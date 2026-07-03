@@ -132,16 +132,6 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 		}
 	},
 
-	// Auto-dismissing on-canvas toast: an idle task that hides the toast message after a delay.
-	Class
-	{
-		kKESCMToastIdleTaskBoss,
-		kInvalidClass,
-		{
-			IID_IIDLETASK, kKESCMToastIdleTaskImpl,
-		}
-	},
-
 	// Action component: handles the About menu items (main menu + panel flyout).
 	Class
 	{
@@ -215,9 +205,9 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kSDKDefAlphabeticPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
-		// "Split Target (90/10)" on the panel flyout (popup) menu (shown first). Splits the KESCM
-		// Target document and sets the new pane to 90% / the original pane to 10% width, zooming
-		// the original pane to 5%.
+		// "Split Target on Start" on the panel flyout (popup) menu (shown first). Check-mark toggle:
+		// when ON (default), a successful Start splits the Target document into a 90% new pane /
+		// 10% original pane (zoomed to 5%) Split Window.
 		kKESCMPopupSplitTargetActionID,
 		kKESCMPopupMenuPath,
 		kKESCMSplitTargetMenuItemPosition,
@@ -263,7 +253,7 @@ resource ActionDef (kSDKDefActionResourceID)
 		kKESCMSplitTargetMenuKey,
 		kOtherActionArea,
 		kNormalAction,
-		kDisableIfLowMem,
+		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates supplies the check mark (kSelectedAction)
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 

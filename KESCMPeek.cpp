@@ -56,7 +56,6 @@
 #include "KESCMID.h"
 #include "KESCMConstants.h"
 #include "KESCMDrawEventHandler.h"   // エンジンの共有 static ＋ KESCMQueryPanorama
-#include "KESCMToast.h"              // KESCMShowToast / ShowHoldToast / HideHoldToast
 #include "KESCMColorSampler.h"       // KESCMSampleCmykUnderMouse
 #include "KESCMCore.h"               // KESCMCollectPageUIDs ＋ arm/disarm/状態 宣言
 #include "KESCMPeek.h"
@@ -78,7 +77,6 @@ static bool16     sPeekArmed    = kFalse;
 static const PMReal kKESCMPeekSemiOpacity = 0.5;	// Shift+Alt＋ミドル時の旧版の不透明度(0..1)
 static bool16 sPeekActive        = kFalse;	// Shift/Shift+Alt+ミドルを押し込み中(=覗き表示中)か
 static bool16 sSingleShowing     = kFalse;	// 修飾なしミドル押下中(=全マークを選択不透明度25%/75%で一時表示中)か。離すと隠す＋基準opacityへ
-static bool16 sColorHoldShowing  = kFalse;	// Shift＋Ctrl＋Alt＋ミドル押下中(=色サンプルのトースト表示中)か。離すと消す
 // ミドル押下中だけハンドツール(掴んで移動)に一時切替。離すと元のツールへ戻す。
 static ITool*  sSavedTool  = nil;	// 切替前のツール(ref を保持。Restore で Release)
 static bool16  sHandActive = kFalse;	// ハンドツールに一時切替中か
@@ -280,7 +278,7 @@ static void KESCMBeginPeekHold(PMReal opacity)
 
 
 
-// Shift＋Ctrl＋ミドルクリック: マウス下スプレッドだけを再比較して枠(リング)を更新する(部分更新)。
+// Ctrl＋ミドルクリック(旧 Shift＋Ctrl=2026-07-04移動): マウス下スプレッドだけを再比較して枠(リング)を更新する(部分更新)。
 //   targetDB=新(arm 済み表示中) / sourceDB=旧(arm 済み比較相手)。新→旧ページは平坦通し番号で対応。
 //   ・各ページを MakeEntry で取り直し(編集後の差分に更新)。変化が無くなったページは古い枠を消す。
 //   ・旧版画像キャッシュ(sOrigImages)は古いので破棄(次の peek で作り直し)。
@@ -357,7 +355,7 @@ static void KESCMInvalidateMarksDoc()
 }
 
 // マウス下のドキュメントが、arm 済みの対象(Target)文書と一致するか。CMYK サンプリング
-// (Shift＋Ctrl＋Alt＋ミドル)とスプレッド枠の部分更新(Shift＋Ctrl＋ミドル)はヒットテストを sPeekTargetDB の
+// (Shift＋Ctrl＋Alt＋ミドル)とスプレッド枠の部分更新(Ctrl＋ミドル)はヒットテストを sPeekTargetDB の
 // ページ座標に対して行うため、マウス下が Source 側や無関係な第3文書のウィンドウだと、そちらの
 // ローカル座標を対象文書のページ座標として誤って解釈してしまう。対象文書のウィンドウ上で操作した時
 // だけ反応させる。
@@ -556,25 +554,24 @@ IEventDispatcher::EventTypeList KESCMPeekWatcher::WatchEvent(IEvent* e)
 	{
 		if (sPeekArmed && e->ShiftKeyDown() && e->CmdKeyDown() && e->OptionAltKeyDown() && KESCMFrontViewIsOverTarget())
 		{
-			// Shift＋Ctrl＋Alt＋ミドル押下: クリック点の CMYK 生値(0..255)を新・旧でサンプリングし、押下中だけ
-			// トーストで "Target C.. M.. Y.. K..  Source C.. M.. Y.. K.." を表示。離す(kMButtonUp)と消す。3キー同時は
+			// Shift＋Ctrl＋Alt＋ミドル押下: クリック点の CMYK 生値(0..255)を新・旧でサンプリングし、
+			// "Target C.. M.. Y.. K.." / "Source C.. …" をパネルのステータス行に表示する(次の操作まで残る)。
+			// ★旧トースト表示(押下中だけカーソル脇に出す)は 2026-07-04 撤去。3キー同時は
 			// この先頭分岐で捕まえる(後続の Shift/Ctrl/Alt 単独 peek より前に置く=単独分岐に吸われないため)。
 			// ★対象(Target)文書のウィンドウ上でのみ反応(KESCMFrontViewIsOverTarget)。Source 側や無関係な
 			// 第3文書のウィンドウでミドルクリックしても、素のミドル動作を邪魔しないよう何もしない。
 			PMString colorMsg;
 			if (KESCMSampleCmykUnderMouse(sPeekTargetDB, sPeekSourceDB, colorMsg))
-			{
-				sColorHoldShowing = kTrue;
-				KESCMShowHoldToast(sPeekTargetDB, colorMsg);
-			}
+				KESCMSetStatus(colorMsg);
 		}
-		else if (sPeekArmed && e->ShiftKeyDown() && e->CmdKeyDown() && !e->OptionAltKeyDown() && KESCMFrontViewIsOverTarget())
+		else if (sPeekArmed && e->CmdKeyDown() && !e->ShiftKeyDown() && !e->OptionAltKeyDown() && KESCMFrontViewIsOverTarget())
 		{
-			// ★2026-07-03: 旧 Ctrl 単独の動作と入れ替え。
-			// Shift＋Ctrl＋ミドル押下(momentary): マウス下スプレッドだけ枠を再検出して更新。
-			// 旧版画像キャッシュは破棄(次 peek で作り直し)。完了したら「spread N updated」をトースト表示。
-			// ★対象(Target)文書のウィンドウ上でのみ反応(KESCMFrontViewIsOverTarget)。
-			// 3キー同時(Shift+Ctrl+Alt=CMYK)は先頭分岐で捕まえているので、ここに来る時点で Alt は必ず OFF。
+			// ★2026-07-04: Shift+Ctrl から Ctrl 単独へ移動(Shift+Ctrl ミドルは未割当に)。
+			// Ctrl(=Win, CmdKeyDown)＋ミドル押下(momentary): マウス下スプレッドだけ枠を再検出して更新。
+			// 旧版画像キャッシュは破棄(次 peek で作り直し)。完了したら「spread N markers refreshed」を
+			// パネルのステータス行に表示する(旧トースト表示は 2026-07-04 撤去)。
+			// ★arm 済み(Start 後)かつ対象(Target)文書のウィンドウ上でのみ反応(KESCMFrontViewIsOverTarget)。
+			// 3キー同時(Shift+Ctrl+Alt=CMYK)は先頭分岐で捕まえる上、ここは !Shift 条件なので衝突しない。
 			int32 sp = -1;
 			if (KESCMRefreshSpreadUnderMouse(sPeekTargetDB, sPeekSourceDB, &sp, nil))
 			{
@@ -582,7 +579,7 @@ IEventDispatcher::EventTypeList KESCMPeekWatcher::WatchEvent(IEvent* e)
 				msg.SetTranslatable(kFalse);
 				msg.AppendNumber(sp + 1);	// スプレッド番号(1始まり)
 				msg.Append(" markers refreshed");
-				KESCMShowToast(sPeekTargetDB, msg, kKESCMToastDefaultMs);
+				KESCMSetStatus(msg);
 			}
 		}
 		else if (sPeekArmed && e->ShiftKeyDown() && e->OptionAltKeyDown() && !e->CmdKeyDown() && KESCMFrontViewIsOverTarget())
@@ -592,16 +589,19 @@ IEventDispatcher::EventTypeList KESCMPeekWatcher::WatchEvent(IEvent* e)
 			// 分岐より前に置く=吸われない。
 			KESCMBeginPeekHold(kKESCMPeekSemiOpacity);
 		}
-		else if (sPeekArmed && e->ShiftKeyDown() && KESCMFrontViewIsOverTarget())
+		else if (sPeekArmed && e->ShiftKeyDown() && !e->CmdKeyDown() && KESCMFrontViewIsOverTarget())
 		{
 			// Shift＋ミドル押下: マウス下スプレッドの旧版べた載せ(peek)を不透明(100%)で開始。押下中だけ表示。
 			// 判定はこの押下時の修飾キー状態のみ。以後キーを離しても変わらず、ミドルを離すと消える。
 			// ★対象(Target)文書のウィンドウ上でのみ反応(KESCMFrontViewIsOverTarget)。CMYK サンプリングと同じ理由。
+			// ★!Ctrl 条件: スプレッド再比較が Shift+Ctrl→Ctrl 単独へ移動(2026-07-04)した際、Shift+Ctrl が
+			//   この分岐に落ちて 100% peek が誤発動しないように弾く(Shift+Ctrl ミドルは未割当=無反応)。
+			//   Shift+Alt は上の 50% peek 分岐が先に捕まえるので、ここは実質 Shift 単独用。
 			KESCMBeginPeekHold(PMReal(1.0));
 		}
 		else if (e->OptionAltKeyDown() && !e->ShiftKeyDown() && !e->CmdKeyDown())
 		{
-			// ★2026-07-04: Ctrl 単独から Alt 単独へ移動(Ctrl 単独ミドルは現在未割当)。
+			// ★2026-07-04: Ctrl 単独から Alt 単独へ移動(Ctrl 単独は同日「スプレッド再比較」に再割当)。
 			// Alt＋ミドル押下(momentary): 「地図」ナビゲーション。マウス下のウィンドウ
 			// (アクティブでなくてもよい)のローカル座標へ、他の全ウィンドウをスクロールする。arm 状態に依らず常に使える。
 			KESCMSyncScrollOtherWindowsUnderMouse(e);
@@ -622,21 +622,14 @@ IEventDispatcher::EventTypeList KESCMPeekWatcher::WatchEvent(IEvent* e)
 				KESCMInvalidateMarksDoc();
 			}
 		}
-		// (その他の組み合わせ(Ctrl 単独ミドル等)や、Shift 系で arm 未済 → 何もしない=素のミドルを邪魔しない。
-		//  2026-07-04: Alt＋ミドルは「枠を通常表示」を撤去した後、「地図ナビゲーション(旧 Ctrl 単独)」に再割当。
-		//  Ctrl 単独ミドルは未割当)
+		// (その他の組み合わせ(Shift+Ctrl ミドル等)や、Shift/Ctrl 系で arm 未済 → 何もしない=素のミドルを邪魔しない。
+		//  2026-07-04 の再割当: Alt＋ミドル=地図ナビゲーション(旧 Ctrl 単独)、Ctrl 単独=スプレッド再比較(旧 Shift+Ctrl)。
+		//  Shift+Ctrl ミドルと「枠を通常(不透明)で表示」(旧 Alt 単独)は未割当/撤去)
 	}
 	else // kMButtonUp
 	{
 		// ミドルを離したら、ハンドに切替えていた場合は元のツールへ戻す(シングル/ダブル共通)。
 		KESCMRestoreTool();
-
-		if (sColorHoldShowing)
-		{
-			// Shift＋Ctrl＋Alt＋ミドルを離した → 色サンプルのトーストを消す(他の状態には触らない)。
-			sColorHoldShowing = kFalse;
-			KESCMHideHoldToast();
-		}
 
 		if (sPeekActive)
 		{
@@ -720,7 +713,6 @@ void KESCMPeekStartup::Shutdown()
 	// 保持していたマーク/旧版画像バッファを解放(終了時もきれいに片付ける)。
 	KESCMDrawEventHandler::DropAll();
 	KESCMDrawEventHandler::DropAllOrig();
-	KESCMShutdownToast();	// トーストタイマ本体も解放(セッション中1個を保持していた)
 }
 
 //========================================================================================
@@ -771,7 +763,7 @@ IDataBase* KESCMArmedSourceDB()  { return sPeekSourceDB; }
 //========================================================================================
 // KESCMHandleDocsClosed(KESCMCore.h で宣言)
 //   ドキュメントがクローズされた直後(kAfterCloseDoc レスポンダ)に呼ばれる。追跡中の全DB
-//   (マーク sDB / 旧版 sOrigDB / トースト sToastDB / peek arm の target・source)を IDocumentList で
+//   (マーク sDB / 旧版 sOrigDB / peek arm の target・source)を IDocumentList で
 //   生存確認する。どの db が閉じたかは信号から取れないため、この生存スイープで判定する
 //   (HandleDrawEvent と同じ手法を、描画を待たずクローズ確定時に能動実行)。
 //
@@ -782,7 +774,7 @@ IDataBase* KESCMArmedSourceDB()  { return sPeekSourceDB; }
 //
 //   ★重要: 閉じた db ポインタは「FindDocByDataBase への比較」だけに使い、絶対に deref しない。
 //   閉じた文書の IDataBase は既に解放されている可能性があるため、その db 自体への後片付け
-//   (KESCMHideHoldToast / KESCMDoDisarmMousePeek 等の InvalidateViews で deref する処理)は呼ばない。
+//   (KESCMDoDisarmMousePeek 等の InvalidateViews で deref する処理)は呼ばない。
 //   ただし比較相手がまだ開いている場合(タイル表示等)、そちら側は生存確認済みなので
 //   KESCMDoClearMarks と同様に InvalidateViews して枠を即座に消す(生き残り側の再描画漏れ対策)。
 //========================================================================================
@@ -841,17 +833,6 @@ void KESCMHandleDocsClosed()
 		KESCMInvalidateDB(survivorTargetDB);
 		if (survivorOrigDB != survivorTargetDB)
 			KESCMInvalidateDB(survivorOrigDB);
-	}
-
-	// トースト。マーク/peek arm とは独立に、無関係な文書へ一時表示中だったケースも安全に消す。
-	// KESCMHideHoldToast は消去時に旧 sToastDB を deref(InvalidateViews)するため、
-	// 閉じた db に対しては呼ばず、static を直接 nil にする(描画ガード db==sToastDB がもう成立しない)。
-	if (KESCMDrawEventHandler::sToastDB != nil &&
-	    docList->FindDocByDataBase(KESCMDrawEventHandler::sToastDB) == nil)
-	{
-		KESCMDrawEventHandler::sToastVisible = kFalse;
-		KESCMDrawEventHandler::sToastDB = nil;
-		changed = kTrue;
 	}
 
 	// 何か片付けたらパネルの ON/OFF 表示を実状態に合わせる(①「ON 固着」の解消)。

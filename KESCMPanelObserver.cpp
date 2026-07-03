@@ -292,6 +292,12 @@ void KESCMPanelObserver::DoStart()
 	KESCMDoMarkChangesDoc(targetDB, sourceDB, report);
 	KESCMDoArmMousePeek(targetDB, sourceDB);
 	this->SetStatus(report);
+
+	// フライアウトの「Split Target on Start」が ON なら、Target を 90/10 の Split Window にする。
+	// 成功時は無音なので上の比較レポート表示は残る(失敗時のみステータス行が差し替わる)。
+	if (KESCMGetSplitOnStart())
+		KESCMDoSplitTarget();
+
 	this->UpdateInfoDisplay();
 }
 
@@ -481,7 +487,7 @@ void KESCMSetStatus(const PMString& s, bool16 forceRedrawNow)
 		tcd->SetString(s);
 
 	// この直後にブロッキング処理(比較ループ等)が続く場合、SetString の invalidate は次の
-	// イベントループまで反映されない。トーストの busyMsg と同じく、今すぐ同期描画させる。
+	// イベントループまで反映されない。busyMsg 表示のために今すぐ同期描画させる。
 	if (forceRedrawNow)
 		panel->ForceRedraw(nil, kTrue);
 }

@@ -85,8 +85,8 @@ bool16		KESCMGetPrintMarks();		// 印刷マーク ON/OFF
 bool16		KESCMGetMarkOpacity25();	// 枠不透明度の選択: kTrue=25% / kFalse=75%
 
 // ドキュメントがクローズされた直後(kAfterCloseDoc レスポンダ)に呼ぶ。追跡中の全DB(マーク/旧版画像/
-// トースト/peek arm)を IDocumentList で生存確認し、閉じていたものだけ確定的にクリーンアップする
-// (DropAll/DropAllOrig/トースト消去/無音 disarm)。片付けが起きたらパネルも ON→OFF 更新する。
+// peek arm)を IDocumentList で生存確認し、閉じていたものだけ確定的にクリーンアップする
+// (DropAll/DropAllOrig/無音 disarm)。片付けが起きたらパネルも ON→OFF 更新する。
 // どの db が閉じたかは信号から取れない(AfterClose では UIDRef 無効)ため、生存スイープで判定する。
 // 実体は KESCMPeek.cpp(peek の file-local 状態にアクセスできる唯一の場所)。
 void		KESCMHandleDocsClosed();
@@ -105,5 +105,14 @@ void		KESCMSetStatus(const PMString& s, bool16 forceRedrawNow = kFalse);
 // パネルのイラスト(ON/OFF アイコン)をクリックしたときに呼ぶ。「このプラグインについて」に載せている
 // 配布元URL(kKESCMRepoURL, KESCMID.h)を既定のブラウザで開く。実体は KESCMActionComponent.cpp。
 void		KESCMOpenAboutURL();
+
+// パネルのフライアウト「Split Target on Start」トグルの現在値(既定 kTrue、セッション内のみ保持)。
+// kTrue なら Start 成功時に KESCMDoSplitTarget が自動で走る。実体は KESCMActionComponent.cpp。
+bool16		KESCMGetSplitOnStart();
+
+// Target 文書(KESCMArmedTargetDB)を Split Window で2分割し、新しい側を90%・元側を10%幅+5%ズームの
+// 概観ペインにする。成功時は無音、失敗時のみパネルのステータス行にメッセージを出す(UI状態のみで
+// ドキュメントモデルには触れない)。実体は KESCMActionComponent.cpp。
+void		KESCMDoSplitTarget();
 
 #endif // __KESCMCore_h__

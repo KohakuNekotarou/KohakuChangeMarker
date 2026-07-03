@@ -3,8 +3,8 @@
 //  KESCMDrawEventHandler.h
 //
 //  差分オーバーレイの描画エンジン。ページUID→オーバーレイ(KESCMOverlayEntry)を保持し、
-//  スプレッド描画イベント時にリング/変更数/旧版べた載せ/トーストを描く。共有状態は public static
-//  メンバとして公開し、他モジュール(peek/トースト/コア処理)から参照させる。
+//  スプレッド描画イベント時にリング/変更数/旧版べた載せを描く。共有状態は public static
+//  メンバとして公開し、他モジュール(peek/コア処理)から参照させる。
 //
 //========================================================================================
 #ifndef __KESCMDrawEventHandler_h__
@@ -128,11 +128,8 @@ public:
 	static PMReal sPeekOpacity;							// 覗き中(peek)の旧版べた載せの不透明度。Shift＋ミドル=1.0(不透明)/
 														// Ctrl＋ミドル=0.5(半透明)。描画ブロックが参照する
 
-	// 一時トースト(画面=可視領域の中央に少し出て自動で消えるメッセージ)。マーク等とは完全に独立。
-	// sToastDB のドキュメントの前面ビューにだけ描く。自動消去は IIdleTask(KESCMToastIdleTask)が担う。
-	static PMString   sToastMsg;		// 表示文字列
-	static bool16     sToastVisible;	// 表示中か(タイマで kFalse に戻す)
-	static IDataBase* sToastDB;			// トーストを描くドキュメント(前面)
+	// (一時トースト機構は 2026-07-04 に撤去。メッセージはパネルのステータス行(KESCMSetStatus)へ。
+	//  仕組み自体は他プラグインへの転用候補: docs/ai-notes/kescm-toast-mechanism.md と git 履歴 509e830 を参照)
 
 	// 距離変換 dist を使い、buf(ARGB)へリング(0<dist<=radius)を1パスで描く(膨張不要)。
 	// 各リング画素の色は、その位置の背景が赤っぽい(bgRed[idx])なら青、そうでなければ赤。

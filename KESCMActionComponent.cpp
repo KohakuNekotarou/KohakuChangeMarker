@@ -12,6 +12,7 @@
 // 一般:
 #include "CActionComponent.h"
 #include "CAlert.h"
+#include "IActionStateList.h"		// UpdateActionStates(チェックマーク表示)。IPMUnknown 派生ではない
 #include "PMString.h"
 
 // Split Target(90/10)機能用:
@@ -41,6 +42,15 @@ namespace GoToURLUtils
 	PUBLIC_DECL void GoToURL(const PMString& goToURL, bool16 isAGoURL);
 }
 
+// 「Split Target on Start」トグルの状態(セッション内のみ保持、印刷チェック等の既存状態と同じ扱い)。
+// kTrue なら Start 成功時に KESCMDoSplitTarget() が自動で走る。既定は ON。
+static bool16 sSplitOnStart = kTrue;
+
+bool16 KESCMGetSplitOnStart()
+{
+	return sSplitOnStart;
+}
+
 /** ChangeMarker プラグインのメニュー項目に対する IActionComponent の実装。
 */
 class KESCMActionComponent : public CActionComponent
@@ -51,11 +61,13 @@ public:
 	/** Execute the requested menu action. */
 	void DoAction(IActiveContext* ac, ActionID actionID, GSysPoint mousePoint = kInvalidMousePoint, IPMUnknown* widget = nil);
 
+	/** 「Split Target on Start」(kCustomEnabling)のチェックマークを sSplitOnStart に合わせて更新する。 */
+	virtual void UpdateActionStates(IActiveContext* ac, IActionStateList* listToUpdate, GSysPoint mousePoint = kInvalidMousePoint, IPMUnknown* widget = nil);
+
 private:
 	void DoAbout();
 	void DoAboutScript();
 	void DoUsage();
-	void DoSplitTarget();	// Target文書をSplit Windowで90/10に分割し、元側を5%ズームにする
 };
 
 /* Binds the C++ implementation class onto its ImplementationID. */
@@ -79,12 +91,32 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 			this->DoUsage();
 			break;
 
+		// 「Split Target on Start」トグル: フラグを反転する。ON にした時点で既に Start 済み(armed)
+		// なら、次の Start を待たずにその場でスプリットを適用する。OFF にしてもスプリット済みの
+		// ウィンドウは戻さない(手動で閉じられるため)。
 		case kKESCMPopupSplitTargetActionID:
-			this->DoSplitTarget();
+			sSplitOnStart = !sSplitOnStart;
+			if (sSplitOnStart && KESCMIsArmed() && (KESCMArmedTargetDB() != nil))
+				KESCMDoSplitTarget();
 			break;
 
 		default:
 			break;
+	}
+}
+
+/* UpdateActionStates — 「Split Target on Start」のチェックマーク。常に有効、ON なら kSelectedAction
+   を立てる(docwatch の DocWchActionComponent::UpdateActionStates と同じ流儀)。 */
+void KESCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionStateList* listToUpdate, GSysPoint /*mousePoint*/, IPMUnknown* /*widget*/)
+{
+	int16 actionState = kEnabledAction;
+	if (sSplitOnStart)
+		actionState |= kSelectedAction;
+
+	for (int32 i = 0; i < listToUpdate->Length(); i++)
+	{
+		if (listToUpdate->GetNthAction(i) == kKESCMPopupSplitTargetActionID)
+			listToUpdate->SetNthActionState(i, actionState);
 	}
 }
 
@@ -130,22 +162,24 @@ void KESCMActionComponent::DoUsage()
 	);
 }
 
-// DoSplitTarget — パネルのフライアウト「Split Target (90/10)」。
+// KESCMDoSplitTarget(KESCMCore.h で宣言) — Start 成功時(および「Split Target on Start」を armed 中に
+//   ON へ切り替えた時)に呼ばれる。
 //   KESCM の Target 文書(Start 済みの比較対象、KESCMArmedTargetDB)を Split Window で2分割し、
 //   新しく現れた側(kLayoutSecondaryPanelWidgetID)を全体の90%、元から表示していた側
 //   (kLayoutWidgetBoss)を10%にする。さらに元の側は概観用として拡大率を5%にする。
 //   ★前提(Split Test の実測結果からの類推、要目視確認): SetSplitterEdge に「全体の10%」を渡すと
 //   境界(先頭側=index0)が10%地点に来る。先頭側が元のペイン(kLayoutWidgetBoss)である前提だが、
 //   もし逆(新しいペインが10%になる)場合は下の target 計算を (1.0 - 0.10) に反転すればよい。
+//   成功時は無音(Start の比較レポート表示を上書きしない)。失敗時のみパネルのステータス行に出す。
 //   ドキュメントモデルには一切触れない(UI状態のみ)ので Command 化は不要。
-void KESCMActionComponent::DoSplitTarget()
+void KESCMDoSplitTarget()
 {
 	IDataBase* targetDB = KESCMArmedTargetDB();
 	if (targetDB == nil)
 	{
 		PMString msg("Split Target: ChangeMarker is not armed (press Start first).");
 		msg.SetTranslatable(kFalse);
-		CAlert::InformationAlert(msg);
+		KESCMSetStatus(msg);
 		return;
 	}
 
@@ -154,7 +188,7 @@ void KESCMActionComponent::DoSplitTarget()
 	{
 		PMString msg("Split Target: no open presentation for the Target document.");
 		msg.SetTranslatable(kFalse);
-		CAlert::InformationAlert(msg);
+		KESCMSetStatus(msg);
 		return;
 	}
 
@@ -162,7 +196,7 @@ void KESCMActionComponent::DoSplitTarget()
 	{
 		PMString msg("Split Target: the Target document is in Galley/Story view; cannot split.");
 		msg.SetTranslatable(kFalse);
-		CAlert::InformationAlert(msg);
+		KESCMSetStatus(msg);
 		return;
 	}
 
@@ -173,9 +207,9 @@ void KESCMActionComponent::DoSplitTarget()
 	IControlView* splitterView = (panelData != nil) ? panelData->FindWidget(kLayoutSplitterPanelWidgetID) : nil;
 	if (splitterView == nil)
 	{
-		PMString msg("Split Target: kLayoutSplitterPanelWidgetID not found even after ShowSplitLayoutView.");
+		PMString msg("Split Target: splitter widget not found.");
 		msg.SetTranslatable(kFalse);
-		CAlert::InformationAlert(msg);
+		KESCMSetStatus(msg);
 		return;
 	}
 
@@ -183,9 +217,9 @@ void KESCMActionComponent::DoSplitTarget()
 	InterfacePtr<ISplitterPanelController>  splitterCtrl(splitterData, UseDefaultIID());
 	if (splitterData == nil || splitterCtrl == nil)
 	{
-		PMString msg("Split Target: ISplitterPanelControlData/ISplitterPanelController query failed.");
+		PMString msg("Split Target: splitter interfaces not available.");
 		msg.SetTranslatable(kFalse);
-		CAlert::InformationAlert(msg);
+		KESCMSetStatus(msg);
 		return;
 	}
 
@@ -213,6 +247,7 @@ void KESCMActionComponent::DoSplitTarget()
 		}
 	}
 
+	// 元側ペインが見つからなくてもスプリット自体は成立しているので、ズームだけ静かにスキップする。
 	if (originalView != nil)
 	{
 		K2Vector<IControlView*> zoomViews;
@@ -220,13 +255,6 @@ void KESCMActionComponent::DoSplitTarget()
 		K2Vector<PBPMPoint> zoomPoints;	// 空 = ビュー中心を基準にズーム
 		Utils<ILayoutViewUtils>()->ZoomLayoutViews(zoomViews, zoomPoints, kTrue, PMReal(0.05));
 	}
-
-	PMString msg("Split Target: done.\n");
-	msg.SetTranslatable(kFalse);
-	msg.Append("IsVerticalSplitter = "); msg.Append(vertical ? "true" : "false"); msg.Append("\n");
-	msg.Append("splitter edge set to "); msg.AppendNumber(target); msg.Append(" of "); msg.AppendNumber(totalExtent); msg.Append("\n");
-	msg.Append(originalView != nil ? "Original pane found; zoomed to 5%." : "Original pane NOT found (kLayoutWidgetBoss lookup failed); zoom skipped.");
-	CAlert::InformationAlert(msg);
 }
 
 // KESCMOpenAboutURL(KESCMCore.h で宣言) — パネルのイラストクリックから呼ばれる。「このプラグインに

@@ -53,7 +53,7 @@ DECLARE_PMID(kPlugInIDSpace, kKESCMPluginID, kKESCMPrefix + 0)
 DECLARE_PMID(kClassIDSpace, kKESCMDrawEventServiceBoss, kKESCMPrefix + 4)
 DECLARE_PMID(kClassIDSpace, kKESCMPeekWatcherBoss, kKESCMPrefix + 5)	// IEventWatcher: ミドルボタン peek(kMButtonDn/Up をスヌープ)
 DECLARE_PMID(kClassIDSpace, kKESCMPeekStartupBoss, kKESCMPrefix + 6)	// IStartupShutdown: アプリ起動時に peek ウォッチャを開始
-DECLARE_PMID(kClassIDSpace, kKESCMToastIdleTaskBoss, kKESCMPrefix + 7)	// IIdleTask: カンバス上のトーストを自動で消す
+// kClassIDSpace +7 は現在空き(旧 kKESCMToastIdleTaskBoss; トーストは2026-07-04撤去。転用は docs/ai-notes/kescm-toast-mechanism.md)
 DECLARE_PMID(kClassIDSpace, kKESCMPanelWidgetBoss, kKESCMPrefix + 8)	// ChangeMarker 操作パネル(パレット)
 DECLARE_PMID(kClassIDSpace, kKESCMActionComponentBoss, kKESCMPrefix + 9)	// About メニューのアクションコンポーネント
 DECLARE_PMID(kClassIDSpace, kKESCMDocResponderServiceBoss, kKESCMPrefix + 10)	// IK2ServiceProvider+IResponder: ドキュメントクローズ監視(閉じた文書の追跡状態を確定クリーンアップ)
@@ -114,7 +114,7 @@ DECLARE_PMID(kImplementationIDSpace, kKESCMDrawEventSrvcImpl, kKESCMPrefix + 1)
 DECLARE_PMID(kImplementationIDSpace, kKESCMDrawEventHandlerImpl, kKESCMPrefix + 2)
 DECLARE_PMID(kImplementationIDSpace, kKESCMPeekWatcherImpl, kKESCMPrefix + 3)	// IEventWatcher 実装(ミドルボタン peek)
 DECLARE_PMID(kImplementationIDSpace, kKESCMPeekStartupImpl, kKESCMPrefix + 4)	// IStartupShutdown 実装(peek ウォッチャを開始)
-DECLARE_PMID(kImplementationIDSpace, kKESCMToastIdleTaskImpl, kKESCMPrefix + 5)	// IIdleTask 実装(トースト自動消去)
+// kImplementationIDSpace +5 は現在空き(旧 kKESCMToastIdleTaskImpl; トーストは2026-07-04撤去)
 DECLARE_PMID(kImplementationIDSpace, kKESCMPanelObserverImpl, kKESCMPrefix + 6)	// IObserver 実装(パネルのウィジェットオブザーバ)
 DECLARE_PMID(kImplementationIDSpace, kKESCMActionComponentImpl, kKESCMPrefix + 7)	// IActionComponent 実装(About)
 DECLARE_PMID(kImplementationIDSpace, kKESCMDocServiceProviderImpl, kKESCMPrefix + 8)	// IK2ServiceProvider 実装(クローズ監視のサービス登録)
@@ -149,7 +149,7 @@ DECLARE_PMID(kActionIDSpace, kKESCMPopupAboutThisActionID, kKESCMPrefix + 2)	// 
 DECLARE_PMID(kActionIDSpace, kKESCMPopupAboutScriptActionID, kKESCMPrefix + 3)	// パネルのフライアウトの「スクリプトについて」
 DECLARE_PMID(kActionIDSpace, kKESCMPopupUsageActionID, kKESCMPrefix + 4)	// パネルのフライアウトの「使い方」
 // kActionIDSpace +5 は現在空き(旧 kKESCMPopupTestSplitActionID; Split Test 検証メニューは撤去済み)
-DECLARE_PMID(kActionIDSpace, kKESCMPopupSplitTargetActionID, kKESCMPrefix + 6)	// パネルのフライアウトの「Split Target (90/10)」
+DECLARE_PMID(kActionIDSpace, kKESCMPopupSplitTargetActionID, kKESCMPrefix + 6)	// パネルのフライアウトの「Split Target on Start」チェック式トグル
 //DECLARE_PMID(kActionIDSpace, kKESCMActionID, kKESCMPrefix + 7)
 //DECLARE_PMID(kActionIDSpace, kKESCMActionID, kKESCMPrefix + 8)
 //DECLARE_PMID(kActionIDSpace, kKESCMActionID, kKESCMPrefix + 9)
@@ -245,7 +245,7 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMToggleButtonWidgetID, kKESCMPrefix + 37)	// �
 #define kKESCMAboutScriptMenuKey	kKESCMStringPrefix "kKESCMAboutScriptMenuKey"	// パネルのフライアウト「スクリプトについて」のメニュー名
 #define kKESCMScriptHelpStringKey	kKESCMStringPrefix "kKESCMScriptHelpStringKey"	// その本文(スクリプトAPIは撤去済み。現在は「利用可能なスクリプトはありません」の旨を表示)
 #define kKESCMUsageMenuKey		kKESCMStringPrefix "kKESCMUsageMenuKey"	// パネルのフライアウト「使い方」のメニュー名(本文は kKESCMHintKey を再利用)
-#define kKESCMSplitTargetMenuKey	kKESCMStringPrefix "kKESCMSplitTargetMenuKey"	// パネルのフライアウト「Split Target (90/10)」のメニュー名
+#define kKESCMSplitTargetMenuKey	kKESCMStringPrefix "kKESCMSplitTargetMenuKey"	// パネルのフライアウト「Split Target on Start」トグルのメニュー名
 
 // パネル: 内部フライアウト(ポップアップ)メニュー名＋そのメニューパス。
 #define kKESCMInternalPopupMenuNameKey	kKESCMStringPrefix "kKESCMInternalPopupMenuNameKey"
@@ -266,9 +266,9 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMToggleButtonWidgetID, kKESCMPrefix + 37)	// �
 #define kKESCMIconOffResID	1002
 #define kKESCMPaletteIconResID	1003	// パネルが折りたたまれた時に出る小さいドックタブアイコン
 
-// Menu item positions (flyout order): Split Target(9) → 使い方(10) → スクリプトについて(11) →
-// このプラグインについて(12)
-#define kKESCMSplitTargetMenuItemPosition	9.0	// 実行コマンドを先頭に
+// Menu item positions (flyout order): Split Target on Start(9) → How to Use(10) → About Scripting(11) →
+// About this plug-in(12)。※メニュー名は日本語ロケールでも英語で統一(2026-07-04)
+#define kKESCMSplitTargetMenuItemPosition	9.0	// チェック式トグルを先頭に
 #define kKESCMUsageMenuItemPosition			10.0	// 「使い方」
 #define kKESCMAboutScriptMenuItemPosition	11.0	// その下に「スクリプトについて」
 #define kKESCMAboutThisMenuItemPosition		12.0	// 末尾に「このプラグインについて」

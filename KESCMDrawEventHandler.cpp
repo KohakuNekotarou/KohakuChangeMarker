@@ -3,7 +3,7 @@
 //  KESCMDrawEventHandler.cpp
 //
 //  差分オーバーレイ描画エンジンの実装(旧 KESCMScriptProvider.cpp から分離)。リング/変更数/
-//  旧版べた載せ/トーストの描画、比較ラスタ化(MakeEntry/MakeOrigImage)、各種画像ヘルパを持つ。
+//  旧版べた載せの描画、比較ラスタ化(MakeEntry/MakeOrigImage)、各種画像ヘルパを持つ。
 //  共有状態(static メンバ)と KESCMQueryPanorama は KESCMDrawEventHandler.h で公開している。
 //
 //========================================================================================
@@ -36,8 +36,6 @@
 #include "IPanorama.h"
 #include "IWidgetParent.h"
 #include "ISession.h"
-#include "IFontMgr.h"
-#include "IPMFont.h"
 #include "PMMatrix.h"
 #include "PMPoint.h"
 #include "PMReal.h"
@@ -60,7 +58,7 @@ CREATE_PMINTERFACE(KESCMDrawEventHandler, kKESCMDrawEventHandlerImpl)
 std::map<UID, KESCMOverlayEntry*> KESCMDrawEventHandler::sEntries;
 IDataBase* KESCMDrawEventHandler::sDB = nil;
 bool16 KESCMDrawEventHandler::sMarksVisible = kFalse;	// 既定=非表示。枠等はシングルミドル押下中だけ表示(master トグル)
-PMReal KESCMDrawEventHandler::sMarkScreenOpacity = 1.0;	// 既定=不透明。ミドルのみ=25%/Alt=不透明/印刷25%中の常時表示=25%
+PMReal KESCMDrawEventHandler::sMarkScreenOpacity = 1.0;	// 既定=不透明。ミドル押下中=選択不透明度(25%/75%)/印刷ON中の常時表示=選択不透明度
 bool16 KESCMDrawEventHandler::sPrintMarks = kFalse;	// 既定=画面のみ(印刷/PDF には出さない)
 bool16 KESCMDrawEventHandler::sMarkOpacity25 = kTrue;	// 既定=25%(パネルの既定ラジオと一致)。kFalse=75%
 bool16 KESCMDrawEventHandler::sRasterizing = kFalse;	// 自前ラスタ化中だけ kTrue(自己参照防止)
@@ -68,10 +66,7 @@ std::map<UID, KESCMOrigImage*> KESCMDrawEventHandler::sOrigImages;
 IDataBase* KESCMDrawEventHandler::sOrigDB = nil;
 bool16 KESCMDrawEventHandler::sShowOriginal = kFalse;	// 既定=非表示(kescmShowOriginal で ON)
 PMReal KESCMDrawEventHandler::sOrigScale = 0.0;	// ラスタ化時のズームスケール(0=未設定)
-PMReal KESCMDrawEventHandler::sPeekOpacity = 1.0;	// 既定=不透明(Shift peek)。Ctrl peek で 0.5 にする
-PMString   KESCMDrawEventHandler::sToastMsg;
-bool16     KESCMDrawEventHandler::sToastVisible = kFalse;	// 既定=非表示
-IDataBase* KESCMDrawEventHandler::sToastDB = nil;
+PMReal KESCMDrawEventHandler::sPeekOpacity = 1.0;	// 既定=不透明(Shift peek)。Shift+Alt peek で 0.5 にする
 
 
 void KESCMDrawEventHandler::BuildRing(uint8* buf, int32 rb, int32 bpp, int32 wt, int32 ht,
@@ -473,18 +468,14 @@ ErrorCode KESCMDrawEventHandler::MakeOrigImage(const UIDRef& targetRef, const UI
 
 void KESCMDrawEventHandler::Register(IDrwEvtDispatcher* d)
 {
-	// スプレッド単位で配られる描画イベント。ポートは spread 座標。枠/変更数はこちらで描く。
-	// トーストもこちらで描く=スプレッド/ペーストボード帯の「前面」分(帯外はクリップされる)。
+	// スプレッド単位で配られる描画イベント。ポートは spread 座標。枠/変更数・旧版べた載せをこちらで描く。
+	// (トースト撤去(2026-07-04)に伴い、カンバス背景帯用の kAfterLastSpreadDrawMessage 登録は廃止)
 	d->RegisterHandler(ClassID(kEndSpreadMessage), this, kDEHLowestPriority);
-	// ウィンドウ単位(全スプレッド描画後に1回)。ポートは CTM=pasteboard。スプレッド/ペーストボードの
-	// 背面に来るため、トーストの「帯外=カンバス背景」分だけをこちらで描く(2系統併用で全域カバー)。
-	d->RegisterHandler(ClassID(kAfterLastSpreadDrawMessage), this, kDEHLowestPriority);
 }
 
 void KESCMDrawEventHandler::UnRegister(IDrwEvtDispatcher* d)
 {
 	d->UnRegisterHandler(ClassID(kEndSpreadMessage), this);
-	d->UnRegisterHandler(ClassID(kAfterLastSpreadDrawMessage), this);
 }
 
 
@@ -502,210 +493,6 @@ IPanorama* KESCMQueryPanorama(IControlView* view)
 		return nil;
 	return (IPanorama*)parent->QueryParentFor(IID_IPANORAMA);
 }
-
-// トースト用の文字列幅の概算(em 単位の合計)。SDK に「選択フォントで任意文字列を実測する」軽量 API が
-// 無いため、文字種別の代表値を合計して近似する(プロポーショナルフォントで一律 0.5em より実幅に近い)。
-// 大文字・記号は広め、小文字は中、スペースは狭め、非 ASCII(全角=CJK 等)は約 1em とみなす。
-static PMReal KESCMEstimateTextEm(const UTF16TextChar* buf, int32 n)
-{
-	PMReal sum = 0.0;
-	for (int32 i = 0; i < n; ++i)
-	{
-		const UTF16TextChar c = buf[i];
-		PMReal w;
-		if (c == 0x20)                      w = PMReal(0.30);	// 半角スペース
-		else if (c >= 0x41 && c <= 0x5A)    w = PMReal(0.80);	// 大文字 A-Z(広め。右端の詰まり対策で少し大きめ)
-		else if (c >= 0x61 && c <= 0x7A)    w = PMReal(0.50);	// 小文字 a-z
-		else if (c >= 0x30 && c <= 0x39)    w = PMReal(0.55);	// 数字 0-9
-		else if (c < 0x80)                  w = PMReal(0.50);	// その他 ASCII(記号等)
-		else                                w = PMReal(1.00);	// 非 ASCII(全角=CJK 等)
-		sum = sum + w;
-	}
-	return sum;
-}
-
-//========================================================================================
-// pasteboard 座標 → このスプレッドの spread 座標 への変換オフセット(= pasteboard - spread)。
-//   pasteboard 座標はドキュメント全体で1つ。スプレッドは pasteboard 上で(主に縦に)積まれ、各々が
-//   オフセットを持つ(spread[0] だけ偶然 0)。同一の inner 原点(0,0)を InnerToSpreadMatrix と
-//   InnerToPasteboardMatrix の両方で写し、その差を取ればこのスプレッドのオフセットになる。
-//   pasteboard 中心からこれを引けば、そのスプレッドの spread 座標における中心が得られる。
-//========================================================================================
-static PMPoint KESCMSpreadOffsetFromPasteboard(IDataBase* db, ISpread* spread)
-{
-	PMPoint off(0.0, 0.0);
-	if (db == nil || spread == nil || spread->GetNumPages() < 1)
-		return off;
-	InterfacePtr<IGeometry> pg(db, spread->GetNthPageUID(0), UseDefaultIID());
-	if (pg == nil)
-		return off;
-	PMMatrix mS = ::InnerToSpreadMatrix(pg);
-	PMMatrix mP = ::InnerToPasteboardMatrix(pg);
-	PMPoint ps(0.0, 0.0), pp(0.0, 0.0);
-	mS.Transform(&ps);
-	mP.Transform(&pp);
-	return PMPoint(pp.X() - ps.X(), pp.Y() - ps.Y());
-}
-
-//========================================================================================
-// 一時トースト描画: 半透明の暗いボックス＋白文字でメッセージを描く。centerPort(通常はマウスカーソル
-//   位置)は「呼び出すポートの座標系」で渡す:
-//     - kEndSpreadMessage(per-spread)        → spread 座標(スプレッド/ペーストボード帯の前面)
-//     - kAfterLastSpreadDrawMessage(ウィンドウ)→ pasteboard 座標(帯外=カンバス背景)
-//   この2系統を併用すると、各画素はどちらか一方が担当=二重描き無しで全域(スプレッド+ペースト
-//   ボード+カンバス)をカバーできる。可視/db/中心の有効性チェックは呼び出し側で済ませる。
-//   サイズはズーム不変(画面px / sxr)。
-//   ★ボックスは centerPort に中心を合わせるのではなく、その少し上(kKESCMToastCursorGapPx)に
-//   下端が来るよう配置する。カーソルに文字が重なって読みにくくなるのを防ぐため。
-//   clampBoundsPort(centerPort と同じ座標系、nil可)を渡すと、ボックス全体がその矩形に収まるよう
-//   中心をクランプする(=マウスがレイアウトウィンドウの下端/左端付近にあってもボックスがはみ出さない)。
-//   ボックスの方が矩形より大きい軸は、その軸だけ矩形の中央に寄せる。
-//========================================================================================
-static void KESCMDrawToast(IGraphicsPort* gPort, PMReal sxr, const PMPoint& centerPort, const PMRect* clampBoundsPort = nil)
-{
-	if (gPort == nil || sxr <= 0)
-		return;
-
-	PMReal sX = centerPort.X();
-	PMReal sY = centerPort.Y();
-
-	PMString msg = KESCMDrawEventHandler::sToastMsg;
-	msg.SetTranslatable(kFalse);
-	const int32 nch = msg.NumUTF16TextChars();
-	if (nch <= 0)
-		return;
-	InterfacePtr<IFontMgr> fontMgr(GetExecutionContextSession(), UseDefaultIID());
-	InterfacePtr<IPMFont> theFont(fontMgr ? fontMgr->QueryFont(fontMgr->GetDefaultFontName()) : nil);
-	if (theFont == nil)
-		return;
-
-	const PMReal fpt   = kKESCMToastTextPx / sxr;			// 文字pt(ズーム不変)
-	const PMReal pad   = kKESCMToastPadPx  / sxr;
-	const UTF16TextChar* mbuf = msg.GrabUTF16Buffer(nil);	// 文字バッファ(幅見積もりと描画で共用)
-
-	// 改行(LF=0x0A)で行に分割(最大 kMaxLines 行)。改行が無ければ 1 行=従来どおり。各行は中央寄せで縦に積む。
-	const int32 kMaxLines = 8;
-	int32 lineStart[kMaxLines], lineLen[kMaxLines], nLines = 0;
-	int32 st = 0;
-	for (int32 i = 0; i <= nch; ++i)
-	{
-		if (i == nch || mbuf[i] == 0x0A)
-		{
-			if (nLines < kMaxLines) { lineStart[nLines] = st; lineLen[nLines] = i - st; ++nLines; }
-			st = i + 1;
-		}
-	}
-	if (nLines <= 0)
-		return;
-
-	// 各行を任意の TAB(0x09)で「ラベル列(seg0)」と「値列(seg1)」に分ける。値列を全行同じ X(固定列)から
-	// 描くと、ラベル(Target/Source)の実幅が違っても値(C000 …)の桁がぴったり揃う。TAB が無ければその行は
-	// seg0 のみ＝中央寄せ(単一行トースト等は従来どおり)。
-	int32 seg0Len[kMaxLines], seg1Off[kMaxLines], seg1Len[kMaxLines];
-	bool16 anyTab = kFalse;
-	for (int32 L = 0; L < nLines; ++L)
-	{
-		int32 tabRel = -1;
-		for (int32 k = 0; k < lineLen[L]; ++k)
-			if (mbuf[lineStart[L] + k] == 0x09) { tabRel = k; break; }
-		if (tabRel >= 0)
-		{
-			seg0Len[L] = tabRel;
-			seg1Off[L] = tabRel + 1;
-			seg1Len[L] = lineLen[L] - (tabRel + 1);
-			anyTab = kTrue;
-		}
-		else { seg0Len[L] = lineLen[L]; seg1Off[L] = lineLen[L]; seg1Len[L] = 0; }
-	}
-
-	// 列幅(em)とコンテンツ幅(em)を見積もる。TAB あり=ラベル列幅+間隔+値列幅、無し=行全体の最大幅。
-	PMReal col0Em = 0.0, col1Em = 0.0, maxLineEm = 0.0;
-	for (int32 L = 0; L < nLines; ++L)
-	{
-		const PMReal e0 = KESCMEstimateTextEm(&mbuf[lineStart[L]], seg0Len[L]);
-		const PMReal e1 = (seg1Len[L] > 0) ? KESCMEstimateTextEm(&mbuf[lineStart[L] + seg1Off[L]], seg1Len[L]) : PMReal(0.0);
-		if (e0 > col0Em) col0Em = e0;
-		if (e1 > col1Em) col1Em = e1;
-		const PMReal whole = KESCMEstimateTextEm(&mbuf[lineStart[L]], lineLen[L]);
-		if (whole > maxLineEm) maxLineEm = whole;
-	}
-	const PMReal gapEm     = PMReal(0.6);					// ラベル列と値列の間隔(em)
-	const PMReal contentEm = anyTab ? (col0Em + gapEm + col1Em) : maxLineEm;
-
-	const PMReal textW   = fpt * contentEm;
-	const PMReal lineGap = fpt * PMReal(1.20);				// 行送り(2 行目以降の縦間隔)
-	const PMReal boxW    = textW + pad * PMReal(2.0);
-	const PMReal boxH    = fpt + PMReal(nLines - 1) * lineGap + pad * PMReal(2.0);
-
-	// マウスカーソルに文字が重なって読みにくくならないよう、ボックスをカーソル位置の上へ逃がす。
-	// ボックスの下端が centerPort から kKESCMToastCursorGapPx だけ上に来るよう中心を引き上げる
-	// (行数が多いほどボックスは上に伸びるので、下端の余白は常に一定に保たれる)。
-	sY = sY - kKESCMToastCursorGapPx / sxr - boxH / PMReal(2.0);
-
-	// マウス位置がレイアウトウィンドウの端に近く、ボックスがそのままだとはみ出す場合は、矩形内に
-	// 収まるよう中心をクランプする(縁からの余白は pad を流用)。矩形よりボックスの方が大きい軸は、
-	// その軸だけ矩形中央へ寄せる(はみ出すこと自体は避けられないため、せめて左右/上下均等に)。
-	if (clampBoundsPort != nil && !clampBoundsPort->IsEmpty())
-	{
-		PMReal left = clampBoundsPort->Left(), right = clampBoundsPort->Right();
-		PMReal top  = clampBoundsPort->Top(),  bottom = clampBoundsPort->Bottom();
-		if (left > right)  { const PMReal t = left; left = right; right = t; }
-		if (top  > bottom) { const PMReal t = top;  top  = bottom; bottom = t; }
-		left += pad; right -= pad; top += pad; bottom -= pad;
-
-		const PMReal halfW = boxW / PMReal(2.0);
-		const PMReal minX  = left + halfW, maxX = right - halfW;
-		if (minX <= maxX)      { if (sX < minX) sX = minX; else if (sX > maxX) sX = maxX; }
-		else                    sX = (left + right) / PMReal(2.0);
-
-		const PMReal halfH = boxH / PMReal(2.0);
-		const PMReal minY  = top + halfH, maxY = bottom - halfH;
-		if (minY <= maxY)      { if (sY < minY) sY = minY; else if (sY > maxY) sY = maxY; }
-		else                    sY = (top + bottom) / PMReal(2.0);
-	}
-
-	const PMReal x0      = sX - boxW / PMReal(2.0);
-	const PMReal y0      = sY - boxH / PMReal(2.0);
-
-	AutoGSave ag(gPort);
-	// 背景: ほぼ不透明の暗いボックス(下の青線/ガイドが透けてまだらにならないよう不透明寄りに)。
-	gPort->setopacity(PMReal(0.92), kFalse);
-	gPort->setrgbcolor(PMReal(0.10), PMReal(0.10), PMReal(0.10));
-	gPort->rectfill(x0, y0, boxW, boxH);
-	// 細い白枠。
-	gPort->setopacity(PMReal(1.0), kFalse);
-	gPort->setrgbcolor(PMReal(1.0), PMReal(1.0), PMReal(1.0));
-	gPort->setlinewidth(PMReal(1.0) / sxr);
-	gPort->rectpath(x0, y0, boxW, boxH);
-	gPort->stroke();
-	// 白文字。show は baseline 左端基準。1 行目の縦中央 ≒ y0 + pad + fpt*0.78。
-	gPort->selectfont(theFont, fpt);
-	gPort->setrgbcolor(PMReal(1.0), PMReal(1.0), PMReal(1.0));
-	const PMReal contentLeft = x0 + pad;					// テキストブロックの左端(ボックス内で中央寄せ)
-	const PMReal col1X       = contentLeft + fpt * (col0Em + gapEm);	// 値列(seg1)の共通左端=固定列
-	for (int32 L = 0; L < nLines; ++L)
-	{
-		const PMReal ty = y0 + pad + fpt * PMReal(0.78) + PMReal(L) * lineGap;
-		if (anyTab)
-		{
-			// 列レイアウト: ラベルは左端、値は固定列(col1X)から。両行で値の桁が揃う。
-			if (seg0Len[L] > 0)
-				gPort->show(contentLeft, ty, seg0Len[L], &mbuf[lineStart[L]], (IGraphicsPort::TextGraphicsFlags)(IGraphicsPort::kFillText));
-			if (seg1Len[L] > 0)
-				gPort->show(col1X, ty, seg1Len[L], &mbuf[lineStart[L] + seg1Off[L]], (IGraphicsPort::TextGraphicsFlags)(IGraphicsPort::kFillText));
-		}
-		else
-		{
-			// 中央寄せ(従来=単一行トースト等)。
-			if (lineLen[L] <= 0)
-				continue;
-			const PMReal lw = fpt * KESCMEstimateTextEm(&mbuf[lineStart[L]], lineLen[L]);
-			const PMReal tx = sX - lw / PMReal(2.0);
-			gPort->show(tx, ty, lineLen[L], &mbuf[lineStart[L]], (IGraphicsPort::TextGraphicsFlags)(IGraphicsPort::kFillText));
-		}
-	}
-}
-
 
 //========================================================================================
 // 印刷/PDF 用のリング描画。画面は image() blit でよいが(画素 alpha を honor する)、印刷のフラットナ
@@ -817,7 +604,7 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 		return kFalse;
 	// この描画で何を描き得るかを状態フラグだけで先に確定し、全部 No なら即 return する。
 	//   ・マーク(リング＋枠): 印刷ON か ミドル押下中の表示ON で、かつエントリがある時だけ
-	//   ・旧版べた載せ / トースト: 画面描画のみ(印刷には出さない)
+	//   ・旧版べた載せ: 画面描画のみ(印刷には出さない)
 	// ★以前は「sEntries が非空」なだけで下の前処理(スプレッド取得・生存スイープ・ズーム行列・
 	//   パノラマ探索・マウス位置・可視域変換)を全部実行し、最後の分岐で「マーク非表示」と判定して
 	//   捨てていた。Start 済み・マーク非表示(既定=ミドル押下中だけ表示)の待機状態が最頻なので、
@@ -825,8 +612,7 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	//   何か描く」時だけの保険になる(クローズ後始末の本線は KESCMDocResponder で変わらず)。
 	const bool16 wantMarks = (sPrintMarks || sMarksVisible) && !sEntries.empty();
 	const bool16 wantOrig  = !printing && sShowOriginal && !sOrigImages.empty();
-	const bool16 wantToast = !printing && sToastVisible;
-	if (!wantMarks && !wantOrig && !wantToast)
+	if (!wantMarks && !wantOrig)
 		return kFalse;
 
 	GraphicsData* gd = ded->gd;
@@ -863,31 +649,10 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	// 画面スケール(ズーム)を一度だけ取得。画面描画時のみ非nil。
 	PMReal sxr = 0.0;
 	IControlView* zview = gd->GetView();
-	PMPoint centerPb(0.0, 0.0);		// トーストの基準位置(pasteboard 座標)。原則マウスカーソル位置、取得不可時は可視領域中心
-	PMRect  boundsPb;				// 可視領域(pasteboard 座標)。トーストがはみ出さないようクランプする範囲
-	bool16  hasCenter = kFalse;		// 上記が有効か(トーストをこの文書に描く時だけ計算する)
 	if (zview != nil)
 	{
 		PMMatrix toWin = zview->GetContentToWindowMatrix();	// content→window(画面px), 現ズーム
 		sxr = toWin.GetXScale(); if (sxr < 0) sxr = -sxr;
-		// マウス位置・可視域はトーストの配置専用の仕事(パノラマ探索・グローバルマウス取得・座標変換)。
-		// マークのリング描画に要るのは sxr だけなので、トーストをこの文書に実際に描く時だけ計算する。
-		if (wantToast && db == sToastDB)
-		{
-			InterfacePtr<IPanorama> pano(KESCMQueryPanorama(zview));	// 自身→親(LayoutWidget)で IPanorama を辿る
-			if (pano != nil)
-			{
-				// マウスカーソル位置(pasteboard 座標)をトーストの基準位置にする。取得できなければ従来どおり可視領域中心。
-				PMReal mx = 0.0, my = 0.0;
-				centerPb = KESCMQueryMouseContentPoint(zview, mx, my) ? PMPoint(mx, my)
-				                                                       : pano->GetContentLocationAtFrameCenter();
-				// レイアウトウィンドウの可視範囲(窓座標→pasteboard 座標)。カーソルが下端/左端付近にあっても
-				// トーストがウィンドウの外へはみ出さないよう、KESCMDrawToast 側でこの矩形にクランプする。
-				boundsPb = zview->GetBBox();
-				zview->WindowToContentTransform(&boundsPb);
-				hasCenter = kTrue;
-			}
-		}
 	}
 
 	// ★印刷/PDF 時は「100% 表示の見た目」に固定する(ズーム連動を切る)。印刷ポートには view が無く
@@ -896,17 +661,6 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	// ズーム適応式・フォールバック式をそのまま使い回せる)。画面描画(printing=false)は従来どおりズーム連動。
 	if (printing)
 		sxr = 1.0;
-
-	// ★ウィンドウ単位イベント(全スプレッド描画後, CTM=pasteboard)= トーストの「帯外(カンバス背景)」担当。
-	// このポートはスプレッド/ペーストボードの背面に来るため、何も被さらないカンバス部分にだけ見える。
-	// スプレッド/ペーストボード帯の前面分は per-spread(kEndSpreadMessage)側で描く(下)。
-	// 枠/旧版もスプレッド単位側で描く。トーストは一時メッセージなので印刷/PDF には出さない。
-	if (eventID == ClassID(kAfterLastSpreadDrawMessage))
-	{
-		if (wantToast && db == sToastDB && hasCenter && sxr > 0)
-			KESCMDrawToast(gPort, sxr, centerPb, &boundsPb);	// pasteboard 座標の中心へ直接(可視範囲でクランプ)
-		return kFalse;
-	}
 
 	// 今描いている「このスプレッド」を覗いている(旧版べた載せ中)か。覗きで旧版が乗るのはマウス下の1スプレッド
 	// だけ(そのページが sOrigImages にある)。覗き中のスプレッドだけ旧版をきれいに見せたいので、マーク
@@ -946,20 +700,6 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 			gPort->scale(pr.Width() / o->w, pr.Height() / o->h);	// 旧版画像をページ矩形にフィット
 			gPort->image(&o->rec, PMMatrix(), 0);			// 旧版を sPeekOpacity で重ねる
 		}
-	}
-
-	// トースト — スプレッド/ペーストボード帯の「前面」に出すため per-spread(spread座標)ポートでも描く。
-	// このポートは帯にクリップされる(帯外は欠ける)ので、帯外=カンバスは kAfterLastSpreadDrawMessage 側が担う。
-	// マウス位置(centerPb=pasteboard座標)・クランプ範囲(boundsPb)をこのスプレッドのオフセット分だけ引いて
-	// spread 座標へ変換する(平行移動のみなのでどちらも同じオフセットでよい)。
-	// per-spread は可視スプレッドごとに発火するので、箱が複数スプレッドにまたがっても各帯で前面に出る。
-	if (wantToast && db == sToastDB && hasCenter && sxr > 0)
-	{
-		PMPoint off = KESCMSpreadOffsetFromPasteboard(db, spread);
-		PMPoint cS(centerPb.X() - off.X(), centerPb.Y() - off.Y());
-		PMRect  boundsS(boundsPb.Left() - off.X(), boundsPb.Top() - off.Y(),
-		                boundsPb.Right() - off.X(), boundsPb.Bottom() - off.Y());
-		KESCMDrawToast(gPort, sxr, cS, &boundsS);
 	}
 
 	// 変更オーバーレイ(リング＋変更数) — マーク済みドキュメントが現スプレッドの db と一致する時だけ。
