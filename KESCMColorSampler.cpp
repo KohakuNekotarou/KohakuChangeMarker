@@ -98,7 +98,8 @@ bool16 KESCMSampleCmykUnderMouse(IDataBase* targetDB, IDataBase* sourceDB, PMStr
 	if (targetDB == nil || sourceDB == nil)
 		return kFalse;
 
-	InterfacePtr<IControlView> view(Utils<ILayoutUIUtils>()->QueryFrontView());
+	// マウスが乗っているレイアウトビュー(Split Window対応、KESCMQueryViewUnderMouse参照)。
+	InterfacePtr<IControlView> view(KESCMQueryViewUnderMouse());
 	PMReal mx = 0.0, my = 0.0;
 	if (!KESCMQueryMouseContentPoint(view, mx, my))
 		return kFalse;

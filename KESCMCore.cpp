@@ -24,6 +24,11 @@
 #include "PMPoint.h"
 #include "PMRect.h"
 #include "TransformUtils.h"
+#include "IWindow.h"
+#include "IWindowUtils.h"
+#include "IDocumentPresentation.h"
+#include "IPanelControlData.h"
+#include "LayoutUIID.h"				// kLayoutWidgetBoss / kLayoutSecondaryPanelWidgetID
 
 #include <vector>
 
@@ -71,6 +76,46 @@ bool16 KESCMQueryMouseContentPoint(IControlView* view, PMReal& outX, PMReal& out
 	outX = pt.X();
 	outY = pt.Y();
 	return kTrue;
+}
+
+// マウス下のレイアウトビューを求める(Split Window対応)。KESCMCore.h のコメント参照。
+IControlView* KESCMQueryViewUnderMouse()
+{
+	GSysPoint globalPt = Utils<IEventUtils>()->GetGlobalMouseLocation();
+
+	InterfacePtr<IWindow> hitWindow(Utils<IWindowUtils>()->QueryWindowUnderPoint(globalPt, kFalse));
+	if (hitWindow == nil)
+		return nil;
+
+	InterfacePtr<IDocumentPresentation> hitPres(hitWindow, UseDefaultIID());
+	if (hitPres == nil)
+		return nil;
+
+	InterfacePtr<IPanelControlData> hitPanelData(hitPres, UseDefaultIID());
+	if (hitPanelData == nil)
+		return nil;
+
+	IControlView* primaryView = hitPanelData->FindWidget(kLayoutWidgetBoss);
+	if (primaryView == nil)
+		return nil;
+
+	// primaryView は「グローバル→ウィンドウ座標への変換」にだけ使う(どの子ウィジェット経由でも同じ
+	// ウィンドウ座標系になるため)。実際にマウス下にあるビューは FindWidget(windowPt) のヒットテストで
+	// 特定する(キャンバス以外=ルーラ等に当たった場合は primaryView にフォールバック)。
+	IControlView* hitView = primaryView;
+	const PMPoint globalPM((PMReal)globalPt.x, (PMReal)globalPt.y);
+	const PMPoint winPM = primaryView->GlobalToWindow(globalPM);
+	SysPoint winPt;
+	winPt.x = ::ToInt32(winPM.X());
+	winPt.y = ::ToInt32(winPM.Y());
+
+	IControlView* pointHit = hitPanelData->FindWidget(winPt);
+	if (pointHit != nil &&
+	    (pointHit->GetWidgetID() == kLayoutWidgetBoss || pointHit->GetWidgetID() == kLayoutSecondaryPanelWidgetID))
+		hitView = pointHit;
+
+	hitView->AddRef();	// QueryFrontView() と同じ「+1 ref、呼び出し側で Release」の契約に合わせる
+	return hitView;
 }
 
 bool16 KESCMFindPageUnderMouse(IDataBase* targetDB, PMReal mx, PMReal my, KESCMPageHit& out)

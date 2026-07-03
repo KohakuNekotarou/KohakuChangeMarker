@@ -45,6 +45,7 @@ static const PMReal kKESCMOrigResolution = 72.0;
 static const PMReal kKESCMToastTextPx    = 28.8;	// 文字サイズ(画面px)。従来36.0の80%
 static const PMReal kKESCMToastPadPx     = 12.8;	// 文字周りの内側余白(画面px)。大きいほど背景ボックスが広い。従来16.0の80%
 static const uint32 kKESCMToastDefaultMs = 2500;	// 既定の表示時間(ms)。表示後この時間で自動的に消える
+static const PMReal kKESCMToastCursorGapPx = 22.0;	// トースト下端とマウスカーソル位置との隙間(画面px)。カーソルで文字が隠れないよう上に逃がす
 
 // クリック点 CMYK サンプリング(Shift＋Ctrl＋Alt＋ミドル)。クリック周りの極小領域だけを高dpi・CMYK で
 // ラスタ化し、中心1画素の生値(0..255)を新・旧で読む。AA は OFF(ベクター縁の中間色を避ける)。

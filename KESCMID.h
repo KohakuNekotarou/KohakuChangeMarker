@@ -148,8 +148,8 @@ DECLARE_PMID(kActionIDSpace, kKESCMPanelWidgetActionID, kKESCMPrefix + 1)	// パ
 DECLARE_PMID(kActionIDSpace, kKESCMPopupAboutThisActionID, kKESCMPrefix + 2)	// パネルのフライアウトの「このプラグインについて」
 DECLARE_PMID(kActionIDSpace, kKESCMPopupAboutScriptActionID, kKESCMPrefix + 3)	// パネルのフライアウトの「スクリプトについて」
 DECLARE_PMID(kActionIDSpace, kKESCMPopupUsageActionID, kKESCMPrefix + 4)	// パネルのフライアウトの「使い方」
-//DECLARE_PMID(kActionIDSpace, kKESCMActionID, kKESCMPrefix + 5)
-//DECLARE_PMID(kActionIDSpace, kKESCMActionID, kKESCMPrefix + 6)
+DECLARE_PMID(kActionIDSpace, kKESCMPopupTestSplitActionID, kKESCMPrefix + 5)	// パネルのフライアウトの「Split Test」(検証用、恒久機能ではない)
+DECLARE_PMID(kActionIDSpace, kKESCMPopupSplitTargetActionID, kKESCMPrefix + 6)	// パネルのフライアウトの「Split Target (90/10)」
 //DECLARE_PMID(kActionIDSpace, kKESCMActionID, kKESCMPrefix + 7)
 //DECLARE_PMID(kActionIDSpace, kKESCMActionID, kKESCMPrefix + 8)
 //DECLARE_PMID(kActionIDSpace, kKESCMActionID, kKESCMPrefix + 9)
@@ -246,6 +246,8 @@ DECLARE_PMID(kScriptInfoIDSpace, kKESCMSetPrintMarksMethodScriptElement, kKESCMP
 #define kKESCMAboutScriptMenuKey	kKESCMStringPrefix "kKESCMAboutScriptMenuKey"	// パネルのフライアウト「スクリプトについて」のメニュー名
 #define kKESCMScriptHelpStringKey	kKESCMStringPrefix "kKESCMScriptHelpStringKey"	// その本文(スクリプトAPIは撤去済み。現在は「利用可能なスクリプトはありません」の旨を表示)
 #define kKESCMUsageMenuKey		kKESCMStringPrefix "kKESCMUsageMenuKey"	// パネルのフライアウト「使い方」のメニュー名(本文は kKESCMHintKey を再利用)
+#define kKESCMTestSplitMenuKey	kKESCMStringPrefix "kKESCMTestSplitMenuKey"	// パネルのフライアウト「Split Test」のメニュー名(検証用、恒久機能ではない)
+#define kKESCMSplitTargetMenuKey	kKESCMStringPrefix "kKESCMSplitTargetMenuKey"	// パネルのフライアウト「Split Target (90/10)」のメニュー名
 #define kKESCMTargetMenuPath kKESCMPluginsMenuPath
 
 // パネル: 内部フライアウト(ポップアップ)メニュー名＋そのメニューパス。
@@ -267,10 +269,13 @@ DECLARE_PMID(kScriptInfoIDSpace, kKESCMSetPrintMarksMethodScriptElement, kKESCMP
 #define kKESCMIconOffResID	1002
 #define kKESCMPaletteIconResID	1003	// パネルが折りたたまれた時に出る小さいドックタブアイコン
 
-// Menu item positions (flyout order): 使い方(10) → スクリプトについて(11) → このプラグインについて(12)
-#define kKESCMUsageMenuItemPosition			10.0	// 「使い方」を先頭に
+// Menu item positions (flyout order): Split Target(9) → 使い方(10) → スクリプトについて(11) →
+// このプラグインについて(12) → Split Test(13、検証用)
+#define kKESCMSplitTargetMenuItemPosition	9.0	// 実行コマンドを先頭に
+#define kKESCMUsageMenuItemPosition			10.0	// 「使い方」
 #define kKESCMAboutScriptMenuItemPosition	11.0	// その下に「スクリプトについて」
 #define kKESCMAboutThisMenuItemPosition		12.0	// 末尾に「このプラグインについて」
+#define kKESCMTestSplitMenuItemPosition		13.0	// さらにその下(検証用、恒久機能ではない)
 
 
 // Initial data format version numbers

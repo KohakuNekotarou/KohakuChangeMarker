@@ -38,6 +38,8 @@ resource StringTable (kSDKDefStringsResourceID + index_enUS)
                 kSDKDefAboutThisPlugInMenuKey,			kSDKDefAboutThisPlugInMenuValue_enUS,
                 kKESCMAboutScriptMenuKey,			"About Scripting...",
                 kKESCMUsageMenuKey,				"How to Use...",
+                kKESCMTestSplitMenuKey,			"Split Test (debug)...",
+                kKESCMSplitTargetMenuKey,			"Split Target (90/10)",
 
                 // ----- Command strings
 
@@ -51,7 +53,7 @@ resource StringTable (kSDKDefStringsResourceID + index_enUS)
                 kKESCMPrintCheckKey,			"Print comparison marks",
                 kKESCMOpacity25Key,				"25%",
                 kKESCMOpacityNormalKey,			"Normal",
-                kKESCMHintKey,					"Middle button =\n  25% marks (while held)\nMiddle + Shift =\n  original (while held)\nMiddle + Alt =\n  marks (while held)\nMiddle + Ctrl =\n  refresh spread compare\nMiddle + Shift+Ctrl =\n  scroll other windows to here\n  (always available, even before Start)\nMiddle + Shift+Alt =\n  original 50% (while held)\nMiddle + Shift+Ctrl+Alt =\n  color info (while held)\n\nShift/Ctrl/Alt can be released\n\nEven with comparison-mark printing ON, File > Export to PDF won't include them. To make a PDF, use Print and choose a PDF printer.",
+                kKESCMHintKey,					"Middle button =\n  25% marks (while held)\nMiddle + Shift =\n  original (while held)\nMiddle + Alt =\n  marks (while held)\nMiddle + Ctrl =\n  scroll other windows to here\n  (always available, even before Start)\nMiddle + Shift+Ctrl =\n  refresh spread compare\nMiddle + Shift+Alt =\n  original 50% (while held)\nMiddle + Shift+Ctrl+Alt =\n  color info (while held)\n\nShift/Ctrl/Alt can be released\n\nEven with comparison-mark printing ON, File > Export to PDF won't include them. To make a PDF, use Print and choose a PDF printer.",
 
 		// ----- Misc strings
                 kKESCMAboutBoxStringKey,			kKESCMPluginName ", version " kKESCMVersion "\n\n"

@@ -25,8 +25,8 @@
 #include "IWindow.h"
 #include "IWindowUtils.h"
 #include "IDocumentPresentation.h"
-#include "IPresentationList.h"
 #include "IPanelControlData.h"
+#include "ILayoutViewUtils.h"		// GetAllLayoutViews(Split Window両ペインのIControlView*取得)
 
 // イベント監視 / ツール / 起動:
 #include "IEventWatcher.h"
@@ -109,8 +109,8 @@ static KESCMPeekResult KESCMPeekShowUnderMouse(IDataBase* targetDB, IDataBase* s
 	if (targetDB == nil || sourceDB == nil)
 		return kKESCMPeekNoView;
 
-	// 前面レイアウトビュー(マウスが乗っているビュー)。前面が layout でなければ nil。
-	InterfacePtr<IControlView> view(Utils<ILayoutUIUtils>()->QueryFrontView());
+	// マウスが乗っているレイアウトビュー(Split Window対応、KESCMQueryViewUnderMouse参照)。
+	InterfacePtr<IControlView> view(KESCMQueryViewUnderMouse());
 	if (view == nil)
 		return kKESCMPeekNoView;
 
@@ -279,7 +279,7 @@ static void KESCMBeginPeekHold(PMReal opacity)
 
 
 
-// Alt＋ミドルクリック: マウス下スプレッドだけを再比較して枠(リング)を更新する(部分更新)。
+// Shift＋Ctrl＋ミドルクリック: マウス下スプレッドだけを再比較して枠(リング)を更新する(部分更新)。
 //   targetDB=新(arm 済み表示中) / sourceDB=旧(arm 済み比較相手)。新→旧ページは平坦通し番号で対応。
 //   ・各ページを MakeEntry で取り直し(編集後の差分に更新)。変化が無くなったページは古い枠を消す。
 //   ・旧版画像キャッシュ(sOrigImages)は古いので破棄(次の peek で作り直し)。
@@ -291,7 +291,8 @@ static bool16 KESCMRefreshSpreadUnderMouse(IDataBase* targetDB, IDataBase* sourc
 	if (targetDB == nil || sourceDB == nil)
 		return kFalse;
 
-	InterfacePtr<IControlView> view(Utils<ILayoutUIUtils>()->QueryFrontView());
+	// マウスが乗っているレイアウトビュー(Split Window対応、KESCMQueryViewUnderMouse参照)。
+	InterfacePtr<IControlView> view(KESCMQueryViewUnderMouse());
 	PMReal mx = 0.0, my = 0.0;
 	if (!KESCMQueryMouseContentPoint(view, mx, my))
 		return kFalse;
@@ -354,19 +355,32 @@ static void KESCMInvalidateMarksDoc()
 	KESCMInvalidateDB(KESCMDrawEventHandler::sDB);
 }
 
-// 前面レイアウトビューの所属ドキュメントが、arm 済みの対象(Target)文書と一致するか。CMYK サンプリング
-// (Shift＋Ctrl＋Alt＋ミドル)とスプレッド枠の部分更新(Ctrl＋ミドル)はヒットテストを sPeekTargetDB の
-// ページ座標に対して行うため、前面が Source 側や無関係な第3文書のウィンドウだと、そちらのローカル座標を
-// 対象文書のページ座標として誤って解釈してしまう。対象文書のウィンドウ上で操作した時だけ反応させる。
+// マウス下のドキュメントが、arm 済みの対象(Target)文書と一致するか。CMYK サンプリング
+// (Shift＋Ctrl＋Alt＋ミドル)とスプレッド枠の部分更新(Shift＋Ctrl＋ミドル)はヒットテストを sPeekTargetDB の
+// ページ座標に対して行うため、マウス下が Source 側や無関係な第3文書のウィンドウだと、そちらの
+// ローカル座標を対象文書のページ座標として誤って解釈してしまう。対象文書のウィンドウ上で操作した時
+// だけ反応させる。
+// ★以前は Utils<ILayoutUIUtils>()->GetFrontDocument()(「front(アクティブ)なドキュメント」)で
+// 判定していたが、Split Window の新しい側(kLayoutSecondaryPanelWidgetID)を操作しても OWL 内部の
+// アクティブ状態追跡が元側のままになるらしく、判定に失敗していた(ユーザー実測で確認)。
+// KESCMSyncScrollOtherWindowsUnderMouse と同じ QueryWindowUnderPoint ベースの判定に統一し、
+// マウス位置そのものからドキュメントを特定する(アクティブ状態を一切参照しない)。
 static bool16 KESCMFrontViewIsOverTarget()
 {
-	IDocument* frontDoc = Utils<ILayoutUIUtils>()->GetFrontDocument();
-	if (frontDoc == nil)
+	GSysPoint globalPt = Utils<IEventUtils>()->GetGlobalMouseLocation();
+
+	InterfacePtr<IWindow> hitWindow(Utils<IWindowUtils>()->QueryWindowUnderPoint(globalPt, kFalse));
+	if (hitWindow == nil)
 		return kFalse;
-	return ::GetUIDRef(frontDoc).GetDataBase() == sPeekTargetDB;
+
+	InterfacePtr<IDocumentPresentation> hitPres(hitWindow, UseDefaultIID());
+	if (hitPres == nil)
+		return kFalse;
+
+	return (hitPres->GetDocumentUIDRef().GetDataBase() == sPeekTargetDB);
 }
 
-// Shift＋Ctrl＋ミドル押下(momentary): 「地図」ナビゲーション。マウス下のレイアウトウィンドウ
+// Ctrl＋ミドル押下(momentary): 「地図」ナビゲーション。マウス下のレイアウトウィンドウ
 // (アクティブである必要はない; IWindowUtils::QueryWindowUnderPoint でグローバル座標から直接引く)の
 // ローカル(pasteboard)座標を求め、開いている全ドキュメントの全ウィンドウ(マウス下=地図側のウィンドウ
 // 自身は除く)を同じ場所へスクロールする。ChangeMarker の Start(sPeekArmed)とは無関係に常に使える。
@@ -375,6 +389,19 @@ static bool16 KESCMFrontViewIsOverTarget()
 // を大きくナビゲートする。pasteboard 座標はドキュメント固有の値だが、Target/Source のようにページ構成が
 // 近い別ドキュメントにもそのまま流用する(ズレは許容)。スクロール自体は KESCL(KESCLFindInDoc.cpp)の
 // ScrollViewCenterTo と同じ手口(QueryPanorama→ScrollContentLocationToFrameCenter)。
+//
+// ★Split Window(1文書2ペイン)対応:
+// (1) マウス下の判定を kLayoutWidgetBoss 固定にせず FindWidget(windowPt) でヒットテストし、地図側が
+//     スプリットの新しい側でも正しい座標に変換する。
+// (2) スクロール先のビュー列挙・パノラマ取得には Utils<ILayoutViewUtils>()->GetAllLayoutViews() を使う。
+//     ★実測で判明した重要事項: kLayoutSecondaryPanelWidgetID を IPanelControlData::FindWidget() で
+//     直接引いても、そのウィジェット自身はパノラマを持たず、祖先を辿っても見つからない(外側の
+//     ラッパーに過ぎない)。実際にパノラマを持つオブジェクトは GetAllLayoutViews() が返す別オブジェクト
+//     である(FindWidget(kLayoutSecondaryPanelWidgetID)の戻り値とは同一ではない)。そのため、
+//     スクロール対象は必ず GetAllLayoutViews() 経由で取得する。
+// (3) 除外は「プレゼンテーション単位」ではなく「役割単位」(地図に使っているのが元側か新しい側か)で
+//     行う。以前は pres==hitPres でプレゼンテーション全体を除外していたため、地図に使っている方の
+//     ペインと同じ文書の相方(スプリットで新しく出た側)まで丸ごとスキップされ、全く動かなかった。
 static void KESCMSyncScrollOtherWindowsUnderMouse(IEvent* e)
 {
 	if (e == nil)
@@ -389,14 +416,41 @@ static void KESCMSyncScrollOtherWindowsUnderMouse(IEvent* e)
 	InterfacePtr<IDocumentPresentation> hitPres(hitWindow, UseDefaultIID());
 	if (hitPres == nil)
 		return;	// マウス下がドキュメントウィンドウではない(アプリフレーム／パレット等)
-	IDocumentPresentation* const hitPresPtr = hitPres;
 
 	InterfacePtr<IPanelControlData> hitPanelData(hitPres, UseDefaultIID());
-	IControlView* hitView = (hitPanelData != nil) ? hitPanelData->FindWidget(kLayoutWidgetBoss) : nil;
-	if (hitView == nil)
+	if (hitPanelData == nil)
 		return;
 
+	IControlView* primaryView = hitPanelData->FindWidget(kLayoutWidgetBoss);
+	if (primaryView == nil)
+		return;
+
+	// ★スプリット表示中は、マウスが元側(kLayoutWidgetBoss)と新しい側(kLayoutSecondaryPanelWidgetID)の
+	// どちらの上にあるかで座標変換に使うビューが変わる。以前は常に kLayoutWidgetBoss 固定で
+	// ComputePasteboardPoint していたため、マウスがスプリットの新しい側にある時は座標がズレていた。
+	// primaryView は「グローバル→ウィンドウ座標への変換」にだけ使う(どの子ウィジェット経由でも同じ
+	// ウィンドウ座標系になるため)。実際に変換元として使うビューは FindWidget(windowPt) の
+	// ヒットテストで特定する(キャンバス以外=ルーラ等に当たった場合は primaryView にフォールバック)。
+	IControlView* hitView = primaryView;
+	bool16 usedSecondary = kFalse;
+	{
+		const PMPoint globalPM((PMReal)globalPt.x, (PMReal)globalPt.y);
+		const PMPoint winPM = primaryView->GlobalToWindow(globalPM);
+		SysPoint winPt;
+		winPt.x = ::ToInt32(winPM.X());
+		winPt.y = ::ToInt32(winPM.Y());
+
+		IControlView* pointHit = hitPanelData->FindWidget(winPt);
+		if (pointHit != nil &&
+		    (pointHit->GetWidgetID() == kLayoutWidgetBoss || pointHit->GetWidgetID() == kLayoutSecondaryPanelWidgetID))
+		{
+			hitView = pointHit;
+			usedSecondary = (pointHit->GetWidgetID() == kLayoutSecondaryPanelWidgetID);
+		}
+	}
+
 	const PBPMPoint pbPoint = Utils<ILayoutUIUtils>()->ComputePasteboardPoint(globalPt, hitView);
+	const IDataBase* hitDocDb = hitPres->GetDocumentUIDRef().GetDataBase();
 
 	InterfacePtr<IApplication> app(GetExecutionContextSession()->QueryApplication());
 	InterfacePtr<IDocumentList> docList(app ? app->QueryDocumentList() : nil);
@@ -410,20 +464,31 @@ static void KESCMSyncScrollOtherWindowsUnderMouse(IEvent* e)
 		if (doc == nil)
 			continue;
 
-		InterfacePtr<IPresentationList> presList(doc, UseDefaultIID());
-		if (presList == nil)
-			continue;
+		IDataBase* db = ::GetUIDRef(doc).GetDataBase();
+		const bool16 isHitDoc = (db == hitDocDb);
 
-		for (IPresentationList::iterator it = presList->begin(); it != presList->end(); ++it)
+		K2Vector<IControlView*> views;
+		Utils<ILayoutViewUtils>()->GetAllLayoutViews(views, nil, db);
+
+		for (int32 vi = 0; vi < (int32)views.size(); ++vi)
 		{
-			IDocumentPresentation* pres = *it;
-			if (pres == nil || pres == hitPresPtr)
-				continue;	// マウス下(地図側)のウィンドウ自身は動かさない
-
-			InterfacePtr<IPanelControlData> panelData(pres, UseDefaultIID());
-			IControlView* view = (panelData != nil) ? panelData->FindWidget(kLayoutWidgetBoss) : nil;
+			IControlView* view = views[vi];
 			if (view == nil)
 				continue;
+
+			if (isHitDoc)
+			{
+				// 地図に使っている文書自身の場合、マウスが乗っている「役割」(元側/新しい側)と
+				// 一致するビューだけをスキップする(地図自身は動かさない)。primaryView との一致で
+				// 元側かどうかを判定できる(GetAllLayoutViews の元側エントリは primaryView と同一
+				// オブジェクトであることを実測で確認済み)。新しい側は同一オブジェクトを直接指せない
+				// (FindWidget(kLayoutSecondaryPanelWidgetID)は別オブジェクトを返すため)ので、
+				// 「元側ではない方」として消去法で判定する。
+				const bool16 thisIsPrimary = (view == primaryView);
+				const bool16 thisIsTheMapView = usedSecondary ? !thisIsPrimary : thisIsPrimary;
+				if (thisIsTheMapView)
+					continue;
+			}
 
 			InterfacePtr<IPanorama> pano(KESCMQueryPanorama(view));
 			if (pano != nil)
@@ -502,12 +567,22 @@ IEventDispatcher::EventTypeList KESCMPeekWatcher::WatchEvent(IEvent* e)
 				KESCMShowHoldToast(sPeekTargetDB, colorMsg);
 			}
 		}
-		else if (e->ShiftKeyDown() && e->CmdKeyDown() && !e->OptionAltKeyDown())
+		else if (sPeekArmed && e->ShiftKeyDown() && e->CmdKeyDown() && !e->OptionAltKeyDown() && KESCMFrontViewIsOverTarget())
 		{
-			// Shift＋Ctrl＋ミドル押下(momentary): 「地図」ナビゲーション。マウス下のウィンドウ(アクティブで
-			// なくてもよい)のローカル座標へ、他の全ウィンドウをスクロールする。arm 状態に依らず常に使える。
+			// ★2026-07-03: 旧 Ctrl 単独の動作と入れ替え。
+			// Shift＋Ctrl＋ミドル押下(momentary): マウス下スプレッドだけ枠を再検出して更新。
+			// 旧版画像キャッシュは破棄(次 peek で作り直し)。完了したら「spread N updated」をトースト表示。
+			// ★対象(Target)文書のウィンドウ上でのみ反応(KESCMFrontViewIsOverTarget)。
 			// 3キー同時(Shift+Ctrl+Alt=CMYK)は先頭分岐で捕まえているので、ここに来る時点で Alt は必ず OFF。
-			KESCMSyncScrollOtherWindowsUnderMouse(e);
+			int32 sp = -1;
+			if (KESCMRefreshSpreadUnderMouse(sPeekTargetDB, sPeekSourceDB, &sp, nil))
+			{
+				PMString msg("spread ");
+				msg.SetTranslatable(kFalse);
+				msg.AppendNumber(sp + 1);	// スプレッド番号(1始まり)
+				msg.Append(" markers refreshed");
+				KESCMShowToast(sPeekTargetDB, msg, kKESCMToastDefaultMs);
+			}
 		}
 		else if (sPeekArmed && e->ShiftKeyDown() && e->OptionAltKeyDown() && !e->CmdKeyDown() && KESCMFrontViewIsOverTarget())
 		{
@@ -538,20 +613,12 @@ IEventDispatcher::EventTypeList KESCMPeekWatcher::WatchEvent(IEvent* e)
 				KESCMInvalidateMarksDoc();
 			}
 		}
-		else if (sPeekArmed && e->CmdKeyDown() && KESCMFrontViewIsOverTarget())
+		else if (e->CmdKeyDown() && !e->ShiftKeyDown() && !e->OptionAltKeyDown())
 		{
-			// Ctrl(=Win, CmdKeyDown)＋ミドル押下(momentary): マウス下スプレッドだけ枠を再検出して更新。
-			// 旧版画像キャッシュは破棄(次 peek で作り直し)。完了したら「spread N updated」をトースト表示。
-			// ★対象(Target)文書のウィンドウ上でのみ反応(KESCMFrontViewIsOverTarget)。
-			int32 sp = -1;
-			if (KESCMRefreshSpreadUnderMouse(sPeekTargetDB, sPeekSourceDB, &sp, nil))
-			{
-				PMString msg("spread ");
-				msg.SetTranslatable(kFalse);
-				msg.AppendNumber(sp + 1);	// スプレッド番号(1始まり)
-				msg.Append(" markers refreshed");
-				KESCMShowToast(sPeekTargetDB, msg, kKESCMToastDefaultMs);
-			}
+			// ★2026-07-03: 旧 Shift+Ctrl の動作と入れ替え。
+			// Ctrl(=Win, CmdKeyDown)＋ミドル押下(momentary): 「地図」ナビゲーション。マウス下のウィンドウ
+			// (アクティブでなくてもよい)のローカル座標へ、他の全ウィンドウをスクロールする。arm 状態に依らず常に使える。
+			KESCMSyncScrollOtherWindowsUnderMouse(e);
 		}
 		else if (!e->ShiftKeyDown() && !e->CmdKeyDown() && !e->OptionAltKeyDown())
 		{

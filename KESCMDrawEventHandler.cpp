@@ -548,21 +548,26 @@ static PMPoint KESCMSpreadOffsetFromPasteboard(IDataBase* db, ISpread* spread)
 }
 
 //========================================================================================
-// 一時トースト描画: 指定中心(centerPort)に、半透明の暗いボックス＋白文字でメッセージを描く。
-//   中心は「呼び出すポートの座標系」で渡す:
+// 一時トースト描画: 半透明の暗いボックス＋白文字でメッセージを描く。centerPort(通常はマウスカーソル
+//   位置)は「呼び出すポートの座標系」で渡す:
 //     - kEndSpreadMessage(per-spread)        → spread 座標(スプレッド/ペーストボード帯の前面)
 //     - kAfterLastSpreadDrawMessage(ウィンドウ)→ pasteboard 座標(帯外=カンバス背景)
 //   この2系統を併用すると、各画素はどちらか一方が担当=二重描き無しで全域(スプレッド+ペースト
 //   ボード+カンバス)をカバーできる。可視/db/中心の有効性チェックは呼び出し側で済ませる。
 //   サイズはズーム不変(画面px / sxr)。
+//   ★ボックスは centerPort に中心を合わせるのではなく、その少し上(kKESCMToastCursorGapPx)に
+//   下端が来るよう配置する。カーソルに文字が重なって読みにくくなるのを防ぐため。
+//   clampBoundsPort(centerPort と同じ座標系、nil可)を渡すと、ボックス全体がその矩形に収まるよう
+//   中心をクランプする(=マウスがレイアウトウィンドウの下端/左端付近にあってもボックスがはみ出さない)。
+//   ボックスの方が矩形より大きい軸は、その軸だけ矩形の中央に寄せる。
 //========================================================================================
-static void KESCMDrawToast(IGraphicsPort* gPort, PMReal sxr, const PMPoint& centerPort)
+static void KESCMDrawToast(IGraphicsPort* gPort, PMReal sxr, const PMPoint& centerPort, const PMRect* clampBoundsPort = nil)
 {
 	if (gPort == nil || sxr <= 0)
 		return;
 
-	const PMReal sX = centerPort.X();
-	const PMReal sY = centerPort.Y();
+	PMReal sX = centerPort.X();
+	PMReal sY = centerPort.Y();
 
 	PMString msg = KESCMDrawEventHandler::sToastMsg;
 	msg.SetTranslatable(kFalse);
@@ -631,6 +636,34 @@ static void KESCMDrawToast(IGraphicsPort* gPort, PMReal sxr, const PMPoint& cent
 	const PMReal lineGap = fpt * PMReal(1.20);				// 行送り(2 行目以降の縦間隔)
 	const PMReal boxW    = textW + pad * PMReal(2.0);
 	const PMReal boxH    = fpt + PMReal(nLines - 1) * lineGap + pad * PMReal(2.0);
+
+	// マウスカーソルに文字が重なって読みにくくならないよう、ボックスをカーソル位置の上へ逃がす。
+	// ボックスの下端が centerPort から kKESCMToastCursorGapPx だけ上に来るよう中心を引き上げる
+	// (行数が多いほどボックスは上に伸びるので、下端の余白は常に一定に保たれる)。
+	sY = sY - kKESCMToastCursorGapPx / sxr - boxH / PMReal(2.0);
+
+	// マウス位置がレイアウトウィンドウの端に近く、ボックスがそのままだとはみ出す場合は、矩形内に
+	// 収まるよう中心をクランプする(縁からの余白は pad を流用)。矩形よりボックスの方が大きい軸は、
+	// その軸だけ矩形中央へ寄せる(はみ出すこと自体は避けられないため、せめて左右/上下均等に)。
+	if (clampBoundsPort != nil && !clampBoundsPort->IsEmpty())
+	{
+		PMReal left = clampBoundsPort->Left(), right = clampBoundsPort->Right();
+		PMReal top  = clampBoundsPort->Top(),  bottom = clampBoundsPort->Bottom();
+		if (left > right)  { const PMReal t = left; left = right; right = t; }
+		if (top  > bottom) { const PMReal t = top;  top  = bottom; bottom = t; }
+		left += pad; right -= pad; top += pad; bottom -= pad;
+
+		const PMReal halfW = boxW / PMReal(2.0);
+		const PMReal minX  = left + halfW, maxX = right - halfW;
+		if (minX <= maxX)      { if (sX < minX) sX = minX; else if (sX > maxX) sX = maxX; }
+		else                    sX = (left + right) / PMReal(2.0);
+
+		const PMReal halfH = boxH / PMReal(2.0);
+		const PMReal minY  = top + halfH, maxY = bottom - halfH;
+		if (minY <= maxY)      { if (sY < minY) sY = minY; else if (sY > maxY) sY = maxY; }
+		else                    sY = (top + bottom) / PMReal(2.0);
+	}
+
 	const PMReal x0      = sX - boxW / PMReal(2.0);
 	const PMReal y0      = sY - boxH / PMReal(2.0);
 
@@ -820,8 +853,9 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	// 画面スケール(ズーム)を一度だけ取得。画面描画時のみ非nil。
 	PMReal sxr = 0.0;
 	IControlView* zview = gd->GetView();
-	InterfacePtr<IPanorama> pano;	// 可視領域の中心(トーストの基準位置)を辿るのに使う。画面描画時のみ非nil
-	PMPoint centerPb(0.0, 0.0);		// 可視領域の中心(pasteboard 座標)。トーストの基準位置に使う
+	InterfacePtr<IPanorama> pano;	// マウス位置が取れない時のフォールバック(可視領域中心)に使う。画面描画時のみ非nil
+	PMPoint centerPb(0.0, 0.0);		// トーストの基準位置(pasteboard 座標)。原則マウスカーソル位置、取得不可時は可視領域中心
+	PMRect  boundsPb;				// 可視領域(pasteboard 座標)。トーストがはみ出さないようクランプする範囲
 	bool16  hasCenter = kFalse;		// 上記が有効か(panorama を辿れた=画面描画時のみ)
 	if (zview != nil)
 	{
@@ -830,7 +864,14 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 		pano.reset(KESCMQueryPanorama(zview));	// 自身→親(LayoutWidget)で IPanorama を辿る(attach=addref済みを所有)
 		if (pano != nil)
 		{
-			centerPb = pano->GetContentLocationAtFrameCenter();	// 可視中心(content=pasteboard 座標)
+			// マウスカーソル位置(pasteboard 座標)をトーストの基準位置にする。取得できなければ従来どおり可視領域中心。
+			PMReal mx = 0.0, my = 0.0;
+			centerPb = KESCMQueryMouseContentPoint(zview, mx, my) ? PMPoint(mx, my)
+			                                                       : pano->GetContentLocationAtFrameCenter();
+			// レイアウトウィンドウの可視範囲(窓座標→pasteboard 座標)。カーソルが下端/左端付近にあっても
+			// トーストがウィンドウの外へはみ出さないよう、KESCMDrawToast 側でこの矩形にクランプする。
+			boundsPb = zview->GetBBox();
+			zview->WindowToContentTransform(&boundsPb);
 			hasCenter = kTrue;
 		}
 	}
@@ -849,7 +890,7 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	if (eventID == ClassID(kAfterLastSpreadDrawMessage))
 	{
 		if (!printing && sToastVisible && db == sToastDB && hasCenter && sxr > 0)
-			KESCMDrawToast(gPort, sxr, centerPb);	// pasteboard 座標の中心へ直接
+			KESCMDrawToast(gPort, sxr, centerPb, &boundsPb);	// pasteboard 座標の中心へ直接(可視範囲でクランプ)
 		return kFalse;
 	}
 
@@ -895,13 +936,16 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 
 	// トースト — スプレッド/ペーストボード帯の「前面」に出すため per-spread(spread座標)ポートでも描く。
 	// このポートは帯にクリップされる(帯外は欠ける)ので、帯外=カンバスは kAfterLastSpreadDrawMessage 側が担う。
-	// window 中心(centerPb=pasteboard座標)をこのスプレッドのオフセット分だけ引いて spread 座標の中心へ変換する。
+	// マウス位置(centerPb=pasteboard座標)・クランプ範囲(boundsPb)をこのスプレッドのオフセット分だけ引いて
+	// spread 座標へ変換する(平行移動のみなのでどちらも同じオフセットでよい)。
 	// per-spread は可視スプレッドごとに発火するので、箱が複数スプレッドにまたがっても各帯で前面に出る。
 	if (!printing && sToastVisible && db == sToastDB && hasCenter && sxr > 0)
 	{
 		PMPoint off = KESCMSpreadOffsetFromPasteboard(db, spread);
 		PMPoint cS(centerPb.X() - off.X(), centerPb.Y() - off.Y());
-		KESCMDrawToast(gPort, sxr, cS);
+		PMRect  boundsS(boundsPb.Left() - off.X(), boundsPb.Top() - off.Y(),
+		                boundsPb.Right() - off.X(), boundsPb.Bottom() - off.Y());
+		KESCMDrawToast(gPort, sxr, cS, &boundsS);
 	}
 
 	// 変更オーバーレイ(リング＋変更数) — マーク済みドキュメントが現スプレッドの db と一致する時だけ。

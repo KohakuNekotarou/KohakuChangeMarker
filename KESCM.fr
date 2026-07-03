@@ -215,7 +215,15 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kSDKDefAlphabeticPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
-		// "How to Use" on the panel flyout (popup) menu (shown first).
+		// "Split Target (90/10)" on the panel flyout (popup) menu (shown first). Splits the KESCM
+		// Target document and sets the new pane to 90% / the original pane to 10% width, zooming
+		// the original pane to 5%.
+		kKESCMPopupSplitTargetActionID,
+		kKESCMPopupMenuPath,
+		kKESCMSplitTargetMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
+		// "How to Use" on the panel flyout (popup) menu.
 		kKESCMPopupUsageActionID,
 		kKESCMPopupMenuPath,
 		kKESCMUsageMenuItemPosition,
@@ -231,6 +239,14 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKESCMPopupAboutThisActionID,
 		kKESCMPopupMenuPath,
 		kKESCMAboutThisMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
+		// "Split Test" on the panel flyout (popup) menu. Temporary verification entry for
+		// ISplitterPanelControlData/ISplitterPanelController on kLayoutSplitterPanelWidgetID; not a
+		// permanent feature.
+		kKESCMPopupTestSplitActionID,
+		kKESCMPopupMenuPath,
+		kKESCMTestSplitMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 	}
 };
@@ -249,6 +265,15 @@ resource ActionDef (kSDKDefActionResourceID)
 		kDisableIfLowMem,					// enabling type
 		kInvalidInterfaceID,				// selection interface this action cares about
 		kSDKDefInvisibleInKBSCEditorFlag,	// KBSC editor visibility
+
+		kKESCMActionComponentBoss,
+		kKESCMPopupSplitTargetActionID,
+		kKESCMSplitTargetMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kDisableIfLowMem,
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
 
 		kKESCMActionComponentBoss,
 		kKESCMPopupUsageActionID,
@@ -271,6 +296,15 @@ resource ActionDef (kSDKDefActionResourceID)
 		kKESCMActionComponentBoss,
 		kKESCMPopupAboutThisActionID,
 		kSDKDefAboutThisPlugInMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kDisableIfLowMem,
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		kKESCMActionComponentBoss,
+		kKESCMPopupTestSplitActionID,
+		kKESCMTestSplitMenuKey,
 		kOtherActionArea,
 		kNormalAction,
 		kDisableIfLowMem,

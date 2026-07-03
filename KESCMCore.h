@@ -29,6 +29,15 @@ void		KESCMCollectPageUIDs(IDataBase* db, std::vector<UID>& out);
 // kFalse。peek と色サンプラが同じ流儀でカーソル位置を求めるための共有ヘルパ。
 bool16		KESCMQueryMouseContentPoint(IControlView* view, PMReal& outX, PMReal& outY);
 
+// マウス下のレイアウトビューを求める(Split Window対応)。ILayoutUIUtils::QueryFrontView() は
+// 「front presentationの代表ビュー」を1つ返すだけでマウス位置を見ないため、1文書がSplit Window中
+// (kLayoutWidgetBoss＋kLayoutSecondaryPanelWidgetID)だと常に元側を返してしまう(実測で確認済み:
+// スプリットの新しい側で操作しても反応しない)。本関数は QueryWindowUnderPoint→
+// IPanelControlData::FindWidget(windowPt) のヒットテストで、実際にマウスが乗っているペイン
+// (元側/新しい側)を正しく特定する。戻り値は QueryFrontView() と同じ契約(+1 ref、呼び出し側で
+// InterfacePtr 等による Release が必要)。見つからなければ nil。
+IControlView*	KESCMQueryViewUnderMouse();
+
 // マウス下のページを特定した結果(KESCMFindPageUnderMouse 参照)。平坦ページ番号は KESCMCollectPageUIDs と
 // 一致するので、globalPageBase + hitPageIndex が旧ドキュメントの平坦ページ列にそのまま対応する。
 struct KESCMPageHit
