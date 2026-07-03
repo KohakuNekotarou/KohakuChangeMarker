@@ -1,0 +1,585 @@
+//========================================================================================
+//  
+//  $File: $
+//  
+//  Owner: 
+//  
+//  $Author: $
+//  
+//  $DateTime: $
+//  
+//  $Revision: $
+//  
+//  $Change: $
+//  
+//  Copyright 1997-2012 Adobe Systems Incorporated. All rights reserved.
+//  
+//  NOTICE:  Adobe permits you to use, modify, and distribute this file in accordance 
+//  with the terms of the Adobe license agreement accompanying it.  If you have received
+//  this file from a source other than Adobe, then your use, modification, or 
+//  distribution of it requires the prior written permission of Adobe.
+//  
+//========================================================================================
+
+#include "VCPlugInHeaders.h"
+
+// General includes:
+#include "MenuDef.fh"
+#include "ActionDef.fh"
+#include "ActionDefs.h"
+#include "AdobeMenuPositions.h"
+#include "LocaleIndex.h"
+#include "PMLocaleIds.h"
+#include "StringTable.fh"
+#include "ObjectModelTypes.fh"
+#include "ShuksanID.h"
+#include "ActionID.h"
+#include "CommandID.h"
+#include "WorkspaceID.h"
+#include "WidgetID.h"
+#include "BuildNumber.h"
+#include "PlugInModel_UIAttributes.h"
+
+// Panel / widget resources:
+#include "PanelList.fh"
+#include "Widgets.fh"				// PalettePanelWidget and the standard control widgets
+#include "InterfaceColorDefines.h"
+#include "IControlViewDefs.h"
+#include "SysControlIds.h"
+
+#include "ScriptInfoTypes.fh"
+#include "AppFrameworkID.h"
+
+#include "SpreadID.h"	// for kPageObjectScriptElement
+#include "GraphicsID.h"	// for IID_IDRWEVTHANDLER
+#include "DocFrameworkID.h"	// for kDocumentObjectScriptElement
+#include "DocumentID.h"	// for kAfterCloseDocSignalResponderService (doc-close responder)
+#include "TipsID.h"		// for IID_ITIP
+
+// Project includes:
+#include "KESCMID.h"
+#include "GenericID.h"
+#include "ShuksanID.h"
+#include "TextID.h"
+
+#include "KESCMScriptingDefs.h"
+
+
+#ifdef __ODFRC__
+
+/*  
+ * Plugin version definition.
+ */
+resource PluginVersion (kSDKDefPluginVersionResourceID)
+{
+	kTargetVersion,
+	kKESCMPluginID,
+	kSDKDefPlugInMajorVersionNumber, kSDKDefPlugInMinorVersionNumber,
+	kSDKDefHostMajorVersionNumber, kSDKDefHostMinorVersionNumber,
+	kKESCMCurrentMajorFormatNumber, kKESCMCurrentMinorFormatNumber,
+	{ kInDesignProduct },
+	{ kWildFS },
+	kUIPlugIn,
+	kKESCMVersion
+};
+
+/*  
+ * The ExtraPluginInfo resource adds extra information to the Missing Plug-in dialog
+ * that is popped when a document containing this plug-in's data is opened when
+ * this plug-in is not present. These strings are not translatable strings
+ * since they must be available when the plug-in isn't around. They get stored
+ * in any document that this plug-in contributes data to.
+ */
+resource ExtraPluginInfo(1)
+{
+	kKESCMCompanyValue,			// Company name
+	kKESCMMissingPluginURLValue,	// URL 
+	kKESCMMissingPluginAlertValue,	// Missing plug-in alert text
+};
+
+/* 
+ * Boss class definitions.
+ */
+resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
+{{{
+	Class
+	{
+		kKESCMScriptProviderBoss,
+		kBaseScriptProviderBoss,
+		{
+			IID_ISCRIPTPROVIDER,kKESCMScriptProviderImpl,
+			
+		}
+	},
+
+	Class
+	{
+		kKESCMDrawEventServiceBoss,
+		kInvalidClass,
+		{
+			IID_IK2SERVICEPROVIDER, kKESCMDrawEventSrvcImpl,
+			IID_IDRWEVTHANDLER,     kKESCMDrawEventHandlerImpl,
+		}
+	},
+
+	// Middle-button "peek": snoops kMButtonDn/kMButtonUp (non-consuming) and, while armed,
+	// shows the opaque OLD overlay of the spread under the mouse while the button is held.
+	Class
+	{
+		kKESCMPeekWatcherBoss,
+		kInvalidClass,
+		{
+			IID_IEVENTWATCHER, kKESCMPeekWatcherImpl,
+		}
+	},
+
+	// Starts the peek watcher at app launch (lazy = during an idle task right after startup).
+	Class
+	{
+		kKESCMPeekStartupBoss,
+		kInvalidClass,
+		{
+			IID_ISTARTUPSHUTDOWN,   kKESCMPeekStartupImpl,
+			IID_IK2SERVICEPROVIDER, kLazyStartupShutdownProviderImpl,
+		}
+	},
+
+	// Auto-dismissing on-canvas toast: an idle task that hides the toast message after a delay.
+	Class
+	{
+		kKESCMToastIdleTaskBoss,
+		kInvalidClass,
+		{
+			IID_IIDLETASK, kKESCMToastIdleTaskImpl,
+		}
+	},
+
+	// Action component: handles the About menu items (main menu + panel flyout).
+	Class
+	{
+		kKESCMActionComponentBoss,
+		kBaseActionComponentBoss,
+		{
+			IID_IACTIONCOMPONENT, kKESCMActionComponentImpl,
+		}
+	},
+
+	// The ChangeMarker control panel (palette). The observer drives the Start/Clear/print controls
+	// and the popup (flyout) menu data hosts the "About this plug-in" item.
+	Class
+	{
+		kKESCMPanelWidgetBoss,
+		kPalettePanelWidgetBoss,
+		{
+			IID_IPANELMENUDATA, kCPanelMenuDataImpl,
+			IID_IOBSERVER, kKESCMPanelObserverImpl,
+		}
+	},
+
+	// Document-close responder service. IK2ServiceProvider advertises the after-close
+	// signal; IResponder cleans up any of KESCM's tracked, now-closed documents.
+	Class
+	{
+		kKESCMDocResponderServiceBoss,
+		kInvalidClass,
+		{
+			IID_IK2SERVICEPROVIDER, kKESCMDocServiceProviderImpl,
+			IID_IRESPONDER,         kKESCMDocResponderImpl,
+		}
+	},
+
+	// Subclass of the system rollover icon button used for the panel illustration
+	// (kKESCMIconOnWidgetID/kKESCMIconOffWidgetID), adding IID_ITIP so hovering it shows a tooltip
+	// with the repo URL (same pattern as kLinksUIButtonBoss in open/components/linksui).
+	Class
+	{
+		kKESCMIconWidgetBoss,
+		kRollOverIconButtonBoss,
+		{
+			IID_ITIP, kKESCMIconTipImpl,
+		}
+	},
+}}};
+
+/*  
+ * Implementation definition.
+ */
+resource FactoryList (kSDKDefFactoryListResourceID)
+{
+	kImplementationIDSpace,
+	{
+		#include "KESCMFactoryList.h"
+	}
+};
+
+
+/*
+ * Menu definition: the About Plug-ins entry (main menu) and the "About this plug-in" entry on
+ * the panel's flyout (popup) menu. The panel itself appears under the Window menu automatically
+ * (registered via the PanelList resource below), so no menu entry is needed for showing it.
+ */
+resource MenuDef (kSDKDefMenuResourceID)
+{
+	{
+		// About Plug-ins sub-menu item.
+		kKESCMAboutActionID,
+		kKESCMAboutMenuPath,
+		kSDKDefAlphabeticPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
+		// "How to Use" on the panel flyout (popup) menu (shown first).
+		kKESCMPopupUsageActionID,
+		kKESCMPopupMenuPath,
+		kKESCMUsageMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
+		// "About scripting" on the panel flyout (popup) menu.
+		kKESCMPopupAboutScriptActionID,
+		kKESCMPopupMenuPath,
+		kKESCMAboutScriptMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
+		// "About this plug-in" on the panel flyout (popup) menu (shown last).
+		kKESCMPopupAboutThisActionID,
+		kKESCMPopupMenuPath,
+		kKESCMAboutThisMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+	}
+};
+
+/*
+ * Action definition for the menu items above.
+ */
+resource ActionDef (kSDKDefActionResourceID)
+{
+	{
+		kKESCMActionComponentBoss,			// boss that implements the action
+		kKESCMAboutActionID,				// ActionID
+		kKESCMAboutMenuKey,					// sub-menu string
+		kHelpMenuActionArea,				// area name
+		kNormalAction,						// action type
+		kDisableIfLowMem,					// enabling type
+		kInvalidInterfaceID,				// selection interface this action cares about
+		kSDKDefInvisibleInKBSCEditorFlag,	// KBSC editor visibility
+
+		kKESCMActionComponentBoss,
+		kKESCMPopupUsageActionID,
+		kKESCMUsageMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kDisableIfLowMem,
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		kKESCMActionComponentBoss,
+		kKESCMPopupAboutScriptActionID,
+		kKESCMAboutScriptMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kDisableIfLowMem,
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		kKESCMActionComponentBoss,
+		kKESCMPopupAboutThisActionID,
+		kSDKDefAboutThisPlugInMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kDisableIfLowMem,
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+	}
+};
+
+
+/*  
+ * Locale Indicies.
+ * The LocaleIndex should have indicies that point at your
+ * localizations for each language system that you are localized for.
+ */
+
+/*  
+ * String LocaleIndex.
+ */
+resource LocaleIndex ( kSDKDefStringsResourceID)
+{
+	kStringTableRsrcType,
+	{
+		kWildFS, k_enUS, kSDKDefStringsResourceID + index_enUS
+		kWildFS, k_enGB, kSDKDefStringsResourceID + index_enUS
+		kWildFS, k_deDE, kSDKDefStringsResourceID + index_enUS
+		kWildFS, k_frFR, kSDKDefStringsResourceID + index_enUS
+		kWildFS, k_esES, kSDKDefStringsResourceID + index_enUS
+		kWildFS, k_ptBR, kSDKDefStringsResourceID + index_enUS
+		kWildFS, k_svSE, kSDKDefStringsResourceID + index_enUS
+		kWildFS, k_daDK, kSDKDefStringsResourceID + index_enUS
+		kWildFS, k_nlNL, kSDKDefStringsResourceID + index_enUS
+		kWildFS, k_itIT, kSDKDefStringsResourceID + index_enUS
+		kWildFS, k_nbNO, kSDKDefStringsResourceID + index_enUS
+		kWildFS, k_fiFI, kSDKDefStringsResourceID + index_enUS
+		kInDesignJapaneseFS, k_jaJP, kSDKDefStringsResourceID + index_jaJP
+	}
+};
+
+resource LocaleIndex (kSDKDefStringsNoTransResourceID)
+{
+	kStringTableRsrcType,
+	{
+		kWildFS, k_Wild, kSDKDefStringsNoTransResourceID + index_enUS
+	}
+};
+
+// Strings not being localized
+resource StringTable (kSDKDefStringsNoTransResourceID + index_enUS)
+{
+	k_enUS,									// Locale Id
+	kEuropeanMacToWinEncodingConverter,		// Character encoding converter
+	{
+		// Internal popup (flyout) menu name - not translated.
+		kKESCMInternalPopupMenuNameKey,	kKESCMInternalPopupMenuNameKey,
+	}
+};
+/*
+
+/*  Scripting definition
+	In InDesign/InCopy, scripting resources are defined via ODFRez statements for cross-platform compatibility.
+*/
+resource VersionedScriptElementInfo(2)
+{
+	// Contexts
+	{
+        kFiredrakeScriptVersion, kCoreScriptManagerBoss, kInDesignAllLanguagesFS, k_Wild,
+		kFiredrakeScriptVersion, kCoreScriptManagerBoss, kInCopyAllLanguagesFS, k_Wild,
+		
+	}
+	
+	// Elements
+	{
+			// Page/Document.kescmToast(message) - shows a brief message at the CENTER of the visible area that
+			// auto-dismisses after ~2.5s. Screen only, non-persistent.
+			// ExtendScript:  app.documents[0].kescmToast("ChangeMarker ON");
+			Method
+			{
+				kKESCMToastMethodScriptElement,
+				e_KESCMToast,
+				"kescm toast",
+				"Shows a brief auto-dismissing message at the center of the screen (screen only).",
+				StringType,
+				"Status string",
+				{
+					p_KESCMToastMsg, "message", "The text to show briefly at the center of the screen", StringType, kRequired,
+				}
+			}
+
+			// Connects this plug-in's methods to scripting. kescmToast targets the document's
+			// layout window (centered in the visible area), so it is exposed on the Document object only.
+			Provider
+		{
+			kKESCMScriptProviderBoss,	// provider boss ID
+			{
+				Object{ kDocumentObjectScriptElement },
+				Method{ kKESCMToastMethodScriptElement },
+			}
+		}
+	}
+};
+
+
+//========================================================================================
+// ChangeMarker control panel (palette)
+//========================================================================================
+
+// PNG icons (compiled into the plug-in; ON = armed/comparing, OFF = idle). Same art is used for
+// the normal and rollover states since this is a non-interactive status icon.
+resource PNGA(kKESCMIconOnResID)  "KohakuExtendScriptChangeMarkerON64.png"
+resource PNGR(kKESCMIconOnResID)  "KohakuExtendScriptChangeMarkerON64.png"
+resource PNGA(kKESCMIconOffResID) "KohakuExtendScriptChangeMarkerOFF64.png"
+resource PNGR(kKESCMIconOffResID) "KohakuExtendScriptChangeMarkerOFF64.png"
+
+// Small dock-tab icon shown when the panel is collapsed to its smallest. Replace
+// KohakuChangeMarkerTab.png with your own artwork (a small, e.g. ~20x20, transparent PNG).
+resource PNGA(kKESCMPaletteIconResID) "KohakuChangeMarkerTab.png"
+
+// Panel LocaleIndex - a single (string-key driven) view is used for every locale; the labels
+// themselves are localized through the string tables (KESCM_enUS.fr / KESCM_jaJP.fr).
+resource LocaleIndex (kSDKDefPanelResourceID)
+{
+	kViewRsrcType,
+	{
+		kWildFS, k_Wild, kSDKDefPanelResourceID + index_enUS
+	}
+};
+
+// Type definition for the panel widget boss.
+type KESCMPanelWidget(kViewRsrcType) : PalettePanelWidget(ClassID = kKESCMPanelWidgetBoss)
+{
+	CPanelMenuData;
+};
+
+// Panel illustration (ON/OFF icon) widget type: same as RollOverIconButtonWidget, but backed by
+// kKESCMIconWidgetBoss so it carries IID_ITIP (tooltip showing the repo URL on hover).
+type KESCMIconWidget(kViewRsrcType) : RollOverIconButtonWidget(ClassID = kKESCMIconWidgetBoss) { };
+
+// PanelList - registers the panel and makes it appear under the Window menu.
+resource PanelList (kSDKDefPanelResourceID)
+{
+	{
+		kSDKDefPanelResourceID,		// Resource ID for this panel
+		kKESCMPluginID,				// owning plug-in
+		kNotResizable,				// fixed-size panel
+		kKESCMPanelWidgetActionID,	// Action ID to show/hide the panel
+		"",							// panelName empty: place via altMenu below for explicit menu placement
+		kKESCMPanelPluginsMenuPath,	// Plug-Ins > KohakuNekotarou > KohakuChangeMarker
+		kKESCMPanelPluginsMenuPosition,	// lower part of the menu
+		kKESCMPaletteIconResID, kKESCMPluginID,	// PNG icon for the collapsed dock tab
+		c_Panel
+	}
+};
+
+// PanelView - widget layout. Labels reference string keys so they localize automatically.
+resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
+{
+	__FILE__, __LINE__,
+	kKESCMPanelWidgetID,			// WidgetID
+	kPMRsrcID_None,					// RsrcID
+	kBindNone,						// Binding
+	0, 0, 192, 300,					// Frame: left, top, right, bottom (width 80% of original 240)
+	kTrue, kTrue,					// Visible, Enabled
+	kFalse,							// Erase background
+	kInterfacePaletteFill,			// Erase to color
+	kFalse,							// Draw dropshadow
+	kKESCMPanelTitleKey,			// Panel name
+	{
+		// Target / Source status (label stays English; the document name is filled in by the observer).
+		StaticTextWidget
+		(
+			kKESCMTargetTextWidgetID,
+			kSysStaticTextPMRsrcId,
+			kBindLeft | kBindRight | kBindTop,
+			Frame(8, 8, 184, 24)
+			kTrue, kTrue,
+			kAlignLeft, kEllipsizeEnd, kTrue,
+			kKESCMTargetLabelKey,
+			kInvalidWidgetID,
+		),
+		StaticTextWidget
+		(
+			kKESCMSourceTextWidgetID,
+			kSysStaticTextPMRsrcId,
+			kBindLeft | kBindRight | kBindTop,
+			Frame(8, 26, 184, 42)
+			kTrue, kTrue,
+			kAlignLeft, kEllipsizeEnd, kTrue,
+			kKESCMSourceLabelKey,
+			kInvalidWidgetID,
+		),
+
+		// Separator.
+		SeparatorWidget
+		(
+			kInvalidWidgetID, kPMRsrcID_None,
+			kBindLeft | kBindRight | kBindTop,
+			Frame(0, 48, 192, 50)
+			kTrue, kTrue,
+		),
+
+		// Start / Stop toggle button. The observer flips the label between
+		// "Start" (idle) and "Stop" (armed/comparing) based on the shared state.
+		ButtonWidget
+		(
+			kKESCMToggleButtonWidgetID,
+			kSysButtonPMRsrcId,
+			kBindLeft | kBindRight | kBindTop,
+			Frame(12, 56, 180, 80)
+			kTrue, kTrue,
+			kKESCMStartButtonKey,
+		),
+
+		// Print marks checkbox.
+		CheckBoxWidget
+		(
+			kKESCMPrintCheckWidgetID,
+			kSysCheckBoxPMRsrcId,
+			kBindLeft | kBindTop,
+			Frame(12, 88, 180, 104)
+			kTrue, kTrue,
+			kAlignLeft,
+			kKESCMPrintCheckKey,
+		),
+
+		// Print opacity (25% / Normal). Order 25% -> Normal, default 25% (set by the observer).
+		ClusterPanelWidget
+		(
+			kKESCMOpacityClusterWidgetID,
+			kPMRsrcID_None,
+			kBindLeft | kBindTop,
+			Frame(12, 110, 180, 160)
+			kTrue, kTrue,
+			"",
+			{
+				RadioButtonWidget
+				(
+					kKESCMOpacity25RadioWidgetID,
+					kSysRadioButtonPMRsrcId,
+					kBindNone,
+					Frame(6, 4, 160, 20)
+					kTrue, kTrue,
+					kKESCMOpacity25Key,
+				),
+				RadioButtonWidget
+				(
+					kKESCMOpacityNormalRadioWidgetID,
+					kSysRadioButtonPMRsrcId,
+					kBindNone,
+					Frame(6, 24, 160, 40)
+					kTrue, kTrue,
+					kKESCMOpacityNormalKey,
+				),
+			}
+		),
+
+		// Status icon (OFF visible by default; the observer swaps ON/OFF based on the armed state).
+		// KESCMIconWidget (not the plain RollOverIconButtonWidget) so it carries IID_ITIP (tooltip).
+		KESCMIconWidget
+		(
+			kKESCMIconOffWidgetID,
+			kKESCMIconOffResID, kKESCMPluginID,
+			kBindBottom,
+			Frame(64, 228, 128, 292)
+			kTrue, kTrue,
+			kADBEIconSuiteButtonType,
+		),
+		KESCMIconWidget
+		(
+			kKESCMIconOnWidgetID,
+			kKESCMIconOnResID, kKESCMPluginID,
+			kBindBottom,
+			Frame(64, 228, 128, 292)
+			kFalse, kTrue,
+			kADBEIconSuiteButtonType,
+		),
+
+		// Status text (filled in by the observer with the result of each action).
+		StaticMultiLineTextWidget
+		(
+			kKESCMStatusTextWidgetID,
+			kPMRsrcID_None,
+			kBindLeft | kBindRight | kBindTop,
+			Frame(8, 168, 184, 220)
+			kTrue, kTrue,
+			kAlignLeft, kDontEllipsize, kTrue,
+			kInvalidWidgetID,
+			kPaletteWindowFontId,
+			3,
+			2, 0,
+			"",
+		),
+	}
+
+	kKESCMInternalPopupMenuNameKey		// Popup (flyout) menu name (internal)
+};
+
+#endif // __ODFRC__
+
+#include "KESCM_enUS.fr"
+#include "KESCM_jaJP.fr"
