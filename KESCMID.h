@@ -148,7 +148,7 @@ DECLARE_PMID(kActionIDSpace, kKESCMPanelWidgetActionID, kKESCMPrefix + 1)	// パ
 DECLARE_PMID(kActionIDSpace, kKESCMPopupAboutThisActionID, kKESCMPrefix + 2)	// パネルのフライアウトの「このプラグインについて」
 DECLARE_PMID(kActionIDSpace, kKESCMPopupAboutScriptActionID, kKESCMPrefix + 3)	// パネルのフライアウトの「スクリプトについて」
 DECLARE_PMID(kActionIDSpace, kKESCMPopupUsageActionID, kKESCMPrefix + 4)	// パネルのフライアウトの「使い方」
-DECLARE_PMID(kActionIDSpace, kKESCMPopupTestSplitActionID, kKESCMPrefix + 5)	// パネルのフライアウトの「Split Test」(検証用、恒久機能ではない)
+// kActionIDSpace +5 は現在空き(旧 kKESCMPopupTestSplitActionID; Split Test 検証メニューは撤去済み)
 DECLARE_PMID(kActionIDSpace, kKESCMPopupSplitTargetActionID, kKESCMPrefix + 6)	// パネルのフライアウトの「Split Target (90/10)」
 //DECLARE_PMID(kActionIDSpace, kKESCMActionID, kKESCMPrefix + 7)
 //DECLARE_PMID(kActionIDSpace, kKESCMActionID, kKESCMPrefix + 8)
@@ -180,7 +180,7 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMSourceTextWidgetID, kKESCMPrefix + 26)
 DECLARE_PMID(kWidgetIDSpace, kKESCMPrintCheckWidgetID, kKESCMPrefix + 29)
 DECLARE_PMID(kWidgetIDSpace, kKESCMOpacityClusterWidgetID, kKESCMPrefix + 30)
 DECLARE_PMID(kWidgetIDSpace, kKESCMOpacity25RadioWidgetID, kKESCMPrefix + 31)
-DECLARE_PMID(kWidgetIDSpace, kKESCMOpacityNormalRadioWidgetID, kKESCMPrefix + 32)
+DECLARE_PMID(kWidgetIDSpace, kKESCMOpacity75RadioWidgetID, kKESCMPrefix + 32)	// 旧 kKESCMOpacityNormalRadioWidgetID(Normal→75% に改称。ID値は同じ)
 // kWidgetIDSpace +33 は現在空き(旧 kKESCMHintTextWidgetID; 説明文はパネルから撤去しフライアウト「使い方」へ移動)
 DECLARE_PMID(kWidgetIDSpace, kKESCMIconOnWidgetID, kKESCMPrefix + 34)
 DECLARE_PMID(kWidgetIDSpace, kKESCMIconOffWidgetID, kKESCMPrefix + 35)
@@ -211,27 +211,26 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMToggleButtonWidgetID, kKESCMPrefix + 37)	// �
 //DECLARE_PMID(kWidgetIDSpace, kKESCMWidgetID, kKESCMPrefix + 24)
 //DECLARE_PMID(kWidgetIDSpace, kKESCMWidgetID, kKESCMPrefix + 25)
 
-// スクリプト要素 ID
+// スクリプト要素 ID(スクリプトAPIは全撤去済み=+1〜+12 はすべて空き。再利用時は旧用途との衝突に注意)
 // kScriptInfoIDSpace +1 は現在空き(ページ単位 kescmMarkChanges は廃止; kescmMarkChangesDoc を使う)
-DECLARE_PMID(kScriptInfoIDSpace, kKESCMClearMarksMethodScriptElement, kKESCMPrefix + 2)
-DECLARE_PMID(kScriptInfoIDSpace, kKESCMMarkChangesDocMethodScriptElement, kKESCMPrefix + 3)
+// kScriptInfoIDSpace +2 は現在空き(旧 kKESCMClearMarksMethodScriptElement; スクリプトAPI撤去)
+// kScriptInfoIDSpace +3 は現在空き(旧 kKESCMMarkChangesDocMethodScriptElement; 同上)
 // kScriptInfoIDSpace +4 は現在空き(kescmShowPageX 廃止; 対角線のページ × は撤去)
 // kScriptInfoIDSpace +5 は現在空き(kescmShowOverset 廃止); 再利用時は衝突に注意
 // kScriptInfoIDSpace +6 は現在空き(kescmShowOriginal 廃止; ミドルボタン peek に統合)
 // kScriptInfoIDSpace +7 は現在空き(kescmHideOriginal 廃止; kescmShowOriginal と対)
 // kScriptInfoIDSpace +8 は現在空き(kescmShowOriginalUnderMouse 廃止; ミドルボタン peek を使う)
-DECLARE_PMID(kScriptInfoIDSpace, kKESCMArmMousePeekMethodScriptElement, kKESCMPrefix + 9)
-DECLARE_PMID(kScriptInfoIDSpace, kKESCMDisarmMousePeekMethodScriptElement, kKESCMPrefix + 10)
+// kScriptInfoIDSpace +9 は現在空き(旧 kKESCMArmMousePeekMethodScriptElement; スクリプトAPI撤去)
+// kScriptInfoIDSpace +10 は現在空き(旧 kKESCMDisarmMousePeekMethodScriptElement; 同上)
 // kScriptInfoIDSpace +11 は現在空き(旧 kKESCMToastMethodScriptElement; kescmToast はスクリプトAPIごと撤去)
-DECLARE_PMID(kScriptInfoIDSpace, kKESCMSetPrintMarksMethodScriptElement, kKESCMPrefix + 12)
+// kScriptInfoIDSpace +12 は現在空き(旧 kKESCMSetPrintMarksMethodScriptElement; スクリプトAPI撤去)
 
 // "About Plug-ins" sub-menu:
 #define kKESCMAboutMenuKey			kKESCMStringPrefix "kKESCMAboutMenuKey"
 #define kKESCMAboutMenuPath		kSDKDefStandardAboutMenuPath kKESCMCompanyKey
 
-// "Plug-ins" sub-menu:
-#define kKESCMPluginsMenuKey 		kKESCMStringPrefix "kKESCMPluginsMenuKey"
-#define kKESCMPluginsMenuPath		kSDKDefPlugInsStandardMenuPath kKESCMCompanyKey kSDKDefDelimitMenuPath kKESCMPluginsMenuKey
+// (旧 "Plug-ins" sub-menu 用の kKESCMPluginsMenuKey/Path は未使用のため撤去。パネルのメニュー配置は
+//  下の kKESCMPanelPluginsMenuPath が担う)
 
 // パネルを Plug-Ins メニューへ出すためのパスと位置。
 // Plug-Ins ▸ KohakuNekotarou ▸ KohakuChangeMarker（リーフはパネル名キー）。
@@ -246,9 +245,7 @@ DECLARE_PMID(kScriptInfoIDSpace, kKESCMSetPrintMarksMethodScriptElement, kKESCMP
 #define kKESCMAboutScriptMenuKey	kKESCMStringPrefix "kKESCMAboutScriptMenuKey"	// パネルのフライアウト「スクリプトについて」のメニュー名
 #define kKESCMScriptHelpStringKey	kKESCMStringPrefix "kKESCMScriptHelpStringKey"	// その本文(スクリプトAPIは撤去済み。現在は「利用可能なスクリプトはありません」の旨を表示)
 #define kKESCMUsageMenuKey		kKESCMStringPrefix "kKESCMUsageMenuKey"	// パネルのフライアウト「使い方」のメニュー名(本文は kKESCMHintKey を再利用)
-#define kKESCMTestSplitMenuKey	kKESCMStringPrefix "kKESCMTestSplitMenuKey"	// パネルのフライアウト「Split Test」のメニュー名(検証用、恒久機能ではない)
 #define kKESCMSplitTargetMenuKey	kKESCMStringPrefix "kKESCMSplitTargetMenuKey"	// パネルのフライアウト「Split Target (90/10)」のメニュー名
-#define kKESCMTargetMenuPath kKESCMPluginsMenuPath
 
 // パネル: 内部フライアウト(ポップアップ)メニュー名＋そのメニューパス。
 #define kKESCMInternalPopupMenuNameKey	kKESCMStringPrefix "kKESCMInternalPopupMenuNameKey"
@@ -261,7 +258,7 @@ DECLARE_PMID(kScriptInfoIDSpace, kKESCMSetPrintMarksMethodScriptElement, kKESCMP
 #define kKESCMStartButtonKey	kKESCMStringPrefix "kKESCMStartButtonKey"	// トグルボタンの .fr 初期キャプション(未開始=Start)。Stop ラベルは Observer が英語リテラルで設定
 #define kKESCMPrintCheckKey		kKESCMStringPrefix "kKESCMPrintCheckKey"
 #define kKESCMOpacity25Key		kKESCMStringPrefix "kKESCMOpacity25Key"
-#define kKESCMOpacityNormalKey	kKESCMStringPrefix "kKESCMOpacityNormalKey"
+#define kKESCMOpacity75Key		kKESCMStringPrefix "kKESCMOpacity75Key"	// 旧 kKESCMOpacityNormalKey(Normal→75% に改称)
 #define kKESCMHintKey			kKESCMStringPrefix "kKESCMHintKey"
 
 // PNG アイコンリソース(プラグインに埋め込み; .pln とは別ファイルでは出荷しない)。
@@ -270,12 +267,11 @@ DECLARE_PMID(kScriptInfoIDSpace, kKESCMSetPrintMarksMethodScriptElement, kKESCMP
 #define kKESCMPaletteIconResID	1003	// パネルが折りたたまれた時に出る小さいドックタブアイコン
 
 // Menu item positions (flyout order): Split Target(9) → 使い方(10) → スクリプトについて(11) →
-// このプラグインについて(12) → Split Test(13、検証用)
+// このプラグインについて(12)
 #define kKESCMSplitTargetMenuItemPosition	9.0	// 実行コマンドを先頭に
 #define kKESCMUsageMenuItemPosition			10.0	// 「使い方」
 #define kKESCMAboutScriptMenuItemPosition	11.0	// その下に「スクリプトについて」
 #define kKESCMAboutThisMenuItemPosition		12.0	// 末尾に「このプラグインについて」
-#define kKESCMTestSplitMenuItemPosition		13.0	// さらにその下(検証用、恒久機能ではない)
 
 
 // Initial data format version numbers

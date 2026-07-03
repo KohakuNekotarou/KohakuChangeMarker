@@ -240,14 +240,6 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKESCMPopupMenuPath,
 		kKESCMAboutThisMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
-
-		// "Split Test" on the panel flyout (popup) menu. Temporary verification entry for
-		// ISplitterPanelControlData/ISplitterPanelController on kLayoutSplitterPanelWidgetID; not a
-		// permanent feature.
-		kKESCMPopupTestSplitActionID,
-		kKESCMPopupMenuPath,
-		kKESCMTestSplitMenuItemPosition,
-		kSDKDefIsNotDynamicMenuFlag,
 	}
 };
 
@@ -296,15 +288,6 @@ resource ActionDef (kSDKDefActionResourceID)
 		kKESCMActionComponentBoss,
 		kKESCMPopupAboutThisActionID,
 		kSDKDefAboutThisPlugInMenuKey,
-		kOtherActionArea,
-		kNormalAction,
-		kDisableIfLowMem,
-		kInvalidInterfaceID,
-		kSDKDefInvisibleInKBSCEditorFlag,
-
-		kKESCMActionComponentBoss,
-		kKESCMPopupTestSplitActionID,
-		kKESCMTestSplitMenuKey,
 		kOtherActionArea,
 		kNormalAction,
 		kDisableIfLowMem,
@@ -489,7 +472,9 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 			kKESCMPrintCheckKey,
 		),
 
-		// Print opacity (25% / Normal). Order 25% -> Normal, default 25% (set by the observer).
+		// Marks opacity (25% / 75%). Applies to the middle-button display, the always-on screen
+		// display while printing is ON, and the print output. Always enabled; default 25% (set by
+		// the observer).
 		ClusterPanelWidget
 		(
 			kKESCMOpacityClusterWidgetID,
@@ -510,12 +495,12 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 				),
 				RadioButtonWidget
 				(
-					kKESCMOpacityNormalRadioWidgetID,
+					kKESCMOpacity75RadioWidgetID,
 					kSysRadioButtonPMRsrcId,
 					kBindNone,
 					Frame(6, 24, 160, 40)
 					kTrue, kTrue,
-					kKESCMOpacityNormalKey,
+					kKESCMOpacity75Key,
 				),
 			}
 		),

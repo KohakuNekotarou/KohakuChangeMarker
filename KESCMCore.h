@@ -66,8 +66,9 @@ void		KESCMInvalidateDB(IDataBase* db);
 // オーバーレイ全体(と旧版画像のキャッシュ)を破棄し、db を再描画する。
 void		KESCMDoClearMarks(IDataBase* db);
 
-// マークを印刷に出すか(かつ画面に常時表示するか)を切り替える。faintFlag = 約25%で印刷。
-void		KESCMDoSetPrintMarks(bool16 printFlag, bool16 faintFlag, IDataBase* db);
+// マークを印刷に出すか(かつ画面に常時表示するか)と、枠の不透明度の選択を切り替える。
+// opacity25Flag: kTrue=25% / kFalse=75%(ミドル押下表示・印刷ON常時表示・印刷出力に共通)。
+void		KESCMDoSetPrintMarks(bool16 printFlag, bool16 opacity25Flag, IDataBase* db);
 
 // 旧版のミドルボタン peek を arm / disarm する(パネルの ON/OFF 状態も駆動する)。
 void		KESCMDoArmMousePeek(IDataBase* targetDB, IDataBase* sourceDB);
@@ -80,8 +81,8 @@ IDataBase*	KESCMArmedTargetDB();
 IDataBase*	KESCMArmedSourceDB();
 
 // 現在の印刷マーク設定。パネルを開き直したときにチェック/ラジオを実状態へ復元するために使う。
-bool16		KESCMGetPrintMarks();	// 印刷マーク ON/OFF
-bool16		KESCMGetPrintFaint();	// 印刷不透明度: kTrue=約25% / kFalse=通常
+bool16		KESCMGetPrintMarks();		// 印刷マーク ON/OFF
+bool16		KESCMGetMarkOpacity25();	// 枠不透明度の選択: kTrue=25% / kFalse=75%
 
 // ドキュメントがクローズされた直後(kAfterCloseDoc レスポンダ)に呼ぶ。追跡中の全DB(マーク/旧版画像/
 // トースト/peek arm)を IDocumentList で生存確認し、閉じていたものだけ確定的にクリーンアップする

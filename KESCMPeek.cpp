@@ -77,20 +77,19 @@ static bool16     sPeekArmed    = kFalse;
 // 押下中だけ表示し、ミドルを離すと消す(修飾キーは離してもよい)。判定はミドル押下時に1回見るだけ。
 static const PMReal kKESCMPeekSemiOpacity = 0.5;	// Shift+Alt＋ミドル時の旧版の不透明度(0..1)
 static bool16 sPeekActive        = kFalse;	// Shift/Shift+Alt+ミドルを押し込み中(=覗き表示中)か
-static bool16 sSingleShowing     = kFalse;	// 修飾なしミドル押下中(=全マークを約25%で一時表示中)か。離すと隠す＋基準opacityへ
-static bool16 sFaintShowing      = kFalse;	// Alt+ミドル押下中(=全マークを通常=不透明で一時表示中)か。離すと隠す＋基準opacityへ
+static bool16 sSingleShowing     = kFalse;	// 修飾なしミドル押下中(=全マークを選択不透明度25%/75%で一時表示中)か。離すと隠す＋基準opacityへ
 static bool16 sColorHoldShowing  = kFalse;	// Shift＋Ctrl＋Alt＋ミドル押下中(=色サンプルのトースト表示中)か。離すと消す
 // ミドル押下中だけハンドツール(掴んで移動)に一時切替。離すと元のツールへ戻す。
 static ITool*  sSavedTool  = nil;	// 切替前のツール(ref を保持。Restore で Release)
 static bool16  sHandActive = kFalse;	// ハンドツールに一時切替中か
 
-// 画面マークの「基準」不透明度(=ミドル/Alt のどちらも押していない常時表示時の値)。
-//   印刷マークON＋25%(faint)選択中は 0.25(画面も印刷と同じ薄さ)、それ以外は 1.0(不透明)。
-//   ミドル/Alt を離したら sMarkScreenOpacity をこの値へ戻す。
+// 画面マークの「基準」不透明度(=ミドルを押していない常時表示時の値)。
+//   印刷マークON中はパネルで選択中の不透明度(25%/75%。画面と印刷の見た目を一致)、印刷OFFは 1.0。
+//   ミドルを離したら sMarkScreenOpacity をこの値へ戻す。
 PMReal KESCMBaseScreenOpacity()
 {
-	return (KESCMDrawEventHandler::sPrintMarks && KESCMDrawEventHandler::sPrintFaint)
-	       ? kKESCMFaintOpacity : PMReal(1.0);
+	return KESCMDrawEventHandler::sPrintMarks
+	       ? KESCMDrawEventHandler::SelectedMarkOpacity() : PMReal(1.0);
 }
 
 // peek 試行の結果(スクリプトの状態文字列用。watcher は無視する)。
@@ -150,10 +149,6 @@ static KESCMPeekResult KESCMPeekShowUnderMouse(IDataBase* targetDB, IDataBase* s
 	if (!KESCMFindPageUnderMouse(targetDB, mx, my, hit))
 		return kKESCMPeekNoSpread;
 
-	// 旧ドキュメントの平坦ページUID列(スプレッド順・ページ順)。新→旧の通し番号対応に使う。
-	std::vector<UID> sPages;
-	KESCMCollectPageUIDs(sourceDB, sPages);
-
 	const int32 s           = hit.spreadIndex;
 	const int32 np          = hit.numPages;
 	const int32 globalIndex = hit.globalPageBase;
@@ -202,6 +197,12 @@ static KESCMPeekResult KESCMPeekShowUnderMouse(IDataBase* targetDB, IDataBase* s
 	}
 	else
 	{
+		// 旧ドキュメントの平坦ページUID列(スプレッド順・ページ順)。新→旧の通し番号対応に使う。
+		// 実際にラスタ化するこの分岐でだけ必要なので、ここで集める(キャッシュヒット=同一スプレッドの
+		// 再 peek が最頻ケースで、その度に旧文書の全スプレッド/ページを列挙するのは無駄だった)。
+		std::vector<UID> sPages;
+		KESCMCollectPageUIDs(sourceDB, sPages);
+
 		KESCMDrawEventHandler::DropAllOrig();		// 覗くのは1スプレッドだけ=他は破棄
 		KESCMDrawEventHandler::sOrigDB = targetDB;
 		KESCMDrawEventHandler::sOrigScale = effScale;	// このラスタ化解像度を記録(再 peek の作り直し判定用)
@@ -380,7 +381,7 @@ static bool16 KESCMFrontViewIsOverTarget()
 	return (hitPres->GetDocumentUIDRef().GetDataBase() == sPeekTargetDB);
 }
 
-// Ctrl＋ミドル押下(momentary): 「地図」ナビゲーション。マウス下のレイアウトウィンドウ
+// Alt＋ミドル押下(momentary、旧 Ctrl＋ミドル=2026-07-04移動): 「地図」ナビゲーション。マウス下のレイアウトウィンドウ
 // (アクティブである必要はない; IWindowUtils::QueryWindowUnderPoint でグローバル座標から直接引く)の
 // ローカル(pasteboard)座標を求め、開いている全ドキュメントの全ウィンドウ(マウス下=地図側のウィンドウ
 // 自身は除く)を同じ場所へスクロールする。ChangeMarker の Start(sPeekArmed)とは無関係に常に使える。
@@ -600,42 +601,30 @@ IEventDispatcher::EventTypeList KESCMPeekWatcher::WatchEvent(IEvent* e)
 		}
 		else if (e->OptionAltKeyDown() && !e->ShiftKeyDown() && !e->CmdKeyDown())
 		{
-			// Alt＋ミドル押下: 既存マーク(リング＋変更数)を「通常(不透明)」で表示。peek(旧版べた載せ)とは別物で
-			// arm 不要(見せるだけ)。ハンドツールに切替えて枠を見ながら掴んで移動できる。離すと非表示へ戻す。
-			// マークが無ければ無反応(素のミドルを邪魔しない)。
-			const bool16 haveContent = !KESCMDrawEventHandler::sEntries.empty();
-			if (haveContent)
-			{
-				sFaintShowing = kTrue;
-				KESCMDrawEventHandler::sMarkScreenOpacity = 1.0;				// 通常=不透明(印刷25%中でも不透明で確認できる)
-				KESCMDrawEventHandler::sMarksVisible = kTrue;					// 押下中だけ表示
-				KESCMEnterHandTool();											// 枠を見ながら掴んで移動
-				KESCMInvalidateMarksDoc();
-			}
-		}
-		else if (e->CmdKeyDown() && !e->ShiftKeyDown() && !e->OptionAltKeyDown())
-		{
-			// ★2026-07-03: 旧 Shift+Ctrl の動作と入れ替え。
-			// Ctrl(=Win, CmdKeyDown)＋ミドル押下(momentary): 「地図」ナビゲーション。マウス下のウィンドウ
+			// ★2026-07-04: Ctrl 単独から Alt 単独へ移動(Ctrl 単独ミドルは現在未割当)。
+			// Alt＋ミドル押下(momentary): 「地図」ナビゲーション。マウス下のウィンドウ
 			// (アクティブでなくてもよい)のローカル座標へ、他の全ウィンドウをスクロールする。arm 状態に依らず常に使える。
 			KESCMSyncScrollOtherWindowsUnderMouse(e);
 		}
 		else if (!e->ShiftKeyDown() && !e->CmdKeyDown() && !e->OptionAltKeyDown())
 		{
-			// シングル動作(修飾キーなしミドル押下中): 全マーク(リング＋変更数)を「約25%で薄表示」にして、
-			// ハンドツールに切替えて「枠を見ながら掴んで移動」できるようにする。離す(kMButtonUp)と非表示＋不透明度を戻す。
+			// シングル動作(修飾キーなしミドル押下中): 全マーク(リング＋変更数)をパネルで選択中の
+			// 不透明度(25%/75%)で表示し、ハンドツールに切替えて「枠を見ながら掴んで移動」できるようにする。
+			// 離す(kMButtonUp)と非表示＋不透明度を基準値へ戻す。
 			// マークが何も無い(エントリ無し)時は反応しない=素のミドルクリックを邪魔しない。
 			const bool16 haveContent = !KESCMDrawEventHandler::sEntries.empty();
 			if (haveContent)
 			{
 				sSingleShowing = kTrue;
-				KESCMDrawEventHandler::sMarkScreenOpacity = kKESCMFaintOpacity;	// ミドルのみ=25%薄表示
+				KESCMDrawEventHandler::sMarkScreenOpacity = KESCMDrawEventHandler::SelectedMarkOpacity();	// パネルの 25%/75%
 				KESCMDrawEventHandler::sMarksVisible = kTrue;	// 押下中だけ枠等を表示
 				KESCMEnterHandTool();	// 枠を見ながら掴んで移動
 				KESCMInvalidateMarksDoc();
 			}
 		}
-		// (Shift/Ctrl/Alt を押していて arm 未済 → 何もしない。これらは peek 系専用に予約)
+		// (その他の組み合わせ(Ctrl 単独ミドル等)や、Shift 系で arm 未済 → 何もしない=素のミドルを邪魔しない。
+		//  2026-07-04: Alt＋ミドルは「枠を通常表示」を撤去した後、「地図ナビゲーション(旧 Ctrl 単独)」に再割当。
+		//  Ctrl 単独ミドルは未割当)
 	}
 	else // kMButtonUp
 	{
@@ -661,16 +650,8 @@ IEventDispatcher::EventTypeList KESCMPeekWatcher::WatchEvent(IEvent* e)
 		}
 		else if (sSingleShowing)
 		{
-			// ミドルのみの押下を離した → 25%表示を解除し、不透明度を基準値(印刷設定に応じた値)へ戻す＋非表示へ。
+			// ミドルのみの押下を離した → 枠表示を解除し、不透明度を基準値(印刷設定に応じた値)へ戻す＋非表示へ。
 			sSingleShowing = kFalse;
-			KESCMDrawEventHandler::sMarksVisible = kFalse;
-			KESCMDrawEventHandler::sMarkScreenOpacity = KESCMBaseScreenOpacity();
-			KESCMInvalidateMarksDoc();
-		}
-		else if (sFaintShowing)
-		{
-			// Alt＋ミドルを離した → 通常(不透明)表示を解除し、不透明度を基準値へ戻す＋非表示へ。
-			sFaintShowing = kFalse;
 			KESCMDrawEventHandler::sMarksVisible = kFalse;
 			KESCMDrawEventHandler::sMarkScreenOpacity = KESCMBaseScreenOpacity();
 			KESCMInvalidateMarksDoc();

@@ -14,7 +14,7 @@
 #include "CAlert.h"
 #include "PMString.h"
 
-// Split Test(検証用)/ Split Target(90/10)機能用:
+// Split Target(90/10)機能用:
 #include "IDocumentUIUtils.h"		// Utils<IDocumentUIUtils>()->GetActiveDocumentPresentation/GetFrontmostPresentationForDocument
 #include "IDocumentPresentation.h"
 #include "IPanelControlData.h"		// FindWidget(kLayoutSplitterPanelWidgetID)
@@ -55,7 +55,6 @@ private:
 	void DoAbout();
 	void DoAboutScript();
 	void DoUsage();
-	void DoTestSplit();	// 検証用(恒久機能ではない)
 	void DoSplitTarget();	// Target文書をSplit Windowで90/10に分割し、元側を5%ズームにする
 };
 
@@ -78,10 +77,6 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 
 		case kKESCMPopupUsageActionID:
 			this->DoUsage();
-			break;
-
-		case kKESCMPopupTestSplitActionID:
-			this->DoTestSplit();
 			break;
 
 		case kKESCMPopupSplitTargetActionID:
@@ -133,133 +128,6 @@ void KESCMActionComponent::DoUsage()
 		1,							// Set OK button to default
 		CAlert::eInformationIcon	// Information icon
 	);
-}
-
-// DoTestSplit — パネルのフライアウト「Split Test」(検証用、恒久機能ではない)。
-//   目的: レイアウトウィンドウの Split Window(1文書を2ペインに分割する機能)を、C++ SDK から
-//   直接(Windows API のマウスドラッグ模倣なしで)操作できるか検証する。
-//   手がかり: Widgets.fh に `LayoutSplitterPanelWidget : SplitterPanelWidget
-//   (ClassID = kLayoutSplitterPanelWidgetBoss)` とあり、汎用の SplitterPanelWidget のサブクラスである
-//   ことが分かっている。汎用側の実装(LinksUIUtils.cpp)は ISplitterPanelControlData/
-//   ISplitterPanelController を使って絶対ピクセル位置で分割位置を直接セットしている。
-//   本関数はその同じ手順を kLayoutSplitterPanelWidgetID に対して試し、結果(成功/失敗・実際の値)を
-//   アラートで報告する。ドキュメントモデルには一切触れない(UI状態のみ)ので Command 化は不要。
-void KESCMActionComponent::DoTestSplit()
-{
-	IDocumentPresentation* pres = Utils<IDocumentUIUtils>()->GetActiveDocumentPresentation();
-	if (pres == nil)
-	{
-		PMString msg("Split Test: no active document presentation.");
-		msg.SetTranslatable(kFalse);
-		CAlert::InformationAlert(msg);
-		return;
-	}
-
-	// ----- フェーズ0: 上位Facade(ILayoutViewUtils)の確認 -----
-	// kLayoutSplitterPanelWidgetID を自前で探す前に、公式の高レベルAPIが使えないか先に見る
-	// (CLAUDE.md の「Facade優先」原則)。IsSplitLayoutViewShown/GetAllLayoutViews は比率設定こそ
-	// 持たないが、状態確認と両ペインの IControlView* を直接取得できる。
-	{
-		const bool16 inGalleyOrStory = Utils<IGalleyUtils>() ? Utils<IGalleyUtils>()->InGalleyOrStory(pres) : kFalse;
-		const bool16 isSplitShown = Utils<ILayoutViewUtils>()->IsSplitLayoutViewShown(pres);
-
-		K2Vector<IControlView*> layoutViews;
-		IDataBase* db = pres->GetDocumentUIDRef().GetDataBase();
-		Utils<ILayoutViewUtils>()->GetAllLayoutViews(layoutViews, nil, db);
-
-		PMString msg0("Split Test - Phase 0 (ILayoutViewUtils):\n\n");
-		msg0.SetTranslatable(kFalse);
-		msg0.Append("InGalleyOrStory = "); msg0.Append(inGalleyOrStory ? "true" : "false"); msg0.Append("\n");
-		msg0.Append("IsSplitLayoutViewShown = "); msg0.Append(isSplitShown ? "true" : "false"); msg0.Append("\n");
-		msg0.Append("GetAllLayoutViews count = "); msg0.AppendNumber((int32)layoutViews.size()); msg0.Append("\n");
-		for (int32 i = 0; i < (int32)layoutViews.size(); ++i)
-		{
-			IControlView* v = layoutViews[i];
-			msg0.Append("  view["); msg0.AppendNumber(i); msg0.Append("] frame = ");
-			if (v != nil)
-			{
-				const PMRect r = v->GetFrame();
-				msg0.AppendNumber(r.Left()); msg0.Append(", "); msg0.AppendNumber(r.Top());
-				msg0.Append(", "); msg0.AppendNumber(r.Right()); msg0.Append(", "); msg0.AppendNumber(r.Bottom());
-			}
-			else
-				msg0.Append("(nil)");
-			msg0.Append("\n");
-		}
-		CAlert::InformationAlert(msg0);
-	}
-
-	// ----- フェーズ1: 低レベル(kLayoutSplitterPanelWidgetID / ISplitterPanelControlData)の確認 -----
-	InterfacePtr<IPanelControlData> panelData(pres, UseDefaultIID());
-	if (panelData == nil)
-	{
-		PMString msg("Split Test: no IPanelControlData on the active presentation.");
-		msg.SetTranslatable(kFalse);
-		CAlert::InformationAlert(msg);
-		return;
-	}
-
-	IControlView* splitterView = panelData->FindWidget(kLayoutSplitterPanelWidgetID);
-	if (splitterView == nil)
-	{
-		PMString msg("Split Test: kLayoutSplitterPanelWidgetID not found "
-			"(Split Window is probably not active on the front document).");
-		msg.SetTranslatable(kFalse);
-		CAlert::InformationAlert(msg);
-		return;
-	}
-
-	InterfacePtr<ISplitterPanelControlData> splitterData(splitterView, UseDefaultIID());
-	if (splitterData == nil)
-	{
-		PMString msg("Split Test: kLayoutSplitterPanelWidgetID was found, "
-			"but it does NOT implement ISplitterPanelControlData.");
-		msg.SetTranslatable(kFalse);
-		CAlert::InformationAlert(msg);
-		return;
-	}
-
-	InterfacePtr<ISplitterPanelController> splitterCtrl(splitterData, UseDefaultIID());
-	if (splitterCtrl == nil)
-	{
-		PMString msg("Split Test: ISplitterPanelControlData OK, "
-			"but ISplitterPanelController query failed.");
-		msg.SetTranslatable(kFalse);
-		CAlert::InformationAlert(msg);
-		return;
-	}
-
-	// ----- 現在の状態を読む(セット前) -----
-	const bool16 vertical = splitterData->IsVerticalSplitter();
-	const int32  edgeBefore = splitterData->GetSplitterEdge();
-	const double percentBefore = splitterData->GetSplitterPercent();
-	const PMRect frame = splitterView->GetFrame();
-	const PMReal totalExtent = vertical ? frame.Width() : frame.Height();	// vertical=左右分割と仮定(要検証)
-
-	// ----- 10% 地点へセットしてみる -----
-	const int32 target = ::ToInt32(totalExtent * PMReal(0.10));
-	splitterCtrl->SetSplitterEdge(target);
-	splitterCtrl->SyncPanelsToSplitter(kTrue, kFalse);
-
-	// ----- セット後の状態を読み直す -----
-	const int32  edgeAfter = splitterData->GetSplitterEdge();
-	const double percentAfter = splitterData->GetSplitterPercent();
-	const PMRect frameAfter = splitterView->GetFrame();
-
-	PMString msg("Split Test result:\n\n");
-	msg.SetTranslatable(kFalse);
-	msg.Append("IsVerticalSplitter() = "); msg.Append(vertical ? "true" : "false"); msg.Append("\n");
-	msg.Append("frame(before) = "); msg.AppendNumber(frame.Left()); msg.Append(", "); msg.AppendNumber(frame.Top());
-	msg.Append(", "); msg.AppendNumber(frame.Right()); msg.Append(", "); msg.AppendNumber(frame.Bottom()); msg.Append("\n");
-	msg.Append("totalExtent used for 10% calc = "); msg.AppendNumber(totalExtent); msg.Append("\n\n");
-	msg.Append("edge  before -> target -> after : ");
-	msg.AppendNumber(edgeBefore); msg.Append(" -> "); msg.AppendNumber(target); msg.Append(" -> "); msg.AppendNumber(edgeAfter); msg.Append("\n");
-	msg.Append("percent before -> after : ");
-	msg.AppendNumber(PMReal(percentBefore), 4); msg.Append(" -> "); msg.AppendNumber(PMReal(percentAfter), 4); msg.Append("\n");
-	msg.Append("frame(after) = "); msg.AppendNumber(frameAfter.Left()); msg.Append(", "); msg.AppendNumber(frameAfter.Top());
-	msg.Append(", "); msg.AppendNumber(frameAfter.Right()); msg.Append(", "); msg.AppendNumber(frameAfter.Bottom());
-
-	CAlert::InformationAlert(msg);
 }
 
 // DoSplitTarget — パネルのフライアウト「Split Target (90/10)」。

@@ -244,10 +244,10 @@ void KESCMDoClearMarks(IDataBase* db)
 		KESCMInvalidateDB(db);
 }
 
-void KESCMDoSetPrintMarks(bool16 printFlag, bool16 faintFlag, IDataBase* db)
+void KESCMDoSetPrintMarks(bool16 printFlag, bool16 opacity25Flag, IDataBase* db)
 {
 	KESCMDrawEventHandler::sPrintMarks = printFlag;
-	KESCMDrawEventHandler::sPrintFaint = faintFlag;
+	KESCMDrawEventHandler::sMarkOpacity25 = opacity25Flag;
 	// 常時表示(画面)の不透明度を印刷設定に合わせて即反映。
 	KESCMDrawEventHandler::sMarkScreenOpacity = KESCMBaseScreenOpacity();
 
@@ -265,7 +265,7 @@ bool16 KESCMGetPrintMarks()
 	return KESCMDrawEventHandler::sPrintMarks;
 }
 
-bool16 KESCMGetPrintFaint()
+bool16 KESCMGetMarkOpacity25()
 {
-	return KESCMDrawEventHandler::sPrintFaint;
+	return KESCMDrawEventHandler::sMarkOpacity25;
 }

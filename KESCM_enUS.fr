@@ -33,12 +33,10 @@ resource StringTable (kSDKDefStringsResourceID + index_enUS)
         	 // ----- Menu strings
                 kKESCMCompanyKey,					"Kohaku Plug-Ins",	// メニュー束ね名(表示)。会社名 kKESCMCompanyValue とは別概念で固定
                 kKESCMAboutMenuKey,					kKESCMPluginName "[US]...",
-                kKESCMPluginsMenuKey,				kKESCMPluginName "[US]",
-	
+
                 kSDKDefAboutThisPlugInMenuKey,			kSDKDefAboutThisPlugInMenuValue_enUS,
                 kKESCMAboutScriptMenuKey,			"About Scripting...",
                 kKESCMUsageMenuKey,				"How to Use...",
-                kKESCMTestSplitMenuKey,			"Split Test (debug)...",
                 kKESCMSplitTargetMenuKey,			"Split Target (90/10)",
 
                 // ----- Command strings
@@ -51,9 +49,9 @@ resource StringTable (kSDKDefStringsResourceID + index_enUS)
                 kKESCMSourceLabelKey,			"Source:",
                 kKESCMStartButtonKey,			"Start",
                 kKESCMPrintCheckKey,			"Print comparison marks",
-                kKESCMOpacity25Key,				"25%",
-                kKESCMOpacityNormalKey,			"Normal",
-                kKESCMHintKey,					"Middle button =\n  25% marks (while held)\nMiddle + Shift =\n  original (while held)\nMiddle + Alt =\n  marks (while held)\nMiddle + Ctrl =\n  scroll other windows to here\n  (always available, even before Start)\nMiddle + Shift+Ctrl =\n  refresh spread compare\nMiddle + Shift+Alt =\n  original 50% (while held)\nMiddle + Shift+Ctrl+Alt =\n  color info (while held)\n\nShift/Ctrl/Alt can be released\n\nEven with comparison-mark printing ON, File > Export to PDF won't include them. To make a PDF, use Print and choose a PDF printer.",
+                kKESCMOpacity25Key,				"Marks opacity 25%",
+                kKESCMOpacity75Key,				"Marks opacity 75%",
+                kKESCMHintKey,					"Middle button =\n  marks (while held;\n  opacity 25%/75% from panel)\nMiddle + Shift =\n  original (while held)\nMiddle + Alt =\n  scroll other windows to here\n  (always available, even before Start)\nMiddle + Shift+Ctrl =\n  refresh spread compare\nMiddle + Shift+Alt =\n  original 50% (while held)\nMiddle + Shift+Ctrl+Alt =\n  color info (while held)\n\nShift/Ctrl/Alt can be released\n\nEven with comparison-mark printing ON, File > Export to PDF won't include them. To make a PDF, use Print and choose a PDF printer.",
 
 		// ----- Misc strings
                 kKESCMAboutBoxStringKey,			kKESCMPluginName ", version " kKESCMVersion "\n\n"

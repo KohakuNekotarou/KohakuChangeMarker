@@ -62,7 +62,7 @@ IDataBase* KESCMDrawEventHandler::sDB = nil;
 bool16 KESCMDrawEventHandler::sMarksVisible = kFalse;	// 既定=非表示。枠等はシングルミドル押下中だけ表示(master トグル)
 PMReal KESCMDrawEventHandler::sMarkScreenOpacity = 1.0;	// 既定=不透明。ミドルのみ=25%/Alt=不透明/印刷25%中の常時表示=25%
 bool16 KESCMDrawEventHandler::sPrintMarks = kFalse;	// 既定=画面のみ(印刷/PDF には出さない)
-bool16 KESCMDrawEventHandler::sPrintFaint = kTrue;	// 既定=印刷時は約25%(パネルの既定ラジオ「25%」と一致)。印刷OFF中は未参照
+bool16 KESCMDrawEventHandler::sMarkOpacity25 = kTrue;	// 既定=25%(パネルの既定ラジオと一致)。kFalse=75%
 bool16 KESCMDrawEventHandler::sRasterizing = kFalse;	// 自前ラスタ化中だけ kTrue(自己参照防止)
 std::map<UID, KESCMOrigImage*> KESCMDrawEventHandler::sOrigImages;
 IDataBase* KESCMDrawEventHandler::sOrigDB = nil;
@@ -748,8 +748,8 @@ static void KESCMDrawRingForPrint(IGraphicsPort* gPort, KESCMOverlayEntry* e)
 		}
 	}
 
-	// リングの不透明度。通常=画面と同じ(kKESCMRingAlpha/255=1.0 不透明) / faint=約25%(kKESCMFaintOpacity)。
-	const PMReal op = KESCMDrawEventHandler::sPrintFaint ? kKESCMFaintOpacity : (kKESCMRingAlpha / PMReal(255.0));
+	// リングの不透明度=パネルで選択中の 25%/75%(画面表示と共通の SelectedMarkOpacity)。
+	const PMReal op = KESCMDrawEventHandler::SelectedMarkOpacity();
 	// 既知の制限: 透明効果のあるページでは、ここで描く枠/リングがフラットナにラスタ化され、CMYK 変換で
 	// 色がやや沈む(透明画像のあるページだけ枠が濃く見える)。色を CMYK 指定にしても解消せず(=色値ではなく
 	// 透明機能で描いていることが原因)、不透明ベクター化は25%の「透け」を失うため見送り。現状は元の RGB 指定のまま。
@@ -815,8 +815,18 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	// 印刷 or オーバープリントプレビューで「枠の印刷」が OFF のときは描かない(枠は基本非印刷)。
 	if ((printing || overprintPreview) && !sPrintMarks)
 		return kFalse;
-	// マークも 旧版べた載せ も トースト も無ければ何もしない。
-	if (sEntries.empty() && !(sShowOriginal && !sOrigImages.empty()) && !sToastVisible)
+	// この描画で何を描き得るかを状態フラグだけで先に確定し、全部 No なら即 return する。
+	//   ・マーク(リング＋枠): 印刷ON か ミドル押下中の表示ON で、かつエントリがある時だけ
+	//   ・旧版べた載せ / トースト: 画面描画のみ(印刷には出さない)
+	// ★以前は「sEntries が非空」なだけで下の前処理(スプレッド取得・生存スイープ・ズーム行列・
+	//   パノラマ探索・マウス位置・可視域変換)を全部実行し、最後の分岐で「マーク非表示」と判定して
+	//   捨てていた。Start 済み・マーク非表示(既定=ミドル押下中だけ表示)の待機状態が最頻なので、
+	//   ここで落として通常の編集・スクロール中の描画コストをほぼゼロにする。生存スイープも「実際に
+	//   何か描く」時だけの保険になる(クローズ後始末の本線は KESCMDocResponder で変わらず)。
+	const bool16 wantMarks = (sPrintMarks || sMarksVisible) && !sEntries.empty();
+	const bool16 wantOrig  = !printing && sShowOriginal && !sOrigImages.empty();
+	const bool16 wantToast = !printing && sToastVisible;
+	if (!wantMarks && !wantOrig && !wantToast)
 		return kFalse;
 
 	GraphicsData* gd = ded->gd;
@@ -853,26 +863,30 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	// 画面スケール(ズーム)を一度だけ取得。画面描画時のみ非nil。
 	PMReal sxr = 0.0;
 	IControlView* zview = gd->GetView();
-	InterfacePtr<IPanorama> pano;	// マウス位置が取れない時のフォールバック(可視領域中心)に使う。画面描画時のみ非nil
 	PMPoint centerPb(0.0, 0.0);		// トーストの基準位置(pasteboard 座標)。原則マウスカーソル位置、取得不可時は可視領域中心
 	PMRect  boundsPb;				// 可視領域(pasteboard 座標)。トーストがはみ出さないようクランプする範囲
-	bool16  hasCenter = kFalse;		// 上記が有効か(panorama を辿れた=画面描画時のみ)
+	bool16  hasCenter = kFalse;		// 上記が有効か(トーストをこの文書に描く時だけ計算する)
 	if (zview != nil)
 	{
 		PMMatrix toWin = zview->GetContentToWindowMatrix();	// content→window(画面px), 現ズーム
 		sxr = toWin.GetXScale(); if (sxr < 0) sxr = -sxr;
-		pano.reset(KESCMQueryPanorama(zview));	// 自身→親(LayoutWidget)で IPanorama を辿る(attach=addref済みを所有)
-		if (pano != nil)
+		// マウス位置・可視域はトーストの配置専用の仕事(パノラマ探索・グローバルマウス取得・座標変換)。
+		// マークのリング描画に要るのは sxr だけなので、トーストをこの文書に実際に描く時だけ計算する。
+		if (wantToast && db == sToastDB)
 		{
-			// マウスカーソル位置(pasteboard 座標)をトーストの基準位置にする。取得できなければ従来どおり可視領域中心。
-			PMReal mx = 0.0, my = 0.0;
-			centerPb = KESCMQueryMouseContentPoint(zview, mx, my) ? PMPoint(mx, my)
-			                                                       : pano->GetContentLocationAtFrameCenter();
-			// レイアウトウィンドウの可視範囲(窓座標→pasteboard 座標)。カーソルが下端/左端付近にあっても
-			// トーストがウィンドウの外へはみ出さないよう、KESCMDrawToast 側でこの矩形にクランプする。
-			boundsPb = zview->GetBBox();
-			zview->WindowToContentTransform(&boundsPb);
-			hasCenter = kTrue;
+			InterfacePtr<IPanorama> pano(KESCMQueryPanorama(zview));	// 自身→親(LayoutWidget)で IPanorama を辿る
+			if (pano != nil)
+			{
+				// マウスカーソル位置(pasteboard 座標)をトーストの基準位置にする。取得できなければ従来どおり可視領域中心。
+				PMReal mx = 0.0, my = 0.0;
+				centerPb = KESCMQueryMouseContentPoint(zview, mx, my) ? PMPoint(mx, my)
+				                                                       : pano->GetContentLocationAtFrameCenter();
+				// レイアウトウィンドウの可視範囲(窓座標→pasteboard 座標)。カーソルが下端/左端付近にあっても
+				// トーストがウィンドウの外へはみ出さないよう、KESCMDrawToast 側でこの矩形にクランプする。
+				boundsPb = zview->GetBBox();
+				zview->WindowToContentTransform(&boundsPb);
+				hasCenter = kTrue;
+			}
 		}
 	}
 
@@ -889,7 +903,7 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	// 枠/旧版もスプレッド単位側で描く。トーストは一時メッセージなので印刷/PDF には出さない。
 	if (eventID == ClassID(kAfterLastSpreadDrawMessage))
 	{
-		if (!printing && sToastVisible && db == sToastDB && hasCenter && sxr > 0)
+		if (wantToast && db == sToastDB && hasCenter && sxr > 0)
 			KESCMDrawToast(gPort, sxr, centerPb, &boundsPb);	// pasteboard 座標の中心へ直接(可視範囲でクランプ)
 		return kFalse;
 	}
@@ -898,7 +912,7 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	// だけ(そのページが sOrigImages にある)。覗き中のスプレッドだけ旧版をきれいに見せたいので、マーク
 	// (枠)を描かない。それ以外のスプレッドは通常どおりマークを描く。
 	bool16 peekingThisSpread = kFalse;
-	if (!printing && sShowOriginal && !sOrigImages.empty() && sOrigDB != nil && db == sOrigDB)
+	if (wantOrig && sOrigDB != nil && db == sOrigDB)
 	{
 		const int32 npChk = spread->GetNumPages();
 		for (int32 i = 0; i < npChk; ++i)
@@ -939,7 +953,7 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	// マウス位置(centerPb=pasteboard座標)・クランプ範囲(boundsPb)をこのスプレッドのオフセット分だけ引いて
 	// spread 座標へ変換する(平行移動のみなのでどちらも同じオフセットでよい)。
 	// per-spread は可視スプレッドごとに発火するので、箱が複数スプレッドにまたがっても各帯で前面に出る。
-	if (!printing && sToastVisible && db == sToastDB && hasCenter && sxr > 0)
+	if (wantToast && db == sToastDB && hasCenter && sxr > 0)
 	{
 		PMPoint off = KESCMSpreadOffsetFromPasteboard(db, spread);
 		PMPoint cS(centerPb.X() - off.X(), centerPb.Y() - off.Y());
@@ -952,13 +966,13 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	// master 表示トグル(sMarksVisible)が OFF の間、またはこのスプレッドを覗き中(旧版べた載せ中)は描かない
 	// (データは保持=再表示で即復帰)。覗いていない他のスプレッドのマークは通常どおり残る。
 	// ★印刷マーク(sPrintMarks)が ON の間は、ミドル押下に関係なく常に描く(画面=WYSIWYG / 印刷・PDF にも出る)。
-	if (peekingThisSpread || !(sPrintMarks || sMarksVisible) || sEntries.empty() || sDB == nil || db != sDB)
+	if (peekingThisSpread || !wantMarks || sDB == nil || db != sDB)
 		return kFalse;
 
 	// 画面マークの実効不透明度。sMarkScreenOpacity は常に実効値を保持する(下の各ソースが設定):
-	//   ・既定/印刷通常 = 1.0(不透明)  ・印刷25%選択中(常時表示) = 0.3
-	//   ・ミドルのみ押下中 = 0.25        ・Alt 押下中 = 1.0(不透明=印刷25%中でも不透明で確認できる)
-	// 離すと印刷設定に応じた基準値(KESCMBaseScreenOpacity)へ戻る。printing 経路はここを使わない。
+	//   ・ミドル押下中 = 選択不透明度(パネルの 25%/75%)
+	//   ・押していない時 = 基準値 KESCMBaseScreenOpacity()(印刷ONなら選択不透明度 / 印刷OFFは1.0)
+	// 離すと基準値へ戻る。printing 経路はここを使わず、KESCMDrawRingForPrint が SelectedMarkOpacity を直接使う。
 	const PMReal screenMarkOp = sMarkScreenOpacity;
 
 	// このスプレッドの各ページについて、エントリがあれば描く。
