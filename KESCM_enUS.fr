@@ -51,7 +51,7 @@ resource StringTable (kSDKDefStringsResourceID + index_enUS)
                 kKESCMPrintCheckKey,			"Print comparison marks",
                 kKESCMOpacity25Key,				"25%",
                 kKESCMOpacityNormalKey,			"Normal",
-                kKESCMHintKey,					"Middle button =\n  25% marks (while held)\nMiddle + Shift =\n  original (while held)\nMiddle + Alt =\n  original 50% (while held)\nMiddle + Ctrl =\n  refresh spread compare\nMiddle + Shift+Alt =\n  marks (while held)\nMiddle + Shift+Ctrl+Alt =\n  color info (while held)\n\nShift/Ctrl/Alt can be released\n\nEven with comparison-mark printing ON, File > Export to PDF won't include them. To make a PDF, use Print and choose a PDF printer.",
+                kKESCMHintKey,					"Middle button =\n  25% marks (while held)\nMiddle + Shift =\n  original (while held)\nMiddle + Alt =\n  marks (while held)\nMiddle + Ctrl =\n  refresh spread compare\nMiddle + Shift+Alt =\n  original 50% (while held)\nMiddle + Shift+Ctrl+Alt =\n  color info (while held)\n\nShift/Ctrl/Alt can be released\n\nEven with comparison-mark printing ON, File > Export to PDF won't include them. To make a PDF, use Print and choose a PDF printer.",
 
 		// ----- Misc strings
                 kKESCMAboutBoxStringKey,			kKESCMPluginName ", version " kKESCMVersion "\n\n"
@@ -61,15 +61,7 @@ resource StringTable (kSDKDefStringsResourceID + index_enUS)
                 	"DISCLAIMER: Provided as-is. We cannot take responsibility for any problems that may arise. Use at your own risk.\n\n"
                 	"Source: " kKESCMRepoURL,
 
-                kKESCMScriptHelpStringKey,			"KohakuChangeMarker - Scripting\n\n"
-                	"  Document.kescmToast(message)\n"
-                	"    Shows a brief message at the center of the active\n"
-                	"    document's layout window, auto-dismissing after\n"
-                	"    about 2.5 seconds. Screen only; nothing is saved\n"
-                	"    into the document. Returns a status string.\n\n"
-                	"Examples:\n"
-                	"  app.activeDocument.kescmToast('Hello');\n"
-                	"  app.documents[0].kescmToast('Done!');",
+                kKESCMScriptHelpStringKey,			"No scripts are currently available.",
 
 
         }

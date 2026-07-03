@@ -87,8 +87,10 @@ void		KESCMHandleDocsClosed();
 void		KESCMRefreshPanel();
 
 // パネルのステータス行を更新する(KESCMPanelObserver::SetStatus と同じ処理を自由関数として公開)。
-// パネルが隠れていてもセッション状態は覚えておき、再表示時に復元する。実体は KESCMPanelObserver.cpp。
-void		KESCMSetStatus(const PMString& s);
+// パネルが隠れていてもセッション状態は覚えておき、再表示時に復元する。forceRedrawNow=kTrue なら、
+// この後にブロッキング処理が続く場合でも次のイベントループを待たずに今すぐ描画する
+// (KESCMDoMarkChangesDoc の比較ループ前の busyMsg 表示に使う)。実体は KESCMPanelObserver.cpp。
+void		KESCMSetStatus(const PMString& s, bool16 forceRedrawNow = kFalse);
 
 // パネルのイラスト(ON/OFF アイコン)をクリックしたときに呼ぶ。「このプラグインについて」に載せている
 // 配布元URL(kKESCMRepoURL, KESCMID.h)を既定のブラウザで開く。実体は KESCMActionComponent.cpp。

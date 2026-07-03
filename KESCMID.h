@@ -49,7 +49,7 @@
 DECLARE_PMID(kPlugInIDSpace, kKESCMPluginID, kKESCMPrefix + 0)
 
 // ClassIDs:
-DECLARE_PMID(kClassIDSpace, kKESCMScriptProviderBoss, kKESCMPrefix + 3)
+// kClassIDSpace +3 は現在空き(旧 kKESCMScriptProviderBoss; スクリプトAPI(kescmToast)は撤去)
 DECLARE_PMID(kClassIDSpace, kKESCMDrawEventServiceBoss, kKESCMPrefix + 4)
 DECLARE_PMID(kClassIDSpace, kKESCMPeekWatcherBoss, kKESCMPrefix + 5)	// IEventWatcher: ミドルボタン peek(kMButtonDn/Up をスヌープ)
 DECLARE_PMID(kClassIDSpace, kKESCMPeekStartupBoss, kKESCMPrefix + 6)	// IStartupShutdown: アプリ起動時に peek ウォッチャを開始
@@ -109,7 +109,7 @@ DECLARE_PMID(kClassIDSpace, kKESCMIconWidgetBoss, kKESCMPrefix + 11)	// kRollOve
 
 
 // ImplementationIDs:
-DECLARE_PMID(kImplementationIDSpace, kKESCMScriptProviderImpl, kKESCMPrefix + 0)
+// kImplementationIDSpace +0 は現在空き(旧 kKESCMScriptProviderImpl; スクリプトAPI(kescmToast)は撤去)
 DECLARE_PMID(kImplementationIDSpace, kKESCMDrawEventSrvcImpl, kKESCMPrefix + 1)
 DECLARE_PMID(kImplementationIDSpace, kKESCMDrawEventHandlerImpl, kKESCMPrefix + 2)
 DECLARE_PMID(kImplementationIDSpace, kKESCMPeekWatcherImpl, kKESCMPrefix + 3)	// IEventWatcher 実装(ミドルボタン peek)
@@ -222,7 +222,7 @@ DECLARE_PMID(kScriptInfoIDSpace, kKESCMMarkChangesDocMethodScriptElement, kKESCM
 // kScriptInfoIDSpace +8 は現在空き(kescmShowOriginalUnderMouse 廃止; ミドルボタン peek を使う)
 DECLARE_PMID(kScriptInfoIDSpace, kKESCMArmMousePeekMethodScriptElement, kKESCMPrefix + 9)
 DECLARE_PMID(kScriptInfoIDSpace, kKESCMDisarmMousePeekMethodScriptElement, kKESCMPrefix + 10)
-DECLARE_PMID(kScriptInfoIDSpace, kKESCMToastMethodScriptElement, kKESCMPrefix + 11)
+// kScriptInfoIDSpace +11 は現在空き(旧 kKESCMToastMethodScriptElement; kescmToast はスクリプトAPIごと撤去)
 DECLARE_PMID(kScriptInfoIDSpace, kKESCMSetPrintMarksMethodScriptElement, kKESCMPrefix + 12)
 
 // "About Plug-ins" sub-menu:
@@ -244,7 +244,7 @@ DECLARE_PMID(kScriptInfoIDSpace, kKESCMSetPrintMarksMethodScriptElement, kKESCMP
 #define kKESCMAboutBoxStringKey	kKESCMStringPrefix "kKESCMAboutBoxStringKey"
 #define kKESCMRepoURL			"https://github.com/KohakuNekotarou/KohakuExtendScriptChangeMarker"	// 配布元URL。「このプラグインについて」本文とパネルのイラストクリックの飛び先で共通
 #define kKESCMAboutScriptMenuKey	kKESCMStringPrefix "kKESCMAboutScriptMenuKey"	// パネルのフライアウト「スクリプトについて」のメニュー名
-#define kKESCMScriptHelpStringKey	kKESCMStringPrefix "kKESCMScriptHelpStringKey"	// その本文(kescmToast の使い方)
+#define kKESCMScriptHelpStringKey	kKESCMStringPrefix "kKESCMScriptHelpStringKey"	// その本文(スクリプトAPIは撤去済み。現在は「利用可能なスクリプトはありません」の旨を表示)
 #define kKESCMUsageMenuKey		kKESCMStringPrefix "kKESCMUsageMenuKey"	// パネルのフライアウト「使い方」のメニュー名(本文は kKESCMHintKey を再利用)
 #define kKESCMTargetMenuPath kKESCMPluginsMenuPath
 

@@ -60,7 +60,7 @@ CREATE_PMINTERFACE(KESCMDrawEventHandler, kKESCMDrawEventHandlerImpl)
 std::map<UID, KESCMOverlayEntry*> KESCMDrawEventHandler::sEntries;
 IDataBase* KESCMDrawEventHandler::sDB = nil;
 bool16 KESCMDrawEventHandler::sMarksVisible = kFalse;	// 既定=非表示。枠等はシングルミドル押下中だけ表示(master トグル)
-PMReal KESCMDrawEventHandler::sMarkScreenOpacity = 1.0;	// 既定=不透明。ミドルのみ=25%/Shift+Alt=不透明/印刷25%中の常時表示=25%
+PMReal KESCMDrawEventHandler::sMarkScreenOpacity = 1.0;	// 既定=不透明。ミドルのみ=25%/Alt=不透明/印刷25%中の常時表示=25%
 bool16 KESCMDrawEventHandler::sPrintMarks = kFalse;	// 既定=画面のみ(印刷/PDF には出さない)
 bool16 KESCMDrawEventHandler::sPrintFaint = kTrue;	// 既定=印刷時は約25%(パネルの既定ラジオ「25%」と一致)。印刷OFF中は未参照
 bool16 KESCMDrawEventHandler::sRasterizing = kFalse;	// 自前ラスタ化中だけ kTrue(自己参照防止)
@@ -913,7 +913,7 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 
 	// 画面マークの実効不透明度。sMarkScreenOpacity は常に実効値を保持する(下の各ソースが設定):
 	//   ・既定/印刷通常 = 1.0(不透明)  ・印刷25%選択中(常時表示) = 0.3
-	//   ・ミドルのみ押下中 = 0.25        ・Shift+Alt 押下中 = 1.0(不透明=印刷25%中でも不透明で確認できる)
+	//   ・ミドルのみ押下中 = 0.25        ・Alt 押下中 = 1.0(不透明=印刷25%中でも不透明で確認できる)
 	// 離すと印刷設定に応じた基準値(KESCMBaseScreenOpacity)へ戻る。printing 経路はここを使わない。
 	const PMReal screenMarkOp = sMarkScreenOpacity;
 
@@ -980,7 +980,7 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 				KESCMDrawRingForPrint(gPort, e);
 			else
 			{
-				// 画面 blit は image() の画素 alpha に加えてポート opacity も honor する。薄表示(Shift+Alt+ミドル)
+				// 画面 blit は image() の画素 alpha に加えてポート opacity も honor する。薄表示(ミドルのみ押下)
 				// 中や 25%設定中は screenMarkOp(≒0.25)、通常は 1.0。AutoGSave 内なので閉じれば元へ戻る。
 				gPort->setopacity(screenMarkOp, kFalse);
 				gPort->image(&e->rec, PMMatrix(), 0);			// 自前レコード(buf を指す)を blit

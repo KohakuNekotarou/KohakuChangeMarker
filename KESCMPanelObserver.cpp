@@ -71,7 +71,7 @@ CREATE_PMINTERFACE(KESCMPanelObserver, kKESCMPanelObserverImpl)
 //----------------------------------------------------------------------------------------
 // 今セッションで最後に表示したステータス文字列。
 // StaticMultiLineTextWidget の内容はワークスペースに永続化されるため、InDesign を再起動して
-// アイコン状態のパネルを開くと前回セッションの文字列(例: "kescm: pages compared=22")が残って
+// アイコン状態のパネルを開くと前回セッションの文字列(例: "marks start / pages compared=22")が残って
 // しまう。そこで「今セッションで表示したメッセージ」だけをここに覚えておき、AutoAttach で必ず
 // 上書きする。プラグインを一度も操作していなければ空文字なので何も表示されない。
 //----------------------------------------------------------------------------------------
@@ -478,7 +478,7 @@ void KESCMRefreshPanel()
 //   クローズレスポンダ(KESCMHandleDocsClosed)からも Stop 相当のメッセージを出せるようにする。
 //   パネルが隠れていてもセッション状態(gSessionStatus)は覚えておき、再表示時に復元する。
 //========================================================================================
-void KESCMSetStatus(const PMString& s)
+void KESCMSetStatus(const PMString& s, bool16 forceRedrawNow)
 {
 	gSessionStatus = s;	// パネルを隠して再表示したときに復元できるよう、今セッションの表示内容を覚えておく
 
@@ -500,6 +500,11 @@ void KESCMSetStatus(const PMString& s)
 	InterfacePtr<ITextControlData> tcd(cv, UseDefaultIID());
 	if (tcd != nil)
 		tcd->SetString(s);
+
+	// この直後にブロッキング処理(比較ループ等)が続く場合、SetString の invalidate は次の
+	// イベントループまで反映されない。トーストの busyMsg と同じく、今すぐ同期描画させる。
+	if (forceRedrawNow)
+		panel->ForceRedraw(nil, kTrue);
 }
 
 // KESCMPanelObserver.cpp 終わり。

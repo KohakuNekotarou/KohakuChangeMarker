@@ -17,7 +17,6 @@
 #include "ILayoutUIUtils.h"
 #include "IEventUtils.h"
 #include "IApplication.h"
-#include "IActiveContext.h"
 #include "IDocumentList.h"
 #include "ISpread.h"
 #include "ISpreadList.h"
@@ -69,20 +68,20 @@ static IDataBase* sPeekTargetDB = nil;	// 表示中(新)ドキュメント。使
 static IDataBase* sPeekSourceDB = nil;	// peek 中に重ねる旧ドキュメント。
 static bool16     sPeekArmed    = kFalse;
 
-// Shift＋ミドル=旧版を不透明(100%)で / Ctrl(=Win, IEvent::CmdKeyDown)＋ミドル=旧版を 50% で重ねて peek。
+// Shift＋ミドル=旧版を不透明(100%)で / Shift+Alt＋ミドル=旧版を 50% で重ねて peek。
 // 押下中だけ表示し、ミドルを離すと消す(修飾キーは離してもよい)。判定はミドル押下時に1回見るだけ。
-static const PMReal kKESCMPeekSemiOpacity = 0.5;	// Ctrl＋ミドル時の旧版の不透明度(0..1)
-static bool16 sPeekActive        = kFalse;	// Shift/Ctrl+ミドルを押し込み中(=覗き表示中)か
+static const PMReal kKESCMPeekSemiOpacity = 0.5;	// Shift+Alt＋ミドル時の旧版の不透明度(0..1)
+static bool16 sPeekActive        = kFalse;	// Shift/Shift+Alt+ミドルを押し込み中(=覗き表示中)か
 static bool16 sSingleShowing     = kFalse;	// 修飾なしミドル押下中(=全マークを約25%で一時表示中)か。離すと隠す＋基準opacityへ
-static bool16 sFaintShowing      = kFalse;	// Shift+Alt+ミドル押下中(=全マークを通常=不透明で一時表示中)か。離すと隠す＋基準opacityへ
+static bool16 sFaintShowing      = kFalse;	// Alt+ミドル押下中(=全マークを通常=不透明で一時表示中)か。離すと隠す＋基準opacityへ
 static bool16 sColorHoldShowing  = kFalse;	// Shift＋Ctrl＋Alt＋ミドル押下中(=色サンプルのトースト表示中)か。離すと消す
 // ミドル押下中だけハンドツール(掴んで移動)に一時切替。離すと元のツールへ戻す。
 static ITool*  sSavedTool  = nil;	// 切替前のツール(ref を保持。Restore で Release)
 static bool16  sHandActive = kFalse;	// ハンドツールに一時切替中か
 
-// 画面マークの「基準」不透明度(=ミドル/Shift+Alt のどちらも押していない常時表示時の値)。
+// 画面マークの「基準」不透明度(=ミドル/Alt のどちらも押していない常時表示時の値)。
 //   印刷マークON＋25%(faint)選択中は 0.25(画面も印刷と同じ薄さ)、それ以外は 1.0(不透明)。
-//   ミドル/Shift+Alt を離したら sMarkScreenOpacity をこの値へ戻す。
+//   ミドル/Alt を離したら sMarkScreenOpacity をこの値へ戻す。
 PMReal KESCMBaseScreenOpacity()
 {
 	return (KESCMDrawEventHandler::sPrintMarks && KESCMDrawEventHandler::sPrintFaint)
@@ -432,11 +431,25 @@ IEventDispatcher::EventTypeList KESCMPeekWatcher::WatchEvent(IEvent* e)
 				KESCMShowHoldToast(sPeekTargetDB, colorMsg);
 			}
 		}
-		else if (e->ShiftKeyDown() && e->OptionAltKeyDown() && !e->CmdKeyDown())
+		else if (sPeekArmed && e->ShiftKeyDown() && e->OptionAltKeyDown() && !e->CmdKeyDown() && KESCMFrontViewIsOverTarget())
 		{
-			// Shift＋Alt＋ミドル押下: 既存マーク(リング＋変更数)を「通常(不透明)」で表示。peek(旧版べた載せ)とは別物で
+			// Shift＋Alt＋ミドル押下: 旧版べた載せ(peek)を 50% 透明で重ねる(現行ページと半々のゴースト比較)。
+			// ★対象(Target)文書のウィンドウ上でのみ反応(KESCMFrontViewIsOverTarget)。Shift 単独/ Alt 単独の
+			// 分岐より前に置く=吸われない。
+			KESCMBeginPeekHold(kKESCMPeekSemiOpacity);
+		}
+		else if (sPeekArmed && e->ShiftKeyDown() && KESCMFrontViewIsOverTarget())
+		{
+			// Shift＋ミドル押下: マウス下スプレッドの旧版べた載せ(peek)を不透明(100%)で開始。押下中だけ表示。
+			// 判定はこの押下時の修飾キー状態のみ。以後キーを離しても変わらず、ミドルを離すと消える。
+			// ★対象(Target)文書のウィンドウ上でのみ反応(KESCMFrontViewIsOverTarget)。CMYK サンプリングと同じ理由。
+			KESCMBeginPeekHold(PMReal(1.0));
+		}
+		else if (e->OptionAltKeyDown() && !e->ShiftKeyDown() && !e->CmdKeyDown())
+		{
+			// Alt＋ミドル押下: 既存マーク(リング＋変更数)を「通常(不透明)」で表示。peek(旧版べた載せ)とは別物で
 			// arm 不要(見せるだけ)。ハンドツールに切替えて枠を見ながら掴んで移動できる。離すと非表示へ戻す。
-			// マークが無ければ無反応(素のミドルを邪魔しない)。Shift 単独/ Alt 単独の peek 分岐より前に置く=吸われない。
+			// マークが無ければ無反応(素のミドルを邪魔しない)。
 			const bool16 haveContent = !KESCMDrawEventHandler::sEntries.empty();
 			if (haveContent)
 			{
@@ -446,19 +459,6 @@ IEventDispatcher::EventTypeList KESCMPeekWatcher::WatchEvent(IEvent* e)
 				KESCMEnterHandTool();											// 枠を見ながら掴んで移動
 				KESCMInvalidateMarksDoc();
 			}
-		}
-		else if (sPeekArmed && e->ShiftKeyDown() && KESCMFrontViewIsOverTarget())
-		{
-			// Shift＋ミドル押下: マウス下スプレッドの旧版べた載せ(peek)を不透明(100%)で開始。押下中だけ表示。
-			// 判定はこの押下時の修飾キー状態のみ。以後キーを離しても変わらず、ミドルを離すと消える。
-			// ★対象(Target)文書のウィンドウ上でのみ反応(KESCMFrontViewIsOverTarget)。CMYK サンプリングと同じ理由。
-			KESCMBeginPeekHold(PMReal(1.0));
-		}
-		else if (sPeekArmed && e->OptionAltKeyDown() && KESCMFrontViewIsOverTarget())
-		{
-			// Alt(=Win, OptionAltKeyDown)＋ミドル押下: 同じ peek を 50% 透明で重ねる(現行ページと半々のゴースト比較)。
-			// ★対象(Target)文書のウィンドウ上でのみ反応(KESCMFrontViewIsOverTarget)。
-			KESCMBeginPeekHold(kKESCMPeekSemiOpacity);
 		}
 		else if (sPeekArmed && e->CmdKeyDown() && KESCMFrontViewIsOverTarget())
 		{
@@ -506,7 +506,7 @@ IEventDispatcher::EventTypeList KESCMPeekWatcher::WatchEvent(IEvent* e)
 
 		if (sPeekActive)
 		{
-			// Shift／Alt＋ミドルを離した(ミドル解放) → 旧版を隠す(マークは触らない)。キャッシュは保持(再 peek は即時)。
+			// Shift／Shift+Alt＋ミドルを離した(ミドル解放) → 旧版を隠す(マークは触らない)。キャッシュは保持(再 peek は即時)。
 			sPeekActive = kFalse;
 			if (KESCMDrawEventHandler::sShowOriginal)
 			{
@@ -524,7 +524,7 @@ IEventDispatcher::EventTypeList KESCMPeekWatcher::WatchEvent(IEvent* e)
 		}
 		else if (sFaintShowing)
 		{
-			// Shift＋Alt＋ミドルを離した → 通常(不透明)表示を解除し、不透明度を基準値へ戻す＋非表示へ。
+			// Alt＋ミドルを離した → 通常(不透明)表示を解除し、不透明度を基準値へ戻す＋非表示へ。
 			sFaintShowing = kFalse;
 			KESCMDrawEventHandler::sMarksVisible = kFalse;
 			KESCMDrawEventHandler::sMarkScreenOpacity = KESCMBaseScreenOpacity();
@@ -614,10 +614,6 @@ void KESCMDoArmMousePeek(IDataBase* targetDB, IDataBase* sourceDB)
 	sPeekActive = kFalse;			// 覗き状態を初期化
 	sSingleShowing = kFalse;
 	KESCMDrawEventHandler::sMarksVisible = kFalse;	// 既定(非表示)へ。arm 中も枠は押下中だけ表示
-
-	PMString onMsg("ChangeMarker ON");
-	onMsg.SetTranslatable(kFalse);
-	KESCMShowToast(targetDB, onMsg, kKESCMToastDefaultMs);
 }
 
 void KESCMDoDisarmMousePeek(IDataBase* db)
@@ -639,11 +635,6 @@ void KESCMDoDisarmMousePeek(IDataBase* db)
 	KESCMInvalidateDB(armedTargetDB);
 	if (db != armedTargetDB)
 		KESCMInvalidateDB(db);
-
-	// トーストは実際に見えている(=アクティブな)文書に出すのが目的なので、こちらは db のまま。
-	PMString offMsg("ChangeMarker OFF");
-	offMsg.SetTranslatable(kFalse);
-	KESCMShowToast(db, offMsg, kKESCMToastDefaultMs);
 }
 
 // パネルの状態アクセサ(arm 済み peek =「開始済み」状態を反映する)。
@@ -724,19 +715,6 @@ void KESCMHandleDocsClosed()
 		KESCMInvalidateDB(survivorTargetDB);
 		if (survivorOrigDB != survivorTargetDB)
 			KESCMInvalidateDB(survivorOrigDB);
-
-		// KESCMDoDisarmMousePeek と同じ "ChangeMarker OFF" トーストを、今アクティブ(前面)な文書の
-		// レイアウトウィンドウに出す。ユーザー操作による disarm ではなくクローズ由来の自動 OFF でも、
-		// 見た目のフィードバックを揃えるため。アクティブ文書が取れない(全文書クローズ済み等)場合は何もしない。
-		IActiveContext* activeContext = GetExecutionContextSession() ? GetExecutionContextSession()->GetActiveContext() : nil;
-		IDocument* activeDoc = activeContext ? activeContext->GetContextDocument() : nil;
-		IDataBase* activeDB = activeDoc ? ::GetUIDRef(activeDoc).GetDataBase() : nil;
-		if (activeDB != nil)
-		{
-			PMString offMsg("ChangeMarker OFF");
-			offMsg.SetTranslatable(kFalse);
-			KESCMShowToast(activeDB, offMsg, kKESCMToastDefaultMs);
-		}
 	}
 
 	// トースト。マーク/peek arm とは独立に、無関係な文書へ一時表示中だったケースも安全に消す。

@@ -62,8 +62,6 @@
 #include "ShuksanID.h"
 #include "TextID.h"
 
-#include "KESCMScriptingDefs.h"
-
 
 #ifdef __ODFRC__
 
@@ -102,16 +100,6 @@ resource ExtraPluginInfo(1)
  */
 resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 {{{
-	Class
-	{
-		kKESCMScriptProviderBoss,
-		kBaseScriptProviderBoss,
-		{
-			IID_ISCRIPTPROVIDER,kKESCMScriptProviderImpl,
-			
-		}
-	},
-
 	Class
 	{
 		kKESCMDrawEventServiceBoss,
@@ -339,50 +327,10 @@ resource StringTable (kSDKDefStringsNoTransResourceID + index_enUS)
 		kKESCMInternalPopupMenuNameKey,	kKESCMInternalPopupMenuNameKey,
 	}
 };
-/*
-
-/*  Scripting definition
-	In InDesign/InCopy, scripting resources are defined via ODFRez statements for cross-platform compatibility.
-*/
-resource VersionedScriptElementInfo(2)
-{
-	// Contexts
-	{
-        kFiredrakeScriptVersion, kCoreScriptManagerBoss, kInDesignAllLanguagesFS, k_Wild,
-		kFiredrakeScriptVersion, kCoreScriptManagerBoss, kInCopyAllLanguagesFS, k_Wild,
-		
-	}
-	
-	// Elements
-	{
-			// Page/Document.kescmToast(message) - shows a brief message at the CENTER of the visible area that
-			// auto-dismisses after ~2.5s. Screen only, non-persistent.
-			// ExtendScript:  app.documents[0].kescmToast("ChangeMarker ON");
-			Method
-			{
-				kKESCMToastMethodScriptElement,
-				e_KESCMToast,
-				"kescm toast",
-				"Shows a brief auto-dismissing message at the center of the screen (screen only).",
-				StringType,
-				"Status string",
-				{
-					p_KESCMToastMsg, "message", "The text to show briefly at the center of the screen", StringType, kRequired,
-				}
-			}
-
-			// Connects this plug-in's methods to scripting. kescmToast targets the document's
-			// layout window (centered in the visible area), so it is exposed on the Document object only.
-			Provider
-		{
-			kKESCMScriptProviderBoss,	// provider boss ID
-			{
-				Object{ kDocumentObjectScriptElement },
-				Method{ kKESCMToastMethodScriptElement },
-			}
-		}
-	}
-};
+//========================================================================================
+// (Scripting API removed: KESCM no longer exposes any script methods. See panel flyout
+// "About scripting" for the user-facing note.)
+//========================================================================================
 
 
 //========================================================================================

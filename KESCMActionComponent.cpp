@@ -85,12 +85,12 @@ void KESCMActionComponent::DoAbout()
 	);
 }
 
-/* DoAboutScript — パネルのフライアウト「スクリプトについて」。kescmToast の使い方を表示する。 */
+/* DoAboutScript — パネルのフライアウト「スクリプトについて」。スクリプトAPIは撤去済みなので、その旨を表示する。 */
 void KESCMActionComponent::DoAboutScript()
 {
 	CAlert::ModalAlert
 	(
-		kKESCMScriptHelpStringKey,	// Alert string (kescmToast usage)
+		kKESCMScriptHelpStringKey,	// Alert string ("No scripts are currently available.")
 		kOKString,					// OK button
 		kNullString,				// No second button
 		kNullString,				// No third button

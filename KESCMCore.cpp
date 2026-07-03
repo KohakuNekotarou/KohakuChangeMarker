@@ -14,7 +14,6 @@
 #include "IDataBase.h"
 #include "IDocument.h"
 #include "ILayoutUtils.h"
-#include "ILayoutUIUtils.h"
 #include "IControlView.h"
 #include "IEventUtils.h"
 #include "IGeometry.h"
@@ -30,7 +29,6 @@
 
 #include "KESCMConstants.h"
 #include "KESCMDrawEventHandler.h"   // 描画エンジン＋共有 static
-#include "KESCMToast.h"              // KESCMShowToast
 #include "KESCMPeek.h"               // KESCMBaseScreenOpacity
 #include "KESCMCore.h"
 
@@ -145,15 +143,12 @@ ErrorCode KESCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMStri
 	KESCMCollectPageUIDs(targetDB, tPages);
 	KESCMCollectPageUIDs(sourceDB, sPages);
 
-	// 比較は同期実行で全ページをラスタ化するため時間がかかる。ループ前に「Comparing changes...」を出し、
-	// ForceRedraw で即時に1回描いてからループに入る(ブロック中も表示が見えるようにする)。
+	// 比較は同期実行で全ページをラスタ化するため時間がかかる。ループ前に「Comparing changes...」を
+	// パネルステータスへ出し、ForceRedraw で即時に描いてからループに入る(ブロック中も見えるようにする)。
 	{
 		PMString busyMsg("Comparing changes...");
 		busyMsg.SetTranslatable(kFalse);
-		KESCMShowToast(targetDB, busyMsg, kKESCMToastDefaultMs);
-		InterfacePtr<IControlView> fv(Utils<ILayoutUIUtils>()->QueryFrontView());
-		if (fv != nil)
-			fv->ForceRedraw(nil, kTrue);	// ブロックする比較ループの前に同期描画
+		KESCMSetStatus(busyMsg, kTrue /*forceRedrawNow*/);
 	}
 
 	const size_t n = (tPages.size() < sPages.size()) ? tPages.size() : sPages.size();
@@ -169,7 +164,9 @@ ErrorCode KESCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMStri
 
 	PMString report;
 	report.SetTranslatable(kFalse);
-	report.Append("kescm: pages compared="); report.AppendNumber((int32)n);
+	report.Append("marks start");
+	report.AppendW(UTF32TextChar(0x0A));	// 改行 → 2行目へ
+	report.Append("pages compared="); report.AppendNumber((int32)n);
 	report.Append(" changed="); report.AppendNumber(changedCount);
 	outReport = report;
 	return kSuccess;

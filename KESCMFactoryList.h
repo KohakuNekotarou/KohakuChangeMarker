@@ -20,7 +20,6 @@
 //  distribution of it requires the prior written permission of Adobe.
 //  
 //========================================================================================
-REGISTER_PMINTERFACE(KESCMScriptProvider, kKESCMScriptProviderImpl)
 REGISTER_PMINTERFACE(KESCMDrawEventSrvc, kKESCMDrawEventSrvcImpl)
 REGISTER_PMINTERFACE(KESCMDrawEventHandler, kKESCMDrawEventHandlerImpl)
 REGISTER_PMINTERFACE(KESCMPeekWatcher, kKESCMPeekWatcherImpl)
