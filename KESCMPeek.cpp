@@ -22,6 +22,11 @@
 #include "ISpreadList.h"
 #include "IShape.h"
 #include "ISession.h"
+#include "IWindow.h"
+#include "IWindowUtils.h"
+#include "IDocumentPresentation.h"
+#include "IPresentationList.h"
+#include "IPanelControlData.h"
 
 // イベント監視 / ツール / 起動:
 #include "IEventWatcher.h"
@@ -59,9 +64,9 @@
 //========================================================================================
 // ミドルボタン peek — 共有状態とヘルパ。
 //   ミドルボタンを押している間だけ、マウス下スプレッドの旧版を不透明べた載せし、離すと隠す。
-//   IEventWatcher はグローバル(スクリプト引数を持てない)ので、比較相手の旧ドキュメントは先に
-//   Document.kescmArmMousePeek(sourceDoc) で登録しておく。watcher(KESCMPeekWatcher)とスクリプト
-//   メソッドが下の arm 状態を共有する。全部を1つの翻訳単位に置くことで、watcher が MakeOrigImage /
+//   IEventWatcher はグローバル(引数を持てない)ので、比較相手の旧ドキュメントは先に
+//   KESCMDoArmMousePeek(KESCMCore.h)で登録しておく(パネルの Start ボタンが呼ぶ)。watcher
+//   (KESCMPeekWatcher)がこの arm 状態を見る。全部を1つの翻訳単位に置くことで、watcher が MakeOrigImage /
 //   マウス下スプレッド判定 / sOrigImages を直接再利用できる。
 //========================================================================================
 static IDataBase* sPeekTargetDB = nil;	// 表示中(新)ドキュメント。使用前に「まだ開いているか」を検証する。
@@ -361,6 +366,72 @@ static bool16 KESCMFrontViewIsOverTarget()
 	return ::GetUIDRef(frontDoc).GetDataBase() == sPeekTargetDB;
 }
 
+// Shift＋Ctrl＋ミドル押下(momentary): 「地図」ナビゲーション。マウス下のレイアウトウィンドウ
+// (アクティブである必要はない; IWindowUtils::QueryWindowUnderPoint でグローバル座標から直接引く)の
+// ローカル(pasteboard)座標を求め、開いている全ドキュメントの全ウィンドウ(マウス下=地図側のウィンドウ
+// 自身は除く)を同じ場所へスクロールする。ChangeMarker の Start(sPeekArmed)とは無関係に常に使える。
+//
+// 用途: 同じドキュメントを2つ開き、片方を低倍率の「地図」として使ってもう片方(や比較用の旧ドキュメント)
+// を大きくナビゲートする。pasteboard 座標はドキュメント固有の値だが、Target/Source のようにページ構成が
+// 近い別ドキュメントにもそのまま流用する(ズレは許容)。スクロール自体は KESCL(KESCLFindInDoc.cpp)の
+// ScrollViewCenterTo と同じ手口(QueryPanorama→ScrollContentLocationToFrameCenter)。
+static void KESCMSyncScrollOtherWindowsUnderMouse(IEvent* e)
+{
+	if (e == nil)
+		return;
+
+	const GSysPoint globalPt = e->GlobalWhere();
+
+	InterfacePtr<IWindow> hitWindow(Utils<IWindowUtils>()->QueryWindowUnderPoint(globalPt, kFalse));
+	if (hitWindow == nil)
+		return;
+
+	InterfacePtr<IDocumentPresentation> hitPres(hitWindow, UseDefaultIID());
+	if (hitPres == nil)
+		return;	// マウス下がドキュメントウィンドウではない(アプリフレーム／パレット等)
+	IDocumentPresentation* const hitPresPtr = hitPres;
+
+	InterfacePtr<IPanelControlData> hitPanelData(hitPres, UseDefaultIID());
+	IControlView* hitView = (hitPanelData != nil) ? hitPanelData->FindWidget(kLayoutWidgetBoss) : nil;
+	if (hitView == nil)
+		return;
+
+	const PBPMPoint pbPoint = Utils<ILayoutUIUtils>()->ComputePasteboardPoint(globalPt, hitView);
+
+	InterfacePtr<IApplication> app(GetExecutionContextSession()->QueryApplication());
+	InterfacePtr<IDocumentList> docList(app ? app->QueryDocumentList() : nil);
+	if (docList == nil)
+		return;
+
+	const int32 docCount = docList->GetDocCount();
+	for (int32 d = 0; d < docCount; ++d)
+	{
+		IDocument* doc = docList->GetNthDoc(d);
+		if (doc == nil)
+			continue;
+
+		InterfacePtr<IPresentationList> presList(doc, UseDefaultIID());
+		if (presList == nil)
+			continue;
+
+		for (IPresentationList::iterator it = presList->begin(); it != presList->end(); ++it)
+		{
+			IDocumentPresentation* pres = *it;
+			if (pres == nil || pres == hitPresPtr)
+				continue;	// マウス下(地図側)のウィンドウ自身は動かさない
+
+			InterfacePtr<IPanelControlData> panelData(pres, UseDefaultIID());
+			IControlView* view = (panelData != nil) ? panelData->FindWidget(kLayoutWidgetBoss) : nil;
+			if (view == nil)
+				continue;
+
+			InterfacePtr<IPanorama> pano(KESCMQueryPanorama(view));
+			if (pano != nil)
+				pano->ScrollContentLocationToFrameCenter(pbPoint, kTrue /*forceRedraw*/);
+		}
+	}
+}
+
 
 //========================================================================================
 // KESCMPeekWatcher
@@ -430,6 +501,13 @@ IEventDispatcher::EventTypeList KESCMPeekWatcher::WatchEvent(IEvent* e)
 				sColorHoldShowing = kTrue;
 				KESCMShowHoldToast(sPeekTargetDB, colorMsg);
 			}
+		}
+		else if (e->ShiftKeyDown() && e->CmdKeyDown() && !e->OptionAltKeyDown())
+		{
+			// Shift＋Ctrl＋ミドル押下(momentary): 「地図」ナビゲーション。マウス下のウィンドウ(アクティブで
+			// なくてもよい)のローカル座標へ、他の全ウィンドウをスクロールする。arm 状態に依らず常に使える。
+			// 3キー同時(Shift+Ctrl+Alt=CMYK)は先頭分岐で捕まえているので、ここに来る時点で Alt は必ず OFF。
+			KESCMSyncScrollOtherWindowsUnderMouse(e);
 		}
 		else if (sPeekArmed && e->ShiftKeyDown() && e->OptionAltKeyDown() && !e->CmdKeyDown() && KESCMFrontViewIsOverTarget())
 		{
