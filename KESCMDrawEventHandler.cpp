@@ -28,8 +28,6 @@
 #include "DocumentContextID.h"
 #include "GraphicsID.h"
 #include "GraphicsData.h"
-#include "IViewPortAttributes.h"
-#include "OutPrvID.h"
 #include "IGraphicsPort.h"
 #include "AutoGSave.h"
 #include "IControlView.h"
@@ -701,22 +699,18 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	// ※PDF 書き出し(File>Export)はこのスプレッド描画イベントを発火しないため対象外(print-to-PDF を使う)。
 	// 自己参照(自前スナップショット)は上の sRasterizing で防ぐので、ここで kPreviewMode は見ない。
 	const bool16 printing = (ded->flags & IShape::kPrinting) != 0;
-	// オーバープリントプレビュー(OPP)中か。OPP は「印刷の見え方」を画面でシミュレートするモードなので、
-	// 枠は基本非印刷=OPP でも「枠の印刷」OFF なら隠す(以前 kPreviewMode で弾いていた挙動の復帰)。ただし
-	// kPreviewMode(4096) は PDF 書き出しの kPDFExportMode と同一ビットで衝突するため使わず、OPP 専用の
-	// ビューポート属性 kSepPrvOPPEnabledVPAttr で正確に判定する(PDF export とは衝突しない)。
-	bool16 overprintPreview = kFalse;
-	IViewPortAttributes* vpa = ded->gd->GetViewPortAttributes();	// ded->gd は冒頭で非nil確認済み
-	if (vpa != nil)
-		overprintPreview = (vpa->GetAttr(kSepPrvOPPEnabledVPAttr, 0) != 0);
+	// ★オーバープリントプレビュー(OPP)は抑制しない(2026-07-05 仕様変更)。以前は kSepPrvOPPEnabledVPAttr を
+	// 読んで「OPP=印刷シミュレーション」として印刷と同じ抑制を掛けていたが、OPP はあくまで画面の作業モード
+	// なので、ミドル押下の枠・Shift/Shift+Alt の旧版 peek(と押下中の旧番号バッジ)は OPP 中も表示する。
+	// 抑制は本物の印刷(kPrinting)だけ=「枠の印刷」OFF なら印刷物に出ない、は従来どおり。
 	// Source 側の枠(Show Marks on Source)。トグル ON の間は「常時」表示で、OPP でも隠さず印刷にも常に
 	// 出す(Target 側の sPrintMarks とは独立の仕様)。この描画が実際に Source 文書のスプレッドかどうかは
 	// db 取得後に判定する(ここでは「描き得るか」だけ)。
 	const bool16 wantSrcMarks = sSrcMarksOn && sSrcDB != nil && !sEntries.empty();
-	// 印刷 or オーバープリントプレビューで「枠の印刷」が OFF のときは、Target 側のオーバーレイ一式を
-	// 描かない(枠は基本非印刷。従来の早期 return と同じ抑制)。Source 側の枠だけは常に印刷/OPP に出す
-	// 仕様なので、wantSrcMarks が生きていれば処理を続行し、下の want フラグ側で Target 分だけ落とす。
-	const bool16 suppressForPrint = (printing || overprintPreview) && !sPrintMarks;
+	// 印刷で「枠の印刷」が OFF のときは、Target 側のオーバーレイ一式を描かない(枠は基本非印刷)。
+	// Source 側の枠だけは常に印刷に出す仕様なので、wantSrcMarks が生きていれば処理を続行し、
+	// 下の want フラグ側で Target 分だけ落とす。
+	const bool16 suppressForPrint = printing && !sPrintMarks;
 	if (suppressForPrint && !wantSrcMarks)
 		return kFalse;
 	// この描画で何を描き得るかを状態フラグだけで先に確定し、全部 No なら即 return する。
@@ -904,8 +898,9 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	// Source 文書側のリング(Show Marks on Source) — 現スプレッドが Source 文書のものなら、対応表
 	// (SourceページUID→TargetページUID)経由で同じリング画像を Source ページに重ねる。
 	// トグル ON の間は常時表示(ミドル押下と無関係)。不透明度はパネルの 25%/75% 選択
-	// (SelectedMarkOpacity)固定で、印刷/OPP 文脈でも冒頭の suppressForPrint を通り抜けてここへ来る
-	// (印刷経路は KESCMDrawRingForPrint が同じ SelectedMarkOpacity を使う=画面と印刷の見た目一致)。
+	// (SelectedMarkOpacity)固定で、印刷文脈でも冒頭の suppressForPrint(印刷のみの抑制)を通り抜けて
+	// ここへ来る(印刷経路は KESCMDrawRingForPrint が同じ SelectedMarkOpacity を使う=画面と印刷の
+	// 見た目一致。OPP は 2026-07-05 からそもそも抑制対象外)。
 	// Target と同一 db(想定外の自己比較)は下の Target 側描画に任せ、二重描画を避ける。
 	if (wantSrcMarks && db == sSrcDB && db != sDB)
 	{
