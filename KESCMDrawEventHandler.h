@@ -111,6 +111,12 @@ public:
 	// ミドル押下中の画面表示・印刷ON中の常時表示(KESCMBaseScreenOpacity)・印刷/PDF出力(KESCMDrawRingForPrint)の
 	// すべてが SelectedMarkOpacity() 経由でこの選択を使う(画面と印刷の見た目を一致)。
 	static bool16 sMarkOpacity25;
+	// 旧ページ番号バッジ(フライアウト「Show Original Page Numbers」のチェック式トグル)。★既定=kFalse。
+	// ON の間、枠と同じ可視条件(sPrintMarks ON の常時表示、またはミドル押下中 sMarksVisible)で、番号が
+	// ズレているページ(=それより前に隠しスプレッドがある)の下端中央に「隠す前の元の番号」を描く
+	// (sPrintMarks ON なら印刷/PDF にも出る)。マークデータ(sEntries)とは独立で、どの文書のスプレッド描画
+	// でも番号がズレていれば描く(隠しが無ければ現在番号と一致して何も描かない)。
+	static bool16 sShowOldNumbers;
 
 	// 選択中の枠不透明度(0.25 / 0.75)。枠を描く全経路の単一の供給元。
 	static PMReal SelectedMarkOpacity() { return sMarkOpacity25 ? kKESCMMarkOpacity25 : kKESCMMarkOpacity75; }

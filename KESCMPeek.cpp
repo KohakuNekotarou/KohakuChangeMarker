@@ -848,6 +848,24 @@ void KESCMHandleDocsClosed()
 			KESCMInvalidateDB(survivorOrigDB);
 	}
 
+	// 「Hide Unchanged Spreads」トグルの後片付け(Target/Source 両側)。隠し先のどちらかが閉じた、
+	// または比較関連の db が閉じてマークを全消しした(comparisonDocClosed=「変更なし」判定の根拠が
+	// 消えた)場合は、リセットしてトグルを OFF に戻す。KESCMResetHideUnchanged(kTrue) は内部で文書の
+	// 生存確認を行い、生存側のみ再表示・閉じた側は deref せず状態破棄するので、ここでは kTrue 一択で
+	// よい。無関係な第3文書が閉じただけなら何もしない。
+	IDataBase* hideDB    = KESCMGetHideUnchangedDB();
+	IDataBase* hideSrcDB = KESCMGetHideUnchangedSrcDB();
+	if (hideDB != nil || hideSrcDB != nil)
+	{
+		const bool16 hideTargetClosed = (hideDB    != nil && docList->FindDocByDataBase(hideDB)    == nil);
+		const bool16 hideSourceClosed = (hideSrcDB != nil && docList->FindDocByDataBase(hideSrcDB) == nil);
+		if (hideTargetClosed || hideSourceClosed || comparisonDocClosed)
+		{
+			KESCMResetHideUnchanged(kTrue);
+			changed = kTrue;
+		}
+	}
+
 	// 何か片付けたらパネルの ON/OFF 表示を実状態に合わせる(①「ON 固着」の解消)。
 	if (changed)
 		KESCMRefreshPanel();

@@ -51,4 +51,19 @@ static const PMReal kKESCMOrigResolution = 72.0;
 static const PMReal kKESCMSampleDpi    = 300.0;	// サンプリングのラスタ解像度(dpi)
 static const PMReal kKESCMSampleHalfPt = 1.0;	// サンプル領域の半幅(pt)。300dpi で約2pt四方≒8px→中心1画素を読む
 
+// 旧ページ番号バッジ(フライアウト「Show Original Page Numbers」)。スプレッドを隠すと「現在のページ番号」
+// マーカーが隠し分を飛ばして振り直されるため、枠の可視条件と同じとき(印刷マークONの常時表示/ミドル押下中)に
+// 「隠す前の元の番号」をページ下端中央へ描く(印刷マークONなら印刷/PDF にも出る)。
+// サイズはズーム非依存(印刷時は実効スケール1.0固定=そのまま pt)。
+// 見た目=トースト風: 白い四角の塗りの上に赤の太字。バッジ全体の不透明度はパネルの「Marks opacity
+// 25% / 75%」選択に連動(枠と同じ SelectedMarkOpacity() を使う=画面と印刷で一致)。
+static const PMReal kKESCMOldNumFontPx   = 42.0;	// 文字サイズ(画面px/印刷pt)。当初14の3倍
+static const PMReal kKESCMOldNumMarginPx = 6.0;		// ページ下端から文字下端までの余白(画面px/印刷pt)
+// 文字色: 赤(比較マークの枠と同じ)。
+static const PMReal kKESCMOldNumR = 1.0, kKESCMOldNumG = 0.0, kKESCMOldNumB = 0.0;
+// 疑似ボールド: 既定フォントのまま、中心+8方向の計9回重ね描きでストロークを太らせる(オフセット=文字サイズ比)。
+// 既定フォントのボールド変種を名前で探すのはフォント環境依存で壊れやすいため、重ね描き方式にする。
+static const PMReal kKESCMOldNumBoldEm = 0.025;	// 重ね描きオフセット(em比)。0.04→0.025 へ少し細め(2026-07-04ユーザー指定)
+static const PMReal kKESCMOldNumPadEm  = 0.20;		// 白い四角の塗りの余白(em比、文字の周囲に付く)
+
 #endif // __KESCMConstants_h__

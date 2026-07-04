@@ -45,6 +45,8 @@ resource StringTable (kSDKDefStringsResourceID + index_jaJP)
                 kKESCMAboutScriptMenuKey,			"About Scripting...",
                 kKESCMUsageMenuKey,				"How to Use...",
                 kKESCMSplitTargetMenuKey,			"Split Target on Start",
+                kKESCMHideUnchangedMenuKey,			"Hide Unchanged Spreads",
+                kKESCMShowOldNumsMenuKey,			"Show Original Page Numbers",
 
                 // ----- Command strings
 
@@ -72,6 +74,10 @@ resource StringTable (kSDKDefStringsResourceID + index_jaJP)
                 	"ソース: " kKESCMRepoURL,
 
                 kKESCMScriptHelpStringKey,			"No scripts are currently available.",
+
+                // 「Hide Unchanged Spreads」実行前の確認ダイアログ本文(ドキュメントに変更を加えるため)。
+                // ダイアログのみ日本語ロケールで日本語表示(メニュー名は英語統一の方針のまま)。
+                kKESCMHideConfirmKey,				"この機能はファイルに変更を加えます。構いませんか?",
 
         }
 

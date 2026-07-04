@@ -150,7 +150,8 @@ DECLARE_PMID(kActionIDSpace, kKESCMPopupAboutScriptActionID, kKESCMPrefix + 3)	/
 DECLARE_PMID(kActionIDSpace, kKESCMPopupUsageActionID, kKESCMPrefix + 4)	// パネルのフライアウトの「使い方」
 // kActionIDSpace +5 は現在空き(旧 kKESCMPopupTestSplitActionID; Split Test 検証メニューは撤去済み)
 DECLARE_PMID(kActionIDSpace, kKESCMPopupSplitTargetActionID, kKESCMPrefix + 6)	// パネルのフライアウトの「Split Target on Start」チェック式トグル
-//DECLARE_PMID(kActionIDSpace, kKESCMActionID, kKESCMPrefix + 7)
+DECLARE_PMID(kActionIDSpace, kKESCMPopupHideUnchangedActionID, kKESCMPrefix + 7)	// パネルのフライアウトの「Hide Unchanged Spreads」チェック式トグル(ON=変更なしスプレッドを隠す)
+DECLARE_PMID(kActionIDSpace, kKESCMPopupShowOldNumsActionID, kKESCMPrefix + 8)	// パネルのフライアウトの「Show Original Page Numbers」チェック式トグル(枠表示中/印刷ON時に隠す前の元番号バッジ)
 //DECLARE_PMID(kActionIDSpace, kKESCMActionID, kKESCMPrefix + 8)
 //DECLARE_PMID(kActionIDSpace, kKESCMActionID, kKESCMPrefix + 9)
 //DECLARE_PMID(kActionIDSpace, kKESCMActionID, kKESCMPrefix + 10)
@@ -246,6 +247,9 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMToggleButtonWidgetID, kKESCMPrefix + 37)	// �
 #define kKESCMScriptHelpStringKey	kKESCMStringPrefix "kKESCMScriptHelpStringKey"	// その本文(スクリプトAPIは撤去済み。現在は「利用可能なスクリプトはありません」の旨を表示)
 #define kKESCMUsageMenuKey		kKESCMStringPrefix "kKESCMUsageMenuKey"	// パネルのフライアウト「使い方」のメニュー名(本文は kKESCMHintKey を再利用)
 #define kKESCMSplitTargetMenuKey	kKESCMStringPrefix "kKESCMSplitTargetMenuKey"	// パネルのフライアウト「Split Target on Start」トグルのメニュー名
+#define kKESCMHideUnchangedMenuKey	kKESCMStringPrefix "kKESCMHideUnchangedMenuKey"	// パネルのフライアウト「Hide Unchanged Spreads」トグルのメニュー名
+#define kKESCMHideConfirmKey		kKESCMStringPrefix "kKESCMHideConfirmKey"	// その確認ダイアログ本文(ダイアログのみロケール連動: enUS=英語/jaJP=日本語)
+#define kKESCMShowOldNumsMenuKey	kKESCMStringPrefix "kKESCMShowOldNumsMenuKey"	// パネルのフライアウト「Show Original Page Numbers」トグルのメニュー名
 
 // パネル: 内部フライアウト(ポップアップ)メニュー名＋そのメニューパス。
 #define kKESCMInternalPopupMenuNameKey	kKESCMStringPrefix "kKESCMInternalPopupMenuNameKey"
@@ -266,9 +270,12 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMToggleButtonWidgetID, kKESCMPrefix + 37)	// �
 #define kKESCMIconOffResID	1002
 #define kKESCMPaletteIconResID	1003	// パネルが折りたたまれた時に出る小さいドックタブアイコン
 
-// Menu item positions (flyout order): Split Target on Start(9) → How to Use(10) → About Scripting(11) →
-// About this plug-in(12)。※メニュー名は日本語ロケールでも英語で統一(2026-07-04)
+// Menu item positions (flyout order): Split Target on Start(9) → Hide Unchanged Spreads(9.5) →
+// Show Original Page Numbers(9.7) → How to Use(10) → About Scripting(11) → About this plug-in(12)。
+// ※メニュー名は日本語ロケールでも英語で統一(2026-07-04)
 #define kKESCMSplitTargetMenuItemPosition	9.0	// チェック式トグルを先頭に
+#define kKESCMHideUnchangedMenuItemPosition	9.5	// チェック式トグル「Hide Unchanged Spreads」をその直後に
+#define kKESCMShowOldNumsMenuItemPosition	9.7	// チェック式トグル「Show Original Page Numbers」をさらにその直後に
 #define kKESCMUsageMenuItemPosition			10.0	// 「使い方」
 #define kKESCMAboutScriptMenuItemPosition	11.0	// その下に「スクリプトについて」
 #define kKESCMAboutThisMenuItemPosition		12.0	// 末尾に「このプラグインについて」

@@ -213,6 +213,26 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKESCMSplitTargetMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
+		// "Hide Unchanged Spreads" on the panel flyout (popup) menu. Check-mark toggle:
+		// turning it ON asks for confirmation (this DOES modify/dirty the documents), then hides
+		// every spread that has no comparison marks via kHideSpreadCmdBoss — in the Target and,
+		// by flat-page-index mapping, in the Source document too. Turning it OFF re-shows only
+		// the spreads this plug-in hid (in both documents).
+		kKESCMPopupHideUnchangedActionID,
+		kKESCMPopupMenuPath,
+		kKESCMHideUnchangedMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
+		// "Show Original Page Numbers" on the panel flyout (popup) menu. Check-mark toggle:
+		// while ON, pages whose live page-number markers shifted because of hidden spreads get a
+		// badge with the original (pre-hide) page number at the bottom center, whenever the
+		// comparison marks are visible (middle button held, or "Print comparison marks" ON —
+		// the latter also prints the badge).
+		kKESCMPopupShowOldNumsActionID,
+		kKESCMPopupMenuPath,
+		kKESCMShowOldNumsMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
 		// "How to Use" on the panel flyout (popup) menu.
 		kKESCMPopupUsageActionID,
 		kKESCMPopupMenuPath,
@@ -251,6 +271,24 @@ resource ActionDef (kSDKDefActionResourceID)
 		kKESCMActionComponentBoss,
 		kKESCMPopupSplitTargetActionID,
 		kKESCMSplitTargetMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates supplies the check mark (kSelectedAction)
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		kKESCMActionComponentBoss,
+		kKESCMPopupHideUnchangedActionID,
+		kKESCMHideUnchangedMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates supplies the check mark (kSelectedAction)
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		kKESCMActionComponentBoss,
+		kKESCMPopupShowOldNumsActionID,
+		kKESCMShowOldNumsMenuKey,
 		kOtherActionArea,
 		kNormalAction,
 		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates supplies the check mark (kSelectedAction)

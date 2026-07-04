@@ -19,6 +19,8 @@
 #include "IGeometry.h"
 #include "ISpread.h"
 #include "ISpreadList.h"
+#include "IBoolData.h"				// スプレッドの隠し状態(IID_IHIDESPREADBOOLDATA)の読み取り
+#include "SpreadID.h"				// IID_IHIDESPREADBOOLDATA(kSpreadBoss 上の IBoolData。docs の boss 一覧で裏取り済み)
 #include "PMString.h"
 #include "PMMatrix.h"
 #include "PMPoint.h"
@@ -136,6 +138,20 @@ bool16 KESCMFindPageUnderMouse(IDataBase* targetDB, PMReal mx, PMReal my, KESCMP
 		if (spread == nil)
 			continue;
 		const int32 np = spread->GetNumPages();
+
+		// ★隠しスプレッド(Hide Unchanged Spreads / ページパネルの Hide Spread)は当たり判定から除外する。
+		//   隠すと表示中スプレッドが再配置されて座標が動くのに、隠れたスプレッドの旧座標が同じ場所に
+		//   残ってマウスに先にヒットし、peek/再比較/色サンプラの新旧対応(平坦ページ番号)がずれるため。
+		//   ページ数の加算(下の globalIndex += np)は続ける=平坦番号は「隠していない時と同じ元の番号」を
+		//   維持し、旧ドキュメントの平坦ページ列との対応が崩れない。
+		//   隠し状態は kSpreadBoss 上の IBoolData(IID_IHIDESPREADBOOLDATA、kTrue=隠し中)で読む。
+		InterfacePtr<IBoolData> hideFlag(targetDB, spreadUID, IID_IHIDESPREADBOOLDATA);
+		if (hideFlag != nil && hideFlag->GetBool())
+		{
+			globalIndex += np;
+			continue;
+		}
+
 		// マウスがこのスプレッドのいずれかのページ上にあるか?(最初に当たったページを採用)
 		for (int32 p = 0; p < np; ++p)
 		{
@@ -178,6 +194,10 @@ ErrorCode KESCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMStri
 {
 	if (targetDB == nil || sourceDB == nil)
 		return kFailure;
+
+	// 再比較すると「どのスプレッドが変更なしか」の分類が古くなるため、「Hide Unchanged Spreads」で
+	// 隠していたスプレッドは先に再表示してトグルを OFF に戻す(何も隠していなければ何もしない)。
+	KESCMResetHideUnchanged(kTrue);
 
 	// ドキュメント単位の総入れ替え。
 	KESCMDrawEventHandler::DropAll();
@@ -231,6 +251,10 @@ void KESCMInvalidateDB(IDataBase* db)
 
 void KESCMDoClearMarks(IDataBase* db)
 {
+	// マーク(=「変更なし」判定の根拠)が消えるので、「Hide Unchanged Spreads」で隠していた
+	// スプレッドも再表示してトグルを OFF に戻す(何も隠していなければ何もしない)。
+	KESCMResetHideUnchanged(kTrue);
+
 	// DropAll() で sDB が nil になる前に、実際にマークが描かれていた文書を控えておく。呼び出し側の
 	// db(=操作時のアクティブ文書)が前面で Source や無関係な第3文書に切り替わっていても、対象文書の
 	// 枠が即座に消えるようにするため(タイル表示等で対象文書が同時に見えている場合に効く)。

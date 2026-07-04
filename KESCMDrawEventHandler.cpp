@@ -45,6 +45,12 @@
 #include "GraphicsExternal.h"
 #include "IXPUtils.h"
 
+// 旧ページ番号バッジ(Show Original Page Numbers)用:
+#include "IPageList.h"			// GetPageString(..., bIncludePagesOfHiddenSpread) — kTrue=元の番号 / kFalse=隠し反映後の現在番号
+#include "IFontMgr.h"			// 既定フォント取得(framelabel の FrmLblAdornment.cpp と同じ流儀)
+#include "IPMFont.h"
+#include "IFontInstance.h"		// MeasureWText(中央揃えの幅測定) / GetDescent
+
 #include <map>
 #include <new>			// std::nothrow(画像バッファ確保。MSVC の通常 new は失敗時 nil でなく throw のため)
 #include <string.h>
@@ -62,6 +68,7 @@ bool16 KESCMDrawEventHandler::sMarksVisible = kFalse;	// 既定=非表示。枠�
 PMReal KESCMDrawEventHandler::sMarkScreenOpacity = 1.0;	// 既定=不透明。ミドル押下中=選択不透明度(25%/75%)/印刷ON中の常時表示=選択不透明度
 bool16 KESCMDrawEventHandler::sPrintMarks = kFalse;	// 既定=画面のみ(印刷/PDF には出さない)
 bool16 KESCMDrawEventHandler::sMarkOpacity25 = kTrue;	// 既定=25%(パネルの既定ラジオと一致)。kFalse=75%
+bool16 KESCMDrawEventHandler::sShowOldNumbers = kFalse;	// 既定=OFF(フライアウト「Show Original Page Numbers」)
 bool16 KESCMDrawEventHandler::sRasterizing = kFalse;	// 自前ラスタ化中だけ kTrue(自己参照防止)
 std::map<UID, KESCMOrigImage*> KESCMDrawEventHandler::sOrigImages;
 IDataBase* KESCMDrawEventHandler::sOrigDB = nil;
@@ -630,7 +637,12 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	//   何か描く」時だけの保険になる(クローズ後始末の本線は KESCMDocResponder で変わらず)。
 	const bool16 wantMarks = (sPrintMarks || sMarksVisible) && !sEntries.empty();
 	const bool16 wantOrig  = !printing && sShowOriginal && !sOrigImages.empty();
-	if (!wantMarks && !wantOrig)
+	// 旧ページ番号バッジ: トグルON かつ「枠が見えている」間(=印刷マークON の常時表示、またはミドル押下中)。
+	// 枠の可視条件(wantMarks の sPrintMarks || sMarksVisible)と同じ揃え。印刷文脈は上のガードで
+	// sPrintMarks ON のときだけ到達する=印刷に出るのは印刷マークON時のみ。
+	// 番号がズレているかはページごとに後で判定する(ズレていなければ何も描かない)。
+	const bool16 wantOldNums = sShowOldNumbers && (sPrintMarks || sMarksVisible);
+	if (!wantMarks && !wantOrig && !wantOldNums)
 		return kFalse;
 
 	GraphicsData* gd = ded->gd;
@@ -717,6 +729,82 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 			gPort->translate(pr.Left(), pr.Top());
 			gPort->scale(pr.Width() / o->w, pr.Height() / o->h);	// 旧版画像をページ矩形にフィット
 			gPort->image(&o->rec, PMMatrix(), 0);			// 旧版を sPeekOpacity で重ねる
+		}
+	}
+
+	// 旧ページ番号バッジ(Show Original Page Numbers)。スプレッドが隠されて「現在のページ番号」マーカーが
+	// ズレているページにだけ、「隠す前の元の番号」をページ下端中央へ描く(画面=WYSIWYG、印刷/PDF にも出る)。
+	// マーク(sEntries)とは独立=この db がマーク対象かは問わない(隠しが無ければ元番号と現在番号が一致して
+	// 何も描かない)。GetPageString の最終引数 bIncludePagesOfHiddenSpread が kTrue=隠しページも数える(元の番号)/
+	// kFalse=隠しページを飛ばす(現在マーカーが表示している番号)。書式はセクション込み・セクションの番号スタイル
+	// (bUseIntegerStyle=kFalse)=実際のノンブルと同じ見た目。文字は framelabel 流(selectfont+show)。
+	// サイズはズーム非依存(fontSize=目標px/sxr。印刷時は sxr=1.0 固定=実寸 pt)。
+	// 見た目=トースト風: 白い四角の塗りの上に赤の疑似ボールド。バッジ全体の不透明度は 25%/75% 選択に連動。
+	if (wantOldNums && sxr > 0)
+	{
+		InterfacePtr<IPageList> pageList(db, db->GetRootUID(), UseDefaultIID());
+		InterfacePtr<IFontMgr> fontMgr(GetExecutionContextSession(), UseDefaultIID());
+		InterfacePtr<IPMFont> numFont(fontMgr != nil ? fontMgr->QueryFont(fontMgr->GetDefaultFontName()) : nil);
+		if (pageList != nil && numFont != nil)
+		{
+			const PMReal fontSize = kKESCMOldNumFontPx / sxr;
+			const PMReal margin   = kKESCMOldNumMarginPx / sxr;
+			PMMatrix fontMatrix(fontSize, 0.0, 0.0, fontSize, 0.0, 0.0);
+			InterfacePtr<IFontInstance> fontInst(fontMgr->QueryFontInstance(numFont, fontMatrix));
+
+			const int32 npn = spread->GetNumPages();
+			for (int32 i = 0; i < npn; ++i)
+			{
+				const UID pageUID = spread->GetNthPageUID(i);
+				PMString orig, cur;
+				pageList->GetPageString(pageUID, &orig, kTrue, kFalse, kDefaultPageType, kTrue, kTrue);	// 元(隠し込みで数えた番号)
+				pageList->GetPageString(pageUID, &cur,  kTrue, kFalse, kDefaultPageType, kTrue, kFalse);	// 現在(隠しを飛ばした番号)
+				if (orig == cur)
+					continue;	// ズレていない(このページより前に隠しスプレッドが無い)
+
+				InterfacePtr<IGeometry> pageGeo(db, pageUID, UseDefaultIID());
+				if (pageGeo == nil)
+					continue;
+				PMRect pr = pageGeo->GetPathBoundingBox();		// ページ inner
+				PMMatrix pm = ::InnerToSpreadMatrix(pageGeo);
+				pm.Transform(&pr);								// → spread(=描画ポート)座標
+
+				PMReal textW = 0.0;
+				if (fontInst != nil)
+					fontInst->MeasureWText(orig, textW);
+				const PMReal ascent  = (fontInst != nil) ? fontInst->GetAscent()  : (fontSize * PMReal(0.8));
+				const PMReal descent = (fontInst != nil) ? fontInst->GetDescent() : (fontSize * PMReal(0.2));
+				const PMReal tx = (pr.Left() + pr.Right()) / 2 - textW / 2;	// 下端中央(横センター)
+				const PMReal ty = pr.Bottom() - margin - descent;			// ベースライン(下端から余白+descent 上)
+
+				const int32 nch = orig.NumUTF16TextChars();
+				const UTF16TextChar* buf16 = orig.GrabUTF16Buffer(nil);
+
+				AutoGSave ag(gPort);
+				// バッジ全体(白い四角の塗り+赤の太字)を透明グループで1つに束ね、グループの合成に
+				// SelectedMarkOpacity(枠と同じ25%/75%連動、画面と印刷で同値)を1回だけ適用する。
+				// starttransparencygroup は開始時点の GState(=直前の setopacity)をグループ合成に引き継ぎ、
+				// グループ内の alpha は 1.0 にリセットされる(IGraphicsPort.h の仕様)。つまり中は全部不透明で
+				// 描けるので、疑似ボールドの9回重ね描きが重なっても濃度が変わらない(setopacity のまま重ねると
+				// 重なった画素だけ濃くなる)。cs=nil は非隔離グループ=親のカラースペースを使うので問題ない。
+				const PMReal pad = fontSize * kKESCMOldNumPadEm;	// 白地の余白(em比)。疑似ボールドのはみ出し(±0.04em)もこの中に収まる
+				const PMRect badgeRect(tx - pad, ty - ascent - pad, tx + textW + pad, ty + descent + pad);
+				gPort->setopacity(SelectedMarkOpacity(), kFalse);	// グループ全体の合成不透明度
+				gPort->starttransparencygroup(badgeRect, nil, kFalse /*non-isolated*/, kFalse /*no knockout*/);
+
+				gPort->selectfont(numFont, fontSize);
+				// 白い四角の塗り(トースト風の下地)。
+				gPort->setrgbcolor(1.0, 1.0, 1.0);
+				gPort->rectfill(badgeRect);
+				// 赤の太字。既定フォントのまま、中心+8方向の計9回重ね描きでストロークを太らせる(疑似ボールド)。
+				gPort->setrgbcolor(kKESCMOldNumR, kKESCMOldNumG, kKESCMOldNumB);
+				const PMReal b = fontSize * kKESCMOldNumBoldEm;
+				for (int32 dy = -1; dy <= 1; ++dy)
+					for (int32 dx = -1; dx <= 1; ++dx)
+						gPort->show(tx + b * dx, ty + b * dy, nch, buf16);
+
+				gPort->endtransparencygroup();
+			}
 		}
 	}
 

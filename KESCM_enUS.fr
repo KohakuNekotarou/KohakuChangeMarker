@@ -38,6 +38,8 @@ resource StringTable (kSDKDefStringsResourceID + index_enUS)
                 kKESCMAboutScriptMenuKey,			"About Scripting...",
                 kKESCMUsageMenuKey,				"How to Use...",
                 kKESCMSplitTargetMenuKey,			"Split Target on Start",
+                kKESCMHideUnchangedMenuKey,			"Hide Unchanged Spreads",
+                kKESCMShowOldNumsMenuKey,			"Show Original Page Numbers",
 
                 // ----- Command strings
 
@@ -62,6 +64,9 @@ resource StringTable (kSDKDefStringsResourceID + index_enUS)
                 	"Source: " kKESCMRepoURL,
 
                 kKESCMScriptHelpStringKey,			"No scripts are currently available.",
+
+                // Confirmation shown before "Hide Unchanged Spreads" hides spreads (it modifies the document).
+                kKESCMHideConfirmKey,				"This feature modifies the document file. Continue?",
 
 
         }

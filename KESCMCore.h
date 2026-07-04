@@ -121,4 +121,19 @@ bool16		KESCMGetSplitOnStart();
 // ドキュメントモデルには触れない)。実体は KESCMActionComponent.cpp。
 void		KESCMDoSplitTarget();
 
+// フライアウト「Hide Unchanged Spreads」トグルの状態リセット(Target/Source 両側)。
+// restoreSpreads=kTrue なら、覚えている「自分が隠したスプレッド」を kHideSpreadCmdBoss(kFalse) で
+// 再表示してから状態を捨てる(削除済み UID はスキップ)。★文書の生存確認は内部で行う
+// (IDocumentList へのポインタ比較のみ)ので、片方が閉じていても kTrue で安全(生存側のみ再表示)。
+// kFalse なら db に一切触れず状態だけ捨てる。
+// 呼び所: 再比較(KESCMDoMarkChangesDoc)・Stop(KESCMDoClearMarks)・クローズスイープ
+// (KESCMHandleDocsClosed)はいずれも kTrue でよい。実体は KESCMActionComponent.cpp。
+void		KESCMResetHideUnchanged(bool16 restoreSpreads);
+
+// 「Hide Unchanged Spreads」で現在スプレッドを隠している文書(未使用なら nil)。Target 側と Source 側。
+// クローズスイープが生存確認(FindDocByDataBase への比較のみ、deref しない)に使う。
+// 実体は KESCMActionComponent.cpp。
+IDataBase*	KESCMGetHideUnchangedDB();
+IDataBase*	KESCMGetHideUnchangedSrcDB();
+
 #endif // __KESCMCore_h__
