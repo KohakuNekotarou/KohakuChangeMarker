@@ -111,6 +111,18 @@ public:
 	// ミドル押下中の画面表示・印刷ON中の常時表示(KESCMBaseScreenOpacity)・印刷/PDF出力(KESCMDrawRingForPrint)の
 	// すべてが SelectedMarkOpacity() 経由でこの選択を使う(画面と印刷の見た目を一致)。
 	static bool16 sMarkOpacity25;
+	// Source(旧文書)側にも枠を出すトグル(フライアウト「Show Marks on Source」のチェック式)。★既定=kFalse
+	// だが Start(KESCMDoMarkChangesDoc)のたびに kTrue へ戻す(=Start で既定 ON、OFF にしたければメニューで外す)。
+	// ON の間、Source 文書の対応ページに同じリング画像を「常時」表示する(ミドル押下と無関係)。不透明度は
+	// パネルの 25%/75% 選択(SelectedMarkOpacity)に連動し、OPP(オーバープリントプレビュー)でも隠さず、
+	// 印刷/PDF にも常に出す(Target 側の sPrintMarks とは独立)。
+	static bool16 sSrcMarksOn;
+	// Source 文書の db。比較実行(KESCMDoMarkChangesDoc/MakeEntry)時に設定し、DropAll で nil に戻す。
+	static IDataBase* sSrcDB;
+	// SourceページUID → TargetページUID の対応表。比較は平坦ページ番号どうしの対応なので、Source の
+	// スプレッド描画時にこの表→sEntries の順で引けば、同じリング画像を Source ページに重ねられる。
+	// MakeEntry がエントリ登録と同時に記録する(=Ctrl+ミドルのスプレッド再比較でも対応が維持される)。
+	static std::map<UID, UID> sSrcPageToTarget;
 	// 旧ページ番号バッジ(フライアウト「Show Original Page Numbers」のチェック式トグル)。★既定=kFalse。
 	// ON の間、枠と同じ可視条件(sPrintMarks ON の常時表示、またはミドル押下中 sMarksVisible)で、番号が
 	// ズレているページ(=それより前に隠しスプレッドがある)の下端中央に「隠す前の元の番号」を描く
@@ -153,13 +165,16 @@ public:
 	// resolution 既定=kKESCMOrigResolution。peek 経路では現在のズームから dpi=72×スケールを渡して常にくっきり。
 	static ErrorCode MakeOrigImage(const UIDRef& targetRef, const UIDRef& sourceRef, const PMReal& resolution = kKESCMOrigResolution);
 
-	// 全エントリ破棄(kescmClearMarks / 別ドキュメント切替時)。
+	// 全エントリ破棄(kescmClearMarks / 別ドキュメント切替時)。Source 側の対応表と db も一緒に破棄する
+	// (トグル sSrcMarksOn 自体は「ユーザーの好み」として保持。エントリが無ければ何も描かないので無害)。
 	static void DropAll()
 	{
 		for (std::map<UID, KESCMOverlayEntry*>::iterator it = sEntries.begin(); it != sEntries.end(); ++it)
 			delete it->second;
 		sEntries.clear();
 		sDB = nil;
+		sSrcPageToTarget.clear();
+		sSrcDB = nil;
 	}
 
 	// 旧版画像を全破棄(kescmClearMarks / 別ドキュメント切替時)。表示トグルもOFFへ。

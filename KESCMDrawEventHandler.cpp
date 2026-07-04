@@ -69,6 +69,9 @@ PMReal KESCMDrawEventHandler::sMarkScreenOpacity = 1.0;	// 既定=不透明。�
 bool16 KESCMDrawEventHandler::sPrintMarks = kFalse;	// 既定=画面のみ(印刷/PDF には出さない)
 bool16 KESCMDrawEventHandler::sMarkOpacity25 = kTrue;	// 既定=25%(パネルの既定ラジオと一致)。kFalse=75%
 bool16 KESCMDrawEventHandler::sShowOldNumbers = kFalse;	// 既定=OFF(フライアウト「Show Original Page Numbers」)
+bool16 KESCMDrawEventHandler::sSrcMarksOn = kFalse;	// 既定=OFF。Start(KESCMDoMarkChangesDoc)のたびに kTrue へ(フライアウト「Show Marks on Source」)
+IDataBase* KESCMDrawEventHandler::sSrcDB = nil;
+std::map<UID, UID> KESCMDrawEventHandler::sSrcPageToTarget;
 bool16 KESCMDrawEventHandler::sRasterizing = kFalse;	// 自前ラスタ化中だけ kTrue(自己参照防止)
 std::map<UID, KESCMOrigImage*> KESCMDrawEventHandler::sOrigImages;
 IDataBase* KESCMDrawEventHandler::sOrigDB = nil;
@@ -378,6 +381,12 @@ ErrorCode KESCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef
 					if (old != sEntries.end()) { delete old->second; sEntries.erase(old); }
 					sEntries[key] = e;
 
+					// Source 側描画(Show Marks on Source)用の対応表もここで記録する。エントリ登録と同じ場所に
+					// 置くことで、Ctrl+ミドルのスプレッド再比較(MakeEntry 直呼び)でも対応が自動で維持される。
+					// 対応表の掃除は DropAll(エントリと運命共同体)。
+					sSrcDB = sourceRef.GetDataBase();
+					sSrcPageToTarget[sourceRef.GetUID()] = key;
+
 					// dist / bgRed / buf は entry が所有(mask M は dist 生成後に解放済み)。スナップショットは下の後始末で即破棄。
 					changed = kTrue;
 					status = kSuccess;
@@ -601,6 +610,82 @@ static void KESCMDrawRingForPrint(IGraphicsPort* gPort, KESCMOverlayEntry* e)
 }
 
 
+//========================================================================================
+// ページ1枚分のリング描画(HandleDrawEvent の Target ループから括り出した共通部)。
+//   db/pageUID のページ矩形へ e のリング画像をフィットさせて描く。リング太さのズーム適応
+//   (BuildRing 再計算)もここ。Target 側と Source 側(Show Marks on Source)の両方から呼ばれる:
+//   Source 側は Target のリング画像をそのまま Source ページ矩形に重ねる(比較は平坦ページ番号
+//   対応なので位置・形は同一。ページサイズが違えば矩形フィットで引き伸ばされる)。
+//   screenOpacity は画面 blit にだけ使う(printing 時は KESCMDrawRingForPrint が
+//   SelectedMarkOpacity を直接使う)。
+//   ★Target と Source を別ズームで表示中は、双方の再描画で e->lastRadius が交互に書き換わり
+//   BuildRing が走り直すが、リング画像は 36dpi 化済みでバッファが小さく実害はない。
+//========================================================================================
+static void KESCMDrawEntryOnPage(IGraphicsPort* gPort, KESCMOverlayEntry* e, IDataBase* db, UID pageUID,
+	const PMReal& sxr, bool16 printing, const PMReal& screenOpacity)
+{
+	if (e == nil || e->buf == nil)
+		return;
+
+	const int32 iw = e->w, ih = e->h;
+	InterfacePtr<IGeometry> pageGeo(db, pageUID, UseDefaultIID());
+	if (iw <= 0 || ih <= 0 || pageGeo == nil)
+		return;
+
+	// 【座標の肝】kEndSpreadMessage の描画ポートは spread 座標。ページ inner bbox を
+	// InnerToSpreadMatrix で spread 座標へ変換してフィットさせる。
+	PMRect pr = pageGeo->GetPathBoundingBox();			// ページ inner
+	PMMatrix m = ::InnerToSpreadMatrix(pageGeo);
+	m.Transform(&pr);									// → spread(=描画ポート)座標
+
+	// 【リング太さのズーム適応】このページの実寸と現ズームから「画面 kKESCMRingTargetPx 相当」の
+	// 膨張半径(画像px)を逆算。前回と違えば描き直し。拡大時は下限(2)に張り付くので再計算が止まる。
+	if (e->dist != nil && sxr > 0)
+	{
+		PMReal denom = (pr.Width() / PMReal(iw)) * sxr;		// 画面px / 画像px
+		if (denom > PMReal(0.0001))
+		{
+			int32 R = ::ToInt32(::Round(kKESCMRingTargetPx / denom));
+			if (R < 2) R = 2;									// 最小2px(量子化後は最小4px)
+			if (R > 200) R = 200;								// 過大膨張の上限
+			// 量子化を 2px→4px 刻みに。ズーム中に R が変わる回数(=BuildRing 再計算)がほぼ半減。
+			// 代償=太さの段階がやや粗い。最小は 4、200 は 200 に丸まる。
+			R = ((R + 2) / 4) * 4;								// 4px 量子化
+			if (R != e->lastRadius)
+			{
+				KESCMDrawEventHandler::BuildRing(e->buf, e->rowBytes, e->bpp, e->w, e->h, e->dist, e->bgRed, R);
+				e->lastRadius = R;
+			}
+		}
+	}
+
+	// 枠の画像(リング)を blit する。translate/scale はこの gsave 内だけ。
+	{
+		AutoGSave ag(gPort);
+		// ★この描画を「このページの矩形よりわずかに内側」に限定する(spread 座標でクリップ)。見開きの
+		// 2ページはノドで隙間なく隣接し、ページ矩形の端=隣ページの端=共有線になる。単に pr でクリップ
+		// すると枠の最外周がその共有線に乗り、隣(変化なし)ページのノドに 1px 線が出る。そこで pr を
+		// 約1pt 内側に縮めてクリップし、枠が共有線に届かないようにする(枠はページ端の1px内側=見た目ほぼ不変)。
+		const PMReal kKESCMClipInset = 1.0;	// pt
+		gPort->rectclip(pr.Left()   + kKESCMClipInset, pr.Top()    + kKESCMClipInset,
+		                pr.Width()  - kKESCMClipInset * 2.0, pr.Height() - kKESCMClipInset * 2.0);
+		gPort->translate(pr.Left(), pr.Top());				// ページ左上へ
+		gPort->scale(pr.Width() / iw, pr.Height() / ih);	// 画像px → ページ矩形にフィット
+		// ★印刷/PDF 時は image() blit だと枠が不透明になる(フラットナが画像の部分 alpha を honor しない)。
+		// アルファサーバ＋純色ベクター fill＋setopacity で半透明に描く(透明合成エンジンが honor)。
+		// 画面描画(printing=false)は従来の ARGB blit のまま(画素 alpha を honor=検証済みの見た目を維持)。
+		if (printing)
+			KESCMDrawRingForPrint(gPort, e);
+		else
+		{
+			// 画面 blit は image() の画素 alpha に加えてポート opacity も honor する。
+			gPort->setopacity(screenOpacity, kFalse);
+			gPort->image(&e->rec, PMMatrix(), 0);			// 自前レコード(buf を指す)を blit
+		}
+	}
+}
+
+
 bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 {
 	DrawEventData* ded = static_cast<DrawEventData*>(eventData);
@@ -624,8 +709,15 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	IViewPortAttributes* vpa = ded->gd->GetViewPortAttributes();	// ded->gd は冒頭で非nil確認済み
 	if (vpa != nil)
 		overprintPreview = (vpa->GetAttr(kSepPrvOPPEnabledVPAttr, 0) != 0);
-	// 印刷 or オーバープリントプレビューで「枠の印刷」が OFF のときは描かない(枠は基本非印刷)。
-	if ((printing || overprintPreview) && !sPrintMarks)
+	// Source 側の枠(Show Marks on Source)。トグル ON の間は「常時」表示で、OPP でも隠さず印刷にも常に
+	// 出す(Target 側の sPrintMarks とは独立の仕様)。この描画が実際に Source 文書のスプレッドかどうかは
+	// db 取得後に判定する(ここでは「描き得るか」だけ)。
+	const bool16 wantSrcMarks = sSrcMarksOn && sSrcDB != nil && !sEntries.empty();
+	// 印刷 or オーバープリントプレビューで「枠の印刷」が OFF のときは、Target 側のオーバーレイ一式を
+	// 描かない(枠は基本非印刷。従来の早期 return と同じ抑制)。Source 側の枠だけは常に印刷/OPP に出す
+	// 仕様なので、wantSrcMarks が生きていれば処理を続行し、下の want フラグ側で Target 分だけ落とす。
+	const bool16 suppressForPrint = (printing || overprintPreview) && !sPrintMarks;
+	if (suppressForPrint && !wantSrcMarks)
 		return kFalse;
 	// この描画で何を描き得るかを状態フラグだけで先に確定し、全部 No なら即 return する。
 	//   ・マーク(リング＋枠): 印刷ON か ミドル押下中の表示ON で、かつエントリがある時だけ
@@ -635,14 +727,14 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	//   捨てていた。Start 済み・マーク非表示(既定=ミドル押下中だけ表示)の待機状態が最頻なので、
 	//   ここで落として通常の編集・スクロール中の描画コストをほぼゼロにする。生存スイープも「実際に
 	//   何か描く」時だけの保険になる(クローズ後始末の本線は KESCMDocResponder で変わらず)。
-	const bool16 wantMarks = (sPrintMarks || sMarksVisible) && !sEntries.empty();
-	const bool16 wantOrig  = !printing && sShowOriginal && !sOrigImages.empty();
+	const bool16 wantMarks = !suppressForPrint && (sPrintMarks || sMarksVisible) && !sEntries.empty();
+	const bool16 wantOrig  = !suppressForPrint && !printing && sShowOriginal && !sOrigImages.empty();
 	// 旧ページ番号バッジ: トグルON かつ「枠が見えている」間(=印刷マークON の常時表示、またはミドル押下中)。
-	// 枠の可視条件(wantMarks の sPrintMarks || sMarksVisible)と同じ揃え。印刷文脈は上のガードで
-	// sPrintMarks ON のときだけ到達する=印刷に出るのは印刷マークON時のみ。
+	// 枠の可視条件(wantMarks の sPrintMarks || sMarksVisible)と同じ揃え。印刷文脈は suppressForPrint で
+	// sPrintMarks ON のときだけ生き残る=印刷に出るのは印刷マークON時のみ(従来どおり)。
 	// 番号がズレているかはページごとに後で判定する(ズレていなければ何も描かない)。
-	const bool16 wantOldNums = sShowOldNumbers && (sPrintMarks || sMarksVisible);
-	if (!wantMarks && !wantOrig && !wantOldNums)
+	const bool16 wantOldNums = !suppressForPrint && sShowOldNumbers && (sPrintMarks || sMarksVisible);
+	if (!wantMarks && !wantOrig && !wantOldNums && !wantSrcMarks)
 		return kFalse;
 
 	GraphicsData* gd = ded->gd;
@@ -666,13 +758,14 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	//   クローズ responder(KESCMHandleDocsClosed)がクローズ直後に先回りして片付けるためこの分岐へは実質
 	//   到達しないが、保険として残す以上は KESCMHandleDocsClosed に一本化し、Stop 相当のフルクリーンアップ
 	//   (peek arm 解除・パネル更新も)を確実に行う。
-	if (sDB != nil || sOrigDB != nil)
+	if (sDB != nil || sOrigDB != nil || sSrcDB != nil)
 	{
 		InterfacePtr<IApplication> app(GetExecutionContextSession()->QueryApplication());
 		InterfacePtr<IDocumentList> docList(app ? app->QueryDocumentList() : nil);
 		if (docList != nil &&
 		    ((sDB != nil && docList->FindDocByDataBase(sDB) == nil) ||
-		     (sOrigDB != nil && docList->FindDocByDataBase(sOrigDB) == nil)))
+		     (sOrigDB != nil && docList->FindDocByDataBase(sOrigDB) == nil) ||
+		     (sSrcDB != nil && docList->FindDocByDataBase(sSrcDB) == nil)))
 			KESCMHandleDocsClosed();
 	}
 
@@ -808,6 +901,29 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 		}
 	}
 
+	// Source 文書側のリング(Show Marks on Source) — 現スプレッドが Source 文書のものなら、対応表
+	// (SourceページUID→TargetページUID)経由で同じリング画像を Source ページに重ねる。
+	// トグル ON の間は常時表示(ミドル押下と無関係)。不透明度はパネルの 25%/75% 選択
+	// (SelectedMarkOpacity)固定で、印刷/OPP 文脈でも冒頭の suppressForPrint を通り抜けてここへ来る
+	// (印刷経路は KESCMDrawRingForPrint が同じ SelectedMarkOpacity を使う=画面と印刷の見た目一致)。
+	// Target と同一 db(想定外の自己比較)は下の Target 側描画に任せ、二重描画を避ける。
+	if (wantSrcMarks && db == sSrcDB && db != sDB)
+	{
+		const int32 nps = spread->GetNumPages();
+		for (int32 i = 0; i < nps; ++i)
+		{
+			const UID srcPageUID = spread->GetNthPageUID(i);
+			std::map<UID, UID>::iterator mp = sSrcPageToTarget.find(srcPageUID);
+			if (mp == sSrcPageToTarget.end())
+				continue;
+			std::map<UID, KESCMOverlayEntry*>::iterator it = sEntries.find(mp->second);
+			if (it == sEntries.end())
+				continue;
+			KESCMDrawEntryOnPage(gPort, it->second, db, srcPageUID, sxr, printing, SelectedMarkOpacity());
+		}
+		return kFalse;	// Source 文書に Target 側オーバーレイは無い=ここで終わり
+	}
+
 	// 変更オーバーレイ(リング＋変更数) — マーク済みドキュメントが現スプレッドの db と一致する時だけ。
 	// master 表示トグル(sMarksVisible)が OFF の間、またはこのスプレッドを覗き中(旧版べた載せ中)は描かない
 	// (データは保持=再表示で即復帰)。覗いていない他のスプレッドのマークは通常どおり残る。
@@ -821,7 +937,7 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	// 離すと基準値へ戻る。printing 経路はここを使わず、KESCMDrawRingForPrint が SelectedMarkOpacity を直接使う。
 	const PMReal screenMarkOp = sMarkScreenOpacity;
 
-	// このスプレッドの各ページについて、エントリがあれば描く。
+	// このスプレッドの各ページについて、エントリがあれば描く(描画本体は KESCMDrawEntryOnPage に共通化)。
 	const int32 np = spread->GetNumPages();
 	for (int32 i = 0; i < np; ++i)
 	{
@@ -829,67 +945,7 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 		std::map<UID, KESCMOverlayEntry*>::iterator it = sEntries.find(pageUID);
 		if (it == sEntries.end())
 			continue;
-		KESCMOverlayEntry* e = it->second;
-		if (e == nil || e->buf == nil)
-			continue;
-
-		const int32 iw = e->w, ih = e->h;
-		InterfacePtr<IGeometry> pageGeo(db, pageUID, UseDefaultIID());
-		if (iw <= 0 || ih <= 0 || pageGeo == nil)
-			continue;
-
-		// 【座標の肝】kEndSpreadMessage の描画ポートは spread 座標。ページ inner bbox を
-		// InnerToSpreadMatrix で spread 座標へ変換してフィットさせる。
-		PMRect pr = pageGeo->GetPathBoundingBox();			// ページ inner
-		PMMatrix m = ::InnerToSpreadMatrix(pageGeo);
-		m.Transform(&pr);									// → spread(=描画ポート)座標
-
-		// 【リング太さのズーム適応】このページの実寸と現ズームから「画面 kKESCMRingTargetPx 相当」の
-		// 膨張半径(画像px)を逆算。前回と違えば描き直し。拡大時は下限(2)に張り付くので再計算が止まる。
-		if (e->dist != nil && sxr > 0)
-		{
-			PMReal denom = (pr.Width() / PMReal(iw)) * sxr;		// 画面px / 画像px
-			if (denom > PMReal(0.0001))
-			{
-				int32 R = ::ToInt32(::Round(kKESCMRingTargetPx / denom));
-				if (R < 2) R = 2;									// 最小2px(量子化後は最小4px)
-				if (R > 200) R = 200;								// 過大膨張の上限
-				// 量子化を 2px→4px 刻みに。ズーム中に R が変わる回数(=BuildRing 再計算)がほぼ半減。
-				// 代償=太さの段階がやや粗い。最小は 4、200 は 200 に丸まる。
-				R = ((R + 2) / 4) * 4;								// 4px 量子化
-				if (R != e->lastRadius)
-				{
-					BuildRing(e->buf, e->rowBytes, e->bpp, e->w, e->h, e->dist, e->bgRed, R);
-					e->lastRadius = R;
-				}
-			}
-		}
-
-		// 枠の画像(リング)を blit する。translate/scale はこの gsave 内だけ。
-		{
-			AutoGSave ag(gPort);
-			// ★この描画を「このページの矩形よりわずかに内側」に限定する(spread 座標でクリップ)。見開きの
-			// 2ページはノドで隙間なく隣接し、ページ矩形の端=隣ページの端=共有線になる。単に pr でクリップ
-			// すると枠の最外周がその共有線に乗り、隣(変化なし)ページのノドに 1px 線が出る。そこで pr を
-			// 約1pt 内側に縮めてクリップし、枠が共有線に届かないようにする(枠はページ端の1px内側=見た目ほぼ不変)。
-			const PMReal kKESCMClipInset = 1.0;	// pt
-			gPort->rectclip(pr.Left()   + kKESCMClipInset, pr.Top()    + kKESCMClipInset,
-			                pr.Width()  - kKESCMClipInset * 2.0, pr.Height() - kKESCMClipInset * 2.0);
-			gPort->translate(pr.Left(), pr.Top());				// ページ左上へ
-			gPort->scale(pr.Width() / iw, pr.Height() / ih);	// 画像px → ページ矩形にフィット
-			// ★印刷/PDF 時は image() blit だと枠が不透明になる(フラットナが画像の部分 alpha を honor しない)。
-			// アルファサーバ＋純色ベクター fill＋setopacity で半透明に描く(透明合成エンジンが honor)。
-			// 画面描画(printing=false)は従来の ARGB blit のまま(画素 alpha を honor=検証済みの見た目を維持)。
-			if (printing)
-				KESCMDrawRingForPrint(gPort, e);
-			else
-			{
-				// 画面 blit は image() の画素 alpha に加えてポート opacity も honor する。薄表示(ミドルのみ押下)
-				// 中や 25%設定中は screenMarkOp(≒0.25)、通常は 1.0。AutoGSave 内なので閉じれば元へ戻る。
-				gPort->setopacity(screenMarkOp, kFalse);
-				gPort->image(&e->rec, PMMatrix(), 0);			// 自前レコード(buf を指す)を blit
-			}
-		}
+		KESCMDrawEntryOnPage(gPort, it->second, db, pageUID, sxr, printing, screenMarkOp);
 	}
 
 	return kFalse;	// 他のハンドラ・描画を続行させる

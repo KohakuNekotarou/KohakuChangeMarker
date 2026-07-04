@@ -37,6 +37,7 @@ resource StringTable (kSDKDefStringsResourceID + index_enUS)
                 kSDKDefAboutThisPlugInMenuKey,			kSDKDefAboutThisPlugInMenuValue_enUS,
                 kKESCMAboutScriptMenuKey,			"About Scripting...",
                 kKESCMUsageMenuKey,				"How to Use...",
+                kKESCMShowSrcMarksMenuKey,			"Show Marks on Source",
                 kKESCMHideUnchangedMenuKey,			"Hide Unchanged Spreads",
                 kKESCMShowOldNumsMenuKey,			"Show Original Page Numbers",
                 kKESCMSyncViewsMenuKey,				"Sync Layout Views",

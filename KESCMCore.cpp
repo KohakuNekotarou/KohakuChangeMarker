@@ -225,7 +225,15 @@ ErrorCode KESCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMStri
 		if (changed) ++changedCount;
 	}
 
+	// 「Show Marks on Source」は Start のたびに既定 ON(仕様)。OFF にしたければフライアウトで外す。
+	// sSrcDB/対応表は MakeEntry が変化ページ登録時に埋めるが、変化ゼロでも db だけは明示しておく
+	// (エントリが無ければ wantSrcMarks が空判定で落ちるので描画コストは増えない)。
+	KESCMDrawEventHandler::sSrcMarksOn = kTrue;
+	KESCMDrawEventHandler::sSrcDB = sourceDB;
+
 	KESCMInvalidateDB(targetDB);
+	if (sourceDB != targetDB)
+		KESCMInvalidateDB(sourceDB);	// Source 側の常時枠を即反映
 
 	PMString report;
 	report.SetTranslatable(kFalse);
@@ -258,7 +266,9 @@ void KESCMDoClearMarks(IDataBase* db)
 	// DropAll() で sDB が nil になる前に、実際にマークが描かれていた文書を控えておく。呼び出し側の
 	// db(=操作時のアクティブ文書)が前面で Source や無関係な第3文書に切り替わっていても、対象文書の
 	// 枠が即座に消えるようにするため(タイル表示等で対象文書が同時に見えている場合に効く)。
+	// Source 側の常時枠(Show Marks on Source)も同様に、消える前の db を控えて後で再描画する。
 	IDataBase* markedDB = KESCMDrawEventHandler::sDB;
+	IDataBase* srcDB    = KESCMDrawEventHandler::sSrcDB;
 
 	KESCMDrawEventHandler::DropAll();
 	KESCMDrawEventHandler::DropAllOrig();	// 旧版べた載せのキャッシュも解放(メモリ開放)
@@ -266,6 +276,8 @@ void KESCMDoClearMarks(IDataBase* db)
 	KESCMInvalidateDB(markedDB);
 	if (db != markedDB)
 		KESCMInvalidateDB(db);
+	if (srcDB != markedDB && srcDB != db)
+		KESCMInvalidateDB(srcDB);			// Source 側の常時枠も即座に消す
 }
 
 void KESCMDoSetPrintMarks(bool16 printFlag, bool16 opacity25Flag, IDataBase* db)
@@ -278,9 +290,12 @@ void KESCMDoSetPrintMarks(bool16 printFlag, bool16 opacity25Flag, IDataBase* db)
 	// 実際にマークが描かれている対象文書(sDB)を優先して再描画する。呼び出し側 db(=アクティブ文書)が
 	// それと異なっていても(Source や無関係な第3文書が前面の状態で操作した場合)、対象文書の見た目が
 	// 即座に更新されるようにするため。Start 前(sDB==nil)は従来どおり db のみ再描画する。
+	// Source 側の常時枠(Show Marks on Source)は 25%/75% 選択に連動するので、Source も再描画する。
 	KESCMInvalidateDB(KESCMDrawEventHandler::sDB);
 	if (db != KESCMDrawEventHandler::sDB)
 		KESCMInvalidateDB(db);
+	if (KESCMDrawEventHandler::sSrcDB != KESCMDrawEventHandler::sDB && KESCMDrawEventHandler::sSrcDB != db)
+		KESCMInvalidateDB(KESCMDrawEventHandler::sSrcDB);
 }
 
 // 現在の印刷マーク設定を返す(パネル再表示時の状態復元に使用)。

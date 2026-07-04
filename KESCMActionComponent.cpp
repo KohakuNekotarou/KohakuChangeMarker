@@ -101,6 +101,19 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 			this->DoUsage();
 			break;
 
+		// 「Show Marks on Source」トグル: フラグを反転して Source 文書を再描画するだけ(表示判定と描画は
+		// KESCMDrawEventHandler::HandleDrawEvent の Source 分岐。ON の間は常時表示・OPPでも表示・印刷にも
+		// 出る。不透明度はパネルの 25%/75% 選択に連動)。Start のたびに既定 ON へ戻る(KESCMDoMarkChangesDoc)。
+		case kKESCMPopupShowSrcMarksActionID:
+		{
+			KESCMDrawEventHandler::sSrcMarksOn = !KESCMDrawEventHandler::sSrcMarksOn;
+			KESCMInvalidateDB(KESCMDrawEventHandler::sSrcDB);
+			PMString msg(KESCMDrawEventHandler::sSrcMarksOn ? "Source marks: on." : "Source marks: off.");
+			msg.SetTranslatable(kFalse);
+			KESCMSetStatus(msg);
+			break;
+		}
+
 		// 「Hide Unchanged Spreads」トグル: OFF→ON は確認ダイアログ→変更なしスプレッドを隠す。
 		// ON→OFF は自分が隠した分だけ再表示。本体は DoHideUnchangedToggle。
 		case kKESCMPopupHideUnchangedActionID:
@@ -129,9 +142,9 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 	}
 }
 
-/* UpdateActionStates — チェック式トグル3つ(「Hide Unchanged Spreads」「Show Original Page Numbers」
-   「Sync Layout Views」)のチェックマーク。常に有効、ON なら kSelectedAction を立てる
-   (docwatch の DocWchActionComponent::UpdateActionStates と同じ流儀)。 */
+/* UpdateActionStates — チェック式トグル4つ(「Show Marks on Source」「Hide Unchanged Spreads」
+   「Show Original Page Numbers」「Sync Layout Views」)のチェックマーク。常に有効、ON なら
+   kSelectedAction を立てる(docwatch の DocWchActionComponent::UpdateActionStates と同じ流儀)。 */
 void KESCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionStateList* listToUpdate, GSysPoint /*mousePoint*/, IPMUnknown* /*widget*/)
 {
 	for (int32 i = 0; i < listToUpdate->Length(); i++)
@@ -155,6 +168,13 @@ void KESCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionSta
 		{
 			int16 actionState = kEnabledAction;
 			if (KESCMGetLayoutSync())
+				actionState |= kSelectedAction;
+			listToUpdate->SetNthActionState(i, actionState);
+		}
+		else if (action == kKESCMPopupShowSrcMarksActionID)
+		{
+			int16 actionState = kEnabledAction;
+			if (KESCMDrawEventHandler::sSrcMarksOn)
 				actionState |= kSelectedAction;
 			listToUpdate->SetNthActionState(i, actionState);
 		}

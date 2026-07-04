@@ -157,9 +157,7 @@ DECLARE_PMID(kActionIDSpace, kKESCMPopupUsageActionID, kKESCMPrefix + 4)	// パ�
 DECLARE_PMID(kActionIDSpace, kKESCMPopupHideUnchangedActionID, kKESCMPrefix + 7)	// パネルのフライアウトの「Hide Unchanged Spreads」チェック式トグル(ON=変更なしスプレッドを隠す)
 DECLARE_PMID(kActionIDSpace, kKESCMPopupShowOldNumsActionID, kKESCMPrefix + 8)	// パネルのフライアウトの「Show Original Page Numbers」チェック式トグル(枠表示中/印刷ON時に隠す前の元番号バッジ)
 DECLARE_PMID(kActionIDSpace, kKESCMPopupSyncViewsActionID, kKESCMPrefix + 9)	// パネルのフライアウトの「Sync Layout Views」チェック式トグル(他文書のビューへ座標+拡大率を自動同期)
-//DECLARE_PMID(kActionIDSpace, kKESCMActionID, kKESCMPrefix + 8)
-//DECLARE_PMID(kActionIDSpace, kKESCMActionID, kKESCMPrefix + 9)
-//DECLARE_PMID(kActionIDSpace, kKESCMActionID, kKESCMPrefix + 10)
+DECLARE_PMID(kActionIDSpace, kKESCMPopupShowSrcMarksActionID, kKESCMPrefix + 10)	// パネルのフライアウトの「Show Marks on Source」チェック式トグル(Source側にも枠を常時表示。OPPでも表示・印刷にも出す。Startで既定ON)
 //DECLARE_PMID(kActionIDSpace, kKESCMActionID, kKESCMPrefix + 11)
 //DECLARE_PMID(kActionIDSpace, kKESCMActionID, kKESCMPrefix + 12)
 //DECLARE_PMID(kActionIDSpace, kKESCMActionID, kKESCMPrefix + 13)
@@ -255,6 +253,7 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMToggleButtonWidgetID, kKESCMPrefix + 37)	// �
 #define kKESCMHideConfirmKey		kKESCMStringPrefix "kKESCMHideConfirmKey"	// その確認ダイアログ本文(ダイアログのみロケール連動: enUS=英語/jaJP=日本語)
 #define kKESCMShowOldNumsMenuKey	kKESCMStringPrefix "kKESCMShowOldNumsMenuKey"	// パネルのフライアウト「Show Original Page Numbers」トグルのメニュー名
 #define kKESCMSyncViewsMenuKey		kKESCMStringPrefix "kKESCMSyncViewsMenuKey"	// パネルのフライアウト「Sync Layout Views」トグルのメニュー名
+#define kKESCMShowSrcMarksMenuKey	kKESCMStringPrefix "kKESCMShowSrcMarksMenuKey"	// パネルのフライアウト「Show Marks on Source」トグルのメニュー名
 
 // パネル: 内部フライアウト(ポップアップ)メニュー名＋そのメニューパス。
 #define kKESCMInternalPopupMenuNameKey	kKESCMStringPrefix "kKESCMInternalPopupMenuNameKey"
@@ -275,10 +274,12 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMToggleButtonWidgetID, kKESCMPrefix + 37)	// �
 #define kKESCMIconOffResID	1002
 #define kKESCMPaletteIconResID	1003	// パネルが折りたたまれた時に出る小さいドックタブアイコン
 
-// Menu item positions (flyout order): Hide Unchanged Spreads(9.5) → Show Original Page Numbers(9.7) →
-// Sync Layout Views(9.8) → How to Use(10) → About Scripting(11) → About this plug-in(12)。
+// Menu item positions (flyout order): Show Marks on Source(9.4) → Hide Unchanged Spreads(9.5) →
+// Show Original Page Numbers(9.7) → Sync Layout Views(9.8) → How to Use(10) → About Scripting(11) →
+// About this plug-in(12)。
 // ※メニュー名は日本語ロケールでも英語で統一(2026-07-04)。Split Target on Start(旧9.0)は撤去済み
-#define kKESCMHideUnchangedMenuItemPosition	9.5	// チェック式トグル「Hide Unchanged Spreads」を先頭に
+#define kKESCMShowSrcMarksMenuItemPosition	9.4	// チェック式トグル「Show Marks on Source」を先頭に
+#define kKESCMHideUnchangedMenuItemPosition	9.5	// チェック式トグル「Hide Unchanged Spreads」をその直後に
 #define kKESCMShowOldNumsMenuItemPosition	9.7	// チェック式トグル「Show Original Page Numbers」をその直後に
 #define kKESCMSyncViewsMenuItemPosition		9.8	// チェック式トグル「Sync Layout Views」をさらにその直後に
 #define kKESCMUsageMenuItemPosition			10.0	// 「使い方」

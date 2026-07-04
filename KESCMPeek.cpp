@@ -1109,10 +1109,12 @@ void KESCMHandleDocsClosed()
 
 	bool16 changed = kFalse;
 
-	// 比較に関わる db(マーク sDB / 旧版 sOrigDB / peek arm の target・source)のいずれかが閉じたか。
+	// 比較に関わる db(マーク sDB / 旧版 sOrigDB / Source側枠 sSrcDB / peek arm の target・source)の
+	// いずれかが閉じたか(sSrcDB は実質 sPeekSourceDB と同じ文書だが、arm 状態に依存しない保険として見る)。
 	const bool16 comparisonDocClosed =
 		(KESCMDrawEventHandler::sDB     != nil && docList->FindDocByDataBase(KESCMDrawEventHandler::sDB)     == nil) ||
 		(KESCMDrawEventHandler::sOrigDB != nil && docList->FindDocByDataBase(KESCMDrawEventHandler::sOrigDB) == nil) ||
+		(KESCMDrawEventHandler::sSrcDB  != nil && docList->FindDocByDataBase(KESCMDrawEventHandler::sSrcDB)  == nil) ||
 		(sPeekArmed &&
 		 ((sPeekTargetDB != nil && docList->FindDocByDataBase(sPeekTargetDB) == nil) ||
 		  (sPeekSourceDB != nil && docList->FindDocByDataBase(sPeekSourceDB) == nil)));
@@ -1123,10 +1125,13 @@ void KESCMHandleDocsClosed()
 		// 後で安全に InvalidateViews できる)。閉じた方の db は決して拾わない。
 		IDataBase* survivorTargetDB = nil;
 		IDataBase* survivorOrigDB   = nil;
+		IDataBase* survivorSrcDB    = nil;	// Source側枠(Show Marks on Source)が出ている文書
 		if (KESCMDrawEventHandler::sDB != nil && docList->FindDocByDataBase(KESCMDrawEventHandler::sDB) != nil)
 			survivorTargetDB = KESCMDrawEventHandler::sDB;
 		if (KESCMDrawEventHandler::sOrigDB != nil && docList->FindDocByDataBase(KESCMDrawEventHandler::sOrigDB) != nil)
 			survivorOrigDB = KESCMDrawEventHandler::sOrigDB;
+		if (KESCMDrawEventHandler::sSrcDB != nil && docList->FindDocByDataBase(KESCMDrawEventHandler::sSrcDB) != nil)
+			survivorSrcDB = KESCMDrawEventHandler::sSrcDB;
 		if (sPeekArmed)
 		{
 			if (survivorTargetDB == nil && sPeekTargetDB != nil && docList->FindDocByDataBase(sPeekTargetDB) != nil)
@@ -1151,10 +1156,13 @@ void KESCMHandleDocsClosed()
 		s.SetTranslatable(kFalse);
 		KESCMSetStatus(s);
 
-		// Stop ボタン(KESCMDoClearMarks)と同じく、生存している側を再描画して枠を即座に消す。
+		// Stop ボタン(KESCMDoClearMarks)と同じく、生存している側を再描画して枠を即座に消す
+		// (Source 側の常時枠が出ていた文書も含む)。
 		KESCMInvalidateDB(survivorTargetDB);
 		if (survivorOrigDB != survivorTargetDB)
 			KESCMInvalidateDB(survivorOrigDB);
+		if (survivorSrcDB != survivorTargetDB && survivorSrcDB != survivorOrigDB)
+			KESCMInvalidateDB(survivorSrcDB);
 	}
 
 	// 「Hide Unchanged Spreads」トグルの後片付け(Target/Source 両側)。隠し先のどちらかが閉じた、
