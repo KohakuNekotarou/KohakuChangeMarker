@@ -35,6 +35,8 @@
 #include "CObserver.h"
 #include "widgetid.h"				// kTrueStateMessage / kFalseStateMessage
 #include "PersistUtils.h"			// ::GetUIDRef
+#include "PaletteRef.h"				// パネルの一時表示(CMYK比較の押下中)でアイコン化状態を扱う
+#include "PaletteRefUtils.h"		// GetParentOfPalette / IsTabPane / Get・SetTabPaneMode(Icon⇔Expanded)
 
 // プロジェクト内:
 #include "KESCMID.h"
@@ -293,10 +295,7 @@ void KESCMPanelObserver::DoStart()
 	KESCMDoArmMousePeek(targetDB, sourceDB);
 	this->SetStatus(report);
 
-	// フライアウトの「Split Target on Start」が ON なら、Target を 90/10 の Split Window にする。
-	// 成功時は無音なので上の比較レポート表示は残る(失敗時のみステータス行が差し替わる)。
-	if (KESCMGetSplitOnStart())
-		KESCMDoSplitTarget();
+	// (Split Target on Start は 2026-07-04 撤去。仕組みは docs/ai-notes/kescm-split-target-mechanism.md に保存)
 
 	this->UpdateInfoDisplay();
 }
@@ -473,6 +472,91 @@ void KESCMEnsurePanelShown()
 		return;
 	if (!panelMgr->IsPanelWithWidgetIDShown(kKESCMPanelWidgetID))
 		panelMgr->ShowPanelByWidgetID(kKESCMPanelWidgetID, kFalse);	// giveKeyFocus=kFalse: ミドル操作中にフォーカスを奪わない
+}
+
+//========================================================================================
+// パネルの一時表示(KESCMCore.h で宣言) — CMYK比較(3キー+ミドル)の押下中だけパネルを見せて、
+// ミドルを離したら元の状態(閉じていた/アイコン化されていた)へ戻す。
+//   Begin: 押下時に呼ぶ。既に見えていれば何もしない(復元も不要)。非表示/アイコン化なら
+//          「アイコン化だったか」を控えてから ShowPanelByWidgetID で表示し、復元待ちにする。
+//   End  : ミドル解放時に呼ぶ(復元待ちでなければ即 return=無害)。アイコン化だった場合は
+//          タブペイン(ドックの1列)のモードを Icon へ戻し、閉じていた場合は Hide で閉じ直す。
+//   アイコン化の判定と復元は Drover パレット層(PaletteRefUtils)。TabPane の Icon/Expanded モード=
+//   UI の「>>」ボタン相当で、列単位の状態(パネル1枚単位ではない)。
+//========================================================================================
+static bool16 sTempShowPending = kFalse;	// 復元待ちか(Begin 時に非表示/アイコン化だった)
+static bool16 sTempShowWasIcon = kFalse;	// Begin 前がアイコン化(タブペインが Icon モード)だったか
+
+// パネルを含むタブペイン(Icon/Expanded モードを持つドックの1列)を、パレット階層を遡って探す。
+// ドッキングされていない(フローティング等)場合は無効な PaletteRef を返す。
+static PaletteRef KESCMFindPanelTabPane(IPanelMgr* panelMgr)
+{
+	IControlView* panel = panelMgr->GetPanelFromWidgetID(kKESCMPanelWidgetID);
+	if (panel == nil)
+		return PaletteRef();
+	PaletteRef pal = panelMgr->GetPaletteRefContainingPanel(panel);
+	for (int32 guard = 0; guard < 16 && pal.IsValid(); ++guard)	// guard=階層異常時の無限ループ保険
+	{
+		if (PaletteRefUtils::IsTabPane(pal))
+			return pal;
+		if (PaletteRefUtils::IsRootPaletteNode(pal))
+			break;
+		pal = PaletteRefUtils::GetParentOfPalette(pal);
+	}
+	return PaletteRef();
+}
+
+void KESCMPanelTempShowBegin()
+{
+	sTempShowPending = kFalse;
+	sTempShowWasIcon = kFalse;
+
+	InterfacePtr<IApplication> app(GetExecutionContextSession()->QueryApplication());
+	InterfacePtr<IPanelMgr> panelMgr(app != nil ? app->QueryPanelManager() : nil);
+	if (panelMgr == nil)
+		return;
+
+	if (panelMgr->IsPanelWithWidgetIDShown(kKESCMPanelWidgetID))
+		return;	// 既に見えている: 一時表示ではないので離しても何もしない
+
+	// 「アイコン化されていた」か「閉じていた」かを控える(復元方法が違う)。
+	PaletteRef pane = KESCMFindPanelTabPane(panelMgr);
+	if (pane.IsValid() && PaletteRefUtils::GetTabPaneMode(pane) == PaletteRefUtils::kIcon_TabPaneMode)
+		sTempShowWasIcon = kTrue;
+
+	panelMgr->ShowPanelByWidgetID(kKESCMPanelWidgetID, kFalse);	// giveKeyFocus=kFalse: ミドル操作中にフォーカスを奪わない
+	sTempShowPending = kTrue;
+}
+
+void KESCMPanelTempShowEnd()
+{
+	if (!sTempShowPending)
+		return;
+	sTempShowPending = kFalse;
+
+	InterfacePtr<IApplication> app(GetExecutionContextSession()->QueryApplication());
+	InterfacePtr<IPanelMgr> panelMgr(app != nil ? app->QueryPanelManager() : nil);
+	if (panelMgr == nil)
+		return;
+
+	if (sTempShowWasIcon)
+	{
+		sTempShowWasIcon = kFalse;
+		// アイコンへ戻す。Show が列ごと展開していた場合に備えて、まずタブペインのモードを Icon へ
+		// 戻し(既に Icon のまま=ドロワー表示だった場合は no-op)、それでもパネルが見えたまま
+		// (=ドロワーが開いている)なら Hide で閉じる。
+		PaletteRef pane = KESCMFindPanelTabPane(panelMgr);
+		if (pane.IsValid() &&
+		    PaletteRefUtils::GetTabPaneMode(pane) != PaletteRefUtils::kIcon_TabPaneMode)
+			PaletteRefUtils::SetTabPaneMode(pane, PaletteRefUtils::kIcon_TabPaneMode);
+		if (panelMgr->IsPanelWithWidgetIDShown(kKESCMPanelWidgetID))
+			panelMgr->HidePanelByWidgetID(kKESCMPanelWidgetID);
+	}
+	else
+	{
+		// 閉じていた → 閉じ直す。
+		panelMgr->HidePanelByWidgetID(kKESCMPanelWidgetID);
+	}
 }
 
 //========================================================================================

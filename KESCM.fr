@@ -166,6 +166,24 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 		}
 	},
 
+	// Layout view sync observer, added onto the system active-context boss (same proven pattern as
+	// the user's original KESLayoutScrollObserver plug-in, which is confirmed working: an observer
+	// living on kActiveContextBoss under a custom IID receives the layout views' IID_IPANORAMA
+	// notifications; a free-floating observer boss did NOT receive them in practice).
+	// While the flyout "Sync Layout Views" toggle is ON, this observer subscribes to the IPanorama
+	// subject of every open layout view (and to the active context for document switches). Whenever
+	// any view scrolls or zooms, the change is mirrored to all layout views of the OTHER documents
+	// (position + zoom; same engine as Alt+middle). A re-entrancy guard suppresses the
+	// notifications caused by the mirroring itself.
+	AddIn
+	{
+		kActiveContextBoss,
+		kInvalidClass,
+		{
+			IID_IKESCMLAYOUTSYNCOBSERVER, kKESCMLayoutSyncObserverImpl,
+		}
+	},
+
 	// Subclass of the system rollover icon button used for the panel illustration
 	// (kKESCMIconOnWidgetID/kKESCMIconOffWidgetID), adding IID_ITIP so hovering it shows a tooltip
 	// with the repo URL (same pattern as kLinksUIButtonBoss in open/components/linksui).
@@ -205,13 +223,8 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kSDKDefAlphabeticPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
-		// "Split Target on Start" on the panel flyout (popup) menu (shown first). Check-mark toggle:
-		// when ON (default), a successful Start splits the Target document into a 90% new pane /
-		// 10% original pane (zoomed to 5%) Split Window.
-		kKESCMPopupSplitTargetActionID,
-		kKESCMPopupMenuPath,
-		kKESCMSplitTargetMenuItemPosition,
-		kSDKDefIsNotDynamicMenuFlag,
+		// ("Split Target on Start" was removed 2026-07-04; mechanism preserved in
+		//  docs/ai-notes/kescm-split-target-mechanism.md and git history 69c4b07.)
 
 		// "Hide Unchanged Spreads" on the panel flyout (popup) menu. Check-mark toggle:
 		// turning it ON asks for confirmation (this DOES modify/dirty the documents), then hides
@@ -231,6 +244,14 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKESCMPopupShowOldNumsActionID,
 		kKESCMPopupMenuPath,
 		kKESCMShowOldNumsMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
+		// "Sync Layout Views" on the panel flyout (popup) menu. Check-mark toggle: while ON,
+		// scrolling/zooming any layout view mirrors its viewport (position + zoom) to all layout
+		// views of the other documents, live. Works without Start.
+		kKESCMPopupSyncViewsActionID,
+		kKESCMPopupMenuPath,
+		kKESCMSyncViewsMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
 		// "How to Use" on the panel flyout (popup) menu.
@@ -269,15 +290,6 @@ resource ActionDef (kSDKDefActionResourceID)
 		kSDKDefInvisibleInKBSCEditorFlag,	// KBSC editor visibility
 
 		kKESCMActionComponentBoss,
-		kKESCMPopupSplitTargetActionID,
-		kKESCMSplitTargetMenuKey,
-		kOtherActionArea,
-		kNormalAction,
-		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates supplies the check mark (kSelectedAction)
-		kInvalidInterfaceID,
-		kSDKDefInvisibleInKBSCEditorFlag,
-
-		kKESCMActionComponentBoss,
 		kKESCMPopupHideUnchangedActionID,
 		kKESCMHideUnchangedMenuKey,
 		kOtherActionArea,
@@ -289,6 +301,15 @@ resource ActionDef (kSDKDefActionResourceID)
 		kKESCMActionComponentBoss,
 		kKESCMPopupShowOldNumsActionID,
 		kKESCMShowOldNumsMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates supplies the check mark (kSelectedAction)
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		kKESCMActionComponentBoss,
+		kKESCMPopupSyncViewsActionID,
+		kKESCMSyncViewsMenuKey,
 		kOtherActionArea,
 		kNormalAction,
 		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates supplies the check mark (kSelectedAction)

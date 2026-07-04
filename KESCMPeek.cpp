@@ -14,7 +14,6 @@
 #include "IDataBase.h"
 #include "IGeometry.h"
 #include "IDocument.h"
-#include "ILayoutUIUtils.h"
 #include "IEventUtils.h"
 #include "IApplication.h"
 #include "IDocumentList.h"
@@ -27,6 +26,15 @@
 #include "IDocumentPresentation.h"
 #include "IPanelControlData.h"
 #include "ILayoutViewUtils.h"		// GetAllLayoutViews(Split Window両ペインのIControlView*取得)
+#include "ILayoutUIUtils.h"			// MakeZoomCmd(kZoomToCmdBoss。ビューポート同期のズーム)
+#include "CmdUtils.h"				// ProcessCommand(ズームコマンド実行)
+#include "ICommand.h"
+
+// レイアウトビュー同期(Sync Layout Views)用:
+#include "CObserver.h"				// 同期オブザーバの基底(手本=work/KESLayoutScrollObserver.cpp)
+#include "ISubject.h"				// AttachObserver/DetachObserver/IsAttached
+#include "IActiveContext.h"			// IID_IACTIVECONTEXT / ContextInfo(文書切替の検知)
+#include "widgetid.h"				// IID_IPANORAMA / kScrollToMessage・kScrollByMessage・kScaleToMessage・kScaleByMessage
 
 // イベント監視 / ツール / 起動:
 #include "IEventWatcher.h"
@@ -379,28 +387,147 @@ static bool16 KESCMFrontViewIsOverTarget()
 	return (hitPres->GetDocumentUIDRef().GetDataBase() == sPeekTargetDB);
 }
 
-// Alt＋ミドル押下(momentary、旧 Ctrl＋ミドル=2026-07-04移動): 「地図」ナビゲーション。マウス下のレイアウトウィンドウ
+//========================================================================================
+// ビューポート同期エンジン(共有)
+//   手本パノラマの「見えている状態」= 実効ズーム(GetXScaleFactor(kTrue)、モニタPPI補正込み。
+//   kZoomToCmdBoss の scaleFactor と同じ次元)+可視中心の content 座標 を、srcDocDb「以外」の
+//   全ドキュメントの全レイアウトビューへ複製する(同一文書のビュー=スプリット相方は対象外)。
+//   Alt+ミドル(単発)とフライアウト「Sync Layout Views」(自動)の両方がこの1本を使う。
+//========================================================================================
+
+// 再入ガード: 複製そのものが対象ビューで kScaleTo/kScrollTo 等の通知を発生させ、同期オブザーバが
+// それを拾って同期し返す(無限ループ/ピンポン)のを防ぐ。複製ループの間だけ kTrue。
+static bool16 sLayoutSyncBroadcasting = kFalse;
+
+// view がどの文書のレイアウトビューかをポインタ照合で特定する(見つからなければ nil)。
+// GetAllLayoutViews が返す IControlView* は同一ビューなら同一ポインタ(実測前提、本ファイルの
+// 役割判定でも同じ前提を使用)。同期オブザーバが通知元ビューの所属文書を知るために使う。
+static IDataBase* KESCMFindDocDbForView(IControlView* view)
+{
+	if (view == nil)
+		return nil;
+	InterfacePtr<IApplication> app(GetExecutionContextSession()->QueryApplication());
+	InterfacePtr<IDocumentList> docList(app ? app->QueryDocumentList() : nil);
+	if (docList == nil)
+		return nil;
+	const int32 docCount = docList->GetDocCount();
+	for (int32 d = 0; d < docCount; ++d)
+	{
+		IDocument* doc = docList->GetNthDoc(d);
+		if (doc == nil)
+			continue;
+		IDataBase* db = ::GetUIDRef(doc).GetDataBase();
+		K2Vector<IControlView*> views;
+		Utils<ILayoutViewUtils>()->GetAllLayoutViews(views, nil, db);
+		for (int32 vi = 0; vi < (int32)views.size(); ++vi)
+			if (views[vi] == view)
+				return db;
+	}
+	return nil;
+}
+
+static void KESCMSyncOtherDocViewportsTo(IPanorama* srcPano, IDataBase* srcDocDb)
+{
+	if (srcPano == nil)
+		return;
+
+	// 手本ビューの「見えている状態」を読む。ズームは実効スケール(kTrue=モニタPPI補正込み)。
+	// ズームコマンド(kZoomToCmdBoss)が扱う scaleFactor と同じ次元なので、読み書きが対称になる。
+	const PMReal  srcZoom   = srcPano->GetXScaleFactor(kTrue);
+	const PBPMPoint srcCenter(srcPano->GetContentLocationAtFrameCenter());
+
+	InterfacePtr<IApplication> app(GetExecutionContextSession()->QueryApplication());
+	InterfacePtr<IDocumentList> docList(app ? app->QueryDocumentList() : nil);
+	if (docList == nil)
+		return;
+
+	sLayoutSyncBroadcasting = kTrue;	// ここからの通知は自分発なのでオブザーバは無視する
+
+	const int32 docCount = docList->GetDocCount();
+	for (int32 d = 0; d < docCount; ++d)
+	{
+		IDocument* doc = docList->GetNthDoc(d);
+		if (doc == nil)
+			continue;
+
+		IDataBase* db = ::GetUIDRef(doc).GetDataBase();
+
+		// ★手本の文書自身は丸ごと対象外(スプリット相方も含む。2026-07-04ユーザー指定:
+		// 「他のドキュメントにだけ」)。
+		if (db == srcDocDb)
+			continue;
+
+		K2Vector<IControlView*> views;
+		Utils<ILayoutViewUtils>()->GetAllLayoutViews(views, nil, db);
+
+		for (int32 vi = 0; vi < (int32)views.size(); ++vi)
+		{
+			IControlView* view = views[vi];
+			if (view == nil)
+				continue;
+
+			InterfacePtr<IPanorama> pano(KESCMQueryPanorama(view));
+			if (pano == nil)
+				continue;
+
+			// 既に手本と一致しているビューは触らない。スクロールドラッグ/ズーム操作中は通知が高頻度で
+			// 来るため(自動同期経由)、一致済みビューへの再スクロール+forceRedraw を毎回打たない。
+			// 中心の許容差はズーム換算で約1.5画面px(スクロール位置は画面px量子化されるため、pt固定の
+			// 微小許容差だと低倍率で永遠に「不一致」になる)。この範囲のズレは見た目に出ない。
+			PMReal zoomDiff = pano->GetXScaleFactor(kTrue) - srcZoom;
+			if (zoomDiff < 0) zoomDiff = -zoomDiff;
+			const bool16 zoomMatched = (zoomDiff <= PMReal(0.0001));
+			if (zoomMatched)
+			{
+				const PMPoint curCenter = pano->GetContentLocationAtFrameCenter();
+				PMReal dx = curCenter.X() - srcCenter.X(); if (dx < 0) dx = -dx;
+				PMReal dy = curCenter.Y() - srcCenter.Y(); if (dy < 0) dy = -dy;
+				const PMReal tol = (srcZoom > PMReal(0.0001)) ? (PMReal(1.5) / srcZoom) : PMReal(1.0);
+				if (dx <= tol && dy <= tol)
+					continue;	// 位置も拡大率も一致済み
+			}
+
+			// 拡大率を手本と同じ実効スケールへ。ズームは UI のズーム欄と同じ公式コマンド
+			// (kZoomToCmdBoss)で行う。既定引数=ビュー中心基準。
+			// ★ILayoutViewUtils::ZoomLayoutViews 直呼びは他文書のビューに効かない(実機確認)ため不可。
+			if (!zoomMatched)
+			{
+				InterfacePtr<ICommand> zoomCmd(Utils<ILayoutUIUtils>()->MakeZoomCmd(view, srcZoom));
+				if (zoomCmd != nil)
+					CmdUtils::ProcessCommand(zoomCmd);
+			}
+			// 手本の可視中心と同じ content 座標をビュー中心へ=同じ拡大率なら同じ画面が同じように映る。
+			// ズーム(コマンド)実行後に行うので、新しい倍率で正しくセンタリングされる。
+			pano->ScrollContentLocationToFrameCenter(srcCenter, kTrue /*forceRedraw*/);
+		}
+	}
+
+	sLayoutSyncBroadcasting = kFalse;
+}
+
+// Alt＋ミドル押下(momentary、旧 Ctrl＋ミドル=2026-07-04移動): ビューポート同期。マウス下のレイアウトビュー
 // (アクティブである必要はない; IWindowUtils::QueryWindowUnderPoint でグローバル座標から直接引く)の
-// ローカル(pasteboard)座標を求め、開いている全ドキュメントの全ウィンドウ(マウス下=地図側のウィンドウ
-// 自身は除く)を同じ場所へスクロールする。ChangeMarker の Start(sPeekArmed)とは無関係に常に使える。
+// 「見えている状態」= 実効ズーム(拡大率)+ビュー中心に映っている content(pasteboard)座標 を読み取り、
+// ★「他のドキュメント」のウィンドウへだけ複製する(マウス下の文書自身のビュー=スプリット相方含めて
+// 対象外。2026-07-04ユーザー指定)。つまり拡大率が同じなら、同じ座標の画面が同じように映る
+// (旧仕様=マウス位置を他ウィンドウのセンターへスクロールするだけで、拡大率は触らなかった)。
+// ChangeMarker の Start(sPeekArmed)とは無関係に常に使える。
 //
-// 用途: 同じドキュメントを2つ開き、片方を低倍率の「地図」として使ってもう片方(や比較用の旧ドキュメント)
-// を大きくナビゲートする。pasteboard 座標はドキュメント固有の値だが、Target/Source のようにページ構成が
-// 近い別ドキュメントにもそのまま流用する(ズレは許容)。スクロール自体は KESCL(KESCLFindInDoc.cpp)の
-// ScrollViewCenterTo と同じ手口(QueryPanorama→ScrollContentLocationToFrameCenter)。
+// 用途: Target/Source のようにページ構成が近い文書を並べ、同じ場所を同じ倍率で見比べる。
+// pasteboard 座標はドキュメント固有の値だが、構成が近ければそのまま流用できる(ズレは許容)。
+// ズーム=ILayoutUIUtils::MakeZoomCmd(kZoomToCmdBoss=UIのズーム欄と同じ公式経路)+ProcessCommand。
+// ★前実装の ILayoutViewUtils::ZoomLayoutViews 直呼びは他ドキュメントのビューに効かなかった(実機で
+// 拡大率が変わらないのを確認)ため、コマンド経由へ変更。ズーム値は読み書きとも実効スケール
+// GetXScaleFactor(kTrue)(モニタPPI補正込み。IZoomCmdData.h の kMinZoom=0.05〜kMaxZoom=40.0 と同じ次元)。
+// スクロール=KESCL(KESCLFindInDoc.cpp)と同じ手口(QueryPanorama→ScrollContentLocationToFrameCenter)。
 //
 // ★Split Window(1文書2ペイン)対応:
-// (1) マウス下の判定を kLayoutWidgetBoss 固定にせず FindWidget(windowPt) でヒットテストし、地図側が
-//     スプリットの新しい側でも正しい座標に変換する。
-// (2) スクロール先のビュー列挙・パノラマ取得には Utils<ILayoutViewUtils>()->GetAllLayoutViews() を使う。
+// (1) 手本の判定を kLayoutWidgetBoss 固定にせず FindWidget(windowPt) でヒットテストし、マウスが
+//     スプリットの新しい側にあればそちらを手本にする。
+// (2) パノラマの読み書きに使うビューは必ず Utils<ILayoutViewUtils>()->GetAllLayoutViews() 経由で取得。
 //     ★実測で判明した重要事項: kLayoutSecondaryPanelWidgetID を IPanelControlData::FindWidget() で
 //     直接引いても、そのウィジェット自身はパノラマを持たず、祖先を辿っても見つからない(外側の
-//     ラッパーに過ぎない)。実際にパノラマを持つオブジェクトは GetAllLayoutViews() が返す別オブジェクト
-//     である(FindWidget(kLayoutSecondaryPanelWidgetID)の戻り値とは同一ではない)。そのため、
-//     スクロール対象は必ず GetAllLayoutViews() 経由で取得する。
-// (3) 除外は「プレゼンテーション単位」ではなく「役割単位」(地図に使っているのが元側か新しい側か)で
-//     行う。以前は pres==hitPres でプレゼンテーション全体を除外していたため、地図に使っている方の
-//     ペインと同じ文書の相方(スプリットで新しく出た側)まで丸ごとスキップされ、全く動かなかった。
+//     ラッパーに過ぎない)。実際にパノラマを持つオブジェクトは GetAllLayoutViews() が返す別オブジェクト。
 static void KESCMSyncScrollOtherWindowsUnderMouse(IEvent* e)
 {
 	if (e == nil)
@@ -425,12 +552,9 @@ static void KESCMSyncScrollOtherWindowsUnderMouse(IEvent* e)
 		return;
 
 	// ★スプリット表示中は、マウスが元側(kLayoutWidgetBoss)と新しい側(kLayoutSecondaryPanelWidgetID)の
-	// どちらの上にあるかで座標変換に使うビューが変わる。以前は常に kLayoutWidgetBoss 固定で
-	// ComputePasteboardPoint していたため、マウスがスプリットの新しい側にある時は座標がズレていた。
-	// primaryView は「グローバル→ウィンドウ座標への変換」にだけ使う(どの子ウィジェット経由でも同じ
-	// ウィンドウ座標系になるため)。実際に変換元として使うビューは FindWidget(windowPt) の
-	// ヒットテストで特定する(キャンバス以外=ルーラ等に当たった場合は primaryView にフォールバック)。
-	IControlView* hitView = primaryView;
+	// どちらの上にあるかで「手本」にするビューが変わる。FindWidget(windowPt) のヒットテストで役割だけ
+	// 判定する(キャンバス以外=ルーラ等に当たった場合は元側扱いにフォールバック)。primaryView は
+	// 「グローバル→ウィンドウ座標への変換」にだけ使う(どの子ウィジェット経由でも同じウィンドウ座標系)。
 	bool16 usedSecondary = kFalse;
 	{
 		const PMPoint globalPM((PMReal)globalPt.x, (PMReal)globalPt.y);
@@ -440,59 +564,230 @@ static void KESCMSyncScrollOtherWindowsUnderMouse(IEvent* e)
 		winPt.y = ::ToInt32(winPM.Y());
 
 		IControlView* pointHit = hitPanelData->FindWidget(winPt);
-		if (pointHit != nil &&
-		    (pointHit->GetWidgetID() == kLayoutWidgetBoss || pointHit->GetWidgetID() == kLayoutSecondaryPanelWidgetID))
-		{
-			hitView = pointHit;
-			usedSecondary = (pointHit->GetWidgetID() == kLayoutSecondaryPanelWidgetID);
-		}
+		if (pointHit != nil && pointHit->GetWidgetID() == kLayoutSecondaryPanelWidgetID)
+			usedSecondary = kTrue;
 	}
 
-	const PBPMPoint pbPoint = Utils<ILayoutUIUtils>()->ComputePasteboardPoint(globalPt, hitView);
-	const IDataBase* hitDocDb = hitPres->GetDocumentUIDRef().GetDataBase();
+	IDataBase* hitDocDb = hitPres->GetDocumentUIDRef().GetDataBase();
 
-	InterfacePtr<IApplication> app(GetExecutionContextSession()->QueryApplication());
-	InterfacePtr<IDocumentList> docList(app ? app->QueryDocumentList() : nil);
-	if (docList == nil)
+	// 手本(マウス下)ビューの実体を特定する。FindWidget が返すオブジェクトはパノラマを持たない
+	// ラッパーのことがある(上記(2))ので、パノラマの読み取りも GetAllLayoutViews 経由の実体で行う。
+	// スプリット中(ビュー2つ)は元側/新しい側を消去法で選ぶ。非スプリット(1つ)はそのまま採用。
+	// 万一どれとも同定できなければ先頭の非nilビューへフォールバック(何もしないよりよい)。
+	IControlView* mapView = nil;
+	{
+		K2Vector<IControlView*> hitDocViews;
+		Utils<ILayoutViewUtils>()->GetAllLayoutViews(hitDocViews, nil, hitDocDb);
+		IControlView* firstView = nil;
+		for (int32 i = 0; i < (int32)hitDocViews.size(); ++i)
+		{
+			if (hitDocViews[i] == nil)
+				continue;
+			if (firstView == nil)
+				firstView = hitDocViews[i];
+			const bool16 thisIsPrimary = (hitDocViews[i] == primaryView);
+			const bool16 thisIsTheMapView = usedSecondary ? !thisIsPrimary : thisIsPrimary;
+			if (thisIsTheMapView)
+			{
+				mapView = hitDocViews[i];
+				break;
+			}
+		}
+		if (mapView == nil)
+			mapView = firstView;
+	}
+	InterfacePtr<IPanorama> srcPano(mapView != nil ? KESCMQueryPanorama(mapView) : nil);
+	if (srcPano == nil)
 		return;
 
-	const int32 docCount = docList->GetDocCount();
-	for (int32 d = 0; d < docCount; ++d)
+	KESCMSyncOtherDocViewportsTo(srcPano, hitDocDb);
+}
+
+
+//========================================================================================
+// レイアウトビュー同期(フライアウト「Sync Layout Views」チェック式トグル)
+//   ON の間、全ドキュメントの全レイアウトビューの IPanorama subject を購読し、どれかが
+//   スクロール/ズームしたら KESCMSyncOtherDocViewportsTo で他文書のビューへ複製する(自動・ライブ)。
+//   さらに ActiveContext(文書切替)も購読し、新しく開いた文書のビューを購読へ追加する。
+//   Start(枠)とは完全に独立=単独で ON にできる。
+//
+//   手本=ユーザー自作の旧KESプラグインの KESLayoutScrollObserver(work/ に原本)。改善点:
+//   ①購読対象を「アクティブ文書の最初のプレゼンテーションの元側ペインのみ(QueryFrontView 一致時)」
+//     から「全文書の全レイアウトビュー(スプリット新側・2枚目以降のウィンドウ込み)」へ拡大。
+//     どのウィンドウを動かしてもそれが手本になり、QueryFrontView のアクティブ追跡ズレ
+//     (Split Window で実測済みの罠)にも影響されない。
+//   ②多重購読でも無限ループ/ピンポンしないよう、再入ガード(sLayoutSyncBroadcasting)で
+//     複製中に発生する自分発の通知を無視する(手本は「単一ビューだけ購読」で回避していた)。
+//   ③同期エンジンは Alt+ミドルと共通(kZoomToCmdBoss+実効スケール対称読み書き=本日実機確定の手順)。
+//========================================================================================
+
+static bool16 sLayoutSyncOn = kFalse;			// トグル状態(セッション内のみ保持)
+
+// 同期オブザーバの実体を ActiveContext boss から引く(+1 ref、呼び出し側は InterfacePtr で受ける)。
+// ★実証済み構成: .fr の AddIn で kActiveContextBoss に IID_IKESCMLAYOUTSYNCOBSERVER として同居させる
+// (手本=ユーザー自作 KESLayoutScrollObserver と同じ)。
+// ★当初の失敗の原因(特定済み): AttachObserver の第4引数 asObserver は「オブザーバ実装がそのboss上で
+// 実際に載っているインターフェイスID」を渡す契約(ISubject.h の記述+IChangeManager は依存を
+// (subject, observer, observerIID, interestedIn) で管理し boss+IID で引き直せる前提の設計。
+// CSubject.h/IChangeManager.h は docs HTML のみに存在)。当初は実装を IID_IOBSERVER で載せた独立boss
+// (CreateObject2)に、boss上に存在しない IID_IKESCMLAYOUTSYNCOBSERVER を asObserver として渡していた
+// ため Update が届かなかった。現構成は実装が実際に IID_IKESCMLAYOUTSYNCOBSERVER で載っており整合する。
+static IObserver* KESCMQueryLayoutSyncObserver()
+{
+	IActiveContext* ctx = GetExecutionContextSession()->GetActiveContext();
+	if (ctx == nil)
+		return nil;
+	return (IObserver*)ctx->QueryInterface(IID_IKESCMLAYOUTSYNCOBSERVER);
+}
+
+// 全レイアウトビューへ購読を付ける(未購読のものだけ)。ON時と、ON中の文書切替時に呼ばれ、
+// 新しく開いた文書・新しく現れたウィンドウのビューを取りこぼさない。
+static void KESCMLayoutSyncAttachAllPanoramas()
+{
+	InterfacePtr<IObserver> obs(KESCMQueryLayoutSyncObserver());
+	if (obs == nil)
+		return;
+	K2Vector<IControlView*> views;
+	Utils<ILayoutViewUtils>()->GetAllLayoutViews(views, nil, nil);	// db=nil で全ドキュメントの全レイアウトビュー
+	for (int32 i = 0; i < (int32)views.size(); ++i)
 	{
-		IDocument* doc = docList->GetNthDoc(d);
-		if (doc == nil)
+		if (views[i] == nil)
 			continue;
+		InterfacePtr<ISubject> subject(views[i], UseDefaultIID());
+		if (subject == nil)
+			continue;
+		if (!subject->IsAttached(ISubject::kRegularAttachment, obs, IID_IPANORAMA, IID_IKESCMLAYOUTSYNCOBSERVER))
+			subject->AttachObserver(ISubject::kRegularAttachment, obs, IID_IPANORAMA, IID_IKESCMLAYOUTSYNCOBSERVER);
+	}
+}
 
-		IDataBase* db = ::GetUIDRef(doc).GetDataBase();
-		const bool16 isHitDoc = (db == hitDocDb);
+// 全レイアウトビューから購読を外す(OFF時/Shutdown時)。既にクローズされたビューは
+// GetAllLayoutViews に現れない=購読はビュー破棄と一緒に消えているので、生存分だけ外せばよい。
+static void KESCMLayoutSyncDetachAllPanoramas()
+{
+	InterfacePtr<IObserver> obs(KESCMQueryLayoutSyncObserver());
+	if (obs == nil)
+		return;
+	K2Vector<IControlView*> views;
+	Utils<ILayoutViewUtils>()->GetAllLayoutViews(views, nil, nil);
+	for (int32 i = 0; i < (int32)views.size(); ++i)
+	{
+		if (views[i] == nil)
+			continue;
+		InterfacePtr<ISubject> subject(views[i], UseDefaultIID());
+		if (subject == nil)
+			continue;
+		if (subject->IsAttached(ISubject::kRegularAttachment, obs, IID_IPANORAMA, IID_IKESCMLAYOUTSYNCOBSERVER))
+			subject->DetachObserver(ISubject::kRegularAttachment, obs, IID_IPANORAMA, IID_IKESCMLAYOUTSYNCOBSERVER);
+	}
+}
 
-		K2Vector<IControlView*> views;
-		Utils<ILayoutViewUtils>()->GetAllLayoutViews(views, nil, db);
+// ActiveContext(文書切替の通知源)への購読を付け外しする。ActiveContext はセッションに1つの
+// 永続オブジェクトなので、付け外しは ON/OFF 時の各1回でよい。
+static void KESCMLayoutSyncAttachContext(bool16 attach)
+{
+	IActiveContext* ctx = GetExecutionContextSession()->GetActiveContext();
+	if (ctx == nil)
+		return;
+	InterfacePtr<IObserver> obs((IObserver*)ctx->QueryInterface(IID_IKESCMLAYOUTSYNCOBSERVER));
+	if (obs == nil)
+		return;
+	InterfacePtr<ISubject> subject(ctx, UseDefaultIID());
+	if (subject == nil)
+		return;
+	const bool16 attached = subject->IsAttached(ISubject::kRegularAttachment, obs, IID_IACTIVECONTEXT, IID_IKESCMLAYOUTSYNCOBSERVER);
+	if (attach && !attached)
+		subject->AttachObserver(ISubject::kRegularAttachment, obs, IID_IACTIVECONTEXT, IID_IKESCMLAYOUTSYNCOBSERVER);
+	else if (!attach && attached)
+		subject->DetachObserver(ISubject::kRegularAttachment, obs, IID_IACTIVECONTEXT, IID_IKESCMLAYOUTSYNCOBSERVER);
+}
 
-		for (int32 vi = 0; vi < (int32)views.size(); ++vi)
+/** レイアウトビュー同期オブザーバの実装。.fr の AddIn で kActiveContextBoss に
+    IID_IKESCMLAYOUTSYNCOBSERVER として同居させている(手本と同じ実証済み構成)。 */
+class KESCMLayoutSyncObserver : public CObserver
+{
+public:
+	KESCMLayoutSyncObserver(IPMUnknown* boss) : CObserver(boss) {}
+	~KESCMLayoutSyncObserver() {}
+
+	virtual void Update(const ClassID& theChange, ISubject* theSubject, const PMIID& protocol, void* changedBy);
+};
+
+CREATE_PMINTERFACE(KESCMLayoutSyncObserver, kKESCMLayoutSyncObserverImpl)
+
+void KESCMLayoutSyncObserver::Update(const ClassID& theChange, ISubject* theSubject, const PMIID& protocol, void* changedBy)
+{
+	if (!sLayoutSyncOn || sLayoutSyncBroadcasting)
+		return;	// OFF、または自分発(複製中)の通知
+
+	// 文書切替(IID_IDOCUMENT)またはアクティブビュー切替(IID_ICONTROLVIEW)で購読を付け直す
+	// (未購読分にだけ付く。手本の KESLayoutScrollObserver は文書切替のみだったが、ビュー切替も見る
+	// ことで、ON 中に作られた同一文書の新規ウィンドウ/Split Window の新側ペインも、クリックして
+	// アクティブになった瞬間に購読される=そのペインを動かしても手本になれる)。
+	if (protocol.Get() == IID_IACTIVECONTEXT)
+	{
+		IActiveContext::ContextInfo* info = (IActiveContext::ContextInfo*)changedBy;
+		if (info != nil && (info->Key() == IID_IDOCUMENT || info->Key() == IID_ICONTROLVIEW))
+			KESCMLayoutSyncAttachAllPanoramas();
+		return;
+	}
+
+	if (protocol.Get() != IID_IPANORAMA)
+		return;
+	if (theChange != kScrollToMessage && theChange != kScrollByMessage &&
+	    theChange != kScaleToMessage  && theChange != kScaleByMessage)
+		return;
+
+	// 通知元(=手本)のパノラマと所属文書。theSubject はレイアウトビュー boss の subject なので、
+	// 同じ boss から IPanorama / IControlView を引ける。
+	InterfacePtr<IPanorama> srcPano(theSubject, UseDefaultIID());
+	InterfacePtr<IControlView> srcView(theSubject, UseDefaultIID());
+	if (srcPano == nil || srcView == nil)
+		return;
+	IDataBase* srcDocDb = KESCMFindDocDbForView(srcView);
+	if (srcDocDb == nil)
+		return;	// 所属文書を特定できない(クローズ途中等)。同期しない
+
+	KESCMSyncOtherDocViewportsTo(srcPano, srcDocDb);
+}
+
+// KESCMGetLayoutSync / KESCMSetLayoutSync(KESCMCore.h で宣言) — フライアウトトグルの実体。
+bool16 KESCMGetLayoutSync()
+{
+	return sLayoutSyncOn;
+}
+
+void KESCMSetLayoutSync(bool16 on)
+{
+	if ((on && sLayoutSyncOn) || (!on && !sLayoutSyncOn))
+		return;
+
+	if (on)
+	{
+		// オブザーバは kActiveContextBoss に AddIn 済み(.fr)。取得できない環境なら ON にしない。
+		InterfacePtr<IObserver> obs(KESCMQueryLayoutSyncObserver());
+		if (obs == nil)
+			return;
+		sLayoutSyncOn = kTrue;
+		KESCMLayoutSyncAttachContext(kTrue);
+		KESCMLayoutSyncAttachAllPanoramas();
+
+		// ON にした瞬間に一度そろえる(手本=最前面のレイアウトビュー)。以後は通知駆動のライブ同期。
+		InterfacePtr<IControlView> front(Utils<ILayoutUIUtils>()->QueryFrontView());
+		if (front != nil)
 		{
-			IControlView* view = views[vi];
-			if (view == nil)
-				continue;
-
-			if (isHitDoc)
-			{
-				// 地図に使っている文書自身の場合、マウスが乗っている「役割」(元側/新しい側)と
-				// 一致するビューだけをスキップする(地図自身は動かさない)。primaryView との一致で
-				// 元側かどうかを判定できる(GetAllLayoutViews の元側エントリは primaryView と同一
-				// オブジェクトであることを実測で確認済み)。新しい側は同一オブジェクトを直接指せない
-				// (FindWidget(kLayoutSecondaryPanelWidgetID)は別オブジェクトを返すため)ので、
-				// 「元側ではない方」として消去法で判定する。
-				const bool16 thisIsPrimary = (view == primaryView);
-				const bool16 thisIsTheMapView = usedSecondary ? !thisIsPrimary : thisIsPrimary;
-				if (thisIsTheMapView)
-					continue;
-			}
-
-			InterfacePtr<IPanorama> pano(KESCMQueryPanorama(view));
-			if (pano != nil)
-				pano->ScrollContentLocationToFrameCenter(pbPoint, kTrue /*forceRedraw*/);
+			InterfacePtr<IPanorama> pano(KESCMQueryPanorama(front));
+			IDataBase* db = KESCMFindDocDbForView(front);
+			if (pano != nil && db != nil)
+				KESCMSyncOtherDocViewportsTo(pano, db);
 		}
+	}
+	else
+	{
+		sLayoutSyncOn = kFalse;
+		KESCMLayoutSyncDetachAllPanoramas();
+		KESCMLayoutSyncAttachContext(kFalse);
+		// オブザーバ本体は kActiveContextBoss 所属(AddIn)なので、寿命管理は不要。
 	}
 }
 
@@ -564,8 +859,10 @@ IEventDispatcher::EventTypeList KESCMPeekWatcher::WatchEvent(IEvent* e)
 			if (KESCMSampleCmykUnderMouse(sPeekTargetDB, sPeekSourceDB, colorMsg))
 			{
 				// 結果はパネルのステータス行に出るので、パネルが閉じている/アイコン化されていると
-				// ユーザーが気づけない。表示直前に確実に開く。
-				KESCMEnsurePanelShown();
+				// ユーザーが気づけない。押下中だけ一時表示し、ミドルを離したら元の状態
+				// (閉じていた/アイコン化)へ戻す(KESCMPanelTempShowEnd は kMButtonUp 側)。
+				// 既に見えていた場合は何も変えない(離しても閉じない)。
+				KESCMPanelTempShowBegin();
 				KESCMSetStatus(colorMsg);
 			}
 		}
@@ -635,6 +932,10 @@ IEventDispatcher::EventTypeList KESCMPeekWatcher::WatchEvent(IEvent* e)
 	{
 		// ミドルを離したら、ハンドに切替えていた場合は元のツールへ戻す(シングル/ダブル共通)。
 		KESCMRestoreTool();
+
+		// CMYK比較(3キー+ミドル)で一時表示していたパネルを元の状態(閉/アイコン)へ戻す。
+		// 一時表示していなければ無害な no-op。
+		KESCMPanelTempShowEnd();
 
 		if (sPeekActive)
 		{
@@ -726,6 +1027,14 @@ void KESCMPeekStartup::Shutdown()
 		sSavedTool = nil;
 	}
 	sHandActive = kFalse;
+
+	// レイアウトビュー同期の後始末は「状態フラグを落とすだけ」にする(以後の通知は Update 先頭の
+	// ガードで無視される)。★KESCMSetLayoutSync(kFalse) をここで呼んではならない: その経路は
+	// GetActiveContext()/GetAllLayoutViews に触るが、アプリ終了処理中はセッション/コンテキストが
+	// 解体中で deref すると 100% クラッシュする(実機で確認済み。ON のまま終了→必ず落ちた)。
+	// 手本の KESLayoutScrollObserver も終了時は何も外さず無事故=購読(依存)は subject/observer の
+	// boss 破棄と一緒に IChangeManager から消えるので、明示的な解除は不要。
+	sLayoutSyncOn = kFalse;
 }
 
 //========================================================================================

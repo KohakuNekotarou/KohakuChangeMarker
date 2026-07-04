@@ -23,10 +23,13 @@ static const PMReal kKESCMMarkOpacity75 = 0.75;	// 「75%」(濃いめ・少し�
 // CMYK のまま比較するのが要点(ユーザーは CMYK 数値で考える)。画像/効果の再描画ゆらぎでノイズが出るなら 1〜2 に上げる。
 static const int   kKESCMCmykThr = 0;
 static const int32 kKESCMBaseRadius = 4;	// リング初期半径(画像px)。描画時にズームから再算出するための初期値
-static const PMReal kKESCMResolution = 72.0;	// 保存・表示のラスタ解像度(dpi)。リング画像/マスクはこの解像度で持つ(軽い)
+static const PMReal kKESCMResolution = 36.0;	// 保存・表示のラスタ解像度(dpi)。リング画像/マスクはこの解像度で持つ。
+												// ★2026-07-04 72→36 へ変更(メモリ約1/4: A4の変更ページ1枚 約3MB→約0.77MB)。
+												// 代償=マスク1セルが1pt→2pt角になり枠の輪郭が粗くなる(特にズームイン時と印刷)。
 // 【取りこぼし防止】比較だけ高解像度で行い、結果を低解像度に圧縮(マックスプーリング)して記憶する。
 // 比較解像度 = kKESCMResolution × kKESCMHiResMul。低解像度では平均化で消える細線/微小ズレを満額で拾う。
-static const PMReal kKESCMHiResMul    = 2.0;	// 比較解像度の倍率(2=144dpi)。上げるほど検出力↑/一時メモリ↑。300dpi 相当なら≒4.17
+static const PMReal kKESCMHiResMul    = 4.0;	// 比較解像度の倍率。★保存36dpi化に合わせ 2.0→4.0(36×4=144dpi で検出力は従来と同一)。
+												// 比較時の一時メモリも従来(144dpi)と同じ
 static const int32  kKESCMPoolMinCount = 1;	// プーリング: 低解像度1セル内の「高解像度の変化画素数」がこの値以上で変化と判定。
 											// 1=最高感度(縁ノイズも拾う)/大きいほどノイズ耐性↑(取りこぼしのリスクも僅かに増)
 

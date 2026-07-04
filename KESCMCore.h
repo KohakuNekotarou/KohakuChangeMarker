@@ -104,22 +104,22 @@ void		KESCMSetStatus(const PMString& s, bool16 forceRedrawNow = kFalse);
 
 // パネルが非表示(閉じている、またはアイコン化/最小化されている)なら表示する。何もしなくても既に
 // 見えている場合は何もしない。フォーカスは奪わない(giveKeyFocus=kFalse; ミドルボタン操作の途中で
-// 呼ばれるため)。CMYK比較(KESCMSampleCmykUnderMouse)のように、結果をパネルのステータス行に出す
-// 直前に呼び、ユーザーが確実に結果を見られるようにする。実体は KESCMPanelObserver.cpp。
+// 呼ばれるため)。実体は KESCMPanelObserver.cpp。
 void		KESCMEnsurePanelShown();
+
+// パネルの一時表示(CMYK比較=3キー+ミドルの押下中だけ)。Begin=押下時: 非表示/アイコン化なら表示して
+// 復元待ちにする(既に見えていれば何もしない)。End=ミドル解放時: 元の状態(閉じていた→閉じ直す/
+// アイコン化→タブペインを Icon へ戻す)に復元する(復元待ちでなければ無害な no-op)。
+// 実体は KESCMPanelObserver.cpp(アイコン判定・復元は PaletteRefUtils)。
+void		KESCMPanelTempShowBegin();
+void		KESCMPanelTempShowEnd();
 
 // パネルのイラスト(ON/OFF アイコン)をクリックしたときに呼ぶ。「このプラグインについて」に載せている
 // 配布元URL(kKESCMRepoURL, KESCMID.h)を既定のブラウザで開く。実体は KESCMActionComponent.cpp。
 void		KESCMOpenAboutURL();
 
-// パネルのフライアウト「Split Target on Start」トグルの現在値(既定 kTrue、セッション内のみ保持)。
-// kTrue なら Start 成功時に KESCMDoSplitTarget が自動で走る。実体は KESCMActionComponent.cpp。
-bool16		KESCMGetSplitOnStart();
-
-// Target 文書(KESCMArmedTargetDB)を Split Window で2分割し、新しい側を90%・元側を10%幅+5%ズームの
-// 概観ペインにする。成功時は無音、失敗時のみパネルのステータス行にメッセージを出す(UI状態のみで
-// ドキュメントモデルには触れない)。実体は KESCMActionComponent.cpp。
-void		KESCMDoSplitTarget();
+// (Split Target on Start(KESCMGetSplitOnStart/KESCMDoSplitTarget)は 2026-07-04 撤去。
+//  仕組みは docs/ai-notes/kescm-split-target-mechanism.md と git 履歴 69c4b07 に保存)
 
 // フライアウト「Hide Unchanged Spreads」トグルの状態リセット(Target/Source 両側)。
 // restoreSpreads=kTrue なら、覚えている「自分が隠したスプレッド」を kHideSpreadCmdBoss(kFalse) で
@@ -135,5 +135,12 @@ void		KESCMResetHideUnchanged(bool16 restoreSpreads);
 // 実体は KESCMActionComponent.cpp。
 IDataBase*	KESCMGetHideUnchangedDB();
 IDataBase*	KESCMGetHideUnchangedSrcDB();
+
+// フライアウト「Sync Layout Views」トグル(レイアウトビュー同期)。ON の間、どれかのレイアウトビューを
+// スクロール/ズームすると、その表示(座標+拡大率)を他のドキュメントの全レイアウトビューへ自動で複製する
+// (同一文書のビュー=スプリット相方は対象外。Alt+ミドルと同じ同期エンジン)。Start(枠)とは無関係に
+// 単独で ON にできる。実体は KESCMPeek.cpp(オブザーバと同期エンジンの状態がある場所)。
+bool16		KESCMGetLayoutSync();
+void		KESCMSetLayoutSync(bool16 on);
 
 #endif // __KESCMCore_h__

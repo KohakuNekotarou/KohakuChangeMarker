@@ -28,23 +28,15 @@
 #include "IDocumentList.h"			// FindDocByDataBase(閉じた db を deref しないための生存確認)
 #include <vector>
 
-// Split Target(90/10)機能用:
-#include "IDocumentUIUtils.h"		// Utils<IDocumentUIUtils>()->GetActiveDocumentPresentation/GetFrontmostPresentationForDocument
-#include "IDocumentPresentation.h"
-#include "IPanelControlData.h"		// FindWidget(kLayoutSplitterPanelWidgetID)
-#include "IControlView.h"			// GetFrame()
-#include "LayoutUIID.h"				// kLayoutSplitterPanelWidgetID
-#include "ISplitterPanelControlData.h"	// source/open/interfaces/ui。GetSplitterEdge/GetSplitterPercent等
-#include "ISplitterPanelController.h"	// source/open/interfaces/ui。SetSplitterEdge/SyncPanelsToSplitter
-#include "ILayoutViewUtils.h"		// Show/HideSplitLayoutView, IsSplitLayoutViewShown, GetAllLayoutViews(上位Facade)
-#include "IGalleyUtils.h"			// InGalleyOrStory(ガレー/ストーリー編集中はスプリットレイアウトの概念が異なるためガード)
-#include "IDataBase.h"				// GetDocumentUIDRef().GetDataBase()
-#include "IPanorama.h"				// GetBounds(ペーストボード範囲)/ScrollContentLocationToFrameCenter/GetYScaleFactor
+#include "IDataBase.h"				// GetRootUID()(Hide Unchanged のスプレッド走査)
+
+// (Split Target(90/10)機能は 2026-07-04 撤去。専用 include 群も削除。
+//  仕組みは docs/ai-notes/kescm-split-target-mechanism.md と git 履歴 69c4b07 に保存)
 
 // プロジェクト内:
 #include "KESCMID.h"
 #include "KESCMCore.h"		// KESCMOpenAboutURL
-#include "KESCMDrawEventHandler.h"	// KESCMQueryPanorama(IControlView から IPanorama を辿る共有ヘルパ)
+#include "KESCMDrawEventHandler.h"	// sEntries/sDB/sShowOldNumbers(Hide Unchanged と旧番号バッジの状態参照)
 
 // ★注意: source/public/includes/URLUtils.h は "namespace URLUtils { PUBLIC_DECL void GoToURL(...); }" と
 // 宣言しているが、これはヘッダーとバイナリの不一致(Public.lib 側の実エクスポート名と食い違っている)。
@@ -55,15 +47,6 @@
 namespace GoToURLUtils
 {
 	PUBLIC_DECL void GoToURL(const PMString& goToURL, bool16 isAGoURL);
-}
-
-// 「Split Target on Start」トグルの状態(セッション内のみ保持、印刷チェック等の既存状態と同じ扱い)。
-// kTrue なら Start 成功時に KESCMDoSplitTarget() が自動で走る。既定は ON。
-static bool16 sSplitOnStart = kTrue;
-
-bool16 KESCMGetSplitOnStart()
-{
-	return sSplitOnStart;
 }
 
 // 「Hide Unchanged Spreads」トグルの状態。ON の間、sHiddenSpreads = 自分が隠したスプレッド UID の控え
@@ -87,7 +70,7 @@ public:
 	/** Execute the requested menu action. */
 	void DoAction(IActiveContext* ac, ActionID actionID, GSysPoint mousePoint = kInvalidMousePoint, IPMUnknown* widget = nil);
 
-	/** 「Split Target on Start」(kCustomEnabling)のチェックマークを sSplitOnStart に合わせて更新する。 */
+	/** チェック式トグル(kCustomEnabling)のチェックマークを現在の状態に合わせて更新する。 */
 	virtual void UpdateActionStates(IActiveContext* ac, IActionStateList* listToUpdate, GSysPoint mousePoint = kInvalidMousePoint, IPMUnknown* widget = nil);
 
 private:
@@ -118,15 +101,6 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 			this->DoUsage();
 			break;
 
-		// 「Split Target on Start」トグル: フラグを反転する。ON にした時点で既に Start 済み(armed)
-		// なら、次の Start を待たずにその場でスプリットを適用する。OFF にしてもスプリット済みの
-		// ウィンドウは戻さない(手動で閉じられるため)。
-		case kKESCMPopupSplitTargetActionID:
-			sSplitOnStart = !sSplitOnStart;
-			if (sSplitOnStart && KESCMIsArmed() && (KESCMArmedTargetDB() != nil))
-				KESCMDoSplitTarget();
-			break;
-
 		// 「Hide Unchanged Spreads」トグル: OFF→ON は確認ダイアログ→変更なしスプレッドを隠す。
 		// ON→OFF は自分が隠した分だけ再表示。本体は DoHideUnchangedToggle。
 		case kKESCMPopupHideUnchangedActionID:
@@ -144,27 +118,26 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 				KESCMInvalidateDB(KESCMArmedSourceDB());
 			break;
 
+		// 「Sync Layout Views」トグル: レイアウトビュー同期の ON/OFF。実体は KESCMPeek.cpp の
+		// KESCMSetLayoutSync(購読の付け外し+ON時は即時に一度そろえる)。Start(枠)とは無関係に使える。
+		case kKESCMPopupSyncViewsActionID:
+			KESCMSetLayoutSync(!KESCMGetLayoutSync());
+			break;
+
 		default:
 			break;
 	}
 }
 
-/* UpdateActionStates — チェック式トグル3つ(「Split Target on Start」「Hide Unchanged Spreads」
-   「Show Original Page Numbers」)のチェックマーク。常に有効、ON なら kSelectedAction を立てる
+/* UpdateActionStates — チェック式トグル3つ(「Hide Unchanged Spreads」「Show Original Page Numbers」
+   「Sync Layout Views」)のチェックマーク。常に有効、ON なら kSelectedAction を立てる
    (docwatch の DocWchActionComponent::UpdateActionStates と同じ流儀)。 */
 void KESCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionStateList* listToUpdate, GSysPoint /*mousePoint*/, IPMUnknown* /*widget*/)
 {
 	for (int32 i = 0; i < listToUpdate->Length(); i++)
 	{
 		const ActionID action = listToUpdate->GetNthAction(i);
-		if (action == kKESCMPopupSplitTargetActionID)
-		{
-			int16 actionState = kEnabledAction;
-			if (sSplitOnStart)
-				actionState |= kSelectedAction;
-			listToUpdate->SetNthActionState(i, actionState);
-		}
-		else if (action == kKESCMPopupHideUnchangedActionID)
+		if (action == kKESCMPopupHideUnchangedActionID)
 		{
 			int16 actionState = kEnabledAction;
 			if (sHideUnchangedOn)
@@ -175,6 +148,13 @@ void KESCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionSta
 		{
 			int16 actionState = kEnabledAction;
 			if (KESCMDrawEventHandler::sShowOldNumbers)
+				actionState |= kSelectedAction;
+			listToUpdate->SetNthActionState(i, actionState);
+		}
+		else if (action == kKESCMPopupSyncViewsActionID)
+		{
+			int16 actionState = kEnabledAction;
+			if (KESCMGetLayoutSync())
 				actionState |= kSelectedAction;
 			listToUpdate->SetNthActionState(i, actionState);
 		}
@@ -507,123 +487,8 @@ IDataBase* KESCMGetHideUnchangedSrcDB()
 	return sHiddenSrcDB;
 }
 
-// KESCMDoSplitTarget(KESCMCore.h で宣言) — Start 成功時(および「Split Target on Start」を armed 中に
-//   ON へ切り替えた時)に呼ばれる。
-//   KESCM の Target 文書(Start 済みの比較対象、KESCMArmedTargetDB)を Split Window で2分割し、
-//   新しく現れた側(kLayoutSecondaryPanelWidgetID)を全体の90%、元から表示していた側
-//   (kLayoutWidgetBoss)を10%にする。さらに元の側は概観用として拡大率を5%にし、ペーストボード
-//   X中央・Y上端が見えるようスクロールする(左右にはずれず、上寄せの俯瞰表示)。
-//   ★前提(Split Test の実測結果からの類推、要目視確認): SetSplitterEdge に「全体の10%」を渡すと
-//   境界(先頭側=index0)が10%地点に来る。先頭側が元のペイン(kLayoutWidgetBoss)である前提だが、
-//   もし逆(新しいペインが10%になる)場合は下の target 計算を (1.0 - 0.10) に反転すればよい。
-//   成功時は無音(Start の比較レポート表示を上書きしない)。失敗時のみパネルのステータス行に出す。
-//   ドキュメントモデルには一切触れない(UI状態のみ)ので Command 化は不要。
-void KESCMDoSplitTarget()
-{
-	IDataBase* targetDB = KESCMArmedTargetDB();
-	if (targetDB == nil)
-	{
-		PMString msg("Split Target: ChangeMarker is not armed (press Start first).");
-		msg.SetTranslatable(kFalse);
-		KESCMSetStatus(msg);
-		return;
-	}
-
-	IDocumentPresentation* pres = Utils<IDocumentUIUtils>()->GetFrontmostPresentationForDocument(targetDB);
-	if (pres == nil)
-	{
-		PMString msg("Split Target: no open presentation for the Target document.");
-		msg.SetTranslatable(kFalse);
-		KESCMSetStatus(msg);
-		return;
-	}
-
-	if (Utils<IGalleyUtils>() != nil && Utils<IGalleyUtils>()->InGalleyOrStory(pres))
-	{
-		PMString msg("Split Target: the Target document is in Galley/Story view; cannot split.");
-		msg.SetTranslatable(kFalse);
-		KESCMSetStatus(msg);
-		return;
-	}
-
-	if (!Utils<ILayoutViewUtils>()->IsSplitLayoutViewShown(pres))
-		Utils<ILayoutViewUtils>()->ShowSplitLayoutView(pres);
-
-	InterfacePtr<IPanelControlData> panelData(pres, UseDefaultIID());
-	IControlView* splitterView = (panelData != nil) ? panelData->FindWidget(kLayoutSplitterPanelWidgetID) : nil;
-	if (splitterView == nil)
-	{
-		PMString msg("Split Target: splitter widget not found.");
-		msg.SetTranslatable(kFalse);
-		KESCMSetStatus(msg);
-		return;
-	}
-
-	InterfacePtr<ISplitterPanelControlData> splitterData(splitterView, UseDefaultIID());
-	InterfacePtr<ISplitterPanelController>  splitterCtrl(splitterData, UseDefaultIID());
-	if (splitterData == nil || splitterCtrl == nil)
-	{
-		PMString msg("Split Target: splitter interfaces not available.");
-		msg.SetTranslatable(kFalse);
-		KESCMSetStatus(msg);
-		return;
-	}
-
-	// 元の側を10%、新しい側を90%にする(横幅=IsVerticalSplitter()==trueのケースで実測済み)。
-	const bool16 vertical = splitterData->IsVerticalSplitter();
-	const PMRect frame = splitterView->GetFrame();
-	const PMReal totalExtent = vertical ? frame.Width() : frame.Height();
-	const int32 target = ::ToInt32(totalExtent * PMReal(0.10));
-	splitterCtrl->SetSplitterEdge(target);
-	splitterCtrl->SyncPanelsToSplitter(kTrue, kFalse);
-
-	// 元の側(kLayoutWidgetBoss)の拡大率を5%にする。GetAllLayoutViews で両ペインの IControlView* を
-	// 取得し、WidgetID で元側を特定してからズームする。
-	K2Vector<IControlView*> layoutViews;
-	IDataBase* db = pres->GetDocumentUIDRef().GetDataBase();
-	Utils<ILayoutViewUtils>()->GetAllLayoutViews(layoutViews, nil, db);
-
-	IControlView* originalView = nil;
-	for (int32 i = 0; i < (int32)layoutViews.size(); ++i)
-	{
-		if (layoutViews[i] != nil && layoutViews[i]->GetWidgetID() == kLayoutWidgetBoss)
-		{
-			originalView = layoutViews[i];
-			break;
-		}
-	}
-
-	// 元側ペインが見つからなくてもスプリット自体は成立しているので、ズーム/スクロールは静かにスキップする。
-	if (originalView != nil)
-	{
-		K2Vector<IControlView*> zoomViews;
-		zoomViews.push_back(originalView);
-		K2Vector<PBPMPoint> zoomPoints;	// 空 = ビュー中心を基準にズーム
-		Utils<ILayoutViewUtils>()->ZoomLayoutViews(zoomViews, zoomPoints, kTrue, PMReal(0.05));
-
-		// 概観ペインの表示位置: X はペーストボード中央、Y はペーストボード上端(=左右にはずれず、上寄せ)。
-		// ScrollContentLocationToFrameCenter は「指定した content 座標をビュー中心に置く」動作しか
-		// 持たない(検証済み、KESCM/KESCL で使用実績あり)ため、狙った座標を直接センターに渡すのではなく、
-		// 「センターに置いたときにペーストボード上端がビュー最上部に来る」ような座標を逆算して渡す。
-		// 具体的には Y をペーストボード上端からビュー可視高さの半分だけ下にずらした座標を中心指定する。
-		// ズーム直後の値を使うため、この計算は ZoomLayoutViews の後で行う。
-		InterfacePtr<IPanorama> origPano(KESCMQueryPanorama(originalView));
-		if (origPano != nil)
-		{
-			const PMRect pbBounds = origPano->GetBounds();	// ペーストボード範囲(content座標)
-			const PMReal centerX = (pbBounds.Left() + pbBounds.Right()) / 2;
-			const PMReal topY = pbBounds.Top();
-
-			const PMReal yScale = origPano->GetYScaleFactor();	// content→window スケール(ズーム後の実効値)
-			if (yScale > 0)
-			{
-				const PMReal halfViewContentHeight = (originalView->GetFrame().Height() / yScale) / 2;
-				const PBPMPoint centerTarget(centerX, topY + halfViewContentHeight);
-				origPano->ScrollContentLocationToFrameCenter(centerTarget, kTrue);
-			}
-		}
-	}
-}
+// (KESCMDoSplitTarget(Split Target 90/10)は 2026-07-04 撤去。実装全文と実測知見は
+//  docs/ai-notes/kescm-split-target-mechanism.md と git 履歴 69c4b07 に保存=他プラグインへの転用候補)
 
 // KESCMOpenAboutURL(KESCMCore.h で宣言) — パネルのイラストクリックから呼ばれる。「このプラグインに
 // ついて」本文と同じ配布元URL(kKESCMRepoURL)を既定のブラウザで開く。ドキュメントモデルには一切
