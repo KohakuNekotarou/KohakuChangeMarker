@@ -676,7 +676,7 @@ void KESCMPeekWatcher::StopWatching()
 	InterfacePtr<IApplication> app(GetExecutionContextSession()->QueryApplication());
 	InterfacePtr<IEventDispatcher> dispatcher(app, UseDefaultIID());
 	if (dispatcher)
-		dispatcher->RemoveEventWatcher(this, IEventDispatcher::EventTypeList());	// 空=全種の監視を解除
+		dispatcher->RemoveEventWatcher(this, IEventDispatcher::EventTypeList());	// 既定ctor=kAllEventTypes(全ビットON)=全種の監視を解除。「空」ではない(IEventDispatcher.h)
 	fWatching = kFalse;
 }
 
@@ -718,6 +718,14 @@ void KESCMPeekStartup::Shutdown()
 	// 保持していたマーク/旧版画像バッファを解放(終了時もきれいに片付ける)。
 	KESCMDrawEventHandler::DropAll();
 	KESCMDrawEventHandler::DropAllOrig();
+	// ハンドツール一時切替中(ミドル押下中)に終了した場合、保存していた元ツールの参照が残る。
+	// 終了処理中なので SetActiveTool(KESCMRestoreTool)は呼ばず、参照の解放だけを行う。
+	if (sSavedTool != nil)
+	{
+		sSavedTool->Release();
+		sSavedTool = nil;
+	}
+	sHandActive = kFalse;
 }
 
 //========================================================================================

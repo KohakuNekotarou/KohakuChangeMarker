@@ -46,6 +46,7 @@
 #include "IXPUtils.h"
 
 #include <map>
+#include <new>			// std::nothrow(画像バッファ確保。MSVC の通常 new は失敗時 nil でなく throw のため)
 #include <string.h>
 
 // プロジェクト内インクルード:
@@ -229,9 +230,12 @@ ErrorCode KESCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef
 			wth == wsh && hth == hsh && rbTH == rbSH && rbTH > 0 &&
 			bppH >= 4 && wl > 0 && hl > 0)
 		{
+			// ★この関数の確保は全て new (std::nothrow): MSVC の通常 new は失敗時に nil を返さず throw するため、
+			//   nothrow にしないと下の nil チェックが機能しない(OOM 時は例外がイベント境界を突き抜けてクラッシュ)。
+			//   nothrow なら OOM でも「このページのマークを作らない」だけで安全に続行できる。
 			const size_t N = (size_t)wl * hl;
-			uint8*  M     = new uint8[N];	// 低解像度マスク(保存): プーリング結果
-			uint16* cntHi = new uint16[N];	// 低解像度セルごとの「高解像度の変化画素数」(プーリング用一時)
+			uint8*  M     = new (std::nothrow) uint8[N];	// 低解像度マスク(保存): プーリング結果
+			uint16* cntHi = new (std::nothrow) uint16[N];	// 低解像度セルごとの「高解像度の変化画素数」(プーリング用一時)
 			if (M != nil && cntHi != nil)
 			{
 				memset(cntHi, 0, N * sizeof(uint16));
@@ -292,7 +296,7 @@ ErrorCode KESCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef
 					// (低解像度 snapL を廃止。低解像度セル中心の高解像度画素1点を代表サンプルに)。
 					// CMYK 経路は RGB が無いので、サンプル CMYK を近似 RGB に変換してから同じ R 優位判定を使う。
 					const int32 colorOffT = 0;
-					uint8* BG = new uint8[N];
+					uint8* BG = new (std::nothrow) uint8[N];	// nil 可(BuildRing が nil bgRed を許容)
 					if (BG != nil)
 					{
 						for (int32 y = 0; y < hl; ++y)
@@ -318,19 +322,31 @@ ErrorCode KESCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef
 					// ★buf を指す自前 AGMImageRecord を組んで切り離す(buf は下で BuildRing が全画素を書くので
 					//   ラスタ画素のコピーは不要)。SnapshotUtilsEx / accessor は保持しない(下で即破棄)。
 					//   GetAGMImageRecord も呼ばない=破棄時クラッシュ(保持 accessor の delete)を根本回避。
-					KESCMOverlayEntry* e = new KESCMOverlayEntry();
+					KESCMOverlayEntry* e = new (std::nothrow) KESCMOverlayEntry();
+					if (e == nil)
+					{
+						// OOM 保険(nothrow 化に伴う): ここまでの部分確保を解放し、スナップショットも
+						// 破棄してこのページは諦める(MakeOrigImage の確保失敗時と同じ early-return 流儀)。
+						if (BG != nil) delete[] BG;
+						delete[] M;
+						if (accSH)  delete accSH;
+						if (snapSH) delete snapSH;
+						if (accTH)  delete accTH;
+						if (snapTH) delete snapTH;
+						return kFailure;
+					}
 					e->w = wl;  e->h = hl;  e->rowBytes = rbL;  e->bpp = bppL;
 					e->bgRed = BG;  e->lastRadius = kKESCMBaseRadius;
 					// mask M から距離変換 dist を1回だけ作って保持(以後の BuildRing はこれ1つで描ける)。
 					//   dist 生成後、mask M はもう不要なので解放(常駐メモリは dist が mask を置換=純増ゼロ)。
-					e->dist = new uint8[N];
+					e->dist = new (std::nothrow) uint8[N];
 					if (e->dist != nil)
 						KESCMDistTransform(M, wl, hl, e->dist);
 					delete[] M;
 
 					// 初回リング(基準半径)を buf へ直接描く(dist 確保失敗時のみ透明クリアで安全に)。
 					// buf 確保失敗(nil)時はここでは触らない。描画側(HandleDrawEvent)が e->buf==nil で skip する。
-					e->buf = new uint8[(size_t)rbL * hl];
+					e->buf = new (std::nothrow) uint8[(size_t)rbL * hl];
 					if (e->buf != nil)
 					{
 						if (e->dist != nil)
@@ -403,8 +419,10 @@ ErrorCode KESCMDrawEventHandler::MakeOrigImage(const UIDRef& targetRef, const UI
 		// AGMImageRecord.bounds は int16。300dpi で超大型ページ(幅/高さ>32767px≒109inch)だと破綻するので弾く。
 		if (p != nil && w > 0 && h > 0 && rb > 0 && bpp >= 3 && b.right <= 32767 && b.bottom <= 32767)
 		{
-			KESCMOrigImage* o = new KESCMOrigImage();
-			uint8* obuf = (o != nil) ? new uint8[(size_t)rb * h] : nil;
+			// nothrow: 300dpi の大判ページ(A2 で buf 約140MB)は OOM が現実に起こり得る筆頭。
+			// 失敗時は下の early-return が部分確保を解放して安全に抜ける(nil チェックを実効化)。
+			KESCMOrigImage* o = new (std::nothrow) KESCMOrigImage();
+			uint8* obuf = (o != nil) ? new (std::nothrow) uint8[(size_t)rb * h] : nil;
 			if (o == nil || obuf == nil)
 			{
 				// allocation failed: free any partial state and bail (same safety as MakeEntry)
@@ -515,8 +533,8 @@ static void KESCMDrawRingForPrint(IGraphicsPort* gPort, KESCMOverlayEntry* e)
 	const size_t N = (size_t)w * h;
 
 	// e->buf(ARGB)から、赤リング画素=255 / 青リング画素=255 の2枚のグレーマスクを作る。
-	uint8* maskR = new uint8[N];
-	uint8* maskB = new uint8[N];
+	uint8* maskR = new (std::nothrow) uint8[N];	// nothrow: 直下の nil チェックを実効化(失敗時は枠を描かないだけ)
+	uint8* maskB = new (std::nothrow) uint8[N];
 	if (maskR == nil || maskB == nil) { if (maskR) delete[] maskR; if (maskB) delete[] maskB; return; }
 	for (int32 y = 0; y < h; ++y)
 	{

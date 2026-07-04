@@ -143,16 +143,20 @@ bool16 KESCMSampleCmykUnderMouse(IDataBase* targetDB, IDataBase* sourceDB, PMStr
 
 	// ラベルは ASCII。1行目=Target(新/cN)、改行(LF)、2行目=Source(旧/cO)。各値はラスタ8bit(0..255)を
 	// 本来の CMYK 数値 0..100% に換算し、3桁ゼロ埋めで桁を揃える。表示先はパネルのステータス行
-	// (複数行テキスト)。旧トースト表示の TAB 列揃えは 2026-07-04 撤去し、区切りは空白1つに変更。
+	// (複数行テキスト)。★2026-07-04: ラベルを行頭から行末へ移動(指摘により変更)。C/M/Y/K の列は
+	// 新旧で全く同じ文字列なので行頭から揃い、ラベル(Target/Source)は末尾に付くだけなので
+	// 文字幅が違っても後続の列がずれる心配はない。
 	outMsg.SetTranslatable(kFalse);
-	outMsg.Append("Target C"); KESCMAppend3(outMsg, KESCMByteToPct(cN[0]));
-	outMsg.Append(" M");       KESCMAppend3(outMsg, KESCMByteToPct(cN[1]));
-	outMsg.Append(" Y");       KESCMAppend3(outMsg, KESCMByteToPct(cN[2]));
-	outMsg.Append(" K");       KESCMAppend3(outMsg, KESCMByteToPct(cN[3]));
+	outMsg.Append("C"); KESCMAppend3(outMsg, KESCMByteToPct(cN[0]));
+	outMsg.Append(" M"); KESCMAppend3(outMsg, KESCMByteToPct(cN[1]));
+	outMsg.Append(" Y"); KESCMAppend3(outMsg, KESCMByteToPct(cN[2]));
+	outMsg.Append(" K"); KESCMAppend3(outMsg, KESCMByteToPct(cN[3]));
+	outMsg.Append(" Target");
 	outMsg.AppendW(UTF32TextChar(0x0A));	// 改行 → 2行目へ
-	outMsg.Append("Source C"); KESCMAppend3(outMsg, KESCMByteToPct(cO[0]));
-	outMsg.Append(" M");       KESCMAppend3(outMsg, KESCMByteToPct(cO[1]));
-	outMsg.Append(" Y");       KESCMAppend3(outMsg, KESCMByteToPct(cO[2]));
-	outMsg.Append(" K");       KESCMAppend3(outMsg, KESCMByteToPct(cO[3]));
+	outMsg.Append("C"); KESCMAppend3(outMsg, KESCMByteToPct(cO[0]));
+	outMsg.Append(" M"); KESCMAppend3(outMsg, KESCMByteToPct(cO[1]));
+	outMsg.Append(" Y"); KESCMAppend3(outMsg, KESCMByteToPct(cO[2]));
+	outMsg.Append(" K"); KESCMAppend3(outMsg, KESCMByteToPct(cO[3]));
+	outMsg.Append(" Source");
 	return kTrue;
 }
