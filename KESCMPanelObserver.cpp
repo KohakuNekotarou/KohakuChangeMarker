@@ -458,6 +458,24 @@ void KESCMRefreshPanel()
 }
 
 //========================================================================================
+// KESCMEnsurePanelShown(KESCMCore.h で宣言)
+//   パネルが非表示(閉じている)か、アイコン化/最小化されている(IsPanelWithWidgetIDShown が kFalse を
+//   返す状態。ドキュメント曰く「minimized palette では kFalse になる」ため、閉鎖とアイコン化の両方を
+//   一つの判定で拾える)なら ShowPanelByWidgetID で表示する。既に見えていれば何もしない。
+//========================================================================================
+void KESCMEnsurePanelShown()
+{
+	InterfacePtr<IApplication> app(GetExecutionContextSession()->QueryApplication());
+	if (app == nil)
+		return;
+	InterfacePtr<IPanelMgr> panelMgr(app->QueryPanelManager());
+	if (panelMgr == nil)
+		return;
+	if (!panelMgr->IsPanelWithWidgetIDShown(kKESCMPanelWidgetID))
+		panelMgr->ShowPanelByWidgetID(kKESCMPanelWidgetID, kFalse);	// giveKeyFocus=kFalse: ミドル操作中にフォーカスを奪わない
+}
+
+//========================================================================================
 // KESCMSetStatus(KESCMCore.h で宣言)
 //   パネルのステータス行を更新する。メンバ SetStatus(自パネル)と同じ処理を自由関数として公開し、
 //   クローズレスポンダ(KESCMHandleDocsClosed)からも Stop 相当のメッセージを出せるようにする。

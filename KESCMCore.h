@@ -102,6 +102,12 @@ void		KESCMRefreshPanel();
 // (KESCMDoMarkChangesDoc の比較ループ前の busyMsg 表示に使う)。実体は KESCMPanelObserver.cpp。
 void		KESCMSetStatus(const PMString& s, bool16 forceRedrawNow = kFalse);
 
+// パネルが非表示(閉じている、またはアイコン化/最小化されている)なら表示する。何もしなくても既に
+// 見えている場合は何もしない。フォーカスは奪わない(giveKeyFocus=kFalse; ミドルボタン操作の途中で
+// 呼ばれるため)。CMYK比較(KESCMSampleCmykUnderMouse)のように、結果をパネルのステータス行に出す
+// 直前に呼び、ユーザーが確実に結果を見られるようにする。実体は KESCMPanelObserver.cpp。
+void		KESCMEnsurePanelShown();
+
 // パネルのイラスト(ON/OFF アイコン)をクリックしたときに呼ぶ。「このプラグインについて」に載せている
 // 配布元URL(kKESCMRepoURL, KESCMID.h)を既定のブラウザで開く。実体は KESCMActionComponent.cpp。
 void		KESCMOpenAboutURL();

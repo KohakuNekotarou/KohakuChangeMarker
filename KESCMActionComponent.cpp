@@ -26,10 +26,12 @@
 #include "ILayoutViewUtils.h"		// Show/HideSplitLayoutView, IsSplitLayoutViewShown, GetAllLayoutViews(上位Facade)
 #include "IGalleyUtils.h"			// InGalleyOrStory(ガレー/ストーリー編集中はスプリットレイアウトの概念が異なるためガード)
 #include "IDataBase.h"				// GetDocumentUIDRef().GetDataBase()
+#include "IPanorama.h"				// GetBounds(ペーストボード範囲)/ScrollContentLocationToFrameCenter/GetYScaleFactor
 
 // プロジェクト内:
 #include "KESCMID.h"
 #include "KESCMCore.h"		// KESCMOpenAboutURL
+#include "KESCMDrawEventHandler.h"	// KESCMQueryPanorama(IControlView から IPanorama を辿る共有ヘルパ)
 
 // ★注意: source/public/includes/URLUtils.h は "namespace URLUtils { PUBLIC_DECL void GoToURL(...); }" と
 // 宣言しているが、これはヘッダーとバイナリの不一致(Public.lib 側の実エクスポート名と食い違っている)。
@@ -166,7 +168,8 @@ void KESCMActionComponent::DoUsage()
 //   ON へ切り替えた時)に呼ばれる。
 //   KESCM の Target 文書(Start 済みの比較対象、KESCMArmedTargetDB)を Split Window で2分割し、
 //   新しく現れた側(kLayoutSecondaryPanelWidgetID)を全体の90%、元から表示していた側
-//   (kLayoutWidgetBoss)を10%にする。さらに元の側は概観用として拡大率を5%にする。
+//   (kLayoutWidgetBoss)を10%にする。さらに元の側は概観用として拡大率を5%にし、ペーストボード
+//   X中央・Y上端が見えるようスクロールする(左右にはずれず、上寄せの俯瞰表示)。
 //   ★前提(Split Test の実測結果からの類推、要目視確認): SetSplitterEdge に「全体の10%」を渡すと
 //   境界(先頭側=index0)が10%地点に来る。先頭側が元のペイン(kLayoutWidgetBoss)である前提だが、
 //   もし逆(新しいペインが10%になる)場合は下の target 計算を (1.0 - 0.10) に反転すればよい。
@@ -247,13 +250,35 @@ void KESCMDoSplitTarget()
 		}
 	}
 
-	// 元側ペインが見つからなくてもスプリット自体は成立しているので、ズームだけ静かにスキップする。
+	// 元側ペインが見つからなくてもスプリット自体は成立しているので、ズーム/スクロールは静かにスキップする。
 	if (originalView != nil)
 	{
 		K2Vector<IControlView*> zoomViews;
 		zoomViews.push_back(originalView);
 		K2Vector<PBPMPoint> zoomPoints;	// 空 = ビュー中心を基準にズーム
 		Utils<ILayoutViewUtils>()->ZoomLayoutViews(zoomViews, zoomPoints, kTrue, PMReal(0.05));
+
+		// 概観ペインの表示位置: X はペーストボード中央、Y はペーストボード上端(=左右にはずれず、上寄せ)。
+		// ScrollContentLocationToFrameCenter は「指定した content 座標をビュー中心に置く」動作しか
+		// 持たない(検証済み、KESCM/KESCL で使用実績あり)ため、狙った座標を直接センターに渡すのではなく、
+		// 「センターに置いたときにペーストボード上端がビュー最上部に来る」ような座標を逆算して渡す。
+		// 具体的には Y をペーストボード上端からビュー可視高さの半分だけ下にずらした座標を中心指定する。
+		// ズーム直後の値を使うため、この計算は ZoomLayoutViews の後で行う。
+		InterfacePtr<IPanorama> origPano(KESCMQueryPanorama(originalView));
+		if (origPano != nil)
+		{
+			const PMRect pbBounds = origPano->GetBounds();	// ペーストボード範囲(content座標)
+			const PMReal centerX = (pbBounds.Left() + pbBounds.Right()) / 2;
+			const PMReal topY = pbBounds.Top();
+
+			const PMReal yScale = origPano->GetYScaleFactor();	// content→window スケール(ズーム後の実効値)
+			if (yScale > 0)
+			{
+				const PMReal halfViewContentHeight = (originalView->GetFrame().Height() / yScale) / 2;
+				const PBPMPoint centerTarget(centerX, topY + halfViewContentHeight);
+				origPano->ScrollContentLocationToFrameCenter(centerTarget, kTrue);
+			}
+		}
 	}
 }
 

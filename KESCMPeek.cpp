@@ -562,7 +562,12 @@ IEventDispatcher::EventTypeList KESCMPeekWatcher::WatchEvent(IEvent* e)
 			// 第3文書のウィンドウでミドルクリックしても、素のミドル動作を邪魔しないよう何もしない。
 			PMString colorMsg;
 			if (KESCMSampleCmykUnderMouse(sPeekTargetDB, sPeekSourceDB, colorMsg))
+			{
+				// 結果はパネルのステータス行に出るので、パネルが閉じている/アイコン化されていると
+				// ユーザーが気づけない。表示直前に確実に開く。
+				KESCMEnsurePanelShown();
 				KESCMSetStatus(colorMsg);
+			}
 		}
 		else if (sPeekArmed && e->CmdKeyDown() && !e->ShiftKeyDown() && !e->OptionAltKeyDown() && KESCMFrontViewIsOverTarget())
 		{
