@@ -277,6 +277,11 @@ void KESCMDoClearMarks(IDataBase* db)
 	IDataBase* markedDB = KESCMDrawEventHandler::sDB;
 	IDataBase* srcDB    = KESCMDrawEventHandler::sSrcDB;
 
+	// ★登録(Added/Removedページ)もここでクリアする。Target/Sourceの組み合わせを変えて再Start
+	// した時に、古い登録が新しい比較へ紛れ込むのを防ぐ(2026-07-05, ユーザー判断)。
+	KESCMPageMapClearAll(markedDB);
+	KESCMPageMapClearAll(srcDB);
+
 	KESCMDrawEventHandler::DropAll();
 	KESCMDrawEventHandler::DropAllOrig();	// 旧版べた載せのキャッシュも解放(メモリ開放)
 

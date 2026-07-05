@@ -264,6 +264,15 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKESCMSyncViewsMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
+		// "Ignore Page Number Marker" on the panel flyout (popup) menu. Check-mark toggle: while ON
+		// (default), frames containing an automatic "Current Page Number" marker are excluded from
+		// the pixel comparison, so pages whose only difference is a shifted running folio (caused by
+		// registered added/removed pages elsewhere) aren't falsely flagged as changed.
+		kKESCMPopupIgnorePageNumActionID,
+		kKESCMPopupMenuPath,
+		kKESCMIgnorePageNumMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
 		// "How to Use" on the panel flyout (popup) menu.
 		kKESCMPopupUsageActionID,
 		kKESCMPopupMenuPath,
@@ -344,6 +353,15 @@ resource ActionDef (kSDKDefActionResourceID)
 		kKESCMActionComponentBoss,
 		kKESCMPopupSyncViewsActionID,
 		kKESCMSyncViewsMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates supplies the check mark (kSelectedAction)
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		kKESCMActionComponentBoss,
+		kKESCMPopupIgnorePageNumActionID,
+		kKESCMIgnorePageNumMenuKey,
 		kOtherActionArea,
 		kNormalAction,
 		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates supplies the check mark (kSelectedAction)

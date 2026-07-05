@@ -159,8 +159,7 @@ DECLARE_PMID(kActionIDSpace, kKESCMPopupShowOldNumsActionID, kKESCMPrefix + 8)	/
 DECLARE_PMID(kActionIDSpace, kKESCMPopupSyncViewsActionID, kKESCMPrefix + 9)	// パネルのフライアウトの「Sync Layout Views」チェック式トグル(他文書のビューへ座標+拡大率を自動同期)
 DECLARE_PMID(kActionIDSpace, kKESCMPopupShowSrcMarksActionID, kKESCMPrefix + 10)	// パネルのフライアウトの「Show Marks on Source」チェック式トグル(Source側にも枠を常時表示。OPPでも表示・印刷にも出す。Startで既定ON)
 DECLARE_PMID(kActionIDSpace, kKESCMPageMapToggleActionID, kKESCMPrefix + 11)	// ページパネルのページ右クリック(RtMenuPagesPanel)のトグル「KESCM: Register as Added/Removed Pages」(選択ページを「比較相手なし」として登録/解除。チェック/動的ラベルは kCustomEnabling。KESCMPageMap.cpp)
-//DECLARE_PMID(kActionIDSpace, kKESCMActionID, kKESCMPrefix + 11)
-//DECLARE_PMID(kActionIDSpace, kKESCMActionID, kKESCMPrefix + 12)
+DECLARE_PMID(kActionIDSpace, kKESCMPopupIgnorePageNumActionID, kKESCMPrefix + 12)	// パネルのフライアウトの「Ignore Page Number Marker」チェック式トグル(ON=ノンブル(自動ページ番号)マーカーを含むフレームを比較から除外。既定ON。KESCMPageNumberMarker.cpp)
 //DECLARE_PMID(kActionIDSpace, kKESCMActionID, kKESCMPrefix + 13)
 //DECLARE_PMID(kActionIDSpace, kKESCMActionID, kKESCMPrefix + 14)
 //DECLARE_PMID(kActionIDSpace, kKESCMActionID, kKESCMPrefix + 15)
@@ -256,6 +255,7 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMToggleButtonWidgetID, kKESCMPrefix + 37)	// �
 #define kKESCMSyncViewsMenuKey		kKESCMStringPrefix "kKESCMSyncViewsMenuKey"	// パネルのフライアウト「Sync Layout Views」トグルのメニュー名
 #define kKESCMShowSrcMarksMenuKey	kKESCMStringPrefix "kKESCMShowSrcMarksMenuKey"	// パネルのフライアウト「Show Marks on Source」トグルのメニュー名
 #define kKESCMPageMapToggleMenuKey	kKESCMStringPrefix "kKESCMPageMapToggleMenuKey"	// ページパネル右クリックのトグル「KESCM: Register as Added/Removed Pages」の既定メニュー名(表示時は UpdateActionStates が Target=Added/Source=Removed に動的差し替え)
+#define kKESCMIgnorePageNumMenuKey	kKESCMStringPrefix "kKESCMIgnorePageNumMenuKey"	// パネルのフライアウト「Ignore Page Number Marker」トグルのメニュー名
 
 // パネル: 内部フライアウト(ポップアップ)メニュー名＋そのメニューパス。
 #define kKESCMInternalPopupMenuNameKey	kKESCMStringPrefix "kKESCMInternalPopupMenuNameKey"
@@ -284,6 +284,7 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMToggleButtonWidgetID, kKESCMPrefix + 37)	// �
 #define kKESCMHideUnchangedMenuItemPosition	9.5	// チェック式トグル「Hide Unchanged Spreads」をその直後に
 #define kKESCMShowOldNumsMenuItemPosition	9.7	// チェック式トグル「Show Original Page Numbers」をその直後に
 #define kKESCMSyncViewsMenuItemPosition		9.8	// チェック式トグル「Sync Layout Views」をさらにその直後に
+#define kKESCMIgnorePageNumMenuItemPosition	9.9	// チェック式トグル「Ignore Page Number Marker」をさらにその直後に
 #define kKESCMUsageMenuItemPosition			10.0	// 「使い方」
 // ページパネルのページ右クリックメニュー(内部名 RtMenuPagesPanel、2026-07-05 実機確定)内の位置。
 // 本家項目の後ろ(末尾)に付ける。内部名は非翻訳キーなので全ロケール共通で効く。

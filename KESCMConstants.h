@@ -44,6 +44,12 @@ static const int   kKESCMRedBgDom = 25;	// 背景を「赤っぽい」と判定�
 // ため緑固定(背景色による切り替えは無し。ラスタ差分が無く背景判定の材料も無いため)。
 static const uint8 kKESCMAddedBorderR = 0, kKESCMAddedBorderG = 200, kKESCMAddedBorderB = 0;
 
+// ノンブル(自動ページ番号)除外領域を可視化するベタ塗り色と不透明度。除外トグルON時、比較から
+// 外している矩形を半透明の緑で塗り、「どこが除外されているか」を目視できるようにする(下のノンブルが
+// 透ける程度の薄さ)。塗りはベクター矩形+setopacity なので画面・印刷とも正しく半透明合成される。
+static const uint8  kKESCMExcludeFillR = 0, kKESCMExcludeFillG = 200, kKESCMExcludeFillB = 0;
+static const PMReal kKESCMExcludeFillOpacity = 0.35;	// 除外領域ベタ塗りの不透明度(0〜1)
+
 // 旧版べた載せ(kescmShowOriginal)で重ねる画像の解像度(dpi)。スクリプト実行時に、対象ページの旧版を
 // この解像度で1枚だけラスタ化(オフスクリーン1枚=即破棄)し、不透明でページ矩形いっぱいに重ねる。
 // 高いほど鮮明・メモリ大(A4・300dpi で約26〜35MB/ページ)。覗いたページの分だけ保持する。

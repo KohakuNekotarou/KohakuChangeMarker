@@ -260,6 +260,16 @@ void KESCMPageMapSweepClosedDocs()
 }
 
 //========================================================================================
+// KESCMPageMapClearAll(KESCMPageMap.h で宣言)
+//========================================================================================
+void KESCMPageMapClearAll(IDataBase* db)
+{
+	if (db == nil)
+		return;
+	sRegistered.erase(db);
+}
+
+//========================================================================================
 // KESCMPageMapIsRegistered(KESCMPageMap.h で宣言)
 //========================================================================================
 bool16 KESCMPageMapIsRegistered(IDataBase* db, UID pageUID)

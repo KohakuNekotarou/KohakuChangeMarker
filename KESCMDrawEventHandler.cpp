@@ -58,6 +58,7 @@
 #include "KESCMID.h"
 #include "KESCMCore.h"               // KESCMHandleDocsClosed(クローズ検知の後始末を一本化)
 #include "KESCMPageMap.h"            // KESCMPageMapIsRegistered/KESCMPageMapHasAnyRegistered(追加/削除ページ縁枠)
+#include "KESCMPageNumberMarker.h"   // KESCMGetIgnorePageNumberMarker/KESCMAppendPageNumberMarkerRects(ノンブル除外)
 #include "KESCMDrawEventHandler.h"
 
 //========================================================================================
@@ -253,6 +254,18 @@ static void KESCMDistTransform(const uint8* mask, int32 wt, int32 ht, uint8* out
 }
 
 
+// (x,y)が rects のいずれかの矩形内にあるか(ノンブル除外領域の判定に使う)。
+static bool16 KESCMPointInRects(int32 x, int32 y, const std::vector<Int32Rect>& rects)
+{
+	for (size_t i = 0; i < rects.size(); ++i)
+	{
+		const Int32Rect& r = rects[i];
+		if (x >= r.left && x < r.right && y >= r.top && y < r.bottom)
+			return kTrue;
+	}
+	return kFalse;
+}
+
 ErrorCode KESCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef& sourceRef, bool16& changed)
 {
 	changed = kFalse;
@@ -320,6 +333,32 @@ ErrorCode KESCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef
 			{
 				memset(cntHi, 0, N * sizeof(uint16));
 
+				// ★ノンブル(自動ページ番号)除外領域。トグルON時のみ、target/source 両ページの
+				// 「Current Page Number」マーカーを含むフレームの矩形(ページ左上原点のpt座標)を集め、
+				// 比較解像度(hiRes)のピクセル座標に変換してから、その範囲内の画素は下の差分走査で
+				// スキップする(実デザインが同一でも新旧で連番が違うことによる誤検知を防ぐ)。
+				// target/source は同じページサイズが前提なので、どちらの矩形も同じ (x,y) 座標系に
+				// そのまま使える。Int32Rect への変換はここ(KESCMPageNumberMarker.h は PMRect のみを
+				// 扱い、Int32Rect には依存しない)。
+				std::vector<Int32Rect> excludeRects;
+				if (KESCMGetIgnorePageNumberMarker())
+				{
+					std::vector<PMRect> markerRects;
+					KESCMAppendPageNumberMarkerRects(targetRef, markerRects);
+					KESCMAppendPageNumberMarkerRects(sourceRef, markerRects);
+					const PMReal pxScale = hiRes / PMReal(72.0);	// pt → 比較解像度のpx
+					for (size_t mi = 0; mi < markerRects.size(); ++mi)
+					{
+						const PMRect& mr = markerRects[mi];
+						Int32Rect epr;
+						epr.left   = ::ToInt32(::Round(mr.Left()   * pxScale));
+						epr.top    = ::ToInt32(::Round(mr.Top()    * pxScale));
+						epr.right  = ::ToInt32(::Round(mr.Right()  * pxScale));
+						epr.bottom = ::ToInt32(::Round(mr.Bottom() * pxScale));
+						excludeRects.push_back(epr);
+					}
+				}
+
 				// 【高解像度で比較 → 低解像度セルへ散らす(scatter)】
 				// 高解像度の各画素を差分判定(生の各チャンネル最大差>しきい値)し、変化していたら
 				// 対応する低解像度セルのカウンタを増やす。セル写像は寸法比(高/低が整数倍でなくてもよい)。
@@ -336,6 +375,8 @@ ErrorCode KESCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef
 					uint16* cntRow = cntHi + (size_t)yl * wl;
 					for (int32 x = 0; x < wth; ++x)
 					{
+						if (!excludeRects.empty() && KESCMPointInRects(x, y, excludeRects))
+							continue;	// ノンブル除外領域: 差分扱いしない
 						const uint8* px = rowT + (size_t)x * bppH + colorOffH;
 						const uint8* sx = rowS + (size_t)x * bppH + colorOffH;
 						int cm = 0;
@@ -849,6 +890,45 @@ static void KESCMDrawAddedPageBorder(IGraphicsPort* gPort, IDataBase* db, UID pa
 
 
 //========================================================================================
+// ノンブル(自動ページ番号)除外領域のベタ塗り(可視化)。
+//   除外トグル(KESCMGetIgnorePageNumberMarker)がONの間、pageUID のノンブルフレーム矩形を
+//   半透明の緑で塗り、比較から外している領域を目視できるようにする。矩形は
+//   KESCMAppendPageNumberMarkerRects がページ左上原点のpt座標で返すので、通常マークと同じく
+//   ページ inner bbox を spread(=描画ポート)座標へ変換し、その左上を原点に平行移動して塗る
+//   (ページは軸整列前提=比較の除外処理やリング描画と同じ座標の扱い)。ベクター矩形+setopacity
+//   ゆえ screen/print とも正しく半透明合成される(KESCMDrawAddedPageBorder と同じ理由)。
+//========================================================================================
+static void KESCMDrawPageNumberMarkerFill(IGraphicsPort* gPort, IDataBase* db, UID pageUID)
+{
+	if (db == nil || pageUID == kInvalidUID)
+		return;
+
+	std::vector<PMRect> markerRects;
+	KESCMAppendPageNumberMarkerRects(UIDRef(db, pageUID), markerRects);
+	if (markerRects.empty())
+		return;
+
+	InterfacePtr<IGeometry> pageGeo(db, pageUID, UseDefaultIID());
+	if (pageGeo == nil)
+		return;
+
+	PMRect pr = pageGeo->GetPathBoundingBox();		// ページ inner
+	PMMatrix m = ::InnerToSpreadMatrix(pageGeo);
+	m.Transform(&pr);								// → spread(=描画ポート)座標
+
+	AutoGSave ag(gPort);
+	gPort->setopacity(kKESCMExcludeFillOpacity, kFalse);
+	gPort->setrgbcolor(kKESCMExcludeFillR / PMReal(255.0), kKESCMExcludeFillG / PMReal(255.0), kKESCMExcludeFillB / PMReal(255.0));
+	for (size_t i = 0; i < markerRects.size(); ++i)
+	{
+		const PMRect& mr = markerRects[i];			// ページ左上原点の pt 座標
+		if (mr.Width() > 0 && mr.Height() > 0)
+			gPort->rectfill(pr.Left() + mr.Left(), pr.Top() + mr.Top(), mr.Width(), mr.Height());
+	}
+}
+
+
+//========================================================================================
 // 対応表からあふれたページ(登録もされていないのに、新旧の文書間のページ数差で比較相手が無い
 // ページ)の縁取り。KESCMDrawAddedPageBorder(登録済み="Added"/"Removed")とは別ケースで、ユーザーが
 // まだ気付いていない可能性がある「本当に比較されていないページ」を明示するため、左下→右上の斜線
@@ -1152,6 +1232,7 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	if (wantSrcMarks && db == sSrcDB && db != sDB)
 	{
 		const int32 nps = spread->GetNumPages();
+		const bool16 fillExcluded = KESCMGetIgnorePageNumberMarker();	// ノンブル除外領域の緑ベタ塗り(除外トグルON時)
 		for (int32 i = 0; i < nps; ++i)
 		{
 			const UID srcPageUID = spread->GetNthPageUID(i);
@@ -1172,6 +1253,12 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 				// 登録もされていない、ページ数差であふれたページ。未比較であることを赤斜線で明示する。
 				KESCMDrawOverflowPageDiagonal(gPort, db, srcPageUID, sxr, drawMode, SelectedMarkOpacity());
 			}
+			// 除外トグルON時、実際に比較しているページ(=登録済みRemovedでも overflow でもない=対応表に
+			// 入るページ)にだけ除外領域の緑ベタ塗りを重ねる。変更なしで entry が無いページにも出すので
+			// 上の if/else とは独立に判定する。Removed/overflow ページは画素比較自体を行わない
+			// (ノンブル除外という概念が無い)ので塗らない。
+			if (fillExcluded && !KESCMPageMapIsRegistered(db, srcPageUID) && sOverflowSet.count(srcPageUID) == 0)
+				KESCMDrawPageNumberMarkerFill(gPort, db, srcPageUID);
 		}
 		return kFalse;	// Source 文書に Target 側オーバーレイは無い=ここで終わり
 	}
@@ -1191,6 +1278,7 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 
 	// このスプレッドの各ページについて、エントリがあれば描く(描画本体は KESCMDrawEntryOnPage に共通化)。
 	const int32 np = spread->GetNumPages();
+	const bool16 fillExcluded = KESCMGetIgnorePageNumberMarker();	// ノンブル除外領域の緑ベタ塗り(除外トグルON時)
 	for (int32 i = 0; i < np; ++i)
 	{
 		const UID pageUID = spread->GetNthPageUID(i);
@@ -1207,6 +1295,12 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 			// 登録もされていない、ページ数差であふれたページ。未比較であることを赤斜線で明示する。
 			KESCMDrawOverflowPageDiagonal(gPort, db, pageUID, sxr, drawMode, screenMarkOp);
 		}
+		// 除外トグルON時、実際に比較しているページ(=登録済みAddedでも overflow でもない=対応表に
+		// 入るページ)にだけ除外領域の緑ベタ塗りを重ねる。変更なしで entry が無いページにも出すので
+		// 上の if/else とは独立に判定する。Added/overflow ページは画素比較自体を行わない
+		// (ノンブル除外という概念が無い)ので塗らない。
+		if (fillExcluded && !KESCMPageMapIsRegistered(db, pageUID) && tOverflowSet.count(pageUID) == 0)
+			KESCMDrawPageNumberMarkerFill(gPort, db, pageUID);
 	}
 
 	return kFalse;	// 他のハンドラ・描画を続行させる

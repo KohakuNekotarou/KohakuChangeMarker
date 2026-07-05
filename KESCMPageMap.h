@@ -40,6 +40,10 @@ void KESCMPageMapUpdateToggleState(IActionStateList* listToUpdate, int32 index);
 // 比較のみ)。
 void KESCMPageMapSweepClosedDocs();
 
+// db の登録(比較相手なしページ)を全部消す。db が nil、または登録が無ければ何もしない。
+// Stop(KESCMDoClearMarks)から呼ぶ他、将来のフライアウト「Clear Registered Pages」でも使う想定。
+void KESCMPageMapClearAll(IDataBase* db);
+
 // pageUID(db内)が「比較相手なし」として登録済みか。db が nil、または該当文書の登録が無ければ kFalse。
 bool16 KESCMPageMapIsRegistered(IDataBase* db, UID pageUID);
 

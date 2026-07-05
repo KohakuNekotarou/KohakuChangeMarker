@@ -40,6 +40,7 @@
 #include "KESCMDrawEventHandler.h"	// sEntries/sDB/sShowOldNumbers(Hide Unchanged と旧番号バッジの状態参照)
 #include "KESCMPageMap.h"	// KESCMPageMapToggleSelectedPages / KESCMPageMapUpdateToggleState(追加/削除ページ登録トグル)
 							// ＋ KESCMBuildPairing(除外対応表、Hide Unchanged の Source 側分類で使用)
+#include "KESCMPageNumberMarker.h"	// KESCMGetIgnorePageNumberMarker/KESCMSetIgnorePageNumberMarker(ノンブル除外トグル)
 
 // ★注意: source/public/includes/URLUtils.h は "namespace URLUtils { PUBLIC_DECL void GoToURL(...); }" と
 // 宣言しているが、これはヘッダーとバイナリの不一致(Public.lib 側の実エクスポート名と食い違っている)。
@@ -140,6 +141,24 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 			KESCMSetLayoutSync(!KESCMGetLayoutSync());
 			break;
 
+		// 「Ignore Page Number Marker」トグル: ノンブル(自動ページ番号)マーカーを含むフレームを
+		// 比較(CMYKピクセル差分)から除外するか(既定ON)。フラグを反転し、既にStart済みなら
+		// 登録トグルと同じ理由で全体再比較して即座に反映する。
+		case kKESCMPopupIgnorePageNumActionID:
+		{
+			KESCMSetIgnorePageNumberMarker(!KESCMGetIgnorePageNumberMarker());
+			PMString msg(KESCMGetIgnorePageNumberMarker() ? "Ignore page number marker: on." : "Ignore page number marker: off.");
+			msg.SetTranslatable(kFalse);
+			if (KESCMDrawEventHandler::sDB != nil && KESCMDrawEventHandler::sSrcDB != nil)
+			{
+				PMString report;
+				KESCMDoMarkChangesDoc(KESCMDrawEventHandler::sDB, KESCMDrawEventHandler::sSrcDB, report);
+				msg.Append(" (recompared)");
+			}
+			KESCMSetStatus(msg);
+			break;
+		}
+
 		// ページパネルのページ右クリック「KESCM: Register as Added/Removed Pages」トグル。
 		// 選択ページを「比較相手なし」として登録/解除する(実体は KESCMPageMap.cpp。このステップでは
 		// 登録の保持とチェック表示まで。比較の除外対応表への反映は次ステップ)。
@@ -152,8 +171,9 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 	}
 }
 
-/* UpdateActionStates — フライアウトのチェック式トグル4つ(「Show Marks on Source」「Hide Unchanged
-   Spreads」「Show Original Page Numbers」「Sync Layout Views」)は常に有効、ON なら kSelectedAction を
+/* UpdateActionStates — フライアウトのチェック式トグル5つ(「Show Marks on Source」「Hide Unchanged
+   Spreads」「Show Original Page Numbers」「Sync Layout Views」「Ignore Page Number Marker」)は
+   常に有効、ON なら kSelectedAction を
    立てる(docwatch の DocWchActionComponent::UpdateActionStates と同じ流儀)。ページパネル右クリックの
    「KESCM: Register as Added/Removed Pages」だけは選択依存の有効/無効・中間チェック・動的ラベルが
    あるため KESCMPageMapUpdateToggleState(KESCMPageMap.cpp)へ委譲する。 */
@@ -187,6 +207,13 @@ void KESCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionSta
 		{
 			int16 actionState = kEnabledAction;
 			if (KESCMDrawEventHandler::sSrcMarksOn)
+				actionState |= kSelectedAction;
+			listToUpdate->SetNthActionState(i, actionState);
+		}
+		else if (action == kKESCMPopupIgnorePageNumActionID)
+		{
+			int16 actionState = kEnabledAction;
+			if (KESCMGetIgnorePageNumberMarker())
 				actionState |= kSelectedAction;
 			listToUpdate->SetNthActionState(i, actionState);
 		}
