@@ -281,6 +281,21 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKESCMPopupMenuPath,
 		kKESCMAboutThisMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
+
+		// "KESCM: Register as Added/Removed Pages" on the Pages panel page context menu.
+		// Check-mark toggle: registers/unregisters the selected pages as "pages with no
+		// comparison counterpart" (added pages in the Target, removed pages in the Source —
+		// same concept either way). The check mark, enable state and the dynamic label
+		// (Added vs Removed, per the document's role) come from UpdateActionStates
+		// (kCustomEnabling); the actual work is in KESCMPageMap.cpp.
+		// "RtMenuPagesPanel" is the untranslated internal menu name of the right-click menu on
+		// page icons in the Pages panel (verified live 2026-07-05 via app.menus + FindKeyStrings;
+		// same style as the csxsdemo sample's "RtMouseLayout"). Untranslated keys are
+		// locale-independent, so this works on English/Japanese/any-language InDesign.
+		kKESCMPageMapToggleActionID,
+		"RtMenuPagesPanel",
+		kKESCMPageMapToggleMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
 	}
 };
 
@@ -359,6 +374,15 @@ resource ActionDef (kSDKDefActionResourceID)
 		kOtherActionArea,
 		kNormalAction,
 		kDisableIfLowMem,
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		kKESCMActionComponentBoss,
+		kKESCMPageMapToggleActionID,
+		kKESCMPageMapToggleMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates supplies check mark, enabling and the dynamic Added/Removed label
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 	}

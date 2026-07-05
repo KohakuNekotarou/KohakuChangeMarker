@@ -45,6 +45,7 @@ resource StringTable (kSDKDefStringsResourceID + index_jaJP)
                 kKESCMAboutScriptMenuKey,			"About Scripting...",
                 kKESCMUsageMenuKey,				"How to Use...",
                 kKESCMShowSrcMarksMenuKey,			"Show Marks on Source",
+                kKESCMPageMapToggleMenuKey,			"KESCM: Register as Added/Removed Pages",
                 kKESCMHideUnchangedMenuKey,			"Hide Unchanged Spreads",
                 kKESCMShowOldNumsMenuKey,			"Show Original Page Numbers",
                 kKESCMSyncViewsMenuKey,				"Sync Layout Views",

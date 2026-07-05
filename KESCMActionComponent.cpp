@@ -37,6 +37,7 @@
 #include "KESCMID.h"
 #include "KESCMCore.h"		// KESCMOpenAboutURL
 #include "KESCMDrawEventHandler.h"	// sEntries/sDB/sShowOldNumbers(Hide Unchanged と旧番号バッジの状態参照)
+#include "KESCMPageMap.h"	// KESCMPageMapToggleSelectedPages / KESCMPageMapUpdateToggleState(追加/削除ページ登録トグル)
 
 // ★注意: source/public/includes/URLUtils.h は "namespace URLUtils { PUBLIC_DECL void GoToURL(...); }" と
 // 宣言しているが、これはヘッダーとバイナリの不一致(Public.lib 側の実エクスポート名と食い違っている)。
@@ -137,14 +138,23 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 			KESCMSetLayoutSync(!KESCMGetLayoutSync());
 			break;
 
+		// ページパネルのページ右クリック「KESCM: Register as Added/Removed Pages」トグル。
+		// 選択ページを「比較相手なし」として登録/解除する(実体は KESCMPageMap.cpp。このステップでは
+		// 登録の保持とチェック表示まで。比較の除外対応表への反映は次ステップ)。
+		case kKESCMPageMapToggleActionID:
+			KESCMPageMapToggleSelectedPages();
+			break;
+
 		default:
 			break;
 	}
 }
 
-/* UpdateActionStates — チェック式トグル4つ(「Show Marks on Source」「Hide Unchanged Spreads」
-   「Show Original Page Numbers」「Sync Layout Views」)のチェックマーク。常に有効、ON なら
-   kSelectedAction を立てる(docwatch の DocWchActionComponent::UpdateActionStates と同じ流儀)。 */
+/* UpdateActionStates — フライアウトのチェック式トグル4つ(「Show Marks on Source」「Hide Unchanged
+   Spreads」「Show Original Page Numbers」「Sync Layout Views」)は常に有効、ON なら kSelectedAction を
+   立てる(docwatch の DocWchActionComponent::UpdateActionStates と同じ流儀)。ページパネル右クリックの
+   「KESCM: Register as Added/Removed Pages」だけは選択依存の有効/無効・中間チェック・動的ラベルが
+   あるため KESCMPageMapUpdateToggleState(KESCMPageMap.cpp)へ委譲する。 */
 void KESCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionStateList* listToUpdate, GSysPoint /*mousePoint*/, IPMUnknown* /*widget*/)
 {
 	for (int32 i = 0; i < listToUpdate->Length(); i++)
@@ -177,6 +187,12 @@ void KESCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionSta
 			if (KESCMDrawEventHandler::sSrcMarksOn)
 				actionState |= kSelectedAction;
 			listToUpdate->SetNthActionState(i, actionState);
+		}
+		else if (action == kKESCMPageMapToggleActionID)
+		{
+			// ページパネル右クリックの登録トグル: 有効/無効(選択の有無)・チェック(全登録=✓/
+			// 一部=中間)・ラベル(Target=Added/Source=Removed)をまとめて KESCMPageMap.cpp 側で設定。
+			KESCMPageMapUpdateToggleState(listToUpdate, i);
 		}
 	}
 }

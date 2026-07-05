@@ -66,6 +66,7 @@
 #include "KESCMDrawEventHandler.h"   // エンジンの共有 static ＋ KESCMQueryPanorama
 #include "KESCMColorSampler.h"       // KESCMSampleCmykUnderMouse
 #include "KESCMCore.h"               // KESCMCollectPageUIDs ＋ arm/disarm/状態 宣言
+#include "KESCMPageMap.h"            // KESCMPageMapSweepClosedDocs(クローズスイープで登録を掃除)
 #include "KESCMPeek.h"
 
 //========================================================================================
@@ -1182,6 +1183,10 @@ void KESCMHandleDocsClosed()
 			changed = kTrue;
 		}
 	}
+
+	// 「比較相手なしページ」登録(KESCMPageMap)の後片付け: 閉じた文書の分を状態だけ捨てる
+	// (deref なし。パネル表示には関与しないので changed は立てない)。
+	KESCMPageMapSweepClosedDocs();
 
 	// 何か片付けたらパネルの ON/OFF 表示を実状態に合わせる(①「ON 固着」の解消)。
 	if (changed)
