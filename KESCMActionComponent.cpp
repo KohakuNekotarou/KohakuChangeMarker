@@ -295,9 +295,10 @@ void KESCMActionComponent::DoHideUnchangedToggle()
 		return;
 	}
 
-	// OFF→ON。
+	// OFF→ON。sEntries が空でも登録済み(比較相手なし="Added")ページがあれば続行する
+	// (そのページ自体が「変更あり」扱いになるため)。
 	IDataBase* db = KESCMDrawEventHandler::sDB;
-	if (db == nil || KESCMDrawEventHandler::sEntries.empty())
+	if (db == nil || (KESCMDrawEventHandler::sEntries.empty() && !KESCMPageMapHasAnyRegistered(db)))
 	{
 		// Start 前、または比較結果「変更ゼロ」。後者は全スプレッドが対象になってしまい、
 		// 全スプレッド非表示は InDesign が許さないので、どちらもここで中止する。
@@ -332,7 +333,10 @@ void KESCMActionComponent::DoHideUnchangedToggle()
 		const int32 np = spread->GetNumPages();
 		for (int32 p = 0; p < np; ++p)
 		{
-			if (KESCMDrawEventHandler::sEntries.count(spread->GetNthPageUID(p)) > 0)
+			const UID pageUID = spread->GetNthPageUID(p);
+			// 登録済み(比較相手なし="Added")ページは比較対象外で sEntries には載らないが、
+			// 緑枠つきの「変更あり」ページとして扱う(誤って Hide Unchanged で隠さないため)。
+			if (KESCMDrawEventHandler::sEntries.count(pageUID) > 0 || KESCMPageMapIsRegistered(db, pageUID))
 			{
 				changed = kTrue;
 				break;

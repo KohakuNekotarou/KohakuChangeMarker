@@ -138,47 +138,47 @@ void KESCMPageMapToggleSelectedPages()
 		}
 	}
 
+	// ★パネルのステータス欄は幅・行数とも小さいため(KESCM.fr の kKESCMStatusTextWidgetID は
+	// 176×52px 程度で自動省略もされない)、メッセージは短く1行に収める。
 	PMString msg;
 	msg.SetTranslatable(kFalse);
 	if (anyUnregistered)
 	{
 		for (size_t i = 0; i < pages.size(); ++i)
 			reg.insert(pages[i]);
-		msg.Append("Registered ");
+		msg.Append("+");
 		msg.AppendNumber((int32)pages.size());
-		msg.Append(" page(s) as ");
+		msg.Append(" ");
 		msg.Append(KESCMPageMapRoleWord(db));
-		msg.Append(" (no counterpart).");
 	}
 	else
 	{
 		for (size_t i = 0; i < pages.size(); ++i)
 			reg.erase(pages[i]);
-		msg.Append("Unregistered ");
+		msg.Append("-");
 		msg.AppendNumber((int32)pages.size());
 		msg.Append(" ");
 		msg.Append(KESCMPageMapRoleWord(db));
-		msg.Append(" page(s).");
 	}
 
 	// 空になったらエントリごと捨てる。合計はその後に数える(解除で 0 なら "Total: 0")。
 	if (reg.empty())
 		sRegistered.erase(db);
 	std::map<IDataBase*, std::set<UID> >::const_iterator it = sRegistered.find(db);
-	msg.Append(" Total in this document: ");
+	msg.Append(", total ");
 	msg.AppendNumber(it != sRegistered.end() ? (int32)it->second.size() : 0);
 
 	// ★既に比較実行済み(Start後)なら、除外対応表が変わった分をその場で反映するため、Start と同じ
 	// 全体再比較を自動で走らせる(実機確認: 比較後に登録を変えてもリアルタイムには反映されなかった
 	// ため、2026-07-05 にこの自動再比較を追加)。Start 未実行なら何もしない(次の Start で自然に反映)。
 	// KESCMDoMarkChangesDoc は Start 同様「Show Marks on Source」を既定 ON に戻す等の副作用も持つが、
-	// これは手動で Start を押し直すのと同じ挙動なので許容する。
+	// これは手動で Start を押し直すのと同じ挙動なので許容する。報告文字列(report)は使わず短い
+	// サフィックスだけ足す(ステータス欄が小さく、report をそのまま足すと溢れるため)。
 	if (KESCMIsArmed() && KESCMArmedTargetDB() != nil && KESCMArmedSourceDB() != nil)
 	{
 		PMString report;
 		KESCMDoMarkChangesDoc(KESCMArmedTargetDB(), KESCMArmedSourceDB(), report);
-		msg.AppendW(UTF32TextChar(0x0A));
-		msg.Append(report);
+		msg.Append(" (recompared)");
 	}
 
 	KESCMSetStatus(msg);
@@ -286,12 +286,17 @@ bool16 KESCMPageMapHasAnyRegistered(IDataBase* db)
 //   targetDB/sourceDB の平坦ページ列(KESCMCollectPageUIDs)から、それぞれ登録済み(比較相手なし)
 //   ページを除き、残り同士を順番に対応させる。従来(ステップ1以前)は素の平坦列を直接 zip していたが、
 //   追加/削除ページが登録されていれば、そのページを飛ばして残りを詰めて対応させる。
+//   ★文書間のページ数差で対応表からあふれたページ(登録されていないのに対応相手が無いページ)は
+//   outOverflowTargetPages/outOverflowSourcePages(任意)に入れる。
 //========================================================================================
 void KESCMBuildPairing(IDataBase* targetDB, IDataBase* sourceDB,
-	std::vector<UID>& outTargetPages, std::vector<UID>& outSourcePages)
+	std::vector<UID>& outTargetPages, std::vector<UID>& outSourcePages,
+	std::vector<UID>* outOverflowTargetPages, std::vector<UID>* outOverflowSourcePages)
 {
 	outTargetPages.clear();
 	outSourcePages.clear();
+	if (outOverflowTargetPages) outOverflowTargetPages->clear();
+	if (outOverflowSourcePages) outOverflowSourcePages->clear();
 	if (targetDB == nil || sourceDB == nil)
 		return;
 
@@ -312,6 +317,20 @@ void KESCMBuildPairing(IDataBase* targetDB, IDataBase* sourceDB,
 	const size_t n = (tFiltered.size() < sFiltered.size()) ? tFiltered.size() : sFiltered.size();
 	outTargetPages.assign(tFiltered.begin(), tFiltered.begin() + n);
 	outSourcePages.assign(sFiltered.begin(), sFiltered.begin() + n);
+	if (outOverflowTargetPages && tFiltered.size() > n)
+		outOverflowTargetPages->assign(tFiltered.begin() + n, tFiltered.end());
+	if (outOverflowSourcePages && sFiltered.size() > n)
+		outOverflowSourcePages->assign(sFiltered.begin() + n, sFiltered.end());
+}
+
+//========================================================================================
+// KESCMPageMapHasOverflow(KESCMPageMap.h で宣言)
+//========================================================================================
+bool16 KESCMPageMapHasOverflow(IDataBase* targetDB, IDataBase* sourceDB)
+{
+	std::vector<UID> tPages, sPages, tOverflow, sOverflow;
+	KESCMBuildPairing(targetDB, sourceDB, tPages, sPages, &tOverflow, &sOverflow);
+	return (!tOverflow.empty() || !sOverflow.empty()) ? kTrue : kFalse;
 }
 
 //========================================================================================

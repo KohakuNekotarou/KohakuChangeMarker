@@ -50,9 +50,17 @@ bool16 KESCMPageMapHasAnyRegistered(IDataBase* db);
 // 除外対応表: targetDB/sourceDB それぞれの平坦ページ列(KESCMCollectPageUIDs)から登録済み
 // (比較相手なし)ページを除き、残り同士を順番に対応させる。outTargetPages[i] と outSourcePages[i] が
 // 対応ペア(短い方の長さに切り詰め済み=2つの配列は同じ長さになる)。targetDB/sourceDB が nil なら
-// 両方とも空にして戻る。実体は KESCMPageMap.cpp。
+// 両方とも空にして戻る。
+// outOverflowTargetPages/outOverflowSourcePages(任意、nil可)には、登録されていないのに文書間の
+// ページ数差で対応表からあふれた側のページを入れる(ページ数が多い方の db にだけ入る。少ない方は空)。
+// 実体は KESCMPageMap.cpp。
 void KESCMBuildPairing(IDataBase* targetDB, IDataBase* sourceDB,
-	std::vector<UID>& outTargetPages, std::vector<UID>& outSourcePages);
+	std::vector<UID>& outTargetPages, std::vector<UID>& outSourcePages,
+	std::vector<UID>* outOverflowTargetPages = nil, std::vector<UID>* outOverflowSourcePages = nil);
+
+// targetDB/sourceDB のどちらかに、登録されていないのに文書間のページ数差であふれたページがあるか
+// (存在チェックのみ)。描画側の早期 return 判定に使う。
+bool16 KESCMPageMapHasOverflow(IDataBase* targetDB, IDataBase* sourceDB);
 
 // targetPageUID(targetDB内)に対応する sourceDB 側のページを1つ求める(内部で KESCMBuildPairing を
 // 使う)。targetPageUID 自身が登録済み(除外対象)か、対応表の範囲外(対応相手なし)なら kFalse で

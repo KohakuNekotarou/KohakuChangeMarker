@@ -50,6 +50,7 @@
 #include "IFontInstance.h"		// MeasureWText(中央揃えの幅測定) / GetDescent
 
 #include <map>
+#include <set>
 #include <new>			// std::nothrow(画像バッファ確保。MSVC の通常 new は失敗時 nil でなく throw のため)
 #include <string.h>
 
@@ -847,6 +848,51 @@ static void KESCMDrawAddedPageBorder(IGraphicsPort* gPort, IDataBase* db, UID pa
 }
 
 
+//========================================================================================
+// 対応表からあふれたページ(登録もされていないのに、新旧の文書間のページ数差で比較相手が無い
+// ページ)の縁取り。KESCMDrawAddedPageBorder(登録済み="Added"/"Removed")とは別ケースで、ユーザーが
+// まだ気付いていない可能性がある「本当に比較されていないページ」を明示するため、左下→右上の斜線
+// ("/") を赤(通常の変更マークと同じ色)・同じ太さで描く。ラスタ不要のベクター線なので、
+// KESCMDrawAddedPageBorder と同じ理由で screen/print とも setopacity で正しく半透明合成される。
+//========================================================================================
+static void KESCMDrawOverflowPageDiagonal(IGraphicsPort* gPort, IDataBase* db, UID pageUID,
+	const PMReal& sxr, int32 drawMode, const PMReal& screenOpacity)
+{
+	if (sxr <= 0)
+		return;
+	InterfacePtr<IGeometry> pageGeo(db, pageUID, UseDefaultIID());
+	if (pageGeo == nil)
+		return;
+
+	PMRect pr = pageGeo->GetPathBoundingBox();
+	PMMatrix m = ::InnerToSpreadMatrix(pageGeo);
+	m.Transform(&pr);
+
+	// 通常マークと同じ「画面 kKESCMRingTargetPx 相当」の太さ(pt)。KESCMDrawAddedPageBorder と同じ式。
+	PMReal w = kKESCMRingTargetPx / sxr;
+	const PMReal maxW = (pr.Width() < pr.Height() ? pr.Width() : pr.Height()) / PMReal(2.0);
+	if (w > maxW) w = maxW;
+	if (w < PMReal(0.5))
+		return;
+
+	const PMReal opacity = (drawMode == kKESCMDrawModePrint)
+		? KESCMDrawEventHandler::SelectedMarkOpacity() : screenOpacity;
+
+	AutoGSave ag(gPort);
+	// ノドの共有線に届かないよう、通常マークと同じく約1pt内側でクリップしてから対角線を引く。
+	const PMReal kKESCMClipInset = 1.0;	// pt
+	gPort->rectclip(pr.Left()   + kKESCMClipInset, pr.Top()    + kKESCMClipInset,
+	                pr.Width()  - kKESCMClipInset * 2.0, pr.Height() - kKESCMClipInset * 2.0);
+	gPort->setopacity(opacity, kFalse);
+	gPort->setrgbcolor(kKESCMRingR / PMReal(255.0), kKESCMRingG / PMReal(255.0), kKESCMRingB / PMReal(255.0));	// 赤(通常マークと同色)
+	gPort->setlinewidth(w);
+	gPort->newpath();
+	gPort->moveto(pr.Left(),  pr.Bottom());	// 左下
+	gPort->lineto(pr.Right(), pr.Top());		// 右上 → "/" の対角線
+	gPort->stroke();
+}
+
+
 bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 {
 	DrawEventData* ded = static_cast<DrawEventData*>(eventData);
@@ -876,10 +922,15 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	// Source 側の枠(Show Marks on Source)。トグル ON の間は「常時」表示で、OPP でも隠さず印刷にも常に
 	// 出す(Target 側の sPrintMarks とは独立の仕様)。この描画が実際に Source 文書のスプレッドかどうかは
 	// db 取得後に判定する(ここでは「描き得るか」だけ)。
-	// ★sEntries が空でも、Source 側に登録済み(比較相手なし="Removed")ページがあれば緑枠を描くために
-	// 続行する(KESCMPageMapHasAnyRegistered)。
-	const bool16 wantSrcMarks = sSrcMarksOn && sSrcDB != nil &&
-		(!sEntries.empty() || KESCMPageMapHasAnyRegistered(sSrcDB));
+	// ★sEntries が空でも、登録済み(比較相手なし="Added"/"Removed")ページや、文書間のページ数差で
+	// 対応表からあふれたページがあれば、緑枠/赤斜線を描くために続行する。オーバーフロー判定
+	// (KESCMPageMapHasOverflow)は対応表を作り直すので、他の条件が全部 false の時だけ評価されるよう
+	// 短絡評価の最後に置く。
+	const bool16 anyMarkableContent = !sEntries.empty() ||
+		(sDB    != nil && KESCMPageMapHasAnyRegistered(sDB)) ||
+		(sSrcDB != nil && KESCMPageMapHasAnyRegistered(sSrcDB)) ||
+		(sDB != nil && sSrcDB != nil && KESCMPageMapHasOverflow(sDB, sSrcDB));
+	const bool16 wantSrcMarks = sSrcMarksOn && sSrcDB != nil && anyMarkableContent;
 	// 印刷で「枠の印刷」が OFF のときは、Target 側のオーバーレイ一式を描かない(枠は基本非印刷)。
 	// Source 側の枠だけは常に印刷に出す仕様なので、wantSrcMarks が生きていれば処理を続行し、
 	// 下の want フラグ側で Target 分だけ落とす。
@@ -894,10 +945,7 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	//   捨てていた。Start 済み・マーク非表示(既定=ミドル押下中だけ表示)の待機状態が最頻なので、
 	//   ここで落として通常の編集・スクロール中の描画コストをほぼゼロにする。生存スイープも「実際に
 	//   何か描く」時だけの保険になる(クローズ後始末の本線は KESCMDocResponder で変わらず)。
-	// ★sEntries が空でも、Target 側に登録済み(比較相手なし="Added")ページがあれば緑枠を描くために
-	// 続行する(KESCMPageMapHasAnyRegistered)。
-	const bool16 wantMarks = !suppressForPrint && (sPrintMarks || sMarksVisible) &&
-		(!sEntries.empty() || (sDB != nil && KESCMPageMapHasAnyRegistered(sDB)));
+	const bool16 wantMarks = !suppressForPrint && (sPrintMarks || sMarksVisible) && anyMarkableContent;
 	const bool16 wantOrig  = !suppressForPrint && !printing && sShowOriginal && !sOrigImages.empty();
 	// 旧ページ番号バッジ: トグルON かつ「枠が見えている」間(=印刷マークON の常時表示、またはミドル押下中)。
 	// 枠の可視条件(wantMarks の sPrintMarks || sMarksVisible)と同じ揃え。印刷文脈は suppressForPrint で
@@ -1082,6 +1130,18 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 		}
 	}
 
+	// 除外対応表からあふれたページ(登録されていないのに、新旧の文書間のページ数差で対応相手が無い
+	// ページ)を、Target/Source 双方分まとめて1回だけ求めておく(sDB/sSrcDB が揃っている時だけ)。
+	// このスプレッドの各ページについて、あふれ側の集合に入っているかを見るだけなので O(log n) で済む。
+	std::set<UID> tOverflowSet, sOverflowSet;
+	if (sDB != nil && sSrcDB != nil)
+	{
+		std::vector<UID> tPages, sPages, tOverflow, sOverflow;
+		KESCMBuildPairing(sDB, sSrcDB, tPages, sPages, &tOverflow, &sOverflow);
+		tOverflowSet.insert(tOverflow.begin(), tOverflow.end());
+		sOverflowSet.insert(sOverflow.begin(), sOverflow.end());
+	}
+
 	// Source 文書側のリング(Show Marks on Source) — 現スプレッドが Source 文書のものなら、対応表
 	// (SourceページUID→TargetページUID)経由で同じリング画像を Source ページに重ねる。
 	// トグル ON の間は常時表示(ミドル押下と無関係)。不透明度はパネルの 25%/75% 選択
@@ -1106,6 +1166,11 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 			{
 				// 対応表に無い(=比較対象外)Source ページ。登録済み("Removed")なら緑枠を描く。
 				KESCMDrawAddedPageBorder(gPort, db, srcPageUID, sxr, drawMode, SelectedMarkOpacity());
+			}
+			else if (sOverflowSet.count(srcPageUID) > 0)
+			{
+				// 登録もされていない、ページ数差であふれたページ。未比較であることを赤斜線で明示する。
+				KESCMDrawOverflowPageDiagonal(gPort, db, srcPageUID, sxr, drawMode, SelectedMarkOpacity());
 			}
 		}
 		return kFalse;	// Source 文書に Target 側オーバーレイは無い=ここで終わり
@@ -1136,6 +1201,11 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 		{
 			// 比較エントリが無い(=対象外)Target ページ。登録済み("Added")なら緑枠を描く。
 			KESCMDrawAddedPageBorder(gPort, db, pageUID, sxr, drawMode, screenMarkOp);
+		}
+		else if (tOverflowSet.count(pageUID) > 0)
+		{
+			// 登録もされていない、ページ数差であふれたページ。未比較であることを赤斜線で明示する。
+			KESCMDrawOverflowPageDiagonal(gPort, db, pageUID, sxr, drawMode, screenMarkOp);
 		}
 	}
 
