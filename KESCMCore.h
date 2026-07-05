@@ -58,7 +58,15 @@ bool16		KESCMFindPageUnderMouse(IDataBase* targetDB, PMReal mx, PMReal my, KESCM
 
 // targetDB の各ページを sourceDB の同番号ページと比較し、変更マークのオーバーレイを(再)構築する。
 // outReport にはスクリプトメソッドが返すのと同じ状態文字列が入る。
-ErrorCode	KESCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMString& outReport);
+//
+// allowIncremental=kTrue のときは「差分再比較」を試みる: 前回比較(sPrevPairTargetToSource)と今回の
+// 除外対応表ペアリングを突き合わせ、ペアが不変のページは MakeEntry(=高dpiラスタ化2枚)を呼ばず前回
+// 結果を再利用し、ペアが新規/相手変化/消滅したページだけを再計算する。登録トグル(比較相手なしページの
+// 追加/解除)専用の高速化で、そこでは文書内容は変わらずペアリングだけが動くため安全に再利用できる。
+// ★内容が変わり得る Start や、除外条件が変わる Ignore Page Number Marker 切替では kFalse(既定)にして
+//   従来どおり全ページを再ラスタ化すること。状態不整合時(別文書対/前回ペアリング無し)は自動で全再比較に
+//   フォールバックする。
+ErrorCode	KESCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMString& outReport, bool16 allowIncremental = kFalse);
 
 // db が非nilなら、その IDocument のビューを再描画する(nil や IDocument 取得失敗時は何もしない)。
 // Clear/印刷マーク切替/peek disarm が「呼び出し側の db」と「実際にマークが描かれている対象文書」の

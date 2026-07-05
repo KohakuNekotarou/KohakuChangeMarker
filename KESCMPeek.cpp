@@ -331,10 +331,9 @@ static bool16 KESCMRefreshSpreadUnderMouse(IDataBase* targetDB, IDataBase* sourc
 			++changedCount;
 		else
 		{
-			// 変化が無くなったページ → 古い枠が残っていれば消す(更新で消えるべき)。
-			std::map<UID, KESCMOverlayEntry*>::iterator old = KESCMDrawEventHandler::sEntries.find(tUID);
-			if (old != KESCMDrawEventHandler::sEntries.end())
-			{ delete old->second; KESCMDrawEventHandler::sEntries.erase(old); }
+			// 変化が無くなったページ → 古い枠が残っていれば消す(更新で消えるべき)。エントリと同時に
+			// Source 側対応表(sSrcPageToTarget[sUID])も掃除する共通ヘルパへ統一(ドロップ処理を1本化)。
+			KESCMDrawEventHandler::DropOneEntry(tUID, sUID);
 		}
 	}
 

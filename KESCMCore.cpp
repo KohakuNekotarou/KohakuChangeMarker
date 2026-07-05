@@ -191,39 +191,88 @@ bool16 KESCMFindPageUnderMouse(IDataBase* targetDB, PMReal mx, PMReal my, KESCMP
 // (sPeek*)へ直接アクセスできるようにするため。
 //========================================================================================
 
-ErrorCode KESCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMString& outReport)
+ErrorCode KESCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMString& outReport, bool16 allowIncremental)
 {
 	if (targetDB == nil || sourceDB == nil)
 		return kFailure;
+
+	// 差分再比較の可否。登録トグル専用(allowIncremental=kTrue)で、かつ前回比較と同じドキュメント対を
+	// 対象にしていて前回ペアリングが残っている場合のみ差分にする。それ以外(Start・Ignore Page Number
+	// マーカー切替・別文書対・前回ペアリング無し)は従来どおり全ページを再ラスタ化する。
+	const bool16 doIncremental =
+		allowIncremental &&
+		KESCMDrawEventHandler::sDB == targetDB &&
+		KESCMDrawEventHandler::sSrcDB == sourceDB &&
+		!KESCMDrawEventHandler::sPrevPairTargetToSource.empty();
 
 	// 再比較すると「どのスプレッドが変更なしか」の分類が古くなるため、「Hide Unchanged Spreads」で
 	// 隠していたスプレッドは先に再表示してトグルを OFF に戻す(何も隠していなければ何もしない)。
 	KESCMResetHideUnchanged(kTrue);
 
-	// ドキュメント単位の総入れ替え。
-	KESCMDrawEventHandler::DropAll();
-	KESCMDrawEventHandler::sDB = targetDB;
-
 	// 両ドキュメントのページ対応を除外対応表(登録済み=比較相手なしページを除いた順番対応)で求める。
+	// 差分・全再比較のどちらでも使い、末尾で次回差分用の前回ペアリング(sPrevPairTargetToSource)に記録する。
 	std::vector<UID> tPages, sPages;
 	KESCMBuildPairing(targetDB, sourceDB, tPages, sPages);
+	const size_t n = tPages.size();	// KESCMBuildPairing は既に短い方へ切り詰め済み(tPages/sPagesは同じ長さ)
 
-	// 比較は同期実行で全ページをラスタ化するため時間がかかる。ループ前に「Comparing changes...」を
+	// 今回ペアリングの map 化(差分の O(1) 逆引き＋末尾の記録に使う)。
+	std::map<UID, UID> newMap;
+	for (size_t i = 0; i < n; ++i)
+		newMap[tPages[i]] = sPages[i];
+
+	// 比較は同期実行でページをラスタ化するため時間がかかる。ループ前に「Comparing changes...」を
 	// パネルステータスへ出し、ForceRedraw で即時に描いてからループに入る(ブロック中も見えるようにする)。
+	// 差分の場合はラスタ化枚数が少なく一瞬で終わるが、出しておいても害はない。
 	{
 		PMString busyMsg("Comparing changes...");
 		busyMsg.SetTranslatable(kFalse);
 		KESCMSetStatus(busyMsg, kTrue /*forceRedrawNow*/);
 	}
 
-	const size_t n = tPages.size();	// KESCMBuildPairing は既に短い方へ切り詰め済み(tPages/sPagesは同じ長さ)
 	int32 changedCount = 0;
-	for (size_t i = 0; i < n; ++i)
+	if (doIncremental)
 	{
-		bool16 changed = kFalse;
-		KESCMDrawEventHandler::MakeEntry(UIDRef(targetDB, tPages[i]), UIDRef(sourceDB, sPages[i]), changed);
-		if (changed) ++changedCount;
+		// 【差分再比較】前回ペアリング(oldMap)と今回(newMap)を突き合わせる。ペア不変のページは
+		// MakeEntry を呼ばず前回のオーバーレイ(または「変化ゼロ=エントリ無し」)をそのまま再利用する。
+		const std::map<UID, UID>& oldMap = KESCMDrawEventHandler::sPrevPairTargetToSource;
+
+		// (1) 破棄: 前回ペアの target のうち、今回ペアが消えた/相手が変わったものはエントリを捨てる。
+		//     MakeEntry は変化ゼロだと既存エントリを消さないので、相手が変わるページは先にここで消す。
+		for (std::map<UID, UID>::const_iterator it = oldMap.begin(); it != oldMap.end(); ++it)
+		{
+			std::map<UID, UID>::const_iterator nit = newMap.find(it->first);
+			if (nit == newMap.end() || nit->second != it->second)
+				KESCMDrawEventHandler::DropOneEntry(it->first, it->second);
+		}
+
+		// (2) 再計算: 今回ペアの target のうち、前回ペアが無かった/相手が変わったものだけ MakeEntry。
+		//     ペア不変ページは触らない(=前回結果を再利用=ラスタ化しない=ここが高速化の核)。
+		for (size_t i = 0; i < n; ++i)
+		{
+			std::map<UID, UID>::const_iterator oit = oldMap.find(tPages[i]);
+			if (oit == oldMap.end() || oit->second != sPages[i])
+			{
+				bool16 changed = kFalse;
+				KESCMDrawEventHandler::MakeEntry(UIDRef(targetDB, tPages[i]), UIDRef(sourceDB, sPages[i]), changed);
+			}
+		}
+		changedCount = (int32)KESCMDrawEventHandler::sEntries.size();	// 再利用分も含めた現在の変化ページ総数
 	}
+	else
+	{
+		// 【全再比較】ドキュメント単位の総入れ替え(Start・Ignore Page Number 切替・フォールバック)。
+		KESCMDrawEventHandler::DropAll();
+		KESCMDrawEventHandler::sDB = targetDB;
+		for (size_t i = 0; i < n; ++i)
+		{
+			bool16 changed = kFalse;
+			KESCMDrawEventHandler::MakeEntry(UIDRef(targetDB, tPages[i]), UIDRef(sourceDB, sPages[i]), changed);
+			if (changed) ++changedCount;
+		}
+	}
+
+	// 今回のペアリングを次回の差分用に記録する(差分・全再比較のどちらの経路でも)。
+	KESCMDrawEventHandler::sPrevPairTargetToSource.swap(newMap);
 
 	// 「Show Marks on Source」は Start のたびに既定 ON(仕様)。OFF にしたければフライアウトで外す。
 	// sSrcDB/対応表は MakeEntry が変化ページ登録時に埋めるが、変化ゼロでも db だけは明示しておく

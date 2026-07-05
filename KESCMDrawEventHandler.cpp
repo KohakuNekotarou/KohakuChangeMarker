@@ -143,6 +143,7 @@ bool16 KESCMDrawEventHandler::sShowOldNumbers = kFalse;	// 既定=OFF(フライ�
 bool16 KESCMDrawEventHandler::sSrcMarksOn = kFalse;	// 既定=OFF。Start(KESCMDoMarkChangesDoc)のたびに kTrue へ(フライアウト「Show Marks on Source」)
 IDataBase* KESCMDrawEventHandler::sSrcDB = nil;
 std::map<UID, UID> KESCMDrawEventHandler::sSrcPageToTarget;
+std::map<UID, UID> KESCMDrawEventHandler::sPrevPairTargetToSource;	// 前回比較のペアリング(登録トグルの差分再比較用)
 bool16 KESCMDrawEventHandler::sRasterizing = kFalse;	// 自前ラスタ化中だけ kTrue(自己参照防止)
 std::map<UID, KESCMOrigImage*> KESCMDrawEventHandler::sOrigImages;
 IDataBase* KESCMDrawEventHandler::sOrigDB = nil;

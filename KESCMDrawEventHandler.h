@@ -123,6 +123,13 @@ public:
 	// スプレッド描画時にこの表→sEntries の順で引けば、同じリング画像を Source ページに重ねられる。
 	// MakeEntry がエントリ登録と同時に記録する(=Ctrl+ミドルのスプレッド再比較でも対応が維持される)。
 	static std::map<UID, UID> sSrcPageToTarget;
+	// 前回の比較で使った TargetページUID → SourceページUID のペアリング(除外対応表の zip 結果)。
+	// 登録トグル(比較相手なしページの追加/解除)による再比較を差分化するために保持する:
+	// 新旧ペアリングを突き合わせ、ペアが不変のページは MakeEntry を呼ばず前回結果を再利用する
+	// (KESCMDoMarkChangesDoc の allowIncremental 経路)。全再比較(Start 等)のたびに丸ごと更新し、
+	// DropAll で破棄する。sEntries と違い、変化ゼロのページも含めた「前回比較した全ペア」を持つ点が肝
+	// (エントリの有無だけでは不変ページを再利用判定できないため)。
+	static std::map<UID, UID> sPrevPairTargetToSource;
 	// 旧ページ番号バッジ(フライアウト「Show Original Page Numbers」のチェック式トグル)。★既定=kFalse。
 	// ON の間、枠と同じ可視条件(sPrintMarks ON の常時表示、またはミドル押下中 sMarksVisible)で、番号が
 	// ズレているページ(=それより前に隠しスプレッドがある)の下端中央に「隠す前の元の番号」を描く
@@ -165,6 +172,18 @@ public:
 	// resolution 既定=kKESCMOrigResolution。peek 経路では現在のズームから dpi=72×スケールを渡して常にくっきり。
 	static ErrorCode MakeOrigImage(const UIDRef& targetRef, const UIDRef& sourceRef, const PMReal& resolution = kKESCMOrigResolution);
 
+	// 単一ページのオーバーレイ破棄(インクリメンタル再比較の差分適用で使う)。targetUID のエントリを
+	// 消し、その target を指していた Source 側対応表(sSrcPageToTarget[oldSourceUID])も掃除する。
+	// エントリ/対応表が無ければ何もしない(不変・変化ゼロページに対しても安全に呼べる)。
+	static void DropOneEntry(UID targetUID, UID oldSourceUID)
+	{
+		std::map<UID, KESCMOverlayEntry*>::iterator it = sEntries.find(targetUID);
+		if (it != sEntries.end()) { delete it->second; sEntries.erase(it); }
+		std::map<UID, UID>::iterator sp = sSrcPageToTarget.find(oldSourceUID);
+		if (sp != sSrcPageToTarget.end() && sp->second == targetUID)
+			sSrcPageToTarget.erase(sp);
+	}
+
 	// 全エントリ破棄(kescmClearMarks / 別ドキュメント切替時)。Source 側の対応表と db も一緒に破棄する
 	// (トグル sSrcMarksOn 自体は「ユーザーの好み」として保持。エントリが無ければ何も描かないので無害)。
 	static void DropAll()
@@ -175,6 +194,7 @@ public:
 		sDB = nil;
 		sSrcPageToTarget.clear();
 		sSrcDB = nil;
+		sPrevPairTargetToSource.clear();	// 差分用の前回ペアリングも破棄(次の比較で作り直す)
 	}
 
 	// 旧版画像を全破棄(kescmClearMarks / 別ドキュメント切替時)。表示トグルもOFFへ。

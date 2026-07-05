@@ -176,8 +176,11 @@ void KESCMPageMapToggleSelectedPages()
 	// サフィックスだけ足す(ステータス欄が小さく、report をそのまま足すと溢れるため)。
 	if (KESCMIsArmed() && KESCMArmedTargetDB() != nil && KESCMArmedSourceDB() != nil)
 	{
+		// ★差分再比較(allowIncremental=kTrue)。登録の追加/解除では文書内容は変わらず除外対応表の
+		// ペアリングだけが動くので、ペアが不変のページは前回結果を再利用し(=ラスタ化しない)、ペアが
+		// 新規/相手変化/消滅したページだけを再計算する。大規模文書ほど効く。全体の総入れ替えではない。
 		PMString report;
-		KESCMDoMarkChangesDoc(KESCMArmedTargetDB(), KESCMArmedSourceDB(), report);
+		KESCMDoMarkChangesDoc(KESCMArmedTargetDB(), KESCMArmedSourceDB(), report, kTrue /*allowIncremental*/);
 		msg.Append(" (recompared)");
 	}
 
