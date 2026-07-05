@@ -18,8 +18,10 @@
 //    チェック/有効無効/動的ラベルは kCustomEnabling → KESCMPageMapUpdateToggleState。
 //  - 登録の保持: セッション内のみ(文書ファイルには保存しない=dirty にもならない)。文書クローズ時は
 //    KESCMHandleDocsClosed からの KESCMPageMapSweepClosedDocs で状態だけ捨てる(deref なし)。
-//  - このステップ(1)では登録・解除・チェック表示まで。比較(除外対応表=残りページ同士の順番
-//    ペアリング)への反映は次ステップ。
+//  - ステップ2(2026-07-05): 除外対応表(KESCMBuildPairing/KESCMMapTargetToSource/
+//    KESCMMapSourceToTarget)。登録済みページを平坦列から除いて残り同士を順番に対応させ、
+//    比較(KESCMDoMarkChangesDoc)・peek旧版取得・スプレッド再比較・CMYK色サンプラ・
+//    Hide UnchangedのSource側分類の5箇所が、素の平坦列 zip からこの対応表経由に置き換わった。
 //
 //========================================================================================
 
@@ -166,6 +168,19 @@ void KESCMPageMapToggleSelectedPages()
 	msg.Append(" Total in this document: ");
 	msg.AppendNumber(it != sRegistered.end() ? (int32)it->second.size() : 0);
 
+	// ★既に比較実行済み(Start後)なら、除外対応表が変わった分をその場で反映するため、Start と同じ
+	// 全体再比較を自動で走らせる(実機確認: 比較後に登録を変えてもリアルタイムには反映されなかった
+	// ため、2026-07-05 にこの自動再比較を追加)。Start 未実行なら何もしない(次の Start で自然に反映)。
+	// KESCMDoMarkChangesDoc は Start 同様「Show Marks on Source」を既定 ON に戻す等の副作用も持つが、
+	// これは手動で Start を押し直すのと同じ挙動なので許容する。
+	if (KESCMIsArmed() && KESCMArmedTargetDB() != nil && KESCMArmedSourceDB() != nil)
+	{
+		PMString report;
+		KESCMDoMarkChangesDoc(KESCMArmedTargetDB(), KESCMArmedSourceDB(), report);
+		msg.AppendW(UTF32TextChar(0x0A));
+		msg.Append(report);
+	}
+
 	KESCMSetStatus(msg);
 }
 
@@ -242,6 +257,101 @@ void KESCMPageMapSweepClosedDocs()
 		else
 			++it;
 	}
+}
+
+//========================================================================================
+// KESCMPageMapIsRegistered(KESCMPageMap.h で宣言)
+//========================================================================================
+bool16 KESCMPageMapIsRegistered(IDataBase* db, UID pageUID)
+{
+	if (db == nil)
+		return kFalse;
+	std::map<IDataBase*, std::set<UID> >::const_iterator it = sRegistered.find(db);
+	return (it != sRegistered.end() && it->second.count(pageUID) > 0) ? kTrue : kFalse;
+}
+
+//========================================================================================
+// KESCMPageMapHasAnyRegistered(KESCMPageMap.h で宣言)
+//========================================================================================
+bool16 KESCMPageMapHasAnyRegistered(IDataBase* db)
+{
+	if (db == nil)
+		return kFalse;
+	std::map<IDataBase*, std::set<UID> >::const_iterator it = sRegistered.find(db);
+	return (it != sRegistered.end() && !it->second.empty()) ? kTrue : kFalse;
+}
+
+//========================================================================================
+// KESCMBuildPairing(KESCMPageMap.h で宣言)
+//   targetDB/sourceDB の平坦ページ列(KESCMCollectPageUIDs)から、それぞれ登録済み(比較相手なし)
+//   ページを除き、残り同士を順番に対応させる。従来(ステップ1以前)は素の平坦列を直接 zip していたが、
+//   追加/削除ページが登録されていれば、そのページを飛ばして残りを詰めて対応させる。
+//========================================================================================
+void KESCMBuildPairing(IDataBase* targetDB, IDataBase* sourceDB,
+	std::vector<UID>& outTargetPages, std::vector<UID>& outSourcePages)
+{
+	outTargetPages.clear();
+	outSourcePages.clear();
+	if (targetDB == nil || sourceDB == nil)
+		return;
+
+	std::vector<UID> tFlat, sFlat;
+	KESCMCollectPageUIDs(targetDB, tFlat);
+	KESCMCollectPageUIDs(sourceDB, sFlat);
+
+	std::vector<UID> tFiltered, sFiltered;
+	tFiltered.reserve(tFlat.size());
+	sFiltered.reserve(sFlat.size());
+	for (size_t i = 0; i < tFlat.size(); ++i)
+		if (!KESCMPageMapIsRegistered(targetDB, tFlat[i]))
+			tFiltered.push_back(tFlat[i]);
+	for (size_t i = 0; i < sFlat.size(); ++i)
+		if (!KESCMPageMapIsRegistered(sourceDB, sFlat[i]))
+			sFiltered.push_back(sFlat[i]);
+
+	const size_t n = (tFiltered.size() < sFiltered.size()) ? tFiltered.size() : sFiltered.size();
+	outTargetPages.assign(tFiltered.begin(), tFiltered.begin() + n);
+	outSourcePages.assign(sFiltered.begin(), sFiltered.begin() + n);
+}
+
+//========================================================================================
+// KESCMMapTargetToSource / KESCMMapSourceToTarget(KESCMPageMap.h で宣言)
+//   1ページ単位の対応変換。内部で KESCMBuildPairing を呼んで対応表を作り、探しているページを
+//   線形探索で引く(ページ数は高々数百なので毎回作り直しても軽い。呼び出し側は既に1スプレッド分
+//   =数ページの粒度でしか呼ばないため実測コストも小さい)。
+//========================================================================================
+bool16 KESCMMapTargetToSource(IDataBase* targetDB, IDataBase* sourceDB,
+	UID targetPageUID, UID& outSourcePageUID)
+{
+	outSourcePageUID = kInvalidUID;
+	std::vector<UID> tPages, sPages;
+	KESCMBuildPairing(targetDB, sourceDB, tPages, sPages);
+	for (size_t i = 0; i < tPages.size(); ++i)
+	{
+		if (tPages[i] == targetPageUID)
+		{
+			outSourcePageUID = sPages[i];
+			return kTrue;
+		}
+	}
+	return kFalse;
+}
+
+bool16 KESCMMapSourceToTarget(IDataBase* targetDB, IDataBase* sourceDB,
+	UID sourcePageUID, UID& outTargetPageUID)
+{
+	outTargetPageUID = kInvalidUID;
+	std::vector<UID> tPages, sPages;
+	KESCMBuildPairing(targetDB, sourceDB, tPages, sPages);
+	for (size_t i = 0; i < sPages.size(); ++i)
+	{
+		if (sPages[i] == sourcePageUID)
+		{
+			outTargetPageUID = tPages[i];
+			return kTrue;
+		}
+	}
+	return kFalse;
 }
 
 // KESCMPageMap.cpp 終わり。

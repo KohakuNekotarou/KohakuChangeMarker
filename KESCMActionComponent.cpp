@@ -27,6 +27,7 @@
 #include "IApplication.h"
 #include "IDocumentList.h"			// FindDocByDataBase(閉じた db を deref しないための生存確認)
 #include <vector>
+#include <map>
 
 #include "IDataBase.h"				// GetRootUID()(Hide Unchanged のスプレッド走査)
 
@@ -38,6 +39,7 @@
 #include "KESCMCore.h"		// KESCMOpenAboutURL
 #include "KESCMDrawEventHandler.h"	// sEntries/sDB/sShowOldNumbers(Hide Unchanged と旧番号バッジの状態参照)
 #include "KESCMPageMap.h"	// KESCMPageMapToggleSelectedPages / KESCMPageMapUpdateToggleState(追加/削除ページ登録トグル)
+							// ＋ KESCMBuildPairing(除外対応表、Hide Unchanged の Source 側分類で使用)
 
 // ★注意: source/public/includes/URLUtils.h は "namespace URLUtils { PUBLIC_DECL void GoToURL(...); }" と
 // 宣言しているが、これはヘッダーとバイナリの不一致(Public.lib 側の実エクスポート名と食い違っている)。
@@ -379,30 +381,27 @@ void KESCMActionComponent::DoHideUnchangedToggle()
 	sHiddenSpreads = unchanged;
 
 	// ---- Source 側も同じ分類で自動的に隠す ----
-	// 「変更あり」を Target の平坦ページ番号の集合にし、Source のスプレッドを平坦番号で走査して、
-	// 変更ありページに対応するページを1つも含まないスプレッドを隠す。新旧で見開き構成(スプレッドの
-	// ページ配分)が違っても、比較自体が平坦ページ番号どうしの対応なので、この判定も同じ基準で崩れない。
+	// 「変更あり」を除外対応表(登録済み=比較相手なしページを除いた順番対応)経由で Source ページの
+	// 集合にし、Source のスプレッドを走査して、変更ありページに対応するページを1つも含まない
+	// スプレッドを隠す。対応表に無い Source ページ(登録済み=削除ページ扱い)は安全側で「変更あり」
+	// 扱いにする(縁枠合成(ステップ3)が入るまでの暫定方針)。
 	// Source 側が失敗/スキップでも Target 側の隠しはそのまま生かす(致命ではないため)。
 	IDataBase* srcDB = KESCMArmedSourceDB();
 	int32 srcHiddenCount = 0;
 	bool16 srcSkippedAll = kFalse;
 	if (srcDB != nil && srcDB != db)
 	{
-		std::vector<UID> tFlat;
-		KESCMCollectPageUIDs(db, tFlat);
-		std::vector<bool> changedIdx(tFlat.size(), false);
-		for (size_t i = 0; i < tFlat.size(); ++i)
-		{
-			if (KESCMDrawEventHandler::sEntries.count(tFlat[i]) > 0)
-				changedIdx[i] = true;
-		}
+		std::vector<UID> tPages, sPages;
+		KESCMBuildPairing(db, srcDB, tPages, sPages);
+		std::map<UID, bool16> srcChangedMap;	// 対応表にあるSourceページ→対応Targetページが変更ありか
+		for (size_t i = 0; i < tPages.size(); ++i)
+			srcChangedMap[sPages[i]] = (KESCMDrawEventHandler::sEntries.count(tPages[i]) > 0) ? kTrue : kFalse;
 
 		InterfacePtr<ISpreadList> srcSpreadList(srcDB, srcDB->GetRootUID(), UseDefaultIID());
 		if (srcSpreadList != nil)
 		{
 			std::vector<UID> srcUnchanged;
 			int32 srcVisibleCount = 0;	// Source 側の全スプレッド非表示ガードの分母(表示中のみ)
-			int32 flat = 0;				// Source の平坦ページ番号(隠し済みスプレッドのページも数える)
 			const int32 nss = srcSpreadList->GetSpreadCount();
 			for (int32 s = 0; s < nss; ++s)
 			{
@@ -412,19 +411,16 @@ void KESCMActionComponent::DoHideUnchangedToggle()
 					continue;
 				const int32 np = srcSpread->GetNumPages();
 				// 手動で隠し済みの Source スプレッドは巻き込まない(Target 側と同じ方針)。
-				// ページ数の加算は続ける=平坦番号を崩さない。
 				InterfacePtr<IBoolData> srcHideFlag(srcDB, srcSpreadUID, IID_IHIDESPREADBOOLDATA);
 				if (srcHideFlag != nil && srcHideFlag->GetBool())
-				{
-					flat += np;
 					continue;
-				}
 				++srcVisibleCount;
 				bool16 srcChanged = kFalse;
 				for (int32 p = 0; p < np; ++p)
 				{
-					const size_t gi = (size_t)(flat + p);
-					if (gi < changedIdx.size() && changedIdx[gi])
+					const UID srcPageUID = srcSpread->GetNthPageUID(p);
+					std::map<UID, bool16>::const_iterator mit = srcChangedMap.find(srcPageUID);
+					if (mit == srcChangedMap.end() || mit->second)
 					{
 						srcChanged = kTrue;
 						break;
@@ -432,7 +428,6 @@ void KESCMActionComponent::DoHideUnchangedToggle()
 				}
 				if (!srcChanged)
 					srcUnchanged.push_back(srcSpreadUID);
-				flat += np;
 			}
 
 			if (!srcUnchanged.empty())

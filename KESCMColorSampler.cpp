@@ -21,11 +21,10 @@
 #include "SnapshotUtilsEx.h"
 #include "AGMImageAccessor.h"
 
-#include <vector>
-
 #include "KESCMConstants.h"
 #include "KESCMDrawEventHandler.h"   // KESCMDrawEventHandler::sRasterizing
-#include "KESCMCore.h"               // KESCMCollectPageUIDs
+#include "KESCMCore.h"               // KESCMQueryMouseContentPoint / KESCMFindPageUnderMouse
+#include "KESCMPageMap.h"            // KESCMMapTargetToSource(除外対応表)
 #include "KESCMColorSampler.h"
 
 // pageRef のページを、spreadPt(そのページの spread 座標)まわりの極小領域だけ CMYK・高dpi でラスタ化し、
@@ -109,15 +108,11 @@ bool16 KESCMSampleCmykUnderMouse(IDataBase* targetDB, IDataBase* sourceDB, PMStr
 	if (!KESCMFindPageUnderMouse(targetDB, mx, my, hit))
 		return kFalse;
 
-	// 新→旧ページ対応(平坦通し番号)。
-	std::vector<UID> sPages;
-	KESCMCollectPageUIDs(sourceDB, sPages);
-	const int32 gi = hit.globalPageBase + hit.hitPageIndex;
-	if (gi >= (int32)sPages.size())
-		return kFalse;
-
+	// 新→旧ページ対応(除外対応表=登録済みページを除いた順番対応)。
 	const UID tPageUID = hit.hitPageUID;
-	const UID sPageUID = sPages[gi];
+	UID sPageUID;
+	if (!KESCMMapTargetToSource(targetDB, sourceDB, tPageUID, sPageUID))
+		return kFalse;
 	InterfacePtr<IGeometry> tGeo(targetDB, tPageUID, UseDefaultIID());
 	InterfacePtr<IGeometry> sGeo(sourceDB, sPageUID, UseDefaultIID());
 	if (tGeo == nil || sGeo == nil)

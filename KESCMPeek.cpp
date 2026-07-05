@@ -57,7 +57,6 @@
 #include "PMReal.h"
 #include "TransformUtils.h"
 
-#include <vector>
 #include <map>
 
 // プロジェクト内インクルード:
@@ -65,8 +64,8 @@
 #include "KESCMConstants.h"
 #include "KESCMDrawEventHandler.h"   // エンジンの共有 static ＋ KESCMQueryPanorama
 #include "KESCMColorSampler.h"       // KESCMSampleCmykUnderMouse
-#include "KESCMCore.h"               // KESCMCollectPageUIDs ＋ arm/disarm/状態 宣言
-#include "KESCMPageMap.h"            // KESCMPageMapSweepClosedDocs(クローズスイープで登録を掃除)
+#include "KESCMCore.h"               // arm/disarm/状態 宣言
+#include "KESCMPageMap.h"            // KESCMMapTargetToSource(除外対応表)/KESCMPageMapSweepClosedDocs
 #include "KESCMPeek.h"
 
 //========================================================================================
@@ -158,7 +157,6 @@ static KESCMPeekResult KESCMPeekShowUnderMouse(IDataBase* targetDB, IDataBase* s
 
 	const int32 s           = hit.spreadIndex;
 	const int32 np          = hit.numPages;
-	const int32 globalIndex = hit.globalPageBase;
 	InterfacePtr<ISpread> spread(targetDB, hit.spreadUID, UseDefaultIID());
 	if (spread == nil)
 		return kKESCMPeekNoSpread;
@@ -204,22 +202,20 @@ static KESCMPeekResult KESCMPeekShowUnderMouse(IDataBase* targetDB, IDataBase* s
 	}
 	else
 	{
-		// 旧ドキュメントの平坦ページUID列(スプレッド順・ページ順)。新→旧の通し番号対応に使う。
-		// 実際にラスタ化するこの分岐でだけ必要なので、ここで集める(キャッシュヒット=同一スプレッドの
-		// 再 peek が最頻ケースで、その度に旧文書の全スプレッド/ページを列挙するのは無駄だった)。
-		std::vector<UID> sPages;
-		KESCMCollectPageUIDs(sourceDB, sPages);
-
+		// 新→旧のページ対応は除外対応表(登録済み=比較相手なしページを除いた順番対応)で引く。
+		// 実際にラスタ化するこの分岐でだけ必要(キャッシュヒット=同一スプレッドの再 peek が最頻ケースで、
+		// その度に対応表を作り直すのは無駄だった)。
 		KESCMDrawEventHandler::DropAllOrig();		// 覗くのは1スプレッドだけ=他は破棄
 		KESCMDrawEventHandler::sOrigDB = targetDB;
 		KESCMDrawEventHandler::sOrigScale = effScale;	// このラスタ化解像度を記録(再 peek の作り直し判定用)
 		for (int32 p = 0; p < np; ++p)
 		{
-			const int32 gi = globalIndex + p;
-			if (gi < (int32)sPages.size())
+			const UID tPageUID = spread->GetNthPageUID(p);
+			UID sPageUID;
+			if (KESCMMapTargetToSource(targetDB, sourceDB, tPageUID, sPageUID))
 			{
-				UIDRef tRef(targetDB, spread->GetNthPageUID(p));
-				UIDRef sRef(sourceDB, sPages[gi]);
+				UIDRef tRef(targetDB, tPageUID);
+				UIDRef sRef(sourceDB, sPageUID);
 				if (KESCMDrawEventHandler::MakeOrigImage(tRef, sRef, peekDpi) == kSuccess)
 					++captured;
 			}
@@ -310,10 +306,6 @@ static bool16 KESCMRefreshSpreadUnderMouse(IDataBase* targetDB, IDataBase* sourc
 	if (!KESCMFindPageUnderMouse(targetDB, mx, my, hit))
 		return kFalse;
 
-	// 旧ドキュメントの平坦ページUID列(スプレッド順・ページ順)。
-	std::vector<UID> sPages;
-	KESCMCollectPageUIDs(sourceDB, sPages);
-
 	// マークの所属ドキュメントを合わせる(別 doc にマークがあった場合のみ総入れ替え=通常は一致で何もしない)。
 	if (KESCMDrawEventHandler::sDB != nil && KESCMDrawEventHandler::sDB != targetDB)
 		KESCMDrawEventHandler::DropAll();
@@ -324,16 +316,17 @@ static bool16 KESCMRefreshSpreadUnderMouse(IDataBase* targetDB, IDataBase* sourc
 		return kFalse;
 	const int32 np = hit.numPages;
 
-	// このスプレッドの各ページを再比較して枠を更新。新→旧は globalPageBase で対応。
+	// このスプレッドの各ページを再比較して枠を更新。新→旧は除外対応表(登録済みページを除いた
+	// 順番対応)で引く。
 	int32 changedCount = 0;
 	for (int32 p = 0; p < np; ++p)
 	{
-		const int32 gi = hit.globalPageBase + p;
-		if (gi >= (int32)sPages.size())
-			continue;
 		const UID tUID = spread->GetNthPageUID(p);
+		UID sUID;
+		if (!KESCMMapTargetToSource(targetDB, sourceDB, tUID, sUID))
+			continue;
 		bool16 changed = kFalse;
-		KESCMDrawEventHandler::MakeEntry(UIDRef(targetDB, tUID), UIDRef(sourceDB, sPages[gi]), changed);
+		KESCMDrawEventHandler::MakeEntry(UIDRef(targetDB, tUID), UIDRef(sourceDB, sUID), changed);
 		if (changed)
 			++changedCount;
 		else

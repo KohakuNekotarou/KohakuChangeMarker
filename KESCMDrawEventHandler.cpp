@@ -56,7 +56,78 @@
 // プロジェクト内インクルード:
 #include "KESCMID.h"
 #include "KESCMCore.h"               // KESCMHandleDocsClosed(クローズ検知の後始末を一本化)
+#include "KESCMPageMap.h"            // KESCMPageMapIsRegistered/KESCMPageMapHasAnyRegistered(追加/削除ページ縁枠)
 #include "KESCMDrawEventHandler.h"
+
+//========================================================================================
+// ★TEST(一時診断・確認後に 0 へ戻すか削除): ページパネルのサムネイル再生成が draw event を
+// 発するかの調査ログ。1 にすると全18種の draw event を購読し、HandleDrawEvent の先頭で
+// work/kescm_drawlog.txt に1行ずつ追記する(追加購読分は記録だけして即 return=描画に影響なし)。
+// 見方: view=0000000000000000 がオフスクリーン描画(サムネイル/スナップショット/印刷)。
+// rast=1 は KESCM 自身のラスタ化中(これは無視してよい)。
+//========================================================================================
+#define KESCM_DRAWLOG 0
+
+#if KESCM_DRAWLOG
+#include <stdio.h>
+
+static const char* KESCMDrawLogEventName(int32 id)
+{
+	switch (id)
+	{
+		case kDrawSpreadMessage:        return "DrawSpread";
+		case kBeginSpreadMessage:       return "BeginSpread";
+		case kEndSpreadMessage:         return "EndSpread";
+		case kDrawSpreadPageMessage:    return "DrawSpreadPage";
+		case kBeginSpreadPageMessage:   return "BeginSpreadPage";
+		case kEndSpreadPageMessage:     return "EndSpreadPage";
+		case kDrawLayerMessage:         return "DrawLayer";
+		case kBeginLayerMessage:        return "BeginLayer";
+		case kEndLayerMessage:          return "EndLayer";
+		case kDrawPageMessage:          return "DrawPage";
+		case kBeginPageMessage:         return "BeginPage";
+		case kEndPageMessage:           return "EndPage";
+		case kDrawGroupMessage:         return "DrawGroup";
+		case kBeginGroupMessage:        return "BeginGroup";
+		case kEndGroupMessage:          return "EndGroup";
+		case kDrawShapeMessage:         return "DrawShape";
+		case kBeginShapeMessage:        return "BeginShape";
+		case kEndShapeMessage:          return "EndShape";
+		case kDrawMasterSpreadMessage:  return "DrawMasterSpread";
+		case kBeginMasterSpreadMessage: return "BeginMasterSpread";
+		case kEndMasterSpreadMessage:   return "EndMasterSpread";
+		default:                        return nil;
+	}
+}
+
+// 1イベント=1行。fopen/fclose を毎回行う(重いが診断専用なので単純さ優先)。
+static void KESCMDrawLogLine(ClassID eventID, DrawEventData* ded)
+{
+	FILE* f = fopen("C:\\Users\\user\\Desktop\\plugin_sdk_21.0.0.192\\work\\kescm_drawlog.txt", "ab");
+	if (f == nil)
+		return;
+	GraphicsData* gd = ded->gd;
+	IControlView* view = (gd != nil) ? gd->GetView() : nil;
+	IDataBase* db = (ded->changedBy != nil) ? ::GetDataBase(ded->changedBy) : nil;
+	int32 uid = 0;
+	bool16 isSpread = kFalse;
+	if (ded->changedBy != nil)
+	{
+		uid = (int32)(::GetUID(ded->changedBy).Get());
+		InterfacePtr<ISpread> sp(ded->changedBy, UseDefaultIID());
+		isSpread = (sp != nil);
+	}
+	const char* nm = KESCMDrawLogEventName(eventID.Get());
+	if (nm != nil)
+		fprintf(f, "%-18s", nm);
+	else
+		fprintf(f, "0x%08X        ", (unsigned int)eventID.Get());
+	fprintf(f, " view=%p flags=0x%04X rast=%d db=%p uid=%d spread=%d\n",
+		(void*)view, (unsigned int)ded->flags, (int)(KESCMDrawEventHandler::sRasterizing ? 1 : 0),
+		(void*)db, uid, (int)(isSpread ? 1 : 0));
+	fclose(f);
+}
+#endif // KESCM_DRAWLOG
 
 CREATE_PMINTERFACE(KESCMDrawEventHandler, kKESCMDrawEventHandlerImpl)
 
@@ -498,16 +569,40 @@ ErrorCode KESCMDrawEventHandler::MakeOrigImage(const UIDRef& targetRef, const UI
 }
 
 
+#if KESCM_DRAWLOG
+// ★TEST: 診断で追加購読する draw event(本来の kEndSpreadMessage 以外の全17種。
+// basicdrwevthandler の一覧と同じ)。HandleDrawEvent 先頭でログだけ取って即 return する。
+static const int32 kKESCMDrawLogExtraIDs[] =
+{
+	kDrawSpreadMessage, kBeginSpreadMessage,
+	kDrawSpreadPageMessage, kBeginSpreadPageMessage, kEndSpreadPageMessage,
+	kDrawLayerMessage, kBeginLayerMessage, kEndLayerMessage,
+	kDrawPageMessage, kBeginPageMessage, kEndPageMessage,
+	kDrawGroupMessage, kBeginGroupMessage, kEndGroupMessage,
+	kDrawShapeMessage, kBeginShapeMessage, kEndShapeMessage,
+	kDrawMasterSpreadMessage, kBeginMasterSpreadMessage, kEndMasterSpreadMessage,
+};
+static const int32 kKESCMDrawLogExtraCount = (int32)(sizeof(kKESCMDrawLogExtraIDs) / sizeof(kKESCMDrawLogExtraIDs[0]));
+#endif
+
 void KESCMDrawEventHandler::Register(IDrwEvtDispatcher* d)
 {
 	// スプレッド単位で配られる描画イベント。ポートは spread 座標。枠/変更数・旧版べた載せをこちらで描く。
 	// (トースト撤去(2026-07-04)に伴い、カンバス背景帯用の kAfterLastSpreadDrawMessage 登録は廃止)
 	d->RegisterHandler(ClassID(kEndSpreadMessage), this, kDEHLowestPriority);
+#if KESCM_DRAWLOG
+	for (int32 i = 0; i < kKESCMDrawLogExtraCount; ++i)
+		d->RegisterHandler(ClassID(kKESCMDrawLogExtraIDs[i]), this, kDEHLowestPriority);
+#endif
 }
 
 void KESCMDrawEventHandler::UnRegister(IDrwEvtDispatcher* d)
 {
 	d->UnRegisterHandler(ClassID(kEndSpreadMessage), this);
+#if KESCM_DRAWLOG
+	for (int32 i = 0; i < kKESCMDrawLogExtraCount; ++i)
+		d->UnRegisterHandler(ClassID(kKESCMDrawLogExtraIDs[i]), this);
+#endif
 }
 
 
@@ -608,19 +703,30 @@ static void KESCMDrawRingForPrint(IGraphicsPort* gPort, KESCMOverlayEntry* e)
 }
 
 
+// KESCMDrawEntryOnPage の描画モード。文脈ごとに「太さの決め方」と「描き方」が違う:
+//   Screen: 半径=ズーム適応(画面 kKESCMRingTargetPx 相当)、image() blit+選択不透明度(25%/75%)
+//   Print:  半径=100%表示相当(sxr=1.0)、アルファサーバ+ベクター fill(フラットナが image() の
+//           部分 alpha を honor しないため。不透明度は KESCMDrawRingForPrint 内で選択値を使用)
+//   (ページパネルのサムネイル生成(view 無し・kPreviewMode のオフスクリーン)向けの専用モードは
+//   2026-07-05 に撤去。★背景=既に一度描画済み・パネルに表示中のサムネイルは、公開APIでは
+//   ピンポイントで無効化・再生成する手段が無いため([[kescm-pages-panel-thumbnails]]参照)、
+//   一部のページだけ枠が古いまま/新しいまま食い違う不整合な見た目になる。ユーザー判断で
+//   パネルには枠を一切出さない方針に変更=HandleDrawEvent 側でこの描画コンテキストを早期 return)
+enum { kKESCMDrawModeScreen = 0, kKESCMDrawModePrint = 1 };
+
 //========================================================================================
 // ページ1枚分のリング描画(HandleDrawEvent の Target ループから括り出した共通部)。
-//   db/pageUID のページ矩形へ e のリング画像をフィットさせて描く。リング太さのズーム適応
-//   (BuildRing 再計算)もここ。Target 側と Source 側(Show Marks on Source)の両方から呼ばれる:
+//   db/pageUID のページ矩形へ e のリング画像をフィットさせて描く。リング太さの再計算
+//   (BuildRing)もここ。Target 側と Source 側(Show Marks on Source)の両方から呼ばれる:
 //   Source 側は Target のリング画像をそのまま Source ページ矩形に重ねる(比較は平坦ページ番号
 //   対応なので位置・形は同一。ページサイズが違えば矩形フィットで引き伸ばされる)。
-//   screenOpacity は画面 blit にだけ使う(printing 時は KESCMDrawRingForPrint が
+//   screenOpacity は Screen モードの blit にだけ使う(Print は KESCMDrawRingForPrint が
 //   SelectedMarkOpacity を直接使う)。
-//   ★Target と Source を別ズームで表示中は、双方の再描画で e->lastRadius が交互に書き換わり
-//   BuildRing が走り直すが、リング画像は 36dpi 化済みでバッファが小さく実害はない。
+//   ★Target と Source を別ズームで表示中は e->lastRadius が行き来して BuildRing が走り直すが、
+//   リング画像は 36dpi 化済みでバッファが小さく実害はない。
 //========================================================================================
 static void KESCMDrawEntryOnPage(IGraphicsPort* gPort, KESCMOverlayEntry* e, IDataBase* db, UID pageUID,
-	const PMReal& sxr, bool16 printing, const PMReal& screenOpacity)
+	const PMReal& sxr, int32 drawMode, const PMReal& screenOpacity)
 {
 	if (e == nil || e->buf == nil)
 		return;
@@ -636,24 +742,29 @@ static void KESCMDrawEntryOnPage(IGraphicsPort* gPort, KESCMOverlayEntry* e, IDa
 	PMMatrix m = ::InnerToSpreadMatrix(pageGeo);
 	m.Transform(&pr);									// → spread(=描画ポート)座標
 
-	// 【リング太さのズーム適応】このページの実寸と現ズームから「画面 kKESCMRingTargetPx 相当」の
-	// 膨張半径(画像px)を逆算。前回と違えば描き直し。拡大時は下限(2)に張り付くので再計算が止まる。
-	if (e->dist != nil && sxr > 0)
+	// 【リング太さ】モードごとに膨張半径(画像px)を決め、前回と違えば描き直す。
+	if (e->dist != nil)
 	{
-		PMReal denom = (pr.Width() / PMReal(iw)) * sxr;		// 画面px / 画像px
-		if (denom > PMReal(0.0001))
+		int32 R = -1;	// -1=このモードでは半径を決められない(既存バッファのまま描く)
+		if (sxr > 0)
 		{
-			int32 R = ::ToInt32(::Round(kKESCMRingTargetPx / denom));
-			if (R < 2) R = 2;									// 最小2px(量子化後は最小4px)
-			if (R > 200) R = 200;								// 過大膨張の上限
-			// 量子化を 2px→4px 刻みに。ズーム中に R が変わる回数(=BuildRing 再計算)がほぼ半減。
-			// 代償=太さの段階がやや粗い。最小は 4、200 は 200 に丸まる。
-			R = ((R + 2) / 4) * 4;								// 4px 量子化
-			if (R != e->lastRadius)
+			// 画面/印刷: このページの実寸と現ズーム(印刷は sxr=1.0 固定)から
+			// 「画面 kKESCMRingTargetPx 相当」の半径を逆算。拡大時は下限(2)に張り付くので再計算が止まる。
+			PMReal denom = (pr.Width() / PMReal(iw)) * sxr;		// 画面px / 画像px
+			if (denom > PMReal(0.0001))
 			{
-				KESCMDrawEventHandler::BuildRing(e->buf, e->rowBytes, e->bpp, e->w, e->h, e->dist, e->bgRed, R);
-				e->lastRadius = R;
+				R = ::ToInt32(::Round(kKESCMRingTargetPx / denom));
+				if (R < 2) R = 2;								// 最小2px(量子化後は最小4px)
+				if (R > 200) R = 200;							// 過大膨張の上限
+				// 量子化を 2px→4px 刻みに。ズーム中に R が変わる回数(=BuildRing 再計算)がほぼ半減。
+				// 代償=太さの段階がやや粗い。最小は 4、200 は 200 に丸まる。
+				R = ((R + 2) / 4) * 4;							// 4px 量子化
 			}
+		}
+		if (R > 0 && R != e->lastRadius)
+		{
+			KESCMDrawEventHandler::BuildRing(e->buf, e->rowBytes, e->bpp, e->w, e->h, e->dist, e->bgRed, R);
+			e->lastRadius = R;
 		}
 	}
 
@@ -671,16 +782,68 @@ static void KESCMDrawEntryOnPage(IGraphicsPort* gPort, KESCMOverlayEntry* e, IDa
 		gPort->scale(pr.Width() / iw, pr.Height() / ih);	// 画像px → ページ矩形にフィット
 		// ★印刷/PDF 時は image() blit だと枠が不透明になる(フラットナが画像の部分 alpha を honor しない)。
 		// アルファサーバ＋純色ベクター fill＋setopacity で半透明に描く(透明合成エンジンが honor)。
-		// 画面描画(printing=false)は従来の ARGB blit のまま(画素 alpha を honor=検証済みの見た目を維持)。
-		if (printing)
+		// 画面は image() blit(画素 alpha を honor=実測確認済み)+選択不透明度(25%/75%)。
+		if (drawMode == kKESCMDrawModePrint)
 			KESCMDrawRingForPrint(gPort, e);
 		else
 		{
-			// 画面 blit は image() の画素 alpha に加えてポート opacity も honor する。
 			gPort->setopacity(screenOpacity, kFalse);
 			gPort->image(&e->rec, PMMatrix(), 0);			// 自前レコード(buf を指す)を blit
 		}
 	}
+}
+
+
+//========================================================================================
+// 登録済み(比較相手なし="Added"/"Removed")ページの縁枠(KESCMPageMap の右クリック登録トグルで
+// 登録したページ用)。対応するdiffが存在しない(比較の対象外)ため、通常のリング(KESCMOverlayEntry/
+// BuildRing)は作れない。ページ全体を「変更あり」として扱う視覚表現として、通常マークと同じ太さの
+// 決め方(画面はズーム適応=kKESCMRingTargetPx相当、印刷は100%相当固定)で、緑固定の縁枠を描く。
+// ★通常マークと違い、これは最初から単純な矩形(ラスタ差分なし)なので、ベクター矩形塗り+setopacity
+// だけで screen/print 両方とも正しく半透明合成される(image() blit と違い、透明合成エンジンが
+// ベクター塗りの opacity をそのまま honor するため、KESCMDrawRingForPrint 相当のアルファサーバ細工は
+// 不要)。
+//========================================================================================
+static void KESCMDrawAddedPageBorder(IGraphicsPort* gPort, IDataBase* db, UID pageUID,
+	const PMReal& sxr, int32 drawMode, const PMReal& screenOpacity)
+{
+	if (sxr <= 0)
+		return;
+	InterfacePtr<IGeometry> pageGeo(db, pageUID, UseDefaultIID());
+	if (pageGeo == nil)
+		return;
+
+	// 【座標】KESCMDrawEntryOnPage と同じく、ページ inner bbox を spread 座標へ変換。
+	PMRect pr = pageGeo->GetPathBoundingBox();
+	PMMatrix m = ::InnerToSpreadMatrix(pageGeo);
+	m.Transform(&pr);
+
+	// 【太さ】通常マークと同じ「画面 kKESCMRingTargetPx 相当」を、画像px経由ではなく直接pt単位で
+	// 求める(sxr = content→window スケールなので pt = px/sxr。印刷は呼び出し側で sxr=1.0 固定済み)。
+	PMReal w = kKESCMRingTargetPx / sxr;
+	const PMReal maxW = (pr.Width() < pr.Height() ? pr.Width() : pr.Height()) / PMReal(2.0) - PMReal(0.5);
+	if (w > maxW) w = maxW;
+	if (w < PMReal(0.5))
+		return;	// ページが小さすぎて太さが潰れる場合は描かない
+
+	// 【クリップ相当】通常マークと同じく、ノドの共有線に届かないよう約1pt内側から描く。
+	const PMReal kKESCMClipInset = 1.0;	// pt
+	const PMReal L = pr.Left()   + kKESCMClipInset, R = pr.Right()  - kKESCMClipInset;
+	const PMReal T = pr.Top()    + kKESCMClipInset, B = pr.Bottom() - kKESCMClipInset;
+	if (R <= L || B <= T)
+		return;
+
+	// 印刷時は通常マークと同じく SelectedMarkOpacity() を使う(screenOpacity は画面専用の実効値)。
+	const PMReal opacity = (drawMode == kKESCMDrawModePrint)
+		? KESCMDrawEventHandler::SelectedMarkOpacity() : screenOpacity;
+
+	AutoGSave ag(gPort);
+	gPort->setopacity(opacity, kFalse);
+	gPort->setrgbcolor(kKESCMAddedBorderR / PMReal(255.0), kKESCMAddedBorderG / PMReal(255.0), kKESCMAddedBorderB / PMReal(255.0));
+	gPort->rectfill(L,     T,     R - L, w);					// 上
+	gPort->rectfill(L,     B - w, R - L, w);					// 下
+	gPort->rectfill(L,     T + w, w,     (B - T) - w * PMReal(2.0));	// 左
+	gPort->rectfill(R - w, T + w, w,     (B - T) - w * PMReal(2.0));	// 右
 }
 
 
@@ -689,6 +852,13 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	DrawEventData* ded = static_cast<DrawEventData*>(eventData);
 	if (ded == nil || ded->gd == nil)
 		return kFalse;
+#if KESCM_DRAWLOG
+	// ★TEST: 全イベントをログ(sRasterizing 中も記録=rast=1 で区別)。追加購読した17種は
+	// 記録だけして即 return し、以降の本来の処理(kEndSpreadMessage のみ)へ影響させない。
+	KESCMDrawLogLine(eventID, ded);
+	if (eventID.Get() != kEndSpreadMessage)
+		return kFalse;
+#endif
 	// 自前のラスタ化(MakeEntry の比較スナップショット / MakeOrigImage の旧版スナップショット)中の再入は
 	// 描かない(自己参照=マークがスナップショットに写り込む feedback を防ぐ)。以前は kPreviewMode ビットで
 	// 弾いていたが、それは PDF 書き出しの kPDFExportMode と同一ビット(4096)で export を巻き込んでいたため、
@@ -706,7 +876,10 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	// Source 側の枠(Show Marks on Source)。トグル ON の間は「常時」表示で、OPP でも隠さず印刷にも常に
 	// 出す(Target 側の sPrintMarks とは独立の仕様)。この描画が実際に Source 文書のスプレッドかどうかは
 	// db 取得後に判定する(ここでは「描き得るか」だけ)。
-	const bool16 wantSrcMarks = sSrcMarksOn && sSrcDB != nil && !sEntries.empty();
+	// ★sEntries が空でも、Source 側に登録済み(比較相手なし="Removed")ページがあれば緑枠を描くために
+	// 続行する(KESCMPageMapHasAnyRegistered)。
+	const bool16 wantSrcMarks = sSrcMarksOn && sSrcDB != nil &&
+		(!sEntries.empty() || KESCMPageMapHasAnyRegistered(sSrcDB));
 	// 印刷で「枠の印刷」が OFF のときは、Target 側のオーバーレイ一式を描かない(枠は基本非印刷)。
 	// Source 側の枠だけは常に印刷に出す仕様なので、wantSrcMarks が生きていれば処理を続行し、
 	// 下の want フラグ側で Target 分だけ落とす。
@@ -721,7 +894,10 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	//   捨てていた。Start 済み・マーク非表示(既定=ミドル押下中だけ表示)の待機状態が最頻なので、
 	//   ここで落として通常の編集・スクロール中の描画コストをほぼゼロにする。生存スイープも「実際に
 	//   何か描く」時だけの保険になる(クローズ後始末の本線は KESCMDocResponder で変わらず)。
-	const bool16 wantMarks = !suppressForPrint && (sPrintMarks || sMarksVisible) && !sEntries.empty();
+	// ★sEntries が空でも、Target 側に登録済み(比較相手なし="Added")ページがあれば緑枠を描くために
+	// 続行する(KESCMPageMapHasAnyRegistered)。
+	const bool16 wantMarks = !suppressForPrint && (sPrintMarks || sMarksVisible) &&
+		(!sEntries.empty() || (sDB != nil && KESCMPageMapHasAnyRegistered(sDB)));
 	const bool16 wantOrig  = !suppressForPrint && !printing && sShowOriginal && !sOrigImages.empty();
 	// 旧ページ番号バッジ: トグルON かつ「枠が見えている」間(=印刷マークON の常時表示、またはミドル押下中)。
 	// 枠の可視条件(wantMarks の sPrintMarks || sMarksVisible)と同じ揃え。印刷文脈は suppressForPrint で
@@ -734,6 +910,14 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	GraphicsData* gd = ded->gd;
 	IGraphicsPort* gPort = gd->GetGraphicsPort();
 	if (gPort == nil)
+		return kFalse;
+
+	// ★ページパネルのサムネイル生成(view 無し・kPreviewMode のオフスクリーン描画。2026-07-05 診断ログ:
+	// flags=0x1800=kPreviewMode|kDrawFrameEdge)には枠を一切出さない。既に一度描画済み・パネルに
+	// 表示中のサムネイルは公開APIでは無効化・再生成できず、一部のページだけ枠が古いまま/新しいまま
+	// 食い違う不整合な見た目になるため、ユーザー判断でパネルには出さない方針に変更(詳細は
+	// memory kescm-pages-panel-thumbnails)。画面描画(zview 有り)・印刷は対象外=従来どおり描く。
+	if (!printing && gd->GetView() == nil && (ded->flags & IShape::kPreviewMode) != 0)
 		return kFalse;
 
 	// changedBy = 今描いているスプレッド。
@@ -772,10 +956,13 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 		sxr = toWin.GetXScale(); if (sxr < 0) sxr = -sxr;
 	}
 
+	// ★描画モードの決定(サムネイル生成は関数冒頭で早期 return 済みなのでここには来ない)。
+	int32 drawMode = printing ? kKESCMDrawModePrint : kKESCMDrawModeScreen;
+
 	// ★印刷/PDF 時は「100% 表示の見た目」に固定する(ズーム連動を切る)。印刷ポートには view が無く
-	// sxr=0 / pano=nil になるので、実効 sxr=1.0(=100%・deviceScale 1 相当)を与える。
-	// これでリング太さの式が、画面 100% 表示時とちょうど同じ値になる(下流の
-	// ズーム適応式・フォールバック式をそのまま使い回せる)。画面描画(printing=false)は従来どおりズーム連動。
+	// sxr=0 / pano=nil になるので、実効 sxr=1.0(=100%・deviceScale 1 相当)を与える。これでリング太さの
+	// 式が、画面 100% 表示時とちょうど同じ値になる(下流のズーム適応式をそのまま使い回せる)。
+	// 画面描画は従来どおりズーム連動。
 	if (printing)
 		sxr = 1.0;
 
@@ -909,12 +1096,17 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 		{
 			const UID srcPageUID = spread->GetNthPageUID(i);
 			std::map<UID, UID>::iterator mp = sSrcPageToTarget.find(srcPageUID);
-			if (mp == sSrcPageToTarget.end())
-				continue;
-			std::map<UID, KESCMOverlayEntry*>::iterator it = sEntries.find(mp->second);
-			if (it == sEntries.end())
-				continue;
-			KESCMDrawEntryOnPage(gPort, it->second, db, srcPageUID, sxr, printing, SelectedMarkOpacity());
+			if (mp != sSrcPageToTarget.end())
+			{
+				std::map<UID, KESCMOverlayEntry*>::iterator it = sEntries.find(mp->second);
+				if (it != sEntries.end())
+					KESCMDrawEntryOnPage(gPort, it->second, db, srcPageUID, sxr, drawMode, SelectedMarkOpacity());
+			}
+			else if (KESCMPageMapIsRegistered(db, srcPageUID))
+			{
+				// 対応表に無い(=比較対象外)Source ページ。登録済み("Removed")なら緑枠を描く。
+				KESCMDrawAddedPageBorder(gPort, db, srcPageUID, sxr, drawMode, SelectedMarkOpacity());
+			}
 		}
 		return kFalse;	// Source 文書に Target 側オーバーレイは無い=ここで終わり
 	}
@@ -938,9 +1130,13 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	{
 		const UID pageUID = spread->GetNthPageUID(i);
 		std::map<UID, KESCMOverlayEntry*>::iterator it = sEntries.find(pageUID);
-		if (it == sEntries.end())
-			continue;
-		KESCMDrawEntryOnPage(gPort, it->second, db, pageUID, sxr, printing, screenMarkOp);
+		if (it != sEntries.end())
+			KESCMDrawEntryOnPage(gPort, it->second, db, pageUID, sxr, drawMode, screenMarkOp);
+		else if (KESCMPageMapIsRegistered(db, pageUID))
+		{
+			// 比較エントリが無い(=対象外)Target ページ。登録済み("Added")なら緑枠を描く。
+			KESCMDrawAddedPageBorder(gPort, db, pageUID, sxr, drawMode, screenMarkOp);
+		}
 	}
 
 	return kFalse;	// 他のハンドラ・描画を続行させる

@@ -37,6 +37,7 @@
 #include "KESCMConstants.h"
 #include "KESCMDrawEventHandler.h"   // 描画エンジン＋共有 static
 #include "KESCMPeek.h"               // KESCMBaseScreenOpacity
+#include "KESCMPageMap.h"            // KESCMBuildPairing(除外対応表)
 #include "KESCMCore.h"
 
 //========================================================================================
@@ -203,10 +204,9 @@ ErrorCode KESCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMStri
 	KESCMDrawEventHandler::DropAll();
 	KESCMDrawEventHandler::sDB = targetDB;
 
-	// 両ドキュメントのページUIDをドキュメント順に平坦列挙。
+	// 両ドキュメントのページ対応を除外対応表(登録済み=比較相手なしページを除いた順番対応)で求める。
 	std::vector<UID> tPages, sPages;
-	KESCMCollectPageUIDs(targetDB, tPages);
-	KESCMCollectPageUIDs(sourceDB, sPages);
+	KESCMBuildPairing(targetDB, sourceDB, tPages, sPages);
 
 	// 比較は同期実行で全ページをラスタ化するため時間がかかる。ループ前に「Comparing changes...」を
 	// パネルステータスへ出し、ForceRedraw で即時に描いてからループに入る(ブロック中も見えるようにする)。
@@ -216,7 +216,7 @@ ErrorCode KESCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMStri
 		KESCMSetStatus(busyMsg, kTrue /*forceRedrawNow*/);
 	}
 
-	const size_t n = (tPages.size() < sPages.size()) ? tPages.size() : sPages.size();
+	const size_t n = tPages.size();	// KESCMBuildPairing は既に短い方へ切り詰め済み(tPages/sPagesは同じ長さ)
 	int32 changedCount = 0;
 	for (size_t i = 0; i < n; ++i)
 	{
@@ -234,6 +234,13 @@ ErrorCode KESCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMStri
 	KESCMInvalidateDB(targetDB);
 	if (sourceDB != targetDB)
 		KESCMInvalidateDB(sourceDB);	// Source 側の常時枠を即反映
+
+	// ★ページパネルのサムネイルは「文書の変更」でしか無効化されないキャッシュ(サイズ別に別キャッシュを
+	// 持つ)を内部で持っており、公開APIでは既に描画済み・表示中のサムネイルを更新する手段が無いことを
+	// 2026-07-05 に確認済み(IPagesSubPanelController::InvalidatePageWidget/InvalidateSpreadWidget、
+	// UpdatePagesPanel の bForcePurge、IControlView::ForceRedraw を全て試したが効果なし。ドキュメントを
+	// 一時的に編集してUndoで戻す手も、Redo履歴を汚すため見送り)。既知の制限として受け入れる
+	// (メインのレイアウト表示への枠描画はここまでの処理で完結しており正常に動作する)。
 
 	PMString report;
 	report.SetTranslatable(kFalse);

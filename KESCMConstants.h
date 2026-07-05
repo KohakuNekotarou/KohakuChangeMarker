@@ -40,6 +40,10 @@ static const uint8 kKESCMRingR = 255, kKESCMRingG = 0,   kKESCMRingB = 0;		// �
 static const uint8 kKESCMRingAltR = 0,   kKESCMRingAltG = 255, kKESCMRingAltB = 255;	// 赤背景の上(シアン=赤の補色)
 static const int   kKESCMRedBgDom = 25;	// 背景を「赤っぽい」と判定する R 優位の閾値(R が G,B の双方より これ以上大きい)。小さいほどピンク/薄い赤も拾う
 
+// 登録済み(比較相手なし="Added"/"Removed")ページの縁枠色。通常の変更マーク(赤/シアン)と区別する
+// ため緑固定(背景色による切り替えは無し。ラスタ差分が無く背景判定の材料も無いため)。
+static const uint8 kKESCMAddedBorderR = 0, kKESCMAddedBorderG = 200, kKESCMAddedBorderB = 0;
+
 // 旧版べた載せ(kescmShowOriginal)で重ねる画像の解像度(dpi)。スクリプト実行時に、対象ページの旧版を
 // この解像度で1枚だけラスタ化(オフスクリーン1枚=即破棄)し、不透明でページ矩形いっぱいに重ねる。
 // 高いほど鮮明・メモリ大(A4・300dpi で約26〜35MB/ページ)。覗いたページの分だけ保持する。
