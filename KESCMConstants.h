@@ -17,6 +17,13 @@ static const PMReal kKESCMRingTargetPx = 8.0;	// リングの目標太さ(画面
 // 使えないため画像幅に対する固定比率で決める。半径 = 画像幅 / この除数(小さいほど太い)。サムネイルは
 // 極小表示なので視認性優先で太めにする。8 ≒ 画像幅の 12.5%。見づらければ 6、太すぎれば 10〜12 に。
 static const int32 kKESCMThumbRingDivisor = 8;
+// ★サムネイルのページ単位マークの太さ。ズーム式が使えないサムネイル(sxr<=0)では、ページ短辺 / 除数 を
+// 太さ(pt)にする(小さいほど太い)。極小表示で潰れないよう太め。枠と「/」で見え方が違う(枠は4辺に分散する
+// ので同じ太さでも細く見える)ため除数を分けている。
+// ・枠(変更ページの赤枠): 短辺 / 6 ≒ 短辺の 16.7%。細ければ 5、太すぎれば 7〜8。
+static const int32 kKESCMThumbBorderDivisor = 6;
+// ・「/」斜線(Add/Removeの緑・溢れの赤): 短辺 / 10 ≒ 10%。従来値のまま(見え方OK)。
+static const int32 kKESCMThumbDiagDivisor = 10;
 static const uint8 kKESCMRingAlpha = 255;	// リングの基本アルファ(0..255)。「通常」=不透明(255)。薄表示は setopacity 側で行う(25%→255×0.25=実25%)
 // 枠(リング＋変更数)の不透明度の二択(パネルのラジオ「Marks opacity 25% / 75%」)。選択値は
 // ミドル押下中の画面表示・印刷ON中の常時表示・印刷/PDF出力のすべてに共通で効く(KESCMDrawEventHandler::SelectedMarkOpacity)。

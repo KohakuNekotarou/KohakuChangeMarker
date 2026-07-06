@@ -781,20 +781,17 @@ static void KESCMDrawEntryOnPage(IGraphicsPort* gPort, KESCMOverlayEntry* e, IDa
 
 
 //========================================================================================
-// 登録済み(比較相手なし="Added"/"Removed")ページの縁枠(KESCMPageMap の右クリック登録トグルで
-// 登録したページ用)。対応するdiffが存在しない(比較の対象外)ため、通常のリング(KESCMOverlayEntry/
-// BuildRing)は作れない。ページ全体を「変更あり」として扱う視覚表現として、通常マークと同じ太さの
-// 決め方(画面はズーム適応=kKESCMRingTargetPx相当、印刷は100%相当固定)で、緑固定の縁枠を描く。
-// ★通常マークと違い、これは最初から単純な矩形(ラスタ差分なし)なので、ベクター矩形塗り+setopacity
-// だけで screen/print 両方とも正しく半透明合成される(image() blit と違い、透明合成エンジンが
-// ベクター塗りの opacity をそのまま honor するため、KESCMDrawRingForPrint 相当のアルファサーバ細工は
-// 不要)。
+// ページ全体を囲む縁枠(色指定)。用途: Pages パネルのサムネイルで「変更ページ」を赤枠で示す
+// (極小サムネイルでは差分リングが潰れて見えないため、ページ枠に置き換える。KESCMDrawEventHandler の
+// isThumb 分岐から呼ぶ)。ベクター矩形塗り+setopacity なので screen/print/サムネイル とも正しく合成される。
+// 太さ: 画面/印刷 = 画面 kKESCMRingTargetPx 相当(pt=px/sxr。印刷は呼び出し側で sxr=1.0)。
+//       サムネイル(sxr<=0)= ページ短辺 / kKESCMThumbBorderDivisor(ズーム式が使えないので潰れない固定比率)。
+// 不透明度: サムネイルは不透明(潰れ防止)、印刷は SelectedMarkOpacity、画面は screenOpacity。
 //========================================================================================
-static void KESCMDrawAddedPageBorder(IGraphicsPort* gPort, IDataBase* db, UID pageUID,
-	const PMReal& sxr, int32 drawMode, const PMReal& screenOpacity)
+static void KESCMDrawPageBorder(IGraphicsPort* gPort, IDataBase* db, UID pageUID,
+	const PMReal& sxr, int32 drawMode, const PMReal& screenOpacity,
+	uint8 cr, uint8 cg, uint8 cb)
 {
-	if (sxr <= 0)
-		return;
 	InterfacePtr<IGeometry> pageGeo(db, pageUID, UseDefaultIID());
 	if (pageGeo == nil)
 		return;
@@ -804,10 +801,10 @@ static void KESCMDrawAddedPageBorder(IGraphicsPort* gPort, IDataBase* db, UID pa
 	PMMatrix m = ::InnerToSpreadMatrix(pageGeo);
 	m.Transform(&pr);
 
-	// 【太さ】通常マークと同じ「画面 kKESCMRingTargetPx 相当」を、画像px経由ではなく直接pt単位で
-	// 求める(sxr = content→window スケールなので pt = px/sxr。印刷は呼び出し側で sxr=1.0 固定済み)。
-	PMReal w = kKESCMRingTargetPx / sxr;
-	const PMReal maxW = (pr.Width() < pr.Height() ? pr.Width() : pr.Height()) / PMReal(2.0) - PMReal(0.5);
+	// 【太さ】画面/印刷はズーム適応(px/sxr)、サムネイル(sxr<=0)はページ短辺の固定比率(枠専用の除数)。
+	const PMReal minDim = (pr.Width() < pr.Height() ? pr.Width() : pr.Height());
+	PMReal w = (sxr > 0) ? (kKESCMRingTargetPx / sxr) : (minDim / PMReal(kKESCMThumbBorderDivisor));
+	const PMReal maxW = minDim / PMReal(2.0) - PMReal(0.5);
 	if (w > maxW) w = maxW;
 	if (w < PMReal(0.5))
 		return;	// ページが小さすぎて太さが潰れる場合は描かない
@@ -819,13 +816,17 @@ static void KESCMDrawAddedPageBorder(IGraphicsPort* gPort, IDataBase* db, UID pa
 	if (R <= L || B <= T)
 		return;
 
-	// 印刷時は通常マークと同じく SelectedMarkOpacity() を使う(screenOpacity は画面専用の実効値)。
-	const PMReal opacity = (drawMode == kKESCMDrawModePrint)
-		? KESCMDrawEventHandler::SelectedMarkOpacity() : screenOpacity;
+	const PMReal opacity = (sxr <= 0) ? PMReal(1.0)
+		: ((drawMode == kKESCMDrawModePrint) ? KESCMDrawEventHandler::SelectedMarkOpacity() : screenOpacity);
 
 	AutoGSave ag(gPort);
+	// ★サムネイル生成ポートでは、描画前に有効なクリップ矩形を設定しないと fill が出ない(KESCMDrawEntryOnPage の
+	// image blit / KESCMDrawPageDiagonal の stroke も同様に rectclip 後に描いている=これが無いと枠が全く出ない)。
+	// ノドの共有線に届かないよう約1pt内側でクリップ(L/R/T/B と同じ inset)。fill 各バーはこの内側なので削れない。
+	gPort->rectclip(pr.Left()   + kKESCMClipInset, pr.Top()    + kKESCMClipInset,
+	                pr.Width()  - kKESCMClipInset * 2.0, pr.Height() - kKESCMClipInset * 2.0);
 	gPort->setopacity(opacity, kFalse);
-	gPort->setrgbcolor(kKESCMAddedBorderR / PMReal(255.0), kKESCMAddedBorderG / PMReal(255.0), kKESCMAddedBorderB / PMReal(255.0));
+	gPort->setrgbcolor(cr / PMReal(255.0), cg / PMReal(255.0), cb / PMReal(255.0));
 	gPort->rectfill(L,     T,     R - L, w);					// 上
 	gPort->rectfill(L,     B - w, R - L, w);					// 下
 	gPort->rectfill(L,     T + w, w,     (B - T) - w * PMReal(2.0));	// 左
@@ -840,7 +841,7 @@ static void KESCMDrawAddedPageBorder(IGraphicsPort* gPort, IDataBase* db, UID pa
 //   KESCMAppendPageNumberMarkerRects がページ左上原点のpt座標で返すので、通常マークと同じく
 //   ページ inner bbox を spread(=描画ポート)座標へ変換し、その左上を原点に平行移動して塗る
 //   (ページは軸整列前提=比較の除外処理やリング描画と同じ座標の扱い)。ベクター矩形+setopacity
-//   ゆえ screen/print とも正しく半透明合成される(KESCMDrawAddedPageBorder と同じ理由)。
+//   ゆえ screen/print とも正しく半透明合成される(KESCMDrawPageBorder と同じ理由)。
 //========================================================================================
 static void KESCMDrawPageNumberMarkerFill(IGraphicsPort* gPort, IDataBase* db, UID pageUID)
 {
@@ -873,17 +874,17 @@ static void KESCMDrawPageNumberMarkerFill(IGraphicsPort* gPort, IDataBase* db, U
 
 
 //========================================================================================
-// 対応表からあふれたページ(登録もされていないのに、新旧の文書間のページ数差で比較相手が無い
-// ページ)の縁取り。KESCMDrawAddedPageBorder(登録済み="Added"/"Removed")とは別ケースで、ユーザーが
-// まだ気付いていない可能性がある「本当に比較されていないページ」を明示するため、左下→右上の斜線
-// ("/") を赤(通常の変更マークと同じ色)・同じ太さで描く。ラスタ不要のベクター線なので、
-// KESCMDrawAddedPageBorder と同じ理由で screen/print とも setopacity で正しく半透明合成される。
+// ページに左下→右上の斜線("/")を引く(色指定)。用途2種:
+//   ・登録済み(比較相手なし="Added"/"Removed")ページ → 緑「/」(2026-07-06: 従来の緑「枠」から変更。
+//     溢れの赤「/」と同じ斜線様式にして「相手なしページ」を一目で対応づける)。
+//   ・文書間のページ数差であふれた(登録もされていない)未比較ページ → 赤「/」(通常マークと同色)。
+// ラスタ不要のベクター線なので screen/print/サムネイル とも setopacity で正しく合成される。
+// 太さ/不透明度は KESCMDrawPageBorder と同じ規則(サムネイルは固定比率・不透明)。
 //========================================================================================
-static void KESCMDrawOverflowPageDiagonal(IGraphicsPort* gPort, IDataBase* db, UID pageUID,
-	const PMReal& sxr, int32 drawMode, const PMReal& screenOpacity)
+static void KESCMDrawPageDiagonal(IGraphicsPort* gPort, IDataBase* db, UID pageUID,
+	const PMReal& sxr, int32 drawMode, const PMReal& screenOpacity,
+	uint8 cr, uint8 cg, uint8 cb)
 {
-	if (sxr <= 0)
-		return;
 	InterfacePtr<IGeometry> pageGeo(db, pageUID, UseDefaultIID());
 	if (pageGeo == nil)
 		return;
@@ -892,15 +893,16 @@ static void KESCMDrawOverflowPageDiagonal(IGraphicsPort* gPort, IDataBase* db, U
 	PMMatrix m = ::InnerToSpreadMatrix(pageGeo);
 	m.Transform(&pr);
 
-	// 通常マークと同じ「画面 kKESCMRingTargetPx 相当」の太さ(pt)。KESCMDrawAddedPageBorder と同じ式。
-	PMReal w = kKESCMRingTargetPx / sxr;
-	const PMReal maxW = (pr.Width() < pr.Height() ? pr.Width() : pr.Height()) / PMReal(2.0);
+	// 太さ: 画面/印刷=ズーム適応、サムネイル(sxr<=0)=ページ短辺の固定比率(「/」専用の除数)。
+	const PMReal minDim = (pr.Width() < pr.Height() ? pr.Width() : pr.Height());
+	PMReal w = (sxr > 0) ? (kKESCMRingTargetPx / sxr) : (minDim / PMReal(kKESCMThumbDiagDivisor));
+	const PMReal maxW = minDim / PMReal(2.0);
 	if (w > maxW) w = maxW;
 	if (w < PMReal(0.5))
 		return;
 
-	const PMReal opacity = (drawMode == kKESCMDrawModePrint)
-		? KESCMDrawEventHandler::SelectedMarkOpacity() : screenOpacity;
+	const PMReal opacity = (sxr <= 0) ? PMReal(1.0)
+		: ((drawMode == kKESCMDrawModePrint) ? KESCMDrawEventHandler::SelectedMarkOpacity() : screenOpacity);
 
 	AutoGSave ag(gPort);
 	// ノドの共有線に届かないよう、通常マークと同じく約1pt内側でクリップしてから対角線を引く。
@@ -908,7 +910,7 @@ static void KESCMDrawOverflowPageDiagonal(IGraphicsPort* gPort, IDataBase* db, U
 	gPort->rectclip(pr.Left()   + kKESCMClipInset, pr.Top()    + kKESCMClipInset,
 	                pr.Width()  - kKESCMClipInset * 2.0, pr.Height() - kKESCMClipInset * 2.0);
 	gPort->setopacity(opacity, kFalse);
-	gPort->setrgbcolor(kKESCMRingR / PMReal(255.0), kKESCMRingG / PMReal(255.0), kKESCMRingB / PMReal(255.0));	// 赤(通常マークと同色)
+	gPort->setrgbcolor(cr / PMReal(255.0), cg / PMReal(255.0), cb / PMReal(255.0));
 	gPort->setlinewidth(w);
 	gPort->newpath();
 	gPort->moveto(pr.Left(),  pr.Bottom());	// 左下
@@ -1180,23 +1182,23 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 			{
 				std::map<UID, KESCMOverlayEntry*>::iterator it = sEntries.find(mp->second);
 				if (it != sEntries.end())
-					KESCMDrawEntryOnPage(gPort, it->second, db, srcPageUID, sxr, drawMode, SelectedMarkOpacity());
+					{ if (isThumb) KESCMDrawPageBorder(gPort, db, srcPageUID, sxr, drawMode, SelectedMarkOpacity(), kKESCMRingR, kKESCMRingG, kKESCMRingB); else KESCMDrawEntryOnPage(gPort, it->second, db, srcPageUID, sxr, drawMode, SelectedMarkOpacity()); }
 			}
 			else if (KESCMPageMapIsRegistered(db, srcPageUID))
 			{
-				// 対応表に無い(=比較対象外)Source ページ。登録済み("Removed")なら緑枠を描く。
-				KESCMDrawAddedPageBorder(gPort, db, srcPageUID, sxr, drawMode, SelectedMarkOpacity());
+				// 対応表に無い(=比較対象外)Source ページ。登録済み("Removed")なら緑「/」を描く。
+				KESCMDrawPageDiagonal(gPort, db, srcPageUID, sxr, drawMode, SelectedMarkOpacity(), kKESCMAddedBorderR, kKESCMAddedBorderG, kKESCMAddedBorderB);
 			}
 			else if (sOverflowS.count(srcPageUID) > 0)
 			{
 				// 登録もされていない、ページ数差であふれたページ。未比較であることを赤斜線で明示する。
-				KESCMDrawOverflowPageDiagonal(gPort, db, srcPageUID, sxr, drawMode, SelectedMarkOpacity());
+				KESCMDrawPageDiagonal(gPort, db, srcPageUID, sxr, drawMode, SelectedMarkOpacity(), kKESCMRingR, kKESCMRingG, kKESCMRingB);
 			}
 			// 除外トグルON時、実際に比較しているページ(=登録済みRemovedでも overflow でもない=対応表に
 			// 入るページ)にだけ除外領域の緑ベタ塗りを重ねる。変更なしで entry が無いページにも出すので
 			// 上の if/else とは独立に判定する。Removed/overflow ページは画素比較自体を行わない
 			// (ノンブル除外という概念が無い)ので塗らない。
-			if (fillExcluded && !KESCMPageMapIsRegistered(db, srcPageUID) && sOverflowS.count(srcPageUID) == 0)
+			if (!isThumb && fillExcluded && !KESCMPageMapIsRegistered(db, srcPageUID) && sOverflowS.count(srcPageUID) == 0)
 				KESCMDrawPageNumberMarkerFill(gPort, db, srcPageUID);
 		}
 		return kFalse;	// Source 文書に Target 側オーバーレイは無い=ここで終わり
@@ -1223,22 +1225,22 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 		const UID pageUID = spread->GetNthPageUID(i);
 		std::map<UID, KESCMOverlayEntry*>::iterator it = sEntries.find(pageUID);
 		if (it != sEntries.end())
-			KESCMDrawEntryOnPage(gPort, it->second, db, pageUID, sxr, drawMode, screenMarkOp);
+			{ if (isThumb) KESCMDrawPageBorder(gPort, db, pageUID, sxr, drawMode, screenMarkOp, kKESCMRingR, kKESCMRingG, kKESCMRingB); else KESCMDrawEntryOnPage(gPort, it->second, db, pageUID, sxr, drawMode, screenMarkOp); }
 		else if (KESCMPageMapIsRegistered(db, pageUID))
 		{
-			// 比較エントリが無い(=対象外)Target ページ。登録済み("Added")なら緑枠を描く。
-			KESCMDrawAddedPageBorder(gPort, db, pageUID, sxr, drawMode, screenMarkOp);
+			// 比較エントリが無い(=対象外)Target ページ。登録済み("Added")なら緑「/」を描く。
+			KESCMDrawPageDiagonal(gPort, db, pageUID, sxr, drawMode, screenMarkOp, kKESCMAddedBorderR, kKESCMAddedBorderG, kKESCMAddedBorderB);
 		}
 		else if (sOverflowT.count(pageUID) > 0)
 		{
 			// 登録もされていない、ページ数差であふれたページ。未比較であることを赤斜線で明示する。
-			KESCMDrawOverflowPageDiagonal(gPort, db, pageUID, sxr, drawMode, screenMarkOp);
+			KESCMDrawPageDiagonal(gPort, db, pageUID, sxr, drawMode, screenMarkOp, kKESCMRingR, kKESCMRingG, kKESCMRingB);
 		}
 		// 除外トグルON時、実際に比較しているページ(=登録済みAddedでも overflow でもない=対応表に
 		// 入るページ)にだけ除外領域の緑ベタ塗りを重ねる。変更なしで entry が無いページにも出すので
 		// 上の if/else とは独立に判定する。Added/overflow ページは画素比較自体を行わない
 		// (ノンブル除外という概念が無い)ので塗らない。
-		if (fillExcluded && !KESCMPageMapIsRegistered(db, pageUID) && sOverflowT.count(pageUID) == 0)
+		if (!isThumb && fillExcluded && !KESCMPageMapIsRegistered(db, pageUID) && sOverflowT.count(pageUID) == 0)
 			KESCMDrawPageNumberMarkerFill(gPort, db, pageUID);
 	}
 
