@@ -39,6 +39,7 @@
 #include "KESCMPeek.h"               // KESCMBaseScreenOpacity
 #include "KESCMPageMap.h"            // KESCMBuildPairing(除外対応表)
 #include "KESCMThumbnailRefresh.h"   // ★実験: 既表示サムネイルの再生成トライ(2026-07-06)
+#include "KESCMChangeNav.h"          // KESCMResetNav(セッションを跨いだ巡回基準点の持ち越しを断つ)
 #include "KESCMCore.h"
 
 //========================================================================================
@@ -264,6 +265,9 @@ ErrorCode KESCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMStri
 		// 【全再比較】ドキュメント単位の総入れ替え(Start・Ignore Page Number 切替・フォールバック)。
 		KESCMDrawEventHandler::DropAll();
 		KESCMDrawEventHandler::sDB = targetDB;
+		// 対象文書を丸ごと入れ替えるので、変更ページ巡回(Next/Prev)の基準点も捨てる。旧文書のページ UID を
+		// 持ち越すと、別文書での UID 偶然一致で誤った位置から巡回が始まるため(差分再比較の側は同一文書なので触らない)。
+		KESCMResetNav();
 		for (size_t i = 0; i < n; ++i)
 		{
 			bool16 changed = kFalse;
@@ -349,6 +353,17 @@ void KESCMDoClearMarks(IDataBase* db)
 		KESCMInvalidateDB(db);
 	if (srcDB != markedDB && srcDB != db)
 		KESCMInvalidateDB(srcDB);			// Source 側の常時枠も即座に消す
+
+	// ★Pages パネルのサムネイルからも枠/斜線を消す。KESCMInvalidateDB(=InvalidateViews)はレイアウト
+	// ビューだけを無効化し、サムネイルの共有画像キャッシュには届かない。Start 側(比較実行後)が枠を
+	// 付けるのと対称に、Stop でも Purge+ForceRedraw でクリーンなサムネイルへ作り直させる。DropAll 済みで
+	// マーク対象が無い状態なので、再生成される isThumb 描画は早期 return し枠は描かれない。
+	KESCMTryRefreshPagesPanelThumbnails(markedDB);
+	if (srcDB != nil && srcDB != markedDB)
+		KESCMTryRefreshPagesPanelThumbnails(srcDB);
+
+	// 変更ページ巡回(Next/Prev)の基準点も忘れる(次の比較へ持ち越さない)。
+	KESCMResetNav();
 }
 
 void KESCMDoSetPrintMarks(bool16 printFlag, bool16 opacity25Flag, IDataBase* db)

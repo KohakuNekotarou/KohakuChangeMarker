@@ -395,6 +395,14 @@ static void KESCMApplyPanelInfo(const InterfacePtr<IPanelControlData>& pcd)
 	if (onView  != nil) { onView->ShowView(started ? kTrue : kFalse);  onView->Enable(started ? kTrue : kFalse); }
 	if (offView != nil) { offView->ShowView(started ? kFalse : kTrue); offView->Enable(started ? kFalse : kTrue); }
 
+	// Prev/Next(変更ページナビ)は比較開始中のみ有効。未開始はグレーアウトして押せないようにする
+	// (未開始で押しても KESCMGoto が弾くが、無効化して「今は使えない」ことを見た目でも示す)。
+	// attach 時・Start/Stop・文書クローズ/切替のすべてがこの関数を通るので初期状態から正しく反映される。
+	IControlView* prevView = pcd->FindWidget(kKESCMPrevChangeButtonWidgetID);
+	IControlView* nextView = pcd->FindWidget(kKESCMNextChangeButtonWidgetID);
+	if (prevView != nil) prevView->Enable(started ? kTrue : kFalse);
+	if (nextView != nil) nextView->Enable(started ? kTrue : kFalse);
+
 	// トグルボタンのラベル: 開始中=Stop / 未開始=Start(英語固定)。
 	IControlView* toggleView = pcd->FindWidget(kKESCMToggleButtonWidgetID);
 	if (toggleView != nil)

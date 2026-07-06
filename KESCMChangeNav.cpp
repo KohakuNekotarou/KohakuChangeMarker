@@ -300,4 +300,7 @@ static void KESCMGoto(int32 dir)
 void KESCMGotoNextChange() { KESCMGoto(+1); }
 void KESCMGotoPrevChange() { KESCMGoto(-1); }
 
+// 巡回の基準点を忘れる(KESCMChangeNav.h)。次回の Next/Prev はリストの先頭/末尾から始まる。
+void KESCMResetNav() { sNavCurrent = kInvalidUID; }
+
 // KESCMChangeNav.cpp 終わり。

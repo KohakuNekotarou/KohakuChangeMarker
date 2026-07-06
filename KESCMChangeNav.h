@@ -19,4 +19,9 @@
 void KESCMGotoNextChange();
 void KESCMGotoPrevChange();
 
+// 巡回の基準点(直近ページ)を忘れる。比較の Start(全再比較=対象文書入れ替え)と Stop で呼ぶ。
+// ★UID はデータベース単位なので、別文書で再 Start したときに旧文書のページ UID が偶然一致して
+// 誤った位置から巡回が始まるのを防ぐ(セッションを跨いだ基準点の持ち越しを断つ)。
+void KESCMResetNav();
+
 #endif // __KESCMChangeNav_h__

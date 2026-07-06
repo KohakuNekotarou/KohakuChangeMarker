@@ -466,10 +466,10 @@ resource StringTable (kSDKDefStringsNoTransResourceID + index_enUS)
 
 // PNG icons (compiled into the plug-in; ON = armed/comparing, OFF = idle). Same art is used for
 // the normal and rollover states since this is a non-interactive status icon.
-resource PNGA(kKESCMIconOnResID)  "KohakuExtendScriptChangeMarkerON64.png"
-resource PNGR(kKESCMIconOnResID)  "KohakuExtendScriptChangeMarkerON64.png"
-resource PNGA(kKESCMIconOffResID) "KohakuExtendScriptChangeMarkerOFF64.png"
-resource PNGR(kKESCMIconOffResID) "KohakuExtendScriptChangeMarkerOFF64.png"
+resource PNGA(kKESCMIconOnResID)  "KESCM_On32.png"
+resource PNGR(kKESCMIconOnResID)  "KESCM_On32.png"
+resource PNGA(kKESCMIconOffResID) "KESCM_Off32.png"
+resource PNGR(kKESCMIconOffResID) "KESCM_Off32.png"
 
 // Small dock-tab icon shown when the panel is collapsed to its smallest. Replace
 // KohakuChangeMarkerTab.png with your own artwork (a small, e.g. ~20x20, transparent PNG).
@@ -518,7 +518,7 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 	kKESCMPanelWidgetID,			// WidgetID
 	kPMRsrcID_None,					// RsrcID
 	kBindNone,						// Binding
-	0, 0, 192, 324,					// Frame: left, top, right, bottom (width 80% of original 240)
+	0, 0, 192, 292,					// Frame: left, top, right, bottom (illustration 64→32 に縮小した分だけ縦を32px詰めた)
 	kTrue, kTrue,					// Visible, Enabled
 	kFalse,							// Erase background
 	kInterfacePaletteFill,			// Erase to color
@@ -643,7 +643,7 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 			kKESCMIconOffWidgetID,
 			kKESCMIconOffResID, kKESCMPluginID,
 			kBindBottom,
-			Frame(64, 252, 128, 316)
+			Frame(152, 252, 184, 284)	// 32×32・右寄せ(右端184=テキスト幅と同じ8px余白)。ON側と同座標
 			kTrue, kTrue,
 			kADBEIconSuiteButtonType,
 		),
@@ -652,7 +652,7 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 			kKESCMIconOnWidgetID,
 			kKESCMIconOnResID, kKESCMPluginID,
 			kBindBottom,
-			Frame(64, 252, 128, 316)
+			Frame(152, 252, 184, 284)	// 32×32・右寄せ(右端184=テキスト幅と同じ8px余白)。OFF側と同座標
 			kFalse, kTrue,
 			kADBEIconSuiteButtonType,
 		),
