@@ -79,6 +79,7 @@ std::set<UID> KESCMDrawEventHandler::sOverflowS;					// 同(Source側)
 IDataBase* KESCMDrawEventHandler::sOverflowCacheDB = nil;			// 上記キャッシュを作った時の sDB
 IDataBase* KESCMDrawEventHandler::sOverflowCacheSrcDB = nil;			// 同 sSrcDB
 bool16 KESCMDrawEventHandler::sRasterizing = kFalse;	// 自前ラスタ化中だけ kTrue(自己参照防止)
+bool16 KESCMDrawEventHandler::sThumbExperiment = kTrue;	// ★サムネイル実験(2026-07-06)。kFalseで従来動作へ即復帰
 std::map<UID, KESCMOrigImage*> KESCMDrawEventHandler::sOrigImages;
 IDataBase* KESCMDrawEventHandler::sOrigDB = nil;
 bool16 KESCMDrawEventHandler::sShowOriginal = kFalse;	// 既定=非表示(kescmShowOriginal で ON)
@@ -735,6 +736,15 @@ static void KESCMDrawEntryOnPage(IGraphicsPort* gPort, KESCMOverlayEntry* e, IDa
 				R = ((R + 2) / 4) * 4;							// 4px 量子化
 			}
 		}
+		else if (drawMode != kKESCMDrawModePrint)
+		{
+			// ★サムネイル(view無し=sxr が取れない)。ズーム逆算が使えないので、画像幅に対する固定比率で
+			// 太い枠を作る(極小表示ゆえ視認性優先)。半径 = 画像幅 / kKESCMThumbRingDivisor。
+			R = iw / kKESCMThumbRingDivisor;
+			if (R < 4) R = 4;
+			if (R > 200) R = 200;
+			R = ((R + 2) / 4) * 4;								// 4px 量子化(画面と同じ流儀)
+		}
 		if (R > 0 && R != e->lastRadius)
 		{
 			KESCMDrawEventHandler::BuildRing(e->buf, e->rowBytes, e->bpp, e->w, e->h, e->dist, e->bgRed, R);
@@ -761,7 +771,9 @@ static void KESCMDrawEntryOnPage(IGraphicsPort* gPort, KESCMOverlayEntry* e, IDa
 			KESCMDrawRingForPrint(gPort, e);
 		else
 		{
-			gPort->setopacity(screenOpacity, kFalse);
+			// サムネイル(sxr<=0)は不透明100%で描く(極小表示で 25%/75% だと沈んで見えないため)。
+			const PMReal blitOpacity = (sxr <= 0) ? PMReal(1.0) : screenOpacity;
+			gPort->setopacity(blitOpacity, kFalse);
 			gPort->image(&e->rec, PMMatrix(), 0);			// 自前レコード(buf を指す)を blit
 		}
 	}
@@ -920,6 +932,12 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	// ※PDF 書き出し(File>Export)はこのスプレッド描画イベントを発火しないため対象外(print-to-PDF を使う)。
 	// 自己参照(自前スナップショット)は上の sRasterizing で防ぐので、ここで kPreviewMode は見ない。
 	const bool16 printing = (ded->flags & IShape::kPrinting) != 0;
+	// ★サムネイル実験(2026-07-06): Pagesパネルのサムネイル生成(view無し・kPreviewMode・非印刷。診断ログ
+	// flags=0x1800=kPreviewMode|kDrawFrameEdge)を検出。sThumbExperiment ON の間は、サムネイルにも枠を
+	// 描くため下で wantMarks を強制 ON にする(通常は sPrintMarks/sMarksVisible が OFF だと枠が出ない)。
+	// 太さ/不透明度は KESCMDrawEntryOnPage 側で isThumb 用(太い固定比率半径・不透明100%)に切替える。
+	const bool16 isThumb = sThumbExperiment && !printing &&
+		ded->gd != nil && ded->gd->GetView() == nil && (ded->flags & IShape::kPreviewMode) != 0;
 	// ★オーバープリントプレビュー(OPP)は抑制しない(2026-07-05 仕様変更)。以前は kSepPrvOPPEnabledVPAttr を
 	// 読んで「OPP=印刷シミュレーション」として印刷と同じ抑制を掛けていたが、OPP はあくまで画面の作業モード
 	// なので、ミドル押下の枠・Shift/Shift+Alt の旧版 peek(と押下中の旧番号バッジ)は OPP 中も表示する。
@@ -951,7 +969,7 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	//   捨てていた。Start 済み・マーク非表示(既定=ミドル押下中だけ表示)の待機状態が最頻なので、
 	//   ここで落として通常の編集・スクロール中の描画コストをほぼゼロにする。生存スイープも「実際に
 	//   何か描く」時だけの保険になる(クローズ後始末の本線は KESCMDocResponder で変わらず)。
-	const bool16 wantMarks = !suppressForPrint && (sPrintMarks || sMarksVisible) && anyMarkableContent;
+	const bool16 wantMarks = !suppressForPrint && (sPrintMarks || sMarksVisible || isThumb) && anyMarkableContent;
 	const bool16 wantOrig  = !suppressForPrint && !printing && sShowOriginal && !sOrigImages.empty();
 	// 旧ページ番号バッジ: トグルON かつ「枠が見えている」間(=印刷マークON の常時表示、またはミドル押下中)。
 	// 枠の可視条件(wantMarks の sPrintMarks || sMarksVisible)と同じ揃え。印刷文脈は suppressForPrint で
@@ -967,12 +985,16 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 		return kFalse;
 
 	// ★ページパネルのサムネイル生成(view 無し・kPreviewMode のオフスクリーン描画。2026-07-05 診断ログ:
-	// flags=0x1800=kPreviewMode|kDrawFrameEdge)には枠を一切出さない。既に一度描画済み・パネルに
-	// 表示中のサムネイルは公開APIでは無効化・再生成できず、一部のページだけ枠が古いまま/新しいまま
-	// 食い違う不整合な見た目になるため、ユーザー判断でパネルには出さない方針に変更(詳細は
-	// memory kescm-pages-panel-thumbnails)。画面描画(zview 有り)・印刷は対象外=従来どおり描く。
+	// flags=0x1800=kPreviewMode|kDrawFrameEdge)。従来は「既表示サムネイルを再生成できず一部だけ枠が
+	// 古い/新しいと不整合になる」ため一切描かなかった。2026-07-06 の実験では sThumbExperiment ON の間だけ
+	// 描いてみる(比較後に KESCMTryRefreshPagesPanelThumbnails で既表示分の再生成を試みる)。実験を切れば
+	// (sThumbExperiment=kFalse → isThumb=kFalse)この分岐で従来どおり早期 return し、完全に元の動作に戻る。
 	if (!printing && gd->GetView() == nil && (ded->flags & IShape::kPreviewMode) != 0)
-		return kFalse;
+	{
+		if (!isThumb)
+			return kFalse;	// 実験OFF: サムネイルには一切描かない(従来動作)
+		// 実験ON: このまま続行してサムネイルにも枠を描く。
+	}
 
 	// changedBy = 今描いているスプレッド。
 	InterfacePtr<ISpread> spread(ded->changedBy, UseDefaultIID());

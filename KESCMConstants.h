@@ -13,6 +13,10 @@
 #include "PMReal.h"
 
 static const PMReal kKESCMRingTargetPx = 8.0;	// リングの目標太さ(画面px)。ズームに依らず一定に見せる
+// ★サムネイル実験(2026-07-06): Pagesパネルのサムネイル生成時(view無し・sxr=0)の枠太さは、ズーム式が
+// 使えないため画像幅に対する固定比率で決める。半径 = 画像幅 / この除数(小さいほど太い)。サムネイルは
+// 極小表示なので視認性優先で太めにする。8 ≒ 画像幅の 12.5%。見づらければ 6、太すぎれば 10〜12 に。
+static const int32 kKESCMThumbRingDivisor = 8;
 static const uint8 kKESCMRingAlpha = 255;	// リングの基本アルファ(0..255)。「通常」=不透明(255)。薄表示は setopacity 側で行う(25%→255×0.25=実25%)
 // 枠(リング＋変更数)の不透明度の二択(パネルのラジオ「Marks opacity 25% / 75%」)。選択値は
 // ミドル押下中の画面表示・印刷ON中の常時表示・印刷/PDF出力のすべてに共通で効く(KESCMDrawEventHandler::SelectedMarkOpacity)。

@@ -41,6 +41,7 @@
 // プロジェクト内:
 #include "KESCMID.h"
 #include "KESCMCore.h"
+#include "KESCMChangeNav.h"			// KESCMGotoNextChange / KESCMGotoPrevChange(◀ Prev / Next ▶ ボタン)
 
 /** ChangeMarker パネルのウィジェットを監視し、共有のオーバーレイ操作を駆動する。 */
 class KESCMPanelObserver : public CObserver
@@ -151,6 +152,8 @@ void KESCMPanelObserver::AutoAttach()
 		return;
 
 	this->AttachWidget(pcd, kKESCMToggleButtonWidgetID,       IBooleanControlData::kDefaultIID);
+	this->AttachWidget(pcd, kKESCMPrevChangeButtonWidgetID,   IBooleanControlData::kDefaultIID);
+	this->AttachWidget(pcd, kKESCMNextChangeButtonWidgetID,   IBooleanControlData::kDefaultIID);
 	this->AttachWidget(pcd, kKESCMPrintCheckWidgetID,         ITriStateControlData::kDefaultIID);
 	this->AttachWidget(pcd, kKESCMOpacity25RadioWidgetID,     ITriStateControlData::kDefaultIID);
 	this->AttachWidget(pcd, kKESCMOpacity75RadioWidgetID,     ITriStateControlData::kDefaultIID);
@@ -185,6 +188,8 @@ void KESCMPanelObserver::AutoDetach()
 		return;
 
 	this->DetachWidget(pcd, kKESCMToggleButtonWidgetID,       IBooleanControlData::kDefaultIID);
+	this->DetachWidget(pcd, kKESCMPrevChangeButtonWidgetID,   IBooleanControlData::kDefaultIID);
+	this->DetachWidget(pcd, kKESCMNextChangeButtonWidgetID,   IBooleanControlData::kDefaultIID);
 	this->DetachWidget(pcd, kKESCMPrintCheckWidgetID,         ITriStateControlData::kDefaultIID);
 	this->DetachWidget(pcd, kKESCMOpacity25RadioWidgetID,     ITriStateControlData::kDefaultIID);
 	this->DetachWidget(pcd, kKESCMOpacity75RadioWidgetID,     ITriStateControlData::kDefaultIID);
@@ -241,6 +246,9 @@ void KESCMPanelObserver::Update(const ClassID& theChange, ISubject* theSubject, 
 				else
 					this->DoStart();
 				break;
+			// ◀ Prev / Next ▶: 見るべきページ(変更/Added/未比較)へ Target ビューをスクロール。
+			case kKESCMPrevChangeButtonWidgetID:  KESCMGotoPrevChange(); break;
+			case kKESCMNextChangeButtonWidgetID:  KESCMGotoNextChange(); break;
 			case kKESCMPrintCheckWidgetID:         this->ApplyPrintMarks(); break;
 			// 25%/75% の切替: ミドル押下表示にも効くため、印刷ON/OFFに依らず常に即反映する。
 			case kKESCMOpacity25RadioWidgetID:

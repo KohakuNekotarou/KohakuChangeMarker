@@ -38,6 +38,7 @@
 #include "KESCMDrawEventHandler.h"   // 描画エンジン＋共有 static
 #include "KESCMPeek.h"               // KESCMBaseScreenOpacity
 #include "KESCMPageMap.h"            // KESCMBuildPairing(除外対応表)
+#include "KESCMThumbnailRefresh.h"   // ★実験: 既表示サムネイルの再生成トライ(2026-07-06)
 #include "KESCMCore.h"
 
 //========================================================================================
@@ -289,12 +290,16 @@ ErrorCode KESCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMStri
 	if (sourceDB != targetDB)
 		KESCMInvalidateDB(sourceDB);	// Source 側の常時枠を即反映
 
-	// ★ページパネルのサムネイルは「文書の変更」でしか無効化されないキャッシュ(サイズ別に別キャッシュを
-	// 持つ)を内部で持っており、公開APIでは既に描画済み・表示中のサムネイルを更新する手段が無いことを
-	// 2026-07-05 に確認済み(IPagesSubPanelController::InvalidatePageWidget/InvalidateSpreadWidget、
-	// UpdatePagesPanel の bForcePurge、IControlView::ForceRedraw を全て試したが効果なし。ドキュメントを
-	// 一時的に編集してUndoで戻す手も、Redo履歴を汚すため見送り)。既知の制限として受け入れる
-	// (メインのレイアウト表示への枠描画はここまでの処理で完結しており正常に動作する)。
+	// ★サムネイル実験(2026-07-06): 既表示サムネイルの再生成を試みる(KESCMThumbnailRefresh)。
+	// 従来 2026-07-05 に「文書の変更でしか無効化されない内部キャッシュがあり、InvalidatePageWidget/
+	// InvalidateSpreadWidget・UpdatePagesPanel(bForcePurge)・ForceRedraw は全て不発」と確認済みだが、
+	// 未検証だった IPendingUpdateController::Update()(保留更新の消化)と IImageCacheMgr::Purge(db) を
+	// 合わせて叩いてみる(微かな望み)。効果が無ければこの1行と KESCMThumbnailRefresh.* を外すだけで戻せる。
+	// (サムネイル自体への枠描画は sThumbExperiment 経由=描画エンジン側で ON。)詳細: memory
+	// kescm-pages-panel-thumbnails。
+	KESCMTryRefreshPagesPanelThumbnails(targetDB);
+	if (sourceDB != targetDB)
+		KESCMTryRefreshPagesPanelThumbnails(sourceDB);
 
 	PMString report;
 	report.SetTranslatable(kFalse);

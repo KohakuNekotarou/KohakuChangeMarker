@@ -190,6 +190,8 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMIconOnWidgetID, kKESCMPrefix + 34)
 DECLARE_PMID(kWidgetIDSpace, kKESCMIconOffWidgetID, kKESCMPrefix + 35)
 DECLARE_PMID(kWidgetIDSpace, kKESCMStatusTextWidgetID, kKESCMPrefix + 36)
 DECLARE_PMID(kWidgetIDSpace, kKESCMToggleButtonWidgetID, kKESCMPrefix + 37)	// 開始/解除を兼ねるトグルボタン
+DECLARE_PMID(kWidgetIDSpace, kKESCMPrevChangeButtonWidgetID, kKESCMPrefix + 38)	// 「◀ Prev」= 前の見るべきページへスクロール(KESCMChangeNav.cpp)
+DECLARE_PMID(kWidgetIDSpace, kKESCMNextChangeButtonWidgetID, kKESCMPrefix + 39)	// 「Next ▶」= 次の見るべきページへスクロール(KESCMChangeNav.cpp)
 //DECLARE_PMID(kWidgetIDSpace, kKESCMWidgetID, kKESCMPrefix + 2)
 //DECLARE_PMID(kWidgetIDSpace, kKESCMWidgetID, kKESCMPrefix + 3)
 //DECLARE_PMID(kWidgetIDSpace, kKESCMWidgetID, kKESCMPrefix + 4)
@@ -269,6 +271,8 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMToggleButtonWidgetID, kKESCMPrefix + 37)	// �
 #define kKESCMPrintCheckKey		kKESCMStringPrefix "kKESCMPrintCheckKey"
 #define kKESCMOpacity25Key		kKESCMStringPrefix "kKESCMOpacity25Key"
 #define kKESCMOpacity75Key		kKESCMStringPrefix "kKESCMOpacity75Key"	// 旧 kKESCMOpacityNormalKey(Normal→75% に改称)
+#define kKESCMPrevChangeKey		kKESCMStringPrefix "kKESCMPrevChangeKey"	// パネルの「◀ Prev」ボタンのキャプション(英語固定)
+#define kKESCMNextChangeKey		kKESCMStringPrefix "kKESCMNextChangeKey"	// パネルの「Next ▶」ボタンのキャプション(英語固定)
 #define kKESCMHintKey			kKESCMStringPrefix "kKESCMHintKey"
 
 // PNG アイコンリソース(プラグインに埋め込み; .pln とは別ファイルでは出荷しない)。

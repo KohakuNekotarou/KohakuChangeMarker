@@ -518,7 +518,7 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 	kKESCMPanelWidgetID,			// WidgetID
 	kPMRsrcID_None,					// RsrcID
 	kBindNone,						// Binding
-	0, 0, 192, 300,					// Frame: left, top, right, bottom (width 80% of original 240)
+	0, 0, 192, 324,					// Frame: left, top, right, bottom (width 80% of original 240)
 	kTrue, kTrue,					// Visible, Enabled
 	kFalse,							// Erase background
 	kInterfacePaletteFill,			// Erase to color
@@ -615,6 +615,27 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 			}
 		),
 
+		// Change navigation: jump the Target layout view to the previous / next page that carries a
+		// KESCM mark (changed ring, Added border, or overflow "/"). Handled by KESCMChangeNav.cpp.
+		ButtonWidget
+		(
+			kKESCMPrevChangeButtonWidgetID,
+			kSysButtonPMRsrcId,
+			kBindLeft | kBindTop,
+			Frame(12, 164, 94, 186)
+			kTrue, kTrue,
+			kKESCMPrevChangeKey,
+		),
+		ButtonWidget
+		(
+			kKESCMNextChangeButtonWidgetID,
+			kSysButtonPMRsrcId,
+			kBindLeft | kBindTop,
+			Frame(98, 164, 180, 186)
+			kTrue, kTrue,
+			kKESCMNextChangeKey,
+		),
+
 		// Status icon (OFF visible by default; the observer swaps ON/OFF based on the armed state).
 		// KESCMIconWidget (not the plain RollOverIconButtonWidget) so it carries IID_ITIP (tooltip).
 		KESCMIconWidget
@@ -622,7 +643,7 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 			kKESCMIconOffWidgetID,
 			kKESCMIconOffResID, kKESCMPluginID,
 			kBindBottom,
-			Frame(64, 228, 128, 292)
+			Frame(64, 252, 128, 316)
 			kTrue, kTrue,
 			kADBEIconSuiteButtonType,
 		),
@@ -631,7 +652,7 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 			kKESCMIconOnWidgetID,
 			kKESCMIconOnResID, kKESCMPluginID,
 			kBindBottom,
-			Frame(64, 228, 128, 292)
+			Frame(64, 252, 128, 316)
 			kFalse, kTrue,
 			kADBEIconSuiteButtonType,
 		),
@@ -642,7 +663,7 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 			kKESCMStatusTextWidgetID,
 			kPMRsrcID_None,
 			kBindLeft | kBindRight | kBindTop,
-			Frame(8, 168, 184, 220)
+			Frame(8, 192, 184, 244)
 			kTrue, kTrue,
 			kAlignLeft, kDontEllipsize, kTrue,
 			kInvalidWidgetID,

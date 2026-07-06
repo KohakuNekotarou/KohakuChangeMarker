@@ -148,6 +148,13 @@ public:
 	// でも番号がズレていれば描く(隠しが無ければ現在番号と一致して何も描かない)。
 	static bool16 sShowOldNumbers;
 
+	// ★サムネイル実験トグル(2026-07-06)。kTrue の間、Pagesパネルのサムネイル生成(view無し・kPreviewMode)
+	// にも枠を描く(通常は sPrintMarks/sMarksVisible が OFF だと出ないが、サムネイルは isThumb で強制ON・
+	// 太めの固定比率半径・不透明100%)。加えて比較後に KESCMTryRefreshPagesPanelThumbnails で既表示分の
+	// 再生成を試みる。うまく更新できない/不整合が目立つ場合は、この1フラグを kFalse に戻すだけで従来動作
+	// (サムネイルには一切描かない)へ即復帰する。関連: docs memory kescm-pages-panel-thumbnails。
+	static bool16 sThumbExperiment;
+
 	// 選択中の枠不透明度(0.25 / 0.75)。枠を描く全経路の単一の供給元。
 	static PMReal SelectedMarkOpacity() { return sMarkOpacity25 ? kKESCMMarkOpacity25 : kKESCMMarkOpacity75; }
 	// 自前のラスタ化(MakeEntry/MakeOrigImage の SnapshotUtilsEx::Draw)中だけ kTrue。HandleDrawEvent が
