@@ -43,8 +43,9 @@
 
 #include "KESCMPageNumberMarker.h"
 
-// 既定=kTrue(ユーザー要望の主目的機能なので最初からON)。セッション内のみ(文書には保存しない)。
-static bool16 sIgnorePageNumberMarker = kTrue;
+// 既定=kFalse(通常はノンブルの違いも変更として検出する。無視したい時だけフライアウトでON)。
+// セッション内のみ(文書には保存しない)。
+static bool16 sIgnorePageNumberMarker = kFalse;
 
 bool16 KESCMGetIgnorePageNumberMarker()
 {

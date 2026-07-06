@@ -280,6 +280,11 @@ ErrorCode KESCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMStri
 	KESCMDrawEventHandler::sSrcMarksOn = kTrue;
 	KESCMDrawEventHandler::sSrcDB = sourceDB;
 
+	// overflow("/")キャッシュを今の対応表から作り直す。ここは Start・登録 Add/解除・Ignore 切替が
+	// すべて通る唯一の再比較路なので、これらの操作後は描画側が最新の overflow を使う(描画のたびの
+	// 全文書走査は EnsureOverflowCache 側で回避)。
+	KESCMDrawEventHandler::RebuildOverflowCache();
+
 	KESCMInvalidateDB(targetDB);
 	if (sourceDB != targetDB)
 		KESCMInvalidateDB(sourceDB);	// Source 側の常時枠を即反映

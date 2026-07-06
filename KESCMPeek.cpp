@@ -208,17 +208,22 @@ static KESCMPeekResult KESCMPeekShowUnderMouse(IDataBase* targetDB, IDataBase* s
 		KESCMDrawEventHandler::DropAllOrig();		// 覗くのは1スプレッドだけ=他は破棄
 		KESCMDrawEventHandler::sOrigDB = targetDB;
 		KESCMDrawEventHandler::sOrigScale = effScale;	// このラスタ化解像度を記録(再 peek の作り直し判定用)
+		// 対応表はスプレッド内で同一なのでループ前に1回だけ作る(ページごとの KESCMBuildPairing 再構築を回避)。
+		std::vector<UID> pairT, pairS;
+		KESCMBuildPairing(targetDB, sourceDB, pairT, pairS);
+		std::map<UID, UID> targetToSource;
+		for (size_t k = 0; k < pairT.size(); ++k)
+			targetToSource[pairT[k]] = pairS[k];
 		for (int32 p = 0; p < np; ++p)
 		{
 			const UID tPageUID = spread->GetNthPageUID(p);
-			UID sPageUID;
-			if (KESCMMapTargetToSource(targetDB, sourceDB, tPageUID, sPageUID))
-			{
-				UIDRef tRef(targetDB, tPageUID);
-				UIDRef sRef(sourceDB, sPageUID);
-				if (KESCMDrawEventHandler::MakeOrigImage(tRef, sRef, peekDpi) == kSuccess)
-					++captured;
-			}
+			std::map<UID, UID>::const_iterator mi = targetToSource.find(tPageUID);
+			if (mi == targetToSource.end())
+				continue;
+			UIDRef tRef(targetDB, tPageUID);
+			UIDRef sRef(sourceDB, mi->second);
+			if (KESCMDrawEventHandler::MakeOrigImage(tRef, sRef, peekDpi) == kSuccess)
+				++captured;
 		}
 	}
 	KESCMDrawEventHandler::sShowOriginal = kTrue;
@@ -316,15 +321,24 @@ static bool16 KESCMRefreshSpreadUnderMouse(IDataBase* targetDB, IDataBase* sourc
 		return kFalse;
 	const int32 np = hit.numPages;
 
-	// このスプレッドの各ページを再比較して枠を更新。新→旧は除外対応表(登録済みページを除いた
-	// 順番対応)で引く。
+	// 除外対応表(登録済みページを除いた順番対応)を1回だけ作り、target→source を引けるようにする。
+	// ★以前はページごとに KESCMMapTargetToSource を呼んでいたが、その中で毎回 KESCMBuildPairing
+	//   (両文書の全ページ走査)が走っていた。スプレッド内では対応表は同一なのでループ前に1回で足りる。
+	std::vector<UID> pairT, pairS;
+	KESCMBuildPairing(targetDB, sourceDB, pairT, pairS);
+	std::map<UID, UID> targetToSource;
+	for (size_t k = 0; k < pairT.size(); ++k)
+		targetToSource[pairT[k]] = pairS[k];
+
+	// このスプレッドの各ページを再比較して枠を更新。
 	int32 changedCount = 0;
 	for (int32 p = 0; p < np; ++p)
 	{
 		const UID tUID = spread->GetNthPageUID(p);
-		UID sUID;
-		if (!KESCMMapTargetToSource(targetDB, sourceDB, tUID, sUID))
+		std::map<UID, UID>::const_iterator mi = targetToSource.find(tUID);
+		if (mi == targetToSource.end())
 			continue;
+		const UID sUID = mi->second;
 		bool16 changed = kFalse;
 		KESCMDrawEventHandler::MakeEntry(UIDRef(targetDB, tUID), UIDRef(sourceDB, sUID), changed);
 		if (changed)

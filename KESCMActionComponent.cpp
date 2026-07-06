@@ -28,6 +28,7 @@
 #include "IDocumentList.h"			// FindDocByDataBase(閉じた db を deref しないための生存確認)
 #include <vector>
 #include <map>
+#include <set>
 
 #include "IDataBase.h"				// GetRootUID()(Hide Unchanged のスプレッド走査)
 
@@ -322,13 +323,35 @@ void KESCMActionComponent::DoHideUnchangedToggle()
 		return;
 	}
 
-	// OFF→ON。sEntries が空でも登録済み(比較相手なし="Added")ページがあれば続行する
-	// (そのページ自体が「変更あり」扱いになるため)。
+	// OFF→ON。
 	IDataBase* db = KESCMDrawEventHandler::sDB;
-	if (db == nil || (KESCMDrawEventHandler::sEntries.empty() && !KESCMPageMapHasAnyRegistered(db)))
+	if (db == nil)
 	{
-		// Start 前、または比較結果「変更ゼロ」。後者は全スプレッドが対象になってしまい、
-		// 全スプレッド非表示は InDesign が許さないので、どちらもここで中止する。
+		// Start 前。
+		KESCMHideStatus("Hide Unchanged: no changed spreads to keep visible (press Start first; if no changes were found, nothing can be hidden).");
+		return;
+	}
+
+	// ★「/」が付く overflow ページ(登録されていないのに、文書間のページ数差で比較相手が無い=未比較の
+	//   ページ)を含むスプレッドは、変更ありページや登録済み("Added")ページと同じく隠さない
+	//   (未比較の見落としを防ぐ。ユーザー要望 2026-07-06)。ここで Target 側の overflow 集合を作る
+	//   (Source 側は下の分類が対応表外ページを既に「変更あり」扱いにしているので隠れない)。
+	std::set<UID> tOverflowSet;
+	{
+		IDataBase* srcForOverflow = KESCMArmedSourceDB();
+		if (srcForOverflow != nil && srcForOverflow != db)
+		{
+			std::vector<UID> ovT, ovS, tOverflow, sOverflow;
+			KESCMBuildPairing(db, srcForOverflow, ovT, ovS, &tOverflow, &sOverflow);
+			tOverflowSet.insert(tOverflow.begin(), tOverflow.end());
+		}
+	}
+
+	// sEntries が空でも、登録済み(比較相手なし="Added")ページや overflow ページがあれば続行する
+	// (それら自体が「変更あり=残す」扱いになるため)。全部無ければ全スプレッドが対象になり、
+	// 全スプレッド非表示は InDesign が許さないので中止する。
+	if (KESCMDrawEventHandler::sEntries.empty() && !KESCMPageMapHasAnyRegistered(db) && tOverflowSet.empty())
+	{
 		KESCMHideStatus("Hide Unchanged: no changed spreads to keep visible (press Start first; if no changes were found, nothing can be hidden).");
 		return;
 	}
@@ -361,9 +384,12 @@ void KESCMActionComponent::DoHideUnchangedToggle()
 		for (int32 p = 0; p < np; ++p)
 		{
 			const UID pageUID = spread->GetNthPageUID(p);
-			// 登録済み(比較相手なし="Added")ページは比較対象外で sEntries には載らないが、
-			// 緑枠つきの「変更あり」ページとして扱う(誤って Hide Unchanged で隠さないため)。
-			if (KESCMDrawEventHandler::sEntries.count(pageUID) > 0 || KESCMPageMapIsRegistered(db, pageUID))
+			// 登録済み(比較相手なし="Added")ページは比較対象外で sEntries には載らないが、緑枠つきの
+			// 「変更あり」ページとして扱う。overflow ページ("/"、文書間のページ数差で未比較)も同様に
+			// 「変更あり=残す」扱いにして、隠さない(誤って未比較ページを隠すのを防ぐ)。
+			if (KESCMDrawEventHandler::sEntries.count(pageUID) > 0 ||
+			    KESCMPageMapIsRegistered(db, pageUID) ||
+			    tOverflowSet.count(pageUID) > 0)
 			{
 				changed = kTrue;
 				break;

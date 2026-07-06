@@ -61,76 +61,6 @@
 #include "KESCMPageNumberMarker.h"   // KESCMGetIgnorePageNumberMarker/KESCMAppendPageNumberMarkerRects(ノンブル除外)
 #include "KESCMDrawEventHandler.h"
 
-//========================================================================================
-// ★TEST(一時診断・確認後に 0 へ戻すか削除): ページパネルのサムネイル再生成が draw event を
-// 発するかの調査ログ。1 にすると全18種の draw event を購読し、HandleDrawEvent の先頭で
-// work/kescm_drawlog.txt に1行ずつ追記する(追加購読分は記録だけして即 return=描画に影響なし)。
-// 見方: view=0000000000000000 がオフスクリーン描画(サムネイル/スナップショット/印刷)。
-// rast=1 は KESCM 自身のラスタ化中(これは無視してよい)。
-//========================================================================================
-#define KESCM_DRAWLOG 0
-
-#if KESCM_DRAWLOG
-#include <stdio.h>
-
-static const char* KESCMDrawLogEventName(int32 id)
-{
-	switch (id)
-	{
-		case kDrawSpreadMessage:        return "DrawSpread";
-		case kBeginSpreadMessage:       return "BeginSpread";
-		case kEndSpreadMessage:         return "EndSpread";
-		case kDrawSpreadPageMessage:    return "DrawSpreadPage";
-		case kBeginSpreadPageMessage:   return "BeginSpreadPage";
-		case kEndSpreadPageMessage:     return "EndSpreadPage";
-		case kDrawLayerMessage:         return "DrawLayer";
-		case kBeginLayerMessage:        return "BeginLayer";
-		case kEndLayerMessage:          return "EndLayer";
-		case kDrawPageMessage:          return "DrawPage";
-		case kBeginPageMessage:         return "BeginPage";
-		case kEndPageMessage:           return "EndPage";
-		case kDrawGroupMessage:         return "DrawGroup";
-		case kBeginGroupMessage:        return "BeginGroup";
-		case kEndGroupMessage:          return "EndGroup";
-		case kDrawShapeMessage:         return "DrawShape";
-		case kBeginShapeMessage:        return "BeginShape";
-		case kEndShapeMessage:          return "EndShape";
-		case kDrawMasterSpreadMessage:  return "DrawMasterSpread";
-		case kBeginMasterSpreadMessage: return "BeginMasterSpread";
-		case kEndMasterSpreadMessage:   return "EndMasterSpread";
-		default:                        return nil;
-	}
-}
-
-// 1イベント=1行。fopen/fclose を毎回行う(重いが診断専用なので単純さ優先)。
-static void KESCMDrawLogLine(ClassID eventID, DrawEventData* ded)
-{
-	FILE* f = fopen("C:\\Users\\user\\Desktop\\plugin_sdk_21.0.0.192\\work\\kescm_drawlog.txt", "ab");
-	if (f == nil)
-		return;
-	GraphicsData* gd = ded->gd;
-	IControlView* view = (gd != nil) ? gd->GetView() : nil;
-	IDataBase* db = (ded->changedBy != nil) ? ::GetDataBase(ded->changedBy) : nil;
-	int32 uid = 0;
-	bool16 isSpread = kFalse;
-	if (ded->changedBy != nil)
-	{
-		uid = (int32)(::GetUID(ded->changedBy).Get());
-		InterfacePtr<ISpread> sp(ded->changedBy, UseDefaultIID());
-		isSpread = (sp != nil);
-	}
-	const char* nm = KESCMDrawLogEventName(eventID.Get());
-	if (nm != nil)
-		fprintf(f, "%-18s", nm);
-	else
-		fprintf(f, "0x%08X        ", (unsigned int)eventID.Get());
-	fprintf(f, " view=%p flags=0x%04X rast=%d db=%p uid=%d spread=%d\n",
-		(void*)view, (unsigned int)ded->flags, (int)(KESCMDrawEventHandler::sRasterizing ? 1 : 0),
-		(void*)db, uid, (int)(isSpread ? 1 : 0));
-	fclose(f);
-}
-#endif // KESCM_DRAWLOG
-
 CREATE_PMINTERFACE(KESCMDrawEventHandler, kKESCMDrawEventHandlerImpl)
 
 std::map<UID, KESCMOverlayEntry*> KESCMDrawEventHandler::sEntries;
@@ -144,6 +74,10 @@ bool16 KESCMDrawEventHandler::sSrcMarksOn = kFalse;	// 既定=OFF。Start(KESCMD
 IDataBase* KESCMDrawEventHandler::sSrcDB = nil;
 std::map<UID, UID> KESCMDrawEventHandler::sSrcPageToTarget;
 std::map<UID, UID> KESCMDrawEventHandler::sPrevPairTargetToSource;	// 前回比較のペアリング(登録トグルの差分再比較用)
+std::set<UID> KESCMDrawEventHandler::sOverflowT;					// overflow("/")ページ集合キャッシュ(Target側)
+std::set<UID> KESCMDrawEventHandler::sOverflowS;					// 同(Source側)
+IDataBase* KESCMDrawEventHandler::sOverflowCacheDB = nil;			// 上記キャッシュを作った時の sDB
+IDataBase* KESCMDrawEventHandler::sOverflowCacheSrcDB = nil;			// 同 sSrcDB
 bool16 KESCMDrawEventHandler::sRasterizing = kFalse;	// 自前ラスタ化中だけ kTrue(自己参照防止)
 std::map<UID, KESCMOrigImage*> KESCMDrawEventHandler::sOrigImages;
 IDataBase* KESCMDrawEventHandler::sOrigDB = nil;
@@ -151,6 +85,34 @@ bool16 KESCMDrawEventHandler::sShowOriginal = kFalse;	// 既定=非表示(kescmS
 PMReal KESCMDrawEventHandler::sOrigScale = 0.0;	// ラスタ化時のズームスケール(0=未設定)
 PMReal KESCMDrawEventHandler::sPeekOpacity = 1.0;	// 既定=不透明(Shift peek)。Shift+Alt peek で 0.5 にする
 
+
+//========================================================================================
+// overflow キャッシュ("/"の未比較ページ集合)。以前は HandleDrawEvent が描画のたびに
+// KESCMBuildPairing(両文書の全ページ走査)を呼んでいたのを、比較実行時に1回作って保持する形へ。
+//========================================================================================
+void KESCMDrawEventHandler::RebuildOverflowCache()
+{
+	sOverflowT.clear();
+	sOverflowS.clear();
+	sOverflowCacheDB    = sDB;
+	sOverflowCacheSrcDB = sSrcDB;
+	if (sDB != nil && sSrcDB != nil)
+	{
+		std::vector<UID> tp, sp, tov, sov;
+		KESCMBuildPairing(sDB, sSrcDB, tp, sp, &tov, &sov);
+		sOverflowT.insert(tov.begin(), tov.end());
+		sOverflowS.insert(sov.begin(), sov.end());
+	}
+}
+
+void KESCMDrawEventHandler::EnsureOverflowCache()
+{
+	// 控えた (sDB,sSrcDB) が現在と食い違う時だけ作り直す(文書切替・別文書へのスプレッド再比較の保険)。
+	// 登録Add/Start/Ignore切替は KESCMDoMarkChangesDoc が RebuildOverflowCache を直接呼ぶので、ここは
+	// 「同じ文書対のまま」の通常描画では何もしない=毎描画の全文書走査を避ける。
+	if (sOverflowCacheDB != sDB || sOverflowCacheSrcDB != sSrcDB)
+		RebuildOverflowCache();
+}
 
 void KESCMDrawEventHandler::BuildRing(uint8* buf, int32 rb, int32 bpp, int32 wt, int32 ht,
 	const uint8* dist, const uint8* bgRed, int32 radius)
@@ -160,10 +122,8 @@ void KESCMDrawEventHandler::BuildRing(uint8* buf, int32 rb, int32 bpp, int32 wt,
 	if (radius < 1) radius = 1;
 	const int32 colorOff = bpp - 3;
 	const uint8 rad = (radius > 255) ? 255 : (uint8)radius;	// dist は uint8 clamp255。半径上限は200<255。
-	// ★端クリップ対策: バッファ(=ページ矩形)端から radius 以内に変化があると、外側の帯がページ端を
-	//   越える分はバッファ外=描かれず、その辺の枠が痩せて欠ける。対策は「端から radius 以内の変化画素を
-	//   内側帯として塗る」だけでよい。ある変化画素が x<radius にあれば、領域は左端から radius 以内に
-	//   到達済み=左の外側帯は必ずクリップされるので、接触判定(旧 drow[0] 等)は不要。4辺とも対称に扱う。
+	// ★端の欠け対策は下の frame(ページ内縁の枠帯)が兼ねる: 端から radius 以内を無条件に塗るので、
+	//   変化がページ端に接していてもその帯が必ず埋まり、辺の枠が痩せて欠けることはない。
 
 	// 距離変換の1パス塗り。リング = 0<dist<=radius(=「半径内に変化画素があり、かつ自身は変化画素でない」)。
 	// 旧版の横膨張+縦膨張(各 O(W*H) のスライディングウィンドウ)が消え、ズーム段ごとの仕事が約1/3。
@@ -178,14 +138,9 @@ void KESCMDrawEventHandler::BuildRing(uint8* buf, int32 rb, int32 bpp, int32 wt,
 			uint8* pixT = rowB + (size_t)x * bpp;	// ARGB 先頭=alpha
 			uint8* px = pixT + colorOff;
 			const uint8 d = drow[x];
-			bool16 ring = (d != 0 && d <= rad);		// 外側の帯(従来)
-			if (!ring && d == 0)
-			{
-				// 変化画素が端から radius 以内にあれば、その端の外側帯はクリップ済み=内側に補填する。
-				if (x < radius            || (wt - 1 - x) < radius ||
-				    y < radius            || (ht - 1 - y) < radius)
-					ring = kTrue;
-			}
+			// 変化画素まわりの外側の帯(距離 <= radius)。ページ端に接する部分の欠け補填は不要:
+			// 下の frame(ページ内縁の枠帯)が端から radius 以内を無条件に塗るので、同じ端の画素が必ず埋まる。
+			const bool16 ring = (d != 0 && d <= rad);
 			// ★ページ内縁の枠帯: 変化の有無に関わらず、ページ端(=バッファ端)から radius 画素以内を
 			//   「外枠」として塗る。太さは変化部リングと同じ radius(=毎ズーム再算出ゆえ一定px=ズーム不変)。
 			//   色・不透明度もリング画素と同一(赤/赤背景でシアン、alpha=255。薄さは blit 側 opacity が担当)。
@@ -612,40 +567,16 @@ ErrorCode KESCMDrawEventHandler::MakeOrigImage(const UIDRef& targetRef, const UI
 }
 
 
-#if KESCM_DRAWLOG
-// ★TEST: 診断で追加購読する draw event(本来の kEndSpreadMessage 以外の全17種。
-// basicdrwevthandler の一覧と同じ)。HandleDrawEvent 先頭でログだけ取って即 return する。
-static const int32 kKESCMDrawLogExtraIDs[] =
-{
-	kDrawSpreadMessage, kBeginSpreadMessage,
-	kDrawSpreadPageMessage, kBeginSpreadPageMessage, kEndSpreadPageMessage,
-	kDrawLayerMessage, kBeginLayerMessage, kEndLayerMessage,
-	kDrawPageMessage, kBeginPageMessage, kEndPageMessage,
-	kDrawGroupMessage, kBeginGroupMessage, kEndGroupMessage,
-	kDrawShapeMessage, kBeginShapeMessage, kEndShapeMessage,
-	kDrawMasterSpreadMessage, kBeginMasterSpreadMessage, kEndMasterSpreadMessage,
-};
-static const int32 kKESCMDrawLogExtraCount = (int32)(sizeof(kKESCMDrawLogExtraIDs) / sizeof(kKESCMDrawLogExtraIDs[0]));
-#endif
-
 void KESCMDrawEventHandler::Register(IDrwEvtDispatcher* d)
 {
 	// スプレッド単位で配られる描画イベント。ポートは spread 座標。枠/変更数・旧版べた載せをこちらで描く。
 	// (トースト撤去(2026-07-04)に伴い、カンバス背景帯用の kAfterLastSpreadDrawMessage 登録は廃止)
 	d->RegisterHandler(ClassID(kEndSpreadMessage), this, kDEHLowestPriority);
-#if KESCM_DRAWLOG
-	for (int32 i = 0; i < kKESCMDrawLogExtraCount; ++i)
-		d->RegisterHandler(ClassID(kKESCMDrawLogExtraIDs[i]), this, kDEHLowestPriority);
-#endif
 }
 
 void KESCMDrawEventHandler::UnRegister(IDrwEvtDispatcher* d)
 {
 	d->UnRegisterHandler(ClassID(kEndSpreadMessage), this);
-#if KESCM_DRAWLOG
-	for (int32 i = 0; i < kKESCMDrawLogExtraCount; ++i)
-		d->UnRegisterHandler(ClassID(kKESCMDrawLogExtraIDs[i]), this);
-#endif
 }
 
 
@@ -979,13 +910,6 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	DrawEventData* ded = static_cast<DrawEventData*>(eventData);
 	if (ded == nil || ded->gd == nil)
 		return kFalse;
-#if KESCM_DRAWLOG
-	// ★TEST: 全イベントをログ(sRasterizing 中も記録=rast=1 で区別)。追加購読した17種は
-	// 記録だけして即 return し、以降の本来の処理(kEndSpreadMessage のみ)へ影響させない。
-	KESCMDrawLogLine(eventID, ded);
-	if (eventID.Get() != kEndSpreadMessage)
-		return kFalse;
-#endif
 	// 自前のラスタ化(MakeEntry の比較スナップショット / MakeOrigImage の旧版スナップショット)中の再入は
 	// 描かない(自己参照=マークがスナップショットに写り込む feedback を防ぐ)。以前は kPreviewMode ビットで
 	// 弾いていたが、それは PDF 書き出しの kPDFExportMode と同一ビット(4096)で export を巻き込んでいたため、
@@ -1004,13 +928,14 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	// 出す(Target 側の sPrintMarks とは独立の仕様)。この描画が実際に Source 文書のスプレッドかどうかは
 	// db 取得後に判定する(ここでは「描き得るか」だけ)。
 	// ★sEntries が空でも、登録済み(比較相手なし="Added"/"Removed")ページや、文書間のページ数差で
-	// 対応表からあふれたページがあれば、緑枠/赤斜線を描くために続行する。オーバーフロー判定
-	// (KESCMPageMapHasOverflow)は対応表を作り直すので、他の条件が全部 false の時だけ評価されるよう
-	// 短絡評価の最後に置く。
+	// 対応表からあふれた("/"の)ページがあれば、緑枠/赤斜線を描くために続行する。overflow 判定は
+	// キャッシュ(sOverflowT/sOverflowS)を使う。EnsureOverflowCache は (sDB,sSrcDB) が前回作成時と
+	// 変わった時だけ作り直す(通常の描画では全文書走査は走らない)。
+	EnsureOverflowCache();
 	const bool16 anyMarkableContent = !sEntries.empty() ||
 		(sDB    != nil && KESCMPageMapHasAnyRegistered(sDB)) ||
 		(sSrcDB != nil && KESCMPageMapHasAnyRegistered(sSrcDB)) ||
-		(sDB != nil && sSrcDB != nil && KESCMPageMapHasOverflow(sDB, sSrcDB));
+		(!sOverflowT.empty() || !sOverflowS.empty());
 	const bool16 wantSrcMarks = sSrcMarksOn && sSrcDB != nil && anyMarkableContent;
 	// 印刷で「枠の印刷」が OFF のときは、Target 側のオーバーレイ一式を描かない(枠は基本非印刷)。
 	// Source 側の枠だけは常に印刷に出す仕様なので、wantSrcMarks が生きていれば処理を続行し、
@@ -1211,17 +1136,8 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 		}
 	}
 
-	// 除外対応表からあふれたページ(登録されていないのに、新旧の文書間のページ数差で対応相手が無い
-	// ページ)を、Target/Source 双方分まとめて1回だけ求めておく(sDB/sSrcDB が揃っている時だけ)。
-	// このスプレッドの各ページについて、あふれ側の集合に入っているかを見るだけなので O(log n) で済む。
-	std::set<UID> tOverflowSet, sOverflowSet;
-	if (sDB != nil && sSrcDB != nil)
-	{
-		std::vector<UID> tPages, sPages, tOverflow, sOverflow;
-		KESCMBuildPairing(sDB, sSrcDB, tPages, sPages, &tOverflow, &sOverflow);
-		tOverflowSet.insert(tOverflow.begin(), tOverflow.end());
-		sOverflowSet.insert(sOverflow.begin(), sOverflow.end());
-	}
+	// overflow("/"の未比較ページ)集合は EnsureOverflowCache() が保持済み(sOverflowT=Target/
+	// sOverflowS=Source)。このスプレッドの各ページが overflow 側に入っているかを count で見るだけ。
 
 	// Source 文書側のリング(Show Marks on Source) — 現スプレッドが Source 文書のものなら、対応表
 	// (SourceページUID→TargetページUID)経由で同じリング画像を Source ページに重ねる。
@@ -1249,7 +1165,7 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 				// 対応表に無い(=比較対象外)Source ページ。登録済み("Removed")なら緑枠を描く。
 				KESCMDrawAddedPageBorder(gPort, db, srcPageUID, sxr, drawMode, SelectedMarkOpacity());
 			}
-			else if (sOverflowSet.count(srcPageUID) > 0)
+			else if (sOverflowS.count(srcPageUID) > 0)
 			{
 				// 登録もされていない、ページ数差であふれたページ。未比較であることを赤斜線で明示する。
 				KESCMDrawOverflowPageDiagonal(gPort, db, srcPageUID, sxr, drawMode, SelectedMarkOpacity());
@@ -1258,7 +1174,7 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 			// 入るページ)にだけ除外領域の緑ベタ塗りを重ねる。変更なしで entry が無いページにも出すので
 			// 上の if/else とは独立に判定する。Removed/overflow ページは画素比較自体を行わない
 			// (ノンブル除外という概念が無い)ので塗らない。
-			if (fillExcluded && !KESCMPageMapIsRegistered(db, srcPageUID) && sOverflowSet.count(srcPageUID) == 0)
+			if (fillExcluded && !KESCMPageMapIsRegistered(db, srcPageUID) && sOverflowS.count(srcPageUID) == 0)
 				KESCMDrawPageNumberMarkerFill(gPort, db, srcPageUID);
 		}
 		return kFalse;	// Source 文書に Target 側オーバーレイは無い=ここで終わり
@@ -1291,7 +1207,7 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 			// 比較エントリが無い(=対象外)Target ページ。登録済み("Added")なら緑枠を描く。
 			KESCMDrawAddedPageBorder(gPort, db, pageUID, sxr, drawMode, screenMarkOp);
 		}
-		else if (tOverflowSet.count(pageUID) > 0)
+		else if (sOverflowT.count(pageUID) > 0)
 		{
 			// 登録もされていない、ページ数差であふれたページ。未比較であることを赤斜線で明示する。
 			KESCMDrawOverflowPageDiagonal(gPort, db, pageUID, sxr, drawMode, screenMarkOp);
@@ -1300,7 +1216,7 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 		// 入るページ)にだけ除外領域の緑ベタ塗りを重ねる。変更なしで entry が無いページにも出すので
 		// 上の if/else とは独立に判定する。Added/overflow ページは画素比較自体を行わない
 		// (ノンブル除外という概念が無い)ので塗らない。
-		if (fillExcluded && !KESCMPageMapIsRegistered(db, pageUID) && tOverflowSet.count(pageUID) == 0)
+		if (fillExcluded && !KESCMPageMapIsRegistered(db, pageUID) && sOverflowT.count(pageUID) == 0)
 			KESCMDrawPageNumberMarkerFill(gPort, db, pageUID);
 	}
 

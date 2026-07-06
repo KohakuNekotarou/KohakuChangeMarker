@@ -11,6 +11,7 @@
 #define __KESCMDrawEventHandler_h__
 
 #include <map>
+#include <set>
 #include "KESCMConstants.h"
 #include "CPMUnknown.h"
 #include "IDrwEvtHandler.h"
@@ -130,6 +131,16 @@ public:
 	// DropAll で破棄する。sEntries と違い、変化ゼロのページも含めた「前回比較した全ペア」を持つ点が肝
 	// (エントリの有無だけでは不変ページを再利用判定できないため)。
 	static std::map<UID, UID> sPrevPairTargetToSource;
+	// overflow(登録されていないのに文書間のページ数差で比較相手が無い="/"のページ)集合のキャッシュ。
+	// Target側=sOverflowT / Source側=sOverflowS。以前は描画のたびに KESCMBuildPairing(両文書の全ページ
+	// 走査)を走らせていたが、比較実行(KESCMDoMarkChangesDoc)時に1回だけ作って保持する。どの (sDB,sSrcDB)
+	// 用に作ったかを sOverflowCacheDB/sOverflowCacheSrcDB に控え、描画時に食い違えば(文書切替・スプレッド
+	// 再比較で別文書に移った等)EnsureOverflowCache が作り直す。DropAll で破棄。
+	// ★生のページ挿入/削除(Start無し)には追従しない=次の Start/再比較まで固定(枠=リングと同じ挙動)。
+	static std::set<UID> sOverflowT;
+	static std::set<UID> sOverflowS;
+	static IDataBase* sOverflowCacheDB;
+	static IDataBase* sOverflowCacheSrcDB;
 	// 旧ページ番号バッジ(フライアウト「Show Original Page Numbers」のチェック式トグル)。★既定=kFalse。
 	// ON の間、枠と同じ可視条件(sPrintMarks ON の常時表示、またはミドル押下中 sMarksVisible)で、番号が
 	// ズレているページ(=それより前に隠しスプレッドがある)の下端中央に「隠す前の元の番号」を描く
@@ -172,6 +183,13 @@ public:
 	// resolution 既定=kKESCMOrigResolution。peek 経路では現在のズームから dpi=72×スケールを渡して常にくっきり。
 	static ErrorCode MakeOrigImage(const UIDRef& targetRef, const UIDRef& sourceRef, const PMReal& resolution = kKESCMOrigResolution);
 
+	// overflow キャッシュ(sOverflowT/sOverflowS)を現在の sDB/sSrcDB から作り直す(KESCMBuildPairing を
+	// 1回呼ぶ)。比較実行(KESCMDoMarkChangesDoc)から呼び、Start/登録Add/Ignore切替のたびに最新化する。
+	static void RebuildOverflowCache();
+	// 控えた (sDB,sSrcDB) が現在と食い違う時だけ RebuildOverflowCache する(文書切替・スプレッド再比較で
+	// 別文書へ移った場合の保険)。一致していれば何もしない=描画のたびの全文書走査を避ける。
+	static void EnsureOverflowCache();
+
 	// 単一ページのオーバーレイ破棄(インクリメンタル再比較の差分適用で使う)。targetUID のエントリを
 	// 消し、その target を指していた Source 側対応表(sSrcPageToTarget[oldSourceUID])も掃除する。
 	// エントリ/対応表が無ければ何もしない(不変・変化ゼロページに対しても安全に呼べる)。
@@ -195,6 +213,8 @@ public:
 		sSrcPageToTarget.clear();
 		sSrcDB = nil;
 		sPrevPairTargetToSource.clear();	// 差分用の前回ペアリングも破棄(次の比較で作り直す)
+		sOverflowT.clear();  sOverflowS.clear();		// overflow キャッシュも破棄
+		sOverflowCacheDB = nil;  sOverflowCacheSrcDB = nil;
 	}
 
 	// 旧版画像を全破棄(kescmClearMarks / 別ドキュメント切替時)。表示トグルもOFFへ。
