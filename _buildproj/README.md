@@ -13,9 +13,11 @@ KESCM の git リポジトリは `source/sdksamples/KESCM/`(このフォルダ�
 ## このプロジェクトファイルに入っているカスタム(復元時に必要な要点)
 - KESCM の全ソース(`KESCM*.cpp` / `.h`)の登録。特に近年追加分:
   `KESCMChangeNav.*`(変更ページへの Next/Prev ナビ)、`KESCMThumbnailRefresh.*`
-  (Pages パネルのサムネイル更新実験)、`KESCMPageMap.*`、`KESCMPageNumberMarker.*` ほか。
-- **追加のインクルードパス** `$(ID_SDK_DIR)\source\open\interfaces\ui`
-  (`IPendingUpdateController.h` が source/open 配下にあるため。これが無いと C1083)。
+  (Pages パネルのサムネイル更新)、`KESCMPageMap.*`、`KESCMPageNumberMarker.*` ほか。
+- 追加のインクルードパスは**無し**(標準構成のまま)。
+  ※2026-07-06 まで一時的に `$(ID_SDK_DIR)\source\open\interfaces\ui` を追加していた
+  (`IPendingUpdateController.h` 用)が、サムネイル更新を `IImageCacheMgr::Purge` + `ForceRedraw` の
+  最小2手に整理して `IPendingUpdateController` 依存を撤去したため、このパスも撤去済み。
 
 ## 復元方法
 このフォルダーの2ファイルを、ビルドツリーへ上書きコピーする:
