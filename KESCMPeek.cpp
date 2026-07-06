@@ -66,6 +66,7 @@
 #include "KESCMColorSampler.h"       // KESCMSampleCmykUnderMouse
 #include "KESCMCore.h"               // arm/disarm/状態 宣言
 #include "KESCMPageMap.h"            // KESCMMapTargetToSource(除外対応表)/KESCMPageMapSweepClosedDocs
+#include "KESCMThumbnailRefresh.h"   // クローズ後、生存側の Pages パネルサムネイルから枠を消す
 #include "KESCMPeek.h"
 
 //========================================================================================
@@ -1170,6 +1171,16 @@ void KESCMHandleDocsClosed()
 			KESCMInvalidateDB(survivorOrigDB);
 		if (survivorSrcDB != survivorTargetDB && survivorSrcDB != survivorOrigDB)
 			KESCMInvalidateDB(survivorSrcDB);
+
+		// Stop と同じく、生存側の Pages パネルサムネイルからも枠/斜線を消す(InvalidateViews は
+		// レイアウトビューだけで、サムネイルの共有画像キャッシュには届かない)。DropAll 済みなので
+		// 再生成される isThumb 描画は早期 return し枠は描かれない。survivor* は生存確認済みポインタ
+		// のみ=閉じた db は決して渡さない(nil は関数側で弾く)。
+		KESCMTryRefreshPagesPanelThumbnails(survivorTargetDB);
+		if (survivorOrigDB != survivorTargetDB)
+			KESCMTryRefreshPagesPanelThumbnails(survivorOrigDB);
+		if (survivorSrcDB != survivorTargetDB && survivorSrcDB != survivorOrigDB)
+			KESCMTryRefreshPagesPanelThumbnails(survivorSrcDB);
 	}
 
 	// 「Hide Unchanged Spreads」トグルの後片付け(Target/Source 両側)。隠し先のどちらかが閉じた、

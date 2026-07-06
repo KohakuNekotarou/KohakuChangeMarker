@@ -5,7 +5,7 @@
 //  「見るべきページ」を順に巡回するナビゲーション(パネルの ◀ Prev / Next ▶ ボタンの実体)。
 //  対象は常に Target 文書(sDB)で、次の3種のいずれかのマークが付くページを、文書のページ順で巡る:
 //    ① 変更あり(赤/青リング) = sEntries にキーがある
-//    ② Added ページ(登録済み・囲み枠) = KESCMPageMapIsRegistered(sDB, uid)
+//    ② Added ページ(登録済み・緑「/」斜線) = KESCMPageMapIsRegistered(sDB, uid)
 //    ③ Overflow(未比較・"/"斜線) = KESCMBuildPairing の tOverflow
 //  現在のズームは変えず、対象ページの中心をレイアウトビューの中央へスクロールするだけ(選択はしない)。
 //

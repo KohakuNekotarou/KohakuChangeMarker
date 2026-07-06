@@ -1047,8 +1047,10 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	// 今描いている「このスプレッド」を覗いている(旧版べた載せ中)か。覗きで旧版が乗るのはマウス下の1スプレッド
 	// だけ(そのページが sOrigImages にある)。覗き中のスプレッドだけ旧版をきれいに見せたいので、マーク
 	// (枠)を描かない。それ以外のスプレッドは通常どおりマークを描く。
+	// ★サムネイル生成(isThumb)では旧版べた載せをしない: peek 押下中にそのスプレッドのサムネイルが
+	// 再生成されると、旧版画像が blit されたサムネイルがキャッシュに残り、離した後も古い絵のままになる。
 	bool16 peekingThisSpread = kFalse;
-	if (wantOrig && sOrigDB != nil && db == sOrigDB)
+	if (wantOrig && !isThumb && sOrigDB != nil && db == sOrigDB)
 	{
 		const int32 npChk = spread->GetNumPages();
 		for (int32 i = 0; i < npChk; ++i)
