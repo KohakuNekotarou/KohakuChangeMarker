@@ -15,3 +15,6 @@ Adobe InDesign C++ SDK Plug-In.
 お仕事のお依頼は
 kohaku.nekotarou@gmail.com
 まで、日本国内のみ対応します。
+
+## 支援
+https://github.com/sponsors/KohakuNekotarou
