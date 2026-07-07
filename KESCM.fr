@@ -643,7 +643,7 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 			kKESCMIconOffWidgetID,
 			kKESCMIconOffResID, kKESCMPluginID,
 			kBindTop,
-			Frame(152, 202, 184, 234)	// 32×32・右寄せ・ステータステキスト(192-244)の縦中央=横並び。ON側と同座標
+			Frame(152, 212, 184, 244)	// 32×32・右寄せ・ステータステキスト帯(192-244)の下端に揃える。ON側と同座標
 			kTrue, kTrue,
 			kADBEIconSuiteButtonType,
 		),
@@ -652,7 +652,7 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 			kKESCMIconOnWidgetID,
 			kKESCMIconOnResID, kKESCMPluginID,
 			kBindTop,
-			Frame(152, 202, 184, 234)	// 32×32・右寄せ・ステータステキスト(192-244)の縦中央=横並び。OFF側と同座標
+			Frame(152, 212, 184, 244)	// 32×32・右寄せ・ステータステキスト帯(192-244)の下端に揃える。OFF側と同座標
 			kFalse, kTrue,
 			kADBEIconSuiteButtonType,
 		),
