@@ -518,7 +518,7 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 	kKESCMPanelWidgetID,			// WidgetID
 	kPMRsrcID_None,					// RsrcID
 	kBindNone,						// Binding
-	0, 0, 192, 292,					// Frame: left, top, right, bottom (illustration 64→32 に縮小した分だけ縦を32px詰めた)
+	0, 0, 192, 252,					// Frame: left, top, right, bottom (イラストをステータステキスト横=右へ移した分、縦を40px詰めた)
 	kTrue, kTrue,					// Visible, Enabled
 	kFalse,							// Erase background
 	kInterfacePaletteFill,			// Erase to color
@@ -642,8 +642,8 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 		(
 			kKESCMIconOffWidgetID,
 			kKESCMIconOffResID, kKESCMPluginID,
-			kBindBottom,
-			Frame(152, 252, 184, 284)	// 32×32・右寄せ(右端184=テキスト幅と同じ8px余白)。ON側と同座標
+			kBindTop,
+			Frame(152, 202, 184, 234)	// 32×32・右寄せ・ステータステキスト(192-244)の縦中央=横並び。ON側と同座標
 			kTrue, kTrue,
 			kADBEIconSuiteButtonType,
 		),
@@ -651,8 +651,8 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 		(
 			kKESCMIconOnWidgetID,
 			kKESCMIconOnResID, kKESCMPluginID,
-			kBindBottom,
-			Frame(152, 252, 184, 284)	// 32×32・右寄せ(右端184=テキスト幅と同じ8px余白)。OFF側と同座標
+			kBindTop,
+			Frame(152, 202, 184, 234)	// 32×32・右寄せ・ステータステキスト(192-244)の縦中央=横並び。OFF側と同座標
 			kFalse, kTrue,
 			kADBEIconSuiteButtonType,
 		),
@@ -663,7 +663,7 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 			kKESCMStatusTextWidgetID,
 			kPMRsrcID_None,
 			kBindLeft | kBindRight | kBindTop,
-			Frame(8, 192, 184, 244)
+			Frame(8, 192, 148, 244)		// 右148まで=イラスト(152-184)と横並び(4px間隔)
 			kTrue, kTrue,
 			kAlignLeft, kDontEllipsize, kTrue,
 			kInvalidWidgetID,
