@@ -29,7 +29,13 @@
 #include "IControlView.h"
 #include "IPanorama.h"
 #include "ILayoutViewUtils.h"	// GetAllLayoutViews(db)
-#include "ILayoutUIUtils.h"		// MakeZoomCmd(kZoomToCmdBoss。他文書ビューのズームを合わせる公式経路)
+#include "ILayoutUIUtils.h"		// MakeZoomCmd(kZoomToCmdBoss。他文書ビューのズームを合わせる公式経路)/GetFrontDocument
+#include "IApplication.h"		// ページパネル連動スクロール用(IPanelMgr 取得)
+#include "IPanelMgr.h"
+#include "IPanelControlData.h"
+#include "IDocument.h"
+#include "IPagesSubPanelController.h"	// ScrollPanelToSpread(page/spread UID 可と明記あり)
+#include "PagesPanelID.h"		// kPagesPanelWidgetID / kLayoutPagesSubPanelWidgetID / IID_IPAGESSUBPANELCONTROLLER
 #include "ICommand.h"			// ズームコマンド
 #include "CmdUtils.h"			// ProcessCommand
 #include "IGeometry.h"
@@ -226,6 +232,45 @@ static UID KESCMSourcePageForTarget(IDataBase* targetDB, IDataBase* sourceDB, UI
 }
 
 //----------------------------------------------------------------------------------------
+// Pages パネルも対象ページのスプレッドへ連動スクロールする(ベストエフォート)。
+//   ★Pages パネルは「前面(アクティブ)の文書」のページ一覧を表示するので、前面文書が db と
+//   一致する時だけ動かす(Source が前面のまま Next/Prev を押した場合、パネルは Source の一覧を
+//   表示中=Target のページ UID を渡しても意味がないので何もしない)。
+//   経路は KESCMThumbnailRefresh と同じ IPanelMgr→GetVisiblePanel(kPagesPanelWidgetID)→
+//   FindWidget(kLayoutPagesSubPanelWidgetID)→IPagesSubPanelController。ScrollPanelToSpread は
+//   ヘッダー注記により page UID をそのまま渡してよい(「spread or page uid」)。
+//----------------------------------------------------------------------------------------
+static void KESCMScrollPagesPanelToPage(IDataBase* db, UID pageUID)
+{
+	if (db == nil || pageUID == kInvalidUID)
+		return;
+
+	// 前面文書のページ一覧を表示中か(違えば触らない)。
+	IDocument* front = Utils<ILayoutUIUtils>()->GetFrontDocument();
+	if (front == nil || ::GetDataBase(front) != db)
+		return;
+
+	InterfacePtr<IApplication> app(GetExecutionContextSession()->QueryApplication());
+	if (app == nil)
+		return;
+	InterfacePtr<IPanelMgr> panelMgr(app->QueryPanelManager());
+	if (panelMgr == nil)
+		return;
+	IControlView* panel = panelMgr->GetVisiblePanel(kPagesPanelWidgetID);
+	if (panel == nil)
+		return;	// パネル非表示なら何もしない(次に開いたときは通常表示でよい)
+	InterfacePtr<IPanelControlData> pcd(panel, UseDefaultIID());
+	if (pcd == nil)
+		return;
+	IControlView* subView = pcd->FindWidget(kLayoutPagesSubPanelWidgetID);
+	if (subView == nil)
+		return;
+	InterfacePtr<IPagesSubPanelController> ctrl(subView, UseDefaultIID());
+	if (ctrl != nil)
+		ctrl->ScrollPanelToSpread(UIDRef(db, pageUID));
+}
+
+//----------------------------------------------------------------------------------------
 // 巡回本体(dir=+1 で次、-1 で前)。端は折り返す。ステータス行に「3 / 12」と現在位置を出す。
 //----------------------------------------------------------------------------------------
 static void KESCMGoto(int32 dir)
@@ -272,6 +317,9 @@ static void KESCMGoto(int32 dir)
 		return;
 	}
 
+	// Pages パネルも対象ページへ連動スクロール(前面文書が Target のときだけ。ベストエフォート)。
+	KESCMScrollPagesPanelToPage(targetDB, sNavCurrent);
+
 	// Source 側も対応ページへ連動スクロール(背面のまま位置だけ動かす。前面には出さない)。
 	// ページの追加/削除でズレていても対応表で正しい相手へ、相手が無い Added/Overflow は近傍へ寄せる。
 	// ★Source の拡大率も Target に合わせる(Target の実効ズームを読み、Source のビューへ MakeZoomCmd で反映)。
@@ -284,6 +332,10 @@ static void KESCMGoto(int32 dir)
 		{
 			const PMReal targetZoom = KESCMReadDocZoom(targetDB);	// 実効ズーム(<=0 ならズームは変えない)
 			KESCMScrollDocToPage(sourceDB, srcPage, targetZoom);
+			// Source が前面の場合、Pages パネルは Source の一覧を表示しているので、そちらの対応ページへ
+			// 連動スクロール(ヘルパー内の前面一致ガードにより、Target 前面ならこの呼び出しは何もしない=
+			// 上の Target 側呼び出しと排他で、前面の文書に合った側だけがパネルを動かす)。
+			KESCMScrollPagesPanelToPage(sourceDB, srcPage);
 		}
 	}
 
