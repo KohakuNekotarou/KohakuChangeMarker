@@ -17,6 +17,12 @@
 //   ④見つかったフレームの矩形(GetPathBoundingBox)を、そのアイテム自身の InnerToSpreadMatrix で
 //     スプレッド座標へ、マスター由来アイテムはさらに AppendMasterPageItems が返す offset 行列で
 //     描画先スプレッド座標へ変換してから、ページの逆行列でページinner座標へ戻す。
+//   ⑤★さらに「実際に描かれる数字」のグリフ実インク範囲を union してフレーム矩形と合成する
+//     (2026-07-07。KESCMRealNumberInkInSpread)。フレームから少しはみ出すグリフ(大きなノンブルの
+//     ディセンダー/オーバーシュート等)が除外領域の外にこぼれて差分と誤検知されるのを防ぐ。
+//     ★マスターの wax はプレースホルダ文字で組まれ実ページの数字と違うため、ベースライン/フォント/
+//     座標変換だけをマスター wax から借り、グリフ形状は実ページ番号(GetPageString)から取る。
+//     wax/フォント/文字列が取れない場合はフレーム矩形のみ=従来動作にフォールバック。
 //
 //========================================================================================
 
@@ -32,6 +38,19 @@
 #include "ITextFrameColumn.h"
 #include "IGraphicFrameData.h"	// グラフィックフレーム(テキスト枠の親)→子MCテキストフレーム取得
 #include "ITextModel.h"
+#include "IWaxStrand.h"			// 文字インク境界(はみ出しグリフ対応)用。KESCL と同じ既知良好パターン
+#include "IWaxIterator.h"
+#include "IWaxLine.h"			// GetToSpreadMatrix / QueryWaxGlyphIterator
+#include "IWaxGlyphIterator.h"	// グリフ単位走査(先頭グリフの配置行列=ベースライン)
+#include "IWaxGlyphs.h"
+#include "IWaxRun.h"				// GetWaxRun → IWaxRenderData
+#include "IWaxRenderData.h"		// run→フォント/フォント行列(GetGlyphBBox 用 IFontInstance を作る)
+#include "IFontMgr.h"			// QueryFontInstance
+#include "IPMFont.h"
+#include "IFontInstance.h"		// AppendGlyphIDs / GetGlyphBBox(グリフ輪郭の bbox=真のタイト境界)
+#include "K2Vector.h"
+#include "TextID.h"				// kFrameListBoss / IID_IWAXSTRAND
+#include "K2SmartPtr.h"			// K2::scoped_ptr(IWaxIterator の解放)
 #include "TextChar.h"			// kTextChar_PageNumber(ノンブルマーカーの文字コード 0x18)
 #include "textiterator.h"
 #include "TransformUtils.h"		// InnerToSpreadMatrix
@@ -40,6 +59,9 @@
 #include "PMPoint.h"
 #include "UIDList.h"
 #include "Utils.h"
+
+#include "IPageList.h"			// 実ページ番号の文字列(GetPageString)
+#include "CTextEnum.h"			// Text::GlyphID
 
 #include "KESCMPageNumberMarker.h"
 
@@ -77,14 +99,16 @@ static bool16 KESCMTextRangeHasPageNumberMarker(ITextModel* textModel, TextIndex
 	return kFalse;
 }
 
-// itemUID のテキストフレームに自動ページ番号マーカー(0x18)を含む文字があるか。
+// itemUID のテキストフレームに自動ページ番号マーカー(0x18)を含む文字があるか。あれば、その
+// テキストモデルと範囲も返す(★インク境界計算用に 2026-07-07 拡張。従来の bool 検出と同一の走査)。
 // アイテムの実体は文脈で違う:
 //   (a) グラフィックフレーム(スプライン=テキスト枠の親)。★マスターアイテムはこれで来る
 //       (AppendMasterPageItems は kSkipChildren 既定で親フレームを返し、テキストを持つ子は返さない)。
 //       IGraphicFrameData::QueryMCTextFrame() で子の MC テキストフレームへ降りてテキストモデルを得る。
 //   (b) アイテム自身が IMultiColumnTextFrame / ITextFrameColumn を実装している場合(直に取れる)。
 // (a)(b) いずれかでテキストモデルが取れれば走査。どれも無ければ kFalse。
-static bool16 KESCMItemHasPageNumberMarker(IDataBase* db, UID itemUID)
+static bool16 KESCMQueryMarkerText(IDataBase* db, UID itemUID,
+	InterfacePtr<ITextModel>& outModel, TextIndex& outStart, int32& outSpan)
 {
 	// (a) グラフィックフレーム → 子 MC テキストフレーム
 	InterfacePtr<IGraphicFrameData> gfd(db, itemUID, UseDefaultIID());
@@ -95,7 +119,10 @@ static bool16 KESCMItemHasPageNumberMarker(IDataBase* db, UID itemUID)
 		{
 			InterfacePtr<ITextModel> textModel(childMcf->QueryTextModel());
 			if (KESCMTextRangeHasPageNumberMarker(textModel, childMcf->TextStart(), childMcf->TextSpan()))
+			{
+				outModel = textModel; outStart = childMcf->TextStart(); outSpan = childMcf->TextSpan();
 				return kTrue;
+			}
 		}
 	}
 	// (b) アイテム自身が MC テキストフレーム
@@ -104,7 +131,10 @@ static bool16 KESCMItemHasPageNumberMarker(IDataBase* db, UID itemUID)
 	{
 		InterfacePtr<ITextModel> textModel(mcf->QueryTextModel());
 		if (KESCMTextRangeHasPageNumberMarker(textModel, mcf->TextStart(), mcf->TextSpan()))
+		{
+			outModel = textModel; outStart = mcf->TextStart(); outSpan = mcf->TextSpan();
 			return kTrue;
+		}
 	}
 	// (b) アイテム自身がテキストフレームカラム(単一列)
 	InterfacePtr<ITextFrameColumn> tfc(db, itemUID, UseDefaultIID());
@@ -112,9 +142,102 @@ static bool16 KESCMItemHasPageNumberMarker(IDataBase* db, UID itemUID)
 	{
 		InterfacePtr<ITextModel> textModel(tfc->QueryTextModel());
 		if (KESCMTextRangeHasPageNumberMarker(textModel, tfc->TextStart(), tfc->TextSpan()))
+		{
+			outModel = textModel; outStart = tfc->TextStart(); outSpan = tfc->TextSpan();
 			return kTrue;
+		}
 	}
 	return kFalse;
+}
+
+// ノンブルフレームの「実際に描かれる数字」のインク範囲を、そのフレームが属するスプレッド座標で返す。
+// ★2026-07-07: マスターのノンブルフレームの wax はプレースホルダ文字(「A」等)で組まれ、実ページに
+// 出る本物の数字(「3」等)とはグリフが違う=マスターの wax から実ページのはみ出しは測れない、と実機の
+// 診断で判明した。そこで:
+//   ①マスター wax からは「ベースライン位置(先頭グリフの配置行列 gm)」「スプレッド変換(line→spread)」
+//     「フォント(級数込み IFontInstance)」だけを借りる(これらはどの数字でも同じ=流用可)。
+//   ②実際に出る数字の文字列は IPageList::GetPageString(pageUID) で取る(＝画面の表示番号)。
+//   ③その各文字のグリフ bbox(IFontInstance::GetGlyphBBox)をベースライン上に置いて union する。
+// これで「実ページの本物の数字がどれだけ溢れるか」ぴったりのインク範囲になる(オーバーシュート/
+// ディセンダー込み)。横位置は先頭グリフ位置に積むだけ(呼び出し側がフレーム矩形と union するので X は
+// フレームで被覆される)。返り値の座標系はフレーム自身のスプレッド(マスター由来は呼び出し側で offset 合成)。
+// ★Recompose は意図的にしない(描画イベント中に呼ばれ得るため再入回避)。wax/フォント/文字列のどれかが
+// 取れなければ空 rect を返し、呼び出し側はフレーム矩形のみ=従来動作に自然フォールバックする。
+static PMRect KESCMRealNumberInkInSpread(ITextModel* masterTextModel, TextIndex start,
+	IDataBase* db, UID pageUID)
+{
+	PMRect result(0, 0, 0, 0);	// 空(呼び出し側は IsEmpty で判定)
+	if (masterTextModel == nil || db == nil || pageUID == kInvalidUID)
+		return result;
+
+	// ---- ① マスター wax から baseline 配置(gm)・line→spread(lm)・フォント(fi)を借りる ----
+	InterfacePtr<IWaxStrand> waxStrand((IWaxStrand*)masterTextModel->QueryStrand(kFrameListBoss, IID_IWAXSTRAND));
+	if (waxStrand == nil)
+		return result;
+	K2::scoped_ptr<IWaxIterator> waxIter(waxStrand->NewWaxIterator());
+	if (waxIter == nil)
+		return result;
+	IWaxLine* line = waxIter->GetFirstWaxLine(start);
+	if (line == nil)
+		return result;	// 未組版/オーバーセット → フレーム矩形のみ
+
+	const PMMatrix lineToSpread = line->GetToSpreadMatrix();
+
+	// 先頭グリフの配置行列(pen(0,0)=行頭・ベースライン。gmXsc=1.0 で再スケール無し=実測確認済み)と
+	// そのランのフォント(級数込み IFontInstance)を取る。
+	InterfacePtr<IFontMgr> fontMgr(GetExecutionContextSession(), UseDefaultIID());
+	if (fontMgr == nil)
+		return result;
+	K2::scoped_ptr<IWaxGlyphIterator> git(line->QueryWaxGlyphIterator(kFalse));
+	if (git == nil)
+		return result;
+	git->Reset();
+	IWaxGlyphs* g = git->GetWaxGlyphsContainer();
+	if (g == nil)
+		return result;
+	PMMatrix baselinePlacement;			// 先頭グリフの GetGlyphMatrix(行頭・ベースライン配置)
+	PMPoint pen(0, 0);
+	git->GetGlyphMatrix(&baselinePlacement, &pen);
+	IWaxRun* run = git->GetWaxRun();
+	InterfacePtr<IWaxRenderData> rd(run, UseDefaultIID());
+	if (rd == nil)
+		return result;
+	InterfacePtr<IPMFont> font(rd->QueryFont());
+	if (font == nil)
+		return result;
+	const PMMatrix fontMatrix = rd->GetFontMatrix();
+	InterfacePtr<IFontInstance> fontInst(fontMgr->QueryFontInstance(font, fontMatrix));
+	if (fontInst == nil)
+		return result;
+
+	// ---- ② 実ページに表示される番号文字列(＝画面の現在番号)を取る ----
+	InterfacePtr<IPageList> pageList(db, db->GetRootUID(), UseDefaultIID());
+	if (pageList == nil)
+		return result;
+	PMString numStr;
+	// KESCMDrawEventHandler の「現在番号(cur)」と同じ呼び方: セクション込み・番号スタイルそのまま・
+	// 隠しスプレッドを飛ばした表示番号(最終引数 kFalse)。
+	pageList->GetPageString(pageUID, &numStr, kTrue, kFalse, kDefaultPageType, kTrue, kFalse);
+	const int32 nch = numStr.NumUTF16TextChars();
+	if (nch <= 0)
+		return result;
+	const UTF16TextChar* buf = numStr.GrabUTF16Buffer(nil);
+	if (buf == nil)
+		return result;
+
+	// ---- ③ 各文字のグリフ bbox をベースライン上に置いて union ----
+	K2Vector<Text::GlyphID> gids;
+	fontInst->AppendGlyphIDs(buf, nch, gids);
+	for (int32 i = 0; i < (int32)gids.size(); ++i)
+	{
+		PMRect bbox = fontInst->GetGlyphBBox(gids[i]);	// サイズ適用済み・ベースライン基準(実測確認済み)
+		if (bbox.IsEmpty())
+			continue;								// notdef 等
+		baselinePlacement.Transform(&bbox);		// glyph 空間 → wax(行頭・ベースライン)
+		lineToSpread.Transform(&bbox);			// wax → スプレッド
+		result.Union(bbox);
+	}
+	return result;
 }
 
 // itemUID(テキストフレーム、ページinner座標系とは限らない自身の inner 座標系)の矩形を、
@@ -177,13 +300,24 @@ void KESCMAppendPageNumberMarkerRects(const UIDRef& pageRef, std::vector<PMRect>
 	for (int32 i = 0; i < nLocal; ++i)
 	{
 		const UID itemUID = localItems[i];
-		if (!KESCMItemHasPageNumberMarker(db, itemUID))
+		InterfacePtr<ITextModel> markerModel;
+		TextIndex mStart = 0; int32 mSpan = 0;
+		if (!KESCMQueryMarkerText(db, itemUID, markerModel, mStart, mSpan))
 			continue;
 		InterfacePtr<IGeometry> itemGeo(db, itemUID, UseDefaultIID());
 		if (itemGeo == nil)
 			continue;
 		const PMMatrix itemToSpread = ::InnerToSpreadMatrix(itemGeo);
 		PMRect r = KESCMItemRectToPageInner(db, itemUID, itemToSpread, spreadToPage);
+		// ★実際に描かれる数字のインク範囲を union: フレームからはみ出すグリフ(大きなノンブルの
+		// ディセンダー/オーバーシュート等)も除外領域に含める(はみ出し画素の誤検知を防ぐ)。ローカル
+		// アイテムの wax は描画先スプレッドそのものに属するので、そのまま spreadToPage でページ inner へ。
+		PMRect ink = KESCMRealNumberInkInSpread(markerModel, mStart, db, pageUID);
+		if (!ink.IsEmpty())
+		{
+			spreadToPage.Transform(&ink);
+			r.Union(ink);
+		}
 		r.Left(r.Left() - origin.X());   r.Right(r.Right() - origin.X());
 		r.Top(r.Top() - origin.Y());     r.Bottom(r.Bottom() - origin.Y());
 		outRects.push_back(r);
@@ -211,7 +345,9 @@ void KESCMAppendPageNumberMarkerRects(const UIDRef& pageRef, std::vector<PMRect>
 		for (int32 i = 0; i < nMaster; ++i)
 		{
 			const UID itemUID = masterItems[i];
-			if (!KESCMItemHasPageNumberMarker(db, itemUID))
+			InterfacePtr<ITextModel> markerModel;
+			TextIndex mStart = 0; int32 mSpan = 0;
+			if (!KESCMQueryMarkerText(db, itemUID, markerModel, mStart, mSpan))
 				continue;
 			InterfacePtr<IGeometry> itemGeo(db, itemUID, UseDefaultIID());
 			if (itemGeo == nil)
@@ -221,6 +357,18 @@ void KESCMAppendPageNumberMarkerRects(const UIDRef& pageRef, std::vector<PMRect>
 			const PMMatrix itemToMasterSpread = ::InnerToSpreadMatrix(itemGeo);
 			const PMMatrix itemToDrawingSpread = itemToMasterSpread * offsets[i];
 			PMRect r = KESCMItemRectToPageInner(db, itemUID, itemToDrawingSpread, spreadToPage);
+			// ★実際に描かれる数字のインク範囲を union(ローカル側と同じ趣旨)。マスターフレームの wax は
+			// プレースホルダ文字で組まれるが、KESCMRealNumberInkInSpread は「ベースライン/フォント/変換」
+			// だけをマスター wax から借り、グリフ形状は実ページ番号(GetPageString(pageUID))から取るので、
+			// 実際に出る数字のはみ出しにぴったり合う。座標はマスタースプレッド → offsets[i](描画先スプレッド)
+			// → spreadToPage でページ inner へ(パス矩形と同じ流れ)。
+			PMRect ink = KESCMRealNumberInkInSpread(markerModel, mStart, db, pageUID);
+			if (!ink.IsEmpty())
+			{
+				offsets[i].Transform(&ink);
+				spreadToPage.Transform(&ink);
+				r.Union(ink);
+			}
 			r.Left(r.Left() - origin.X());   r.Right(r.Right() - origin.X());
 			r.Top(r.Top() - origin.Y());     r.Bottom(r.Bottom() - origin.Y());
 			outRects.push_back(r);
