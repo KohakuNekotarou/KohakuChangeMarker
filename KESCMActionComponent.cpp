@@ -43,6 +43,7 @@
 							// ＋ KESCMBuildPairing(除外対応表、Hide Unchanged の Source 側分類で使用)
 #include "KESCMPageNumberMarker.h"	// KESCMGetIgnorePageNumberMarker/KESCMSetIgnorePageNumberMarker(ノンブル除外トグル)
 #include "KESCMThumbnailRefresh.h"	// KESCMTryRefreshPagesPanelThumbnails(Source サムネイルの枠を即 ON/OFF)
+#include "KESCMPeek.h"				// KESCMBaseScreenOpacity(Hold to Hide Marks 切替時に常時表示の基準不透明度を反映)
 
 // ★注意: source/public/includes/URLUtils.h は "namespace URLUtils { PUBLIC_DECL void GoToURL(...); }" と
 // 宣言しているが、これはヘッダーとバイナリの不一致(Public.lib 側の実エクスポート名と食い違っている)。
@@ -169,6 +170,22 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 			KESCMSetLayoutSync(!KESCMGetLayoutSync());
 			break;
 
+		// 「Hold to Hide Marks」トグル: 枠表示の極性反転(フラグ反転のみ)。ON=画面に枠を常時表示し、
+		// ミドル押下中だけ隠す(押下/解放は KESCMPeek.cpp の WatchEvent が sMarksTempHidden を上下)。
+		// OFF=従来(既定非表示・押下中だけ表示)。画面のみ=印刷は Print comparison marks が別管理。
+		// 切替時に一時退避を解除し、常時表示の基準不透明度(常時表示ON中は25%/75%)を反映して sDB を再描画。
+		case kKESCMPopupHoldToHideMarksActionID:
+		{
+			KESCMDrawEventHandler::sAlwaysShowMarks = !KESCMDrawEventHandler::sAlwaysShowMarks;
+			KESCMDrawEventHandler::sMarksTempHidden = kFalse;	// モード切替時は一時退避を解除
+			KESCMDrawEventHandler::sMarkScreenOpacity = KESCMBaseScreenOpacity();	// 常時表示の不透明度を即反映
+			KESCMInvalidateDB(KESCMDrawEventHandler::sDB);
+			PMString msg(KESCMDrawEventHandler::sAlwaysShowMarks ? "Hold to Hide Marks: on." : "Hold to Hide Marks: off.");
+			msg.SetTranslatable(kFalse);
+			KESCMSetStatus(msg);
+			break;
+		}
+
 		// 「Ignore Page Number Marker」トグル: ノンブル(自動ページ番号)マーカーを含むフレームを
 		// 比較(CMYKピクセル差分)から除外するか(既定ON)。フラグを反転し、既にStart済みなら
 		// 登録トグルと同じ理由で全体再比較して即座に反映する。
@@ -262,6 +279,13 @@ void KESCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionSta
 			int16 actionState = kEnabledAction;
 			if (KESCMGetLayoutSync())
 				actionState |= kSelectedAction;
+			listToUpdate->SetNthActionState(i, actionState);
+		}
+		else if (action == kKESCMPopupHoldToHideMarksActionID)
+		{
+			int16 actionState = kEnabledAction;
+			if (KESCMDrawEventHandler::sAlwaysShowMarks)
+				actionState |= kSelectedAction;	// ON ならチェックマーク
 			listToUpdate->SetNthActionState(i, actionState);
 		}
 		else if (action == kKESCMPopupShowSrcMarksActionID)

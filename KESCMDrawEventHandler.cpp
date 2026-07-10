@@ -70,6 +70,9 @@ PMReal KESCMDrawEventHandler::sMarkScreenOpacity = 1.0;	// 既定=不透明。�
 bool16 KESCMDrawEventHandler::sPrintMarks = kFalse;	// 既定=画面のみ(印刷/PDF には出さない)
 bool16 KESCMDrawEventHandler::sMarkOpacity25 = kTrue;	// 既定=25%(パネルの既定ラジオと一致)。kFalse=75%
 bool16 KESCMDrawEventHandler::sShowOldNumbers = kFalse;	// 既定=OFF(フライアウト「Show Original Page Numbers」)
+bool16 KESCMDrawEventHandler::sAlwaysShowMarks = kFalse;	// 既定=OFF(フライアウト「Hold to Hide Marks」。ON=枠を画面に常時表示し押下中だけ隠す=極性反転)
+bool16 KESCMDrawEventHandler::sMarksTempHidden = kFalse;	// Hold to Hide Marks モード中、Target 窓でミドル押下中だけ kTrue(Target 常時表示枠の一時退避)
+bool16 KESCMDrawEventHandler::sSrcMarksTempHidden = kFalse;	// 同上の Source 版。Source 窓でミドル押下中だけ kTrue(Source 常時表示枠の一時退避)
 bool16 KESCMDrawEventHandler::sSrcMarksOn = kFalse;	// 既定=OFF。Start(KESCMDoMarkChangesDoc)のたびに kTrue へ(フライアウト「Show Marks on Source」)
 IDataBase* KESCMDrawEventHandler::sSrcDB = nil;
 std::map<UID, UID> KESCMDrawEventHandler::sSrcPageToTarget;
@@ -956,7 +959,12 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 		(sDB    != nil && KESCMPageMapHasAnyRegistered(sDB)) ||
 		(sSrcDB != nil && KESCMPageMapHasAnyRegistered(sSrcDB)) ||
 		(!sOverflowT.empty() || !sOverflowS.empty());
-	const bool16 wantSrcMarks = sSrcMarksOn && sSrcDB != nil && anyMarkableContent;
+	// 「Hold to Hide Marks」と併用時のみ: Source のレイアウト窓でミドルを押している間(sSrcMarksTempHidden)は
+	// Source 側の常時表示枠も画面で隠す(押した窓の枠だけ隠す=Target と対称のウィンドウ別の極性反転)。
+	// 印刷は Source 枠を常に出す仕様なので !printing でゲート=印刷/PDF は不変。sAlwaysShowMarks OFF や
+	// Source 窓以外で押した時は sSrcMarksTempHidden が立たない(KESCMPeek.cpp の窓判定)ので従来どおり常時表示。
+	const bool16 srcTempHidden = sAlwaysShowMarks && sSrcMarksTempHidden && !printing;
+	const bool16 wantSrcMarks = sSrcMarksOn && sSrcDB != nil && anyMarkableContent && !srcTempHidden;
 	// 印刷で「枠の印刷」が OFF のときは、Target 側のオーバーレイ一式を描かない(枠は基本非印刷)。
 	// Source 側の枠だけは常に印刷に出す仕様なので、wantSrcMarks が生きていれば処理を続行し、
 	// 下の want フラグ側で Target 分だけ落とす。
@@ -971,13 +979,17 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	//   捨てていた。Start 済み・マーク非表示(既定=ミドル押下中だけ表示)の待機状態が最頻なので、
 	//   ここで落として通常の編集・スクロール中の描画コストをほぼゼロにする。生存スイープも「実際に
 	//   何か描く」時だけの保険になる(クローズ後始末の本線は KESCMDocResponder で変わらず)。
-	const bool16 wantMarks = !suppressForPrint && (sPrintMarks || sMarksVisible || isThumb) && anyMarkableContent;
+	// 「Hold to Hide Marks」(極性反転): モード ON の間は画面(!printing)で枠を常時表示。ただしミドル押下中
+	// (sMarksTempHidden)は隠す。画面のみ=印刷/PDF は下の sPrintMarks が独立して決める(alwaysScreen は
+	// !printing ゲートで印刷文脈には一切効かせない=印刷は従来どおり Print comparison marks のみで制御)。
+	const bool16 alwaysScreen = sAlwaysShowMarks && !sMarksTempHidden && !printing;
+	const bool16 wantMarks = !suppressForPrint && (sPrintMarks || sMarksVisible || alwaysScreen || isThumb) && anyMarkableContent;
 	const bool16 wantOrig  = !suppressForPrint && !printing && sShowOriginal && !sOrigImages.empty();
 	// 旧ページ番号バッジ: トグルON かつ「枠が見えている」間(=印刷マークON の常時表示、またはミドル押下中)。
 	// 枠の可視条件(wantMarks の sPrintMarks || sMarksVisible)と同じ揃え。印刷文脈は suppressForPrint で
 	// sPrintMarks ON のときだけ生き残る=印刷に出るのは印刷マークON時のみ(従来どおり)。
 	// 番号がズレているかはページごとに後で判定する(ズレていなければ何も描かない)。
-	const bool16 wantOldNums = !suppressForPrint && sShowOldNumbers && (sPrintMarks || sMarksVisible);
+	const bool16 wantOldNums = !suppressForPrint && sShowOldNumbers && (sPrintMarks || sMarksVisible || alwaysScreen);
 	if (!wantMarks && !wantOrig && !wantOldNums && !wantSrcMarks)
 		return kFalse;
 

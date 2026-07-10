@@ -98,7 +98,9 @@ static bool16  sHandActive = kFalse;	// ハンドツールに一時切替中か
 //   ミドルを離したら sMarkScreenOpacity をこの値へ戻す。
 PMReal KESCMBaseScreenOpacity()
 {
-	return KESCMDrawEventHandler::sPrintMarks
+	// 印刷マーク ON、または「Hold to Hide Marks」(枠を画面に常時表示)ON のときは、常時表示の枠を
+	// パネル選択の 25%/75% で描く(押下中の一時表示と見た目を揃える)。どちらも OFF なら 1.0(不透明)。
+	return (KESCMDrawEventHandler::sPrintMarks || KESCMDrawEventHandler::sAlwaysShowMarks)
 	       ? KESCMDrawEventHandler::SelectedMarkOpacity() : PMReal(1.0);
 }
 
@@ -396,6 +398,28 @@ static bool16 KESCMFrontViewIsOverTarget()
 		return kFalse;
 
 	return (hitPres->GetDocumentUIDRef().GetDataBase() == sPeekTargetDB);
+}
+
+// マウス下のドキュメントウィンドウが Source(比較の旧側=常時表示枠を載せている sSrcDB)かどうか。
+// 「Hold to Hide Marks」＋「Show Marks on Source」併用時、Source 窓でミドルを押したときだけ Source 枠を
+// 一時退避させるための窓判定(Target 版 KESCMFrontViewIsOverTarget と対称)。Source マークの所属は sSrcDB を
+// 正とする(arm の sPeekSourceDB と同一文書だが、判定はマークの実 db に紐づける)。
+static bool16 KESCMFrontViewIsOverSource()
+{
+	if (KESCMDrawEventHandler::sSrcDB == nil)
+		return kFalse;
+
+	GSysPoint globalPt = Utils<IEventUtils>()->GetGlobalMouseLocation();
+
+	InterfacePtr<IWindow> hitWindow(Utils<IWindowUtils>()->QueryWindowUnderPoint(globalPt, kFalse));
+	if (hitWindow == nil)
+		return kFalse;
+
+	InterfacePtr<IDocumentPresentation> hitPres(hitWindow, UseDefaultIID());
+	if (hitPres == nil)
+		return kFalse;
+
+	return (hitPres->GetDocumentUIDRef().GetDataBase() == KESCMDrawEventHandler::sSrcDB);
 }
 
 //========================================================================================
@@ -983,6 +1007,36 @@ IEventDispatcher::EventTypeList KESCMPeekWatcher::WatchEvent(IEvent* e)
 
 	if (type == IEvent::kMButtonDn)
 	{
+		// 「Hold to Hide Marks」モード(枠を画面に常時表示)中は、押下中は常時表示の枠を隠す(離すと戻る)=
+		// 極性反転の本体。個々の修飾キー動作(peek/再比較/同期/パネル/CMYK)はこの後も従来どおり走る。下の
+		// 修飾なしミドル分岐は、モード ON 時は「反転して隠す」側に切り替える(sMarksVisible で表示 ON にすると
+		// sMarksTempHidden と競合するため)。
+		// ★押した窓の枠だけを隠す(ウィンドウ別)。Target 窓で押したら Target 枠(sMarksTempHidden)、Source 窓で
+		//   押したら Source 枠(sSrcMarksTempHidden。Show Marks on Source ON 時のみ)。これでタイル表示中に相手側の
+		//   窓で押しても、こちらの枠は消えない(旧・一律 temp-hide の非対称を解消)。
+		// ★枠を隠すのは「枠を見せない/旧版を覗く」系のミドル操作のときだけ(ユーザー指定 2026-07-10)。
+		//   隠す: 修飾なし(=枠隠し本機能そのもの)/ Shift(100% peek)/ Shift＋Alt(50% peek)。
+		//   隠さない: Ctrl(スプレッド再比較)/ Alt 単独(ビューポート同期)/ Shift＋Ctrl(パネル切替)/
+		//             Shift＋Ctrl＋Alt(CMYK)。これらは枠を出したまま操作したいため。
+		//   条件=Ctrl 非押下 かつ (修飾なし または Shift 押下)。→ Ctrl 系は全除外、Alt 単独は Shift 無しで除外。
+		const bool16 tempHideGesture =
+			!e->CmdKeyDown() &&
+			( (!e->ShiftKeyDown() && !e->OptionAltKeyDown()) || e->ShiftKeyDown() );
+		if (KESCMDrawEventHandler::sAlwaysShowMarks && tempHideGesture)
+		{
+			if (!KESCMDrawEventHandler::sMarksTempHidden && KESCMFrontViewIsOverTarget())
+			{
+				KESCMDrawEventHandler::sMarksTempHidden = kTrue;
+				KESCMInvalidateMarksDoc();	// Target(sDB)を再描画
+			}
+			if (KESCMDrawEventHandler::sSrcMarksOn && !KESCMDrawEventHandler::sSrcMarksTempHidden &&
+			    KESCMFrontViewIsOverSource())
+			{
+				KESCMDrawEventHandler::sSrcMarksTempHidden = kTrue;
+				KESCMInvalidateDB(KESCMDrawEventHandler::sSrcDB);	// Source(sSrcDB)を再描画
+			}
+		}
+
 		if (e->ShiftKeyDown() && e->CmdKeyDown() && !e->OptionAltKeyDown())
 		{
 			// Shift＋Ctrl＋ミドル押下: KESCMパネルの表示/非表示トグル。表示時、パネルがフローティングなら
@@ -1053,18 +1107,34 @@ IEventDispatcher::EventTypeList KESCMPeekWatcher::WatchEvent(IEvent* e)
 		}
 		else if (!e->ShiftKeyDown() && !e->CmdKeyDown() && !e->OptionAltKeyDown())
 		{
-			// シングル動作(修飾キーなしミドル押下中): 全マーク(リング＋変更数)をパネルで選択中の
-			// 不透明度(25%/75%)で表示し、ハンドツールに切替えて「枠を見ながら掴んで移動」できるようにする。
-			// 離す(kMButtonUp)と非表示＋不透明度を基準値へ戻す。
-			// マークが何も無い(エントリ無し)時は反応しない=素のミドルクリックを邪魔しない。
+			// シングル動作(修飾キーなしミドル押下中)。マークが何も無い(エントリ無し)時は反応しない=
+			// 素のミドルクリックを邪魔しない。
 			const bool16 haveContent = !KESCMDrawEventHandler::sEntries.empty();
 			if (haveContent)
 			{
-				sSingleShowing = kTrue;
-				KESCMDrawEventHandler::sMarkScreenOpacity = KESCMDrawEventHandler::SelectedMarkOpacity();	// パネルの 25%/75%
-				KESCMDrawEventHandler::sMarksVisible = kTrue;	// 押下中だけ枠等を表示
-				KESCMEnterHandTool();	// 枠を見ながら掴んで移動
-				KESCMInvalidateMarksDoc();
+				if (KESCMDrawEventHandler::sAlwaysShowMarks)
+				{
+					// 「Hold to Hide Marks」モード ON(極性反転): 常時表示の枠は上で sMarksTempHidden により
+					// 既に隠している。ここではハンドツールへ切替え、枠の無い素の状態で掴んで移動できるように
+					// する(sMarksVisible は立てない=モードの常時表示/一時退避を上書きしないため)。
+					KESCMEnterHandTool();
+				}
+				else
+				{
+					// 従来動作(モード OFF): ミドル押下中だけ全マーク(リング＋変更数)をパネルで選択中の
+					// 不透明度(25%/75%)で一時表示(reveal)する。離す(kMButtonUp)と非表示＋不透明度を基準値へ戻す。
+					// ★Target 窓の上で押したときだけ reveal する(Source や無関係な窓で押しても Target 枠は
+					//   出さない。ユーザー指定 2026-07-10)。ハンドツール(掴んで移動)は窓を問わず有効にしておく
+					//   =パン操作は汎用なので、どのレイアウト窓でもミドルで掴んで動かせるままにする。
+					if (KESCMFrontViewIsOverTarget())
+					{
+						sSingleShowing = kTrue;
+						KESCMDrawEventHandler::sMarkScreenOpacity = KESCMDrawEventHandler::SelectedMarkOpacity();	// パネルの 25%/75%
+						KESCMDrawEventHandler::sMarksVisible = kTrue;	// 押下中だけ枠等を表示
+						KESCMInvalidateMarksDoc();
+					}
+					KESCMEnterHandTool();	// 枠の有無に関わらず掴んで移動できるように
+				}
 			}
 		}
 		// (その他の組み合わせ(Shift+Ctrl ミドル等)や、Shift/Ctrl 系で arm 未済 → 何もしない=素のミドルを邪魔しない。
@@ -1075,6 +1145,19 @@ IEventDispatcher::EventTypeList KESCMPeekWatcher::WatchEvent(IEvent* e)
 	{
 		// ミドルを離したら、ハンドに切替えていた場合は元のツールへ戻す(シングル/ダブル共通)。
 		KESCMRestoreTool();
+
+		// 「Hold to Hide Marks」モードで押下中に隠していた常時表示の枠を戻す(離すと再表示)。押した窓に応じて
+		// Target/Source どちらか(または両方)が立っている。モード OFF なら両方 kFalse なので無影響。
+		if (KESCMDrawEventHandler::sMarksTempHidden)
+		{
+			KESCMDrawEventHandler::sMarksTempHidden = kFalse;
+			KESCMInvalidateMarksDoc();	// Target(sDB)を再描画
+		}
+		if (KESCMDrawEventHandler::sSrcMarksTempHidden)
+		{
+			KESCMDrawEventHandler::sSrcMarksTempHidden = kFalse;
+			KESCMInvalidateDB(KESCMDrawEventHandler::sSrcDB);	// Source(sSrcDB)を再描画
+		}
 
 		// CMYK比較(3キー+ミドル)で一時表示していたパネルを元の状態(閉/アイコン)へ戻す。
 		// 一時表示していなければ無害な no-op。
@@ -1205,6 +1288,8 @@ void KESCMDoArmMousePeek(IDataBase* targetDB, IDataBase* sourceDB)
 	sPeekArmed = kTrue;
 	sPeekActive = kFalse;			// 覗き状態を初期化
 	sSingleShowing = kFalse;
+	KESCMDrawEventHandler::sMarksTempHidden = kFalse;	// Hold to Hide Marks の一時退避も初期化(押下中フラグの取りこぼし対策)
+	KESCMDrawEventHandler::sSrcMarksTempHidden = kFalse;	// Source 側の一時退避も初期化
 	KESCMDrawEventHandler::sMarksVisible = kFalse;	// 既定(非表示)へ。arm 中も枠は押下中だけ表示
 }
 
@@ -1221,6 +1306,8 @@ void KESCMDoDisarmMousePeek(IDataBase* db)
 	sPeekSourceDB = nil;
 	sPeekActive = kFalse;
 	sSingleShowing = kFalse;
+	KESCMDrawEventHandler::sMarksTempHidden = kFalse;	// Hold to Hide Marks の一時退避を解除
+	KESCMDrawEventHandler::sSrcMarksTempHidden = kFalse;	// Source 側の一時退避も解除
 	KESCMDrawEventHandler::sMarksVisible = kFalse;	// 既定(非表示)のまま
 	KESCMDrawEventHandler::DropAllOrig();	// sShowOriginal も OFF にし、キャッシュを解放
 
@@ -1301,6 +1388,8 @@ void KESCMHandleDocsClosed()
 		sPeekSourceDB  = nil;
 		sPeekActive    = kFalse;
 		sSingleShowing = kFalse;
+		KESCMDrawEventHandler::sMarksTempHidden = kFalse;	// Hold to Hide Marks の一時退避も解除
+		KESCMDrawEventHandler::sSrcMarksTempHidden = kFalse;	// Source 側の一時退避も解除
 		KESCMDrawEventHandler::sMarksVisible = kFalse;
 		changed = kTrue;
 

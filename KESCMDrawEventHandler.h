@@ -148,6 +148,21 @@ public:
 	// でも番号がズレていれば描く(隠しが無ければ現在番号と一致して何も描かない)。
 	static bool16 sShowOldNumbers;
 
+	// 「Hold to Hide Marks」トグル(フライアウトのチェック式。枠表示の極性反転)。★既定=kFalse。
+	// ON の間、画面では枠(リング＋変更数)を「常時」表示し、ミドルボタン押下中だけ sMarksTempHidden で
+	// 一時的に隠す(離すと戻る)=既定動作(非表示・押下中だけ表示)の逆。画面のみの挙動で、印刷/PDF への
+	// 出力は sPrintMarks が独立して決める(下の wantMarks では !printing のときだけ効かせる)。不透明度は
+	// パネル選択の 25%/75%(KESCMBaseScreenOpacity が sAlwaysShowMarks ON も選択不透明度を返す)。
+	static bool16 sAlwaysShowMarks;
+	// Hold to Hide Marks モード中、ミドルボタンを押している間だけ kTrue(常時表示の枠を一時退避)。離すと kFalse。
+	// KESCMPeek.cpp の WatchEvent(kMButtonDn/Up)が上下させる。モード OFF の間は常に kFalse で無影響。
+	// ★これは Target 窓上でミドルを押したときだけ立てる(押した窓の枠だけ隠す=ウィンドウ別)。
+	static bool16 sMarksTempHidden;
+	// sMarksTempHidden の Source 版。「Show Marks on Source」ON かつ「Hold to Hide Marks」ON のとき、
+	// Source のレイアウト窓上でミドルを押している間だけ kTrue(その間だけ Source 側の常時表示枠を画面で隠す)。
+	// 印刷は Source 枠を常に出す仕様なので影響しない(描画側で !printing ゲート)。
+	static bool16 sSrcMarksTempHidden;
+
 	// ★サムネイル実験トグル(2026-07-06)。kTrue の間、Pagesパネルのサムネイル生成(view無し・kPreviewMode)
 	// にも枠を描く(通常は sPrintMarks/sMarksVisible が OFF だと出ないが、サムネイルは isThumb で強制ON・
 	// 太めの固定比率半径・不透明100%)。加えて比較後に KESCMTryRefreshPagesPanelThumbnails で既表示分の

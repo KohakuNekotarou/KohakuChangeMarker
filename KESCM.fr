@@ -263,6 +263,17 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKESCMPrintMarksMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
+		// "Hold to Hide Marks" on the panel flyout (popup) menu. Check-mark toggle that inverts the
+		// polarity of the marks display: while ON, the comparison marks are kept visible on screen at
+		// all times, and holding the middle button (any reveal/peek gesture) temporarily HIDES them —
+		// releasing shows them again (the default is the opposite: marks are hidden and the middle
+		// button reveals them while held). Screen-only: printing is still governed independently by
+		// "Print comparison marks". The check mark comes from UpdateActionStates (kCustomEnabling).
+		kKESCMPopupHoldToHideMarksActionID,
+		kKESCMPopupMenuPath,
+		kKESCMHoldToHideMarksMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
 		// "Marks opacity" submenu containing "25%" and "75%". The two children act as a radio pair
 		// (mutually exclusive): UpdateActionStates (kCustomEnabling) puts the check mark on whichever
 		// opacity is currently selected. Replaces the former panel opacity radios (2026-07-10). The
@@ -400,6 +411,15 @@ resource ActionDef (kSDKDefActionResourceID)
 		kKESCMActionComponentBoss,
 		kKESCMPopupPrintMarksActionID,
 		kKESCMPrintCheckKey,				// "Print comparison marks" (same label as the former panel checkbox)
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates supplies the check mark (kSelectedAction)
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		kKESCMActionComponentBoss,
+		kKESCMPopupHoldToHideMarksActionID,
+		kKESCMHoldToHideMarksMenuKey,
 		kOtherActionArea,
 		kNormalAction,
 		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates supplies the check mark (kSelectedAction)
