@@ -132,6 +132,12 @@ void		KESCMToggleStartStop();
 // 実体は KESCMPanelObserver.cpp。
 void		KESCMTogglePrintMarks();
 
+// 枠の不透明度を 25%(op25=kTrue)/75%(kFalse)に設定(旧パネルの opacity ラジオ→2026-07-10 フライアウト
+// メニュー化)。現在の印刷フラグ(KESCMGetPrintMarks)を維持したまま KESCMDoSetPrintMarks を呼ぶ。
+// フライアウト項目 kKESCMPopupOpacity25ActionID / kKESCMPopupOpacity75ActionID の DoAction から呼ぶ。
+// 実体は KESCMPanelObserver.cpp。
+void		KESCMSetMarkOpacity25(bool16 op25);
+
 // パネルのステータス行を更新する(KESCMPanelObserver::SetStatus と同じ処理を自由関数として公開)。
 // パネルが隠れていてもセッション状態は覚えておき、再表示時に復元する。forceRedrawNow=kTrue なら、
 // この後にブロッキング処理が続く場合でも次のイベントループを待たずに今すぐ描画する

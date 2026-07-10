@@ -248,6 +248,12 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKESCMStartStopMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
+		// Separator below Start (path ending in ":-" renders a menu separator; no ActionDef needed).
+		kKESCMPopupSep1ActionID,
+		kKESCMPopupMenuPath ":-",
+		kKESCMSep1MenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
 		// "Print comparison marks" on the panel flyout (popup) menu. Check-mark toggle:
 		// while ON, the comparison marks are printed (and stay visible on screen); OFF is
 		// screen-only. This replaces the former panel checkbox (2026-07-10). The check mark
@@ -255,6 +261,28 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKESCMPopupPrintMarksActionID,
 		kKESCMPopupMenuPath,
 		kKESCMPrintMarksMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
+		// "Marks opacity" submenu containing "25%" and "75%". The two children act as a radio pair
+		// (mutually exclusive): UpdateActionStates (kCustomEnabling) puts the check mark on whichever
+		// opacity is currently selected. Replaces the former panel opacity radios (2026-07-10). The
+		// opacity applies to the middle-button display, the always-on screen display while printing is
+		// ON, and the print output.
+		// Submenu parent node: actionID 0 + path ending in a delimiter creates the "Marks opacity"
+		// submenu at this position in the flyout (Adobe idiom, see buttonui/incopyexportui .fr).
+		0,
+		kKESCMOpacitySubmenuPath ":",
+		kKESCMOpacitySubmenuMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
+		kKESCMPopupOpacity25ActionID,
+		kKESCMOpacitySubmenuPath,
+		kKESCMOpacity25SubMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
+		kKESCMPopupOpacity75ActionID,
+		kKESCMOpacitySubmenuPath,
+		kKESCMOpacity75SubMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
 		// "Show Marks on Source" on the panel flyout (popup) menu. Check-mark toggle:
@@ -302,6 +330,12 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKESCMPopupIgnorePageNumActionID,
 		kKESCMPopupMenuPath,
 		kKESCMIgnorePageNumMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
+		// Separator above How to Use (path ending in ":-" renders a menu separator; no ActionDef needed).
+		kKESCMPopupSep2ActionID,
+		kKESCMPopupMenuPath ":-",
+		kKESCMSep2MenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
 		// "How to Use" on the panel flyout (popup) menu.
@@ -369,6 +403,24 @@ resource ActionDef (kSDKDefActionResourceID)
 		kOtherActionArea,
 		kNormalAction,
 		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates supplies the check mark (kSelectedAction)
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		kKESCMActionComponentBoss,
+		kKESCMPopupOpacity25ActionID,
+		kKESCMOpacity25Key,					// "Marks opacity 25%" (same label as the former panel radio)
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates checks whichever opacity is selected (radio-style)
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		kKESCMActionComponentBoss,
+		kKESCMPopupOpacity75ActionID,
+		kKESCMOpacity75Key,					// "Marks opacity 75%"
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates checks whichever opacity is selected (radio-style)
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 
@@ -567,7 +619,7 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 	kKESCMPanelWidgetID,			// WidgetID
 	kPMRsrcID_None,					// RsrcID
 	kBindNone,						// Binding
-	0, 0, 192, 198,					// Frame: left, top, right, bottom (イラストをステータステキスト横=右へ移した分、縦を40px詰めた)
+	0, 0, 192, 136,					// Frame: left, top, right, bottom (イラストをステータステキスト横=右へ移した分、縦を40px詰めた)
 	kTrue, kTrue,					// Visible, Enabled
 	kFalse,							// Erase background
 	kInterfacePaletteFill,			// Erase to color
@@ -598,51 +650,12 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 			kInvalidWidgetID,
 		),
 
-		// Separator.
-		SeparatorWidget
-		(
-			kInvalidWidgetID, kPMRsrcID_None,
-			kBindLeft | kBindRight | kBindTop,
-			Frame(0, 48, 192, 50)
-			kTrue, kTrue,
-		),
+		// (Target/Source 下の区切り線は 2026-07-10 に撤去。以下を 8px 上へ詰めた。)
 
-		// (Start / Stop と Print comparison marks は 2026-07-10 にパネルからフライアウトメニュー項目
-		//  kKESCMPopupStartStopActionID / kKESCMPopupPrintMarksActionID へ移行。ボタン/チェックボックスは
-		//  撤去し、以下を上へ詰めた。)
-
-		// Marks opacity (25% / 75%). Applies to the middle-button display, the always-on screen
-		// display while printing is ON, and the print output. Always enabled; default 25% (set by
-		// the observer).
-		ClusterPanelWidget
-		(
-			kKESCMOpacityClusterWidgetID,
-			kPMRsrcID_None,
-			kBindLeft | kBindTop,
-			Frame(12, 56, 180, 106)
-			kTrue, kTrue,
-			"",
-			{
-				RadioButtonWidget
-				(
-					kKESCMOpacity25RadioWidgetID,
-					kSysRadioButtonPMRsrcId,
-					kBindNone,
-					Frame(6, 4, 160, 20)
-					kTrue, kTrue,
-					kKESCMOpacity25Key,
-				),
-				RadioButtonWidget
-				(
-					kKESCMOpacity75RadioWidgetID,
-					kSysRadioButtonPMRsrcId,
-					kBindNone,
-					Frame(6, 24, 160, 40)
-					kTrue, kTrue,
-					kKESCMOpacity75Key,
-				),
-			}
-		),
+		// (Start / Stop・Print comparison marks・Marks opacity 25%/75% は 2026-07-10 にパネルから
+		//  フライアウトメニュー項目へ移行(kKESCMPopupStartStopActionID / kKESCMPopupPrintMarksActionID /
+		//  kKESCMPopupOpacity25ActionID / kKESCMPopupOpacity75ActionID)。ボタン/チェック/ラジオは撤去し、
+		//  以下を上へ詰めた。パネルに残るのは Target/Source・セパレータ・Prev/Next・ステータス+アイコン。)
 
 		// Change navigation: jump the Target layout view to the previous / next page that carries a
 		// KESCM mark (changed ring, Added border, or overflow "/"). Handled by KESCMChangeNav.cpp.
@@ -651,7 +664,7 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 			kKESCMPrevChangeButtonWidgetID,
 			kSysButtonPMRsrcId,
 			kBindLeft | kBindTop,
-			Frame(12, 110, 94, 132)
+			Frame(12, 48, 94, 70)
 			kTrue, kTrue,
 			kKESCMPrevChangeKey,
 		),
@@ -660,7 +673,7 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 			kKESCMNextChangeButtonWidgetID,
 			kSysButtonPMRsrcId,
 			kBindLeft | kBindTop,
-			Frame(98, 110, 180, 132)
+			Frame(98, 48, 180, 70)
 			kTrue, kTrue,
 			kKESCMNextChangeKey,
 		),
@@ -672,7 +685,7 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 			kKESCMIconOffWidgetID,
 			kKESCMIconOffResID, kKESCMPluginID,
 			kBindTop,
-			Frame(152, 158, 184, 190)	// 32×32・右寄せ・ステータステキスト帯(138-190)の下端に揃える。ON側と同座標
+			Frame(152, 96, 184, 128)	// 32×32・右寄せ・ステータステキスト帯(76-128)の下端に揃える。ON側と同座標
 			kTrue, kTrue,
 			kADBEIconSuiteButtonType,
 		),
@@ -681,7 +694,7 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 			kKESCMIconOnWidgetID,
 			kKESCMIconOnResID, kKESCMPluginID,
 			kBindTop,
-			Frame(152, 158, 184, 190)	// 32×32・右寄せ・ステータステキスト帯(138-190)の下端に揃える。OFF側と同座標
+			Frame(152, 96, 184, 128)	// 32×32・右寄せ・ステータステキスト帯(76-128)の下端に揃える。OFF側と同座標
 			kFalse, kTrue,
 			kADBEIconSuiteButtonType,
 		),
@@ -692,7 +705,7 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 			kKESCMStatusTextWidgetID,
 			kPMRsrcID_None,
 			kBindLeft | kBindRight | kBindTop,
-			Frame(8, 138, 148, 190)		// 右148まで=イラスト(152-184)と横並び(4px間隔)
+			Frame(8, 76, 148, 128)		// 右148まで=イラスト(152-184)と横並び(4px間隔)
 			kTrue, kTrue,
 			kAlignLeft, kDontEllipsize, kTrue,
 			kInvalidWidgetID,

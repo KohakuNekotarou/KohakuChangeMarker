@@ -57,14 +57,9 @@ public:
 private:
 	void AttachWidget(const InterfacePtr<IPanelControlData>& pcd, const WidgetID& wid, const PMIID& iid);
 	void DetachWidget(const InterfacePtr<IPanelControlData>& pcd, const WidgetID& wid, const PMIID& iid);
-	IControlView* FindW(const WidgetID& wid);
 
-	void ApplyPrintMarks();
 	void UpdateInfoDisplay();
 	void SetStatus(const PMString& s);
-
-	bool16 IsSelected(const WidgetID& wid);
-	void   SetSelected(const WidgetID& wid, bool16 sel);	// チェックボックス/ラジオを選択・解除(通知なし)
 };
 
 CREATE_PMINTERFACE(KESCMPanelObserver, kKESCMPanelObserverImpl)
@@ -151,23 +146,16 @@ void KESCMPanelObserver::AutoAttach()
 
 	this->AttachWidget(pcd, kKESCMPrevChangeButtonWidgetID,   IBooleanControlData::kDefaultIID);
 	this->AttachWidget(pcd, kKESCMNextChangeButtonWidgetID,   IBooleanControlData::kDefaultIID);
-	this->AttachWidget(pcd, kKESCMOpacity25RadioWidgetID,     ITriStateControlData::kDefaultIID);
-	this->AttachWidget(pcd, kKESCMOpacity75RadioWidgetID,     ITriStateControlData::kDefaultIID);
 	// イラスト(ON/OFF アイコン、どちらか一方だけが可視)のクリックで「このプラグインについて」の配布元
 	// URL を開く。RollOverIconButtonWidget ベースのボスは ITriStateControlData のクリックで
 	// kTrueStateMessage を送る(pictureicon サンプル PicIcoRollOverButtonObserver と同じ流儀)。
 	this->AttachWidget(pcd, kKESCMIconOnWidgetID,             ITriStateControlData::kDefaultIID);
 	this->AttachWidget(pcd, kKESCMIconOffWidgetID,            ITriStateControlData::kDefaultIID);
 
-	// 不透明度ラジオを現在の共有状態へ復元する。パネルを隠して再表示すると AutoAttach が再実行される
-	// ため、固定の既定値ではなく engine の実状態(KESCMGetMarkOpacity25)を読んで反映する。
-	// RadioButtonWidget は .fr で初期選択状態を持たないので、ここで必ずどちらか一方だけを選択する。
-	// 不透明度ラジオはミドル押下表示にも効くため、印刷ON/OFFに依らず常に有効(グレーアウトしない)。
-	// (印刷ON/OFF のチェックボックスは 2026-07-10 にフライアウト kKESCMPopupPrintMarksActionID へ移行。
-	//  その状態は UpdateActionStates が KESCMGetPrintMarks を読んでチェックマークで反映する。)
-	const bool16 op25 = KESCMGetMarkOpacity25();
-	this->SetSelected(kKESCMOpacity25RadioWidgetID, op25);
-	this->SetSelected(kKESCMOpacity75RadioWidgetID, !op25);
+	// (印刷ON/OFF と 不透明度 25%/75% は 2026-07-10 にフライアウトメニューへ移行:
+	//  kKESCMPopupPrintMarksActionID / kKESCMPopupOpacity25ActionID / kKESCMPopupOpacity75ActionID。
+	//  それらの状態は UpdateActionStates が engine 実状態(KESCMGetPrintMarks/KESCMGetMarkOpacity25)を
+	//  読んでチェックマークで反映するので、ここでパネルウィジェットを復元する必要はなくなった。)
 
 	this->UpdateInfoDisplay();		// 開始済みなら Target/Source 名と ON アイコン、未開始なら名前なし+OFF
 
@@ -196,8 +184,6 @@ void KESCMPanelObserver::AutoDetach()
 
 	this->DetachWidget(pcd, kKESCMPrevChangeButtonWidgetID,   IBooleanControlData::kDefaultIID);
 	this->DetachWidget(pcd, kKESCMNextChangeButtonWidgetID,   IBooleanControlData::kDefaultIID);
-	this->DetachWidget(pcd, kKESCMOpacity25RadioWidgetID,     ITriStateControlData::kDefaultIID);
-	this->DetachWidget(pcd, kKESCMOpacity75RadioWidgetID,     ITriStateControlData::kDefaultIID);
 	this->DetachWidget(pcd, kKESCMIconOnWidgetID,             ITriStateControlData::kDefaultIID);
 	this->DetachWidget(pcd, kKESCMIconOffWidgetID,            ITriStateControlData::kDefaultIID);
 }
@@ -222,12 +208,6 @@ void KESCMPanelObserver::DetachWidget(const InterfacePtr<IPanelControlData>& pcd
 		subject->DetachObserver(this, iid);
 }
 
-IControlView* KESCMPanelObserver::FindW(const WidgetID& wid)
-{
-	InterfacePtr<IPanelControlData> pcd(this, UseDefaultIID());
-	return (pcd != nil) ? pcd->FindWidget(wid) : nil;
-}
-
 //----------------------------------------------------------------------------------------
 // Update のディスパッチ
 //----------------------------------------------------------------------------------------
@@ -248,17 +228,7 @@ void KESCMPanelObserver::Update(const ClassID& theChange, ISubject* theSubject, 
 			// (Start/Stop はパネルボタン→フライアウトメニュー kKESCMPopupStartStopActionID へ移行 2026-07-10)
 			case kKESCMPrevChangeButtonWidgetID:  KESCMGotoPrevChange(); break;
 			case kKESCMNextChangeButtonWidgetID:  KESCMGotoNextChange(); break;
-			// 25%/75% の切替: ミドル押下表示にも効くため、印刷ON/OFFに依らず常に即反映する。
-			// (印刷ON/OFF 自体はフライアウト kKESCMPopupPrintMarksActionID へ移行 2026-07-10。ここでは
-			//  不透明度だけを変え、印刷フラグは現在値を維持する=ApplyPrintMarks 内で KESCMGetPrintMarks を読む。)
-			case kKESCMOpacity25RadioWidgetID:
-				this->SetSelected(kKESCMOpacity75RadioWidgetID, kFalse);	// 相互排他(手動)
-				this->ApplyPrintMarks();
-				break;
-			case kKESCMOpacity75RadioWidgetID:
-				this->SetSelected(kKESCMOpacity25RadioWidgetID, kFalse);	// 相互排他(手動)
-				this->ApplyPrintMarks();
-				break;
+			// (印刷ON/OFF と 不透明度 25%/75% はフライアウトメニューへ移行 2026-07-10。ここでは扱わない。)
 			// イラストクリック → 「このプラグインについて」の配布元URLをブラウザで開く。
 			case kKESCMIconOnWidgetID:
 			case kKESCMIconOffWidgetID:
@@ -322,16 +292,16 @@ void KESCMToggleStartStop()
 	KESCMRefreshPanel();	// Target/Source 名・アイコン・Prev/Next 有効無効を arm 状態へ更新
 }
 
-void KESCMPanelObserver::ApplyPrintMarks()
+// KESCMSetMarkOpacity25(KESCMCore.h で宣言) — 枠の不透明度を 25%/75% に設定。旧パネルの opacity ラジオの
+// 代わりに、フライアウト項目 kKESCMPopupOpacity25ActionID / kKESCMPopupOpacity75ActionID の DoAction から
+// 呼ぶ。現在の印刷フラグ(KESCMGetPrintMarks)を維持したまま不透明度だけを反映する。ラジオ相当の見た目
+// (選択中の項目に✓)はメニューを開いたときに UpdateActionStates が KESCMGetMarkOpacity25 を読んで反映する。
+void KESCMSetMarkOpacity25(bool16 op25)
 {
-	// 不透明度ラジオ(25%/75%)の切替から呼ばれる。アクティブ文書は再描画にだけ使う(nil でも可)。
-	// ★印刷フラグはもうパネルには無い(フライアウトへ移行)ので、現在のエンジン状態 KESCMGetPrintMarks を
-	//   維持したまま、不透明度だけをラジオの選択で更新する(ラジオ操作で印刷 ON/OFF が変わらないように)。
 	IDocument* active = KESCMActiveDoc();
 	IDataBase* db = (active != nil) ? ::GetUIDRef(active).GetDataBase() : nil;
 
 	const bool16 flag = KESCMGetPrintMarks();	// 現在の印刷 ON/OFF を維持
-	const bool16 op25 = this->IsSelected(kKESCMOpacity25RadioWidgetID);
 	KESCMDoSetPrintMarks(flag, op25, db);
 
 	PMString report;
@@ -339,7 +309,7 @@ void KESCMPanelObserver::ApplyPrintMarks()
 	report.Append(op25 ? "kescm: marks opacity 25%" : "kescm: marks opacity 75%");
 	report.Append(flag ? "; will print (and stay visible on screen)"
 	                   : "; screen-only (won't print)");
-	this->SetStatus(report);
+	KESCMSetStatus(report);
 }
 
 // KESCMTogglePrintMarks(KESCMCore.h で宣言) — 印刷マーク ON/OFF トグル。旧パネルのチェックボックスの
@@ -434,29 +404,6 @@ void KESCMPanelObserver::UpdateInfoDisplay()
 void KESCMPanelObserver::SetStatus(const PMString& s)
 {
 	KESCMSetStatus(s);
-}
-
-bool16 KESCMPanelObserver::IsSelected(const WidgetID& wid)
-{
-	IControlView* cv = this->FindW(wid);
-	if (cv == nil)
-		return kFalse;
-	InterfacePtr<ITriStateControlData> ts(cv, UseDefaultIID());
-	return (ts != nil) ? ts->IsSelected() : kFalse;
-}
-
-void KESCMPanelObserver::SetSelected(const WidgetID& wid, bool16 sel)
-{
-	IControlView* cv = this->FindW(wid);
-	if (cv == nil)
-		return;
-	InterfacePtr<ITriStateControlData> ts(cv, UseDefaultIID());
-	if (ts == nil)
-		return;
-	if (sel)
-		ts->Select(kTrue /*invalidate*/, kFalse /*don't notify*/);
-	else
-		ts->Deselect(kTrue /*invalidate*/, kFalse /*don't notify*/);
 }
 
 //========================================================================================

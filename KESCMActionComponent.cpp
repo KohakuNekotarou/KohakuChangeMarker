@@ -111,6 +111,15 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 			KESCMTogglePrintMarks();
 			break;
 
+		// フライアウトの「Marks opacity 25% / 75%」(ラジオ風): 選んだ方の不透明度に設定する。
+		// 実体は KESCMPanelObserver.cpp の自由関数(印刷フラグは維持し不透明度だけ変更)。
+		case kKESCMPopupOpacity25ActionID:
+			KESCMSetMarkOpacity25(kTrue);
+			break;
+		case kKESCMPopupOpacity75ActionID:
+			KESCMSetMarkOpacity25(kFalse);
+			break;
+
 		case kKESCMPopupAboutScriptActionID:
 			this->DoAboutScript();
 			break;
@@ -216,6 +225,22 @@ void KESCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionSta
 			int16 actionState = kEnabledAction;
 			if (KESCMGetPrintMarks())
 				actionState |= kSelectedAction;	// ON ならチェックマーク
+			listToUpdate->SetNthActionState(i, actionState);
+		}
+		else if (action == kKESCMPopupOpacity25ActionID)
+		{
+			// ラジオ風: 現在 25% ならこの項目に✓(75% と相互排他)。
+			int16 actionState = kEnabledAction;
+			if (KESCMGetMarkOpacity25())
+				actionState |= kSelectedAction;
+			listToUpdate->SetNthActionState(i, actionState);
+		}
+		else if (action == kKESCMPopupOpacity75ActionID)
+		{
+			// ラジオ風: 現在 75%(=!25%)ならこの項目に✓。
+			int16 actionState = kEnabledAction;
+			if (!KESCMGetMarkOpacity25())
+				actionState |= kSelectedAction;
 			listToUpdate->SetNthActionState(i, actionState);
 		}
 		else if (action == kKESCMPopupHideUnchangedActionID)

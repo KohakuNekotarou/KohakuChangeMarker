@@ -162,7 +162,11 @@ DECLARE_PMID(kActionIDSpace, kKESCMPageMapToggleActionID, kKESCMPrefix + 11)	// 
 DECLARE_PMID(kActionIDSpace, kKESCMPopupIgnorePageNumActionID, kKESCMPrefix + 12)	// パネルのフライアウトの「Ignore Page Number Marker」チェック式トグル(ON=ノンブル(自動ページ番号)マーカーを含むフレームを比較から除外。既定ON。KESCMPageNumberMarker.cpp)
 DECLARE_PMID(kActionIDSpace, kKESCMPopupStartStopActionID, kKESCMPrefix + 13)	// パネルのフライアウト先頭の「Start / Stop」(比較の開始/解除。旧トグルボタンをメニュー化。arm 状態で名前が Start↔Stop に動的変化=kCustomEnabling+SetNthActionName。KESCMPanelObserver.cpp の KESCMToggleStartStop)
 DECLARE_PMID(kActionIDSpace, kKESCMPopupPrintMarksActionID, kKESCMPrefix + 14)	// パネルのフライアウトの「Print comparison marks」チェック式トグル(旧パネルのチェックボックスをメニュー化。ON=マークを印刷し画面にも常時表示。KESCMPanelObserver.cpp の KESCMTogglePrintMarks)
-//DECLARE_PMID(kActionIDSpace, kKESCMActionID, kKESCMPrefix + 15)
+DECLARE_PMID(kActionIDSpace, kKESCMPopupOpacity25ActionID, kKESCMPrefix + 15)	// パネルのフライアウトの「Marks opacity 25%」(旧パネルの opacity ラジオをメニュー化。75% と相互排他=選択中の方に✓。KESCMPanelObserver.cpp の KESCMSetMarkOpacity25)
+DECLARE_PMID(kActionIDSpace, kKESCMPopupOpacity75ActionID, kKESCMPrefix + 16)	// パネルのフライアウトの「Marks opacity 75%」(25% と相互排他)
+DECLARE_PMID(kActionIDSpace, kKESCMPopupSep1ActionID, kKESCMPrefix + 17)	// フライアウト: Start の下の区切り線(MenuDef のパス末尾 ":-"。ActionDef 不要・DoAction 不要=一意なIDだけ要る)
+DECLARE_PMID(kActionIDSpace, kKESCMPopupSep2ActionID, kKESCMPrefix + 18)	// フライアウト: How to Use の上の区切り線
+//DECLARE_PMID(kActionIDSpace, kKESCMActionID, kKESCMPrefix + 19)
 //DECLARE_PMID(kActionIDSpace, kKESCMActionID, kKESCMPrefix + 14)
 //DECLARE_PMID(kActionIDSpace, kKESCMActionID, kKESCMPrefix + 15)
 //DECLARE_PMID(kActionIDSpace, kKESCMActionID, kKESCMPrefix + 16)
@@ -185,9 +189,9 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMSourceTextWidgetID, kKESCMPrefix + 26)
 // kWidgetIDSpace +28 は現在空き(旧 kKESCMClearButtonWidgetID; 同上)
 // kWidgetIDSpace +29 は現在未使用(旧 kKESCMPrintCheckWidgetID; 印刷ON/OFF チェックボックスは 2026-07-10 に
 //   フライアウト「Print comparison marks」メニュー項目=kKESCMPopupPrintMarksActionID へ移行しパネルから撤去)
-DECLARE_PMID(kWidgetIDSpace, kKESCMOpacityClusterWidgetID, kKESCMPrefix + 30)
-DECLARE_PMID(kWidgetIDSpace, kKESCMOpacity25RadioWidgetID, kKESCMPrefix + 31)
-DECLARE_PMID(kWidgetIDSpace, kKESCMOpacity75RadioWidgetID, kKESCMPrefix + 32)	// 旧 kKESCMOpacityNormalRadioWidgetID(Normal→75% に改称。ID値は同じ)
+// kWidgetIDSpace +30〜+32 は現在未使用(旧 kKESCMOpacityClusterWidgetID / kKESCMOpacity25RadioWidgetID /
+//   kKESCMOpacity75RadioWidgetID; 不透明度 25%/75% ラジオは 2026-07-10 にフライアウト
+//   kKESCMPopupOpacity25ActionID / kKESCMPopupOpacity75ActionID へ移行しパネルから撤去)
 // kWidgetIDSpace +33 は現在空き(旧 kKESCMHintTextWidgetID; 説明文はパネルから撤去しフライアウト「使い方」へ移動)
 DECLARE_PMID(kWidgetIDSpace, kKESCMIconOnWidgetID, kKESCMPrefix + 34)
 DECLARE_PMID(kWidgetIDSpace, kKESCMIconOffWidgetID, kKESCMPrefix + 35)
@@ -267,14 +271,21 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMNextChangeButtonWidgetID, kKESCMPrefix + 39)	
 #define kKESCMInternalPopupMenuNameKey	kKESCMStringPrefix "kKESCMInternalPopupMenuNameKey"
 #define kKESCMPopupMenuPath				kKESCMInternalPopupMenuNameKey
 
+// フライアウトの「Marks opacity」サブメニュー(中に 25% / 75%)。名前は英語リテラル(KESCM のメニュー名は
+// 全ロケール英語で統一)。子項目(25%/75%)はこの kKESCMOpacitySubmenuPath を親メニューパスとして指す。
+// 親ノードは MenuDef で actionID 0・パス末尾に区切り(kSDKDefDelimitMenuPath)を付けて宣言する
+// (Adobe 実例 open/components/buttonui FormFieldUIMenu.fr / incopyexportui と同じ流儀)。
+#define kKESCMOpacitySubmenuName		"Marks opacity"
+#define kKESCMOpacitySubmenuPath		kKESCMPopupMenuPath kSDKDefDelimitMenuPath kKESCMOpacitySubmenuName
+
 // パネルの文字列キー(KESCM_enUS.fr / KESCM_jaJP.fr でローカライズ)。
 #define kKESCMPanelTitleKey		kKESCMStringPrefix "kKESCMPanelTitleKey"
 #define kKESCMTargetLabelKey	kKESCMStringPrefix "kKESCMTargetLabelKey"	// パネルの "Target:" ラベル。リテラルだとシステム訳と衝突するため自前キーで持つ
 #define kKESCMSourceLabelKey	kKESCMStringPrefix "kKESCMSourceLabelKey"	// パネルの "Source:" ラベル。リテラル "Source:" は日本語ロケールで「スタイルソース :」に化けるため自前キーで持つ
 #define kKESCMStartButtonKey	kKESCMStringPrefix "kKESCMStartButtonKey"	// フライアウト「Start / Stop」項目の既定メニュー名(未開始=Start)。表示時は UpdateActionStates が arm 状態で Start↔Stop に動的差し替え(旧トグルボタンのキャプションキーを流用)
 #define kKESCMPrintCheckKey		kKESCMStringPrefix "kKESCMPrintCheckKey"	// フライアウト「Print comparison marks」トグルのメニュー名(旧パネルチェックボックスのキャプションキーを流用)
-#define kKESCMOpacity25Key		kKESCMStringPrefix "kKESCMOpacity25Key"
-#define kKESCMOpacity75Key		kKESCMStringPrefix "kKESCMOpacity75Key"	// 旧 kKESCMOpacityNormalKey(Normal→75% に改称)
+#define kKESCMOpacity25Key		kKESCMStringPrefix "kKESCMOpacity25Key"	// サブメニュー「Marks opacity」内の子項目名(="25%")
+#define kKESCMOpacity75Key		kKESCMStringPrefix "kKESCMOpacity75Key"	// サブメニュー「Marks opacity」内の子項目名(="75%")
 #define kKESCMPrevChangeKey		kKESCMStringPrefix "kKESCMPrevChangeKey"	// パネルの「◀ Prev」ボタンのキャプション(英語固定)
 #define kKESCMNextChangeKey		kKESCMStringPrefix "kKESCMNextChangeKey"	// パネルの「Next ▶」ボタンのキャプション(英語固定)
 #define kKESCMHintKey			kKESCMStringPrefix "kKESCMHintKey"
@@ -289,12 +300,17 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMNextChangeButtonWidgetID, kKESCMPrefix + 39)	
 // About this plug-in(12)。
 // ※メニュー名は日本語ロケールでも英語で統一(2026-07-04)。Split Target on Start(旧9.0)は撤去済み
 #define kKESCMStartStopMenuItemPosition		9.0	// 「Start / Stop」(比較開始/解除)をフライアウト先頭に。名前は arm 状態で動的に Start↔Stop
+#define kKESCMSep1MenuItemPosition			9.1	// Start の下の区切り線(パス末尾 ":-")
 #define kKESCMPrintMarksMenuItemPosition	9.2	// チェック式トグル「Print comparison marks」を Start/Stop の直後に(旧パネルチェックボックスのメニュー化)
+#define kKESCMOpacitySubmenuMenuItemPosition	9.3	// 「Marks opacity」サブメニュー(中に 25% / 75%)
+#define kKESCMOpacity25SubMenuItemPosition	1.0	// サブメニュー「Marks opacity」内: 25%(選択中に✓)
+#define kKESCMOpacity75SubMenuItemPosition	2.0	// サブメニュー「Marks opacity」内: 75%(25% と相互排他)
 #define kKESCMShowSrcMarksMenuItemPosition	9.4	// チェック式トグル「Show Marks on Source」を先頭に
 #define kKESCMHideUnchangedMenuItemPosition	9.5	// チェック式トグル「Hide Unchanged Spreads」をその直後に
 #define kKESCMShowOldNumsMenuItemPosition	9.7	// チェック式トグル「Show Original Page Numbers」をその直後に
 #define kKESCMSyncViewsMenuItemPosition		9.8	// チェック式トグル「Sync Layout Views」をさらにその直後に
 #define kKESCMIgnorePageNumMenuItemPosition	9.9	// チェック式トグル「Ignore Page Number Marker」をさらにその直後に
+#define kKESCMSep2MenuItemPosition			9.95	// How to Use の上の区切り線(パス末尾 ":-")
 #define kKESCMUsageMenuItemPosition			10.0	// 「使い方」
 // ページパネルのページ右クリックメニュー(内部名 RtMenuPagesPanel、2026-07-05 実機確定)内の位置。
 // 本家項目の後ろ(末尾)に付ける。内部名は非翻訳キーなので全ロケール共通で効く。
