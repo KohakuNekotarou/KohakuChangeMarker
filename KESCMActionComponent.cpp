@@ -99,6 +99,18 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 			this->DoAbout();
 			break;
 
+		// フライアウト先頭の「Start / Stop」: 比較の開始/解除トグル(旧パネルボタン→2026-07-10 メニュー化)。
+		// 実体は KESCMPanelObserver.cpp の自由関数(arm 状態を見て開始 or 解除、実行後にパネル更新)。
+		case kKESCMPopupStartStopActionID:
+			KESCMToggleStartStop();
+			break;
+
+		// フライアウトの「Print comparison marks」: 印刷マーク ON/OFF トグル(旧パネルのチェックボックス
+		// →2026-07-10 メニュー化)。実体は KESCMPanelObserver.cpp の自由関数。
+		case kKESCMPopupPrintMarksActionID:
+			KESCMTogglePrintMarks();
+			break;
+
 		case kKESCMPopupAboutScriptActionID:
 			this->DoAboutScript();
 			break;
@@ -189,7 +201,24 @@ void KESCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionSta
 	for (int32 i = 0; i < listToUpdate->Length(); i++)
 	{
 		const ActionID action = listToUpdate->GetNthAction(i);
-		if (action == kKESCMPopupHideUnchangedActionID)
+		if (action == kKESCMPopupStartStopActionID)
+		{
+			// arm 状態でメニュー名を出し分け(arm 中=Stop / 未 arm=Start)。常に有効。
+			// (kSelectedAction は付けない=チェックマークではなく名前そのものを切り替える。)
+			const bool16 armed = KESCMIsArmed() && (KESCMArmedTargetDB() != nil);
+			PMString name(armed ? "Stop" : "Start");
+			name.SetTranslatable(kFalse);
+			listToUpdate->SetNthActionName(i, name);
+			listToUpdate->SetNthActionState(i, kEnabledAction);
+		}
+		else if (action == kKESCMPopupPrintMarksActionID)
+		{
+			int16 actionState = kEnabledAction;
+			if (KESCMGetPrintMarks())
+				actionState |= kSelectedAction;	// ON ならチェックマーク
+			listToUpdate->SetNthActionState(i, actionState);
+		}
+		else if (action == kKESCMPopupHideUnchangedActionID)
 		{
 			int16 actionState = kEnabledAction;
 			if (sHideUnchangedOn)

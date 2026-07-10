@@ -239,6 +239,24 @@ resource MenuDef (kSDKDefMenuResourceID)
 		// ("Split Target on Start" was removed 2026-07-04; mechanism preserved in
 		//  docs/ai-notes/kescm-split-target-mechanism.md and git history 69c4b07.)
 
+		// "Start / Stop" at the top of the panel flyout (popup) menu. Starts a comparison
+		// (idle) or stops/clears it (armed). This replaces the former Start/Stop panel button
+		// (2026-07-10). The label switches between "Start" and "Stop" via UpdateActionStates
+		// (kCustomEnabling + SetNthActionName) based on the shared armed state.
+		kKESCMPopupStartStopActionID,
+		kKESCMPopupMenuPath,
+		kKESCMStartStopMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
+		// "Print comparison marks" on the panel flyout (popup) menu. Check-mark toggle:
+		// while ON, the comparison marks are printed (and stay visible on screen); OFF is
+		// screen-only. This replaces the former panel checkbox (2026-07-10). The check mark
+		// comes from UpdateActionStates (kCustomEnabling). Opacity still follows the 25%/75% radios.
+		kKESCMPopupPrintMarksActionID,
+		kKESCMPopupMenuPath,
+		kKESCMPrintMarksMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
 		// "Show Marks on Source" on the panel flyout (popup) menu. Check-mark toggle:
 		// while ON, the same comparison rings are also drawn on the corresponding pages of the
 		// Source document — always visible (independent of the middle button), shown in
@@ -335,6 +353,24 @@ resource ActionDef (kSDKDefActionResourceID)
 		kDisableIfLowMem,					// enabling type
 		kInvalidInterfaceID,				// selection interface this action cares about
 		kSDKDefInvisibleInKBSCEditorFlag,	// KBSC editor visibility
+
+		kKESCMActionComponentBoss,
+		kKESCMPopupStartStopActionID,
+		kKESCMStartButtonKey,				// default menu name ("Start"); UpdateActionStates swaps to "Stop" when armed
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates supplies the dynamic Start/Stop label
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		kKESCMActionComponentBoss,
+		kKESCMPopupPrintMarksActionID,
+		kKESCMPrintCheckKey,				// "Print comparison marks" (same label as the former panel checkbox)
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates supplies the check mark (kSelectedAction)
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
 
 		kKESCMActionComponentBoss,
 		kKESCMPopupShowSrcMarksActionID,
@@ -531,7 +567,7 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 	kKESCMPanelWidgetID,			// WidgetID
 	kPMRsrcID_None,					// RsrcID
 	kBindNone,						// Binding
-	0, 0, 192, 252,					// Frame: left, top, right, bottom (イラストをステータステキスト横=右へ移した分、縦を40px詰めた)
+	0, 0, 192, 198,					// Frame: left, top, right, bottom (イラストをステータステキスト横=右へ移した分、縦を40px詰めた)
 	kTrue, kTrue,					// Visible, Enabled
 	kFalse,							// Erase background
 	kInterfacePaletteFill,			// Erase to color
@@ -571,29 +607,9 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 			kTrue, kTrue,
 		),
 
-		// Start / Stop toggle button. The observer flips the label between
-		// "Start" (idle) and "Stop" (armed/comparing) based on the shared state.
-		ButtonWidget
-		(
-			kKESCMToggleButtonWidgetID,
-			kSysButtonPMRsrcId,
-			kBindLeft | kBindRight | kBindTop,
-			Frame(12, 56, 180, 80)
-			kTrue, kTrue,
-			kKESCMStartButtonKey,
-		),
-
-		// Print marks checkbox.
-		CheckBoxWidget
-		(
-			kKESCMPrintCheckWidgetID,
-			kSysCheckBoxPMRsrcId,
-			kBindLeft | kBindTop,
-			Frame(12, 88, 180, 104)
-			kTrue, kTrue,
-			kAlignLeft,
-			kKESCMPrintCheckKey,
-		),
+		// (Start / Stop と Print comparison marks は 2026-07-10 にパネルからフライアウトメニュー項目
+		//  kKESCMPopupStartStopActionID / kKESCMPopupPrintMarksActionID へ移行。ボタン/チェックボックスは
+		//  撤去し、以下を上へ詰めた。)
 
 		// Marks opacity (25% / 75%). Applies to the middle-button display, the always-on screen
 		// display while printing is ON, and the print output. Always enabled; default 25% (set by
@@ -603,7 +619,7 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 			kKESCMOpacityClusterWidgetID,
 			kPMRsrcID_None,
 			kBindLeft | kBindTop,
-			Frame(12, 110, 180, 160)
+			Frame(12, 56, 180, 106)
 			kTrue, kTrue,
 			"",
 			{
@@ -635,7 +651,7 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 			kKESCMPrevChangeButtonWidgetID,
 			kSysButtonPMRsrcId,
 			kBindLeft | kBindTop,
-			Frame(12, 164, 94, 186)
+			Frame(12, 110, 94, 132)
 			kTrue, kTrue,
 			kKESCMPrevChangeKey,
 		),
@@ -644,7 +660,7 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 			kKESCMNextChangeButtonWidgetID,
 			kSysButtonPMRsrcId,
 			kBindLeft | kBindTop,
-			Frame(98, 164, 180, 186)
+			Frame(98, 110, 180, 132)
 			kTrue, kTrue,
 			kKESCMNextChangeKey,
 		),
@@ -656,7 +672,7 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 			kKESCMIconOffWidgetID,
 			kKESCMIconOffResID, kKESCMPluginID,
 			kBindTop,
-			Frame(152, 212, 184, 244)	// 32×32・右寄せ・ステータステキスト帯(192-244)の下端に揃える。ON側と同座標
+			Frame(152, 158, 184, 190)	// 32×32・右寄せ・ステータステキスト帯(138-190)の下端に揃える。ON側と同座標
 			kTrue, kTrue,
 			kADBEIconSuiteButtonType,
 		),
@@ -665,7 +681,7 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 			kKESCMIconOnWidgetID,
 			kKESCMIconOnResID, kKESCMPluginID,
 			kBindTop,
-			Frame(152, 212, 184, 244)	// 32×32・右寄せ・ステータステキスト帯(192-244)の下端に揃える。OFF側と同座標
+			Frame(152, 158, 184, 190)	// 32×32・右寄せ・ステータステキスト帯(138-190)の下端に揃える。OFF側と同座標
 			kFalse, kTrue,
 			kADBEIconSuiteButtonType,
 		),
@@ -676,7 +692,7 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 			kKESCMStatusTextWidgetID,
 			kPMRsrcID_None,
 			kBindLeft | kBindRight | kBindTop,
-			Frame(8, 192, 148, 244)		// 右148まで=イラスト(152-184)と横並び(4px間隔)
+			Frame(8, 138, 148, 190)		// 右148まで=イラスト(152-184)と横並び(4px間隔)
 			kTrue, kTrue,
 			kAlignLeft, kDontEllipsize, kTrue,
 			kInvalidWidgetID,

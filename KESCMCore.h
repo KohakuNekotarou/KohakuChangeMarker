@@ -120,6 +120,18 @@ void		KESCMHandleDocsClosed();
 // (再表示時に AutoAttach が反映する)。実体は KESCMPanelObserver.cpp。
 void		KESCMRefreshPanel();
 
+// 比較の開始/解除トグル(旧パネルの Start/Stop ボタン→2026-07-10 フライアウトメニュー化)。
+// arm 済みなら解除(マーク消去+peek 解除)、未 arm なら開始(アクティブ文書=Target・別の開いている
+// 文書=Source を解決して比較+peek arm)。実行後に KESCMRefreshPanel でパネル表示を更新する。
+// フライアウト項目 kKESCMPopupStartStopActionID の DoAction から呼ぶ。実体は KESCMPanelObserver.cpp。
+void		KESCMToggleStartStop();
+
+// 印刷マーク ON/OFF トグル(旧パネルのチェックボックス→2026-07-10 フライアウトメニュー化)。
+// 現在の印刷フラグ(KESCMGetPrintMarks)を反転し、不透明度は現在の選択(KESCMGetMarkOpacity25)を維持して
+// KESCMDoSetPrintMarks を呼ぶ。フライアウト項目 kKESCMPopupPrintMarksActionID の DoAction から呼ぶ。
+// 実体は KESCMPanelObserver.cpp。
+void		KESCMTogglePrintMarks();
+
 // パネルのステータス行を更新する(KESCMPanelObserver::SetStatus と同じ処理を自由関数として公開)。
 // パネルが隠れていてもセッション状態は覚えておき、再表示時に復元する。forceRedrawNow=kTrue なら、
 // この後にブロッキング処理が続く場合でも次のイベントループを待たずに今すぐ描画する

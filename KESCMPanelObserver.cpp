@@ -59,8 +59,6 @@ private:
 	void DetachWidget(const InterfacePtr<IPanelControlData>& pcd, const WidgetID& wid, const PMIID& iid);
 	IControlView* FindW(const WidgetID& wid);
 
-	void DoStart();
-	void DoClear();
 	void ApplyPrintMarks();
 	void UpdateInfoDisplay();
 	void SetStatus(const PMString& s);
@@ -151,10 +149,8 @@ void KESCMPanelObserver::AutoAttach()
 	if (pcd == nil)
 		return;
 
-	this->AttachWidget(pcd, kKESCMToggleButtonWidgetID,       IBooleanControlData::kDefaultIID);
 	this->AttachWidget(pcd, kKESCMPrevChangeButtonWidgetID,   IBooleanControlData::kDefaultIID);
 	this->AttachWidget(pcd, kKESCMNextChangeButtonWidgetID,   IBooleanControlData::kDefaultIID);
-	this->AttachWidget(pcd, kKESCMPrintCheckWidgetID,         ITriStateControlData::kDefaultIID);
 	this->AttachWidget(pcd, kKESCMOpacity25RadioWidgetID,     ITriStateControlData::kDefaultIID);
 	this->AttachWidget(pcd, kKESCMOpacity75RadioWidgetID,     ITriStateControlData::kDefaultIID);
 	// イラスト(ON/OFF アイコン、どちらか一方だけが可視)のクリックで「このプラグインについて」の配布元
@@ -163,22 +159,33 @@ void KESCMPanelObserver::AutoAttach()
 	this->AttachWidget(pcd, kKESCMIconOnWidgetID,             ITriStateControlData::kDefaultIID);
 	this->AttachWidget(pcd, kKESCMIconOffWidgetID,            ITriStateControlData::kDefaultIID);
 
-	// ウィジェットを現在の共有状態へ復元する。パネルを隠して再表示すると AutoAttach が再実行される
-	// ため、固定の既定値ではなく engine の実状態(KESCMGetPrintMarks/KESCMGetMarkOpacity25)を読んで反映する。
+	// 不透明度ラジオを現在の共有状態へ復元する。パネルを隠して再表示すると AutoAttach が再実行される
+	// ため、固定の既定値ではなく engine の実状態(KESCMGetMarkOpacity25)を読んで反映する。
 	// RadioButtonWidget は .fr で初期選択状態を持たないので、ここで必ずどちらか一方だけを選択する。
 	// 不透明度ラジオはミドル押下表示にも効くため、印刷ON/OFFに依らず常に有効(グレーアウトしない)。
-	const bool16 printOn = KESCMGetPrintMarks();
-	const bool16 op25    = KESCMGetMarkOpacity25();
-	this->SetSelected(kKESCMPrintCheckWidgetID,     printOn);
+	// (印刷ON/OFF のチェックボックスは 2026-07-10 にフライアウト kKESCMPopupPrintMarksActionID へ移行。
+	//  その状態は UpdateActionStates が KESCMGetPrintMarks を読んでチェックマークで反映する。)
+	const bool16 op25 = KESCMGetMarkOpacity25();
 	this->SetSelected(kKESCMOpacity25RadioWidgetID, op25);
 	this->SetSelected(kKESCMOpacity75RadioWidgetID, !op25);
 
 	this->UpdateInfoDisplay();		// 開始済みなら Target/Source 名と ON アイコン、未開始なら名前なし+OFF
 
 	// ステータス欄はワークスペースに永続化されるため、再起動後にアイコン状態から開くと前回
-	// セッションの文字列が残る。今セッションで表示したメッセージ(未操作なら空)で必ず上書きし、
-	// 一度も起動していなければ何も表示しない。
-	this->SetStatus(gSessionStatus);
+	// セッションの文字列が残る。今セッションで表示したメッセージ(未操作なら空)で必ず上書きする。
+	// ★未操作(空)のとき=初めてパネルを開いたときは、使い方の初期ヒントを英語で表示する
+	//   (ソース/ターゲットを開いてフライアウトメニューから Start、という案内)。Start 等を一度でも
+	//   操作すれば gSessionStatus がそのメッセージで埋まり、以後ヒントは出ない。
+	if (gSessionStatus.CharCount() == 0)
+	{
+		PMString hint("Open the source and target documents, then choose Start from the panel menu.");
+		hint.SetTranslatable(kFalse);
+		this->SetStatus(hint);
+	}
+	else
+	{
+		this->SetStatus(gSessionStatus);
+	}
 }
 
 void KESCMPanelObserver::AutoDetach()
@@ -187,10 +194,8 @@ void KESCMPanelObserver::AutoDetach()
 	if (pcd == nil)
 		return;
 
-	this->DetachWidget(pcd, kKESCMToggleButtonWidgetID,       IBooleanControlData::kDefaultIID);
 	this->DetachWidget(pcd, kKESCMPrevChangeButtonWidgetID,   IBooleanControlData::kDefaultIID);
 	this->DetachWidget(pcd, kKESCMNextChangeButtonWidgetID,   IBooleanControlData::kDefaultIID);
-	this->DetachWidget(pcd, kKESCMPrintCheckWidgetID,         ITriStateControlData::kDefaultIID);
 	this->DetachWidget(pcd, kKESCMOpacity25RadioWidgetID,     ITriStateControlData::kDefaultIID);
 	this->DetachWidget(pcd, kKESCMOpacity75RadioWidgetID,     ITriStateControlData::kDefaultIID);
 	this->DetachWidget(pcd, kKESCMIconOnWidgetID,             ITriStateControlData::kDefaultIID);
@@ -239,18 +244,13 @@ void KESCMPanelObserver::Update(const ClassID& theChange, ISubject* theSubject, 
 	{
 		switch (wid.Get())
 		{
-			// 単一トグル: 開始中なら解除、未開始なら開始。ラベルは UpdateInfoDisplay が切替。
-			case kKESCMToggleButtonWidgetID:
-				if (KESCMIsArmed() && (KESCMArmedTargetDB() != nil))
-					this->DoClear();
-				else
-					this->DoStart();
-				break;
 			// ◀ Prev / Next ▶: 見るべきページ(変更/Added/未比較)へ Target ビューをスクロール。
+			// (Start/Stop はパネルボタン→フライアウトメニュー kKESCMPopupStartStopActionID へ移行 2026-07-10)
 			case kKESCMPrevChangeButtonWidgetID:  KESCMGotoPrevChange(); break;
 			case kKESCMNextChangeButtonWidgetID:  KESCMGotoNextChange(); break;
-			case kKESCMPrintCheckWidgetID:         this->ApplyPrintMarks(); break;
 			// 25%/75% の切替: ミドル押下表示にも効くため、印刷ON/OFFに依らず常に即反映する。
+			// (印刷ON/OFF 自体はフライアウト kKESCMPopupPrintMarksActionID へ移行 2026-07-10。ここでは
+			//  不透明度だけを変え、印刷フラグは現在値を維持する=ApplyPrintMarks 内で KESCMGetPrintMarks を読む。)
 			case kKESCMOpacity25RadioWidgetID:
 				this->SetSelected(kKESCMOpacity75RadioWidgetID, kFalse);	// 相互排他(手動)
 				this->ApplyPrintMarks();
@@ -267,73 +267,70 @@ void KESCMPanelObserver::Update(const ClassID& theChange, ISubject* theSubject, 
 			default: break;
 		}
 	}
-	else if (theChange == kFalseStateMessage)
-	{
-		if (wid == kKESCMPrintCheckWidgetID)
-			this->ApplyPrintMarks();
-	}
 }
 
 //----------------------------------------------------------------------------------------
 // アクション
 //----------------------------------------------------------------------------------------
 
-void KESCMPanelObserver::DoStart()
+// KESCMToggleStartStop(KESCMCore.h で宣言) — 比較の開始/解除トグル。旧パネルの Start/Stop ボタンの
+// DoStart/DoClear を統合した自由関数で、フライアウト項目 kKESCMPopupStartStopActionID の DoAction から
+// 呼ぶ。arm 済みなら解除、未 arm なら開始。表示更新は KESCMRefreshPanel(可視パネルを arm 状態へ)。
+void KESCMToggleStartStop()
 {
-	IDocument* target = KESCMActiveDoc();
-	if (target == nil)
+	const bool16 armed = KESCMIsArmed() && (KESCMArmedTargetDB() != nil);
+	if (armed)
 	{
-		PMString s("Target and source documents not found."); s.SetTranslatable(kFalse);
-		this->SetStatus(s);
-		return;
+		// 解除(旧 DoClear)。アクティブ文書は再描画にだけ使う(nil でも可)。KESCMDoClearMarks /
+		// KESCMDoDisarmMousePeek は内部で「実際にマークが描かれていた文書」(sDB / arm 済み target)を
+		// 控えて再描画するので、文書が1つも開いていなくても消去・解除は常に成立させる。
+		IDocument* active = KESCMActiveDoc();
+		IDataBase* db = (active != nil) ? ::GetUIDRef(active).GetDataBase() : nil;
+
+		KESCMDoClearMarks(db);
+		KESCMDoDisarmMousePeek(db);
+		PMString s("marks cleared"); s.SetTranslatable(kFalse);
+		KESCMSetStatus(s);
 	}
-	IDocument* source = KESCMFirstOtherDoc(target);
-	if (source == nil)
+	else
 	{
-		PMString s("Target or source documents not found."); s.SetTranslatable(kFalse);
-		this->SetStatus(s);
-		return;
+		// 開始(旧 DoStart)。アクティブ(前面)文書=Target、別の開いている文書=Source。
+		IDocument* target = KESCMActiveDoc();
+		if (target == nil)
+		{
+			PMString s("Target and source documents not found."); s.SetTranslatable(kFalse);
+			KESCMSetStatus(s);
+			return;
+		}
+		IDocument* source = KESCMFirstOtherDoc(target);
+		if (source == nil)
+		{
+			PMString s("Target or source documents not found."); s.SetTranslatable(kFalse);
+			KESCMSetStatus(s);
+			return;
+		}
+
+		IDataBase* targetDB = ::GetUIDRef(target).GetDataBase();
+		IDataBase* sourceDB = ::GetUIDRef(source).GetDataBase();
+
+		PMString report;
+		KESCMDoMarkChangesDoc(targetDB, sourceDB, report);
+		KESCMDoArmMousePeek(targetDB, sourceDB);
+		KESCMSetStatus(report);
 	}
 
-	IDataBase* targetDB = ::GetUIDRef(target).GetDataBase();
-	IDataBase* sourceDB = ::GetUIDRef(source).GetDataBase();
-
-	PMString report;
-	KESCMDoMarkChangesDoc(targetDB, sourceDB, report);
-	KESCMDoArmMousePeek(targetDB, sourceDB);
-	this->SetStatus(report);
-
-	// (Split Target on Start は 2026-07-04 撤去。仕組みは docs/ai-notes/kescm-split-target-mechanism.md に保存)
-
-	this->UpdateInfoDisplay();
-}
-
-void KESCMPanelObserver::DoClear()
-{
-	// アクティブ文書は再描画にだけ使う(nil でも可)。KESCMDoClearMarks / KESCMDoDisarmMousePeek は
-	// 内部で「実際にマークが描かれていた文書」(sDB / arm 済み target)を控えて再描画するので、
-	// 文書が1つも開いていなくても消去・解除は常に成立させる。以前は nil で早期 return していた
-	// ため、文書ゼロの状態では Stop が効かず arm 状態が残る食い違いがあった。
-	IDocument* active = KESCMActiveDoc();
-	IDataBase* db = (active != nil) ? ::GetUIDRef(active).GetDataBase() : nil;
-
-	KESCMDoClearMarks(db);
-	KESCMDoDisarmMousePeek(db);
-	PMString s("marks cleared"); s.SetTranslatable(kFalse);
-	this->SetStatus(s);
-	this->UpdateInfoDisplay();
+	KESCMRefreshPanel();	// Target/Source 名・アイコン・Prev/Next 有効無効を arm 状態へ更新
 }
 
 void KESCMPanelObserver::ApplyPrintMarks()
 {
-	// アクティブ文書は再描画にだけ使う(nil でも可)。フラグ自体はエンジンの共有状態なので、文書が
-	// 1つも開いていなくても常に反映する。以前は nil で早期 return していたため、チェックボックスの
-	// 見た目だけ変わってエンジン状態(sPrintMarks/sMarkOpacity25)は変わらず、パネルを隠して再表示すると
-	// AutoAttach が実状態を読み戻してチェックが元に戻る、という UI と実状態の食い違いがあった。
+	// 不透明度ラジオ(25%/75%)の切替から呼ばれる。アクティブ文書は再描画にだけ使う(nil でも可)。
+	// ★印刷フラグはもうパネルには無い(フライアウトへ移行)ので、現在のエンジン状態 KESCMGetPrintMarks を
+	//   維持したまま、不透明度だけをラジオの選択で更新する(ラジオ操作で印刷 ON/OFF が変わらないように)。
 	IDocument* active = KESCMActiveDoc();
 	IDataBase* db = (active != nil) ? ::GetUIDRef(active).GetDataBase() : nil;
 
-	const bool16 flag = this->IsSelected(kKESCMPrintCheckWidgetID);
+	const bool16 flag = KESCMGetPrintMarks();	// 現在の印刷 ON/OFF を維持
 	const bool16 op25 = this->IsSelected(kKESCMOpacity25RadioWidgetID);
 	KESCMDoSetPrintMarks(flag, op25, db);
 
@@ -343,6 +340,27 @@ void KESCMPanelObserver::ApplyPrintMarks()
 	report.Append(flag ? "; will print (and stay visible on screen)"
 	                   : "; screen-only (won't print)");
 	this->SetStatus(report);
+}
+
+// KESCMTogglePrintMarks(KESCMCore.h で宣言) — 印刷マーク ON/OFF トグル。旧パネルのチェックボックスの
+// 代わりに、フライアウト項目 kKESCMPopupPrintMarksActionID の DoAction から呼ぶ。現在の印刷フラグを反転し、
+// 不透明度は現在の選択(KESCMGetMarkOpacity25)を維持して反映する。表示更新はステータス行のみ
+// (チェックマークはメニューを開いたときに UpdateActionStates が KESCMGetPrintMarks を読んで反映する)。
+void KESCMTogglePrintMarks()
+{
+	IDocument* active = KESCMActiveDoc();
+	IDataBase* db = (active != nil) ? ::GetUIDRef(active).GetDataBase() : nil;
+
+	const bool16 newFlag = !KESCMGetPrintMarks();
+	const bool16 op25    = KESCMGetMarkOpacity25();
+	KESCMDoSetPrintMarks(newFlag, op25, db);
+
+	PMString report;
+	report.SetTranslatable(kFalse);
+	report.Append(op25 ? "kescm: marks opacity 25%" : "kescm: marks opacity 75%");
+	report.Append(newFlag ? "; will print (and stay visible on screen)"
+	                      : "; screen-only (won't print)");
+	KESCMSetStatus(report);
 }
 
 //----------------------------------------------------------------------------------------
@@ -403,18 +421,8 @@ static void KESCMApplyPanelInfo(const InterfacePtr<IPanelControlData>& pcd)
 	if (prevView != nil) prevView->Enable(started ? kTrue : kFalse);
 	if (nextView != nil) nextView->Enable(started ? kTrue : kFalse);
 
-	// トグルボタンのラベル: 開始中=Stop / 未開始=Start(英語固定)。
-	IControlView* toggleView = pcd->FindWidget(kKESCMToggleButtonWidgetID);
-	if (toggleView != nil)
-	{
-		InterfacePtr<ITextControlData> tcd(toggleView, UseDefaultIID());
-		if (tcd != nil)
-		{
-			PMString label(started ? "Stop" : "Start");
-			label.SetTranslatable(kFalse);
-			tcd->SetString(label, kTrue /*invalidate*/, kFalse /*don't notify*/);
-		}
-	}
+	// (Start/Stop の切替はパネルボタンから撤去し、フライアウト項目 kKESCMPopupStartStopActionID の
+	//  動的ラベル(UpdateActionStates)へ移行 2026-07-10。ここでのボタンラベル設定は不要になった。)
 }
 
 void KESCMPanelObserver::UpdateInfoDisplay()

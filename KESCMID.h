@@ -160,7 +160,9 @@ DECLARE_PMID(kActionIDSpace, kKESCMPopupSyncViewsActionID, kKESCMPrefix + 9)	// 
 DECLARE_PMID(kActionIDSpace, kKESCMPopupShowSrcMarksActionID, kKESCMPrefix + 10)	// パネルのフライアウトの「Show Marks on Source」チェック式トグル(Source側にも枠を常時表示。OPPでも表示・印刷にも出す。Startで既定ON)
 DECLARE_PMID(kActionIDSpace, kKESCMPageMapToggleActionID, kKESCMPrefix + 11)	// ページパネルのページ右クリック(RtMenuPagesPanel)のトグル「KESCM: Register as Added/Removed Pages」(選択ページを「比較相手なし」として登録/解除。チェック/動的ラベルは kCustomEnabling。KESCMPageMap.cpp)
 DECLARE_PMID(kActionIDSpace, kKESCMPopupIgnorePageNumActionID, kKESCMPrefix + 12)	// パネルのフライアウトの「Ignore Page Number Marker」チェック式トグル(ON=ノンブル(自動ページ番号)マーカーを含むフレームを比較から除外。既定ON。KESCMPageNumberMarker.cpp)
-//DECLARE_PMID(kActionIDSpace, kKESCMActionID, kKESCMPrefix + 13)
+DECLARE_PMID(kActionIDSpace, kKESCMPopupStartStopActionID, kKESCMPrefix + 13)	// パネルのフライアウト先頭の「Start / Stop」(比較の開始/解除。旧トグルボタンをメニュー化。arm 状態で名前が Start↔Stop に動的変化=kCustomEnabling+SetNthActionName。KESCMPanelObserver.cpp の KESCMToggleStartStop)
+DECLARE_PMID(kActionIDSpace, kKESCMPopupPrintMarksActionID, kKESCMPrefix + 14)	// パネルのフライアウトの「Print comparison marks」チェック式トグル(旧パネルのチェックボックスをメニュー化。ON=マークを印刷し画面にも常時表示。KESCMPanelObserver.cpp の KESCMTogglePrintMarks)
+//DECLARE_PMID(kActionIDSpace, kKESCMActionID, kKESCMPrefix + 15)
 //DECLARE_PMID(kActionIDSpace, kKESCMActionID, kKESCMPrefix + 14)
 //DECLARE_PMID(kActionIDSpace, kKESCMActionID, kKESCMPrefix + 15)
 //DECLARE_PMID(kActionIDSpace, kKESCMActionID, kKESCMPrefix + 16)
@@ -181,7 +183,8 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMTargetTextWidgetID, kKESCMPrefix + 1)
 DECLARE_PMID(kWidgetIDSpace, kKESCMSourceTextWidgetID, kKESCMPrefix + 26)
 // kWidgetIDSpace +27 は現在空き(旧 kKESCMStartButtonWidgetID; 開始/解除を kKESCMToggleButtonWidgetID に統合)
 // kWidgetIDSpace +28 は現在空き(旧 kKESCMClearButtonWidgetID; 同上)
-DECLARE_PMID(kWidgetIDSpace, kKESCMPrintCheckWidgetID, kKESCMPrefix + 29)
+// kWidgetIDSpace +29 は現在未使用(旧 kKESCMPrintCheckWidgetID; 印刷ON/OFF チェックボックスは 2026-07-10 に
+//   フライアウト「Print comparison marks」メニュー項目=kKESCMPopupPrintMarksActionID へ移行しパネルから撤去)
 DECLARE_PMID(kWidgetIDSpace, kKESCMOpacityClusterWidgetID, kKESCMPrefix + 30)
 DECLARE_PMID(kWidgetIDSpace, kKESCMOpacity25RadioWidgetID, kKESCMPrefix + 31)
 DECLARE_PMID(kWidgetIDSpace, kKESCMOpacity75RadioWidgetID, kKESCMPrefix + 32)	// 旧 kKESCMOpacityNormalRadioWidgetID(Normal→75% に改称。ID値は同じ)
@@ -189,7 +192,8 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMOpacity75RadioWidgetID, kKESCMPrefix + 32)	//
 DECLARE_PMID(kWidgetIDSpace, kKESCMIconOnWidgetID, kKESCMPrefix + 34)
 DECLARE_PMID(kWidgetIDSpace, kKESCMIconOffWidgetID, kKESCMPrefix + 35)
 DECLARE_PMID(kWidgetIDSpace, kKESCMStatusTextWidgetID, kKESCMPrefix + 36)
-DECLARE_PMID(kWidgetIDSpace, kKESCMToggleButtonWidgetID, kKESCMPrefix + 37)	// 開始/解除を兼ねるトグルボタン
+// kWidgetIDSpace +37 は現在未使用(旧 kKESCMToggleButtonWidgetID; 開始/解除ボタンは 2026-07-10 に
+//   フライアウト「Start / Stop」メニュー項目=kKESCMPopupStartStopActionID へ移行しパネルから撤去)
 DECLARE_PMID(kWidgetIDSpace, kKESCMPrevChangeButtonWidgetID, kKESCMPrefix + 38)	// 「◀ Prev」= 前の見るべきページへスクロール(KESCMChangeNav.cpp)
 DECLARE_PMID(kWidgetIDSpace, kKESCMNextChangeButtonWidgetID, kKESCMPrefix + 39)	// 「Next ▶」= 次の見るべきページへスクロール(KESCMChangeNav.cpp)
 //DECLARE_PMID(kWidgetIDSpace, kKESCMWidgetID, kKESCMPrefix + 2)
@@ -267,8 +271,8 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMNextChangeButtonWidgetID, kKESCMPrefix + 39)	
 #define kKESCMPanelTitleKey		kKESCMStringPrefix "kKESCMPanelTitleKey"
 #define kKESCMTargetLabelKey	kKESCMStringPrefix "kKESCMTargetLabelKey"	// パネルの "Target:" ラベル。リテラルだとシステム訳と衝突するため自前キーで持つ
 #define kKESCMSourceLabelKey	kKESCMStringPrefix "kKESCMSourceLabelKey"	// パネルの "Source:" ラベル。リテラル "Source:" は日本語ロケールで「スタイルソース :」に化けるため自前キーで持つ
-#define kKESCMStartButtonKey	kKESCMStringPrefix "kKESCMStartButtonKey"	// トグルボタンの .fr 初期キャプション(未開始=Start)。Stop ラベルは Observer が英語リテラルで設定
-#define kKESCMPrintCheckKey		kKESCMStringPrefix "kKESCMPrintCheckKey"
+#define kKESCMStartButtonKey	kKESCMStringPrefix "kKESCMStartButtonKey"	// フライアウト「Start / Stop」項目の既定メニュー名(未開始=Start)。表示時は UpdateActionStates が arm 状態で Start↔Stop に動的差し替え(旧トグルボタンのキャプションキーを流用)
+#define kKESCMPrintCheckKey		kKESCMStringPrefix "kKESCMPrintCheckKey"	// フライアウト「Print comparison marks」トグルのメニュー名(旧パネルチェックボックスのキャプションキーを流用)
 #define kKESCMOpacity25Key		kKESCMStringPrefix "kKESCMOpacity25Key"
 #define kKESCMOpacity75Key		kKESCMStringPrefix "kKESCMOpacity75Key"	// 旧 kKESCMOpacityNormalKey(Normal→75% に改称)
 #define kKESCMPrevChangeKey		kKESCMStringPrefix "kKESCMPrevChangeKey"	// パネルの「◀ Prev」ボタンのキャプション(英語固定)
@@ -284,6 +288,8 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMNextChangeButtonWidgetID, kKESCMPrefix + 39)	
 // Show Original Page Numbers(9.7) → Sync Layout Views(9.8) → How to Use(10) → About Scripting(11) →
 // About this plug-in(12)。
 // ※メニュー名は日本語ロケールでも英語で統一(2026-07-04)。Split Target on Start(旧9.0)は撤去済み
+#define kKESCMStartStopMenuItemPosition		9.0	// 「Start / Stop」(比較開始/解除)をフライアウト先頭に。名前は arm 状態で動的に Start↔Stop
+#define kKESCMPrintMarksMenuItemPosition	9.2	// チェック式トグル「Print comparison marks」を Start/Stop の直後に(旧パネルチェックボックスのメニュー化)
 #define kKESCMShowSrcMarksMenuItemPosition	9.4	// チェック式トグル「Show Marks on Source」を先頭に
 #define kKESCMHideUnchangedMenuItemPosition	9.5	// チェック式トグル「Hide Unchanged Spreads」をその直後に
 #define kKESCMShowOldNumsMenuItemPosition	9.7	// チェック式トグル「Show Original Page Numbers」をその直後に
