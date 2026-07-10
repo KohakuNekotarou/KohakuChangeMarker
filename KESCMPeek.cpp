@@ -490,47 +490,52 @@ static UID KESCMFindPageAtPasteboard(IDataBase* db, const PBPMPoint& pb)
 }
 
 //----------------------------------------------------------------------------------------
-// Alt+ミドルの追加/削除補正: 手本(srcDocDb)のビュー中心にあるページを、比較ペアリング
+// Alt+ミドル/自動同期の追加/削除補正: 手本(srcDocDb)のビュー中心にあるページを、比較ペアリング
 // (KESCMMapTargetToSource / KESCMMapSourceToTarget=登録ページを除外して残りを順番対応させるので、
 // ページの追加/削除で番号がズレていても「本来の相手」を返す)で相手ページへ写像し、ページ中心からの
 // 相対オフセットを保ったまま相手ページ上の座標へ変換する。これで「増減があっても比較対象のページ同士が
-// 同じ位置に映る」。補正できない場合(未 arm / arm ペア以外の文書 / ページが登録・overflow で未写像)は
-// srcCenter をそのまま返す=従来の生同期にフォールバックする。
+// 同じ位置に映る」。
+//   ★outSkip: 手本中心が Added/Removed(登録)・overflow ページ=相手なしのときは kTrue を返す。
+//     呼び出し側はこの宛先文書を同期しない(追従側を動かさず据え置く)。相手のいないページで追従側が
+//     生座標へ飛ぶのを避けるため(ユーザー指定 2026-07-10)。
+//   補正できないが skip でもない場合(未 arm / arm ペア以外の第3文書 / 中心がページ外 / 幾何取得失敗)は
+//   srcCenter をそのまま返す=従来の生同期にフォールバックする(outSkip=kFalse)。
 //----------------------------------------------------------------------------------------
-static PBPMPoint KESCMCorrectedCenterForDoc(IDataBase* srcDocDb, IDataBase* dstDb, const PBPMPoint& srcCenter)
+static PBPMPoint KESCMCorrectedCenterForDoc(IDataBase* srcDocDb, IDataBase* dstDb,
+                                            const PBPMPoint& srcCenter, bool16& outSkip)
 {
+	outSkip = kFalse;
+
 	if (!sPeekArmed || sPeekTargetDB == nil || sPeekSourceDB == nil)
+		return srcCenter;	// 未 arm: 生同期
+
+	// ペアリング方向。arm ペア(Target/Source)以外の第3文書は補正しない=生同期。
+	const bool16 t2s = (srcDocDb == sPeekTargetDB && dstDb == sPeekSourceDB);
+	const bool16 s2t = (srcDocDb == sPeekSourceDB && dstDb == sPeekTargetDB);
+	if (!t2s && !s2t)
 		return srcCenter;
 
 	// 手本ページ(srcDocDb 側でビュー中心にあるページ)。
 	const UID srcPage = KESCMFindPageAtPasteboard(srcDocDb, srcCenter);
 	if (srcPage == kInvalidUID)
-		return srcCenter;
+		return srcCenter;	// 中心がページ外(ページ間の隙間等): 生同期
 
-	// ペアリング方向を判定して相手ページを引く(arm ペア=Target/Source の間だけ補正する)。
+	// 相手ページを引く。Added/Removed(登録)・overflow は相手なし → このページでは同期しない(skip)。
 	UID dstPage = kInvalidUID;
-	if (srcDocDb == sPeekTargetDB && dstDb == sPeekSourceDB)
+	const bool16 mapped = t2s
+		? KESCMMapTargetToSource(sPeekTargetDB, sPeekSourceDB, srcPage, dstPage)
+		: KESCMMapSourceToTarget(sPeekTargetDB, sPeekSourceDB, srcPage, dstPage);
+	if (!mapped || dstPage == kInvalidUID)
 	{
-		if (!KESCMMapTargetToSource(sPeekTargetDB, sPeekSourceDB, srcPage, dstPage))
-			return srcCenter;	// srcPage が登録/overflow=相手なし
-	}
-	else if (srcDocDb == sPeekSourceDB && dstDb == sPeekTargetDB)
-	{
-		if (!KESCMMapSourceToTarget(sPeekTargetDB, sPeekSourceDB, srcPage, dstPage))
-			return srcCenter;
-	}
-	else
-	{
-		return srcCenter;	// arm ペア以外の文書は補正しない
-	}
-	if (dstPage == kInvalidUID)
+		outSkip = kTrue;	// ★相手なし(Added 等): 追従側は動かさない
 		return srcCenter;
+	}
 
 	// ページ内相対位置(ページ中心からのオフセット)を保って相手ページ中心へ移す。
 	PMRect srcRect, dstRect;
 	if (!KESCMPagePasteboardRect(srcDocDb, srcPage, srcRect) ||
 	    !KESCMPagePasteboardRect(dstDb,    dstPage, dstRect))
-		return srcCenter;
+		return srcCenter;	// 幾何取得失敗: 生同期にフォールバック(skip はしない)
 	const PMReal srcCX = (srcRect.Left() + srcRect.Right()) / PMReal(2.0);
 	const PMReal srcCY = (srcRect.Top()  + srcRect.Bottom()) / PMReal(2.0);
 	const PMReal dstCX = (dstRect.Left() + dstRect.Right()) / PMReal(2.0);
@@ -571,11 +576,17 @@ static void KESCMSyncOtherDocViewportsTo(IPanorama* srcPano, IDataBase* srcDocDb
 		if (db == srcDocDb)
 			continue;
 
-		// この宛先文書へ複製する中心座標。Alt+ミドルのときは追加/削除補正(比較ペアの相手ページへ
-		// 写像してページ内相対位置を保つ)を掛ける。補正不能なら srcCenter がそのまま返る。
-		const PBPMPoint dstCenter = applyPageOffset
-			? KESCMCorrectedCenterForDoc(srcDocDb, db, srcCenter)
-			: srcCenter;
+		// この宛先文書へ複製する中心座標。applyPageOffset のときは追加/削除補正(比較ペアの相手ページへ
+		// 写像してページ内相対位置を保つ)を掛ける。手本中心が Added ページ(相手なし)なら skip=この宛先は
+		// 同期しない(追従側を据え置く)。補正不能だが skip でもないなら srcCenter がそのまま返る(生同期)。
+		PBPMPoint dstCenter = srcCenter;
+		if (applyPageOffset)
+		{
+			bool16 skipThisDoc = kFalse;
+			dstCenter = KESCMCorrectedCenterForDoc(srcDocDb, db, srcCenter, skipThisDoc);
+			if (skipThisDoc)
+				continue;	// ★手本中心が Added ページ(相手なし)=この宛先文書は同期しない
+		}
 
 		K2Vector<IControlView*> views;
 		Utils<ILayoutViewUtils>()->GetAllLayoutViews(views, nil, db);
@@ -871,7 +882,9 @@ void KESCMLayoutSyncObserver::Update(const ClassID& theChange, ISubject* theSubj
 	if (srcDocDb == nil)
 		return;	// 所属文書を特定できない(クローズ途中等)。同期しない
 
-	KESCMSyncOtherDocViewportsTo(srcPano, srcDocDb);
+	// ★実験(2026-07-10): 自動同期(ライブ)にも追加/削除補正を掛ける。比較 arm 中は比較ペアの相手
+	// ページ同士が並ぶ。未 arm/ペア外は関数内で生同期にフォールバック。重い/飛ぶようなら kFalse へ戻す。
+	KESCMSyncOtherDocViewportsTo(srcPano, srcDocDb, kTrue /*applyPageOffset*/);
 }
 
 // KESCMGetLayoutSync / KESCMSetLayoutSync(KESCMCore.h で宣言) — フライアウトトグルの実体。
@@ -902,7 +915,7 @@ void KESCMSetLayoutSync(bool16 on)
 			InterfacePtr<IPanorama> pano(KESCMQueryPanorama(front));
 			IDataBase* db = KESCMFindDocDbForView(front);
 			if (pano != nil && db != nil)
-				KESCMSyncOtherDocViewportsTo(pano, db);
+				KESCMSyncOtherDocViewportsTo(pano, db, kTrue /*applyPageOffset(実験): 初回そろえも補正付き*/);
 		}
 	}
 	else
