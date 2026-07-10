@@ -54,10 +54,12 @@
 #include "IWidgetParent.h"
 #include "PMMatrix.h"
 #include "PMPoint.h"
+#include "PMRect.h"					// ページのペーストボード矩形(Alt+ミドルの追加/削除補正)
 #include "PMReal.h"
 #include "TransformUtils.h"
 
 #include <map>
+#include <vector>
 
 // プロジェクト内インクルード:
 #include "KESCMID.h"
@@ -435,7 +437,110 @@ static IDataBase* KESCMFindDocDbForView(IControlView* view)
 	return nil;
 }
 
-static void KESCMSyncOtherDocViewportsTo(IPanorama* srcPano, IDataBase* srcDocDb)
+//----------------------------------------------------------------------------------------
+// ページ pageUID(db 内)のペーストボード矩形を得る。パノラマの content 座標=ペーストボード座標
+// (PBPMPoint)と同じ空間。ページは回転しないので inner bbox の 2 隅を変換して min/max を取る。
+//----------------------------------------------------------------------------------------
+static bool16 KESCMPagePasteboardRect(IDataBase* db, UID pageUID, PMRect& outPB)
+{
+	if (db == nil || pageUID == kInvalidUID)
+		return kFalse;
+	InterfacePtr<IGeometry> geo(db, pageUID, UseDefaultIID());
+	if (geo == nil)
+		return kFalse;
+	PMRect inner = geo->GetPathBoundingBox();
+	PMMatrix m = ::InnerToPasteboardMatrix(geo);
+	PMPoint p0(inner.Left(),  inner.Top());    m.Transform(&p0);
+	PMPoint p1(inner.Right(), inner.Bottom()); m.Transform(&p1);
+	const PMReal l = (p0.X() < p1.X()) ? p0.X() : p1.X();
+	const PMReal r = (p0.X() < p1.X()) ? p1.X() : p0.X();
+	const PMReal t = (p0.Y() < p1.Y()) ? p0.Y() : p1.Y();
+	const PMReal b = (p0.Y() < p1.Y()) ? p1.Y() : p0.Y();
+	outPB = PMRect(l, t, r, b);
+	return kTrue;
+}
+
+//----------------------------------------------------------------------------------------
+// db 内で、ペーストボード点 pb を内包するページ UID を返す。内包が無ければ中心が最も近いページ
+// (ページ間の隙間/ペーストボード上をビュー中心が指しているとき)。ページが無ければ kInvalidUID。
+//----------------------------------------------------------------------------------------
+static UID KESCMFindPageAtPasteboard(IDataBase* db, const PBPMPoint& pb)
+{
+	if (db == nil)
+		return kInvalidUID;
+	std::vector<UID> flat;
+	KESCMCollectPageUIDs(db, flat);
+	UID best = kInvalidUID;
+	PMReal bestDist2(0);
+	bool16 haveBest = kFalse;
+	for (size_t i = 0; i < flat.size(); ++i)
+	{
+		PMRect r;
+		if (!KESCMPagePasteboardRect(db, flat[i], r))
+			continue;
+		if (pb.X() >= r.Left() && pb.X() <= r.Right() && pb.Y() >= r.Top() && pb.Y() <= r.Bottom())
+			return flat[i];	// 内包するページが確定
+		const PMReal cx = (r.Left() + r.Right()) / PMReal(2.0);
+		const PMReal cy = (r.Top()  + r.Bottom()) / PMReal(2.0);
+		const PMReal dx = pb.X() - cx, dy = pb.Y() - cy;
+		const PMReal d2 = dx * dx + dy * dy;
+		if (!haveBest || d2 < bestDist2) { bestDist2 = d2; best = flat[i]; haveBest = kTrue; }
+	}
+	return best;
+}
+
+//----------------------------------------------------------------------------------------
+// Alt+ミドルの追加/削除補正: 手本(srcDocDb)のビュー中心にあるページを、比較ペアリング
+// (KESCMMapTargetToSource / KESCMMapSourceToTarget=登録ページを除外して残りを順番対応させるので、
+// ページの追加/削除で番号がズレていても「本来の相手」を返す)で相手ページへ写像し、ページ中心からの
+// 相対オフセットを保ったまま相手ページ上の座標へ変換する。これで「増減があっても比較対象のページ同士が
+// 同じ位置に映る」。補正できない場合(未 arm / arm ペア以外の文書 / ページが登録・overflow で未写像)は
+// srcCenter をそのまま返す=従来の生同期にフォールバックする。
+//----------------------------------------------------------------------------------------
+static PBPMPoint KESCMCorrectedCenterForDoc(IDataBase* srcDocDb, IDataBase* dstDb, const PBPMPoint& srcCenter)
+{
+	if (!sPeekArmed || sPeekTargetDB == nil || sPeekSourceDB == nil)
+		return srcCenter;
+
+	// 手本ページ(srcDocDb 側でビュー中心にあるページ)。
+	const UID srcPage = KESCMFindPageAtPasteboard(srcDocDb, srcCenter);
+	if (srcPage == kInvalidUID)
+		return srcCenter;
+
+	// ペアリング方向を判定して相手ページを引く(arm ペア=Target/Source の間だけ補正する)。
+	UID dstPage = kInvalidUID;
+	if (srcDocDb == sPeekTargetDB && dstDb == sPeekSourceDB)
+	{
+		if (!KESCMMapTargetToSource(sPeekTargetDB, sPeekSourceDB, srcPage, dstPage))
+			return srcCenter;	// srcPage が登録/overflow=相手なし
+	}
+	else if (srcDocDb == sPeekSourceDB && dstDb == sPeekTargetDB)
+	{
+		if (!KESCMMapSourceToTarget(sPeekTargetDB, sPeekSourceDB, srcPage, dstPage))
+			return srcCenter;
+	}
+	else
+	{
+		return srcCenter;	// arm ペア以外の文書は補正しない
+	}
+	if (dstPage == kInvalidUID)
+		return srcCenter;
+
+	// ページ内相対位置(ページ中心からのオフセット)を保って相手ページ中心へ移す。
+	PMRect srcRect, dstRect;
+	if (!KESCMPagePasteboardRect(srcDocDb, srcPage, srcRect) ||
+	    !KESCMPagePasteboardRect(dstDb,    dstPage, dstRect))
+		return srcCenter;
+	const PMReal srcCX = (srcRect.Left() + srcRect.Right()) / PMReal(2.0);
+	const PMReal srcCY = (srcRect.Top()  + srcRect.Bottom()) / PMReal(2.0);
+	const PMReal dstCX = (dstRect.Left() + dstRect.Right()) / PMReal(2.0);
+	const PMReal dstCY = (dstRect.Top()  + dstRect.Bottom()) / PMReal(2.0);
+	return PBPMPoint(dstCX + (srcCenter.X() - srcCX), dstCY + (srcCenter.Y() - srcCY));
+}
+
+// applyPageOffset=kTrue(Alt+ミドル)のとき、各宛先文書へ複製する中心座標に上の追加/削除補正を掛ける。
+// 既定 kFalse=フライアウト「Sync Layout Views」の自動同期は従来どおり無補正(生座標)。
+static void KESCMSyncOtherDocViewportsTo(IPanorama* srcPano, IDataBase* srcDocDb, bool16 applyPageOffset = kFalse)
 {
 	if (srcPano == nil)
 		return;
@@ -466,6 +571,12 @@ static void KESCMSyncOtherDocViewportsTo(IPanorama* srcPano, IDataBase* srcDocDb
 		if (db == srcDocDb)
 			continue;
 
+		// この宛先文書へ複製する中心座標。Alt+ミドルのときは追加/削除補正(比較ペアの相手ページへ
+		// 写像してページ内相対位置を保つ)を掛ける。補正不能なら srcCenter がそのまま返る。
+		const PBPMPoint dstCenter = applyPageOffset
+			? KESCMCorrectedCenterForDoc(srcDocDb, db, srcCenter)
+			: srcCenter;
+
 		K2Vector<IControlView*> views;
 		Utils<ILayoutViewUtils>()->GetAllLayoutViews(views, nil, db);
 
@@ -489,8 +600,8 @@ static void KESCMSyncOtherDocViewportsTo(IPanorama* srcPano, IDataBase* srcDocDb
 			if (zoomMatched)
 			{
 				const PMPoint curCenter = pano->GetContentLocationAtFrameCenter();
-				PMReal dx = curCenter.X() - srcCenter.X(); if (dx < 0) dx = -dx;
-				PMReal dy = curCenter.Y() - srcCenter.Y(); if (dy < 0) dy = -dy;
+				PMReal dx = curCenter.X() - dstCenter.X(); if (dx < 0) dx = -dx;
+				PMReal dy = curCenter.Y() - dstCenter.Y(); if (dy < 0) dy = -dy;
 				const PMReal tol = (srcZoom > PMReal(0.0001)) ? (PMReal(1.5) / srcZoom) : PMReal(1.0);
 				if (dx <= tol && dy <= tol)
 					continue;	// 位置も拡大率も一致済み
@@ -505,9 +616,10 @@ static void KESCMSyncOtherDocViewportsTo(IPanorama* srcPano, IDataBase* srcDocDb
 				if (zoomCmd != nil)
 					CmdUtils::ProcessCommand(zoomCmd);
 			}
-			// 手本の可視中心と同じ content 座標をビュー中心へ=同じ拡大率なら同じ画面が同じように映る。
-			// ズーム(コマンド)実行後に行うので、新しい倍率で正しくセンタリングされる。
-			pano->ScrollContentLocationToFrameCenter(srcCenter, kTrue /*forceRedraw*/);
+			// 手本の可視中心と同じ content 座標(補正時は相手ページ上の対応座標)をビュー中心へ=
+			// 同じ拡大率なら同じ画面が同じように映る。ズーム(コマンド)実行後に行うので、新しい倍率で
+			// 正しくセンタリングされる。
+			pano->ScrollContentLocationToFrameCenter(dstCenter, kTrue /*forceRedraw*/);
 		}
 	}
 
@@ -609,7 +721,9 @@ static void KESCMSyncScrollOtherWindowsUnderMouse(IEvent* e)
 	if (srcPano == nil)
 		return;
 
-	KESCMSyncOtherDocViewportsTo(srcPano, hitDocDb);
+	// Alt+ミドルは追加/削除補正あり(比較 arm 中は比較ペアの相手ページ同士がきっちり合う。
+	// 未 arm/ペア外の文書は関数内で従来の生同期にフォールバック)。
+	KESCMSyncOtherDocViewportsTo(srcPano, hitDocDb, kTrue /*applyPageOffset*/);
 }
 
 

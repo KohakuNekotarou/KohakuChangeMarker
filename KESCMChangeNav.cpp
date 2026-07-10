@@ -2,13 +2,15 @@
 //
 //  KESCMChangeNav.cpp
 //
-//  変更ページ・Added ページ・未比較ページを順に巡回する Next/Prev ナビ(KESCMChangeNav.h で宣言)。
+//  「中身が変わったページ」を順に巡回する Next/Prev ナビ(KESCMChangeNav.h で宣言)。
 //  KESCL の「検索ヒットを ScrollViewCenterTo で中央へ送る」動きと同じ発想で、対象は KESCM の
-//  「見るべきページ」= Target(sDB)にマークが付く全ページ。
+//  「見るべきページ」= Target(sDB)で内容変更マークが付くページ(sEntries)。
+//  ★Added/Removed(登録ページ)・Overflow(未比較)はページ増減由来なので巡回対象に含めない
+//    (2026-07-10 ユーザー指定)。
 //
-//  巡回リストは呼ばれるたびにその場で作り直す(再比較・登録変更でマークが動いても常に最新に追従し、
+//  巡回リストは呼ばれるたびにその場で作り直す(再比較でマークが動いても常に最新に追従し、
 //  index ではなく現在ページ UID を覚えておくことで位置を見失わない)。順序は文書のページ順そのもの
-//  (KESCMCollectPageUIDs)なので、変更・Added・Overflow が混在しても重複なく自然に並ぶ。
+//  (KESCMCollectPageUIDs)。
 //
 //  移動は「対象ページの矩形中心 → ::InnerToPasteboardMatrix でペーストボード座標 →
 //  KESCMQueryPanorama()->ScrollViewCenterTo()」。ズームは触らない(現在の倍率のまま中央へ)。
@@ -52,7 +54,7 @@
 
 #include "KESCMCore.h"				// KESCMCollectPageUIDs / KESCMArmed* / KESCMSetStatus
 #include "KESCMDrawEventHandler.h"	// sDB / sSrcDB / sEntries / KESCMQueryPanorama
-#include "KESCMPageMap.h"			// KESCMPageMapIsRegistered / KESCMBuildPairing / KESCMMapTargetToSource
+#include "KESCMPageMap.h"			// KESCMBuildPairing / KESCMMapTargetToSource(Source 側連動スクロール用)
 #include "KESCMThumbnailRefresh.h"	// KESCMGetVisiblePagesPanel(表示中 Pages パネル取得の共有ヘルパ)
 #include "KESCMChangeNav.h"
 
@@ -63,10 +65,11 @@ static UID sNavCurrent = kInvalidUID;
 
 //----------------------------------------------------------------------------------------
 // Target(sDB)で「見るべきページ」を文書のページ順に集める。
-//   ① 変更あり: sEntries にキーがある
-//   ② Added(登録済み): KESCMPageMapIsRegistered(sDB, uid)
-//   ③ Overflow(未比較): KESCMBuildPairing の tOverflow に含まれる
-// いずれかに該当するページを、KESCMCollectPageUIDs(sDB) の順で out に積む(ページ順なので重複なし)。
+//   対象は「中身が変わったページ」= sEntries にキーがあるページのみ。
+//   ★Added/Removed(登録ページ=緑「/」= KESCMPageMapIsRegistered)と Overflow(未比較=
+//     KESCMBuildPairing の tOverflow)は巡回対象に含めない(2026-07-10: これらは既存ページの
+//     内容変更ではなくページ増減由来なので、ユーザー指定で Prev/Next から除外)。
+// 該当ページを KESCMCollectPageUIDs(sDB) の順で out に積む(ページ順なので重複なし)。
 //----------------------------------------------------------------------------------------
 static void KESCMBuildReviewList(std::vector<UID>& out)
 {
@@ -75,27 +78,13 @@ static void KESCMBuildReviewList(std::vector<UID>& out)
 	if (targetDB == nil)
 		return;
 
-	// ③ Overflow(Target 側)。Source が無ければ overflow は無い(比較自体が成立していない)。
-	std::set<UID> overflowT;
-	IDataBase* sourceDB = KESCMDrawEventHandler::sSrcDB;
-	if (sourceDB != nil)
-	{
-		std::vector<UID> tPages, sPages, tOverflow, sOverflow;
-		KESCMBuildPairing(targetDB, sourceDB, tPages, sPages, &tOverflow, &sOverflow);
-		for (size_t i = 0; i < tOverflow.size(); ++i)
-			overflowT.insert(tOverflow[i]);
-	}
-
 	std::vector<UID> flat;
 	KESCMCollectPageUIDs(targetDB, flat);
 	for (size_t i = 0; i < flat.size(); ++i)
 	{
 		const UID u = flat[i];
-		const bool16 changed  = (KESCMDrawEventHandler::sEntries.find(u) != KESCMDrawEventHandler::sEntries.end());
-		const bool16 added    = KESCMPageMapIsRegistered(targetDB, u);
-		const bool16 overflow = (overflowT.count(u) > 0);
-		if (changed || added || overflow)
-			out.push_back(u);
+		if (KESCMDrawEventHandler::sEntries.find(u) != KESCMDrawEventHandler::sEntries.end())
+			out.push_back(u);	// 中身が変わったページのみ
 	}
 }
 
@@ -281,7 +270,7 @@ static void KESCMGoto(int32 dir)
 	KESCMBuildReviewList(list);
 	if (list.empty())
 	{
-		PMString s("No changed or added pages."); s.SetTranslatable(kFalse);
+		PMString s("No changed pages."); s.SetTranslatable(kFalse);
 		KESCMSetStatus(s);
 		return;
 	}
