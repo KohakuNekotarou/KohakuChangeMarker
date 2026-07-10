@@ -67,6 +67,7 @@
 #include "KESCMCore.h"               // arm/disarm/状態 宣言
 #include "KESCMPageMap.h"            // KESCMMapTargetToSource(除外対応表)/KESCMPageMapSweepClosedDocs
 #include "KESCMThumbnailRefresh.h"   // クローズ後、生存側の Pages パネルサムネイルから枠を消す
+#include "KESCMThumbIdleTask.h"      // クローズ後の再生成を次のidleに遅延(前面切替の過渡を避ける)
 #include "KESCMPeek.h"
 
 //========================================================================================
@@ -1024,9 +1025,18 @@ void KESCMPeekStartup::Shutdown()
 		fWatcher->Release();
 		fWatcher = nil;
 	}
+	// 遅延サムネイル更新の idle task を解放(予約中なら RemoveTask してから)。
+	KESCMShutdownThumbIdleTask();
 	// 保持していたマーク/旧版画像バッファを解放(終了時もきれいに片付ける)。
 	KESCMDrawEventHandler::DropAll();
 	KESCMDrawEventHandler::DropAllOrig();
+	// ★peek の arm 状態もここで落とす。残したままだと、終了処理後に kAfterCloseDoc responder が
+	// 発火した場合、KESCMHandleDocsClosed が stale な sPeek* から comparisonDocClosed=true を
+	// 再計算し得る(通常の終了順=文書クローズ→Shutdown では起きないはずだが防御的にリセット。
+	// ポインタは nil 代入のみ=deref しない)。
+	sPeekArmed = kFalse;
+	sPeekTargetDB = nil;
+	sPeekSourceDB = nil;
 	// ハンドツール一時切替中(ミドル押下中)に終了した場合、保存していた元ツールの参照が残る。
 	// 終了処理中なので SetActiveTool(KESCMRestoreTool)は呼ばず、参照の解放だけを行う。
 	if (sSavedTool != nil)
@@ -1172,15 +1182,17 @@ void KESCMHandleDocsClosed()
 		if (survivorSrcDB != survivorTargetDB && survivorSrcDB != survivorOrigDB)
 			KESCMInvalidateDB(survivorSrcDB);
 
-		// Stop と同じく、生存側の Pages パネルサムネイルからも枠/斜線を消す(InvalidateViews は
-		// レイアウトビューだけで、サムネイルの共有画像キャッシュには届かない)。DropAll 済みなので
+		// 生存側の Pages パネルサムネイルからも枠/斜線を消す。★その場(同期)で呼ぶと、閉じたのが
+		// ターゲットで生存側がこれからアクティブ化する場合、パネルの前面切替の過渡で ForceRedraw が
+		// 再生成を起こしきれず枠が残る(2026-07-08 実機で確認)。そこで「次の idle」に遅延させ、切替が
+		// 落ち着いてから purge＋ForceRedraw する(KESCMScheduleThumbRefresh)。DropAll 済みなので
 		// 再生成される isThumb 描画は早期 return し枠は描かれない。survivor* は生存確認済みポインタ
-		// のみ=閉じた db は決して渡さない(nil は関数側で弾く)。
-		KESCMTryRefreshPagesPanelThumbnails(survivorTargetDB);
+		// のみ=閉じた db は決して渡さない(nil はスケジューラ側で弾く。重複 db も集約される)。
+		KESCMScheduleThumbRefresh(survivorTargetDB);
 		if (survivorOrigDB != survivorTargetDB)
-			KESCMTryRefreshPagesPanelThumbnails(survivorOrigDB);
+			KESCMScheduleThumbRefresh(survivorOrigDB);
 		if (survivorSrcDB != survivorTargetDB && survivorSrcDB != survivorOrigDB)
-			KESCMTryRefreshPagesPanelThumbnails(survivorSrcDB);
+			KESCMScheduleThumbRefresh(survivorSrcDB);
 	}
 
 	// 「Hide Unchanged Spreads」トグルの後片付け(Target/Source 両側)。隠し先のどちらかが閉じた、

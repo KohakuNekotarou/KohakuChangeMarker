@@ -166,6 +166,19 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 		}
 	},
 
+	// Deferred Pages-panel thumbnail refresh. After a document close, refreshing the survivor's
+	// thumbnails synchronously fails while the panel is mid-switch to the newly-active document,
+	// so KESCMHandleDocsClosed schedules this one-shot idle task (~150ms) which purges + redraws
+	// once the switch has settled. Returns kEndOfTime so it removes itself from the queue.
+	Class
+	{
+		kKESCMThumbIdleTaskBoss,
+		kInvalidClass,
+		{
+			IID_IIDLETASK, kKESCMThumbIdleTaskImpl,
+		}
+	},
+
 	// Layout view sync observer, added onto the system active-context boss (same proven pattern as
 	// the user's original KESLayoutScrollObserver plug-in, which is confirmed working: an observer
 	// living on kActiveContextBoss under a custom IID receives the layout views' IID_IPANORAMA

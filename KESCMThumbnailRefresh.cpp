@@ -59,6 +59,7 @@
 #include "KESCMThumbnailRefresh.h"
 #include "KESCMDrawEventHandler.h"	// sEntries / sDB / sSrcDB / sSrcPageToTarget
 #include "KESCMCore.h"				// KESCMCollectPageUIDs(全ページ列挙)
+#include "KESCMPageMap.h"			// KESCMPageMapCollectRegistered(登録ページ=緑「/」)
 
 // サブパネル(Layout 用/Master 用)を1枚再描画する(③)。
 static void KESCMForceRedrawSubPanel(IPanelControlData* pcd, const WidgetID& subPanelWID)
@@ -78,7 +79,8 @@ static void KESCMForceRedrawSubPanel(IPanelControlData* pcd, const WidgetID& sub
 //     overflow ページのサムネイルが Purge されず、斜線が即時に出ない(2026-07-08 実機で判明)。
 //     overflow キャッシュが現在のペア(sDB,sSrcDB)用に作られている時だけ加える(別文書用の UID を
 //     誤って Purge しないための安全ガード)。
-static bool16 KESCMCollectChangedPageUIDs(IDataBase* db, std::set<UID>& outPages)
+// (KESCMThumbnailRefresh.h で宣言=KESCMDoMarkChangesDoc の再比較前退避と共用)
+bool16 KESCMCollectChangedPageUIDs(IDataBase* db, std::set<UID>& outPages)
 {
 	const bool16 overflowCacheMatches =
 		(KESCMDrawEventHandler::sOverflowCacheDB == KESCMDrawEventHandler::sDB &&
@@ -91,6 +93,9 @@ static bool16 KESCMCollectChangedPageUIDs(IDataBase* db, std::set<UID>& outPages
 			outPages.insert(it->first);
 		if (overflowCacheMatches)
 			outPages.insert(KESCMDrawEventHandler::sOverflowT.begin(), KESCMDrawEventHandler::sOverflowT.end());
+		// ★登録ページ(Added=緑「/」)も含める。sEntries/overflow とは別集合なので、含めないと
+		//   再比較時に登録ページのサムネイルが Purge されず緑「/」が即時に出ない(START 時も同様)。
+		KESCMPageMapCollectRegistered(db, outPages);
 		return kTrue;
 	}
 	if (db != nil && db == KESCMDrawEventHandler::sSrcDB)
@@ -100,70 +105,111 @@ static bool16 KESCMCollectChangedPageUIDs(IDataBase* db, std::set<UID>& outPages
 			outPages.insert(it->first);
 		if (overflowCacheMatches)
 			outPages.insert(KESCMDrawEventHandler::sOverflowS.begin(), KESCMDrawEventHandler::sOverflowS.end());
+		// ★登録ページ(Removed=緑「/」)も含める(上と同じ理由)。
+		KESCMPageMapCollectRegistered(db, outPages);
 		return kTrue;
 	}
 	return kFalse;
 }
 
-void KESCMTryRefreshPagesPanelThumbnails(IDataBase* db)
+// ④ 指定ページ UID 群を per-UID Purge(共有画像キャッシュ無効化)。ワークスペースは実効セッションから。
+//    UID 列の入れ物は呼び出し側の都合で set/vector の両方が来るため、実体はイテレータ範囲テンプレートに
+//    して使い捨てコピー(vector→set 変換)を作らない。順序も重複排除も Purge には不要。
+template <class InputIt>
+static void KESCMPurgePageThumbsRange(IDataBase* db, InputIt first, InputIt last)
+{
+	if (db == nil || first == last)
+		return;
+	InterfacePtr<IWorkspace> ws(GetExecutionContextSession()->QueryWorkspace());
+	InterfacePtr<IImageCacheMgr> cacheMgr(ws, IID_IIMAGECACHEMGR);
+	if (cacheMgr == nil)
+		return;
+	for (; first != last; ++first)
+	{
+		UIDRef pageRef(db, *first);
+		cacheMgr->Purge(pageRef, IImageCacheMgr::kWildCard);
+	}
+}
+
+static void KESCMPurgePageThumbs(IDataBase* db, const std::set<UID>& pages)
+{
+	KESCMPurgePageThumbsRange(db, pages.begin(), pages.end());
+}
+
+static void KESCMPurgePageThumbs(IDataBase* db, const std::vector<UID>& pages)
+{
+	KESCMPurgePageThumbsRange(db, pages.begin(), pages.end());
+}
+
+// 表示中の Pages パネルを返す(KESCMThumbnailRefresh.h で宣言。ChangeNav の連動スクロールと共用)。
+IControlView* KESCMGetVisiblePagesPanel()
+{
+	InterfacePtr<IApplication> app(GetExecutionContextSession()->QueryApplication());
+	if (app == nil)
+		return nil;
+	InterfacePtr<IPanelMgr> panelMgr(app->QueryPanelManager());
+	if (panelMgr == nil)
+		return nil;
+	return panelMgr->GetVisiblePanel(kPagesPanelWidgetID);
+}
+
+// ③ Pages パネルが表示されていれば、その場で再描画させて(Purge 済みの)サムネイルを作り直させる。
+//    隠れていれば触る先が無い(次に開いたとき自然に作られる)。
+static void KESCMForceRedrawPagesPanel()
+{
+	IControlView* panel = KESCMGetVisiblePagesPanel();
+	if (panel == nil)
+		return;
+	InterfacePtr<IPanelControlData> pcd(panel, UseDefaultIID());
+	KESCMForceRedrawSubPanel(pcd, kLayoutPagesSubPanelWidgetID);
+	KESCMForceRedrawSubPanel(pcd, kMasterPagesSubPanelWidgetID);
+	panel->ForceRedraw(nil, kTrue);
+}
+
+void KESCMTryRefreshPagesPanelThumbnails(IDataBase* db, const std::set<UID>* extraPages)
 {
 	if (db == nil)
 		return;
 
-	// ④ 共有画像キャッシュを無効化(パネルの有無に関わらず先に実行)。ワークスペースは実効セッションから。
+	std::set<UID> changedPages;
+	if (KESCMCollectChangedPageUIDs(db, changedPages))
 	{
-		InterfacePtr<IWorkspace> ws(GetExecutionContextSession()->QueryWorkspace());
-		InterfacePtr<IImageCacheMgr> cacheMgr(ws, IID_IIMAGECACHEMGR);
-		if (cacheMgr != nil)
-		{
-			std::set<UID> changedPages;
-			if (KESCMCollectChangedPageUIDs(db, changedPages))
-			{
-				// ── 比較中の db(START/再比較) ──
-				// ★変更ページ＋overflow斜線ページ(ページ UID)だけを狙って Purge。変更のないページの
-				//   サムネイルはキャッシュが生き残り点滅しない。サムネイルはページ UID でキャッシュ
-				//   されている(2026-07-07 実機プローブで確定)。集合が空(変更ゼロ)なら何も purge せず、
-				//   下の ForceRedraw だけ行う(無害)。
-				for (std::set<UID>::iterator it = changedPages.begin(); it != changedPages.end(); ++it)
-				{
-					UIDRef pageRef(db, *it);
-					cacheMgr->Purge(pageRef, IImageCacheMgr::kWildCard);
-				}
-			}
-			else
-			{
-				// ── Stop/クローズ後(DropAll 済みで db が比較対象でなくなった) ──
-				// ★全ページを列挙して1ページずつ per-UID Purge する。全体 Purge(db) 一発は既存サムネイルの
-				//   無効化として実機で効かなかった(枠が消えない)ため、proven な per-UID を全ページに回す。
-				//   DropAll 済み=枠データが無いので、作り直されるサムネイルはクリーン(枠が消える)。
-				//   終端操作なのでパネル全体が一瞬リフレッシュされても許容。
-				std::vector<UID> allPages;
-				KESCMCollectPageUIDs(db, allPages);
-				for (std::vector<UID>::iterator it = allPages.begin(); it != allPages.end(); ++it)
-				{
-					UIDRef pageRef(db, *it);
-					cacheMgr->Purge(pageRef, IImageCacheMgr::kWildCard);
-				}
-			}
-		}
+		// ── 比較中の db(START/再比較) ──
+		// ★変更ページ＋overflow斜線ページ＋登録ページ(ページ UID)だけを狙って Purge。変更のない
+		//   ページのサムネイルはキャッシュが生き残り点滅しない。サムネイルはページ UID でキャッシュ
+		//   されている(2026-07-07 実機プローブで確定)。集合が空(変更ゼロ)なら何も purge せず、
+		//   下の ForceRedraw だけ行う(無害)。
+		// ★extraPages(再比較前に枠が付いていた旧集合)も合流させる。再ペアリングで旧集合から抜けた
+		//   ページ(overflow を抜けた赤「/」・変更なしに戻ったリング)は新集合に入らず取りこぼすため、
+		//   旧集合も一緒に Purge して古い枠/斜線を確実に消す。
+		if (extraPages != nil)
+			changedPages.insert(extraPages->begin(), extraPages->end());
+		KESCMPurgePageThumbs(db, changedPages);
+	}
+	else
+	{
+		// ── Stop/クローズ後(DropAll 済みで db が比較対象でなくなった) ──
+		// ★全ページを列挙して1ページずつ per-UID Purge する。全体 Purge(db) 一発は既存サムネイルの
+		//   無効化として実機で効かなかった(枠が消えない)ため、proven な per-UID を全ページに回す。
+		//   DropAll 済み=枠データが無いので、作り直されるサムネイルはクリーン(枠が消える)。
+		//   終端操作なのでパネル全体が一瞬リフレッシュされても許容。
+		std::vector<UID> allPages;
+		KESCMCollectPageUIDs(db, allPages);
+		KESCMPurgePageThumbs(db, allPages);
 	}
 
-	// ③ Pages パネルが表示されていれば、その場で再描画させて(Purge 済みの)サムネイルを作り直させる。
-	//    隠れていれば触る先が無い(次に開いたとき自然に作られる)。
-	InterfacePtr<IApplication> app(GetExecutionContextSession()->QueryApplication());
-	if (app == nil)
-		return;
-	InterfacePtr<IPanelMgr> panelMgr(app->QueryPanelManager());
-	if (panelMgr == nil)
-		return;
-	IControlView* panel = panelMgr->GetVisiblePanel(kPagesPanelWidgetID);
-	if (panel == nil)
-		return;
-	InterfacePtr<IPanelControlData> pcd(panel, UseDefaultIID());
+	KESCMForceRedrawPagesPanel();
+}
 
-	KESCMForceRedrawSubPanel(pcd, kLayoutPagesSubPanelWidgetID);
-	KESCMForceRedrawSubPanel(pcd, kMasterPagesSubPanelWidgetID);
-	panel->ForceRedraw(nil, kTrue);
+void KESCMRefreshThumbnailsForPages(IDataBase* db, const std::vector<UID>& pages)
+{
+	if (db == nil || pages.empty())
+		return;
+	// トグルしたページを明示 per-UID Purge。登録解除は sRegistered から先に消えるため、上の
+	// KESCMCollectChangedPageUIDs 経由では拾えない=ここで直接 Purge して緑「/」を消す。登録追加でも
+	// 同ページを対称に Purge して、赤「/」(overflow)→緑「/」(登録)の載せ替えを即時反映する。
+	KESCMPurgePageThumbs(db, pages);
+	KESCMForceRedrawPagesPanel();
 }
 
 // KESCMThumbnailRefresh.cpp 終わり。

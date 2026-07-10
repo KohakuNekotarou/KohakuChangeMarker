@@ -42,6 +42,7 @@
 #include "KESCMPageMap.h"	// KESCMPageMapToggleSelectedPages / KESCMPageMapUpdateToggleState(追加/削除ページ登録トグル)
 							// ＋ KESCMBuildPairing(除外対応表、Hide Unchanged の Source 側分類で使用)
 #include "KESCMPageNumberMarker.h"	// KESCMGetIgnorePageNumberMarker/KESCMSetIgnorePageNumberMarker(ノンブル除外トグル)
+#include "KESCMThumbnailRefresh.h"	// KESCMTryRefreshPagesPanelThumbnails(Source サムネイルの枠を即 ON/OFF)
 
 // ★注意: source/public/includes/URLUtils.h は "namespace URLUtils { PUBLIC_DECL void GoToURL(...); }" と
 // 宣言しているが、これはヘッダーとバイナリの不一致(Public.lib 側の実エクスポート名と食い違っている)。
@@ -113,6 +114,11 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 		{
 			KESCMDrawEventHandler::sSrcMarksOn = !KESCMDrawEventHandler::sSrcMarksOn;
 			KESCMInvalidateDB(KESCMDrawEventHandler::sSrcDB);
+			// ★レイアウトビューだけでなく Pages パネルの Source サムネイルも即時更新する。Source 側の枠は
+			//   wantSrcMarks(=sSrcMarksOn)に依存し、サムネイル(isThumb)でも強制表示されないため、トグルで
+			//   サムネイルを作り直さないと OFF にしても枠が残る/ON にしても出ない。対象ページは Source の
+			//   変更/overflow/登録集合(KESCMCollectChangedPageUIDs が引く)で、枠が出得るページと一致する。
+			KESCMTryRefreshPagesPanelThumbnails(KESCMDrawEventHandler::sSrcDB);
 			PMString msg(KESCMDrawEventHandler::sSrcMarksOn ? "Source marks: on." : "Source marks: off.");
 			msg.SetTranslatable(kFalse);
 			KESCMSetStatus(msg);
@@ -522,16 +528,7 @@ void KESCMActionComponent::DoHideUnchangedToggle()
 	KESCMSetStatus(msg);
 }
 
-// 文書の生存確認(閉じた db は deref 禁止。IDocumentList へのポインタ比較のみで判定する。
-// KESCMHandleDocsClosed の生存スイープと同じ流儀)。
-static bool16 KESCMIsDocDBOpen(IDataBase* db)
-{
-	if (db == nil)
-		return kFalse;
-	InterfacePtr<IApplication> app(GetExecutionContextSession()->QueryApplication());
-	InterfacePtr<IDocumentList> docList(app ? app->QueryDocumentList() : nil);
-	return (docList != nil && docList->FindDocByDataBase(db) != nil);
-}
+// 文書の生存確認は共有ヘルパ KESCMIsDocDBOpen(KESCMCore.h)を使う(旧ここ static、2026-07-10 共有化)。
 
 // 片側(db+控えリスト)の再表示と状態破棄。restore=kTrue かつ db が生存している場合のみ再表示コマンドを
 // 打つ(途中で削除されたスプレッドは ISpread クエリが nil になるのでスキップ)。db が閉じていれば

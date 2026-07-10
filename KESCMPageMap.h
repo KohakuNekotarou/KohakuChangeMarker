@@ -19,6 +19,7 @@
 #include "BaseType.h"		// int32, bool16
 #include "OMTypes.h"		// UID
 #include <vector>
+#include <set>
 
 class IActionStateList;
 class IDataBase;
@@ -50,6 +51,11 @@ bool16 KESCMPageMapIsRegistered(IDataBase* db, UID pageUID);
 // db に登録済み(比較相手なし)ページが1つでもあるか(存在チェックのみ)。描画側の早期 return 判定
 // (KESCMDrawEventHandler::HandleDrawEvent の wantMarks/wantSrcMarks)に使う。
 bool16 KESCMPageMapHasAnyRegistered(IDataBase* db);
+
+// db に登録済み(Added/Removed=緑「/」)のページ UID をすべて out に追加する。Pages パネルサムネイルの
+// per-UID Purge 対象に登録ページを含めるために使う(登録ページは sEntries/overflow とは別管理のため、
+// これを含めないと緑「/」がサムネイルに即時反映されない)。db が nil か登録が無ければ何もしない。
+void KESCMPageMapCollectRegistered(IDataBase* db, std::set<UID>& out);
 
 // 除外対応表: targetDB/sourceDB それぞれの平坦ページ列(KESCMCollectPageUIDs)から登録済み
 // (比較相手なし)ページを除き、残り同士を順番に対応させる。outTargetPages[i] と outSourcePages[i] が

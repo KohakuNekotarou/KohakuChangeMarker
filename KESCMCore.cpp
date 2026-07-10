@@ -11,6 +11,9 @@
 #include "VCPlugInHeaders.h"
 
 #include "PersistUtils.h"
+#include "ISession.h"			// GetExecutionContextSession(KESCMIsDocDBOpen)
+#include "IApplication.h"		// QueryDocumentList(KESCMIsDocDBOpen)
+#include "IDocumentList.h"		// FindDocByDataBase=生存確認のポインタ比較(KESCMIsDocDBOpen)
 #include "IDataBase.h"
 #include "IDocument.h"
 #include "ILayoutUtils.h"
@@ -33,6 +36,7 @@
 #include "LayoutUIID.h"				// kLayoutWidgetBoss / kLayoutSecondaryPanelWidgetID
 
 #include <vector>
+#include <set>
 
 #include "KESCMConstants.h"
 #include "KESCMDrawEventHandler.h"   // 描画エンジン＋共有 static
@@ -198,6 +202,18 @@ ErrorCode KESCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMStri
 	if (targetDB == nil || sourceDB == nil)
 		return kFailure;
 
+	// ★再比較の前に「今 枠/斜線が付いているページ」を控える(サムネイル取りこぼし対策)。再ペアリング
+	//   (登録トグルでページ数差を無視した時など)で対応が1つズレると、overflow を抜けたページ(赤「/」が
+	//   消える)や再ペアで変更なしに戻ったページ(リングが消える)が生じる。これらは再比較後の per-UID
+	//   Purge 集合(=いずれも「今」の状態)には入らないため、旧集合を控えて後で一緒に Purge しないと
+	//   古い枠/斜線がサムネイルに残る。
+	//   列挙は KESCMCollectChangedPageUIDs に一本化(「何がマーク済みか」の定義を二重実装しない)。
+	//   同関数は db が現在の sDB/sSrcDB と一致する時だけ集める=「前回比較が今回と同じ文書の時だけ
+	//   旧 UID を拾う」ガード(UID は db 固有。別文書対への再 Start で誤 Purge しない)も兼ねる。
+	std::set<UID> prevTargetMarked, prevSourceMarked;
+	KESCMCollectChangedPageUIDs(targetDB, prevTargetMarked);
+	KESCMCollectChangedPageUIDs(sourceDB, prevSourceMarked);
+
 	// 差分再比較の可否。登録トグル専用(allowIncremental=kTrue)で、かつ前回比較と同じドキュメント対を
 	// 対象にしていて前回ペアリングが残っている場合のみ差分にする。それ以外(Start・Ignore Page Number
 	// マーカー切替・別文書対・前回ペアリング無し)は従来どおり全ページを再ラスタ化する。
@@ -301,9 +317,9 @@ ErrorCode KESCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMStri
 	// 合わせて叩いてみる(微かな望み)。効果が無ければこの1行と KESCMThumbnailRefresh.* を外すだけで戻せる。
 	// (サムネイル自体への枠描画は sThumbExperiment 経由=描画エンジン側で ON。)詳細: memory
 	// kescm-pages-panel-thumbnails。
-	KESCMTryRefreshPagesPanelThumbnails(targetDB);
+	KESCMTryRefreshPagesPanelThumbnails(targetDB, &prevTargetMarked);
 	if (sourceDB != targetDB)
-		KESCMTryRefreshPagesPanelThumbnails(sourceDB);
+		KESCMTryRefreshPagesPanelThumbnails(sourceDB, &prevSourceMarked);
 
 	PMString report;
 	report.SetTranslatable(kFalse);
@@ -313,6 +329,17 @@ ErrorCode KESCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMStri
 	report.Append(" changed="); report.AppendNumber(changedCount);
 	outReport = report;
 	return kSuccess;
+}
+
+// 文書の生存確認(KESCMCore.h で宣言)。★閉じた db は deref 禁止=IDocumentList への
+// ポインタ比較のみ。旧 KESCMActionComponent.cpp の static を共有化したもの(2026-07-10)。
+bool16 KESCMIsDocDBOpen(IDataBase* db)
+{
+	if (db == nil)
+		return kFalse;
+	InterfacePtr<IApplication> app(GetExecutionContextSession()->QueryApplication());
+	InterfacePtr<IDocumentList> docList(app ? app->QueryDocumentList() : nil);
+	return (docList != nil && docList->FindDocByDataBase(db) != nil) ? kTrue : kFalse;
 }
 
 // db が非nilなら、その IDocument のビューを再描画する。呼び出し側(パネル操作時の「今アクティブな

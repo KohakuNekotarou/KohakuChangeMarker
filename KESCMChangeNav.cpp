@@ -30,8 +30,6 @@
 #include "IPanorama.h"
 #include "ILayoutViewUtils.h"	// GetAllLayoutViews(db)
 #include "ILayoutUIUtils.h"		// MakeZoomCmd(kZoomToCmdBoss。他文書ビューのズームを合わせる公式経路)/GetFrontDocument
-#include "IApplication.h"		// ページパネル連動スクロール用(IPanelMgr 取得)
-#include "IPanelMgr.h"
 #include "IPanelControlData.h"
 #include "IDocument.h"
 #include "IPagesSubPanelController.h"	// ScrollPanelToSpread(page/spread UID 可と明記あり)
@@ -55,6 +53,7 @@
 #include "KESCMCore.h"				// KESCMCollectPageUIDs / KESCMArmed* / KESCMSetStatus
 #include "KESCMDrawEventHandler.h"	// sDB / sSrcDB / sEntries / KESCMQueryPanorama
 #include "KESCMPageMap.h"			// KESCMPageMapIsRegistered / KESCMBuildPairing / KESCMMapTargetToSource
+#include "KESCMThumbnailRefresh.h"	// KESCMGetVisiblePagesPanel(表示中 Pages パネル取得の共有ヘルパ)
 #include "KESCMChangeNav.h"
 
 // 直近に巡回した Target ページ UID(次/前の基準点)。index ではなく UID で持つことで、リストが
@@ -250,13 +249,8 @@ static void KESCMScrollPagesPanelToPage(IDataBase* db, UID pageUID)
 	if (front == nil || ::GetDataBase(front) != db)
 		return;
 
-	InterfacePtr<IApplication> app(GetExecutionContextSession()->QueryApplication());
-	if (app == nil)
-		return;
-	InterfacePtr<IPanelMgr> panelMgr(app->QueryPanelManager());
-	if (panelMgr == nil)
-		return;
-	IControlView* panel = panelMgr->GetVisiblePanel(kPagesPanelWidgetID);
+	// パネル取得は共有ヘルパ(KESCMThumbnailRefresh.h)に一本化(2026-07-10)。
+	IControlView* panel = KESCMGetVisiblePagesPanel();
 	if (panel == nil)
 		return;	// パネル非表示なら何もしない(次に開いたときは通常表示でよい)
 	InterfacePtr<IPanelControlData> pcd(panel, UseDefaultIID());

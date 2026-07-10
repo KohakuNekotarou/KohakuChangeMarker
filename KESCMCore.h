@@ -25,6 +25,11 @@ class IControlView;
 // 色サンプラが共有するヘルパ。実体は KESCMCore.cpp。
 void		KESCMCollectPageUIDs(IDataBase* db, std::vector<UID>& out);
 
+// 文書の生存確認: db がまだ開いている文書のものなら kTrue。★閉じた db は deref 禁止のため、
+// IDocumentList::FindDocByDataBase へのポインタ比較のみで判定する(KESCM 全体の共通規約)。
+// Hide Unchanged の復元・遅延サムネイル更新などが共有する。実体は KESCMCore.cpp。
+bool16		KESCMIsDocDBOpen(IDataBase* db);
+
 // 現在のマウス位置を、このビューの content(ペーストボード)座標で読む(画面→窓→content)。view が nil なら
 // kFalse。peek と色サンプラが同じ流儀でカーソル位置を求めるための共有ヘルパ。
 bool16		KESCMQueryMouseContentPoint(IControlView* view, PMReal& outX, PMReal& outY);

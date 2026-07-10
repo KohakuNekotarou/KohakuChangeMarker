@@ -45,6 +45,7 @@
 
 #include "KESCMCore.h"			// KESCMCollectPageUIDs / KESCMArmedTargetDB / KESCMArmedSourceDB / KESCMSetStatus
 #include "KESCMPageMap.h"
+#include "KESCMThumbnailRefresh.h"	// KESCMRefreshThumbnailsForPages(トグルページの明示サムネイル更新)
 
 // 登録済み「比較相手なしページ」: 文書DB → ページUIDの集合。セッション内のみ。
 // 空になった文書のエントリは即座に消す(スイープと「登録あり文書」の判定を軽く保つ)。
@@ -174,6 +175,7 @@ void KESCMPageMapToggleSelectedPages()
 	// KESCMDoMarkChangesDoc は Start 同様「Show Marks on Source」を既定 ON に戻す等の副作用も持つが、
 	// これは手動で Start を押し直すのと同じ挙動なので許容する。報告文字列(report)は使わず短い
 	// サフィックスだけ足す(ステータス欄が小さく、report をそのまま足すと溢れるため)。
+	bool16 recompared = kFalse;
 	if (KESCMIsArmed() && KESCMArmedTargetDB() != nil && KESCMArmedSourceDB() != nil)
 	{
 		// ★差分再比較(allowIncremental=kTrue)。登録の追加/解除では文書内容は変わらず除外対応表の
@@ -182,7 +184,19 @@ void KESCMPageMapToggleSelectedPages()
 		PMString report;
 		KESCMDoMarkChangesDoc(KESCMArmedTargetDB(), KESCMArmedSourceDB(), report, kTrue /*allowIncremental*/);
 		msg.Append(" (recompared)");
+		recompared = kTrue;
 	}
+
+	// ★トグルしたページのサムネイル明示 per-UID Purge。必要なのは次の2ケースだけ:
+	//   ・再比較が走らなかった(未 arm 等) … 他に refresh 経路が無い
+	//   ・登録解除 … 解除ページは sRegistered からも sEntries/overflow(※)からも消えるため、再比較の
+	//     Purge 集合(現在の集合∪再比較前の sEntries/overflow 退避)のどこにも入らない=ここで拾うしかない
+	//     (※登録中はペアリングから除外されていたので、退避した旧 overflow にも入っていない)
+	//   登録追加で再比較済みの場合はスキップ: トグル済みページは sRegistered に入っており、再比較側の
+	//   KESCMCollectChangedPageUIDs(登録ページ込み)が既に Purge+ForceRedraw している。ここでも呼ぶと
+	//   同じページを二重ラスタ化+パネル二重再描画(点滅)するだけで無意味(2026-07-10 レビューで判明)。
+	if (!recompared || !anyUnregistered)
+		KESCMRefreshThumbnailsForPages(db, pages);
 
 	KESCMSetStatus(msg);
 }
@@ -292,6 +306,22 @@ bool16 KESCMPageMapHasAnyRegistered(IDataBase* db)
 		return kFalse;
 	std::map<IDataBase*, std::set<UID> >::const_iterator it = sRegistered.find(db);
 	return (it != sRegistered.end() && !it->second.empty()) ? kTrue : kFalse;
+}
+
+//========================================================================================
+// KESCMPageMapCollectRegistered(KESCMPageMap.h で宣言)
+//   db の登録済み(Added/Removed=緑「/」)ページ UID をすべて out に追加する(out はクリアしない=
+//   既存の変更/overflow 集合に足し込む使い方)。登録ページは sEntries/overflow とは別管理なので、
+//   サムネイル per-UID Purge の対象集合にこれを含めないと緑「/」が即時反映されない。
+//========================================================================================
+void KESCMPageMapCollectRegistered(IDataBase* db, std::set<UID>& out)
+{
+	if (db == nil)
+		return;
+	std::map<IDataBase*, std::set<UID> >::const_iterator it = sRegistered.find(db);
+	if (it == sRegistered.end())
+		return;
+	out.insert(it->second.begin(), it->second.end());
 }
 
 //========================================================================================
