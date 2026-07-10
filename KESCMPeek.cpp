@@ -567,8 +567,10 @@ static PBPMPoint KESCMCorrectedCenterForDoc(IDataBase* srcDocDb, IDataBase* dstD
 	return PBPMPoint(dstCX + (srcCenter.X() - srcCX), dstCY + (srcCenter.Y() - srcCY));
 }
 
-// applyPageOffset=kTrue(Alt+ミドル)のとき、各宛先文書へ複製する中心座標に上の追加/削除補正を掛ける。
-// 既定 kFalse=フライアウト「Sync Layout Views」の自動同期は従来どおり無補正(生座標)。
+// applyPageOffset=kTrue のとき、各宛先文書へ複製する中心座標に上の追加/削除補正を掛ける。
+// ★Alt+ミドルとフライアウト「Sync Layout Views」の自動同期は、どちらも本仕様として kTrue で呼ぶ
+// (比較 arm 中は比較ペアの相手ページ同士がきっちり並ぶ)。未 arm/ペア外は関数内で生同期にフォールバック。
+// 既定 kFalse は補正なし(生座標)の呼び口を残すためのもの。
 static void KESCMSyncOtherDocViewportsTo(IPanorama* srcPano, IDataBase* srcDocDb, bool16 applyPageOffset = kFalse)
 {
 	if (srcPano == nil)
@@ -654,7 +656,10 @@ static void KESCMSyncOtherDocViewportsTo(IPanorama* srcPano, IDataBase* srcDocDb
 			// 手本の可視中心と同じ content 座標(補正時は相手ページ上の対応座標)をビュー中心へ=
 			// 同じ拡大率なら同じ画面が同じように映る。ズーム(コマンド)実行後に行うので、新しい倍率で
 			// 正しくセンタリングされる。
-			pano->ScrollContentLocationToFrameCenter(dstCenter, kTrue /*forceRedraw*/);
+			// 自動同期(高頻度通知)ではその都度の同期再描画を避け、invalidate だけして OS の描画
+			// サイクルにまとめさせる(軽量化)。スクロール位置は同期更新されるので上の dedup 判定は
+			// forceRedraw=kFalse でも正しく効く。
+			pano->ScrollContentLocationToFrameCenter(dstCenter, kFalse /*forceRedraw*/);
 		}
 	}
 
@@ -906,8 +911,8 @@ void KESCMLayoutSyncObserver::Update(const ClassID& theChange, ISubject* theSubj
 	if (srcDocDb == nil)
 		return;	// 所属文書を特定できない(クローズ途中等)。同期しない
 
-	// ★実験(2026-07-10): 自動同期(ライブ)にも追加/削除補正を掛ける。比較 arm 中は比較ペアの相手
-	// ページ同士が並ぶ。未 arm/ペア外は関数内で生同期にフォールバック。重い/飛ぶようなら kFalse へ戻す。
+	// ★本仕様(2026-07-10 確定): 自動同期(ライブ)にも追加/削除補正を掛ける。比較 arm 中は比較ペアの
+	// 相手ページ同士がきっちり並ぶ(実機で使い勝手を確認済み)。未 arm/ペア外は関数内で生同期にフォールバック。
 	KESCMSyncOtherDocViewportsTo(srcPano, srcDocDb, kTrue /*applyPageOffset*/);
 }
 
@@ -939,7 +944,7 @@ void KESCMSetLayoutSync(bool16 on)
 			InterfacePtr<IPanorama> pano(KESCMQueryPanorama(front));
 			IDataBase* db = KESCMFindDocDbForView(front);
 			if (pano != nil && db != nil)
-				KESCMSyncOtherDocViewportsTo(pano, db, kTrue /*applyPageOffset(実験): 初回そろえも補正付き*/);
+				KESCMSyncOtherDocViewportsTo(pano, db, kTrue /*applyPageOffset(本仕様): 初回そろえも補正付き*/);
 		}
 	}
 	else
