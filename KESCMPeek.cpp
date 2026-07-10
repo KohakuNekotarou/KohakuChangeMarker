@@ -983,7 +983,14 @@ IEventDispatcher::EventTypeList KESCMPeekWatcher::WatchEvent(IEvent* e)
 
 	if (type == IEvent::kMButtonDn)
 	{
-		if (sPeekArmed && e->ShiftKeyDown() && e->CmdKeyDown() && e->OptionAltKeyDown() && KESCMFrontViewIsOverTarget())
+		if (e->ShiftKeyDown() && e->CmdKeyDown() && !e->OptionAltKeyDown())
+		{
+			// Shift＋Ctrl＋ミドル押下: KESCMパネルの表示/非表示トグル。表示時、パネルがフローティングなら
+			// マウス位置付近へポップさせる(ドック中は剥がさず定位置に表示)。arm 不要・全文書共通なので
+			// 先頭で捕まえる。3キー同時(Shift+Ctrl+Alt=CMYK)は Alt 有り(!Alt 条件)でここに吸われない。
+			KESCMTogglePanelAtCursor();
+		}
+		else if (sPeekArmed && e->ShiftKeyDown() && e->CmdKeyDown() && e->OptionAltKeyDown() && KESCMFrontViewIsOverTarget())
 		{
 			// Shift＋Ctrl＋Alt＋ミドル押下: クリック点の CMYK 生値(0..255)を新・旧でサンプリングし、
 			// "Target C.. M.. Y.. K.." / "Source C.. …" をパネルのステータス行に表示する(次の操作まで残る)。

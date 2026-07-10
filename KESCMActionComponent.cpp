@@ -388,7 +388,7 @@ void KESCMActionComponent::DoHideUnchangedToggle()
 	if (db == nil)
 	{
 		// Start 前。
-		KESCMHideStatus("Hide Unchanged: no changed spreads to keep visible (press Start first; if no changes were found, nothing can be hidden).");
+		KESCMHideStatus("Hide Unchanged: Start first.");
 		return;
 	}
 
@@ -412,7 +412,7 @@ void KESCMActionComponent::DoHideUnchangedToggle()
 	// 全スプレッド非表示は InDesign が許さないので中止する。
 	if (KESCMDrawEventHandler::sEntries.empty() && !KESCMPageMapHasAnyRegistered(db) && tOverflowSet.empty())
 	{
-		KESCMHideStatus("Hide Unchanged: no changed spreads to keep visible (press Start first; if no changes were found, nothing can be hidden).");
+		KESCMHideStatus("Hide Unchanged: no changes to hide.");
 		return;
 	}
 
@@ -461,14 +461,14 @@ void KESCMActionComponent::DoHideUnchangedToggle()
 
 	if (unchanged.empty())
 	{
-		KESCMHideStatus("Hide Unchanged: every spread has changes; nothing to hide.");
+		KESCMHideStatus("Hide Unchanged: all changed; none to hide.");
 		return;
 	}
 	if ((int32)unchanged.size() >= visibleCount)
 	{
 		// 保険(sEntries が非空なら通常ここへは来ない): 表示中スプレッドを全部隠すことになる場合は中止
 		// (InDesign は全スプレッド非表示を許さない。分母は「現在表示中」の数=手動で隠し済みの分は除く)。
-		KESCMHideStatus("Hide Unchanged: no changed spreads to keep visible; cannot hide all spreads.");
+		KESCMHideStatus("Hide Unchanged: can't hide all spreads.");
 		return;
 	}
 

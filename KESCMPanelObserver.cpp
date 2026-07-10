@@ -27,6 +27,8 @@
 #include "IBooleanControlData.h"
 #include "IApplication.h"			// GetExecutionContextSession / QueryApplication
 #include "IPanelMgr.h"				// QueryPanelManager / GetVisiblePanel(外部からのパネル更新)
+#include "IEventUtils.h"			// GetGlobalMouseLocation(Shift+Ctrl+中のカーソル位置ポップ)
+#include "Utils.h"					// Utils<IEventUtils>() テンプレートアクセサ
 #include "IActiveContext.h"
 #include "IDocument.h"
 #include "IDocumentList.h"
@@ -528,6 +530,69 @@ void KESCMPanelTempShowEnd()
 		// 閉じていた → 閉じ直す。
 		panelMgr->HidePanelByWidgetID(kKESCMPanelWidgetID);
 	}
+}
+
+//========================================================================================
+// KESCMTogglePanelAtCursor(KESCMCore.h で宣言) — Shift+Ctrl+中ボタンでパネルの表示/非表示を
+// トグルする。表示にするとき、パネルがフローティング(=どこにもドックされていない浮きパレット)なら
+// マウス位置付近へ移動して「カーソルの所にポップ」させる。ドック中は剥がさず定位置に表示する
+// (ユーザー指定 2026-07-10: フロート時のみ追従)。
+//========================================================================================
+
+// パネルを含む「フローティングのタブ付きドック」をパレット階層を遡って探す。ドッキング中
+// (フロートでない)なら無効な PaletteRef を返す。SetPalettePosition の precondition
+// (フローティングの Dock)を満たす対象を返すため、TabPane ではなくドック本体まで遡る。
+static PaletteRef KESCMFindPanelFloatingDock(IPanelMgr* panelMgr)
+{
+	IControlView* panel = panelMgr->GetPanelFromWidgetID(kKESCMPanelWidgetID);
+	if (panel == nil)
+		return PaletteRef();
+	PaletteRef pal = panelMgr->GetPaletteRefContainingPanel(panel);
+	for (int32 guard = 0; guard < 16 && pal.IsValid(); ++guard)	// guard=階層異常時の無限ループ保険
+	{
+		if (PaletteRefUtils::IsFloatingTabbedPaletteDock(pal))
+			return pal;
+		if (PaletteRefUtils::IsRootPaletteNode(pal))
+			break;
+		pal = PaletteRefUtils::GetParentOfPalette(pal);
+	}
+	return PaletteRef();
+}
+
+void KESCMTogglePanelAtCursor()
+{
+	InterfacePtr<IApplication> app(GetExecutionContextSession()->QueryApplication());
+	InterfacePtr<IPanelMgr> panelMgr(app != nil ? app->QueryPanelManager() : nil);
+	if (panelMgr == nil)
+		return;
+
+	// 表示中(=見えている)なら隠す。
+	if (panelMgr->IsPanelWithWidgetIDShown(kKESCMPanelWidgetID))
+	{
+		panelMgr->HidePanelByWidgetID(kKESCMPanelWidgetID);
+		return;
+	}
+
+	// カーソル位置(グローバル)。少し左上へパネル左上を置く(クリック点を隠しすぎない)。
+	GSysPoint g = Utils<IEventUtils>()->GetGlobalMouseLocation();
+	const SysCoord left = (SysCoord)g.x - 7;
+	const SysCoord top  = (SysCoord)g.y - 7;
+
+	// ★「表示→移動」のチラつきを消すため、表示する前に位置を決める。GetPanelFromWidgetID は
+	// 非表示のパネルも返す(GetVisiblePanel と違い nil にならない)ので、隠れている floating dock を
+	// 先に掴んで SetPalettePosition できる。これで ShowPanelByWidgetID した瞬間からカーソル位置に出る。
+	// フロート時のみ(ドック中は floating dock が見つからず何もしない=定位置表示)。
+	PaletteRef preDock = KESCMFindPanelFloatingDock(panelMgr);
+	if (preDock.IsValid())
+		PaletteRefUtils::SetPalettePosition(preDock, left, top);
+
+	// 非表示/アイコン化 → 表示する。giveKeyFocus=kFalse: ミドル操作中にフォーカスを奪わない。
+	panelMgr->ShowPanelByWidgetID(kKESCMPanelWidgetID, kFalse);
+
+	// 表示で dock が purge→再生成された場合の補正(前段で置けていれば同座標=実質no-op=チラつかない)。
+	PaletteRef postDock = KESCMFindPanelFloatingDock(panelMgr);
+	if (postDock.IsValid())
+		PaletteRefUtils::SetPalettePosition(postDock, left, top);
 }
 
 //========================================================================================

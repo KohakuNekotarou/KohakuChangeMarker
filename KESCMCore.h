@@ -156,6 +156,10 @@ void		KESCMEnsurePanelShown();
 void		KESCMPanelTempShowBegin();
 void		KESCMPanelTempShowEnd();
 
+// Shift+Ctrl+中ボタン: KESCMパネルの表示/非表示トグル。表示時、パネルが既にフローティングなら
+// マウス位置付近へ移動する(ドック中は剥がさず定位置に表示)。実体は KESCMPanelObserver.cpp。
+void		KESCMTogglePanelAtCursor();
+
 // パネルのイラスト(ON/OFF アイコン)をクリックしたときに呼ぶ。「このプラグインについて」に載せている
 // 配布元URL(kKESCMRepoURL, KESCMID.h)を既定のブラウザで開く。実体は KESCMActionComponent.cpp。
 void		KESCMOpenAboutURL();

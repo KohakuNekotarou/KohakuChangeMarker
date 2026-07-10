@@ -146,12 +146,12 @@ bool16 KESCMSampleCmykUnderMouse(IDataBase* targetDB, IDataBase* sourceDB, PMStr
 	outMsg.Append(" M"); KESCMAppend3(outMsg, KESCMByteToPct(cN[1]));
 	outMsg.Append(" Y"); KESCMAppend3(outMsg, KESCMByteToPct(cN[2]));
 	outMsg.Append(" K"); KESCMAppend3(outMsg, KESCMByteToPct(cN[3]));
-	outMsg.Append(" Target");
+	outMsg.Append(" tgt");
 	outMsg.AppendW(UTF32TextChar(0x0A));	// 改行 → 2行目へ
 	outMsg.Append("C"); KESCMAppend3(outMsg, KESCMByteToPct(cO[0]));
 	outMsg.Append(" M"); KESCMAppend3(outMsg, KESCMByteToPct(cO[1]));
 	outMsg.Append(" Y"); KESCMAppend3(outMsg, KESCMByteToPct(cO[2]));
 	outMsg.Append(" K"); KESCMAppend3(outMsg, KESCMByteToPct(cO[3]));
-	outMsg.Append(" Source");
+	outMsg.Append(" src");
 	return kTrue;
 }
