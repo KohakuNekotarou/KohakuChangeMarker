@@ -52,6 +52,11 @@ bool16 KESCMPageMapIsRegistered(IDataBase* db, UID pageUID);
 // (KESCMDrawEventHandler::HandleDrawEvent の wantMarks/wantSrcMarks)に使う。
 bool16 KESCMPageMapHasAnyRegistered(IDataBase* db);
 
+// どれか1つでも登録済み(比較相手なし)ページを持つ文書があるか(db を問わない存在チェック)。
+// 描画側(HandleDrawEvent)は want フラグを db 確定前に計算するため、「比較を Start していなくても、
+// 登録があればサムネイルに緑『/』を描く」判定の入口としてこれを使う。実体は KESCMPageMap.cpp。
+bool16 KESCMPageMapHasAnyRegisteredAnywhere();
+
 // db に登録済み(Added/Removed=緑「/」)のページ UID をすべて out に追加する。Pages パネルサムネイルの
 // per-UID Purge 対象に登録ページを含めるために使う(登録ページは sEntries/overflow とは別管理のため、
 // これを含めないと緑「/」がサムネイルに即時反映されない)。db が nil か登録が無ければ何もしない。

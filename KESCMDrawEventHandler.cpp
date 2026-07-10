@@ -990,7 +990,15 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	// sPrintMarks ON のときだけ生き残る=印刷に出るのは印刷マークON時のみ(従来どおり)。
 	// 番号がズレているかはページごとに後で判定する(ズレていなければ何も描かない)。
 	const bool16 wantOldNums = !suppressForPrint && sShowOldNumbers && (sPrintMarks || sMarksVisible || alwaysScreen);
-	if (!wantMarks && !wantOrig && !wantOldNums && !wantSrcMarks)
+	// ★登録ページ(Added/Removed=緑「/」)は比較の Start と無関係に描けるようにする。右クリック登録だけで
+	// Pages パネルのサムネイルに緑「/」を反映させるための経路(下の「登録専用パス」で描く)。表示条件は枠と
+	// 同じ(印刷ON常時 / ミドル押下中 / Hold to Hide 常時 / サムネイルは isThumb で強制)。どれかの文書に
+	// 登録があるか(db を問わない存在チェック)だけをここで見て、実際にどの db に描くかは下のパスが判定する
+	// (want フラグは db 確定前に計算するため、ここでは Anywhere 判定を使う)。
+	const bool16 wantRegistered = !suppressForPrint &&
+		(sPrintMarks || sMarksVisible || alwaysScreen || isThumb) &&
+		KESCMPageMapHasAnyRegisteredAnywhere();
+	if (!wantMarks && !wantOrig && !wantOldNums && !wantSrcMarks && !wantRegistered)
 		return kFalse;
 
 	GraphicsData* gd = ded->gd;
@@ -1216,6 +1224,23 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 				KESCMDrawPageNumberMarkerFill(gPort, db, srcPageUID);
 		}
 		return kFalse;	// Source 文書に Target 側オーバーレイは無い=ここで終わり
+	}
+
+	// ★登録専用パス: この db が現在の比較対象(sDB/sSrcDB)でなくても、その文書に登録ページ(Added/Removed)が
+	//   あれば緑「/」を描く。比較を Start していない状態で右クリック登録しただけでも、Pages パネルのサムネイル
+	//   (isThumb)に緑「/」が出るようにするための経路。比較中の db(db==sDB / db==sSrcDB)は上の Source ループと
+	//   下の Target ループが登録ページも描くので、ここでは扱わない(二重描画の防止)。不透明度は枠と同じ規則
+	//   (サムネイルは KESCMDrawPageDiagonal 内で不透明100%、画面は screen 基準、印刷は SelectedMarkOpacity)。
+	if (wantRegistered && db != sDB && db != sSrcDB && KESCMPageMapHasAnyRegistered(db))
+	{
+		const int32 nreg = spread->GetNumPages();
+		for (int32 i = 0; i < nreg; ++i)
+		{
+			const UID pageUID = spread->GetNthPageUID(i);
+			if (KESCMPageMapIsRegistered(db, pageUID))
+				KESCMDrawPageDiagonal(gPort, db, pageUID, sxr, drawMode, sMarkScreenOpacity,
+					kKESCMAddedBorderR, kKESCMAddedBorderG, kKESCMAddedBorderB);
+		}
 	}
 
 	// 変更オーバーレイ(リング＋変更数) — マーク済みドキュメントが現スプレッドの db と一致する時だけ。

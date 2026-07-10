@@ -309,6 +309,16 @@ bool16 KESCMPageMapHasAnyRegistered(IDataBase* db)
 }
 
 //========================================================================================
+// KESCMPageMapHasAnyRegisteredAnywhere(KESCMPageMap.h で宣言)
+//   どれか1つでも登録ページを持つ文書があるか。空エントリは登録/解除時に即消しているので
+//   (KESCMPageMapToggleSelectedPages の reg.empty() ガード)、map が空でないこと=登録が存在すること。
+//========================================================================================
+bool16 KESCMPageMapHasAnyRegisteredAnywhere()
+{
+	return sRegistered.empty() ? kFalse : kTrue;
+}
+
+//========================================================================================
 // KESCMPageMapCollectRegistered(KESCMPageMap.h で宣言)
 //   db の登録済み(Added/Removed=緑「/」)ページ UID をすべて out に追加する(out はクリアしない=
 //   既存の変更/overflow 集合に足し込む使い方)。登録ページは sEntries/overflow とは別管理なので、
