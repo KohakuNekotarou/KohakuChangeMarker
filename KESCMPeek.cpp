@@ -1457,6 +1457,10 @@ void KESCMHandleDocsClosed()
 		//   Stop(KESCMDoClearMarks)と同じく登録も丸ごと忘れる。これを怠ると、生存側 Target/Source に
 		//   古い登録が残り、次の Start でペアリングに紛れ込む(map 空にするだけ=deref なし)。
 		KESCMPageMapClearAllDocs();
+		// ★スクロールバー地図 strip も Stop と同様に取り外す(2026-07-11 セルフレビューで発見)。
+		//   これを怠ると、生存側の窓に孤児 strip が残り、レイアウトビューも 5px 詰めたままになる。
+		//   DetachAll は「今開いている窓」だけを走査する(閉じた窓の widget は窓ごと消えている)ので安全。
+		KESCMScrollMapDetachAll();
 		changed = kTrue;
 
 		PMString s("marks cleared");	// Stop ボタン(DoClear)と同じメッセージ

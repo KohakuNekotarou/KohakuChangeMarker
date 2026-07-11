@@ -32,4 +32,10 @@ void	KESCMScrollMapDetachAll();
 // 最新化するために呼ぶ(KESCMDoMarkChangesDoc の末尾)。strip が1つも無ければ何もしない。
 void	KESCMScrollMapInvalidateAll();
 
+// スプレッド描画イベントに便乗した「手動 Hide/Show Spread」検出(KESCMDrawEventHandler から呼ぶ)。
+// ページパネルからの手動の隠し/再表示は KESCM のどのフックも通らないが、必ず再描画は起こすので、
+// 描画のたび(250msスロットル付き)に Target/Source の隠しフラグ構成の指紋を取り、変化していたら
+// 地図を Invalidate する。Undo/Redo による隠し状態の変化も同じ経路で拾える。未 arm なら即 return。
+void	KESCMScrollMapNoticeDrawEvent();
+
 #endif // __KESCMScrollMap_h__

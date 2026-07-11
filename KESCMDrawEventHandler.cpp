@@ -59,6 +59,7 @@
 #include "KESCMCore.h"               // KESCMHandleDocsClosed(クローズ検知の後始末を一本化)
 #include "KESCMPageMap.h"            // KESCMPageMapIsRegistered/KESCMPageMapHasAnyRegistered(追加/削除ページ縁枠)
 #include "KESCMPageNumberMarker.h"   // KESCMGetIgnorePageNumberMarker/KESCMAppendPageNumberMarkerRects(ノンブル除外)
+#include "KESCMScrollMap.h"          // KESCMScrollMapNoticeDrawEvent(手動 Hide/Show Spread の検出)
 #include "KESCMDrawEventHandler.h"
 
 CREATE_PMINTERFACE(KESCMDrawEventHandler, kKESCMDrawEventHandlerImpl)
@@ -937,6 +938,12 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	// ※PDF 書き出し(File>Export)はこのスプレッド描画イベントを発火しないため対象外(print-to-PDF を使う)。
 	// 自己参照(自前スナップショット)は上の sRasterizing で防ぐので、ここで kPreviewMode は見ない。
 	const bool16 printing = (ded->flags & IShape::kPrinting) != 0;
+
+	// スクロールバー地図: ページパネルからの手動 Hide/Show Spread を検出する軽量チェック(250ms
+	// スロットル付きの指紋比較)。手動の隠し/再表示は KESCM のフックを通らないが必ず再描画は起こす
+	// ので、スプレッド描画イベントに便乗して拾う(Undo/Redo による変化も同経路)。KESCMScrollMap.cpp。
+	if (!printing)
+		KESCMScrollMapNoticeDrawEvent();
 	// ★サムネイル実験(2026-07-06): Pagesパネルのサムネイル生成(view無し・kPreviewMode・非印刷。診断ログ
 	// flags=0x1800=kPreviewMode|kDrawFrameEdge)を検出。sThumbExperiment ON の間は、サムネイルにも枠を
 	// 描くため下で wantMarks を強制 ON にする(通常は sPrintMarks/sMarksVisible が OFF だと枠が出ない)。

@@ -36,6 +36,10 @@
 #include "IGraphicsPort.h"
 #include "IGeometry.h"				// ページ矩形(pasteboard 写像用)
 #include "IInterfaceColors.h"		// 背景をテーマ地色(kInterfacePaletteFill)に
+#include "ISpreadList.h"			// スプレッド順の走査(隠しスプレッド除外のため)
+#include "ISpread.h"
+#include "IBoolData.h"				// スプレッドの隠し状態(IID_IHIDESPREADBOOLDATA)の読み取り
+#include "SpreadID.h"				// IID_IHIDESPREADBOOLDATA(kSpreadBoss 上の IBoolData)
 
 // General includes:
 #include "K2Vector.h"
@@ -52,11 +56,12 @@
 #include "PMMatrix.h"
 #include <vector>
 #include <set>
+#include <ctime>					// std::clock(手動 Hide/Show 検出のスロットル。MSVC の clock() は実時間)
 
 // Project includes:
 #include "KESCMID.h"
 #include "KESCMScrollMap.h"
-#include "KESCMCore.h"				// KESCMArmedTargetDB / KESCMIsDocDBOpen / KESCMCollectPageUIDs
+#include "KESCMCore.h"				// KESCMArmedTargetDB / KESCMArmedSourceDB / KESCMIsDocDBOpen
 #include "KESCMDrawEventHandler.h"	// sEntries / sDB(変更ページ=赤マークの供給元)
 #include "KESCMPageMap.h"			// KESCMPageMapCollectRegistered(Add/Remove 登録ページ=緑マーク)
 
@@ -88,8 +93,8 @@ CREATE_PERSIST_PMINTERFACE(KESCMScrollMapView, kKESCMScrollMapViewImpl)
 // 写像は「文書全体基準」(VS方式): 全ページの pasteboard Y の全域[minY,maxY]を strip の全高に
 // 正規化し、各対象ページの Y 帯をそのまま帯マークにする(最低3px)。スクロール位置・ズームに
 // 依存しないので、再描画は比較結果が変わったとき(KESCMScrollMapInvalidateAll)だけでよい。
-// ★既知の割り切り: Hide Unchanged Spreads で隠したスプレッドは pasteboard 座標が旧位置のまま
-// 残る(メモリ kescm-hide-unchanged-spreads)ため、隠し使用中はマーク位置が実表示と多少ズレ得る。
+// 隠しスプレッド(Hide Unchanged 等)はページ収集の時点で除外する(下記)ので、隠し使用中も
+// 表示中スプレッドの現座標だけで正規化され、マーク位置は実表示と一致する。
 void KESCMScrollMapView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 {
 	AGMGraphicsContext gc(viewPort, this, updateRgn);
@@ -132,9 +137,30 @@ void KESCMScrollMapView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 	if ((!isTarget && !isSource) || !KESCMIsDocDBOpen(db))
 		return;
 
-	// 全ページの pasteboard Y 帯を集める(順序は KESCMCollectPageUIDs=スプレッド順・ページ順)。
+	// 全ページの pasteboard Y 帯をスプレッド順・ページ順で集める。★隠しスプレッド(Hide Unchanged
+	// Spreads / ページパネルの Hide Spread)は除外する: 隠すと表示中スプレッドは再配置(座標更新)される
+	// のに、隠れたスプレッドは旧座標のまま残るため、含めると正規化が汚れて全マークがズレる
+	// (ユーザー報告 2026-07-11。KESCMFindPageUnderMouse のヒットテスト除外と同じ理由・同じ判定)。
 	std::vector<UID> pages;
-	KESCMCollectPageUIDs(db, pages);
+	{
+		InterfacePtr<ISpreadList> spreadList(db, db->GetRootUID(), UseDefaultIID());
+		if (spreadList == nil)
+			return;
+		const int32 ns = spreadList->GetSpreadCount();
+		for (int32 s = 0; s < ns; ++s)
+		{
+			const UID spreadUID = spreadList->GetNthSpreadUID(s);
+			InterfacePtr<IBoolData> hideFlag(db, spreadUID, IID_IHIDESPREADBOOLDATA);
+			if (hideFlag != nil && hideFlag->GetBool())
+				continue;	// 隠し中のスプレッドは地図に載せない(スクロールでも到達できない)
+			InterfacePtr<ISpread> spread(db, spreadUID, UseDefaultIID());
+			if (spread == nil)
+				continue;
+			const int32 np = spread->GetNumPages();
+			for (int32 p = 0; p < np; ++p)
+				pages.push_back(spread->GetNthPageUID(p));
+		}
+	}
 	if (pages.empty())
 		return;
 
@@ -402,6 +428,62 @@ void KESCMScrollMapInvalidateAll()
 		IControlView* strip = presPanel->FindWidget(kKESCMScrollMapWidgetID);
 		if (strip != nil)
 			strip->Invalidate();
+	}
+}
+
+//========================================================================================
+// 手動 Hide/Show Spread の検出(スプレッド描画イベント便乗+スロットル)
+//========================================================================================
+
+// db の「スプレッド構成+隠しフラグ」の指紋。隠し/再表示・スプレッド増減で必ず値が変わる。
+// db が nil/クローズ済みなら 0(=arm 解除後は両指紋 0 で安定し、比較は常に一致)。
+static uint32 KESCMHiddenFingerprint(IDataBase* db)
+{
+	if (db == nil || !KESCMIsDocDBOpen(db))
+		return 0;
+	InterfacePtr<ISpreadList> spreadList(db, db->GetRootUID(), UseDefaultIID());
+	if (spreadList == nil)
+		return 0;
+	uint32 h = 0;
+	const int32 ns = spreadList->GetSpreadCount();
+	for (int32 s = 0; s < ns; ++s)
+	{
+		const UID uid = spreadList->GetNthSpreadUID(s);
+		InterfacePtr<IBoolData> hideFlag(db, uid, IID_IHIDESPREADBOOLDATA);
+		const uint32 hidden = (hideFlag != nil && hideFlag->GetBool()) ? 1u : 0u;
+		h = h * 131u + (uid.Get() << 1) + hidden;
+	}
+	return h;
+}
+
+static std::clock_t sHiddenCheckLast = 0;	// 前回チェック時刻(スロットル用)
+static uint32 sHiddenFingerT = 0;			// 前回の Target 側指紋
+static uint32 sHiddenFingerS = 0;			// 前回の Source 側指紋
+
+// KESCMScrollMapNoticeDrawEvent(KESCMScrollMap.h 参照) — 描画イベントごとに呼ばれる軽量チェック。
+// 250ms スロットル内は時刻比較1回で即 return。指紋が変わっていたら地図を Invalidate する
+// (strip は専有列にいてレイアウトビューと重ならないので、描画イベント中の Invalidate でも
+// スプレッド再描画→再検出の無限ループにはならない)。
+void KESCMScrollMapNoticeDrawEvent()
+{
+	if (KESCMArmedTargetDB() == nil)
+		return;		// 未 arm = strip も無い(指紋は arm 中しか意味を持たないので触らない)
+
+	// スロットル。★delta が負(clock_t は 32bit で連続起動約25日でラップ)のときはスキップせず
+	// 通す=基準時刻が現在に更新されて自然復帰する(負のまま return し続けると検出が止まる)。
+	const std::clock_t now = std::clock();
+	const std::clock_t delta = now - sHiddenCheckLast;
+	if (sHiddenCheckLast != 0 && delta >= 0 && delta < (std::clock_t)(CLOCKS_PER_SEC / 4))
+		return;
+	sHiddenCheckLast = now;
+
+	const uint32 ft = KESCMHiddenFingerprint(KESCMArmedTargetDB());
+	const uint32 fs = KESCMHiddenFingerprint(KESCMArmedSourceDB());
+	if (ft != sHiddenFingerT || fs != sHiddenFingerS)
+	{
+		sHiddenFingerT = ft;
+		sHiddenFingerS = fs;
+		KESCMScrollMapInvalidateAll();	// 初回(0→現指紋)の1回だけ余計に走るが無害
 	}
 }
 

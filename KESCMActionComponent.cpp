@@ -44,6 +44,7 @@
 #include "KESCMPageNumberMarker.h"	// KESCMGetIgnorePageNumberMarker/KESCMSetIgnorePageNumberMarker(ノンブル除外トグル)
 #include "KESCMThumbnailRefresh.h"	// KESCMTryRefreshPagesPanelThumbnails(Source サムネイルの枠を即 ON/OFF)
 #include "KESCMPeek.h"				// KESCMBaseScreenOpacity(Hold to Hide Marks 切替時に常時表示の基準不透明度を反映)
+#include "KESCMScrollMap.h"		// KESCMScrollMapInvalidateAll(Hide Unchanged 切替後に地図を描き直す)
 
 // ★注意: source/public/includes/URLUtils.h は "namespace URLUtils { PUBLIC_DECL void GoToURL(...); }" と
 // 宣言しているが、これはヘッダーとバイナリの不一致(Public.lib 側の実エクスポート名と食い違っている)。
@@ -439,6 +440,7 @@ void KESCMActionComponent::DoHideUnchangedToggle()
 	if (sHideUnchangedOn)
 	{
 		KESCMResetHideUnchanged(kTrue);
+		KESCMScrollMapInvalidateAll();	// スクロールバー地図を再表示後の配置で描き直す(2026-07-11)
 		KESCMHideStatus("Hide Unchanged: hidden spreads restored.");
 		return;
 	}
@@ -640,6 +642,9 @@ void KESCMActionComponent::DoHideUnchangedToggle()
 	if (srcSkippedAll)
 		msg.Append(" Source not hidden (would hide all its spreads).");
 	KESCMSetStatus(msg);
+
+	// スクロールバー地図を隠し後の配置で描き直す(隠しスプレッドは地図から除外される。Target/Source 両窓)。
+	KESCMScrollMapInvalidateAll();
 }
 
 // 文書の生存確認は共有ヘルパ KESCMIsDocDBOpen(KESCMCore.h)を使う(旧ここ static、2026-07-10 共有化)。
