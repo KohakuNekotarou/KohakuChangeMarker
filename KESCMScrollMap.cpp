@@ -75,6 +75,11 @@ static const PMReal kKESCMScrollMapWidth = 5.0;
 // 背景はテーマ連動(IInterfaceColors の kInterfacePaletteFill)なので、ライト/ダークどちらでも馴染む。
 static const PMReal kKESCMScrollMapMarkAlpha = 0.6;
 
+// スクロールバー地図の有効/無効(フライアウト「Show Scrollbar Map」トグル。既定=ON)。
+// OFF の間は Attach / NoticeDrawEvent を即 return させる(strip を注入しない・毎描画の指紋計算もしない)。
+// トグルを OFF にした瞬間の既存 strip 撤去は、操作側(KESCMActionComponent)が DetachAll を呼ぶ。
+static bool16 sScrollMapOn = kTrue;
+
 //========================================================================================
 // KESCMScrollMapView — strip の自前描画(IControlView 実装)
 //========================================================================================
@@ -308,6 +313,8 @@ static void KESCMCollectPresentationPanels(IDataBase* db, K2Vector<IPanelControl
 // KESCMScrollMapAttach(KESCMScrollMap.h 参照) — targetDB の各文書ウィンドウに strip を注入する。
 void KESCMScrollMapAttach(IDataBase* targetDB)
 {
+	if (!sScrollMapOn)
+		return;	// 「Show Scrollbar Map」OFF 中は strip を注入しない(Start しても地図は出ない)
 	if (targetDB == nil)
 		return;
 
@@ -481,6 +488,8 @@ static uint32 sHiddenFingerS = 0;			// 前回の Source 側指紋
 // スプレッド再描画→再検出の無限ループにはならない)。
 void KESCMScrollMapNoticeDrawEvent()
 {
+	if (!sScrollMapOn)
+		return;		// 「Show Scrollbar Map」OFF 中は strip も無い=毎描画の指紋計算を省く
 	if (KESCMArmedTargetDB() == nil)
 		return;		// 未 arm = strip も無い(指紋は arm 中しか意味を持たないので触らない)
 
@@ -501,5 +510,10 @@ void KESCMScrollMapNoticeDrawEvent()
 		KESCMScrollMapInvalidateAll();	// 初回(0→現指紋)の1回だけ余計に走るが無害
 	}
 }
+
+// ── 有効/無効フラグ(フライアウト「Show Scrollbar Map」トグル。既定 ON) ─────────────────
+// フラグの反転に伴う strip の attach / detach は操作側(KESCMActionComponent)が担う。ここは値の保持だけ。
+bool16 KESCMGetScrollMapEnabled()      { return sScrollMapOn; }
+void   KESCMSetScrollMapEnabled(bool16 on) { sScrollMapOn = on; }
 
 // KESCMScrollMap.cpp 終わり。

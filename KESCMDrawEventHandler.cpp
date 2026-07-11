@@ -790,7 +790,7 @@ static void KESCMDrawEntryOnPage(IGraphicsPort* gPort, KESCMOverlayEntry* e, IDa
 // isThumb 分岐から呼ぶ)。ベクター矩形塗り+setopacity なので screen/print/サムネイル とも正しく合成される。
 // 太さ: 画面/印刷 = 画面 kKESCMRingTargetPx 相当(pt=px/sxr。印刷は呼び出し側で sxr=1.0)。
 //       サムネイル(sxr<=0)= ページ短辺 / kKESCMThumbBorderDivisor(ズーム式が使えないので潰れない固定比率)。
-// 不透明度: サムネイルは不透明(潰れ防止)、印刷は SelectedMarkOpacity、画面は screenOpacity。
+// 不透明度: サムネイルは kKESCMThumbMarkOpacity(0.75=少し透ける)、印刷は SelectedMarkOpacity、画面は screenOpacity。
 //========================================================================================
 static void KESCMDrawPageBorder(IGraphicsPort* gPort, IDataBase* db, UID pageUID,
 	const PMReal& sxr, int32 drawMode, const PMReal& screenOpacity,
@@ -820,7 +820,7 @@ static void KESCMDrawPageBorder(IGraphicsPort* gPort, IDataBase* db, UID pageUID
 	if (R <= L || B <= T)
 		return;
 
-	const PMReal opacity = (sxr <= 0) ? PMReal(1.0)
+	const PMReal opacity = (sxr <= 0) ? kKESCMThumbMarkOpacity
 		: ((drawMode == kKESCMDrawModePrint) ? KESCMDrawEventHandler::SelectedMarkOpacity() : screenOpacity);
 
 	AutoGSave ag(gPort);
@@ -883,7 +883,7 @@ static void KESCMDrawPageNumberMarkerFill(IGraphicsPort* gPort, IDataBase* db, U
 //     溢れの赤「/」と同じ斜線様式にして「相手なしページ」を一目で対応づける)。
 //   ・文書間のページ数差であふれた(登録もされていない)未比較ページ → 赤「/」(通常マークと同色)。
 // ラスタ不要のベクター線なので screen/print/サムネイル とも setopacity で正しく合成される。
-// 太さ/不透明度は KESCMDrawPageBorder と同じ規則(サムネイルは固定比率・不透明)。
+// 太さ/不透明度は KESCMDrawPageBorder と同じ規則(サムネイルは固定比率・kKESCMThumbMarkOpacity で少し透ける)。
 //========================================================================================
 static void KESCMDrawPageDiagonal(IGraphicsPort* gPort, IDataBase* db, UID pageUID,
 	const PMReal& sxr, int32 drawMode, const PMReal& screenOpacity,
@@ -905,7 +905,7 @@ static void KESCMDrawPageDiagonal(IGraphicsPort* gPort, IDataBase* db, UID pageU
 	if (w < PMReal(0.5))
 		return;
 
-	const PMReal opacity = (sxr <= 0) ? PMReal(1.0)
+	const PMReal opacity = (sxr <= 0) ? kKESCMThumbMarkOpacity
 		: ((drawMode == kKESCMDrawModePrint) ? KESCMDrawEventHandler::SelectedMarkOpacity() : screenOpacity);
 
 	AutoGSave ag(gPort);
@@ -947,7 +947,9 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	// ★サムネイル実験(2026-07-06): Pagesパネルのサムネイル生成(view無し・kPreviewMode・非印刷。診断ログ
 	// flags=0x1800=kPreviewMode|kDrawFrameEdge)を検出。sThumbExperiment ON の間は、サムネイルにも枠を
 	// 描くため下で wantMarks を強制 ON にする(通常は sPrintMarks/sMarksVisible が OFF だと枠が出ない)。
-	// 太さ/不透明度は KESCMDrawEntryOnPage 側で isThumb 用(太い固定比率半径・不透明100%)に切替える。
+	// サムネイルでは差分リング画像(KESCMDrawEntryOnPage)ではなく、下の Target/Source ループが
+	// isThumb 分岐で KESCMDrawPageBorder(枠)/KESCMDrawPageDiagonal(「/」)を呼ぶ(極小表示で潰れない
+	// 固定比率の太さ)。不透明度は kKESCMThumbMarkOpacity(0.75=少し透ける)。
 	const bool16 isThumb = sThumbExperiment && !printing &&
 		ded->gd != nil && ded->gd->GetView() == nil && (ded->flags & IShape::kPreviewMode) != 0;
 	// ★オーバープリントプレビュー(OPP)は抑制しない(2026-07-05 仕様変更)。以前は kSepPrvOPPEnabledVPAttr を

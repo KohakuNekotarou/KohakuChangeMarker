@@ -346,6 +346,14 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKESCMSyncViewsMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
+		// "Show Scrollbar Map" on the panel flyout (popup) menu. Check-mark toggle (default ON):
+		// while ON, a thin strip beside each document window's vertical scrollbar maps the positions
+		// of changed / registered pages. Turn it OFF to remove the strip from all windows.
+		kKESCMPopupScrollMapActionID,
+		kKESCMPopupMenuPath,
+		kKESCMScrollMapMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
 		// "Invoke Panel Shortcut" on the panel flyout (popup) menu. Check-mark toggle (default ON):
 		// while ON, Shift+Ctrl+middle-click toggles this panel's visibility (pops at the cursor when
 		// floating). Turn it OFF to disable that gesture so the plain middle-click is left untouched.
@@ -494,6 +502,15 @@ resource ActionDef (kSDKDefActionResourceID)
 		kKESCMActionComponentBoss,
 		kKESCMPopupSyncViewsActionID,
 		kKESCMSyncViewsMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates supplies the check mark (kSelectedAction)
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		kKESCMActionComponentBoss,
+		kKESCMPopupScrollMapActionID,
+		kKESCMScrollMapMenuKey,
 		kOtherActionArea,
 		kNormalAction,
 		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates supplies the check mark (kSelectedAction)

@@ -38,4 +38,10 @@ void	KESCMScrollMapInvalidateAll();
 // 地図を Invalidate する。Undo/Redo による隠し状態の変化も同じ経路で拾える。未 arm なら即 return。
 void	KESCMScrollMapNoticeDrawEvent();
 
+// スクロールバー地図の有効/無効(フライアウト「Show Scrollbar Map」トグル。既定 ON)。
+// OFF の間は KESCMScrollMapAttach / KESCMScrollMapNoticeDrawEvent が即 return するので、
+// Start しても strip を注入しない(既存 strip はトグル操作側で DetachAll して撤去する)。
+bool16	KESCMGetScrollMapEnabled();
+void	KESCMSetScrollMapEnabled(bool16 on);
+
 #endif // __KESCMScrollMap_h__

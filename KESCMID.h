@@ -168,6 +168,7 @@ DECLARE_PMID(kActionIDSpace, kKESCMPopupSep1ActionID, kKESCMPrefix + 17)	// フ�
 DECLARE_PMID(kActionIDSpace, kKESCMPopupSep2ActionID, kKESCMPrefix + 18)	// フライアウト: How to Use の上の区切り線
 DECLARE_PMID(kActionIDSpace, kKESCMPopupHoldToHideMarksActionID, kKESCMPrefix + 19)	// パネルのフライアウトの「Hold to Hide Marks」チェック式トグル(ON=枠を画面に常時表示し、ミドル押下中だけ隠す=極性反転。画面のみ・印刷は Print comparison marks が別管理。KESCMActionComponent.cpp)
 DECLARE_PMID(kActionIDSpace, kKESCMPopupPanelShortcutActionID, kKESCMPrefix + 20)	// パネルのフライアウトの「Invoke Panel Shortcut」チェック式トグル(ON=Shift+Ctrl+ミドルでパネル表示/非表示を切替えるショートカットを有効化。既定ON。実体 KESCMPeek.cpp の sPanelShortcutOn)
+DECLARE_PMID(kActionIDSpace, kKESCMPopupScrollMapActionID, kKESCMPrefix + 21)	// パネルのフライアウトの「Show Scrollbar Map」チェック式トグル(ON=文書窓の縦スクロールバー脇に変更位置地図stripを表示。既定ON。実体 KESCMScrollMap.cpp の sScrollMapOn)
 //DECLARE_PMID(kActionIDSpace, kKESCMActionID, kKESCMPrefix + 15)
 //DECLARE_PMID(kActionIDSpace, kKESCMActionID, kKESCMPrefix + 15)
 //DECLARE_PMID(kActionIDSpace, kKESCMActionID, kKESCMPrefix + 16)
@@ -270,6 +271,7 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMScrollMapWidgetID, kKESCMPrefix + 40)	// ス�
 #define kKESCMIgnorePageNumMenuKey	kKESCMStringPrefix "kKESCMIgnorePageNumMenuKey"	// パネルのフライアウト「Ignore Page Number Marker」トグルのメニュー名
 #define kKESCMHoldToHideMarksMenuKey	kKESCMStringPrefix "kKESCMHoldToHideMarksMenuKey"	// パネルのフライアウト「Hold to Hide Marks」トグルのメニュー名
 #define kKESCMPanelShortcutMenuKey	kKESCMStringPrefix "kKESCMPanelShortcutMenuKey"	// パネルのフライアウト「Invoke Panel Shortcut」トグルのメニュー名
+#define kKESCMScrollMapMenuKey		kKESCMStringPrefix "kKESCMScrollMapMenuKey"	// パネルのフライアウト「Show Scrollbar Map」トグルのメニュー名
 
 // パネル: 内部フライアウト(ポップアップ)メニュー名＋そのメニューパス。
 #define kKESCMInternalPopupMenuNameKey	kKESCMStringPrefix "kKESCMInternalPopupMenuNameKey"
@@ -317,6 +319,7 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMScrollMapWidgetID, kKESCMPrefix + 40)	// ス�
 #define kKESCMHideUnchangedMenuItemPosition	9.5	// チェック式トグル「Hide Unchanged Spreads」をその直後に
 #define kKESCMShowOldNumsMenuItemPosition	9.7	// チェック式トグル「Show Original Page Numbers」をその直後に
 #define kKESCMSyncViewsMenuItemPosition		9.8	// チェック式トグル「Sync Layout Views」をさらにその直後に
+#define kKESCMScrollMapMenuItemPosition		9.85	// チェック式トグル「Show Scrollbar Map」を Sync Layout Views の直後・Ignore Page Number Marker の前に
 #define kKESCMIgnorePageNumMenuItemPosition	9.9	// チェック式トグル「Ignore Page Number Marker」をさらにその直後に
 #define kKESCMPanelShortcutMenuItemPosition	9.92	// チェック式トグル「Invoke Panel Shortcut」(Shift+Ctrl+ミドルでパネル呼び出し)を Ignore Page Number Marker の直後に
 #define kKESCMSep2MenuItemPosition			9.95	// How to Use の上の区切り線(パス末尾 ":-")

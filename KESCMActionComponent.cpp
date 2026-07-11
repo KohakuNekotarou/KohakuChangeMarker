@@ -200,6 +200,27 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 			break;
 		}
 
+		// 「Show Scrollbar Map」トグル: 文書窓の縦スクロールバー脇に変更位置の地図 strip を出すか(既定 ON)。
+		// ON にしたら現在の比較対象(sDB/sSrcDB)へ即 attach して表示、OFF にしたら全窓から即 detach。
+		// 未 arm(sDB=nil)で ON にした場合は attach が no-op=次の Start で自然に出る(フラグは ON のまま)。
+		case kKESCMPopupScrollMapActionID:
+		{
+			const bool16 on = !KESCMGetScrollMapEnabled();
+			KESCMSetScrollMapEnabled(on);
+			if (on)
+			{
+				if (KESCMDrawEventHandler::sDB    != nil) KESCMScrollMapAttach(KESCMDrawEventHandler::sDB);
+				if (KESCMDrawEventHandler::sSrcDB != nil) KESCMScrollMapAttach(KESCMDrawEventHandler::sSrcDB);
+				KESCMScrollMapInvalidateAll();
+			}
+			else
+				KESCMScrollMapDetachAll();	// 既存 strip を全窓から撤去
+			PMString msg(on ? "Scrollbar map: on." : "Scrollbar map: off.");
+			msg.SetTranslatable(kFalse);
+			KESCMSetStatus(msg);
+			break;
+		}
+
 		// 「Hold to Hide Marks」トグル: 枠表示の極性反転(フラグ反転のみ)。ON=画面に枠を常時表示し、
 		// ミドル押下中だけ隠す(押下/解放は KESCMPeek.cpp の WatchEvent が sMarksTempHidden を上下)。
 		// OFF=従来(既定非表示・押下中だけ表示)。画面のみ=印刷は Print comparison marks が別管理。
@@ -315,6 +336,13 @@ void KESCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionSta
 		{
 			int16 actionState = kEnabledAction;
 			if (KESCMGetPanelShortcut())
+				actionState |= kSelectedAction;	// ON(既定)ならチェックマーク
+			listToUpdate->SetNthActionState(i, actionState);
+		}
+		else if (action == kKESCMPopupScrollMapActionID)
+		{
+			int16 actionState = kEnabledAction;
+			if (KESCMGetScrollMapEnabled())
 				actionState |= kSelectedAction;	// ON(既定)ならチェックマーク
 			listToUpdate->SetNthActionState(i, actionState);
 		}

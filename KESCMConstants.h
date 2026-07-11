@@ -24,6 +24,9 @@ static const int32 kKESCMThumbRingDivisor = 8;
 static const int32 kKESCMThumbBorderDivisor = 6;
 // ・「/」斜線(Add/Removeの緑・溢れの赤): 短辺 / 10 ≒ 10%。従来値のまま(見え方OK)。
 static const int32 kKESCMThumbDiagDivisor = 10;
+// ★サムネイルの枠/「/」の不透明度。従来は 1.0(不透明)固定だったが、少し透けて下のページが見える方が
+// 好ましいとの判断で 0.75(=透明25%)へ(画面マークの75%ラジオと同じ濃さ)。極小表示で沈まない範囲。
+static const PMReal kKESCMThumbMarkOpacity = 0.75;
 static const uint8 kKESCMRingAlpha = 255;	// リングの基本アルファ(0..255)。「通常」=不透明(255)。薄表示は setopacity 側で行う(25%→255×0.25=実25%)
 // 枠(リング＋変更数)の不透明度の二択(パネルのラジオ「Marks opacity 25% / 75%」)。選択値は
 // ミドル押下中の画面表示・印刷ON中の常時表示・印刷/PDF出力のすべてに共通で効く(KESCMDrawEventHandler::SelectedMarkOpacity)。
