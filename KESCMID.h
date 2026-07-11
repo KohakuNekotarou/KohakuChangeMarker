@@ -169,6 +169,9 @@ DECLARE_PMID(kActionIDSpace, kKESCMPopupSep2ActionID, kKESCMPrefix + 18)	// フ�
 DECLARE_PMID(kActionIDSpace, kKESCMPopupHoldToHideMarksActionID, kKESCMPrefix + 19)	// パネルのフライアウトの「Hold to Hide Marks」チェック式トグル(ON=枠を画面に常時表示し、ミドル押下中だけ隠す=極性反転。画面のみ・印刷は Print comparison marks が別管理。KESCMActionComponent.cpp)
 DECLARE_PMID(kActionIDSpace, kKESCMPopupPanelShortcutActionID, kKESCMPrefix + 20)	// パネルのフライアウトの「Invoke Panel Shortcut」チェック式トグル(ON=Shift+Ctrl+ミドルでパネル表示/非表示を切替えるショートカットを有効化。既定ON。実体 KESCMPeek.cpp の sPanelShortcutOn)
 DECLARE_PMID(kActionIDSpace, kKESCMPopupScrollMapActionID, kKESCMPrefix + 21)	// パネルのフライアウトの「Show Scrollbar Map」チェック式トグル(ON=文書窓の縦スクロールバー脇に変更位置地図stripを表示。既定ON。実体 KESCMScrollMap.cpp の sScrollMapOn)
+DECLARE_PMID(kActionIDSpace, kKESCMPopupSavePanelStateActionID, kKESCMPrefix + 22)	// パネルのフライアウトの「Save Panel Settings」(チェックではなく実行アクション)。現在の設定系トグルを独自JSONでローカルへ保存し保存先パスを表示。パネル初回オープン時に読込。実体 KESCMPanelState.cpp
+DECLARE_PMID(kActionIDSpace, kKESCMPopupSep3ActionID, kKESCMPrefix + 23)	// フライアウト: Ignore Page Number Marker の下の区切り線(MenuDef のパス末尾 ":-"。ActionDef 不要)。この下に Hide Unchanged Spreads を置く
+DECLARE_PMID(kActionIDSpace, kKESCMPageCheckToggleActionID, kKESCMPrefix + 24)	// ページパネルのページ右クリック(RtMenuPagesPanel)のトグル「KESCM: Check」(選択ページに✓印を付け外し。Start中限定・Stopで消去。チェック/有効無効は kCustomEnabling。実体 KESCMPageCheck.cpp、✓描画は KESCMDrawEventHandler の isThumb 分岐)
 //DECLARE_PMID(kActionIDSpace, kKESCMActionID, kKESCMPrefix + 15)
 //DECLARE_PMID(kActionIDSpace, kKESCMActionID, kKESCMPrefix + 15)
 //DECLARE_PMID(kActionIDSpace, kKESCMActionID, kKESCMPrefix + 16)
@@ -268,10 +271,12 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMScrollMapWidgetID, kKESCMPrefix + 40)	// ス�
 #define kKESCMSyncViewsMenuKey		kKESCMStringPrefix "kKESCMSyncViewsMenuKey"	// パネルのフライアウト「Sync Layout Views」トグルのメニュー名
 #define kKESCMShowSrcMarksMenuKey	kKESCMStringPrefix "kKESCMShowSrcMarksMenuKey"	// パネルのフライアウト「Show Marks on Source」トグルのメニュー名
 #define kKESCMPageMapToggleMenuKey	kKESCMStringPrefix "kKESCMPageMapToggleMenuKey"	// ページパネル右クリックのトグル「KESCM: Register as Added/Removed Pages」の既定メニュー名(表示時は UpdateActionStates が Target=Added/Source=Removed に動的差し替え)
+#define kKESCMPageCheckMenuKey		kKESCMStringPrefix "kKESCMPageCheckMenuKey"	// ページパネル右クリックのトグル「KESCM: Check」のメニュー名
 #define kKESCMIgnorePageNumMenuKey	kKESCMStringPrefix "kKESCMIgnorePageNumMenuKey"	// パネルのフライアウト「Ignore Page Number Marker」トグルのメニュー名
 #define kKESCMHoldToHideMarksMenuKey	kKESCMStringPrefix "kKESCMHoldToHideMarksMenuKey"	// パネルのフライアウト「Hold to Hide Marks」トグルのメニュー名
 #define kKESCMPanelShortcutMenuKey	kKESCMStringPrefix "kKESCMPanelShortcutMenuKey"	// パネルのフライアウト「Invoke Panel Shortcut」トグルのメニュー名
 #define kKESCMScrollMapMenuKey		kKESCMStringPrefix "kKESCMScrollMapMenuKey"	// パネルのフライアウト「Show Scrollbar Map」トグルのメニュー名
+#define kKESCMSavePanelStateMenuKey	kKESCMStringPrefix "kKESCMSavePanelStateMenuKey"	// パネルのフライアウト「Save Panel Settings」項目のメニュー名
 
 // パネル: 内部フライアウト(ポップアップ)メニュー名＋そのメニューパス。
 #define kKESCMInternalPopupMenuNameKey	kKESCMStringPrefix "kKESCMInternalPopupMenuNameKey"
@@ -304,10 +309,12 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMScrollMapWidgetID, kKESCMPrefix + 40)	// ス�
 // スクロールバー地図stripのビューリソースID(kViewRsrcType; ::CreateObject で実行時生成する。KESCMScrollMap.cpp)
 #define kKESCMScrollMapRsrcID	1010
 
-// Menu item positions (flyout order): Show Marks on Source(9.4) → Hide Unchanged Spreads(9.5) →
-// Show Original Page Numbers(9.7) → Sync Layout Views(9.8) → How to Use(10) → About Scripting(11) →
-// About this plug-in(12)。
-// ※メニュー名は日本語ロケールでも英語で統一(2026-07-04)。Split Target on Start(旧9.0)は撤去済み
+// Menu item positions (flyout order): … Show Marks on Source(9.4) → Show Original Page Numbers(9.7) →
+// Sync Layout Views(9.8) → Show Scrollbar Map(9.85) → Ignore Page Number Marker(9.9) →
+// Invoke Panel Shortcut(9.901) → ─線 Sep3(9.905) → Hide Unchanged Spreads(9.91) → Save Panel Settings(9.93) →
+// ─線 Sep2(9.95) → How to Use(10) → About Scripting(11) → About this plug-in(12)。
+// ※メニュー名は日本語ロケールでも英語で統一(2026-07-04)。Split Target on Start(旧9.0)は撤去済み。
+// ※2026-07-11: Sep3 を足し Hide Unchanged Spreads(旧9.5)をその下へ移動。Invoke Panel Shortcut を Ignore のすぐ下(線の上)へ。
 #define kKESCMStartStopMenuItemPosition		9.0	// 「Start / Stop」(比較開始/解除)をフライアウト先頭に。名前は arm 状態で動的に Start↔Stop
 #define kKESCMSep1MenuItemPosition			9.1	// Start の下の区切り線(パス末尾 ":-")
 #define kKESCMPrintMarksMenuItemPosition	9.2	// チェック式トグル「Print comparison marks」を Start/Stop の直後に(旧パネルチェックボックスのメニュー化)
@@ -316,17 +323,20 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMScrollMapWidgetID, kKESCMPrefix + 40)	// ス�
 #define kKESCMOpacity25SubMenuItemPosition	1.0	// サブメニュー「Marks opacity」内: 25%(選択中に✓)
 #define kKESCMOpacity75SubMenuItemPosition	2.0	// サブメニュー「Marks opacity」内: 75%(25% と相互排他)
 #define kKESCMShowSrcMarksMenuItemPosition	9.4	// チェック式トグル「Show Marks on Source」を先頭に
-#define kKESCMHideUnchangedMenuItemPosition	9.5	// チェック式トグル「Hide Unchanged Spreads」をその直後に
 #define kKESCMShowOldNumsMenuItemPosition	9.7	// チェック式トグル「Show Original Page Numbers」をその直後に
 #define kKESCMSyncViewsMenuItemPosition		9.8	// チェック式トグル「Sync Layout Views」をさらにその直後に
 #define kKESCMScrollMapMenuItemPosition		9.85	// チェック式トグル「Show Scrollbar Map」を Sync Layout Views の直後・Ignore Page Number Marker の前に
 #define kKESCMIgnorePageNumMenuItemPosition	9.9	// チェック式トグル「Ignore Page Number Marker」をさらにその直後に
-#define kKESCMPanelShortcutMenuItemPosition	9.92	// チェック式トグル「Invoke Panel Shortcut」(Shift+Ctrl+ミドルでパネル呼び出し)を Ignore Page Number Marker の直後に
+#define kKESCMPanelShortcutMenuItemPosition	9.901	// チェック式トグル「Invoke Panel Shortcut」(Shift+Ctrl+ミドルでパネル呼び出し)を Ignore Page Number Marker のすぐ下(Sep3 の線より上)に(2026-07-11)
+#define kKESCMSep3MenuItemPosition			9.905	// Invoke Panel Shortcut の下の区切り線(パス末尾 ":-")。この下に Hide Unchanged Spreads を置く
+#define kKESCMHideUnchangedMenuItemPosition	9.91	// チェック式トグル「Hide Unchanged Spreads」を Sep3(線)の直後へ移動(2026-07-11)
+#define kKESCMSavePanelStateMenuItemPosition	9.93	// 実行アクション「Save Panel Settings」を設定系トグル群の末尾(Invoke Panel Shortcut の直後・Sep2 の前)に
 #define kKESCMSep2MenuItemPosition			9.95	// How to Use の上の区切り線(パス末尾 ":-")
 #define kKESCMUsageMenuItemPosition			10.0	// 「使い方」
 // ページパネルのページ右クリックメニュー(内部名 RtMenuPagesPanel、2026-07-05 実機確定)内の位置。
 // 本家項目の後ろ(末尾)に付ける。内部名は非翻訳キーなので全ロケール共通で効く。
 #define kKESCMPageMapToggleMenuItemPosition	3000.0
+#define kKESCMPageCheckMenuItemPosition		3001.0	// 「KESCM: Check」を Register の直後(ページパネル右クリック末尾)に
 #define kKESCMAboutScriptMenuItemPosition	11.0	// その下に「スクリプトについて」
 #define kKESCMAboutThisMenuItemPosition		12.0	// 末尾に「このプラグインについて」
 

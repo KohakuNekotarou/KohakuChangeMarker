@@ -58,6 +58,7 @@
 #include "KESCMID.h"
 #include "KESCMCore.h"               // KESCMHandleDocsClosed(クローズ検知の後始末を一本化)
 #include "KESCMPageMap.h"            // KESCMPageMapIsRegistered/KESCMPageMapHasAnyRegistered(追加/削除ページ縁枠)
+#include "KESCMPageCheck.h"          // KESCMPageCheckIsChecked/KESCMPageCheckHasAny(「KESCM: Check」の✓)
 #include "KESCMPageNumberMarker.h"   // KESCMGetIgnorePageNumberMarker/KESCMAppendPageNumberMarkerRects(ノンブル除外)
 #include "KESCMScrollMap.h"          // KESCMScrollMapNoticeDrawEvent(手動 Hide/Show Spread の検出)
 #include "KESCMDrawEventHandler.h"
@@ -923,6 +924,56 @@ static void KESCMDrawPageDiagonal(IGraphicsPort* gPort, IDataBase* db, UID pageU
 }
 
 
+//========================================================================================
+// ページ中央に ✓(チェックマーク)をベクター線で描く(色指定)。「KESCM: Check」でチェックした
+// ページの Pages パネルサムネイルにのみ描く(呼び出し側で isThumb を判定)。
+// ★フォントの ✓ 文字(U+2713 等)は環境/フォント依存で出ないことがあるため使わず、線2本
+//   (左端→下の谷→右上=「レ」を左右反転した ✓ 型)を moveto/lineto/stroke で引く。
+// 太さ/不透明度は KESCMDrawPageDiagonal と同じ規則(サムネイルは固定比率・kKESCMThumbMarkOpacity)。
+//========================================================================================
+static void KESCMDrawPageCheck(IGraphicsPort* gPort, IDataBase* db, UID pageUID,
+	const PMReal& sxr, int32 drawMode, const PMReal& screenOpacity,
+	uint8 cr, uint8 cg, uint8 cb)
+{
+	InterfacePtr<IGeometry> pageGeo(db, pageUID, UseDefaultIID());
+	if (pageGeo == nil)
+		return;
+
+	PMRect pr = pageGeo->GetPathBoundingBox();
+	PMMatrix m = ::InnerToSpreadMatrix(pageGeo);
+	m.Transform(&pr);
+
+	const PMReal minDim = (pr.Width() < pr.Height() ? pr.Width() : pr.Height());
+	// 太さ: 画面/印刷=ズーム適応、サムネイル(sxr<=0)=ページ短辺の固定比率。
+	PMReal w = (sxr > 0) ? (kKESCMRingTargetPx / sxr) : (minDim / PMReal(kKESCMThumbDiagDivisor));
+	const PMReal maxW = minDim / PMReal(3.0);
+	if (w > maxW) w = maxW;
+	if (w < PMReal(0.5))
+		return;
+
+	const PMReal opacity = (sxr <= 0) ? kKESCMThumbMarkOpacity
+		: ((drawMode == kKESCMDrawModePrint) ? KESCMDrawEventHandler::SelectedMarkOpacity() : screenOpacity);
+
+	// ページ中央基準・短辺の一定比率で ✓ を組む。ページ座標は Top<Bottom(Y 下向き)。
+	const PMReal cx = (pr.Left() + pr.Right()) / PMReal(2.0);
+	const PMReal cy = (pr.Top()  + pr.Bottom()) / PMReal(2.0);
+	const PMReal s  = minDim * PMReal(0.52);		// ✓ 全体サイズ(短辺比。2026-07-11 ほんの少し大きく 0.42→0.52)
+	const PMReal lx = cx - s * PMReal(0.40), ly = cy - s * PMReal(0.02);	// 左端(やや上)
+	const PMReal vx = cx - s * PMReal(0.10), vy = cy + s * PMReal(0.32);	// 下の谷(最下点)
+	const PMReal rx = cx + s * PMReal(0.48), ry = cy - s * PMReal(0.40);	// 右上(最上点)
+
+	AutoGSave ag(gPort);
+	gPort->setopacity(opacity, kFalse);
+	gPort->setrgbcolor(cr / PMReal(255.0), cg / PMReal(255.0), cb / PMReal(255.0));
+	gPort->setlinewidth(w);
+	gPort->newpath();
+	gPort->moveto(lx, ly);
+	gPort->lineto(vx, vy);
+	gPort->lineto(rx, ry);
+	gPort->stroke();
+}
+
+
 bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 {
 	DrawEventData* ded = static_cast<DrawEventData*>(eventData);
@@ -967,6 +1018,8 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	const bool16 anyMarkableContent = !sEntries.empty() ||
 		(sDB    != nil && KESCMPageMapHasAnyRegistered(sDB)) ||
 		(sSrcDB != nil && KESCMPageMapHasAnyRegistered(sSrcDB)) ||
+		(sDB    != nil && KESCMPageCheckHasAny(sDB)) ||		// 「KESCM: Check」の✓(サムネイル描画を起こすため)
+		(sSrcDB != nil && KESCMPageCheckHasAny(sSrcDB)) ||
 		(!sOverflowT.empty() || !sOverflowS.empty());
 	// 「Hold to Hide Marks」と併用時のみ: Source のレイアウト窓でミドルを押している間(sSrcMarksTempHidden)は
 	// Source 側の常時表示枠も画面で隠す(押した窓の枠だけ隠す=Target と対称のウィンドウ別の極性反転)。
@@ -1068,6 +1121,23 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	// 画面描画は従来どおりズーム連動。
 	if (printing)
 		sxr = 1.0;
+
+	// ★「KESCM: Check」の ✓: チェック済みページの Pages パネルサムネイル中央に青い ✓ を描く。
+	//   他のマーク(リング/斜線/Show Marks on Source トグル)とは完全に独立=このスプレッドの db が
+	//   Target でも Source でも、その db にチェックがあれば描く(下の Target/Source メインループより前・
+	//   それらのゲートに依らない)。Pages パネルのサムネイル(isThumb)限定=レイアウトビューには出さない。
+	//   Start 中限定(チェック集合は Stop で全消去されるので非 arm 時は空だが、保険で arm ゲート)。
+	if (isThumb && KESCMIsArmed() && KESCMPageCheckHasAny(db))
+	{
+		const int32 npChk = spread->GetNumPages();
+		for (int32 i = 0; i < npChk; ++i)
+		{
+			const UID puid = spread->GetNthPageUID(i);
+			if (KESCMPageCheckIsChecked(db, puid))
+				KESCMDrawPageCheck(gPort, db, puid, sxr, drawMode, kKESCMThumbMarkOpacity,
+					kKESCMCheckR, kKESCMCheckG, kKESCMCheckB);
+		}
+	}
 
 	// 今描いている「このスプレッド」を覗いている(旧版べた載せ中)か。覗きで旧版が乗るのはマウス下の1スプレッド
 	// だけ(そのページが sOrigImages にある)。覗き中のスプレッドだけ旧版をきれいに見せたいので、マーク

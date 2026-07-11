@@ -42,6 +42,7 @@
 #include "KESCMDrawEventHandler.h"   // 描画エンジン＋共有 static
 #include "KESCMPeek.h"               // KESCMBaseScreenOpacity
 #include "KESCMPageMap.h"            // KESCMBuildPairing(除外対応表)
+#include "KESCMPageCheck.h"          // KESCMPageCheckClearAllDocs(Stop で✓を全消去)
 #include "KESCMThumbnailRefresh.h"   // ★実験: 既表示サムネイルの再生成トライ(2026-07-06)
 #include "KESCMChangeNav.h"          // KESCMResetNav(セッションを跨いだ巡回基準点の持ち越しを断つ)
 #include "KESCMScrollMap.h"          // KESCMScrollMapInvalidateAll(比較後にスクロールバー地図を最新化)
@@ -314,6 +315,11 @@ ErrorCode KESCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMStri
 	// スクロールバー地図 strip のマークも最新化(Start/Ctrl+ミドル再比較/登録トグルの全経路がここを通る)。
 	KESCMScrollMapInvalidateAll();
 
+	// ★「KESCM: Check」の✓: 再比較で「マーク(枠/「/」)が無くなったページ」のチェックを忘れる
+	//   (ユーザー指定 2026-07-11)。この後のサムネイル更新で、マークが消えたページは prevMarked 経由で
+	//   purge され、リングも✓も無いクリーンなサムネイルに作り直される(チェックを先に外すのが肝)。
+	KESCMPageCheckPruneToMarked();
+
 	// ★サムネイル実験(2026-07-06): 既表示サムネイルの再生成を試みる(KESCMThumbnailRefresh)。
 	// 従来 2026-07-05 に「文書の変更でしか無効化されない内部キャッシュがあり、InvalidatePageWidget/
 	// InvalidateSpreadWidget・UpdatePagesPanel(bForcePurge)・ForceRedraw は全て不発」と確認済みだが、
@@ -376,6 +382,9 @@ void KESCMDoClearMarks(IDataBase* db)
 	// だが、取りこぼしの無いよう全文書分を一括クリアする(Target/Source の組み合わせを変えて再 Start した
 	// 時に古い登録が紛れ込むのも防ぐ。2026-07-05 の per-db クリアを全体クリアへ拡張)。
 	KESCMPageMapClearAllDocs();
+
+	// ★「KESCM: Check」の✓も Stop で丸ごと忘れる(ユーザー指定: Start 中限定・Stop で消去)。
+	KESCMPageCheckClearAllDocs();
 
 	KESCMDrawEventHandler::DropAll();
 	KESCMDrawEventHandler::DropAllOrig();	// 旧版べた載せのキャッシュも解放(メモリ開放)

@@ -58,6 +58,11 @@ static const int   kKESCMRedBgDom = 25;	// 背景を「赤っぽい」と判定�
 // ため緑固定(背景色による切り替えは無し。ラスタ差分が無く背景判定の材料も無いため)。
 static const uint8 kKESCMAddedBorderR = 0, kKESCMAddedBorderG = 200, kKESCMAddedBorderB = 0;
 
+// 「KESCM: Check」でチェックしたページに Pages パネルのサムネイル中央へ描く ✓ マークの色(青)。
+// ★フォントの ✓ 文字(環境依存)ではなく、線2本(moveto/lineto/stroke)でベクターの ✓ 型を描くので
+//   フォント/OS/ロケールに依存しない。緑「/」(登録)や赤「/」(overflow)と色で区別するため青にする。
+static const uint8 kKESCMCheckR = 30, kKESCMCheckG = 110, kKESCMCheckB = 235;
+
 // ノンブル(自動ページ番号)除外領域を可視化するベタ塗り色と不透明度。除外トグルON時、比較から
 // 外している矩形を半透明の緑で塗り、「どこが除外されているか」を目視できるようにする(下のノンブルが
 // 透ける程度の薄さ)。塗りはベクター矩形+setopacity なので画面・印刷とも正しく半透明合成される。

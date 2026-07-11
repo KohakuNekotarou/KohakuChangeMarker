@@ -68,6 +68,7 @@
 #include "KESCMColorSampler.h"       // KESCMSampleCmykUnderMouse
 #include "KESCMCore.h"               // arm/disarm/状態 宣言
 #include "KESCMPageMap.h"            // KESCMMapTargetToSource(除外対応表)/KESCMPageMapSweepClosedDocs
+#include "KESCMPageCheck.h"          // KESCMPageCheckClearAllDocs / KESCMPageCheckSweepClosedDocs(✓の後片付け)
 #include "KESCMThumbnailRefresh.h"   // クローズ後、生存側の Pages パネルサムネイルから枠を消す
 #include "KESCMScrollMap.h"          // スプレッド再比較後にスクロールバー地図を最新化
 #include "KESCMThumbIdleTask.h"      // クローズ後の再生成を次のidleに遅延(前面切替の過渡を避ける)
@@ -1457,6 +1458,7 @@ void KESCMHandleDocsClosed()
 		//   Stop(KESCMDoClearMarks)と同じく登録も丸ごと忘れる。これを怠ると、生存側 Target/Source に
 		//   古い登録が残り、次の Start でペアリングに紛れ込む(map 空にするだけ=deref なし)。
 		KESCMPageMapClearAllDocs();
+		KESCMPageCheckClearAllDocs();	// 「KESCM: Check」の✓も同様に全消去(Start 中限定)
 		// ★スクロールバー地図 strip も Stop と同様に取り外す(2026-07-11 セルフレビューで発見)。
 		//   これを怠ると、生存側の窓に孤児 strip が残り、レイアウトビューも 5px 詰めたままになる。
 		//   DetachAll は「今開いている窓」だけを走査する(閉じた窓の widget は窓ごと消えている)ので安全。
@@ -1509,6 +1511,7 @@ void KESCMHandleDocsClosed()
 	// 「比較相手なしページ」登録(KESCMPageMap)の後片付け: 閉じた文書の分を状態だけ捨てる
 	// (deref なし。パネル表示には関与しないので changed は立てない)。
 	KESCMPageMapSweepClosedDocs();
+	KESCMPageCheckSweepClosedDocs();	// 「KESCM: Check」の✓も、閉じた文書の分を状態だけ捨てる(deref なし)
 
 	// 何か片付けたらパネルの ON/OFF 表示を実状態に合わせる(①「ON 固着」の解消)。
 	if (changed)

@@ -41,10 +41,12 @@
 #include "KESCMDrawEventHandler.h"	// sEntries/sDB/sShowOldNumbers(Hide Unchanged と旧番号バッジの状態参照)
 #include "KESCMPageMap.h"	// KESCMPageMapToggleSelectedPages / KESCMPageMapUpdateToggleState(追加/削除ページ登録トグル)
 							// ＋ KESCMBuildPairing(除外対応表、Hide Unchanged の Source 側分類で使用)
+#include "KESCMPageCheck.h"	// KESCMPageCheckToggleSelectedPages / KESCMPageCheckUpdateToggleState(「KESCM: Check」の✓トグル)
 #include "KESCMPageNumberMarker.h"	// KESCMGetIgnorePageNumberMarker/KESCMSetIgnorePageNumberMarker(ノンブル除外トグル)
 #include "KESCMThumbnailRefresh.h"	// KESCMTryRefreshPagesPanelThumbnails(Source サムネイルの枠を即 ON/OFF)
 #include "KESCMPeek.h"				// KESCMBaseScreenOpacity(Hold to Hide Marks 切替時に常時表示の基準不透明度を反映)
 #include "KESCMScrollMap.h"		// KESCMScrollMapInvalidateAll(Hide Unchanged 切替後に地図を描き直す)
+#include "KESCMPanelState.h"		// KESCMSavePanelState(フライアウト「Save Panel Settings」)
 
 // ★注意: source/public/includes/URLUtils.h は "namespace URLUtils { PUBLIC_DECL void GoToURL(...); }" と
 // 宣言しているが、これはヘッダーとバイナリの不一致(Public.lib 側の実エクスポート名と食い違っている)。
@@ -255,11 +257,23 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 			break;
 		}
 
+		// フライアウトの「Save Panel Settings」: 現在の設定系トグルを独自 JSON でローカルへ保存し、
+		// 保存先パスをダイアログ表示する(実体は KESCMPanelState.cpp)。読み込みはパネル初回オープン時。
+		case kKESCMPopupSavePanelStateActionID:
+			KESCMSavePanelState();
+			break;
+
 		// ページパネルのページ右クリック「KESCM: Register as Added/Removed Pages」トグル。
 		// 選択ページを「比較相手なし」として登録/解除する(実体は KESCMPageMap.cpp。このステップでは
 		// 登録の保持とチェック表示まで。比較の除外対応表への反映は次ステップ)。
 		case kKESCMPageMapToggleActionID:
 			KESCMPageMapToggleSelectedPages();
+			break;
+
+		// ページパネルのページ右クリック「KESCM: Check」トグル。選択ページに✓印を付け外しする
+		// (実体は KESCMPageCheck.cpp。✓の描画は KESCMDrawEventHandler の isThumb 分岐)。
+		case kKESCMPageCheckToggleActionID:
+			KESCMPageCheckToggleSelectedPages();
 			break;
 
 		default:
@@ -372,6 +386,12 @@ void KESCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionSta
 			// ページパネル右クリックの登録トグル: 有効/無効(選択の有無)・チェック(全登録=✓/
 			// 一部=中間)・ラベル(Target=Added/Source=Removed)をまとめて KESCMPageMap.cpp 側で設定。
 			KESCMPageMapUpdateToggleState(listToUpdate, i);
+		}
+		else if (action == kKESCMPageCheckToggleActionID)
+		{
+			// ページパネル右クリックの「KESCM: Check」トグル: 有効/無効(Start中+Target/Source+選択)と
+			// チェック(全部✓/一部=中間)を KESCMPageCheck.cpp 側で設定。
+			KESCMPageCheckUpdateToggleState(listToUpdate, i);
 		}
 	}
 }

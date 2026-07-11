@@ -39,11 +39,13 @@ resource StringTable (kSDKDefStringsResourceID + index_enUS)
                 kKESCMUsageMenuKey,				"How to Use...",
                 kKESCMShowSrcMarksMenuKey,			"Show Marks on Source",
                 kKESCMPageMapToggleMenuKey,			"KESCM: Register as Added/Removed Pages",
+                kKESCMPageCheckMenuKey,				"KESCM: Check",
                 kKESCMHideUnchangedMenuKey,			"Hide Unchanged Spreads",
                 kKESCMShowOldNumsMenuKey,			"Show Original Page Numbers",
                 kKESCMSyncViewsMenuKey,				"Sync Layout Views",
                 kKESCMScrollMapMenuKey,				"Show Scrollbar Map",
                 kKESCMPanelShortcutMenuKey,			"Invoke Panel Shortcut",
+                kKESCMSavePanelStateMenuKey,			"Save Panel Settings",
                 kKESCMIgnorePageNumMenuKey,			"Ignore Page Number Marker",
                 kKESCMHoldToHideMarksMenuKey,			"Hold to Hide Marks",
 

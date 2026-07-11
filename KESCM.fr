@@ -371,6 +371,23 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKESCMIgnorePageNumMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
+		// Separator below "Invoke Panel Shortcut" (path ending in ":-" renders a menu separator;
+		// no ActionDef needed). "Hide Unchanged Spreads" was moved to just below this line (2026-07-11).
+		kKESCMPopupSep3ActionID,
+		kKESCMPopupMenuPath ":-",
+		kKESCMSep3MenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
+		// "Save Panel Settings" on the panel flyout (popup) menu. Not a check toggle: a plain command
+		// that writes the current "settings" toggles to a private JSON file in the user's roaming
+		// preferences folder (KESCM\KESCMPanelState.json) and shows the saved path. The file is read
+		// back the first time the panel is opened (KESCMPanelState.cpp). Nothing is written into
+		// InDesign's own data (workspace SavedData / documents).
+		kKESCMPopupSavePanelStateActionID,
+		kKESCMPopupMenuPath,
+		kKESCMSavePanelStateMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
 		// Separator above How to Use (path ending in ":-" renders a menu separator; no ActionDef needed).
 		kKESCMPopupSep2ActionID,
 		kKESCMPopupMenuPath ":-",
@@ -408,6 +425,16 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKESCMPageMapToggleActionID,
 		"RtMenuPagesPanel",
 		kKESCMPageMapToggleMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
+		// "KESCM: Check" on the Pages panel page context menu. Check-mark toggle: marks/unmarks the
+		// selected pages with a blue check (✓) drawn on their Pages-panel thumbnails. Independent of
+		// the Added/Removed registration. Only available while Started (armed) with the selected doc
+		// being Target/Source; cleared on Stop. Check state / enabling come from UpdateActionStates
+		// (kCustomEnabling); the work is in KESCMPageCheck.cpp and the ✓ drawing in KESCMDrawEventHandler.
+		kKESCMPageCheckToggleActionID,
+		"RtMenuPagesPanel",
+		kKESCMPageCheckMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 	}
 };
@@ -536,6 +563,15 @@ resource ActionDef (kSDKDefActionResourceID)
 		kSDKDefInvisibleInKBSCEditorFlag,
 
 		kKESCMActionComponentBoss,
+		kKESCMPopupSavePanelStateActionID,
+		kKESCMSavePanelStateMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kDisableIfLowMem,					// plain command; always enabled (no UpdateActionStates needed)
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		kKESCMActionComponentBoss,
 		kKESCMPopupUsageActionID,
 		kKESCMUsageMenuKey,
 		kOtherActionArea,
@@ -568,6 +604,15 @@ resource ActionDef (kSDKDefActionResourceID)
 		kOtherActionArea,
 		kNormalAction,
 		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates supplies check mark, enabling and the dynamic Added/Removed label
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		kKESCMActionComponentBoss,
+		kKESCMPageCheckToggleActionID,
+		kKESCMPageCheckMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates supplies check mark and enabling
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 	}

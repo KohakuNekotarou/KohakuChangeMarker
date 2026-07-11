@@ -45,6 +45,7 @@
 #include "KESCMCore.h"
 #include "KESCMChangeNav.h"			// KESCMGotoNextChange / KESCMGotoPrevChange(◀ Prev / Next ▶ ボタン)
 #include "KESCMScrollMap.h"			// スクロールバー地図strip(Startで注入/Stopで取り外し)
+#include "KESCMPanelState.h"		// KESCMLoadPanelStateIfPresent(保存済み設定をパネル初回オープン時に読み込む)
 
 /** ChangeMarker パネルのウィジェットを監視し、共有のオーバーレイ操作を駆動する。 */
 class KESCMPanelObserver : public CObserver
@@ -143,6 +144,11 @@ static PMString KESCMDocNameFromDB(IDataBase* db)
 
 void KESCMPanelObserver::AutoAttach()
 {
+	// ★保存済みのパネル設定(独自 JSON)があれば読み込んで各トグルへ適用する。関数内にセッション
+	//   一度きりのガードがあるので、パネルを開き直しても再ロードはしない(途中変更を巻き戻さない)。
+	//   「保存データがあればパネルが最初に開かれた時に読み込む」というユーザー仕様の実装点。
+	KESCMLoadPanelStateIfPresent();
+
 	InterfacePtr<IPanelControlData> pcd(this, UseDefaultIID());
 	if (pcd == nil)
 		return;

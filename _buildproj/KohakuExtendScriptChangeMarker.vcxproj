@@ -221,8 +221,10 @@
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMCore.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMDrawEventHandler.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMPageMap.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMPageCheck.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMPageNumberMarker.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMPanelObserver.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMPanelState.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMThumbnailRefresh.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMThumbIdleTask.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMScrollMap.cpp" />
@@ -251,7 +253,9 @@
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMID.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMFactoryList.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMPageMap.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMPageCheck.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMPageNumberMarker.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMPanelState.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMPeek.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMThumbnailRefresh.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMThumbIdleTask.h" />

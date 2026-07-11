@@ -60,10 +60,16 @@
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMPanelObserver.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMPanelState.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMPeek.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMPageMap.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMPageCheck.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMPageNumberMarker.cpp">
@@ -101,10 +107,16 @@
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMDrawEventHandler.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMPanelState.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMPeek.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMPageMap.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMPageCheck.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMPageNumberMarker.h">
