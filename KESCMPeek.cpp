@@ -1446,6 +1446,11 @@ void KESCMHandleDocsClosed()
 		KESCMDrawEventHandler::sMarksTempHidden = kFalse;	// Hold to Hide Marks の一時退避も解除
 		KESCMDrawEventHandler::sSrcMarksTempHidden = kFalse;	// Source 側の一時退避も解除
 		KESCMDrawEventHandler::sMarksVisible = kFalse;
+		// ★2026-07-11(ユーザー報告): Stop ボタンは登録(Add/Remove)を全解除するのに、比較文書(Source等)を
+		//   閉じて比較が終わった時は登録が残っていた。ここは「Stop 相当のフルクリーンアップ」なので、
+		//   Stop(KESCMDoClearMarks)と同じく登録も丸ごと忘れる。これを怠ると、生存側 Target/Source に
+		//   古い登録が残り、次の Start でペアリングに紛れ込む(map 空にするだけ=deref なし)。
+		KESCMPageMapClearAllDocs();
 		changed = kTrue;
 
 		PMString s("marks cleared");	// Stop ボタン(DoClear)と同じメッセージ

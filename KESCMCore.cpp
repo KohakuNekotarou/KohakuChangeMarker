@@ -367,10 +367,11 @@ void KESCMDoClearMarks(IDataBase* db)
 	IDataBase* markedDB = KESCMDrawEventHandler::sDB;
 	IDataBase* srcDB    = KESCMDrawEventHandler::sSrcDB;
 
-	// ★登録(Added/Removedページ)もここでクリアする。Target/Sourceの組み合わせを変えて再Start
-	// した時に、古い登録が新しい比較へ紛れ込むのを防ぐ(2026-07-05, ユーザー判断)。
-	KESCMPageMapClearAll(markedDB);
-	KESCMPageMapClearAll(srcDB);
+	// ★登録(Added/Removedページ)も Stop で丸ごと忘れる(ユーザー指定 2026-07-11:「Stop すると
+	// Add/Remove の登録は解除する」)。登録は arm 済みのとき Target/Source にしか作れないので実質この2文書
+	// だが、取りこぼしの無いよう全文書分を一括クリアする(Target/Source の組み合わせを変えて再 Start した
+	// 時に古い登録が紛れ込むのも防ぐ。2026-07-05 の per-db クリアを全体クリアへ拡張)。
+	KESCMPageMapClearAllDocs();
 
 	KESCMDrawEventHandler::DropAll();
 	KESCMDrawEventHandler::DropAllOrig();	// 旧版べた載せのキャッシュも解放(メモリ開放)

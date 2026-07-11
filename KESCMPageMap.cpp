@@ -127,6 +127,11 @@ void KESCMPageMapToggleSelectedPages()
 	if (!KESCMPageMapReadSelection(db, pages))
 		return;		// メニューは kCustomEnabling で無効化済みのはずだが保険
 
+	// ★2026-07-11(ユーザー指定): 登録は「比較を Start 中(arm 済み)」かつ「選択文書が Target/Source」の
+	//   ときだけ可能。メニューは UpdateToggleState で無効化済みのはずだが、保険としてここでも弾く。
+	if (!KESCMIsArmed() || (db != KESCMArmedTargetDB() && db != KESCMArmedSourceDB()))
+		return;
+
 	std::set<UID>& reg = sRegistered[db];
 
 	bool16 anyUnregistered = kFalse;
@@ -219,6 +224,14 @@ void KESCMPageMapUpdateToggleState(IActionStateList* listToUpdate, int32 index)
 		return;
 	}
 
+	// ★2026-07-11(ユーザー指定): 登録は「比較を Start 中(arm 済み)」かつ「選択文書が Target/Source」の
+	//   ときだけ可能=それ以外はグレーアウト。未 Start / 第3文書のページパネルではメニューを無効表示にする。
+	if (!KESCMIsArmed() || (db != KESCMArmedTargetDB() && db != KESCMArmedSourceDB()))
+	{
+		listToUpdate->SetNthActionState(index, kDisabled_Unselected);
+		return;
+	}
+
 	int32 regCount = 0;
 	std::map<IDataBase*, std::set<UID> >::const_iterator it = sRegistered.find(db);
 	if (it != sRegistered.end())
@@ -287,6 +300,16 @@ void KESCMPageMapClearAll(IDataBase* db)
 }
 
 //========================================================================================
+// KESCMPageMapClearAllDocs(KESCMPageMap.h で宣言)
+//   全文書の登録を丸ごと忘れる。Stop(KESCMDoClearMarks)で呼び、比較を解除したら Add/Remove の
+//   登録も残さない(ユーザー指定 2026-07-11)。ポインタは触らず map を空にするだけ(deref なし=安全)。
+//========================================================================================
+void KESCMPageMapClearAllDocs()
+{
+	sRegistered.clear();
+}
+
+//========================================================================================
 // KESCMPageMapIsRegistered(KESCMPageMap.h で宣言)
 //========================================================================================
 bool16 KESCMPageMapIsRegistered(IDataBase* db, UID pageUID)
@@ -306,16 +329,6 @@ bool16 KESCMPageMapHasAnyRegistered(IDataBase* db)
 		return kFalse;
 	std::map<IDataBase*, std::set<UID> >::const_iterator it = sRegistered.find(db);
 	return (it != sRegistered.end() && !it->second.empty()) ? kTrue : kFalse;
-}
-
-//========================================================================================
-// KESCMPageMapHasAnyRegisteredAnywhere(KESCMPageMap.h で宣言)
-//   どれか1つでも登録ページを持つ文書があるか。空エントリは登録/解除時に即消しているので
-//   (KESCMPageMapToggleSelectedPages の reg.empty() ガード)、map が空でないこと=登録が存在すること。
-//========================================================================================
-bool16 KESCMPageMapHasAnyRegisteredAnywhere()
-{
-	return sRegistered.empty() ? kFalse : kTrue;
 }
 
 //========================================================================================

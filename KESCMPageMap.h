@@ -45,17 +45,16 @@ void KESCMPageMapSweepClosedDocs();
 // Stop(KESCMDoClearMarks)から呼ぶ他、将来のフライアウト「Clear Registered Pages」でも使う想定。
 void KESCMPageMapClearAll(IDataBase* db);
 
+// 全文書の登録を丸ごと忘れる。Stop で比較を解除したら Add/Remove の登録も残さないために使う
+// (ユーザー指定 2026-07-11)。ポインタは触らず map を空にするだけ。
+void KESCMPageMapClearAllDocs();
+
 // pageUID(db内)が「比較相手なし」として登録済みか。db が nil、または該当文書の登録が無ければ kFalse。
 bool16 KESCMPageMapIsRegistered(IDataBase* db, UID pageUID);
 
 // db に登録済み(比較相手なし)ページが1つでもあるか(存在チェックのみ)。描画側の早期 return 判定
 // (KESCMDrawEventHandler::HandleDrawEvent の wantMarks/wantSrcMarks)に使う。
 bool16 KESCMPageMapHasAnyRegistered(IDataBase* db);
-
-// どれか1つでも登録済み(比較相手なし)ページを持つ文書があるか(db を問わない存在チェック)。
-// 描画側(HandleDrawEvent)は want フラグを db 確定前に計算するため、「比較を Start していなくても、
-// 登録があればサムネイルに緑『/』を描く」判定の入口としてこれを使う。実体は KESCMPageMap.cpp。
-bool16 KESCMPageMapHasAnyRegisteredAnywhere();
 
 // db に登録済み(Added/Removed=緑「/」)のページ UID をすべて out に追加する。Pages パネルサムネイルの
 // per-UID Purge 対象に登録ページを含めるために使う(登録ページは sEntries/overflow とは別管理のため、
