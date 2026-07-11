@@ -44,6 +44,7 @@
 #include "KESCMPageMap.h"            // KESCMBuildPairing(除外対応表)
 #include "KESCMThumbnailRefresh.h"   // ★実験: 既表示サムネイルの再生成トライ(2026-07-06)
 #include "KESCMChangeNav.h"          // KESCMResetNav(セッションを跨いだ巡回基準点の持ち越しを断つ)
+#include "KESCMScrollMap.h"          // KESCMScrollMapInvalidateAll(比較後にスクロールバー地図を最新化)
 #include "KESCMCore.h"
 
 //========================================================================================
@@ -309,6 +310,9 @@ ErrorCode KESCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMStri
 	KESCMInvalidateDB(targetDB);
 	if (sourceDB != targetDB)
 		KESCMInvalidateDB(sourceDB);	// Source 側の常時枠を即反映
+
+	// スクロールバー地図 strip のマークも最新化(Start/Ctrl+ミドル再比較/登録トグルの全経路がここを通る)。
+	KESCMScrollMapInvalidateAll();
 
 	// ★サムネイル実験(2026-07-06): 既表示サムネイルの再生成を試みる(KESCMThumbnailRefresh)。
 	// 従来 2026-07-05 に「文書の変更でしか無効化されない内部キャッシュがあり、InvalidatePageWidget/

@@ -13,7 +13,11 @@ KESCM の git リポジトリは `source/sdksamples/KESCM/`(このフォルダ�
 ## このプロジェクトファイルに入っているカスタム(復元時に必要な要点)
 - KESCM の全ソース(`KESCM*.cpp` / `.h`)の登録。特に近年追加分:
   `KESCMChangeNav.*`(変更ページへの Next/Prev ナビ)、`KESCMThumbnailRefresh.*`
-  (Pages パネルのサムネイル更新)、`KESCMPageMap.*`、`KESCMPageNumberMarker.*` ほか。
+  (Pages パネルのサムネイル更新)、`KESCMPageMap.*`、`KESCMPageNumberMarker.*`、
+  `KESCMScrollMap.*`(スクロールバー地図 strip)ほか。
+- **リンクライブラリに `DV_WidgetBin.lib` を追加**(2026-07-11、全4構成)。`KESCMScrollMap.cpp` の
+  自前描画ビュー基底 `DVControlView`(`AbstractControlView`/`DVHostedWidgetView`)の実体は
+  `WidgetBin.lib` ではなく `DV_WidgetBin.lib` にあるため(dumpbin で確認)。
 - 追加のインクルードパスは**無し**(標準構成のまま)。
   ※2026-07-06 まで一時的に `$(ID_SDK_DIR)\source\open\interfaces\ui` を追加していた
   (`IPendingUpdateController.h` 用)が、サムネイル更新を `IImageCacheMgr::Purge` + `ForceRedraw` の

@@ -208,6 +208,18 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 			IID_ITIP, kKESCMIconTipImpl,
 		}
 	},
+
+	// Scroll-map strip: a thin custom-drawn widget injected at runtime next to the document
+	// window's vertical scrollbar (KESCMScrollMap.cpp). Same pattern as customdatalinkui's
+	// kCusDtLnkUITreeCViewPanelWidgetBoss: kGenericPanelWidgetBoss + own IControlView.
+	Class
+	{
+		kKESCMScrollMapWidgetBoss,
+		kGenericPanelWidgetBoss,
+		{
+			IID_ICONTROLVIEW, kKESCMScrollMapViewImpl,
+		}
+	},
 }}};
 
 /*  
@@ -632,6 +644,33 @@ type KESCMPanelWidget(kViewRsrcType) : PalettePanelWidget(ClassID = kKESCMPanelW
 // Panel illustration (ON/OFF icon) widget type: same as RollOverIconButtonWidget, but backed by
 // kKESCMIconWidgetBoss so it carries IID_ITIP (tooltip showing the repo URL on hover).
 type KESCMIconWidget(kViewRsrcType) : RollOverIconButtonWidget(ClassID = kKESCMIconWidgetBoss) { };
+
+// Scroll-map strip widget type (custom-drawn; injected at runtime by KESCMScrollMap.cpp).
+type KESCMScrollMapWidget(kViewRsrcType) : GenericPanelWidget(ClassID = kKESCMScrollMapWidgetBoss) { };
+
+// Scroll-map strip view resource: instantiated with ::CreateObject(db, RsrcSpec(...,
+// kViewRsrcType, kKESCMScrollMapRsrcID), IID_ICONTROLVIEW) — same runtime-creation pattern as
+// linksui's dynamic info widgets. The Frame here is a placeholder; the real frame/binding are
+// assigned right after AddWidget from the live scrollbar geometry.
+resource LocaleIndex (kKESCMScrollMapRsrcID)
+{
+	kViewRsrcType,
+	{
+		kWildFS, k_Wild, kKESCMScrollMapRsrcID + index_enUS
+	}
+};
+
+resource KESCMScrollMapWidget(kKESCMScrollMapRsrcID + index_enUS)
+{
+	kKESCMScrollMapWidgetID,		// WidgetId
+	kPMRsrcID_None,					// RsrcId
+	kBindNone,						// Frame binding (placeholder; set at runtime)
+	Frame(0, 0, 5, 100)				// Frame (placeholder; set at runtime)
+	kTrue, kTrue,					// Visible, Enabled
+	"",								// Panel name (none)
+	{
+	}
+};
 
 // PanelList - registers the panel and makes it appear under the Window menu.
 resource PanelList (kSDKDefPanelResourceID)

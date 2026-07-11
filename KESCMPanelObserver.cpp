@@ -44,6 +44,7 @@
 #include "KESCMID.h"
 #include "KESCMCore.h"
 #include "KESCMChangeNav.h"			// KESCMGotoNextChange / KESCMGotoPrevChange(◀ Prev / Next ▶ ボタン)
+#include "KESCMScrollMap.h"			// スクロールバー地図strip(Startで注入/Stopで取り外し)
 
 /** ChangeMarker パネルのウィジェットを監視し、共有のオーバーレイ操作を駆動する。 */
 class KESCMPanelObserver : public CObserver
@@ -261,6 +262,7 @@ void KESCMToggleStartStop()
 
 		KESCMDoClearMarks(db);
 		KESCMDoDisarmMousePeek(db);
+		KESCMScrollMapDetachAll();	// スクロールバー地図stripを全窓から取り外す
 		PMString s("marks cleared"); s.SetTranslatable(kFalse);
 		KESCMSetStatus(s);
 	}
@@ -288,6 +290,7 @@ void KESCMToggleStartStop()
 		PMString report;
 		KESCMDoMarkChangesDoc(targetDB, sourceDB, report);
 		KESCMDoArmMousePeek(targetDB, sourceDB);
+		KESCMScrollMapAttach(targetDB);	// Target の各文書窓にスクロールバー地図stripを注入(フェーズ1=プローブ描画)
 		KESCMSetStatus(report);
 	}
 

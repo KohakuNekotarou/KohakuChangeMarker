@@ -102,7 +102,7 @@
       <Command>merge_res.cmd "$(IntDir)"  KESCM &amp; echo Deleting old resources... &amp; del /f /s "$(TargetDir)($(TargetName) Resources)\"*.idrc &gt; $(IntDir)prevDeletedResources.txt &amp;  xcopy /Q /E "$(IntDir)"*.idrc "$(TargetDir)($(TargetName) Resources)\" /Y</Command>
     </PreLinkEvent>
     <Link>
-      <AdditionalDependencies>$(ID_SDK_DIR)\build\win\objd\PMRuntime.lib; $(ID_SDK_DIR)\build\win\objd\Public.lib; $(ID_SDK_DIR)\build\win\objd\WidgetBin.lib</AdditionalDependencies>
+      <AdditionalDependencies>$(ID_SDK_DIR)\build\win\objd\PMRuntime.lib; $(ID_SDK_DIR)\build\win\objd\Public.lib; $(ID_SDK_DIR)\build\win\objd\WidgetBin.lib; $(ID_SDK_DIR)\build\win\objd\DV_WidgetBin.lib</AdditionalDependencies>
       <OutputFile>$(OutDir)$(TargetName)$(TargetExt)</OutputFile>
       <ProgramDatabaseFile>..\debug\sdk\KohakuExtendScriptChangeMarker.pdb</ProgramDatabaseFile>
       <ImportLibrary>$(LIB_DIR)\KohakuExtendScriptChangeMarker/KohakuExtendScriptChangeMarker.lib</ImportLibrary>
@@ -135,7 +135,7 @@
       <Command>merge_res.cmd "$(IntDir)"  KESCM &amp; echo Deleting old resources... &amp; del /f /s "$(TargetDir)($(TargetName) Resources)\"*.idrc &gt; $(IntDir)prevDeletedResources.txt &amp;  xcopy /Q /E "$(IntDir)"*.idrc "$(TargetDir)($(TargetName) Resources)\" /Y</Command>
     </PreLinkEvent>
     <Link>
-      <AdditionalDependencies>$(ID_SDK_DIR)\build\win\objdx64\PMRuntime.lib; $(ID_SDK_DIR)\build\win\objdx64\Public.lib; $(ID_SDK_DIR)\build\win\objdx64\WidgetBin.lib</AdditionalDependencies>
+      <AdditionalDependencies>$(ID_SDK_DIR)\build\win\objdx64\PMRuntime.lib; $(ID_SDK_DIR)\build\win\objdx64\Public.lib; $(ID_SDK_DIR)\build\win\objdx64\WidgetBin.lib; $(ID_SDK_DIR)\build\win\objdx64\DV_WidgetBin.lib</AdditionalDependencies>
       <OutputFile>$(OutDir)$(TargetName)$(TargetExt)</OutputFile>
       <ProgramDatabaseFile>..\debugx64\sdk\KohakuExtendScriptChangeMarker.pdb</ProgramDatabaseFile>
       <ImportLibrary>$(LIB_DIR)\KohakuExtendScriptChangeMarker/KohakuExtendScriptChangeMarker.lib</ImportLibrary>
@@ -170,7 +170,7 @@
     </PreLinkEvent>
     <Link>
       <AdditionalOptions>/IGNORE:4089 %(AdditionalOptions)</AdditionalOptions>
-      <AdditionalDependencies>$(ID_SDK_DIR)\build\win\objr\PMRuntime.lib; $(ID_SDK_DIR)\build\win\objr\Public.lib; $(ID_SDK_DIR)\build\win\objr\WidgetBin.lib</AdditionalDependencies>
+      <AdditionalDependencies>$(ID_SDK_DIR)\build\win\objr\PMRuntime.lib; $(ID_SDK_DIR)\build\win\objr\Public.lib; $(ID_SDK_DIR)\build\win\objr\WidgetBin.lib; $(ID_SDK_DIR)\build\win\objr\DV_WidgetBin.lib</AdditionalDependencies>
       <OutputFile>$(OutDir)$(TargetName)$(TargetExt)</OutputFile>
       <ProgramDatabaseFile>..\release\sdk\KohakuExtendScriptChangeMarker.pdb</ProgramDatabaseFile>
       <ImportLibrary>$(LIB_DIR)\KohakuExtendScriptChangeMarker/KohakuExtendScriptChangeMarker.lib</ImportLibrary>
@@ -205,7 +205,7 @@
     </PreLinkEvent>
     <Link>
       <AdditionalOptions>/IGNORE:4089 %(AdditionalOptions)</AdditionalOptions>
-      <AdditionalDependencies>$(ID_SDK_DIR)\build\win\objrx64\PMRuntime.lib; $(ID_SDK_DIR)\build\win\objrx64\Public.lib; $(ID_SDK_DIR)\build\win\objrx64\WidgetBin.lib</AdditionalDependencies>
+      <AdditionalDependencies>$(ID_SDK_DIR)\build\win\objrx64\PMRuntime.lib; $(ID_SDK_DIR)\build\win\objrx64\Public.lib; $(ID_SDK_DIR)\build\win\objrx64\WidgetBin.lib; $(ID_SDK_DIR)\build\win\objrx64\DV_WidgetBin.lib</AdditionalDependencies>
       <OutputFile>$(OutDir)$(TargetName)$(TargetExt)</OutputFile>
       <ProgramDatabaseFile>..\releasex64\sdk\KohakuExtendScriptChangeMarker.pdb</ProgramDatabaseFile>
       <ImportLibrary>$(LIB_DIR)\KohakuExtendScriptChangeMarker/KohakuExtendScriptChangeMarker.lib</ImportLibrary>
@@ -224,6 +224,8 @@
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMPageNumberMarker.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMPanelObserver.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMThumbnailRefresh.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMThumbIdleTask.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMScrollMap.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMPeek.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMDocServiceProvider.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMDocResponder.cpp" />
@@ -252,6 +254,8 @@
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMPageNumberMarker.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMPeek.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMThumbnailRefresh.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMThumbIdleTask.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMScrollMap.h" />
   </ItemGroup>
   <ItemGroup>
     <CustomBuild Include="..\..\..\source\sdksamples\KESCM\KESCM.fr">

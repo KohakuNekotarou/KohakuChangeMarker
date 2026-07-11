@@ -58,8 +58,7 @@ DECLARE_PMID(kClassIDSpace, kKESCMPanelWidgetBoss, kKESCMPrefix + 8)	// ChangeMa
 DECLARE_PMID(kClassIDSpace, kKESCMActionComponentBoss, kKESCMPrefix + 9)	// About メニューのアクションコンポーネント
 DECLARE_PMID(kClassIDSpace, kKESCMDocResponderServiceBoss, kKESCMPrefix + 10)	// IK2ServiceProvider+IResponder: ドキュメントクローズ監視(閉じた文書の追跡状態を確定クリーンアップ)
 DECLARE_PMID(kClassIDSpace, kKESCMIconWidgetBoss, kKESCMPrefix + 11)	// kRollOverIconButtonBoss を継承し IID_ITIP を追加(パネルイラストのツールチップ)
-// kClassIDSpace +12 は現在空き(旧 kKESCMLayoutSyncObserverBoss; 独立boss方式では通知が届かず、
-//   実機動作確認済みの手本と同じ AddIn(kActiveContextBoss へ同居)方式に変更したため独立bossは不要に)
+DECLARE_PMID(kClassIDSpace, kKESCMScrollMapWidgetBoss, kKESCMPrefix + 12)	// kGenericPanelWidgetBoss+自前IControlView: 縦スクロールバー脇の枠ページ地図strip(旧 kKESCMLayoutSyncObserverBoss のスロット転用)
 //DECLARE_PMID(kClassIDSpace, kKESCMBoss, kKESCMPrefix + 6)
 //DECLARE_PMID(kClassIDSpace, kKESCMBoss, kKESCMPrefix + 8)
 //DECLARE_PMID(kClassIDSpace, kKESCMBoss, kKESCMPrefix + 9)
@@ -123,6 +122,7 @@ DECLARE_PMID(kImplementationIDSpace, kKESCMDocServiceProviderImpl, kKESCMPrefix 
 DECLARE_PMID(kImplementationIDSpace, kKESCMDocResponderImpl, kKESCMPrefix + 9)	// IResponder 実装(クローズ確定時の追跡状態クリーンアップ)
 DECLARE_PMID(kImplementationIDSpace, kKESCMIconTipImpl, kKESCMPrefix + 10)	// ITip 実装(パネルイラストにURLをツールチップ表示)
 DECLARE_PMID(kImplementationIDSpace, kKESCMLayoutSyncObserverImpl, kKESCMPrefix + 11)	// IObserver 実装(レイアウトビュー同期)
+DECLARE_PMID(kImplementationIDSpace, kKESCMScrollMapViewImpl, kKESCMPrefix + 12)	// IControlView 実装(スクロールバー地図stripの自前描画; KESCMScrollMap.cpp)
 //DECLARE_PMID(kImplementationIDSpace, kKESCMImpl, kKESCMPrefix + 6)
 //DECLARE_PMID(kImplementationIDSpace, kKESCMImpl, kKESCMPrefix + 7)
 //DECLARE_PMID(kImplementationIDSpace, kKESCMImpl, kKESCMPrefix + 8)
@@ -201,6 +201,7 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMStatusTextWidgetID, kKESCMPrefix + 36)
 //   フライアウト「Start / Stop」メニュー項目=kKESCMPopupStartStopActionID へ移行しパネルから撤去)
 DECLARE_PMID(kWidgetIDSpace, kKESCMPrevChangeButtonWidgetID, kKESCMPrefix + 38)	// 「◀ Prev」= 前の見るべきページへスクロール(KESCMChangeNav.cpp)
 DECLARE_PMID(kWidgetIDSpace, kKESCMNextChangeButtonWidgetID, kKESCMPrefix + 39)	// 「Next ▶」= 次の見るべきページへスクロール(KESCMChangeNav.cpp)
+DECLARE_PMID(kWidgetIDSpace, kKESCMScrollMapWidgetID, kKESCMPrefix + 40)	// スクロールバー地図strip(文書窓の縦スクロールバー左隣に実行時注入; KESCMScrollMap.cpp)
 //DECLARE_PMID(kWidgetIDSpace, kKESCMWidgetID, kKESCMPrefix + 2)
 //DECLARE_PMID(kWidgetIDSpace, kKESCMWidgetID, kKESCMPrefix + 3)
 //DECLARE_PMID(kWidgetIDSpace, kKESCMWidgetID, kKESCMPrefix + 4)
@@ -297,6 +298,9 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMNextChangeButtonWidgetID, kKESCMPrefix + 39)	
 #define kKESCMIconOnResID	1001
 #define kKESCMIconOffResID	1002
 #define kKESCMPaletteIconResID	1003	// パネルが折りたたまれた時に出る小さいドックタブアイコン
+
+// スクロールバー地図stripのビューリソースID(kViewRsrcType; ::CreateObject で実行時生成する。KESCMScrollMap.cpp)
+#define kKESCMScrollMapRsrcID	1010
 
 // Menu item positions (flyout order): Show Marks on Source(9.4) → Hide Unchanged Spreads(9.5) →
 // Show Original Page Numbers(9.7) → Sync Layout Views(9.8) → How to Use(10) → About Scripting(11) →
