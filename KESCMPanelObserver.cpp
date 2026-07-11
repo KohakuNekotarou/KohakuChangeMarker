@@ -290,7 +290,8 @@ void KESCMToggleStartStop()
 		PMString report;
 		KESCMDoMarkChangesDoc(targetDB, sourceDB, report);
 		KESCMDoArmMousePeek(targetDB, sourceDB);
-		KESCMScrollMapAttach(targetDB);	// Target の各文書窓にスクロールバー地図stripを注入(フェーズ1=プローブ描画)
+		KESCMScrollMapAttach(targetDB);	// Target の各文書窓にスクロールバー地図stripを注入
+		KESCMScrollMapAttach(sourceDB);	// Source 窓にも表示(2026-07-11 ユーザー要望。strip 側が窓の文書を見て供給元を切替)
 		KESCMSetStatus(report);
 	}
 

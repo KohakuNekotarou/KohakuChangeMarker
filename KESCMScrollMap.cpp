@@ -116,9 +116,20 @@ void KESCMScrollMapView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 	gPort->rectpath(frame);
 	gPort->fill();
 
-	// 対象文書 = 現在 arm 中の Target。未 arm・クローズ済みなら背景のみ。
-	IDataBase* db = KESCMArmedTargetDB();
-	if (db == nil || !KESCMIsDocDBOpen(db))
+	// この strip が属する窓の文書を特定し(presentation の GetDocumentUIDRef)、Target 窓か
+	// Source 窓かでマークの供給元を切り替える(2026-07-11 ユーザー要望で Source 窓にも表示)。
+	// どちらの文書でもない・未 arm・クローズ済みなら背景のみ。
+	IDataBase* db = nil;
+	{
+		InterfacePtr<IWidgetParent> wp(this, IID_IWIDGETPARENT);
+		InterfacePtr<IDocumentPresentation> pres(
+			wp != nil ? (IDocumentPresentation*)wp->QueryParentFor(IID_IDOCUMENTPRESENTATION) : nil);
+		if (pres != nil)
+			db = pres->GetDocumentUIDRef().GetDataBase();
+	}
+	const bool16 isTarget = (db != nil && db == KESCMArmedTargetDB());
+	const bool16 isSource = (!isTarget && db != nil && db == KESCMArmedSourceDB());
+	if ((!isTarget && !isSource) || !KESCMIsDocDBOpen(db))
 		return;
 
 	// 全ページの pasteboard Y 帯を集める(順序は KESCMCollectPageUIDs=スプレッド順・ページ順)。
@@ -151,9 +162,18 @@ void KESCMScrollMapView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 	if (first || maxY <= minY)
 		return;
 
-	// マーク対象の集合。赤 = 変更ページ(sEntries; エンジンが同じ db を指しているときだけ)。
-	// 緑 = Add/Remove 登録ページ。両方に該当したら赤を優先(変更が見える方が重要)。
-	const bool16 entriesValid = (KESCMDrawEventHandler::sDB == db);
+	// マーク対象の集合。赤の供給元(2026-07-11 に overflow「/」も赤に含めるようユーザー指定):
+	//   Target 窓 = 変更ページ(sEntries) + overflow(sOverflowT=登録されていないのに相手が無い「/」)
+	//   Source 窓 = 変更ペアの Source 側(sSrcPageToTarget のキー) + overflow(sOverflowS)
+	// 緑 = Add/Remove 登録ページ(その db のもの)。両方に該当したら赤を優先。
+	// overflow キャッシュは現在の(sDB,sSrcDB)へ合わせてから読む(一致時は no-op)。
+	KESCMDrawEventHandler::EnsureOverflowCache();
+	const bool16 engineMatch = isTarget ? (KESCMDrawEventHandler::sDB == db)
+	                                    : (KESCMDrawEventHandler::sSrcDB == db);
+	const bool16 overflowMatch = isTarget ? (KESCMDrawEventHandler::sOverflowCacheDB == db)
+	                                      : (KESCMDrawEventHandler::sOverflowCacheSrcDB == db);
+	const std::set<UID>& overflowSet = isTarget ? KESCMDrawEventHandler::sOverflowT
+	                                            : KESCMDrawEventHandler::sOverflowS;
 	std::set<UID> greens;
 	KESCMPageMapCollectRegistered(db, greens);
 
@@ -162,8 +182,18 @@ void KESCMScrollMapView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 	{
 		if (bottoms[i] <= tops[i])
 			continue;	// 幾何が取れなかったページ
-		const bool16 isRed = (entriesValid &&
-			KESCMDrawEventHandler::sEntries.find(pages[i]) != KESCMDrawEventHandler::sEntries.end());
+		bool16 isRed = kFalse;
+		if (engineMatch)
+		{
+			if (isTarget)
+				isRed = (KESCMDrawEventHandler::sEntries.find(pages[i]) !=
+						 KESCMDrawEventHandler::sEntries.end());
+			else
+				isRed = (KESCMDrawEventHandler::sSrcPageToTarget.find(pages[i]) !=
+						 KESCMDrawEventHandler::sSrcPageToTarget.end());
+		}
+		if (!isRed && overflowMatch)
+			isRed = (overflowSet.find(pages[i]) != overflowSet.end());
 		const bool16 isGreen = (!isRed && greens.find(pages[i]) != greens.end());
 		if (!isRed && !isGreen)
 			continue;
@@ -277,12 +307,34 @@ void KESCMScrollMapAttach(IDataBase* targetDB)
 		// バーの左隣・同じ高さ。座標はバーと同じ親ローカル。binding はバーのものをコピー
 		// (右端固定+上下ストレッチ相当のはず。実際に何が入っているかはプローブで観察)。
 		const PMRect sbFrame = sbView->GetFrame();
-		PMRect stripFrame(sbFrame.Left() - kKESCMScrollMapWidth, sbFrame.Top(),
-						  sbFrame.Left(), sbFrame.Bottom());
+		const PMReal stripLeft = sbFrame.Left() - kKESCMScrollMapWidth;
+		PMRect stripFrame(stripLeft, sbFrame.Top(), sbFrame.Left(), sbFrame.Bottom());
 		strip->SetFrame(stripFrame);
 		strip->SetFrameBinding(sbView->GetFrameBinding());
 		strip->ShowView();
 		strip->Invalidate();
+
+		// ★strip の列をレイアウトビューから「専有」する(実機で確認した残像対策 2026-07-11)。
+		// レイアウトビューはスクロールを画面ピクセルのずらしコピー(blit)で高速化しており、ビューの
+		// 領域に strip が重なっていると strip のピクセルごと横/縦にコピーされて残像になる。そこで、
+		// strip 列に右端が食い込んでいる兄弟(=レイアウトビュー)の右端を strip の左端まで詰めて、
+		// 重なりをゼロにする(縦スクロールバーと縦帯が重なる兄弟だけが対象。下端の横スクロールバーや
+		// 上端のルーラーは縦範囲が重ならないので触らない)。取り外し時に元へ戻す(Detach 側)。
+		const int32 numSiblings = sbParentPanel->Length();
+		for (int32 c = 0; c < numSiblings; ++c)
+		{
+			IControlView* sib = sbParentPanel->GetWidget(c);
+			if (sib == nil || sib == sbView || sib == (IControlView*)strip)
+				continue;
+			PMRect sf = sib->GetFrame();
+			if (sf.Right() > stripLeft && sf.Left() < stripLeft &&
+				sf.Top() < sbFrame.Bottom() && sf.Bottom() > sbFrame.Top())
+			{
+				sf.Right() = stripLeft;
+				sib->SetFrame(sf);
+				sib->Invalidate();
+			}
+		}
 	}
 }
 
@@ -308,13 +360,37 @@ void KESCMScrollMapDetachAll()
 		InterfacePtr<IPanelControlData> parentPanel(wp->GetParent(), UseDefaultIID());
 		if (parentPanel == nil)
 			continue;
+
+		// Attach 時に strip 列ぶん右端を詰めた兄弟(=レイアウトビュー)を元の幅へ戻す。
+		// 「右端が strip の左端に(ほぼ)一致し、縦帯が重なる兄弟」= 詰めた本人。strip の右端
+		// (=スクロールバーの左端)まで広げ直す。
+		const PMRect stripFrame = strip->GetFrame();
+		const int32 numSiblings = parentPanel->Length();
+		for (int32 c = 0; c < numSiblings; ++c)
+		{
+			IControlView* sib = parentPanel->GetWidget(c);
+			if (sib == nil || sib == strip)
+				continue;
+			PMRect sf = sib->GetFrame();
+			PMReal gap = sf.Right() - stripFrame.Left();
+			if (gap < 0) gap = -gap;
+			if (gap <= PMReal(0.5) &&
+				sf.Top() < stripFrame.Bottom() && sf.Bottom() > stripFrame.Top())
+			{
+				sf.Right() = stripFrame.Right();
+				sib->SetFrame(sf);
+				sib->Invalidate();
+			}
+		}
+
 		parentPanel->RemoveWidget(strip, kTrue, kTrue);
 	}
 }
 
 // KESCMScrollMapInvalidateAll(KESCMScrollMap.h 参照) — 注入済みの全 strip を再描画する。
-// 比較(KESCMDoMarkChangesDoc)の末尾から呼ばれ、Start/Ctrl+ミドル再比較/登録トグルの
-// すべてで最新のマークに更新される(この3操作は全部あの関数を通る)。
+// 呼び所は2箇所: ①KESCMDoMarkChangesDoc の末尾(Start/登録トグルの全再比較・差分再比較)、
+// ②KESCMPeek.cpp のスプレッド再比較(Ctrl+ミドル。★KESCMDoMarkChangesDoc を通らない独立経路
+// なので個別に呼ぶ必要がある=ユーザー報告 2026-07-11 で判明)。
 void KESCMScrollMapInvalidateAll()
 {
 	K2Vector<IPanelControlData*> panels;

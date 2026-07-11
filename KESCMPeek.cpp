@@ -69,6 +69,7 @@
 #include "KESCMCore.h"               // arm/disarm/状態 宣言
 #include "KESCMPageMap.h"            // KESCMMapTargetToSource(除外対応表)/KESCMPageMapSweepClosedDocs
 #include "KESCMThumbnailRefresh.h"   // クローズ後、生存側の Pages パネルサムネイルから枠を消す
+#include "KESCMScrollMap.h"          // スプレッド再比較後にスクロールバー地図を最新化
 #include "KESCMThumbIdleTask.h"      // クローズ後の再生成を次のidleに遅延(前面切替の過渡を避ける)
 #include "KESCMPeek.h"
 
@@ -370,6 +371,11 @@ static bool16 KESCMRefreshSpreadUnderMouse(IDataBase* targetDB, IDataBase* sourc
 	KESCMDrawEventHandler::DropAllOrig();
 
 	KESCMInvalidateDB(targetDB);
+
+	// スクロールバー地図 strip も最新化する。この部分再比較は KESCMDoMarkChangesDoc を通らない
+	// 独立経路なので、あちらの末尾フックだけでは更新されない(ユーザー報告 2026-07-11:
+	// Ctrl+ミドルで変更が増えても地図が古いまま)。Target/Source 両窓の strip をまとめて再描画。
+	KESCMScrollMapInvalidateAll();
 
 	// ★Ctrl+ミドルの部分再比較でも、レイアウトビューだけでなく Pages パネルのサムネイルを即時更新する
 	//   (以前は KESCMInvalidateDB だけで、サムネイルのリングが再比較後に古いまま残っていた=ユーザー報告
