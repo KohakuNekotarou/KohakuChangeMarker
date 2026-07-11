@@ -69,6 +69,12 @@
 // 移動はバー自体のクリックで足りるため表示は細めに)。
 static const PMReal kKESCMScrollMapWidth = 5.0;
 
+// 帯マークの不透明度(0〜1、ユーザー要望 2026-07-11 で半透明化)。実際の合成は、帯が「自分で塗った
+// 背景(テーマ地色)の上」にしか載らない性質を利用した混色(色'=α×マーク色+(1-α)×背景色)で行う。
+// setopacity(IGraphicsPort.h:389)でも可能だが、混色は API の透明合成挙動に依存せず確実(見た目は同一)。
+// 背景はテーマ連動(IInterfaceColors の kInterfacePaletteFill)なので、ライト/ダークどちらでも馴染む。
+static const PMReal kKESCMScrollMapMarkAlpha = 0.6;
+
 //========================================================================================
 // KESCMScrollMapView — strip の自前描画(IControlView 実装)
 //========================================================================================
@@ -203,6 +209,15 @@ void KESCMScrollMapView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 	std::set<UID> greens;
 	KESCMPageMapCollectRegistered(db, greens);
 
+	// 帯の色(背景=テーマ地色との混色で半透明風。α は kKESCMScrollMapMarkAlpha)。
+	const PMReal ma = kKESCMScrollMapMarkAlpha;
+	const PMReal redR = ma * PMReal(0.85) + (PMReal(1.0) - ma) * bgR;
+	const PMReal redG = ma * PMReal(0.08) + (PMReal(1.0) - ma) * bgG;
+	const PMReal redB = ma * PMReal(0.08) + (PMReal(1.0) - ma) * bgB;
+	const PMReal grnR = ma * PMReal(0.10) + (PMReal(1.0) - ma) * bgR;
+	const PMReal grnG = ma * PMReal(0.70) + (PMReal(1.0) - ma) * bgG;
+	const PMReal grnB = ma * PMReal(0.25) + (PMReal(1.0) - ma) * bgB;
+
 	const PMReal scale = frame.Height() / (maxY - minY);
 	for (size_t i = 0; i < pages.size(); ++i)
 	{
@@ -236,9 +251,9 @@ void KESCMScrollMapView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 		if (y1 > frame.Bottom()) y1 = frame.Bottom();
 
 		if (isRed)
-			gPort->setrgbcolor(PMReal(0.85), PMReal(0.08), PMReal(0.08));
+			gPort->setrgbcolor(redR, redG, redB);
 		else
-			gPort->setrgbcolor(PMReal(0.10), PMReal(0.70), PMReal(0.25));
+			gPort->setrgbcolor(grnR, grnG, grnB);
 		gPort->rectpath(PMRect(frame.Left(), y0, frame.Right(), y1));
 		gPort->fill();
 	}
