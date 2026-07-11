@@ -573,10 +573,14 @@ void KESCMTogglePanelAtCursor()
 		return;
 	}
 
-	// カーソル位置(グローバル)。少し左上へパネル左上を置く(クリック点を隠しすぎない)。
+	// カーソル位置(グローバル)にパネルを出す。左はクリック点を隠しすぎないよう少し左へ。
+	// ★上端(=タイトルバー)はカーソルの「少し下」に置く(ユーザー指定 2026-07-11)。タイトルバーの上に
+	//   カーソルが載ると、そこでは Shift+Ctrl+ミドルのショートカット(トグルで隠す)が効かなくなるため、
+	//   タイトルバーがカーソルに重ならない位置へ下げる。カーソルはパネルの少し上(=タイトルバーの外)に来る。
 	GSysPoint g = Utils<IEventUtils>()->GetGlobalMouseLocation();
+	const SysCoord kKESCMPanelPopTopMargin = 9;	// カーソルからタイトルバー上端までの下方向オフセット(px)
 	const SysCoord left = (SysCoord)g.x - 7;
-	const SysCoord top  = (SysCoord)g.y - 7;
+	const SysCoord top  = (SysCoord)g.y + kKESCMPanelPopTopMargin;
 
 	// ★「表示→移動」のチラつきを消すため、表示する前に位置を決める。GetPanelFromWidgetID は
 	// 非表示のパネルも返す(GetVisiblePanel と違い nil にならない)ので、隠れている floating dock を

@@ -189,4 +189,11 @@ IDataBase*	KESCMGetHideUnchangedSrcDB();
 bool16		KESCMGetLayoutSync();
 void		KESCMSetLayoutSync(bool16 on);
 
+// フライアウト「Invoke Panel Shortcut」トグル。ON(既定)の間だけ、Shift+Ctrl+ミドルクリックで
+// KESCM パネルの表示/非表示を切り替えられる(フローティング時はカーソル付近にポップ)。OFF にすると
+// そのジェスチャは無反応になり、素のミドルクリック動作を邪魔しない。実体は KESCMPeek.cpp
+// (ジェスチャを捌く WatchEvent と同じ翻訳単位に状態 static を置く)。
+bool16		KESCMGetPanelShortcut();
+void		KESCMSetPanelShortcut(bool16 on);
+
 #endif // __KESCMCore_h__

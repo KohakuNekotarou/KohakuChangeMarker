@@ -84,6 +84,10 @@ static IDataBase* sPeekTargetDB = nil;	// 表示中(新)ドキュメント。使
 static IDataBase* sPeekSourceDB = nil;	// peek 中に重ねる旧ドキュメント。
 static bool16     sPeekArmed    = kFalse;
 
+// フライアウト「Invoke Panel Shortcut」トグルの状態(既定 ON)。ON の間だけ Shift+Ctrl+ミドルクリックで
+// パネル表示/非表示を切り替える(下の WatchEvent の該当分岐でこのフラグを見る)。セッション内のみ保持。
+static bool16     sPanelShortcutOn = kTrue;
+
 // Shift＋ミドル=旧版を不透明(100%)で / Shift+Alt＋ミドル=旧版を 50% で重ねて peek。
 // 押下中だけ表示し、ミドルを離すと消す(修飾キーは離してもよい)。判定はミドル押下時に1回見るだけ。
 static const PMReal kKESCMPeekSemiOpacity = 0.5;	// Shift+Alt＋ミドル時の旧版の不透明度(0..1)
@@ -425,9 +429,12 @@ static bool16 KESCMFrontViewIsOverSource()
 //========================================================================================
 // ビューポート同期エンジン(共有)
 //   手本パノラマの「見えている状態」= 実効ズーム(GetXScaleFactor(kTrue)、モニタPPI補正込み。
-//   kZoomToCmdBoss の scaleFactor と同じ次元)+可視中心の content 座標 を、srcDocDb「以外」の
-//   全ドキュメントの全レイアウトビューへ複製する(同一文書のビュー=スプリット相方は対象外)。
+//   kZoomToCmdBoss の scaleFactor と同じ次元)+可視中心の content 座標 を、比較相手のドキュメントの
+//   全レイアウトビューへ複製する(同一文書のビュー=スプリット相方は対象外)。
 //   Alt+ミドル(単発)とフライアウト「Sync Layout Views」(自動)の両方がこの1本を使う。
+//   ★2026-07-11(ユーザー指定): 発動は「比較を Start 中(sPeekArmed)」かつ「手本・宛先とも Target/Source」の
+//   ときだけ。未 Start や第3文書は関数先頭のガードで弾く(=同期しない)。以前は arm と無関係に全文書へ
+//   複製していたが、Target↔Source 間のみへ限定した。
 //========================================================================================
 
 // 再入ガード: 複製そのものが対象ビューで kScaleTo/kScrollTo 等の通知を発生させ、同期オブザーバが
@@ -576,6 +583,16 @@ static void KESCMSyncOtherDocViewportsTo(IPanorama* srcPano, IDataBase* srcDocDb
 	if (srcPano == nil)
 		return;
 
+	// ★同期は「比較を Start 中(arm 済み)」かつ「Target↔Source の間だけ」に限定する(ユーザー指定 2026-07-11)。
+	//   Alt+ミドル(単発)・フライアウト「Sync Layout Views」のライブ同期の両方がこの1本を通るので、
+	//   ここで一括ガードすれば両機能とも同じ条件になる。
+	//   ・未 Start(!sPeekArmed)、または arm 対の一方でも不明なら何もしない。
+	//   ・手本(操作した)ビューが Target/Source のどちらでもない第3文書なら同期しない。
+	if (!sPeekArmed || sPeekTargetDB == nil || sPeekSourceDB == nil)
+		return;
+	if (srcDocDb != sPeekTargetDB && srcDocDb != sPeekSourceDB)
+		return;
+
 	// 手本ビューの「見えている状態」を読む。ズームは実効スケール(kTrue=モニタPPI補正込み)。
 	// ズームコマンド(kZoomToCmdBoss)が扱う scaleFactor と同じ次元なので、読み書きが対称になる。
 	const PMReal  srcZoom   = srcPano->GetXScaleFactor(kTrue);
@@ -600,6 +617,11 @@ static void KESCMSyncOtherDocViewportsTo(IPanorama* srcPano, IDataBase* srcDocDb
 		// ★手本の文書自身は丸ごと対象外(スプリット相方も含む。2026-07-04ユーザー指定:
 		// 「他のドキュメントにだけ」)。
 		if (db == srcDocDb)
+			continue;
+
+		// ★Target/Source 以外の第3文書へは複製しない(ユーザー指定 2026-07-11)。手本は上のガードで
+		// 既に Target/Source のどちらかなので、宛先は「対の相手」1文書だけになる。
+		if (db != sPeekTargetDB && db != sPeekSourceDB)
 			continue;
 
 		// この宛先文書へ複製する中心座標。applyPageOffset のときは追加/削除補正(比較ペアの相手ページへ
@@ -669,10 +691,11 @@ static void KESCMSyncOtherDocViewportsTo(IPanorama* srcPano, IDataBase* srcDocDb
 // Alt＋ミドル押下(momentary、旧 Ctrl＋ミドル=2026-07-04移動): ビューポート同期。マウス下のレイアウトビュー
 // (アクティブである必要はない; IWindowUtils::QueryWindowUnderPoint でグローバル座標から直接引く)の
 // 「見えている状態」= 実効ズーム(拡大率)+ビュー中心に映っている content(pasteboard)座標 を読み取り、
-// ★「他のドキュメント」のウィンドウへだけ複製する(マウス下の文書自身のビュー=スプリット相方含めて
+// ★比較相手(Target↔Source)のウィンドウへだけ複製する(マウス下の文書自身のビュー=スプリット相方含めて
 // 対象外。2026-07-04ユーザー指定)。つまり拡大率が同じなら、同じ座標の画面が同じように映る
 // (旧仕様=マウス位置を他ウィンドウのセンターへスクロールするだけで、拡大率は触らなかった)。
-// ChangeMarker の Start(sPeekArmed)とは無関係に常に使える。
+// ★2026-07-11(ユーザー指定): ChangeMarker の Start(sPeekArmed)中のみ、かつ Target↔Source 間のみ有効に変更
+// (旧仕様=arm と無関係に全文書へ複製)。限定の実体は KESCMSyncOtherDocViewportsTo 側の一括ガード。
 //
 // 用途: Target/Source のようにページ構成が近い文書を並べ、同じ場所を同じ倍率で見比べる。
 // pasteboard 座標はドキュメント固有の値だが、構成が近ければそのまま流用できる(ズレは許容)。
@@ -1042,7 +1065,7 @@ IEventDispatcher::EventTypeList KESCMPeekWatcher::WatchEvent(IEvent* e)
 			}
 		}
 
-		if (e->ShiftKeyDown() && e->CmdKeyDown() && !e->OptionAltKeyDown())
+		if (sPanelShortcutOn && e->ShiftKeyDown() && e->CmdKeyDown() && !e->OptionAltKeyDown())
 		{
 			// Shift＋Ctrl＋ミドル押下: KESCMパネルの表示/非表示トグル。表示時、パネルがフローティングなら
 			// マウス位置付近へポップさせる(ドック中は剥がさず定位置に表示)。arm 不要・全文書共通なので
@@ -1103,11 +1126,13 @@ IEventDispatcher::EventTypeList KESCMPeekWatcher::WatchEvent(IEvent* e)
 			//   Shift+Alt は上の 50% peek 分岐が先に捕まえるので、ここは実質 Shift 単独用。
 			KESCMBeginPeekHold(PMReal(1.0));
 		}
-		else if (e->OptionAltKeyDown() && !e->ShiftKeyDown() && !e->CmdKeyDown())
+		else if (sPeekArmed && e->OptionAltKeyDown() && !e->ShiftKeyDown() && !e->CmdKeyDown())
 		{
 			// ★2026-07-04: Ctrl 単独から Alt 単独へ移動(Ctrl 単独は同日「スプレッド再比較」に再割当)。
 			// Alt＋ミドル押下(momentary): 「地図」ナビゲーション。マウス下のウィンドウ
-			// (アクティブでなくてもよい)のローカル座標へ、他の全ウィンドウをスクロールする。arm 状態に依らず常に使える。
+			// (アクティブでなくてもよい)の表示を比較相手のウィンドウへ複製する。★2026-07-11(ユーザー指定):
+				// 「Start 中(arm 済み)のみ」かつ「Target↔Source 間のみ」に限定。未 Start では反応しない(素のミドルを邪魔しない)。
+				// Target/Source 限定の実体は KESCMSyncOtherDocViewportsTo 側の一括ガードで担保。
 			KESCMSyncScrollOtherWindowsUnderMouse(e);
 		}
 		else if (!e->ShiftKeyDown() && !e->CmdKeyDown() && !e->OptionAltKeyDown())
@@ -1325,6 +1350,11 @@ void KESCMDoDisarmMousePeek(IDataBase* db)
 bool16     KESCMIsArmed()        { return sPeekArmed; }
 IDataBase* KESCMArmedTargetDB()  { return sPeekTargetDB; }
 IDataBase* KESCMArmedSourceDB()  { return sPeekSourceDB; }
+
+// フライアウト「Invoke Panel Shortcut」トグル(KESCMCore.h で宣言)。ON の間だけ Shift+Ctrl+ミドルで
+// パネル表示/非表示を切り替える(判定は WatchEvent の該当分岐)。既定 ON。
+bool16     KESCMGetPanelShortcut()        { return sPanelShortcutOn; }
+void       KESCMSetPanelShortcut(bool16 on) { sPanelShortcutOn = on; }
 
 //========================================================================================
 // KESCMHandleDocsClosed(KESCMCore.h で宣言)

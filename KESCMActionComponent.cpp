@@ -158,17 +158,46 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 		// ミドル押下中)。再描画は隠しの当事者になりやすい Target(sDB)と Source を対象にする(他の文書は
 		// 次の自然な再描画で反映される)。
 		case kKESCMPopupShowOldNumsActionID:
+		{
 			KESCMDrawEventHandler::sShowOldNumbers = !KESCMDrawEventHandler::sShowOldNumbers;
 			KESCMInvalidateDB(KESCMDrawEventHandler::sDB);
 			if (KESCMArmedSourceDB() != KESCMDrawEventHandler::sDB)
 				KESCMInvalidateDB(KESCMArmedSourceDB());
+			PMString msg(KESCMDrawEventHandler::sShowOldNumbers ? "Show original page numbers: on." : "Show original page numbers: off.");
+			msg.SetTranslatable(kFalse);
+			KESCMSetStatus(msg);
 			break;
+		}
 
 		// 「Sync Layout Views」トグル: レイアウトビュー同期の ON/OFF。実体は KESCMPeek.cpp の
-		// KESCMSetLayoutSync(購読の付け外し+ON時は即時に一度そろえる)。Start(枠)とは無関係に使える。
+		// KESCMSetLayoutSync(購読の付け外し+ON時は即時に一度そろえる)。★2026-07-11(ユーザー指定):
+		// 実際に同期がかかるのは「トグル ON かつ 比較を Start 中」のときだけ、かつ Target↔Source 間のみ
+		// (未 Start ではトグル ON でも購読はするが同期は no-op。判定は KESCMSyncOtherDocViewportsTo のガード)。
 		case kKESCMPopupSyncViewsActionID:
+		{
 			KESCMSetLayoutSync(!KESCMGetLayoutSync());
+			// ★同期が実際に効くのは「トグル ON かつ Start 中」なので、ON にしても未 Start のときは
+			//   その旨を添える(ユーザーが「効かない」と誤解しないように)。
+			PMString msg;
+			if (KESCMGetLayoutSync())
+				msg = KESCMIsArmed() ? "Sync layout views: on." : "Sync layout views: on (needs Start).";
+			else
+				msg = "Sync layout views: off.";
+			msg.SetTranslatable(kFalse);
+			KESCMSetStatus(msg);
 			break;
+		}
+
+		// 「Invoke Panel Shortcut」トグル: Shift+Ctrl+ミドルでパネル表示/非表示を切り替えるショートカットの
+		// 有効/無効(既定 ON)。フラグを反転するだけ。実体は KESCMPeek.cpp の sPanelShortcutOn(WatchEvent が参照)。
+		case kKESCMPopupPanelShortcutActionID:
+		{
+			KESCMSetPanelShortcut(!KESCMGetPanelShortcut());
+			PMString msg(KESCMGetPanelShortcut() ? "Invoke panel shortcut: on." : "Invoke panel shortcut: off.");
+			msg.SetTranslatable(kFalse);
+			KESCMSetStatus(msg);
+			break;
+		}
 
 		// 「Hold to Hide Marks」トグル: 枠表示の極性反転(フラグ反転のみ)。ON=画面に枠を常時表示し、
 		// ミドル押下中だけ隠す(押下/解放は KESCMPeek.cpp の WatchEvent が sMarksTempHidden を上下)。
@@ -279,6 +308,13 @@ void KESCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionSta
 			int16 actionState = kEnabledAction;
 			if (KESCMGetLayoutSync())
 				actionState |= kSelectedAction;
+			listToUpdate->SetNthActionState(i, actionState);
+		}
+		else if (action == kKESCMPopupPanelShortcutActionID)
+		{
+			int16 actionState = kEnabledAction;
+			if (KESCMGetPanelShortcut())
+				actionState |= kSelectedAction;	// ON(既定)ならチェックマーク
 			listToUpdate->SetNthActionState(i, actionState);
 		}
 		else if (action == kKESCMPopupHoldToHideMarksActionID)

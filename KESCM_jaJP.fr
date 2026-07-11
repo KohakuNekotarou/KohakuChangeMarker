@@ -49,6 +49,7 @@ resource StringTable (kSDKDefStringsResourceID + index_jaJP)
                 kKESCMHideUnchangedMenuKey,			"Hide Unchanged Spreads",
                 kKESCMShowOldNumsMenuKey,			"Show Original Page Numbers",
                 kKESCMSyncViewsMenuKey,				"Sync Layout Views",
+                kKESCMPanelShortcutMenuKey,			"Invoke Panel Shortcut",
                 kKESCMIgnorePageNumMenuKey,			"Ignore Page Number Marker",
                 kKESCMHoldToHideMarksMenuKey,			"Hold to Hide Marks",
 

@@ -334,6 +334,14 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKESCMSyncViewsMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
+		// "Invoke Panel Shortcut" on the panel flyout (popup) menu. Check-mark toggle (default ON):
+		// while ON, Shift+Ctrl+middle-click toggles this panel's visibility (pops at the cursor when
+		// floating). Turn it OFF to disable that gesture so the plain middle-click is left untouched.
+		kKESCMPopupPanelShortcutActionID,
+		kKESCMPopupMenuPath,
+		kKESCMPanelShortcutMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
 		// "Ignore Page Number Marker" on the panel flyout (popup) menu. Check-mark toggle: while ON
 		// (default), frames containing an automatic "Current Page Number" marker are excluded from
 		// the pixel comparison, so pages whose only difference is a shifted running folio (caused by
@@ -474,6 +482,15 @@ resource ActionDef (kSDKDefActionResourceID)
 		kKESCMActionComponentBoss,
 		kKESCMPopupSyncViewsActionID,
 		kKESCMSyncViewsMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates supplies the check mark (kSelectedAction)
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		kKESCMActionComponentBoss,
+		kKESCMPopupPanelShortcutActionID,
+		kKESCMPanelShortcutMenuKey,
 		kOtherActionArea,
 		kNormalAction,
 		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates supplies the check mark (kSelectedAction)
