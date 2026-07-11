@@ -340,8 +340,11 @@ static bool16 KESCMRefreshSpreadUnderMouse(IDataBase* targetDB, IDataBase* sourc
 	for (size_t k = 0; k < pairT.size(); ++k)
 		targetToSource[pairT[k]] = pairS[k];
 
-	// このスプレッドの各ページを再比較して枠を更新。
+	// このスプレッドの各ページを再比較して枠を更新。再比較で触れたページ(target とその source 対応)を
+	// 集めておき、後で Pages パネルのサムネイルを per-UID Purge する(下記)。変化あり/なしの両方を入れる=
+	// 変化なしに戻って sEntries から外れたページも古いリングを確実に消せるようにするため。
 	int32 changedCount = 0;
+	std::vector<UID> touchedTargetPages, touchedSourcePages;
 	for (int32 p = 0; p < np; ++p)
 	{
 		const UID tUID = spread->GetNthPageUID(p);
@@ -349,6 +352,8 @@ static bool16 KESCMRefreshSpreadUnderMouse(IDataBase* targetDB, IDataBase* sourc
 		if (mi == targetToSource.end())
 			continue;
 		const UID sUID = mi->second;
+		touchedTargetPages.push_back(tUID);
+		touchedSourcePages.push_back(sUID);
 		bool16 changed = kFalse;
 		KESCMDrawEventHandler::MakeEntry(UIDRef(targetDB, tUID), UIDRef(sourceDB, sUID), changed);
 		if (changed)
@@ -365,6 +370,21 @@ static bool16 KESCMRefreshSpreadUnderMouse(IDataBase* targetDB, IDataBase* sourc
 	KESCMDrawEventHandler::DropAllOrig();
 
 	KESCMInvalidateDB(targetDB);
+
+	// ★Ctrl+ミドルの部分再比較でも、レイアウトビューだけでなく Pages パネルのサムネイルを即時更新する
+	//   (以前は KESCMInvalidateDB だけで、サムネイルのリングが再比較後に古いまま残っていた=ユーザー報告
+	//   2026-07-11)。★再比較したのは「マウス下スプレッドのページ」だけと分かっているので、文書全体の
+	//   変更ページを Purge する KESCMTryRefreshPagesPanelThumbnails ではなく、対象ページだけを per-UID
+	//   Purge する KESCMRefreshThumbnailsForPages を使う(触っていない他ページのサムネイルは再生成しない)。
+	//   スプレッドの全ページ(変化あり/なし両方)を渡すので、変化なしに戻って sEntries から外れたページの
+	//   古いリングも確実に消える。Source 側も対応ページを更新する(Show Marks on Source の有無に依らず安全)。
+	//   pages が空/パネル非表示なら安全に no-op。
+	KESCMRefreshThumbnailsForPages(targetDB, touchedTargetPages);
+	// Source 側サムネイルのリングは Show Marks on Source(sSrcMarksOn)ON のときだけ出る(wantSrcMarks で
+	// ゲート/isThumb でも強制表示されない)。OFF ならリングは無い=更新しても絵は変わらないので、余計な
+	// per-UID Purge と Pages パネル ForceRedraw を避けてスキップする。
+	if (KESCMDrawEventHandler::sSrcMarksOn)
+		KESCMRefreshThumbnailsForPages(sourceDB, touchedSourcePages);
 
 	if (outSpread)  *outSpread = hit.spreadIndex;
 	if (outChanged) *outChanged = changedCount;
