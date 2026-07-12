@@ -388,6 +388,23 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKESCMSavePanelStateMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
+		// "Save Check & Register" on the panel flyout (popup) menu. Plain command that writes the current
+		// per-page checks (KESCM: Check) and registered Added/Removed pages of the started Target/Source
+		// documents to a private JSON file (KESCM\KESCMPageChecks.json, v2), merged with any previously saved
+		// documents. Shows the saved path.
+		kKESCMPopupSaveChecksActionID,
+		kKESCMPopupMenuPath,
+		kKESCMSaveChecksMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
+		// "Load Check & Register" on the panel flyout (popup) menu. Plain command; only meaningful while started.
+		// Applies the saved registered pages to both documents, recompares once, then restores the saved checks
+		// whose pages are still marked (frame/"/").
+		kKESCMPopupLoadChecksActionID,
+		kKESCMPopupMenuPath,
+		kKESCMLoadChecksMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
 		// Separator above How to Use (path ending in ":-" renders a menu separator; no ActionDef needed).
 		kKESCMPopupSep2ActionID,
 		kKESCMPopupMenuPath ":-",
@@ -568,6 +585,24 @@ resource ActionDef (kSDKDefActionResourceID)
 		kOtherActionArea,
 		kNormalAction,
 		kDisableIfLowMem,					// plain command; always enabled (no UpdateActionStates needed)
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		kKESCMActionComponentBoss,
+		kKESCMPopupSaveChecksActionID,
+		kKESCMSaveChecksMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kDisableIfLowMem,					// plain command; guards inside (needs Start + checks)
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		kKESCMActionComponentBoss,
+		kKESCMPopupLoadChecksActionID,
+		kKESCMLoadChecksMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kDisableIfLowMem,					// plain command; guards inside (needs Start)
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 
@@ -757,7 +792,7 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 	kKESCMPanelWidgetID,			// WidgetID
 	kPMRsrcID_None,					// RsrcID
 	kBindNone,						// Binding
-	0, 0, 192, 136,					// Frame: left, top, right, bottom (イラストをステータステキスト横=右へ移した分、縦を40px詰めた)
+	0, 0, 192, 153,					// Frame: left, top, right, bottom (ステータス欄を3→4行に拡張した分、下端を +17px。イラストも下端145へ下寄せ)
 	kTrue, kTrue,					// Visible, Enabled
 	kFalse,							// Erase background
 	kInterfacePaletteFill,			// Erase to color
@@ -823,7 +858,7 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 			kKESCMIconOffWidgetID,
 			kKESCMIconOffResID, kKESCMPluginID,
 			kBindTop,
-			Frame(152, 96, 184, 128)	// 32×32・右寄せ・ステータステキスト帯(76-128)の下端に揃える。ON側と同座標
+			Frame(152, 113, 184, 145)	// 32×32・右寄せ。ステータス欄(4行・下端145)に合わせて下寄せ(top113/bottom145、パネル下端153まで8pxマージン)。ON側と同座標
 			kTrue, kTrue,
 			kADBEIconSuiteButtonType,
 		),
@@ -832,7 +867,7 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 			kKESCMIconOnWidgetID,
 			kKESCMIconOnResID, kKESCMPluginID,
 			kBindTop,
-			Frame(152, 96, 184, 128)	// 32×32・右寄せ・ステータステキスト帯(76-128)の下端に揃える。OFF側と同座標
+			Frame(152, 113, 184, 145)	// 32×32・右寄せ。ステータス欄(4行・下端145)に合わせて下寄せ(top113/bottom145、パネル下端153まで8pxマージン)。OFF側と同座標
 			kFalse, kTrue,
 			kADBEIconSuiteButtonType,
 		),
@@ -843,12 +878,12 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 			kKESCMStatusTextWidgetID,
 			kPMRsrcID_None,
 			kBindLeft | kBindRight | kBindTop,
-			Frame(8, 76, 148, 128)		// 右148まで=イラスト(152-184)と横並び(4px間隔)
+			Frame(8, 76, 148, 145)		// 右148まで=イラスト(152-184)と横並び(4px間隔)。下端を 128→145 に拡張(3→4行)
 			kTrue, kTrue,
 			kAlignLeft, kDontEllipsize, kTrue,
 			kInvalidWidgetID,
 			kPaletteWindowFontId,
-			3,
+			4,
 			2, 0,
 			"",
 		),

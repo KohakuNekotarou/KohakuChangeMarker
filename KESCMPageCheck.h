@@ -54,4 +54,19 @@ bool16 KESCMPageCheckIsChecked(IDataBase* db, UID pageUID);
 // (KESCMDrawEventHandler::HandleDrawEvent の anyMarkableContent)に使う。
 bool16 KESCMPageCheckHasAny(IDataBase* db);
 
+// フライアウト「Save Check & Register」: Start 中(arm 済み)の Target/Source について、現在の Check(✓)と
+// Register(Added/Removed=緑「/」)の両方を独自 JSON(ローミング環境設定フォルダー直下の KESCMPageChecks.json,
+// version 2)へ保存する。キーは文書ファイルのフルパス、値は checks[] と registered[] の2配列。既存ファイルに
+// 「マージ」する(今 Start 中の2文書ぶんだけ更新し、他の文書の保存済み分は温存)。保存先パスをステータス行に
+// 出す。未 Start や未保存文書(パス無し)は対象外。実体は KESCMPageCheck.cpp。
+void KESCMPageCheckSaveToFile();
+
+// フライアウト「Load Check & Register」: Start 中(arm 済み)だけ有効。上記 JSON を読み、Target/Source について
+//   ①まず Register を両文書へ適用(KESCMPageMapReplaceRegistered)→ 一度だけ再比較(除外対応表を張り直し、
+//     Added/Removed の緑「/」サムネイルも更新)
+//   ②その後 Check を復元(保存済みのうち「今もマーク付き(枠/「/」)」のページだけ。その文書の現在のチェックを置換)
+// の順に処理する。復元件数をステータス行に出す。旧 v1 ファイル("pages" 配列)は checks として寛容に受理する。
+// 未 Start なら何もしない。実体は KESCMPageCheck.cpp。
+void KESCMPageCheckLoadFromFile();
+
 #endif // __KESCMPageCheck_h__

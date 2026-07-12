@@ -276,6 +276,19 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 			KESCMPageCheckToggleSelectedPages();
 			break;
 
+		// フライアウトの「Save Check & Register」: Start中の Target/Source の現在の Check(✓)+ Register
+		// (Added/Removed)を独自 JSON(KESCM\KESCMPageChecks.json, v2)へマージ保存し、保存先パスをステータス行に
+		// 出す(実体 KESCMPageCheck.cpp)。
+		case kKESCMPopupSaveChecksActionID:
+			KESCMPageCheckSaveToFile();
+			break;
+
+		// フライアウトの「Load Check & Register」: Start中だけ有効。上記 JSON から Register を両文書へ適用→再比較→
+		// Check(今もマーク付きのページだけ)を復元する(実体 KESCMPageCheck.cpp)。
+		case kKESCMPopupLoadChecksActionID:
+			KESCMPageCheckLoadFromFile();
+			break;
+
 		default:
 			break;
 	}

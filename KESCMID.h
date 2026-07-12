@@ -172,6 +172,8 @@ DECLARE_PMID(kActionIDSpace, kKESCMPopupScrollMapActionID, kKESCMPrefix + 21)	//
 DECLARE_PMID(kActionIDSpace, kKESCMPopupSavePanelStateActionID, kKESCMPrefix + 22)	// パネルのフライアウトの「Save Panel Settings」(チェックではなく実行アクション)。現在の設定系トグルを独自JSONでローカルへ保存し保存先パスを表示。パネル初回オープン時に読込。実体 KESCMPanelState.cpp
 DECLARE_PMID(kActionIDSpace, kKESCMPopupSep3ActionID, kKESCMPrefix + 23)	// フライアウト: Ignore Page Number Marker の下の区切り線(MenuDef のパス末尾 ":-"。ActionDef 不要)。この下に Hide Unchanged Spreads を置く
 DECLARE_PMID(kActionIDSpace, kKESCMPageCheckToggleActionID, kKESCMPrefix + 24)	// ページパネルのページ右クリック(RtMenuPagesPanel)のトグル「KESCM: Check」(選択ページに✓印を付け外し。Start中限定・Stopで消去。チェック/有効無効は kCustomEnabling。実体 KESCMPageCheck.cpp、✓描画は KESCMDrawEventHandler の isThumb 分岐)
+DECLARE_PMID(kActionIDSpace, kKESCMPopupSaveChecksActionID, kKESCMPrefix + 25)	// パネルのフライアウトの「Save Check & Register」(実行アクション)。Start中の Target/Source の現在の Check(✓)+ Register(Added/Removed)を独自JSON(KESCM\KESCMPageChecks.json, v2)へマージ保存し保存先パスを表示。実体 KESCMPageCheck.cpp
+DECLARE_PMID(kActionIDSpace, kKESCMPopupLoadChecksActionID, kKESCMPrefix + 26)	// パネルのフライアウトの「Load Check & Register」(実行アクション)。Start中だけ有効。上記JSONから Register を両文書へ適用→再比較→Check(今もマーク付きのみ)を復元。実体 KESCMPageCheck.cpp
 //DECLARE_PMID(kActionIDSpace, kKESCMActionID, kKESCMPrefix + 15)
 //DECLARE_PMID(kActionIDSpace, kKESCMActionID, kKESCMPrefix + 15)
 //DECLARE_PMID(kActionIDSpace, kKESCMActionID, kKESCMPrefix + 16)
@@ -182,8 +184,7 @@ DECLARE_PMID(kActionIDSpace, kKESCMPageCheckToggleActionID, kKESCMPrefix + 24)	/
 //DECLARE_PMID(kActionIDSpace, kKESCMActionID, kKESCMPrefix + 21)
 //DECLARE_PMID(kActionIDSpace, kKESCMActionID, kKESCMPrefix + 22)
 //DECLARE_PMID(kActionIDSpace, kKESCMActionID, kKESCMPrefix + 23)
-//DECLARE_PMID(kActionIDSpace, kKESCMActionID, kKESCMPrefix + 24)
-//DECLARE_PMID(kActionIDSpace, kKESCMActionID, kKESCMPrefix + 25)
+// kKESCMPrefix + 24/25/26 は使用中(KESCM: Check / Save Check & Register / Load Check & Register)
 
 
 // WidgetIDs:
@@ -277,6 +278,8 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMScrollMapWidgetID, kKESCMPrefix + 40)	// ス�
 #define kKESCMPanelShortcutMenuKey	kKESCMStringPrefix "kKESCMPanelShortcutMenuKey"	// パネルのフライアウト「Invoke Panel Shortcut」トグルのメニュー名
 #define kKESCMScrollMapMenuKey		kKESCMStringPrefix "kKESCMScrollMapMenuKey"	// パネルのフライアウト「Show Scrollbar Map」トグルのメニュー名
 #define kKESCMSavePanelStateMenuKey	kKESCMStringPrefix "kKESCMSavePanelStateMenuKey"	// パネルのフライアウト「Save Panel Settings」項目のメニュー名
+#define kKESCMSaveChecksMenuKey		kKESCMStringPrefix "kKESCMSaveChecksMenuKey"	// パネルのフライアウト「Save Check & Register」項目のメニュー名
+#define kKESCMLoadChecksMenuKey		kKESCMStringPrefix "kKESCMLoadChecksMenuKey"	// パネルのフライアウト「Load Check & Register」項目のメニュー名
 
 // パネル: 内部フライアウト(ポップアップ)メニュー名＋そのメニューパス。
 #define kKESCMInternalPopupMenuNameKey	kKESCMStringPrefix "kKESCMInternalPopupMenuNameKey"
@@ -312,7 +315,7 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMScrollMapWidgetID, kKESCMPrefix + 40)	// ス�
 // Menu item positions (flyout order): … Show Marks on Source(9.4) → Show Original Page Numbers(9.7) →
 // Sync Layout Views(9.8) → Show Scrollbar Map(9.85) → Ignore Page Number Marker(9.9) →
 // Invoke Panel Shortcut(9.901) → ─線 Sep3(9.905) → Hide Unchanged Spreads(9.91) → Save Panel Settings(9.93) →
-// ─線 Sep2(9.95) → How to Use(10) → About Scripting(11) → About this plug-in(12)。
+// Save Check & Register(9.935) → Load Check & Register(9.94) → ─線 Sep2(9.95) → How to Use(10) → About Scripting(11) → About this plug-in(12)。
 // ※メニュー名は日本語ロケールでも英語で統一(2026-07-04)。Split Target on Start(旧9.0)は撤去済み。
 // ※2026-07-11: Sep3 を足し Hide Unchanged Spreads(旧9.5)をその下へ移動。Invoke Panel Shortcut を Ignore のすぐ下(線の上)へ。
 #define kKESCMStartStopMenuItemPosition		9.0	// 「Start / Stop」(比較開始/解除)をフライアウト先頭に。名前は arm 状態で動的に Start↔Stop
@@ -331,6 +334,8 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMScrollMapWidgetID, kKESCMPrefix + 40)	// ス�
 #define kKESCMSep3MenuItemPosition			9.905	// Invoke Panel Shortcut の下の区切り線(パス末尾 ":-")。この下に Hide Unchanged Spreads を置く
 #define kKESCMHideUnchangedMenuItemPosition	9.91	// チェック式トグル「Hide Unchanged Spreads」を Sep3(線)の直後へ移動(2026-07-11)
 #define kKESCMSavePanelStateMenuItemPosition	9.93	// 実行アクション「Save Panel Settings」を設定系トグル群の末尾(Invoke Panel Shortcut の直後・Sep2 の前)に
+#define kKESCMSaveChecksMenuItemPosition	9.935	// 実行アクション「Save Check & Register」を Save Panel Settings の直下に(2026-07-11)
+#define kKESCMLoadChecksMenuItemPosition	9.94	// 実行アクション「Load Check & Register」を Save Check & Register の直下に(2026-07-11)
 #define kKESCMSep2MenuItemPosition			9.95	// How to Use の上の区切り線(パス末尾 ":-")
 #define kKESCMUsageMenuItemPosition			10.0	// 「使い方」
 // ページパネルのページ右クリックメニュー(内部名 RtMenuPagesPanel、2026-07-05 実機確定)内の位置。

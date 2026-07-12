@@ -6,10 +6,10 @@
 //  独自の JSON ファイルとしてローカル(ユーザーのローミング環境設定フォルダー)に保存/復元する。
 //  ★InDesign 本体のデータ(ワークスペース SavedData・ドキュメント)には一切書き込まない。
 //
-//  保存先: FileUtils::GetAppRoamingDataFolder(..,"KESCM") が作る
-//    (Windows 例) %APPDATA%\Adobe\InDesign\Version XX.0\<locale>\KESCM\KESCMPanelState.json
-//  この場所は InDesign の環境設定と同じユーザー領域だが、KESCM 専用のサブフォルダー内の
-//  独立した JSON ファイルなので、InDesign 側のファイルとは無関係。
+//  保存先: FileUtils::GetAppRoamingDataFolder(.., "KESCMPanelState.json") 直下
+//    (Windows 例) %APPDATA%\Adobe\InDesign\Version XX.0\<locale>\KESCMPanelState.json
+//  ★サブフォルダーは作らない(ユーザー指定 2026-07-12)。この場所は InDesign の環境設定と同じユーザー
+//  領域だが、独立した独自 JSON ファイルなので InDesign 側のファイルとは無関係。
 //
 //  保存対象(=設定系トグルのみ。Start/Stop の arm 状態や Hide Unchanged の隠し実行状態のような
 //  「その瞬間の作業状態」は、復元すると副作用があるので保存しない):

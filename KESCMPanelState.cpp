@@ -10,7 +10,6 @@
 #include "VCPlugInHeaders.h"
 
 // 一般:
-#include "CAlert.h"			// モーダルダイアログ(保存先パスの表示)
 #include "PMString.h"
 #include "FileUtils.h"		// GetAppRoamingDataFolder / AppendPath / OpenFile / DoesFileExist / SysFileToPMString
 #include "IDFile.h"
@@ -33,22 +32,15 @@ static const char* const kKESCMPanelStateFileName = "KESCMPanelState.json";
 // 保存先の解決
 //----------------------------------------------------------------------------------------
 
-// ローミング環境設定フォルダー内の "KESCM" サブフォルダー配下の KESCMPanelState.json への IDFile を
-// outFile に返す。取得できなければ kFalse。
-// ★GetAppRoamingDataFolder はドキュメント上「サブフォルダーを作る」とあるが、実機で "KESCM" サブ
-//   フォルダーが実際には作られず、その配下へファイルを開こうとして "open failed" になった(2026-07-11)。
-//   そこで CreateFolderIfNeeded で KESCM フォルダー(と親)を明示的に確実に作ってから、ファイル名を足す。
-//   createFolder=kFalse(読み込み時)は作成せず、既存パスの解決だけ行う(無ければ後段の DoesFileExist で弾く)。
-static bool16 KESCMPanelStateFile(IDFile& outFile, bool16 createFolder)
+// ローミング環境設定フォルダー(locale 付き)直下の KESCMPanelState.json への IDFile を outFile に返す。
+// ★サブフォルダーは作らない(ユーザー指定 2026-07-12)。GetAppRoamingDataFolder の subFolderName に
+//   ファイル名をそのまま渡すと、そのフォルダー直下の「ファイルの」IDFile が返る(SDK 実例:
+//   SnpShareAppResources.cpp / SuppUISysFileData.cpp)。親フォルダーは InDesign が環境設定用に既に
+//   作っているので CreateFolderIfNeeded は不要(旧実装で "KESCM" サブフォルダー作成が要ったのは、
+//   存在しないサブフォルダー配下へ開こうとしていたため)。取得できなければ kFalse。
+static bool16 KESCMPanelStateFile(IDFile& outFile)
 {
-	IDFile folder;
-	if (!FileUtils::GetAppRoamingDataFolder(&folder, "KESCM"))
-		return kFalse;
-	if (createFolder)
-		FileUtils::CreateFolderIfNeeded(folder, kTrue /*bCreateParent*/);
-	FileUtils::AppendPath(&folder, PMString(kKESCMPanelStateFileName));
-	outFile = folder;
-	return kTrue;
+	return FileUtils::GetAppRoamingDataFolder(&outFile, PMString(kKESCMPanelStateFileName));
 }
 
 //----------------------------------------------------------------------------------------
@@ -93,11 +85,11 @@ static bool16 KESCMJsonReadBool(const std::string& text, const char* key, bool16
 void KESCMSavePanelState()
 {
 	IDFile file;
-	if (!KESCMPanelStateFile(file, kTrue /*createFolder*/))
+	if (!KESCMPanelStateFile(file))
 	{
-		PMString err("Could not locate the preferences folder to save panel settings.");
+		PMString err("Save failed (folder)");	// パネルのステータス行に表示(幅が狭いので短く)
 		err.SetTranslatable(kFalse);
-		CAlert::ModalAlert(err, kOKString, kNullString, kNullString, 1, CAlert::eWarningIcon);
+		KESCMSetStatus(err, kTrue /*forceRedrawNow*/);
 		return;
 	}
 
@@ -119,19 +111,20 @@ void KESCMSavePanelState()
 	FILE* fp = FileUtils::OpenFile(file, "wb");
 	if (fp == nil)
 	{
-		PMString err("Could not write the panel settings file (open failed).");
+		PMString err("Save failed (open)");	// パネルのステータス行に表示
 		err.SetTranslatable(kFalse);
-		CAlert::ModalAlert(err, kOKString, kNullString, kNullString, 1, CAlert::eWarningIcon);
+		KESCMSetStatus(err, kTrue /*forceRedrawNow*/);
 		return;
 	}
 	fwrite(json.data(), 1, json.size(), fp);
 	fclose(fp);
 
-	// 保存先のフルパスを表示する。
-	PMString msg("Panel settings saved to:\n");
+	// 保存先のフルパスをパネルのステータス行に表示する(ユーザー要望 2026-07-11: モーダルからパネル表示へ)。
+	// ★パスのみ(「Settings saved:」等のラベルを付けるとステータス行(幅140px×3行)から溢れるため)。
+	PMString msg;
 	msg.SetTranslatable(kFalse);
 	msg.Append(FileUtils::SysFileToPMString(file));
-	CAlert::ModalAlert(msg, kOKString, kNullString, kNullString, 1, CAlert::eInformationIcon);
+	KESCMSetStatus(msg, kTrue /*forceRedrawNow*/);
 }
 
 //----------------------------------------------------------------------------------------
@@ -146,7 +139,7 @@ void KESCMLoadPanelStateIfPresent()
 	sLoaded = kTrue;	// 成否に関わらずセッションで一度だけ試みる
 
 	IDFile file;
-	if (!KESCMPanelStateFile(file, kFalse /*createFolder*/))
+	if (!KESCMPanelStateFile(file))
 		return;
 	if (!FileUtils::DoesFileExist(file))
 		return;		// 保存データが無い=初回。既定値のまま。

@@ -348,6 +348,27 @@ void KESCMPageMapCollectRegistered(IDataBase* db, std::set<UID>& out)
 }
 
 //========================================================================================
+// KESCMPageMapReplaceRegistered(KESCMPageMap.h で宣言)
+//   db の登録集合を pages で丸ごと置き換える(LOAD 用の setter。「Load Check & Register」から呼ぶ)。
+//   ここでは sRegistered を書き換えるだけで、再比較やサムネイル更新は行わない(呼び出し側が両文書を
+//   set し終えてから一度だけ再比較する)。pages が空ならエントリごと消す。
+//========================================================================================
+void KESCMPageMapReplaceRegistered(IDataBase* db, const std::vector<UID>& pages)
+{
+	if (db == nil)
+		return;
+	if (pages.empty())
+	{
+		sRegistered.erase(db);
+		return;
+	}
+	std::set<UID>& reg = sRegistered[db];
+	reg.clear();
+	for (size_t i = 0; i < pages.size(); ++i)
+		reg.insert(pages[i]);
+}
+
+//========================================================================================
 // KESCMBuildPairing(KESCMPageMap.h で宣言)
 //   targetDB/sourceDB の平坦ページ列(KESCMCollectPageUIDs)から、それぞれ登録済み(比較相手なし)
 //   ページを除き、残り同士を順番に対応させる。従来(ステップ1以前)は素の平坦列を直接 zip していたが、

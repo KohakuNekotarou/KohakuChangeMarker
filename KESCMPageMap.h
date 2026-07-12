@@ -61,6 +61,11 @@ bool16 KESCMPageMapHasAnyRegistered(IDataBase* db);
 // これを含めないと緑「/」がサムネイルに即時反映されない)。db が nil か登録が無ければ何もしない。
 void KESCMPageMapCollectRegistered(IDataBase* db, std::set<UID>& out);
 
+// db の登録集合を pages で丸ごと置き換える(LOAD 用。「Load Check & Register」から呼ぶ)。sRegistered を
+// 書き換えるだけで再比較/サムネイル更新はしない(呼び出し側が両文書を set 後に一度だけ再比較する)。
+// pages が空ならその文書の登録を消す。実体は KESCMPageMap.cpp。
+void KESCMPageMapReplaceRegistered(IDataBase* db, const std::vector<UID>& pages);
+
 // 除外対応表: targetDB/sourceDB それぞれの平坦ページ列(KESCMCollectPageUIDs)から登録済み
 // (比較相手なし)ページを除き、残り同士を順番に対応させる。outTargetPages[i] と outSourcePages[i] が
 // 対応ペア(短い方の長さに切り詰め済み=2つの配列は同じ長さになる)。targetDB/sourceDB が nil なら
