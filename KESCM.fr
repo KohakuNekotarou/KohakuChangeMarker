@@ -362,6 +362,14 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKESCMPanelShortcutMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
+		// "Pages Panel Shortcut" on the panel flyout (popup) menu. Check-mark toggle (default ON):
+		// while ON, Ctrl+Alt+middle-click toggles the built-in InDesign Pages panel's visibility
+		// (simple show/hide, no cursor move). Turn it OFF to disable that gesture.
+		kKESCMPopupPagesPanelShortcutActionID,
+		kKESCMPopupMenuPath,
+		kKESCMPagesPanelShortcutMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
 		// "Ignore Page Number Marker" on the panel flyout (popup) menu. Check-mark toggle: while ON
 		// (default), frames containing an automatic "Current Page Number" marker are excluded from
 		// the pixel comparison, so pages whose only difference is a shifted running folio (caused by
@@ -564,6 +572,15 @@ resource ActionDef (kSDKDefActionResourceID)
 		kKESCMActionComponentBoss,
 		kKESCMPopupPanelShortcutActionID,
 		kKESCMPanelShortcutMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates supplies the check mark (kSelectedAction)
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		kKESCMActionComponentBoss,
+		kKESCMPopupPagesPanelShortcutActionID,
+		kKESCMPagesPanelShortcutMenuKey,
 		kOtherActionArea,
 		kNormalAction,
 		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates supplies the check mark (kSelectedAction)

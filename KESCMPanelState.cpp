@@ -105,6 +105,7 @@ void KESCMSavePanelState()
 	json += "  \"syncLayoutViews\": ";        json += KESCMBoolLiteral(KESCMGetLayoutSync());                       json += ",\n";
 	json += "  \"scrollbarMap\": ";           json += KESCMBoolLiteral(KESCMGetScrollMapEnabled());                 json += ",\n";
 	json += "  \"panelShortcut\": ";          json += KESCMBoolLiteral(KESCMGetPanelShortcut());                    json += ",\n";
+	json += "  \"pagesPanelShortcut\": ";     json += KESCMBoolLiteral(KESCMGetPagesPanelShortcut());               json += ",\n";
 	json += "  \"ignorePageNumberMarker\": "; json += KESCMBoolLiteral(KESCMGetIgnorePageNumberMarker());           json += "\n";
 	json += "}\n";
 
@@ -171,6 +172,7 @@ void KESCMLoadPanelStateIfPresent()
 	KESCMSetLayoutSync            (KESCMJsonReadBool(text, "syncLayoutViews",         KESCMGetLayoutSync()));
 	KESCMSetScrollMapEnabled      (KESCMJsonReadBool(text, "scrollbarMap",           KESCMGetScrollMapEnabled()));
 	KESCMSetPanelShortcut         (KESCMJsonReadBool(text, "panelShortcut",          KESCMGetPanelShortcut()));
+	KESCMSetPagesPanelShortcut    (KESCMJsonReadBool(text, "pagesPanelShortcut",     KESCMGetPagesPanelShortcut()));
 	KESCMSetIgnorePageNumberMarker(KESCMJsonReadBool(text, "ignorePageNumberMarker", KESCMGetIgnorePageNumberMarker()));
 }
 

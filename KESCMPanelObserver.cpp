@@ -27,6 +27,7 @@
 #include "IBooleanControlData.h"
 #include "IApplication.h"			// GetExecutionContextSession / QueryApplication
 #include "IPanelMgr.h"				// QueryPanelManager / GetVisiblePanel(外部からのパネル更新)
+#include "PagesPanelID.h"			// kPagesPanelWidgetID(Ctrl+Alt+ミドルで標準ページパネルを show/hide)
 #include "IEventUtils.h"			// GetGlobalMouseLocation(Shift+Ctrl+中のカーソル位置ポップ)
 #include "Utils.h"					// Utils<IEventUtils>() テンプレートアクセサ
 #include "IActiveContext.h"
@@ -175,7 +176,7 @@ void KESCMPanelObserver::AutoAttach()
 	//   操作すれば gSessionStatus がそのメッセージで埋まり、以後ヒントは出ない。
 	if (gSessionStatus.CharCount() == 0)
 	{
-		PMString hint("Open the source and target documents, then choose Start from the panel menu.");
+		PMString hint("Open the target and source documents (the active one becomes the Target), then choose Start from the panel menu.");
 		hint.SetTranslatable(kFalse);
 		this->SetStatus(hint);
 	}
@@ -607,6 +608,25 @@ void KESCMTogglePanelAtCursor()
 	PaletteRef postDock = KESCMFindPanelFloatingDock(panelMgr);
 	if (postDock.IsValid())
 		PaletteRefUtils::SetPalettePosition(postDock, left, top);
+}
+
+//========================================================================================
+// KESCMTogglePagesPanel(KESCMCore.h で宣言) — Ctrl+Alt+中ボタンで InDesign 標準「ページ」パネルの
+// 表示/非表示をトグルする(ユーザー指定 2026-07-12)。自パネルのトグルと違い、カーソル位置への移動は
+// しない(単純な表示/非表示のみ)。Start 不要・全文書共通。対象 widget は kPagesPanelWidgetID。
+//========================================================================================
+void KESCMTogglePagesPanel()
+{
+	InterfacePtr<IApplication> app(GetExecutionContextSession()->QueryApplication());
+	InterfacePtr<IPanelMgr> panelMgr(app != nil ? app->QueryPanelManager() : nil);
+	if (panelMgr == nil)
+		return;
+
+	// 表示中(=見えている)なら隠す。そうでなければ(非表示/アイコン化)表示する。
+	if (panelMgr->IsPanelWithWidgetIDShown(kPagesPanelWidgetID))
+		panelMgr->HidePanelByWidgetID(kPagesPanelWidgetID);
+	else
+		panelMgr->ShowPanelByWidgetID(kPagesPanelWidgetID, kFalse);	// giveKeyFocus=kFalse: ミドル操作中にフォーカスを奪わない
 }
 
 //========================================================================================

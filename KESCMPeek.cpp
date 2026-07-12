@@ -90,6 +90,10 @@ static bool16     sPeekArmed    = kFalse;
 // パネル表示/非表示を切り替える(下の WatchEvent の該当分岐でこのフラグを見る)。セッション内のみ保持。
 static bool16     sPanelShortcutOn = kTrue;
 
+// フライアウト「Pages Panel Shortcut」トグルの状態(既定 ON)。ON の間だけ Ctrl+Alt+ミドルクリックで
+// InDesign 標準「ページ」パネルの表示/非表示を切り替える(下の WatchEvent の該当分岐でこのフラグを見る)。
+static bool16     sPagesPanelShortcutOn = kTrue;
+
 // Shift＋ミドル=旧版を不透明(100%)で / Shift+Alt＋ミドル=旧版を 50% で重ねて peek。
 // 押下中だけ表示し、ミドルを離すと消す(修飾キーは離してもよい)。判定はミドル押下時に1回見るだけ。
 static const PMReal kKESCMPeekSemiOpacity = 0.5;	// Shift+Alt＋ミドル時の旧版の不透明度(0..1)
@@ -1099,6 +1103,13 @@ IEventDispatcher::EventTypeList KESCMPeekWatcher::WatchEvent(IEvent* e)
 			// 先頭で捕まえる。3キー同時(Shift+Ctrl+Alt=CMYK)は Alt 有り(!Alt 条件)でここに吸われない。
 			KESCMTogglePanelAtCursor();
 		}
+		else if (sPagesPanelShortcutOn && e->CmdKeyDown() && e->OptionAltKeyDown() && !e->ShiftKeyDown())
+		{
+			// Ctrl＋Alt＋ミドル押下: InDesign 標準「ページ」パネルの表示/非表示トグル(ユーザー指定 2026-07-12)。
+			// arm 不要・全文書共通。カーソル位置への移動はしない(単純な表示/非表示のみ)。3キー同時
+			// (Shift+Ctrl+Alt=CMYK)は上の分岐が先に捕まえる(ここは !Shift 条件なので衝突しない)。
+			KESCMTogglePagesPanel();
+		}
 		else if (sPeekArmed && e->ShiftKeyDown() && e->CmdKeyDown() && e->OptionAltKeyDown() && KESCMFrontViewIsOverTarget())
 		{
 			// Shift＋Ctrl＋Alt＋ミドル押下: クリック点の CMYK 生値(0..255)を新・旧でサンプリングし、
@@ -1382,6 +1393,8 @@ IDataBase* KESCMArmedSourceDB()  { return sPeekSourceDB; }
 // パネル表示/非表示を切り替える(判定は WatchEvent の該当分岐)。既定 ON。
 bool16     KESCMGetPanelShortcut()        { return sPanelShortcutOn; }
 void       KESCMSetPanelShortcut(bool16 on) { sPanelShortcutOn = on; }
+bool16     KESCMGetPagesPanelShortcut()        { return sPagesPanelShortcutOn; }
+void       KESCMSetPagesPanelShortcut(bool16 on) { sPagesPanelShortcutOn = on; }
 
 //========================================================================================
 // KESCMHandleDocsClosed(KESCMCore.h で宣言)
