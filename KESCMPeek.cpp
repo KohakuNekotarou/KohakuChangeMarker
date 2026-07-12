@@ -90,7 +90,7 @@ static bool16     sPeekArmed    = kFalse;
 // パネル表示/非表示を切り替える(下の WatchEvent の該当分岐でこのフラグを見る)。セッション内のみ保持。
 static bool16     sPanelShortcutOn = kTrue;
 
-// フライアウト「Pages Panel Shortcut」トグルの状態(既定 ON)。ON の間だけ Ctrl+Alt+ミドルクリックで
+// フライアウト「Invoke Pages Panel Shortcut」トグルの状態(既定 ON)。ON の間だけ Ctrl+Alt+ミドルクリックで
 // InDesign 標準「ページ」パネルの表示/非表示を切り替える(下の WatchEvent の該当分岐でこのフラグを見る)。
 static bool16     sPagesPanelShortcutOn = kTrue;
 
@@ -1191,7 +1191,17 @@ IEventDispatcher::EventTypeList KESCMPeekWatcher::WatchEvent(IEvent* e)
 		{
 			// シングル動作(修飾キーなしミドル押下中)。マークが何も無い(エントリ無し)時は反応しない=
 			// 素のミドルクリックを邪魔しない。
-			const bool16 haveContent = !KESCMDrawEventHandler::sEntries.empty();
+			// ★2026-07-12(C-1 修正): 「マークがある」の判定を描画側 anyMarkableContent と揃える。変更ページ
+			// (sEntries)が 0 でも、overflow の赤「/」や Add/Remove 登録の緑「/」があれば斜線は出せるので、それらが
+			// あれば reveal する(以前は sEntries だけ見ており、変更ゼロ+登録/overflow のみの比較でミドル押下しても
+			// 斜線が出なかった)。overflow 集合は現在の (sDB,sSrcDB) 用へ合わせてから読む。
+			KESCMDrawEventHandler::EnsureOverflowCache();
+			const bool16 haveContent =
+				!KESCMDrawEventHandler::sEntries.empty() ||
+				!KESCMDrawEventHandler::sOverflowT.empty() ||
+				!KESCMDrawEventHandler::sOverflowS.empty() ||
+				(KESCMDrawEventHandler::sDB    != nil && KESCMPageMapHasAnyRegistered(KESCMDrawEventHandler::sDB)) ||
+				(KESCMDrawEventHandler::sSrcDB != nil && KESCMPageMapHasAnyRegistered(KESCMDrawEventHandler::sSrcDB));
 			if (haveContent)
 			{
 				if (KESCMDrawEventHandler::sAlwaysShowMarks)

@@ -70,8 +70,8 @@ static bool16 KESCMReadCmykPixel(const UIDRef& pageRef, const PMPoint& spreadPt,
 	return ok;
 }
 
-// 0..255 の値を必ず3桁(ゼロ埋め)で追記する。Target/Source の C/M/Y/K の桁を縦に揃えて見やすくするため
-// (AppendNumber はゼロ埋めしないので桁ごとに分けて出す)。
+// 値を必ず3桁(ゼロ埋め)で追記する(現在の呼び出しは CMYK% の 0..100)。Target/Source の C/M/Y/K の桁を
+// 縦に揃えて見やすくするため(AppendNumber はゼロ埋めしないので桁ごとに分けて出す。範囲外は 0..999 にクランプ)。
 static void KESCMAppend3(PMString& s, int32 v)
 {
 	if (v < 0)   v = 0;

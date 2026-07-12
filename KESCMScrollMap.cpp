@@ -64,7 +64,8 @@
 #include "PMMatrix.h"
 #include <vector>
 #include <set>
-#include <ctime>					// std::clock(手動 Hide/Show 検出のスロットル。MSVC の clock() は実時間)
+#include <chrono>					// steady_clock(手動 Hide/Show 検出のスロットル。単調増加の壁時計=Win/Mac 共通で正しい。
+									// 旧 std::clock は Win=壁時計/POSIX(Mac)=CPU時間 と意味が食い違うため置換)
 
 // Project includes:
 #include "KESCMID.h"
@@ -486,7 +487,8 @@ static uint32 KESCMHiddenFingerprint(IDataBase* db)
 	return h;
 }
 
-static std::clock_t sHiddenCheckLast = 0;	// 前回チェック時刻(スロットル用)
+static std::chrono::steady_clock::time_point sHiddenCheckLast;	// 前回チェック時刻(スロットル用)
+static bool16 sHiddenCheckStarted = kFalse;	// 一度でもチェックしたか(初回は必ず通す。time_point 既定値との比較を避ける)
 static uint32 sHiddenFingerT = 0;			// 前回の Target 側指紋
 static uint32 sHiddenFingerS = 0;			// 前回の Source 側指紋
 
@@ -501,12 +503,17 @@ void KESCMScrollMapNoticeDrawEvent()
 	if (KESCMArmedTargetDB() == nil)
 		return;		// 未 arm = strip も無い(指紋は arm 中しか意味を持たないので触らない)
 
-	// スロットル。★delta が負(clock_t は 32bit で連続起動約25日でラップ)のときはスキップせず
-	// 通す=基準時刻が現在に更新されて自然復帰する(負のまま return し続けると検出が止まる)。
-	const std::clock_t now = std::clock();
-	const std::clock_t delta = now - sHiddenCheckLast;
-	if (sHiddenCheckLast != 0 && delta >= 0 && delta < (std::clock_t)(CLOCKS_PER_SEC / 4))
-		return;
+	// スロットル(250ms)。steady_clock は単調増加なのでラップ/負 delta の心配は無い(旧 clock_t 版に
+	// あった 32bit ラップ対策は不要になった)。初回(sHiddenCheckStarted=kFalse)は必ず通す。
+	const std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
+	if (sHiddenCheckStarted)
+	{
+		const long long deltaMs =
+			std::chrono::duration_cast<std::chrono::milliseconds>(now - sHiddenCheckLast).count();
+		if (deltaMs < 250)
+			return;
+	}
+	sHiddenCheckStarted = kTrue;
 	sHiddenCheckLast = now;
 
 	const uint32 ft = KESCMHiddenFingerprint(KESCMArmedTargetDB());

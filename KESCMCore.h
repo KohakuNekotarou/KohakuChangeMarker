@@ -196,7 +196,7 @@ void		KESCMSetLayoutSync(bool16 on);
 bool16		KESCMGetPanelShortcut();
 void		KESCMSetPanelShortcut(bool16 on);
 
-// フライアウト「Pages Panel Shortcut」トグル。ON(既定)の間だけ、Ctrl+Alt+ミドルクリックで InDesign 標準
+// フライアウト「Invoke Pages Panel Shortcut」トグル。ON(既定)の間だけ、Ctrl+Alt+ミドルクリックで InDesign 標準
 // 「ページ」パネルの表示/非表示を切り替えられる(カーソル移動なしの単純トグル)。OFF にするとそのジェスチャは
 // 無反応になる。状態 static は KESCMPeek.cpp(ジェスチャを捌く WatchEvent と同じ翻訳単位)。
 bool16		KESCMGetPagesPanelShortcut();

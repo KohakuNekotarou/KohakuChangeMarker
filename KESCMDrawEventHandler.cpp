@@ -1316,7 +1316,12 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 			{
 				std::map<UID, KESCMOverlayEntry*>::iterator it = sEntries.find(mp->second);
 				if (it != sEntries.end())
-					{ if (isThumb) KESCMDrawPageBorder(gPort, db, srcPageUID, sxr, drawMode, SelectedMarkOpacity(), kKESCMRingR, kKESCMRingG, kKESCMRingB); else KESCMDrawEntryOnPage(gPort, it->second, db, srcPageUID, sxr, drawMode, SelectedMarkOpacity()); }
+				{
+					if (isThumb)
+						KESCMDrawPageBorder(gPort, db, srcPageUID, sxr, drawMode, SelectedMarkOpacity(), kKESCMRingR, kKESCMRingG, kKESCMRingB);
+					else
+						KESCMDrawEntryOnPage(gPort, it->second, db, srcPageUID, sxr, drawMode, SelectedMarkOpacity());
+				}
 			}
 			else if (KESCMPageMapIsRegistered(db, srcPageUID))
 			{
@@ -1363,7 +1368,12 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 		const UID pageUID = spread->GetNthPageUID(i);
 		std::map<UID, KESCMOverlayEntry*>::iterator it = sEntries.find(pageUID);
 		if (it != sEntries.end())
-			{ if (isThumb) KESCMDrawPageBorder(gPort, db, pageUID, sxr, drawMode, screenMarkOp, kKESCMRingR, kKESCMRingG, kKESCMRingB); else KESCMDrawEntryOnPage(gPort, it->second, db, pageUID, sxr, drawMode, screenMarkOp); }
+		{
+			if (isThumb)
+				KESCMDrawPageBorder(gPort, db, pageUID, sxr, drawMode, screenMarkOp, kKESCMRingR, kKESCMRingG, kKESCMRingB);
+			else
+				KESCMDrawEntryOnPage(gPort, it->second, db, pageUID, sxr, drawMode, screenMarkOp);
+		}
 		else if (KESCMPageMapIsRegistered(db, pageUID))
 		{
 			// 比較エントリが無い(=対象外)Target ページ。登録済み("Added")なら緑「/」を描く。

@@ -202,7 +202,7 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 			break;
 		}
 
-		// 「Pages Panel Shortcut」トグル: Ctrl+Alt+ミドルで標準「ページ」パネルの表示/非表示を切り替える
+		// 「Invoke Pages Panel Shortcut」トグル: Ctrl+Alt+ミドルで標準「ページ」パネルの表示/非表示を切り替える
 		// ショートカットの有効/無効(既定 ON)。フラグ反転のみ。実体は KESCMPeek.cpp の sPagesPanelShortcutOn。
 		case kKESCMPopupPagesPanelShortcutActionID:
 		{
