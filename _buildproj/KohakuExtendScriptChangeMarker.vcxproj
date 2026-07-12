@@ -229,6 +229,9 @@
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMThumbIdleTask.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMScrollMap.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMPeek.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMTool.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMTracker.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMTrackerRegister.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMDocServiceProvider.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMDocResponder.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMIconTip.cpp" />

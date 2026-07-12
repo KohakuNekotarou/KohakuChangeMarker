@@ -66,6 +66,7 @@ resource StringTable (kSDKDefStringsResourceID + index_jaJP)
                 // ----- Panel/dialog strings
                 // パネル UI は英語表記で統一(説明文 kKESCMHintKey のみ日本語のまま)。
                 kKESCMPanelTitleKey,			"KohakuChangeMarker",
+                kKESCMToolStringKey,			"KohakuChangeMarker Tool",	// ツール名も英語統一(メニュー名方針と同じ)
                 kKESCMTargetLabelKey,			"Target:",
                 kKESCMSourceLabelKey,			"Source:",
                 kKESCMStartButtonKey,			"Start",

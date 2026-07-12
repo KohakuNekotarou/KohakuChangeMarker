@@ -1048,7 +1048,8 @@ CREATE_PMINTERFACE(KESCMPeekWatcher, kKESCMPeekWatcherImpl)
 
 IEventDispatcher::EventTypeList KESCMPeekWatcher::WatchEvent(IEvent* e)
 {
-	// 興味=ミドル押下/解放のみ。毎回返す(空を返すと監視解除される)。Shift 判定は押下イベントで見る。
+	// 興味=ミドル押下/解放のみ。毎回返す(空を返すと監視解除される)。修飾キー判定は押下イベントで見る。
+	// 左ボタンによる reveal は KESCM ツールのトラッカー(KESCMTracker.cpp)が担当するため、ここでは監視しない。
 	IEventDispatcher::EventTypeList interest(IEvent::kMButtonDn, IEvent::kMButtonUp);
 
 	if (e == nil)
@@ -1277,6 +1278,58 @@ IEventDispatcher::EventTypeList KESCMPeekWatcher::WatchEvent(IEvent* e)
 	return interest;
 }
 
+//========================================================================================
+// トラッカー(左ボタン)用の共有入口。KESCM ツール選択中の左ボタン押下/解放から呼ばれる
+// (KESCMTracker.cpp)。中ボタンの「修飾なし押下=マーク reveal」(上の WatchEvent kMButtonDn の
+// 素のミドル分岐)と同じ挙動を、左ボタンでも使えるようにする最小の切り出し。ここはファイル内の
+// peek 状態(sSingleShowing)と描画状態(KESCMDrawEventHandler::sMarks*)にアクセスできる。
+//
+// ★Step 1 (2026-07-12): まずは「修飾なし=マーク一時表示」だけ。Shift/Ctrl/Alt の各ジェスチャや
+//   「Hold to Hide Marks」極性反転・ハンドツール切替は Step 2 以降で WatchEvent と共通化する。
+//   中ボタン側の WatchEvent は一切変更していない(両入力は併存)。
+//========================================================================================
+void KESCMTrackerRevealBegin()
+{
+	// 「マークがある」の判定は WatchEvent の修飾なし分岐と同一(anyMarkableContent 相当)。
+	// overflow 集合は現在の (sDB,sSrcDB) 用へ合わせてから読む。
+	KESCMDrawEventHandler::EnsureOverflowCache();
+	const bool16 haveContent =
+		!KESCMDrawEventHandler::sEntries.empty() ||
+		!KESCMDrawEventHandler::sOverflowT.empty() ||
+		!KESCMDrawEventHandler::sOverflowS.empty() ||
+		(KESCMDrawEventHandler::sDB    != nil && KESCMPageMapHasAnyRegistered(KESCMDrawEventHandler::sDB)) ||
+		(KESCMDrawEventHandler::sSrcDB != nil && KESCMPageMapHasAnyRegistered(KESCMDrawEventHandler::sSrcDB));
+	if (!haveContent)
+		return;
+
+	// 「Hold to Hide Marks」モード(常時表示の極性反転)は Step 2 で対応する。ここでは通常モード
+	// (マーク非表示→押下中だけ表示)のみ扱う。
+	if (KESCMDrawEventHandler::sAlwaysShowMarks)
+		return;
+
+	// Target 窓の上でだけ reveal する(Source や無関係な窓では出さない。中ボタンと同じ方針)。
+	if (!KESCMFrontViewIsOverTarget())
+		return;
+
+	sSingleShowing = kTrue;
+	KESCMDrawEventHandler::sMarkScreenOpacity = KESCMDrawEventHandler::SelectedMarkOpacity();	// パネルの 25%/75%
+	KESCMDrawEventHandler::sMarksVisible = kTrue;	// 押下中だけ枠等を表示
+	KESCMInvalidateMarksDoc();
+}
+
+void KESCMTrackerRevealEnd()
+{
+	// 左ボタンを離した → 枠表示を解除し、不透明度を基準値へ戻す＋非表示へ(WatchEvent の
+	// sSingleShowing 復元と同じ)。
+	if (sSingleShowing)
+	{
+		sSingleShowing = kFalse;
+		KESCMDrawEventHandler::sMarksVisible = kFalse;
+		KESCMDrawEventHandler::sMarkScreenOpacity = KESCMBaseScreenOpacity();
+		KESCMInvalidateMarksDoc();
+	}
+}
+
 void KESCMPeekWatcher::StartWatching()
 {
 	if (fWatching) return;
@@ -1284,7 +1337,9 @@ void KESCMPeekWatcher::StartWatching()
 	InterfacePtr<IEventDispatcher> dispatcher(app, UseDefaultIID());
 	if (dispatcher)
 	{
-		dispatcher->AddEventWatcher(this, IEventDispatcher::EventTypeList(IEvent::kMButtonDn, IEvent::kMButtonUp));
+		// ミドル押下/解放のみ監視(左ボタンの reveal は KESCM ツールのトラッカーが担当)。
+		IEventDispatcher::EventTypeList types(IEvent::kMButtonDn, IEvent::kMButtonUp);
+		dispatcher->AddEventWatcher(this, types);
 		fWatching = kTrue;
 	}
 }

@@ -56,6 +56,12 @@
 #include "DocumentID.h"	// for kAfterCloseDocSignalResponderService (doc-close responder)
 #include "TipsID.h"		// for IID_ITIP
 
+// Toolbox tool:
+#include "Tool.fh"			// ToolDef resource type
+#include "ToolBoxDefs.h"	// tool group / tool number constants (kSixthAdobeToolsGroup, kFirstAdobeTool, kDoesNotApply)
+#include "ToolboxID.h"		// kGenericToolBoss
+#include "LayoutUIID.h"		// kPointerToolBoss (ToolDef tool type)
+
 // Project includes:
 #include "KESCMID.h"
 #include "GenericID.h"
@@ -218,6 +224,53 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 		kGenericPanelWidgetBoss,
 		{
 			IID_ICONTROLVIEW, kKESCMScrollMapViewImpl,
+		}
+	},
+
+	// Toolbox tool for the left-button "reveal marks while held" gesture (useful on Macs without
+	// a middle button). While this tool is the active tool, the event watcher in KESCMPeek.cpp
+	// shows the comparison marks while the left button is held and hides them on release - the
+	// same non-capturing mechanism as the middle button. We deliberately install NO tracker:
+	// a custom capturing tracker froze/crashed InDesign, and reusing the Hand tool's tracker
+	// triggered InDesign's Power Zoom on button-hold. With no tracker there is no mouse capture,
+	// no pan and no Power Zoom, so hold-to-peek behaves exactly like the middle button. The
+	// middle-button gestures are untouched; both input methods coexist. Inherits kGenericToolBoss
+	// (the standard tool base that provides the toolbox button view); IID_IPMPERSIST persists the
+	// selected state.
+	Class
+	{
+		kKESCMToolBoss,
+		kGenericToolBoss,
+		{
+			IID_ITOOL,      kKESCMToolImpl,
+			IID_IPMPERSIST, kPMPersistImpl,
+		}
+	},
+
+	// The KESCM tool's capturing tracker. IID_ITRACKER is the tracker (reveals marks while the
+	// left button is held); IID_IEVENTHANDLER (a CTrackerEventHandler subclass) forwards the
+	// button-up during capture to EndTracking. Same shape as the SDK's real capturing tracker
+	// (dynamicdocumentsui AnimationUIButtonTriggerTrackerBoss).
+	Class
+	{
+		kKESCMTrackerBoss,
+		kInvalidClass,
+		{
+			IID_ITRACKER,      kKESCMTrackerImpl,
+			IID_IEVENTHANDLER, kKESCMTrackerEHImpl,
+		}
+	},
+
+	// Registers the tracker with the app: (layout widget, KESCM tool) -> KESCM tracker.
+	// IID_IK2SERVICEPROVIDER (kCTrackerRegisterProviderImpl, provided by the API) lets the
+	// application discover this registrar at startup.
+	Class
+	{
+		kKESCMTrackerRegisterBoss,
+		kInvalidClass,
+		{
+			IID_ITRACKERREGISTER,   kKESCMTrackerRegisterImpl,
+			IID_IK2SERVICEPROVIDER, kCTrackerRegisterProviderImpl,
 		}
 	},
 }}};
@@ -681,7 +734,30 @@ resource ActionDef (kSDKDefActionResourceID)
 };
 
 
-/*  
+/*
+ * Toolbox tool definition. Places the KESCM tool in the toolbox. While it is the active tool,
+ * the left mouse button runs the same "reveal marks while held" gesture as a plain middle
+ * press (Step 1). Group kSixthAdobeToolsGroup is documented in ToolBoxDefs.h as a good slot
+ * for third-party / SDK tools. The icon reuses the existing panel PNG suite (kKESCMIconOnResID)
+ * for now. kKESCMToolActionID is the tool-select shortcut action (no ActionDef needed; the
+ * toolbox framework provides the selection action for a tool).
+ */
+resource ToolDef (kKESCMIconOnResID)
+{
+	kKESCMToolBoss,				// classID for the tool boss
+	kPointerToolBoss,			// tool type (boss of the default tool for this type)
+	kDoesNotApply,				// parent tool boss
+	kSixthAdobeToolsGroup,		// group number (good slot for third-party / SDK tools)
+	kFirstAdobeTool,			// tool number within the group
+	kDoesNotApply,				// subtool number
+	kKESCMToolActionID,			// action ID associated with the tool-select shortcut
+	kKESCMIconOnResID,			// icon resource ID (reuse the existing panel PNG suite)
+	kKESCMPluginID,				// plug-in ID
+	kADBEIconSuiteButtonType
+};
+
+
+/*
  * Locale Indicies.
  * The LocaleIndex should have indicies that point at your
  * localizations for each language system that you are localized for.

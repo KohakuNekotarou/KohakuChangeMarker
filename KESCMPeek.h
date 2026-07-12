@@ -17,4 +17,11 @@
 // peek を離したときの経路と KESCMDoSetPrintMarks が使う。実体は KESCMPeek.cpp。
 PMReal KESCMBaseScreenOpacity();
 
+// トラッカー(左ボタン)用の共有入口。KESCM ツール選択中に左ボタンを押している間だけ、中ボタンの
+// 「修飾なし押下」と同じマーク一時表示(reveal)を行う。Begin=押下、End=解放。実体は KESCMPeek.cpp
+// (peek の file-local 状態と描画状態にアクセスできる唯一の場所)。KESCMTracker.cpp から呼ぶ。
+// ★Step 1: 修飾なしの reveal のみ。Shift/Ctrl/Alt 別ジェスチャや Hold to Hide 反転は Step 2 以降。
+void KESCMTrackerRevealBegin();
+void KESCMTrackerRevealEnd();
+
 #endif // __KESCMPeek_h__

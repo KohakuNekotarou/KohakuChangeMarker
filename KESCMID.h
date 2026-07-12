@@ -59,6 +59,9 @@ DECLARE_PMID(kClassIDSpace, kKESCMActionComponentBoss, kKESCMPrefix + 9)	// Abou
 DECLARE_PMID(kClassIDSpace, kKESCMDocResponderServiceBoss, kKESCMPrefix + 10)	// IK2ServiceProvider+IResponder: ドキュメントクローズ監視(閉じた文書の追跡状態を確定クリーンアップ)
 DECLARE_PMID(kClassIDSpace, kKESCMIconWidgetBoss, kKESCMPrefix + 11)	// kRollOverIconButtonBoss を継承し IID_ITIP を追加(パネルイラストのツールチップ)
 DECLARE_PMID(kClassIDSpace, kKESCMScrollMapWidgetBoss, kKESCMPrefix + 12)	// kGenericPanelWidgetBoss+自前IControlView: 縦スクロールバー脇の枠ページ地図strip(旧 kKESCMLayoutSyncObserverBoss のスロット転用)
+DECLARE_PMID(kClassIDSpace, kKESCMToolBoss, kKESCMPrefix + 13)	// kGenericToolBoss継承: ツールボックスの peek 専用ツール(KESCMTool.cpp)
+DECLARE_PMID(kClassIDSpace, kKESCMTrackerBoss, kKESCMPrefix + 14)	// ツールのキャプチャ型トラッカー(IID_ITRACKER+IID_IEVENTHANDLER)。左ボタン hold 中だけ reveal。KESCMTracker.cpp
+DECLARE_PMID(kClassIDSpace, kKESCMTrackerRegisterBoss, kKESCMPrefix + 15)	// トラッカー登録(kLayoutWidgetBoss×ツール→トラッカー)。KESCMTrackerRegister.cpp
 //DECLARE_PMID(kClassIDSpace, kKESCMBoss, kKESCMPrefix + 6)
 //DECLARE_PMID(kClassIDSpace, kKESCMBoss, kKESCMPrefix + 8)
 //DECLARE_PMID(kClassIDSpace, kKESCMBoss, kKESCMPrefix + 9)
@@ -123,6 +126,10 @@ DECLARE_PMID(kImplementationIDSpace, kKESCMDocResponderImpl, kKESCMPrefix + 9)	/
 DECLARE_PMID(kImplementationIDSpace, kKESCMIconTipImpl, kKESCMPrefix + 10)	// ITip 実装(パネルイラストにURLをツールチップ表示)
 DECLARE_PMID(kImplementationIDSpace, kKESCMLayoutSyncObserverImpl, kKESCMPrefix + 11)	// IObserver 実装(レイアウトビュー同期)
 DECLARE_PMID(kImplementationIDSpace, kKESCMScrollMapViewImpl, kKESCMPrefix + 12)	// IControlView 実装(スクロールバー地図stripの自前描画; KESCMScrollMap.cpp)
+DECLARE_PMID(kImplementationIDSpace, kKESCMToolImpl, kKESCMPrefix + 13)	// ITool 実装(KESCMTool.cpp)
+DECLARE_PMID(kImplementationIDSpace, kKESCMTrackerImpl, kKESCMPrefix + 14)	// ITracker 実装(CTracker派生; KESCMTracker.cpp)
+DECLARE_PMID(kImplementationIDSpace, kKESCMTrackerRegisterImpl, kKESCMPrefix + 15)	// ITrackerRegister 実装(KESCMTrackerRegister.cpp)
+DECLARE_PMID(kImplementationIDSpace, kKESCMTrackerEHImpl, kKESCMPrefix + 16)	// IEventHandler 実装(CTrackerEventHandler派生; 押下中のボタン解放を EndTracking へ転送。KESCMTracker.cpp)
 //DECLARE_PMID(kImplementationIDSpace, kKESCMImpl, kKESCMPrefix + 6)
 //DECLARE_PMID(kImplementationIDSpace, kKESCMImpl, kKESCMPrefix + 7)
 //DECLARE_PMID(kImplementationIDSpace, kKESCMImpl, kKESCMPrefix + 8)
@@ -176,6 +183,7 @@ DECLARE_PMID(kActionIDSpace, kKESCMPopupSaveChecksActionID, kKESCMPrefix + 25)	/
 DECLARE_PMID(kActionIDSpace, kKESCMPopupLoadChecksActionID, kKESCMPrefix + 26)	// パネルのフライアウトの「Load Check & Register」(実行アクション)。Start中だけ有効。上記JSONから Register を両文書へ適用→再比較→Check(今もマーク付きのみ)を復元。実体 KESCMPageCheck.cpp
 DECLARE_PMID(kActionIDSpace, kKESCMPopupPagesPanelShortcutActionID, kKESCMPrefix + 27)	// パネルのフライアウトの「Invoke Pages Panel Shortcut」チェック式トグル(ON=Ctrl+Alt+ミドルで InDesign 標準「ページ」パネルの表示/非表示を切替。既定ON。実体 KESCMPeek.cpp の sPagesPanelShortcutOn / トグル本体 KESCMPanelObserver.cpp の KESCMTogglePagesPanel)
 DECLARE_PMID(kActionIDSpace, kKESCMPageMapSepActionID, kKESCMPrefix + 28)	// ページパネルのページ右クリック(RtMenuPagesPanel): KESCM 追加項目(Register / Check)の上の区切り線(MenuDef のパス末尾 ":-"。ActionDef 不要・DoAction 不要=一意なIDだけ要る)。本家メニューと視覚的に分けるため
+DECLARE_PMID(kActionIDSpace, kKESCMToolActionID, kKESCMPrefix + 29)	// ツールボックスのツール選択ショートカット用の ActionID(ToolDef が参照。ActionDef 不要=ツール枠が自動生成)
 //DECLARE_PMID(kActionIDSpace, kKESCMActionID, kKESCMPrefix + 15)
 //DECLARE_PMID(kActionIDSpace, kKESCMActionID, kKESCMPrefix + 15)
 //DECLARE_PMID(kActionIDSpace, kKESCMActionID, kKESCMPrefix + 16)
@@ -209,6 +217,7 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMStatusTextWidgetID, kKESCMPrefix + 36)
 DECLARE_PMID(kWidgetIDSpace, kKESCMPrevChangeButtonWidgetID, kKESCMPrefix + 38)	// 「◀ Prev」= 前の見るべきページへスクロール(KESCMChangeNav.cpp)
 DECLARE_PMID(kWidgetIDSpace, kKESCMNextChangeButtonWidgetID, kKESCMPrefix + 39)	// 「Next ▶」= 次の見るべきページへスクロール(KESCMChangeNav.cpp)
 DECLARE_PMID(kWidgetIDSpace, kKESCMScrollMapWidgetID, kKESCMPrefix + 40)	// スクロールバー地図strip(文書窓の縦スクロールバー左隣に実行時注入; KESCMScrollMap.cpp)
+DECLARE_PMID(kWidgetIDSpace, kKESCMToolWidgetID, kKESCMPrefix + 41)	// ツールボックスのツールボタンのウィジェットID(KESCMTool::InitWidget)
 //DECLARE_PMID(kWidgetIDSpace, kKESCMWidgetID, kKESCMPrefix + 2)
 //DECLARE_PMID(kWidgetIDSpace, kKESCMWidgetID, kKESCMPrefix + 3)
 //DECLARE_PMID(kWidgetIDSpace, kKESCMWidgetID, kKESCMPrefix + 4)
@@ -306,6 +315,7 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMScrollMapWidgetID, kKESCMPrefix + 40)	// ス�
 #define kKESCMPrevChangeKey		kKESCMStringPrefix "kKESCMPrevChangeKey"	// パネルの「◀ Prev」ボタンのキャプション(英語固定)
 #define kKESCMNextChangeKey		kKESCMStringPrefix "kKESCMNextChangeKey"	// パネルの「Next ▶」ボタンのキャプション(英語固定)
 #define kKESCMHintKey			kKESCMStringPrefix "kKESCMHintKey"
+#define kKESCMToolStringKey		kKESCMStringPrefix "kKESCMToolStringKey"	// ツールボックスのツール名(ツールチップ)。全ロケール英語で統一
 
 // PNG アイコンリソース(プラグインに埋め込み; .pln とは別ファイルでは出荷しない)。
 #define kKESCMIconOnResID	1001
