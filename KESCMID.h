@@ -175,6 +175,7 @@ DECLARE_PMID(kActionIDSpace, kKESCMPageCheckToggleActionID, kKESCMPrefix + 24)	/
 DECLARE_PMID(kActionIDSpace, kKESCMPopupSaveChecksActionID, kKESCMPrefix + 25)	// パネルのフライアウトの「Save Check & Register」(実行アクション)。Start中の Target/Source の現在の Check(✓)+ Register(Added/Removed)を独自JSON(KESCM\KESCMPageChecks.json, v2)へマージ保存し保存先パスを表示。実体 KESCMPageCheck.cpp
 DECLARE_PMID(kActionIDSpace, kKESCMPopupLoadChecksActionID, kKESCMPrefix + 26)	// パネルのフライアウトの「Load Check & Register」(実行アクション)。Start中だけ有効。上記JSONから Register を両文書へ適用→再比較→Check(今もマーク付きのみ)を復元。実体 KESCMPageCheck.cpp
 DECLARE_PMID(kActionIDSpace, kKESCMPopupPagesPanelShortcutActionID, kKESCMPrefix + 27)	// パネルのフライアウトの「Pages Panel Shortcut」チェック式トグル(ON=Ctrl+Alt+ミドルで InDesign 標準「ページ」パネルの表示/非表示を切替。既定ON。実体 KESCMPeek.cpp の sPagesPanelShortcutOn / トグル本体 KESCMPanelObserver.cpp の KESCMTogglePagesPanel)
+DECLARE_PMID(kActionIDSpace, kKESCMPageMapSepActionID, kKESCMPrefix + 28)	// ページパネルのページ右クリック(RtMenuPagesPanel): KESCM 追加項目(Register / Check)の上の区切り線(MenuDef のパス末尾 ":-"。ActionDef 不要・DoAction 不要=一意なIDだけ要る)。本家メニューと視覚的に分けるため
 //DECLARE_PMID(kActionIDSpace, kKESCMActionID, kKESCMPrefix + 15)
 //DECLARE_PMID(kActionIDSpace, kKESCMActionID, kKESCMPrefix + 15)
 //DECLARE_PMID(kActionIDSpace, kKESCMActionID, kKESCMPrefix + 16)
@@ -185,7 +186,7 @@ DECLARE_PMID(kActionIDSpace, kKESCMPopupPagesPanelShortcutActionID, kKESCMPrefix
 //DECLARE_PMID(kActionIDSpace, kKESCMActionID, kKESCMPrefix + 21)
 //DECLARE_PMID(kActionIDSpace, kKESCMActionID, kKESCMPrefix + 22)
 //DECLARE_PMID(kActionIDSpace, kKESCMActionID, kKESCMPrefix + 23)
-// kKESCMPrefix + 24/25/26/27 は使用中(KESCM: Check / Save Check & Register / Load Check & Register / Pages Panel Shortcut)
+// kKESCMPrefix + 24/25/26/27/28 は使用中(KESCM: Check / Save Check & Register / Load Check & Register / Pages Panel Shortcut / RtMenuPagesPanel の区切り線)
 
 
 // WidgetIDs:
@@ -343,6 +344,7 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMScrollMapWidgetID, kKESCMPrefix + 40)	// ス�
 #define kKESCMUsageMenuItemPosition			10.0	// 「使い方」
 // ページパネルのページ右クリックメニュー(内部名 RtMenuPagesPanel、2026-07-05 実機確定)内の位置。
 // 本家項目の後ろ(末尾)に付ける。内部名は非翻訳キーなので全ロケール共通で効く。
+#define kKESCMPageMapSepMenuItemPosition	2999.0	// KESCM 追加項目(Register 3000.0 / Check 3001.0)の直上の区切り線。本家メニュー項目と KESCM 項目を視覚的に分ける
 #define kKESCMPageMapToggleMenuItemPosition	3000.0
 #define kKESCMPageCheckMenuItemPosition		3001.0	// 「KESCM: Check」を Register の直後(ページパネル右クリック末尾)に
 #define kKESCMAboutScriptMenuItemPosition	11.0	// その下に「スクリプトについて」

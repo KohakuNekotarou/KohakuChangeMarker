@@ -437,6 +437,16 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKESCMAboutThisMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
+		// Separator above the KESCM-added items on the Pages panel page context menu (path ending
+		// in ":-" renders a menu separator; no ActionDef needed). It groups KESCM's own items
+		// (Register / Check) apart from the built-in Pages panel menu items so they read clearly as
+		// "KESCM's". Positioned just above Register (2999.0 < 3000.0), i.e. between the native items
+		// and the KESCM block.
+		kKESCMPageMapSepActionID,
+		"RtMenuPagesPanel" ":-",
+		kKESCMPageMapSepMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
 		// "KESCM: Register as Added/Removed Pages" on the Pages panel page context menu.
 		// Check-mark toggle: registers/unregisters the selected pages as "pages with no
 		// comparison counterpart" (added pages in the Target, removed pages in the Source —

@@ -520,7 +520,7 @@ static void KESCMAppendUintList(std::string& json, const std::set<uint32>& s)
 			json += ", ";
 		first = kFalse;
 		char num[16];
-		std::sprintf(num, "%lu", (unsigned long)(*u));
+		std::snprintf(num, sizeof(num), "%lu", (unsigned long)(*u));	// 境界チェック付き(sprintf を避け静的解析の指摘を回避)
 		json += num;
 	}
 }
