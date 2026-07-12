@@ -375,7 +375,19 @@ static bool16 KESCMRefreshSpreadUnderMouse(IDataBase* targetDB, IDataBase* sourc
 	// 旧版画像キャッシュは古いので破棄(次の peek で現ズームで作り直し)。
 	KESCMDrawEventHandler::DropAllOrig();
 
+	// ★「KESCM: Check」の✓: この部分再比較でマーク(枠)が消えたページのチェックも忘れる(ユーザー指定
+	//   2026-07-11「枠が無くなったらチェックの記憶も外れる」)。従来は全再比較(KESCMDoMarkChangesDoc)しか
+	//   prune せず、Ctrl+ミドルで枠が消えても ✓ だけレイアウト/サムネイルに残っていた(2026-07-12 報告)。
+	//   ★必ず下の KESCMInvalidateDB より前に呼ぶ(Invalidate 後に外すと古い ✓ でレイアウトが描き直される)。
+	//   prune 前に Source 側のチェック有無を控える(最後の1個が外れた場合もサムネイルを確実に更新するため)。
+	const bool16 srcHadChecks = KESCMPageCheckHasAny(sourceDB);
+	KESCMPageCheckPruneToMarked();
+
 	KESCMInvalidateDB(targetDB);
+	// Source 側のレイアウトビューも再描画する。エントリの増減は Source の常時枠(Show Marks on Source)や
+	// ✓(prune)の見た目も変えるが、従来は Target しか Invalidate しておらず Source 窓が古いまま残っていた。
+	if (sourceDB != targetDB)
+		KESCMInvalidateDB(sourceDB);
 
 	// スクロールバー地図 strip も最新化する。この部分再比較は KESCMDoMarkChangesDoc を通らない
 	// 独立経路なので、あちらの末尾フックだけでは更新されない(ユーザー報告 2026-07-11:
@@ -394,7 +406,9 @@ static bool16 KESCMRefreshSpreadUnderMouse(IDataBase* targetDB, IDataBase* sourc
 	// Source 側サムネイルのリングは Show Marks on Source(sSrcMarksOn)ON のときだけ出る(wantSrcMarks で
 	// ゲート/isThumb でも強制表示されない)。OFF ならリングは無い=更新しても絵は変わらないので、余計な
 	// per-UID Purge と Pages パネル ForceRedraw を避けてスキップする。
-	if (KESCMDrawEventHandler::sSrcMarksOn)
+	// ★ただし ✓ は sSrcMarksOn と無関係にサムネイルへ出るので、prune 前に Source にチェックがあった
+	//   場合(prune で消えた可能性がある)も更新する(srcHadChecks は prune 前に控えた値)。
+	if (KESCMDrawEventHandler::sSrcMarksOn || srcHadChecks)
 		KESCMRefreshThumbnailsForPages(sourceDB, touchedSourcePages);
 
 	if (outSpread)  *outSpread = hit.spreadIndex;

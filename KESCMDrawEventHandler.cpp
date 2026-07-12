@@ -926,14 +926,18 @@ static void KESCMDrawPageDiagonal(IGraphicsPort* gPort, IDataBase* db, UID pageU
 
 //========================================================================================
 // ページ中央に ✓(チェックマーク)をベクター線で描く(色指定)。「KESCM: Check」でチェックした
-// ページの Pages パネルサムネイルにのみ描く(呼び出し側で isThumb を判定)。
+// ページに描く。描き先は2通り(layoutStyle で切替):
+//   ・kFalse = Pages パネルのサムネイル(従来。呼び出し側で isThumb を判定): サイズ=短辺 0.52、
+//     太さ=「/」と同じ固定比率、不透明度=kKESCMThumbMarkOpacity。
+//   ・kTrue  = レイアウトビュー/印刷(2026-07-12 追加): サイズ=短辺×kKESCMCheckLayoutSizeRatio
+//     (かなり大きい)、太さ=✓サイズ×kKESCMCheckLayoutStrokeRatio(ページ比例=ズーム/印刷とも相似形)、
+//     不透明度=渡された screenOpacity(呼び出し側が SelectedMarkOpacity=25%/75% 選択を渡す。印刷も同値)。
 // ★フォントの ✓ 文字(U+2713 等)は環境/フォント依存で出ないことがあるため使わず、線2本
 //   (左端→下の谷→右上=「レ」を左右反転した ✓ 型)を moveto/lineto/stroke で引く。
-// 太さ/不透明度は KESCMDrawPageDiagonal と同じ規則(サムネイルは固定比率・kKESCMThumbMarkOpacity)。
 //========================================================================================
 static void KESCMDrawPageCheck(IGraphicsPort* gPort, IDataBase* db, UID pageUID,
 	const PMReal& sxr, int32 drawMode, const PMReal& screenOpacity,
-	uint8 cr, uint8 cg, uint8 cb)
+	uint8 cr, uint8 cg, uint8 cb, bool16 layoutStyle = kFalse)
 {
 	InterfacePtr<IGeometry> pageGeo(db, pageUID, UseDefaultIID());
 	if (pageGeo == nil)
@@ -944,20 +948,27 @@ static void KESCMDrawPageCheck(IGraphicsPort* gPort, IDataBase* db, UID pageUID,
 	m.Transform(&pr);
 
 	const PMReal minDim = (pr.Width() < pr.Height() ? pr.Width() : pr.Height());
-	// 太さ: 画面/印刷=ズーム適応、サムネイル(sxr<=0)=ページ短辺の固定比率。
-	PMReal w = (sxr > 0) ? (kKESCMRingTargetPx / sxr) : (minDim / PMReal(kKESCMThumbDiagDivisor));
+	// ✓ 全体サイズ(短辺比): レイアウト版はかなり大きく、サムネイルは従来値(2026-07-11 に 0.42→0.52)。
+	const PMReal s = minDim * (layoutStyle ? kKESCMCheckLayoutSizeRatio : PMReal(0.52));
+	// 太さ: レイアウト版=✓サイズ比例(ズーム/印刷とも相似形)。サムネイル=「/」と同じ固定比率。
+	// (サムネイル経路の sxr>0 は来ない=isThumb は view 無しの生成で sxr=0 だが、従来式のまま残す)
+	PMReal w = layoutStyle ? (s * kKESCMCheckLayoutStrokeRatio)
+		: ((sxr > 0) ? (kKESCMRingTargetPx / sxr) : (minDim / PMReal(kKESCMThumbDiagDivisor)));
 	const PMReal maxW = minDim / PMReal(3.0);
 	if (w > maxW) w = maxW;
 	if (w < PMReal(0.5))
 		return;
 
-	const PMReal opacity = (sxr <= 0) ? kKESCMThumbMarkOpacity
-		: ((drawMode == kKESCMDrawModePrint) ? KESCMDrawEventHandler::SelectedMarkOpacity() : screenOpacity);
+	// 不透明度: レイアウト版は画面=screenOpacity(SelectedMarkOpacity が渡る)/印刷=SelectedMarkOpacity
+	// (=同値。画面と印刷の見た目一致)。サムネイルは kKESCMThumbMarkOpacity 固定(従来)。
+	const PMReal opacity = layoutStyle
+		? ((drawMode == kKESCMDrawModePrint) ? KESCMDrawEventHandler::SelectedMarkOpacity() : screenOpacity)
+		: ((sxr <= 0) ? kKESCMThumbMarkOpacity
+			: ((drawMode == kKESCMDrawModePrint) ? KESCMDrawEventHandler::SelectedMarkOpacity() : screenOpacity));
 
 	// ページ中央基準・短辺の一定比率で ✓ を組む。ページ座標は Top<Bottom(Y 下向き)。
 	const PMReal cx = (pr.Left() + pr.Right()) / PMReal(2.0);
 	const PMReal cy = (pr.Top()  + pr.Bottom()) / PMReal(2.0);
-	const PMReal s  = minDim * PMReal(0.52);		// ✓ 全体サイズ(短辺比。2026-07-11 ほんの少し大きく 0.42→0.52)
 	const PMReal lx = cx - s * PMReal(0.40), ly = cy - s * PMReal(0.02);	// 左端(やや上)
 	const PMReal vx = cx - s * PMReal(0.10), vy = cy + s * PMReal(0.32);	// 下の谷(最下点)
 	const PMReal rx = cx + s * PMReal(0.48), ry = cy - s * PMReal(0.40);	// 右上(最上点)
@@ -1047,6 +1058,13 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	const bool16 alwaysScreen = sAlwaysShowMarks && !sMarksTempHidden && !printing;
 	const bool16 wantMarks = !suppressForPrint && (sPrintMarks || sMarksVisible || alwaysScreen || isThumb) && anyMarkableContent;
 	const bool16 wantOrig  = !suppressForPrint && !printing && sShowOriginal && !sOrigImages.empty();
+	// ★「KESCM: Check」の ✓ のレイアウトビュー版(2026-07-12)。画面では「常に」表示(ミドル押下・
+	// Hold to Hide Marks・Show Marks on Source 等の枠トグルとは完全に独立)。印刷/PDF は sPrintMarks
+	// (Print comparison marks)ON のときだけ(Target/Source とも同条件)。✓ 集合は Start 中の
+	// Target/Source(sDB/sSrcDB)にしか無い(Stop で全消去)ので、存在チェックも両 db だけ見れば足りる。
+	// サムネイル(isThumb)は下の専用ブロックが従来どおり描くのでここでは対象外。
+	const bool16 wantChecks = !isThumb && (!printing || sPrintMarks) &&
+		((sDB != nil && KESCMPageCheckHasAny(sDB)) || (sSrcDB != nil && KESCMPageCheckHasAny(sSrcDB)));
 	// 旧ページ番号バッジ: トグルON かつ「枠が見えている」間(=印刷マークON の常時表示、またはミドル押下中)。
 	// 枠の可視条件(wantMarks の sPrintMarks || sMarksVisible)と同じ揃え。印刷文脈は suppressForPrint で
 	// sPrintMarks ON のときだけ生き残る=印刷に出るのは印刷マークON時のみ(従来どおり)。
@@ -1056,7 +1074,7 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	// Start と無関係に描く「登録専用パス」があり、未 Start でも右クリック登録すると緑「/」が出ていたが、
 	// これを撤去した(登録自体も arm 済みのときだけ可能に変更)。よって登録「/」は下の Target/Source メイン
 	// ループ(db==sDB / db==sSrcDB。=Start 中のみ成立)だけが描く。ここでの Anywhere 判定・専用パスは不要。
-	if (!wantMarks && !wantOrig && !wantOldNums && !wantSrcMarks)
+	if (!wantMarks && !wantOrig && !wantOldNums && !wantSrcMarks && !wantChecks)
 		return kFalse;
 
 	GraphicsData* gd = ded->gd;
@@ -1122,10 +1140,10 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	if (printing)
 		sxr = 1.0;
 
-	// ★「KESCM: Check」の ✓: チェック済みページの Pages パネルサムネイル中央に青い ✓ を描く。
+	// ★「KESCM: Check」の ✓(サムネイル版): チェック済みページの Pages パネルサムネイル中央に青い ✓ を描く。
 	//   他のマーク(リング/斜線/Show Marks on Source トグル)とは完全に独立=このスプレッドの db が
 	//   Target でも Source でも、その db にチェックがあれば描く(下の Target/Source メインループより前・
-	//   それらのゲートに依らない)。Pages パネルのサムネイル(isThumb)限定=レイアウトビューには出さない。
+	//   それらのゲートに依らない)。レイアウトビュー/印刷版は下の wantChecks ブロック(2026-07-12 追加)。
 	//   Start 中限定(チェック集合は Stop で全消去されるので非 arm 時は空だが、保険で arm ゲート)。
 	if (isThumb && KESCMIsArmed() && KESCMPageCheckHasAny(db))
 	{
@@ -1178,6 +1196,25 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 			gPort->translate(pr.Left(), pr.Top());
 			gPort->scale(pr.Width() / o->w, pr.Height() / o->h);	// 旧版画像をページ矩形にフィット
 			gPort->image(&o->rec, PMMatrix(), 0);			// 旧版を sPeekOpacity で重ねる
+		}
+	}
+
+	// ★「KESCM: Check」の ✓(レイアウトビュー/印刷版・2026-07-12)。チェック済みページのページ中央に
+	//   青い ✓ を「かなり大きく」(短辺×kKESCMCheckLayoutSizeRatio)描く。Target/Source を問わず、この
+	//   スプレッドの db にチェックがあれば描く(枠トグル・ミドル押下とは完全に独立=画面では常時表示)。
+	//   印刷/PDF は wantChecks が sPrintMarks でゲート済み。不透明度はパネルの 25%/75% 選択
+	//   (SelectedMarkOpacity)を画面・印刷共通で使う。旧版べた載せ(peek)の直後に描く=peek の不透明画像
+	//   の上にも ✓ が乗る(常に見える)。この後の Source/Target マークループより前に置くのは、Source
+	//   ループが return kFalse で抜けるため(リング等が ✓ の上に重なるのは許容=どちらも半透明マーク)。
+	if (wantChecks && KESCMIsArmed() && KESCMPageCheckHasAny(db))
+	{
+		const int32 npc = spread->GetNumPages();
+		for (int32 i = 0; i < npc; ++i)
+		{
+			const UID puid = spread->GetNthPageUID(i);
+			if (KESCMPageCheckIsChecked(db, puid))
+				KESCMDrawPageCheck(gPort, db, puid, sxr, drawMode, SelectedMarkOpacity(),
+					kKESCMCheckR, kKESCMCheckG, kKESCMCheckB, kTrue /*layoutStyle*/);
 		}
 	}
 

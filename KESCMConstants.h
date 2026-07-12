@@ -58,10 +58,16 @@ static const int   kKESCMRedBgDom = 25;	// 背景を「赤っぽい」と判定�
 // ため緑固定(背景色による切り替えは無し。ラスタ差分が無く背景判定の材料も無いため)。
 static const uint8 kKESCMAddedBorderR = 0, kKESCMAddedBorderG = 200, kKESCMAddedBorderB = 0;
 
-// 「KESCM: Check」でチェックしたページに Pages パネルのサムネイル中央へ描く ✓ マークの色(青)。
+// 「KESCM: Check」でチェックしたページに描く ✓ マークの色(青)。Pages パネルのサムネイル中央と、
+// レイアウトビューのページ中央(2026-07-12 追加)の両方で同色。
 // ★フォントの ✓ 文字(環境依存)ではなく、線2本(moveto/lineto/stroke)でベクターの ✓ 型を描くので
 //   フォント/OS/ロケールに依存しない。緑「/」(登録)や赤「/」(overflow)と色で区別するため青にする。
 static const uint8 kKESCMCheckR = 30, kKESCMCheckG = 110, kKESCMCheckB = 235;
+// ✓ のレイアウトビュー版(2026-07-12)。ページ中央に「かなり大きく」描く: サイズ=ページ短辺のこの比率
+// (サムネイルの 0.52 より大幅に大きい)。線の太さ=✓ サイズのこの比率(ページ比例=ズームしても印刷しても
+// 相似形。枠リングの「画面px固定」式とは別方式)。不透明度はパネルの 25%/75% 選択(SelectedMarkOpacity)連動。
+static const PMReal kKESCMCheckLayoutSizeRatio   = 0.80;	// ✓ 全体サイズ(ページ短辺比)
+static const PMReal kKESCMCheckLayoutStrokeRatio = 0.12;	// 線の太さ(✓ サイズ比)
 
 // ノンブル(自動ページ番号)除外領域を可視化するベタ塗り色と不透明度。除外トグルON時、比較から
 // 外している矩形を半透明の緑で塗り、「どこが除外されているか」を目視できるようにする(下のノンブルが

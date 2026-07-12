@@ -170,6 +170,11 @@ void KESCMPageCheckToggleSelectedPages()
 	// ✓ を反映する(比較には影響しないので再比較は不要)。
 	KESCMRefreshThumbnailsForPages(db, pages);
 
+	// ★レイアウトビュー版の ✓(2026-07-12 追加)も即反映する。✓ は常時表示なので、トグルした文書の
+	// レイアウトビューを InvalidateViews で再描画しないと、次の再描画機会(スクロール等)まで
+	// 付け外しが画面に出ない(ユーザー報告: OFF にしても ✓ が残る)。サムネイル更新とは別経路。
+	KESCMInvalidateDB(db);
+
 	KESCMSetStatus(msg);
 }
 
@@ -782,6 +787,10 @@ void KESCMPageCheckLoadFromFile()
 		{
 			std::vector<UID> pages(affected.begin(), affected.end());
 			KESCMRefreshThumbnailsForPages(db, pages);
+			// ★レイアウトビュー版の ✓(2026-07-12 追加)も即反映する。フェーズ2の再比較(KESCMDoMarkChangesDoc)
+			// が両文書を Invalidate するのは「復元前の ✓ 状態」に対してなので、ここで復元後の状態で
+			// もう一度 Invalidate しないと、復元/消去された ✓ がレイアウト画面に出ない(トグルと同じ理屈)。
+			KESCMInvalidateDB(db);
 		}
 	}
 

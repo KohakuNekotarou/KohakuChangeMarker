@@ -308,17 +308,21 @@ ErrorCode KESCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMStri
 	// 全文書走査は EnsureOverflowCache 側で回避)。
 	KESCMDrawEventHandler::RebuildOverflowCache();
 
+	// ★「KESCM: Check」の✓: 再比較で「マーク(枠/「/」)が無くなったページ」のチェックを忘れる
+	//   (ユーザー指定 2026-07-11)。この後のサムネイル更新で、マークが消えたページは prevMarked 経由で
+	//   purge され、リングも✓も無いクリーンなサムネイルに作り直される(チェックを先に外すのが肝)。
+	//   ★必ず下の KESCMInvalidateDB より前に呼ぶ(2026-07-12 ユーザー報告の修正): ✓ はレイアウト
+	//   ビューにも常時表示されるようになったので、Invalidate 後にチェックを外すと「✓ がまだある状態」
+	//   でレイアウトが描き直されて古い ✓ が残る(サムネイルは prune 後に更新されるので消える=食い違い)。
+	//   prune に必要なマーク集合(sEntries/登録/overflow)は直前の RebuildOverflowCache までで確定済み。
+	KESCMPageCheckPruneToMarked();
+
 	KESCMInvalidateDB(targetDB);
 	if (sourceDB != targetDB)
 		KESCMInvalidateDB(sourceDB);	// Source 側の常時枠を即反映
 
 	// スクロールバー地図 strip のマークも最新化(Start/Ctrl+ミドル再比較/登録トグルの全経路がここを通る)。
 	KESCMScrollMapInvalidateAll();
-
-	// ★「KESCM: Check」の✓: 再比較で「マーク(枠/「/」)が無くなったページ」のチェックを忘れる
-	//   (ユーザー指定 2026-07-11)。この後のサムネイル更新で、マークが消えたページは prevMarked 経由で
-	//   purge され、リングも✓も無いクリーンなサムネイルに作り直される(チェックを先に外すのが肝)。
-	KESCMPageCheckPruneToMarked();
 
 	// ★サムネイル実験(2026-07-06): 既表示サムネイルの再生成を試みる(KESCMThumbnailRefresh)。
 	// 従来 2026-07-05 に「文書の変更でしか無効化されない内部キャッシュがあり、InvalidatePageWidget/
