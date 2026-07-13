@@ -22,7 +22,6 @@
 //========================================================================================
 REGISTER_PMINTERFACE(KESCMDrawEventSrvc, kKESCMDrawEventSrvcImpl)
 REGISTER_PMINTERFACE(KESCMDrawEventHandler, kKESCMDrawEventHandlerImpl)
-REGISTER_PMINTERFACE(KESCMPeekWatcher, kKESCMPeekWatcherImpl)
 REGISTER_PMINTERFACE(KESCMPeekStartup, kKESCMPeekStartupImpl)
 REGISTER_PMINTERFACE(KESCMPanelObserver, kKESCMPanelObserverImpl)
 REGISTER_PMINTERFACE(KESCMActionComponent, kKESCMActionComponentImpl)

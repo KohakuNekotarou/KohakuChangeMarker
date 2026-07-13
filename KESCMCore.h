@@ -189,21 +189,9 @@ IDataBase*	KESCMGetHideUnchangedSrcDB();
 bool16		KESCMGetLayoutSync();
 void		KESCMSetLayoutSync(bool16 on);
 
-// フライアウト「Invoke Panel Shortcut」トグル。ON(既定)の間だけ、Shift+Ctrl+ミドルクリックで
-// KESCM パネルの表示/非表示を切り替えられる(フローティング時はカーソル付近にポップ)。OFF にすると
-// そのジェスチャは無反応になり、素のミドルクリック動作を邪魔しない。実体は KESCMPeek.cpp
-// (ジェスチャを捌く WatchEvent と同じ翻訳単位に状態 static を置く)。
-bool16		KESCMGetPanelShortcut();
-void		KESCMSetPanelShortcut(bool16 on);
-
-// フライアウト「Invoke Pages Panel Shortcut」トグル。ON(既定)の間だけ、Ctrl+Alt+ミドルクリックで InDesign 標準
-// 「ページ」パネルの表示/非表示を切り替えられる(カーソル移動なしの単純トグル)。OFF にするとそのジェスチャは
-// 無反応になる。状態 static は KESCMPeek.cpp(ジェスチャを捌く WatchEvent と同じ翻訳単位)。
-bool16		KESCMGetPagesPanelShortcut();
-void		KESCMSetPagesPanelShortcut(bool16 on);
-
-// Ctrl+Alt+中ボタンで InDesign 標準「ページ」パネルの表示/非表示をトグルする(上のショートカットの本体)。
-// 実体は KESCMPanelObserver.cpp(IPanelMgr の show/hide を kPagesPanelWidgetID に対して行う)。
+// InDesign 標準「ページ」パネルの表示/非表示をトグルする。実体は KESCMPanelObserver.cpp(IPanelMgr の
+// show/hide を kPagesPanelWidgetID に対して行う)。★中ボタン/ツールの起動経路は撤去済み(2026-07-13)=
+// 現在は呼び出し元なし(将来ショートカット等へ再割当する余地として関数は残す)。
 void		KESCMTogglePagesPanel();
 
 #endif // __KESCMCore_h__

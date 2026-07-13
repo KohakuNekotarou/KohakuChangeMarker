@@ -96,14 +96,6 @@ static IDataBase* sPeekTargetDB = nil;	// 表示中(新)ドキュメント。使
 static IDataBase* sPeekSourceDB = nil;	// peek 中に重ねる旧ドキュメント。
 static bool16     sPeekArmed    = kFalse;
 
-// フライアウト「Invoke Panel Shortcut」トグルの状態(既定 ON)。ON の間だけ Shift+Ctrl+ミドルクリックで
-// パネル表示/非表示を切り替える(下の WatchEvent の該当分岐でこのフラグを見る)。セッション内のみ保持。
-static bool16     sPanelShortcutOn = kTrue;
-
-// フライアウト「Invoke Pages Panel Shortcut」トグルの状態(既定 ON)。ON の間だけ Ctrl+Alt+ミドルクリックで
-// InDesign 標準「ページ」パネルの表示/非表示を切り替える(下の WatchEvent の該当分岐でこのフラグを見る)。
-static bool16     sPagesPanelShortcutOn = kTrue;
-
 // Shift＋ミドル=旧版を不透明(100%)で / Shift+Alt＋ミドル=旧版を 50% で重ねて peek。
 // 押下中だけ表示し、ミドルを離すと消す(修飾キーは離してもよい)。判定はミドル押下時に1回見るだけ。
 static const PMReal kKESCMPeekSemiOpacity = 0.5;	// Shift+Alt＋ミドル時の旧版の不透明度(0..1)
@@ -262,27 +254,6 @@ static KESCMPeekResult KESCMPeekShowUnderMouse(IDataBase* targetDB, IDataBase* s
 }
 
 
-// ミドル押下中だけ一時的にハンドツール(掴んで移動)へ切り替える。元のツールを覚えておく(離すと戻す)。
-// 既に切替中なら何もしない(ハンド自身を「元のツール」として覚えてしまわないため)。
-static void KESCMEnterHandTool()
-{
-	if (sHandActive)
-		return;
-	ITool* cur  = Utils<IToolBoxUtils>()->QueryActiveTool(kPointerToolBoss);	// +1 ref
-	ITool* hand = Utils<IToolBoxUtils>()->QueryTool(kGrabberHandToolBoss);	// +1 ref
-	if (hand != nil)
-	{
-		sSavedTool = cur;	// ref を保持(下の Restore で Release)。cur が nil でも可
-		Utils<IToolBoxUtils>()->SetActiveTool(hand, kPointerToolBoss);
-		hand->Release();
-		sHandActive = kTrue;
-	}
-	else if (cur != nil)
-	{
-		cur->Release();
-	}
-}
-
 // 覚えていた元のツールへ戻す(ハンドに切替えていた場合のみ)。
 static void KESCMRestoreTool()
 {
@@ -296,23 +267,6 @@ static void KESCMRestoreTool()
 	}
 	sHandActive = kFalse;
 }
-
-// Shift／Ctrl＋ミドル押下を検出したときの共通処理: 「保持中だけ覗く」状態に入り、マウス下スプレッドの旧版を
-// opacity(Shift=1.0 不透明 / Ctrl=0.5 半透明)で表示。覗き中もハンドツールにして「旧状態で掴んで移動」できるように。
-// 覗き中は枠等(マーク)は不要なので sMarksVisible=kFalse のまま(既定が非表示)＝旧版だけが乗る。覗いている
-// スプレッドは旧版が覆い、他スプレッドも非表示なので、画面全体が枠なしの「旧版/現行のみ」になる。
-static void KESCMBeginPeekHold(PMReal opacity)
-{
-	sPeekActive = kTrue;
-	KESCMDrawEventHandler::sPeekOpacity = opacity;	// 旧版の不透明度(描画時に旧版べた載せの描画ブロックが参照)
-	sSingleShowing = kFalse;
-	KESCMDrawEventHandler::sMarksVisible = kFalse;	// 覗き中は枠等を出さない(旧版だけ)
-	KESCMEnterHandTool();	// 旧状態で掴んで移動
-	KESCMPeekShowUnderMouse(sPeekTargetDB, sPeekSourceDB, nil, nil);
-}
-
-
-
 
 // ページ比較の部分更新(共通コア): targetPages(= targetDB 上のページUID列)を再比較して枠(リング)を
 // 更新する。source 対応は除外対応表(登録済みページを除いた順番対応)で引く。
@@ -806,120 +760,6 @@ static void KESCMSyncOtherDocViewportsTo(IPanorama* srcPano, IDataBase* srcDocDb
 	sLayoutSyncBroadcasting = kFalse;
 }
 
-// Alt＋ミドル押下(momentary、旧 Ctrl＋ミドル=2026-07-04移動): ビューポート同期。マウス下のレイアウトビュー
-// (アクティブである必要はない; IWindowUtils::QueryWindowUnderPoint でグローバル座標から直接引く)の
-// 「見えている状態」= 実効ズーム(拡大率)+ビュー中心に映っている content(pasteboard)座標 を読み取り、
-// ★比較相手(Target↔Source)のウィンドウへだけ複製する(マウス下の文書自身のビュー=スプリット相方含めて
-// 対象外。2026-07-04ユーザー指定)。つまり拡大率が同じなら、同じ座標の画面が同じように映る
-// (旧仕様=マウス位置を他ウィンドウのセンターへスクロールするだけで、拡大率は触らなかった)。
-// ★2026-07-11(ユーザー指定): ChangeMarker の Start(sPeekArmed)中のみ、かつ Target↔Source 間のみ有効に変更
-// (旧仕様=arm と無関係に全文書へ複製)。限定の実体は KESCMSyncOtherDocViewportsTo 側の一括ガード。
-//
-// 用途: Target/Source のようにページ構成が近い文書を並べ、同じ場所を同じ倍率で見比べる。
-// pasteboard 座標はドキュメント固有の値だが、構成が近ければそのまま流用できる(ズレは許容)。
-// ズーム=ILayoutUIUtils::MakeZoomCmd(kZoomToCmdBoss=UIのズーム欄と同じ公式経路)+ProcessCommand。
-// ★前実装の ILayoutViewUtils::ZoomLayoutViews 直呼びは他ドキュメントのビューに効かなかった(実機で
-// 拡大率が変わらないのを確認)ため、コマンド経由へ変更。ズーム値は読み書きとも実効スケール
-// GetXScaleFactor(kTrue)(モニタPPI補正込み。IZoomCmdData.h の kMinZoom=0.05〜kMaxZoom=40.0 と同じ次元)。
-// スクロール=KESCL(KESCLFindInDoc.cpp)と同じ手口(QueryPanorama→ScrollContentLocationToFrameCenter)。
-//
-// ★Split Window(1文書2ペイン)対応:
-// (1) 手本の判定を kLayoutWidgetBoss 固定にせず FindWidget(windowPt) でヒットテストし、マウスが
-//     スプリットの新しい側にあればそちらを手本にする。
-// (2) パノラマの読み書きに使うビューは必ず Utils<ILayoutViewUtils>()->GetAllLayoutViews() 経由で取得。
-//     ★実測で判明した重要事項: kLayoutSecondaryPanelWidgetID を IPanelControlData::FindWidget() で
-//     直接引いても、そのウィジェット自身はパノラマを持たず、祖先を辿っても見つからない(外側の
-//     ラッパーに過ぎない)。実際にパノラマを持つオブジェクトは GetAllLayoutViews() が返す別オブジェクト。
-static void KESCMSyncScrollOtherWindowsUnderMouse(IEvent* e, bool16 limitToArmedPair = kTrue)
-{
-	if (e == nil)
-		return;
-
-	const GSysPoint globalPt = e->GlobalWhere();
-
-	InterfacePtr<IWindow> hitWindow(Utils<IWindowUtils>()->QueryWindowUnderPoint(globalPt, kFalse));
-	if (hitWindow == nil)
-		return;
-
-	InterfacePtr<IDocumentPresentation> hitPres(hitWindow, UseDefaultIID());
-	if (hitPres == nil)
-		return;	// マウス下がドキュメントウィンドウではない(アプリフレーム／パレット等)
-
-	InterfacePtr<IPanelControlData> hitPanelData(hitPres, UseDefaultIID());
-	if (hitPanelData == nil)
-		return;
-
-	IControlView* primaryView = hitPanelData->FindWidget(kLayoutWidgetBoss);
-	if (primaryView == nil)
-		return;
-
-	// ★スプリット表示中は、マウスが元側(kLayoutWidgetBoss)と新しい側(kLayoutSecondaryPanelWidgetID)の
-	// どちらの上にあるかで「手本」にするビューが変わる。FindWidget(windowPt) のヒットテストで役割だけ
-	// 判定する(キャンバス以外=ルーラ等に当たった場合は元側扱いにフォールバック)。primaryView は
-	// 「グローバル→ウィンドウ座標への変換」にだけ使う(どの子ウィジェット経由でも同じウィンドウ座標系)。
-	bool16 usedSecondary = kFalse;
-	{
-		const PMPoint globalPM((PMReal)globalPt.x, (PMReal)globalPt.y);
-		const PMPoint winPM = primaryView->GlobalToWindow(globalPM);
-		SysPoint winPt;
-		winPt.x = ::ToInt32(winPM.X());
-		winPt.y = ::ToInt32(winPM.Y());
-
-		IControlView* pointHit = hitPanelData->FindWidget(winPt);
-		if (pointHit != nil && pointHit->GetWidgetID() == kLayoutSecondaryPanelWidgetID)
-			usedSecondary = kTrue;
-	}
-
-	IDataBase* hitDocDb = hitPres->GetDocumentUIDRef().GetDataBase();
-
-	// 手本(マウス下)ビューの実体を特定する。FindWidget が返すオブジェクトはパノラマを持たない
-	// ラッパーのことがある(上記(2))ので、パノラマの読み取りも GetAllLayoutViews 経由の実体で行う。
-	// スプリット中(ビュー2つ)は元側/新しい側を消去法で選ぶ。非スプリット(1つ)はそのまま採用。
-	// 万一どれとも同定できなければ先頭の非nilビューへフォールバック(何もしないよりよい)。
-	IControlView* mapView = nil;
-	{
-		K2Vector<IControlView*> hitDocViews;
-		Utils<ILayoutViewUtils>()->GetAllLayoutViews(hitDocViews, nil, hitDocDb);
-		IControlView* firstView = nil;
-		for (int32 i = 0; i < (int32)hitDocViews.size(); ++i)
-		{
-			if (hitDocViews[i] == nil)
-				continue;
-			if (firstView == nil)
-				firstView = hitDocViews[i];
-			const bool16 thisIsPrimary = (hitDocViews[i] == primaryView);
-			const bool16 thisIsTheMapView = usedSecondary ? !thisIsPrimary : thisIsPrimary;
-			if (thisIsTheMapView)
-			{
-				mapView = hitDocViews[i];
-				break;
-			}
-		}
-		if (mapView == nil)
-			mapView = firstView;
-	}
-	InterfacePtr<IPanorama> srcPano(mapView != nil ? KESCMQueryPanorama(mapView) : nil);
-	if (srcPano == nil)
-		return;
-
-	// Alt+ミドルは追加/削除補正あり(比較 arm 中は比較ペアの相手ページ同士がきっちり合う。
-	// 未 arm/ペア外の文書は関数内で従来の生同期にフォールバック)。limitToArmedPair は呼び出し元指定
-	// (中ボタン=kTrue でペア限定、左ダブルクリック=kFalse で全文書対象)。
-	KESCMSyncOtherDocViewportsTo(srcPano, hitDocDb, kTrue /*applyPageOffset*/, limitToArmedPair);
-}
-
-// トラッカー(左ボタン ダブルクリック)用の公開入口。KESCM ツール選択中の左ボタン ダブルクリック
-// (修飾なし)から KESCMTracker.cpp が呼ぶ。中ボタン Alt+ミドル(WatchEvent の Alt 単独分岐)と全く同じ
-// 1 本(KESCMSyncScrollOtherWindowsUnderMouse)を通す=arm 済み・Target/Source 間限定・追加/削除補正つき。
-// 中ボタン側の WatchEvent は変更しない(両入力は併存)。
-void KESCMTrackerDocSync(IEvent* theEvent)
-{
-	// ★左ダブルクリックは limitToArmedPair=kFalse: Start 不問で、カーソル下の文書を除く全ドキュメントへ同期する
-	//   (ユーザー指定 2026-07-13)。中ボタン Alt+ミドル(WatchEvent)は従来どおり arm 済み Target/Source 限定のまま。
-	KESCMSyncScrollOtherWindowsUnderMouse(theEvent, kFalse /*limitToArmedPair*/);
-}
-
-
 //========================================================================================
 // レイアウトビュー同期(フライアウト「Sync Layout Views」チェック式トグル)
 //   ON の間、全ドキュメントの全レイアウトビューの IPanorama subject を購読し、どれかが
@@ -1111,243 +951,6 @@ void KESCMSetLayoutSync(bool16 on)
 
 
 //========================================================================================
-// KESCMPeekWatcher
-//   非消費のイベントウォッチャ。peek が arm 済み(kescmArmMousePeek)の間、Shift＋ミドルボタンを押すと
-//   マウス下スプレッドの旧版べた載せを表示し、ミドルを離すと隠す。非消費=ミドルボタン本来の動作も走る。
-//========================================================================================
-class KESCMPeekWatcher : public CPMUnknown<IEventWatcher>
-{
-public:
-	KESCMPeekWatcher(IPMUnknown* boss) : CPMUnknown<IEventWatcher>(boss), fWatching(kFalse) {}
-	~KESCMPeekWatcher() {}
-
-	IEventDispatcher::EventTypeList WatchEvent(IEvent* e);
-	void StartWatching();
-	void StopWatching();
-
-private:
-	bool16 fWatching;
-};
-
-CREATE_PMINTERFACE(KESCMPeekWatcher, kKESCMPeekWatcherImpl)
-
-IEventDispatcher::EventTypeList KESCMPeekWatcher::WatchEvent(IEvent* e)
-{
-	// 興味=ミドル押下/解放のみ。毎回返す(空を返すと監視解除される)。修飾キー判定は押下イベントで見る。
-	// 左ボタンによる reveal は KESCM ツールのトラッカー(KESCMTracker.cpp)が担当するため、ここでは監視しない。
-	IEventDispatcher::EventTypeList interest(IEvent::kMButtonDn, IEvent::kMButtonUp);
-
-	if (e == nil)
-		return interest;
-
-	const IEvent::EventType type = e->GetType();
-	if (type != IEvent::kMButtonDn && type != IEvent::kMButtonUp)
-		return interest;
-
-	// 旧版べた載せ(peek)の検証は arm 済みの時だけ。シングルの枠表示は arm 不要なので、ここで素通りさせる。
-	if (sPeekArmed)
-	{
-		// arm 済みドキュメントがまだ開いているか検証(片方を閉じた後のダングリング参照を防ぐ)。
-		// ★以前はここで peek arm の解除・旧版べた載せの破棄だけを個別に行い、マーク本体(sEntries/sDB)には
-		// 触れていなかった。通常はドキュメントクローズ responder(KESCMHandleDocsClosed)がクローズ直後に
-		// 先回りして片付けるためこの分岐へは実質到達しないが、保険として残す以上は KESCMHandleDocsClosed に
-		// 一本化し、Stop 相当のフルクリーンアップ(マーク破棄＋パネル更新も)を確実に行う
-		// (枠だけ残る／ボタンだけ変わるといった食い違いを防ぐ)。
-		InterfacePtr<IApplication> app(GetExecutionContextSession()->QueryApplication());
-		InterfacePtr<IDocumentList> docList(app ? app->QueryDocumentList() : nil);
-		if (docList == nil ||
-		    docList->FindDocByDataBase(sPeekTargetDB) == nil ||
-		    docList->FindDocByDataBase(sPeekSourceDB) == nil)
-		{
-			KESCMHandleDocsClosed();
-			return interest;
-		}
-	}
-
-	if (type == IEvent::kMButtonDn)
-	{
-		// 「Hold to Hide Marks」モード(枠を画面に常時表示)中は、押下中は常時表示の枠を隠す(離すと戻る)=
-		// 極性反転の本体。個々の修飾キー動作(peek/再比較/同期/パネル/CMYK)はこの後も従来どおり走る。下の
-		// 修飾なしミドル分岐は、モード ON 時は「反転して隠す」側に切り替える(sMarksVisible で表示 ON にすると
-		// sMarksTempHidden と競合するため)。
-		// ★押した窓の枠だけを隠す(ウィンドウ別)。Target 窓で押したら Target 枠(sMarksTempHidden)、Source 窓で
-		//   押したら Source 枠(sSrcMarksTempHidden。Show Marks on Source ON 時のみ)。これでタイル表示中に相手側の
-		//   窓で押しても、こちらの枠は消えない(旧・一律 temp-hide の非対称を解消)。
-		// ★枠を隠すのは「枠を見せない/旧版を覗く」系のミドル操作のときだけ(ユーザー指定 2026-07-10)。
-		//   隠す: 修飾なし(=枠隠し本機能そのもの)/ Shift(100% peek)/ Shift＋Alt(50% peek)。
-		//   隠さない: Ctrl(スプレッド再比較)/ Alt 単独(ビューポート同期)/ Shift＋Ctrl(パネル切替)/
-		//             Shift＋Ctrl＋Alt(CMYK)。これらは枠を出したまま操作したいため。
-		//   条件=Ctrl 非押下 かつ (修飾なし または Shift 押下)。→ Ctrl 系は全除外、Alt 単独は Shift 無しで除外。
-		const bool16 tempHideGesture =
-			!e->CmdKeyDown() &&
-			( (!e->ShiftKeyDown() && !e->OptionAltKeyDown()) || e->ShiftKeyDown() );
-		if (KESCMDrawEventHandler::sAlwaysShowMarks && tempHideGesture)
-		{
-			if (!KESCMDrawEventHandler::sMarksTempHidden && KESCMFrontViewIsOverTarget())
-			{
-				KESCMDrawEventHandler::sMarksTempHidden = kTrue;
-				KESCMInvalidateMarksDoc();	// Target(sDB)を再描画
-			}
-			if (KESCMDrawEventHandler::sSrcMarksOn && !KESCMDrawEventHandler::sSrcMarksTempHidden &&
-			    KESCMFrontViewIsOverSource())
-			{
-				KESCMDrawEventHandler::sSrcMarksTempHidden = kTrue;
-				KESCMInvalidateDB(KESCMDrawEventHandler::sSrcDB);	// Source(sSrcDB)を再描画
-			}
-		}
-
-		if (sPanelShortcutOn && e->ShiftKeyDown() && e->CmdKeyDown() && !e->OptionAltKeyDown())
-		{
-			// Shift＋Ctrl＋ミドル押下: KESCMパネルの表示/非表示トグル。表示時、パネルがフローティングなら
-			// マウス位置付近へポップさせる(ドック中は剥がさず定位置に表示)。arm 不要・全文書共通なので
-			// 先頭で捕まえる。3キー同時(Shift+Ctrl+Alt=CMYK)は Alt 有り(!Alt 条件)でここに吸われない。
-			KESCMTogglePanelAtCursor();
-		}
-		else if (sPagesPanelShortcutOn && e->CmdKeyDown() && e->OptionAltKeyDown() && !e->ShiftKeyDown())
-		{
-			// Ctrl＋Alt＋ミドル押下: InDesign 標準「ページ」パネルの表示/非表示トグル(ユーザー指定 2026-07-12)。
-			// arm 不要・全文書共通。カーソル位置への移動はしない(単純な表示/非表示のみ)。3キー同時
-			// (Shift+Ctrl+Alt=CMYK)は上の分岐が先に捕まえる(ここは !Shift 条件なので衝突しない)。
-			KESCMTogglePagesPanel();
-		}
-		else if (sPeekArmed && e->ShiftKeyDown() && e->CmdKeyDown() && e->OptionAltKeyDown() && KESCMFrontViewIsOverTarget())
-		{
-			// Shift＋Ctrl＋Alt＋ミドル押下: クリック点の CMYK 生値(0..255)を新・旧でサンプリングし、
-			// "Target C.. M.. Y.. K.." / "Source C.. …" をパネルのステータス行に表示する(次の操作まで残る)。
-			// ★旧トースト表示(押下中だけカーソル脇に出す)は 2026-07-04 撤去。3キー同時は
-			// この先頭分岐で捕まえる(後続の Shift/Ctrl/Alt 単独 peek より前に置く=単独分岐に吸われないため)。
-			// ★対象(Target)文書のウィンドウ上でのみ反応(KESCMFrontViewIsOverTarget)。Source 側や無関係な
-			// 第3文書のウィンドウでミドルクリックしても、素のミドル動作を邪魔しないよう何もしない。
-			PMString colorMsg;
-			if (KESCMSampleCmykUnderMouse(sPeekTargetDB, sPeekSourceDB, colorMsg))
-			{
-				// 結果はパネルのステータス行に出るので、パネルが閉じている/アイコン化されていると
-				// ユーザーが気づけない。押下中だけ一時表示し、ミドルを離したら元の状態
-				// (閉じていた/アイコン化)へ戻す(KESCMPanelTempShowEnd は kMButtonUp 側)。
-				// 既に見えていた場合は何も変えない(離しても閉じない)。
-				KESCMPanelTempShowBegin();
-				KESCMSetStatus(colorMsg);
-			}
-		}
-		// ★Ctrl 単独＋ミドルの「スプレッド再比較」は 2026-07-13 撤去し、ページパネルのページ右クリック
-		//   「KESCM: Refresh Page Comparison」メニューへ移設した(実体 KESCMRefreshComparisonForSelectedPages)。
-		else if (sPeekArmed && e->ShiftKeyDown() && e->OptionAltKeyDown() && !e->CmdKeyDown() && KESCMFrontViewIsOverTarget())
-		{
-			// Shift＋Alt＋ミドル押下: 旧版べた載せ(peek)を 50% 透明で重ねる(現行ページと半々のゴースト比較)。
-			// ★対象(Target)文書のウィンドウ上でのみ反応(KESCMFrontViewIsOverTarget)。Shift 単独/ Alt 単独の
-			// 分岐より前に置く=吸われない。
-			KESCMBeginPeekHold(kKESCMPeekSemiOpacity);
-		}
-		else if (sPeekArmed && e->ShiftKeyDown() && !e->CmdKeyDown() && KESCMFrontViewIsOverTarget())
-		{
-			// Shift＋ミドル押下: マウス下スプレッドの旧版べた載せ(peek)を不透明(100%)で開始。押下中だけ表示。
-			// 判定はこの押下時の修飾キー状態のみ。以後キーを離しても変わらず、ミドルを離すと消える。
-			// ★対象(Target)文書のウィンドウ上でのみ反応(KESCMFrontViewIsOverTarget)。CMYK サンプリングと同じ理由。
-			// ★!Ctrl 条件: スプレッド再比較が Shift+Ctrl→Ctrl 単独へ移動(2026-07-04)した際、Shift+Ctrl が
-			//   この分岐に落ちて 100% peek が誤発動しないように弾く(Shift+Ctrl ミドルは未割当=無反応)。
-			//   Shift+Alt は上の 50% peek 分岐が先に捕まえるので、ここは実質 Shift 単独用。
-			KESCMBeginPeekHold(PMReal(1.0));
-		}
-		else if (sPeekArmed && e->OptionAltKeyDown() && !e->ShiftKeyDown() && !e->CmdKeyDown())
-		{
-			// ★2026-07-04: Ctrl 単独から Alt 単独へ移動(Ctrl 単独は同日「スプレッド再比較」に再割当)。
-			// Alt＋ミドル押下(momentary): 「地図」ナビゲーション。マウス下のウィンドウ
-			// (アクティブでなくてもよい)の表示を比較相手のウィンドウへ複製する。★2026-07-11(ユーザー指定):
-				// 「Start 中(arm 済み)のみ」かつ「Target↔Source 間のみ」に限定。未 Start では反応しない(素のミドルを邪魔しない)。
-				// Target/Source 限定の実体は KESCMSyncOtherDocViewportsTo 側の一括ガードで担保。
-			KESCMSyncScrollOtherWindowsUnderMouse(e);
-		}
-		else if (!e->ShiftKeyDown() && !e->CmdKeyDown() && !e->OptionAltKeyDown())
-		{
-			// シングル動作(修飾キーなしミドル押下中)。マークが何も無い(エントリ無し)時は反応しない=
-			// 素のミドルクリックを邪魔しない。
-			// ★2026-07-12(C-1 修正): 「マークがある」の判定を描画側 anyMarkableContent と揃える。変更ページ
-			// (sEntries)が 0 でも、overflow の赤「/」や Add/Remove 登録の緑「/」があれば斜線は出せるので、それらが
-			// あれば reveal する(以前は sEntries だけ見ており、変更ゼロ+登録/overflow のみの比較でミドル押下しても
-			// 斜線が出なかった)。overflow 集合は現在の (sDB,sSrcDB) 用へ合わせてから読む。
-			KESCMDrawEventHandler::EnsureOverflowCache();
-			const bool16 haveContent =
-				!KESCMDrawEventHandler::sEntries.empty() ||
-				!KESCMDrawEventHandler::sOverflowT.empty() ||
-				!KESCMDrawEventHandler::sOverflowS.empty() ||
-				(KESCMDrawEventHandler::sDB    != nil && KESCMPageMapHasAnyRegistered(KESCMDrawEventHandler::sDB)) ||
-				(KESCMDrawEventHandler::sSrcDB != nil && KESCMPageMapHasAnyRegistered(KESCMDrawEventHandler::sSrcDB));
-			if (haveContent)
-			{
-				if (KESCMDrawEventHandler::sAlwaysShowMarks)
-				{
-					// 「Hold to Hide Marks」モード ON(極性反転): 常時表示の枠は上で sMarksTempHidden により
-					// 既に隠している。ここではハンドツールへ切替え、枠の無い素の状態で掴んで移動できるように
-					// する(sMarksVisible は立てない=モードの常時表示/一時退避を上書きしないため)。
-					KESCMEnterHandTool();
-				}
-				else
-				{
-					// 従来動作(モード OFF): ミドル押下中だけ全マーク(リング＋変更数)をパネルで選択中の
-					// 不透明度(25%/75%)で一時表示(reveal)する。離す(kMButtonUp)と非表示＋不透明度を基準値へ戻す。
-					// ★Target 窓の上で押したときだけ reveal する(Source や無関係な窓で押しても Target 枠は
-					//   出さない。ユーザー指定 2026-07-10)。ハンドツール(掴んで移動)は窓を問わず有効にしておく
-					//   =パン操作は汎用なので、どのレイアウト窓でもミドルで掴んで動かせるままにする。
-					if (KESCMFrontViewIsOverTarget())
-					{
-						sSingleShowing = kTrue;
-						KESCMDrawEventHandler::sMarkScreenOpacity = KESCMDrawEventHandler::SelectedMarkOpacity();	// パネルの 25%/75%
-						KESCMDrawEventHandler::sMarksVisible = kTrue;	// 押下中だけ枠等を表示
-						KESCMInvalidateMarksDoc();
-					}
-					KESCMEnterHandTool();	// 枠の有無に関わらず掴んで移動できるように
-				}
-			}
-		}
-		// (その他の組み合わせ(Shift+Ctrl ミドル等)や、Shift/Ctrl 系で arm 未済 → 何もしない=素のミドルを邪魔しない。
-		//  2026-07-04 の再割当: Alt＋ミドル=地図ナビゲーション(旧 Ctrl 単独)、Ctrl 単独=スプレッド再比較(旧 Shift+Ctrl)。
-		//  Shift+Ctrl ミドルと「枠を通常(不透明)で表示」(旧 Alt 単独)は未割当/撤去)
-	}
-	else // kMButtonUp
-	{
-		// ミドルを離したら、ハンドに切替えていた場合は元のツールへ戻す(シングル/ダブル共通)。
-		KESCMRestoreTool();
-
-		// 「Hold to Hide Marks」モードで押下中に隠していた常時表示の枠を戻す(離すと再表示)。押した窓に応じて
-		// Target/Source どちらか(または両方)が立っている。モード OFF なら両方 kFalse なので無影響。
-		if (KESCMDrawEventHandler::sMarksTempHidden)
-		{
-			KESCMDrawEventHandler::sMarksTempHidden = kFalse;
-			KESCMInvalidateMarksDoc();	// Target(sDB)を再描画
-		}
-		if (KESCMDrawEventHandler::sSrcMarksTempHidden)
-		{
-			KESCMDrawEventHandler::sSrcMarksTempHidden = kFalse;
-			KESCMInvalidateDB(KESCMDrawEventHandler::sSrcDB);	// Source(sSrcDB)を再描画
-		}
-
-		// CMYK比較(3キー+ミドル)で一時表示していたパネルを元の状態(閉/アイコン)へ戻す。
-		// 一時表示していなければ無害な no-op。
-		KESCMPanelTempShowEnd();
-
-		if (sPeekActive)
-		{
-			// Shift／Shift+Alt＋ミドルを離した(ミドル解放) → 旧版を隠す(マークは触らない)。キャッシュは保持(再 peek は即時)。
-			sPeekActive = kFalse;
-			if (KESCMDrawEventHandler::sShowOriginal)
-			{
-				KESCMDrawEventHandler::sShowOriginal = kFalse;
-				KESCMInvalidateDB(sPeekTargetDB);
-			}
-		}
-		else if (sSingleShowing)
-		{
-			// ミドルのみの押下を離した → 枠表示を解除し、不透明度を基準値(印刷設定に応じた値)へ戻す＋非表示へ。
-			sSingleShowing = kFalse;
-			KESCMDrawEventHandler::sMarksVisible = kFalse;
-			KESCMDrawEventHandler::sMarkScreenOpacity = KESCMBaseScreenOpacity();
-			KESCMInvalidateMarksDoc();
-		}
-	}
-	return interest;
-}
-
-//========================================================================================
 // トラッカー(左ボタン)用の共有入口。KESCM ツール選択中の左ボタン押下/解放から呼ばれる
 // (KESCMTracker.cpp)。中ボタンの「修飾なし押下=マーク reveal」(上の WatchEvent kMButtonDn の
 // 素のミドル分岐)と同じ挙動を、左ボタンでも使えるようにする最小の切り出し。ここはファイル内の
@@ -1363,10 +966,9 @@ IEventDispatcher::EventTypeList KESCMPeekWatcher::WatchEvent(IEvent* e)
 //   いない(両入力は併存)。
 //========================================================================================
 
-// トラッカー(左ボタン)用の peek 開始。中ボタン KESCMBeginPeekHold と同じく arm 済み(Start 後)かつ
-// Target 窓上のときだけ、マウス下スプレッドの旧版を opacity(1.0=不透明 / 0.5=半透明)で重ねる。
-// ★中ボタン版と違い KESCMEnterHandTool() は呼ばない: トラッカーが既にマウスをキャプチャ済みで、
-//   ドラッグは ContinueTracking へ行くため、ハンドツールへの一時切替は不要かつ不整合の元になる。
+// トラッカー(左ボタン)用の peek 開始。arm 済み(Start 後)かつ Target 窓上のときだけ、マウス下スプレッドの
+// 旧版を opacity(1.0=不透明 / 0.5=半透明)で重ねる。ハンドツールへの一時切替はしない(トラッカーが既に
+// マウスをキャプチャ済みで、ドラッグは ContinueTracking へ行くため不要)。
 static void KESCMTrackerBeginPeek(PMReal opacity)
 {
 	if (!sPeekArmed || !KESCMFrontViewIsOverTarget())
@@ -1590,65 +1192,31 @@ void KESCMTrackerRevealEnd()
 	}
 }
 
-void KESCMPeekWatcher::StartWatching()
-{
-	if (fWatching) return;
-	InterfacePtr<IApplication> app(GetExecutionContextSession()->QueryApplication());
-	InterfacePtr<IEventDispatcher> dispatcher(app, UseDefaultIID());
-	if (dispatcher)
-	{
-		// ミドル押下/解放のみ監視(左ボタンの reveal は KESCM ツールのトラッカーが担当)。
-		IEventDispatcher::EventTypeList types(IEvent::kMButtonDn, IEvent::kMButtonUp);
-		dispatcher->AddEventWatcher(this, types);
-		fWatching = kTrue;
-	}
-}
-
-void KESCMPeekWatcher::StopWatching()
-{
-	if (!fWatching) return;
-	InterfacePtr<IApplication> app(GetExecutionContextSession()->QueryApplication());
-	InterfacePtr<IEventDispatcher> dispatcher(app, UseDefaultIID());
-	if (dispatcher)
-		dispatcher->RemoveEventWatcher(this, IEventDispatcher::EventTypeList());	// 既定ctor=kAllEventTypes(全ビットON)=全種の監視を解除。「空」ではない(IEventDispatcher.h)
-	fWatching = kFalse;
-}
-
-
 //========================================================================================
 // KESCMPeekStartup
-//   アプリ起動時に peek ウォッチャを生成して監視を開始する。
+//   アプリ起動/終了サービス。中ボタンウォッチャは撤去した(2026-07-13)ので起動時の処理は無く、
+//   終了時に保持リソース(遅延サムネイル idle task・マーク/旧版画像バッファ・peek arm 状態・
+//   レイアウト同期フラグ)を片付けるためだけに残している。
 //========================================================================================
 class KESCMPeekStartup : public CPMUnknown<IStartupShutdownService>
 {
 public:
-	KESCMPeekStartup(IPMUnknown* boss) : CPMUnknown<IStartupShutdownService>(boss), fWatcher(nil) {}
+	KESCMPeekStartup(IPMUnknown* boss) : CPMUnknown<IStartupShutdownService>(boss) {}
 	~KESCMPeekStartup() {}
 
 	virtual void Startup();
 	virtual void Shutdown();
-
-private:
-	IEventWatcher* fWatcher;
 };
 
 CREATE_PMINTERFACE(KESCMPeekStartup, kKESCMPeekStartupImpl)
 
 void KESCMPeekStartup::Startup()
 {
-	fWatcher = ::CreateObject2<IEventWatcher>(kKESCMPeekWatcherBoss);
-	if (fWatcher)
-		fWatcher->StartWatching();
+	// 中ボタンウォッチャ撤去により起動時の処理は無し(このサービスは終了時の後片付けのために残す)。
 }
 
 void KESCMPeekStartup::Shutdown()
 {
-	if (fWatcher)
-	{
-		fWatcher->StopWatching();
-		fWatcher->Release();
-		fWatcher = nil;
-	}
 	// 遅延サムネイル更新の idle task を解放(予約中なら RemoveTask してから)。
 	KESCMShutdownThumbIdleTask();
 	// 保持していたマーク/旧版画像バッファを解放(終了時もきれいに片付ける)。
@@ -1727,13 +1295,6 @@ void KESCMDoDisarmMousePeek(IDataBase* db)
 bool16     KESCMIsArmed()        { return sPeekArmed; }
 IDataBase* KESCMArmedTargetDB()  { return sPeekTargetDB; }
 IDataBase* KESCMArmedSourceDB()  { return sPeekSourceDB; }
-
-// フライアウト「Invoke Panel Shortcut」トグル(KESCMCore.h で宣言)。ON の間だけ Shift+Ctrl+ミドルで
-// パネル表示/非表示を切り替える(判定は WatchEvent の該当分岐)。既定 ON。
-bool16     KESCMGetPanelShortcut()        { return sPanelShortcutOn; }
-void       KESCMSetPanelShortcut(bool16 on) { sPanelShortcutOn = on; }
-bool16     KESCMGetPagesPanelShortcut()        { return sPagesPanelShortcutOn; }
-void       KESCMSetPagesPanelShortcut(bool16 on) { sPagesPanelShortcutOn = on; }
 
 //========================================================================================
 // KESCMHandleDocsClosed(KESCMCore.h で宣言)

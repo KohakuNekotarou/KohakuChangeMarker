@@ -191,28 +191,6 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 			break;
 		}
 
-		// 「Invoke Panel Shortcut」トグル: Shift+Ctrl+ミドルでパネル表示/非表示を切り替えるショートカットの
-		// 有効/無効(既定 ON)。フラグを反転するだけ。実体は KESCMPeek.cpp の sPanelShortcutOn(WatchEvent が参照)。
-		case kKESCMPopupPanelShortcutActionID:
-		{
-			KESCMSetPanelShortcut(!KESCMGetPanelShortcut());
-			PMString msg(KESCMGetPanelShortcut() ? "Invoke panel shortcut: on." : "Invoke panel shortcut: off.");
-			msg.SetTranslatable(kFalse);
-			KESCMSetStatus(msg);
-			break;
-		}
-
-		// 「Invoke Pages Panel Shortcut」トグル: Ctrl+Alt+ミドルで標準「ページ」パネルの表示/非表示を切り替える
-		// ショートカットの有効/無効(既定 ON)。フラグ反転のみ。実体は KESCMPeek.cpp の sPagesPanelShortcutOn。
-		case kKESCMPopupPagesPanelShortcutActionID:
-		{
-			KESCMSetPagesPanelShortcut(!KESCMGetPagesPanelShortcut());
-			PMString msg(KESCMGetPagesPanelShortcut() ? "Invoke pages panel shortcut: on." : "Invoke pages panel shortcut: off.");
-			msg.SetTranslatable(kFalse);
-			KESCMSetStatus(msg);
-			break;
-		}
-
 		// 「Show Scrollbar Map」トグル: 文書窓の縦スクロールバー脇に変更位置の地図 strip を出すか(既定 ON)。
 		// ON にしたら現在の比較対象(sDB/sSrcDB)へ即 attach して表示、OFF にしたら全窓から即 detach。
 		// 未 arm(sDB=nil)で ON にした場合は attach が no-op=次の Start で自然に出る(フラグは ON のまま)。
@@ -387,20 +365,6 @@ void KESCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionSta
 			int16 actionState = kEnabledAction;
 			if (KESCMGetLayoutSync())
 				actionState |= kSelectedAction;
-			listToUpdate->SetNthActionState(i, actionState);
-		}
-		else if (action == kKESCMPopupPanelShortcutActionID)
-		{
-			int16 actionState = kEnabledAction;
-			if (KESCMGetPanelShortcut())
-				actionState |= kSelectedAction;	// ON(既定)ならチェックマーク
-			listToUpdate->SetNthActionState(i, actionState);
-		}
-		else if (action == kKESCMPopupPagesPanelShortcutActionID)
-		{
-			int16 actionState = kEnabledAction;
-			if (KESCMGetPagesPanelShortcut())
-				actionState |= kSelectedAction;	// ON(既定)ならチェックマーク
 			listToUpdate->SetNthActionState(i, actionState);
 		}
 		else if (action == kKESCMPopupScrollMapActionID)

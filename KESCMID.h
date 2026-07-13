@@ -51,7 +51,7 @@ DECLARE_PMID(kPlugInIDSpace, kKESCMPluginID, kKESCMPrefix + 0)
 // ClassIDs:
 // kClassIDSpace +3 は現在空き(旧 kKESCMScriptProviderBoss; スクリプトAPI(kescmToast)は撤去)
 DECLARE_PMID(kClassIDSpace, kKESCMDrawEventServiceBoss, kKESCMPrefix + 4)
-DECLARE_PMID(kClassIDSpace, kKESCMPeekWatcherBoss, kKESCMPrefix + 5)	// IEventWatcher: ミドルボタン peek(kMButtonDn/Up をスヌープ)
+// kKESCMPeekWatcherBoss (kKESCMPrefix + 5) は中ボタンウォッチャ撤去(2026-07-13)により廃止。スロットは予約のまま。
 DECLARE_PMID(kClassIDSpace, kKESCMPeekStartupBoss, kKESCMPrefix + 6)	// IStartupShutdown: アプリ起動時に peek ウォッチャを開始
 DECLARE_PMID(kClassIDSpace, kKESCMThumbIdleTaskBoss, kKESCMPrefix + 7)	// IIdleTask: クローズ後の Pages サムネイル再生成を次のidleに遅延(旧 kKESCMToastIdleTaskBoss のスロット転用)
 DECLARE_PMID(kClassIDSpace, kKESCMPanelWidgetBoss, kKESCMPrefix + 8)	// ChangeMarker 操作パネル(パレット)
@@ -116,7 +116,7 @@ DECLARE_PMID(kInterfaceIDSpace, IID_IKESCMLAYOUTSYNCOBSERVER, kKESCMPrefix + 0)	
 // kImplementationIDSpace +0 は現在空き(旧 kKESCMScriptProviderImpl; スクリプトAPI(kescmToast)は撤去)
 DECLARE_PMID(kImplementationIDSpace, kKESCMDrawEventSrvcImpl, kKESCMPrefix + 1)
 DECLARE_PMID(kImplementationIDSpace, kKESCMDrawEventHandlerImpl, kKESCMPrefix + 2)
-DECLARE_PMID(kImplementationIDSpace, kKESCMPeekWatcherImpl, kKESCMPrefix + 3)	// IEventWatcher 実装(ミドルボタン peek)
+// kKESCMPeekWatcherImpl (kKESCMPrefix + 3) は中ボタンウォッチャ撤去(2026-07-13)により廃止。スロットは予約のまま。
 DECLARE_PMID(kImplementationIDSpace, kKESCMPeekStartupImpl, kKESCMPrefix + 4)	// IStartupShutdown 実装(peek ウォッチャを開始)
 DECLARE_PMID(kImplementationIDSpace, kKESCMThumbIdleTaskImpl, kKESCMPrefix + 5)	// IIdleTask 実装(クローズ後の Pages サムネイル再生成を遅延実行)
 DECLARE_PMID(kImplementationIDSpace, kKESCMPanelObserverImpl, kKESCMPrefix + 6)	// IObserver 実装(パネルのウィジェットオブザーバ)
@@ -174,14 +174,14 @@ DECLARE_PMID(kActionIDSpace, kKESCMPopupOpacity75ActionID, kKESCMPrefix + 16)	//
 DECLARE_PMID(kActionIDSpace, kKESCMPopupSep1ActionID, kKESCMPrefix + 17)	// フライアウト: Start の下の区切り線(MenuDef のパス末尾 ":-"。ActionDef 不要・DoAction 不要=一意なIDだけ要る)
 DECLARE_PMID(kActionIDSpace, kKESCMPopupSep2ActionID, kKESCMPrefix + 18)	// フライアウト: How to Use の上の区切り線
 DECLARE_PMID(kActionIDSpace, kKESCMPopupHoldToHideMarksActionID, kKESCMPrefix + 19)	// パネルのフライアウトの「Hold to Hide Marks」チェック式トグル(ON=枠を画面に常時表示し、ミドル押下中だけ隠す=極性反転。画面のみ・印刷は Print comparison marks が別管理。KESCMActionComponent.cpp)
-DECLARE_PMID(kActionIDSpace, kKESCMPopupPanelShortcutActionID, kKESCMPrefix + 20)	// パネルのフライアウトの「Invoke Panel Shortcut」チェック式トグル(ON=Shift+Ctrl+ミドルでパネル表示/非表示を切替えるショートカットを有効化。既定ON。実体 KESCMPeek.cpp の sPanelShortcutOn)
+// kKESCMPopupPanelShortcutActionID (kKESCMPrefix + 20) は中ボタン撤去(2026-07-13)に伴い「Invoke Panel Shortcut」トグルごと廃止。スロットは予約のまま。
 DECLARE_PMID(kActionIDSpace, kKESCMPopupScrollMapActionID, kKESCMPrefix + 21)	// パネルのフライアウトの「Show Scrollbar Map」チェック式トグル(ON=文書窓の縦スクロールバー脇に変更位置地図stripを表示。既定ON。実体 KESCMScrollMap.cpp の sScrollMapOn)
 DECLARE_PMID(kActionIDSpace, kKESCMPopupSavePanelStateActionID, kKESCMPrefix + 22)	// パネルのフライアウトの「Save Panel Settings」(チェックではなく実行アクション)。現在の設定系トグルを独自JSONでローカルへ保存し保存先パスを表示。パネル初回オープン時に読込。実体 KESCMPanelState.cpp
 DECLARE_PMID(kActionIDSpace, kKESCMPopupSep3ActionID, kKESCMPrefix + 23)	// フライアウト: Ignore Page Number Marker の下の区切り線(MenuDef のパス末尾 ":-"。ActionDef 不要)。この下に Hide Unchanged Spreads を置く
 DECLARE_PMID(kActionIDSpace, kKESCMPageCheckToggleActionID, kKESCMPrefix + 24)	// ページパネルのページ右クリック(RtMenuPagesPanel)のトグル「KESCM: Check」(選択ページに✓印を付け外し。Start中限定・Stopで消去。チェック/有効無効は kCustomEnabling。実体 KESCMPageCheck.cpp、✓描画は KESCMDrawEventHandler の isThumb 分岐)
 DECLARE_PMID(kActionIDSpace, kKESCMPopupSaveChecksActionID, kKESCMPrefix + 25)	// パネルのフライアウトの「Save Check & Register」(実行アクション)。Start中の Target/Source の現在の Check(✓)+ Register(Added/Removed)を独自JSON(KESCM\KESCMPageChecks.json, v2)へマージ保存し保存先パスを表示。実体 KESCMPageCheck.cpp
 DECLARE_PMID(kActionIDSpace, kKESCMPopupLoadChecksActionID, kKESCMPrefix + 26)	// パネルのフライアウトの「Load Check & Register」(実行アクション)。Start中だけ有効。上記JSONから Register を両文書へ適用→再比較→Check(今もマーク付きのみ)を復元。実体 KESCMPageCheck.cpp
-DECLARE_PMID(kActionIDSpace, kKESCMPopupPagesPanelShortcutActionID, kKESCMPrefix + 27)	// パネルのフライアウトの「Invoke Pages Panel Shortcut」チェック式トグル(ON=Ctrl+Alt+ミドルで InDesign 標準「ページ」パネルの表示/非表示を切替。既定ON。実体 KESCMPeek.cpp の sPagesPanelShortcutOn / トグル本体 KESCMPanelObserver.cpp の KESCMTogglePagesPanel)
+// kKESCMPopupPagesPanelShortcutActionID (kKESCMPrefix + 27) は中ボタン撤去(2026-07-13)に伴い「Invoke Pages Panel Shortcut」トグルごと廃止。スロットは予約のまま。
 DECLARE_PMID(kActionIDSpace, kKESCMPageMapSepActionID, kKESCMPrefix + 28)	// ページパネルのページ右クリック(RtMenuPagesPanel): KESCM 追加項目(Register / Check)の上の区切り線(MenuDef のパス末尾 ":-"。ActionDef 不要・DoAction 不要=一意なIDだけ要る)。本家メニューと視覚的に分けるため
 DECLARE_PMID(kActionIDSpace, kKESCMToolActionID, kKESCMPrefix + 29)	// ツールボックスのツール選択ショートカット用の ActionID(ToolDef が参照。ActionDef 不要=ツール枠が自動生成)
 DECLARE_PMID(kActionIDSpace, kKESCMPageRefreshCompareActionID, kKESCMPrefix + 30)	// ページパネルのページ右クリック(RtMenuPagesPanel)の実行アクション「KESCM: Refresh Page Comparison」(選択ページの比較を再検出して枠/サムネイルを更新。旧 Ctrl+ミドルのスプレッド再比較を移設。Start中限定・kCustomEnabling。実体 KESCMPeek.cpp の KESCMRefreshComparisonForSelectedPages)
@@ -288,8 +288,6 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMToolWidgetID, kKESCMPrefix + 41)	// ツール
 #define kKESCMPageRefreshCompareMenuKey	kKESCMStringPrefix "kKESCMPageRefreshCompareMenuKey"	// ページパネル右クリックの「KESCM: Refresh Page Comparison」のメニュー名(選択ページの比較を再検出して更新)
 #define kKESCMIgnorePageNumMenuKey	kKESCMStringPrefix "kKESCMIgnorePageNumMenuKey"	// パネルのフライアウト「Ignore Page Number Marker」トグルのメニュー名
 #define kKESCMHoldToHideMarksMenuKey	kKESCMStringPrefix "kKESCMHoldToHideMarksMenuKey"	// パネルのフライアウト「Hold to Hide Marks」トグルのメニュー名
-#define kKESCMPanelShortcutMenuKey	kKESCMStringPrefix "kKESCMPanelShortcutMenuKey"	// パネルのフライアウト「Invoke Panel Shortcut」トグルのメニュー名
-#define kKESCMPagesPanelShortcutMenuKey	kKESCMStringPrefix "kKESCMPagesPanelShortcutMenuKey"	// パネルのフライアウト「Invoke Pages Panel Shortcut」トグルのメニュー名
 #define kKESCMScrollMapMenuKey		kKESCMStringPrefix "kKESCMScrollMapMenuKey"	// パネルのフライアウト「Show Scrollbar Map」トグルのメニュー名
 #define kKESCMSavePanelStateMenuKey	kKESCMStringPrefix "kKESCMSavePanelStateMenuKey"	// パネルのフライアウト「Save Panel Settings」項目のメニュー名
 #define kKESCMSaveChecksMenuKey		kKESCMStringPrefix "kKESCMSaveChecksMenuKey"	// パネルのフライアウト「Save Check & Register」項目のメニュー名
@@ -345,8 +343,6 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMToolWidgetID, kKESCMPrefix + 41)	// ツール
 #define kKESCMSyncViewsMenuItemPosition		9.8	// チェック式トグル「Sync Layout Views」をさらにその直後に
 #define kKESCMScrollMapMenuItemPosition		9.85	// チェック式トグル「Show Scrollbar Map」を Sync Layout Views の直後・Ignore Page Number Marker の前に
 #define kKESCMIgnorePageNumMenuItemPosition	9.9	// チェック式トグル「Ignore Page Number Marker」をさらにその直後に
-#define kKESCMPanelShortcutMenuItemPosition	9.901	// チェック式トグル「Invoke Panel Shortcut」(Shift+Ctrl+ミドルでパネル呼び出し)を Ignore Page Number Marker のすぐ下(Sep3 の線より上)に(2026-07-11)
-#define kKESCMPagesPanelShortcutMenuItemPosition	9.902	// チェック式トグル「Invoke Pages Panel Shortcut」(Ctrl+Alt+ミドルでページパネル表示/非表示)を Invoke Panel Shortcut(9.901)の直下に(2026-07-12)
 #define kKESCMSep3MenuItemPosition			9.905	// Invoke Panel Shortcut の下の区切り線(パス末尾 ":-")。この下に Hide Unchanged Spreads を置く
 #define kKESCMHideUnchangedMenuItemPosition	9.91	// チェック式トグル「Hide Unchanged Spreads」を Sep3(線)の直後へ移動(2026-07-11)
 #define kKESCMSavePanelStateMenuItemPosition	9.93	// 実行アクション「Save Panel Settings」を設定系トグル群の末尾(Invoke Panel Shortcut の直後・Sep2 の前)に

@@ -116,18 +116,8 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 		}
 	},
 
-	// Middle-button "peek": snoops kMButtonDn/kMButtonUp (non-consuming) and, while armed,
-	// shows the opaque OLD overlay of the spread under the mouse while the button is held.
-	Class
-	{
-		kKESCMPeekWatcherBoss,
-		kInvalidClass,
-		{
-			IID_IEVENTWATCHER, kKESCMPeekWatcherImpl,
-		}
-	},
-
-	// Starts the peek watcher at app launch (lazy = during an idle task right after startup).
+	// Startup/shutdown service. The middle-button watcher was removed (2026-07-13); this now only
+	// tears down held resources at app shutdown (see KESCMPeekStartup in KESCMPeek.cpp).
 	Class
 	{
 		kKESCMPeekStartupBoss,
@@ -407,22 +397,6 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKESCMScrollMapMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
-		// "Invoke Panel Shortcut" on the panel flyout (popup) menu. Check-mark toggle (default ON):
-		// while ON, Shift+Ctrl+middle-click toggles this panel's visibility (pops at the cursor when
-		// floating). Turn it OFF to disable that gesture so the plain middle-click is left untouched.
-		kKESCMPopupPanelShortcutActionID,
-		kKESCMPopupMenuPath,
-		kKESCMPanelShortcutMenuItemPosition,
-		kSDKDefIsNotDynamicMenuFlag,
-
-		// "Invoke Pages Panel Shortcut" on the panel flyout (popup) menu. Check-mark toggle (default ON):
-		// while ON, Ctrl+Alt+middle-click toggles the built-in InDesign Pages panel's visibility
-		// (simple show/hide, no cursor move). Turn it OFF to disable that gesture.
-		kKESCMPopupPagesPanelShortcutActionID,
-		kKESCMPopupMenuPath,
-		kKESCMPagesPanelShortcutMenuItemPosition,
-		kSDKDefIsNotDynamicMenuFlag,
-
 		// "Ignore Page Number Marker" on the panel flyout (popup) menu. Check-mark toggle: while ON
 		// (default), frames containing an automatic "Current Page Number" marker are excluded from
 		// the pixel comparison, so pages whose only difference is a shifted running folio (caused by
@@ -636,24 +610,6 @@ resource ActionDef (kSDKDefActionResourceID)
 		kKESCMActionComponentBoss,
 		kKESCMPopupScrollMapActionID,
 		kKESCMScrollMapMenuKey,
-		kOtherActionArea,
-		kNormalAction,
-		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates supplies the check mark (kSelectedAction)
-		kInvalidInterfaceID,
-		kSDKDefInvisibleInKBSCEditorFlag,
-
-		kKESCMActionComponentBoss,
-		kKESCMPopupPanelShortcutActionID,
-		kKESCMPanelShortcutMenuKey,
-		kOtherActionArea,
-		kNormalAction,
-		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates supplies the check mark (kSelectedAction)
-		kInvalidInterfaceID,
-		kSDKDefInvisibleInKBSCEditorFlag,
-
-		kKESCMActionComponentBoss,
-		kKESCMPopupPagesPanelShortcutActionID,
-		kKESCMPagesPanelShortcutMenuKey,
 		kOtherActionArea,
 		kNormalAction,
 		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates supplies the check mark (kSelectedAction)
