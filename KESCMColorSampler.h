@@ -15,6 +15,9 @@
 
 class IDataBase;
 
-bool16 KESCMSampleCmykUnderMouse(IDataBase* targetDB, IDataBase* sourceDB, PMString& outMsg);
+// outPanel = パネルのステータス行用(幅140px制約のため略語 tgt/src の compact 表記)。
+// outCursor = カーソル自身に描く用(ラベルは Target/Source のフル表記＋タブ区切りで桁揃え)。
+bool16 KESCMSampleCmykUnderMouse(IDataBase* targetDB, IDataBase* sourceDB,
+                                 PMString& outPanel, PMString& outCursor);
 
 #endif // __KESCMColorSampler_h__

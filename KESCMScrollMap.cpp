@@ -82,7 +82,10 @@ static const PMReal kKESCMScrollMapWidth = 5.0;
 // 背景(テーマ地色)の上」にしか載らない性質を利用した混色(色'=α×マーク色+(1-α)×背景色)で行う。
 // setopacity(IGraphicsPort.h:389)でも可能だが、混色は API の透明合成挙動に依存せず確実(見た目は同一)。
 // 背景はテーマ連動(IInterfaceColors の kInterfacePaletteFill)なので、ライト/ダークどちらでも馴染む。
-static const PMReal kKESCMScrollMapMarkAlpha = 0.6;
+// 枠(変更ページ=赤)+登録ページ(緑)の不透明度。
+static const PMReal kKESCMScrollMapMarkAlpha     = 0.4;	// 枠(変更)はしっかり見せる(ユーザー指定 2026-07-13)
+// overflow「/」ページ(相手が無いページ)の不透明度。枠と差を付けて薄く(ユーザー指定 2026-07-13)。
+static const PMReal kKESCMScrollMapOverflowAlpha = 0.15;	// 「/」は下地とよく混ぜて薄く(0.2→0.15、ユーザー指定 2026-07-13)
 
 // スクロールバー地図の有効/無効(フライアウト「Show Scrollbar Map」トグル。既定=ON)。
 // OFF の間は Attach / NoticeDrawEvent を即 return させる(strip を注入しない・毎描画の指紋計算もしない)。
@@ -223,12 +226,18 @@ void KESCMScrollMapView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 	std::set<UID> greens;
 	KESCMPageMapCollectRegistered(db, greens);
 
-	// 帯の色(背景=テーマ地色との混色で半透明風。α は kKESCMScrollMapMarkAlpha)。
+	// 帯の色(背景=テーマ地色との混色で半透明風)。枠(変更)=kKESCMScrollMapMarkAlpha、
+	// overflow「/」=kKESCMScrollMapOverflowAlpha と、赤でも α を分けて濃さに差を付ける
+	// (ユーザー指定 2026-07-13。枠はしっかり/「/」は薄く)。緑(登録)は枠と同じ α。
 	const PMReal ma = kKESCMScrollMapMarkAlpha;
-	const PMReal redR = ma * PMReal(0.85) + (PMReal(1.0) - ma) * bgR;
+	const PMReal oa = kKESCMScrollMapOverflowAlpha;
+	const PMReal redR = ma * PMReal(0.85) + (PMReal(1.0) - ma) * bgR;	// 枠(変更)=赤
 	const PMReal redG = ma * PMReal(0.08) + (PMReal(1.0) - ma) * bgG;
 	const PMReal redB = ma * PMReal(0.08) + (PMReal(1.0) - ma) * bgB;
-	const PMReal grnR = ma * PMReal(0.10) + (PMReal(1.0) - ma) * bgR;
+	const PMReal ovrR = oa * PMReal(0.85) + (PMReal(1.0) - oa) * bgR;	// overflow「/」=薄い赤
+	const PMReal ovrG = oa * PMReal(0.08) + (PMReal(1.0) - oa) * bgG;
+	const PMReal ovrB = oa * PMReal(0.08) + (PMReal(1.0) - oa) * bgB;
+	const PMReal grnR = ma * PMReal(0.10) + (PMReal(1.0) - ma) * bgR;	// 登録=緑
 	const PMReal grnG = ma * PMReal(0.70) + (PMReal(1.0) - ma) * bgG;
 	const PMReal grnB = ma * PMReal(0.25) + (PMReal(1.0) - ma) * bgB;
 
@@ -237,7 +246,8 @@ void KESCMScrollMapView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 	{
 		if (bottoms[i] <= tops[i])
 			continue;	// 幾何が取れなかったページ
-		bool16 isRed = kFalse;
+		bool16 isRed = kFalse;			// 枠(変更ページ)由来の赤
+		bool16 isOverflowRed = kFalse;	// overflow「/」由来の赤(枠とは別の薄い赤にする)
 		if (engineMatch)
 		{
 			if (isTarget)
@@ -247,8 +257,12 @@ void KESCMScrollMapView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 				isRed = (KESCMDrawEventHandler::sSrcPageToTarget.find(pages[i]) !=
 						 KESCMDrawEventHandler::sSrcPageToTarget.end());
 		}
-		if (!isRed && overflowMatch)
-			isRed = (overflowSet.find(pages[i]) != overflowSet.end());
+		if (!isRed && overflowMatch &&
+			overflowSet.find(pages[i]) != overflowSet.end())
+		{
+			isRed = kTrue;			// 純粋な overflow(変更ではない)だけ薄い赤にする
+			isOverflowRed = kTrue;	// 変更ページが overflow にも入る場合は上で先に確定=枠色優先
+		}
 		const bool16 isGreen = (!isRed && greens.find(pages[i]) != greens.end());
 		if (!isRed && !isGreen)
 			continue;
@@ -265,7 +279,12 @@ void KESCMScrollMapView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 		if (y1 > frame.Bottom()) y1 = frame.Bottom();
 
 		if (isRed)
-			gPort->setrgbcolor(redR, redG, redB);
+		{
+			if (isOverflowRed)
+				gPort->setrgbcolor(ovrR, ovrG, ovrB);	// overflow「/」= 薄い赤
+			else
+				gPort->setrgbcolor(redR, redG, redB);	// 枠(変更)= しっかりした赤
+		}
 		else
 			gPort->setrgbcolor(grnR, grnG, grnB);
 		gPort->rectpath(PMRect(frame.Left(), y0, frame.Right(), y1));

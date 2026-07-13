@@ -74,7 +74,7 @@ static void KESCMCheckCursorBitmapProc(uchar* bitmapBuffer, uint32* width, uint3
 
 	// 白フチ(下地。白ストロークで明暗どちらの背景でも✓を視認できるようにする。ごく細めのフチ)。
 	gPort->setrgbcolor(PMReal(1.0), PMReal(1.0), PMReal(1.0));
-	gPort->setlinewidth(PMReal(3.1));
+	gPort->setlinewidth(PMReal(3.5));	// 縁(白フチ)の太さ 3.1→3.5(ユーザー指定 2026-07-13)
 	gPort->newpath();
 	gPort->moveto(ax, ay);
 	gPort->lineto(bx, by);

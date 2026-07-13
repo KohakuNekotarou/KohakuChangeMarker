@@ -27,6 +27,9 @@
 
 #include "CursorSpec.h"		// CursorSpec / GetPlugIn()(Alt+左 CMYK のカスタムカーソル)
 #include "CursorDefs.h"		// kCrsrTool
+#include "ISession.h"		// GetExecutionContextSession(ICursorMgr 取得)
+#include "IApplication.h"	// QueryApplication(ICursorMgr 取得)
+#include "ICursorMgr.h"		// ClearCache(kFalse カーソル入れ直しの描き直しを確実にする)
 
 #include "KESCMID.h"
 #include "KESCMPeek.h"		// KESCMTrackerRevealBegin / KESCMTrackerRevealEnd / CMYK カーソル入口
@@ -51,7 +54,7 @@ CREATE_PMINTERFACE(KESCMTrackerEH, kKESCMTrackerEHImpl)
 class KESCMTracker : public CTracker
 {
 public:
-	KESCMTracker(IPMUnknown* boss) : CTracker(boss)
+	KESCMTracker(IPMUnknown* boss) : CTracker(boss), fCmykCursorFlip(kFalse)
 	{
 		fWantsToAutoScroll = kFalse;		// no autoscroll while holding (same as the animation sample)
 	}
@@ -82,23 +85,55 @@ public:
 		if (theEvent == nil || theEvent->GetType() != IEvent::kLButtonDn)
 			return kFalse;
 
+		// ★押下時の「1フレームのゴミ」対策(2026-07-14): Alt 単独(色比較)の押下では、①基底の
+		// モーダルカーソル取得(✓の再設定)→②重い CMYK サンプリング(ラスタ化×2)→③CMYK 情報カーソル
+		// 設置、とカーソルが多段に切り替わる。ハードウェアカーソルはアプリの処理と独立に OS が合成する
+		// ため、この途中状態は実時間でそのまま画面に出る。どこかの段が持つ未初期化の絵にコンポジタの
+		// フレームが落ちた時だけゴミが見える(=「出たり出なかったり」の正体。どの段かはカーソル
+		// マネージャ実装が非公開のため確定不能)。→ 遷移全体を ICursorMgr::Hide/Show で隠し、完成した
+		// CMYK カーソルだけを見せる(タイミング非依存。完成品の表示自体はドラッグ中の入れ直しがゴミゼロ
+		// であることで実証済み)。副作用=押下からサンプリング完了までの短い間カーソルが消える。
+		const bool16 cmykGesture = (theEvent->OptionAltKeyDown() &&
+		                            !theEvent->ShiftKeyDown() && !theEvent->CmdKeyDown());
+		InterfacePtr<IApplication> theApp(GetExecutionContextSession()->QueryApplication());
+		InterfacePtr<ICursorMgr> cursorMgr(theApp, UseDefaultIID());
+		const bool16 hideDuringSwitch = (cmykGesture && cursorMgr != nil);
+		if (hideDuringSwitch)
+			cursorMgr->Hide();
+
 		bool16 result = CTracker::BeginTracking(theEvent);
 		if (result)
 		{
 			KESCMTrackerRevealBegin(theEvent->ShiftKeyDown(), theEvent->OptionAltKeyDown(), theEvent->CmdKeyDown());
 
-			// Alt+左「色比較」のとき、パネル状態行に加えてカーソル自身にも CMYK を描く。CTracker が
-			// BeginTracking で用意した modal cursor を、自前のカスタムビットマップカーソルへ差し替える
-			// (トラッキング終了時に CTracker が自動で元へ戻す)。bDynamicBitmap=kTrue で毎回描き直し
-			// (前回サンプルのビットマップがキャッシュされないように)。
+			// Alt+左「色比較」のとき、カーソル自身に CMYK を描く。CTracker が BeginTracking で用意した
+			// modal cursor を自前のカスタムビットマップカーソルへ差し替える(トラッキング終了時に
+			// CTracker が自動で元へ戻す)。kTrue(動的)スペックは設定の瞬間に未初期化バッファが見える
+			// ため使わない(InstallCmykCursor 参照)。ドラッグ中の数値更新は ContinueTracking が
+			// 値の変化時に InstallCmykCursor で入れ直して行う。
 			if (KESCMTrackerHasPendingCmykCursor())
-			{
-				CursorSpec spec(GetPlugIn()->GetPluginID(), IDFile(), kCrsrTool,
-				                KESCMTrackerCmykCursorProc(), kTrue /*bDynamicBitmap*/);
-				this->ChangeModalCursor(spec);
-			}
+				this->InstallCmykCursor();
 		}
+
+		// Hide したら必ず対で Show する(サンプリング失敗や result==kFalse の経路も含む。消えっぱなし防止)。
+		if (hideDuringSwitch)
+			cursorMgr->Show();
 		return result;
+	}
+
+	/** Mouse drag (移動中)。CTrackerEventHandler が MouseDrag をここへ転送する。WantTimer=kFalse なので
+		タイマー駆動では呼ばれず、実際にマウスが動いたときだけ来る。Alt+左「色比較」中は現在位置で CMYK を
+		再サンプル(スロットル付き)し、値が変わったらカーソルを描き直す=ドラッグで数値を拾っていく
+		(ユーザー要望 2026-07-13)。それ以外のジェスチャ(reveal / peek)では何もしない(base のみ)。 */
+	virtual void ContinueTracking(const PBPMPoint& where, bool16 mouseDidMove)
+	{
+		CTracker::ContinueTracking(where, mouseDidMove);
+		// Alt+左「色比較」中: 現在位置で CMYK を再サンプル(KESCMTrackerUpdateCmykDrag 内で 50ms スロットル)
+		// し、値が変わったとき(=kTrue が返ったとき)だけ kFalse カーソルを入れ直して描き直す。
+		// 動的カーソル(kTrue)は設定の瞬間に未初期化バッファが見える(初回ゴミの真因)ため使わない。
+		// kFalse の入れ直しは「コールバックで描き終えてから表示」なのでドラッグ中の更新でもゴミは出ない。
+		if (mouseDidMove && KESCMTrackerHasPendingCmykCursor() && KESCMTrackerUpdateCmykDrag())
+			this->InstallCmykCursor();
 	}
 
 	/** Mouse up. Call the base first, then hide the marks. */
@@ -115,6 +150,33 @@ public:
 	{
 		CTracker::AbortTracking(theEvent);
 		KESCMTrackerRevealEnd();
+	}
+
+private:
+	bool16 fCmykCursorFlip;		// CMYK カーソルの CursorID 交互切替の現在側(kFalse=次は1021、kTrue=次は1022)
+
+	/** CMYK 情報カーソルを kFalse(同期描画)スペックで設定する。初回(BeginTracking)と、ドラッグ中に
+		値が変わったときの入れ直し(ContinueTracking)の両方がこれを使う。ゴミが出ない根拠と、入れ直しを
+		確実に効かせる2つのガード:
+		・kFalse = カーソルマネージャがコールバックを同期実行し、描き終えたバッファからカーソルを作って
+		  から表示する(✓カーソルでゴミゼロ実証済み)。kTrue(動的)は「表示→後からコールバック」の順に
+		  なり未初期化バッファが一瞬見えるため使わない。
+		・ClearCache = CursorID キーのビットマップキャッシュが古い数値の絵を再利用してコールバックが
+		  呼ばれないのを防ぐ(キャッシュの実在は ✓ と CursorID を共有した時の取り違えで実測済み)。
+		  ドラッグ中でも呼び出しは値の変化時のみ+50ms スロットル付き(最大約20回/秒)。
+		・CursorID の交互切替(1021↔1022) = 直前と必ず違うスペックにして、同一スペック再設定の no-op
+		  扱いでも描き直しが確実に起きるようにする。HOTC は両IDとも (10,18) なのでカーソル位置は動かない。 */
+	void InstallCmykCursor()
+	{
+		InterfacePtr<IApplication> theApp(GetExecutionContextSession()->QueryApplication());
+		InterfacePtr<ICursorMgr> cursorMgr(theApp, UseDefaultIID());
+		if (cursorMgr != nil)
+			cursorMgr->ClearCache();
+		fCmykCursorFlip = !fCmykCursorFlip;
+		CursorSpec spec(GetPlugIn()->GetPluginID(), IDFile(),
+		                fCmykCursorFlip ? kKESCMCmykCursorResID : kKESCMCmykCursor2ResID,
+		                KESCMTrackerCmykCursorProc(), kFalse /*同期描画=ゴミ無し*/);
+		this->ChangeModalCursor(spec);
 	}
 };
 

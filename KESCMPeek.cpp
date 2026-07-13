@@ -68,6 +68,8 @@
 #include <vector>
 #include <set>
 #include <algorithm>				// std::find(選択ページの重複除去)
+#include <cstring>				// std::memset(カーソルバッファの透明クリア)
+#include <chrono>				// steady_clock(ドラッグ中ライブ再サンプルのスロットル)
 
 #include "UIDList.h"				// GetSelectedPages(ページパネル選択の公式取得)
 
@@ -1009,15 +1011,124 @@ static void KESCMSplitTwoLines(const PMString& src, PMString& line1, PMString& l
 
 // CursorSpec のコールバック。カーソル描画系が呼ぶ(UIスレッド)。bitmapBuffer は呼び出し側が
 // (最大カーソルサイズ)²×4 で確保済み。*width/*height は入力=最大サイズ(hiRes 時は 2 倍)、出力=実使用サイズ。
+// カーソル文字列の1行(例 "Target\tC000 M000 Y000 K000")を、タブ(0x09)でラベルと数値に分割する。
+// タブが無ければ全体を数値扱い(label 空)。ラベルと数値は別々の行に積んで描くので、2つの数値行は
+// 同じ x から始まり自動的に桁が縦に揃う(カーソル最大幅の制約で1行に収まらないため。ユーザー報告 2026-07-13)。
+static void KESCMSplitAtTab(const PMString& line, PMString& label, PMString& num)
+{
+	label.Clear(); label.SetTranslatable(kFalse);
+	num.Clear();   num.SetTranslatable(kFalse);
+	const int32 n = line.NumUTF16TextChars();
+	const UTF16TextChar* buf = line.GrabUTF16Buffer(nil);
+	bool16 afterTab = kFalse;
+	for (int32 i = 0; i < n; ++i)
+	{
+		if (buf[i] == 0x0009) { afterTab = kTrue; continue; }	// タブ=ラベル/数値の区切り
+		if (!afterTab) label.AppendW(UTF32TextChar(buf[i]));
+		else           num.AppendW(UTF32TextChar(buf[i]));
+	}
+	if (!afterTab) { num = label; label.Clear(); }	// タブ無し=全体を数値列に
+}
+
+// スペース区切りの行を「表」状に描く。先頭4トークン(見出し C/M/Y/K、または3桁値)を x0+col*pitch の
+// 固定列に、5トークン目以降(ラベル tgt/src)は4列目の右(x0+4*pitch)に置く。ヘッダー行とデータ行を同じ
+// x0/pitch で描けば CMYK 見出しと数字の桁が必ず縦にそろう(フォント計測不要=ユーザー要望の縦位置合わせ
+// 2026-07-13)。描画は KESCMShowHalo(白フチ＋黒本体)。
+static void KESCMShowHalo(IGraphicsPort* gPort, IPMFont* font, const PMReal& size,
+                          const PMReal& x, const PMReal& y, const PMString& s);	// 前方宣言
+
+static void KESCMDrawColumns(IGraphicsPort* gPort, IPMFont* font, const PMReal& fs,
+                             const PMReal& x0, const PMReal& pitch, const PMReal& y, const PMString& row)
+{
+	PMString tok; tok.SetTranslatable(kFalse);
+	int32 col = 0;
+	const int32 n = row.NumUTF16TextChars();
+	const UTF16TextChar* b = row.GrabUTF16Buffer(nil);
+	for (int32 i = 0; i <= n; ++i)
+	{
+		if (i < n && b[i] != 0x0020)	// スペース以外は現在のトークンに積む
+		{
+			tok.AppendW(UTF32TextChar(b[i]));
+			continue;
+		}
+		if (tok.NumUTF16TextChars() > 0)	// 区切り(スペース or 行末)でトークン確定
+		{
+			const int32 c = (col < 4) ? col : 4;	// 5番目以降(ラベル)は4列目の右へ
+			KESCMShowHalo(gPort, font, fs, x0 + pitch * PMReal(c), y, tok);
+			++col;
+			tok.Clear();
+			tok.SetTranslatable(kFalse);
+		}
+	}
+}
+
+// (x,y) に文字列を描く(空なら何もしない)。
+static void KESCMShowHalo(IGraphicsPort* gPort, IPMFont* font, const PMReal& size,
+                          const PMReal& x, const PMReal& y, const PMString& s)
+{
+	const int32 n = s.NumUTF16TextChars();
+	if (n <= 0 || font == nil)
+		return;
+	const UTF16TextChar* b = s.GrabUTF16Buffer(nil);
+	gPort->selectfont(font, size);
+
+	// 白フチ(8方向に1pxずらして白で描く)→ 黒本体。透明背景でも明暗どちらの下地でも読める。
+	static const int kDX[8] = { -1, 0, 1, -1, 1, -1, 0, 1 };
+	static const int kDY[8] = { -1, -1, -1, 0, 0, 1, 1, 1 };
+	const PMReal o(1.0);
+	gPort->setrgbcolor(PMReal(1.0), PMReal(1.0), PMReal(1.0));
+	for (int i = 0; i < 8; ++i)
+		gPort->show(x + PMReal(kDX[i]) * o, y + PMReal(kDY[i]) * o, (uint32)n, b);
+	gPort->setrgbcolor(PMReal(0.0), PMReal(0.0), PMReal(0.0));
+	gPort->show(x, y, (uint32)n, b);
+}
+
 static void KESCMCmykCursorBitmapProc(uchar* bitmapBuffer, uint32* width, uint32* height, bool16* hasAlpha, bool16 hiRes)
 {
+	const uint32 maxAllocW = *width;	// 呼び出し側が確保した正方バッファ(max×max)
+	const uint32 maxAllocH = *height;
 	const uint32 scale   = hiRes ? 2u : 1u;
-	const uint32 maxLogW = (*width)  / scale;
-	const uint32 maxLogH = (*height) / scale;
+	const uint32 maxLogW = maxAllocW / scale;
+	const uint32 maxLogH = maxAllocH / scale;
 
-	// 論理サイズ(1x px)。2行 + 余白。最大を超えないようクランプ。
-	uint32 logW = 140; if (logW > maxLogW) logW = maxLogW;
-	uint32 logH = 34;  if (logH > maxLogH) logH = maxLogH;
+	// 背景を透明にする(黒い箱を出さない=ユーザー指定 2026-07-13)。QueryGraphicsPortForBitmap は既存内容を
+	// 消さないので、まず確保全域を ARGB=0 にクリアしてから描く(✓カーソルと同じ作法)。
+	std::memset(bitmapBuffer, 0, (size_t)maxAllocW * (size_t)maxAllocH * 4u);
+
+	// 表示文字列を先に分解し、最長行から「幅いっぱいに収まる大きめフォント」を決める(ユーザー要望
+	// 2026-07-13: カーソル最大サイズまで使って cmyk＋数値を大きく)。ラベルは末尾の t/s。
+	PMString line1, line2, lab1, num1, lab2, num2;
+	KESCMSplitTwoLines(sCmykCursorText, line1, line2);
+	KESCMSplitAtTab(line1, lab1, num1);
+	KESCMSplitAtTab(line2, lab2, num2);
+	int32 maxChars = num1.NumUTF16TextChars();
+	if (num2.NumUTF16TextChars() > maxChars) maxChars = num2.NumUTF16TextChars();
+	if (maxChars < 1) maxChars = 1;
+
+	// フォントは使える最大幅から大きめに決める(1文字≒0.58em、上限18pt/下限7pt)。
+	int32 fs = ((int32)maxLogW - 8) * 100 / (maxChars * 58);
+	if (fs > 18) fs = 18;
+	if (fs < 7)  fs = 7;
+
+	// ★ビットマップ幅は「実際の内容幅」にタイトに合わせる。最大幅いっぱいに取ると右側に広い透明余白が
+	// でき、その初回フレームがちらついて見える(ゴミ)ため。内容幅 = 左6 + 4列×ピッチ(2.1em) +
+	// ラベル(tgt≒1.74em) + 右4 ≒ 10 + 10.14em(下の描画の pitch=2.1×fs と一致させること)。
+	int32 contentW = 10 + (fs * 1014) / 100;
+	uint32 logW = (contentW > 0) ? (uint32)contentW : maxLogW;
+	if (logW > maxLogW) logW = maxLogW;
+
+	// ✓(上部 y≈18 まで)の下に「ヘッダー C M Y K + データ2行(Target/Source)」を積む。位置・高さは fs から。
+	const int32 gap    = (fs * 130) / 100;	// 行間 ≒1.3em
+	const int32 yHdr   = 22 + fs;			// ヘッダー行ベースライン(✓の下。全体を少し下げた=ユーザー要望 2026-07-13)
+	const int32 yData1 = yHdr + gap;		// Target 行
+	const int32 yData2 = yData1 + gap;		// Source 行
+	// 最下段(Source 行 "src")はディセンダ(下に伸びる字)が無いので、ベースラインのすぐ下でビットマップを
+	// 終える。下端の透明余白を残すと、そこに初回フレームのちらつき(ゴミ)が出る(ユーザー報告: 文字より
+	// 約3px下に一瞬。2026-07-13)。ハロー(y+1)とAA ぶんだけ +2 で足りる。
+	int32 needH = yData2 + 2;
+	uint32 logH = (needH > 0) ? (uint32)needH : 60u;
+	if (logH > maxLogH) logH = maxLogH;
+
 	const uint32 actW = logW * scale;
 	const uint32 actH = logH * scale;
 	*width    = actW;
@@ -1029,26 +1140,33 @@ static void KESCMCmykCursorBitmapProc(uchar* bitmapBuffer, uint32* width, uint32
 	if (gPort == nil)
 		return;
 
-	// 背景(濃いグレーの不透明箱=まず「出るか」を確実に見るため全面塗り)。
+	// 背景は透明(上で全域 ARGB=0 にクリア済み)。setopacity は以降のストローク/文字を不透明にするため。
 	gPort->setopacity(PMReal(1.0), kFalse);
-	gPort->setrgbcolor(PMReal(0.12), PMReal(0.12), PMReal(0.12));
-	gPort->rectfill(PMReal(0.0), PMReal(0.0), PMReal(logW), PMReal(logH));
+	/* 背景塗りは廃止=透明のまま。黒い箱を出さない(ユーザー指定 2026-07-13) */
 
-	// 文字(白)。既定フォント。y-down 前提でベースラインを置く(実機で要調整)。
+	// サンプル点マーカー。以前は ✓ を stroke(線)で描いていたが、これが初回フレームのちらつき(ゴミ)の
+	// 原因らしい(ユーザーのヒント: 文字だけ=show/fill のときは出なかった。2026-07-13)。そこで stroke を
+	// やめ、文字と同じ塗り(rectfill)だけで小さなドット(白フチ+黒)をホットスポット(10,18)に描く
+	// =サンプル点そのものを示す。
+	gPort->setrgbcolor(PMReal(1.0), PMReal(1.0), PMReal(1.0));	// 白フチ(7x7、中心(10,18))
+	gPort->rectfill(PMReal(6.5), PMReal(14.5), PMReal(13.5), PMReal(21.5));
+	gPort->setrgbcolor(PMReal(0.0), PMReal(0.0), PMReal(0.0));	// 黒コア(4x4、中心(10,18))
+	gPort->rectfill(PMReal(8.0), PMReal(16.0), PMReal(12.0), PMReal(20.0));
+
+	// 上から: ヘッダー "C M Y K"(各列先頭にそろえる) / Target 数値 / Source 数値。数値は各値3桁で行頭
+	// そろえ、末尾に t/s。フォント fs・行位置は上で計算済み。描画は KESCMShowHalo(白フチ＋黒本体)。
 	InterfacePtr<IFontMgr> fontMgr(GetExecutionContextSession(), UseDefaultIID());
 	InterfacePtr<IPMFont> font(fontMgr != nil ? fontMgr->QueryFont(fontMgr->GetDefaultFontName()) : nil);
 	if (font != nil)
 	{
-		PMString line1, line2;
-		KESCMSplitTwoLines(sCmykCursorText, line1, line2);
-
-		gPort->setrgbcolor(PMReal(1.0), PMReal(1.0), PMReal(1.0));
-		gPort->selectfont(font, PMReal(12.0));
-
-		const int32 n1 = line1.NumUTF16TextChars();
-		if (n1 > 0) gPort->show(PMReal(4.0), PMReal(13.0), (uint32)n1, line1.GrabUTF16Buffer(nil));
-		const int32 n2 = line2.NumUTF16TextChars();
-		if (n2 > 0) gPort->show(PMReal(4.0), PMReal(28.0), (uint32)n2, line2.GrabUTF16Buffer(nil));
+		// 見出し行とデータ2行を同じ固定列(x0, pitch)で描いて桁を縦にそろえる(pitch=3桁+ギャップ)。
+		// ヘッダーの C/M/Y/K が各3桁列の真上に来る(ユーザー要望の縦位置合わせ 2026-07-13)。
+		const PMReal x0(6.0);
+		const PMReal pitch = PMReal(fs) * PMReal(2.1);
+		PMString hdr; hdr.SetTranslatable(kFalse); hdr.Append("C M Y K");
+		KESCMDrawColumns(gPort, font, PMReal(fs), x0, pitch, PMReal(yHdr),   hdr);	// 見出し C M Y K
+		KESCMDrawColumns(gPort, font, PMReal(fs), x0, pitch, PMReal(yData1), num1);	// Target
+		KESCMDrawColumns(gPort, font, PMReal(fs), x0, pitch, PMReal(yData2), num2);	// Source
 	}
 }
 
@@ -1056,6 +1174,58 @@ static void KESCMCmykCursorBitmapProc(uchar* bitmapBuffer, uint32* width, uint32
 // ChangeModalCursor(CursorSpec(KESCMTrackerCmykCursorProc(), …)) を呼ぶ。
 bool16 KESCMTrackerHasPendingCmykCursor()          { return sCmykCursorPending; }
 CreateCursorBitmapProc KESCMTrackerCmykCursorProc() { return &KESCMCmykCursorBitmapProc; }
+
+// KESCMTrackerUpdateCmykDrag(KESCMPeek.h 参照) — ドラッグ中の CMYK ライブ更新。
+// トラッカーの ContinueTracking(マウス移動)から呼ばれる。現在のマウス位置で CMYK を再サンプルし、
+// 値が変わったら sCmykCursorText を更新して kTrue を返す(呼び出し側がカーソルを描き直す)。
+// 連続ラスタ化で重くならないよう時間スロットル(既定 50ms ≒ 20回/秒)を掛ける。
+// 前方宣言。定義は KESCMTrackerRevealBegin の直前(ページ外の「値なし c---」表示を作る)。
+static void KESCMBuildCmykNoValue(PMString& out);
+
+bool16 KESCMTrackerUpdateCmykDrag()
+{
+	if (!sCmykCursorPending)	// Alt+左 CMYK モードでなければ何もしない
+		return kFalse;
+	if (!sPeekArmed || sPeekTargetDB == nil || sPeekSourceDB == nil)
+		return kFalse;
+
+	// スロットル(50ms)。steady_clock は単調増加なのでラップの心配なし。初回は必ず通す。
+	static std::chrono::steady_clock::time_point sLast;
+	static bool16 sStarted = kFalse;
+	const std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
+	if (sStarted)
+	{
+		const long long ms =
+			std::chrono::duration_cast<std::chrono::milliseconds>(now - sLast).count();
+		if (ms < 50)
+			return kFalse;
+	}
+	sStarted = kTrue;
+	sLast = now;
+
+	// 現在のマウス位置で新/旧をサンプリング(KESCMSampleCmykUnderMouse は毎回マウス位置を読み直す)。
+	// ページ外・取得失敗なら「値なし(c--- …)」表示にして、拾えていないことが分かるようにする
+	// (ユーザー要望 2026-07-13。直前値を残さない=誤読防止)。
+	PMString panelMsg, cursorMsg;
+	if (!KESCMSampleCmykUnderMouse(sPeekTargetDB, sPeekSourceDB, panelMsg, cursorMsg))
+		KESCMBuildCmykNoValue(cursorMsg);
+	if (cursorMsg == sCmykCursorText)	// 値が同じなら描き直し不要
+		return kFalse;
+
+	sCmykCursorText = cursorMsg;
+	return kTrue;
+}
+
+// ページ外など CMYK を拾えないときに出す「値なし」表示("c--- m--- y--- k--- t/s")。ダッシュで
+// 「ここでは色を拾えていない」ことが分かるようにする(ユーザー要望 2026-07-13)。ラベルは通常と同じ t/s。
+static void KESCMBuildCmykNoValue(PMString& out)
+{
+	out.Clear();
+	out.SetTranslatable(kFalse);
+	out.Append("--- --- --- --- tgt");
+	out.AppendW(UTF32TextChar(0x0A));	// 改行 → 2行目へ
+	out.Append("--- --- --- --- src");
+}
 
 void KESCMTrackerRevealBegin(bool16 shiftDown, bool16 altDown, bool16 cmdDown)
 {
@@ -1091,19 +1261,19 @@ void KESCMTrackerRevealBegin(bool16 shiftDown, bool16 altDown, bool16 cmdDown)
 	if (altDown && !shiftDown)
 	{
 		// Alt+左(単独、Shift/Ctrl なし): クリック点の CMYK 生値(0..255)を新・旧でサンプリングし、
-		// "Target C.. M.. Y.. K.." / "Source C.. …" をパネルのステータス行に表示する(次の操作まで残る)。
+		// "Target C.. M.. Y.. K.." / "Source C.. …" をカーソル自身に描画する(パネルには一切出さない)。
 		// 中ボタン Shift+Ctrl+Alt+ミドル 相当。arm 済み(Start 後)かつ Target 窓上でのみ反応。
-		// パネルが閉じ/アイコン化していてもステータスが見えるよう、押下中だけ一時表示する(離すと元へ戻す=
-		// End 側の KESCMPanelTempShowEnd)。
+		// (旧仕様: パネルを押下中だけ一時表示していたが撤去。色比較はカーソルにのみ描画する。)
 		if (sPeekArmed && KESCMFrontViewIsOverTarget())
 		{
-			PMString colorMsg;
-			if (KESCMSampleCmykUnderMouse(sPeekTargetDB, sPeekSourceDB, colorMsg))
+			PMString panelMsg, cursorMsg;
+			if (!KESCMSampleCmykUnderMouse(sPeekTargetDB, sPeekSourceDB, panelMsg, cursorMsg))
+					KESCMBuildCmykNoValue(cursorMsg);	/* ページ外など: 拾えないことを示す(値なし c--- 表示) */
 			{
-				KESCMPanelTempShowBegin();
-				KESCMSetStatus(colorMsg);
-				// パネル状態行に加えて、カーソル自身にも同じ CMYK を描く(トラッカーが ChangeModalCursor する)。
-				sCmykCursorText    = colorMsg;
+				// 色比較はカーソル自身に CMYK を描くだけにする(トラッカーが ChangeModalCursor する)。
+				// パネルへのメッセージ表示や、パネルの一時 ON/OFF は行わない(ユーザー指定 2026-07-13。
+				// 以前は KESCMPanelTempShowBegin()+KESCMSetStatus(panelMsg) でパネルにも出していた)。
+				sCmykCursorText    = cursorMsg;
 				sCmykCursorPending = kTrue;
 			}
 		}
@@ -1168,7 +1338,7 @@ void KESCMTrackerRevealEnd()
 
 	// Alt+左(CMYK)で一時表示していたパネルを元の状態(閉/アイコン)へ戻す。一時表示していなければ無害な
 	// no-op(中ボタン kMButtonUp の KESCMPanelTempShowEnd と同一)。
-	KESCMPanelTempShowEnd();
+	/* 色比較でパネルを一切開閉しないため撤去(ユーザー指定 2026-07-13) */;
 
 	if (sPeekActive)
 	{

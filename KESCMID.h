@@ -331,6 +331,17 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMToolWidgetID, kKESCMPrefix + 41)	// ツール
 // PNGC/SVGC は置かない(手続き描画がプロバイダ経路で効くかの実験)。KESCMCursorProvider.cpp。
 #define kKESCMCheckCursorResID	1020
 
+// Alt+左「色比較」の CMYK 情報カーソルのリソースID。✓カーソルと HOTC は同じ(10,18)だが CursorID は
+// 分ける。同一 CursorID を使い回すとカーソルキャッシュが ✓(24×24)と CMYK情報(150×60)を取り違え、
+// 色比較の初回フレームに「ゴミ」が一瞬見えた(ユーザー報告 2026-07-13)。別IDにして解消。KESCMPeek.cpp。
+#define kKESCMCmykCursorResID	1021
+
+// CMYK 情報カーソルの交互切替用の第2リソースID。ドラッグ中の数値更新は kFalse スペックの「入れ直し」で
+// 行うが(動的 kTrue スペックは設定の瞬間に未初期化バッファが見える=初回ゴミの真因のため全廃。2026-07-14)、
+// 同一スペックの再設定が no-op 扱いされても確実に描き直しが起きるよう 1021 と 1022 を交互に使う
+// (KESCMTracker.cpp の InstallCmykCursor)。HOTC は 1021 と同じ (10,18)=切替でカーソル位置は動かない。
+#define kKESCMCmykCursor2ResID	1022
+
 // Menu item positions (flyout order): … Show Marks on Source(9.4) → Show Original Page Numbers(9.7) →
 // Sync Layout Views(9.8) → Show Scrollbar Map(9.85) → Ignore Page Number Marker(9.9) →
 // Invoke Panel Shortcut(9.901) → ─線 Sep3(9.905) → Hide Unchanged Spreads(9.91) → Save Panel Settings(9.93) →

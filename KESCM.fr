@@ -810,6 +810,14 @@ resource PNGA(kKESCMPaletteIconResID) "KohakuChangeMarkerTab.png"
 // which must match (bx, by) in KESCMCheckCursorBitmapProc so the click point sits on the vertex.
 resource HOTC(kKESCMCheckCursorResID) {10, 18};
 
+// Alt+左「色比較」の CMYK 情報カーソルのホットスポット。✓と同じ折れ点(10,18)=クリック点に一致させる。
+// CursorID は ✓ と分けてある(キャッシュ取り違えによる初回フレームのゴミ対策。KESCMID.h 参照)。
+resource HOTC(kKESCMCmykCursorResID) {10, 18};
+
+// 同・交互切替用の第2ID。ドラッグ中の数値更新は kFalse カーソルの入れ直しで行い、同一スペック再設定の
+// no-op を避けるため 1021/1022 を交互に使う(KESCMTracker.cpp の InstallCmykCursor)。ホットスポットは同じ。
+resource HOTC(kKESCMCmykCursor2ResID) {10, 18};
+
 // Panel LocaleIndex - a single (string-key driven) view is used for every locale; the labels
 // themselves are localized through the string tables (KESCM_enUS.fr / KESCM_jaJP.fr).
 resource LocaleIndex (kSDKDefPanelResourceID)
