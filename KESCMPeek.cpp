@@ -66,6 +66,10 @@
 
 #include <map>
 #include <vector>
+#include <set>
+#include <algorithm>				// std::find(選択ページの重複除去)
+
+#include "UIDList.h"				// GetSelectedPages(ページパネル選択の公式取得)
 
 // プロジェクト内インクルード:
 #include "KESCMID.h"
@@ -310,27 +314,18 @@ static void KESCMBeginPeekHold(PMReal opacity)
 
 
 
-// Ctrl＋ミドルクリック(旧 Shift＋Ctrl=2026-07-04移動): マウス下スプレッドだけを再比較して枠(リング)を更新する(部分更新)。
-//   targetDB=新(arm 済み表示中) / sourceDB=旧(arm 済み比較相手)。新→旧ページは平坦通し番号で対応。
+// ページ比較の部分更新(共通コア): targetPages(= targetDB 上のページUID列)を再比較して枠(リング)を
+// 更新する。source 対応は除外対応表(登録済みページを除いた順番対応)で引く。
 //   ・各ページを MakeEntry で取り直し(編集後の差分に更新)。変化が無くなったページは古い枠を消す。
 //   ・旧版画像キャッシュ(sOrigImages)は古いので破棄(次の peek で作り直し)。
-//   見つかったスプレッドの index(0始まり)を outSpread に、変化ページ数を outChanged に返す。戻り=見つかったか。
-static bool16 KESCMRefreshSpreadUnderMouse(IDataBase* targetDB, IDataBase* sourceDB, int32* outSpread, int32* outChanged)
+//   ・✓ の剪定/レイアウト・スクロールバー地図・Pages パネルサムネイルの更新まで行う。
+//   変化ページ数を outChanged に返す。戻り=1ページ以上処理したか。
+//   ★旧 Ctrl+ミドル(マウス下スプレッド再比較)の中核をページ指定へ一般化したもの(2026-07-13 移設)。
+static bool16 KESCMRefreshComparisonCore(IDataBase* targetDB, IDataBase* sourceDB,
+                                         const std::vector<UID>& targetPages, int32* outChanged)
 {
-	if (outSpread)  *outSpread = -1;
 	if (outChanged) *outChanged = 0;
-	if (targetDB == nil || sourceDB == nil)
-		return kFalse;
-
-	// マウスが乗っているレイアウトビュー(Split Window対応、KESCMQueryViewUnderMouse参照)。
-	InterfacePtr<IControlView> view(KESCMQueryViewUnderMouse());
-	PMReal mx = 0.0, my = 0.0;
-	if (!KESCMQueryMouseContentPoint(view, mx, my))
-		return kFalse;
-
-	// マウス下のスプレッド/ページを特定(平坦通し番号も取得)。共有ヘルパ KESCMFindPageUnderMouse に集約。
-	KESCMPageHit hit;
-	if (!KESCMFindPageUnderMouse(targetDB, mx, my, hit))
+	if (targetDB == nil || sourceDB == nil || targetPages.empty())
 		return kFalse;
 
 	// マークの所属ドキュメントを合わせる(別 doc にマークがあった場合のみ総入れ替え=通常は一致で何もしない)。
@@ -338,31 +333,24 @@ static bool16 KESCMRefreshSpreadUnderMouse(IDataBase* targetDB, IDataBase* sourc
 		KESCMDrawEventHandler::DropAll();
 	KESCMDrawEventHandler::sDB = targetDB;
 
-	InterfacePtr<ISpread> spread(targetDB, hit.spreadUID, UseDefaultIID());
-	if (spread == nil)
-		return kFalse;
-	const int32 np = hit.numPages;
-
 	// 除外対応表(登録済みページを除いた順番対応)を1回だけ作り、target→source を引けるようにする。
-	// ★以前はページごとに KESCMMapTargetToSource を呼んでいたが、その中で毎回 KESCMBuildPairing
-	//   (両文書の全ページ走査)が走っていた。スプレッド内では対応表は同一なのでループ前に1回で足りる。
 	std::vector<UID> pairT, pairS;
 	KESCMBuildPairing(targetDB, sourceDB, pairT, pairS);
 	std::map<UID, UID> targetToSource;
 	for (size_t k = 0; k < pairT.size(); ++k)
 		targetToSource[pairT[k]] = pairS[k];
 
-	// このスプレッドの各ページを再比較して枠を更新。再比較で触れたページ(target とその source 対応)を
-	// 集めておき、後で Pages パネルのサムネイルを per-UID Purge する(下記)。変化あり/なしの両方を入れる=
-	// 変化なしに戻って sEntries から外れたページも古いリングを確実に消せるようにするため。
+	// 指定ページを再比較して枠を更新。触れたページ(target とその source 対応)を集めておき、後で Pages
+	// パネルのサムネイルを per-UID Purge する。変化あり/なしの両方を入れる=変化なしに戻って sEntries から
+	// 外れたページも古いリングを確実に消せるようにするため。
 	int32 changedCount = 0;
 	std::vector<UID> touchedTargetPages, touchedSourcePages;
-	for (int32 p = 0; p < np; ++p)
+	for (size_t i = 0; i < targetPages.size(); ++i)
 	{
-		const UID tUID = spread->GetNthPageUID(p);
+		const UID tUID = targetPages[i];
 		std::map<UID, UID>::const_iterator mi = targetToSource.find(tUID);
 		if (mi == targetToSource.end())
-			continue;
+			continue;	// 登録済み(比較相手なし)ページ等は再比較対象外
 		const UID sUID = mi->second;
 		touchedTargetPages.push_back(tUID);
 		touchedSourcePages.push_back(sUID);
@@ -377,49 +365,122 @@ static bool16 KESCMRefreshSpreadUnderMouse(IDataBase* targetDB, IDataBase* sourc
 			KESCMDrawEventHandler::DropOneEntry(tUID, sUID);
 		}
 	}
+	if (touchedTargetPages.empty())
+		return kFalse;
 
 	// 旧版画像キャッシュは古いので破棄(次の peek で現ズームで作り直し)。
 	KESCMDrawEventHandler::DropAllOrig();
 
 	// ★「KESCM: Check」の✓: この部分再比較でマーク(枠)が消えたページのチェックも忘れる(ユーザー指定
-	//   2026-07-11「枠が無くなったらチェックの記憶も外れる」)。従来は全再比較(KESCMDoMarkChangesDoc)しか
-	//   prune せず、Ctrl+ミドルで枠が消えても ✓ だけレイアウト/サムネイルに残っていた(2026-07-12 報告)。
-	//   ★必ず下の KESCMInvalidateDB より前に呼ぶ(Invalidate 後に外すと古い ✓ でレイアウトが描き直される)。
-	//   prune 前に Source 側のチェック有無を控える(最後の1個が外れた場合もサムネイルを確実に更新するため)。
+	//   2026-07-11「枠が無くなったらチェックの記憶も外れる」)。★必ず下の KESCMInvalidateDB より前に呼ぶ
+	//   (Invalidate 後に外すと古い ✓ でレイアウトが描き直される)。prune 前に Source 側のチェック有無を
+	//   控える(最後の1個が外れた場合もサムネイルを確実に更新するため)。
 	const bool16 srcHadChecks = KESCMPageCheckHasAny(sourceDB);
 	KESCMPageCheckPruneToMarked();
 
 	KESCMInvalidateDB(targetDB);
 	// Source 側のレイアウトビューも再描画する。エントリの増減は Source の常時枠(Show Marks on Source)や
-	// ✓(prune)の見た目も変えるが、従来は Target しか Invalidate しておらず Source 窓が古いまま残っていた。
+	// ✓(prune)の見た目も変えるため。
 	if (sourceDB != targetDB)
 		KESCMInvalidateDB(sourceDB);
 
-	// スクロールバー地図 strip も最新化する。この部分再比較は KESCMDoMarkChangesDoc を通らない
-	// 独立経路なので、あちらの末尾フックだけでは更新されない(ユーザー報告 2026-07-11:
-	// Ctrl+ミドルで変更が増えても地図が古いまま)。Target/Source 両窓の strip をまとめて再描画。
+	// スクロールバー地図 strip も最新化する(この部分再比較は KESCMDoMarkChangesDoc を通らない独立経路)。
 	KESCMScrollMapInvalidateAll();
 
-	// ★Ctrl+ミドルの部分再比較でも、レイアウトビューだけでなく Pages パネルのサムネイルを即時更新する
-	//   (以前は KESCMInvalidateDB だけで、サムネイルのリングが再比較後に古いまま残っていた=ユーザー報告
-	//   2026-07-11)。★再比較したのは「マウス下スプレッドのページ」だけと分かっているので、文書全体の
-	//   変更ページを Purge する KESCMTryRefreshPagesPanelThumbnails ではなく、対象ページだけを per-UID
-	//   Purge する KESCMRefreshThumbnailsForPages を使う(触っていない他ページのサムネイルは再生成しない)。
-	//   スプレッドの全ページ(変化あり/なし両方)を渡すので、変化なしに戻って sEntries から外れたページの
-	//   古いリングも確実に消える。Source 側も対応ページを更新する(Show Marks on Source の有無に依らず安全)。
-	//   pages が空/パネル非表示なら安全に no-op。
+	// レイアウトビューだけでなく Pages パネルのサムネイルも即時更新する。触れたページだけを per-UID Purge
+	// する KESCMRefreshThumbnailsForPages を使う(触っていない他ページのサムネイルは再生成しない)。変化
+	// あり/なし両方を渡すので、変化なしに戻ったページの古いリングも確実に消える。
 	KESCMRefreshThumbnailsForPages(targetDB, touchedTargetPages);
-	// Source 側サムネイルのリングは Show Marks on Source(sSrcMarksOn)ON のときだけ出る(wantSrcMarks で
-	// ゲート/isThumb でも強制表示されない)。OFF ならリングは無い=更新しても絵は変わらないので、余計な
-	// per-UID Purge と Pages パネル ForceRedraw を避けてスキップする。
-	// ★ただし ✓ は sSrcMarksOn と無関係にサムネイルへ出るので、prune 前に Source にチェックがあった
-	//   場合(prune で消えた可能性がある)も更新する(srcHadChecks は prune 前に控えた値)。
+	// Source 側サムネイルのリングは Show Marks on Source(sSrcMarksOn)ON のときだけ出る。ただし ✓ は
+	// sSrcMarksOn と無関係にサムネイルへ出るので、prune 前に Source にチェックがあった場合も更新する。
 	if (KESCMDrawEventHandler::sSrcMarksOn || srcHadChecks)
 		KESCMRefreshThumbnailsForPages(sourceDB, touchedSourcePages);
 
-	if (outSpread)  *outSpread = hit.spreadIndex;
 	if (outChanged) *outChanged = changedCount;
 	return kTrue;
+}
+
+// ページパネルの選択ページの「ページ比較」を再検出して更新する(ページ右クリック「KESCM: Refresh Page
+// Comparison」の実体。旧 Ctrl+ミドルの移設先)。arm 済み(Start 後)かつ前面文書が Target/Source のときだけ
+// 動く。前面が Source のときは選択 Source ページを対応する Target ページへ写像してから再比較する(マークは
+// Target 側に載るため)。outPages=処理したページ数、outChanged=うち変化したページ数。戻り=1ページ以上処理したか。
+bool16 KESCMRefreshComparisonForSelectedPages(int32* outPages, int32* outChanged)
+{
+	if (outPages)   *outPages = 0;
+	if (outChanged) *outChanged = 0;
+
+	if (!KESCMIsArmed())
+		return kFalse;
+	IDataBase* targetDB = KESCMArmedTargetDB();
+	IDataBase* sourceDB = KESCMArmedSourceDB();
+	if (targetDB == nil || sourceDB == nil)
+		return kFalse;
+
+	// 選択が属する前面文書(=アクティブ文書)。Target/Source のどちらかでなければ何もしない。
+	IDocument* doc = Utils<ILayoutUIUtils>()->GetFrontDocument();
+	IDataBase* db = (doc != nil) ? ::GetDataBase(doc) : nil;
+	if (db == nil || (db != targetDB && db != sourceDB))
+		return kFalse;
+
+	// ページパネルの選択ページ(実在ページのみ)を読む(「KESCM: Check」と同じ流儀)。
+	UIDList sel(db);
+	Utils<ILayoutUIUtils>()->GetSelectedPages(sel, kFalse /*masters除外*/, kTrue /*currentPageOnly*/, kTrue /*pagesOnly*/);
+	std::vector<UID> flat;
+	KESCMCollectPageUIDs(db, flat);
+	std::set<UID> flatSet(flat.begin(), flat.end());
+
+	std::vector<UID> selPages;
+	const int32 n = sel.Length();
+	for (int32 i = 0; i < n; ++i)
+	{
+		const UID u = sel[i];
+		if (flatSet.count(u) > 0 && std::find(selPages.begin(), selPages.end(), u) == selPages.end())
+			selPages.push_back(u);
+	}
+	if (selPages.empty())
+		return kFalse;
+
+	// 再比較コアは Target ページで駆動する。前面が Source なら Source→Target 写像で対象 Target ページを作る。
+	std::vector<UID> targetPages;
+	if (db == targetDB)
+	{
+		targetPages = selPages;
+	}
+	else	// db == sourceDB
+	{
+		for (size_t i = 0; i < selPages.size(); ++i)
+		{
+			UID tUID = kInvalidUID;
+			if (KESCMMapSourceToTarget(targetDB, sourceDB, selPages[i], tUID) && tUID != kInvalidUID)
+				targetPages.push_back(tUID);
+		}
+	}
+	if (targetPages.empty())
+		return kFalse;
+
+	int32 changed = 0;
+	if (!KESCMRefreshComparisonCore(targetDB, sourceDB, targetPages, &changed))
+		return kFalse;
+
+	if (outPages)   *outPages = (int32)targetPages.size();
+	if (outChanged) *outChanged = changed;
+	return kTrue;
+}
+
+// 「KESCM: Refresh Page Comparison」メニューを有効化してよいか(UpdateActionStates 用)。
+// arm 済み(Start 後)かつ前面文書が Target/Source のとき kTrue。選択の有無までは見ない(ページ右クリックは
+// 通常そのページを選択済みで、未選択でも DoAction 側が安全に no-op する)。
+bool16 KESCMRefreshComparisonAvailable()
+{
+	if (!KESCMIsArmed())
+		return kFalse;
+	IDataBase* targetDB = KESCMArmedTargetDB();
+	IDataBase* sourceDB = KESCMArmedSourceDB();
+	if (targetDB == nil || sourceDB == nil)
+		return kFalse;
+	IDocument* doc = Utils<ILayoutUIUtils>()->GetFrontDocument();
+	IDataBase* db = (doc != nil) ? ::GetDataBase(doc) : nil;
+	return (db != nil && (db == targetDB || db == sourceDB)) ? kTrue : kFalse;
 }
 
 
@@ -629,20 +690,25 @@ static PBPMPoint KESCMCorrectedCenterForDoc(IDataBase* srcDocDb, IDataBase* dstD
 // ★Alt+ミドルとフライアウト「Sync Layout Views」の自動同期は、どちらも本仕様として kTrue で呼ぶ
 // (比較 arm 中は比較ペアの相手ページ同士がきっちり並ぶ)。未 arm/ペア外は関数内で生同期にフォールバック。
 // 既定 kFalse は補正なし(生座標)の呼び口を残すためのもの。
-static void KESCMSyncOtherDocViewportsTo(IPanorama* srcPano, IDataBase* srcDocDb, bool16 applyPageOffset = kFalse)
+static void KESCMSyncOtherDocViewportsTo(IPanorama* srcPano, IDataBase* srcDocDb, bool16 applyPageOffset = kFalse, bool16 limitToArmedPair = kTrue)
 {
 	if (srcPano == nil)
 		return;
 
-	// ★同期は「比較を Start 中(arm 済み)」かつ「Target↔Source の間だけ」に限定する(ユーザー指定 2026-07-11)。
-	//   Alt+ミドル(単発)・フライアウト「Sync Layout Views」のライブ同期の両方がこの1本を通るので、
-	//   ここで一括ガードすれば両機能とも同じ条件になる。
+	// ★limitToArmedPair=kTrue(中ボタン Alt+ミドル・フライアウト「Sync Layout Views」のライブ同期):
+	//   「比較を Start 中(arm 済み)」かつ「Target↔Source の間だけ」に限定する(ユーザー指定 2026-07-11)。
 	//   ・未 Start(!sPeekArmed)、または arm 対の一方でも不明なら何もしない。
 	//   ・手本(操作した)ビューが Target/Source のどちらでもない第3文書なら同期しない。
-	if (!sPeekArmed || sPeekTargetDB == nil || sPeekSourceDB == nil)
-		return;
-	if (srcDocDb != sPeekTargetDB && srcDocDb != sPeekSourceDB)
-		return;
+	// ★limitToArmedPair=kFalse(ツール+左ダブルクリック、ユーザー指定 2026-07-13): arm 不問。開いている
+	//   全ドキュメント(手本=カーソル下の文書だけ除外)へ複製する。ページ補正は arm 中の Target/Source ペアの
+	//   ときだけ KESCMCorrectedCenterForDoc が効き、その他は生同期にフォールバックする。
+	if (limitToArmedPair)
+	{
+		if (!sPeekArmed || sPeekTargetDB == nil || sPeekSourceDB == nil)
+			return;
+		if (srcDocDb != sPeekTargetDB && srcDocDb != sPeekSourceDB)
+			return;
+	}
 
 	// 手本ビューの「見えている状態」を読む。ズームは実効スケール(kTrue=モニタPPI補正込み)。
 	// ズームコマンド(kZoomToCmdBoss)が扱う scaleFactor と同じ次元なので、読み書きが対称になる。
@@ -672,7 +738,8 @@ static void KESCMSyncOtherDocViewportsTo(IPanorama* srcPano, IDataBase* srcDocDb
 
 		// ★Target/Source 以外の第3文書へは複製しない(ユーザー指定 2026-07-11)。手本は上のガードで
 		// 既に Target/Source のどちらかなので、宛先は「対の相手」1文書だけになる。
-		if (db != sPeekTargetDB && db != sPeekSourceDB)
+		// limitToArmedPair=kFalse(左ダブルクリック)のときはこの制限を外し、手本以外の全文書を宛先にする。
+		if (limitToArmedPair && db != sPeekTargetDB && db != sPeekSourceDB)
 			continue;
 
 		// この宛先文書へ複製する中心座標。applyPageOffset のときは追加/削除補正(比較ペアの相手ページへ
@@ -763,7 +830,7 @@ static void KESCMSyncOtherDocViewportsTo(IPanorama* srcPano, IDataBase* srcDocDb
 //     ★実測で判明した重要事項: kLayoutSecondaryPanelWidgetID を IPanelControlData::FindWidget() で
 //     直接引いても、そのウィジェット自身はパノラマを持たず、祖先を辿っても見つからない(外側の
 //     ラッパーに過ぎない)。実際にパノラマを持つオブジェクトは GetAllLayoutViews() が返す別オブジェクト。
-static void KESCMSyncScrollOtherWindowsUnderMouse(IEvent* e)
+static void KESCMSyncScrollOtherWindowsUnderMouse(IEvent* e, bool16 limitToArmedPair = kTrue)
 {
 	if (e == nil)
 		return;
@@ -836,8 +903,20 @@ static void KESCMSyncScrollOtherWindowsUnderMouse(IEvent* e)
 		return;
 
 	// Alt+ミドルは追加/削除補正あり(比較 arm 中は比較ペアの相手ページ同士がきっちり合う。
-	// 未 arm/ペア外の文書は関数内で従来の生同期にフォールバック)。
-	KESCMSyncOtherDocViewportsTo(srcPano, hitDocDb, kTrue /*applyPageOffset*/);
+	// 未 arm/ペア外の文書は関数内で従来の生同期にフォールバック)。limitToArmedPair は呼び出し元指定
+	// (中ボタン=kTrue でペア限定、左ダブルクリック=kFalse で全文書対象)。
+	KESCMSyncOtherDocViewportsTo(srcPano, hitDocDb, kTrue /*applyPageOffset*/, limitToArmedPair);
+}
+
+// トラッカー(左ボタン ダブルクリック)用の公開入口。KESCM ツール選択中の左ボタン ダブルクリック
+// (修飾なし)から KESCMTracker.cpp が呼ぶ。中ボタン Alt+ミドル(WatchEvent の Alt 単独分岐)と全く同じ
+// 1 本(KESCMSyncScrollOtherWindowsUnderMouse)を通す=arm 済み・Target/Source 間限定・追加/削除補正つき。
+// 中ボタン側の WatchEvent は変更しない(両入力は併存)。
+void KESCMTrackerDocSync(IEvent* theEvent)
+{
+	// ★左ダブルクリックは limitToArmedPair=kFalse: Start 不問で、カーソル下の文書を除く全ドキュメントへ同期する
+	//   (ユーザー指定 2026-07-13)。中ボタン Alt+ミドル(WatchEvent)は従来どおり arm 済み Target/Source 限定のまま。
+	KESCMSyncScrollOtherWindowsUnderMouse(theEvent, kFalse /*limitToArmedPair*/);
 }
 
 
@@ -1150,24 +1229,8 @@ IEventDispatcher::EventTypeList KESCMPeekWatcher::WatchEvent(IEvent* e)
 				KESCMSetStatus(colorMsg);
 			}
 		}
-		else if (sPeekArmed && e->CmdKeyDown() && !e->ShiftKeyDown() && !e->OptionAltKeyDown() && KESCMFrontViewIsOverTarget())
-		{
-			// ★2026-07-04: Shift+Ctrl から Ctrl 単独へ移動(Shift+Ctrl ミドルは未割当に)。
-			// Ctrl(=Win, CmdKeyDown)＋ミドル押下(momentary): マウス下スプレッドだけ枠を再検出して更新。
-			// 旧版画像キャッシュは破棄(次 peek で作り直し)。完了したら「spread N markers refreshed」を
-			// パネルのステータス行に表示する(旧トースト表示は 2026-07-04 撤去)。
-			// ★arm 済み(Start 後)かつ対象(Target)文書のウィンドウ上でのみ反応(KESCMFrontViewIsOverTarget)。
-			// 3キー同時(Shift+Ctrl+Alt=CMYK)は先頭分岐で捕まえる上、ここは !Shift 条件なので衝突しない。
-			int32 sp = -1;
-			if (KESCMRefreshSpreadUnderMouse(sPeekTargetDB, sPeekSourceDB, &sp, nil))
-			{
-				PMString msg("spread ");
-				msg.SetTranslatable(kFalse);
-				msg.AppendNumber(sp + 1);	// スプレッド番号(1始まり)
-				msg.Append(" markers refreshed");
-				KESCMSetStatus(msg);
-			}
-		}
+		// ★Ctrl 単独＋ミドルの「スプレッド再比較」は 2026-07-13 撤去し、ページパネルのページ右クリック
+		//   「KESCM: Refresh Page Comparison」メニューへ移設した(実体 KESCMRefreshComparisonForSelectedPages)。
 		else if (sPeekArmed && e->ShiftKeyDown() && e->OptionAltKeyDown() && !e->CmdKeyDown() && KESCMFrontViewIsOverTarget())
 		{
 			// Shift＋Alt＋ミドル押下: 旧版べた載せ(peek)を 50% 透明で重ねる(現行ページと半々のゴースト比較)。

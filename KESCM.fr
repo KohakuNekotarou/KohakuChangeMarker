@@ -524,6 +524,16 @@ resource MenuDef (kSDKDefMenuResourceID)
 		"RtMenuPagesPanel",
 		kKESCMPageCheckMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
+
+		// "KESCM: Refresh Page Comparison" on the Pages panel page context menu. Plain command
+		// (not a toggle): re-runs the comparison for the selected page(s) and updates the marks /
+		// thumbnails (formerly the Ctrl+middle spread recompare, moved to this menu 2026-07-13).
+		// Only available while Started (armed) with the front document being Target/Source; enabling
+		// comes from UpdateActionStates (kCustomEnabling). The work is in KESCMPeek.cpp.
+		kKESCMPageRefreshCompareActionID,
+		"RtMenuPagesPanel",
+		kKESCMPageRefreshCompareMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
 	}
 };
 
@@ -728,6 +738,15 @@ resource ActionDef (kSDKDefActionResourceID)
 		kOtherActionArea,
 		kNormalAction,
 		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates supplies check mark and enabling
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		kKESCMActionComponentBoss,
+		kKESCMPageRefreshCompareActionID,
+		kKESCMPageRefreshCompareMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates supplies enabling (armed + front doc is Target/Source)
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 	}

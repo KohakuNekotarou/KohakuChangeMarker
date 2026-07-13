@@ -184,6 +184,7 @@ DECLARE_PMID(kActionIDSpace, kKESCMPopupLoadChecksActionID, kKESCMPrefix + 26)	/
 DECLARE_PMID(kActionIDSpace, kKESCMPopupPagesPanelShortcutActionID, kKESCMPrefix + 27)	// パネルのフライアウトの「Invoke Pages Panel Shortcut」チェック式トグル(ON=Ctrl+Alt+ミドルで InDesign 標準「ページ」パネルの表示/非表示を切替。既定ON。実体 KESCMPeek.cpp の sPagesPanelShortcutOn / トグル本体 KESCMPanelObserver.cpp の KESCMTogglePagesPanel)
 DECLARE_PMID(kActionIDSpace, kKESCMPageMapSepActionID, kKESCMPrefix + 28)	// ページパネルのページ右クリック(RtMenuPagesPanel): KESCM 追加項目(Register / Check)の上の区切り線(MenuDef のパス末尾 ":-"。ActionDef 不要・DoAction 不要=一意なIDだけ要る)。本家メニューと視覚的に分けるため
 DECLARE_PMID(kActionIDSpace, kKESCMToolActionID, kKESCMPrefix + 29)	// ツールボックスのツール選択ショートカット用の ActionID(ToolDef が参照。ActionDef 不要=ツール枠が自動生成)
+DECLARE_PMID(kActionIDSpace, kKESCMPageRefreshCompareActionID, kKESCMPrefix + 30)	// ページパネルのページ右クリック(RtMenuPagesPanel)の実行アクション「KESCM: Refresh Page Comparison」(選択ページの比較を再検出して枠/サムネイルを更新。旧 Ctrl+ミドルのスプレッド再比較を移設。Start中限定・kCustomEnabling。実体 KESCMPeek.cpp の KESCMRefreshComparisonForSelectedPages)
 //DECLARE_PMID(kActionIDSpace, kKESCMActionID, kKESCMPrefix + 15)
 //DECLARE_PMID(kActionIDSpace, kKESCMActionID, kKESCMPrefix + 15)
 //DECLARE_PMID(kActionIDSpace, kKESCMActionID, kKESCMPrefix + 16)
@@ -284,6 +285,7 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMToolWidgetID, kKESCMPrefix + 41)	// ツール
 #define kKESCMShowSrcMarksMenuKey	kKESCMStringPrefix "kKESCMShowSrcMarksMenuKey"	// パネルのフライアウト「Show Marks on Source」トグルのメニュー名
 #define kKESCMPageMapToggleMenuKey	kKESCMStringPrefix "kKESCMPageMapToggleMenuKey"	// ページパネル右クリックのトグル「KESCM: Register as Added/Removed Pages」の既定メニュー名(表示時は UpdateActionStates が Target=Added/Source=Removed に動的差し替え)
 #define kKESCMPageCheckMenuKey		kKESCMStringPrefix "kKESCMPageCheckMenuKey"	// ページパネル右クリックのトグル「KESCM: Check」のメニュー名
+#define kKESCMPageRefreshCompareMenuKey	kKESCMStringPrefix "kKESCMPageRefreshCompareMenuKey"	// ページパネル右クリックの「KESCM: Refresh Page Comparison」のメニュー名(選択ページの比較を再検出して更新)
 #define kKESCMIgnorePageNumMenuKey	kKESCMStringPrefix "kKESCMIgnorePageNumMenuKey"	// パネルのフライアウト「Ignore Page Number Marker」トグルのメニュー名
 #define kKESCMHoldToHideMarksMenuKey	kKESCMStringPrefix "kKESCMHoldToHideMarksMenuKey"	// パネルのフライアウト「Hold to Hide Marks」トグルのメニュー名
 #define kKESCMPanelShortcutMenuKey	kKESCMStringPrefix "kKESCMPanelShortcutMenuKey"	// パネルのフライアウト「Invoke Panel Shortcut」トグルのメニュー名
@@ -357,6 +359,7 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMToolWidgetID, kKESCMPrefix + 41)	// ツール
 #define kKESCMPageMapSepMenuItemPosition	2999.0	// KESCM 追加項目(Register 3000.0 / Check 3001.0)の直上の区切り線。本家メニュー項目と KESCM 項目を視覚的に分ける
 #define kKESCMPageMapToggleMenuItemPosition	3000.0
 #define kKESCMPageCheckMenuItemPosition		3001.0	// 「KESCM: Check」を Register の直後(ページパネル右クリック末尾)に
+#define kKESCMPageRefreshCompareMenuItemPosition	3002.0	// 「KESCM: Refresh Page Comparison」を Check の直後(ページパネル右クリック末尾)に
 #define kKESCMAboutScriptMenuItemPosition	11.0	// その下に「スクリプトについて」
 #define kKESCMAboutThisMenuItemPosition		12.0	// 末尾に「このプラグインについて」
 

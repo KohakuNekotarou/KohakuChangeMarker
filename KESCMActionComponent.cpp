@@ -287,6 +287,25 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 			KESCMPageCheckToggleSelectedPages();
 			break;
 
+		// ページパネルのページ右クリック「KESCM: Refresh Page Comparison」(実行アクション)。選択ページの
+		// 比較を再検出して枠/サムネイルを更新する(旧 Ctrl+ミドルのスプレッド再比較を移設。2026-07-13)。
+		// 実体は KESCMPeek.cpp。結果をステータス行に短く出す。
+		case kKESCMPageRefreshCompareActionID:
+		{
+			int32 nPages = 0, nChanged = 0;
+			if (KESCMRefreshComparisonForSelectedPages(&nPages, &nChanged))
+			{
+				PMString msg("refreshed ");
+				msg.SetTranslatable(kFalse);
+				msg.AppendNumber(nPages);
+				msg.Append(" (changed ");
+				msg.AppendNumber(nChanged);
+				msg.Append(")");
+				KESCMSetStatus(msg);
+			}
+			break;
+		}
+
 		// フライアウトの「Save Check & Register」: Start中の Target/Source の現在の Check(✓)+ Register
 		// (Added/Removed)を独自 JSON(KESCM\KESCMPageChecks.json, v2)へマージ保存し、保存先パスをステータス行に
 		// 出す(実体 KESCMPageCheck.cpp)。
@@ -423,6 +442,12 @@ void KESCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionSta
 			// ページパネル右クリックの「KESCM: Check」トグル: 有効/無効(Start中+Target/Source+選択)と
 			// チェック(全部✓/一部=中間)を KESCMPageCheck.cpp 側で設定。
 			KESCMPageCheckUpdateToggleState(listToUpdate, i);
+		}
+		else if (action == kKESCMPageRefreshCompareActionID)
+		{
+			// ページパネル右クリックの「KESCM: Refresh Page Comparison」(トグルではない実行アクション):
+			// Start中(arm済み)かつ前面文書が Target/Source のときだけ有効化。それ以外はグレーアウト。
+			listToUpdate->SetNthActionState(i, KESCMRefreshComparisonAvailable() ? kEnabledAction : kDisabled_Unselected);
 		}
 	}
 }
