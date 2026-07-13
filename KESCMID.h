@@ -130,6 +130,7 @@ DECLARE_PMID(kImplementationIDSpace, kKESCMToolImpl, kKESCMPrefix + 13)	// ITool
 DECLARE_PMID(kImplementationIDSpace, kKESCMTrackerImpl, kKESCMPrefix + 14)	// ITracker 実装(CTracker派生; KESCMTracker.cpp)
 DECLARE_PMID(kImplementationIDSpace, kKESCMTrackerRegisterImpl, kKESCMPrefix + 15)	// ITrackerRegister 実装(KESCMTrackerRegister.cpp)
 DECLARE_PMID(kImplementationIDSpace, kKESCMTrackerEHImpl, kKESCMPrefix + 16)	// IEventHandler 実装(CTrackerEventHandler派生; 押下中のボタン解放を EndTracking へ転送。KESCMTracker.cpp)
+DECLARE_PMID(kImplementationIDSpace, kKESCMCursorProviderImpl, kKESCMPrefix + 17)	// ICursorProvider 実装(CToolCursorProvider派生; ツール選択中は常時✓カーソル。KESCMCursorProvider.cpp)
 //DECLARE_PMID(kImplementationIDSpace, kKESCMImpl, kKESCMPrefix + 6)
 //DECLARE_PMID(kImplementationIDSpace, kKESCMImpl, kKESCMPrefix + 7)
 //DECLARE_PMID(kImplementationIDSpace, kKESCMImpl, kKESCMPrefix + 8)
@@ -324,6 +325,11 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMToolWidgetID, kKESCMPrefix + 41)	// ツール
 
 // スクロールバー地図stripのビューリソースID(kViewRsrcType; ::CreateObject で実行時生成する。KESCMScrollMap.cpp)
 #define kKESCMScrollMapRsrcID	1010
+
+// ✓チェックマークカーソルのリソースID。CursorSpec の CursorID として使い、HOTC(このID)でホットスポット
+// (✓の折れ点=座標取得点)を指定する。画像はコールバック(KESCMCheckCursorBitmapProc)で毎回描くため
+// PNGC/SVGC は置かない(手続き描画がプロバイダ経路で効くかの実験)。KESCMCursorProvider.cpp。
+#define kKESCMCheckCursorResID	1020
 
 // Menu item positions (flyout order): … Show Marks on Source(9.4) → Show Original Page Numbers(9.7) →
 // Sync Layout Views(9.8) → Show Scrollbar Map(9.85) → Ignore Page Number Marker(9.9) →

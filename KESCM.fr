@@ -61,6 +61,8 @@
 #include "ToolBoxDefs.h"	// tool group / tool number constants (kSixthAdobeToolsGroup, kFirstAdobeTool, kDoesNotApply)
 #include "ToolboxID.h"		// kGenericToolBoss
 #include "LayoutUIID.h"		// kPointerToolBoss (ToolDef tool type)
+#include "CursorID.h"		// IID_ICURSORPROVIDER (tool cursor provider)
+#include "Cursor.fh"		// HOTC resource type (cursor hotspot)
 
 // Project includes:
 #include "KESCMID.h"
@@ -234,6 +236,8 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 		{
 			IID_ITOOL,      kKESCMToolImpl,
 			IID_IPMPERSIST, kPMPersistImpl,
+			// ツール選択中は常時✓カーソル(CToolCursorProvider 派生)。KESCMCursorProvider.cpp。
+			IID_ICURSORPROVIDER, kKESCMCursorProviderImpl,
 		}
 	},
 
@@ -799,6 +803,12 @@ resource PNGR(kKESCMIconOffResID) "KESCM_Off32.png"
 // Small dock-tab icon shown when the panel is collapsed to its smallest. Replace
 // KohakuChangeMarkerTab.png with your own artwork (a small, e.g. ~20x20, transparent PNG).
 resource PNGA(kKESCMPaletteIconResID) "KohakuChangeMarkerTab.png"
+
+// ✓ tool cursor hotspot. The cursor bitmap itself is drawn procedurally by the callback in
+// KESCMCursorProvider.cpp (no PNGC/SVGC on purpose - testing whether a callback cursor works via
+// the cursor-provider path). {X, Y} = the checkmark's vertex (folding point) in 1x logical pixels,
+// which must match (bx, by) in KESCMCheckCursorBitmapProc so the click point sits on the vertex.
+resource HOTC(kKESCMCheckCursorResID) {10, 18};
 
 // Panel LocaleIndex - a single (string-key driven) view is used for every locale; the labels
 // themselves are localized through the string tables (KESCM_enUS.fr / KESCM_jaJP.fr).
