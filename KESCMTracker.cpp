@@ -1,4 +1,4 @@
-//========================================================================================
+﻿//========================================================================================
 //
 //  KESCMTracker.cpp
 //
@@ -26,8 +26,11 @@
 #include "CTrackerEventHandler.h"
 #include "IEvent.h"
 
+#include "CursorSpec.h"		// CursorSpec / GetPlugIn()(Alt+左 CMYK のカスタムカーソル)
+#include "CursorDefs.h"		// kCrsrTool
+
 #include "KESCMID.h"
-#include "KESCMPeek.h"		// KESCMTrackerRevealBegin / KESCMTrackerRevealEnd
+#include "KESCMPeek.h"		// KESCMTrackerRevealBegin / KESCMTrackerRevealEnd / CMYK カーソル入口
 
 //____________________________________________________________________________________
 //	Tracker event handler: forwards events (notably the button-up) to the tracker while
@@ -70,9 +73,11 @@ public:
 		tracking via the CTrackerEventHandler, not the timer, so this is safe. */
 	virtual bool16 WantTimer(ClassID /*trackerTimerBoss*/) { return kFalse; }
 
-	/** Mouse down. Engage only on a plain left-button press (leave right/middle to their normal
-		handling, e.g. the context menu). Call the base to do the real tracking setup, then reveal
-		the marks. Return the base's result so the tracking lifecycle stays intact. */
+	/** Mouse down. Engage on a left-button press (any modifiers; middle/right keep their normal
+		handling, e.g. the context menu). Call the base to do the real tracking setup, then dispatch
+		to the matching KESCM gesture by the modifier keys held at press time:
+		  plain = reveal / Hold-to-Hide, Shift = peek 100%, Shift+Alt = peek 50%.
+		Return the base's result so the tracking lifecycle stays intact. */
 	virtual bool16 BeginTracking(IEvent* theEvent)
 	{
 		if (theEvent == nil || theEvent->GetType() != IEvent::kLButtonDn)
@@ -80,7 +85,20 @@ public:
 
 		bool16 result = CTracker::BeginTracking(theEvent);
 		if (result)
-			KESCMTrackerRevealBegin();
+		{
+			KESCMTrackerRevealBegin(theEvent->ShiftKeyDown(), theEvent->OptionAltKeyDown(), theEvent->CmdKeyDown());
+
+			// Alt+左「色比較」のとき、パネル状態行に加えてカーソル自身にも CMYK を描く。CTracker が
+			// BeginTracking で用意した modal cursor を、自前のカスタムビットマップカーソルへ差し替える
+			// (トラッキング終了時に CTracker が自動で元へ戻す)。bDynamicBitmap=kTrue で毎回描き直し
+			// (前回サンプルのビットマップがキャッシュされないように)。
+			if (KESCMTrackerHasPendingCmykCursor())
+			{
+				CursorSpec spec(GetPlugIn()->GetPluginID(), IDFile(), kCrsrTool,
+				                KESCMTrackerCmykCursorProc(), kTrue /*bDynamicBitmap*/);
+				this->ChangeModalCursor(spec);
+			}
+		}
 		return result;
 	}
 

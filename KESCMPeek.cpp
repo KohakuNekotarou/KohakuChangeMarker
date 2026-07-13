@@ -58,6 +58,12 @@
 #include "PMReal.h"
 #include "TransformUtils.h"
 
+// カスタムビットマップカーソル(Alt+左 CMYK 情報をカーソルにも描く):
+#include "ICursorUtils.h"			// QueryGraphicsPortForBitmap(自前バッファに AGM 描画)/CursorSpec も同梱
+#include "IGraphicsPort.h"			// setrgbcolor/rectfill/selectfont/show
+#include "IFontMgr.h"				// 既定フォント取得
+#include "IPMFont.h"
+
 #include <map>
 #include <vector>
 
@@ -1284,12 +1290,178 @@ IEventDispatcher::EventTypeList KESCMPeekWatcher::WatchEvent(IEvent* e)
 // 素のミドル分岐)と同じ挙動を、左ボタンでも使えるようにする最小の切り出し。ここはファイル内の
 // peek 状態(sSingleShowing)と描画状態(KESCMDrawEventHandler::sMarks*)にアクセスできる。
 //
-// ★Step 1 (2026-07-12): まずは「修飾なし=マーク一時表示」だけ。Shift/Ctrl/Alt の各ジェスチャや
-//   「Hold to Hide Marks」極性反転・ハンドツール切替は Step 2 以降で WatchEvent と共通化する。
-//   中ボタン側の WatchEvent は一切変更していない(両入力は併存)。
+// ★Step 1 (2026-07-12): 「修飾なし=マーク一時表示」を移植。
+// ★Step 2 (2026-07-13): 「Hold to Hide Marks」極性反転(パネルメニューで Hold ON のとき、押下中だけ
+//   常時表示の枠を隠す)を移植。窓別 temp-hide(Target/Source)まで WatchEvent kMButtonDn/Up と共通の挙動。
+// ★Step 3 (2026-07-13): Shift+左=旧版べた載せ peek 100% / Shift+Alt+左=peek 50% を移植
+//   (中ボタン Shift+ミドル / Shift+Alt+ミドル 相当)。
+// ★Step 4 (2026-07-13): Alt+左(単独)=CMYK 生値サンプリング(中ボタン Shift+Ctrl+Alt+ミドル 相当)を移植。
+//   Ctrl(cmd)系の各ジェスチャ(再比較/パネル)はまだ中ボタン専用。中ボタン側の WatchEvent は一切変更して
+//   いない(両入力は併存)。
 //========================================================================================
-void KESCMTrackerRevealBegin()
+
+// トラッカー(左ボタン)用の peek 開始。中ボタン KESCMBeginPeekHold と同じく arm 済み(Start 後)かつ
+// Target 窓上のときだけ、マウス下スプレッドの旧版を opacity(1.0=不透明 / 0.5=半透明)で重ねる。
+// ★中ボタン版と違い KESCMEnterHandTool() は呼ばない: トラッカーが既にマウスをキャプチャ済みで、
+//   ドラッグは ContinueTracking へ行くため、ハンドツールへの一時切替は不要かつ不整合の元になる。
+static void KESCMTrackerBeginPeek(PMReal opacity)
 {
+	if (!sPeekArmed || !KESCMFrontViewIsOverTarget())
+		return;	// 未 Start / Target 窓以外では反応しない(中ボタン peek 分岐と同じ条件)
+	sPeekActive = kTrue;
+	KESCMDrawEventHandler::sPeekOpacity = opacity;	// 旧版べた載せの不透明度(描画時に参照)
+	sSingleShowing = kFalse;
+	KESCMDrawEventHandler::sMarksVisible = kFalse;	// 覗き中は枠等を出さない(旧版だけ)
+	KESCMPeekShowUnderMouse(sPeekTargetDB, sPeekSourceDB, nil, nil);
+}
+
+//========================================================================================
+// Alt+左「色比較」の CMYK 情報を、パネル状態行に加えて**カーソル自身**にも描く。
+//   カーソルは OS 描画=ドキュメント窓枠を超えマウス追従(仕組み: CursorSpec のコールバックで
+//   自前バッファに AGM 描画する「カスタムビットマップカーソル」。ChangeModalCursor はトラッカー
+//   =独自ツールを持つ KESCM だから使える特典)。CreateCursorBitmapProc は引数でデータを渡せない
+//   ので、描く文字列は file-static sCmykCursorText に置きコールバックから読む。
+//   ★これはまず「出るか」を見る実装スパイク(2026-07-13)。座標系(y方向)・alpha・サイズは実機で調整。
+//========================================================================================
+static PMString sCmykCursorText;			// "…tgt\n…src"(LF区切り2行)。色サンプル成功時に格納。
+static bool16   sCmykCursorPending = kFalse;	// 直近の BeginTracking で CMYK カーソルを出すべきか
+
+// LF(0x0A)で最大2行に分割する。
+static void KESCMSplitTwoLines(const PMString& src, PMString& line1, PMString& line2)
+{
+	line1.Clear(); line1.SetTranslatable(kFalse);
+	line2.Clear(); line2.SetTranslatable(kFalse);
+	const int32 n = src.NumUTF16TextChars();
+	const UTF16TextChar* buf = src.GrabUTF16Buffer(nil);
+	bool16 second = kFalse;
+	for (int32 i = 0; i < n; ++i)
+	{
+		if (buf[i] == 0x000A) { second = kTrue; continue; }
+		if (!second) line1.AppendW(UTF32TextChar(buf[i]));
+		else         line2.AppendW(UTF32TextChar(buf[i]));
+	}
+}
+
+// CursorSpec のコールバック。カーソル描画系が呼ぶ(UIスレッド)。bitmapBuffer は呼び出し側が
+// (最大カーソルサイズ)²×4 で確保済み。*width/*height は入力=最大サイズ(hiRes 時は 2 倍)、出力=実使用サイズ。
+static void KESCMCmykCursorBitmapProc(uchar* bitmapBuffer, uint32* width, uint32* height, bool16* hasAlpha, bool16 hiRes)
+{
+	const uint32 scale   = hiRes ? 2u : 1u;
+	const uint32 maxLogW = (*width)  / scale;
+	const uint32 maxLogH = (*height) / scale;
+
+	// 論理サイズ(1x px)。2行 + 余白。最大を超えないようクランプ。
+	uint32 logW = 140; if (logW > maxLogW) logW = maxLogW;
+	uint32 logH = 34;  if (logH > maxLogH) logH = maxLogH;
+	const uint32 actW = logW * scale;
+	const uint32 actH = logH * scale;
+	*width    = actW;
+	*height   = actH;
+	*hasAlpha = kTrue;
+
+	InterfacePtr<IGraphicsPort> gPort(Utils<ICursorUtils>()->QueryGraphicsPortForBitmap(
+		bitmapBuffer, actW, actH, kTrue /*hasAlpha*/, hiRes));
+	if (gPort == nil)
+		return;
+
+	// 背景(濃いグレーの不透明箱=まず「出るか」を確実に見るため全面塗り)。
+	gPort->setopacity(PMReal(1.0), kFalse);
+	gPort->setrgbcolor(PMReal(0.12), PMReal(0.12), PMReal(0.12));
+	gPort->rectfill(PMReal(0.0), PMReal(0.0), PMReal(logW), PMReal(logH));
+
+	// 文字(白)。既定フォント。y-down 前提でベースラインを置く(実機で要調整)。
+	InterfacePtr<IFontMgr> fontMgr(GetExecutionContextSession(), UseDefaultIID());
+	InterfacePtr<IPMFont> font(fontMgr != nil ? fontMgr->QueryFont(fontMgr->GetDefaultFontName()) : nil);
+	if (font != nil)
+	{
+		PMString line1, line2;
+		KESCMSplitTwoLines(sCmykCursorText, line1, line2);
+
+		gPort->setrgbcolor(PMReal(1.0), PMReal(1.0), PMReal(1.0));
+		gPort->selectfont(font, PMReal(12.0));
+
+		const int32 n1 = line1.NumUTF16TextChars();
+		if (n1 > 0) gPort->show(PMReal(4.0), PMReal(13.0), (uint32)n1, line1.GrabUTF16Buffer(nil));
+		const int32 n2 = line2.NumUTF16TextChars();
+		if (n2 > 0) gPort->show(PMReal(4.0), PMReal(28.0), (uint32)n2, line2.GrabUTF16Buffer(nil));
+	}
+}
+
+// KESCMTracker.cpp から使う入口。BeginTracking の CMYK 分岐が成功したら Pending が立ち、トラッカーが
+// ChangeModalCursor(CursorSpec(KESCMTrackerCmykCursorProc(), …)) を呼ぶ。
+bool16 KESCMTrackerHasPendingCmykCursor()          { return sCmykCursorPending; }
+CreateCursorBitmapProc KESCMTrackerCmykCursorProc() { return &KESCMCmykCursorBitmapProc; }
+
+void KESCMTrackerRevealBegin(bool16 shiftDown, bool16 altDown, bool16 cmdDown)
+{
+	sCmykCursorPending = kFalse;	// このプレスで CMYK カーソルを出すかは下の Alt 分岐で決める(既定=出さない)
+
+
+	// Ctrl(cmd)を伴う左ボタンは未対応(再比較/パネル/CMYK は中ボタン専用)。素のミドルを邪魔しないのと
+	// 同様、ここでは何もしない(トラッカーはキャプチャ済みだが描画状態は変えない)。
+	if (cmdDown)
+		return;
+
+	// ---- 「Hold to Hide Marks」モード(常時表示の極性反転)の窓別 temp-hide ----
+	// 中ボタン WatchEvent kMButtonDn 冒頭の tempHideGesture と同一。隠すジェスチャ=修飾なし or Shift
+	// (Shift+Alt も Shift を含む)。cmd は上で除外済み。★Alt 単独(CMYK)は隠さない=枠を出したままサンプリング
+	// (中ボタン Shift+Ctrl+Alt でも枠は隠れない仕様に一致)。押した窓の枠だけを隠す(Target/Source 別)。
+	const bool16 tempHideGesture = (!shiftDown && !altDown) || shiftDown;
+	if (KESCMDrawEventHandler::sAlwaysShowMarks && tempHideGesture)
+	{
+		if (!KESCMDrawEventHandler::sMarksTempHidden && KESCMFrontViewIsOverTarget())
+		{
+			KESCMDrawEventHandler::sMarksTempHidden = kTrue;
+			KESCMInvalidateMarksDoc();	// Target(sDB)を再描画
+		}
+		if (KESCMDrawEventHandler::sSrcMarksOn && !KESCMDrawEventHandler::sSrcMarksTempHidden &&
+		    KESCMFrontViewIsOverSource())
+		{
+			KESCMDrawEventHandler::sSrcMarksTempHidden = kTrue;
+			KESCMInvalidateDB(KESCMDrawEventHandler::sSrcDB);	// Source(sSrcDB)を再描画
+		}
+	}
+
+	// ---- ジェスチャ分岐 ----
+	if (altDown && !shiftDown)
+	{
+		// Alt+左(単独、Shift/Ctrl なし): クリック点の CMYK 生値(0..255)を新・旧でサンプリングし、
+		// "Target C.. M.. Y.. K.." / "Source C.. …" をパネルのステータス行に表示する(次の操作まで残る)。
+		// 中ボタン Shift+Ctrl+Alt+ミドル 相当。arm 済み(Start 後)かつ Target 窓上でのみ反応。
+		// パネルが閉じ/アイコン化していてもステータスが見えるよう、押下中だけ一時表示する(離すと元へ戻す=
+		// End 側の KESCMPanelTempShowEnd)。
+		if (sPeekArmed && KESCMFrontViewIsOverTarget())
+		{
+			PMString colorMsg;
+			if (KESCMSampleCmykUnderMouse(sPeekTargetDB, sPeekSourceDB, colorMsg))
+			{
+				KESCMPanelTempShowBegin();
+				KESCMSetStatus(colorMsg);
+				// パネル状態行に加えて、カーソル自身にも同じ CMYK を描く(トラッカーが ChangeModalCursor する)。
+				sCmykCursorText    = colorMsg;
+				sCmykCursorPending = kTrue;
+			}
+		}
+		return;
+	}
+	if (shiftDown && altDown)
+	{
+		// Shift+Alt+左: 旧版べた載せ peek を 50% で(中ボタン Shift+Alt+ミドル相当)。
+		KESCMTrackerBeginPeek(kKESCMPeekSemiOpacity);
+		return;
+	}
+	if (shiftDown)
+	{
+		// Shift+左: 旧版べた載せ peek を 100% 不透明で(中ボタン Shift+ミドル相当)。
+		KESCMTrackerBeginPeek(PMReal(1.0));
+		return;
+	}
+
+	// ---- 修飾なし: 通常モードのマーク一時表示(reveal) ----
+	// Hold to Hide モード中は上で temp-hide 済み=ここでは何もしない(reveal はしない)。
+	if (KESCMDrawEventHandler::sAlwaysShowMarks)
+		return;
+
 	// 「マークがある」の判定は WatchEvent の修飾なし分岐と同一(anyMarkableContent 相当)。
 	// overflow 集合は現在の (sDB,sSrcDB) 用へ合わせてから読む。
 	KESCMDrawEventHandler::EnsureOverflowCache();
@@ -1302,12 +1474,8 @@ void KESCMTrackerRevealBegin()
 	if (!haveContent)
 		return;
 
-	// 「Hold to Hide Marks」モード(常時表示の極性反転)は Step 2 で対応する。ここでは通常モード
-	// (マーク非表示→押下中だけ表示)のみ扱う。
-	if (KESCMDrawEventHandler::sAlwaysShowMarks)
-		return;
-
-	// Target 窓の上でだけ reveal する(Source や無関係な窓では出さない。中ボタンと同じ方針)。
+	// 通常モード(マーク非表示→押下中だけ表示)。Target 窓の上でだけ reveal する(Source や無関係な窓では
+	// 出さない。中ボタンと同じ方針)。
 	if (!KESCMFrontViewIsOverTarget())
 		return;
 
@@ -1319,10 +1487,39 @@ void KESCMTrackerRevealBegin()
 
 void KESCMTrackerRevealEnd()
 {
-	// 左ボタンを離した → 枠表示を解除し、不透明度を基準値へ戻す＋非表示へ(WatchEvent の
-	// sSingleShowing 復元と同じ)。
-	if (sSingleShowing)
+	// 「Hold to Hide Marks」で押下中に隠していた常時表示の枠を戻す(離すと再表示)。押した窓に応じて
+	// Target/Source どちらか(または両方)が立っている。モード OFF なら両方 kFalse なので無影響
+	// (WatchEvent kMButtonUp の temp-hide 復元と同一)。
+	if (KESCMDrawEventHandler::sMarksTempHidden)
 	{
+		KESCMDrawEventHandler::sMarksTempHidden = kFalse;
+		KESCMInvalidateMarksDoc();	// Target(sDB)を再描画
+	}
+	if (KESCMDrawEventHandler::sSrcMarksTempHidden)
+	{
+		KESCMDrawEventHandler::sSrcMarksTempHidden = kFalse;
+		KESCMInvalidateDB(KESCMDrawEventHandler::sSrcDB);	// Source(sSrcDB)を再描画
+	}
+
+	// Alt+左(CMYK)で一時表示していたパネルを元の状態(閉/アイコン)へ戻す。一時表示していなければ無害な
+	// no-op(中ボタン kMButtonUp の KESCMPanelTempShowEnd と同一)。
+	KESCMPanelTempShowEnd();
+
+	if (sPeekActive)
+	{
+		// Shift／Shift+Alt+左を離した → 旧版べた載せを隠す(マークは触らない)。キャッシュは保持
+		// (再 peek は即時)。中ボタン kMButtonUp の sPeekActive 復元と同一。
+		sPeekActive = kFalse;
+		if (KESCMDrawEventHandler::sShowOriginal)
+		{
+			KESCMDrawEventHandler::sShowOriginal = kFalse;
+			KESCMInvalidateDB(sPeekTargetDB);
+		}
+	}
+	else if (sSingleShowing)
+	{
+		// 通常モードの reveal 解除 → 枠表示を解除し、不透明度を基準値へ戻す＋非表示へ(WatchEvent の
+		// sSingleShowing 復元と同じ)。
 		sSingleShowing = kFalse;
 		KESCMDrawEventHandler::sMarksVisible = kFalse;
 		KESCMDrawEventHandler::sMarkScreenOpacity = KESCMBaseScreenOpacity();
