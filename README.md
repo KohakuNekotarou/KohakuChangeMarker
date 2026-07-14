@@ -1,14 +1,15 @@
 # KohakuExtendScriptChangeMarker (KESCM)
 Adobe InDesign C++ SDK Plug-In.
-二つのドキュメントをページ単位でオフスクリーンにレンダリングしてピクセル比較し、
-変化した箇所を画面上に枠を重ねて表示します。表示は非永続なので、ドキュメントには残りません。
+Two documents are rendered off-screen page by page and compared at the pixel level; areas with changes are highlighted by overlaying frames on the screen.
+This display is temporary and does not alter the documents themselves.
 
-## 作成について
-本プラグインは **KohakuNekotarou** が、Anthropic の AI **Claude（Claude Code）**
-と協働して設計・実装しました。
+https://www.youtube.com/watch?v=QIP_KAs5rtU
 
-## 注意
-どの様な問題が起こっても責任を取れません、ご利用は自己責任でお願いします。
+## About Creation
+This plugin was designed and implemented by **KohakuNekotarou** in collaboration with Anthropic's AI, **Claude (Claude Code)**.
+
+## Note
+We cannot be held responsible for any issues that may arise; please use this service at your own risk.
 
 ## 連絡
 農作業の合間に趣味でInDesignのScriptやPlugInを作っています。
@@ -16,5 +17,5 @@ Adobe InDesign C++ SDK Plug-In.
 kohaku.nekotarou@gmail.com
 まで、日本国内のみ対応します。
 
-## 支援
+## sponsors
 https://github.com/sponsors/KohakuNekotarou
