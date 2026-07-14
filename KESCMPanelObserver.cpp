@@ -28,8 +28,6 @@
 #include "IApplication.h"			// GetExecutionContextSession / QueryApplication
 #include "IPanelMgr.h"				// QueryPanelManager / GetVisiblePanel(外部からのパネル更新)
 #include "PagesPanelID.h"			// kPagesPanelWidgetID(Ctrl+Alt+ミドルで標準ページパネルを show/hide)
-#include "IEventUtils.h"			// GetGlobalMouseLocation(Shift+Ctrl+中のカーソル位置ポップ)
-#include "Utils.h"					// Utils<IEventUtils>() テンプレートアクセサ
 #include "IActiveContext.h"
 #include "IDocument.h"
 #include "IDocumentList.h"
@@ -38,8 +36,6 @@
 #include "CObserver.h"
 #include "widgetid.h"				// kTrueStateMessage / kFalseStateMessage
 #include "PersistUtils.h"			// ::GetUIDRef
-#include "PaletteRef.h"				// パネルの一時表示(CMYK比較の押下中)でアイコン化状態を扱う
-#include "PaletteRefUtils.h"		// GetParentOfPalette / IsTabPane / Get・SetTabPaneMode(Icon⇔Expanded)
 
 // プロジェクト内:
 #include "KESCMID.h"
@@ -438,176 +434,6 @@ void KESCMRefreshPanel()
 		return;		// パネルは隠れている: 触る先が無い。
 	InterfacePtr<IPanelControlData> pcd(panel, UseDefaultIID());
 	KESCMApplyPanelInfo(pcd);
-}
-
-//========================================================================================
-// KESCMEnsurePanelShown(KESCMCore.h で宣言)
-//   パネルが非表示(閉じている)か、アイコン化/最小化されている(IsPanelWithWidgetIDShown が kFalse を
-//   返す状態。ドキュメント曰く「minimized palette では kFalse になる」ため、閉鎖とアイコン化の両方を
-//   一つの判定で拾える)なら ShowPanelByWidgetID で表示する。既に見えていれば何もしない。
-//========================================================================================
-void KESCMEnsurePanelShown()
-{
-	InterfacePtr<IApplication> app(GetExecutionContextSession()->QueryApplication());
-	if (app == nil)
-		return;
-	InterfacePtr<IPanelMgr> panelMgr(app->QueryPanelManager());
-	if (panelMgr == nil)
-		return;
-	if (!panelMgr->IsPanelWithWidgetIDShown(kKESCMPanelWidgetID))
-		panelMgr->ShowPanelByWidgetID(kKESCMPanelWidgetID, kFalse);	// giveKeyFocus=kFalse: ミドル操作中にフォーカスを奪わない
-}
-
-//========================================================================================
-// パネルの一時表示(KESCMCore.h で宣言) — CMYK比較(3キー+ミドル)の押下中だけパネルを見せて、
-// ミドルを離したら元の状態(閉じていた/アイコン化されていた)へ戻す。
-//   Begin: 押下時に呼ぶ。既に見えていれば何もしない(復元も不要)。非表示/アイコン化なら
-//          「アイコン化だったか」を控えてから ShowPanelByWidgetID で表示し、復元待ちにする。
-//   End  : ミドル解放時に呼ぶ(復元待ちでなければ即 return=無害)。アイコン化だった場合は
-//          タブペイン(ドックの1列)のモードを Icon へ戻し、閉じていた場合は Hide で閉じ直す。
-//   アイコン化の判定と復元は Drover パレット層(PaletteRefUtils)。TabPane の Icon/Expanded モード=
-//   UI の「>>」ボタン相当で、列単位の状態(パネル1枚単位ではない)。
-//========================================================================================
-static bool16 sTempShowPending = kFalse;	// 復元待ちか(Begin 時に非表示/アイコン化だった)
-static bool16 sTempShowWasIcon = kFalse;	// Begin 前がアイコン化(タブペインが Icon モード)だったか
-
-// パネルを含むタブペイン(Icon/Expanded モードを持つドックの1列)を、パレット階層を遡って探す。
-// ドッキングされていない(フローティング等)場合は無効な PaletteRef を返す。
-static PaletteRef KESCMFindPanelTabPane(IPanelMgr* panelMgr)
-{
-	IControlView* panel = panelMgr->GetPanelFromWidgetID(kKESCMPanelWidgetID);
-	if (panel == nil)
-		return PaletteRef();
-	PaletteRef pal = panelMgr->GetPaletteRefContainingPanel(panel);
-	for (int32 guard = 0; guard < 16 && pal.IsValid(); ++guard)	// guard=階層異常時の無限ループ保険
-	{
-		if (PaletteRefUtils::IsTabPane(pal))
-			return pal;
-		if (PaletteRefUtils::IsRootPaletteNode(pal))
-			break;
-		pal = PaletteRefUtils::GetParentOfPalette(pal);
-	}
-	return PaletteRef();
-}
-
-void KESCMPanelTempShowBegin()
-{
-	sTempShowPending = kFalse;
-	sTempShowWasIcon = kFalse;
-
-	InterfacePtr<IApplication> app(GetExecutionContextSession()->QueryApplication());
-	InterfacePtr<IPanelMgr> panelMgr(app != nil ? app->QueryPanelManager() : nil);
-	if (panelMgr == nil)
-		return;
-
-	if (panelMgr->IsPanelWithWidgetIDShown(kKESCMPanelWidgetID))
-		return;	// 既に見えている: 一時表示ではないので離しても何もしない
-
-	// 「アイコン化されていた」か「閉じていた」かを控える(復元方法が違う)。
-	PaletteRef pane = KESCMFindPanelTabPane(panelMgr);
-	if (pane.IsValid() && PaletteRefUtils::GetTabPaneMode(pane) == PaletteRefUtils::kIcon_TabPaneMode)
-		sTempShowWasIcon = kTrue;
-
-	panelMgr->ShowPanelByWidgetID(kKESCMPanelWidgetID, kFalse);	// giveKeyFocus=kFalse: ミドル操作中にフォーカスを奪わない
-	sTempShowPending = kTrue;
-}
-
-void KESCMPanelTempShowEnd()
-{
-	if (!sTempShowPending)
-		return;
-	sTempShowPending = kFalse;
-
-	InterfacePtr<IApplication> app(GetExecutionContextSession()->QueryApplication());
-	InterfacePtr<IPanelMgr> panelMgr(app != nil ? app->QueryPanelManager() : nil);
-	if (panelMgr == nil)
-		return;
-
-	if (sTempShowWasIcon)
-	{
-		sTempShowWasIcon = kFalse;
-		// アイコンへ戻す。Show が列ごと展開していた場合に備えて、まずタブペインのモードを Icon へ
-		// 戻し(既に Icon のまま=ドロワー表示だった場合は no-op)、それでもパネルが見えたまま
-		// (=ドロワーが開いている)なら Hide で閉じる。
-		PaletteRef pane = KESCMFindPanelTabPane(panelMgr);
-		if (pane.IsValid() &&
-		    PaletteRefUtils::GetTabPaneMode(pane) != PaletteRefUtils::kIcon_TabPaneMode)
-			PaletteRefUtils::SetTabPaneMode(pane, PaletteRefUtils::kIcon_TabPaneMode);
-		if (panelMgr->IsPanelWithWidgetIDShown(kKESCMPanelWidgetID))
-			panelMgr->HidePanelByWidgetID(kKESCMPanelWidgetID);
-	}
-	else
-	{
-		// 閉じていた → 閉じ直す。
-		panelMgr->HidePanelByWidgetID(kKESCMPanelWidgetID);
-	}
-}
-
-//========================================================================================
-// KESCMTogglePanelAtCursor(KESCMCore.h で宣言) — Shift+Ctrl+中ボタンでパネルの表示/非表示を
-// トグルする。表示にするとき、パネルがフローティング(=どこにもドックされていない浮きパレット)なら
-// マウス位置付近へ移動して「カーソルの所にポップ」させる。ドック中は剥がさず定位置に表示する
-// (ユーザー指定 2026-07-10: フロート時のみ追従)。
-//========================================================================================
-
-// パネルを含む「フローティングのタブ付きドック」をパレット階層を遡って探す。ドッキング中
-// (フロートでない)なら無効な PaletteRef を返す。SetPalettePosition の precondition
-// (フローティングの Dock)を満たす対象を返すため、TabPane ではなくドック本体まで遡る。
-static PaletteRef KESCMFindPanelFloatingDock(IPanelMgr* panelMgr)
-{
-	IControlView* panel = panelMgr->GetPanelFromWidgetID(kKESCMPanelWidgetID);
-	if (panel == nil)
-		return PaletteRef();
-	PaletteRef pal = panelMgr->GetPaletteRefContainingPanel(panel);
-	for (int32 guard = 0; guard < 16 && pal.IsValid(); ++guard)	// guard=階層異常時の無限ループ保険
-	{
-		if (PaletteRefUtils::IsFloatingTabbedPaletteDock(pal))
-			return pal;
-		if (PaletteRefUtils::IsRootPaletteNode(pal))
-			break;
-		pal = PaletteRefUtils::GetParentOfPalette(pal);
-	}
-	return PaletteRef();
-}
-
-void KESCMTogglePanelAtCursor()
-{
-	InterfacePtr<IApplication> app(GetExecutionContextSession()->QueryApplication());
-	InterfacePtr<IPanelMgr> panelMgr(app != nil ? app->QueryPanelManager() : nil);
-	if (panelMgr == nil)
-		return;
-
-	// 表示中(=見えている)なら隠す。
-	if (panelMgr->IsPanelWithWidgetIDShown(kKESCMPanelWidgetID))
-	{
-		panelMgr->HidePanelByWidgetID(kKESCMPanelWidgetID);
-		return;
-	}
-
-	// カーソル位置(グローバル)にパネルを出す。左はクリック点を隠しすぎないよう少し左へ。
-	// ★上端(=タイトルバー)はカーソルの「少し下」に置く(ユーザー指定 2026-07-11)。タイトルバーの上に
-	//   カーソルが載ると、そこでは Shift+Ctrl+ミドルのショートカット(トグルで隠す)が効かなくなるため、
-	//   タイトルバーがカーソルに重ならない位置へ下げる。カーソルはパネルの少し上(=タイトルバーの外)に来る。
-	GSysPoint g = Utils<IEventUtils>()->GetGlobalMouseLocation();
-	const SysCoord kKESCMPanelPopTopMargin = 9;	// カーソルからタイトルバー上端までの下方向オフセット(px)
-	const SysCoord left = (SysCoord)g.x - 7;
-	const SysCoord top  = (SysCoord)g.y + kKESCMPanelPopTopMargin;
-
-	// ★「表示→移動」のチラつきを消すため、表示する前に位置を決める。GetPanelFromWidgetID は
-	// 非表示のパネルも返す(GetVisiblePanel と違い nil にならない)ので、隠れている floating dock を
-	// 先に掴んで SetPalettePosition できる。これで ShowPanelByWidgetID した瞬間からカーソル位置に出る。
-	// フロート時のみ(ドック中は floating dock が見つからず何もしない=定位置表示)。
-	PaletteRef preDock = KESCMFindPanelFloatingDock(panelMgr);
-	if (preDock.IsValid())
-		PaletteRefUtils::SetPalettePosition(preDock, left, top);
-
-	// 非表示/アイコン化 → 表示する。giveKeyFocus=kFalse: ミドル操作中にフォーカスを奪わない。
-	panelMgr->ShowPanelByWidgetID(kKESCMPanelWidgetID, kFalse);
-
-	// 表示で dock が purge→再生成された場合の補正(前段で置けていれば同座標=実質no-op=チラつかない)。
-	PaletteRef postDock = KESCMFindPanelFloatingDock(panelMgr);
-	if (postDock.IsValid())
-		PaletteRefUtils::SetPalettePosition(postDock, left, top);
 }
 
 //========================================================================================

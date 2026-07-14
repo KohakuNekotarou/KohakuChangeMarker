@@ -43,8 +43,6 @@
 #include "IStartupShutdownService.h"
 #include "CreateObject.h"
 #include "CPMUnknown.h"
-#include "IToolBoxUtils.h"
-#include "ITool.h"
 #include "LayoutUIID.h"
 #include "DocumentContextID.h"
 
@@ -103,9 +101,6 @@ static bool16     sPeekArmed    = kFalse;
 static const PMReal kKESCMPeekSemiOpacity = 0.5;	// Shift+Alt＋ミドル時の旧版の不透明度(0..1)
 static bool16 sPeekActive        = kFalse;	// Shift/Shift+Alt+ミドルを押し込み中(=覗き表示中)か
 static bool16 sSingleShowing     = kFalse;	// 修飾なしミドル押下中(=全マークを選択不透明度25%/75%で一時表示中)か。離すと隠す＋基準opacityへ
-// ミドル押下中だけハンドツール(掴んで移動)に一時切替。離すと元のツールへ戻す。
-static ITool*  sSavedTool  = nil;	// 切替前のツール(ref を保持。Restore で Release)
-static bool16  sHandActive = kFalse;	// ハンドツールに一時切替中か
 
 // 画面マークの「基準」不透明度(=ミドルを押していない常時表示時の値)。
 //   印刷マークON中はパネルで選択中の不透明度(25%/75%。画面と印刷の見た目を一致)、印刷OFFは 1.0。
@@ -255,20 +250,6 @@ static KESCMPeekResult KESCMPeekShowUnderMouse(IDataBase* targetDB, IDataBase* s
 	return kKESCMPeekShown;
 }
 
-
-// 覚えていた元のツールへ戻す(ハンドに切替えていた場合のみ)。
-static void KESCMRestoreTool()
-{
-	if (!sHandActive)
-		return;
-	if (sSavedTool != nil)
-	{
-		Utils<IToolBoxUtils>()->SetActiveTool(sSavedTool, kPointerToolBoss);
-		sSavedTool->Release();
-		sSavedTool = nil;
-	}
-	sHandActive = kFalse;
-}
 
 // ページ比較の部分更新(共通コア): targetPages(= targetDB 上のページUID列)を再比較して枠(リング)を
 // 更新する。source 対応は除外対応表(登録済みページを除いた順番対応)で引く。
@@ -1312,8 +1293,8 @@ void KESCMTrackerRevealBegin(bool16 shiftDown, bool16 altDown, bool16 cmdDown)
 				// 色比較はカーソル自身に CMYK を描く(トラッカーが ChangeModalCursor する)のに加えて、
 				// 念のためパネルのステータス行にも同じ値を出す(ユーザー要望 2026-07-14)。
 				// ★KESCMSetStatus はパネルが非表示でも「強制的に表示」はしない(ON→表示中なら見える、
-				// OFF→隠れたまま状態だけ覚える)。パネルを開かせる KESCMPanelTempShowBegin() は
-				// 呼ばない(ユーザー指定: OFFのままでよい、ONにはしない)。
+				// OFF→隠れたまま状態だけ覚える)。パネルを強制的に開かせることはしない
+				// (ユーザー指定: OFFのままでよい、ONにはしない)。
 				KESCMSetStatus(panelMsg);
 				sCmykCursorText    = cursorMsg;
 				sCmykCursorPending = kTrue;
@@ -1378,10 +1359,6 @@ void KESCMTrackerRevealEnd()
 		KESCMInvalidateDB(KESCMDrawEventHandler::sSrcDB);	// Source(sSrcDB)を再描画
 	}
 
-	// Alt+左(CMYK)で一時表示していたパネルを元の状態(閉/アイコン)へ戻す。一時表示していなければ無害な
-	// no-op(中ボタン kMButtonUp の KESCMPanelTempShowEnd と同一)。
-	/* 色比較でパネルを一切開閉しないため撤去(ユーザー指定 2026-07-13) */;
-
 	if (sPeekActive)
 	{
 		// Shift／Shift+Alt+左を離した → 旧版べた載せを隠す(マークは触らない)。キャッシュは保持
@@ -1441,14 +1418,6 @@ void KESCMPeekStartup::Shutdown()
 	sPeekArmed = kFalse;
 	sPeekTargetDB = nil;
 	sPeekSourceDB = nil;
-	// ハンドツール一時切替中(ミドル押下中)に終了した場合、保存していた元ツールの参照が残る。
-	// 終了処理中なので SetActiveTool(KESCMRestoreTool)は呼ばず、参照の解放だけを行う。
-	if (sSavedTool != nil)
-	{
-		sSavedTool->Release();
-		sSavedTool = nil;
-	}
-	sHandActive = kFalse;
 
 	// レイアウトビュー同期の後始末は「状態フラグを落とすだけ」にする(以後の通知は Update 先頭の
 	// ガードで無視される)。★KESCMSetLayoutSync(kFalse) をここで呼んではならない: その経路は
@@ -1487,7 +1456,6 @@ void KESCMDoDisarmMousePeek(IDataBase* db)
 	// するため(タイル表示等で対象文書が同時に見えている場合に効く)。
 	IDataBase* armedTargetDB = sPeekTargetDB;
 
-	KESCMRestoreTool();	// ハンドに切替え中なら元のツールへ戻す
 	sPeekArmed = kFalse;
 	sPeekTargetDB = nil;
 	sPeekSourceDB = nil;
@@ -1569,7 +1537,6 @@ void KESCMHandleDocsClosed()
 		// Stop ボタン(DoClear)相当のフルクリーンアップ。
 		KESCMDrawEventHandler::DropAll();		// sDB=nil、マークエントリ破棄
 		KESCMDrawEventHandler::DropAllOrig();	// sOrigDB=nil、旧版べた載せ破棄
-		KESCMRestoreTool();						// ハンドに切替え中なら元のツールへ戻す(db を触らない)
 		sPeekArmed     = kFalse;
 		sPeekTargetDB  = nil;
 		sPeekSourceDB  = nil;

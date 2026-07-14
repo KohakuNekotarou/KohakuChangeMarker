@@ -144,22 +144,6 @@ void		KESCMSetMarkOpacity25(bool16 op25);
 // (KESCMDoMarkChangesDoc の比較ループ前の busyMsg 表示に使う)。実体は KESCMPanelObserver.cpp。
 void		KESCMSetStatus(const PMString& s, bool16 forceRedrawNow = kFalse);
 
-// パネルが非表示(閉じている、またはアイコン化/最小化されている)なら表示する。何もしなくても既に
-// 見えている場合は何もしない。フォーカスは奪わない(giveKeyFocus=kFalse; ミドルボタン操作の途中で
-// 呼ばれるため)。実体は KESCMPanelObserver.cpp。
-void		KESCMEnsurePanelShown();
-
-// パネルの一時表示(CMYK比較=3キー+ミドルの押下中だけ)。Begin=押下時: 非表示/アイコン化なら表示して
-// 復元待ちにする(既に見えていれば何もしない)。End=ミドル解放時: 元の状態(閉じていた→閉じ直す/
-// アイコン化→タブペインを Icon へ戻す)に復元する(復元待ちでなければ無害な no-op)。
-// 実体は KESCMPanelObserver.cpp(アイコン判定・復元は PaletteRefUtils)。
-void		KESCMPanelTempShowBegin();
-void		KESCMPanelTempShowEnd();
-
-// Shift+Ctrl+中ボタン: KESCMパネルの表示/非表示トグル。表示時、パネルが既にフローティングなら
-// マウス位置付近へ移動する(ドック中は剥がさず定位置に表示)。実体は KESCMPanelObserver.cpp。
-void		KESCMTogglePanelAtCursor();
-
 // パネルのイラスト(ON/OFF アイコン)をクリックしたときに呼ぶ。「このプラグインについて」に載せている
 // 配布元URL(kKESCMRepoURL, KESCMID.h)を既定のブラウザで開く。実体は KESCMActionComponent.cpp。
 void		KESCMOpenAboutURL();
