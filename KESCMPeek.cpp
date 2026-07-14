@@ -1214,15 +1214,15 @@ static void KESCMBuildCmykNoValue(PMString& out)
 	out.Append("--- --- --- --- s");
 }
 
-// パネル版の「値なし」表示。値ごとに見出し文字を添え tgt/src 略語にする。KESCMSampleCmykUnderMouse
+// パネル版の「値なし」表示。値ごとに見出し文字を添え t/s にする。KESCMSampleCmykUnderMouse
 // 成功時のパネル表記(KESCMColorSampler.cpp の KESCMAppendCmykLabeled)と揃える(2026-07-14)。
 static void KESCMBuildCmykNoValuePanel(PMString& out)
 {
 	out.Clear();
 	out.SetTranslatable(kFalse);
-	out.Append("C--- M--- Y--- K--- tgt");
+	out.Append("C--- M--- Y--- K--- t");
 	out.AppendW(UTF32TextChar(0x0A));
-	out.Append("C--- M--- Y--- K--- src");
+	out.Append("C--- M--- Y--- K--- s");
 }
 
 void KESCMTrackerRevealBegin(bool16 shiftDown, bool16 altDown, bool16 cmdDown)
