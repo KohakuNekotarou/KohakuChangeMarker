@@ -162,8 +162,7 @@ bool16 KESCMSampleCmykUnderMouse(IDataBase* targetDB, IDataBase* sourceDB,
 
 	// 各値はラスタ8bit(0..255)を本来の CMYK 数値 0..100% に換算し、3桁ゼロ埋めで桁を揃える。
 	// 表示先でラベルの長さを変える: カーソルは幅制約が厳しいので1文字(t/s。maxChars見積りを減らして
-	// フォントサイズの余地を稼ぐ=ユーザー指定 2026-07-14)。パネルは幅に余裕があるので tgt/src の
-	// 略語表記(ユーザー指定 2026-07-14)。
+	// フォントサイズの余地を稼ぐ=ユーザー指定 2026-07-14)。
 
 	// outCursor = 数値2行、ラベルは t/s(KESCMPeek.cpp のビットマップカーソルは「C M Y K」見出しを別途
 	// 自前描画で足すので、渡す文字列は数値行のみでよい)。数値は両行とも行頭から始まるので
@@ -173,15 +172,14 @@ bool16 KESCMSampleCmykUnderMouse(IDataBase* targetDB, IDataBase* sourceDB,
 	outCursor.AppendW(UTF32TextChar(0x0A));	// 改行 → 2行目へ
 	KESCMAppendCmyk(outCursor, cO); outCursor.Append(" s");
 
-	// outPanel = 値ごとに見出し文字を直接添える(KESCMAppendCmykLabeled)+ tgt/src 略語(Target/Source
-	// フル表記だと1行に収まらなかったため 2026-07-14 に短縮)。
+	// outPanel = 値ごとに見出し文字を直接添える(KESCMAppendCmykLabeled)+ t/s
 	// ★見出し行を数値行の上に別途置いて縦揃えする案は撤回した: パネルのステータス欄はプロポーショナル
 	// フォント(kPaletteWindowFontId)で、SDK にモノスペース選択肢が無いため、文字と数字の字幅差で
 	// スペース数をいくら調整しても縦に揃わなかった(ユーザー実機報告 2026-07-14)。値ごとにラベルを
 	// 直接添える今の形なら、行間の縦揃えが不要になり、フォント幅に関係なく崩れない。
 	outPanel.SetTranslatable(kFalse);
-	KESCMAppendCmykLabeled(outPanel, cN); outPanel.Append(" tgt");
+	KESCMAppendCmykLabeled(outPanel, cN); outPanel.Append(" t");
 	outPanel.AppendW(UTF32TextChar(0x0A));
-	KESCMAppendCmykLabeled(outPanel, cO); outPanel.Append(" src");
+	KESCMAppendCmykLabeled(outPanel, cO); outPanel.Append(" s");
 	return kTrue;
 }
