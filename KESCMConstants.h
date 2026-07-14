@@ -29,7 +29,7 @@ static const int32 kKESCMThumbDiagDivisor = 10;
 static const PMReal kKESCMThumbMarkOpacity = 0.75;
 static const uint8 kKESCMRingAlpha = 255;	// リングの基本アルファ(0..255)。「通常」=不透明(255)。薄表示は setopacity 側で行う(25%→255×0.25=実25%)
 // 枠(リング＋変更数)の不透明度の二択(パネルのラジオ「Marks opacity 25% / 75%」)。選択値は
-// ミドル押下中の画面表示・印刷ON中の常時表示・印刷/PDF出力のすべてに共通で効く(KESCMDrawEventHandler::SelectedMarkOpacity)。
+// ツール左hold中の画面表示・印刷ON中の常時表示・印刷/PDF出力のすべてに共通で効く(KESCMDrawEventHandler::SelectedMarkOpacity)。
 static const PMReal kKESCMMarkOpacity25 = 0.25;	// 「25%」(薄い)
 static const PMReal kKESCMMarkOpacity75 = 0.75;	// 「75%」(濃いめ・少し透ける)
 // 変化判定: 常に CMYK でラスタ化して比較し、CMYK 4ch のどれかがこのしきい値を超えて違えば「変化」とする。
@@ -84,13 +84,13 @@ static const PMReal kKESCMOrigResolution = 72.0;
 
 // (一時トーストの定数は 2026-07-04 撤去。転用時は docs/ai-notes/kescm-toast-mechanism.md 参照)
 
-// クリック点 CMYK サンプリング(Shift＋Ctrl＋Alt＋ミドル)。クリック周りの極小領域だけを高dpi・CMYK で
+// クリック点 CMYK サンプリング(旧 Shift＋Ctrl＋Alt＋ミドル)。クリック周りの極小領域だけを高dpi・CMYK で
 // ラスタ化し、中心1画素の生値(0..255)を新・旧で読む。AA は OFF(ベクター縁の中間色を避ける)。
 static const PMReal kKESCMSampleDpi    = 300.0;	// サンプリングのラスタ解像度(dpi)
 static const PMReal kKESCMSampleHalfPt = 1.0;	// サンプル領域の半幅(pt)。300dpi で約2pt四方≒8px→中心1画素を読む
 
 // 旧ページ番号バッジ(フライアウト「Show Original Page Numbers」)。スプレッドを隠すと「現在のページ番号」
-// マーカーが隠し分を飛ばして振り直されるため、枠の可視条件と同じとき(印刷マークONの常時表示/ミドル押下中)に
+// マーカーが隠し分を飛ばして振り直されるため、枠の可視条件と同じとき(印刷マークONの常時表示/ツール左hold中)に
 // 「隠す前の元の番号」をページ下端中央へ描く(印刷マークONなら印刷/PDF にも出る)。
 // サイズはズーム非依存(印刷時は実効スケール1.0固定=そのまま pt)。
 // 見た目=トースト風: 白い四角の塗りの上に赤の太字。バッジ全体の不透明度はパネルの「Marks opacity

@@ -82,10 +82,10 @@ void		KESCMInvalidateDB(IDataBase* db);
 void		KESCMDoClearMarks(IDataBase* db);
 
 // マークを印刷に出すか(かつ画面に常時表示するか)と、枠の不透明度の選択を切り替える。
-// opacity25Flag: kTrue=25% / kFalse=75%(ミドル押下表示・印刷ON常時表示・印刷出力に共通)。
+// opacity25Flag: kTrue=25% / kFalse=75%(ツール左hold表示・印刷ON常時表示・印刷出力に共通)。
 void		KESCMDoSetPrintMarks(bool16 printFlag, bool16 opacity25Flag, IDataBase* db);
 
-// 旧版のミドルボタン peek を arm / disarm する(パネルの ON/OFF 状態も駆動する)。
+// 旧版の peek を arm / disarm する(パネルの ON/OFF 状態も駆動する)。
 void		KESCMDoArmMousePeek(IDataBase* targetDB, IDataBase* sourceDB);
 void		KESCMDoDisarmMousePeek(IDataBase* db);
 
@@ -168,7 +168,7 @@ IDataBase*	KESCMGetHideUnchangedSrcDB();
 
 // フライアウト「Sync Layout Views」トグル(レイアウトビュー同期)。ON の間、どれかのレイアウトビューを
 // スクロール/ズームすると、その表示(座標+拡大率)を他のドキュメントの全レイアウトビューへ自動で複製する
-// (同一文書のビュー=スプリット相方は対象外。Alt+ミドルと同じ同期エンジン)。Start(枠)とは無関係に
+// (同一文書のビュー=スプリット相方は対象外。旧 Alt+ミドルと同じ同期エンジン)。Start(枠)とは無関係に
 // 単独で ON にできる。実体は KESCMPeek.cpp(オブザーバと同期エンジンの状態がある場所)。
 bool16		KESCMGetLayoutSync();
 void		KESCMSetLayoutSync(bool16 on);

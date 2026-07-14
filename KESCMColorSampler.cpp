@@ -111,7 +111,7 @@ static void KESCMAppendCmykLabeled(PMString& s, const uint8 c[4])
 	s.Append(" K"); KESCMAppend3(s, KESCMByteToPct(c[3]));
 }
 
-// Shift＋Ctrl＋Alt＋ミドルクリック: マウス下ページのクリック点 CMYK 生値を新(target)・旧(source)で
+// ツール Alt+左クリック(旧・中ボタン Shift＋Ctrl＋Alt＋ミドル): マウス下ページのクリック点 CMYK 生値を新(target)・旧(source)で
 // サンプリングし、"Target C000 …(改行)Source C000 …"(各値3桁ゼロ埋め)を outMsg に組む。成功で kTrue。
 //   新→旧ページは平坦通し番号で対応。クリック点を inner(ページ内)座標へ戻し、新/旧それぞれの spread
 //   座標へ写してから各ページを極小ラスタ化する(新旧の幾何一致が前提)。

@@ -158,7 +158,7 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 
 		// 「Show Original Page Numbers」トグル: フラグを反転して再描画するだけ(バッジの表示判定と描画は
 		// KESCMDrawEventHandler::HandleDrawEvent。表示は枠と同じ可視条件=印刷マークONの常時表示、または
-		// ミドル押下中)。再描画は隠しの当事者になりやすい Target(sDB)と Source を対象にする(他の文書は
+		// ツール左hold中)。再描画は隠しの当事者になりやすい Target(sDB)と Source を対象にする(他の文書は
 		// 次の自然な再描画で反映される)。
 		case kKESCMPopupShowOldNumsActionID:
 		{
@@ -213,7 +213,7 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 		}
 
 		// 「Hold to Hide Marks」トグル: 枠表示の極性反転(フラグ反転のみ)。ON=画面に枠を常時表示し、
-		// ミドル押下中だけ隠す(押下/解放は KESCMPeek.cpp の WatchEvent が sMarksTempHidden を上下)。
+		// ツール左hold中だけ隠す(押下/解放は KESCMPeek.cpp のトラッカー(KESCMTrackerRevealBegin/End)が sMarksTempHidden を上下)。
 		// OFF=従来(既定非表示・押下中だけ表示)。画面のみ=印刷は Print comparison marks が別管理。
 		// 切替時に一時退避を解除し、常時表示の基準不透明度(常時表示ON中は25%/75%)を反映して sDB を再描画。
 		case kKESCMPopupHoldToHideMarksActionID:
@@ -444,7 +444,7 @@ void KESCMActionComponent::DoAboutScript()
 	);
 }
 
-/* DoUsage — パネルのフライアウト「使い方」。中ボタン操作リファレンス(=旧パネルの説明文)を表示する。 */
+/* DoUsage — パネルのフライアウト「使い方」。操作リファレンス(=旧パネルの説明文)を表示する。 */
 void KESCMActionComponent::DoUsage()
 {
 	CAlert::ModalAlert

@@ -2,7 +2,7 @@
 //
 //  KESCMPeek.cpp
 //
-//  ミドルボタン peek の実装(KESCMScriptProvider.cpp から分離)。peek 状態、ミドルボタン＋修飾キーを
+//  ツール(左ボタン)peek の実装(KESCMScriptProvider.cpp から分離)。peek 状態、ツール左ボタン＋修飾キーを
 //  スヌープする IEventWatcher、起動サービス、KESCMCore.h で宣言した arm/disarm/状態アクセサの入口を持つ。
 //
 //========================================================================================
@@ -52,7 +52,7 @@
 #include "IWidgetParent.h"
 #include "PMMatrix.h"
 #include "PMPoint.h"
-#include "PMRect.h"					// ページのペーストボード矩形(Alt+ミドルの追加/削除補正)
+#include "PMRect.h"					// ページのペーストボード矩形(旧 Alt+ミドルの追加/削除補正)
 #include "PMReal.h"
 #include "TransformUtils.h"
 
@@ -85,8 +85,8 @@
 #include "KESCMPeek.h"
 
 //========================================================================================
-// ミドルボタン peek — 共有状態とヘルパ。
-//   ミドルボタンを押している間だけ、マウス下スプレッドの旧版を不透明べた載せし、離すと隠す。
+// ツール(左ボタン)peek — 共有状態とヘルパ。
+//   ツール左ボタンを押している間だけ、マウス下スプレッドの旧版を不透明べた載せし、離すと隠す。
 //   IEventWatcher はグローバル(引数を持てない)ので、比較相手の旧ドキュメントは先に
 //   KESCMDoArmMousePeek(KESCMCore.h)で登録しておく(パネルの Start ボタンが呼ぶ)。watcher
 //   (KESCMPeekWatcher)がこの arm 状態を見る。全部を1つの翻訳単位に置くことで、watcher が MakeOrigImage /
@@ -96,15 +96,15 @@ static IDataBase* sPeekTargetDB = nil;	// 表示中(新)ドキュメント。使
 static IDataBase* sPeekSourceDB = nil;	// peek 中に重ねる旧ドキュメント。
 static bool16     sPeekArmed    = kFalse;
 
-// Shift＋ミドル=旧版を不透明(100%)で / Shift+Alt＋ミドル=旧版を 50% で重ねて peek。
-// 押下中だけ表示し、ミドルを離すと消す(修飾キーは離してもよい)。判定はミドル押下時に1回見るだけ。
-static const PMReal kKESCMPeekSemiOpacity = 0.5;	// Shift+Alt＋ミドル時の旧版の不透明度(0..1)
-static bool16 sPeekActive        = kFalse;	// Shift/Shift+Alt+ミドルを押し込み中(=覗き表示中)か
-static bool16 sSingleShowing     = kFalse;	// 修飾なしミドル押下中(=全マークを選択不透明度25%/75%で一時表示中)か。離すと隠す＋基準opacityへ
+// Shift+左=旧版を不透明(100%)で / Shift+Alt+左=旧版を 50% で重ねて peek。
+// 押下中だけ表示し、ツール左ボタンを離すと消す(修飾キーは離してもよい)。判定はツール左ボタン押下時に1回見るだけ。
+static const PMReal kKESCMPeekSemiOpacity = 0.5;	// Shift+Alt+左時の旧版の不透明度(0..1)
+static bool16 sPeekActive        = kFalse;	// Shift/Shift+Alt+左を押し込み中(=覗き表示中)か
+static bool16 sSingleShowing     = kFalse;	// 修飾なしのツール左hold中(=全マークを選択不透明度25%/75%で一時表示中)か。離すと隠す＋基準opacityへ
 
-// 画面マークの「基準」不透明度(=ミドルを押していない常時表示時の値)。
+// 画面マークの「基準」不透明度(=ツール左ボタンを押していない常時表示時の値)。
 //   印刷マークON中はパネルで選択中の不透明度(25%/75%。画面と印刷の見た目を一致)、印刷OFFは 1.0。
-//   ミドルを離したら sMarkScreenOpacity をこの値へ戻す。
+//   ツール左ボタンを離したら sMarkScreenOpacity をこの値へ戻す。
 PMReal KESCMBaseScreenOpacity()
 {
 	// 印刷マーク ON、または「Hold to Hide Marks」(枠を画面に常時表示)ON のときは、常時表示の枠を
@@ -429,7 +429,7 @@ static void KESCMInvalidateMarksDoc()
 }
 
 // マウス下のドキュメントが、arm 済みの対象(Target)文書と一致するか。CMYK サンプリング
-// (Shift＋Ctrl＋Alt＋ミドル)とスプレッド枠の部分更新(Ctrl＋ミドル)はヒットテストを sPeekTargetDB の
+// (旧 Shift＋Ctrl＋Alt＋ミドル)とスプレッド枠の部分更新(旧 Ctrl＋ミドル)はヒットテストを sPeekTargetDB の
 // ページ座標に対して行うため、マウス下が Source 側や無関係な第3文書のウィンドウだと、そちらの
 // ローカル座標を対象文書のページ座標として誤って解釈してしまう。対象文書のウィンドウ上で操作した時
 // だけ反応させる。
@@ -454,7 +454,7 @@ static bool16 KESCMFrontViewIsOverTarget()
 }
 
 // マウス下のドキュメントウィンドウが Source(比較の旧側=常時表示枠を載せている sSrcDB)かどうか。
-// 「Hold to Hide Marks」＋「Show Marks on Source」併用時、Source 窓でミドルを押したときだけ Source 枠を
+// 「Hold to Hide Marks」＋「Show Marks on Source」併用時、Source 窓でツール左ボタンを押したときだけ Source 枠を
 // 一時退避させるための窓判定(Target 版 KESCMFrontViewIsOverTarget と対称)。Source マークの所属は sSrcDB を
 // 正とする(arm の sPeekSourceDB と同一文書だが、判定はマークの実 db に紐づける)。
 static bool16 KESCMFrontViewIsOverSource()
@@ -480,7 +480,7 @@ static bool16 KESCMFrontViewIsOverSource()
 //   手本パノラマの「見えている状態」= 実効ズーム(GetXScaleFactor(kTrue)、モニタPPI補正込み。
 //   kZoomToCmdBoss の scaleFactor と同じ次元)+可視中心の content 座標 を、比較相手のドキュメントの
 //   全レイアウトビューへ複製する(同一文書のビュー=スプリット相方は対象外)。
-//   Alt+ミドル(単発)とフライアウト「Sync Layout Views」(自動)の両方がこの1本を使う。
+//   旧 Alt+ミドル(単発)とフライアウト「Sync Layout Views」(自動)の両方がこの1本を使う。
 //   ★2026-07-11(ユーザー指定): 発動は「比較を Start 中(sPeekArmed)」かつ「手本・宛先とも Target/Source」の
 //   ときだけ。未 Start や第3文書は関数先頭のガードで弾く(=同期しない)。以前は arm と無関係に全文書へ
 //   複製していたが、Target↔Source 間のみへ限定した。
@@ -570,7 +570,7 @@ static UID KESCMFindPageAtPasteboard(IDataBase* db, const PBPMPoint& pb)
 }
 
 //----------------------------------------------------------------------------------------
-// Alt+ミドル/自動同期の追加/削除補正: 手本(srcDocDb)のビュー中心にあるページを、比較ペアリング
+// 旧 Alt+ミドル/自動同期の追加/削除補正: 手本(srcDocDb)のビュー中心にあるページを、比較ペアリング
 // (KESCMMapTargetToSource / KESCMMapSourceToTarget=登録ページを除外して残りを順番対応させるので、
 // ページの追加/削除で番号がズレていても「本来の相手」を返す)で相手ページへ写像し、ページ中心からの
 // 相対オフセットを保ったまま相手ページ上の座標へ変換する。これで「増減があっても比較対象のページ同士が
@@ -624,7 +624,7 @@ static PBPMPoint KESCMCorrectedCenterForDoc(IDataBase* srcDocDb, IDataBase* dstD
 }
 
 // applyPageOffset=kTrue のとき、各宛先文書へ複製する中心座標に上の追加/削除補正を掛ける。
-// ★Alt+ミドルとフライアウト「Sync Layout Views」の自動同期は、どちらも本仕様として kTrue で呼ぶ
+// ★旧 Alt+ミドルとフライアウト「Sync Layout Views」の自動同期は、どちらも本仕様として kTrue で呼ぶ
 // (比較 arm 中は比較ペアの相手ページ同士がきっちり並ぶ)。未 arm/ペア外は関数内で生同期にフォールバック。
 // 既定 kFalse は補正なし(生座標)の呼び口を残すためのもの。
 static void KESCMSyncOtherDocViewportsTo(IPanorama* srcPano, IDataBase* srcDocDb, bool16 applyPageOffset = kFalse, bool16 limitToArmedPair = kTrue)
@@ -632,7 +632,7 @@ static void KESCMSyncOtherDocViewportsTo(IPanorama* srcPano, IDataBase* srcDocDb
 	if (srcPano == nil)
 		return;
 
-	// ★limitToArmedPair=kTrue(中ボタン Alt+ミドル・フライアウト「Sync Layout Views」のライブ同期):
+	// ★limitToArmedPair=kTrue(旧・中ボタン Alt+ミドル・フライアウト「Sync Layout Views」のライブ同期):
 	//   「比較を Start 中(arm 済み)」かつ「Target↔Source の間だけ」に限定する(ユーザー指定 2026-07-11)。
 	//   ・未 Start(!sPeekArmed)、または arm 対の一方でも不明なら何もしない。
 	//   ・手本(操作した)ビューが Target/Source のどちらでもない第3文書なら同期しない。
@@ -757,7 +757,7 @@ static void KESCMSyncOtherDocViewportsTo(IPanorama* srcPano, IDataBase* srcDocDb
 //     (Split Window で実測済みの罠)にも影響されない。
 //   ②多重購読でも無限ループ/ピンポンしないよう、再入ガード(sLayoutSyncBroadcasting)で
 //     複製中に発生する自分発の通知を無視する(手本は「単一ビューだけ購読」で回避していた)。
-//   ③同期エンジンは Alt+ミドルと共通(kZoomToCmdBoss+実効スケール対称読み書き=本日実機確定の手順)。
+//   ③同期エンジンは 旧 Alt+ミドルと共通(kZoomToCmdBoss+実効スケール対称読み書き=本日実機確定の手順)。
 //========================================================================================
 
 static bool16 sLayoutSyncOn = kFalse;			// トグル状態(セッション内のみ保持)
@@ -935,18 +935,15 @@ void KESCMSetLayoutSync(bool16 on)
 
 //========================================================================================
 // トラッカー(左ボタン)用の共有入口。KESCM ツール選択中の左ボタン押下/解放から呼ばれる
-// (KESCMTracker.cpp)。中ボタンの「修飾なし押下=マーク reveal」(上の WatchEvent kMButtonDn の
-// 素のミドル分岐)と同じ挙動を、左ボタンでも使えるようにする最小の切り出し。ここはファイル内の
-// peek 状態(sSingleShowing)と描画状態(KESCMDrawEventHandler::sMarks*)にアクセスできる。
+// (KESCMTracker.cpp)。修飾なし押下=マーク reveal を基本に、修飾キーで peek/CMYK を切り替える。
+// ここはファイル内の peek 状態(sSingleShowing)と描画状態(KESCMDrawEventHandler::sMarks*)に
+// アクセスできる。
 //
-// ★Step 1 (2026-07-12): 「修飾なし=マーク一時表示」を移植。
-// ★Step 2 (2026-07-13): 「Hold to Hide Marks」極性反転(パネルメニューで Hold ON のとき、押下中だけ
-//   常時表示の枠を隠す)を移植。窓別 temp-hide(Target/Source)まで WatchEvent kMButtonDn/Up と共通の挙動。
-// ★Step 3 (2026-07-13): Shift+左=旧版べた載せ peek 100% / Shift+Alt+左=peek 50% を移植
-//   (中ボタン Shift+ミドル / Shift+Alt+ミドル 相当)。
-// ★Step 4 (2026-07-13): Alt+左(単独)=CMYK 生値サンプリング(中ボタン Shift+Ctrl+Alt+ミドル 相当)を移植。
-//   Ctrl(cmd)系の各ジェスチャ(再比較/パネル)はまだ中ボタン専用。中ボタン側の WatchEvent は一切変更して
-//   いない(両入力は併存)。
+// ★由来(2026-07-12〜13): もとは中ボタン＋修飾キーのジェスチャだったものをツールの左ボタンへ移植した。
+//   修飾なし=マーク一時表示 / Hold to Hide Marks の窓別 temp-hide(Target/Source) /
+//   Shift+左=旧版べた載せ peek 100% / Shift+Alt+左=peek 50% / Alt+左(単独)=CMYK 生値サンプリング。
+//   中ボタン経路(および Ctrl 系のパネル/再比較ジェスチャ)は撤去済み(2026-07-13)。再比較はページ
+//   右クリックメニュー「KESCM: Refresh Page Comparison」へ移設。
 //========================================================================================
 
 // トラッカー(左ボタン)用の peek 開始。arm 済み(Start 後)かつ Target 窓上のときだけ、マウス下スプレッドの
@@ -955,7 +952,7 @@ void KESCMSetLayoutSync(bool16 on)
 static void KESCMTrackerBeginPeek(PMReal opacity)
 {
 	if (!sPeekArmed || !KESCMFrontViewIsOverTarget())
-		return;	// 未 Start / Target 窓以外では反応しない(中ボタン peek 分岐と同じ条件)
+		return;	// 未 Start / Target 窓以外では反応しない(旧・中ボタン peek 分岐と同じ条件)
 	sPeekActive = kTrue;
 	KESCMDrawEventHandler::sPeekOpacity = opacity;	// 旧版べた載せの不透明度(描画時に参照)
 	sSingleShowing = kFalse;
@@ -1250,15 +1247,16 @@ void KESCMTrackerRevealBegin(bool16 shiftDown, bool16 altDown, bool16 cmdDown)
 	sCmykCursorPending = kFalse;	// このプレスで CMYK カーソルを出すかは下の Alt 分岐で決める(既定=出さない)
 
 
-	// Ctrl(cmd)を伴う左ボタンは未対応(再比較/パネル/CMYK は中ボタン専用)。素のミドルを邪魔しないのと
-	// 同様、ここでは何もしない(トラッカーはキャプチャ済みだが描画状態は変えない)。
+	// Ctrl(cmd)を伴う左ボタンは未対応。再比較はページ右クリックメニューへ移設済み、パネル操作は
+	// フライアウトへ移行済みで、いずれもこのトラッカーは扱わない。ここでは何もしない(トラッカーは
+	// キャプチャ済みだが描画状態は変えない)。
 	if (cmdDown)
 		return;
 
 	// ---- 「Hold to Hide Marks」モード(常時表示の極性反転)の窓別 temp-hide ----
-	// 中ボタン WatchEvent kMButtonDn 冒頭の tempHideGesture と同一。隠すジェスチャ=修飾なし or Shift
-	// (Shift+Alt も Shift を含む)。cmd は上で除外済み。★Alt 単独(CMYK)は隠さない=枠を出したままサンプリング
-	// (中ボタン Shift+Ctrl+Alt でも枠は隠れない仕様に一致)。押した窓の枠だけを隠す(Target/Source 別)。
+	// 隠すジェスチャ=修飾なし or Shift(Shift+Alt も Shift を含む)。cmd は上で除外済み。
+	// ★Alt 単独(CMYK)は隠さない=枠を出したままサンプリング(旧・中ボタン Shift+Ctrl+Alt でも枠は
+	// 隠れない仕様に一致)。押した窓の枠だけを隠す(Target/Source 別)。
 	const bool16 tempHideGesture = (!shiftDown && !altDown) || shiftDown;
 	if (KESCMDrawEventHandler::sAlwaysShowMarks && tempHideGesture)
 	{
@@ -1280,7 +1278,7 @@ void KESCMTrackerRevealBegin(bool16 shiftDown, bool16 altDown, bool16 cmdDown)
 	{
 		// Alt+左(単独、Shift/Ctrl なし): クリック点の CMYK 生値(0..255)を新・旧でサンプリングし、
 		// "Target C.. M.. Y.. K.." / "Source C.. …" をカーソル自身に描画する。
-		// 中ボタン Shift+Ctrl+Alt+ミドル 相当。arm 済み(Start 後)かつ Target 窓上でのみ反応。
+		// 旧・中ボタン Shift+Ctrl+Alt+ミドル。arm 済み(Start 後)かつ Target 窓上でのみ反応。
 		if (sPeekArmed && KESCMFrontViewIsOverTarget())
 		{
 			PMString panelMsg, cursorMsg;
@@ -1304,13 +1302,13 @@ void KESCMTrackerRevealBegin(bool16 shiftDown, bool16 altDown, bool16 cmdDown)
 	}
 	if (shiftDown && altDown)
 	{
-		// Shift+Alt+左: 旧版べた載せ peek を 50% で(中ボタン Shift+Alt+ミドル相当)。
+		// Shift+Alt+左: 旧版べた載せ peek を 50% で(旧・中ボタン Shift+Alt+ミドル)。
 		KESCMTrackerBeginPeek(kKESCMPeekSemiOpacity);
 		return;
 	}
 	if (shiftDown)
 	{
-		// Shift+左: 旧版べた載せ peek を 100% 不透明で(中ボタン Shift+ミドル相当)。
+		// Shift+左: 旧版べた載せ peek を 100% 不透明で(旧・中ボタン Shift+ミドル)。
 		KESCMTrackerBeginPeek(PMReal(1.0));
 		return;
 	}
@@ -1320,7 +1318,7 @@ void KESCMTrackerRevealBegin(bool16 shiftDown, bool16 altDown, bool16 cmdDown)
 	if (KESCMDrawEventHandler::sAlwaysShowMarks)
 		return;
 
-	// 「マークがある」の判定は WatchEvent の修飾なし分岐と同一(anyMarkableContent 相当)。
+	// 「マークがある」の判定は旧・中ボタンの修飾なし分岐と同一(anyMarkableContent 相当)。
 	// overflow 集合は現在の (sDB,sSrcDB) 用へ合わせてから読む。
 	KESCMDrawEventHandler::EnsureOverflowCache();
 	const bool16 haveContent =
@@ -1333,7 +1331,7 @@ void KESCMTrackerRevealBegin(bool16 shiftDown, bool16 altDown, bool16 cmdDown)
 		return;
 
 	// 通常モード(マーク非表示→押下中だけ表示)。Target 窓の上でだけ reveal する(Source や無関係な窓では
-	// 出さない。中ボタンと同じ方針)。
+	// 出さない。旧・中ボタンと同じ方針)。
 	if (!KESCMFrontViewIsOverTarget())
 		return;
 
@@ -1347,7 +1345,7 @@ void KESCMTrackerRevealEnd()
 {
 	// 「Hold to Hide Marks」で押下中に隠していた常時表示の枠を戻す(離すと再表示)。押した窓に応じて
 	// Target/Source どちらか(または両方)が立っている。モード OFF なら両方 kFalse なので無影響
-	// (WatchEvent kMButtonUp の temp-hide 復元と同一)。
+	// (旧・中ボタン解放時の temp-hide 復元と同一)。
 	if (KESCMDrawEventHandler::sMarksTempHidden)
 	{
 		KESCMDrawEventHandler::sMarksTempHidden = kFalse;
@@ -1362,7 +1360,7 @@ void KESCMTrackerRevealEnd()
 	if (sPeekActive)
 	{
 		// Shift／Shift+Alt+左を離した → 旧版べた載せを隠す(マークは触らない)。キャッシュは保持
-		// (再 peek は即時)。中ボタン kMButtonUp の sPeekActive 復元と同一。
+		// (再 peek は即時)。旧・中ボタン解放時の sPeekActive 復元と同一。
 		sPeekActive = kFalse;
 		if (KESCMDrawEventHandler::sShowOriginal)
 		{
@@ -1372,7 +1370,7 @@ void KESCMTrackerRevealEnd()
 	}
 	else if (sSingleShowing)
 	{
-		// 通常モードの reveal 解除 → 枠表示を解除し、不透明度を基準値へ戻す＋非表示へ(WatchEvent の
+		// 通常モードの reveal 解除 → 枠表示を解除し、不透明度を基準値へ戻す＋非表示へ(旧・中ボタン解放時の
 		// sSingleShowing 復元と同じ)。
 		sSingleShowing = kFalse;
 		KESCMDrawEventHandler::sMarksVisible = kFalse;

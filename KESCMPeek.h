@@ -2,7 +2,7 @@
 //
 //  KESCMPeek.h
 //
-//  ミドルボタンの「peek(覗き)」。修飾キー＋ミドルを押している間だけ、カーソル下スプレッドの旧版を
+//  ツール(左ボタン)の「peek(覗き)」。修飾キー＋ツール左ボタンを押している間だけ、カーソル下スプレッドの旧版を
 //  表示する(または再比較する)。離すと元に戻す。peek 状態(arm 済みの target/source DB、押下中フラグ)と
 //  イベントウォッチャ／起動サービスを所有する。ここで公開するのは KESCMBaseScreenOpacity だけで、
 //  arm/disarm/状態アクセサは KESCMCore.h にある。
@@ -18,14 +18,15 @@
 // peek を離したときの経路と KESCMDoSetPrintMarks が使う。実体は KESCMPeek.cpp。
 PMReal KESCMBaseScreenOpacity();
 
-// トラッカー(左ボタン)用の共有入口。KESCM ツール選択中に左ボタンを押している間だけ、中ボタンの
-// 対応ジェスチャと同じ動作を行う。Begin=押下(押下時の修飾キー状態を渡す)、End=解放。実体は
+// トラッカー(左ボタン)用の共有入口。KESCM ツール選択中に左ボタンを押している間だけ、押下時の修飾キーで
+// 選んだ動作を行う。Begin=押下(押下時の修飾キー状態を渡す)、End=解放。実体は
 // KESCMPeek.cpp(peek の file-local 状態と描画状態にアクセスできる唯一の場所)。KESCMTracker.cpp から呼ぶ。
+// (由来: いずれも旧・中ボタン＋修飾キーのジェスチャをツールの左ボタンへ移植したもの。)
 //   ・修飾なし        = マーク一時表示(reveal) / Hold to Hide 反転(常時表示の枠を押下中だけ隠す)
-//   ・Shift           = 旧版べた載せ peek 100%(中ボタン Shift+ミドル相当)
-//   ・Shift+Alt       = 旧版べた載せ peek 50%(中ボタン Shift+Alt+ミドル相当)
-//   ・Alt(単独)       = クリック点の CMYK 生値を新/旧サンプリングしステータス行へ(中ボタン Shift+Ctrl+Alt+ミドル相当)
-//   ・Ctrl(cmd)含む  = 未対応(再比較/パネルは中ボタン専用)。何もしない。
+//   ・Shift           = 旧版べた載せ peek 100%(旧・中ボタン Shift+ミドル)
+//   ・Shift+Alt       = 旧版べた載せ peek 50%(旧・中ボタン Shift+Alt+ミドル)
+//   ・Alt(単独)       = クリック点の CMYK 生値を新/旧サンプリングしステータス行へ(旧・中ボタン Shift+Ctrl+Alt+ミドル)
+//   ・Ctrl(cmd)含む  = 未対応。何もしない(再比較はページ右クリックメニュー/パネル操作はフライアウトへ移行済み)。
 void KESCMTrackerRevealBegin(bool16 shiftDown, bool16 altDown, bool16 cmdDown);
 void KESCMTrackerRevealEnd();
 

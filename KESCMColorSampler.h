@@ -2,7 +2,7 @@
 //
 //  KESCMColorSampler.h
 //
-//  Shift＋Ctrl＋Alt＋ミドルクリックで、クリック点の CMYK 生値を新(target)・旧(source)でサンプリング
+//  ツール Alt+左クリック(旧・中ボタン Shift＋Ctrl＋Alt＋ミドル)で、クリック点の CMYK 生値を新(target)・旧(source)でサンプリング
 //  して "Target C.. / Source C.." の文字列に組む。クリック点まわりの極小領域だけを高dpi・CMYK で
 //  ラスタ化して中心1画素を読む。
 //

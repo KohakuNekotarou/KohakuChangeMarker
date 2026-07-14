@@ -19,7 +19,6 @@
 //    - Show Original Page Numbers
 //    - Sync Layout Views(復元しても実際の同期は Start 中のみ発火するので実害なし)
 //    - Show Scrollbar Map
-//    - Invoke Panel Shortcut
 //    - Ignore Page Number Marker
 //
 //========================================================================================

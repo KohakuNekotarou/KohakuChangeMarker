@@ -67,14 +67,14 @@ CREATE_PMINTERFACE(KESCMDrawEventHandler, kKESCMDrawEventHandlerImpl)
 
 std::map<UID, KESCMOverlayEntry*> KESCMDrawEventHandler::sEntries;
 IDataBase* KESCMDrawEventHandler::sDB = nil;
-bool16 KESCMDrawEventHandler::sMarksVisible = kFalse;	// 既定=非表示。枠等はシングルミドル押下中だけ表示(master トグル)
-PMReal KESCMDrawEventHandler::sMarkScreenOpacity = 1.0;	// 既定=不透明。ミドル押下中=選択不透明度(25%/75%)/印刷ON中の常時表示=選択不透明度
+bool16 KESCMDrawEventHandler::sMarksVisible = kFalse;	// 既定=非表示。枠等はシングルツール左hold中だけ表示(master トグル)
+PMReal KESCMDrawEventHandler::sMarkScreenOpacity = 1.0;	// 既定=不透明。ツール左hold中=選択不透明度(25%/75%)/印刷ON中の常時表示=選択不透明度
 bool16 KESCMDrawEventHandler::sPrintMarks = kFalse;	// 既定=画面のみ(印刷/PDF には出さない)
 bool16 KESCMDrawEventHandler::sMarkOpacity25 = kTrue;	// 既定=25%(パネルの既定ラジオと一致)。kFalse=75%
 bool16 KESCMDrawEventHandler::sShowOldNumbers = kFalse;	// 既定=OFF(フライアウト「Show Original Page Numbers」)
 bool16 KESCMDrawEventHandler::sAlwaysShowMarks = kFalse;	// 既定=OFF(フライアウト「Hold to Hide Marks」。ON=枠を画面に常時表示し押下中だけ隠す=極性反転)
-bool16 KESCMDrawEventHandler::sMarksTempHidden = kFalse;	// Hold to Hide Marks モード中、Target 窓でミドル押下中だけ kTrue(Target 常時表示枠の一時退避)
-bool16 KESCMDrawEventHandler::sSrcMarksTempHidden = kFalse;	// 同上の Source 版。Source 窓でミドル押下中だけ kTrue(Source 常時表示枠の一時退避)
+bool16 KESCMDrawEventHandler::sMarksTempHidden = kFalse;	// Hold to Hide Marks モード中、Target 窓でツール左hold中だけ kTrue(Target 常時表示枠の一時退避)
+bool16 KESCMDrawEventHandler::sSrcMarksTempHidden = kFalse;	// 同上の Source 版。Source 窓でツール左hold中だけ kTrue(Source 常時表示枠の一時退避)
 bool16 KESCMDrawEventHandler::sSrcMarksOn = kFalse;	// 既定=OFF。Start(KESCMDoMarkChangesDoc)のたびに kTrue へ(フライアウト「Show Marks on Source」)
 IDataBase* KESCMDrawEventHandler::sSrcDB = nil;
 std::map<UID, UID> KESCMDrawEventHandler::sSrcPageToTarget;
@@ -455,7 +455,7 @@ ErrorCode KESCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef
 					sEntries[key] = e;
 
 					// Source 側描画(Show Marks on Source)用の対応表もここで記録する。エントリ登録と同じ場所に
-					// 置くことで、Ctrl+ミドルのスプレッド再比較(MakeEntry 直呼び)でも対応が自動で維持される。
+					// 置くことで、旧 Ctrl+ミドルのスプレッド再比較(MakeEntry 直呼び)でも対応が自動で維持される。
 					// 対応表の掃除は DropAll(エントリと運命共同体)。
 					sSrcDB = sourceRef.GetDataBase();
 					sSrcPageToTarget[sourceRef.GetUID()] = key;
@@ -1016,7 +1016,7 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 		ded->gd != nil && ded->gd->GetView() == nil && (ded->flags & IShape::kPreviewMode) != 0;
 	// ★オーバープリントプレビュー(OPP)は抑制しない(2026-07-05 仕様変更)。以前は kSepPrvOPPEnabledVPAttr を
 	// 読んで「OPP=印刷シミュレーション」として印刷と同じ抑制を掛けていたが、OPP はあくまで画面の作業モード
-	// なので、ミドル押下の枠・Shift/Shift+Alt の旧版 peek(と押下中の旧番号バッジ)は OPP 中も表示する。
+	// なので、ツール左hold の枠・Shift/Shift+Alt の旧版 peek(と押下中の旧番号バッジ)は OPP 中も表示する。
 	// 抑制は本物の印刷(kPrinting)だけ=「枠の印刷」OFF なら印刷物に出ない、は従来どおり。
 	// Source 側の枠(Show Marks on Source)。トグル ON の間は「常時」表示で、OPP でも隠さず印刷にも常に
 	// 出す(Target 側の sPrintMarks とは独立の仕様)。この描画が実際に Source 文書のスプレッドかどうかは
@@ -1032,7 +1032,7 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 		(sDB    != nil && KESCMPageCheckHasAny(sDB)) ||		// 「KESCM: Check」の✓(サムネイル描画を起こすため)
 		(sSrcDB != nil && KESCMPageCheckHasAny(sSrcDB)) ||
 		(!sOverflowT.empty() || !sOverflowS.empty());
-	// 「Hold to Hide Marks」と併用時のみ: Source のレイアウト窓でミドルを押している間(sSrcMarksTempHidden)は
+	// 「Hold to Hide Marks」と併用時のみ: Source のレイアウト窓でツール左ボタンを押している間(sSrcMarksTempHidden)は
 	// Source 側の常時表示枠も画面で隠す(押した窓の枠だけ隠す=Target と対称のウィンドウ別の極性反転)。
 	// 印刷は Source 枠を常に出す仕様なので !printing でゲート=印刷/PDF は不変。sAlwaysShowMarks OFF や
 	// Source 窓以外で押した時は sSrcMarksTempHidden が立たない(KESCMPeek.cpp の窓判定)ので従来どおり常時表示。
@@ -1045,27 +1045,27 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	if (suppressForPrint && !wantSrcMarks)
 		return kFalse;
 	// この描画で何を描き得るかを状態フラグだけで先に確定し、全部 No なら即 return する。
-	//   ・マーク(リング＋枠): 印刷ON か ミドル押下中の表示ON で、かつエントリがある時だけ
+	//   ・マーク(リング＋枠): 印刷ON か ツール左hold中の表示ON で、かつエントリがある時だけ
 	//   ・旧版べた載せ: 画面描画のみ(印刷には出さない)
 	// ★以前は「sEntries が非空」なだけで下の前処理(スプレッド取得・生存スイープ・ズーム行列・
 	//   パノラマ探索・マウス位置・可視域変換)を全部実行し、最後の分岐で「マーク非表示」と判定して
-	//   捨てていた。Start 済み・マーク非表示(既定=ミドル押下中だけ表示)の待機状態が最頻なので、
+	//   捨てていた。Start 済み・マーク非表示(既定=ツール左hold中だけ表示)の待機状態が最頻なので、
 	//   ここで落として通常の編集・スクロール中の描画コストをほぼゼロにする。生存スイープも「実際に
 	//   何か描く」時だけの保険になる(クローズ後始末の本線は KESCMDocResponder で変わらず)。
-	// 「Hold to Hide Marks」(極性反転): モード ON の間は画面(!printing)で枠を常時表示。ただしミドル押下中
+	// 「Hold to Hide Marks」(極性反転): モード ON の間は画面(!printing)で枠を常時表示。ただしツール左hold中
 	// (sMarksTempHidden)は隠す。画面のみ=印刷/PDF は下の sPrintMarks が独立して決める(alwaysScreen は
 	// !printing ゲートで印刷文脈には一切効かせない=印刷は従来どおり Print comparison marks のみで制御)。
 	const bool16 alwaysScreen = sAlwaysShowMarks && !sMarksTempHidden && !printing;
 	const bool16 wantMarks = !suppressForPrint && (sPrintMarks || sMarksVisible || alwaysScreen || isThumb) && anyMarkableContent;
 	const bool16 wantOrig  = !suppressForPrint && !printing && sShowOriginal && !sOrigImages.empty();
-	// ★「KESCM: Check」の ✓ のレイアウトビュー版(2026-07-12)。画面では「常に」表示(ミドル押下・
+	// ★「KESCM: Check」の ✓ のレイアウトビュー版(2026-07-12)。画面では「常に」表示(ツール左hold・
 	// Hold to Hide Marks・Show Marks on Source 等の枠トグルとは完全に独立)。印刷/PDF は sPrintMarks
 	// (Print comparison marks)ON のときだけ(Target/Source とも同条件)。✓ 集合は Start 中の
 	// Target/Source(sDB/sSrcDB)にしか無い(Stop で全消去)ので、存在チェックも両 db だけ見れば足りる。
 	// サムネイル(isThumb)は下の専用ブロックが従来どおり描くのでここでは対象外。
 	const bool16 wantChecks = !isThumb && (!printing || sPrintMarks) &&
 		((sDB != nil && KESCMPageCheckHasAny(sDB)) || (sSrcDB != nil && KESCMPageCheckHasAny(sSrcDB)));
-	// 旧ページ番号バッジ: トグルON かつ「枠が見えている」間(=印刷マークON の常時表示、またはミドル押下中)。
+	// 旧ページ番号バッジ: トグルON かつ「枠が見えている」間(=印刷マークON の常時表示、またはツール左hold中)。
 	// 枠の可視条件(wantMarks の sPrintMarks || sMarksVisible)と同じ揃え。印刷文脈は suppressForPrint で
 	// sPrintMarks ON のときだけ生き残る=印刷に出るのは印刷マークON時のみ(従来どおり)。
 	// 番号がズレているかはページごとに後で判定する(ズレていなければ何も描かない)。
@@ -1201,7 +1201,7 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 
 	// ★「KESCM: Check」の ✓(レイアウトビュー/印刷版・2026-07-12)。チェック済みページのページ中央に
 	//   青い ✓ を「かなり大きく」(短辺×kKESCMCheckLayoutSizeRatio)描く。Target/Source を問わず、この
-	//   スプレッドの db にチェックがあれば描く(枠トグル・ミドル押下とは完全に独立=画面では常時表示)。
+	//   スプレッドの db にチェックがあれば描く(枠トグル・ツール左hold とは完全に独立=画面では常時表示)。
 	//   印刷/PDF は wantChecks が sPrintMarks でゲート済み。不透明度はパネルの 25%/75% 選択
 	//   (SelectedMarkOpacity)を画面・印刷共通で使う。旧版べた載せ(peek)の直後に描く=peek の不透明画像
 	//   の上にも ✓ が乗る(常に見える)。この後の Source/Target マークループより前に置くのは、Source
@@ -1299,7 +1299,7 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 
 	// Source 文書側のリング(Show Marks on Source) — 現スプレッドが Source 文書のものなら、対応表
 	// (SourceページUID→TargetページUID)経由で同じリング画像を Source ページに重ねる。
-	// トグル ON の間は常時表示(ミドル押下と無関係)。不透明度はパネルの 25%/75% 選択
+	// トグル ON の間は常時表示(ツール左hold と無関係)。不透明度はパネルの 25%/75% 選択
 	// (SelectedMarkOpacity)固定で、印刷文脈でも冒頭の suppressForPrint(印刷のみの抑制)を通り抜けて
 	// ここへ来る(印刷経路は KESCMDrawRingForPrint が同じ SelectedMarkOpacity を使う=画面と印刷の
 	// 見た目一致。OPP は 2026-07-05 からそもそも抑制対象外)。
@@ -1350,12 +1350,12 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	// 変更オーバーレイ(リング＋変更数) — マーク済みドキュメントが現スプレッドの db と一致する時だけ。
 	// master 表示トグル(sMarksVisible)が OFF の間、またはこのスプレッドを覗き中(旧版べた載せ中)は描かない
 	// (データは保持=再表示で即復帰)。覗いていない他のスプレッドのマークは通常どおり残る。
-	// ★印刷マーク(sPrintMarks)が ON の間は、ミドル押下に関係なく常に描く(画面=WYSIWYG / 印刷・PDF にも出る)。
+	// ★印刷マーク(sPrintMarks)が ON の間は、ツール左hold に関係なく常に描く(画面=WYSIWYG / 印刷・PDF にも出る)。
 	if (peekingThisSpread || !wantMarks || sDB == nil || db != sDB)
 		return kFalse;
 
 	// 画面マークの実効不透明度。sMarkScreenOpacity は常に実効値を保持する(下の各ソースが設定):
-	//   ・ミドル押下中 = 選択不透明度(パネルの 25%/75%)
+	//   ・ツール左hold中 = 選択不透明度(パネルの 25%/75%)
 	//   ・押していない時 = 基準値 KESCMBaseScreenOpacity()(印刷ONなら選択不透明度 / 印刷OFFは1.0)
 	// 離すと基準値へ戻る。printing 経路はここを使わず、KESCMDrawRingForPrint が SelectedMarkOpacity を直接使う。
 	const PMReal screenMarkOp = sMarkScreenOpacity;

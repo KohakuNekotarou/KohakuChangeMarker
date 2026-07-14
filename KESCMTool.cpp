@@ -3,13 +3,13 @@
 //  KESCMTool.cpp
 //
 //  Toolbox tool for KESCM. While this tool is the active tool, pressing and holding the LEFT
-//  mouse button on the layout reveals the comparison marks (useful on Macs that have no middle
-//  button); releasing hides them. The mouse handling is done by the tool's capturing tracker
-//  (KESCMTracker.cpp), installed for this tool boss by KESCMTrackerRegister.cpp. This class is
-//  just the ITool that puts the tool in the toolbox.
+//  mouse button on the layout reveals the comparison marks; releasing hides them. Modifier keys
+//  held at press time pick the variant (see KESCMTrackerRevealBegin). The mouse handling is done
+//  by the tool's capturing tracker (KESCMTracker.cpp), installed for this tool boss by
+//  KESCMTrackerRegister.cpp. This class is just the ITool that puts the tool in the toolbox.
 //
-//  ITool (via the CTool partial implementation). The middle-button gestures stay untouched
-//  (both input methods coexist).
+//  ITool (via the CTool partial implementation). This tool is now the only input for the reveal /
+//  peek / CMYK gestures; the earlier middle-button gestures were removed (2026-07-13).
 //
 //========================================================================================
 

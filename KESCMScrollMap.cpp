@@ -465,7 +465,7 @@ void KESCMScrollMapDetachAll()
 
 // KESCMScrollMapInvalidateAll(KESCMScrollMap.h 参照) — 注入済みの全 strip を再描画する。
 // 呼び所は2箇所: ①KESCMDoMarkChangesDoc の末尾(Start/登録トグルの全再比較・差分再比較)、
-// ②KESCMPeek.cpp のスプレッド再比較(Ctrl+ミドル。★KESCMDoMarkChangesDoc を通らない独立経路
+// ②KESCMPeek.cpp のスプレッド再比較(旧 Ctrl+ミドル。★KESCMDoMarkChangesDoc を通らない独立経路
 // なので個別に呼ぶ必要がある=ユーザー報告 2026-07-11 で判明)。
 void KESCMScrollMapInvalidateAll()
 {

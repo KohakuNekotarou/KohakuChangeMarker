@@ -4,10 +4,10 @@
 //
 //  ChangeMarker 操作パネルの IObserver。work/changemarker-panel.jsx を再現する:
 //    - Start ボタン : Target(=アクティブ文書)＋ Source(=もう一方の開いている文書)を解決し、
-//                     変更ページ全部にマークを付け、ミドルボタン peek を arm する。
+//                     変更ページ全部にマークを付け、peek を arm する。
 //    - Clear ボタン : オーバーレイを消去し、peek を disarm する。
 //    - 印刷チェック : SetPrintMarks 経由で、マークを印刷するか(かつ画面に残すか)を切り替える。
-//    - 25% / 75%    : 枠の不透明度の選択。ミドル押下中の表示・印刷ON中の常時表示・印刷出力の全部に効く
+//    - 25% / 75%    : 枠の不透明度の選択。ツール左hold中の表示・印刷ON中の常時表示・印刷出力の全部に効く
 //                     (印刷ON/OFFに依らず常に有効)。
 //  Target:/Source: ラベルと ON/OFF アイコンは arm 済み(「開始済み」)状態を反映する。これはアプリ全体で
 //  共有される(KESCMIsArmed/…)ので、パネルを開き直しても正しい状態が表示され続ける。
@@ -27,7 +27,7 @@
 #include "IBooleanControlData.h"
 #include "IApplication.h"			// GetExecutionContextSession / QueryApplication
 #include "IPanelMgr.h"				// QueryPanelManager / GetVisiblePanel(外部からのパネル更新)
-#include "PagesPanelID.h"			// kPagesPanelWidgetID(Ctrl+Alt+ミドルで標準ページパネルを show/hide)
+#include "PagesPanelID.h"			// kPagesPanelWidgetID(旧 Ctrl+Alt+ミドルで標準ページパネルを show/hide)
 #include "IActiveContext.h"
 #include "IDocument.h"
 #include "IDocumentList.h"
@@ -437,7 +437,7 @@ void KESCMRefreshPanel()
 }
 
 //========================================================================================
-// KESCMTogglePagesPanel(KESCMCore.h で宣言) — Ctrl+Alt+中ボタンで InDesign 標準「ページ」パネルの
+// KESCMTogglePagesPanel(KESCMCore.h で宣言) — 旧 Ctrl+Alt+中ボタンで InDesign 標準「ページ」パネルの
 // 表示/非表示をトグルする(ユーザー指定 2026-07-12)。自パネルのトグルと違い、カーソル位置への移動は
 // しない(単純な表示/非表示のみ)。Start 不要・全文書共通。対象 widget は kPagesPanelWidgetID。
 //========================================================================================
@@ -452,7 +452,7 @@ void KESCMTogglePagesPanel()
 	if (panelMgr->IsPanelWithWidgetIDShown(kPagesPanelWidgetID))
 		panelMgr->HidePanelByWidgetID(kPagesPanelWidgetID);
 	else
-		panelMgr->ShowPanelByWidgetID(kPagesPanelWidgetID, kFalse);	// giveKeyFocus=kFalse: ミドル操作中にフォーカスを奪わない
+		panelMgr->ShowPanelByWidgetID(kPagesPanelWidgetID, kFalse);	// giveKeyFocus=kFalse: ツール操作中にフォーカスを奪わない
 }
 
 //========================================================================================

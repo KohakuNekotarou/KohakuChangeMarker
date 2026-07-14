@@ -321,7 +321,7 @@ ErrorCode KESCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMStri
 	if (sourceDB != targetDB)
 		KESCMInvalidateDB(sourceDB);	// Source 側の常時枠を即反映
 
-	// スクロールバー地図 strip のマークも最新化(Start/Ctrl+ミドル再比較/登録トグルの全経路がここを通る)。
+	// スクロールバー地図 strip のマークも最新化(Start/旧 Ctrl+ミドル再比較/登録トグルの全経路がここを通る)。
 	KESCMScrollMapInvalidateAll();
 
 	// ★サムネイル実験(2026-07-06): 既表示サムネイルの再生成を試みる(KESCMThumbnailRefresh)。

@@ -97,24 +97,24 @@ public:
 	// 全エントリが属する単一ドキュメント。別dbをmarkしたら作り直す(UIDはdb内のみ一意なため)。
 	static IDataBase* sDB;
 	// 上書き表示(変更リング)の master 表示トグル。データ(sEntries)は消さず
-	// 表示だけ切り替える。★既定=kFalse(非表示)。シングルミドルボタンを押している間だけ kTrue にして枠等を
+	// 表示だけ切り替える。★既定=kFalse(非表示)。シングルツール左ボタンを押している間だけ kTrue にして枠等を
 	// 表示し、離すと kFalse に戻す。kFalse の間はこれら全部を描かない。旧版べた載せ(sShowOriginal)は
 	// このトグルの影響を受けない(ダブルクリックで別管理)。
 	static bool16 sMarksVisible;
 	// 画面マーク(リング＋変更数)に掛ける「実効」不透明度。★既定=1.0。リング blit と数字 show の双方に同率。
-	//   ・ミドル押下中 = SelectedMarkOpacity()(パネルで選択中の 25%/75%)
+	//   ・ツール左hold中 = SelectedMarkOpacity()(パネルで選択中の 25%/75%)
 	//   ・押していない常時表示時 = 基準値 KESCMBaseScreenOpacity()(印刷ONなら選択不透明度 / 印刷OFFは1.0)
 	static PMReal sMarkScreenOpacity;
 	// 変更マーク(リング＋変更数)を印刷/PDF にも出すか(KESCMDoSetPrintMarks)。★既定=kFalse(画面のみ)。
-	// ON の間は、ミドル押下に関係なく画面でも常時表示(WYSIWYG)＋印刷/PDF にも描く。マークデータとは独立に保持。
+	// ON の間は、ツール左hold に関係なく画面でも常時表示(WYSIWYG)＋印刷/PDF にも描く。マークデータとは独立に保持。
 	static bool16 sPrintMarks;
 	// 枠の不透明度の選択(パネルのラジオ「Marks opacity 25% / 75%」)。kTrue=25% / kFalse=75%。★既定=kTrue(25%)。
-	// ミドル押下中の画面表示・印刷ON中の常時表示(KESCMBaseScreenOpacity)・印刷/PDF出力(KESCMDrawRingForPrint)の
+	// ツール左hold中の画面表示・印刷ON中の常時表示(KESCMBaseScreenOpacity)・印刷/PDF出力(KESCMDrawRingForPrint)の
 	// すべてが SelectedMarkOpacity() 経由でこの選択を使う(画面と印刷の見た目を一致)。
 	static bool16 sMarkOpacity25;
 	// Source(旧文書)側にも枠を出すトグル(フライアウト「Show Marks on Source」のチェック式)。★既定=kFalse
 	// だが Start(KESCMDoMarkChangesDoc)のたびに kTrue へ戻す(=Start で既定 ON、OFF にしたければメニューで外す)。
-	// ON の間、Source 文書の対応ページに同じリング画像を「常時」表示する(ミドル押下と無関係)。不透明度は
+	// ON の間、Source 文書の対応ページに同じリング画像を「常時」表示する(ツール左hold と無関係)。不透明度は
 	// パネルの 25%/75% 選択(SelectedMarkOpacity)に連動し、OPP(オーバープリントプレビュー)でも隠さず、
 	// 印刷/PDF にも常に出す(Target 側の sPrintMarks とは独立)。
 	static bool16 sSrcMarksOn;
@@ -122,7 +122,7 @@ public:
 	static IDataBase* sSrcDB;
 	// SourceページUID → TargetページUID の対応表。比較は平坦ページ番号どうしの対応なので、Source の
 	// スプレッド描画時にこの表→sEntries の順で引けば、同じリング画像を Source ページに重ねられる。
-	// MakeEntry がエントリ登録と同時に記録する(=Ctrl+ミドルのスプレッド再比較でも対応が維持される)。
+	// MakeEntry がエントリ登録と同時に記録する(=旧 Ctrl+ミドルのスプレッド再比較でも対応が維持される)。
 	static std::map<UID, UID> sSrcPageToTarget;
 	// 前回の比較で使った TargetページUID → SourceページUID のペアリング(除外対応表の zip 結果)。
 	// 登録トグル(比較相手なしページの追加/解除)による再比較を差分化するために保持する:
@@ -142,24 +142,24 @@ public:
 	static IDataBase* sOverflowCacheDB;
 	static IDataBase* sOverflowCacheSrcDB;
 	// 旧ページ番号バッジ(フライアウト「Show Original Page Numbers」のチェック式トグル)。★既定=kFalse。
-	// ON の間、枠と同じ可視条件(sPrintMarks ON の常時表示、またはミドル押下中 sMarksVisible)で、番号が
+	// ON の間、枠と同じ可視条件(sPrintMarks ON の常時表示、またはツール左hold中 sMarksVisible)で、番号が
 	// ズレているページ(=それより前に隠しスプレッドがある)の下端中央に「隠す前の元の番号」を描く
 	// (sPrintMarks ON なら印刷/PDF にも出る)。マークデータ(sEntries)とは独立で、どの文書のスプレッド描画
 	// でも番号がズレていれば描く(隠しが無ければ現在番号と一致して何も描かない)。
 	static bool16 sShowOldNumbers;
 
 	// 「Hold to Hide Marks」トグル(フライアウトのチェック式。枠表示の極性反転)。★既定=kFalse。
-	// ON の間、画面では枠(リング＋変更数)を「常時」表示し、ミドルボタン押下中だけ sMarksTempHidden で
+	// ON の間、画面では枠(リング＋変更数)を「常時」表示し、ツール左hold中だけ sMarksTempHidden で
 	// 一時的に隠す(離すと戻る)=既定動作(非表示・押下中だけ表示)の逆。画面のみの挙動で、印刷/PDF への
 	// 出力は sPrintMarks が独立して決める(下の wantMarks では !printing のときだけ効かせる)。不透明度は
 	// パネル選択の 25%/75%(KESCMBaseScreenOpacity が sAlwaysShowMarks ON も選択不透明度を返す)。
 	static bool16 sAlwaysShowMarks;
-	// Hold to Hide Marks モード中、ミドルボタンを押している間だけ kTrue(常時表示の枠を一時退避)。離すと kFalse。
-	// KESCMPeek.cpp の WatchEvent(kMButtonDn/Up)が上下させる。モード OFF の間は常に kFalse で無影響。
-	// ★これは Target 窓上でミドルを押したときだけ立てる(押した窓の枠だけ隠す=ウィンドウ別)。
+	// Hold to Hide Marks モード中、ツール左ボタンを押している間だけ kTrue(常時表示の枠を一時退避)。離すと kFalse。
+	// KESCMPeek.cpp のトラッカー(KESCMTrackerRevealBegin/End)が上下させる。モード OFF の間は常に kFalse で無影響。
+	// ★これは Target 窓上でツール左ボタンを押したときだけ立てる(押した窓の枠だけ隠す=ウィンドウ別)。
 	static bool16 sMarksTempHidden;
 	// sMarksTempHidden の Source 版。「Show Marks on Source」ON かつ「Hold to Hide Marks」ON のとき、
-	// Source のレイアウト窓上でミドルを押している間だけ kTrue(その間だけ Source 側の常時表示枠を画面で隠す)。
+	// Source のレイアウト窓上でツール左ボタンを押している間だけ kTrue(その間だけ Source 側の常時表示枠を画面で隠す)。
 	// 印刷は Source 枠を常に出す仕様なので影響しない(描画側で !printing ゲート)。
 	static bool16 sSrcMarksTempHidden;
 
@@ -183,8 +183,8 @@ public:
 	static bool16 sShowOriginal;						// べた載せ表示 ON/OFF(既定 OFF)
 	static PMReal sOrigScale;							// 旧版画像をラスタ化した時の content→window スケール(ズーム×デバイス倍率)。
 														// 再 peek 時にズームが変わっていたら作り直す基準。0=未設定
-	static PMReal sPeekOpacity;							// 覗き中(peek)の旧版べた載せの不透明度。Shift＋ミドル=1.0(不透明)/
-														// Ctrl＋ミドル=0.5(半透明)。描画ブロックが参照する
+	static PMReal sPeekOpacity;							// 覗き中(peek)の旧版べた載せの不透明度。Shift+左=1.0(不透明)/
+														// Shift+Alt+左=0.5(半透明)。描画ブロックが参照する
 
 	// (一時トースト機構は 2026-07-04 に撤去。メッセージはパネルのステータス行(KESCMSetStatus)へ。
 	//  仕組み自体は他プラグインへの転用候補: docs/ai-notes/kescm-toast-mechanism.md と git 履歴 509e830 を参照)
