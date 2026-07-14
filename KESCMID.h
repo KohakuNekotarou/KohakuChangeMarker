@@ -342,6 +342,11 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMToolWidgetID, kKESCMPrefix + 41)	// ツール
 // (KESCMTracker.cpp の InstallCmykCursor)。HOTC は 1021 と同じ (10,18)=切替でカーソル位置は動かない。
 #define kKESCMCmykCursor2ResID	1022
 
+// ツールボックスの KESCM ツール専用アイコン(32×32 通常 / 64×64 = +kHIDPIIconOffset)。従来はパネル用
+// アイコン(kKESCMIconOnResID)を流用していたが、専用画像(KESCM_Tool_32.png/_64.png)を用意したため差し替え
+// (ユーザー提供 2026-07-14)。ダーク版は用意していないため PNGAD もライト版と同じ画像を指す(=流用)。
+#define kKESCMToolIconResID	1030
+
 // Menu item positions (flyout order): … Show Marks on Source(9.4) → Show Original Page Numbers(9.7) →
 // Sync Layout Views(9.8) → Show Scrollbar Map(9.85) → Ignore Page Number Marker(9.9) →
 // Invoke Panel Shortcut(9.901) → ─線 Sep3(9.905) → Hide Unchanged Spreads(9.91) → Save Panel Settings(9.93) →

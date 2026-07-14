@@ -88,15 +88,27 @@ static int32 KESCMByteToPct(uint8 v)
 	return ((int32)v * 100 + 127) / 255;
 }
 
-// "C000 M000 Y000 K000"(各値3桁ゼロ埋め、0..100%)を追記する。パネル用・カーソル用で共通。
+// "C000 M000 Y000 K000"(各値3桁ゼロ埋め、0..100%)を追記する。カーソル用(見出し行はカーソル側で
+// グラフィック描画として別途足す=値ごとに文字を付けないぶん幅が詰まる。ユーザー提案 2026-07-13)。
 static void KESCMAppendCmyk(PMString& s, const uint8 c[4])
 {
-	// 数字のみ "NNN NNN NNN NNN"(各値3桁、0..100%)。C/M/Y/K の見出しはカーソル側でヘッダー行として
-	// 別に描く(値ごとに文字を付けないぶん幅が詰まる=ユーザー提案 2026-07-13)。
 	KESCMAppend3(s, KESCMByteToPct(c[0]));
 	s.Append(" "); KESCMAppend3(s, KESCMByteToPct(c[1]));
 	s.Append(" "); KESCMAppend3(s, KESCMByteToPct(c[2]));
 	s.Append(" "); KESCMAppend3(s, KESCMByteToPct(c[3]));
+}
+
+// "C 000 M 000 Y 000 K 000"(値ごとに見出し文字を直接付ける)を追記する。パネル用。
+// ★パネルのステータス行はプロポーショナルフォント(kPaletteWindowFontId、モノスペース選択肢がSDKに無い)
+// なので、見出し行と数値行を別々に描いて縦揃えすることは原理的にできない(文字と数字で字幅が違う)。
+// カーソル側(KESCMDrawColumns)のような座標揃えの代わりに、各値へ見出し文字を直接添えて「縦の整列」自体を
+// 不要にする(ユーザー指定 2026-07-14)。
+static void KESCMAppendCmykLabeled(PMString& s, const uint8 c[4])
+{
+	s.Append("C"); KESCMAppend3(s, KESCMByteToPct(c[0]));
+	s.Append(" M"); KESCMAppend3(s, KESCMByteToPct(c[1]));
+	s.Append(" Y"); KESCMAppend3(s, KESCMByteToPct(c[2]));
+	s.Append(" K"); KESCMAppend3(s, KESCMByteToPct(c[3]));
 }
 
 // Shift＋Ctrl＋Alt＋ミドルクリック: マウス下ページのクリック点 CMYK 生値を新(target)・旧(source)で
@@ -148,22 +160,28 @@ bool16 KESCMSampleCmykUnderMouse(IDataBase* targetDB, IDataBase* sourceDB,
 	if (!okN || !okO)
 		return kFalse;
 
-	// 1行目=Target(新/cN)、改行(LF)、2行目=Source(旧/cO)。各値はラスタ8bit(0..255)を本来の
-	// CMYK 数値 0..100% に換算し、3桁ゼロ埋めで桁を揃える。表示先は2つ:
-	//   ・outPanel  = パネルのステータス行(幅140px制約)。ラベルは行末に略語 tgt/src を付ける。
-	//                 C/M/Y/K の列は新旧で同じ文字列なので行頭から揃い、末尾ラベルは後続列に影響しない。
-	//   ・outCursor = カーソル自身(KESCMPeek.cpp のビットマップカーソル)。ラベルは行頭に Target/Source の
-	//                 フル表記＋タブ(0x09)区切り。描画側がタブでラベル/数値に分割し、数値を固定X列から
-	//                 描くので、Target/Source の文字幅差に関係なく2行の桁が縦に揃う(ユーザー要望 2026-07-13)。
-	outPanel.SetTranslatable(kFalse);
-	KESCMAppendCmyk(outPanel, cN); outPanel.Append(" tgt");	// Target=末尾 tgt(ヘッダー行方式で幅に余裕。ユーザー指定 2026-07-13)
-	outPanel.AppendW(UTF32TextChar(0x0A));	// 改行 → 2行目へ
-	KESCMAppendCmyk(outPanel, cO); outPanel.Append(" src");	// Source=末尾 src
+	// 各値はラスタ8bit(0..255)を本来の CMYK 数値 0..100% に換算し、3桁ゼロ埋めで桁を揃える。
+	// 表示先でラベルの長さを変える: カーソルは幅制約が厳しいので1文字(t/s。maxChars見積りを減らして
+	// フォントサイズの余地を稼ぐ=ユーザー指定 2026-07-14)。パネルは幅に余裕があるので英語フル表記
+	// (Target/Source。ユーザー指定 2026-07-14)。
 
-	// カーソルもパネルと同形式にする(数値を行頭に揃え、ラベルは末尾にスペース区切りの略語)。
-	// ラベルを行頭＋タブにすると1行が長くなり、カーソル最大幅の制約で数値まで切れてしまうため
-	// (ユーザー報告 2026-07-13: ラベルは後ろへ・前は普通のスペース・幅が足りなければ略語で可)。
-	// 数値は両行とも行頭から始まるので C/M/Y/K の桁は自動的に縦へ揃う。
-	outCursor = outPanel;
+	// outCursor = 数値2行、ラベルは t/s(KESCMPeek.cpp のビットマップカーソルは「C M Y K」見出しを別途
+	// 自前描画で足すので、渡す文字列は数値行のみでよい)。数値は両行とも行頭から始まるので
+	// C/M/Y/K の桁は自動的に縦へ揃う。
+	outCursor.SetTranslatable(kFalse);
+	KESCMAppendCmyk(outCursor, cN); outCursor.Append(" t");
+	outCursor.AppendW(UTF32TextChar(0x0A));	// 改行 → 2行目へ
+	KESCMAppendCmyk(outCursor, cO); outCursor.Append(" s");
+
+	// outPanel = 値ごとに見出し文字を直接添える(KESCMAppendCmykLabeled)+ tgt/src 略語(Target/Source
+	// フル表記だと1行に収まらなかったため 2026-07-14 に短縮)。
+	// ★見出し行を数値行の上に別途置いて縦揃えする案は撤回した: パネルのステータス欄はプロポーショナル
+	// フォント(kPaletteWindowFontId)で、SDK にモノスペース選択肢が無いため、文字と数字の字幅差で
+	// スペース数をいくら調整しても縦に揃わなかった(ユーザー実機報告 2026-07-14)。値ごとにラベルを
+	// 直接添える今の形なら、行間の縦揃えが不要になり、フォント幅に関係なく崩れない。
+	outPanel.SetTranslatable(kFalse);
+	KESCMAppendCmykLabeled(outPanel, cN); outPanel.Append(" tgt");
+	outPanel.AppendW(UTF32TextChar(0x0A));
+	KESCMAppendCmykLabeled(outPanel, cO); outPanel.Append(" src");
 	return kTrue;
 }

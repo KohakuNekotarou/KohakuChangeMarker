@@ -1105,9 +1105,11 @@ static void KESCMCmykCursorBitmapProc(uchar* bitmapBuffer, uint32* width, uint32
 	if (num2.NumUTF16TextChars() > maxChars) maxChars = num2.NumUTF16TextChars();
 	if (maxChars < 1) maxChars = 1;
 
-	// フォントは使える最大幅から大きめに決める(1文字≒0.58em、上限18pt/下限7pt)。
+	// フォントは使える最大幅から大きめに決める(1文字≒0.58em、下限7pt)。
+	// ★上限キャップ撤廃(2026-07-14、検証用): 18→26→48pt と上げても実機で変化が無かったため、上限に
+	// 到達する前に maxLogW(カーソル最大論理サイズ=OS/カーソルマネージャ依存で SDK からは不明)からの
+	// 逆算値自体が頭打ちになっている疑いが強い。上限を外して、この式が実際にどこまで出すかを見る。
 	int32 fs = ((int32)maxLogW - 8) * 100 / (maxChars * 58);
-	if (fs > 18) fs = 18;
 	if (fs < 7)  fs = 7;
 
 	// ★ビットマップ幅は「実際の内容幅」にタイトに合わせる。最大幅いっぱいに取ると右側に広い透明余白が
@@ -1144,14 +1146,32 @@ static void KESCMCmykCursorBitmapProc(uchar* bitmapBuffer, uint32* width, uint32
 	gPort->setopacity(PMReal(1.0), kFalse);
 	/* 背景塗りは廃止=透明のまま。黒い箱を出さない(ユーザー指定 2026-07-13) */
 
-	// サンプル点マーカー。以前は ✓ を stroke(線)で描いていたが、これが初回フレームのちらつき(ゴミ)の
-	// 原因らしい(ユーザーのヒント: 文字だけ=show/fill のときは出なかった。2026-07-13)。そこで stroke を
-	// やめ、文字と同じ塗り(rectfill)だけで小さなドット(白フチ+黒)をホットスポット(10,18)に描く
-	// =サンプル点そのものを示す。
-	gPort->setrgbcolor(PMReal(1.0), PMReal(1.0), PMReal(1.0));	// 白フチ(7x7、中心(10,18))
-	gPort->rectfill(PMReal(6.5), PMReal(14.5), PMReal(13.5), PMReal(21.5));
-	gPort->setrgbcolor(PMReal(0.0), PMReal(0.0), PMReal(0.0));	// 黒コア(4x4、中心(10,18))
-	gPort->rectfill(PMReal(8.0), PMReal(16.0), PMReal(12.0), PMReal(20.0));
+	// ツール選択中と同じ✓(KESCMCheckCursorBitmapProc と同一形状/座標)をホットスポット(10,18)=✓の
+	// 折れ点=クリック点に描く。数値表示中もカーソル形状を残す(ユーザー要望 2026-07-14)。
+	// ★以前は「✓ を stroke で描くと初回フレームのちらつき(ゴミ)が出る」と考えて rectfill のドットに
+	// 退避していたが(2026-07-13)、その後の調査でゴミの真因は stroke 描画ではなく BeginTracking の
+	// 多段カーソル切替が OS のハードウェアカーソル合成にそのまま見えていたことだと判明し、
+	// KESCMTracker.cpp 側で ICursorMgr::Hide/Show により解決済み(2026-07-14)。stroke 自体は無罪なので
+	// ✓に戻して問題ない。
+	const PMReal ax(5.0), ay(12.0);	// 短腕の先(左上)
+	const PMReal bx(10.0), by(18.0);	// 頂点(折れ点)=ホットスポットと一致
+	const PMReal cx(20.0), cy(5.0);	// 長腕の先(右上)
+	gPort->setlinecap(1);	// round cap
+	gPort->setlinejoin(1);	// round join
+	gPort->setrgbcolor(PMReal(1.0), PMReal(1.0), PMReal(1.0));	// 白フチ
+	gPort->setlinewidth(PMReal(3.5));
+	gPort->newpath();
+	gPort->moveto(ax, ay);
+	gPort->lineto(bx, by);
+	gPort->lineto(cx, cy);
+	gPort->stroke();
+	gPort->setrgbcolor(PMReal(0.0), PMReal(0.0), PMReal(0.0));	// 黒本体
+	gPort->setlinewidth(PMReal(2.4));
+	gPort->newpath();
+	gPort->moveto(ax, ay);
+	gPort->lineto(bx, by);
+	gPort->lineto(cx, cy);
+	gPort->stroke();
 
 	// 上から: ヘッダー "C M Y K"(各列先頭にそろえる) / Target 数値 / Source 数値。数値は各値3桁で行頭
 	// そろえ、末尾に t/s。フォント fs・行位置は上で計算済み。描画は KESCMShowHalo(白フチ＋黒本体)。
@@ -1180,7 +1200,8 @@ CreateCursorBitmapProc KESCMTrackerCmykCursorProc() { return &KESCMCmykCursorBit
 // 値が変わったら sCmykCursorText を更新して kTrue を返す(呼び出し側がカーソルを描き直す)。
 // 連続ラスタ化で重くならないよう時間スロットル(既定 50ms ≒ 20回/秒)を掛ける。
 // 前方宣言。定義は KESCMTrackerRevealBegin の直前(ページ外の「値なし c---」表示を作る)。
-static void KESCMBuildCmykNoValue(PMString& out);
+static void KESCMBuildCmykNoValue(PMString& out);				// カーソル用(t/s)
+static void KESCMBuildCmykNoValuePanel(PMString& out);			// パネル用(見出し行+Target/Source)
 
 bool16 KESCMTrackerUpdateCmykDrag()
 {
@@ -1208,10 +1229,15 @@ bool16 KESCMTrackerUpdateCmykDrag()
 	// (ユーザー要望 2026-07-13。直前値を残さない=誤読防止)。
 	PMString panelMsg, cursorMsg;
 	if (!KESCMSampleCmykUnderMouse(sPeekTargetDB, sPeekSourceDB, panelMsg, cursorMsg))
+	{
 		KESCMBuildCmykNoValue(cursorMsg);
-	if (cursorMsg == sCmykCursorText)	// 値が同じなら描き直し不要
+		KESCMBuildCmykNoValuePanel(panelMsg);
+	}
+	if (cursorMsg == sCmykCursorText)	// 値が同じなら描き直し不要(パネルも同じ値なので更新不要)
 		return kFalse;
 
+	// パネルのステータス行もドラッグに追従させる(強制表示はしない。KESCMTrackerRevealBegin と同じ方針)。
+	KESCMSetStatus(panelMsg);
 	sCmykCursorText = cursorMsg;
 	return kTrue;
 }
@@ -1222,9 +1248,20 @@ static void KESCMBuildCmykNoValue(PMString& out)
 {
 	out.Clear();
 	out.SetTranslatable(kFalse);
-	out.Append("--- --- --- --- tgt");
+	out.Append("--- --- --- --- t");	// ラベルは t/s(KESCMColorSampler.cpp と同じ短縮。2026-07-14)
 	out.AppendW(UTF32TextChar(0x0A));	// 改行 → 2行目へ
-	out.Append("--- --- --- --- src");
+	out.Append("--- --- --- --- s");
+}
+
+// パネル版の「値なし」表示。値ごとに見出し文字を添え tgt/src 略語にする。KESCMSampleCmykUnderMouse
+// 成功時のパネル表記(KESCMColorSampler.cpp の KESCMAppendCmykLabeled)と揃える(2026-07-14)。
+static void KESCMBuildCmykNoValuePanel(PMString& out)
+{
+	out.Clear();
+	out.SetTranslatable(kFalse);
+	out.Append("C--- M--- Y--- K--- tgt");
+	out.AppendW(UTF32TextChar(0x0A));
+	out.Append("C--- M--- Y--- K--- src");
 }
 
 void KESCMTrackerRevealBegin(bool16 shiftDown, bool16 altDown, bool16 cmdDown)
@@ -1261,18 +1298,23 @@ void KESCMTrackerRevealBegin(bool16 shiftDown, bool16 altDown, bool16 cmdDown)
 	if (altDown && !shiftDown)
 	{
 		// Alt+左(単独、Shift/Ctrl なし): クリック点の CMYK 生値(0..255)を新・旧でサンプリングし、
-		// "Target C.. M.. Y.. K.." / "Source C.. …" をカーソル自身に描画する(パネルには一切出さない)。
+		// "Target C.. M.. Y.. K.." / "Source C.. …" をカーソル自身に描画する。
 		// 中ボタン Shift+Ctrl+Alt+ミドル 相当。arm 済み(Start 後)かつ Target 窓上でのみ反応。
-		// (旧仕様: パネルを押下中だけ一時表示していたが撤去。色比較はカーソルにのみ描画する。)
 		if (sPeekArmed && KESCMFrontViewIsOverTarget())
 		{
 			PMString panelMsg, cursorMsg;
 			if (!KESCMSampleCmykUnderMouse(sPeekTargetDB, sPeekSourceDB, panelMsg, cursorMsg))
-					KESCMBuildCmykNoValue(cursorMsg);	/* ページ外など: 拾えないことを示す(値なし c--- 表示) */
 			{
-				// 色比較はカーソル自身に CMYK を描くだけにする(トラッカーが ChangeModalCursor する)。
-				// パネルへのメッセージ表示や、パネルの一時 ON/OFF は行わない(ユーザー指定 2026-07-13。
-				// 以前は KESCMPanelTempShowBegin()+KESCMSetStatus(panelMsg) でパネルにも出していた)。
+				KESCMBuildCmykNoValue(cursorMsg);	/* ページ外など: 拾えないことを示す(値なし c--- 表示) */
+				KESCMBuildCmykNoValuePanel(panelMsg);
+			}
+			{
+				// 色比較はカーソル自身に CMYK を描く(トラッカーが ChangeModalCursor する)のに加えて、
+				// 念のためパネルのステータス行にも同じ値を出す(ユーザー要望 2026-07-14)。
+				// ★KESCMSetStatus はパネルが非表示でも「強制的に表示」はしない(ON→表示中なら見える、
+				// OFF→隠れたまま状態だけ覚える)。パネルを開かせる KESCMPanelTempShowBegin() は
+				// 呼ばない(ユーザー指定: OFFのままでよい、ONにはしない)。
+				KESCMSetStatus(panelMsg);
 				sCmykCursorText    = cursorMsg;
 				sCmykCursorPending = kTrue;
 			}
