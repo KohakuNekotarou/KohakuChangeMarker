@@ -902,7 +902,7 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 	kKESCMPanelWidgetID,			// WidgetID
 	kPMRsrcID_None,					// RsrcID
 	kBindNone,						// Binding
-	0, 0, 192, 153,					// Frame: left, top, right, bottom (ステータス欄を3→4行に拡張した分、下端を +17px。イラストも下端145へ下寄せ)
+	0, 0, 204, 153,					// Frame: left, top, right, bottom (ステータス欄を3→4行に拡張した分、下端を +17px。イラストも下端145へ下寄せ。ステータス欄を+12px広げた分、右端も192→204)
 	kTrue, kTrue,					// Visible, Enabled
 	kFalse,							// Erase background
 	kInterfacePaletteFill,			// Erase to color
@@ -915,7 +915,7 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 			kKESCMTargetTextWidgetID,
 			kSysStaticTextPMRsrcId,
 			kBindLeft | kBindRight | kBindTop,
-			Frame(8, 8, 184, 24)
+			Frame(8, 8, 196, 24)
 			kTrue, kTrue,
 			kAlignLeft, kEllipsizeEnd, kTrue,
 			kKESCMTargetLabelKey,
@@ -926,7 +926,7 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 			kKESCMSourceTextWidgetID,
 			kSysStaticTextPMRsrcId,
 			kBindLeft | kBindRight | kBindTop,
-			Frame(8, 26, 184, 42)
+			Frame(8, 26, 196, 42)
 			kTrue, kTrue,
 			kAlignLeft, kEllipsizeEnd, kTrue,
 			kKESCMSourceLabelKey,
@@ -968,7 +968,7 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 			kKESCMIconOffWidgetID,
 			kKESCMIconOffResID, kKESCMPluginID,
 			kBindTop,
-			Frame(152, 113, 184, 145)	// 32×32・右寄せ。ステータス欄(4行・下端145)に合わせて下寄せ(top113/bottom145、パネル下端153まで8pxマージン)。ON側と同座標
+			Frame(164, 113, 196, 145)	// 32×32・右寄せ。ステータス欄(4行・下端145)に合わせて下寄せ(top113/bottom145、パネル下端153まで8pxマージン)。ステータス欄+12px広げた分、右へ152→164。ON側と同座標
 			kTrue, kTrue,
 			kADBEIconSuiteButtonType,
 		),
@@ -977,7 +977,7 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 			kKESCMIconOnWidgetID,
 			kKESCMIconOnResID, kKESCMPluginID,
 			kBindTop,
-			Frame(152, 113, 184, 145)	// 32×32・右寄せ。ステータス欄(4行・下端145)に合わせて下寄せ(top113/bottom145、パネル下端153まで8pxマージン)。OFF側と同座標
+			Frame(164, 113, 196, 145)	// 32×32・右寄せ。ステータス欄(4行・下端145)に合わせて下寄せ(top113/bottom145、パネル下端153まで8pxマージン)。ステータス欄+12px広げた分、右へ152→164。OFF側と同座標
 			kFalse, kTrue,
 			kADBEIconSuiteButtonType,
 		),
@@ -988,7 +988,7 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 			kKESCMStatusTextWidgetID,
 			kPMRsrcID_None,
 			kBindLeft | kBindRight | kBindTop,
-			Frame(8, 76, 148, 145)		// 右148まで=イラスト(152-184)と横並び(4px間隔)。下端を 128→145 に拡張(3→4行)
+			Frame(8, 76, 160, 145)		// 右160まで=イラスト(164-196)と横並び(4px間隔)。下端を 128→145 に拡張(3→4行)。メッセージ部分を+12px広げるためパネル全体も192→204に拡張(ユーザー指定 2026-07-14)
 			kTrue, kTrue,
 			kAlignLeft, kDontEllipsize, kTrue,
 			kInvalidWidgetID,

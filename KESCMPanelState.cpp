@@ -119,7 +119,7 @@ void KESCMSavePanelState()
 	fclose(fp);
 
 	// 保存先のフルパスをパネルのステータス行に表示する(ユーザー要望 2026-07-11: モーダルからパネル表示へ)。
-	// ★パスのみ(「Settings saved:」等のラベルを付けるとステータス行(幅140px×3行)から溢れるため)。
+	// ★パスのみ(「Settings saved:」等のラベルを付けるとステータス行(幅152px×4行)から溢れるため)。
 	PMString msg;
 	msg.SetTranslatable(kFalse);
 	msg.Append(FileUtils::SysFileToPMString(file));

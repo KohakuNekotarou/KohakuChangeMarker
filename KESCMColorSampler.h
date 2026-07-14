@@ -15,8 +15,9 @@
 
 class IDataBase;
 
-// outPanel = パネルのステータス行用(幅140px制約のため略語 tgt/src の compact 表記)。
-// outCursor = カーソル自身に描く用(ラベルは Target/Source のフル表記＋タブ区切りで桁揃え)。
+// outPanel = パネルのステータス行用(幅152px制約のため略語 tgt/src の compact 表記)。
+// outCursor = カーソル自身に描く用(ラベルは t/s の1文字。C/M/Y/K見出しはKESCMPeek.cppのビットマップ
+// カーソル側で別途描画するため、渡す文字列は数値行のみでよい)。
 bool16 KESCMSampleCmykUnderMouse(IDataBase* targetDB, IDataBase* sourceDB,
                                  PMString& outPanel, PMString& outCursor);
 

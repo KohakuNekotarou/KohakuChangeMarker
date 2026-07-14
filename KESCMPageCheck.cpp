@@ -595,7 +595,7 @@ void KESCMPageCheckSaveToFile()
 {
 	if (!KESCMIsArmed())
 	{
-		PMString msg("Save: start first");	// ステータス行は幅が狭い(約140px×3行)ので短く
+		PMString msg("Save: start first");	// ステータス行は幅が狭い(約152px×4行)ので短く
 		msg.SetTranslatable(kFalse);
 		KESCMSetStatus(msg, kTrue /*forceRedrawNow*/);
 		return;
