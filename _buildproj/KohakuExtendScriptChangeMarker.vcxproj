@@ -250,6 +250,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMChangeNav.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMCheckGlyph.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMColorSampler.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMConstants.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMCore.h" />

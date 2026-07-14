@@ -107,6 +107,9 @@
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMChangeNav.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMCheckGlyph.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMColorSampler.h">
       <Filter>Header Files</Filter>
     </ClInclude>

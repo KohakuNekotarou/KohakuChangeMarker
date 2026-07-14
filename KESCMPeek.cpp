@@ -76,6 +76,7 @@
 #include "KESCMConstants.h"
 #include "KESCMDrawEventHandler.h"   // エンジンの共有 static ＋ KESCMQueryPanorama
 #include "KESCMColorSampler.h"       // KESCMSampleCmykUnderMouse
+#include "KESCMCheckGlyph.h"         // KESCMDrawCheckGlyph(✓描画を CMYK カーソルと共有)
 #include "KESCMCore.h"               // arm/disarm/状態 宣言
 #include "KESCMPageMap.h"            // KESCMMapTargetToSource(除外対応表)/KESCMPageMapSweepClosedDocs
 #include "KESCMPageCheck.h"          // KESCMPageCheckClearAllDocs / KESCMPageCheckSweepClosedDocs(✓の後片付け)
@@ -1124,32 +1125,14 @@ static void KESCMCmykCursorBitmapProc(uchar* bitmapBuffer, uint32* width, uint32
 	gPort->setopacity(PMReal(1.0), kFalse);
 	/* 背景塗りは廃止=透明のまま。黒い箱を出さない(ユーザー指定 2026-07-13) */
 
-	// ツール選択中と同じ✓(KESCMCheckCursorBitmapProc と同一形状/座標)をホットスポット(10,18)=✓の
-	// 折れ点=クリック点に描く。数値表示中もカーソル形状を残す(ユーザー要望 2026-07-14)。
-	// ★以前は「✓ を stroke で描くと初回フレームのちらつき(ゴミ)が出る」と考えて rectfill のドットに
-	// 退避していたが(2026-07-13)、その後の調査でゴミの真因は stroke 描画ではなく BeginTracking の
-	// 多段カーソル切替が OS のハードウェアカーソル合成にそのまま見えていたことだと判明し、
-	// KESCMTracker.cpp 側で ICursorMgr::Hide/Show により解決済み(2026-07-14)。stroke 自体は無罪なので
-	// ✓に戻して問題ない。
-	const PMReal ax(5.0), ay(12.0);	// 短腕の先(左上)
-	const PMReal bx(10.0), by(18.0);	// 頂点(折れ点)=ホットスポットと一致
-	const PMReal cx(20.0), cy(5.0);	// 長腕の先(右上)
-	gPort->setlinecap(1);	// round cap
-	gPort->setlinejoin(1);	// round join
-	gPort->setrgbcolor(PMReal(1.0), PMReal(1.0), PMReal(1.0));	// 白フチ
-	gPort->setlinewidth(PMReal(3.5));
-	gPort->newpath();
-	gPort->moveto(ax, ay);
-	gPort->lineto(bx, by);
-	gPort->lineto(cx, cy);
-	gPort->stroke();
-	gPort->setrgbcolor(PMReal(0.0), PMReal(0.0), PMReal(0.0));	// 黒本体
-	gPort->setlinewidth(PMReal(2.4));
-	gPort->newpath();
-	gPort->moveto(ax, ay);
-	gPort->lineto(bx, by);
-	gPort->lineto(cx, cy);
-	gPort->stroke();
+	// ツール選択中と同じ✓を、共有ヘルパ KESCMDrawCheckGlyph でホットスポット(10,18)=✓の折れ点=
+	// クリック点に描く(KESCMCursorProvider.cpp と同一形状/座標)。数値表示中もカーソル形状を残す
+	// (ユーザー要望 2026-07-14)。★以前は「✓ を stroke で描くと初回フレームのちらつき(ゴミ)が出る」と
+	// 考えて rectfill のドットに退避していたが(2026-07-13)、その後の調査でゴミの真因は stroke 描画では
+	// なく BeginTracking の多段カーソル切替が OS のハードウェアカーソル合成にそのまま見えていたことだと
+	// 判明し、KESCMTracker.cpp 側で ICursorMgr::Hide/Show により解決済み(2026-07-14)。stroke 自体は
+	// 無罪なので✓に戻して問題ない。
+	KESCMDrawCheckGlyph(gPort);
 
 	// 上から: ヘッダー "C M Y K"(各列先頭にそろえる) / Target 数値 / Source 数値。数値は各値3桁で行頭
 	// そろえ、末尾に t/s。フォント fs・行位置は上で計算済み。描画は KESCMShowHalo(白フチ＋黒本体)。

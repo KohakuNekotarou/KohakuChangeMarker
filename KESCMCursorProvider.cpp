@@ -29,6 +29,8 @@
 #include "IGraphicsPort.h"		// ✓のストローク描画
 #include "Utils.h"				// Utils<ICursorUtils>()
 
+#include "KESCMCheckGlyph.h"	// KESCMDrawCheckGlyph(✓描画を CMYK カーソルと共有)
+
 //----------------------------------------------------------------------------------------
 //  ✓カーソルの描画コールバック
 //----------------------------------------------------------------------------------------
@@ -62,33 +64,11 @@ static void KESCMCheckCursorBitmapProc(uchar* bitmapBuffer, uint32* width, uint3
 	if (gPort == nil)
 		return;
 
-	// ✓ を 2 本のストローク(短腕→頂点→長腕)で描く。論理座標(y-down)。
-	// 頂点(bx,by)=折れ点=ホットスポット。.fr の HOTC(kKESCMCheckCursorResID) と一致させること。
-	const PMReal ax( 5.0), ay(12.0);	// 短腕の先(左上)
-	const PMReal bx(10.0), by(18.0);	// 頂点(折れ点)
-	const PMReal cx(20.0), cy( 5.0);	// 長腕の先(右上)
-
+	// ✓ (white halo + black body). Shared with the CMYK readout cursor (KESCMPeek.cpp) via
+	// KESCMDrawCheckGlyph so both draw the identical shape. Vertex (10,18) = the .fr HOTC
+	// (kKESCMCheckCursorResID) hotspot.
 	gPort->setopacity(PMReal(1.0), kFalse);
-	gPort->setlinecap(1);	// round cap
-	gPort->setlinejoin(1);	// round join
-
-	// 白フチ(下地。白ストロークで明暗どちらの背景でも✓を視認できるようにする。ごく細めのフチ)。
-	gPort->setrgbcolor(PMReal(1.0), PMReal(1.0), PMReal(1.0));
-	gPort->setlinewidth(PMReal(3.5));	// 縁(白フチ)の太さ 3.1→3.5(ユーザー指定 2026-07-13)
-	gPort->newpath();
-	gPort->moveto(ax, ay);
-	gPort->lineto(bx, by);
-	gPort->lineto(cx, cy);
-	gPort->stroke();
-
-	// 黒の✓本体。
-	gPort->setrgbcolor(PMReal(0.0), PMReal(0.0), PMReal(0.0));
-	gPort->setlinewidth(PMReal(2.4));
-	gPort->newpath();
-	gPort->moveto(ax, ay);
-	gPort->lineto(bx, by);
-	gPort->lineto(cx, cy);
-	gPort->stroke();
+	KESCMDrawCheckGlyph(gPort);
 }
 
 //----------------------------------------------------------------------------------------
