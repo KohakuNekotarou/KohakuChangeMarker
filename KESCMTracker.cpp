@@ -33,6 +33,7 @@
 
 #include "KESCMID.h"
 #include "KESCMPeek.h"		// KESCMTrackerRevealBegin / KESCMTrackerRevealEnd / CMYK カーソル入口
+#include "KESCMCore.h"		// KESCMIsArmed(未 Start では Hide/Show を省く)
 
 //____________________________________________________________________________________
 //	Tracker event handler: forwards events (notably the button-up) to the tracker while
@@ -97,7 +98,10 @@ public:
 		                            !theEvent->ShiftKeyDown() && !theEvent->CmdKeyDown());
 		InterfacePtr<IApplication> theApp(GetExecutionContextSession()->QueryApplication());
 		InterfacePtr<ICursorMgr> cursorMgr(theApp, UseDefaultIID());
-		const bool16 hideDuringSwitch = (cmykGesture && cursorMgr != nil);
+		// ★未 Start(arm 前)では色比較は発動しない(RevealBegin が sPeekArmed で弾き、CMYK カーソルも出ない)
+		//   ので、その場合は隠す意味が無い。KESCMIsArmed() を条件に足して、CMYK カーソルを実際に出し得る時
+		//   (=Start 済み)だけ Hide/Show で多段切替を包む。未 Start の Alt+左で無駄にカーソルがまたたくのを防ぐ。
+		const bool16 hideDuringSwitch = (cmykGesture && cursorMgr != nil && KESCMIsArmed());
 		if (hideDuringSwitch)
 			cursorMgr->Hide();
 
