@@ -57,6 +57,17 @@ CREATE_PMINTERFACE(KESCMThumbIdleTask, kKESCMThumbIdleTaskImpl)
 
 uint32 KESCMThumbIdleTask::RunTask(uint32 flags, IdleTimer* /*idleTimer*/)
 {
+	// ★終了堅牢化(2026-07-15): アプリが終了処理中なら Pages パネルへ触らず、予約を捨てて自分を外す。
+	// quit 中の doc close がこのタスクを予約→Shutdown(RemoveTask)より前に idle が回った場合の保険
+	// (解体中のパネルへの purge+ForceRedraw が Mac 限定 crash-on-quit の典型形)。
+	if (KESCMAppIsQuitting())
+	{
+		sQueued = kFalse;
+		sPendingDBs.clear();
+		this->UninstallTask();
+		return 0;
+	}
+
 	// メニュー展開中・マウス追跡中・バックグラウンドでは触らない(状態が変わったら呼び直される)。
 	if (flags & (IIdleTaskMgr::kInBackground | IIdleTaskMgr::kMenuUp | IIdleTaskMgr::kMouseTracking))
 		return kOnFlagChange;
@@ -87,8 +98,8 @@ uint32 KESCMThumbIdleTask::RunTask(uint32 flags, IdleTimer* /*idleTimer*/)
 //========================================================================================
 void KESCMScheduleThumbRefresh(IDataBase* db)
 {
-	if (db == nil || sShutdown)
-		return;		// ★Shutdown 後は再アーム禁止(タスク再生成リーク/ティアダウン中発火の防止)
+	if (db == nil || sShutdown || KESCMAppIsQuitting())
+		return;		// ★Shutdown 後・アプリ終了中は再アーム禁止(タスク再生成リーク/ティアダウン中発火の防止)
 
 	// 同じ db を重複登録しない。
 	if (std::find(sPendingDBs.begin(), sPendingDBs.end(), db) == sPendingDBs.end())

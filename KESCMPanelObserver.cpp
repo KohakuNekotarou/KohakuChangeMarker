@@ -474,6 +474,17 @@ void KESCMSetStatus(const PMString& s, bool16 forceRedrawNow)
 }
 
 //========================================================================================
+// KESCMClearSessionStatus(KESCMCore.h で宣言)
+//   Shutdown 専用。gSessionStatus(file-static PMString)を空にして、プラグイン unload 時の
+//   静的デストラクタを実質 no-op にする(UI には一切触らない。KESCMSetStatus は使わないこと=
+//   あちらはパネル widget を探しに行くため終了処理中は不可)。
+//========================================================================================
+void KESCMClearSessionStatus()
+{
+	gSessionStatus.Clear();
+}
+
+//========================================================================================
 // KESCMSetNavPosition(KESCMCore.h で宣言)
 //   Prev/Next の間の現在位置表示(kKESCMNavPosTextWidgetID、例 "3/12")と、Prev/Next ボタンの
 //   有効/無効をまとめて更新する。パネルが隠れていれば何もしない(再表示時に KESCMRefreshNavPosition が

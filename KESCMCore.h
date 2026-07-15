@@ -43,6 +43,17 @@ bool16		KESCMQueryMouseContentPoint(IControlView* view, PMReal& outX, PMReal& ou
 // InterfacePtr 等による Release が必要)。見つからなければ nil。
 IControlView*	KESCMQueryViewUnderMouse();
 
+// アプリが終了処理中(IApplication::GetApplicationState() が kQuitting/kShuttingDown)なら kTrue。
+// quit の close-all フェーズ(保存確認でキャンセル可能な段階)はまだ kRunning=kFalse。kTrue の間は
+// ウィンドウ/パネルの解体順がプラットフォーム依存(特に Mac)のため、widget 操作・再描画・idle task
+// 予約などの UI 仕事を全てスキップし、状態(メモリ)の破棄だけに縮退すること。実体は KESCMCore.cpp。
+bool16		KESCMAppIsQuitting();
+
+// Shutdown 専用: パネルのステータス行のセッション記憶(gSessionStatus)を空にする。static PMString の
+// 静的デストラクタをプラグイン unload 時の実質 no-op にするため(Mac の unload 順は Windows と異なり、
+// 破棄時に生きた heap バッファを持たせない方が安全)。実体は KESCMPanelObserver.cpp。
+void		KESCMClearSessionStatus();
+
 // マウス下のページを特定した結果(KESCMFindPageUnderMouse 参照)。globalPageBase は自身の文書内での
 // 平坦ページ番号(KESCMCollectPageUIDs と一致)。旧ドキュメント側のページは(登録済み=比較相手なし
 // ページの除外を考慮するため)ここから直接インデックスせず、除外対応表(KESCMPageMap.h の

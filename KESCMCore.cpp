@@ -362,6 +362,20 @@ bool16 KESCMIsDocDBOpen(IDataBase* db)
 	return (docList != nil && docList->FindDocByDataBase(db) != nil) ? kTrue : kFalse;
 }
 
+// アプリが終了処理中(kQuitting=QuitCmd の Terminate 後 / kShuttingDown=イベントループ停止後)なら kTrue。
+// quit の close-all フェーズ(ユーザーが保存確認をキャンセルできる段階)はまだ kRunning なので kFalse のまま
+// =通常クローズと同じフルクリーンアップが走る。ここが kTrue の間はウィンドウ/パネルの解体順が
+// プラットフォーム依存(特に Mac の Cocoa 解体順は Windows と異なる)のため、widget 操作・再描画・
+// idle task 予約などの UI 仕事をしてはならない(2026-07-15 終了堅牢化)。
+bool16 KESCMAppIsQuitting()
+{
+	InterfacePtr<IApplication> app(GetExecutionContextSession()->QueryApplication());
+	if (app == nil)
+		return kTrue;	// アプリすら引けない=解体が進んでいる。安全側(終了中扱い)に倒す
+	const IApplication::ApplicationStateType st = app->GetApplicationState();
+	return (st == IApplication::kQuitting || st == IApplication::kShuttingDown) ? kTrue : kFalse;
+}
+
 // db が非nilなら、その IDocument のビューを再描画する。呼び出し側(パネル操作時の「今アクティブな
 // 文書」)と「実際にマークが描かれている対象文書」が異なる(例: Source や無関係な第3文書が前面の
 // 状態で Stop や印刷マーク切替を行った)場合でも、両方を確実に再描画するために使う共有ヘルパ。

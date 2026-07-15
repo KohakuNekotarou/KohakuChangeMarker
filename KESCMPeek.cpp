@@ -1487,6 +1487,12 @@ void KESCMPeekStartup::Shutdown()
 	// 手本の KESLayoutScrollObserver も終了時は何も外さず無事故=購読(依存)は subject/observer の
 	// boss 破棄と一緒に IChangeManager から消えるので、明示的な解除は不要。
 	sLayoutSyncOn = kFalse;
+
+	// ★file-static PMString を空にして、プラグイン unload 時の静的デストラクタを実質 no-op にする
+	// (Windows では実害なしの実績だが、Mac は unload 順が異なるため heap バッファを持ち越さない方が
+	// 安全。2026-07-15 終了堅牢化)。
+	sCmykCursorText.Clear();
+	KESCMClearSessionStatus();	// パネルのステータス記憶(gSessionStatus)も同様に空へ
 }
 
 //========================================================================================
@@ -1562,6 +1568,14 @@ void KESCMHandleDocsClosed()
 	if (docList == nil)
 		return;
 
+	// ★終了堅牢化(2026-07-15): アプリが終了処理中(kQuitting/kShuttingDown)にこのレスポンダへ来たら、
+	// UI 仕事(strip の widget 除去・InvalidateViews・サムネイル idle 予約・パネル/ステータス更新)を
+	// 全てスキップし、状態(メモリ)の破棄だけにする。終了中のウィンドウ/パネル解体順はプラットフォーム
+	// 依存で、特に Mac(Cocoa)は Windows と異なるため、解体中の widget へ触るのが Mac 限定
+	// crash-on-quit の典型形。通常の quit は close-all(まだ kRunning)→Terminate の順なので、対話的な
+	// クローズと quit の close-all フェーズでは従来どおりフルクリーンアップが走る(挙動変更なし)。
+	const bool16 quitting = KESCMAppIsQuitting();
+
 	bool16 changed = kFalse;
 
 	// 比較に関わる db(マーク sDB / 旧版 sOrigDB / Source側枠 sSrcDB / peek arm の target・source)の
@@ -1615,32 +1629,38 @@ void KESCMHandleDocsClosed()
 		// ★スクロールバー地図 strip も Stop と同様に取り外す(2026-07-11 セルフレビューで発見)。
 		//   これを怠ると、生存側の窓に孤児 strip が残り、レイアウトビューも 5px 詰めたままになる。
 		//   DetachAll は「今開いている窓」だけを走査する(閉じた窓の widget は窓ごと消えている)ので安全。
-		KESCMScrollMapDetachAll();
+		//   ★終了中(quitting)はスキップ: 解体中の窓の widget 除去/SetFrame が危険な上、窓ごと消えるので
+		//   取り外す意味も無い(以下の UI 仕事も同様にスキップ)。
+		if (!quitting)
+			KESCMScrollMapDetachAll();
 		changed = kTrue;
 
-		PMString s("marks cleared");	// Stop ボタン(DoClear)と同じメッセージ
-		s.SetTranslatable(kFalse);
-		KESCMSetStatus(s);
+		if (!quitting)
+		{
+			PMString s("marks cleared");	// Stop ボタン(DoClear)と同じメッセージ
+			s.SetTranslatable(kFalse);
+			KESCMSetStatus(s);
 
-		// Stop ボタン(KESCMDoClearMarks)と同じく、生存している側を再描画して枠を即座に消す
-		// (Source 側の常時枠が出ていた文書も含む)。
-		KESCMInvalidateDB(survivorTargetDB);
-		if (survivorOrigDB != survivorTargetDB)
-			KESCMInvalidateDB(survivorOrigDB);
-		if (survivorSrcDB != survivorTargetDB && survivorSrcDB != survivorOrigDB)
-			KESCMInvalidateDB(survivorSrcDB);
+			// Stop ボタン(KESCMDoClearMarks)と同じく、生存している側を再描画して枠を即座に消す
+			// (Source 側の常時枠が出ていた文書も含む)。
+			KESCMInvalidateDB(survivorTargetDB);
+			if (survivorOrigDB != survivorTargetDB)
+				KESCMInvalidateDB(survivorOrigDB);
+			if (survivorSrcDB != survivorTargetDB && survivorSrcDB != survivorOrigDB)
+				KESCMInvalidateDB(survivorSrcDB);
 
-		// 生存側の Pages パネルサムネイルからも枠/斜線を消す。★その場(同期)で呼ぶと、閉じたのが
-		// ターゲットで生存側がこれからアクティブ化する場合、パネルの前面切替の過渡で ForceRedraw が
-		// 再生成を起こしきれず枠が残る(2026-07-08 実機で確認)。そこで「次の idle」に遅延させ、切替が
-		// 落ち着いてから purge＋ForceRedraw する(KESCMScheduleThumbRefresh)。DropAll 済みなので
-		// 再生成される isThumb 描画は早期 return し枠は描かれない。survivor* は生存確認済みポインタ
-		// のみ=閉じた db は決して渡さない(nil はスケジューラ側で弾く。重複 db も集約される)。
-		KESCMScheduleThumbRefresh(survivorTargetDB);
-		if (survivorOrigDB != survivorTargetDB)
-			KESCMScheduleThumbRefresh(survivorOrigDB);
-		if (survivorSrcDB != survivorTargetDB && survivorSrcDB != survivorOrigDB)
-			KESCMScheduleThumbRefresh(survivorSrcDB);
+			// 生存側の Pages パネルサムネイルからも枠/斜線を消す。★その場(同期)で呼ぶと、閉じたのが
+			// ターゲットで生存側がこれからアクティブ化する場合、パネルの前面切替の過渡で ForceRedraw が
+			// 再生成を起こしきれず枠が残る(2026-07-08 実機で確認)。そこで「次の idle」に遅延させ、切替が
+			// 落ち着いてから purge＋ForceRedraw する(KESCMScheduleThumbRefresh)。DropAll 済みなので
+			// 再生成される isThumb 描画は早期 return し枠は描かれない。survivor* は生存確認済みポインタ
+			// のみ=閉じた db は決して渡さない(nil はスケジューラ側で弾く。重複 db も集約される)。
+			KESCMScheduleThumbRefresh(survivorTargetDB);
+			if (survivorOrigDB != survivorTargetDB)
+				KESCMScheduleThumbRefresh(survivorOrigDB);
+			if (survivorSrcDB != survivorTargetDB && survivorSrcDB != survivorOrigDB)
+				KESCMScheduleThumbRefresh(survivorSrcDB);
+		}
 	}
 
 	// 「Hide Unchanged Spreads」トグルの後片付け(Target/Source 両側)。隠し先のどちらかが閉じた、
@@ -1656,7 +1676,10 @@ void KESCMHandleDocsClosed()
 		const bool16 hideSourceClosed = (hideSrcDB != nil && docList->FindDocByDataBase(hideSrcDB) == nil);
 		if (hideTargetClosed || hideSourceClosed || comparisonDocClosed)
 		{
-			KESCMResetHideUnchanged(kTrue);
+			// ★終了中は kFalse=スプレッド再表示コマンド(kHideSpreadCmdBoss)を打たず状態だけ捨てる。
+			// 終了のティアダウン中にモデル変更コマンドを流すのは危険(通常 quit では close-all が
+			// kRunning 中に済むので、この kFalse 経路に来るのは異常系のみ=挙動変更なし)。
+			KESCMResetHideUnchanged(quitting ? kFalse : kTrue);
 			changed = kTrue;
 		}
 	}
@@ -1667,6 +1690,7 @@ void KESCMHandleDocsClosed()
 	KESCMPageCheckSweepClosedDocs();	// 「KESCM: Check」の✓も、閉じた文書の分を状態だけ捨てる(deref なし)
 
 	// 何か片付けたらパネルの ON/OFF 表示を実状態に合わせる(①「ON 固着」の解消)。
-	if (changed)
+	// ★終了中はパネル widget へ触らない(パネルも解体中の可能性がある)。
+	if (changed && !quitting)
 		KESCMRefreshPanel();
 }
