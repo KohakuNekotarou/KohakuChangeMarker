@@ -144,6 +144,13 @@ void		KESCMSetMarkOpacity25(bool16 op25);
 // (KESCMDoMarkChangesDoc の比較ループ前の busyMsg 表示に使う)。実体は KESCMPanelObserver.cpp。
 void		KESCMSetStatus(const PMString& s, bool16 forceRedrawNow = kFalse);
 
+// Prev/Next の間に出す現在位置表示(例 "3/12")と、Prev/Next ボタンの有効/無効をまとめて更新する。
+// ステータス行とは別ウィジェット(kKESCMNavPosTextWidgetID / kKESCMPrevChangeButtonWidgetID /
+// kKESCMNextChangeButtonWidgetID)。posText 空でクリア。navButtonsEnabled=kFalse で両ボタンを無効化。
+// 通常は KESCMChangeNav.cpp の KESCMRefreshNavPosition から呼ぶ(表示規則はそちら参照)。パネルが
+// 隠れていれば何もしない(再表示時に KESCMRefreshNavPosition が実状態を反映)。実体は KESCMPanelObserver.cpp。
+void		KESCMSetNavPosition(const PMString& posText, bool16 navButtonsEnabled);
+
 // パネルのイラスト(ON/OFF アイコン)をクリックしたときに呼ぶ。「このプラグインについて」に載せている
 // 配布元URL(kKESCMRepoURL, KESCMID.h)を既定のブラウザで開く。実体は KESCMActionComponent.cpp。
 void		KESCMOpenAboutURL();

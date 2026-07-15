@@ -214,8 +214,9 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMSourceTextWidgetID, kKESCMPrefix + 26)
 DECLARE_PMID(kWidgetIDSpace, kKESCMIconOnWidgetID, kKESCMPrefix + 34)
 DECLARE_PMID(kWidgetIDSpace, kKESCMIconOffWidgetID, kKESCMPrefix + 35)
 DECLARE_PMID(kWidgetIDSpace, kKESCMStatusTextWidgetID, kKESCMPrefix + 36)
-// kWidgetIDSpace +37 は現在未使用(旧 kKESCMToggleButtonWidgetID; 開始/解除ボタンは 2026-07-10 に
-//   フライアウト「Start / Stop」メニュー項目=kKESCMPopupStartStopActionID へ移行しパネルから撤去)
+// kWidgetIDSpace +37 は 2026-07-15 に kKESCMNavPosTextWidgetID として再利用(旧 kKESCMToggleButtonWidgetID;
+//   開始/解除ボタンは 2026-07-10 にフライアウト「Start / Stop」項目=kKESCMPopupStartStopActionID へ移行済み)
+DECLARE_PMID(kWidgetIDSpace, kKESCMNavPosTextWidgetID, kKESCMPrefix + 37)	// Prev/Next の間に出す現在位置「3/12」(中央揃え StaticText。KESCMChangeNav.cpp が KESCMSetNavPosition で更新)
 DECLARE_PMID(kWidgetIDSpace, kKESCMPrevChangeButtonWidgetID, kKESCMPrefix + 38)	// 「◀ Prev」= 前の見るべきページへスクロール(KESCMChangeNav.cpp)
 DECLARE_PMID(kWidgetIDSpace, kKESCMNextChangeButtonWidgetID, kKESCMPrefix + 39)	// 「Next ▶」= 次の見るべきページへスクロール(KESCMChangeNav.cpp)
 DECLARE_PMID(kWidgetIDSpace, kKESCMScrollMapWidgetID, kKESCMPrefix + 40)	// スクロールバー地図strip(文書窓の縦スクロールバー左隣に実行時注入; KESCMScrollMap.cpp)

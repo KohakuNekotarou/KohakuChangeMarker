@@ -39,7 +39,7 @@
 //  コールバックは引数でデータを渡せないため、黒/白抜きは「別 CursorID+別コールバック」で分ける
 //  (キャッシュも ID 別に効く=ClearCache 不要で切り替わる。2026-07-15)。
 static void KESCMCheckCursorBitmapCommon(uchar* bitmapBuffer, uint32* width, uint32* height, bool16* hasAlpha, bool16 hiRes,
-                                         const PMReal& bodyGray, const PMReal& haloGray)
+                                         const PMReal& bodyGray, const PMReal& haloGray, const PMReal& haloWidth)
 {
 	// 前処理(透明クリア+サイズ確定+ポート取得)は CMYK カーソルと共有(KESCMCheckGlyph.h)。
 	// 論理サイズ(1x px)は標準カーソルと同程度の 24x24。
@@ -50,24 +50,27 @@ static void KESCMCheckCursorBitmapCommon(uchar* bitmapBuffer, uint32* width, uin
 	if (gPort == nil)
 		return;
 
-	// ✓ (white halo + body). Shared with the CMYK readout cursor (KESCMPeek.cpp) via
+	// ✓ (halo + body). Shared with the CMYK readout cursor (KESCMPeek.cpp) via
 	// KESCMDrawCheckGlyph so both draw the identical shape. Vertex (10,18) = the .fr HOTC
 	// (kKESCMCheckCursorResID / kKESCMCheckCursorInactiveResID) hotspot.
 	gPort->setopacity(PMReal(1.0), kFalse);
-	KESCMDrawCheckGlyph(gPort, bodyGray, haloGray);
+	KESCMDrawCheckGlyph(gPort, bodyGray, haloGray, haloWidth);
 }
 
-// 黒✓=白フチ+黒本体(Start 中かつマウス下が Target 文書=ツールが効く場所)。
+// 黒✓=白フチ+黒本体(Start 中かつマウス下が Target 文書=ツールが効く場所)。縁(白フチ)は既定 3.5。
 static void KESCMCheckCursorBitmapProc(uchar* bitmapBuffer, uint32* width, uint32* height, bool16* hasAlpha, bool16 hiRes)
 {
-	KESCMCheckCursorBitmapCommon(bitmapBuffer, width, height, hasAlpha, hiRes, PMReal(0.0), PMReal(1.0));
+	KESCMCheckCursorBitmapCommon(bitmapBuffer, width, height, hasAlpha, hiRes, PMReal(0.0), PMReal(1.0), PMReal(3.5));
 }
 
 // 白抜き✓=黒フチ+白本体(Source・第3の文書・未 Start=ツールが効かない場所の明示)。
 // ★灰色本体(0.55)を先に試したが判別しづらいとのユーザー報告(2026-07-15)→白の塗りに黒の縁へ反転。
+// ★縁(黒フチ)は太めにする: 黒フチは白フチと同じ幅だと錯視で細く見えるため(ユーザー報告
+//   2026-07-15「Stop の縁が細く見える」)。当初 3.9 にしたが更に太くとの要望で 5.0 へ(2026-07-15)。
+//   本体 2.4px の下に敷くので、見えるフチは片側 (5.0-2.4)/2≈1.3px。24×24 論理内に収まりクリップ無し。
 static void KESCMCheckCursorInactiveBitmapProc(uchar* bitmapBuffer, uint32* width, uint32* height, bool16* hasAlpha, bool16 hiRes)
 {
-	KESCMCheckCursorBitmapCommon(bitmapBuffer, width, height, hasAlpha, hiRes, PMReal(1.0), PMReal(0.0));
+	KESCMCheckCursorBitmapCommon(bitmapBuffer, width, height, hasAlpha, hiRes, PMReal(1.0), PMReal(0.0), PMReal(5.0));
 }
 
 //----------------------------------------------------------------------------------------

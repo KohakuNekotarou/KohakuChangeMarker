@@ -179,6 +179,10 @@ void KESCMPanelObserver::AutoAttach()
 	{
 		this->SetStatus(gSessionStatus);
 	}
+
+	// Prev/Next の間の現在位置表示とボタン有効/無効は、上の UpdateInfoDisplay(→KESCMApplyPanelInfo
+	// →KESCMRefreshNavPosition)で今の実状態から作り直し済み。ワークスペースに永続化された前回の値は
+	// そこで確実に上書きされるので、ここでの復元処理は不要。
 }
 
 void KESCMPanelObserver::AutoDetach()
@@ -391,13 +395,11 @@ static void KESCMApplyPanelInfo(const InterfacePtr<IPanelControlData>& pcd)
 	if (onView  != nil) { onView->ShowView(started ? kTrue : kFalse);  onView->Enable(started ? kTrue : kFalse); }
 	if (offView != nil) { offView->ShowView(started ? kFalse : kTrue); offView->Enable(started ? kFalse : kTrue); }
 
-	// Prev/Next(変更ページナビ)は比較開始中のみ有効。未開始はグレーアウトして押せないようにする
-	// (未開始で押しても KESCMGoto が弾くが、無効化して「今は使えない」ことを見た目でも示す)。
-	// attach 時・Start/Stop・文書クローズ/切替のすべてがこの関数を通るので初期状態から正しく反映される。
-	IControlView* prevView = pcd->FindWidget(kKESCMPrevChangeButtonWidgetID);
-	IControlView* nextView = pcd->FindWidget(kKESCMNextChangeButtonWidgetID);
-	if (prevView != nil) prevView->Enable(started ? kTrue : kFalse);
-	if (nextView != nil) nextView->Enable(started ? kTrue : kFalse);
+	// Prev/Next(変更ページナビ)の有効/無効と、その間の現在位置表示(k/N・-・空)は
+	// KESCMRefreshNavPosition に一元化(比較中かつ変更ページありのときだけ有効。無ければ無効+"/"、
+	// 未 Start は無効+空)。attach 時・Start/Stop・文書クローズ/切替のすべてがこの関数を通るので
+	// 初期状態から正しく反映される。値の作り方は KESCMChangeNav.cpp を参照。
+	KESCMRefreshNavPosition();
 
 	// (Start/Stop の切替はパネルボタンから撤去し、フライアウト項目 kKESCMPopupStartStopActionID の
 	//  動的ラベル(UpdateActionStates)へ移行 2026-07-10。ここでのボタンラベル設定は不要になった。)
@@ -468,6 +470,49 @@ void KESCMSetStatus(const PMString& s, bool16 forceRedrawNow)
 	// イベントループまで反映されない。busyMsg 表示のために今すぐ同期描画させる。
 	if (forceRedrawNow)
 		panel->ForceRedraw(nil, kTrue);
+}
+
+//========================================================================================
+// KESCMSetNavPosition(KESCMCore.h で宣言)
+//   Prev/Next の間の現在位置表示(kKESCMNavPosTextWidgetID、例 "3/12")と、Prev/Next ボタンの
+//   有効/無効をまとめて更新する。パネルが隠れていれば何もしない(再表示時に KESCMRefreshNavPosition が
+//   実状態を反映する)。値の決定は呼び出し側(KESCMRefreshNavPosition)に集約。
+//========================================================================================
+void KESCMSetNavPosition(const PMString& posText, bool16 navButtonsEnabled)
+{
+	InterfacePtr<IApplication> app(GetExecutionContextSession()->QueryApplication());
+	if (app == nil)
+		return;
+	InterfacePtr<IPanelMgr> panelMgr(app->QueryPanelManager());
+	if (panelMgr == nil)
+		return;
+	IControlView* panel = panelMgr->GetVisiblePanel(kKESCMPanelWidgetID);
+	if (panel == nil)
+		return;		// パネルは隠れている: 触る先が無い。
+	InterfacePtr<IPanelControlData> pcd(panel, UseDefaultIID());
+	if (pcd == nil)
+		return;
+
+	// 位置表示。★StaticTextWidget は SetString だけでは次の再描画契機まで古い値が残る(StaticMultiLineText
+	//   と違い自動 invalidate されない)。Start での変化や Next/Prev の値変更を即時反映させるため、明示的に
+	//   invalidate → 今すぐ再描画する(2026-07-15 ユーザー報告「1/5 が即時更新されない」)。
+	IControlView* cv = pcd->FindWidget(kKESCMNavPosTextWidgetID);
+	if (cv != nil)
+	{
+		InterfacePtr<ITextControlData> tcd(cv, UseDefaultIID());
+		if (tcd != nil)
+		{
+			tcd->SetString(posText);
+			cv->Invalidate();
+			cv->ForceRedraw();
+		}
+	}
+
+	// Prev/Next ボタンの有効/無効(変更ページが無ければ押せないようにする=ユーザー指定 2026-07-15)。
+	IControlView* prevView = pcd->FindWidget(kKESCMPrevChangeButtonWidgetID);
+	IControlView* nextView = pcd->FindWidget(kKESCMNextChangeButtonWidgetID);
+	if (prevView != nil) prevView->Enable(navButtonsEnabled);
+	if (nextView != nil) nextView->Enable(navButtonsEnabled);
 }
 
 // KESCMPanelObserver.cpp 終わり。

@@ -66,10 +66,15 @@ inline IGraphicsPort* KESCMCursorBitmapFinish(uchar* buffer, uint32* width, uint
 	  - inactive (inverted): black halo + white body ("白の塗りに黒の縁") — everywhere else,
 	    meaning "the tool does nothing here". A gray body was tried first but was hard to tell apart.
 	@param bodyGray body stroke gray level (0.0 = black default, 1.0 = white for inactive)
-	@param haloGray halo stroke gray level (1.0 = white default, 0.0 = black for inactive) */
+	@param haloGray halo stroke gray level (1.0 = white default, 0.0 = black for inactive)
+	@param haloWidth halo (rim) stroke width. Default 3.5 gives a ~0.55px visible rim over the
+	       2.4px body. The inactive (black-rimmed) cursor passes a slightly larger value because a
+	       dark rim reads thinner than a light one at the same width (irradiation illusion), so it
+	       needs to be a touch wider to look the same thickness (user report 2026-07-15). */
 inline void KESCMDrawCheckGlyph(IGraphicsPort* gPort,
                                 const PMReal& bodyGray = PMReal(0.0),
-                                const PMReal& haloGray = PMReal(1.0))
+                                const PMReal& haloGray = PMReal(1.0),
+                                const PMReal& haloWidth = PMReal(3.5))
 {
 	if (gPort == nil)
 		return;
@@ -82,7 +87,7 @@ inline void KESCMDrawCheckGlyph(IGraphicsPort* gPort,
 	gPort->setlinejoin(1);	// round join
 
 	gPort->setrgbcolor(haloGray, haloGray, haloGray);	// halo (white default: readable on any background)
-	gPort->setlinewidth(PMReal(3.5));
+	gPort->setlinewidth(haloWidth);
 	gPort->newpath();
 	gPort->moveto(ax, ay);
 	gPort->lineto(bx, by);

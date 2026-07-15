@@ -92,16 +92,17 @@ static const PMReal kKESCMSampleHalfPt = 1.0;	// サンプル領域の半幅(pt)
 // 旧ページ番号バッジ(フライアウト「Show Original Page Numbers」)。スプレッドを隠すと「現在のページ番号」
 // マーカーが隠し分を飛ばして振り直されるため、枠の可視条件と同じとき(印刷マークONの常時表示/ツール左hold中)に
 // 「隠す前の元の番号」をページ下端中央へ描く(印刷マークONなら印刷/PDF にも出る)。
-// サイズはズーム非依存(印刷時は実効スケール1.0固定=そのまま pt)。
-// 見た目=トースト風: 白い四角の塗りの上に赤の太字。バッジ全体の不透明度はパネルの「Marks opacity
-// 25% / 75%」選択に連動(枠と同じ SelectedMarkOpacity() を使う=画面と印刷で一致)。
-static const PMReal kKESCMOldNumFontPx   = 42.0;	// 文字サイズ(画面px/印刷pt)。当初14の3倍
-static const PMReal kKESCMOldNumMarginPx = 6.0;		// ページ下端から文字下端までの余白(画面px/印刷pt)
-// 文字色: 赤(比較マークの枠と同じ)。
-static const PMReal kKESCMOldNumR = 1.0, kKESCMOldNumG = 0.0, kKESCMOldNumB = 0.0;
-// 疑似ボールド: 既定フォントのまま、中心+8方向の計9回重ね描きでストロークを太らせる(オフセット=文字サイズ比)。
-// 既定フォントのボールド変種を名前で探すのはフォント環境依存で壊れやすいため、重ね描き方式にする。
-static const PMReal kKESCMOldNumBoldEm = 0.025;	// 重ね描きオフセット(em比)。0.04→0.025 へ少し細め(2026-07-04ユーザー指定)
-static const PMReal kKESCMOldNumPadEm  = 0.20;		// 白い四角の塗りの余白(em比、文字の周囲に付く)
+// ★サイズはドキュメント拡大率50%相当で固定(ズーム/印刷に依存せず、ページに対して一定の大きさ。
+//   ユーザー指定 2026-07-15)。★セクションプレフィックスは付けない=番号のみ。★背景の白塗りは無し。
+// 見た目: 白フチ+青文字(背景なし)。バッジ全体の不透明度はパネルの「Marks opacity 25% / 75%」選択に
+// 連動(枠と同じ SelectedMarkOpacity() を使う=画面と印刷で一致)。
+static const PMReal kKESCMOldNumFontPx    = 42.0;	// 文字サイズの基準(px)。実サイズは /kKESCMOldNumFixedZoom
+static const PMReal kKESCMOldNumMarginPx  = 6.0;	// ページ下端から文字下端までの余白の基準(同上)
+static const PMReal kKESCMOldNumFixedZoom = 0.5;	// ★固定拡大率(ドキュメント50%相当)。sxr の代わりに使う=ズーム/印刷非依存
+// 文字色: 黒(白フチとの組で明暗どちらの下地でも読める。ユーザー指定 2026-07-15、青→黒に変更)。
+static const PMReal kKESCMOldNumR = 0.0, kKESCMOldNumG = 0.0, kKESCMOldNumB = 0.0;
+// 白フチ(ハロー): 本体の前に白を中心±で8方向にずらして描き、縁取りにする(オフセット=文字サイズ比)。
+static const PMReal kKESCMOldNumHaloEm = 0.06;	// 白フチの太さ(em比)
+static const PMReal kKESCMOldNumPadEm  = 0.20;	// 透明グループ bbox の余白(em比。白フチのはみ出しを含む)
 
 #endif // __KESCMConstants_h__

@@ -1233,8 +1233,10 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 		InterfacePtr<IPMFont> numFont(fontMgr != nil ? fontMgr->QueryFont(fontMgr->GetDefaultFontName()) : nil);
 		if (pageList != nil && numFont != nil)
 		{
-			const PMReal fontSize = kKESCMOldNumFontPx / sxr;
-			const PMReal margin   = kKESCMOldNumMarginPx / sxr;
+			// ★サイズはドキュメント拡大率50%相当で固定(ユーザー指定 2026-07-15)。sxr(画面/印刷の実効
+			//   スケール)ではなく固定値で割る=ズームでも印刷でもページに対して一定の大きさになる。
+			const PMReal fontSize = kKESCMOldNumFontPx / kKESCMOldNumFixedZoom;
+			const PMReal margin   = kKESCMOldNumMarginPx / kKESCMOldNumFixedZoom;
 			PMMatrix fontMatrix(fontSize, 0.0, 0.0, fontSize, 0.0, 0.0);
 			InterfacePtr<IFontInstance> fontInst(fontMgr->QueryFontInstance(numFont, fontMatrix));
 
@@ -1243,8 +1245,10 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 			{
 				const UID pageUID = spread->GetNthPageUID(i);
 				PMString orig, cur;
-				pageList->GetPageString(pageUID, &orig, kTrue, kFalse, kDefaultPageType, kTrue, kTrue);	// 元(隠し込みで数えた番号)
-				pageList->GetPageString(pageUID, &cur,  kTrue, kFalse, kDefaultPageType, kTrue, kFalse);	// 現在(隠しを飛ばした番号)
+				// 第3引数 bIncludeSectionName=kFalse=セクションプレフィックス("A:"等)を付けない=番号のみ
+				// (ユーザー指定 2026-07-15)。元/現在の両方を同じ設定で取り、ズレ判定を狂わせない。
+				pageList->GetPageString(pageUID, &orig, kFalse, kFalse, kDefaultPageType, kTrue, kTrue);	// 元(隠し込みで数えた番号)
+				pageList->GetPageString(pageUID, &cur,  kFalse, kFalse, kDefaultPageType, kTrue, kFalse);	// 現在(隠しを飛ばした番号)
 				if (orig == cur)
 					continue;	// ズレていない(このページより前に隠しスプレッドが無い)
 
@@ -1267,27 +1271,28 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 				const UTF16TextChar* buf16 = orig.GrabUTF16Buffer(nil);
 
 				AutoGSave ag(gPort);
-				// バッジ全体(白い四角の塗り+赤の太字)を透明グループで1つに束ね、グループの合成に
+				// バッジ(白フチ+青文字、背景なし)を透明グループで1つに束ね、グループの合成に
 				// SelectedMarkOpacity(枠と同じ25%/75%連動、画面と印刷で同値)を1回だけ適用する。
 				// starttransparencygroup は開始時点の GState(=直前の setopacity)をグループ合成に引き継ぎ、
 				// グループ内の alpha は 1.0 にリセットされる(IGraphicsPort.h の仕様)。つまり中は全部不透明で
-				// 描けるので、疑似ボールドの9回重ね描きが重なっても濃度が変わらない(setopacity のまま重ねると
+				// 描けるので、白フチと青本体が重なる縁でも濃度が変わらない(setopacity のまま重ねると
 				// 重なった画素だけ濃くなる)。cs=nil は非隔離グループ=親のカラースペースを使うので問題ない。
-				const PMReal pad = fontSize * kKESCMOldNumPadEm;	// 白地の余白(em比)。疑似ボールドのはみ出し(±0.04em)もこの中に収まる
+				const PMReal pad = fontSize * kKESCMOldNumPadEm;	// 透明グループ bbox の余白(白フチのはみ出しを含む)
 				const PMRect badgeRect(tx - pad, ty - ascent - pad, tx + textW + pad, ty + descent + pad);
 				gPort->setopacity(SelectedMarkOpacity(), kFalse);	// グループ全体の合成不透明度
 				gPort->starttransparencygroup(badgeRect, nil, kFalse /*non-isolated*/, kFalse /*no knockout*/);
 
 				gPort->selectfont(numFont, fontSize);
-				// 白い四角の塗り(トースト風の下地)。
-				gPort->setrgbcolor(1.0, 1.0, 1.0);
-				gPort->rectfill(badgeRect);
-				// 赤の太字。既定フォントのまま、中心+8方向の計9回重ね描きでストロークを太らせる(疑似ボールド)。
-				gPort->setrgbcolor(kKESCMOldNumR, kKESCMOldNumG, kKESCMOldNumB);
-				const PMReal b = fontSize * kKESCMOldNumBoldEm;
+				// 白フチ(中心±で8方向にずらして白 show)→ 青本体。背景の白塗りは廃止(ユーザー指定 2026-07-15)。
+				// 透明背景でも明暗どちらの下地でも読める(カーソルの✓ハローと同方式)。
+				const PMReal halo = fontSize * kKESCMOldNumHaloEm;
+				gPort->setrgbcolor(1.0, 1.0, 1.0);	// 白フチ
 				for (int32 dy = -1; dy <= 1; ++dy)
 					for (int32 dx = -1; dx <= 1; ++dx)
-						gPort->show(tx + b * dx, ty + b * dy, nch, buf16);
+						if (dx != 0 || dy != 0)
+							gPort->show(tx + halo * dx, ty + halo * dy, nch, buf16);
+				gPort->setrgbcolor(kKESCMOldNumR, kKESCMOldNumG, kKESCMOldNumB);	// 青本体
+				gPort->show(tx, ty, nch, buf16);
 
 				gPort->endtransparencygroup();
 			}

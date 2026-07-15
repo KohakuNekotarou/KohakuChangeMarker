@@ -272,6 +272,7 @@ static void KESCMGoto(int32 dir)
 	{
 		PMString s("No changed pages."); s.SetTranslatable(kFalse);
 		KESCMSetStatus(s);
+		KESCMRefreshNavPosition();	// 巡回対象なし: 位置は "/"・Prev/Next は無効化(通常はボタン無効で来ない)
 		return;
 	}
 
@@ -322,11 +323,10 @@ static void KESCMGoto(int32 dir)
 		}
 	}
 
-	PMString msg; msg.SetTranslatable(kFalse);
-	msg.AppendNumber(next + 1);
-	msg.Append(" / ");
-	msg.AppendNumber((int32)list.size());
-	KESCMSetStatus(msg);
+	// 現在位置は Prev/Next の間の専用ウィジェット(KESCL 風「3/12」)へ。ステータス行(メッセージ欄)には
+	// 出さない(2026-07-15 ユーザー指定: 位置はボタン間へ移設)。基準点(sNavCurrent)は上で更新済みなので、
+	// 共通関数で今の集合から「k/N」を作り直す(値の組み立てとボタン有効/無効を1箇所に集約)。
+	KESCMRefreshNavPosition();
 }
 
 //========================================================================================
@@ -336,6 +336,45 @@ void KESCMGotoNextChange() { KESCMGoto(+1); }
 void KESCMGotoPrevChange() { KESCMGoto(-1); }
 
 // 巡回の基準点を忘れる(KESCMChangeNav.h)。次回の Next/Prev はリストの先頭/末尾から始まる。
+// ★表示更新はしない(基準点を落とすだけ): これは比較の総入れ替え(Start)の途中でも呼ばれるため、
+//   位置表示は呼び出し側(KESCMDoMarkChangesDoc 末尾 / KESCMDoClearMarks)が確定後に
+//   KESCMRefreshNavPosition で一括更新する。
 void KESCMResetNav() { sNavCurrent = kInvalidUID; }
+
+// KESCMChangeNav.h 参照。今の変更ページ集合＋基準点(sNavCurrent)から Prev/Next 間の位置表示を作り直し、
+// Prev/Next ボタンの有効/無効もあわせて更新する(値組み立てとボタン状態を1箇所に集約=KESCL の
+// UpdateNavWidgets と同じ発想)。表示規則は KESCMChangeNav.h のコメント参照。
+void KESCMRefreshNavPosition()
+{
+	IDataBase* targetDB = KESCMDrawEventHandler::sDB;	// 比較中のみ非nil(Stop の DropAll で nil)
+
+	PMString text; text.SetTranslatable(kFalse);
+	bool16 navEnabled = kFalse;
+
+	if (targetDB != nil)	// Start 済み(比較中)
+	{
+		std::vector<UID> list;
+		KESCMBuildReviewList(list);
+		if (list.empty())
+		{
+			text.Append("/");	// 変更ページ0件: 巡回対象なし → "/"・ボタン無効(ユーザー指定 2026-07-15)
+		}
+		else
+		{
+			// 基準点の現在位置(1始まり)。まだ巡回していない(集合内に無い)ときは先頭扱いで "1/N"。
+			int32 cur = -1;
+			for (size_t i = 0; i < list.size(); ++i)
+				if (list[i] == sNavCurrent) { cur = (int32)i; break; }
+			const int32 shown = (cur < 0) ? 1 : (cur + 1);
+			text.AppendNumber(shown);
+			text.Append("/");
+			text.AppendNumber((int32)list.size());
+			navEnabled = kTrue;	// 巡回対象あり → Prev/Next 有効
+		}
+	}
+	// 未 Start(targetDB==nil): text は空・navEnabled=false(位置欄クリア・ボタン無効)
+
+	KESCMSetNavPosition(text, navEnabled);
+}
 
 // KESCMChangeNav.cpp 終わり。

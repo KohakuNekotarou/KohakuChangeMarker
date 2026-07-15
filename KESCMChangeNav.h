@@ -24,4 +24,15 @@ void KESCMGotoPrevChange();
 // 誤った位置から巡回が始まるのを防ぐ(セッションを跨いだ基準点の持ち越しを断つ)。
 void KESCMResetNav();
 
+// Prev/Next の間の現在位置表示を「今の変更ページ集合＋巡回基準点」から作り直してパネルへ送る。
+// KESCL の UpdateNavWidgets と同じ発想で、Next/Prev を押さなくても状態変化に追従させるために、
+// 変更ページ集合が変わり得るすべての契機から呼ぶ(Start/差分再比較/登録/Check=KESCMDoMarkChangesDoc、
+// スプレッド再比較=KESCMRefreshComparisonForSelectedPages、Stop=KESCMDoClearMarks、パネル更新=
+// KESCMApplyPanelInfo)。表示規則:
+//   ・未 Start(比較なし)          → 空
+//   ・Start 済み・変更ページ 0 件  → "/"
+//   ・Start 済み・N 件(未巡回)     → "1/N"(Start 直後に即表示)
+//   ・k 番目を巡回中               → "k/N"
+void KESCMRefreshNavPosition();
+
 #endif // __KESCMChangeNav_h__

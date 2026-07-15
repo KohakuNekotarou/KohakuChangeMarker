@@ -167,17 +167,16 @@ private:
 		・kFalse = カーソルマネージャがコールバックを同期実行し、描き終えたバッファからカーソルを作って
 		  から表示する(✓カーソルでゴミゼロ実証済み)。kTrue(動的)は「表示→後からコールバック」の順に
 		  なり未初期化バッファが一瞬見えるため使わない。
-		・ClearCache = CursorID キーのビットマップキャッシュが古い数値の絵を再利用してコールバックが
-		  呼ばれないのを防ぐ(キャッシュの実在は ✓ と CursorID を共有した時の取り違えで実測済み)。
-		  ドラッグ中でも呼び出しは値の変化時のみ+50ms スロットル付き(最大約20回/秒)。
 		・CursorID の交互切替(1021↔1022) = 直前と必ず違うスペックにして、同一スペック再設定の no-op
-		  扱いでも描き直しが確実に起きるようにする。HOTC は両IDとも (10,18) なのでカーソル位置は動かない。 */
+		  扱いでも描き直しが確実に起きるようにする。HOTC は両IDとも (10,18) なのでカーソル位置は動かない。
+		  呼び出しはドラッグ中でも値の変化時のみ+50ms スロットル付き(最大約20回/秒)。
+		★2026-07-15: 以前は毎回 ICursorMgr::ClearCache() も呼んでいた(「CursorID キーのキャッシュが古い
+		  数値の絵を再利用する」懸念への保険)。だが ClearCache 無し(交互ID + kFalse 同期スペックのみ)でも
+		  古い絵の再利用は起きないことを実機で確認し撤去した。過去に実測した「取り違え」の真因は ✓ と CMYK が
+		  CursorID を共有していたこと(1020 と 1021/1022 の分離で解決済み)であり、ClearCache は本来不要だった。
+		  ※万一ドラッグ中に「2回前の数値の絵」が出る個体があれば、ここで ClearCache を復活させること。 */
 	void InstallCmykCursor()
 	{
-		InterfacePtr<IApplication> theApp(GetExecutionContextSession()->QueryApplication());
-		InterfacePtr<ICursorMgr> cursorMgr(theApp, UseDefaultIID());
-		if (cursorMgr != nil)
-			cursorMgr->ClearCache();
 		fCmykCursorFlip = !fCmykCursorFlip;
 		CursorSpec spec(GetPlugIn()->GetPluginID(), IDFile(),
 		                fCmykCursorFlip ? kKESCMCmykCursorResID : kKESCMCmykCursor2ResID,

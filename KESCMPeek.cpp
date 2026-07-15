@@ -77,6 +77,7 @@
 #include "KESCMPageCheck.h"          // KESCMPageCheckClearAllDocs / KESCMPageCheckSweepClosedDocs(✓の後片付け)
 #include "KESCMThumbnailRefresh.h"   // クローズ後、生存側の Pages パネルサムネイルから枠を消す
 #include "KESCMScrollMap.h"          // スプレッド再比較後にスクロールバー地図を最新化
+#include "KESCMChangeNav.h"          // KESCMRefreshNavPosition(スプレッド再比較後に Prev/Next 位置を最新化)
 #include "KESCMThumbIdleTask.h"      // クローズ後の再生成を次のidleに遅延(前面切替の過渡を避ける)
 #include "KESCMPeek.h"
 
@@ -369,6 +370,10 @@ bool16 KESCMRefreshComparisonForSelectedPages(int32* outPages, int32* outChanged
 	int32 processed = 0, changed = 0;
 	if (!KESCMRefreshComparisonCore(targetDB, sourceDB, targetPages, &processed, &changed))
 		return kFalse;
+
+	// この経路は KESCMDoMarkChangesDoc を通らない独立再比較なので、Prev/Next 間の位置表示と
+	// ボタン有効/無効もここで最新化する(選択ページの再比較で変更ページ集合が増減し得るため)。
+	KESCMRefreshNavPosition();
 
 	if (outPages)   *outPages = processed;
 	if (outChanged) *outChanged = changed;
@@ -1351,6 +1356,17 @@ void KESCMTrackerRevealEnd()
 		sCmykCursorFont = nil;
 	}
 	KESCMSampleCmykEndDrag();
+
+	// Alt+左(CMYK 色比較)を離したら、押下中にパネルのステータス行へ出していた CMYK 値を消す
+	// (ユーザー要望 2026-07-15: ホールド終了でメッセージは消す)。sCmykCursorPending は押下中に
+	// CMYK 値を出したときだけ立つので、色比較のときだけクリアし、reveal/peek や Check/Register 等
+	// 他機能のステータスには触らない。空文字で SetString→gSessionStatus も空になり再表示でも復活しない。
+	if (sCmykCursorPending)
+	{
+		KESCMSetStatus(PMString());
+		sCmykCursorText.Clear();
+		sCmykCursorPending = kFalse;
+	}
 
 	// 「Hold to Hide Marks」で押下中に隠していた常時表示の枠を戻す(離すと再表示)。押した窓に応じて
 	// Target/Source どちらか(または両方)が立っている。モード OFF なら両方 kFalse なので無影響

@@ -342,6 +342,12 @@ ErrorCode KESCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMStri
 	report.Append("pages compared="); report.AppendNumber((int32)n);
 	report.Append(" changed="); report.AppendNumber(changedCount);
 	outReport = report;
+
+	// Prev/Next 間の現在位置表示(k/N・-)と Prev/Next ボタンの有効/無効を、確定した最新の変更ページ集合で
+	// 作り直す。Start・差分再比較・登録(Add/Remove)・Check がすべてこの関数を通るので、Next/Prev を
+	// 押さなくても集合の変化に即時追従する(ユーザー要望 2026-07-15。全再比較路では上で KESCMResetNav 済み
+	// =未巡回扱いで "1/N")。
+	KESCMRefreshNavPosition();
 	return kSuccess;
 }
 
@@ -409,6 +415,8 @@ void KESCMDoClearMarks(IDataBase* db)
 
 	// 変更ページ巡回(Next/Prev)の基準点も忘れる(次の比較へ持ち越さない)。
 	KESCMResetNav();
+	// Stop で sDB は nil(DropAll 済み)なので、位置表示は空・Prev/Next ボタンは無効へ戻る。
+	KESCMRefreshNavPosition();
 }
 
 void KESCMDoSetPrintMarks(bool16 printFlag, bool16 opacity25Flag, IDataBase* db)

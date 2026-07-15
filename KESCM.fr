@@ -907,7 +907,7 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 	kKESCMPanelWidgetID,			// WidgetID
 	kPMRsrcID_None,					// RsrcID
 	kBindNone,						// Binding
-	0, 0, 204, 153,					// Frame: left, top, right, bottom (ステータス欄を3→4行に拡張した分、下端を +17px。イラストも下端145へ下寄せ。ステータス欄を+12px広げた分、右端も192→204)
+	0, 0, 214, 153,					// Frame: left, top, right, bottom (ステータス欄を3→4行に拡張した分、下端を +17px。イラストも下端145へ下寄せ。ステータス欄を+12px広げた分、右端 192→204。さらに 2026-07-15 にメッセージ欄を+10px広げ 204→214)
 	kTrue, kTrue,					// Visible, Enabled
 	kFalse,							// Erase background
 	kInterfacePaletteFill,			// Erase to color
@@ -920,7 +920,7 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 			kKESCMTargetTextWidgetID,
 			kSysStaticTextPMRsrcId,
 			kBindLeft | kBindRight | kBindTop,
-			Frame(8, 8, 196, 24)
+			Frame(8, 8, 206, 24)		// 右端 196→206(パネル+10px 拡張, 2026-07-15)
 			kTrue, kTrue,
 			kAlignLeft, kEllipsizeEnd, kTrue,
 			kKESCMTargetLabelKey,
@@ -931,7 +931,7 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 			kKESCMSourceTextWidgetID,
 			kSysStaticTextPMRsrcId,
 			kBindLeft | kBindRight | kBindTop,
-			Frame(8, 26, 196, 42)
+			Frame(8, 26, 206, 42)		// 右端 196→206(パネル+10px 拡張, 2026-07-15)
 			kTrue, kTrue,
 			kAlignLeft, kEllipsizeEnd, kTrue,
 			kKESCMSourceLabelKey,
@@ -947,21 +947,36 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 
 		// Change navigation: jump the Target layout view to the previous / next page that carries a
 		// KESCM mark (changed ring, Added border, or overflow "/"). Handled by KESCMChangeNav.cpp.
+		// レイアウトは KESCL パネルにならい「[Prev]  3/12  [Next]」。ボタンは文字幅相当(幅48)まで詰め、
+		// 中央に現在位置(kKESCMNavPosTextWidgetID)を置く(2026-07-15 ユーザー指定)。左右マージンは12pxで対称。
 		ButtonWidget
 		(
 			kKESCMPrevChangeButtonWidgetID,
 			kSysButtonPMRsrcId,
 			kBindLeft | kBindTop,
-			Frame(12, 48, 94, 70)
+			Frame(12, 48, 70, 70)		// 幅82→48→58(文字幅相当に縮小後、少し広げ直し, 2026-07-15)
 			kTrue, kTrue,
 			kKESCMPrevChangeKey,
+		),
+		// Prev/Next の間の現在位置表示「3/12」(中央揃え)。値は KESCMChangeNav.cpp が KESCMSetNavPosition で
+		// 実行時に埋める(初期は空)。旧来はステータス行に出していたが、KESCL 風にボタン間へ移設(2026-07-15)。
+		StaticTextWidget
+		(
+			kKESCMNavPosTextWidgetID,
+			kSysStaticTextPMRsrcId,
+			kBindLeft | kBindTop,
+			Frame(70, 51, 144, 70)		// Prev(〜70)と Next(144〜)の間。ボタンと縦位置を合わせるため top を +3px
+			kTrue, kTrue,
+			kAlignCenter, kEllipsizeEnd, kTrue,
+			"",							// 初期テキストは空(実行時に位置を設定)
+			kInvalidWidgetID,
 		),
 		ButtonWidget
 		(
 			kKESCMNextChangeButtonWidgetID,
 			kSysButtonPMRsrcId,
 			kBindLeft | kBindTop,
-			Frame(98, 48, 180, 70)
+			Frame(144, 48, 202, 70)		// 幅82→48→58・右マージン12pxで Prev と対称(2026-07-15)
 			kTrue, kTrue,
 			kKESCMNextChangeKey,
 		),
@@ -973,7 +988,7 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 			kKESCMIconOffWidgetID,
 			kKESCMIconOffResID, kKESCMPluginID,
 			kBindTop,
-			Frame(164, 113, 196, 145)	// 32×32・右寄せ。ステータス欄(4行・下端145)に合わせて下寄せ(top113/bottom145、パネル下端153まで8pxマージン)。ステータス欄+12px広げた分、右へ152→164。ON側と同座標
+			Frame(174, 113, 206, 145)	// 32×32・右寄せ。ステータス欄(4行・下端145)に合わせて下寄せ(top113/bottom145、パネル下端153まで8pxマージン)。ステータス欄+12px広げた分、右へ152→164。パネル+10px 拡張で 164→174(2026-07-15)。ON側と同座標
 			kTrue, kTrue,
 			kADBEIconSuiteButtonType,
 		),
@@ -982,7 +997,7 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 			kKESCMIconOnWidgetID,
 			kKESCMIconOnResID, kKESCMPluginID,
 			kBindTop,
-			Frame(164, 113, 196, 145)	// 32×32・右寄せ。ステータス欄(4行・下端145)に合わせて下寄せ(top113/bottom145、パネル下端153まで8pxマージン)。ステータス欄+12px広げた分、右へ152→164。OFF側と同座標
+			Frame(174, 113, 206, 145)	// 32×32・右寄せ。ステータス欄(4行・下端145)に合わせて下寄せ(top113/bottom145、パネル下端153まで8pxマージン)。ステータス欄+12px広げた分、右へ152→164。パネル+10px 拡張で 164→174(2026-07-15)。OFF側と同座標
 			kFalse, kTrue,
 			kADBEIconSuiteButtonType,
 		),
@@ -993,7 +1008,7 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 			kKESCMStatusTextWidgetID,
 			kPMRsrcID_None,
 			kBindLeft | kBindRight | kBindTop,
-			Frame(8, 76, 160, 145)		// 右160まで=イラスト(164-196)と横並び(4px間隔)。下端を 128→145 に拡張(3→4行)。メッセージ部分を+12px広げるためパネル全体も192→204に拡張(ユーザー指定 2026-07-14)
+			Frame(8, 76, 170, 145)		// 右170まで=イラスト(174-206)と横並び(4px間隔)。下端を 128→145 に拡張(3→4行)。メッセージ部分を+12px広げるためパネル全体も192→204に拡張(2026-07-14)。さらに+10px拡張で右 160→170・パネル204→214(2026-07-15)
 			kTrue, kTrue,
 			kAlignLeft, kDontEllipsize, kTrue,
 			kInvalidWidgetID,
