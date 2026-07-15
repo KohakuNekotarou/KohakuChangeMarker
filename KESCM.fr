@@ -832,6 +832,10 @@ resource HOTC(kKESCMCmykCursorResID) {10, 18};
 // no-op を避けるため 1021/1022 を交互に使う(KESCMTracker.cpp の InstallCmykCursor)。ホットスポットは同じ。
 resource HOTC(kKESCMCmykCursor2ResID) {10, 18};
 
+// ✓カーソルの非アクティブ版(白抜き=黒フチ+白本体)のホットスポット(黒✓と同じ折れ点 10,18=切替で
+// カーソル位置は動かない)。「Start 中かつマウス下が Target 文書」以外で出す(KESCMCursorProvider.cpp)。
+resource HOTC(kKESCMCheckCursorInactiveResID) {10, 18};
+
 // Panel LocaleIndex - a single (string-key driven) view is used for every locale; the labels
 // themselves are localized through the string tables (KESCM_enUS.fr / KESCM_jaJP.fr).
 resource LocaleIndex (kSDKDefPanelResourceID)

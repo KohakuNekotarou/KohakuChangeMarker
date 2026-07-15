@@ -19,9 +19,17 @@
 #include "IGraphicsPort.h"
 #include "PMReal.h"
 
-/** Stroke the ✓ into gPort (white halo, then black body). Coordinates match the .fr HOTC
-	for kKESCMCheckCursorResID so the bend sits on the cursor hotspot / click point. */
-inline void KESCMDrawCheckGlyph(IGraphicsPort* gPort)
+/** Stroke the ✓ into gPort (halo stroke under a thinner body stroke). Coordinates match the
+	.fr HOTC for kKESCMCheckCursorResID so the bend sits on the cursor hotspot / click point.
+	Two color schemes (2026-07-15, user-specified):
+	  - active   (default): white halo + black body — over the armed Target where the tool works.
+	  - inactive (inverted): black halo + white body ("白の塗りに黒の縁") — everywhere else,
+	    meaning "the tool does nothing here". A gray body was tried first but was hard to tell apart.
+	@param bodyGray body stroke gray level (0.0 = black default, 1.0 = white for inactive)
+	@param haloGray halo stroke gray level (1.0 = white default, 0.0 = black for inactive) */
+inline void KESCMDrawCheckGlyph(IGraphicsPort* gPort,
+                                const PMReal& bodyGray = PMReal(0.0),
+                                const PMReal& haloGray = PMReal(1.0))
 {
 	if (gPort == nil)
 		return;
@@ -33,7 +41,7 @@ inline void KESCMDrawCheckGlyph(IGraphicsPort* gPort)
 	gPort->setlinecap(1);	// round cap
 	gPort->setlinejoin(1);	// round join
 
-	gPort->setrgbcolor(PMReal(1.0), PMReal(1.0), PMReal(1.0));	// white halo (readable on any background)
+	gPort->setrgbcolor(haloGray, haloGray, haloGray);	// halo (white default: readable on any background)
 	gPort->setlinewidth(PMReal(3.5));
 	gPort->newpath();
 	gPort->moveto(ax, ay);
@@ -41,7 +49,7 @@ inline void KESCMDrawCheckGlyph(IGraphicsPort* gPort)
 	gPort->lineto(cx, cy);
 	gPort->stroke();
 
-	gPort->setrgbcolor(PMReal(0.0), PMReal(0.0), PMReal(0.0));	// black body
+	gPort->setrgbcolor(bodyGray, bodyGray, bodyGray);	// body (black default / white when inactive)
 	gPort->setlinewidth(PMReal(2.4));
 	gPort->newpath();
 	gPort->moveto(ax, ay);

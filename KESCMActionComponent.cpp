@@ -281,6 +281,16 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 				msg.Append(")");
 				KESCMSetStatus(msg);
 			}
+			else
+			{
+				// 有効化判定(KESCMRefreshComparisonAvailable)は選択の中身まで見ないため、選択が空/全ページ
+				// 未対応(Added/Removed 登録等)だと何も処理せず kFalse で戻る。その場合も無反応にせず
+				// 「今回は何も再比較しなかった」ことをステータス行に出す(前回の refreshed 表示の残留による
+				// 成功誤認を防ぐ。2026-07-15)。
+				PMString msg("refresh: no comparable pages.");
+				msg.SetTranslatable(kFalse);
+				KESCMSetStatus(msg);
+			}
 			break;
 		}
 

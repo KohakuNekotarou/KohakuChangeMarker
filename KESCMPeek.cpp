@@ -257,12 +257,15 @@ static KESCMPeekResult KESCMPeekShowUnderMouse(IDataBase* targetDB, IDataBase* s
 //   ・各ページを MakeEntry で取り直し(編集後の差分に更新)。変化が無くなったページは古い枠を消す。
 //   ・旧版画像キャッシュ(sOrigImages)は古いので破棄(次の peek で作り直し)。
 //   ・✓ の剪定/レイアウト・スクロールバー地図・Pages パネルサムネイルの更新まで行う。
-//   変化ページ数を outChanged に返す。戻り=1ページ以上処理したか。
+//   実際に再比較したページ数(対応表に無い登録済みページ等の skip を除く)を outProcessed に、
+//   うち変化ページ数を outChanged に返す。戻り=1ページ以上処理したか。
 //   ★旧 Ctrl+ミドル(マウス下スプレッド再比較)の中核をページ指定へ一般化したもの(2026-07-13 移設)。
 static bool16 KESCMRefreshComparisonCore(IDataBase* targetDB, IDataBase* sourceDB,
-                                         const std::vector<UID>& targetPages, int32* outChanged)
+                                         const std::vector<UID>& targetPages,
+                                         int32* outProcessed, int32* outChanged)
 {
-	if (outChanged) *outChanged = 0;
+	if (outProcessed) *outProcessed = 0;
+	if (outChanged)   *outChanged = 0;
 	if (targetDB == nil || sourceDB == nil || targetPages.empty())
 		return kFalse;
 
@@ -303,6 +306,9 @@ static bool16 KESCMRefreshComparisonCore(IDataBase* targetDB, IDataBase* sourceD
 			KESCMDrawEventHandler::DropOneEntry(tUID, sUID);
 		}
 	}
+	// 報告用の処理数=実際に MakeEntry/DropOneEntry まで到達したページ数(上の continue で skip した
+	// 選択ページは数えない。ステータス行の「refreshed N」が実態と一致するように。2026-07-15)。
+	if (outProcessed) *outProcessed = (int32)touchedTargetPages.size();
 	if (touchedTargetPages.empty())
 		return kFalse;
 
@@ -339,9 +345,10 @@ static bool16 KESCMRefreshComparisonCore(IDataBase* targetDB, IDataBase* sourceD
 }
 
 // ページパネルの選択ページの「ページ比較」を再検出して更新する(ページ右クリック「KESCM: Refresh Page
-// Comparison」の実体。旧 Ctrl+ミドルの移設先)。arm 済み(Start 後)かつ前面文書が Target/Source のときだけ
-// 動く。前面が Source のときは選択 Source ページを対応する Target ページへ写像してから再比較する(マークは
-// Target 側に載るため)。outPages=処理したページ数、outChanged=うち変化したページ数。戻り=1ページ以上処理したか。
+// Comparison」の実体。旧 Ctrl+ミドルの移設先)。arm 済み(Start 後)かつ前面文書が Target のときだけ動く
+// (★2026-07-15 Target 限定化=ユーザー指定。旧仕様の Source→Target 写像経路は撤去)。
+// outPages=実際に再比較したページ数(対応表に無い登録済みページ等は数えない)、
+// outChanged=うち変化したページ数。戻り=1ページ以上処理したか。
 bool16 KESCMRefreshComparisonForSelectedPages(int32* outPages, int32* outChanged)
 {
 	if (outPages)   *outPages = 0;
@@ -354,10 +361,11 @@ bool16 KESCMRefreshComparisonForSelectedPages(int32* outPages, int32* outChanged
 	if (targetDB == nil || sourceDB == nil)
 		return kFalse;
 
-	// 選択が属する前面文書(=アクティブ文書)。Target/Source のどちらかでなければ何もしない。
+	// 選択が属する前面文書(=アクティブ文書)。Target でなければ何もしない(Source では項目自体を
+	// 出さない/無効にする。KESCMRefreshComparisonAvailable と対)。
 	IDocument* doc = Utils<ILayoutUIUtils>()->GetFrontDocument();
 	IDataBase* db = (doc != nil) ? ::GetDataBase(doc) : nil;
-	if (db == nil || (db != targetDB && db != sourceDB))
+	if (db == nil || db != targetDB)
 		return kFalse;
 
 	// ページパネルの選択ページ(実在ページのみ)を読む(「KESCM: Check」と同じ流儀)。
@@ -378,36 +386,23 @@ bool16 KESCMRefreshComparisonForSelectedPages(int32* outPages, int32* outChanged
 	if (selPages.empty())
 		return kFalse;
 
-	// 再比較コアは Target ページで駆動する。前面が Source なら Source→Target 写像で対象 Target ページを作る。
-	std::vector<UID> targetPages;
-	if (db == targetDB)
-	{
-		targetPages = selPages;
-	}
-	else	// db == sourceDB
-	{
-		for (size_t i = 0; i < selPages.size(); ++i)
-		{
-			UID tUID = kInvalidUID;
-			if (KESCMMapSourceToTarget(targetDB, sourceDB, selPages[i], tUID) && tUID != kInvalidUID)
-				targetPages.push_back(tUID);
-		}
-	}
-	if (targetPages.empty())
+	// 再比較コアは Target ページで駆動する(前面=Target のみなので選択ページがそのまま対象)。
+	std::vector<UID> targetPages = selPages;
+
+	int32 processed = 0, changed = 0;
+	if (!KESCMRefreshComparisonCore(targetDB, sourceDB, targetPages, &processed, &changed))
 		return kFalse;
 
-	int32 changed = 0;
-	if (!KESCMRefreshComparisonCore(targetDB, sourceDB, targetPages, &changed))
-		return kFalse;
-
-	if (outPages)   *outPages = (int32)targetPages.size();
+	if (outPages)   *outPages = processed;
 	if (outChanged) *outChanged = changed;
 	return kTrue;
 }
 
 // 「KESCM: Refresh Page Comparison」メニューを有効化してよいか(UpdateActionStates 用)。
-// arm 済み(Start 後)かつ前面文書が Target/Source のとき kTrue。選択の有無までは見ない(ページ右クリックは
-// 通常そのページを選択済みで、未選択でも DoAction 側が安全に no-op する)。
+// arm 済み(Start 後)かつ前面文書が Target のとき kTrue(★2026-07-15 Target 限定化=ユーザー指定。
+// コンテキストメニューは無効項目を出さないため、Source 側の右クリックでは項目自体が消える想定)。
+// 選択の有無までは見ない(ページ右クリックは通常そのページを選択済みで、未選択でも DoAction 側が
+// 安全に no-op しステータス行へ "no comparable pages" を出す)。
 bool16 KESCMRefreshComparisonAvailable()
 {
 	if (!KESCMIsArmed())
@@ -418,7 +413,7 @@ bool16 KESCMRefreshComparisonAvailable()
 		return kFalse;
 	IDocument* doc = Utils<ILayoutUIUtils>()->GetFrontDocument();
 	IDataBase* db = (doc != nil) ? ::GetDataBase(doc) : nil;
-	return (db != nil && (db == targetDB || db == sourceDB)) ? kTrue : kFalse;
+	return (db != nil && db == targetDB) ? kTrue : kFalse;
 }
 
 
@@ -947,13 +942,34 @@ void KESCMSetLayoutSync(bool16 on)
 //   右クリックメニュー「KESCM: Refresh Page Comparison」へ移設。
 //========================================================================================
 
+// ★armed 中の Target/Source が IDocumentList に現存するかの最終ライン防御(2026-07-15 復活)。
+//   旧・中ボタン watcher はジェスチャ毎にこの検査を行っていたが、ツール移行で失われていた。
+//   通常はクローズ responder(KESCMHandleDocsClosed)が先回りして disarm するため失格には到達しないが、
+//   responder が漏れた場合に解放済み IDataBase をサンプリング/peek へ渡さないための保険。
+//   失格なら KESCMHandleDocsClosed() で Stop 相当のフルクリーンアップ(sPeek* 解除を含む)をして kFalse。
+static bool16 KESCMArmedDocsAlive()
+{
+	if (!sPeekArmed || sPeekTargetDB == nil || sPeekSourceDB == nil)
+		return kFalse;
+	InterfacePtr<IApplication> app(GetExecutionContextSession()->QueryApplication());
+	InterfacePtr<IDocumentList> docList(app ? app->QueryDocumentList() : nil);
+	if (docList == nil ||
+	    docList->FindDocByDataBase(sPeekTargetDB) == nil ||
+	    docList->FindDocByDataBase(sPeekSourceDB) == nil)
+	{
+		KESCMHandleDocsClosed();
+		return kFalse;
+	}
+	return kTrue;
+}
+
 // トラッカー(左ボタン)用の peek 開始。arm 済み(Start 後)かつ Target 窓上のときだけ、マウス下スプレッドの
 // 旧版を opacity(1.0=不透明 / 0.5=半透明)で重ねる。ハンドツールへの一時切替はしない(トラッカーが既に
 // マウスをキャプチャ済みで、ドラッグは ContinueTracking へ行くため不要)。
 static void KESCMTrackerBeginPeek(PMReal opacity)
 {
-	if (!sPeekArmed || !KESCMFrontViewIsOverTarget())
-		return;	// 未 Start / Target 窓以外では反応しない(旧・中ボタン peek 分岐と同じ条件)
+	if (!KESCMArmedDocsAlive() || !KESCMFrontViewIsOverTarget())
+		return;	// 未 Start / 比較文書が閉じ済み / Target 窓以外では反応しない(旧・中ボタン peek 分岐と同じ条件)
 	sPeekActive = kTrue;
 	KESCMDrawEventHandler::sPeekOpacity = opacity;	// 旧版べた載せの不透明度(描画時に参照)
 	sSingleShowing = kFalse;
@@ -1093,8 +1109,9 @@ static void KESCMCmykCursorBitmapProc(uchar* bitmapBuffer, uint32* width, uint32
 
 	// ★ビットマップ幅は「実際の内容幅」にタイトに合わせる。最大幅いっぱいに取ると右側に広い透明余白が
 	// でき、その初回フレームがちらついて見える(ゴミ)ため。内容幅 = 左6 + 4列×ピッチ(2.1em) +
-	// ラベル(tgt≒1.74em) + 右4 ≒ 10 + 10.14em(下の描画の pitch=2.1×fs と一致させること)。
-	int32 contentW = 10 + (fs * 1014) / 100;
+	// ラベル(t/s=1文字≒0.58em) + 右4 ≒ 10 + 8.98em(下の描画の pitch=2.1×fs と一致させること。
+	// 2026-07-15: ラベルを tgt/src→t/s へ短縮したのに合わせ 10.14em→8.98em に更新=右端の透明余白を除去)。
+	int32 contentW = 10 + (fs * 898) / 100;
 	uint32 logW = (contentW > 0) ? (uint32)contentW : maxLogW;
 	if (logW > maxLogW) logW = maxLogW;
 
@@ -1156,6 +1173,24 @@ static void KESCMCmykCursorBitmapProc(uchar* bitmapBuffer, uint32* width, uint32
 bool16 KESCMTrackerHasPendingCmykCursor()          { return sCmykCursorPending; }
 CreateCursorBitmapProc KESCMTrackerCmykCursorProc() { return &KESCMCmykCursorBitmapProc; }
 
+// Alt+左(単独)の CMYK カーソルが「実際に出る」条件(KESCMPeek.h 参照)。RevealBegin の Alt 分岐と
+// トラッカーの Hide/Show ラップ判定の両方がこれを使う=条件は必ずここ1本で変える(2026-07-15)。
+bool16 KESCMTrackerCmykCursorWouldShow()
+{
+	return (KESCMArmedDocsAlive() && KESCMFrontViewIsOverTarget()) ? kTrue : kFalse;
+}
+
+// ツール常時✓カーソルの黒/白抜き判定(KESCMPeek.h 参照)。黒=「Start 中かつマウス下ビューが Target 文書」
+// =左ホールドの reveal/peek/CMYK が実際に効く場所。それ以外は白抜き✓(黒フチ+白本体)で「ここでは効かない」を示す
+// (ユーザー指定 2026-07-15)。ビュー→文書の特定は同期オブザーバと同じ KESCMFindDocDbForView
+// (GetAllLayoutViews のポインタ照合)。
+bool16 KESCMToolCursorShouldBeBlack(IControlView* viewUnderMouse)
+{
+	if (viewUnderMouse == nil || !KESCMArmedDocsAlive())
+		return kFalse;
+	return (KESCMFindDocDbForView(viewUnderMouse) == sPeekTargetDB) ? kTrue : kFalse;
+}
+
 // KESCMTrackerUpdateCmykDrag(KESCMPeek.h 参照) — ドラッグ中の CMYK ライブ更新。
 // トラッカーの ContinueTracking(マウス移動)から呼ばれる。現在のマウス位置で CMYK を再サンプルし、
 // 値が変わったら sCmykCursorText を更新して kTrue を返す(呼び出し側がカーソルを描き直す)。
@@ -1184,6 +1219,11 @@ bool16 KESCMTrackerUpdateCmykDrag()
 	}
 	sStarted = kTrue;
 	sLast = now;
+
+	// スロットル通過後(≦20回/秒)に比較文書の生存を検査してからサンプリングへ渡す
+	// (責務は KESCMArmedDocsAlive のコメント参照。ドラッグ中の文書クローズはスクリプト経由等の稀な経路)。
+	if (!KESCMArmedDocsAlive())
+		return kFalse;
 
 	// 現在のマウス位置で新/旧をサンプリング(KESCMSampleCmykUnderMouse は毎回マウス位置を読み直す)。
 	// ページ外・取得失敗なら「値なし(c--- …)」表示にして、拾えていないことが分かるようにする
@@ -1214,15 +1254,15 @@ static void KESCMBuildCmykNoValue(PMString& out)
 	out.Append("--- --- --- --- s");
 }
 
-// パネル版の「値なし」表示。値ごとに見出し文字を添え tgt/src 略語にする。KESCMSampleCmykUnderMouse
+// パネル版の「値なし」表示。値ごとに見出し文字を添え t/s にする。KESCMSampleCmykUnderMouse
 // 成功時のパネル表記(KESCMColorSampler.cpp の KESCMAppendCmykLabeled)と揃える(2026-07-14)。
 static void KESCMBuildCmykNoValuePanel(PMString& out)
 {
 	out.Clear();
 	out.SetTranslatable(kFalse);
-	out.Append("C--- M--- Y--- K--- tgt");
+	out.Append("C--- M--- Y--- K--- t");
 	out.AppendW(UTF32TextChar(0x0A));
-	out.Append("C--- M--- Y--- K--- src");
+	out.Append("C--- M--- Y--- K--- s");
 }
 
 void KESCMTrackerRevealBegin(bool16 shiftDown, bool16 altDown, bool16 cmdDown)
@@ -1261,8 +1301,9 @@ void KESCMTrackerRevealBegin(bool16 shiftDown, bool16 altDown, bool16 cmdDown)
 	{
 		// Alt+左(単独、Shift/Ctrl なし): クリック点の CMYK 生値(0..255)を新・旧でサンプリングし、
 		// "Target C.. M.. Y.. K.." / "Source C.. …" をカーソル自身に描画する。
-		// 旧・中ボタン Shift+Ctrl+Alt+ミドル。arm 済み(Start 後)かつ Target 窓上でのみ反応。
-		if (sPeekArmed && KESCMFrontViewIsOverTarget())
+		// 旧・中ボタン Shift+Ctrl+Alt+ミドル。arm 済み(Start 後・比較文書が生存)かつ Target 窓上でのみ反応。
+		// 判定はトラッカーの Hide/Show ラップと共有(KESCMTrackerCmykCursorWouldShow。食い違い禁止)。
+		if (KESCMTrackerCmykCursorWouldShow())
 		{
 			PMString panelMsg, cursorMsg;
 			if (!KESCMSampleCmykUnderMouse(sPeekTargetDB, sPeekSourceDB, panelMsg, cursorMsg))

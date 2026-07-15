@@ -33,7 +33,7 @@
 
 #include "KESCMID.h"
 #include "KESCMPeek.h"		// KESCMTrackerRevealBegin / KESCMTrackerRevealEnd / CMYK カーソル入口
-#include "KESCMCore.h"		// KESCMIsArmed(未 Start では Hide/Show を省く)
+#include "KESCMCore.h"		// KESCM 共有状態アクセサ(arm/disarm 等)
 
 //____________________________________________________________________________________
 //	Tracker event handler: forwards events (notably the button-up) to the tracker while
@@ -98,10 +98,11 @@ public:
 		                            !theEvent->ShiftKeyDown() && !theEvent->CmdKeyDown());
 		InterfacePtr<IApplication> theApp(GetExecutionContextSession()->QueryApplication());
 		InterfacePtr<ICursorMgr> cursorMgr(theApp, UseDefaultIID());
-		// ★未 Start(arm 前)では色比較は発動しない(RevealBegin が sPeekArmed で弾き、CMYK カーソルも出ない)
-		//   ので、その場合は隠す意味が無い。KESCMIsArmed() を条件に足して、CMYK カーソルを実際に出し得る時
-		//   (=Start 済み)だけ Hide/Show で多段切替を包む。未 Start の Alt+左で無駄にカーソルがまたたくのを防ぐ。
-		const bool16 hideDuringSwitch = (cmykGesture && cursorMgr != nil && KESCMIsArmed());
+		// ★CMYK カーソルが「実際に出る」条件(arm 済み・比較文書生存・Target 窓上)のときだけ Hide/Show で
+		//   多段切替を包む。判定は RevealBegin の Alt 分岐と KESCMTrackerCmykCursorWouldShow で共有
+		//   (2026-07-15。旧判定は KESCMIsArmed() のみで、Start 済みでも Source 窓や第3の文書上の Alt+左では
+		//   CMYK カーソルが出ないのに Hide/Show だけ走り、無駄にカーソルがまたたいていた)。
+		const bool16 hideDuringSwitch = (cmykGesture && cursorMgr != nil && KESCMTrackerCmykCursorWouldShow());
 		if (hideDuringSwitch)
 			cursorMgr->Hide();
 

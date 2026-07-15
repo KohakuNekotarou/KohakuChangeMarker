@@ -14,6 +14,8 @@
 #include "PMReal.h"
 #include "CursorSpec.h"		// CreateCursorBitmapProc(Alt+左 CMYK のカスタムカーソル)
 
+class IControlView;			// KESCMToolCursorShouldBeBlack の引数(前方宣言で足りる)
+
 // 常時表示マークの画面上の「基準」不透明度。印刷設定から決まる(印刷ON => 選択不透明度25%/75%、印刷OFF => 1.0)。
 // peek を離したときの経路と KESCMDoSetPrintMarks が使う。実体は KESCMPeek.cpp。
 PMReal KESCMBaseScreenOpacity();
@@ -36,6 +38,18 @@ void KESCMTrackerRevealEnd();
 bool16 KESCMTrackerHasPendingCmykCursor();
 CreateCursorBitmapProc KESCMTrackerCmykCursorProc();
 
+// Alt+左(単独)の CMYK カーソルが「実際に出る」条件か(=arm 済み・比較文書生存・Target 窓上)。
+// KESCMTracker.cpp の BeginTracking が Hide/Show ラップの要否判定に使う。RevealBegin の Alt 分岐と
+// 同じ判定を1本で共有し、CMYK カーソルが出ないのに Hide/Show だけ走ってカーソルがまたたくのを防ぐ
+// (2026-07-15)。実体は KESCMPeek.cpp。
+bool16 KESCMTrackerCmykCursorWouldShow();
+
+// ツール常時✓カーソルを黒で出してよいか=「Start 中(比較文書生存)かつ viewUnderMouse が Target 文書の
+// レイアウトビュー」。それ以外(Source・第3の文書・未 Start・view 不明)は kFalse=白抜き✓を出す
+// (「ここではツールは効かない」の明示。ユーザー指定 2026-07-15)。KESCMCursorProvider.cpp の
+// GetCursor から毎ムーブ呼ばれる(文書数×ビュー数の走査のみ=軽量)。実体は KESCMPeek.cpp。
+bool16 KESCMToolCursorShouldBeBlack(IControlView* viewUnderMouse);
+
 // ドラッグ中の CMYK ライブ更新。トラッカーの ContinueTracking(マウス移動)から呼ぶ。現在のマウス位置で
 // CMYK を再サンプルし(スロットル付き=連続ラスタ化で重くならないように)、値が変わったら
 // sCmykCursorText を更新して kTrue を返す。呼び出し側はそのとき ChangeModalCursor でカーソルを描き直す。
@@ -44,12 +58,13 @@ bool16 KESCMTrackerUpdateCmykDrag();
 
 // ページパネルのページ右クリック「KESCM: Refresh Page Comparison」の実体。選択ページの比較を再検出して
 // 枠/サムネイルを更新する(旧 Ctrl+ミドルのスプレッド再比較を移設。2026-07-13)。arm 済み(Start 後)かつ
-// 前面文書が Target/Source のときだけ動く。outPages=処理ページ数 / outChanged=うち変化ページ数(いずれも
-// nil 可)。戻り=1ページ以上処理したか。実体は KESCMPeek.cpp。KESCMActionComponent.cpp から呼ぶ。
+// 前面文書が Target のときだけ動く(★2026-07-15 Target 限定=ユーザー指定)。outPages=実際に再比較した
+// ページ数 / outChanged=うち変化ページ数(いずれも nil 可)。戻り=1ページ以上処理したか。
+// 実体は KESCMPeek.cpp。KESCMActionComponent.cpp から呼ぶ。
 bool16 KESCMRefreshComparisonForSelectedPages(int32* outPages, int32* outChanged);
 
 // 上記メニューの有効/無効判定(KESCMActionComponent.cpp の UpdateActionStates 用)。arm 済みかつ前面文書が
-// Target/Source なら kTrue。実体は KESCMPeek.cpp。
+// Target なら kTrue(Source では無効=コンテキストメニューでは項目ごと非表示になる想定)。実体は KESCMPeek.cpp。
 bool16 KESCMRefreshComparisonAvailable();
 
 #endif // __KESCMPeek_h__

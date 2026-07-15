@@ -342,6 +342,13 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMToolWidgetID, kKESCMPrefix + 41)	// ツール
 // (KESCMTracker.cpp の InstallCmykCursor)。HOTC は 1021 と同じ (10,18)=切替でカーソル位置は動かない。
 #define kKESCMCmykCursor2ResID	1022
 
+// ✓カーソルの非アクティブ版(白抜き=黒フチ+白本体)のリソースID。ツール選択中、「Start 中かつマウス下が
+// Target 文書」のときだけ黒✓、それ以外(Source・第3の文書・未 Start)は白抜き✓=「ここではツールは
+// 効かない」の明示(ユーザー指定 2026-07-15。灰色本体は判別しづらく反転式に変更)。CursorID を分けるのは
+// キャッシュの取り違え防止(1021/1022 と同じ理由)+ClearCache 不要で切り替えるため。
+// HOTC は ✓ と同じ (10,18)。KESCMCursorProvider.cpp。
+#define kKESCMCheckCursorInactiveResID	1023
+
 // ツールボックスの KESCM ツール専用アイコン(32×32 通常 / 64×64 = +kHIDPIIconOffset)。従来はパネル用
 // アイコン(kKESCMIconOnResID)を流用していたが、専用画像(KESCM_Tool_32.png/_64.png)を用意したため差し替え
 // (ユーザー提供 2026-07-14)。ダーク版は用意していないため PNGAD もライト版と同じ画像を指す(=流用)。

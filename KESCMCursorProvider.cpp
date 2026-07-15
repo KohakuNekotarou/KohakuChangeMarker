@@ -30,6 +30,7 @@
 #include "Utils.h"				// Utils<ICursorUtils>()
 
 #include "KESCMCheckGlyph.h"	// KESCMDrawCheckGlyph(✓描画を CMYK カーソルと共有)
+#include "KESCMPeek.h"			// KESCMToolCursorShouldBeBlack(黒/白抜きの判定。Target 上でだけ黒)
 
 //----------------------------------------------------------------------------------------
 //  ✓カーソルの描画コールバック
@@ -37,7 +38,10 @@
 //  buffer は呼び出し側が (最大カーソルサイズ)²×4 で確保済み。*width/*height は入力=最大サイズ
 //  (hiRes 時は 2 倍)、出力=実使用サイズ。hasAlpha=kTrue で 32bit ARGB。hiRes 時は 2x 解像度で
 //  buffer/寸法が倍。描画は論理座標(1x px)で行い、port が hiRes スケールを吸収する。
-static void KESCMCheckCursorBitmapProc(uchar* bitmapBuffer, uint32* width, uint32* height, bool16* hasAlpha, bool16 hiRes)
+//  コールバックは引数でデータを渡せないため、黒/白抜きは「別 CursorID+別コールバック」で分ける
+//  (キャッシュも ID 別に効く=ClearCache 不要で切り替わる。2026-07-15)。
+static void KESCMCheckCursorBitmapCommon(uchar* bitmapBuffer, uint32* width, uint32* height, bool16* hasAlpha, bool16 hiRes,
+                                         const PMReal& bodyGray, const PMReal& haloGray)
 {
 	const uint32 maxAllocW = *width;	// 呼び出し側が確保した最大サイズ(hiRes 時は 2 倍)
 	const uint32 maxAllocH = *height;
@@ -64,11 +68,24 @@ static void KESCMCheckCursorBitmapProc(uchar* bitmapBuffer, uint32* width, uint3
 	if (gPort == nil)
 		return;
 
-	// ✓ (white halo + black body). Shared with the CMYK readout cursor (KESCMPeek.cpp) via
+	// ✓ (white halo + body). Shared with the CMYK readout cursor (KESCMPeek.cpp) via
 	// KESCMDrawCheckGlyph so both draw the identical shape. Vertex (10,18) = the .fr HOTC
-	// (kKESCMCheckCursorResID) hotspot.
+	// (kKESCMCheckCursorResID / kKESCMCheckCursorInactiveResID) hotspot.
 	gPort->setopacity(PMReal(1.0), kFalse);
-	KESCMDrawCheckGlyph(gPort);
+	KESCMDrawCheckGlyph(gPort, bodyGray, haloGray);
+}
+
+// 黒✓=白フチ+黒本体(Start 中かつマウス下が Target 文書=ツールが効く場所)。
+static void KESCMCheckCursorBitmapProc(uchar* bitmapBuffer, uint32* width, uint32* height, bool16* hasAlpha, bool16 hiRes)
+{
+	KESCMCheckCursorBitmapCommon(bitmapBuffer, width, height, hasAlpha, hiRes, PMReal(0.0), PMReal(1.0));
+}
+
+// 白抜き✓=黒フチ+白本体(Source・第3の文書・未 Start=ツールが効かない場所の明示)。
+// ★灰色本体(0.55)を先に試したが判別しづらいとのユーザー報告(2026-07-15)→白の塗りに黒の縁へ反転。
+static void KESCMCheckCursorInactiveBitmapProc(uchar* bitmapBuffer, uint32* width, uint32* height, bool16* hasAlpha, bool16 hiRes)
+{
+	KESCMCheckCursorBitmapCommon(bitmapBuffer, width, height, hasAlpha, hiRes, PMReal(1.0), PMReal(0.0));
 }
 
 //----------------------------------------------------------------------------------------
@@ -96,8 +113,13 @@ CursorSpec KESCMCheckCursorProvider::GetCursor(IControlView* viewUnderMouse, con
 		return base;
 
 	// それ以外は常時✓。画像はコールバックで毎回描画する。✓は静的なので bDynamicBitmap=kFalse
-	// (毎回同じ絵=キャッシュ可)。ホットスポットは HOTC(kKESCMCheckCursorResID) から取る。
-	return CursorSpec(GetPlugIn()->GetPluginID(), IDFile(), kKESCMCheckCursorResID, &KESCMCheckCursorBitmapProc, kFalse);
+	// (毎回同じ絵=キャッシュ可)。ホットスポットは HOTC(各 ResID)から取る。
+	// 黒✓=「Start 中かつマウス下が Target 文書」(ツールが効く場所)のみ。それ以外は白抜き✓(黒フチ+白本体)で
+	// 「ここではツールは効かない」を示す(ユーザー指定 2026-07-15)。2状態は CursorID ごと分けるので
+	// キャッシュはそのまま効き、境界をまたいだ瞬間にスペック違いで確実に切り替わる(ClearCache 不要)。
+	if (KESCMToolCursorShouldBeBlack(viewUnderMouse))
+		return CursorSpec(GetPlugIn()->GetPluginID(), IDFile(), kKESCMCheckCursorResID, &KESCMCheckCursorBitmapProc, kFalse);
+	return CursorSpec(GetPlugIn()->GetPluginID(), IDFile(), kKESCMCheckCursorInactiveResID, &KESCMCheckCursorInactiveBitmapProc, kFalse);
 }
 
 // End, KESCMCursorProvider.cpp.
