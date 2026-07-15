@@ -63,16 +63,18 @@ static bool16 KESCMVecContains(const std::vector<UID>& v, UID u)
 }
 
 //========================================================================================
-// ヘルパ: ページパネルの選択を読む。outDB=選択が属する文書(=アクティブ文書)、outPages=文書の
-// ページ列に実在する選択ページUID。有効なページが1つ以上あれば kTrue。
+// KESCMPageMapReadSelection(KESCMPageMap.h で宣言) — ページパネルの選択を読む共通リーダー。
+// outDB=選択が属する文書(=アクティブ文書)、outPages=文書のページ列に実在する選択ページUID。
+// 有効なページが1つ以上あれば kTrue。
 // 取得は公式 API Utils<ILayoutUIUtils>()->GetSelectedPages():
 //   ・bIncludeMasters=kFalse … マスターページ/マスタースプレッドを除外(比較対象外)
 //   ・bPagesOnly=kTrue …… 見開き全体の選択(パネル内部ではスプレッド扱い)も所属ページUIDへ展開
 //   ・bCurrentPageOnly=kTrue はパネル非表示時のフォールバック規定(このメニューはパネルからしか
 //     開けないため実質使われない)
 // 返ったUIDは念のため文書の平坦ページ列(KESCMCollectPageUIDs)と突合し、重複も除去する。
+// ★Register(ここ)/Check(KESCMPageCheck.cpp)/Refresh(KESCMPeek.cpp)の3機能共通(2026-07-15 統合)。
 //========================================================================================
-static bool16 KESCMPageMapReadSelection(IDataBase*& outDB, std::vector<UID>& outPages)
+bool16 KESCMPageMapReadSelection(IDataBase*& outDB, std::vector<UID>& outPages)
 {
 	outDB = nil;
 	outPages.clear();

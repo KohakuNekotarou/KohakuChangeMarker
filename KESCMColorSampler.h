@@ -21,4 +21,12 @@ class IDataBase;
 bool16 KESCMSampleCmykUnderMouse(IDataBase* targetDB, IDataBase* sourceDB,
                                  PMString& outPanel, PMString& outCursor);
 
+// Alt+左ホールド(ドラッグ)中の target→source ページ対応表キャッシュ。Begin=押下時(RevealBegin の
+// Cmyk 分岐)に対応表を1回だけ構築、End=解放時(RevealEnd)に破棄。Begin〜End の間、
+// KESCMSampleCmykUnderMouse は毎サンプル(≦20回/秒)の KESCMBuildPairing 全ページ再構築を省いて
+// キャッシュを引く(ページ構成はトラッキング中に変わらない。2026-07-15)。Begin なしの単発サンプルは
+// 従来どおり毎回構築(挙動不変)。
+void KESCMSampleCmykBeginDrag(IDataBase* targetDB, IDataBase* sourceDB);
+void KESCMSampleCmykEndDrag();
+
 #endif // __KESCMColorSampler_h__

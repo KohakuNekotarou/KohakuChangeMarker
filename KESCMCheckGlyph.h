@@ -18,6 +18,46 @@
 
 #include "IGraphicsPort.h"
 #include "PMReal.h"
+#include "ICursorUtils.h"	// QueryGraphicsPortForBitmap(KESCMCursorBitmapFinish)
+#include "Utils.h"
+#include <cstring>			// std::memset(KESCMCursorBitmapBegin の透明クリア)
+
+//----------------------------------------------------------------------------------------
+// カーソルビットマップ・コールバック共通の前処理(2026-07-15 に2つのコールバックの重複約16行を集約。
+// 使用箇所 = ✓カーソル KESCMCursorProvider.cpp / CMYK 情報カーソル KESCMPeek.cpp)。
+// 手順: Begin(確保全域を透明クリア+論理最大サイズ取得) → 呼び出し側が論理サイズを決める →
+//       Finish(クランプ+出力サイズ設定+AGM ポート取得)。
+//----------------------------------------------------------------------------------------
+
+/** 1) 確保バッファ全域を透明(ARGB=0)にクリアし、論理最大サイズ(1x px)を返す。
+	QueryGraphicsPortForBitmap は既存内容を消さないため、描かない画素にゴミが残るのを防ぐ。
+	allocW/allocH = 呼び出し側が確保した実サイズ(hiRes 時は論理の2倍)。 */
+inline void KESCMCursorBitmapBegin(uchar* buffer, uint32 allocW, uint32 allocH, bool16 hiRes,
+                                   uint32& outMaxLogW, uint32& outMaxLogH)
+{
+	const uint32 scale = hiRes ? 2u : 1u;
+	outMaxLogW = allocW / scale;
+	outMaxLogH = allocH / scale;
+	std::memset(buffer, 0, (size_t)allocW * (size_t)allocH * 4u);
+}
+
+/** 2) 論理サイズを最大にクランプして *width/*height/*hasAlpha を確定し、AGM ポートを返す
+	(AddRef 済み=呼び出し側が InterfacePtr で受ける。失敗時 nil)。描画は論理座標(1x px)で行い、
+	port が hiRes スケールを吸収する。 */
+inline IGraphicsPort* KESCMCursorBitmapFinish(uchar* buffer, uint32* width, uint32* height, bool16* hasAlpha,
+                                              bool16 hiRes, uint32 logW, uint32 logH,
+                                              uint32 maxLogW, uint32 maxLogH)
+{
+	if (logW > maxLogW) logW = maxLogW;
+	if (logH > maxLogH) logH = maxLogH;
+	const uint32 scale = hiRes ? 2u : 1u;
+	const uint32 actW = logW * scale;
+	const uint32 actH = logH * scale;
+	*width    = actW;
+	*height   = actH;
+	*hasAlpha = kTrue;
+	return Utils<ICursorUtils>()->QueryGraphicsPortForBitmap(buffer, actW, actH, kTrue /*hasAlpha*/, hiRes);
+}
 
 /** Stroke the ✓ into gPort (halo stroke under a thinner body stroke). Coordinates match the
 	.fr HOTC for kKESCMCheckCursorResID so the bend sits on the cursor hotspot / click point.

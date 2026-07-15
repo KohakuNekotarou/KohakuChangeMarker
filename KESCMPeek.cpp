@@ -2,8 +2,9 @@
 //
 //  KESCMPeek.cpp
 //
-//  ツール(左ボタン)peek の実装(KESCMScriptProvider.cpp から分離)。peek 状態、ツール左ボタン＋修飾キーを
-//  スヌープする IEventWatcher、起動サービス、KESCMCore.h で宣言した arm/disarm/状態アクセサの入口を持つ。
+//  ツール(左ボタン)peek の実装(KESCMScriptProvider.cpp から分離)。peek 状態、トラッカー(KESCMTracker.cpp)
+//  から呼ばれるジェスチャ入口(KESCMTrackerRevealBegin/End ほか)、起動/終了サービス、KESCMCore.h で宣言した
+//  arm/disarm/状態アクセサの入口を持つ。旧・中ボタンの IEventWatcher は撤去済み(2026-07-13)。
 //
 //========================================================================================
 
@@ -36,10 +37,7 @@
 #include "IActiveContext.h"			// IID_IACTIVECONTEXT / ContextInfo(文書切替の検知)
 #include "widgetid.h"				// IID_IPANORAMA / kScrollToMessage・kScrollByMessage・kScaleToMessage・kScaleByMessage
 
-// イベント監視 / ツール / 起動:
-#include "IEventWatcher.h"
-#include "IEvent.h"
-#include "IEventDispatcher.h"
+// ツール / 起動:
 #include "IStartupShutdownService.h"
 #include "CreateObject.h"
 #include "CPMUnknown.h"
@@ -65,11 +63,8 @@
 #include <map>
 #include <vector>
 #include <set>
-#include <algorithm>				// std::find(選択ページの重複除去)
 #include <cstring>				// std::memset(カーソルバッファの透明クリア)
 #include <chrono>				// steady_clock(ドラッグ中ライブ再サンプルのスロットル)
-
-#include "UIDList.h"				// GetSelectedPages(ページパネル選択の公式取得)
 
 // プロジェクト内インクルード:
 #include "KESCMID.h"
@@ -88,10 +83,9 @@
 //========================================================================================
 // ツール(左ボタン)peek — 共有状態とヘルパ。
 //   ツール左ボタンを押している間だけ、マウス下スプレッドの旧版を不透明べた載せし、離すと隠す。
-//   IEventWatcher はグローバル(引数を持てない)ので、比較相手の旧ドキュメントは先に
-//   KESCMDoArmMousePeek(KESCMCore.h)で登録しておく(パネルの Start ボタンが呼ぶ)。watcher
-//   (KESCMPeekWatcher)がこの arm 状態を見る。全部を1つの翻訳単位に置くことで、watcher が MakeOrigImage /
-//   マウス下スプレッド判定 / sOrigImages を直接再利用できる。
+//   比較相手の旧ドキュメントは先に KESCMDoArmMousePeek(KESCMCore.h)で登録しておく(パネルの Start
+//   ボタンが呼ぶ)。トラッカー入口(KESCMTrackerRevealBegin/End)がこの arm 状態を見る。全部を1つの
+//   翻訳単位に置くことで、入口が MakeOrigImage / マウス下スプレッド判定 / sOrigImages を直接再利用できる。
 //========================================================================================
 static IDataBase* sPeekTargetDB = nil;	// 表示中(新)ドキュメント。使用前に「まだ開いているか」を検証する。
 static IDataBase* sPeekSourceDB = nil;	// peek 中に重ねる旧ドキュメント。
@@ -361,29 +355,12 @@ bool16 KESCMRefreshComparisonForSelectedPages(int32* outPages, int32* outChanged
 	if (targetDB == nil || sourceDB == nil)
 		return kFalse;
 
-	// 選択が属する前面文書(=アクティブ文書)。Target でなければ何もしない(Source では項目自体を
-	// 出さない/無効にする。KESCMRefreshComparisonAvailable と対)。
-	IDocument* doc = Utils<ILayoutUIUtils>()->GetFrontDocument();
-	IDataBase* db = (doc != nil) ? ::GetDataBase(doc) : nil;
-	if (db == nil || db != targetDB)
-		return kFalse;
-
-	// ページパネルの選択ページ(実在ページのみ)を読む(「KESCM: Check」と同じ流儀)。
-	UIDList sel(db);
-	Utils<ILayoutUIUtils>()->GetSelectedPages(sel, kFalse /*masters除外*/, kTrue /*currentPageOnly*/, kTrue /*pagesOnly*/);
-	std::vector<UID> flat;
-	KESCMCollectPageUIDs(db, flat);
-	std::set<UID> flatSet(flat.begin(), flat.end());
-
+	// ページパネルの選択ページを読む(Register/Check と共通のリーダー。KESCMPageMap.cpp)。選択が属する
+	// 前面文書が Target でなければ何もしない(Source では項目自体を出さない/無効にする。
+	// KESCMRefreshComparisonAvailable と対)。
+	IDataBase* db = nil;
 	std::vector<UID> selPages;
-	const int32 n = sel.Length();
-	for (int32 i = 0; i < n; ++i)
-	{
-		const UID u = sel[i];
-		if (flatSet.count(u) > 0 && std::find(selPages.begin(), selPages.end(), u) == selPages.end())
-			selPages.push_back(u);
-	}
-	if (selPages.empty())
+	if (!KESCMPageMapReadSelection(db, selPages) || db != targetDB)
 		return kFalse;
 
 	// 再比較コアは Target ページで駆動する(前面=Target のみなので選択ページがそのまま対象)。
@@ -620,28 +597,22 @@ static PBPMPoint KESCMCorrectedCenterForDoc(IDataBase* srcDocDb, IDataBase* dstD
 }
 
 // applyPageOffset=kTrue のとき、各宛先文書へ複製する中心座標に上の追加/削除補正を掛ける。
-// ★旧 Alt+ミドルとフライアウト「Sync Layout Views」の自動同期は、どちらも本仕様として kTrue で呼ぶ
-// (比較 arm 中は比較ペアの相手ページ同士がきっちり並ぶ)。未 arm/ペア外は関数内で生同期にフォールバック。
-// 既定 kFalse は補正なし(生座標)の呼び口を残すためのもの。
-static void KESCMSyncOtherDocViewportsTo(IPanorama* srcPano, IDataBase* srcDocDb, bool16 applyPageOffset = kFalse, bool16 limitToArmedPair = kTrue)
+// ★フライアウト「Sync Layout Views」の自動同期は本仕様として kTrue で呼ぶ(比較 arm 中は比較ペアの
+// 相手ページ同士がきっちり並ぶ)。ペア外は関数内で生同期にフォールバック。
+// (★2026-07-15: 旧「左ダブルクリック=arm 不問・全文書同期」用の limitToArmedPair=kFalse 分岐は、
+//  ジェスチャ自体の全廃で呼び出しゼロになっていたため削除。同期は常に Start 中の Target↔Source 限定。)
+static void KESCMSyncOtherDocViewportsTo(IPanorama* srcPano, IDataBase* srcDocDb, bool16 applyPageOffset = kFalse)
 {
 	if (srcPano == nil)
 		return;
 
-	// ★limitToArmedPair=kTrue(旧・中ボタン Alt+ミドル・フライアウト「Sync Layout Views」のライブ同期):
-	//   「比較を Start 中(arm 済み)」かつ「Target↔Source の間だけ」に限定する(ユーザー指定 2026-07-11)。
+	// 「比較を Start 中(arm 済み)」かつ「Target↔Source の間だけ」に限定する(ユーザー指定 2026-07-11)。
 	//   ・未 Start(!sPeekArmed)、または arm 対の一方でも不明なら何もしない。
 	//   ・手本(操作した)ビューが Target/Source のどちらでもない第3文書なら同期しない。
-	// ★limitToArmedPair=kFalse(ツール+左ダブルクリック、ユーザー指定 2026-07-13): arm 不問。開いている
-	//   全ドキュメント(手本=カーソル下の文書だけ除外)へ複製する。ページ補正は arm 中の Target/Source ペアの
-	//   ときだけ KESCMCorrectedCenterForDoc が効き、その他は生同期にフォールバックする。
-	if (limitToArmedPair)
-	{
-		if (!sPeekArmed || sPeekTargetDB == nil || sPeekSourceDB == nil)
-			return;
-		if (srcDocDb != sPeekTargetDB && srcDocDb != sPeekSourceDB)
-			return;
-	}
+	if (!sPeekArmed || sPeekTargetDB == nil || sPeekSourceDB == nil)
+		return;
+	if (srcDocDb != sPeekTargetDB && srcDocDb != sPeekSourceDB)
+		return;
 
 	// 手本ビューの「見えている状態」を読む。ズームは実効スケール(kTrue=モニタPPI補正込み)。
 	// ズームコマンド(kZoomToCmdBoss)が扱う scaleFactor と同じ次元なので、読み書きが対称になる。
@@ -671,8 +642,7 @@ static void KESCMSyncOtherDocViewportsTo(IPanorama* srcPano, IDataBase* srcDocDb
 
 		// ★Target/Source 以外の第3文書へは複製しない(ユーザー指定 2026-07-11)。手本は上のガードで
 		// 既に Target/Source のどちらかなので、宛先は「対の相手」1文書だけになる。
-		// limitToArmedPair=kFalse(左ダブルクリック)のときはこの制限を外し、手本以外の全文書を宛先にする。
-		if (limitToArmedPair && db != sPeekTargetDB && db != sPeekSourceDB)
+		if (db != sPeekTargetDB && db != sPeekSourceDB)
 			continue;
 
 		// この宛先文書へ複製する中心座標。applyPageOffset のときは追加/削除補正(比較ペアの相手ページへ
@@ -985,8 +955,14 @@ static void KESCMTrackerBeginPeek(PMReal opacity)
 //   ので、描く文字列は file-static sCmykCursorText に置きコールバックから読む。
 //   ★これはまず「出るか」を見る実装スパイク(2026-07-13)。座標系(y方向)・alpha・サイズは実機で調整。
 //========================================================================================
-static PMString sCmykCursorText;			// "…tgt\n…src"(LF区切り2行)。色サンプル成功時に格納。
+static PMString sCmykCursorText;			// "… t\n… s"(LF区切り2行、末尾ラベル t/s)。色サンプル成功時に格納。
 static bool16   sCmykCursorPending = kFalse;	// 直近の BeginTracking で CMYK カーソルを出すべきか
+
+// Alt+左ドラッグ中だけ保持する既定フォント(取得=RevealBegin の Alt 分岐、解放=RevealEnd)。
+// ドラッグ中のカーソル再描画(≦20回/秒)が毎回 IFontMgr の名前引きをしないためのキャッシュ(2026-07-15)。
+// ★file-static の InterfacePtr にはしない: 静的破棄タイミングの Release はオブジェクトモデル消滅後で
+//   危険なため、生ポインタ+RevealEnd での明示解放(押下の外では常に nil)にする。
+static IPMFont* sCmykCursorFont = nil;
 
 // LF(0x0A)で最大2行に分割する。
 static void KESCMSplitTwoLines(const PMString& src, PMString& line1, PMString& line2)
@@ -1002,27 +978,6 @@ static void KESCMSplitTwoLines(const PMString& src, PMString& line1, PMString& l
 		if (!second) line1.AppendW(UTF32TextChar(buf[i]));
 		else         line2.AppendW(UTF32TextChar(buf[i]));
 	}
-}
-
-// CursorSpec のコールバック。カーソル描画系が呼ぶ(UIスレッド)。bitmapBuffer は呼び出し側が
-// (最大カーソルサイズ)²×4 で確保済み。*width/*height は入力=最大サイズ(hiRes 時は 2 倍)、出力=実使用サイズ。
-// カーソル文字列の1行(例 "Target\tC000 M000 Y000 K000")を、タブ(0x09)でラベルと数値に分割する。
-// タブが無ければ全体を数値扱い(label 空)。ラベルと数値は別々の行に積んで描くので、2つの数値行は
-// 同じ x から始まり自動的に桁が縦に揃う(カーソル最大幅の制約で1行に収まらないため。ユーザー報告 2026-07-13)。
-static void KESCMSplitAtTab(const PMString& line, PMString& label, PMString& num)
-{
-	label.Clear(); label.SetTranslatable(kFalse);
-	num.Clear();   num.SetTranslatable(kFalse);
-	const int32 n = line.NumUTF16TextChars();
-	const UTF16TextChar* buf = line.GrabUTF16Buffer(nil);
-	bool16 afterTab = kFalse;
-	for (int32 i = 0; i < n; ++i)
-	{
-		if (buf[i] == 0x0009) { afterTab = kTrue; continue; }	// タブ=ラベル/数値の区切り
-		if (!afterTab) label.AppendW(UTF32TextChar(buf[i]));
-		else           num.AppendW(UTF32TextChar(buf[i]));
-	}
-	if (!afterTab) { num = label; label.Clear(); }	// タブ無し=全体を数値列に
 }
 
 // スペース区切りの行を「表」状に描く。先頭4トークン(見出し C/M/Y/K、または3桁値)を x0+col*pitch の
@@ -1078,26 +1033,21 @@ static void KESCMShowHalo(IGraphicsPort* gPort, IPMFont* font, const PMReal& siz
 	gPort->show(x, y, (uint32)n, b);
 }
 
+// CursorSpec のコールバック。カーソル描画系が呼ぶ(UIスレッド)。bitmapBuffer は呼び出し側が
+// (最大カーソルサイズ)²×4 で確保済み。*width/*height は入力=最大サイズ(hiRes 時は 2 倍)、出力=実使用サイズ。
 static void KESCMCmykCursorBitmapProc(uchar* bitmapBuffer, uint32* width, uint32* height, bool16* hasAlpha, bool16 hiRes)
 {
-	const uint32 maxAllocW = *width;	// 呼び出し側が確保した正方バッファ(max×max)
-	const uint32 maxAllocH = *height;
-	const uint32 scale   = hiRes ? 2u : 1u;
-	const uint32 maxLogW = maxAllocW / scale;
-	const uint32 maxLogH = maxAllocH / scale;
+	// 前処理(確保全域の透明クリア+論理最大サイズ取得)は ✓カーソルと共有(KESCMCheckGlyph.h)。
+	// 背景は透明のまま=黒い箱を出さない(ユーザー指定 2026-07-13)。
+	uint32 maxLogW = 0, maxLogH = 0;
+	KESCMCursorBitmapBegin(bitmapBuffer, *width, *height, hiRes, maxLogW, maxLogH);
 
-	// 背景を透明にする(黒い箱を出さない=ユーザー指定 2026-07-13)。QueryGraphicsPortForBitmap は既存内容を
-	// 消さないので、まず確保全域を ARGB=0 にクリアしてから描く(✓カーソルと同じ作法)。
-	std::memset(bitmapBuffer, 0, (size_t)maxAllocW * (size_t)maxAllocH * 4u);
-
-	// 表示文字列を先に分解し、最長行から「幅いっぱいに収まる大きめフォント」を決める(ユーザー要望
-	// 2026-07-13: カーソル最大サイズまで使って cmyk＋数値を大きく)。ラベルは末尾の t/s。
-	PMString line1, line2, lab1, num1, lab2, num2;
+	// 表示文字列(数値2行、各行末尾にラベル t/s)を分解し、最長行から「幅いっぱいに収まる大きめフォント」を
+	// 決める(ユーザー要望 2026-07-13: カーソル最大サイズまで使って cmyk＋数値を大きく)。
+	PMString line1, line2;
 	KESCMSplitTwoLines(sCmykCursorText, line1, line2);
-	KESCMSplitAtTab(line1, lab1, num1);
-	KESCMSplitAtTab(line2, lab2, num2);
-	int32 maxChars = num1.NumUTF16TextChars();
-	if (num2.NumUTF16TextChars() > maxChars) maxChars = num2.NumUTF16TextChars();
+	int32 maxChars = line1.NumUTF16TextChars();
+	if (line2.NumUTF16TextChars() > maxChars) maxChars = line2.NumUTF16TextChars();
 	if (maxChars < 1) maxChars = 1;
 
 	// フォントは使える最大幅から大きめに決める(1文字≒0.58em、下限7pt)。
@@ -1112,8 +1062,7 @@ static void KESCMCmykCursorBitmapProc(uchar* bitmapBuffer, uint32* width, uint32
 	// ラベル(t/s=1文字≒0.58em) + 右4 ≒ 10 + 8.98em(下の描画の pitch=2.1×fs と一致させること。
 	// 2026-07-15: ラベルを tgt/src→t/s へ短縮したのに合わせ 10.14em→8.98em に更新=右端の透明余白を除去)。
 	int32 contentW = 10 + (fs * 898) / 100;
-	uint32 logW = (contentW > 0) ? (uint32)contentW : maxLogW;
-	if (logW > maxLogW) logW = maxLogW;
+	uint32 logW = (contentW > 0) ? (uint32)contentW : maxLogW;	// クランプは KESCMCursorBitmapFinish が行う
 
 	// ✓(上部 y≈18 まで)の下に「ヘッダー C M Y K + データ2行(Target/Source)」を積む。位置・高さは fs から。
 	const int32 gap    = (fs * 130) / 100;	// 行間 ≒1.3em
@@ -1125,16 +1074,10 @@ static void KESCMCmykCursorBitmapProc(uchar* bitmapBuffer, uint32* width, uint32
 	// 約3px下に一瞬。2026-07-13)。ハロー(y+1)とAA ぶんだけ +2 で足りる。
 	int32 needH = yData2 + 2;
 	uint32 logH = (needH > 0) ? (uint32)needH : 60u;
-	if (logH > maxLogH) logH = maxLogH;
 
-	const uint32 actW = logW * scale;
-	const uint32 actH = logH * scale;
-	*width    = actW;
-	*height   = actH;
-	*hasAlpha = kTrue;
-
-	InterfacePtr<IGraphicsPort> gPort(Utils<ICursorUtils>()->QueryGraphicsPortForBitmap(
-		bitmapBuffer, actW, actH, kTrue /*hasAlpha*/, hiRes));
+	// サイズ確定(クランプ込み)+AGM ポート取得(✓カーソルと共有の後処理。KESCMCheckGlyph.h)。
+	InterfacePtr<IGraphicsPort> gPort(KESCMCursorBitmapFinish(
+		bitmapBuffer, width, height, hasAlpha, hiRes, logW, logH, maxLogW, maxLogH));
 	if (gPort == nil)
 		return;
 
@@ -1153,8 +1096,17 @@ static void KESCMCmykCursorBitmapProc(uchar* bitmapBuffer, uint32* width, uint32
 
 	// 上から: ヘッダー "C M Y K"(各列先頭にそろえる) / Target 数値 / Source 数値。数値は各値3桁で行頭
 	// そろえ、末尾に t/s。フォント fs・行位置は上で計算済み。描画は KESCMShowHalo(白フチ＋黒本体)。
-	InterfacePtr<IFontMgr> fontMgr(GetExecutionContextSession(), UseDefaultIID());
-	InterfacePtr<IPMFont> font(fontMgr != nil ? fontMgr->QueryFont(fontMgr->GetDefaultFontName()) : nil);
+	// フォントは押下中キャッシュ(sCmykCursorFont。ドラッグ再描画≦20回/秒の名前引き回避)を使い、
+	// 万一 nil ならローカルに引き直すフォールバック(2026-07-15)。
+	IPMFont* font = sCmykCursorFont;
+	InterfacePtr<IPMFont> fallbackFont;
+	if (font == nil)
+	{
+		InterfacePtr<IFontMgr> fontMgr(GetExecutionContextSession(), UseDefaultIID());
+		if (fontMgr != nil)
+			fallbackFont = InterfacePtr<IPMFont>(fontMgr->QueryFont(fontMgr->GetDefaultFontName()));
+		font = fallbackFont;
+	}
 	if (font != nil)
 	{
 		// 見出し行とデータ2行を同じ固定列(x0, pitch)で描いて桁を縦にそろえる(pitch=3桁+ギャップ)。
@@ -1163,8 +1115,8 @@ static void KESCMCmykCursorBitmapProc(uchar* bitmapBuffer, uint32* width, uint32
 		const PMReal pitch = PMReal(fs) * PMReal(2.1);
 		PMString hdr; hdr.SetTranslatable(kFalse); hdr.Append("C M Y K");
 		KESCMDrawColumns(gPort, font, PMReal(fs), x0, pitch, PMReal(yHdr),   hdr);	// 見出し C M Y K
-		KESCMDrawColumns(gPort, font, PMReal(fs), x0, pitch, PMReal(yData1), num1);	// Target
-		KESCMDrawColumns(gPort, font, PMReal(fs), x0, pitch, PMReal(yData2), num2);	// Source
+		KESCMDrawColumns(gPort, font, PMReal(fs), x0, pitch, PMReal(yData1), line1);	// Target
+		KESCMDrawColumns(gPort, font, PMReal(fs), x0, pitch, PMReal(yData2), line2);	// Source
 	}
 }
 
@@ -1265,22 +1217,36 @@ static void KESCMBuildCmykNoValuePanel(PMString& out)
 	out.Append("C--- M--- Y--- K--- s");
 }
 
+// 修飾キー→ジェスチャの分類(KESCMPeek.h 参照)。★割当の定義はここ1本だけ: トラッカーの Hide/Show
+// 事前判定(KESCMTracker.cpp)・下の RevealBegin の分岐・temp-hide 判定がすべてこれを使う(2026-07-15 統合)。
+KESCMGesture KESCMClassifyGesture(bool16 shiftDown, bool16 altDown, bool16 cmdDown)
+{
+	// Ctrl(cmd)を伴う左ボタンは未割当。再比較はページ右クリックメニューへ移設済み、パネル操作は
+	// フライアウトへ移行済みで、いずれもトラッカーは扱わない。
+	if (cmdDown)
+		return kKESCMGestureNone;
+	if (altDown && !shiftDown)
+		return kKESCMGestureCmyk;		// Alt 単独: CMYK 色サンプリング
+	if (shiftDown && altDown)
+		return kKESCMGesturePeek50;		// Shift+Alt: 旧版べた載せ 50%
+	if (shiftDown)
+		return kKESCMGesturePeek100;	// Shift: 旧版べた載せ 100%
+	return kKESCMGestureReveal;			// 修飾なし: reveal / temp-hide
+}
+
 void KESCMTrackerRevealBegin(bool16 shiftDown, bool16 altDown, bool16 cmdDown)
 {
-	sCmykCursorPending = kFalse;	// このプレスで CMYK カーソルを出すかは下の Alt 分岐で決める(既定=出さない)
+	sCmykCursorPending = kFalse;	// このプレスで CMYK カーソルを出すかは下の Cmyk 分岐で決める(既定=出さない)
 
-
-	// Ctrl(cmd)を伴う左ボタンは未対応。再比較はページ右クリックメニューへ移設済み、パネル操作は
-	// フライアウトへ移行済みで、いずれもこのトラッカーは扱わない。ここでは何もしない(トラッカーは
-	// キャプチャ済みだが描画状態は変えない)。
-	if (cmdDown)
-		return;
+	const KESCMGesture gesture = KESCMClassifyGesture(shiftDown, altDown, cmdDown);
+	if (gesture == kKESCMGestureNone)
+		return;	// 未割当(Ctrl 系)。トラッカーはキャプチャ済みだが描画状態は変えない。
 
 	// ---- 「Hold to Hide Marks」モード(常時表示の極性反転)の窓別 temp-hide ----
-	// 隠すジェスチャ=修飾なし or Shift(Shift+Alt も Shift を含む)。cmd は上で除外済み。
-	// ★Alt 単独(CMYK)は隠さない=枠を出したままサンプリング(旧・中ボタン Shift+Ctrl+Alt でも枠は
+	// 隠すジェスチャ=reveal と peek(修飾なし/Shift/Shift+Alt)。
+	// ★CMYK(Alt 単独)は隠さない=枠を出したままサンプリング(旧・中ボタン Shift+Ctrl+Alt でも枠は
 	// 隠れない仕様に一致)。押した窓の枠だけを隠す(Target/Source 別)。
-	const bool16 tempHideGesture = (!shiftDown && !altDown) || shiftDown;
+	const bool16 tempHideGesture = (gesture != kKESCMGestureCmyk);
 	if (KESCMDrawEventHandler::sAlwaysShowMarks && tempHideGesture)
 	{
 		if (!KESCMDrawEventHandler::sMarksTempHidden && KESCMFrontViewIsOverTarget())
@@ -1297,7 +1263,7 @@ void KESCMTrackerRevealBegin(bool16 shiftDown, bool16 altDown, bool16 cmdDown)
 	}
 
 	// ---- ジェスチャ分岐 ----
-	if (altDown && !shiftDown)
+	if (gesture == kKESCMGestureCmyk)
 	{
 		// Alt+左(単独、Shift/Ctrl なし): クリック点の CMYK 生値(0..255)を新・旧でサンプリングし、
 		// "Target C.. M.. Y.. K.." / "Source C.. …" をカーソル自身に描画する。
@@ -1305,6 +1271,17 @@ void KESCMTrackerRevealBegin(bool16 shiftDown, bool16 altDown, bool16 cmdDown)
 		// 判定はトラッカーの Hide/Show ラップと共有(KESCMTrackerCmykCursorWouldShow。食い違い禁止)。
 		if (KESCMTrackerCmykCursorWouldShow())
 		{
+			// ドラッグ中の再サンプル(≦20回/秒)が毎回重い準備をやり直さないよう、押下中キャッシュを
+			// ここで用意する(解放/破棄は RevealEnd。2026-07-15):
+			//   ・既定フォント(sCmykCursorFont) … カーソル再描画毎の IFontMgr 名前引きを回避
+			//   ・ページ対応表(KESCMSampleCmykBeginDrag) … サンプル毎の全ページ pairing 再構築を回避
+			if (sCmykCursorFont == nil)
+			{
+				InterfacePtr<IFontMgr> fontMgr(GetExecutionContextSession(), UseDefaultIID());
+				sCmykCursorFont = (fontMgr != nil) ? fontMgr->QueryFont(fontMgr->GetDefaultFontName()) : nil;
+			}
+			KESCMSampleCmykBeginDrag(sPeekTargetDB, sPeekSourceDB);
+
 			PMString panelMsg, cursorMsg;
 			if (!KESCMSampleCmykUnderMouse(sPeekTargetDB, sPeekSourceDB, panelMsg, cursorMsg))
 			{
@@ -1324,13 +1301,13 @@ void KESCMTrackerRevealBegin(bool16 shiftDown, bool16 altDown, bool16 cmdDown)
 		}
 		return;
 	}
-	if (shiftDown && altDown)
+	if (gesture == kKESCMGesturePeek50)
 	{
 		// Shift+Alt+左: 旧版べた載せ peek を 50% で(旧・中ボタン Shift+Alt+ミドル)。
 		KESCMTrackerBeginPeek(kKESCMPeekSemiOpacity);
 		return;
 	}
-	if (shiftDown)
+	if (gesture == kKESCMGesturePeek100)
 	{
 		// Shift+左: 旧版べた載せ peek を 100% 不透明で(旧・中ボタン Shift+ミドル)。
 		KESCMTrackerBeginPeek(PMReal(1.0));
@@ -1367,6 +1344,14 @@ void KESCMTrackerRevealBegin(bool16 shiftDown, bool16 altDown, bool16 cmdDown)
 
 void KESCMTrackerRevealEnd()
 {
+	// Alt+左(CMYK)の押下中キャッシュを返す/捨てる(取得は RevealBegin の Cmyk 分岐。押下の外では持たない)。
+	if (sCmykCursorFont != nil)
+	{
+		sCmykCursorFont->Release();
+		sCmykCursorFont = nil;
+	}
+	KESCMSampleCmykEndDrag();
+
 	// 「Hold to Hide Marks」で押下中に隠していた常時表示の枠を戻す(離すと再表示)。押した窓に応じて
 	// Target/Source どちらか(または両方)が立っている。モード OFF なら両方 kFalse なので無影響
 	// (旧・中ボタン解放時の temp-hide 復元と同一)。

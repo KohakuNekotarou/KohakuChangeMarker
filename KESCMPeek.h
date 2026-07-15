@@ -3,8 +3,8 @@
 //  KESCMPeek.h
 //
 //  ツール(左ボタン)の「peek(覗き)」。修飾キー＋ツール左ボタンを押している間だけ、カーソル下スプレッドの旧版を
-//  表示する(または再比較する)。離すと元に戻す。peek 状態(arm 済みの target/source DB、押下中フラグ)と
-//  イベントウォッチャ／起動サービスを所有する。ここで公開するのは KESCMBaseScreenOpacity だけで、
+//  表示する(または CMYK をサンプリングする)。離すと元に戻す。peek 状態(arm 済みの target/source DB、
+//  押下中フラグ)と起動/終了サービスを所有する(旧・中ボタンのイベントウォッチャは撤去済み 2026-07-13)。
 //  arm/disarm/状態アクセサは KESCMCore.h にある。
 //
 //========================================================================================
@@ -31,6 +31,19 @@ PMReal KESCMBaseScreenOpacity();
 //   ・Ctrl(cmd)含む  = 未対応。何もしない(再比較はページ右クリックメニュー/パネル操作はフライアウトへ移行済み)。
 void KESCMTrackerRevealBegin(bool16 shiftDown, bool16 altDown, bool16 cmdDown);
 void KESCMTrackerRevealEnd();
+
+// 修飾キー→ジェスチャの分類。★割当の定義はこの1本だけ(2026-07-15 に3箇所の独立判定を統合):
+// KESCMTracker.cpp の Hide/Show 事前判定・RevealBegin の分岐・Hold to Hide の temp-hide 判定が
+// すべてこれを使う。ジェスチャ割当を変えるときは KESCMClassifyGesture(KESCMPeek.cpp)だけを直す。
+enum KESCMGesture
+{
+	kKESCMGestureNone = 0,	// Ctrl(cmd)を含む=未割当(何もしない)
+	kKESCMGestureReveal,	// 修飾なし: マーク一時表示(reveal) / Hold to Hide の temp-hide
+	kKESCMGesturePeek100,	// Shift: 旧版べた載せ peek 100%
+	kKESCMGesturePeek50,	// Shift+Alt: 旧版べた載せ peek 50%
+	kKESCMGestureCmyk		// Alt 単独: CMYK 色サンプリング(カーソル表示)
+};
+KESCMGesture KESCMClassifyGesture(bool16 shiftDown, bool16 altDown, bool16 cmdDown);
 
 // Alt+左「色比較」のカスタムカーソル(CMYK をカーソル自身に描く)。KESCMTracker.cpp が使う:
 // BeginTracking で KESCMTrackerRevealBegin 後、Pending が立っていれば

@@ -24,8 +24,44 @@
 #include "KESCMConstants.h"
 #include "KESCMDrawEventHandler.h"   // KESCMDrawEventHandler::sRasterizing
 #include "KESCMCore.h"               // KESCMQueryMouseContentPoint / KESCMFindPageUnderMouse
-#include "KESCMPageMap.h"            // KESCMMapTargetToSource(除外対応表)
+#include "KESCMPageMap.h"            // KESCMMapTargetToSource / KESCMBuildPairing(除外対応表)
 #include "KESCMColorSampler.h"
+
+#include <map>
+
+//----------------------------------------------------------------------------------------
+// Alt+左ホールド(ドラッグ)中の target→source ページ対応表キャッシュ(KESCMColorSampler.h 参照)。
+// 押下中はページ構成が変わらないので、毎サンプル(≦20回/秒)の KESCMBuildPairing 全ページ再構築を
+// 1回に減らす(2026-07-15)。押下の外では常に非アクティブ=単発サンプルは従来どおり毎回構築。
+//----------------------------------------------------------------------------------------
+static bool16              sDragCacheActive   = kFalse;
+static IDataBase*          sDragCacheTargetDB = nil;	// キー照合用(deref しない)
+static IDataBase*          sDragCacheSourceDB = nil;
+static std::map<UID, UID>  sDragCacheT2S;
+
+void KESCMSampleCmykBeginDrag(IDataBase* targetDB, IDataBase* sourceDB)
+{
+	sDragCacheT2S.clear();
+	sDragCacheTargetDB = targetDB;
+	sDragCacheSourceDB = sourceDB;
+	sDragCacheActive   = kFalse;
+	if (targetDB == nil || sourceDB == nil)
+		return;
+
+	std::vector<UID> pairT, pairS;
+	KESCMBuildPairing(targetDB, sourceDB, pairT, pairS);
+	for (size_t k = 0; k < pairT.size(); ++k)
+		sDragCacheT2S[pairT[k]] = pairS[k];
+	sDragCacheActive = kTrue;
+}
+
+void KESCMSampleCmykEndDrag()
+{
+	sDragCacheActive   = kFalse;
+	sDragCacheTargetDB = nil;
+	sDragCacheSourceDB = nil;
+	sDragCacheT2S.clear();
+}
 
 // pageRef のページを、spreadPt(そのページの spread 座標)まわりの極小領域だけ CMYK・高dpi でラスタ化し、
 // 中心1画素の C,M,Y,K 生値(0..255)を out[4] に読む。アクセサ/スナップショットは即破棄(保持ゼロで
@@ -132,10 +168,18 @@ bool16 KESCMSampleCmykUnderMouse(IDataBase* targetDB, IDataBase* sourceDB,
 	if (!KESCMFindPageUnderMouse(targetDB, mx, my, hit))
 		return kFalse;
 
-	// 新→旧ページ対応(除外対応表=登録済みページを除いた順番対応)。
+	// 新→旧ページ対応(除外対応表=登録済みページを除いた順番対応)。ドラッグ中はキャッシュを引く
+	// (BeginDrag で構築済み。対応表に無い=登録済み/あふれページは値なし)。
 	const UID tPageUID = hit.hitPageUID;
 	UID sPageUID;
-	if (!KESCMMapTargetToSource(targetDB, sourceDB, tPageUID, sPageUID))
+	if (sDragCacheActive && targetDB == sDragCacheTargetDB && sourceDB == sDragCacheSourceDB)
+	{
+		std::map<UID, UID>::const_iterator it = sDragCacheT2S.find(tPageUID);
+		if (it == sDragCacheT2S.end())
+			return kFalse;
+		sPageUID = it->second;
+	}
+	else if (!KESCMMapTargetToSource(targetDB, sourceDB, tPageUID, sPageUID))
 		return kFalse;
 	InterfacePtr<IGeometry> tGeo(targetDB, tPageUID, UseDefaultIID());
 	InterfacePtr<IGeometry> sGeo(sourceDB, sPageUID, UseDefaultIID());

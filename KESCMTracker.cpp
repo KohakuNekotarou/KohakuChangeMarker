@@ -94,8 +94,9 @@ public:
 		// マネージャ実装が非公開のため確定不能)。→ 遷移全体を ICursorMgr::Hide/Show で隠し、完成した
 		// CMYK カーソルだけを見せる(タイミング非依存。完成品の表示自体はドラッグ中の入れ直しがゴミゼロ
 		// であることで実証済み)。副作用=押下からサンプリング完了までの短い間カーソルが消える。
-		const bool16 cmykGesture = (theEvent->OptionAltKeyDown() &&
-		                            !theEvent->ShiftKeyDown() && !theEvent->CmdKeyDown());
+		// ジェスチャ分類は KESCMClassifyGesture の1本に集約(独立の修飾キー判定を書かない。KESCMPeek.h)。
+		const bool16 cmykGesture = (KESCMClassifyGesture(theEvent->ShiftKeyDown(),
+		                            theEvent->OptionAltKeyDown(), theEvent->CmdKeyDown()) == kKESCMGestureCmyk);
 		InterfacePtr<IApplication> theApp(GetExecutionContextSession()->QueryApplication());
 		InterfacePtr<ICursorMgr> cursorMgr(theApp, UseDefaultIID());
 		// ★CMYK カーソルが「実際に出る」条件(arm 済み・比較文書生存・Target 窓上)のときだけ Hide/Show で

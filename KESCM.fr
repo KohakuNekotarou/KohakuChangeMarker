@@ -220,16 +220,17 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 		}
 	},
 
-	// Toolbox tool for the left-button "reveal marks while held" gesture (useful on Macs without
-	// a middle button). While this tool is the active tool, the event watcher in KESCMPeek.cpp
-	// shows the comparison marks while the left button is held and hides them on release - the
-	// same non-capturing mechanism as the middle button. We deliberately install NO tracker:
-	// a custom capturing tracker froze/crashed InDesign, and reusing the Hand tool's tracker
-	// triggered InDesign's Power Zoom on button-hold. With no tracker there is no mouse capture,
-	// no pan and no Power Zoom, so hold-to-peek behaves exactly like the middle button. The
-	// middle-button gestures are untouched; both input methods coexist. Inherits kGenericToolBoss
-	// (the standard tool base that provides the toolbox button view); IID_IPMPERSIST persists the
-	// selected state.
+	// Toolbox tool for ALL KESCM pointer gestures (2026-07-13: the middle-button watcher and every
+	// middle-button gesture were removed; this tool is now the only pointer input). Left-hold with
+	// the tool active dispatches by the modifier keys held at press time: no modifier = reveal
+	// marks while held / Shift = peek the old version 100% / Shift+Alt = peek 50% / Alt = CMYK
+	// readout cursor. All input goes through the capturing tracker registered below
+	// (kKESCMTrackerBoss, installed by kKESCMTrackerRegisterBoss) - BeginTracking dispatches the
+	// gesture and mouse-up ends it (KESCMTracker.cpp / KESCMPeek.cpp). Note: an earlier design
+	// note here claimed a capturing tracker froze InDesign; the real culprit was the
+	// kMouseTrackerBoss timer's continuous redraws, which this tracker avoids with
+	// WantTimer=kFalse. Inherits kGenericToolBoss (the standard tool base that provides the
+	// toolbox button view); IID_IPMPERSIST persists the selected state.
 	Class
 	{
 		kKESCMToolBoss,

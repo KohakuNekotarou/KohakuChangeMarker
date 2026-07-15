@@ -173,9 +173,4 @@ IDataBase*	KESCMGetHideUnchangedSrcDB();
 bool16		KESCMGetLayoutSync();
 void		KESCMSetLayoutSync(bool16 on);
 
-// InDesign 標準「ページ」パネルの表示/非表示をトグルする。実体は KESCMPanelObserver.cpp(IPanelMgr の
-// show/hide を kPagesPanelWidgetID に対して行う)。★中ボタン/ツールの起動経路は撤去済み(2026-07-13)=
-// 現在は呼び出し元なし(将来ショートカット等へ再割当する余地として関数は残す)。
-void		KESCMTogglePagesPanel();
-
 #endif // __KESCMCore_h__

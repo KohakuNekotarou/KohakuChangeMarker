@@ -17,8 +17,6 @@
 
 #include "VCPlugInHeaders.h"
 
-#include <cstring>				// std::memset(バッファを透明にクリア)
-
 #include "KESCMID.h"
 
 #include "CToolCursorProvider.h"	// 基底(ツール用カーソルプロバイダ。ズーム/ハンド等の既定処理を持つ)
@@ -43,28 +41,12 @@
 static void KESCMCheckCursorBitmapCommon(uchar* bitmapBuffer, uint32* width, uint32* height, bool16* hasAlpha, bool16 hiRes,
                                          const PMReal& bodyGray, const PMReal& haloGray)
 {
-	const uint32 maxAllocW = *width;	// 呼び出し側が確保した最大サイズ(hiRes 時は 2 倍)
-	const uint32 maxAllocH = *height;
-	const uint32 scale     = hiRes ? 2u : 1u;
-	const uint32 maxLogW   = maxAllocW / scale;
-	const uint32 maxLogH   = maxAllocH / scale;
-
-	// 論理サイズ(1x px)。標準カーソルと同程度の 24x24。最大を超えないようクランプ。
-	uint32 logW = 24; if (logW > maxLogW) logW = maxLogW;
-	uint32 logH = 24; if (logH > maxLogH) logH = maxLogH;
-	const uint32 actW = logW * scale;
-	const uint32 actH = logH * scale;
-
-	// まずバッファ全体を透明(ARGB=0)にクリア。QueryGraphicsPortForBitmap は既存内容を消さないため、
-	// 描かなかった画素にゴミが残るのを防ぐ。クリアは確保サイズ全域に対して行う。
-	std::memset(bitmapBuffer, 0, (size_t)maxAllocW * (size_t)maxAllocH * 4u);
-
-	*width    = actW;
-	*height   = actH;
-	*hasAlpha = kTrue;
-
-	InterfacePtr<IGraphicsPort> gPort(Utils<ICursorUtils>()->QueryGraphicsPortForBitmap(
-		bitmapBuffer, actW, actH, kTrue /*hasAlpha*/, hiRes));
+	// 前処理(透明クリア+サイズ確定+ポート取得)は CMYK カーソルと共有(KESCMCheckGlyph.h)。
+	// 論理サイズ(1x px)は標準カーソルと同程度の 24x24。
+	uint32 maxLogW = 0, maxLogH = 0;
+	KESCMCursorBitmapBegin(bitmapBuffer, *width, *height, hiRes, maxLogW, maxLogH);
+	InterfacePtr<IGraphicsPort> gPort(KESCMCursorBitmapFinish(
+		bitmapBuffer, width, height, hasAlpha, hiRes, 24u, 24u, maxLogW, maxLogH));
 	if (gPort == nil)
 		return;
 

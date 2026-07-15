@@ -27,7 +27,6 @@
 #include "IBooleanControlData.h"
 #include "IApplication.h"			// GetExecutionContextSession / QueryApplication
 #include "IPanelMgr.h"				// QueryPanelManager / GetVisiblePanel(外部からのパネル更新)
-#include "PagesPanelID.h"			// kPagesPanelWidgetID(旧 Ctrl+Alt+ミドルで標準ページパネルを show/hide)
 #include "IActiveContext.h"
 #include "IDocument.h"
 #include "IDocumentList.h"
@@ -434,25 +433,6 @@ void KESCMRefreshPanel()
 		return;		// パネルは隠れている: 触る先が無い。
 	InterfacePtr<IPanelControlData> pcd(panel, UseDefaultIID());
 	KESCMApplyPanelInfo(pcd);
-}
-
-//========================================================================================
-// KESCMTogglePagesPanel(KESCMCore.h で宣言) — 旧 Ctrl+Alt+中ボタンで InDesign 標準「ページ」パネルの
-// 表示/非表示をトグルする(ユーザー指定 2026-07-12)。自パネルのトグルと違い、カーソル位置への移動は
-// しない(単純な表示/非表示のみ)。Start 不要・全文書共通。対象 widget は kPagesPanelWidgetID。
-//========================================================================================
-void KESCMTogglePagesPanel()
-{
-	InterfacePtr<IApplication> app(GetExecutionContextSession()->QueryApplication());
-	InterfacePtr<IPanelMgr> panelMgr(app != nil ? app->QueryPanelManager() : nil);
-	if (panelMgr == nil)
-		return;
-
-	// 表示中(=見えている)なら隠す。そうでなければ(非表示/アイコン化)表示する。
-	if (panelMgr->IsPanelWithWidgetIDShown(kPagesPanelWidgetID))
-		panelMgr->HidePanelByWidgetID(kPagesPanelWidgetID);
-	else
-		panelMgr->ShowPanelByWidgetID(kPagesPanelWidgetID, kFalse);	// giveKeyFocus=kFalse: ツール操作中にフォーカスを奪わない
 }
 
 //========================================================================================

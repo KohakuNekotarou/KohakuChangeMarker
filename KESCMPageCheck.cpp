@@ -7,7 +7,7 @@
 //  Pages パネルのサムネイル中央に青い ✓(ベクター線)を描く(描画は KESCMDrawEventHandler の
 //  isThumb 分岐)。登録(KESCMPageMap)とは独立した別集合。セッション内のみ・Stop で全消去。
 //
-//  構造は KESCMPageMap.cpp を踏襲(選択取得=Utils<ILayoutUIUtils>()->GetSelectedPages、状態=
+//  構造は KESCMPageMap.cpp を踏襲(選択取得=共通リーダー KESCMPageMapReadSelection、状態=
 //  文書DBごとの UID セット、クローズスイープは deref なしのポインタ比較のみ)。
 //
 //========================================================================================
@@ -20,10 +20,8 @@
 #include "IDataBase.h"			// GetSysFile(保存キー=文書ファイルパス)
 #include "IDocumentList.h"		// 生存スイープ(FindDocByDataBase へのポインタ比較のみ)
 #include "IActionStateList.h"	// メニューの有効/チェック
-#include "ILayoutUIUtils.h"		// GetFrontDocument / GetSelectedPages(ページパネル選択の公式取得)
 #include "Utils.h"
 #include "PersistUtils.h"		// ::GetDataBase(IDocument→IDataBase)
-#include "UIDList.h"
 #include "PMString.h"
 #include "FileUtils.h"			// GetAppRoamingDataFolder / AppendPath / OpenFile / DoesFileExist / SysFileToPMString
 #include "IDFile.h"
@@ -41,48 +39,6 @@
 
 // チェック済みページ: 文書DB → ページUIDの集合。セッション内のみ。空になった文書のエントリは即消す。
 static std::map<IDataBase*, std::set<UID> > sChecked;
-
-// ヘルパ: vector<UID> の線形 contains(選択は高々数十件)。
-static bool16 KESCMCheckVecContains(const std::vector<UID>& v, UID u)
-{
-	for (size_t k = 0; k < v.size(); ++k)
-	{
-		if (v[k] == u)
-			return kTrue;
-	}
-	return kFalse;
-}
-
-// ページパネルの選択を読む(KESCMPageMap.cpp の同名ヘルパと同じ流儀)。outDB=選択が属する文書
-// (=アクティブ文書)、outPages=文書のページ列に実在する選択ページUID。有効なページが1つ以上あれば kTrue。
-static bool16 KESCMPageCheckReadSelection(IDataBase*& outDB, std::vector<UID>& outPages)
-{
-	outDB = nil;
-	outPages.clear();
-
-	IDocument* doc = Utils<ILayoutUIUtils>()->GetFrontDocument();
-	IDataBase* db = (doc != nil) ? ::GetDataBase(doc) : nil;
-	if (db == nil)
-		return kFalse;
-
-	UIDList sel(db);
-	Utils<ILayoutUIUtils>()->GetSelectedPages(sel, kFalse /*masters除外*/, kTrue /*currentPageOnly*/, kTrue /*pagesOnly*/);
-
-	std::vector<UID> flat;
-	KESCMCollectPageUIDs(db, flat);
-	const int32 n = sel.Length();
-	for (int32 i = 0; i < n; ++i)
-	{
-		const UID u = sel[i];
-		if (KESCMCheckVecContains(flat, u) && !KESCMCheckVecContains(outPages, u))
-			outPages.push_back(u);
-	}
-	if (outPages.empty())
-		return kFalse;
-
-	outDB = db;
-	return kTrue;
-}
 
 // db の「マーク付きページ」集合を1回だけ作る。マーク付き = KESCM の変更リング(sEntries)/登録「/」/
 // overflow「/」のいずれか。実体は KESCMCollectChangedPageUIDs(KESCMThumbnailRefresh.h。db が sDB/sSrcDB の
@@ -117,7 +73,7 @@ void KESCMPageCheckToggleSelectedPages()
 {
 	IDataBase* db = nil;
 	std::vector<UID> selPages;
-	if (!KESCMPageCheckReadSelection(db, selPages))
+	if (!KESCMPageMapReadSelection(db, selPages))
 		return;		// メニューは kCustomEnabling で無効化済みのはずだが保険
 
 	// チェックは「比較を Start 中(arm 済み)」かつ「選択文書が Target/Source」のときだけ可能。
@@ -185,7 +141,7 @@ void KESCMPageCheckUpdateToggleState(IActionStateList* listToUpdate, int32 index
 {
 	IDataBase* db = nil;
 	std::vector<UID> pages;
-	if (!KESCMPageCheckReadSelection(db, pages))
+	if (!KESCMPageMapReadSelection(db, pages))
 	{
 		listToUpdate->SetNthActionState(index, kDisabled_Unselected);
 		return;
