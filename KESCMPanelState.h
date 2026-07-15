@@ -17,7 +17,8 @@
 //    - Hold to Hide Marks
 //    - Show Marks on Source
 //    - Show Original Page Numbers
-//    - Sync Layout Views(復元しても実際の同期は Start 中のみ発火するので実害なし)
+//    - Sync Layout Views(既定 ON。同期の発火条件は Start 中の Target↔Source、または Stop 中+
+//      KESCM ツール選択中の全文書=KESCMSyncOtherDocViewportsTo のガード参照)
 //    - Show Scrollbar Map
 //    - Ignore Page Number Marker
 //
@@ -31,10 +32,12 @@
 // 実体は KESCMPanelState.cpp。
 void	KESCMSavePanelState();
 
-// パネルが初めて開かれたとき(KESCMPanelObserver::AutoAttach)に呼ぶ。保存済みの JSON ファイルが
-// あれば読み込み、各トグルへ適用する(無ければ何もしない)。★セッション内で一度だけ実行する内部
-// ガードを持つので、パネルを開き直すたびに再ロードはしない(=途中で変えた設定が巻き戻らない)。
-// 実体は KESCMPanelState.cpp。
+// 保存済みの JSON ファイルがあれば読み込み、各トグルへ適用する(無ければ何もしない)。
+// ★呼び出しタイミングは起動時(KESCMPeekStartup::Startup。2026-07-15 に前倒し): 同期が Stop 中+
+//   ツール選択でも動くようになったため、パネルを開く前でも保存設定(特に Sync OFF)を効かせる。
+//   復元先は全部エンジン側のフラグ/購読でパネル・文書に依存せず、起動時に呼んで安全。
+// ★セッション内で一度だけ実行する内部ガードを持つので、パネル AutoAttach からの既存呼び出しは
+//   no-op の保険として残り、途中で変えた設定が巻き戻ることもない。実体は KESCMPanelState.cpp。
 void	KESCMLoadPanelStateIfPresent();
 
 #endif // __KESCMPanelState_h__

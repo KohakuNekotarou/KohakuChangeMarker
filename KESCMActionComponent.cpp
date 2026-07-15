@@ -172,18 +172,18 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 			break;
 		}
 
-		// 「Sync Layout Views」トグル: レイアウトビュー同期の ON/OFF。実体は KESCMPeek.cpp の
-		// KESCMSetLayoutSync(購読の付け外し+ON時は即時に一度そろえる)。★2026-07-11(ユーザー指定):
-		// 実際に同期がかかるのは「トグル ON かつ 比較を Start 中」のときだけ、かつ Target↔Source 間のみ
-		// (未 Start ではトグル ON でも購読はするが同期は no-op。判定は KESCMSyncOtherDocViewportsTo のガード)。
+		// 「Sync Layout Views」トグル: レイアウトビュー同期の ON/OFF(既定 ON)。実体は KESCMPeek.cpp の
+		// KESCMSetLayoutSync(購読の付け外し+ON時は即時に一度そろえる)。作動条件は2モード(判定は
+		// KESCMSyncOtherDocViewportsTo のガード):
+		//   (A) Start 中: Target↔Source 間のみ・追加/削除補正あり(2026-07-11)。
+		//   (B) Stop 中 + KESCM ツール選択中: アクティブ文書へ他の全文書を同期・補正なし(2026-07-15)。
+		// トグル ON でも上記いずれの条件も満たさなければ(Stop かつツール非選択)購読はするが同期は no-op。
 		case kKESCMPopupSyncViewsActionID:
 		{
 			KESCMSetLayoutSync(!KESCMGetLayoutSync());
-			// ★同期が実際に効くのは「トグル ON かつ Start 中」なので、ON にしても未 Start のときは
-			//   その旨を添える(ユーザーが「効かない」と誤解しないように)。
 			PMString msg;
 			if (KESCMGetLayoutSync())
-				msg = KESCMIsArmed() ? "Sync layout views: on." : "Sync layout views: on (needs Start).";
+				msg = "Sync layout views: on.";
 			else
 				msg = "Sync layout views: off.";
 			msg.SetTranslatable(kFalse);

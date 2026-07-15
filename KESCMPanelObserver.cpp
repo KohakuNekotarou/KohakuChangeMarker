@@ -140,9 +140,10 @@ static PMString KESCMDocNameFromDB(IDataBase* db)
 
 void KESCMPanelObserver::AutoAttach()
 {
-	// ★保存済みのパネル設定(独自 JSON)があれば読み込んで各トグルへ適用する。関数内にセッション
-	//   一度きりのガードがあるので、パネルを開き直しても再ロードはしない(途中変更を巻き戻さない)。
-	//   「保存データがあればパネルが最初に開かれた時に読み込む」というユーザー仕様の実装点。
+	// ★保存済みのパネル設定(独自 JSON)の読み込みは起動時(KESCMPeekStartup::Startup)へ前倒し済み
+	//   (2026-07-15: 同期が Stop 中+ツール選択でも動くため、パネルを開く前でも保存設定を効かせる)。
+	//   ここは起動サービスの順序が万一変わっても取りこぼさないための保険呼び出し(通常はセッション
+	//   一度きりの内部ガードで no-op。途中変更を巻き戻すこともない)。
 	KESCMLoadPanelStateIfPresent();
 
 	InterfacePtr<IPanelControlData> pcd(this, UseDefaultIID());

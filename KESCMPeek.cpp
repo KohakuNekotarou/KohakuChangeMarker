@@ -43,6 +43,8 @@
 #include "CPMUnknown.h"
 #include "LayoutUIID.h"
 #include "DocumentContextID.h"
+#include "IToolBoxUtils.h"			// QueryActiveTool(Stop 中のツール選択判定でレイアウト同期を許可)
+#include "ITool.h"					// ::GetClass(activeTool) で boss を kKESCMToolBoss と比較
 
 // ジオメトリ / ビュー:
 #include "IControlView.h"
@@ -79,6 +81,7 @@
 #include "KESCMScrollMap.h"          // スプレッド再比較後にスクロールバー地図を最新化
 #include "KESCMChangeNav.h"          // KESCMRefreshNavPosition(スプレッド再比較後に Prev/Next 位置を最新化)
 #include "KESCMThumbIdleTask.h"      // クローズ後の再生成を次のidleに遅延(前面切替の過渡を避ける)
+#include "KESCMPanelState.h"         // KESCMLoadPanelStateIfPresent(起動時に保存済みパネル設定を復元)
 #include "KESCMPeek.h"
 
 //========================================================================================
@@ -611,13 +614,27 @@ static void KESCMSyncOtherDocViewportsTo(IPanorama* srcPano, IDataBase* srcDocDb
 	if (srcPano == nil)
 		return;
 
-	// 「比較を Start 中(arm 済み)」かつ「Target↔Source の間だけ」に限定する(ユーザー指定 2026-07-11)。
-	//   ・未 Start(!sPeekArmed)、または arm 対の一方でも不明なら何もしない。
-	//   ・手本(操作した)ビューが Target/Source のどちらでもない第3文書なら同期しない。
-	if (!sPeekArmed || sPeekTargetDB == nil || sPeekSourceDB == nil)
-		return;
-	if (srcDocDb != sPeekTargetDB && srcDocDb != sPeekSourceDB)
-		return;
+	// 同期の作動条件を2モードで判定する:
+	//   (A) 比較を Start 中(arm 済み): 従来通り Target↔Source の間だけ・追加/削除補正あり(ユーザー指定 2026-07-11)。
+	//       手本(操作した)ビューが Target/Source のどちらでもない第3文書なら同期しない。
+	//   (B) 未 Start(Stop 中)だが KESCM ツールが選択中: アクティブ(操作した)文書へ他の全文書を同期する
+	//       (ユーザー指定 2026-07-15)。AddRemove(追加/削除補正)は扱わない=applyPageOffset を強制 kFalse。
+	//   どちらの条件も満たさなければ何もしない(Stop かつツール非選択=誤同期を避けるため no-op)。
+	const bool16 armed = (sPeekArmed && sPeekTargetDB != nil && sPeekSourceDB != nil);
+	bool16 stopToolSync = kFalse;
+	if (armed)
+	{
+		if (srcDocDb != sPeekTargetDB && srcDocDb != sPeekSourceDB)
+			return;
+	}
+	else
+	{
+		InterfacePtr<ITool> activeTool(Utils<IToolBoxUtils>()->QueryActiveTool());
+		if (activeTool == nil || ::GetClass(activeTool) != kKESCMToolBoss)
+			return;
+		stopToolSync    = kTrue;
+		applyPageOffset = kFalse;	// ★AddRemove(追加/削除補正)は掛けない(ユーザー指定)
+	}
 
 	// 手本ビューの「見えている状態」を読む。ズームは実効スケール(kTrue=モニタPPI補正込み)。
 	// ズームコマンド(kZoomToCmdBoss)が扱う scaleFactor と同じ次元なので、読み書きが対称になる。
@@ -645,9 +662,10 @@ static void KESCMSyncOtherDocViewportsTo(IPanorama* srcPano, IDataBase* srcDocDb
 		if (db == srcDocDb)
 			continue;
 
-		// ★Target/Source 以外の第3文書へは複製しない(ユーザー指定 2026-07-11)。手本は上のガードで
+		// ★arm 中(A)は Target/Source 以外の第3文書へは複製しない(ユーザー指定 2026-07-11)。手本は上のガードで
 		// 既に Target/Source のどちらかなので、宛先は「対の相手」1文書だけになる。
-		if (db != sPeekTargetDB && db != sPeekSourceDB)
+		// Stop ツール同期(B)ではこの限定を外し、アクティブ文書以外の全文書へ複製する。
+		if (!stopToolSync && db != sPeekTargetDB && db != sPeekSourceDB)
 			continue;
 
 		// この宛先文書へ複製する中心座標。applyPageOffset のときは追加/削除補正(比較ペアの相手ページへ
@@ -1360,10 +1378,16 @@ void KESCMTrackerRevealEnd()
 	// Alt+左(CMYK 色比較)を離したら、押下中にパネルのステータス行へ出していた CMYK 値を消す
 	// (ユーザー要望 2026-07-15: ホールド終了でメッセージは消す)。sCmykCursorPending は押下中に
 	// CMYK 値を出したときだけ立つので、色比較のときだけクリアし、reveal/peek や Check/Register 等
-	// 他機能のステータスには触らない。空文字で SetString→gSessionStatus も空になり再表示でも復活しない。
+	// 他機能のステータスには触らない。
+	// ★クリアは空文字ではなく「空白1文字」で行う(ユーザー指定 2026-07-15): 完全な空だと
+	//   gSessionStatus が「未操作」と区別できず、次回パネルを開いたときに AutoAttach の
+	//   CharCount()==0 判定で初回ヒントが再表示されてしまう。空白1文字なら見た目は空のまま
+	//   「操作済み」を保てる(再表示でも空白が復元されるだけでヒントは出ない)。
 	if (sCmykCursorPending)
 	{
-		KESCMSetStatus(PMString());
+		PMString blank(" ");
+		blank.SetTranslatable(kFalse);
+		KESCMSetStatus(blank);
 		sCmykCursorText.Clear();
 		sCmykCursorPending = kFalse;
 	}
@@ -1424,7 +1448,21 @@ CREATE_PMINTERFACE(KESCMPeekStartup, kKESCMPeekStartupImpl)
 
 void KESCMPeekStartup::Startup()
 {
-	// 中ボタンウォッチャ撤去により起動時の処理は無し(このサービスは終了時の後片付けのために残す)。
+	// ★レイアウトビュー同期を既定 ON にする(ユーザー指定 2026-07-15)。この時点で kActiveContextBoss は
+	// 既に存在するので ActiveContext 購読は付く。文書はまだ無くてもよい=以後、文書が開くたびに
+	// ActiveContext の Update(IID_IDOCUMENT)が KESCMLayoutSyncAttachAllPanoramas を呼び、そのビューを
+	// 購読へ足す。
+	KESCMSetLayoutSync(kTrue);
+
+	// ★続けて保存済みパネル設定(独自 JSON)をここで読み込む(ユーザー指定 2026-07-15)。
+	// 同期は Stop 中+ツール選択でも動くようになった(モードB)ため、「パネル初回オープン時に復元」の
+	// 従来タイミングでは、OFF を保存したユーザーでも起動〜パネルを開くまでの間だけ既定 ON で同期が
+	// 動いてしまう。起動時に読み込めばその窓が無くなる(保存が無ければ上の既定 ON のまま)。
+	// 各トグルの復元先は全部エンジン側のフラグ/購読で、パネルにも文書にも依存しない=起動時に安全
+	// (KESCMDoSetPrintMarks は db=nil のフラグのみ、ScrollMap/IgnoreMarker/HoldToHide 等は平の代入)。
+	// 内部の「セッション一度きり」ガードにより、パネル AutoAttach からの既存呼び出しは no-op のまま残る
+	// (起動サービスの順序が万一変わっても取りこぼさない保険)。
+	KESCMLoadPanelStateIfPresent();
 }
 
 void KESCMPeekStartup::Shutdown()
