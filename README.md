@@ -12,7 +12,7 @@ This plugin was designed and implemented by **KohakuNekotarou** in collaboration
 We cannot be held responsible for any issues that may arise; please use this service at your own risk.
 
 ## Releases
-https://github.com/KohakuNekotarou/KohakuExtendScriptChangeMarker/releases
+https://github.com/KohakuNekotarou/KohakuChangeMarker/releases
 
 ## 連絡
 農作業の合間に趣味でInDesignのScriptやPlugInを作っています。
