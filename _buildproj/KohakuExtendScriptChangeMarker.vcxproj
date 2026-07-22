@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003" DefaultTargets="Build" ToolsVersion="15.0">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Debug|Win32">
@@ -69,10 +69,10 @@
     <IntDir Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">..\objR\KohakuExtendScriptChangeMarker\</IntDir>
     <OutDir Condition="'$(Configuration)|$(Platform)'=='Release|x64'">..\releasex64\sdk\</OutDir>
     <IntDir Condition="'$(Configuration)|$(Platform)'=='Release|x64'">..\objRx64\KohakuExtendScriptChangeMarker\</IntDir>
-    <TargetName Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">$(ProjectName).sdk</TargetName>
-    <TargetName Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(ProjectName).sdk</TargetName>
-    <TargetName Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">$(ProjectName).sdk</TargetName>
-    <TargetName Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(ProjectName).sdk</TargetName>
+    <TargetName Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">KohakuChangeMarker</TargetName>
+    <TargetName Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">KohakuChangeMarker</TargetName>
+    <TargetName Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">KohakuChangeMarker</TargetName>
+    <TargetName Condition="'$(Configuration)|$(Platform)'=='Release|x64'">KohakuChangeMarker</TargetName>
     <TargetExt Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">.pln</TargetExt>
     <TargetExt Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">.pln</TargetExt>
     <TargetExt Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">.pln</TargetExt>

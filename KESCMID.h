@@ -32,9 +32,10 @@
 #define kKESCMCompanyValue	"KohakuNekotarou"	// Company name displayed externally.
 
 // Plug-in:
-#define kKESCMPluginName	"KohakuExtendScriptChangeMarker"			// Name of this plug-in.
+#define kKESCMPluginName	"KohakuExtendScriptChangeMarker"			// Name of this plug-in. 内部名(ID系・.rc の InternalName)。互換のため据え置き。
+#define kKESCMDisplayName	"KohakuChangeMarker"			// 表示名(About メニュー項目・About ボックス本文・出力 .pln 名)。
 #define kKESCMPrefixNumber	0x205515 		// Unique prefix number for this plug-in(*Must* be obtained from Adobe Developer Support).
-#define kKESCMVersion		kSDKDefPluginVersionString						// Version of this plug-in (for the About Box).
+#define kKESCMVersion		"1.0.1"						// Version of this plug-in (for the About Box).
 #define kKESCMAuthor		""					// Author of this plug-in (for the About Box).
 
 // Plug-in Prefix: (please change kKESCMPrefixNumber above to modify the prefix.)
@@ -276,7 +277,7 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMToolWidgetID, kKESCMPrefix + 41)	// ツール
 
 // Other StringKeys:
 #define kKESCMAboutBoxStringKey	kKESCMStringPrefix "kKESCMAboutBoxStringKey"
-#define kKESCMRepoURL			"https://github.com/KohakuNekotarou/KohakuExtendScriptChangeMarker"	// 配布元URL。「このプラグインについて」本文とパネルのイラストクリックの飛び先で共通
+#define kKESCMRepoURL			"https://github.com/KohakuNekotarou/KohakuChangeMarker"// 配布元URL。「このプラグインについて」本文とパネルのイラストクリックの飛び先で共通
 #define kKESCMAboutScriptMenuKey	kKESCMStringPrefix "kKESCMAboutScriptMenuKey"	// パネルのフライアウト「スクリプトについて」のメニュー名
 #define kKESCMScriptHelpStringKey	kKESCMStringPrefix "kKESCMScriptHelpStringKey"	// その本文(スクリプトAPIは撤去済み。現在は「利用可能なスクリプトはありません」の旨を表示)
 #define kKESCMUsageMenuKey		kKESCMStringPrefix "kKESCMUsageMenuKey"	// パネルのフライアウト「使い方」のメニュー名(本文は kKESCMHintKey を再利用)

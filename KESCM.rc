@@ -48,7 +48,7 @@ BEGIN
             VALUE "InternalName", kKESCMPluginName, "\0"
             VALUE "LegalCopyright", kShortCopyRightStr, "\0"
 
-            VALUE "OriginalFilename", kKESCMPluginName ".pln\0"
+            VALUE "OriginalFilename", kKESCMDisplayName ".pln\0"
             VALUE "ProductName", "Adobe InDesign\0"
             VALUE "ProductVersion", kVersionNumberStr, "\0"
             VALUE "Copyright", kVersionCopyRightStr, "\0"

@@ -1,4 +1,4 @@
-# KohakuExtendScriptChangeMarker (KESCM)
+# KohakuChangeMarker (KESCM)
 Adobe InDesign C++ SDK Plug-In.
 Two documents are rendered off-screen page by page and compared at the pixel level; areas with changes are highlighted by overlaying frames on the screen.
 This display is temporary and does not alter the documents themselves.
