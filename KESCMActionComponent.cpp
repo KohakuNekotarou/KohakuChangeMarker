@@ -47,7 +47,8 @@
 #include "KESCMPeek.h"				// KESCMBaseScreenOpacity(Hold to Hide Marks 切替時に常時表示の基準不透明度を反映)
 #include "KESCMScrollMap.h"		// KESCMScrollMapInvalidateAll(Hide Unchanged 切替後に地図を描き直す)
 #include "KESCMPanelState.h"		// KESCMSavePanelState(フライアウト「Save Panel Settings」)
-#include "KESCMOversetScan.h"		// KESCMCollectOversetPages(Find Overset の検出=アクティブ文書走査)
+#include "KESCMOversetScan.h"		// KESCMCollectOversetLocations(Find Overset の検出=アクティブ文書走査)
+#include "KESCMChangeNav.h"			// KESCMRefreshNavPosition(overset トグルで Prev/Next の対象数を更新)
 #include "IActiveContext.h"			// GetContextDocument(アクティブ文書の解決)
 #include "IDocument.h"
 #include "PersistUtils.h"			// ::GetUIDRef(doc)(アクティブ文書 → db)
@@ -819,9 +820,68 @@ static IDataBase* KESCMActionActiveDocDB()
 	return ::GetUIDRef(doc).GetDataBase();
 }
 
+/* KESCMApplyOversetForDoc(KESCMCore.h で宣言) — db を走査して overset を反映する共有処理。
+   Find Overset(ON)/Refresh Overset(armed時Target)/Start(overset ON時) から呼ぶ。前回と別文書なら
+   前の文書のサムネイル目印を消す。ステータス行は呼び出し側が用途別に出す。 */
+void KESCMApplyOversetForDoc(IDataBase* db)
+{
+	if (db == nil)
+		return;
+
+	// 前回の状態を退避(別文書へ移ったら前の文書の目印を消す/同一文書で抜けたページの目印を消すため)。
+	IDataBase* prevDB = KESCMDrawEventHandler::sOversetDB;
+	std::set<UID> oldPages = KESCMDrawEventHandler::sOversetPages;
+
+	// db を走査して overset 位置(＋点)とページを集める。
+	std::vector<KESCMOversetLoc> locs;
+	KESCMCollectOversetLocations(db, locs);
+	std::set<UID> pages;
+	for (size_t i = 0; i < locs.size(); ++i)
+		pages.insert(locs[i].pageUID);
+
+	KESCMDrawEventHandler::sOversetOn = kTrue;
+	KESCMDrawEventHandler::sOversetDB = db;
+	KESCMDrawEventHandler::sOversetPages.swap(pages);
+	KESCMDrawEventHandler::sOversetLocs.swap(locs);
+
+	// Pages パネルのサムネイル更新。別文書へ移ったら前の文書の枠/＋を消し、新旧のページを作り直す。
+	if (prevDB != nil && prevDB != db)
+	{
+		std::vector<UID> oldVec(oldPages.begin(), oldPages.end());
+		KESCMRefreshThumbnailsForPages(prevDB, oldVec);	// 前の文書の枠/＋を消す
+		KESCMInvalidateDB(prevDB);
+		std::vector<UID> newVec(KESCMDrawEventHandler::sOversetPages.begin(),
+		                        KESCMDrawEventHandler::sOversetPages.end());
+		KESCMRefreshThumbnailsForPages(db, newVec);
+	}
+	else
+	{
+		// 同一文書 or 初回(prevDB==nil): 旧∪新のサムネイルを作り直す(oldPages 空なら新のみ)。
+		std::set<UID> u = oldPages;
+		u.insert(KESCMDrawEventHandler::sOversetPages.begin(), KESCMDrawEventHandler::sOversetPages.end());
+		std::vector<UID> uv(u.begin(), u.end());
+		KESCMRefreshThumbnailsForPages(db, uv);
+	}
+
+	// スクロールバー地図を db の窓へ注入(既にあればスキップ)＋再描画。比較未Startでも赤帯を出す。
+	KESCMScrollMapAttach(db);
+	KESCMScrollMapInvalidateAll();
+	KESCMInvalidateDB(db);
+	KESCMRefreshNavPosition();	// Prev/Next の対象(有効化・位置 k/N)を更新
+}
+
+// 比較中なら overset の走査対象は必ず比較 Target 文書(sDB)にする(変更(枠)と overset を同じ文書で
+// Prev/Next 巡回できるように=nav の navDB と一致させる)。未 Start ならアクティブ文書。
+static IDataBase* KESCMOversetScanTargetDB()
+{
+	if (KESCMDrawEventHandler::sDB != nil)
+		return KESCMDrawEventHandler::sDB;	// = KESCMNavDoc() の armed 分岐と同じ
+	return KESCMActionActiveDocDB();
+}
+
 /* DoFindOversetToggle — フライアウト「Find Overset」トグル。
-   OFF→ON: アクティブ文書を走査(KESCMCollectOversetPages)→ overset ページ集合を保持し十字を表示。
-   ON→OFF: 集合を空にしてトグル OFF、走査していた文書を再描画して十字を消す。 */
+   OFF→ON: 走査対象文書(比較中はTarget/それ以外はアクティブ)を走査→ overset を反映。
+   ON→OFF: 集合を空にしてトグル OFF、走査していた文書を再描画して目印を消す。 */
 void KESCMActionComponent::DoFindOversetToggle()
 {
 	// ON→OFF: ＋を消す。
@@ -839,14 +899,15 @@ void KESCMActionComponent::DoFindOversetToggle()
 		else
 			KESCMScrollMapDetachAll();
 		KESCMInvalidateDB(prevDB);	// nil 安全(他の呼び出しと同じ)
+		KESCMRefreshNavPosition();	// Prev/Next から overset 箇所を外す(比較のみ/対象なしへ)
 		PMString msg("Find Overset: off.");
 		msg.SetTranslatable(kFalse);
 		KESCMSetStatus(msg);
 		return;
 	}
 
-	// OFF→ON: アクティブ文書を走査。
-	IDataBase* db = KESCMActionActiveDocDB();
+	// OFF→ON: 走査対象文書(比較中は Target、未 arm はアクティブ)を走査して反映。
+	IDataBase* db = KESCMOversetScanTargetDB();
 	if (db == nil)
 	{
 		PMString msg("Find Overset: no active document.");
@@ -854,22 +915,7 @@ void KESCMActionComponent::DoFindOversetToggle()
 		KESCMSetStatus(msg);
 		return;
 	}
-	std::set<UID> pages;
-	KESCMCollectOversetPages(db, pages);
-
-	KESCMDrawEventHandler::sOversetOn = kTrue;
-	KESCMDrawEventHandler::sOversetDB = db;
-	KESCMDrawEventHandler::sOversetPages.swap(pages);
-	// Pages パネルのサムネイルに「赤＋白縁」の＋を出す(既表示分を per-UID Purge して作り直す)。
-	{
-		std::vector<UID> ov(KESCMDrawEventHandler::sOversetPages.begin(),
-		                    KESCMDrawEventHandler::sOversetPages.end());
-		KESCMRefreshThumbnailsForPages(db, ov);
-	}
-	// スクロールバー地図を(比較未 Start でも)この文書窓へ注入して赤帯を出す。
-	KESCMScrollMapAttach(db);
-	KESCMScrollMapInvalidateAll();
-	KESCMInvalidateDB(db);
+	KESCMApplyOversetForDoc(db);
 
 	PMString msg("Find Overset: on (");
 	msg.SetTranslatable(kFalse);
@@ -886,7 +932,7 @@ void KESCMActionComponent::DoRefreshOverset()
 	if (!KESCMDrawEventHandler::sOversetOn)
 		return;	// OFF時は無効(保険。通常はメニューが灰色で呼ばれない)
 
-	IDataBase* db = KESCMActionActiveDocDB();
+	IDataBase* db = KESCMOversetScanTargetDB();
 	if (db == nil)
 	{
 		PMString msg("Refresh Overset: no active document.");
@@ -894,37 +940,7 @@ void KESCMActionComponent::DoRefreshOverset()
 		KESCMSetStatus(msg);
 		return;
 	}
-	std::set<UID> pages;
-	KESCMCollectOversetPages(db, pages);
-
-	IDataBase* prevDB = KESCMDrawEventHandler::sOversetDB;
-	std::set<UID> oldPages = KESCMDrawEventHandler::sOversetPages;	// 退避(＋が消えるページの再生成用)
-
-	KESCMDrawEventHandler::sOversetDB = db;
-	KESCMDrawEventHandler::sOversetPages.swap(pages);
-
-	// Pages パネルのサムネイル更新: 旧集合(＋が消える)と新集合(＋が付く)の両方を作り直す。
-	if (prevDB != nil && prevDB != db)
-	{
-		// 別文書へ切替: 前の文書の＋を消し、新しい文書窓に地図を注入して＋を付ける。
-		std::vector<UID> oldVec(oldPages.begin(), oldPages.end());
-		KESCMRefreshThumbnailsForPages(prevDB, oldVec);
-		KESCMScrollMapAttach(db);
-		KESCMInvalidateDB(prevDB);
-		std::vector<UID> newVec(KESCMDrawEventHandler::sOversetPages.begin(),
-		                        KESCMDrawEventHandler::sOversetPages.end());
-		KESCMRefreshThumbnailsForPages(db, newVec);
-	}
-	else
-	{
-		// 同一文書: 旧∪新のサムネイルを作り直す(抜けたページの＋を消し、増えたページに付ける)。
-		std::set<UID> u = oldPages;
-		u.insert(KESCMDrawEventHandler::sOversetPages.begin(), KESCMDrawEventHandler::sOversetPages.end());
-		std::vector<UID> uv(u.begin(), u.end());
-		KESCMRefreshThumbnailsForPages(db, uv);
-	}
-	KESCMScrollMapInvalidateAll();
-	KESCMInvalidateDB(db);
+	KESCMApplyOversetForDoc(db);	// 再走査・反映(別文書なら前の文書の目印も消す)は共有処理に集約
 
 	PMString msg("Refresh Overset: ");
 	msg.SetTranslatable(kFalse);

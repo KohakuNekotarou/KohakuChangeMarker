@@ -12,16 +12,30 @@
 #define __KESCMOversetScan_h__
 
 #include <set>
+#include <vector>
 #include "UIDRef.h"		// UID
+#include "PMPoint.h"	// PBPMPoint(overset「+」のペーストボード座標)
 
 class IDataBase;
 
-// アクティブ文書 db を走査し、overset(あふれ)を含むページの UID を outPages に集める(追記; 呼び出し側で
-// 事前に clear すること)。検出=各ユーザーストーリーのプライマリスレッドの overset(ITextUtils::IsOverset)
-// を判定し、あふれていれば「最後の配置済みフレーム」→そのフレームが載っているページ UID を求める。
-// ページに載らない(ペーストボード等)フレームのあふれは、載っているページが無いのでスキップ。
-// ★制限(v1): 純粋な「セル内容が単独であふれた赤点」(親フレームは非あふれ)は未対応。セルが行ごと
-// フレーム外へ押し出されたケースは、親スレッドがあふれになり anchor 鎖登りで拾う。
+// 1つの overset「+」の位置。pageUID=その「+」が載るページ、pb=「+」点(最後の配置済みパーセルの
+// outport=右下。KBS の KBSOversetLocator と同じ算出)のペーストボード座標。Prev/Next の overset ジャンプ先。
+struct KESCMOversetLoc
+{
+	UID			pageUID;
+	PBPMPoint	pb;
+	KESCMOversetLoc() : pageUID(kInvalidUID) {}
+	KESCMOversetLoc(UID p, const PBPMPoint& pt) : pageUID(p), pb(pt) {}
+};
+
+// アクティブ文書 db を走査し、overset(あふれ)箇所を1つずつ outLocs に集める(追記; 呼び出し側で事前に
+// clear すること)。各ストーリーのプライマリスレッド overset(通常フレームの赤「+」)＋全テーブルの全セル
+// 単独あふれ(赤丸)を検出し、それぞれの「+」ペーストボード点とページ UID を1エントリとして積む
+// (KBS 流=箇所ごと)。ページに載らない(ペーストボード等)フレームのあふれは載るページが無いのでスキップ。
+void KESCMCollectOversetLocations(IDataBase* db, std::vector<KESCMOversetLoc>& outLocs);
+
+// 上の薄いラッパ。overset を含むページ UID の集合だけが要る用途(Pages パネルの枠/＋・スクロール地図)向け。
+// 内部で KESCMCollectOversetLocations を1回走らせ、各 loc.pageUID を outPages に入れる(追記; 事前 clear)。
 void KESCMCollectOversetPages(IDataBase* db, std::set<UID>& outPages);
 
 #endif // __KESCMOversetScan_h__

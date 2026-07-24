@@ -40,6 +40,7 @@
 #include "CmdUtils.h"			// ProcessCommand
 #include "IGeometry.h"
 #include "IDataBase.h"
+#include "IPageList.h"			// GetPageString / kDefaultPageType(飛んだページ番号の表示ラベル "P1" 等)
 #include "TransformUtils.h"		// ::InnerToPasteboardMatrix
 #include "PMMatrix.h"
 #include "PMRect.h"
@@ -53,39 +54,102 @@
 #include <vector>
 
 #include "KESCMCore.h"				// KESCMCollectPageUIDs / KESCMArmed* / KESCMSetStatus
-#include "KESCMDrawEventHandler.h"	// sDB / sSrcDB / sEntries / KESCMQueryPanorama
+#include "KESCMDrawEventHandler.h"	// sDB / sSrcDB / sEntries / sOverset* / KESCMQueryPanorama
+#include "KESCMOversetScan.h"		// KESCMOversetLoc(overset「+」箇所の位置)
 #include "KESCMPageMap.h"			// KESCMBuildPairing / KESCMMapTargetToSource(Source 側連動スクロール用)
 #include "KESCMThumbnailRefresh.h"	// KESCMGetVisiblePagesPanel(表示中 Pages パネル取得の共有ヘルパ)
 #include "KESCMChangeNav.h"
 
-// 直近に巡回した Target ページ UID(次/前の基準点)。index ではなく UID で持つことで、リストが
-// 再構築されて中身が変わっても位置を追える。未 Start(DropAll)後はリストが空になるので実害はなく、
-// 再 Start 後にこの UID が新リストに無ければ先頭/末尾から始め直す。
-static UID sNavCurrent = kInvalidUID;
+// 巡回の1ストップ。change=そのページの変更(枠)= ページ中心へスクロール / overset=あふれ「+」箇所=
+// その pb 点へスクロール(KBS 流)。pageUID は並び順・ラベル・Source 連動に、pb は overset のときだけ有効。
+struct KESCMNavStop
+{
+	UID			pageUID;
+	bool16		isOverset;			// kFalse=変更(枠), kTrue=overset(「+」)
+	PBPMPoint	pb;					// overset の「+」点(isOverset のときのみ有効)
+	int32		oversetOrd;			// 同じページ内の overset ストップ通し番号(0始まり。リスト再構築後の同定用)
+	int32		oversetCountOnPage;	// そのページの overset 件数(ラベルで (n) を出すか判定。1件なら番号なし)
+	KESCMNavStop() : pageUID(kInvalidUID), isOverset(kFalse), oversetOrd(0), oversetCountOnPage(0) {}
+};
+
+// 直近に巡回したストップの同定情報。index ではなく内容(ページ+種別+ページ内序数)で持つことで、リストが
+// 再構築されても位置を追える。対象が消えたら KESCMFindCurrentStop が -1 を返し先頭/末尾から始め直す。
+static UID    sNavPageUID    = kInvalidUID;
+static bool16 sNavIsOverset  = kFalse;
+static int32  sNavOversetOrd = 0;
 
 //----------------------------------------------------------------------------------------
-// Target(sDB)で「見るべきページ」を文書のページ順に集める。
-//   対象は「中身が変わったページ」= sEntries にキーがあるページのみ。
-//   ★Added/Removed(登録ページ=緑「/」= KESCMPageMapIsRegistered)と Overflow(未比較=
-//     KESCMBuildPairing の tOverflow)は巡回対象に含めない(2026-07-10: これらは既存ページの
-//     内容変更ではなくページ増減由来なので、ユーザー指定で Prev/Next から除外)。
-// 該当ページを KESCMCollectPageUIDs(sDB) の順で out に積む(ページ順なので重複なし)。
+// 巡回する文書。比較 Start 中は Target(sDB)。未 Start でも Find Overset ON ならその走査文書(sOversetDB)。
+// どちらでもなければ nil(巡回対象なし)。
 //----------------------------------------------------------------------------------------
-static void KESCMBuildReviewList(std::vector<UID>& out)
+static IDataBase* KESCMNavDoc()
+{
+	if (KESCMDrawEventHandler::sDB != nil)
+		return KESCMDrawEventHandler::sDB;
+	if (KESCMDrawEventHandler::sOversetOn && KESCMDrawEventHandler::sOversetDB != nil)
+		return KESCMDrawEventHandler::sOversetDB;
+	return nil;
+}
+
+//----------------------------------------------------------------------------------------
+// 巡回ストップ列を文書のページ順に組む。各ページで「まず変更(枠)→ 次に overset の各「+」箇所」の順
+// (ユーザー指定 2026-07-24)。
+//   ・変更ストップ = 比較 Start 中(navDB==sDB)かつ sEntries にあるページ。ページ中心へ。
+//     ★Added/Removed・Overflow(ページ増減由来)は従来どおり含めない(2026-07-10)。
+//   ・overset ストップ = Find Overset ON かつ sOversetDB==navDB。そのページに載る「+」を箇所ごとに1つ
+//     (sOversetLocs の並び=走査順)。KBS 流に「+」pb 点へ。
+//   比較と overset が別文書のとき(navDB==Target、overset は別文書)は overset を混ぜない(そのページ順の
+//   意味が崩れるため。overset 単独時はその文書を navDB として overset だけを巡る)。
+//----------------------------------------------------------------------------------------
+static void KESCMBuildStops(std::vector<KESCMNavStop>& out)
 {
 	out.clear();
-	IDataBase* targetDB = KESCMDrawEventHandler::sDB;
-	if (targetDB == nil)
+	IDataBase* navDB = KESCMNavDoc();
+	if (navDB == nil)
 		return;
+	const bool16 changeHere  = (KESCMDrawEventHandler::sDB == navDB);	// 変更(枠)を混ぜるのは比較 Target のときだけ
+	const bool16 oversetHere = (KESCMDrawEventHandler::sOversetOn && KESCMDrawEventHandler::sOversetDB == navDB);
 
 	std::vector<UID> flat;
-	KESCMCollectPageUIDs(targetDB, flat);
+	KESCMCollectPageUIDs(navDB, flat);
 	for (size_t i = 0; i < flat.size(); ++i)
 	{
 		const UID u = flat[i];
-		if (KESCMDrawEventHandler::sEntries.find(u) != KESCMDrawEventHandler::sEntries.end())
-			out.push_back(u);	// 中身が変わったページのみ
+		// 1) そのページの変更(枠)= ページ中心。
+		if (changeHere && KESCMDrawEventHandler::sEntries.find(u) != KESCMDrawEventHandler::sEntries.end())
+		{
+			KESCMNavStop s; s.pageUID = u; s.isOverset = kFalse;
+			out.push_back(s);
+		}
+		// 2) そのページの overset「+」箇所(走査順に1つずつ)。件数を各ストップに持たせるため先に集める。
+		if (oversetHere)
+		{
+			std::vector<size_t> onPage;
+			for (size_t j = 0; j < KESCMDrawEventHandler::sOversetLocs.size(); ++j)
+				if (KESCMDrawEventHandler::sOversetLocs[j].pageUID == u)
+					onPage.push_back(j);
+			const int32 cnt = (int32)onPage.size();
+			for (int32 k = 0; k < cnt; ++k)
+			{
+				const KESCMOversetLoc& loc = KESCMDrawEventHandler::sOversetLocs[onPage[k]];
+				KESCMNavStop s; s.pageUID = u; s.isOverset = kTrue; s.pb = loc.pb;
+				s.oversetOrd = k; s.oversetCountOnPage = cnt;
+				out.push_back(s);
+			}
+		}
 	}
+}
+
+// リスト内で「今の基準ストップ」の index を返す(見つからなければ -1)。
+static int32 KESCMFindCurrentStop(const std::vector<KESCMNavStop>& stops)
+{
+	for (size_t i = 0; i < stops.size(); ++i)
+	{
+		if (stops[i].pageUID == sNavPageUID && stops[i].isOverset == sNavIsOverset &&
+			(!stops[i].isOverset || stops[i].oversetOrd == sNavOversetOrd))
+			return (int32)i;
+	}
+	return -1;
 }
 
 //----------------------------------------------------------------------------------------
@@ -111,27 +175,17 @@ static PMReal KESCMReadDocZoom(IDataBase* db)
 }
 
 //----------------------------------------------------------------------------------------
-// 文書 db の全レイアウトビューを、pageUID の矩形中心が画面中央に来るようスクロールする。
+// 文書 db の全レイアウトビューを、pbPoint(ペーストボード座標)が画面中央に来るようスクロールする。
 //   applyZoom > 0 のときは、センタリングの前に各ビューの実効ズームを applyZoom に合わせる
 //   (Source を Target の拡大率に合わせる用。ズームは UI のズーム欄と同じ公式コマンド
 //   kZoomToCmdBoss=MakeZoomCmd 経由。★ILayoutViewUtils::ZoomLayoutViews 直呼びは他文書ビューに
 //   効かないため不可=KESCMPeek のビューポート同期と同じ理由)。既に一致していれば触らない。
 //   applyZoom <= 0 ならズームは変えない(従来どおり位置だけ)。1つでもスクロールできれば kTrue。
 //----------------------------------------------------------------------------------------
-static bool16 KESCMScrollDocToPage(IDataBase* db, UID pageUID, PMReal applyZoom = PMReal(-1.0))
+static bool16 KESCMScrollDocToPBPoint(IDataBase* db, const PBPMPoint& pbPoint, PMReal applyZoom = PMReal(-1.0))
 {
-	if (db == nil || pageUID == kInvalidUID)
+	if (db == nil)
 		return kFalse;
-	InterfacePtr<IGeometry> pageGeo(db, pageUID, UseDefaultIID());
-	if (pageGeo == nil)
-		return kFalse;
-
-	// ページ inner 矩形の中心 → ペーストボード座標(ScrollViewCenterTo は PBPMPoint=ペーストボード)。
-	PMRect box = pageGeo->GetPathBoundingBox();
-	PMPoint center((box.Left() + box.Right()) / PMReal(2.0), (box.Top() + box.Bottom()) / PMReal(2.0));
-	PMMatrix m = ::InnerToPasteboardMatrix(pageGeo);
-	m.Transform(&center);
-
 	K2Vector<IControlView*> views;
 	Utils<ILayoutViewUtils>()->GetAllLayoutViews(views, nil, db);
 	bool16 any = kFalse;
@@ -158,10 +212,30 @@ static bool16 KESCMScrollDocToPage(IDataBase* db, UID pageUID, PMReal applyZoom 
 			}
 		}
 
-		pano->ScrollViewCenterTo(center, kTrue /*forceRedraw*/);
+		pano->ScrollViewCenterTo(pbPoint, kTrue /*forceRedraw*/);
 		any = kTrue;
 	}
 	return any;
+}
+
+//----------------------------------------------------------------------------------------
+// 文書 db の全レイアウトビューを、pageUID の矩形中心が画面中央に来るようスクロールする(変更ストップ用)。
+// 上の pb 版へ委譲(ページ inner 中心 → ペーストボード変換)。
+//----------------------------------------------------------------------------------------
+static bool16 KESCMScrollDocToPage(IDataBase* db, UID pageUID, PMReal applyZoom = PMReal(-1.0))
+{
+	if (db == nil || pageUID == kInvalidUID)
+		return kFalse;
+	InterfacePtr<IGeometry> pageGeo(db, pageUID, UseDefaultIID());
+	if (pageGeo == nil)
+		return kFalse;
+
+	// ページ inner 矩形の中心 → ペーストボード座標(ScrollViewCenterTo は PBPMPoint=ペーストボード)。
+	PMRect box = pageGeo->GetPathBoundingBox();
+	PMPoint center((box.Left() + box.Right()) / PMReal(2.0), (box.Top() + box.Bottom()) / PMReal(2.0));
+	PMMatrix m = ::InnerToPasteboardMatrix(pageGeo);
+	m.Transform(&center);
+	return KESCMScrollDocToPBPoint(db, PBPMPoint(center.X(), center.Y()), applyZoom);
 }
 
 //----------------------------------------------------------------------------------------
@@ -254,78 +328,125 @@ static void KESCMScrollPagesPanelToPage(IDataBase* db, UID pageUID)
 }
 
 //----------------------------------------------------------------------------------------
-// 巡回本体(dir=+1 で次、-1 で前)。端は折り返す。ステータス行に「3 / 12」と現在位置を出す。
+// 飛んだ先のラベルを組む(パネルのメッセージ欄に出す)。
+//   変更(枠)          = "P<番号>"               例: P1
+//   overset(そのページに1件) = "P<番号> Overset"      例: P1 Overset
+//   overset(そのページに複数)= "P<番号>(n) Overset"   例: P1(1) Overset / P1(2) Overset  (n=1始まり)
+// "Overset" の前は半角スペース1つ。ページ番号は IPageList::GetPageString(セクション込み・現在の表示番号)。
+//----------------------------------------------------------------------------------------
+static PMString KESCMStopLabel(IDataBase* db, const KESCMNavStop& stop)
+{
+	PMString label; label.SetTranslatable(kFalse);
+	label.Append("P");
+
+	InterfacePtr<IPageList> pageList(db, db->GetRootUID(), UseDefaultIID());
+	PMString numStr; numStr.SetTranslatable(kFalse);
+	if (pageList != nil)
+		pageList->GetPageString(stop.pageUID, &numStr, kTrue, kFalse, kDefaultPageType, kTrue, kFalse);
+	if (numStr.NumUTF16TextChars() > 0)
+		label.Append(numStr);
+	else
+		label.Append("?");	// 番号が取れないページ(通常は起きない)
+
+	if (stop.isOverset)
+	{
+		if (stop.oversetCountOnPage > 1)	// 同ページに複数あるときだけ (n) を付ける(1始まり)
+		{
+			label.Append("(");
+			label.AppendNumber(stop.oversetOrd + 1);
+			label.Append(")");
+		}
+		label.Append(" Overset");	// 半角スペース + Overset
+	}
+	return label;
+}
+
+//----------------------------------------------------------------------------------------
+// 巡回本体(dir=+1 で次、-1 で前)。端は折り返す。位置表示「3/12」は Prev/Next 間のウィジェットへ、
+// 飛んだページラベル「P1」等はメッセージ欄へ。ストップは「変更(枠)=ページ中心」または
+// 「overset=「+」pb 点(KBS 流)」。
 //----------------------------------------------------------------------------------------
 static void KESCMGoto(int32 dir)
 {
-	IDataBase* targetDB = KESCMDrawEventHandler::sDB;
-	if (targetDB == nil)
+	IDataBase* navDB = KESCMNavDoc();
+	if (navDB == nil)
 	{
-		PMString s("Start a comparison first."); s.SetTranslatable(kFalse);
+		PMString s("Start a comparison or run Find Overset first."); s.SetTranslatable(kFalse);
 		KESCMSetStatus(s);
 		return;
 	}
 
-	std::vector<UID> list;
-	KESCMBuildReviewList(list);
-	if (list.empty())
+	std::vector<KESCMNavStop> stops;
+	KESCMBuildStops(stops);
+	if (stops.empty())
 	{
-		PMString s("No changed pages."); s.SetTranslatable(kFalse);
+		PMString s("Nothing to review."); s.SetTranslatable(kFalse);
 		KESCMSetStatus(s);
 		KESCMRefreshNavPosition();	// 巡回対象なし: 位置は "/"・Prev/Next は無効化(通常はボタン無効で来ない)
 		return;
 	}
 
-	// 現在位置を UID で探す。見つからなければ(初回/前回ページが消えた)、次=先頭・前=末尾から。
-	int32 cur = -1;
-	for (size_t i = 0; i < list.size(); ++i)
-	{
-		if (list[i] == sNavCurrent) { cur = (int32)i; break; }
-	}
-
+	// 現在位置を内容で探す。見つからなければ(初回/前回ストップが消えた)、次=先頭・前=末尾から。
+	int32 cur = KESCMFindCurrentStop(stops);
 	int32 next;
 	if (cur < 0)
-		next = (dir > 0) ? 0 : (int32)list.size() - 1;
+		next = (dir > 0) ? 0 : (int32)stops.size() - 1;
 	else
 	{
 		next = cur + dir;
-		if (next < 0)                       next = (int32)list.size() - 1;	// 先頭で「前」→末尾へ折り返し
-		else if (next >= (int32)list.size()) next = 0;						// 末尾で「次」→先頭へ折り返し
+		if (next < 0)                        next = (int32)stops.size() - 1;	// 先頭で「前」→末尾へ折り返し
+		else if (next >= (int32)stops.size()) next = 0;						// 末尾で「次」→先頭へ折り返し
 	}
-	sNavCurrent = list[next];
+	const KESCMNavStop& stop = stops[next];
+	sNavPageUID    = stop.pageUID;
+	sNavIsOverset  = stop.isOverset;
+	sNavOversetOrd = stop.oversetOrd;
 
-	if (!KESCMScrollDocToPage(targetDB, sNavCurrent))
+	// overset は「+」点へ(KBS 流)、変更はページ中心へスクロール。
+	const bool16 ok = stop.isOverset ? KESCMScrollDocToPBPoint(navDB, stop.pb)
+	                                 : KESCMScrollDocToPage(navDB, stop.pageUID);
+	if (!ok)
 	{
-		PMString s("Could not scroll to the page."); s.SetTranslatable(kFalse);
+		PMString s("Could not scroll."); s.SetTranslatable(kFalse);
 		KESCMSetStatus(s);
 		return;
 	}
 
-	// Pages パネルも対象ページへ連動スクロール(前面文書が Target のときだけ。ベストエフォート)。
-	KESCMScrollPagesPanelToPage(targetDB, sNavCurrent);
+	// 飛んだ先をメッセージ欄へ("P1" / "P1ov" / "P1(2)ov")。位置 k/N は別ウィジェット(下の RefreshNavPosition)。
+	KESCMSetStatus(KESCMStopLabel(navDB, stop));
 
-	// Source 側も対応ページへ連動スクロール(背面のまま位置だけ動かす。前面には出さない)。
+	// Pages パネルも対象ページへ連動スクロール(前面文書が navDB のときだけ。ベストエフォート)。
+	KESCMScrollPagesPanelToPage(navDB, stop.pageUID);
+
+	// Source 側も対応ページへ連動スクロール(比較 Start 中のみ=sSrcDB 非nil。背面のまま位置だけ)。
 	// ページの追加/削除でズレていても対応表で正しい相手へ、相手が無い Added/Overflow は近傍へ寄せる。
-	// ★Source の拡大率も Target に合わせる(Target の実効ズームを読み、Source のビューへ MakeZoomCmd で反映)。
-	// ベストエフォート: Source ビューが無い/相手が引けなくても Target 側の移動は成立させる。
+	// ★Source の拡大率も Target に合わせる。overset ストップでも「そのページ」の対応 Source ページへ寄せる。
+	// ベストエフォート: Source ビューが無い/相手が引けなくても navDB 側の移動は成立させる。
 	IDataBase* sourceDB = KESCMDrawEventHandler::sSrcDB;
-	if (sourceDB != nil && sourceDB != targetDB)
+	if (sourceDB != nil && sourceDB != navDB)
 	{
-		const UID srcPage = KESCMSourcePageForTarget(targetDB, sourceDB, sNavCurrent);
+		const UID srcPage = KESCMSourcePageForTarget(navDB, sourceDB, stop.pageUID);
 		if (srcPage != kInvalidUID)
 		{
-			const PMReal targetZoom = KESCMReadDocZoom(targetDB);	// 実効ズーム(<=0 ならズームは変えない)
-			KESCMScrollDocToPage(sourceDB, srcPage, targetZoom);
+			// ★Sync layout views が ON のときは Source の「ビュー」スクロールをしない。理由: Sync オブザーバ
+			//   (KESCMPeek.cpp)が navDB(Target)のスクロールをページオフセット込みで Source へ自動ミラーする。
+			//   ここで Source を手動スクロールすると、その変化が Sync により Target へ逆ミラーされ、overset の
+			//   「+」スクロールがページ中心に打ち消される(2026-07-24 ユーザー発見: sync OFF なら overset に飛ぶ)。
+			//   sync ON では Target のスクロール(上の KESCMScrollDocToPBPoint/Page)を Sync が Source へ伝える。
+			//   Pages パネルの連動は Sync の対象外なので、そちらは sync の有無に関わらず行う。
+			if (!KESCMGetLayoutSync())
+			{
+				const PMReal targetZoom = KESCMReadDocZoom(navDB);	// 実効ズーム(<=0 ならズームは変えない)
+				KESCMScrollDocToPage(sourceDB, srcPage, targetZoom);
+			}
 			// Source が前面の場合、Pages パネルは Source の一覧を表示しているので、そちらの対応ページへ
-			// 連動スクロール(ヘルパー内の前面一致ガードにより、Target 前面ならこの呼び出しは何もしない=
-			// 上の Target 側呼び出しと排他で、前面の文書に合った側だけがパネルを動かす)。
+			// 連動スクロール(ヘルパー内の前面一致ガードにより、navDB 前面ならこの呼び出しは何もしない)。
 			KESCMScrollPagesPanelToPage(sourceDB, srcPage);
 		}
 	}
 
-	// 現在位置は Prev/Next の間の専用ウィジェット(KESCL 風「3/12」)へ。ステータス行(メッセージ欄)には
-	// 出さない(2026-07-15 ユーザー指定: 位置はボタン間へ移設)。基準点(sNavCurrent)は上で更新済みなので、
-	// 共通関数で今の集合から「k/N」を作り直す(値の組み立てとボタン有効/無効を1箇所に集約)。
+	// 現在位置は Prev/Next の間の専用ウィジェット(KESCL 風「3/12」)へ。基準ストップは上で更新済みなので、
+	// 共通関数で今のストップ列から「k/N」を作り直す(値の組み立てとボタン有効/無効を1箇所に集約)。
 	KESCMRefreshNavPosition();
 }
 
@@ -339,40 +460,37 @@ void KESCMGotoPrevChange() { KESCMGoto(-1); }
 // ★表示更新はしない(基準点を落とすだけ): これは比較の総入れ替え(Start)の途中でも呼ばれるため、
 //   位置表示は呼び出し側(KESCMDoMarkChangesDoc 末尾 / KESCMDoClearMarks)が確定後に
 //   KESCMRefreshNavPosition で一括更新する。
-void KESCMResetNav() { sNavCurrent = kInvalidUID; }
+void KESCMResetNav() { sNavPageUID = kInvalidUID; sNavIsOverset = kFalse; sNavOversetOrd = 0; }
 
-// KESCMChangeNav.h 参照。今の変更ページ集合＋基準点(sNavCurrent)から Prev/Next 間の位置表示を作り直し、
-// Prev/Next ボタンの有効/無効もあわせて更新する(値組み立てとボタン状態を1箇所に集約=KESCL の
-// UpdateNavWidgets と同じ発想)。表示規則は KESCMChangeNav.h のコメント参照。
+// KESCMChangeNav.h 参照。今のストップ列(変更+overset 箇所)＋基準ストップから Prev/Next 間の位置表示を
+// 作り直し、Prev/Next ボタンの有効/無効もあわせて更新する(値組み立てとボタン状態を1箇所に集約=KESCL の
+// UpdateNavWidgets と同じ発想)。表示規則: 未Start&overset無し→空 / 対象0件→"/" / N件→"k/N"。
 void KESCMRefreshNavPosition()
 {
-	IDataBase* targetDB = KESCMDrawEventHandler::sDB;	// 比較中のみ非nil(Stop の DropAll で nil)
-
 	PMString text; text.SetTranslatable(kFalse);
 	bool16 navEnabled = kFalse;
 
-	if (targetDB != nil)	// Start 済み(比較中)
+	IDataBase* navDB = KESCMNavDoc();	// 比較 Start 中 or Find Overset ON のとき非nil
+	if (navDB != nil)
 	{
-		std::vector<UID> list;
-		KESCMBuildReviewList(list);
-		if (list.empty())
+		std::vector<KESCMNavStop> stops;
+		KESCMBuildStops(stops);
+		if (stops.empty())
 		{
-			text.Append("/");	// 変更ページ0件: 巡回対象なし → "/"・ボタン無効(ユーザー指定 2026-07-15)
+			text.Append("/");	// 対象0件: 巡回対象なし → "/"・ボタン無効(ユーザー指定 2026-07-15)
 		}
 		else
 		{
-			// 基準点の現在位置(1始まり)。まだ巡回していない(集合内に無い)ときは先頭扱いで "1/N"。
-			int32 cur = -1;
-			for (size_t i = 0; i < list.size(); ++i)
-				if (list[i] == sNavCurrent) { cur = (int32)i; break; }
+			// 基準ストップの現在位置(1始まり)。まだ巡回していない(列内に無い)ときは先頭扱いで "1/N"。
+			const int32 cur = KESCMFindCurrentStop(stops);
 			const int32 shown = (cur < 0) ? 1 : (cur + 1);
 			text.AppendNumber(shown);
 			text.Append("/");
-			text.AppendNumber((int32)list.size());
+			text.AppendNumber((int32)stops.size());
 			navEnabled = kTrue;	// 巡回対象あり → Prev/Next 有効
 		}
 	}
-	// 未 Start(targetDB==nil): text は空・navEnabled=false(位置欄クリア・ボタン無効)
+	// 未 Start かつ overset 無し(navDB==nil): text は空・navEnabled=false(位置欄クリア・ボタン無効)
 
 	KESCMSetNavPosition(text, navEnabled);
 }

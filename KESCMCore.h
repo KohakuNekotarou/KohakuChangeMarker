@@ -89,6 +89,13 @@ ErrorCode	KESCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMStri
 // 両方を確実に再描画するための共有ヘルパ(2つが同じ db なら二重には呼ばない)。
 void		KESCMInvalidateDB(IDataBase* db);
 
+// Find Overset を db に対して走査・反映する共有処理(実体は KESCMActionComponent.cpp)。db(非nil)の overset
+// 位置/ページを集めて sOverset* に格納し、Pages パネルのサムネイル・スクロール地図・Prev/Next の位置表示を
+// 更新する。ステータス行は出さない(呼び出し側が用途別メッセージを出す)。★比較中は必ず Target 文書に紐づけ
+// 直すために、Find Overset/Refresh(armed 時)と Start(overset ON 時)から呼ぶ。前回と別文書なら前の文書の
+// サムネイルの目印も消す。
+void		KESCMApplyOversetForDoc(IDataBase* db);
+
 // オーバーレイ全体(と旧版画像のキャッシュ)を破棄し、db を再描画する。
 void		KESCMDoClearMarks(IDataBase* db);
 

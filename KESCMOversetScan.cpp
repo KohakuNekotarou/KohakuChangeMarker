@@ -25,6 +25,11 @@
 #include "ITableUtils.h"		// InsideTable / TableToPrimaryTextIndex(セルが押し出された時の anchor 登り)
 #include "ILayoutUtils.h"		// GetOwnerPageUID(off-page なら spread UID を返す=ページ非所属判定)
 #include "IHierarchy.h"
+#include "IGeometry.h"			// フレーム inner→pasteboard 変換(「+」点の算出)
+#include "TransformUtils.h"		// ::InnerToPasteboardMatrix
+#include "PMMatrix.h"
+#include "PMPoint.h"			// PBPMPoint
+#include "PMRect.h"				// GetParcelBounds の右下角
 // テーブルセル単独あふれ(赤丸)の走査用:
 #include "ITableModelList.h"		// story 内の全テーブル列挙(GetModelCount/QueryNthModel)
 #include "ITableModel.h"			// const_iterator / GetGridID / begin/end
@@ -43,43 +48,59 @@
 
 
 //========================================================================================
-// このスレッド(pos が compose する parcel list)の「最後の配置済みパーセル」のフレーム UID を返す。
-// 末尾から遡り、初めて有効フレーム(GetParcelFrameUID != kInvalidUID)を持つパーセルを見つける。
-// 1つも配置済みが無ければ(全パーセルが未配置)kInvalidUID。KBSOversetLocator.cpp の LocateInThread 相当
-// (ここでは outport 座標は不要なのでフレーム UID だけ返す簡略版)。
+// このスレッド(pos が compose する parcel list)の「最後の配置済みパーセル」の outport(右下角)を求める。
+// 末尾から遡り、初めて有効フレーム(GetParcelFrameUID != kInvalidUID)を持つパーセルの右下を、パーセル
+// →フレーム inner→ペーストボードへ変換して返す(KBSOversetLocator.cpp の LocateInThread と同一算出)。
+// 1つも配置済みが無ければ(全パーセルが未配置)kFalse。outFrame=「+」を出しているフレーム、outPb=「+」点。
 //========================================================================================
-static UID KESCMLastPlacedFrameUID(ITextModel* textModel, TextIndex pos)
+static bool16 KESCMLastPlacedOutport(ITextModel* textModel, IDataBase* db, TextIndex pos,
+	UID& outFrame, PBPMPoint& outPb)
 {
-	if (textModel == nil)
-		return kInvalidUID;
+	if (textModel == nil || db == nil)
+		return kFalse;
 	InterfacePtr<ITextParcelList> tpl(textModel->QueryTextParcelList(pos));
 	if (tpl == nil)
-		return kInvalidUID;
+		return kFalse;
 	InterfacePtr<IParcelList> pl(tpl, UseDefaultIID());
 	if (pl == nil)
-		return kInvalidUID;
+		return kFalse;
 
 	for (ParcelKey k = pl->GetLastParcelKey(); k.IsValid(); k = pl->GetPreviousParcelKey(k))
 	{
 		const UID frameUID = pl->GetParcelFrameUID(k);
-		if (frameUID != kInvalidUID)
-			return frameUID;	// この断片が「最後の配置済み」=「+」を出しているフレーム
-		// frameUID == kInvalidUID の断片はそれ自体があふれ=さらに手前へ遡る
+		if (frameUID == kInvalidUID)
+			continue;	// この断片は未配置=あふれ。さらに手前(配置済み)へ遡る
+
+		InterfacePtr<IGeometry> frameGeo(db, frameUID, UseDefaultIID());
+		if (frameGeo == nil)
+			continue;
+
+		const PMRect  parcelBounds  = pl->GetParcelBounds(k);				// parcel-local
+		const PMMatrix toFrame      = pl->GetParcelToFrameMatrix(k);			// parcel → frame inner
+		const PMMatrix toPasteboard = ::InnerToPasteboardMatrix(frameGeo);	// frame inner → pasteboard
+
+		PMPoint corner(parcelBounds.Right(), parcelBounds.Bottom());		// outport(横組みは右下)
+		toFrame.Transform(&corner);
+		toPasteboard.Transform(&corner);
+
+		outFrame = frameUID;
+		outPb    = PBPMPoint(corner.X(), corner.Y());
+		return kTrue;
 	}
-	return kInvalidUID;
+	return kFalse;
 }
 
 
 //========================================================================================
-// あふれているスレッドの「+」を出しているフレーム UID を返す。まず pos 自身のスレッドを見て、配置済みが
-// 無ければ(=セルが行ごとフレーム外へ押し出された等)テーブルアンカーを親スレッドへ登り、最初に配置済み
-// フレームを持つ祖先の「+」を採る(KBSFindOversetLocator 相当)。非進行/深ネストは guard で止める。
+// あふれているスレッドの「+」の位置を求める。まず pos 自身のスレッドを見て、配置済みが無ければ(=セルが
+// 行ごとフレーム外へ押し出された等)テーブルアンカーを親スレッドへ登り、最初に配置済みフレームを持つ祖先
+// の「+」を採る(KBSFindOversetLocator 相当)。非進行/深ネストは guard で止める。
 //========================================================================================
-static UID KESCMFindOversetFrameUID(ITextModel* textModel, TextIndex pos)
+static bool16 KESCMFindOversetOutport(ITextModel* textModel, IDataBase* db, TextIndex pos,
+	UID& outFrame, PBPMPoint& outPb)
 {
-	UID frameUID = KESCMLastPlacedFrameUID(textModel, pos);
-	if (frameUID != kInvalidUID)
-		return frameUID;
+	if (KESCMLastPlacedOutport(textModel, db, pos, outFrame, outPb))
+		return kTrue;
 
 	TextIndex cur = pos;
 	for (int32 guard = 0; guard < 32; ++guard)
@@ -90,11 +111,10 @@ static UID KESCMFindOversetFrameUID(ITextModel* textModel, TextIndex pos)
 		if (up == cur)
 			break;	// 進んでいない
 		cur = up;
-		frameUID = KESCMLastPlacedFrameUID(textModel, cur);
-		if (frameUID != kInvalidUID)
-			return frameUID;
+		if (KESCMLastPlacedOutport(textModel, db, cur, outFrame, outPb))
+			return kTrue;
 	}
-	return kInvalidUID;
+	return kFalse;
 }
 
 
@@ -152,7 +172,7 @@ static bool16 KESCMThreadIsOverset(ITextModel* textModel, TextIndex pos)
 // story 内の全テーブルの全セルを走査し、単独あふれ（赤丸。親フレームは非あふれ）のセルが載るページ UID を
 // out に足す。セルテキストは親と同一 ITextModel の別スレッド（より大きな TextIndex）＝プライマリの
 // IsOverset では拾えないので、各セルの先頭 TextIndex を StoryThreadDict 経路（SnpAccessTableContent 実証）で
-// 取り、KESCMThreadIsOverset で判定→あふれなら KESCMFindOversetFrameUID+KESCMFramePageUID でページ追加。
+// 取り、KESCMThreadIsOverset で判定→あふれなら KESCMFindOversetOutport+KESCMFramePageUID で位置追加。
 //   取得: story(UIDRef,kTextStoryBoss)→ITableModelList（deprecated だが現役。SnpIterTableStories 実証）。
 //         各 ITableModel の const_iterator でアンカーセルを回し、GetGridID→dict->QueryThread→GetTextStart。
 //   ★ネスト表: ITableModelList が story 内の全テーブル（入れ子含む）を返す前提。ヘッダーでは包含が保証
@@ -160,7 +180,8 @@ static bool16 KESCMThreadIsOverset(ITextModel* textModel, TextIndex pos)
 //   ★性能: コストは Σ(rows×cols)。大きな表で重い（Find Overset はオンデマンドなので許容）。安価な
 //     「表にあふれセルが在るか」の事前判定 API は SDK に無い（確認済み）。
 //========================================================================================
-static void KESCMCollectOversetCells(IDataBase* db, const UIDRef& storyRef, ITextModel* textModel, std::set<UID>& out)
+static void KESCMCollectOversetCells(IDataBase* db, const UIDRef& storyRef, ITextModel* textModel,
+	std::vector<KESCMOversetLoc>& out)
 {
 	if (db == nil || textModel == nil)
 		return;
@@ -191,19 +212,21 @@ static void KESCMCollectOversetCells(IDataBase* db, const UIDRef& storyRef, ITex
 				continue;								// 空セルはあふれない
 			if (!KESCMThreadIsOverset(textModel, cellPos))
 				continue;
-			const UID frameUID = KESCMFindOversetFrameUID(textModel, cellPos);
+			UID frameUID = kInvalidUID; PBPMPoint pb;
+			if (!KESCMFindOversetOutport(textModel, db, cellPos, frameUID, pb))
+				continue;
 			const UID pageUID = KESCMFramePageUID(db, frameUID);
 			if (pageUID != kInvalidUID)
-				out.insert(pageUID);
+				out.push_back(KESCMOversetLoc(pageUID, pb));
 		}
 	}
 }
 
 
 //========================================================================================
-// KESCMCollectOversetPages(KESCMOversetScan.h で宣言)
+// KESCMCollectOversetLocations(KESCMOversetScan.h で宣言)
 //========================================================================================
-void KESCMCollectOversetPages(IDataBase* db, std::set<UID>& outPages)
+void KESCMCollectOversetLocations(IDataBase* db, std::vector<KESCMOversetLoc>& outLocs)
 {
 	if (db == nil)
 		return;
@@ -224,7 +247,7 @@ void KESCMCollectOversetPages(IDataBase* db, std::set<UID>& outPages)
 			continue;
 
 		// (1) プライマリスレッドのあふれ(通常フレームの赤「+」)。purpose-built の IsOverset で判定し、
-		//     あふれていれば末尾位置から「最後の配置済みフレーム」→ページ。span<=0(空)は対象外。
+		//     あふれていれば末尾位置から「最後の配置済みフレーム」の outport(「+」点)→ページ。span<=0(空)は対象外。
 		//     ★ここで continue しないこと: 親が非あふれでもテーブルのセルは単独であふれ得る((2)で拾う)。
 		InterfacePtr<IFrameList> frameList(textModel->QueryFrameList());
 		if (frameList != nil && Utils<ITextUtils>()->IsOverset(frameList))
@@ -232,17 +255,31 @@ void KESCMCollectOversetPages(IDataBase* db, std::set<UID>& outPages)
 			const int32 span = textModel->GetPrimaryStoryThreadSpan();
 			if (span > 0)
 			{
-				const UID frameUID = KESCMFindOversetFrameUID(textModel, span - 1);
-				const UID pageUID = KESCMFramePageUID(db, frameUID);
-				if (pageUID != kInvalidUID)
-					outPages.insert(pageUID);	// kInvalidUID はペーストボードのみ=スキップ(仕様通り)
+				UID frameUID = kInvalidUID; PBPMPoint pb;
+				if (KESCMFindOversetOutport(textModel, db, span - 1, frameUID, pb))
+				{
+					const UID pageUID = KESCMFramePageUID(db, frameUID);
+					if (pageUID != kInvalidUID)
+						outLocs.push_back(KESCMOversetLoc(pageUID, pb));	// kInvalidUID はペーストボードのみ=スキップ
+				}
 			}
 		}
 
 		// (2) テーブルのセル単独あふれ(赤丸)。親スレッドの IsOverset では拾えないため、全テーブル・全セルの
 		//     スレッド先頭 TextIndex を個別に overset 判定する(親が非あふれのストーリーでも必ず実行する)。
-		KESCMCollectOversetCells(db, storyRef, textModel, outPages);
+		KESCMCollectOversetCells(db, storyRef, textModel, outLocs);
 	}
+}
+
+//========================================================================================
+// KESCMCollectOversetPages(KESCMOversetScan.h で宣言) — 位置列を1回走らせてページ集合へ畳む薄いラッパ。
+//========================================================================================
+void KESCMCollectOversetPages(IDataBase* db, std::set<UID>& outPages)
+{
+	std::vector<KESCMOversetLoc> locs;
+	KESCMCollectOversetLocations(db, locs);
+	for (size_t i = 0; i < locs.size(); ++i)
+		outPages.insert(locs[i].pageUID);
 }
 
 // KESCMOversetScan.cpp 終わり。

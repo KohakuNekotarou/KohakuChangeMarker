@@ -93,6 +93,7 @@ PMReal KESCMDrawEventHandler::sPeekOpacity = 1.0;	// 既定=不透明(Shift peek
 bool16 KESCMDrawEventHandler::sOversetOn = kFalse;	// Find Overset トグル(既定 OFF)
 IDataBase* KESCMDrawEventHandler::sOversetDB = nil;	// 走査した文書(pointer 識別のみ)
 std::set<UID> KESCMDrawEventHandler::sOversetPages;	// overset を含むページ UID 集合
+std::vector<KESCMOversetLoc> KESCMDrawEventHandler::sOversetLocs;	// overset「+」箇所ごとの位置(Prev/Next 巡回先)
 
 
 //========================================================================================

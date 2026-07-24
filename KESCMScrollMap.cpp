@@ -86,8 +86,9 @@ static const PMReal kKESCMScrollMapWidth = 5.0;
 static const PMReal kKESCMScrollMapMarkAlpha     = 0.4;	// 枠(変更)はしっかり見せる(ユーザー指定 2026-07-13)
 // overflow「/」ページ(相手が無いページ)の不透明度。枠と差を付けて薄く(ユーザー指定 2026-07-13)。
 static const PMReal kKESCMScrollMapOverflowAlpha = 0.15;	// 「/」は下地とよく混ぜて薄く(0.2→0.15、ユーザー指定 2026-07-13)
-// Find Overset の帯の不透明度。変更帯(0.4)より混色を控えて濃い赤にする(ユーザー指定 2026-07-24)。
-static const PMReal kKESCMScrollMapOversetAlpha  = 0.7;	// overset は下地と混ぜず赤を強く
+// Find Overset の帯の不透明度。変更帯(0.4)より混色を控えて濃い赤にする(ユーザー指定 2026-07-24。
+// 「もう少し濃く」で 0.7→0.85)。
+static const PMReal kKESCMScrollMapOversetAlpha  = 0.85;	// overset は下地とほぼ混ぜず赤を強く
 
 // スクロールバー地図の有効/無効(フライアウト「Show Scrollbar Map」トグル。既定=ON)。
 // OFF の間は Attach / NoticeDrawEvent を即 return させる(strip を注入しない・毎描画の指紋計算もしない)。

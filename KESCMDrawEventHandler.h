@@ -12,7 +12,9 @@
 
 #include <map>
 #include <set>
+#include <vector>
 #include "KESCMConstants.h"
+#include "KESCMOversetScan.h"	// KESCMOversetLoc(sOversetLocs の要素型)
 #include "CPMUnknown.h"
 #include "IDrwEvtHandler.h"
 #include "GraphicsExternal.h"   // AGMImageRecord (構造体メンバ)
@@ -193,7 +195,8 @@ public:
 	// db とのポインタ一致だけを見る(deref しない)=閉じても安全。トグルOFF/クローズ時は sOversetPages を空に。
 	static bool16 sOversetOn;			// Find Overset トグル(既定 OFF)
 	static IDataBase* sOversetDB;		// 走査した文書(pointer 識別のみ。deref しない)
-	static std::set<UID> sOversetPages;	// overset を含むページ UID 集合
+	static std::set<UID> sOversetPages;	// overset を含むページ UID 集合(Pages パネルの枠/＋・スクロール地図の帯用)
+	static std::vector<KESCMOversetLoc> sOversetLocs;	// overset「+」箇所ごとの位置(ページ＋pb点)。Prev/Next の巡回先
 
 	// Find Overset のクリア(トグルOFF / 走査文書クローズ / 別文書切替)。集合を空にしトグルも OFF へ。
 	static void DropOverset()
@@ -201,6 +204,7 @@ public:
 		sOversetOn = kFalse;
 		sOversetDB = nil;
 		sOversetPages.clear();
+		sOversetLocs.clear();
 	}
 
 	// (一時トースト機構は 2026-07-04 に撤去。メッセージはパネルのステータス行(KESCMSetStatus)へ。

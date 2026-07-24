@@ -304,6 +304,11 @@ void KESCMToggleStartStop()
 		KESCMDoArmMousePeek(targetDB, sourceDB);
 		KESCMScrollMapAttach(targetDB);	// Target の各文書窓にスクロールバー地図stripを注入
 		KESCMScrollMapAttach(sourceDB);	// Source 窓にも表示(2026-07-11 ユーザー要望。strip 側が窓の文書を見て供給元を切替)
+		// ★Find Overset が別文書(または未紐づけ)で ON のままなら、比較 Target に貼り直す(2026-07-24)。
+		//   これで Start 後も Prev/Next が「変更(枠)→ overset」を同じ Target 文書で巡れる(overset が
+		//   sOversetDB!=sDB で黙って巡回対象から外れる不具合の防止)。同一文書なら再走査しない。
+		if (KESCMDrawEventHandler::sOversetOn && KESCMDrawEventHandler::sOversetDB != targetDB)
+			KESCMApplyOversetForDoc(targetDB);
 		KESCMSetStatus(report);
 	}
 
