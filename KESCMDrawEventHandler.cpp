@@ -928,15 +928,15 @@ static void KESCMDrawPageDiagonal(IGraphicsPort* gPort, IDataBase* db, UID pageU
 
 
 //========================================================================================
-// ページ全体に大きな「＋」(縦横の中央線)をベクター線で描く(色指定)。用途: フライアウト
-// 「Find Overset」でアクティブ文書を走査し、overset(あふれ)のあるページに「このページに
-// あふれがある」の目印を出す。比較(sEntries)とは完全に独立=比較ON中でも重ねられる。
-// KESCMDrawPageDiagonal と同じ座標・太さ・不透明度・クリップの流儀(ラスタ不要のベクター線
-// なので screen/print とも setopacity で正しく合成される。ただし Find Overset は画面のみ)。
+// ページ全体に大きな「＋」を「赤の線＋白い縁取り」で描く(Pages パネルのサムネイル専用)。用途:
+// フライアウト「Find Overset」でアクティブ文書を走査し、overset(あふれ)のあるページを、ページ
+// パネルのサムネイル上で目立たせる。★2026-07-24 ユーザー指定でカンバス(レイアウトビュー)には
+// 一切描かず、ページパネルのサムネイルにだけ出す(旧: カンバスに赤い十字を描いていた)。
+//   白い太線(縁取り)を先に引き、その上に少し細い赤線を重ねて「赤＋白縁」を作る。フォント非依存の
+//   ベクター線なので極小サムネイルでも潰れない(太さはページ短辺の固定比率=「/」と同じ流儀)。
+//   サムネイル生成は view 無し(sxr=0)なので、太さはズーム式ではなく短辺比率で決める。
 //========================================================================================
-static void KESCMDrawPageCross(IGraphicsPort* gPort, IDataBase* db, UID pageUID,
-	const PMReal& sxr, int32 drawMode, const PMReal& screenOpacity,
-	uint8 cr, uint8 cg, uint8 cb)
+static void KESCMDrawPageCrossOutlined(IGraphicsPort* gPort, IDataBase* db, UID pageUID)
 {
 	InterfacePtr<IGeometry> pageGeo(db, pageUID, UseDefaultIID());
 	if (pageGeo == nil)
@@ -946,30 +946,42 @@ static void KESCMDrawPageCross(IGraphicsPort* gPort, IDataBase* db, UID pageUID,
 	PMMatrix m = ::InnerToSpreadMatrix(pageGeo);
 	m.Transform(&pr);								// → spread(=描画ポート)座標
 
-	// 太さ: 画面=ズーム適応(px/sxr)、サムネイル(sxr<=0)=ページ短辺の固定比率(「/」と同じ除数)。
+	// 赤線の太さ = ページ短辺 ÷ 専用除数(「/」より太い)。白縁はこれより太く引いて左右にはみ出させる。
 	const PMReal minDim = (pr.Width() < pr.Height() ? pr.Width() : pr.Height());
-	PMReal w = (sxr > 0) ? (kKESCMRingTargetPx / sxr) : (minDim / PMReal(kKESCMThumbDiagDivisor));
-	const PMReal maxW = minDim / PMReal(2.0);
-	if (w > maxW) w = maxW;
-	if (w < PMReal(0.5))
+	PMReal redW = minDim / PMReal(kKESCMOversetCrossWidthDivisor);
+	const PMReal maxW = minDim / PMReal(3.0);
+	if (redW > maxW) redW = maxW;
+	if (redW < PMReal(0.5))
 		return;
+	const PMReal whiteW = redW * PMReal(2.2);	// 白縁(赤線の左右に約 redW*0.6 ずつはみ出す)
 
-	const PMReal opacity = (sxr <= 0) ? kKESCMThumbMarkOpacity
-		: ((drawMode == kKESCMDrawModePrint) ? KESCMDrawEventHandler::SelectedMarkOpacity() : screenOpacity);
+	const PMReal cx = (pr.Left() + pr.Right()) / PMReal(2.0);	// ページ中央 X
+	const PMReal cy = (pr.Top()  + pr.Bottom()) / PMReal(2.0);	// ページ中央 Y
+	// ★縦横とも同じ長さの「＋」にする(2026-07-24 ユーザー指定)。中央から片側 half の長さで上下左右へ伸ばす。
+	//   half=短辺×kKESCMOversetCrossHalfRatio(0.40=横は幅の約80%とやや短め・縦も同じ長さ)。
+	const PMReal half = minDim * PMReal(kKESCMOversetCrossHalfRatio);
 
 	AutoGSave ag(gPort);
 	// ノドの共有線に届かないよう、通常マークと同じく約1pt内側でクリップしてから引く。
 	const PMReal kKESCMClipInset = 1.0;	// pt
 	gPort->rectclip(pr.Left()   + kKESCMClipInset, pr.Top()    + kKESCMClipInset,
 	                pr.Width()  - kKESCMClipInset * 2.0, pr.Height() - kKESCMClipInset * 2.0);
-	gPort->setopacity(opacity, kFalse);
-	gPort->setrgbcolor(cr / PMReal(255.0), cg / PMReal(255.0), cb / PMReal(255.0));
-	gPort->setlinewidth(w);
-	const PMReal cx = (pr.Left() + pr.Right()) / PMReal(2.0);	// ページ中央 X
-	const PMReal cy = (pr.Top()  + pr.Bottom()) / PMReal(2.0);	// ページ中央 Y
+	gPort->setopacity(kKESCMOversetCrossOpacity, kFalse);	// くっきり(不透明)
+
+	// 1) 白い縁取り(太線)を先に引く。
+	gPort->setrgbcolor(PMReal(1.0), PMReal(1.0), PMReal(1.0));
+	gPort->setlinewidth(whiteW);
 	gPort->newpath();
-	gPort->moveto(pr.Left(), cy);   gPort->lineto(pr.Right(),  cy);	// 横線(中央)
-	gPort->moveto(cx, pr.Top());    gPort->lineto(cx,          pr.Bottom());	// 縦線(中央)
+	gPort->moveto(cx - half, cy);   gPort->lineto(cx + half, cy);	// 横線(中央・長さ 2*half)
+	gPort->moveto(cx, cy - half);   gPort->lineto(cx, cy + half);	// 縦線(中央・横と同じ長さ)
+	gPort->stroke();
+
+	// 2) 赤い本体(細線)を白縁の上に重ねる=「赤＋白縁」。
+	gPort->setrgbcolor(kKESCMRingR / PMReal(255.0), kKESCMRingG / PMReal(255.0), kKESCMRingB / PMReal(255.0));
+	gPort->setlinewidth(redW);
+	gPort->newpath();
+	gPort->moveto(cx - half, cy);   gPort->lineto(cx + half, cy);	// 横線(中央・長さ 2*half)
+	gPort->moveto(cx, cy - half);   gPort->lineto(cx, cy + half);	// 縦線(中央・横と同じ長さ)
 	gPort->stroke();
 }
 
@@ -1115,10 +1127,11 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	// サムネイル(isThumb)は下の専用ブロックが従来どおり描くのでここでは対象外。
 	const bool16 wantChecks = !isThumb && (!printing || sPrintMarks) &&
 		((sDB != nil && KESCMPageCheckHasAny(sDB)) || (sSrcDB != nil && KESCMPageCheckHasAny(sSrcDB)));
-	// ★Find Overset の十字マーク: 比較(sEntries)・チェック(✓)等とは完全に独立。走査済み(sOversetOn)で
-	// 集合が非空なら「画面描画のみ」描く(印刷/PDF は対象外=!printing)。実際に描くのは db==sOversetDB の
-	// スプレッドだけ(下の描画ブロックで判定)。isThumb(サムネイル)には出さない(画面レイアウトビュー専用)。
-	const bool16 wantOverset = !printing && !isThumb && sOversetOn && sOversetDB != nil && !sOversetPages.empty();
+	// ★Find Overset の「＋」: 比較(sEntries)・チェック(✓)等とは完全に独立。★2026-07-24 ユーザー指定で
+	// カンバス(レイアウトビュー)には一切描かず、Pages パネルのサムネイル(isThumb)にだけ「赤＋白縁」の
+	// 「＋」を描く(旧: カンバスに赤い十字を描いていた)。走査済み(sOversetOn)で集合が非空なら描画対象。
+	// 実際に描くのは db==sOversetDB のスプレッドのサムネイルだけ(下の描画ブロックで判定)。
+	const bool16 wantOversetThumb = isThumb && sOversetOn && sOversetDB != nil && !sOversetPages.empty();
 	// 旧ページ番号バッジ: トグルON かつ「枠が見えている」間(=印刷マークON の常時表示、またはツール左hold中)。
 	// 枠の可視条件(wantMarks の sPrintMarks || sMarksVisible)と同じ揃え。印刷文脈は suppressForPrint で
 	// sPrintMarks ON のときだけ生き残る=印刷に出るのは印刷マークON時のみ(従来どおり)。
@@ -1128,7 +1141,7 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	// Start と無関係に描く「登録専用パス」があり、未 Start でも右クリック登録すると緑「/」が出ていたが、
 	// これを撤去した(登録自体も arm 済みのときだけ可能に変更)。よって登録「/」は下の Target/Source メイン
 	// ループ(db==sDB / db==sSrcDB。=Start 中のみ成立)だけが描く。ここでの Anywhere 判定・専用パスは不要。
-	if (!wantMarks && !wantOrig && !wantOldNums && !wantSrcMarks && !wantChecks && !wantOverset)
+	if (!wantMarks && !wantOrig && !wantOldNums && !wantSrcMarks && !wantChecks && !wantOversetThumb)
 		return kFalse;
 
 	GraphicsData* gd = ded->gd;
@@ -1211,6 +1224,26 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 		}
 	}
 
+	// ★Find Overset の目印(サムネイル版・2026-07-24)。走査した文書(sOversetDB)の Pages パネル
+	//   サムネイル生成時だけ、overset を含むページ(sOversetPages)に (a) 変更ページと同じ赤枠
+	//   (KESCMDrawPageBorder。ユーザー指定 2026-07-24)＋ (b) その中央に「赤＋白縁」の「＋」を描く。
+	//   カンバス(レイアウトビュー)には一切描かない(ユーザー指定)。比較(sEntries)・✓ とは完全に独立=
+	//   sOversetOn の間、非 arm でも描く(比較していなくてもオーバーセット検査の結果を出す)。
+	if (wantOversetThumb && db == sOversetDB)
+	{
+		const int32 npx = spread->GetNumPages();
+		for (int32 i = 0; i < npx; ++i)
+		{
+			const UID puid = spread->GetNthPageUID(i);
+			if (sOversetPages.count(puid) > 0)
+			{
+				KESCMDrawPageBorder(gPort, db, puid, sxr, drawMode, SelectedMarkOpacity(),
+					kKESCMRingR, kKESCMRingG, kKESCMRingB);	// 変更と同じ赤枠
+				KESCMDrawPageCrossOutlined(gPort, db, puid);	// 中央に赤＋白縁の＋
+			}
+		}
+	}
+
 	// 今描いている「このスプレッド」を覗いている(旧版べた載せ中)か。覗きで旧版が乗るのはマウス下の1スプレッド
 	// だけ(そのページが sOrigImages にある)。覗き中のスプレッドだけ旧版をきれいに見せたいので、マーク
 	// (枠)を描かない。それ以外のスプレッドは通常どおりマークを描く。
@@ -1272,21 +1305,8 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 		}
 	}
 
-	// ★Find Overset の十字マーク(画面のみ)。走査した文書(sOversetDB)のスプレッド描画でだけ、overset を
-	//   含むページ(sOversetPages)にページいっぱいの赤い「＋」を描く。比較(sEntries)・✓・ツール左hold 等
-	//   とは完全に独立=sOversetOn の間は常時表示。色/太さ/不透明度は変更リング枠と同じ(kKESCMRing*・
-	//   kKESCMRingTargetPx/sxr・SelectedMarkOpacity)。db!=sOversetDB のスプレッド(別文書)には出さない。
-	if (wantOverset && db == sOversetDB)
-	{
-		const int32 npx = spread->GetNumPages();
-		for (int32 i = 0; i < npx; ++i)
-		{
-			const UID puid = spread->GetNthPageUID(i);
-			if (sOversetPages.count(puid) > 0)
-				KESCMDrawPageCross(gPort, db, puid, sxr, drawMode, SelectedMarkOpacity(),
-					kKESCMRingR, kKESCMRingG, kKESCMRingB);
-		}
-	}
+	// ★Find Overset の「＋」はカンバス(レイアウトビュー)には描かない(2026-07-24 ユーザー指定)。
+	//   Pages パネルのサムネイル(isThumb)にだけ描く=上の isThumb 専用ブロック(wantOversetThumb)を参照。
 
 	// 旧ページ番号バッジ(Show Original Page Numbers)。スプレッドが隠されて「現在のページ番号」マーカーが
 	// ズレているページにだけ、「隠す前の元の番号」をページ下端中央へ描く(画面=WYSIWYG、印刷/PDF にも出る)。

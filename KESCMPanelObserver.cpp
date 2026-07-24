@@ -41,6 +41,7 @@
 #include "KESCMCore.h"
 #include "KESCMChangeNav.h"			// KESCMGotoNextChange / KESCMGotoPrevChange(◀ Prev / Next ▶ ボタン)
 #include "KESCMScrollMap.h"			// スクロールバー地図strip(Startで注入/Stopで取り外し)
+#include "KESCMDrawEventHandler.h"	// KESCMDrawEventHandler::sOversetOn(Stop 時に Find Overset 単独 ON なら地図を残す判定)
 #include "KESCMPanelState.h"		// KESCMLoadPanelStateIfPresent(保存済み設定をパネル初回オープン時に読み込む)
 
 /** ChangeMarker パネルのウィジェットを監視し、共有のオーバーレイ操作を駆動する。 */
@@ -269,7 +270,11 @@ void KESCMToggleStartStop()
 
 		KESCMDoClearMarks(db);
 		KESCMDoDisarmMousePeek(db);
-		KESCMScrollMapDetachAll();	// スクロールバー地図stripを全窓から取り外す
+		// スクロールバー地図: Find Overset が単独 ON 中なら残す(比較の赤帯だけ消して overset の赤帯を保つ)。
+		if (KESCMDrawEventHandler::sOversetOn)
+			KESCMScrollMapInvalidateAll();
+		else
+			KESCMScrollMapDetachAll();	// スクロールバー地図stripを全窓から取り外す
 		PMString s("marks cleared"); s.SetTranslatable(kFalse);
 		KESCMSetStatus(s);
 	}

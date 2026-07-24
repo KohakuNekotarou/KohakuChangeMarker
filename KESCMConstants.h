@@ -27,6 +27,16 @@ static const int32 kKESCMThumbDiagDivisor = 10;
 // ★サムネイルの枠/「/」の不透明度。従来は 1.0(不透明)固定だったが、少し透けて下のページが見える方が
 // 好ましいとの判断で 0.75(=透明25%)へ(画面マークの75%ラジオと同じ濃さ)。極小表示で沈まない範囲。
 static const PMReal kKESCMThumbMarkOpacity = 0.75;
+// ★Find Overset の「＋」(Pages パネルのサムネイル専用)の不透明度。赤＋白縁をくっきり見せたいので
+// 枠/「/」(0.75)より濃く不透明(1.0)にする(2026-07-24 ユーザー指定=カンバスには出さずページパネルにだけ出す)。
+static const PMReal kKESCMOversetCrossOpacity = 1.0;
+// ★Find Overset の「＋」の腕の長さ(ページ中央からの片側長 ÷ ページ短辺)。縦横とも同じ長さにするための
+// 基準。0.5=短辺いっぱい(=横は幅いっぱい)。0.20 で横は幅の 40% とさらに短くし、縦も同じ長さにする
+// (2026-07-24 ユーザー指定=縦横同じ長さ・さらに短く。0.40→0.30→0.20)。
+static const PMReal kKESCMOversetCrossHalfRatio = 0.20;
+// ★Find Overset の「＋」の赤線の太さ(ページ短辺 ÷ この値。小さいほど太い)。白縁はこの 2.2 倍。
+// 「/」の除数(kKESCMThumbDiagDivisor=10)より太く=8(2026-07-24 ユーザー指定=線を少し太く)。
+static const int32 kKESCMOversetCrossWidthDivisor = 8;
 static const uint8 kKESCMRingAlpha = 255;	// リングの基本アルファ(0..255)。「通常」=不透明(255)。薄表示は setopacity 側で行う(25%→255×0.25=実25%)
 // 枠(リング＋変更数)の不透明度の二択(パネルのラジオ「Marks opacity 25% / 75%」)。選択値は
 // ツール左hold中の画面表示・印刷ON中の常時表示・印刷/PDF出力のすべてに共通で効く(KESCMDrawEventHandler::SelectedMarkOpacity)。

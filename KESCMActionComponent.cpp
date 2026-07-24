@@ -218,6 +218,9 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 			{
 				if (KESCMDrawEventHandler::sDB    != nil) KESCMScrollMapAttach(KESCMDrawEventHandler::sDB);
 				if (KESCMDrawEventHandler::sSrcDB != nil) KESCMScrollMapAttach(KESCMDrawEventHandler::sSrcDB);
+				// Find Overset 単独で ON 中なら、その走査文書窓にも地図を復帰させる(2026-07-24)。
+				if (KESCMDrawEventHandler::sOversetOn && KESCMDrawEventHandler::sOversetDB != nil)
+					KESCMScrollMapAttach(KESCMDrawEventHandler::sOversetDB);
 				KESCMScrollMapInvalidateAll();
 			}
 			else
@@ -821,11 +824,20 @@ static IDataBase* KESCMActionActiveDocDB()
    ON→OFF: 集合を空にしてトグル OFF、走査していた文書を再描画して十字を消す。 */
 void KESCMActionComponent::DoFindOversetToggle()
 {
-	// ON→OFF: 十字を消す。
+	// ON→OFF: ＋を消す。
 	if (KESCMDrawEventHandler::sOversetOn)
 	{
 		IDataBase* prevDB = KESCMDrawEventHandler::sOversetDB;
+		// Pages パネルのサムネイルから＋を消すため、消える前にページ集合を控える。
+		std::vector<UID> prevPages(KESCMDrawEventHandler::sOversetPages.begin(),
+		                           KESCMDrawEventHandler::sOversetPages.end());
 		KESCMDrawEventHandler::DropOverset();
+		KESCMRefreshThumbnailsForPages(prevDB, prevPages);	// サムネイルを作り直して＋を消す
+		// スクロールバー地図: 比較もしていなければ全窓から撤去、比較中なら残して赤帯だけ描き直す。
+		if (KESCMIsArmed())
+			KESCMScrollMapInvalidateAll();
+		else
+			KESCMScrollMapDetachAll();
 		KESCMInvalidateDB(prevDB);	// nil 安全(他の呼び出しと同じ)
 		PMString msg("Find Overset: off.");
 		msg.SetTranslatable(kFalse);
@@ -848,6 +860,15 @@ void KESCMActionComponent::DoFindOversetToggle()
 	KESCMDrawEventHandler::sOversetOn = kTrue;
 	KESCMDrawEventHandler::sOversetDB = db;
 	KESCMDrawEventHandler::sOversetPages.swap(pages);
+	// Pages パネルのサムネイルに「赤＋白縁」の＋を出す(既表示分を per-UID Purge して作り直す)。
+	{
+		std::vector<UID> ov(KESCMDrawEventHandler::sOversetPages.begin(),
+		                    KESCMDrawEventHandler::sOversetPages.end());
+		KESCMRefreshThumbnailsForPages(db, ov);
+	}
+	// スクロールバー地図を(比較未 Start でも)この文書窓へ注入して赤帯を出す。
+	KESCMScrollMapAttach(db);
+	KESCMScrollMapInvalidateAll();
 	KESCMInvalidateDB(db);
 
 	PMString msg("Find Overset: on (");
@@ -877,10 +898,32 @@ void KESCMActionComponent::DoRefreshOverset()
 	KESCMCollectOversetPages(db, pages);
 
 	IDataBase* prevDB = KESCMDrawEventHandler::sOversetDB;
+	std::set<UID> oldPages = KESCMDrawEventHandler::sOversetPages;	// 退避(＋が消えるページの再生成用)
+
 	KESCMDrawEventHandler::sOversetDB = db;
 	KESCMDrawEventHandler::sOversetPages.swap(pages);
+
+	// Pages パネルのサムネイル更新: 旧集合(＋が消える)と新集合(＋が付く)の両方を作り直す。
 	if (prevDB != nil && prevDB != db)
-		KESCMInvalidateDB(prevDB);	// 別文書に切り替わっていたら前の文書の十字を消す
+	{
+		// 別文書へ切替: 前の文書の＋を消し、新しい文書窓に地図を注入して＋を付ける。
+		std::vector<UID> oldVec(oldPages.begin(), oldPages.end());
+		KESCMRefreshThumbnailsForPages(prevDB, oldVec);
+		KESCMScrollMapAttach(db);
+		KESCMInvalidateDB(prevDB);
+		std::vector<UID> newVec(KESCMDrawEventHandler::sOversetPages.begin(),
+		                        KESCMDrawEventHandler::sOversetPages.end());
+		KESCMRefreshThumbnailsForPages(db, newVec);
+	}
+	else
+	{
+		// 同一文書: 旧∪新のサムネイルを作り直す(抜けたページの＋を消し、増えたページに付ける)。
+		std::set<UID> u = oldPages;
+		u.insert(KESCMDrawEventHandler::sOversetPages.begin(), KESCMDrawEventHandler::sOversetPages.end());
+		std::vector<UID> uv(u.begin(), u.end());
+		KESCMRefreshThumbnailsForPages(db, uv);
+	}
+	KESCMScrollMapInvalidateAll();
 	KESCMInvalidateDB(db);
 
 	PMString msg("Refresh Overset: ");

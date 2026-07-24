@@ -86,6 +86,8 @@ static const PMReal kKESCMScrollMapWidth = 5.0;
 static const PMReal kKESCMScrollMapMarkAlpha     = 0.4;	// 枠(変更)はしっかり見せる(ユーザー指定 2026-07-13)
 // overflow「/」ページ(相手が無いページ)の不透明度。枠と差を付けて薄く(ユーザー指定 2026-07-13)。
 static const PMReal kKESCMScrollMapOverflowAlpha = 0.15;	// 「/」は下地とよく混ぜて薄く(0.2→0.15、ユーザー指定 2026-07-13)
+// Find Overset の帯の不透明度。変更帯(0.4)より混色を控えて濃い赤にする(ユーザー指定 2026-07-24)。
+static const PMReal kKESCMScrollMapOversetAlpha  = 0.7;	// overset は下地と混ぜず赤を強く
 
 // スクロールバー地図の有効/無効(フライアウト「Show Scrollbar Map」トグル。既定=ON)。
 // OFF の間は Attach / NoticeDrawEvent を即 return させる(strip を注入しない・毎描画の指紋計算もしない)。
@@ -157,7 +159,12 @@ void KESCMScrollMapView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 	}
 	const bool16 isTarget = (db != nil && db == KESCMArmedTargetDB());
 	const bool16 isSource = (!isTarget && db != nil && db == KESCMArmedSourceDB());
-	if ((!isTarget && !isSource) || !KESCMIsDocDBOpen(db))
+	// ★Find Overset の帯(2026-07-24): 比較(arm)とは独立に、走査した文書(sOversetDB)の窓にも
+	//   overset ページを赤帯で出す。比較していない文書でもこの strip は描く(=オーバーセット検査だけでも
+	//   地図が出る)。比較と同じ文書なら赤どうしで自然に重なる。
+	const bool16 isOverset = (db != nil && KESCMDrawEventHandler::sOversetOn &&
+		db == KESCMDrawEventHandler::sOversetDB);
+	if ((!isTarget && !isSource && !isOverset) || !KESCMIsDocDBOpen(db))
 		return;
 
 	// 全ページの pasteboard Y 帯をスプレッド順・ページ順で集める。★隠しスプレッド(Hide Unchanged
@@ -237,6 +244,10 @@ void KESCMScrollMapView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 	const PMReal ovrR = oa * PMReal(0.85) + (PMReal(1.0) - oa) * bgR;	// overflow「/」=薄い赤
 	const PMReal ovrG = oa * PMReal(0.08) + (PMReal(1.0) - oa) * bgG;
 	const PMReal ovrB = oa * PMReal(0.08) + (PMReal(1.0) - oa) * bgB;
+	const PMReal osa = kKESCMScrollMapOversetAlpha;						// overset=濃い赤(混色控えめ)
+	const PMReal ovsR = osa * PMReal(0.85) + (PMReal(1.0) - osa) * bgR;
+	const PMReal ovsG = osa * PMReal(0.08) + (PMReal(1.0) - osa) * bgG;
+	const PMReal ovsB = osa * PMReal(0.08) + (PMReal(1.0) - osa) * bgB;
 	const PMReal grnR = ma * PMReal(0.10) + (PMReal(1.0) - ma) * bgR;	// 登録=緑
 	const PMReal grnG = ma * PMReal(0.70) + (PMReal(1.0) - ma) * bgG;
 	const PMReal grnB = ma * PMReal(0.25) + (PMReal(1.0) - ma) * bgB;
@@ -264,7 +275,10 @@ void KESCMScrollMapView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 			isOverflowRed = kTrue;	// 変更ページが overflow にも入る場合は上で先に確定=枠色優先
 		}
 		const bool16 isGreen = (!isRed && greens.find(pages[i]) != greens.end());
-		if (!isRed && !isGreen)
+		// ★overset ページ(この文書が sOversetDB のとき)=しっかりした赤(＋マークと揃える。ユーザー指定 2026-07-24)。
+		const bool16 isOversetRed = (isOverset &&
+			KESCMDrawEventHandler::sOversetPages.find(pages[i]) != KESCMDrawEventHandler::sOversetPages.end());
+		if (!isRed && !isGreen && !isOversetRed)
 			continue;
 
 		PMReal y0 = frame.Top() + (tops[i]    - minY) * scale;
@@ -278,12 +292,14 @@ void KESCMScrollMapView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 		if (y0 < frame.Top())    y0 = frame.Top();
 		if (y1 > frame.Bottom()) y1 = frame.Bottom();
 
-		if (isRed)
+		if (isOversetRed)
+			gPort->setrgbcolor(ovsR, ovsG, ovsB);		// overset = 濃い赤(混色控えめ・最優先)
+		else if (isRed)
 		{
 			if (isOverflowRed)
-				gPort->setrgbcolor(ovrR, ovrG, ovrB);	// overflow「/」= 薄い赤
+				gPort->setrgbcolor(ovrR, ovrG, ovrB);	// 純 overflow「/」= 薄い赤
 			else
-				gPort->setrgbcolor(redR, redG, redB);	// 枠(変更)= しっかりした赤
+				gPort->setrgbcolor(redR, redG, redB);	// 変更 = しっかりした赤
 		}
 		else
 			gPort->setrgbcolor(grnR, grnG, grnB);
@@ -510,6 +526,7 @@ static std::chrono::steady_clock::time_point sHiddenCheckLast;	// 前回チェ�
 static bool16 sHiddenCheckStarted = kFalse;	// 一度でもチェックしたか(初回は必ず通す。time_point 既定値との比較を避ける)
 static uint32 sHiddenFingerT = 0;			// 前回の Target 側指紋
 static uint32 sHiddenFingerS = 0;			// 前回の Source 側指紋
+static uint32 sHiddenFingerO = 0;			// 前回の overset 走査文書側指紋(Find Overset 単独時の隠し追従)
 
 // KESCMScrollMapNoticeDrawEvent(KESCMScrollMap.h 参照) — 描画イベントごとに呼ばれる軽量チェック。
 // 250ms スロットル内は時刻比較1回で即 return。指紋が変わっていたら地図を Invalidate する
@@ -519,8 +536,10 @@ void KESCMScrollMapNoticeDrawEvent()
 {
 	if (!sScrollMapOn)
 		return;		// 「Show Scrollbar Map」OFF 中は strip も無い=毎描画の指紋計算を省く
-	if (KESCMArmedTargetDB() == nil)
-		return;		// 未 arm = strip も無い(指紋は arm 中しか意味を持たないので触らない)
+	// 未 arm でも Find Overset 単独なら strip があり得るので、その場合は続行する(2026-07-24)。
+	if (KESCMArmedTargetDB() == nil &&
+		!(KESCMDrawEventHandler::sOversetOn && KESCMDrawEventHandler::sOversetDB != nil))
+		return;		// arm も overset も無い = strip も無い(指紋は無意味なので触らない)
 
 	// スロットル(250ms)。steady_clock は単調増加なのでラップ/負 delta の心配は無い(旧 clock_t 版に
 	// あった 32bit ラップ対策は不要になった)。初回(sHiddenCheckStarted=kFalse)は必ず通す。
@@ -537,10 +556,13 @@ void KESCMScrollMapNoticeDrawEvent()
 
 	const uint32 ft = KESCMHiddenFingerprint(KESCMArmedTargetDB());
 	const uint32 fs = KESCMHiddenFingerprint(KESCMArmedSourceDB());
-	if (ft != sHiddenFingerT || fs != sHiddenFingerS)
+	const uint32 fo = KESCMHiddenFingerprint(
+		(KESCMDrawEventHandler::sOversetOn) ? KESCMDrawEventHandler::sOversetDB : nil);
+	if (ft != sHiddenFingerT || fs != sHiddenFingerS || fo != sHiddenFingerO)
 	{
 		sHiddenFingerT = ft;
 		sHiddenFingerS = fs;
+		sHiddenFingerO = fo;
 		KESCMScrollMapInvalidateAll();	// 初回(0→現指紋)の1回だけ余計に走るが無害
 	}
 }

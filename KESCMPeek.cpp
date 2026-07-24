@@ -1642,7 +1642,15 @@ void KESCMHandleDocsClosed()
 		//   ★終了中(quitting)はスキップ: 解体中の窓の widget 除去/SetFrame が危険な上、窓ごと消えるので
 		//   取り外す意味も無い(以下の UI 仕事も同様にスキップ)。
 		if (!quitting)
-			KESCMScrollMapDetachAll();
+		{
+			// ★Find Overset が(走査文書が生存したまま)単独 ON 中なら地図を残す(赤帯だけ描き直す)。
+			//   overset 文書自身が閉じた場合は上(1586 付近)で DropOverset 済み=sOversetOn が false なので
+			//   通常どおり撤去される(2026-07-24)。
+			if (KESCMDrawEventHandler::sOversetOn)
+				KESCMScrollMapInvalidateAll();
+			else
+				KESCMScrollMapDetachAll();
+		}
 		changed = kTrue;
 
 		if (!quitting)
