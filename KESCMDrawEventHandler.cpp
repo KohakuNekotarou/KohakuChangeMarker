@@ -1227,9 +1227,11 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 
 	// ★Find Overset の目印(サムネイル版・2026-07-24)。走査した文書(sOversetDB)の Pages パネル
 	//   サムネイル生成時だけ、overset を含むページ(sOversetPages)に (a) 変更ページと同じ赤枠
-	//   (KESCMDrawPageBorder。ユーザー指定 2026-07-24)＋ (b) その中央に「赤＋白縁」の「＋」を描く。
-	//   カンバス(レイアウトビュー)には一切描かない(ユーザー指定)。比較(sEntries)・✓ とは完全に独立=
-	//   sOversetOn の間、非 arm でも描く(比較していなくてもオーバーセット検査の結果を出す)。
+	//   (KESCMDrawPageBorder)＋ (b) その中央に「赤＋白縁」の「＋」を描く。
+	//   ★2026-07-24: 一度は赤枠を撤去し「＋」だけにしたが、十字だけでは視認しにくいとのユーザー指定で
+	//   赤枠を復活(変更ページと同じ赤枠。区別より視認性を優先)。カンバス(レイアウトビュー)には一切描かない
+	//   (ユーザー指定)。比較(sEntries)・✓ とは完全に独立= sOversetOn の間、非 arm でも描く
+	//   (比較していなくてもオーバーセット検査の結果を出す)。
 	if (wantOversetThumb && db == sOversetDB)
 	{
 		const int32 npx = spread->GetNumPages();
@@ -1239,7 +1241,7 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 			if (sOversetPages.count(puid) > 0)
 			{
 				KESCMDrawPageBorder(gPort, db, puid, sxr, drawMode, SelectedMarkOpacity(),
-					kKESCMRingR, kKESCMRingG, kKESCMRingB);	// 変更と同じ赤枠
+					kKESCMRingR, kKESCMRingG, kKESCMRingB);	// 変更と同じ赤枠(視認性のため復活)
 				KESCMDrawPageCrossOutlined(gPort, db, puid);	// 中央に赤＋白縁の＋
 			}
 		}

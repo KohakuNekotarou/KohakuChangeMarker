@@ -176,7 +176,8 @@ DECLARE_PMID(kActionIDSpace, kKESCMPopupOpacity75ActionID, kKESCMPrefix + 16)	//
 DECLARE_PMID(kActionIDSpace, kKESCMPopupSep1ActionID, kKESCMPrefix + 17)	// フライアウト: Start の下の区切り線(MenuDef のパス末尾 ":-"。ActionDef 不要・DoAction 不要=一意なIDだけ要る)
 DECLARE_PMID(kActionIDSpace, kKESCMPopupSep2ActionID, kKESCMPrefix + 18)	// フライアウト: How to Use の上の区切り線
 DECLARE_PMID(kActionIDSpace, kKESCMPopupHoldToHideMarksActionID, kKESCMPrefix + 19)	// パネルのフライアウトの「Hold to Hide Marks」チェック式トグル(ON=枠を画面に常時表示し、ツール左hold中だけ隠す=極性反転。画面のみ・印刷は Print comparison marks が別管理。KESCMActionComponent.cpp)
-// kKESCMPopupPanelShortcutActionID (kKESCMPrefix + 20) は中ボタン撤去(2026-07-13)に伴い「Invoke Panel Shortcut」トグルごと廃止。スロットは予約のまま。
+// kKESCMPopupPanelShortcutActionID (kKESCMPrefix + 20) は中ボタン撤去(2026-07-13)に伴い廃止。スロットを 2026-07-24 に再利用:
+DECLARE_PMID(kActionIDSpace, kKESCMPopupAlignViewsActionID, kKESCMPrefix + 20)	// パネルのフライアウトの「Align Other Views to Active」(実行アクション)。アクティブ(最前面)文書のビューの位置+拡大率を他文書のビューへ1回そろえる。Start中はページのAdd/Remove補正あり。ショートカット割当可(kKESCMPanelMenuActionArea+VisibleInKBSC)。実体 KESCMPeek.cpp の KESCMAlignOtherViewsToActiveNow
 DECLARE_PMID(kActionIDSpace, kKESCMPopupScrollMapActionID, kKESCMPrefix + 21)	// パネルのフライアウトの「Show Scrollbar Map」チェック式トグル(ON=文書窓の縦スクロールバー脇に変更位置地図stripを表示。既定ON。実体 KESCMScrollMap.cpp の sScrollMapOn)
 DECLARE_PMID(kActionIDSpace, kKESCMPopupSavePanelStateActionID, kKESCMPrefix + 22)	// パネルのフライアウトの「Save Panel Settings」(チェックではなく実行アクション)。現在の設定系トグルを独自JSONでローカルへ保存し保存先パスを表示。パネル初回オープン時に読込。実体 KESCMPanelState.cpp
 DECLARE_PMID(kActionIDSpace, kKESCMPopupSep3ActionID, kKESCMPrefix + 23)	// フライアウト: Ignore Page Number Marker の下の区切り線(MenuDef のパス末尾 ":-"。ActionDef 不要)。この下に Hide Unchanged Spreads を置く
@@ -288,6 +289,7 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMToolWidgetID, kKESCMPrefix + 41)	// ツール
 #define kKESCMHideConfirmKey		kKESCMStringPrefix "kKESCMHideConfirmKey"	// その確認ダイアログ本文(ダイアログのみロケール連動: enUS=英語/jaJP=日本語)
 #define kKESCMShowOldNumsMenuKey	kKESCMStringPrefix "kKESCMShowOldNumsMenuKey"	// パネルのフライアウト「Show Original Page Numbers」トグルのメニュー名
 #define kKESCMSyncViewsMenuKey		kKESCMStringPrefix "kKESCMSyncViewsMenuKey"	// パネルのフライアウト「Sync Layout Views」トグルのメニュー名
+#define kKESCMAlignViewsMenuKey		kKESCMStringPrefix "kKESCMAlignViewsMenuKey"	// パネルのフライアウト「Align Other Views to Active」(実行アクション)のメニュー名
 #define kKESCMShowSrcMarksMenuKey	kKESCMStringPrefix "kKESCMShowSrcMarksMenuKey"	// パネルのフライアウト「Show Marks on Source」トグルのメニュー名
 #define kKESCMPageMapToggleMenuKey	kKESCMStringPrefix "kKESCMPageMapToggleMenuKey"	// ページパネル右クリックのトグル「KESCM: Register as Added/Removed Pages」の既定メニュー名(表示時は UpdateActionStates が Target=Added/Source=Removed に動的差し替え)
 #define kKESCMPageCheckMenuKey		kKESCMStringPrefix "kKESCMPageCheckMenuKey"	// ページパネル右クリックのトグル「KESCM: Check」のメニュー名
@@ -300,6 +302,13 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMToolWidgetID, kKESCMPrefix + 41)	// ツール
 #define kKESCMLoadChecksMenuKey		kKESCMStringPrefix "kKESCMLoadChecksMenuKey"	// パネルのフライアウト「Load Check & Register」項目のメニュー名
 #define kKESCMFindOversetMenuKey	kKESCMStringPrefix "kKESCMFindOversetMenuKey"	// パネルのフライアウト「Find Overset」トグルのメニュー名
 #define kKESCMRefreshOversetMenuKey	kKESCMStringPrefix "kKESCMRefreshOversetMenuKey"	// パネルのフライアウト「Refresh Overset」項目のメニュー名
+
+// ショートカット割当可アクション用のアクションエリア(KESCL と同型。2026-07-24)。ActionDef の area 欄に
+// kKESCMPanelMenuActionArea を渡し、StringTable でその値 kKESCMPanelMenuActionAreaValue に解決させると、
+// Edit > キーボードショートカット の Product Area「Palette Menus」に「KohakuChangeMarker: <名前>」として並ぶ。
+// 先頭の "KBSCE " は KBSC エディタ用エリアキーの規約プレフィックス。既定ショートカットは同梱しない(ユーザーが割当)。
+#define kKESCMPanelMenuActionArea		"KBSCE Palette Menus: KohakuChangeMarker: "
+#define kKESCMPanelMenuActionAreaValue	"Palette Menus:KohakuChangeMarker"
 
 // パネル: 内部フライアウト(ポップアップ)メニュー名＋そのメニューパス。
 #define kKESCMInternalPopupMenuNameKey	kKESCMStringPrefix "kKESCMInternalPopupMenuNameKey"
@@ -361,32 +370,41 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMToolWidgetID, kKESCMPrefix + 41)	// ツール
 // (ユーザー提供 2026-07-14)。ダーク版は用意していないため PNGAD もライト版と同じ画像を指す(=流用)。
 #define kKESCMToolIconResID	1030
 
-// Menu item positions (flyout order): … Show Marks on Source(9.4) → Show Original Page Numbers(9.7) →
-// Sync Layout Views(9.8) → Show Scrollbar Map(9.85) → Ignore Page Number Marker(9.9) →
-// ─線 Sep3(9.905) → Hide Unchanged Spreads(9.91) → Save Panel Settings(9.93) →
-// Save Check & Register(9.935) → Load Check & Register(9.94) → ─線 Sep2(9.95) → How to Use(10) → About Scripting(11) → About this plug-in(12)。
-// ※メニュー名は日本語ロケールでも英語で統一(2026-07-04)。Split Target on Start(旧9.0)は撤去済み。
-// ※2026-07-11: Sep3 を足し Hide Unchanged Spreads(旧9.5)をその下へ移動。※Invoke Panel Shortcut(旧9.901)は中ボタン撤去に伴い廃止(2026-07-13)。
+// Menu item positions (flyout order, 2026-07-24 に大幅入れ替え):
+//   Start/Stop(9.0) → ─線Sep1(9.1) →
+//   [表示系トグル群] Hold to Hide Marks(9.20) → Ignore Page Number Marker(9.22) → Print comparison marks(9.24) →
+//     Marks opacity ▸(9.26) → Show Original Page Numbers(9.28) → Show Marks on Source(9.30) →
+//     Show Scrollbar Map(9.32) → Sync Layout Views(9.34) →
+//   ─線OversetSep(9.40) → Find Overset(9.42) → Refresh Overset(9.44) →
+//   ─線Sep3(9.50) → [実行アクション群] Align Other Views to Active(9.52) → Hide Unchanged Spreads(9.54) →
+//     Save Panel Settings(9.56) → Save Check & Register(9.58) → Load Check & Register(9.60) →
+//   ─線Sep2(9.95) → How to Use(10) → About Scripting(11) → About this plug-in(12)。
+// ※メニュー名は日本語ロケールでも英語で統一(2026-07-04)。区切り線は Sep1/OversetSep/Sep3/Sep2 の4本を再利用。
 #define kKESCMStartStopMenuItemPosition		9.0	// 「Start / Stop」(比較開始/解除)をフライアウト先頭に。名前は arm 状態で動的に Start↔Stop
 #define kKESCMSep1MenuItemPosition			9.1	// Start の下の区切り線(パス末尾 ":-")
-#define kKESCMPrintMarksMenuItemPosition	9.2	// チェック式トグル「Print comparison marks」を Start/Stop の直後に(旧パネルチェックボックスのメニュー化)
-#define kKESCMHoldToHideMarksMenuItemPosition	9.35	// チェック式トグル「Hold to Hide Marks」を「Marks opacity」サブメニューの直後に(枠表示の極性反転)
-#define kKESCMOpacitySubmenuMenuItemPosition	9.3	// 「Marks opacity」サブメニュー(中に 25% / 75%)
+// ── 表示系トグル群 ──
+#define kKESCMHoldToHideMarksMenuItemPosition	9.20	// チェック式トグル「Hold to Hide Marks」(枠表示の極性反転)。Sep1 の直後(群の先頭)
+#define kKESCMIgnorePageNumMenuItemPosition	9.22	// チェック式トグル「Ignore Page Number Marker」
+#define kKESCMOpacitySubmenuMenuItemPosition	9.24	// 「Marks opacity」サブメニュー(中に 25% / 75%)。Print の上へ入れ替え(2026-07-24)
+#define kKESCMPrintMarksMenuItemPosition	9.26	// チェック式トグル「Print comparison marks」。Marks opacity の下へ入れ替え(2026-07-24)
 #define kKESCMOpacity25SubMenuItemPosition	1.0	// サブメニュー「Marks opacity」内: 25%(選択中に✓)
 #define kKESCMOpacity75SubMenuItemPosition	2.0	// サブメニュー「Marks opacity」内: 75%(25% と相互排他)
-#define kKESCMShowSrcMarksMenuItemPosition	9.4	// チェック式トグル「Show Marks on Source」を先頭に
-#define kKESCMShowOldNumsMenuItemPosition	9.7	// チェック式トグル「Show Original Page Numbers」をその直後に
-#define kKESCMSyncViewsMenuItemPosition		9.8	// チェック式トグル「Sync Layout Views」をさらにその直後に
-#define kKESCMScrollMapMenuItemPosition		9.85	// チェック式トグル「Show Scrollbar Map」を Sync Layout Views の直後・Ignore Page Number Marker の前に
-#define kKESCMIgnorePageNumMenuItemPosition	9.9	// チェック式トグル「Ignore Page Number Marker」をさらにその直後に
-#define kKESCMSep3MenuItemPosition			9.905	// Ignore Page Number Marker の下の区切り線(パス末尾 ":-")。この下に Hide Unchanged Spreads を置く
-#define kKESCMHideUnchangedMenuItemPosition	9.91	// チェック式トグル「Hide Unchanged Spreads」を Sep3(線)の直後へ移動(2026-07-11)
-#define kKESCMSavePanelStateMenuItemPosition	9.93	// 実行アクション「Save Panel Settings」を設定系トグル群の末尾(Hide Unchanged Spreads の後・Sep2 の前)に
-#define kKESCMSaveChecksMenuItemPosition	9.935	// 実行アクション「Save Check & Register」を Save Panel Settings の直下に(2026-07-11)
-#define kKESCMLoadChecksMenuItemPosition	9.94	// 実行アクション「Load Check & Register」を Save Check & Register の直下に(2026-07-11)
-#define kKESCMOversetSepMenuItemPosition	9.941	// Find Overset 群の上の区切り線(パス末尾 ":-")。比較系項目と視覚的に分ける
-#define kKESCMFindOversetMenuItemPosition	9.942	// チェック式トグル「Find Overset」(アクティブ文書の overset ページに十字)
-#define kKESCMRefreshOversetMenuItemPosition	9.943	// 実行アクション「Refresh Overset」(ON時のみ有効=再走査)
+#define kKESCMShowOldNumsMenuItemPosition	9.28	// チェック式トグル「Show Original Page Numbers」
+#define kKESCMShowSrcMarksMenuItemPosition	9.30	// チェック式トグル「Show Marks on Source」
+#define kKESCMScrollMapMenuItemPosition		9.32	// チェック式トグル「Show Scrollbar Map」
+#define kKESCMSyncViewsMenuItemPosition		9.34	// チェック式トグル「Sync Layout Views」(表示系トグル群の末尾)
+// ── Overset 群 ──
+#define kKESCMOversetSepMenuItemPosition	9.40	// Find Overset 群の上の区切り線(パス末尾 ":-")
+#define kKESCMFindOversetMenuItemPosition	9.42	// チェック式トグル「Find Overset」(アクティブ文書の overset ページに十字)
+#define kKESCMRefreshOversetMenuItemPosition	9.44	// 実行アクション「Refresh Overset」(ON時のみ有効=再走査)
+// ── 実行アクション群 ──
+#define kKESCMSep3MenuItemPosition			9.50	// Refresh Overset の下の区切り線(パス末尾 ":-")。この下に実行アクション群を置く
+#define kKESCMAlignViewsMenuItemPosition	9.52	// 実行アクション「Align Other Views to Active」を実行アクション群の先頭に(2026-07-24)
+#define kKESCMHideUnchangedMenuItemPosition	9.54	// チェック式トグル「Hide Unchanged Spreads」
+#define kKESCMSavePanelStateMenuItemPosition	9.56	// 実行アクション「Save Panel Settings」
+#define kKESCMSaveChecksMenuItemPosition	9.58	// 実行アクション「Save Check & Register」
+#define kKESCMLoadChecksMenuItemPosition	9.60	// 実行アクション「Load Check & Register」
+// ── 情報系(末尾) ──
 #define kKESCMSep2MenuItemPosition			9.95	// How to Use の上の区切り線(パス末尾 ":-")
 #define kKESCMUsageMenuItemPosition			10.0	// 「使い方」
 // ページパネルのページ右クリックメニュー(内部名 RtMenuPagesPanel、2026-07-05 実機確定)内の位置。

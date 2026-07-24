@@ -254,6 +254,15 @@ void KESCMScrollMapView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 	const PMReal grnB = ma * PMReal(0.25) + (PMReal(1.0) - ma) * bgB;
 
 	const PMReal scale = frame.Height() / (maxY - minY);
+
+	// ★各ページの色区分と帯座標(y0/y1)を先に決め、優先度別の添字リスト(byLevel)へ振り分ける。見開きの
+	//   2ページ(例: 4p と 5p)は同一スプレッドで pasteboard Y 帯が同じ位置に重なるため、単純にページ順で
+	//   描くと後のページが上書きする(ユーザー報告 2026-07-24: 4p=overset・5p=変更 だと変更色が overset を
+	//   上書きしていた)。そこで優先度(overset > 変更 > overflow > 登録)の低い順にまとめて描き、高い優先度が
+	//   必ず上=勝つようにする。ページ内の優先(280行相当)は 1 ページ 1 レベルの決定で吸収し、別ページ同士の
+	//   重なりは描画順で解決。level: 1=登録(緑) / 2=overflow「/」(薄赤) / 3=変更(赤) / 4=overset(濃赤)。
+	std::vector<size_t> byLevel[5];	// [1..4]=そのレベルに属するページ添字(0は未使用)。描画は合計 N ループで済む
+	std::vector<PMReal> y0s(pages.size()), y1s(pages.size());
 	for (size_t i = 0; i < pages.size(); ++i)
 	{
 		if (bottoms[i] <= tops[i])
@@ -279,33 +288,49 @@ void KESCMScrollMapView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 		// ★overset ページ(この文書が sOversetDB のとき)=しっかりした赤(＋マークと揃える。ユーザー指定 2026-07-24)。
 		const bool16 isOversetRed = (isOverset &&
 			KESCMDrawEventHandler::sOversetPages.find(pages[i]) != KESCMDrawEventHandler::sOversetPages.end());
-		if (!isRed && !isGreen && !isOversetRed)
+
+		int32 c = 0;
+		if (isOversetRed)   c = 4;					// overset = 最優先(最後に描いて上へ)
+		else if (isRed)     c = isOverflowRed ? 2 : 3;	// 変更=3 / 純 overflow「/」=2
+		else if (isGreen)   c = 1;					// 登録(緑)
+		if (c == 0)
 			continue;
 
 		PMReal y0 = frame.Top() + (tops[i]    - minY) * scale;
 		PMReal y1 = frame.Top() + (bottoms[i] - minY) * scale;
 		if (y1 - y0 < PMReal(3.0))	// 細くなり過ぎたら中心を保って3pxに
 		{
-			const PMReal c = (y0 + y1) / PMReal(2.0);
-			y0 = c - PMReal(1.5);
-			y1 = c + PMReal(1.5);
+			const PMReal cy = (y0 + y1) / PMReal(2.0);
+			y0 = cy - PMReal(1.5);
+			y1 = cy + PMReal(1.5);
 		}
 		if (y0 < frame.Top())    y0 = frame.Top();
 		if (y1 > frame.Bottom()) y1 = frame.Bottom();
 
-		if (isOversetRed)
-			gPort->setrgbcolor(ovsR, ovsG, ovsB);		// overset = 濃い赤(混色控えめ・最優先)
-		else if (isRed)
+		y0s[i] = y0;
+		y1s[i] = y1;
+		byLevel[c].push_back(i);	// c は 1..4(c==0 は上で continue 済み)
+	}
+
+	// 優先度の低い順(1→4)に描く=高い優先度が上(最後)に来て、同スプレッドの重なりでも必ず勝つ。
+	// 色設定は各レベルで1回だけ。描画は byLevel の添字だけを辿るので全体で合計 N 回の fill で済む。
+	for (int32 level = 1; level <= 4; ++level)
+	{
+		if (byLevel[level].empty())
+			continue;
+		switch (level)
 		{
-			if (isOverflowRed)
-				gPort->setrgbcolor(ovrR, ovrG, ovrB);	// 純 overflow「/」= 薄い赤
-			else
-				gPort->setrgbcolor(redR, redG, redB);	// 変更 = しっかりした赤
+			case 1: gPort->setrgbcolor(grnR, grnG, grnB); break;	// 登録=緑
+			case 2: gPort->setrgbcolor(ovrR, ovrG, ovrB); break;	// 純 overflow「/」= 薄い赤
+			case 3: gPort->setrgbcolor(redR, redG, redB); break;	// 変更 = しっかりした赤
+			case 4: gPort->setrgbcolor(ovsR, ovsG, ovsB); break;	// overset = 濃い赤(最優先)
 		}
-		else
-			gPort->setrgbcolor(grnR, grnG, grnB);
-		gPort->rectpath(PMRect(frame.Left(), y0, frame.Right(), y1));
-		gPort->fill();
+		for (size_t k = 0; k < byLevel[level].size(); ++k)
+		{
+			const size_t i = byLevel[level][k];
+			gPort->rectpath(PMRect(frame.Left(), y0s[i], frame.Right(), y1s[i]));
+			gPort->fill();
+		}
 	}
 }
 

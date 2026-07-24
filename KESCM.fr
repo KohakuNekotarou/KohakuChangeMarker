@@ -395,6 +395,16 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKESCMSyncViewsMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
+		// "Align Other Views to Active" on the panel flyout (popup) menu. Plain command (not a toggle):
+		// sets every OTHER document's layout views to the active (frontmost) view's position + zoom, once.
+		// Independent of the Sync Layout Views toggle (works even when it is OFF). While Started, the page
+		// Add/Remove correction is applied so the compared pages line up. Shortcut-assignable (its ActionDef
+		// uses kKESCMPanelMenuActionArea + kSDKDefVisibleInKBSCEditorFlag).
+		kKESCMPopupAlignViewsActionID,
+		kKESCMPopupMenuPath,
+		kKESCMAlignViewsMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
 		// "Show Scrollbar Map" on the panel flyout (popup) menu. Check-mark toggle (default ON):
 		// while ON, a thin strip beside each document window's vertical scrollbar maps the positions
 		// of changed / registered pages. Turn it OFF to remove the strip from all windows.
@@ -635,6 +645,20 @@ resource ActionDef (kSDKDefActionResourceID)
 		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates supplies the check mark (kSelectedAction)
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
+
+		// "Align Other Views to Active": shortcut-assignable one-shot. kKESCMPanelMenuActionArea +
+		// kSDKDefVisibleInKBSCEditorFlag file it in the Keyboard Shortcuts editor under Product Area
+		// "Palette Menus" as "KohakuChangeMarker: Align Other Views to Active" (same treatment as KESCL's
+		// searches). No default shortcut ships; the user assigns one. Plain kDisableIfLowMem = always
+		// available (no UpdateActionStates entry needed).
+		kKESCMActionComponentBoss,
+		kKESCMPopupAlignViewsActionID,
+		kKESCMAlignViewsMenuKey,
+		kKESCMPanelMenuActionArea,
+		kNormalAction,
+		kDisableIfLowMem,
+		kInvalidInterfaceID,
+		kSDKDefVisibleInKBSCEditorFlag,
 
 		kKESCMActionComponentBoss,
 		kKESCMPopupScrollMapActionID,
@@ -995,7 +1019,7 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 			kKESCMPrevChangeButtonWidgetID,
 			kSysButtonPMRsrcId,
 			kBindLeft | kBindTop,
-			Frame(12, 48, 70, 70)		// 幅82→48→58(文字幅相当に縮小後、少し広げ直し, 2026-07-15)
+			Frame(27, 48, 85, 70)		// 幅58維持。Prev/Next 間を詰めるためクラスタを中央寄せ(左右マージン27px対称, 2026-07-24)
 			kTrue, kTrue,
 			kKESCMPrevChangeKey,
 		),
@@ -1006,7 +1030,7 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 			kKESCMNavPosTextWidgetID,
 			kSysStaticTextPMRsrcId,
 			kBindLeft | kBindTop,
-			Frame(70, 51, 144, 70)		// Prev(〜70)と Next(144〜)の間。ボタンと縦位置を合わせるため top を +3px
+			Frame(85, 51, 129, 70)		// Prev(〜85)と Next(129〜)の間(幅44に短縮=隙間を詰めた, 2026-07-24)。縦位置合わせで top を +3px
 			kTrue, kTrue,
 			kAlignCenter, kEllipsizeEnd, kTrue,
 			"",							// 初期テキストは空(実行時に位置を設定)
@@ -1017,7 +1041,7 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 			kKESCMNextChangeButtonWidgetID,
 			kSysButtonPMRsrcId,
 			kBindLeft | kBindTop,
-			Frame(144, 48, 202, 70)		// 幅82→48→58・右マージン12pxで Prev と対称(2026-07-15)
+			Frame(129, 48, 187, 70)		// 幅58維持・右マージン27pxで Prev と対称(クラスタ中央寄せ, 2026-07-24)
 			kTrue, kTrue,
 			kKESCMNextChangeKey,
 		),

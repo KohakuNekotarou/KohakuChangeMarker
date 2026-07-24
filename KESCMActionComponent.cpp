@@ -208,6 +208,19 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 			break;
 		}
 
+		// 「Align Other Views to Active」(実行アクション・ショートカット割当可): アクティブ(最前面)
+		// レイアウトビューの位置+拡大率を他文書の全ビューへ1回そろえる。Sync Layout Views トグルとは独立
+		// (OFF でも効く)。Start 中はページの Add/Remove 補正あり。実体は KESCMPeek.cpp の
+		// KESCMAlignOtherViewsToActiveNow(トグル ON 時の初回そろえと同じ同期エンジン)。
+		case kKESCMPopupAlignViewsActionID:
+		{
+			const bool16 ok = KESCMAlignOtherViewsToActiveNow();
+			PMString msg(ok ? "Aligned other views to the active view." : "Align: no active layout view.");
+			msg.SetTranslatable(kFalse);
+			KESCMSetStatus(msg);
+			break;
+		}
+
 		// 「Show Scrollbar Map」トグル: 文書窓の縦スクロールバー脇に変更位置の地図 strip を出すか(既定 ON)。
 		// ON にしたら現在の比較対象(sDB/sSrcDB)へ即 attach して表示、OFF にしたら全窓から即 detach。
 		// 未 arm(sDB=nil)で ON にした場合は attach が no-op=次の Start で自然に出る(フラグは ON のまま)。

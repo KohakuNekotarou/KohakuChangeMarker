@@ -43,8 +43,6 @@
 #include "CPMUnknown.h"
 #include "LayoutUIID.h"
 #include "DocumentContextID.h"
-#include "IToolBoxUtils.h"			// QueryActiveTool(Stop 中のツール選択判定でレイアウト同期を許可)
-#include "ITool.h"					// ::GetClass(activeTool) で boss を kKESCMToolBoss と比較
 
 // ジオメトリ / ビュー:
 #include "IControlView.h"
@@ -617,11 +615,13 @@ static void KESCMSyncOtherDocViewportsTo(IPanorama* srcPano, IDataBase* srcDocDb
 	// 同期の作動条件を2モードで判定する:
 	//   (A) 比較を Start 中(arm 済み): 従来通り Target↔Source の間だけ・追加/削除補正あり(ユーザー指定 2026-07-11)。
 	//       手本(操作した)ビューが Target/Source のどちらでもない第3文書なら同期しない。
-	//   (B) 未 Start(Stop 中)だが KESCM ツールが選択中: アクティブ(操作した)文書へ他の全文書を同期する
-	//       (ユーザー指定 2026-07-15)。AddRemove(追加/削除補正)は扱わない=applyPageOffset を強制 kFalse。
-	//   どちらの条件も満たさなければ何もしない(Stop かつツール非選択=誤同期を避けるため no-op)。
+	//   (B) 未 Start(Stop 中): アクティブ(操作した)文書へ他の全文書を同期する。
+	//       AddRemove(追加/削除補正)は扱わない=applyPageOffset を強制 kFalse。
+	//       ★2026-07-24 変更: 旧仕様は「Stop 中は KESCM ツール選択中のみ同期」(誤同期回避が目的)だったが、
+	//       この関数に来る時点で ONトグル(sLayoutSyncOn)は必ず ON 確定なので、それを作動条件と見なし、
+	//       ツールの選択状態に関係なく同期する(ユーザー指定)。
 	const bool16 armed = (sPeekArmed && sPeekTargetDB != nil && sPeekSourceDB != nil);
-	bool16 stopToolSync = kFalse;
+	bool16 stopBroadSync = kFalse;
 	if (armed)
 	{
 		if (srcDocDb != sPeekTargetDB && srcDocDb != sPeekSourceDB)
@@ -629,10 +629,7 @@ static void KESCMSyncOtherDocViewportsTo(IPanorama* srcPano, IDataBase* srcDocDb
 	}
 	else
 	{
-		InterfacePtr<ITool> activeTool(Utils<IToolBoxUtils>()->QueryActiveTool());
-		if (activeTool == nil || ::GetClass(activeTool) != kKESCMToolBoss)
-			return;
-		stopToolSync    = kTrue;
+		stopBroadSync   = kTrue;
 		applyPageOffset = kFalse;	// ★AddRemove(追加/削除補正)は掛けない(ユーザー指定)
 	}
 
@@ -664,8 +661,8 @@ static void KESCMSyncOtherDocViewportsTo(IPanorama* srcPano, IDataBase* srcDocDb
 
 		// ★arm 中(A)は Target/Source 以外の第3文書へは複製しない(ユーザー指定 2026-07-11)。手本は上のガードで
 		// 既に Target/Source のどちらかなので、宛先は「対の相手」1文書だけになる。
-		// Stop ツール同期(B)ではこの限定を外し、アクティブ文書以外の全文書へ複製する。
-		if (!stopToolSync && db != sPeekTargetDB && db != sPeekSourceDB)
+		// Stop 同期(B)ではこの限定を外し、アクティブ文書以外の全文書へ複製する。
+		if (!stopBroadSync && db != sPeekTargetDB && db != sPeekSourceDB)
 			continue;
 
 		// この宛先文書へ複製する中心座標。applyPageOffset のときは追加/削除補正(比較ペアの相手ページへ
@@ -919,6 +916,25 @@ void KESCMSetLayoutSync(bool16 on)
 		KESCMLayoutSyncAttachContext(kFalse);
 		// オブザーバ本体は kActiveContextBoss 所属(AddIn)なので、寿命管理は不要。
 	}
+}
+
+// KESCMAlignOtherViewsToActiveNow(KESCMCore.h で宣言) — フライアウト/ショートカットの実行アクション。
+// アクティブ(最前面)レイアウトビューの位置+拡大率を他文書の全ビューへ1回そろえる。Sync Layout Views
+// トグルの ON/OFF とは独立で、OFF でも押せば1回だけそろう(トグル ON 時の初回そろえ=上の KESCMSetLayoutSync
+// と同じ手本ビュー取得+同じ同期エンジン呼び出し)。applyPageOffset=kTrue を渡すので、Start 中(arm)は
+// KESCMSyncOtherDocViewportsTo のガードにより Target↔Source 間でページの Add/Remove 補正が掛かり(賢く一致)、
+// 未 Start 時は同関数が補正を kFalse に強制して他の全文書へ生同期する。
+bool16 KESCMAlignOtherViewsToActiveNow()
+{
+	InterfacePtr<IControlView> front(Utils<ILayoutUIUtils>()->QueryFrontView());
+	if (front == nil)
+		return kFalse;
+	InterfacePtr<IPanorama> pano(KESCMQueryPanorama(front));
+	IDataBase* db = KESCMFindDocDbForView(front);
+	if (pano == nil || db == nil)
+		return kFalse;
+	KESCMSyncOtherDocViewportsTo(pano, db, kTrue /*applyPageOffset(arm時のみ補正・未arm時は関数内でkFalse強制)*/);
+	return kTrue;
 }
 
 
@@ -1448,16 +1464,14 @@ CREATE_PMINTERFACE(KESCMPeekStartup, kKESCMPeekStartupImpl)
 
 void KESCMPeekStartup::Startup()
 {
-	// ★レイアウトビュー同期を既定 ON にする(ユーザー指定 2026-07-15)。この時点で kActiveContextBoss は
-	// 既に存在するので ActiveContext 購読は付く。文書はまだ無くてもよい=以後、文書が開くたびに
-	// ActiveContext の Update(IID_IDOCUMENT)が KESCMLayoutSyncAttachAllPanoramas を呼び、そのビューを
-	// 購読へ足す。
-	KESCMSetLayoutSync(kTrue);
+	// ★レイアウトビュー同期は既定 OFF(ユーザー指定 2026-07-24。旧・既定 ON を撤回)。sLayoutSyncOn は
+	// 初期値 kFalse なので、ここで明示的に ON にしなければ OFF のまま。保存済み設定(下の読み込み)で
+	// syncLayoutViews=true を復元したユーザーだけ ON になる。
 
 	// ★続けて保存済みパネル設定(独自 JSON)をここで読み込む(ユーザー指定 2026-07-15)。
-	// 同期は Stop 中+ツール選択でも動くようになった(モードB)ため、「パネル初回オープン時に復元」の
-	// 従来タイミングでは、OFF を保存したユーザーでも起動〜パネルを開くまでの間だけ既定 ON で同期が
-	// 動いてしまう。起動時に読み込めばその窓が無くなる(保存が無ければ上の既定 ON のまま)。
+	// 同期は Stop 中でもトグル ON なら動くため、「パネル初回オープン時に復元」の従来タイミングだと、
+	// ON を保存したユーザーは起動〜パネルを開くまでの間だけ同期が止まってしまう。起動時に読み込めば
+	// その窓が無くなる(保存が無ければ上の既定 OFF のまま)。
 	// 各トグルの復元先は全部エンジン側のフラグ/購読で、パネルにも文書にも依存しない=起動時に安全
 	// (KESCMDoSetPrintMarks は db=nil のフラグのみ、ScrollMap/IgnoreMarker/HoldToHide 等は平の代入)。
 	// 内部の「セッション一度きり」ガードにより、パネル AutoAttach からの既存呼び出しは no-op のまま残る

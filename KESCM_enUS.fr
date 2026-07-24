@@ -44,6 +44,7 @@ resource StringTable (kSDKDefStringsResourceID + index_enUS)
                 kKESCMHideUnchangedMenuKey,			"Hide Unchanged Spreads",
                 kKESCMShowOldNumsMenuKey,			"Show Original Page Numbers",
                 kKESCMSyncViewsMenuKey,				"Sync Layout Views",
+                kKESCMAlignViewsMenuKey,			"Align Other Views to Active",
                 kKESCMScrollMapMenuKey,				"Show Scrollbar Map",
                 kKESCMSavePanelStateMenuKey,			"Save Panel Settings",
                 kKESCMSaveChecksMenuKey,			"Save Check && Register",
@@ -52,6 +53,11 @@ resource StringTable (kSDKDefStringsResourceID + index_enUS)
                 kKESCMRefreshOversetMenuKey,		"Refresh Overset",
                 kKESCMIgnorePageNumMenuKey,			"Ignore Page Number Marker",
                 kKESCMHoldToHideMarksMenuKey,			"Hold to Hide Marks",
+
+                // Keyboard Shortcuts editor area for shortcut-assignable actions: the value string that
+                // "KBSCE Palette Menus: KohakuChangeMarker: " (kKESCMPanelMenuActionArea) resolves to. This
+                // files those actions under Product Area "Palette Menus", prefixed "KohakuChangeMarker".
+                kKESCMPanelMenuActionArea,			kKESCMPanelMenuActionAreaValue,
 
                 // ----- Command strings
 

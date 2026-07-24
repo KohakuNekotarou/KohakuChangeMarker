@@ -270,11 +270,15 @@ void KESCMToggleStartStop()
 
 		KESCMDoClearMarks(db);
 		KESCMDoDisarmMousePeek(db);
-		// スクロールバー地図: Find Overset が単独 ON 中なら残す(比較の赤帯だけ消して overset の赤帯を保つ)。
+		// スクロールバー地図: まず比較用の strip を全窓(Target/Source 両方)から取り外す。
+		// ★Find Overset が単独 ON 中なら、続けて overset 文書(sOversetDB)だけへ strip を貼り直す
+		//   (比較解除で Source 窓に strip が残らないようにする 2026-07-24)。あわせて overset を再走査して
+		//   リフレッシュする(ユーザー報告: overset 有りで Start→編集で解消→Stop すると、集合が編集前のまま
+		//   残り「まだ有る」と判断していた)。KESCMApplyOversetForDoc は sOversetDB を再走査し、サムネイル/
+		//   地図の Attach+Invalidate/Prev-Next をまとめて更新する。
+		KESCMScrollMapDetachAll();	// スクロールバー地図stripを全窓(Target/Source)から取り外す
 		if (KESCMDrawEventHandler::sOversetOn)
-			KESCMScrollMapInvalidateAll();
-		else
-			KESCMScrollMapDetachAll();	// スクロールバー地図stripを全窓から取り外す
+			KESCMApplyOversetForDoc(KESCMDrawEventHandler::sOversetDB);
 		PMString s("marks cleared"); s.SetTranslatable(kFalse);
 		KESCMSetStatus(s);
 	}
@@ -304,10 +308,11 @@ void KESCMToggleStartStop()
 		KESCMDoArmMousePeek(targetDB, sourceDB);
 		KESCMScrollMapAttach(targetDB);	// Target の各文書窓にスクロールバー地図stripを注入
 		KESCMScrollMapAttach(sourceDB);	// Source 窓にも表示(2026-07-11 ユーザー要望。strip 側が窓の文書を見て供給元を切替)
-		// ★Find Overset が別文書(または未紐づけ)で ON のままなら、比較 Target に貼り直す(2026-07-24)。
-		//   これで Start 後も Prev/Next が「変更(枠)→ overset」を同じ Target 文書で巡れる(overset が
-		//   sOversetDB!=sDB で黙って巡回対象から外れる不具合の防止)。同一文書なら再走査しない。
-		if (KESCMDrawEventHandler::sOversetOn && KESCMDrawEventHandler::sOversetDB != targetDB)
+		// ★Find Overset が ON のままなら、Start 時に必ず比較 Target を再走査して overset を貼り直す(2026-07-24)。
+		//   これで (a) Start 後も Prev/Next が「変更(枠)→ overset」を同じ Target 文書で巡れる(overset が
+		//   sOversetDB!=sDB で黙って巡回対象から外れる不具合の防止)＋(b) 同一文書でも編集で増減した overset を
+		//   リフレッシュできる(ユーザー報告: 同一文書だと再走査せず古い集合が残っていた)。
+		if (KESCMDrawEventHandler::sOversetOn)
 			KESCMApplyOversetForDoc(targetDB);
 		KESCMSetStatus(report);
 	}

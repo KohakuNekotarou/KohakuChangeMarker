@@ -51,6 +51,7 @@ resource StringTable (kSDKDefStringsResourceID + index_jaJP)
                 kKESCMHideUnchangedMenuKey,			"Hide Unchanged Spreads",
                 kKESCMShowOldNumsMenuKey,			"Show Original Page Numbers",
                 kKESCMSyncViewsMenuKey,				"Sync Layout Views",
+                kKESCMAlignViewsMenuKey,			"Align Other Views to Active",
                 kKESCMScrollMapMenuKey,				"Show Scrollbar Map",
                 kKESCMSavePanelStateMenuKey,			"Save Panel Settings",
                 kKESCMSaveChecksMenuKey,			"Save Check && Register",
@@ -59,6 +60,11 @@ resource StringTable (kSDKDefStringsResourceID + index_jaJP)
                 kKESCMRefreshOversetMenuKey,		"Refresh Overset",
                 kKESCMIgnorePageNumMenuKey,			"Ignore Page Number Marker",
                 kKESCMHoldToHideMarksMenuKey,			"Hold to Hide Marks",
+
+                // キーボードショートカットエディタ用のエリア値(kKESCMPanelMenuActionArea の解決先)。
+                // 割当可アクションを Product Area「Palette Menus」の「KohakuChangeMarker: …」として並べる。
+                // 値はロケール非依存だが KESCL と同様に翻訳テーブルへ両ロケール同値で登録する。
+                kKESCMPanelMenuActionArea,			kKESCMPanelMenuActionAreaValue,
 
                 // ----- Command strings
 

@@ -198,4 +198,12 @@ IDataBase*	KESCMGetHideUnchangedSrcDB();
 bool16		KESCMGetLayoutSync();
 void		KESCMSetLayoutSync(bool16 on);
 
+// フライアウト「Align Other Views to Active」(実行アクション。ショートカット割当可)。アクティブ(最前面)
+// レイアウトビューの位置+拡大率を、他のドキュメントの全レイアウトビューへ1回だけそろえる。Sync Layout
+// Views トグルの ON/OFF とは独立(OFF でも1発で効く)。同期エンジンは KESCMSetLayoutSync の初回そろえと
+// 同じ KESCMSyncOtherDocViewportsTo を applyPageOffset=kTrue で呼ぶので、Start 中は Target↔Source 間で
+// ページの Add/Remove 補正が掛かり(賢く一致)、未 Start 時は他の全文書へ生同期する。
+// 戻り値: アクティブなレイアウトビューが取得できて同期を実行したら kTrue、無ければ kFalse。実体は KESCMPeek.cpp。
+bool16		KESCMAlignOtherViewsToActiveNow();
+
 #endif // __KESCMCore_h__
