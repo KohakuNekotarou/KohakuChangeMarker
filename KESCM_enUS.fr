@@ -48,6 +48,8 @@ resource StringTable (kSDKDefStringsResourceID + index_enUS)
                 kKESCMSavePanelStateMenuKey,			"Save Panel Settings",
                 kKESCMSaveChecksMenuKey,			"Save Check && Register",
                 kKESCMLoadChecksMenuKey,			"Load Check && Register",
+                kKESCMFindOversetMenuKey,			"Find Overset",
+                kKESCMRefreshOversetMenuKey,		"Refresh Overset",
                 kKESCMIgnorePageNumMenuKey,			"Ignore Page Number Marker",
                 kKESCMHoldToHideMarksMenuKey,			"Hold to Hide Marks",
 

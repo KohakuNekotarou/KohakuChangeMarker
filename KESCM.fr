@@ -446,6 +446,29 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKESCMLoadChecksMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
+		// Separator above the Find Overset group (independent single-doc overset check).
+		kKESCMPopupOversetSepActionID,
+		kKESCMPopupMenuPath ":-",
+		kKESCMOversetSepMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
+		// "Find Overset" on the panel flyout (popup) menu. Check-mark toggle (independent of the
+		// new/old comparison): while ON, the ACTIVE document is scanned and a large red cross ("+")
+		// is drawn on every page that contains overset (overflowing) text. The check mark comes from
+		// UpdateActionStates (kCustomEnabling). Screen-only. The work is in KESCMOversetScan.cpp.
+		kKESCMPopupFindOversetActionID,
+		kKESCMPopupMenuPath,
+		kKESCMFindOversetMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
+		// "Refresh Overset" on the panel flyout (popup) menu. Plain command that re-scans the active
+		// document and refreshes the crosses. Enabled only while "Find Overset" is ON (greyed out
+		// otherwise) - UpdateActionStates supplies the enable state (kCustomEnabling).
+		kKESCMPopupRefreshOversetActionID,
+		kKESCMPopupMenuPath,
+		kKESCMRefreshOversetMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
 		// Separator above How to Use (path ending in ":-" renders a menu separator; no ActionDef needed).
 		kKESCMPopupSep2ActionID,
 		kKESCMPopupMenuPath ":-",
@@ -655,6 +678,24 @@ resource ActionDef (kSDKDefActionResourceID)
 		kOtherActionArea,
 		kNormalAction,
 		kDisableIfLowMem,					// plain command; guards inside (needs Start)
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		kKESCMActionComponentBoss,
+		kKESCMPopupFindOversetActionID,
+		kKESCMFindOversetMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates supplies the check mark (kSelectedAction)
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		kKESCMActionComponentBoss,
+		kKESCMPopupRefreshOversetActionID,
+		kKESCMRefreshOversetMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates enables only while Find Overset is ON (greyed out otherwise)
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 

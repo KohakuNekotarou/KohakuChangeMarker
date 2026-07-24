@@ -90,6 +90,9 @@ IDataBase* KESCMDrawEventHandler::sOrigDB = nil;
 bool16 KESCMDrawEventHandler::sShowOriginal = kFalse;	// 既定=非表示(kescmShowOriginal で ON)
 PMReal KESCMDrawEventHandler::sOrigScale = 0.0;	// ラスタ化時のズームスケール(0=未設定)
 PMReal KESCMDrawEventHandler::sPeekOpacity = 1.0;	// 既定=不透明(Shift peek)。Shift+Alt peek で 0.5 にする
+bool16 KESCMDrawEventHandler::sOversetOn = kFalse;	// Find Overset トグル(既定 OFF)
+IDataBase* KESCMDrawEventHandler::sOversetDB = nil;	// 走査した文書(pointer 識別のみ)
+std::set<UID> KESCMDrawEventHandler::sOversetPages;	// overset を含むページ UID 集合
 
 
 //========================================================================================
@@ -925,6 +928,53 @@ static void KESCMDrawPageDiagonal(IGraphicsPort* gPort, IDataBase* db, UID pageU
 
 
 //========================================================================================
+// ページ全体に大きな「＋」(縦横の中央線)をベクター線で描く(色指定)。用途: フライアウト
+// 「Find Overset」でアクティブ文書を走査し、overset(あふれ)のあるページに「このページに
+// あふれがある」の目印を出す。比較(sEntries)とは完全に独立=比較ON中でも重ねられる。
+// KESCMDrawPageDiagonal と同じ座標・太さ・不透明度・クリップの流儀(ラスタ不要のベクター線
+// なので screen/print とも setopacity で正しく合成される。ただし Find Overset は画面のみ)。
+//========================================================================================
+static void KESCMDrawPageCross(IGraphicsPort* gPort, IDataBase* db, UID pageUID,
+	const PMReal& sxr, int32 drawMode, const PMReal& screenOpacity,
+	uint8 cr, uint8 cg, uint8 cb)
+{
+	InterfacePtr<IGeometry> pageGeo(db, pageUID, UseDefaultIID());
+	if (pageGeo == nil)
+		return;
+
+	PMRect pr = pageGeo->GetPathBoundingBox();
+	PMMatrix m = ::InnerToSpreadMatrix(pageGeo);
+	m.Transform(&pr);								// → spread(=描画ポート)座標
+
+	// 太さ: 画面=ズーム適応(px/sxr)、サムネイル(sxr<=0)=ページ短辺の固定比率(「/」と同じ除数)。
+	const PMReal minDim = (pr.Width() < pr.Height() ? pr.Width() : pr.Height());
+	PMReal w = (sxr > 0) ? (kKESCMRingTargetPx / sxr) : (minDim / PMReal(kKESCMThumbDiagDivisor));
+	const PMReal maxW = minDim / PMReal(2.0);
+	if (w > maxW) w = maxW;
+	if (w < PMReal(0.5))
+		return;
+
+	const PMReal opacity = (sxr <= 0) ? kKESCMThumbMarkOpacity
+		: ((drawMode == kKESCMDrawModePrint) ? KESCMDrawEventHandler::SelectedMarkOpacity() : screenOpacity);
+
+	AutoGSave ag(gPort);
+	// ノドの共有線に届かないよう、通常マークと同じく約1pt内側でクリップしてから引く。
+	const PMReal kKESCMClipInset = 1.0;	// pt
+	gPort->rectclip(pr.Left()   + kKESCMClipInset, pr.Top()    + kKESCMClipInset,
+	                pr.Width()  - kKESCMClipInset * 2.0, pr.Height() - kKESCMClipInset * 2.0);
+	gPort->setopacity(opacity, kFalse);
+	gPort->setrgbcolor(cr / PMReal(255.0), cg / PMReal(255.0), cb / PMReal(255.0));
+	gPort->setlinewidth(w);
+	const PMReal cx = (pr.Left() + pr.Right()) / PMReal(2.0);	// ページ中央 X
+	const PMReal cy = (pr.Top()  + pr.Bottom()) / PMReal(2.0);	// ページ中央 Y
+	gPort->newpath();
+	gPort->moveto(pr.Left(), cy);   gPort->lineto(pr.Right(),  cy);	// 横線(中央)
+	gPort->moveto(cx, pr.Top());    gPort->lineto(cx,          pr.Bottom());	// 縦線(中央)
+	gPort->stroke();
+}
+
+
+//========================================================================================
 // ページ中央に ✓(チェックマーク)をベクター線で描く(色指定)。「KESCM: Check」でチェックした
 // ページに描く。描き先は2通り(layoutStyle で切替):
 //   ・kFalse = Pages パネルのサムネイル(従来。呼び出し側で isThumb を判定): サイズ=短辺 0.52、
@@ -1065,6 +1115,10 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	// サムネイル(isThumb)は下の専用ブロックが従来どおり描くのでここでは対象外。
 	const bool16 wantChecks = !isThumb && (!printing || sPrintMarks) &&
 		((sDB != nil && KESCMPageCheckHasAny(sDB)) || (sSrcDB != nil && KESCMPageCheckHasAny(sSrcDB)));
+	// ★Find Overset の十字マーク: 比較(sEntries)・チェック(✓)等とは完全に独立。走査済み(sOversetOn)で
+	// 集合が非空なら「画面描画のみ」描く(印刷/PDF は対象外=!printing)。実際に描くのは db==sOversetDB の
+	// スプレッドだけ(下の描画ブロックで判定)。isThumb(サムネイル)には出さない(画面レイアウトビュー専用)。
+	const bool16 wantOverset = !printing && !isThumb && sOversetOn && sOversetDB != nil && !sOversetPages.empty();
 	// 旧ページ番号バッジ: トグルON かつ「枠が見えている」間(=印刷マークON の常時表示、またはツール左hold中)。
 	// 枠の可視条件(wantMarks の sPrintMarks || sMarksVisible)と同じ揃え。印刷文脈は suppressForPrint で
 	// sPrintMarks ON のときだけ生き残る=印刷に出るのは印刷マークON時のみ(従来どおり)。
@@ -1074,7 +1128,7 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	// Start と無関係に描く「登録専用パス」があり、未 Start でも右クリック登録すると緑「/」が出ていたが、
 	// これを撤去した(登録自体も arm 済みのときだけ可能に変更)。よって登録「/」は下の Target/Source メイン
 	// ループ(db==sDB / db==sSrcDB。=Start 中のみ成立)だけが描く。ここでの Anywhere 判定・専用パスは不要。
-	if (!wantMarks && !wantOrig && !wantOldNums && !wantSrcMarks && !wantChecks)
+	if (!wantMarks && !wantOrig && !wantOldNums && !wantSrcMarks && !wantChecks && !wantOverset)
 		return kFalse;
 
 	GraphicsData* gd = ded->gd;
@@ -1215,6 +1269,22 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 			if (KESCMPageCheckIsChecked(db, puid))
 				KESCMDrawPageCheck(gPort, db, puid, sxr, drawMode, SelectedMarkOpacity(),
 					kKESCMCheckR, kKESCMCheckG, kKESCMCheckB, kTrue /*layoutStyle*/);
+		}
+	}
+
+	// ★Find Overset の十字マーク(画面のみ)。走査した文書(sOversetDB)のスプレッド描画でだけ、overset を
+	//   含むページ(sOversetPages)にページいっぱいの赤い「＋」を描く。比較(sEntries)・✓・ツール左hold 等
+	//   とは完全に独立=sOversetOn の間は常時表示。色/太さ/不透明度は変更リング枠と同じ(kKESCMRing*・
+	//   kKESCMRingTargetPx/sxr・SelectedMarkOpacity)。db!=sOversetDB のスプレッド(別文書)には出さない。
+	if (wantOverset && db == sOversetDB)
+	{
+		const int32 npx = spread->GetNumPages();
+		for (int32 i = 0; i < npx; ++i)
+		{
+			const UID puid = spread->GetNthPageUID(i);
+			if (sOversetPages.count(puid) > 0)
+				KESCMDrawPageCross(gPort, db, puid, sxr, drawMode, SelectedMarkOpacity(),
+					kKESCMRingR, kKESCMRingG, kKESCMRingB);
 		}
 	}
 

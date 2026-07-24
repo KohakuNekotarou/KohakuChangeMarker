@@ -186,6 +186,23 @@ public:
 	static PMReal sPeekOpacity;							// 覗き中(peek)の旧版べた載せの不透明度。Shift+左=1.0(不透明)/
 														// Shift+Alt+左=0.5(半透明)。描画ブロックが参照する
 
+	// ★オーバーセットページの十字マーク(フライアウト「Find Overset」)。比較(sEntries)とは完全に独立。
+	// アクティブ1文書を走査して overset(あふれ)のあるページ UID を sOversetPages に保持し、sOversetOn の
+	// 間その文書(sOversetDB)のスプレッド描画で、該当ページにページいっぱいの赤い「＋」を画面のみ描く
+	// (色/太さ/不透明度は変更リング枠と同じ)。sOversetDB は「どの文書を走査したか」の識別用で、描画時は
+	// db とのポインタ一致だけを見る(deref しない)=閉じても安全。トグルOFF/クローズ時は sOversetPages を空に。
+	static bool16 sOversetOn;			// Find Overset トグル(既定 OFF)
+	static IDataBase* sOversetDB;		// 走査した文書(pointer 識別のみ。deref しない)
+	static std::set<UID> sOversetPages;	// overset を含むページ UID 集合
+
+	// Find Overset のクリア(トグルOFF / 走査文書クローズ / 別文書切替)。集合を空にしトグルも OFF へ。
+	static void DropOverset()
+	{
+		sOversetOn = kFalse;
+		sOversetDB = nil;
+		sOversetPages.clear();
+	}
+
 	// (一時トースト機構は 2026-07-04 に撤去。メッセージはパネルのステータス行(KESCMSetStatus)へ。
 	//  仕組み自体は他プラグインへの転用候補: docs/ai-notes/kescm-toast-mechanism.md と git 履歴 509e830 を参照)
 

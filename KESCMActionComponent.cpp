@@ -47,6 +47,10 @@
 #include "KESCMPeek.h"				// KESCMBaseScreenOpacity(Hold to Hide Marks 切替時に常時表示の基準不透明度を反映)
 #include "KESCMScrollMap.h"		// KESCMScrollMapInvalidateAll(Hide Unchanged 切替後に地図を描き直す)
 #include "KESCMPanelState.h"		// KESCMSavePanelState(フライアウト「Save Panel Settings」)
+#include "KESCMOversetScan.h"		// KESCMCollectOversetPages(Find Overset の検出=アクティブ文書走査)
+#include "IActiveContext.h"			// GetContextDocument(アクティブ文書の解決)
+#include "IDocument.h"
+#include "PersistUtils.h"			// ::GetUIDRef(doc)(アクティブ文書 → db)
 
 // ★注意: source/public/includes/URLUtils.h は "namespace URLUtils { PUBLIC_DECL void GoToURL(...); }" と
 // 宣言しているが、これはヘッダーとバイナリの不一致(Public.lib 側の実エクスポート名と食い違っている)。
@@ -88,6 +92,8 @@ private:
 	void DoAboutScript();
 	void DoUsage();
 	void DoHideUnchangedToggle();
+	void DoFindOversetToggle();		// フライアウト「Find Overset」: アクティブ文書を走査して十字表示/消去(トグル)
+	void DoRefreshOverset();		// フライアウト「Refresh Overset」: ON時のみ・アクティブ文書を再走査
 };
 
 /* Binds the C++ implementation class onto its ImplementationID. */
@@ -154,6 +160,16 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 		// ON→OFF は自分が隠した分だけ再表示。本体は DoHideUnchangedToggle。
 		case kKESCMPopupHideUnchangedActionID:
 			this->DoHideUnchangedToggle();
+			break;
+
+		// フライアウト「Find Overset」トグル: アクティブ文書を走査し overset のあるページへ十字表示/OFFで消去。
+		case kKESCMPopupFindOversetActionID:
+			this->DoFindOversetToggle();
+			break;
+
+		// フライアウト「Refresh Overset」: Find Overset が ON のときだけ有効=アクティブ文書を再走査して貼り直す。
+		case kKESCMPopupRefreshOversetActionID:
+			this->DoRefreshOverset();
 			break;
 
 		// 「Show Original Page Numbers」トグル: フラグを反転して再描画するだけ(バッジの表示判定と描画は
@@ -422,6 +438,18 @@ void KESCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionSta
 			// ページパネル右クリックの「KESCM: Refresh Page Comparison」(トグルではない実行アクション):
 			// Start中(arm済み)かつ前面文書が Target/Source のときだけ有効化。それ以外はグレーアウト。
 			listToUpdate->SetNthActionState(i, KESCMRefreshComparisonAvailable() ? kEnabledAction : kDisabled_Unselected);
+		}
+		else if (action == kKESCMPopupFindOversetActionID)
+		{
+			int16 actionState = kEnabledAction;
+			if (KESCMDrawEventHandler::sOversetOn)
+				actionState |= kSelectedAction;	// ON ならチェックマーク
+			listToUpdate->SetNthActionState(i, actionState);
+		}
+		else if (action == kKESCMPopupRefreshOversetActionID)
+		{
+			// Find Overset が ON のときだけ有効(=再走査可能)。OFF 時は灰色(kDisabled_Unselected)。
+			listToUpdate->SetNthActionState(i, KESCMDrawEventHandler::sOversetOn ? kEnabledAction : kDisabled_Unselected);
 		}
 	}
 }
@@ -771,6 +799,96 @@ IDataBase* KESCMGetHideUnchangedSrcDB()
 
 // (KESCMDoSplitTarget(Split Target 90/10)は 2026-07-04 撤去。実装全文と実測知見は
 //  docs/ai-notes/kescm-split-target-mechanism.md と git 履歴 69c4b07 に保存=他プラグインへの転用候補)
+
+
+//========================================================================================
+// Find Overset(フライアウト): アクティブ1文書を走査し、overset のあるページに十字を出す/消す。
+// 比較(sEntries)とは完全に独立。状態は KESCMDrawEventHandler::sOversetOn/sOversetDB/sOversetPages。
+//========================================================================================
+
+// アクティブ文書の db(無ければ nil)。KESCMPanelObserver の KESCMActiveDoc と同じ解決経路。
+static IDataBase* KESCMActionActiveDocDB()
+{
+	IActiveContext* ac = GetExecutionContextSession() ? GetExecutionContextSession()->GetActiveContext() : nil;
+	IDocument* doc = ac ? ac->GetContextDocument() : nil;
+	if (doc == nil)
+		return nil;
+	return ::GetUIDRef(doc).GetDataBase();
+}
+
+/* DoFindOversetToggle — フライアウト「Find Overset」トグル。
+   OFF→ON: アクティブ文書を走査(KESCMCollectOversetPages)→ overset ページ集合を保持し十字を表示。
+   ON→OFF: 集合を空にしてトグル OFF、走査していた文書を再描画して十字を消す。 */
+void KESCMActionComponent::DoFindOversetToggle()
+{
+	// ON→OFF: 十字を消す。
+	if (KESCMDrawEventHandler::sOversetOn)
+	{
+		IDataBase* prevDB = KESCMDrawEventHandler::sOversetDB;
+		KESCMDrawEventHandler::DropOverset();
+		KESCMInvalidateDB(prevDB);	// nil 安全(他の呼び出しと同じ)
+		PMString msg("Find Overset: off.");
+		msg.SetTranslatable(kFalse);
+		KESCMSetStatus(msg);
+		return;
+	}
+
+	// OFF→ON: アクティブ文書を走査。
+	IDataBase* db = KESCMActionActiveDocDB();
+	if (db == nil)
+	{
+		PMString msg("Find Overset: no active document.");
+		msg.SetTranslatable(kFalse);
+		KESCMSetStatus(msg);
+		return;
+	}
+	std::set<UID> pages;
+	KESCMCollectOversetPages(db, pages);
+
+	KESCMDrawEventHandler::sOversetOn = kTrue;
+	KESCMDrawEventHandler::sOversetDB = db;
+	KESCMDrawEventHandler::sOversetPages.swap(pages);
+	KESCMInvalidateDB(db);
+
+	PMString msg("Find Overset: on (");
+	msg.SetTranslatable(kFalse);
+	msg.AppendNumber((int32)KESCMDrawEventHandler::sOversetPages.size());
+	msg.Append(" page(s)).");
+	KESCMSetStatus(msg);
+}
+
+/* DoRefreshOverset — フライアウト「Refresh Overset」。Find Overset が ON のときだけ有効(OFF時は
+   UpdateActionStates で灰色)。アクティブ文書を再走査して集合を貼り直す。文書が切り替わっていたら
+   前の文書の十字も消す。 */
+void KESCMActionComponent::DoRefreshOverset()
+{
+	if (!KESCMDrawEventHandler::sOversetOn)
+		return;	// OFF時は無効(保険。通常はメニューが灰色で呼ばれない)
+
+	IDataBase* db = KESCMActionActiveDocDB();
+	if (db == nil)
+	{
+		PMString msg("Refresh Overset: no active document.");
+		msg.SetTranslatable(kFalse);
+		KESCMSetStatus(msg);
+		return;
+	}
+	std::set<UID> pages;
+	KESCMCollectOversetPages(db, pages);
+
+	IDataBase* prevDB = KESCMDrawEventHandler::sOversetDB;
+	KESCMDrawEventHandler::sOversetDB = db;
+	KESCMDrawEventHandler::sOversetPages.swap(pages);
+	if (prevDB != nil && prevDB != db)
+		KESCMInvalidateDB(prevDB);	// 別文書に切り替わっていたら前の文書の十字を消す
+	KESCMInvalidateDB(db);
+
+	PMString msg("Refresh Overset: ");
+	msg.SetTranslatable(kFalse);
+	msg.AppendNumber((int32)KESCMDrawEventHandler::sOversetPages.size());
+	msg.Append(" page(s).");
+	KESCMSetStatus(msg);
+}
 
 // KESCMOpenAboutURL(KESCMCore.h で宣言) — パネルのイラストクリックから呼ばれる。「このプラグインに
 // ついて」本文と同じ配布元URL(kKESCMRepoURL)を既定のブラウザで開く。ドキュメントモデルには一切

@@ -1576,6 +1576,16 @@ void KESCMHandleDocsClosed()
 	// クローズと quit の close-all フェーズでは従来どおりフルクリーンアップが走る(挙動変更なし)。
 	const bool16 quitting = KESCMAppIsQuitting();
 
+	// ★Find Overset(比較とは独立): 走査した文書が閉じていたら十字状態を捨てる。sOversetDB は描画時に
+	//   ポインタ一致だけを見る(deref しない)が、閉じたまま残すと別文書へアドレスが再利用された時に
+	//   誤って十字を描き得るので、ここで能動的に掃除する。メモリ破棄のみ=終了中(quitting)でも安全。
+	//   他文書には元々出していないので再描画も不要(閉じた文書の十字は窓ごと消える)。
+	if (KESCMDrawEventHandler::sOversetOn && KESCMDrawEventHandler::sOversetDB != nil &&
+	    docList->FindDocByDataBase(KESCMDrawEventHandler::sOversetDB) == nil)
+	{
+		KESCMDrawEventHandler::DropOverset();
+	}
+
 	bool16 changed = kFalse;
 
 	// 比較に関わる db(マーク sDB / 旧版 sOrigDB / Source側枠 sSrcDB / peek arm の target・source)の
