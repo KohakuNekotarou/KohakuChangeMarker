@@ -48,6 +48,7 @@
 #include "KESCMScrollMap.h"		// KESCMScrollMapInvalidateAll(Hide Unchanged 切替後に地図を描き直す)
 #include "KESCMPanelState.h"		// KESCMSavePanelState(フライアウト「Save Panel Settings」)
 #include "KESCMOversetScan.h"		// KESCMCollectOversetLocations(Find Overset の検出=アクティブ文書走査)
+#include "KESCMChangedPagesTSV.h"	// KESCMExportChangedPagesTSV(フライアウト「Export Changed Pages...」)
 #include "KESCMChangeNav.h"			// KESCMRefreshNavPosition(overset トグルで Prev/Next の対象数を更新)
 #include "IActiveContext.h"			// GetContextDocument(アクティブ文書の解決)
 #include "IDocument.h"
@@ -90,7 +91,6 @@ public:
 
 private:
 	void DoAbout();
-	void DoAboutScript();
 	void DoUsage();
 	void DoHideUnchangedToggle();
 	void DoFindOversetToggle();		// フライアウト「Find Overset」: アクティブ文書を走査して十字表示/消去(トグル)
@@ -131,9 +131,7 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 			KESCMSetMarkOpacity25(kFalse);
 			break;
 
-		case kKESCMPopupAboutScriptActionID:
-			this->DoAboutScript();
-			break;
+		// (kKESCMPopupAboutScriptActionID / DoAboutScript は 2026-07-25 撤去=About Scripting 項目削除。)
 
 		case kKESCMPopupUsageActionID:
 			this->DoUsage();
@@ -343,6 +341,13 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 			KESCMPageCheckLoadFromFile();
 			break;
 
+		// フライアウトの「Export Changed Pages...」: 現在の比較(Start 後)の変更ページ一覧を
+		// TSV(新ページ/旧ページ/種別=変更/挿入/削除)で保存する(実体 KESCMChangedPagesTSV.cpp)。
+		// 比較中(sDB≠nil)のみ有効。オーバーセットは含めない。
+		case kKESCMPopupExportChangedPagesActionID:
+			KESCMExportChangedPagesTSV();
+			break;
+
 		default:
 			break;
 	}
@@ -471,6 +476,11 @@ void KESCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionSta
 			// Find Overset が ON のときだけ有効(=再走査可能)。OFF 時は灰色(kDisabled_Unselected)。
 			listToUpdate->SetNthActionState(i, KESCMDrawEventHandler::sOversetOn ? kEnabledAction : kDisabled_Unselected);
 		}
+		else if (action == kKESCMPopupExportChangedPagesActionID)
+		{
+			// 比較中(sDB≠nil)のみ有効=書き出す変更データが在り得るとき。未 Start は灰色。
+			listToUpdate->SetNthActionState(i, (KESCMDrawEventHandler::sDB != nil) ? kEnabledAction : kDisabled_Unselected);
+		}
 	}
 }
 
@@ -488,19 +498,8 @@ void KESCMActionComponent::DoAbout()
 	);
 }
 
-/* DoAboutScript — パネルのフライアウト「スクリプトについて」。スクリプトAPIは撤去済みなので、その旨を表示する。 */
-void KESCMActionComponent::DoAboutScript()
-{
-	CAlert::ModalAlert
-	(
-		kKESCMScriptHelpStringKey,	// Alert string ("No scripts are currently available.")
-		kOKString,					// OK button
-		kNullString,				// No second button
-		kNullString,				// No third button
-		1,							// Set OK button to default
-		CAlert::eInformationIcon	// Information icon
-	);
-}
+/* (DoAboutScript は 2026-07-25 撤去=About Scripting 項目削除。スクリプトAPIは元々撤去済みで、
+    "No scripts are currently available." を出すだけの項目だった。) */
 
 /* DoUsage — パネルのフライアウト「使い方」。操作リファレンス(=旧パネルの説明文)を表示する。 */
 void KESCMActionComponent::DoUsage()

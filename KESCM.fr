@@ -456,6 +456,16 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKESCMLoadChecksMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
+		// "Export Changed Pages..." on the panel flyout (popup) menu. Plain command (not a toggle):
+		// writes the current comparison's changed-page list to a tab-separated UTF-8 text file
+		// (columns: new page / old page / kind = changed / inserted / deleted) for pasting into
+		// Excel. Overset is never included. Enabled only while a comparison is active (sDB != nil);
+		// UpdateActionStates supplies the enable state (kCustomEnabling). Work in KESCMChangedPagesTSV.cpp.
+		kKESCMPopupExportChangedPagesActionID,
+		kKESCMPopupMenuPath,
+		kKESCMExportChangedPagesMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
 		// Separator above the Find Overset group (independent single-doc overset check).
 		kKESCMPopupOversetSepActionID,
 		kKESCMPopupMenuPath ":-",
@@ -491,11 +501,9 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKESCMUsageMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
-		// "About scripting" on the panel flyout (popup) menu.
-		kKESCMPopupAboutScriptActionID,
-		kKESCMPopupMenuPath,
-		kKESCMAboutScriptMenuItemPosition,
-		kSDKDefIsNotDynamicMenuFlag,
+		// ("About scripting" フライアウト項目は 2026-07-25 に撤去(ユーザー指定)。スクリプトAPIは
+		//  既に無く、"No scripts are currently available." を出すだけの項目だったため。ActionID
+		//  kKESCMPopupAboutScriptActionID(kKESCMPrefix+3)は予約のまま。)
 
 		// "About this plug-in" on the panel flyout (popup) menu (shown last).
 		kKESCMPopupAboutThisActionID,
@@ -706,6 +714,15 @@ resource ActionDef (kSDKDefActionResourceID)
 		kSDKDefInvisibleInKBSCEditorFlag,
 
 		kKESCMActionComponentBoss,
+		kKESCMPopupExportChangedPagesActionID,
+		kKESCMExportChangedPagesMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates enables only while a comparison is active (sDB != nil)
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		kKESCMActionComponentBoss,
 		kKESCMPopupFindOversetActionID,
 		kKESCMFindOversetMenuKey,
 		kOtherActionArea,
@@ -732,14 +749,7 @@ resource ActionDef (kSDKDefActionResourceID)
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 
-		kKESCMActionComponentBoss,
-		kKESCMPopupAboutScriptActionID,
-		kKESCMAboutScriptMenuKey,
-		kOtherActionArea,
-		kNormalAction,
-		kDisableIfLowMem,
-		kInvalidInterfaceID,
-		kSDKDefInvisibleInKBSCEditorFlag,
+		// (kKESCMPopupAboutScriptActionID の ActionDef は 2026-07-25 に撤去=About Scripting 項目削除に伴い。)
 
 		kKESCMActionComponentBoss,
 		kKESCMPopupAboutThisActionID,

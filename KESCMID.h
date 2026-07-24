@@ -158,7 +158,7 @@ DECLARE_PMID(kImplementationIDSpace, kKESCMCursorProviderImpl, kKESCMPrefix + 17
 DECLARE_PMID(kActionIDSpace, kKESCMAboutActionID, kKESCMPrefix + 0)
 DECLARE_PMID(kActionIDSpace, kKESCMPanelWidgetActionID, kKESCMPrefix + 1)	// パネルの表示/非表示(ウィンドウメニュー)
 DECLARE_PMID(kActionIDSpace, kKESCMPopupAboutThisActionID, kKESCMPrefix + 2)	// パネルのフライアウトの「このプラグインについて」
-DECLARE_PMID(kActionIDSpace, kKESCMPopupAboutScriptActionID, kKESCMPrefix + 3)	// パネルのフライアウトの「スクリプトについて」
+DECLARE_PMID(kActionIDSpace, kKESCMPopupAboutScriptActionID, kKESCMPrefix + 3)	// (撤去・予約)旧「About Scripting」フライアウト項目。2026-07-25 削除(ユーザー指定)。ID スロットは予約のまま
 DECLARE_PMID(kActionIDSpace, kKESCMPopupUsageActionID, kKESCMPrefix + 4)	// パネルのフライアウトの「使い方」
 // kActionIDSpace +5 は現在空き(旧 kKESCMPopupTestSplitActionID; Split Test 検証メニューは撤去済み)
 // kActionIDSpace +6 は現在空き(旧 kKESCMPopupSplitTargetActionID; Split Target on Start は 2026-07-04 撤去。
@@ -191,6 +191,7 @@ DECLARE_PMID(kActionIDSpace, kKESCMPageRefreshCompareActionID, kKESCMPrefix + 30
 DECLARE_PMID(kActionIDSpace, kKESCMPopupFindOversetActionID, kKESCMPrefix + 31)	// パネルのフライアウトの「Find Overset」チェック式トグル(ON=アクティブ文書を走査し overset のあるページに大きな十字を表示。比較と独立・単独点検。kCustomEnabling。実体 KESCMActionComponent.cpp/KESCMOversetScan.cpp)
 DECLARE_PMID(kActionIDSpace, kKESCMPopupRefreshOversetActionID, kKESCMPrefix + 32)	// パネルのフライアウトの「Refresh Overset」(実行アクション)。Find Overset が ON のときだけ有効(OFF時は灰色)=アクティブ文書を再走査して十字を貼り直す。kCustomEnabling
 DECLARE_PMID(kActionIDSpace, kKESCMPopupOversetSepActionID, kKESCMPrefix + 33)	// フライアウト: Find Overset 群の上の区切り線(MenuDef のパス末尾 ":-"。ActionDef 不要・DoAction 不要=一意なIDだけ要る)
+DECLARE_PMID(kActionIDSpace, kKESCMPopupExportChangedPagesActionID, kKESCMPrefix + 34)	// パネルのフライアウトの「Export Changed Pages...」(実行アクション)。比較中(sDB≠nil)のみ有効=現在の比較の変更ページ一覧をTSV(新/旧/種別)で保存。実体 KESCMChangedPagesTSV.cpp
 //DECLARE_PMID(kActionIDSpace, kKESCMActionID, kKESCMPrefix + 15)
 //DECLARE_PMID(kActionIDSpace, kKESCMActionID, kKESCMPrefix + 15)
 //DECLARE_PMID(kActionIDSpace, kKESCMActionID, kKESCMPrefix + 16)
@@ -302,6 +303,7 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMToolWidgetID, kKESCMPrefix + 41)	// ツール
 #define kKESCMLoadChecksMenuKey		kKESCMStringPrefix "kKESCMLoadChecksMenuKey"	// パネルのフライアウト「Load Check & Register」項目のメニュー名
 #define kKESCMFindOversetMenuKey	kKESCMStringPrefix "kKESCMFindOversetMenuKey"	// パネルのフライアウト「Find Overset」トグルのメニュー名
 #define kKESCMRefreshOversetMenuKey	kKESCMStringPrefix "kKESCMRefreshOversetMenuKey"	// パネルのフライアウト「Refresh Overset」項目のメニュー名
+#define kKESCMExportChangedPagesMenuKey	kKESCMStringPrefix "kKESCMExportChangedPagesMenuKey"	// パネルのフライアウト「Export Changed Pages...」項目のメニュー名
 
 // ショートカット割当可アクション用のアクションエリア(KESCL と同型。2026-07-24)。ActionDef の area 欄に
 // kKESCMPanelMenuActionArea を渡し、StringTable でその値 kKESCMPanelMenuActionAreaValue に解決させると、
@@ -376,9 +378,10 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMToolWidgetID, kKESCMPrefix + 41)	// ツール
 //     Marks opacity ▸(9.26) → Show Original Page Numbers(9.28) → Show Marks on Source(9.30) →
 //     Show Scrollbar Map(9.32) → Sync Layout Views(9.34) →
 //   ─線OversetSep(9.40) → Find Overset(9.42) → Refresh Overset(9.44) →
-//   ─線Sep3(9.50) → [実行アクション群] Align Other Views to Active(9.52) → Hide Unchanged Spreads(9.54) →
-//     Save Panel Settings(9.56) → Save Check & Register(9.58) → Load Check & Register(9.60) →
-//   ─線Sep2(9.95) → How to Use(10) → About Scripting(11) → About this plug-in(12)。
+//   ─線Sep3(9.50) → [実行アクション群] Align Other Views to Active(9.52) → Export Changed Pages...(9.53) →
+//     Hide Unchanged Spreads(9.54) → Save Panel Settings(9.56) → Save Check & Register(9.58) →
+//     Load Check & Register(9.60) →
+//   ─線Sep2(9.95) → How to Use(10) → About this plug-in(12)。 ※About Scripting(11)は 2026-07-25 撤去
 // ※メニュー名は日本語ロケールでも英語で統一(2026-07-04)。区切り線は Sep1/OversetSep/Sep3/Sep2 の4本を再利用。
 #define kKESCMStartStopMenuItemPosition		9.0	// 「Start / Stop」(比較開始/解除)をフライアウト先頭に。名前は arm 状態で動的に Start↔Stop
 #define kKESCMSep1MenuItemPosition			9.1	// Start の下の区切り線(パス末尾 ":-")
@@ -404,6 +407,7 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMToolWidgetID, kKESCMPrefix + 41)	// ツール
 #define kKESCMSavePanelStateMenuItemPosition	9.56	// 実行アクション「Save Panel Settings」
 #define kKESCMSaveChecksMenuItemPosition	9.58	// 実行アクション「Save Check & Register」
 #define kKESCMLoadChecksMenuItemPosition	9.60	// 実行アクション「Load Check & Register」
+#define kKESCMExportChangedPagesMenuItemPosition	9.53	// 実行アクション「Export Changed Pages...」(変更ページ一覧をTSVで保存)。Align の直下(2026-07-25 ユーザー指定)
 // ── 情報系(末尾) ──
 #define kKESCMSep2MenuItemPosition			9.95	// How to Use の上の区切り線(パス末尾 ":-")
 #define kKESCMUsageMenuItemPosition			10.0	// 「使い方」
