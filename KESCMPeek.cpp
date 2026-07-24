@@ -92,6 +92,7 @@
 static IDataBase* sPeekTargetDB = nil;	// 表示中(新)ドキュメント。使用前に「まだ開いているか」を検証する。
 static IDataBase* sPeekSourceDB = nil;	// peek 中に重ねる旧ドキュメント。
 static bool16     sPeekArmed    = kFalse;
+static IDataBase* sSoloCmykDB   = nil;	// Stop 中の単独色ピックで押下したマウス下文書(比較 arm とは独立)。押下中だけ保持し RevealEnd で nil。
 
 // Shift+左=旧版を不透明(100%)で / Shift+Alt+左=旧版を 50% で重ねて peek。
 // 押下中だけ表示し、ツール左ボタンを離すと消す(修飾キーは離してもよい)。判定はツール左ボタン押下時に1回見るだけ。
@@ -1131,7 +1132,13 @@ static void KESCMCmykCursorBitmapProc(uchar* bitmapBuffer, uint32* width, uint32
 	// なく BeginTracking の多段カーソル切替が OS のハードウェアカーソル合成にそのまま見えていたことだと
 	// 判明し、KESCMTracker.cpp 側で ICursorMgr::Hide/Show により解決済み(2026-07-14)。stroke 自体は
 	// 無罪なので✓に戻して問題ない。
-	KESCMDrawCheckGlyph(gPort);
+	// ★✓の色は常時ツールカーソル(KESCMCursorProvider.cpp)と揃える(ユーザー要望 2026-07-24):
+	//   Start(arm 済み=CMYK は必ず Target 窓上で出る)は黒✓、Stop(未 arm の単独ピック)は白抜き✓
+	//   (黒フチ+白本体=KESCMCheckCursorInactiveBitmapProc と同一パラメータ)。数値部分は変えない。
+	if (sPeekArmed)
+		KESCMDrawCheckGlyph(gPort);											// 黒✓(Start)
+	else
+		KESCMDrawCheckGlyph(gPort, PMReal(1.0), PMReal(0.0), PMReal(5.0));	// 白抜き✓(Stop)
 
 	// 上から: ヘッダー "C M Y K"(各列先頭にそろえる) / Target 数値 / Source 数値。数値は各値3桁で行頭
 	// そろえ、末尾に t/s。フォント fs・行位置は上で計算済み。描画は KESCMShowHalo(白フチ＋黒本体)。
@@ -1168,7 +1175,13 @@ CreateCursorBitmapProc KESCMTrackerCmykCursorProc() { return &KESCMCmykCursorBit
 // トラッカーの Hide/Show ラップ判定の両方がこれを使う=条件は必ずここ1本で変える(2026-07-15)。
 bool16 KESCMTrackerCmykCursorWouldShow()
 {
-	return (KESCMArmedDocsAlive() && KESCMFrontViewIsOverTarget()) ? kTrue : kFalse;
+	// Start 中(arm 済み): 従来どおり比較文書が生存し Target 窓上のときだけ(新旧2行の CMYK 比較)。
+	if (KESCMArmedDocsAlive())
+		return KESCMFrontViewIsOverTarget();
+	// Stop 中(未 arm): マウス下にレイアウトビュー+文書があれば、その1文書の CMYK を単独表示する
+	//   (ユーザー要望 2026-07-24。比較相手が無いので Target/Source の区別はせず「マウス下のどの文書でも」)。
+	InterfacePtr<IControlView> viewUnderMouse(KESCMQueryViewUnderMouse());
+	return (KESCMFindDocDbForView(viewUnderMouse) != nil) ? kTrue : kFalse;
 }
 
 // ツール常時✓カーソルの黒/白抜き判定(KESCMPeek.h 参照)。黒=「Start 中かつマウス下ビューが Target 文書」
@@ -1189,12 +1202,34 @@ bool16 KESCMToolCursorShouldBeBlack(IControlView* viewUnderMouse)
 // 前方宣言。定義は KESCMTrackerRevealBegin の直前(ページ外の「値なし c---」表示を作る)。
 static void KESCMBuildCmykNoValue(PMString& out);				// カーソル用(t/s)
 static void KESCMBuildCmykNoValuePanel(PMString& out);			// パネル用(見出し行+Target/Source)
+static void KESCMBuildCmykNoValueSolo(PMString& out);			// solo(Stop): カーソル1行(ラベルなし)
+static void KESCMBuildCmykNoValuePanelSolo(PMString& out);		// solo(Stop): パネル1行(ラベルなし)
+
+// Stop 単独ピックで押下中に固定した文書(sSoloCmykDB)がまだ開いているか。arm 版 KESCMArmedDocsAlive の
+// 単独文書版(比較相手が無いので Target/Source の二重検査はしない)。ドラッグ中に稀な経路で押下文書が
+// 閉じても、解放済み IDataBase をサンプリングへ渡さないための最終ライン防御。
+static bool16 KESCMSoloDocAlive()
+{
+	if (sSoloCmykDB == nil)
+		return kFalse;
+	InterfacePtr<IApplication> app(GetExecutionContextSession()->QueryApplication());
+	InterfacePtr<IDocumentList> docList(app ? app->QueryDocumentList() : nil);
+	return (docList != nil && docList->FindDocByDataBase(sSoloCmykDB) != nil) ? kTrue : kFalse;
+}
 
 bool16 KESCMTrackerUpdateCmykDrag()
 {
 	if (!sCmykCursorPending)	// Alt+左 CMYK モードでなければ何もしない
 		return kFalse;
-	if (!sPeekArmed || sPeekTargetDB == nil || sPeekSourceDB == nil)
+
+	// Start=arm 済みの Target/Source を比較 / Stop=押下中に固定した単独文書(sSoloCmykDB)。
+	const bool16 solo = !sPeekArmed;
+	if (solo)
+	{
+		if (sSoloCmykDB == nil)
+			return kFalse;
+	}
+	else if (sPeekTargetDB == nil || sPeekSourceDB == nil)
 		return kFalse;
 
 	// スロットル(50ms)。steady_clock は単調増加なのでラップの心配なし。初回は必ず通す。
@@ -1211,19 +1246,26 @@ bool16 KESCMTrackerUpdateCmykDrag()
 	sStarted = kTrue;
 	sLast = now;
 
-	// スロットル通過後(≦20回/秒)に比較文書の生存を検査してからサンプリングへ渡す
-	// (責務は KESCMArmedDocsAlive のコメント参照。ドラッグ中の文書クローズはスクリプト経由等の稀な経路)。
-	if (!KESCMArmedDocsAlive())
+	// スロットル通過後(≦20回/秒)に文書の生存を検査してからサンプリングへ渡す
+	// (ドラッグ中の文書クローズはスクリプト経由等の稀な経路。arm 版=KESCMArmedDocsAlive / solo 版=KESCMSoloDocAlive)。
+	if (solo)
+	{
+		if (!KESCMSoloDocAlive())
+			return kFalse;
+	}
+	else if (!KESCMArmedDocsAlive())
 		return kFalse;
 
-	// 現在のマウス位置で新/旧をサンプリング(KESCMSampleCmykUnderMouse は毎回マウス位置を読み直す)。
-	// ページ外・取得失敗なら「値なし(c--- …)」表示にして、拾えていないことが分かるようにする
+	// 現在のマウス位置でサンプリング(KESCMSampleCmykUnderMouse は毎回マウス位置を読み直す)。solo は
+	// source=nil で target 単独(1行)。ページ外・取得失敗なら「値なし(--- …)」表示にして拾えていないことを示す
 	// (ユーザー要望 2026-07-13。直前値を残さない=誤読防止)。
+	IDataBase* tDB = solo ? sSoloCmykDB : sPeekTargetDB;
+	IDataBase* sDB = solo ? nil         : sPeekSourceDB;
 	PMString panelMsg, cursorMsg;
-	if (!KESCMSampleCmykUnderMouse(sPeekTargetDB, sPeekSourceDB, panelMsg, cursorMsg))
+	if (!KESCMSampleCmykUnderMouse(tDB, sDB, panelMsg, cursorMsg))
 	{
-		KESCMBuildCmykNoValue(cursorMsg);
-		KESCMBuildCmykNoValuePanel(panelMsg);
+		if (solo) { KESCMBuildCmykNoValueSolo(cursorMsg); KESCMBuildCmykNoValuePanelSolo(panelMsg); }
+		else      { KESCMBuildCmykNoValue(cursorMsg);     KESCMBuildCmykNoValuePanel(panelMsg); }
 	}
 	if (cursorMsg == sCmykCursorText)	// 値が同じなら描き直し不要(パネルも同じ値なので更新不要)
 		return kFalse;
@@ -1254,6 +1296,21 @@ static void KESCMBuildCmykNoValuePanel(PMString& out)
 	out.Append("C--- M--- Y--- K--- t");
 	out.AppendW(UTF32TextChar(0x0A));
 	out.Append("C--- M--- Y--- K--- s");
+}
+
+// solo(Stop 単独ピック)用の「値なし」1行版。ラベル(t/s)なし=1文書のみ。カーソル側は
+// KESCMSplitTwoLines が空の2行目を自動スキップするので、1行渡すだけで崩れない。
+static void KESCMBuildCmykNoValueSolo(PMString& out)
+{
+	out.Clear();
+	out.SetTranslatable(kFalse);
+	out.Append("--- --- --- ---");
+}
+static void KESCMBuildCmykNoValuePanelSolo(PMString& out)
+{
+	out.Clear();
+	out.SetTranslatable(kFalse);
+	out.Append("C--- M--- Y--- K---");
 }
 
 // 修飾キー→ジェスチャの分類(KESCMPeek.h 参照)。★割当の定義はここ1本だけ: トラッカーの Hide/Show
@@ -1304,39 +1361,54 @@ void KESCMTrackerRevealBegin(bool16 shiftDown, bool16 altDown, bool16 cmdDown)
 	// ---- ジェスチャ分岐 ----
 	if (gesture == kKESCMGestureCmyk)
 	{
-		// Alt+左(単独、Shift/Ctrl なし): クリック点の CMYK 生値(0..255)を新・旧でサンプリングし、
-		// "Target C.. M.. Y.. K.." / "Source C.. …" をカーソル自身に描画する。
-		// 旧・中ボタン Shift+Ctrl+Alt+ミドル。arm 済み(Start 後・比較文書が生存)かつ Target 窓上でのみ反応。
+		// Alt+左(単独、Shift/Ctrl なし): クリック点の CMYK 生値(0..255)をサンプリングしカーソル自身に描画する。
+		//   Start 中(arm 済み・Target 窓上) … 新・旧を比較(2行 "Target …" / "Source …")。
+		//   Stop 中(未 arm)                 … マウス下1文書を単独ピック(1行、ラベルなし。ユーザー要望 2026-07-24)。
 		// 判定はトラッカーの Hide/Show ラップと共有(KESCMTrackerCmykCursorWouldShow。食い違い禁止)。
 		if (KESCMTrackerCmykCursorWouldShow())
 		{
-			// ドラッグ中の再サンプル(≦20回/秒)が毎回重い準備をやり直さないよう、押下中キャッシュを
-			// ここで用意する(解放/破棄は RevealEnd。2026-07-15):
-			//   ・既定フォント(sCmykCursorFont) … カーソル再描画毎の IFontMgr 名前引きを回避
-			//   ・ページ対応表(KESCMSampleCmykBeginDrag) … サンプル毎の全ページ pairing 再構築を回避
+			// カーソル再描画毎(≦20回/秒)の IFontMgr 名前引きを回避する押下中フォントキャッシュ(解放は RevealEnd)。
 			if (sCmykCursorFont == nil)
 			{
 				InterfacePtr<IFontMgr> fontMgr(GetExecutionContextSession(), UseDefaultIID());
 				sCmykCursorFont = (fontMgr != nil) ? fontMgr->QueryFont(fontMgr->GetDefaultFontName()) : nil;
 			}
-			KESCMSampleCmykBeginDrag(sPeekTargetDB, sPeekSourceDB);
+
+			// サンプリング対象を Start/Stop で切り替える。
+			//   Start(arm 済み) … Target/Source を比較。ページ対応表キャッシュを用意(サンプル毎の全ページ
+			//                      pairing 再構築を回避。破棄は RevealEnd)。
+			//   Stop(未 arm)    … マウス下の文書を単独ピック(source=nil)。ページ対応が無いのでキャッシュ不要。
+			//                      押下中は sSoloCmykDB に固定(解除は RevealEnd)。
+			const bool16 solo = !sPeekArmed;
+			IDataBase* tDB;
+			IDataBase* sDB;
+			if (solo)
+			{
+				InterfacePtr<IControlView> viewUnderMouse(KESCMQueryViewUnderMouse());
+				sSoloCmykDB = KESCMFindDocDbForView(viewUnderMouse);
+				tDB = sSoloCmykDB;
+				sDB = nil;
+			}
+			else
+			{
+				tDB = sPeekTargetDB;
+				sDB = sPeekSourceDB;
+				KESCMSampleCmykBeginDrag(tDB, sDB);
+			}
 
 			PMString panelMsg, cursorMsg;
-			if (!KESCMSampleCmykUnderMouse(sPeekTargetDB, sPeekSourceDB, panelMsg, cursorMsg))
+			if (!KESCMSampleCmykUnderMouse(tDB, sDB, panelMsg, cursorMsg))
 			{
-				KESCMBuildCmykNoValue(cursorMsg);	/* ページ外など: 拾えないことを示す(値なし c--- 表示) */
-				KESCMBuildCmykNoValuePanel(panelMsg);
+				// ページ外など: 拾えないことを示す(値なし --- 表示)。
+				if (solo) { KESCMBuildCmykNoValueSolo(cursorMsg); KESCMBuildCmykNoValuePanelSolo(panelMsg); }
+				else      { KESCMBuildCmykNoValue(cursorMsg);     KESCMBuildCmykNoValuePanel(panelMsg); }
 			}
-			{
-				// 色比較はカーソル自身に CMYK を描く(トラッカーが ChangeModalCursor する)のに加えて、
-				// 念のためパネルのステータス行にも同じ値を出す(ユーザー要望 2026-07-14)。
-				// ★KESCMSetStatus はパネルが非表示でも「強制的に表示」はしない(ON→表示中なら見える、
-				// OFF→隠れたまま状態だけ覚える)。パネルを強制的に開かせることはしない
-				// (ユーザー指定: OFFのままでよい、ONにはしない)。
-				KESCMSetStatus(panelMsg);
-				sCmykCursorText    = cursorMsg;
-				sCmykCursorPending = kTrue;
-			}
+			// カーソル自身に CMYK を描く(トラッカーが ChangeModalCursor する)のに加えて、パネルのステータス行にも
+			// 同じ値を出す。★KESCMSetStatus はパネルが非表示でも「強制的に表示」はしない(ON→表示中なら見える、
+			// OFF→隠れたまま状態だけ覚える)。パネルを強制的に開かせることはしない(ユーザー指定)。
+			KESCMSetStatus(panelMsg);
+			sCmykCursorText    = cursorMsg;
+			sCmykCursorPending = kTrue;
 		}
 		return;
 	}
@@ -1390,6 +1462,7 @@ void KESCMTrackerRevealEnd()
 		sCmykCursorFont = nil;
 	}
 	KESCMSampleCmykEndDrag();
+	sSoloCmykDB = nil;	// Stop 単独ピックで押下中に固定していたマウス下文書の保持を解除(押下の外では持たない)。
 
 	// Alt+左(CMYK 色比較)を離したら、押下中にパネルのステータス行へ出していた CMYK 値を消す
 	// (ユーザー要望 2026-07-15: ホールド終了でメッセージは消す)。sCmykCursorPending は押下中に

@@ -154,8 +154,10 @@ static void KESCMAppendCmykLabeled(PMString& s, const uint8 c[4])
 bool16 KESCMSampleCmykUnderMouse(IDataBase* targetDB, IDataBase* sourceDB,
                                  PMString& outPanel, PMString& outCursor)
 {
-	if (targetDB == nil || sourceDB == nil)
+	if (targetDB == nil)
 		return kFalse;
+	// sourceDB==nil = Stop 中の単独色ピック(比較相手なし)。target 側だけ読み、CMYK を1行(ラベルなし)で返す。
+	const bool16 solo = (sourceDB == nil);
 
 	// マウスが乗っているレイアウトビュー(Split Window対応、KESCMQueryViewUnderMouse参照)。
 	InterfacePtr<IControlView> view(KESCMQueryViewUnderMouse());
@@ -168,9 +170,38 @@ bool16 KESCMSampleCmykUnderMouse(IDataBase* targetDB, IDataBase* sourceDB,
 	if (!KESCMFindPageUnderMouse(targetDB, mx, my, hit))
 		return kFalse;
 
-	// 新→旧ページ対応(除外対応表=登録済みページを除いた順番対応)。ドラッグ中はキャッシュを引く
-	// (BeginDrag で構築済み。対応表に無い=登録済み/あふれページは値なし)。
 	const UID tPageUID = hit.hitPageUID;
+
+	// クリック点(pasteboard) → ページ内(inner)座標 → target の spread 座標(solo/比較 共通)。
+	InterfacePtr<IGeometry> tGeo(targetDB, tPageUID, UseDefaultIID());
+	if (tGeo == nil)
+		return kFalse;
+	PMMatrix mPB = ::InnerToPasteboardMatrix(tGeo);
+	if (mPB.IsSingular())
+		return kFalse;
+	PMPoint inner(mx, my);
+	mPB.Inverse().Transform(&inner);
+	PMPoint tSpreadPt(inner.X(), inner.Y());
+	::InnerToSpreadMatrix(tGeo).Transform(&tSpreadPt);
+
+	uint8 cN[4];
+	if (!KESCMReadCmykPixel(UIDRef(targetDB, tPageUID), tSpreadPt, cN))
+		return kFalse;
+
+	// ---- 単独モード(Stop): target の CMYK を1行だけ返す。カーソルは KESCMSplitTwoLines が
+	//      2行目(空)を自動スキップするので、1行渡すだけでヘッダー「C M Y K」+1行に収まる。 ----
+	if (solo)
+	{
+		outCursor.SetTranslatable(kFalse);
+		KESCMAppendCmyk(outCursor, cN);			// "C.. M.. Y.. K.."(ラベルなし=1文書のみ)
+		outPanel.SetTranslatable(kFalse);
+		KESCMAppendCmykLabeled(outPanel, cN);	// "C .. M .. Y .. K .."(ラベルなし)
+		return kTrue;
+	}
+
+	// ---- 比較モード(Start): 新→旧ページ対応(除外対応表=登録済みページを除いた順番対応)を解決し
+	//      source も読む。ドラッグ中はキャッシュを引く(BeginDrag で構築済み。対応表に無い=登録済み/
+	//      あふれページは値なし)。 ----
 	UID sPageUID;
 	if (sDragCacheActive && targetDB == sDragCacheTargetDB && sourceDB == sDragCacheSourceDB)
 	{
@@ -181,46 +212,26 @@ bool16 KESCMSampleCmykUnderMouse(IDataBase* targetDB, IDataBase* sourceDB,
 	}
 	else if (!KESCMMapTargetToSource(targetDB, sourceDB, tPageUID, sPageUID))
 		return kFalse;
-	InterfacePtr<IGeometry> tGeo(targetDB, tPageUID, UseDefaultIID());
 	InterfacePtr<IGeometry> sGeo(sourceDB, sPageUID, UseDefaultIID());
-	if (tGeo == nil || sGeo == nil)
+	if (sGeo == nil)
 		return kFalse;
-
-	// クリック点(pasteboard) → ページ内(inner)座標 → 新/旧それぞれの spread 座標。
-	PMMatrix mPB = ::InnerToPasteboardMatrix(tGeo);
-	if (mPB.IsSingular())
-		return kFalse;
-	PMPoint inner(mx, my);
-	mPB.Inverse().Transform(&inner);
-
-	PMPoint tSpreadPt(inner.X(), inner.Y());
-	::InnerToSpreadMatrix(tGeo).Transform(&tSpreadPt);
 	PMPoint sSpreadPt(inner.X(), inner.Y());
 	::InnerToSpreadMatrix(sGeo).Transform(&sSpreadPt);
 
-	uint8 cN[4], cO[4];
-	const bool16 okN = KESCMReadCmykPixel(UIDRef(targetDB, tPageUID), tSpreadPt, cN);
-	const bool16 okO = KESCMReadCmykPixel(UIDRef(sourceDB, sPageUID), sSpreadPt, cO);
-	if (!okN || !okO)
+	uint8 cO[4];
+	if (!KESCMReadCmykPixel(UIDRef(sourceDB, sPageUID), sSpreadPt, cO))
 		return kFalse;
 
 	// 各値はラスタ8bit(0..255)を本来の CMYK 数値 0..100% に換算し、3桁ゼロ埋めで桁を揃える。
-	// 表示先でラベルの長さを変える: カーソルは幅制約が厳しいので1文字(t/s。maxChars見積りを減らして
-	// フォントサイズの余地を稼ぐ=ユーザー指定 2026-07-14)。
-
-	// outCursor = 数値2行、ラベルは t/s(KESCMPeek.cpp のビットマップカーソルは「C M Y K」見出しを別途
-	// 自前描画で足すので、渡す文字列は数値行のみでよい)。数値は両行とも行頭から始まるので
-	// C/M/Y/K の桁は自動的に縦へ揃う。
+	// outCursor = 数値2行、ラベルは t/s(ビットマップカーソルは「C M Y K」見出しを別途描くので数値行のみ)。
 	outCursor.SetTranslatable(kFalse);
 	KESCMAppendCmyk(outCursor, cN); outCursor.Append(" t");
 	outCursor.AppendW(UTF32TextChar(0x0A));	// 改行 → 2行目へ
 	KESCMAppendCmyk(outCursor, cO); outCursor.Append(" s");
 
-	// outPanel = 値ごとに見出し文字を直接添える(KESCMAppendCmykLabeled)+ t/s
-	// ★見出し行を数値行の上に別途置いて縦揃えする案は撤回した: パネルのステータス欄はプロポーショナル
-	// フォント(kPaletteWindowFontId)で、SDK にモノスペース選択肢が無いため、文字と数字の字幅差で
-	// スペース数をいくら調整しても縦に揃わなかった(ユーザー実機報告 2026-07-14)。値ごとにラベルを
-	// 直接添える今の形なら、行間の縦揃えが不要になり、フォント幅に関係なく崩れない。
+	// outPanel = 値ごとに見出し文字を直接添える(KESCMAppendCmykLabeled)+ t/s。
+	// ★見出し行を別途置いて縦揃えする案は撤回済み: パネルのステータス欄はプロポーショナルフォント
+	// (kPaletteWindowFontId)で字幅が揃わないため、値ごとにラベルを直接添える(フォント幅に依らず崩れない)。
 	outPanel.SetTranslatable(kFalse);
 	KESCMAppendCmykLabeled(outPanel, cN); outPanel.Append(" t");
 	outPanel.AppendW(UTF32TextChar(0x0A));
