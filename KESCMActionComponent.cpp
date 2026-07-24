@@ -215,7 +215,10 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 		case kKESCMPopupAlignViewsActionID:
 		{
 			const bool16 ok = KESCMAlignOtherViewsToActiveNow();
-			PMString msg(ok ? "Aligned other views to the active view." : "Align: no active layout view.");
+			// false は2通り: (a) 最前面レイアウトビューが無い / (b) Start 中で最前面が Target/Source 以外の
+			// 第3文書(engine が同期しない)。どちらも「実際にそろえていない」ので成功表示は出さない。
+			PMString msg(ok ? "Aligned other views to the active view."
+			                : "Align: no view to align from (while Started, use the Target or Source view).");
 			msg.SetTranslatable(kFalse);
 			KESCMSetStatus(msg);
 			break;
@@ -839,6 +842,16 @@ static IDataBase* KESCMActionActiveDocDB()
 void KESCMApplyOversetForDoc(IDataBase* db)
 {
 	if (db == nil)
+		return;
+
+	// ★最終ライン防御(2026-07-24): 大半の呼び出し(DoFindOverset/DoRefreshOverset/Start 経路)は
+	//   その場解決した生きた db を渡すが、Stop 経路だけは保存済みの sOversetDB を渡す。クローズ
+	//   responder が漏れて閉じた文書のポインタが来た場合に、下の走査(KESCMCollectOversetLocations)で
+	//   解放済み IDataBase を deref しないよう、ここで一度だけ生存確認する(FindDocByDataBase への
+	//   ポインタ比較のみ=deref しない。KESCM 全体の共通規約)。死んでいたら何もせず戻る。
+	InterfacePtr<IApplication> app(GetExecutionContextSession() ? GetExecutionContextSession()->QueryApplication() : nil);
+	InterfacePtr<IDocumentList> docList(app != nil ? app->QueryDocumentList() : nil);
+	if (docList == nil || docList->FindDocByDataBase(db) == nil)
 		return;
 
 	// 前回の状態を退避(別文書へ移ったら前の文書の目印を消す/同一文書で抜けたページの目印を消すため)。

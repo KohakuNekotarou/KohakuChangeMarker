@@ -934,6 +934,12 @@ bool16 KESCMAlignOtherViewsToActiveNow()
 	IDataBase* db = KESCMFindDocDbForView(front);
 	if (pano == nil || db == nil)
 		return kFalse;
+	// ★Start 中(arm)は同期エンジンが Target↔Source 間だけに限定し、最前面が第3文書なら何もせず戻る。
+	//   その場合に「そろえた」と誤って成功表示を出さないよう、engine と同じ条件をここで先読みして kFalse を
+	//   返す(2026-07-24。下の KESCMSyncOtherDocViewportsTo の armed ガードと必ず同条件に保つ)。
+	if (sPeekArmed && sPeekTargetDB != nil && sPeekSourceDB != nil &&
+	    db != sPeekTargetDB && db != sPeekSourceDB)
+		return kFalse;
 	KESCMSyncOtherDocViewportsTo(pano, db, kTrue /*applyPageOffset(arm時のみ補正・未arm時は関数内でkFalse強制)*/);
 	return kTrue;
 }
