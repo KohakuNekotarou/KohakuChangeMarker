@@ -659,7 +659,7 @@ resource ActionDef (kSDKDefActionResourceID)
 
 		// "Align Other Views to Active": shortcut-assignable one-shot. kKESCMPanelMenuActionArea +
 		// kSDKDefVisibleInKBSCEditorFlag file it in the Keyboard Shortcuts editor under Product Area
-		// "Palette Menus" as "KohakuChangeMarker: Align Other Views to Active" (same treatment as KESCL's
+		// "Palette Menus" as "Kohaku Change Marker: Align Other Views to Active" (same treatment as KESCL's
 		// searches). No default shortcut ships; the user assigns one. Plain kDisableIfLowMem = always
 		// available (no UpdateActionStates entry needed).
 		kKESCMActionComponentBoss,
@@ -985,7 +985,7 @@ resource PanelList (kSDKDefPanelResourceID)
 		kNotResizable,				// fixed-size panel
 		kKESCMPanelWidgetActionID,	// Action ID to show/hide the panel
 		"",							// panelName empty: place via altMenu below for explicit menu placement
-		kKESCMPanelPluginsMenuPath,	// Plug-Ins > Kohaku Plug-Ins > KohakuChangeMarker(束ね名は kKESCMCompanyKey の解決値)
+		kKESCMPanelPluginsMenuPath,	// Plug-Ins > Kohaku Plug-Ins > Kohaku Change Marker(束ね名は kKESCMCompanyKey の解決値)
 		kKESCMPanelPluginsMenuPosition,	// lower part of the menu
 		kKESCMPaletteIconResID, kKESCMPluginID,	// PNG icon for the collapsed dock tab
 		c_Panel

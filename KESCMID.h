@@ -33,7 +33,8 @@
 
 // Plug-in:
 #define kKESCMPluginName	"KohakuExtendScriptChangeMarker"			// Name of this plug-in. 内部名(ID系・.rc の InternalName)。互換のため据え置き。
-#define kKESCMDisplayName	"KohakuChangeMarker"			// 表示名(About メニュー項目・About ボックス本文・出力 .pln 名)。
+#define kKESCMDisplayName	"Kohaku Change Marker"			// 表示名(About メニュー項目・About ボックス本文・パネル/ツール名)。KBS の "Kohaku Search Panel" に合わせ、単語間をスペースで区切る(2026-07-25)。
+#define kKESCMFileName		"KohakuChangeMarker"			// 出力ファイル名の基底(.rc の OriginalFilename)。vcxproj の TargetName と一致させること。表示名と違いスペースは入れない。
 #define kKESCMPrefixNumber	0x205515 		// Unique prefix number for this plug-in(*Must* be obtained from Adobe Developer Support).
 #define kKESCMVersion		"1.0.1"						// Version of this plug-in (for the About Box).
 // (kKESCMAuthor はテンプレート残骸(どこからも未参照)のため削除 2026-07-25)
@@ -274,7 +275,7 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMToolWidgetID, kKESCMPrefix + 41)	// ツール
 //  下の kKESCMPanelPluginsMenuPath が担う)
 
 // パネルを Plug-Ins メニューへ出すためのパスと位置。
-// Plug-Ins ▸ KohakuNekotarou ▸ KohakuChangeMarker（リーフはパネル名キー）。
+// Plug-Ins ▸ KohakuNekotarou ▸ Kohaku Change Marker（リーフはパネル名キー）。
 #define kKESCMPanelPluginsMenuPath		kSDKDefPlugInsStandardMenuPath kKESCMCompanyKey kSDKDefDelimitMenuPath kKESCMPanelTitleKey
 #define kKESCMPanelPluginsMenuPosition	100.0	// 大きいほど下に並ぶ。
 
@@ -321,10 +322,12 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMToolWidgetID, kKESCMPrefix + 41)	// ツール
 
 // ショートカット割当可アクション用のアクションエリア(KESCL と同型。2026-07-24)。ActionDef の area 欄に
 // kKESCMPanelMenuActionArea を渡し、StringTable でその値 kKESCMPanelMenuActionAreaValue に解決させると、
-// Edit > キーボードショートカット の Product Area「Palette Menus」に「KohakuChangeMarker: <名前>」として並ぶ。
+// Edit > キーボードショートカット の Product Area「Palette Menus」に「Kohaku Change Marker: <名前>」として並ぶ。
 // 先頭の "KBSCE " は KBSC エディタ用エリアキーの規約プレフィックス。既定ショートカットは同梱しない(ユーザーが割当)。
-#define kKESCMPanelMenuActionArea		"KBSCE Palette Menus: KohakuChangeMarker: "
-#define kKESCMPanelMenuActionAreaValue	"Palette Menus:KohakuChangeMarker"
+// ※この表記は表示ラベルにすぎない。ショートカット自体は IShortcutManager が ActionID + コンテキスト文字列で
+//   保持する(IShortcutManager.h の AddShortcut/GetActionIDOfShortcut)ので、ここを改名しても既存の割当は外れない。
+#define kKESCMPanelMenuActionArea		"KBSCE Palette Menus: Kohaku Change Marker: "
+#define kKESCMPanelMenuActionAreaValue	"Palette Menus:Kohaku Change Marker"
 
 // パネル: 内部フライアウト(ポップアップ)メニュー名＋そのメニューパス。
 #define kKESCMInternalPopupMenuNameKey	kKESCMStringPrefix "kKESCMInternalPopupMenuNameKey"

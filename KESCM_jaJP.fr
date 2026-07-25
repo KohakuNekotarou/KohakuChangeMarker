@@ -62,7 +62,7 @@ resource StringTable (kSDKDefStringsResourceID + index_jaJP)
                 kKESCMHoldToHideMarksMenuKey,			"Hold to Hide Marks",
 
                 // キーボードショートカットエディタ用のエリア値(kKESCMPanelMenuActionArea の解決先)。
-                // 割当可アクションを Product Area「Palette Menus」の「KohakuChangeMarker: …」として並べる。
+                // 割当可アクションを Product Area「Palette Menus」の「Kohaku Change Marker: …」として並べる。
                 // 値はロケール非依存だが KESCL と同様に翻訳テーブルへ両ロケール同値で登録する。
                 kKESCMPanelMenuActionArea,			kKESCMPanelMenuActionAreaValue,
 
@@ -72,8 +72,8 @@ resource StringTable (kSDKDefStringsResourceID + index_jaJP)
 
                 // ----- Panel/dialog strings
                 // パネル UI は英語表記で統一(説明文 kKESCMHintKey のみ日本語のまま)。
-                kKESCMPanelTitleKey,			"KohakuChangeMarker",
-                kKESCMToolStringKey,			"KohakuChangeMarker Tool",	// ツール名も英語統一(メニュー名方針と同じ)
+                kKESCMPanelTitleKey,			"Kohaku Change Marker",
+                kKESCMToolStringKey,			"Kohaku Change Marker Tool",	// ツール名も英語統一(メニュー名方針と同じ)
                 kKESCMTargetLabelKey,			"Target:",
                 kKESCMSourceLabelKey,			"Source:",
                 kKESCMStartButtonKey,			"Start",
@@ -82,7 +82,7 @@ resource StringTable (kSDKDefStringsResourceID + index_jaJP)
                 kKESCMOpacity75Key,				"75%",
                 kKESCMPrevChangeKey,			"< Prev",
                 kKESCMNextChangeKey,			"Next >",
-                kKESCMHintKey,					"ChangeMarkerツール(ツールボックス)を選び、レイアウト上で:\n左ボタン長押し=\n　比較枠を表示(押している間/透明度はパネルの25%・75%)\n左ボタン+Shift長押し=\n　元(旧版)を表示(押している間)\n左ボタン+Shift+" kKESCMAltKeyName "長押し=\n　元を50%で表示(押している間)\n左ボタン+" kKESCMAltKeyName "長押し=\n　クリック点の色情報(CMYK)をカーソルとパネルに表示\n\nShift・" kKESCMAltKeyName "は押したままでも離してもOK\n\n【ページの追加・削除への対応(Add / Remove)】\nページを追加・削除すると、それ以降のページ番号がズレて本来同じページ同士が比較されなくなり、デザインが同じでも「すべて変更あり」と誤検知されることがあります。これを防ぐため、追加・削除したページを比較対象から外して登録できます。\n・使い方: ページパネルでページを選択して右クリックし、「KESCM: Register as Added/Removed Pages」を選びます\n・Target(新しい方)で登録=追加ページ / Source(古い方)で登録=削除ページ\n・もう一度同じ操作で登録を解除\n・登録したページは緑の斜線、ページ数の差で比較相手がいないページは赤の斜線で表示\n・Start済みの状態で登録・解除すると、その場で自動的に比較し直します\n\n【ページのチェック(KESCM: Check)】\n確認が済んだページにチェック印を付けられます。Start中のみ使用でき、Stopで消えます。\n・使い方: ページパネルでページを選択して右クリックし、「KESCM: Check」を選びます(もう一度で解除)\n・チェック印を付けられるのは、比較枠や斜線などのマークが付いているページだけです(マークの無いページには付きません)\n・チェック印と登録(Add / Remove)は保存・読込できます。パネルのフライアウトメニューから:\n　「Save Check & Register」= 現在のチェック印と登録を専用ファイルに保存(保存先のパスを表示)\n　「Load Check & Register」= 保存内容を読み込み、登録を適用して比較し直し、チェック印を復元(Start中のみ)\n・保存はこのプラグイン専用のファイル(環境設定フォルダー)に書くだけで、InDesignの文書やワークスペースには一切書き込みません\n・文書を別の場所へ移動したり別名保存したりして保存場所(パス)が変わると、保存したチェック印は復元できません\n\n【ページ比較の更新(KESCM: Refresh Page Comparison)】\n編集したページだけを比較し直せます。Start中のみ使用できます。\n・使い方: ページパネルでページを選択して右クリックし、「KESCM: Refresh Page Comparison」を選びます\n・選んだページの比較枠とサムネイルを最新の状態に更新します(TargetでもSourceでも可)\n\n【オーバーセットの検出(Find Overset)】\n比較とは別に、文字があふれた(オーバーセットの)ページを単独で探せます。\n・フライアウトの「Find Overset」でON/OFF\n・あふれのあるページをサムネイルに赤枠＋赤い「＋」、スクロールバー地図に赤帯で表示\n・テキストフレームのあふれに加え、表のセル単独のあふれ(赤丸)も検出\n・Prev/Nextであふれ箇所を巡回(比較中は各ページ 変更→あふれの順)\n・編集後は「Refresh Overset」で走査し直し(Find OversetがONのときのみ)\n\n比較枠の印刷をONにしても、ファイル＞書き出しのPDFには出ません。PDFにしたい場合は、プリントでプリンターの選択でPDFを選んでください。\n\n【注意】どのような問題が起こっても責任を取れません。ご利用は自己責任でお願いします。",
+                kKESCMHintKey,					"Kohaku Change Marker ツール(ツールボックス)を選び、レイアウト上で:\n左ボタン長押し=\n　比較枠を表示(押している間/透明度はパネルの25%・75%)\n左ボタン+Shift長押し=\n　元(旧版)を表示(押している間)\n左ボタン+Shift+" kKESCMAltKeyName "長押し=\n　元を50%で表示(押している間)\n左ボタン+" kKESCMAltKeyName "長押し=\n　クリック点の色情報(CMYK)をカーソルとパネルに表示\n\nShift・" kKESCMAltKeyName "は押したままでも離してもOK\n\n【ページの追加・削除への対応(Add / Remove)】\nページを追加・削除すると、それ以降のページ番号がズレて本来同じページ同士が比較されなくなり、デザインが同じでも「すべて変更あり」と誤検知されることがあります。これを防ぐため、追加・削除したページを比較対象から外して登録できます。\n・使い方: ページパネルでページを選択して右クリックし、「KESCM: Register as Added/Removed Pages」を選びます\n・Target(新しい方)で登録=追加ページ / Source(古い方)で登録=削除ページ\n・もう一度同じ操作で登録を解除\n・登録したページは緑の斜線、ページ数の差で比較相手がいないページは赤の斜線で表示\n・Start済みの状態で登録・解除すると、その場で自動的に比較し直します\n\n【ページのチェック(KESCM: Check)】\n確認が済んだページにチェック印を付けられます。Start中のみ使用でき、Stopで消えます。\n・使い方: ページパネルでページを選択して右クリックし、「KESCM: Check」を選びます(もう一度で解除)\n・チェック印を付けられるのは、比較枠や斜線などのマークが付いているページだけです(マークの無いページには付きません)\n・チェック印と登録(Add / Remove)は保存・読込できます。パネルのフライアウトメニューから:\n　「Save Check & Register」= 現在のチェック印と登録を専用ファイルに保存(保存先のパスを表示)\n　「Load Check & Register」= 保存内容を読み込み、登録を適用して比較し直し、チェック印を復元(Start中のみ)\n・保存はこのプラグイン専用のファイル(環境設定フォルダー)に書くだけで、InDesignの文書やワークスペースには一切書き込みません\n・文書を別の場所へ移動したり別名保存したりして保存場所(パス)が変わると、保存したチェック印は復元できません\n\n【ページ比較の更新(KESCM: Refresh Page Comparison)】\n編集したページだけを比較し直せます。Start中のみ使用できます。\n・使い方: ページパネルでページを選択して右クリックし、「KESCM: Refresh Page Comparison」を選びます\n・選んだページの比較枠とサムネイルを最新の状態に更新します(TargetでもSourceでも可)\n\n【オーバーセットの検出(Find Overset)】\n比較とは別に、文字があふれた(オーバーセットの)ページを単独で探せます。\n・フライアウトの「Find Overset」でON/OFF\n・あふれのあるページをサムネイルに赤枠＋赤い「＋」、スクロールバー地図に赤帯で表示\n・テキストフレームのあふれに加え、表のセル単独のあふれ(赤丸)も検出\n・Prev/Nextであふれ箇所を巡回(比較中は各ページ 変更→あふれの順)\n・編集後は「Refresh Overset」で走査し直し(Find OversetがONのときのみ)\n\n比較枠の印刷をONにしても、ファイル＞書き出しのPDFには出ません。PDFにしたい場合は、プリントでプリンターの選択でPDFを選んでください。\n\n【注意】どのような問題が起こっても責任を取れません。ご利用は自己責任でお願いします。",
 
               // ----- Error strings
 
