@@ -36,7 +36,7 @@
 #define kKESCMDisplayName	"Kohaku Change Marker"			// 表示名(About メニュー項目・About ボックス本文・パネル/ツール名)。KBS の "Kohaku Search Panel" に合わせ、単語間をスペースで区切る(2026-07-25)。
 #define kKESCMFileName		"KohakuChangeMarker"			// 出力ファイル名の基底(.rc の OriginalFilename)。vcxproj の TargetName と一致させること。表示名と違いスペースは入れない。
 #define kKESCMPrefixNumber	0x205515 		// Unique prefix number for this plug-in(*Must* be obtained from Adobe Developer Support).
-#define kKESCMVersion		"1.0.1"						// Version of this plug-in (for the About Box).
+#define kKESCMVersion		"1.1.0"						// Version of this plug-in。About ボックス本文・.rc の FileVersion・PluginVersion リソースの3か所に出る。1.0.1 → 1.1.0(2026-07-25)。
 // (kKESCMAuthor はテンプレート残骸(どこからも未参照)のため削除 2026-07-25)
 
 // Plug-in Prefix: (please change kKESCMPrefixNumber above to modify the prefix.)
