@@ -24,14 +24,19 @@
 #include "CTracker.h"
 #include "CTrackerEventHandler.h"
 #include "IEvent.h"
+#include "AutoBusyCursor.h"	// 押下前サンプリング中のコマンド処理系ビジーカーソル抑止
 
 #include "CursorSpec.h"		// CursorSpec / GetPlugIn()(Alt+左 CMYK のカスタムカーソル)
 #include "ISession.h"		// GetExecutionContextSession(ICursorMgr 取得)
 #include "IApplication.h"	// QueryApplication(ICursorMgr 取得)
-#include "ICursorMgr.h"		// Hide/Show(押下中カーソルの一時退避。ClearCache は撤去済み 2026-07-15)
+#include "ICursorMgr.h"		// Hide/Show(カーソル設置の1フレームを隠す。ClearCache は撤去済み 2026-07-15)
 
 #include "KESCMID.h"
+#include "KESCMConstants.h"	// kKESCMCursorSettleMillis(設置後の落ち着き待ち)
 #include "KESCMPeek.h"		// KESCMTrackerRevealBegin / KESCMTrackerRevealEnd / CMYK カーソル入口
+
+#include <chrono>			// milliseconds(カーソル設置後の落ち着き待ち)
+#include <thread>			// std::this_thread::sleep_for(同上。Win/Mac 共通)
 
 //____________________________________________________________________________________
 //	Tracker event handler: forwards events (notably the button-up) to the tracker while
@@ -84,41 +89,58 @@ public:
 		if (theEvent == nil || theEvent->GetType() != IEvent::kLButtonDn)
 			return kFalse;
 
-		// ★押下時の「1フレームのゴミ」対策(2026-07-14): Alt 単独(色比較)の押下では、①基底の
-		// モーダルカーソル取得(✓の再設定)→②重い CMYK サンプリング(ラスタ化×2)→③CMYK 情報カーソル
-		// 設置、とカーソルが多段に切り替わる。ハードウェアカーソルはアプリの処理と独立に OS が合成する
-		// ため、この途中状態は実時間でそのまま画面に出る。どこかの段が持つ未初期化の絵にコンポジタの
-		// フレームが落ちた時だけゴミが見える(=「出たり出なかったり」の正体。どの段かはカーソル
-		// マネージャ実装が非公開のため確定不能)。→ 遷移全体を ICursorMgr::Hide/Show で隠し、完成した
-		// CMYK カーソルだけを見せる(タイミング非依存。完成品の表示自体はドラッグ中の入れ直しがゴミゼロ
-		// であることで実証済み)。副作用=押下からサンプリング完了までの短い間カーソルが消える。
 		// ジェスチャ分類は KESCMClassifyGesture の1本に集約(独立の修飾キー判定を書かない。KESCMPeek.h)。
 		// ★Mac 対応(2026-07-25 追補): MacCtrlDown() も渡す。macOS の Control+クリックは副ボタンの標準
 		//   ジェスチャなので KESCMClassifyGesture 側で「未割当」に倒す。Windows では常に kFalse。
-		const bool16 cmykGesture = (KESCMClassifyGesture(theEvent->ShiftKeyDown(),
-		                            theEvent->OptionAltKeyDown(), theEvent->CmdKeyDown(),
-		                            theEvent->MacCtrlDown()) == kKESCMGestureCmyk);
+		const bool16 shiftDown = theEvent->ShiftKeyDown();
+		const bool16 altDown   = theEvent->OptionAltKeyDown();
+		const bool16 cmdDown   = theEvent->CmdKeyDown();
+		const bool16 macCtrl   = theEvent->MacCtrlDown();
+		const bool16 cmykGesture =
+			(KESCMClassifyGesture(shiftDown, altDown, cmdDown, macCtrl) == kKESCMGestureCmyk);
+
+		// ★押下時の「1フレームのゴミ」対策(2026-07-25 改訂。要点=隠す区間から重い処理を追い出し、設置後に待つ)。
+		//   Alt 単独(色比較)の押下では、①基底のモーダルカーソル取得(✓の再設定)→②重い CMYK サンプリング
+		//   (ページ対応表の構築＋極小ラスタ化×2)→③CMYK 情報カーソル設置、とカーソルが多段に切り替わる。
+		//   ハードウェアカーソルはアプリの処理と独立に OS が合成するため、設置が完成した絵を出す前に一瞬だけ
+		//   出す別の絵(未初期化バッファ等)がそのまま画面に出る=間欠的な「ゴミ」(ユーザー報告 2026-07-25:
+		//   数値が出る前に一瞬・毎回ではない)。
+		//   ★実測(2026-07-25): ②を隠す区間の外へ出して①→③を1ms程度に縮めただけ(Hide/Show 無し)では
+		//     ゴミは消えなかった。→ 原因は「切替に時間がかかること」ではなく「設置そのものが持つ1フレーム」
+		//     であり、隠す以外に手段は無い。ただし旧方式のように②まで隠すと、隠れている時間のほぼ全部が
+		//     ②の計算時間になってカーソルが目に見えて消える(ユーザー報告 2026-07-25)。
+		//   → 現方式: ②は隠す前に済ませ(✓カーソルを出したまま計算)、隠すのは「①+③+落ち着き待ち」だけ。
+		//     待ち = kKESCMCursorSettleMillis(KESCMConstants.h)。ゴミがまだ出るならその値を増やす。
+		//   ★AutoBusyCursor(kFalse) = サンプリング中にコマンド処理系の自動ビジーカーソルが割り込まない
+		//     ようにする抑止(基底が InitializeModalCursor でやっているのと同じことを、前倒しで効かせる)。
+		//     スコープを抜けると元の状態に戻る。
+		if (cmykGesture)
+		{
+			AutoBusyCursor noBusyCursorWhileSampling(kFalse);
+			KESCMTrackerRevealBegin(shiftDown, altDown, cmdDown, macCtrl);
+		}
+
 		// session は終了処理中に nil になり得るので QueryApplication の直呼びだけガードする
 		// (InterfacePtr(p, iid) 側は p==nil を許す。InterfacePtr.h:459。2026-07-25 追補 に KESCM 全体で統一)。
+		// ★隠すのは「CMYK カーソルを実際に出すとき」=値が採れた(Pending)ときだけ。値が採れないのに隠すと、
+		//   CMYK カーソルが出ないのにカーソルがまたたくだけになる(2026-07-15 の教訓。判定は Pending 1本)。
 		ISession* session = GetExecutionContextSession();
 		InterfacePtr<IApplication> theApp(session != nil ? session->QueryApplication() : nil);
 		InterfacePtr<ICursorMgr> cursorMgr(theApp, UseDefaultIID());
-		// ★CMYK カーソルが「実際に出る」条件(arm 済み・比較文書生存・Target 窓上)のときだけ Hide/Show で
-		//   多段切替を包む。判定は RevealBegin の Alt 分岐と KESCMTrackerCmykCursorWouldShow で共有
-		//   (2026-07-15。旧判定は KESCMIsArmed() のみで、Start 済みでも Source 窓や第3の文書上の Alt+左では
-		//   CMYK カーソルが出ないのに Hide/Show だけ走り、無駄にカーソルがまたたいていた)。
-		const bool16 hideDuringSwitch = (cmykGesture && cursorMgr != nil && KESCMTrackerCmykCursorWouldShow());
+		const bool16 hideDuringSwitch =
+			(cmykGesture && cursorMgr != nil && KESCMTrackerHasPendingCmykCursor());
 		if (hideDuringSwitch)
 			cursorMgr->Hide();
 
 		bool16 result = CTracker::BeginTracking(theEvent);
 		if (result)
 		{
-			KESCMTrackerRevealBegin(theEvent->ShiftKeyDown(), theEvent->OptionAltKeyDown(),
-			                        theEvent->CmdKeyDown(), theEvent->MacCtrlDown());
+			// CMYK 以外(reveal / peek)は従来どおり基底の後で発動する。CMYK は上で済ませてある。
+			if (!cmykGesture)
+				KESCMTrackerRevealBegin(shiftDown, altDown, cmdDown, macCtrl);
 
-			// Alt+左「色比較」のとき、カーソル自身に CMYK を描く。CTracker が BeginTracking で用意した
-			// modal cursor を自前のカスタムビットマップカーソルへ差し替える(トラッキング終了時に
+			// Alt+左「色比較」で値が採れていたら、カーソル自身に CMYK を描く。CTracker が BeginTracking で
+			// 用意した modal cursor を自前のカスタムビットマップカーソルへ差し替える(トラッキング終了時に
 			// CTracker が自動で元へ戻す)。kTrue(動的)スペックは設定の瞬間に未初期化バッファが見える
 			// ため使わない(InstallCmykCursor 参照)。ドラッグ中の数値更新は ContinueTracking が
 			// 値の変化時に InstallCmykCursor で入れ直して行う。
@@ -126,9 +148,22 @@ public:
 				this->InstallCmykCursor();
 		}
 
-		// Hide したら必ず対で Show する(サンプリング失敗や result==kFalse の経路も含む。消えっぱなし防止)。
+		// Hide したら必ず対で Show する(result==kFalse の経路も含む。消えっぱなし防止)。
+		// kKESCMCursorSettleMillis > 0 なら見せる前にその時間だけ待つ(既定 0=待たない。KESCMConstants.h の
+		// 説明のとおり、包んでさえいれば待ちは不要。ゴミが再発したときの調整用に残してある)。
 		if (hideDuringSwitch)
+		{
+			if (kKESCMCursorSettleMillis > 0)
+				std::this_thread::sleep_for(std::chrono::milliseconds(kKESCMCursorSettleMillis));
 			cursorMgr->Show();
+		}
+
+		if (!result && cmykGesture)
+		{
+			// 基底がトラッキングを断った経路(EndTracking は来ない)。先に走らせたサンプリングの保持物
+			// =押下中フォント/ページ対応表キャッシュ/単独ピックの文書/ステータス行 をここで必ず返す。
+			KESCMTrackerRevealEnd();
+		}
 		return result;
 	}
 

@@ -62,7 +62,8 @@
 #include "ToolboxID.h"		// kGenericToolBoss
 #include "LayoutUIID.h"		// kPointerToolBoss (ToolDef tool type)
 #include "CursorID.h"		// IID_ICURSORPROVIDER (tool cursor provider)
-#include "Cursor.fh"		// HOTC resource type (cursor hotspot)
+#include "Cursor.fh"		// PNGC / SVGC / HOTC resource types (cursor image and hotspot)
+#include "CursorDefs.h"	// kHIDPICrsrOffset / kHIDPI150CrsrOffset(2x / Win 1.5x のカーソルID)
 #include "IconPNGDefs.h"	// kHIDPIIconOffset/kHIDPIIconOffset150(ツール専用アイコンの2x/Win1.5x)
 
 // Project includes:
@@ -896,10 +897,18 @@ resource PNGA(kKESCMToolIconResID + kHIDPIIconOffset150)  "KESCM_Tool_32.png"
 resource PNGAD(kKESCMToolIconResID + kHIDPIIconOffset150) "KESCM_Tool_32.png"
 #endif
 
-// ✓ tool cursor hotspot. The cursor bitmap itself is drawn procedurally by the callback in
-// KESCMCursorProvider.cpp (no PNGC/SVGC on purpose - testing whether a callback cursor works via
-// the cursor-provider path). {X, Y} = the checkmark's vertex (folding point) in 1x logical pixels,
-// which must match (bx, by) in KESCMCheckCursorBitmapProc so the click point sits on the vertex.
+// ✓ tool cursor. {X, Y} = the checkmark's vertex (folding point) in 1x logical pixels, which must
+// match the vertex (10,18) drawn by KESCMDrawCheckGlyph so the click point sits on the vertex.
+// ★2026-07-25: コールバック描画(KESCMCheckCursorBitmapProc)から **PNG リソース**へ変更した。理由=押下時に
+//   間欠的に出る「ゴミ」の発生源が、基底 CTracker::BeginTracking の中の✓再設置(モーダルカーソル取得)で
+//   コールバックが呼び直されることだったため(切り分け 2026-07-25)。リソースなら再設置でバッファ描画が
+//   起きない=発生源そのものが消える。画像は KESCMCheckGlyph.h と同じ幾何で生成(work/ のスクリプト参照)。
+//   1x=32x32 / 2x=+kHIDPICrsrOffset(3000) / Win 1.5x=+kHIDPI150CrsrOffset(4000)。手本=sdksamples/snapshot。
+resource PNGC(kKESCMCheckCursorResID) "KESCM_Check_10_18.png"
+resource PNGC(kKESCMCheckCursorResID + kHIDPICrsrOffset) "KESCM_Check_10_18@2x.png"
+#ifdef WINDOWS
+resource PNGC(kKESCMCheckCursorResID + kHIDPI150CrsrOffset) "KESCM_Check_10_18@3to2x.png"
+#endif
 resource HOTC(kKESCMCheckCursorResID) {10, 18};
 
 // Alt+左「色比較」の CMYK 情報カーソルのホットスポット。✓と同じ折れ点(10,18)=クリック点に一致させる。
@@ -910,8 +919,14 @@ resource HOTC(kKESCMCmykCursorResID) {10, 18};
 // no-op を避けるため 1021/1022 を交互に使う(KESCMTracker.cpp の InstallCmykCursor)。ホットスポットは同じ。
 resource HOTC(kKESCMCmykCursor2ResID) {10, 18};
 
-// ✓カーソルの非アクティブ版(白抜き=黒フチ+白本体)のホットスポット(黒✓と同じ折れ点 10,18=切替で
-// カーソル位置は動かない)。「Start 中かつマウス下が Target 文書」以外で出す(KESCMCursorProvider.cpp)。
+// ✓カーソルの非アクティブ版(白抜き=黒フチ+白本体)。ホットスポットは黒✓と同じ折れ点 (10,18)=切替で
+// カーソル位置は動かない。「Start 中かつマウス下が Target 文書」以外で出す(KESCMCursorProvider.cpp)。
+// こちらも PNG リソース(上の黒✓と同じ理由。2026-07-25)。
+resource PNGC(kKESCMCheckCursorInactiveResID) "KESCM_CheckOff_10_18.png"
+resource PNGC(kKESCMCheckCursorInactiveResID + kHIDPICrsrOffset) "KESCM_CheckOff_10_18@2x.png"
+#ifdef WINDOWS
+resource PNGC(kKESCMCheckCursorInactiveResID + kHIDPI150CrsrOffset) "KESCM_CheckOff_10_18@3to2x.png"
+#endif
 resource HOTC(kKESCMCheckCursorInactiveResID) {10, 18};
 
 // Panel LocaleIndex - a single (string-key driven) view is used for every locale; the labels

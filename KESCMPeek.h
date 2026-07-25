@@ -49,8 +49,9 @@ void KESCMTrackerRevealBegin(bool16 shiftDown, bool16 altDown, bool16 cmdDown, b
 void KESCMTrackerRevealEnd();
 
 // 修飾キー→ジェスチャの分類。★割当の定義はこの1本だけ(2026-07-15 に3箇所の独立判定を統合):
-// KESCMTracker.cpp の Hide/Show 事前判定・RevealBegin の分岐・Hold to Hide の temp-hide 判定が
-// すべてこれを使う。ジェスチャ割当を変えるときは KESCMClassifyGesture(KESCMPeek.cpp)だけを直す。
+// KESCMTracker.cpp の BeginTracking(CMYK を先に発動させるかの判定)・RevealBegin の分岐・
+// Hold to Hide の temp-hide 判定がすべてこれを使う。ジェスチャ割当を変えるときは
+// KESCMClassifyGesture(KESCMPeek.cpp)だけを直す。
 enum KESCMGesture
 {
 	kKESCMGestureNone = 0,	// Ctrl(cmd)または Mac の Control を含む=未割当(何もしない)
@@ -66,16 +67,12 @@ enum KESCMGesture
 KESCMGesture KESCMClassifyGesture(bool16 shiftDown, bool16 altDown, bool16 cmdDown, bool16 macCtrlDown = kFalse);
 
 // Alt+左「色比較」のカスタムカーソル(CMYK をカーソル自身に描く)。KESCMTracker.cpp が使う:
-// BeginTracking で KESCMTrackerRevealBegin 後、Pending が立っていれば
-// ChangeModalCursor(CursorSpec(KESCMTrackerCmykCursorProc(), ...)) を呼ぶ。実体は KESCMPeek.cpp。
+// BeginTracking が(CMYK ジェスチャなら基底より前に)KESCMTrackerRevealBegin を呼び、Pending が
+// 立っていれば ChangeModalCursor(CursorSpec(KESCMTrackerCmykCursorProc(), ...)) を呼ぶ。
+// ★Pending=「値が実際に採れた」なので、押下時のカーソル差し替えの要否判定はこれ1本で足りる
+//   (2026-07-25: 旧 KESCMTrackerCmykCursorWouldShow の外部公開はやめた)。実体は KESCMPeek.cpp。
 bool16 KESCMTrackerHasPendingCmykCursor();
 CreateCursorBitmapProc KESCMTrackerCmykCursorProc();
-
-// Alt+左(単独)の CMYK カーソルが「実際に出る」条件か(=arm 済み・比較文書生存・Target 窓上)。
-// KESCMTracker.cpp の BeginTracking が Hide/Show ラップの要否判定に使う。RevealBegin の Alt 分岐と
-// 同じ判定を1本で共有し、CMYK カーソルが出ないのに Hide/Show だけ走ってカーソルがまたたくのを防ぐ
-// (2026-07-15)。実体は KESCMPeek.cpp。
-bool16 KESCMTrackerCmykCursorWouldShow();
 
 // ツール常時✓カーソルを黒で出してよいか=「Start 中(比較文書生存)かつ viewUnderMouse が Target 文書の
 // レイアウトビュー」。それ以外(Source・第3の文書・未 Start・view 不明)は kFalse=白抜き✓を出す

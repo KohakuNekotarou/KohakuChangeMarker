@@ -4,10 +4,16 @@
 //
 //  Shared drawing of the KESCM check mark (✓) into an IGraphicsPort: a white halo stroke
 //  under a black body, at fixed logical (1x px) coordinates whose vertex (10,18) is the
-//  cursor hotspot. Used by two callback-drawn cursors that must show the identical shape:
-//    - the tool's always-on ✓ cursor        (KESCMCursorProvider.cpp)
-//    - the Alt+left CMYK readout cursor that keeps the ✓ on top (KESCMPeek.cpp)
-//  The caller owns the buffer clear and setopacity; this only strokes the glyph.
+//  cursor hotspot. Used by the Alt+left CMYK readout cursor, which keeps the ✓ on top of the
+//  numbers (KESCMPeek.cpp). The caller owns the buffer clear and setopacity; this only strokes
+//  the glyph.
+//
+//  ★★形を変えるときは PNG も作り直すこと(2026-07-25)。ツール選択中の常時✓カーソルは、押下時のゴミ対策で
+//  コールバック描画をやめて PNG リソース(KESCM_Check_10_18.png / KESCM_CheckOff_10_18.png ＋ @2x/@3to2x)に
+//  なったため、✓の絵の出どころが「この関数」と「PNG」の2つある。PNG はこの関数と同じ幾何(頂点・線幅・
+//  丸端)で生成したもので、再生成スクリプト = work/kescm-make-check-cursor.ps1(引数=出力フォルダー)。
+//  生成後は source/sdksamples/KESCM/ へ置き、**KESCM.fr を touch してから**ビルドすること
+//  (PNG だけ差し替えても ODFRC が走らず古い画像がリンクされ続ける既知の罠)。
 //
 //  Header-only inline (no .cpp / no build-system change): both callers already include
 //  IGraphicsPort.h, and inlining avoids an ODR clash across the two translation units.
@@ -67,14 +73,16 @@ inline IGraphicsPort* KESCMCursorBitmapFinish(uchar* buffer, uint32* width, uint
 	    meaning "the tool does nothing here". A gray body was tried first but was hard to tell apart.
 	@param bodyGray body stroke gray level (0.0 = black default, 1.0 = white for inactive)
 	@param haloGray halo stroke gray level (1.0 = white default, 0.0 = black for inactive)
-	@param haloWidth halo (rim) stroke width. Default 3.5 gives a ~0.55px visible rim over the
-	       2.4px body. The inactive (black-rimmed) cursor passes a slightly larger value because a
-	       dark rim reads thinner than a light one at the same width (irradiation illusion), so it
-	       needs to be a touch wider to look the same thickness (user report 2026-07-15). */
+	@param haloWidth halo (rim) stroke width. Default 4.2 gives a ~0.9px visible rim over the
+	       2.4px body (★2026-07-25 にユーザー要望で 3.5=0.55px から太くした。PNG 側 work/
+	       kescm-make-check-cursor.ps1 の active 幅と必ず同じ値にすること)。The inactive
+	       (black-rimmed) cursor passes a slightly larger value because a dark rim reads thinner
+	       than a light one at the same width (irradiation illusion), so it needs to be a touch
+	       wider to look the same thickness (user report 2026-07-15). */
 inline void KESCMDrawCheckGlyph(IGraphicsPort* gPort,
                                 const PMReal& bodyGray = PMReal(0.0),
                                 const PMReal& haloGray = PMReal(1.0),
-                                const PMReal& haloWidth = PMReal(3.5))
+                                const PMReal& haloWidth = PMReal(4.2))
 {
 	if (gPort == nil)
 		return;

@@ -359,8 +359,9 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMToolWidgetID, kKESCMPrefix + 41)	// ツール
 #define kKESCMScrollMapRsrcID	1010
 
 // ✓チェックマークカーソルのリソースID。CursorSpec の CursorID として使い、HOTC(このID)でホットスポット
-// (✓の折れ点=座標取得点)を指定する。画像はコールバック(KESCMCheckCursorBitmapProc)で毎回描くため
-// PNGC/SVGC は置かない(手続き描画がプロバイダ経路で効くかの実験)。KESCMCursorProvider.cpp。
+// (✓の折れ点=座標取得点)を指定する。★2026-07-25: 画像はコールバック描画から PNGC リソースへ変更
+// (KESCM_Check_10_18.png ＋ @2x=+kHIDPICrsrOffset / @3to2x=+kHIDPI150CrsrOffset)。押下時のゴミの発生源
+// =基底のモーダルカーソル取得によるコールバック再実行 を断つため。KESCMCursorProvider.cpp / KESCM.fr。
 #define kKESCMCheckCursorResID	1020
 
 // Alt+左「色比較」の CMYK 情報カーソルのリソースID。✓カーソルと HOTC は同じ(10,18)だが CursorID は
@@ -378,7 +379,8 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMToolWidgetID, kKESCMPrefix + 41)	// ツール
 // Target 文書」のときだけ黒✓、それ以外(Source・第3の文書・未 Start)は白抜き✓=「ここではツールは
 // 効かない」の明示(ユーザー指定 2026-07-15。灰色本体は判別しづらく反転式に変更)。CursorID を分けるのは
 // キャッシュの取り違え防止(1021/1022 と同じ理由)+ClearCache 不要で切り替えるため。
-// HOTC は ✓ と同じ (10,18)。KESCMCursorProvider.cpp。
+// HOTC は ✓ と同じ (10,18)。画像は黒✓と同様 PNGC リソース(KESCM_CheckOff_10_18.png ＋ @2x / @3to2x。
+// 2026-07-25)。KESCMCursorProvider.cpp / KESCM.fr。
 #define kKESCMCheckCursorInactiveResID	1023
 
 // ツールボックスの KESCM ツール専用アイコン(32×32 通常 / 64×64 = +kHIDPIIconOffset)。従来はパネル用

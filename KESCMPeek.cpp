@@ -1265,6 +1265,17 @@ static void KESCMShowHalo(IGraphicsPort* gPort, IPMFont* font, const PMReal& siz
 	gPort->show(x, y, (uint32)n, b);
 }
 
+// CMYK カーソルの上部に載せる✓。色は arm 状態で出し分ける(常時ツールカーソル KESCMCursorProvider.cpp と
+// 同じ規則。ユーザー要望 2026-07-24): Start(arm 済み=CMYK は必ず Target 窓上で出る)は黒✓、Stop(未 arm の
+// 単独ピック)は白抜き✓(黒フチ+白本体=KESCMCheckCursorInactiveBitmapProc と同一パラメータ)。
+static void KESCMDrawCmykCursorCheck(IGraphicsPort* gPort)
+{
+	if (sPeekArmed)
+		KESCMDrawCheckGlyph(gPort);											// 黒✓(Start)
+	else
+		KESCMDrawCheckGlyph(gPort, PMReal(1.0), PMReal(0.0), PMReal(5.0));	// 白抜き✓(Stop)
+}
+
 // CursorSpec のコールバック。カーソル描画系が呼ぶ(UIスレッド)。bitmapBuffer は呼び出し側が
 // (最大カーソルサイズ)²×4 で確保済み。*width/*height は入力=最大サイズ(hiRes 時は 2 倍)、出力=実使用サイズ。
 static void KESCMCmykCursorBitmapProc(uchar* bitmapBuffer, uint32* width, uint32* height, bool16* hasAlpha, bool16 hiRes)
@@ -1278,8 +1289,27 @@ static void KESCMCmykCursorBitmapProc(uchar* bitmapBuffer, uint32* width, uint32
 	// 決める(ユーザー要望 2026-07-13: カーソル最大サイズまで使って cmyk＋数値を大きく)。
 	PMString line1, line2;
 	KESCMSplitTwoLines(sCmykCursorText, line1, line2);
-	int32 maxChars = line1.NumUTF16TextChars();
-	if (line2.NumUTF16TextChars() > maxChars) maxChars = line2.NumUTF16TextChars();
+	const int32 chars1 = line1.NumUTF16TextChars();
+	const int32 chars2 = line2.NumUTF16TextChars();
+
+	// ★空文字ガード(2026-07-25 追加)。文字列が空のまま呼ばれると下の maxChars が 1 になり、fs が
+	//   (maxLogW-8)*100/58 = 100〜200pt まで跳ね上がって、巨大な "C M Y K" がカーソル全面に描かれる
+	//   =見た目はまさに「ゴミ」。通常経路(InstallCmykCursor は値が採れた時だけ)では起きないが、
+	//   カーソルキャッシュの再生成や DPI 変更で proc が呼ばれると露出しうるので保険を入れる。
+	//   ★*width/*height/*hasAlpha を設定せずに return してはいけない(未設定だと最大サイズ・24bit RGB
+	//     扱い等で本物のゴミになる)。ツール常時カーソルと同じ「✓だけの 24x24」に倒す。
+	if (chars1 <= 0 && chars2 <= 0)
+	{
+		InterfacePtr<IGraphicsPort> gPortCheckOnly(KESCMCursorBitmapFinish(
+			bitmapBuffer, width, height, hasAlpha, hiRes, 24u, 24u, maxLogW, maxLogH));
+		if (gPortCheckOnly == nil)
+			return;
+		gPortCheckOnly->setopacity(PMReal(1.0), kFalse);
+		KESCMDrawCmykCursorCheck(gPortCheckOnly);
+		return;
+	}
+
+	int32 maxChars = (chars2 > chars1) ? chars2 : chars1;
 	if (maxChars < 1) maxChars = 1;
 
 	// フォントは使える最大幅から大きめに決める(1文字≒0.58em、下限7pt)。
@@ -1306,7 +1336,7 @@ static void KESCMCmykCursorBitmapProc(uchar* bitmapBuffer, uint32* width, uint32
 	// 約3px下に一瞬。2026-07-13)。ハロー(y+1)とAA ぶんだけ +2 で足りる。
 	// ★solo(Stop 単独ピック=line2 空)は Target 行までで終える(2026-07-25 監査で修正): 常に yData2 基準だと
 	//   使わない Source 行ぶんの透明帯が下に残り、上の「余白タイト化」方針と矛盾していた。
-	int32 needH = ((line2.NumUTF16TextChars() > 0) ? yData2 : yData1) + 2;
+	int32 needH = ((chars2 > 0) ? yData2 : yData1) + 2;
 	uint32 logH = (needH > 0) ? (uint32)needH : 60u;
 
 	// サイズ確定(クランプ込み)+AGM ポート取得(✓カーソルと共有の後処理。KESCMCheckGlyph.h)。
@@ -1324,15 +1354,9 @@ static void KESCMCmykCursorBitmapProc(uchar* bitmapBuffer, uint32* width, uint32
 	// (ユーザー要望 2026-07-14)。★以前は「✓ を stroke で描くと初回フレームのちらつき(ゴミ)が出る」と
 	// 考えて rectfill のドットに退避していたが(2026-07-13)、その後の調査でゴミの真因は stroke 描画では
 	// なく BeginTracking の多段カーソル切替が OS のハードウェアカーソル合成にそのまま見えていたことだと
-	// 判明し、KESCMTracker.cpp 側で ICursorMgr::Hide/Show により解決済み(2026-07-14)。stroke 自体は
-	// 無罪なので✓に戻して問題ない。
-	// ★✓の色は常時ツールカーソル(KESCMCursorProvider.cpp)と揃える(ユーザー要望 2026-07-24):
-	//   Start(arm 済み=CMYK は必ず Target 窓上で出る)は黒✓、Stop(未 arm の単独ピック)は白抜き✓
-	//   (黒フチ+白本体=KESCMCheckCursorInactiveBitmapProc と同一パラメータ)。数値部分は変えない。
-	if (sPeekArmed)
-		KESCMDrawCheckGlyph(gPort);											// 黒✓(Start)
-	else
-		KESCMDrawCheckGlyph(gPort, PMReal(1.0), PMReal(0.0), PMReal(5.0));	// 白抜き✓(Stop)
+	// 判明した(対策は KESCMTracker.cpp の BeginTracking = サンプリングを切替の前へ出す)。stroke 自体は
+	// 無罪なので✓に戻して問題ない。色の出し分けは KESCMDrawCmykCursorCheck に集約(空文字ガードと共有)。
+	KESCMDrawCmykCursorCheck(gPort);
 
 	// 上から: ヘッダー "C M Y K"(各列先頭にそろえる) / Target 数値 / Source 数値。数値は各値3桁で行頭
 	// そろえ、末尾に t/s。フォント fs・行位置は上で計算済み。描画は KESCMShowHalo(白フチ＋黒本体)。
@@ -1365,9 +1389,10 @@ static void KESCMCmykCursorBitmapProc(uchar* bitmapBuffer, uint32* width, uint32
 bool16 KESCMTrackerHasPendingCmykCursor()          { return sCmykCursorPending; }
 CreateCursorBitmapProc KESCMTrackerCmykCursorProc() { return &KESCMCmykCursorBitmapProc; }
 
-// Alt+左(単独)の CMYK カーソルが「実際に出る」条件(KESCMPeek.h 参照)。RevealBegin の Alt 分岐と
-// トラッカーの Hide/Show ラップ判定の両方がこれを使う=条件は必ずここ1本で変える(2026-07-15)。
-bool16 KESCMTrackerCmykCursorWouldShow()
+// Alt+左(単独)の CMYK カーソルが「実際に出る」条件。使うのは下の RevealBegin の Alt 分岐だけ
+// (2026-07-25: トラッカーの Hide/Show ラップ撤去に伴い外部公開をやめ file-local 化。以前は
+//  KESCMTracker.cpp の事前判定と2箇所で共有していて「食い違い禁止」の制約があった)。
+static bool16 KESCMTrackerCmykCursorWouldShow()
 {
 	// Start 中(arm 済み): 従来どおり比較文書が生存し Target 窓上のときだけ(新旧2行の CMYK 比較)。
 	if (KESCMArmedDocsAlive())
@@ -1508,8 +1533,8 @@ static void KESCMBuildCmykNoValuePanelSolo(PMString& out)
 	out.Append("C--- M--- Y--- K---");
 }
 
-// 修飾キー→ジェスチャの分類(KESCMPeek.h 参照)。★割当の定義はここ1本だけ: トラッカーの Hide/Show
-// 事前判定(KESCMTracker.cpp)・下の RevealBegin の分岐・temp-hide 判定がすべてこれを使う(2026-07-15 統合)。
+// 修飾キー→ジェスチャの分類(KESCMPeek.h 参照)。★割当の定義はここ1本だけ: トラッカーの押下時分岐
+// (KESCMTracker.cpp)・下の RevealBegin の分岐・temp-hide 判定がすべてこれを使う(2026-07-15 統合)。
 KESCMGesture KESCMClassifyGesture(bool16 shiftDown, bool16 altDown, bool16 cmdDown, bool16 macCtrlDown)
 {
 	// Ctrl(cmd)を伴う左ボタンは未割当。再比較はページ右クリックメニューへ移設済み、パネル操作は
@@ -1562,7 +1587,8 @@ void KESCMTrackerRevealBegin(bool16 shiftDown, bool16 altDown, bool16 cmdDown, b
 		// Alt+左(単独、Shift/Ctrl なし): クリック点の CMYK 生値(0..255)をサンプリングしカーソル自身に描画する。
 		//   Start 中(arm 済み・Target 窓上) … 新・旧を比較(2行 "Target …" / "Source …")。
 		//   Stop 中(未 arm)                 … マウス下1文書を単独ピック(1行、ラベルなし。ユーザー要望 2026-07-24)。
-		// 判定はトラッカーの Hide/Show ラップと共有(KESCMTrackerCmykCursorWouldShow。食い違い禁止)。
+		// ★このブロックは基底 CTracker::BeginTracking より前に呼ばれる(KESCMTracker.cpp)。重いサンプリングを
+		//   カーソル切替の前で終わらせ、切替を一瞬にするため(押下時のゴミ対策 2026-07-25)。
 		if (KESCMTrackerCmykCursorWouldShow())
 		{
 			// カーソル再描画毎(≦20回/秒)の IFontMgr 名前引きを回避する押下中フォントキャッシュ(解放は RevealEnd)。
