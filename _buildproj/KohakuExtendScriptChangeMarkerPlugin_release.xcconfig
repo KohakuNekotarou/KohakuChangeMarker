@@ -1,0 +1,6 @@
+
+ID_BUILD_CONFIG_PLUGIN_RELEASE = YES
+
+// InDesign core library build settings (based on common build settings)
+#include "../../../build/mac/prj/_shared_build_settings/common_release.xcconfig"
+

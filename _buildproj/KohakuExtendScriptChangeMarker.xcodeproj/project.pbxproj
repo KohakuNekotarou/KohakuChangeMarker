@@ -1,0 +1,388 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 46;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		A00000000000000000000201 /* KESCM.fr in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000101 /* KESCM.fr */; };
+		A00000000000000000000202 /* SDKPlugInEntrypoint.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000102 /* SDKPlugInEntrypoint.cpp */; };
+		A00000000000000000000203 /* SDKFileHelper.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000103 /* SDKFileHelper.cpp */; };
+		A00000000000000000000204 /* KESCMNoStrip.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000104 /* KESCMNoStrip.cpp */; };
+		A00000000000000000000205 /* KESCMID.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000105 /* KESCMID.cpp */; };
+		A00000000000000000000206 /* KESCMActionComponent.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000106 /* KESCMActionComponent.cpp */; };
+		A00000000000000000000207 /* KESCMChangeNav.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000107 /* KESCMChangeNav.cpp */; };
+		A00000000000000000000208 /* KESCMChangedPagesTSV.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000108 /* KESCMChangedPagesTSV.cpp */; };
+		A00000000000000000000209 /* KESCMColorSampler.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000109 /* KESCMColorSampler.cpp */; };
+		A0000000000000000000020A /* KESCMCore.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000010A /* KESCMCore.cpp */; };
+		A0000000000000000000020B /* KESCMCursorProvider.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000010B /* KESCMCursorProvider.cpp */; };
+		A0000000000000000000020C /* KESCMDocResponder.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000010C /* KESCMDocResponder.cpp */; };
+		A0000000000000000000020D /* KESCMDocServiceProvider.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000010D /* KESCMDocServiceProvider.cpp */; };
+		A0000000000000000000020E /* KESCMDrawEventHandler.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000010E /* KESCMDrawEventHandler.cpp */; };
+		A0000000000000000000020F /* KESCMIconTip.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000010F /* KESCMIconTip.cpp */; };
+		A00000000000000000000210 /* KESCMOversetScan.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000110 /* KESCMOversetScan.cpp */; };
+		A00000000000000000000211 /* KESCMPageCheck.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000111 /* KESCMPageCheck.cpp */; };
+		A00000000000000000000212 /* KESCMPageMap.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000112 /* KESCMPageMap.cpp */; };
+		A00000000000000000000213 /* KESCMPageNumberMarker.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000113 /* KESCMPageNumberMarker.cpp */; };
+		A00000000000000000000214 /* KESCMPanelObserver.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000114 /* KESCMPanelObserver.cpp */; };
+		A00000000000000000000215 /* KESCMPanelState.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000115 /* KESCMPanelState.cpp */; };
+		A00000000000000000000216 /* KESCMPeek.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000116 /* KESCMPeek.cpp */; };
+		A00000000000000000000217 /* KESCMScrollMap.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000117 /* KESCMScrollMap.cpp */; };
+		A00000000000000000000218 /* KESCMThumbIdleTask.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000118 /* KESCMThumbIdleTask.cpp */; };
+		A00000000000000000000219 /* KESCMThumbnailRefresh.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000119 /* KESCMThumbnailRefresh.cpp */; };
+		A0000000000000000000021A /* KESCMTool.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000011A /* KESCMTool.cpp */; };
+		A0000000000000000000021B /* KESCMTracker.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000011B /* KESCMTracker.cpp */; };
+		A0000000000000000000021C /* KESCMTrackerRegister.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000011C /* KESCMTrackerRegister.cpp */; };
+		A00000000000000000000017 /* InDesignModelAndUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A00000000000000000000015 /* InDesignModelAndUI.framework */; };
+		A00000000000000000000018 /* libPublicPlugIn.a in Frameworks */ = {isa = PBXBuildFile; fileRef = A00000000000000000000016 /* libPublicPlugIn.a */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXBuildRule section */
+		A0000000000000000000000F /* PBXBuildRule */ = {
+			isa = PBXBuildRule;
+			compilerSpec = com.apple.compilers.proxy.script;
+			filePatterns = "*.fr";
+			runOncePerArchitecture = 0;
+			fileType = pattern.proxy;
+			isEditable = 1;
+			outputFiles = (
+				"$(REZ_COLLECTOR_DIR)/$(INPUT_FILE_NAME).rsrc",
+			);
+			script = "$ID_SDK_ROOT/devtools/bin/odfrc-cmd -d RELEASE $ODFRC_ADDITIONAL_FLAGS -i \"$ID_SDK_ROOT/source/sdksamples/KESCM\" -o \"$REZ_COLLECTOR_DIR/$INPUT_FILE_NAME.rsrc\" \"$INPUT_FILE_PATH\"";
+		};
+/* End PBXBuildRule section */
+
+/* Begin PBXFileReference section */
+		A00000000000000000000015 /* InDesignModelAndUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = InDesignModelAndUI.framework; path = ../release_cocoa64/packagefolder/contents/macos/InDesignModelAndUI.framework; sourceTree = SOURCE_ROOT; };
+		A00000000000000000000016 /* libPublicPlugIn.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libPublicPlugIn.a; path = ../release_cocoa64/packagefolder/contents/macos/libs/libPublicPlugIn.a; sourceTree = SOURCE_ROOT; };
+		A00000000000000000000019 /* KohakuExtendScriptChangeMarkerPlugin.xcconfig */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = text.xcconfig; path = KohakuExtendScriptChangeMarkerPlugin.xcconfig; sourceTree = SOURCE_ROOT; };
+		A0000000000000000000001A /* KohakuExtendScriptChangeMarkerPlugin_release.xcconfig */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.xcconfig; path = KohakuExtendScriptChangeMarkerPlugin_release.xcconfig; sourceTree = "<group>"; };
+		A0000000000000000000001B /* _shared_build_settings/common_release.xcconfig */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = text.xcconfig; path = _shared_build_settings/common_release.xcconfig; sourceTree = SOURCE_ROOT; };
+		A0000000000000000000001C /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = Info.plist; path = ../../../source/sdksamples/common/Info.plist; sourceTree = SOURCE_ROOT; };
+		A00000000000000000000014 /* KohakuChangeMarker.InDesignPlugin */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = KohakuChangeMarker.InDesignPlugin; sourceTree = BUILT_PRODUCTS_DIR; };
+		A00000000000000000000101 /* KESCM.fr */ = {isa = PBXFileReference; lastKnownFileType = text; name = KESCM.fr; path = ../../../source/sdksamples/KESCM/KESCM.fr; sourceTree = SOURCE_ROOT; };
+		A00000000000000000000102 /* SDKPlugInEntrypoint.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = SDKPlugInEntrypoint.cpp; path = ../../../source/sdksamples/common/SDKPlugInEntrypoint.cpp; sourceTree = SOURCE_ROOT; };
+		A00000000000000000000103 /* SDKFileHelper.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = SDKFileHelper.cpp; path = ../../../source/sdksamples/common/SDKFileHelper.cpp; sourceTree = SOURCE_ROOT; };
+		A00000000000000000000104 /* KESCMNoStrip.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = KESCMNoStrip.cpp; path = ../../../source/sdksamples/KESCM/KESCMNoStrip.cpp; sourceTree = SOURCE_ROOT; };
+		A00000000000000000000105 /* KESCMID.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = KESCMID.cpp; path = ../../../source/sdksamples/KESCM/KESCMID.cpp; sourceTree = SOURCE_ROOT; };
+		A00000000000000000000106 /* KESCMActionComponent.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = KESCMActionComponent.cpp; path = ../../../source/sdksamples/KESCM/KESCMActionComponent.cpp; sourceTree = SOURCE_ROOT; };
+		A00000000000000000000107 /* KESCMChangeNav.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = KESCMChangeNav.cpp; path = ../../../source/sdksamples/KESCM/KESCMChangeNav.cpp; sourceTree = SOURCE_ROOT; };
+		A00000000000000000000108 /* KESCMChangedPagesTSV.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = KESCMChangedPagesTSV.cpp; path = ../../../source/sdksamples/KESCM/KESCMChangedPagesTSV.cpp; sourceTree = SOURCE_ROOT; };
+		A00000000000000000000109 /* KESCMColorSampler.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = KESCMColorSampler.cpp; path = ../../../source/sdksamples/KESCM/KESCMColorSampler.cpp; sourceTree = SOURCE_ROOT; };
+		A0000000000000000000010A /* KESCMCore.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = KESCMCore.cpp; path = ../../../source/sdksamples/KESCM/KESCMCore.cpp; sourceTree = SOURCE_ROOT; };
+		A0000000000000000000010B /* KESCMCursorProvider.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = KESCMCursorProvider.cpp; path = ../../../source/sdksamples/KESCM/KESCMCursorProvider.cpp; sourceTree = SOURCE_ROOT; };
+		A0000000000000000000010C /* KESCMDocResponder.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = KESCMDocResponder.cpp; path = ../../../source/sdksamples/KESCM/KESCMDocResponder.cpp; sourceTree = SOURCE_ROOT; };
+		A0000000000000000000010D /* KESCMDocServiceProvider.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = KESCMDocServiceProvider.cpp; path = ../../../source/sdksamples/KESCM/KESCMDocServiceProvider.cpp; sourceTree = SOURCE_ROOT; };
+		A0000000000000000000010E /* KESCMDrawEventHandler.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = KESCMDrawEventHandler.cpp; path = ../../../source/sdksamples/KESCM/KESCMDrawEventHandler.cpp; sourceTree = SOURCE_ROOT; };
+		A0000000000000000000010F /* KESCMIconTip.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = KESCMIconTip.cpp; path = ../../../source/sdksamples/KESCM/KESCMIconTip.cpp; sourceTree = SOURCE_ROOT; };
+		A00000000000000000000110 /* KESCMOversetScan.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = KESCMOversetScan.cpp; path = ../../../source/sdksamples/KESCM/KESCMOversetScan.cpp; sourceTree = SOURCE_ROOT; };
+		A00000000000000000000111 /* KESCMPageCheck.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = KESCMPageCheck.cpp; path = ../../../source/sdksamples/KESCM/KESCMPageCheck.cpp; sourceTree = SOURCE_ROOT; };
+		A00000000000000000000112 /* KESCMPageMap.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = KESCMPageMap.cpp; path = ../../../source/sdksamples/KESCM/KESCMPageMap.cpp; sourceTree = SOURCE_ROOT; };
+		A00000000000000000000113 /* KESCMPageNumberMarker.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = KESCMPageNumberMarker.cpp; path = ../../../source/sdksamples/KESCM/KESCMPageNumberMarker.cpp; sourceTree = SOURCE_ROOT; };
+		A00000000000000000000114 /* KESCMPanelObserver.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = KESCMPanelObserver.cpp; path = ../../../source/sdksamples/KESCM/KESCMPanelObserver.cpp; sourceTree = SOURCE_ROOT; };
+		A00000000000000000000115 /* KESCMPanelState.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = KESCMPanelState.cpp; path = ../../../source/sdksamples/KESCM/KESCMPanelState.cpp; sourceTree = SOURCE_ROOT; };
+		A00000000000000000000116 /* KESCMPeek.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = KESCMPeek.cpp; path = ../../../source/sdksamples/KESCM/KESCMPeek.cpp; sourceTree = SOURCE_ROOT; };
+		A00000000000000000000117 /* KESCMScrollMap.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = KESCMScrollMap.cpp; path = ../../../source/sdksamples/KESCM/KESCMScrollMap.cpp; sourceTree = SOURCE_ROOT; };
+		A00000000000000000000118 /* KESCMThumbIdleTask.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = KESCMThumbIdleTask.cpp; path = ../../../source/sdksamples/KESCM/KESCMThumbIdleTask.cpp; sourceTree = SOURCE_ROOT; };
+		A00000000000000000000119 /* KESCMThumbnailRefresh.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = KESCMThumbnailRefresh.cpp; path = ../../../source/sdksamples/KESCM/KESCMThumbnailRefresh.cpp; sourceTree = SOURCE_ROOT; };
+		A0000000000000000000011A /* KESCMTool.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = KESCMTool.cpp; path = ../../../source/sdksamples/KESCM/KESCMTool.cpp; sourceTree = SOURCE_ROOT; };
+		A0000000000000000000011B /* KESCMTracker.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = KESCMTracker.cpp; path = ../../../source/sdksamples/KESCM/KESCMTracker.cpp; sourceTree = SOURCE_ROOT; };
+		A0000000000000000000011C /* KESCMTrackerRegister.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = KESCMTrackerRegister.cpp; path = ../../../source/sdksamples/KESCM/KESCMTrackerRegister.cpp; sourceTree = SOURCE_ROOT; };
+		A00000000000000000000301 /* KESCMID.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = KESCMID.h; path = ../../../source/sdksamples/KESCM/KESCMID.h; sourceTree = SOURCE_ROOT; };
+		A00000000000000000000302 /* SDKFileHelper.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = SDKFileHelper.h; path = ../../../source/sdksamples/common/SDKFileHelper.h; sourceTree = SOURCE_ROOT; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		A0000000000000000000000C /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A00000000000000000000017 /* InDesignModelAndUI.framework in Frameworks */,
+				A00000000000000000000018 /* libPublicPlugIn.a in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		A00000000000000000000002 = {
+			isa = PBXGroup;
+			children = (
+				A00000000000000000000004 /* Source */,
+				A00000000000000000000006 /* Resources */,
+				A00000000000000000000008 /* InDesign Libraries */,
+				A00000000000000000000007 /* xcconfig */,
+				A00000000000000000000003 /* Products */,
+				A0000000000000000000001C /* Info.plist */,
+			);
+			sourceTree = "<group>";
+		};
+		A00000000000000000000003 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				A00000000000000000000014 /* KohakuChangeMarker.InDesignPlugin */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		A00000000000000000000004 /* Source */ = {
+			isa = PBXGroup;
+			children = (
+				A00000000000000000000005 /* Plugin */,
+				A00000000000000000000106 /* KESCMActionComponent.cpp */,
+				A00000000000000000000107 /* KESCMChangeNav.cpp */,
+				A00000000000000000000108 /* KESCMChangedPagesTSV.cpp */,
+				A00000000000000000000109 /* KESCMColorSampler.cpp */,
+				A0000000000000000000010A /* KESCMCore.cpp */,
+				A0000000000000000000010B /* KESCMCursorProvider.cpp */,
+				A0000000000000000000010C /* KESCMDocResponder.cpp */,
+				A0000000000000000000010D /* KESCMDocServiceProvider.cpp */,
+				A0000000000000000000010E /* KESCMDrawEventHandler.cpp */,
+				A0000000000000000000010F /* KESCMIconTip.cpp */,
+				A00000000000000000000110 /* KESCMOversetScan.cpp */,
+				A00000000000000000000111 /* KESCMPageCheck.cpp */,
+				A00000000000000000000112 /* KESCMPageMap.cpp */,
+				A00000000000000000000113 /* KESCMPageNumberMarker.cpp */,
+				A00000000000000000000114 /* KESCMPanelObserver.cpp */,
+				A00000000000000000000115 /* KESCMPanelState.cpp */,
+				A00000000000000000000116 /* KESCMPeek.cpp */,
+				A00000000000000000000117 /* KESCMScrollMap.cpp */,
+				A00000000000000000000118 /* KESCMThumbIdleTask.cpp */,
+				A00000000000000000000119 /* KESCMThumbnailRefresh.cpp */,
+				A0000000000000000000011A /* KESCMTool.cpp */,
+				A0000000000000000000011B /* KESCMTracker.cpp */,
+				A0000000000000000000011C /* KESCMTrackerRegister.cpp */,
+			);
+			name = Source;
+			sourceTree = "<group>";
+		};
+		A00000000000000000000005 /* Plugin */ = {
+			isa = PBXGroup;
+			children = (
+				A00000000000000000000102 /* SDKPlugInEntrypoint.cpp */,
+				A00000000000000000000302 /* SDKFileHelper.h */,
+				A00000000000000000000103 /* SDKFileHelper.cpp */,
+				A00000000000000000000104 /* KESCMNoStrip.cpp */,
+				A00000000000000000000301 /* KESCMID.h */,
+				A00000000000000000000105 /* KESCMID.cpp */,
+			);
+			name = Plugin;
+			sourceTree = "<group>";
+		};
+		A00000000000000000000006 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				A00000000000000000000101 /* KESCM.fr */,
+			);
+			name = Resources;
+			sourceTree = "<group>";
+		};
+		A00000000000000000000007 /* xcconfig */ = {
+			isa = PBXGroup;
+			children = (
+				A0000000000000000000001B /* _shared_build_settings/common_release.xcconfig */,
+				A00000000000000000000019 /* KohakuExtendScriptChangeMarkerPlugin.xcconfig */,
+				A0000000000000000000001A /* KohakuExtendScriptChangeMarkerPlugin_release.xcconfig */,
+			);
+			name = xcconfig;
+			sourceTree = "<group>";
+		};
+		A00000000000000000000008 /* InDesign Libraries */ = {
+			isa = PBXGroup;
+			children = (
+				A00000000000000000000009 /* For Cocoa64 */,
+			);
+			name = "InDesign Libraries";
+			sourceTree = "<group>";
+		};
+		A00000000000000000000009 /* For Cocoa64 */ = {
+			isa = PBXGroup;
+			children = (
+				A00000000000000000000015 /* InDesignModelAndUI.framework */,
+				A00000000000000000000016 /* libPublicPlugIn.a */,
+			);
+			name = "For Cocoa64";
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		A0000000000000000000000A /* Release_Cocoa64 */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A00000000000000000000011 /* Build configuration list for PBXNativeTarget "Release_Cocoa64" */;
+			buildPhases = (
+				A0000000000000000000000B /* Sources */,
+				A0000000000000000000000C /* Frameworks */,
+				A0000000000000000000000D /* Resources */,
+				A0000000000000000000000E /* ShellScript */,
+			);
+			buildRules = (
+				A0000000000000000000000F /* PBXBuildRule */,
+			);
+			dependencies = (
+			);
+			name = Release_Cocoa64;
+			productName = Release;
+			productReference = A00000000000000000000014 /* KohakuChangeMarker.InDesignPlugin */;
+			productType = "com.apple.product-type.framework";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		A00000000000000000000001 /* Project object */ = {
+			isa = PBXProject;
+			buildConfigurationList = A00000000000000000000010 /* Build configuration list for PBXProject "KohakuExtendScriptChangeMarker" */;
+			compatibilityVersion = "Xcode 3.2";
+			developmentRegion = English;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				English,
+				Japanese,
+				French,
+				German,
+			);
+			mainGroup = A00000000000000000000002;
+			productRefGroup = A00000000000000000000003 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				A0000000000000000000000A /* Release_Cocoa64 */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		A0000000000000000000000D /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		A0000000000000000000000E /* ShellScript */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			outputPaths = (
+				$REZ_COLLECTOR_DIR/resourcesCopied.txt,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = ../packagescripts/copyResources.sh;
+			showEnvVarsInLog = 0;
+		};
+/* End PBXShellScriptBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		A0000000000000000000000B /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A00000000000000000000201 /* KESCM.fr in Sources */,
+				A00000000000000000000202 /* SDKPlugInEntrypoint.cpp in Sources */,
+				A00000000000000000000203 /* SDKFileHelper.cpp in Sources */,
+				A00000000000000000000204 /* KESCMNoStrip.cpp in Sources */,
+				A00000000000000000000205 /* KESCMID.cpp in Sources */,
+				A00000000000000000000206 /* KESCMActionComponent.cpp in Sources */,
+				A00000000000000000000207 /* KESCMChangeNav.cpp in Sources */,
+				A00000000000000000000208 /* KESCMChangedPagesTSV.cpp in Sources */,
+				A00000000000000000000209 /* KESCMColorSampler.cpp in Sources */,
+				A0000000000000000000020A /* KESCMCore.cpp in Sources */,
+				A0000000000000000000020B /* KESCMCursorProvider.cpp in Sources */,
+				A0000000000000000000020C /* KESCMDocResponder.cpp in Sources */,
+				A0000000000000000000020D /* KESCMDocServiceProvider.cpp in Sources */,
+				A0000000000000000000020E /* KESCMDrawEventHandler.cpp in Sources */,
+				A0000000000000000000020F /* KESCMIconTip.cpp in Sources */,
+				A00000000000000000000210 /* KESCMOversetScan.cpp in Sources */,
+				A00000000000000000000211 /* KESCMPageCheck.cpp in Sources */,
+				A00000000000000000000212 /* KESCMPageMap.cpp in Sources */,
+				A00000000000000000000213 /* KESCMPageNumberMarker.cpp in Sources */,
+				A00000000000000000000214 /* KESCMPanelObserver.cpp in Sources */,
+				A00000000000000000000215 /* KESCMPanelState.cpp in Sources */,
+				A00000000000000000000216 /* KESCMPeek.cpp in Sources */,
+				A00000000000000000000217 /* KESCMScrollMap.cpp in Sources */,
+				A00000000000000000000218 /* KESCMThumbIdleTask.cpp in Sources */,
+				A00000000000000000000219 /* KESCMThumbnailRefresh.cpp in Sources */,
+				A0000000000000000000021A /* KESCMTool.cpp in Sources */,
+				A0000000000000000000021B /* KESCMTracker.cpp in Sources */,
+				A0000000000000000000021C /* KESCMTrackerRegister.cpp in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		A00000000000000000000012 /* Default */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = A00000000000000000000019 /* KohakuExtendScriptChangeMarkerPlugin.xcconfig */;
+			buildSettings = {
+				CODE_SIGN_IDENTITY = "";
+				BUILT_PRODUCTS_DIR = "$(ID_BUILT_SDK_SAMPLES_DIR)";
+				HEADER_SEARCH_PATHS = (
+					"$(HEADER_SEARCH_PATHS)",
+					$ID_SDK_ROOT/source/public/interfaces/tables,
+					$ID_SDK_ROOT/source/public/components/widgetbin/includes,
+					$ID_SDK_ROOT/source/public/interfaces/workgroup,
+					$ID_SDK_ROOT/source/public/interfaces/interactive,
+					$ID_SDK_ROOT/source/public/interfaces/interactive/ui,
+					$ID_SDK_ROOT/source/public/interfaces/colormgmt,
+					$ID_SDK_ROOT/source/public/interfaces/incopy,
+					$ID_SDK_ROOT/source/public/interfaces/cjk,
+					$ID_SDK_ROOT/source/public/interfaces/preflight,
+					$ID_SDK_ROOT/source/public/facades/graphics,
+					$ID_SDK_ROOT/source/public/facades/text,
+					$ID_SDK_ROOT/source/public/facades/layout,
+					$ID_SDK_ROOT/source/public/components/publiclib/plugins,
+					$ID_SDK_ROOT/source/public/components/publiclib/files,
+					$ID_SDK_ROOT/source/public/components/publiclib/objectmodel,
+					$ID_SDK_ROOT/source/sdksamples/common,
+					$ID_SDK_ROOT/external/afl/includes,
+					$ID_SDK_ROOT/external/dva/third_party/boost_libraries,
+					../../../source/sdksamples/KESCM,
+				);
+				INFOPLIST_FILE = $ID_SDK_ROOT/source/sdksamples/common/Info.plist;
+				INFOPLIST_PREPROCESS = YES;
+				PLC_OUTPUT_TYPE = InDa;
+				PRODUCT_NAME = KohakuChangeMarker;
+			};
+			name = Default;
+		};
+		A00000000000000000000013 /* Default */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = A0000000000000000000001A /* KohakuExtendScriptChangeMarkerPlugin_release.xcconfig */;
+			buildSettings = {
+				CODE_SIGN_IDENTITY = "";
+			};
+			name = Default;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		A00000000000000000000010 /* Build configuration list for PBXProject "KohakuExtendScriptChangeMarker" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A00000000000000000000012 /* Default */,
+			);
+			defaultConfigurationIsVisible = 1;
+			defaultConfigurationName = Default;
+		};
+		A00000000000000000000011 /* Build configuration list for PBXNativeTarget "Release_Cocoa64" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A00000000000000000000013 /* Default */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Default;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = A00000000000000000000001 /* Project object */;
+}
