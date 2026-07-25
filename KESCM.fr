@@ -1046,7 +1046,7 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 			kKESCMPrevChangeButtonWidgetID,
 			kSysButtonPMRsrcId,
 			kBindLeft | kBindTop,
-			Frame(27, 48, 85, 70)		// 幅58維持。Prev/Next 間を詰めるためクラスタを中央寄せ(左右マージン27px対称, 2026-07-24)
+			Frame(23, 48, 81, 70)		// 幅58維持。クラスタは中央寄せのまま Prev/Next 間を +8px 広げた(左右マージン27→23px対称, 2026-07-25)
 			kTrue, kTrue,
 			kKESCMPrevChangeKey,
 		),
@@ -1057,7 +1057,7 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 			kKESCMNavPosTextWidgetID,
 			kSysStaticTextPMRsrcId,
 			kBindLeft | kBindTop,
-			Frame(85, 51, 129, 70)		// Prev(〜85)と Next(129〜)の間(幅44に短縮=隙間を詰めた, 2026-07-24)。縦位置合わせで top を +3px
+			Frame(81, 51, 133, 70)		// Prev(〜81)と Next(133〜)の間(幅44→52=隙間を少し広げた, 2026-07-25)。縦位置合わせで top を +3px
 			kTrue, kTrue,
 			kAlignCenter, kEllipsizeEnd, kTrue,
 			"",							// 初期テキストは空(実行時に位置を設定)
@@ -1068,7 +1068,7 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 			kKESCMNextChangeButtonWidgetID,
 			kSysButtonPMRsrcId,
 			kBindLeft | kBindTop,
-			Frame(129, 48, 187, 70)		// 幅58維持・右マージン27pxで Prev と対称(クラスタ中央寄せ, 2026-07-24)
+			Frame(133, 48, 191, 70)		// 幅58維持・右マージン23pxで Prev と対称(クラスタ中央寄せ, 2026-07-25)
 			kTrue, kTrue,
 			kKESCMNextChangeKey,
 		),
