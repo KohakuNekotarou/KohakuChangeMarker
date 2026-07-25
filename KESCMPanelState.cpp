@@ -115,8 +115,17 @@ void KESCMSavePanelState()
 		KESCMSetStatus(err, kTrue /*forceRedrawNow*/);
 		return;
 	}
-	fwrite(json.data(), 1, json.size(), fp);
-	fclose(fp);
+	// ★書込バイト数と fclose の成否を確認(2026-07-25 監査で追加): ディスクフル等の部分書込を
+	//   「保存できた」(保存先パス表示)と誤報告しない。
+	const size_t wrote = fwrite(json.data(), 1, json.size(), fp);
+	const int closed = fclose(fp);
+	if (wrote != json.size() || closed != 0)
+	{
+		PMString err("Save failed (write)");	// パネルのステータス行に表示
+		err.SetTranslatable(kFalse);
+		KESCMSetStatus(err, kTrue /*forceRedrawNow*/);
+		return;
+	}
 
 	// 保存先のフルパスをパネルのステータス行に表示する(ユーザー要望 2026-07-11: モーダルからパネル表示へ)。
 	// ★パスのみ(「Settings saved:」等のラベルを付けるとステータス行(幅152px×4行)から溢れるため)。

@@ -32,10 +32,9 @@ resource StringTable (kSDKDefStringsResourceID + index_enUS)
         {
         	 // ----- Menu strings
                 kKESCMCompanyKey,					"Kohaku Plug-Ins",	// メニュー束ね名(表示)。会社名 kKESCMCompanyValue とは別概念で固定
-                kKESCMAboutMenuKey,					kKESCMDisplayName "[US]...",
+                kKESCMAboutMenuKey,					kKESCMDisplayName "...",	// "[US]" テンプレートサフィックスは撤去(2026-07-25)
 
                 kSDKDefAboutThisPlugInMenuKey,			kSDKDefAboutThisPlugInMenuValue_enUS,
-                kKESCMAboutScriptMenuKey,			"About Scripting...",
                 kKESCMUsageMenuKey,				"How to Use...",
                 kKESCMShowSrcMarksMenuKey,			"Show Marks on Source",
                 kKESCMPageMapToggleMenuKey,			"KESCM: Register as Added/Removed Pages",
@@ -83,8 +82,6 @@ resource StringTable (kSDKDefStringsResourceID + index_enUS)
                 	"Renders two documents page by page off-screen, compares them pixel by pixel, and overlays red frames on screen where changes are found. The overlay is non-persistent and is never saved into the document.\n\n"
                 	"Designed and implemented by KohakuNekotarou in collaboration with Anthropic's AI Claude (Claude Code).\n\n"
                 	"Source: " kKESCMRepoURL,
-
-                kKESCMScriptHelpStringKey,			"No scripts are currently available.",
 
                 // Confirmation shown before "Hide Unchanged Spreads" hides spreads (it modifies the document).
                 kKESCMHideConfirmKey,				"This feature modifies the document file. Continue?",

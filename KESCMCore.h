@@ -43,6 +43,19 @@ bool16		KESCMQueryMouseContentPoint(IControlView* view, PMReal& outX, PMReal& ou
 // InterfacePtr 等による Release が必要)。見つからなければ nil。
 IControlView*	KESCMQueryViewUnderMouse();
 
+// view がどの文書のレイアウトビューかをポインタ照合で特定する(見つからなければ nil)。
+// GetAllLayoutViews が返す IControlView* は同一ビューなら同一ポインタ(実測前提)。同期オブザーバの
+// 通知元ビューの所属文書判定と、色サンプラの窓同一性ガードが共有する。実体は KESCMCore.cpp
+// (2026-07-25 に KESCMPeek.cpp の file-static から移動)。
+IDataBase*	KESCMFindDocDbForView(IControlView* view);
+
+// アクティブ(前面)文書とその db(無ければ nil)。ActiveContext 経由の解決を1箇所に集約
+// (2026-07-25 重複解消: 旧 KESCMPanelObserver 内 KESCMActiveDoc と KESCMActionComponent 内
+// KESCMActionActiveDocDB の同一実装2本を統合)。実体は KESCMCore.cpp。
+class IDocument;
+IDocument*	KESCMActiveDoc();
+IDataBase*	KESCMActiveDocDB();
+
 // アプリが終了処理中(IApplication::GetApplicationState() が kQuitting/kShuttingDown)なら kTrue。
 // quit の close-all フェーズ(保存確認でキャンセル可能な段階)はまだ kRunning=kFalse。kTrue の間は
 // ウィンドウ/パネルの解体順がプラットフォーム依存(特に Mac)のため、widget 操作・再描画・idle task

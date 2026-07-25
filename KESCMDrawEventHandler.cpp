@@ -14,13 +14,9 @@
 #include "PersistUtils.h"
 #include "IDataBase.h"
 #include "IGeometry.h"
-#include "IDocument.h"
-#include "ILayoutUtils.h"
-#include "ILayoutUIUtils.h"
 #include "IApplication.h"
 #include "IDocumentList.h"
 #include "ISpread.h"
-#include "ISpreadList.h"
 #include "IShape.h"
 #include "IDrwEvtHandler.h"
 #include "IDrwEvtDispatcher.h"
@@ -35,8 +31,8 @@
 #include "IWidgetParent.h"
 #include "ISession.h"
 #include "PMMatrix.h"
-#include "PMPoint.h"
 #include "PMReal.h"
+#include "PMString.h"			// GetPageString の受け(旧: KESCMDrawEventHandler.h 経由の間接include に依存していた)
 #include "TransformUtils.h"
 #include "SnapshotUtilsEx.h"
 #include "AGMImageAccessor.h"
@@ -75,7 +71,7 @@ bool16 KESCMDrawEventHandler::sShowOldNumbers = kFalse;	// 既定=OFF(フライ�
 bool16 KESCMDrawEventHandler::sAlwaysShowMarks = kFalse;	// 既定=OFF(フライアウト「Hold to Hide Marks」。ON=枠を画面に常時表示し押下中だけ隠す=極性反転)
 bool16 KESCMDrawEventHandler::sMarksTempHidden = kFalse;	// Hold to Hide Marks モード中、Target 窓でツール左hold中だけ kTrue(Target 常時表示枠の一時退避)
 bool16 KESCMDrawEventHandler::sSrcMarksTempHidden = kFalse;	// 同上の Source 版。Source 窓でツール左hold中だけ kTrue(Source 常時表示枠の一時退避)
-bool16 KESCMDrawEventHandler::sSrcMarksOn = kFalse;	// 既定=OFF。Start(KESCMDoMarkChangesDoc)のたびに kTrue へ(フライアウト「Show Marks on Source」)
+bool16 KESCMDrawEventHandler::sSrcMarksOn = kFalse;	// 既定=OFF。Start(KESCMToggleStartStop)のたびに kTrue へ(フライアウト「Show Marks on Source」。再比較では戻さない 2026-07-25)
 IDataBase* KESCMDrawEventHandler::sSrcDB = nil;
 std::map<UID, UID> KESCMDrawEventHandler::sSrcPageToTarget;
 std::map<UID, UID> KESCMDrawEventHandler::sPrevPairTargetToSource;	// 前回比較のペアリング(登録トグルの差分再比較用)
@@ -95,6 +91,27 @@ IDataBase* KESCMDrawEventHandler::sOversetDB = nil;	// 走査した文書(pointe
 std::set<UID> KESCMDrawEventHandler::sOversetPages;	// overset を含むページ UID 集合
 std::vector<KESCMOversetLoc> KESCMDrawEventHandler::sOversetLocs;	// overset「+」箇所ごとの位置(Prev/Next 巡回先)
 
+// ページ矩形クリップの内側縮め量(pt)。見開きはノドで隙間なく隣接するため、ページ矩形ぴったりで
+// クリップすると枠/斜線の最外周が共有線に乗り、隣(変化なし)ページ側に 1px 線が出る。約1pt 内側に
+// 縮めて防ぐ(2026-07-25: 4関数のローカル重複定義をファイルスコープへ集約)。
+static const PMReal kKESCMClipInset = 1.0;
+
+//========================================================================================
+// 旧ページ番号バッジのフォントキャッシュ(2026-07-25 監査): 既定フォント+固定サイズで不変なので、
+// DrawEvent 毎の QueryFont/QueryFontInstance 再取得をやめて初回だけ引いて使い回す。
+// ★file-static InterfacePtr にはしない(静的破棄タイミングの Release はオブジェクトモデル消滅後で
+//   危険=sCmykCursorFont と同じ理由)。生ポインタ+KESCMReleaseOldNumFontCache(Shutdown)で明示解放。
+//========================================================================================
+static IPMFont*       sOldNumFont      = nil;
+static IFontInstance* sOldNumFontInst  = nil;
+static bool16         sOldNumFontTried = kFalse;	// 取得失敗を毎描画リトライしない(セッション内1回だけ試す)
+
+void KESCMReleaseOldNumFontCache()
+{
+	if (sOldNumFontInst != nil) { sOldNumFontInst->Release(); sOldNumFontInst = nil; }
+	if (sOldNumFont != nil)     { sOldNumFont->Release();     sOldNumFont = nil; }
+	sOldNumFontTried = kFalse;
+}
 
 //========================================================================================
 // overflow キャッシュ("/"の未比較ページ集合)。以前は HandleDrawEvent が描画のたびに
@@ -248,19 +265,32 @@ ErrorCode KESCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef
 	const PMReal hiRes = kKESCMResolution * kKESCMHiResMul;
 	// 比較は常に CMYK 4ch を不透明ラスタ化して行う(CMYK の微差が RGB 変換で消えるのを回避)。
 	// 表示リングは別途 ARGB で合成するので、比較ラスタは不透明(addTransparencyAlpha=kFalse)でよい。
-	SnapshotUtilsEx* snapTH = new SnapshotUtilsEx(targetRef, 1.0, 1.0, hiRes, hiRes, 0.0, SnapshotUtilsEx::kCsCMYK, kFalse);
-	sRasterizing = kTrue;	// この Draw 中に再入する HandleDrawEvent はマークを描かない(自己参照防止)
+	// nothrow: 本関数の確保方針(下の★コメント)に合わせる(2026-07-25 監査で3箇所とも統一)。
+	SnapshotUtilsEx* snapTH = new (std::nothrow) SnapshotUtilsEx(targetRef, 1.0, 1.0, hiRes, hiRes, 0.0, SnapshotUtilsEx::kCsCMYK, kFalse);
+	if (snapTH == nil)
+		return kFailure;
 	// アンチエイリアスを OFF にしてラスタ化する(第4引数 enableAntiAliasing=kFalse)。エッジの中間調(灰にじみ)を
 	//   無くし、画素内で収まる微小ズレ由来の帯状ノイズが差分として拾われるのを抑える。fullRes / greek は既定維持。
 	//   ※ target / source は必ず同じ AA 設定でラスタ化すること(片方だけだと全エッジが差分になる)。
-	ErrorCode drewTH = snapTH->Draw(IShape::kPreviewMode, kFalse, 7.0, kFalse);
-	sRasterizing = kFalse;
+	ErrorCode drewTH;
+	{
+		KESCMRasterizingGuard rg;	// この Draw 中に再入する HandleDrawEvent はマークを描かない(自己参照防止)
+		drewTH = snapTH->Draw(IShape::kPreviewMode, kFalse, 7.0, kFalse);
+	}
 	AGMImageAccessor* accTH = (drewTH == kSuccess) ? snapTH->CreateAGMImageAccessor() : nil;
 
-	SnapshotUtilsEx* snapSH = new SnapshotUtilsEx(sourceRef, 1.0, 1.0, hiRes, hiRes, 0.0, SnapshotUtilsEx::kCsCMYK, kFalse);
-	sRasterizing = kTrue;
-	ErrorCode drewSH = snapSH->Draw(IShape::kPreviewMode, kFalse, 7.0, kFalse);	// 同上: AA OFF(両者同条件)
-	sRasterizing = kFalse;
+	SnapshotUtilsEx* snapSH = new (std::nothrow) SnapshotUtilsEx(sourceRef, 1.0, 1.0, hiRes, hiRes, 0.0, SnapshotUtilsEx::kCsCMYK, kFalse);
+	if (snapSH == nil)
+	{
+		if (accTH) delete accTH;
+		delete snapTH;
+		return kFailure;
+	}
+	ErrorCode drewSH;
+	{
+		KESCMRasterizingGuard rg;
+		drewSH = snapSH->Draw(IShape::kPreviewMode, kFalse, 7.0, kFalse);	// 同上: AA OFF(両者同条件)
+	}
 	AGMImageAccessor* accSH = (drewSH == kSuccess) ? snapSH->CreateAGMImageAccessor() : nil;
 
 	ErrorCode status = kFailure;
@@ -495,10 +525,14 @@ ErrorCode KESCMDrawEventHandler::MakeOrigImage(const UIDRef& targetRef, const UI
 
 	// source(旧)を resolution(dpi)で不透明ラスタ化。addTransparencyAlpha=kFalse=ページを不透明に描く(べた載せ用)。
 	// オフスクリーンは1枚だけ。画素を自前 buf へコピーしたら即破棄(下)＝同時に複数生存しない=安全。
-	SnapshotUtilsEx* snap = new SnapshotUtilsEx(sourceRef, 1.0, 1.0, resolution, resolution, 0.0, SnapshotUtilsEx::kCsRGB, kFalse);
-	sRasterizing = kTrue;	// この Draw 中に再入する HandleDrawEvent はマークを描かない(自己参照防止)
-	ErrorCode drew = snap->Draw(IShape::kPreviewMode);
-	sRasterizing = kFalse;
+	SnapshotUtilsEx* snap = new (std::nothrow) SnapshotUtilsEx(sourceRef, 1.0, 1.0, resolution, resolution, 0.0, SnapshotUtilsEx::kCsRGB, kFalse);
+	if (snap == nil)
+		return kFailure;	// nothrow: OOM でもこのページの旧版画像を作らないだけで安全に続行(MakeEntry と同方針)
+	ErrorCode drew;
+	{
+		KESCMRasterizingGuard rg;	// この Draw 中に再入する HandleDrawEvent はマークを描かない(自己参照防止)
+		drew = snap->Draw(IShape::kPreviewMode);
+	}
 	AGMImageAccessor* acc = (drew == kSuccess) ? snap->CreateAGMImageAccessor() : nil;
 
 	ErrorCode status = kFailure;
@@ -768,7 +802,6 @@ static void KESCMDrawEntryOnPage(IGraphicsPort* gPort, KESCMOverlayEntry* e, IDa
 		// 2ページはノドで隙間なく隣接し、ページ矩形の端=隣ページの端=共有線になる。単に pr でクリップ
 		// すると枠の最外周がその共有線に乗り、隣(変化なし)ページのノドに 1px 線が出る。そこで pr を
 		// 約1pt 内側に縮めてクリップし、枠が共有線に届かないようにする(枠はページ端の1px内側=見た目ほぼ不変)。
-		const PMReal kKESCMClipInset = 1.0;	// pt
 		gPort->rectclip(pr.Left()   + kKESCMClipInset, pr.Top()    + kKESCMClipInset,
 		                pr.Width()  - kKESCMClipInset * 2.0, pr.Height() - kKESCMClipInset * 2.0);
 		gPort->translate(pr.Left(), pr.Top());				// ページ左上へ
@@ -819,7 +852,6 @@ static void KESCMDrawPageBorder(IGraphicsPort* gPort, IDataBase* db, UID pageUID
 		return;	// ページが小さすぎて太さが潰れる場合は描かない
 
 	// 【クリップ相当】通常マークと同じく、ノドの共有線に届かないよう約1pt内側から描く。
-	const PMReal kKESCMClipInset = 1.0;	// pt
 	const PMReal L = pr.Left()   + kKESCMClipInset, R = pr.Right()  - kKESCMClipInset;
 	const PMReal T = pr.Top()    + kKESCMClipInset, B = pr.Bottom() - kKESCMClipInset;
 	if (R <= L || B <= T)
@@ -915,7 +947,6 @@ static void KESCMDrawPageDiagonal(IGraphicsPort* gPort, IDataBase* db, UID pageU
 
 	AutoGSave ag(gPort);
 	// ノドの共有線に届かないよう、通常マークと同じく約1pt内側でクリップしてから対角線を引く。
-	const PMReal kKESCMClipInset = 1.0;	// pt
 	gPort->rectclip(pr.Left()   + kKESCMClipInset, pr.Top()    + kKESCMClipInset,
 	                pr.Width()  - kKESCMClipInset * 2.0, pr.Height() - kKESCMClipInset * 2.0);
 	gPort->setopacity(opacity, kFalse);
@@ -964,7 +995,6 @@ static void KESCMDrawPageCrossOutlined(IGraphicsPort* gPort, IDataBase* db, UID 
 
 	AutoGSave ag(gPort);
 	// ノドの共有線に届かないよう、通常マークと同じく約1pt内側でクリップしてから引く。
-	const PMReal kKESCMClipInset = 1.0;	// pt
 	gPort->rectclip(pr.Left()   + kKESCMClipInset, pr.Top()    + kKESCMClipInset,
 	                pr.Width()  - kKESCMClipInset * 2.0, pr.Height() - kKESCMClipInset * 2.0);
 	gPort->setopacity(kKESCMOversetCrossOpacity, kFalse);	// くっきり(不透明)
@@ -1076,7 +1106,7 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	// isThumb 分岐で KESCMDrawPageBorder(枠)/KESCMDrawPageDiagonal(「/」)を呼ぶ(極小表示で潰れない
 	// 固定比率の太さ)。不透明度は kKESCMThumbMarkOpacity(0.75=少し透ける)。
 	const bool16 isThumb = sThumbExperiment && !printing &&
-		ded->gd != nil && ded->gd->GetView() == nil && (ded->flags & IShape::kPreviewMode) != 0;
+		ded->gd->GetView() == nil && (ded->flags & IShape::kPreviewMode) != 0;	// gd の nil は関数冒頭で検査済み
 	// ★オーバープリントプレビュー(OPP)は抑制しない(2026-07-05 仕様変更)。以前は kSepPrvOPPEnabledVPAttr を
 	// 読んで「OPP=印刷シミュレーション」として印刷と同じ抑制を掛けていたが、OPP はあくまで画面の作業モード
 	// なので、ツール左hold の枠・Shift/Shift+Alt の旧版 peek(と押下中の旧番号バッジ)は OPP 中も表示する。
@@ -1178,14 +1208,18 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	//   クローズ responder(KESCMHandleDocsClosed)がクローズ直後に先回りして片付けるためこの分岐へは実質
 	//   到達しないが、保険として残す以上は KESCMHandleDocsClosed に一本化し、Stop 相当のフルクリーンアップ
 	//   (peek arm 解除・パネル更新も)を確実に行う。
-	if (sDB != nil || sOrigDB != nil || sSrcDB != nil)
+	//   ★sOversetDB も対象(2026-07-25 監査で追加): Find Overset を未 arm で単独使用中にその文書を閉じ、
+	//   responder が漏れた場合でも、stale な sOversetPages がアドレス再利用された新文書のサムネイルへ
+	//   誤マークされないようにする。
+	if (sDB != nil || sOrigDB != nil || sSrcDB != nil || sOversetDB != nil)
 	{
 		InterfacePtr<IApplication> app(GetExecutionContextSession()->QueryApplication());
 		InterfacePtr<IDocumentList> docList(app ? app->QueryDocumentList() : nil);
 		if (docList != nil &&
 		    ((sDB != nil && docList->FindDocByDataBase(sDB) == nil) ||
 		     (sOrigDB != nil && docList->FindDocByDataBase(sOrigDB) == nil) ||
-		     (sSrcDB != nil && docList->FindDocByDataBase(sSrcDB) == nil)))
+		     (sSrcDB != nil && docList->FindDocByDataBase(sSrcDB) == nil) ||
+		     (sOversetDB != nil && docList->FindDocByDataBase(sOversetDB) == nil)))
 			KESCMHandleDocsClosed();
 	}
 
@@ -1322,16 +1356,32 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	if (wantOldNums && sxr > 0)
 	{
 		InterfacePtr<IPageList> pageList(db, db->GetRootUID(), UseDefaultIID());
-		InterfacePtr<IFontMgr> fontMgr(GetExecutionContextSession(), UseDefaultIID());
-		InterfacePtr<IPMFont> numFont(fontMgr != nil ? fontMgr->QueryFont(fontMgr->GetDefaultFontName()) : nil);
+		// フォント/インスタンスはファイル先頭のキャッシュ(sOldNumFont/sOldNumFontInst)から。初回だけ取得。
+		if (!sOldNumFontTried)
+		{
+			sOldNumFontTried = kTrue;
+			InterfacePtr<IFontMgr> fontMgr(GetExecutionContextSession(), UseDefaultIID());
+			if (fontMgr != nil)
+			{
+				sOldNumFont = fontMgr->QueryFont(fontMgr->GetDefaultFontName());
+				if (sOldNumFont != nil)
+				{
+					// ★サイズはドキュメント拡大率50%相当で固定(ユーザー指定 2026-07-15)なので、
+					//   インスタンス(フォント×行列)も不変=キャッシュ可。
+					const PMReal cacheSize = kKESCMOldNumFontPx / kKESCMOldNumFixedZoom;
+					PMMatrix fontMatrix(cacheSize, 0.0, 0.0, cacheSize, 0.0, 0.0);
+					sOldNumFontInst = fontMgr->QueryFontInstance(sOldNumFont, fontMatrix);
+				}
+			}
+		}
+		IPMFont*       numFont  = sOldNumFont;
+		IFontInstance* fontInst = sOldNumFontInst;	// nil でも下の分岐がフォールバック値を使う
 		if (pageList != nil && numFont != nil)
 		{
 			// ★サイズはドキュメント拡大率50%相当で固定(ユーザー指定 2026-07-15)。sxr(画面/印刷の実効
 			//   スケール)ではなく固定値で割る=ズームでも印刷でもページに対して一定の大きさになる。
 			const PMReal fontSize = kKESCMOldNumFontPx / kKESCMOldNumFixedZoom;
 			const PMReal margin   = kKESCMOldNumMarginPx / kKESCMOldNumFixedZoom;
-			PMMatrix fontMatrix(fontSize, 0.0, 0.0, fontSize, 0.0, 0.0);
-			InterfacePtr<IFontInstance> fontInst(fontMgr->QueryFontInstance(numFont, fontMatrix));
 
 			const int32 npn = spread->GetNumPages();
 			for (int32 i = 0; i < npn; ++i)

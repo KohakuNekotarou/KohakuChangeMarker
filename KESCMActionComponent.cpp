@@ -825,15 +825,7 @@ IDataBase* KESCMGetHideUnchangedSrcDB()
 // 比較(sEntries)とは完全に独立。状態は KESCMDrawEventHandler::sOversetOn/sOversetDB/sOversetPages。
 //========================================================================================
 
-// アクティブ文書の db(無ければ nil)。KESCMPanelObserver の KESCMActiveDoc と同じ解決経路。
-static IDataBase* KESCMActionActiveDocDB()
-{
-	IActiveContext* ac = GetExecutionContextSession() ? GetExecutionContextSession()->GetActiveContext() : nil;
-	IDocument* doc = ac ? ac->GetContextDocument() : nil;
-	if (doc == nil)
-		return nil;
-	return ::GetUIDRef(doc).GetDataBase();
-}
+// (アクティブ文書の解決は KESCMActiveDocDB(KESCMCore)に統合。2026-07-25 重複解消)
 
 /* KESCMApplyOversetForDoc(KESCMCore.h で宣言) — db を走査して overset を反映する共有処理。
    Find Overset(ON)/Refresh Overset(armed時Target)/Start(overset ON時) から呼ぶ。前回と別文書なら
@@ -873,11 +865,13 @@ void KESCMApplyOversetForDoc(IDataBase* db)
 	if (prevDB != nil && prevDB != db)
 	{
 		std::vector<UID> oldVec(oldPages.begin(), oldPages.end());
-		KESCMRefreshThumbnailsForPages(prevDB, oldVec);	// 前の文書の枠/＋を消す
+		// 2文書とも Purge のみ→呼び出しの最後(下の2回目)で1回だけ ForceRedraw(2026-07-25 バッチ化)。
+		KESCMRefreshThumbnailsForPages(prevDB, oldVec, kFalse /*redrawNow*/);	// 前の文書の枠/＋を消す
 		KESCMInvalidateDB(prevDB);
 		std::vector<UID> newVec(KESCMDrawEventHandler::sOversetPages.begin(),
 		                        KESCMDrawEventHandler::sOversetPages.end());
-		KESCMRefreshThumbnailsForPages(db, newVec);
+		KESCMRefreshThumbnailsForPages(db, newVec, kFalse /*redrawNow*/);
+		KESCMForceRedrawPagesPanelNow();
 	}
 	else
 	{
@@ -901,7 +895,7 @@ static IDataBase* KESCMOversetScanTargetDB()
 {
 	if (KESCMDrawEventHandler::sDB != nil)
 		return KESCMDrawEventHandler::sDB;	// = KESCMNavDoc() の armed 分岐と同じ
-	return KESCMActionActiveDocDB();
+	return KESCMActiveDocDB();
 }
 
 /* DoFindOversetToggle — フライアウト「Find Overset」トグル。

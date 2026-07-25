@@ -26,14 +26,12 @@
 #include "IEvent.h"
 
 #include "CursorSpec.h"		// CursorSpec / GetPlugIn()(Alt+左 CMYK のカスタムカーソル)
-#include "CursorDefs.h"		// kCrsrTool
 #include "ISession.h"		// GetExecutionContextSession(ICursorMgr 取得)
 #include "IApplication.h"	// QueryApplication(ICursorMgr 取得)
-#include "ICursorMgr.h"		// ClearCache(kFalse カーソル入れ直しの描き直しを確実にする)
+#include "ICursorMgr.h"		// Hide/Show(押下中カーソルの一時退避。ClearCache は撤去済み 2026-07-15)
 
 #include "KESCMID.h"
 #include "KESCMPeek.h"		// KESCMTrackerRevealBegin / KESCMTrackerRevealEnd / CMYK カーソル入口
-#include "KESCMCore.h"		// KESCM 共有状態アクセサ(arm/disarm 等)
 
 //____________________________________________________________________________________
 //	Tracker event handler: forwards events (notably the button-up) to the tracker while

@@ -19,7 +19,6 @@
 #include "IDrwEvtHandler.h"
 #include "GraphicsExternal.h"   // AGMImageRecord (構造体メンバ)
 #include "UIDRef.h"             // UID / UIDRef
-#include "PMString.h"
 #include "PMReal.h"
 
 class IDataBase;
@@ -272,7 +271,20 @@ public:
 	}
 };
 
+// sRasterizing を例外安全に立てる/戻す RAII(2026-07-25 監査で追加)。SnapshotUtilsEx::Draw が万一
+// throw(AGM 内部の bad_alloc 等)してもフラグが立ちっぱなし(=以後マーク描画が全抑止)にならない。
+class KESCMRasterizingGuard
+{
+public:
+	KESCMRasterizingGuard()  { KESCMDrawEventHandler::sRasterizing = kTrue; }
+	~KESCMRasterizingGuard() { KESCMDrawEventHandler::sRasterizing = kFalse; }
+};
+
 // IControlView から可視範囲(IPanorama)を辿る小ヘルパ。エンジンと peek の双方で使うため公開する。
 IPanorama* KESCMQueryPanorama(IControlView* view);
+
+// 旧ページ番号バッジのフォントキャッシュを解放する(KESCMPeekStartup::Shutdown から呼ぶ。2026-07-25)。
+// 実体は KESCMDrawEventHandler.cpp(キャッシュ本体と同居)。
+void KESCMReleaseOldNumFontCache();
 
 #endif // __KESCMDrawEventHandler_h__

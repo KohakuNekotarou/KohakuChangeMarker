@@ -155,7 +155,8 @@ IControlView* KESCMGetVisiblePagesPanel()
 
 // ③ Pages パネルが表示されていれば、その場で再描画させて(Purge 済みの)サムネイルを作り直させる。
 //    隠れていれば触る先が無い(次に開いたとき自然に作られる)。
-static void KESCMForceRedrawPagesPanel()
+//    (2026-07-25: バッチ化のため公開版 KESCMForceRedrawPagesPanelNow としてヘッダーへ昇格)
+void KESCMForceRedrawPagesPanelNow()
 {
 	IControlView* panel = KESCMGetVisiblePagesPanel();
 	if (panel == nil)
@@ -166,7 +167,7 @@ static void KESCMForceRedrawPagesPanel()
 	panel->ForceRedraw(nil, kTrue);
 }
 
-void KESCMTryRefreshPagesPanelThumbnails(IDataBase* db, const std::set<UID>* extraPages)
+void KESCMTryRefreshPagesPanelThumbnails(IDataBase* db, const std::set<UID>* extraPages, bool16 redrawNow)
 {
 	if (db == nil)
 		return;
@@ -198,10 +199,11 @@ void KESCMTryRefreshPagesPanelThumbnails(IDataBase* db, const std::set<UID>* ext
 		KESCMPurgePageThumbs(db, allPages);
 	}
 
-	KESCMForceRedrawPagesPanel();
+	if (redrawNow)
+		KESCMForceRedrawPagesPanelNow();
 }
 
-void KESCMRefreshThumbnailsForPages(IDataBase* db, const std::vector<UID>& pages)
+void KESCMRefreshThumbnailsForPages(IDataBase* db, const std::vector<UID>& pages, bool16 redrawNow)
 {
 	if (db == nil || pages.empty())
 		return;
@@ -209,7 +211,8 @@ void KESCMRefreshThumbnailsForPages(IDataBase* db, const std::vector<UID>& pages
 	// KESCMCollectChangedPageUIDs 経由では拾えない=ここで直接 Purge して緑「/」を消す。登録追加でも
 	// 同ページを対称に Purge して、赤「/」(overflow)→緑「/」(登録)の載せ替えを即時反映する。
 	KESCMPurgePageThumbs(db, pages);
-	KESCMForceRedrawPagesPanel();
+	if (redrawNow)
+		KESCMForceRedrawPagesPanelNow();
 }
 
 // KESCMThumbnailRefresh.cpp 終わり。

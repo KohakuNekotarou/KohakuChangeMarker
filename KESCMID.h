@@ -36,7 +36,7 @@
 #define kKESCMDisplayName	"KohakuChangeMarker"			// 表示名(About メニュー項目・About ボックス本文・出力 .pln 名)。
 #define kKESCMPrefixNumber	0x205515 		// Unique prefix number for this plug-in(*Must* be obtained from Adobe Developer Support).
 #define kKESCMVersion		"1.0.1"						// Version of this plug-in (for the About Box).
-#define kKESCMAuthor		""					// Author of this plug-in (for the About Box).
+// (kKESCMAuthor はテンプレート残骸(どこからも未参照)のため削除 2026-07-25)
 
 // Plug-in Prefix: (please change kKESCMPrefixNumber above to modify the prefix.)
 #define kKESCMPrefix		RezLong(kKESCMPrefixNumber)				// The unique numeric prefix for all object model IDs for this plug-in.
@@ -180,7 +180,7 @@ DECLARE_PMID(kActionIDSpace, kKESCMPopupHoldToHideMarksActionID, kKESCMPrefix + 
 DECLARE_PMID(kActionIDSpace, kKESCMPopupAlignViewsActionID, kKESCMPrefix + 20)	// パネルのフライアウトの「Align Other Views to Active」(実行アクション)。アクティブ(最前面)文書のビューの位置+拡大率を他文書のビューへ1回そろえる。Start中はページのAdd/Remove補正あり。ショートカット割当可(kKESCMPanelMenuActionArea+VisibleInKBSC)。実体 KESCMPeek.cpp の KESCMAlignOtherViewsToActiveNow
 DECLARE_PMID(kActionIDSpace, kKESCMPopupScrollMapActionID, kKESCMPrefix + 21)	// パネルのフライアウトの「Show Scrollbar Map」チェック式トグル(ON=文書窓の縦スクロールバー脇に変更位置地図stripを表示。既定ON。実体 KESCMScrollMap.cpp の sScrollMapOn)
 DECLARE_PMID(kActionIDSpace, kKESCMPopupSavePanelStateActionID, kKESCMPrefix + 22)	// パネルのフライアウトの「Save Panel Settings」(チェックではなく実行アクション)。現在の設定系トグルを独自JSONでローカルへ保存し保存先パスを表示。パネル初回オープン時に読込。実体 KESCMPanelState.cpp
-DECLARE_PMID(kActionIDSpace, kKESCMPopupSep3ActionID, kKESCMPrefix + 23)	// フライアウト: Ignore Page Number Marker の下の区切り線(MenuDef のパス末尾 ":-"。ActionDef 不要)。この下に Hide Unchanged Spreads を置く
+DECLARE_PMID(kActionIDSpace, kKESCMPopupSep3ActionID, kKESCMPrefix + 23)	// フライアウト: Refresh Overset の下(9.50)の区切り線(MenuDef のパス末尾 ":-"。ActionDef 不要)。現配置は下の位置一覧(9.50)が正(2026-07-25 コメント現行化)
 DECLARE_PMID(kActionIDSpace, kKESCMPageCheckToggleActionID, kKESCMPrefix + 24)	// ページパネルのページ右クリック(RtMenuPagesPanel)のトグル「KESCM: Check」(選択ページに✓印を付け外し。Start中限定・Stopで消去。チェック/有効無効は kCustomEnabling。実体 KESCMPageCheck.cpp、✓描画は KESCMDrawEventHandler の isThumb 分岐)
 DECLARE_PMID(kActionIDSpace, kKESCMPopupSaveChecksActionID, kKESCMPrefix + 25)	// パネルのフライアウトの「Save Check & Register」(実行アクション)。Start中の Target/Source の現在の Check(✓)+ Register(Added/Removed)を独自JSON(KESCM\KESCMPageChecks.json, v2)へマージ保存し保存先パスを表示。実体 KESCMPageCheck.cpp
 DECLARE_PMID(kActionIDSpace, kKESCMPopupLoadChecksActionID, kKESCMPrefix + 26)	// パネルのフライアウトの「Load Check & Register」(実行アクション)。Start中だけ有効。上記JSONから Register を両文書へ適用→再比較→Check(今もマーク付きのみ)を復元。実体 KESCMPageCheck.cpp
@@ -283,8 +283,7 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMToolWidgetID, kKESCMPrefix + 41)	// ツール
 // Other StringKeys:
 #define kKESCMAboutBoxStringKey	kKESCMStringPrefix "kKESCMAboutBoxStringKey"
 #define kKESCMRepoURL			"https://github.com/KohakuNekotarou/KohakuChangeMarker"// 配布元URL。「このプラグインについて」本文とパネルのイラストクリックの飛び先で共通
-#define kKESCMAboutScriptMenuKey	kKESCMStringPrefix "kKESCMAboutScriptMenuKey"	// パネルのフライアウト「スクリプトについて」のメニュー名
-#define kKESCMScriptHelpStringKey	kKESCMStringPrefix "kKESCMScriptHelpStringKey"	// その本文(スクリプトAPIは撤去済み。現在は「利用可能なスクリプトはありません」の旨を表示)
+// (kKESCMAboutScriptMenuKey / kKESCMScriptHelpStringKey は「About Scripting」撤去(2026-07-25)に伴い削除)
 #define kKESCMUsageMenuKey		kKESCMStringPrefix "kKESCMUsageMenuKey"	// パネルのフライアウト「使い方」のメニュー名(本文は kKESCMHintKey を再利用)
 #define kKESCMHideUnchangedMenuKey	kKESCMStringPrefix "kKESCMHideUnchangedMenuKey"	// パネルのフライアウト「Hide Unchanged Spreads」トグルのメニュー名
 #define kKESCMHideConfirmKey		kKESCMStringPrefix "kKESCMHideConfirmKey"	// その確認ダイアログ本文(ダイアログのみロケール連動: enUS=英語/jaJP=日本語)
@@ -417,8 +416,7 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMToolWidgetID, kKESCMPrefix + 41)	// ツール
 #define kKESCMPageMapToggleMenuItemPosition	3000.0
 #define kKESCMPageCheckMenuItemPosition		3001.0	// 「KESCM: Check」を Register の直後(ページパネル右クリック末尾)に
 #define kKESCMPageRefreshCompareMenuItemPosition	3002.0	// 「KESCM: Refresh Page Comparison」を Check の直後(ページパネル右クリック末尾)に
-#define kKESCMAboutScriptMenuItemPosition	11.0	// その下に「スクリプトについて」
-#define kKESCMAboutThisMenuItemPosition		12.0	// 末尾に「このプラグインについて」
+#define kKESCMAboutThisMenuItemPosition		12.0	// 末尾に「このプラグインについて」(11.0=旧 About Scripting は撤去済み 2026-07-25)
 
 
 // Initial data format version numbers

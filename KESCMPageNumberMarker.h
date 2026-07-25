@@ -27,7 +27,8 @@
 
 class IDataBase;
 
-// フライアウト「Ignore Page Number Marker」の状態(セッション内のみ・既定=kTrue)。
+// フライアウト「Ignore Page Number Marker」の状態(セッション内のみ・既定=kFalse。実装の
+// sIgnorePageNumberMarker が正。2026-07-25 監査でヘッダー側の「既定=kTrue」誤記を訂正)。
 bool16	KESCMGetIgnorePageNumberMarker();
 void	KESCMSetIgnorePageNumberMarker(bool16 on);
 

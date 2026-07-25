@@ -34,7 +34,7 @@ resource StringTable (kSDKDefStringsResourceID + index_jaJP)
         {
         	// ----- Menu strings
                 kKESCMCompanyKey,					"Kohaku Plug-Ins",	// 日本語ロケールも英語表記で統一(会社名 kKESCMCompanyValue とは別)
-                kKESCMAboutMenuKey,					kKESCMDisplayName "[JP]...",
+                kKESCMAboutMenuKey,					kKESCMDisplayName "...",	// "[JP]" テンプレートサフィックスは撤去(2026-07-25)
 
                 // パネルのフライアウトのメニュー名は日本語ロケールでも英語(enUS と同一)で統一する
                 // (ユーザー方針 2026-07-04)。日本語が残るのはメニューから開いた表示内容
@@ -42,7 +42,6 @@ resource StringTable (kSDKDefStringsResourceID + index_jaJP)
                 // kSDKDefAboutThisPlugInMenuValue_enUS は ASCII のみなので UTF-8 テーブルでもそのまま使える
                 // (Shift-JIS 定義の _jaJP 版と違い衝突しない)。
                 kSDKDefAboutThisPlugInMenuKey,			kSDKDefAboutThisPlugInMenuValue_enUS,
-                kKESCMAboutScriptMenuKey,			"About Scripting...",
                 kKESCMUsageMenuKey,				"How to Use...",
                 kKESCMShowSrcMarksMenuKey,			"Show Marks on Source",
                 kKESCMPageMapToggleMenuKey,			"KESCM: Register as Added/Removed Pages",
@@ -93,8 +92,6 @@ resource StringTable (kSDKDefStringsResourceID + index_jaJP)
                 	"二つのドキュメントをページ単位でオフスクリーンにレンダリングしてピクセル比較し、変化した箇所を画面上に赤い枠で重ねて表示します。表示は非永続なので、ドキュメントには残りません。\n\n"
                 	"本プラグインは KohakuNekotarou が、Anthropic の AI Claude（Claude Code）と協働して設計・実装しました。\n\n"
                 	"ソース: " kKESCMRepoURL,
-
-                kKESCMScriptHelpStringKey,			"No scripts are currently available.",
 
                 // 「Hide Unchanged Spreads」実行前の確認ダイアログ本文(ドキュメントに変更を加えるため)。
                 // ダイアログのみ日本語ロケールで日本語表示(メニュー名は英語統一の方針のまま)。

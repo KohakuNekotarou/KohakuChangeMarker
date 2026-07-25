@@ -12,6 +12,7 @@
 
 #include "PersistUtils.h"
 #include "ISession.h"			// GetExecutionContextSession(KESCMIsDocDBOpen)
+#include "IActiveContext.h"		// GetContextDocument(KESCMActiveDoc)
 #include "IApplication.h"		// QueryDocumentList(KESCMIsDocDBOpen)
 #include "IDocumentList.h"		// FindDocByDataBase=生存確認のポインタ比較(KESCMIsDocDBOpen)
 #include "IDataBase.h"
@@ -31,14 +32,16 @@
 #include "TransformUtils.h"
 #include "IWindow.h"
 #include "IWindowUtils.h"
+#include "ILayoutViewUtils.h"		// GetAllLayoutViews(KESCMFindDocDbForView)
+#include "K2Vector.h"				// GetAllLayoutViews の out コンテナ(間接includeに頼らず明示)
 #include "IDocumentPresentation.h"
 #include "IPanelControlData.h"
 #include "LayoutUIID.h"				// kLayoutWidgetBoss / kLayoutSecondaryPanelWidgetID
 
 #include <vector>
 #include <set>
+#include <map>						// KESCMDoMarkChangesDoc のペアリング map(間接includeに頼らず明示 2026-07-25)
 
-#include "KESCMConstants.h"
 #include "KESCMDrawEventHandler.h"   // 描画エンジン＋共有 static
 #include "KESCMPeek.h"               // KESCMBaseScreenOpacity
 #include "KESCMPageMap.h"            // KESCMBuildPairing(除外対応表)
@@ -127,6 +130,46 @@ IControlView* KESCMQueryViewUnderMouse()
 
 	hitView->AddRef();	// QueryFrontView() と同じ「+1 ref、呼び出し側で Release」の契約に合わせる
 	return hitView;
+}
+
+// アクティブ(前面)文書とその db。KESCMCore.h のコメント参照(2026-07-25 重複解消で集約)。
+IDocument* KESCMActiveDoc()
+{
+	ISession* session = GetExecutionContextSession();
+	IActiveContext* ac = session ? session->GetActiveContext() : nil;
+	return ac ? ac->GetContextDocument() : nil;
+}
+
+IDataBase* KESCMActiveDocDB()
+{
+	IDocument* doc = KESCMActiveDoc();
+	return doc ? ::GetUIDRef(doc).GetDataBase() : nil;
+}
+
+// view がどの文書のレイアウトビューかをポインタ照合で特定する。KESCMCore.h のコメント参照。
+// (2026-07-25: KESCMPeek.cpp の file-static から共有ヘルパへ移動。色サンプラの窓ガードでも使うため)
+IDataBase* KESCMFindDocDbForView(IControlView* view)
+{
+	if (view == nil)
+		return nil;
+	InterfacePtr<IApplication> app(GetExecutionContextSession()->QueryApplication());
+	InterfacePtr<IDocumentList> docList(app ? app->QueryDocumentList() : nil);
+	if (docList == nil)
+		return nil;
+	const int32 docCount = docList->GetDocCount();
+	for (int32 d = 0; d < docCount; ++d)
+	{
+		IDocument* doc = docList->GetNthDoc(d);
+		if (doc == nil)
+			continue;
+		IDataBase* db = ::GetUIDRef(doc).GetDataBase();
+		K2Vector<IControlView*> views;
+		Utils<ILayoutViewUtils>()->GetAllLayoutViews(views, nil, db);
+		for (int32 vi = 0; vi < (int32)views.size(); ++vi)
+			if (views[vi] == view)
+				return db;
+	}
+	return nil;
 }
 
 bool16 KESCMFindPageUnderMouse(IDataBase* targetDB, PMReal mx, PMReal my, KESCMPageHit& out)
@@ -297,10 +340,12 @@ ErrorCode KESCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMStri
 	// 今回のペアリングを次回の差分用に記録する(差分・全再比較のどちらの経路でも)。
 	KESCMDrawEventHandler::sPrevPairTargetToSource.swap(newMap);
 
-	// 「Show Marks on Source」は Start のたびに既定 ON(仕様)。OFF にしたければフライアウトで外す。
 	// sSrcDB/対応表は MakeEntry が変化ページ登録時に埋めるが、変化ゼロでも db だけは明示しておく
 	// (エントリが無ければ wantSrcMarks が空判定で落ちるので描画コストは増えない)。
-	KESCMDrawEventHandler::sSrcMarksOn = kTrue;
+	// ★「Show Marks on Source」の既定 ON はここでは立てない(2026-07-25 監査で移動): この関数は Start
+	//   だけでなく登録トグルの差分再比較・Ignore Page Number 切替の再比較も通るため、ここで kTrue に
+	//   戻すとユーザーが OFF にした直後の再比較で黙って ON に戻ってしまう。既定 ON へ戻すのは仕様どおり
+	//   Start 経路(KESCMToggleStartStop)のみ。
 	KESCMDrawEventHandler::sSrcDB = sourceDB;
 
 	// overflow("/")キャッシュを今の対応表から作り直す。ここは Start・登録 Add/解除・Ignore 切替が
@@ -331,9 +376,12 @@ ErrorCode KESCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMStri
 	// 合わせて叩いてみる(微かな望み)。効果が無ければこの1行と KESCMThumbnailRefresh.* を外すだけで戻せる。
 	// (サムネイル自体への枠描画は sThumbExperiment 経由=描画エンジン側で ON。)詳細: memory
 	// kescm-pages-panel-thumbnails。
-	KESCMTryRefreshPagesPanelThumbnails(targetDB, &prevTargetMarked);
+	// Target/Source の2回とも Purge だけ行い、Pages パネルの ForceRedraw は最後の1回に畳む
+	// (2026-07-25 監査: 同期 ForceRedraw の多重実行を削減)。
+	KESCMTryRefreshPagesPanelThumbnails(targetDB, &prevTargetMarked, kFalse /*redrawNow*/);
 	if (sourceDB != targetDB)
-		KESCMTryRefreshPagesPanelThumbnails(sourceDB, &prevSourceMarked);
+		KESCMTryRefreshPagesPanelThumbnails(sourceDB, &prevSourceMarked, kFalse /*redrawNow*/);
+	KESCMForceRedrawPagesPanelNow();
 
 	PMString report;
 	report.SetTranslatable(kFalse);
@@ -369,7 +417,12 @@ bool16 KESCMIsDocDBOpen(IDataBase* db)
 // idle task 予約などの UI 仕事をしてはならない(2026-07-15 終了堅牢化)。
 bool16 KESCMAppIsQuitting()
 {
-	InterfacePtr<IApplication> app(GetExecutionContextSession()->QueryApplication());
+	// ★session 自体も nil ガード(2026-07-25 監査で追加): 終了保護そのものの関数が無ガード deref では
+	//   本末転倒。session すら引けない=解体が進んでいる、として終了中扱いに倒す。
+	ISession* session = GetExecutionContextSession();
+	if (session == nil)
+		return kTrue;
+	InterfacePtr<IApplication> app(session->QueryApplication());
 	if (app == nil)
 		return kTrue;	// アプリすら引けない=解体が進んでいる。安全側(終了中扱い)に倒す
 	const IApplication::ApplicationStateType st = app->GetApplicationState();
@@ -423,9 +476,11 @@ void KESCMDoClearMarks(IDataBase* db)
 	// ビューだけを無効化し、サムネイルの共有画像キャッシュには届かない。Start 側(比較実行後)が枠を
 	// 付けるのと対称に、Stop でも Purge+ForceRedraw でクリーンなサムネイルへ作り直させる。DropAll 済みで
 	// マーク対象が無い状態なので、再生成される isThumb 描画は早期 return し枠は描かれない。
-	KESCMTryRefreshPagesPanelThumbnails(markedDB);
+	// 2文書とも Purge だけ行い、ForceRedraw は最後の1回に畳む(2026-07-25 監査: 多重実行の削減)。
+	KESCMTryRefreshPagesPanelThumbnails(markedDB, nil, kFalse /*redrawNow*/);
 	if (srcDB != nil && srcDB != markedDB)
-		KESCMTryRefreshPagesPanelThumbnails(srcDB);
+		KESCMTryRefreshPagesPanelThumbnails(srcDB, nil, kFalse /*redrawNow*/);
+	KESCMForceRedrawPagesPanelNow();
 
 	// 変更ページ巡回(Next/Prev)の基準点も忘れる(次の比較へ持ち越さない)。
 	KESCMResetNav();

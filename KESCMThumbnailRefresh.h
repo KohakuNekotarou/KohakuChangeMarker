@@ -32,7 +32,10 @@ IControlView* KESCMGetVisiblePagesPanel();
 //   ★再ペアリング(登録トグル/再Start)で「旧集合からは抜けたが新集合には入らない」ページ(overflow を
 //     抜けた赤「/」・変更なしに戻ったリング等)は、新集合しか見ない per-UID Purge から漏れて古い枠が
 //     残る。呼び出し側が「再比較前に枠が付いていたページ」をここへ渡すことで確実に作り直させる。
-void KESCMTryRefreshPagesPanelThumbnails(IDataBase* db, const std::set<UID>* extraPages = nil);
+//   redrawNow(既定 kTrue): kFalse なら Purge だけ行い ForceRedraw をスキップする。Target/Source の
+//     2文書を続けて更新する呼び出し側が、前半を kFalse にして最後の1回だけ再描画するためのバッチ化
+//     (2026-07-25 監査: 1操作で最大9回走っていた同期 ForceRedraw の多重実行を削減)。
+void KESCMTryRefreshPagesPanelThumbnails(IDataBase* db, const std::set<UID>* extraPages = nil, bool16 redrawNow = kTrue);
 
 // db が現在の比較対象(sDB/sSrcDB)なら、「今マークが出得るページ UID」(変更リング+overflow「/」+
 // 登録「/」)を outPages へ追加して kTrue を返す。比較対象でなければ何もせず kFalse。
@@ -44,6 +47,11 @@ bool16 KESCMCollectChangedPageUIDs(IDataBase* db, std::set<UID>& outPages);
 // 「変更ページ集合(sEntries/overflow)には自動では入らないが、確実にサムネイルを作り直したい」特定
 // ページを明示更新するために使う。特に登録解除は sRegistered から先に消えるため、解除したページの
 // 緑「/」を消すにはこの明示 Purge が必要。db が nil か pages が空なら何もしない。安全に何度でも呼べる。
-void KESCMRefreshThumbnailsForPages(IDataBase* db, const std::vector<UID>& pages);
+// redrawNow の意味は KESCMTryRefreshPagesPanelThumbnails と同じ(kFalse=Purge のみ、バッチ化用)。
+void KESCMRefreshThumbnailsForPages(IDataBase* db, const std::vector<UID>& pages, bool16 redrawNow = kTrue);
+
+// Pages パネルが表示されていれば今すぐ再描画する(Purge 済みサムネイルの作り直しトリガー)。
+// redrawNow=kFalse でバッチ化した呼び出し側が、最後に1回だけ呼ぶための公開版。
+void KESCMForceRedrawPagesPanelNow();
 
 #endif // __KESCMThumbnailRefresh_h__

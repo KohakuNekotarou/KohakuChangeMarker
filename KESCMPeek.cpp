@@ -19,13 +19,10 @@
 #include "IApplication.h"
 #include "IDocumentList.h"
 #include "ISpread.h"
-#include "ISpreadList.h"
-#include "IShape.h"
 #include "ISession.h"
 #include "IWindow.h"
 #include "IWindowUtils.h"
 #include "IDocumentPresentation.h"
-#include "IPanelControlData.h"
 #include "ILayoutViewUtils.h"		// GetAllLayoutViews(Split Window両ペインのIControlView*取得)
 #include "ILayoutUIUtils.h"			// MakeZoomCmd(kZoomToCmdBoss。ビューポート同期のズーム)
 #include "CmdUtils.h"				// ProcessCommand(ズームコマンド実行)
@@ -39,7 +36,6 @@
 
 // ツール / 起動:
 #include "IStartupShutdownService.h"
-#include "CreateObject.h"
 #include "CPMUnknown.h"
 #include "LayoutUIID.h"
 #include "DocumentContextID.h"
@@ -47,7 +43,6 @@
 // ジオメトリ / ビュー:
 #include "IControlView.h"
 #include "IPanorama.h"
-#include "IWidgetParent.h"
 #include "PMMatrix.h"
 #include "PMPoint.h"
 #include "PMRect.h"					// ページのペーストボード矩形(旧 Alt+ミドルの追加/削除補正)
@@ -55,14 +50,13 @@
 #include "TransformUtils.h"
 
 // カスタムビットマップカーソル(Alt+左 CMYK 情報をカーソルにも描く):
-#include "ICursorUtils.h"			// QueryGraphicsPortForBitmap(自前バッファに AGM 描画)/CursorSpec も同梱
+// (ICursorUtils.h は KESCMCheckGlyph.h 経由で入る=直接シンボルを使わないため直 include は撤去 2026-07-25)
 #include "IGraphicsPort.h"			// setrgbcolor/rectfill/selectfont/show
 #include "IFontMgr.h"				// 既定フォント取得
 #include "IPMFont.h"
 
 #include <map>
 #include <vector>
-#include <set>
 #include <cstring>				// std::memset(カーソルバッファの透明クリア)
 #include <chrono>				// steady_clock(ドラッグ中ライブ再サンプルのスロットル)
 
@@ -111,26 +105,21 @@ PMReal KESCMBaseScreenOpacity()
 	       ? KESCMDrawEventHandler::SelectedMarkOpacity() : PMReal(1.0);
 }
 
-// peek 試行の結果(スクリプトの状態文字列用。watcher は無視する)。
-enum KESCMPeekResult { kKESCMPeekNoView = 0, kKESCMPeekNoSpread = 1, kKESCMPeekShown = 2, kKESCMPeekNoChange = 3 };
-
 // 前面レイアウトビューで「マウス下スプレッド」の旧版べた載せを表示する。
 //   targetDB=表示中(新)ドキュメント, sourceDB=重ねる旧ドキュメント。
 //   そのスプレッドが既にキャッシュ済みなら再利用(即時)。未キャッシュなら旧キャッシュを捨てて、その
 //   スプレッドだけをその場でラスタ化(保持は常に1スプレッド)。成功時に sShowOriginal を立てて再描画。
-//   outSpread/outPages は任意(nil 可)。
-static KESCMPeekResult KESCMPeekShowUnderMouse(IDataBase* targetDB, IDataBase* sourceDB,
-	int32* outSpread, int32* outPages)
+//   (2026-07-25 監査: 旧・中ボタン watcher/スクリプト報告用の戻り値 KESCMPeekResult と
+//    outSpread/outPages は、唯一の呼び出し側が全て捨てていたため撤去して void 化)
+static void KESCMPeekShowUnderMouse(IDataBase* targetDB, IDataBase* sourceDB)
 {
-	if (outSpread) *outSpread = -1;
-	if (outPages)  *outPages = 0;
 	if (targetDB == nil || sourceDB == nil)
-		return kKESCMPeekNoView;
+		return;
 
 	// マウスが乗っているレイアウトビュー(Split Window対応、KESCMQueryViewUnderMouse参照)。
 	InterfacePtr<IControlView> view(KESCMQueryViewUnderMouse());
 	if (view == nil)
-		return kKESCMPeekNoView;
+		return;
 
 	// 現在のズーム(content→window スケール=ズーム×デバイス倍率)から、画面と 1:1 になる解像度を決める。
 	// dpi = 72 × スケール。1:1 のとき最も綺麗(画像px=画面px)。
@@ -161,18 +150,17 @@ static KESCMPeekResult KESCMPeekShowUnderMouse(IDataBase* targetDB, IDataBase* s
 
 	PMReal mx = 0.0, my = 0.0;
 	if (!KESCMQueryMouseContentPoint(view, mx, my))
-		return kKESCMPeekNoView;
+		return;
 
 	// マウス下のスプレッド/ページを特定(平坦通し番号も取得)。共有ヘルパ KESCMFindPageUnderMouse に集約。
 	KESCMPageHit hit;
 	if (!KESCMFindPageUnderMouse(targetDB, mx, my, hit))
-		return kKESCMPeekNoSpread;
+		return;
 
-	const int32 s           = hit.spreadIndex;
 	const int32 np          = hit.numPages;
 	InterfacePtr<ISpread> spread(targetDB, hit.spreadUID, UseDefaultIID());
 	if (spread == nil)
-		return kKESCMPeekNoSpread;
+		return;
 
 	// 【未更新スプレッドの早期スキップ】このドキュメントで比較が実行済み(sDB==targetDB)で、かつ
 	// このスプレッドのどのページも変化エントリ(sEntries)に無いなら、旧版は現行と同一=重ねる意味が
@@ -186,11 +174,7 @@ static KESCMPeekResult KESCMPeekShowUnderMouse(IDataBase* targetDB, IDataBase* s
 			    KESCMDrawEventHandler::sEntries.end())
 			{ anyChanged = kTrue; break; }
 		if (!anyChanged)
-		{
-			if (outSpread) *outSpread = s;
-			if (outPages)  *outPages = 0;
-			return kKESCMPeekNoChange;
-		}
+			return;
 	}
 
 	// このスプレッドは既に丸ごとキャッシュ済みか?(同じ db かつ 全ページが sOrigImages にある) → 再利用(即時)。
@@ -208,12 +192,7 @@ static KESCMPeekResult KESCMPeekShowUnderMouse(IDataBase* targetDB, IDataBase* s
 			cached = kFalse;
 	}
 
-	int32 captured = 0;
-	if (cached)
-	{
-		captured = np;	// ラスタ化不要=キャッシュがこのスプレッドを覆っている
-	}
-	else
+	if (!cached)
 	{
 		// 新→旧のページ対応は除外対応表(登録済み=比較相手なしページを除いた順番対応)で引く。
 		// 実際にラスタ化するこの分岐でだけ必要(キャッシュヒット=同一スプレッドの再 peek が最頻ケースで、
@@ -235,17 +214,12 @@ static KESCMPeekResult KESCMPeekShowUnderMouse(IDataBase* targetDB, IDataBase* s
 				continue;
 			UIDRef tRef(targetDB, tPageUID);
 			UIDRef sRef(sourceDB, mi->second);
-			if (KESCMDrawEventHandler::MakeOrigImage(tRef, sRef, peekDpi) == kSuccess)
-				++captured;
+			KESCMDrawEventHandler::MakeOrigImage(tRef, sRef, peekDpi);	// 失敗ページは重ねずスキップ(従来同挙動)
 		}
 	}
 	KESCMDrawEventHandler::sShowOriginal = kTrue;
 
 	KESCMInvalidateDB(targetDB);
-
-	if (outSpread) *outSpread = s;
-	if (outPages)  *outPages = captured;
-	return kKESCMPeekShown;
 }
 
 
@@ -331,11 +305,13 @@ static bool16 KESCMRefreshComparisonCore(IDataBase* targetDB, IDataBase* sourceD
 	// レイアウトビューだけでなく Pages パネルのサムネイルも即時更新する。触れたページだけを per-UID Purge
 	// する KESCMRefreshThumbnailsForPages を使う(触っていない他ページのサムネイルは再生成しない)。変化
 	// あり/なし両方を渡すので、変化なしに戻ったページの古いリングも確実に消える。
-	KESCMRefreshThumbnailsForPages(targetDB, touchedTargetPages);
+	// (2文書とも Purge のみ→最後に1回だけ ForceRedraw。2026-07-25 監査: 多重実行の削減)
+	KESCMRefreshThumbnailsForPages(targetDB, touchedTargetPages, kFalse /*redrawNow*/);
 	// Source 側サムネイルのリングは Show Marks on Source(sSrcMarksOn)ON のときだけ出る。ただし ✓ は
 	// sSrcMarksOn と無関係にサムネイルへ出るので、prune 前に Source にチェックがあった場合も更新する。
 	if (KESCMDrawEventHandler::sSrcMarksOn || srcHadChecks)
-		KESCMRefreshThumbnailsForPages(sourceDB, touchedSourcePages);
+		KESCMRefreshThumbnailsForPages(sourceDB, touchedSourcePages, kFalse /*redrawNow*/);
+	KESCMForceRedrawPagesPanelNow();
 
 	if (outChanged) *outChanged = changedCount;
 	return kTrue;
@@ -418,19 +394,26 @@ static void KESCMInvalidateMarksDoc()
 // アクティブ状態追跡が元側のままになるらしく、判定に失敗していた(ユーザー実測で確認)。
 // KESCMSyncScrollOtherWindowsUnderMouse と同じ QueryWindowUnderPoint ベースの判定に統一し、
 // マウス位置そのものからドキュメントを特定する(アクティブ状態を一切参照しない)。
-static bool16 KESCMFrontViewIsOverTarget()
+// 共通部: マウス直下のドキュメントウィンドウの db を返す(無ければ nil)。Target/Source 判定の
+// 差分は比較先 db だけなので、窓解決を1本に畳んだ(2026-07-25 監査で重複解消)。
+static IDataBase* KESCMQueryDocDbUnderMouse()
 {
 	GSysPoint globalPt = Utils<IEventUtils>()->GetGlobalMouseLocation();
 
 	InterfacePtr<IWindow> hitWindow(Utils<IWindowUtils>()->QueryWindowUnderPoint(globalPt, kFalse));
 	if (hitWindow == nil)
-		return kFalse;
+		return nil;
 
 	InterfacePtr<IDocumentPresentation> hitPres(hitWindow, UseDefaultIID());
 	if (hitPres == nil)
-		return kFalse;
+		return nil;
 
-	return (hitPres->GetDocumentUIDRef().GetDataBase() == sPeekTargetDB);
+	return hitPres->GetDocumentUIDRef().GetDataBase();
+}
+
+static bool16 KESCMFrontViewIsOverTarget()
+{
+	return (sPeekTargetDB != nil && KESCMQueryDocDbUnderMouse() == sPeekTargetDB) ? kTrue : kFalse;
 }
 
 // マウス下のドキュメントウィンドウが Source(比較の旧側=常時表示枠を載せている sSrcDB)かどうか。
@@ -439,20 +422,8 @@ static bool16 KESCMFrontViewIsOverTarget()
 // 正とする(arm の sPeekSourceDB と同一文書だが、判定はマークの実 db に紐づける)。
 static bool16 KESCMFrontViewIsOverSource()
 {
-	if (KESCMDrawEventHandler::sSrcDB == nil)
-		return kFalse;
-
-	GSysPoint globalPt = Utils<IEventUtils>()->GetGlobalMouseLocation();
-
-	InterfacePtr<IWindow> hitWindow(Utils<IWindowUtils>()->QueryWindowUnderPoint(globalPt, kFalse));
-	if (hitWindow == nil)
-		return kFalse;
-
-	InterfacePtr<IDocumentPresentation> hitPres(hitWindow, UseDefaultIID());
-	if (hitPres == nil)
-		return kFalse;
-
-	return (hitPres->GetDocumentUIDRef().GetDataBase() == KESCMDrawEventHandler::sSrcDB);
+	return (KESCMDrawEventHandler::sSrcDB != nil &&
+	        KESCMQueryDocDbUnderMouse() == KESCMDrawEventHandler::sSrcDB) ? kTrue : kFalse;
 }
 
 //========================================================================================
@@ -470,32 +441,8 @@ static bool16 KESCMFrontViewIsOverSource()
 // それを拾って同期し返す(無限ループ/ピンポン)のを防ぐ。複製ループの間だけ kTrue。
 static bool16 sLayoutSyncBroadcasting = kFalse;
 
-// view がどの文書のレイアウトビューかをポインタ照合で特定する(見つからなければ nil)。
-// GetAllLayoutViews が返す IControlView* は同一ビューなら同一ポインタ(実測前提、本ファイルの
-// 役割判定でも同じ前提を使用)。同期オブザーバが通知元ビューの所属文書を知るために使う。
-static IDataBase* KESCMFindDocDbForView(IControlView* view)
-{
-	if (view == nil)
-		return nil;
-	InterfacePtr<IApplication> app(GetExecutionContextSession()->QueryApplication());
-	InterfacePtr<IDocumentList> docList(app ? app->QueryDocumentList() : nil);
-	if (docList == nil)
-		return nil;
-	const int32 docCount = docList->GetDocCount();
-	for (int32 d = 0; d < docCount; ++d)
-	{
-		IDocument* doc = docList->GetNthDoc(d);
-		if (doc == nil)
-			continue;
-		IDataBase* db = ::GetUIDRef(doc).GetDataBase();
-		K2Vector<IControlView*> views;
-		Utils<ILayoutViewUtils>()->GetAllLayoutViews(views, nil, db);
-		for (int32 vi = 0; vi < (int32)views.size(); ++vi)
-			if (views[vi] == view)
-				return db;
-	}
-	return nil;
-}
+// (KESCMFindDocDbForView は 2026-07-25 に KESCMCore.cpp の共有ヘルパへ移動。宣言は KESCMCore.h。
+//  色サンプラの窓同一性ガードでも使うため。本ファイルの呼び出しは全てそのまま)
 
 //----------------------------------------------------------------------------------------
 // ページ pageUID(db 内)のペーストボード矩形を得る。パノラマの content 座標=ペーストボード座標
@@ -644,7 +591,13 @@ static void KESCMSyncOtherDocViewportsTo(IPanorama* srcPano, IDataBase* srcDocDb
 	if (docList == nil)
 		return;
 
-	sLayoutSyncBroadcasting = kTrue;	// ここからの通知は自分発なのでオブザーバは無視する
+	// 再入ガードを RAII で立てる(2026-07-25 監査で変更): 複製ループ中の ProcessCommand が万一 throw
+	// してもフラグが立ちっぱなし(=以後の同期が永久に無効化)にならない。
+	struct KESCMSyncBroadcastGuard
+	{
+		KESCMSyncBroadcastGuard()  { sLayoutSyncBroadcasting = kTrue; }	// ここからの通知は自分発なのでオブザーバは無視する
+		~KESCMSyncBroadcastGuard() { sLayoutSyncBroadcasting = kFalse; }
+	} broadcastGuard;
 
 	const int32 docCount = docList->GetDocCount();
 	for (int32 d = 0; d < docCount; ++d)
@@ -726,8 +679,7 @@ static void KESCMSyncOtherDocViewportsTo(IPanorama* srcPano, IDataBase* srcDocDb
 			pano->ScrollContentLocationToFrameCenter(dstCenter, kFalse /*forceRedraw*/);
 		}
 	}
-
-	sLayoutSyncBroadcasting = kFalse;
+	// (sLayoutSyncBroadcasting は broadcastGuard のデストラクタが戻す)
 }
 
 //========================================================================================
@@ -990,7 +942,7 @@ static void KESCMTrackerBeginPeek(PMReal opacity)
 	KESCMDrawEventHandler::sPeekOpacity = opacity;	// 旧版べた載せの不透明度(描画時に参照)
 	sSingleShowing = kFalse;
 	KESCMDrawEventHandler::sMarksVisible = kFalse;	// 覗き中は枠等を出さない(旧版だけ)
-	KESCMPeekShowUnderMouse(sPeekTargetDB, sPeekSourceDB, nil, nil);
+	KESCMPeekShowUnderMouse(sPeekTargetDB, sPeekSourceDB);
 }
 
 //========================================================================================
@@ -1097,9 +1049,9 @@ static void KESCMCmykCursorBitmapProc(uchar* bitmapBuffer, uint32* width, uint32
 	if (maxChars < 1) maxChars = 1;
 
 	// フォントは使える最大幅から大きめに決める(1文字≒0.58em、下限7pt)。
-	// ★上限キャップ撤廃(2026-07-14、検証用): 18→26→48pt と上げても実機で変化が無かったため、上限に
-	// 到達する前に maxLogW(カーソル最大論理サイズ=OS/カーソルマネージャ依存で SDK からは不明)からの
-	// 逆算値自体が頭打ちになっている疑いが強い。上限を外して、この式が実際にどこまで出すかを見る。
+	// ★上限キャップは撤廃で確定(2026-07-14 検証→2026-07-25 採用を明文化): 18→26→48pt と上げても実機で
+	// 変化が無かった=maxLogW(カーソル最大論理サイズ=OS/カーソルマネージャ依存)からの逆算値が実質の
+	// 上限として機能しており、人工的なキャップは不要。
 	int32 fs = ((int32)maxLogW - 8) * 100 / (maxChars * 58);
 	if (fs < 7)  fs = 7;
 
@@ -1107,8 +1059,8 @@ static void KESCMCmykCursorBitmapProc(uchar* bitmapBuffer, uint32* width, uint32
 	// でき、その初回フレームがちらついて見える(ゴミ)ため。内容幅 = 左6 + 4列×ピッチ(2.1em) +
 	// ラベル(t/s=1文字≒0.58em) + 右4 ≒ 10 + 8.98em(下の描画の pitch=2.1×fs と一致させること。
 	// 2026-07-15: ラベルを tgt/src→t/s へ短縮したのに合わせ 10.14em→8.98em に更新=右端の透明余白を除去)。
-	int32 contentW = 10 + (fs * 898) / 100;
-	uint32 logW = (contentW > 0) ? (uint32)contentW : maxLogW;	// クランプは KESCMCursorBitmapFinish が行う
+	const int32 contentW = 10 + (fs * 898) / 100;	// fs>=7 保証(上のクランプ)により常に正
+	uint32 logW = (uint32)contentW;					// クランプは KESCMCursorBitmapFinish が行う
 
 	// ✓(上部 y≈18 まで)の下に「ヘッダー C M Y K + データ2行(Target/Source)」を積む。位置・高さは fs から。
 	const int32 gap    = (fs * 130) / 100;	// 行間 ≒1.3em
@@ -1118,7 +1070,9 @@ static void KESCMCmykCursorBitmapProc(uchar* bitmapBuffer, uint32* width, uint32
 	// 最下段(Source 行 "src")はディセンダ(下に伸びる字)が無いので、ベースラインのすぐ下でビットマップを
 	// 終える。下端の透明余白を残すと、そこに初回フレームのちらつき(ゴミ)が出る(ユーザー報告: 文字より
 	// 約3px下に一瞬。2026-07-13)。ハロー(y+1)とAA ぶんだけ +2 で足りる。
-	int32 needH = yData2 + 2;
+	// ★solo(Stop 単独ピック=line2 空)は Target 行までで終える(2026-07-25 監査で修正): 常に yData2 基準だと
+	//   使わない Source 行ぶんの透明帯が下に残り、上の「余白タイト化」方針と矛盾していた。
+	int32 needH = ((line2.NumUTF16TextChars() > 0) ? yData2 : yData1) + 2;
 	uint32 logH = (needH > 0) ? (uint32)needH : 60u;
 
 	// サイズ確定(クランプ込み)+AGM ポート取得(✓カーソルと共有の後処理。KESCMCheckGlyph.h)。
@@ -1586,6 +1540,18 @@ void KESCMPeekStartup::Shutdown()
 	// 安全。2026-07-15 終了堅牢化)。
 	sCmykCursorText.Clear();
 	KESCMClearSessionStatus();	// パネルのステータス記憶(gSessionStatus)も同様に空へ
+
+	// ★Alt+左ホールド中にアプリが終了する経路(スクリプト quit 等)では RevealEnd を通らず
+	//   sCmykCursorFont が生きたまま残るので、ここで解放する(2026-07-25 監査で追加。通常経路では
+	//   押下の外は常に nil なので no-op)。
+	if (sCmykCursorFont != nil)
+	{
+		sCmykCursorFont->Release();
+		sCmykCursorFont = nil;
+	}
+
+	// 旧ページ番号バッジのフォントキャッシュも同じ理由(静的破棄前の明示解放)でここで捨てる(2026-07-25)。
+	KESCMReleaseOldNumFontCache();
 }
 
 //========================================================================================

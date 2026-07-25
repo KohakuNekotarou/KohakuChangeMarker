@@ -36,10 +36,8 @@
 #include <string>
 #include <vector>
 #include <set>
-#include <map>
 
 // Project includes:
-#include "KESCMID.h"
 #include "KESCMCore.h"				// KESCMSetStatus / KESCMCollectPageUIDs
 #include "KESCMDrawEventHandler.h"	// sEntries / sDB / sSrcDB
 #include "KESCMPageMap.h"			// KESCMBuildPairing / KESCMPageMapCollectRegistered

@@ -50,13 +50,12 @@
 #include "K2Vector.h"
 
 #include <map>
-#include <set>
 #include <vector>
 
 #include "KESCMCore.h"				// KESCMCollectPageUIDs / KESCMArmed* / KESCMSetStatus
 #include "KESCMDrawEventHandler.h"	// sDB / sSrcDB / sEntries / sOverset* / KESCMQueryPanorama
 #include "KESCMOversetScan.h"		// KESCMOversetLoc(overset「+」箇所の位置)
-#include "KESCMPageMap.h"			// KESCMBuildPairing / KESCMMapTargetToSource(Source 側連動スクロール用)
+#include "KESCMPageMap.h"			// KESCMBuildPairing(Source 側連動スクロールの対応表。2026-07-25 コメント現行化)
 #include "KESCMThumbnailRefresh.h"	// KESCMGetVisiblePagesPanel(表示中 Pages パネル取得の共有ヘルパ)
 #include "KESCMChangeNav.h"
 
@@ -398,21 +397,25 @@ static void KESCMGoto(int32 dir)
 		else if (next >= (int32)stops.size()) next = 0;						// 末尾で「次」→先頭へ折り返し
 	}
 	const KESCMNavStop& stop = stops[next];
-	sNavPageUID    = stop.pageUID;
-	sNavIsOverset  = stop.isOverset;
-	sNavOversetOrd = stop.oversetOrd;
 
 	// overset は「+」点へ(KBS 流)、変更はページ中心へスクロール。
+	// ★基準ストップ(sNav*)の更新はスクロール成功後(2026-07-25 監査で移動): 失敗時に基準だけ先へ進むと、
+	//   位置表示「k/N」が古いまま・次回の巡回起点も移動済み、という不整合が残るため。
 	const bool16 ok = stop.isOverset ? KESCMScrollDocToPBPoint(navDB, stop.pb)
 	                                 : KESCMScrollDocToPage(navDB, stop.pageUID);
 	if (!ok)
 	{
 		PMString s("Could not scroll."); s.SetTranslatable(kFalse);
 		KESCMSetStatus(s);
+		KESCMRefreshNavPosition();	// 表示とボタン状態は「移動しなかった現状」で作り直す
 		return;
 	}
+	sNavPageUID    = stop.pageUID;
+	sNavIsOverset  = stop.isOverset;
+	sNavOversetOrd = stop.oversetOrd;
 
-	// 飛んだ先をメッセージ欄へ("P1" / "P1ov" / "P1(2)ov")。位置 k/N は別ウィジェット(下の RefreshNavPosition)。
+	// 飛んだ先をメッセージ欄へ(例 "P1" / "P1 Overset" / "P1 Overset (2)"=KESCMStopLabel 参照)。
+	// 位置 k/N は別ウィジェット(下の RefreshNavPosition)。
 	KESCMSetStatus(KESCMStopLabel(navDB, stop));
 
 	// Pages パネルも対象ページへ連動スクロール(前面文書が navDB のときだけ。ベストエフォート)。

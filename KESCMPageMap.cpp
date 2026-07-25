@@ -412,15 +412,8 @@ void KESCMBuildPairing(IDataBase* targetDB, IDataBase* sourceDB,
 		outOverflowSourcePages->assign(sFiltered.begin() + n, sFiltered.end());
 }
 
-//========================================================================================
-// KESCMPageMapHasOverflow(KESCMPageMap.h で宣言)
-//========================================================================================
-bool16 KESCMPageMapHasOverflow(IDataBase* targetDB, IDataBase* sourceDB)
-{
-	std::vector<UID> tPages, sPages, tOverflow, sOverflow;
-	KESCMBuildPairing(targetDB, sourceDB, tPages, sPages, &tOverflow, &sOverflow);
-	return (!tOverflow.empty() || !sOverflow.empty()) ? kTrue : kFalse;
-}
+// (KESCMPageMapHasOverflow は 2026-07-25 監査で削除: 描画側が sOverflowT/sOverflowS キャッシュ方式へ
+//  移行して以来どこからも呼ばれておらず、中身が全ページ走査なので誤ってホットパスから呼ばれる前に撤去)
 
 //========================================================================================
 // KESCMMapTargetToSource / KESCMMapSourceToTarget(KESCMPageMap.h で宣言)

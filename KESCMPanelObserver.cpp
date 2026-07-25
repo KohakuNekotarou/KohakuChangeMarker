@@ -60,7 +60,6 @@ private:
 	void DetachWidget(const InterfacePtr<IPanelControlData>& pcd, const WidgetID& wid, const PMIID& iid);
 
 	void UpdateInfoDisplay();
-	void SetStatus(const PMString& s);
 };
 
 CREATE_PMINTERFACE(KESCMPanelObserver, kKESCMPanelObserverImpl)
@@ -70,7 +69,8 @@ CREATE_PMINTERFACE(KESCMPanelObserver, kKESCMPanelObserverImpl)
 // StaticMultiLineTextWidget の内容はワークスペースに永続化されるため、InDesign を再起動して
 // アイコン状態のパネルを開くと前回セッションの文字列(例: "marks start / pages compared=22")が残って
 // しまう。そこで「今セッションで表示したメッセージ」だけをここに覚えておき、AutoAttach で必ず
-// 上書きする。プラグインを一度も操作していなければ空文字なので何も表示されない。
+// 上書きする。未操作(空文字)の場合は AutoAttach が初期ヒントを表示する(2026-07-25 コメント現行化。
+// 旧記述「空なら何も表示されない」は初期ヒント導入前のもの)。
 //----------------------------------------------------------------------------------------
 namespace { PMString gSessionStatus; }
 
@@ -78,12 +78,7 @@ namespace { PMString gSessionStatus; }
 // ローカルヘルパ
 //----------------------------------------------------------------------------------------
 
-// アクティブ(前面)文書 = 比較の Target。
-static IDocument* KESCMActiveDoc()
-{
-	IActiveContext* ac = GetExecutionContextSession() ? GetExecutionContextSession()->GetActiveContext() : nil;
-	return ac ? ac->GetContextDocument() : nil;
-}
+// (アクティブ(前面)文書=比較の Target の解決は KESCMActiveDoc(KESCMCore)に統合。2026-07-25 重複解消)
 
 // target 以外で最初に開いている文書 = 比較の Source(旧版)。
 static IDocument* KESCMFirstOtherDoc(IDocument* target)
@@ -175,11 +170,11 @@ void KESCMPanelObserver::AutoAttach()
 	{
 		PMString hint("Open the target and source documents (the active one becomes the Target), then choose Start from the panel menu.");
 		hint.SetTranslatable(kFalse);
-		this->SetStatus(hint);
+		KESCMSetStatus(hint);	// (メンバ SetStatus は単純転送だったため撤去し直接呼ぶ 2026-07-25)
 	}
 	else
 	{
-		this->SetStatus(gSessionStatus);
+		KESCMSetStatus(gSessionStatus);
 	}
 
 	// Prev/Next の間の現在位置表示とボタン有効/無効は、上の UpdateInfoDisplay(→KESCMApplyPanelInfo
@@ -304,6 +299,9 @@ void KESCMToggleStartStop()
 		IDataBase* sourceDB = ::GetUIDRef(source).GetDataBase();
 
 		PMString report;
+		// 「Show Marks on Source」は Start のたびに既定 ON へ戻す(仕様)。再比較(登録トグル/Ignore 切替)で
+		// 黙って ON に戻さないよう、KESCMDoMarkChangesDoc 側ではなく Start 経路のここで立てる(2026-07-25)。
+		KESCMDrawEventHandler::sSrcMarksOn = kTrue;
 		KESCMDoMarkChangesDoc(targetDB, sourceDB, report);
 		KESCMDoArmMousePeek(targetDB, sourceDB);
 		KESCMScrollMapAttach(targetDB);	// Target の各文書窓にスクロールバー地図stripを注入
@@ -425,11 +423,6 @@ void KESCMPanelObserver::UpdateInfoDisplay()
 {
 	InterfacePtr<IPanelControlData> pcd(this, UseDefaultIID());
 	KESCMApplyPanelInfo(pcd);
-}
-
-void KESCMPanelObserver::SetStatus(const PMString& s)
-{
-	KESCMSetStatus(s);
 }
 
 //========================================================================================

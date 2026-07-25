@@ -42,9 +42,9 @@ BEGIN
     BEGIN
         BLOCK "040904b0"
         BEGIN
-            VALUE "CompanyName", "Adobe Systems Incorporated\0"
-            VALUE "FileDescription", "Adobe InDesign SDK Plug-in\0"
-            VALUE "FileVersion", "1.0", "\0"
+            VALUE "CompanyName", "Kohaku Plug-Ins\0"
+            VALUE "FileDescription", "KohakuChangeMarker - Adobe InDesign SDK Plug-in\0"
+            VALUE "FileVersion", kKESCMVersion, "\0"
             VALUE "InternalName", kKESCMPluginName, "\0"
             VALUE "LegalCopyright", kShortCopyRightStr, "\0"
 

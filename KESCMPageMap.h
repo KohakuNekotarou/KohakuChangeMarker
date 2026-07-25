@@ -84,10 +84,6 @@ void KESCMBuildPairing(IDataBase* targetDB, IDataBase* sourceDB,
 	std::vector<UID>& outTargetPages, std::vector<UID>& outSourcePages,
 	std::vector<UID>* outOverflowTargetPages = nil, std::vector<UID>* outOverflowSourcePages = nil);
 
-// targetDB/sourceDB のどちらかに、登録されていないのに文書間のページ数差であふれたページがあるか
-// (存在チェックのみ)。描画側の早期 return 判定に使う。
-bool16 KESCMPageMapHasOverflow(IDataBase* targetDB, IDataBase* sourceDB);
-
 // targetPageUID(targetDB内)に対応する sourceDB 側のページを1つ求める(内部で KESCMBuildPairing を
 // 使う)。targetPageUID 自身が登録済み(除外対象)か、対応表の範囲外(対応相手なし)なら kFalse で
 // outSourcePageUID は不定。

@@ -20,8 +20,6 @@
 #include "IDataBase.h"			// GetSysFile(保存キー=文書ファイルパス)
 #include "IDocumentList.h"		// 生存スイープ(FindDocByDataBase へのポインタ比較のみ)
 #include "IActionStateList.h"	// メニューの有効/チェック
-#include "Utils.h"
-#include "PersistUtils.h"		// ::GetDataBase(IDocument→IDataBase)
 #include "PMString.h"
 #include "FileUtils.h"			// GetAppRoamingDataFolder / AppendPath / OpenFile / DoesFileExist / SysFileToPMString
 #include "IDFile.h"
@@ -191,7 +189,8 @@ void KESCMPageCheckSweepClosedDocs()
 	if (sChecked.empty())
 		return;
 
-	InterfacePtr<IApplication> app(GetExecutionContextSession()->QueryApplication());
+	ISession* session = GetExecutionContextSession();	// クローズ掃除は終了シーケンス中にも来得るので nil ガード(2026-07-25)
+	InterfacePtr<IApplication> app(session != nil ? session->QueryApplication() : nil);
 	InterfacePtr<IDocumentList> docList(app != nil ? app->QueryDocumentList() : nil);
 	if (docList == nil)
 		return;
@@ -376,8 +375,13 @@ static bool16 KESCMReadWholeFile(const IDFile& file, std::string& outText)
 	size_t n;
 	while ((n = fread(buf, 1, sizeof(buf), fp)) > 0)
 		outText.append(buf, n);
+	// ★途中で読込エラーなら失敗扱い(2026-07-25 監査で追加): 部分読みのまま Save のマージ元になると、
+	//   読めなかった他文書分が上書きで黙って消えるため。
+	const bool16 ok = ferror(fp) ? kFalse : kTrue;
 	fclose(fp);
-	return kTrue;
+	if (!ok)
+		outText.clear();
+	return ok;
 }
 
 // [regionBegin, regionEnd) の範囲内で key(例 "\"checks\"")の直後の [ ... ] を探し、中の符号なし整数を
@@ -422,16 +426,28 @@ static bool16 KESCMParseUintArray(const std::string& text, size_t regionBegin, s
 // KESCMPageChecks.json を読み、パス(UTF-8)→(checks/registered)集合に展開する。無ければ空 map で kFalse。
 // 寛容パース: "path" を順に探し、その doc の領域([この "path" 位置, 次の "path" 位置))内で "registered" と
 // "checks" を読む。"checks" が無い旧 v1 ファイルは "pages" を checks として受理する。
-static bool16 KESCMReadSetsMap(std::map<std::string, KESCMDocSets>& out)
+static bool16 KESCMReadSetsMap(std::map<std::string, KESCMDocSets>& out, bool16* outReadError = nil)
 {
 	out.clear();
+	if (outReadError)
+		*outReadError = kFalse;
 
 	IDFile file;
 	if (!KESCMPageChecksFile(file))
 		return kFalse;
+	if (!FileUtils::DoesFileExist(file))
+		return kFalse;	// ファイル無し=正常な「保存なし」(読込エラーではない)
 	std::string text;
-	if (!KESCMReadWholeFile(file, text) || text.empty())
+	if (!KESCMReadWholeFile(file, text))
+	{
+		// ★在るのに読めない(open/fread 失敗)。Save のマージ元にすると既存の保存分が全て消えるため、
+		//   呼び出し側(Save)が中止できるよう区別して返す(2026-07-25 監査で追加)。
+		if (outReadError)
+			*outReadError = kTrue;
 		return kFalse;
+	}
+	if (text.empty())
+		return kFalse;	// 空ファイル=温存すべきデータ無し(上書きしても失うものが無い)
 
 	const std::string kPathKey = "\"path\"";
 	size_t p = 0;
@@ -445,16 +461,24 @@ static bool16 KESCMReadSetsMap(std::map<std::string, KESCMDocSets>& out)
 		const size_t next = text.find(kPathKey, kpath + kPathKey.size());
 		const size_t regionEnd = (next == std::string::npos) ? text.size() : next;
 
-		// "path" の後の ':' → 開き '"' → 文字列本体
+		// "path" の後の ':' → 開き '"' → 文字列本体。
+		// ★読解失敗は break ではなく「この doc だけスキップ」(2026-07-25 監査で変更): 1エントリの破損で
+		//   残りの全 doc を放棄すると、その状態の Save マージで後続の保存分が消えるため。
 		size_t q = text.find(':', kpath + kPathKey.size());
 		if (q == std::string::npos || q >= regionEnd)
-			break;
+		{
+			p = regionEnd;
+			continue;
+		}
 		++q;
 		while (q < text.size() && (text[q] == ' ' || text[q] == '\t' || text[q] == '\n' || text[q] == '\r'))
 			++q;
 		std::string pathStr;
 		if (!KESCMJsonReadString(text, q, pathStr))
-			break;
+		{
+			p = regionEnd;
+			continue;
+		}
 
 		KESCMDocSets sets;
 		KESCMParseUintArray(text, q, regionEnd, "\"registered\"", sets.registered);
@@ -467,6 +491,11 @@ static bool16 KESCMReadSetsMap(std::map<std::string, KESCMDocSets>& out)
 
 		p = regionEnd;	// 次の doc を探す
 	}
+
+	// ★本文があるのに構造の目印("docs" キー)すら無く1件も読めなかった=壊れたファイル。マージ元にすると
+	//   全消えするため読込エラー扱いにする(正規の「空の docs 配列」ファイルはエラーにしない)(2026-07-25)。
+	if (out.empty() && text.find("\"docs\"") == std::string::npos && outReadError)
+		*outReadError = kTrue;
 
 	return !out.empty();
 }
@@ -520,9 +549,11 @@ static bool16 KESCMWriteSetsMap(const std::map<std::string, KESCMDocSets>& in, I
 	FILE* fp = FileUtils::OpenFile(outFile, "wb");
 	if (fp == nil)
 		return kFalse;
-	fwrite(json.data(), 1, json.size(), fp);
-	fclose(fp);
-	return kTrue;
+	// ★書込バイト数と fclose の成否を確認(2026-07-25 監査で追加): ディスクフル等の部分書込を
+	//   「保存できた」と誤報告しない(TSV 側の Flush 後 GetStreamState 確認と同じ流儀)。
+	const size_t wrote = fwrite(json.data(), 1, json.size(), fp);
+	const int closed = fclose(fp);
+	return (wrote == json.size() && closed == 0) ? kTrue : kFalse;
 }
 
 // db の文書ファイルパス(フルパス)を UTF-8 で返す(保存/読込の判別キー)。未保存(パス無し)なら kFalse。
@@ -560,7 +591,17 @@ void KESCMPageCheckSaveToFile()
 	// 既存ファイルを読み(他文書の保存済み分を温存するため)、今 Start 中の Target/Source ぶんだけ
 	// 現在の Check(✓)+ Register(Added/Removed)で上書き/削除する。
 	std::map<std::string, KESCMDocSets> merged;
-	KESCMReadSetsMap(merged);	// 無ければ空
+	bool16 readError = kFalse;
+	KESCMReadSetsMap(merged, &readError);	// 無ければ空
+	if (readError)
+	{
+		// ★既存ファイルが在るのに読めない/壊れている。このまま上書きすると他文書の保存分が消えるため中止
+		//   (2026-07-25 監査で追加)。
+		PMString err("Save failed (read old)");
+		err.SetTranslatable(kFalse);
+		KESCMSetStatus(err, kTrue /*forceRedrawNow*/);
+		return;
+	}
 
 	IDataBase* dbs[2] = { KESCMArmedTargetDB(), KESCMArmedSourceDB() };
 	int32 savedDocs = 0;
@@ -603,7 +644,7 @@ void KESCMPageCheckSaveToFile()
 	IDFile outFile;
 	if (!KESCMWriteSetsMap(merged, outFile))
 	{
-		PMString err("Save failed (open)");	// 短い状態表示(ステータス行)
+		PMString err("Save failed (write)");	// 短い状態表示(ステータス行)。open/書込/close いずれの失敗も含む
 		err.SetTranslatable(kFalse);
 		KESCMSetStatus(err, kTrue /*forceRedrawNow*/);
 		return;

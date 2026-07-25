@@ -422,8 +422,9 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKESCMIgnorePageNumMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
-		// Separator below "Invoke Panel Shortcut" (path ending in ":-" renders a menu separator;
-		// no ActionDef needed). "Hide Unchanged Spreads" was moved to just below this line (2026-07-11).
+		// Separator below "Refresh Overset" (path ending in ":-" renders a menu separator; no ActionDef
+		// needed). Position table: KESCMID.h の ActionID 位置一覧(9.50)。(2026-07-25 コメント現行化。
+		// 旧記述の "Invoke Panel Shortcut" は 2026-07-13 廃止済み)
 		kKESCMPopupSep3ActionID,
 		kKESCMPopupMenuPath ":-",
 		kKESCMSep3MenuItemPosition,
@@ -862,8 +863,8 @@ resource StringTable (kSDKDefStringsNoTransResourceID + index_enUS)
 	}
 };
 //========================================================================================
-// (Scripting API removed: KESCM no longer exposes any script methods. See panel flyout
-// "About scripting" for the user-facing note.)
+// (Scripting API removed: KESCM no longer exposes any script methods. The flyout item
+// "About Scripting" that used to say so was also removed on 2026-07-25.)
 //========================================================================================
 
 
@@ -968,7 +969,7 @@ resource PanelList (kSDKDefPanelResourceID)
 		kNotResizable,				// fixed-size panel
 		kKESCMPanelWidgetActionID,	// Action ID to show/hide the panel
 		"",							// panelName empty: place via altMenu below for explicit menu placement
-		kKESCMPanelPluginsMenuPath,	// Plug-Ins > KohakuNekotarou > KohakuChangeMarker
+		kKESCMPanelPluginsMenuPath,	// Plug-Ins > Kohaku Plug-Ins > KohakuChangeMarker(束ね名は kKESCMCompanyKey の解決値)
 		kKESCMPanelPluginsMenuPosition,	// lower part of the menu
 		kKESCMPaletteIconResID, kKESCMPluginID,	// PNG icon for the collapsed dock tab
 		c_Panel

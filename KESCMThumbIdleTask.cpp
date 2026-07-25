@@ -79,12 +79,18 @@ uint32 KESCMThumbIdleTask::RunTask(uint32 flags, IdleTimer* /*idleTimer*/)
 	std::vector<IDataBase*> dbs;
 	dbs.swap(sPendingDBs);
 
+	bool16 purgedAny = kFalse;
 	for (std::vector<IDataBase*>::iterator it = dbs.begin(); it != dbs.end(); ++it)
 	{
 		// 予約から idle までの間に閉じた db は触らない(deref 禁止=共有ヘルパ KESCMIsDocDBOpen)。
 		if (KESCMIsDocDBOpen(*it))
-			KESCMTryRefreshPagesPanelThumbnails(*it);
+		{
+			KESCMTryRefreshPagesPanelThumbnails(*it, nil, kFalse /*redrawNow*/);	// Purge のみ
+			purgedAny = kTrue;
+		}
 	}
+	if (purgedAny)
+		KESCMForceRedrawPagesPanelNow();	// ForceRedraw は全 db の Purge 後に1回だけ(2026-07-25 バッチ化)
 
 	// 契約(CIdleTask.h): kEndOfTime を返さず UninstallTask を呼ぶ。kEndOfTime だと IdleTaskMgr は
 	// UninstallTask を経ずに外すため基底 fCurrentlyInstalled が true のまま残り、次回 InstallTask の
@@ -101,14 +107,14 @@ void KESCMScheduleThumbRefresh(IDataBase* db)
 	if (db == nil || sShutdown || KESCMAppIsQuitting())
 		return;		// ★Shutdown 後・アプリ終了中は再アーム禁止(タスク再生成リーク/ティアダウン中発火の防止)
 
-	// 同じ db を重複登録しない。
-	if (std::find(sPendingDBs.begin(), sPendingDBs.end(), db) == sPendingDBs.end())
-		sPendingDBs.push_back(db);
-
 	if (sThumbTask == nil)
 		sThumbTask = ::CreateObject2<IIdleTask>(kKESCMThumbIdleTaskBoss);
 	if (sThumbTask == nil)
-		return;
+		return;	// タスクを作れない=予約も立たないので保留リストにも積まない(2026-07-25: push を成功後へ移動)
+
+	// 同じ db を重複登録しない。
+	if (std::find(sPendingDBs.begin(), sPendingDBs.end(), db) == sPendingDBs.end())
+		sPendingDBs.push_back(db);
 
 	// 二重 AddTask は不可。既に予約が載っていれば一旦外してから入れ直す(発火時刻を最新化)。
 	if (sQueued)

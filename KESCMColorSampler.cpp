@@ -10,7 +10,6 @@
 
 #include "IDataBase.h"
 #include "IControlView.h"
-#include "ILayoutUIUtils.h"
 #include "IGeometry.h"
 #include "IShape.h"
 #include "TransformUtils.h"
@@ -28,6 +27,7 @@
 #include "KESCMColorSampler.h"
 
 #include <map>
+#include <new>						// std::nothrow(SnapshotUtilsEx 確保)
 
 //----------------------------------------------------------------------------------------
 // Alt+左ホールド(ドラッグ)中の target→source ページ対応表キャッシュ(KESCMColorSampler.h 参照)。
@@ -76,13 +76,17 @@ static bool16 KESCMReadCmykPixel(const UIDRef& pageRef, const PMPoint& spreadPt,
 	const PMReal hp = kKESCMSampleHalfPt;
 	PMRect clip(spreadPt.X() - hp, spreadPt.Y() - hp, spreadPt.X() + hp, spreadPt.Y() + hp);
 
-	SnapshotUtilsEx* snap = new SnapshotUtilsEx(clip, PMMatrix(), pageRef, 1.0, 1.0,
+	SnapshotUtilsEx* snap = new (std::nothrow) SnapshotUtilsEx(clip, PMMatrix(), pageRef, 1.0, 1.0,
 		kKESCMSampleDpi, 72.0, 0.0, SnapshotUtilsEx::kCsCMYK, kFalse);
-	KESCMDrawEventHandler::sRasterizing = kTrue;	// この Draw 中の再入でマークを描かせない
+	if (snap == nil)
+		return kFalse;	// nothrow: OOM でもサンプル1回を諦めるだけ(KESCMDrawEventHandler と同方針、2026-07-25)
 	// 枠の比較(KESCMDrawEventHandler)と同じプロキシ描画(fullRes=kFalse)。配置画像のフル解像度生成を
 	// 誘発しないので文書を dirty にせず、dirty 回避の SaveRestoreModifiedState guard は不要。
-	ErrorCode drew = snap->Draw(IShape::kPreviewMode, kFalse /*fullRes*/, 7.0, kFalse /*AA off*/);
-	KESCMDrawEventHandler::sRasterizing = kFalse;
+	ErrorCode drew;
+	{
+		KESCMRasterizingGuard rg;	// この Draw 中の再入でマークを描かせない(RAII、2026-07-25)
+		drew = snap->Draw(IShape::kPreviewMode, kFalse /*fullRes*/, 7.0, kFalse /*AA off*/);
+	}
 	AGMImageAccessor* acc = (drew == kSuccess) ? snap->CreateAGMImageAccessor() : nil;
 
 	bool16 ok = kFalse;
@@ -161,6 +165,12 @@ bool16 KESCMSampleCmykUnderMouse(IDataBase* targetDB, IDataBase* sourceDB,
 
 	// マウスが乗っているレイアウトビュー(Split Window対応、KESCMQueryViewUnderMouse参照)。
 	InterfacePtr<IControlView> view(KESCMQueryViewUnderMouse());
+	// ★窓の同一性ガード(2026-07-25 監査で追加): 押下時は Target 窓上に限定される(KESCMPeek.cpp の
+	//   KESCMFrontViewIsOverTarget / solo 分岐)が、ドラッグ更新はここが唯一の検査点。ドラッグしたまま
+	//   Source 窓や第3文書の窓へ入ると、その窓のペーストボード座標を targetDB のページ座標として
+	//   誤解釈した誤値を表示するため、マウス下ビューの所属文書が targetDB のときだけサンプリングする。
+	if (KESCMFindDocDbForView(view) != targetDB)
+		return kFalse;
 	PMReal mx = 0.0, my = 0.0;
 	if (!KESCMQueryMouseContentPoint(view, mx, my))
 		return kFalse;
