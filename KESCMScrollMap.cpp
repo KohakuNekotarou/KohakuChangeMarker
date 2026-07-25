@@ -23,13 +23,17 @@
 //  (KESCMPanelObserver.cpp の KESCMToggleStartStop から呼ぶ)。strip へのポインタは一切保持しない
 //  (毎回 FindWidget で探す)ので、窓ごと閉じられて widget が消えていても安全。
 //
-//  ★ビルド時リンク依存(Win/Mac 共通・特に Mac プロジェクト新規作成時の注意):
-//    このファイルが KESCM プロジェクトに 2 つの追加ライブラリのリンクを要求している(Dolly 既定の
-//    PMRuntime / Public だけでは未解決シンボルになる)。無いと大量のリンクエラーで落ちる。
+//  ★ビルド時リンク依存:
+//    このファイルは 2 つの追加ライブラリを要求する(Dolly 既定の PMRuntime / Public だけでは未解決
+//    シンボルになり、大量のリンクエラーで落ちる)。
 //      - DV_WidgetBin ... 下で継承している DVControlView(自前描画ビュー基底。#include "DVControlView.h")
 //      - WidgetBin    ... ::CreateObject + kViewRsrcType + AddWidget によるウィジェット実行時生成
-//    Mac(Xcode)では両者を "Link Binary With Libraries" に追加すること。Win(.vcxproj)では
-//    AdditionalDependencies に WidgetBin.lib / DV_WidgetBin.lib を追加済み(_buildproj のバックアップ参照)。
+//    Windows(.vcxproj)では AdditionalDependencies に WidgetBin.lib / DV_WidgetBin.lib を追加済み
+//    (_buildproj のバックアップ参照)。
+//    ★Mac は追加不要(2026-07-25 追補で訂正): Mac 側の実体は libPublicPlugIn.a の 1 本だけで、
+//    Windows で 4 つに分かれているもの(PMRuntime / Public / WidgetBin / DV_WidgetBin)がそこに統合
+//    されている。DVControlView を使う SDK サンプル customdatalinkui の Xcode プロジェクトも、
+//    InDesignModelAndUI.framework + libPublicPlugIn.a の 2 つしかリンクしていない。
 //
 //========================================================================================
 
