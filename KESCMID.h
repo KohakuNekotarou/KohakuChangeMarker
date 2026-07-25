@@ -168,7 +168,7 @@ DECLARE_PMID(kActionIDSpace, kKESCMPopupShowOldNumsActionID, kKESCMPrefix + 8)	/
 DECLARE_PMID(kActionIDSpace, kKESCMPopupSyncViewsActionID, kKESCMPrefix + 9)	// パネルのフライアウトの「Sync Layout Views」チェック式トグル(他文書のビューへ座標+拡大率を自動同期)
 DECLARE_PMID(kActionIDSpace, kKESCMPopupShowSrcMarksActionID, kKESCMPrefix + 10)	// パネルのフライアウトの「Show Marks on Source」チェック式トグル(Source側にも枠を常時表示。OPPでも表示・印刷にも出す。Startで既定ON)
 DECLARE_PMID(kActionIDSpace, kKESCMPageMapToggleActionID, kKESCMPrefix + 11)	// ページパネルのページ右クリック(RtMenuPagesPanel)のトグル「KESCM: Register as Added/Removed Pages」(選択ページを「比較相手なし」として登録/解除。チェック/動的ラベルは kCustomEnabling。KESCMPageMap.cpp)
-DECLARE_PMID(kActionIDSpace, kKESCMPopupIgnorePageNumActionID, kKESCMPrefix + 12)	// パネルのフライアウトの「Ignore Page Number Marker」チェック式トグル(ON=ノンブル(自動ページ番号)マーカーを含むフレームを比較から除外。既定ON。KESCMPageNumberMarker.cpp)
+DECLARE_PMID(kActionIDSpace, kKESCMPopupIgnorePageNumActionID, kKESCMPrefix + 12)	// パネルのフライアウトの「Ignore Page Number Marker」チェック式トグル(ON=ノンブル(自動ページ番号)マーカーを含むフレームを比較から除外。★既定OFF=sIgnorePageNumberMarker の初期値。KESCMPageNumberMarker.cpp)
 DECLARE_PMID(kActionIDSpace, kKESCMPopupStartStopActionID, kKESCMPrefix + 13)	// パネルのフライアウト先頭の「Start / Stop」(比較の開始/解除。旧トグルボタンをメニュー化。arm 状態で名前が Start↔Stop に動的変化=kCustomEnabling+SetNthActionName。KESCMPanelObserver.cpp の KESCMToggleStartStop)
 DECLARE_PMID(kActionIDSpace, kKESCMPopupPrintMarksActionID, kKESCMPrefix + 14)	// パネルのフライアウトの「Print comparison marks」チェック式トグル(旧パネルのチェックボックスをメニュー化。ON=マークを印刷し画面にも常時表示。KESCMPanelObserver.cpp の KESCMTogglePrintMarks)
 DECLARE_PMID(kActionIDSpace, kKESCMPopupOpacity25ActionID, kKESCMPrefix + 15)	// パネルのフライアウトの「Marks opacity 25%」(旧パネルの opacity ラジオをメニュー化。75% と相互排他=選択中の方に✓。KESCMPanelObserver.cpp の KESCMSetMarkOpacity25)
@@ -279,6 +279,21 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMToolWidgetID, kKESCMPrefix + 41)	// ツール
 #define kKESCMPanelPluginsMenuPosition	100.0	// 大きいほど下に並ぶ。
 
 // Menu item keys:
+
+// ★プラットフォーム別の修飾キー表記(2026-07-25 追補 Mac 対応)。
+//   実装側は SDK の IEvent が差を吸収する(OptionAltKeyDown = Win の Alt / Mac の Option、
+//   CmdKeyDown = Win の Ctrl / Mac の Command)ので、切り替えるのは「ユーザーに見せる名前」だけ。
+//   この定数は文字列リテラルなので、.fr の StringTable でも C++ でも隣接連結でそのまま埋め込める
+//   (例: "Hold Left + " kKESCMAltKeyName "=")。MACINTOSH は Mac ビルドの xcconfig
+//   (GCC_PREPROCESSOR_DEFINITIONS)と odfrc の双方で定義される(SDK サンプル snapshot/linksui に
+//   .fr 内 #ifdef MACINTOSH の実例あり)。
+//   ※現在この表記が要るのは How to Use 本文(kKESCMHintKey)だけ。KESCM のジェスチャは Ctrl/Command を
+//     使わないので Cmd 側の名前定数は用意していない(必要になったら同じ形で足す)。
+#ifdef MACINTOSH
+#define kKESCMAltKeyName	"Option"
+#else
+#define kKESCMAltKeyName	"Alt"
+#endif
 
 // Other StringKeys:
 #define kKESCMAboutBoxStringKey	kKESCMStringPrefix "kKESCMAboutBoxStringKey"

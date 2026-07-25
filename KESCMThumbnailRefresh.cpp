@@ -41,6 +41,7 @@
 
 #include "VCPlugInHeaders.h"
 
+#include "ISession.h"			// GetExecutionContextSession(終了処理中は nil になり得るので型を明示して受ける)
 #include "IApplication.h"
 #include "IPanelMgr.h"
 #include "IPanelControlData.h"
@@ -120,7 +121,9 @@ static void KESCMPurgePageThumbsRange(IDataBase* db, InputIt first, InputIt last
 {
 	if (db == nil || first == last)
 		return;
-	InterfacePtr<IWorkspace> ws(GetExecutionContextSession()->QueryWorkspace());
+	// session は終了処理中に nil になり得る(この purge は遅延 idle task 経由でも走る。2026-07-25 追補 統一)。
+	ISession* session = GetExecutionContextSession();
+	InterfacePtr<IWorkspace> ws(session != nil ? session->QueryWorkspace() : nil);
 	InterfacePtr<IImageCacheMgr> cacheMgr(ws, IID_IIMAGECACHEMGR);
 	if (cacheMgr == nil)
 		return;
@@ -144,7 +147,8 @@ static void KESCMPurgePageThumbs(IDataBase* db, const std::vector<UID>& pages)
 // 表示中の Pages パネルを返す(KESCMThumbnailRefresh.h で宣言。ChangeNav の連動スクロールと共用)。
 IControlView* KESCMGetVisiblePagesPanel()
 {
-	InterfacePtr<IApplication> app(GetExecutionContextSession()->QueryApplication());
+	ISession* session = GetExecutionContextSession();	// 終了処理中は nil になり得る
+	InterfacePtr<IApplication> app(session != nil ? session->QueryApplication() : nil);
 	if (app == nil)
 		return nil;
 	InterfacePtr<IPanelMgr> panelMgr(app->QueryPanelManager());

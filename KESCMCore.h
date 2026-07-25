@@ -49,6 +49,11 @@ IControlView*	KESCMQueryViewUnderMouse();
 // (2026-07-25 に KESCMPeek.cpp の file-static から移動)。
 IDataBase*	KESCMFindDocDbForView(IControlView* view);
 
+// 上の関数が持つ「直前にヒットした文書」ヒントを捨てる(2026-07-25 追補)。ヒントは答えを決めるものでは
+// なく「どの db から照合を試すか」だけなので正しさには影響しないが、文書クローズ・arm 切替・
+// 同期 OFF の直後は外れが確定しているので捨てておく。実体は KESCMCore.cpp。
+void		KESCMForgetViewDbHint();
+
 // アクティブ(前面)文書とその db(無ければ nil)。ActiveContext 経由の解決を1箇所に集約
 // (2026-07-25 重複解消: 旧 KESCMPanelObserver 内 KESCMActiveDoc と KESCMActionComponent 内
 // KESCMActionActiveDocDB の同一実装2本を統合)。実体は KESCMCore.cpp。

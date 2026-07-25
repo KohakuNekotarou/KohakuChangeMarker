@@ -67,7 +67,7 @@
 #include "KESCMColorSampler.h"       // KESCMSampleCmykUnderMouse
 #include "KESCMCheckGlyph.h"         // KESCMDrawCheckGlyph(✓描画を CMYK カーソルと共有)
 #include "KESCMCore.h"               // arm/disarm/状態 宣言
-#include "KESCMPageMap.h"            // KESCMMapTargetToSource(除外対応表)/KESCMPageMapSweepClosedDocs
+#include "KESCMPageMap.h"            // KESCMBuildPairing(同期の除外対応表キャッシュ)/KESCMPageMapHasAnyRegistered/KESCMPageMapSweepClosedDocs
 #include "KESCMPageCheck.h"          // KESCMPageCheckClearAllDocs / KESCMPageCheckSweepClosedDocs(✓の後片付け)
 #include "KESCMThumbnailRefresh.h"   // クローズ後、生存側の Pages パネルサムネイルから枠を消す
 #include "KESCMScrollMap.h"          // スプレッド再比較後にスクロールバー地図を最新化
@@ -444,11 +444,100 @@ static bool16 sLayoutSyncBroadcasting = kFalse;
 // (KESCMFindDocDbForView は 2026-07-25 に KESCMCore.cpp の共有ヘルパへ移動。宣言は KESCMCore.h。
 //  色サンプラの窓同一性ガードでも使うため。本ファイルの呼び出しは全てそのまま)
 
+//========================================================================================
+// ★ビューポート同期のホットパス用 短命キャッシュ(2026-07-25 追補)
+//
+//   Sync Layout Views は「どれかのビューがスクロール/ズームするたび」に通知が飛ぶ。スクロールを
+//   ドラッグしている間は毎秒数十回この経路を通るが、旧実装はその都度
+//     ・文書の全ページ列挙(ISpreadList → ISpread → GetNthPageUID)
+//     ・各ページの IGeometry 取得 + InnerToPasteboardMatrix(ページ数ぶんの行列演算)
+//     ・除外対応表の再構築(KESCMBuildPairing = 両文書の全ページ走査 + 登録判定)
+//   をやり直していた。ページ数に比例した仕事が1通知ごとに乗るので、長い文書ほど追従が重くなる。
+//   これらはいずれも「スクロールしている間は変わらない」ものなので、短時間だけ覚えて使い回す。
+//
+//   無効化は2本立て:
+//     ①明示 … KESCMInvalidateSyncCaches()(arm/disarm・同期 OFF・文書クローズ・Shutdown)
+//     ②時間 … kKESCMSyncCacheTtlMs(250ms)経過で自動失効。ページの追加/削除やスプレッドの
+//              隠し/再表示に追従するための保険(スクロールを止めれば必ず作り直される)。
+//
+//   ★古いキャッシュを使っても壊れない設計にしてある: ずれ得るのは「追従側のスクロール位置」だけで、
+//     次の通知か 250ms 後には正しい値に戻る。db ポインタは照合にしか使わず deref しない。
+//========================================================================================
+static const long long kKESCMSyncCacheTtlMs = 250;
+
+// 1文書ぶんの「ページ UID とそのペーストボード矩形」。pages と rects は同じ並び。
+// 幾何を取れなかったページは空矩形(幅・高さ 0)にしておき、判定側で自然に落とす。
+struct KESCMPageRectCache
+{
+	IDataBase*          db;
+	std::vector<UID>    pages;
+	std::vector<PMRect> rects;
+	KESCMPageRectCache() : db(nil) {}
+};
+// 枠は2つで足りる: arm 中の同期は Target↔Source の2文書だけを行き来する。
+static KESCMPageRectCache sPageRectCache[2];
+
+// 除外対応表(登録ページを除いた順番対応)の両方向マップ。arm 中の (Target, Source) 対に紐づく。
+static std::map<UID, UID> sSyncPairT2S;
+static std::map<UID, UID> sSyncPairS2T;
+static IDataBase* sSyncPairTargetDB = nil;
+static IDataBase* sSyncPairSourceDB = nil;
+static bool16     sSyncPairBuilt    = kFalse;
+
+// 手本ビューの「前回複製した状態」。同じ状態の通知が続けて来たら複製ごと省く(下の Update 参照)。
+// ポインタは同一性の照合にしか使わない(deref しない)。
+static IPanorama* sLastSrcPano      = nil;
+static PMReal     sLastSrcZoom      = 0.0;
+static PBPMPoint  sLastSrcCenter;
+static bool16     sHaveLastSrcState = kFalse;
+
+static bool16                                  sSyncCacheValid = kFalse;
+static std::chrono::steady_clock::time_point   sSyncCacheStamp;
+
+// 同期キャッシュを丸ごと捨てる(KESCMPeek.h で宣言)。
+void KESCMInvalidateSyncCaches()
+{
+	sSyncCacheValid = kFalse;
+	for (int i = 0; i < 2; ++i)
+	{
+		sPageRectCache[i].db = nil;
+		sPageRectCache[i].pages.clear();
+		sPageRectCache[i].rects.clear();
+	}
+	sSyncPairT2S.clear();
+	sSyncPairS2T.clear();
+	sSyncPairTargetDB = nil;
+	sSyncPairSourceDB = nil;
+	sSyncPairBuilt    = kFalse;
+	sLastSrcPano      = nil;
+	sHaveLastSrcState = kFalse;
+	KESCMForgetViewDbHint();	// view→db の「直前ヒット」ヒントも一緒に捨てる
+}
+
+// 通知1回ぶんの入口で呼ぶ。TTL を過ぎていたらキャッシュを捨てて世代を切り直す。
+static void KESCMSyncCacheBeginTick()
+{
+	const std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
+	if (sSyncCacheValid)
+	{
+		const long long ms =
+			std::chrono::duration_cast<std::chrono::milliseconds>(now - sSyncCacheStamp).count();
+		if (ms < kKESCMSyncCacheTtlMs)
+			return;			// まだ有効
+		KESCMInvalidateSyncCaches();
+	}
+	sSyncCacheValid = kTrue;	// 新しい世代を開始
+	sSyncCacheStamp = now;
+}
+
+// db のページ矩形表を返す(未作成なら作る)。db が nil なら nil。
+static const KESCMPageRectCache* KESCMGetPageRects(IDataBase* db);
+
 //----------------------------------------------------------------------------------------
 // ページ pageUID(db 内)のペーストボード矩形を得る。パノラマの content 座標=ペーストボード座標
 // (PBPMPoint)と同じ空間。ページは回転しないので inner bbox の 2 隅を変換して min/max を取る。
 //----------------------------------------------------------------------------------------
-static bool16 KESCMPagePasteboardRect(IDataBase* db, UID pageUID, PMRect& outPB)
+static bool16 KESCMPagePasteboardRectRaw(IDataBase* db, UID pageUID, PMRect& outPB)
 {
 	if (db == nil || pageUID == kInvalidUID)
 		return kFalse;
@@ -468,32 +557,113 @@ static bool16 KESCMPagePasteboardRect(IDataBase* db, UID pageUID, PMRect& outPB)
 }
 
 //----------------------------------------------------------------------------------------
+// db のページ矩形表を返す(キャッシュ。未作成なら1回だけ全ページを実測して作る)。
+// ★ここが同期ホットパスの重い部分を丸ごと肩代わりする: 旧実装は通知のたびに全ページの IGeometry と
+//   InnerToPasteboardMatrix を引き直していた。2枠しか持たないのは、arm 中の同期が Target↔Source の
+//   2文書だけを行き来するため(それ以外が来たら古い枠を捨てて作り直す=最悪でも従来と同じ仕事量)。
+//----------------------------------------------------------------------------------------
+static const KESCMPageRectCache* KESCMGetPageRects(IDataBase* db)
+{
+	if (db == nil)
+		return nil;
+	for (int i = 0; i < 2; ++i)
+		if (sPageRectCache[i].db == db)
+			return &sPageRectCache[i];
+
+	// 空き枠を優先し、両方埋まっていたら 0 番を作り直す。
+	const int slot = (sPageRectCache[0].db == nil) ? 0 : ((sPageRectCache[1].db == nil) ? 1 : 0);
+	KESCMPageRectCache& c = sPageRectCache[slot];
+	c.db = db;
+	c.pages.clear();
+	c.rects.clear();
+	KESCMCollectPageUIDs(db, c.pages);
+	c.rects.resize(c.pages.size());
+	for (size_t i = 0; i < c.pages.size(); ++i)
+	{
+		if (!KESCMPagePasteboardRectRaw(db, c.pages[i], c.rects[i]))
+			c.rects[i] = PMRect(0, 0, 0, 0);	// 幾何が取れないページ=空矩形にして下の判定から落とす
+	}
+	return &c;
+}
+
+//----------------------------------------------------------------------------------------
+// ページ pageUID(db 内)のペーストボード矩形(キャッシュ経由)。同期経路はこちらを使う。
+// 空矩形(幾何が取れなかったページ)は kFalse を返し、旧実装の「取得失敗」と同じ扱いになる。
+//----------------------------------------------------------------------------------------
+static bool16 KESCMPagePasteboardRect(IDataBase* db, UID pageUID, PMRect& outPB)
+{
+	if (pageUID == kInvalidUID)
+		return kFalse;
+	const KESCMPageRectCache* c = KESCMGetPageRects(db);
+	if (c == nil)
+		return kFalse;
+	for (size_t i = 0; i < c->pages.size(); ++i)
+	{
+		if (c->pages[i] != pageUID)
+			continue;
+		const PMRect& r = c->rects[i];
+		if (r.Right() <= r.Left() && r.Bottom() <= r.Top())
+			return kFalse;	// 空矩形=幾何が取れなかったページ
+		outPB = r;
+		return kTrue;
+	}
+	return kFalse;
+}
+
+//----------------------------------------------------------------------------------------
 // db 内で、ペーストボード点 pb を内包するページ UID を返す。内包が無ければ中心が最も近いページ
 // (ページ間の隙間/ペーストボード上をビュー中心が指しているとき)。ページが無ければ kInvalidUID。
+// ページ矩形はキャッシュから読むので、通知のたびの全ページ実測は起きない。
 //----------------------------------------------------------------------------------------
 static UID KESCMFindPageAtPasteboard(IDataBase* db, const PBPMPoint& pb)
 {
-	if (db == nil)
+	const KESCMPageRectCache* c = KESCMGetPageRects(db);
+	if (c == nil)
 		return kInvalidUID;
-	std::vector<UID> flat;
-	KESCMCollectPageUIDs(db, flat);
 	UID best = kInvalidUID;
 	PMReal bestDist2(0);
 	bool16 haveBest = kFalse;
-	for (size_t i = 0; i < flat.size(); ++i)
+	for (size_t i = 0; i < c->pages.size(); ++i)
 	{
-		PMRect r;
-		if (!KESCMPagePasteboardRect(db, flat[i], r))
-			continue;
+		const PMRect& r = c->rects[i];
+		if (r.Right() <= r.Left() && r.Bottom() <= r.Top())
+			continue;	// 空矩形=幾何が取れなかったページ
 		if (pb.X() >= r.Left() && pb.X() <= r.Right() && pb.Y() >= r.Top() && pb.Y() <= r.Bottom())
-			return flat[i];	// 内包するページが確定
+			return c->pages[i];	// 内包するページが確定
 		const PMReal cx = (r.Left() + r.Right()) / PMReal(2.0);
 		const PMReal cy = (r.Top()  + r.Bottom()) / PMReal(2.0);
 		const PMReal dx = pb.X() - cx, dy = pb.Y() - cy;
 		const PMReal d2 = dx * dx + dy * dy;
-		if (!haveBest || d2 < bestDist2) { bestDist2 = d2; best = flat[i]; haveBest = kTrue; }
+		if (!haveBest || d2 < bestDist2) { bestDist2 = d2; best = c->pages[i]; haveBest = kTrue; }
 	}
 	return best;
+}
+
+//----------------------------------------------------------------------------------------
+// 除外対応表(登録ページを除いた順番対応)の両方向マップを用意する(キャッシュ。未作成なら1回だけ作る)。
+// ★旧実装は KESCMMapTargetToSource / KESCMMapSourceToTarget が呼ばれるたびに KESCMBuildPairing を
+//   まるごと作り直していた(=両文書の全ページ列挙 + 登録判定 + 線形探索)。同期の通知は毎秒数十回
+//   来るので、ここがページ数に比例した固定費になっていた。1世代(250ms または明示無効化まで)に
+//   1回だけ作り、以後は map の O(log n) 探索で引く。
+//----------------------------------------------------------------------------------------
+static void KESCMEnsureSyncPairing(IDataBase* targetDB, IDataBase* sourceDB)
+{
+	if (sSyncPairBuilt && sSyncPairTargetDB == targetDB && sSyncPairSourceDB == sourceDB)
+		return;
+	sSyncPairT2S.clear();
+	sSyncPairS2T.clear();
+	sSyncPairTargetDB = targetDB;
+	sSyncPairSourceDB = sourceDB;
+	sSyncPairBuilt    = kTrue;	// 対応が空(全ページ登録済み等)でも「作った」ことは覚える
+	if (targetDB == nil || sourceDB == nil)
+		return;
+	std::vector<UID> pairT, pairS;
+	KESCMBuildPairing(targetDB, sourceDB, pairT, pairS);
+	for (size_t i = 0; i < pairT.size(); ++i)
+	{
+		sSyncPairT2S[pairT[i]] = pairS[i];
+		sSyncPairS2T[pairS[i]] = pairT[i];
+	}
 }
 
 //----------------------------------------------------------------------------------------
@@ -528,15 +698,17 @@ static PBPMPoint KESCMCorrectedCenterForDoc(IDataBase* srcDocDb, IDataBase* dstD
 		return srcCenter;	// 中心がページ外(ページ間の隙間等): 生同期
 
 	// 相手ページを引く。Added/Removed(登録)・overflow は相手なし → このページでは同期しない(skip)。
-	UID dstPage = kInvalidUID;
-	const bool16 mapped = t2s
-		? KESCMMapTargetToSource(sPeekTargetDB, sPeekSourceDB, srcPage, dstPage)
-		: KESCMMapSourceToTarget(sPeekTargetDB, sPeekSourceDB, srcPage, dstPage);
-	if (!mapped || dstPage == kInvalidUID)
+	// ★対応表はキャッシュから引く(2026-07-25 追補)。挙動は KESCMMapTargetToSource/SourceToTarget と同一で、
+	//   「対応表に無い=相手なし」を skip として扱う点も変わらない。
+	KESCMEnsureSyncPairing(sPeekTargetDB, sPeekSourceDB);
+	const std::map<UID, UID>& pairTable = t2s ? sSyncPairT2S : sSyncPairS2T;
+	std::map<UID, UID>::const_iterator pairIt = pairTable.find(srcPage);
+	if (pairIt == pairTable.end() || pairIt->second == kInvalidUID)
 	{
 		outSkip = kTrue;	// ★相手なし(Added 等): 追従側は動かさない
 		return srcCenter;
 	}
+	const UID dstPage = pairIt->second;
 
 	// ページ内相対位置(ページ中心からのオフセット)を保って相手ページ中心へ移す。
 	PMRect srcRect, dstRect;
@@ -559,6 +731,10 @@ static void KESCMSyncOtherDocViewportsTo(IPanorama* srcPano, IDataBase* srcDocDb
 {
 	if (srcPano == nil)
 		return;
+
+	// キャッシュ世代の更新はここでも行う(2026-07-25 追補)。Update 経由なら既に呼ばれているので no-op だが、
+	// Align Other Views / Sync ON の初回そろえはこの関数を直接呼ぶため、TTL をここでも効かせておく。
+	KESCMSyncCacheBeginTick();
 
 	// 同期の作動条件を2モードで判定する:
 	//   (A) 比較を Start 中(arm 済み): 従来通り Target↔Source の間だけ・追加/削除補正あり(ユーザー指定 2026-07-11)。
@@ -586,10 +762,46 @@ static void KESCMSyncOtherDocViewportsTo(IPanorama* srcPano, IDataBase* srcDocDb
 	const PMReal  srcZoom   = srcPano->GetXScaleFactor(kTrue);
 	const PBPMPoint srcCenter(srcPano->GetContentLocationAtFrameCenter());
 
-	InterfacePtr<IApplication> app(GetExecutionContextSession()->QueryApplication());
+	ISession* session = GetExecutionContextSession();	// 終了処理中は nil になり得る(2026-07-25 追補 統一)
+	InterfacePtr<IApplication> app(session != nil ? session->QueryApplication() : nil);
 	InterfacePtr<IDocumentList> docList(app ? app->QueryDocumentList() : nil);
 	if (docList == nil)
 		return;
+
+	// ★宛先文書を先に確定する(2026-07-25 追補)。
+	//   arm 中(A) … 手本は上のガードで Target/Source のどちらかに確定しているので、宛先は「対の相手」
+	//                1文書しかない。旧実装はそれを求めるために毎回 IDocumentList を端から端まで回し、
+	//                文書ごとに ::GetUIDRef(doc).GetDataBase() を作っていた。スクロール追従は毎秒数十回
+	//                この関数を通るので、相手を直接名指しして生存確認1回に畳む。
+	//   Stop 中(B) … 手本以外の全文書が宛先なので、従来どおり列挙する。
+	std::vector<IDataBase*> dstDbs;
+	dstDbs.reserve(2);
+	if (!stopBroadSync)
+	{
+		IDataBase* dstDb = (srcDocDb == sPeekTargetDB) ? sPeekSourceDB : sPeekTargetDB;
+		// 相手がまだ開いているかだけ確認する(旧実装は docList 全走査が暗黙に保証していた条件)。
+		// ★FindDocByDataBase へのポインタ比較のみ=閉じた db を deref しない(KESCM 共通規約)。
+		if (dstDb != nil && dstDb != srcDocDb && docList->FindDocByDataBase(dstDb) != nil)
+			dstDbs.push_back(dstDb);
+	}
+	else
+	{
+		const int32 docCount = docList->GetDocCount();
+		for (int32 d = 0; d < docCount; ++d)
+		{
+			IDocument* doc = docList->GetNthDoc(d);
+			if (doc == nil)
+				continue;
+			IDataBase* db = ::GetUIDRef(doc).GetDataBase();
+			// ★手本の文書自身は丸ごと対象外(スプリット相方も含む。2026-07-04ユーザー指定:
+			// 「他のドキュメントにだけ」)。
+			if (db == srcDocDb)
+				continue;
+			dstDbs.push_back(db);
+		}
+	}
+	if (dstDbs.empty())
+		return;	// 複製先が無い(=何もしない)。再入ガードを立てる前に抜ける
 
 	// 再入ガードを RAII で立てる(2026-07-25 監査で変更): 複製ループ中の ProcessCommand が万一 throw
 	// してもフラグが立ちっぱなし(=以後の同期が永久に無効化)にならない。
@@ -599,25 +811,9 @@ static void KESCMSyncOtherDocViewportsTo(IPanorama* srcPano, IDataBase* srcDocDb
 		~KESCMSyncBroadcastGuard() { sLayoutSyncBroadcasting = kFalse; }
 	} broadcastGuard;
 
-	const int32 docCount = docList->GetDocCount();
-	for (int32 d = 0; d < docCount; ++d)
+	for (size_t di = 0; di < dstDbs.size(); ++di)
 	{
-		IDocument* doc = docList->GetNthDoc(d);
-		if (doc == nil)
-			continue;
-
-		IDataBase* db = ::GetUIDRef(doc).GetDataBase();
-
-		// ★手本の文書自身は丸ごと対象外(スプリット相方も含む。2026-07-04ユーザー指定:
-		// 「他のドキュメントにだけ」)。
-		if (db == srcDocDb)
-			continue;
-
-		// ★arm 中(A)は Target/Source 以外の第3文書へは複製しない(ユーザー指定 2026-07-11)。手本は上のガードで
-		// 既に Target/Source のどちらかなので、宛先は「対の相手」1文書だけになる。
-		// Stop 同期(B)ではこの限定を外し、アクティブ文書以外の全文書へ複製する。
-		if (!stopBroadSync && db != sPeekTargetDB && db != sPeekSourceDB)
-			continue;
+		IDataBase* db = dstDbs[di];
 
 		// この宛先文書へ複製する中心座標。applyPageOffset のときは追加/削除補正(比較ペアの相手ページへ
 		// 写像してページ内相対位置を保つ)を掛ける。手本中心が Added ページ(相手なし)なら skip=この宛先は
@@ -712,7 +908,9 @@ static bool16 sLayoutSyncOn = kFalse;			// トグル状態(セッション内の
 // ため Update が届かなかった。現構成は実装が実際に IID_IKESCMLAYOUTSYNCOBSERVER で載っており整合する。
 static IObserver* KESCMQueryLayoutSyncObserver()
 {
-	IActiveContext* ctx = GetExecutionContextSession()->GetActiveContext();
+	// session は終了処理中に nil になり得る(2026-07-25 追補 に KESCM 全体で統一)。
+	ISession* session = GetExecutionContextSession();
+	IActiveContext* ctx = (session != nil) ? session->GetActiveContext() : nil;
 	if (ctx == nil)
 		return nil;
 	return (IObserver*)ctx->QueryInterface(IID_IKESCMLAYOUTSYNCOBSERVER);
@@ -764,7 +962,8 @@ static void KESCMLayoutSyncDetachAllPanoramas()
 // 永続オブジェクトなので、付け外しは ON/OFF 時の各1回でよい。
 static void KESCMLayoutSyncAttachContext(bool16 attach)
 {
-	IActiveContext* ctx = GetExecutionContextSession()->GetActiveContext();
+	ISession* session = GetExecutionContextSession();	// 終了処理中は nil になり得る
+	IActiveContext* ctx = (session != nil) ? session->GetActiveContext() : nil;
 	if (ctx == nil)
 		return;
 	InterfacePtr<IObserver> obs((IObserver*)ctx->QueryInterface(IID_IKESCMLAYOUTSYNCOBSERVER));
@@ -816,15 +1015,44 @@ void KESCMLayoutSyncObserver::Update(const ClassID& theChange, ISubject* theSubj
 	    theChange != kScaleToMessage  && theChange != kScaleByMessage)
 		return;
 
-	// 通知元(=手本)のパノラマと所属文書。theSubject はレイアウトビュー boss の subject なので、
+	// 通知元(=手本)のパノラマ。theSubject はレイアウトビュー boss の subject なので、
 	// 同じ boss から IPanorama / IControlView を引ける。
 	InterfacePtr<IPanorama> srcPano(theSubject, UseDefaultIID());
+	if (srcPano == nil)
+		return;
+
+	// ★同一状態の通知を弾く(2026-07-25 追補)。1回のスクロール/ズーム操作で kScrollTo と kScrollBy のように
+	//   複数の通知が続けて届くことがあり、その全部で複製一式(ページ対応の解決 + 全宛先ビューの走査)を
+	//   走らせるのは無駄。手本の (パノラマ, 実効ズーム, 可視中心) が前回複製したときと完全に同じなら
+	//   何も変わっていないので即戻る。この判定はパノラマ2回読みだけで済む=最も安いふるい。
+	//   ★取りこぼしは無い: 宛先側だけが動いた場合は、その宛先ビュー自身からも通知が来て、そちらが
+	//     手本として処理される(手本と宛先は固定ではない)。
+	//   ★sLastSrcPano はポインタ照合にしか使わない(deref しない)。別ビューが同じアドレスを再利用
+	//     しても、ズーム/中心まで一致しない限り弾かれないので実害は無い。250ms の TTL でも失効する。
+	KESCMSyncCacheBeginTick();	// TTL 超過ならこの中でキャッシュ一式(前回状態を含む)が捨てられる
+	const PMReal    curZoom = srcPano->GetXScaleFactor(kTrue);
+	const PBPMPoint curCenter(srcPano->GetContentLocationAtFrameCenter());
+	if (sHaveLastSrcState && sLastSrcPano == (IPanorama*)srcPano)
+	{
+		PMReal dz = curZoom - sLastSrcZoom;                 if (dz < 0) dz = -dz;
+		PMReal dcx = curCenter.X() - sLastSrcCenter.X();    if (dcx < 0) dcx = -dcx;
+		PMReal dcy = curCenter.Y() - sLastSrcCenter.Y();    if (dcy < 0) dcy = -dcy;
+		if (dz <= PMReal(0.0) && dcx <= PMReal(0.0) && dcy <= PMReal(0.0))
+			return;	// 手本は前回複製時から1ミリも動いていない
+	}
+
 	InterfacePtr<IControlView> srcView(theSubject, UseDefaultIID());
-	if (srcPano == nil || srcView == nil)
+	if (srcView == nil)
 		return;
 	IDataBase* srcDocDb = KESCMFindDocDbForView(srcView);
 	if (srcDocDb == nil)
 		return;	// 所属文書を特定できない(クローズ途中等)。同期しない
+
+	// ここから実際に複製する=この状態を「前回複製した状態」として記録する。
+	sLastSrcPano      = (IPanorama*)srcPano;
+	sLastSrcZoom      = curZoom;
+	sLastSrcCenter    = curCenter;
+	sHaveLastSrcState = kTrue;
 
 	// ★本仕様(2026-07-10 確定): 自動同期(ライブ)にも追加/削除補正を掛ける。比較 arm 中は比較ペアの
 	// 相手ページ同士がきっちり並ぶ(実機で使い勝手を確認済み)。未 arm/ペア外は関数内で生同期にフォールバック。
@@ -841,6 +1069,8 @@ void KESCMSetLayoutSync(bool16 on)
 {
 	if ((on && sLayoutSyncOn) || (!on && !sLayoutSyncOn))
 		return;
+
+	KESCMInvalidateSyncCaches();	// ON/OFF のどちらでも、次の同期は最新の実測から始める(2026-07-25 追補)
 
 	if (on)
 	{
@@ -879,6 +1109,9 @@ void KESCMSetLayoutSync(bool16 on)
 // 未 Start 時は同関数が補正を kFalse に強制して他の全文書へ生同期する。
 bool16 KESCMAlignOtherViewsToActiveNow()
 {
+	// 明示アクションなので、キャッシュの鮮度に関係なく必ず今の実測でそろえる(2026-07-25 追補)。
+	KESCMInvalidateSyncCaches();
+
 	InterfacePtr<IControlView> front(Utils<ILayoutUIUtils>()->QueryFrontView());
 	if (front == nil)
 		return kFalse;
@@ -919,7 +1152,8 @@ static bool16 KESCMArmedDocsAlive()
 {
 	if (!sPeekArmed || sPeekTargetDB == nil || sPeekSourceDB == nil)
 		return kFalse;
-	InterfacePtr<IApplication> app(GetExecutionContextSession()->QueryApplication());
+	ISession* session = GetExecutionContextSession();	// 終了処理中は nil になり得る(2026-07-25 追補 統一)
+	InterfacePtr<IApplication> app(session != nil ? session->QueryApplication() : nil);
 	InterfacePtr<IDocumentList> docList(app ? app->QueryDocumentList() : nil);
 	if (docList == nil ||
 	    docList->FindDocByDataBase(sPeekTargetDB) == nil ||
@@ -1172,7 +1406,8 @@ static bool16 KESCMSoloDocAlive()
 {
 	if (sSoloCmykDB == nil)
 		return kFalse;
-	InterfacePtr<IApplication> app(GetExecutionContextSession()->QueryApplication());
+	ISession* session = GetExecutionContextSession();	// 終了処理中は nil になり得る
+	InterfacePtr<IApplication> app(session != nil ? session->QueryApplication() : nil);
 	InterfacePtr<IDocumentList> docList(app ? app->QueryDocumentList() : nil);
 	return (docList != nil && docList->FindDocByDataBase(sSoloCmykDB) != nil) ? kTrue : kFalse;
 }
@@ -1275,11 +1510,14 @@ static void KESCMBuildCmykNoValuePanelSolo(PMString& out)
 
 // 修飾キー→ジェスチャの分類(KESCMPeek.h 参照)。★割当の定義はここ1本だけ: トラッカーの Hide/Show
 // 事前判定(KESCMTracker.cpp)・下の RevealBegin の分岐・temp-hide 判定がすべてこれを使う(2026-07-15 統合)。
-KESCMGesture KESCMClassifyGesture(bool16 shiftDown, bool16 altDown, bool16 cmdDown)
+KESCMGesture KESCMClassifyGesture(bool16 shiftDown, bool16 altDown, bool16 cmdDown, bool16 macCtrlDown)
 {
 	// Ctrl(cmd)を伴う左ボタンは未割当。再比較はページ右クリックメニューへ移設済み、パネル操作は
 	// フライアウトへ移行済みで、いずれもトラッカーは扱わない。
-	if (cmdDown)
+	// ★Mac の Control も未割当(2026-07-25 追補): macOS では Control+クリックが副ボタン(コンテキスト
+	//   メニュー)の標準ジェスチャなので、左ボタン押下として届いても reveal を横取りしない。
+	//   MacCtrlDown() は Windows では常に kFalse なので Windows の挙動は不変。
+	if (cmdDown || macCtrlDown)
 		return kKESCMGestureNone;
 	if (altDown && !shiftDown)
 		return kKESCMGestureCmyk;		// Alt 単独: CMYK 色サンプリング
@@ -1290,13 +1528,13 @@ KESCMGesture KESCMClassifyGesture(bool16 shiftDown, bool16 altDown, bool16 cmdDo
 	return kKESCMGestureReveal;			// 修飾なし: reveal / temp-hide
 }
 
-void KESCMTrackerRevealBegin(bool16 shiftDown, bool16 altDown, bool16 cmdDown)
+void KESCMTrackerRevealBegin(bool16 shiftDown, bool16 altDown, bool16 cmdDown, bool16 macCtrlDown)
 {
 	sCmykCursorPending = kFalse;	// このプレスで CMYK カーソルを出すかは下の Cmyk 分岐で決める(既定=出さない)
 
-	const KESCMGesture gesture = KESCMClassifyGesture(shiftDown, altDown, cmdDown);
+	const KESCMGesture gesture = KESCMClassifyGesture(shiftDown, altDown, cmdDown, macCtrlDown);
 	if (gesture == kKESCMGestureNone)
-		return;	// 未割当(Ctrl 系)。トラッカーはキャプチャ済みだが描画状態は変えない。
+		return;	// 未割当(Ctrl/Command 系、Mac の Control)。トラッカーはキャプチャ済みだが描画状態は変えない。
 
 	// ---- 「Hold to Hide Marks」モード(常時表示の極性反転)の窓別 temp-hide ----
 	// 隠すジェスチャ=reveal と peek(修飾なし/Shift/Shift+Alt)。
@@ -1519,6 +1757,18 @@ void KESCMPeekStartup::Shutdown()
 	// 保持していたマーク/旧版画像バッファを解放(終了時もきれいに片付ける)。
 	KESCMDrawEventHandler::DropAll();
 	KESCMDrawEventHandler::DropAllOrig();
+	// ★残りの静的コンテナも同じ方針で空にする(2026-07-25 監査の積み残しを同日の追補で対応)。
+	//   DropAll/DropAllOrig は比較系(sEntries/sOrigImages/対応表/overflow)しか触らないため、
+	//   Find Overset の集合・登録(Add/Remove)・チェック(✓)・Hide Unchanged の控えは
+	//   プラグイン unload 時の静的デストラクタまで heap を持ち越していた。Windows では実害なしの
+	//   実績だが、Mac は unload 順が異なるので「生きたバッファを静的破棄まで残さない」方針
+	//   (file-static PMString を Clear するのと同じ理由)へ揃える。
+	//   いずれもポインタは deref せず、コンテナを空にするだけ=終了処理中でも安全。
+	KESCMDrawEventHandler::DropOverset();	// sOversetPages / sOversetLocs
+	KESCMPageMapClearAllDocs();				// 登録(Added/Removed)
+	KESCMPageCheckClearAllDocs();			// 「KESCM: Check」の✓
+	KESCMResetHideUnchanged(kFalse);		// Hide Unchanged の控え(kFalse=文書には一切触らない)
+	KESCMInvalidateSyncCaches();			// 同期のページ矩形表・対応表・前回状態(2026-07-25 追補)
 	// ★peek の arm 状態もここで落とす。残したままだと、終了処理後に kAfterCloseDoc responder が
 	// 発火した場合、KESCMHandleDocsClosed が stale な sPeek* から comparisonDocClosed=true を
 	// 再計算し得る(通常の終了順=文書クローズ→Shutdown では起きないはずだが防御的にリセット。
@@ -1565,6 +1815,8 @@ void KESCMDoArmMousePeek(IDataBase* targetDB, IDataBase* sourceDB)
 	if (sPeekSourceDB != sourceDB || sPeekTargetDB != targetDB)
 		KESCMDrawEventHandler::DropAllOrig();
 
+	KESCMInvalidateSyncCaches();	// 比較対象の組み合わせが変わる=同期キャッシュは作り直し(2026-07-25 追補)
+
 	sPeekTargetDB = targetDB;
 	sPeekSourceDB = sourceDB;
 	sPeekArmed = kTrue;
@@ -1581,6 +1833,8 @@ void KESCMDoDisarmMousePeek(IDataBase* db)
 	// 文書)が前面で Source や無関係な第3文書に切り替わっていても、対象文書の枠が即座に消えるように
 	// するため(タイル表示等で対象文書が同時に見えている場合に効く)。
 	IDataBase* armedTargetDB = sPeekTargetDB;
+
+	KESCMInvalidateSyncCaches();	// 対象が無くなる=同期キャッシュを捨てる(2026-07-25 追補)
 
 	sPeekArmed = kFalse;
 	sPeekTargetDB = nil;
@@ -1622,10 +1876,17 @@ IDataBase* KESCMArmedSourceDB()  { return sPeekSourceDB; }
 //========================================================================================
 void KESCMHandleDocsClosed()
 {
-	InterfacePtr<IApplication> app(GetExecutionContextSession()->QueryApplication());
+	// session は終了処理中に nil になり得る(2026-07-25 追補 に KESCM 全体で統一)。引けなければ
+	// 生存判定そのものができないので、何も片付けずに戻る(状態は Shutdown が破棄する)。
+	ISession* session = GetExecutionContextSession();
+	InterfacePtr<IApplication> app(session != nil ? session->QueryApplication() : nil);
 	InterfacePtr<IDocumentList> docList(app ? app->QueryDocumentList() : nil);
 	if (docList == nil)
 		return;
+
+	// 文書が閉じた=ページ構成も db ポインタも当てにならないので、同期キャッシュは無条件に捨てる
+	// (2026-07-25 追補。コンテナを空にするだけ=deref しないので終了処理中でも安全)。
+	KESCMInvalidateSyncCaches();
 
 	// ★終了堅牢化(2026-07-15): アプリが終了処理中(kQuitting/kShuttingDown)にこのレスポンダへ来たら、
 	// UI 仕事(strip の widget 除去・InvalidateViews・サムネイル idle 予約・パネル/ステータス更新)を

@@ -146,13 +146,48 @@ IDataBase* KESCMActiveDocDB()
 	return doc ? ::GetUIDRef(doc).GetDataBase() : nil;
 }
 
+// view が db のレイアウトビュー群に含まれるか(1文書ぶんのポインタ照合)。下の2用途で共有する。
+static bool16 KESCMViewBelongsToDb(IControlView* view, IDataBase* db)
+{
+	if (view == nil || db == nil)
+		return kFalse;
+	K2Vector<IControlView*> views;
+	Utils<ILayoutViewUtils>()->GetAllLayoutViews(views, nil, db);	// 閉じた db なら空が返るだけ=安全
+	for (int32 vi = 0; vi < (int32)views.size(); ++vi)
+		if (views[vi] == view)
+			return kTrue;
+	return kFalse;
+}
+
+// ★直前にヒットした文書(2026-07-25 追補)。ホットパス最適化のためだけの「当たりを付ける」ヒント。
+//   Sync Layout Views のスクロール追従とツールカーソルの黒/白判定は、同じビューについて連続で
+//   (マウス移動のたび=数十回/秒)この関数を呼ぶ。毎回「全文書 × GetAllLayoutViews」を回すと
+//   文書数ぶんの K2Vector 構築が積み上がるので、まず前回の db だけを試す。
+//   ★誤りが混入しない作り: ヒントは「どの db から試すか」を決めるだけで、答えは必ず
+//   KESCMViewBelongsToDb による実照合で確定する。外れたら従来どおり全走査へフォールバックする。
+//   閉じた db が残っていても GetAllLayoutViews が空を返して外れるだけ(deref しない)。
+static IDataBase* sLastViewHitDb = nil;
+
+// 直前ヒントを捨てる(KESCMCore.h で宣言)。文書クローズ・arm 切替・同期 OFF から呼ぶ。
+void KESCMForgetViewDbHint()
+{
+	sLastViewHitDb = nil;
+}
+
 // view がどの文書のレイアウトビューかをポインタ照合で特定する。KESCMCore.h のコメント参照。
 // (2026-07-25: KESCMPeek.cpp の file-static から共有ヘルパへ移動。色サンプラの窓ガードでも使うため)
 IDataBase* KESCMFindDocDbForView(IControlView* view)
 {
 	if (view == nil)
 		return nil;
-	InterfacePtr<IApplication> app(GetExecutionContextSession()->QueryApplication());
+
+	// ①前回ヒットした文書を先に試す(連続呼び出しはほぼここで確定する)。
+	if (sLastViewHitDb != nil && KESCMViewBelongsToDb(view, sLastViewHitDb))
+		return sLastViewHitDb;
+
+	// ②外れたら全文書を走査(従来どおり)。見つかった db を次回のヒントにする。
+	ISession* session = GetExecutionContextSession();	// 終了処理中は nil になり得る(下の共通規約参照)
+	InterfacePtr<IApplication> app(session != nil ? session->QueryApplication() : nil);
 	InterfacePtr<IDocumentList> docList(app ? app->QueryDocumentList() : nil);
 	if (docList == nil)
 		return nil;
@@ -163,11 +198,13 @@ IDataBase* KESCMFindDocDbForView(IControlView* view)
 		if (doc == nil)
 			continue;
 		IDataBase* db = ::GetUIDRef(doc).GetDataBase();
-		K2Vector<IControlView*> views;
-		Utils<ILayoutViewUtils>()->GetAllLayoutViews(views, nil, db);
-		for (int32 vi = 0; vi < (int32)views.size(); ++vi)
-			if (views[vi] == view)
-				return db;
+		if (db == sLastViewHitDb)
+			continue;	// ①で試して外れている
+		if (KESCMViewBelongsToDb(view, db))
+		{
+			sLastViewHitDb = db;
+			return db;
+		}
 	}
 	return nil;
 }
@@ -352,6 +389,9 @@ ErrorCode KESCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMStri
 	// すべて通る唯一の再比較路なので、これらの操作後は描画側が最新の overflow を使う(描画のたびの
 	// 全文書走査は EnsureOverflowCache 側で回避)。
 	KESCMDrawEventHandler::RebuildOverflowCache();
+	// ビューポート同期が持つ除外対応表キャッシュも同じ理由でここで捨てる(登録 Add/解除でペアが動く。
+	// 2026-07-25 追補。呼び忘れても 250ms の TTL で追従するが、明示しておけば次の1通知から正しい)。
+	KESCMInvalidateSyncCaches();
 
 	// ★「KESCM: Check」の✓: 再比較で「マーク(枠/「/」)が無くなったページ」のチェックを忘れる
 	//   (ユーザー指定 2026-07-11)。この後のサムネイル更新で、マークが消えたページは prevMarked 経由で
@@ -401,11 +441,16 @@ ErrorCode KESCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMStri
 
 // 文書の生存確認(KESCMCore.h で宣言)。★閉じた db は deref 禁止=IDocumentList への
 // ポインタ比較のみ。旧 KESCMActionComponent.cpp の static を共有化したもの(2026-07-10)。
+// ★session の nil ガードは必須(2026-07-25 追補): この関数は KESCMScrollMapView::Draw と遅延サムネイル
+//   idle task から呼ばれ、どちらもアプリ終了のティアダウン中に発火し得る。session が解体済みの
+//   環境(特に Mac の Cocoa 解体順)で無ガード deref すると crash-on-quit になる。
+//   引けない=解体が進んでいる → 「開いていない」と答えるのが安全側。
 bool16 KESCMIsDocDBOpen(IDataBase* db)
 {
 	if (db == nil)
 		return kFalse;
-	InterfacePtr<IApplication> app(GetExecutionContextSession()->QueryApplication());
+	ISession* session = GetExecutionContextSession();
+	InterfacePtr<IApplication> app(session != nil ? session->QueryApplication() : nil);
 	InterfacePtr<IDocumentList> docList(app ? app->QueryDocumentList() : nil);
 	return (docList != nil && docList->FindDocByDataBase(db) != nil) ? kTrue : kFalse;
 }

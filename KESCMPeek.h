@@ -20,6 +20,19 @@ class IControlView;			// KESCMToolCursorShouldBeBlack の引数(前方宣言で�
 // peek を離したときの経路と KESCMDoSetPrintMarks が使う。実体は KESCMPeek.cpp。
 PMReal KESCMBaseScreenOpacity();
 
+// ★ビューポート同期(Sync Layout Views / Align Other Views)のホットパス用キャッシュを捨てる(2026-07-25 追補)。
+// スクロール追従は毎秒数十回の通知で駆動されるため、KESCMPeek.cpp 側で「文書のページ矩形表」と
+// 「除外対応表」と「前回複製した手本の状態」を短時間だけ覚えている(既定 250ms で自動失効)。
+// 前提が変わったことが分かっている場面では、失効を待たずにここで明示的に捨てる:
+//   ・arm / disarm(比較対象の組み合わせが変わる)
+//   ・Sync Layout Views の ON/OFF、Align の実行(明示操作なので必ず最新で計算する)
+//   ・文書クローズ(ページ構成もポインタも当てにならない)
+//   ・再比較(登録 Add/Remove で対応表が動く)
+//   ・Shutdown(保持物を残さない)
+// ★キャッシュは「正しさ」ではなく「速さ」のためのものなので、呼び忘れても最大 250ms 遅れて追従する
+//   だけで壊れない。実体は KESCMPeek.cpp。
+void KESCMInvalidateSyncCaches();
+
 // トラッカー(左ボタン)用の共有入口。KESCM ツール選択中に左ボタンを押している間だけ、押下時の修飾キーで
 // 選んだ動作を行う。Begin=押下(押下時の修飾キー状態を渡す)、End=解放。実体は
 // KESCMPeek.cpp(peek の file-local 状態と描画状態にアクセスできる唯一の場所)。KESCMTracker.cpp から呼ぶ。
@@ -29,7 +42,10 @@ PMReal KESCMBaseScreenOpacity();
 //   ・Shift+Alt       = 旧版べた載せ peek 50%(旧・中ボタン Shift+Alt+ミドル)
 //   ・Alt(単独)       = クリック点の CMYK 生値を新/旧サンプリングしステータス行へ(旧・中ボタン Shift+Ctrl+Alt+ミドル)
 //   ・Ctrl(cmd)含む  = 未対応。何もしない(再比較はページ右クリックメニュー/パネル操作はフライアウトへ移行済み)。
-void KESCMTrackerRevealBegin(bool16 shiftDown, bool16 altDown, bool16 cmdDown);
+//   ・Mac の Control  = 未対応(下の macCtrlDown 参照)。
+// ★キー名の対応(SDK の IEvent が吸収する): OptionAltKeyDown = Win の Alt / Mac の Option、
+//   CmdKeyDown = Win の Ctrl / Mac の Command。よって上表の "Alt" は Mac では Option になる。
+void KESCMTrackerRevealBegin(bool16 shiftDown, bool16 altDown, bool16 cmdDown, bool16 macCtrlDown = kFalse);
 void KESCMTrackerRevealEnd();
 
 // 修飾キー→ジェスチャの分類。★割当の定義はこの1本だけ(2026-07-15 に3箇所の独立判定を統合):
@@ -37,13 +53,17 @@ void KESCMTrackerRevealEnd();
 // すべてこれを使う。ジェスチャ割当を変えるときは KESCMClassifyGesture(KESCMPeek.cpp)だけを直す。
 enum KESCMGesture
 {
-	kKESCMGestureNone = 0,	// Ctrl(cmd)を含む=未割当(何もしない)
+	kKESCMGestureNone = 0,	// Ctrl(cmd)または Mac の Control を含む=未割当(何もしない)
 	kKESCMGestureReveal,	// 修飾なし: マーク一時表示(reveal) / Hold to Hide の temp-hide
 	kKESCMGesturePeek100,	// Shift: 旧版べた載せ peek 100%
-	kKESCMGesturePeek50,	// Shift+Alt: 旧版べた載せ peek 50%
-	kKESCMGestureCmyk		// Alt 単独: CMYK 色サンプリング(カーソル表示)
+	kKESCMGesturePeek50,	// Shift+Alt(Mac: Shift+Option): 旧版べた載せ peek 50%
+	kKESCMGestureCmyk		// Alt 単独(Mac: Option 単独): CMYK 色サンプリング(カーソル表示)
 };
-KESCMGesture KESCMClassifyGesture(bool16 shiftDown, bool16 altDown, bool16 cmdDown);
+// ★macCtrlDown(= IEvent::MacCtrlDown。Windows では常に kFalse)は「未割当」に倒す(2026-07-25 追補 Mac 対応):
+//   macOS の Control+クリックは OS/アプリが副ボタン(コンテキストメニュー)として扱う標準ジェスチャなので、
+//   もし左ボタン押下として届いても KESCM が reveal を横取りしないようにする。cmdDown(Mac の Command)を
+//   未割当にしているのと同じ趣旨。既定引数 kFalse なので Windows 側の呼び出しは影響を受けない。
+KESCMGesture KESCMClassifyGesture(bool16 shiftDown, bool16 altDown, bool16 cmdDown, bool16 macCtrlDown = kFalse);
 
 // Alt+左「色比較」のカスタムカーソル(CMYK をカーソル自身に描く)。KESCMTracker.cpp が使う:
 // BeginTracking で KESCMTrackerRevealBegin 後、Pending が立っていれば

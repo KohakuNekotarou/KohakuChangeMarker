@@ -276,7 +276,10 @@ void KESCMPageMapSweepClosedDocs()
 	if (sRegistered.empty())
 		return;
 
-	InterfacePtr<IApplication> app(GetExecutionContextSession()->QueryApplication());
+	// クローズ掃除は終了シーケンス中にも来得るので session を nil ガード(2026-07-25 追補 に KESCM 全体で統一。
+	// KESCMPageCheckSweepClosedDocs と同じ形)。
+	ISession* session = GetExecutionContextSession();
+	InterfacePtr<IApplication> app(session != nil ? session->QueryApplication() : nil);
 	InterfacePtr<IDocumentList> docList(app != nil ? app->QueryDocumentList() : nil);
 	if (docList == nil)
 		return;

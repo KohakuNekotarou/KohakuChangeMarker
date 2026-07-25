@@ -25,7 +25,8 @@
 #include "ITextControlData.h"
 #include "ITriStateControlData.h"
 #include "IBooleanControlData.h"
-#include "IApplication.h"			// GetExecutionContextSession / QueryApplication
+#include "ISession.h"				// GetExecutionContextSession(終了処理中は nil になり得るので型を明示して受ける)
+#include "IApplication.h"			// QueryApplication
 #include "IPanelMgr.h"				// QueryPanelManager / GetVisiblePanel(外部からのパネル更新)
 #include "IActiveContext.h"
 #include "IDocument.h"
@@ -433,7 +434,10 @@ void KESCMPanelObserver::UpdateInfoDisplay()
 //========================================================================================
 void KESCMRefreshPanel()
 {
-	InterfacePtr<IApplication> app(GetExecutionContextSession()->QueryApplication());
+	// session の nil ガード: この関数はクローズ responder から呼ばれ、アプリ終了のティアダウン中にも
+	// 到達し得る(2026-07-25 追補 に KESCM 全体で統一)。引けなければ触る先が無いので黙って戻る。
+	ISession* session = GetExecutionContextSession();
+	InterfacePtr<IApplication> app(session != nil ? session->QueryApplication() : nil);
 	if (app == nil)
 		return;
 	InterfacePtr<IPanelMgr> panelMgr(app->QueryPanelManager());
@@ -456,7 +460,8 @@ void KESCMSetStatus(const PMString& s, bool16 forceRedrawNow)
 {
 	gSessionStatus = s;	// パネルを隠して再表示したときに復元できるよう、今セッションの表示内容を覚えておく
 
-	InterfacePtr<IApplication> app(GetExecutionContextSession()->QueryApplication());
+	ISession* session = GetExecutionContextSession();	// 終了処理中は nil になり得る
+	InterfacePtr<IApplication> app(session != nil ? session->QueryApplication() : nil);
 	if (app == nil)
 		return;
 	InterfacePtr<IPanelMgr> panelMgr(app->QueryPanelManager());
@@ -500,7 +505,8 @@ void KESCMClearSessionStatus()
 //========================================================================================
 void KESCMSetNavPosition(const PMString& posText, bool16 navButtonsEnabled)
 {
-	InterfacePtr<IApplication> app(GetExecutionContextSession()->QueryApplication());
+	ISession* session = GetExecutionContextSession();	// 終了処理中は nil になり得る
+	InterfacePtr<IApplication> app(session != nil ? session->QueryApplication() : nil);
 	if (app == nil)
 		return;
 	InterfacePtr<IPanelMgr> panelMgr(app->QueryPanelManager());

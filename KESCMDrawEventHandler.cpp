@@ -237,15 +237,19 @@ static void KESCMDistTransform(const uint8* mask, int32 wt, int32 ht, uint8* out
 }
 
 
-// (x,y)が rects のいずれかの矩形内にあるか(ノンブル除外領域の判定に使う)。
-static bool16 KESCMPointInRects(int32 x, int32 y, const std::vector<Int32Rect>& rects)
+// ノンブル除外領域の判定(比較ループの最内で使う)。
+// ★2026-07-25 追補 に per-pixel の全矩形走査から2段ふるいへ変更。旧実装は画素ごとに全矩形の4辺を
+//   比較しており、比較解像度 144dpi の A4 = 約200万画素 × 矩形数ぶんの判定が全ページで走っていた。
+//   ノンブル矩形はページ下端(または上端)の薄い帯に限られるので、
+//     ①ページ全体の union bbox で行/列を粗くふるう
+//     ②行ループの先頭で「その y に掛かる矩形」だけを集めておく
+//   の2段にすると、除外帯の外(=大半の行)は「集合が空か」の1回で抜けられる。
+//   下の KESCMXInRowRects は②で絞り込んだ行内の矩形について x 方向だけを見る。
+static bool16 KESCMXInRowRects(int32 x, const std::vector<const Int32Rect*>& rowRects)
 {
-	for (size_t i = 0; i < rects.size(); ++i)
-	{
-		const Int32Rect& r = rects[i];
-		if (x >= r.left && x < r.right && y >= r.top && y < r.bottom)
+	for (size_t i = 0; i < rowRects.size(); ++i)
+		if (x >= rowRects[i]->left && x < rowRects[i]->right)
 			return kTrue;
-	}
 	return kFalse;
 }
 
@@ -362,6 +366,25 @@ ErrorCode KESCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef
 				const int  nch       = 4;
 				const int32 colorOffH = 0;
 				const int  thr        = kKESCMCmykThr;
+
+				// 【ノンブル除外の前処理(2026-07-25 追補)】除外矩形の union bbox を先に取る。以降は
+				// 「行が bbox の縦範囲外なら判定ゼロ」「x が bbox の横範囲外なら 2 比較」で抜けられる。
+				int32 exTop = 0, exBottom = 0, exLeft = 0, exRight = 0;
+				if (!excludeRects.empty())
+				{
+					exTop  = excludeRects[0].top;   exBottom = excludeRects[0].bottom;
+					exLeft = excludeRects[0].left;  exRight  = excludeRects[0].right;
+					for (size_t mi = 1; mi < excludeRects.size(); ++mi)
+					{
+						const Int32Rect& r = excludeRects[mi];
+						if (r.top    < exTop)    exTop    = r.top;
+						if (r.bottom > exBottom) exBottom = r.bottom;
+						if (r.left   < exLeft)   exLeft   = r.left;
+						if (r.right  > exRight)  exRight  = r.right;
+					}
+				}
+				std::vector<const Int32Rect*> rowRects;	// その行に掛かる矩形だけ(ループ外で確保して再利用)
+				rowRects.reserve(excludeRects.size());
 				for (int32 y = 0; y < hth; ++y)
 				{
 					const uint8* rowT = ptH + (size_t)y * rbTH;
@@ -369,9 +392,20 @@ ErrorCode KESCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef
 					int32 yl = (int32)((int64)y * hl / hth);
 					if (yl >= hl) yl = hl - 1;
 					uint16* cntRow = cntHi + (size_t)yl * wl;
+
+					// この行に掛かる除外矩形だけを集める(bbox の縦範囲外なら空のまま=以降は判定ゼロ)。
+					rowRects.clear();
+					if (!excludeRects.empty() && y >= exTop && y < exBottom)
+					{
+						for (size_t mi = 0; mi < excludeRects.size(); ++mi)
+							if (y >= excludeRects[mi].top && y < excludeRects[mi].bottom)
+								rowRects.push_back(&excludeRects[mi]);
+					}
+					const bool16 rowHasExclude = rowRects.empty() ? kFalse : kTrue;
+
 					for (int32 x = 0; x < wth; ++x)
 					{
-						if (!excludeRects.empty() && KESCMPointInRects(x, y, excludeRects))
+						if (rowHasExclude && x >= exLeft && x < exRight && KESCMXInRowRects(x, rowRects))
 							continue;	// ノンブル除外領域: 差分扱いしない
 						const uint8* px = rowT + (size_t)x * bppH + colorOffH;
 						const uint8* sx = rowS + (size_t)x * bppH + colorOffH;
@@ -1213,7 +1247,8 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	//   誤マークされないようにする。
 	if (sDB != nil || sOrigDB != nil || sSrcDB != nil || sOversetDB != nil)
 	{
-		InterfacePtr<IApplication> app(GetExecutionContextSession()->QueryApplication());
+		ISession* session = GetExecutionContextSession();	// 終了処理中は nil になり得る(2026-07-25 追補 統一)
+		InterfacePtr<IApplication> app(session != nil ? session->QueryApplication() : nil);
 		InterfacePtr<IDocumentList> docList(app ? app->QueryDocumentList() : nil);
 		if (docList != nil &&
 		    ((sDB != nil && docList->FindDocByDataBase(sDB) == nil) ||
@@ -1360,6 +1395,9 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 		if (!sOldNumFontTried)
 		{
 			sOldNumFontTried = kTrue;
+			// ★InterfacePtr(p, iid) は p==nil を許す(InterfacePtr.h:459 QueryInterface_ が nil チェック済み)
+			//   ので、session が終了処理中に nil でもここは安全に fontMgr==nil になるだけ。明示ガードが
+			//   要るのは session->QueryApplication() のような「直接のメソッド呼び出し」だけ(2026-07-25 追補 整理)。
 			InterfacePtr<IFontMgr> fontMgr(GetExecutionContextSession(), UseDefaultIID());
 			if (fontMgr != nil)
 			{
@@ -1426,7 +1464,7 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 				gPort->starttransparencygroup(badgeRect, nil, kFalse /*non-isolated*/, kFalse /*no knockout*/);
 
 				gPort->selectfont(numFont, fontSize);
-				// 白フチ(中心±で8方向にずらして白 show)→ 青本体。背景の白塗りは廃止(ユーザー指定 2026-07-15)。
+				// 白フチ(中心±で8方向にずらして白 show)→ 本体(既定=黒)。背景の白塗りは廃止(ユーザー指定 2026-07-15)。
 				// 透明背景でも明暗どちらの下地でも読める(カーソルの✓ハローと同方式)。
 				const PMReal halo = fontSize * kKESCMOldNumHaloEm;
 				gPort->setrgbcolor(1.0, 1.0, 1.0);	// 白フチ
@@ -1434,7 +1472,7 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 					for (int32 dx = -1; dx <= 1; ++dx)
 						if (dx != 0 || dy != 0)
 							gPort->show(tx + halo * dx, ty + halo * dy, nch, buf16);
-				gPort->setrgbcolor(kKESCMOldNumR, kKESCMOldNumG, kKESCMOldNumB);	// 青本体
+				gPort->setrgbcolor(kKESCMOldNumR, kKESCMOldNumG, kKESCMOldNumB);	// 本体(定数どおり=既定は黒。2026-07-15 に青→黒)
 				gPort->show(tx, ty, nch, buf16);
 
 				gPort->endtransparencygroup();

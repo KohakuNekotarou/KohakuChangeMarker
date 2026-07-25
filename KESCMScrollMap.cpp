@@ -132,7 +132,8 @@ void KESCMScrollMapView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 
 	const PMRect frame(this->GetInnerContentFrame());
 
-	// 背景: テーマ地色(取得失敗時は中間グレー)
+	// 背景: テーマ地色(取得失敗時は中間グレー)。session が終了処理中に nil でも InterfacePtr(p, iid) は
+	// nil を許す(InterfacePtr.h:459)ので colors==nil になるだけ=下のグレーへフォールバックする。
 	PMReal bgR(0.5), bgG(0.5), bgB(0.5);
 	{
 		InterfacePtr<IInterfaceColors> colors(GetExecutionContextSession(), IID_IINTERFACECOLORS);

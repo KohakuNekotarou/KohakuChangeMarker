@@ -93,9 +93,15 @@ public:
 		// CMYK カーソルだけを見せる(タイミング非依存。完成品の表示自体はドラッグ中の入れ直しがゴミゼロ
 		// であることで実証済み)。副作用=押下からサンプリング完了までの短い間カーソルが消える。
 		// ジェスチャ分類は KESCMClassifyGesture の1本に集約(独立の修飾キー判定を書かない。KESCMPeek.h)。
+		// ★Mac 対応(2026-07-25 追補): MacCtrlDown() も渡す。macOS の Control+クリックは副ボタンの標準
+		//   ジェスチャなので KESCMClassifyGesture 側で「未割当」に倒す。Windows では常に kFalse。
 		const bool16 cmykGesture = (KESCMClassifyGesture(theEvent->ShiftKeyDown(),
-		                            theEvent->OptionAltKeyDown(), theEvent->CmdKeyDown()) == kKESCMGestureCmyk);
-		InterfacePtr<IApplication> theApp(GetExecutionContextSession()->QueryApplication());
+		                            theEvent->OptionAltKeyDown(), theEvent->CmdKeyDown(),
+		                            theEvent->MacCtrlDown()) == kKESCMGestureCmyk);
+		// session は終了処理中に nil になり得るので QueryApplication の直呼びだけガードする
+		// (InterfacePtr(p, iid) 側は p==nil を許す。InterfacePtr.h:459。2026-07-25 追補 に KESCM 全体で統一)。
+		ISession* session = GetExecutionContextSession();
+		InterfacePtr<IApplication> theApp(session != nil ? session->QueryApplication() : nil);
 		InterfacePtr<ICursorMgr> cursorMgr(theApp, UseDefaultIID());
 		// ★CMYK カーソルが「実際に出る」条件(arm 済み・比較文書生存・Target 窓上)のときだけ Hide/Show で
 		//   多段切替を包む。判定は RevealBegin の Alt 分岐と KESCMTrackerCmykCursorWouldShow で共有
@@ -108,7 +114,8 @@ public:
 		bool16 result = CTracker::BeginTracking(theEvent);
 		if (result)
 		{
-			KESCMTrackerRevealBegin(theEvent->ShiftKeyDown(), theEvent->OptionAltKeyDown(), theEvent->CmdKeyDown());
+			KESCMTrackerRevealBegin(theEvent->ShiftKeyDown(), theEvent->OptionAltKeyDown(),
+			                        theEvent->CmdKeyDown(), theEvent->MacCtrlDown());
 
 			// Alt+左「色比較」のとき、カーソル自身に CMYK を描く。CTracker が BeginTracking で用意した
 			// modal cursor を自前のカスタムビットマップカーソルへ差し替える(トラッキング終了時に

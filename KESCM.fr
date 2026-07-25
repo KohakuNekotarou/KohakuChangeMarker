@@ -413,10 +413,11 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKESCMScrollMapMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
-		// "Ignore Page Number Marker" on the panel flyout (popup) menu. Check-mark toggle: while ON
-		// (default), frames containing an automatic "Current Page Number" marker are excluded from
-		// the pixel comparison, so pages whose only difference is a shifted running folio (caused by
-		// registered added/removed pages elsewhere) aren't falsely flagged as changed.
+		// "Ignore Page Number Marker" on the panel flyout (popup) menu. Check-mark toggle (default OFF,
+		// see sIgnorePageNumberMarker in KESCMPageNumberMarker.cpp): while ON, frames containing an
+		// automatic "Current Page Number" marker are excluded from the pixel comparison, so pages whose
+		// only difference is a shifted running folio (caused by registered added/removed pages
+		// elsewhere) aren't falsely flagged as changed.
 		kKESCMPopupIgnorePageNumActionID,
 		kKESCMPopupMenuPath,
 		kKESCMIgnorePageNumMenuItemPosition,
@@ -459,7 +460,7 @@ resource MenuDef (kSDKDefMenuResourceID)
 
 		// "Export Changed Pages..." on the panel flyout (popup) menu. Plain command (not a toggle):
 		// writes the current comparison's changed-page list to a tab-separated UTF-8 text file
-		// (columns: new page / old page / kind = changed / inserted / deleted) for pasting into
+		// (2 columns: Page / Type, where Type = Changed / Inserted / Deleted) for pasting into
 		// Excel. Overset is never included. Enabled only while a comparison is active (sDB != nil);
 		// UpdateActionStates supplies the enable state (kCustomEnabling). Work in KESCMChangedPagesTSV.cpp.
 		kKESCMPopupExportChangedPagesActionID,

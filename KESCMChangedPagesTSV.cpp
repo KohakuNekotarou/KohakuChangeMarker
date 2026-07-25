@@ -11,8 +11,11 @@
 //    同じ呼び方)で「画面に見えている番号」を取る。
 //  ・出力は UTF-8 + BOM + CRLF(KESCL と同一)。日本語ページ名でも Excel/メモ帳が化けない。
 //  ・成功時は無言、失敗のみステータス行。未 Start / 変更ゼロは短くステータス行に出して戻る。
-//  ・日本語リテラルは \uXXXX エスケープの wide 文字列で持つ(ソースは純 ASCII=BOM 不要・
-//    CP932 誤読の心配なし)。
+//  ・★文字列は最初から最後まで PMString で持つ(2026-07-25 追補 Mac 対応)。旧実装は std::wstring と
+//    reinterpret_cast<const wchar_t*>(UTF16TextChar*) で組んでいたが、これは wchar_t が 16bit の
+//    Windows でしか成立しない。macOS/clang の wchar_t は 32bit なので、同じキャストは文字化けに
+//    加えて元バッファの 2 倍を読む(バッファ外読み取り)。PMString なら UTF-16 のまま扱えて
+//    プラットフォームに依存しない。ラベルは全て ASCII なので Append(const char*) で足りる。
 //  ・★オーバーセット(sOverset*)は一切参照しない(ユーザー指定 2026-07-24)。
 //
 //========================================================================================
@@ -48,17 +51,26 @@ namespace
 
 // 出力は2列(Page / Type)。ラベルは全て英語で統一(ユーザー指定 2026-07-25。KESCM の他 UI と同じ)。
 // Type の値 = Changed / Inserted / Deleted。旧ページ列は持たない(ページ名はそのページ自身の
-// 文書での表示名: 変更・挿入=Target 側 / 削除=Source 側)。
-const wchar_t* const kKindChanged  = L"Changed";
-const wchar_t* const kKindInserted = L"Inserted";
-const wchar_t* const kKindDeleted  = L"Deleted";
-const wchar_t* const kHeaderLine   = L"Page\tType\n";
+// 文書での表示名: 変更・挿入=Target 側 / 削除=Source 側)。全て ASCII なので char リテラルでよい。
+const char* const kKindChanged  = "Changed";
+const char* const kKindInserted = "Inserted";
+const char* const kKindDeleted  = "Deleted";
+const char* const kHeaderCol1   = "Page";
+const char* const kHeaderCol2   = "Type";
 
-// 1行分(ページ表示名 + 種別)。
+// 区切り文字は AppendW(UTF32TextChar) で明示的に入れる(KESCM の他所と同じ流儀。char リテラルの
+// "\t" / "\n" を PMString へ渡す経路のエンコーディング解釈に依存しない)。値は使う場所でその都度
+// 組む(名前空間スコープの静的オブジェクトにして初期化順序に依存させない)。
+const int kTabCode = 0x09;
+const int kLfCode  = 0x0A;
+
+// 1行分(ページ表示名 + 種別)。page はドキュメント由来なので PMString(UTF-16)、kind は上の
+// 固定 ASCII リテラルを指すだけ(コピー不要)。
 struct KESCMChangeRow
 {
-	std::wstring page;
-	std::wstring kind;
+	PMString    page;
+	const char* kind;
+	KESCMChangeRow() : kind(kKindChanged) { page.SetTranslatable(kFalse); }
 };
 
 // ステータス行(KESCL/KESCM 共通の非翻訳・英語の流儀)。
@@ -69,67 +81,62 @@ void ShowStatus(const char* text)
 	KESCMSetStatus(s);
 }
 
-// pageUID(db 内)の「画面に見えている表示ページ番号」を wide 文字列で返す。取れなければ空。
+// pageUID(db 内)の「画面に見えている表示ページ番号」を返す。取れなければ空。
 // 呼び方は KESCMPageNumberMarker の GetPageString と同一(セクション込み・番号スタイルそのまま・
 // 隠しスプレッドを飛ばした表示番号)。
-std::wstring PageDisplay(IDataBase* db, UID pageUID)
+PMString PageDisplay(IDataBase* db, UID pageUID)
 {
-	std::wstring out;
+	PMString out;
+	out.SetTranslatable(kFalse);
 	if (db == nil || pageUID == kInvalidUID)
 		return out;
 	InterfacePtr<IPageList> pageList(db, db->GetRootUID(), UseDefaultIID());
 	if (pageList == nil)
 		return out;
-	PMString s;
-	pageList->GetPageString(pageUID, &s, kTrue, kFalse, kDefaultPageType, kTrue, kFalse);
-	const int32 n = s.NumUTF16TextChars();
-	if (n <= 0)
-		return out;
-	const UTF16TextChar* buf = s.GrabUTF16Buffer(nil);
-	if (buf == nil)
-		return out;
-	out.assign(reinterpret_cast<const wchar_t*>(buf), n);
+	pageList->GetPageString(pageUID, &out, kTrue, kFalse, kDefaultPageType, kTrue, kFalse);
+	out.SetTranslatable(kFalse);	// GetPageString が付け直す可能性に備えて再設定
 	return out;
 }
 
-// Windows のファイル名に使えない9文字を '-' に(KESCL の SanitizeForFileName と同じ)。
-std::wstring SanitizeForFileName(const std::wstring& part)
+// ファイル名に使えない文字を '-' に(KESCL の SanitizeForFileName と同じ9文字)。Windows の禁止文字を
+// 基準にする(Mac で禁止なのは '/' と ':' だけなので、この集合はどちらのOSでも安全側)。
+// PMString を UTF-16 のまま1文字ずつ写す=サロゲートペアも壊さない。
+PMString SanitizeForFileName(const PMString& part)
 {
-	std::wstring out(part);
-	for (size_t i = 0; i < out.size(); ++i)
+	PMString out;
+	out.SetTranslatable(kFalse);
+	const int32 n = part.NumUTF16TextChars();
+	const UTF16TextChar* b = part.GrabUTF16Buffer(nil);
+	if (b == nil)
+		return out;
+	for (int32 i = 0; i < n; ++i)
 	{
-		const wchar_t c = out[i];
-		if (c == L'\\' || c == L'/' || c == L':' || c == L'*' || c == L'?'
-			|| c == L'"' || c == L'<' || c == L'>' || c == L'|')
-		{
-			out[i] = L'-';
-		}
+		const UTF16TextChar c = b[i];
+		const bool16 bad = (c == '\\' || c == '/' || c == ':' || c == '*' || c == '?'
+			|| c == '"' || c == '<' || c == '>' || c == '|') ? kTrue : kFalse;
+		out.AppendW(UTF32TextChar(bad ? (UTF16TextChar)'-' : c));
 	}
 	return out;
 }
 
 // db を所有する文書の表示名(拡張子は残す。suggested filename 用)。取れなければ空。
 // KESCMPanelObserver::KESCMDocNameFromDB と同じ解決経路(セッション→app→docList→FindDocByDataBase)。
-std::wstring DocNameFromDB(IDataBase* db)
+PMString DocNameFromDB(IDataBase* db)
 {
-	std::wstring out;
+	PMString out;
+	out.SetTranslatable(kFalse);
 	if (db == nil)
 		return out;
-	InterfacePtr<IApplication> app(GetExecutionContextSession() ? GetExecutionContextSession()->QueryApplication() : nil);
+	ISession* session = GetExecutionContextSession();
+	InterfacePtr<IApplication> app(session != nil ? session->QueryApplication() : nil);
 	InterfacePtr<IDocumentList> docList(app != nil ? app->QueryDocumentList() : nil);
 	if (docList == nil)
 		return out;
 	IDocument* d = docList->FindDocByDataBase(db);	// no ref(deref せず名前を取るだけ)
 	if (d == nil)
 		return out;
-	PMString name;
-	d->GetName(name);
-	const int32 n = name.NumUTF16TextChars();
-	if (n <= 0)
-		return out;
-	const UTF16TextChar* buf = name.GrabUTF16Buffer(nil);
-	if (buf != nil)
-		out.assign(reinterpret_cast<const wchar_t*>(buf), n);
+	d->GetName(out);
+	out.SetTranslatable(kFalse);
 	return out;
 }
 
@@ -137,21 +144,30 @@ std::wstring DocNameFromDB(IDataBase* db)
 // "KohakuChangeMarker_ChangedPages.txt"。拡張子(.indd 等)は落とす。
 PMString BuildSuggestedFileName(IDataBase* targetDB)
 {
-	std::wstring stem(L"KohakuChangeMarker_ChangedPages");
-	std::wstring doc = DocNameFromDB(targetDB);
-	const size_t dot = doc.find_last_of(L'.');
-	if (dot != std::wstring::npos && dot > 0)
-		doc.erase(dot);
-	if (!doc.empty())
-	{
-		stem += L'_';
-		stem += SanitizeForFileName(doc);
-	}
-	stem += L".txt";
-
 	PMString result;
 	result.SetTranslatable(kFalse);
-	result.AppendW(reinterpret_cast<const UTF16TextChar*>(stem.c_str()));
+	result.Append("KohakuChangeMarker_ChangedPages");
+
+	// 文書名から拡張子(最後の '.' 以降)を落とす。'.' が先頭のときは落とさない(隠しファイル名扱い)。
+	const PMString doc = DocNameFromDB(targetDB);
+	const int32 n = doc.NumUTF16TextChars();
+	const UTF16TextChar* b = doc.GrabUTF16Buffer(nil);
+	if (n > 0 && b != nil)
+	{
+		int32 cut = n;
+		for (int32 i = n - 1; i > 0; --i)
+			if (b[i] == '.') { cut = i; break; }
+		PMString stem;
+		stem.SetTranslatable(kFalse);
+		for (int32 i = 0; i < cut; ++i)
+			stem.AppendW(UTF32TextChar(b[i]));
+		if (stem.NumUTF16TextChars() > 0)
+		{
+			result.Append("_");
+			result.Append(SanitizeForFileName(stem));
+		}
+	}
+	result.Append(".txt");
 	return result;
 }
 
@@ -213,16 +229,20 @@ bool16 CollectRows(IDataBase* targetDB, IDataBase* sourceDB, std::vector<KESCMCh
 	return !rows.empty();
 }
 
-// 集めた行を1本の wide テキスト(ヘッダー + 各行、行末は '\n')に組む。
-std::wstring BuildReportText(const std::vector<KESCMChangeRow>& rows)
+// 集めた行を1本のテキスト(ヘッダー + 各行、行末は '\n')に組む。区切りの TAB / LF は ASCII なので
+// Append(const char*) でそのまま置ける(PMString は UTF-16 で保持する)。
+PMString BuildReportText(const std::vector<KESCMChangeRow>& rows)
 {
-	std::wstring text(kHeaderLine);
+	PMString text;
+	text.SetTranslatable(kFalse);
+	text.Append(kHeaderCol1);  text.AppendW(UTF32TextChar(kTabCode));
+	text.Append(kHeaderCol2);  text.AppendW(UTF32TextChar(kLfCode));
 	for (size_t i = 0; i < rows.size(); ++i)
 	{
-		text += rows[i].page;
-		text += L'\t';
-		text += rows[i].kind;
-		text += L'\n';
+		text.Append(rows[i].page);
+		text.AppendW(UTF32TextChar(kTabCode));
+		text.Append(rows[i].kind);
+		text.AppendW(UTF32TextChar(kLfCode));
 	}
 	return text;
 }
@@ -264,13 +284,8 @@ void KESCMExportChangedPagesTSV()
 	if (!chooser.IsChosen())
 		return;	// キャンセルは無音
 
-	// wide テキスト → PMString → UTF-8。
-	const std::wstring wtext = BuildReportText(rows);
-	PMString report;
-	report.SetTranslatable(kFalse);
-	report.AppendW(reinterpret_cast<const UTF16TextChar*>(wtext.c_str()));
-
 	// UTF-8 + BOM、'\n' -> '\r\n'(KESCL と同一。BOM 無しの日本語テキストは Excel/メモ帳が推測を誤る)。
+	const PMString report = BuildReportText(rows);
 	const std::string utf8 = report.GetUTF8String();
 	std::string bytes;
 	bytes.reserve(utf8.size() + utf8.size() / 8 + 3);
