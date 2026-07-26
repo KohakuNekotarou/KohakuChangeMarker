@@ -88,6 +88,46 @@ static PMString sHudText;
 // (KESCMPanelState の "hudOn")。OFF の間は sprite を作らず、one-shot タイマーも動かさない。
 static bool16 sHudOn = kTrue;
 
+// one-shot タイマーの予約中フラグ。★予約が生きている間に重ねて StartTimer しないための門番
+// (描画イベントごとに再武装すると、実装次第で予約が二重に積まれる)。立てるのは予約した側、
+// 倒すのは発火した側(KESCMHudTimerProc)と後始末(HideHud / Shutdown)。
+static bool16 sHudRedrawPending = kFalse;
+
+// ShowHud の実行中。★再入ガード: sprite の描画が文書側の再描画を誘発し、その描画イベントから
+// また再描画を要求される…という振動を止める(KESCMTrackerRequestHudRedraw が見る)。
+static bool16 sHudDrawing = kFalse;
+
+// 1回の押下で、描画イベント由来の描き直しを受け付ける上限と、その回数。
+// ★暴走止め: sprite の後始末(DestroySprite)は必要なら invalidate を出す仕様(CSprite.h:104-108)なので、
+//   「描き直す → 再描画が起きる → また描き直す」の往復が理屈の上ではありうる。分析上は、ビューが
+//   動いていなければ DestroySprite を通らないので1往復で収まるが、one-shot タイマーの暴走で
+//   InDesign を固めた前科がある(下の KESCMHudTimerProc のコメント参照)ため、番人を置いておく。
+//   打ち止めても失うのは HUD の追従だけ(押し直せば戻る)。通常のスクロールでは数十回も行かない。
+static const int32 kKESCMHudMaxRedrawsPerPress = 300;
+static int32 sHudRedrawCount = 0;
+
+/** sHudDrawing の RAII(ShowHud には途中 return が多いので、旗の下ろし忘れを型で防ぐ)。 */
+struct KESCMHudDrawGuard
+{
+	KESCMHudDrawGuard()  { sHudDrawing = kTrue;  }
+	~KESCMHudDrawGuard() { sHudDrawing = kFalse; }
+};
+
+//____________________________________________________________________________________
+//	HUD の寸法。**すべて画面ピクセル**(ズームを変えても見た目が変わらない)。
+//	★描く側(KESCMSprite::CreateTrackerPaths)と、更新領域を宣言する側(KESCMTracker::BuildHudRegionPath)
+//	  の両方がここを見る。片方だけ変えると「領域が足りず文字が切れる」形で壊れるので、値は1箇所に置く。
+//	  型は double(POD)= 静的初期化順序に依存しない。使うときに PMReal へ上げる。
+//	文字サイズの経緯(2026-07-26 ユーザー指定): 36px → 24px → 16px(小さすぎ) → 20px。
+//____________________________________________________________________________________
+static const double kKESCMHudTextPx   = 20.0;	// 文字の大きさ
+static const double kKESCMHudPadXPx   =  8.0;	// 下地の左右余白
+static const double kKESCMHudPadTopPx =  4.0;	// 下地の上余白
+static const double kKESCMHudPadBotPx =  4.0;	// 下地の下余白
+static const double kKESCMHudOpacity  =  0.6;	// HUD 全体(下地＋文字)に掛ける合成不透明度(1.0=不透明)
+// 文字幅が測れなかったときだけ使う保険の想定幅(画面 px)。通常は MeasureWText の実測値を使う。
+static const double kKESCMHudFallbackWidthPx = 600.0;
+
 #include <chrono>			// milliseconds(カーソル設置後の落ち着き待ち)
 #include <thread>			// std::this_thread::sleep_for(同上。Win/Mac 共通)
 
@@ -255,12 +295,22 @@ static IPMFont* KESCMQueryFontForText(const WideString& text)
 				font->Release();
 		}
 	}
-	return nil;
+
+	// ④どれも全文字は持っていなかった → 既定フォントで妥協する。
+	//   ★ここで nil を返すと HUD が丸ごと消える(文字だけでなく下地も描かれない)。「一部の字が□」は
+	//     見ればわかるが、「何も出ない」は壊れているのか OFF なのか区別できず、たちが悪い。
+	//   全滅は実際に起こりうる: 文書名に絵文字が1つ混ざるだけで、和文フォントは絵文字を持たず絵文字
+	//   フォントは和文を持たないので、どの1本も「全文字を持つ」条件を満たせなくなる。
+	return fontMgr->QueryFont(fontMgr->GetDefaultFontName());
 }
 
 // 選定結果のキャッシュ(選定は文字列が変わったときだけ。押下のたびに総当たりしない)。所有する。
+// ★sHudFontTried = 「この文字列でもう選定を走らせた」印。**失敗(nil)もキャッシュする**ための旗で、
+//   これが無いと nil のときだけキャッシュが効かず、再描画のたびにインストール済み全フォントの
+//   総当たり(フォント数 × 文字数の GetGlyphID)が走ってドラッグが固まる。
 static IPMFont* sHudFont = nil;
 static PMString sHudFontLabel;
+static bool16   sHudFontTried = kFalse;
 
 // 文字寸法を測るためのインスタンス(= フォント × サイズ行列)。背景ボックスの大きさに要る
 // (幅 = MeasureWText、上下 = GetAscent/GetDescent)。サイズは px/D で決まるのでズームで変わる
@@ -282,8 +332,8 @@ static void KESCMReleaseHudFontInstance()
 /** labelStr を描けるフォントを返す(キャッシュ付き)。所有はここ側=呼び出し側は Release しない。 */
 static IPMFont* KESCMQueryHudFont(const PMString& labelStr, const WideString& label)
 {
-	if (sHudFont != nil && sHudFontLabel == labelStr)
-		return sHudFont;
+	if (sHudFontTried && sHudFontLabel == labelStr)
+		return sHudFont;				// ★nil でもそのまま返す(失敗も1回で打ち切る)
 
 	if (sHudFont != nil)
 	{
@@ -293,6 +343,7 @@ static IPMFont* KESCMQueryHudFont(const PMString& labelStr, const WideString& la
 	KESCMReleaseHudFontInstance();		// ★フォントが変わればインスタンスも無効(古いフォントを指したまま測らない)
 	sHudFont      = KESCMQueryFontForText(label);
 	sHudFontLabel = labelStr;
+	sHudFontTried = kTrue;
 	return sHudFont;
 }
 
@@ -324,7 +375,25 @@ static void KESCMReleaseHudFont()
 		sHudFont = nil;
 	}
 	sHudFontLabel.Clear();
+	sHudFontTried = kFalse;
 	KESCMReleaseHudFontInstance();
+}
+
+/** HUD 1行の描画幅(content 単位)。下地の大きさにも更新領域の宣言にも同じ値が要るので、測るのは
+	ここ1本に集約する(片方が固定値だと、長い文書名で領域が足りず右側が切れる)。
+	fontSize は content 単位の文字サイズ(= 画面 px ÷ 実ズーム)。測れなければ kFalse を返す。 */
+static bool16 KESCMMeasureHudText(const PMString& labelStr, const WideString& label,
+                                  const PMReal& fontSize, PMReal& outWidth)
+{
+	outWidth = 0.0;
+	IPMFont* font = KESCMQueryHudFont(labelStr, label);
+	if (font == nil)
+		return kFalse;
+	IFontInstance* inst = KESCMQueryHudFontInstance(font, fontSize);
+	if (inst == nil)
+		return kFalse;
+	inst->MeasureWText(label, outWidth);
+	return (outWidth > 0);
 }
 
 //____________________________________________________________________________________
@@ -382,7 +451,15 @@ CREATE_PMINTERFACE(KESCMSprite, kKESCMSpriteImpl)
 	という実機の症状に一致した(四角は基準点±20px なので常に残る)。content 座標なら余白は常に画面
 	120px で、300% でも文字は収まるはず=見えるので、この一点で content 説は否定される。
 	∴ 余白は **px のまま足す**。値は「文字が確実に収まる」大きさ(左右 400 / 上下 200)。ここは
-	更新領域なので大きめでも見た目は変わらない(オフスクリーンが少し大きくなるだけ)。 */
+	更新領域なので大きめでも見た目は変わらない(オフスクリーンが少し大きくなるだけ。CSprite が最後に
+	view でクリップするので、ビューより大きくはならない)。
+
+	※ただしヘッダーの記述とは食い違っている: NoHandleSprite::GetTrackerBounds は「boss の
+	  IPathGeometry の **GetCtrlPointsBoundingBox** を返す」= content 座標、と書いてある
+	  (NoHandleSprite.h:69-74)。content だとすれば余白は低ズームほど画面上で小さくなり、25% では
+	  400pt≒100px しかない。上の実測(高ズームで切れた)は device 説で説明できるが、低ズーム側は
+	  試していないので断定はしない。**どちらであっても足りるように、この余白には頼らず
+	  BuildHudRegionPath が実測幅で領域を確保する**(そちらのコメント参照)。 */
 PMRect KESCMSprite::GetTrackerBounds(IGraphicsContext* gc, int32 flags)
 {
 	PMRect r = NoHandleSprite::GetTrackerBounds(gc, flags);
@@ -446,15 +523,16 @@ void KESCMSprite::CreateTrackerPaths(IGraphicsContext* gc)
 		IPMFont* font = KESCMQueryHudFont(sHudText, label);
 		if (font != nil)
 		{
-			// ★大きさ・余白は画面ピクセルで指定する(ズームを変えても見た目が変わらない)。
-			// 文字サイズの経緯(2026-07-26 ユーザー指定): 36px → 24px → 16px(小さすぎ) → 20px。
-			const PMReal kTextPx     = 20.0;	// 文字の大きさ
-			const PMReal kPadXPx     = 8.0;		// 下地の左右余白
-			const PMReal kPadTopPx   = 4.0;		// 下地の上余白
-			const PMReal kPadBotPx   = 4.0;		// 下地の下余白
+			// ★大きさ・余白は画面ピクセルで指定する(ズームを変えても見た目が変わらない)。値そのものは
+			//   ファイル先頭の kKESCMHud*Px に置いてある(更新領域を宣言する BuildHudRegionPath と共有。
+			//   片方だけ変えると領域が足りず文字が切れる)。
+			const PMReal kTextPx     = PMReal(kKESCMHudTextPx);		// 文字の大きさ
+			const PMReal kPadXPx     = PMReal(kKESCMHudPadXPx);		// 下地の左右余白
+			const PMReal kPadTopPx   = PMReal(kKESCMHudPadTopPx);	// 下地の上余白
+			const PMReal kPadBotPx   = PMReal(kKESCMHudPadBotPx);	// 下地の下余白
 			// ★HUD 全体(下地＋文字)に掛ける不透明度(1.0=不透明)。下地だけでなく**文字も一緒に**薄くする
 			//   (ユーザー指定 2026-07-26)。下地 0.75 ＋ 文字 1.0 の個別指定から、下の透明グループへ移した。
-			const PMReal kHudOpacity = 0.6;
+			const PMReal kHudOpacity = PMReal(kKESCMHudOpacity);
 
 			const PMReal fontSize = kTextPx / sy;
 
@@ -534,7 +612,8 @@ class KESCMTracker : public CTracker
 {
 public:
 	KESCMTracker(IPMUnknown* boss) : CTracker(boss), fCmykCursorFlip(kFalse),
-		fHudAlive(kFalse), fHudShown(kFalse)
+		fHudAlive(kFalse), fHudShown(kFalse), fHudLastBaseline(PMReal(0.0), PMReal(0.0)),
+		fHudLastSx(0.0), fHudLastSy(0.0)
 	{
 		fWantsToAutoScroll = kFalse;		// no autoscroll while holding (same as the animation sample)
 	}
@@ -551,8 +630,14 @@ public:
 				sHudTimer->Release();
 				sHudTimer = nil;
 			}
-			sHudTracker = nil;
+			sHudTracker       = nil;
+			sHudRedrawPending = kFalse;
+			sHudRedrawCount   = 0;
 		}
+		// ※sprite(fHudAlive)はここでは片付けない。DestroySprite には IGraphicsContext が要り、それには
+		//   fControlView を deref する必要があるが、この経路(基底の後始末を通らない破棄)では fControlView
+		//   が既に無効なことがある。「まれなリークを避ける」ために「終了時に落ちる」危険は取らない。
+		//   通常の解放は HideHud(EndTracking / AbortTracking)が必ず行う。
 	}
 
 	/** Do NOT suppress document-view updates while tracking. CTracker::BeginTracking calls
@@ -651,11 +736,16 @@ public:
 				//   HandleContinueTracking を呼ぶ(押下直後は convertedPoint==fPreviousPoint なので
 				//   mouseDidMove=kFalse で来る = CTracker.cpp:449-452)。
 				//   → 全滅=「BeginTracking を抜けるまで画面が確定しない」。∴ 抜けた直後に一度だけ描かせる。
-				sHudTracker = this;
+				sHudTracker     = this;
+				sHudRedrawCount = 0;	// 暴走止めのカウンタは押下ごとにリセット
 				if (sHudTimer == nil)
 					sHudTimer = (ICallbackTimer*)::CreateObject(kCallbackTimerBoss, IID_ICALLBACKTIMER);
 				if (sHudTimer != nil)
+				{
+					// 予約中の印を立ててから武装する(この間は KESCMTrackerRequestHudRedraw が重ねない)。
+					sHudRedrawPending = kTrue;
 					sHudTimer->StartTimer(KESCMHudTimerProc, 1, nil);
+				}
 			}
 		}
 
@@ -724,16 +814,25 @@ private:
 	bool16 fHudAlive;	// CreateSprite 済み(=Hide/DestroySprite が要る)
 	bool16 fHudShown;	// 一度でも Show した(=次の Show の前に Erase する)
 
+	// 前回 Show したときのビュー状態(基準点=pasteboard 座標 と 実ズーム)。
+	// ★スクロール/ズームを検出するために持つ: CSprite の Erase は「保存しておいた背景を描き戻す」
+	//   ので、ビューが動いた後に呼ぶと画面へ**古い絵**を貼ってしまう。動いていたら Erase せず
+	//   sprite ごと作り直す(ShowHud 参照)。
+	PMPoint fHudLastBaseline;
+	PMReal  fHudLastSx;
+	PMReal  fHudLastSy;
+
 	//----------------------------------------------------------------------------------------
 	// HUD の「更新領域」を宣言するパスを組む。
 	//
 	// ★このパスは**描かれない**(KESCMSprite::CreateTrackerPaths は基底を呼ばない)。CSprite は
 	//   GetTrackerBounds = boss の IPathGeometry の制御点 bbox を更新領域の元にするので、そこへ
-	//   「文字がだいたい収まる矩形」を1つ置いて領域だけを申告する。実際の余白は GetTrackerBounds が
-	//   さらに device px で足す(そちらのコメント参照)。
+	//   「文字が収まる矩形」を1つ置いて領域だけを申告する。実際の余白は GetTrackerBounds が
+	//   さらに足す(そちらのコメント参照。ただし座標系に不確かさがあるので、その上乗せには頼らない)。
 	// パスは pasteboard 座標で組む(純正 CPathCreationTracker と同じ。"hand make sprite path in pb coords")。
+	// textWidth = 実測した文字列の描画幅(content 単位。KESCMMeasureHudText の戻り)。
 	//----------------------------------------------------------------------------------------
-	void BuildHudRegionPath(const PMPoint& pbBaseline)
+	void BuildHudRegionPath(const PMPoint& pbBaseline, const PMReal& textWidth)
 	{
 		InterfacePtr<IPathGeometry> geom(this, IID_IPATHGEOMETRY);
 		if (geom == nil || fControlView == nil)
@@ -748,12 +847,14 @@ private:
 		if (sx == 0 || sy == 0)
 			return;
 
-		// 基準点 = 文字のベースライン左端。そこから上へ文字の高さ分、右へ文字列の想定幅分を取る
-		// (幅は名前の長さで変わるので大きめ。足りない分は GetTrackerBounds の余白が吸収する)。
-		const PMReal left   = pbBaseline.X() - (PMReal(10.0)  / sx);
-		const PMReal right  = pbBaseline.X() + (PMReal(600.0) / sx);
-		const PMReal top    = pbBaseline.Y() - (PMReal(30.0)  / sy);
-		const PMReal bottom = pbBaseline.Y() + (PMReal(10.0)  / sy);
+		// 基準点 = 文字のベースライン左端。★右端は**実測した文字幅**から決める(2026-07-26 修正)。
+		// 以前は固定 600px 相当で、それを超える長さの文書名だと領域が足りず右側が切れた。
+		// 上下は文字サイズから(ベースラインの上に ascent+余白、下に descent+余白が入る大きさ)。
+		const PMReal marginX = PMReal(kKESCMHudPadXPx + 4.0) / sx;
+		const PMReal left   = pbBaseline.X() - marginX;
+		const PMReal right  = pbBaseline.X() + textWidth + marginX;
+		const PMReal top    = pbBaseline.Y() - (PMReal(kKESCMHudTextPx * 1.5) / sy);
+		const PMReal bottom = pbBaseline.Y() + (PMReal(kKESCMHudTextPx * 0.8) / sy);
 
 		geom->RemoveAllPaths();
 		const int32 p = geom->AddNewPath();
@@ -780,9 +881,12 @@ public:
 	{
 		if (!sHudOn || fControlView == nil || sHudText.IsEmpty())
 			return;
+		if (sHudDrawing)
+			return;		// 再入(この描画自体が起こした再描画から呼ばれた)
 		InterfacePtr<ISprite> sprite(this, IID_ISPRITE);
 		if (sprite == nil)
 			return;
+		KESCMHudDrawGuard drawGuard;
 
 		PMReal sx = 1.0, sy = 1.0;
 		{
@@ -811,11 +915,39 @@ public:
 			fControlView->GetWindowToContentMatrix().Transform(&pbBaseline);
 		}
 
+		// 文字幅を実測する(更新領域の右端に使う)。測れなかったときだけ固定値の保険へ落ちる。
+		PMReal textWidth = PMReal(kKESCMHudFallbackWidthPx) / sx;
+		{
+			WideString label(sHudText);
+			PMReal measured = 0.0;
+			if (KESCMMeasureHudText(sHudText, label, PMReal(kKESCMHudTextPx) / sy, measured))
+				textWidth = measured;
+		}
+
 		NonMarkingAGMGraphicsContext gc(fControlView);
+
+		// ★ビューが動いた(スクロール/ズーム)なら sprite を作り直す。CSprite の Erase は「保存して
+		//   おいた背景を描き戻す」ので、動いた後に呼ぶと画面へ**古い絵**を貼ってしまう。ここへ来ている
+		//   のは文書側の再描画の後(= 画面はもう描き直されている)なので、そもそも消す作業が要らない。
+		if (fHudAlive &&
+		    (pbBaseline.X() != fHudLastBaseline.X() || pbBaseline.Y() != fHudLastBaseline.Y() ||
+		     sx != fHudLastSx || sy != fHudLastSy))
+		{
+			sprite->DestroySprite(&gc);
+			fHudAlive = kFalse;
+			fHudShown = kFalse;
+		}
+
 		if (!fHudAlive)
 		{
 			// itemList = nil = 「ページアイテムではなく自前パスを描く」(パス作成トラッカーと同じ使い方)。
-			sprite->CreateSprite(&gc, nil, PMPoint(), kFalse /* don't draw item list */);
+			// ★戻り値 kFalse = オフスクリーンを作れなかった(低メモリ)。その経路の CSprite は XOR で描くので、
+			//   下地の塗りが重なるほど累積して読めなくなる(反転方式を捨てたのと同じ理由)。HUD は諦める。
+			if (!sprite->CreateSprite(&gc, nil, PMPoint(), kFalse /* don't draw item list */))
+			{
+				sprite->DestroySprite(&gc);
+				return;
+			}
 			fHudAlive = kTrue;
 			fHudShown = kFalse;
 		}
@@ -825,9 +957,12 @@ public:
 		// ★基準点を更新する位置は「Erase の後・Show の前」。Erase は前回の絵を消す描画なので、
 		// 先に書き換えると消す位置がずれる(CreateTrackerPaths は Erase でも呼ばれる)。
 		sHudAnchor = pbBaseline;
-		this->BuildHudRegionPath(pbBaseline);
+		this->BuildHudRegionPath(pbBaseline, textWidth);
 		sprite->Show(&gc, PMPoint(), IShape::kDrawCreateDynamic);
-		fHudShown = kTrue;
+		fHudShown        = kTrue;
+		fHudLastBaseline = pbBaseline;
+		fHudLastSx       = sx;
+		fHudLastSy       = sy;
 	}
 
 private:
@@ -841,7 +976,9 @@ private:
 			sHudTimer->Release();
 			sHudTimer = nil;
 		}
-		sHudTracker = nil;
+		sHudTracker       = nil;
+		sHudRedrawPending = kFalse;
+		sHudRedrawCount   = 0;
 
 		if (fHudAlive && fControlView != nil)
 		{
@@ -853,8 +990,10 @@ private:
 				sprite->DestroySprite(&gc);
 			}
 		}
-		fHudAlive = kFalse;
-		fHudShown = kFalse;
+		fHudAlive  = kFalse;
+		fHudShown  = kFalse;
+		fHudLastSx = 0.0;			// 次の押下で「ビューが動いた」判定に古い値を持ち込まない
+		fHudLastSy = 0.0;
 		sHudText.Clear();
 		KESCMReleaseHudFont();		// ★押下中だけ持つフォント選定キャッシュを返す
 	}
@@ -885,9 +1024,11 @@ private:
 
 CREATE_PMINTERFACE(KESCMTracker, kKESCMTrackerImpl)
 
-// 押下直後の one-shot 発火。BeginTracking を抜けた後に一度だけ呼ばれ、HUD を出す。
+// 押下直後(と、押下中に文書が再描画されたあと)の one-shot 発火。一度だけ呼ばれ、HUD を描き直す。
 static uint32 KESCMHudTimerProc(void* /*refPtr*/)
 {
+	sHudRedrawPending = kFalse;		// 予約は消化した(次の要求から再び武装できる)
+
 	// ★ここでは Release しない。RunTask の実行中に自分を解放すると、参照が 0 になって破棄された
 	// オブジェクトのまま戻り値を返すことになる(自己破棄しながら実行継続)。しかも先に nil にすると
 	// 暴走したときに StopTimer で止める手が無くなる。解放は押下解除(HideHud)の1箇所に集約する。
@@ -900,6 +1041,25 @@ static uint32 KESCMHudTimerProc(void* /*refPtr*/)
 	// (2026-07-26 実機)。しかもコールバックの先頭で Release+nil にしているので外から止められない。
 	// one-shot は必ず kEndOfTime を返すこと。
 	return IIdleTask::kEndOfTime;
+}
+
+void KESCMTrackerRequestHudRedraw()
+{
+	// ★なぜ要るか(2026-07-26 追加): HUD を描く sprite の絵は、文書側が再描画されると消える。押下中の
+	//   描画契機は「押下直後の one-shot」と「ContinueTracking(マウスが動いたときだけ)」の2つしかなく
+	//   (WantTimer=kFalse ゆえ定期発火も無い)、押した直後にマーク表示のための再描画が入ると、
+	//   マウスを動かさない限り HUD が出ないままになる。スクロール/ズームも同様に取り残される。
+	//   → 文書の描画イベント(KESCMDrawEventHandler)からここを叩き、次のアイドルで一度だけ描き直す。
+	// 直接 ShowHud を呼ばないのは、描画イベントの最中に sprite を描かせない(再入させない)ため。
+	if (!sHudOn || sHudDrawing || sHudRedrawPending)
+		return;
+	if (sHudTracker == nil || sHudTimer == nil)
+		return;		// 押していない(押下中だけ sHudTracker/sHudTimer が生きている)
+	if (sHudRedrawCount >= kKESCMHudMaxRedrawsPerPress)
+		return;		// 暴走止め(上限に達したらこの押下では追従をやめる)
+	++sHudRedrawCount;
+	sHudRedrawPending = kTrue;
+	sHudTimer->StartTimer(KESCMHudTimerProc, 1, nil);
 }
 
 // HUD の ON/OFF(パネルのフライアウト「Show HUD」)。状態はここ1箇所に持ち、パネル設定として保存される。
@@ -917,7 +1077,9 @@ void KESCMTrackerShutdownHud()
 		sHudTimer->Release();
 		sHudTimer = nil;
 	}
-	sHudTracker = nil;
+	sHudTracker       = nil;
+	sHudRedrawPending = kFalse;
+	sHudRedrawCount   = 0;
 	sHudText.Clear();
 	KESCMReleaseHudFont();	// フォント参照を .pln が降りる前に必ず返す
 }

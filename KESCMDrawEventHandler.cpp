@@ -58,6 +58,7 @@
 #include "KESCMPageCheck.h"          // KESCMPageCheckIsChecked/KESCMPageCheckHasAny(「KESCM: Check」の✓)
 #include "KESCMPageNumberMarker.h"   // KESCMGetIgnorePageNumberMarker/KESCMAppendPageNumberMarkerRects(ノンブル除外)
 #include "KESCMScrollMap.h"          // KESCMScrollMapNoticeDrawEvent(手動 Hide/Show Spread の検出)
+#include "KESCMPeek.h"               // KESCMTrackerRequestHudRedraw(押下中 HUD の描き直し要求)
 #include "KESCMDrawEventHandler.h"
 
 CREATE_PMINTERFACE(KESCMDrawEventHandler, kKESCMDrawEventHandlerImpl)
@@ -1134,6 +1135,13 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	// ので、スプレッド描画イベントに便乗して拾う(Undo/Redo による変化も同経路)。KESCMScrollMap.cpp。
 	if (!printing)
 		KESCMScrollMapNoticeDrawEvent();
+
+	// 押下中の HUD(トラッカーの sprite 層に描く1行)は、文書側のこの再描画で消される。描き直しを
+	// 予約しておく(押していない/HUD OFF/予約済みなら即座に戻る軽い呼び出し)。★実画面のビュー描画の
+	// ときだけ: サムネイル生成(GetView()==nil)や印刷の描画で予約しても意味がない。
+	// ここで直接描かずタイマー経由にしているのは、この描画イベントの最中に sprite を描かせないため。
+	if (!printing && ded->gd->GetView() != nil)
+		KESCMTrackerRequestHudRedraw();
 
 	// ★サムネイル実験(2026-07-06): Pagesパネルのサムネイル生成(view無し・kPreviewMode・非印刷。診断ログ
 	// flags=0x1800=kPreviewMode|kDrawFrameEdge)を検出。sThumbExperiment ON の間は、サムネイルにも枠を

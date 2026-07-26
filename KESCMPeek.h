@@ -58,6 +58,15 @@ void KESCMTrackerShutdownHud();
 bool16 KESCMGetHudEnabled();
 void   KESCMSetHudEnabled(bool16 on);
 
+// 押下中の HUD を「次のアイドルで一度だけ描き直す」よう要求する(2026-07-26)。
+// ★文書側が再描画されると sprite の絵は消える。押下中に描き直す機会は「押下直後の one-shot」と
+//   「マウスが動いたとき(ContinueTracking)」しかないので、押したまま動かさないと HUD が出ないまま、
+//   スクロール/ズームでは取り残される。これを防ぐため、描画イベント
+//   (KESCMDrawEventHandler::HandleDrawEvent)から毎回呼ぶ。
+// 押していない/HUD が OFF/すでに予約済み なら即 return するので、無条件に呼んでよい。
+// 描画イベントの最中に sprite を描かせないため、要求はタイマー経由。実体は KESCMTracker.cpp。
+void KESCMTrackerRequestHudRedraw();
+
 // 修飾キー→ジェスチャの分類。★割当の定義はこの1本だけ(2026-07-15 に3箇所の独立判定を統合):
 // KESCMTracker.cpp の BeginTracking(CMYK を先に発動させるかの判定)・RevealBegin の分岐・
 // Hold to Hide の temp-hide 判定がすべてこれを使う。ジェスチャ割当を変えるときは
@@ -80,14 +89,16 @@ KESCMGesture KESCMClassifyGesture(bool16 shiftDown, bool16 altDown, bool16 cmdDo
 // BeginTracking が(CMYK ジェスチャなら基底より前に)KESCMTrackerRevealBegin を呼び、Pending が
 // 立っていれば ChangeModalCursor(CursorSpec(KESCMTrackerCmykCursorProc(), ...)) を呼ぶ。
 // ★Pending=「値が実際に採れた」なので、押下時のカーソル差し替えの要否判定はこれ1本で足りる
-//   (2026-07-25: 旧 KESCMTrackerCmykCursorWouldShow の外部公開はやめた)。実体は KESCMPeek.cpp。
+//   (2026-07-25 に外部公開をやめ、2026-07-26 に判定関数 KESCMTrackerCmykCursorWouldShow 自体を廃止:
+//    発火条件が「マウス下に文書がある」だけになり、RevealBegin の中で直接書けるようになったため)。
+//   実体は KESCMPeek.cpp。
 bool16 KESCMTrackerHasPendingCmykCursor();
 CreateCursorBitmapProc KESCMTrackerCmykCursorProc();
 
-// ツール常時✓カーソルを黒で出してよいか=「Start 中(比較文書生存)かつ viewUnderMouse が Target 文書の
-// レイアウトビュー」。それ以外(Source・第3の文書・未 Start・view 不明)は kFalse=白抜き✓を出す
-// (「ここではツールは効かない」の明示。ユーザー指定 2026-07-15)。KESCMCursorProvider.cpp の
-// GetCursor から毎ムーブ呼ばれる(文書数×ビュー数の走査のみ=軽量)。実体は KESCMPeek.cpp。
+// ツール常時✓カーソルを黒で出してよいか=「Start 中(比較文書が生存)」。★2026-07-26(ユーザー指定)に
+// 「どの文書の上でも黒」へ変更した(以前は Target 窓だけ黒)。理由=Alt+左の CMYK は Start 中ならどの窓でも
+// 値を出すようになったため(Target/Source 窓=比較2行、第3の文書=単独1行)。未 Start / view 不明は
+// kFalse=白抜き✓。KESCMCursorProvider.cpp の GetCursor から毎ムーブ呼ばれる。実体は KESCMPeek.cpp。
 bool16 KESCMToolCursorShouldBeBlack(IControlView* viewUnderMouse);
 
 // ドラッグ中の CMYK ライブ更新。トラッカーの ContinueTracking(マウス移動)から呼ぶ。現在のマウス位置で

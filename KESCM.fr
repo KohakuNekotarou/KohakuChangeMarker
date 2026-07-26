@@ -255,16 +255,18 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 		{
 			IID_ITRACKER,      kKESCMTrackerImpl,
 			IID_IEVENTHANDLER, kKESCMTrackerEHImpl,
-			// ★★実験(一時・2026-07-26): トラッカー自身の描画層(CSprite)を試すための2枚。どちらも
-			// API 提供の既製実装で、自前クラスは要らない(手本=sdksamples/wavetool の kSawWaveTrackerBoss)。
-			//   IID_ISPRITE       = トラッキング中の画面更新機構。CreateSprite/Show/Hide/DestroySprite を
-			//                       トラッカーから呼ぶ。kNoHandleSpriteImpl = ハンドルを描かない版。
-			//   IID_IPATHGEOMETRY = sprite が描くパスの置き場。CSprite の既定実装が「boss の
-			//                       IPathGeometry のパスを描く」ので、ここへ図形を組めば出る。
-			// 検証が済んだらこの2行と KESCMTracker.cpp のプローブ一式を削除する。
-			// ★kKESCMSpriteImpl = NoHandleSprite(=kNoHandleSpriteImpl の実クラス)を継承した自前 sprite。
-			// 既定の「IPathGeometry のパスを描く」動作はそのままに、CreateTrackerPaths で文字と
-			// 純正マーカーを足して検証する(KESCMTracker.cpp)。素の挙動に戻すなら kNoHandleSpriteImpl へ。
+			// ★押下中 HUD(レイアウトビュー左上に出す1行)の描画層。**この2行は必須**で、消すと HUD が
+			// 出なくなる(2026-07-26 に実験として入れ、同日 正式機能になった)。構成の手本は
+			// sdksamples/wavetool の kSawWaveTrackerBoss(あちらは2つとも API 既製の実装)。
+			//   IID_ISPRITE       = トラッキング中の画面更新機構。CreateSprite/Show/Erase/Hide/
+			//                       DestroySprite をトラッカーから呼ぶ。kKESCMSpriteImpl は
+			//                       NoHandleSprite(= kNoHandleSpriteImpl の実クラス)を継承した自前
+			//                       sprite で、CreateTrackerPaths に HUD の描画を載せている
+			//                       (KESCMTracker.cpp の KESCMSprite)。素の挙動に戻すなら
+			//                       kNoHandleSpriteImpl へ差し替える。
+			//   IID_IPATHGEOMETRY = sprite の**更新領域を宣言する**パスの置き場。★HUD ではここに置いた
+			//                       パス自体は描かない(描画は CreateTrackerPaths が自前で行う)。
+			//                       GetTrackerBounds がこの bbox を更新領域の元にするので必要。
 			IID_ISPRITE,       kKESCMSpriteImpl,
 			IID_IPATHGEOMETRY, kPathGeometryImpl,
 		}

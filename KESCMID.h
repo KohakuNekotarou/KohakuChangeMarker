@@ -36,7 +36,7 @@
 #define kKESCMDisplayName	"Kohaku Change Marker"			// 表示名(About メニュー項目・About ボックス本文・パネル/ツール名)。KBS の "Kohaku Search Panel" に合わせ、単語間をスペースで区切る(2026-07-25)。
 #define kKESCMFileName		"KohakuChangeMarker"			// 出力ファイル名の基底(.rc の OriginalFilename)。vcxproj の TargetName と一致させること。表示名と違いスペースは入れない。
 #define kKESCMPrefixNumber	0x205515 		// Unique prefix number for this plug-in(*Must* be obtained from Adobe Developer Support).
-#define kKESCMVersion		"1.1.0"						// Version of this plug-in。About ボックス本文・.rc の FileVersion・PluginVersion リソースの3か所に出る。1.0.1 → 1.1.0(2026-07-25)。
+#define kKESCMVersion		"1.1.1"						// Version of this plug-in。About ボックス本文・.rc の FileVersion・PluginVersion リソースの3か所に出る。1.0.1 → 1.1.0(2026-07-25) → 1.1.1(2026-07-26)。★1.1.0 は押下中 HUD が入る前の状態で Adobe Exchange へレビュー提出済み。同じ版番号で中身の違うバイナリを配らないため、HUD を足したこのビルドから 1.1.1 にする。
 // (kKESCMAuthor はテンプレート残骸(どこからも未参照)のため削除 2026-07-25)
 
 // Plug-in Prefix: (please change kKESCMPrefixNumber above to modify the prefix.)
@@ -145,7 +145,7 @@ DECLARE_PMID(kImplementationIDSpace, kKESCMCursorProviderImpl, kKESCMPrefix + 17
 //DECLARE_PMID(kImplementationIDSpace, kKESCMImpl, kKESCMPrefix + 15)
 //DECLARE_PMID(kImplementationIDSpace, kKESCMImpl, kKESCMPrefix + 16)
 //DECLARE_PMID(kImplementationIDSpace, kKESCMImpl, kKESCMPrefix + 17)
-DECLARE_PMID(kImplementationIDSpace, kKESCMSpriteImpl, kKESCMPrefix + 18)	// ★実験(一時): ISprite 実装(CSprite派生; トラッカー描画層で自前に描く。KESCMTracker.cpp)
+DECLARE_PMID(kImplementationIDSpace, kKESCMSpriteImpl, kKESCMPrefix + 18)	// ISprite 実装(NoHandleSprite 派生)。トラッカーの描画層＝押下中 HUD をここで描く。実体 KESCMTracker.cpp の KESCMSprite
 //DECLARE_PMID(kImplementationIDSpace, kKESCMImpl, kKESCMPrefix + 19)
 //DECLARE_PMID(kImplementationIDSpace, kKESCMImpl, kKESCMPrefix + 20)
 //DECLARE_PMID(kImplementationIDSpace, kKESCMImpl, kKESCMPrefix + 21)
@@ -413,11 +413,11 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMToolWidgetID, kKESCMPrefix + 41)	// ツール
 #define kKESCMPrintMarksMenuItemPosition	9.26	// チェック式トグル「Print comparison marks」。Marks opacity の下へ入れ替え(2026-07-24)
 #define kKESCMOpacity25SubMenuItemPosition	1.0	// サブメニュー「Marks opacity」内: 25%(選択中に✓)
 #define kKESCMOpacity75SubMenuItemPosition	2.0	// サブメニュー「Marks opacity」内: 75%(25% と相互排他)
+#define kKESCMHudMenuItemPosition			9.27	// チェック式トグル「Show HUD」(★Show Original Page Numbers の上=Show 系トグル群の先頭。2026-07-26 ユーザー指定で 9.36 から移動)
 #define kKESCMShowOldNumsMenuItemPosition	9.28	// チェック式トグル「Show Original Page Numbers」
 #define kKESCMShowSrcMarksMenuItemPosition	9.30	// チェック式トグル「Show Marks on Source」
 #define kKESCMScrollMapMenuItemPosition		9.32	// チェック式トグル「Show Scrollbar Map」
-#define kKESCMSyncViewsMenuItemPosition		9.34	// チェック式トグル「Sync Layout Views」
-#define kKESCMHudMenuItemPosition			9.36	// チェック式トグル「Show HUD」(表示系トグル群の末尾)
+#define kKESCMSyncViewsMenuItemPosition		9.34	// チェック式トグル「Sync Layout Views」(表示系トグル群の末尾)
 // ── Overset 群 ──
 #define kKESCMOversetSepMenuItemPosition	9.40	// Find Overset 群の上の区切り線(パス末尾 ":-")
 #define kKESCMFindOversetMenuItemPosition	9.42	// チェック式トグル「Find Overset」(アクティブ文書の overset ページに十字)

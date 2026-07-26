@@ -1,4 +1,4 @@
-//========================================================================================
+﻿//========================================================================================
 //  
 //  $File: $
 //  
@@ -34,6 +34,6 @@ REGISTER_PMINTERFACE(KESCMScrollMapView, kKESCMScrollMapViewImpl)
 REGISTER_PMINTERFACE(KESCMTool, kKESCMToolImpl)
 REGISTER_PMINTERFACE(KESCMTracker, kKESCMTrackerImpl)
 REGISTER_PMINTERFACE(KESCMTrackerEH, kKESCMTrackerEHImpl)
-REGISTER_PMINTERFACE(KESCMSprite, kKESCMSpriteImpl)	// ★実験(一時): トラッカー描画層の自前 sprite
+REGISTER_PMINTERFACE(KESCMSprite, kKESCMSpriteImpl)	// トラッカー描画層の自前 sprite(押下中 HUD の描画。KESCMTracker.cpp)
 REGISTER_PMINTERFACE(KESCMTrackerRegister, kKESCMTrackerRegisterImpl)
 REGISTER_PMINTERFACE(KESCMCheckCursorProvider, kKESCMCursorProviderImpl)
