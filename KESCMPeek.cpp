@@ -1780,8 +1780,8 @@ void KESCMPeekStartup::Shutdown()
 {
 	// 遅延サムネイル更新の idle task を解放(予約中なら RemoveTask してから)。
 	KESCMShutdownThumbIdleTask();
-	// トラッカー描画層(sprite)の one-shot タイマーも確実に止める(生関数ポインタを残さない)。
-	KESCMTrackerShutdownSpriteProbe();
+	// HUD(sprite)の one-shot タイマーとフォント参照も確実に返す(生関数ポインタを残さない)。
+	KESCMTrackerShutdownHud();
 	// 保持していたマーク/旧版画像バッファを解放(終了時もきれいに片付ける)。
 	KESCMDrawEventHandler::DropAll();
 	KESCMDrawEventHandler::DropAllOrig();

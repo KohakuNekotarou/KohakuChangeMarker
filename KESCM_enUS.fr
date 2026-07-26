@@ -45,6 +45,7 @@ resource StringTable (kSDKDefStringsResourceID + index_enUS)
                 kKESCMSyncViewsMenuKey,				"Sync Layout Views",
                 kKESCMAlignViewsMenuKey,			"Align Other Views to Active",
                 kKESCMScrollMapMenuKey,				"Show Scrollbar Map",
+                kKESCMHudMenuKey,					"Show HUD",
                 kKESCMSavePanelStateMenuKey,			"Save Panel Settings",
                 kKESCMSaveChecksMenuKey,			"Save Check && Register",
                 kKESCMLoadChecksMenuKey,			"Load Check && Register",

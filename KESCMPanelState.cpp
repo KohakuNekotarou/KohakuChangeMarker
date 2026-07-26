@@ -23,6 +23,7 @@
 									// KESCMGetLayoutSync / KESCMSetLayoutSync
 #include "KESCMDrawEventHandler.h"	// sAlwaysShowMarks / sSrcMarksOn / sShowOldNumbers(公開 static)
 #include "KESCMScrollMap.h"			// KESCMGetScrollMapEnabled / KESCMSetScrollMapEnabled
+#include "KESCMPeek.h"				// KESCMGetHudEnabled / KESCMSetHudEnabled(HUD トグル)
 #include "KESCMPageNumberMarker.h"	// KESCMGetIgnorePageNumberMarker / KESCMSetIgnorePageNumberMarker
 
 // 保存ファイル名(KESCM サブフォルダー内)。
@@ -104,6 +105,7 @@ void KESCMSavePanelState()
 	json += "  \"showOldNumbers\": ";         json += KESCMBoolLiteral(KESCMDrawEventHandler::sShowOldNumbers);     json += ",\n";
 	json += "  \"syncLayoutViews\": ";        json += KESCMBoolLiteral(KESCMGetLayoutSync());                       json += ",\n";
 	json += "  \"scrollbarMap\": ";           json += KESCMBoolLiteral(KESCMGetScrollMapEnabled());                 json += ",\n";
+	json += "  \"hudOn\": ";                  json += KESCMBoolLiteral(KESCMGetHudEnabled());                       json += ",\n";
 	json += "  \"ignorePageNumberMarker\": "; json += KESCMBoolLiteral(KESCMGetIgnorePageNumberMarker());           json += "\n";
 	json += "}\n";
 
@@ -179,6 +181,7 @@ void KESCMLoadPanelStateIfPresent()
 
 	KESCMSetLayoutSync            (KESCMJsonReadBool(text, "syncLayoutViews",         KESCMGetLayoutSync()));
 	KESCMSetScrollMapEnabled      (KESCMJsonReadBool(text, "scrollbarMap",           KESCMGetScrollMapEnabled()));
+	KESCMSetHudEnabled            (KESCMJsonReadBool(text, "hudOn",                  KESCMGetHudEnabled()));
 	KESCMSetIgnorePageNumberMarker(KESCMJsonReadBool(text, "ignorePageNumberMarker", KESCMGetIgnorePageNumberMarker()));
 }
 

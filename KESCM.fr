@@ -426,6 +426,15 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKESCMScrollMapMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
+		// "Show HUD" on the panel flyout (popup) menu. Check-mark toggle (default ON): while ON, holding
+		// the tool's left button draws one line in the top-left corner of the layout view telling you what
+		// the other side of the comparison is ("Source: <name>" over the target, "Target: <name>" over the
+		// source, "Not in comparison" elsewhere, "Not comparing" when stopped). Spec: docs/ai-notes/kescm-tracker-hud.md.
+		kKESCMPopupHudActionID,
+		kKESCMPopupMenuPath,
+		kKESCMHudMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
 		// "Ignore Page Number Marker" on the panel flyout (popup) menu. Check-mark toggle (default OFF,
 		// see sIgnorePageNumberMarker in KESCMPageNumberMarker.cpp): while ON, frames containing an
 		// automatic "Current Page Number" marker are excluded from the pixel comparison, so pages whose
@@ -686,6 +695,15 @@ resource ActionDef (kSDKDefActionResourceID)
 		kKESCMActionComponentBoss,
 		kKESCMPopupScrollMapActionID,
 		kKESCMScrollMapMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates supplies the check mark (kSelectedAction)
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		kKESCMActionComponentBoss,
+		kKESCMPopupHudActionID,
+		kKESCMHudMenuKey,
 		kOtherActionArea,
 		kNormalAction,
 		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates supplies the check mark (kSelectedAction)

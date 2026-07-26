@@ -35,53 +35,58 @@
 #include "KESCMConstants.h"	// kKESCMCursorSettleMillis(設置後の落ち着き待ち)
 #include "KESCMPeek.h"		// KESCMTrackerRevealBegin / KESCMTrackerRevealEnd / CMYK カーソル入口
 
-// ★★実験プローブ(一時・2026-07-26)用。トラッカー自身の描画層(CSprite)の検証。撤去時に全部外す。
+// HUD(押している間だけビュー左上に1行出す)用。描画はトラッカー自身の描画層 = sprite で行う。
+// 仕様と、ここに至るまでの実測は docs/ai-notes/kescm-tracker-hud.md。
 #include "ISprite.h"						// CreateSprite / Show / Erase / Hide / DestroySprite
 #include "NoHandleSprite.h"					// 自前 sprite の基底(= kNoHandleSpriteImpl の実クラス。CSprite 派生で
 											// WIDGET_DECL export 済み。実装は WidgetBin.lib 内で .cpp は非公開)
-#include "IPathGeometry.h"					// sprite が描くパスの置き場(boss に同居)
+#include "IPathGeometry.h"					// ★HUD では「描くパス」ではなく **更新領域の宣言** として使う(BuildHudRegionPath)
 #include "PMPathPoint.h"					// AddPoint に渡す点
 #include "NonMarkingAGMGraphicsContext.h"	// sprite に渡す gc(純正のトラッカーもこれを使う)
 #include "IShape.h"							// kDrawCreateDynamic(Show のフラグ)
 #include "IControlView.h"					// GetContentToWindowMatrix(実ズーム D)
-#include "IPanorama.h"						// GetBounds(可視範囲=HUD を置く隅を決める。content 座標)
-#include "ILayoutUIUtils.h"					// GetMousePasteboardPosition(押下点)
-#include "IEventUtils.h"					// GetGlobalMouseLocation
+#include "IPanorama.h"						// GetContentLocationAtFrameOrigin(ビュー左上の content 点 = HUD の基準)
 #include "IGraphicsContext.h"				// GetViewPort / GetView(gc からポートを取る)
-#include "IGraphicsPort.h"					// selectfont / show / fill(自前描画)
-#include "IRasterPort.h"					// CreateAnchorPointPath に渡す(取れるかどうかも検証点)
-#include "IGraphicsUtils.h"					// CreateAnchorPointPath(本命の検証対象)
+#include "IGraphicsPort.h"					// selectfont / show(文字描画)
 #include "IFontMgr.h"						// フォント取得(QueryFont)とインストール済みフォントの列挙
 #include "IPMFont.h"						// GetGlyphID / GetNotDefinedGlyph(その字を持っているかの判定)
+#include "IFontInstance.h"					// MeasureWText / GetAscent / GetDescent(背景ボックスの寸法)
 #include "IFontGroup.h"						// GetNumFonts(フォント走査の内側)
 #include "LocaleSetting.h"					// GetSystemScript(ユーザーの言語からフォントを引く)
 #include "AutoGSave.h"
 #include "WideString.h"						// show に渡す UTF16
-#include "IDocument.h"						// GetName(HUD に出す Source 文書名)
+#include "IDocument.h"						// GetName(HUD に出す文書名)
 #include "IDocumentList.h"					// FindDocByDataBase(db → 文書)
-#include "KESCMDrawEventHandler.h"			// sSrcDB(比較の旧側 = Source 文書の db)
+#include "KESCMCore.h"						// KESCMIsArmed / KESCMArmedTargetDB / KESCMArmedSourceDB / KESCMFindDocDbForView
+#include "KESCMDrawEventHandler.h"			// KESCMQueryPanorama(ビューから IPanorama を辿る共有ヘルパ)
 #include "ICallbackTimer.h"					// 押下直後に一発だけ描くための one-shot タイマー
 #include "CreateObject.h"					// ::CreateObject(kCallbackTimerBoss, ...)
 #include "ShuksanID.h"						// kCallbackTimerBoss / IID_ICALLBACKTIMER
 #include "Utils.h"
 #include "PMMatrix.h"
 
-// ★★実験プローブ(一時・2026-07-26): 押下直後に sprite を出すための one-shot タイマー。
-// BeginTracking の中で(基底の後に)Show しても絵が出ないため、BeginTracking を完全に抜けた直後に
-// 一度だけ描かせる。押している間だけ生き、EndTracking/AbortTracking で必ず止める
-// (コールバックは参照カウントされない生関数ポインタで、残したままプラグインが降りるとクラッシュする)。
+// ★押下直後に sprite を出すための one-shot タイマー。BeginTracking の中で(基底の後に)Show しても
+// 絵が出ないため、BeginTracking を完全に抜けた直後に一度だけ描かせる。押している間だけ生き、
+// EndTracking/AbortTracking で必ず止める(コールバックは参照カウントされない生関数ポインタで、
+// 予約を残したままプラグインが降りるとクラッシュする)。
 class KESCMTracker;
-static ICallbackTimer* sSpriteProbeTimer   = nil;
-static KESCMTracker*   sSpriteProbeTracker = nil;
-static uint32 KESCMSpriteProbeTimerProc(void* refPtr);
+static ICallbackTimer* sHudTimer   = nil;
+static KESCMTracker*   sHudTracker = nil;
+static uint32 KESCMHudTimerProc(void* refPtr);
 
-// ★★実験プローブ(一時・2026-07-26): 文字を描く基準点(pasteboard 座標)。ShowSpriteProbe が Show の
-// たびに更新し、KESCMSprite::CreateTrackerPaths が参照する。
-// ★**パスの bbox 中心を基準にしてはいけない**(2026-07-26 実機): 対照用の右の四角だけ content 固定
-// サイズ(12pt)なので、ズームを上げると bbox が右へ伸び、その中心=文字位置が右へずれる
-// (100%→300% で約 6px)。上下は四角が基準点に対称なのでズレない、も実機の見え方と一致した。
-// 本番の HUD では四角自体を撤去するので、そのときも文字位置が変わらないこの形が正しい。
-static PMPoint sSpriteProbeAnchor;
+// HUD の基準点(pasteboard 座標)。ShowHud が Show のたびに更新し、KESCMSprite::CreateTrackerPaths が読む。
+// ★**パスの bbox 中心を基準にしてはいけない**(2026-07-26 実機で確認): bbox に content 固定サイズの
+// パスが混じると、ズームを上げるほど bbox がその方向へ伸び、中心=文字位置が動く(実測 100%→300% で
+// 約 6px 右。上下は対称なので動かず、症状が「横だけ」だったのが証拠)。基準点は常にここから読む。
+static PMPoint sHudAnchor;
+
+// HUD に出す文字列。★押下時に1回決めて押している間は固定する(押している最中に窓は変わらないため、
+// 描画のたびに状態を引き直す必要がない)。
+static PMString sHudText;
+
+// HUD の ON/OFF(パネルのフライアウト「Show HUD」)。★既定 = ON。パネル設定として保存される
+// (KESCMPanelState の "hudOn")。OFF の間は sprite を作らず、one-shot タイマーも動かさない。
+static bool16 sHudOn = kTrue;
 
 #include <chrono>			// milliseconds(カーソル設置後の落ち着き待ち)
 #include <thread>			// std::this_thread::sleep_for(同上。Win/Mac 共通)
@@ -100,17 +105,14 @@ public:
 
 CREATE_PMINTERFACE(KESCMTrackerEH, kKESCMTrackerEHImpl)
 
-/** ★★実験プローブ(一時・2026-07-26): HUD に出す文字列 = 比較の Source(旧)文書名。
-	解決経路は KESCMChangedPagesTSV.cpp の DocNameFromDB と同じ(セッション→app→docList→
-	FindDocByDataBase。IDocument は no ref で名前を取るだけ)。
-	★まだ Start していない(sSrcDB==nil)ときは "(no source)" を返す。空文字にすると、実機で
-	「HUD 自体が出ていない」のか「名前が空なだけ」なのか区別できず、位置の検証にならないため。 */
-static PMString KESCMSpriteProbeLabel()
+/** db を持つ文書の表示名。取れなければ "(unknown)"。解決経路は KESCMChangedPagesTSV.cpp の
+	DocNameFromDB と同じ(セッション→app→docList→FindDocByDataBase。IDocument は no ref で名前だけ)。
+	★閉じた db を deref しないため、生存確認を兼ねた FindDocByDataBase を必ず通す。 */
+static PMString KESCMHudDocName(IDataBase* db)
 {
 	PMString out;
 	out.SetTranslatable(kFalse);
 
-	IDataBase* db = KESCMDrawEventHandler::sSrcDB;
 	if (db != nil)
 	{
 		ISession* session = GetExecutionContextSession();
@@ -121,7 +123,48 @@ static PMString KESCMSpriteProbeLabel()
 			doc->GetName(out);
 	}
 	if (out.IsEmpty())
-		out = PMString("(no source)");
+		out = PMString("(unknown)");
+	out.SetTranslatable(kFalse);
+	return out;
+}
+
+/** HUD に出す1行を組む。押した窓(view)と比較状態で4通り:
+	  比較中 + Target の窓  → "Source: <旧文書名>"   … いま比べている相手(旧版)はこれ
+	  比較中 + Source の窓  → "Target: <新文書名>"   … 同上(新版)
+	  比較中 + それ以外     → "Not in comparison"    … この文書は比較の対象ではない
+	  Stop 中               → "Not comparing"        … そもそも比較していない
+	★「出ない」を状態表示に使わない(壊れているのか仕様なのか分からなくなるため)。
+	★文字は英語固定。翻訳キー扱いで化けないよう SetTranslatable(kFalse) を必ず通す
+	  (UI 文字列のリテラルが内蔵訳に化ける事故が KESCM で実際に起きている)。 */
+static PMString KESCMBuildHudText(IControlView* view)
+{
+	PMString out;
+	out.SetTranslatable(kFalse);
+
+	if (!KESCMIsArmed())
+	{
+		out = PMString("Not comparing");
+		out.SetTranslatable(kFalse);
+		return out;
+	}
+
+	IDataBase* const db = KESCMFindDocDbForView(view);	// 押した窓の文書(ポインタ比較のみ)
+	if (db != nil && db == KESCMArmedTargetDB())
+		out = PMString("Source: ");
+	else if (db != nil && db == KESCMArmedSourceDB())
+		out = PMString("Target: ");
+	else
+	{
+		out = PMString("Not in comparison");
+		out.SetTranslatable(kFalse);
+		return out;
+	}
+	out.SetTranslatable(kFalse);
+
+	// 相手側(押した窓が Target なら Source、その逆なら Target)の名前を足す。
+	const PMString name = KESCMHudDocName(
+		(db == KESCMArmedTargetDB()) ? KESCMArmedSourceDB() : KESCMArmedTargetDB());
+	out.Append(name);
 	out.SetTranslatable(kFalse);
 	return out;
 }
@@ -219,6 +262,23 @@ static IPMFont* KESCMQueryFontForText(const WideString& text)
 static IPMFont* sHudFont = nil;
 static PMString sHudFontLabel;
 
+// 文字寸法を測るためのインスタンス(= フォント × サイズ行列)。背景ボックスの大きさに要る
+// (幅 = MeasureWText、上下 = GetAscent/GetDescent)。サイズは px/D で決まるのでズームで変わる
+// → フォントかサイズが変われば作り直す。所有する。
+static IFontInstance* sHudFontInst     = nil;
+static PMReal         sHudFontInstSize = 0.0;
+
+/** 寸法測定用のインスタンスを返す(押下解除・フォント差し替え・終了で呼ぶ)。 */
+static void KESCMReleaseHudFontInstance()
+{
+	if (sHudFontInst != nil)
+	{
+		sHudFontInst->Release();
+		sHudFontInst = nil;
+	}
+	sHudFontInstSize = 0.0;
+}
+
 /** labelStr を描けるフォントを返す(キャッシュ付き)。所有はここ側=呼び出し側は Release しない。 */
 static IPMFont* KESCMQueryHudFont(const PMString& labelStr, const WideString& label)
 {
@@ -230,9 +290,29 @@ static IPMFont* KESCMQueryHudFont(const PMString& labelStr, const WideString& la
 		sHudFont->Release();
 		sHudFont = nil;
 	}
+	KESCMReleaseHudFontInstance();		// ★フォントが変わればインスタンスも無効(古いフォントを指したまま測らない)
 	sHudFont      = KESCMQueryFontForText(label);
 	sHudFontLabel = labelStr;
 	return sHudFont;
+}
+
+/** font をそのサイズで測るインスタンスを返す(キャッシュ付き)。所有はここ側=呼び出し側は Release しない。
+	作り方は KESCMDrawEventHandler.cpp の旧ページ番号バッジと同じ(サイズを対角に入れた行列を渡す)。 */
+static IFontInstance* KESCMQueryHudFontInstance(IPMFont* font, const PMReal& size)
+{
+	if (font == nil || size <= 0)
+		return nil;
+	if (sHudFontInst != nil && sHudFontInstSize == size)
+		return sHudFontInst;
+
+	KESCMReleaseHudFontInstance();
+	InterfacePtr<IFontMgr> fontMgr(GetExecutionContextSession(), UseDefaultIID());
+	if (fontMgr == nil)
+		return nil;
+	const PMMatrix fontMatrix(size, 0.0, 0.0, size, 0.0, 0.0);
+	sHudFontInst     = fontMgr->QueryFontInstance(font, fontMatrix);
+	sHudFontInstSize = size;
+	return sHudFontInst;
 }
 
 /** フォントキャッシュを返す(押下解除とプラグイン終了で呼ぶ)。 */
@@ -244,23 +324,23 @@ static void KESCMReleaseHudFont()
 		sHudFont = nil;
 	}
 	sHudFontLabel.Clear();
+	KESCMReleaseHudFontInstance();
 }
 
 //____________________________________________________________________________________
-//	★★実験プローブ(一時・2026-07-26): トラッカーの描画層(sprite)で自前に描く。
+//	HUD の描画層。トラッカーが押されている間だけ、レイアウトビューの左上に1行描く。
 //
-//	これまでの実測: Draw Event 経路は、トラッカーで押している間も settled キャッシュ層のままで、
-//	rPort のスケールが表示ズーム D と一致しない(= ピクセル指定の CreateAnchorPointPath が拡大する)。
-//	では純正のトラッカーが使う描画機構 = sprite ならどうか、を測る。
+//	なぜ sprite なのか: Draw Event 経路は押している間も settled キャッシュ層のままで、しかも描画が
+//	**ペーストボードにクリップ**されるので窓の隅には描けない。sprite の clip は「レイアウトビュー全体」
+//	なので隅に置ける(2026-07-26 実機で確認)。∴ 押下中限定の HUD はこの層でしか作れない。
 //
-//	基底 = NoHandleSprite(.fr で使っていた kNoHandleSpriteImpl の実クラス。CSprite 派生で
-//	WIDGET_DECL export 済み=継承できる。CSprite.cpp / NoHandleSprite.cpp は非公開だが、
-//	CreateTrackerPaths が protected virtual なので、既定の「boss の IPathGeometry のパスを描く」
-//	動作を残したまま描く中身を足せる)。背景の保存・復元(消去)は基底がやるので自前では書かない。
+//	基底 = NoHandleSprite(.fr の kNoHandleSpriteImpl の実クラス。CSprite 派生で WIDGET_DECL export
+//	済み=継承できる。CSprite.cpp / NoHandleSprite.cpp は非公開だが CreateTrackerPaths が
+//	protected virtual)。背景の保存・復元(消去)は基底がやるので自前では書かない。
 //
-//	ここで2つ試す:
-//	  ①文字(selectfont + show) — 出るなら CMYK 数値をカーソルビットマップでなくカンバスに描ける。
-//	  ②CreateAnchorPointPath   — この層で rPort が取れるか、取れたとして固定サイズになるか(B=D か)。
+//	★基底の CreateTrackerPaths は呼ばない。基底は「boss の IPathGeometry のパスを描く」実装だが、
+//	  HUD ではその IPathGeometry を**描くためではなく「更新領域を宣言する」ためだけ**に使うので、
+//	  描かれると余計な矩形が見えてしまう(領域の決め方は GetTrackerBounds のコメント参照)。
 //____________________________________________________________________________________
 class KESCMSprite : public NoHandleSprite
 {
@@ -271,6 +351,19 @@ public:
 protected:
 	virtual void CreateTrackerPaths(IGraphicsContext* gc);
 	virtual PMRect GetTrackerBounds(IGraphicsContext* gc, int32 flags);
+
+	// ★★中心の「X」を描かせない(2026-07-26 実機。文字の左 20〜30px に出ていた青いゴミの正体)。
+	//   NoHandleSprite は「**ハンドル**を描かない」だけで、**中心の X は描く**(NoHandleSprite.h:54-59
+	//   "draws the X in the center of the sprite, but does not draw any of the shape's handles")。
+	//   実体は CSprite::DrawCenterX = 「ドラッグ中、各ページアイテムの中心に小さな X を XOR で描く」
+	//   (CSprite.h:447-451)。XOR の色はレイヤー色(SetHiliteColor 同 :349-352)で既定はライトブルー
+	//   = 見えていた青と一致する。位置が文字の近くだったのは、CreateSprite に渡す開始点が原点
+	//   (PMPoint())だから。CreateTrackerPaths を潰しても**別経路**なので消えなかった。
+	//   → 経路は2本(Show から DrawSpriteHandles / CreateTrackerPaths から CreateHandlePaths)あるので
+	//     両方とも空にする。HUD は文字だけを描くので、これで失うものは無い
+	//     (NoHandleSprite::DrawSpriteHandles が描く Smart Dimension guides も不要)。
+	virtual void CreateHandlePaths(IGraphicsContext* /*gc*/, bool16 /*bDoDirection*/) {}
+	virtual void DrawSpriteHandles(IGraphicsContext* /*gc*/, int32 /*flags*/, PMMatrix* /*xForm*/) {}
 };
 
 CREATE_PMINTERFACE(KESCMSprite, kKESCMSpriteImpl)
@@ -299,23 +392,28 @@ PMRect KESCMSprite::GetTrackerBounds(IGraphicsContext* gc, int32 flags)
 
 void KESCMSprite::CreateTrackerPaths(IGraphicsContext* gc)
 {
-	// まず既定の動作(boss の IPathGeometry のパスを描く)。四角2つはこれで出る。
-	NoHandleSprite::CreateTrackerPaths(gc);
-
-	if (gc == nil)
+	// ★基底は呼ばない(上のクラスコメント参照。IPathGeometry は領域宣言専用で、描くと矩形が見える)。
+	if (gc == nil || sHudText.IsEmpty())
 		return;
 
-	// gc → ViewPort boss → 各ポート。gPort は必ず取れる。rPort は「画面なら取れる」ので、
-	// 取れるかどうか自体が観測点(取れなければ CreateAnchorPointPath はこの層では使えない)。
+	// gc → ViewPort boss → gPort。
 	InterfacePtr<IGraphicsPort> gPort(gc->GetViewPort(), UseDefaultIID());
 	if (gPort == nil)
 		return;
 
-	// 描く基準点(pasteboard 座標)。★トラッカーが記録した基準点そのものを使う。パスの bbox 中心は
-	// 使わない: 対照用の四角が content 固定サイズなので、bbox 中心はズームで右へ動く
-	// (sSpriteProbeAnchor の宣言部のコメント参照。2026-07-26 実機で確認)。
-	const PMReal cx = sSpriteProbeAnchor.X();
-	const PMReal cy = sSpriteProbeAnchor.Y();
+	// ★カレントパスを残さない(2026-07-26。実機で「文字の左 20〜30px に青いゴミ」が出たことへの対策)。
+	//   この関数は CSprite の描画サイクルから呼ばれるが、CSprite 側は「CreateTrackerPaths でパスを
+	//   組ませ、DrawTrackerExtra がそれを XOR で描く」設計に見える(CSprite.h:256-261 "Draws the paths
+	//   in xor mode" / :383-388 "walks/draws the path stored in the IPathGeometry")。XOR の色は
+	//   レイヤー色(SetHiliteColor = CSprite.h:349-352)で、既定レイヤーは**ライトブルー**=ゴミの色と一致。
+	//   ∴ 自前の描画がポートにカレントパスを残すと、後段がそれを青くストロークしうる。入口と各描画の
+	//   前後で newpath() して、この関数はパスを持ち込まず・持ち帰らないようにする。
+	gPort->newpath();
+
+	// 描く基準点(pasteboard 座標)= 文字のベースライン左端。★トラッカーが決めた基準点をそのまま使う
+	// (パスの bbox 中心は使わない。sHudAnchor の宣言部のコメント参照)。
+	const PMReal cx = sHudAnchor.X();
+	const PMReal cy = sHudAnchor.Y();
 
 	// 実ズーム D(ピクセル指定を content サイズへ逆算するのに使う)。
 	PMReal sx = 1.0, sy = 1.0;
@@ -331,56 +429,85 @@ void KESCMSprite::CreateTrackerPaths(IGraphicsContext* gc)
 	if (sx == 0 || sy == 0)
 		return;
 
-	// ①文字。下地を敷かず、色を反転させて描く(ユーザー指定 2026-07-26)。
-	//   ★反転の実装を XOR から Difference ブレンドへ変更(2026-07-26 実測):
-	//     IRasterPort::SetXORMode(kTrue) は反転自体は成功したが、**マウスを動かすと塗りつぶしに
-	//     なった**。XOR は「同じ場所に2回描くと元に戻る」性質で、CSprite の描画サイクル
-	//     (背景オフスクリーンの用意と前景描画)で CreateTrackerPaths が複数回呼ばれると反転が
-	//     累積するため(= color-inversion-drawing の「二重 XOR 問題」)。
-	//   → ブレンドモード Difference は **gstate なので AutoGSave で確実に戻り**、モードの
-	//     付け外しがポート全体に残らない。白(1,1,1)で塗ると完全反転(結果 = 1 − 下地)。
-	//   ★弱点は XOR と同じ: 中間グレー(50%)の上では効かない(128 → 127 でほぼ同色)。
+	// ★描き方 = **半透明の下地を敷いて、その上に普通の黒文字**(ユーザー指定 2026-07-26)。
+	//   下の絵に依存しないので、太さも色も素直に決められる。
+	//
+	//   〈これ以前に試して捨てた方式(戻さないための記録)〉
+	//   ・XOR 反転(IRasterPort::SetXORMode) … 反転はしたが**マウスを動かすと塗りつぶしになった**。
+	//     XOR は「同じ場所に2回描くと戻る」性質で、CSprite の描画サイクルで CreateTrackerPaths が
+	//     複数回呼ばれると反転が累積する(= color-inversion-drawing の「二重 XOR 問題」)。
+	//   ・Difference ブレンド＋白フチ … gstate なので AutoGSave で確実に戻り、累積もしない。ただし
+	//     中間グレー(50%)の上では効かず(128 → 127)、フチ頼みになる。**字を太らせようと塗りに線を
+	//     重ねた時点で破綻**(反転・フチ・線が互いに干渉して字が潰れた。実機 2026-07-26)。
 	{
 		// ★フォントは「その文字を持っているもの」を選ぶ(既定フォント固定だと日本語等が化ける)。
 		//   選定とキャッシュは KESCMQueryHudFont に集約。所有はキャッシュ側=ここでは Release しない。
-		const PMString labelStr = KESCMSpriteProbeLabel();
-		WideString label(labelStr);
-		IPMFont* font = KESCMQueryHudFont(labelStr, label);
+		WideString label(sHudText);
+		IPMFont* font = KESCMQueryHudFont(sHudText, label);
 		if (font != nil)
 		{
-			// ★大きさ・太さは画面ピクセルで指定する(ズームを変えても見た目が変わらない)。
-			// 本実装で CMYK 数値を描くときも、この2つを変えるだけで調整できる。
-			const PMReal kTextPx    = 36.0;
-			const PMReal kOutlinePx = 4.0;	// 白縁の太さ
+			// ★大きさ・余白は画面ピクセルで指定する(ズームを変えても見た目が変わらない)。
+			// 文字サイズの経緯(2026-07-26 ユーザー指定): 36px → 24px → 16px(小さすぎ) → 20px。
+			const PMReal kTextPx     = 20.0;	// 文字の大きさ
+			const PMReal kPadXPx     = 8.0;		// 下地の左右余白
+			const PMReal kPadTopPx   = 4.0;		// 下地の上余白
+			const PMReal kPadBotPx   = 4.0;		// 下地の下余白
+			// ★HUD 全体(下地＋文字)に掛ける不透明度(1.0=不透明)。下地だけでなく**文字も一緒に**薄くする
+			//   (ユーザー指定 2026-07-26)。下地 0.75 ＋ 文字 1.0 の個別指定から、下の透明グループへ移した。
+			const PMReal kHudOpacity = 0.6;
 
-			// 出す中身は比較の Source(旧)文書名。未 Start なら "(no source)"(label は上で作成済み)。
-			// show はベースライン左端を (x,y) に置く。文字が大きくなった分、左と下へ余裕を取る。
-			const PMReal tx = cx - (PMReal(100.0) / sx);
-			const PMReal ty = cy - (PMReal(70.0)  / sy);
+			const PMReal fontSize = kTextPx / sy;
 
-			// (1) 白縁: 通常描画(反転しない)で、文字のアウトラインを太くストロークする。
-			//     ★中間グレーの上では Difference が効かない(128 → 127)ため、本体だけだと消える。
-			//     縁を「下地に依らない不透明の白」で描いておくと、グレー地では白い輪郭の中抜き文字
-			//     として読める(白地では縁が見えず本体の黒が、黒地では縁も本体も白く出る)。
-			//     縁は show の kStrokeText で描ける(オフセットを変えて何度も描く必要はない)。
+			// show はベースライン左端を (x,y) に置く。基準点がそのままベースライン左端。
+			const PMReal tx = cx;
+			const PMReal ty = cy;
+
+			// 下地の大きさは**実測**で決める(文字数×固定幅の概算は和文/欧文で外れる)。
+			// 幅=MeasureWText、上下=GetAscent/GetDescent(IFontInstance.h:144/205/210)。
+			// インスタンスが取れなかったときだけ概算へ落とす(下地が消えるよりはマシ)。
+			PMReal textW   = 0.0;
+			PMReal ascent  = fontSize * PMReal(0.8);
+			PMReal descent = fontSize * PMReal(0.2);
+			IFontInstance* inst = KESCMQueryHudFontInstance(font, fontSize);
+			if (inst != nil)
 			{
-				AutoGSave ag(gPort);
-				gPort->setrgbcolor(PMReal(1.0), PMReal(1.0), PMReal(1.0));
-				gPort->setlinewidth(kOutlinePx / sy);
-				gPort->selectfont(font, kTextPx / sy);
-				gPort->show(tx, ty, label.NumUTF16TextChars(), label.GrabUTF16Buffer(nil),
-					IGraphicsPort::kStrokeText);
+				inst->MeasureWText(label, textW);
+				ascent  = inst->GetAscent();
+				descent = inst->GetDescent();
 			}
+			if (textW <= 0)
+				textW = fontSize * PMReal(0.6) * PMReal(label.CharCount());
 
-			// (2) 本体: Difference で下地を反転(白で塗ると 結果 = 1 − 下地)。
-			{
-				AutoGSave ag(gPort);
-				gPort->setblendingmode(kPMBlendDifference);
-				gPort->setrgbcolor(PMReal(1.0), PMReal(1.0), PMReal(1.0));
-				gPort->selectfont(font, kTextPx / sy);
-				gPort->show(tx, ty, label.NumUTF16TextChars(), label.GrabUTF16Buffer(nil),
-					IGraphicsPort::kFillText);
-			}
+			// 下地の矩形(= 透明グループの範囲でもある)。PMRect は (左, 上, 右, 下)。
+			const PMRect hudRect(tx - kPadXPx / sx,
+			                     ty - ascent - kPadTopPx / sy,
+			                     tx + textW + kPadXPx / sx,
+			                     ty + descent + kPadBotPx / sy);
+
+			// ★下地と文字を**透明グループで1つに束ね**、合成の不透明度をグループに1回だけ掛ける。
+			//   個別に setopacity すると、文字と下地が重なる画素だけ濃くなって「文字だけ濃い」状態に
+			//   なる。starttransparencygroup は開始時点の GState(=直前の setopacity)を**グループ合成に**
+			//   引き継ぎ、グループ内の alpha は 1.0 にリセットする(IGraphicsPort.h の仕様)。つまり
+			//   中は不透明で描いてよく、全体が均一に薄くなる。作法は KESCMDrawEventHandler.cpp の
+			//   旧ページ番号バッジ(白フチ＋本体を束ねる箇所)と同じ。cs=nil は非隔離グループ。
+			AutoGSave ag(gPort);
+			gPort->setopacity(kHudOpacity, kFalse);		// グループ全体の合成不透明度
+			gPort->starttransparencygroup(hudRect, nil, kFalse /*non-isolated*/, kFalse /*no knockout*/);
+
+			// (1) 下地: 白ベタ。rectfill は (左, 上, 幅, 高さ)。
+			gPort->newpath();
+			gPort->setrgbcolor(PMReal(1.0), PMReal(1.0), PMReal(1.0));
+			gPort->rectfill(hudRect.Left(), hudRect.Top(), hudRect.Width(), hudRect.Height());
+			gPort->newpath();
+
+			// (2) 文字: 黒。ブレンドもフチも使わない(読みやすさは下地が担保する)。
+			gPort->setrgbcolor(PMReal(0.0), PMReal(0.0), PMReal(0.0));
+			gPort->selectfont(font, fontSize);
+			gPort->show(tx, ty, label.NumUTF16TextChars(), label.GrabUTF16Buffer(nil),
+				IGraphicsPort::kFillText);
+			gPort->newpath();
+
+			gPort->endtransparencygroup();
 		}
 	}
 
@@ -398,19 +525,6 @@ void KESCMSprite::CreateTrackerPaths(IGraphicsContext* gc)
 	//     でしか受けられない。sprite 側は上の KESCMQueryFontForText で**自前にフォントを選ぶ**しかない。
 	//   ※同じ理由で、この経路のブレンド(反転)が効くかも確かめられていない(描画自体が起きないため)。
 
-	// ②純正のピクセル指定マーカー。rPort が取れたときだけ。ズームを変えて大きさが変わらなければ、
-	//   この層は B=D(ライブ)ということ。
-	{
-		InterfacePtr<IRasterPort> rPort(gc->GetViewPort(), UseDefaultIID());
-		if (rPort != nil)
-		{
-			AutoGSave ag(gPort);
-			gPort->newpath();
-			Utils<IGraphicsUtils>()->CreateAnchorPointPath(rPort, gPort,
-				PMPoint(cx, cy + (PMReal(60.0) / sy)), PMReal(20.0), kFalse);
-			gPort->fill();
-		}
-	}
 }
 
 //____________________________________________________________________________________
@@ -420,24 +534,24 @@ class KESCMTracker : public CTracker
 {
 public:
 	KESCMTracker(IPMUnknown* boss) : CTracker(boss), fCmykCursorFlip(kFalse),
-		fSpriteProbeAlive(kFalse), fSpriteProbeShown(kFalse)	// ★実験プローブ(一時)
+		fHudAlive(kFalse), fHudShown(kFalse)
 	{
 		fWantsToAutoScroll = kFalse;		// no autoscroll while holding (same as the animation sample)
 	}
 	virtual ~KESCMTracker()
 	{
-		// ★sprite プローブの保険: EndTracking / AbortTracking のどちらも通らずに破棄される経路
-		// (アプリ終了時など)で、one-shot タイマーのコールバックが死んだ this を触らないようにする。
+		// ★HUD の保険: EndTracking / AbortTracking のどちらも通らずに破棄される経路(アプリ終了時など)で、
+		// one-shot タイマーのコールバックが死んだ this を触らないようにする。
 		// 自分が対象のときだけ外す(別インスタンスが登録済みなら手を出さない)。
-		if (sSpriteProbeTracker == this)
+		if (sHudTracker == this)
 		{
-			if (sSpriteProbeTimer != nil)
+			if (sHudTimer != nil)
 			{
-				sSpriteProbeTimer->StopTimer();
-				sSpriteProbeTimer->Release();
-				sSpriteProbeTimer = nil;
+				sHudTimer->StopTimer();
+				sHudTimer->Release();
+				sHudTimer = nil;
 			}
-			sSpriteProbeTracker = nil;
+			sHudTracker = nil;
 		}
 	}
 
@@ -524,24 +638,25 @@ public:
 			if (KESCMTrackerHasPendingCmykCursor())
 				this->InstallCmykCursor();
 
-			// ★★実験プローブ(一時・2026-07-26): トラッカー自身の描画層(CSprite)を押下点に出す。
-			// 修飾キーに依らず出す。撤去時はこのブロックと ContinueTracking / EndTracking /
-			// AbortTracking の対になる呼び出し、およびヘルパー一式を消す。
-			//
-			// ★押した瞬間から出す(実測 2026-07-26 の経過。どれも出なかった):
-			//   ①BeginTracking で ShowSpriteProbe を1回
-			//   ②同 2回(初回=ShowFirstTime のオフスクリーン用意、2回目=ShowSprite の実描画、と
-			//     CSprite.h のコメントから立てた仮説)
-			//   ③BeginTracking から HandleContinueTracking を呼ぶ(+ ContinueTracking 側で
-			//     mouseDidMove=kFalse を通すよう修正。押下直後は convertedPoint==fPreviousPoint
-			//     なので必ず kFalse で来る = CTracker.cpp:449-452)
-			//   → ①〜③が全滅ということは「BeginTracking を抜けるまで画面が確定しない」のが原因。
-			//     ∴ 抜けた直後に one-shot タイマーで一度だけ描かせる。
-			sSpriteProbeTracker = this;
-			if (sSpriteProbeTimer == nil)
-				sSpriteProbeTimer = (ICallbackTimer*)::CreateObject(kCallbackTimerBoss, IID_ICALLBACKTIMER);
-			if (sSpriteProbeTimer != nil)
-				sSpriteProbeTimer->StartTimer(KESCMSpriteProbeTimerProc, 1, nil);
+			// HUD(押している間だけビュー左上に1行)。ジェスチャに依らず出す=挙動を一定にする。
+			// ★文字列はここで1回だけ決めて押している間は固定する(押している最中に窓は変わらない)。
+			//   判定に使う「押した窓」は fControlView(このトラッカーが動いているビュー)。
+			if (sHudOn)
+			{
+				sHudText = KESCMBuildHudText(fControlView);
+
+				// ★押した瞬間から出すには one-shot タイマーが要る(実測 2026-07-26。以下は全部出なかった):
+				//   ①BeginTracking で Show を1回 ②同 2回(初回=ShowFirstTime のオフスクリーン用意、
+				//   2回目=ShowSprite の実描画、と CSprite.h のコメントから立てた仮説) ③BeginTracking から
+				//   HandleContinueTracking を呼ぶ(押下直後は convertedPoint==fPreviousPoint なので
+				//   mouseDidMove=kFalse で来る = CTracker.cpp:449-452)。
+				//   → 全滅=「BeginTracking を抜けるまで画面が確定しない」。∴ 抜けた直後に一度だけ描かせる。
+				sHudTracker = this;
+				if (sHudTimer == nil)
+					sHudTimer = (ICallbackTimer*)::CreateObject(kCallbackTimerBoss, IID_ICALLBACKTIMER);
+				if (sHudTimer != nil)
+					sHudTimer->StartTimer(KESCMHudTimerProc, 1, nil);
+			}
 		}
 
 		// Hide したら必ず対で Show する(result==kFalse の経路も含む。消えっぱなし防止)。
@@ -577,19 +692,17 @@ public:
 		if (mouseDidMove && KESCMTrackerHasPendingCmykCursor() && KESCMTrackerUpdateCmykDrag())
 			this->InstallCmykCursor();
 
-		// ★★実験プローブ(一時・2026-07-26): sprite をマウスに追従させる(Erase→組み直し→Show)。
-		// ★押下直後は mouseDidMove=kFalse で来る: CTracker::HandleContinueTracking は
-		// 「convertedPoint != fPreviousPoint」でしか mouseDidMove を立てず(CTracker.cpp:449-452)、
-		// 押した瞬間は当然その2点が同じだから。BeginTracking から自分で HandleContinueTracking を
-		// 呼んでも、この条件で弾かれて描画に届かない。→ まだ一度も出していない間は、動いていなくても描く。
-		if (mouseDidMove || !fSpriteProbeShown)
-			this->ShowSpriteProbe(where);
+		// HUD は位置固定(ビュー左上)なのでマウス追従は不要だが、ドラッグ中に文書側の再描画が入ると
+		// 消えるので描き直す。★one-shot タイマーの発火より先にドラッグが来ることもあるので、まだ一度も
+		// 出していない間は動いていなくても描く(押下直後は mouseDidMove=kFalse で来る=CTracker.cpp:449-452)。
+		if (mouseDidMove || !fHudShown)
+			this->ShowHud();
 	}
 
 	/** Mouse up. Call the base first, then hide the marks. */
 	virtual bool16 EndTracking(IEvent* theEvent)
 	{
-		this->HideSpriteProbe();	// ★実験プローブ(一時): 基底より先に画面から取り除く
+		this->HideHud();	// 基底より先に画面から取り除く
 		bool16 result = CTracker::EndTracking(theEvent);
 		KESCMTrackerRevealEnd();
 		return result;
@@ -599,7 +712,7 @@ public:
 		hold 中に中断されても枠が出っぱなしにならないように)。 */
 	virtual void AbortTracking(IEvent* theEvent)
 	{
-		this->HideSpriteProbe();	// ★実験プローブ(一時): 中断でも出しっぱなしにしない
+		this->HideHud();	// 中断でも出しっぱなしにしない
 		CTracker::AbortTracking(theEvent);
 		KESCMTrackerRevealEnd();
 	}
@@ -607,26 +720,20 @@ public:
 private:
 	bool16 fCmykCursorFlip;		// CMYK カーソルの CursorID 交互切替の現在側(kFalse=次は1021、kTrue=次は1022)
 
-	// ★★実験プローブ(一時・2026-07-26)。トラッカー自身の描画層(CSprite)の状態。撤去時に消す。
-	bool16 fSpriteProbeAlive;	// CreateSprite 済み(=Hide/DestroySprite が要る)
-	bool16 fSpriteProbeShown;	// 一度でも Show した(=次の Show の前に Erase する)
+	// HUD(sprite)の状態。
+	bool16 fHudAlive;	// CreateSprite 済み(=Hide/DestroySprite が要る)
+	bool16 fHudShown;	// 一度でも Show した(=次の Show の前に Erase する)
 
 	//----------------------------------------------------------------------------------------
-	// ★★実験プローブ(一時・2026-07-26): トラッカー自身の描画層 = CSprite の振る舞いを見る。
+	// HUD の「更新領域」を宣言するパスを組む。
 	//
-	// Draw Event 経路は、押している間も settled キャッシュ層のままだと実測で判った(rPort のスケールが
-	// 表示ズーム D ではなくオフスクリーン基準 B なので、ピクセル指定の描画が拡大する)。では純正の
-	// トラッカーが使う描画機構=CSprite はどうなのか、を測る。
-	//
-	// 押している間、マウス位置に四角を2つ並べて描く:
-	//   ・左 = 実ズーム D で 40px/D に逆算した四角  → D が効く層なら、ズームを変えても常に 40px
-	//   ・右 = content 座標で固定サイズ(12pt)の四角 → ズームで必ず大きさが変わる(対照)
-	// 右が変わり左が変わらなければ「CSprite 層では D 補正が正しく効く」。両方変わるなら別の層にいる。
-	//
-	// CSprite は XOR ワイヤー(線)で描くので色は指定できない。見るのは大きさだけ。パスは pasteboard
-	// 座標で組む(純正 CPathCreationTracker と同じ。"hand make sprite path in pb coords")。
+	// ★このパスは**描かれない**(KESCMSprite::CreateTrackerPaths は基底を呼ばない)。CSprite は
+	//   GetTrackerBounds = boss の IPathGeometry の制御点 bbox を更新領域の元にするので、そこへ
+	//   「文字がだいたい収まる矩形」を1つ置いて領域だけを申告する。実際の余白は GetTrackerBounds が
+	//   さらに device px で足す(そちらのコメント参照)。
+	// パスは pasteboard 座標で組む(純正 CPathCreationTracker と同じ。"hand make sprite path in pb coords")。
 	//----------------------------------------------------------------------------------------
-	void BuildSpriteProbePath(const PMPoint& pbWhere)
+	void BuildHudRegionPath(const PMPoint& pbBaseline)
 	{
 		InterfacePtr<IPathGeometry> geom(this, IID_IPATHGEOMETRY);
 		if (geom == nil || fControlView == nil)
@@ -641,60 +748,42 @@ private:
 		if (sx == 0 || sy == 0)
 			return;
 
-		const PMReal kProbePx = 40.0;	// 左の四角の狙い(画面ピクセル)
-		const PMReal kFixedPt = 12.0;	// 右の四角(content 固定=対照)
-		const PMReal halfAW = (kProbePx / sx) / PMReal(2.0);
-		const PMReal halfAH = (kProbePx / sy) / PMReal(2.0);
-		const PMReal halfB  = kFixedPt / PMReal(2.0);
-		const PMReal gap    = (kProbePx * PMReal(1.5)) / sx;	// 2つの間隔も px 基準(常に隣り合って見える)
+		// 基準点 = 文字のベースライン左端。そこから上へ文字の高さ分、右へ文字列の想定幅分を取る
+		// (幅は名前の長さで変わるので大きめ。足りない分は GetTrackerBounds の余白が吸収する)。
+		const PMReal left   = pbBaseline.X() - (PMReal(10.0)  / sx);
+		const PMReal right  = pbBaseline.X() + (PMReal(600.0) / sx);
+		const PMReal top    = pbBaseline.Y() - (PMReal(30.0)  / sy);
+		const PMReal bottom = pbBaseline.Y() + (PMReal(10.0)  / sy);
 
 		geom->RemoveAllPaths();
-
-		// 左: D 補正の四角(検証対象)
-		{
-			const PMReal cx = pbWhere.X() - gap, cy = pbWhere.Y();
-			const int32 p = geom->AddNewPath();
-			geom->AddPoint(p, PMPathPoint(PMPoint(cx - halfAW, cy - halfAH)));
-			geom->AddPoint(p, PMPathPoint(PMPoint(cx + halfAW, cy - halfAH)));
-			geom->AddPoint(p, PMPathPoint(PMPoint(cx + halfAW, cy + halfAH)));
-			geom->AddPoint(p, PMPathPoint(PMPoint(cx - halfAW, cy + halfAH)));
-			geom->ClosePath(p);
-		}
-		// 右: content 固定の四角(対照。ズームで必ず変わる)
-		{
-			const PMReal cx = pbWhere.X() + gap, cy = pbWhere.Y();
-			const int32 p = geom->AddNewPath();
-			geom->AddPoint(p, PMPathPoint(PMPoint(cx - halfB, cy - halfB)));
-			geom->AddPoint(p, PMPathPoint(PMPoint(cx + halfB, cy - halfB)));
-			geom->AddPoint(p, PMPathPoint(PMPoint(cx + halfB, cy + halfB)));
-			geom->AddPoint(p, PMPathPoint(PMPoint(cx - halfB, cy + halfB)));
-			geom->ClosePath(p);
-		}
+		const int32 p = geom->AddNewPath();
+		geom->AddPoint(p, PMPathPoint(PMPoint(left,  top)));
+		geom->AddPoint(p, PMPathPoint(PMPoint(right, top)));
+		geom->AddPoint(p, PMPathPoint(PMPoint(right, bottom)));
+		geom->AddPoint(p, PMPathPoint(PMPoint(left,  bottom)));
+		geom->ClosePath(p);
 	}
 
-	/** sprite を(必要なら作ってから)現在位置で描き直す。2回目以降は Show の前に Erase する
-		(純正 CPathCreationTracker::HandleMove と同じ順序)。 */
-	void ShowSpriteProbe(const PMPoint& /*pbWhere*/)
+public:
+	/** HUD を(必要なら sprite を作ってから)描き直す。2回目以降は Show の前に Erase する
+		(純正 CPathCreationTracker::HandleMove と同じ順序)。one-shot タイマーからも呼ぶ。
+
+		位置 = **レイアウトビューの左上**。基準点は `IPanorama::GetContentLocationAtFrameOrigin()`
+		(= いまビュー左上に来ている content 点。IPanorama.h:199-204)＋画面 px のインセット。
+		★`IPanorama::GetBounds()` は使わない。あれは可視範囲ではなく「パノラマが抱えるコンテンツ全域
+		  (スクロールできる範囲全部)」の矩形(同 :75-84)で、その左上は画面のはるか外。実際 2026-07-26 に
+		  これで「描いてはいるが見えない」状態になった(エラーも警告も出ないので原因が見えにくい)。
+		★ウィンドウ座標の定点を content へ落とす方式も使わない。レイアウトビュー widget がルーラーや
+		  タブの分だけ下にずれていると、ビューの外に置いてしまう(保険としてのみ残す)。
+		※スクロール/ズームで可視範囲は動くが、再計算は Show のたびなので押下中も隅に留まる。 */
+	void ShowHud()
 	{
-		if (fControlView == nil)
+		if (!sHudOn || fControlView == nil || sHudText.IsEmpty())
 			return;
 		InterfacePtr<ISprite> sprite(this, IID_ISPRITE);
 		if (sprite == nil)
 			return;
 
-		// ★★HUD 実験(2026-07-26): マウス位置ではなく「レイアウトビューの可視範囲の左上」に固定して描く。
-		// sprite の clip はペーストボードではなく**ビュー全体(ウィンドウ座標)**なので、可視範囲の隅=
-		// ペーストボードの外側にも描けるはず、というのがここでの観測点(Draw Event の描画はペースト
-		// ボードにクリップされ、窓の隅には出せなかった=layout-screen-overlay)。
-		// 可視範囲の左上は IPanorama::GetContentLocationAtFrameOrigin()(content 座標)で取る。
-		// ★★2026-07-26 実機で「出ない」→原因: 最初 GetBounds() を使ったが、あれは可視範囲ではなく
-		//   「パノラマが抱えるコンテンツ全域(=スクロールできる範囲全部)」の矩形(IPanorama.h:75-84)。
-		//   その左上は画面のはるか外なので、描いてはいたが見えない場所に描いていた。
-		//   ビューの左上に来ている content 座標を返すのは GetContentLocationAtFrameOrigin(同 199-204)。
-		// ウィンドウ座標の定点を落とす方式は、
-		// レイアウトビュー widget がルーラー/タブの分だけ下にずれているとビューの外に落ち、
-		// 「クリップされて出ない」のか「そもそもビュー外に置いた」のか区別できなくなるため使わない。
-		// ※スクロール/ズームで可視範囲は動くが、再計算は Show のたびなので押下中も隅に留まる。
 		PMReal sx = 1.0, sy = 1.0;
 		{
 			const PMMatrix toWindow = fControlView->GetContentToWindowMatrix();
@@ -704,66 +793,57 @@ private:
 		if (sx == 0 || sy == 0)
 			return;
 
-		// 基準点は可視範囲の左上から画面 110px 内側。四角2つと文字は基準点の左上へ 100px 前後
-		// はみ出す(BuildSpriteProbePath の gap / CreateTrackerPaths の tx,ty)ので、その分の余白。
-		const PMReal kHudInsetPx = 110.0;
-		PMPoint pbWhere;
+		// ビュー左上からの位置(画面 px)。y は文字のベースライン。
+		const PMReal kHudLeftPx     = 20.0;
+		const PMReal kHudBaselinePx = 40.0;
+
+		PMPoint pbBaseline;
 		InterfacePtr<IPanorama> pano(KESCMQueryPanorama(fControlView));
 		if (pano != nil)
 		{
 			const PMPoint topLeft = pano->GetContentLocationAtFrameOrigin();	// ビュー左上に来ている content 点
-			pbWhere = PMPoint(topLeft.X() + kHudInsetPx / sx, topLeft.Y() + kHudInsetPx / sy);
+			pbBaseline = PMPoint(topLeft.X() + kHudLeftPx / sx, topLeft.Y() + kHudBaselinePx / sy);
 		}
 		else
 		{
 			// 保険: パノラマが取れないビュー。ウィンドウ座標の定点を content 座標へ落とす。
-			pbWhere = PMPoint(kHudInsetPx, kHudInsetPx);
-			fControlView->GetWindowToContentMatrix().Transform(&pbWhere);
+			pbBaseline = PMPoint(kHudLeftPx, kHudBaselinePx);
+			fControlView->GetWindowToContentMatrix().Transform(&pbBaseline);
 		}
 
 		NonMarkingAGMGraphicsContext gc(fControlView);
-		if (!fSpriteProbeAlive)
+		if (!fHudAlive)
 		{
 			// itemList = nil = 「ページアイテムではなく自前パスを描く」(パス作成トラッカーと同じ使い方)。
 			sprite->CreateSprite(&gc, nil, PMPoint(), kFalse /* don't draw item list */);
-			fSpriteProbeAlive = kTrue;
-			fSpriteProbeShown = kFalse;
+			fHudAlive = kTrue;
+			fHudShown = kFalse;
 		}
-		if (fSpriteProbeShown)
+		if (fHudShown)
 			sprite->Erase(&gc, PMPoint(), IShape::kDrawCreateDynamic);
 
-		// ★文字の基準点を更新する位置は「Erase の後・Show の前」。Erase は前回の絵を消す描画なので、
+		// ★基準点を更新する位置は「Erase の後・Show の前」。Erase は前回の絵を消す描画なので、
 		// 先に書き換えると消す位置がずれる(CreateTrackerPaths は Erase でも呼ばれる)。
-		sSpriteProbeAnchor = pbWhere;
-		this->BuildSpriteProbePath(pbWhere);
+		sHudAnchor = pbBaseline;
+		this->BuildHudRegionPath(pbBaseline);
 		sprite->Show(&gc, PMPoint(), IShape::kDrawCreateDynamic);
-		fSpriteProbeShown = kTrue;
-	}
-
-public:
-	/** ★実験プローブ(一時): one-shot タイマーから呼ぶ入口。現在のマウス位置に sprite を出す。 */
-	void ShowSpriteProbeAtMouse()
-	{
-		if (fControlView == nil)
-			return;
-		this->ShowSpriteProbe(Utils<ILayoutUIUtils>()->GetMousePasteboardPosition(
-			Utils<IEventUtils>()->GetGlobalMouseLocation(), fControlView));
+		fHudShown = kTrue;
 	}
 
 private:
-	/** 押下解除/中断で sprite を片付ける。CreateSprite していなければ何もしない(二重解放なし)。 */
-	void HideSpriteProbe()
+	/** 押下解除/中断で HUD を片付ける。CreateSprite していなければ何もしない(二重解放なし)。 */
+	void HideHud()
 	{
 		// ★one-shot タイマーが残っていたら必ず止めて返す(押下の外にコールバックを残さない)。
-		if (sSpriteProbeTimer != nil)
+		if (sHudTimer != nil)
 		{
-			sSpriteProbeTimer->StopTimer();
-			sSpriteProbeTimer->Release();
-			sSpriteProbeTimer = nil;
+			sHudTimer->StopTimer();
+			sHudTimer->Release();
+			sHudTimer = nil;
 		}
-		sSpriteProbeTracker = nil;
+		sHudTracker = nil;
 
-		if (fSpriteProbeAlive && fControlView != nil)
+		if (fHudAlive && fControlView != nil)
 		{
 			InterfacePtr<ISprite> sprite(this, IID_ISPRITE);
 			if (sprite != nil)
@@ -773,8 +853,9 @@ private:
 				sprite->DestroySprite(&gc);
 			}
 		}
-		fSpriteProbeAlive = kFalse;
-		fSpriteProbeShown = kFalse;
+		fHudAlive = kFalse;
+		fHudShown = kFalse;
+		sHudText.Clear();
 		KESCMReleaseHudFont();		// ★押下中だけ持つフォント選定キャッシュを返す
 	}
 
@@ -804,17 +885,14 @@ private:
 
 CREATE_PMINTERFACE(KESCMTracker, kKESCMTrackerImpl)
 
-// ★★実験プローブ(一時・2026-07-26): 押下直後の one-shot 発火。BeginTracking を抜けた後に一度だけ
-// 呼ばれ、現在のマウス位置に sprite を出す。自分の参照を先に返してから描く(描画中に何が起きても
-// タイマーの解放漏れが残らないように)。撤去時はこの関数と file-static 2本、BeginTracking の
-// StartTimer、HideSpriteProbe の停止処理を消す。
-static uint32 KESCMSpriteProbeTimerProc(void* /*refPtr*/)
+// 押下直後の one-shot 発火。BeginTracking を抜けた後に一度だけ呼ばれ、HUD を出す。
+static uint32 KESCMHudTimerProc(void* /*refPtr*/)
 {
 	// ★ここでは Release しない。RunTask の実行中に自分を解放すると、参照が 0 になって破棄された
 	// オブジェクトのまま戻り値を返すことになる(自己破棄しながら実行継続)。しかも先に nil にすると
-	// 暴走したときに StopTimer で止める手が無くなる。解放は押下解除(HideSpriteProbe)の1箇所に集約する。
-	if (sSpriteProbeTracker != nil)
-		sSpriteProbeTracker->ShowSpriteProbeAtMouse();
+	// 暴走したときに StopTimer で止める手が無くなる。解放は押下解除(HideHud)の1箇所に集約する。
+	if (sHudTracker != nil)
+		sHudTracker->ShowHud();
 
 	// ★★戻り値は IIdleTask::RunTask の再スケジュール値。**0 は「すぐまた呼べ」**であって
 	// 「終わり」ではない(SDK のサンプル: `return fThingsLeftToDo ? 0 : kEndOfTime;`)。
@@ -824,18 +902,23 @@ static uint32 KESCMSpriteProbeTimerProc(void* /*refPtr*/)
 	return IIdleTask::kEndOfTime;
 }
 
-void KESCMTrackerShutdownSpriteProbe()
+// HUD の ON/OFF(パネルのフライアウト「Show HUD」)。状態はここ1箇所に持ち、パネル設定として保存される。
+bool16 KESCMGetHudEnabled()          { return sHudOn; }
+void   KESCMSetHudEnabled(bool16 on) { sHudOn = on; }
+
+void KESCMTrackerShutdownHud()
 {
 	// プラグイン終了時の保険。ICallbackTimer のコールバックは参照カウントされない生関数ポインタで、
 	// 予約が残ったままこの .pln が降りると、発火時に消えた関数へ飛んでクラッシュする。押下中に終了する
 	// ことは実質ないが、確実に止める(ポインタは deref せず、停止と解放だけ=終了処理中でも安全)。
-	if (sSpriteProbeTimer != nil)
+	if (sHudTimer != nil)
 	{
-		sSpriteProbeTimer->StopTimer();
-		sSpriteProbeTimer->Release();
-		sSpriteProbeTimer = nil;
+		sHudTimer->StopTimer();
+		sHudTimer->Release();
+		sHudTimer = nil;
 	}
-	sSpriteProbeTracker = nil;
+	sHudTracker = nil;
+	sHudText.Clear();
 	KESCMReleaseHudFont();	// フォント参照を .pln が降りる前に必ず返す
 }
 

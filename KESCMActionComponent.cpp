@@ -246,6 +246,19 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 			break;
 		}
 
+		// 「Show HUD」トグル: ツール左hold中にレイアウトビュー左上へ「比較の相手」を1行出すか(既定 ON)。
+		// フラグ反転のみ=次の押下から効く(押している最中に切り替わることはない)。表示内容と仕様は
+		// docs/ai-notes/kescm-tracker-hud.md、実体は KESCMTracker.cpp の sHudOn。
+		case kKESCMPopupHudActionID:
+		{
+			const bool16 on = !KESCMGetHudEnabled();
+			KESCMSetHudEnabled(on);
+			PMString msg(on ? "HUD: on." : "HUD: off.");
+			msg.SetTranslatable(kFalse);
+			KESCMSetStatus(msg);
+			break;
+		}
+
 		// 「Hold to Hide Marks」トグル: 枠表示の極性反転(フラグ反転のみ)。ON=画面に枠を常時表示し、
 		// ツール左hold中だけ隠す(押下/解放は KESCMPeek.cpp のトラッカー(KESCMTrackerRevealBegin/End)が sMarksTempHidden を上下)。
 		// OFF=従来(既定非表示・押下中だけ表示)。画面のみ=印刷は Print comparison marks が別管理。
@@ -422,6 +435,13 @@ void KESCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionSta
 		{
 			int16 actionState = kEnabledAction;
 			if (KESCMGetScrollMapEnabled())
+				actionState |= kSelectedAction;	// ON(既定)ならチェックマーク
+			listToUpdate->SetNthActionState(i, actionState);
+		}
+		else if (action == kKESCMPopupHudActionID)
+		{
+			int16 actionState = kEnabledAction;
+			if (KESCMGetHudEnabled())
 				actionState |= kSelectedAction;	// ON(既定)ならチェックマーク
 			listToUpdate->SetNthActionState(i, actionState);
 		}
