@@ -29,7 +29,7 @@
 #include "CursorSpec.h"			// CursorSpec
 #include "CursorDefs.h"			// kCrsrNone
 
-#include "KESCMPeek.h"			// KESCMToolCursorShouldBeBlack(黒/白抜きの判定。Target 上でだけ黒)
+#include "KESCMPeek.h"			// KESCMToolCursorShouldBeBlack(黒/白抜きの判定。Start 中は文書を問わず黒)
 
 //----------------------------------------------------------------------------------------
 //  カーソルプロバイダ本体
@@ -58,8 +58,8 @@ CursorSpec KESCMCheckCursorProvider::GetCursor(IControlView* viewUnderMouse, con
 	// それ以外は常時✓。画像は .fr の PNGC リソース(ID ごと。2x/1.5x も同 ID+オフセットで登録済み)、
 	// ホットスポットは HOTC(各 ResID)から取る。★コールバック(proc)は渡さない=設置のたびにバッファへ
 	// 描き直すことがなくなり、押下時の「完成前の1フレーム」が原理的に発生しない(2026-07-25)。
-	// 黒✓=「Start 中かつマウス下が Target 文書」(ツールが効く場所)のみ。それ以外は白抜き✓(黒フチ+白本体)で
-	// 「ここではツールは効かない」を示す(ユーザー指定 2026-07-15)。2状態は CursorID ごと分けるので
+	// 黒✓=「Start 中(比較を実行中)」。マウス下がどの文書でも黒にする(ユーザー指定 2026-07-26。以前は
+	// Target 文書の上だけ黒だった)。Stop 中は白抜き✓(黒フチ+白本体)。2状態は CursorID ごと分けるので
 	// 境界をまたいだ瞬間にスペック違いで確実に切り替わる。
 	if (KESCMToolCursorShouldBeBlack(viewUnderMouse))
 		return CursorSpec(GetPlugIn()->GetPluginID(), kKESCMCheckCursorResID);

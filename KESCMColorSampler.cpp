@@ -30,37 +30,46 @@
 #include <new>						// std::nothrow(SnapshotUtilsEx 確保)
 
 //----------------------------------------------------------------------------------------
-// Alt+左ホールド(ドラッグ)中の target→source ページ対応表キャッシュ(KESCMColorSampler.h 参照)。
+// Alt+左ホールド(ドラッグ)中の hover→other ページ対応表キャッシュ(KESCMColorSampler.h 参照)。
 // 押下中はページ構成が変わらないので、毎サンプル(≦20回/秒)の KESCMBuildPairing 全ページ再構築を
 // 1回に減らす(2026-07-15)。押下の外では常に非アクティブ=単発サンプルは従来どおり毎回構築。
+// ★向きは押下時に固定する(2026-07-26): Target 窓で押せば target→source、Source 窓で押せば
+//   source→target。押下中に基準の窓は変わらない(KESCMPeek.cpp が hover 文書を押下時に固定する)。
 //----------------------------------------------------------------------------------------
-static bool16              sDragCacheActive   = kFalse;
-static IDataBase*          sDragCacheTargetDB = nil;	// キー照合用(deref しない)
-static IDataBase*          sDragCacheSourceDB = nil;
-static std::map<UID, UID>  sDragCacheT2S;
+static bool16              sDragCacheActive  = kFalse;
+static IDataBase*          sDragCacheHoverDB = nil;	// キー照合用(deref しない)
+static IDataBase*          sDragCacheOtherDB = nil;
+static std::map<UID, UID>  sDragCacheH2O;			// hover ページ → other ページ
 
-void KESCMSampleCmykBeginDrag(IDataBase* targetDB, IDataBase* sourceDB)
+void KESCMSampleCmykBeginDrag(IDataBase* hoverDB, IDataBase* otherDB, bool16 hoverIsTarget)
 {
-	sDragCacheT2S.clear();
-	sDragCacheTargetDB = targetDB;
-	sDragCacheSourceDB = sourceDB;
-	sDragCacheActive   = kFalse;
-	if (targetDB == nil || sourceDB == nil)
+	sDragCacheH2O.clear();
+	sDragCacheHoverDB = hoverDB;
+	sDragCacheOtherDB = otherDB;
+	sDragCacheActive  = kFalse;
+	if (hoverDB == nil || otherDB == nil)
 		return;
 
+	// KESCMBuildPairing は target/source の順で受け取るので、hover がどちら側かで並べ替えて渡し、
+	// 得られたペアを hover→other の向きで持つ。
+	IDataBase* const targetDB = hoverIsTarget ? hoverDB : otherDB;
+	IDataBase* const sourceDB = hoverIsTarget ? otherDB : hoverDB;
 	std::vector<UID> pairT, pairS;
 	KESCMBuildPairing(targetDB, sourceDB, pairT, pairS);
 	for (size_t k = 0; k < pairT.size(); ++k)
-		sDragCacheT2S[pairT[k]] = pairS[k];
+	{
+		if (hoverIsTarget) sDragCacheH2O[pairT[k]] = pairS[k];
+		else               sDragCacheH2O[pairS[k]] = pairT[k];
+	}
 	sDragCacheActive = kTrue;
 }
 
 void KESCMSampleCmykEndDrag()
 {
-	sDragCacheActive   = kFalse;
-	sDragCacheTargetDB = nil;
-	sDragCacheSourceDB = nil;
-	sDragCacheT2S.clear();
+	sDragCacheActive  = kFalse;
+	sDragCacheHoverDB = nil;
+	sDragCacheOtherDB = nil;
+	sDragCacheH2O.clear();
 }
 
 // pageRef のページを、spreadPt(そのページの spread 座標)まわりの極小領域だけ CMYK・高dpi でラスタ化し、
@@ -151,25 +160,27 @@ static void KESCMAppendCmykLabeled(PMString& s, const uint8 c[4])
 	s.Append(" K"); KESCMAppend3(s, KESCMByteToPct(c[3]));
 }
 
-// ツール Alt+左クリック(旧・中ボタン Shift＋Ctrl＋Alt＋ミドル): マウス下ページのクリック点 CMYK 生値を新(target)・旧(source)で
-// サンプリングし、"Target C000 …(改行)Source C000 …"(各値3桁ゼロ埋め)を outMsg に組む。成功で kTrue。
-//   新→旧ページは平坦通し番号で対応。クリック点を inner(ページ内)座標へ戻し、新/旧それぞれの spread
-//   座標へ写してから各ページを極小ラスタ化する(新旧の幾何一致が前提)。
-bool16 KESCMSampleCmykUnderMouse(IDataBase* targetDB, IDataBase* sourceDB,
+// ツール Alt+左クリック(旧・中ボタン Shift＋Ctrl＋Alt＋ミドル): マウス下ページのクリック点 CMYK 生値を
+// hover(マウスが乗っている窓)・other(比較相手)でサンプリングし、"…000 t(改行)…000 s"(各値3桁ゼロ埋め、
+// 1行目が必ず hover 側)を outCursor/outPanel に組む。成功で kTrue。
+//   hover→other のページは平坦通し番号で対応。クリック点を inner(ページ内)座標へ戻し、hover/other
+//   それぞれの spread 座標へ写してから各ページを極小ラスタ化する(新旧の幾何一致が前提)。
+bool16 KESCMSampleCmykUnderMouse(IDataBase* hoverDB, IDataBase* otherDB, bool16 hoverIsTarget,
                                  PMString& outPanel, PMString& outCursor)
 {
-	if (targetDB == nil)
+	if (hoverDB == nil)
 		return kFalse;
-	// sourceDB==nil = Stop 中の単独色ピック(比較相手なし)。target 側だけ読み、CMYK を1行(ラベルなし)で返す。
-	const bool16 solo = (sourceDB == nil);
+	// otherDB==nil = 単独色ピック(比較相手なし)。hover 側だけ読み、CMYK を1行(ラベルなし)で返す。
+	// = Stop 中、および Start 中でも比較に無関係な第3の文書の上のとき(2026-07-26)。
+	const bool16 solo = (otherDB == nil);
 
 	// マウスが乗っているレイアウトビュー(Split Window対応、KESCMQueryViewUnderMouse参照)。
 	InterfacePtr<IControlView> view(KESCMQueryViewUnderMouse());
-	// ★窓の同一性ガード(2026-07-25 監査で追加): 押下時は Target 窓上に限定される(KESCMPeek.cpp の
-	//   KESCMFrontViewIsOverTarget / solo 分岐)が、ドラッグ更新はここが唯一の検査点。ドラッグしたまま
-	//   Source 窓や第3文書の窓へ入ると、その窓のペーストボード座標を targetDB のページ座標として
-	//   誤解釈した誤値を表示するため、マウス下ビューの所属文書が targetDB のときだけサンプリングする。
-	if (KESCMFindDocDbForView(view) != targetDB)
+	// ★窓の同一性ガード(2026-07-25 監査で追加): 押下時にモード(hover 文書)は固定されるが、ドラッグ更新は
+	//   ここが唯一の検査点。押した窓から別の窓へドラッグで入ると、その窓のペーストボード座標を hoverDB の
+	//   ページ座標として誤解釈した誤値を表示するため、マウス下ビューの所属文書が hoverDB のときだけ
+	//   サンプリングする(外れている間は呼び出し側が「値なし ---」を出す)。
+	if (KESCMFindDocDbForView(view) != hoverDB)
 		return kFalse;
 	PMReal mx = 0.0, my = 0.0;
 	if (!KESCMQueryMouseContentPoint(view, mx, my))
@@ -177,74 +188,86 @@ bool16 KESCMSampleCmykUnderMouse(IDataBase* targetDB, IDataBase* sourceDB,
 
 	// マウス下のページを特定(平坦通し番号も取得)。共有ヘルパ KESCMFindPageUnderMouse に集約。
 	KESCMPageHit hit;
-	if (!KESCMFindPageUnderMouse(targetDB, mx, my, hit))
+	if (!KESCMFindPageUnderMouse(hoverDB, mx, my, hit))
 		return kFalse;
 
-	const UID tPageUID = hit.hitPageUID;
+	const UID hPageUID = hit.hitPageUID;
 
-	// クリック点(pasteboard) → ページ内(inner)座標 → target の spread 座標(solo/比較 共通)。
-	InterfacePtr<IGeometry> tGeo(targetDB, tPageUID, UseDefaultIID());
-	if (tGeo == nil)
+	// クリック点(pasteboard) → ページ内(inner)座標 → hover の spread 座標(solo/比較 共通)。
+	InterfacePtr<IGeometry> hGeo(hoverDB, hPageUID, UseDefaultIID());
+	if (hGeo == nil)
 		return kFalse;
-	PMMatrix mPB = ::InnerToPasteboardMatrix(tGeo);
+	PMMatrix mPB = ::InnerToPasteboardMatrix(hGeo);
 	if (mPB.IsSingular())
 		return kFalse;
 	PMPoint inner(mx, my);
 	mPB.Inverse().Transform(&inner);
-	PMPoint tSpreadPt(inner.X(), inner.Y());
-	::InnerToSpreadMatrix(tGeo).Transform(&tSpreadPt);
+	PMPoint hSpreadPt(inner.X(), inner.Y());
+	::InnerToSpreadMatrix(hGeo).Transform(&hSpreadPt);
 
-	uint8 cN[4];
-	if (!KESCMReadCmykPixel(UIDRef(targetDB, tPageUID), tSpreadPt, cN))
+	uint8 cH[4];
+	if (!KESCMReadCmykPixel(UIDRef(hoverDB, hPageUID), hSpreadPt, cH))
 		return kFalse;
 
-	// ---- 単独モード(Stop): target の CMYK を1行だけ返す。カーソルは KESCMSplitTwoLines が
+	// ---- 単独モード: hover の CMYK を1行だけ返す。カーソルは KESCMSplitTwoLines が
 	//      2行目(空)を自動スキップするので、1行渡すだけでヘッダー「C M Y K」+1行に収まる。 ----
 	if (solo)
 	{
 		outCursor.SetTranslatable(kFalse);
-		KESCMAppendCmyk(outCursor, cN);			// "C.. M.. Y.. K.."(ラベルなし=1文書のみ)
+		KESCMAppendCmyk(outCursor, cH);			// "C.. M.. Y.. K.."(ラベルなし=1文書のみ)
 		outPanel.SetTranslatable(kFalse);
-		KESCMAppendCmykLabeled(outPanel, cN);	// "C .. M .. Y .. K .."(ラベルなし)
+		KESCMAppendCmykLabeled(outPanel, cH);	// "C .. M .. Y .. K .."(ラベルなし)
 		return kTrue;
 	}
 
-	// ---- 比較モード(Start): 新→旧ページ対応(除外対応表=登録済みページを除いた順番対応)を解決し
-	//      source も読む。ドラッグ中はキャッシュを引く(BeginDrag で構築済み。対応表に無い=登録済み/
-	//      あふれページは値なし)。 ----
-	UID sPageUID;
-	if (sDragCacheActive && targetDB == sDragCacheTargetDB && sourceDB == sDragCacheSourceDB)
+	// ---- 比較モード(Start 中の Target 窓/Source 窓): hover→other のページ対応(除外対応表=登録済み
+	//      ページを除いた順番対応)を解決し other も読む。ドラッグ中はキャッシュを引く(BeginDrag で
+	//      押下時の向きのまま構築済み。対応表に無い=登録済み/あふれページは値なし)。 ----
+	UID oPageUID;
+	if (sDragCacheActive && hoverDB == sDragCacheHoverDB && otherDB == sDragCacheOtherDB)
 	{
-		std::map<UID, UID>::const_iterator it = sDragCacheT2S.find(tPageUID);
-		if (it == sDragCacheT2S.end())
+		std::map<UID, UID>::const_iterator it = sDragCacheH2O.find(hPageUID);
+		if (it == sDragCacheH2O.end())
 			return kFalse;
-		sPageUID = it->second;
+		oPageUID = it->second;
 	}
-	else if (!KESCMMapTargetToSource(targetDB, sourceDB, tPageUID, sPageUID))
+	else
+	{
+		// キャッシュ無し(押下外の単発サンプル)。対応表の引数は常に (targetDB, sourceDB) の順。
+		const bool16 mapped = hoverIsTarget
+			? KESCMMapTargetToSource(hoverDB, otherDB, hPageUID, oPageUID)
+			: KESCMMapSourceToTarget(otherDB, hoverDB, hPageUID, oPageUID);
+		if (!mapped)
+			return kFalse;
+	}
+	InterfacePtr<IGeometry> oGeo(otherDB, oPageUID, UseDefaultIID());
+	if (oGeo == nil)
 		return kFalse;
-	InterfacePtr<IGeometry> sGeo(sourceDB, sPageUID, UseDefaultIID());
-	if (sGeo == nil)
-		return kFalse;
-	PMPoint sSpreadPt(inner.X(), inner.Y());
-	::InnerToSpreadMatrix(sGeo).Transform(&sSpreadPt);
+	PMPoint oSpreadPt(inner.X(), inner.Y());
+	::InnerToSpreadMatrix(oGeo).Transform(&oSpreadPt);
 
-	uint8 cO[4];
-	if (!KESCMReadCmykPixel(UIDRef(sourceDB, sPageUID), sSpreadPt, cO))
+	uint8 cX[4];
+	if (!KESCMReadCmykPixel(UIDRef(otherDB, oPageUID), oSpreadPt, cX))
 		return kFalse;
+
+	// 行末ラベル: 1行目=hover 側、2行目=other 側。Target 窓で押せば "t"/"s"、Source 窓なら "s"/"t"
+	// (ユーザー指定 2026-07-26「マウスが乗っている窓の側を上」)。
+	const char* const hoverLabel = hoverIsTarget ? " t" : " s";
+	const char* const otherLabel = hoverIsTarget ? " s" : " t";
 
 	// 各値はラスタ8bit(0..255)を本来の CMYK 数値 0..100% に換算し、3桁ゼロ埋めで桁を揃える。
-	// outCursor = 数値2行、ラベルは t/s(ビットマップカーソルは「C M Y K」見出しを別途描くので数値行のみ)。
+	// outCursor = 数値2行(ビットマップカーソルは「C M Y K」見出しを別途描くので数値行のみ)。
 	outCursor.SetTranslatable(kFalse);
-	KESCMAppendCmyk(outCursor, cN); outCursor.Append(" t");
+	KESCMAppendCmyk(outCursor, cH); outCursor.Append(hoverLabel);
 	outCursor.AppendW(UTF32TextChar(0x0A));	// 改行 → 2行目へ
-	KESCMAppendCmyk(outCursor, cO); outCursor.Append(" s");
+	KESCMAppendCmyk(outCursor, cX); outCursor.Append(otherLabel);
 
 	// outPanel = 値ごとに見出し文字を直接添える(KESCMAppendCmykLabeled)+ t/s。
 	// ★見出し行を別途置いて縦揃えする案は撤回済み: パネルのステータス欄はプロポーショナルフォント
 	// (kPaletteWindowFontId)で字幅が揃わないため、値ごとにラベルを直接添える(フォント幅に依らず崩れない)。
 	outPanel.SetTranslatable(kFalse);
-	KESCMAppendCmykLabeled(outPanel, cN); outPanel.Append(" t");
+	KESCMAppendCmykLabeled(outPanel, cH); outPanel.Append(hoverLabel);
 	outPanel.AppendW(UTF32TextChar(0x0A));
-	KESCMAppendCmykLabeled(outPanel, cO); outPanel.Append(" s");
+	KESCMAppendCmykLabeled(outPanel, cX); outPanel.Append(otherLabel);
 	return kTrue;
 }

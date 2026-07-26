@@ -86,7 +86,17 @@
 static IDataBase* sPeekTargetDB = nil;	// 表示中(新)ドキュメント。使用前に「まだ開いているか」を検証する。
 static IDataBase* sPeekSourceDB = nil;	// peek 中に重ねる旧ドキュメント。
 static bool16     sPeekArmed    = kFalse;
-static IDataBase* sSoloCmykDB   = nil;	// Stop 中の単独色ピックで押下したマウス下文書(比較 arm とは独立)。押下中だけ保持し RevealEnd で nil。
+
+// Alt+左(CMYK 色ピック)の押下中モード。押下時に「マウス下の文書」で決めて固定し、RevealEnd で捨てる
+// (押下の外では常に nil/既定)。★2026-07-26 にユーザー指定で3通りへ拡張(旧 sSoloCmykDB 1本を置換):
+//   Start 中・Target 窓 … hover=Target / other=Source(比較2行、1行目 "t")
+//   Start 中・Source 窓 … hover=Source / other=Target(比較2行、1行目 "s")
+//   Start 中・第3の文書 / Stop 中 … hover=その文書 / other=nil(単独1行)
+// 押下中に別の窓へドラッグしても基準は切り替えない(行の上下が入れ替わらないように。外れている間は
+// サンプラが窓の同一性ガードで弾き「値なし ---」になる)。ポインタは照合専用で deref しない。
+static IDataBase* sCmykHoverDB       = nil;		// マウスが乗っている側=1行目に出す文書
+static IDataBase* sCmykOtherDB       = nil;		// 比較相手(nil=単独モード)
+static bool16     sCmykHoverIsTarget = kFalse;	// hover が Target(新)側か=ページ対応の向きとラベル t/s
 
 // Shift+左=旧版を不透明(100%)で / Shift+Alt+左=旧版を 50% で重ねて peek。
 // 押下中だけ表示し、ツール左ボタンを離すと消す(修飾キーは離してもよい)。判定はツール左ボタン押下時に1回見るだけ。
@@ -1187,7 +1197,7 @@ static void KESCMTrackerBeginPeek(PMReal opacity)
 //   ので、描く文字列は file-static sCmykCursorText に置きコールバックから読む。
 //   ★これはまず「出るか」を見る実装スパイク(2026-07-13)。座標系(y方向)・alpha・サイズは実機で調整。
 //========================================================================================
-static PMString sCmykCursorText;			// "… t\n… s"(LF区切り2行、末尾ラベル t/s)。色サンプル成功時に格納。
+static PMString sCmykCursorText;			// "… t\n… s"(LF区切り2行、末尾ラベル t/s。1行目=マウスが乗っている窓の側)。色サンプル成功時に格納。
 static bool16   sCmykCursorPending = kFalse;	// 直近の BeginTracking で CMYK カーソルを出すべきか
 
 // Alt+左ドラッグ中だけ保持する既定フォント(取得=RevealBegin の Alt 分岐、解放=RevealEnd)。
@@ -1265,9 +1275,10 @@ static void KESCMShowHalo(IGraphicsPort* gPort, IPMFont* font, const PMReal& siz
 	gPort->show(x, y, (uint32)n, b);
 }
 
-// CMYK カーソルの上部に載せる✓。色は arm 状態で出し分ける(常時ツールカーソル KESCMCursorProvider.cpp と
-// 同じ規則。ユーザー要望 2026-07-24): Start(arm 済み=CMYK は必ず Target 窓上で出る)は黒✓、Stop(未 arm の
-// 単独ピック)は白抜き✓(黒フチ+白本体=KESCMCheckCursorInactiveBitmapProc と同一パラメータ)。
+// CMYK カーソルの上部に載せる✓。色は arm 状態だけで出し分ける(常時ツールカーソル KESCMCursorProvider.cpp と
+// 同じ規則。ユーザー要望 2026-07-24 / 2026-07-26 に「Start 中はどの文書の上でも黒」で確定): Start(arm 済み)は
+// 黒✓、Stop(未 arm)は白抜き✓(黒フチ+白本体=KESCMCheckCursorInactiveBitmapProc と同一パラメータ)。
+// ★Start 中の第3の文書は表示こそ単独1行(Stop と同じ)だが、✓は黒のまま=「比較は動いている」を示す。
 static void KESCMDrawCmykCursorCheck(IGraphicsPort* gPort)
 {
 	if (sPeekArmed)
@@ -1379,8 +1390,8 @@ static void KESCMCmykCursorBitmapProc(uchar* bitmapBuffer, uint32* width, uint32
 		const PMReal pitch = PMReal(fs) * PMReal(2.1);
 		PMString hdr; hdr.SetTranslatable(kFalse); hdr.Append("C M Y K");
 		KESCMDrawColumns(gPort, font, PMReal(fs), x0, pitch, PMReal(yHdr),   hdr);	// 見出し C M Y K
-		KESCMDrawColumns(gPort, font, PMReal(fs), x0, pitch, PMReal(yData1), line1);	// Target
-		KESCMDrawColumns(gPort, font, PMReal(fs), x0, pitch, PMReal(yData2), line2);	// Source
+		KESCMDrawColumns(gPort, font, PMReal(fs), x0, pitch, PMReal(yData1), line1);	// 1行目=マウスが乗っている窓の側(t or s)
+		KESCMDrawColumns(gPort, font, PMReal(fs), x0, pitch, PMReal(yData2), line2);	// 2行目=比較相手(単独モードでは空=自動スキップ)
 	}
 }
 
@@ -1389,29 +1400,16 @@ static void KESCMCmykCursorBitmapProc(uchar* bitmapBuffer, uint32* width, uint32
 bool16 KESCMTrackerHasPendingCmykCursor()          { return sCmykCursorPending; }
 CreateCursorBitmapProc KESCMTrackerCmykCursorProc() { return &KESCMCmykCursorBitmapProc; }
 
-// Alt+左(単独)の CMYK カーソルが「実際に出る」条件。使うのは下の RevealBegin の Alt 分岐だけ
-// (2026-07-25: トラッカーの Hide/Show ラップ撤去に伴い外部公開をやめ file-local 化。以前は
-//  KESCMTracker.cpp の事前判定と2箇所で共有していて「食い違い禁止」の制約があった)。
-static bool16 KESCMTrackerCmykCursorWouldShow()
-{
-	// Start 中(arm 済み): 従来どおり比較文書が生存し Target 窓上のときだけ(新旧2行の CMYK 比較)。
-	if (KESCMArmedDocsAlive())
-		return KESCMFrontViewIsOverTarget();
-	// Stop 中(未 arm): マウス下にレイアウトビュー+文書があれば、その1文書の CMYK を単独表示する
-	//   (ユーザー要望 2026-07-24。比較相手が無いので Target/Source の区別はせず「マウス下のどの文書でも」)。
-	InterfacePtr<IControlView> viewUnderMouse(KESCMQueryViewUnderMouse());
-	return (KESCMFindDocDbForView(viewUnderMouse) != nil) ? kTrue : kFalse;
-}
-
-// ツール常時✓カーソルの黒/白抜き判定(KESCMPeek.h 参照)。黒=「Start 中かつマウス下ビューが Target 文書」
-// =左ホールドの reveal/peek/CMYK が実際に効く場所。それ以外は白抜き✓(黒フチ+白本体)で「ここでは効かない」を示す
-// (ユーザー指定 2026-07-15)。ビュー→文書の特定は同期オブザーバと同じ KESCMFindDocDbForView
-// (GetAllLayoutViews のポインタ照合)。
+// ツール常時✓カーソルの黒/白抜き判定(KESCMPeek.h 参照)。
+// ★2026-07-26(ユーザー指定): 黒=「Start 中(比較文書が生存)」だけで決める。マウス下がどの文書かは見ない。
+//   Alt+左の CMYK は Start 中ならどの窓でも値を出す(Target/Source 窓=比較2行、第3の文書=単独1行)ので、
+//   以前の「Target 窓だけ黒」は実態と合わなくなった。Stop 中は従来どおり白抜き✓(黒フチ+白本体)。
+//   viewUnderMouse が nil(レイアウトビュー上に居ない)なら白抜きのまま=カーソル形状の既定側に倒す。
 bool16 KESCMToolCursorShouldBeBlack(IControlView* viewUnderMouse)
 {
-	if (viewUnderMouse == nil || !KESCMArmedDocsAlive())
+	if (viewUnderMouse == nil)
 		return kFalse;
-	return (KESCMFindDocDbForView(viewUnderMouse) == sPeekTargetDB) ? kTrue : kFalse;
+	return KESCMArmedDocsAlive();
 }
 
 // KESCMTrackerUpdateCmykDrag(KESCMPeek.h 参照) — ドラッグ中の CMYK ライブ更新。
@@ -1419,22 +1417,27 @@ bool16 KESCMToolCursorShouldBeBlack(IControlView* viewUnderMouse)
 // 値が変わったら sCmykCursorText を更新して kTrue を返す(呼び出し側がカーソルを描き直す)。
 // 連続ラスタ化で重くならないよう時間スロットル(既定 50ms ≒ 20回/秒)を掛ける。
 // 前方宣言。定義は KESCMTrackerRevealBegin の直前(ページ外の「値なし c---」表示を作る)。
-static void KESCMBuildCmykNoValue(PMString& out);				// カーソル用(t/s)
-static void KESCMBuildCmykNoValuePanel(PMString& out);			// パネル用(見出し行+Target/Source)
-static void KESCMBuildCmykNoValueSolo(PMString& out);			// solo(Stop): カーソル1行(ラベルなし)
-static void KESCMBuildCmykNoValuePanelSolo(PMString& out);		// solo(Stop): パネル1行(ラベルなし)
+// hoverIsTarget= 1行目(=マウスが乗っている窓)のラベルが t か s か。
+static void KESCMBuildCmykNoValue(PMString& out, bool16 hoverIsTarget);			// 比較: カーソル用(t/s)
+static void KESCMBuildCmykNoValuePanel(PMString& out, bool16 hoverIsTarget);	// 比較: パネル用(見出し文字+t/s)
+static void KESCMBuildCmykNoValueSolo(PMString& out);							// 単独: カーソル1行(ラベルなし)
+static void KESCMBuildCmykNoValuePanelSolo(PMString& out);						// 単独: パネル1行(ラベルなし)
 
-// Stop 単独ピックで押下中に固定した文書(sSoloCmykDB)がまだ開いているか。arm 版 KESCMArmedDocsAlive の
-// 単独文書版(比較相手が無いので Target/Source の二重検査はしない)。ドラッグ中に稀な経路で押下文書が
-// 閉じても、解放済み IDataBase をサンプリングへ渡さないための最終ライン防御。
-static bool16 KESCMSoloDocAlive()
+// 押下中に固定した CMYK 対象文書(sCmykHoverDB / sCmykOtherDB)がまだ開いているか。ドラッグ中に稀な経路で
+// 文書が閉じても、解放済み IDataBase をサンプリングへ渡さないための最終ライン防御。
+//   比較モード … hover/other は arm 済みの Target/Source なので arm 版の検査に委ねる
+//                (KESCMArmedDocsAlive は失格時に Stop 相当のクリーンアップまでやる)。
+//   単独モード … マウス下の1文書をドキュメントリストに照合するだけ(第3の文書や Stop 中なので arm と無関係)。
+static bool16 KESCMCmykDocsAlive()
 {
-	if (sSoloCmykDB == nil)
+	if (sCmykHoverDB == nil)
 		return kFalse;
+	if (sCmykOtherDB != nil)
+		return KESCMArmedDocsAlive();
 	ISession* session = GetExecutionContextSession();	// 終了処理中は nil になり得る
 	InterfacePtr<IApplication> app(session != nil ? session->QueryApplication() : nil);
 	InterfacePtr<IDocumentList> docList(app ? app->QueryDocumentList() : nil);
-	return (docList != nil && docList->FindDocByDataBase(sSoloCmykDB) != nil) ? kTrue : kFalse;
+	return (docList != nil && docList->FindDocByDataBase(sCmykHoverDB) != nil) ? kTrue : kFalse;
 }
 
 bool16 KESCMTrackerUpdateCmykDrag()
@@ -1442,15 +1445,10 @@ bool16 KESCMTrackerUpdateCmykDrag()
 	if (!sCmykCursorPending)	// Alt+左 CMYK モードでなければ何もしない
 		return kFalse;
 
-	// Start=arm 済みの Target/Source を比較 / Stop=押下中に固定した単独文書(sSoloCmykDB)。
-	const bool16 solo = !sPeekArmed;
-	if (solo)
-	{
-		if (sSoloCmykDB == nil)
-			return kFalse;
-	}
-	else if (sPeekTargetDB == nil || sPeekSourceDB == nil)
+	// 押下時に固定したモード(hover/other)をそのまま使う。押下中に基準の窓は切り替えない。
+	if (sCmykHoverDB == nil)
 		return kFalse;
+	const bool16 solo = (sCmykOtherDB == nil);
 
 	// スロットル(50ms)。steady_clock は単調増加なのでラップの心配なし。初回は必ず通す。
 	static std::chrono::steady_clock::time_point sLast;
@@ -1467,25 +1465,19 @@ bool16 KESCMTrackerUpdateCmykDrag()
 	sLast = now;
 
 	// スロットル通過後(≦20回/秒)に文書の生存を検査してからサンプリングへ渡す
-	// (ドラッグ中の文書クローズはスクリプト経由等の稀な経路。arm 版=KESCMArmedDocsAlive / solo 版=KESCMSoloDocAlive)。
-	if (solo)
-	{
-		if (!KESCMSoloDocAlive())
-			return kFalse;
-	}
-	else if (!KESCMArmedDocsAlive())
+	// (ドラッグ中の文書クローズはスクリプト経由等の稀な経路。検査は KESCMCmykDocsAlive に集約)。
+	if (!KESCMCmykDocsAlive())
 		return kFalse;
 
-	// 現在のマウス位置でサンプリング(KESCMSampleCmykUnderMouse は毎回マウス位置を読み直す)。solo は
-	// source=nil で target 単独(1行)。ページ外・取得失敗なら「値なし(--- …)」表示にして拾えていないことを示す
-	// (ユーザー要望 2026-07-13。直前値を残さない=誤読防止)。
-	IDataBase* tDB = solo ? sSoloCmykDB : sPeekTargetDB;
-	IDataBase* sDB = solo ? nil         : sPeekSourceDB;
+	// 現在のマウス位置でサンプリング(KESCMSampleCmykUnderMouse は毎回マウス位置を読み直す)。単独モードは
+	// other=nil で hover だけ(1行)。ページ外・押した窓から外れた・取得失敗なら「値なし(--- …)」表示にして
+	// 拾えていないことを示す(ユーザー要望 2026-07-13。直前値を残さない=誤読防止)。
 	PMString panelMsg, cursorMsg;
-	if (!KESCMSampleCmykUnderMouse(tDB, sDB, panelMsg, cursorMsg))
+	if (!KESCMSampleCmykUnderMouse(sCmykHoverDB, sCmykOtherDB, sCmykHoverIsTarget, panelMsg, cursorMsg))
 	{
 		if (solo) { KESCMBuildCmykNoValueSolo(cursorMsg); KESCMBuildCmykNoValuePanelSolo(panelMsg); }
-		else      { KESCMBuildCmykNoValue(cursorMsg);     KESCMBuildCmykNoValuePanel(panelMsg); }
+		else      { KESCMBuildCmykNoValue(cursorMsg, sCmykHoverIsTarget);
+		            KESCMBuildCmykNoValuePanel(panelMsg, sCmykHoverIsTarget); }
 	}
 	if (cursorMsg == sCmykCursorText)	// 値が同じなら描き直し不要(パネルも同じ値なので更新不要)
 		return kFalse;
@@ -1496,29 +1488,30 @@ bool16 KESCMTrackerUpdateCmykDrag()
 	return kTrue;
 }
 
-// ページ外など CMYK を拾えないときに出す「値なし」表示("c--- m--- y--- k--- t/s")。ダッシュで
-// 「ここでは色を拾えていない」ことが分かるようにする(ユーザー要望 2026-07-13)。ラベルは通常と同じ t/s。
-static void KESCMBuildCmykNoValue(PMString& out)
+// ページ外など CMYK を拾えないときに出す「値なし」表示("--- --- --- --- t/s")。ダッシュで
+// 「ここでは色を拾えていない」ことが分かるようにする(ユーザー要望 2026-07-13)。ラベルは通常と同じ t/s で、
+// 1行目は成功時と同じく hover 側(Target 窓なら t、Source 窓なら s。2026-07-26)。
+static void KESCMBuildCmykNoValue(PMString& out, bool16 hoverIsTarget)
 {
 	out.Clear();
 	out.SetTranslatable(kFalse);
-	out.Append("--- --- --- --- t");	// ラベルは t/s(KESCMColorSampler.cpp と同じ短縮。2026-07-14)
+	out.Append(hoverIsTarget ? "--- --- --- --- t" : "--- --- --- --- s");	// ラベルは t/s(KESCMColorSampler.cpp と同じ短縮。2026-07-14)
 	out.AppendW(UTF32TextChar(0x0A));	// 改行 → 2行目へ
-	out.Append("--- --- --- --- s");
+	out.Append(hoverIsTarget ? "--- --- --- --- s" : "--- --- --- --- t");
 }
 
 // パネル版の「値なし」表示。値ごとに見出し文字を添え t/s にする。KESCMSampleCmykUnderMouse
 // 成功時のパネル表記(KESCMColorSampler.cpp の KESCMAppendCmykLabeled)と揃える(2026-07-14)。
-static void KESCMBuildCmykNoValuePanel(PMString& out)
+static void KESCMBuildCmykNoValuePanel(PMString& out, bool16 hoverIsTarget)
 {
 	out.Clear();
 	out.SetTranslatable(kFalse);
-	out.Append("C--- M--- Y--- K--- t");
+	out.Append(hoverIsTarget ? "C--- M--- Y--- K--- t" : "C--- M--- Y--- K--- s");
 	out.AppendW(UTF32TextChar(0x0A));
-	out.Append("C--- M--- Y--- K--- s");
+	out.Append(hoverIsTarget ? "C--- M--- Y--- K--- s" : "C--- M--- Y--- K--- t");
 }
 
-// solo(Stop 単独ピック)用の「値なし」1行版。ラベル(t/s)なし=1文書のみ。カーソル側は
+// 単独ピック(Stop 中、または Start 中の第3の文書)用の「値なし」1行版。ラベル(t/s)なし=1文書のみ。カーソル側は
 // KESCMSplitTwoLines が空の2行目を自動スキップするので、1行渡すだけで崩れない。
 static void KESCMBuildCmykNoValueSolo(PMString& out)
 {
@@ -1585,11 +1578,16 @@ void KESCMTrackerRevealBegin(bool16 shiftDown, bool16 altDown, bool16 cmdDown, b
 	if (gesture == kKESCMGestureCmyk)
 	{
 		// Alt+左(単独、Shift/Ctrl なし): クリック点の CMYK 生値(0..255)をサンプリングしカーソル自身に描画する。
-		//   Start 中(arm 済み・Target 窓上) … 新・旧を比較(2行 "Target …" / "Source …")。
-		//   Stop 中(未 arm)                 … マウス下1文書を単独ピック(1行、ラベルなし。ユーザー要望 2026-07-24)。
+		// ★発火条件=「マウス下にレイアウトビュー+文書がある」だけ(2026-07-26 にユーザー指定で拡張。以前は
+		//   Start 中は Target 窓に限っていた)。押した窓で3通りに分岐する:
+		//   Start 中・Target 窓  … 新・旧を比較(2行。1行目=Target "t" / 2行目=Source "s")
+		//   Start 中・Source 窓  … 同じく比較だが向きが逆(1行目=Source "s" / 2行目=Target "t")
+		//   Start 中・第3の文書 / Stop 中 … その1文書を単独ピック(1行、ラベルなし)
 		// ★このブロックは基底 CTracker::BeginTracking より前に呼ばれる(KESCMTracker.cpp)。重いサンプリングを
 		//   カーソル切替の前で終わらせ、切替を一瞬にするため(押下時のゴミ対策 2026-07-25)。
-		if (KESCMTrackerCmykCursorWouldShow())
+		InterfacePtr<IControlView> viewUnderMouse(KESCMQueryViewUnderMouse());
+		IDataBase* const hoverDB = KESCMFindDocDbForView(viewUnderMouse);
+		if (hoverDB != nil)
 		{
 			// カーソル再描画毎(≦20回/秒)の IFontMgr 名前引きを回避する押下中フォントキャッシュ(解放は RevealEnd)。
 			if (sCmykCursorFont == nil)
@@ -1598,34 +1596,31 @@ void KESCMTrackerRevealBegin(bool16 shiftDown, bool16 altDown, bool16 cmdDown, b
 				sCmykCursorFont = (fontMgr != nil) ? fontMgr->QueryFont(fontMgr->GetDefaultFontName()) : nil;
 			}
 
-			// サンプリング対象を Start/Stop で切り替える。
-			//   Start(arm 済み) … Target/Source を比較。ページ対応表キャッシュを用意(サンプル毎の全ページ
-			//                      pairing 再構築を回避。破棄は RevealEnd)。
-			//   Stop(未 arm)    … マウス下の文書を単独ピック(source=nil)。ページ対応が無いのでキャッシュ不要。
-			//                      押下中は sSoloCmykDB に固定(解除は RevealEnd)。
-			const bool16 solo = !sPeekArmed;
-			IDataBase* tDB;
-			IDataBase* sDB;
-			if (solo)
+			// 押した窓の文書を Target / Source / それ以外 に分類してモードを固定する(解除は RevealEnd)。
+			// 比較モードのときだけページ対応表キャッシュを用意する(サンプル毎の全ページ pairing 再構築を
+			// 回避。向きも押下時のまま固定。破棄は RevealEnd)。単独モードはページ対応が無いので不要。
+			IDataBase* otherDB      = nil;
+			bool16     hoverIsTarget = kFalse;
+			if (KESCMArmedDocsAlive())	// 比較中か(解放済み db との照合を避けるため生存検査を先に通す)
 			{
-				InterfacePtr<IControlView> viewUnderMouse(KESCMQueryViewUnderMouse());
-				sSoloCmykDB = KESCMFindDocDbForView(viewUnderMouse);
-				tDB = sSoloCmykDB;
-				sDB = nil;
+				if (hoverDB == sPeekTargetDB)      { otherDB = sPeekSourceDB; hoverIsTarget = kTrue;  }
+				else if (hoverDB == sPeekSourceDB) { otherDB = sPeekTargetDB; hoverIsTarget = kFalse; }
 			}
-			else
-			{
-				tDB = sPeekTargetDB;
-				sDB = sPeekSourceDB;
-				KESCMSampleCmykBeginDrag(tDB, sDB);
-			}
+			sCmykHoverDB       = hoverDB;
+			sCmykOtherDB       = otherDB;
+			sCmykHoverIsTarget = hoverIsTarget;
+
+			const bool16 solo = (otherDB == nil);
+			if (!solo)
+				KESCMSampleCmykBeginDrag(hoverDB, otherDB, hoverIsTarget);
 
 			PMString panelMsg, cursorMsg;
-			if (!KESCMSampleCmykUnderMouse(tDB, sDB, panelMsg, cursorMsg))
+			if (!KESCMSampleCmykUnderMouse(hoverDB, otherDB, hoverIsTarget, panelMsg, cursorMsg))
 			{
 				// ページ外など: 拾えないことを示す(値なし --- 表示)。
 				if (solo) { KESCMBuildCmykNoValueSolo(cursorMsg); KESCMBuildCmykNoValuePanelSolo(panelMsg); }
-				else      { KESCMBuildCmykNoValue(cursorMsg);     KESCMBuildCmykNoValuePanel(panelMsg); }
+				else      { KESCMBuildCmykNoValue(cursorMsg, hoverIsTarget);
+				            KESCMBuildCmykNoValuePanel(panelMsg, hoverIsTarget); }
 			}
 			// カーソル自身に CMYK を描く(トラッカーが ChangeModalCursor する)のに加えて、パネルのステータス行にも
 			// 同じ値を出す。★KESCMSetStatus はパネルが非表示でも「強制的に表示」はしない(ON→表示中なら見える、
@@ -1686,7 +1681,10 @@ void KESCMTrackerRevealEnd()
 		sCmykCursorFont = nil;
 	}
 	KESCMSampleCmykEndDrag();
-	sSoloCmykDB = nil;	// Stop 単独ピックで押下中に固定していたマウス下文書の保持を解除(押下の外では持たない)。
+	// 押下中に固定していた CMYK モード(hover/other)の保持を解除(押下の外では持たない)。
+	sCmykHoverDB       = nil;
+	sCmykOtherDB       = nil;
+	sCmykHoverIsTarget = kFalse;
 
 	// Alt+左(CMYK 色比較)を離したら、押下中にパネルのステータス行へ出していた CMYK 値を消す
 	// (ユーザー要望 2026-07-15: ホールド終了でメッセージは消す)。sCmykCursorPending は押下中に
@@ -1827,6 +1825,12 @@ void KESCMPeekStartup::Shutdown()
 		sCmykCursorFont->Release();
 		sCmykCursorFont = nil;
 	}
+	// 同じ経路で残りうる押下中モードの文書ポインタも捨てる(deref しない照合専用だが、
+	// 終了後に解放済みポインタを持ち越さない。2026-07-26)。
+	sCmykHoverDB       = nil;
+	sCmykOtherDB       = nil;
+	sCmykHoverIsTarget = kFalse;
+	KESCMSampleCmykEndDrag();	// 押下中のページ対応表キャッシュ(hover→other)も同様に破棄
 
 	// 旧ページ番号バッジのフォントキャッシュも同じ理由(静的破棄前の明示解放)でここで捨てる(2026-07-25)。
 	KESCMReleaseOldNumFontCache();
