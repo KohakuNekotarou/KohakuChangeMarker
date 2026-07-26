@@ -39,6 +39,7 @@
 #include "GraphicsExternal.h"
 #include "IXPUtils.h"
 
+
 // 旧ページ番号バッジ(Show Original Page Numbers)用:
 #include "IPageList.h"			// GetPageString(..., bIncludePagesOfHiddenSpread) — kTrue=元の番号 / kFalse=隠し反映後の現在番号
 #include "IFontMgr.h"			// 既定フォント取得(framelabel の FrmLblAdornment.cpp と同じ流儀)
@@ -1133,6 +1134,7 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	// ので、スプレッド描画イベントに便乗して拾う(Undo/Redo による変化も同経路)。KESCMScrollMap.cpp。
 	if (!printing)
 		KESCMScrollMapNoticeDrawEvent();
+
 	// ★サムネイル実験(2026-07-06): Pagesパネルのサムネイル生成(view無し・kPreviewMode・非印刷。診断ログ
 	// flags=0x1800=kPreviewMode|kDrawFrameEdge)を検出。sThumbExperiment ON の間は、サムネイルにも枠を
 	// 描くため下で wantMarks を強制 ON にする(通常は sPrintMarks/sMarksVisible が OFF だと枠が出ない)。
@@ -1141,6 +1143,7 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	// 固定比率の太さ)。不透明度は kKESCMThumbMarkOpacity(0.75=少し透ける)。
 	const bool16 isThumb = sThumbExperiment && !printing &&
 		ded->gd->GetView() == nil && (ded->flags & IShape::kPreviewMode) != 0;	// gd の nil は関数冒頭で検査済み
+
 	// ★オーバープリントプレビュー(OPP)は抑制しない(2026-07-05 仕様変更)。以前は kSepPrvOPPEnabledVPAttr を
 	// 読んで「OPP=印刷シミュレーション」として印刷と同じ抑制を掛けていたが、OPP はあくまで画面の作業モード
 	// なので、ツール左hold の枠・Shift/Shift+Alt の旧版 peek(と押下中の旧番号バッジ)は OPP 中も表示する。

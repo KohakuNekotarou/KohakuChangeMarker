@@ -48,6 +48,11 @@ void KESCMInvalidateSyncCaches();
 void KESCMTrackerRevealBegin(bool16 shiftDown, bool16 altDown, bool16 cmdDown, bool16 macCtrlDown = kFalse);
 void KESCMTrackerRevealEnd();
 
+// トラッカー描画層(sprite)の one-shot タイマーを確実に止める。プラグイン終了時(KESCMPeekStartup::
+// Shutdown)から呼ぶ保険 — ICallbackTimer のコールバックは参照カウントされない生関数ポインタなので、
+// 予約を残したまま .pln が降りるとクラッシュする。実体は KESCMTracker.cpp。
+void KESCMTrackerShutdownSpriteProbe();
+
 // 修飾キー→ジェスチャの分類。★割当の定義はこの1本だけ(2026-07-15 に3箇所の独立判定を統合):
 // KESCMTracker.cpp の BeginTracking(CMYK を先に発動させるかの判定)・RevealBegin の分岐・
 // Hold to Hide の temp-hide 判定がすべてこれを使う。ジェスチャ割当を変えるときは

@@ -145,7 +145,7 @@ DECLARE_PMID(kImplementationIDSpace, kKESCMCursorProviderImpl, kKESCMPrefix + 17
 //DECLARE_PMID(kImplementationIDSpace, kKESCMImpl, kKESCMPrefix + 15)
 //DECLARE_PMID(kImplementationIDSpace, kKESCMImpl, kKESCMPrefix + 16)
 //DECLARE_PMID(kImplementationIDSpace, kKESCMImpl, kKESCMPrefix + 17)
-//DECLARE_PMID(kImplementationIDSpace, kKESCMImpl, kKESCMPrefix + 18)
+DECLARE_PMID(kImplementationIDSpace, kKESCMSpriteImpl, kKESCMPrefix + 18)	// ★実験(一時): ISprite 実装(CSprite派生; トラッカー描画層で自前に描く。KESCMTracker.cpp)
 //DECLARE_PMID(kImplementationIDSpace, kKESCMImpl, kKESCMPrefix + 19)
 //DECLARE_PMID(kImplementationIDSpace, kKESCMImpl, kKESCMPrefix + 20)
 //DECLARE_PMID(kImplementationIDSpace, kKESCMImpl, kKESCMPrefix + 21)

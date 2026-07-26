@@ -255,6 +255,18 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 		{
 			IID_ITRACKER,      kKESCMTrackerImpl,
 			IID_IEVENTHANDLER, kKESCMTrackerEHImpl,
+			// ★★実験(一時・2026-07-26): トラッカー自身の描画層(CSprite)を試すための2枚。どちらも
+			// API 提供の既製実装で、自前クラスは要らない(手本=sdksamples/wavetool の kSawWaveTrackerBoss)。
+			//   IID_ISPRITE       = トラッキング中の画面更新機構。CreateSprite/Show/Hide/DestroySprite を
+			//                       トラッカーから呼ぶ。kNoHandleSpriteImpl = ハンドルを描かない版。
+			//   IID_IPATHGEOMETRY = sprite が描くパスの置き場。CSprite の既定実装が「boss の
+			//                       IPathGeometry のパスを描く」ので、ここへ図形を組めば出る。
+			// 検証が済んだらこの2行と KESCMTracker.cpp のプローブ一式を削除する。
+			// ★kKESCMSpriteImpl = NoHandleSprite(=kNoHandleSpriteImpl の実クラス)を継承した自前 sprite。
+			// 既定の「IPathGeometry のパスを描く」動作はそのままに、CreateTrackerPaths で文字と
+			// 純正マーカーを足して検証する(KESCMTracker.cpp)。素の挙動に戻すなら kNoHandleSpriteImpl へ。
+			IID_ISPRITE,       kKESCMSpriteImpl,
+			IID_IPATHGEOMETRY, kPathGeometryImpl,
 		}
 	},
 
