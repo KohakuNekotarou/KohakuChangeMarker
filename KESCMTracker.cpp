@@ -55,8 +55,6 @@
 #include "LocaleSetting.h"					// GetSystemScript(ユーザーの言語からフォントを引く)
 #include "AutoGSave.h"
 #include "WideString.h"						// show に渡す UTF16
-#include "IDocument.h"						// GetName(HUD に出す文書名)
-#include "IDocumentList.h"					// FindDocByDataBase(db → 文書)
 #include "KESCMCore.h"						// KESCMIsArmed / KESCMArmedTargetDB / KESCMArmedSourceDB / KESCMFindDocDbForView
 #include "KESCMDrawEventHandler.h"			// KESCMQueryPanorama(ビューから IPanorama を辿る共有ヘルパ)
 #include "ICallbackTimer.h"					// 押下直後に一発だけ描くための one-shot タイマー
@@ -145,66 +143,33 @@ public:
 
 CREATE_PMINTERFACE(KESCMTrackerEH, kKESCMTrackerEHImpl)
 
-/** db を持つ文書の表示名。取れなければ "(unknown)"。解決経路は KESCMChangedPagesTSV.cpp の
-	DocNameFromDB と同じ(セッション→app→docList→FindDocByDataBase。IDocument は no ref で名前だけ)。
-	★閉じた db を deref しないため、生存確認を兼ねた FindDocByDataBase を必ず通す。 */
-static PMString KESCMHudDocName(IDataBase* db)
-{
-	PMString out;
-	out.SetTranslatable(kFalse);
-
-	if (db != nil)
-	{
-		ISession* session = GetExecutionContextSession();
-		InterfacePtr<IApplication> app(session != nil ? session->QueryApplication() : nil);
-		InterfacePtr<IDocumentList> docList(app != nil ? app->QueryDocumentList() : nil);
-		IDocument* doc = (docList != nil) ? docList->FindDocByDataBase(db) : nil;	// no ref(deref せず名前だけ)
-		if (doc != nil)
-			doc->GetName(out);
-	}
-	if (out.IsEmpty())
-		out = PMString("(unknown)");
-	out.SetTranslatable(kFalse);
-	return out;
-}
-
 /** HUD に出す1行を組む。押した窓(view)と比較状態で4通り:
-	  比較中 + Target の窓  → "Source: <旧文書名>"   … いま比べている相手(旧版)はこれ
-	  比較中 + Source の窓  → "Target: <新文書名>"   … 同上(新版)
-	  比較中 + それ以外     → "Not in comparison"    … この文書は比較の対象ではない
-	  Stop 中               → "Not comparing"        … そもそも比較していない
+	  比較中 + Target の窓  → "Target"              … この窓が比較の Target(新版)
+	  比較中 + Source の窓  → "Source"              … この窓が比較の Source(旧版)
+	  比較中 + それ以外     → "Not in comparison"   … この文書は比較の対象ではない
+	  Stop 中               → "Not comparing"       … そもそも比較していない
+	★出すのは「押した窓が何か」だけ。相手の文書名は出さない(2026-07-27 ユーザー指示。
+	  長い文書名で HUD が伸びるより、いま触っている窓の役割が一目で分かる方を採る)。
 	★「出ない」を状態表示に使わない(壊れているのか仕様なのか分からなくなるため)。
 	★文字は英語固定。翻訳キー扱いで化けないよう SetTranslatable(kFalse) を必ず通す
 	  (UI 文字列のリテラルが内蔵訳に化ける事故が KESCM で実際に起きている)。 */
 static PMString KESCMBuildHudText(IControlView* view)
 {
 	PMString out;
-	out.SetTranslatable(kFalse);
 
 	if (!KESCMIsArmed())
-	{
 		out = PMString("Not comparing");
-		out.SetTranslatable(kFalse);
-		return out;
-	}
-
-	IDataBase* const db = KESCMFindDocDbForView(view);	// 押した窓の文書(ポインタ比較のみ)
-	if (db != nil && db == KESCMArmedTargetDB())
-		out = PMString("Source: ");
-	else if (db != nil && db == KESCMArmedSourceDB())
-		out = PMString("Target: ");
 	else
 	{
-		out = PMString("Not in comparison");
-		out.SetTranslatable(kFalse);
-		return out;
+		IDataBase* const db = KESCMFindDocDbForView(view);	// 押した窓の文書(ポインタ比較のみ)
+		if (db != nil && db == KESCMArmedTargetDB())
+			out = PMString("Target");
+		else if (db != nil && db == KESCMArmedSourceDB())
+			out = PMString("Source");
+		else
+			out = PMString("Not in comparison");
 	}
-	out.SetTranslatable(kFalse);
 
-	// 相手側(押した窓が Target なら Source、その逆なら Target)の名前を足す。
-	const PMString name = KESCMHudDocName(
-		(db == KESCMArmedTargetDB()) ? KESCMArmedSourceDB() : KESCMArmedTargetDB());
-	out.Append(name);
 	out.SetTranslatable(kFalse);
 	return out;
 }
