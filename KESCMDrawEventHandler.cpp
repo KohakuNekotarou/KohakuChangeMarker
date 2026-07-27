@@ -490,6 +490,9 @@ ErrorCode KESCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef
 					}
 					e->w = wl;  e->h = hl;  e->rowBytes = rbL;  e->bpp = bppL;
 					e->bgRed = BG;  e->lastRadius = kKESCMBaseRadius;
+					// 変更の割合表示(Prev/Next)用。分母は w * h なので分子だけ覚える。ここは diffCount != 0 が
+					// 確定した枝なので必ず 1 以上になる(0 のときは上でエントリを作らずに戻っている)。
+					e->changedCells = (int32)diffCount;
 					// mask M から距離変換 dist を1回だけ作って保持(以後の BuildRing はこれ1つで描ける)。
 					//   dist 生成後、mask M はもう不要なので解放(常駐メモリは dist が mask を置換=純増ゼロ)。
 					e->dist = new (std::nothrow) uint8[N];

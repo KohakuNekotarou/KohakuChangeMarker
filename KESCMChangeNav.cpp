@@ -327,16 +327,52 @@ static void KESCMScrollPagesPanelToPage(IDataBase* db, UID pageUID)
 }
 
 //----------------------------------------------------------------------------------------
-// 飛んだ先のラベルを組む(パネルのメッセージ欄に出す)。
-//   変更(枠)          = "P<番号>"               例: P1
-//   overset(そのページに1件) = "P<番号> Overset"      例: P1 Overset
-//   overset(そのページに複数)= "P<番号>(n) Overset"   例: P1(1) Overset / P1(2) Overset  (n=1始まり)
-// "Overset" の前は半角スペース1つ。ページ番号は IPageList::GetPageString(セクション込み・現在の表示番号)。
+// 変更セル数 changed / ページ全体のセル数 total から、表示用の割合文字列を作る。
+//   1% 以上            → 整数     例 "12%"
+//   0.05% 以上 1% 未満 → 小数1桁  例 "0.4%"
+//   0.05% 未満         → "<0.1%"  (小数1桁に丸めると "0.0%" になり「変更なし」と誤読されるため)
+// total<=0 / changed<=0 なら空文字列を返す(呼び出し側は何も足さない)。
+// ★小数点は自前で "." を足す: PMString の実数書式はロケールで小数点が "," になり得るため、
+//   千分率を整数演算で出してから桁を組み、表記を固定する(ロケール差の入り込む余地を作らない)。
+//----------------------------------------------------------------------------------------
+static PMString KESCMFormatChangeRatio(int32 changed, int32 total)
+{
+	PMString out; out.SetTranslatable(kFalse);
+	if (total <= 0 || changed <= 0)
+		return out;
+
+	// 千分率(0.1% 単位・四捨五入)。changed <= total なので 1000 以下。int64 で計算するので桁あふれしない。
+	const int32 permille = (int32)(((int64)changed * 1000 + total / 2) / total);
+
+	if (permille >= 10)			// 1% 以上: 整数の % を別途四捨五入して出す
+		out.AppendNumber((int32)(((int64)changed * 100 + total / 2) / total));
+	else if (permille >= 1)		// 0.05% 以上 1% 未満: 小数1桁("0" + "." + 1桁)
+	{
+		out.AppendNumber(permille / 10);
+		out.Append(".");
+		out.AppendNumber(permille % 10);
+	}
+	else						// 0.05% 未満: 丸めると 0 になるので下限表記
+		out.Append("<0.1");
+
+	out.Append("%");
+	return out;
+}
+
+//----------------------------------------------------------------------------------------
+// 飛んだ先のラベルを組む(パネルのメッセージ欄に出す)。★2026-07-27 に "P1" 形式から改めた(ユーザー指定)。
+//   変更(枠)           = "Page: <番号> <割合>"       例: Page: 1 12% / Page: 4 0.4% / Page: 9 <0.1%
+//   overset(1件のページ)  = "Page: <番号> Overset"      例: Page: 1 Overset
+//   overset(複数のページ) = "Page: <番号> (n) Overset"  例: Page: 1 (1) Overset / Page: 1 (2) Overset  (n=1始まり)
+// 番号の後の各要素(割合・(n)・Overset)は半角スペース1つ区切り。ページ番号は IPageList::GetPageString
+// (セクション込み・現在の表示番号)。
+// ★割合は変更ストップにだけ付ける(overset は「あふれ」であって変更量とは無関係)。エントリが引けない等で
+//   値が作れないときは付けない=従来どおりのラベル。仕様は docs/ai-notes/kescm-change-ratio.md。
 //----------------------------------------------------------------------------------------
 static PMString KESCMStopLabel(IDataBase* db, const KESCMNavStop& stop)
 {
 	PMString label; label.SetTranslatable(kFalse);
-	label.Append("P");
+	label.Append("Page: ");
 
 	InterfacePtr<IPageList> pageList(db, db->GetRootUID(), UseDefaultIID());
 	PMString numStr; numStr.SetTranslatable(kFalse);
@@ -351,11 +387,26 @@ static PMString KESCMStopLabel(IDataBase* db, const KESCMNavStop& stop)
 	{
 		if (stop.oversetCountOnPage > 1)	// 同ページに複数あるときだけ (n) を付ける(1始まり)
 		{
-			label.Append("(");
+			label.Append(" (");			// 番号と枝番が詰まって読みにくいので空ける("Page: 1 (2)")
 			label.AppendNumber(stop.oversetOrd + 1);
 			label.Append(")");
 		}
 		label.Append(" Overset");	// 半角スペース + Overset
+	}
+	else
+	{
+		// 変更ストップ: そのページの変更の割合を足す(例 "P3 12%")。分子=比較時に数えた変化セル数、
+		// 分母=そのページの低解像度セル数(= w * h。エントリの画像寸法がそのまま分母)。
+		std::map<UID, KESCMOverlayEntry*>::const_iterator it = KESCMDrawEventHandler::sEntries.find(stop.pageUID);
+		if (it != KESCMDrawEventHandler::sEntries.end() && it->second != nil)
+		{
+			const PMString ratio = KESCMFormatChangeRatio(it->second->changedCells, it->second->w * it->second->h);
+			if (ratio.NumUTF16TextChars() > 0)
+			{
+				label.Append(" ");		// 半角スペース1つ(Overset と同じ流儀)
+				label.Append(ratio);
+			}
+		}
 	}
 	return label;
 }

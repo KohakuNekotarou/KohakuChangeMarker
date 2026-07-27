@@ -37,8 +37,12 @@ struct KESCMOverlayEntry
 	int32          rowBytes;	// buf の行バイト数(= rec.byteWidth)
 	int32          bpp;			// バイト/ピクセル
 	int32          lastRadius;	// 最後に描いたリング半径(px)。-1=未描画
+	int32          changedCells;	// 変化した低解像度セル数(MakeEntry の diffCount)。Prev/Next で飛んだ先の
+									//   「変更の割合」表示に使う。★割合の分母(ページ全体のセル数)は持たない
+									//   = w * h がそのまま分母なので、同じ値を二重に持たせない。
 
-	KESCMOverlayEntry() : buf(nil), dist(nil), bgRed(nil), w(0), h(0), rowBytes(0), bpp(0), lastRadius(-1)
+	KESCMOverlayEntry() : buf(nil), dist(nil), bgRed(nil), w(0), h(0), rowBytes(0), bpp(0), lastRadius(-1),
+		changedCells(0)
 	{
 		rec.baseAddr = nil; rec.decodeArray = nil;
 		rec.colorTab.numColors = 0; rec.colorTab.theColors = nil;
