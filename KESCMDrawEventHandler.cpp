@@ -1433,7 +1433,26 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 			const PMReal margin   = kKESCMOldNumMarginPx / kKESCMOldNumFixedZoom;
 
 			const int32 npn = spread->GetNumPages();
-			for (int32 i = 0; i < npn; ++i)
+
+			// ★このスプレッドに「番号がズレているページ」が有り得るかを、先頭ページで1回だけ先に判定する
+			//   (2026-07-27 の無駄取り)。ズレは「このスプレッドより前に隠しスプレッドがあるか」で決まるので、
+			//   同じスプレッドのページはすべて同じ条件下にある: 先頭が一致＝隠しの影響が及んでいないか、
+			//   番号を固定するセクション内にあるかのどちらかで、後続ページはその連番なのでやはり一致する。
+			//   隠しスプレッドが1つも無い通常の文書ではこれが常に成立し、以前は毎描画・全ページで
+			//   GetPageString を2回ずつ呼んで必ず「一致」で捨てていた(バッジ ON の間ずっと空振り)。
+			//   ズレていた場合だけ従来どおり全ページを回す(ループ内の per-page 判定はそのまま残すので、
+			//   スプレッドの途中でセクションが始まってズレが解消するページも正しく飛ばせる)。
+			bool16 spreadMayShift = kFalse;
+			if (npn > 0)
+			{
+				const UID probeUID = spread->GetNthPageUID(0);
+				PMString probeOrig, probeCur;
+				pageList->GetPageString(probeUID, &probeOrig, kFalse, kFalse, kDefaultPageType, kTrue, kTrue);
+				pageList->GetPageString(probeUID, &probeCur,  kFalse, kFalse, kDefaultPageType, kTrue, kFalse);
+				spreadMayShift = (probeOrig != probeCur);
+			}
+
+			for (int32 i = 0; spreadMayShift && i < npn; ++i)
 			{
 				const UID pageUID = spread->GetNthPageUID(i);
 				PMString orig, cur;
@@ -1508,6 +1527,10 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 		for (int32 i = 0; i < nps; ++i)
 		{
 			const UID srcPageUID = spread->GetNthPageUID(i);
+			// 登録済み/overflow の判定は下の if/else 連鎖と除外塗りの両方で要るので、1ページにつき
+			// 1回ずつ引いて使い回す(以前は同じ問い合わせをページごとに2回ずつ行っていた)。
+			const bool16 isRegistered = KESCMPageMapIsRegistered(db, srcPageUID);
+			const bool16 isOverflow   = (sOverflowS.count(srcPageUID) > 0);
 			std::map<UID, UID>::iterator mp = sSrcPageToTarget.find(srcPageUID);
 			if (mp != sSrcPageToTarget.end())
 			{
@@ -1520,12 +1543,12 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 						KESCMDrawEntryOnPage(gPort, it->second, db, srcPageUID, sxr, drawMode, SelectedMarkOpacity());
 				}
 			}
-			else if (KESCMPageMapIsRegistered(db, srcPageUID))
+			else if (isRegistered)
 			{
 				// 対応表に無い(=比較対象外)Source ページ。登録済み("Removed")なら緑「/」を描く。
 				KESCMDrawPageDiagonal(gPort, db, srcPageUID, sxr, drawMode, SelectedMarkOpacity(), kKESCMAddedBorderR, kKESCMAddedBorderG, kKESCMAddedBorderB);
 			}
-			else if (sOverflowS.count(srcPageUID) > 0)
+			else if (isOverflow)
 			{
 				// 登録もされていない、ページ数差であふれたページ。未比較であることを赤斜線で明示する。
 				KESCMDrawPageDiagonal(gPort, db, srcPageUID, sxr, drawMode, SelectedMarkOpacity(), kKESCMRingR, kKESCMRingG, kKESCMRingB);
@@ -1534,7 +1557,7 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 			// 入るページ)にだけ除外領域の緑ベタ塗りを重ねる。変更なしで entry が無いページにも出すので
 			// 上の if/else とは独立に判定する。Removed/overflow ページは画素比較自体を行わない
 			// (ノンブル除外という概念が無い)ので塗らない。
-			if (!isThumb && fillExcluded && !KESCMPageMapIsRegistered(db, srcPageUID) && sOverflowS.count(srcPageUID) == 0)
+			if (!isThumb && fillExcluded && !isRegistered && !isOverflow)
 				KESCMDrawPageNumberMarkerFill(gPort, db, srcPageUID);
 		}
 		return kFalse;	// Source 文書に Target 側オーバーレイは無い=ここで終わり
@@ -1563,6 +1586,10 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	for (int32 i = 0; i < np; ++i)
 	{
 		const UID pageUID = spread->GetNthPageUID(i);
+		// 登録済み/overflow の判定は下の if/else 連鎖と除外塗りの両方で要るので、1ページにつき
+		// 1回ずつ引いて使い回す(以前は同じ問い合わせをページごとに2回ずつ行っていた)。
+		const bool16 isRegistered = KESCMPageMapIsRegistered(db, pageUID);
+		const bool16 isOverflow   = (sOverflowT.count(pageUID) > 0);
 		std::map<UID, KESCMOverlayEntry*>::iterator it = sEntries.find(pageUID);
 		if (it != sEntries.end())
 		{
@@ -1571,12 +1598,12 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 			else
 				KESCMDrawEntryOnPage(gPort, it->second, db, pageUID, sxr, drawMode, screenMarkOp);
 		}
-		else if (KESCMPageMapIsRegistered(db, pageUID))
+		else if (isRegistered)
 		{
 			// 比較エントリが無い(=対象外)Target ページ。登録済み("Added")なら緑「/」を描く。
 			KESCMDrawPageDiagonal(gPort, db, pageUID, sxr, drawMode, screenMarkOp, kKESCMAddedBorderR, kKESCMAddedBorderG, kKESCMAddedBorderB);
 		}
-		else if (sOverflowT.count(pageUID) > 0)
+		else if (isOverflow)
 		{
 			// 登録もされていない、ページ数差であふれたページ。未比較であることを赤斜線で明示する。
 			KESCMDrawPageDiagonal(gPort, db, pageUID, sxr, drawMode, screenMarkOp, kKESCMRingR, kKESCMRingG, kKESCMRingB);
@@ -1585,7 +1612,7 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 		// 入るページ)にだけ除外領域の緑ベタ塗りを重ねる。変更なしで entry が無いページにも出すので
 		// 上の if/else とは独立に判定する。Added/overflow ページは画素比較自体を行わない
 		// (ノンブル除外という概念が無い)ので塗らない。
-		if (!isThumb && fillExcluded && !KESCMPageMapIsRegistered(db, pageUID) && sOverflowT.count(pageUID) == 0)
+		if (!isThumb && fillExcluded && !isRegistered && !isOverflow)
 			KESCMDrawPageNumberMarkerFill(gPort, db, pageUID);
 	}
 

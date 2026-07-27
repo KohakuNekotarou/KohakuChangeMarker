@@ -34,6 +34,10 @@
 #include "IActiveContext.h"			// IID_IACTIVECONTEXT / ContextInfo(文書切替の検知)
 #include "widgetid.h"				// IID_IPANORAMA / kScrollToMessage・kScrollByMessage・kScaleToMessage・kScaleByMessage
 
+// 一括クローズ(複数文書を続けて閉じる)の集約用:
+#include "IBoolData.h"				// セッション上の IID_IKFILESCLOSING(「今どれかの文書が閉じている最中か」)
+#include "LinksUIID.h"				// ★公開ヘッダー: IID_IKFILESCLOSING / kPendingDocumentsClosedMsg(本体 Links UI が提供)
+
 // ツール / 起動:
 #include "IStartupShutdownService.h"
 #include "CPMUnknown.h"
@@ -1740,6 +1744,119 @@ void KESCMTrackerRevealEnd()
 }
 
 //========================================================================================
+// 一括クローズ(複数文書を続けて閉じる / アプリ終了の close-all)の後片付けを1回に畳む
+//
+//   kAfterCloseDoc は「閉じた文書ごと」に飛ぶ。そのたびに KESCMHandleDocsClosed が UI の後片付け
+//   (スクロール地図 strip の撤去・InvalidateViews・サムネイル再生成の予約・パネル/ステータス更新)
+//   まで行うと、N 文書を一度に閉じたときに N 回走る。状態(メモリ)の破棄はその場で行い、UI 側だけ
+//   保留して、全部閉じ終わったところで1回だけ流す(=「集めてから1回」)。解体が進む場面で widget に
+//   触る回数が減るので、終了時の堅牢性(特に Mac)にも効く。
+//
+//   ★「今どれかの文書が閉じている最中か」と「全部閉じ終わった」は本体(Links UI プラグイン)が
+//     公開しており、こちらは読むだけでよい(公開ヘッダー LinksUIID.h):
+//       ・IID_IKFILESCLOSING        = セッション boss 上の IBoolData(閉じ始めに kTrue、全部閉じたら kFalse)
+//       ・kPendingDocumentsClosedMsg = 全部閉じ終わった瞬間にアプリの subject へ飛ぶ通知
+//   ★Links UI が無い/無効な環境ではフラグを引けない。その場合は保留せず、従来どおり毎回その場で
+//     片付ける(フォールバック=挙動は元のまま)。
+//========================================================================================
+
+static bool16 sDeferredCloseUiPending = kFalse;	// UI の後片付けを保留中か(完了通知で1回だけ流す)
+
+// いま一括クローズの最中か(本体が管理するセッションフラグを読むだけ。引けなければ kFalse)。
+static bool16 KESCMBatchCloseInProgress()
+{
+	ISession* session = GetExecutionContextSession();	// 終了処理中は nil になり得る
+	if (session == nil)
+		return kFalse;
+	InterfacePtr<IBoolData> filesClosing(session, IID_IKFILESCLOSING);
+	return (filesClosing != nil && filesClosing->GetBool()) ? kTrue : kFalse;
+}
+
+// 保留していた UI の後片付けを1回だけ流す(一括クローズ完了時)。
+static void KESCMFlushDeferredCloseUi()
+{
+	if (!sDeferredCloseUiPending)
+		return;
+	sDeferredCloseUiPending = kFalse;
+
+	if (KESCMAppIsQuitting())
+		return;		// 終了中は UI に触らない(状態は Shutdown が破棄する)
+
+	// Find Overset が(走査文書が生存したまま)単独 ON なら地図は残す。それ以外は撤去する
+	// (KESCMHandleDocsClosed 側で即時に行っていた処理と同じ判断)。
+	if (KESCMDrawEventHandler::sOversetOn)
+		KESCMScrollMapInvalidateAll();
+	else
+		KESCMScrollMapDetachAll();
+
+	PMString s("marks cleared");	// Stop ボタン(DoClear)と同じメッセージ
+	s.SetTranslatable(kFalse);
+	KESCMSetStatus(s);
+
+	// ★生き残っている文書は、保留した時点のものと同じとは限らない(一括クローズなので、その後さらに
+	//   閉じられている)。閉じた db を持ち越さないよう、控えたポインタは使わず「今開いている文書」を
+	//   その場で列挙する。マークは既に破棄済みなので、無関係な文書を再描画しても枠は描かれない。
+	ISession* session = GetExecutionContextSession();
+	InterfacePtr<IApplication> app(session != nil ? session->QueryApplication() : nil);
+	InterfacePtr<IDocumentList> docList(app ? app->QueryDocumentList() : nil);
+	if (docList != nil)
+	{
+		const int32 nDocs = docList->GetDocCount();
+		for (int32 i = 0; i < nDocs; ++i)
+		{
+			IDocument* doc = docList->GetNthDoc(i);
+			if (doc == nil)
+				continue;
+			IDataBase* db = ::GetUIDRef(doc).GetDataBase();
+			KESCMInvalidateDB(db);
+			KESCMScheduleThumbRefresh(db);	// 遅延サムネイル再生成(同じ db は集約される)
+		}
+	}
+
+	KESCMRefreshPanel();
+}
+
+/** 一括クローズ完了(kPendingDocumentsClosedMsg)を受けるだけのオブザーバ。.fr の AddIn で
+    kActiveContextBoss に IID_IKESCMDOCSCLOSEDOBSERVER として同居させている(同居先の理由は上の
+    レイアウト同期オブザーバと同じ=実証済みの構成)。購読先はアプリの subject。 */
+class KESCMDocsClosedObserver : public CObserver
+{
+public:
+	KESCMDocsClosedObserver(IPMUnknown* boss) : CObserver(boss, IID_IKESCMDOCSCLOSEDOBSERVER) {}
+	~KESCMDocsClosedObserver() {}
+
+	virtual void Update(const ClassID& theChange, ISubject* theSubject, const PMIID& protocol, void* changedBy);
+};
+
+CREATE_PMINTERFACE(KESCMDocsClosedObserver, kKESCMDocsClosedObserverImpl)
+
+void KESCMDocsClosedObserver::Update(const ClassID& theChange, ISubject* /*theSubject*/, const PMIID& protocol, void* /*changedBy*/)
+{
+	if (protocol == IID_IAPPLICATION && theChange == kPendingDocumentsClosedMsg)
+		KESCMFlushDeferredCloseUi();
+}
+
+// アプリ subject への購読を付ける(Startup から1回)。アプリもオブザーバの同居先も
+// セッションと同じ寿命なので、終了時に明示 detach はしない(detach 自体がクラッシュ要因になる。
+// レイアウト同期オブザーバの Shutdown 方針と同じ)。
+static void KESCMAttachDocsClosedObserver()
+{
+	ISession* session = GetExecutionContextSession();
+	IActiveContext* ctx = (session != nil) ? session->GetActiveContext() : nil;
+	if (ctx == nil)
+		return;
+	InterfacePtr<IObserver> obs((IObserver*)ctx->QueryInterface(IID_IKESCMDOCSCLOSEDOBSERVER));
+	if (obs == nil)
+		return;
+	InterfacePtr<IApplication> app(session->QueryApplication());
+	InterfacePtr<ISubject> subject(app, IID_ISUBJECT);
+	if (subject == nil)
+		return;
+	if (!subject->IsAttached(ISubject::kRegularAttachment, obs, IID_IAPPLICATION, IID_IKESCMDOCSCLOSEDOBSERVER))
+		subject->AttachObserver(ISubject::kRegularAttachment, obs, IID_IAPPLICATION, IID_IKESCMDOCSCLOSEDOBSERVER);
+}
+
+//========================================================================================
 // KESCMPeekStartup
 //   アプリ起動/終了サービス。中ボタンウォッチャは撤去した(2026-07-13)ので起動時の処理は無く、
 //   終了時に保持リソース(遅延サムネイル idle task・マーク/旧版画像バッファ・peek arm 状態・
@@ -1772,12 +1889,18 @@ void KESCMPeekStartup::Startup()
 	// 内部の「セッション一度きり」ガードにより、パネル AutoAttach からの既存呼び出しは no-op のまま残る
 	// (起動サービスの順序が万一変わっても取りこぼさない保険)。
 	KESCMLoadPanelStateIfPresent();
+
+	// 一括クローズ完了(kPendingDocumentsClosedMsg)の購読を開始する。以後、複数文書を続けて閉じても
+	// UI の後片付けは「全部閉じ終わってから1回」に畳まれる(上の集約ブロック参照)。
+	KESCMAttachDocsClosedObserver();
 }
 
 void KESCMPeekStartup::Shutdown()
 {
 	// 遅延サムネイル更新の idle task を解放(予約中なら RemoveTask してから)。
 	KESCMShutdownThumbIdleTask();
+	// 一括クローズの保留も捨てる(終了後に流れることは無いが、状態を残さない)。
+	sDeferredCloseUiPending = kFalse;
 	// HUD(sprite)の one-shot タイマーとフォント参照も確実に返す(生関数ポインタを残さない)。
 	KESCMTrackerShutdownHud();
 	// 保持していたマーク/旧版画像バッファを解放(終了時もきれいに片付ける)。
@@ -1928,6 +2051,12 @@ void KESCMHandleDocsClosed()
 	// クローズと quit の close-all フェーズでは従来どおりフルクリーンアップが走る(挙動変更なし)。
 	const bool16 quitting = KESCMAppIsQuitting();
 
+	// ★一括クローズ(複数文書を続けて閉じる)の最中は、UI の後片付けを保留して全部閉じ終わってから
+	//   1回だけ流す(2026-07-27)。状態(メモリ)の破棄は保留せずその場で行うので、閉じた db を持ち越さない
+	//   従来どおりの安全性は保たれる。フラグを引けない環境(Links UI 無効)では kFalse=従来動作。
+	const bool16 deferUi = !quitting && KESCMBatchCloseInProgress();
+	const bool16 doUiNow = !quitting && !deferUi;
+
 	// ★Find Overset(比較とは独立): 走査した文書が閉じていたら十字状態を捨てる。sOversetDB は描画時に
 	//   ポインタ一致だけを見る(deref しない)が、閉じたまま残すと別文書へアドレスが再利用された時に
 	//   誤って十字を描き得るので、ここで能動的に掃除する。メモリ破棄のみ=終了中(quitting)でも安全。
@@ -1993,7 +2122,7 @@ void KESCMHandleDocsClosed()
 		//   DetachAll は「今開いている窓」だけを走査する(閉じた窓の widget は窓ごと消えている)ので安全。
 		//   ★終了中(quitting)はスキップ: 解体中の窓の widget 除去/SetFrame が危険な上、窓ごと消えるので
 		//   取り外す意味も無い(以下の UI 仕事も同様にスキップ)。
-		if (!quitting)
+		if (doUiNow)
 		{
 			// ★Find Overset が(走査文書が生存したまま)単独 ON 中なら地図を残す(赤帯だけ描き直す)。
 			//   overset 文書自身が閉じた場合は上(1586 付近)で DropOverset 済み=sOversetOn が false なので
@@ -2005,7 +2134,7 @@ void KESCMHandleDocsClosed()
 		}
 		changed = kTrue;
 
-		if (!quitting)
+		if (doUiNow)
 		{
 			PMString s("marks cleared");	// Stop ボタン(DoClear)と同じメッセージ
 			s.SetTranslatable(kFalse);
@@ -2061,6 +2190,12 @@ void KESCMHandleDocsClosed()
 
 	// 何か片付けたらパネルの ON/OFF 表示を実状態に合わせる(①「ON 固着」の解消)。
 	// ★終了中はパネル widget へ触らない(パネルも解体中の可能性がある)。
-	if (changed && !quitting)
-		KESCMRefreshPanel();
+	// ★一括クローズ中は保留し、全部閉じ終わった通知でまとめて流す(上の集約ブロック)。
+	if (changed)
+	{
+		if (doUiNow)
+			KESCMRefreshPanel();
+		else if (deferUi)
+			sDeferredCloseUiPending = kTrue;
+	}
 }

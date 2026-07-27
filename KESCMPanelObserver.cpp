@@ -303,16 +303,21 @@ void KESCMToggleStartStop()
 		// 「Show Marks on Source」は Start のたびに既定 ON へ戻す(仕様)。再比較(登録トグル/Ignore 切替)で
 		// 黙って ON に戻さないよう、KESCMDoMarkChangesDoc 側ではなく Start 経路のここで立てる(2026-07-25)。
 		KESCMDrawEventHandler::sSrcMarksOn = kTrue;
-		KESCMDoMarkChangesDoc(targetDB, sourceDB, report);
-		KESCMDoArmMousePeek(targetDB, sourceDB);
-		KESCMScrollMapAttach(targetDB);	// Target の各文書窓にスクロールバー地図stripを注入
-		KESCMScrollMapAttach(sourceDB);	// Source 窓にも表示(2026-07-11 ユーザー要望。strip 側が窓の文書を見て供給元を切替)
-		// ★Find Overset が ON のままなら、Start 時に必ず比較 Target を再走査して overset を貼り直す(2026-07-24)。
-		//   これで (a) Start 後も Prev/Next が「変更(枠)→ overset」を同じ Target 文書で巡れる(overset が
-		//   sOversetDB!=sDB で黙って巡回対象から外れる不具合の防止)＋(b) 同一文書でも編集で増減した overset を
-		//   リフレッシュできる(ユーザー報告: 同一文書だと再走査せず古い集合が残っていた)。
-		if (KESCMDrawEventHandler::sOversetOn)
-			KESCMApplyOversetForDoc(targetDB);
+		// ★比較をユーザーがキャンセルしたら(ページ数が多いときは進捗バーに Cancel が出る)Start しない。
+		//   マークは KESCMDoMarkChangesDoc 側で破棄済みなので、arm も strip 注入もせず「押す前」の状態へ
+		//   戻す(中途半端に arm だけ残して、枠が1つも無い Start 中を作らない)。
+		if (KESCMDoMarkChangesDoc(targetDB, sourceDB, report) == kSuccess)
+		{
+			KESCMDoArmMousePeek(targetDB, sourceDB);
+			KESCMScrollMapAttach(targetDB);	// Target の各文書窓にスクロールバー地図stripを注入
+			KESCMScrollMapAttach(sourceDB);	// Source 窓にも表示(2026-07-11 ユーザー要望。strip 側が窓の文書を見て供給元を切替)
+			// ★Find Overset が ON のままなら、Start 時に必ず比較 Target を再走査して overset を貼り直す(2026-07-24)。
+			//   これで (a) Start 後も Prev/Next が「変更(枠)→ overset」を同じ Target 文書で巡れる(overset が
+			//   sOversetDB!=sDB で黙って巡回対象から外れる不具合の防止)＋(b) 同一文書でも編集で増減した overset を
+			//   リフレッシュできる(ユーザー報告: 同一文書だと再走査せず古い集合が残っていた)。
+			if (KESCMDrawEventHandler::sOversetOn)
+				KESCMApplyOversetForDoc(targetDB);
+		}
 		KESCMSetStatus(report);
 	}
 

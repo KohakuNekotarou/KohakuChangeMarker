@@ -37,6 +37,8 @@
 #include "IDocumentPresentation.h"
 #include "IPanelControlData.h"
 #include "LayoutUIID.h"				// kLayoutWidgetBoss / kLayoutSecondaryPanelWidgetID
+#include "ProgressBar.h"			// TaskProgressBar(重い比較の進捗バー＋キャンセル)
+#include "ErrorUtils.h"				// PMSetGlobalErrorCode(キャンセル後にグローバルエラーを残さない)
 
 #include <vector>
 #include <set>
@@ -329,7 +331,9 @@ ErrorCode KESCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMStri
 		KESCMSetStatus(busyMsg, kTrue /*forceRedrawNow*/);
 	}
 
-	int32 changedCount = 0;
+	// ★これから実際にラスタ化するページ(tPages/sPages の添字)を先に確定する。進捗バーの総数に使うほか、
+	//   差分側は「対象かどうか」の判定を1回で済ませられる(以前は判定とラスタ化が同じループにあった)。
+	std::vector<size_t> toRaster;
 	if (doIncremental)
 	{
 		// 【差分再比較】前回ペアリング(oldMap)と今回(newMap)を突き合わせる。ペア不変のページは
@@ -345,18 +349,14 @@ ErrorCode KESCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMStri
 				KESCMDrawEventHandler::DropOneEntry(it->first, it->second);
 		}
 
-		// (2) 再計算: 今回ペアの target のうち、前回ペアが無かった/相手が変わったものだけ MakeEntry。
+		// (2) 再計算対象: 今回ペアの target のうち、前回ペアが無かった/相手が変わったものだけ。
 		//     ペア不変ページは触らない(=前回結果を再利用=ラスタ化しない=ここが高速化の核)。
 		for (size_t i = 0; i < n; ++i)
 		{
 			std::map<UID, UID>::const_iterator oit = oldMap.find(tPages[i]);
 			if (oit == oldMap.end() || oit->second != sPages[i])
-			{
-				bool16 changed = kFalse;
-				KESCMDrawEventHandler::MakeEntry(UIDRef(targetDB, tPages[i]), UIDRef(sourceDB, sPages[i]), changed);
-			}
+				toRaster.push_back(i);
 		}
-		changedCount = (int32)KESCMDrawEventHandler::sEntries.size();	// 再利用分も含めた現在の変化ページ総数
 	}
 	else
 	{
@@ -366,24 +366,80 @@ ErrorCode KESCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMStri
 		// 対象文書を丸ごと入れ替えるので、変更ページ巡回(Next/Prev)の基準点も捨てる。旧文書のページ UID を
 		// 持ち越すと、別文書での UID 偶然一致で誤った位置から巡回が始まるため(差分再比較の側は同一文書なので触らない)。
 		KESCMResetNav();
+		toRaster.reserve(n);
 		for (size_t i = 0; i < n; ++i)
-		{
-			bool16 changed = kFalse;
-			KESCMDrawEventHandler::MakeEntry(UIDRef(targetDB, tPages[i]), UIDRef(sourceDB, sPages[i]), changed);
-			if (changed) ++changedCount;
-		}
+			toRaster.push_back(i);
 	}
 
-	// 今回のペアリングを次回の差分用に記録する(差分・全再比較のどちらの経路でも)。
-	KESCMDrawEventHandler::sPrevPairTargetToSource.swap(newMap);
+	// ★重い比較には進捗バーとキャンセルを出す(2026-07-27)。TaskProgressBar は showImmediate=kFalse(既定)
+	//   なので、すぐ終わる比較ではバーが一度も現れない=「ページ数が多いときだけ出る」が自前のしきい値
+	//   なしで成立する。総数は「これから実際にラスタ化する枚数」(差分なら再計算するページだけ)。
+	//   タイトルは KESCM の他の文言と同じく英語固定＝翻訳キー扱いを避けるため SetTranslatable(kFalse)。
+	// ★検証用スイッチ: kTrue にすると showImmediate=kTrue で「比較が始まった瞬間に必ず出す」。
+	//   進捗バーとキャンセルの動きを実機で確かめたいときだけ一時的に kTrue にする
+	//   (2026-07-27 に kTrue で実機確認済み → 既定の kFalse に戻した)。
+	//   kFalse = 上のコメントどおりの本来の挙動 = すぐ終わる比較では一度も現れない。
+	static const bool8 kKESCMProgressBarShowImmediate = kFalse;
 
-	// sSrcDB/対応表は MakeEntry が変化ページ登録時に埋めるが、変化ゼロでも db だけは明示しておく
-	// (エントリが無ければ wantSrcMarks が空判定で落ちるので描画コストは増えない)。
-	// ★「Show Marks on Source」の既定 ON はここでは立てない(2026-07-25 監査で移動): この関数は Start
-	//   だけでなく登録トグルの差分再比較・Ignore Page Number 切替の再比較も通るため、ここで kTrue に
-	//   戻すとユーザーが OFF にした直後の再比較で黙って ON に戻ってしまう。既定 ON へ戻すのは仕様どおり
-	//   Start 経路(KESCMToggleStartStop)のみ。
-	KESCMDrawEventHandler::sSrcDB = sourceDB;
+	const int32 rasterCount = (int32)toRaster.size();
+	PMString barTitle(rasterCount == 1 ? "Comparing 1 page..." : "Comparing pages...");
+	barTitle.SetTranslatable(kFalse);
+	TaskProgressBar progress(barTitle, rasterCount, kKESCMProgressBarShowImmediate);
+	progress.DisableChildProgressBars(kTrue);	// ラスタ化の内部処理が自分のバーを出すのを抑える
+
+	bool16 cancelled = kFalse;
+	int32 changedCount = 0;
+	for (size_t k = 0; k < toRaster.size(); ++k)
+	{
+		const size_t i = toRaster[k];
+
+		PMString item("Page ");
+		item.AppendNumber((int32)(k + 1));
+		item.Append(" / ");
+		item.AppendNumber(rasterCount);
+		item.SetTranslatable(kFalse);	// 数値入りなので翻訳対象にしない
+		progress.DoTask(item);			// ★1件進める(前の1件の完了もここで反映される)
+
+		bool16 changed = kFalse;
+		KESCMDrawEventHandler::MakeEntry(UIDRef(targetDB, tPages[i]), UIDRef(sourceDB, sPages[i]), changed);
+		if (changed) ++changedCount;
+
+		// ★キャンセル判定は「1ページを比較し終えた安全な場所」で行う(WasCancelled はイベントを回すので、
+		//   ラスタ化の途中では見ない)。引数 kFalse = グローバルエラー状態を立てない(立てると後続の
+		//   コマンドが巻き添えで失敗する)。
+		if (progress.WasCancelled(kFalse))
+		{
+			cancelled = kTrue;
+			break;
+		}
+	}
+	// 差分では、今回ラスタ化しなかったページ(前回結果の再利用分)も現在の変化ページ数に含める。
+	if (doIncremental && !cancelled)
+		changedCount = (int32)KESCMDrawEventHandler::sEntries.size();
+
+	if (cancelled)
+	{
+		// ★キャンセル: 「比較済みページと未比較ページの混在」を残さない。マークを全部捨てて
+		//   「比較していない」状態へ戻す(変更が無いのか、まだ見ていないのかが区別できない画面を作らない)。
+		//   前回ペアリングも DropAll が捨てるので、次の比較は必ず全ページを見直す(差分で取りこぼさない)。
+		//   ここでペアリング(newMap)を記録しないのが肝。
+		KESCMDrawEventHandler::DropAll();
+		changedCount = 0;
+		ErrorUtils::PMSetGlobalErrorCode(kSuccess);	// 中断で立った可能性のあるエラーを持ち越さない
+	}
+	else
+	{
+		// 今回のペアリングを次回の差分用に記録する(差分・全再比較のどちらの経路でも)。
+		KESCMDrawEventHandler::sPrevPairTargetToSource.swap(newMap);
+
+		// sSrcDB/対応表は MakeEntry が変化ページ登録時に埋めるが、変化ゼロでも db だけは明示しておく
+		// (エントリが無ければ wantSrcMarks が空判定で落ちるので描画コストは増えない)。
+		// ★「Show Marks on Source」の既定 ON はここでは立てない(2026-07-25 監査で移動): この関数は Start
+		//   だけでなく登録トグルの差分再比較・Ignore Page Number 切替の再比較も通るため、ここで kTrue に
+		//   戻すとユーザーが OFF にした直後の再比較で黙って ON に戻ってしまう。既定 ON へ戻すのは仕様どおり
+		//   Start 経路(KESCMToggleStartStop)のみ。
+		KESCMDrawEventHandler::sSrcDB = sourceDB;
+	}
 
 	// overflow("/")キャッシュを今の対応表から作り直す。ここは Start・登録 Add/解除・Ignore 切替が
 	// すべて通る唯一の再比較路なので、これらの操作後は描画側が最新の overflow を使う(描画のたびの
@@ -425,10 +481,20 @@ ErrorCode KESCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMStri
 
 	PMString report;
 	report.SetTranslatable(kFalse);
-	report.Append("marks start");
-	report.AppendW(UTF32TextChar(0x0A));	// 改行 → 2行目へ
-	report.Append("pages compared="); report.AppendNumber((int32)n);
-	report.Append(" changed="); report.AppendNumber(changedCount);
+	if (cancelled)
+	{
+		// キャンセルしたことと、その結果マークが無くなったことの両方を出す(枠が消えた理由が分かるように)。
+		report.Append("comparison cancelled");
+		report.AppendW(UTF32TextChar(0x0A));	// 改行 → 2行目へ
+		report.Append("marks cleared");
+	}
+	else
+	{
+		report.Append("marks start");
+		report.AppendW(UTF32TextChar(0x0A));	// 改行 → 2行目へ
+		report.Append("pages compared="); report.AppendNumber((int32)n);
+		report.Append(" changed="); report.AppendNumber(changedCount);
+	}
 	outReport = report;
 
 	// Prev/Next 間の現在位置表示(k/N・-)と Prev/Next ボタンの有効/無効を、確定した最新の変更ページ集合で
@@ -436,7 +502,10 @@ ErrorCode KESCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMStri
 	// 押さなくても集合の変化に即時追従する(ユーザー要望 2026-07-15。全再比較路では上で KESCMResetNav 済み
 	// =未巡回扱いで "1/N")。
 	KESCMRefreshNavPosition();
-	return kSuccess;
+	// ★キャンセルは kFailure で返す。Start 経路(KESCMToggleStartStop)はこの戻り値を見て arm するかどうかを
+	//   決めるので、ここを常に kSuccess にすると「キャンセルしたのに arm され、メニューが Stop のまま」
+	//   になる(2026-07-27 実機で発生)。
+	return cancelled ? kFailure : kSuccess;
 }
 
 // 文書の生存確認(KESCMCore.h で宣言)。★閉じた db は deref 禁止=IDocumentList への

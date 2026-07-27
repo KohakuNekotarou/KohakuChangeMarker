@@ -194,6 +194,13 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 		kInvalidClass,
 		{
 			IID_IKESCMLAYOUTSYNCOBSERVER, kKESCMLayoutSyncObserverImpl,
+			// Batch-close observer (2026-07-27). Subscribes to the application subject and waits for
+			// kPendingDocumentsClosedMsg, which the built-in Links UI plug-in broadcasts once every
+			// document of a multi-document close has finished closing. Closing N documents used to run
+			// KESCM's full close cleanup (strip detach, InvalidateViews, thumbnail refresh, panel
+			// refresh) N times; now the UI half is deferred and flushed once. Lives on the same
+			// active-context boss for the same proven reason as the sync observer above.
+			IID_IKESCMDOCSCLOSEDOBSERVER, kKESCMDocsClosedObserverImpl,
 		}
 	},
 
@@ -429,9 +436,9 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kSDKDefIsNotDynamicMenuFlag,
 
 		// "Show HUD" on the panel flyout (popup) menu. Check-mark toggle (default ON): while ON, holding
-		// the tool's left button draws one line in the top-left corner of the layout view telling you what
-		// the other side of the comparison is ("Source: <name>" over the target, "Target: <name>" over the
-		// source, "Not in comparison" elsewhere, "Not comparing" when stopped). Spec: docs/ai-notes/kescm-tracker-hud.md.
+		// the tool's left button draws one line in the top-left corner of the layout view telling you the
+		// role of the window you are holding in ("Target" over the target, "Source" over the source,
+		// "Not in comparison" elsewhere, "Not comparing" when stopped). Spec: docs/ai-notes/kescm-tracker-hud.md.
 		kKESCMPopupHudActionID,
 		kKESCMPopupMenuPath,
 		kKESCMHudMenuItemPosition,

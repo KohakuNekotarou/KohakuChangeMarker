@@ -87,7 +87,7 @@ DECLARE_PMID(kClassIDSpace, kKESCMTrackerRegisterBoss, kKESCMPrefix + 15)	// ト
 
 // InterfaceIDs:
 DECLARE_PMID(kInterfaceIDSpace, IID_IKESCMLAYOUTSYNCOBSERVER, kKESCMPrefix + 0)	// レイアウトビュー同期オブザーバのアタッチ識別ID(AttachObserver の observerIID)
-//DECLARE_PMID(kInterfaceIDSpace, IID_IKESCMINTERFACE, kKESCMPrefix + 1)
+DECLARE_PMID(kInterfaceIDSpace, IID_IKESCMDOCSCLOSEDOBSERVER, kKESCMPrefix + 1)	// 一括クローズ完了(kPendingDocumentsClosedMsg)を受けるオブザーバのアタッチ識別ID
 //DECLARE_PMID(kInterfaceIDSpace, IID_IKESCMINTERFACE, kKESCMPrefix + 2)
 //DECLARE_PMID(kInterfaceIDSpace, IID_IKESCMINTERFACE, kKESCMPrefix + 3)
 //DECLARE_PMID(kInterfaceIDSpace, IID_IKESCMINTERFACE, kKESCMPrefix + 4)
@@ -146,7 +146,7 @@ DECLARE_PMID(kImplementationIDSpace, kKESCMCursorProviderImpl, kKESCMPrefix + 17
 //DECLARE_PMID(kImplementationIDSpace, kKESCMImpl, kKESCMPrefix + 16)
 //DECLARE_PMID(kImplementationIDSpace, kKESCMImpl, kKESCMPrefix + 17)
 DECLARE_PMID(kImplementationIDSpace, kKESCMSpriteImpl, kKESCMPrefix + 18)	// ISprite 実装(NoHandleSprite 派生)。トラッカーの描画層＝押下中 HUD をここで描く。実体 KESCMTracker.cpp の KESCMSprite
-//DECLARE_PMID(kImplementationIDSpace, kKESCMImpl, kKESCMPrefix + 19)
+DECLARE_PMID(kImplementationIDSpace, kKESCMDocsClosedObserverImpl, kKESCMPrefix + 19)	// IObserver 実装(一括クローズ完了で、保留した後片付けを1回だけ流す。KESCMPeek.cpp)
 //DECLARE_PMID(kImplementationIDSpace, kKESCMImpl, kKESCMPrefix + 20)
 //DECLARE_PMID(kImplementationIDSpace, kKESCMImpl, kKESCMPrefix + 21)
 //DECLARE_PMID(kImplementationIDSpace, kKESCMImpl, kKESCMPrefix + 22)
