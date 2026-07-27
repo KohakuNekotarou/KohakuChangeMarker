@@ -59,6 +59,10 @@
 #include "IFontMgr.h"				// 既定フォント取得
 #include "IPMFont.h"
 
+// 選択ページ再比較の進捗バー:
+#include "ProgressBar.h"			// TaskProgressBar(多ページの Refresh に進捗＋キャンセル)
+#include "ErrorUtils.h"				// PMSetGlobalErrorCode(キャンセル後にエラーを持ち越さない)
+
 #include <map>
 #include <vector>
 #include <cstring>				// std::memset(カーソルバッファの透明クリア)
@@ -244,13 +248,17 @@ static void KESCMPeekShowUnderMouse(IDataBase* targetDB, IDataBase* sourceDB)
 //   ・✓ の剪定/レイアウト・スクロールバー地図・Pages パネルサムネイルの更新まで行う。
 //   実際に再比較したページ数(対応表に無い登録済みページ等の skip を除く)を outProcessed に、
 //   うち変化ページ数を outChanged に返す。戻り=1ページ以上処理したか。
+//   ★ページ数が多いときは進捗バー＋キャンセルを出す(2026-07-27)。キャンセルされたら outCancelled に
+//     kTrue を返し、「そこまで更新した分は残して」止める(Start の比較と違い全部は捨てない。理由は
+//     下のループ内コメント)。更新済みページの反映(✓剪定・再描画・サムネイル)は中断時も行う。
 //   ★旧 Ctrl+ミドル(マウス下スプレッド再比較)の中核をページ指定へ一般化したもの(2026-07-13 移設)。
 static bool16 KESCMRefreshComparisonCore(IDataBase* targetDB, IDataBase* sourceDB,
                                          const std::vector<UID>& targetPages,
-                                         int32* outProcessed, int32* outChanged)
+                                         int32* outProcessed, int32* outChanged, bool16* outCancelled)
 {
 	if (outProcessed) *outProcessed = 0;
 	if (outChanged)   *outChanged = 0;
+	if (outCancelled) *outCancelled = kFalse;
 	if (targetDB == nil || sourceDB == nil || targetPages.empty())
 		return kFalse;
 
@@ -269,15 +277,48 @@ static bool16 KESCMRefreshComparisonCore(IDataBase* targetDB, IDataBase* sourceD
 	// 指定ページを再比較して枠を更新。触れたページ(target とその source 対応)を集めておき、後で Pages
 	// パネルのサムネイルを per-UID Purge する。変化あり/なしの両方を入れる=変化なしに戻って sEntries から
 	// 外れたページも古いリングを確実に消せるようにするため。
-	int32 changedCount = 0;
-	std::vector<UID> touchedTargetPages, touchedSourcePages;
+	// ★実際に比較するページを先に確定する(進捗バーの総数に使う。対応表に無い=登録済み(比較相手なし)
+	//   ページはここで落ちる)。Start 経路(KESCMCore.cpp の toRaster)と同じ「先に対象を確定してから回す」形。
+	std::vector<UID> toCompareT, toCompareS;
+	toCompareT.reserve(targetPages.size());
+	toCompareS.reserve(targetPages.size());
 	for (size_t i = 0; i < targetPages.size(); ++i)
 	{
-		const UID tUID = targetPages[i];
-		std::map<UID, UID>::const_iterator mi = targetToSource.find(tUID);
+		std::map<UID, UID>::const_iterator mi = targetToSource.find(targetPages[i]);
 		if (mi == targetToSource.end())
 			continue;	// 登録済み(比較相手なし)ページ等は再比較対象外
-		const UID sUID = mi->second;
+		toCompareT.push_back(targetPages[i]);
+		toCompareS.push_back(mi->second);
+	}
+
+	// 対象0件(選択が登録済み=比較相手なしページばかり)ならここで戻る。総数0の進捗バーを作らずに済み、
+	// 下の後処理(✓剪定・再描画・サムネイル)も走らせない=以前と同じ「何もしない」振る舞いになる。
+	if (toCompareT.empty())
+		return kFalse;
+
+	// ★ページ数が多いときだけ進捗バー＋キャンセルを出す(2026-07-27)。しきい値と、自前でしきい値を
+	//   持つ理由は kKESCMProgressBarMinPages(KESCMConstants.h)を参照。
+	const int32 compareCount = (int32)toCompareT.size();
+	const bool8 showBar = (compareCount >= kKESCMProgressBarMinPages) ? kTrue : kFalse;
+	PMString barTitle(compareCount == 1 ? "Refreshing 1 page..." : "Refreshing pages...");
+	barTitle.SetTranslatable(kFalse);
+	TaskProgressBar progress(barTitle, compareCount, showBar);
+	progress.DisableChildProgressBars(kTrue);	// ラスタ化の内部処理が自分のバーを出すのを抑える
+
+	int32 changedCount = 0;
+	bool16 cancelled = kFalse;
+	std::vector<UID> touchedTargetPages, touchedSourcePages;
+	for (size_t i = 0; i < toCompareT.size(); ++i)
+	{
+		PMString item("Page ");
+		item.AppendNumber((int32)(i + 1));
+		item.Append(" / ");
+		item.AppendNumber(compareCount);
+		item.SetTranslatable(kFalse);	// 数値入りなので翻訳対象にしない
+		progress.DoTask(item);			// ★1件進める(前の1件の完了もここで反映される)
+
+		const UID tUID = toCompareT[i];
+		const UID sUID = toCompareS[i];
 		touchedTargetPages.push_back(tUID);
 		touchedSourcePages.push_back(sUID);
 		bool16 changed = kFalse;
@@ -290,9 +331,26 @@ static bool16 KESCMRefreshComparisonCore(IDataBase* targetDB, IDataBase* sourceD
 			// Source 側対応表(sSrcPageToTarget[sUID])も掃除する共通ヘルパへ統一(ドロップ処理を1本化)。
 			KESCMDrawEventHandler::DropOneEntry(tUID, sUID);
 		}
+
+		// ★キャンセル判定は「1ページを比較し終えた安全な場所」で行う(WasCancelled はイベントを回すので
+		//   ラスタ化の途中では見ない)。引数 kFalse = グローバルエラー状態を立てない(立てると後続の
+		//   コマンドが巻き添えで失敗する)。
+		// ★Start の比較と違い、ここは「そこまで更新した分を残して止める」。この機能はもともと
+		//   「選んだページだけを最新にする」部分更新なので、途中でやめても残るのは「更新した数ページ＋
+		//   まだ古い数ページ」= 選択範囲を狭めて実行したのと同じ状態にしかならない(Start のように
+		//   「比較済みと未比較が混在した文書全体」を作ってしまうことはない)。
+		if (progress.WasCancelled(kFalse))
+		{
+			cancelled = kTrue;
+			ErrorUtils::PMSetGlobalErrorCode(kSuccess);	// 中断で立った可能性のあるエラーを持ち越さない
+			break;
+		}
 	}
-	// 報告用の処理数=実際に MakeEntry/DropOneEntry まで到達したページ数(上の continue で skip した
-	// 選択ページは数えない。ステータス行の「refreshed N」が実態と一致するように。2026-07-15)。
+	if (outCancelled) *outCancelled = cancelled;
+
+	// 報告用の処理数=実際に MakeEntry/DropOneEntry まで到達したページ数(対応表に無くて対象から外れた
+	// 選択ページは数えない。キャンセル時はそこまでに処理した数。ステータス行の「refreshed N」が実態と
+	// 一致するように。2026-07-15)。
 	if (outProcessed) *outProcessed = (int32)touchedTargetPages.size();
 	if (touchedTargetPages.empty())
 		return kFalse;
@@ -336,10 +394,11 @@ static bool16 KESCMRefreshComparisonCore(IDataBase* targetDB, IDataBase* sourceD
 // (★2026-07-15 Target 限定化=ユーザー指定。旧仕様の Source→Target 写像経路は撤去)。
 // outPages=実際に再比較したページ数(対応表に無い登録済みページ等は数えない)、
 // outChanged=うち変化したページ数。戻り=1ページ以上処理したか。
-bool16 KESCMRefreshComparisonForSelectedPages(int32* outPages, int32* outChanged)
+bool16 KESCMRefreshComparisonForSelectedPages(int32* outPages, int32* outChanged, bool16* outCancelled)
 {
-	if (outPages)   *outPages = 0;
-	if (outChanged) *outChanged = 0;
+	if (outPages)     *outPages = 0;
+	if (outChanged)   *outChanged = 0;
+	if (outCancelled) *outCancelled = kFalse;
 
 	if (!KESCMIsArmed())
 		return kFalse;
@@ -360,7 +419,12 @@ bool16 KESCMRefreshComparisonForSelectedPages(int32* outPages, int32* outChanged
 	std::vector<UID> targetPages = selPages;
 
 	int32 processed = 0, changed = 0;
-	if (!KESCMRefreshComparisonCore(targetDB, sourceDB, targetPages, &processed, &changed))
+	bool16 cancelled = kFalse;
+	const bool16 ok = KESCMRefreshComparisonCore(targetDB, sourceDB, targetPages, &processed, &changed, &cancelled);
+	// キャンセルの有無は Core の成否に関わらず返す。※Core が kFalse を返すのは「対象0件」= cancelled が
+	//   kFalse の経路だけなので実際には両立しないが、戻り値の意味に依存せず伝えておく(防御)。
+	if (outCancelled) *outCancelled = cancelled;
+	if (!ok)
 		return kFalse;
 
 	// この経路は KESCMDoMarkChangesDoc を通らない独立再比較なので、Prev/Next 間の位置表示と

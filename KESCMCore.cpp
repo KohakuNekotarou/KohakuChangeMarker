@@ -371,20 +371,18 @@ ErrorCode KESCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMStri
 			toRaster.push_back(i);
 	}
 
-	// ★重い比較には進捗バーとキャンセルを出す(2026-07-27)。TaskProgressBar は showImmediate=kFalse(既定)
-	//   なので、すぐ終わる比較ではバーが一度も現れない=「ページ数が多いときだけ出る」が自前のしきい値
-	//   なしで成立する。総数は「これから実際にラスタ化する枚数」(差分なら再計算するページだけ)。
-	//   タイトルは KESCM の他の文言と同じく英語固定＝翻訳キー扱いを避けるため SetTranslatable(kFalse)。
-	// ★検証用スイッチ: kTrue にすると showImmediate=kTrue で「比較が始まった瞬間に必ず出す」。
-	//   進捗バーとキャンセルの動きを実機で確かめたいときだけ一時的に kTrue にする
-	//   (2026-07-27 に kTrue で実機確認済み → 既定の kFalse に戻した)。
-	//   kFalse = 上のコメントどおりの本来の挙動 = すぐ終わる比較では一度も現れない。
-	static const bool8 kKESCMProgressBarShowImmediate = kFalse;
-
+	// ★重い比較には進捗バーとキャンセルを出す(2026-07-27)。総数は「これから実際にラスタ化する枚数」
+	//   (差分なら再計算するページだけ)。タイトルは KESCM の他の文言と同じく英語固定＝翻訳キー扱いを
+	//   避けるため SetTranslatable(kFalse)。
+	// ★★showImmediate(第3引数)は「時間がかかったら自動で出す」ではない。kFalse(既定)は「出さない」で、
+	//   100 ページの比較でも一度も現れなかった(2026-07-27 実機で判明)。→ 出す/出さないは自前のしきい値
+	//   kKESCMProgressBarMinPages(KESCMConstants.h。経緯もそこに記載)で決める。登録トグルによる数ページの
+	//   差分再比較ではバーを出さず、本格的な比較では必ず出る。
 	const int32 rasterCount = (int32)toRaster.size();
+	const bool8 showBar = (rasterCount >= kKESCMProgressBarMinPages) ? kTrue : kFalse;
 	PMString barTitle(rasterCount == 1 ? "Comparing 1 page..." : "Comparing pages...");
 	barTitle.SetTranslatable(kFalse);
-	TaskProgressBar progress(barTitle, rasterCount, kKESCMProgressBarShowImmediate);
+	TaskProgressBar progress(barTitle, rasterCount, showBar);
 	progress.DisableChildProgressBars(kTrue);	// ラスタ化の内部処理が自分のバーを出すのを抑える
 
 	bool16 cancelled = kFalse;
