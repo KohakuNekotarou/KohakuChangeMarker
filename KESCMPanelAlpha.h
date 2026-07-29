@@ -28,7 +28,10 @@ void	KESCMSetPanelTranslucent(bool16 on);
 
 // 現在のフラグをパネルの窓へ反映する。
 //  - パネルが見つからない / ドッキング中 のときは何もしない(エラーにしない)
-//  - 呼ぶ場所: メニュー押下時(KESCMActionComponent.cpp)と パネルの AutoAttach 時(KESCMPanelObserver.cpp)
-void	KESCMApplyPanelTranslucency();
+//  - 呼ぶ場所: メニュー押下時(KESCMActionComponent.cpp)と パネルの AutoAttach 時・
+//    ドッキング切り替え時(KESCMPanelObserver.cpp)
+//  - 返り値: 実際に窓へ alpha を設定できたら kTrue。パネルが無い/ドッキング中/Mac なら kFalse
+//    (メニュー押下時のステータス文言を「効いた」「ドッキング中なので効かない」で分けるために使う)
+bool16	KESCMApplyPanelTranslucency();
 
 #endif // __KESCMPanelAlpha_h__

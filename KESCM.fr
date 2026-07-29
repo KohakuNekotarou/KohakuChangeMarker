@@ -417,6 +417,17 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKESCMSyncViewsMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
+		// "Translucent Panel" on the panel flyout (popup) menu. Check-mark toggle (default OFF):
+		// while ON, this panel itself is drawn translucent (alpha 128) as long as it is FLOATING.
+		// Windows only. Choosing it while the panel is docked is allowed but has no visible effect
+		// (only the flag is stored; it takes hold as soon as the panel floats again), because a
+		// docked panel is a child of the main frame and cannot be made transparent on its own.
+		// Implementation: KESCMPanelAlpha.cpp.
+		kKESCMPopupTranslucentPanelActionID,
+		kKESCMPopupMenuPath,
+		kKESCMTranslucentPanelMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
 		// "Align Other Views to Active" on the panel flyout (popup) menu. Plain command (not a toggle):
 		// sets every OTHER document's layout views to the active (frontmost) view's position + zoom, once.
 		// Independent of the Sync Layout Views toggle (works even when it is OFF). While Started, the page
@@ -713,6 +724,15 @@ resource ActionDef (kSDKDefActionResourceID)
 		kKESCMActionComponentBoss,
 		kKESCMPopupHudActionID,
 		kKESCMHudMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates supplies the check mark (kSelectedAction)
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		kKESCMActionComponentBoss,
+		kKESCMPopupTranslucentPanelActionID,
+		kKESCMTranslucentPanelMenuKey,
 		kOtherActionArea,
 		kNormalAction,
 		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates supplies the check mark (kSelectedAction)

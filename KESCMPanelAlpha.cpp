@@ -114,6 +114,28 @@ static HWND KESCMFindPaletteWindow(const wchar_t* title)
 	return ctx.fFound;
 }
 
+// ★見つけた OWL.Palette を覚えておく。パネルを閉じて開き直しても OWL.Palette の HWND は
+//   変わらない(変わるのは親の OWL.Dock のほう)ので、キャッシュが効く。
+//   ここを入れる理由: 購読している kPaletteVisibilityChangedMessage は「文書を1つ開く」だけでも
+//   複数回飛ぶ(2026-07-29 実測)。そのたびに全窓を EnumWindows で舐めるのは無駄。
+static HWND sPaletteWnd = nullptr;
+
+// キャッシュ優先でパネル窓を得る。★ハンドルは OS が使い回すので、生存確認だけでなく
+//   クラス名/タイトルの一致も見てから使う(全窓走査より遥かに安い)。
+static HWND KESCMQueryPaletteWindow()
+{
+	KESCMFindPaletteCtx ctx;
+	ctx.fTitle = kKESCMPaletteWindowTitle;
+	ctx.fPid   = ::GetCurrentProcessId();
+	ctx.fFound = nullptr;
+
+	if (sPaletteWnd != nullptr && ::IsWindow(sPaletteWnd) && KESCMWindowMatches(sPaletteWnd, &ctx))
+		return sPaletteWnd;
+
+	sPaletteWnd = KESCMFindPaletteWindow(kKESCMPaletteWindowTitle);
+	return sPaletteWnd;
+}
+
 // パネルが載っている「今の」トップレベル窓のうち、単独で透かせるものだけを返す。
 // ドッキング中(GA_ROOT がメインフレーム)なら nullptr。
 static HWND KESCMQueryFloatingDock(HWND palette)
@@ -135,17 +157,19 @@ static HWND KESCMQueryFloatingDock(HWND palette)
 
 #endif // WINDOWS
 
-void KESCMApplyPanelTranslucency()
+bool16 KESCMApplyPanelTranslucency()
 {
 #ifdef WINDOWS
-	HWND palette = KESCMFindPaletteWindow(kKESCMPaletteWindowTitle);
+	HWND palette = KESCMQueryPaletteWindow();
 	HWND dock    = KESCMQueryFloatingDock(palette);
 	if (dock == nullptr)
-		return;		// パネルが無い / ドッキング中 → 何もしない
+		return kFalse;		// パネルが無い / ドッキング中 → 何もしない
 
 	const BYTE alpha = sPanelTranslucent ? kKESCMPanelAlphaValue : 255;
 
 	// ★WS_EX_LAYERED は InDesign が最初から立てているので触らない。
-	::SetLayeredWindowAttributes(dock, 0, alpha, LWA_ALPHA);
+	return ::SetLayeredWindowAttributes(dock, 0, alpha, LWA_ALPHA) ? kTrue : kFalse;
+#else
+	return kFalse;		// Mac: 半透明化の手段が無いので常に「適用しなかった」
 #endif
 }

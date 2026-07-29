@@ -50,6 +50,7 @@
 #include "KESCMOversetScan.h"		// KESCMCollectOversetLocations(Find Overset の検出=アクティブ文書走査)
 #include "KESCMChangedPagesTSV.h"	// KESCMExportChangedPagesTSV(フライアウト「Export Changed Pages...」)
 #include "KESCMChangeNav.h"			// KESCMRefreshNavPosition(overset トグルで Prev/Next の対象数を更新)
+#include "KESCMPanelAlpha.h"		// KESCMGetPanelTranslucent/Set/Apply(フライアウト「Translucent Panel」)
 #include "IActiveContext.h"			// GetContextDocument(アクティブ文書の解決)
 #include "IDocument.h"
 #include "PersistUtils.h"			// ::GetUIDRef(doc)(アクティブ文書 → db)
@@ -259,6 +260,30 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 			break;
 		}
 
+		// 「Translucent Panel」トグル: フローティング中のこのパネル自身を半透明(alpha 128)にするか
+		// (★Windows 専用・既定 OFF)。ドッキング中も選べるが見た目は変わらない=フラグだけ立ち、
+		// フローティングに戻した時点で効く(その追随は KESCMPanelObserver.cpp が
+		// kPaletteVisibilityChangedMessage を購読して行う)。実体は KESCMPanelAlpha.cpp。
+		case kKESCMPopupTranslucentPanelActionID:
+		{
+			const bool16 on = !KESCMGetPanelTranslucent();
+			KESCMSetPanelTranslucent(on);
+
+			// 実際に窓へ届いたか(=フローティング中か)でステータス文言を分ける。ドッキング中に
+			// 押しても画面が変わらないので、「なぜ効かないか」を言葉で返す。
+			const bool16 applied = KESCMApplyPanelTranslucency();
+			PMString msg;
+			if (!on)
+				msg = "Translucent panel: off.";
+			else if (applied)
+				msg = "Translucent panel: on.";
+			else
+				msg = "Translucent panel: on - takes effect while the panel is floating.";
+			msg.SetTranslatable(kFalse);
+			KESCMSetStatus(msg);
+			break;
+		}
+
 		// 「Hold to Hide Marks」トグル: 枠表示の極性反転(フラグ反転のみ)。ON=画面に枠を常時表示し、
 		// ツール左hold中だけ隠す(押下/解放は KESCMPeek.cpp のトラッカー(KESCMTrackerRevealBegin/End)が sMarksTempHidden を上下)。
 		// OFF=従来(既定非表示・押下中だけ表示)。画面のみ=印刷は Print comparison marks が別管理。
@@ -449,6 +474,15 @@ void KESCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionSta
 			int16 actionState = kEnabledAction;
 			if (KESCMGetHudEnabled())
 				actionState |= kSelectedAction;	// ON(既定)ならチェックマーク
+			listToUpdate->SetNthActionState(i, actionState);
+		}
+		else if (action == kKESCMPopupTranslucentPanelActionID)
+		{
+			// ★ドッキング中でも選べる(グレーアウトしない)=ユーザー指定 2026-07-29。
+			// 押した結果が見えないケースは DoAction 側がステータス文言で伝える。
+			int16 actionState = kEnabledAction;
+			if (KESCMGetPanelTranslucent())
+				actionState |= kSelectedAction;	// ON ならチェックマーク
 			listToUpdate->SetNthActionState(i, actionState);
 		}
 		else if (action == kKESCMPopupHoldToHideMarksActionID)
