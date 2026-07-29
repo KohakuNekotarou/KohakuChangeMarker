@@ -41,4 +41,9 @@ bool16	KESCMApplyPanelTranslucency();
 //   受ける(2026-07-29 に Debug 版の Spy で実測して特定。ドッキング切り替えのたびに飛ぶ)。
 void	KESCMAttachPanelVisibilityObserver();
 
+// 遅延再適用に使う one-shot タイマーの後始末。プラグイン終了時(KESCMPeekStartup::Shutdown)から
+// 呼ぶ。★ICallbackTimer のコールバックは参照カウントされない生関数ポインタなので、予約を残した
+// まま .pln が降りるとクラッシュする。実体は KESCMPanelAlpha.cpp(Mac では空実装)。
+void	KESCMShutdownPanelAlpha();
+
 #endif // __KESCMPanelAlpha_h__

@@ -148,7 +148,7 @@ DECLARE_PMID(kImplementationIDSpace, kKESCMCursorProviderImpl, kKESCMPrefix + 17
 DECLARE_PMID(kImplementationIDSpace, kKESCMSpriteImpl, kKESCMPrefix + 18)	// ISprite 実装(NoHandleSprite 派生)。トラッカーの描画層＝押下中 HUD をここで描く。実体 KESCMTracker.cpp の KESCMSprite
 DECLARE_PMID(kImplementationIDSpace, kKESCMDocsClosedObserverImpl, kKESCMPrefix + 19)	// IObserver 実装(一括クローズ完了で、保留した後片付けを1回だけ流す。KESCMPeek.cpp)
 DECLARE_PMID(kImplementationIDSpace, kKESCMPanelVisibilityObserverImpl, kKESCMPrefix + 20)	// IObserver 実装(パネルの表示状態が変わったら半透明を貼り直す。KESCMPanelAlpha.cpp)
-//DECLARE_PMID(kImplementationIDSpace, kKESCMImpl, kKESCMPrefix + 21)
+DECLARE_PMID(kImplementationIDSpace, kKESCMPanelRollOverImpl, kKESCMPrefix + 21)	// IMouseRollOver 実装(パネルにカーソルが乗っている間だけ半透明を解除。KESCMPanelAlpha.cpp)
 //DECLARE_PMID(kImplementationIDSpace, kKESCMImpl, kKESCMPrefix + 22)
 //DECLARE_PMID(kImplementationIDSpace, kKESCMImpl, kKESCMPrefix + 23)
 //DECLARE_PMID(kImplementationIDSpace, kKESCMImpl, kKESCMPrefix + 24)

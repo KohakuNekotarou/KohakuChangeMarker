@@ -1973,6 +1973,8 @@ void KESCMPeekStartup::Shutdown()
 	sDeferredCloseUiPending = kFalse;
 	// HUD(sprite)の one-shot タイマーとフォント参照も確実に返す(生関数ポインタを残さない)。
 	KESCMTrackerShutdownHud();
+	// パネル半透明の遅延再適用タイマーも同様に止める(同じく生関数ポインタを残さないため)。
+	KESCMShutdownPanelAlpha();
 	// 保持していたマーク/旧版画像バッファを解放(終了時もきれいに片付ける)。
 	KESCMDrawEventHandler::DropAll();
 	KESCMDrawEventHandler::DropAllOrig();

@@ -147,5 +147,19 @@ static const PMReal kKESCMOldNumPadEm  = 0.20;	// 透明グループ bbox の余
 // 128 ≒ 50%(ユーザー指定 2026-07-29)。段階指定やスライダーは作らないので、濃さを変えたいときは
 // ここ1箇所を書き換える。★Windows 専用(実体 KESCMPanelAlpha.cpp)。
 static const uint8 kKESCMPanelAlphaValue = 128;
+// ★通知を受けた「あと」にもう一度貼り直す回数と間隔(2026-07-29 実測で追加)。
+//   kPaletteVisibilityChangedMessage を受けた時点で alpha を書いても、その直後に InDesign が
+//   トップレベル窓を作り直すことがあり、書いた値ごと捨てられる(診断値 rb=128 ＝書けているのに、
+//   外から測ると 255。しかも適用先 HWND と、そのとき実在した窓の HWND が別物だった)。
+//   → 窓が落ち着くまでアイドルごとに数回だけ貼り直す。★0 にすれば遅延再適用を止められる。
+//   ★回数×間隔は実測で決めた(2026-07-29、work/panel-alpha-watch2.txt)。窓の交代を 40ms 間隔で
+//     追跡したところ、アイコン化(クリック一発)では 3ms の追いかけで間に合ったが、フローティング化
+//     (ドラッグして離す)では間に合わず 255 のままだった。ドラッグ操作は通知から窓確定までの時間差が
+//     桁違いに大きいため、合計 400ms ほど追いかける。
+static const int32  kKESCMPanelAlphaReapplyTries       = 8;
+static const uint32 kKESCMPanelAlphaReapplyDelayMillis = 50;	// 50ms × 8 回 ＝ 約 400ms 追いかける
+// (パネルの影(OWL.ShadowView)は alpha ではなく表示/非表示で制御する。影は per-pixel alpha で
+//  描かれていて一様 alpha と排他のため、alpha を一度設定すると OFF に戻しても元の影に復帰しない
+//  =2026-07-29 に実機で確認。詳細は KESCMPanelAlpha.cpp のコメント。よって濃さの定数は持たない)
 
 #endif // __KESCMConstants_h__

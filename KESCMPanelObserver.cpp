@@ -189,6 +189,10 @@ void KESCMPanelObserver::AutoAttach()
 	// ★ここは保険で、主たる追随は KESCMPanelAlpha.cpp のオブザーバ(kPaletteVisibilityChangedMessage)。
 	//   ★注意: この AutoAttach は widget を作り直すたびに走るので、固定の既定値を書く場所ではない
 	//   (KESCMGetPanelTranslucent の現在値を読んで反映するだけ)。
+	//
+	// ★起動時(KESCMPeekStartup::Startup)にはパネルマネージャがまだ立ち上がっておらず購読に
+	//   失敗している可能性があるため、ここでも購読を試す(IsAttached ガードがあるので二重にならない)。
+	KESCMAttachPanelVisibilityObserver();
 	KESCMApplyPanelTranslucency();
 }
 

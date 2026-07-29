@@ -151,6 +151,10 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 		{
 			IID_IPANELMENUDATA, kCPanelMenuDataImpl,
 			IID_IOBSERVER, kKESCMPanelObserverImpl,
+			// Roll-over: while the pointer is over the panel, cancel the "Translucent Panel"
+			// alpha so the contents are readable. The framework calls MouseEnter/Leave on
+			// whatever implements IID_IMOUSEROLLOVER on the widget's boss.
+			IID_IMOUSEROLLOVER, kKESCMPanelRollOverImpl,
 		}
 	},
 

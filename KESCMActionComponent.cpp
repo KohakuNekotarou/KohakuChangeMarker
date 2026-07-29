@@ -260,17 +260,18 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 			break;
 		}
 
-		// 「Translucent Panel」トグル: フローティング中のこのパネル自身を半透明(alpha 128)にするか
-		// (★Windows 専用・既定 OFF)。ドッキング中も選べるが見た目は変わらない=フラグだけ立ち、
-		// フローティングに戻した時点で効く(その追随は KESCMPanelObserver.cpp が
+		// 「Translucent Panel」トグル: このパネル自身を半透明(alpha 128)にするか
+		// (★Windows 専用・既定 OFF)。効くのは「フローティング中」と「アイコンからのドロワー展開中」の
+		// 2 つ。ドック内で展開中は選べるが見た目は変わらない=フラグだけ立ち、上記のどちらかに
+		// 戻した時点で効く(その追随は KESCMPanelObserver.cpp が
 		// kPaletteVisibilityChangedMessage を購読して行う)。実体は KESCMPanelAlpha.cpp。
 		case kKESCMPopupTranslucentPanelActionID:
 		{
 			const bool16 on = !KESCMGetPanelTranslucent();
 			KESCMSetPanelTranslucent(on);
 
-			// 実際に窓へ届いたか(=フローティング中か)でステータス文言を分ける。ドッキング中に
-			// 押しても画面が変わらないので、「なぜ効かないか」を言葉で返す。
+			// 実際に窓へ届いたかでステータス文言を分ける。ドック内で展開中に押しても画面が
+			// 変わらないので、「なぜ効かないか」を言葉で返す。
 			const bool16 applied = KESCMApplyPanelTranslucency();
 			PMString msg;
 			if (!on)
@@ -278,7 +279,7 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 			else if (applied)
 				msg = "Translucent panel: on.";
 			else
-				msg = "Translucent panel: on - takes effect while the panel is floating.";
+				msg = "Translucent panel: on - has no effect while the panel is docked.";
 			msg.SetTranslatable(kFalse);
 			KESCMSetStatus(msg);
 			break;
