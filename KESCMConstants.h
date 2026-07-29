@@ -144,9 +144,10 @@ static const PMReal kKESCMOldNumHaloEm = 0.06;	// 白フチの太さ(em比)
 static const PMReal kKESCMOldNumPadEm  = 0.20;	// 透明グループ bbox の余白(em比。白フチのはみ出しを含む)
 
 // パネル半透明トグル(フライアウト「Translucent Panel」)の alpha 値(0=完全透明 255=不透明)。
-// 128 ≒ 50%(ユーザー指定 2026-07-29)。段階指定やスライダーは作らないので、濃さを変えたいときは
-// ここ1箇所を書き換える。★Windows 専用(実体 KESCMPanelAlpha.cpp)。
-static const uint8 kKESCMPanelAlphaValue = 128;
+// ★77 ≒ 30%(ユーザー指定 2026-07-29。当初 128≒50% から変更)。カーソルを乗せれば不透明に戻る
+// (IMouseRollOver)ので、待機中はもっと薄くしてよい、という判断。段階指定やスライダーは作らないので、
+// 濃さを変えたいときはここ1箇所を書き換える。★Windows 専用(実体 KESCMPanelAlpha.cpp)。
+static const uint8 kKESCMPanelAlphaValue = 77;
 // ★通知を受けた「あと」にもう一度貼り直す回数と間隔(2026-07-29 実測で追加)。
 //   kPaletteVisibilityChangedMessage を受けた時点で alpha を書いても、その直後に InDesign が
 //   トップレベル窓を作り直すことがあり、書いた値ごと捨てられる(診断値 rb=128 ＝書けているのに、

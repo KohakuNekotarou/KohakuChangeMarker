@@ -485,15 +485,18 @@ void        KESCMShutdownPanelAlpha() {}
 //   ★仕組み: IMouseRollOver(ui/IMouseRollOver.h)は widget に roll-over 挙動を付けるための
 //     公開インターフェイス。MouseEnter / MouseOver / MouseLeave が呼ばれる。
 //     .fr でパネル boss(kKESCMPanelWidgetBoss)に IID_IMOUSEROLLOVER として AddIn する。
-//   ⚠⚠**現状これは呼ばれない**(2026-07-29 実機で確認)。原因も実機ダンプで判明済み:
-//     本体は「ロールオーバーするパネル」用に **kPanelWithRolloverWidgetBoss** という専用 boss を
-//     用意していて(.fr 型 = `PanelWithRollOverWidget`、Widgets.fh:781)、その boss が独自に持つのは
-//     IID_IMOUSEROLLOVER(=kPanelMouseRollOverImpl)**だけ**で、他は全部 kGenericPanelWidgetBoss /
-//     kBaseWidgetBoss からの継承だった(IObjectModel_RomanFS.txt 6173-6193 行)。
-//     ＝**MouseEnter を呼ぶ側は GenericPanelWidget 系の標準実装**であり、
-//       このパネル(kPalettePanelWidgetBoss 派生)はその系統ではないので呼ばれない。
-//     ★次の一手: パネルの中に `PanelWithRollOverWidget` を 1 枚置き、その boss を自前派生にして
-//       IID_IMOUSEROLLOVER を下の実装で上書きする(.fr のパネル構造に手を入れる必要あり・未実験)。
+//   ★★載せる boss を選ぶこと(2026-07-29 実測)。**パネル boss(kPalettePanelWidgetBoss 派生)に
+//     AddIn しても呼ばれない**。実機ダンプ(IObjectModel_RomanFS.txt)で IID_IMOUSEROLLOVER を
+//     実際に持つ boss を洗うと、対応しているのは次の系統だけだった:
+//       kRollOverIconButtonBoss 系(アイコンボタン全般) → kMouseRollOverImpl
+//       kPanelWithRolloverWidgetBoss(.fr 型 PanelWithRollOverWidget) → kPanelMouseRollOverImpl
+//       kClickableTextWidgetBoss 系(リンク文字) → kHyperlinkRollOverImpl
+//       kGIFPlayerWidgetBoss → kGIFMouseRollOverImpl
+//     ＝**MouseEnter を呼ぶ側は widget 側の実装**で、対応した系統でなければ何も起きない。
+//   ★現在の載せ先 = kKESCMIconWidgetBoss(パネルのイラスト。kRollOverIconButtonBoss 派生なので
+//     もともと IID_IMOUSEROLLOVER を持つ)。つまり**反応するのはイラストの上だけ**。
+//     ★パネル全体で反応させたいなら、`PanelWithRollOverWidget` を 1 枚パネルに敷き(既存 widget を
+//       その子にして包む。兄弟として重ねるとクリックを奪うので不可)、その boss で受ける。
 //   ⚠判定範囲は**パネル本体の widget まで**。タイトルバーやタブ帯(OWL クロム)の上では
 //     反応しない(クロムはマウスイベントを app dispatcher に流さない)。
 //========================================================================================

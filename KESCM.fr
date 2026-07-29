@@ -151,9 +151,11 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 		{
 			IID_IPANELMENUDATA, kCPanelMenuDataImpl,
 			IID_IOBSERVER, kKESCMPanelObserverImpl,
-			// Roll-over: while the pointer is over the panel, cancel the "Translucent Panel"
-			// alpha so the contents are readable. The framework calls MouseEnter/Leave on
-			// whatever implements IID_IMOUSEROLLOVER on the widget's boss.
+			// Roll-over: undim the panel while the pointer is over it (verified on the whole
+			// panel area, 2026-07-29). Note that IMouseRollOver has no usage example anywhere
+			// in the SDK; besides this AddIn it needs CREATE_PMINTERFACE *and* an entry in
+			// KESCMFactoryList.h - a missing factory entry fails completely silently.
+			// Implementation: KESCMPanelAlpha.cpp.
 			IID_IMOUSEROLLOVER, kKESCMPanelRollOverImpl,
 		}
 	},
