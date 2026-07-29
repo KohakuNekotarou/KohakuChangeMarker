@@ -312,8 +312,20 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 			if (KESCMDrawEventHandler::sDB != nil && KESCMDrawEventHandler::sSrcDB != nil)
 			{
 				PMString report;
-				KESCMDoMarkChangesDoc(KESCMDrawEventHandler::sDB, KESCMDrawEventHandler::sSrcDB, report);
-				msg.Append(" (recompared)");
+				// ★ここは allowIncremental を渡していない=全ページ再比較なので、ページ数が多ければ
+				//   進捗バーに Cancel が出る。キャンセルされると KESCMDoMarkChangesDoc 側でマークが
+				//   全部破棄され kFailure が返る。戻り値を捨てると arm だけが残って「枠が1つも無い
+				//   Start 中」になるので、Start 経路(KESCMToggleStartStop)と同じ考え方で Stop まで戻す
+				//   (KESCMToggleStartStop は arm 中に呼べば Stop 分岐に入る)。2026-07-29 の自己レビューで発見。
+				if (KESCMDoMarkChangesDoc(KESCMDrawEventHandler::sDB, KESCMDrawEventHandler::sSrcDB, report) == kSuccess)
+				{
+					msg.Append(" (recompared)");
+				}
+				else
+				{
+					KESCMToggleStartStop();		// マーク破棄済み → strip 撤去・disarm まで揃えて Stop へ
+					msg.Append(" (cancelled - stopped)");
+				}
 			}
 			KESCMSetStatus(msg);
 			break;

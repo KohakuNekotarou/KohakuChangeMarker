@@ -41,6 +41,13 @@ bool16	KESCMApplyPanelTranslucency();
 //   受ける(2026-07-29 に Debug 版の Spy で実測して特定。ドッキング切り替えのたびに飛ぶ)。
 void	KESCMAttachPanelVisibilityObserver();
 
+// カーソルが乗っている扱い(IMouseRollOver の MouseEnter/MouseLeave で上下する内部フラグ)を強制解除する。
+// ★MouseLeave は「カーソルを乗せたままパネルを閉じる/ドッキングする/別アプリへ切り替える」経路では
+//   飛ばない。取りこぼすと「乗っている」が張り付き、トグルが ON でも一切薄くならなくなる(フックも
+//   不透明が正しい状態だと判断するので自己修復しない)。→ パネルの widget が作り直されるタイミング
+//   (AutoAttach / 表示状態の変化)から呼ぶこと。実体は KESCMPanelAlpha.cpp。
+void	KESCMResetPanelHover();
+
 // 遅延再適用に使う one-shot タイマーの後始末。プラグイン終了時(KESCMPeekStartup::Shutdown)から
 // 呼ぶ。★ICallbackTimer のコールバックは参照カウントされない生関数ポインタなので、予約を残した
 // まま .pln が降りるとクラッシュする。実体は KESCMPanelAlpha.cpp(Mac では空実装)。

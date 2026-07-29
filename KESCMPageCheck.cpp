@@ -737,10 +737,22 @@ void KESCMPageCheckLoadFromFile()
 	// 前回結果を再利用。これにより Added/Removed の緑「/」サムネイルも更新される(登録ページ込みで Purge)。
 	// 副作用として現在の Check も KESCMPageCheckPruneToMarked でマーク付きに剪定されるが、フェーズ3で
 	// 保存 Check に置き換えるので問題ない。
+	// ★再比較をキャンセルされたら(登録の変更が多いと進捗バーに Cancel が出る)、マークは
+	//   KESCMDoMarkChangesDoc 側で全部破棄されている。そのままフェーズ3へ進むと「今もマーク付き」が
+	//   空集合になり、保存してあった ✓ を1つも復元しないまま「load chk0」と報告してしまう。
+	//   → 復元は行わず、Start 経路と同じ考え方で Stop まで戻す(枠が1つも無い Start 中を残さない)。
+	//   保存ファイル自体は無傷なので、Start し直して Load を実行すればやり直せる。2026-07-29 の自己レビューで発見。
 	if (tgt != nil && src != nil)
 	{
 		PMString report;
-		KESCMDoMarkChangesDoc(tgt, src, report, kTrue /*allowIncremental*/);
+		if (KESCMDoMarkChangesDoc(tgt, src, report, kTrue /*allowIncremental*/) != kSuccess)
+		{
+			KESCMToggleStartStop();		// arm 中なので Stop 分岐(strip 撤去・disarm・Check/Register 破棄)
+			PMString msg("Load cancelled");
+			msg.SetTranslatable(kFalse);
+			KESCMSetStatus(msg, kTrue /*forceRedrawNow*/);
+			return;
+		}
 	}
 
 	//--- フェーズ3: Check(✓)を復元する(再比較後に「今もマーク付き」のページだけ)。-----------------

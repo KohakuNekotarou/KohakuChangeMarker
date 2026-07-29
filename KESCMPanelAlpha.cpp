@@ -56,14 +56,27 @@ static bool16 sPanelTranslucent = kFalse;
 //   ⚠これは永続化しない(そのときのマウス位置で決まる一時的な状態)。
 static bool16 sPanelHover = kFalse;
 
+// カーソルが乗っている扱いを強制的に解除する(KESCMPanelAlpha.h で宣言)。
+// ★★これが要る理由(2026-07-29 の自己レビューで追加): MouseLeave は「カーソルをパネルに乗せたまま
+//   パネルを閉じる/ドッキングする/別アプリへ切り替える」経路では飛ばない。取りこぼすと sPanelHover が
+//   kTrue のまま張り付き、実効 alpha が常に 255 ＝**トグルが ON なのに一切薄くならない**。しかも
+//   Win32 フックも「255 が望みの値」と判断するので自己修復しない(一度乗せて離すまで戻らない)。
+//   → widget が作り直されるタイミング(パネルの AutoAttach / 表示状態の変化)で必ず落とす。
+void KESCMResetPanelHover()
+{
+	sPanelHover = kFalse;
+}
+
+#ifdef WINDOWS
+
 // ★実効 alpha ＝ トグルが ON で、かつカーソルが乗っていないときだけ薄くする。
 //   ここ1箇所に集約しておくこと(適用側・フックの判定側の両方から使う)。
+//   ※Mac には適用そのものが無いので置かない(未使用関数の警告を出さないため)。
 static uint8 KESCMEffectiveAlpha()
 {
 	return (sPanelTranslucent && !sPanelHover) ? kKESCMPanelAlphaValue : 255;
 }
 
-#ifdef WINDOWS
 // ★Win32 イベントフックの出し入れ(実体は下の WINDOWS ブロック)。ON の間だけ張る。
 static void KESCMInstallWinEventHook();
 static void KESCMRemoveWinEventHook();
@@ -281,24 +294,29 @@ bool16 KESCMApplyPanelTranslucency()
 
 #ifdef WINDOWS
 
-static ICallbackTimer* sReapplyTimer   = nil;
-static bool16          sReapplyPending = kFalse;	// 予約中は重ねない(この通知は連続で飛ぶ)
-static int32           sReapplyLeft    = 0;			// 残り回数(0 で打ち切り＝暴走止め)
+static ICallbackTimer* sReapplyTimer = nil;
+static int32           sReapplyLeft  = 0;			// 残り回数(0 で打ち切り＝暴走止め)
 
 static uint32 KESCMReapplyTimerProc(void* refPtr);
 
-// 予約を1回ぶんだけ武装する(残り回数がある間のみ)。
-static void KESCMArmReapplyTimer()
+// 通知を受けた側から呼ぶ。窓が落ち着くまでの貼り直しを(再)開始する。
+// ★★「予約中なら重ねない」門番(旧 sReapplyPending)は撤去した(2026-07-29 の自己レビュー)。
+//   下の連鎖が何かの拍子に途切れると、その旗が立ったまま戻らず**この関数が以後ずっと no-op**になる
+//   ＝そのセッションでは二度と貼り直せない、という壊れ方をする構造だった。ICallbackTimer は
+//   1 インスタンス 1 予約なので、生きている予約に重ねて StartTimer しても置き換わるだけ。
+//   新しい通知が来たら無条件に武装し直す方が、連鎖の実装差に関わらず確実に動く
+//   (回数も毎回 kKESCMPanelAlphaReapplyTries に戻るので、実質デバウンスとして働く)。
+static void KESCMScheduleReapply()
 {
-	if (sReapplyPending || sReapplyLeft <= 0)
-		return;
+	sReapplyLeft = kKESCMPanelAlphaReapplyTries;	// 通知のたびに回数を戻す
+	if (sReapplyLeft <= 0)
+		return;		// 定数 0 = 遅延再適用そのものを止める設定
 
 	if (sReapplyTimer == nil)
 		sReapplyTimer = (ICallbackTimer*)::CreateObject(kCallbackTimerBoss, IID_ICALLBACKTIMER);
 	if (sReapplyTimer == nil)
 		return;
 
-	sReapplyPending = kTrue;
 	sReapplyTimer->StartTimer(KESCMReapplyTimerProc, kKESCMPanelAlphaReapplyDelayMillis, nil);
 }
 
@@ -308,30 +326,27 @@ static uint32 KESCMReapplyTimerProc(void* /*refPtr*/)
 
 	// ★ここで Release しない(RunTask の実行中に自分を解放すると自己破棄になる)。
 	//   解放は KESCMShutdownPanelAlpha() の1箇所に集約する。
-	if (KESCMGetPanelTranslucent())
+	if (!KESCMGetPanelTranslucent())
 	{
-		KESCMApplyPanelTranslucency();
-
-		// ★★連鎖は「戻り値」で行う(2026-07-29 修正)。以前はここから StartTimer を呼び直して
-		//   いたが、その直後に kEndOfTime を返していたため予約が打ち消され、8 回のはずが
-		//   2 回しか走っていなかった(実測 rp=2)。戻り値が再スケジュール値そのものなので、
-		//   続けたいときは待ち時間を返せばよい。
-		if (sReapplyLeft > 0)
-			return kKESCMPanelAlphaReapplyDelayMillis;
+		sReapplyLeft = 0;		// OFF になったので追いかけをやめる
+		return IIdleTask::kEndOfTime;
 	}
 
-	sReapplyPending = kFalse;		// 連鎖終了。次の通知から改めて武装できる
+	KESCMApplyPanelTranslucency();
+
+	// ★★連鎖は「戻り値」で行う(2026-07-29 修正)。以前はここから StartTimer を呼び直して
+	//   いたが、その直後に kEndOfTime を返していたため予約が打ち消され、8 回のはずが
+	//   2 回しか走っていなかった(実測 rp=2)。戻り値が再スケジュール値そのものなので、
+	//   続けたいときは待ち時間を返せばよい。
+	//   ⚠ICallbackTimer の公開契約は one-shot(ヘッダー: "register a one time only callback")なので、
+	//     この連鎖は実装依存の観測に乗っている。万一効かない環境でも、次の通知で
+	//     KESCMScheduleReapply が無条件に武装し直すので「二度と動かない」状態にはならない。
+	if (sReapplyLeft > 0)
+		return kKESCMPanelAlphaReapplyDelayMillis;
 
 	// ★★戻り値は IIdleTask::RunTask の再スケジュール値。**0 は「すぐまた呼べ」**であって終了では
 	//   ない(KESCMTracker.cpp で 0 を返して InDesign を固めた前科がある)。終わるなら kEndOfTime。
 	return IIdleTask::kEndOfTime;
-}
-
-// 通知を受けた側から呼ぶ。窓が落ち着くまでの貼り直しを(再)開始する。
-static void KESCMScheduleReapply()
-{
-	sReapplyLeft = kKESCMPanelAlphaReapplyTries;	// 通知のたびに回数を戻す
-	KESCMArmReapplyTimer();
 }
 
 //========================================================================================
@@ -362,6 +377,23 @@ static void CALLBACK KESCMWinEventProc(HWINEVENTHOOK /*hook*/, DWORD /*event*/, 
 		return;
 	if (!KESCMGetPanelTranslucent() || sPaletteWnd == nullptr)
 		return;
+
+	// ★★キャッシュしたハンドルでも「今も自分のパネルか」を必ず確かめる(2026-07-29 の自己レビューで追加)。
+	//   HWND は OS が使い回すので、パネルを閉じたあと同じ値が別の窓へ再割り当てされうる。検証せずに
+	//   GA_ROOT を辿ると**他人のパネルを透かす**(しかもフックは OFF にするまで外れないので、
+	//   ON のままパネルを閉じた後もここへ流れ込み続ける)。
+	//   ⚠ここでは全窓走査(EnumWindows)はしない: 失効していたらキャッシュを捨てて戻るだけにして、
+	//     引き直しは SDK 通知や Apply の経路(KESCMQueryPaletteWindow)へ任せる。このフックは
+	//     大量に飛ぶので、1件あたりを軽く保つのが最優先。
+	KESCMFindPaletteCtx ctx;
+	ctx.fTitle = kKESCMPaletteWindowTitle;
+	ctx.fPid   = ::GetCurrentProcessId();
+	ctx.fFound = nullptr;
+	if (!::IsWindow(sPaletteWnd) || !KESCMWindowMatches(sPaletteWnd, &ctx))
+	{
+		sPaletteWnd = nullptr;		// 失効(パネルを閉じた等)。以後このフックは上の行で即 return する
+		return;
+	}
 
 	// ★★当初は「hwnd == sPaletteWnd」で絞っていたが、**OWL.Palette 宛てのイベントは
 	//   PARENTCHANGE も LOCATIONCHANGE も一度も飛んでこなかった**(実測 hk=1/0)。子ウィンドウの
@@ -439,8 +471,7 @@ void KESCMShutdownPanelAlpha()
 		sReapplyTimer->Release();
 		sReapplyTimer = nil;
 	}
-	sReapplyPending = kFalse;
-	sReapplyLeft    = 0;
+	sReapplyLeft = 0;
 }
 
 #else	// Mac: 適用そのものが無いので、予約も後始末も要らない
@@ -485,18 +516,17 @@ void        KESCMShutdownPanelAlpha() {}
 //   ★仕組み: IMouseRollOver(ui/IMouseRollOver.h)は widget に roll-over 挙動を付けるための
 //     公開インターフェイス。MouseEnter / MouseOver / MouseLeave が呼ばれる。
 //     .fr でパネル boss(kKESCMPanelWidgetBoss)に IID_IMOUSEROLLOVER として AddIn する。
-//   ★★載せる boss を選ぶこと(2026-07-29 実測)。**パネル boss(kPalettePanelWidgetBoss 派生)に
-//     AddIn しても呼ばれない**。実機ダンプ(IObjectModel_RomanFS.txt)で IID_IMOUSEROLLOVER を
-//     実際に持つ boss を洗うと、対応しているのは次の系統だけだった:
+//   ★★載せ先 = kKESCMPanelWidgetBoss(パネル本体。kPalettePanelWidgetBoss 派生)。AddIn は KESCM.fr:159。
+//     **パネル全域で反応することを実機で確認済み**(2026-07-29。記録は KESCM.fr:154 のコメント)。
+//     ⚠**ファクトリ登録(KESCMFactoryList.h)を忘れると、何のエラーも出ずに黙って呼ばれない**
+//       (CREATE_PMINTERFACE だけでは足りない)。効かなくなったらまずそこを疑う。
+//   ★調査の記録: 実機ダンプ(IObjectModel_RomanFS.txt)で IID_IMOUSEROLLOVER を実際に持つ boss を洗うと、
+//     本体側で実装を持っているのは次の系統だった(載せ先を変えるときの手掛かり)。
 //       kRollOverIconButtonBoss 系(アイコンボタン全般) → kMouseRollOverImpl
 //       kPanelWithRolloverWidgetBoss(.fr 型 PanelWithRollOverWidget) → kPanelMouseRollOverImpl
 //       kClickableTextWidgetBoss 系(リンク文字) → kHyperlinkRollOverImpl
 //       kGIFPlayerWidgetBoss → kGIFMouseRollOverImpl
-//     ＝**MouseEnter を呼ぶ側は widget 側の実装**で、対応した系統でなければ何も起きない。
-//   ★現在の載せ先 = kKESCMIconWidgetBoss(パネルのイラスト。kRollOverIconButtonBoss 派生なので
-//     もともと IID_IMOUSEROLLOVER を持つ)。つまり**反応するのはイラストの上だけ**。
-//     ★パネル全体で反応させたいなら、`PanelWithRollOverWidget` を 1 枚パネルに敷き(既存 widget を
-//       その子にして包む。兄弟として重ねるとクリックを奪うので不可)、その boss で受ける。
+//     ＝**MouseEnter を呼ぶ側は widget 側の実装**なので、載せ替えるときは受け手があるかを先に確かめる。
 //   ⚠判定範囲は**パネル本体の widget まで**。タイトルバーやタブ帯(OWL クロム)の上では
 //     反応しない(クロムはマウスイベントを app dispatcher に流さない)。
 //========================================================================================

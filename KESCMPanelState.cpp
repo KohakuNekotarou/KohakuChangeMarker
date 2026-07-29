@@ -186,9 +186,12 @@ void KESCMLoadPanelStateIfPresent()
 	KESCMSetHudEnabled            (KESCMJsonReadBool(text, "hudOn",                  KESCMGetHudEnabled()));
 	KESCMSetIgnorePageNumberMarker(KESCMJsonReadBool(text, "ignorePageNumberMarker", KESCMGetIgnorePageNumberMarker()));
 
-	// ★ここはフラグを戻すだけ。窓には触らない(触れない): この復元は起動時
-	//   (KESCMPeekStartup::Startup)に走るので、まだパネルが存在しない。実際に半透明を貼るのは
-	//   パネルの AutoAttach と kPaletteVisibilityChangedMessage の購読(KESCMPanelAlpha.cpp)。
+	// ★ここでは窓に触らない(触れない): この復元は起動時(KESCMPeekStartup::Startup)に走るので、
+	//   まだパネルが存在しない。実際に半透明を貼るのはパネルの AutoAttach と
+	//   kPaletteVisibilityChangedMessage の購読(KESCMPanelAlpha.cpp)。
+	//   ★ただし「フラグを戻すだけ」ではない: ON を復元すると KESCMSetPanelTranslucent が Win32 の
+	//     イベントフックを張る(置き場所だけが変わる遷移を拾う唯一の手段)。パネルがまだ無い間は
+	//     コールバックが即 return するので、起動シーケンスへの影響は無い。
 	KESCMSetPanelTranslucent      (KESCMJsonReadBool(text, "translucentPanel",       KESCMGetPanelTranslucent()));
 }
 
