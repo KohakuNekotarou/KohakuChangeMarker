@@ -45,6 +45,7 @@
 #include "IWidgetParent.h"
 #include "IDocumentPresentation.h"	// IID_IDOCUMENTPRESENTATION(文書ウィンドウ判定)
 #include "ILayoutViewUtils.h"		// GetAllLayoutViews(Split Window 両ペイン+全窓の列挙)
+#include "IPanorama.h"				// GetBounds(パノラマのスクロール全域=スクロールバーが表す範囲)
 #include "IGraphicsPort.h"
 #include "IGeometry.h"				// ページ矩形(pasteboard 写像用)
 #include "IInterfaceColors.h"		// 背景をテーマ地色(kInterfacePaletteFill)に
@@ -116,13 +117,65 @@ public:
 
 CREATE_PERSIST_PMINTERFACE(KESCMScrollMapView, kKESCMScrollMapViewImpl)
 
+// ★写像をスクロールバーに合わせるための実測値を、strip と同じ窓から実行時に読む(2026-07-29)。
+//   outArrowH  = 縦スクロールバーの矢印ボタン(「^」「v」)の高さ。ボタンは正方形なので
+//                「バーの frame の幅」がそのまま高さになる(実機キャプチャで確認: バー 15px 幅に対し
+//                ボタン領域 16px。UI スケールが変わってもバー幅と一緒に変わるので固定値は使わない。
+//                公開定数 kCC2017SpectrumScrollBarWidth=13 は固定値なので採らない)。
+//   outPanoTop/outPanoBottom = パノラマのスクロール全域(content 座標の Y)。スクロールバーの全長が
+//                表しているのはページの範囲ではなくこちら(ページの上下のペーストボード余白を含む)。
+// どちらも取れないことがある(窓の構成が想定と違う/座標系が別)ので取得可否を返し、呼び出し側は
+// 取れなかった分だけ従来の写像へフォールバックする=今より悪くならないようにする。
+// strip はスクロールバーの兄弟として注入してあるので、親パネルを辿ればバーもレイアウトビューも見つかる
+// (IPanorama を持つのはレイアウトビューだけ)。ポインタは保持せず毎 Draw で引き直す(窓ごと閉じられても安全)。
+static void KESCMScrollMapProbeWindow(IControlView* strip, PMReal& outArrowH,
+									  PMReal& outPanoTop, PMReal& outPanoBottom, bool16& outHasPano)
+{
+	outArrowH = 0;
+	outPanoTop = outPanoBottom = 0;
+	outHasPano = kFalse;
+
+	InterfacePtr<IWidgetParent> wp(strip, IID_IWIDGETPARENT);
+	if (wp == nil)
+		return;
+	InterfacePtr<IPanelControlData> parentPanel(wp->GetParent(), UseDefaultIID());
+	if (parentPanel == nil)
+		return;
+
+	IControlView* sbView = parentPanel->FindWidget(kVertScrollBarWidgetID);
+	if (sbView != nil)
+		outArrowH = sbView->GetFrame().Width();
+
+	const int32 numSiblings = parentPanel->Length();
+	for (int32 i = 0; i < numSiblings; ++i)
+	{
+		IControlView* sib = parentPanel->GetWidget(i);
+		if (sib == nil || sib == strip || sib == sbView)
+			continue;
+		InterfacePtr<IPanorama> panorama(sib, UseDefaultIID());
+		if (panorama == nil)
+			continue;
+		const PMRect bounds = panorama->GetBounds();
+		if (bounds.Bottom() > bounds.Top())
+		{
+			outPanoTop    = bounds.Top();
+			outPanoBottom = bounds.Bottom();
+			outHasPano    = kTrue;
+		}
+		break;	// レイアウトビューは見つかった(bounds が不正なら従来の写像へ任せる)
+	}
+}
+
 // フェーズ2の実データ描画(表示専用。クリック移動等は付けない=ユーザー指定 2026-07-11)。
 //   ・背景 = テーマ地色(kInterfacePaletteFill)
 //   ・変更ページ(sEntries) = 赤の塗りつぶし
 //   ・Add/Remove 登録ページ(KESCMPageMapCollectRegistered) = 緑の塗りつぶし
-// 写像は「文書全体基準」(VS方式): 全ページの pasteboard Y の全域[minY,maxY]を strip の全高に
-// 正規化し、各対象ページの Y 帯をそのまま帯マークにする(最低3px)。スクロール位置・ズームに
-// 依存しないので、再描画は比較結果が変わったとき(KESCMScrollMapInvalidateAll)だけでよい。
+// 写像は「文書全体基準」(VS方式)。★2026-07-29 にスクロールバー実物へ合わせて基準を直した:
+// 縦の範囲は strip の全高ではなく「つまみが動けるトラック(上下の矢印ボタンの内側)」、Y の分母は
+// ページ矩形の全域ではなく「パノラマのスクロール全域(IPanorama::GetBounds。ペーストボード余白込み)」。
+// これで帯の位置とつまみの位置が同じ尺になる(詳細は下の写像部のコメント)。各対象ページの Y 帯を
+// そのまま帯マークにする(最低3px)のは従来どおり。スクロール位置・ズームに依存しないので、再描画は
+// 比較結果が変わったとき(KESCMScrollMapInvalidateAll)だけでよい。
 // 隠しスプレッド(Hide Unchanged 等)はページ収集の時点で除外する(下記)ので、隠し使用中も
 // 表示中スプレッドの現座標だけで正規化され、マーク位置は実表示と一致する。
 void KESCMScrollMapView::Draw(IViewPort* viewPort, SysRgn updateRgn)
@@ -258,7 +311,43 @@ void KESCMScrollMapView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 	const PMReal grnG = ma * PMReal(0.70) + (PMReal(1.0) - ma) * bgG;
 	const PMReal grnB = ma * PMReal(0.25) + (PMReal(1.0) - ma) * bgB;
 
-	const PMReal scale = frame.Height() / (maxY - minY);
+	// ★写像の基準をスクロールバーに合わせる(2026-07-29 の修正。ユーザー報告のキャプチャで確定)。
+	// 従来は「ページ矩形の Y 全域 → strip の全高」に線形写像していたが、実際のバーとは2点で食い違う:
+	//   ① つまみが動けるのは上下の矢印ボタン(「^」「v」)の内側だけなのに、strip はバーと同じ全高に
+	//      描いていた(上端で +ボタン高・中央で 0・下端で -ボタン高 の系統的なズレ。キャプチャでは
+	//      1ページ目の帯が上矢印ボタンの真横=つまみが絶対に来られない位置に出ていた)。
+	//   ② バーの全長が表すのはページの範囲ではなく「パノラマのスクロール全域」(ページの上下にある
+	//      ペーストボード余白を含む)。
+	// ①はバーの frame 幅(=正方形ボタンの高さ)、②は IPanorama::GetBounds() で、どちらも実行時に読む。
+	PMReal arrowH(0), panoTop(0), panoBottom(0);
+	bool16 hasPano = kFalse;
+	KESCMScrollMapProbeWindow(this, arrowH, panoTop, panoBottom, hasPano);
+
+	// バーの frame は親ローカル座標、frame(GetInnerContentFrame)は strip 自身のローカル座標。通常は
+	// 1:1 だが、縦の縮尺が違う場合に備えて strip の外形高さとの比で換算しておく。
+	const PMReal outerH = this->GetFrame().Height();
+	if (outerH > 0 && frame.Height() > 0)
+		arrowH = arrowH * frame.Height() / outerH;
+
+	PMReal trackTop    = frame.Top() + arrowH;		// つまみが動ける範囲(=地図を描くべき範囲)
+	PMReal trackBottom = frame.Bottom() - arrowH;
+	if (trackBottom - trackTop < PMReal(8.0))		// 窓が極端に低い/バーが引けない → 補正をあきらめて全高
+	{
+		trackTop    = frame.Top();
+		trackBottom = frame.Bottom();
+	}
+
+	// 分母。パノラマ全域がページ全域を包含していれば採用する。包含していない=座標系が想定と違う
+	// (または隠しスプレッド等で食い違う)ときは従来どおりページ矩形の全域を使う。
+	PMReal spanTop = minY, spanBottom = maxY;
+	if (hasPano && panoBottom > panoTop &&
+		panoTop <= minY + PMReal(1.0) && panoBottom >= maxY - PMReal(1.0))
+	{
+		spanTop    = panoTop;
+		spanBottom = panoBottom;
+	}
+
+	const PMReal scale = (trackBottom - trackTop) / (spanBottom - spanTop);
 
 	// ★各ページの色区分と帯座標(y0/y1)を先に決め、優先度別の添字リスト(byLevel)へ振り分ける。見開きの
 	//   2ページ(例: 4p と 5p)は同一スプレッドで pasteboard Y 帯が同じ位置に重なるため、単純にページ順で
@@ -301,16 +390,16 @@ void KESCMScrollMapView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 		if (c == 0)
 			continue;
 
-		PMReal y0 = frame.Top() + (tops[i]    - minY) * scale;
-		PMReal y1 = frame.Top() + (bottoms[i] - minY) * scale;
+		PMReal y0 = trackTop + (tops[i]    - spanTop) * scale;
+		PMReal y1 = trackTop + (bottoms[i] - spanTop) * scale;
 		if (y1 - y0 < PMReal(3.0))	// 細くなり過ぎたら中心を保って3pxに
 		{
 			const PMReal cy = (y0 + y1) / PMReal(2.0);
 			y0 = cy - PMReal(1.5);
 			y1 = cy + PMReal(1.5);
 		}
-		if (y0 < frame.Top())    y0 = frame.Top();
-		if (y1 > frame.Bottom()) y1 = frame.Bottom();
+		if (y0 < trackTop)    y0 = trackTop;		// 矢印ボタンの横には出さない(つまみが来られない位置)
+		if (y1 > trackBottom) y1 = trackBottom;
 
 		y0s[i] = y0;
 		y1s[i] = y1;
