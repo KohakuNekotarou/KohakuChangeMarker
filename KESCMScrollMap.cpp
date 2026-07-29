@@ -95,6 +95,15 @@ static const PMReal kKESCMScrollMapOverflowAlpha = 0.15;	// 「/」は下地と�
 // 「もう少し濃く」で 0.7→0.85)。
 static const PMReal kKESCMScrollMapOversetAlpha  = 0.85;	// overset は下地とほぼ混ぜず赤を強く
 
+// ★トラックの追い込みマージン(2026-07-29 実機で決めた採用値)。矢印ボタンの内側から、さらに上下
+// それぞれこのぶんだけ詰めた範囲に地図を描く。つまみが実際に動ける範囲は、矢印ボタンの内側より
+// もう少し狭い(バーの上下にボタンとは別の余白がある)ため、この分を引くと帯とつまみが最もよく揃う。
+// 実機で 5.0 → 8.0 と試し、ユーザーが 8.0 を採用(「良い感じ」2026-07-29)。0.0 にすると矢印ボタンの
+// 内側いっぱいに描く(この追い込みを入れる前の動作)。効き所は Draw の写像部の 1 箇所だけ。
+// ※名前に Test が残っているのは実験時の名残。挙動は確定値なので、次にビルドするついでに
+//   kKESCMScrollMapTrackInset へ改名してよい(改名だけで意味は変わらない)。
+static const PMReal kKESCMScrollMapTestInset = 8.0;
+
 // スクロールバー地図の有効/無効(フライアウト「Show Scrollbar Map」トグル。既定=ON)。
 // OFF の間は Attach / NoticeDrawEvent を即 return させる(strip を注入しない・毎描画の指紋計算もしない)。
 // トグルを OFF にした瞬間の既存 strip 撤去は、操作側(KESCMActionComponent)が DetachAll を呼ぶ。
@@ -328,6 +337,10 @@ void KESCMScrollMapView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 	const PMReal outerH = this->GetFrame().Height();
 	if (outerH > 0 && frame.Height() > 0)
 		arrowH = arrowH * frame.Height() / outerH;
+
+	// トラックの追い込み(実機で決めた採用値。宣言部のコメント参照)。つまみが動ける範囲は矢印ボタンの
+	// 内側よりさらに少し狭いので、そのぶんを引いてから写像する。
+	arrowH = arrowH + kKESCMScrollMapTestInset;
 
 	PMReal trackTop    = frame.Top() + arrowH;		// つまみが動ける範囲(=地図を描くべき範囲)
 	PMReal trackBottom = frame.Bottom() - arrowH;
