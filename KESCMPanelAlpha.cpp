@@ -34,6 +34,7 @@
 #include "IActiveContext.h"		// オブザーバ実体の同居先(kActiveContextBoss)
 #include "IPanelMgr.h"			// IID_IPANELMGR(購読する subject)
 #include "AppUIID.h"			// ★kPaletteVisibilityChangedMessage(公開ヘッダー。AppUIID.h:325)
+#include "ShuksanID.h"			// kApplicationSuspendMsg(ShuksanID.h:1151。別アプリへ切り替わった通知)
 
 // 通知の「あと」に窓が作り直されるので、一巡させてから貼り直すための one-shot タイマー:
 #include "ICallbackTimer.h"		// StartTimer/StopTimer(IIdleTask 派生。kEndOfTime もここ経由)
@@ -51,30 +52,52 @@
 // トグル状態(セッション内で保持。永続化は KESCMPanelState.cpp が担当)。★既定 OFF
 static bool16 sPanelTranslucent = kFalse;
 
-// ★カーソルがパネル本体の上にあるか(IMouseRollOver が上下させる)。
-//   半透明で見づらいのは「読みたい・操作したい」ときなので、乗っている間だけ不透明に戻す。
-//   ⚠これは永続化しない(そのときのマウス位置で決まる一時的な状態)。
-static bool16 sPanelHover = kFalse;
-
-// カーソルが乗っている扱いを強制的に解除する(KESCMPanelAlpha.h で宣言)。
-// ★★これが要る理由(2026-07-29 の自己レビューで追加): MouseLeave は「カーソルをパネルに乗せたまま
-//   パネルを閉じる/ドッキングする/別アプリへ切り替える」経路では飛ばない。取りこぼすと sPanelHover が
-//   kTrue のまま張り付き、実効 alpha が常に 255 ＝**トグルが ON なのに一切薄くならない**。しかも
-//   Win32 フックも「255 が望みの値」と判断するので自己修復しない(一度乗せて離すまで戻らない)。
-//   → widget が作り直されるタイミング(パネルの AutoAttach / 表示状態の変化)で必ず落とす。
-void KESCMResetPanelHover()
-{
-	sPanelHover = kFalse;
-}
-
 #ifdef WINDOWS
+
+// カーソルが対象窓(パネルが今載っているトップレベル窓)の上にあるか。
+//
+// ★★旗を持たず毎回実測する(2026-07-29 に変更)。以前は IMouseRollOver が上下させる static な旗
+//   だったが、次の 2 つの弱点があった。実測ならどちらも構造的に起きない:
+//     (a)MouseLeave は「カーソルを乗せたままパネルを閉じる/ドッキングする/別アプリへ切り替える」
+//        経路では飛ばない。取りこぼすと「乗っている」が張り付き、トグルが ON でも一切薄くならない。
+//     (b)IMouseRollOver が見るのは**パネル本体の widget だけ**なので、タブ帯("Kohaku Change Marker"
+//        と出ている帯)やタイトル帯(<< / x の帯)にカーソルを乗せても反応しない(ユーザー要望の発端)。
+//
+// ★対象窓はタブ帯もタイトル帯もパネル本体も含む 1 つの窓なので、この判定だけで「パネルのどこかに
+//   乗っている」が丸ごと取れる。★★タブ帯を SDK 側で取る道が無いことは実機で確定済み(2026-07-29):
+//   パネル widget の親は kOWLHostedPanelWrapperBoss(0x1645a) の 1 段で尽き(QueryParent()==nil)、
+//   しかもその bbox はパネル本体と同一だった ＝ クロムは widget ツリーの外(OWL 側)。
+//
+// ★矩形(GetWindowRect+PtInRect)だけで判定してはいけない。他の窓が上に重なっていても「乗っている」に
+//   なってしまう。矩形は安い足切りに使い、確定は WindowFromPoint → GA_ROOT の一致で行う。
+//   ★この足切りのおかげで、カーソルがパネルから離れている間は整数比較だけで終わる。
+static bool KESCMCursorOverWindow(HWND target)
+{
+	if (target == nullptr)
+		return false;
+
+	POINT pt;
+	if (!::GetCursorPos(&pt))
+		return false;
+
+	RECT rc;
+	if (!::GetWindowRect(target, &rc) || !::PtInRect(&rc, pt))
+		return false;		// 矩形の外 = 確実に乗っていない(大半のマウス移動はここで終わる)
+
+	HWND under = ::WindowFromPoint(pt);
+	return (under != nullptr && ::GetAncestor(under, GA_ROOT) == target);
+}
 
 // ★実効 alpha ＝ トグルが ON で、かつカーソルが乗っていないときだけ薄くする。
 //   ここ1箇所に集約しておくこと(適用側・フックの判定側の両方から使う)。
+//   ★OFF ならカーソル位置すら見ない(この機能は ON のときだけ動く=ユーザー方針 2026-07-29)。
 //   ※Mac には適用そのものが無いので置かない(未使用関数の警告を出さないため)。
-static uint8 KESCMEffectiveAlpha()
+static uint8 KESCMEffectiveAlpha(HWND target)
 {
-	return (sPanelTranslucent && !sPanelHover) ? kKESCMPanelAlphaValue : 255;
+	if (!sPanelTranslucent)
+		return 255;
+
+	return KESCMCursorOverWindow(target) ? 255 : kKESCMPanelAlphaValue;
 }
 
 // ★Win32 イベントフックの出し入れ(実体は下の WINDOWS ブロック)。ON の間だけ張る。
@@ -246,8 +269,9 @@ bool16 KESCMApplyPanelTranslucency()
 	if (target == nullptr)
 		return kFalse;		// パネルが無い / ドック内で展開中 → 何もしない
 
-	// ★カーソルが乗っている間は不透明に戻す(KESCMEffectiveAlpha が判断)。
-	const BYTE alpha = KESCMEffectiveAlpha();
+	// ★カーソルが乗っている間は不透明に戻す(KESCMEffectiveAlpha が今の位置を実測して判断)。
+	//   タブ帯・タイトル帯の上でも「乗っている」になる ＝ 対象窓がそれらを含むため。
+	const BYTE alpha = KESCMEffectiveAlpha(target);
 
 	// ★WS_EX_LAYERED は InDesign が最初から立てているので触らない。
 	const BOOL ok = ::SetLayeredWindowAttributes(target, 0, alpha, LWA_ALPHA);
@@ -264,11 +288,17 @@ bool16 KESCMApplyPanelTranslucency()
 	//   表示/非表示の切り替えなら描画方式に触らないので安全。
 	//   ※ SW_SHOWNA = アクティブ化せずに表示(影の窓は WS_EX_NOACTIVATE で、前面化させたくない)。
 	//   ※ドロワー展開("OWL.FrameDrawer")の owner が ShadowView でない場合は、下の判定で素通りする。
-	//   ★影を隠すのは「実際に薄くしているとき」だけ。カーソルが乗って不透明に戻している間は
-	//     影も戻す(でないと不透明なのに影だけ消えた不自然な見た目になる)。
+	//   ★★影の出し入れは alpha ではなく**トグルの ON/OFF だけ**で決める(2026-07-29 修正)。
+	//     ON の間はカーソルで不透明に戻っていても影は隠したままにする。
+	//     ⚠理由(ユーザー報告の不具合): パネルはタブ帯／タイトル帯をつかんで動かすが、そこは
+	//       「カーソルが乗っている」＝不透明なので、alpha で判定すると**ドラッグ中に影を表示**
+	//       してしまう。InDesign はドラッグ中に影を出さない(確定した瞬間に描く)作りなので、
+	//       こちらが強引に出すと**位置が更新されない影が元の場所に取り残される**。
+	//     ★副次効果: カーソルがパネルを出入りするたびに影が点いたり消えたりするちらつきも消える。
+	const bool16 hideShadow = KESCMGetPanelTranslucent();
 	HWND shadow = ::GetWindow(target, GW_OWNER);
 	if (KESCMClassIs(shadow, L"OWL.ShadowView"))
-		::ShowWindow(shadow, (alpha < 255) ? SW_HIDE : SW_SHOWNA);
+		::ShowWindow(shadow, hideShadow ? SW_HIDE : SW_SHOWNA);
 
 	return ok ? kTrue : kFalse;
 #else
@@ -372,9 +402,21 @@ static void CALLBACK KESCMWinEventProc(HWINEVENTHOOK /*hook*/, DWORD /*event*/, 
 									   LONG idObject, LONG idChild,
 									   DWORD /*thread*/, DWORD /*time*/)
 {
-	// 窓そのもののイベントだけ見る(子要素・非窓オブジェクトは無視)。
-	if (idObject != OBJID_WINDOW || idChild != CHILDID_SELF)
+	// 見るのは 2 種類だけ:
+	//   ①窓そのもののイベント(OBJID_WINDOW) = 窓の作り直し・移動。従来からの本命。
+	//   ★②カーソルの移動(OBJID_CURSOR) = マウスが動いた合図(2026-07-29 追加)。これを拾うことで
+	//     **タブ帯やタイトル帯にカーソルが乗ったとき**も不透明に戻せる(そこは widget ツリーの外なので
+	//     SDK の IMouseRollOver では届かない)。フックも定期タイマーも増やさず、既に張ってある
+	//     このフックへ流れてくるものを捨てずに使うだけ。
+	//   ⚠子要素(idChild != CHILDID_SELF)は窓イベントのときだけ弾く。カーソルのイベントは
+	//     idChild にカーソルの状態が入ることがあるため、ここで弾くと取りこぼす。
+	const bool isWindowEvent = (idObject == OBJID_WINDOW && idChild == CHILDID_SELF);
+	const bool isCursorEvent = (idObject == OBJID_CURSOR);
+	if (!isWindowEvent && !isCursorEvent)
 		return;
+
+	// ★この機能はトグルが ON のときだけ動く(OFF ならフック自体を張っていないが、外れる直前の
+	//   取りこぼしもここで弾く)。以降の判定に進むのは ON のときだけ。
 	if (!KESCMGetPanelTranslucent() || sPaletteWnd == nullptr)
 		return;
 
@@ -385,14 +427,29 @@ static void CALLBACK KESCMWinEventProc(HWINEVENTHOOK /*hook*/, DWORD /*event*/, 
 	//   ⚠ここでは全窓走査(EnumWindows)はしない: 失効していたらキャッシュを捨てて戻るだけにして、
 	//     引き直しは SDK 通知や Apply の経路(KESCMQueryPaletteWindow)へ任せる。このフックは
 	//     大量に飛ぶので、1件あたりを軽く保つのが最優先。
-	KESCMFindPaletteCtx ctx;
-	ctx.fTitle = kKESCMPaletteWindowTitle;
-	ctx.fPid   = ::GetCurrentProcessId();
-	ctx.fFound = nullptr;
-	if (!::IsWindow(sPaletteWnd) || !KESCMWindowMatches(sPaletteWnd, &ctx))
+	if (!::IsWindow(sPaletteWnd))
 	{
 		sPaletteWnd = nullptr;		// 失効(パネルを閉じた等)。以後このフックは上の行で即 return する
 		return;
+	}
+
+	// ★クラス名/タイトルの照合は**窓のイベントのときだけ**行う(2026-07-29)。カーソルが動いただけの
+	//   回まで GetClassNameW + GetWindowTextW を叩くのは無駄(秒間 60〜100 回走る)。
+	//   ⚠安全性の根拠: HWND が別の窓へ使い回されるには、その窓が作られて**表示される**必要がある。
+	//     表示は EVENT_OBJECT_SHOW ＝窓イベントなので、すり替わった瞬間には必ずこの照合を通る。
+	//     非表示のままの窓は KESCMQueryTranslucentTarget が "OWL.Dock"/"OWL.FrameDrawer" 以外として
+	//     弾くので、透かす対象にもならない。
+	if (isWindowEvent)
+	{
+		KESCMFindPaletteCtx ctx;
+		ctx.fTitle = kKESCMPaletteWindowTitle;
+		ctx.fPid   = ::GetCurrentProcessId();
+		ctx.fFound = nullptr;
+		if (!KESCMWindowMatches(sPaletteWnd, &ctx))
+		{
+			sPaletteWnd = nullptr;
+			return;
+		}
 	}
 
 	// ★★当初は「hwnd == sPaletteWnd」で絞っていたが、**OWL.Palette 宛てのイベントは
@@ -409,7 +466,7 @@ static void CALLBACK KESCMWinEventProc(HWINEVENTHOOK /*hook*/, DWORD /*event*/, 
 	//   (実測では総イベント 1477 件に対し、実際の書き込みは 1 件だけだった)。
 
 	// ①alpha が望みの値か(カーソルが乗っていれば不透明が「望みの値」になる)
-	const BYTE want = KESCMEffectiveAlpha();
+	const BYTE want = KESCMEffectiveAlpha(target);
 	BYTE  cur = 0;
 	DWORD key = 0, flags = 0;
 	const bool16 alphaOk = (::GetLayeredWindowAttributes(target, &key, &cur, &flags) && cur == want) ? kTrue : kFalse;
@@ -421,17 +478,22 @@ static void CALLBACK KESCMWinEventProc(HWINEVENTHOOK /*hook*/, DWORD /*event*/, 
 	HWND   shadow   = ::GetWindow(target, GW_OWNER);
 	if (KESCMClassIs(shadow, L"OWL.ShadowView"))
 	{
-		const bool16 visible     = ::IsWindowVisible(shadow) ? kTrue : kFalse;
-		const bool16 wantVisible = (want < 255) ? kFalse : kTrue;
-		shadowOk = (visible == wantVisible);
+		const bool16 visible = ::IsWindowVisible(shadow) ? kTrue : kFalse;
+		// ★望みの状態は alpha ではなく**トグルの ON/OFF**で決まる(上の適用側と必ず揃えること)。
+		//   ここに到達するのは ON のときだけなので、望みは常に「隠れている」。
+		shadowOk = (visible == kFalse);
 	}
 
 	if (alphaOk && shadowOk)
 		return;					// どちらも望みどおり = 何もしない
 
-	// 窓が仕上がりきっていないことがあるので、その場で一度当て、遅延でも当て直す。
 	KESCMApplyPanelTranslucency();
-	KESCMScheduleReapply();
+
+	// ★遅延の貼り直し(8 回 × 50ms)は**窓のイベントのときだけ**。窓が作り直されて alpha ごと
+	//   捨てられるのを追いかけるための仕掛けなので、カーソルが動いただけの回で回すのは純粋な無駄
+	//   (しかもカーソルは何度も動くので、その都度 8 回の連鎖を張り直すことになる)。
+	if (isWindowEvent)
+		KESCMScheduleReapply();
 }
 
 static void KESCMInstallWinEventHook()
@@ -529,9 +591,19 @@ void        KESCMShutdownPanelAlpha() {}
 //     ＝**MouseEnter を呼ぶ側は widget 側の実装**なので、載せ替えるときは受け手があるかを先に確かめる。
 //   ⚠判定範囲は**パネル本体の widget まで**。タイトルバーやタブ帯(OWL クロム)の上では
 //     反応しない(クロムはマウスイベントを app dispatcher に流さない)。
+//
+//   ★★2026-07-29 変更: 「乗っているか」の判定はもうここでは持たない。KESCMCursorOverWindow() が
+//     呼ばれるたびにカーソル位置を実測する。理由は 2 つ:
+//       (a)上の⚠のとおり、タブ帯・タイトル帯では一切呼ばれない。そこはユーザーが実際に触る場所
+//          なので、届かないままにはできない(実機のツリーダンプでクロムが widget ツリーの外＝
+//          kOWLHostedPanelWrapperBoss で親が尽きることを確定させた)。
+//       (b)MouseLeave は取りこぼす経路があり、旗方式だと「乗っている」が張り付いて半透明が
+//          二度と効かなくなる壊れ方をしていた。
+//     ＝ここは「マウスが動いたから貼り直せ」と伝えるだけの**補助トリガー**に降格した。旗を持たない
+//       ので、どちら側のイベントを取りこぼしても状態がずれたままにならない。
 //========================================================================================
 
-/** パネルにカーソルが乗っている間だけ「Translucent Panel」を一時解除する。 */
+/** パネルにカーソルが乗り降りしたら半透明を貼り直す(判定は持たない=補助トリガー)。 */
 class KESCMPanelRollOver : public CPMUnknown<IMouseRollOver>
 {
 public:
@@ -541,7 +613,7 @@ public:
 	virtual void	MouseEnter(const PMPoint& localMousePos);
 	virtual void	MouseOver(const PMPoint& localMousePos);
 	virtual void	MouseLeave();
-	virtual bool8	IsMouseOver() const				{ return sPanelHover != kFalse; }
+	virtual bool8	IsMouseOver() const;
 	virtual PMPoint	GetMouseOverPosition() const	{ return fLastPos; }
 
 private:
@@ -553,11 +625,7 @@ CREATE_PMINTERFACE(KESCMPanelRollOver, kKESCMPanelRollOverImpl)
 void KESCMPanelRollOver::MouseEnter(const PMPoint& localMousePos)
 {
 	fLastPos = localMousePos;
-	if (sPanelHover)
-		return;					// 既に乗っている扱い(取りこぼし対策の冪等ガード)
-
-	sPanelHover = kTrue;
-	KESCMApplyPanelTranslucency();		// → 不透明へ(OFF のときは中で弾かれる)
+	KESCMApplyPanelTranslucency();		// → 実測して不透明へ(OFF のときは中で弾かれる)
 }
 
 void KESCMPanelRollOver::MouseOver(const PMPoint& localMousePos)
@@ -569,11 +637,18 @@ void KESCMPanelRollOver::MouseOver(const PMPoint& localMousePos)
 
 void KESCMPanelRollOver::MouseLeave()
 {
-	if (!sPanelHover)
-		return;
+	KESCMApplyPanelTranslucency();		// → 実測して元の半透明へ
+}
 
-	sPanelHover = kFalse;
-	KESCMApplyPanelTranslucency();		// → 元の半透明へ
+bool8 KESCMPanelRollOver::IsMouseOver() const
+{
+	// ★旗を持たないので、その場で実測して答える(このインターフェイスの契約どおり
+	//   「今カーソルが乗っているか」を返す)。
+#ifdef WINDOWS
+	return KESCMCursorOverWindow(KESCMQueryTranslucentTarget(KESCMQueryPaletteWindow())) ? kTrue : kFalse;
+#else
+	return kFalse;
+#endif
 }
 
 /** パネルの表示状態が変わったら半透明を貼り直すオブザーバ。購読先は パネルマネージャの subject。 */
@@ -604,7 +679,15 @@ void KESCMPanelVisibilityObserver::Update(const ClassID& theChange, ISubject* /*
 	//     流れてくるので、theChange で必ず絞ること。
 	const bool16 isPaletteMsg = (protocol == IID_IPANELMGR    && theChange == kPaletteVisibilityChangedMessage);
 	const bool16 isDockMsg    = (protocol == IID_IAPPLICATION && theChange == kDockedPaletteAreaChangedByUserMsg);
-	if (!isPaletteMsg && !isDockMsg)
+	// ★③アプリが背面へ回った(kApplicationSuspendMsg)。2026-07-29 追加。
+	//   ⚠これが無いと: カーソルをタブ帯／タイトル帯に乗せたまま別アプリへマウスを出すと、
+	//     自プロセス限定の Win32 フックにはもうカーソルイベントが来ないので、**不透明のまま固まる**
+	//     (パネル本体から出た場合だけは IMouseRollOver の MouseLeave が救ってくれるが、クロムの上は
+	//      そもそも MouseLeave の対象外)。ここで一度貼り直せば、実測で「乗っていない」と分かって薄く戻る。
+	//   ★alpha を1つ書くだけで、モデルにも UI にも触らない ＝ 非アクティブ化の最中に呼んでも安全
+	//     ([[app-resume-and-safe-timing]] のガード集は「重い自動処理」向けで、ここには当たらない)。
+	const bool16 isSuspendMsg = (protocol == IID_IAPPLICATION && theChange == kApplicationSuspendMsg);
+	if (!isPaletteMsg && !isDockMsg && !isSuspendMsg)
 		return;
 
 	// ★OFF のときは何もしない。この通知は「文書を1つ開く」だけでも複数回飛ぶ(実測)ので、
@@ -616,7 +699,9 @@ void KESCMPanelVisibilityObserver::Update(const ClassID& theChange, ISubject* /*
 
 	// ★ここで書いた alpha は、直後に InDesign が窓を作り直すと捨てられる(実測)。
 	//   イベントを一巡させてから「そのときの窓」へ貼り直す。
-	KESCMScheduleReapply();
+	//   ★ただし背面へ回っただけ(Suspend)のときは窓に変化が無いので、追いかけは要らない。
+	if (!isSuspendMsg)
+		KESCMScheduleReapply();
 }
 
 void KESCMAttachPanelVisibilityObserver()

@@ -193,9 +193,8 @@ void KESCMPanelObserver::AutoAttach()
 	// ★起動時(KESCMPeekStartup::Startup)にはパネルマネージャがまだ立ち上がっておらず購読に
 	//   失敗している可能性があるため、ここでも購読を試す(IsAttached ガードがあるので二重にならない)。
 	KESCMAttachPanelVisibilityObserver();
-	// ★widget が作り直された＝ロールオーバーの「乗っている」状態は無効。取りこぼした MouseLeave が
-	//   張り付いたままだと半透明が二度と効かなくなるので、ここで必ず落とす(2026-07-29 の自己レビュー)。
-	KESCMResetPanelHover();
+	// (「乗っている」状態を落とす KESCMResetPanelHover の呼び出しは 2026-07-29 に撤去。判定を
+	//  旗から Win32 の実測へ変えたので、widget を作り直しても落とすべき状態が無い。)
 	KESCMApplyPanelTranslucency();
 }
 
