@@ -25,6 +25,7 @@
 #include "KESCMScrollMap.h"			// KESCMGetScrollMapEnabled / KESCMSetScrollMapEnabled
 #include "KESCMPeek.h"				// KESCMGetHudEnabled / KESCMSetHudEnabled(HUD トグル)
 #include "KESCMPageNumberMarker.h"	// KESCMGetIgnorePageNumberMarker / KESCMSetIgnorePageNumberMarker
+#include "KESCMPanelAlpha.h"		// KESCMGetPanelTranslucent / KESCMSetPanelTranslucent(Translucent Panel)
 
 // 保存ファイル名(KESCM サブフォルダー内)。
 static const char* const kKESCMPanelStateFileName = "KESCMPanelState.json";
@@ -106,7 +107,8 @@ void KESCMSavePanelState()
 	json += "  \"syncLayoutViews\": ";        json += KESCMBoolLiteral(KESCMGetLayoutSync());                       json += ",\n";
 	json += "  \"scrollbarMap\": ";           json += KESCMBoolLiteral(KESCMGetScrollMapEnabled());                 json += ",\n";
 	json += "  \"hudOn\": ";                  json += KESCMBoolLiteral(KESCMGetHudEnabled());                       json += ",\n";
-	json += "  \"ignorePageNumberMarker\": "; json += KESCMBoolLiteral(KESCMGetIgnorePageNumberMarker());           json += "\n";
+	json += "  \"ignorePageNumberMarker\": "; json += KESCMBoolLiteral(KESCMGetIgnorePageNumberMarker());           json += ",\n";
+	json += "  \"translucentPanel\": ";       json += KESCMBoolLiteral(KESCMGetPanelTranslucent());                 json += "\n";
 	json += "}\n";
 
 	FILE* fp = FileUtils::OpenFile(file, "wb");
@@ -183,6 +185,11 @@ void KESCMLoadPanelStateIfPresent()
 	KESCMSetScrollMapEnabled      (KESCMJsonReadBool(text, "scrollbarMap",           KESCMGetScrollMapEnabled()));
 	KESCMSetHudEnabled            (KESCMJsonReadBool(text, "hudOn",                  KESCMGetHudEnabled()));
 	KESCMSetIgnorePageNumberMarker(KESCMJsonReadBool(text, "ignorePageNumberMarker", KESCMGetIgnorePageNumberMarker()));
+
+	// ★ここはフラグを戻すだけ。窓には触らない(触れない): この復元は起動時
+	//   (KESCMPeekStartup::Startup)に走るので、まだパネルが存在しない。実際に半透明を貼るのは
+	//   パネルの AutoAttach と kPaletteVisibilityChangedMessage の購読(KESCMPanelAlpha.cpp)。
+	KESCMSetPanelTranslucent      (KESCMJsonReadBool(text, "translucentPanel",       KESCMGetPanelTranslucent()));
 }
 
 // KESCMPanelState.cpp 終わり。

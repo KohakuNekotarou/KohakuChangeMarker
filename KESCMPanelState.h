@@ -21,6 +21,8 @@
 //      KESCM ツール選択中の全文書=KESCMSyncOtherDocViewportsTo のガード参照)
 //    - Show Scrollbar Map
 //    - Ignore Page Number Marker
+//    - Translucent Panel(★Windows 専用。復元されるのはフラグだけで、窓への適用はパネルの
+//      AutoAttach とパネル表示状態の購読が行う=起動時にはまだパネルが無いため)
 //
 //========================================================================================
 
