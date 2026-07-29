@@ -143,4 +143,9 @@ static const PMReal kKESCMOldNumR = 0.0, kKESCMOldNumG = 0.0, kKESCMOldNumB = 0.
 static const PMReal kKESCMOldNumHaloEm = 0.06;	// 白フチの太さ(em比)
 static const PMReal kKESCMOldNumPadEm  = 0.20;	// 透明グループ bbox の余白(em比。白フチのはみ出しを含む)
 
+// パネル半透明トグル(フライアウト「Translucent Panel」)の alpha 値(0=完全透明 255=不透明)。
+// 128 ≒ 50%(ユーザー指定 2026-07-29)。段階指定やスライダーは作らないので、濃さを変えたいときは
+// ここ1箇所を書き換える。★Windows 専用(実体 KESCMPanelAlpha.cpp)。
+static const uint8 kKESCMPanelAlphaValue = 128;
+
 #endif // __KESCMConstants_h__
