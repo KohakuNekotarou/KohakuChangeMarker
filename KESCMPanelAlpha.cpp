@@ -23,8 +23,18 @@
 // プロジェクト内:
 #include "KESCMPanelAlpha.h"
 #include "KESCMConstants.h"		// kKESCMPanelAlphaValue
-#include "KESCMID.h"			// kKESCMDisplayName(=窓 title で引くパネル名)
+#include "KESCMID.h"			// kKESCMDisplayName(=窓 title で引くパネル名)/独自 IID・ImplID
 
+// パネルの表示状態変化を購読するオブザーバ用:
+#include "CObserver.h"
+#include "ISubject.h"			// AttachObserver / IsAttached
+#include "ISession.h"			// GetExecutionContextSession(終了処理中は nil になり得る)
+#include "IApplication.h"		// QueryPanelManager
+#include "IActiveContext.h"		// オブザーバ実体の同居先(kActiveContextBoss)
+#include "IPanelMgr.h"			// IID_IPANELMGR(購読する subject)
+#include "AppUIID.h"			// ★kPaletteVisibilityChangedMessage(公開ヘッダー。AppUIID.h:325)
+
+// ★windows.h は SDK ヘッダーより後に置くこと(マクロが SDK 側の名前とぶつからないように)。
 #ifdef WINDOWS
 #include <windows.h>
 #endif
@@ -172,4 +182,70 @@ bool16 KESCMApplyPanelTranslucency()
 #else
 	return kFalse;		// Mac: 半透明化の手段が無いので常に「適用しなかった」
 #endif
+}
+
+//========================================================================================
+// パネルの開閉・ドッキング切り替えへの追随
+//
+//   ★半透明は「今のトップレベル窓(OWL.Dock)」に付けるので、その窓が作り直されると失われる。
+//     具体的には (a)パネルを閉じて開き直す (b)ドッキング⇄フローティングを切り替える の2つ。
+//     どちらも下の通知で拾えるので、ON のままなら自動で貼り直る。
+//
+//   ★購読する通知の特定は 2026-07-29 に Debug 版 InDesign の Spy で実測した:
+//       kPaletteVisibilityChangedMessage @ kPanelManagerBoss (IID_IPANELMGR)
+//     ドッキング切り替えのたびに飛ぶ。本体側の受け手(kLibraryPanelWindowObserverBoss /
+//     kBookPaletteWindowObserverBoss)も普通の IID_IOBSERVER で受けている。
+//     ⚠事前に候補と考えた kDockedPaletteAreaChangedMsg は一度も飛ばなかった(=使えない)。
+//     ⚠「パネルが開いた」専用の通知は存在しない(閉じる直前の kAboutToClosePaletteMsg に
+//       対応するものは無く、開閉もドッキング切り替えもこの1本にまとまっている)。
+//
+//   ★オブザーバ実体は kActiveContextBoss に AddIn して同居させる(.fr)。レイアウト同期オブザーバ・
+//     一括クローズオブザーバと同じ実証済みの構成。
+//   ★終了時に明示 detach はしない(アプリも同居先もセッションと同じ寿命。detach 自体が
+//     クラッシュ要因になる)。既存2つのオブザーバと同じ方針。
+//========================================================================================
+
+/** パネルの表示状態が変わったら半透明を貼り直すオブザーバ。購読先は パネルマネージャの subject。 */
+class KESCMPanelVisibilityObserver : public CObserver
+{
+public:
+	KESCMPanelVisibilityObserver(IPMUnknown* boss) : CObserver(boss, IID_IKESCMPANELVISIBILITYOBSERVER) {}
+	~KESCMPanelVisibilityObserver() {}
+
+	virtual void Update(const ClassID& theChange, ISubject* theSubject, const PMIID& protocol, void* changedBy);
+};
+
+CREATE_PMINTERFACE(KESCMPanelVisibilityObserver, kKESCMPanelVisibilityObserverImpl)
+
+void KESCMPanelVisibilityObserver::Update(const ClassID& theChange, ISubject* /*theSubject*/, const PMIID& protocol, void* /*changedBy*/)
+{
+	if (protocol != IID_IPANELMGR || theChange != kPaletteVisibilityChangedMessage)
+		return;
+
+	// ★OFF のときは何もしない。この通知は「文書を1つ開く」だけでも複数回飛ぶ(実測)ので、
+	//   使っていない人にまで窓探索を走らせない(貼り直しが要るのは ON のときだけ)。
+	if (!KESCMGetPanelTranslucent())
+		return;
+
+	KESCMApplyPanelTranslucency();
+}
+
+void KESCMAttachPanelVisibilityObserver()
+{
+	ISession* session = GetExecutionContextSession();
+	IActiveContext* ctx = (session != nil) ? session->GetActiveContext() : nil;
+	if (ctx == nil)
+		return;
+	InterfacePtr<IObserver> obs((IObserver*)ctx->QueryInterface(IID_IKESCMPANELVISIBILITYOBSERVER));
+	if (obs == nil)
+		return;
+
+	InterfacePtr<IApplication> app(session->QueryApplication());
+	InterfacePtr<IPanelMgr> panelMgr(app != nil ? app->QueryPanelManager() : nil);
+	InterfacePtr<ISubject> subject(panelMgr, IID_ISUBJECT);
+	if (subject == nil)
+		return;
+
+	if (!subject->IsAttached(ISubject::kRegularAttachment, obs, IID_IPANELMGR, IID_IKESCMPANELVISIBILITYOBSERVER))
+		subject->AttachObserver(ISubject::kRegularAttachment, obs, IID_IPANELMGR, IID_IKESCMPANELVISIBILITYOBSERVER);
 }

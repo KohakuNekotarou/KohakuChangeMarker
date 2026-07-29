@@ -82,6 +82,7 @@
 #include "KESCMChangeNav.h"          // KESCMRefreshNavPosition(スプレッド再比較後に Prev/Next 位置を最新化)
 #include "KESCMThumbIdleTask.h"      // クローズ後の再生成を次のidleに遅延(前面切替の過渡を避ける)
 #include "KESCMPanelState.h"         // KESCMLoadPanelStateIfPresent(起動時に保存済みパネル設定を復元)
+#include "KESCMPanelAlpha.h"         // KESCMAttachPanelVisibilityObserver(半透明トグルの追随購読を起動時に開始)
 #include "KESCMPeek.h"
 
 //========================================================================================
@@ -1957,6 +1958,11 @@ void KESCMPeekStartup::Startup()
 	// 一括クローズ完了(kPendingDocumentsClosedMsg)の購読を開始する。以後、複数文書を続けて閉じても
 	// UI の後片付けは「全部閉じ終わってから1回」に畳まれる(上の集約ブロック参照)。
 	KESCMAttachDocsClosedObserver();
+
+	// パネルの表示状態変化(kPaletteVisibilityChangedMessage)の購読を開始する。「Translucent Panel」が
+	// ON のとき、パネルを開き直したりドッキング⇄フローティングを切り替えたりしても半透明が残る
+	// (半透明の付け先である OWL.Dock 窓がそのたびに作り直されるため)。実体は KESCMPanelAlpha.cpp。
+	KESCMAttachPanelVisibilityObserver();
 }
 
 void KESCMPeekStartup::Shutdown()

@@ -34,4 +34,11 @@ void	KESCMSetPanelTranslucent(bool16 on);
 //    (メニュー押下時のステータス文言を「効いた」「ドッキング中なので効かない」で分けるために使う)
 bool16	KESCMApplyPanelTranslucency();
 
+// パネルの表示状態変化(開く/閉じる/ドッキング⇄フローティング)の購読を始める。
+// ★起動時に1回だけ呼ぶ(KESCMPeekStartup::Startup)。以後、パネルをフローティングに戻したり
+//   開き直したりしても、ON なら自動で半透明が貼り直される。
+// ★仕組み: kPanelManagerBoss の IID_IPANELMGR subject に飛ぶ kPaletteVisibilityChangedMessage を
+//   受ける(2026-07-29 に Debug 版の Spy で実測して特定。ドッキング切り替えのたびに飛ぶ)。
+void	KESCMAttachPanelVisibilityObserver();
+
 #endif // __KESCMPanelAlpha_h__

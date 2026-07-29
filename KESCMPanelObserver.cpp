@@ -44,6 +44,7 @@
 #include "KESCMScrollMap.h"			// スクロールバー地図strip(Startで注入/Stopで取り外し)
 #include "KESCMDrawEventHandler.h"	// KESCMDrawEventHandler::sOversetOn(Stop 時に Find Overset 単独 ON なら地図を残す判定)
 #include "KESCMPanelState.h"		// KESCMLoadPanelStateIfPresent(保存済み設定をパネル初回オープン時に読み込む)
+#include "KESCMPanelAlpha.h"		// KESCMApplyPanelTranslucency(パネル再表示時に半透明を貼り直す)
 
 /** ChangeMarker パネルのウィジェットを監視し、共有のオーバーレイ操作を駆動する。 */
 class KESCMPanelObserver : public CObserver
@@ -181,6 +182,14 @@ void KESCMPanelObserver::AutoAttach()
 	// Prev/Next の間の現在位置表示とボタン有効/無効は、上の UpdateInfoDisplay(→KESCMApplyPanelInfo
 	// →KESCMRefreshNavPosition)で今の実状態から作り直し済み。ワークスペースに永続化された前回の値は
 	// そこで確実に上書きされるので、ここでの復元処理は不要。
+
+	// 「Translucent Panel」が ON なら半透明を貼り直す。パネルを開き直すと半透明の付け先である
+	// トップレベル窓(OWL.Dock)が別物に変わるため([[win32-window-alpha-transparency]])。
+	// OFF のとき・ドッキング中・Mac では中で弾かれるので、無条件に呼んでよい。
+	// ★ここは保険で、主たる追随は KESCMPanelAlpha.cpp のオブザーバ(kPaletteVisibilityChangedMessage)。
+	//   ★注意: この AutoAttach は widget を作り直すたびに走るので、固定の既定値を書く場所ではない
+	//   (KESCMGetPanelTranslucent の現在値を読んで反映するだけ)。
+	KESCMApplyPanelTranslucency();
 }
 
 void KESCMPanelObserver::AutoDetach()

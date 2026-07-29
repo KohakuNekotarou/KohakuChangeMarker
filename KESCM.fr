@@ -201,6 +201,14 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 			// refresh) N times; now the UI half is deferred and flushed once. Lives on the same
 			// active-context boss for the same proven reason as the sync observer above.
 			IID_IKESCMDOCSCLOSEDOBSERVER, kKESCMDocsClosedObserverImpl,
+			// Panel visibility observer (2026-07-29). Subscribes to the panel manager's subject and
+			// waits for kPaletteVisibilityChangedMessage, which fires whenever a panel is opened,
+			// closed or moved between docked and floating. The "Translucent Panel" toggle applies its
+			// alpha to the panel's current top-level window (an OWL.Dock), and that window is thrown
+			// away and recreated by those very actions - so without this the translucency would be
+			// silently lost. Lives on the same active-context boss for the same proven reason as the
+			// two observers above. Implementation: KESCMPanelAlpha.cpp.
+			IID_IKESCMPANELVISIBILITYOBSERVER, kKESCMPanelVisibilityObserverImpl,
 		}
 	},
 
