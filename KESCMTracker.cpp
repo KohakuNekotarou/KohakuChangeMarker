@@ -104,6 +104,13 @@ static bool16 sHudDrawing = kFalse;
 static const int32 kKESCMHudMaxRedrawsPerPress = 300;
 static int32 sHudRedrawCount = 0;
 
+// ★押下直後だけ「画面が落ち着くまで」HUD を描き直す残り回数(2026-07-30 追加)。なぜ必要かは
+//   KESCMConstants.h の kKESCMHudSettleTries を参照(非アクティブ窓を押した時のアクティブ化に伴う
+//   画面復元は描画イベントを発火せずに sprite の絵を消すため、イベントでは拾えない)。
+//   押下ごとに BeginTracking がセットし、KESCMHudTimerProc が戻り値で連鎖しながら減らす。
+//   押下解除・中断・終了では必ず 0 に戻す(タイマーを止めるので連鎖もそこで切れる)。
+static int32 sHudSettleLeft = 0;
+
 /** sHudDrawing の RAII(ShowHud には途中 return が多いので、旗の下ろし忘れを型で防ぐ)。 */
 struct KESCMHudDrawGuard
 {
@@ -624,6 +631,7 @@ public:
 			sHudTracker       = nil;
 			sHudRedrawPending = kFalse;
 			sHudRedrawCount   = 0;
+			sHudSettleLeft    = 0;	// 押下直後の追いかけも打ち切る(タイマーはこの上で止めてある)
 		}
 		// ※sprite(fHudAlive)はここでは片付けない。DestroySprite には IGraphicsContext が要り、それには
 		//   fControlView を deref する必要があるが、この経路(基底の後始末を通らない破棄)では fControlView
@@ -734,13 +742,18 @@ public:
 					//   → 全滅=「BeginTracking を抜けるまで画面が確定しない」。∴ 抜けた直後に一度だけ描かせる。
 					sHudTracker     = this;
 					sHudRedrawCount = 0;	// 暴走止めのカウンタは押下ごとにリセット
+					sHudSettleLeft  = kKESCMHudSettleTries;	// ★押下直後の追いかけ(既定 0=無効)
 					if (sHudTimer == nil)
 						sHudTimer = (ICallbackTimer*)::CreateObject(kCallbackTimerBoss, IID_ICALLBACKTIMER);
 					if (sHudTimer != nil)
 					{
 						// 予約中の印を立ててから武装する(この間は KESCMTrackerRequestHudRedraw が重ねない)。
+						// ★初回だけは「すぐ」ではなく kKESCMHudFirstDrawDelayMillis 待ってから描く
+						//   (2026-07-30)。非アクティブ窓を押したときのアクティブ化に伴う画面復元より
+						//   先に描いてしまうと、その復元で消されて「一瞬出てまた出る」ちらつきになる。
+						//   復元が終わってから描けば最初から出たまま。理由の詳細は KESCMConstants.h。
 						sHudRedrawPending = kTrue;
-						sHudTimer->StartTimer(KESCMHudTimerProc, 1, nil);
+						sHudTimer->StartTimer(KESCMHudTimerProc, kKESCMHudFirstDrawDelayMillis, nil);
 					}
 				}
 			}
@@ -770,9 +783,17 @@ public:
 			this->InstallCmykCursor();
 
 		// HUD は位置固定(ビュー左上)なのでマウス追従は不要だが、ドラッグ中に文書側の再描画が入ると
-		// 消えるので描き直す。★one-shot タイマーの発火より先にドラッグが来ることもあるので、まだ一度も
-		// 出していない間は動いていなくても描く(押下直後は mouseDidMove=kFalse で来る=CTracker.cpp:449-452)。
-		if (mouseDidMove || !fHudShown)
+		// 消えるので描き直す。
+		// ★★タイマーの予約が生きている間はここから描かない(2026-07-30 修正)。以前は「まだ一度も出して
+		//   いない間は動いていなくても描く」(mouseDidMove || !fHudShown)としていた。押下直後は
+		//   mouseDidMove=kFalse で ContinueTracking が来る(CTracker.cpp:449-452)ので、タイマーより先に
+		//   ドラッグが来ても HUD を出すための保険だった。ところが初回描画を遅らせる
+		//   (kKESCMHudFirstDrawDelayMillis)ようにした結果、この保険が**遅延を打ち消して**しまった:
+		//   押下直後にここで描く → 直後のアクティブ化の画面復元で消される → 待ち明けにタイマーが描く
+		//   ＝点滅。実測の診断値 sh2(ここ 1 回 + タイマー 1 回)で確定した。
+		//   → 予約中はタイマーに任せる。予約が無いとき(=初回描画が済んでいる/万一タイマーが動かなかった)
+		//     だけ、従来の条件で描き直す=保険としての役割は残る。
+		if (!sHudRedrawPending && (mouseDidMove || !fHudShown))
 			this->ShowHud();
 	}
 
@@ -966,6 +987,7 @@ private:
 		sHudTracker       = nil;
 		sHudRedrawPending = kFalse;
 		sHudRedrawCount   = 0;
+		sHudSettleLeft    = 0;	// 押下直後の追いかけも打ち切る(タイマーはこの上で止めてある)
 
 		if (fHudAlive && fControlView != nil)
 		{
@@ -1022,11 +1044,27 @@ static uint32 KESCMHudTimerProc(void* /*refPtr*/)
 	if (sHudTracker != nil)
 		sHudTracker->ShowHud();
 
+	// ★★押下直後の「画面が落ち着くまで追いかける」連鎖(2026-07-30 追加)。非アクティブな文書窓を
+	//   押してアクティブになる経路では、窓のアクティブ化に伴う画面復元が **スプレッド描画イベントを
+	//   発火せずに** sprite の絵を消してしまう(実測の診断値 req0 / sh1 で確定)。つまり描画イベントに
+	//   便乗する KESCMTrackerRequestHudRedraw では拾えないので、押下直後だけ時間で数回描き直す。
+	//   回数と間隔・止め方は KESCMConstants.h の kKESCMHudSettleTries を参照(0 にすれば無効化できる)。
+	//   ★連鎖は「戻り値」で行う。ここで StartTimer を呼び直して kEndOfTime を返すと予約が打ち消される
+	//     (2026-07-29 に KESCMPanelAlpha の遅延再適用で実測。あちらと同じ実証済みの形)。
+	//   ★連鎖中は予約済みの印を立てる=描画イベント由来の要求と二重に走らせない。
+	//   ★押下が終わっていれば連鎖しない(HideHud が sHudTracker=nil と sHudSettleLeft=0 にする)。
+	if (sHudTracker != nil && sHudSettleLeft > 0)
+	{
+		--sHudSettleLeft;
+		sHudRedrawPending = kTrue;
+		return kKESCMHudSettleDelayMillis;	// ★必ず正の値を返す(下の 0 の注意を参照)
+	}
+
 	// ★★戻り値は IIdleTask::RunTask の再スケジュール値。**0 は「すぐまた呼べ」**であって
 	// 「終わり」ではない(SDK のサンプル: `return fThingsLeftToDo ? 0 : kEndOfTime;`)。
 	// 一度 0 を返したせいで無限に呼ばれ、毎回 CreateSprite+Show が走って InDesign が固まった
 	// (2026-07-26 実機)。しかもコールバックの先頭で Release+nil にしているので外から止められない。
-	// one-shot は必ず kEndOfTime を返すこと。
+	// 連鎖しないときは必ず kEndOfTime を返すこと。
 	return IIdleTask::kEndOfTime;
 }
 
@@ -1067,6 +1105,7 @@ void KESCMTrackerShutdownHud()
 	sHudTracker       = nil;
 	sHudRedrawPending = kFalse;
 	sHudRedrawCount   = 0;
+	sHudSettleLeft    = 0;	// 押下直後の追いかけも打ち切る(タイマーはこの上で止めてある)
 	sHudText.Clear();
 	KESCMReleaseHudFont();	// フォント参照を .pln が降りる前に必ず返す
 }
