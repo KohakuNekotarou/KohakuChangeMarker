@@ -361,10 +361,12 @@ static PMString KESCMFormatChangeRatio(int32 changed, int32 total)
 
 //----------------------------------------------------------------------------------------
 // 飛んだ先のラベルを組む(パネルのメッセージ欄に出す)。★2026-07-27 に "P1" 形式から改めた(ユーザー指定)。
-//   変更(枠)           = "Page: <番号> <割合>"       例: Page: 1 12% / Page: 4 0.4% / Page: 9 <0.1%
+//   変更(枠)           = "Page: <番号>, Change <割合>" 例: Page: 1, Change 12% / Page: 4, Change 0.4%
 //   overset(1件のページ)  = "Page: <番号> Overset"      例: Page: 1 Overset
 //   overset(複数のページ) = "Page: <番号> (n) Overset"  例: Page: 1 (1) Overset / Page: 1 (2) Overset  (n=1始まり)
-// 番号の後の各要素(割合・(n)・Overset)は半角スペース1つ区切り。ページ番号は IPageList::GetPageString
+// ★2026-07-29 に割合の区切りを半角スペースから ", Change " へ変更(ユーザー指定)＝何の % なのか読んで分かる
+//   ようにするため。overset 側は既に "Overset" の語が付いているので従来どおりスペース区切りのまま。
+// (n)・Overset は半角スペース1つ区切り。ページ番号は IPageList::GetPageString
 // (セクション込み・現在の表示番号)。
 // ★割合は変更ストップにだけ付ける(overset は「あふれ」であって変更量とは無関係)。エントリが引けない等で
 //   値が作れないときは付けない=従来どおりのラベル。仕様は docs/ai-notes/kescm-change-ratio.md。
@@ -395,7 +397,7 @@ static PMString KESCMStopLabel(IDataBase* db, const KESCMNavStop& stop)
 	}
 	else
 	{
-		// 変更ストップ: そのページの変更の割合を足す(例 "P3 12%")。分子=比較時に数えた変化セル数、
+		// 変更ストップ: そのページの変更の割合を足す(例 "Page: 3, Change 12%")。分子=比較時に数えた変化セル数、
 		// 分母=そのページの低解像度セル数(= w * h。エントリの画像寸法がそのまま分母)。
 		std::map<UID, KESCMOverlayEntry*>::const_iterator it = KESCMDrawEventHandler::sEntries.find(stop.pageUID);
 		if (it != KESCMDrawEventHandler::sEntries.end() && it->second != nil)
@@ -403,7 +405,7 @@ static PMString KESCMStopLabel(IDataBase* db, const KESCMNavStop& stop)
 			const PMString ratio = KESCMFormatChangeRatio(it->second->changedCells, it->second->w * it->second->h);
 			if (ratio.NumUTF16TextChars() > 0)
 			{
-				label.Append(" ");		// 半角スペース1つ(Overset と同じ流儀)
+				label.Append(", Change ");	// 何の % なのか分かるようにラベルを付ける("Page: 3, Change 12%")
 				label.Append(ratio);
 			}
 		}
