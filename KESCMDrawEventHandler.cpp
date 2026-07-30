@@ -500,16 +500,26 @@ ErrorCode KESCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef
 						KESCMDistTransform(M, wl, hl, e->dist);
 					delete[] M;
 
-					// 初回リング(基準半径)を buf へ直接描く(dist 確保失敗時のみ透明クリアで安全に)。
-					// buf 確保失敗(nil)時はここでは触らない。描画側(HandleDrawEvent)が e->buf==nil で skip する。
-					e->buf = new (std::nothrow) uint8[(size_t)rbL * hl];
-					if (e->buf != nil)
+					// 初回リング(基準半径)を buf へ直接描く。
+					e->buf = (e->dist != nil) ? new (std::nothrow) uint8[(size_t)rbL * hl] : nil;
+
+					// ★★dist / buf のどちらかが確保できなかったら、このページのマークは作らない
+					//   (2026-07-30 の監査で修正)。以前は「dist が無ければ buf を透明クリア」「buf が
+					//   無ければ描画側が skip」というフォールバックだったが、どちらも **sEntries には
+					//   エントリが載るのに画面には何も出ない** 状態を作る。changedCells は非 0 なので
+					//   Prev/Next は「変更あり」としてそのページへ飛び、しかし枠が見えない=壊れて見える。
+					//   OOM でこのページを諦めるのは、上の e==nil / MakeOrigImage の確保失敗と同じ流儀。
+					//   ★BG は既に e->bgRed が所有しているので、delete e が dist/buf/bgRed をまとめて解放する。
+					if (e->buf == nil)
 					{
-						if (e->dist != nil)
-							BuildRing(e->buf, rbL, bppL, wl, hl, e->dist, BG, kKESCMBaseRadius);
-						else
-							memset(e->buf, 0, (size_t)rbL * hl);
+						delete e;
+						if (accSH)  delete accSH;
+						if (snapSH) delete snapSH;
+						if (accTH)  delete accTH;
+						if (snapTH) delete snapTH;
+						return kFailure;
 					}
+					BuildRing(e->buf, rbL, bppL, wl, hl, e->dist, BG, kKESCMBaseRadius);
 					e->rec.bounds.xMin = 0;             e->rec.bounds.yMin = 0;
 					e->rec.bounds.xMax = (int16)wl;     e->rec.bounds.yMax = (int16)hl;
 					e->rec.baseAddr     = e->buf;

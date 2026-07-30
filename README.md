@@ -3,7 +3,7 @@
 > **On the name**: the display name is **Kohaku Change Marker** (spaced, to match
 > **Kohaku Search Panel** / **Kohaku Excel Search**). The `.pln` file name stays
 > `KohakuChangeMarker`, the VS project stays `KohakuExtendScriptChangeMarker` and the code
-> prefix stays `KESCM`, so the build output is still `KohakuChangeMarker.sdk.pln`.
+> prefix stays `KESCM`, so the build output is `KohakuChangeMarker.pln`.
 
 Adobe InDesign C++ SDK Plug-In.
 Two documents are rendered off-screen page by page and compared at the pixel level; areas with changes are highlighted by overlaying frames on the screen.

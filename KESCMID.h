@@ -36,7 +36,7 @@
 #define kKESCMDisplayName	"Kohaku Change Marker"			// 表示名(About メニュー項目・About ボックス本文・パネル/ツール名)。KBS の "Kohaku Search Panel" に合わせ、単語間をスペースで区切る(2026-07-25)。
 #define kKESCMFileName		"KohakuChangeMarker"			// 出力ファイル名の基底(.rc の OriginalFilename)。vcxproj の TargetName と一致させること。表示名と違いスペースは入れない。
 #define kKESCMPrefixNumber	0x205515 		// Unique prefix number for this plug-in(*Must* be obtained from Adobe Developer Support).
-#define kKESCMVersion		"1.1.1"						// Version of this plug-in。About ボックス本文・.rc の FileVersion・PluginVersion リソースの3か所に出る。1.0.1 → 1.1.0(2026-07-25) → 1.1.1(2026-07-26)。★1.1.0 は押下中 HUD が入る前の状態で Adobe Exchange へレビュー提出済み。同じ版番号で中身の違うバイナリを配らないため、HUD を足したこのビルドから 1.1.1 にする。
+#define kKESCMVersion		"1.2.0"						// Version of this plug-in。About ボックス本文・.rc の FileVersion・PluginVersion リソースの3か所に出る。1.0.1 → 1.1.0(2026-07-25) → 1.1.1(2026-07-26) → 1.2.0(2026-07-30)。★Adobe Exchange に出ているのは 1.1.0 まで。1.1.1 以降の未提出分(押下中 HUD／変更割合表示／進捗バー＋キャンセル／パネル半透明トグル)をまとめて 1.2.0 とする(新機能を含むので minor を上げた)。
 // (kKESCMAuthor はテンプレート残骸(どこからも未参照)のため削除 2026-07-25)
 
 // Plug-in Prefix: (please change kKESCMPrefixNumber above to modify the prefix.)
@@ -397,8 +397,8 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMToolWidgetID, kKESCMPrefix + 41)	// ツール
 
 // Menu item positions (flyout order, 2026-07-24 に大幅入れ替え):
 //   Start/Stop(9.0) → ─線Sep1(9.1) →
-//   [表示系トグル群] Hold to Hide Marks(9.20) → Ignore Page Number Marker(9.22) → Print comparison marks(9.24) →
-//     Marks opacity ▸(9.26) → Show Original Page Numbers(9.28) → Show Marks on Source(9.30) →
+//   [表示系トグル群] Hold to Hide Marks(9.20) → Ignore Page Number Marker(9.22) → Marks opacity ▸(9.24) →
+//     Print comparison marks(9.26) → Show Original Page Numbers(9.28) → Show Marks on Source(9.30) →
 //     Show Scrollbar Map(9.32) → Sync Layout Views(9.34) →
 //   ─線OversetSep(9.40) → Find Overset(9.42) → Refresh Overset(9.44) →
 //   ─線Sep3(9.50) → [実行アクション群] Align Other Views to Active(9.52) → Export Changed Pages...(9.53) →

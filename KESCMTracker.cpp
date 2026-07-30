@@ -129,6 +129,32 @@ static const double kKESCMHudFallbackWidthPx = 600.0;
 #include <chrono>			// milliseconds(カーソル設置後の落ち着き待ち)
 #include <thread>			// std::this_thread::sleep_for(同上。Win/Mac 共通)
 
+/** ICursorMgr::Hide() → Show() の対を RAII で保証する(2026-07-30 の監査で追加)。
+	押下時のカーソル差し替えの1フレーム(「ゴミ」)を隠すために、設置の前後を Hide/Show で囲む
+	(経緯と切り分けは KESCMConstants.h の kKESCMCursorSettleMillis を参照)。★対で呼ばないと
+	カーソルが消えたままになるので、明示的な Show ではなくスコープに任せる。
+	mgr==nil のときは何もしない(隠す必要が無い=CMYK 以外のジェスチャや値が採れなかった場合)。 */
+struct KESCMCursorHideGuard
+{
+	explicit KESCMCursorHideGuard(ICursorMgr* mgr) : fMgr(mgr)
+	{
+		if (fMgr != nil)
+			fMgr->Hide();
+	}
+	~KESCMCursorHideGuard()
+	{
+		if (fMgr == nil)
+			return;
+		// 設置後の「落ち着き待ち」。既定 0=待たない(ゴミが再発したときの調整用に残してある)。
+		if (kKESCMCursorSettleMillis > 0)
+			std::this_thread::sleep_for(std::chrono::milliseconds(kKESCMCursorSettleMillis));
+		fMgr->Show();
+	}
+
+private:
+	ICursorMgr* fMgr;	// 借り物(呼び出し側の InterfacePtr がスコープ内で保持している)。AddRef しない
+};
+
 //____________________________________________________________________________________
 //	Tracker event handler: forwards events (notably the button-up) to the tracker while
 //	capturing. A bare subclass of CTrackerEventHandler is enough - the base already forwards
@@ -670,59 +696,55 @@ public:
 		InterfacePtr<ICursorMgr> cursorMgr(theApp, UseDefaultIID());
 		const bool16 hideDuringSwitch =
 			(cmykGesture && cursorMgr != nil && KESCMTrackerHasPendingCmykCursor());
-		if (hideDuringSwitch)
-			cursorMgr->Hide();
 
-		bool16 result = CTracker::BeginTracking(theEvent);
-		if (result)
+		bool16 result = kFalse;
 		{
-			// CMYK 以外(reveal / peek)は従来どおり基底の後で発動する。CMYK は上で済ませてある。
-			if (!cmykGesture)
-				KESCMTrackerRevealBegin(shiftDown, altDown, cmdDown, macCtrl);
+			// ★Hide/Show の対は KESCMCursorHideGuard に任せる(2026-07-30 の監査で RAII 化)。Show が走る
+			//   位置=このブロックの終わりで、従来の明示的な Show と同じ場所なので挙動は変わらない。
+			//   将来ここに途中 return を足しても「カーソルが消えたまま」を作れなくなる。
+			KESCMCursorHideGuard cursorHide(hideDuringSwitch ? (ICursorMgr*)cursorMgr : nil);
 
-			// Alt+左「色比較」で値が採れていたら、カーソル自身に CMYK を描く。CTracker が BeginTracking で
-			// 用意した modal cursor を自前のカスタムビットマップカーソルへ差し替える(トラッキング終了時に
-			// CTracker が自動で元へ戻す)。kTrue(動的)スペックは設定の瞬間に未初期化バッファが見える
-			// ため使わない(InstallCmykCursor 参照)。ドラッグ中の数値更新は ContinueTracking が
-			// 値の変化時に InstallCmykCursor で入れ直して行う。
-			if (KESCMTrackerHasPendingCmykCursor())
-				this->InstallCmykCursor();
-
-			// HUD(押している間だけビュー左上に1行)。ジェスチャに依らず出す=挙動を一定にする。
-			// ★文字列はここで1回だけ決めて押している間は固定する(押している最中に窓は変わらない)。
-			//   判定に使う「押した窓」は fControlView(このトラッカーが動いているビュー)。
-			if (sHudOn)
+			result = CTracker::BeginTracking(theEvent);
+			if (result)
 			{
-				sHudText = KESCMBuildHudText(fControlView);
+				// CMYK 以外(reveal / peek)は従来どおり基底の後で発動する。CMYK は上で済ませてある。
+				if (!cmykGesture)
+					KESCMTrackerRevealBegin(shiftDown, altDown, cmdDown, macCtrl);
 
-				// ★押した瞬間から出すには one-shot タイマーが要る(実測 2026-07-26。以下は全部出なかった):
-				//   ①BeginTracking で Show を1回 ②同 2回(初回=ShowFirstTime のオフスクリーン用意、
-				//   2回目=ShowSprite の実描画、と CSprite.h のコメントから立てた仮説) ③BeginTracking から
-				//   HandleContinueTracking を呼ぶ(押下直後は convertedPoint==fPreviousPoint なので
-				//   mouseDidMove=kFalse で来る = CTracker.cpp:449-452)。
-				//   → 全滅=「BeginTracking を抜けるまで画面が確定しない」。∴ 抜けた直後に一度だけ描かせる。
-				sHudTracker     = this;
-				sHudRedrawCount = 0;	// 暴走止めのカウンタは押下ごとにリセット
-				if (sHudTimer == nil)
-					sHudTimer = (ICallbackTimer*)::CreateObject(kCallbackTimerBoss, IID_ICALLBACKTIMER);
-				if (sHudTimer != nil)
+				// Alt+左「色比較」で値が採れていたら、カーソル自身に CMYK を描く。CTracker が BeginTracking で
+				// 用意した modal cursor を自前のカスタムビットマップカーソルへ差し替える(トラッキング終了時に
+				// CTracker が自動で元へ戻す)。kTrue(動的)スペックは設定の瞬間に未初期化バッファが見える
+				// ため使わない(InstallCmykCursor 参照)。ドラッグ中の数値更新は ContinueTracking が
+				// 値の変化時に InstallCmykCursor で入れ直して行う。
+				if (KESCMTrackerHasPendingCmykCursor())
+					this->InstallCmykCursor();
+
+				// HUD(押している間だけビュー左上に1行)。ジェスチャに依らず出す=挙動を一定にする。
+				// ★文字列はここで1回だけ決めて押している間は固定する(押している最中に窓は変わらない)。
+				//   判定に使う「押した窓」は fControlView(このトラッカーが動いているビュー)。
+				if (sHudOn)
 				{
-					// 予約中の印を立ててから武装する(この間は KESCMTrackerRequestHudRedraw が重ねない)。
-					sHudRedrawPending = kTrue;
-					sHudTimer->StartTimer(KESCMHudTimerProc, 1, nil);
+					sHudText = KESCMBuildHudText(fControlView);
+
+					// ★押した瞬間から出すには one-shot タイマーが要る(実測 2026-07-26。以下は全部出なかった):
+					//   ①BeginTracking で Show を1回 ②同 2回(初回=ShowFirstTime のオフスクリーン用意、
+					//   2回目=ShowSprite の実描画、と CSprite.h のコメントから立てた仮説) ③BeginTracking から
+					//   HandleContinueTracking を呼ぶ(押下直後は convertedPoint==fPreviousPoint なので
+					//   mouseDidMove=kFalse で来る = CTracker.cpp:449-452)。
+					//   → 全滅=「BeginTracking を抜けるまで画面が確定しない」。∴ 抜けた直後に一度だけ描かせる。
+					sHudTracker     = this;
+					sHudRedrawCount = 0;	// 暴走止めのカウンタは押下ごとにリセット
+					if (sHudTimer == nil)
+						sHudTimer = (ICallbackTimer*)::CreateObject(kCallbackTimerBoss, IID_ICALLBACKTIMER);
+					if (sHudTimer != nil)
+					{
+						// 予約中の印を立ててから武装する(この間は KESCMTrackerRequestHudRedraw が重ねない)。
+						sHudRedrawPending = kTrue;
+						sHudTimer->StartTimer(KESCMHudTimerProc, 1, nil);
+					}
 				}
 			}
-		}
-
-		// Hide したら必ず対で Show する(result==kFalse の経路も含む。消えっぱなし防止)。
-		// kKESCMCursorSettleMillis > 0 なら見せる前にその時間だけ待つ(既定 0=待たない。KESCMConstants.h の
-		// 説明のとおり、包んでさえいれば待ちは不要。ゴミが再発したときの調整用に残してある)。
-		if (hideDuringSwitch)
-		{
-			if (kKESCMCursorSettleMillis > 0)
-				std::this_thread::sleep_for(std::chrono::milliseconds(kKESCMCursorSettleMillis));
-			cursorMgr->Show();
-		}
+		}	// ← ここで cursorHide のデストラクタが(隠していれば)Show する
 
 		if (!result && cmykGesture)
 		{

@@ -405,7 +405,13 @@ ErrorCode KESCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMStri
 		// ★キャンセル判定は「1ページを比較し終えた安全な場所」で行う(WasCancelled はイベントを回すので、
 		//   ラスタ化の途中では見ない)。引数 kFalse = グローバルエラー状態を立てない(立てると後続の
 		//   コマンドが巻き添えで失敗する)。
-		if (progress.WasCancelled(kFalse))
+		// ★★最後のページの後では見ない(2026-07-30 の監査で修正)。この経路のキャンセルは
+		//   「全マークを破棄して Stop へ戻す」なので、全ページ終わった直後に押されたのを拾うと
+		//   **完了している比較を丸ごと捨ててしまう**(100 ページ比較した後なら全部やり直しになる)。
+		//   残りが無い＝もう中断する余地が無いので、判定自体が無意味。
+		//   ※Refresh 経路(KESCMPeek.cpp)は「そこまで更新した分を残す」設計で、最後に押されても
+		//     失うものが無い(ステータスに "- cancelled" と出るだけ)ため、あちらは現状のままでよい。
+		if (k + 1 < toRaster.size() && progress.WasCancelled(kFalse))
 		{
 			cancelled = kTrue;
 			break;
