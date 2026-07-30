@@ -398,8 +398,9 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMToolWidgetID, kKESCMPrefix + 41)	// ツール
 // Menu item positions (flyout order, 2026-07-24 に大幅入れ替え):
 //   Start/Stop(9.0) → ─線Sep1(9.1) →
 //   [表示系トグル群] Hold to Hide Marks(9.20) → Ignore Page Number Marker(9.22) → Marks opacity ▸(9.24) →
-//     Print comparison marks(9.26) → Show Original Page Numbers(9.28) → Show Marks on Source(9.30) →
-//     Show Scrollbar Map(9.32) → Sync Layout Views(9.34) →
+//     Print comparison marks(9.26) → Show HUD(9.27) → Show Original Page Numbers(9.28) →
+//     Show Marks on Source(9.30) → Show Scrollbar Map(9.32) → Sync Layout Views(9.34) →
+//     Translucent Panel(9.36) →
 //   ─線OversetSep(9.40) → Find Overset(9.42) → Refresh Overset(9.44) →
 //   ─線Sep3(9.50) → [実行アクション群] Align Other Views to Active(9.52) → Export Changed Pages...(9.53) →
 //     Hide Unchanged Spreads(9.54) → Save Panel Settings(9.56) → Save Check & Register(9.58) →

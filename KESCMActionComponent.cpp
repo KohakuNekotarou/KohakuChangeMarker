@@ -260,7 +260,8 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 			break;
 		}
 
-		// 「Translucent Panel」トグル: このパネル自身を半透明(alpha 128)にするか
+		// 「Translucent Panel」トグル: このパネル自身を半透明(alpha は kKESCMPanelAlphaValue=77 ≒ 30%。
+		// 2026-07-29 に 128 から変更)にするか
 		// (★Windows 専用・既定 OFF)。効くのは「フローティング中」と「アイコンからのドロワー展開中」の
 		// 2 つ。ドック内で展開中は選べるが見た目は変わらない=フラグだけ立ち、上記のどちらかに
 		// 戻した時点で効く(その追随は KESCMPanelObserver.cpp が

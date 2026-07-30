@@ -645,6 +645,12 @@ bool8 KESCMPanelRollOver::IsMouseOver() const
 	// ★旗を持たないので、その場で実測して答える(このインターフェイスの契約どおり
 	//   「今カーソルが乗っているか」を返す)。
 #ifdef WINDOWS
+	// ★トグルが OFF なら実測しない(2026-07-30 の再確認で追加)。この AddIn は半透明トグル専用で、
+	//   OFF の間は誰もこの答えを使わない。一方 KESCMQueryPaletteWindow はキャッシュが失効していると
+	//   EnumWindows で全窓を走査するので、使っていない人にその費用を払わせない
+	//   (適用側 KESCMEffectiveAlpha が OFF でカーソル位置すら見ないのと同じ方針)。
+	if (!sPanelTranslucent)
+		return kFalse;
 	return KESCMCursorOverWindow(KESCMQueryTranslucentTarget(KESCMQueryPaletteWindow())) ? kTrue : kFalse;
 #else
 	return kFalse;

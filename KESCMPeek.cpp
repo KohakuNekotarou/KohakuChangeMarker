@@ -1847,6 +1847,17 @@ static void KESCMFlushDeferredCloseUi()
 	if (KESCMAppIsQuitting())
 		return;		// 終了中は UI に触らない(状態は Shutdown が破棄する)
 
+	// ★★保留している間に新しい比較が始まっていたら、この後片付けは走らせない(2026-07-30 の再確認で追加)。
+	//   この関数は「閉じた文書の分を片付ける」ためのものだが、中身(strip 撤去・"marks cleared" 表示)は
+	//   対象を選ばず全部に効く。完了通知 kPendingDocumentsClosedMsg が来ないまま保留が残り(監査 B-2 の
+	//   穴)、その後ユーザーが Start して、さらに後の一括クローズ完了でまとめて流れると、**動いている
+	//   比較の strip を撤去してステータスを "marks cleared" に上書きしてしまう**。
+	//   ★arm 中なら片付けるものは無い: 保留が立つのは KESCMHandleDocsClosed が比較状態を破棄した
+	//     (=disarm した)ときだけで、その後の Start が strip 注入もステータスもパネル更新も済ませている。
+	//     閉じた文書の窓は窓ごと消えているので strip も残らない。∴ 旗を下ろすだけでよい。
+	if (sPeekArmed)
+		return;
+
 	// Find Overset が(走査文書が生存したまま)単独 ON なら地図は残す。それ以外は撤去する
 	// (KESCMHandleDocsClosed 側で即時に行っていた処理と同じ判断)。
 	if (KESCMDrawEventHandler::sOversetOn)

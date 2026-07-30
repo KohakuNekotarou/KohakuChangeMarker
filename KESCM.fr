@@ -432,7 +432,10 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kSDKDefIsNotDynamicMenuFlag,
 
 		// "Translucent Panel" on the panel flyout (popup) menu. Check-mark toggle (default OFF):
-		// while ON, this panel itself is drawn translucent (alpha 128) as long as it is FLOATING.
+		// while ON, this panel itself is drawn translucent (alpha = kKESCMPanelAlphaValue, 77 out of 255;
+		// it was 128 until 2026-07-29) whenever it is FLOATING or pulled out as an icon DRAWER - those
+		// are the two states that get their own top-level window. Moving the pointer over the panel
+		// (including its tab strip and title bar) turns it opaque again.
 		// Windows only. Choosing it while the panel is docked is allowed but has no visible effect
 		// (only the flag is stored; it takes hold as soon as the panel floats again), because a
 		// docked panel is a child of the main frame and cannot be made transparent on its own.
