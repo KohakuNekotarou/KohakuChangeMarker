@@ -11,11 +11,11 @@ This display is temporary and does not alter the documents themselves.
 
 https://www.youtube.com/watch?v=QIP_KAs5rtU
 
-## About Creation
-This plugin was designed and implemented by **KohakuNekotarou** in collaboration with Anthropic's AI, **Claude (Claude Code)**.
-
 ## Adobe Exchange
 https://exchange.adobe.com/apps/cc/205515/kohakuchangemarker
+
+## About Creation
+This plugin was designed and implemented by **KohakuNekotarou** in collaboration with Anthropic's AI, **Claude (Claude Code)**.
 
 ## Note
 We cannot be held responsible for any issues that may arise; please use this service at your own risk.
