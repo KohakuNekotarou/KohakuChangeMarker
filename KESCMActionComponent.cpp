@@ -37,6 +37,7 @@
 
 // プロジェクト内:
 #include "KESCMID.h"
+#include "KESCMLoc.h"		// 実行時の日本語切替(jaJP テーブルは 2026-08-05 撤去)
 #include "KESCMCore.h"		// KESCMOpenAboutURL
 #include "KESCMDrawEventHandler.h"	// sEntries/sDB/sShowOldNumbers(Hide Unchanged と旧番号バッジの状態参照)
 #include "KESCMPageMap.h"	// KESCMPageMapToggleSelectedPages / KESCMPageMapUpdateToggleState(追加/削除ページ登録トグル)
@@ -563,7 +564,8 @@ void KESCMActionComponent::DoAbout()
 {
 	CAlert::ModalAlert
 	(
-		kKESCMAboutBoxStringKey,	// Alert string
+		// 完成済みテキスト(キーではない): 日本語 UI なら日本語、他は enUS テーブルの英語。
+		KESCMLoc::Text(kKESCMAboutBoxStringKey, KESCMJa::kAboutBox),
 		kOKString,					// OK button
 		kNullString,				// No second button
 		kNullString,				// No third button
@@ -580,7 +582,8 @@ void KESCMActionComponent::DoUsage()
 {
 	CAlert::ModalAlert
 	(
-		kKESCMHintKey,				// Alert string (gesture reference; formerly the panel hint)
+		// 完成済みテキスト。操作リファレンス(旧パネル説明文)の日本語は KESCMLoc.h に移った。
+		KESCMLoc::Text(kKESCMHintKey, KESCMJa::kHint),
 		kOKString,					// OK button
 		kNullString,				// No second button
 		kNullString,				// No third button
@@ -737,7 +740,8 @@ void KESCMActionComponent::DoHideUnchangedToggle()
 	// 文言はロケール連動(enUS=英語/jaJP=日本語)。ボタンは Windows の制約で標準 Yes/No のみ。
 	const int16 clicked = CAlert::ModalAlert
 	(
-		kKESCMHideConfirmKey,		// "This feature modifies the document file. Continue?" / 日本語版
+		// "This feature modifies the document file. Continue?" / 日本語 UI では日本語(KESCMLoc)。
+		KESCMLoc::Text(kKESCMHideConfirmKey, KESCMJa::kHideConfirm),
 		kYesString,
 		kNoString,
 		kNullString,

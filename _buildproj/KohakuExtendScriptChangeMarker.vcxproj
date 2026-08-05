@@ -319,7 +319,6 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="..\..\..\source\sdksamples\KESCM\KESCM_enUS.fr" />
-    <None Include="..\..\..\source\sdksamples\KESCM\KESCM_jaJP.fr" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets" />

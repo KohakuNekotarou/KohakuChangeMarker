@@ -918,7 +918,10 @@ resource LocaleIndex ( kSDKDefStringsResourceID)
 		kWildFS, k_itIT, kSDKDefStringsResourceID + index_enUS
 		kWildFS, k_nbNO, kSDKDefStringsResourceID + index_enUS
 		kWildFS, k_fiFI, kSDKDefStringsResourceID + index_enUS
-		kInDesignJapaneseFS, k_jaJP, kSDKDefStringsResourceID + index_jaJP
+		// kWildFS と enUS テーブル: jaJP 文字列テーブルは撤去(2026-08-05・KBS と同時)。日本語を
+		// 話す3箇所は KESCMLoc.h の実行時切替へ。旧形(kInDesignJapaneseFS+jaJP テーブル)は
+		// 「Roman エンジン+日本語 UI」でどの行にも当たらず全キーが生表示になる(同日実測)。
+		kWildFS, k_jaJP, kSDKDefStringsResourceID + index_enUS
 	}
 };
 
@@ -1193,4 +1196,4 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 #endif // __ODFRC__
 
 #include "KESCM_enUS.fr"
-#include "KESCM_jaJP.fr"
+// KESCM_jaJP.fr は撤去(2026-08-05): 日本語は KESCMLoc.h の実行時切替へ。
