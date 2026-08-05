@@ -179,8 +179,8 @@ void KESCMPageMapToggleSelectedPages()
 	// ★既に比較実行済み(Start後)なら、除外対応表が変わった分をその場で反映するため、Start と同じ
 	// 全体再比較を自動で走らせる(実機確認: 比較後に登録を変えてもリアルタイムには反映されなかった
 	// ため、2026-07-05 にこの自動再比較を追加)。Start 未実行なら何もしない(次の Start で自然に反映)。
-	// KESCMDoMarkChangesDoc は Start 同様「Show Marks on Source」を既定 ON に戻す等の副作用も持つが、
-	// これは手動で Start を押し直すのと同じ挙動なので許容する。報告文字列(report)は使わず短い
+	// (旧記述の「Show Marks on Source を既定 ON に戻す副作用」は 2026-07-25 に Start 経路へ移動済み=
+	// この再比較ではユーザーの OFF 選択は保たれる)。報告文字列(report)は使わず短い
 	// サフィックスだけ足す(ステータス欄が小さく、report をそのまま足すと溢れるため)。
 	bool16 recompared = kFalse;
 	if (KESCMIsArmed() && KESCMArmedTargetDB() != nil && KESCMArmedSourceDB() != nil)
@@ -188,8 +188,21 @@ void KESCMPageMapToggleSelectedPages()
 		// ★差分再比較(allowIncremental=kTrue)。登録の追加/解除では文書内容は変わらず除外対応表の
 		// ペアリングだけが動くので、ペアが不変のページは前回結果を再利用し(=ラスタ化しない)、ペアが
 		// 新規/相手変化/消滅したページだけを再計算する。大規模文書ほど効く。全体の総入れ替えではない。
+		// ★戻り値を必ず見る(2026-08-05 監査で発見した「枠ゼロの Start 中」穴の5個目): 登録の変更は
+		//   後続全ページのペアをずらすので差分でもラスタ化枚数が嵩み、進捗バーの Cancel が出得る。
+		//   キャンセルされるとマークは KESCMDoMarkChangesDoc 側で全破棄済み(kFailure)なのに、無視して
+		//   進むと「枠が1つも無い Start 中」のまま "(recompared)" と嘘の報告をしてしまう。
+		//   Load Check & Register のキャンセル(KESCMPageCheck.cpp)と同じく Stop まで戻す
+		//   (今回の登録変更も Stop の全消去で捨てられる=Stop の仕様どおり)。
 		PMString report;
-		KESCMDoMarkChangesDoc(KESCMArmedTargetDB(), KESCMArmedSourceDB(), report, kTrue /*allowIncremental*/);
+		if (KESCMDoMarkChangesDoc(KESCMArmedTargetDB(), KESCMArmedSourceDB(), report, kTrue /*allowIncremental*/) != kSuccess)
+		{
+			KESCMToggleStartStop();		// arm 中なので Stop 分岐(マーク/登録/Check 破棄・disarm・パネル更新)
+			PMString cmsg("Recompare cancelled");
+			cmsg.SetTranslatable(kFalse);
+			KESCMSetStatus(cmsg, kTrue /*forceRedrawNow*/);
+			return;
+		}
 		msg.Append(" (recompared)");
 		recompared = kTrue;
 	}
