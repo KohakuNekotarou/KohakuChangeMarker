@@ -47,13 +47,10 @@
 #include "IControlViewDefs.h"
 #include "SysControlIds.h"
 
-#include "ScriptInfoTypes.fh"
-#include "AppFrameworkID.h"
-
-#include "SpreadID.h"	// for kPageObjectScriptElement
-#include "GraphicsID.h"	// for IID_IDRWEVTHANDLER
-#include "DocFrameworkID.h"	// for kDocumentObjectScriptElement
-#include "DocumentID.h"	// for kAfterCloseDocSignalResponderService (doc-close responder)
+// (ScriptInfoTypes.fh / AppFrameworkID.h / SpreadID.h / DocFrameworkID.h / DocumentID.h were
+//  only here for the scripting API, which is gone - removed 2026-08-05. Everything below resolves
+//  from ShuksanID.h / widgetid.h / GraphicsID.h and the tool headers.)
+#include "GraphicsID.h"	// for IID_IDRWEVTHANDLER / IID_ISPRITE / IID_IPATHGEOMETRY / kPathGeometryImpl
 #include "TipsID.h"		// for IID_ITIP
 
 // Toolbox tool:
@@ -68,9 +65,8 @@
 
 // Project includes:
 #include "KESCMID.h"
-#include "GenericID.h"
-#include "ShuksanID.h"
-#include "TextID.h"
+// (GenericID.h / TextID.h and a duplicate ShuksanID.h were scripting-era leftovers with no
+//  remaining reference in this file - removed 2026-08-05.)
 
 
 #ifdef __ODFRC__
@@ -142,8 +138,9 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 		}
 	},
 
-	// The ChangeMarker control panel (palette). The observer drives the Start/Clear/print controls
-	// and the popup (flyout) menu data hosts the "About this plug-in" item.
+	// The ChangeMarker control panel (palette). The observer drives the Prev/Next buttons and the
+	// status text/icon (the Start/print/opacity controls moved to the flyout menu, 2026-07-10);
+	// the popup (flyout) menu data hosts the flyout menu itself.
 	Class
 	{
 		kKESCMPanelWidgetBoss,
@@ -347,7 +344,7 @@ resource MenuDef (kSDKDefMenuResourceID)
 
 		// Separator below Start (path ending in ":-" renders a menu separator; no ActionDef needed).
 		kKESCMPopupSep1ActionID,
-		kKESCMPopupMenuPath ":-",
+		kKESCMPopupMenuPath kSDKDefDelimiterAndSeparatorPath,
 		kKESCMSep1MenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
@@ -362,9 +359,9 @@ resource MenuDef (kSDKDefMenuResourceID)
 
 		// "Hold to Hide Marks" on the panel flyout (popup) menu. Check-mark toggle that inverts the
 		// polarity of the marks display: while ON, the comparison marks are kept visible on screen at
-		// all times, and holding the middle button (any reveal/peek gesture) temporarily HIDES them —
-		// releasing shows them again (the default is the opposite: marks are hidden and the middle
-		// button reveals them while held). Screen-only: printing is still governed independently by
+		// all times, and holding the tool's left button (any reveal/peek gesture) temporarily HIDES
+		// them — releasing shows them again (the default is the opposite: marks are hidden and the
+		// left-hold reveals them while held). Screen-only: printing is still governed independently by
 		// "Print comparison marks". The check mark comes from UpdateActionStates (kCustomEnabling).
 		kKESCMPopupHoldToHideMarksActionID,
 		kKESCMPopupMenuPath,
@@ -379,7 +376,7 @@ resource MenuDef (kSDKDefMenuResourceID)
 		// Submenu parent node: actionID 0 + path ending in a delimiter creates the "Marks opacity"
 		// submenu at this position in the flyout (Adobe idiom, see buttonui/incopyexportui .fr).
 		0,
-		kKESCMOpacitySubmenuPath ":",
+		kKESCMOpacitySubmenuPath kSDKDefDelimitMenuPath,
 		kKESCMOpacitySubmenuMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
@@ -486,7 +483,7 @@ resource MenuDef (kSDKDefMenuResourceID)
 		// needed). Position table: KESCMID.h の ActionID 位置一覧(9.50)。(2026-07-25 コメント現行化。
 		// 旧記述の "Invoke Panel Shortcut" は 2026-07-13 廃止済み)
 		kKESCMPopupSep3ActionID,
-		kKESCMPopupMenuPath ":-",
+		kKESCMPopupMenuPath kSDKDefDelimiterAndSeparatorPath,
 		kKESCMSep3MenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
@@ -529,7 +526,7 @@ resource MenuDef (kSDKDefMenuResourceID)
 
 		// Separator above the Find Overset group (independent single-doc overset check).
 		kKESCMPopupOversetSepActionID,
-		kKESCMPopupMenuPath ":-",
+		kKESCMPopupMenuPath kSDKDefDelimiterAndSeparatorPath,
 		kKESCMOversetSepMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
@@ -552,7 +549,7 @@ resource MenuDef (kSDKDefMenuResourceID)
 
 		// Separator above How to Use (path ending in ":-" renders a menu separator; no ActionDef needed).
 		kKESCMPopupSep2ActionID,
-		kKESCMPopupMenuPath ":-",
+		kKESCMPopupMenuPath kSDKDefDelimiterAndSeparatorPath,
 		kKESCMSep2MenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
@@ -578,7 +575,7 @@ resource MenuDef (kSDKDefMenuResourceID)
 		// "KESCM's". Positioned just above Register (2999.0 < 3000.0), i.e. between the native items
 		// and the KESCM block.
 		kKESCMPageMapSepActionID,
-		"RtMenuPagesPanel" ":-",
+		"RtMenuPagesPanel" kSDKDefDelimiterAndSeparatorPath,
 		kKESCMPageMapSepMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
@@ -871,8 +868,8 @@ resource ActionDef (kSDKDefActionResourceID)
 
 /*
  * Toolbox tool definition. Places the KESCM tool in the toolbox. While it is the active tool,
- * the left mouse button runs the same "reveal marks while held" gesture as a plain middle
- * press (Step 1). Group kSixthAdobeToolsGroup is documented in ToolBoxDefs.h as a good slot
+ * holding the left mouse button reveals the comparison marks (modifier keys switch to the
+ * peek / CMYK gestures - see the tool boss above). Group kSixthAdobeToolsGroup is a good slot
  * for third-party / SDK tools. The icon uses a dedicated tool icon (kKESCMToolIconResID;
  * KESCM_Tool_32.png/_64.png, ユーザー提供 2026-07-14) instead of the panel PNG suite.
  * kKESCMToolActionID is the tool-select shortcut action (no ActionDef needed; the
