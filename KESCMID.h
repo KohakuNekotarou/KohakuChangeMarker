@@ -304,7 +304,7 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMToolWidgetID, kKESCMPrefix + 41)	// ツール
 // (kKESCMAboutScriptMenuKey / kKESCMScriptHelpStringKey は「About Scripting」撤去(2026-07-25)に伴い削除)
 #define kKESCMUsageMenuKey		kKESCMStringPrefix "kKESCMUsageMenuKey"	// パネルのフライアウト「使い方」のメニュー名(本文は kKESCMHintKey を再利用)
 #define kKESCMHideUnchangedMenuKey	kKESCMStringPrefix "kKESCMHideUnchangedMenuKey"	// パネルのフライアウト「Hide Unchanged Spreads」トグルのメニュー名
-#define kKESCMHideConfirmKey		kKESCMStringPrefix "kKESCMHideConfirmKey"	// その確認ダイアログ本文(ダイアログのみロケール連動: enUS=英語/jaJP=日本語)
+#define kKESCMHideConfirmKey		kKESCMStringPrefix "kKESCMHideConfirmKey"	// その確認ダイアログ本文(enUS=英語。日本語UIは KESCMLoc.h の実行時切替 2026-08-05)
 #define kKESCMShowOldNumsMenuKey	kKESCMStringPrefix "kKESCMShowOldNumsMenuKey"	// パネルのフライアウト「Show Original Page Numbers」トグルのメニュー名
 #define kKESCMSyncViewsMenuKey		kKESCMStringPrefix "kKESCMSyncViewsMenuKey"	// パネルのフライアウト「Sync Layout Views」トグルのメニュー名
 #define kKESCMAlignViewsMenuKey		kKESCMStringPrefix "kKESCMAlignViewsMenuKey"	// パネルのフライアウト「Align Other Views to Active」(実行アクション)のメニュー名
