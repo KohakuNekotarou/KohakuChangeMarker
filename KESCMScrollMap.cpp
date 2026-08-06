@@ -98,11 +98,11 @@ static const PMReal kKESCMScrollMapOversetAlpha  = 0.85;	// overset は下地と
 // それぞれこのぶんだけ詰めた範囲に地図を描く。つまみが実際に動ける範囲は、矢印ボタンの内側より
 // もう少し狭い(バーの上下にボタンとは別の余白がある)ため、この分を引くと帯とつまみが最もよく揃う。
 // 実機で 5.0 → 8.0(2026-07-29「良い感じ」) → 6.0 → 6.5(2026-07-30 ユーザー指定。8.0 から
-// 「上下 2px ずつ減らす」で 6.0 にし、そこから半 px だけ戻して微調整)と詰めてきた。0.0 にすると
-// 矢印ボタンの内側いっぱいに描く(この追い込みを入れる前の動作)。
+// 「上下 2px ずつ減らす」で 6.0 にし、そこから半 px だけ戻して微調整) → 7.5(2026-08-07 ユーザー
+// 指定「＋1」)と詰めてきた。0.0 にすると矢印ボタンの内側いっぱいに描く(この追い込みを入れる前の動作)。
 // 効き所は Draw の写像部の 1 箇所だけで、trackTop と trackBottom の両方に同じ値が効く=必ず上下対称。
 // (2026-07-30: 実験時の名残だった kKESCMScrollMapTestInset から改名)
-static const PMReal kKESCMScrollMapTrackInset = 6.5;
+static const PMReal kKESCMScrollMapTrackInset = 7.5;
 
 // スクロールバー地図の有効/無効(フライアウト「Show Scrollbar Map」トグル。既定=ON)。
 // OFF の間は Attach / NoticeDrawEvent を即 return させる(strip を注入しない・毎描画の指紋計算もしない)。
