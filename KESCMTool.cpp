@@ -18,6 +18,7 @@
 #include "CTool.h"
 
 #include "KESCMID.h"
+#include "KESCMScriptingDefs.h"	// en_KESCMTool (this tool's ScriptID, registered in KESCM.fr)
 
 /** The KESCM tool's ITool implementation, based on the partial implementation CTool. */
 class KESCMTool : public CTool
@@ -30,8 +31,17 @@ public:
 	/** Set the tool's name and initialise the tool's toolbox button icon. */
 	virtual void Init(RsrcID iconID, const PluginID& pluginID);
 
-	/** KESCM exposes no scripting, so return en_None (avoids CTool's ASSERT_UNIMPLEMENTED). */
-	virtual ScriptID GetScriptID() const { return en_None; }
+	/** Returns the ScriptID that identifies this tool inside the en_ToolBoxTools enumeration.
+		ITool.h:192-223 requires every toolbox tool to define one and register it in
+		kToolBoxEnumScriptElement (done in KESCM.fr); the base class ASSERTs if it is not
+		implemented. Scripts read it as app.toolBoxTools.currentTool and select this tool with
+		app.toolBoxTools.currentTool = UITools.KOHAKU_CHANGE_MARKER_TOOL.
+		This is the tool's identity, not a scripting API - KESCM still exposes no methods and no
+		properties. Until 2026-08-06 this returned en_None ('none' = "no tool at all"), which left
+		the tool indistinguishable from "nothing selected" and impossible to pick from a script
+		(currentTool only accepts UITools enumerators). Same shape as the official samples:
+		SnapTool -> en_SnapTool, SawWaveTool -> en_SawWaveTl. */
+	virtual ScriptID GetScriptID() const { return en_KESCMTool; }
 };
 
 /*

@@ -47,9 +47,14 @@
 #include "IControlViewDefs.h"
 #include "SysControlIds.h"
 
-// (ScriptInfoTypes.fh / AppFrameworkID.h / SpreadID.h / DocFrameworkID.h / DocumentID.h were
-//  only here for the scripting API, which is gone - removed 2026-08-05. Everything below resolves
-//  from ShuksanID.h / widgetid.h / GraphicsID.h and the tool headers.)
+// (AppFrameworkID.h / SpreadID.h / DocFrameworkID.h / DocumentID.h were only here for the
+//  scripting API, which is gone - removed 2026-08-05. Everything below resolves from
+//  ShuksanID.h / widgetid.h / GraphicsID.h and the tool headers.)
+// ScriptInfoTypes.fh came back on 2026-08-06: a toolbox tool has to register its ScriptID in
+// kToolBoxEnumScriptElement (ITool.h:192-223) - that is the tool's identity, not a scripting API.
+// This single header is enough for the resource at the end of this file: it also pulls in
+// ScriptingID.h (kCoreScriptManagerBoss) and defines kCS5ScriptVersion.
+#include "ScriptInfoTypes.fh"	// VersionedScriptElementInfo / Enumerator
 #include "GraphicsID.h"	// for IID_IDRWEVTHANDLER / IID_ISPRITE / IID_IPATHGEOMETRY / kPathGeometryImpl
 #include "TipsID.h"		// for IID_ITIP
 
@@ -65,6 +70,7 @@
 
 // Project includes:
 #include "KESCMID.h"
+#include "KESCMScriptingDefs.h"	// en_KESCMTool (the toolbox tool's ScriptID)
 // (GenericID.h / TextID.h and a duplicate ShuksanID.h were scripting-era leftovers with no
 //  remaining reference in this file - removed 2026-08-05.)
 
@@ -1169,6 +1175,35 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 	}
 
 	kKESCMInternalPopupMenuNameKey		// Popup (flyout) menu name (internal)
+};
+
+/*
+ * Register the tool's ScriptID with the toolbox enumeration.
+ * ITool.h:192-223 spells out the three steps (its worked example is "the pumpkin tool"): define a
+ * ScriptID (KESCMScriptingDefs.h), add it to kToolBoxEnumScriptElement here, and return it from
+ * ITool::GetScriptID (KESCMTool.cpp). The second string is the name scripts see:
+ * "kohaku change marker tool" surfaces as UITools.KOHAKU_CHANGE_MARKER_TOOL, so a script can both
+ * read app.toolBoxTools.currentTool and assign to it to select this tool - neither was possible
+ * while GetScriptID returned en_None (measured 2026-08-06, audit block 7).
+ * Same shape as the official samples: snapshot (Snap.fr:2085-2101) / wavetool (WavTl.fr:319-336).
+ * This adds no methods and no properties - KESCM stays without a scripting API.
+ */
+resource VersionedScriptElementInfo(10)
+{
+	//Contexts
+	{
+		kCS5ScriptVersion, kCoreScriptManagerBoss, kInDesignAllLanguagesFS, k_Wild,
+	}
+	//Elements
+	{
+		Enumerator
+		{
+			kToolBoxEnumScriptElement,
+			{
+				en_KESCMTool, "kohaku change marker tool", "The Kohaku Change Marker tool.",
+			}
+		}
+	}
 };
 
 #endif // __ODFRC__

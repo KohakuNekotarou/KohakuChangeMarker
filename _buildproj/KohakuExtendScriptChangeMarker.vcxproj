@@ -273,6 +273,7 @@
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMThumbnailRefresh.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMThumbIdleTask.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMScrollMap.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMScriptingDefs.h" />
   </ItemGroup>
   <ItemGroup>
     <CustomBuild Include="..\..\..\source\sdksamples\KESCM\KESCM.fr">

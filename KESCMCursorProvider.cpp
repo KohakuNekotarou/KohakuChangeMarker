@@ -61,9 +61,12 @@ CursorSpec KESCMCheckCursorProvider::GetCursor(IControlView* viewUnderMouse, con
 	// 黒✓=「Start 中(比較を実行中)」。マウス下がどの文書でも黒にする(ユーザー指定 2026-07-26。以前は
 	// Target 文書の上だけ黒だった)。Stop 中は白抜き✓(黒フチ+白本体)。2状態は CursorID ごと分けるので
 	// 境界をまたいだ瞬間にスペック違いで確実に切り替わる。
+	// ★PluginCursorSpec = CursorSpec(GetPlugIn()->GetPluginID(), id) の公式マクロ(CursorSpec.h:145-149)。
+	//   ヘッダーが「PluginID 定数をコードに埋める必要をなくすため」と用途を明記している。手本=製品
+	//   open/components/buttonui/misc/AppearancePlaceBehaviorUI.cpp:124,132(2026-08-06 ブロック7 監査 A-2)。
 	if (KESCMToolCursorShouldBeBlack(viewUnderMouse))
-		return CursorSpec(GetPlugIn()->GetPluginID(), kKESCMCheckCursorResID);
-	return CursorSpec(GetPlugIn()->GetPluginID(), kKESCMCheckCursorInactiveResID);
+		return PluginCursorSpec(kKESCMCheckCursorResID);
+	return PluginCursorSpec(kKESCMCheckCursorInactiveResID);
 }
 
 // End, KESCMCursorProvider.cpp.

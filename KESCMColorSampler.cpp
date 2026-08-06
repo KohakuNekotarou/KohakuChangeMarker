@@ -91,10 +91,15 @@ static bool16 KESCMReadCmykPixel(const UIDRef& pageRef, const PMPoint& spreadPt,
 		return kFalse;	// nothrow: OOM でもサンプル1回を諦めるだけ(KESCMDrawEventHandler と同方針、2026-07-25)
 	// 枠の比較(KESCMDrawEventHandler)と同じプロキシ描画(fullRes=kFalse)。配置画像のフル解像度生成を
 	// 誘発しないので文書を dirty にせず、dirty 回避の SaveRestoreModifiedState guard は不要。
+	// ★greek は 0.0=無効(2026-08-06 ブロック7 監査 A-1)。既定の 7.0 だと「そのポイント数未満の文字」が
+	//   字形を持たない灰色の帯として描かれる(SnapshotUtilsEx.h:224-225)ので、小さい文字の上をクリックすると
+	//   文字の色ではなく帯の色を CMYK として読んでしまう。しかも hover/other とも同じ帯になるため値が
+	//   揃って見え、誤りだと気づけない。★画素を読む用途では greek 無効が正しい=比較ラスタ化(MakeEntry)と
+	//   同じ判断。代償はラスタ化がわずかに遅くなることだけ(対象は kKESCMSampleHalfPt の 2pt 四方)。
 	ErrorCode drew;
 	{
 		KESCMRasterizingGuard rg;	// この Draw 中の再入でマークを描かせない(RAII、2026-07-25)
-		drew = snap->Draw(IShape::kPreviewMode, kFalse /*fullRes*/, 7.0, kFalse /*AA off*/);
+		drew = snap->Draw(IShape::kPreviewMode, kFalse /*fullRes*/, 0.0 /*greek 無効*/, kFalse /*AA off*/);
 	}
 	AGMImageAccessor* acc = (drew == kSuccess) ? snap->CreateAGMImageAccessor() : nil;
 
