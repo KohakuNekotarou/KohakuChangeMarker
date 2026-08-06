@@ -38,7 +38,7 @@ static const PMReal kKESCMOversetCrossHalfRatio = 0.20;
 // 「/」の除数(kKESCMThumbDiagDivisor=10)より太く=8(2026-07-24 ユーザー指定=線を少し太く)。
 static const int32 kKESCMOversetCrossWidthDivisor = 8;
 static const uint8 kKESCMRingAlpha = 255;	// リングの基本アルファ(0..255)。「通常」=不透明(255)。薄表示は setopacity 側で行う(25%→255×0.25=実25%)
-// 枠(リング＋変更数)の不透明度の二択(パネルのラジオ「Marks opacity 25% / 75%」)。選択値は
+// 枠(リング)の不透明度の二択(パネルのラジオ「Marks opacity 25% / 75%」)。選択値は
 // ツール左hold中の画面表示・印刷ON中の常時表示・印刷/PDF出力のすべてに共通で効く(KESCMDrawEventHandler::SelectedMarkOpacity)。
 static const PMReal kKESCMMarkOpacity25 = 0.25;	// 「25%」(薄い)
 static const PMReal kKESCMMarkOpacity75 = 0.75;	// 「75%」(濃いめ・少し透ける)

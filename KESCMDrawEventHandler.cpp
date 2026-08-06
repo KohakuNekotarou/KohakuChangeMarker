@@ -1392,7 +1392,7 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 			PMMatrix m = ::InnerToSpreadMatrix(pageGeo);
 			m.Transform(&pr);								// → spread(=描画ポート)座標
 			AutoGSave ag(gPort);
-			gPort->setopacity(sPeekOpacity, kFalse);		// Shift peek=1.0(不透明) / Ctrl peek=0.5(半透明)
+			gPort->setopacity(sPeekOpacity, kFalse);		// Shift peek=1.0(不透明) / Shift+Alt peek=0.5(半透明)
 			gPort->translate(pr.Left(), pr.Top());
 			gPort->scale(pr.Width() / o->w, pr.Height() / o->h);	// 旧版画像をページ矩形にフィット
 			gPort->image(&o->rec, PMMatrix(), 0);			// 旧版を sPeekOpacity で重ねる
@@ -1602,7 +1602,7 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	//   (ユーザー指定: 未 Start では Add/Remove の「/」をドキュメント・Pages パネルとも出さない)。登録「/」は
 	//   Start 中の Target/Source メインループ(下の Target ループ・上の Source ループ)だけが描く。
 
-	// 変更オーバーレイ(リング＋変更数) — マーク済みドキュメントが現スプレッドの db と一致する時だけ。
+	// 変更オーバーレイ(リング) — マーク済みドキュメントが現スプレッドの db と一致する時だけ。
 	// master 表示トグル(sMarksVisible)が OFF の間、またはこのスプレッドを覗き中(旧版べた載せ中)は描かない
 	// (データは保持=再表示で即復帰)。覗いていない他のスプレッドのマークは通常どおり残る。
 	// ★印刷マーク(sPrintMarks)が ON の間は、ツール左hold に関係なく常に描く(画面=WYSIWYG / 印刷・PDF にも出る)。

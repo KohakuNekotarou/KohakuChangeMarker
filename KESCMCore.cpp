@@ -318,6 +318,12 @@ ErrorCode KESCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMStri
 	if (targetDB == nil || sourceDB == nil)
 		return kFailure;
 
+	// ★全ページのラスタ化は未組版ストーリーの lazy recompose を誘発し得る=「聞くだけで組む→組めば
+	//   dirty になる」(KESCMOversetScan.cpp の (0) と同じ理屈)。KESCM は「モデルを書き換えない・dirty に
+	//   しない」が設計の核なので、入る前が clean なら出るとき clean へ戻す(2026-08-06 再点検)。
+	IDataBase::SaveRestoreModifiedState targetDirtyGuard(targetDB);
+	IDataBase::SaveRestoreModifiedState sourceDirtyGuard(sourceDB);
+
 	// ★再比較の前に「今 枠/斜線が付いているページ」を控える(サムネイル取りこぼし対策)。再ペアリング
 	//   (登録トグルでページ数差を無視した時など)で対応が1つズレると、overflow を抜けたページ(赤「/」が
 	//   消える)や再ペアで変更なしに戻ったページ(リングが消える)が生じる。これらは再比較後の per-UID
@@ -419,6 +425,7 @@ ErrorCode KESCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMStri
 
 	bool16 cancelled = kFalse;
 	int32 changedCount = 0;
+	int32 failedCount = 0;
 	for (size_t k = 0; k < toRaster.size(); ++k)
 	{
 		const size_t i = toRaster[k];
@@ -431,8 +438,19 @@ ErrorCode KESCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMStri
 		progress.DoTask(item);			// ★1件進める(前の1件の完了もここで反映される)
 
 		bool16 changed = kFalse;
-		KESCMDrawEventHandler::MakeEntry(UIDRef(targetDB, tPages[i]), UIDRef(sourceDB, sPages[i]), changed);
-		if (changed) ++changedCount;
+		const ErrorCode mkErr =
+			KESCMDrawEventHandler::MakeEntry(UIDRef(targetDB, tPages[i]), UIDRef(sourceDB, sPages[i]), changed);
+		if (mkErr != kSuccess)
+		{
+			// ★比較できなかったページ(ページサイズ不一致のペア・ラスタ化失敗・OOM)を「変更なし」と
+			//   混同しない(2026-08-06 再点検)。今回ペアリングから外す=次回は差分再比較でも必ず比較し直す
+			//   (載せたままだと「ペア不変=前回結果を再利用」と判定され、失敗が「比較済み・差なし」の
+			//   見た目で固定化される)。件数は下の report に failed=N で出す。
+			newMap.erase(tPages[i]);
+			++failedCount;
+		}
+		else if (changed)
+			++changedCount;
 
 		// ★キャンセル判定は「1ページを比較し終えた安全な場所」で行う(WasCancelled はイベントを回すので、
 		//   ラスタ化の途中では見ない)。引数 kFalse = グローバルエラー状態を立てない(立てると後続の
@@ -530,6 +548,11 @@ ErrorCode KESCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMStri
 		report.AppendW(UTF32TextChar(0x0A));	// 改行 → 2行目へ
 		report.Append("pages compared="); report.AppendNumber((int32)n);
 		report.Append(" changed="); report.AppendNumber(changedCount);
+		// ★比較できなかったページは隠さない(そのページは「枠が無い=変更なし」とは限らない)。
+		if (failedCount > 0)
+		{
+			report.Append(" failed="); report.AppendNumber(failedCount);
+		}
 	}
 	outReport = report;
 

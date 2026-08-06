@@ -257,13 +257,20 @@ static void KESCMPeekShowUnderMouse(IDataBase* targetDB, IDataBase* sourceDB)
 //   ★旧 Ctrl+ミドル(マウス下スプレッド再比較)の中核をページ指定へ一般化したもの(2026-07-13 移設)。
 static bool16 KESCMRefreshComparisonCore(IDataBase* targetDB, IDataBase* sourceDB,
                                          const std::vector<UID>& targetPages,
-                                         int32* outProcessed, int32* outChanged, bool16* outCancelled)
+                                         int32* outProcessed, int32* outChanged, bool16* outCancelled,
+                                         int32* outFailed)
 {
 	if (outProcessed) *outProcessed = 0;
 	if (outChanged)   *outChanged = 0;
 	if (outCancelled) *outCancelled = kFalse;
+	if (outFailed)    *outFailed = 0;
 	if (targetDB == nil || sourceDB == nil || targetPages.empty())
 		return kFalse;
+
+	// ★ラスタ化は未組版ストーリーの lazy recompose を誘発し得る=組めば dirty になる。Start 経路
+	//   (KESCMDoMarkChangesDoc)と同じく、入る前が clean なら出るとき clean へ戻す(2026-08-06 再点検)。
+	IDataBase::SaveRestoreModifiedState targetDirtyGuard(targetDB);
+	IDataBase::SaveRestoreModifiedState sourceDirtyGuard(sourceDB);
 
 	// マークの所属ドキュメントを合わせる(別 doc にマークがあった場合のみ総入れ替え=通常は一致で何もしない)。
 	if (KESCMDrawEventHandler::sDB != nil && KESCMDrawEventHandler::sDB != targetDB)
@@ -309,6 +316,7 @@ static bool16 KESCMRefreshComparisonCore(IDataBase* targetDB, IDataBase* sourceD
 	progress.DisableChildProgressBars(kTrue);	// ラスタ化の内部処理が自分のバーを出すのを抑える
 
 	int32 changedCount = 0;
+	int32 failedCount = 0;
 	bool16 cancelled = kFalse;
 	std::vector<UID> touchedTargetPages, touchedSourcePages;
 	for (size_t i = 0; i < toCompareT.size(); ++i)
@@ -325,8 +333,15 @@ static bool16 KESCMRefreshComparisonCore(IDataBase* targetDB, IDataBase* sourceD
 		touchedTargetPages.push_back(tUID);
 		touchedSourcePages.push_back(sUID);
 		bool16 changed = kFalse;
-		KESCMDrawEventHandler::MakeEntry(UIDRef(targetDB, tUID), UIDRef(sourceDB, sUID), changed);
-		if (changed)
+		const ErrorCode mkErr = KESCMDrawEventHandler::MakeEntry(UIDRef(targetDB, tUID), UIDRef(sourceDB, sUID), changed);
+		if (mkErr != kSuccess)
+		{
+			// ★比較できなかった(ページサイズ不一致・ラスタ化失敗・OOM)ときは既存エントリに触らない
+			//   (2026-08-06 再点検): changed==kFalse を「変化が無くなった」と読んで DropOneEntry すると、
+			//   一時的な失敗で前回の正しい枠が黙って消える。古い枠は残し、件数を failed としてステータスへ。
+			++failedCount;
+		}
+		else if (changed)
 			++changedCount;
 		else
 		{
@@ -389,6 +404,7 @@ static bool16 KESCMRefreshComparisonCore(IDataBase* targetDB, IDataBase* sourceD
 	KESCMForceRedrawPagesPanelNow();
 
 	if (outChanged) *outChanged = changedCount;
+	if (outFailed)  *outFailed = failedCount;
 	return kTrue;
 }
 
@@ -397,11 +413,12 @@ static bool16 KESCMRefreshComparisonCore(IDataBase* targetDB, IDataBase* sourceD
 // (★2026-07-15 Target 限定化=ユーザー指定。旧仕様の Source→Target 写像経路は撤去)。
 // outPages=実際に再比較したページ数(対応表に無い登録済みページ等は数えない)、
 // outChanged=うち変化したページ数。戻り=1ページ以上処理したか。
-bool16 KESCMRefreshComparisonForSelectedPages(int32* outPages, int32* outChanged, bool16* outCancelled)
+bool16 KESCMRefreshComparisonForSelectedPages(int32* outPages, int32* outChanged, bool16* outCancelled, int32* outFailed)
 {
 	if (outPages)     *outPages = 0;
 	if (outChanged)   *outChanged = 0;
 	if (outCancelled) *outCancelled = kFalse;
+	if (outFailed)    *outFailed = 0;
 
 	if (!KESCMIsArmed())
 		return kFalse;
@@ -421,9 +438,9 @@ bool16 KESCMRefreshComparisonForSelectedPages(int32* outPages, int32* outChanged
 	// 再比較コアは Target ページで駆動する(前面=Target のみなので選択ページがそのまま対象)。
 	std::vector<UID> targetPages = selPages;
 
-	int32 processed = 0, changed = 0;
+	int32 processed = 0, changed = 0, failed = 0;
 	bool16 cancelled = kFalse;
-	const bool16 ok = KESCMRefreshComparisonCore(targetDB, sourceDB, targetPages, &processed, &changed, &cancelled);
+	const bool16 ok = KESCMRefreshComparisonCore(targetDB, sourceDB, targetPages, &processed, &changed, &cancelled, &failed);
 	// キャンセルの有無は Core の成否に関わらず返す。※Core が kFalse を返すのは「対象0件」= cancelled が
 	//   kFalse の経路だけなので実際には両立しないが、戻り値の意味に依存せず伝えておく(防御)。
 	if (outCancelled) *outCancelled = cancelled;
@@ -436,6 +453,7 @@ bool16 KESCMRefreshComparisonForSelectedPages(int32* outPages, int32* outChanged
 
 	if (outPages)   *outPages = processed;
 	if (outChanged) *outChanged = changed;
+	if (outFailed)  *outFailed = failed;
 	return kTrue;
 }
 
@@ -820,9 +838,14 @@ static PBPMPoint KESCMCorrectedCenterForDoc(IControlView* srcView, IDataBase* sr
 
 	// 手本ページ(srcDocDb 側でビュー中心にあるページ)。
 	// ★まず公式ルート(KESCMQueryViewCenterPage)に聞く(2026-08-06 の監査 A-2)。
-	// ★公式ルートは「文書のどのページか」を広く答えるので、マスタースプレッドや隠しスプレッドの
-	//   ページも返し得る。同期が対応させたいのは通常スプレッドのページ(=KESCMCollectPageUIDs の
-	//   平坦列)だけなので、対応表に載っていない答えだったときは従来の自前探索へ落として挙動を保つ。
+	// ★公式ルートは「文書のどのページか」を広く答える。マスタースプレッドのページは対応表に載らない
+	//   (KESCMCollectPageUIDs は ISpreadList=通常スプレッドだけを平坦化し、マスターは IMasterSpreadList の
+	//   別管理)ので、下の find で外れて従来の自前探索へ落ち、挙動が保たれる。
+	//   ⚠隠しスプレッドのページは**対応表に載っている**(平坦化は hide フラグを見ない)ので、この網では
+	//   弾けない=Sync+Hide Unchanged 併用時は隠しページの相手へ同期し得る。これは置き換え前の自前探索
+	//   (同じ平坦列を使う)でも同じだった既存挙動で、2026-08-06 の再点検では「隠しスプレッドも網に掛かる」
+	//   と書いていた旧コメントの方を訂正した。塞ぐなら参照側に hide 判定(IID_IHIDESPREADBOOLDATA)を足す
+	//   (★KESCMCollectPageUIDs 自体は比較ペアリングと共用のため変えない)。
 	//   (Added/Removed 登録ページも「対応表に無い」ので自前探索へ落ちるが、そちらも同じページを
 	//    返すので結果は変わらない=下の skip 判定に進むだけ。稀なケースで探索が2回になるだけの実害)
 	UID srcPage = KESCMQueryViewCenterPage(srcView, srcCenter);
@@ -1002,8 +1025,14 @@ static void KESCMSyncOtherDocViewportsTo(IControlView* srcView, IPanorama* srcPa
 			if (!zoomMatched)
 			{
 				InterfacePtr<ICommand> zoomCmd(Utils<ILayoutUIUtils>()->MakeZoomCmd(view, srcZoom));
-				if (zoomCmd != nil)
-					CmdUtils::ProcessCommand(zoomCmd);
+				if (zoomCmd == nil || CmdUtils::ProcessCommand(zoomCmd) != kSuccess)
+				{
+					// ★ズーム合わせは同期表示の便宜で、失敗してもスクロール同期は続けてよい。ただし
+					//   エラー状態を持ち越すと後続コマンドが巻き添えで失敗する
+					//   ([[command-sequence-rollback-on-error]])ので掃除して続行(2026-08-06 再点検。
+					//   KESCMChangeNav.cpp のズームと同じ作法)。
+					ErrorUtils::PMSetGlobalErrorCode(kSuccess);
+				}
 			}
 			// 手本の可視中心と同じ content 座標(補正時は相手ページ上の対応座標)をビュー中心へ=
 			// 同じ拡大率なら同じ画面が同じように映る。ズーム(コマンド)実行後に行うので、新しい倍率で
@@ -2099,6 +2128,8 @@ void KESCMPeekStartup::Shutdown()
 	// (Windows では実害なしの実績だが、Mac は unload 順が異なるため heap バッファを持ち越さない方が
 	// 安全。2026-07-15 終了堅牢化)。
 	sCmykCursorText.Clear();
+	sCmykCursorPending = kFalse;	// ★押下中に quit した経路で立ったまま残さない(2026-08-06 再点検。
+									//   下の sCmykCursorFont/sCmykHoverDB と同じ「押下の外では持たない」の徹底)
 	KESCMClearSessionStatus();	// パネルのステータス記憶(gSessionStatus)も同様に空へ
 
 	// ★Alt+左ホールド中にアプリが終了する経路(スクリプト quit 等)では RevealEnd を通らず
@@ -2282,6 +2313,10 @@ void KESCMHandleDocsClosed()
 		//   古い登録が残り、次の Start でペアリングに紛れ込む(map 空にするだけ=deref なし)。
 		KESCMPageMapClearAllDocs();
 		KESCMPageCheckClearAllDocs();	// 「KCM: Check」の✓も同様に全消去(Start 中限定)
+		// ★巡回の基準点も忘れる(2026-08-06 再点検)。Stop(KESCMDoClearMarks)は KESCMResetNav を呼ぶのに、
+		//   この「Stop 相当のフルクリーンアップ」だけ抜けていた。閉じた文書のページ UID を基準点に残すと、
+		//   次の対象文書で UID が偶然一致して途中から巡回が始まり得る(static の代入のみ=終了中でも安全)。
+		KESCMResetNav();
 		// ★スクロールバー地図 strip も Stop と同様に取り外す(2026-07-11 セルフレビューで発見)。
 		//   これを怠ると、生存側の窓に孤児 strip が残り、レイアウトビューも 5px 詰めたままになる。
 		//   DetachAll は「今開いている窓」だけを走査する(閉じた窓の widget は窓ごと消えている)ので安全。

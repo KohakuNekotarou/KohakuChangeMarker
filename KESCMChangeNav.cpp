@@ -318,8 +318,13 @@ static bool16 KESCMScrollDocToPBPoint(IDataBase* db, const PBPMPoint& pbPoint, P
 			if (diff > PMReal(0.0001))
 			{
 				InterfacePtr<ICommand> zoomCmd(Utils<ILayoutUIUtils>()->MakeZoomCmd(view, applyZoom));
-				if (zoomCmd != nil)
-					CmdUtils::ProcessCommand(zoomCmd);
+				if (zoomCmd == nil || CmdUtils::ProcessCommand(zoomCmd) != kSuccess)
+				{
+					// ★ズームは飛び先表示の便宜で、失敗してもスクロール自体は続けてよい。ただしエラー状態を
+					//   持ち越すと後続コマンドが巻き添えで失敗する([[command-sequence-rollback-on-error]])ので
+					//   掃除して続行(KESCMEnsureSpreadInView の失敗時と同じ作法。2026-08-06 再点検)。
+					ErrorUtils::PMSetGlobalErrorCode(kSuccess);
+				}
 			}
 		}
 
@@ -453,6 +458,12 @@ static void KESCMScrollPagesPanelToPage(IDataBase* db, UID pageUID)
 	IControlView* subView = pcd->FindWidget(kLayoutPagesSubPanelWidgetID);
 	if (subView == nil)
 		return;
+	// ★マスターページはレイアウト側サブパネル(kLayoutPagesSubPanelWidgetID)の管轄外なので渡さない
+	//   (2026-08-06 追補。マスター overset へのジャンプ自体はスプレッド切替で成立し、パネル連動だけ
+	//   諦める)。通常ページかどうかは IPageList への所属(GetPageIndex>=0)で判定する(IPageList.h:97-104)。
+	InterfacePtr<IPageList> pageList(db, db->GetRootUID(), UseDefaultIID());
+	if (pageList == nil || pageList->GetPageIndex(pageUID) < 0)
+		return;
 	InterfacePtr<IPagesSubPanelController> ctrl(subView, UseDefaultIID());
 	if (ctrl != nil)
 		ctrl->ScrollPanelToSpread(UIDRef(db, pageUID));
@@ -514,6 +525,9 @@ static PMString KESCMStopLabel(IDataBase* db, const KESCMNavStop& stop)
 		pageList->GetPageString(stop.pageUID, &numStr, kTrue, kFalse, kDefaultPageType, kTrue, kFalse);
 	if (numStr.NumUTF16TextChars() > 0)
 		label.Append(numStr);
+	else if (stop.isOverset)
+		label.Append("Master");	// ★マスターページの overset(2026-08-06 追補): IPageList=通常ページの
+								//   一覧なので番号が引けない。「?」より事情が伝わる語にする
 	else
 		label.Append("?");	// 番号が取れないページ(通常は起きない)
 

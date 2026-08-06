@@ -26,7 +26,8 @@
 #include "KESCMPageNumberMarker.h"	// KESCMGetIgnorePageNumberMarker / KESCMSetIgnorePageNumberMarker
 #include "KESCMPanelAlpha.h"		// KESCMGetPanelTranslucent / KESCMSetPanelTranslucent(Translucent Panel)
 
-// 保存ファイル名(KESCM サブフォルダー内)。
+// 保存ファイル名(Roaming 直下。★サブフォルダーは 2026-07-12 に廃止=下の KESCMPanelStateFile と
+// KESCMPanelState.h:11 の説明が正)。
 static const char* const kKESCMPanelStateFileName = "KESCMPanelState.json";
 
 //----------------------------------------------------------------------------------------
@@ -163,7 +164,11 @@ void KESCMLoadPanelStateIfPresent()
 	size_t n;
 	while ((n = fread(buf, 1, sizeof(buf), fp)) > 0)
 		text.append(buf, n);
+	const bool readFailed = (ferror(fp) != 0);
 	fclose(fp);
+	if (readFailed)
+		return;		// ★読み取りが途中で失敗した部分テキストで適用しない(2026-08-06 再点検。
+					//   KESCMReadWholeFile(KESCMPageCheck.cpp)と同じ作法。全トグル既定値のままにする)
 	if (text.empty())
 		return;
 

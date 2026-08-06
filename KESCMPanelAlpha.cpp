@@ -75,7 +75,9 @@ static bool16 sPanelTranslucent = kFalse;
 //
 // ★矩形(GetWindowRect+PtInRect)だけで判定してはいけない。他の窓が上に重なっていても「乗っている」に
 //   なってしまう。矩形は安い足切りに使い、確定は WindowFromPoint → GA_ROOT の一致で行う。
-//   ★この足切りのおかげで、カーソルがパネルから離れている間は整数比較だけで終わる。
+//   ★矩形外は WindowFromPoint 1回のポップアップ判定(下の KESCMCursorOnOwnPopupTouchingPanel)だけで
+//     終わる(2026-08-06 の「はみ出した自分のメニュー」対応で、整数比較のみからは1段増えた。
+//     クラス名照合まで進むのはカーソルが自プロセスの窓の上にあるときだけ)。
 //
 // ★★★ただし「パネルの上に出ている自分の窓」は、まだパネルの上である。
 //   (2026-08-05 に KBS 側でユーザー報告「行を右クリックすると不透明のパネルがまた薄くなる」を受けて
@@ -88,6 +90,43 @@ static bool16 sPanelTranslucent = kFalse;
 //   ⚠代わりに手放すもの: InDesign の**別の**窓がパネルを覆っている場合、パネルは隠れたまま不透明で
 //     居座る。画面に見えているものは何もおかしくならず、次にカーソルが矩形の外へ出れば直るので、
 //     自分のメニューを開くたびにパネルが点滅するのに比べれば遥かに小さい代償。
+//   ★はみ出し対応(2026-08-06 再点検): 縦に長いメニューはパネル矩形の外へ伸びる。その部分は上の
+//     pid 判定に到達しない(矩形の足切りが先)ので、矩形外では下の補助判定を追加で見る。
+static bool KESCMClassIs(HWND h, const wchar_t* wanted);	// 実体は下(窓クラス名の完全一致)
+
+// カーソルが「パネルからはみ出した自分のポップアップ」の上にあるか(KESCMCursorOverWindow の補助)。
+// ★フライアウト/右クリックメニューはパネル矩形の外へ伸びることがある。その部分にカーソルが移ると
+//   矩形の足切りで即「他所」になり、メニュー操作中にパネルが薄くなる(=矩形内で潰した点滅の、はみ出し版)。
+// ★「自分のプロセスの窓」だけでは広すぎる(メインフレームも別パネルの容れ物も自プロセス)。容れ物クラス
+//   (indesign / OWL.Dock / OWL.FrameDrawer)を除いた自プロセス窓=一時的なポップアップに限り、さらに
+//   「パネル矩形と交差している」(パネルから開いたメニューは必ず重なる)ことを要求して、無関係な場所の
+//   メニュー(アプリのメニューバー等)で不透明が張り付くのを防ぐ。
+static bool KESCMCursorOnOwnPopupTouchingPanel(const POINT& pt, const RECT& panelRc)
+{
+	HWND under = ::WindowFromPoint(pt);
+	if (under == nullptr)
+		return false;
+
+	const HWND root = ::GetAncestor(under, GA_ROOT);
+	if (root == nullptr)
+		return false;
+
+	DWORD pid = 0;
+	::GetWindowThreadProcessId(root, &pid);
+	if (pid != ::GetCurrentProcessId())
+		return false;
+
+	if (KESCMClassIs(root, L"indesign") ||			// メインフレーム(ドック内パネル・文書窓の容れ物)
+	    KESCMClassIs(root, L"OWL.Dock") ||			// フローティングパネルの容れ物(=別のパネル)
+	    KESCMClassIs(root, L"OWL.FrameDrawer"))		// ドロワー展開の容れ物
+		return false;
+
+	RECT wr, is;
+	if (!::GetWindowRect(root, &wr))
+		return false;
+	return ::IntersectRect(&is, &wr, &panelRc) != 0;
+}
+
 static bool KESCMCursorOverWindow(HWND target)
 {
 	if (target == nullptr)
@@ -98,8 +137,14 @@ static bool KESCMCursorOverWindow(HWND target)
 		return false;
 
 	RECT rc;
-	if (!::GetWindowRect(target, &rc) || !::PtInRect(&rc, pt))
-		return false;		// 矩形の外 = 確実に乗っていない(大半のマウス移動はここで終わる)
+	if (!::GetWindowRect(target, &rc))
+		return false;
+	if (!::PtInRect(&rc, pt))
+	{
+		// 矩形の外でも、パネルから開いた自分のメニューのはみ出し部分は「まだパネルの上」
+		// (2026-08-06 再点検)。それ以外(大半のマウス移動)はここで終わる。
+		return KESCMCursorOnOwnPopupTouchingPanel(pt, rc);
+	}
 
 	HWND under = ::WindowFromPoint(pt);
 	if (under == nullptr)
@@ -158,8 +203,9 @@ void KESCMSetPanelTranslucent(bool16 on)
 
 // ★探すパネルの window title。kKESCMDisplayName は表示名の**唯一の定義**で、文字列テーブルの
 //   kKESCMPanelTitleKey もそこから来ているので、これを widen して使う。
-//   ⚠2026-08-06 現在 UI は全ロケール英語(KESCM_jaJP.fr は 08-05 に、KESCMLoc.h は 08-06 に削除)
-//     なので、窓タイトルが翻訳されてここと一致しなくなる余地はそもそも無い。
+//   ⚠2026-08-06 現在、メニュー・パネル・窓タイトルは全ロケール英語(KESCM_jaJP.fr は 08-05 に撤去。
+//     KESCMLoc.h は現存するが、日本語で出すのは How to Use と Hide 確認のダイアログ本文2箇所だけ=
+//     窓タイトルには関係しない)なので、窓タイトルが翻訳されてここと一致しなくなる余地はそもそも無い。
 //   ★.fr のパネル名だけを変えるとここが一致しなくなり、機能が黙って効かなくなる。両方を揃えること。
 //   ⚠実行時に本物のタイトルを読み返して照合する道は無い(2026-08-06 に確認):
 //     PaletteRefUtils::GetPaletteLabel は一度も可視になっていないパレットへは空文字を返し、
@@ -361,6 +407,7 @@ bool16 KESCMApplyPanelTranslucency()
 
 static ICallbackTimer* sReapplyTimer = nil;
 static int32           sReapplyLeft  = 0;			// 残り回数(0 で打ち切り＝暴走止め)
+static bool            sPanelAlphaShutdown = false;	// ★KESCMShutdownPanelAlpha 済み(以後タイマーを作り直さない)
 
 static uint32 KESCMReapplyTimerProc(void* refPtr);
 
@@ -373,6 +420,13 @@ static uint32 KESCMReapplyTimerProc(void* refPtr);
 //   (回数も毎回 kKESCMPanelAlphaReapplyTries に戻るので、実質デバウンスとして働く)。
 static void KESCMScheduleReapply()
 {
+	// ★Shutdown 後の再武装禁止(2026-08-06 再点検)。可視性オブザーバは detach しない設計なので、終了
+	//   処理中のパネル破棄が通知を出すと(トグルは ON のまま)ここへ来る。後始末の後にタイマーを
+	//   CreateObject し直すと、上の⚠が警告する「生関数ポインタの予約を残したまま .pln が降りる」が
+	//   後始末の後から再生成されてしまう。
+	if (sPanelAlphaShutdown)
+		return;
+
 	sReapplyLeft = kKESCMPanelAlphaReapplyTries;	// 通知のたびに回数を戻す
 	if (sReapplyLeft <= 0)
 		return;		// 定数 0 = 遅延再適用そのものを止める設定
@@ -560,6 +614,7 @@ static void KESCMRemoveWinEventHook()
 void KESCMShutdownPanelAlpha()
 {
 	// プラグイン終了時の保険。ポインタは deref せず、停止と解放だけ(終了処理中でも安全)。
+	sPanelAlphaShutdown = true;		// ★以後 KESCMScheduleReapply がタイマーを作り直さない(再武装禁止)
 	KESCMRemoveWinEventHook();		// ★フックを残したまま .pln が降りると危険
 
 	sPaletteWnd = nullptr;			// 覚えていた HWND も手放す(OS が使い回す値を抱えたままにしない)

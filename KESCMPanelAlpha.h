@@ -5,7 +5,7 @@
 //  パネルのフライアウト「Translucent Panel」トグルの実体。
 //
 //  ★Windows 専用。Win32 の SetLayeredWindowAttributes でパネルの窓に alpha をかける
-//    (Mac では下の3本は残るが KESCMApplyPanelTranslucency が何もしない)。
+//    (Mac では下の公開関数は残るが KESCMApplyPanelTranslucency が何もしない)。
 //  ★効くのは「フローティング中」のときだけ。ドッキング中のパネルはメインフレームの子窓に
 //    なるため単独では透かせない(その場合は何もしない=フラグだけ立つ)。
 //

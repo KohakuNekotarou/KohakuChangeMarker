@@ -16,7 +16,7 @@
 //    ・★閉じた db は絶対に deref しない。生存スイープは IDocumentList::FindDocByDataBase への
 //      ポインタ比較のみで判定する([[uidref-reuse-after-close]])。
 //    ・空になった文書のエントリは即座に捨てる(スイープと「登録あり文書」の判定を軽く保つ)。
-//      Insert だけがエントリを作り、Erase / ClearDoc / Replace(空) が捨てる。
+//      Insert と Replace(非空) がエントリを作り、Erase / ClearDoc / Replace(空) が捨てる。
 //
 //========================================================================================
 #ifndef __KESCMDocUidSet_h__

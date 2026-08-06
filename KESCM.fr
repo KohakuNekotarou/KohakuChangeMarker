@@ -920,6 +920,11 @@ resource LocaleIndex ( kSDKDefStringsResourceID)
 		// 話す3箇所は KESCMLoc.h の実行時切替へ。旧形(kInDesignJapaneseFS+jaJP テーブル)は
 		// 「Roman エンジン+日本語 UI」でどの行にも当たらず全キーが生表示になる(同日実測)。
 		kWildFS, k_jaJP, kSDKDefStringsResourceID + index_enUS
+		// ★catch-all(2026-08-06 再点検): 上に列挙の無い UI 言語(中国語・韓国語・ロシア語等)の受け皿。
+		//   この行が無いとそれらの言語ではテーブルが引けず、全キーが生表示になる(「どの行にも当たらないと
+		//   生表示」は jaJP テーブル撤去作業(2026-08-05)の実測どおり)。公式サンプル(basicpanel ほか)と
+		//   KBS は全てこの行を持つ。必ず言語列挙の末尾に置くこと(前に置くと個別行に到達しない)。
+		kWildFS, k_Wild, kSDKDefStringsResourceID + index_enUS
 	}
 };
 

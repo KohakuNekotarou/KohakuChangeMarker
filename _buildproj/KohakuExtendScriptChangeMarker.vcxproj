@@ -19,7 +19,7 @@
     </ProjectConfiguration>
   </ItemGroup>
   <PropertyGroup Label="Globals">
-    <ProjectName>KohakuExtendScriptChangeMarker</ProjectName>
+    <ProjectName>KohakuChangeMarker</ProjectName>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
     <ProjectGuid>{36D150B5-56E0-4BA4-B015-B0E45A4A90BB}</ProjectGuid>
   </PropertyGroup>

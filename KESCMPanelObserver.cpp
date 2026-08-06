@@ -2,13 +2,12 @@
 //
 //  KESCMPanelObserver.cpp
 //
-//  ChangeMarker 操作パネルの IObserver。work/changemarker-panel.jsx を再現する:
-//    - Start ボタン : Target(=アクティブ文書)＋ Source(=もう一方の開いている文書)を解決し、
-//                     変更ページ全部にマークを付け、peek を arm する。
-//    - Clear ボタン : オーバーレイを消去し、peek を disarm する。
-//    - 印刷チェック : SetPrintMarks 経由で、マークを印刷するか(かつ画面に残すか)を切り替える。
-//    - 25% / 75%    : 枠の不透明度の選択。ツール左hold中の表示・印刷ON中の常時表示・印刷出力の全部に効く
-//                     (印刷ON/OFFに依らず常に有効)。
+//  ChangeMarker 操作パネルの IObserver。
+//  ★2026-07-10 に Start/Clear・印刷トグル・25%/75% はフライアウトメニューへ移行済みで、現在のパネルは
+//    Target:/Source: の文書名ラベル・Prev/Next ボタン・ステータス行・イラストアイコンだけを持つ。
+//    ここが担うのは (a)Prev/Next のボタン押下 (b)AutoAttach での実状態反映(固定既定値は書かない=
+//    [[panel-autoattach-read-real-state]]) (c)Start/Stop 実行の実体(KESCMToggleStartStop。フライアウトの
+//    Start/Stop と Load の Stop 戻しから呼ばれる)。
 //  Target:/Source: ラベルと ON/OFF アイコンは arm 済み(「開始済み」)状態を反映する。これはアプリ全体で
 //  共有される(KESCMIsArmed/…)ので、パネルを開き直しても正しい状態が表示され続ける。
 //
@@ -43,7 +42,7 @@
 #include "KESCMChangeNav.h"			// KESCMGotoNextChange / KESCMGotoPrevChange(◀ Prev / Next ▶ ボタン)
 #include "KESCMScrollMap.h"			// スクロールバー地図strip(Startで注入/Stopで取り外し)
 #include "KESCMDrawEventHandler.h"	// KESCMDrawEventHandler::sOversetOn(Stop 時に Find Overset 単独 ON なら地図を残す判定)
-#include "KESCMPanelState.h"		// KESCMLoadPanelStateIfPresent(保存済み設定をパネル初回オープン時に読み込む)
+#include "KESCMPanelState.h"		// KESCMLoadPanelStateIfPresent(読込の主経路は起動時=KESCMPeekStartup。ここは保険)
 #include "KESCMPanelAlpha.h"		// KESCMApplyPanelTranslucency(パネル再表示時に半透明を貼り直す)
 
 /** ChangeMarker パネルのウィジェットを監視し、共有のオーバーレイ操作を駆動する。 */
@@ -205,7 +204,12 @@ void KESCMPanelObserver::AutoAttach()
 
 	// 「Translucent Panel」が ON なら半透明を貼り直す。パネルを開き直すと半透明の付け先である
 	// トップレベル窓(OWL.Dock)が別物に変わるため([[win32-window-alpha-transparency]])。
-	// OFF のとき・ドッキング中・Mac では中で弾かれるので、無条件に呼んでよい。
+	// ★OFF のときはこちらで弾いて呼ばない(2026-08-06 再点検)。Apply は OFF でも中で弾かれない
+	//   (弾くのはドッキング中=対象窓なしのときだけ)ので、無条件に呼ぶと使っていない人にも
+	//   窓探索(キャッシュ失効時は EnumWindows 全走査)+alpha 書き+影の SW_SHOWNA の費用を払わせる。
+	//   MouseEnter/MouseLeave/フック/可視性オブザーバの各入口が OFF を弾くのと同じ方針。
+	//   ⚠Apply 側に OFF ガードを入れてはいけない: メニューで OFF にした瞬間の 255 復元・影の再表示は
+	//     Apply(OFF 状態での呼び出し)が担っている(KESCMActionComponent.cpp のトグル経路)。
 	// ★ここは保険で、主たる追随は KESCMPanelAlpha.cpp のオブザーバ(kPaletteVisibilityChangedMessage)。
 	//   ★注意: この AutoAttach は widget を作り直すたびに走るので、固定の既定値を書く場所ではない
 	//   (KESCMGetPanelTranslucent の現在値を読んで反映するだけ)。
@@ -215,7 +219,8 @@ void KESCMPanelObserver::AutoAttach()
 	KESCMAttachPanelVisibilityObserver();
 	// (「乗っている」状態を落とす KESCMResetPanelHover の呼び出しは 2026-07-29 に撤去。判定を
 	//  旗から Win32 の実測へ変えたので、widget を作り直しても落とすべき状態が無い。)
-	KESCMApplyPanelTranslucency();
+	if (KESCMGetPanelTranslucent())
+		KESCMApplyPanelTranslucency();
 }
 
 void KESCMPanelObserver::AutoDetach()
@@ -322,8 +327,9 @@ void KESCMToggleStartStop()
 		IDocument* source = nil;
 		if (!KESCMResolveComparisonPair(target, source))
 		{
+			// 実際に欠けているものを言う(target が居るなら足りないのは Source だけ。2026-08-06 再点検)。
 			PMString s(target == nil ? "Target and source documents not found."
-			                         : "Target or source documents not found.");
+			                         : "Source document not found.");
 			s.SetTranslatable(kFalse);
 			KESCMSetStatus(s);
 			return;

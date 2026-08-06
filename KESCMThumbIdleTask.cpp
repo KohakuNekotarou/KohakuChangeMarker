@@ -93,6 +93,12 @@ uint32 KESCMThumbIdleTask::RunTask(uint32 flags, IdleTimer* /*idleTimer*/)
 	// UninstallTask を経ずに外すため基底 fCurrentlyInstalled が true のまま残り、次回 InstallTask の
 	// AddTask がスキップされて 2回目以降のクローズで遅延サムネイル更新が二度と走らなくなる。
 	this->UninstallTask();
+	// ★RunTask 中の再入予約を握りつぶさない(2026-08-06 再点検): 上の KESCMForceRedrawPagesPanelNow は
+	//   同期描画で、描画イベントの保険掃除(閉じた文書の後片付け)経由で KESCMScheduleThumbRefresh が
+	//   この最中に走ることがある。その予約(AddTask)は直後の UninstallTask で外れてしまい、保留 db が
+	//   残ったまま二度と発火しない。保留が残っていたらここで入れ直す(空なら従来どおり降りるだけ)。
+	if (!sPendingDBs.empty())
+		this->InstallTask(kKESCMThumbRefreshDelayMs);
 	return 0;	// 戻り値は無視される(オブジェクトは保持し次回再利用)。
 }
 

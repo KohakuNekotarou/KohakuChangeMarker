@@ -3,8 +3,9 @@
 //  KESCMDrawEventHandler.h
 //
 //  差分オーバーレイの描画エンジン。ページUID→オーバーレイ(KESCMOverlayEntry)を保持し、
-//  スプレッド描画イベント時にリング/変更数/旧版べた載せを描く。共有状態は public static
-//  メンバとして公開し、他モジュール(peek/コア処理)から参照させる。
+//  スプレッド描画イベント時にリング(比較枠)・登録/あふれの斜線・旧ページ番号バッジ・旧版べた載せを
+//  描く。共有状態は public static メンバとして公開し、他モジュール(peek/コア処理)から参照させる。
+//  (変更数の数字は描かない。changedCells は Prev/Next の割合表示(KESCMChangeNav)だけが使う。)
 //
 //========================================================================================
 #ifndef __KESCMDrawEventHandler_h__
@@ -106,11 +107,11 @@ public:
 	// 表示し、離すと kFalse に戻す。kFalse の間はこれら全部を描かない。旧版べた載せ(sShowOriginal)は
 	// このトグルの影響を受けない(ダブルクリックで別管理)。
 	static bool16 sMarksVisible;
-	// 画面マーク(リング＋変更数)に掛ける「実効」不透明度。★既定=1.0。リング blit と数字 show の双方に同率。
+	// 画面マーク(リング)に掛ける「実効」不透明度。★既定=1.0。リング blit に掛ける。
 	//   ・ツール左hold中 = SelectedMarkOpacity()(パネルで選択中の 25%/75%)
 	//   ・押していない常時表示時 = 基準値 KESCMBaseScreenOpacity()(印刷ONなら選択不透明度 / 印刷OFFは1.0)
 	static PMReal sMarkScreenOpacity;
-	// 変更マーク(リング＋変更数)を印刷/PDF にも出すか(KESCMDoSetPrintMarks)。★既定=kFalse(画面のみ)。
+	// 変更マーク(リング)を印刷/PDF にも出すか(KESCMDoSetPrintMarks)。★既定=kFalse(画面のみ)。
 	// ON の間は、ツール左hold に関係なく画面でも常時表示(WYSIWYG)＋印刷/PDF にも描く。マークデータとは独立に保持。
 	static bool16 sPrintMarks;
 	// 枠の不透明度の選択(パネルのラジオ「Marks opacity 25% / 75%」)。kTrue=25% / kFalse=75%。★既定=kTrue(25%)。
@@ -118,7 +119,9 @@ public:
 	// すべてが SelectedMarkOpacity() 経由でこの選択を使う(画面と印刷の見た目を一致)。
 	static bool16 sMarkOpacity25;
 	// Source(旧文書)側にも枠を出すトグル(フライアウト「Show Marks on Source」のチェック式)。★既定=kFalse
-	// だが Start(KESCMDoMarkChangesDoc)のたびに kTrue へ戻す(=Start で既定 ON、OFF にしたければメニューで外す)。
+	// だが Start 経路(KESCMToggleStartStop)だけが kTrue へ戻す(=Start で既定 ON、OFF にしたければメニューで
+	// 外す。★KESCMDoMarkChangesDoc では戻さない=登録トグル/Ignore 切替の再比較でも通る関数のため。
+	// 2026-07-25 に移動。KESCMCore.cpp の同関数末尾のコメントが正)。
 	// ON の間、Source 文書の対応ページに同じリング画像を「常時」表示する(ツール左hold と無関係)。不透明度は
 	// パネルの 25%/75% 選択(SelectedMarkOpacity)に連動し、OPP(オーバープリントプレビュー)でも隠さず、
 	// 印刷/PDF にも常に出す(Target 側の sPrintMarks とは独立)。
@@ -154,7 +157,7 @@ public:
 	static bool16 sShowOldNumbers;
 
 	// 「Hold to Hide Marks」トグル(フライアウトのチェック式。枠表示の極性反転)。★既定=kFalse。
-	// ON の間、画面では枠(リング＋変更数)を「常時」表示し、ツール左hold中だけ sMarksTempHidden で
+	// ON の間、画面では枠(リング)を「常時」表示し、ツール左hold中だけ sMarksTempHidden で
 	// 一時的に隠す(離すと戻る)=既定動作(非表示・押下中だけ表示)の逆。画面のみの挙動で、印刷/PDF への
 	// 出力は sPrintMarks が独立して決める(下の wantMarks では !printing のときだけ効かせる)。不透明度は
 	// パネル選択の 25%/75%(KESCMBaseScreenOpacity が sAlwaysShowMarks ON も選択不透明度を返す)。

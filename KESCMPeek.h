@@ -101,7 +101,7 @@ bool16 KESCMTrackerUpdateCmykDrag();
 // 時点のページは処理済みなので、中断時は「戻り kTrue + outCancelled=kTrue」になる(戻り kFalse は
 // 「対象0件で何も処理しなかった」ときだけ)。
 // 実体は KESCMPeek.cpp。KESCMActionComponent.cpp から呼ぶ。
-bool16 KESCMRefreshComparisonForSelectedPages(int32* outPages, int32* outChanged, bool16* outCancelled = nil);
+bool16 KESCMRefreshComparisonForSelectedPages(int32* outPages, int32* outChanged, bool16* outCancelled = nil, int32* outFailed = nil);
 
 // 上記メニューの有効/無効判定(KESCMActionComponent.cpp の UpdateActionStates 用)。arm 済みかつ前面文書が
 // Target なら kTrue(Source では無効=コンテキストメニューでは項目ごと非表示になる想定)。実体は KESCMPeek.cpp。

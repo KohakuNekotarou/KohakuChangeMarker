@@ -629,6 +629,19 @@ void KESCMPageCheckSaveToFile()
 		}
 	}
 
+	// ★保存する内容が 1 文書も無いときはファイルに触らない(2026-08-06 再点検)。以前はここでも書き込んで
+	//   いたため、「今どの文書も空」(例: 再 Start 直後=Stop で ✓ 全消去済み)のときに Save を押すと、
+	//   上の merged.erase で過去の保存分が消えたファイルが書かれたのに表示は "Nothing to save" =
+	//   何も起きなかったように見えて Load でも戻せなかった。保存からの削除(erase)は「保存する内容がある
+	//   保存」に同乗するときだけにする。
+	if (savedDocs == 0)
+	{
+		PMString msg(skippedUnsaved > 0 ? "Save doc first" : "Nothing to save");
+		msg.SetTranslatable(kFalse);
+		KESCMSetStatus(msg, kTrue /*forceRedrawNow*/);
+		return;
+	}
+
 	IDFile outFile;
 	if (!KESCMWriteSetsMap(merged, outFile))
 	{
@@ -640,10 +653,7 @@ void KESCMPageCheckSaveToFile()
 
 	PMString msg;
 	msg.SetTranslatable(kFalse);
-	if (savedDocs == 0)
-		msg.Append(skippedUnsaved > 0 ? "Save doc first" : "Nothing to save");
-	else
-		msg.Append(FileUtils::SysFileToPMString(outFile));	// パスのみ(ラベル/件数を付けるとステータス行から溢れるため)
+	msg.Append(FileUtils::SysFileToPMString(outFile));	// パスのみ(ラベル/件数を付けるとステータス行から溢れるため)
 	KESCMSetStatus(msg, kTrue /*forceRedrawNow*/);
 }
 

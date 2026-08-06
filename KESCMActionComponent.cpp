@@ -2,8 +2,10 @@
 //
 //  KESCMActionComponent.cpp
 //
-//  プラグインのメニューアクションを処理する: 「プラグインについて」エントリと、パネルのフライアウトの
-//  「このプラグインについて」エントリ。BasicPanel サンプル(BscPnlActionComponent.cpp)を手本にしている。
+//  プラグインの全メニューアクションの中枢。About・パネルフライアウトの全項目(Start/Stop・表示トグル・
+//  Save/Load・Find Overset 等)・ページパネル右クリック(KCM: Check / Register / Refresh)の DoAction と
+//  UpdateActionStates(動的ラベル・条件付き有効化)をここで担う。骨格は BasicPanel サンプル
+//  (BscPnlActionComponent.cpp)を手本にしている(当初は About 2項目だけだった)。
 //
 //========================================================================================
 
@@ -330,7 +332,8 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 
 		// フライアウトの「Save Panel Settings」: 現在の設定系トグルを独自 JSON でローカルへ保存し、
 		// 保存先パスを**パネルのステータス行**に出す(実体は KESCMPanelState.cpp:132-137)。
-		// 読み込みはパネル初回オープン時。(旧コメントの「ダイアログ表示する」は 2026-07-11 に
+		// 読み込みは起動時(KESCMPeekStartup::Startup。2026-07-15 に「パネル初回オープン時」から前倒し=
+		// KESCMPanelState.h の説明が正)。(旧コメントの「ダイアログ表示する」は 2026-07-11 に
 		// モーダルからステータス行へ変えた時点で陳腐化していた。2026-08-06 監査で現行化。)
 		case kKESCMPopupSavePanelStateActionID:
 			KESCMSavePanelState();
@@ -354,9 +357,9 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 		// 実体は KESCMPeek.cpp。結果をステータス行に短く出す。
 		case kKESCMPageRefreshCompareActionID:
 		{
-			int32 nPages = 0, nChanged = 0;
+			int32 nPages = 0, nChanged = 0, nFailed = 0;
 			bool16 wasCancelled = kFalse;
-			if (KESCMRefreshComparisonForSelectedPages(&nPages, &nChanged, &wasCancelled))
+			if (KESCMRefreshComparisonForSelectedPages(&nPages, &nChanged, &wasCancelled, &nFailed))
 			{
 				PMString msg("refreshed ");
 				msg.SetTranslatable(kFalse);
@@ -364,6 +367,14 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 				msg.Append(" (changed ");
 				msg.AppendNumber(nChanged);
 				msg.Append(")");
+				// ★比較できなかったページ(ページサイズ不一致・ラスタ化失敗)は隠さない。その分の枠は
+				//   前回のまま=最新でないことをユーザーに伝える(2026-08-06 再点検)。
+				if (nFailed > 0)
+				{
+					msg.Append(" (failed ");
+					msg.AppendNumber(nFailed);
+					msg.Append(")");
+				}
 				// ★途中で止めた場合は明示する(残りの選択ページは古いままなので、全部終わったと
 				//   誤解させない。2026-07-27 に進捗バー＋キャンセルを追加)。
 				if (wasCancelled)
@@ -409,12 +420,13 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 	}
 }
 
-/* UpdateActionStates — フライアウトのチェック式トグル5つ(「Show Marks on Source」「Hide Unchanged
-   Spreads」「Show Original Page Numbers」「Sync Layout Views」「Ignore Page Number Marker」)は
-   常に有効、ON なら kSelectedAction を
-   立てる(docwatch の DocWchActionComponent::UpdateActionStates と同じ流儀)。ページパネル右クリックの
-   「KCM: Register as Added/Removed Pages」だけは選択依存の有効/無効・中間チェック・動的ラベルが
-   あるため KESCMPageMapUpdateToggleState(KESCMPageMap.cpp)へ委譲する。 */
+/* UpdateActionStates — チェック式トグルは ON なら kSelectedAction を立てる(docwatch の
+   DocWchActionComponent::UpdateActionStates と同じ流儀)。条件付きの有効/無効・動的ラベルもここで返す:
+   Start/Stop(名前の出し分け＋Start は文書2つ未満で灰色)・Hide Unchanged Spreads(Start 中のみ有効。
+   2026-08-06 変更)・Find Overset(走査対象文書が無ければ灰色。ON 中は常に有効)・Refresh Overset/
+   Export 等の条件付き有効化。ページパネル右クリックの「KCM: Register as Added/Removed Pages」だけは
+   選択依存の有効/無効・中間チェック・動的ラベルがあるため KESCMPageMapUpdateToggleState
+   (KESCMPageMap.cpp)へ委譲する。 */
 void KESCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionStateList* listToUpdate, GSysPoint /*mousePoint*/, IPMUnknown* /*widget*/)
 {
 	for (int32 i = 0; i < listToUpdate->Length(); i++)
@@ -951,6 +963,12 @@ void KESCMApplyOversetForDoc(IDataBase* db)
 	KESCMDrawEventHandler::sOversetDB = db;
 	KESCMDrawEventHandler::sOversetPages.swap(pages);
 	KESCMDrawEventHandler::sOversetLocs.swap(locs);
+
+	// ★走査対象の文書が変わったら巡回の基準点も捨てる(2026-08-06 再点検)。「同じ作りの文書は UID まで
+	//   同じ」(KESCMChangeNav.h)なので、前の文書の基準点を持ち越すと UID の偶然一致で途中から巡回が
+	//   始まり得る。別文書へ移るのは未 arm(アクティブ文書走査)のときだけ=比較の巡回には影響しない。
+	if (prevDB != nil && prevDB != db)
+		KESCMResetNav();
 
 	// Pages パネルのサムネイル更新。別文書へ移ったら前の文書の枠/＋を消し、新旧のページを作り直す。
 	if (prevDB != nil && prevDB != db)

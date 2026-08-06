@@ -120,7 +120,18 @@ public:
 		Return the base's result so the tracking lifecycle stays intact. */
 	virtual bool16 BeginTracking(IEvent* theEvent)
 	{
-		if (theEvent == nil || theEvent->GetType() != IEvent::kLButtonDn)
+		if (theEvent == nil)
+			return kFalse;
+		// ★左の押下だけで動く(中/右は通常の処理=コンテキストメニュー等に譲る)。
+		//   ⚠kLButtonDn 限定にしない(2026-08-06 再点検): 「押して離して即もう一度押す」の2度目は OS の
+		//   ダブルクリック時間内だと kDoubleClick で来得る。kDoubleClick は「任意のボタン」(IEvent.h:236)
+		//   なので、LButtonDn()(=このイベント発生時に左が押されていたか。IEvent.h:39-42)で左に絞る。
+		//   手本の製品トラッカー(AnimationUIButtonTriggerTracker)は型フィルタ自体を持たない。
+		const IEvent::EventType evType = theEvent->GetType();
+		const bool16 leftPress =
+			(evType == IEvent::kLButtonDn) ||
+			(evType == IEvent::kDoubleClick && theEvent->LButtonDn());
+		if (!leftPress)
 			return kFalse;
 
 		// ジェスチャ分類は KESCMClassifyGesture の1本に集約(独立の修飾キー判定を書かない。KESCMPeek.h)。
