@@ -99,7 +99,10 @@ static IDocument* KESCMFirstOtherDoc(IDocument* target)
 	return nil;
 }
 
-// db を所有する文書の表示名(JSX パネルと同様、ラベルに収まるよう短縮する)。
+// db を所有する文書の表示名(そのまま返す。ラベル幅への収まりは widget の ellipsize が引き受ける)。
+// ★旧記述「JSX パネルと同様、ラベルに収まるよう短縮する」は 2026-08-06 の監査(ブロック8 A-2)で
+//   自前短縮を撤去した時点で陳腐化していた(2026-08-06 の再確認で現行化)。呼び出しは下の
+//   Target/Source ラベル2箇所だけで、どちらも .fr が kEllipsizeMiddle。
 static PMString KESCMDocNameFromDB(IDataBase* db)
 {
 	PMString name;

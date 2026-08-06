@@ -14,11 +14,7 @@
 
 #include "VCPlugInHeaders.h"
 
-#include "ISession.h"
-#include "IApplication.h"
-#include "IDocument.h"
 #include "IDataBase.h"			// GetSysFile(保存キー=文書ファイルパス)
-#include "IDocumentList.h"		// 生存スイープ(FindDocByDataBase へのポインタ比較のみ)
 #include "IActionStateList.h"	// メニューの有効/チェック
 #include "PMString.h"
 #include "FileUtils.h"			// GetAppRoamingDataFolder / AppendPath / OpenFile / DoesFileExist / SysFileToPMString
@@ -33,10 +29,12 @@
 #include "KESCMCore.h"			// KESCMCollectPageUIDs / KESCMIsArmed / KESCMArmedTargetDB / KESCMArmedSourceDB / KESCMSetStatus / KESCMDoMarkChangesDoc
 #include "KESCMPageCheck.h"
 #include "KESCMPageMap.h"		// KESCMPageMapCollectRegistered(保存) / KESCMPageMapReplaceRegistered(読込)
+#include "KESCMDocUidSet.h"		// 「文書DB→ページUID集合」の共通の入れ物(登録側と共有。2026-08-06 監査 C-1)
 #include "KESCMThumbnailRefresh.h"	// KESCMRefreshThumbnailsForPages(トグルページの明示サムネイル更新)
 
-// チェック済みページ: 文書DB → ページUIDの集合。セッション内のみ。空になった文書のエントリは即消す。
-static std::map<IDataBase*, std::set<UID> > sChecked;
+// チェック済みページ: 文書DB → ページUIDの集合。セッション内のみ。
+// 空になった文書のエントリは即座に消える(KESCMDocUidSet の規約)。
+static KESCMDocUidSet sChecked;
 
 // db の「マーク付きページ」集合を1回だけ作る。マーク付き = KESCM の変更リング(sEntries)/登録「/」/
 // overflow「/」のいずれか。実体は KESCMCollectChangedPageUIDs(KESCMThumbnailRefresh.h。db が sDB/sSrcDB の
@@ -84,12 +82,10 @@ void KESCMPageCheckToggleSelectedPages()
 	if (pages.empty())
 		return;		// 選択にマーク付きページが無い=何もしない(メニューも無効のはず)
 
-	std::set<UID>& chk = sChecked[db];
-
 	bool16 anyUnchecked = kFalse;
 	for (size_t i = 0; i < pages.size(); ++i)
 	{
-		if (chk.count(pages[i]) == 0)
+		if (!sChecked.Contains(db, pages[i]))
 		{
 			anyUnchecked = kTrue;
 			break;
@@ -101,24 +97,21 @@ void KESCMPageCheckToggleSelectedPages()
 	if (anyUnchecked)
 	{
 		for (size_t i = 0; i < pages.size(); ++i)
-			chk.insert(pages[i]);
+			sChecked.Insert(db, pages[i]);
 		msg.Append("check +");
 		msg.AppendNumber((int32)pages.size());
 	}
 	else
 	{
 		for (size_t i = 0; i < pages.size(); ++i)
-			chk.erase(pages[i]);
+			sChecked.Erase(db, pages[i]);
 		msg.Append("check -");
 		msg.AppendNumber((int32)pages.size());
 	}
 
-	// 空になったらエントリごと捨てる。合計はその後に数える。
-	if (chk.empty())
-		sChecked.erase(db);
-	std::map<IDataBase*, std::set<UID> >::const_iterator it = sChecked.find(db);
+	// 合計は付け外しの後に数える(解除で空になった文書のエントリは Erase が捨てているので 0 が返る)。
 	msg.Append(", total ");
-	msg.AppendNumber(it != sChecked.end() ? (int32)it->second.size() : 0);
+	msg.AppendNumber(sChecked.CountIn(db));
 
 	// トグルしたページ(マーク付きに限定済み=サムネイルが確実に作り直される)のサムネイルを即更新して
 	// ✓ を反映する(比較には影響しないので再比較は不要)。
@@ -163,14 +156,10 @@ void KESCMPageCheckUpdateToggleState(IActionStateList* listToUpdate, int32 index
 	}
 
 	int32 chkCount = 0;
-	std::map<IDataBase*, std::set<UID> >::const_iterator it = sChecked.find(db);
-	if (it != sChecked.end())
+	for (size_t i = 0; i < marked.size(); ++i)
 	{
-		for (size_t i = 0; i < marked.size(); ++i)
-		{
-			if (it->second.count(marked[i]) > 0)
-				++chkCount;
-		}
+		if (sChecked.Contains(db, marked[i]))
+			++chkCount;
 	}
 
 	int16 state = kEnabledAction;
@@ -186,23 +175,7 @@ void KESCMPageCheckUpdateToggleState(IActionStateList* listToUpdate, int32 index
 //========================================================================================
 void KESCMPageCheckSweepClosedDocs()
 {
-	if (sChecked.empty())
-		return;
-
-	ISession* session = GetExecutionContextSession();	// クローズ掃除は終了シーケンス中にも来得るので nil ガード(2026-07-25)
-	InterfacePtr<IApplication> app(session != nil ? session->QueryApplication() : nil);
-	InterfacePtr<IDocumentList> docList(app != nil ? app->QueryDocumentList() : nil);
-	if (docList == nil)
-		return;
-
-	std::map<IDataBase*, std::set<UID> >::iterator it = sChecked.begin();
-	while (it != sChecked.end())
-	{
-		if (docList->FindDocByDataBase(it->first) == nil)
-			sChecked.erase(it++);	// 閉じた文書: 状態だけ捨てる(deref なし)
-		else
-			++it;
-	}
+	sChecked.SweepClosedDocs();	// 終了中の nil ガードも deref 回避も入れ物側の責務(KESCMDocUidSet.cpp)
 }
 
 //========================================================================================
@@ -210,7 +183,7 @@ void KESCMPageCheckSweepClosedDocs()
 //========================================================================================
 void KESCMPageCheckClearAllDocs()
 {
-	sChecked.clear();
+	sChecked.ClearAllDocs();
 }
 
 //========================================================================================
@@ -221,10 +194,12 @@ void KESCMPageCheckClearAllDocs()
 //========================================================================================
 void KESCMPageCheckPruneToMarked()
 {
-	if (sChecked.empty())
+	if (sChecked.IsEmpty())
 		return;
-	std::map<IDataBase*, std::set<UID> >::iterator it = sChecked.begin();
-	while (it != sChecked.end())
+	// ★文書ごとにマーク集合を1回だけ作って絞るので、入れ物の集合を直接いじる口(GetMap)を使う。
+	//   空になった文書のエントリは最後に PruneEmptyDocs() で捨てる(KESCMDocUidSet.h の規約)。
+	KESCMDocUidSet::Map& m = sChecked.GetMap();
+	for (KESCMDocUidSet::Map::iterator it = m.begin(); it != m.end(); ++it)
 	{
 		std::set<UID> marked;
 		KESCMCollectChangedPageUIDs(it->first, marked);		// db が比較対象でなければ空
@@ -236,11 +211,8 @@ void KESCMPageCheckPruneToMarked()
 			else
 				++c;
 		}
-		if (chk.empty())
-			sChecked.erase(it++);
-		else
-			++it;
 	}
+	sChecked.PruneEmptyDocs();
 }
 
 //========================================================================================
@@ -248,10 +220,7 @@ void KESCMPageCheckPruneToMarked()
 //========================================================================================
 bool16 KESCMPageCheckIsChecked(IDataBase* db, UID pageUID)
 {
-	if (db == nil)
-		return kFalse;
-	std::map<IDataBase*, std::set<UID> >::const_iterator it = sChecked.find(db);
-	return (it != sChecked.end() && it->second.count(pageUID) > 0) ? kTrue : kFalse;
+	return sChecked.Contains(db, pageUID);
 }
 
 //========================================================================================
@@ -259,10 +228,7 @@ bool16 KESCMPageCheckIsChecked(IDataBase* db, UID pageUID)
 //========================================================================================
 bool16 KESCMPageCheckHasAny(IDataBase* db)
 {
-	if (db == nil)
-		return kFalse;
-	std::map<IDataBase*, std::set<UID> >::const_iterator it = sChecked.find(db);
-	return (it != sChecked.end() && !it->second.empty()) ? kTrue : kFalse;
+	return sChecked.HasAny(db);
 }
 
 //========================================================================================
@@ -384,6 +350,28 @@ static bool16 KESCMReadWholeFile(const IDFile& file, std::string& outText)
 	return ok;
 }
 
+// pos 以降で「JSON のキーとしての key」(例 "\"checks\"")の位置を探す。無ければ npos。
+// ★素の find だと、値の文字列(=文書のフルパス)の中にエスケープされた \"checks\" が入っている場合に
+//   その内側へ一致してしまう(エスケープ後のバイト列に "checks" がそのまま現れるため)。JSON 文法上、
+//   キーの直前の非空白文字は必ず '{' か ',' なので、そこまで確かめて誤一致を捨てる。
+//   ⚠Windows はファイル名に '"' を使えないので現状は無害だが、Mac では使える(2026-08-06 ブロック9 監査 C-3)。
+static size_t KESCMFindJsonKey(const std::string& text, size_t pos, const std::string& key)
+{
+	while (pos < text.size())
+	{
+		const size_t hit = text.find(key, pos);
+		if (hit == std::string::npos)
+			return std::string::npos;
+		size_t b = hit;
+		while (b > 0 && (text[b - 1] == ' ' || text[b - 1] == '\t' || text[b - 1] == '\n' || text[b - 1] == '\r'))
+			--b;
+		if (b > 0 && (text[b - 1] == '{' || text[b - 1] == ','))
+			return hit;		// 直前が '{' か ',' = 本物のキー
+		pos = hit + 1;		// 値の文字列に紛れ込んだ一致 = 次を探す
+	}
+	return std::string::npos;
+}
+
 // [regionBegin, regionEnd) の範囲内で key(例 "\"checks\"")の直後の [ ... ] を探し、中の符号なし整数を
 // out に拾う。key が region 内に見つかれば(配列が空でも)kTrue、無ければ kFalse。region 境界を跨がないよう
 // 見つけた '[' / ']' が regionEnd を越えるものは無効扱い。
@@ -392,7 +380,7 @@ static bool16 KESCMParseUintArray(const std::string& text, size_t regionBegin, s
 {
 	out.clear();
 	const std::string k(key);
-	const size_t kk = text.find(k, regionBegin);
+	const size_t kk = KESCMFindJsonKey(text, regionBegin, k);
 	if (kk == std::string::npos || kk >= regionEnd)
 		return kFalse;
 	const size_t lb = text.find('[', kk + k.size());
@@ -453,12 +441,12 @@ static bool16 KESCMReadSetsMap(std::map<std::string, KESCMDocSets>& out, bool16*
 	size_t p = 0;
 	while (true)
 	{
-		const size_t kpath = text.find(kPathKey, p);
+		const size_t kpath = KESCMFindJsonKey(text, p, kPathKey);
 		if (kpath == std::string::npos)
 			break;
 
 		// この doc の領域末尾 = 次の "path"(無ければ末尾)。配列探索がこの境界を跨がないようにする。
-		const size_t next = text.find(kPathKey, kpath + kPathKey.size());
+		const size_t next = KESCMFindJsonKey(text, kpath + kPathKey.size(), kPathKey);
 		const size_t regionEnd = (next == std::string::npos) ? text.size() : next;
 
 		// "path" の後の ':' → 開き '"' → 文字列本体。
@@ -620,10 +608,10 @@ void KESCMPageCheckSaveToFile()
 
 		KESCMDocSets sets;
 		// Check(✓)
-		std::map<IDataBase*, std::set<UID> >::const_iterator it = sChecked.find(db);
-		if (it != sChecked.end())
-			for (std::set<UID>::const_iterator u = it->second.begin(); u != it->second.end(); ++u)
-				sets.checks.insert((uint32)u->Get());
+		std::set<UID> chk;
+		sChecked.CollectInto(db, chk);
+		for (std::set<UID>::const_iterator u = chk.begin(); u != chk.end(); ++u)
+			sets.checks.insert((uint32)u->Get());
 		// Register(Added/Removed=緑「/」)。別モジュール管理なので facade 経由で集める。
 		std::set<UID> reg;
 		KESCMPageMapCollectRegistered(db, reg);
@@ -779,17 +767,12 @@ void KESCMPageCheckLoadFromFile()
 		}
 
 		// 影響ページ(旧チェック ∪ 新チェック)のサムネイルを更新する(✓の付与/消去を反映)。
+		// ★CollectInto は out をクリアしないので、newSet に旧チェックを足し込む形で和集合になる。
 		std::set<UID> affected = newSet;
-		std::map<IDataBase*, std::set<UID> >::iterator cur = sChecked.find(db);
-		if (cur != sChecked.end())
-			for (std::set<UID>::const_iterator o = cur->second.begin(); o != cur->second.end(); ++o)
-				affected.insert(*o);
+		sChecked.CollectInto(db, affected);
 
-		// この文書のチェックを復元セットで置き換える。
-		if (newSet.empty())
-			sChecked.erase(db);
-		else
-			sChecked[db] = newSet;
+		// この文書のチェックを復元セットで置き換える(空ならエントリごと消える)。
+		sChecked.Replace(db, newSet);
 		checksRestored += (int32)newSet.size();
 
 		if (!affected.empty())

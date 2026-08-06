@@ -31,7 +31,7 @@
 #include "IControlView.h"
 #include "IPanorama.h"
 #include "ILayoutViewUtils.h"	// GetAllLayoutViews(db)
-#include "ILayoutUIUtils.h"		// MakeZoomCmd(kZoomToCmdBoss。他文書ビューのズームを合わせる公式経路)/GetFrontDocument
+#include "ILayoutUIUtils.h"		// MakeZoomCmd(kZoomToCmdBoss。他文書ビューのズームを合わせる公式経路)
 #include "IPanelControlData.h"
 #include "IDocument.h"
 #include "IPagesSubPanelController.h"	// ScrollPanelToSpread(page/spread UID 可と明記あり)
@@ -413,8 +413,8 @@ static UID KESCMSourcePageForTarget(IDataBase* targetDB, IDataBase* sourceDB, UI
 
 //----------------------------------------------------------------------------------------
 // Pages パネルも対象ページのスプレッドへ連動スクロールする(ベストエフォート)。
-//   ★Pages パネルは「前面(アクティブ)の文書」のページ一覧を表示するので、前面文書が db と
-//   一致する時だけ動かす(Source が前面のまま Next/Prev を押した場合、パネルは Source の一覧を
+//   ★Pages パネルは「アクティブ文書」のページ一覧を表示するので、アクティブ文書が db と
+//   一致する時だけ動かす(Source がアクティブのまま Next/Prev を押した場合、パネルは Source の一覧を
 //   表示中=Target のページ UID を渡しても意味がないので何もしない)。
 //   経路は KESCMThumbnailRefresh と同じ IPanelMgr→GetVisiblePanel(kPagesPanelWidgetID)→
 //   FindWidget(kLayoutPagesSubPanelWidgetID)→IPagesSubPanelController。ScrollPanelToSpread は
@@ -425,9 +425,12 @@ static void KESCMScrollPagesPanelToPage(IDataBase* db, UID pageUID)
 	if (db == nil || pageUID == kInvalidUID)
 		return;
 
-	// 前面文書のページ一覧を表示中か(違えば触らない)。
-	IDocument* front = Utils<ILayoutUIUtils>()->GetFrontDocument();
-	if (front == nil || ::GetDataBase(front) != db)
+	// アクティブ文書のページ一覧を表示中か(違えば触らない)。
+	// ★db は KESCMActiveDocDB()(=IActiveContext::GetContextDocument)で引く(2026-08-06 ブロック9 監査 A-1)。
+	//   「Pages パネルが今どの文書を見せているか」は KESCMPageMapReadSelection と同じ問いなので、
+	//   同じ口で聞く([[one-question-one-place]])。旧実装の GetFrontDocument() は契約が
+	//   「frontmost *layout* presentation の文書」(ILayoutUIUtils.h:95-98)で、アクティブ文書と食い違い得る。
+	if (KESCMActiveDocDB() != db)
 		return;
 
 	// パネル取得は共有ヘルパ(KESCMThumbnailRefresh.h)に一本化(2026-07-10)。

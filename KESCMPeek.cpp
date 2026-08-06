@@ -445,8 +445,11 @@ bool16 KESCMRefreshComparisonForSelectedPages(int32* outPages, int32* outChanged
 // 選択の有無までは見ない(ページ右クリックは通常そのページを選択済みで、未選択でも DoAction 側が
 // 安全に no-op しステータス行へ "no comparable pages" を出す)。
 // ★実行側(KESCMRefreshComparisonForSelectedPages)は KESCMPageMapReadSelection の db で判定するが、
-//   そちらも内部で同じ Utils<ILayoutUIUtils>()->GetFrontDocument() を使っている(KESCMPageMap.cpp:84)
-//   ので、両者の「対象文書」は必ず一致する。違いは「選択の有無を見るか」だけ(2026-08-06 の監査で確認)。
+//   そちらも同じ KESCMActiveDocDB() を使う(KESCMPageMap.cpp)ので、両者の「対象文書」は必ず一致する。
+//   違いは「選択の有無を見るか」だけ(2026-08-06 の監査で確認)。
+//   ★2026-08-06 ブロック9 監査 A-1: 両者とも旧実装は Utils<ILayoutUIUtils>()->GetFrontDocument() で、
+//   ここのコメントは「向こうも同じものを使っている」ことを一致の根拠にしていた。向こうを公式ルート
+//   (ActiveContext 経由)へ寄せたので、こちらも同時に合わせる=一致の根拠を保つ([[one-question-one-place]])。
 bool16 KESCMRefreshComparisonAvailable()
 {
 	if (!KESCMIsArmed())
@@ -455,8 +458,7 @@ bool16 KESCMRefreshComparisonAvailable()
 	IDataBase* sourceDB = KESCMArmedSourceDB();
 	if (targetDB == nil || sourceDB == nil)
 		return kFalse;
-	IDocument* doc = Utils<ILayoutUIUtils>()->GetFrontDocument();
-	IDataBase* db = (doc != nil) ? ::GetDataBase(doc) : nil;
+	IDataBase* db = KESCMActiveDocDB();
 	return (db != nil && db == targetDB) ? kTrue : kFalse;
 }
 

@@ -9,7 +9,10 @@
 //
 //  - 選択の取得: ★Utils<ILayoutUIUtils>()->GetSelectedPages()(公式API、ILayoutUIUtils.h:183)。
 //    bPagesOnly=kTrue でスプレッド選択も所属ページUIDへ展開、bIncludeMasters=kFalse でマスター
-//    除外。本家実使用例=source/open の PageTransitionsPanelObserver.cpp:672。
+//    除外。★実使用例は3つあるが目的で引数が分かれる: 製品 PageTransitionsPanelObserver.cpp:672 は
+//    bPagesOnly=kFalse(スプレッド単位のトランジションが目的でページ/スプレッド混在を欲しがる)、
+//    codesnippets/SnpModifyLayoutGrid.cpp:959 と SnpInspectLayoutGrid.cpp:690 は既定(=kTrue)。
+//    KESCM はページ単位で対応表を作るので kTrue が正しい(2026-08-06 ブロック9 監査で確認)。
 //    ★旧実装の自前 IUIDListControlData 読み(kPagesPanelWidgetBoss 直上)は「ページアイコン選択」
 //    しか拾えず、見開き(スプレッド)として選択されると空になり項目が出なかった(2026-07-05 実機)。
 //    パネルには文書ページ用/マスター用のサブパネルが2つあり、選択の置き場は1本ではない。
@@ -27,31 +30,29 @@
 
 #include "VCPlugInHeaders.h"
 
-#include "ISession.h"
-#include "IApplication.h"
-#include "IDocument.h"
 #include "IDataBase.h"
-#include "IDocumentList.h"		// 生存スイープ(FindDocByDataBase へのポインタ比較のみ)
 #include "IActionStateList.h"	// メニューの有効/チェック/動的ラベル(SetNthActionName)
-#include "ILayoutUIUtils.h"		// GetFrontDocument / GetSelectedPages(ページパネル選択の公式取得)
+#include "ILayoutUIUtils.h"		// GetSelectedPages(ページパネル選択の公式取得)
 #include "Utils.h"
-#include "PersistUtils.h"		// ::GetDataBase(IDocument→IDataBase)
 #include "UIDList.h"
 #include "PMString.h"
 
-#include <map>
 #include <set>
 #include <vector>
 
 #include "KESCMCore.h"			// KESCMCollectPageUIDs / KESCMArmedTargetDB / KESCMArmedSourceDB / KESCMSetStatus
 #include "KESCMPageMap.h"
+#include "KESCMDocUidSet.h"		// 「文書DB→ページUID集合」の共通の入れ物(✓側と共有。2026-08-06 監査 C-1)
 #include "KESCMThumbnailRefresh.h"	// KESCMRefreshThumbnailsForPages(トグルページの明示サムネイル更新)
 
 // 登録済み「比較相手なしページ」: 文書DB → ページUIDの集合。セッション内のみ。
-// 空になった文書のエントリは即座に消す(スイープと「登録あり文書」の判定を軽く保つ)。
-static std::map<IDataBase*, std::set<UID> > sRegistered;
+// 空になった文書のエントリは即座に消える(KESCMDocUidSet の規約)。
+static KESCMDocUidSet sRegistered;
 
-// ヘルパ: vector<UID> の線形 contains(選択は高々数十件なので set 化するまでもない)。
+// ヘルパ: vector<UID> の線形 contains。★用途は「これまでに積んだ選択(outPages)との重複除去」だけで、
+// 相手は高々選択数なので線形でよい。★文書の全ページ列(flat)との突合はこれを使わない(set で引く=
+// 下の KESCMPageMapReadSelection。2026-08-06 ブロック9 監査 C-6: 旧実装は選択数だけを見て線形にして
+// いたが、探索対象はページ数側なので 1,000ページ×100選択で 10 万回になっていた)。
 static bool16 KESCMVecContains(const std::vector<UID>& v, UID u)
 {
 	for (size_t k = 0; k < v.size(); ++k)
@@ -79,23 +80,30 @@ bool16 KESCMPageMapReadSelection(IDataBase*& outDB, std::vector<UID>& outPages)
 	outDB = nil;
 	outPages.clear();
 
-	// ページパネルの表示対象=アクティブ(最前面)文書。その db を UIDList に仕込んで渡す契約
+	// ページパネルの表示対象=アクティブ文書。その db を UIDList に仕込んで渡す契約
 	// (ILayoutUIUtils.h:178 "UIDList must be set up with proper database")。
-	IDocument* doc = Utils<ILayoutUIUtils>()->GetFrontDocument();
-	IDataBase* db = (doc != nil) ? ::GetDataBase(doc) : nil;
+	// ★db は KESCMActiveDocDB()(=IActiveContext::GetContextDocument)で引く(2026-08-06 ブロック9 監査 A-1)。
+	//   公式の GetSelectedPages 実例も ActiveContext 経由 = codesnippets/SnpModifyLayoutGrid.cpp:951-958
+	//   (製品 dynamicdocumentsui/PageTransitionsPanelObserver.cpp:665-671 は ILayoutControlData 経由の別流儀)。
+	//   ⚠旧実装の Utils<ILayoutUIUtils>()->GetFrontDocument() は契約が「frontmost *layout* presentation の
+	//   文書」(ILayoutUIUtils.h:95-98)で、ストーリーエディタ窓が最前面のときアクティブ文書と食い違い得る
+	//   (=ページパネルが見せている文書とは別の db で選択 UID を解釈してしまう)。
+	IDataBase* db = KESCMActiveDocDB();
 	if (db == nil)
 		return kFalse;
 
 	UIDList sel(db);
 	Utils<ILayoutUIUtils>()->GetSelectedPages(sel, kFalse /*masters除外*/, kTrue /*currentPageOnly*/, kTrue /*pagesOnly*/);
 
+	// 突合相手は「文書の全ページ」なので set で引く(上の KESCMVecContains のコメント参照)。
 	std::vector<UID> flat;
 	KESCMCollectPageUIDs(db, flat);
+	const std::set<UID> flatSet(flat.begin(), flat.end());
 	const int32 n = sel.Length();
 	for (int32 i = 0; i < n; ++i)
 	{
 		const UID u = sel[i];
-		if (KESCMVecContains(flat, u) && !KESCMVecContains(outPages, u))
+		if (flatSet.count(u) > 0 && !KESCMVecContains(outPages, u))
 			outPages.push_back(u);
 	}
 	if (outPages.empty())
@@ -134,12 +142,10 @@ void KESCMPageMapToggleSelectedPages()
 	if (!KESCMIsArmed() || (db != KESCMArmedTargetDB() && db != KESCMArmedSourceDB()))
 		return;
 
-	std::set<UID>& reg = sRegistered[db];
-
 	bool16 anyUnregistered = kFalse;
 	for (size_t i = 0; i < pages.size(); ++i)
 	{
-		if (reg.count(pages[i]) == 0)
+		if (!sRegistered.Contains(db, pages[i]))
 		{
 			anyUnregistered = kTrue;
 			break;
@@ -153,7 +159,7 @@ void KESCMPageMapToggleSelectedPages()
 	if (anyUnregistered)
 	{
 		for (size_t i = 0; i < pages.size(); ++i)
-			reg.insert(pages[i]);
+			sRegistered.Insert(db, pages[i]);
 		msg.Append("+");
 		msg.AppendNumber((int32)pages.size());
 		msg.Append(" ");
@@ -162,19 +168,16 @@ void KESCMPageMapToggleSelectedPages()
 	else
 	{
 		for (size_t i = 0; i < pages.size(); ++i)
-			reg.erase(pages[i]);
+			sRegistered.Erase(db, pages[i]);
 		msg.Append("-");
 		msg.AppendNumber((int32)pages.size());
 		msg.Append(" ");
 		msg.Append(KESCMPageMapRoleWord(db));
 	}
 
-	// 空になったらエントリごと捨てる。合計はその後に数える(解除で 0 なら "Total: 0")。
-	if (reg.empty())
-		sRegistered.erase(db);
-	std::map<IDataBase*, std::set<UID> >::const_iterator it = sRegistered.find(db);
+	// 合計は付け外しの後に数える(解除で空になった文書のエントリは Erase が捨てているので 0 が返る)。
 	msg.Append(", total ");
-	msg.AppendNumber(it != sRegistered.end() ? (int32)it->second.size() : 0);
+	msg.AppendNumber(sRegistered.CountIn(db));
 
 	// ★既に比較実行済み(Start後)なら、除外対応表が変わった分をその場で反映するため、Start と同じ
 	// 全体再比較を自動で走らせる(実機確認: 比較後に登録を変えてもリアルタイムには反映されなかった
@@ -248,14 +251,10 @@ void KESCMPageMapUpdateToggleState(IActionStateList* listToUpdate, int32 index)
 	}
 
 	int32 regCount = 0;
-	std::map<IDataBase*, std::set<UID> >::const_iterator it = sRegistered.find(db);
-	if (it != sRegistered.end())
+	for (size_t i = 0; i < pages.size(); ++i)
 	{
-		for (size_t i = 0; i < pages.size(); ++i)
-		{
-			if (it->second.count(pages[i]) > 0)
-				++regCount;
-		}
+		if (sRegistered.Contains(db, pages[i]))
+			++regCount;
 	}
 
 	int16 state = kEnabledAction;
@@ -286,25 +285,7 @@ void KESCMPageMapUpdateToggleState(IActionStateList* listToUpdate, int32 index)
 //========================================================================================
 void KESCMPageMapSweepClosedDocs()
 {
-	if (sRegistered.empty())
-		return;
-
-	// クローズ掃除は終了シーケンス中にも来得るので session を nil ガード(2026-07-25 追補 に KESCM 全体で統一。
-	// KESCMPageCheckSweepClosedDocs と同じ形)。
-	ISession* session = GetExecutionContextSession();
-	InterfacePtr<IApplication> app(session != nil ? session->QueryApplication() : nil);
-	InterfacePtr<IDocumentList> docList(app != nil ? app->QueryDocumentList() : nil);
-	if (docList == nil)
-		return;
-
-	std::map<IDataBase*, std::set<UID> >::iterator it = sRegistered.begin();
-	while (it != sRegistered.end())
-	{
-		if (docList->FindDocByDataBase(it->first) == nil)
-			sRegistered.erase(it++);	// 閉じた文書: 状態だけ捨てる(deref なし)
-		else
-			++it;
-	}
+	sRegistered.SweepClosedDocs();	// 終了中の nil ガードも deref 回避も入れ物側の責務(KESCMDocUidSet.cpp)
 }
 
 //========================================================================================
@@ -312,9 +293,7 @@ void KESCMPageMapSweepClosedDocs()
 //========================================================================================
 void KESCMPageMapClearAll(IDataBase* db)
 {
-	if (db == nil)
-		return;
-	sRegistered.erase(db);
+	sRegistered.ClearDoc(db);
 }
 
 //========================================================================================
@@ -324,7 +303,7 @@ void KESCMPageMapClearAll(IDataBase* db)
 //========================================================================================
 void KESCMPageMapClearAllDocs()
 {
-	sRegistered.clear();
+	sRegistered.ClearAllDocs();
 }
 
 //========================================================================================
@@ -332,10 +311,7 @@ void KESCMPageMapClearAllDocs()
 //========================================================================================
 bool16 KESCMPageMapIsRegistered(IDataBase* db, UID pageUID)
 {
-	if (db == nil)
-		return kFalse;
-	std::map<IDataBase*, std::set<UID> >::const_iterator it = sRegistered.find(db);
-	return (it != sRegistered.end() && it->second.count(pageUID) > 0) ? kTrue : kFalse;
+	return sRegistered.Contains(db, pageUID);
 }
 
 //========================================================================================
@@ -343,10 +319,7 @@ bool16 KESCMPageMapIsRegistered(IDataBase* db, UID pageUID)
 //========================================================================================
 bool16 KESCMPageMapHasAnyRegistered(IDataBase* db)
 {
-	if (db == nil)
-		return kFalse;
-	std::map<IDataBase*, std::set<UID> >::const_iterator it = sRegistered.find(db);
-	return (it != sRegistered.end() && !it->second.empty()) ? kTrue : kFalse;
+	return sRegistered.HasAny(db);
 }
 
 //========================================================================================
@@ -357,12 +330,7 @@ bool16 KESCMPageMapHasAnyRegistered(IDataBase* db)
 //========================================================================================
 void KESCMPageMapCollectRegistered(IDataBase* db, std::set<UID>& out)
 {
-	if (db == nil)
-		return;
-	std::map<IDataBase*, std::set<UID> >::const_iterator it = sRegistered.find(db);
-	if (it == sRegistered.end())
-		return;
-	out.insert(it->second.begin(), it->second.end());
+	sRegistered.CollectInto(db, out);	// out はクリアしない(入れ物側の契約)
 }
 
 //========================================================================================
@@ -373,17 +341,7 @@ void KESCMPageMapCollectRegistered(IDataBase* db, std::set<UID>& out)
 //========================================================================================
 void KESCMPageMapReplaceRegistered(IDataBase* db, const std::vector<UID>& pages)
 {
-	if (db == nil)
-		return;
-	if (pages.empty())
-	{
-		sRegistered.erase(db);
-		return;
-	}
-	std::set<UID>& reg = sRegistered[db];
-	reg.clear();
-	for (size_t i = 0; i < pages.size(); ++i)
-		reg.insert(pages[i]);
+	sRegistered.Replace(db, pages);		// 空ならエントリごと消える(入れ物側の契約)
 }
 
 //========================================================================================

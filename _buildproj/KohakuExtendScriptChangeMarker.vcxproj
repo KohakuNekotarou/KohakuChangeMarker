@@ -224,6 +224,7 @@
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMOversetScan.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMPageMap.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMPageCheck.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMDocUidSet.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMPageNumberMarker.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMPanelAlpha.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMPanelObserver.cpp" />
@@ -266,6 +267,7 @@
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMFactoryList.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMPageMap.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMPageCheck.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMDocUidSet.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMPageNumberMarker.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMPanelAlpha.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMPanelState.h" />
