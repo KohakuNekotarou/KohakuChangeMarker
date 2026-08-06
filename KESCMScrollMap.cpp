@@ -63,10 +63,9 @@
 #include "DVControlView.h"			// 自前描画ビューの基底(customdatalinkui と同じ)
 #include "AGMGraphicsContext.h"
 #include "AutoGSave.h"
-#include "LayoutUIID.h"				// kVertScrollBarWidgetID
+#include "LayoutUIID.h"				// kVertScrollBarWidgetID / kLayoutWidgetID(レイアウトビューを名指しで引く)
 #include "CoreResTypes.h"			// kViewRsrcType
-#include "TransformUtils.h"			// ::InnerToPasteboardMatrix
-#include "PMMatrix.h"
+#include "IGeometryFacade.h"		// GetItemBounds(ページ矩形をペーストボード座標で。手本=SnapTracker.cpp:610-616)
 #include <vector>
 #include <set>
 #include <chrono>					// steady_clock(手動 Hide/Show 検出のスロットル。単調増加の壁時計=Win/Mac 共通で正しい。
@@ -156,15 +155,34 @@ static void KESCMScrollMapProbeWindow(IControlView* strip, PMReal& outArrowH,
 	if (sbView != nil)
 		outArrowH = sbView->GetFrame().Width();
 
-	const int32 numSiblings = parentPanel->Length();
-	for (int32 i = 0; i < numSiblings; ++i)
+	// ★レイアウトビューは WidgetID で名指しに引く(製品 spellpanel/PrivateSpellingUtils.cpp:362 と同じ)。
+	//   ⚠同じ関数の主ペイン側(:356)は FindWidget(kLayoutWidgetBoss)＝**ClassID** を渡しているが、
+	//   kLayoutWidgetBoss(kClassIDSpace, kLayoutUIPrefix+3) と kLayoutWidgetID(kWidgetIDSpace, 同+3) は
+	//   数値が同じでたまたま動いているだけなので、寄せる先は副ペイン側が使っている kLayoutWidgetID。
+	//   引けなかったときは従来どおり兄弟を総なめする(窓の構成が想定と違っても今より悪くならない)。
+	IControlView* layoutView = parentPanel->FindWidget(kLayoutWidgetID);
+	if (layoutView == nil)
 	{
-		IControlView* sib = parentPanel->GetWidget(i);
-		if (sib == nil || sib == strip || sib == sbView)
-			continue;
-		InterfacePtr<IPanorama> panorama(sib, UseDefaultIID());
-		if (panorama == nil)
-			continue;
+		const int32 numSiblings = parentPanel->Length();
+		for (int32 i = 0; i < numSiblings; ++i)
+		{
+			IControlView* sib = parentPanel->GetWidget(i);
+			if (sib == nil || sib == strip || sib == sbView)
+				continue;
+			InterfacePtr<IPanorama> sibPano(sib, UseDefaultIID());
+			if (sibPano != nil)
+			{
+				layoutView = sib;	// パノラマを持つ最初の兄弟=レイアウトビュー
+				break;
+			}
+		}
+	}
+
+	// ★IPanorama の Query と nil 判定は残す: 欲しいのは「パノラマを持つビュー」であって widget 名ではない
+	//   (WidgetID で引けても、そこにパノラマが載っているかは別の話)。bounds が不正なら従来の写像へ任せる。
+	InterfacePtr<IPanorama> panorama(layoutView, UseDefaultIID());	// layoutView==nil でも可(InterfacePtr.h:459)
+	if (panorama != nil)
+	{
 		const PMRect bounds = panorama->GetBounds();
 		if (bounds.Bottom() > bounds.Top())
 		{
@@ -172,7 +190,6 @@ static void KESCMScrollMapProbeWindow(IControlView* strip, PMReal& outArrowH,
 			outPanoBottom = bounds.Bottom();
 			outHasPano    = kTrue;
 		}
-		break;	// レイアウトビューは見つかった(bounds が不正なら従来の写像へ任せる)
 	}
 }
 
@@ -272,13 +289,16 @@ void KESCMScrollMapView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 		InterfacePtr<IGeometry> geo(db, pages[i], UseDefaultIID());
 		if (geo == nil)
 			continue;
-		PMRect box = geo->GetPathBoundingBox();
-		PMPoint pTop(box.GetHCenter(), box.Top());
-		PMPoint pBot(box.GetHCenter(), box.Bottom());
-		PMMatrix m = ::InnerToPasteboardMatrix(geo);
-		m.Transform(&pTop);
-		m.Transform(&pBot);
-		PMReal a = pTop.Y(), b = pBot.Y();
+		// ★ページ矩形をペーストボード座標で得るのは Facade の仕事(2026-08-06 ブロック12 監査で寄せた。
+		//   ブロック10 で ChangeNav を寄せたときの論点が、ここと KESCMCore/KESCMPeek に残っていた)。
+		//   手本 snapshot/SnapTracker.cpp:610-616 が**ページに対して**同じことをしている。旧実装は
+		//   「GetPathBoundingBox + ::InnerToPasteboardMatrix + 自前 Transform」で同じ答えを組んでいた。
+		//   ★上の nil 判定は残す: 「この UID は本当に幾何を持つ」を Facade は担保しない(手本も同じ順序)。
+		//   ★下の入れ替えも残す: 旧実装がついでに担保していた正規化で、IGeometryFacade.h は返す矩形が
+		//   正規化済みだとは明言していない。
+		const PMRect box = Utils<Facade::IGeometryFacade>()->GetItemBounds(
+			::GetUIDRef(geo), Transform::PasteboardCoordinates(), Geometry::PathBounds());
+		PMReal a = box.Top(), b = box.Bottom();
 		if (b < a) { PMReal t = a; a = b; b = t; }
 		tops[i] = a; bottoms[i] = b;
 		if (first) { minY = a; maxY = b; first = kFalse; }

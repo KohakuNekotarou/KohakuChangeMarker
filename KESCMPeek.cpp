@@ -48,11 +48,11 @@
 // ジオメトリ / ビュー:
 #include "IControlView.h"
 #include "IPanorama.h"
-#include "PMMatrix.h"
+#include "PMMatrix.h"				// GetContentToWindowMatrix の戻り値(ズーム倍率の読み取り)
 #include "PMPoint.h"
 #include "PMRect.h"					// ページのペーストボード矩形(旧 Alt+ミドルの追加/削除補正)
 #include "PMReal.h"
-#include "TransformUtils.h"
+#include "IGeometryFacade.h"		// GetItemBounds(ページ矩形をペーストボード座標で。手本=SnapTracker.cpp:610-616)
 
 // カスタムビットマップカーソル(Alt+左 CMYK 情報をカーソルにも描く):
 // (ICursorUtils.h は KESCMCheckGlyph.h 経由で入る=直接シンボルを使わないため直 include は撤去 2026-07-25)
@@ -630,14 +630,18 @@ static bool16 KESCMPagePasteboardRectRaw(IDataBase* db, UID pageUID, PMRect& out
 	InterfacePtr<IGeometry> geo(db, pageUID, UseDefaultIID());
 	if (geo == nil)
 		return kFalse;
-	PMRect inner = geo->GetPathBoundingBox();
-	PMMatrix m = ::InnerToPasteboardMatrix(geo);
-	PMPoint p0(inner.Left(),  inner.Top());    m.Transform(&p0);
-	PMPoint p1(inner.Right(), inner.Bottom()); m.Transform(&p1);
-	const PMReal l = (p0.X() < p1.X()) ? p0.X() : p1.X();
-	const PMReal r = (p0.X() < p1.X()) ? p1.X() : p0.X();
-	const PMReal t = (p0.Y() < p1.Y()) ? p0.Y() : p1.Y();
-	const PMReal b = (p0.Y() < p1.Y()) ? p1.Y() : p0.Y();
+	// ★ページ矩形をペーストボード座標で得るのは Facade の仕事(2026-08-06 ブロック12 監査で寄せた。
+	//   ブロック10 で ChangeNav を寄せたときの論点が、ここと KESCMCore/KESCMScrollMap に残っていた)。
+	//   手本 snapshot/SnapTracker.cpp:610-616 が**ページに対して**同じことをしている。
+	//   ★上の nil 判定と下の min/max は残す: 「幾何を持つか」も「矩形が正規化済みか」も Facade は
+	//   担保しない(旧実装がついでに担保していたぶん)。ここは1回だけ実測してキャッシュする経路なので、
+	//   Facade 呼び出しに変えても同期ホットパスのコストは増えない。
+	const PMRect pb = Utils<Facade::IGeometryFacade>()->GetItemBounds(
+		::GetUIDRef(geo), Transform::PasteboardCoordinates(), Geometry::PathBounds());
+	const PMReal l = (pb.Left() < pb.Right()) ? pb.Left() : pb.Right();
+	const PMReal r = (pb.Left() < pb.Right()) ? pb.Right() : pb.Left();
+	const PMReal t = (pb.Top()  < pb.Bottom()) ? pb.Top()  : pb.Bottom();
+	const PMReal b = (pb.Top()  < pb.Bottom()) ? pb.Bottom() : pb.Top();
 	outPB = PMRect(l, t, r, b);
 	return kTrue;
 }

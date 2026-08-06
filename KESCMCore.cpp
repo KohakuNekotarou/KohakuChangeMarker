@@ -26,10 +26,9 @@
 #include "IBoolData.h"				// スプレッドの隠し状態(IID_IHIDESPREADBOOLDATA)の読み取り
 #include "SpreadID.h"				// IID_IHIDESPREADBOOLDATA(kSpreadBoss 上の IBoolData。docs の boss 一覧で裏取り済み)
 #include "PMString.h"
-#include "PMMatrix.h"
 #include "PMPoint.h"
 #include "PMRect.h"
-#include "TransformUtils.h"
+#include "IGeometryFacade.h"		// GetItemBounds(ページ矩形をペーストボード座標で。手本=SnapTracker.cpp:610-616)
 #include "IWindow.h"
 #include "IWindowUtils.h"
 #include "ILayoutViewUtils.h"		// GetAllLayoutViews(KESCMFindDocDbForView のフォールバック)
@@ -278,9 +277,14 @@ bool16 KESCMFindPageUnderMouse(IDataBase* targetDB, PMReal mx, PMReal my, KESCMP
 			InterfacePtr<IGeometry> geo(targetDB, pageUID, UseDefaultIID());
 			if (geo == nil)
 				continue;
-			PMRect bb = geo->GetPathBoundingBox();
-			PMMatrix m = ::InnerToPasteboardMatrix(geo);
-			m.Transform(&bb);
+			// ★ページ矩形をペーストボード座標で得るのは Facade の仕事(2026-08-06 ブロック12 監査で寄せた。
+			//   ブロック4 はここを「TransformUtils の標準イディオム＝公式どおり」と判定していたが、
+			//   Facade を見ていなかった＝ブロック10 で台帳ごと訂正済み。訂正の対象がここ)。
+			//   手本 snapshot/SnapTracker.cpp:610-616 が**ページに対して**同じことをしている。
+			//   ★上の nil 判定と下の入れ替えは残す: 「幾何を持つか」も「矩形が正規化済みか」も
+			//   Facade は担保しない(旧実装がついでに担保していたぶん)。
+			const PMRect bb = Utils<Facade::IGeometryFacade>()->GetItemBounds(
+				::GetUIDRef(geo), Transform::PasteboardCoordinates(), Geometry::PathBounds());
 			PMReal L = bb.Left(), R = bb.Right(), T = bb.Top(), B = bb.Bottom();
 			if (L > R) { PMReal t = L; L = R; R = t; }
 			if (T > B) { PMReal t = T; T = B; B = t; }
