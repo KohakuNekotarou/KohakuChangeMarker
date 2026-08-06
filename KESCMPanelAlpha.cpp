@@ -11,8 +11,13 @@
 //    4. "OWL.Dock"(フローティング) / "OWL.FrameDrawer"(アイコンをクリックしたドロワー展開) なら
 //       SetLayeredWindowAttributes で alpha を設定
 //
-//  ★OWL.Dock の HWND はパネルを閉じて開き直すと変わる(使い回しプールから再割り当て)。
-//    OWL.Palette の HWND は不変。だから HWND を保持せず毎回探し直す。
+//  ★OWL.Dock の HWND は「ドッキング → フローティングに戻す」で変わる(古い窓は破棄され、新しく
+//    作られる)。⚠パネルを**閉じて開き直す**のは別で、**同じ Dock が alpha ごと生き残る**
+//    (2026-08-04 に KBS 側で Release 21.0.2.2 を一段ずつ外部から測って確定。ここに長く書いてあった
+//     「閉じて開き直すと変わる」は誤りだった)。OWL.Palette の HWND はどちらでも不変。
+//    だから Dock の HWND は保持せず毎回探し直す。
+//  ★Dock は 1 つのパネルに属する(起動時から 55〜56 組が非可視で待機し、それぞれ自分のパネル名を
+//    名乗っている)ので、あるパネルの alpha が別のパネルへ渡ることはない。
 //  ★OWL.Dock は InDesign 自身が WS_EX_LAYERED を立てている(EXSTYLE=0x08080000)。
 //    スタイルの追加も除去も不要。★除去すると本体の描画が壊れる(復元は alpha=255 のみ)。
 //  ★子窓(OWL.Palette)に直接 WS_EX_LAYERED を立てるな。半透明にならず色が壊れる(実測)。
@@ -71,6 +76,18 @@ static bool16 sPanelTranslucent = kFalse;
 // ★矩形(GetWindowRect+PtInRect)だけで判定してはいけない。他の窓が上に重なっていても「乗っている」に
 //   なってしまう。矩形は安い足切りに使い、確定は WindowFromPoint → GA_ROOT の一致で行う。
 //   ★この足切りのおかげで、カーソルがパネルから離れている間は整数比較だけで終わる。
+//
+// ★★★ただし「パネルの上に出ている自分の窓」は、まだパネルの上である。
+//   (2026-08-05 に KBS 側でユーザー報告「行を右クリックすると不透明のパネルがまた薄くなる」を受けて
+//    修正され、2026-08-06 に KESCM へ戻した。KBSPanelAlpha.cpp:108-147 と同じ形。)
+//   フライアウトメニューはパネルに重なって開き、出ている間 WindowFromPoint に答えてしまうので、
+//   素の「GA_ROOT == target」だけだと**メニューが出た瞬間に「カーソルは他所」**になる。しかも窓の表示は
+//   EVENT_OBJECT_SHOW ＝下の Win32 フックの範囲内なので、薄い alpha が即座に書き込まれる。
+//   パネルに重なるツールチップ(KESCMIconTip.cpp)も同じ形。
+//   → 判定は「カーソルがパネルの矩形の中で、その下にあるのが **InDesign の窓** か」にする。
+//   ⚠代わりに手放すもの: InDesign の**別の**窓がパネルを覆っている場合、パネルは隠れたまま不透明で
+//     居座る。画面に見えているものは何もおかしくならず、次にカーソルが矩形の外へ出れば直るので、
+//     自分のメニューを開くたびにパネルが点滅するのに比べれば遥かに小さい代償。
 static bool KESCMCursorOverWindow(HWND target)
 {
 	if (target == nullptr)
@@ -85,7 +102,19 @@ static bool KESCMCursorOverWindow(HWND target)
 		return false;		// 矩形の外 = 確実に乗っていない(大半のマウス移動はここで終わる)
 
 	HWND under = ::WindowFromPoint(pt);
-	return (under != nullptr && ::GetAncestor(under, GA_ROOT) == target);
+	if (under == nullptr)
+		return false;
+
+	const HWND root = ::GetAncestor(under, GA_ROOT);
+	if (root == target)
+		return true;		// パネル自身 = 普通の答え
+
+	// 自分のプロセスの窓なら、それはパネルが自分の上に出したもの(フライアウト・ツールチップ)であって、
+	// カーソルはパネルから離れていない。★トップレベル窓に対して聞くこと: メニューはパネルの子ではなく、
+	// アプリが所有する独立したトップレベル窓として作られる。
+	DWORD pid = 0;
+	::GetWindowThreadProcessId(root, &pid);
+	return (pid == ::GetCurrentProcessId());
 }
 
 // ★実効 alpha ＝ トグルが ON で、かつカーソルが乗っていないときだけ薄くする。
@@ -127,10 +156,15 @@ void KESCMSetPanelTranslucent(bool16 on)
 
 #ifdef WINDOWS
 
-// ★探すパネルの window title。KESCM_enUS.fr / KESCM_jaJP.fr の kKESCMPanelTitleKey が
-//   両ロケールとも kKESCMDisplayName と同じ "Kohaku Change Marker" なので、そこから作る
-//   (=ロケール非依存)。★.fr のパネル名だけを変えるとここが一致しなくなり、機能が黙って
-//   効かなくなる。パネル名を変えるときは両方を揃えること。
+// ★探すパネルの window title。kKESCMDisplayName は表示名の**唯一の定義**で、文字列テーブルの
+//   kKESCMPanelTitleKey もそこから来ているので、これを widen して使う。
+//   ⚠2026-08-06 現在 UI は全ロケール英語(KESCM_jaJP.fr は 08-05 に、KESCMLoc.h は 08-06 に削除)
+//     なので、窓タイトルが翻訳されてここと一致しなくなる余地はそもそも無い。
+//   ★.fr のパネル名だけを変えるとここが一致しなくなり、機能が黙って効かなくなる。両方を揃えること。
+//   ⚠実行時に本物のタイトルを読み返して照合する道は無い(2026-08-06 に確認):
+//     PaletteRefUtils::GetPaletteLabel は一度も可視になっていないパレットへは空文字を返し、
+//     IWindow::GetTitle は最後に Set した値しか返さない(どちらもヘッダーに明記)。
+//     ＝照合する文字列はこちら側で綴るしかない。
 #define KESCM_WIDEN_(x)	L ## x
 #define KESCM_WIDEN(x)	KESCM_WIDEN_(x)
 static const wchar_t* const kKESCMPaletteWindowTitle = KESCM_WIDEN(kKESCMDisplayName);
@@ -197,8 +231,9 @@ static HWND KESCMFindPaletteWindow(const wchar_t* title)
 	return ctx.fFound;
 }
 
-// ★見つけた OWL.Palette を覚えておく。パネルを閉じて開き直しても OWL.Palette の HWND は
-//   変わらない(変わるのは親の OWL.Dock のほう)ので、キャッシュが効く。
+// ★見つけた OWL.Palette を覚えておく。パネルを閉じて開き直しても、ドッキングとフローティングを
+//   切り替えても OWL.Palette の HWND は変わらない(変わるのは親の OWL.Dock で、しかも
+//   「ドッキング → フローティング」のときだけ = 上のファイル冒頭を参照)ので、キャッシュが効く。
 //   ここを入れる理由: 購読している kPaletteVisibilityChangedMessage は「文書を1つ開く」だけでも
 //   複数回飛ぶ(2026-07-29 実測)。そのたびに全窓を EnumWindows で舐めるのは無駄。
 static HWND sPaletteWnd = nullptr;
@@ -527,6 +562,8 @@ void KESCMShutdownPanelAlpha()
 	// プラグイン終了時の保険。ポインタは deref せず、停止と解放だけ(終了処理中でも安全)。
 	KESCMRemoveWinEventHook();		// ★フックを残したまま .pln が降りると危険
 
+	sPaletteWnd = nullptr;			// 覚えていた HWND も手放す(OS が使い回す値を抱えたままにしない)
+
 	if (sReapplyTimer != nil)
 	{
 		sReapplyTimer->StopTimer();
@@ -578,7 +615,7 @@ void        KESCMShutdownPanelAlpha() {}
 //   ★仕組み: IMouseRollOver(ui/IMouseRollOver.h)は widget に roll-over 挙動を付けるための
 //     公開インターフェイス。MouseEnter / MouseOver / MouseLeave が呼ばれる。
 //     .fr でパネル boss(kKESCMPanelWidgetBoss)に IID_IMOUSEROLLOVER として AddIn する。
-//   ★★載せ先 = kKESCMPanelWidgetBoss(パネル本体。kPalettePanelWidgetBoss 派生)。AddIn は KESCM.fr:159。
+//   ★★載せ先 = kKESCMPanelWidgetBoss(パネル本体。kPalettePanelWidgetBoss 派生)。AddIn は KESCM.fr:166。
 //     **パネル全域で反応することを実機で確認済み**(2026-07-29。記録は KESCM.fr:154 のコメント)。
 //     ⚠**ファクトリ登録(KESCMFactoryList.h)を忘れると、何のエラーも出ずに黙って呼ばれない**
 //       (CREATE_PMINTERFACE だけでは足りない)。効かなくなったらまずそこを疑う。
@@ -625,7 +662,18 @@ CREATE_PMINTERFACE(KESCMPanelRollOver, kKESCMPanelRollOverImpl)
 void KESCMPanelRollOver::MouseEnter(const PMPoint& localMousePos)
 {
 	fLastPos = localMousePos;
-	KESCMApplyPanelTranslucency();		// → 実測して不透明へ(OFF のときは中で弾かれる)
+
+	// ★トグルが OFF なら何もしない(2026-08-06 追加)。★ここには長く「OFF のときは中で弾かれる」と
+	//   書いてあったが**そうなっていなかった**: KESCMApplyPanelTranslucency は OFF でも窓を探し
+	//   (キャッシュが失効していれば EnumWindows で全窓走査)、alpha=255 を書き、影を SW_SHOWNA する。
+	//   ★同じファイルの IsMouseOver() が 2026-07-30 に「OFF なら実測しない」と決めた判断が、
+	//     こちら側に届いていなかった(同一ファイル内の割れ)。使っていない人に費用を払わせない。
+	//   ⚠OFF へ切り替えた瞬間の 255 への復元は、フライアウトのハンドラが明示的に
+	//     KESCMApplyPanelTranslucency() を呼ぶので保証されている(KESCMActionComponent.cpp)。
+	if (!KESCMGetPanelTranslucent())
+		return;
+
+	KESCMApplyPanelTranslucency();		// → 実測して不透明へ
 }
 
 void KESCMPanelRollOver::MouseOver(const PMPoint& localMousePos)
@@ -637,13 +685,18 @@ void KESCMPanelRollOver::MouseOver(const PMPoint& localMousePos)
 
 void KESCMPanelRollOver::MouseLeave()
 {
+	if (!KESCMGetPanelTranslucent())	// ★MouseEnter と同じ理由(上のコメント参照)
+		return;
+
 	KESCMApplyPanelTranslucency();		// → 実測して元の半透明へ
 }
 
 bool8 KESCMPanelRollOver::IsMouseOver() const
 {
-	// ★旗を持たないので、その場で実測して答える(このインターフェイスの契約どおり
-	//   「今カーソルが乗っているか」を返す)。
+	// ★旗を持たないので、その場で実測して答える。
+	//   ⚠ヘッダーの契約は厳密には「**直前の MouseEnter/Over/Leave の呼び出しから決まる**」
+	//     (IMouseRollOver.h:50)。実測はそれより正確な答えを返すが、契約の文言そのものではない
+	//     ——旗を捨てた以上ここで実測する以外に答えようが無く、呼び手の期待にもそちらが合う。
 #ifdef WINDOWS
 	// ★トグルが OFF なら実測しない(2026-07-30 の再確認で追加)。この AddIn は半透明トグル専用で、
 	//   OFF の間は誰もこの答えを使わない。一方 KESCMQueryPaletteWindow はキャッシュが失効していると
@@ -721,19 +774,28 @@ void KESCMAttachPanelVisibilityObserver()
 	if (obs == nil)
 		return;
 
+	InterfacePtr<IApplication> app(session->QueryApplication());
+	if (app == nil)
+		return;
+
 	// ★パネルマネージャは本体の起動シーケンスの途中で立ち上がる(kPanelMgrHasStartedMsg が存在する)。
 	//   起動サービスから呼ぶとここが nil になる可能性がある。
-	InterfacePtr<IApplication> app(session->QueryApplication());
-	InterfacePtr<IPanelMgr> panelMgr(app != nil ? app->QueryPanelManager() : nil);
-	if (panelMgr == nil)
-		return;
-
-	InterfacePtr<ISubject> subject(panelMgr, IID_ISUBJECT);
-	if (subject == nil)
-		return;
-
-	if (!subject->IsAttached(ISubject::kRegularAttachment, obs, IID_IPANELMGR, IID_IKESCMPANELVISIBILITYOBSERVER))
-		subject->AttachObserver(ISubject::kRegularAttachment, obs, IID_IPANELMGR, IID_IKESCMPANELVISIBILITYOBSERVER);
+	// ★★nil でも下の購読へ進むこと(2026-08-06。KBS が 08-04 の監査で直したのと同じ形)。ここで return
+	//   すると kAppBoss 側の購読まで道連れになり、**kApplicationSuspendMsg が購読されないまま残る**
+	//   ——それは「カーソルをパネルに乗せたまま別アプリへ出ると不透明のまま固まる」を防ぐ唯一の
+	//   手掛かりで、パネルマネージャとは何の関係もない。片方の subject が無いことを、もう片方を
+	//   あきらめる理由にしない。
+	//   ※パレット側の購読はパネルの AutoAttach(KESCMPanelObserver.cpp)がここを呼び直すので後から拾える。
+	InterfacePtr<IPanelMgr> panelMgr(app->QueryPanelManager());
+	if (panelMgr != nil)
+	{
+		InterfacePtr<ISubject> subject(panelMgr, IID_ISUBJECT);
+		if (subject != nil &&
+			!subject->IsAttached(ISubject::kRegularAttachment, obs, IID_IPANELMGR, IID_IKESCMPANELVISIBILITYOBSERVER))
+		{
+			subject->AttachObserver(ISubject::kRegularAttachment, obs, IID_IPANELMGR, IID_IKESCMPANELVISIBILITYOBSERVER);
+		}
+	}
 
 	// ★2つめの購読先 = kAppBoss / IID_IAPPLICATION。
 	//   「ドック内で展開 → ドラッグでフローティング」は PanelMgr には出ず、2025 ではここに
