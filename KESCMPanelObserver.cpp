@@ -535,6 +535,18 @@ void KESCMSetStatus(const PMString& s, bool16 forceRedrawNow)
 }
 
 //========================================================================================
+// KESCMGetSessionStatus(KESCMCore.h で宣言)
+//   KESCMSetStatus が最後に出した文字列を返す。app.kcmStatus(KESCMScriptProvider.cpp)の値。
+//   ★読む先は widget ではなく gSessionStatus なので、パネルが閉じていても答えられる
+//     (スクリプトから実行して結果だけ読み取るテストは、パネルを開く必要が無い)。
+//========================================================================================
+void KESCMGetSessionStatus(PMString& out)
+{
+	out = gSessionStatus;
+	out.SetTranslatable(kFalse);	// 状態表示は組み立て済みの文で翻訳キーではない
+}
+
+//========================================================================================
 // KESCMClearSessionStatus(KESCMCore.h で宣言)
 //   Shutdown 専用。gSessionStatus(file-static PMString)を空にして、プラグイン unload 時の
 //   静的デストラクタを実質 no-op にする(UI には一切触らない。KESCMSetStatus は使わないこと=

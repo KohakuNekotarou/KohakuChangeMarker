@@ -51,7 +51,7 @@
 DECLARE_PMID(kPlugInIDSpace, kKESCMPluginID, kKESCMPrefix + 0)
 
 // ClassIDs:
-// kClassIDSpace +3 は現在空き(旧 kKESCMScriptProviderBoss; スクリプトAPI(kescmToast)は撤去)
+DECLARE_PMID(kClassIDSpace, kKESCMScriptProviderBoss, kKESCMPrefix + 3)	// app.kcmStatus を返す ScriptProvider(2026-08-06 復活。旧スクリプトAPI(kescmToast 等)は撤去済みで、公開するのは読み取り専用の1プロパティだけ)
 DECLARE_PMID(kClassIDSpace, kKESCMDrawEventServiceBoss, kKESCMPrefix + 4)
 // kKESCMPeekWatcherBoss (kKESCMPrefix + 5) は中ボタンウォッチャ撤去(2026-07-13)により廃止。スロットは予約のまま。
 DECLARE_PMID(kClassIDSpace, kKESCMPeekStartupBoss, kKESCMPrefix + 6)	// IStartupShutdown: アプリ起動時に peek ウォッチャを開始
@@ -107,7 +107,7 @@ DECLARE_PMID(kInterfaceIDSpace, IID_IKESCMPANELVISIBILITYOBSERVER, kKESCMPrefix 
 
 
 // ImplementationIDs:
-// kImplementationIDSpace +0 は現在空き(旧 kKESCMScriptProviderImpl; スクリプトAPI(kescmToast)は撤去)
+DECLARE_PMID(kImplementationIDSpace, kKESCMScriptProviderImpl, kKESCMPrefix + 0)	// CScriptProvider 実装(app.kcmStatus を返す。KESCMScriptProvider.cpp)
 DECLARE_PMID(kImplementationIDSpace, kKESCMDrawEventSrvcImpl, kKESCMPrefix + 1)
 DECLARE_PMID(kImplementationIDSpace, kKESCMDrawEventHandlerImpl, kKESCMPrefix + 2)
 // kKESCMPeekWatcherImpl (kKESCMPrefix + 3) は中ボタンウォッチャ撤去(2026-07-13)により廃止。スロットは予約のまま。
@@ -250,6 +250,9 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMToolWidgetID, kKESCMPrefix + 41)	// ツール
 // kScriptInfoIDSpace +10 は現在空き(旧 kKESCMDisarmMousePeekMethodScriptElement; 同上)
 // kScriptInfoIDSpace +11 は現在空き(旧 kKESCMToastMethodScriptElement; kescmToast はスクリプトAPIごと撤去)
 // kScriptInfoIDSpace +12 は現在空き(旧 kKESCMSetPrintMarksMethodScriptElement; スクリプトAPI撤去)
+// ★+1〜+12 は「メソッド」の跡地なので再利用せず、新しいプロパティは +13 から採る(旧用途と混同しないため)。
+DECLARE_PMID(kScriptInfoIDSpace, kKESCMStatusPropertyScriptElement, kKESCMPrefix + 13)	// app.kcmStatus(読み取り専用。パネルのステータス行の最後の1行)
+// (ツールの列挙子は本体の kToolBoxEnumScriptElement に載せるので、こちら側の ID は要らない。)
 
 // "About Plug-ins" sub-menu:
 #define kKESCMAboutMenuKey			kKESCMStringPrefix "kKESCMAboutMenuKey"

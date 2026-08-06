@@ -4,12 +4,22 @@
 //
 //  ScriptIDs (four-character codes) published by KESCM.
 //
-//  IMPORTANT: this plug-in exposes NO scripting API - no methods, no properties, no script
-//  objects (those were removed 2026-08-05). The single entry below is the toolbox tool's
-//  identity, which ITool.h:192-223 requires every tool to have: "when adding a new tool to the
-//  Tool Box, you must first define a new ScriptID and then add it to kToolBoxEnumScriptElement",
-//  then return it from ITool::GetScriptID. The registration itself lives in KESCM.fr
-//  (VersionedScriptElementInfo), and KESCMTool.cpp returns this value.
+//  WHAT IS EXPOSED: one READ-ONLY property, app.kcmStatus, and the toolbox tool's identity.
+//  No methods and no script objects - the ones this plug-in used to have (kescmToast and the
+//  rest) were removed 2026-08-05 and are not coming back; the panel is the interface.
+//
+//  app.kcmStatus (2026-08-06, at the user's request) reports the last line the panel put on its
+//  status area, which is the plug-in's whole account of what it just did: "marks start / pages
+//  compared=4 changed=2", "refreshed 1 (changed 1)", "Page: 3, Change 12%". Reading it needs one
+//  line of JavaScript, so a test can check what the panel said without a person looking at the
+//  screen - the same thing KBS gets from app.kfcStatus. Writing is refused (see
+//  KESCMScriptProvider.cpp): a script must not be able to make the panel appear to say something
+//  it never said.
+//
+//  The tool entry below is what ITool.h:192-223 requires every tool to have: "when adding a new
+//  tool to the Tool Box, you must first define a new ScriptID and then add it to
+//  kToolBoxEnumScriptElement", then return it from ITool::GetScriptID. The registration itself
+//  lives in KESCM.fr (VersionedScriptElementInfo), and KESCMTool.cpp returns this value.
 //
 //  Why it matters (measured 2026-08-06, audit block 7): without it the tool returns en_None
 //  ('none' = 1852796517), which is the value meaning "no tool at all" - so
@@ -37,6 +47,12 @@
 enum KESCMScriptEnums
 {
 	en_KESCMTool = 'nKGt'	// n = enumerator, K = Kohaku, G = KESCM, t = tool
+};
+
+/** Properties KESCM adds to the application object. */
+enum KESCMScriptProperties
+{
+	p_KESCMStatus = 'pKGm'	// p = property, K = Kohaku, G = KESCM, m = message (app.kcmStatus)
 };
 
 #endif // __KESCMScriptingDefs_h__

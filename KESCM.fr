@@ -47,9 +47,13 @@
 #include "IControlViewDefs.h"
 #include "SysControlIds.h"
 
-// (AppFrameworkID.h / SpreadID.h / DocFrameworkID.h were only here for the scripting API,
-//  which is gone - removed 2026-08-05. Everything below resolves from ShuksanID.h /
-//  widgetid.h / GraphicsID.h and the tool headers.)
+// (SpreadID.h / DocFrameworkID.h were only here for the old scripting API, which is gone -
+//  removed 2026-08-05. Everything below resolves from ShuksanID.h / widgetid.h / GraphicsID.h
+//  and the tool headers.)
+// AppFrameworkID.h came back on 2026-08-06 with app.kcmStatus: it defines
+// kApplicationObjectScriptElement, the object the property is put on. The official scripting
+// sample credits this header with exactly that (BPI.fr:55).
+#include "AppFrameworkID.h"
 // ScriptInfoTypes.fh came back on 2026-08-06: a toolbox tool has to register its ScriptID in
 // kToolBoxEnumScriptElement (ITool.h:192-223) - that is the tool's identity, not a scripting API.
 // This single header is enough for the resource at the end of this file: it also pulls in
@@ -317,6 +321,22 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 		{
 			IID_ITRACKERREGISTER,   kKESCMTrackerRegisterImpl,
 			IID_IK2SERVICEPROVIDER, kCTrackerRegisterProviderImpl,
+		}
+	},
+
+	/*
+	 * Scripting provider: serves app.kcmStatus and nothing else. Derives from
+	 * kBaseScriptProviderBoss, which brings the machinery that dispatches script requests; all this
+	 * boss adds is our own handler. The property itself is declared in the
+	 * VersionedScriptElementInfo resource at the end of this file. Same shape as KBS
+	 * (KBS.fr:406-413), which follows the official scripting sample BPI.fr.
+	 */
+	Class
+	{
+		kKESCMScriptProviderBoss,
+		kBaseScriptProviderBoss,
+		{
+			IID_ISCRIPTPROVIDER, kKESCMScriptProviderImpl,
 		}
 	},
 }}};
@@ -1215,15 +1235,20 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 };
 
 /*
- * Register the tool's ScriptID with the toolbox enumeration.
- * ITool.h:192-223 spells out the three steps (its worked example is "the pumpkin tool"): define a
- * ScriptID (KESCMScriptingDefs.h), add it to kToolBoxEnumScriptElement here, and return it from
- * ITool::GetScriptID (KESCMTool.cpp). The second string is the name scripts see:
+ * What KESCM adds to the object model: the tool's identity, and one read-only property.
+ *
+ * The tool entry is what ITool.h:192-223 spells out (its worked example is "the pumpkin tool"):
+ * define a ScriptID (KESCMScriptingDefs.h), add it to kToolBoxEnumScriptElement here, and return
+ * it from ITool::GetScriptID (KESCMTool.cpp). The second string is the name scripts see:
  * "kohaku change marker tool" surfaces as UITools.KOHAKU_CHANGE_MARKER_TOOL, so a script can both
  * read app.toolBoxTools.currentTool and assign to it to select this tool - neither was possible
  * while GetScriptID returned en_None (measured 2026-08-06, audit block 7).
  * Same shape as the official samples: snapshot (Snap.fr:2085-2101) / wavetool (WavTl.fr:319-336).
- * This adds no methods and no properties - KESCM stays without a scripting API.
+ *
+ * app.kcmStatus (added 2026-08-06 at the user's request) is the panel's status line, read-only.
+ * It is the same idea as KBS's app.kfcStatus (KBS.fr:1273-1313) and exists for the same reason:
+ * the status line is the plug-in's account of what it just did, and until now reading it meant
+ * looking at the screen, which cannot be automated. KESCM still publishes NO methods.
  */
 resource VersionedScriptElementInfo(10)
 {
@@ -1238,6 +1263,32 @@ resource VersionedScriptElementInfo(10)
 			kToolBoxEnumScriptElement,
 			{
 				en_KESCMTool, "kohaku change marker tool", "The Kohaku Change Marker tool.",
+			}
+		}
+
+		Property
+		{
+			kKESCMStatusPropertyScriptElement,	// this property's script element ID
+			p_KESCMStatus,						// ScriptID (KESCMScriptingDefs.h)
+			"kcm status",						// name -> app.kcmStatus
+			"The last message the Kohaku Change Marker panel put on its status line.",
+			StringType,							// type
+			{}									// alternate types
+			kNoAttributeClass,					// attribute class ID
+		}
+
+		// Puts the property ON the application object.
+		//
+		// Object{}, not Parent{}: Object names an EXISTING scripting object to add members to,
+		// while Parent hangs a NEW object underneath one. BPI.fr:603-612 is the form followed here
+		// (and KBS.fr:1305-1313, which learned it the hard way - with Parent the property never
+		// appeared on app at all).
+		Provider
+		{
+			kKESCMScriptProviderBoss,
+			{
+				Object{ kApplicationObjectScriptElement },
+				Property{ kKESCMStatusPropertyScriptElement, kReadOnly },
 			}
 		}
 	}
