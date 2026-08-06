@@ -38,6 +38,7 @@
 #include "KESCMID.h"
 #include "KESCMConstants.h"	// kKESCMCursorSettleMillis(設置後の落ち着き待ち)
 #include "KESCMPeek.h"		// KESCMTrackerRevealBegin / KESCMTrackerRevealEnd / CMYK カーソル入口
+#include "KESCMTestHud.h"	// ★実験(2026-08-07): 押下中だけビュー右上に "Test"(描画は Draw Event 側)
 
 #include <chrono>			// milliseconds(カーソル設置後の落ち着き待ち)
 #include <thread>			// std::this_thread::sleep_for(同上。Win/Mac 共通)
@@ -185,6 +186,12 @@ public:
 			result = CTracker::BeginTracking(theEvent);
 			if (result)
 			{
+				// ★押下中 HUD を「出す」印を立てる(実験 2026-08-07)。★KESCMTrackerRevealBegin の**前**に
+				//   立てること: あちらが InvalidateViews を呼び、その再描画で枠が描かれる —— 同じ描画で
+				//   HUD も描かれるので**枠と同時に出る**(旧 sprite 版が枠に遅れていた点の是正)。
+				//   描画の実体は KESCMDrawEventHandler の2系統(帯の前面 / カンバス背景)。
+				KESCMTestHudBegin(fControlView);
+
 				// CMYK 以外(reveal / peek)は従来どおり基底の後で発動する。CMYK は上で済ませてある。
 				if (!cmykGesture)
 					KESCMTrackerRevealBegin(shiftDown, altDown, cmdDown, macCtrl);
@@ -227,6 +234,9 @@ public:
 	virtual bool16 EndTracking(IEvent* theEvent)
 	{
 		bool16 result = CTracker::EndTracking(theEvent);
+		// ★HUD の印は KESCMTrackerRevealEnd の**前**に落とす(あちらの InvalidateViews による再描画で
+		//   枠と一緒に消えるように。順序は BeginTracking と対称)。
+		KESCMTestHudEnd();
 		KESCMTrackerRevealEnd();
 		return result;
 	}
@@ -236,6 +246,7 @@ public:
 	virtual void AbortTracking(IEvent* theEvent)
 	{
 		CTracker::AbortTracking(theEvent);
+		KESCMTestHudEnd();			// EndTracking と同じ後始末(中断でも HUD を残さない)
 		KESCMTrackerRevealEnd();
 	}
 

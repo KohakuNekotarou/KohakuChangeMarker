@@ -85,6 +85,7 @@
 #include "KESCMThumbIdleTask.h"      // クローズ後の再生成を次のidleに遅延(前面切替の過渡を避ける)
 #include "KESCMPanelState.h"         // KESCMLoadPanelStateIfPresent(起動時に保存済みパネル設定を復元)
 #include "KESCMPanelAlpha.h"         // KESCMAttachPanelVisibilityObserver(半透明トグルの追随購読を起動時に開始)
+#include "KESCMTestHud.h"            // KESCMTestHudShutdown(押下中 HUD 実験のフォント参照を終了時に返す)
 #include "KESCMPeek.h"
 
 //========================================================================================
@@ -2092,6 +2093,8 @@ void KESCMPeekStartup::Shutdown()
 	sDeferredCloseUiPending = kFalse;
 	// パネル半透明の遅延再適用タイマーも同様に止める(同じく生関数ポインタを残さないため)。
 	KESCMShutdownPanelAlpha();
+	// 押下中 HUD(実験)が抱えるフォント参照を返す。押下中に quit した経路でも確実に片付ける。
+	KESCMTestHudShutdown();
 	// 保持していたマーク/旧版画像バッファを解放(終了時もきれいに片付ける)。
 	KESCMDrawEventHandler::DropAll();
 	KESCMDrawEventHandler::DropAllOrig();

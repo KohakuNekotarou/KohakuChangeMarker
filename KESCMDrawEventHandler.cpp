@@ -58,6 +58,7 @@
 #include "KESCMPageCheck.h"          // KESCMPageCheckIsChecked/KESCMPageCheckHasAny(「KCM: Check」の✓)
 #include "KESCMPageNumberMarker.h"   // KESCMGetIgnorePageNumberMarker/KESCMAppendPageNumberMarkerRects(ノンブル除外)
 #include "KESCMScrollMap.h"          // KESCMScrollMapNoticeDrawEvent(手動 Hide/Show Spread の検出)
+#include "KESCMTestHud.h"            // 押下中 HUD(実験 2026-08-07。枠と同じ描画パスで右上に出す)
 #include "KESCMDrawEventHandler.h"
 
 CREATE_PMINTERFACE(KESCMDrawEventHandler, kKESCMDrawEventHandlerImpl)
@@ -684,13 +685,23 @@ ErrorCode KESCMDrawEventHandler::MakeOrigImage(const UIDRef& targetRef, const UI
 void KESCMDrawEventHandler::Register(IDrwEvtDispatcher* d)
 {
 	// スプレッド単位で配られる描画イベント。ポートは spread 座標。枠/変更数・旧版べた載せをこちらで描く。
-	// (トースト撤去(2026-07-04)に伴い、カンバス背景帯用の kAfterLastSpreadDrawMessage 登録は廃止)
 	d->RegisterHandler(ClassID(kEndSpreadMessage), this, kDEHLowestPriority);
+
+	// ★★ウィンドウ単位(全スプレッド描画後に1回)。ポートは pasteboard 座標。
+	//   2026-07-04 のトースト撤去で一度外したが、2026-08-07 に押下中 HUD(KESCMTestHud)のために戻した。
+	//   ★この2系統の関係が「ビューの隅に描けるか」の答え:
+	//     kEndSpreadMessage           … 帯(スプレッド/ペーストボード)に clip されるが**前面**
+	//     kAfterLastSpreadDrawMessage … clip されないが**背面**(= 何も被さらないカンバス部分にだけ見える)
+	//   ∴ 併用すると各画素はどちらか一方だけが担当し、**二重描きなしでビュー全域**を覆える。
+	//   ⚠これを知らずに memory/layout-screen-overlay.md は「Draw Event はペーストボードに clip される
+	//     ので窓の隅に描けない」と結論していた(2026-08-07 訂正)。制約は clip ではなく Z 順だった。
+	d->RegisterHandler(ClassID(kAfterLastSpreadDrawMessage), this, kDEHLowestPriority);
 }
 
 void KESCMDrawEventHandler::UnRegister(IDrwEvtDispatcher* d)
 {
 	d->UnRegisterHandler(ClassID(kEndSpreadMessage), this);
+	d->UnRegisterHandler(ClassID(kAfterLastSpreadDrawMessage), this);
 }
 
 
@@ -1151,6 +1162,31 @@ static void KESCMDrawPageCheck(IGraphicsPort* gPort, IDataBase* db, UID pageUID,
 }
 
 
+//========================================================================================
+// pasteboard 座標 → このスプレッドの spread 座標 への変換オフセット(= pasteboard - spread)。
+//   pasteboard 座標はドキュメント全体で1つ。スプレッドは pasteboard 上で(主に縦に)積まれ、各々が
+//   オフセットを持つ(spread[0] だけ偶然 0)。同一の inner 原点(0,0)を InnerToSpreadMatrix と
+//   InnerToPasteboardMatrix の両方で写し、その差を取ればこのスプレッドのオフセットになる。
+//   pasteboard 座標の点からこれを引けば、そのスプレッドの spread 座標における点が得られる。
+//   ★2026-07-04 のトースト撤去で消えたが、2026-08-07 に押下中 HUD のために戻した(元コード
+//     = git 068d8fb^ の KESCMDrawEventHandler.cpp:534-548)。
+//========================================================================================
+static PMPoint KESCMSpreadOffsetFromPasteboard(IDataBase* db, ISpread* spread)
+{
+	PMPoint off(0.0, 0.0);
+	if (db == nil || spread == nil || spread->GetNumPages() < 1)
+		return off;
+	InterfacePtr<IGeometry> pg(db, spread->GetNthPageUID(0), UseDefaultIID());
+	if (pg == nil)
+		return off;
+	PMMatrix mS = ::InnerToSpreadMatrix(pg);
+	PMMatrix mP = ::InnerToPasteboardMatrix(pg);
+	PMPoint ps(0.0, 0.0), pp(0.0, 0.0);
+	mS.Transform(&ps);
+	mP.Transform(&pp);
+	return PMPoint(pp.X() - ps.X(), pp.Y() - ps.Y());
+}
+
 bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 {
 	DrawEventData* ded = static_cast<DrawEventData*>(eventData);
@@ -1247,7 +1283,12 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	// Start と無関係に描く「登録専用パス」があり、未 Start でも右クリック登録すると緑「/」が出ていたが、
 	// これを撤去した(登録自体も arm 済みのときだけ可能に変更)。よって登録「/」は下の Target/Source メイン
 	// ループ(db==sDB / db==sSrcDB。=Start 中のみ成立)だけが描く。ここでの Anywhere 判定・専用パスは不要。
-	if (!wantMarks && !wantOrig && !wantOldNums && !wantSrcMarks && !wantChecks && !wantOversetThumb)
+	// ★押下中 HUD(実験。KESCMTestHud.cpp)。左ボタンを押している間、押した窓の右上に "Test" を出す。
+	//   画面だけ(印刷/PDF には出さない)。サムネイル生成(view 無し)も対象外。判定の本体は
+	//   KESCMTestHudWantsDraw = 「押下中」かつ「押した窓のビュー」。
+	const bool16 wantTestHud = !printing && !isThumb && KESCMTestHudWantsDraw(ded->gd->GetView());
+
+	if (!wantMarks && !wantOrig && !wantOldNums && !wantSrcMarks && !wantChecks && !wantOversetThumb && !wantTestHud)
 		return kFalse;
 
 	GraphicsData* gd = ded->gd;
@@ -1267,6 +1308,18 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 		// 実験ON: このまま続行してサムネイルにも枠を描く。
 	}
 
+	// ★★ウィンドウ単位イベント(全スプレッド描画後に1回・CTM=pasteboard 座標)。
+	//   このポートはスプレッド/ペーストボード帯の**背面**に来るので、何も被さらないカンバス部分にだけ
+	//   見える。帯の上に乗る分は下の per-spread(kEndSpreadMessage)側が描く ＝ 2系統で分担すると
+	//   二重描きなしでビュー全域を覆える(Register のコメント参照)。
+	//   ⚠changedBy はスプレッドではないので、この分岐は下の ISpread 取得より前に置くこと。
+	if (eventID == ClassID(kAfterLastSpreadDrawMessage))
+	{
+		if (wantTestHud)
+			KESCMTestHudDraw(gPort, gd->GetView(), PMPoint(0.0, 0.0));	// pasteboard 座標なのでオフセット無し
+		return kFalse;
+	}
+
 	// changedBy = 今描いているスプレッド。
 	InterfacePtr<ISpread> spread(ded->changedBy, UseDefaultIID());
 	if (spread == nil)
@@ -1274,6 +1327,14 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	IDataBase* db = ::GetDataBase(ded->changedBy);
 	if (db == nil)
 		return kFalse;
+
+	// ★押下中 HUD の「帯の前面」ぶん。このポートは spread 座標で、帯(スプレッド/ペーストボード)に
+	//   clip される = HUD のうち帯に重なる部分だけがここで描かれ、残り(カンバス背景の上)は上の
+	//   kAfterLastSpreadDrawMessage が描く。**各画素はどちらか一方だけ**なので二重に濃くならない。
+	//   ⚠ここは db 確定の直後に置くこと: この先には「描くものが無い」経路の return が複数あり、
+	//     HUD だけが理由でここへ来た場合に末尾まで到達しない。
+	if (wantTestHud)
+		KESCMTestHudDraw(gPort, gd->GetView(), KESCMSpreadOffsetFromPasteboard(db, spread));
 
 	// ★保持マークのドキュメントが閉じられていたら破棄する(クローズ監視の代わり)。draw は開いている
 	//   ドキュメントについてのみ発火するので、ここで sDB/sOrigDB の生存を確認できる。

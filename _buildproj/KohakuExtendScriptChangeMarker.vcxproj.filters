@@ -108,6 +108,9 @@
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMScriptProvider.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMTestHud.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMID.h">
@@ -167,6 +170,9 @@
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMScrollMap.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMTestHud.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="..\..\..\source\sdksamples\KESCM\KESCM.rc">
@@ -179,9 +185,6 @@
     </CustomBuild>
   </ItemGroup>
   <ItemGroup>
-    <None Include="..\..\..\source\sdksamples\KESCM\KESCM_jaJP.fr">
-      <Filter>Resource Files</Filter>
-    </None>
     <None Include="..\..\..\source\sdksamples\KESCM\KESCM_enUS.fr">
       <Filter>Resource Files</Filter>
     </None>
