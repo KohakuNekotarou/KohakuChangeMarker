@@ -36,7 +36,16 @@
 #define kKESCMDisplayName	"Kohaku Change Marker"			// 表示名(About メニュー項目・About ボックス本文・パネル/ツール名)。KBS の "Kohaku Search Panel" に合わせ、単語間をスペースで区切る(2026-07-25)。
 #define kKESCMFileName		"KohakuChangeMarker"			// 出力ファイル名の基底(.rc の OriginalFilename)。vcxproj の TargetName と一致させること。表示名と違いスペースは入れない。
 #define kKESCMPrefixNumber	0x205515 		// Unique prefix number for this plug-in(*Must* be obtained from Adobe Developer Support).
-#define kKESCMVersion		"1.2.1"						// Version of this plug-in。About ボックス本文・.rc の FileVersion・PluginVersion リソースの3か所に出る。1.0.1 → 1.1.0(2026-07-25) → 1.1.1(2026-07-26) → 1.2.0(2026-07-30) → 1.2.1(2026-08-06)。★Adobe Exchange の公開版は 1.2.0。1.2.1 の増分＝押下中 HUD の全廃／About を「名前 版数」1行に(英語のみ)／★日本語で出すのは How to Use と Hide Unchanged の確認アラートの2箇所だけに整理(メニュー・パネル・ステータス行は従来どおり全ロケール英語)／パネル幅 +10px／Hide Unchanged を Start 中のみ有効に／ジャンプ前にスプレッド切替(マスターページへ飛べるように)／Find Overset で押し出された表のセルを報告しない／描画エンジン監査の反映(greek 無効・除外領域の緑は画面限定・除外矩形のキャッシュ化)／フライアウトの Start(文書2つ未満)と Find Overset(走査対象なし)を灰色化／ページパネル右クリックのメニュー接頭辞を KESCM:→KCM: に短縮／再提出前の全コード再点検(2026-08-06)の修正一式=LocaleIndex に k_Wild 追補(列挙外UI言語の生キー表示防止)・比較失敗ページの可視化(failed=N・Refresh で既存枠を消さない)・比較経路の SaveRestoreModifiedState・半透明の細部(はみ出しメニュー/AutoAttach の OFF ガード/Shutdown 後の再武装禁止)ほか(全文=docs/ai-notes/kescm-bug-recheck-2026-08-06.md)。機能追加は無く既存の整理と修正だけなので patch を上げた。
+#define kKESCMVersion		"1.3.0"						// Version of this plug-in。About ボックス本文・.rc の FileVersion・PluginVersion リソースの3か所に出る。1.0.1 → 1.1.0(2026-07-25) → 1.1.1(2026-07-26) → 1.2.0(2026-07-30) → 1.2.1(2026-08-06) → 1.3.0(2026-08-07)。
+														// ★Adobe Exchange の公開版は 1.2.0。1.2.1 は提出しないまま 1.3.0 へ繰り上げた(機能追加が入ったので patch では足りない)ので、**以下は公開版 1.2.0 から見た増分**。
+														// ■機能追加(minor を上げた理由):
+														//   ①app.kcmStatus = パネルのステータス行の最後の1行をスクリプト/COM から読む読み取り専用プロパティ(KESCMScriptProvider.cpp)。パネルを閉じていても答える。実機検証の自動化用。
+														//   ②Translucent Pages Panel = **本体のページパネル**もホバーで不透明に戻る半透明にできる(フライアウト。従来は自分のパネルだけ)。窓の特定を WidgetID 狙い撃ちへ全面入れ替えたことで可能になった(本体パネルの窓タイトルは UI 言語で変わるため)。
+														//   ③ツールに ScriptID を与えた = app.toolBoxTools.currentTool から KESCM ツールを読み書きできる(UITools.KOHAKU_CHANGE_MARKER_TOOL)。従来は en_None で「何も選ばれていない」と区別できなかった。
+														// ■機能削除: 押下中 HUD を全廃(ソース・ターゲット名の表示)。★公開版 1.2.0 にはある機能なので、提出時の説明に要記載。
+														// ■表示・操作の整理: About を「名前 版数」1行に(英語のみ)／日本語で出すのは How to Use と Hide Unchanged の確認アラートの2箇所だけに整理(メニュー・パネル・ステータス行は全ロケール英語)／パネル幅 +10px／Hide Unchanged と Start(文書2つ未満)と Find Overset(走査対象なし)を条件付きで灰色化／ページパネル右クリックのメニュー接頭辞を KESCM:→KCM: に短縮／Prev/Next のラベル整理。
+														// ■不具合修正・内部改善: ジャンプ前にスプレッド切替(マスターページへ飛べるように)＋マスターページのあふれを巡回一覧に載せる／Find Overset で押し出された表のセルを報告しない／あふれを聞く前にリコンポーズ／表の列挙を ITextStoryThreadDictHier へ(入れ子の表が入る)／描画エンジンの見直し(greek 無効・除外領域の緑は画面限定・除外矩形のキャッシュ化)／LocaleIndex に k_Wild 追補(列挙外 UI 言語での生キー表示を防ぐ)／比較失敗ページの可視化(failed=N・Refresh で既存枠を消さない)／半透明の細部(はみ出しメニュー・AutoAttach の OFF ガード・Shutdown 後の再武装禁止)。
+														// ■全14ブロックの API 監査(2026-08-05〜08-07)とバグ特化の全コード再点検(08-06)を実施済み。全文=docs/ai-notes/kescm-file-map.md の各ブロックノート／kescm-bug-recheck-2026-08-06.md。
 // (kKESCMAuthor はテンプレート残骸(どこからも未参照)のため削除 2026-07-25)
 
 // Plug-in Prefix: (please change kKESCMPrefixNumber above to modify the prefix.)

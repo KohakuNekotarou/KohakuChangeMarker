@@ -1278,6 +1278,20 @@ resource VersionedScriptElementInfo(10)
 {
 	//Contexts
 	{
+		// ★★feature set が kInDesignAllLanguagesFS(=InDesign 全言語。InCopy と InDesign Server を除く)
+		//   なのは**正しい**。手本 = snapshot/Snap.fr:2089 —— **SnapTool の ScriptID を
+		//   kToolBoxEnumScriptElement へ登録しているリソースが、まさに同じ kInDesignAllLanguagesFS 単独**。
+		//   理由もはっきりしている: **ツールボックスは InDesign デスクトップにしか無い**(InCopy にも
+		//   Server にも無い)ので、ツールの列挙子を登録する context は InDesign に絞るのが筋。
+		//   ★同じ snapshot が **Snap.fr:1795 では kWildFS を使っている**(あちらはツールを含まない
+		//     スクリプト API のリソース) ＝ **公式は1つのプラグイン内で内容によって使い分けている。**
+		//   ⚠**KBS(KBS.fr:1282)が kWildFS なのは割れではない**。KBS のリソースは Property だけで
+		//     ツールを含まないため。**内容が違うので正しく違う。**
+		// ⚠2026-08-07 に一度 kWildFS へ変えたが**同日中に撤回した**。「kInDesignAllLanguagesFS 単独の
+		//   公式実例はゼロ」と判定したのが誤りで、走査結果の件数上限で Snap.fr:2089 を見落としていた
+		//   (経緯 = docs/ai-notes/kescm-api-audit-block14-2026-08-07.md の A-1)。
+		// ★script version は kCS5。公式サンプルは CS2〜CS5〜Firedrake と幅があり、新しい版を選ぶこと
+		//   自体が公式の範囲内(CustSE / XDocBk / **Snap.fr:2089 のツール登録も kCS5**)。
 		kCS5ScriptVersion, kCoreScriptManagerBoss, kInDesignAllLanguagesFS, k_Wild,
 	}
 	//Elements

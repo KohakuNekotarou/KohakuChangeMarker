@@ -21,8 +21,14 @@
 //      KESCM ツール選択中の全文書=KESCMSyncOtherDocViewportsTo のガード参照)
 //    - Show Scrollbar Map
 //    - Ignore Page Number Marker
-//    - Translucent Panel(★Windows 専用。復元されるのはフラグだけで、窓への適用はパネルの
-//      AutoAttach とパネル表示状態の購読が行う=起動時にはまだパネルが無いため)
+//    - Translucent Panel / Translucent Pages Panel(★Windows 専用。前者は自パネル、後者は本体の
+//      ページパネルが対象で、保存キーは "translucentPanel" / "translucentPagesPanel")
+//      ★復元されるのはフラグだけで、窓への適用はパネルの AutoAttach とパネル表示状態の購読が
+//      行う(起動時にはまだ自パネルが無いため)。
+//      ⚠ページパネル側は「自分の AutoAttach が必ず走る」という自パネルの保証を持たない(他人の窓
+//      なので、ワークスペース復元で最初から開いていると購読開始より前に開き終わっている)。
+//      **保存した ON が再起動直後に貼られるかは未確認**(2026-08-06 時点)。KESCM パネルを開けば
+//      KESCMPanelObserver.cpp の AutoAttach が両対象を貼り直すので、そこでは必ず効く。
 //
 //========================================================================================
 

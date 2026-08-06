@@ -276,8 +276,15 @@ void KESCMSetPagesPanelTranslucent(bool16 on)
 //      -> IPanelMgr::GetPaletteRefContainingPanel() … その panel を載せている PaletteRef
 //         -> PaletteRef::GetOWLControl()            … PaletteRef.h:47(OWLControlRef=HWND), :188
 //
-//  実測した階層(2026-08-06。ページパネルと自パネルの両方で同一だった。PaletteRef.h:87-123 の記述どおり):
-//    type=8 kTabPanelContainerType = OWL.Palette   ← ここが返る
+//  ★★「何が返るか」は実測ではなく**契約**(2026-08-07 のブロック13再監査で裏取り):
+//    IPanelMgr.h:197-201 が GetPaletteRefContainingPanel について
+//    "For regular tabbed palettes, this should return an object of type kTabPanelContainerType"
+//    と明記している。＝下の階層の type=8 が返るのはヘッダーの約束であって、環境で変わる観測ではない。
+//    (だから下の KESCMQueryPanelPaletteFromSDK は戻り値のクラス名を検証しない。キャッシュ側と
+//     フック側がクラス名を見るのは別の理由 ＝ HWND を OS が使い回すことへの対策。)
+//
+//  実測した階層(2026-08-06。ページパネルと自パネルの両方で同一。PaletteRef.h:87-123 の記述どおり):
+//    type=8 kTabPanelContainerType = OWL.Palette   ← ここが返る(上記の契約)
 //    type=7 kTabGroupType          = OWL.TabGroup
 //    type=6 kTabPaneType           = OWL.TabPane
 //    type=3 kDockType              = OWL.Dock      ← alpha を書く窓
