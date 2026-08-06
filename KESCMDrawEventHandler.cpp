@@ -55,7 +55,7 @@
 #include "KESCMID.h"
 #include "KESCMCore.h"               // KESCMHandleDocsClosed(クローズ検知の後始末を一本化)
 #include "KESCMPageMap.h"            // KESCMPageMapIsRegistered/KESCMPageMapHasAnyRegistered(追加/削除ページ縁枠)
-#include "KESCMPageCheck.h"          // KESCMPageCheckIsChecked/KESCMPageCheckHasAny(「KESCM: Check」の✓)
+#include "KESCMPageCheck.h"          // KESCMPageCheckIsChecked/KESCMPageCheckHasAny(「KCM: Check」の✓)
 #include "KESCMPageNumberMarker.h"   // KESCMGetIgnorePageNumberMarker/KESCMAppendPageNumberMarkerRects(ノンブル除外)
 #include "KESCMScrollMap.h"          // KESCMScrollMapNoticeDrawEvent(手動 Hide/Show Spread の検出)
 #include "KESCMDrawEventHandler.h"
@@ -1091,7 +1091,7 @@ static void KESCMDrawPageCrossOutlined(IGraphicsPort* gPort, IDataBase* db, UID 
 
 
 //========================================================================================
-// ページ中央に ✓(チェックマーク)をベクター線で描く(色指定)。「KESCM: Check」でチェックした
+// ページ中央に ✓(チェックマーク)をベクター線で描く(色指定)。「KCM: Check」でチェックした
 // ページに描く。描き先は2通り(layoutStyle で切替):
 //   ・kFalse = Pages パネルのサムネイル(従来。呼び出し側で isThumb を判定): サイズ=短辺 0.52、
 //     太さ=「/」と同じ固定比率、不透明度=kKESCMThumbMarkOpacity。
@@ -1197,7 +1197,7 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	const bool16 anyMarkableContent = !sEntries.empty() ||
 		(sDB    != nil && KESCMPageMapHasAnyRegistered(sDB)) ||
 		(sSrcDB != nil && KESCMPageMapHasAnyRegistered(sSrcDB)) ||
-		(sDB    != nil && KESCMPageCheckHasAny(sDB)) ||		// 「KESCM: Check」の✓(サムネイル描画を起こすため)
+		(sDB    != nil && KESCMPageCheckHasAny(sDB)) ||		// 「KCM: Check」の✓(サムネイル描画を起こすため)
 		(sSrcDB != nil && KESCMPageCheckHasAny(sSrcDB)) ||
 		(!sOverflowT.empty() || !sOverflowS.empty());
 	// 「Hold to Hide Marks」と併用時のみ: Source のレイアウト窓でツール左ボタンを押している間(sSrcMarksTempHidden)は
@@ -1226,7 +1226,7 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	const bool16 alwaysScreen = sAlwaysShowMarks && !sMarksTempHidden && !printing;
 	const bool16 wantMarks = !suppressForPrint && (sPrintMarks || sMarksVisible || alwaysScreen || isThumb) && anyMarkableContent;
 	const bool16 wantOrig  = !suppressForPrint && !printing && sShowOriginal && !sOrigImages.empty();
-	// ★「KESCM: Check」の ✓ のレイアウトビュー版(2026-07-12)。画面では「常に」表示(ツール左hold・
+	// ★「KCM: Check」の ✓ のレイアウトビュー版(2026-07-12)。画面では「常に」表示(ツール左hold・
 	// Hold to Hide Marks・Show Marks on Source 等の枠トグルとは完全に独立)。印刷/PDF は sPrintMarks
 	// (Print comparison marks)ON のときだけ(Target/Source とも同条件)。✓ 集合は Start 中の
 	// Target/Source(sDB/sSrcDB)にしか無い(Stop で全消去)ので、存在チェックも両 db だけ見れば足りる。
@@ -1318,7 +1318,7 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	if (printing)
 		sxr = 1.0;
 
-	// ★「KESCM: Check」の ✓(サムネイル版): チェック済みページの Pages パネルサムネイル中央に青い ✓ を描く。
+	// ★「KCM: Check」の ✓(サムネイル版): チェック済みページの Pages パネルサムネイル中央に青い ✓ を描く。
 	//   他のマーク(リング/斜線/Show Marks on Source トグル)とは完全に独立=このスプレッドの db が
 	//   Target でも Source でも、その db にチェックがあれば描く(下の Target/Source メインループより前・
 	//   それらのゲートに依らない)。レイアウトビュー/印刷版は下の wantChecks ブロック(2026-07-12 追加)。
@@ -1399,7 +1399,7 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 		}
 	}
 
-	// ★「KESCM: Check」の ✓(レイアウトビュー/印刷版・2026-07-12)。チェック済みページのページ中央に
+	// ★「KCM: Check」の ✓(レイアウトビュー/印刷版・2026-07-12)。チェック済みページのページ中央に
 	//   青い ✓ を「かなり大きく」(短辺×kKESCMCheckLayoutSizeRatio)描く。Target/Source を問わず、この
 	//   スプレッドの db にチェックがあれば描く(枠トグル・ツール左hold とは完全に独立=画面では常時表示)。
 	//   印刷/PDF は wantChecks が sPrintMarks でゲート済み。不透明度はパネルの 25%/75% 選択

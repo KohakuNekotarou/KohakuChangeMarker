@@ -481,7 +481,7 @@ ErrorCode KESCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMStri
 	// 2026-07-25 追補。呼び忘れても 250ms の TTL で追従するが、明示しておけば次の1通知から正しい)。
 	KESCMInvalidateSyncCaches();
 
-	// ★「KESCM: Check」の✓: 再比較で「マーク(枠/「/」)が無くなったページ」のチェックを忘れる
+	// ★「KCM: Check」の✓: 再比較で「マーク(枠/「/」)が無くなったページ」のチェックを忘れる
 	//   (ユーザー指定 2026-07-11)。この後のサムネイル更新で、マークが消えたページは prevMarked 経由で
 	//   purge され、リングも✓も無いクリーンなサムネイルに作り直される(チェックを先に外すのが肝)。
 	//   ★必ず下の KESCMInvalidateDB より前に呼ぶ(2026-07-12 ユーザー報告の修正): ✓ はレイアウト
@@ -606,7 +606,7 @@ void KESCMDoClearMarks(IDataBase* db)
 	// 時に古い登録が紛れ込むのも防ぐ。2026-07-05 の per-db クリアを全体クリアへ拡張)。
 	KESCMPageMapClearAllDocs();
 
-	// ★「KESCM: Check」の✓も Stop で丸ごと忘れる(ユーザー指定: Start 中限定・Stop で消去)。
+	// ★「KCM: Check」の✓も Stop で丸ごと忘れる(ユーザー指定: Start 中限定・Stop で消去)。
 	KESCMPageCheckClearAllDocs();
 
 	KESCMDrawEventHandler::DropAll();

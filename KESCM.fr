@@ -508,7 +508,7 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kSDKDefIsNotDynamicMenuFlag,
 
 		// "Save Check & Register" on the panel flyout (popup) menu. Plain command that writes the current
-		// per-page checks (KESCM: Check) and registered Added/Removed pages of the started Target/Source
+		// per-page checks (KCM: Check) and registered Added/Removed pages of the started Target/Source
 		// documents to a private JSON file (KESCM\KESCMPageChecks.json, v2), merged with any previously saved
 		// documents. Shows the saved path.
 		kKESCMPopupSaveChecksActionID,
@@ -589,7 +589,7 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKESCMPageMapSepMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
-		// "KESCM: Register as Added/Removed Pages" on the Pages panel page context menu.
+		// "KCM: Register as Added/Removed Pages" on the Pages panel page context menu.
 		// Check-mark toggle: registers/unregisters the selected pages as "pages with no
 		// comparison counterpart" (added pages in the Target, removed pages in the Source —
 		// same concept either way). The check mark, enable state and the dynamic label
@@ -604,7 +604,7 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKESCMPageMapToggleMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
-		// "KESCM: Check" on the Pages panel page context menu. Check-mark toggle: marks/unmarks the
+		// "KCM: Check" on the Pages panel page context menu. Check-mark toggle: marks/unmarks the
 		// selected pages with a blue check (✓) drawn on their Pages-panel thumbnails. Independent of
 		// the Added/Removed registration. Only available while Started (armed) with the selected doc
 		// being Target/Source; cleared on Stop. Check state / enabling come from UpdateActionStates
@@ -614,7 +614,7 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKESCMPageCheckMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
-		// "KESCM: Refresh Page Comparison" on the Pages panel page context menu. Plain command
+		// "KCM: Refresh Page Comparison" on the Pages panel page context menu. Plain command
 		// (not a toggle): re-runs the comparison for the selected page(s) and updates the marks /
 		// thumbnails (formerly the Ctrl+middle spread recompare, moved to this menu 2026-07-13).
 		// Only available while Started (armed) with the front document being Target/Source; enabling

@@ -2,8 +2,8 @@
 //
 //  KESCMPageCheck.cpp
 //
-//  「KESCM: Check」機能(KESCMPageCheck.h 参照)。ページパネルでページを選択→右クリックの
-//  トグル「KESCM: Check」で、そのページに「チェック済み」印を付け外しする。チェックしたページには
+//  「KCM: Check」機能(KESCMPageCheck.h 参照)。ページパネルでページを選択→右クリックの
+//  トグル「KCM: Check」で、そのページに「チェック済み」印を付け外しする。チェックしたページには
 //  Pages パネルのサムネイル中央に青い ✓(ベクター線)を描く(描画は KESCMDrawEventHandler の
 //  isThumb 分岐)。登録(KESCMPageMap)とは独立した別集合。セッション内のみ・Stop で全消去。
 //

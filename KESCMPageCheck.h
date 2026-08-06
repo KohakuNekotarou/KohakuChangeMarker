@@ -2,7 +2,7 @@
 //
 //  KESCMPageCheck.h
 //
-//  「KESCM: Check」機能の入口。ページパネルのページを選択→右クリックのトグル「KESCM: Check」で、
+//  「KCM: Check」機能の入口。ページパネルのページを選択→右クリックのトグル「KCM: Check」で、
 //  そのページに「チェック済み」印を付け外しする。チェックすると、そのページの Pages パネル
 //  サムネイル中央に青い ✓(ベクター線描画=フォント非依存)を表示する。
 //
@@ -24,7 +24,7 @@
 class IActionStateList;
 class IDataBase;
 
-// ページパネル右クリックのトグル「KESCM: Check」の実行。選択ページのチェックを付け外しする
+// ページパネル右クリックのトグル「KCM: Check」の実行。選択ページのチェックを付け外しする
 // (1つでも未チェックがあれば全チェック、全部チェック済みなら全解除)。結果はパネルのステータス行に
 // 出す。トグルしたページのサムネイルは即更新して ✓ を反映する。実体は KESCMPageCheck.cpp。
 void KESCMPageCheckToggleSelectedPages();

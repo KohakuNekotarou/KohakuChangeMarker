@@ -165,6 +165,12 @@ void		KESCMRefreshPanel();
 // フライアウト項目 kKESCMPopupStartStopActionID の DoAction から呼ぶ。実体は KESCMPanelObserver.cpp。
 void		KESCMToggleStartStop();
 
+// 比較を開始できるか＝アクティブ(前面)文書があり、かつ別の開いている文書が1つ以上ある(=Target と
+// Source が揃う)。フライアウトの「Start」を有効にしてよいかの判定に使う(2026-08-06 ユーザー指定:
+// 文書が2つ以上開かれていなければ押せない)。★KESCMToggleStartStop の開始分岐と同じ解決子を通るので、
+// メニューの見た目と押した結果がずれない。実体は KESCMPanelObserver.cpp。
+bool16		KESCMCanStartComparison();
+
 // 印刷マーク ON/OFF トグル(旧パネルのチェックボックス→2026-07-10 フライアウトメニュー化)。
 // 現在の印刷フラグ(KESCMGetPrintMarks)を反転し、不透明度は現在の選択(KESCMGetMarkOpacity25)を維持して
 // KESCMDoSetPrintMarks を呼ぶ。フライアウト項目 kKESCMPopupPrintMarksActionID の DoAction から呼ぶ。

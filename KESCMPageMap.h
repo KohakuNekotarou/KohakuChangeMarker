@@ -31,7 +31,7 @@ class IDataBase;
 //   「選択ページ」の意味を変えるときは必ずここ1箇所で。実体は KESCMPageMap.cpp。
 bool16 KESCMPageMapReadSelection(IDataBase*& outDB, std::vector<UID>& outPages);
 
-// ページパネル右クリックのトグル「KESCM: Register as Added/Removed Pages」の実行。選択ページを
+// ページパネル右クリックのトグル「KCM: Register as Added/Removed Pages」の実行。選択ページを
 // 「比較相手なしページ」として登録/解除する(1つでも未登録があれば全登録、全部登録済みなら全解除)。
 // 結果はパネルのステータス行に出す。実体は KESCMPageMap.cpp。
 void KESCMPageMapToggleSelectedPages();

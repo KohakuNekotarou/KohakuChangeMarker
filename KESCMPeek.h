@@ -92,7 +92,7 @@ bool16 KESCMToolCursorShouldBeBlack(IControlView* viewUnderMouse);
 // Alt+左 CMYK モード中(Pending)でなければ、またはスロットル中/ページ外/値不変なら kFalse。実体は KESCMPeek.cpp。
 bool16 KESCMTrackerUpdateCmykDrag();
 
-// ページパネルのページ右クリック「KESCM: Refresh Page Comparison」の実体。選択ページの比較を再検出して
+// ページパネルのページ右クリック「KCM: Refresh Page Comparison」の実体。選択ページの比較を再検出して
 // 枠/サムネイルを更新する(旧 Ctrl+ミドルのスプレッド再比較を移設。2026-07-13)。arm 済み(Start 後)かつ
 // 前面文書が Target のときだけ動く(★2026-07-15 Target 限定=ユーザー指定)。outPages=実際に再比較した
 // ページ数 / outChanged=うち変化ページ数 / outCancelled=進捗バーのキャンセルで中断したか(いずれも nil 可)。

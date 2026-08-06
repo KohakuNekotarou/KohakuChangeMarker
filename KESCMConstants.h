@@ -76,7 +76,7 @@ static const int   kKESCMRedBgDom = 25;	// 背景を「赤っぽい」と判定�
 // ため緑固定(背景色による切り替えは無し。ラスタ差分が無く背景判定の材料も無いため)。
 static const uint8 kKESCMAddedBorderR = 0, kKESCMAddedBorderG = 200, kKESCMAddedBorderB = 0;
 
-// 「KESCM: Check」でチェックしたページに描く ✓ マークの色(青)。Pages パネルのサムネイル中央と、
+// 「KCM: Check」でチェックしたページに描く ✓ マークの色(青)。Pages パネルのサムネイル中央と、
 // レイアウトビューのページ中央(2026-07-12 追加)の両方で同色。
 // ★フォントの ✓ 文字(環境依存)ではなく、線2本(moveto/lineto/stroke)でベクターの ✓ 型を描くので
 //   フォント/OS/ロケールに依存しない。緑「/」(登録)や赤「/」(overflow)と色で区別するため青にする。

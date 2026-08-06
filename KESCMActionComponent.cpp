@@ -42,7 +42,7 @@
 #include "KESCMDrawEventHandler.h"	// sEntries/sDB/sShowOldNumbers(Hide Unchanged と旧番号バッジの状態参照)
 #include "KESCMPageMap.h"	// KESCMPageMapToggleSelectedPages / KESCMPageMapUpdateToggleState(追加/削除ページ登録トグル)
 							// ＋ KESCMBuildPairing(除外対応表、Hide Unchanged の Source 側分類で使用)
-#include "KESCMPageCheck.h"	// KESCMPageCheckToggleSelectedPages / KESCMPageCheckUpdateToggleState(「KESCM: Check」の✓トグル)
+#include "KESCMPageCheck.h"	// KESCMPageCheckToggleSelectedPages / KESCMPageCheckUpdateToggleState(「KCM: Check」の✓トグル)
 #include "KESCMPageNumberMarker.h"	// KESCMGetIgnorePageNumberMarker/KESCMSetIgnorePageNumberMarker(ノンブル除外トグル)
 #include "KESCMThumbnailRefresh.h"	// KESCMTryRefreshPagesPanelThumbnails(Source サムネイルの枠を即 ON/OFF)
 #include "KESCMPeek.h"				// KESCMBaseScreenOpacity(Hold to Hide Marks 切替時に常時表示の基準不透明度を反映)
@@ -77,6 +77,11 @@ static std::vector<UID> sHiddenSpreads;
 static IDataBase* sHiddenDB = nil;
 static std::vector<UID> sHiddenSrcSpreads;
 static IDataBase* sHiddenSrcDB = nil;
+
+// overset 走査の対象文書(比較中は Target、未 Start はアクティブ文書)。定義はこのファイルの下の方
+// (DoFindOversetToggle の直前)。UpdateActionStates が「Find Overset を有効にしてよいか」を実行側と
+// 同じ基準で聞くために前方宣言する。
+static IDataBase* KESCMOversetScanTargetDB();
 
 /** ChangeMarker プラグインのメニュー項目に対する IActionComponent の実装。
 */
@@ -331,20 +336,20 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 			KESCMSavePanelState();
 			break;
 
-		// ページパネルのページ右クリック「KESCM: Register as Added/Removed Pages」トグル。
+		// ページパネルのページ右クリック「KCM: Register as Added/Removed Pages」トグル。
 		// 選択ページを「比較相手なし」として登録/解除する(実体は KESCMPageMap.cpp。このステップでは
 		// 登録の保持とチェック表示まで。比較の除外対応表への反映は次ステップ)。
 		case kKESCMPageMapToggleActionID:
 			KESCMPageMapToggleSelectedPages();
 			break;
 
-		// ページパネルのページ右クリック「KESCM: Check」トグル。選択ページに✓印を付け外しする
+		// ページパネルのページ右クリック「KCM: Check」トグル。選択ページに✓印を付け外しする
 		// (実体は KESCMPageCheck.cpp。✓の描画は KESCMDrawEventHandler の isThumb 分岐)。
 		case kKESCMPageCheckToggleActionID:
 			KESCMPageCheckToggleSelectedPages();
 			break;
 
-		// ページパネルのページ右クリック「KESCM: Refresh Page Comparison」(実行アクション)。選択ページの
+		// ページパネルのページ右クリック「KCM: Refresh Page Comparison」(実行アクション)。選択ページの
 		// 比較を再検出して枠/サムネイルを更新する(旧 Ctrl+ミドルのスプレッド再比較を移設。2026-07-13)。
 		// 実体は KESCMPeek.cpp。結果をステータス行に短く出す。
 		case kKESCMPageRefreshCompareActionID:
@@ -408,7 +413,7 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
    Spreads」「Show Original Page Numbers」「Sync Layout Views」「Ignore Page Number Marker」)は
    常に有効、ON なら kSelectedAction を
    立てる(docwatch の DocWchActionComponent::UpdateActionStates と同じ流儀)。ページパネル右クリックの
-   「KESCM: Register as Added/Removed Pages」だけは選択依存の有効/無効・中間チェック・動的ラベルが
+   「KCM: Register as Added/Removed Pages」だけは選択依存の有効/無効・中間チェック・動的ラベルが
    あるため KESCMPageMapUpdateToggleState(KESCMPageMap.cpp)へ委譲する。 */
 void KESCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionStateList* listToUpdate, GSysPoint /*mousePoint*/, IPMUnknown* /*widget*/)
 {
@@ -417,13 +422,19 @@ void KESCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionSta
 		const ActionID action = listToUpdate->GetNthAction(i);
 		if (action == kKESCMPopupStartStopActionID)
 		{
-			// arm 状態でメニュー名を出し分け(arm 中=Stop / 未 arm=Start)。常に有効。
+			// arm 状態でメニュー名を出し分け(arm 中=Stop / 未 arm=Start)。
 			// (kSelectedAction は付けない=チェックマークではなく名前そのものを切り替える。)
 			const bool16 armed = KESCMIsArmed() && (KESCMArmedTargetDB() != nil);
 			PMString name(armed ? "Stop" : "Start");
 			name.SetTranslatable(kFalse);
 			listToUpdate->SetNthActionName(i, name);
-			listToUpdate->SetNthActionState(i, kEnabledAction);
+			// ★Stop は常に有効: 文書が1つも開いていなくてもマーク消去・peek 解除は成立させる
+			//   (KESCMToggleStartStop の解除分岐が「実際にマークが描かれていた文書」を自分で控える)。
+			//   Start は Target と Source の2文書が要るので、揃っていなければ灰色にする
+			//   (2026-08-06 ユーザー指定)。判定は実行側と同じ KESCMCanStartComparison() を通るので、
+			//   メニューの見た目と押した結果がずれない。
+			listToUpdate->SetNthActionState(i,
+				(armed || KESCMCanStartComparison()) ? kEnabledAction : kDisabled_Unselected);
 		}
 		else if (action == kKESCMPopupPrintMarksActionID)
 		{
@@ -523,20 +534,26 @@ void KESCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionSta
 		}
 		else if (action == kKESCMPageCheckToggleActionID)
 		{
-			// ページパネル右クリックの「KESCM: Check」トグル: 有効/無効(Start中+Target/Source+選択)と
+			// ページパネル右クリックの「KCM: Check」トグル: 有効/無効(Start中+Target/Source+選択)と
 			// チェック(全部✓/一部=中間)を KESCMPageCheck.cpp 側で設定。
 			KESCMPageCheckUpdateToggleState(listToUpdate, i);
 		}
 		else if (action == kKESCMPageRefreshCompareActionID)
 		{
-			// ページパネル右クリックの「KESCM: Refresh Page Comparison」(トグルではない実行アクション):
+			// ページパネル右クリックの「KCM: Refresh Page Comparison」(トグルではない実行アクション):
 			// Start中(arm済み)かつ前面文書が Target/Source のときだけ有効化。それ以外はグレーアウト。
 			listToUpdate->SetNthActionState(i, KESCMRefreshComparisonAvailable() ? kEnabledAction : kDisabled_Unselected);
 		}
 		else if (action == kKESCMPopupFindOversetActionID)
 		{
-			int16 actionState = kEnabledAction;
-			if (KESCMDrawEventHandler::sOversetOn)
+			// ★ON の間は常に有効(OFF に戻して十字を消せる必要がある)。OFF のときは走査する文書が
+			//   無ければ灰色にする(2026-08-06 ユーザー指定)。対象の決め方は実行側 DoFindOversetToggle
+			//   と同じ KESCMOversetScanTargetDB()＝比較中は Target、未 Start はアクティブ文書。
+			//   (従来はここが常に有効で、文書を開かずに押すと "no active document" とだけ出ていた。)
+			const bool16 on = KESCMDrawEventHandler::sOversetOn;
+			int16 actionState = (on || KESCMOversetScanTargetDB() != nil) ? kEnabledAction
+			                                                              : kDisabled_Unselected;
+			if (on)
 				actionState |= kSelectedAction;	// ON ならチェックマーク
 			listToUpdate->SetNthActionState(i, actionState);
 		}

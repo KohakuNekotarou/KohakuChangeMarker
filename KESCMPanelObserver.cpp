@@ -82,6 +82,13 @@ namespace { PMString gSessionStatus; }
 
 // (アクティブ(前面)文書=比較の Target の解決は KESCMActiveDoc(KESCMCore)に統合。2026-07-25 重複解消)
 
+// 比較の Target/Source を解決する唯一の場所。アクティブ(前面)文書=Target、それ以外で最初に開いて
+// いる文書=Source。両方引けたときだけ kTrue を返す(引けなかった側は nil のまま返るので、呼び出し側は
+// どちらが欠けたかで文言を選べる)。
+// ★ここに集約する理由: 「比較を始められるか」をメニューの有効/無効(KESCMCanStartComparison)と実行
+//   (KESCMToggleStartStop)の2か所で別々に書くと、必ずどこかでずれる([[one-question-one-place]])。
+static bool16 KESCMResolveComparisonPair(IDocument*& outTarget, IDocument*& outSource);
+
 // target 以外で最初に開いている文書 = 比較の Source(旧版)。
 static IDocument* KESCMFirstOtherDoc(IDocument* target)
 {
@@ -97,6 +104,23 @@ static IDocument* KESCMFirstOtherDoc(IDocument* target)
 			return d;
 	}
 	return nil;
+}
+
+// 上で宣言した解決子の実体。
+static bool16 KESCMResolveComparisonPair(IDocument*& outTarget, IDocument*& outSource)
+{
+	outTarget = KESCMActiveDoc();
+	outSource = (outTarget != nil) ? KESCMFirstOtherDoc(outTarget) : nil;
+	return (outTarget != nil && outSource != nil) ? kTrue : kFalse;
+}
+
+// 比較を開始できるか(KESCMCore.h で宣言)。フライアウトの「Start」を有効にしてよいかの判定で、
+// 実行側 KESCMToggleStartStop と同じ解決子を通る。
+bool16 KESCMCanStartComparison()
+{
+	IDocument* target = nil;
+	IDocument* source = nil;
+	return KESCMResolveComparisonPair(target, source);
 }
 
 // db を所有する文書の表示名(そのまま返す。ラベル幅への収まりは widget の ellipsize が引き受ける)。
@@ -292,17 +316,15 @@ void KESCMToggleStartStop()
 	else
 	{
 		// 開始(旧 DoStart)。アクティブ(前面)文書=Target、別の開いている文書=Source。
-		IDocument* target = KESCMActiveDoc();
-		if (target == nil)
+		// ★フライアウトの Start は文書が2つ揃っていなければ灰色なので(KESCMCanStartComparison=同じ
+		//   解決子を通る)、通常ここで欠けることは無い。メニューを開いたまま文書が閉じた場合などの保険。
+		IDocument* target = nil;
+		IDocument* source = nil;
+		if (!KESCMResolveComparisonPair(target, source))
 		{
-			PMString s("Target and source documents not found."); s.SetTranslatable(kFalse);
-			KESCMSetStatus(s);
-			return;
-		}
-		IDocument* source = KESCMFirstOtherDoc(target);
-		if (source == nil)
-		{
-			PMString s("Target or source documents not found."); s.SetTranslatable(kFalse);
+			PMString s(target == nil ? "Target and source documents not found."
+			                         : "Target or source documents not found.");
+			s.SetTranslatable(kFalse);
 			KESCMSetStatus(s);
 			return;
 		}

@@ -361,7 +361,7 @@ static bool16 KESCMRefreshComparisonCore(IDataBase* targetDB, IDataBase* sourceD
 	// 旧版画像キャッシュは古いので破棄(次の peek で現ズームで作り直し)。
 	KESCMDrawEventHandler::DropAllOrig();
 
-	// ★「KESCM: Check」の✓: この部分再比較でマーク(枠)が消えたページのチェックも忘れる(ユーザー指定
+	// ★「KCM: Check」の✓: この部分再比較でマーク(枠)が消えたページのチェックも忘れる(ユーザー指定
 	//   2026-07-11「枠が無くなったらチェックの記憶も外れる」)。★必ず下の KESCMInvalidateDB より前に呼ぶ
 	//   (Invalidate 後に外すと古い ✓ でレイアウトが描き直される)。prune 前に Source 側のチェック有無を
 	//   控える(最後の1個が外れた場合もサムネイルを確実に更新するため)。
@@ -392,7 +392,7 @@ static bool16 KESCMRefreshComparisonCore(IDataBase* targetDB, IDataBase* sourceD
 	return kTrue;
 }
 
-// ページパネルの選択ページの「ページ比較」を再検出して更新する(ページ右クリック「KESCM: Refresh Page
+// ページパネルの選択ページの「ページ比較」を再検出して更新する(ページ右クリック「KCM: Refresh Page
 // Comparison」の実体。旧 Ctrl+ミドルの移設先)。arm 済み(Start 後)かつ前面文書が Target のときだけ動く
 // (★2026-07-15 Target 限定化=ユーザー指定。旧仕様の Source→Target 写像経路は撤去)。
 // outPages=実際に再比較したページ数(対応表に無い登録済みページ等は数えない)、
@@ -439,7 +439,7 @@ bool16 KESCMRefreshComparisonForSelectedPages(int32* outPages, int32* outChanged
 	return kTrue;
 }
 
-// 「KESCM: Refresh Page Comparison」メニューを有効化してよいか(UpdateActionStates 用)。
+// 「KCM: Refresh Page Comparison」メニューを有効化してよいか(UpdateActionStates 用)。
 // arm 済み(Start 後)かつ前面文書が Target のとき kTrue(★2026-07-15 Target 限定化=ユーザー指定。
 // コンテキストメニューは無効項目を出さないため、Source 側の右クリックでは項目自体が消える想定)。
 // 選択の有無までは見ない(ページ右クリックは通常そのページを選択済みで、未選択でも DoAction 側が
@@ -1279,7 +1279,7 @@ bool16 KESCMAlignOtherViewsToActiveNow()
 //   修飾なし=マーク一時表示 / Hold to Hide Marks の窓別 temp-hide(Target/Source) /
 //   Shift+左=旧版べた載せ peek 100% / Shift+Alt+左=peek 50% / Alt+左(単独)=CMYK 生値サンプリング。
 //   中ボタン経路(および Ctrl 系のパネル/再比較ジェスチャ)は撤去済み(2026-07-13)。再比較はページ
-//   右クリックメニュー「KESCM: Refresh Page Comparison」へ移設。
+//   右クリックメニュー「KCM: Refresh Page Comparison」へ移設。
 //========================================================================================
 
 // ★armed 中の Target/Source が IDocumentList に現存するかの最終ライン防御(2026-07-15 復活)。
@@ -2071,7 +2071,7 @@ void KESCMPeekStartup::Shutdown()
 	//   いずれもポインタは deref せず、コンテナを空にするだけ=終了処理中でも安全。
 	KESCMDrawEventHandler::DropOverset();	// sOversetPages / sOversetLocs
 	KESCMPageMapClearAllDocs();				// 登録(Added/Removed)
-	KESCMPageCheckClearAllDocs();			// 「KESCM: Check」の✓
+	KESCMPageCheckClearAllDocs();			// 「KCM: Check」の✓
 	KESCMResetHideUnchanged(kFalse);		// Hide Unchanged の控え(kFalse=文書には一切触らない)
 	KESCMInvalidateSyncCaches();			// 同期のページ矩形表・対応表・前回状態(2026-07-25 追補)
 	KESCMInvalidatePageNumberMarkerRects();	// ノンブル除外矩形のキャッシュ(2026-08-06 の監査 E-3)
@@ -2277,7 +2277,7 @@ void KESCMHandleDocsClosed()
 		//   Stop(KESCMDoClearMarks)と同じく登録も丸ごと忘れる。これを怠ると、生存側 Target/Source に
 		//   古い登録が残り、次の Start でペアリングに紛れ込む(map 空にするだけ=deref なし)。
 		KESCMPageMapClearAllDocs();
-		KESCMPageCheckClearAllDocs();	// 「KESCM: Check」の✓も同様に全消去(Start 中限定)
+		KESCMPageCheckClearAllDocs();	// 「KCM: Check」の✓も同様に全消去(Start 中限定)
 		// ★スクロールバー地図 strip も Stop と同様に取り外す(2026-07-11 セルフレビューで発見)。
 		//   これを怠ると、生存側の窓に孤児 strip が残り、レイアウトビューも 5px 詰めたままになる。
 		//   DetachAll は「今開いている窓」だけを走査する(閉じた窓の widget は窓ごと消えている)ので安全。
@@ -2347,7 +2347,7 @@ void KESCMHandleDocsClosed()
 	// 「比較相手なしページ」登録(KESCMPageMap)の後片付け: 閉じた文書の分を状態だけ捨てる
 	// (deref なし。パネル表示には関与しないので changed は立てない)。
 	KESCMPageMapSweepClosedDocs();
-	KESCMPageCheckSweepClosedDocs();	// 「KESCM: Check」の✓も、閉じた文書の分を状態だけ捨てる(deref なし)
+	KESCMPageCheckSweepClosedDocs();	// 「KCM: Check」の✓も、閉じた文書の分を状態だけ捨てる(deref なし)
 
 	// 何か片付けたらパネルの ON/OFF 表示を実状態に合わせる(①「ON 固着」の解消)。
 	// ★終了中はパネル widget へ触らない(パネルも解体中の可能性がある)。

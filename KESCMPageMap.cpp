@@ -3,7 +3,7 @@
 //  KESCMPageMap.cpp
 //
 //  ページ対応(追加/削除ページ)モジュール。ページパネルでページを選択→右クリックのトグル
-//  「KESCM: Register as Added/Removed Pages」で「比較相手なしページ」として登録/解除する。
+//  「KCM: Register as Added/Removed Pages」で「比較相手なしページ」として登録/解除する。
 //  アクティブ文書が Target なら「追加ページ」/Source なら「削除ページ」だが、概念はどちらも
 //  同じ「比較相手なし」(対応表からの除外)なので、入れ物は文書DBごとの UID セット1種類。
 //
@@ -267,11 +267,11 @@ void KESCMPageMapUpdateToggleState(IActionStateList* listToUpdate, int32 index)
 	// 動的ラベル(英語固定=パネルUIと同方針)。未 arm や第3文書では総称のまま。
 	PMString name;
 	if (db == KESCMArmedTargetDB())
-		name = "KESCM: Register as Added Pages";
+		name = "KCM: Register as Added Pages";
 	else if (db == KESCMArmedSourceDB())
-		name = "KESCM: Register as Removed Pages";
+		name = "KCM: Register as Removed Pages";
 	else
-		name = "KESCM: Register as Added/Removed Pages";
+		name = "KCM: Register as Added/Removed Pages";
 	name.SetTranslatable(kFalse);
 	listToUpdate->SetNthActionName(index, name);
 }
