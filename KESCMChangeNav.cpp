@@ -57,6 +57,7 @@
 #include "K2Vector.h"
 
 #include <map>
+#include <set>			// 通常スプレッドに載るページの集合(マスターページ上の overset を見分ける)
 #include <vector>
 
 #include "KESCMCore.h"				// KESCMCollectPageUIDs / KESCMArmed* / KESCMSetStatus
@@ -107,6 +108,25 @@ static IDataBase* KESCMNavDoc()
 //   比較と overset が別文書のとき(navDB==Target、overset は別文書)は overset を混ぜない(そのページ順の
 //   意味が崩れるため。overset 単独時はその文書を navDB として overset だけを巡る)。
 //----------------------------------------------------------------------------------------
+// pageUID に載る overset「+」箇所を走査順にストップとして足す(ページ内の枝番と件数もここで振る)。
+// ★通常ページ用のループとマスターページ等の追い足しの両方から呼ぶので、枝番の付け方が2箇所に
+//   分かれないようここへ切り出してある。
+static void KESCMAppendOversetStopsForPage(UID pageUID, std::vector<KESCMNavStop>& out)
+{
+	std::vector<size_t> onPage;
+	for (size_t j = 0; j < KESCMDrawEventHandler::sOversetLocs.size(); ++j)
+		if (KESCMDrawEventHandler::sOversetLocs[j].pageUID == pageUID)
+			onPage.push_back(j);
+	const int32 cnt = (int32)onPage.size();
+	for (int32 k = 0; k < cnt; ++k)
+	{
+		const KESCMOversetLoc& loc = KESCMDrawEventHandler::sOversetLocs[onPage[k]];
+		KESCMNavStop s; s.pageUID = pageUID; s.isOverset = kTrue; s.pb = loc.pb;
+		s.oversetOrd = k; s.oversetCountOnPage = cnt;
+		out.push_back(s);
+	}
+}
+
 static void KESCMBuildStops(std::vector<KESCMNavStop>& out)
 {
 	out.clear();
@@ -127,22 +147,38 @@ static void KESCMBuildStops(std::vector<KESCMNavStop>& out)
 			KESCMNavStop s; s.pageUID = u; s.isOverset = kFalse;
 			out.push_back(s);
 		}
-		// 2) そのページの overset「+」箇所(走査順に1つずつ)。件数を各ストップに持たせるため先に集める。
+		// 2) そのページの overset「+」箇所(走査順に1つずつ)。
 		if (oversetHere)
+			KESCMAppendOversetStopsForPage(u, out);
+	}
+
+	// 3) ★通常スプレッドに載っていない overset を末尾に足す(2026-08-06 ユーザー報告「マスターの
+	//    オーバーセット、見つけますがボタンが押せない」の修正)。
+	//    ★★KESCMCollectPageUIDs が回すのは **ISpreadList = 通常スプレッドだけ**で、マスタースプレッドは
+	//    IMasterSpreadList の別管理なので上のループには一度も現れない。その結果、マスターページ上の
+	//    あふれは検出できていて(サムネイルの「+」は出る)、それでもストップ列から丸ごと落ち、他に
+	//    巡回対象が無ければ **Prev/Next が無効のまま**になっていた＝「見つかるのに飛べない」。
+	//    ★KESCMCollectPageUIDs 自体は変えない: あれは比較のページ対応(KESCMBuildPairing)でも使う共有
+	//    ヘルパで、マスターページを混ぜると**比較する対象そのものが変わる**。ここで足すのが正しい。
+	//    順序は「通常ページを全部回った後」＝ページ順の意味を壊さない。
+	if (oversetHere)
+	{
+		const std::set<UID> covered(flat.begin(), flat.end());
+		std::vector<UID> extra;		// 走査順・重複なし
+		for (size_t j = 0; j < KESCMDrawEventHandler::sOversetLocs.size(); ++j)
 		{
-			std::vector<size_t> onPage;
-			for (size_t j = 0; j < KESCMDrawEventHandler::sOversetLocs.size(); ++j)
-				if (KESCMDrawEventHandler::sOversetLocs[j].pageUID == u)
-					onPage.push_back(j);
-			const int32 cnt = (int32)onPage.size();
-			for (int32 k = 0; k < cnt; ++k)
-			{
-				const KESCMOversetLoc& loc = KESCMDrawEventHandler::sOversetLocs[onPage[k]];
-				KESCMNavStop s; s.pageUID = u; s.isOverset = kTrue; s.pb = loc.pb;
-				s.oversetOrd = k; s.oversetCountOnPage = cnt;
-				out.push_back(s);
-			}
+			const UID pu = KESCMDrawEventHandler::sOversetLocs[j].pageUID;
+			if (covered.find(pu) != covered.end())
+				continue;			// 通常ページ=上のループで拾い済み
+			bool16 already = kFalse;
+			for (size_t e = 0; e < extra.size() && !already; ++e)
+				if (extra[e] == pu)
+					already = kTrue;
+			if (!already)
+				extra.push_back(pu);
 		}
+		for (size_t e = 0; e < extra.size(); ++e)
+			KESCMAppendOversetStopsForPage(extra[e], out);
 	}
 }
 
