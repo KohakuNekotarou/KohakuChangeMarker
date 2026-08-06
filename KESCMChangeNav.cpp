@@ -40,6 +40,13 @@
 #include "CmdUtils.h"			// ProcessCommand
 #include "IGeometry.h"
 #include "IDataBase.h"
+#include "IHierarchy.h"			// GetSpreadUID(ページ→スプレッド。スクロール前の切替判定に使う)
+#include "ILayoutControlData.h"	// GetSpreadRef(そのビューが今どのスプレッドを見ているか)/GetDocument
+#include "ILayoutCmdData.h"		// kSetSpreadCmdBoss が要求するデータ(対象の文書とビュー)
+#include "SpreadID.h"			// kSetSpreadCmdBoss(レイアウトビューにスプレッドを出すコマンド)
+#include "ErrorUtils.h"			// PMSetGlobalErrorCode(切替に失敗しても後続コマンドを巻き添えにしない)
+#include "PersistUtils.h"		// ::GetUIDRef / ::GetDataBase
+#include "UIDList.h"			// SetItemList(切替先スプレッド)
 #include "IPageList.h"			// GetPageString / kDefaultPageType(飛んだページ番号の表示ラベル "P1" 等)
 #include "TransformUtils.h"		// ::InnerToPasteboardMatrix
 #include "PMMatrix.h"
@@ -174,6 +181,76 @@ static PMReal KESCMReadDocZoom(IDataBase* db)
 }
 
 //----------------------------------------------------------------------------------------
+// スクロールの前に、対象ページの載っているスプレッドをビューに出す。
+//
+// ★★ペーストボード点へのスクロールは「そのビューが既にその点のスプレッドを映している」ことを
+//   前提にしている。別のスプレッドを見ているビューにとって、その座標は別の場所か、どこでもない。
+//   ★マスタースプレッドでこれが露骨に出る: 通常スプレッドの連続したペーストボードに含まれないので、
+//   スクロールをいくらしても絶対に届かず、空のペーストボードに着地する。
+//   ⚠KBS が 2026-08-05 に実測で踏んだ不具合とまったく同じ形(あちらは行の locator は "PA" と正しいのに
+//   クリックすると何も無い場所へ飛んだ)。手当ても同じ＝KBSJump.cpp:280 EnsureSpreadInView の移植。
+//
+// ★★判定は「マスターかどうか」ではなく「違うスプレッドかどうか」。Adobe 自身がそう書いている
+//   (snapshot/SnapTracker.cpp:224 は ::GetUIDRef(spread) と ILayoutControlData::GetSpreadRef() を
+//   比べ、違えば無条件にコマンドを出す。マスターの特例はどこにも無い)。KBS は当初これを
+//   「マスターのときだけ」に絞って書いたが、ユーザー指摘で公式どおり無条件へ直した経緯がある。
+//
+// ★★呼んだ「後」に座標を読むこと(SnapTracker.cpp:234-235 "Re-calculate the starting point")。
+//   下の KESCMScrollDocToPage は幾何を読む前にここを通す。overset の「+」点だけは例外で、
+//   スキャン時に ::InnerToPasteboardMatrix で確定した**ビュー非依存**の座標なので切替後も有効
+//   (再スキャンせずに使ってよいのはそのため)。
+//
+// コマンドは kSetSpreadCmdBoss + ILayoutCmdData(SnapTracker.cpp:390-413 が完全な実例)。
+// ★KESCM は KBS と違い「その文書の全レイアウトビュー」を対象にする(Split Window・複数窓でも
+//   スクロール先が揃うように。既存の KESCMScrollDocToPBPoint と同じ範囲)。
+// 取れないビューは黙って飛ばす=そのビューは従来どおりスクロールだけになり、悪化はしない。
+//----------------------------------------------------------------------------------------
+static void KESCMEnsureSpreadInView(IDataBase* db, UID pageUID)
+{
+	if (db == nil || pageUID == kInvalidUID)
+		return;
+
+	InterfacePtr<IHierarchy> pageHier(db, pageUID, UseDefaultIID());
+	if (pageHier == nil)
+		return;
+	const UID spreadUID = pageHier->GetSpreadUID();
+	if (spreadUID == kInvalidUID)
+		return;
+
+	K2Vector<IControlView*> views;
+	Utils<ILayoutViewUtils>()->GetAllLayoutViews(views, nil, db);
+	for (int32 i = 0; i < (int32)views.size(); ++i)
+	{
+		if (views[i] == nil)
+			continue;
+		InterfacePtr<ILayoutControlData> layout(views[i], UseDefaultIID());
+		if (layout == nil)
+			continue;
+		if (layout->GetSpreadRef().GetUID() == spreadUID)
+			continue;	// もう映している=通常のケース。いちばん安い出口
+
+		// コマンドはビューを名指しするので、その「ビュー自身の文書」を渡す(KBS/SnapTracker と同じ)。
+		IDocument* const viewDoc = layout->GetDocument();
+		if (viewDoc == nil)
+			continue;
+		// UID は出どころの db の外では意味を持たない。同じはずだが確かめてから渡す。
+		if (::GetDataBase(viewDoc) != db)
+			continue;
+
+		InterfacePtr<ICommand> setSpreadCmd(CmdUtils::CreateCommand(kSetSpreadCmdBoss));
+		if (setSpreadCmd == nil)
+			continue;
+		InterfacePtr<ILayoutCmdData> cmdData(setSpreadCmd, UseDefaultIID());
+		if (cmdData == nil)
+			continue;
+		cmdData->Set(::GetUIDRef(viewDoc), layout);
+		setSpreadCmd->SetItemList(UIDList(db, spreadUID));
+		if (CmdUtils::ProcessCommand(setSpreadCmd) != kSuccess)
+			ErrorUtils::PMSetGlobalErrorCode(kSuccess);	// スクロールは続行。後続コマンドを巻き添えにしない
+	}
+}
+
+//----------------------------------------------------------------------------------------
 // 文書 db の全レイアウトビューを、pbPoint(ペーストボード座標)が画面中央に来るようスクロールする。
 //   applyZoom > 0 のときは、センタリングの前に各ビューの実効ズームを applyZoom に合わせる
 //   (Source を Target の拡大率に合わせる用。ズームは UI のズーム欄と同じ公式コマンド
@@ -225,6 +302,12 @@ static bool16 KESCMScrollDocToPage(IDataBase* db, UID pageUID, PMReal applyZoom 
 {
 	if (db == nil || pageUID == kInvalidUID)
 		return kFalse;
+
+	// ★先にスプレッドを出す。マスタースプレッド上のページは、これが無いとスクロールでは届かない
+	//   (上の KESCMEnsureSpreadInView の説明を参照)。★幾何を読むのはこの後(切替前の座標は当てにしない
+	//   ＝SnapTracker.cpp:234-235 と同じ順序)。
+	KESCMEnsureSpreadInView(db, pageUID);
+
 	InterfacePtr<IGeometry> pageGeo(db, pageUID, UseDefaultIID());
 	if (pageGeo == nil)
 		return kFalse;
@@ -454,6 +537,11 @@ static void KESCMGoto(int32 dir)
 	// overset は「+」点へ(KBS 流)、変更はページ中心へスクロール。
 	// ★基準ストップ(sNav*)の更新はスクロール成功後(2026-07-25 監査で移動): 失敗時に基準だけ先へ進むと、
 	//   位置表示「k/N」が古いまま・次回の巡回起点も移動済み、という不整合が残るため。
+	// ★overset 経路は pb 点へ直接スクロールするので、ここでスプレッドを出しておく(ページ中心経路は
+	//   KESCMScrollDocToPage の中で同じことをしている)。これが無いとマスタースプレッド上の
+	//   あふれに飛べない=空のペーストボードに着地する(2026-08-06 ユーザー指摘。KBS と同じ手当て)。
+	if (stop.isOverset)
+		KESCMEnsureSpreadInView(navDB, stop.pageUID);
 	const bool16 ok = stop.isOverset ? KESCMScrollDocToPBPoint(navDB, stop.pb)
 	                                 : KESCMScrollDocToPage(navDB, stop.pageUID);
 	if (!ok)

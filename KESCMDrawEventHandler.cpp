@@ -58,7 +58,6 @@
 #include "KESCMPageCheck.h"          // KESCMPageCheckIsChecked/KESCMPageCheckHasAny(「KESCM: Check」の✓)
 #include "KESCMPageNumberMarker.h"   // KESCMGetIgnorePageNumberMarker/KESCMAppendPageNumberMarkerRects(ノンブル除外)
 #include "KESCMScrollMap.h"          // KESCMScrollMapNoticeDrawEvent(手動 Hide/Show Spread の検出)
-#include "KESCMPeek.h"               // KESCMTrackerRequestHudRedraw(押下中 HUD の描き直し要求)
 #include "KESCMDrawEventHandler.h"
 
 CREATE_PMINTERFACE(KESCMDrawEventHandler, kKESCMDrawEventHandlerImpl)
@@ -276,12 +275,23 @@ ErrorCode KESCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef
 	if (snapTH == nil)
 		return kFailure;
 	// アンチエイリアスを OFF にしてラスタ化する(第4引数 enableAntiAliasing=kFalse)。エッジの中間調(灰にじみ)を
-	//   無くし、画素内で収まる微小ズレ由来の帯状ノイズが差分として拾われるのを抑える。fullRes / greek は既定維持。
+	//   無くし、画素内で収まる微小ズレ由来の帯状ノイズが差分として拾われるのを抑える。
 	//   ※ target / source は必ず同じ AA 設定でラスタ化すること(片方だけだと全エッジが差分になる)。
+	// ★第2引数 fullResolutionGraphics=kFalse(既定)は**意図的**: kTrue にすると配置画像のフル解像度生成を
+	//   誘発し、それが文書を dirty にする(KESCMColorSampler.cpp:92-93 に同じ理由を記載)。KESCM は
+	//   「モデルを一切書き換えない」のが設計の核なので、プロキシ描画のまま比較する。
+	// ★第3引数 greekBelowPtSize=0.0(=greek 無効)は**意図的**(2026-08-06 の監査 E-1 で既定 7.0 から変更)。
+	//   既定のままだと小さい文字が「灰色の帯」として描かれて字形を持たず、target/source とも同条件に
+	//   なるため「小さい文字は変わっても差分が出ない」取りこぼしが起きうる(SnapshotUtilsEx.h:224-225。
+	//   しきい値は "point size multiplied by the scaling" だが、その scaling が何を指すかはヘッダーに
+	//   書かれておらず、7pt 未満が全滅するのか 3.5pt 未満だけなのかは決着しない)。KESCM の目的は
+	//   画素比較なので、字形を必ず描かせる 0.0 を渡す(代償=小さい文字が多いページのラスタ化がやや遅くなる)。
+	//   ⚠公式サンプル(snapshot/SnapTracker.cpp:318)は既定のままだが、あちらの目的は「見た目のスナップ
+	//   ショット」で前提が違う。★target/source は必ず同じ値で(片方だけ greek すると全文字が差分になる)。
 	ErrorCode drewTH;
 	{
 		KESCMRasterizingGuard rg;	// この Draw 中に再入する HandleDrawEvent はマークを描かない(自己参照防止)
-		drewTH = snapTH->Draw(IShape::kPreviewMode, kFalse, 7.0, kFalse);
+		drewTH = snapTH->Draw(IShape::kPreviewMode, kFalse, 0.0, kFalse);
 	}
 	AGMImageAccessor* accTH = (drewTH == kSuccess) ? snapTH->CreateAGMImageAccessor() : nil;
 
@@ -295,7 +305,7 @@ ErrorCode KESCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef
 	ErrorCode drewSH;
 	{
 		KESCMRasterizingGuard rg;
-		drewSH = snapSH->Draw(IShape::kPreviewMode, kFalse, 7.0, kFalse);	// 同上: AA OFF(両者同条件)
+		drewSH = snapSH->Draw(IShape::kPreviewMode, kFalse, 0.0, kFalse);	// 同上: greek 無効・AA OFF(両者同条件)
 	}
 	AGMImageAccessor* accSH = (drewSH == kSuccess) ? snapSH->CreateAGMImageAccessor() : nil;
 
@@ -345,19 +355,25 @@ ErrorCode KESCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef
 				std::vector<Int32Rect> excludeRects;
 				if (KESCMGetIgnorePageNumberMarker())
 				{
-					std::vector<PMRect> markerRects;
-					KESCMAppendPageNumberMarkerRects(targetRef, markerRects);
-					KESCMAppendPageNumberMarkerRects(sourceRef, markerRects);
+					// ★比較のときは必ず実測し直す(refresh=kTrue)。同時にキャッシュも更新されるので、
+					//   除外領域の緑ベタ塗り(可視化)はこの比較で使ったのと同じ矩形を描くことになる
+					//   (2026-08-06 の監査 E-3。以前は描画側が毎回別に実測していた)。
+					const std::vector<PMRect>& tRects = KESCMGetPageNumberMarkerRects(targetRef, kTrue);
+					const std::vector<PMRect>& sRects = KESCMGetPageNumberMarkerRects(sourceRef, kTrue);
 					const PMReal pxScale = hiRes / PMReal(72.0);	// pt → 比較解像度のpx
-					for (size_t mi = 0; mi < markerRects.size(); ++mi)
+					for (int pass = 0; pass < 2; ++pass)		// 0=target / 1=source(同じ (x,y) 座標系へ積む)
 					{
-						const PMRect& mr = markerRects[mi];
-						Int32Rect epr;
-						epr.left   = ::ToInt32(::Round(mr.Left()   * pxScale));
-						epr.top    = ::ToInt32(::Round(mr.Top()    * pxScale));
-						epr.right  = ::ToInt32(::Round(mr.Right()  * pxScale));
-						epr.bottom = ::ToInt32(::Round(mr.Bottom() * pxScale));
-						excludeRects.push_back(epr);
+						const std::vector<PMRect>& mrs = (pass == 0) ? tRects : sRects;
+						for (size_t mi = 0; mi < mrs.size(); ++mi)
+						{
+							const PMRect& mr = mrs[mi];
+							Int32Rect epr;
+							epr.left   = ::ToInt32(::Round(mr.Left()   * pxScale));
+							epr.top    = ::ToInt32(::Round(mr.Top()    * pxScale));
+							epr.right  = ::ToInt32(::Round(mr.Right()  * pxScale));
+							epr.bottom = ::ToInt32(::Round(mr.Bottom() * pxScale));
+							excludeRects.push_back(epr);
+						}
 					}
 				}
 
@@ -938,8 +954,11 @@ static void KESCMDrawPageNumberMarkerFill(IGraphicsPort* gPort, IDataBase* db, U
 	if (db == nil || pageUID == kInvalidUID)
 		return;
 
-	std::vector<PMRect> markerRects;
-	KESCMAppendPageNumberMarkerRects(UIDRef(db, pageUID), markerRects);
+	// ★キャッシュ経由(refresh=kFalse。2026-08-06 の監査 E-3)。この関数は描画イベントのたびに
+	//   全ページぶん呼ばれる(スクロール中は連続)ので、実測は繰り返さない。比較時(MakeEntry)に入った
+	//   値があればそれを描く=「この比較で除外した領域」。比較より後にトグルを ON にした場合だけ、
+	//   ここで1回だけ実測して覚える。
+	const std::vector<PMRect>& markerRects = KESCMGetPageNumberMarkerRects(UIDRef(db, pageUID), kFalse);
 	if (markerRects.empty())
 		return;
 
@@ -1148,13 +1167,6 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	// ので、スプレッド描画イベントに便乗して拾う(Undo/Redo による変化も同経路)。KESCMScrollMap.cpp。
 	if (!printing)
 		KESCMScrollMapNoticeDrawEvent();
-
-	// 押下中の HUD(トラッカーの sprite 層に描く1行)は、文書側のこの再描画で消される。描き直しを
-	// 予約しておく(押していない/HUD OFF/予約済みなら即座に戻る軽い呼び出し)。★実画面のビュー描画の
-	// ときだけ: サムネイル生成(GetView()==nil)や印刷の描画で予約しても意味がない。
-	// ここで直接描かずタイマー経由にしているのは、この描画イベントの最中に sprite を描かせないため。
-	if (!printing && ded->gd->GetView() != nil)
-		KESCMTrackerRequestHudRedraw();
 
 	// ★サムネイル実験(2026-07-06): Pagesパネルのサムネイル生成(view無し・kPreviewMode・非印刷。診断ログ
 	// flags=0x1800=kPreviewMode|kDrawFrameEdge)を検出。sThumbExperiment ON の間は、サムネイルにも枠を
@@ -1408,10 +1420,11 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	// ズレているページにだけ、「隠す前の元の番号」をページ下端中央へ描く(画面=WYSIWYG、印刷/PDF にも出る)。
 	// マーク(sEntries)とは独立=この db がマーク対象かは問わない(隠しが無ければ元番号と現在番号が一致して
 	// 何も描かない)。GetPageString の最終引数 bIncludePagesOfHiddenSpread が kTrue=隠しページも数える(元の番号)/
-	// kFalse=隠しページを飛ばす(現在マーカーが表示している番号)。書式はセクション込み・セクションの番号スタイル
+	// kFalse=隠しページを飛ばす(現在マーカーが表示している番号)。書式は★番号のみ(bIncludeSectionName=kFalse
+	// =セクションプレフィックス "A:" を付けない。ユーザー指定 2026-07-15)・セクションの番号スタイル
 	// (bUseIntegerStyle=kFalse)=実際のノンブルと同じ見た目。文字は framelabel 流(selectfont+show)。
 	// サイズはズーム非依存(fontSize=目標px/sxr。印刷時は sxr=1.0 固定=実寸 pt)。
-	// 見た目=トースト風: 白い四角の塗りの上に赤の疑似ボールド。バッジ全体の不透明度は 25%/75% 選択に連動。
+	// 見た目: 白フチ+黒文字(背景の白塗りは 2026-07-15 に廃止)。バッジ全体の不透明度は 25%/75% 選択に連動。
 	if (wantOldNums && sxr > 0)
 	{
 		InterfacePtr<IPageList> pageList(db, db->GetRootUID(), UseDefaultIID());
@@ -1495,7 +1508,7 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 				const UTF16TextChar* buf16 = orig.GrabUTF16Buffer(nil);
 
 				AutoGSave ag(gPort);
-				// バッジ(白フチ+青文字、背景なし)を透明グループで1つに束ね、グループの合成に
+				// バッジ(白フチ+黒文字、背景なし)を透明グループで1つに束ね、グループの合成に
 				// SelectedMarkOpacity(枠と同じ25%/75%連動、画面と印刷で同値)を1回だけ適用する。
 				// starttransparencygroup は開始時点の GState(=直前の setopacity)をグループ合成に引き継ぎ、
 				// グループ内の alpha は 1.0 にリセットされる(IGraphicsPort.h の仕様)。つまり中は全部不透明で
@@ -1536,7 +1549,11 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	if (wantSrcMarks && db == sSrcDB && db != sDB)
 	{
 		const int32 nps = spread->GetNumPages();
-		const bool16 fillExcluded = KESCMGetIgnorePageNumberMarker();	// ノンブル除外領域の緑ベタ塗り(除外トグルON時)
+		// ★緑ベタ塗りは「どこを比較から外しているか」を見せる**画面用の診断表示**なので、印刷/PDF には出さない
+		//   (!printing。2026-08-06 の監査 E-4)。リングのような校正マークと違い下のデザインを覆うため。
+		//   ⚠以前は Source 側だけが sPrintMarks を見ない経路(Source 枠は常に印刷に出す仕様)に乗っていたので、
+		//   「Print comparison marks」OFF でも Source の印刷に緑が乗っていた。Target/Source とも画面限定に揃える。
+		const bool16 fillExcluded = !printing && KESCMGetIgnorePageNumberMarker();	// ノンブル除外領域の緑ベタ塗り(除外トグルON・画面のみ)
 		for (int32 i = 0; i < nps; ++i)
 		{
 			const UID srcPageUID = spread->GetNthPageUID(i);
@@ -1595,7 +1612,11 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 
 	// このスプレッドの各ページについて、エントリがあれば描く(描画本体は KESCMDrawEntryOnPage に共通化)。
 	const int32 np = spread->GetNumPages();
-	const bool16 fillExcluded = KESCMGetIgnorePageNumberMarker();	// ノンブル除外領域の緑ベタ塗り(除外トグルON時)
+	// ★緑ベタ塗りは「どこを比較から外しているか」を見せる**画面用の診断表示**なので、印刷/PDF には出さない
+	//   (!printing。2026-08-06 の監査 E-4)。リングのような校正マークと違い下のデザインを覆うため。
+	//   ⚠以前は Source 側だけが sPrintMarks を見ない経路(Source 枠は常に印刷に出す仕様)に乗っていたので、
+	//   「Print comparison marks」OFF でも Source の印刷に緑が乗っていた。Target/Source とも画面限定に揃える。
+	const bool16 fillExcluded = !printing && KESCMGetIgnorePageNumberMarker();	// ノンブル除外領域の緑ベタ塗り(除外トグルON・画面のみ)
 	for (int32 i = 0; i < np; ++i)
 	{
 		const UID pageUID = spread->GetNthPageUID(i);
@@ -1647,7 +1668,10 @@ public:
 	virtual ServiceID GetServiceID() { return kDrawEventService; }
 	virtual bool16 IsDefaultServiceProvider() { return kFalse; }
 	virtual InstancePerX GetInstantiationPolicy() { return IK2ServiceProvider::kInstancePerSession; }
-	virtual void GetName(PMString* pName) { pName->SetKey("KESCMDrawEventSrvc\0"); }
+	// ★内部名(翻訳対象ではない)なので SetCString。製品 dynamicdocumentsui/motion/MotionPathDrawService.cpp:44
+	//   と同じ流儀。⚠サンプル basicdrwevthandler/BscDEHDrwEvtSrvc.cpp:131 は SetKey=2流儀(2026-08-06 に製品側へ)。
+	//   ⚠末尾の "\0" はそのサンプルの写しだったので落とした(C 文字列は終端で切れるので挙動は元から同じ)。
+	virtual void GetName(PMString* pName) { pName->SetCString("KESCMDrawEventSrvc"); }
 	virtual IPlugIn::ThreadingPolicy GetThreadingPolicy() const { return IPlugIn::kMainThreadOnly; }
 };
 

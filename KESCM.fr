@@ -273,19 +273,15 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 		{
 			IID_ITRACKER,      kKESCMTrackerImpl,
 			IID_IEVENTHANDLER, kKESCMTrackerEHImpl,
-			// ★押下中 HUD(レイアウトビュー左上に出す1行)の描画層。**この2行は必須**で、消すと HUD が
-			// 出なくなる(2026-07-26 に実験として入れ、同日 正式機能になった)。構成の手本は
-			// sdksamples/wavetool の kSawWaveTrackerBoss(あちらは2つとも API 既製の実装)。
-			//   IID_ISPRITE       = トラッキング中の画面更新機構。CreateSprite/Show/Erase/Hide/
-			//                       DestroySprite をトラッカーから呼ぶ。kKESCMSpriteImpl は
-			//                       NoHandleSprite(= kNoHandleSpriteImpl の実クラス)を継承した自前
-			//                       sprite で、CreateTrackerPaths に HUD の描画を載せている
-			//                       (KESCMTracker.cpp の KESCMSprite)。素の挙動に戻すなら
-			//                       kNoHandleSpriteImpl へ差し替える。
-			//   IID_IPATHGEOMETRY = sprite の**更新領域を宣言する**パスの置き場。★HUD ではここに置いた
-			//                       パス自体は描かない(描画は CreateTrackerPaths が自前で行う)。
-			//                       GetTrackerBounds がこの bbox を更新領域の元にするので必要。
-			IID_ISPRITE,       kKESCMSpriteImpl,
+			// トラッキング中の画面更新機構。手本は sdksamples/wavetool の kSawWaveTrackerBoss
+			// (WavTl.fr:151,155 / :193,197)＝**SDK のトラッカー boss はこの2つを必ず持つ**ので、
+			// KESCM も同じ形に揃えてある(2つとも API 既製の実装)。
+			// ★2026-08-06: 押下中 HUD を全廃したのに伴い、IID_ISPRITE の実装を自前の kKESCMSpriteImpl
+			//   (CreateTrackerPaths に HUD の描画を載せていた NoHandleSprite 派生)から、SDK 標準の
+			//   kNoHandleSpriteImpl へ戻した。KESCM のトラッカーは図形を作らないので sprite を自分から
+			//   使うことはもう無いが、公式の boss 構成から外れないようここは残す(誰も Query しなければ
+			//   実体は作られない=コストは無い)。
+			IID_ISPRITE,       kNoHandleSpriteImpl,
 			IID_IPATHGEOMETRY, kPathGeometryImpl,
 		}
 	},
@@ -460,14 +456,7 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKESCMScrollMapMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
-		// "Show HUD" on the panel flyout (popup) menu. Check-mark toggle (default ON): while ON, holding
-		// the tool's left button draws one line in the top-left corner of the layout view telling you the
-		// role of the window you are holding in ("Target" over the target, "Source" over the source,
-		// "Not in comparison" elsewhere, "Not comparing" when stopped). Spec: docs/ai-notes/kescm-tracker-hud.md.
-		kKESCMPopupHudActionID,
-		kKESCMPopupMenuPath,
-		kKESCMHudMenuItemPosition,
-		kSDKDefIsNotDynamicMenuFlag,
+		// ("Show HUD" was removed together with the on-press HUD itself on 2026-08-06.)
 
 		// "Ignore Page Number Marker" on the panel flyout (popup) menu. Check-mark toggle (default OFF,
 		// see sIgnorePageNumberMarker in KESCMPageNumberMarker.cpp): while ON, frames containing an
@@ -729,15 +718,6 @@ resource ActionDef (kSDKDefActionResourceID)
 		kKESCMActionComponentBoss,
 		kKESCMPopupScrollMapActionID,
 		kKESCMScrollMapMenuKey,
-		kOtherActionArea,
-		kNormalAction,
-		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates supplies the check mark (kSelectedAction)
-		kInvalidInterfaceID,
-		kSDKDefInvisibleInKBSCEditorFlag,
-
-		kKESCMActionComponentBoss,
-		kKESCMPopupHudActionID,
-		kKESCMHudMenuKey,
 		kOtherActionArea,
 		kNormalAction,
 		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates supplies the check mark (kSelectedAction)
@@ -1076,7 +1056,7 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 	kKESCMPanelWidgetID,			// WidgetID
 	kPMRsrcID_None,					// RsrcID
 	kBindNone,						// Binding
-	0, 0, 214, 153,					// Frame: left, top, right, bottom (ステータス欄を3→4行に拡張した分、下端を +17px。イラストも下端145へ下寄せ。ステータス欄を+12px広げた分、右端 192→204。さらに 2026-07-15 にメッセージ欄を+10px広げ 204→214)
+	0, 0, 224, 153,					// Frame: left, top, right, bottom (ステータス欄を3→4行に拡張した分、下端を +17px。イラストも下端145へ下寄せ。ステータス欄を+12px広げた分、右端 192→204。2026-07-15 にメッセージ欄を+10px広げ 204→214。2026-08-06 にさらに+10px広げ 214→224=中の widget も全部 +10px 追随させてある)
 	kTrue, kTrue,					// Visible, Enabled
 	kFalse,							// Erase background
 	kInterfacePaletteFill,			// Erase to color
@@ -1089,7 +1069,7 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 			kKESCMTargetTextWidgetID,
 			kSysStaticTextPMRsrcId,
 			kBindLeft | kBindRight | kBindTop,
-			Frame(8, 8, 206, 24)		// 右端 196→206(パネル+10px 拡張, 2026-07-15)
+			Frame(8, 8, 216, 24)		// 右端 206→216(パネル+10px 拡張, 2026-08-06)
 			kTrue, kTrue,
 			kAlignLeft, kEllipsizeEnd, kTrue,
 			kKESCMTargetLabelKey,
@@ -1100,7 +1080,7 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 			kKESCMSourceTextWidgetID,
 			kSysStaticTextPMRsrcId,
 			kBindLeft | kBindRight | kBindTop,
-			Frame(8, 26, 206, 42)		// 右端 196→206(パネル+10px 拡張, 2026-07-15)
+			Frame(8, 26, 216, 42)		// 右端 206→216(パネル+10px 拡張, 2026-08-06)
 			kTrue, kTrue,
 			kAlignLeft, kEllipsizeEnd, kTrue,
 			kKESCMSourceLabelKey,
@@ -1123,7 +1103,7 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 			kKESCMPrevChangeButtonWidgetID,
 			kSysButtonPMRsrcId,
 			kBindLeft | kBindTop,
-			Frame(23, 48, 81, 70)		// 幅58維持。クラスタは中央寄せのまま Prev/Next 間を +8px 広げた(左右マージン27→23px対称, 2026-07-25)
+			Frame(28, 48, 86, 70)		// 幅58維持。パネル+10px(2026-08-06)に合わせクラスタごと +5px 右へ=左右マージン28pxで対称のまま
 			kTrue, kTrue,
 			kKESCMPrevChangeKey,
 		),
@@ -1134,7 +1114,7 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 			kKESCMNavPosTextWidgetID,
 			kSysStaticTextPMRsrcId,
 			kBindLeft | kBindTop,
-			Frame(81, 51, 133, 70)		// Prev(〜81)と Next(133〜)の間(幅44→52=隙間を少し広げた, 2026-07-25)。縦位置合わせで top を +3px
+			Frame(86, 51, 138, 70)		// Prev(〜86)と Next(138〜)の間(幅52)。縦位置合わせで top を +3px。クラスタごと +5px 右へ(2026-08-06)
 			kTrue, kTrue,
 			kAlignCenter, kEllipsizeEnd, kTrue,
 			"",							// 初期テキストは空(実行時に位置を設定)
@@ -1145,7 +1125,7 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 			kKESCMNextChangeButtonWidgetID,
 			kSysButtonPMRsrcId,
 			kBindLeft | kBindTop,
-			Frame(133, 48, 191, 70)		// 幅58維持・右マージン23pxで Prev と対称(クラスタ中央寄せ, 2026-07-25)
+			Frame(138, 48, 196, 70)		// 幅58維持・右マージン28pxで Prev と対称(クラスタ中央寄せ。パネル+10px で +5px 右へ, 2026-08-06)
 			kTrue, kTrue,
 			kKESCMNextChangeKey,
 		),
@@ -1157,7 +1137,7 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 			kKESCMIconOffWidgetID,
 			kKESCMIconOffResID, kKESCMPluginID,
 			kBindTop,
-			Frame(174, 113, 206, 145)	// 32×32・右寄せ。ステータス欄(4行・下端145)に合わせて下寄せ(top113/bottom145、パネル下端153まで8pxマージン)。ステータス欄+12px広げた分、右へ152→164。パネル+10px 拡張で 164→174(2026-07-15)。ON側と同座標
+			Frame(184, 113, 216, 145)	// 32×32・右寄せ。ステータス欄(4行・下端145)に合わせて下寄せ(top113/bottom145、パネル下端153まで8pxマージン)。ステータス欄+12px広げた分、右へ152→164。パネル+10px 拡張で 164→174(2026-07-15)→184(2026-08-06)。ON側と同座標
 			kTrue, kTrue,
 			kADBEIconSuiteButtonType,
 		),
@@ -1166,7 +1146,7 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 			kKESCMIconOnWidgetID,
 			kKESCMIconOnResID, kKESCMPluginID,
 			kBindTop,
-			Frame(174, 113, 206, 145)	// 32×32・右寄せ。ステータス欄(4行・下端145)に合わせて下寄せ(top113/bottom145、パネル下端153まで8pxマージン)。ステータス欄+12px広げた分、右へ152→164。パネル+10px 拡張で 164→174(2026-07-15)。OFF側と同座標
+			Frame(184, 113, 216, 145)	// 32×32・右寄せ。ステータス欄(4行・下端145)に合わせて下寄せ(top113/bottom145、パネル下端153まで8pxマージン)。ステータス欄+12px広げた分、右へ152→164。パネル+10px 拡張で 164→174(2026-07-15)→184(2026-08-06)。OFF側と同座標
 			kFalse, kTrue,
 			kADBEIconSuiteButtonType,
 		),
@@ -1177,7 +1157,7 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 			kKESCMStatusTextWidgetID,
 			kPMRsrcID_None,
 			kBindLeft | kBindRight | kBindTop,
-			Frame(8, 76, 170, 145)		// 右170まで=イラスト(174-206)と横並び(4px間隔)。下端を 128→145 に拡張(3→4行)。メッセージ部分を+12px広げるためパネル全体も192→204に拡張(2026-07-14)。さらに+10px拡張で右 160→170・パネル204→214(2026-07-15)
+			Frame(8, 76, 180, 145)		// 右180まで=イラスト(184-216)と横並び(4px間隔)。下端を 128→145 に拡張(3→4行)。メッセージ部分を+12px広げるためパネル全体も192→204に拡張(2026-07-14)。+10px拡張で右 160→170・パネル204→214(2026-07-15)。さらに+10pxで右 170→180・パネル214→224(2026-08-06)
 			kTrue, kTrue,
 			kAlignLeft, kDontEllipsize, kTrue,
 			kInvalidWidgetID,

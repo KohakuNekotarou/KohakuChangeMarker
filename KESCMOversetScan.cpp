@@ -92,6 +92,44 @@ static bool16 KESCMLastPlacedOutport(ITextModel* textModel, IDataBase* db, TextI
 
 
 //========================================================================================
+// このスレッドは「実際にどこかへ組まれている」か＝フレーム UID を持つパーセルを1つでも持つか。
+//
+// ★★これが「このセルが溢れた」と「このセルは組まれる機会が無かった」を見分ける。
+//   GetIsOverset は**両方に yes と答える**: 自分の文字が下端を越えたセルと、表ごとフレームの外へ
+//   押し出されて何ひとつ組まれなかったセル。後者は独立した報告ではない——**フレームの方が報告**であり、
+//   公式プリフライトもそう言う(KBS が 2026-08-05 に実測: 押し出された表を含む文書で InDesign は
+//   「Text Frame / Overset text」を2件出し、その中の10セルには一言も触れなかったのに、ガードの無い
+//   スキャンは12件報告した。全記録 docs/ai-notes/kbs-overset-scan.md §6.5.5)。
+//   見分けはパーセルにある: 溢れたセルは先頭の数行がページに出ている=フレーム UID を持つパーセルが
+//   ある。押し出されたセルはどのパーセルも kInvalidUID を返す。
+//
+// ★下の KESCMLastPlacedOutport と同じ walk だが、あちらは「+」を描く位置(幾何)まで作り、こちらは
+//   「在ったか」だけを聞く。呼び手が欲しいものが違うので分けてある(KBS が ThreadHasPlacedParcel を
+//   KBSOversetLocator と別に持つのと同じ理由)。
+// 末尾から遡るのは、あふれたスレッドは末尾側に未配置パーセルが並ぶため=失敗する経路では探している
+// 配置済みパーセルが末尾に近く、成功する経路では最初の一歩で答えが出る。
+//========================================================================================
+static bool16 KESCMThreadHasPlacedParcel(ITextModel* textModel, TextIndex pos)
+{
+	if (textModel == nil)
+		return kFalse;
+	InterfacePtr<ITextParcelList> tpl(textModel->QueryTextParcelList(pos));
+	if (tpl == nil)
+		return kFalse;
+	InterfacePtr<IParcelList> pl(tpl, UseDefaultIID());
+	if (pl == nil)
+		return kFalse;
+
+	for (ParcelKey k = pl->GetLastParcelKey(); k.IsValid(); k = pl->GetPreviousParcelKey(k))
+	{
+		if (pl->GetParcelFrameUID(k) != kInvalidUID)
+			return kTrue;
+	}
+	return kFalse;
+}
+
+
+//========================================================================================
 // あふれているスレッドの「+」の位置を求める。まず pos 自身のスレッドを見て、配置済みが無ければ(=セルが
 // 行ごとフレーム外へ押し出された等)テーブルアンカーを親スレッドへ登り、最初に配置済みフレームを持つ祖先
 // の「+」を採る(KBSFindOversetLocator 相当)。非進行/深ネストは guard で止める。
@@ -211,6 +249,15 @@ static void KESCMCollectOversetCells(IDataBase* db, const UIDRef& storyRef, ITex
 			if (span <= 0)
 				continue;								// 空セルはあふれない
 			if (!KESCMThreadIsOverset(textModel, cellPos))
+				continue;
+			// ★★このセルは「溢れた」のか「組まれる機会が無かった」のか(上の KESCMThreadHasPlacedParcel)。
+			//   表がフレームごと押し出されると中の全セルが GetIsOverset に yes と答えるので、ガードが
+			//   無いと 4行×2列の表で 8 個の「あふれ」を報告してしまう。しかも下の
+			//   KESCMFindOversetOutport が祖先へ登るため、**位置は 8 個とも親フレームの同じ「+」点**＝
+			//   Prev/Next の巡回では同じ場所に 8 回止まる(枝番だけが増える)。フレーム自体のあふれは
+			//   上の (1) プライマリスレッド走査が既に拾っているので、失うものは無い。
+			//   ★KBS が 2026-08-05 に「本命」として直した穴と同じもの(2026-08-06 にユーザー指示で移植)。
+			if (!KESCMThreadHasPlacedParcel(textModel, cellPos))
 				continue;
 			UID frameUID = kInvalidUID; PBPMPoint pb;
 			if (!KESCMFindOversetOutport(textModel, db, cellPos, frameUID, pb))

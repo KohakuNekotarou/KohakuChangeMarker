@@ -5,9 +5,15 @@
 //  KohakuExtendScriptChangeMarker (KESCM)
 //
 //  実行時の日本語切替。jaJP 文字列テーブルは 2026-08-05 に撤去(ユーザー方針・KBS と同時):
-//  全ロケールが enUS テーブルを読み、日本語を話す3箇所(How to Use / About / Hide Unchanged の
-//  確認)だけをここで UI 言語判定して差し替える。判定は featureset ではなく UI 言語
-//  (PMLocaleId は2軸を別々に持つ)なので、Roman エンジン+日本語 UI の環境でも日本語が出る。
+//  全ロケールが enUS テーブルを読み、日本語を話す箇所だけをここで UI 言語判定して差し替える。
+//  判定は featureset ではなく UI 言語(PMLocaleId は2軸を別々に持つ)なので、Roman エンジン+日本語 UI の
+//  環境でも日本語が出る。
+//
+//  ★★2026-08-06 に対象を **2箇所** へ絞った(ユーザー指示):
+//    ・How to Use...          … 初めて使う人への操作説明。KBS も「使い方の案内だけは日本語」という
+//                               同じ線引きにしている(パネル/メニュー/ステータス行は英語のまま)
+//    ・Hide Unchanged の確認   … 文書を変更する前の確認アラート。意味を取り違えると実害が出る
+//  ⚠**About は英語のみ**(同日に「名前＋版数」の1行だけになったので、訳し分ける中身が無い)。
 //
 //  ***** このファイルは UTF-8 (BOM 付き) ***** — u"..." リテラルを日本語のまま読めるようにするため。
 //  (BOM 無しだと MSVC が CP932 として誤読する。)
@@ -54,7 +60,8 @@ namespace KESCMLoc
 	}
 }
 
-// 旧 KESCM_jaJP.fr が持っていた日本語(3つだけ)。対のキーは KESCMID.h と enUS テーブルに健在。
+// 旧 KESCM_jaJP.fr が持っていた日本語(★2026-08-06 に About を外して2つ)。対のキーは KESCMID.h と
+// enUS テーブルに健在。
 namespace KESCMJa
 {
 	// ----- How to Use... (操作リファレンス。旧パネル説明文) -----
@@ -98,16 +105,8 @@ namespace KESCMJa
 		u"PDFにしたい場合は、プリントでプリンターの選択でPDFを選んでください。\n\n"
 		u"【注意】どのような問題が起こっても責任を取れません。ご利用は自己責任でお願いします。";
 
-	// ----- About ボックス -----
-	const char16_t kAboutBox[] =
-		u"" kKESCMDisplayName u"、version " kKESCMVersion u"\n\n"
-		u"Adobe InDesign C++ SDK プラグイン。\n"
-		u"二つのドキュメントをページ単位でオフスクリーンにレンダリングしてピクセル比較し、"
-		u"変化した箇所を画面上に赤い枠で重ねて表示します。表示は非永続なので、"
-		u"ドキュメントには残りません。\n\n"
-		u"本プラグインは KohakuNekotarou が、Anthropic の AI Claude（Claude Code）と協働して"
-		u"設計・実装しました。\n\n"
-		u"ソース: " kKESCMRepoURL;
+	// (About の日本語は 2026-08-06 に廃止＝英語の1行「<名前> version x.y.z」だけになったので、
+	//  訳し分ける中身が無い。呼び出し側 DoAbout も文字列キーを直接 CAlert へ渡す形に戻してある。)
 
 	// ----- Hide Unchanged Spreads の確認(文書に変更を加えるため) -----
 	const char16_t kHideConfirm[] = u"この機能はファイルに変更を加えます。構いませんか?";

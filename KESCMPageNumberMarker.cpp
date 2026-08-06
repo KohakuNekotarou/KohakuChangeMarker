@@ -63,6 +63,9 @@
 #include "IPageList.h"			// 実ページ番号の文字列(GetPageString)
 #include "CTextEnum.h"			// Text::GlyphID
 
+#include <map>					// 除外矩形キャッシュ((db,page) → 矩形列)
+#include <utility>				// std::pair(同キー)
+
 #include "KESCMPageNumberMarker.h"
 
 // 既定=kFalse(通常はノンブルの違いも変更として検出する。無視したい時だけフライアウトでON)。
@@ -77,6 +80,10 @@ bool16 KESCMGetIgnorePageNumberMarker()
 void KESCMSetIgnorePageNumberMarker(bool16 on)
 {
 	sIgnorePageNumberMarker = on;
+	// ★切り替えのたびに除外矩形キャッシュを捨てる(2026-08-06 の監査 E-3)。キャッシュは比較時の値を
+	//   持ち続けるので、ノンブルフレームを動かした後に測り直させる手段がユーザー側に要る。トグルの
+	//   OFF→ON がその逃げ道になる(再比較でも当然更新される)。
+	KESCMInvalidatePageNumberMarkerRects();
 }
 
 // [start, start+span) の範囲に自動ページ番号(ノンブル)マーカーがあるか。
@@ -174,12 +181,24 @@ static PMRect KESCMRealNumberInkInSpread(ITextModel* masterTextModel, TextIndex 
 	InterfacePtr<IWaxStrand> waxStrand((IWaxStrand*)masterTextModel->QueryStrand(kFrameListBoss, IID_IWAXSTRAND));
 	if (waxStrand == nil)
 		return result;
-	K2::scoped_ptr<IWaxIterator> waxIter(waxStrand->NewWaxIterator());
+	// ★読み取り専用イテレータ: この walk は wax を変えず Apply もしない(ベースライン・フォント・
+	// 変換を借りるだけ)。IWaxStrand.h:100-106 が「wax を変えず Apply もしないコード(描画等)向け」と
+	// して用意しているのがこちらで、製品コードもこれを使う(spellpanel/PrivateSpellingUtils.cpp:371,579)。
+	// ⚠サンプル(SnpEstimateTextDepth.cpp:208)は通常版=2流儀。製品側に揃える(KBSGlyphScanEngine.cpp:312 も同じ)。
+	K2::scoped_ptr<const IWaxIterator> waxIter(waxStrand->NewReadOnlyWaxIterator());
 	if (waxIter == nil)
 		return result;
-	IWaxLine* line = waxIter->GetFirstWaxLine(start);
+	const IWaxLine* line = waxIter->GetFirstWaxLine(start);
 	if (line == nil)
 		return result;	// 未組版/オーバーセット → フレーム矩形のみ
+	// ★composer が捨てた line を strand がまだ渡してくることがある。触る前に弾く
+	// (製品 PrivateSpellingUtils.cpp:387-389。コメントに bug fix 538392 と明記のある実バグ由来のガード)。
+	// ここは下の通り意図的にリコンポーズしないので、公式より踏みやすい立場にいる。
+	// ⚠併記されている IsDamaged の方は入れない: あちらは「どうせ描き直される」描画側の判断で、
+	//   この用途(ベースライン/フォント/変換を借りるだけ)は damaged でも成立する。弾くとフレーム矩形
+	//   だけに縮む=除外領域が痩せて誤検知が増える方向になる。
+	if (line->IsDestroyed())
+		return result;
 
 	const PMMatrix lineToSpread = line->GetToSpreadMatrix();
 
@@ -215,9 +234,17 @@ static PMRect KESCMRealNumberInkInSpread(ITextModel* masterTextModel, TextIndex 
 	if (pageList == nil)
 		return result;
 	PMString numStr;
-	// KESCMDrawEventHandler の「現在番号(cur)」と同じ呼び方: セクション込み・番号スタイルそのまま・
-	// 隠しスプレッドを飛ばした表示番号(最終引数 kFalse)。
-	pageList->GetPageString(pageUID, &numStr, kTrue, kFalse, kDefaultPageType, kTrue, kFalse);
+	// KESCMDrawEventHandler の「現在番号(cur)」と同じ呼び方(IPageList.h:141-146):
+	//   第3 bIncludeSectionName=kFalse … ★番号のみ(2026-08-06 の監査で kTrue から修正。バッジ側
+	//     KESCMDrawEventHandler.cpp の「現在番号(cur)」も元から kFalse)。kTrue が返すのは "A:12" 形式で、
+	//     これは Pages パネル等の表記であってページに描かれるノンブルの見た目ではない。
+	//     ⚠セクションの「ページ番号にプレフィックスを含める」が ON なら実際にも前置きは付くが、
+	//       その場合でも区切りの ":" は入らないので kTrue でも一致しない。★この実装は全グリフを
+	//       先頭位置に重ねて Y 方向の bbox を union するだけなので、余計な文字が混じって効くのは
+	//       縦方向だけ。それでも「実際に描かれる字だけを測る」kFalse の方が確かに近い。
+	//   第4 bUseIntegerStyle=kFalse … セクションの番号スタイルそのまま(ローマ数字等も実際の見た目どおり)
+	//   第7 bIncludePagesOfHiddenSpread=kFalse … 隠しスプレッドを飛ばした表示番号(=画面に出ている番号)
+	pageList->GetPageString(pageUID, &numStr, kFalse, kFalse, kDefaultPageType, kTrue, kFalse);
 	const int32 nch = numStr.NumUTF16TextChars();
 	if (nch <= 0)
 		return result;
@@ -374,4 +401,44 @@ void KESCMAppendPageNumberMarkerRects(const UIDRef& pageRef, std::vector<PMRect>
 			outRects.push_back(r);
 		}
 	}
+}
+
+
+//========================================================================================
+// 除外矩形のキャッシュ(KESCMPageNumberMarker.h で宣言。2026-08-06 の監査 E-3)
+//   上の実測はページ1枚につき「全アイテム列挙＋各テキストフレームの全文字走査＋マスターページ
+//   アイテム収集＋wax 走査＋グリフ bbox」を回す。これを描画イベントのたびに全ページぶんやっていた
+//   (緑ベタ塗りの可視化)ので、結果を (db, ページUID) で覚えて引くだけにする。
+//   ★db ポインタは照合専用で deref しない。閉じた db のエントリは Invalidate で捨てる。
+//========================================================================================
+typedef std::pair<IDataBase*, UID>              KESCMMarkerRectKey;
+typedef std::map<KESCMMarkerRectKey, std::vector<PMRect> > KESCMMarkerRectMap;
+static KESCMMarkerRectMap sMarkerRectCache;
+
+const std::vector<PMRect>& KESCMGetPageNumberMarkerRects(const UIDRef& pageRef, bool16 refresh)
+{
+	// 引数不正のときに返す不変の空(キャッシュには入れない=無効なキーを覚えない)。
+	static const std::vector<PMRect> kNoRects;
+
+	IDataBase* const db      = pageRef.GetDataBase();
+	const UID        pageUID = pageRef.GetUID();
+	if (db == nil || pageUID == kInvalidUID)
+		return kNoRects;
+
+	const KESCMMarkerRectKey key(db, pageUID);
+	KESCMMarkerRectMap::iterator it = sMarkerRectCache.find(key);
+	if (it != sMarkerRectCache.end() && !refresh)
+		return it->second;	// 覚えている値をそのまま返す(★矩形ゼロも覚える=最も重い空振りを消せる)
+
+	std::vector<PMRect> rects;
+	KESCMAppendPageNumberMarkerRects(pageRef, rects);
+	if (it == sMarkerRectCache.end())
+		it = sMarkerRectCache.insert(std::make_pair(key, std::vector<PMRect>())).first;
+	it->second.swap(rects);	// コピーせず中身を入れ替える(古い値はローカル側と一緒に破棄)
+	return it->second;
+}
+
+void KESCMInvalidatePageNumberMarkerRects()
+{
+	sMarkerRectCache.clear();
 }

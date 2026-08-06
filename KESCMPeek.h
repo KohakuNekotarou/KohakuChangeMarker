@@ -48,24 +48,9 @@ void KESCMInvalidateSyncCaches();
 void KESCMTrackerRevealBegin(bool16 shiftDown, bool16 altDown, bool16 cmdDown, bool16 macCtrlDown = kFalse);
 void KESCMTrackerRevealEnd();
 
-// HUD(押下中にレイアウトビュー左上へ1行出す)の後始末。プラグイン終了時(KESCMPeekStartup::Shutdown)
-// から呼ぶ保険 — ICallbackTimer のコールバックは参照カウントされない生関数ポインタなので、予約を
-// 残したまま .pln が降りるとクラッシュする。フォント参照もここで返す。実体は KESCMTracker.cpp。
-void KESCMTrackerShutdownHud();
-
-// HUD の ON/OFF(パネルのフライアウト「Show HUD」。★既定 ON。KESCMPanelState で保存/復元)。
-// 実体は KESCMTracker.cpp の sHudOn。
-bool16 KESCMGetHudEnabled();
-void   KESCMSetHudEnabled(bool16 on);
-
-// 押下中の HUD を「次のアイドルで一度だけ描き直す」よう要求する(2026-07-26)。
-// ★文書側が再描画されると sprite の絵は消える。押下中に描き直す機会は「押下直後の one-shot」と
-//   「マウスが動いたとき(ContinueTracking)」しかないので、押したまま動かさないと HUD が出ないまま、
-//   スクロール/ズームでは取り残される。これを防ぐため、描画イベント
-//   (KESCMDrawEventHandler::HandleDrawEvent)から毎回呼ぶ。
-// 押していない/HUD が OFF/すでに予約済み なら即 return するので、無条件に呼んでよい。
-// 描画イベントの最中に sprite を描かせないため、要求はタイマー経由。実体は KESCMTracker.cpp。
-void KESCMTrackerRequestHudRedraw();
+// (★押下中 HUD の入口4本 — KESCMTrackerShutdownHud / KESCMGetHudEnabled / KESCMSetHudEnabled /
+//  KESCMTrackerRequestHudRedraw — は 2026-08-06 に機能ごと全廃した。ユーザー指示で
+//  「レイアウトビュー左上に Target/Source の1行を出す」機能そのものを無くしたため。)
 
 // 修飾キー→ジェスチャの分類。★割当の定義はこの1本だけ(2026-07-15 に3箇所の独立判定を統合):
 // KESCMTracker.cpp の BeginTracking(CMYK を先に発動させるかの判定)・RevealBegin の分岐・

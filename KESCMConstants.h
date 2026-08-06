@@ -132,7 +132,7 @@ static const int32 kKESCMCursorSettleMillis = 0;
 // 「隠す前の元の番号」をページ下端中央へ描く(印刷マークONなら印刷/PDF にも出る)。
 // ★サイズはドキュメント拡大率50%相当で固定(ズーム/印刷に依存せず、ページに対して一定の大きさ。
 //   ユーザー指定 2026-07-15)。★セクションプレフィックスは付けない=番号のみ。★背景の白塗りは無し。
-// 見た目: 白フチ+青文字(背景なし)。バッジ全体の不透明度はパネルの「Marks opacity 25% / 75%」選択に
+// 見た目: 白フチ+黒文字(背景なし。下の kKESCMOldNumR/G/B が正)。バッジ全体の不透明度はパネルの「Marks opacity 25% / 75%」選択に
 // 連動(枠と同じ SelectedMarkOpacity() を使う=画面と印刷で一致)。
 static const PMReal kKESCMOldNumFontPx    = 42.0;	// 文字サイズの基準(px)。実サイズは /kKESCMOldNumFixedZoom
 static const PMReal kKESCMOldNumMarginPx  = 6.0;	// ページ下端から文字下端までの余白の基準(同上)
@@ -143,36 +143,9 @@ static const PMReal kKESCMOldNumR = 0.0, kKESCMOldNumG = 0.0, kKESCMOldNumB = 0.
 static const PMReal kKESCMOldNumHaloEm = 0.06;	// 白フチの太さ(em比)
 static const PMReal kKESCMOldNumPadEm  = 0.20;	// 透明グループ bbox の余白(em比。白フチのはみ出しを含む)
 
-// ★★押下直後に HUD を「画面が落ち着くまで」時間差で追いかける回数と間隔。**既定 0 = 無効**
-//   (2026-07-30 に実機で確定。下の kKESCMHudFirstDrawDelayMillis だけで足りたため)。
-//   ─ 背景(この一連の仕掛けが在る理由) ─────────────────────────────────────
-//   非アクティブな文書窓を押すと、押下でその窓がアクティブになり、**窓のアクティブ化に伴う画面復元**が
-//   HUD の sprite の絵を消す。しかもその復元は settled キャッシュからの貼り直しで済むため
-//   **スプレッド描画イベント(kEndSpreadMessage)を発火しない**＝描画イベントに便乗して描き直す
-//   KESCMTrackerRequestHudRedraw が一度も呼ばれない(実測の診断値 req0 で確定。既にアクティブな窓では
-//   復元そのものが起きないので元から正常だった)。つまり「消えたこと」を知る手段が無い。
-//   ★当初はここで時間差の追いかけ(50ms×6)を回して復活させたが、それでは「一瞬消えてまた出る」点滅に
-//     なる。**復元より後に初めて描く**方が正解で、追いかけは要らなくなったので 0 にした。
-//   ★残してある理由: 復元が初回描画の待ちより遅い環境では HUD が出ないままになり得るので、そのときは
-//     ここを 1 以上にすれば時間差の追いかけが復活する(手法はパネル半透明の遅延再適用
-//     kKESCMPanelAlphaReapplyTries と同じ＝実証済み。回数で必ず止まるので暴走しない)。
-//   ※押下中のスクロール/ズームへの追従はこの追いかけではなく描画イベント経由が担うので、0 でも失われない。
-static const int32  kKESCMHudSettleTries        = 0;
-static const uint32 kKESCMHudSettleDelayMillis  = 50;	// 追いかけを有効化したときの間隔(50ms × N 回)
-
-// ★★押下から HUD を「最初に」描くまでの待ち(ms)。2026-07-30 に 1ms から変更(実機で解決を確認)。
-//   1ms(=事実上すぐ)だと、非アクティブ窓を押した場合に**アクティブ化の画面復元より先に描いてしまう**
-//   ため、描いた直後に復元で消される。復元は描画イベントを発火しないので「消えた」ことも検知できない
-//   (上の kKESCMHudSettleTries の背景を参照)。∴ **復元が終わってから描く**のが唯一の解。
-//   ★実測の経緯: 1ms → 80ms(まだ「毎回ではないが点滅」) → 150ms。
-//   ★★点滅が完全に止まったのは、あわせて **ContinueTracking 側の「まだ出していなければ動いていなくても
-//     描く」条件に sHudRedrawPending のガードを足したとき**(KESCMTracker.cpp)。あの条件が初回の待ちを
-//     打ち消して即座に描いてしまい、それが復元で消される→待ち明けに描き直す=点滅の主因だった
-//     (実測 sh2 = ContinueTracking 1 回 + タイマー 1 回)。**この2つは対で意味を持つ**ので、
-//     どちらかだけ戻すと点滅が再発する。
-//   ★人間が「押した瞬間に出た」と感じる範囲(おおむね 100〜150ms)に収めること。既にアクティブな窓を
-//     押した場合もこのぶん遅れるが、体感は変わらない代わりに挙動が1本化される(窓の状態で分岐しない)。
-static const uint32 kKESCMHudFirstDrawDelayMillis = 150;
+// (★押下中 HUD の3定数 — kKESCMHudSettleTries / kKESCMHudSettleDelayMillis /
+//  kKESCMHudFirstDrawDelayMillis — は 2026-08-06 に機能ごと全廃した。点滅対策の実測の経緯は
+//  git 履歴と docs/ai-notes/kescm-tracker-hud.md に残してある。)
 
 // パネル半透明トグル(フライアウト「Translucent Panel」)の alpha 値(0=完全透明 255=不透明)。
 // ★77 ≒ 30%(ユーザー指定 2026-07-29。当初 128≒50% から変更)。カーソルを乗せれば不透明に戻る

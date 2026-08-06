@@ -36,7 +36,7 @@
 #define kKESCMDisplayName	"Kohaku Change Marker"			// 表示名(About メニュー項目・About ボックス本文・パネル/ツール名)。KBS の "Kohaku Search Panel" に合わせ、単語間をスペースで区切る(2026-07-25)。
 #define kKESCMFileName		"KohakuChangeMarker"			// 出力ファイル名の基底(.rc の OriginalFilename)。vcxproj の TargetName と一致させること。表示名と違いスペースは入れない。
 #define kKESCMPrefixNumber	0x205515 		// Unique prefix number for this plug-in(*Must* be obtained from Adobe Developer Support).
-#define kKESCMVersion		"1.2.0"						// Version of this plug-in。About ボックス本文・.rc の FileVersion・PluginVersion リソースの3か所に出る。1.0.1 → 1.1.0(2026-07-25) → 1.1.1(2026-07-26) → 1.2.0(2026-07-30)。★Adobe Exchange に出ているのは 1.1.0 まで。1.1.1 以降の未提出分(押下中 HUD／変更割合表示／進捗バー＋キャンセル／パネル半透明トグル)をまとめて 1.2.0 とする(新機能を含むので minor を上げた)。
+#define kKESCMVersion		"1.2.1"						// Version of this plug-in。About ボックス本文・.rc の FileVersion・PluginVersion リソースの3か所に出る。1.0.1 → 1.1.0(2026-07-25) → 1.1.1(2026-07-26) → 1.2.0(2026-07-30) → 1.2.1(2026-08-06)。★Adobe Exchange の公開版は 1.2.0。1.2.1 の増分＝押下中 HUD の全廃／About を「名前 版数」1行に(英語のみ)／★日本語で出すのは How to Use と Hide Unchanged の確認アラートの2箇所だけに整理(メニュー・パネル・ステータス行は従来どおり全ロケール英語)／パネル幅 +10px／Hide Unchanged を Start 中のみ有効に／ジャンプ前にスプレッド切替(マスターページへ飛べるように)／Find Overset で押し出された表のセルを報告しない／描画エンジン監査の反映(greek 無効・除外領域の緑は画面限定・除外矩形のキャッシュ化)。機能追加は無く既存の整理と修正だけなので patch を上げた。
 // (kKESCMAuthor はテンプレート残骸(どこからも未参照)のため削除 2026-07-25)
 
 // Plug-in Prefix: (please change kKESCMPrefixNumber above to modify the prefix.)
@@ -126,7 +126,9 @@ DECLARE_PMID(kImplementationIDSpace, kKESCMTrackerRegisterImpl, kKESCMPrefix + 1
 DECLARE_PMID(kImplementationIDSpace, kKESCMTrackerEHImpl, kKESCMPrefix + 16)	// IEventHandler 実装(CTrackerEventHandler派生; 押下中のボタン解放を EndTracking へ転送。KESCMTracker.cpp)
 DECLARE_PMID(kImplementationIDSpace, kKESCMCursorProviderImpl, kKESCMPrefix + 17)	// ICursorProvider 実装(CToolCursorProvider派生; ツール選択中は常時✓カーソル。KESCMCursorProvider.cpp)
 // (+6..+17 are all declared above - stale placeholders for them removed 2026-08-05 audit)
-DECLARE_PMID(kImplementationIDSpace, kKESCMSpriteImpl, kKESCMPrefix + 18)	// ISprite 実装(NoHandleSprite 派生)。トラッカーの描画層＝押下中 HUD をここで描く。実体 KESCMTracker.cpp の KESCMSprite
+// (+18 = kKESCMSpriteImpl は 2026-08-06 に押下中 HUD ごと撤去。★**この番号は再利用しない**。
+//  トラッカー boss の IID_ISPRITE は SDK 標準実装 kNoHandleSpriteImpl に戻してある=公式サンプル
+//  wavetool の boss 構成(WavTl.fr:151,155)と同じ形)
 DECLARE_PMID(kImplementationIDSpace, kKESCMDocsClosedObserverImpl, kKESCMPrefix + 19)	// IObserver 実装(一括クローズ完了で、保留した後片付けを1回だけ流す。KESCMPeek.cpp)
 DECLARE_PMID(kImplementationIDSpace, kKESCMPanelVisibilityObserverImpl, kKESCMPrefix + 20)	// IObserver 実装(パネルの表示状態が変わったら半透明を貼り直す。KESCMPanelAlpha.cpp)
 DECLARE_PMID(kImplementationIDSpace, kKESCMPanelRollOverImpl, kKESCMPrefix + 21)	// IMouseRollOver 実装(パネルにカーソルが乗っている間だけ半透明を解除。KESCMPanelAlpha.cpp)
@@ -174,7 +176,9 @@ DECLARE_PMID(kActionIDSpace, kKESCMPopupFindOversetActionID, kKESCMPrefix + 31)	
 DECLARE_PMID(kActionIDSpace, kKESCMPopupRefreshOversetActionID, kKESCMPrefix + 32)	// パネルのフライアウトの「Refresh Overset」(実行アクション)。Find Overset が ON のときだけ有効(OFF時は灰色)=アクティブ文書を再走査して十字を貼り直す。kCustomEnabling
 DECLARE_PMID(kActionIDSpace, kKESCMPopupOversetSepActionID, kKESCMPrefix + 33)	// フライアウト: Find Overset 群の上の区切り線(MenuDef のパス末尾 ":-"。ActionDef 不要・DoAction 不要=一意なIDだけ要る)
 DECLARE_PMID(kActionIDSpace, kKESCMPopupExportChangedPagesActionID, kKESCMPrefix + 34)	// パネルのフライアウトの「Export Changed Pages...」(実行アクション)。比較中(sDB≠nil)のみ有効=現在の比較の変更ページ一覧をTSV(新/旧/種別)で保存。実体 KESCMChangedPagesTSV.cpp
-DECLARE_PMID(kActionIDSpace, kKESCMPopupHudActionID, kKESCMPrefix + 35)	// パネルのフライアウトの「Show HUD」チェック式トグル(ON=ツール左hold中にレイアウトビュー左上へ比較相手を1行表示。★既定ON。実体 KESCMTracker.cpp の sHudOn。仕様 docs/ai-notes/kescm-tracker-hud.md)
+// (+35 = kKESCMPopupHudActionID「Show HUD」は 2026-08-06 に機能ごと撤去。★**この番号は再利用しない**
+//  ＝ショートカット割当は .indk に ActionID の数値で保存されるので、別機能に振り直すと古い割当が
+//  その機能を叩いてしまう)
 DECLARE_PMID(kActionIDSpace, kKESCMPopupTranslucentPanelActionID, kKESCMPrefix + 36)	// パネルのフライアウトの「Translucent Panel」チェック式トグル(ON=フローティング中のこのパネルを半透明にする。★Windows 専用・★ドッキング中は選べるが効かない(フラグだけ立ちフローティングに戻すと効く)。既定 OFF。実体 KESCMPanelAlpha.cpp)
 // (+15..+23 are all declared above - stale placeholders for them removed 2026-08-05 audit. Next free: +37)
 //DECLARE_PMID(kActionIDSpace, kKESCMActionID, kKESCMPrefix + 37)
@@ -291,7 +295,6 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMToolWidgetID, kKESCMPrefix + 41)	// ツール
 #define kKESCMIgnorePageNumMenuKey	kKESCMStringPrefix "kKESCMIgnorePageNumMenuKey"	// パネルのフライアウト「Ignore Page Number Marker」トグルのメニュー名
 #define kKESCMHoldToHideMarksMenuKey	kKESCMStringPrefix "kKESCMHoldToHideMarksMenuKey"	// パネルのフライアウト「Hold to Hide Marks」トグルのメニュー名
 #define kKESCMScrollMapMenuKey		kKESCMStringPrefix "kKESCMScrollMapMenuKey"	// パネルのフライアウト「Show Scrollbar Map」トグルのメニュー名
-#define kKESCMHudMenuKey			kKESCMStringPrefix "kKESCMHudMenuKey"	// パネルのフライアウト「Show HUD」トグルのメニュー名
 #define kKESCMSavePanelStateMenuKey	kKESCMStringPrefix "kKESCMSavePanelStateMenuKey"	// パネルのフライアウト「Save Panel Settings」項目のメニュー名
 #define kKESCMSaveChecksMenuKey		kKESCMStringPrefix "kKESCMSaveChecksMenuKey"	// パネルのフライアウト「Save Check & Register」項目のメニュー名
 #define kKESCMLoadChecksMenuKey		kKESCMStringPrefix "kKESCMLoadChecksMenuKey"	// パネルのフライアウト「Load Check & Register」項目のメニュー名
@@ -374,7 +377,7 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMToolWidgetID, kKESCMPrefix + 41)	// ツール
 // Menu item positions (flyout order, 2026-07-24 に大幅入れ替え):
 //   Start/Stop(9.0) → ─線Sep1(9.1) →
 //   [表示系トグル群] Hold to Hide Marks(9.20) → Ignore Page Number Marker(9.22) → Marks opacity ▸(9.24) →
-//     Print comparison marks(9.26) → Show HUD(9.27) → Show Original Page Numbers(9.28) →
+//     Print comparison marks(9.26) → Show Original Page Numbers(9.28) →
 //     Show Marks on Source(9.30) → Show Scrollbar Map(9.32) → Sync Layout Views(9.34) →
 //     Translucent Panel(9.36) →
 //   ─線OversetSep(9.40) → Find Overset(9.42) → Refresh Overset(9.44) →
@@ -392,7 +395,7 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMToolWidgetID, kKESCMPrefix + 41)	// ツール
 #define kKESCMPrintMarksMenuItemPosition	9.26	// チェック式トグル「Print comparison marks」。Marks opacity の下へ入れ替え(2026-07-24)
 #define kKESCMOpacity25SubMenuItemPosition	1.0	// サブメニュー「Marks opacity」内: 25%(選択中に✓)
 #define kKESCMOpacity75SubMenuItemPosition	2.0	// サブメニュー「Marks opacity」内: 75%(25% と相互排他)
-#define kKESCMHudMenuItemPosition			9.27	// チェック式トグル「Show HUD」(★Show Original Page Numbers の上=Show 系トグル群の先頭。2026-07-26 ユーザー指定で 9.36 から移動)
+// (9.27 = 「Show HUD」は 2026-08-06 に機能ごと撤去。位置番号は空き=別項目に使ってよい)
 #define kKESCMShowOldNumsMenuItemPosition	9.28	// チェック式トグル「Show Original Page Numbers」
 #define kKESCMShowSrcMarksMenuItemPosition	9.30	// チェック式トグル「Show Marks on Source」
 #define kKESCMScrollMapMenuItemPosition		9.32	// チェック式トグル「Show Scrollbar Map」

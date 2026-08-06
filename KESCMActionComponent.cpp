@@ -37,7 +37,7 @@
 
 // プロジェクト内:
 #include "KESCMID.h"
-#include "KESCMLoc.h"		// 実行時の日本語切替(jaJP テーブルは 2026-08-05 撤去)
+#include "KESCMLoc.h"		// 実行時の日本語切替(How to Use と Hide Unchanged の確認の2箇所だけ)
 #include "KESCMCore.h"		// KESCMOpenAboutURL
 #include "KESCMDrawEventHandler.h"	// sEntries/sDB/sShowOldNumbers(Hide Unchanged と旧番号バッジの状態参照)
 #include "KESCMPageMap.h"	// KESCMPageMapToggleSelectedPages / KESCMPageMapUpdateToggleState(追加/削除ページ登録トグル)
@@ -248,18 +248,8 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 			break;
 		}
 
-		// 「Show HUD」トグル: ツール左hold中にレイアウトビュー左上へ「比較の相手」を1行出すか(既定 ON)。
-		// フラグ反転のみ=次の押下から効く(押している最中に切り替わることはない)。表示内容と仕様は
-		// docs/ai-notes/kescm-tracker-hud.md、実体は KESCMTracker.cpp の sHudOn。
-		case kKESCMPopupHudActionID:
-		{
-			const bool16 on = !KESCMGetHudEnabled();
-			KESCMSetHudEnabled(on);
-			PMString msg(on ? "HUD: on." : "HUD: off.");
-			msg.SetTranslatable(kFalse);
-			KESCMSetStatus(msg);
-			break;
-		}
+		// (★「Show HUD」トグルは 2026-08-06 に機能ごと全廃した。ユーザー指示で「押下中にレイアウト
+		//  ビュー左上へ Target/Source の1行を出す」機能そのものを無くしたため。)
 
 		// 「Translucent Panel」トグル: このパネル自身を半透明(alpha は kKESCMPanelAlphaValue=77 ≒ 30%。
 		// 2026-07-29 に 128 から変更)にするか
@@ -458,9 +448,18 @@ void KESCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionSta
 		}
 		else if (action == kKESCMPopupHideUnchangedActionID)
 		{
-			int16 actionState = kEnabledAction;
-			if (sHideUnchangedOn)
-				actionState |= kSelectedAction;
+			// ★Start 中(arm 済み)でなければ灰色にする(2026-08-06 ユーザー指定)。この機能は比較マーク
+			//   (sEntries)を根拠に「変更のないスプレッド」を選ぶので、Start していなければ何も選べない
+			//   (DoHideUnchangedToggle 側も同じ理由で先頭にガードがある)。他の実行アクションと同じ
+			//   kDisabled_Unselected を使う(Refresh Overset / Export Changed Pages と揃えた)。
+			// ★「ON のまま灰色になって戻せない」状態は作れない: Stop(KESCMDoClearMarks)が必ず
+			//   KESCMResetHideUnchanged(kTrue) を呼び、隠したスプレッドを戻してトグルを OFF にする
+			//   (KESCMCore.cpp:566)。再比較・文書クローズも同じ(KESCMCore.cpp:312 / KESCMPeek.cpp:2267)。
+			int16 actionState;
+			if (!KESCMIsArmed())
+				actionState = kDisabled_Unselected;
+			else
+				actionState = sHideUnchangedOn ? (kEnabledAction | kSelectedAction) : kEnabledAction;
 			listToUpdate->SetNthActionState(i, actionState);
 		}
 		else if (action == kKESCMPopupShowOldNumsActionID)
@@ -481,13 +480,6 @@ void KESCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionSta
 		{
 			int16 actionState = kEnabledAction;
 			if (KESCMGetScrollMapEnabled())
-				actionState |= kSelectedAction;	// ON(既定)ならチェックマーク
-			listToUpdate->SetNthActionState(i, actionState);
-		}
-		else if (action == kKESCMPopupHudActionID)
-		{
-			int16 actionState = kEnabledAction;
-			if (KESCMGetHudEnabled())
 				actionState |= kSelectedAction;	// ON(既定)ならチェックマーク
 			listToUpdate->SetNthActionState(i, actionState);
 		}
@@ -564,8 +556,9 @@ void KESCMActionComponent::DoAbout()
 {
 	CAlert::ModalAlert
 	(
-		// 完成済みテキスト(キーではない): 日本語 UI なら日本語、他は enUS テーブルの英語。
-		KESCMLoc::Text(kKESCMAboutBoxStringKey, KESCMJa::kAboutBox),
+		// 文字列キーを渡す(CAlert が翻訳する)。★2026-08-06 に UI を英語のみへ戻したので、
+		// 実行時の日本語切替(旧 KESCMLoc.h)は撤去した。中身は enUS テーブルの1行=「名前, version x.y.z」。
+		PMString(kKESCMAboutBoxStringKey),
 		kOKString,					// OK button
 		kNullString,				// No second button
 		kNullString,				// No third button
@@ -582,7 +575,9 @@ void KESCMActionComponent::DoUsage()
 {
 	CAlert::ModalAlert
 	(
-		// 完成済みテキスト。操作リファレンス(旧パネル説明文)の日本語は KESCMLoc.h に移った。
+		// 完成済みテキスト(キーではない): 日本語 UI なら日本語、他は enUS テーブルの英語。
+		// ★使い方の案内は日本語 UI では日本語で出す(2026-08-06 ユーザー指示)。初めて使う人への説明なので、
+		//   メニュー/パネル/ステータス行を英語で統一する方針の例外にする(KBS と同じ線引き)。
 		KESCMLoc::Text(kKESCMHintKey, KESCMJa::kHint),
 		kOKString,					// OK button
 		kNullString,				// No second button
@@ -741,6 +736,8 @@ void KESCMActionComponent::DoHideUnchangedToggle()
 	const int16 clicked = CAlert::ModalAlert
 	(
 		// "This feature modifies the document file. Continue?" / 日本語 UI では日本語(KESCMLoc)。
+		// ★文書を変更する前の確認なので、意味を取り違えられないよう日本語 UI では日本語で出す
+		//   (2026-08-06 ユーザー指示)。
 		KESCMLoc::Text(kKESCMHideConfirmKey, KESCMJa::kHideConfirm),
 		kYesString,
 		kNoString,

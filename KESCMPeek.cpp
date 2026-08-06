@@ -77,6 +77,7 @@
 #include "KESCMCore.h"               // arm/disarm/状態 宣言
 #include "KESCMPageMap.h"            // KESCMBuildPairing(同期の除外対応表キャッシュ)/KESCMPageMapHasAnyRegistered/KESCMPageMapSweepClosedDocs
 #include "KESCMPageCheck.h"          // KESCMPageCheckClearAllDocs / KESCMPageCheckSweepClosedDocs(✓の後片付け)
+#include "KESCMPageNumberMarker.h"   // KESCMInvalidatePageNumberMarkerRects(ノンブル除外矩形キャッシュの破棄)
 #include "KESCMThumbnailRefresh.h"   // クローズ後、生存側の Pages パネルサムネイルから枠を消す
 #include "KESCMScrollMap.h"          // スプレッド再比較後にスクロールバー地図を最新化
 #include "KESCMChangeNav.h"          // KESCMRefreshNavPosition(スプレッド再比較後に Prev/Next 位置を最新化)
@@ -1982,8 +1983,6 @@ void KESCMPeekStartup::Shutdown()
 	KESCMShutdownThumbIdleTask();
 	// 一括クローズの保留も捨てる(終了後に流れることは無いが、状態を残さない)。
 	sDeferredCloseUiPending = kFalse;
-	// HUD(sprite)の one-shot タイマーとフォント参照も確実に返す(生関数ポインタを残さない)。
-	KESCMTrackerShutdownHud();
 	// パネル半透明の遅延再適用タイマーも同様に止める(同じく生関数ポインタを残さないため)。
 	KESCMShutdownPanelAlpha();
 	// 保持していたマーク/旧版画像バッファを解放(終了時もきれいに片付ける)。
@@ -2001,6 +2000,7 @@ void KESCMPeekStartup::Shutdown()
 	KESCMPageCheckClearAllDocs();			// 「KESCM: Check」の✓
 	KESCMResetHideUnchanged(kFalse);		// Hide Unchanged の控え(kFalse=文書には一切触らない)
 	KESCMInvalidateSyncCaches();			// 同期のページ矩形表・対応表・前回状態(2026-07-25 追補)
+	KESCMInvalidatePageNumberMarkerRects();	// ノンブル除外矩形のキャッシュ(2026-08-06 の監査 E-3)
 	// ★peek の arm 状態もここで落とす。残したままだと、終了処理後に kAfterCloseDoc responder が
 	// 発火した場合、KESCMHandleDocsClosed が stale な sPeek* から comparisonDocClosed=true を
 	// 再計算し得る(通常の終了順=文書クローズ→Shutdown では起きないはずだが防御的にリセット。
@@ -2125,6 +2125,9 @@ void KESCMHandleDocsClosed()
 	// 文書が閉じた=ページ構成も db ポインタも当てにならないので、同期キャッシュは無条件に捨てる
 	// (2026-07-25 追補。コンテナを空にするだけ=deref しないので終了処理中でも安全)。
 	KESCMInvalidateSyncCaches();
+	// ノンブル除外矩形のキャッシュも同じ理由で捨てる(キーに db ポインタを含むので、閉じた文書の
+	// エントリを残さない。2026-08-06 の監査 E-3)。生存側の分は次の描画で1回測り直すだけ。
+	KESCMInvalidatePageNumberMarkerRects();
 
 	// ★終了堅牢化(2026-07-15): アプリが終了処理中(kQuitting/kShuttingDown)にこのレスポンダへ来たら、
 	// UI 仕事(strip の widget 除去・InvalidateViews・サムネイル idle 予約・パネル/ステータス更新)を
