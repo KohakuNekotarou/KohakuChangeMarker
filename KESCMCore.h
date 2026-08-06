@@ -43,15 +43,18 @@ bool16		KESCMQueryMouseContentPoint(IControlView* view, PMReal& outX, PMReal& ou
 // InterfacePtr 等による Release が必要)。見つからなければ nil。
 IControlView*	KESCMQueryViewUnderMouse();
 
-// view がどの文書のレイアウトビューかをポインタ照合で特定する(見つからなければ nil)。
-// GetAllLayoutViews が返す IControlView* は同一ビューなら同一ポインタ(実測前提)。同期オブザーバの
-// 通知元ビューの所属文書判定と、色サンプラの窓同一性ガードが共有する。実体は KESCMCore.cpp
+// view がどの文書のレイアウトビューかを特定する(見つからなければ nil)。同期オブザーバの通知元ビューの
+// 所属文書判定と、色サンプラの窓同一性ガードが共有する。実体は KESCMCore.cpp
 // (2026-07-25 に KESCMPeek.cpp の file-static から移動)。
+// ★2026-08-06 の API 監査(A-1)で公式ルートへ変更: レイアウトビュー boss の ILayoutControlData に
+//   GetDocument() を聞く(ILayoutControlData.h:181。手本=CPathCreationTracker.cpp:277-285)。
+//   引けなかった場合だけ、従来の「全文書 × GetAllLayoutViews のポインタ照合」へ落ちる。
 IDataBase*	KESCMFindDocDbForView(IControlView* view);
 
-// 上の関数が持つ「直前にヒットした文書」ヒントを捨てる(2026-07-25 追補)。ヒントは答えを決めるものでは
-// なく「どの db から照合を試すか」だけなので正しさには影響しないが、文書クローズ・arm 切替・
-// 同期 OFF の直後は外れが確定しているので捨てておく。実体は KESCMCore.cpp。
+// 上の関数のフォールバック経路が持つ「直前にヒットした文書」ヒントを捨てる(2026-07-25 追補)。ヒントは
+// 答えを決めるものではなく「どの db から照合を試すか」だけなので正しさには影響しないが、文書クローズ・
+// arm 切替・同期 OFF の直後は外れが確定しているので捨てておく。実体は KESCMCore.cpp。
+// (★公式ルートが効いている限りフォールバックは走らないので、この呼び出しは実質 no-op になる)
 void		KESCMForgetViewDbHint();
 
 // アクティブ(前面)文書とその db(無ければ nil)。ActiveContext 経由の解決を1箇所に集約

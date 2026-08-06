@@ -25,6 +25,7 @@
 #include "IDocumentPresentation.h"
 #include "ILayoutViewUtils.h"		// GetAllLayoutViews(Split Window両ペインのIControlView*取得)
 #include "ILayoutUIUtils.h"			// MakeZoomCmd(kZoomToCmdBoss。ビューポート同期のズーム)
+#include "IPasteboardUtils.h"		// QuerySpread/QueryNearestSpread(ビュー中心のページ特定=公式ルート)
 #include "CmdUtils.h"				// ProcessCommand(ズームコマンド実行)
 #include "ICommand.h"
 
@@ -443,6 +444,9 @@ bool16 KESCMRefreshComparisonForSelectedPages(int32* outPages, int32* outChanged
 // コンテキストメニューは無効項目を出さないため、Source 側の右クリックでは項目自体が消える想定)。
 // 選択の有無までは見ない(ページ右クリックは通常そのページを選択済みで、未選択でも DoAction 側が
 // 安全に no-op しステータス行へ "no comparable pages" を出す)。
+// ★実行側(KESCMRefreshComparisonForSelectedPages)は KESCMPageMapReadSelection の db で判定するが、
+//   そちらも内部で同じ Utils<ILayoutUIUtils>()->GetFrontDocument() を使っている(KESCMPageMap.cpp:84)
+//   ので、両者の「対象文書」は必ず一致する。違いは「選択の有無を見るか」だけ(2026-08-06 の監査で確認)。
 bool16 KESCMRefreshComparisonAvailable()
 {
 	if (!KESCMIsArmed())
@@ -747,6 +751,36 @@ static void KESCMEnsureSyncPairing(IDataBase* targetDB, IDataBase* sourceDB)
 }
 
 //----------------------------------------------------------------------------------------
+// ★ビュー中心にあるページを SDK に聞く(2026-08-06 の API 監査 A-2 の公式ルート)。
+//   ①ビューと点からスプレッドを引く = IPasteboardUtils::QuerySpread(view, pt)(IPasteboardUtils.h:83。
+//     どのスプレッドにも入っていない点では nil を返すので、:106 の QueryNearestSpread へ落とす)
+//   ②そのスプレッド内の最寄りページを聞く = ISpread::QueryNearestPage(pt, &index)(ISpread.h:195)
+//   手本=CPathCreationTracker.cpp:278(QuerySpread(fControlView, fFirstPoint))。
+//   ★これで「全ページの矩形を自前で実測して内包判定＋最近傍を探す」仕事が SDK 側に移る。
+//   見つからなければ kInvalidUID(呼び出し側が従来の自前探索へ落ちる)。
+//----------------------------------------------------------------------------------------
+static UID KESCMQueryViewCenterPage(IControlView* srcView, const PBPMPoint& center)
+{
+	if (srcView == nil)
+		return kInvalidUID;
+
+	InterfacePtr<ISpread> hitSpread(Utils<IPasteboardUtils>()->QuerySpread(srcView, center));
+	ISpread* rawNear = (hitSpread == nil)
+		? Utils<IPasteboardUtils>()->QueryNearestSpread(srcView, center)	// ペーストボードの何もない所
+		: nil;
+	InterfacePtr<ISpread> nearSpread(rawNear);
+	ISpread* spread = (hitSpread != nil) ? (ISpread*)hitSpread : (ISpread*)nearSpread;
+	if (spread == nil)
+		return kInvalidUID;
+
+	int32 pageIndex = -1;
+	InterfacePtr<IGeometry> pageGeo(spread->QueryNearestPage(center, &pageIndex));
+	if (pageGeo == nil || pageIndex < 0 || pageIndex >= spread->GetNumPages())
+		return kInvalidUID;
+	return spread->GetNthPageUID(pageIndex);
+}
+
+//----------------------------------------------------------------------------------------
 // 旧 Alt+ミドル/自動同期の追加/削除補正: 手本(srcDocDb)のビュー中心にあるページを、比較ペアリング
 // (KESCMMapTargetToSource / KESCMMapSourceToTarget=登録ページを除外して残りを順番対応させるので、
 // ページの追加/削除で番号がズレていても「本来の相手」を返す)で相手ページへ写像し、ページ中心からの
@@ -758,7 +792,7 @@ static void KESCMEnsureSyncPairing(IDataBase* targetDB, IDataBase* sourceDB)
 //   補正できないが skip でもない場合(未 arm / arm ペア以外の第3文書 / 中心がページ外 / 幾何取得失敗)は
 //   srcCenter をそのまま返す=従来の生同期にフォールバックする(outSkip=kFalse)。
 //----------------------------------------------------------------------------------------
-static PBPMPoint KESCMCorrectedCenterForDoc(IDataBase* srcDocDb, IDataBase* dstDb,
+static PBPMPoint KESCMCorrectedCenterForDoc(IControlView* srcView, IDataBase* srcDocDb, IDataBase* dstDb,
                                             const PBPMPoint& srcCenter, bool16& outSkip)
 {
 	outSkip = kFalse;
@@ -772,17 +806,28 @@ static PBPMPoint KESCMCorrectedCenterForDoc(IDataBase* srcDocDb, IDataBase* dstD
 	if (!t2s && !s2t)
 		return srcCenter;
 
-	// 手本ページ(srcDocDb 側でビュー中心にあるページ)。
-	const UID srcPage = KESCMFindPageAtPasteboard(srcDocDb, srcCenter);
-	if (srcPage == kInvalidUID)
-		return srcCenter;	// 中心がページ外(ページ間の隙間等): 生同期
-
-	// 相手ページを引く。Added/Removed(登録)・overflow は相手なし → このページでは同期しない(skip)。
-	// ★対応表はキャッシュから引く(2026-07-25 追補)。挙動は KESCMMapTargetToSource/SourceToTarget と同一で、
-	//   「対応表に無い=相手なし」を skip として扱う点も変わらない。
+	// 相手ページを引くための対応表を先に用意する。Added/Removed(登録)・overflow は相手なし →
+	// そのページでは同期しない(skip)。★対応表はキャッシュから引く(2026-07-25 追補)。挙動は
+	// KESCMMapTargetToSource/SourceToTarget と同一で、「対応表に無い=相手なし」を skip として扱う点も同じ。
 	KESCMEnsureSyncPairing(sPeekTargetDB, sPeekSourceDB);
 	const std::map<UID, UID>& pairTable = t2s ? sSyncPairT2S : sSyncPairS2T;
-	std::map<UID, UID>::const_iterator pairIt = pairTable.find(srcPage);
+
+	// 手本ページ(srcDocDb 側でビュー中心にあるページ)。
+	// ★まず公式ルート(KESCMQueryViewCenterPage)に聞く(2026-08-06 の監査 A-2)。
+	// ★公式ルートは「文書のどのページか」を広く答えるので、マスタースプレッドや隠しスプレッドの
+	//   ページも返し得る。同期が対応させたいのは通常スプレッドのページ(=KESCMCollectPageUIDs の
+	//   平坦列)だけなので、対応表に載っていない答えだったときは従来の自前探索へ落として挙動を保つ。
+	//   (Added/Removed 登録ページも「対応表に無い」ので自前探索へ落ちるが、そちらも同じページを
+	//    返すので結果は変わらない=下の skip 判定に進むだけ。稀なケースで探索が2回になるだけの実害)
+	UID srcPage = KESCMQueryViewCenterPage(srcView, srcCenter);
+	std::map<UID, UID>::const_iterator pairIt = pairTable.find(srcPage);	// kInvalidUID なら end
+	if (pairIt == pairTable.end())
+	{
+		srcPage = KESCMFindPageAtPasteboard(srcDocDb, srcCenter);
+		if (srcPage == kInvalidUID)
+			return srcCenter;	// 文書にページが1枚も無い等: 生同期
+		pairIt = pairTable.find(srcPage);
+	}
 	if (pairIt == pairTable.end() || pairIt->second == kInvalidUID)
 	{
 		outSkip = kTrue;	// ★相手なし(Added 等): 追従側は動かさない
@@ -807,7 +852,10 @@ static PBPMPoint KESCMCorrectedCenterForDoc(IDataBase* srcDocDb, IDataBase* dstD
 // 相手ページ同士がきっちり並ぶ)。ペア外は関数内で生同期にフォールバック。
 // (★2026-07-15: 旧「左ダブルクリック=arm 不問・全文書同期」用の limitToArmedPair=kFalse 分岐は、
 //  ジェスチャ自体の全廃で呼び出しゼロになっていたため削除。同期は常に Start 中の Target↔Source 限定。)
-static void KESCMSyncOtherDocViewportsTo(IPanorama* srcPano, IDataBase* srcDocDb, bool16 applyPageOffset = kFalse)
+// ★srcView は手本(操作した)ビュー。ページ対応の補正で「ビュー中心にあるページ」を SDK に聞くために
+//   使う(公式ルート=KESCMQueryViewCenterPage。2026-08-06 の監査 A-2)。nil でも動く(自前探索へ落ちる)。
+static void KESCMSyncOtherDocViewportsTo(IControlView* srcView, IPanorama* srcPano, IDataBase* srcDocDb,
+                                         bool16 applyPageOffset = kFalse)
 {
 	if (srcPano == nil)
 		return;
@@ -902,7 +950,7 @@ static void KESCMSyncOtherDocViewportsTo(IPanorama* srcPano, IDataBase* srcDocDb
 		if (applyPageOffset)
 		{
 			bool16 skipThisDoc = kFalse;
-			dstCenter = KESCMCorrectedCenterForDoc(srcDocDb, db, srcCenter, skipThisDoc);
+			dstCenter = KESCMCorrectedCenterForDoc(srcView, srcDocDb, db, srcCenter, skipThisDoc);
 			if (skipThisDoc)
 				continue;	// ★手本中心が Added ページ(相手なし)=この宛先文書は同期しない
 		}
@@ -940,6 +988,11 @@ static void KESCMSyncOtherDocViewportsTo(IPanorama* srcPano, IDataBase* srcDocDb
 			// 拡大率を手本と同じ実効スケールへ。ズームは UI のズーム欄と同じ公式コマンド
 			// (kZoomToCmdBoss)で行う。既定引数=ビュー中心基準。
 			// ★ILayoutViewUtils::ZoomLayoutViews 直呼びは他文書のビューに効かない(実機確認)ため不可。
+			// ★★ズームは Command なのに下のスクロールは IPanorama 直操作、という非対称には理由がある
+			//   (2026-08-06 の API 監査で確認): 公式のスクロールコマンドは
+			//   ILayoutUIUtils::MakeScrollToSpreadCmd(:252) だけで、行き先が「スプレッド中心 または
+			//   直前と同じ中心オフセット」に限られ、**任意の content 座標を指定できない**。
+			//   スクロール位置はモデルではなくビュー状態なので、Command を通さないこと自体は筋が通る。
 			if (!zoomMatched)
 			{
 				InterfacePtr<ICommand> zoomCmd(Utils<ILayoutUIUtils>()->MakeZoomCmd(view, srcZoom));
@@ -1064,7 +1117,11 @@ static void KESCMLayoutSyncAttachContext(bool16 attach)
 class KESCMLayoutSyncObserver : public CObserver
 {
 public:
-	KESCMLayoutSyncObserver(IPMUnknown* boss) : CObserver(boss) {}
+	// ★第2引数は「この実装が boss 上で実際に載っている IID」(CObserver.h:55 の fAttachIID)。
+	//   .fr の AddIn は IID_IKESCMLAYOUTSYNCOBSERVER で載せ、Attach もその IID で行うので、
+	//   ここも同じものを渡して自己申告と実態を一致させる(公式=layerpanel/CLayoutLayerListObserver.cpp:112。
+	//   2026-08-06 の API 監査 A-3。既定のままだと GetAttachIID() が IID_IOBSERVER を返して食い違う)。
+	KESCMLayoutSyncObserver(IPMUnknown* boss) : CObserver(boss, IID_IKESCMLAYOUTSYNCOBSERVER) {}
 	~KESCMLayoutSyncObserver() {}
 
 	virtual void Update(const ClassID& theChange, ISubject* theSubject, const PMIID& protocol, void* changedBy);
@@ -1136,7 +1193,7 @@ void KESCMLayoutSyncObserver::Update(const ClassID& theChange, ISubject* theSubj
 
 	// ★本仕様(2026-07-10 確定): 自動同期(ライブ)にも追加/削除補正を掛ける。比較 arm 中は比較ペアの
 	// 相手ページ同士がきっちり並ぶ(実機で使い勝手を確認済み)。未 arm/ペア外は関数内で生同期にフォールバック。
-	KESCMSyncOtherDocViewportsTo(srcPano, srcDocDb, kTrue /*applyPageOffset*/);
+	KESCMSyncOtherDocViewportsTo(srcView, srcPano, srcDocDb, kTrue /*applyPageOffset*/);
 }
 
 // KESCMGetLayoutSync / KESCMSetLayoutSync(KESCMCore.h で宣言) — フライアウトトグルの実体。
@@ -1169,7 +1226,7 @@ void KESCMSetLayoutSync(bool16 on)
 			InterfacePtr<IPanorama> pano(KESCMQueryPanorama(front));
 			IDataBase* db = KESCMFindDocDbForView(front);
 			if (pano != nil && db != nil)
-				KESCMSyncOtherDocViewportsTo(pano, db, kTrue /*applyPageOffset(本仕様): 初回そろえも補正付き*/);
+				KESCMSyncOtherDocViewportsTo(front, pano, db, kTrue /*applyPageOffset(本仕様): 初回そろえも補正付き*/);
 		}
 	}
 	else
@@ -1205,7 +1262,7 @@ bool16 KESCMAlignOtherViewsToActiveNow()
 	if (sPeekArmed && sPeekTargetDB != nil && sPeekSourceDB != nil &&
 	    db != sPeekTargetDB && db != sPeekSourceDB)
 		return kFalse;
-	KESCMSyncOtherDocViewportsTo(pano, db, kTrue /*applyPageOffset(arm時のみ補正・未arm時は関数内でkFalse強制)*/);
+	KESCMSyncOtherDocViewportsTo(front, pano, db, kTrue /*applyPageOffset(arm時のみ補正・未arm時は関数内でkFalse強制)*/);
 	return kTrue;
 }
 
@@ -1270,6 +1327,14 @@ static void KESCMTrackerBeginPeek(PMReal opacity)
 static PMString sCmykCursorText;			// "… t\n… s"(LF区切り2行、末尾ラベル t/s。1行目=マウスが乗っている窓の側)。色サンプル成功時に格納。
 static bool16   sCmykCursorPending = kFalse;	// 直近の BeginTracking で CMYK カーソルを出すべきか
 
+// ドラッグ中ライブ再サンプルのスロットル(既定 50ms ≒ 20回/秒)。★押下ごとに必ず初回を通すため、
+// RevealEnd と Shutdown で sCmykDragThrottleStarted を戻す(2026-08-06 の監査 C-1)。以前は
+// KESCMTrackerUpdateCmykDrag の関数内 static だったので一度立つと戻らず、2回目以降の押下では
+// ドラッグ最初のサンプルが前回の押下から数えたスロットルに引っかかり得た(押下時の値は RevealBegin が
+// 出しているので画面が空になることはないが、このファイルの「押下の外では状態を持たない」方針から外れる)。
+static std::chrono::steady_clock::time_point sCmykDragLastSample;
+static bool16                                sCmykDragThrottleStarted = kFalse;
+
 // Alt+左ドラッグ中だけ保持する既定フォント(取得=RevealBegin の Alt 分岐、解放=RevealEnd)。
 // ドラッグ中のカーソル再描画(≦20回/秒)が毎回 IFontMgr の名前引きをしないためのキャッシュ(2026-07-15)。
 // ★file-static の InterfacePtr にはしない: 静的破棄タイミングの Release はオブジェクトモデル消滅後で
@@ -1296,12 +1361,18 @@ static void KESCMSplitTwoLines(const PMString& src, PMString& line1, PMString& l
 // 固定列に、5トークン目以降(ラベル tgt/src)は4列目の右(x0+4*pitch)に置く。ヘッダー行とデータ行を同じ
 // x0/pitch で描けば CMYK 見出しと数字の桁が必ず縦にそろう(フォント計測不要=ユーザー要望の縦位置合わせ
 // 2026-07-13)。描画は KESCMShowHalo(白フチ＋黒本体)。
-static void KESCMShowHalo(IGraphicsPort* gPort, IPMFont* font, const PMReal& size,
-                          const PMReal& x, const PMReal& y, const PMString& s);	// 前方宣言
+static void KESCMShowHalo(IGraphicsPort* gPort, const PMReal& x, const PMReal& y, const PMString& s);	// 前方宣言
 
 static void KESCMDrawColumns(IGraphicsPort* gPort, IPMFont* font, const PMReal& fs,
                              const PMReal& x0, const PMReal& pitch, const PMReal& y, const PMString& row)
 {
+	if (font == nil)
+		return;
+	// ★フォントの選択はこの行で1回だけ(2026-08-06 の監査 C-5)。以前は KESCMShowHalo の中で
+	//   トークンごとに selectfont していたため、1フレームで最大15回・毎秒20フレームぶん繰り返していた。
+	//   同じフォント・同じサイズなので1回で足りる。
+	gPort->selectfont(font, fs);
+
 	PMString tok; tok.SetTranslatable(kFalse);
 	int32 col = 0;
 	const int32 n = row.NumUTF16TextChars();
@@ -1316,7 +1387,7 @@ static void KESCMDrawColumns(IGraphicsPort* gPort, IPMFont* font, const PMReal& 
 		if (tok.NumUTF16TextChars() > 0)	// 区切り(スペース or 行末)でトークン確定
 		{
 			const int32 c = (col < 4) ? col : 4;	// 5番目以降(ラベル)は4列目の右へ
-			KESCMShowHalo(gPort, font, fs, x0 + pitch * PMReal(c), y, tok);
+			KESCMShowHalo(gPort, x0 + pitch * PMReal(c), y, tok);
 			++col;
 			tok.Clear();
 			tok.SetTranslatable(kFalse);
@@ -1325,14 +1396,13 @@ static void KESCMDrawColumns(IGraphicsPort* gPort, IPMFont* font, const PMReal& 
 }
 
 // (x,y) に文字列を描く(空なら何もしない)。
-static void KESCMShowHalo(IGraphicsPort* gPort, IPMFont* font, const PMReal& size,
-                          const PMReal& x, const PMReal& y, const PMString& s)
+// ★前提: フォントは呼び出し側(KESCMDrawColumns)が selectfont 済み。ここでは選び直さない(監査 C-5)。
+static void KESCMShowHalo(IGraphicsPort* gPort, const PMReal& x, const PMReal& y, const PMString& s)
 {
 	const int32 n = s.NumUTF16TextChars();
-	if (n <= 0 || font == nil)
+	if (n <= 0)
 		return;
 	const UTF16TextChar* b = s.GrabUTF16Buffer(nil);
-	gPort->selectfont(font, size);
 
 	// 白フチ(8方向に1pxずらして白で描く)→ 黒本体。透明背景でも明暗どちらの下地でも読める。
 	static const int kDX[8] = { -1, 0, 1, -1, 1, -1, 0, 1 };
@@ -1475,6 +1545,8 @@ CreateCursorBitmapProc KESCMTrackerCmykCursorProc() { return &KESCMCmykCursorBit
 //   Alt+左の CMYK は Start 中ならどの窓でも値を出す(Target/Source 窓=比較2行、第3の文書=単独1行)ので、
 //   以前の「Target 窓だけ黒」は実態と合わなくなった。Stop 中は従来どおり白抜き✓(黒フチ+白本体)。
 //   viewUnderMouse が nil(レイアウトビュー上に居ない)なら白抜きのまま=カーソル形状の既定側に倒す。
+// ★引数 viewUnderMouse は「レイアウトビューの上に居るか」の判定にだけ使う(どの文書のビューかは見ない)。
+//   2026-07-26 の仕様変更で「文書を問わず黒」になったため、ビューの中身は色に関与しない(監査 C-2)。
 bool16 KESCMToolCursorShouldBeBlack(IControlView* viewUnderMouse)
 {
 	if (viewUnderMouse == nil)
@@ -1520,19 +1592,18 @@ bool16 KESCMTrackerUpdateCmykDrag()
 		return kFalse;
 	const bool16 solo = (sCmykOtherDB == nil);
 
-	// スロットル(50ms)。steady_clock は単調増加なのでラップの心配なし。初回は必ず通す。
-	static std::chrono::steady_clock::time_point sLast;
-	static bool16 sStarted = kFalse;
+	// スロットル(50ms)。steady_clock は単調増加なのでラップの心配なし。★押下ごとの初回は必ず通す
+	// (旗は RevealEnd/Shutdown で戻る＝押下を跨がない。監査 C-1)。
 	const std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
-	if (sStarted)
+	if (sCmykDragThrottleStarted)
 	{
 		const long long ms =
-			std::chrono::duration_cast<std::chrono::milliseconds>(now - sLast).count();
+			std::chrono::duration_cast<std::chrono::milliseconds>(now - sCmykDragLastSample).count();
 		if (ms < 50)
 			return kFalse;
 	}
-	sStarted = kTrue;
-	sLast = now;
+	sCmykDragThrottleStarted = kTrue;
+	sCmykDragLastSample = now;
 
 	// スロットル通過後(≦20回/秒)に文書の生存を検査してからサンプリングへ渡す
 	// (ドラッグ中の文書クローズはスクリプト経由等の稀な経路。検査は KESCMCmykDocsAlive に集約)。
@@ -1755,6 +1826,7 @@ void KESCMTrackerRevealEnd()
 	sCmykHoverDB       = nil;
 	sCmykOtherDB       = nil;
 	sCmykHoverIsTarget = kFalse;
+	sCmykDragThrottleStarted = kFalse;	// 次の押下でドラッグ初回サンプルを必ず通す(監査 C-1)
 
 	// Alt+左(CMYK 色比較)を離したら、押下中にパネルのステータス行へ出していた CMYK 値を消す
 	// (ユーザー要望 2026-07-15: ホールド終了でメッセージは消す)。sCmykCursorPending は押下中に
@@ -2036,6 +2108,7 @@ void KESCMPeekStartup::Shutdown()
 	sCmykHoverDB       = nil;
 	sCmykOtherDB       = nil;
 	sCmykHoverIsTarget = kFalse;
+	sCmykDragThrottleStarted = kFalse;	// ドラッグ用スロットルの旗も残さない(監査 C-1)
 	KESCMSampleCmykEndDrag();	// 押下中のページ対応表キャッシュ(hover→other)も同様に破棄
 
 	// 旧ページ番号バッジのフォントキャッシュも同じ理由(静的破棄前の明示解放)でここで捨てる(2026-07-25)。

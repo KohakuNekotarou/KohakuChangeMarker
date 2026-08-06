@@ -32,7 +32,8 @@
 #include "TransformUtils.h"
 #include "IWindow.h"
 #include "IWindowUtils.h"
-#include "ILayoutViewUtils.h"		// GetAllLayoutViews(KESCMFindDocDbForView)
+#include "ILayoutViewUtils.h"		// GetAllLayoutViews(KESCMFindDocDbForView のフォールバック)
+#include "ILayoutControlData.h"		// GetDocument(view→文書の公式ルート。KESCMFindDocDbForView)
 #include "K2Vector.h"				// GetAllLayoutViews の out コンテナ(間接includeに頼らず明示)
 #include "IDocumentPresentation.h"
 #include "IPanelControlData.h"
@@ -176,18 +177,45 @@ void KESCMForgetViewDbHint()
 	sLastViewHitDb = nil;
 }
 
-// view がどの文書のレイアウトビューかをポインタ照合で特定する。KESCMCore.h のコメント参照。
+// view がどの文書のレイアウトビューかを特定する。KESCMCore.h のコメント参照。
 // (2026-07-25: KESCMPeek.cpp の file-static から共有ヘルパへ移動。色サンプラの窓ガードでも使うため)
 IDataBase* KESCMFindDocDbForView(IControlView* view)
 {
 	if (view == nil)
 		return nil;
 
-	// ①前回ヒットした文書を先に試す(連続呼び出しはほぼここで確定する)。
+	// ★①公式ルート(2026-08-06 の API 監査 A-1): レイアウトビュー boss は ILayoutControlData を持ち、
+	//   そのビューが今表示している文書を直接返す。ビュー自身に聞くので列挙 API の結果に依存しない。
+	//   契約=ILayoutControlData.h:181 / 手本=CPathCreationTracker.cpp:277-285(ほか
+	//   CusDtLnkUIDDTargetFlavorHelper.cpp:197 / BscDNDCustomFlavorHelper.cpp:194)。
+	//   boss に載っていることは実機ダンプで確認済み(kLayoutWidgetBoss + IID_ILAYOUTCONTROLDATA)。
+	//   ★GetDocument() は AddRef しない生ポインタを返す(=Release 不要)。
+	InterfacePtr<ILayoutControlData> layoutData(view, IID_ILAYOUTCONTROLDATA);
+	if (layoutData != nil)
+	{
+		IDocument* doc = layoutData->GetDocument();
+		if (doc != nil)
+		{
+			IDataBase* db = ::GetUIDRef(doc).GetDataBase();
+			// ★生存確認を明示的に行う(2026-08-06 の自己レビューで追加)。従来の経路は IDocumentList を
+			//   走査して照合していたので「返る db は必ず開いている文書のもの」が**暗黙に保証**されていた。
+			//   公式ルートはビューに聞くだけなのでその保証が無く、黙って落とすと KESCM 全体の規約
+			//   (閉じた db を持ち回らない/deref しない)が崩れる。ここで確認して従来の性質を保つ。
+			//   引けなければ下のフォールバックへ流す(全走査でも見つからなければ nil)。
+			if (KESCMIsDocDBOpen(db))
+				return db;
+		}
+	}
+
+	// ---- 以下は①が引けなかったときのフォールバック(従来実装) ----
+	// ★Split Window の 2枚目ペインでも ILayoutControlData が引けるかは実機未確認なので、旧経路を
+	//   残してある(引けるなら以下は一度も走らない)。実機で確認が取れたら丸ごと畳んでよい。
+
+	// ②前回ヒットした文書を先に試す(連続呼び出しはほぼここで確定する)。
 	if (sLastViewHitDb != nil && KESCMViewBelongsToDb(view, sLastViewHitDb))
 		return sLastViewHitDb;
 
-	// ②外れたら全文書を走査(従来どおり)。見つかった db を次回のヒントにする。
+	// ③外れたら全文書を走査(従来どおり)。見つかった db を次回のヒントにする。
 	ISession* session = GetExecutionContextSession();	// 終了処理中は nil になり得る(下の共通規約参照)
 	InterfacePtr<IApplication> app(session != nil ? session->QueryApplication() : nil);
 	InterfacePtr<IDocumentList> docList(app ? app->QueryDocumentList() : nil);
@@ -201,7 +229,7 @@ IDataBase* KESCMFindDocDbForView(IControlView* view)
 			continue;
 		IDataBase* db = ::GetUIDRef(doc).GetDataBase();
 		if (db == sLastViewHitDb)
-			continue;	// ①で試して外れている
+			continue;	// ②で試して外れている
 		if (KESCMViewBelongsToDb(view, db))
 		{
 			sLastViewHitDb = db;
