@@ -479,6 +479,21 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKESCMTranslucentPanelMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
+		// "Translucent Pages Panel" on the panel flyout (popup) menu. Check-mark toggle (default OFF).
+		// Exactly the toggle above, but the target is InDesign's OWN Pages panel instead of this one
+		// (user request, 2026-08-06). Same alpha, same "opaque again while the pointer is over it"
+		// behaviour, same "floating or drawer only" limitation.
+		// ★Why this became possible: the panel's window is now found from its WidgetID
+		// (kPagesPanelWidgetID, a NUMBER) through IPanelMgr -> PaletteRef::GetOWLControl, instead of by
+		// matching the window title. Titles are translated - the Pages panel reads "Pages" on an English
+		// UI and "ページ" on a Japanese one (both measured on this machine, 2026-08-06) - so the old
+		// title-matching lookup could never have worked for a built-in panel.
+		// Implementation: KESCMPanelAlpha.cpp (shared with the toggle above; only the target differs).
+		kKESCMPopupTranslucentPagesActionID,
+		kKESCMPopupMenuPath,
+		kKESCMTranslucentPagesPanelMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
 		// "Align Other Views to Active" on the panel flyout (popup) menu. Plain command (not a toggle):
 		// sets every OTHER document's layout views to the active (frontmost) view's position + zoom, once.
 		// Independent of the Sync Layout Views toggle (works even when it is OFF). While Started, the page
@@ -768,6 +783,15 @@ resource ActionDef (kSDKDefActionResourceID)
 		kKESCMActionComponentBoss,
 		kKESCMPopupTranslucentPanelActionID,
 		kKESCMTranslucentPanelMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates supplies the check mark (kSelectedAction)
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		kKESCMActionComponentBoss,
+		kKESCMPopupTranslucentPagesActionID,
+		kKESCMTranslucentPagesPanelMenuKey,
 		kOtherActionArea,
 		kNormalAction,
 		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates supplies the check mark (kSelectedAction)

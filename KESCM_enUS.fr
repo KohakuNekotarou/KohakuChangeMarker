@@ -46,6 +46,7 @@ resource StringTable (kSDKDefStringsResourceID + index_enUS)
                 kKESCMAlignViewsMenuKey,			"Align Other Views to Active",
                 kKESCMScrollMapMenuKey,				"Show Scrollbar Map",
                 kKESCMTranslucentPanelMenuKey,		"Translucent Panel",
+                kKESCMTranslucentPagesPanelMenuKey,	"Translucent Pages Panel",
                 kKESCMSavePanelStateMenuKey,			"Save Panel Settings",
                 kKESCMSaveChecksMenuKey,			"Save Check && Register",
                 kKESCMLoadChecksMenuKey,			"Load Check && Register",

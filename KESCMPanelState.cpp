@@ -107,7 +107,8 @@ void KESCMSavePanelState()
 	json += "  \"syncLayoutViews\": ";        json += KESCMBoolLiteral(KESCMGetLayoutSync());                       json += ",\n";
 	json += "  \"scrollbarMap\": ";           json += KESCMBoolLiteral(KESCMGetScrollMapEnabled());                 json += ",\n";
 	json += "  \"ignorePageNumberMarker\": "; json += KESCMBoolLiteral(KESCMGetIgnorePageNumberMarker());           json += ",\n";
-	json += "  \"translucentPanel\": ";       json += KESCMBoolLiteral(KESCMGetPanelTranslucent());                 json += "\n";
+	json += "  \"translucentPanel\": ";       json += KESCMBoolLiteral(KESCMGetPanelTranslucent());                 json += ",\n";
+	json += "  \"translucentPagesPanel\": ";  json += KESCMBoolLiteral(KESCMGetPagesPanelTranslucent());            json += "\n";
 	json += "}\n";
 
 	FILE* fp = FileUtils::OpenFile(file, "wb");
@@ -195,6 +196,7 @@ void KESCMLoadPanelStateIfPresent()
 	//     イベントフックを張る(置き場所だけが変わる遷移を拾う唯一の手段)。パネルがまだ無い間は
 	//     コールバックが即 return するので、起動シーケンスへの影響は無い。
 	KESCMSetPanelTranslucent      (KESCMJsonReadBool(text, "translucentPanel",       KESCMGetPanelTranslucent()));
+	KESCMSetPagesPanelTranslucent (KESCMJsonReadBool(text, "translucentPagesPanel",  KESCMGetPagesPanelTranslucent()));
 }
 
 // KESCMPanelState.cpp 終わり。

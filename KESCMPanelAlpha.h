@@ -2,12 +2,17 @@
 //
 //  KESCMPanelAlpha.h
 //
-//  パネルのフライアウト「Translucent Panel」トグルの実体。
+//  パネルのフライアウト「Translucent Panel」/「Translucent Pages Panel」トグルの実体。
 //
 //  ★Windows 専用。Win32 の SetLayeredWindowAttributes でパネルの窓に alpha をかける
 //    (Mac では下の公開関数は残るが KESCMApplyPanelTranslucency が何もしない)。
 //  ★効くのは「フローティング中」のときだけ。ドッキング中のパネルはメインフレームの子窓に
 //    なるため単独では透かせない(その場合は何もしない=フラグだけ立つ)。
+//
+//  ★★対象は2つ(2026-08-06 にユーザー要望で拡張):
+//     ①自分のパネル ②**本体のページパネル**
+//     それぞれ独立したトグルを持つ。実装は KESCMPanelAlpha.cpp 内で1本化されていて、
+//     対象は WidgetID(数値)で狙い撃ちする ＝ 窓タイトル(UI 言語で変わる)に依存しない。
 //
 //  技術的根拠(実測の全記録) = docs/ai-notes/win32-window-transparency.md
 //                             memory/win32-window-alpha-transparency.md
@@ -33,6 +38,19 @@ void	KESCMSetPanelTranslucent(bool16 on);
 //  - 返り値: 実際に窓へ alpha を設定できたら kTrue。パネルが無い/ドッキング中/Mac なら kFalse
 //    (メニュー押下時のステータス文言を「効いた」「ドッキング中なので効かない」で分けるために使う)
 bool16	KESCMApplyPanelTranslucency();
+
+//----------------------------------------------------------------------------------------
+// 本体のページパネル用(2026-08-06 追加)。上の3つと同じ意味・同じ実装で、対象だけが違う。
+//  ★あちらは自分のパネルではないので IMouseRollOver を付けられない。ホバーで不透明に戻す判定は
+//    Win32 フック(OBJID_CURSOR)側だけで成立している。
+//----------------------------------------------------------------------------------------
+bool16	KESCMGetPagesPanelTranslucent();
+void	KESCMSetPagesPanelTranslucent(bool16 on);
+bool16	KESCMApplyPagesPanelTranslucency();
+
+// 全対象へ貼り直す。★パネルの表示状態が変わったとき等、「どれが対象か」を呼び出し側が
+//   知らなくてよい場面で使う(対象が増えても呼び出し側を直さずに済む)。
+void	KESCMApplyAllPanelTranslucency();
 
 // パネルの表示状態変化(開く/閉じる/ドッキング⇄フローティング)の購読を始める。
 // ★起動時に1回だけ呼ぶ(KESCMPeekStartup::Startup)。以後、パネルをフローティングに戻したり

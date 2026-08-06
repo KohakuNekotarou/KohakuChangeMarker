@@ -284,6 +284,31 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 			break;
 		}
 
+		// 「Translucent Pages Panel」トグル: **本体のページパネル**を半透明にするか(2026-08-06 追加)。
+		// 上の Translucent Panel と同じ仕組み・同じ制約で、対象だけが違う。
+		// ★対象の窓は WidgetID(kPagesPanelWidgetID = 数値)から引く。窓タイトルは UI 言語で変わる
+		//   ("Pages" / 「ページ」)ので、タイトル照合では本体パネルに届かない。実体 KESCMPanelAlpha.cpp。
+		case kKESCMPopupTranslucentPagesActionID:
+		{
+			const bool16 on = !KESCMGetPagesPanelTranslucent();
+			KESCMSetPagesPanelTranslucent(on);
+
+			// 実際に窓へ届いたかでステータス文言を分ける。ドック内で展開中に押しても画面が
+			// 変わらないので、「なぜ効かないか」を言葉で返す。
+			// ★ページパネルは既定でドックに入っているので、こちらの方が「効かない」に当たりやすい。
+			const bool16 applied = KESCMApplyPagesPanelTranslucency();
+			PMString msg;
+			if (!on)
+				msg = "Translucent Pages panel: off.";
+			else if (applied)
+				msg = "Translucent Pages panel: on.";
+			else
+				msg = "Translucent Pages panel: on - has no effect while the Pages panel is docked or closed.";
+			msg.SetTranslatable(kFalse);
+			KESCMSetStatus(msg);
+			break;
+		}
+
 		// 「Hold to Hide Marks」トグル: 枠表示の極性反転(フラグ反転のみ)。ON=画面に枠を常時表示し、
 		// ツール左hold中だけ隠す(押下/解放は KESCMPeek.cpp のトラッカー(KESCMTrackerRevealBegin/End)が sMarksTempHidden を上下)。
 		// OFF=従来(既定非表示・押下中だけ表示)。画面のみ=印刷は Print comparison marks が別管理。
@@ -514,6 +539,15 @@ void KESCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionSta
 			// 押した結果が見えないケースは DoAction 側がステータス文言で伝える。
 			int16 actionState = kEnabledAction;
 			if (KESCMGetPanelTranslucent())
+				actionState |= kSelectedAction;	// ON ならチェックマーク
+			listToUpdate->SetNthActionState(i, actionState);
+		}
+		else if (action == kKESCMPopupTranslucentPagesActionID)
+		{
+			// ★上と同じ方針: ページパネルがドッキング中/閉じていても選べる。
+			//   (「今フローティングか」で灰色にすると、ドックに入れた瞬間に設定を戻せなくなる。)
+			int16 actionState = kEnabledAction;
+			if (KESCMGetPagesPanelTranslucent())
 				actionState |= kSelectedAction;	// ON ならチェックマーク
 			listToUpdate->SetNthActionState(i, actionState);
 		}

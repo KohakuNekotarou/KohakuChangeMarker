@@ -202,11 +202,14 @@ void KESCMPanelObserver::AutoAttach()
 	// →KESCMRefreshNavPosition)で今の実状態から作り直し済み。ワークスペースに永続化された前回の値は
 	// そこで確実に上書きされるので、ここでの復元処理は不要。
 
-	// 「Translucent Panel」が ON なら半透明を貼り直す。パネルを開き直すと半透明の付け先である
+	// 半透明トグルが ON なら貼り直す。パネルを開き直すと半透明の付け先である
 	// トップレベル窓(OWL.Dock)が別物に変わるため([[win32-window-alpha-transparency]])。
+	// ★2026-08-06: 対象が2つ(自パネル/本体のページパネル)になったので、ここは全対象を見る。
+	//   自分のパネルが作り直された機会にページパネル側も貼り直しておく方が取りこぼしが無く、
+	//   全部 OFF なら下のガードで何もしない。
 	// ★OFF のときはこちらで弾いて呼ばない(2026-08-06 再点検)。Apply は OFF でも中で弾かれない
 	//   (弾くのはドッキング中=対象窓なしのときだけ)ので、無条件に呼ぶと使っていない人にも
-	//   窓探索(キャッシュ失効時は EnumWindows 全走査)+alpha 書き+影の SW_SHOWNA の費用を払わせる。
+	//   窓探索(キャッシュ失効時は SDK への問い合わせ)+alpha 書き+影の SW_SHOWNA の費用を払わせる。
 	//   MouseEnter/MouseLeave/フック/可視性オブザーバの各入口が OFF を弾くのと同じ方針。
 	//   ⚠Apply 側に OFF ガードを入れてはいけない: メニューで OFF にした瞬間の 255 復元・影の再表示は
 	//     Apply(OFF 状態での呼び出し)が担っている(KESCMActionComponent.cpp のトグル経路)。
@@ -219,8 +222,8 @@ void KESCMPanelObserver::AutoAttach()
 	KESCMAttachPanelVisibilityObserver();
 	// (「乗っている」状態を落とす KESCMResetPanelHover の呼び出しは 2026-07-29 に撤去。判定を
 	//  旗から Win32 の実測へ変えたので、widget を作り直しても落とすべき状態が無い。)
-	if (KESCMGetPanelTranslucent())
-		KESCMApplyPanelTranslucency();
+	if (KESCMGetPanelTranslucent() || KESCMGetPagesPanelTranslucent())
+		KESCMApplyAllPanelTranslucency();
 }
 
 void KESCMPanelObserver::AutoDetach()

@@ -5,7 +5,11 @@
 //  パネル半透明トグルの実装。★Win32 依存はこのファイルに閉じ込める。
 //
 //  ★手順(2026-07-29 の実測に基づく。変更するときは必ず docs/ai-notes/win32-window-transparency.md を読むこと):
-//    1. cls=="OWL.Palette" かつ title==パネル表示名 の窓を自プロセス内から探す
+//    1. パネルの WidgetID から OWL.Palette の窓を得る ——
+//       IPanelMgr::GetPanelFromWidgetID → GetPaletteRefContainingPanel → PaletteRef::GetOWLControl
+//       ★2026-08-06 にここを入れ替えた。旧実装は「cls=="OWL.Palette" かつ title==パネル表示名」で
+//         EnumWindows していたが、**窓タイトルは UI 言語で変わる**(本体のページパネルは
+//         英語UI="Pages" / 日本語UI="ページ")ので、本体パネルには通用しなかった。WidgetID は数値。
 //    2. GetAncestor(GA_ROOT) で「今の」トップレベル窓を得る
 //    3. それが "indesign"(メインフレーム)ならドック内で展開中 → 何もしない
 //    4. "OWL.Dock"(フローティング) / "OWL.FrameDrawer"(アイコンをクリックしたドロワー展開) なら
@@ -49,13 +53,54 @@
 #include "CPMUnknown.h"			// 実装の基底
 #include "IMouseRollOver.h"		// MouseEnter/MouseOver/MouseLeave(ui/IMouseRollOver.h)
 
+// ★★★パネルの窓(HWND)を SDK 側から得るための一式(2026-08-06 に確立)。
+//   PaletteRef は内部に HWND を持っている: PaletteRef.h:47 で OWLControlRef は HWND そのもの、
+//   :188 の GetOWLControl() がそれを返す。IPanelMgr::GetPanelFromWidgetID(数値の WidgetID)から
+//   GetPaletteRefContainingPanel() で PaletteRef を得れば、そこに窓がある。
+//   ⇒ **窓タイトル照合(翻訳される)も EnumWindows(全窓走査)も要らない。**
+//   ⚠ここは 2026-08-06 のブロック13監査で「パネルの HWND を SDK から得る道は無い(4ルート全滅)」と
+//     結論した箇所の訂正。5つ目のルートがこれで、実機で全パネル到達を確認済み。
+#include "IControlView.h"		// GetPanelFromWidgetID が返すパネル
+#include "PaletteRef.h"			// PaletteRef::GetOWLControl(=HWND) / GetPaletteRefType
+#include "PaletteRefUtils.h"	// GetParentOfPalette(階層を上がる)
+#include "PagesPanelID.h"		// kPagesPanelWidgetID(:391) - 本体ページパネルの狙い撃ち先
+
 // ★windows.h は SDK ヘッダーより後に置くこと(マクロが SDK 側の名前とぶつからないように)。
 #ifdef WINDOWS
 #include <windows.h>
 #endif
 
+//----------------------------------------------------------------------------------------
+// 半透明にできる対象パネル(2026-08-06 に2つへ拡張)。
+//
+//  ★1つ目 = 自分のパネル。2つ目 = **本体のページパネル**(ユーザー要望)。
+//  ★対象を WidgetID(数値)で持てるようになったのが今回の肝 —— 窓タイトルは UI 言語で変わるので
+//    本体のパネルには使えなかった(英語UI="Pages" / 日本語UI="ページ")。
+//  ★増やすときは enum に1つ足し、kKESCMAlphaWidgetIDs に WidgetID を1つ足すだけでよい。
+//    ただしトグル(メニュー項目・永続化キー)は対象ごとに要る。
+//----------------------------------------------------------------------------------------
+enum
+{
+	kKESCMAlphaSelf  = 0,		// 自分のパネル(Kohaku Change Marker)
+	kKESCMAlphaPages = 1,		// 本体のページパネル
+	kKESCMAlphaCount = 2
+};
+
 // トグル状態(セッション内で保持。永続化は KESCMPanelState.cpp が担当)。★既定 OFF
-static bool16 sPanelTranslucent = kFalse;
+// ※Mac でも状態だけは持つ(適用側が何もしないだけ)。
+static bool16 sTranslucentOn[kKESCMAlphaCount] = { kFalse, kFalse };
+
+// どれか1つでも ON か。★Win32 フックを張る/外す判断と、遅延再適用を続ける/やめる判断で共有する
+//   (同じことを2か所で数えると必ずずれる)。
+static bool16 KESCMAnyTranslucentOn()
+{
+	for (int32 i = 0; i < kKESCMAlphaCount; ++i)
+	{
+		if (sTranslucentOn[i])
+			return kTrue;
+	}
+	return kFalse;
+}
 
 #ifdef WINDOWS
 
@@ -162,13 +207,13 @@ static bool KESCMCursorOverWindow(HWND target)
 	return (pid == ::GetCurrentProcessId());
 }
 
-// ★実効 alpha ＝ トグルが ON で、かつカーソルが乗っていないときだけ薄くする。
+// ★実効 alpha ＝ その対象のトグルが ON で、かつカーソルが乗っていないときだけ薄くする。
 //   ここ1箇所に集約しておくこと(適用側・フックの判定側の両方から使う)。
 //   ★OFF ならカーソル位置すら見ない(この機能は ON のときだけ動く=ユーザー方針 2026-07-29)。
 //   ※Mac には適用そのものが無いので置かない(未使用関数の警告を出さないため)。
-static uint8 KESCMEffectiveAlpha(HWND target)
+static uint8 KESCMEffectiveAlpha(int32 which, HWND target)
 {
-	if (!sPanelTranslucent)
+	if (!sTranslucentOn[which])
 		return 255;
 
 	return KESCMCursorOverWindow(target) ? 255 : kKESCMPanelAlphaValue;
@@ -179,125 +224,129 @@ static void KESCMInstallWinEventHook();
 static void KESCMRemoveWinEventHook();
 #endif
 
-bool16 KESCMGetPanelTranslucent()
+// 対象を指定して状態を書く。下の公開 API はこれを呼ぶだけの薄いラッパー
+// (判断はここ1箇所に集約する ＝ トグルが2つに増えても分岐が2か所に散らない)。
+static void KESCMSetTranslucentFor(int32 which, bool16 on)
 {
-	return sPanelTranslucent;
-}
-
-void KESCMSetPanelTranslucent(bool16 on)
-{
-	sPanelTranslucent = on;
+	sTranslucentOn[which] = on;
 
 #ifdef WINDOWS
 	// ★「ドック内展開 ⇄ フローティング」と「ドロワー展開 → フローティング」は SDK 通知が
 	//   1本も飛ばない(2026 で Debug/Release 両方から確認)。唯一の手掛かりが Win32 の
-	//   親変更イベントなので、ON の間だけフックを張る。OFF なら外す(常駐させない)。
-	if (on)
+	//   親変更イベントなので、フックを張る。★対象が2つに増えたので、**どれか1つでも ON なら張り、
+	//   全部 OFF になったときだけ外す**(片方を OFF にしただけで、もう片方の追随が止まらないように)。
+	if (KESCMAnyTranslucentOn())
 		KESCMInstallWinEventHook();
 	else
 		KESCMRemoveWinEventHook();
 #endif
 }
 
+bool16 KESCMGetPanelTranslucent()
+{
+	return sTranslucentOn[kKESCMAlphaSelf];
+}
+
+void KESCMSetPanelTranslucent(bool16 on)
+{
+	KESCMSetTranslucentFor(kKESCMAlphaSelf, on);
+}
+
+bool16 KESCMGetPagesPanelTranslucent()
+{
+	return sTranslucentOn[kKESCMAlphaPages];
+}
+
+void KESCMSetPagesPanelTranslucent(bool16 on)
+{
+	KESCMSetTranslucentFor(kKESCMAlphaPages, on);
+}
+
 #ifdef WINDOWS
 
-// ★探すパネルの window title。kKESCMDisplayName は表示名の**唯一の定義**で、文字列テーブルの
-//   kKESCMPanelTitleKey もそこから来ているので、これを widen して使う。
-//   ⚠2026-08-06 現在、メニュー・パネル・窓タイトルは全ロケール英語(KESCM_jaJP.fr は 08-05 に撤去。
-//     KESCMLoc.h は現存するが、日本語で出すのは How to Use と Hide 確認のダイアログ本文2箇所だけ=
-//     窓タイトルには関係しない)なので、窓タイトルが翻訳されてここと一致しなくなる余地はそもそも無い。
-//   ★.fr のパネル名だけを変えるとここが一致しなくなり、機能が黙って効かなくなる。両方を揃えること。
-//   ⚠実行時に本物のタイトルを読み返して照合する道は無い(2026-08-06 に確認):
-//     PaletteRefUtils::GetPaletteLabel は一度も可視になっていないパレットへは空文字を返し、
-//     IWindow::GetTitle は最後に Set した値しか返さない(どちらもヘッダーに明記)。
-//     ＝照合する文字列はこちら側で綴るしかない。
-#define KESCM_WIDEN_(x)	L ## x
-#define KESCM_WIDEN(x)	KESCM_WIDEN_(x)
-static const wchar_t* const kKESCMPaletteWindowTitle = KESCM_WIDEN(kKESCMDisplayName);
-
-// EnumWindows/EnumChildWindows のコールバックへの受け渡し用。
-struct KESCMFindPaletteCtx
+// ★★★パネルの OWL.Palette 窓を SDK 側から得る(2026-08-06 に確立。旧実装 = 窓タイトルで EnumWindows)。
+//
+//  なぜ変えたか: 旧実装は「クラス名が OWL.Palette かつ 窓タイトル == パネル表示名」で全窓を走査して
+//  いた。自分のパネルは表示名が全ロケール英語で固定なので成立していたが、**本体のパネルには通用
+//  しない** —— 同じ機械の同じパネルで、英語UI="Pages" / 日本語UI="ページ" と変わることを実測した
+//  (2026-08-06。Debug ビルド=英語UI と Release=日本語UI で見比べた)。
+//
+//  正しい道 = PaletteRef が内部に HWND を持っている:
+//    IPanelMgr::GetPanelFromWidgetID(WidgetID)      … WidgetID は数値なので言語に依存しない
+//      -> IPanelMgr::GetPaletteRefContainingPanel() … その panel を載せている PaletteRef
+//         -> PaletteRef::GetOWLControl()            … PaletteRef.h:47(OWLControlRef=HWND), :188
+//
+//  実測した階層(2026-08-06。ページパネルと自パネルの両方で同一だった。PaletteRef.h:87-123 の記述どおり):
+//    type=8 kTabPanelContainerType = OWL.Palette   ← ここが返る
+//    type=7 kTabGroupType          = OWL.TabGroup
+//    type=6 kTabPaneType           = OWL.TabPane
+//    type=3 kDockType              = OWL.Dock      ← alpha を書く窓
+//  ★**トップレベル窓への変換は従来どおり下の KESCMQueryTranslucentTarget(GetAncestor)に任せる。**
+//    ドロワー展開(OWL.FrameDrawer)とドック内展開(indesign)の面倒を見ているのはあちらで、そこは
+//    実績があるので触らない。ここで置き換えたのは「OWL.Palette をどう見つけるか」だけ。
+//
+//  ⚠2026-08-06 のブロック13監査は「パネルの HWND を SDK から得る道は無い(4ルート全滅)」と結論して
+//    いたが、それは誤りだった。これが5つ目のルート。
+static HWND KESCMQueryPanelPaletteFromSDK(const WidgetID& panelWidgetID)
 {
-	const wchar_t*	fTitle;
-	DWORD			fPid;
-	HWND			fFound;
-};
+	// ★終了処理中は session が nil になり得る。
+	ISession* session = GetExecutionContextSession();
+	if (session == nil)
+		return nullptr;
 
-static bool KESCMWindowMatches(HWND h, KESCMFindPaletteCtx* ctx)
-{
-	wchar_t cls[64] = { 0 };
-	if (::GetClassNameW(h, cls, 64) == 0)
-		return false;
-	if (::wcscmp(cls, L"OWL.Palette") != 0)
-		return false;
+	InterfacePtr<IApplication> app(session->QueryApplication());
+	if (app == nil)
+		return nullptr;
 
-	wchar_t title[256] = { 0 };
-	::GetWindowTextW(h, title, 256);
-	return ::wcscmp(title, ctx->fTitle) == 0;
-}
+	InterfacePtr<IPanelMgr> panelMgr(app->QueryPanelManager());
+	if (panelMgr == nil)
+		return nullptr;
 
-static BOOL CALLBACK KESCMEnumChildProc(HWND h, LPARAM lp)
-{
-	KESCMFindPaletteCtx* ctx = reinterpret_cast<KESCMFindPaletteCtx*>(lp);
-	if (KESCMWindowMatches(h, ctx))
-	{
-		ctx->fFound = h;
-		return FALSE;		// 見つけたので打ち切る
-	}
-	return TRUE;
-}
+	// ★GetPanelFromWidgetID は AddRef しない(IPanelMgr.h:112。「caller must release」と明記されて
+	//   いるのは CreatePanel だけ)ので Release もしない。
+	IControlView* panel = panelMgr->GetPanelFromWidgetID(panelWidgetID);
+	if (panel == nil)
+		return nullptr;		// そのパネルはまだ一度も作られていない
 
-static BOOL CALLBACK KESCMEnumTopProc(HWND h, LPARAM lp)
-{
-	KESCMFindPaletteCtx* ctx = reinterpret_cast<KESCMFindPaletteCtx*>(lp);
+	const PaletteRef container = panelMgr->GetPaletteRefContainingPanel(panel);
+	if (!container.IsValid())
+		return nullptr;
 
-	DWORD pid = 0;
-	::GetWindowThreadProcessId(h, &pid);
-	if (pid != ctx->fPid)
-		return TRUE;		// 他プロセスの窓は見ない
-
-	if (KESCMWindowMatches(h, ctx))
-	{
-		ctx->fFound = h;
-		return FALSE;
-	}
-	::EnumChildWindows(h, KESCMEnumChildProc, lp);
-	return (ctx->fFound == nullptr) ? TRUE : FALSE;
-}
-
-// パネル名から OWL.Palette の HWND を探す。見つからなければ nullptr。
-static HWND KESCMFindPaletteWindow(const wchar_t* title)
-{
-	KESCMFindPaletteCtx ctx;
-	ctx.fTitle = title;
-	ctx.fPid   = ::GetCurrentProcessId();
-	ctx.fFound = nullptr;
-
-	::EnumWindows(KESCMEnumTopProc, reinterpret_cast<LPARAM>(&ctx));
-	return ctx.fFound;
+	HWND h = container.GetOWLControl();
+	return (h != nullptr && ::IsWindow(h)) ? h : nullptr;
 }
 
 // ★見つけた OWL.Palette を覚えておく。パネルを閉じて開き直しても、ドッキングとフローティングを
 //   切り替えても OWL.Palette の HWND は変わらない(変わるのは親の OWL.Dock で、しかも
 //   「ドッキング → フローティング」のときだけ = 上のファイル冒頭を参照)ので、キャッシュが効く。
 //   ここを入れる理由: 購読している kPaletteVisibilityChangedMessage は「文書を1つ開く」だけでも
-//   複数回飛ぶ(2026-07-29 実測)。そのたびに全窓を EnumWindows で舐めるのは無駄。
-static HWND sPaletteWnd = nullptr;
+//   複数回飛ぶ(2026-07-29 実測)。そのたびに SDK へ問い合わせるのは無駄で、しかも下の Win32 フックは
+//   マウス移動のたびに走る ＝ **Win32 コールバックからモデルへ触る回数は最小に保ちたい**
+//   (KBS が同じ理由で負のキャッシュまで置いている: KBSPanelAlpha.cpp:492-502)。
+static HWND sPaletteWnd[kKESCMAlphaCount] = { nullptr, nullptr };
 
-// キャッシュ優先でパネル窓を得る。★ハンドルは OS が使い回すので、生存確認だけでなく
-//   クラス名/タイトルの一致も見てから使う(全窓走査より遥かに安い)。
-static HWND KESCMQueryPaletteWindow()
+// 対象ごとの狙い撃ち先。★enum の並びと必ず同じ順にすること。
+//  ※WidgetID ではなく生の uint32 で持つ: DECLARE_PMID が作るのは uint32 で、静的初期化に使える。
+static const uint32 kKESCMAlphaWidgetIDs[kKESCMAlphaCount] =
 {
-	KESCMFindPaletteCtx ctx;
-	ctx.fTitle = kKESCMPaletteWindowTitle;
-	ctx.fPid   = ::GetCurrentProcessId();
-	ctx.fFound = nullptr;
+	kKESCMPanelWidgetID,		// kKESCMAlphaSelf  = 自分のパネル
+	kPagesPanelWidgetID			// kKESCMAlphaPages = 本体のページパネル
+};
 
-	if (sPaletteWnd != nullptr && ::IsWindow(sPaletteWnd) && KESCMWindowMatches(sPaletteWnd, &ctx))
-		return sPaletteWnd;
+// キャッシュ優先でパネル窓を得る。★ハンドルは OS が使い回すので、生存確認だけでなくクラス名の
+//   一致も見てから使う(SDK へ問い合わせ直すより安い)。
+//   ⚠旧実装はここで窓タイトルも照合していた。それは「本当に自分のパネルか」を見るためだったが、
+//     引き直しが WidgetID 狙い撃ちになった今、綴りを合わせる相手がいない。窓の作り直しと HWND の
+//     使い回しは kPaletteVisibilityChangedMessage か Win32 フックのどちらかを必ず伴い、
+//     そこでキャッシュを捨てているので、ここはクラス名までで足りる。
+static HWND KESCMQueryPaletteWindow(int32 which)
+{
+	HWND cached = sPaletteWnd[which];
+	if (cached != nullptr && ::IsWindow(cached) && KESCMClassIs(cached, L"OWL.Palette"))
+		return cached;
 
-	sPaletteWnd = KESCMFindPaletteWindow(kKESCMPaletteWindowTitle);
-	return sPaletteWnd;
+	sPaletteWnd[which] = KESCMQueryPanelPaletteFromSDK(kKESCMAlphaWidgetIDs[which]);
+	return sPaletteWnd[which];
 }
 
 // 窓のクラス名が期待どおりか。
@@ -342,17 +391,18 @@ static HWND KESCMQueryTranslucentTarget(HWND palette)
 
 #endif // WINDOWS
 
-bool16 KESCMApplyPanelTranslucency()
+// 対象を1つ指定して適用する。★alpha を書く実体はここだけ(公開 API は下の薄いラッパー)。
+static bool16 KESCMApplyFor(int32 which)
 {
 #ifdef WINDOWS
-	HWND palette = KESCMQueryPaletteWindow();
+	HWND palette = KESCMQueryPaletteWindow(which);
 	HWND target  = KESCMQueryTranslucentTarget(palette);
 	if (target == nullptr)
 		return kFalse;		// パネルが無い / ドック内で展開中 → 何もしない
 
 	// ★カーソルが乗っている間は不透明に戻す(KESCMEffectiveAlpha が今の位置を実測して判断)。
 	//   タブ帯・タイトル帯の上でも「乗っている」になる ＝ 対象窓がそれらを含むため。
-	const BYTE alpha = KESCMEffectiveAlpha(target);
+	const BYTE alpha = KESCMEffectiveAlpha(which, target);
 
 	// ★WS_EX_LAYERED は InDesign が最初から立てているので触らない。
 	const BOOL ok = ::SetLayeredWindowAttributes(target, 0, alpha, LWA_ALPHA);
@@ -376,15 +426,34 @@ bool16 KESCMApplyPanelTranslucency()
 	//       してしまう。InDesign はドラッグ中に影を出さない(確定した瞬間に描く)作りなので、
 	//       こちらが強引に出すと**位置が更新されない影が元の場所に取り残される**。
 	//     ★副次効果: カーソルがパネルを出入りするたびに影が点いたり消えたりするちらつきも消える。
-	const bool16 hideShadow = KESCMGetPanelTranslucent();
+	const bool16 hideShadow = sTranslucentOn[which];
 	HWND shadow = ::GetWindow(target, GW_OWNER);
 	if (KESCMClassIs(shadow, L"OWL.ShadowView"))
 		::ShowWindow(shadow, hideShadow ? SW_HIDE : SW_SHOWNA);
 
 	return ok ? kTrue : kFalse;
 #else
+	(void)which;
 	return kFalse;		// Mac: 半透明化の手段が無いので常に「適用しなかった」
 #endif
+}
+
+bool16 KESCMApplyPanelTranslucency()
+{
+	return KESCMApplyFor(kKESCMAlphaSelf);
+}
+
+bool16 KESCMApplyPagesPanelTranslucency()
+{
+	return KESCMApplyFor(kKESCMAlphaPages);
+}
+
+// 全対象へ貼り直す。★通知・遅延再適用・Win32 フックからはこちらを呼ぶ
+//   (対象が増えても、追随させる側のコードを直さなくて済むように)。
+void KESCMApplyAllPanelTranslucency()
+{
+	for (int32 i = 0; i < kKESCMAlphaCount; ++i)
+		KESCMApplyFor(i);
 }
 
 //========================================================================================
@@ -445,13 +514,14 @@ static uint32 KESCMReapplyTimerProc(void* /*refPtr*/)
 
 	// ★ここで Release しない(RunTask の実行中に自分を解放すると自己破棄になる)。
 	//   解放は KESCMShutdownPanelAlpha() の1箇所に集約する。
-	if (!KESCMGetPanelTranslucent())
+	//   ★対象が複数になったので「**全部** OFF になったら」やめる(2026-08-06)。
+	if (!KESCMAnyTranslucentOn())
 	{
-		sReapplyLeft = 0;		// OFF になったので追いかけをやめる
+		sReapplyLeft = 0;		// 全部 OFF になったので追いかけをやめる
 		return IIdleTask::kEndOfTime;
 	}
 
-	KESCMApplyPanelTranslucency();
+	KESCMApplyAllPanelTranslucency();
 
 	// ★★連鎖は「戻り値」で行う(2026-07-29 修正)。以前はここから StartTimer を呼び直して
 	//   いたが、その直後に kEndOfTime を返していたため予約が打ち消され、8 回のはずが
@@ -504,84 +574,89 @@ static void CALLBACK KESCMWinEventProc(HWINEVENTHOOK /*hook*/, DWORD /*event*/, 
 	if (!isWindowEvent && !isCursorEvent)
 		return;
 
-	// ★この機能はトグルが ON のときだけ動く(OFF ならフック自体を張っていないが、外れる直前の
-	//   取りこぼしもここで弾く)。以降の判定に進むのは ON のときだけ。
-	if (!KESCMGetPanelTranslucent() || sPaletteWnd == nullptr)
-		return;
+	// ★対象ごとに独立して判断する(2026-08-06。自分のパネルと本体のページパネル)。
+	//   片方がドッキング中でも、もう片方は貼り直せなければならないので continue で回す。
+	bool16 didApply = kFalse;
 
-	// ★★キャッシュしたハンドルでも「今も自分のパネルか」を必ず確かめる(2026-07-29 の自己レビューで追加)。
-	//   HWND は OS が使い回すので、パネルを閉じたあと同じ値が別の窓へ再割り当てされうる。検証せずに
-	//   GA_ROOT を辿ると**他人のパネルを透かす**(しかもフックは OFF にするまで外れないので、
-	//   ON のままパネルを閉じた後もここへ流れ込み続ける)。
-	//   ⚠ここでは全窓走査(EnumWindows)はしない: 失効していたらキャッシュを捨てて戻るだけにして、
-	//     引き直しは SDK 通知や Apply の経路(KESCMQueryPaletteWindow)へ任せる。このフックは
-	//     大量に飛ぶので、1件あたりを軽く保つのが最優先。
-	if (!::IsWindow(sPaletteWnd))
+	for (int32 which = 0; which < kKESCMAlphaCount; ++which)
 	{
-		sPaletteWnd = nullptr;		// 失効(パネルを閉じた等)。以後このフックは上の行で即 return する
-		return;
-	}
+		// ★この機能はトグルが ON のときだけ動く(全部 OFF ならフック自体を張っていないが、
+		//   外れる直前の取りこぼしもここで弾く)。
+		if (!sTranslucentOn[which] || sPaletteWnd[which] == nullptr)
+			continue;
 
-	// ★クラス名/タイトルの照合は**窓のイベントのときだけ**行う(2026-07-29)。カーソルが動いただけの
-	//   回まで GetClassNameW + GetWindowTextW を叩くのは無駄(秒間 60〜100 回走る)。
-	//   ⚠安全性の根拠: HWND が別の窓へ使い回されるには、その窓が作られて**表示される**必要がある。
-	//     表示は EVENT_OBJECT_SHOW ＝窓イベントなので、すり替わった瞬間には必ずこの照合を通る。
-	//     非表示のままの窓は KESCMQueryTranslucentTarget が "OWL.Dock"/"OWL.FrameDrawer" 以外として
-	//     弾くので、透かす対象にもならない。
-	if (isWindowEvent)
-	{
-		KESCMFindPaletteCtx ctx;
-		ctx.fTitle = kKESCMPaletteWindowTitle;
-		ctx.fPid   = ::GetCurrentProcessId();
-		ctx.fFound = nullptr;
-		if (!KESCMWindowMatches(sPaletteWnd, &ctx))
+		// ★★キャッシュしたハンドルでも「今もそのパネルか」を必ず確かめる(2026-07-29 の自己レビューで追加)。
+		//   HWND は OS が使い回すので、パネルを閉じたあと同じ値が別の窓へ再割り当てされうる。検証せずに
+		//   GA_ROOT を辿ると**他人のパネルを透かす**(しかもフックは OFF にするまで外れないので、
+		//   ON のままパネルを閉じた後もここへ流れ込み続ける)。
+		//   ⚠ここでは SDK へ問い合わせ直さない: 失効していたらキャッシュを捨てて次へ進むだけにして、
+		//     引き直しは SDK 通知や Apply の経路(KESCMQueryPaletteWindow)へ任せる。このフックは
+		//     大量に飛ぶので、1件あたりを軽く保つのが最優先。
+		if (!::IsWindow(sPaletteWnd[which]))
 		{
-			sPaletteWnd = nullptr;
-			return;
+			sPaletteWnd[which] = nullptr;	// 失効(パネルを閉じた等)。次からは上の行で弾かれる
+			continue;
 		}
+
+		// ★クラス名の照合は**窓のイベントのときだけ**行う(2026-07-29)。カーソルが動いただけの回まで
+		//   GetClassNameW を叩くのは無駄(秒間 60〜100 回走る)。
+		//   ⚠安全性の根拠: HWND が別の窓へ使い回されるには、その窓が作られて**表示される**必要がある。
+		//     表示は EVENT_OBJECT_SHOW ＝窓イベントなので、すり替わった瞬間には必ずこの照合を通る。
+		//     非表示のままの窓は KESCMQueryTranslucentTarget が "OWL.Dock"/"OWL.FrameDrawer" 以外として
+		//     弾くので、透かす対象にもならない。
+		//   ⚠2026-08-06: 旧実装はここで窓タイトルも照合していた(自分のパネルかを綴りで見ていた)。
+		//     引き直しが WidgetID 狙い撃ちになったので綴りを合わせる相手が無くなり、クラス名までにした。
+		//     ここで捨てれば次の Apply が SDK から正しい窓を引き直す。
+		if (isWindowEvent && !KESCMClassIs(sPaletteWnd[which], L"OWL.Palette"))
+		{
+			sPaletteWnd[which] = nullptr;
+			continue;
+		}
+
+		// ★★当初は「hwnd == sPaletteWnd」で絞っていたが、**OWL.Palette 宛てのイベントは
+		//   PARENTCHANGE も LOCATIONCHANGE も一度も飛んでこなかった**(実測 hk=1/0)。子ウィンドウの
+		//   移動ではシステムがこれらを生成しないことがある。
+		//   → 発信元は問わず、「イベントが来たら対象パネルの今のトップレベル窓を引き直して、
+		//     alpha がずれていたら貼る」方式にする。判定は GetAncestor + 属性読みだけで、
+		//     ずれていなければ即 continue するので、大量に飛んできても実害はない。
+		HWND target = KESCMQueryTranslucentTarget(sPaletteWnd[which]);
+		if (target == nullptr)
+			continue;				// ドック内で展開中 = 対象外
+
+		// ★★ここは移動中に何度も呼ばれる。「望みの状態と違うときだけ」実処理へ進むこと
+		//   (実測では総イベント 1477 件に対し、実際の書き込みは 1 件だけだった)。
+
+		// ①alpha が望みの値か(カーソルが乗っていれば不透明が「望みの値」になる)
+		const BYTE want = KESCMEffectiveAlpha(which, target);
+		BYTE  cur = 0;
+		DWORD key = 0, flags = 0;
+		const bool16 alphaOk = (::GetLayeredWindowAttributes(target, &key, &cur, &flags) && cur == want) ? kTrue : kFalse;
+
+		// ②影(OWL.ShadowView)の表示状態が望みどおりか。
+		//   ★パネルをドラッグで動かすと InDesign が影を出し直す。alpha だけを見ていると
+		//     「影だけ戻って濃く見える」状態が残る(2026-07-29 実機で判明)。
+		bool16 shadowOk = kTrue;
+		HWND   shadow   = ::GetWindow(target, GW_OWNER);
+		if (KESCMClassIs(shadow, L"OWL.ShadowView"))
+		{
+			const bool16 visible = ::IsWindowVisible(shadow) ? kTrue : kFalse;
+			// ★望みの状態は alpha ではなく**トグルの ON/OFF**で決まる(上の適用側と必ず揃えること)。
+			//   ここに到達するのはその対象が ON のときだけなので、望みは常に「隠れている」。
+			shadowOk = (visible == kFalse);
+		}
+
+		if (alphaOk && shadowOk)
+			continue;				// どちらも望みどおり = 何もしない
+
+		KESCMApplyFor(which);
+		didApply = kTrue;
 	}
-
-	// ★★当初は「hwnd == sPaletteWnd」で絞っていたが、**OWL.Palette 宛てのイベントは
-	//   PARENTCHANGE も LOCATIONCHANGE も一度も飛んでこなかった**(実測 hk=1/0)。子ウィンドウの
-	//   移動ではシステムがこれらを生成しないことがある。
-	//   → 発信元は問わず、「イベントが来たら自分のパネルの今のトップレベル窓を引き直して、
-	//     alpha がずれていたら貼る」方式にする。判定は GetAncestor + 属性読みだけで、
-	//     ずれていなければ即 return するので、大量に飛んできても実害はない。
-	HWND target = KESCMQueryTranslucentTarget(sPaletteWnd);
-	if (target == nullptr)
-		return;					// ドック内で展開中 = 対象外
-
-	// ★★ここは移動中に何度も呼ばれる。「望みの状態と違うときだけ」実処理へ進むこと
-	//   (実測では総イベント 1477 件に対し、実際の書き込みは 1 件だけだった)。
-
-	// ①alpha が望みの値か(カーソルが乗っていれば不透明が「望みの値」になる)
-	const BYTE want = KESCMEffectiveAlpha(target);
-	BYTE  cur = 0;
-	DWORD key = 0, flags = 0;
-	const bool16 alphaOk = (::GetLayeredWindowAttributes(target, &key, &cur, &flags) && cur == want) ? kTrue : kFalse;
-
-	// ②影(OWL.ShadowView)の表示状態が望みどおりか。
-	//   ★パネルをドラッグで動かすと InDesign が影を出し直す。alpha だけを見ていると
-	//     「影だけ戻って濃く見える」状態が残る(2026-07-29 実機で判明)。
-	bool16 shadowOk = kTrue;
-	HWND   shadow   = ::GetWindow(target, GW_OWNER);
-	if (KESCMClassIs(shadow, L"OWL.ShadowView"))
-	{
-		const bool16 visible = ::IsWindowVisible(shadow) ? kTrue : kFalse;
-		// ★望みの状態は alpha ではなく**トグルの ON/OFF**で決まる(上の適用側と必ず揃えること)。
-		//   ここに到達するのは ON のときだけなので、望みは常に「隠れている」。
-		shadowOk = (visible == kFalse);
-	}
-
-	if (alphaOk && shadowOk)
-		return;					// どちらも望みどおり = 何もしない
-
-	KESCMApplyPanelTranslucency();
 
 	// ★遅延の貼り直し(8 回 × 50ms)は**窓のイベントのときだけ**。窓が作り直されて alpha ごと
 	//   捨てられるのを追いかけるための仕掛けなので、カーソルが動いただけの回で回すのは純粋な無駄
 	//   (しかもカーソルは何度も動くので、その都度 8 回の連鎖を張り直すことになる)。
-	if (isWindowEvent)
+	//   ★対象が複数でも予約は1本でよい(タイマー側が全対象を貼り直すため)。
+	if (isWindowEvent && didApply)
 		KESCMScheduleReapply();
 }
 
@@ -617,7 +692,8 @@ void KESCMShutdownPanelAlpha()
 	sPanelAlphaShutdown = true;		// ★以後 KESCMScheduleReapply がタイマーを作り直さない(再武装禁止)
 	KESCMRemoveWinEventHook();		// ★フックを残したまま .pln が降りると危険
 
-	sPaletteWnd = nullptr;			// 覚えていた HWND も手放す(OS が使い回す値を抱えたままにしない)
+	for (int32 i = 0; i < kKESCMAlphaCount; ++i)
+		sPaletteWnd[i] = nullptr;	// 覚えていた HWND も手放す(OS が使い回す値を抱えたままにしない)
 
 	if (sReapplyTimer != nil)
 	{
@@ -720,7 +796,7 @@ void KESCMPanelRollOver::MouseEnter(const PMPoint& localMousePos)
 
 	// ★トグルが OFF なら何もしない(2026-08-06 追加)。★ここには長く「OFF のときは中で弾かれる」と
 	//   書いてあったが**そうなっていなかった**: KESCMApplyPanelTranslucency は OFF でも窓を探し
-	//   (キャッシュが失効していれば EnumWindows で全窓走査)、alpha=255 を書き、影を SW_SHOWNA する。
+	//   (キャッシュが失効していれば SDK へ問い合わせ直す)、alpha=255 を書き、影を SW_SHOWNA する。
 	//   ★同じファイルの IsMouseOver() が 2026-07-30 に「OFF なら実測しない」と決めた判断が、
 	//     こちら側に届いていなかった(同一ファイル内の割れ)。使っていない人に費用を払わせない。
 	//   ⚠OFF へ切り替えた瞬間の 255 への復元は、フライアウトのハンドラが明示的に
@@ -755,11 +831,13 @@ bool8 KESCMPanelRollOver::IsMouseOver() const
 #ifdef WINDOWS
 	// ★トグルが OFF なら実測しない(2026-07-30 の再確認で追加)。この AddIn は半透明トグル専用で、
 	//   OFF の間は誰もこの答えを使わない。一方 KESCMQueryPaletteWindow はキャッシュが失効していると
-	//   EnumWindows で全窓を走査するので、使っていない人にその費用を払わせない
+	//   SDK(IPanelMgr)へ問い合わせ直すので、使っていない人にその費用を払わせない
 	//   (適用側 KESCMEffectiveAlpha が OFF でカーソル位置すら見ないのと同じ方針)。
-	if (!sPanelTranslucent)
+	// ★この AddIn は**自分のパネルの widget** に付いているので、見るのは自分の側だけ
+	//   (本体のページパネルには AddIn できない。あちらのホバーは Win32 フックの OBJID_CURSOR で拾う)。
+	if (!sTranslucentOn[kKESCMAlphaSelf])
 		return kFalse;
-	return KESCMCursorOverWindow(KESCMQueryTranslucentTarget(KESCMQueryPaletteWindow())) ? kTrue : kFalse;
+	return KESCMCursorOverWindow(KESCMQueryTranslucentTarget(KESCMQueryPaletteWindow(kKESCMAlphaSelf))) ? kTrue : kFalse;
 #else
 	return kFalse;
 #endif
@@ -804,12 +882,12 @@ void KESCMPanelVisibilityObserver::Update(const ClassID& theChange, ISubject* /*
 	if (!isPaletteMsg && !isDockMsg && !isSuspendMsg)
 		return;
 
-	// ★OFF のときは何もしない。この通知は「文書を1つ開く」だけでも複数回飛ぶ(実測)ので、
+	// ★全部 OFF のときは何もしない。この通知は「文書を1つ開く」だけでも複数回飛ぶ(実測)ので、
 	//   使っていない人にまで窓探索を走らせない(貼り直しが要るのは ON のときだけ)。
-	if (!KESCMGetPanelTranslucent())
+	if (!KESCMAnyTranslucentOn())
 		return;
 
-	KESCMApplyPanelTranslucency();
+	KESCMApplyAllPanelTranslucency();
 
 	// ★ここで書いた alpha は、直後に InDesign が窓を作り直すと捨てられる(実測)。
 	//   イベントを一巡させてから「そのときの窓」へ貼り直す。

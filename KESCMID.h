@@ -182,8 +182,8 @@ DECLARE_PMID(kActionIDSpace, kKESCMPopupExportChangedPagesActionID, kKESCMPrefix
 //  ＝ショートカット割当は .indk に ActionID の数値で保存されるので、別機能に振り直すと古い割当が
 //  その機能を叩いてしまう)
 DECLARE_PMID(kActionIDSpace, kKESCMPopupTranslucentPanelActionID, kKESCMPrefix + 36)	// パネルのフライアウトの「Translucent Panel」チェック式トグル(ON=フローティング中のこのパネルを半透明にする。★Windows 専用・★ドッキング中は選べるが効かない(フラグだけ立ちフローティングに戻すと効く)。既定 OFF。実体 KESCMPanelAlpha.cpp)
-// (+15..+23 are all declared above - stale placeholders for them removed 2026-08-05 audit. Next free: +37)
-//DECLARE_PMID(kActionIDSpace, kKESCMActionID, kKESCMPrefix + 37)
+DECLARE_PMID(kActionIDSpace, kKESCMPopupTranslucentPagesActionID, kKESCMPrefix + 37)	// パネルのフライアウトの「Translucent Pages Panel」チェック式トグル(ON=フローティング中の**本体のページパネル**を半透明にする。上の +36 と同じ仕組みで対象だけが違う=WidgetID(kPagesPanelWidgetID)で狙い撃ちする。★Windows 専用・★ドッキング中は選べるが効かない。既定 OFF。実体 KESCMPanelAlpha.cpp)
+// (+15..+23 are all declared above - stale placeholders for them removed 2026-08-05 audit. Next free: +38)
 //DECLARE_PMID(kActionIDSpace, kKESCMActionID, kKESCMPrefix + 38)
 //DECLARE_PMID(kActionIDSpace, kKESCMActionID, kKESCMPrefix + 39)
 //DECLARE_PMID(kActionIDSpace, kKESCMActionID, kKESCMPrefix + 40)
@@ -307,6 +307,7 @@ DECLARE_PMID(kScriptInfoIDSpace, kKESCMStatusPropertyScriptElement, kKESCMPrefix
 #define kKESCMRefreshOversetMenuKey	kKESCMStringPrefix "kKESCMRefreshOversetMenuKey"	// パネルのフライアウト「Refresh Overset」項目のメニュー名
 #define kKESCMExportChangedPagesMenuKey	kKESCMStringPrefix "kKESCMExportChangedPagesMenuKey"	// パネルのフライアウト「Export Changed Pages...」項目のメニュー名
 #define kKESCMTranslucentPanelMenuKey	kKESCMStringPrefix "kKESCMTranslucentPanelMenuKey"	// パネルのフライアウト「Translucent Panel」トグルのメニュー名
+#define kKESCMTranslucentPagesPanelMenuKey	kKESCMStringPrefix "kKESCMTranslucentPagesPanelMenuKey"	// パネルのフライアウト「Translucent Pages Panel」トグルのメニュー名(対象は本体のページパネル)
 
 // ショートカット割当可アクション用のアクションエリア(KESCL と同型。2026-07-24)。ActionDef の area 欄に
 // kKESCMPanelMenuActionArea を渡し、StringTable でその値 kKESCMPanelMenuActionAreaValue に解決させると、
@@ -405,7 +406,8 @@ DECLARE_PMID(kScriptInfoIDSpace, kKESCMStatusPropertyScriptElement, kKESCMPrefix
 #define kKESCMShowSrcMarksMenuItemPosition	9.30	// チェック式トグル「Show Marks on Source」
 #define kKESCMScrollMapMenuItemPosition		9.32	// チェック式トグル「Show Scrollbar Map」
 #define kKESCMSyncViewsMenuItemPosition		9.34	// チェック式トグル「Sync Layout Views」
-#define kKESCMTranslucentPanelMenuItemPosition	9.36	// チェック式トグル「Translucent Panel」(表示系トグル群の末尾。★Windows 専用=フローティング中のパネル自身を半透明に。2026-07-29 ユーザー指定でこの位置)
+#define kKESCMTranslucentPagesPanelMenuItemPosition	9.36	// チェック式トグル「Translucent Pages Panel」(★Windows 専用=フローティング中の**本体のページパネル**を半透明に。2026-08-06 追加。★同日ユーザー指定で Translucent Panel より上へ)
+#define kKESCMTranslucentPanelMenuItemPosition	9.38	// チェック式トグル「Translucent Panel」(表示系トグル群の末尾。★Windows 専用=フローティング中のパネル自身を半透明に。2026-08-06 に Pages 側と上下を入れ替え)
 // ── Overset 群 ──
 #define kKESCMOversetSepMenuItemPosition	9.40	// Find Overset 群の上の区切り線(パス末尾 ":-")
 #define kKESCMFindOversetMenuItemPosition	9.42	// チェック式トグル「Find Overset」(アクティブ文書の overset ページに十字)
