@@ -185,8 +185,13 @@ void KESCMPanelObserver::AutoAttach()
 	// ステータス欄はワークスペースに永続化されるため、再起動後にアイコン状態から開くと前回
 	// セッションの文字列が残る。今セッションで表示したメッセージ(未操作なら空)で必ず上書きする。
 	// ★未操作(空)のとき=初めてパネルを開いたときは、使い方の初期ヒントを英語で表示する
-	//   (ソース/ターゲットを開いてフライアウトメニューから Start、という案内)。Start 等を一度でも
-	//   操作すれば gSessionStatus がそのメッセージで埋まり、以後ヒントは出ない。
+	//   (ソース/ターゲットを開いてフライアウトメニューから Start、という案内)。以後は Start 等の
+	//   実メッセージが gSessionStatus を上書きしていくので、ヒストリとしては最後の1件だけが残る。
+	// ⚠この分岐を「まだ何も操作していないか」の判定に使わないこと(2026-08-07 現行化。旧コメントは
+	//   「Start 等を一度でも操作すれば埋まる」と書いていたが、実際は**ヒントを出した時点で
+	//   KESCMSetStatus を通って gSessionStatus が埋まる**)。∴ 2回目以降は必ず else 側を通り、
+	//   同じヒント文をそのまま復元する(画面の見え方は同じ)。★app.kcmStatus も同じ値を返すので、
+	//   スクリプトから「未操作」を見分けることはできない。
 	if (gSessionStatus.CharCount() == 0)
 	{
 		PMString hint("Open the target and source documents (the active one becomes the Target), then choose Start from the panel menu.");
@@ -205,14 +210,16 @@ void KESCMPanelObserver::AutoAttach()
 	// 半透明トグルが ON なら貼り直す。パネルを開き直すと半透明の付け先である
 	// トップレベル窓(OWL.Dock)が別物に変わるため([[win32-window-alpha-transparency]])。
 	// ★2026-08-06: 対象が2つ(自パネル/本体のページパネル)になったので、ここは全対象を見る。
-	//   自分のパネルが作り直された機会にページパネル側も貼り直しておく方が取りこぼしが無く、
-	//   全部 OFF なら下のガードで何もしない。
+	//   自分のパネルが作り直された機会にページパネル側も貼り直しておく方が取りこぼしが無い。
 	// ★OFF のときはこちらで弾いて呼ばない(2026-08-06 再点検)。Apply は OFF でも中で弾かれない
 	//   (弾くのはドッキング中=対象窓なしのときだけ)ので、無条件に呼ぶと使っていない人にも
 	//   窓探索(キャッシュ失効時は SDK への問い合わせ)+alpha 書き+影の SW_SHOWNA の費用を払わせる。
 	//   MouseEnter/MouseLeave/フック/可視性オブザーバの各入口が OFF を弾くのと同じ方針。
-	//   ⚠Apply 側に OFF ガードを入れてはいけない: メニューで OFF にした瞬間の 255 復元・影の再表示は
-	//     Apply(OFF 状態での呼び出し)が担っている(KESCMActionComponent.cpp のトグル経路)。
+	//   ★対象ごとの OFF は KESCMApplyAllPanelTranslucency が飛ばす(2026-08-07 修正。片方 ON・
+	//     片方 OFF で両者が同じフローティンググループにいると、OFF 側が同じ窓へ 255 を上書きして
+	//     ON 側の半透明を打ち消していた)。∴ ここの条件は「全部 OFF なら呼ぶ意味が無い」の意味。
+	//   ⚠Apply**For** 側に OFF ガードを入れてはいけない: メニューで OFF にした瞬間の 255 復元・
+	//     影の再表示は、対象を名指しで呼ぶあちらが担っている(KESCMActionComponent.cpp のトグル経路)。
 	// ★ここは保険で、主たる追随は KESCMPanelAlpha.cpp のオブザーバ(kPaletteVisibilityChangedMessage)。
 	//   ★注意: この AutoAttach は widget を作り直すたびに走るので、固定の既定値を書く場所ではない
 	//   (KESCMGetPanelTranslucent の現在値を読んで反映するだけ)。
