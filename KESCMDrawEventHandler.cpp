@@ -58,7 +58,7 @@
 #include "KESCMPageCheck.h"          // KESCMPageCheckIsChecked/KESCMPageCheckHasAny(「KCM: Check」の✓)
 #include "KESCMPageNumberMarker.h"   // KESCMGetIgnorePageNumberMarker/KESCMAppendPageNumberMarkerRects(ノンブル除外)
 #include "KESCMScrollMap.h"          // KESCMScrollMapNoticeDrawEvent(手動 Hide/Show Spread の検出)
-#include "KESCMTestHud.h"            // 押下中 HUD(実験 2026-08-07。枠と同じ描画パスで右上に出す)
+#include "KESCMTrackerHud.h"         // 押下中 HUD(枠と同じ描画パスで右上に Target/Source を出す)
 #include "KESCMDrawEventHandler.h"
 
 CREATE_PMINTERFACE(KESCMDrawEventHandler, kKESCMDrawEventHandlerImpl)
@@ -688,7 +688,7 @@ void KESCMDrawEventHandler::Register(IDrwEvtDispatcher* d)
 	d->RegisterHandler(ClassID(kEndSpreadMessage), this, kDEHLowestPriority);
 
 	// ★★ウィンドウ単位(全スプレッド描画後に1回)。ポートは pasteboard 座標。
-	//   2026-07-04 のトースト撤去で一度外したが、2026-08-07 に押下中 HUD(KESCMTestHud)のために戻した。
+	//   2026-07-04 のトースト撤去で一度外したが、2026-08-07 に押下中 HUD(KESCMTrackerHud)のために戻した。
 	//   ★この2系統の関係が「ビューの隅に描けるか」の答え:
 	//     kEndSpreadMessage           … 帯(スプレッド/ペーストボード)に clip されるが**前面**
 	//     kAfterLastSpreadDrawMessage … clip されないが**背面**(= 何も被さらないカンバス部分にだけ見える)
@@ -1283,12 +1283,13 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	// Start と無関係に描く「登録専用パス」があり、未 Start でも右クリック登録すると緑「/」が出ていたが、
 	// これを撤去した(登録自体も arm 済みのときだけ可能に変更)。よって登録「/」は下の Target/Source メイン
 	// ループ(db==sDB / db==sSrcDB。=Start 中のみ成立)だけが描く。ここでの Anywhere 判定・専用パスは不要。
-	// ★押下中 HUD(実験。KESCMTestHud.cpp)。左ボタンを押している間、押した窓の右上に "Test" を出す。
+	// ★押下中 HUD(KESCMTrackerHud.cpp)。左ボタンを押している間、押した窓の左上に「その窓が比較の
+	//   何なのか」(Target/Source/…)を出す。
 	//   画面だけ(印刷/PDF には出さない)。サムネイル生成(view 無し)も対象外。判定の本体は
-	//   KESCMTestHudWantsDraw = 「押下中」かつ「押した窓のビュー」。
-	const bool16 wantTestHud = !printing && !isThumb && KESCMTestHudWantsDraw(ded->gd->GetView());
+	//   KESCMTrackerHudWantsDraw = 「押下中」かつ「押した窓のビュー」。
+	const bool16 wantHud = !printing && !isThumb && KESCMTrackerHudWantsDraw(ded->gd->GetView());
 
-	if (!wantMarks && !wantOrig && !wantOldNums && !wantSrcMarks && !wantChecks && !wantOversetThumb && !wantTestHud)
+	if (!wantMarks && !wantOrig && !wantOldNums && !wantSrcMarks && !wantChecks && !wantOversetThumb && !wantHud)
 		return kFalse;
 
 	GraphicsData* gd = ded->gd;
@@ -1315,8 +1316,8 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	//   ⚠changedBy はスプレッドではないので、この分岐は下の ISpread 取得より前に置くこと。
 	if (eventID == ClassID(kAfterLastSpreadDrawMessage))
 	{
-		if (wantTestHud)
-			KESCMTestHudDraw(gPort, gd->GetView(), PMPoint(0.0, 0.0));	// pasteboard 座標なのでオフセット無し
+		if (wantHud)
+			KESCMTrackerHudDraw(gPort, gd->GetView(), PMPoint(0.0, 0.0));	// pasteboard 座標なのでオフセット無し
 		return kFalse;
 	}
 
@@ -1333,8 +1334,8 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	//   kAfterLastSpreadDrawMessage が描く。**各画素はどちらか一方だけ**なので二重に濃くならない。
 	//   ⚠ここは db 確定の直後に置くこと: この先には「描くものが無い」経路の return が複数あり、
 	//     HUD だけが理由でここへ来た場合に末尾まで到達しない。
-	if (wantTestHud)
-		KESCMTestHudDraw(gPort, gd->GetView(), KESCMSpreadOffsetFromPasteboard(db, spread));
+	if (wantHud)
+		KESCMTrackerHudDraw(gPort, gd->GetView(), KESCMSpreadOffsetFromPasteboard(db, spread));
 
 	// ★保持マークのドキュメントが閉じられていたら破棄する(クローズ監視の代わり)。draw は開いている
 	//   ドキュメントについてのみ発火するので、ここで sDB/sOrigDB の生存を確認できる。

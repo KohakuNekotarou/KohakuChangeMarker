@@ -108,7 +108,7 @@
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMScriptProvider.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMTestHud.cpp">
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMTrackerHud.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -170,7 +170,7 @@
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMScrollMap.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMTestHud.h">
+    <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMTrackerHud.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

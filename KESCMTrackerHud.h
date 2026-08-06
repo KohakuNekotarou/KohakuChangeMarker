@@ -1,9 +1,16 @@
 ﻿//========================================================================================
 //
-//  KESCMTestHud.h
+//  KESCMTrackerHud.h
 //
-//  ★実験(2026-08-07 ユーザー指示)。KESCM ツールで**左ボタンを押している間だけ**、押した
-//    レイアウトビューの**右上**に "Test" の1行を出す。
+//  KESCM ツールで**左ボタンを押している間だけ**、押したレイアウトビューの**左上**に
+//    「その窓が比較の何なのか」を1行で出す(押下中 HUD。2026-08-07 ユーザー指示)。
+//
+//  出す文言は4通り(判定の本体は KESCMTrackerHud.cpp の KESCMTrackerHudLabel):
+//      比較中 + Target の窓  → "Target"
+//      比較中 + Source の窓  → "Source"
+//      比較中 + それ以外     → "Not in comparison"
+//      Stop 中               → "Not comparing"
+//    ★相手の文書名は出さない(2026-07-27 ユーザー指示)。理由は上記関数のコメント。
 //
 //  表示条件はこれだけ = 「KESCM ツールが選ばれていて、左ボタンが押されている」。
 //    ・印刷/PDF には出ない(描画側で printing を弾く)。Print comparison marks が ON でも出ない。
@@ -27,8 +34,8 @@
 //
 //========================================================================================
 
-#ifndef __KESCMTestHud_h__
-#define __KESCMTestHud_h__
+#ifndef __KESCMTrackerHud_h__
+#define __KESCMTrackerHud_h__
 
 #include "BaseType.h"
 #include "PMPoint.h"
@@ -37,13 +44,16 @@ class IControlView;
 class IGraphicsPort;
 
 // 押下開始(トラッカーの BeginTracking から)。view = 押されたレイアウトビュー。
-void KESCMTestHudBegin(IControlView* view);
+// ★押した窓の再描画も**ここが自分で要求する**(Draw Event で描くので再描画が無いと1度も描かれない。
+//   reveal 側の再描画は Target 窓でしか走らない = KESCMTrackerHud.cpp の Invalidate のコメント)。
+void KESCMTrackerHudBegin(IControlView* view);
 
 // 押下解除/中断(EndTracking / AbortTracking から)。二重に呼んでも安全。
-void KESCMTestHudEnd();
+// ★消すための再描画もここが要求する(旗を落としてから。順序は上と対称)。
+void KESCMTrackerHudEnd();
 
 // この描画で HUD を描くか = 「押下中」かつ「押した窓のビュー」。描画ハンドラの早期 return 判定にも使う。
-bool16 KESCMTestHudWantsDraw(IControlView* view);
+bool16 KESCMTrackerHudWantsDraw(IControlView* view);
 
 // HUD を1回描く。
 //   gPort         … 描画ポート
@@ -51,11 +61,11 @@ bool16 KESCMTestHudWantsDraw(IControlView* view);
 //   spreadOffset  … このポートの座標系が pasteboard からどれだけずれているか
 //                   ・kAfterLastSpreadDrawMessage(pasteboard 座標) → (0,0)
 //                   ・kEndSpreadMessage(spread 座標)               → そのスプレッドのオフセット
-void KESCMTestHudDraw(IGraphicsPort* gPort, IControlView* view, const PMPoint& spreadOffset);
+void KESCMTrackerHudDraw(IGraphicsPort* gPort, IControlView* view, const PMPoint& spreadOffset);
 
 // プラグイン終了時。持っているフォント参照を返す(状態は静的変数だけなのでこれで足りる)。
-void KESCMTestHudShutdown();
+void KESCMTrackerHudShutdown();
 
-#endif // __KESCMTestHud_h__
+#endif // __KESCMTrackerHud_h__
 
-// End, KESCMTestHud.h.
+// End, KESCMTrackerHud.h.
