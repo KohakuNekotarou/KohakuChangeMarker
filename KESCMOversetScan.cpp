@@ -8,7 +8,9 @@
 //  ロジックをここにインライン複製した(KBS プラグインへの依存を持たないため)。フレーム→ページ UID の
 //  変換は ITextUtils::GetPageUIDRef を主に、ILayoutUtils::GetOwnerPageUID をフォールバックに使い、
 //  どちらも実ページ(kPageBoss)であることを検証してからページ集合に入れる(ペーストボードは自然に脱落)。
-//  走査は読み取りのみ。窓なし文書でも dirty にしないよう IDataBase::SaveRestoreModifiedState で囲む。
+//  走査は読み取り目的。ただし聞く前に古い組版だけは最新化する(RecomposeThruLastFrame。あふれは組版の
+//  結果なので、組み直さずに聞くと「もう直したあふれ」「まだ出ていないあふれ」を答え得る)。窓なし文書でも
+//  dirty にしないよう全体を IDataBase::SaveRestoreModifiedState で囲む。
 //
 //========================================================================================
 
@@ -18,7 +20,8 @@
 #include "IDataBase.h"			// GetRootUID / GetClass / SaveRestoreModifiedState
 #include "IStoryList.h"			// GetUserAccessibleStoryCount / GetNthUserAccessibleStoryUID
 #include "ITextModel.h"			// QueryFrameList / GetPrimaryStoryThreadSpan / QueryTextParcelList
-#include "IFrameList.h"			// IsOverset の引数
+#include "IFrameList.h"			// IsOverset の引数 / GetFirstDamagedFrameIndex(組版が古いか)
+#include "IFrameListComposer.h"	// RecomposeThruLastFrame(あふれを聞く前に古い組版を最新化する)
 #include "ITextParcelList.h"
 #include "IParcelList.h"		// GetLastParcelKey / GetPreviousParcelKey / GetParcelFrameUID
 #include "ITextUtils.h"			// IsOverset / GetPageUIDRef
@@ -31,7 +34,7 @@
 #include "PMPoint.h"			// PBPMPoint
 #include "PMRect.h"				// GetParcelBounds の右下角
 // テーブルセル単独あふれ(赤丸)の走査用:
-#include "ITableModelList.h"		// story 内の全テーブル列挙(GetModelCount/QueryNthModel)
+#include "ITextStoryThreadDictHier.h"	// NextUID(story 内の全スレッド辞書を階層ごと平坦化して列挙)
 #include "ITableModel.h"			// const_iterator / GetGridID / begin/end
 #include "ITextStoryThreadDict.h"	// QueryThread(gridID)(kTableModelBoss に載る)
 #include "ITextStoryThread.h"		// GetTextStart(セルスレッド先頭 TextIndex)
@@ -41,7 +44,6 @@
 #include "ParcelKey.h"			// ParcelKey::IsValid
 #include "SpreadID.h"			// kPageBoss(実ページかの検証)
 #include "Utils.h"
-#include <set>
 
 // プロジェクト内:
 #include "KESCMOversetScan.h"
@@ -209,12 +211,20 @@ static bool16 KESCMThreadIsOverset(ITextModel* textModel, TextIndex pos)
 //========================================================================================
 // story 内の全テーブルの全セルを走査し、単独あふれ（赤丸。親フレームは非あふれ）のセルが載るページ UID を
 // out に足す。セルテキストは親と同一 ITextModel の別スレッド（より大きな TextIndex）＝プライマリの
-// IsOverset では拾えないので、各セルの先頭 TextIndex を StoryThreadDict 経路（SnpAccessTableContent 実証）で
-// 取り、KESCMThreadIsOverset で判定→あふれなら KESCMFindOversetOutport+KESCMFramePageUID で位置追加。
-//   取得: story(UIDRef,kTextStoryBoss)→ITableModelList（deprecated だが現役。SnpIterTableStories 実証）。
-//         各 ITableModel の const_iterator でアンカーセルを回し、GetGridID→dict->QueryThread→GetTextStart。
-//   ★ネスト表: ITableModelList が story 内の全テーブル（入れ子含む）を返す前提。ヘッダーでは包含が保証
-//     されていない＝実機で取りこぼしが出たら QueryCellContentBoss から子 ITableModelList への再帰を足す。
+// IsOverset では拾えないので、各セルの先頭 TextIndex を StoryThreadDict 経路
+// （SnpIterTableUseDictHier.cpp:247-262 が公式の手本）で取り、KESCMThreadIsOverset で判定→あふれなら
+// KESCMFindOversetOutport+KESCMFramePageUID で位置追加。
+//   ★★テーブルへは ITableModelList ではなく**スレッド辞書の階層**から到達する(2026-08-06 ブロック10 監査
+//     で寄せた)。どちらでも動くが、SDK 自身がどちらが新しいかを明言している——ITableModelList を使う
+//     スニペットが自分を "an older way" と呼び「better technique はこちら」と名指しする
+//     (SnpIterTableStories.cpp:68-70, :151-154)。下の walk は SnpIterTableUseDictHier.cpp:147-199。
+//     ★これで**入れ子の表**が契約として入る: ITextStoryThreadDictHier::NextUID は階層を平坦化する
+//     (ITextStoryThreadDictHier.h:63-66)ので、セルの中に錨を下ろした表もトップレベルの表と同じ列に
+//     並ぶ。旧ルートでは「入れ子も返るはず」が実測頼みの前提で、取りこぼしたら再帰を足す宿題だった。
+//   ★★平坦なので再帰はしない(するとセルの中の表を二度歩き、入れ子セルを二重に報告する)。
+//   取得: story(kTextStoryBoss)の UID から NextUID で辞書を辿り、ITableModel を Query できた辞書＝表
+//         (できない辞書＝プライマリストーリー自身。SnpIterTableUseDictHier.cpp:219-225 の見分け方)。
+//         各表は const_iterator でアンカーセルを回し、GetGridID→dict->QueryThread→GetTextStart。
 //   ★性能: コストは Σ(rows×cols)。大きな表で重い（Find Overset はオンデマンドなので許容）。安価な
 //     「表にあふれセルが在るか」の事前判定 API は SDK に無い（確認済み）。
 //========================================================================================
@@ -223,18 +233,23 @@ static void KESCMCollectOversetCells(IDataBase* db, const UIDRef& storyRef, ITex
 {
 	if (db == nil || textModel == nil)
 		return;
-	InterfacePtr<ITableModelList> tableList(storyRef, UseDefaultIID());
-	if (tableList == nil)
+	// 辞書の階層は kTextStoryBoss に集約されている(表1つにつき ITextStoryThreadDict 1つ)。
+	InterfacePtr<ITextStoryThreadDictHier> dictHier(textModel, UseDefaultIID());
+	if (dictHier == nil)
 		return;
 
-	const int32 nTables = tableList->GetModelCount();
-	for (int32 t = 0; t < nTables; ++t)
+	// 出発点はストーリー自身の UID(kTextStoryBoss も辞書を1つ持つ＝プライマリストーリースレッド)。
+	// それは下の ITableModel Query で落ちる。
+	for (UID nextUID = storyRef.GetUID(); nextUID != kInvalidUID; nextUID = dictHier->NextUID(nextUID))
 	{
-		InterfacePtr<ITableModel> tableModel(tableList->QueryNthModel(t));	// ref+1
-		if (tableModel == nil)
-			continue;
-		InterfacePtr<ITextStoryThreadDict> dict(tableModel, UseDefaultIID());	// dict は kTableModelBoss に載る
+		InterfacePtr<ITextStoryThreadDict> dict(db, nextUID, UseDefaultIID());
 		if (dict == nil)
+			continue;
+
+		// この辞書は表のものか。kTableModelBoss は辞書と ITableModel を一緒に持ち、kTextStoryBoss は
+		// 辞書だけを持つ——プライマリストーリースレッドはこれで見分ける。
+		InterfacePtr<ITableModel> tableModel(dict, UseDefaultIID());
+		if (tableModel == nil)
 			continue;
 
 		for (ITableModel::const_iterator it(tableModel->begin()), end(tableModel->end()); it != end; ++it)
@@ -293,10 +308,34 @@ void KESCMCollectOversetLocations(IDataBase* db, std::vector<KESCMOversetLoc>& o
 		if (textModel == nil)
 			continue;
 
+		// ★★(0) 聞く前に、古くなった組版を最新化する(2026-08-06 ブロック10 監査で追加)。
+		//   あふれは**組版の結果**であって現在の状態ではない——下の2つの判定はどちらも「コンポーザが
+		//   最後にそう言った」を読むだけなので、最後に組んでから編集されたストーリーは、もう直した
+		//   あふれを報告したり、今出たばかりのあふれを黙っていたりする。
+		//   公式ルート= SnpInspectTextModel.cpp:724-733(damaged 添字を見てから RecomposeThruLastFrame)。
+		//   ★兄弟の KBS は 2026-08-03 に同じ手当てを入れている(KBSOversetScanEngine.cpp:371-384 /
+		//   KBSJump.cpp:169-174)が、KESCM に届いていなかった。
+		//   ★フレームリストを組むとその中のテーブルも落ち着くので、下の (2) のセル走査も最新の組版を読む。
+		//   ⚠この関数は Find Overset のオンデマンド1経路(KESCMApplyOversetForDoc)からしか呼ばれない＝
+		//   描画イベント中には走らない。
+		//   ⚠★**組めば文書は dirty になる**。冒頭の SaveRestoreModifiedState は「dirty にしない」ので
+		//   はなく「**入る前が clean だったときに限り、出るときに clean へ戻す**」ガード
+		//   (IDataBase.h:389-412。既に dirty なら fDB=nil にして何もしない=ユーザーの編集を消さない)。
+		//   ★この呼び出しで新しく生じる副作用ではない: スレッドに組版のことを聞けば**聞くだけで組む**ので、
+		//   下の IsOverset / GetIsOverset だけでも同じことが起きていた——ガードが元からここに在るのは
+		//   そのため(KBSOversetScanEngine.cpp:340-343 が同じ理由を書いている)。明示的に組むのは、暗黙に
+		//   起きていたことを確実かつ最後まで行うだけで、生成される wax も次の描画で出来るものと同じ。
+		InterfacePtr<IFrameList> frameList(textModel->QueryFrameList());
+		if (frameList != nil && frameList->GetFirstDamagedFrameIndex() != -1)
+		{
+			InterfacePtr<IFrameListComposer> composer(frameList, UseDefaultIID());
+			if (composer != nil)
+				composer->RecomposeThruLastFrame();
+		}
+
 		// (1) プライマリスレッドのあふれ(通常フレームの赤「+」)。purpose-built の IsOverset で判定し、
 		//     あふれていれば末尾位置から「最後の配置済みフレーム」の outport(「+」点)→ページ。span<=0(空)は対象外。
 		//     ★ここで continue しないこと: 親が非あふれでもテーブルのセルは単独であふれ得る((2)で拾う)。
-		InterfacePtr<IFrameList> frameList(textModel->QueryFrameList());
 		if (frameList != nil && Utils<ITextUtils>()->IsOverset(frameList))
 		{
 			const int32 span = textModel->GetPrimaryStoryThreadSpan();
@@ -316,17 +355,6 @@ void KESCMCollectOversetLocations(IDataBase* db, std::vector<KESCMOversetLoc>& o
 		//     スレッド先頭 TextIndex を個別に overset 判定する(親が非あふれのストーリーでも必ず実行する)。
 		KESCMCollectOversetCells(db, storyRef, textModel, outLocs);
 	}
-}
-
-//========================================================================================
-// KESCMCollectOversetPages(KESCMOversetScan.h で宣言) — 位置列を1回走らせてページ集合へ畳む薄いラッパ。
-//========================================================================================
-void KESCMCollectOversetPages(IDataBase* db, std::set<UID>& outPages)
-{
-	std::vector<KESCMOversetLoc> locs;
-	KESCMCollectOversetLocations(db, locs);
-	for (size_t i = 0; i < locs.size(); ++i)
-		outPages.insert(locs[i].pageUID);
 }
 
 // KESCMOversetScan.cpp 終わり。

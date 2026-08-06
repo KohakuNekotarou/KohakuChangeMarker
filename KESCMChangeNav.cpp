@@ -3,7 +3,7 @@
 //  KESCMChangeNav.cpp
 //
 //  「中身が変わったページ」を順に巡回する Next/Prev ナビ(KESCMChangeNav.h で宣言)。
-//  KESCL の「検索ヒットを ScrollViewCenterTo で中央へ送る」動きと同じ発想で、対象は KESCM の
+//  KESCL の「検索ヒットをパノラマの中央へ送る」動きと同じ発想で、対象は KESCM の
 //  「見るべきページ」= Target(sDB)で内容変更マークが付くページ(sEntries)。
 //  ★Added/Removed(登録ページ)・Overflow(未比較)はページ増減由来なので巡回対象に含めない
 //    (2026-07-10 ユーザー指定)。
@@ -12,8 +12,8 @@
 //  index ではなく現在ページ UID を覚えておくことで位置を見失わない)。順序は文書のページ順そのもの
 //  (KESCMCollectPageUIDs)。
 //
-//  移動は「対象ページの矩形中心 → ::InnerToPasteboardMatrix でペーストボード座標 →
-//  KESCMQueryPanorama()->ScrollViewCenterTo()」。ズームは触らない(現在の倍率のまま中央へ)。
+//  移動は「対象ページの矩形をペーストボード座標で取り(Facade::IGeometryFacade::GetItemBounds)、その中心を
+//  KESCMQueryPanorama()->ScrollContentLocationToFrameCenter() へ」。ズームは触らない(現在の倍率のまま中央へ)。
 //  対象文書は常に Target なので、Target のレイアウトビュー(GetAllLayoutViews(db))をスクロールする
 //  (Source を前面にして押しても背面の Target ビューが動く=ユーザー指定の「常に Target」)。
 //
@@ -47,9 +47,8 @@
 #include "ErrorUtils.h"			// PMSetGlobalErrorCode(切替に失敗しても後続コマンドを巻き添えにしない)
 #include "PersistUtils.h"		// ::GetUIDRef / ::GetDataBase
 #include "UIDList.h"			// SetItemList(切替先スプレッド)
-#include "IPageList.h"			// GetPageString / kDefaultPageType(飛んだページ番号の表示ラベル "P1" 等)
-#include "TransformUtils.h"		// ::InnerToPasteboardMatrix
-#include "PMMatrix.h"
+#include "IPageList.h"			// GetPageString / kDefaultPageType(飛んだページ番号の表示ラベル "Page: 1" 等)
+#include "IGeometryFacade.h"	// GetItemBounds(ページ矩形をペーストボード座標で。手本=SnapTracker.cpp:616)
 #include "PMRect.h"
 #include "PMPoint.h"			// PBPMPoint(= PMPoint の typedef)
 #include "PMString.h"
@@ -324,7 +323,11 @@ static bool16 KESCMScrollDocToPBPoint(IDataBase* db, const PBPMPoint& pbPoint, P
 			}
 		}
 
-		pano->ScrollViewCenterTo(pbPoint, kTrue /*forceRedraw*/);
+		// ★名称は新しい方(2026-08-06 ブロック10 監査で寄せた)。IPanorama.h:141-145 が旧 ScrollViewCenterTo を
+		//   「An obsolete name … New code should call ScrollContentLocationToFrameCenter … this function
+		//   will go away in a future release」と明記している。中身は同じ(:135-138 の inline が旧名を呼ぶ)。
+		//   ★KESCMPeek.cpp は既に新名称(:1010 ほか)＝このファイルだけが取り残されていた。
+		pano->ScrollContentLocationToFrameCenter(pbPoint, kTrue /*forceRedraw*/);
 		any = kTrue;
 	}
 	return any;
@@ -346,14 +349,21 @@ static bool16 KESCMScrollDocToPage(IDataBase* db, UID pageUID, PMReal applyZoom 
 
 	InterfacePtr<IGeometry> pageGeo(db, pageUID, UseDefaultIID());
 	if (pageGeo == nil)
-		return kFalse;
+		return kFalse;	// 幾何を持たない UID=このページは測れない(呼び出し側は「動かせなかった」と出す)
 
-	// ページ inner 矩形の中心 → ペーストボード座標(ScrollViewCenterTo は PBPMPoint=ペーストボード)。
-	PMRect box = pageGeo->GetPathBoundingBox();
-	PMPoint center((box.Left() + box.Right()) / PMReal(2.0), (box.Top() + box.Bottom()) / PMReal(2.0));
-	PMMatrix m = ::InnerToPasteboardMatrix(pageGeo);
-	m.Transform(&center);
-	return KESCMScrollDocToPBPoint(db, PBPMPoint(center.X(), center.Y()), applyZoom);
+	// ★ページ矩形をペーストボード座標で得るのは Facade の仕事(2026-08-06 ブロック10 監査で寄せた)。
+	//   手本 snapshot/SnapTracker.cpp:610-616 が**ページに対して**まったく同じことをしている＝
+	//   IGeometry を Query して nil を弾き、その ::GetUIDRef を GetItemBounds に渡す。旧実装は
+	//   「GetPathBoundingBox + ::InnerToPasteboardMatrix + 自前 Transform」で同じ答えを組んでいた。
+	//   ★上の nil 判定は残す: 旧実装が「ついでに担保していたこと」(この UID は本当に幾何を持つ)を
+	//   Facade は担保しない。手本も同じ順序で書いている。
+	//   ⚠BoundsKind は PathBounds(＝旧 GetPathBoundingBox と同じ意味)。手本は OuterStrokeBounds だが
+	//   ページに線幅は無いので値は変わらない——意味の合う方を採る。
+	const PMRect box = Utils<Facade::IGeometryFacade>()->GetItemBounds(
+		::GetUIDRef(pageGeo), Transform::PasteboardCoordinates(), Geometry::PathBounds());
+	return KESCMScrollDocToPBPoint(db,
+		PBPMPoint((box.Left() + box.Right()) / PMReal(2.0), (box.Top() + box.Bottom()) / PMReal(2.0)),
+		applyZoom);
 }
 
 //----------------------------------------------------------------------------------------
@@ -537,7 +547,7 @@ static PMString KESCMStopLabel(IDataBase* db, const KESCMNavStop& stop)
 
 //----------------------------------------------------------------------------------------
 // 巡回本体(dir=+1 で次、-1 で前)。端は折り返す。位置表示「3/12」は Prev/Next 間のウィジェットへ、
-// 飛んだページラベル「P1」等はメッセージ欄へ。ストップは「変更(枠)=ページ中心」または
+// 飛んだページラベル「Page: 1, Change 12%」等はメッセージ欄へ。ストップは「変更(枠)=ページ中心」または
 // 「overset=「+」pb 点(KBS 流)」。
 //----------------------------------------------------------------------------------------
 static void KESCMGoto(int32 dir)
@@ -594,7 +604,8 @@ static void KESCMGoto(int32 dir)
 	sNavIsOverset  = stop.isOverset;
 	sNavOversetOrd = stop.oversetOrd;
 
-	// 飛んだ先をメッセージ欄へ(例 "P1" / "P1 Overset" / "P1 Overset (2)"=KESCMStopLabel 参照)。
+	// 飛んだ先をメッセージ欄へ(例 "Page: 1, Change 12%" / "Page: 1 Overset" / "Page: 1 (2) Overset"
+	// =KESCMStopLabel 参照。2026-08-06 現行化: 旧 "P1" 表記は 2026-07-27 に廃止済み)。
 	// 位置 k/N は別ウィジェット(下の RefreshNavPosition)。
 	KESCMSetStatus(KESCMStopLabel(navDB, stop));
 

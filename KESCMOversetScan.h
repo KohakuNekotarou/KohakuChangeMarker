@@ -11,7 +11,6 @@
 #ifndef __KESCMOversetScan_h__
 #define __KESCMOversetScan_h__
 
-#include <set>
 #include <vector>
 #include "UIDRef.h"		// UID
 #include "PMPoint.h"	// PBPMPoint(overset「+」のペーストボード座標)
@@ -32,10 +31,13 @@ struct KESCMOversetLoc
 // clear すること)。各ストーリーのプライマリスレッド overset(通常フレームの赤「+」)＋全テーブルの全セル
 // 単独あふれ(赤丸)を検出し、それぞれの「+」ペーストボード点とページ UID を1エントリとして積む
 // (KBS 流=箇所ごと)。ページに載らない(ペーストボード等)フレームのあふれは載るページが無いのでスキップ。
+// ★★あふれを聞く前に、古くなった組版だけは最新化する(RecomposeThruLastFrame)。あふれは組版の結果なので、
+// 組み直さずに聞くと「もう直したあふれ」を報告し「今出たあふれ」を見落とす。⚠組めば文書は dirty になるが、
+// 入る前が clean なら出るときに戻す(IDataBase::SaveRestoreModifiedState)。詳細は .cpp の (0)。
 void KESCMCollectOversetLocations(IDataBase* db, std::vector<KESCMOversetLoc>& outLocs);
 
-// 上の薄いラッパ。overset を含むページ UID の集合だけが要る用途(Pages パネルの枠/＋・スクロール地図)向け。
-// 内部で KESCMCollectOversetLocations を1回走らせ、各 loc.pageUID を outPages に入れる(追記; 事前 clear)。
-void KESCMCollectOversetPages(IDataBase* db, std::set<UID>& outPages);
+// ⚠ページ UID の集合だけを返す薄いラッパ KESCMCollectOversetPages は 2026-08-06(ブロック10 監査)で撤去。
+//   唯一の呼び出し予定地だった KESCMApplyOversetForDoc は位置列**と**ページ集合の両方を要るので、ラッパを
+//   呼ぶと走査が2回になる——だから最初からインラインで畳んでおり、ラッパは誰からも呼ばれていなかった。
 
 #endif // __KESCMOversetScan_h__

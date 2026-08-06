@@ -7,8 +7,11 @@
 //  テキストで保存する。2列 = Page / Type(Changed / Inserted / Deleted)。ラベルは全て英語で統一
 //  (ユーザー指定 2026-07-25)。Page はそのページ自身の表示名(変更・挿入=Target / 削除=Source)。
 //
-//  ・ページ番号は IPageList::GetPageString(セクション込み・表示番号。KESCMPageNumberMarker と
-//    同じ呼び方)で「画面に見えている番号」を取る。
+//  ・ページ番号は IPageList::GetPageString(★セクション込み・表示番号)で「画面に見えている番号」を取る。
+//    ⚠KESCMPageNumberMarker とは**引数が違う**(2026-08-06 現行化。以前は「同じ呼び方」と書いてあった):
+//    あちらは 2026-08-06 のブロック5 監査で bIncludeSectionName を kFalse にした——実ノンブルに
+//    セクション名は付かないので、除外矩形を測る用途では付けてはいけない。こちらは人が読む一覧なので
+//    セクション名込み("A:12")が正しい＝台帳の「パネル表記」側。同じ関数だが問いが違う。
 //  ・出力は UTF-8 + BOM + CRLF(KESCL と同一)。日本語ページ名でも Excel/メモ帳が化けない。
 //  ・成功時は無言、失敗のみステータス行。未 Start / 変更ゼロは短くステータス行に出して戻る。
 //  ・★文字列は最初から最後まで PMString で持つ(2026-07-25 追補 Mac 対応)。旧実装は std::wstring と
@@ -82,8 +85,10 @@ void ShowStatus(const char* text)
 }
 
 // pageUID(db 内)の「画面に見えている表示ページ番号」を返す。取れなければ空。
-// 呼び方は KESCMPageNumberMarker の GetPageString と同一(セクション込み・番号スタイルそのまま・
-// 隠しスプレッドを飛ばした表示番号)。
+// 引数(IPageList.h:141-146): 第3 bIncludeSectionName=kTrue … セクション名込み("A:12")。人が読む一覧なので
+//   どのセクションの 12 かが分かる方が良い。⚠KESCMPageNumberMarker は kFalse(用途が違う。上の冒頭注記)。
+// 第4 bUseIntegerStyle=kFalse … セクションの番号スタイルそのまま(ローマ数字等も画面どおり)。
+// 第7 bIncludePagesOfHiddenSpread=kFalse … 隠しスプレッドを飛ばした表示番号(=画面に出ている番号)。
 PMString PageDisplay(IDataBase* db, UID pageUID)
 {
 	PMString out;
