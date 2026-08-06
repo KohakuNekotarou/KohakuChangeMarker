@@ -50,10 +50,15 @@
 
 
 //========================================================================================
-// このスレッド(pos が compose する parcel list)の「最後の配置済みパーセル」の outport(右下角)を求める。
-// 末尾から遡り、初めて有効フレーム(GetParcelFrameUID != kInvalidUID)を持つパーセルの右下を、パーセル
+// このスレッド(pos が compose する parcel list)の「最後の配置済みパーセル」の outport を求める。
+// 末尾から遡り、初めて有効フレーム(GetParcelFrameUID != kInvalidUID)を持つパーセルの角を、パーセル
 // →フレーム inner→ペーストボードへ変換して返す(KBSOversetLocator.cpp の LocateInThread と同一算出)。
 // 1つも配置済みが無ければ(全パーセルが未配置)kFalse。outFrame=「+」を出しているフレーム、outPb=「+」点。
+//
+// ★縦組みでも同じ式でよい(2026-08-06 実機で確認)。採るのは**パーセル内在座標**の (Right, Bottom) で、
+//   組み方向の違いは GetParcelToFrameMatrix が吸収する。日本語版で縦組みのあふれを Find Overset →
+//   Prev/Next で巡回させると、InDesign が実際に「+」を描く位置(縦組みは左下)に着地した。
+//   ∴「書字方向で分岐する」必要は無い。⚠この式を「横組み専用」と読んで分岐を足さないこと。
 //========================================================================================
 static bool16 KESCMLastPlacedOutport(ITextModel* textModel, IDataBase* db, TextIndex pos,
 	UID& outFrame, PBPMPoint& outPb)
@@ -81,7 +86,7 @@ static bool16 KESCMLastPlacedOutport(ITextModel* textModel, IDataBase* db, TextI
 		const PMMatrix toFrame      = pl->GetParcelToFrameMatrix(k);			// parcel → frame inner
 		const PMMatrix toPasteboard = ::InnerToPasteboardMatrix(frameGeo);	// frame inner → pasteboard
 
-		PMPoint corner(parcelBounds.Right(), parcelBounds.Bottom());		// outport(横組みは右下)
+		PMPoint corner(parcelBounds.Right(), parcelBounds.Bottom());		// パーセル内在座標での outport 角
 		toFrame.Transform(&corner);
 		toPasteboard.Transform(&corner);
 

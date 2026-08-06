@@ -526,8 +526,11 @@ static PMString KESCMStopLabel(IDataBase* db, const KESCMNavStop& stop)
 	if (numStr.NumUTF16TextChars() > 0)
 		label.Append(numStr);
 	else if (stop.isOverset)
-		label.Append("Master");	// ★マスターページの overset(2026-08-06 追補): IPageList=通常ページの
-								//   一覧なので番号が引けない。「?」より事情が伝わる語にする
+		label.Append("Master");	// マスターページの overset 用の受け皿(2026-08-06 追補)。「?」より事情が伝わる語。
+								// ⚠実機ではここへ来ない: GetPageString はマスターページにもプレフィックス
+								//   を返すので(実測 2026-08-06、日本語版で "Page: A Overset" と出た)、上の
+								//   numStr が空にならない。★残してあるのは保険であって、期待値ではない
+								//   ——テストで "Master" を期待して書かないこと。
 	else
 		label.Append("?");	// 番号が取れないページ(通常は起きない)
 
