@@ -2,12 +2,18 @@
 //
 //  KESCMDocResponder.cpp
 //
-//  Document-close responder. Registered (via KESCMDocServiceProvider) for the
-//  kAfterCloseDocSignalResponderService signal, which fires only when a document close
-//  has actually completed (a close cancelled from the save-changes dialog does NOT fire
-//  it). On that signal we hand off to KESCMHandleDocsClosed(), which sweeps every tracked
-//  database (marks / original images / toast / peek arm) against the live document list
-//  and cleans up whichever ones vanished, then refreshes the panel ON->OFF.
+//  Document-close responder for the kAfterCloseDocSignalResponderService signal, which fires
+//  only when a document close has actually completed (a close cancelled from the save-changes
+//  dialog does NOT fire it). On that signal we hand off to KESCMHandleDocsClosed(), which sweeps
+//  every tracked database (marks / original images / toast / peek arm) against the live document
+//  list and cleans up whichever ones vanished, then refreshes the panel ON->OFF.
+//
+//  There is no ServiceProvider here on purpose: a boss that answers ONE signal names the API's own
+//  provider implementation in the .fr (kAfterCloseDocSignalRespServiceImpl, DocumentID.h) and
+//  writes only the responder. CServiceProvider + HasMultipleIDs is for a boss that answers several
+//  signals at once, the shape linksui/ClosingDocumentsResponder.cpp needs for its three.
+//  (A hand-written KESCMDocServiceProvider did this until 2026-08-06 - it did exactly what the
+//  API's implementation does.)
 //
 //  We deliberately use AfterClose rather than BeforeClose: BeforeClose can be followed by
 //  a user cancel (which would wrongly drop the marks), and AfterClose gives no usable

@@ -115,7 +115,9 @@ DECLARE_PMID(kImplementationIDSpace, kKESCMPeekStartupImpl, kKESCMPrefix + 4)	//
 DECLARE_PMID(kImplementationIDSpace, kKESCMThumbIdleTaskImpl, kKESCMPrefix + 5)	// IIdleTask 実装(クローズ後の Pages サムネイル再生成を遅延実行)
 DECLARE_PMID(kImplementationIDSpace, kKESCMPanelObserverImpl, kKESCMPrefix + 6)	// IObserver 実装(パネルのウィジェットオブザーバ)
 DECLARE_PMID(kImplementationIDSpace, kKESCMActionComponentImpl, kKESCMPrefix + 7)	// IActionComponent 実装(About)
-DECLARE_PMID(kImplementationIDSpace, kKESCMDocServiceProviderImpl, kKESCMPrefix + 8)	// IK2ServiceProvider 実装(クローズ監視のサービス登録)
+// kKESCMDocServiceProviderImpl (kKESCMPrefix + 8) は自前 ServiceProvider の撤去(2026-08-06)により廃止。
+// 1シグナルだけの responder は API 提供の kAfterCloseDocSignalRespServiceImpl(DocumentID.h)を .fr で
+// 名指しすれば登録される(KESCM.fr の kKESCMDocResponderServiceBoss 参照)。スロットは予約のまま。
 DECLARE_PMID(kImplementationIDSpace, kKESCMDocResponderImpl, kKESCMPrefix + 9)	// IResponder 実装(クローズ確定時の追跡状態クリーンアップ)
 DECLARE_PMID(kImplementationIDSpace, kKESCMIconTipImpl, kKESCMPrefix + 10)	// ITip 実装(パネルイラストにURLをツールチップ表示)
 DECLARE_PMID(kImplementationIDSpace, kKESCMLayoutSyncObserverImpl, kKESCMPrefix + 11)	// IObserver 実装(レイアウトビュー同期)

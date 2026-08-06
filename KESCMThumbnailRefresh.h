@@ -4,9 +4,13 @@
 //
 //  比較実行後に、Pages パネルの「既に表示済み」のサムネイルを再生成させる隔離モジュール。
 //  ★2026-07-06 実機で切り分け完了。効く最小セット=2手だけ:
-//    ④ IImageCacheMgr::Purge(db) で共有画像キャッシュを無効化(=Pagesサムネイルはこの共有キャッシュに
+//    ④ IImageCacheMgr::Purge で共有画像キャッシュを無効化(=Pagesサムネイルはこの共有キャッシュに
 //       載っている。2026-07-05の「内部専用キャッシュで不可」は誤りだった)+ ③ ForceRedraw で即再描画。
+//       ★Purge の単位は「ページ UID ごと」(2026-07-07 に db 全体 Purge から変更。理由は .cpp 冒頭:
+//       全体 Purge は既存サムネイルの無効化としては効かず、しかもパネル全体を点滅させる)。
 //  不要と分かって外した手: ① InvalidateSpreadWidget+UpdatePagesPanel(bForcePurge)、② IPendingUpdateController。
+//  ⚠①は IPagesSubPanelController(公開ヘッダー)の公式 API だが、単独では実機で不発(2026-07-05)。
+//    SDK 全体で Adobe 自身の使用例もゼロ。「④と組み合わせたら効くか」は未再試験。
 //  背景と切り分け経過: docs memory kescm-pages-panel-thumbnails。
 //
 //========================================================================================

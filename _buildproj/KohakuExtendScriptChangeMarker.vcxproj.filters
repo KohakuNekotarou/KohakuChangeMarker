@@ -18,9 +18,6 @@
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMActionComponent.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMDocServiceProvider.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMDocResponder.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>

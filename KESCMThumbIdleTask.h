@@ -10,8 +10,10 @@
 //    ForceRedraw が再生成を起こしきれず、ソースのサムネイルに枠が残る。切替が落ち着いた後
 //    (次の idle)に purge＋ForceRedraw すれば、アクティブが安定した状態=確実に消える。
 //
-//  使い方: クローズ後片付け(KESCMHandleDocsClosed)で survivor db を KESCMScheduleThumbRefresh に
-//    渡す。約 150ms 後に一度だけ走り(RunTask 末尾の UninstallTask で自分をキューから外す。
+//  使い方: 生存している db を KESCMScheduleThumbRefresh に渡す。呼び出し元は2つとも KESCMPeek.cpp:
+//    ①クローズ後片付け(KESCMHandleDocsClosed)で survivor db を渡す経路 ②一括クローズ完了
+//    (kPendingDocumentsClosedMsg)で保留した UI 仕事を流す経路(こちらは「今開いている文書」を列挙し直す)。
+//    約 150ms 後に一度だけ走り(RunTask 末尾の UninstallTask で自分をキューから外す。
 //    ★kEndOfTime 返しは CIdleTask の fCurrentlyInstalled が残る契約違反=cpp 側の説明が正)、生存して
 //    いる db にだけ KESCMTryRefreshPagesPanelThumbnails を呼ぶ。終了時は KESCMShutdownThumbIdleTask で解放。
 //

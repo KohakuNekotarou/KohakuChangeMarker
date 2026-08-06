@@ -138,14 +138,14 @@ IDataBase*	KESCMArmedSourceDB();
 bool16		KESCMGetPrintMarks();		// 印刷マーク ON/OFF
 bool16		KESCMGetMarkOpacity25();	// 枠不透明度の選択: kTrue=25% / kFalse=75%
 
-// ★既知の制限(2026-07-05調査済・対応しないことを決定): ページパネルのサムネイルは「文書の変更」
-// でしか無効化されない内部キャッシュ(ページタブアイコンサイズ別に別キャッシュ)を持っており、KESCM の
-// 枠は文書を変更しないため、既に一度描画済み・表示中のサムネイルは古いまま残る(比較/Clear/印刷トグル
-// 等の直後)。試して効果が無かったもの: サムネイル設定 OFF→ON の全体トグル、
-// IPagesSubPanelController::InvalidatePageWidget/InvalidateSpreadWidget、UpdatePagesPanel の
-// bForcePurge、IControlView::ForceRedraw。唯一効くのは本物のドキュメント編集(実証済み)だが、
-// ICmdHistory 経由でも Redo 履歴を汚さずに済ませる安全な手段が無く、見送りとした。メインのレイアウト
-// 表示への枠描画(KESCMDrawEventHandler)は本件と無関係に正常動作する。
+// ★ページパネルのサムネイル更新は解決済み(2026-07-06)。実体は KESCMThumbnailRefresh.*。
+// 「変更ページの UID を IImageCacheMgr::Purge → Pages パネルを ForceRedraw」の2手で、既に表示済みの
+// サムネイルも作り直される(比較/Clear/印刷トグル等の直後)。
+// ⚠ここには 2026-07-05 の調査に基づく「内部キャッシュなので更新できない・見送りとした」という記述が
+//   2026-08-06 まで残っていた(翌日に解決していたのに更新し忘れ)。効かなかったのは
+//   IPagesSubPanelController::InvalidatePageWidget/InvalidateSpreadWidget・UpdatePagesPanel の
+//   bForcePurge・サムネイル設定の全体トグルであって、ForceRedraw は現行実装の要の1つ。
+//   経緯と切り分けの詳細は KESCMThumbnailRefresh.cpp 冒頭 / memory kescm-pages-panel-thumbnails。
 
 // ドキュメントがクローズされた直後(kAfterCloseDoc レスポンダ)に呼ぶ。追跡中の全DB(マーク/旧版画像/
 // peek arm)を IDocumentList で生存確認し、閉じていたものだけ確定的にクリーンアップする

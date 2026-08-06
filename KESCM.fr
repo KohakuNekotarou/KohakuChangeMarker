@@ -47,14 +47,18 @@
 #include "IControlViewDefs.h"
 #include "SysControlIds.h"
 
-// (AppFrameworkID.h / SpreadID.h / DocFrameworkID.h / DocumentID.h were only here for the
-//  scripting API, which is gone - removed 2026-08-05. Everything below resolves from
-//  ShuksanID.h / widgetid.h / GraphicsID.h and the tool headers.)
+// (AppFrameworkID.h / SpreadID.h / DocFrameworkID.h were only here for the scripting API,
+//  which is gone - removed 2026-08-05. Everything below resolves from ShuksanID.h /
+//  widgetid.h / GraphicsID.h and the tool headers.)
 // ScriptInfoTypes.fh came back on 2026-08-06: a toolbox tool has to register its ScriptID in
 // kToolBoxEnumScriptElement (ITool.h:192-223) - that is the tool's identity, not a scripting API.
 // This single header is enough for the resource at the end of this file: it also pulls in
 // ScriptingID.h (kCoreScriptManagerBoss) and defines kCS5ScriptVersion.
 #include "ScriptInfoTypes.fh"	// VersionedScriptElementInfo / Enumerator
+// DocumentID.h came back on 2026-08-06 for a different reason than the old scripting API: the
+// close-document responder boss names the API's OWN service provider implementation instead of
+// carrying a hand-written one (see that Class below).
+#include "DocumentID.h"	// kAfterCloseDocSignalRespServiceImpl
 #include "GraphicsID.h"	// for IID_IDRWEVTHANDLER / IID_ISPRITE / IID_IPATHGEOMETRY / kPathGeometryImpl
 #include "TipsID.h"		// for IID_ITIP
 
@@ -163,22 +167,33 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 		}
 	},
 
-	// Document-close responder service. IK2ServiceProvider advertises the after-close
-	// signal; IResponder cleans up any of KESCM's tracked, now-closed documents.
+	// Document-close responder. IResponder cleans up any of KESCM's tracked, now-closed documents.
+	//
+	// A boss that answers ONE signal does not need a ServiceProvider of its own: naming the API's
+	// kAfterCloseDocSignalRespServiceImpl (DocumentID.h) registers this responder for that signal.
+	// CServiceProvider + HasMultipleIDs is only for a boss that answers several signals at once,
+	// the shape linksui/ClosingDocumentsResponder.cpp needs for its three.
+	// Same shape as spellpanel/SpellPanelClass.fr:830, transparencyeffect/TranFx.fr:280
+	// ("Provided by API.") and KBS.fr:384. KESCM carried a hand-written KESCMDocServiceProvider
+	// until 2026-08-06 - it did exactly what the API's implementation does.
 	Class
 	{
 		kKESCMDocResponderServiceBoss,
 		kInvalidClass,
 		{
-			IID_IK2SERVICEPROVIDER, kKESCMDocServiceProviderImpl,
+			IID_IK2SERVICEPROVIDER, kAfterCloseDocSignalRespServiceImpl,
 			IID_IRESPONDER,         kKESCMDocResponderImpl,
 		}
 	},
 
 	// Deferred Pages-panel thumbnail refresh. After a document close, refreshing the survivor's
 	// thumbnails synchronously fails while the panel is mid-switch to the newly-active document,
-	// so KESCMHandleDocsClosed schedules this one-shot idle task (~150ms) which purges + redraws
-	// once the switch has settled. Returns kEndOfTime so it removes itself from the queue.
+	// so the close clean-up schedules this one-shot idle task (~150ms) which purges + redraws
+	// once the switch has settled.
+	// It takes itself off the queue by calling UninstallTask() at the end of RunTask - NOT by
+	// returning kEndOfTime: CIdleTask.h:33-38 says derived tasks must not, because the task manager
+	// then drops the task without going through UninstallTask, leaving fCurrentlyInstalled set and
+	// making every later InstallTask a silent no-op.
 	Class
 	{
 		kKESCMThumbIdleTaskBoss,

@@ -237,7 +237,6 @@
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMTracker.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMTrackerRegister.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMCursorProvider.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMDocServiceProvider.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMDocResponder.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMIconTip.cpp" />
     <ClCompile Include="$(id_sdk_dir)\source\public\libs\publiclib\statics\PlugInStatics.cpp" />
