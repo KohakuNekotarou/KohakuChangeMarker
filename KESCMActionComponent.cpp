@@ -324,7 +324,9 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 		}
 
 		// フライアウトの「Save Panel Settings」: 現在の設定系トグルを独自 JSON でローカルへ保存し、
-		// 保存先パスをダイアログ表示する(実体は KESCMPanelState.cpp)。読み込みはパネル初回オープン時。
+		// 保存先パスを**パネルのステータス行**に出す(実体は KESCMPanelState.cpp:132-137)。
+		// 読み込みはパネル初回オープン時。(旧コメントの「ダイアログ表示する」は 2026-07-11 に
+		// モーダルからステータス行へ変えた時点で陳腐化していた。2026-08-06 監査で現行化。)
 		case kKESCMPopupSavePanelStateActionID:
 			KESCMSavePanelState();
 			break;
@@ -655,16 +657,15 @@ void KESCMActionComponent::DoHideUnchangedToggle()
 	//   ページ)を含むスプレッドは、変更ありページや登録済み("Added")ページと同じく隠さない
 	//   (未比較の見落としを防ぐ。ユーザー要望 2026-07-06)。ここで Target 側の overflow 集合を作る
 	//   (Source 側は下の分類が対応表外ページを既に「変更あり」扱いにしているので隠れない)。
-	std::set<UID> tOverflowSet;
-	{
-		IDataBase* srcForOverflow = KESCMArmedSourceDB();
-		if (srcForOverflow != nil && srcForOverflow != db)
-		{
-			std::vector<UID> ovT, ovS, tOverflow, sOverflow;
-			KESCMBuildPairing(db, srcForOverflow, ovT, ovS, &tOverflow, &sOverflow);
-			tOverflowSet.insert(tOverflow.begin(), tOverflow.end());
-		}
-	}
+	// ★対応表(tPages/sPages)は下の「Source 側も隠す」でもそのまま使う。以前はここと下で
+	//   KESCMBuildPairing を2回呼び、同じ表を2度作っていた(2026-08-06 監査 C-2 で1回に統合)。
+	//   対応表の構築はページ数に比例するので、大きい文書ほど無駄が効いていた。
+	IDataBase* const srcDB = KESCMArmedSourceDB();
+	const bool16 hasSource = (srcDB != nil && srcDB != db);
+	std::vector<UID> tPages, sPages, tOverflow, sOverflow;
+	if (hasSource)
+		KESCMBuildPairing(db, srcDB, tPages, sPages, &tOverflow, &sOverflow);
+	const std::set<UID> tOverflowSet(tOverflow.begin(), tOverflow.end());
 
 	// sEntries が空でも、登録済み(比較相手なし="Added")ページや overflow ページがあれば続行する
 	// (それら自体が「変更あり=残す」扱いになるため)。全部無ければ全スプレッドが対象になり、
@@ -765,13 +766,11 @@ void KESCMActionComponent::DoHideUnchangedToggle()
 	// スプレッドを隠す。対応表に無い Source ページ(登録済み=削除ページ扱い)は安全側で「変更あり」
 	// 扱いにする(縁枠合成(ステップ3)が入るまでの暫定方針)。
 	// Source 側が失敗/スキップでも Target 側の隠しはそのまま生かす(致命ではないため)。
-	IDataBase* srcDB = KESCMArmedSourceDB();
 	int32 srcHiddenCount = 0;
 	bool16 srcSkippedAll = kFalse;
-	if (srcDB != nil && srcDB != db)
+	if (hasSource)
 	{
-		std::vector<UID> tPages, sPages;
-		KESCMBuildPairing(db, srcDB, tPages, sPages);
+		// 対応表(tPages/sPages)は関数先頭で1回だけ作ったものを使う(2026-08-06 監査 C-2)。
 		std::map<UID, bool16> srcChangedMap;	// 対応表にあるSourceページ→対応Targetページが変更ありか
 		for (size_t i = 0; i < tPages.size(); ++i)
 			srcChangedMap[sPages[i]] = (KESCMDrawEventHandler::sEntries.count(tPages[i]) > 0) ? kTrue : kFalse;

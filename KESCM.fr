@@ -1077,7 +1077,21 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 			kBindLeft | kBindRight | kBindTop,
 			Frame(8, 8, 216, 24)		// 右端 206→216(パネル+10px 拡張, 2026-08-06)
 			kTrue, kTrue,
-			kAlignLeft, kEllipsizeEnd, kTrue,
+			// ★kEllipsizeMiddle: 長い文書名はフレーム幅に合わせて中央を省略する。「Target: 」ラベル
+			//   (先頭)と拡張子(末尾)の両方が残る。製品 Links パネルがリンクファイル名に採っているのと
+			//   同じ方式(LinksUIViews_enUS.fr:412 ほか)。★C++ 側(KESCMDocNameFromDB)にあった文字数
+			//   ベースの自前短縮は 2026-08-06 の監査(ブロック8 A-2)で撤去=判断はここ1か所。
+			// ★末尾の kFalse = Convert ampersands を切る。kTrue だと単独の '&' がキーボード
+			//   アクセラレータとして食われ、"A&B.indd" が "AB.indd"(B に下線)になる。
+			//   KESCM の StaticText は4つとも associated widget が kInvalidWidgetID =
+			//   アクセラレータの飛び先が1つも無いので、kTrue にしておく利益がゼロ。
+			//   製品 linksui もリンクファイル名の widget は kFalse(LinksUIViews_enUS.fr:412)。
+			//   ⚠公式には2流儀あり、layerpanel のツリー行は kTrue のまま C++ 側で
+			//     InsertAmpersandForDisplay('&'→'&&')を通す(LayerPanelViewsPageItemTreeNode.fr:86)。
+			//     KBS はツリー行と CAlert(=.fr が届かない層)を持つのでそちらを採っている。
+			//     KESCM は CAlert に可変文字列を載せずツリーも無いので、widget 側で切る方が
+			//     「新しいメッセージで二重化を通し忘れる」経路ごと消える(2026-08-06 ユーザー判断)。
+			kAlignLeft, kEllipsizeMiddle, kFalse,
 			kKESCMTargetLabelKey,
 			kInvalidWidgetID,
 		),
@@ -1088,7 +1102,7 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 			kBindLeft | kBindRight | kBindTop,
 			Frame(8, 26, 216, 42)		// 右端 206→216(パネル+10px 拡張, 2026-08-06)
 			kTrue, kTrue,
-			kAlignLeft, kEllipsizeEnd, kTrue,
+			kAlignLeft, kEllipsizeMiddle, kFalse,	// ★ellipsize も ampersand も Target 側と同じ理由(上のコメント参照)
 			kKESCMSourceLabelKey,
 			kInvalidWidgetID,
 		),
@@ -1122,7 +1136,7 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 			kBindLeft | kBindTop,
 			Frame(86, 51, 138, 70)		// Prev(〜86)と Next(138〜)の間(幅52)。縦位置合わせで top を +3px。クラスタごと +5px 右へ(2026-08-06)
 			kTrue, kTrue,
-			kAlignCenter, kEllipsizeEnd, kTrue,
+			kAlignCenter, kEllipsizeEnd, kFalse,	// ★ampersand 変換は切る(理由は Target のコメント)。ここは "3/12" だけだが4つの流儀を揃える
 			"",							// 初期テキストは空(実行時に位置を設定)
 			kInvalidWidgetID,
 		),
@@ -1165,7 +1179,10 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 			kBindLeft | kBindRight | kBindTop,
 			Frame(8, 76, 180, 145)		// 右180まで=イラスト(184-216)と横並び(4px間隔)。下端を 128→145 に拡張(3→4行)。メッセージ部分を+12px広げるためパネル全体も192→204に拡張(2026-07-14)。+10px拡張で右 160→170・パネル204→214(2026-07-15)。さらに+10pxで右 170→180・パネル214→224(2026-08-06)
 			kTrue, kTrue,
-			kAlignLeft, kDontEllipsize, kTrue,
+			// ★ampersand 変換は切る(理由は Target のコメント)。ここは Save Panel Settings /
+			//   Save Check & Register / Export Changed Pages が**保存先フルパス**を出す行なので
+			//   (KESCMPanelState.cpp:136 ほか)、"Q&A資料" のようなフォルダ名が消えていた。
+			kAlignLeft, kDontEllipsize, kFalse,
 			kInvalidWidgetID,
 			kPaletteWindowFontId,
 			4,

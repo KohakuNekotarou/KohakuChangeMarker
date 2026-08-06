@@ -116,19 +116,12 @@ static PMString KESCMDocNameFromDB(IDataBase* db)
 	if (d != nil)
 		d->GetName(name);
 
-	// 長すぎる名前は末尾を残して切り詰め(JSX の shortName 相当)。
-	if (name.CharCount() > 26)
-	{
-		PMString* tail = name.Substring(name.CharCount() - 23, 23);
-		PMString shortened("...");
-		shortened.SetTranslatable(kFalse);
-		if (tail != nil)
-		{
-			shortened.Append(*tail);
-			delete tail;
-		}
-		name = shortened;
-	}
+	// ★長い名前の切り詰めはここでは行わない。widget 側の ellipsize に一任する(KESCM.fr の
+	//   kKESCMTargetTextWidgetID / kKESCMSourceTextWidgetID = kEllipsizeMiddle)。製品 Links パネルが
+	//   リンクファイル名に採っているのと同じ方式で、文字数ではなくフレーム幅で判断するため、
+	//   日本語(全角)名でも正しく収まり「Target: 」ラベルと拡張子の両端が残る。
+	//   (2026-08-06 監査 A-2: 従来はここで文字数ベースに先頭を切っていたが、.fr は kEllipsizeEnd で
+	//    末尾を切る設定=二重かつ逆方向に効いており、末尾を見せる目的が達成できていなかった。)
 	return name;
 }
 
@@ -384,6 +377,25 @@ void KESCMTogglePrintMarks()
 // 表示ヘルパ
 //----------------------------------------------------------------------------------------
 
+// 表示中の ChangeMarker パネルの IControlView を返す(隠れている/引けないときは nil)。
+// ★下の KESCMRefreshPanel / KESCMSetStatus / KESCMSetNavPosition が
+//   「session → app → panelMgr → GetVisiblePanel」の定型を丸ごと3回持っていたので一本化した
+//   (2026-08-06 監査 C-1)。同じプラグイン内の KESCMGetVisiblePagesPanel
+//   (KESCMThumbnailRefresh.h:24-27)と同じ作り＝Pages パネル側だけ解いてあった穴を埋める形。
+// ★session の nil ガードもここで吸収する: 3つともクローズ responder から呼ばれ、アプリ終了の
+//   ティアダウン中にも到達し得る(2026-07-25 に KESCM 全体で統一した規約)。
+static IControlView* KESCMGetVisibleOwnPanel()
+{
+	ISession* session = GetExecutionContextSession();	// 終了処理中は nil になり得る
+	InterfacePtr<IApplication> app(session != nil ? session->QueryApplication() : nil);
+	if (app == nil)
+		return nil;
+	InterfacePtr<IPanelMgr> panelMgr(app->QueryPanelManager());
+	if (panelMgr == nil)
+		return nil;
+	return panelMgr->GetVisiblePanel(kKESCMPanelWidgetID);
+}
+
 // パネルの ON/OFF 表示(Target/Source 名・アイコン・トグルラベル)を現在の arm 状態
 // (KESCMIsArmed 等)に合わせて更新する共通処理。メンバ UpdateInfoDisplay(自パネル)と外部の
 // KESCMRefreshPanel(可視パネルをレスポンダから)双方から使うため、pcd を引数に取る自由関数にする。
@@ -454,18 +466,10 @@ void KESCMPanelObserver::UpdateInfoDisplay()
 //========================================================================================
 void KESCMRefreshPanel()
 {
-	// session の nil ガード: この関数はクローズ responder から呼ばれ、アプリ終了のティアダウン中にも
-	// 到達し得る(2026-07-25 追補 に KESCM 全体で統一)。引けなければ触る先が無いので黙って戻る。
-	ISession* session = GetExecutionContextSession();
-	InterfacePtr<IApplication> app(session != nil ? session->QueryApplication() : nil);
-	if (app == nil)
-		return;
-	InterfacePtr<IPanelMgr> panelMgr(app->QueryPanelManager());
-	if (panelMgr == nil)
-		return;
-	IControlView* panel = panelMgr->GetVisiblePanel(kKESCMPanelWidgetID);
+	// ★session の nil ガード(終了処理中のティアダウン)も含めて KESCMGetVisibleOwnPanel が持つ。
+	IControlView* panel = KESCMGetVisibleOwnPanel();
 	if (panel == nil)
-		return;		// パネルは隠れている: 触る先が無い。
+		return;		// パネルは隠れている(または終了処理中): 触る先が無い。
 	InterfacePtr<IPanelControlData> pcd(panel, UseDefaultIID());
 	KESCMApplyPanelInfo(pcd);
 }
@@ -480,16 +484,9 @@ void KESCMSetStatus(const PMString& s, bool16 forceRedrawNow)
 {
 	gSessionStatus = s;	// パネルを隠して再表示したときに復元できるよう、今セッションの表示内容を覚えておく
 
-	ISession* session = GetExecutionContextSession();	// 終了処理中は nil になり得る
-	InterfacePtr<IApplication> app(session != nil ? session->QueryApplication() : nil);
-	if (app == nil)
-		return;
-	InterfacePtr<IPanelMgr> panelMgr(app->QueryPanelManager());
-	if (panelMgr == nil)
-		return;
-	IControlView* panel = panelMgr->GetVisiblePanel(kKESCMPanelWidgetID);
+	IControlView* panel = KESCMGetVisibleOwnPanel();
 	if (panel == nil)
-		return;		// パネルは隠れている: 触る先が無い。
+		return;		// パネルは隠れている(または終了処理中): 触る先が無い。
 	InterfacePtr<IPanelControlData> pcd(panel, UseDefaultIID());
 	if (pcd == nil)
 		return;
@@ -525,23 +522,19 @@ void KESCMClearSessionStatus()
 //========================================================================================
 void KESCMSetNavPosition(const PMString& posText, bool16 navButtonsEnabled)
 {
-	ISession* session = GetExecutionContextSession();	// 終了処理中は nil になり得る
-	InterfacePtr<IApplication> app(session != nil ? session->QueryApplication() : nil);
-	if (app == nil)
-		return;
-	InterfacePtr<IPanelMgr> panelMgr(app->QueryPanelManager());
-	if (panelMgr == nil)
-		return;
-	IControlView* panel = panelMgr->GetVisiblePanel(kKESCMPanelWidgetID);
+	IControlView* panel = KESCMGetVisibleOwnPanel();
 	if (panel == nil)
-		return;		// パネルは隠れている: 触る先が無い。
+		return;		// パネルは隠れている(または終了処理中): 触る先が無い。
 	InterfacePtr<IPanelControlData> pcd(panel, UseDefaultIID());
 	if (pcd == nil)
 		return;
 
-	// 位置表示。★StaticTextWidget は SetString だけでは次の再描画契機まで古い値が残る(StaticMultiLineText
-	//   と違い自動 invalidate されない)。Start での変化や Next/Prev の値変更を即時反映させるため、明示的に
-	//   invalidate → 今すぐ再描画する(2026-07-15 ユーザー報告「1/5 が即時更新されない」)。
+	// 位置表示。★inval は SetString がやっている(ITextControlData.h:53-54 の第2引数 invalidate は
+	//   既定 kTrue =「specifies whether the control should be redrawn」)。ただし inval だけでは次の
+	//   イベントループまで画面に届かないので、Start での変化や Next/Prev の値変更を即時反映させるため
+	//   ForceRedraw で今すぐ描かせる(IControlView.h:281-286「Redraws the invalid region directly」。
+	//   2026-07-15 ユーザー報告「1/5 が即時更新されない」。重複していた Invalidate() は 2026-08-06 の
+	//   監査(ブロック8 A-3)で撤去)。
 	IControlView* cv = pcd->FindWidget(kKESCMNavPosTextWidgetID);
 	if (cv != nil)
 	{
@@ -549,7 +542,6 @@ void KESCMSetNavPosition(const PMString& posText, bool16 navButtonsEnabled)
 		if (tcd != nil)
 		{
 			tcd->SetString(posText);
-			cv->Invalidate();
 			cv->ForceRedraw();
 		}
 	}
