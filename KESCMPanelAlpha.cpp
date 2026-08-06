@@ -120,57 +120,33 @@ static bool16 KESCMAnyTranslucentOn()
 //
 // ★矩形(GetWindowRect+PtInRect)だけで判定してはいけない。他の窓が上に重なっていても「乗っている」に
 //   なってしまう。矩形は安い足切りに使い、確定は WindowFromPoint → GA_ROOT の一致で行う。
-//   ★矩形外は WindowFromPoint 1回のポップアップ判定(下の KESCMCursorOnOwnPopupTouchingPanel)だけで
-//     終わる(2026-08-06 の「はみ出した自分のメニュー」対応で、整数比較のみからは1段増えた。
-//     クラス名照合まで進むのはカーソルが自プロセスの窓の上にあるときだけ)。
 //
-// ★★★ただし「パネルの上に出ている自分の窓」は、まだパネルの上である。
-//   (2026-08-05 に KBS 側でユーザー報告「行を右クリックすると不透明のパネルがまた薄くなる」を受けて
-//    修正され、2026-08-06 に KESCM へ戻した。KBSPanelAlpha.cpp:108-147 と同じ形。)
-//   フライアウトメニューはパネルに重なって開き、出ている間 WindowFromPoint に答えてしまうので、
-//   素の「GA_ROOT == target」だけだと**メニューが出た瞬間に「カーソルは他所」**になる。しかも窓の表示は
-//   EVENT_OBJECT_SHOW ＝下の Win32 フックの範囲内なので、薄い alpha が即座に書き込まれる。
-//   パネルに重なるツールチップ(KESCMIconTip.cpp)も同じ形。
-//   → 判定は「カーソルがパネルの矩形の中で、その下にあるのが **InDesign の窓** か」にする。
-//   ⚠代わりに手放すもの: InDesign の**別の**窓がパネルを覆っている場合、パネルは隠れたまま不透明で
-//     居座る。画面に見えているものは何もおかしくならず、次にカーソルが矩形の外へ出れば直るので、
-//     自分のメニューを開くたびにパネルが点滅するのに比べれば遥かに小さい代償。
-//   ★はみ出し対応(2026-08-06 再点検): 縦に長いメニューはパネル矩形の外へ伸びる。その部分は上の
-//     pid 判定に到達しない(矩形の足切りが先)ので、矩形外では下の補助判定を追加で見る。
+// ★★★2026-08-07: 「パネルの上に出ている自分の窓も、まだパネルの上」という判定は**全部やめた**
+//   (ユーザー判断「パネルメニューの上にカーソルがあるときは透明になっていいかも」)。
+//
+//   経緯 —— ここは4回変わっている:
+//     2026-07-29  メニューが重なると薄くなるのを「仕様」として許容
+//     2026-08-05  KBS でユーザー報告(「行を右クリックすると不透明のパネルがまた薄くなる」)→
+//                 「カーソル下が自プロセスの窓なら乗っている」を追加して修正
+//     2026-08-06  KESCM へ移植。さらに「矩形の外へはみ出したメニュー」も拾うため、
+//                 自プロセス窓 ∧ 容れ物クラスでない ∧ パネル矩形と交差、という補助判定を追加
+//     2026-08-07  **全部撤去**(このコード)
+//
+//   ★なぜやめたか = **交差で判定する限り必ず揺れるから**。ユーザー報告
+//   「パネルメニューを出す→枠の透明度を選ぶ→子供のメニューが出てそれを選んでいると、
+//     不透明が半透明になる」の正体がこれだった:
+//     フライアウト本体はパネルに重なる → 交差する → 不透明
+//     その子メニューは右へ開く       → 交差しない → 半透明
+//   ＝親子を行き来するたびに切り替わる。メニューの開く向きも長さも画面位置で変わる以上、
+//   交差の取り方をいくら賢くしても揺れは消せない。**メニューが出ている間は薄いまま**に
+//   統一すれば、状態が揺れる余地そのものが無くなる。
+//
+//   ⚠この判断で受け入れたもの:
+//     ・ツールチップ(KESCMIconTip.cpp)が出た瞬間もパネルは薄くなる。ツールチップ自体は
+//       別窓なので不透明のまま読める。
+//     ・逆に、2026-08-05 に KBS が直した「右クリックメニューで薄くなる」は**仕様に戻る**。
+//       ⚠KBS 側を揃えるかは未判断(あちらは今も自プロセス窓を「乗っている」と数える)。
 static bool KESCMClassIs(HWND h, const wchar_t* wanted);	// 実体は下(窓クラス名の完全一致)
-
-// カーソルが「パネルからはみ出した自分のポップアップ」の上にあるか(KESCMCursorOverWindow の補助)。
-// ★フライアウト/右クリックメニューはパネル矩形の外へ伸びることがある。その部分にカーソルが移ると
-//   矩形の足切りで即「他所」になり、メニュー操作中にパネルが薄くなる(=矩形内で潰した点滅の、はみ出し版)。
-// ★「自分のプロセスの窓」だけでは広すぎる(メインフレームも別パネルの容れ物も自プロセス)。容れ物クラス
-//   (indesign / OWL.Dock / OWL.FrameDrawer)を除いた自プロセス窓=一時的なポップアップに限り、さらに
-//   「パネル矩形と交差している」(パネルから開いたメニューは必ず重なる)ことを要求して、無関係な場所の
-//   メニュー(アプリのメニューバー等)で不透明が張り付くのを防ぐ。
-static bool KESCMCursorOnOwnPopupTouchingPanel(const POINT& pt, const RECT& panelRc)
-{
-	HWND under = ::WindowFromPoint(pt);
-	if (under == nullptr)
-		return false;
-
-	const HWND root = ::GetAncestor(under, GA_ROOT);
-	if (root == nullptr)
-		return false;
-
-	DWORD pid = 0;
-	::GetWindowThreadProcessId(root, &pid);
-	if (pid != ::GetCurrentProcessId())
-		return false;
-
-	if (KESCMClassIs(root, L"indesign") ||			// メインフレーム(ドック内パネル・文書窓の容れ物)
-	    KESCMClassIs(root, L"OWL.Dock") ||			// フローティングパネルの容れ物(=別のパネル)
-	    KESCMClassIs(root, L"OWL.FrameDrawer"))		// ドロワー展開の容れ物
-		return false;
-
-	RECT wr, is;
-	if (!::GetWindowRect(root, &wr))
-		return false;
-	return ::IntersectRect(&is, &wr, &panelRc) != 0;
-}
 
 static bool KESCMCursorOverWindow(HWND target)
 {
@@ -185,26 +161,15 @@ static bool KESCMCursorOverWindow(HWND target)
 	if (!::GetWindowRect(target, &rc))
 		return false;
 	if (!::PtInRect(&rc, pt))
-	{
-		// 矩形の外でも、パネルから開いた自分のメニューのはみ出し部分は「まだパネルの上」
-		// (2026-08-06 再点検)。それ以外(大半のマウス移動)はここで終わる。
-		return KESCMCursorOnOwnPopupTouchingPanel(pt, rc);
-	}
+		return false;
 
 	HWND under = ::WindowFromPoint(pt);
 	if (under == nullptr)
 		return false;
 
-	const HWND root = ::GetAncestor(under, GA_ROOT);
-	if (root == target)
-		return true;		// パネル自身 = 普通の答え
-
-	// 自分のプロセスの窓なら、それはパネルが自分の上に出したもの(フライアウト・ツールチップ)であって、
-	// カーソルはパネルから離れていない。★トップレベル窓に対して聞くこと: メニューはパネルの子ではなく、
-	// アプリが所有する独立したトップレベル窓として作られる。
-	DWORD pid = 0;
-	::GetWindowThreadProcessId(root, &pid);
-	return (pid == ::GetCurrentProcessId());
+	// ★パネル自身のときだけ「乗っている」。上に出ている自分の窓(フライアウト・その子メニュー・
+	//   ツールチップ)は対象外 ＝ 出ている間は薄いまま(上のコメントの経緯を参照)。
+	return ::GetAncestor(under, GA_ROOT) == target;
 }
 
 // ★実効 alpha ＝ その対象のトグルが ON で、かつカーソルが乗っていないときだけ薄くする。
