@@ -36,12 +36,15 @@
 #define kKESCMDisplayName	"Kohaku Change Marker"			// 表示名(About メニュー項目・About ボックス本文・パネル/ツール名)。KBS の "Kohaku Search Panel" に合わせ、単語間をスペースで区切る(2026-07-25)。
 #define kKESCMFileName		"KohakuChangeMarker"			// 出力ファイル名の基底(.rc の OriginalFilename)。vcxproj の TargetName と一致させること。表示名と違いスペースは入れない。
 #define kKESCMPrefixNumber	0x205515 		// Unique prefix number for this plug-in(*Must* be obtained from Adobe Developer Support).
-#define kKESCMVersion		"1.3.0"						// Version of this plug-in。About ボックス本文・.rc の FileVersion・PluginVersion リソースの3か所に出る。1.0.1 → 1.1.0(2026-07-25) → 1.1.1(2026-07-26) → 1.2.0(2026-07-30) → 1.2.1(2026-08-06) → 1.3.0(2026-08-07)。
+#define kKESCMVersion		"1.3.1"						// Version of this plug-in。About ボックス本文・.rc の FileVersion・PluginVersion リソースの3か所に出る。1.0.1 → 1.1.0(2026-07-25) → 1.1.1(2026-07-26) → 1.2.0(2026-07-30) → 1.2.1(2026-08-06) → 1.3.0(2026-08-07) → 1.3.1(2026-08-07)。
 														// ★Adobe Exchange の公開版は 1.2.0。1.2.1 は提出しないまま 1.3.0 へ繰り上げた(機能追加が入ったので patch では足りない)ので、**以下は公開版 1.2.0 から見た増分**。
 														// ■機能追加(minor を上げた理由):
 														//   ①app.kcmStatus = パネルのステータス行の最後の1行をスクリプト/COM から読む読み取り専用プロパティ(KESCMScriptProvider.cpp)。パネルを閉じていても答える。実機検証の自動化用。
 														//   ②Translucent Pages Panel = **本体のページパネル**もホバーで不透明に戻る半透明にできる(フライアウト。従来は自分のパネルだけ)。窓の特定を WidgetID 狙い撃ちへ全面入れ替えたことで可能になった(本体パネルの窓タイトルは UI 言語で変わるため)。
 														//   ③ツールに ScriptID を与えた = app.toolBoxTools.currentTool から KESCM ツールを読み書きできる(UITools.KOHAKU_CHANGE_MARKER_TOOL)。従来は en_None で「何も選ばれていない」と区別できなかった。
+														//   ④パネルにツール切替ボタン(kKESCMToolButtonWidgetID) = 押すとツールボックスの琥珀のツールがアクティブになる。絵はツールボックスと同じリソースを参照。★押下表示はツールボックスと双方向に同期する(状態を書くのは ITool::Select/Deselect の1か所だけなので、どちらから選んでも食い違わない)。
+														// ■1.3.1(2026-08-07) で撤去したもの: 「Translucent Toolbox」トグル(フローティング中の**ツールボックス**を半透明にする)。1.3.0 に一度入れたが、同日ユーザー判断で外した。
+														//   ★★提出説明に「機能を削除した」と書かないこと ＝ **1.3.0 は提出していない**ので、公開版 1.2.0 から見ればこの機能は最初から存在しない。(押下中 HUD で同じ取り違えを一度している＝下の「■機能変更」を参照。)
 														// ■機能変更(★提出時の説明に要記載): 押下中 HUD を作り直した。公開版 1.2.0 は sprite 層で**相手の文書名**を出す作りで、押下を抜けた後に one-shot タイマーで描くため枠より遅れて出ていた。新版は比較マークの枠と同じ Draw Event で描くので**枠と同時に出る**。出す内容も文書名ではなく**押した窓の役割**(Target / Source / Not in comparison / Not comparing)に変えた(2026-07-27 ユーザー指示「相手の文書名は出さない」)。位置・見た目は旧版と同じ(ビュー左上・文字20px・不透明度0.6)。フライアウトの「Show HUD」トグルと設定キー hudOn は廃止＝**常に出る**。★2026-08-06 に一度全廃し、2026-08-07 に作り直した経緯があるので、「削除した機能」として説明しないこと。
 														// ■表示・操作の整理: About を「名前 版数」1行に(英語のみ)／日本語で出すのは How to Use と Hide Unchanged の確認アラートの2箇所だけに整理(メニュー・パネル・ステータス行は全ロケール英語)／パネル幅 +10px／Hide Unchanged と Start(文書2つ未満)と Find Overset(走査対象なし)を条件付きで灰色化／ページパネル右クリックのメニュー接頭辞を KESCM:→KCM: に短縮／Prev/Next のラベル整理。
 														// ■不具合修正・内部改善: ジャンプ前にスプレッド切替(マスターページへ飛べるように)＋マスターページのあふれを巡回一覧に載せる／Find Overset で押し出された表のセルを報告しない／あふれを聞く前にリコンポーズ／表の列挙を ITextStoryThreadDictHier へ(入れ子の表が入る)／描画エンジンの見直し(greek 無効・除外領域の緑は画面限定・除外矩形のキャッシュ化)／LocaleIndex に k_Wild 追補(列挙外 UI 言語での生キー表示を防ぐ)／比較失敗ページの可視化(failed=N・Refresh で既存枠を消さない)／半透明の細部(はみ出しメニュー・AutoAttach の OFF ガード・Shutdown 後の再武装禁止)。
@@ -192,7 +195,10 @@ DECLARE_PMID(kActionIDSpace, kKESCMPopupExportChangedPagesActionID, kKESCMPrefix
 //  その機能を叩いてしまう)
 DECLARE_PMID(kActionIDSpace, kKESCMPopupTranslucentPanelActionID, kKESCMPrefix + 36)	// パネルのフライアウトの「Translucent Panel」チェック式トグル(ON=フローティング中のこのパネルを半透明にする。★Windows 専用・★ドッキング中は選べるが効かない(フラグだけ立ちフローティングに戻すと効く)。既定 OFF。実体 KESCMPanelAlpha.cpp)
 DECLARE_PMID(kActionIDSpace, kKESCMPopupTranslucentPagesActionID, kKESCMPrefix + 37)	// パネルのフライアウトの「Translucent Pages Panel」チェック式トグル(ON=フローティング中の**本体のページパネル**を半透明にする。上の +36 と同じ仕組みで対象だけが違う=WidgetID(kPagesPanelWidgetID)で狙い撃ちする。★Windows 専用・★ドッキング中は選べるが効かない。既定 OFF。実体 KESCMPanelAlpha.cpp)
-DECLARE_PMID(kActionIDSpace, kKESCMPopupTranslucentToolboxActionID, kKESCMPrefix + 38)	// パネルのフライアウトの「Translucent Toolbox」チェック式トグル(ON=フローティング中の**ツールボックス**を半透明にする。上の +36/+37 と同じ仕組みで対象だけが違う=WidgetID(kRootToolBoxWidgetId)で狙い撃ちする。★Windows 専用・★ドッキング中は選べるが効かない。既定 OFF。実体 KESCMPanelAlpha.cpp)
+// ★kKESCMPrefix + 38 は「Translucent Toolbox」トグルの跡地(2026-08-07 に追加し、同日ユーザー判断で撤去)。
+//   **番号は再利用しない** = ショートカット設定(.indk)はアクションを数値の ActionID で保存するので、
+//   割り当て済みの番号を別機能へ回すと、そのショートカットが無関係な機能を叩く。押下中 HUD を撤去した
+//   ときの +35 とまったく同じ扱い。
 // (+15..+23 are all declared above - stale placeholders for them removed 2026-08-05 audit. Next free: +39)
 //DECLARE_PMID(kActionIDSpace, kKESCMActionID, kKESCMPrefix + 39)
 //DECLARE_PMID(kActionIDSpace, kKESCMActionID, kKESCMPrefix + 40)
@@ -221,7 +227,7 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMPrevChangeButtonWidgetID, kKESCMPrefix + 38)	
 DECLARE_PMID(kWidgetIDSpace, kKESCMNextChangeButtonWidgetID, kKESCMPrefix + 39)	// 「Next ▶」= 次の見るべきページへスクロール(KESCMChangeNav.cpp)
 DECLARE_PMID(kWidgetIDSpace, kKESCMScrollMapWidgetID, kKESCMPrefix + 40)	// スクロールバー地図strip(文書窓の縦スクロールバー左隣に実行時注入; KESCMScrollMap.cpp)
 DECLARE_PMID(kWidgetIDSpace, kKESCMToolWidgetID, kKESCMPrefix + 41)	// ツールボックスのツールボタンのウィジェットID(KESCMTool::InitWidget)
-DECLARE_PMID(kWidgetIDSpace, kKESCMToolButtonWidgetID, kKESCMPrefix + 42)	// ★パネル内のツール切替ボタン(2026-08-07 追加。猫イラストの真上・32x32)。押すと kKESCMToolBoss をアクティブツールにする(KESCMActivateOwnTool)。上の +41 とは別物＝あちらはツールボックス側のツール枠
+DECLARE_PMID(kWidgetIDSpace, kKESCMToolButtonWidgetID, kKESCMPrefix + 42)	// ★パネル内のツール切替ボタン(2026-08-07 追加。Prev の左・32x22)。押すと kKESCMToolBoss をアクティブツールにする(KESCMActivateOwnTool)。上の +41 とは別物＝あちらはツールボックス側のツール枠
 //DECLARE_PMID(kWidgetIDSpace, kKESCMWidgetID, kKESCMPrefix + 2)
 //DECLARE_PMID(kWidgetIDSpace, kKESCMWidgetID, kKESCMPrefix + 3)
 //DECLARE_PMID(kWidgetIDSpace, kKESCMWidgetID, kKESCMPrefix + 4)
@@ -318,7 +324,8 @@ DECLARE_PMID(kScriptInfoIDSpace, kKESCMStatusPropertyScriptElement, kKESCMPrefix
 #define kKESCMExportChangedPagesMenuKey	kKESCMStringPrefix "kKESCMExportChangedPagesMenuKey"	// パネルのフライアウト「Export Changed Pages...」項目のメニュー名
 #define kKESCMTranslucentPanelMenuKey	kKESCMStringPrefix "kKESCMTranslucentPanelMenuKey"	// パネルのフライアウト「Translucent Panel」トグルのメニュー名
 #define kKESCMTranslucentPagesPanelMenuKey	kKESCMStringPrefix "kKESCMTranslucentPagesPanelMenuKey"	// パネルのフライアウト「Translucent Pages Panel」トグルのメニュー名(対象は本体のページパネル)
-#define kKESCMTranslucentToolboxMenuKey	kKESCMStringPrefix "kKESCMTranslucentToolboxMenuKey"	// パネルのフライアウト「Translucent Toolbox」トグルのメニュー名(対象はツールボックス)
+// (kKESCMTranslucentToolboxMenuKey は 2026-08-07 に機能ごと撤去。文字列キーは ActionID と違って
+//  外部に保存されないので、跡地を残す必要は無い＝行ごと削除してある。)
 
 // ショートカット割当可アクション用のアクションエリア(KESCL と同型。2026-07-24)。ActionDef の area 欄に
 // kKESCMPanelMenuActionArea を渡し、StringTable でその値 kKESCMPanelMenuActionAreaValue に解決させると、
@@ -420,7 +427,7 @@ DECLARE_PMID(kScriptInfoIDSpace, kKESCMStatusPropertyScriptElement, kKESCMPrefix
 #define kKESCMScrollMapMenuItemPosition		9.32	// チェック式トグル「Show Scrollbar Map」
 #define kKESCMSyncViewsMenuItemPosition		9.34	// チェック式トグル「Sync Layout Views」
 #define kKESCMTranslucentPagesPanelMenuItemPosition	9.36	// チェック式トグル「Translucent Pages Panel」(★Windows 専用=フローティング中の**本体のページパネル**を半透明に。2026-08-06 追加。★同日ユーザー指定で Translucent Panel より上へ)
-#define kKESCMTranslucentToolboxMenuItemPosition	9.37	// チェック式トグル「Translucent Toolbox」(★Windows 専用=フローティング中の**ツールボックス**を半透明に。2026-08-07 追加。Pages と Panel の間)
+// (9.37 は「Translucent Toolbox」の跡地。2026-08-07 に機能ごと撤去したので空き番。)
 #define kKESCMTranslucentPanelMenuItemPosition	9.38	// チェック式トグル「Translucent Panel」(表示系トグル群の末尾。★Windows 専用=フローティング中のパネル自身を半透明に。2026-08-06 に Pages 側と上下を入れ替え)
 // ── Overset 群 ──
 #define kKESCMOversetSepMenuItemPosition	9.40	// Find Overset 群の上の区切り線(パス末尾 ":-")

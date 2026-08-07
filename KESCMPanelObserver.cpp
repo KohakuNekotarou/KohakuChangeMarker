@@ -174,7 +174,7 @@ void KESCMPanelObserver::AutoAttach()
 	// kTrueStateMessage を送る(pictureicon サンプル PicIcoRollOverButtonObserver と同じ流儀)。
 	this->AttachWidget(pcd, kKESCMIconOnWidgetID,             ITriStateControlData::kDefaultIID);
 	this->AttachWidget(pcd, kKESCMIconOffWidgetID,            ITriStateControlData::kDefaultIID);
-	// ★ツール切替ボタン(イラストの真上)。押すとツールボックスの琥珀のツールがアクティブになる。
+	// ★ツール切替ボタン(Prev の左)。押すとツールボックスの琥珀のツールがアクティブになる。
 	//   同じ RollOverIconButtonWidget 系の boss なので、受け方は上の2つとまったく同じ。
 	this->AttachWidget(pcd, kKESCMToolButtonWidgetID,         ITriStateControlData::kDefaultIID);
 

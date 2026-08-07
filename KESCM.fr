@@ -494,20 +494,11 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKESCMTranslucentPagesPanelMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
-		// "Translucent Toolbox" on the panel flyout (popup) menu. Check-mark toggle (default OFF).
-		// The same toggle again, with the TOOLBOX as its target (user request, 2026-08-07).
-		// ★Why this works exactly like the other two: the toolbox, while floating, is an ordinary
-		// palette as far as the window system is concerned. Measured on the real application
-		// (2026-08-07, reading every top-level window from outside the process):
-		//     0x3701E8  OWL.Dock  EXSTYLE=0x08080000  LAYERED=True  Alpha=255  Owner=OWL.ShadowView  41x731
-		// - same class, same WS_EX_LAYERED (put there by InDesign itself), same shadow window - as the
-		// two panels that already go translucent. ⚠Its window TITLE is empty, which is one more reason
-		// the old "find the window by its title" lookup could never have reached it.
-		// Target: kRootToolBoxWidgetId (ToolboxID.h:117). Implementation: KESCMPanelAlpha.cpp.
-		kKESCMPopupTranslucentToolboxActionID,
-		kKESCMPopupMenuPath,
-		kKESCMTranslucentToolboxMenuItemPosition,
-		kSDKDefIsNotDynamicMenuFlag,
+		// ("Translucent Toolbox" was added on 2026-08-07 and taken out again the same day: a KESCM
+		// toggle is not the place to change how InDesign's OWN toolbox looks. It needed only one more
+		// target to work, which is itself evidence that this mechanism does not care WHICH palette it
+		// is pointed at; the measured window structure is kept in memory/translucent-toolbox-idea.md.
+		// Its ActionID (+38) stays retired - see KESCMID.h.)
 
 		// "Align Other Views to Active" on the panel flyout (popup) menu. Plain command (not a toggle):
 		// sets every OTHER document's layout views to the active (frontmost) view's position + zoom, once.
@@ -807,15 +798,6 @@ resource ActionDef (kSDKDefActionResourceID)
 		kKESCMActionComponentBoss,
 		kKESCMPopupTranslucentPagesActionID,
 		kKESCMTranslucentPagesPanelMenuKey,
-		kOtherActionArea,
-		kNormalAction,
-		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates supplies the check mark (kSelectedAction)
-		kInvalidInterfaceID,
-		kSDKDefInvisibleInKBSCEditorFlag,
-
-		kKESCMActionComponentBoss,
-		kKESCMPopupTranslucentToolboxActionID,
-		kKESCMTranslucentToolboxMenuKey,
 		kOtherActionArea,
 		kNormalAction,
 		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates supplies the check mark (kSelectedAction)
@@ -1257,8 +1239,10 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 		//   KESCMIconWidget を使うのは IID_ITIP(ツールチップ)を載せるため。出す文字列は猫イラストと
 		//   別で、ツールボックスと同じツール名 —— 出し分けは KESCMIconTip.cpp が WidgetID で行う。
 		//
-		// ★位置 = Next ボタン(〜196)の右隣(2026-08-07 ユーザー指定。最初は猫イラストの真上に置いたが
-		//   ここへ移した)。上下は Next(48〜70)と揃えて横一列に見せる。
+		// ★位置 = Prev ボタン(48〜)の左隣。パネル左端から 8px で、Target ラベル/ステータス欄と縦に揃う。
+		//   上下は Prev/Next(48〜70)と揃えて横一列に見せる。
+		//   (2026-08-07 に3度動かしてここへ落ち着いた: 猫イラストの真上 → Next の右隣 → Prev/Next
+		//    クラスタと左右入れ替え。いずれもユーザー指定。)
 		// ★★枠を**正方形にしない**のが要点(同日ユーザー指定「ツールボックスと同じようにクリッピング
 		//   して欲しい、ツールボックスのは正方形ではない」)。24×22 の枠に 32×32 の PNG を入れると
 		//   周囲の余白が切り取られ、ツールボックスのツール枠と同じ見え方になる。

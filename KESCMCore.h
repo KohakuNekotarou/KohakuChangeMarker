@@ -206,7 +206,7 @@ void		KESCMSetNavPosition(const PMString& posText, bool16 navButtonsEnabled);
 // 配布元URL(kKESCMRepoURL, KESCMID.h)を既定のブラウザで開く。実体は KESCMActionComponent.cpp。
 void		KESCMOpenAboutURL();
 
-// ★パネルのツール切替ボタン(kKESCMToolButtonWidgetID、猫イラストの真上)を押したときに呼ぶ。
+// ★パネルのツール切替ボタン(kKESCMToolButtonWidgetID、Prev の左)を押したときに呼ぶ。
 //   このプラグインのツール(kKESCMToolBoss ＝ ツールボックスに出ている琥珀のツール)を
 //   アクティブツールにする。ツールボックスでそのツールを直接クリックしたのと同じ状態になる。
 //   ★ツールボックスが無い実行構成(サーバー等)では何もしない。実体は KESCMTool.cpp。

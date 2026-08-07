@@ -64,7 +64,6 @@
 #include "PaletteRef.h"			// PaletteRef::GetOWLControl(=HWND) / GetPaletteRefType
 #include "PaletteRefUtils.h"	// GetParentOfPalette(階層を上がる)
 #include "PagesPanelID.h"		// kPagesPanelWidgetID(:391) - 本体ページパネルの狙い撃ち先
-#include "ToolboxID.h"			// kRootToolBoxWidgetId(:117) - ツールボックスの狙い撃ち先
 
 // ★windows.h は SDK ヘッダーより後に置くこと(マクロが SDK 側の名前とぶつからないように)。
 #ifdef WINDOWS
@@ -72,31 +71,27 @@
 #endif
 
 //----------------------------------------------------------------------------------------
-// 半透明にできる対象パネル(2026-08-06 に2つへ、2026-08-07 に3つへ拡張)。
+// 半透明にできる対象パネル(2026-08-06 に2つへ拡張)。
 //
-//  ★1つ目 = 自分のパネル。2つ目 = **本体のページパネル**。3つ目 = **ツールボックス**(ユーザー要望)。
+//  ★1つ目 = 自分のパネル。2つ目 = **本体のページパネル**(ユーザー要望)。
 //  ★対象を WidgetID(数値)で持てるようになったのが 08-06 の肝 —— 窓タイトルは UI 言語で変わるので
 //    本体のパネルには使えなかった(英語UI="Pages" / 日本語UI="ページ")。
-//  ★★ツールボックスも**通常のパレットとまったく同じ窓構造**であることを実機で確定させた
-//    (2026-08-07。フローティング中に外部から全トップレベル窓を数値で読んだ):
-//        0x3701E8  OWL.Dock  EXSTYLE=0x08080000  LAYERED=True  Alpha=255  Owner=OWL.ShadowView  41x731
-//    ＝クラスも EXSTYLE も影の有無も、半透明が効いている自パネル/ページパネルと同一。
-//    ⚠**窓タイトルは空**だった(Dock は3つとも空)。「タイトルで探す」旧方式が本体パネルに通用しない
-//      理由がもう1つ増えたことになる ＝ WidgetID 狙い撃ちで正解。
 //  ★増やすときは enum に1つ足し、kKESCMAlphaWidgetIDs に WidgetID を1つ足すだけでよい。
 //    ただしトグル(メニュー項目・永続化キー)は対象ごとに要る。
+//  (2026-08-07 に3つ目＝**ツールボックス**を足したが、同日ユーザー判断で撤去した。1つ足すだけで
+//   動いた＝この作りが対象を選ばないことの実証にはなっている。実測した窓構造と狙い撃ち先の記録は
+//   memory/translucent-toolbox-idea.md に残してあるので、再挑戦するならそこから。)
 //----------------------------------------------------------------------------------------
 enum
 {
-	kKESCMAlphaSelf    = 0,		// 自分のパネル(Kohaku Change Marker)
-	kKESCMAlphaPages   = 1,		// 本体のページパネル
-	kKESCMAlphaToolbox = 2,		// ツールボックス
-	kKESCMAlphaCount   = 3
+	kKESCMAlphaSelf  = 0,		// 自分のパネル(Kohaku Change Marker)
+	kKESCMAlphaPages = 1,		// 本体のページパネル
+	kKESCMAlphaCount = 2
 };
 
 // トグル状態(セッション内で保持。永続化は KESCMPanelState.cpp が担当)。★既定 OFF
 // ※Mac でも状態だけは持つ(適用側が何もしないだけ)。
-static bool16 sTranslucentOn[kKESCMAlphaCount] = { kFalse, kFalse, kFalse };
+static bool16 sTranslucentOn[kKESCMAlphaCount] = { kFalse, kFalse };
 
 // どれか1つでも ON か。★Win32 フックを張る/外す判断と、遅延再適用を続ける/やめる判断で共有する
 //   (同じことを2か所で数えると必ずずれる)。
@@ -251,16 +246,6 @@ void KESCMSetPagesPanelTranslucent(bool16 on)
 	KESCMSetTranslucentFor(kKESCMAlphaPages, on);
 }
 
-bool16 KESCMGetToolboxTranslucent()
-{
-	return sTranslucentOn[kKESCMAlphaToolbox];
-}
-
-void KESCMSetToolboxTranslucent(bool16 on)
-{
-	KESCMSetTranslucentFor(kKESCMAlphaToolbox, on);
-}
-
 #ifdef WINDOWS
 
 // ★★★パネルの OWL.Palette 窓を SDK 側から得る(2026-08-06 に確立。旧実装 = 窓タイトルで EnumWindows)。
@@ -329,15 +314,14 @@ static HWND KESCMQueryPanelPaletteFromSDK(const WidgetID& panelWidgetID)
 //   複数回飛ぶ(2026-07-29 実測)。そのたびに SDK へ問い合わせるのは無駄で、しかも下の Win32 フックは
 //   マウス移動のたびに走る ＝ **Win32 コールバックからモデルへ触る回数は最小に保ちたい**
 //   (KBS が同じ理由で負のキャッシュまで置いている: KBSPanelAlpha.cpp:492-502)。
-static HWND sPaletteWnd[kKESCMAlphaCount] = { nullptr, nullptr, nullptr };
+static HWND sPaletteWnd[kKESCMAlphaCount] = { nullptr, nullptr };
 
 // 対象ごとの狙い撃ち先。★enum の並びと必ず同じ順にすること。
 //  ※WidgetID ではなく生の uint32 で持つ: DECLARE_PMID が作るのは uint32 で、静的初期化に使える。
 static const uint32 kKESCMAlphaWidgetIDs[kKESCMAlphaCount] =
 {
-	kKESCMPanelWidgetID,		// kKESCMAlphaSelf    = 自分のパネル
-	kPagesPanelWidgetID,		// kKESCMAlphaPages   = 本体のページパネル
-	kRootToolBoxWidgetId		// kKESCMAlphaToolbox = ツールボックス(ToolboxID.h:117)
+	kKESCMPanelWidgetID,		// kKESCMAlphaSelf  = 自分のパネル
+	kPagesPanelWidgetID			// kKESCMAlphaPages = 本体のページパネル
 };
 
 // キャッシュ優先でパネル窓を得る。★ハンドルは OS が使い回すので、生存確認だけでなくクラス名の
@@ -453,11 +437,6 @@ bool16 KESCMApplyPanelTranslucency()
 bool16 KESCMApplyPagesPanelTranslucency()
 {
 	return KESCMApplyFor(kKESCMAlphaPages);
-}
-
-bool16 KESCMApplyToolboxTranslucency()
-{
-	return KESCMApplyFor(kKESCMAlphaToolbox);
 }
 
 // 全対象へ貼り直す。★通知・遅延再適用・Win32 フックからはこちらを呼ぶ

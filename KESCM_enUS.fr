@@ -47,7 +47,6 @@ resource StringTable (kSDKDefStringsResourceID + index_enUS)
                 kKESCMScrollMapMenuKey,				"Show Scrollbar Map",
                 kKESCMTranslucentPanelMenuKey,		"Translucent Panel",
                 kKESCMTranslucentPagesPanelMenuKey,	"Translucent Pages Panel",
-                kKESCMTranslucentToolboxMenuKey,	"Translucent Toolbox",
                 kKESCMSavePanelStateMenuKey,			"Save Panel Settings",
                 kKESCMSaveChecksMenuKey,			"Save Check && Register",
                 kKESCMLoadChecksMenuKey,			"Load Check && Register",

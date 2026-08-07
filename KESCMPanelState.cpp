@@ -108,8 +108,7 @@ void KESCMSavePanelState()
 	json += "  \"scrollbarMap\": ";           json += KESCMBoolLiteral(KESCMGetScrollMapEnabled());                 json += ",\n";
 	json += "  \"ignorePageNumberMarker\": "; json += KESCMBoolLiteral(KESCMGetIgnorePageNumberMarker());           json += ",\n";
 	json += "  \"translucentPanel\": ";       json += KESCMBoolLiteral(KESCMGetPanelTranslucent());                 json += ",\n";
-	json += "  \"translucentPagesPanel\": ";  json += KESCMBoolLiteral(KESCMGetPagesPanelTranslucent());            json += ",\n";
-	json += "  \"translucentToolbox\": ";     json += KESCMBoolLiteral(KESCMGetToolboxTranslucent());               json += "\n";
+	json += "  \"translucentPagesPanel\": ";  json += KESCMBoolLiteral(KESCMGetPagesPanelTranslucent());            json += "\n";
 	json += "}\n";
 
 	FILE* fp = FileUtils::OpenFile(file, "wb");
@@ -198,7 +197,8 @@ void KESCMLoadPanelStateIfPresent()
 	//     コールバックが即 return するので、起動シーケンスへの影響は無い。
 	KESCMSetPanelTranslucent      (KESCMJsonReadBool(text, "translucentPanel",       KESCMGetPanelTranslucent()));
 	KESCMSetPagesPanelTranslucent (KESCMJsonReadBool(text, "translucentPagesPanel",  KESCMGetPagesPanelTranslucent()));
-	KESCMSetToolboxTranslucent    (KESCMJsonReadBool(text, "translucentToolbox",     KESCMGetToolboxTranslucent()));
+	// (「translucentToolbox」= ツールボックスの半透明は 2026-08-07 に機能ごと撤去。古い設定ファイルに
+	//  このキーが残っていても、読まなくなっただけで害は無い＝KESCMJsonReadBool はキーを名指しで探す。)
 }
 
 // KESCMPanelState.cpp 終わり。
