@@ -206,6 +206,24 @@ void		KESCMSetNavPosition(const PMString& posText, bool16 navButtonsEnabled);
 // 配布元URL(kKESCMRepoURL, KESCMID.h)を既定のブラウザで開く。実体は KESCMActionComponent.cpp。
 void		KESCMOpenAboutURL();
 
+// ★パネルのツール切替ボタン(kKESCMToolButtonWidgetID、猫イラストの真上)を押したときに呼ぶ。
+//   このプラグインのツール(kKESCMToolBoss ＝ ツールボックスに出ている琥珀のツール)を
+//   アクティブツールにする。ツールボックスでそのツールを直接クリックしたのと同じ状態になる。
+//   ★ツールボックスが無い実行構成(サーバー等)では何もしない。実体は KESCMTool.cpp。
+//   戻り値: 実際にアクティブになったら kTrue(SetActiveTool の答えをそのまま返す)。
+//   ★押した結果をステータス行に出すために使う ＝ 効かなかったときに無反応に見えないように。
+bool16		KESCMActivateOwnTool();
+
+// ★このプラグインのツールが今アクティブか(実体は KESCMTool.cpp)。パネルを組み立て直したときに
+//   ボタンの押下表示を実状態へ合わせるために使う ＝ 固定の既定値を書かない([[panel-autoattach-read-real-state]])。
+bool16		KESCMIsOwnToolActive();
+
+// ★パネルのツール切替ボタンを「押されている/いない」表示にする(実体は KESCMPanelObserver.cpp)。
+//   ★呼び元は KESCMTool::Select / Deselect の2つだけ ＝ ツールボックスで選んでもパネルのボタンで
+//     選んでもショートカットでも、必ずここを通る(状態を2か所で管理しない=[[one-question-one-place]])。
+//   パネルが隠れていれば何もしない(再表示時に KESCMIsOwnToolActive から復元される)。
+void		KESCMSetToolButtonSelected(bool16 selected);
+
 // (Split Target on Start(KESCMGetSplitOnStart/KESCMDoSplitTarget)は 2026-07-04 撤去。
 //  仕組みは docs/ai-notes/kescm-split-target-mechanism.md と git 履歴 69c4b07 に保存)
 

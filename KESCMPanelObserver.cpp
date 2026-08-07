@@ -174,6 +174,9 @@ void KESCMPanelObserver::AutoAttach()
 	// kTrueStateMessage を送る(pictureicon サンプル PicIcoRollOverButtonObserver と同じ流儀)。
 	this->AttachWidget(pcd, kKESCMIconOnWidgetID,             ITriStateControlData::kDefaultIID);
 	this->AttachWidget(pcd, kKESCMIconOffWidgetID,            ITriStateControlData::kDefaultIID);
+	// ★ツール切替ボタン(イラストの真上)。押すとツールボックスの琥珀のツールがアクティブになる。
+	//   同じ RollOverIconButtonWidget 系の boss なので、受け方は上の2つとまったく同じ。
+	this->AttachWidget(pcd, kKESCMToolButtonWidgetID,         ITriStateControlData::kDefaultIID);
 
 	// (印刷ON/OFF と 不透明度 25%/75% は 2026-07-10 にフライアウトメニューへ移行:
 	//  kKESCMPopupPrintMarksActionID / kKESCMPopupOpacity25ActionID / kKESCMPopupOpacity75ActionID。
@@ -243,6 +246,7 @@ void KESCMPanelObserver::AutoDetach()
 	this->DetachWidget(pcd, kKESCMNextChangeButtonWidgetID,   IBooleanControlData::kDefaultIID);
 	this->DetachWidget(pcd, kKESCMIconOnWidgetID,             ITriStateControlData::kDefaultIID);
 	this->DetachWidget(pcd, kKESCMIconOffWidgetID,            ITriStateControlData::kDefaultIID);
+	this->DetachWidget(pcd, kKESCMToolButtonWidgetID,         ITriStateControlData::kDefaultIID);	// ★AutoAttach と対で外す
 }
 
 void KESCMPanelObserver::AttachWidget(const InterfacePtr<IPanelControlData>& pcd, const WidgetID& wid, const PMIID& iid)
@@ -277,6 +281,23 @@ void KESCMPanelObserver::Update(const ClassID& theChange, ISubject* theSubject, 
 
 	const WidgetID wid = cv->GetWidgetID();
 
+	// ★★ツール切替ボタンだけは kFalseStateMessage も見る(2026-08-07 ユーザー報告
+	//   「ツールボックスから押すと同期するが、パネルから押すと押しっぱなしの見え方にならない」)。
+	//   原因: この widget は push button の挙動で、**クリック処理の最後に自分で状態を落とす**。
+	//   順番はこうなっていた —— ①押下で kTrueStateMessage → ②下の case がツールを切り替える →
+	//   ③ITool::Select が状態を kSelected にする → ④**widget がクリックを閉じる際に kUnselected へ戻す**。
+	//   ④が最後に来るので押下表示が消える。ツールボックスから選んだときは①④が走らない＝残る、
+	//   というユーザーの観測とも合う。
+	//   ⇒ ④の直後に飛ぶ kFalseStateMessage で「実際にアクティブか」を見て塗り直す。
+	//   ★実状態(KESCMIsOwnToolActive)を見るので、ツールが本当に切り替わらなかったときは
+	//     押下表示も戻らない ＝ 見た目と実態がずれない。
+	//   (トグル系 widget で kTrue/kFalse 両方のメッセージを見るのは製品コードでも定石＝レイヤーパネル。)
+	if (theChange == kFalseStateMessage && wid.Get() == kKESCMToolButtonWidgetID)
+	{
+		KESCMSetToolButtonSelected(KESCMIsOwnToolActive());
+		return;
+	}
+
 	if (theChange == kTrueStateMessage)
 	{
 		switch (wid.Get())
@@ -291,6 +312,39 @@ void KESCMPanelObserver::Update(const ClassID& theChange, ISubject* theSubject, 
 			case kKESCMIconOffWidgetID:
 				KESCMOpenAboutURL();
 				break;
+			// ★ツール切替ボタン → このプラグインのツール(ツールボックスの琥珀のツール)を
+			//   アクティブにする。ツールボックスでそれをクリックしたのと同じ状態になる。
+			//   実体は KESCMTool.cpp(Utils<IToolBoxUtils>()->QueryTool → SetActiveTool)。
+			case kKESCMToolButtonWidgetID:
+			{
+				// ★押した結果をステータス行に出す(2026-08-07 ユーザー要望)。SetActiveTool は
+				//   「実際にアクティブになったか」を返すので、断られた場合も黙って終わらない。
+				const bool16 activated = KESCMActivateOwnTool();
+
+				// ★★出す名前は**ツールチップと同じ**(2026-08-07 ユーザー指定)。そうなるのは同じ
+				//   文字列テーブルのキーを引いているから ＝ 名前を持つ場所は1つだけで、
+				//   ツールボックスのツール名(KESCMTool::Init の SetName)・ツールチップ
+				//   (KESCMIconTip::GetTipText)・この行の3か所が必ず一致する([[one-question-one-place]])。
+				//   PMString::Translate() が「キー → 今のロケールの実文字列」に解決する(PMString.h:692-696)。
+				PMString toolName(kKESCMToolStringKey);
+				toolName.Translate();
+
+				PMString msg;
+				msg.SetTranslatable(kFalse);	// ★組み立て終わった文をもう一度キー扱いさせない
+				if (activated)
+				{
+					msg.Append(toolName);
+					msg.Append(" selected.");
+				}
+				else
+				{
+					msg.Append("Could not select ");
+					msg.Append(toolName);
+					msg.Append(".");
+				}
+				KESCMSetStatus(msg);
+				break;
+			}
 			default: break;
 		}
 	}
@@ -489,8 +543,58 @@ static void KESCMApplyPanelInfo(const InterfacePtr<IPanelControlData>& pcd)
 	// 初期状態から正しく反映される。値の作り方は KESCMChangeNav.cpp を参照。
 	KESCMRefreshNavPosition();
 
+	// ★ツール切替ボタンの押下表示を**実状態**へ合わせる(2026-08-07)。パネルは表示のたびに widget を
+	//   作り直すので、ここで固定の既定値(未選択)を書いてしまうと、ツールがアクティブなままパネルを
+	//   開き直したときに押下表示が落ちる([[panel-autoattach-read-real-state]])。
+	//   ★「今アクティブか」の判断は KESCMTool.cpp の1か所だけが持つ。
+	IControlView* toolView = pcd->FindWidget(kKESCMToolButtonWidgetID);
+	if (toolView != nil)
+	{
+		InterfacePtr<ITriStateControlData> tsd(toolView, UseDefaultIID());
+		if (tsd != nil)
+		{
+			// 第3引数 kFalse = 通知を出さない(理由は下の KESCMSetToolButtonSelected と同じ)。
+			tsd->SetState(KESCMIsOwnToolActive() ? ITriStateControlData::kSelected
+												 : ITriStateControlData::kUnselected, kTrue, kFalse);
+		}
+	}
+
 	// (Start/Stop の切替はパネルボタンから撤去し、フライアウト項目 kKESCMPopupStartStopActionID の
 	//  動的ラベル(UpdateActionStates)へ移行 2026-07-10。ここでのボタンラベル設定は不要になった。)
+}
+
+//========================================================================================
+// KESCMSetToolButtonSelected(KESCMCore.h で宣言)
+//   パネルのツール切替ボタンを「押されている/いない」表示にする。ツールボックスのツール枠と同じ
+//   見た目(くぼみ)になるのは、.fr でこの widget を kADBEIconSuiteButtonDrawWellType にしてあるため。
+//
+//   ★呼び元は KESCMTool::Select / Deselect の2つだけ。ツールボックスで選んでも、パネルのボタンで
+//     選んでも、ショートカットでも、スクリプトでも、ITool::Select は必ず呼ばれる ＝ 状態を持つ場所が
+//     1つで済み、パネルとツールボックスが食い違う経路が構造的に無い([[one-question-one-place]])。
+//========================================================================================
+void KESCMSetToolButtonSelected(bool16 selected)
+{
+	IControlView* panel = KESCMGetVisibleOwnPanel();
+	if (panel == nil)
+		return;		// パネルは隠れている(または終了処理中): 触る先が無い。
+	InterfacePtr<IPanelControlData> pcd(panel, UseDefaultIID());
+	if (pcd == nil)
+		return;
+
+	IControlView* cv = pcd->FindWidget(kKESCMToolButtonWidgetID);
+	if (cv == nil)
+		return;
+
+	InterfacePtr<ITriStateControlData> tsd(cv, UseDefaultIID());
+	if (tsd == nil)
+		return;
+
+	// ★★第3引数 notifyOfChange = kFalse(ITriStateControlData.h:52)。
+	//   ⚠kTrue のままだと状態変更で kTrueStateMessage が飛び、この Observer の Update が
+	//     KESCMActivateOwnTool を呼び返す → SetActiveTool → ITool::Select → またここ、と往復する。
+	//     ここは実状態を**映すだけ**なので、通知は要らない。
+	tsd->SetState(selected ? ITriStateControlData::kSelected : ITriStateControlData::kUnselected, kTrue, kFalse);
+	cv->ForceRedraw();		// 押下表示は即座に見えてほしい(次のイベントループまで待たせない)
 }
 
 void KESCMPanelObserver::UpdateInfoDisplay()

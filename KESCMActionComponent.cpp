@@ -326,6 +326,36 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 			break;
 		}
 
+		// 「Translucent Toolbox」トグル: **ツールボックス**を半透明にするか(2026-08-07 追加)。
+		// 上2つとまったく同じ仕組み・同じ制約で、対象だけが違う。
+		// ★狙い撃ち先は kRootToolBoxWidgetId(ToolboxID.h:117)。★実機で「フローティング中の
+		//   ツールボックスは普通のパレットと同じ窓構造(OWL.Dock / WS_EX_LAYERED 済み / 影つき)」を
+		//   確認済み ＝ ページパネルと同じ扱いでよい。⚠窓タイトルは**空**なので、タイトル照合では
+		//   絶対に届かない(WidgetID 狙い撃ちにしてあるから可能になった)。実体 KESCMPanelAlpha.cpp。
+		case kKESCMPopupTranslucentToolboxActionID:
+		{
+			const bool16 on = !KESCMGetToolboxTranslucent();
+			KESCMSetToolboxTranslucent(on);
+
+			const bool16 applied = KESCMApplyToolboxTranslucency();
+
+			// ★上2つと同じ理由で、OFF に戻したときだけ ON の対象を貼り直す
+			//   (同じフローティンググループに入れていると、こちらの 255 復元が相手を巻き込むため)。
+			if (!on)
+				KESCMApplyAllPanelTranslucency();
+
+			PMString msg;
+			if (!on)
+				msg = "Translucent Toolbox: off.";
+			else if (applied)
+				msg = "Translucent Toolbox: on.";
+			else
+				msg = "Translucent Toolbox: on - has no effect while the Toolbox is docked or closed.";
+			msg.SetTranslatable(kFalse);
+			KESCMSetStatus(msg);
+			break;
+		}
+
 		// 「Hold to Hide Marks」トグル: 枠表示の極性反転(フラグ反転のみ)。ON=画面に枠を常時表示し、
 		// ツール左hold中だけ隠す(押下/解放は KESCMPeek.cpp のトラッカー(KESCMTrackerRevealBegin/End)が sMarksTempHidden を上下)。
 		// OFF=従来(既定非表示・押下中だけ表示)。画面のみ=印刷は Print comparison marks が別管理。
@@ -565,6 +595,14 @@ void KESCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionSta
 			//   (「今フローティングか」で灰色にすると、ドックに入れた瞬間に設定を戻せなくなる。)
 			int16 actionState = kEnabledAction;
 			if (KESCMGetPagesPanelTranslucent())
+				actionState |= kSelectedAction;	// ON ならチェックマーク
+			listToUpdate->SetNthActionState(i, actionState);
+		}
+		else if (action == kKESCMPopupTranslucentToolboxActionID)
+		{
+			// ★上2つと同じ方針: ツールボックスがドッキング中/閉じていても選べる。
+			int16 actionState = kEnabledAction;
+			if (KESCMGetToolboxTranslucent())
 				actionState |= kSelectedAction;	// ON ならチェックマーク
 			listToUpdate->SetNthActionState(i, actionState);
 		}

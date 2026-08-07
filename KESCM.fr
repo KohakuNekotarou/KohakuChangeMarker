@@ -494,6 +494,21 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKESCMTranslucentPagesPanelMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
+		// "Translucent Toolbox" on the panel flyout (popup) menu. Check-mark toggle (default OFF).
+		// The same toggle again, with the TOOLBOX as its target (user request, 2026-08-07).
+		// ★Why this works exactly like the other two: the toolbox, while floating, is an ordinary
+		// palette as far as the window system is concerned. Measured on the real application
+		// (2026-08-07, reading every top-level window from outside the process):
+		//     0x3701E8  OWL.Dock  EXSTYLE=0x08080000  LAYERED=True  Alpha=255  Owner=OWL.ShadowView  41x731
+		// - same class, same WS_EX_LAYERED (put there by InDesign itself), same shadow window - as the
+		// two panels that already go translucent. ⚠Its window TITLE is empty, which is one more reason
+		// the old "find the window by its title" lookup could never have reached it.
+		// Target: kRootToolBoxWidgetId (ToolboxID.h:117). Implementation: KESCMPanelAlpha.cpp.
+		kKESCMPopupTranslucentToolboxActionID,
+		kKESCMPopupMenuPath,
+		kKESCMTranslucentToolboxMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
 		// "Align Other Views to Active" on the panel flyout (popup) menu. Plain command (not a toggle):
 		// sets every OTHER document's layout views to the active (frontmost) view's position + zoom, once.
 		// Independent of the Sync Layout Views toggle (works even when it is OFF). While Started, the page
@@ -799,6 +814,15 @@ resource ActionDef (kSDKDefActionResourceID)
 		kSDKDefInvisibleInKBSCEditorFlag,
 
 		kKESCMActionComponentBoss,
+		kKESCMPopupTranslucentToolboxActionID,
+		kKESCMTranslucentToolboxMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates supplies the check mark (kSelectedAction)
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		kKESCMActionComponentBoss,
 		kKESCMPopupIgnorePageNumActionID,
 		kKESCMIgnorePageNumMenuKey,
 		kOtherActionArea,
@@ -1022,6 +1046,19 @@ resource PNGAD(kKESCMToolIconResID + kHIDPIIconOffset) "KESCM_Tool_64.png"	// �
 resource PNGA(kKESCMToolIconResID + kHIDPIIconOffset150)  "KESCM_Tool_32.png"
 resource PNGAD(kKESCMToolIconResID + kHIDPIIconOffset150) "KESCM_Tool_32.png"
 #endif
+// ★ロールオーバー版(2026-08-07 追加)。同じ絵を**パネル内のツール切替ボタン**でも使うため
+//   (kKESCMToolButtonWidgetID)。RollOverIconButtonWidget 系はマウスが乗ったときに PNGR を引くので、
+//   PNGA だけだとホバーで絵が消える。猫イラスト(上の kKESCMIconOnResID)と同じく、状態で絵を変える
+//   必要は無いので通常版をそのまま流用する。ツールボックス側のツール枠は PNGA/PNGAD しか見ないので、
+//   ここを足してもあちらの見た目は変わらない。
+resource PNGR(kKESCMToolIconResID)  "KESCM_Tool_32.png"
+resource PNGRD(kKESCMToolIconResID) "KESCM_Tool_32.png"	// ダーク版なし=ライトを流用
+resource PNGR(kKESCMToolIconResID + kHIDPIIconOffset)  "KESCM_Tool_64.png"
+resource PNGRD(kKESCMToolIconResID + kHIDPIIconOffset) "KESCM_Tool_64.png"
+#ifdef WINDOWS
+resource PNGR(kKESCMToolIconResID + kHIDPIIconOffset150)  "KESCM_Tool_32.png"
+resource PNGRD(kKESCMToolIconResID + kHIDPIIconOffset150) "KESCM_Tool_32.png"
+#endif
 
 // ✓ tool cursor. {X, Y} = the checkmark's vertex (folding point) in 1x logical pixels, which must
 // match the vertex (10,18) drawn by KESCMDrawCheckGlyph so the click point sits on the vertex.
@@ -1187,7 +1224,7 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 			kKESCMPrevChangeButtonWidgetID,
 			kSysButtonPMRsrcId,
 			kBindLeft | kBindTop,
-			Frame(28, 48, 86, 70)		// 幅58維持。パネル+10px(2026-08-06)に合わせクラスタごと +5px 右へ=左右マージン28pxで対称のまま
+			Frame(48, 48, 106, 70)		// 幅58維持。★2026-08-07 にツール切替ボタンと左右入れ替え=クラスタは右側へ(ツールの右端40から8px)
 			kTrue, kTrue,
 			kKESCMPrevChangeKey,
 		),
@@ -1198,7 +1235,7 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 			kKESCMNavPosTextWidgetID,
 			kSysStaticTextPMRsrcId,
 			kBindLeft | kBindTop,
-			Frame(86, 51, 138, 70)		// Prev(〜86)と Next(138〜)の間(幅52)。縦位置合わせで top を +3px。クラスタごと +5px 右へ(2026-08-06)
+			Frame(106, 51, 158, 70)		// Prev(〜106)と Next(158〜)の間(幅52)。縦位置合わせで top を +3px。左右入れ替えでクラスタごと右へ(2026-08-07)
 			kTrue, kTrue,
 			kAlignCenter, kEllipsizeEnd, kFalse,	// ★ampersand 変換は切る(理由は Target のコメント)。ここは "3/12" だけだが4つの流儀を揃える
 			"",							// 初期テキストは空(実行時に位置を設定)
@@ -1209,9 +1246,39 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 			kKESCMNextChangeButtonWidgetID,
 			kSysButtonPMRsrcId,
 			kBindLeft | kBindTop,
-			Frame(138, 48, 196, 70)		// 幅58維持・右マージン28pxで Prev と対称(クラスタ中央寄せ。パネル+10px で +5px 右へ, 2026-08-06)
+			Frame(158, 48, 216, 70)		// 幅58維持。★右端 216 は下の猫イラスト(184〜216)と揃う。パネル右端 224 まで 8px
 			kTrue, kTrue,
 			kKESCMNextChangeKey,
+		),
+
+		// ★ツール切替ボタン(2026-08-07 ユーザー要望)。押すと **ツールボックスの琥珀のツール**
+		//   (kKESCMToolBoss)がアクティブツールになる。絵はツールボックスに出ているものと同じ
+		//   リソース(kKESCMToolIconResID)をそのまま参照している＝別画像を用意していない。
+		//   KESCMIconWidget を使うのは IID_ITIP(ツールチップ)を載せるため。出す文字列は猫イラストと
+		//   別で、ツールボックスと同じツール名 —— 出し分けは KESCMIconTip.cpp が WidgetID で行う。
+		//
+		// ★位置 = Next ボタン(〜196)の右隣(2026-08-07 ユーザー指定。最初は猫イラストの真上に置いたが
+		//   ここへ移した)。上下は Next(48〜70)と揃えて横一列に見せる。
+		// ★★枠を**正方形にしない**のが要点(同日ユーザー指定「ツールボックスと同じようにクリッピング
+		//   して欲しい、ツールボックスのは正方形ではない」)。24×22 の枠に 32×32 の PNG を入れると
+		//   周囲の余白が切り取られ、ツールボックスのツール枠と同じ見え方になる。
+		//   ⚠**絵は欠けない**: このツールアイコンは 32px の中に横69%(≒22px)・縦56%(≒18px)で
+		//     描く規格に従って作ってあり([[toolbox-icon-spec]])、切り落とされるのは余白のほう。
+		KESCMIconWidget
+		(
+			kKESCMToolButtonWidgetID,
+			kKESCMToolIconResID, kKESCMPluginID,
+			kBindLeft | kBindTop,		// Next と同じ束縛(横一列で動く)
+			Frame(8, 48, 40, 70)		// 32×22。★2026-08-07 に Prev/Next と**左右を入れ替えた**(ユーザー指定)。
+										//   左端 8px は Target ラベル/ステータス欄と揃う
+			kTrue, kTrue,
+			// ★★kADBEIconSuiteButtonDrawWellType = 選択中に**くぼんだ(押された)見た目**になる型
+			//   (2026-08-07 ユーザー要望「ツールボックスのように、選択されていたら色が変わるように」)。
+			//   IconStyleDefs.h:46 の中身は kIconCentering, (kIconRaisedLook | kIconWellLook), kTrue で、
+			//   3つ目が Widgets.fh:84 の「bool, draw Well」。素の kADBEIconSuiteButtonType は
+			//   (…, kIconRaisedLook, kFalse) ＝ well を描かないので、選択状態が見た目に出ない。
+			//   状態そのものは KESCMTool::Select / Deselect が ITriStateControlData へ書く。
+			kADBEIconSuiteButtonDrawWellType,
 		),
 
 		// Status icon (OFF visible by default; the observer swaps ON/OFF based on the armed state).

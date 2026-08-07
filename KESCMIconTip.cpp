@@ -2,9 +2,13 @@
 //
 //  KESCMIconTip.cpp
 //
-//  パネルのイラスト(ON/OFF アイコン、kKESCMIconWidgetBoss)にホバーした時のツールチップ。
-//  クリックすると開くのと同じ配布元URL(kKESCMRepoURL)をそのまま表示し、押すとそこへ飛ぶと
-//  分かるようにする。
+//  kKESCMIconWidgetBoss を載せた widget にホバーした時のツールチップ。★この boss はパネルの
+//  **3つの widget** で共有されているので、出す文言は WidgetID で分ける(2026-08-07):
+//    ・イラスト(ON/OFF アイコン)      → 配布元URL(kKESCMRepoURL)。クリックの飛び先そのものを
+//                                       表示して、押すとそこへ飛ぶと分かるようにする。
+//    ・ツール切替ボタン(+42)          → ツールボックスと同じツール名(kKESCMToolStringKey)。
+//                                       ★同じ文字列キーを KESCMTool::Init の SetName も使っている
+//                                       ので、ツールボックスのツールチップと必ず一致する。
 //
 //  ***** なぜ AbstractTip を継承するのか *****
 //
@@ -30,6 +34,7 @@
 
 // インターフェイス:
 #include "AbstractTip.h"		// 製品のツールチップが全部継承している基底
+#include "IControlView.h"		// GetWidgetID(★自分がどの widget に載っているかを聞く)
 
 // 一般:
 #include "PMString.h"
@@ -37,7 +42,7 @@
 // プロジェクト内:
 #include "KESCMID.h"
 
-/** パネルのイラストのツールチップ: クリックの飛び先そのもの(配布元URL)を出す。 */
+/** kKESCMIconWidgetBoss のツールチップ: イラストなら飛び先(配布元URL)、ツール切替ボタンならツール名。 */
 class KESCMIconTip : public AbstractTip
 {
 public:
@@ -59,6 +64,17 @@ KESCMIconTip::~KESCMIconTip()
 
 PMString KESCMIconTip::GetTipText(const PMPoint& /*mouseLocation*/)
 {
+	// ★どの widget に載っているかで文言を変える(2026-08-07)。ITip と widget は**同じ boss の別
+	//   インターフェイス**なので、自分自身に IControlView を聞けば WidgetID が分かる
+	//   (親を辿る必要は無い＝1段で済む)。
+	InterfacePtr<IControlView> cv(this, UseDefaultIID());
+	if (cv != nil && cv->GetWidgetID() == kKESCMToolButtonWidgetID)
+	{
+		// ★ツールボックスのツール名と**同じ文字列キー**を返す(KESCMTool::Init の SetName と同一)。
+		//   翻訳フラグは落とさない ＝ 文字列テーブルのキーとして解決させる。
+		return PMString(kKESCMToolStringKey);
+	}
+
 	// URL は翻訳する語句ではない(同じ理由で文字列テーブルにも置いていない)。
 	PMString tip(kKESCMRepoURL);
 	tip.SetTranslatable(kFalse);

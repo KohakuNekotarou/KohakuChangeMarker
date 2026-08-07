@@ -48,6 +48,16 @@ bool16	KESCMGetPagesPanelTranslucent();
 void	KESCMSetPagesPanelTranslucent(bool16 on);
 bool16	KESCMApplyPagesPanelTranslucency();
 
+//----------------------------------------------------------------------------------------
+// ツールボックス用(2026-08-07 追加)。上の3つと同じ意味・同じ実装で、対象だけが違う。
+//  ★実機で「ツールボックスもフローティング中は普通のパレットと同じ窓構造(OWL.Dock・
+//    WS_EX_LAYERED 済み・影つき)」を確認済み ＝ ページパネルと同じ扱いでよい。
+//  ★狙い撃ち先は kRootToolBoxWidgetId(ToolboxID.h:117)。
+//----------------------------------------------------------------------------------------
+bool16	KESCMGetToolboxTranslucent();
+void	KESCMSetToolboxTranslucent(bool16 on);
+bool16	KESCMApplyToolboxTranslucency();
+
 // 全対象へ貼り直す。★パネルの表示状態が変わったとき等、「どれが対象か」を呼び出し側が
 //   知らなくてよい場面で使う(対象が増えても呼び出し側を直さずに済む)。
 void	KESCMApplyAllPanelTranslucency();

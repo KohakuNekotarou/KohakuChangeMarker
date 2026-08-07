@@ -64,6 +64,7 @@
 #include "PaletteRef.h"			// PaletteRef::GetOWLControl(=HWND) / GetPaletteRefType
 #include "PaletteRefUtils.h"	// GetParentOfPalette(階層を上がる)
 #include "PagesPanelID.h"		// kPagesPanelWidgetID(:391) - 本体ページパネルの狙い撃ち先
+#include "ToolboxID.h"			// kRootToolBoxWidgetId(:117) - ツールボックスの狙い撃ち先
 
 // ★windows.h は SDK ヘッダーより後に置くこと(マクロが SDK 側の名前とぶつからないように)。
 #ifdef WINDOWS
@@ -71,24 +72,31 @@
 #endif
 
 //----------------------------------------------------------------------------------------
-// 半透明にできる対象パネル(2026-08-06 に2つへ拡張)。
+// 半透明にできる対象パネル(2026-08-06 に2つへ、2026-08-07 に3つへ拡張)。
 //
-//  ★1つ目 = 自分のパネル。2つ目 = **本体のページパネル**(ユーザー要望)。
-//  ★対象を WidgetID(数値)で持てるようになったのが今回の肝 —— 窓タイトルは UI 言語で変わるので
+//  ★1つ目 = 自分のパネル。2つ目 = **本体のページパネル**。3つ目 = **ツールボックス**(ユーザー要望)。
+//  ★対象を WidgetID(数値)で持てるようになったのが 08-06 の肝 —— 窓タイトルは UI 言語で変わるので
 //    本体のパネルには使えなかった(英語UI="Pages" / 日本語UI="ページ")。
+//  ★★ツールボックスも**通常のパレットとまったく同じ窓構造**であることを実機で確定させた
+//    (2026-08-07。フローティング中に外部から全トップレベル窓を数値で読んだ):
+//        0x3701E8  OWL.Dock  EXSTYLE=0x08080000  LAYERED=True  Alpha=255  Owner=OWL.ShadowView  41x731
+//    ＝クラスも EXSTYLE も影の有無も、半透明が効いている自パネル/ページパネルと同一。
+//    ⚠**窓タイトルは空**だった(Dock は3つとも空)。「タイトルで探す」旧方式が本体パネルに通用しない
+//      理由がもう1つ増えたことになる ＝ WidgetID 狙い撃ちで正解。
 //  ★増やすときは enum に1つ足し、kKESCMAlphaWidgetIDs に WidgetID を1つ足すだけでよい。
 //    ただしトグル(メニュー項目・永続化キー)は対象ごとに要る。
 //----------------------------------------------------------------------------------------
 enum
 {
-	kKESCMAlphaSelf  = 0,		// 自分のパネル(Kohaku Change Marker)
-	kKESCMAlphaPages = 1,		// 本体のページパネル
-	kKESCMAlphaCount = 2
+	kKESCMAlphaSelf    = 0,		// 自分のパネル(Kohaku Change Marker)
+	kKESCMAlphaPages   = 1,		// 本体のページパネル
+	kKESCMAlphaToolbox = 2,		// ツールボックス
+	kKESCMAlphaCount   = 3
 };
 
 // トグル状態(セッション内で保持。永続化は KESCMPanelState.cpp が担当)。★既定 OFF
 // ※Mac でも状態だけは持つ(適用側が何もしないだけ)。
-static bool16 sTranslucentOn[kKESCMAlphaCount] = { kFalse, kFalse };
+static bool16 sTranslucentOn[kKESCMAlphaCount] = { kFalse, kFalse, kFalse };
 
 // どれか1つでも ON か。★Win32 フックを張る/外す判断と、遅延再適用を続ける/やめる判断で共有する
 //   (同じことを2か所で数えると必ずずれる)。
@@ -121,31 +129,39 @@ static bool16 KESCMAnyTranslucentOn()
 // ★矩形(GetWindowRect+PtInRect)だけで判定してはいけない。他の窓が上に重なっていても「乗っている」に
 //   なってしまう。矩形は安い足切りに使い、確定は WindowFromPoint → GA_ROOT の一致で行う。
 //
-// ★★★2026-08-07: 「パネルの上に出ている自分の窓も、まだパネルの上」という判定は**全部やめた**
-//   (ユーザー判断「パネルメニューの上にカーソルがあるときは透明になっていいかも」)。
+// ★★★2026-08-07(夜): **KBS と同じ判定に戻した**(ユーザー指示「KBS のようにしてほしい」)。
+//   ＝「カーソルがパネルの**矩形の中**にあり、その下にあるのが InDesign 自身の窓なら乗っている」。
+//   メニューが出ていても、カーソルがパネルの上にある限り不透明のまま。
+//   ★この関数は対象共通(呼び出し側がその対象の窓を target に渡すだけ)なので、**自分のパネルと
+//     本体のページパネルの両方**に同じ挙動が効く。
 //
-//   経緯 —— ここは4回変わっている:
+//   経緯 —— ここは5回変わっている:
 //     2026-07-29  メニューが重なると薄くなるのを「仕様」として許容
 //     2026-08-05  KBS でユーザー報告(「行を右クリックすると不透明のパネルがまた薄くなる」)→
 //                 「カーソル下が自プロセスの窓なら乗っている」を追加して修正
 //     2026-08-06  KESCM へ移植。さらに「矩形の外へはみ出したメニュー」も拾うため、
-//                 自プロセス窓 ∧ 容れ物クラスでない ∧ パネル矩形と交差、という補助判定を追加
-//     2026-08-07  **全部撤去**(このコード)
+//                 自プロセス窓 ∧ 容れ物クラスでない ∧ **パネル矩形と交差**、という補助判定を追加
+//     2026-08-07  揺れるので全部撤去(＝メニューが出ている間は薄いまま に統一)
+//     2026-08-07  **自プロセス判定だけを戻す**(このコード)。撤去すべきだったのは交差判定の方だった。
 //
-//   ★なぜやめたか = **交差で判定する限り必ず揺れるから**。ユーザー報告
+//   ★★揺れの真犯人は 08-06 に足した**交差判定**であって、自プロセス判定ではなかった。ユーザー報告
 //   「パネルメニューを出す→枠の透明度を選ぶ→子供のメニューが出てそれを選んでいると、
-//     不透明が半透明になる」の正体がこれだった:
+//     不透明が半透明になる」はこう起きていた:
 //     フライアウト本体はパネルに重なる → 交差する → 不透明
 //     その子メニューは右へ開く       → 交差しない → 半透明
-//   ＝親子を行き来するたびに切り替わる。メニューの開く向きも長さも画面位置で変わる以上、
-//   交差の取り方をいくら賢くしても揺れは消せない。**メニューが出ている間は薄いまま**に
-//   統一すれば、状態が揺れる余地そのものが無くなる。
+//   ＝**メニュー窓の位置**で判定していたから、開く向きと長さ(画面位置で変わる)で必ず揺れた。
+//
+//   ★いま採る判定はそれとは別物で、見るのは**カーソルの位置**だけ:
+//     ①パネルの矩形の外 → 乗っていない(メニューがどこに出ていようと無関係)
+//     ②矩形の中で、カーソル下が自分(InDesign)の窓 → 乗っている
+//   矩形は動かないので、②の中でメニューの親子をどう行き来しても答えは変わらない ＝ 揺れない。
 //
 //   ⚠この判断で受け入れたもの:
-//     ・ツールチップ(KESCMIconTip.cpp)が出た瞬間もパネルは薄くなる。ツールチップ自体は
-//       別窓なので不透明のまま読める。
-//     ・逆に、2026-08-05 に KBS が直した「右クリックメニューで薄くなる」は**仕様に戻る**。
-//       ⚠KBS 側を揃えるかは未判断(あちらは今も自プロセス窓を「乗っている」と数える)。
+//     ・メニューがパネル矩形の**外**まで伸び、その外側の項目にカーソルを置いている間は薄くなる。
+//       判定の基準が「パネルの矩形」1つなので、薄くなる理由と見た目が一致する。
+//     ・InDesign の**別の窓**がパネルに重なっている場合、その上にカーソルがあっても「パネルに乗って
+//       いる」と数える。隠れているので画面上おかしく見えるものは無く、カーソルが矩形の外へ出れば
+//       次の一手で直る。KBS が 2026-08-05 から受け入れているのと同じ割り切り。
 static bool KESCMClassIs(HWND h, const wchar_t* wanted);	// 実体は下(窓クラス名の完全一致)
 
 static bool KESCMCursorOverWindow(HWND target)
@@ -161,15 +177,23 @@ static bool KESCMCursorOverWindow(HWND target)
 	if (!::GetWindowRect(target, &rc))
 		return false;
 	if (!::PtInRect(&rc, pt))
-		return false;
+		return false;		// 矩形の外 = 確実に乗っていない(マウス移動のほとんどはここで終わる)
 
 	HWND under = ::WindowFromPoint(pt);
 	if (under == nullptr)
 		return false;
 
-	// ★パネル自身のときだけ「乗っている」。上に出ている自分の窓(フライアウト・その子メニュー・
-	//   ツールチップ)は対象外 ＝ 出ている間は薄いまま(上のコメントの経緯を参照)。
-	return ::GetAncestor(under, GA_ROOT) == target;
+	const HWND root = ::GetAncestor(under, GA_ROOT);
+	if (root == target)
+		return true;		// パネル自身 = 普通の答え
+
+	// ★自分(InDesign)の窓でもあるか。ならばそれはパネルが自分の上に出したもの(フライアウト・その子
+	//   メニュー・右クリックメニュー・ツールチップ)で、カーソルはパネルから離れていない。
+	//   ★**トップレベル窓**に対して聞くこと: メニューはパネルの子ではなく、アプリが所有する独立した
+	//     トップレベル窓として作られる。
+	DWORD pid = 0;
+	::GetWindowThreadProcessId(root, &pid);
+	return (pid == ::GetCurrentProcessId());
 }
 
 // ★実効 alpha ＝ その対象のトグルが ON で、かつカーソルが乗っていないときだけ薄くする。
@@ -225,6 +249,16 @@ bool16 KESCMGetPagesPanelTranslucent()
 void KESCMSetPagesPanelTranslucent(bool16 on)
 {
 	KESCMSetTranslucentFor(kKESCMAlphaPages, on);
+}
+
+bool16 KESCMGetToolboxTranslucent()
+{
+	return sTranslucentOn[kKESCMAlphaToolbox];
+}
+
+void KESCMSetToolboxTranslucent(bool16 on)
+{
+	KESCMSetTranslucentFor(kKESCMAlphaToolbox, on);
 }
 
 #ifdef WINDOWS
@@ -295,14 +329,15 @@ static HWND KESCMQueryPanelPaletteFromSDK(const WidgetID& panelWidgetID)
 //   複数回飛ぶ(2026-07-29 実測)。そのたびに SDK へ問い合わせるのは無駄で、しかも下の Win32 フックは
 //   マウス移動のたびに走る ＝ **Win32 コールバックからモデルへ触る回数は最小に保ちたい**
 //   (KBS が同じ理由で負のキャッシュまで置いている: KBSPanelAlpha.cpp:492-502)。
-static HWND sPaletteWnd[kKESCMAlphaCount] = { nullptr, nullptr };
+static HWND sPaletteWnd[kKESCMAlphaCount] = { nullptr, nullptr, nullptr };
 
 // 対象ごとの狙い撃ち先。★enum の並びと必ず同じ順にすること。
 //  ※WidgetID ではなく生の uint32 で持つ: DECLARE_PMID が作るのは uint32 で、静的初期化に使える。
 static const uint32 kKESCMAlphaWidgetIDs[kKESCMAlphaCount] =
 {
-	kKESCMPanelWidgetID,		// kKESCMAlphaSelf  = 自分のパネル
-	kPagesPanelWidgetID			// kKESCMAlphaPages = 本体のページパネル
+	kKESCMPanelWidgetID,		// kKESCMAlphaSelf    = 自分のパネル
+	kPagesPanelWidgetID,		// kKESCMAlphaPages   = 本体のページパネル
+	kRootToolBoxWidgetId		// kKESCMAlphaToolbox = ツールボックス(ToolboxID.h:117)
 };
 
 // キャッシュ優先でパネル窓を得る。★ハンドルは OS が使い回すので、生存確認だけでなくクラス名の
@@ -418,6 +453,11 @@ bool16 KESCMApplyPanelTranslucency()
 bool16 KESCMApplyPagesPanelTranslucency()
 {
 	return KESCMApplyFor(kKESCMAlphaPages);
+}
+
+bool16 KESCMApplyToolboxTranslucency()
+{
+	return KESCMApplyFor(kKESCMAlphaToolbox);
 }
 
 // 全対象へ貼り直す。★通知・遅延再適用・Win32 フックからはこちらを呼ぶ
