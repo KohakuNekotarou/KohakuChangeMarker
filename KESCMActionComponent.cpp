@@ -255,8 +255,10 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 			break;
 		}
 
-		// (★「Show HUD」トグルは 2026-08-06 に機能ごと全廃した。ユーザー指示で「押下中にレイアウト
-		//  ビュー左上へ Target/Source の1行を出す」機能そのものを無くしたため。)
+		// (★「Show HUD」トグルは 2026-08-06 に廃止＝押下中 HUD は**常に出る**ので、出す/出さないを
+		//  選ぶメニュー項目が無い。⚠**HUD 自体は現役**: 2026-08-06 に sprite 版を全廃し、2026-08-07 に
+		//  Draw Event で作り直した(KESCMTrackerHud.cpp。押した窓が Target/Source かを左上に出す)。
+		//  ここには全廃した当日の「機能そのものを無くした」が同日中の作り直しを反映しないまま残っていた。)
 
 		// 「Translucent Panel」トグル: このパネル自身を半透明(alpha は kKESCMPanelAlphaValue=77 ≒ 30%。
 		// 2026-07-29 に 128 から変更)にするか
@@ -272,6 +274,15 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 			// 実際に窓へ届いたかでステータス文言を分ける。ドック内で展開中に押しても画面が
 			// 変わらないので、「なぜ効かないか」を言葉で返す。
 			const bool16 applied = KESCMApplyPanelTranslucency();
+
+			// ★★OFF に戻すと alpha 255 と影の再表示を**その対象の今のトップレベル窓**へ書くが、
+			//   両パネルが**同じフローティンググループ**にいるとその窓は相手と共有なので、ON のまま
+			//   の相手の半透明まで消える。ON の対象だけ貼り直して取り戻す(ON にしたときは呼ばない)。
+			//   ⚠2026-08-07 の再点検で発見。同日 48f0a6b が KESCMApplyAllPanelTranslucency に入れた
+			//     「OFF は飛ばす」の取り残しで、こちらは**対象を名指しで呼ぶ**復元経路だった。
+			if (!on)
+				KESCMApplyAllPanelTranslucency();
+
 			PMString msg;
 			if (!on)
 				msg = "Translucent panel: off.";
@@ -297,6 +308,12 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 			// 変わらないので、「なぜ効かないか」を言葉で返す。
 			// ★ページパネルは既定でドックに入っているので、こちらの方が「効かない」に当たりやすい。
 			const bool16 applied = KESCMApplyPagesPanelTranslucency();
+
+			// ★上の Translucent Panel と同じ理由で、OFF に戻したときだけ ON の対象を貼り直す
+			//   (同じフローティンググループに入れていると、こちらの 255 復元が相手を巻き込むため)。
+			if (!on)
+				KESCMApplyAllPanelTranslucency();
+
 			PMString msg;
 			if (!on)
 				msg = "Translucent Pages panel: off.";

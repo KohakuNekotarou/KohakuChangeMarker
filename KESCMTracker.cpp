@@ -186,9 +186,14 @@ public:
 			result = CTracker::BeginTracking(theEvent);
 			if (result)
 			{
-				// ★押下中 HUD を「出す」印を立てる。★KESCMTrackerRevealBegin の**前**に
-				//   立てること: あちらが InvalidateViews を呼び、その再描画で枠が描かれる —— 同じ描画で
-				//   HUD も描かれるので**枠と同時に出る**(旧 sprite 版が枠に遅れていた点の是正)。
+				// ★押下中 HUD を「出す」印を立てる。★KESCMTrackerRevealBegin の**前**に立てること:
+				//   Begin 自身が再描画を要求する(KESCMTrackerHudInvalidate)ので、先に立てておけば
+				//   その1回の描画に枠も HUD も乗る ＝ **枠と同時に出る**(旧 sprite 版が枠に遅れて
+				//   いた点の是正)。
+				//   ⚠2026-08-07 まで、ここには「reveal が呼ぶ InvalidateViews に相乗りする」と
+				//     書いてあったが、あれは**Target 窓の上でしか走らない**(KESCMPeek.cpp:1841-1844)。
+				//     そのため Source 窓・Stop 中・第3の文書では HUD が1度も描かれなかった。以後 HUD は
+				//     自分で再描画を要求する(理由の全文は KESCMTrackerHud.cpp の Invalidate のコメント)。
 				//   描画の実体は KESCMDrawEventHandler の2系統(帯の前面 / カンバス背景)。
 				KESCMTrackerHudBegin(fControlView);
 
@@ -234,8 +239,8 @@ public:
 	virtual bool16 EndTracking(IEvent* theEvent)
 	{
 		bool16 result = CTracker::EndTracking(theEvent);
-		// ★HUD の印は KESCMTrackerRevealEnd の**前**に落とす(あちらの InvalidateViews による再描画で
-		//   枠と一緒に消えるように。順序は BeginTracking と対称)。
+		// ★HUD の印は KESCMTrackerRevealEnd の**前**に落とす(End 自身が再描画を要求するので、
+		//   先に落としておけばその1回の描画で枠と一緒に消える。順序は BeginTracking と対称)。
 		KESCMTrackerHudEnd();
 		KESCMTrackerRevealEnd();
 		return result;
