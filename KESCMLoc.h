@@ -66,7 +66,7 @@ namespace KESCMJa
 {
 	// ----- How to Use... (操作リファレンス。旧パネル説明文) -----
 	const char16_t kHint[] =
-		u"Kohaku Change Marker ツール(ツールボックス)を選び、レイアウト上で:\n"
+		u"Kohaku Change Marker ツール(ツールボックス、またはパネルのツールボタン)を選び、レイアウト上で:\n"
 		u"左ボタン長押し=\n　比較枠を表示(押している間/透明度はパネルの25%・75%)\n"
 		u"左ボタン+Shift長押し=\n　元(旧版)を表示(押している間)\n"
 		u"左ボタン+Shift+" kKESCMAltKeyName u"長押し=\n　元を50%で表示(押している間)\n"
