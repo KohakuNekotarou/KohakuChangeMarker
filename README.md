@@ -14,6 +14,12 @@ https://www.youtube.com/watch?v=QIP_KAs5rtU
 ## Adobe Exchange
 https://exchange.adobe.com/apps/cc/205515/kohakuchangemarker
 
+## sponsors
+https://github.com/sponsors/KohakuNekotarou
+
+## Discussions 掲示板
+https://github.com/KohakuNekotarou/KohakuChangeMarker/discussions
+
 ## About Creation
 This plugin was designed and implemented by **KohakuNekotarou** in collaboration with Anthropic's AI, **Claude (Claude Code)**.
 
@@ -25,6 +31,3 @@ We cannot be held responsible for any issues that may arise; please use this ser
 お仕事のお依頼は
 kohaku.nekotarou@gmail.com
 まで、日本国内のみ対応します。
-
-## sponsors
-https://github.com/sponsors/KohakuNekotarou
