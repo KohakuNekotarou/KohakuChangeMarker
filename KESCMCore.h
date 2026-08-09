@@ -25,6 +25,11 @@ class IControlView;
 // 色サンプラが共有するヘルパ。実体は KESCMCore.cpp。
 void		KESCMCollectPageUIDs(IDataBase* db, std::vector<UID>& out);
 
+// ページアイテムの UID → そのアイテムが載っているページ UID(どのページにも載らないなら kInvalidUID)。
+// あふれ位置の報告(KESCMOversetScan)と Story Edits の一覧が同じ問いを持つので1本を共有する。
+// ★答えは必ず実ページ(kPageBoss)で、spread の UID は返らない。理由は実体側のコメント(KESCMCore.cpp)。
+UID			KESCMFramePageUID(IDataBase* db, UID frameUID);
+
 // 文書の生存確認: db がまだ開いている文書のものなら kTrue。★閉じた db は deref 禁止のため、
 // IDocumentList::FindDocByDataBase へのポインタ比較のみで判定する(KESCM 全体の共通規約)。
 // Hide Unchanged の復元・遅延サムネイル更新などが共有する。実体は KESCMCore.cpp。

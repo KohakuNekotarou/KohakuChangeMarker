@@ -46,6 +46,7 @@
 #include "Utils.h"
 
 // プロジェクト内:
+#include "KESCMCore.h"			// KESCMFramePageUID(フレーム→ページ。Story Edits と共有する1本)
 #include "KESCMOversetScan.h"
 
 
@@ -163,33 +164,10 @@ static bool16 KESCMFindOversetOutport(ITextModel* textModel, IDataBase* db, Text
 }
 
 
-//========================================================================================
-// フレーム UID → そのフレームが載っているページ UID。どのページにも載らない(ペーストボード等)なら
-// kInvalidUID。主経路=ITextUtils::GetPageUIDRef(textFrame 前提の purpose-built API)、フォールバック=
-// IHierarchy 経由の ILayoutUtils::GetOwnerPageUID(ページ非所属なら spread UID を返す仕様)。どちらも
-// 結果が実ページ(kPageBoss)であることを db->GetClass で検証してから返す(spread UID を誤って採らない)。
-//========================================================================================
-static UID KESCMFramePageUID(IDataBase* db, UID frameUID)
-{
-	if (db == nil || frameUID == kInvalidUID)
-		return kInvalidUID;
-
-	// 主経路: textFrame 前提の purpose-built API。
-	const UIDRef pageRef = Utils<ITextUtils>()->GetPageUIDRef(UIDRef(db, frameUID));
-	const UID pageUID = pageRef.GetUID();
-	if (pageUID != kInvalidUID && db->GetClass(pageUID) == kPageBoss)
-		return pageUID;
-
-	// フォールバック: IHierarchy → GetOwnerPageUID(off-page なら spread UID)。実ページのみ採用。
-	InterfacePtr<IHierarchy> hier(db, frameUID, UseDefaultIID());
-	if (hier != nil)
-	{
-		const UID owner = Utils<ILayoutUtils>()->GetOwnerPageUID(hier);
-		if (owner != kInvalidUID && db->GetClass(owner) == kPageBoss)
-			return owner;
-	}
-	return kInvalidUID;	// どのページにも載らない(ペーストボード等)=スキップ
-}
+// ★フレーム UID → ページ UID の KESCMFramePageUID は KESCMCore.cpp へ移した(2026-08-09)。
+//   Story Edits の一覧が「ストーリーの先頭フレームはどのページか」を同じ問いとして必要としたため。
+//   ここに残して向こうへ写すと、同じプラグインの中に同じ処理が2つ並ぶ——KESCM が過去に何度も
+//   踏んだ「割れ」の形なので、写さずに1本を共有する。宣言は KESCMCore.h。
 
 
 //========================================================================================
