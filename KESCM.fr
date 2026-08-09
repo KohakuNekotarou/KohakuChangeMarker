@@ -1170,7 +1170,7 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 	kKESCMPanelWidgetID,			// WidgetID
 	kPMRsrcID_None,					// RsrcID
 	kBindNone,						// Binding
-	0, 0, 224, 153,					// Frame: left, top, right, bottom (ステータス欄を3→4行に拡張した分、下端を +17px。イラストも下端145へ下寄せ。ステータス欄を+12px広げた分、右端 192→204。2026-07-15 にメッセージ欄を+10px広げ 204→214。2026-08-06 にさらに+10px広げ 214→224=中の widget も全部 +10px 追随させてある)
+	0, 0, 224, 173,					// Frame: left, top, right, bottom (ステータス欄を3→4行に拡張した分、下端を +17px。イラストも下端145へ下寄せ。ステータス欄を+12px広げた分、右端 192→204。2026-07-15 にメッセージ欄を+10px広げ 204→214。2026-08-06 にさらに+10px広げ 214→224=中の widget も全部 +10px 追随させてある。★2026-08-09 に下端 153→173=Story Edits セクションの開閉ボタンを置く 20px の帯を新設した分。既存 widget は1つも動かしていない)
 	kTrue, kTrue,					// Visible, Enabled
 	kFalse,							// Erase background
 	kInterfacePaletteFill,			// Erase to color
@@ -1192,15 +1192,15 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 	(
 		kKESCMSplitterWidgetID, kPMRsrcID_None,
 		kBindAll,
-		Frame(0, 0, 224, 153)
+		Frame(0, 0, 224, 173)
 		kTrue, kTrue,
 		"",
 		kFirstWidgetIsTop,
 		kTrue,							// Top pane visible
 		kFalse,							// ★Bottom pane hidden = the section starts closed
-		153,							// Splitter position
+		173,							// Splitter position
 		100,							// Splitter init percentage
-		153,							// Top snap = the top pane is never squeezed below its designed height
+		173,							// Top snap = the top pane is never squeezed below its designed height
 		kDontSnapSlider,
 		60,								// Bottom snap = smallest useful height for the section
 		kDontSnapSlider,
@@ -1219,7 +1219,7 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 			(
 				kKESCMTopPaneWidgetID, kPMRsrcID_None,
 				kBindAll,
-				Frame(0, 0, 224, 153)
+				Frame(0, 0, 224, 173)
 				kTrue, kTrue,
 				"",
 				{
@@ -1375,6 +1375,23 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 			2, 0,
 			"",
 		),
+
+		// ★Story Edits セクションの開閉ボタン(2026-08-09 新設)。
+		// ★★上ペインの中に置くのが要点＝下ペインに置くと、閉じた瞬間にボタンごと消えて二度と
+		//   開けなくなる。製品 linksui も同じ理由で上ペイン側に置いている
+		//   (LinksUIViews_enUS.fr:135-142 は splitter の下ペインではなく上ペインの内側)。
+		// ★絵は自前の PNG を持たず、本体の開閉三角(kTreeBranchCollapsed/ExpandedRsrcID)を借りる。
+		//   向きの差し替えは KESCMUpdateStorySectionButtonState が実状態から行う。
+		// ★この 20px の帯のためにパネルの下端を 153→173 にした(既存 widget は1つも動いていない)。
+		KESCMStorySectionToggleWidget
+		(
+			kKESCMStorySectionToggleWidgetID,
+			kTreeBranchCollapsedRsrcID, kApplicationRsrcPluginID,
+			kBindLeft | kBindBottom,
+			Frame(4, 153, 20, 169)		// 上ペイン下端の帯(153〜173)。左端4pxはステータス欄(8)より少し内側
+			kTrue, kTrue,
+			kADBEIconSuiteButtonType,
+		),
 				}
 			),
 			// ★Lower pane = the "Story Edits" section itself. Empty at this stage; the tree of
@@ -1384,7 +1401,7 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 			(
 				kKESCMStorySectionWidgetID, kPMRsrcID_None,
 				kBindAll,
-				Frame(0, 153, 224, 253)
+				Frame(0, 173, 224, 273)
 				kFalse, kTrue,			// ★Visible = kFalse: starts closed
 				"",
 				{

@@ -154,6 +154,13 @@ bool16		KESCMGetMarkOpacity25();	// 枠不透明度の選択: kTrue=25% / kFalse
 // 実体は KESCMPeek.cpp(peek の file-local 状態にアクセスできる唯一の場所)。
 void		KESCMHandleDocsClosed();
 
+// 表示中の自分のパネル(kKESCMPanelWidgetID)。隠れていれば nil。
+// ★終了処理中に session が nil になる経路まで吸収済み(2026-07-25 の規約)。
+// 「session → app → panelMgr → GetVisiblePanel」の定型を持つのはこの1か所だけにしてある
+// (2026-08-06 監査 C-1 で3か所を一本化 → 2026-08-09 に公開して4人目の使い手を迎えた)。
+// 実体は KESCMPanelObserver.cpp。
+IControlView*	KESCMGetVisibleOwnPanel();
+
 // 現在表示中のパネルがあれば、その ON/OFF 表示(Target/Source 名・アイコン・トグルラベル)を
 // 現在の arm 状態(KESCMIsArmed 等)に合わせて更新する。パネルが隠れていれば何もしない
 // (再表示時に AutoAttach が反映する)。実体は KESCMPanelObserver.cpp。

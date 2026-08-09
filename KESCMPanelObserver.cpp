@@ -479,7 +479,10 @@ void KESCMTogglePrintMarks()
 //   (KESCMThumbnailRefresh.h:24-27)と同じ作り＝Pages パネル側だけ解いてあった穴を埋める形。
 // ★session の nil ガードもここで吸収する: 3つともクローズ responder から呼ばれ、アプリ終了の
 //   ティアダウン中にも到達し得る(2026-07-25 に KESCM 全体で統一した規約)。
-static IControlView* KESCMGetVisibleOwnPanel()
+// ★2026-08-09: static を外して KESCMCore.h から公開した。4人目の使い手が別ファイルに現れたため
+//   (KESCMStorySection.cpp = Story Edits セクションの開閉。パネルの寸法を触るのに同じパネルが要る)。
+//   ここを複製すると「どのパネルを指すか」の判断が2か所に分かれるので、公開する方を選んだ。
+IControlView* KESCMGetVisibleOwnPanel()
 {
 	ISession* session = GetExecutionContextSession();	// 終了処理中は nil になり得る
 	InterfacePtr<IApplication> app(session != nil ? session->QueryApplication() : nil);
