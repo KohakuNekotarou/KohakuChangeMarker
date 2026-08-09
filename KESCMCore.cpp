@@ -51,6 +51,7 @@
 #include "KESCMThumbnailRefresh.h"   // ★実験: 既表示サムネイルの再生成トライ(2026-07-06)
 #include "KESCMChangeNav.h"          // KESCMResetNav(セッションを跨いだ巡回基準点の持ち越しを断つ)
 #include "KESCMScrollMap.h"          // KESCMScrollMapInvalidateAll(比較後にスクロールバー地図を最新化)
+#include "KESCMStoryStamp.h"         // ストーリーの変更カウンター(テキストが編集されたか＝画素比較には出せない情報)
 #include "KESCMCore.h"
 
 //========================================================================================
@@ -553,6 +554,31 @@ ErrorCode KESCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMStri
 		{
 			report.Append(" failed="); report.AppendNumber(failedCount);
 		}
+
+		// ★テキストが編集されたストーリーの本数。画素比較が答えるのは「このページは違って見える」
+		//   までで、「テキストが変わったのか、レイアウトだけ動いたのか」は区別できない。両者は補い合う
+		//   ——ストーリーが無変更でもページは動きうるし、ページが同じに見えてもテキストは変わりうる。
+		//   ★カウンターの読み取りは組版を起こさないので、比較のコストはほとんど増えない。
+		std::vector<KESCMStoryStamp> targetStamps;
+		std::vector<KESCMStoryStamp> sourceStamps;
+		KESCMStoryEdits::CollectStamps(targetDB, targetStamps);
+		KESCMStoryEdits::CollectStamps(sourceDB, sourceStamps);
+
+		// ⚠引数順は (source, target)。逆にすると「追加された」と「削除された」が入れ替わり、
+		//   消えたストーリーが「追加」として数えられたうえで本当の追加が黙って落ちる。
+		std::vector<KESCMStoryDiff> storyDiffs;
+		KESCMStoryEdits::Compare(sourceStamps, targetStamps, storyDiffs);
+
+		int32 addedCount = 0;
+		for (std::vector<KESCMStoryDiff>::const_iterator it = storyDiffs.begin(); it != storyDiffs.end(); ++it)
+		{
+			if (it->fAdded)
+				++addedCount;
+		}
+
+		report.AppendW(UTF32TextChar(0x0A));	// 改行 → 3行目へ
+		report.Append("stories edited="); report.AppendNumber((int32)storyDiffs.size());
+		report.Append(" added="); report.AppendNumber(addedCount);
 	}
 	outReport = report;
 
