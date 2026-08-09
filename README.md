@@ -14,7 +14,7 @@ https://www.youtube.com/watch?v=QIP_KAs5rtU
 ## Adobe Exchange
 https://exchange.adobe.com/apps/cc/205515/kohakuchangemarker
 
-## sponsors
+## sponsors 支援
 https://github.com/sponsors/KohakuNekotarou
 
 ## Discussions 掲示板
