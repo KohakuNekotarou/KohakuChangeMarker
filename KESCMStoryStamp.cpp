@@ -43,6 +43,9 @@ void KESCMStoryEdits::CollectStamps(IDataBase* db, std::vector<KESCMStoryStamp>&
 		KESCMStoryStamp stamp;
 		stamp.fStoryUID = storyRef.GetUID();
 		stamp.fChangeCount = model->GetChangeCount();
+		stamp.fTextCount   = model->GetTextChangeCount();
+		stamp.fAttrCount   = model->GetAttrChangeCount();
+		stamp.fOtherCount  = model->GetOtherChangeCount();
 		out.push_back(stamp);
 	}
 }
@@ -58,35 +61,43 @@ void KESCMStoryEdits::Compare(const std::vector<KESCMStoryStamp>& source,
 	// Matched by UID rather than by walking both lists in step. The two versions can hold different
 	// numbers of stories, and a story added to the newer version is inserted part-way through the
 	// enumeration rather than appended (measured 2026-08-08), so position says nothing.
-	std::map<UID, uint32> sourceByUID;
+	std::map<UID, KESCMStoryStamp> sourceByUID;
 	for (std::vector<KESCMStoryStamp>::const_iterator it = source.begin(); it != source.end(); ++it)
-		sourceByUID[it->fStoryUID] = it->fChangeCount;
+		sourceByUID[it->fStoryUID] = *it;
 
 	for (std::vector<KESCMStoryStamp>::const_iterator it = target.begin(); it != target.end(); ++it)
 	{
-		const std::map<UID, uint32>::const_iterator found = sourceByUID.find(it->fStoryUID);
+		const std::map<UID, KESCMStoryStamp>::const_iterator found = sourceByUID.find(it->fStoryUID);
 
 		if (found == sourceByUID.end())
 		{
+			// Nothing to compare against, so no kind can be named - "added" is the whole answer.
 			KESCMStoryDiff row;
 			row.fStoryUID = it->fStoryUID;
-			row.fSourceCount = 0;
-			row.fTargetCount = it->fChangeCount;
-			row.fAdded = kTrue;
+			row.fKinds = kKESCMStoryKindAdded;
 			out.push_back(row);
+			continue;
 		}
-		else if (found->second != it->fChangeCount)
-		{
-			KESCMStoryDiff row;
-			row.fStoryUID = it->fStoryUID;
-			row.fSourceCount = found->second;
-			row.fTargetCount = it->fChangeCount;
-			row.fAdded = kFalse;
-			out.push_back(row);
-		}
-		// equal counters produce no row - the text is unchanged (the page may still look different,
-		// which is what the pixel comparison is for)
+
+		// Whether the story is reported is still the aggregate counter's call. See the header: the
+		// sub-counters name what moved, they are not the test.
+		if (found->second.fChangeCount == it->fChangeCount)
+			continue;	// text AND attributes AND everything else read the same
+
+		uint32 kinds = kKESCMStoryKindNone;
+		if (found->second.fTextCount  != it->fTextCount)  kinds |= kKESCMStoryKindText;
+		if (found->second.fAttrCount  != it->fAttrCount)  kinds |= kKESCMStoryKindAttr;
+		if (found->second.fOtherCount != it->fOtherCount) kinds |= kKESCMStoryKindOther;
+
+		if (kinds == kKESCMStoryKindNone)
+			kinds = kKESCMStoryKindOther;	// aggregate moved, no sub-counter did - say "something"
+
+		KESCMStoryDiff row;
+		row.fStoryUID = it->fStoryUID;
+		row.fKinds = kinds;
+		out.push_back(row);
 	}
 }
+
 
 // End, KESCMStoryStamp.cpp.

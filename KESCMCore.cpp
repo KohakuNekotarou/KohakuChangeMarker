@@ -18,6 +18,8 @@
 #include "IDataBase.h"
 #include "IDocument.h"
 #include "ILayoutUtils.h"
+#include "ITextUtils.h"				// GetPageUIDRef(KESCMFramePageUID の主経路)
+#include "IHierarchy.h"				// GetOwnerPageUID へ渡す(KESCMFramePageUID のフォールバック)
 #include "IControlView.h"
 #include "IEventUtils.h"
 #include "IGeometry.h"
@@ -75,6 +77,45 @@ void KESCMCollectPageUIDs(IDataBase* db, std::vector<UID>& out)
 		for (int32 p = 0; p < np; ++p)
 			out.push_back(spread->GetNthPageUID(p));
 	}
+}
+
+//========================================================================================
+// ページアイテムの UID → そのアイテムが載っているページ UID。どのページにも載らない
+// (ペーストボード等)なら kInvalidUID。
+//
+// 道が2本あるのは、片方だけでは答えが出ないため。主経路 ITextUtils::GetPageUIDRef は
+// テキストフレーム前提の purpose-built API、フォールバック IHierarchy + ILayoutUtils::
+// GetOwnerPageUID は一般解。どちらの答えも kPageBoss で検証してから返す——GetOwnerPageUID は
+// 「ページに載っていなければ spread の UID を返す」と契約に明記されており(ILayoutUtils.h:102-107)、
+// 検証しないとその spread UID をページと取り違える。
+//
+// ★KBS は同じ場面で意図的に検証しない(KBSSearchEngine.cpp:799-804)。あちらはペーストボード上の
+//   ヒットを "PB" と綴りたいから。KESCM は実ページか何も無いかの二択でよいので検証する。
+//   両者は目的が違って割れているので、片方に合わせて「直して」はいけない。
+//
+// ★2026-08-09 に KESCMOversetScan.cpp の static からここへ移した。Story Edits の一覧が
+//   「ストーリーの先頭フレームはどのページか」を同じ問いとして必要としたため(写すと割れる)。
+//========================================================================================
+UID KESCMFramePageUID(IDataBase* db, UID frameUID)
+{
+	if (db == nil || frameUID == kInvalidUID)
+		return kInvalidUID;
+
+	// 主経路: textFrame 前提の purpose-built API。
+	const UIDRef pageRef = Utils<ITextUtils>()->GetPageUIDRef(UIDRef(db, frameUID));
+	const UID pageUID = pageRef.GetUID();
+	if (pageUID != kInvalidUID && db->GetClass(pageUID) == kPageBoss)
+		return pageUID;
+
+	// フォールバック: IHierarchy → GetOwnerPageUID(off-page なら spread UID)。実ページのみ採用。
+	InterfacePtr<IHierarchy> hier(db, frameUID, UseDefaultIID());
+	if (hier != nil)
+	{
+		const UID owner = Utils<ILayoutUtils>()->GetOwnerPageUID(hier);
+		if (owner != kInvalidUID && db->GetClass(owner) == kPageBoss)
+			return owner;
+	}
+	return kInvalidUID;	// どのページにも載らない(ペーストボード等)=スキップ
 }
 
 //========================================================================================
@@ -569,16 +610,25 @@ ErrorCode KESCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMStri
 		std::vector<KESCMStoryDiff> storyDiffs;
 		KESCMStoryEdits::Compare(sourceStamps, targetStamps, storyDiffs);
 
-		int32 addedCount = 0;
+		int32 addedCount = 0, textCount = 0, attrCount = 0, otherCount = 0;
 		for (std::vector<KESCMStoryDiff>::const_iterator it = storyDiffs.begin(); it != storyDiffs.end(); ++it)
 		{
-			if (it->fAdded)
-				++addedCount;
+			if (it->fKinds & kKESCMStoryKindAdded) ++addedCount;
+			if (it->fKinds & kKESCMStoryKindText)  ++textCount;
+			if (it->fKinds & kKESCMStoryKindAttr)  ++attrCount;
+			if (it->fKinds & kKESCMStoryKindOther) ++otherCount;
 		}
 
+		// ★TEMPORARY. This whole third line goes away in stage 3's Task 5, when the count moves to
+		//   the section heading - the status box is four lines tall and already full, so this line
+		//   is on borrowed space. It exists so that reading the sub-counters can be checked in the
+		//   application before there is any UI to show it in.
 		report.AppendW(UTF32TextChar(0x0A));	// 改行 → 3行目へ
-		report.Append("stories edited="); report.AppendNumber((int32)storyDiffs.size());
-		report.Append(" added="); report.AppendNumber(addedCount);
+		report.Append("stories="); report.AppendNumber((int32)storyDiffs.size());
+		report.Append(" t="); report.AppendNumber(textCount);
+		report.Append(" a="); report.AppendNumber(attrCount);
+		report.Append(" o="); report.AppendNumber(otherCount);
+		report.Append(" +"); report.AppendNumber(addedCount);
 	}
 	outReport = report;
 

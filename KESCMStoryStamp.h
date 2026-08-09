@@ -4,18 +4,29 @@
 //
 //  Kohaku Change Marker (KESCM)
 //
-//  Reads every user story's change counter out of a document, and matches two documents'
-//  readings by story UID, so the panel can say which stories had their TEXT edited.
+//  Reads every user story's change counters out of a document, and matches two documents'
+//  readings by story UID, so the panel can say which stories changed - and in what way.
 //
-//  KESCM compares PIXELS, so on its own it can only say "this page looks different". What
-//  this file adds is the distinction between "the text changed" and "only the layout changed".
+//  KESCM compares PIXELS, so on its own it can only say "this page looks different". What this
+//  file adds is what kind of change it was: the words, their formatting, or something attached to
+//  the story such as a table.
 //
-//  What is read is ITextModel::GetChangeCount() - the "all changes" counter (ITextModel.h:185-192),
-//  not the text-only one. Two reasons: GetTextChangeCount does not move for an edit that only
-//  changes attributes, and GetOtherChangeCount's own documentation (ITextModel.h:173-183) states
-//  that a TableModel signals change through these counters - "a change to a Table stroke does
-//  represent an effective change to the TextModel" - so a table edit reaches the story that
-//  contains it only through the counter that includes Other.
+//  ALL FOUR COUNTERS ARE READ, and they answer two different questions:
+//
+//    - GetChangeCount() - the "all changes" counter (ITextModel.h:185-192) - decides whether the
+//      story is reported at all. It has to be this one rather than the text-only counter, because
+//      GetTextChangeCount does not move for an edit that only changes attributes, and because
+//      GetOtherChangeCount's own documentation (ITextModel.h:173-183) states that a TableModel
+//      signals change through these counters - "a change to a Table stroke does represent an
+//      effective change to the TextModel" - so a table edit reaches its containing story only
+//      through a counter that includes Other.
+//
+//    - The three sub-counters name what moved, and nothing more. They are not the test: the header
+//      promises the aggregate moves for any change to them, but never promises it is their sum.
+//
+//  (Reading the sub-counters was added 2026-08-09 at the user's request - "show changes other than
+//  text ones too". Note that such stories were ALREADY being listed, since the test was always the
+//  aggregate; what was missing was saying which kind of change it had been.)
 //
 //  A table is NOT a story of its own. Table cells and footnotes are further story threads inside
 //  the same ITextModel (ITextModel.h:140,145), so an edit in a cell moves the counter of the story
@@ -45,24 +56,46 @@
 
 class IDataBase;
 
-/** One story's reading: which story, and what its change counter said. */
+/** Which kind of change moved. Values are OR'd together: one edit can move more than one of them.
+
+	The first three map one-to-one onto ITextModel's three sub-counters (ITextModel.h:158-183).
+	Added is not a counter - it means the source has no story with this UID at all, so there is
+	nothing to have compared.
+*/
+enum KESCMStoryChangeKind
+{
+	kKESCMStoryKindNone		= 0,
+	kKESCMStoryKindText		= 1,	// characters inserted, removed or replaced
+	kKESCMStoryKindAttr		= 2,	// effective attributes - INCLUDING applied styles and overrides
+	kKESCMStoryKindOther	= 4,	// tables, inlines and the like signalling through the model
+	kKESCMStoryKindAdded	= 8		// no story with this UID on the source side
+};
+
+/** One story's reading: which story, and what each of its change counters said. */
 struct KESCMStoryStamp
 {
 	UID		fStoryUID;
-	uint32	fChangeCount;
+	uint32	fChangeCount;	// the all-changes counter - this alone decides whether a row appears
+	uint32	fTextCount;
+	uint32	fAttrCount;
+	uint32	fOtherCount;
 
-	KESCMStoryStamp() : fStoryUID(kInvalidUID), fChangeCount(0) {}
+	KESCMStoryStamp()
+		: fStoryUID(kInvalidUID), fChangeCount(0), fTextCount(0), fAttrCount(0), fOtherCount(0) {}
 };
 
-/** One row of the comparison: a story whose text differs between the two versions. */
+/** One row of the comparison: a story that differs between the two versions, and how.
+
+	No counter values are carried. They are version numbers for the story's state rather than counts
+	of edits (measured 2026-08-08), so the size of the difference means nothing to a reader and the
+	panel does not show it - only which kinds moved.
+*/
 struct KESCMStoryDiff
 {
-	UID		fStoryUID;		// the TARGET side's UID (every row exists in the target)
-	uint32	fSourceCount;	// 0 when fAdded is kTrue - there is no source story to read
-	uint32	fTargetCount;
-	bool16	fAdded;			// kTrue when the source has no story with this UID
+	UID		fStoryUID;	// the TARGET side's UID (every row exists in the target)
+	uint32	fKinds;		// OR of KESCMStoryChangeKind - what the row names
 
-	KESCMStoryDiff() : fStoryUID(kInvalidUID), fSourceCount(0), fTargetCount(0), fAdded(kFalse) {}
+	KESCMStoryDiff() : fStoryUID(kInvalidUID), fKinds(kKESCMStoryKindNone) {}
 };
 
 namespace KESCMStoryEdits
@@ -78,11 +111,17 @@ namespace KESCMStoryEdits
 	*/
 	void CollectStamps(IDataBase* db, std::vector<KESCMStoryStamp>& out);
 
-	/** Match two readings by story UID and report the stories whose text differs.
+	/** Match two readings by story UID and report the stories that differ, with the kinds that moved.
 
-		A row is produced when the same UID reads a different counter, and when the target holds a
-		UID the source does not (added). Stories that read the same, and stories the source has but
-		the target does not (removed), produce nothing - a removed story cannot be jumped to.
+		A row is produced when the same UID reads a different all-changes counter, and when the
+		target holds a UID the source does not (added). Stories that read the same, and stories the
+		source has but the target does not (removed), produce nothing - a removed story cannot be
+		jumped to.
+
+		Each row's fKinds says which of the three sub-counters moved. A row whose aggregate moved
+		while no sub-counter did is reported as Other rather than dropped: nothing in the header
+		rules that combination out, and having already decided the story changed, saying "something"
+		beats saying nothing.
 
 		Note that when the two versions are NOT related by a save-as - a version built by copying
 		into a new document, say - none of the UIDs will line up and every target story is reported
