@@ -25,6 +25,10 @@
 
 /** Show the Story Edits section if it is hidden, hide it if it is showing, and resize the panel
 	by the height of the section either way. Does nothing when the panel is not on screen.
+
+	The section reopens at the height it was closed at. That height is kept on the section's own
+	widget and persists across restarts (kKESCMStorySectionPanelBoss in KESCM.fr). Closing always
+	returns the panel to its designed height, so a dragged divider cannot leave a dead strip behind.
 */
 void KESCMToggleStorySection();
 

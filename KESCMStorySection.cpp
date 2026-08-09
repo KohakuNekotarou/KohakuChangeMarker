@@ -12,6 +12,7 @@
 
 // ----- Interfaces -----
 #include "IControlView.h"
+#include "IIntData.h"				// how the remembered section height is read and written
 #include "IPanelControlData.h"
 #include "ISession.h"				// GetExecutionContextSession (nil during teardown)
 #include "IApplication.h"			// QueryApplication
@@ -46,20 +47,60 @@ namespace
 // The splitter numbers its panes 0 = top, 1 = bottom (ISplitterPanelControlData.h:63).
 const int32 kStorySectionPaneIndex = 1;
 
-// How tall the section opens. Matches the lower pane's Frame in KESCM.fr, so the first open looks
-// like what the resource describes. Remembering the height the user last left it at comes later.
+// How tall the section opens the first time, before it has ever been closed at a height of its own.
+// Matches the lower pane's Frame in KESCM.fr, so the first open looks like what the resource says.
 const int32 kStorySectionDefaultHeight = 100;
+
+/** The whole panel's height, measured off the splitter - which fills the panel edge to edge.
+*/
+int32 WholePanelHeight(ISplitterPanelControlData* splitter)
+{
+	InterfacePtr<const IControlView> splitterView(splitter, UseDefaultIID());
+	if (splitterView == nil)
+		return 0;
+
+	return ::ToInt32(splitterView->GetFrame().Height());
+}
 
 /** How tall the section is right now: the splitter's own height less where its bar sits.
 	Same expression as LinksUIUtils.cpp:638-639.
 */
 int32 CurrentSectionHeight(ISplitterPanelControlData* splitter)
 {
-	InterfacePtr<const IControlView> splitterView(splitter, UseDefaultIID());
-	if (splitterView == nil)
-		return 0;
+	const int32 whole = WholePanelHeight(splitter);
+	return whole > 0 ? whole - splitter->GetSplitterEdge() : 0;
+}
 
-	return ::ToInt32(splitterView->GetFrame().Height()) - splitter->GetSplitterEdge();
+/** The one height the top pane is allowed to be.
+
+	It is read from the splitter's "top snap" figure, which KESCM.fr sets to the panel's designed
+	height on purpose. The widgets up there are a fixed block laid out at fixed coordinates, so the
+	top pane has exactly one correct size, and that number belongs in the resource next to the
+	layout it describes rather than repeated here.
+*/
+int32 DesignedTopPaneHeight(ISplitterPanelControlData* splitter)
+{
+	return splitter->GetSplitterSnapTop();
+}
+
+/** The height the section was left at when it was last closed, or 0 if it never has been.
+
+	Held on the lower pane's own widget (KESCM.fr gives kKESCMStorySectionPanelBoss a persistent
+	IIntData under IID_IKESCMSAVEDSECTIONHEIGHT), which is where the Links panel keeps the same
+	figure. Not a static: the panel throws its widgets away and rebuilds them whenever it is
+	re-shown, so anything remembered outside them is remembered wrongly.
+*/
+int32 SavedSectionHeight(IControlView* sectionView)
+{
+	InterfacePtr<const IIntData> saved(sectionView, IID_IKESCMSAVEDSECTIONHEIGHT);
+	return saved != nil ? saved->GetInt() : 0;
+}
+
+void SetSavedSectionHeight(IControlView* sectionView, int32 height)
+{
+	InterfacePtr<IIntData> saved(sectionView, IID_IKESCMSAVEDSECTIONHEIGHT);
+	if (saved != nil)
+		saved->Set(height);
 }
 
 /** Grow (positive) or shrink (negative) the panel by this many pixels.
@@ -130,21 +171,47 @@ void KESCMToggleStorySection()
 	if (splitter == nil)
 		return;
 
+	InterfacePtr<ISplitterPanelController> controller(splitter, UseDefaultIID());
+	const int32 designedTop = DesignedTopPaneHeight(splitter);
+
 	if (splitter->IsSinglePanelVisible())
 	{
-		// Closed: show the pane first, then make room for it.
+		// Closed: decide how tall to open, show the pane, then make room for it.
+		int32 height = SavedSectionHeight(panelData->FindWidget(kKESCMStorySectionWidgetID));
+		if (height <= 0)
+			height = kStorySectionDefaultHeight;
+		if (height < splitter->GetSplitterSnapBottom())
+			height = splitter->GetSplitterSnapBottom();
+
 		splitter->SetPanelVisible(kStorySectionPaneIndex, kTrue);
-		ResizePanelByDelta(panel, kStorySectionDefaultHeight);
+		ResizePanelByDelta(panel, height);
 	}
 	else
 	{
 		// Open: measure BEFORE hiding - once the pane is gone the splitter no longer describes it.
 		const int32 sectionHeight = CurrentSectionHeight(splitter);
+		const int32 wholeHeight = WholePanelHeight(splitter);
+		if (sectionHeight > 0)
+			SetSavedSectionHeight(panelData->FindWidget(kKESCMStorySectionWidgetID), sectionHeight);
+
 		splitter->SetPanelVisible(kStorySectionPaneIndex, kFalse);
-		ResizePanelByDelta(panel, -sectionHeight);
+
+		// Shrink back to the designed height rather than by the height of the section. The two are
+		// the same number until the divider gets dragged, which grows the top pane past the block of
+		// controls it holds; subtracting only the section would leave that dead strip behind, and it
+		// would still be there every time the panel opened afterwards.
+		if (wholeHeight > designedTop)
+			ResizePanelByDelta(panel, designedTop - wholeHeight);
 	}
 
-	InterfacePtr<ISplitterPanelController> controller(splitter, UseDefaultIID());
+	// Put the divider where the top pane is its designed height, in both directions. linksui instead
+	// derives the divider from the height the section asked for (LinksUIUtils.cpp:724), which hands
+	// any shortfall to the top pane - right for a panel whose upper half is a resizable list, wrong
+	// here, where the upper half is a fixed block of controls. If a docked palette could not grow
+	// all the way, the section takes the shortfall instead.
+	if (controller != nil && splitter->GetSplitterEdge() != designedTop)
+		controller->SetSplitterEdge(designedTop);
+
 	if (controller != nil)
 		controller->SyncPanelsToSplitter(kTrue, kFalse);
 

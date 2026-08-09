@@ -271,6 +271,22 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 		}
 	},
 
+	// The "Story Edits" section itself - a plain panel plus one number: how tall the section was
+	// when it was last closed, so the next open restores that height instead of a fixed default.
+	// The interface is declared as ours but implemented by the SDK's stock kPersistIntDataImpl and
+	// read through IIntData, exactly as the Links panel holds IID_ISAVEDINFOPANESIZE on its info
+	// pane (LinksUIClass.fr:91). Persistent, so the height also survives quitting InDesign.
+	// ★The height lives on the widget rather than in a static: the panel rebuilds its widgets every
+	//   time it is re-shown, and state kept outside them is state that goes stale.
+	Class
+	{
+		kKESCMStorySectionPanelBoss,
+		kGenericPanelWidgetBoss,
+		{
+			IID_IKESCMSAVEDSECTIONHEIGHT, kPersistIntDataImpl,	// treat as IIntData
+		}
+	},
+
 	// Scroll-map strip: a thin custom-drawn widget injected at runtime next to the document
 	// window's vertical scrollbar (KESCMScrollMap.cpp). Same pattern as customdatalinkui's
 	// kCusDtLnkUITreeCViewPanelWidgetBoss: kGenericPanelWidgetBoss + own IControlView.
@@ -1123,6 +1139,12 @@ type KESCMScrollMapWidget(kViewRsrcType) : GenericPanelWidget(ClassID = kKESCMSc
 // the same pair the Links panel uses for its Link Info toggle.
 type KESCMStorySectionToggleWidget(kViewRsrcType) : RollOverIconButtonWidget(ClassID = kKESCMStorySectionToggleBoss) { };
 
+// "Story Edits" section body (the splitter's lower pane): a generic panel that additionally carries
+// one persistent integer, the height it had when it was last closed. Same construction as the Links
+// panel's kLinkInfoPanelWidgetBoss, which holds its IID_ISAVEDINFOPANESIZE the same way
+// (LinksUIViews.fr:45 for the type, LinksUIClass.fr:91 for the interface).
+type KESCMStorySectionPanelWidget(kViewRsrcType) : GenericPanelWidget(ClassID = kKESCMStorySectionPanelBoss) { };
+
 // Scroll-map strip view resource: instantiated with ::CreateObject(db, RsrcSpec(...,
 // kViewRsrcType, kKESCMScrollMapRsrcID), IID_ICONTROLVIEW) — same runtime-creation pattern as
 // linksui's dynamic info widgets. The Frame here is a placeholder; the real frame/binding are
@@ -1402,7 +1424,10 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 			// ★Lower pane = the "Story Edits" section itself. Empty at this stage; the tree of
 			//   edited stories goes in here next. Visible = kFalse to match the splitter's
 			//   "Bottom pane hidden" above - the two have to agree or the section starts half-open.
-			GenericPanelWidget
+			// ★KESCMStorySectionPanelWidget rather than a plain GenericPanelWidget: the only
+			//   difference is the persistent integer it carries, which is the height this section
+			//   had when it was last closed (see kKESCMStorySectionPanelBoss above).
+			KESCMStorySectionPanelWidget
 			(
 				kKESCMStorySectionWidgetID, kPMRsrcID_None,
 				kBindAll,

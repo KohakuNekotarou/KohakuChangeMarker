@@ -84,7 +84,7 @@ DECLARE_PMID(kClassIDSpace, kKESCMTrackerBoss, kKESCMPrefix + 14)	// ツール�
 DECLARE_PMID(kClassIDSpace, kKESCMTrackerRegisterBoss, kKESCMPrefix + 15)	// トラッカー登録(kLayoutWidgetBoss×ツール→トラッカー)。KESCMTrackerRegister.cpp
 // (unused-slot placeholders below start at +16; +6..+15 are declared above. 2026-08-05 audit)
 DECLARE_PMID(kClassIDSpace, kKESCMStorySectionToggleBoss, kKESCMPrefix + 16)	// kRollOverIconButtonBoss継承+IID_IOBSERVER: パネル下部「Story Edits」セクションの開閉ボタン(三角)。絵は本体の kTreeBranchCollapsed/Expanded を借りる
-//DECLARE_PMID(kClassIDSpace, kKESCMBoss, kKESCMPrefix + 17)
+DECLARE_PMID(kClassIDSpace, kKESCMStorySectionPanelBoss, kKESCMPrefix + 17)	// kGenericPanelWidgetBoss継承+IID_IKESCMSAVEDSECTIONHEIGHT(kPersistIntDataImpl): 下ペイン本体。閉じる直前の高さをここに覚える(手本=製品 linksui の kLinkInfoPanelWidgetBoss)
 //DECLARE_PMID(kClassIDSpace, kKESCMBoss, kKESCMPrefix + 18)
 //DECLARE_PMID(kClassIDSpace, kKESCMBoss, kKESCMPrefix + 19)
 //DECLARE_PMID(kClassIDSpace, kKESCMBoss, kKESCMPrefix + 20)
@@ -99,7 +99,7 @@ DECLARE_PMID(kClassIDSpace, kKESCMStorySectionToggleBoss, kKESCMPrefix + 16)	// 
 DECLARE_PMID(kInterfaceIDSpace, IID_IKESCMLAYOUTSYNCOBSERVER, kKESCMPrefix + 0)	// レイアウトビュー同期オブザーバのアタッチ識別ID(AttachObserver の observerIID)
 DECLARE_PMID(kInterfaceIDSpace, IID_IKESCMDOCSCLOSEDOBSERVER, kKESCMPrefix + 1)	// 一括クローズ完了(kPendingDocumentsClosedMsg)を受けるオブザーバのアタッチ識別ID
 DECLARE_PMID(kInterfaceIDSpace, IID_IKESCMPANELVISIBILITYOBSERVER, kKESCMPrefix + 2)	// パネルの表示状態変化(kPaletteVisibilityChangedMessage)を受けるオブザーバのアタッチ識別ID。半透明トグルをドッキング切り替え/開き直しに追随させるために使う
-//DECLARE_PMID(kInterfaceIDSpace, IID_IKESCMINTERFACE, kKESCMPrefix + 3)
+DECLARE_PMID(kInterfaceIDSpace, IID_IKESCMSAVEDSECTIONHEIGHT, kKESCMPrefix + 3)	// IIntData として扱う: Story Edits セクションを閉じた瞬間の高さ(px)。次に開くときこの高さで開く。実装は SDK 標準の kPersistIntDataImpl(手本=linksui の IID_ISAVEDINFOPANESIZE)
 //DECLARE_PMID(kInterfaceIDSpace, IID_IKESCMINTERFACE, kKESCMPrefix + 4)
 //DECLARE_PMID(kInterfaceIDSpace, IID_IKESCMINTERFACE, kKESCMPrefix + 5)
 //DECLARE_PMID(kInterfaceIDSpace, IID_IKESCMINTERFACE, kKESCMPrefix + 6)
