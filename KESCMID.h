@@ -83,7 +83,7 @@ DECLARE_PMID(kClassIDSpace, kKESCMToolBoss, kKESCMPrefix + 13)	// kGenericToolBo
 DECLARE_PMID(kClassIDSpace, kKESCMTrackerBoss, kKESCMPrefix + 14)	// ツールのキャプチャ型トラッカー(IID_ITRACKER+IID_IEVENTHANDLER)。左ボタン hold 中だけ reveal。KESCMTracker.cpp
 DECLARE_PMID(kClassIDSpace, kKESCMTrackerRegisterBoss, kKESCMPrefix + 15)	// トラッカー登録(kLayoutWidgetBoss×ツール→トラッカー)。KESCMTrackerRegister.cpp
 // (unused-slot placeholders below start at +16; +6..+15 are declared above. 2026-08-05 audit)
-//DECLARE_PMID(kClassIDSpace, kKESCMBoss, kKESCMPrefix + 16)
+DECLARE_PMID(kClassIDSpace, kKESCMStorySectionToggleBoss, kKESCMPrefix + 16)	// kRollOverIconButtonBoss継承+IID_IOBSERVER: パネル下部「Story Edits」セクションの開閉ボタン(三角)。絵は本体の kTreeBranchCollapsed/Expanded を借りる
 //DECLARE_PMID(kClassIDSpace, kKESCMBoss, kKESCMPrefix + 17)
 //DECLARE_PMID(kClassIDSpace, kKESCMBoss, kKESCMPrefix + 18)
 //DECLARE_PMID(kClassIDSpace, kKESCMBoss, kKESCMPrefix + 19)
@@ -152,7 +152,7 @@ DECLARE_PMID(kImplementationIDSpace, kKESCMCursorProviderImpl, kKESCMPrefix + 17
 DECLARE_PMID(kImplementationIDSpace, kKESCMDocsClosedObserverImpl, kKESCMPrefix + 19)	// IObserver 実装(一括クローズ完了で、保留した後片付けを1回だけ流す。KESCMPeek.cpp)
 DECLARE_PMID(kImplementationIDSpace, kKESCMPanelVisibilityObserverImpl, kKESCMPrefix + 20)	// IObserver 実装(パネルの表示状態が変わったら半透明を貼り直す。KESCMPanelAlpha.cpp)
 DECLARE_PMID(kImplementationIDSpace, kKESCMPanelRollOverImpl, kKESCMPrefix + 21)	// IMouseRollOver 実装(パネルにカーソルが乗っている間だけ半透明を解除。KESCMPanelAlpha.cpp)
-//DECLARE_PMID(kImplementationIDSpace, kKESCMImpl, kKESCMPrefix + 22)
+DECLARE_PMID(kImplementationIDSpace, kKESCMStorySectionToggleObserverImpl, kKESCMPrefix + 22)	// IObserver 実装(開閉ボタンの押下を受けて Story Edits セクションを開閉。KESCMStorySectionObserver.cpp)
 //DECLARE_PMID(kImplementationIDSpace, kKESCMImpl, kKESCMPrefix + 23)
 //DECLARE_PMID(kImplementationIDSpace, kKESCMImpl, kKESCMPrefix + 24)
 //DECLARE_PMID(kImplementationIDSpace, kKESCMImpl, kKESCMPrefix + 25)
@@ -234,6 +234,12 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMNextChangeButtonWidgetID, kKESCMPrefix + 39)	
 DECLARE_PMID(kWidgetIDSpace, kKESCMScrollMapWidgetID, kKESCMPrefix + 40)	// スクロールバー地図strip(文書窓の縦スクロールバー左隣に実行時注入; KESCMScrollMap.cpp)
 DECLARE_PMID(kWidgetIDSpace, kKESCMToolWidgetID, kKESCMPrefix + 41)	// ツールボックスのツールボタンのウィジェットID(KESCMTool::InitWidget)
 DECLARE_PMID(kWidgetIDSpace, kKESCMToolButtonWidgetID, kKESCMPrefix + 42)	// ★パネル内のツール切替ボタン(2026-08-07 追加。Prev の左・32x22)。押すと kKESCMToolBoss をアクティブツールにする(KESCMActivateOwnTool)。上の +41 とは別物＝あちらはツールボックス側のツール枠
+// ★「Story Edits」セクション(2026-08-09 追加)。パネルを SplitterPanelWidget で上下に割り、下ペインに
+//   「テキストが編集されたストーリー」の一覧を出す(段階3)。手本は製品 linksui の「リンク情報」セクション。
+DECLARE_PMID(kWidgetIDSpace, kKESCMSplitterWidgetID, kKESCMPrefix + 43)			// パネルを上下に割る SplitterPanelWidget(Widgets.fh:462 / kSplitterPanelWidgetBoss)
+DECLARE_PMID(kWidgetIDSpace, kKESCMTopPaneWidgetID, kKESCMPrefix + 44)			// 上ペイン=従来のパネル内容一式を丸ごと収めた GenericPanelWidget。★splitter の「伸縮させない方」に指定する
+DECLARE_PMID(kWidgetIDSpace, kKESCMStorySectionWidgetID, kKESCMPrefix + 45)		// 下ペイン=Story Edits 本体(初期は非表示。段階3でツリーが入る)
+DECLARE_PMID(kWidgetIDSpace, kKESCMStorySectionToggleWidgetID, kKESCMPrefix + 46)	// 開閉ボタン(三角)。★上ペインの中に置く=下ペインに置くと閉じたときボタンごと消えて開けなくなる
 //DECLARE_PMID(kWidgetIDSpace, kKESCMWidgetID, kKESCMPrefix + 2)
 //DECLARE_PMID(kWidgetIDSpace, kKESCMWidgetID, kKESCMPrefix + 3)
 //DECLARE_PMID(kWidgetIDSpace, kKESCMWidgetID, kKESCMPrefix + 4)
