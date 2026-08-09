@@ -1387,7 +1387,12 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 		(
 			kKESCMStorySectionToggleWidgetID,
 			kTreeBranchCollapsedRsrcID, kApplicationRsrcPluginID,
-			kBindLeft | kBindBottom,
+			// ★★kBindTop であって kBindBottom ではない(2026-08-09 ユーザー報告で修正)。
+			//   上ペインは kBindAll なのでパネルの高さが変わると一緒に伸び縮みする。既存 widget は
+			//   全部 kBindTop なので動かないが、ここだけ下端に縛ると**ボタンだけが下へ流れていく**
+			//   ——ドックに入れて開閉したときに実際にそうなった。「下端の帯に置く」という意図は
+			//   Frame の座標が担っていて、binding が担う話ではなかった。
+			kBindLeft | kBindTop,
 			Frame(4, 153, 20, 169)		// 上ペイン下端の帯(153〜173)。左端4pxはステータス欄(8)より少し内側
 			kTrue, kTrue,
 			kADBEIconSuiteButtonType,
