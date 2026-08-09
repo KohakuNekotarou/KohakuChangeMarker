@@ -77,6 +77,14 @@ int32 CurrentSectionHeight(ISplitterPanelControlData* splitter)
 	height on purpose. The widgets up there are a fixed block laid out at fixed coordinates, so the
 	top pane has exactly one correct size, and that number belongs in the resource next to the
 	layout it describes rather than repeated here.
+
+	The same figure is what stops the divider being dragged up into the controls: with snapping
+	turned off, "slider doesn't move beyond snap pos" (Widgets.fh:418). Dragging DOWN is still
+	allowed, as far as the section's own minimum - which is why closing has to aim at this height
+	rather than just subtract the section.
+
+	Callers treat a non-positive answer as "no designed height to aim at" and fall back, rather than
+	resize the panel to nothing.
 */
 int32 DesignedTopPaneHeight(ISplitterPanelControlData* splitter)
 {
@@ -200,8 +208,10 @@ void KESCMToggleStorySection()
 		// the same number until the divider gets dragged, which grows the top pane past the block of
 		// controls it holds; subtracting only the section would leave that dead strip behind, and it
 		// would still be there every time the panel opened afterwards.
-		if (wholeHeight > designedTop)
+		if (designedTop > 0 && wholeHeight > designedTop)
 			ResizePanelByDelta(panel, designedTop - wholeHeight);
+		else if (designedTop <= 0)
+			ResizePanelByDelta(panel, -sectionHeight);	// no designed height to aim at; do what linksui does
 	}
 
 	// Put the divider where the top pane is its designed height, in both directions. linksui instead
@@ -209,7 +219,7 @@ void KESCMToggleStorySection()
 	// any shortfall to the top pane - right for a panel whose upper half is a resizable list, wrong
 	// here, where the upper half is a fixed block of controls. If a docked palette could not grow
 	// all the way, the section takes the shortfall instead.
-	if (controller != nil && splitter->GetSplitterEdge() != designedTop)
+	if (controller != nil && designedTop > 0 && splitter->GetSplitterEdge() != designedTop)
 		controller->SetSplitterEdge(designedTop);
 
 	if (controller != nil)
