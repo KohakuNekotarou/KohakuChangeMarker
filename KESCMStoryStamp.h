@@ -14,12 +14,13 @@
 //  ALL FOUR COUNTERS ARE READ, and they answer two different questions:
 //
 //    - GetChangeCount() - the "all changes" counter (ITextModel.h:185-192) - decides whether the
-//      story is reported at all. It has to be this one rather than the text-only counter, because
-//      GetTextChangeCount does not move for an edit that only changes attributes, and because
-//      GetOtherChangeCount's own documentation (ITextModel.h:173-183) states that a TableModel
-//      signals change through these counters - "a change to a Table stroke does represent an
-//      effective change to the TextModel" - so a table edit reaches its containing story only
-//      through a counter that includes Other.
+//      story is reported at all. It has to be this one rather than any single sub-counter, because
+//      which sub-counter an edit lands on cannot be predicted from the headers. Measured
+//      2026-08-10: a table stroke moved Attr, not Other, even though ITextModel.h:173-183 gives
+//      exactly that edit as its example of what Other is for ("a change to a Table stroke does
+//      represent an effective change to the TextModel ... the TableModel will use this counter").
+//      Adding a table row and inserting an inline both moved Text and Attr, and Other stayed put
+//      in every case measured. The aggregate is the only reading that cannot be wrong-footed.
 //
 //    - The three sub-counters name what moved, and nothing more. They are not the test: the header
 //      promises the aggregate moves for any change to them, but never promises it is their sum.
@@ -66,8 +67,13 @@ enum KESCMStoryChangeKind
 {
 	kKESCMStoryKindNone		= 0,
 	kKESCMStoryKindText		= 1,	// characters inserted, removed or replaced
-	kKESCMStoryKindAttr		= 2,	// effective attributes - INCLUDING applied styles and overrides
-	kKESCMStoryKindOther	= 4,	// tables, inlines and the like signalling through the model
+	kKESCMStoryKindAttr		= 2,	// effective attributes - INCLUDING applied styles and overrides,
+									// and, measured, table strokes and cells as well
+	kKESCMStoryKindOther	= 4,	// the Other counter. Nothing has been found that moves it: the
+									// table and inline edits its documentation names all landed on
+									// Attr or Text instead (see the file comment). Kept because the
+									// header defines it, and because Compare names it for the row
+									// whose aggregate moved while no sub-counter did
 	kKESCMStoryKindAdded	= 8		// no story with this UID on the source side
 };
 
