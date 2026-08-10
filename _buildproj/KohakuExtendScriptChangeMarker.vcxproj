@@ -226,6 +226,7 @@
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMPageCheck.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMDocUidSet.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMStoryStamp.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMStoryList.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMStorySection.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMStorySectionObserver.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMPageNumberMarker.cpp" />
@@ -273,6 +274,7 @@
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMPageCheck.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMDocUidSet.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMStoryStamp.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMStoryList.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMStorySection.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMPageNumberMarker.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMPanelAlpha.h" />

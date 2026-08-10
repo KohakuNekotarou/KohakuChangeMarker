@@ -54,6 +54,7 @@
 #include "KESCMChangeNav.h"          // KESCMResetNav(セッションを跨いだ巡回基準点の持ち越しを断つ)
 #include "KESCMScrollMap.h"          // KESCMScrollMapInvalidateAll(比較後にスクロールバー地図を最新化)
 #include "KESCMStoryStamp.h"         // ストーリーの変更カウンター(テキストが編集されたか＝画素比較には出せない情報)
+#include "KESCMStoryList.h"          // 変更のあったストーリーの一覧(Story Edits セクションが読むモデル)
 #include "KESCMCore.h"
 
 //========================================================================================
@@ -610,6 +611,10 @@ ErrorCode KESCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMStri
 		std::vector<KESCMStoryDiff> storyDiffs;
 		KESCMStoryEdits::Compare(sourceStamps, targetStamps, storyDiffs);
 
+		// ★一覧のモデルを作り直す。読むのは Target 側だけ(行はすべて Target に存在する=Compare の契約)。
+		//   ページ順の並べ替えと本文先頭の取り出しはこの中で完結する。
+		KESCMStoryList::Build(targetDB, storyDiffs);
+
 		int32 addedCount = 0, textCount = 0, attrCount = 0, otherCount = 0;
 		for (std::vector<KESCMStoryDiff>::const_iterator it = storyDiffs.begin(); it != storyDiffs.end(); ++it)
 		{
@@ -629,6 +634,17 @@ ErrorCode KESCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMStri
 		report.Append(" a="); report.AppendNumber(attrCount);
 		report.Append(" o="); report.AppendNumber(otherCount);
 		report.Append(" +"); report.AppendNumber(addedCount);
+
+		// ★TEMPORARY too - goes away with the rest of this line in Task 5. Shows the first row of
+		//   the list, which is the only way to see that the model built anything until the tree
+		//   exists to show it. In page order, so this is the changed story nearest the front.
+		const KESCMStoryRow* firstRow = KESCMStoryList::GetRow(0);
+		if (firstRow != nil)
+		{
+			report.Append(" [");
+			report.Append(firstRow->fText);
+			report.Append("]");
+		}
 	}
 	outReport = report;
 
