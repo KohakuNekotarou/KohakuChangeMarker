@@ -123,6 +123,9 @@
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMStoryRowEH.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMStoryTreeEH.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMPanelView.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>

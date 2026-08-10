@@ -229,6 +229,7 @@
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMStoryList.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMStoryJump.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMStoryRowEH.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMStoryTreeEH.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMPanelView.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMNoTip.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMStoryTreeAdapter.cpp" />

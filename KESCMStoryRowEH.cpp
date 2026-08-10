@@ -40,7 +40,11 @@
 #include "VCPlugInHeaders.h"
 
 // Interface includes:
+#include "IApplication.h"			// the app boss carries IKeyBoard
 #include "IEvent.h"					// ShiftKeyDown / CmdKeyDown
+#include "IEventHandler.h"			// the LIST's handler - the arrow keys' owner (see the hand-off below)
+#include "IKeyBoard.h"				// AcquireKeyFocus / RelinquishKeyFocus
+#include "ISession.h"				// GetExecutionContextSession - the route to the application
 #include "ITreeNodeIDData.h"		// this node's NodeID
 #include "ITreeViewController.h"	// IsSelected - is this the row the click landed on?
 #include "IWidgetParent.h"			// QueryParentFor - the row -> the tree that owns the selection
@@ -146,13 +150,53 @@ bool16 KESCMStoryRowEH::LButtonUp(IEvent* e)
 	if (rowIndex < 0)
 		return result;
 
+	// The tree owns the selection, and from here on it owns the keyboard too - both are asked for
+	// through the parent. (RowForClick has already used this route, but it does not hand the
+	// interface back, and a second Query costs nothing worth avoiding.)
+	InterfacePtr<const IWidgetParent> widgetParent(this, UseDefaultIID());
+	InterfacePtr<ITreeViewController> treeController(widgetParent == nil ? nil :
+		static_cast<ITreeViewController*>(widgetParent->QueryParentFor(ITreeViewController::kDefaultIID)));
+	InterfacePtr<IEventHandler> treeEH(treeController, UseDefaultIID());
+	InterfacePtr<IApplication> app(GetExecutionContextSession()->QueryApplication());
+	InterfacePtr<IKeyBoard> keyBoard(app, UseDefaultIID());
+
 	// ***** The second click of a double click SELECTS THE STORY, rather than jumping again. *****
 	// The first click already moved the view there, so repeating it would only redo that. What is
 	// added is handing the user the text itself - Type tool, the whole story selected.
 	if (selectRatherThanJump)
-		KESCMStorySelectWholeStory(rowIndex);
+	{
+		if (KESCMStorySelectWholeStory(rowIndex))
+		{
+			// ***** AND GIVE THE KEYBOARD BACK. ***** The FIRST click of this double click ended in
+			// the AcquireKeyFocus below, so the tree is holding the keyboard right now. Left that
+			// way, the story would sit selected while the arrows walked the panel and typing went
+			// nowhere - which is the one thing a user who just selected a story wants to do.
+			// ! Relinquish is a POP, not a hand-off: IKeyBoard.h:49-53 restores the PREVIOUS holder,
+			//   and what makes that the document window is the ORDER of the first click - the jump
+			//   fronted the window and only then did the tree acquire. (Same reasoning, and the same
+			//   caveat, as KBS's KBSResultNodeEH.cpp:175-202.)
+			if (treeEH != nil && keyBoard != nil && keyBoard->GetKeyFocus() == treeEH)
+				keyBoard->RelinquishKeyFocus();
+			return result;
+		}
+		// It refused, and has said why. Fall through: the arrows below still want the tree.
+	}
 	else
+	{
 		KESCMStoryJumpToRow(rowIndex);
+	}
+
+	// ***** HAND THE KEYBOARD TO THE LIST, so the up / down arrows walk it from here on. *****
+	// (KESCMStoryTreeEH, added 2026-08-11 at the user's request - "like KBS, move up and down with
+	// the cursor".) ⚠This is the deliberate decision noted at the head of this file being reversed:
+	// while the tree holds the keyboard, the tool shortcuts do not reach the document. The double
+	// click above is the way back.
+	// ★The QUERY of treeEH above is not incidental - it BRINGS KESCMStoryTreeEH INTO EXISTENCE.
+	//   Implementations are created on first use and nothing else in this plug-in ever asks the tree
+	//   for its event handler, so without it the class is never constructed and the arrows keep the
+	//   stock behaviour ([[lazy-interface-instantiation]]; KBS measured exactly this).
+	if (treeEH != nil && keyBoard != nil)
+		keyBoard->AcquireKeyFocus(treeEH);
 
 	return result;
 }

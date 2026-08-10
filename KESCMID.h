@@ -166,11 +166,10 @@ DECLARE_PMID(kImplementationIDSpace, kKESCMStoryTreeWidgetMgrImpl, kKESCMPrefix 
 DECLARE_PMID(kImplementationIDSpace, kKESCMNoTipImpl, kKESCMPrefix + 25)	// ITip 実装(常に空を返す＝ツールチップを出さない。KESCMNoTip.cpp)
 DECLARE_PMID(kImplementationIDSpace, kKESCMPanelViewImpl, kKESCMPrefix + 26)	// IControlView 実装(PalettePanelView派生。ConstrainDimensions でパネルの最小サイズを守る。KESCMPanelView.cpp)
 DECLARE_PMID(kImplementationIDSpace, kKESCMStoryRowEHImpl, kKESCMPrefix + 27)	// IEventHandler 実装(TreeNodeEventHandler派生。Story Edits の行=単クリックでジャンプ・ダブルクリックでストーリー全文を選択。KESCMStoryRowEH.cpp)
-// ★kKESCMPrefix + 28 は kKESCMStoryRowViewImpl の跡地(2026-08-11 に作って同日撤去)。一覧の行の間に
-//   フレームワークが描く区切り線を消すための IControlView(TreeNodeControlView 派生・手本は製品の
-//   TimingPanelTreeNodeView.cpp)だったが、**線があった方が読みやすいというユーザー判断**で線ごと戻した
-//   ＝実装の失敗ではなく、見比べた結果の採否。⚠**同じ発想で作り直す前に KESCM.fr の行 boss のコメントを読むこと。**
-//   番号は次の Impl に使ってよい(ActionID と違い .indk のような外部保存が参照しない)。
+// (kKESCMPrefix + 28 は一度 kKESCMStoryRowViewImpl=行の間の区切り線を消す IControlView に使い、同日
+//  撤去した跡地。線を残すユーザー判断なので実装ごと消えている＝経緯は KESCM.fr の行 boss のコメント。
+//  ActionID と違い Impl 番号は外部保存が参照しないので、下記のとおり再利用した。)
+DECLARE_PMID(kImplementationIDSpace, kKESCMStoryTreeEHImpl, kKESCMPrefix + 28)	// IEventHandler 実装(TreeViewEventHandler派生)。★一覧**そのもの**のキー操作＝↑↓で行を移動し、着いた行へジャンプする(KESCMStoryTreeEH.cpp)。行側の kKESCMStoryRowEHImpl とは別物＝あちらはクリック
 
 
 // ActionIDs:

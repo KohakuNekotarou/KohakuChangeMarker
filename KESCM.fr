@@ -293,11 +293,14 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 		}
 	},
 
-	// The "Story Edits" list. Two interfaces and no more: the tree's controller and its default
-	// event handling (selection, keyboard) already come with kTreeViewWidgetBoss, so a flat list
-	// only has to say what the rows ARE (the hierarchy adapter) and how they are DRAWN (the widget
-	// manager). Same two-line shape as the samples that use a plain list - linkwatcher's
-	// kLnkWtchTreeViewWidgetBoss and basicselectabledialog's.
+	// The "Story Edits" list. The tree's controller and most of its event handling already come with
+	// kTreeViewWidgetBoss, so a flat list only has to say what the rows ARE (the hierarchy adapter)
+	// and how they are DRAWN (the widget manager) - that pair is the whole shape of the samples that
+	// use a plain list (linkwatcher's kLnkWtchTreeViewWidgetBoss, basicselectabledialog's).
+	// ★The third, IID_IEVENTHANDLER, is this panel's own (2026-08-11): the stock up / down arrows
+	//   move the selection, and KESCMStoryTreeEH makes the row they land on SHOW ITSELF, so the list
+	//   can be walked with the keyboard. ⚠It is only ever constructed because KESCMStoryRowEH asks
+	//   the tree for it - naming it here is not enough (implementations are lazy).
 	Class
 	{
 		kKESCMStoryTreeWidgetBoss,
@@ -305,6 +308,7 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 		{
 			IID_ITREEVIEWHIERARCHYADAPTER, kKESCMStoryTreeAdapterImpl,
 			IID_ITREEVIEWWIDGETMGR, kKESCMStoryTreeWidgetMgrImpl,
+			IID_IEVENTHANDLER, kKESCMStoryTreeEHImpl,
 		}
 	},
 
