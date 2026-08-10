@@ -157,7 +157,11 @@ bool16 KESCMStoryRowEH::LButtonUp(IEvent* e)
 	InterfacePtr<ITreeViewController> treeController(widgetParent == nil ? nil :
 		static_cast<ITreeViewController*>(widgetParent->QueryParentFor(ITreeViewController::kDefaultIID)));
 	InterfacePtr<IEventHandler> treeEH(treeController, UseDefaultIID());
-	InterfacePtr<IApplication> app(GetExecutionContextSession()->QueryApplication());
+	// The session is nil while the app is tearing down - this plug-in's standing rule is to ask
+	// before dereferencing it, and every other call site here does (2026-08-11, block 15 audit C-1:
+	// these two event handlers were the only ones that did not, KESCMStorySection.cpp:130 included).
+	ISession* session = GetExecutionContextSession();
+	InterfacePtr<IApplication> app(session != nil ? session->QueryApplication() : nil);
 	InterfacePtr<IKeyBoard> keyBoard(app, UseDefaultIID());
 
 	// ***** The second click of a double click SELECTS THE STORY, rather than jumping again. *****

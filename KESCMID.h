@@ -48,7 +48,7 @@
 														//     何をするものか: 画素比較は「このページは違って見える」までしか言えない。Story Edits は Target と Source の各ストーリーの変更カウンター(ITextModel の4本)を突き合わせ、**変更のあったストーリーを一覧**して「テキストが変わったのか・書式だけか・表などが変わったのか」を区別する。行はページ順で、左に本文の先頭、右に種類(Text / Attr / Other / Added)。
 														//     ⚠**数字(4->6 のようなカウンター値)は出さない** = カウンターは編集回数ではなく状態のバージョン番号なので、差の大きさに人向けの意味が無い(2026-08-08 実測)。
 														//     行の操作: **単クリック=そのストーリーの先頭フレームを画面中央に出す**(Source 窓と Pages パネルは Prev/Next と同じ流儀で連動)。**ダブルクリック=そのストーリーの全文を選択する**(2026-08-10 ユーザー指示で「先頭にキャレット」から変更＝行は「このストーリーが変わった」という報告なので、次にやりたいのはコピー・書式変更・差し替えのいずれかで、そのどれもが選択で足りる)。⚠ダブルクリックは**アクティブツールを文字ツールに変える**(琥珀のツールは外れる)＝選択しても操作できなければ意味が無いため。How to Use にも明記済み。
-														//     一覧の見出し: **UID / Story / Change の3列**(2026-08-10 ユーザー要望)。★行のセルと同じ Frame・同じ binding を .fr で与えることだけが列の揃いを保証している。行の間の区切り線は**消してある**(kKESCMStoryRowViewImpl。DVTreeNodeControlView は行高14px以上で勝手に描く)。
+														//     一覧の見出し: **UID / Story / Change の3列**(2026-08-10 ユーザー要望)。★行のセルと同じ Frame・同じ binding を .fr で与えることだけが列の揃いを保証している。行の間の区切り線は**フレームワークが描くものをそのまま残している**(DVTreeNodeControlView は行高14px以上なら自動で描く)。⚠**2026-08-11 に一度消す実装(kKESCMStoryRowViewImpl)を入れ、同日ユーザー判断で撤去した＝線は「ある」**——旧記述の「消してある」は誤り(2026-08-11 ブロック15 監査 D-1 で訂正)。経緯は下の Impl +28 のコメントと KESCM.fr の行 boss。
 //     現況: **段階1〜4 すべて完了**(2026-08-10)。計画=docs/superpowers/plans/2026-08-09-kescm-story-edits-stage3.md と ...-2026-08-10-kescm-story-edits-stage4.md／設計=docs/superpowers/specs/2026-08-09-kescm-story-edit-section-design.md
 														//     ⚠**パネルが 153→185px 高くなっている**(開閉ボタンの帯 20px ＋ 猫イラストを収めるための 12px。2026-08-10)。これは公開版 1.3.0 から見て目に見える変更なので、提出説明に書く価値がある。★同時に**ステータス欄が右端まで広がった**(180→216)＝猫が下の帯へ移った分。
 														//   ■1.3.1 で撤去したもの: 「Translucent Toolbox」トグル(フローティング中の**ツールボックス**を半透明にする)。★★**提出説明に「機能を削除した」と書かないこと** ＝ **提出した 1.3.0 のビルドに最初から入っていない**(2026-08-07 ユーザー明言)ので、公開版から見れば存在しなかった機能。ActionID +38 は欠番のまま再利用しない。
@@ -94,7 +94,7 @@ DECLARE_PMID(kClassIDSpace, kKESCMTrackerRegisterBoss, kKESCMPrefix + 15)	// ト
 DECLARE_PMID(kClassIDSpace, kKESCMStorySectionToggleBoss, kKESCMPrefix + 16)	// kRollOverIconButtonBoss継承+IID_IOBSERVER: パネル下部「Story Edits」セクションの開閉ボタン(三角)。絵は本体の kTreeBranchCollapsed/Expanded を借りる
 DECLARE_PMID(kClassIDSpace, kKESCMStorySectionPanelBoss, kKESCMPrefix + 17)	// kGenericPanelWidgetBoss継承+IID_IKESCMSAVEDSECTIONHEIGHT(kPersistIntDataImpl): 下ペイン本体。閉じる直前の高さをここに覚える(手本=製品 linksui の kLinkInfoPanelWidgetBoss)
 DECLARE_PMID(kClassIDSpace, kKESCMStoryTreeWidgetBoss, kKESCMPrefix + 18)	// kTreeViewWidgetBoss継承: Story Edits の一覧(平坦1階層)。載せるのは adapter と widget mgr の2つだけ＝コントローラーは kTreeViewWidgetBoss が既に持っている
-DECLARE_PMID(kClassIDSpace, kKESCMStoryRowWidgetBoss, kKESCMPrefix + 19)	// kTreeNodeWidgetBoss継承: 一覧の1行。段階3では自前のIFを載せない(行のクリック処理は段階4)。空の Class は製品コードにも実例あり(spellpanel の kAutoCorrectTreeNodeWidgetBoss)
+DECLARE_PMID(kClassIDSpace, kKESCMStoryRowWidgetBoss, kKESCMPrefix + 19)	// kTreeNodeWidgetBoss継承: 一覧の1行。載せるのは IID_IEVENTHANDLER(kKESCMStoryRowEHImpl)の1つだけ＝単クリックでジャンプ・ダブルクリックで全文選択。⚠2026-08-11 まで空の Class だった(段階4 で足した)
 DECLARE_PMID(kClassIDSpace, kKESCMStoryRowCellBoss, kKESCMPrefix + 20)	// kInfoStaticTextWidgetBoss継承+IID_ITIP(kKESCMNoTipImpl): 一覧の行のセル。★狙いはツールチップを**消す**こと＝素の静的テキストは省略表示すると全文をポップアップで出す(実機ダンプ: kStaticTextWidgetBoss が IID_ITIP=kTextWidgetTipImpl を持つ)。行に出るのは邪魔なので空の tip を返す実装で上書きする(2026-08-10 ユーザー指定)
 //DECLARE_PMID(kClassIDSpace, kKESCMBoss, kKESCMPrefix + 21)
 //DECLARE_PMID(kClassIDSpace, kKESCMBoss, kKESCMPrefix + 22)
@@ -252,7 +252,7 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMToolButtonWidgetID, kKESCMPrefix + 42)	// ★
 //   「テキストが編集されたストーリー」の一覧を出す(段階3)。手本は製品 linksui の「リンク情報」セクション。
 DECLARE_PMID(kWidgetIDSpace, kKESCMSplitterWidgetID, kKESCMPrefix + 43)			// パネルを上下に割る SplitterPanelWidget(Widgets.fh:462 / kSplitterPanelWidgetBoss)
 DECLARE_PMID(kWidgetIDSpace, kKESCMTopPaneWidgetID, kKESCMPrefix + 44)			// 上ペイン=従来のパネル内容一式を丸ごと収めた GenericPanelWidget。★splitter の「伸縮させない方」に指定する
-DECLARE_PMID(kWidgetIDSpace, kKESCMStorySectionWidgetID, kKESCMPrefix + 45)		// 下ペイン=Story Edits 本体(初期は非表示。段階3でツリーが入る)
+DECLARE_PMID(kWidgetIDSpace, kKESCMStorySectionWidgetID, kKESCMPrefix + 45)		// 下ペイン=Story Edits 本体(初期は非表示。中身＝列見出しの帯＋罫線＋一覧ツリー)
 DECLARE_PMID(kWidgetIDSpace, kKESCMStorySectionToggleWidgetID, kKESCMPrefix + 46)	// 開閉ボタン(三角)。★上ペインの中に置く=下ペインに置くと閉じたときボタンごと消えて開けなくなる
 DECLARE_PMID(kWidgetIDSpace, kKESCMStoryTreeWidgetID, kKESCMPrefix + 47)		// Story Edits の一覧ツリー本体(下ペインいっぱい)
 DECLARE_PMID(kWidgetIDSpace, kKESCMStoryRowTextWidgetID, kKESCMPrefix + 48)	// 行の左=本文の先頭テキスト
@@ -267,7 +267,7 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMStoryRowUIDWidgetID, kKESCMPrefix + 52)	// �
 DECLARE_PMID(kWidgetIDSpace, kKESCMStoryHeaderUIDWidgetID, kKESCMPrefix + 53)	// 見出しの左「UID」(行の kKESCMStoryRowUIDWidgetID と同じ 8〜48・kBindLeft)
 DECLARE_PMID(kWidgetIDSpace, kKESCMStoryHeaderTextWidgetID, kKESCMPrefix + 54)	// 見出しの中「Story」(行の kKESCMStoryRowTextWidgetID と同じ 52〜154・kBindLeft|kBindRight＝広げるとここだけ伸びる)
 DECLARE_PMID(kWidgetIDSpace, kKESCMStoryHeaderKindWidgetID, kKESCMPrefix + 55)	// 見出しの右「Change」(行の kKESCMStoryRowKindWidgetID と同じ 154〜216・kBindRight・右寄せ)
-DECLARE_PMID(kWidgetIDSpace, kKESCMStoryHeaderRuleWidgetID, kKESCMPrefix + 56)	// 見出しと一覧を分ける 1px の罫線。stock の RuleWidget(Widgets.fh:887 / kRuleWidgetBoss)に kInterfaceSeparatorColor を渡す
+DECLARE_PMID(kWidgetIDSpace, kKESCMStoryHeaderRuleWidgetID, kKESCMPrefix + 56)	// 見出しと一覧を分ける 1px の罫線＝**ErasablePrimaryResourcePanelWidget を高さ1pxで置き kInterfaceSeparatorColor で erase**(その塗りが線)。⚠stock の RuleWidget(Widgets.fh:887 / kRuleWidgetBoss)を先に試したが**パースもビルドも通って何も描かなかった**ので差し替えた(.fr 側に全文)
 //DECLARE_PMID(kWidgetIDSpace, kKESCMWidgetID, kKESCMPrefix + 2)
 //DECLARE_PMID(kWidgetIDSpace, kKESCMWidgetID, kKESCMPrefix + 3)
 //DECLARE_PMID(kWidgetIDSpace, kKESCMWidgetID, kKESCMPrefix + 4)

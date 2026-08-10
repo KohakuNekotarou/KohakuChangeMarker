@@ -19,6 +19,7 @@
 #include "IApplication.h"			// QueryApplication
 #include "IPanelMgr.h"				// QueryPanelManager / GetPaletteRefContainingPanel
 #include "IWidgetParent.h"			// QueryParentFor - the palette sizer lives ABOVE the panel
+#include "IMonitorInfo.h"			// GetBestScreenRect - is the grown panel still on the screen?
 
 // ----- Interfaces published under source/open -----
 //
@@ -115,6 +116,63 @@ void SetSavedSectionHeight(IControlView* sectionView, int32 height)
 		saved->Set(height);
 }
 
+/** Make the palette recalculate what its smallest and largest sizes are.
+
+	Opening or closing the section changes those figures, and so does moving the divider - but they
+	are normally worked out only while a panel is being resized. linksui forces the recalculation in
+	BOTH places for that reason, and its comment names the cause: "moving the splitter affects our
+	min/max panel size, and the PanelMgr only recalculates those on Resize...so we have to force a
+	recalculation" (LinksUIUtils.cpp:656-659 for a docked palette, :736-739 for a floating one).
+
+	The sizer lives ABOVE the panel, so it is asked for through the widget parent chain.
+*/
+void UpdatePaletteSizeLimits(IControlView* panelView)
+{
+	InterfacePtr<const IWidgetParent> wp(panelView, UseDefaultIID());
+	if (wp == nil)
+		return;
+
+	InterfacePtr<IOWLPaletteSizer> palSizer((IOWLPaletteSizer*)wp->QueryParentFor(IOWLPaletteSizer::kDefaultIID));
+	if (palSizer != nil)
+		palSizer->UpdateOWLPaletteSizes();
+}
+
+/** Pull the panel back up if growing it pushed its bottom edge off the screen.
+
+	Copied from linksui's ForceBottomOfPanelOnMonitor (LinksUIUtils.cpp:613-629), which runs right
+	after the floating panel is resized: the section is opened by GROWING downwards, so a panel
+	sitting near the bottom of the display would otherwise put its new rows where nobody can see or
+	drag them. The +2 and the "which screen am I on" question (GetBestScreenRect handles more than
+	one monitor) are both from there.
+
+	★The shrunk size goes through ConstrainDimensions as well - it must not undercut the section's
+	own minimum, and only KESCMPanelView knows what that is.
+	⚠linksui leaves this out under ID_COCOA_ENABLE with a FIXME; KESCM is Windows-only (the Mac port
+	was dropped 2026-08-07), so there is nothing to leave out here.
+*/
+void KeepPanelOnScreen(IControlView* panelView)
+{
+	ISession* session = GetExecutionContextSession();
+	InterfacePtr<IApplication> theApp(session != nil ? session->QueryApplication() : nil);
+	if (theApp == nil)
+		return;
+
+	InterfacePtr<const IMonitorInfo> monInfo(theApp, UseDefaultIID());
+	if (monInfo == nil)
+		return;
+
+	const SysRect panelBBox  = panelView->GetBBox();
+	const SysRect globalBBox = ::ToSys(panelView->WindowToGlobal(panelBBox));
+	const GSysRect monRect   = monInfo->GetBestScreenRect(globalBBox);
+	if (SysRectBottom(monRect) >= SysRectBottom(globalBBox))
+		return;		// still on the screen - nothing to do
+
+	const PMReal amtToShrink = PMReal(SysRectBottom(globalBBox) - SysRectBottom(monRect) + 2);
+	PMPoint newSize(PMReal(SysRectWidth(panelBBox)), PMReal(SysRectHeight(panelBBox)) - amtToShrink);
+	newSize = panelView->ConstrainDimensions(newSize);
+	panelView->Resize(newSize);
+}
+
 /** Grow (positive) or shrink (negative) the panel by this many pixels.
 
 	***** THE ROUTE DEPENDS ON WHETHER THE PALETTE FLOATS. ***** Resizing the view works while the
@@ -142,21 +200,27 @@ void ResizePanelByDelta(IControlView* panelView, int32 deltaY)
 
 	if (PaletteRefUtils::IsPaletteFloating(palette))
 	{
+		// ★PUTTING THE SIZE THROUGH ConstrainDimensions IS THE CALLER'S JOB - it is not something
+		//   Resize does on the way in. IControlView.h:174-176: "Before resizing a widget, THE CLIENT
+		//   CAN ASK if the size makes sense by calling this method", and linksui calls it explicitly
+		//   before the Resize it makes (LinksUIUtils.cpp:626-627).
+		//   Why it matters here: KESCMPanelView::ConstrainDimensions is where this panel's size rules
+		//   live (closed = exactly the top pane's height; open = top pane + the section's minimum).
+		//   Going round it left the same rules being decided in two places - they agreed, but only
+		//   until one of them was edited (2026-08-11, block 15 audit A-2).
 		const PMRect frame = panelView->GetFrame();
-		panelView->Resize(PMPoint(frame.Width(), frame.Height() + deltaY));
+		PMPoint newSize(frame.Width(), frame.Height() + deltaY);
+		newSize = panelView->ConstrainDimensions(newSize);
+		panelView->Resize(newSize);
+
+		// Opening grows the panel DOWNWARDS, so make sure that did not put its bottom off the screen.
+		KeepPanelOnScreen(panelView);
 	}
 	else
 	{
-		// Toggling a section changes what the panel's min and max size are, but those are normally
-		// recalculated only during a resize - so force it before asking for one, or the request is
-		// clamped to the sizes that were computed for the closed state.
-		InterfacePtr<const IWidgetParent> wp(panelView, UseDefaultIID());
-		if (wp != nil)
-		{
-			InterfacePtr<IOWLPaletteSizer> palSizer((IOWLPaletteSizer*)wp->QueryParentFor(IOWLPaletteSizer::kDefaultIID));
-			if (palSizer != nil)
-				palSizer->UpdateOWLPaletteSizes();
-		}
+		// A docked palette clamps a resize request to the min/max that were computed for the state it
+		// is LEAVING, so those have to be recomputed before asking (see UpdatePaletteSizeLimits).
+		UpdatePaletteSizeLimits(panelView);
 
 		const SysRect bounds = PaletteRefUtils::GetPaletteBounds(palette);
 		SysPoint newSize;
@@ -228,6 +292,13 @@ void KESCMToggleStorySection()
 
 	if (controller != nil)
 		controller->SyncPanelsToSplitter(kTrue, kFalse);
+
+	// ★The divider has just been moved, and that changes what the panel's min and max sizes are -
+	//   which nothing recalculates on its own (see UpdatePaletteSizeLimits). linksui forces it here
+	//   for the floating case (LinksUIUtils.cpp:736-739); KESCM sets the splitter edge on BOTH routes,
+	//   so it is asked for once, here, rather than inside either branch (2026-08-11, block 15 audit
+	//   A-3 - the floating route had no recalculation at all).
+	UpdatePaletteSizeLimits(panel);
 
 	KESCMUpdateStorySectionButtonState();
 }

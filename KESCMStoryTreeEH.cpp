@@ -124,7 +124,10 @@ bool16 KESCMStoryTreeEH::HandleUpDownKey(IEvent* e, const VirtualKey& key)
 	// ***** TAKE THE KEYBOARD BACK. ***** That jump activated a document window, which took the key
 	// focus with it; without this, the NEXT arrow press would go to the document and the walk would
 	// stop after one step. IKeyBoard lives on the application boss.
-	InterfacePtr<IApplication> app(GetExecutionContextSession()->QueryApplication());
+	// ! The session is nil while the app is tearing down - this plug-in's standing rule is to ask
+	//   before dereferencing it (2026-08-11, block 15 audit C-1).
+	ISession* session = GetExecutionContextSession();
+	InterfacePtr<IApplication> app(session != nil ? session->QueryApplication() : nil);
 	InterfacePtr<IKeyBoard> keyBoard(app, UseDefaultIID());
 	if (keyBoard != nil && keyBoard->GetKeyFocus() != this)
 		keyBoard->AcquireKeyFocus(this);

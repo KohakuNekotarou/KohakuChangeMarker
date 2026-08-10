@@ -145,12 +145,22 @@ bool16 KESCMStorySelectWholeStory(int32 rowIndex)
 	if (selectionManager == nil)
 		return kFalse;
 
+	// ***** CLEAR THE SELECTION FIRST - THAT IS THE OFFICIAL ORDER. ***** The recipe is
+	// DeselectAll -> Type tool -> SetTextSelection (gotolasttextedit's GTTxtEdtUtils.cpp:113-136),
+	// and it clears UNCONDITIONALLY. A page-item selection left standing is a second selection, in a
+	// different CSB.
+	// ! 2026-08-11, block 15 audit (A-1): this used to run the tool switch first and to ask
+	//   SelectionExists() before clearing. Both are gone - the order now matches the sample, and the
+	//   question is asked once instead of twice (DeselectAll on an empty selection does nothing, so
+	//   the test only duplicated what the call already decides).
+	selectionManager->DeselectAll(nil);
+
 	// ***** THE TYPE TOOL, BECAUSE THIS IS AN INVITATION TO EDIT. ***** Text selected while some
 	// other tool is active is not text the user can act on, which is the whole of what a double click
-	// here is asking for. The official recipe does exactly this and in this order -
-	// tool first, selection second (gotolasttextedit's GTTxtEdtUtils.cpp:117-136).
+	// here is asking for. The tool goes on before the selection is made, as in the sample.
 	// ! This takes the KESCM tool off, if it was on. Deliberate (user's call, 2026-08-10), and
 	//   written down in How to Use so that it is not a surprise.
+	// ★The nil test on the active tool is ours: the sample only ASSERTs there.
 	InterfacePtr<ITool> activeTool(Utils<IToolBoxUtils>()->QueryActiveTool());
 	if (activeTool == nil || !activeTool->IsTextTool())
 	{
@@ -160,11 +170,6 @@ bool16 KESCMStorySelectWholeStory(int32 rowIndex)
 		if (!Utils<IToolBoxUtils>()->SetActiveTool(iBeamTool))
 			return kFalse;
 	}
-
-	// Clear whatever was selected first (the official sample does the same): a page-item selection
-	// left standing is a second selection, in a different CSB.
-	if (selectionManager->SelectionExists(kInvalidClass /*any CSB*/, ISelectionManager::kAnySelection))
-		selectionManager->DeselectAll(nil);
 
 	InterfacePtr<ITextSelectionSuite> textSelectionSuite(selectionManager, UseDefaultIID());
 	if (textSelectionSuite == nil)
