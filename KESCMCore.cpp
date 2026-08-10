@@ -358,6 +358,49 @@ bool16 KESCMFindPageUnderMouse(IDataBase* targetDB, PMReal mx, PMReal my, KESCMP
 // (sPeek*)へ直接アクセスできるようにするため。
 //========================================================================================
 
+/* KESCMRebuildStoryEdits
+	Read both documents' story counters, work out which stories differ, and put the answer on screen.
+
+	★★ONE PLACE, TWO CALLERS. The full comparison below calls it, and so does "KCM: Refresh Page
+	Comparison" (KESCMPeek.cpp) - which does NOT go through KESCMDoMarkChangesDoc but re-compares the
+	selected pages on its own. Written out twice, the two would drift; and the first thing that
+	happened when only the comparison had it was that Refresh left the list showing the state before
+	the edit (measured 2026-08-10). The nav position beside it is shared for exactly this reason.
+
+	The list is rebuilt whole rather than patched, because stories do not divide up by page: one
+	story can run across the pages that were refreshed and the pages that were not.
+
+	★Reading the counters composes nothing, so this costs a walk of the story list and no more.
+*/
+void KESCMRebuildStoryEdits(IDataBase* targetDB, IDataBase* sourceDB)
+{
+	if (targetDB == nil || sourceDB == nil)
+		return;
+
+	std::vector<KESCMStoryStamp> targetStamps;
+	std::vector<KESCMStoryStamp> sourceStamps;
+	KESCMStoryEdits::CollectStamps(targetDB, targetStamps);
+	KESCMStoryEdits::CollectStamps(sourceDB, sourceStamps);
+
+	// ⚠引数順は (source, target)。逆にすると「追加された」と「削除された」が入れ替わり、
+	//   消えたストーリーが「追加」として数えられたうえで本当の追加が黙って落ちる。
+	std::vector<KESCMStoryDiff> storyDiffs;
+	KESCMStoryEdits::Compare(sourceStamps, targetStamps, storyDiffs);
+
+	// 読むのは Target 側だけ(行はすべて Target に存在する=Compare の契約)。ページ順の並べ替えと
+	// 本文先頭の取り出しは Build の中で完結する。
+	KESCMStoryList::Build(targetDB, storyDiffs);
+
+	// ★モデルを作ったら画面もその場で作り直し、見出しの件数も書き換える。パネルが閉じていても、
+	//   セクションが畳まれていても呼んでよい(どちらも中で静かに諦める)＝「開いているか」を
+	//   呼び手が知らなくて済む。
+	// ★★件数はステータス行ではなく**見出し**に出す。ステータス欄は4行枠がすでに埋まっており、
+	//   もう1行増えると failed=N がはみ出す(段階3の申し送り)。見出しなら、セクションを閉じた
+	//   ままでも件数が読める。
+	KESCMStoryTreeRebuild();
+	KESCMUpdateStorySectionLabel();
+}
+
 ErrorCode KESCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMString& outReport, bool16 allowIncremental)
 {
 	if (targetDB == nil || sourceDB == nil)
@@ -599,32 +642,10 @@ ErrorCode KESCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMStri
 			report.Append(" failed="); report.AppendNumber(failedCount);
 		}
 
-		// ★テキストが編集されたストーリーの本数。画素比較が答えるのは「このページは違って見える」
-		//   までで、「テキストが変わったのか、レイアウトだけ動いたのか」は区別できない。両者は補い合う
+		// ★Story Edits の一覧。画素比較が答えるのは「このページは違って見える」までで、
+		//   「テキストが変わったのか、レイアウトだけ動いたのか」は区別できない。両者は補い合う
 		//   ——ストーリーが無変更でもページは動きうるし、ページが同じに見えてもテキストは変わりうる。
-		//   ★カウンターの読み取りは組版を起こさないので、比較のコストはほとんど増えない。
-		std::vector<KESCMStoryStamp> targetStamps;
-		std::vector<KESCMStoryStamp> sourceStamps;
-		KESCMStoryEdits::CollectStamps(targetDB, targetStamps);
-		KESCMStoryEdits::CollectStamps(sourceDB, sourceStamps);
-
-		// ⚠引数順は (source, target)。逆にすると「追加された」と「削除された」が入れ替わり、
-		//   消えたストーリーが「追加」として数えられたうえで本当の追加が黙って落ちる。
-		std::vector<KESCMStoryDiff> storyDiffs;
-		KESCMStoryEdits::Compare(sourceStamps, targetStamps, storyDiffs);
-
-		// ★一覧のモデルを作り直す。読むのは Target 側だけ(行はすべて Target に存在する=Compare の契約)。
-		//   ページ順の並べ替えと本文先頭の取り出しはこの中で完結する。
-		KESCMStoryList::Build(targetDB, storyDiffs);
-
-		// ★モデルを作ったら画面もその場で作り直し、見出しの件数も書き換える。パネルが閉じていても、
-		//   セクションが畳まれていても呼んでよい(どちらも中で静かに諦める)＝「開いているか」を
-		//   呼び手が知らなくて済む。
-		// ★★件数はステータス行ではなく**見出し**に出す。ステータス欄は4行枠がすでに埋まっており、
-		//   もう1行増えると failed=N がはみ出す(段階3の申し送り)。見出しなら、セクションを閉じた
-		//   ままでも件数が読める。
-		KESCMStoryTreeRebuild();
-		KESCMUpdateStorySectionLabel();
+		KESCMRebuildStoryEdits(targetDB, sourceDB);
 	}
 	outReport = report;
 

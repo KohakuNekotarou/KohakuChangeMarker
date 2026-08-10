@@ -86,6 +86,7 @@
 #include "KESCMPanelState.h"         // KESCMLoadPanelStateIfPresent(起動時に保存済みパネル設定を復元)
 #include "KESCMPanelAlpha.h"         // KESCMAttachPanelVisibilityObserver(半透明トグルの追随購読を起動時に開始)
 #include "KESCMTrackerHud.h"         // KESCMTrackerHudShutdown(押下中 HUD のフォント参照を終了時に返す)
+#include "KESCMStoryList.h"          // KESCMStoryList::ShutdownCleanup(行が抱える PMString を終了時に手放す)
 #include "KESCMPeek.h"
 
 //========================================================================================
@@ -451,6 +452,12 @@ bool16 KESCMRefreshComparisonForSelectedPages(int32* outPages, int32* outChanged
 	// この経路は KESCMDoMarkChangesDoc を通らない独立再比較なので、Prev/Next 間の位置表示と
 	// ボタン有効/無効もここで最新化する(選択ページの再比較で変更ページ集合が増減し得るため)。
 	KESCMRefreshNavPosition();
+
+	// ★Story Edits の一覧も同じ理由でここから作り直す(2026-08-10)。**選択ページぶんだけ**の更新には
+	//   できない——1つのストーリーが、再比較したページとしなかったページにまたがって流れうるので、
+	//   ページ単位に割れない。丸ごと作り直すのは共有関数 KESCMRebuildStoryEdits の仕事。
+	// ⚠これを入れるまで、Refresh の後だけ一覧が編集前の状態のまま残っていた(実測して判明)。
+	KESCMRebuildStoryEdits(targetDB, sourceDB);
 
 	if (outPages)   *outPages = processed;
 	if (outChanged) *outChanged = changed;
@@ -2111,6 +2118,10 @@ void KESCMPeekStartup::Shutdown()
 	KESCMResetHideUnchanged(kFalse);		// Hide Unchanged の控え(kFalse=文書には一切触らない)
 	KESCMInvalidateSyncCaches();			// 同期のページ矩形表・対応表・前回状態(2026-07-25 追補)
 	KESCMInvalidatePageNumberMarkerRects();	// ノンブル除外矩形のキャッシュ(2026-08-06 の監査 E-3)
+	// ★Story Edits の一覧(2026-08-10)。★★他と違い**中身が PMString** なので、これを忘れると
+	//   unload 時に静的な PMString がデストラクトされる ---- KBS が3度続けて忘れて記録した形
+	//   (KBSResultTree.h:76-77)。UI には触らない(行を捨てるだけ)ので終了処理中でも安全。
+	KESCMStoryList::ShutdownCleanup();
 	// ★peek の arm 状態もここで落とす。残したままだと、終了処理後に kAfterCloseDoc responder が
 	// 発火した場合、KESCMHandleDocsClosed が stale な sPeek* から comparisonDocClosed=true を
 	// 再計算し得る(通常の終了順=文書クローズ→Shutdown では起きないはずだが防御的にリセット。
@@ -2316,6 +2327,14 @@ void KESCMHandleDocsClosed()
 		//   古い登録が残り、次の Start でペアリングに紛れ込む(map 空にするだけ=deref なし)。
 		KESCMPageMapClearAllDocs();
 		KESCMPageCheckClearAllDocs();	// 「KCM: Check」の✓も同様に全消去(Start 中限定)
+		// ★Story Edits の一覧も捨てる(2026-08-10)。行は Target 側の story UID とページ UID を持って
+		//   いるので、その文書が閉じた後は指す先が無い。★画面側(ツリーと見出し)は下の
+		//   KESCMRefreshPanel が実状態から作り直すので、ここは状態を捨てるだけでよい
+		//   ＝終了処理中(quitting)に来ても安全(vector を空にするだけ・deref しない)。
+		// ⚠**「閉じたのが比較対象か」をここで判定し直さない**。閉じた文書の UIDRef や IDataBase* は
+		//   アドレスが再利用されるので同一性判定に使えない([[uidref-reuse-after-close]])。上の
+		//   comparisonDocClosed が既に生存確認(FindDocByDataBase)で答えを出しているので相乗りする。
+		KESCMStoryList::Clear();
 		// ★巡回の基準点も忘れる(2026-08-06 再点検)。Stop(KESCMDoClearMarks)は KESCMResetNav を呼ぶのに、
 		//   この「Stop 相当のフルクリーンアップ」だけ抜けていた。閉じた文書のページ UID を基準点に残すと、
 		//   次の対象文書で UID が偶然一致して途中から巡回が始まり得る(static の代入のみ=終了中でも安全)。

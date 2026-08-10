@@ -136,6 +136,12 @@ void		KESCMDoDisarmMousePeek(IDataBase* db);
 // パネルの状態アクセサ。"Armed" == Start ボタンが実行済みで Clear がまだ、の状態。arm 中はパネルが
 // Target/Source 名と ON アイコンを表示し、それ以外では名前を隠して OFF を表示する。
 bool16		KESCMIsArmed();
+// Story Edits の一覧を、この2文書の**今の**状態から丸ごと作り直し、ツリーと見出しへ反映する。
+// ★呼び手は2つ＝全体比較(KESCMDoMarkChangesDoc)と「KCM: Refresh Page Comparison」。後者は
+//   KESCMDoMarkChangesDoc を通らない独立経路なので、ここを共有しないと Refresh の後だけ一覧が
+//   古いまま残る(2026-08-10 に実測)。nil は黙って無視する。
+void		KESCMRebuildStoryEdits(IDataBase* targetDB, IDataBase* sourceDB);
+
 IDataBase*	KESCMArmedTargetDB();
 IDataBase*	KESCMArmedSourceDB();
 
