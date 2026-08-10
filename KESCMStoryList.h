@@ -37,11 +37,14 @@ struct KESCMStoryRow
 	UID			fStoryUID;	// the target document's story
 	PMString	fText;		// first readable words, already shortened - what the row shows
 	uint32		fKinds;		// OR of KESCMStoryChangeKind - named on the right of the row
+	UID			fFrameUID;	// the story's FIRST frame - what a click scrolls to. kInvalidUID for an
+							// unplaced story (no frame at all), which cannot be jumped to
 	UID			fPageUID;	// where the story starts; kInvalidUID when it starts on the pasteboard
 	int32		fPageIndex;	// sort key only. kMaxInt32 when there is no page, so those sink to the end
 
 	KESCMStoryRow()
-		: fStoryUID(kInvalidUID), fKinds(kKESCMStoryKindNone), fPageUID(kInvalidUID), fPageIndex(kMaxInt32) {}
+		: fStoryUID(kInvalidUID), fKinds(kKESCMStoryKindNone), fFrameUID(kInvalidUID),
+		  fPageUID(kInvalidUID), fPageIndex(kMaxInt32) {}
 };
 
 namespace KESCMStoryList

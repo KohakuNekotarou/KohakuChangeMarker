@@ -196,13 +196,20 @@ void KESCMStoryList::Build(IDataBase* db, const std::vector<KESCMStoryDiff>& dif
 		//   had "Source:" turn into a Japanese style-source label that way.
 		row.fText.SetTranslatable(kFalse);
 
-		// Where the story starts, which is the frame a jump would want. RecomposeThruLastFrame is
+		// Where the story starts, which is the frame a jump wants. RecomposeThruLastFrame is
 		// deliberately NOT called: this asks for the FIRST frame, not for where the text overflows,
 		// so there is no reason to compose - and composing here would cost the property stage 1
 		// measured, that reading what changed changes nothing (KESCMStoryStamp.h:42-43).
+		//
+		// ★The frame is kept as well as the page it sits on, because the two answer different
+		//   questions: the frame is WHERE TO SCROLL (a click centres it), and the page is WHERE IT
+		//   BELONGS (the sort order, and which page the older version should be shown at).
 		InterfacePtr<IFrameList> frameList(model->QueryFrameList());
 		if (frameList != nil && frameList->GetFrameCount() > 0)
-			row.fPageUID = KESCMFramePageUID(db, frameList->GetNthFrameUID(0));
+		{
+			row.fFrameUID = frameList->GetNthFrameUID(0);
+			row.fPageUID = KESCMFramePageUID(db, row.fFrameUID);
+		}
 
 		if (row.fPageUID != kInvalidUID && pageList != nil)
 		{
