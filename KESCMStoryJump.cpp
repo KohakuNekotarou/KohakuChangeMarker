@@ -102,7 +102,7 @@ bool16 KESCMStoryJumpToRow(int32 rowIndex)
 		return kFalse;
 	}
 
-	if (!KESCMGotoStoryFrame(db, row->fFrameUID, row->fPageUID))
+	if (!KESCMGotoStoryFrame(db, row->fFrameUID, row->fPageUID, row->fStoryUID))
 	{
 		PMString s("Could not scroll.");	// 文言は Prev/Next の失敗時と同じ(同じ出来事なので)
 		s.SetTranslatable(kFalse);

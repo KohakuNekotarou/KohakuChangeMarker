@@ -64,6 +64,7 @@
 #include "KESCMOversetScan.h"		// KESCMOversetLoc(overset「+」箇所の位置)
 #include "KESCMPageMap.h"			// KESCMBuildPairing(Source 側連動スクロールの対応表。2026-07-25 コメント現行化)
 #include "KESCMThumbnailRefresh.h"	// KESCMGetVisiblePagesPanel(表示中 Pages パネル取得の共有ヘルパ)
+#include "KESCMStoryList.h"			// KESCMStoryFirstFrameUID(Source 側で「同じストーリー」の先頭フレームを引く)
 #include "KESCMChangeNav.h"
 
 // 巡回の1ストップ。change=そのページの変更(枠)= ページ中心へスクロール / overset=あふれ「+」箇所=
@@ -575,9 +576,11 @@ static PMString KESCMStopLabel(IDataBase* db, const KESCMNavStop& stop)
 //----------------------------------------------------------------------------------------
 // Target 側の移動が済んだ後、周りのビューを追随させる(Pages パネルと Source 窓)。
 //
-// ★呼び手は2つ＝Prev/Next の巡回(KESCMGoto)と Story Edits の行ジャンプ(KESCMGotoStoryFrame)。
-//   1本にしてあるのは、ズーム合わせ・Sync ON のときの除外・対応表でのページ解決という3つの判断を
-//   両者が同じに保つため——書き写すと必ず割れる([[one-question-one-place]])。
+// ★呼び手は Prev/Next の巡回(KESCMGoto)だけ。⚠**Story Edits の行ジャンプはここを通らない**
+//   ---- あちらは Target しか動かさない(2026-08-10 ユーザー決定。Source も見たいときは
+//   「Sync Layout Views」を使う、という切り分け)。関数として分けたままにしてあるのは、ズーム合わせ・
+//   Sync ON のときの除外・対応表でのページ解決の3つが「連れて行くとはどういうことか」の答えで、
+//   巡回本体に混ぜると読めなくなるため。
 // ★pageUID が kInvalidUID(ペーストボード上のフレーム)なら寄せる先が決められないので、Source も
 //   Pages パネルも動かさない。Target 側の移動は呼び手が済ませてあるので、それだけが成立する。
 //----------------------------------------------------------------------------------------
@@ -615,6 +618,34 @@ static void KESCMSyncCompanionViews(IDataBase* navDB, UID pageUID)
 			KESCMScrollPagesPanelToPage(sourceDB, srcPage);
 		}
 	}
+}
+
+//----------------------------------------------------------------------------------------
+// 文書 db のビューを、storyUID の「**一番最初**」が画面中央に来るようスクロールする。
+//
+// ★★飛び先はフレームの中心ではなく**本文の書き出し**(ユーザー決定 2026-08-10)。背の高いフレームでは
+//   中心は本文の途中で、読みたいのは書き出しの方。点の算出は KESCMStoryStartPoint
+//   (＝overset の「+」を出す KESCMLastPlacedOutport の鏡像。同じ3つの座標系を同じ順に通る)。
+// ★点へ寄せる手順も overset とまったく同じ＝**先にスプレッドを出してから** pb 点へ。pb 点への
+//   スクロールは「そのビューが既にそのスプレッドを映している」ことが前提だから(上の
+//   KESCMEnsureSpreadInView の説明)。
+// ★まだ1度も組まれていない等で点が採れなければ、フレームの中心へ落とす(2026-08-10 以前の動き)。
+//   outFrame には実際に着地したフレームを返す ---- Pages パネルの連動がページを引くのに使う。
+//----------------------------------------------------------------------------------------
+static bool16 KESCMScrollDocToStoryStart(IDataBase* db, UID storyUID, UID fallbackFrameUID,
+	UID& outFrame, PMReal applyZoom = PMReal(-1.0))
+{
+	UID startFrame = kInvalidUID;
+	PBPMPoint startPb;
+	if (KESCMStoryStartPoint(db, storyUID, startFrame, startPb))
+	{
+		outFrame = startFrame;
+		KESCMEnsureSpreadInView(db, startFrame);
+		return KESCMScrollDocToPBPoint(db, startPb, applyZoom);
+	}
+
+	outFrame = fallbackFrameUID;
+	return KESCMScrollDocToItemCenter(db, fallbackFrameUID, applyZoom);
 }
 
 //----------------------------------------------------------------------------------------
@@ -698,14 +729,55 @@ void KESCMGotoPrevChange() { KESCMGoto(-1); }
 //========================================================================================
 // KESCMGotoStoryFrame(KESCMChangeNav.h で宣言)
 //========================================================================================
-bool16 KESCMGotoStoryFrame(IDataBase* db, UID frameUID, UID pageUID)
+bool16 KESCMGotoStoryFrame(IDataBase* db, UID frameUID, UID pageUID, UID storyUID)
 {
-	// ★スプレッド切替は KESCMScrollDocToItemCenter が中でやる(ページを渡す従来の経路とまったく同じ)。
-	//   ここで先回りして呼ぶと二度切り替えることになるので呼ばない。
-	if (!KESCMScrollDocToItemCenter(db, frameUID))
+	// ストーリーの書き出しへ(フレームの中心ではない。上の KESCMScrollDocToStoryStart 参照)。
+	UID landedFrame = kInvalidUID;
+	if (!KESCMScrollDocToStoryStart(db, storyUID, frameUID, landedFrame))
 		return kFalse;
 
-	KESCMSyncCompanionViews(db, pageUID);
+	// Pages パネルも、**実際に着地したフレーム**のページへ(ページに載っていないなら中で何もしない)。
+	// ★行が覚えている pageUID ではなく着地側から引く: 先頭フレームにパーセルが1つも配置されていない
+	//   ときは、着地するのは次のフレーム＝別のページのことがある。表示と実際がずれない方を採る。
+	KESCMScrollPagesPanelToPage(db, (landedFrame != kInvalidUID) ? KESCMFramePageUID(db, landedFrame) : pageUID);
+
+	// ***** Source 側も連れて行く。ただし合わせるのは「ページ」ではなく「ストーリー」。*****
+	//
+	// ★★ここが Prev/Next(KESCMSyncCompanionViews)と違うところ。あちらが指しているのはページなので
+	//   対応表でページを引けば足りるが、この行が指しているのは**ストーリー**で、**同じストーリーが
+	//   2つの版で違う場所にあることがある**(2026-08-10 ユーザー指摘。レイアウトが変われば当然そうなる)。
+	//   ∴ Source でも同じ story UID の先頭フレームを引き、それを中心に出す ---- ページ番号を経由すると、
+	//   まさにこの機能が見せたい「動いたストーリー」を見失う。
+	// ★UID で引き当てられる根拠は、この機能全体が乗っているのと同じ前提＝**別名保存では story UID が
+	//   引き継がれる**(KESCMStoryStamp.h:36-38 に実測済み)。Source に無いストーリー(=Added の行)は
+	//   kInvalidUID が返るので、そのときは Target だけが動く。
+	IDataBase* sourceDB = KESCMDrawEventHandler::sSrcDB;
+	if (sourceDB != nil && sourceDB != db && storyUID != kInvalidUID)
+	{
+		UID srcFrame = KESCMStoryFirstFrameUID(sourceDB, storyUID);
+		if (srcFrame != kInvalidUID)
+		{
+			// ★Sync layout views が ON のときは Source を手動で動かさない ---- Sync のオブザーバ
+			//   (KESCMPeek.cpp)が、すぐ上でやった Target のスクロールを Source へ既にミラーしている。
+			//   ここでも動かすと二重になり、しかもその変化が Sync 経由で Target へ逆ミラーされて、
+			//   出したはずのフレームが押し戻される(2026-07-24 に overset で実際に起きた形)。
+			//   ⚠ ON のとき Source が映すのは「Target と同じ座標」なので、ストーリーの位置がずれて
+			//   いれば厳密には別の場所になる。それでも Sync の約束(2つの窓を同じ座標で並べる)の方が
+			//   ユーザーの明示的な指定なので、そちらを優先する。KESCMSyncCompanionViews と同じ判断。
+			if (!KESCMGetLayoutSync())
+			{
+				// ★Target とまったく同じ寄せ方＝ストーリーの書き出しへ(ズームも Target に合わせる)。
+				UID srcLanded = kInvalidUID;
+				KESCMScrollDocToStoryStart(sourceDB, storyUID, srcFrame, srcLanded, KESCMReadDocZoom(db));
+				if (srcLanded != kInvalidUID)
+					srcFrame = srcLanded;
+			}
+
+			// Pages パネルは Sync の対象外なので ON/OFF に関わらず追随させる(Source が前面のときだけ
+			// 中で効く。Target が前面なら上の呼び出しの方が効いている)。
+			KESCMScrollPagesPanelToPage(sourceDB, KESCMFramePageUID(sourceDB, srcFrame));
+		}
+	}
 
 	// ★巡回の基準点(sNavPageUID 等)は動かさない。行ジャンプは Prev/Next とは別の動線で、ここで基準を
 	//   書き換えると「Next を押したら一覧で飛んだ場所の次から始まる」という、どちらの機能の説明にも

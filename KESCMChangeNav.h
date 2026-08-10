@@ -42,10 +42,15 @@ void KESCMRefreshNavPosition();
 
 // Story Edits の行から呼ぶジャンプ: そのストーリーの先頭フレームを画面中央に出す。
 //   ・frameUID のスプレッドを先に出すので、別スプレッドでもマスターでもペーストボードでも届く
-//   ・Pages パネルと Source 窓は Prev/Next とまったく同じ流儀で連動する(pageUID がその解決に要る。
-//     kInvalidUID＝ページに載っていないフレームなら Target 側だけが動く)
+//   ・★★Source 窓も連れて行くが、合わせるのは**ページではなく同じストーリー**(storyUID)＝2つの版で
+//     そのストーリーが違う場所にあっても、両方の窓が同じストーリーを映す。Prev/Next が対応表で
+//     ページを引くのとは意図して違う(2026-08-10 ユーザー指摘)。Source に無いストーリー(Added)なら
+//     Target だけが動く。⚠「Sync Layout Views」が ON のときは Source を手動で動かさない
+//     (Sync が Target のスクロールを運ぶので二重になる)
+//   ・Pages パネルは両側とも追随する(pageUID がその解決に要る。kInvalidUID＝ページに載っていない
+//     フレームなら Pages パネルは動かない)
 //   ・★Prev/Next の巡回位置「k/N」には影響しない(別の動線なので基準点を動かさない)
 // 戻り値: 1つでもビューをスクロールできたら kTrue。実体は KESCMChangeNav.cpp。
-bool16 KESCMGotoStoryFrame(IDataBase* db, UID frameUID, UID pageUID);
+bool16 KESCMGotoStoryFrame(IDataBase* db, UID frameUID, UID pageUID, UID storyUID);
 
 #endif // __KESCMChangeNav_h__

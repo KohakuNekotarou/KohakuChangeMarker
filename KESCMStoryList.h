@@ -23,6 +23,7 @@
 #define __KESCMStoryList_h__
 
 #include "PMString.h"
+#include "PMPoint.h"	// PBPMPoint - where a story begins, for the jump
 #include "UIDRef.h"
 
 #include <vector>
@@ -46,6 +47,44 @@ struct KESCMStoryRow
 		: fStoryUID(kInvalidUID), fKinds(kKESCMStoryKindNone), fFrameUID(kInvalidUID),
 		  fPageUID(kInvalidUID), fPageIndex(kMaxInt32) {}
 };
+
+/** The first frame a story is placed in - where a jump to that story should go.
+
+	★TWO DOCUMENTS ASK THIS, WHICH IS WHY IT IS NOT PRIVATE TO THE LIST. Building the rows asks the
+	target for it, and a click asks the SOURCE for the same story's frame, because the two versions
+	can hold the story in DIFFERENT PLACES - the older window cannot be aimed by page number alone
+	(user's observation, 2026-08-10). Matching by story UID works for the same reason the whole
+	feature does: saving under a new name carries the UIDs across (KESCMStoryStamp.h:36-38).
+
+	⚠ For two documents that are NOT versions of each other, a UID means nothing in common - the
+	same reading as everywhere else in this feature, where the rows simply come out as "Added"
+	(the design's §2-5: report it plainly, do not try to detect it).
+
+	@param db which document to ask.
+	@param storyUID the story. Anything that is not a placed story answers kInvalidUID.
+	@return the first frame's UID, or kInvalidUID when there is no story there or it sits in no frame.
+*/
+UID KESCMStoryFirstFrameUID(IDataBase* db, UID storyUID);
+
+/** Where a story BEGINS on the page, as a pasteboard point - what a jump to it should centre.
+
+	★The first frame's centre is not the same thing. In a tall frame the centre is the middle of the
+	text, and what a reader wants is the beginning of it (user's call, 2026-08-10). So this walks the
+	parcels forward from the first and takes the leading corner of the first one actually placed.
+
+	★VERTICAL TEXT NEEDS NO SPECIAL CASE. The corner is taken in PARCEL-LOCAL coordinates and
+	GetParcelToFrameMatrix absorbs the writing direction - the same formula the overset scan uses for
+	the opposite corner, and that one was verified on real vertical text
+	(KESCMOversetScan.cpp:59-62). ⚠Do not add a writing-direction branch here.
+
+	@param db which document to ask - the newer one for the click, the older one for its window.
+	@param storyUID the story.
+	@param outFrame [out] the frame that beginning sits in. Untouched when this answers kFalse.
+	@param outPb [out] the point, in pasteboard coordinates. Untouched when this answers kFalse.
+	@return kFalse when there is no story there, or none of its parcels are placed - callers fall
+		back to centring the first frame (KESCMStoryFirstFrameUID).
+*/
+bool16 KESCMStoryStartPoint(IDataBase* db, UID storyUID, UID& outFrame, PBPMPoint& outPb);
 
 namespace KESCMStoryList
 {

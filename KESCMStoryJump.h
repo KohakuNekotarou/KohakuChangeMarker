@@ -19,9 +19,14 @@
 
 /** Single click: bring the story's first frame to the centre of the target document's window.
 
-	The older version's window and the Pages panel follow along exactly as they do for Prev / Next
-	(KESCMGotoStoryFrame). Writes the outcome to the panel's status line either way, so a click that
-	cannot go anywhere still says so rather than appearing to do nothing.
+	★THE OLDER VERSION'S WINDOW COMES TOO, AIMED AT THE SAME STORY - not at the same page number.
+	The two versions can hold one story in different places (user's observation, 2026-08-10), so the
+	source window is pointed at whatever frame that story starts in over there. Prev / Next matches
+	by page, because a page is what it is stepping through; this matches by story, because a story is
+	what this row is (KESCMGotoStoryFrame). The Pages panel follows on both sides.
+
+	Writes the outcome to the panel's status line either way, so a click that cannot go anywhere
+	still says so rather than appearing to do nothing.
 
 	@param rowIndex which row of KESCMStoryList. Out of range - which includes the placeholder row
 		shown when a comparison found no edits - is a quiet kFalse.

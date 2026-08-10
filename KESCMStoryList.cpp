@@ -14,11 +14,17 @@
 #include "IDataBase.h"
 #include "IComposeScanner.h"
 #include "IFrameList.h"
+#include "IGeometry.h"			// the frame's inner->pasteboard matrix, for where a story begins
 #include "IPageList.h"
+#include "IParcelList.h"		// GetFirstParcelKey / GetNextParcelKey / GetParcelToFrameMatrix
 #include "ITextModel.h"
+#include "ITextParcelList.h"	// QueryTextParcelList - the parcels a story flows through
 
 // General includes:
+#include "PMMatrix.h"
+#include "PMRect.h"				// GetParcelBounds - the leading corner comes off this
 #include "TextChar.h"			// kTextChar_Space - the boundary the readability test draws its line at
+#include "TransformUtils.h"		// ::InnerToPasteboardMatrix
 #include "UnicodeClass.h"		// IsWhiteSpace
 #include "WideString.h"
 
@@ -170,6 +176,78 @@ bool RowIsBefore(const KESCMStoryRow& a, const KESCMStoryRow& b)
 
 }	// anonymous namespace
 
+/* KESCMStoryFirstFrameUID (declared in KESCMStoryList.h)
+
+	★RecomposeThruLastFrame is deliberately NOT called. This asks where the story STARTS, not where
+	its text overflows, so there is nothing to compose - and composing here would cost the property
+	stage 1 measured and wrote down: reading what changed changes nothing (KESCMStoryStamp.h:42-43).
+*/
+UID KESCMStoryFirstFrameUID(IDataBase* db, UID storyUID)
+{
+	if (db == nil || storyUID == kInvalidUID)
+		return kInvalidUID;
+
+	// Quietly nil for a UID this document does not hold a story at - which is the ordinary answer
+	// when the SOURCE is asked about a story that only the target has (an "Added" row).
+	InterfacePtr<ITextModel> model(db, storyUID, UseDefaultIID());
+	if (model == nil)
+		return kInvalidUID;
+
+	InterfacePtr<IFrameList> frameList(model->QueryFrameList());
+	if (frameList == nil || frameList->GetFrameCount() == 0)
+		return kInvalidUID;	// a real story, placed in no frame: there is nowhere to scroll to
+
+	return frameList->GetNthFrameUID(0);
+}
+
+/* KESCMStoryStartPoint (declared in KESCMStoryList.h)
+
+	The mirror image of the overset scan's KESCMLastPlacedOutport: that one walks BACK from the last
+	parcel to find where the text stopped fitting; this walks FORWARD from the first to find where it
+	started. Same three coordinate spaces, same reason vertical text needs no branch.
+*/
+bool16 KESCMStoryStartPoint(IDataBase* db, UID storyUID, UID& outFrame, PBPMPoint& outPb)
+{
+	if (db == nil || storyUID == kInvalidUID)
+		return kFalse;
+
+	InterfacePtr<ITextModel> textModel(db, storyUID, UseDefaultIID());
+	if (textModel == nil)
+		return kFalse;
+
+	// Index 0 is the start of the story, so this is the thread the beginning is in.
+	InterfacePtr<ITextParcelList> tpl(textModel->QueryTextParcelList(0));
+	if (tpl == nil)
+		return kFalse;
+	InterfacePtr<IParcelList> pl(tpl, UseDefaultIID());
+	if (pl == nil)
+		return kFalse;
+
+	for (ParcelKey k = pl->GetFirstParcelKey(); k.IsValid(); k = pl->GetNextParcelKey(k))
+	{
+		const UID frameUID = pl->GetParcelFrameUID(k);
+		if (frameUID == kInvalidUID)
+			continue;	// this piece is not placed; keep going forward for one that is
+
+		InterfacePtr<IGeometry> frameGeo(db, frameUID, UseDefaultIID());
+		if (frameGeo == nil)
+			continue;
+
+		const PMRect   parcelBounds = pl->GetParcelBounds(k);				// parcel-local
+		const PMMatrix toFrame      = pl->GetParcelToFrameMatrix(k);			// parcel -> frame inner
+		const PMMatrix toPasteboard = ::InnerToPasteboardMatrix(frameGeo);	// frame inner -> pasteboard
+
+		PMPoint corner(parcelBounds.Left(), parcelBounds.Top());	// the inport corner, parcel-local
+		toFrame.Transform(&corner);
+		toPasteboard.Transform(&corner);
+
+		outFrame = frameUID;
+		outPb    = PBPMPoint(corner.X(), corner.Y());
+		return kTrue;
+	}
+	return kFalse;
+}
+
 /* Build
 */
 void KESCMStoryList::Build(IDataBase* db, const std::vector<KESCMStoryDiff>& diffs)
@@ -196,20 +274,15 @@ void KESCMStoryList::Build(IDataBase* db, const std::vector<KESCMStoryDiff>& dif
 		//   had "Source:" turn into a Japanese style-source label that way.
 		row.fText.SetTranslatable(kFalse);
 
-		// Where the story starts, which is the frame a jump wants. RecomposeThruLastFrame is
-		// deliberately NOT called: this asks for the FIRST frame, not for where the text overflows,
-		// so there is no reason to compose - and composing here would cost the property stage 1
-		// measured, that reading what changed changes nothing (KESCMStoryStamp.h:42-43).
-		//
 		// ★The frame is kept as well as the page it sits on, because the two answer different
 		//   questions: the frame is WHERE TO SCROLL (a click centres it), and the page is WHERE IT
-		//   BELONGS (the sort order, and which page the older version should be shown at).
-		InterfacePtr<IFrameList> frameList(model->QueryFrameList());
-		if (frameList != nil && frameList->GetFrameCount() > 0)
-		{
-			row.fFrameUID = frameList->GetNthFrameUID(0);
+		//   BELONGS (the sort order, and the page the status line names).
+		//   ⚠The page is NOT how the older version's window gets aimed - that goes by story UID,
+		//   because the same story can sit somewhere else entirely over there (2026-08-10; see
+		//   KESCMGotoStoryFrame). Why reading this composes nothing: KESCMStoryFirstFrameUID.
+		row.fFrameUID = KESCMStoryFirstFrameUID(db, row.fStoryUID);
+		if (row.fFrameUID != kInvalidUID)
 			row.fPageUID = KESCMFramePageUID(db, row.fFrameUID);
-		}
 
 		if (row.fPageUID != kInvalidUID && pageList != nil)
 		{
