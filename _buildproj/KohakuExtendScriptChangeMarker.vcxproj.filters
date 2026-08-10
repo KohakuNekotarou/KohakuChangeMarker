@@ -117,6 +117,18 @@
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMStoryList.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMPanelView.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMNoTip.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMStoryTreeAdapter.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMStoryTreeWidgetMgr.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMStorySection.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -153,6 +165,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMStoryList.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMStoryTree.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMStorySection.h">

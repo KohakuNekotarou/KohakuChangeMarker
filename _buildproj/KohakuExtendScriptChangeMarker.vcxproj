@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003" DefaultTargets="Build" ToolsVersion="15.0">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Debug|Win32">
@@ -227,6 +227,10 @@
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMDocUidSet.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMStoryStamp.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMStoryList.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMPanelView.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMNoTip.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMStoryTreeAdapter.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMStoryTreeWidgetMgr.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMStorySection.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMStorySectionObserver.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMPageNumberMarker.cpp" />
@@ -275,6 +279,7 @@
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMDocUidSet.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMStoryStamp.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMStoryList.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMStoryTree.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMStorySection.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMPageNumberMarker.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMPanelAlpha.h" />

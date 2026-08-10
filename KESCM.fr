@@ -52,6 +52,7 @@
 #include "InterfaceColorDefines.h"
 #include "IControlViewDefs.h"
 #include "SysControlIds.h"
+#include "TreeViewDefs.h"			// kHideRootNode - the Story Edits list (2026-08-10)
 
 // (SpreadID.h / DocFrameworkID.h were only here for the old scripting API, which is gone -
 //  removed 2026-08-05. Everything below resolves from ShuksanID.h / widgetid.h / GraphicsID.h
@@ -174,6 +175,11 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 			// KESCMFactoryList.h - a missing factory entry fails completely silently.
 			// Implementation: KESCMPanelAlpha.cpp.
 			IID_IMOUSEROLLOVER, kKESCMPanelRollOverImpl,
+			// The panel's view replaced (2026-08-10): PalettePanelView plus a floor under how small
+			// the panel can be dragged, now that PanelList below says kIsResizable. See
+			// KESCMPanelView.cpp - the same shape KBS and KESCL use, which they took from
+			// customconditionaltextui.
+			IID_ICONTROLVIEW, kKESCMPanelViewImpl,
 		}
 	},
 
@@ -284,6 +290,49 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 		kGenericPanelWidgetBoss,
 		{
 			IID_IKESCMSAVEDSECTIONHEIGHT, kPersistIntDataImpl,	// treat as IIntData
+		}
+	},
+
+	// The "Story Edits" list. Two interfaces and no more: the tree's controller and its default
+	// event handling (selection, keyboard) already come with kTreeViewWidgetBoss, so a flat list
+	// only has to say what the rows ARE (the hierarchy adapter) and how they are DRAWN (the widget
+	// manager). Same two-line shape as the samples that use a plain list - linkwatcher's
+	// kLnkWtchTreeViewWidgetBoss and basicselectabledialog's.
+	Class
+	{
+		kKESCMStoryTreeWidgetBoss,
+		kTreeViewWidgetBoss,
+		{
+			IID_ITREEVIEWHIERARCHYADAPTER, kKESCMStoryTreeAdapterImpl,
+			IID_ITREEVIEWWIDGETMGR, kKESCMStoryTreeWidgetMgrImpl,
+		}
+	},
+
+	// One row of that list. Nothing is added to the stock tree node yet: at this stage a row can be
+	// selected and nothing else, because jumping to the story is stage 4's job - that is when this
+	// boss gains its IID_IEVENTHANDLER. A Class with an empty interface list is how the product
+	// spells exactly this (spellpanel's kAutoCorrectTreeNodeWidgetBoss, and typekitinspector's).
+	Class
+	{
+		kKESCMStoryRowWidgetBoss,
+		kTreeNodeWidgetBoss,
+		{
+		}
+	},
+
+	// The two cells inside that row. ★The ONLY thing this boss changes is the tooltip, and it
+	// changes it to nothing. A stock static text pops its full string up whenever the cell had to
+	// shorten it (kStaticTextWidgetBoss carries IID_ITIP = kTextWidgetTipImpl - read off the live
+	// boss dump), which is a kindness on a dialog label and a nuisance on a list the pointer only
+	// crosses on its way somewhere (user's call, 2026-08-10). An inherited interface cannot be
+	// removed, so it is answered differently instead: ITip.h:37-41 defines an empty string as
+	// "no tip". Implementation: KESCMNoTip.cpp.
+	Class
+	{
+		kKESCMStoryRowCellBoss,
+		kInfoStaticTextWidgetBoss,
+		{
+			IID_ITIP, kKESCMNoTipImpl,
 		}
 	},
 
@@ -1145,6 +1194,18 @@ type KESCMStorySectionToggleWidget(kViewRsrcType) : RollOverIconButtonWidget(Cla
 // (LinksUIViews.fr:45 for the type, LinksUIClass.fr:91 for the interface).
 type KESCMStorySectionPanelWidget(kViewRsrcType) : GenericPanelWidget(ClassID = kKESCMStorySectionPanelBoss) { };
 
+// The "Story Edits" list itself.
+type KESCMStoryTreeWidget(kViewRsrcType) : TreeViewWidget(ClassID = kKESCMStoryTreeWidgetBoss) { };
+
+// One row of that list. ★PrimaryResourcePanelWidget is the point: the widget manager creates each
+// row with CreateObjectNoInit (boss only) and calls DoPostCreate() afterwards to build the two
+// cells inside it, which is the sequence that lets the palette theme be set in between.
+type KESCMStoryRowWidget(kViewRsrcType) : PrimaryResourcePanelWidget(ClassID = kKESCMStoryRowWidgetBoss) { };
+
+// One cell of that row: an InfoStaticText whose only difference is that it stays silent on hover
+// (see kKESCMStoryRowCellBoss above). The field list is InfoStaticTextWidget's, unchanged.
+type KESCMStoryRowCellWidget(kViewRsrcType) : InfoStaticTextWidget(ClassID = kKESCMStoryRowCellBoss) { };
+
 // Scroll-map strip view resource: instantiated with ::CreateObject(db, RsrcSpec(...,
 // kViewRsrcType, kKESCMScrollMapRsrcID), IID_ICONTROLVIEW) — same runtime-creation pattern as
 // linksui's dynamic info widgets. The Frame here is a placeholder; the real frame/binding are
@@ -1169,13 +1230,79 @@ resource KESCMScrollMapWidget(kKESCMScrollMapRsrcID + index_enUS)
 	}
 };
 
+// One row of the "Story Edits" list, created at runtime by KESCMStoryTreeWidgetMgr. ★The
+// LocaleIndex wrapper is required, not decoration: the widget manager asks for the row with
+// RsrcSpec(LocaleSetting::GetLocale(), ...), so the base ID has to resolve through a locale table
+// before it finds a body. The row carries no localized strings of its own - both cells are stamped
+// at runtime - so one wild locale row is the whole table.
+resource LocaleIndex (kKESCMStoryRowRsrcID)
+{
+	kViewRsrcType,
+	{
+		kWildFS, k_Wild, kKESCMStoryRowRsrcID + index_enUS
+	}
+};
+
+resource KESCMStoryRowWidget(kKESCMStoryRowRsrcID + index_enUS)
+{
+	__FILE__, __LINE__,
+	kKESCMStoryRowWidgetID, kPMRsrcID_None,	// WidgetId, RsrcId
+	kBindLeft | kBindRight,				// Frame binding: follow the list's width
+	Frame(0, 0, 224, kKESCMStoryRowHeight),	// Frame (left, top, right, bottom)
+	kTrue, kTrue,						// Visible, Enabled
+	"",									// Panel name
+	{
+		// Left: the story's opening words. Ellipsized in the MIDDLE, the way this panel's
+		// Target / Source lines treat a document name - the start and the end both survive.
+		// ★Convert ampersands = kFalse. This cell shows text taken out of the document, and a lone
+		//   '&' in it is not an accelerator: "Q&A" has to read as "Q&A" (memory
+		//   ampersand-eaten-in-ui-strings). KBS's rows set kTrue instead, because on that side C++
+		//   doubles the ampersands up first (InsertAmpersandForDisplay); KESCM does not, so the
+		//   conversion is turned off here rather than compensated for there.
+		// ★KESCMStoryRowCellWidget, not the plain InfoStaticTextWidget: the only difference is that
+		//   it does not pop the full text up on hover (see kKESCMStoryRowCellBoss).
+		KESCMStoryRowCellWidget
+		(
+			kKESCMStoryRowTextWidgetID,		// WidgetId
+			kPMRsrcID_None,					// RsrcId
+			kBindLeft | kBindRight,			// Frame binding: take the space the kind cell leaves
+			Frame(4, 1, 158, kKESCMStoryRowHeight - 2),	// Frame
+			kTrue, kTrue,					// Visible, Enabled
+			kAlignLeft,						// Alignment
+			kEllipsizeMiddle, kFalse,		// Ellipsize style, Convert ampersands
+			"",								// Text Control Data
+			0,								// WidgetId for associated control for shortcut focus
+			kPaletteWindowSystemScriptFontId, kPaletteWindowSystemScriptFontId,
+		),
+
+		// Right: which kinds of change moved. A fixed column, so the words line up down the list
+		// and it is the story text that gives way when the panel is narrow.
+		KESCMStoryRowCellWidget
+		(
+			kKESCMStoryRowKindWidgetID,		// WidgetId
+			kPMRsrcID_None,					// RsrcId
+			kBindRight,						// Frame binding: stay at the row's right edge
+			Frame(158, 1, 220, kKESCMStoryRowHeight - 2),	// Frame
+			kTrue, kTrue,					// Visible, Enabled
+			kAlignRight,					// Alignment
+			kDontEllipsize, kFalse,			// Ellipsize style, Convert ampersands
+			"",								// Text Control Data
+			0,								// WidgetId for associated control for shortcut focus
+			kPaletteWindowSystemScriptFontId, kPaletteWindowSystemScriptFontId,
+		),
+	}
+};
+
 // PanelList - registers the panel and makes it appear under the Window menu.
 resource PanelList (kSDKDefPanelResourceID)
 {
 	{
 		kSDKDefPanelResourceID,		// Resource ID for this panel
 		kKESCMPluginID,				// owning plug-in
-		kNotResizable,				// fixed-size panel
+		kIsResizable,				// ★2026-08-10 ユーザー指定で可変に(それまでは kNotResizable)。
+									//   下限を守るのは KESCMPanelView::ConstrainDimensions ＝
+									//   幅は今までの固定幅が最小、高さは Story Edits を閉じている間
+									//   だけ上ペインの高さに固定される
 		kKESCMPanelWidgetActionID,	// Action ID to show/hide the panel
 		"",							// panelName empty: place via altMenu below for explicit menu placement
 		kKESCMPanelPluginsMenuPath,	// Plug-Ins > Kohaku Plug-Ins > Kohaku Change Marker(束ね名は kKESCMCompanyKey の解決値)
@@ -1309,7 +1436,9 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 		(
 			kKESCMNavPosTextWidgetID,
 			kSysStaticTextPMRsrcId,
-			kBindLeft | kBindTop,
+			// ★2026-08-10: パネルが可変幅になったので、Prev(左に固定)と Next(右端に固定)の間の
+			//   隙間はここが吸う。中央揃えなので広がっても数字は真ん中に出る。
+			kBindLeft | kBindRight | kBindTop,
 			Frame(106, 51, 158, 70)		// Prev(〜106)と Next(158〜)の間(幅52)。縦位置合わせで top を +3px。左右入れ替えでクラスタごと右へ(2026-08-07)
 			kTrue, kTrue,
 			kAlignCenter, kEllipsizeEnd, kFalse,	// ★ampersand 変換は切る(理由は Target のコメント)。ここは "3/12" だけだが4つの流儀を揃える
@@ -1320,7 +1449,7 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 		(
 			kKESCMNextChangeButtonWidgetID,
 			kSysButtonPMRsrcId,
-			kBindLeft | kBindTop,
+			kBindRight | kBindTop,		// ★2026-08-10: 可変幅になったので右端に貼り付く(Prev は左のまま)
 			Frame(158, 48, 216, 70)		// 幅58維持。★右端 216 は下の猫イラスト(184〜216)と揃う。パネル右端 224 まで 8px
 			kTrue, kTrue,
 			kKESCMNextChangeKey,
@@ -1364,7 +1493,9 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 		(
 			kKESCMIconOffWidgetID,
 			kKESCMIconOffResID, kKESCMPluginID,
-			kBindTop,
+			// ★2026-08-10: kBindRight を足した。可変幅になったので、右寄せの意図を binding に持たせないと
+			//   イラストだけ元の位置に取り残され、右へ伸びたステータス欄と重なる。
+			kBindRight | kBindTop,
 			Frame(184, 113, 216, 145)	// 32×32・右寄せ。ステータス欄(4行・下端145)に合わせて下寄せ(top113/bottom145、パネル下端153まで8pxマージン)。ステータス欄+12px広げた分、右へ152→164。パネル+10px 拡張で 164→174(2026-07-15)→184(2026-08-06)。ON側と同座標
 			kTrue, kTrue,
 			kADBEIconSuiteButtonType,
@@ -1373,7 +1504,7 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 		(
 			kKESCMIconOnWidgetID,
 			kKESCMIconOnResID, kKESCMPluginID,
-			kBindTop,
+			kBindRight | kBindTop,		// ★OFF 側と同じ理由(2026-08-10)
 			Frame(184, 113, 216, 145)	// 32×32・右寄せ。ステータス欄(4行・下端145)に合わせて下寄せ(top113/bottom145、パネル下端153まで8pxマージン)。ステータス欄+12px広げた分、右へ152→164。パネル+10px 拡張で 164→174(2026-07-15)→184(2026-08-06)。OFF側と同座標
 			kFalse, kTrue,
 			kADBEIconSuiteButtonType,
@@ -1419,11 +1550,28 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 			kTrue, kTrue,
 			kADBEIconSuiteButtonType,
 		),
+
+		// ★セクション見出し。三角の右隣、同じ 20px の帯の中。件数は C++ が実行時に足す
+		//   (KESCMUpdateStorySectionLabel が "Story Edits (3)" に書き換える)。
+		// ★★ここに件数を置くのはステータス欄に余白が無いから＝4行枠は既に埋まっており、
+		//   もう1行増えると `failed=N` がはみ出す。閉じたままでも件数が読めるという利点もある。
+		// ★binding は隣の三角と揃えて kBindLeft | kBindTop(理由は上のコメント)。
+		StaticTextWidget
+		(
+			kKESCMStorySectionLabelWidgetID,
+			kSysStaticTextPMRsrcId,
+			kBindLeft | kBindRight | kBindTop,	// 可変幅で見出しの帯も一緒に伸びる(2026-08-10)
+			Frame(24, 155, 216, 169)	// 三角(4〜20)の右。上下は帯の中で文字の高さぶん
+			kTrue, kTrue,
+			kAlignLeft, kDontEllipsize, kFalse,
+			kKESCMStorySectionLabelKey,
+			kInvalidWidgetID,
+		),
 				}
 			),
-			// ★Lower pane = the "Story Edits" section itself. Empty at this stage; the tree of
-			//   edited stories goes in here next. Visible = kFalse to match the splitter's
-			//   "Bottom pane hidden" above - the two have to agree or the section starts half-open.
+			// ★Lower pane = the "Story Edits" section itself. Visible = kFalse to match the
+			//   splitter's "Bottom pane hidden" above - the two have to agree or the section
+			//   starts half-open.
 			// ★KESCMStorySectionPanelWidget rather than a plain GenericPanelWidget: the only
 			//   difference is the persistent integer it carries, which is the height this section
 			//   had when it was last closed (see kKESCMStorySectionPanelBoss above).
@@ -1435,6 +1583,32 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 				kFalse, kTrue,			// ★Visible = kFalse: starts closed
 				"",
 				{
+					// The list of changed stories, filling the section. ★Its Frame is in the
+					// LOWER PANE's own coordinates - (0,0) is the top left of the section, not
+					// of the panel.
+					// Field order is TreeViewWidget's, copied from KBS.fr:1142-1165.
+					KESCMStoryTreeWidget
+					(
+						kKESCMStoryTreeWidgetID, kPMRsrcID_None,	// WidgetId, RsrcId
+						kBindAll,						// Frame binding: grow with the section
+						Frame(0, 0, 224, 100)			// Frame (the whole lower pane)
+						kTrue, kTrue,					// Visible, Enabled
+						kTrue,							// EraseBeforeDraw
+						kInterfacePaletteFill,			// InterfaceColor
+						"",								// Panel name
+						kHideRootNode,					// Options: the root is not a row
+						kFalse,							// Use H scroll bar
+						kTrue,							// Use V scroll bar
+						kKESCMStoryRowHeight,			// fVScrollButtonIncrement (one row)
+						kKESCMStoryRowHeight,			// fVThumbScrollIncrement
+						kKESCMStoryRowHeight,			// fHScrollButtonIncrement (unused, no H bar)
+						kKESCMStoryRowHeight,			// fHThumbScrollIncrement
+						1,								// Items selectable: 1 = single selection
+						kFalse,							// Allow children from multiple parents to be selected
+						kFalse,							// Allow discontiguous selection
+						{
+						},
+					),
 				}
 			),
 		}

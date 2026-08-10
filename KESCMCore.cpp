@@ -55,6 +55,7 @@
 #include "KESCMScrollMap.h"          // KESCMScrollMapInvalidateAll(比較後にスクロールバー地図を最新化)
 #include "KESCMStoryStamp.h"         // ストーリーの変更カウンター(テキストが編集されたか＝画素比較には出せない情報)
 #include "KESCMStoryList.h"          // 変更のあったストーリーの一覧(Story Edits セクションが読むモデル)
+#include "KESCMStoryTree.h"          // KESCMStoryTreeRebuild(モデルを作り直したら画面も作り直す)
 #include "KESCMCore.h"
 
 //========================================================================================
@@ -614,6 +615,10 @@ ErrorCode KESCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMStri
 		// ★一覧のモデルを作り直す。読むのは Target 側だけ(行はすべて Target に存在する=Compare の契約)。
 		//   ページ順の並べ替えと本文先頭の取り出しはこの中で完結する。
 		KESCMStoryList::Build(targetDB, storyDiffs);
+
+		// ★モデルを作ったら画面もその場で作り直す。パネルが閉じていても、セクションが畳まれていても
+		//   呼んでよい(中で静かに諦める)＝「開いているか」を呼び手が知らなくて済む。
+		KESCMStoryTreeRebuild();
 
 		int32 addedCount = 0, textCount = 0, attrCount = 0, otherCount = 0;
 		for (std::vector<KESCMStoryDiff>::const_iterator it = storyDiffs.begin(); it != storyDiffs.end(); ++it)

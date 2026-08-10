@@ -91,9 +91,9 @@ DECLARE_PMID(kClassIDSpace, kKESCMTrackerRegisterBoss, kKESCMPrefix + 15)	// ト
 // (unused-slot placeholders below start at +16; +6..+15 are declared above. 2026-08-05 audit)
 DECLARE_PMID(kClassIDSpace, kKESCMStorySectionToggleBoss, kKESCMPrefix + 16)	// kRollOverIconButtonBoss継承+IID_IOBSERVER: パネル下部「Story Edits」セクションの開閉ボタン(三角)。絵は本体の kTreeBranchCollapsed/Expanded を借りる
 DECLARE_PMID(kClassIDSpace, kKESCMStorySectionPanelBoss, kKESCMPrefix + 17)	// kGenericPanelWidgetBoss継承+IID_IKESCMSAVEDSECTIONHEIGHT(kPersistIntDataImpl): 下ペイン本体。閉じる直前の高さをここに覚える(手本=製品 linksui の kLinkInfoPanelWidgetBoss)
-//DECLARE_PMID(kClassIDSpace, kKESCMBoss, kKESCMPrefix + 18)
-//DECLARE_PMID(kClassIDSpace, kKESCMBoss, kKESCMPrefix + 19)
-//DECLARE_PMID(kClassIDSpace, kKESCMBoss, kKESCMPrefix + 20)
+DECLARE_PMID(kClassIDSpace, kKESCMStoryTreeWidgetBoss, kKESCMPrefix + 18)	// kTreeViewWidgetBoss継承: Story Edits の一覧(平坦1階層)。載せるのは adapter と widget mgr の2つだけ＝コントローラーは kTreeViewWidgetBoss が既に持っている
+DECLARE_PMID(kClassIDSpace, kKESCMStoryRowWidgetBoss, kKESCMPrefix + 19)	// kTreeNodeWidgetBoss継承: 一覧の1行。段階3では自前のIFを載せない(行のクリック処理は段階4)。空の Class は製品コードにも実例あり(spellpanel の kAutoCorrectTreeNodeWidgetBoss)
+DECLARE_PMID(kClassIDSpace, kKESCMStoryRowCellBoss, kKESCMPrefix + 20)	// kInfoStaticTextWidgetBoss継承+IID_ITIP(kKESCMNoTipImpl): 一覧の行のセル。★狙いはツールチップを**消す**こと＝素の静的テキストは省略表示すると全文をポップアップで出す(実機ダンプ: kStaticTextWidgetBoss が IID_ITIP=kTextWidgetTipImpl を持つ)。行に出るのは邪魔なので空の tip を返す実装で上書きする(2026-08-10 ユーザー指定)
 //DECLARE_PMID(kClassIDSpace, kKESCMBoss, kKESCMPrefix + 21)
 //DECLARE_PMID(kClassIDSpace, kKESCMBoss, kKESCMPrefix + 22)
 //DECLARE_PMID(kClassIDSpace, kKESCMBoss, kKESCMPrefix + 23)
@@ -159,9 +159,10 @@ DECLARE_PMID(kImplementationIDSpace, kKESCMDocsClosedObserverImpl, kKESCMPrefix 
 DECLARE_PMID(kImplementationIDSpace, kKESCMPanelVisibilityObserverImpl, kKESCMPrefix + 20)	// IObserver 実装(パネルの表示状態が変わったら半透明を貼り直す。KESCMPanelAlpha.cpp)
 DECLARE_PMID(kImplementationIDSpace, kKESCMPanelRollOverImpl, kKESCMPrefix + 21)	// IMouseRollOver 実装(パネルにカーソルが乗っている間だけ半透明を解除。KESCMPanelAlpha.cpp)
 DECLARE_PMID(kImplementationIDSpace, kKESCMStorySectionToggleObserverImpl, kKESCMPrefix + 22)	// IObserver 実装(開閉ボタンの押下を受けて Story Edits セクションを開閉。KESCMStorySectionObserver.cpp)
-//DECLARE_PMID(kImplementationIDSpace, kKESCMImpl, kKESCMPrefix + 23)
-//DECLARE_PMID(kImplementationIDSpace, kKESCMImpl, kKESCMPrefix + 24)
-//DECLARE_PMID(kImplementationIDSpace, kKESCMImpl, kKESCMPrefix + 25)
+DECLARE_PMID(kImplementationIDSpace, kKESCMStoryTreeAdapterImpl, kKESCMPrefix + 23)	// ITreeViewHierarchyAdapter 実装(ListTreeViewAdapter派生。KESCMStoryTreeAdapter.cpp)
+DECLARE_PMID(kImplementationIDSpace, kKESCMStoryTreeWidgetMgrImpl, kKESCMPrefix + 24)	// ITreeViewWidgetMgr 実装(CTreeViewWidgetMgr派生。KESCMStoryTreeWidgetMgr.cpp)
+DECLARE_PMID(kImplementationIDSpace, kKESCMNoTipImpl, kKESCMPrefix + 25)	// ITip 実装(常に空を返す＝ツールチップを出さない。KESCMNoTip.cpp)
+DECLARE_PMID(kImplementationIDSpace, kKESCMPanelViewImpl, kKESCMPrefix + 26)	// IControlView 実装(PalettePanelView派生。ConstrainDimensions でパネルの最小サイズを守る。KESCMPanelView.cpp)
 
 
 // ActionIDs:
@@ -246,6 +247,11 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMSplitterWidgetID, kKESCMPrefix + 43)			// パ
 DECLARE_PMID(kWidgetIDSpace, kKESCMTopPaneWidgetID, kKESCMPrefix + 44)			// 上ペイン=従来のパネル内容一式を丸ごと収めた GenericPanelWidget。★splitter の「伸縮させない方」に指定する
 DECLARE_PMID(kWidgetIDSpace, kKESCMStorySectionWidgetID, kKESCMPrefix + 45)		// 下ペイン=Story Edits 本体(初期は非表示。段階3でツリーが入る)
 DECLARE_PMID(kWidgetIDSpace, kKESCMStorySectionToggleWidgetID, kKESCMPrefix + 46)	// 開閉ボタン(三角)。★上ペインの中に置く=下ペインに置くと閉じたときボタンごと消えて開けなくなる
+DECLARE_PMID(kWidgetIDSpace, kKESCMStoryTreeWidgetID, kKESCMPrefix + 47)		// Story Edits の一覧ツリー本体(下ペインいっぱい)
+DECLARE_PMID(kWidgetIDSpace, kKESCMStoryRowTextWidgetID, kKESCMPrefix + 48)	// 行の左=本文の先頭テキスト
+DECLARE_PMID(kWidgetIDSpace, kKESCMStoryRowKindWidgetID, kKESCMPrefix + 49)	// 行の右=変わった種類(Text / Attr / Other / Added)
+DECLARE_PMID(kWidgetIDSpace, kKESCMStorySectionLabelWidgetID, kKESCMPrefix + 50)	// 上ペインの三角の隣=「Story Edits (3)」。件数は C++ が実行時に付ける
+DECLARE_PMID(kWidgetIDSpace, kKESCMStoryRowWidgetID, kKESCMPrefix + 51)		// 行テンプレート自身。★GetWidgetTypeForNode が返すのはこれ
 //DECLARE_PMID(kWidgetIDSpace, kKESCMWidgetID, kKESCMPrefix + 2)
 //DECLARE_PMID(kWidgetIDSpace, kKESCMWidgetID, kKESCMPrefix + 3)
 //DECLARE_PMID(kWidgetIDSpace, kKESCMWidgetID, kKESCMPrefix + 4)
@@ -380,6 +386,15 @@ DECLARE_PMID(kScriptInfoIDSpace, kKESCMStatusPropertyScriptElement, kKESCMPrefix
 #define kKESCMHintKey			kKESCMStringPrefix "kKESCMHintKey"
 #define kKESCMToolStringKey		kKESCMStringPrefix "kKESCMToolStringKey"	// ツールボックスのツール名(ツールチップ)。全ロケール英語で統一
 
+// Story Edits セクションの文字列。⚠文言に "text" を使わない——この一覧はテキスト以外の変更も載せる
+// ので "No text edits" のような言い方は事実と食い違う(設計書 §3-5)。
+#define kKESCMStorySectionLabelKey	kKESCMStringPrefix "kKESCMStorySectionLabelKey"	// セクション見出し(件数は C++ が付ける)
+#define kKESCMStoryNoEditsKey		kKESCMStringPrefix "kKESCMStoryNoEditsKey"		// 変更0件のときに出す1行
+#define kKESCMStoryKindTextKey		kKESCMStringPrefix "kKESCMStoryKindTextKey"		// 行の右=文字が変わった
+#define kKESCMStoryKindAttrKey		kKESCMStringPrefix "kKESCMStoryKindAttrKey"		// 行の右=属性が変わった(適用スタイル・オーバーライド・表の罫線を含む)
+#define kKESCMStoryKindOtherKey		kKESCMStringPrefix "kKESCMStoryKindOtherKey"	// 行の右=上記以外(実測では出にくい。KESCMStoryStamp.h 参照)
+#define kKESCMStoryKindAddedKey		kKESCMStringPrefix "kKESCMStoryKindAddedKey"	// 行の右=Source 側に相手が無い
+
 // PNG アイコンリソース(プラグインに埋め込み; .pln とは別ファイルでは出荷しない)。
 #define kKESCMIconOnResID	1001
 #define kKESCMIconOffResID	1002
@@ -387,6 +402,26 @@ DECLARE_PMID(kScriptInfoIDSpace, kKESCMStatusPropertyScriptElement, kKESCMPrefix
 
 // スクロールバー地図stripのビューリソースID(kViewRsrcType; ::CreateObject で実行時生成する。KESCMScrollMap.cpp)
 #define kKESCMScrollMapRsrcID	1010
+
+// Story Edits の行テンプレートのビューリソースID(kViewRsrcType; CreateObjectNoInit で1行ずつ生成する。
+// KESCMStoryTreeWidgetMgr.cpp)。
+#define kKESCMStoryRowRsrcID	1011
+
+// 一覧の行の高さ。★.fr と C++ の両方がこの1つの定数を読む(Adobe の StdHeightWidthConstants.h と同じ形)
+// ＝行リソースの Frame・ツリーのスクロール増分・GetNodeWidgetHeight が同じ事実を語る。値は KBS の
+// kKBSResultRowHeight と同じ 19＝パレットフォントでの実測値で、SDK の kCC2016PanelTreeNodeHeight(=22)ではない。
+#define kKESCMStoryRowHeight	19
+
+// ★★パネルの最小サイズ(2026-08-10 ユーザー指定「今のを最小の設定で、パネルの大きさは固定ではなく」)。
+//   PanelList を kIsResizable にしたので、下限を守るのは KESCMPanelView::ConstrainDimensions。
+// ・幅 = これまでの固定幅そのまま。中の widget はすべて縁に束縛してあるので広げる方向は自由に伸びるが、
+//   これより狭めるとステータス欄が読めなくなり、一覧の行は省略記号だけになる。
+// ・高さ = 上ペインの設計高。★Story Edits を**閉じている間はこれが上限でもある**——閉じているときの
+//   パネルは固定座標のコントロール群だけなので、伸ばしても下に空白の帯ができるだけになる。
+//   開いている間の下限は「上ペイン + セクションの最小(= .fr の Bottom snap)」で、C++ 側は
+//   分割バーに実際の snap 値を聞く(数字を2か所に書かない)。
+#define kKESCMPanelMinWidth		224
+#define kKESCMPanelTopPaneHeight	173
 
 // ✓チェックマークカーソルのリソースID。CursorSpec の CursorID として使い、HOTC(このID)でホットスポット
 // (✓の折れ点=座標取得点)を指定する。★2026-07-25: 画像はコールバック描画から PNGC リソースへ変更
