@@ -216,7 +216,13 @@ static PMReal KESCMReadDocZoom(IDataBase* db)
 }
 
 //----------------------------------------------------------------------------------------
-// スクロールの前に、対象ページの載っているスプレッドをビューに出す。
+// スクロールの前に、対象のスプレッドをビューに出す。
+//
+// ★★itemUID は**ページでもページアイテムでもよい**。IHierarchy::GetSpreadUID は「この階層ノードの
+//   スプレッド」を返す契約(IHierarchy.h:177-181)で、ページに限った話ではない。∴ ページに載っていない
+//   (ペーストボード上の)フレームでも、正しいスプレッドへ切り替えてから測れる。
+//   ⚠この一般性は Story Edits の行ジャンプ(2026-08-10)で必要になった。ページを渡す従来の呼び手
+//   (KESCMScrollDocToItemCenter)の挙動は1つも変わらない。
 //
 // ★★ペーストボード点へのスクロールは「そのビューが既にその点のスプレッドを映している」ことを
 //   前提にしている。別のスプレッドを見ているビューにとって、その座標は別の場所か、どこでもない。
@@ -240,15 +246,15 @@ static PMReal KESCMReadDocZoom(IDataBase* db)
 //   スクロール先が揃うように。既存の KESCMScrollDocToPBPoint と同じ範囲)。
 // 取れないビューは黙って飛ばす=そのビューは従来どおりスクロールだけになり、悪化はしない。
 //----------------------------------------------------------------------------------------
-static void KESCMEnsureSpreadInView(IDataBase* db, UID pageUID)
+static void KESCMEnsureSpreadInView(IDataBase* db, UID itemUID)
 {
-	if (db == nil || pageUID == kInvalidUID)
+	if (db == nil || itemUID == kInvalidUID)
 		return;
 
-	InterfacePtr<IHierarchy> pageHier(db, pageUID, UseDefaultIID());
-	if (pageHier == nil)
+	InterfacePtr<IHierarchy> itemHier(db, itemUID, UseDefaultIID());
+	if (itemHier == nil)
 		return;
-	const UID spreadUID = pageHier->GetSpreadUID();
+	const UID spreadUID = itemHier->GetSpreadUID();
 	if (spreadUID == kInvalidUID)
 		return;
 
@@ -339,33 +345,37 @@ static bool16 KESCMScrollDocToPBPoint(IDataBase* db, const PBPMPoint& pbPoint, P
 }
 
 //----------------------------------------------------------------------------------------
-// 文書 db の全レイアウトビューを、pageUID の矩形中心が画面中央に来るようスクロールする(変更ストップ用)。
-// 上の pb 版へ委譲(ページ inner 中心 → ペーストボード変換)。
+// 文書 db の全レイアウトビューを、itemUID の矩形中心が画面中央に来るようスクロールする。
+// ★itemUID は**ページでもページアイテムでもよい**(GetItemBounds はどちらにも答える)。呼び手は2つ＝
+//   Prev/Next の巡回はページを渡し(従来どおり)、Story Edits の行ジャンプはストーリーの先頭フレームを
+//   渡す(2026-08-10)。
+// 上の pb 版へ委譲(inner 中心 → ペーストボード変換)。
 //----------------------------------------------------------------------------------------
-static bool16 KESCMScrollDocToPage(IDataBase* db, UID pageUID, PMReal applyZoom = PMReal(-1.0))
+static bool16 KESCMScrollDocToItemCenter(IDataBase* db, UID itemUID, PMReal applyZoom = PMReal(-1.0))
 {
-	if (db == nil || pageUID == kInvalidUID)
+	if (db == nil || itemUID == kInvalidUID)
 		return kFalse;
 
 	// ★先にスプレッドを出す。マスタースプレッド上のページは、これが無いとスクロールでは届かない
 	//   (上の KESCMEnsureSpreadInView の説明を参照)。★幾何を読むのはこの後(切替前の座標は当てにしない
 	//   ＝SnapTracker.cpp:234-235 と同じ順序)。
-	KESCMEnsureSpreadInView(db, pageUID);
+	KESCMEnsureSpreadInView(db, itemUID);
 
-	InterfacePtr<IGeometry> pageGeo(db, pageUID, UseDefaultIID());
-	if (pageGeo == nil)
-		return kFalse;	// 幾何を持たない UID=このページは測れない(呼び出し側は「動かせなかった」と出す)
+	InterfacePtr<IGeometry> itemGeo(db, itemUID, UseDefaultIID());
+	if (itemGeo == nil)
+		return kFalse;	// 幾何を持たない UID=これは測れない(呼び出し側は「動かせなかった」と出す)
 
-	// ★ページ矩形をペーストボード座標で得るのは Facade の仕事(2026-08-06 ブロック10 監査で寄せた)。
+	// ★矩形をペーストボード座標で得るのは Facade の仕事(2026-08-06 ブロック10 監査で寄せた)。
 	//   手本 snapshot/SnapTracker.cpp:610-616 が**ページに対して**まったく同じことをしている＝
 	//   IGeometry を Query して nil を弾き、その ::GetUIDRef を GetItemBounds に渡す。旧実装は
 	//   「GetPathBoundingBox + ::InnerToPasteboardMatrix + 自前 Transform」で同じ答えを組んでいた。
 	//   ★上の nil 判定は残す: 旧実装が「ついでに担保していたこと」(この UID は本当に幾何を持つ)を
 	//   Facade は担保しない。手本も同じ順序で書いている。
-	//   ⚠BoundsKind は PathBounds(＝旧 GetPathBoundingBox と同じ意味)。手本は OuterStrokeBounds だが
-	//   ページに線幅は無いので値は変わらない——意味の合う方を採る。
+	//   ⚠BoundsKind は PathBounds(＝旧 GetPathBoundingBox と同じ意味)。手本は OuterStrokeBounds だが、
+	//   ページに線幅は無く、フレームの線は矩形の四辺に対称に付くので**どちらでも中心の座標は変わらない**
+	//   ——意味の合う方を採る。
 	const PMRect box = Utils<Facade::IGeometryFacade>()->GetItemBounds(
-		::GetUIDRef(pageGeo), Transform::PasteboardCoordinates(), Geometry::PathBounds());
+		::GetUIDRef(itemGeo), Transform::PasteboardCoordinates(), Geometry::PathBounds());
 	return KESCMScrollDocToPBPoint(db,
 		PBPMPoint((box.Left() + box.Right()) / PMReal(2.0), (box.Top() + box.Bottom()) / PMReal(2.0)),
 		applyZoom);
@@ -563,6 +573,51 @@ static PMString KESCMStopLabel(IDataBase* db, const KESCMNavStop& stop)
 }
 
 //----------------------------------------------------------------------------------------
+// Target 側の移動が済んだ後、周りのビューを追随させる(Pages パネルと Source 窓)。
+//
+// ★呼び手は2つ＝Prev/Next の巡回(KESCMGoto)と Story Edits の行ジャンプ(KESCMGotoStoryFrame)。
+//   1本にしてあるのは、ズーム合わせ・Sync ON のときの除外・対応表でのページ解決という3つの判断を
+//   両者が同じに保つため——書き写すと必ず割れる([[one-question-one-place]])。
+// ★pageUID が kInvalidUID(ペーストボード上のフレーム)なら寄せる先が決められないので、Source も
+//   Pages パネルも動かさない。Target 側の移動は呼び手が済ませてあるので、それだけが成立する。
+//----------------------------------------------------------------------------------------
+static void KESCMSyncCompanionViews(IDataBase* navDB, UID pageUID)
+{
+	if (navDB == nil || pageUID == kInvalidUID)
+		return;
+
+	// Pages パネルも対象ページへ連動スクロール(前面文書が navDB のときだけ。ベストエフォート)。
+	KESCMScrollPagesPanelToPage(navDB, pageUID);
+
+	// Source 側も対応ページへ連動スクロール(比較 Start 中のみ=sSrcDB 非nil。背面のまま位置だけ)。
+	// ページの追加/削除でズレていても対応表で正しい相手へ、相手が無い Added/Overflow は近傍へ寄せる。
+	// ★Source の拡大率も Target に合わせる。overset ストップでも「そのページ」の対応 Source ページへ寄せる。
+	// ベストエフォート: Source ビューが無い/相手が引けなくても navDB 側の移動は成立させる。
+	IDataBase* sourceDB = KESCMDrawEventHandler::sSrcDB;
+	if (sourceDB != nil && sourceDB != navDB)
+	{
+		const UID srcPage = KESCMSourcePageForTarget(navDB, sourceDB, pageUID);
+		if (srcPage != kInvalidUID)
+		{
+			// ★Sync layout views が ON のときは Source の「ビュー」スクロールをしない。理由: Sync オブザーバ
+			//   (KESCMPeek.cpp)が navDB(Target)のスクロールをページオフセット込みで Source へ自動ミラーする。
+			//   ここで Source を手動スクロールすると、その変化が Sync により Target へ逆ミラーされ、overset の
+			//   「+」スクロールがページ中心に打ち消される(2026-07-24 ユーザー発見: sync OFF なら overset に飛ぶ)。
+			//   sync ON では Target のスクロール(呼び手がやった分)を Sync が Source へ伝える。
+			//   Pages パネルの連動は Sync の対象外なので、そちらは sync の有無に関わらず行う。
+			if (!KESCMGetLayoutSync())
+			{
+				const PMReal targetZoom = KESCMReadDocZoom(navDB);	// 実効ズーム(<=0 ならズームは変えない)
+				KESCMScrollDocToItemCenter(sourceDB, srcPage, targetZoom);
+			}
+			// Source が前面の場合、Pages パネルは Source の一覧を表示しているので、そちらの対応ページへ
+			// 連動スクロール(ヘルパー内の前面一致ガードにより、navDB 前面ならこの呼び出しは何もしない)。
+			KESCMScrollPagesPanelToPage(sourceDB, srcPage);
+		}
+	}
+}
+
+//----------------------------------------------------------------------------------------
 // 巡回本体(dir=+1 で次、-1 で前)。端は折り返す。位置表示「3/12」は Prev/Next 間のウィジェットへ、
 // 飛んだページラベル「Page: 1, Change 12%」等はメッセージ欄へ。ストップは「変更(枠)=ページ中心」または
 // 「overset=「+」pb 点(KBS 流)」。
@@ -609,7 +664,7 @@ static void KESCMGoto(int32 dir)
 	if (stop.isOverset)
 		KESCMEnsureSpreadInView(navDB, stop.pageUID);
 	const bool16 ok = stop.isOverset ? KESCMScrollDocToPBPoint(navDB, stop.pb)
-	                                 : KESCMScrollDocToPage(navDB, stop.pageUID);
+	                                 : KESCMScrollDocToItemCenter(navDB, stop.pageUID);
 	if (!ok)
 	{
 		PMString s("Could not scroll."); s.SetTranslatable(kFalse);
@@ -626,35 +681,8 @@ static void KESCMGoto(int32 dir)
 	// 位置 k/N は別ウィジェット(下の RefreshNavPosition)。
 	KESCMSetStatus(KESCMStopLabel(navDB, stop));
 
-	// Pages パネルも対象ページへ連動スクロール(前面文書が navDB のときだけ。ベストエフォート)。
-	KESCMScrollPagesPanelToPage(navDB, stop.pageUID);
-
-	// Source 側も対応ページへ連動スクロール(比較 Start 中のみ=sSrcDB 非nil。背面のまま位置だけ)。
-	// ページの追加/削除でズレていても対応表で正しい相手へ、相手が無い Added/Overflow は近傍へ寄せる。
-	// ★Source の拡大率も Target に合わせる。overset ストップでも「そのページ」の対応 Source ページへ寄せる。
-	// ベストエフォート: Source ビューが無い/相手が引けなくても navDB 側の移動は成立させる。
-	IDataBase* sourceDB = KESCMDrawEventHandler::sSrcDB;
-	if (sourceDB != nil && sourceDB != navDB)
-	{
-		const UID srcPage = KESCMSourcePageForTarget(navDB, sourceDB, stop.pageUID);
-		if (srcPage != kInvalidUID)
-		{
-			// ★Sync layout views が ON のときは Source の「ビュー」スクロールをしない。理由: Sync オブザーバ
-			//   (KESCMPeek.cpp)が navDB(Target)のスクロールをページオフセット込みで Source へ自動ミラーする。
-			//   ここで Source を手動スクロールすると、その変化が Sync により Target へ逆ミラーされ、overset の
-			//   「+」スクロールがページ中心に打ち消される(2026-07-24 ユーザー発見: sync OFF なら overset に飛ぶ)。
-			//   sync ON では Target のスクロール(上の KESCMScrollDocToPBPoint/Page)を Sync が Source へ伝える。
-			//   Pages パネルの連動は Sync の対象外なので、そちらは sync の有無に関わらず行う。
-			if (!KESCMGetLayoutSync())
-			{
-				const PMReal targetZoom = KESCMReadDocZoom(navDB);	// 実効ズーム(<=0 ならズームは変えない)
-				KESCMScrollDocToPage(sourceDB, srcPage, targetZoom);
-			}
-			// Source が前面の場合、Pages パネルは Source の一覧を表示しているので、そちらの対応ページへ
-			// 連動スクロール(ヘルパー内の前面一致ガードにより、navDB 前面ならこの呼び出しは何もしない)。
-			KESCMScrollPagesPanelToPage(sourceDB, srcPage);
-		}
-	}
+	// 周りのビュー(Pages パネル・Source 窓)を追随させる。★Story Edits の行ジャンプと同じ関数を通る。
+	KESCMSyncCompanionViews(navDB, stop.pageUID);
 
 	// 現在位置は Prev/Next の間の専用ウィジェット(KESCL 風「3/12」)へ。基準ストップは上で更新済みなので、
 	// 共通関数で今のストップ列から「k/N」を作り直す(値の組み立てとボタン有効/無効を1箇所に集約)。
@@ -666,6 +694,24 @@ static void KESCMGoto(int32 dir)
 //========================================================================================
 void KESCMGotoNextChange() { KESCMGoto(+1); }
 void KESCMGotoPrevChange() { KESCMGoto(-1); }
+
+//========================================================================================
+// KESCMGotoStoryFrame(KESCMChangeNav.h で宣言)
+//========================================================================================
+bool16 KESCMGotoStoryFrame(IDataBase* db, UID frameUID, UID pageUID)
+{
+	// ★スプレッド切替は KESCMScrollDocToItemCenter が中でやる(ページを渡す従来の経路とまったく同じ)。
+	//   ここで先回りして呼ぶと二度切り替えることになるので呼ばない。
+	if (!KESCMScrollDocToItemCenter(db, frameUID))
+		return kFalse;
+
+	KESCMSyncCompanionViews(db, pageUID);
+
+	// ★巡回の基準点(sNavPageUID 等)は動かさない。行ジャンプは Prev/Next とは別の動線で、ここで基準を
+	//   書き換えると「Next を押したら一覧で飛んだ場所の次から始まる」という、どちらの機能の説明にも
+	//   出てこない挙動になる(2026-08-10 の設計判断)。
+	return kTrue;
+}
 
 // 巡回の基準点を忘れる(KESCMChangeNav.h)。次回の Next/Prev はリストの先頭/末尾から始まる。
 // ★表示更新はしない(基準点を落とすだけ): これは比較の総入れ替え(Start)の途中でも呼ばれるため、

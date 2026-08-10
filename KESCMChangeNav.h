@@ -14,6 +14,11 @@
 #ifndef __KESCMChangeNav_h__
 #define __KESCMChangeNav_h__
 
+#include "BaseType.h"	// bool16
+#include "OMTypes.h"	// UID
+
+class IDataBase;
+
 // 次/前の「見るべきページ」へレイアウトビューをスクロールする。未 Start(sDB==nil)や対象0件のときは
 // スクロールせず、パネルのステータス行にその旨を出すだけ(安全に何度でも呼べる)。
 void KESCMGotoNextChange();
@@ -34,5 +39,13 @@ void KESCMResetNav();
 //   ・Start 済み・N 件(未巡回)     → "1/N"(Start 直後に即表示)
 //   ・k 番目を巡回中               → "k/N"
 void KESCMRefreshNavPosition();
+
+// Story Edits の行から呼ぶジャンプ: そのストーリーの先頭フレームを画面中央に出す。
+//   ・frameUID のスプレッドを先に出すので、別スプレッドでもマスターでもペーストボードでも届く
+//   ・Pages パネルと Source 窓は Prev/Next とまったく同じ流儀で連動する(pageUID がその解決に要る。
+//     kInvalidUID＝ページに載っていないフレームなら Target 側だけが動く)
+//   ・★Prev/Next の巡回位置「k/N」には影響しない(別の動線なので基準点を動かさない)
+// 戻り値: 1つでもビューをスクロールできたら kTrue。実体は KESCMChangeNav.cpp。
+bool16 KESCMGotoStoryFrame(IDataBase* db, UID frameUID, UID pageUID);
 
 #endif // __KESCMChangeNav_h__
