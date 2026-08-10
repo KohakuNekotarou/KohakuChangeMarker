@@ -1,4 +1,4 @@
-//========================================================================================
+﻿//========================================================================================
 //
 //  Owner: KohakuNekotarou
 //
@@ -28,6 +28,7 @@
 
 // Project includes:
 #include "KESCMID.h"
+#include "KESCMCore.h"				// KESCMIsArmed - is a comparison running at all
 #include "KESCMStoryList.h"
 
 /** Hierarchy adapter for the Story Edits list: a flat list, as long as the model is.
@@ -41,7 +42,15 @@ public:
 protected:
 	virtual int32 GetNumListItems() const
 	{
-		return KESCMStoryList::GetRowCount();
+		const int32 rows = KESCMStoryList::GetRowCount();
+		if (rows > 0)
+			return rows;
+
+		// ★One placeholder row while a comparison is running, so that "nothing changed" and
+		//   "nothing has been compared yet" do not look identical - an empty list would say both.
+		//   The row itself reads "No edits"; the widget manager writes it when the model has no row
+		//   to answer with. Stopped, the list is genuinely empty and stays that way.
+		return KESCMIsArmed() ? 1 : 0;
 	}
 };
 

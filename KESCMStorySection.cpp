@@ -1,4 +1,4 @@
-//========================================================================================
+﻿//========================================================================================
 //
 //  Owner: KohakuNekotarou
 //
@@ -14,6 +14,7 @@
 #include "IControlView.h"
 #include "IIntData.h"				// how the remembered section height is read and written
 #include "IPanelControlData.h"
+#include "ITextControlData.h"		// the section heading's text
 #include "ISession.h"				// GetExecutionContextSession (nil during teardown)
 #include "IApplication.h"			// QueryApplication
 #include "IPanelMgr.h"				// QueryPanelManager / GetPaletteRefContainingPanel
@@ -38,7 +39,8 @@
 
 // ----- Project -----
 #include "KESCMID.h"
-#include "KESCMCore.h"				// KESCMGetVisibleOwnPanel
+#include "KESCMCore.h"				// KESCMGetVisibleOwnPanel / KESCMIsArmed
+#include "KESCMStoryList.h"			// GetRowCount - the number in the heading
 #include "KESCMStorySection.h"
 
 namespace
@@ -253,6 +255,44 @@ void KESCMUpdateStorySectionButtonState()
 	// mirror and the stock pair is enough.
 	buttonView->SetRsrcID(splitter->IsSinglePanelVisible() ? kTreeBranchCollapsedRsrcID
 	                                                       : kTreeBranchExpandedRsrcID);
+}
+
+/* KESCMUpdateStorySectionLabel
+*/
+void KESCMUpdateStorySectionLabel()
+{
+	IControlView* panel = KESCMGetVisibleOwnPanel();
+	if (panel == nil)
+		return;
+
+	InterfacePtr<const IPanelControlData> panelData(panel, UseDefaultIID());
+	if (panelData == nil)
+		return;
+
+	InterfacePtr<ITextControlData> label(panelData->FindWidget(kKESCMStorySectionLabelWidgetID), UseDefaultIID());
+	if (label == nil)
+		return;
+
+	PMString text(kKESCMStorySectionLabelKey);
+	text.Translate();
+
+	// ★件数を出すのは比較中だけ。Stop 中は一覧そのものが空なので "(0)" は「変更が無かった」ではなく
+	//   「まだ何も比べていない」を意味してしまう ---- 数字を出さないことでその取り違えを断つ
+	//   (行の側でも同じ区別をしていて、Stop 中は空、比較中の0件は "No edits" の1行)。
+	if (KESCMIsArmed())
+	{
+		text.Append(" (");
+		text.AppendNumber(KESCMStoryList::GetRowCount());
+		text.Append(")");
+	}
+
+	// ★組み立て終わった文はもう文字列キーではない。翻訳可のままだと、内蔵テーブルにたまたま一致した
+	//   瞬間に別の文字列へ化ける(KESCM は "Source:" が「スタイルソース :」になる事故を踏んでいる)。
+	text.SetTranslatable(kFalse);
+
+	// 第2引数 invalidate = kTrue。第3引数は notifyOfChange で、ここは表示を書くだけなので kFalse
+	//   ---- 誰かに知らせる変更ではない。
+	label->SetString(text, kTrue, kFalse);
 }
 
 // End, KESCMStorySection.cpp.

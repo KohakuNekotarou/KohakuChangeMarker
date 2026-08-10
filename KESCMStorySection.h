@@ -1,4 +1,4 @@
-//========================================================================================
+﻿//========================================================================================
 //
 //  Owner: KohakuNekotarou
 //
@@ -40,6 +40,18 @@ void KESCMToggleStorySection();
 	section next to it.
 */
 void KESCMUpdateStorySectionButtonState();
+
+/** Put the current row count in the section heading: "Story Edits (3)" while a comparison is
+	running, or the bare "Story Edits" when none is.
+
+	★The count lives in the heading rather than on the status line because the status line has no
+	room left: its box holds four lines and they are all spoken for, so one more would push
+	"failed=N" out of sight. The heading also keeps the count readable while the section is closed,
+	which the status line could not do for a list nobody can see.
+
+	Does nothing when the panel is not on screen.
+*/
+void KESCMUpdateStorySectionLabel();
 
 #endif // __KESCMStorySection_h__
 

@@ -177,6 +177,14 @@ public:
 			text = row->fText;
 			kinds = KindLabel(row->fKinds);
 		}
+		else if (KESCMStoryList::GetRowCount() == 0)
+		{
+			// ★The placeholder the adapter asks for while a comparison is running and found nothing
+			//   (see GetNumListItems). Left cell only: there is no kind to name.
+			text = PMString(kKESCMStoryNoEditsKey);
+			text.Translate();
+			text.SetTranslatable(kFalse);
+		}
 
 		this->SetNodeName(widgetList, text, kKESCMStoryRowTextWidgetID);
 		this->SetNodeName(widgetList, kinds, kKESCMStoryRowKindWidgetID);

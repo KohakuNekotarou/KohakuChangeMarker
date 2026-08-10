@@ -44,6 +44,8 @@
 #include "KESCMDrawEventHandler.h"	// KESCMDrawEventHandler::sOversetOn(Stop 時に Find Overset 単独 ON なら地図を残す判定)
 #include "KESCMPanelState.h"		// KESCMLoadPanelStateIfPresent(読込の主経路は起動時=KESCMPeekStartup。ここは保険)
 #include "KESCMPanelAlpha.h"		// KESCMApplyPanelTranslucency(パネル再表示時に半透明を貼り直す)
+#include "KESCMStorySection.h"		// KESCMUpdateStorySectionLabel(見出しの件数も arm 状態の表示の一部)
+#include "KESCMStoryTree.h"			// KESCMStoryTreeRebuild(一覧の中身も同じく arm 状態で変わる)
 
 /** ChangeMarker パネルのウィジェットを監視し、共有のオーバーレイ操作を駆動する。 */
 class KESCMPanelObserver : public CObserver
@@ -539,6 +541,18 @@ static void KESCMApplyPanelInfo(const InterfacePtr<IPanelControlData>& pcd)
 	IControlView* offView = pcd->FindWidget(kKESCMIconOffWidgetID);
 	if (onView  != nil) { onView->ShowView(started ? kTrue : kFalse);  onView->Enable(started ? kTrue : kFalse); }
 	if (offView != nil) { offView->ShowView(started ? kFalse : kTrue); offView->Enable(started ? kFalse : kTrue); }
+
+	// ★★Story Edits の一覧と見出しもここで作り直す。**どちらも arm 状態を映す表示だから**、
+	//   Target/Source ラベルやアイコンと同じ場所に属する。
+	// ⚠★★これを比較の側(KESCMDoMarkChangesDoc / KESCMDoClearMarks)だけに置くと**必ずずれる**——
+	//   Start は「比較 → 成功したら arm」、Stop は「マーク消去 → disarm」の順で、どちらも
+	//   一覧を作る瞬間の arm 状態が**その後の状態と逆**になる。実機で出た症状は3つとも同じ原因だった
+	//   (2026-08-10): 見出しに件数が出ない／Stop したのに "No edits" の行が残る／0件で Start しても
+	//   "No edits" が出ない。arm の切り替わりの後に必ず通るのはこの関数なので、ここで揃える。
+	//   ★比較側の呼び出しも残してある: Refresh Page Comparison は arm 状態を変えずに件数だけ
+	//   変えるので、あちらはあちらで要る。
+	KESCMStoryTreeRebuild();
+	KESCMUpdateStorySectionLabel();
 
 	// Prev/Next(変更ページナビ)の有効/無効と、その間の現在位置表示(k/N・-・空)は
 	// KESCMRefreshNavPosition に一元化(比較中かつ変更ページありのときだけ有効。無ければ無効+"/"、

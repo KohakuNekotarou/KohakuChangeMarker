@@ -56,6 +56,7 @@
 #include "KESCMStoryStamp.h"         // ストーリーの変更カウンター(テキストが編集されたか＝画素比較には出せない情報)
 #include "KESCMStoryList.h"          // 変更のあったストーリーの一覧(Story Edits セクションが読むモデル)
 #include "KESCMStoryTree.h"          // KESCMStoryTreeRebuild(モデルを作り直したら画面も作り直す)
+#include "KESCMStorySection.h"       // KESCMUpdateStorySectionLabel(見出しの件数)
 #include "KESCMCore.h"
 
 //========================================================================================
@@ -616,40 +617,14 @@ ErrorCode KESCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMStri
 		//   ページ順の並べ替えと本文先頭の取り出しはこの中で完結する。
 		KESCMStoryList::Build(targetDB, storyDiffs);
 
-		// ★モデルを作ったら画面もその場で作り直す。パネルが閉じていても、セクションが畳まれていても
-		//   呼んでよい(中で静かに諦める)＝「開いているか」を呼び手が知らなくて済む。
+		// ★モデルを作ったら画面もその場で作り直し、見出しの件数も書き換える。パネルが閉じていても、
+		//   セクションが畳まれていても呼んでよい(どちらも中で静かに諦める)＝「開いているか」を
+		//   呼び手が知らなくて済む。
+		// ★★件数はステータス行ではなく**見出し**に出す。ステータス欄は4行枠がすでに埋まっており、
+		//   もう1行増えると failed=N がはみ出す(段階3の申し送り)。見出しなら、セクションを閉じた
+		//   ままでも件数が読める。
 		KESCMStoryTreeRebuild();
-
-		int32 addedCount = 0, textCount = 0, attrCount = 0, otherCount = 0;
-		for (std::vector<KESCMStoryDiff>::const_iterator it = storyDiffs.begin(); it != storyDiffs.end(); ++it)
-		{
-			if (it->fKinds & kKESCMStoryKindAdded) ++addedCount;
-			if (it->fKinds & kKESCMStoryKindText)  ++textCount;
-			if (it->fKinds & kKESCMStoryKindAttr)  ++attrCount;
-			if (it->fKinds & kKESCMStoryKindOther) ++otherCount;
-		}
-
-		// ★TEMPORARY. This whole third line goes away in stage 3's Task 5, when the count moves to
-		//   the section heading - the status box is four lines tall and already full, so this line
-		//   is on borrowed space. It exists so that reading the sub-counters can be checked in the
-		//   application before there is any UI to show it in.
-		report.AppendW(UTF32TextChar(0x0A));	// 改行 → 3行目へ
-		report.Append("stories="); report.AppendNumber((int32)storyDiffs.size());
-		report.Append(" t="); report.AppendNumber(textCount);
-		report.Append(" a="); report.AppendNumber(attrCount);
-		report.Append(" o="); report.AppendNumber(otherCount);
-		report.Append(" +"); report.AppendNumber(addedCount);
-
-		// ★TEMPORARY too - goes away with the rest of this line in Task 5. Shows the first row of
-		//   the list, which is the only way to see that the model built anything until the tree
-		//   exists to show it. In page order, so this is the changed story nearest the front.
-		const KESCMStoryRow* firstRow = KESCMStoryList::GetRow(0);
-		if (firstRow != nil)
-		{
-			report.Append(" [");
-			report.Append(firstRow->fText);
-			report.Append("]");
-		}
+		KESCMUpdateStorySectionLabel();
 	}
 	outReport = report;
 
@@ -756,6 +731,14 @@ void KESCMDoClearMarks(IDataBase* db)
 	KESCMResetNav();
 	// Stop で sDB は nil(DropAll 済み)なので、位置表示は空・Prev/Next ボタンは無効へ戻る。
 	KESCMRefreshNavPosition();
+
+	// ★Story Edits の一覧も同じく忘れる。次の比較まで残しておくと、もう比較していない2文書の
+	//   差分を指したまま**クリックすれば飛べてしまう**行が並ぶことになる(ジャンプは段階4)。
+	// ★見出しは括弧つきの件数を落として "Story Edits" に戻る ---- KESCMUpdateStorySectionLabel が
+	//   arm 状態を見て決めるので、ここは順番に呼ぶだけでよい。
+	KESCMStoryList::Clear();
+	KESCMStoryTreeRebuild();
+	KESCMUpdateStorySectionLabel();
 }
 
 void KESCMDoSetPrintMarks(bool16 printFlag, bool16 opacity25Flag, IDataBase* db)
