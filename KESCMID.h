@@ -163,6 +163,7 @@ DECLARE_PMID(kImplementationIDSpace, kKESCMStoryTreeAdapterImpl, kKESCMPrefix + 
 DECLARE_PMID(kImplementationIDSpace, kKESCMStoryTreeWidgetMgrImpl, kKESCMPrefix + 24)	// ITreeViewWidgetMgr 実装(CTreeViewWidgetMgr派生。KESCMStoryTreeWidgetMgr.cpp)
 DECLARE_PMID(kImplementationIDSpace, kKESCMNoTipImpl, kKESCMPrefix + 25)	// ITip 実装(常に空を返す＝ツールチップを出さない。KESCMNoTip.cpp)
 DECLARE_PMID(kImplementationIDSpace, kKESCMPanelViewImpl, kKESCMPrefix + 26)	// IControlView 実装(PalettePanelView派生。ConstrainDimensions でパネルの最小サイズを守る。KESCMPanelView.cpp)
+DECLARE_PMID(kImplementationIDSpace, kKESCMStoryRowEHImpl, kKESCMPrefix + 27)	// IEventHandler 実装(TreeNodeEventHandler派生。Story Edits の行=単クリックでジャンプ・ダブルクリックでキャレット。KESCMStoryRowEH.cpp)
 
 
 // ActionIDs:

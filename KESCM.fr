@@ -308,15 +308,17 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 		}
 	},
 
-	// One row of that list. Nothing is added to the stock tree node yet: at this stage a row can be
-	// selected and nothing else, because jumping to the story is stage 4's job - that is when this
-	// boss gains its IID_IEVENTHANDLER. A Class with an empty interface list is how the product
-	// spells exactly this (spellpanel's kAutoCorrectTreeNodeWidgetBoss, and typekitinspector's).
+	// One row of that list. The stock tree node already handles what a row IS (selection, keyboard);
+	// the one interface added says where a click on it GOES - single click scrolls the story into
+	// view, double click puts the caret in it (KESCMStoryRowEH.cpp).
+	// ★The two cells inside the row are static text and do not consume clicks, so a press anywhere
+	//   along the row reaches this handler.
 	Class
 	{
 		kKESCMStoryRowWidgetBoss,
 		kTreeNodeWidgetBoss,
 		{
+			IID_IEVENTHANDLER, kKESCMStoryRowEHImpl,
 		}
 	},
 

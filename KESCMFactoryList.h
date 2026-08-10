@@ -36,6 +36,7 @@ REGISTER_PMINTERFACE(KESCMPanelView, kKESCMPanelViewImpl)	// パネルの最小�
 REGISTER_PMINTERFACE(KESCMNoTip, kKESCMNoTipImpl)	// ツールチップを出さない ITip(KESCMNoTip.cpp)
 REGISTER_PMINTERFACE(KESCMStoryTreeAdapter, kKESCMStoryTreeAdapterImpl)	// Story Edits 一覧の中身(ListTreeViewAdapter派生。KESCMStoryTreeAdapter.cpp)
 REGISTER_PMINTERFACE(KESCMStoryTreeWidgetMgr, kKESCMStoryTreeWidgetMgrImpl)	// Story Edits 一覧の行の生成と流し込み(CTreeViewWidgetMgr派生。KESCMStoryTreeWidgetMgr.cpp)
+REGISTER_PMINTERFACE(KESCMStoryRowEH, kKESCMStoryRowEHImpl)	// Story Edits の行のクリック=ジャンプ/ダブルクリック=キャレット(TreeNodeEventHandler派生。KESCMStoryRowEH.cpp)
 REGISTER_PMINTERFACE(KESCMThumbIdleTask, kKESCMThumbIdleTaskImpl)
 REGISTER_PMINTERFACE(KESCMScrollMapView, kKESCMScrollMapViewImpl)
 REGISTER_PMINTERFACE(KESCMTool, kKESCMToolImpl)
