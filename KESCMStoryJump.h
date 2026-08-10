@@ -29,6 +29,24 @@
 */
 bool16 KESCMStoryJumpToRow(int32 rowIndex);
 
+/** Double click: put the caret at the start of that story, with the Type tool active.
+
+	★This CHANGES THE USER'S ACTIVE TOOL - deliberately (user's call, 2026-08-10), because a caret
+	the user cannot type into is not the invitation to edit that a double click is asking for. It is
+	written down in How to Use for that reason. The single click above never changes the tool.
+
+	The jump already ran on the first click of the double click, so nothing scrolls here
+	(Selection::kDontScrollSelection): the frame is centred, and "somewhere on screen" would be a
+	worse answer than the one already given.
+
+	Stays silent about its refusals. Every one of them (comparison gone, story unplaced) has just
+	been reported by the single click that preceded it, and saying it twice would only overwrite the
+	message with itself.
+
+	@return kTrue when the caret was placed.
+*/
+bool16 KESCMStoryPlaceCaret(int32 rowIndex);
+
 #endif // __KESCMStoryJump_h__
 
 // End, KESCMStoryJump.h.

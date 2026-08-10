@@ -21,6 +21,20 @@
 //  user INTO the document, and a panel holding the keyboard is a panel where the tool shortcuts
 //  have quietly stopped working.
 //
+//  ***** THE DOUBLE CLICK'S ONE BIT OF STATE. ***** A double click arrives as FOUR events:
+//
+//      LButtonDn   LButtonUp   ButtonDblClk   LButtonUp
+//
+//  - so the FIRST up has already jumped by the time the double click is announced, and a SECOND up
+//  follows it. Placing the caret inside ButtonDblClk therefore does not work: the trailing up would
+//  run the jump all over again. So ButtonDblClk only RAISES A FLAG, and the trailing up reads it
+//  and places the caret instead of jumping.
+//
+//  ! The flag is cleared in LButtonDn, which is what makes it safe: every click begins with a down,
+//    so a flag that was set but never consumed cannot survive into the next click and turn an
+//    ordinary single click into something else. (KBS learned this the same way -
+//    KBSResultNodeEH.cpp:75-93.)
+//
 //========================================================================================
 
 #include "VCPlugInHeaders.h"
@@ -46,13 +60,24 @@
 #include "KESCMID.h"
 #include "KESCMStoryJump.h"
 
+namespace
+{
+
+// A file static rather than a member: row widgets are recycled as the list scrolls, so this belongs
+// to "the click going on right now" rather than to any one row. One click happens at a time.
+bool gCaretOnNextButtonUp = false;
+
+}	// anonymous namespace
+
 class KESCMStoryRowEH : public TreeNodeEventHandler
 {
 public:
 	KESCMStoryRowEH(IPMUnknown* boss) : TreeNodeEventHandler(boss) {}
 	virtual ~KESCMStoryRowEH() {}
 
+	virtual bool16 LButtonDn(IEvent* e);
 	virtual bool16 LButtonUp(IEvent* e);
+	virtual bool16 ButtonDblClk(IEvent* e);
 
 private:
 	/** Which row this click is for, or -1 when it should be left alone.
@@ -91,13 +116,42 @@ int32 KESCMStoryRowEH::RowForClick(IEvent* e, bool16 baseHandled) const
 	return nodeID->GetIndex();
 }
 
+// Nothing of this plug-in's own happens on the way DOWN. The one job here is to start every click
+// with the double-click flag down.
+bool16 KESCMStoryRowEH::LButtonDn(IEvent* e)
+{
+	gCaretOnNextButtonUp = false;
+	return TreeNodeEventHandler::LButtonDn(e);
+}
+
+// The second click of a double click. Only raises the flag - see the note at the head of this file.
+bool16 KESCMStoryRowEH::ButtonDblClk(IEvent* e)
+{
+	const bool16 result = TreeNodeEventHandler::ButtonDblClk(e);
+	if (this->RowForClick(e, result) >= 0)
+		gCaretOnNextButtonUp = true;
+	return result;
+}
+
 bool16 KESCMStoryRowEH::LButtonUp(IEvent* e)
 {
+	// Consumed here, on the way in, so that every path out of this function leaves it down.
+	const bool caretRatherThanJump = gCaretOnNextButtonUp;
+	gCaretOnNextButtonUp = false;
+
 	// Let the stock handler finish the click first (selection, the end of a drag).
 	const bool16 result = TreeNodeEventHandler::LButtonUp(e);
 
 	const int32 rowIndex = this->RowForClick(e, result);
-	if (rowIndex >= 0)
+	if (rowIndex < 0)
+		return result;
+
+	// ***** The second click of a double click puts the CARET in, rather than jumping again. *****
+	// The first click already moved the view there, so repeating it would only redo that. What is
+	// added is putting the user IN the text - Type tool, caret at the start of the story.
+	if (caretRatherThanJump)
+		KESCMStoryPlaceCaret(rowIndex);
+	else
 		KESCMStoryJumpToRow(rowIndex);
 
 	return result;
