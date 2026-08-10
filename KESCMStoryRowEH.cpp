@@ -26,9 +26,9 @@
 //      LButtonDn   LButtonUp   ButtonDblClk   LButtonUp
 //
 //  - so the FIRST up has already jumped by the time the double click is announced, and a SECOND up
-//  follows it. Placing the caret inside ButtonDblClk therefore does not work: the trailing up would
+//  follows it. Selecting the story inside ButtonDblClk therefore does not work: the trailing up would
 //  run the jump all over again. So ButtonDblClk only RAISES A FLAG, and the trailing up reads it
-//  and places the caret instead of jumping.
+//  and selects the story instead of jumping.
 //
 //  ! The flag is cleared in LButtonDn, which is what makes it safe: every click begins with a down,
 //    so a flag that was set but never consumed cannot survive into the next click and turn an
@@ -65,7 +65,7 @@ namespace
 
 // A file static rather than a member: row widgets are recycled as the list scrolls, so this belongs
 // to "the click going on right now" rather than to any one row. One click happens at a time.
-bool gCaretOnNextButtonUp = false;
+bool gSelectOnNextButtonUp = false;
 
 }	// anonymous namespace
 
@@ -120,7 +120,7 @@ int32 KESCMStoryRowEH::RowForClick(IEvent* e, bool16 baseHandled) const
 // with the double-click flag down.
 bool16 KESCMStoryRowEH::LButtonDn(IEvent* e)
 {
-	gCaretOnNextButtonUp = false;
+	gSelectOnNextButtonUp = false;
 	return TreeNodeEventHandler::LButtonDn(e);
 }
 
@@ -129,15 +129,15 @@ bool16 KESCMStoryRowEH::ButtonDblClk(IEvent* e)
 {
 	const bool16 result = TreeNodeEventHandler::ButtonDblClk(e);
 	if (this->RowForClick(e, result) >= 0)
-		gCaretOnNextButtonUp = true;
+		gSelectOnNextButtonUp = true;
 	return result;
 }
 
 bool16 KESCMStoryRowEH::LButtonUp(IEvent* e)
 {
 	// Consumed here, on the way in, so that every path out of this function leaves it down.
-	const bool caretRatherThanJump = gCaretOnNextButtonUp;
-	gCaretOnNextButtonUp = false;
+	const bool selectRatherThanJump = gSelectOnNextButtonUp;
+	gSelectOnNextButtonUp = false;
 
 	// Let the stock handler finish the click first (selection, the end of a drag).
 	const bool16 result = TreeNodeEventHandler::LButtonUp(e);
@@ -146,11 +146,11 @@ bool16 KESCMStoryRowEH::LButtonUp(IEvent* e)
 	if (rowIndex < 0)
 		return result;
 
-	// ***** The second click of a double click puts the CARET in, rather than jumping again. *****
+	// ***** The second click of a double click SELECTS THE STORY, rather than jumping again. *****
 	// The first click already moved the view there, so repeating it would only redo that. What is
-	// added is putting the user IN the text - Type tool, caret at the start of the story.
-	if (caretRatherThanJump)
-		KESCMStoryPlaceCaret(rowIndex);
+	// added is handing the user the text itself - Type tool, the whole story selected.
+	if (selectRatherThanJump)
+		KESCMStorySelectWholeStory(rowIndex);
 	else
 		KESCMStoryJumpToRow(rowIndex);
 

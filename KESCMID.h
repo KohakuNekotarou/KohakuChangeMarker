@@ -47,9 +47,10 @@
 														//   ③★★**Story Edits(パネル下部の開閉セクション) = minor を上げた理由。★2026-08-10 に完成(段階1〜4)＝提出説明に書いてよい。**
 														//     何をするものか: 画素比較は「このページは違って見える」までしか言えない。Story Edits は Target と Source の各ストーリーの変更カウンター(ITextModel の4本)を突き合わせ、**変更のあったストーリーを一覧**して「テキストが変わったのか・書式だけか・表などが変わったのか」を区別する。行はページ順で、左に本文の先頭、右に種類(Text / Attr / Other / Added)。
 														//     ⚠**数字(4->6 のようなカウンター値)は出さない** = カウンターは編集回数ではなく状態のバージョン番号なので、差の大きさに人向けの意味が無い(2026-08-08 実測)。
-														//     行の操作: **単クリック=そのストーリーの先頭フレームを画面中央に出す**(Source 窓と Pages パネルは Prev/Next と同じ流儀で連動)。**ダブルクリック=その先頭にキャレットを立てる**。⚠ダブルクリックは**アクティブツールを文字ツールに変える**(琥珀のツールは外れる)＝キャレットを立てても打てなければ意味が無いため。How to Use にも明記済み。
+														//     行の操作: **単クリック=そのストーリーの先頭フレームを画面中央に出す**(Source 窓と Pages パネルは Prev/Next と同じ流儀で連動)。**ダブルクリック=そのストーリーの全文を選択する**(2026-08-10 ユーザー指示で「先頭にキャレット」から変更＝行は「このストーリーが変わった」という報告なので、次にやりたいのはコピー・書式変更・差し替えのいずれかで、そのどれもが選択で足りる)。⚠ダブルクリックは**アクティブツールを文字ツールに変える**(琥珀のツールは外れる)＝選択しても操作できなければ意味が無いため。How to Use にも明記済み。
+														//     一覧の見出し: **UID / Story / Change の3列**(2026-08-10 ユーザー要望)。★行のセルと同じ Frame・同じ binding を .fr で与えることだけが列の揃いを保証している。行の間の区切り線は**消してある**(kKESCMStoryRowViewImpl。DVTreeNodeControlView は行高14px以上で勝手に描く)。
 //     現況: **段階1〜4 すべて完了**(2026-08-10)。計画=docs/superpowers/plans/2026-08-09-kescm-story-edits-stage3.md と ...-2026-08-10-kescm-story-edits-stage4.md／設計=docs/superpowers/specs/2026-08-09-kescm-story-edit-section-design.md
-														//     ⚠**パネルが 153→173px 高くなっている**(開閉ボタンの帯)。これは公開版 1.3.0 から見て目に見える変更なので、提出説明に書く価値がある。
+														//     ⚠**パネルが 153→185px 高くなっている**(開閉ボタンの帯 20px ＋ 猫イラストを収めるための 12px。2026-08-10)。これは公開版 1.3.0 から見て目に見える変更なので、提出説明に書く価値がある。★同時に**ステータス欄が右端まで広がった**(180→216)＝猫が下の帯へ移った分。
 														//   ■1.3.1 で撤去したもの: 「Translucent Toolbox」トグル(フローティング中の**ツールボックス**を半透明にする)。★★**提出説明に「機能を削除した」と書かないこと** ＝ **提出した 1.3.0 のビルドに最初から入っていない**(2026-08-07 ユーザー明言)ので、公開版から見れば存在しなかった機能。ActionID +38 は欠番のまま再利用しない。
 														//   ⚠**①②とも「版数が 1.3.0 だった時期にコードへ入れた」もの**だが、提出した 1.3.0 のビルド(commit 5ff22c5 時点)には入っていない。**版数コメントが載っている位置で「提出済みか」を判断しない**。
 														//
@@ -164,7 +165,12 @@ DECLARE_PMID(kImplementationIDSpace, kKESCMStoryTreeAdapterImpl, kKESCMPrefix + 
 DECLARE_PMID(kImplementationIDSpace, kKESCMStoryTreeWidgetMgrImpl, kKESCMPrefix + 24)	// ITreeViewWidgetMgr 実装(CTreeViewWidgetMgr派生。KESCMStoryTreeWidgetMgr.cpp)
 DECLARE_PMID(kImplementationIDSpace, kKESCMNoTipImpl, kKESCMPrefix + 25)	// ITip 実装(常に空を返す＝ツールチップを出さない。KESCMNoTip.cpp)
 DECLARE_PMID(kImplementationIDSpace, kKESCMPanelViewImpl, kKESCMPrefix + 26)	// IControlView 実装(PalettePanelView派生。ConstrainDimensions でパネルの最小サイズを守る。KESCMPanelView.cpp)
-DECLARE_PMID(kImplementationIDSpace, kKESCMStoryRowEHImpl, kKESCMPrefix + 27)	// IEventHandler 実装(TreeNodeEventHandler派生。Story Edits の行=単クリックでジャンプ・ダブルクリックでキャレット。KESCMStoryRowEH.cpp)
+DECLARE_PMID(kImplementationIDSpace, kKESCMStoryRowEHImpl, kKESCMPrefix + 27)	// IEventHandler 実装(TreeNodeEventHandler派生。Story Edits の行=単クリックでジャンプ・ダブルクリックでストーリー全文を選択。KESCMStoryRowEH.cpp)
+// ★kKESCMPrefix + 28 は kKESCMStoryRowViewImpl の跡地(2026-08-11 に作って同日撤去)。一覧の行の間に
+//   フレームワークが描く区切り線を消すための IControlView(TreeNodeControlView 派生・手本は製品の
+//   TimingPanelTreeNodeView.cpp)だったが、**線があった方が読みやすいというユーザー判断**で線ごと戻した
+//   ＝実装の失敗ではなく、見比べた結果の採否。⚠**同じ発想で作り直す前に KESCM.fr の行 boss のコメントを読むこと。**
+//   番号は次の Impl に使ってよい(ActionID と違い .indk のような外部保存が参照しない)。
 
 
 // ActionIDs:
@@ -254,6 +260,15 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMStoryRowTextWidgetID, kKESCMPrefix + 48)	// �
 DECLARE_PMID(kWidgetIDSpace, kKESCMStoryRowKindWidgetID, kKESCMPrefix + 49)	// 行の右=変わった種類(Text / Attr / Other / Added)
 DECLARE_PMID(kWidgetIDSpace, kKESCMStorySectionLabelWidgetID, kKESCMPrefix + 50)	// 上ペインの三角の隣=「Story Edits (3)」。件数は C++ が実行時に付ける
 DECLARE_PMID(kWidgetIDSpace, kKESCMStoryRowWidgetID, kKESCMPrefix + 51)		// 行テンプレート自身。★GetWidgetTypeForNode が返すのはこれ
+DECLARE_PMID(kWidgetIDSpace, kKESCMStoryRowUIDWidgetID, kKESCMPrefix + 52)	// ★行の左端=ストーリーの UID(10進。2026-08-10 ユーザー要望「UID・テキスト・変更部分」)。行の同一性を目で追える識別子＝本文が同じ文言でも別のストーリーだと分かる
+// ★一覧の列見出し(2026-08-10 ユーザー要望「一番上の列に UID / Text / 変更のようなのを付けて欲しい」)。
+//   ツリーの中ではなく**下ペインの中でツリーの上**に置く固定の帯＝行をスクロールしても動かない。
+//   ★3つとも行のセルと**同じ x 座標・同じ binding**を与えてある(KESCM.fr)。それが列が揃い続ける唯一の
+//   保証で、片方だけ動かすと可変幅パネルでずれる。
+DECLARE_PMID(kWidgetIDSpace, kKESCMStoryHeaderUIDWidgetID, kKESCMPrefix + 53)	// 見出しの左「UID」(行の kKESCMStoryRowUIDWidgetID と同じ 8〜48・kBindLeft)
+DECLARE_PMID(kWidgetIDSpace, kKESCMStoryHeaderTextWidgetID, kKESCMPrefix + 54)	// 見出しの中「Story」(行の kKESCMStoryRowTextWidgetID と同じ 52〜154・kBindLeft|kBindRight＝広げるとここだけ伸びる)
+DECLARE_PMID(kWidgetIDSpace, kKESCMStoryHeaderKindWidgetID, kKESCMPrefix + 55)	// 見出しの右「Change」(行の kKESCMStoryRowKindWidgetID と同じ 154〜216・kBindRight・右寄せ)
+DECLARE_PMID(kWidgetIDSpace, kKESCMStoryHeaderRuleWidgetID, kKESCMPrefix + 56)	// 見出しと一覧を分ける 1px の罫線。stock の RuleWidget(Widgets.fh:887 / kRuleWidgetBoss)に kInterfaceSeparatorColor を渡す
 //DECLARE_PMID(kWidgetIDSpace, kKESCMWidgetID, kKESCMPrefix + 2)
 //DECLARE_PMID(kWidgetIDSpace, kKESCMWidgetID, kKESCMPrefix + 3)
 //DECLARE_PMID(kWidgetIDSpace, kKESCMWidgetID, kKESCMPrefix + 4)
@@ -397,6 +412,13 @@ DECLARE_PMID(kScriptInfoIDSpace, kKESCMStatusPropertyScriptElement, kKESCMPrefix
 #define kKESCMStoryKindOtherKey		kKESCMStringPrefix "kKESCMStoryKindOtherKey"	// 行の右=上記以外(実測では出にくい。KESCMStoryStamp.h 参照)
 #define kKESCMStoryKindAddedKey		kKESCMStringPrefix "kKESCMStoryKindAddedKey"	// 行の右=Source 側に相手が無い
 
+// 一覧の列見出し(2026-08-10)。★中の語をそのまま使わない: 2列目の見出しは "Text" ではなく "Story"、
+// 3列目は "Kind" ではなく "Change"(ユーザー指定)。理由は語の衝突——3列目に出る**値**が "Text" なので、
+// 2列目の見出しを "Text" にすると同じ語が1行の中で別の意味で2回出る。
+#define kKESCMStoryColUIDKey		kKESCMStringPrefix "kKESCMStoryColUIDKey"		// 見出し左=ストーリーの UID
+#define kKESCMStoryColTextKey		kKESCMStringPrefix "kKESCMStoryColTextKey"		// 見出し中=本文の書き出し
+#define kKESCMStoryColKindKey		kKESCMStringPrefix "kKESCMStoryColKindKey"		// 見出し右=変わった種類
+
 // PNG アイコンリソース(プラグインに埋め込み; .pln とは別ファイルでは出荷しない)。
 #define kKESCMIconOnResID	1001
 #define kKESCMIconOffResID	1002
@@ -414,6 +436,11 @@ DECLARE_PMID(kScriptInfoIDSpace, kKESCMStatusPropertyScriptElement, kKESCMPrefix
 // kKBSResultRowHeight と同じ 19＝パレットフォントでの実測値で、SDK の kCC2016PanelTreeNodeHeight(=22)ではない。
 #define kKESCMStoryRowHeight	19
 
+// 一覧の列見出しの帯の高さ(ラベル 14px ＋ 罫線 1px ＋ 上下の余白 3px。2026-08-10)。
+// ★行高と同じく .fr と C++ の両方がこの1つの定数を読む＝帯を厚くすれば、ツリーの位置も
+//   セクションの最小・既定の高さも同時に動く(KESCM.fr / KESCMStorySection.cpp)。
+#define kKESCMStoryHeaderHeight	18
+
 // ★★パネルの最小サイズ(2026-08-10 ユーザー指定「今のを最小の設定で、パネルの大きさは固定ではなく」)。
 //   PanelList を kIsResizable にしたので、下限を守るのは KESCMPanelView::ConstrainDimensions。
 // ・幅 = これまでの固定幅そのまま。中の widget はすべて縁に束縛してあるので広げる方向は自由に伸びるが、
@@ -422,8 +449,10 @@ DECLARE_PMID(kScriptInfoIDSpace, kKESCMStatusPropertyScriptElement, kKESCMPrefix
 //   パネルは固定座標のコントロール群だけなので、伸ばしても下に空白の帯ができるだけになる。
 //   開いている間の下限は「上ペイン + セクションの最小(= .fr の Bottom snap)」で、C++ 側は
 //   分割バーに実際の snap 値を聞く(数字を2か所に書かない)。
+// ★2026-08-10: 173 → 185。Story Edits の帯に猫イラストを下ろした分(20px の帯では 32×32 の絵が
+//   収まらない)。帯が 12px 高くなり、代わりにステータス欄が右端まで(180→216)伸びた。
 #define kKESCMPanelMinWidth		224
-#define kKESCMPanelTopPaneHeight	173
+#define kKESCMPanelTopPaneHeight	185
 
 // ✓チェックマークカーソルのリソースID。CursorSpec の CursorID として使い、HOTC(このID)でホットスポット
 // (✓の折れ点=座標取得点)を指定する。★2026-07-25: 画像はコールバック描画から PNGC リソースへ変更

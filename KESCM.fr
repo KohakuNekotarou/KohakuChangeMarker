@@ -310,9 +310,16 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 
 	// One row of that list. The stock tree node already handles what a row IS (selection, keyboard);
 	// the one interface added says where a click on it GOES - single click scrolls the story into
-	// view, double click puts the caret in it (KESCMStoryRowEH.cpp).
-	// ★The two cells inside the row are static text and do not consume clicks, so a press anywhere
+	// view, double click selects the whole story (KESCMStoryRowEH.cpp).
+	// ★The three cells inside the row are static text and do not consume clicks, so a press anywhere
 	//   along the row reaches this handler.
+	// ★★THE LINE BETWEEN ROWS IS THE FRAMEWORK'S, AND IT STAYS. DVTreeNodeControlView draws a
+	//   separator under every row taller than 14px on its own (DVTreeNodeControlView.h:55), which is
+	//   every row here. ⚠2026-08-11: it was turned off for a few minutes - a KESCMStoryRowView
+	//   (TreeNodeControlView subclass calling the protected SetDrawNodeSeparatorOnOff(kFalse), the
+	//   way the product's TimingPanelTreeNodeView.cpp does it) was written, built and then removed,
+	//   because seeing it without the lines settled the question: **the user finds the list easier to
+	//   read WITH them**. Kept here so that nobody re-derives the same removal from the same premise.
 	Class
 	{
 		kKESCMStoryRowWidgetBoss,
@@ -1254,7 +1261,26 @@ resource KESCMStoryRowWidget(kKESCMStoryRowRsrcID + index_enUS)
 	kTrue, kTrue,						// Visible, Enabled
 	"",									// Panel name
 	{
-		// Left: the story's opening words. Ellipsized in the MIDDLE, the way this panel's
+		// ★Left: the story's UID, in decimal (user's request, 2026-08-10: "UID, text, what changed").
+		//   It is the one thing on the row that is certainly unique - two stories can open with the
+		//   same words, and the kind column repeats by design. ★kBindLeft only: a fixed column at the
+		//   left edge, so widening the panel gives the space to the text cell rather than to a number
+		//   that is never more than a few digits wide.
+		KESCMStoryRowCellWidget
+		(
+			kKESCMStoryRowUIDWidgetID,		// WidgetId
+			kPMRsrcID_None,					// RsrcId
+			kBindLeft,						// Frame binding: stay at the row's left edge
+			Frame(8, 1, 48, kKESCMStoryRowHeight - 2),	// Frame (40px = room for 5-6 digits at the palette font)
+			kTrue, kTrue,					// Visible, Enabled
+			kAlignLeft,						// Alignment
+			kDontEllipsize, kFalse,			// Ellipsize style, Convert ampersands
+			"",								// Text Control Data
+			0,								// WidgetId for associated control for shortcut focus
+			kPaletteWindowSystemScriptFontId, kPaletteWindowSystemScriptFontId,
+		),
+
+		// Middle: the story's opening words. Ellipsized in the MIDDLE, the way this panel's
 		// Target / Source lines treat a document name - the start and the end both survive.
 		// ★Convert ampersands = kFalse. This cell shows text taken out of the document, and a lone
 		//   '&' in it is not an accelerator: "Q&A" has to read as "Q&A" (memory
@@ -1268,7 +1294,16 @@ resource KESCMStoryRowWidget(kKESCMStoryRowRsrcID + index_enUS)
 			kKESCMStoryRowTextWidgetID,		// WidgetId
 			kPMRsrcID_None,					// RsrcId
 			kBindLeft | kBindRight,			// Frame binding: take the space the kind cell leaves
-			Frame(4, 1, 158, kKESCMStoryRowHeight - 2),	// Frame
+			// ★Left inset 8, the same margin the rest of the panel uses (user's call, 2026-08-10:
+			//   "make the padding at the bottom the same as at the top"). Target / Source
+			//   (Frame(8, ...)), the status block (Frame(8, 76, ...)) and the tool button
+			//   (Frame(8, 48, ...)) are all 8; the list alone sat at 4 and read as cramped.
+			//   ★Right edge 158 -> 154: the 4px comes off this cell so the kind column keeps its
+			//   width (see its comment below).
+			//   ★★Left edge 8 -> 52 (2026-08-10): the UID column above now holds the row's left
+			//     margin, and this cell starts 4px after it. This is the cell that gives way - it is
+			//     the only one that grows when the panel is widened.
+			Frame(52, 1, 154, kKESCMStoryRowHeight - 2),	// Frame
 			kTrue, kTrue,					// Visible, Enabled
 			kAlignLeft,						// Alignment
 			kEllipsizeMiddle, kFalse,		// Ellipsize style, Convert ampersands
@@ -1284,7 +1319,11 @@ resource KESCMStoryRowWidget(kKESCMStoryRowRsrcID + index_enUS)
 			kKESCMStoryRowKindWidgetID,		// WidgetId
 			kPMRsrcID_None,					// RsrcId
 			kBindRight,						// Frame binding: stay at the row's right edge
-			Frame(158, 1, 220, kKESCMStoryRowHeight - 2),	// Frame
+			// ★Right inset 8 (220 -> 216), matching the panel's other right edges: Target / Source
+			//   end at 216, so do Next and both cat illustrations. ★The left edge moves with it
+			//   (158 -> 154) so this column stays 62px wide - two words ("Text Attr") have to fit,
+			//   and kDontEllipsize means anything wider is simply clipped.
+			Frame(154, 1, 216, kKESCMStoryRowHeight - 2),	// Frame
 			kTrue, kTrue,					// Visible, Enabled
 			kAlignRight,					// Alignment
 			kDontEllipsize, kFalse,			// Ellipsize style, Convert ampersands
@@ -1321,7 +1360,7 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 	kKESCMPanelWidgetID,			// WidgetID
 	kPMRsrcID_None,					// RsrcID
 	kBindNone,						// Binding
-	0, 0, 224, 173,					// Frame: left, top, right, bottom (ステータス欄を3→4行に拡張した分、下端を +17px。イラストも下端145へ下寄せ。ステータス欄を+12px広げた分、右端 192→204。2026-07-15 にメッセージ欄を+10px広げ 204→214。2026-08-06 にさらに+10px広げ 214→224=中の widget も全部 +10px 追随させてある。★2026-08-09 に下端 153→173=Story Edits セクションの開閉ボタンを置く 20px の帯を新設した分。既存 widget は1つも動かしていない)
+	0, 0, 224, 185,					// Frame: left, top, right, bottom (ステータス欄を3→4行に拡張した分、下端を +17px。イラストも下端145へ下寄せ。ステータス欄を+12px広げた分、右端 192→204。2026-07-15 にメッセージ欄を+10px広げ 204→214。2026-08-06 にさらに+10px広げ 214→224=中の widget も全部 +10px 追随させてある。★2026-08-09 に下端 153→173=Story Edits セクションの開閉ボタンを置く 20px の帯を新設した分。★2026-08-10 に 173→185=その帯へ猫イラストを下ろした分(20px の帯には 32×32 の絵が収まらない)。猫が空けた場所はステータス欄が右へ 180→216 で引き取った)
 	kTrue, kTrue,					// Visible, Enabled
 	kFalse,							// Erase background
 	kInterfacePaletteFill,			// Erase to color
@@ -1343,17 +1382,17 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 	(
 		kKESCMSplitterWidgetID, kPMRsrcID_None,
 		kBindAll,
-		Frame(0, 0, 224, 173)
+		Frame(0, 0, 224, 185)
 		kTrue, kTrue,
 		"",
 		kFirstWidgetIsTop,
 		kTrue,							// Top pane visible
 		kFalse,							// ★Bottom pane hidden = the section starts closed
-		173,							// Splitter position
+		185,							// Splitter position
 		100,							// Splitter init percentage
-		173,							// Top snap = the top pane is never squeezed below its designed height
+		185,							// Top snap = the top pane is never squeezed below its designed height
 		kDontSnapSlider,
-		60,								// Bottom snap = smallest useful height for the section
+		60 + kKESCMStoryHeaderHeight,	// Bottom snap = smallest useful height for the section. ★+18 (2026-08-10): the heading band is always there, so the floor has to rise with it or the smallest section shows two rows where it used to show three
 		kDontSnapSlider,
 		kHorizontalSplitter,
 		5,								// Splitter radius
@@ -1370,7 +1409,7 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 			(
 				kKESCMTopPaneWidgetID, kPMRsrcID_None,
 				kBindAll,
-				Frame(0, 0, 224, 173)
+				Frame(0, 0, 224, 185)
 				kTrue, kTrue,
 				"",
 				{
@@ -1501,7 +1540,12 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 			// ★2026-08-10: kBindRight を足した。可変幅になったので、右寄せの意図を binding に持たせないと
 			//   イラストだけ元の位置に取り残され、右へ伸びたステータス欄と重なる。
 			kBindRight | kBindTop,
-			Frame(184, 113, 216, 145)	// 32×32・右寄せ。ステータス欄(4行・下端145)に合わせて下寄せ(top113/bottom145、パネル下端153まで8pxマージン)。ステータス欄+12px広げた分、右へ152→164。パネル+10px 拡張で 164→174(2026-07-15)→184(2026-08-06)。ON側と同座標
+			// ★★2026-08-10: Story Edits の帯へ下ろした(ユーザー指定「Story Edits の行に猫のイラストを
+			//   置いて欲しい。猫が下に降りたぶんパネルのメッセージを横に広げられたら広げて欲しい」)。
+			//   ⚠帯は元々 20px で、この絵は 32×32 のうち猫が縦いっぱいに描かれている(ツールアイコンと
+			//     違って切り落としてよい余白が無い)ため、帯の方を 32px に広げた＝パネル下端 173→185。
+			//   ★空いた 180〜216 はステータス欄が引き取る(下の kKESCMStatusTextWidgetID)。
+			Frame(178, 149, 210, 181)	// 32×32。★2026-08-10 に「もう少し左上へ」(ユーザー指定)＝帯ぴったりの (184,153,216,185) から上へ4px・左へ6px(4px 戻した後、さらに 2px)。⚠帯(32px)と絵(32px)が同じ高さなので**帯の中では上下に余白を作れない**——上へ出た 4px は、ステータス欄(下端145)との 8px マージンを分け合っている。ON側と同座標
 			kTrue, kTrue,
 			kADBEIconSuiteButtonType,
 		),
@@ -1510,7 +1554,7 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 			kKESCMIconOnWidgetID,
 			kKESCMIconOnResID, kKESCMPluginID,
 			kBindRight | kBindTop,		// ★OFF 側と同じ理由(2026-08-10)
-			Frame(184, 113, 216, 145)	// 32×32・右寄せ。ステータス欄(4行・下端145)に合わせて下寄せ(top113/bottom145、パネル下端153まで8pxマージン)。ステータス欄+12px広げた分、右へ152→164。パネル+10px 拡張で 164→174(2026-07-15)→184(2026-08-06)。OFF側と同座標
+			Frame(178, 149, 210, 181)	// ★OFF 側と同座標(移設と位置の理由はあちらのコメント。2026-08-10 に Story Edits の帯へ)
 			kFalse, kTrue,
 			kADBEIconSuiteButtonType,
 		),
@@ -1521,7 +1565,7 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 			kKESCMStatusTextWidgetID,
 			kPMRsrcID_None,
 			kBindLeft | kBindRight | kBindTop,
-			Frame(8, 76, 180, 145)		// 右180まで=イラスト(184-216)と横並び(4px間隔)。下端を 128→145 に拡張(3→4行)。メッセージ部分を+12px広げるためパネル全体も192→204に拡張(2026-07-14)。+10px拡張で右 160→170・パネル204→214(2026-07-15)。さらに+10pxで右 170→180・パネル214→224(2026-08-06)
+			Frame(8, 76, 216, 145)		// ★2026-08-10: 右 180→216。猫イラストが Story Edits の帯へ下りて、その 36px が空いた(ユーザー指定「猫が下に降りたぶん横に広げて」)。右端 216 は Target/Source 行・Next ボタンと揃う。★4行のまま行あたりの文字数が増えるので、`failed=N` が付いても折り返しに余裕ができる。以下は旧記述: 右180まで=イラスト(184-216)と横並び(4px間隔)。下端を 128→145 に拡張(3→4行)。メッセージ部分を+12px広げるためパネル全体も192→204に拡張(2026-07-14)。+10px拡張で右 160→170・パネル204→214(2026-07-15)。さらに+10pxで右 170→180・パネル214→224(2026-08-06)
 			kTrue, kTrue,
 			// ★ampersand 変換は切る(理由は Target のコメント)。ここは Save Panel Settings /
 			//   Save Check & Register / Export Changed Pages が**保存先フルパス**を出す行なので
@@ -1540,7 +1584,8 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 		//   (LinksUIViews_enUS.fr:135-142 は splitter の下ペインではなく上ペインの内側)。
 		// ★絵は自前の PNG を持たず、本体の開閉三角(kTreeBranchCollapsed/ExpandedRsrcID)を借りる。
 		//   向きの差し替えは KESCMUpdateStorySectionButtonState が実状態から行う。
-		// ★この 20px の帯のためにパネルの下端を 153→173 にした(既存 widget は1つも動いていない)。
+		// ★この帯のためにパネルの下端を 153→173 にした(2026-08-09。既存 widget は1つも動いていない)。
+		//   ★さらに 173→185 へ(2026-08-10)＝猫イラスト(32×32)を右端に下ろすため、帯自体を 20→32px に。
 		KESCMStorySectionToggleWidget
 		(
 			kKESCMStorySectionToggleWidgetID,
@@ -1551,7 +1596,7 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 			//   ——ドックに入れて開閉したときに実際にそうなった。「下端の帯に置く」という意図は
 			//   Frame の座標が担っていて、binding が担う話ではなかった。
 			kBindLeft | kBindTop,
-			Frame(4, 153, 20, 169)		// 上ペイン下端の帯(153〜173)。左端4pxはステータス欄(8)より少し内側
+			Frame(4, 161, 20, 177)		// 上ペイン下端の帯(153〜185)の中で縦センタリング(16px の絵なので上下8pxずつ)。左端4pxはステータス欄(8)より少し内側。★帯は 2026-08-10 に 20→32px(猫イラストを下ろした)
 			kTrue, kTrue,
 			kADBEIconSuiteButtonType,
 		),
@@ -1566,7 +1611,7 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 			kKESCMStorySectionLabelWidgetID,
 			kSysStaticTextPMRsrcId,
 			kBindLeft | kBindRight | kBindTop,	// 可変幅で見出しの帯も一緒に伸びる(2026-08-10)
-			Frame(24, 155, 216, 169)	// 三角(4〜20)の右。上下は帯の中で文字の高さぶん
+			Frame(24, 162, 174, 176)	// 三角(4〜20)の右。上下は帯(153〜185)の中で縦センタリング。★右端 216→174 は猫イラスト(178〜210)の 4px 手前。両方とも kBindRight なので、パネルを広げても間隔は保たれる(2026-08-10)
 			kTrue, kTrue,
 			kAlignLeft, kDontEllipsize, kFalse,
 			kKESCMStorySectionLabelKey,
@@ -1584,19 +1629,104 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 			(
 				kKESCMStorySectionWidgetID, kPMRsrcID_None,
 				kBindAll,
-				Frame(0, 173, 224, 273)
+				Frame(0, 185, 224, 285 + kKESCMStoryHeaderHeight)	// ★下端 +18px(2026-08-10): 列見出しの帯を足しても、見える行数が減らないようにした
 				kFalse, kTrue,			// ★Visible = kFalse: starts closed
 				"",
 				{
-					// The list of changed stories, filling the section. ★Its Frame is in the
-					// LOWER PANE's own coordinates - (0,0) is the top left of the section, not
-					// of the panel.
+					// ★★★COLUMN HEADINGS (user's request, 2026-08-10: "put UID / Text / what changed
+					//   at the top"). Three labels and a rule, in the SECTION - deliberately not in the
+					//   tree.
+					//
+					//   ★Why outside the tree: a heading that is a row scrolls away with the rows, and
+					//     the framework would also treat it as selectable and clickable. Sitting in the
+					//     lower pane above the tree, it stays put and takes no part in selection.
+					//
+					//   ★★What keeps the headings lined up with the cells below them is that each one
+					//     repeats its cell's Frame and its cell's binding EXACTLY (compare the row
+					//     resource above): 8..48 fixed at the left, 52..154 stretching, 154..216 fixed
+					//     at the right. Change a column here and the row has to change with it - the
+					//     agreement is only in these numbers, nothing enforces it.
+					//
+					//   ★The heading cells are KESCMStoryRowCellWidget for the same reason the row's
+					//     are: that boss stays silent on hover (kKESCMStoryRowCellBoss). They also take
+					//     the same font, so heading and value are drawn identically.
+					KESCMStoryRowCellWidget
+					(
+						kKESCMStoryHeaderUIDWidgetID,	// WidgetId
+						kPMRsrcID_None,					// RsrcId
+						kBindLeft,						// Frame binding: as the UID cell (a fixed left column)
+						Frame(8, 2, 48, kKESCMStoryHeaderHeight - 2),	// Frame
+						kTrue, kTrue,					// Visible, Enabled
+						kAlignLeft,						// Alignment
+						kDontEllipsize, kFalse,			// Ellipsize style, Convert ampersands
+						kKESCMStoryColUIDKey,			// Text Control Data
+						0,								// WidgetId for associated control for shortcut focus
+						kPaletteWindowSystemScriptFontId, kPaletteWindowSystemScriptFontId,
+					),
+					KESCMStoryRowCellWidget
+					(
+						kKESCMStoryHeaderTextWidgetID,	// WidgetId
+						kPMRsrcID_None,					// RsrcId
+						kBindLeft | kBindRight,			// Frame binding: as the text cell (the one that grows)
+						Frame(52, 2, 154, kKESCMStoryHeaderHeight - 2),	// Frame
+						kTrue, kTrue,					// Visible, Enabled
+						kAlignLeft,						// Alignment
+						kDontEllipsize, kFalse,			// Ellipsize style, Convert ampersands
+						kKESCMStoryColTextKey,			// Text Control Data
+						0,								// WidgetId for associated control for shortcut focus
+						kPaletteWindowSystemScriptFontId, kPaletteWindowSystemScriptFontId,
+					),
+					KESCMStoryRowCellWidget
+					(
+						kKESCMStoryHeaderKindWidgetID,	// WidgetId
+						kPMRsrcID_None,					// RsrcId
+						kBindRight,						// Frame binding: as the kind cell (a fixed right column)
+						Frame(154, 2, 216, kKESCMStoryHeaderHeight - 2),	// Frame
+						kTrue, kTrue,					// Visible, Enabled
+						kAlignRight,					// Alignment: right, as the values under it
+						kDontEllipsize, kFalse,			// Ellipsize style, Convert ampersands
+						kKESCMStoryColKindKey,			// Text Control Data
+						0,								// WidgetId for associated control for shortcut focus
+						kPaletteWindowSystemScriptFontId, kPaletteWindowSystemScriptFontId,
+					),
+
+					// ★The line under the headings: a panel one pixel tall that erases itself to the
+					//   separator colour. Drawing nothing else, that erase IS the line.
+					//   ★kInterfaceSeparatorColor is the right colour by name: InterfaceColorDefines.h:105
+					//     describes it as "Used in tree node separators and HEADER SEPARATORS IN
+					//     MULTICOLUMN LISTS" - this exact job. Being an interface colour, it follows
+					//     the light / dark UI theme without any code here.
+					//   ⚠★2026-08-10: this WAS a stock RuleWidget (Widgets.fh:887 / kRuleWidgetBoss),
+					//     which takes a colour index and exists to draw a rule. It parsed, built and
+					//     drew NOTHING (measured - the user's capture shows the headings with no line
+					//     under them). ★It has no .fr instance anywhere in the SDK or in source/open,
+					//     which is the warning that was there to read: a stock type nobody instantiates
+					//     is not a supported path. ErasablePrimaryResourcePanelWidget is used by the
+					//     product and by this very panel's tree (kTrue + kInterfacePaletteFill below).
+					ErasablePrimaryResourcePanelWidget
+					(
+						__FILE__, __LINE__,
+						kKESCMStoryHeaderRuleWidgetID,	// WidgetId
+						kPMRsrcID_None,					// RsrcId
+						kBindLeft | kBindRight | kBindTop,	// Frame binding: full width, stays at the top
+						Frame(0, kKESCMStoryHeaderHeight - 1, 224, kKESCMStoryHeaderHeight)	// Frame: 1px tall, at the bottom of the band
+						kTrue, kTrue,					// Visible, Enabled
+						kTrue,							// Erase before draw - this is what paints the line
+						kInterfaceSeparatorColor,		// Erase to color
+						"",								// Panel name
+						{
+						}
+					),
+
+					// The list of changed stories, filling the rest of the section. ★Its Frame is in
+					// the LOWER PANE's own coordinates - (0,0) is the top left of the section, not
+					// of the panel - so the heading band's height is where the list now starts.
 					// Field order is TreeViewWidget's, copied from KBS.fr:1142-1165.
 					KESCMStoryTreeWidget
 					(
 						kKESCMStoryTreeWidgetID, kPMRsrcID_None,	// WidgetId, RsrcId
 						kBindAll,						// Frame binding: grow with the section
-						Frame(0, 0, 224, 100)			// Frame (the whole lower pane)
+						Frame(0, kKESCMStoryHeaderHeight, 224, 100 + kKESCMStoryHeaderHeight)	// Frame (the lower pane below the headings)
 						kTrue, kTrue,					// Visible, Enabled
 						kTrue,							// EraseBeforeDraw
 						kInterfacePaletteFill,			// InterfaceColor

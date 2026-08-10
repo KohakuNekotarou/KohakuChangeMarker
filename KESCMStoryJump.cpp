@@ -115,9 +115,9 @@ bool16 KESCMStoryJumpToRow(int32 rowIndex)
 }
 
 //----------------------------------------------------------------------------------------
-// KESCMStoryPlaceCaret(KESCMStoryJump.h で宣言)
+// KESCMStorySelectWholeStory(KESCMStoryJump.h で宣言)
 //----------------------------------------------------------------------------------------
-bool16 KESCMStoryPlaceCaret(int32 rowIndex)
+bool16 KESCMStorySelectWholeStory(int32 rowIndex)
 {
 	const KESCMStoryRow* row = KESCMStoryList::GetRow(rowIndex);
 	if (row == nil)
@@ -145,9 +145,9 @@ bool16 KESCMStoryPlaceCaret(int32 rowIndex)
 	if (selectionManager == nil)
 		return kFalse;
 
-	// ***** THE TYPE TOOL, BECAUSE THIS IS AN INVITATION TO EDIT. ***** A caret placed while some
-	// other tool is active is not somewhere the user can start typing, which is the whole of what a
-	// double click here is asking for. The official recipe does exactly this and in this order -
+	// ***** THE TYPE TOOL, BECAUSE THIS IS AN INVITATION TO EDIT. ***** Text selected while some
+	// other tool is active is not text the user can act on, which is the whole of what a double click
+	// here is asking for. The official recipe does exactly this and in this order -
 	// tool first, selection second (gotolasttextedit's GTTxtEdtUtils.cpp:117-136).
 	// ! This takes the KESCM tool off, if it was on. Deliberate (user's call, 2026-08-10), and
 	//   written down in How to Use so that it is not a surprise.
@@ -170,18 +170,23 @@ bool16 KESCMStoryPlaceCaret(int32 rowIndex)
 	if (textSelectionSuite == nil)
 		return kFalse;
 
-	// ! A CARET IS A ZERO-LENGTH RANGE, AND A ZERO-LENGTH RANGE MUST NAME A LEAN. RangeData.h:114-125
-	//   spells it out: RangeData(34, 34) is listed as INCORRECT, and the two-argument form is
-	//   (start, END) rather than (start, length). The caret form is the one the official sample uses
-	//   - RangeData(index, kLeanForward) - and index 0 is the start of the story, which is where the
-	//   design says to put it. Nothing is selected: this points at a place to start typing, it does
-	//   not pick out text (there is no "hit range" on a story row to pick out).
+	// ! THE WHOLE STORY, WHICH IS (0, TotalLength()). The two-argument RangeData is (start, END), not
+	//   (start, length) - RangeData.h:114-125 is explicit about it, and lists RangeData(34, 34) as
+	//   INCORRECT for the caret case. Here the range has length, so no lean is needed: leans only
+	//   settle which side of an insertion point new text joins, and there is no insertion point.
+	//
+	//   ★TotalLength() counts every character in the story "including data for embedded tables"
+	//     (ITextModel.h:137-140), so a story that is nothing but a table selects that table's text
+	//     as well - which is what "the whole story" has to mean for a row that was listed BECAUSE a
+	//     table cell was edited.
+	//   ★The trailing carriage return is inside the range on purpose: it is a character of the story,
+	//     and InDesign's own Select All takes it too.
 	//
 	//   kDontScrollSelection: the first click of this double click already centred the frame with
-	//   IPanorama::ScrollContentLocationToFrameCenter. kScrollIntoView would only promise the caret
-	//   is somewhere on screen, undoing the better answer just given. (The official sample asks for
-	//   kScrollIntoView because nothing has scrolled on its behalf.)
-	return textSelectionSuite->SetTextSelection(storyRef, RangeData(0, RangeData::kLeanForward),
+	//   IPanorama::ScrollContentLocationToFrameCenter. kScrollIntoView would only promise the
+	//   selection is somewhere on screen, undoing the better answer just given. (The official sample
+	//   asks for kScrollIntoView because nothing has scrolled on its behalf.)
+	return textSelectionSuite->SetTextSelection(storyRef, RangeData(0, model->TotalLength()),
 		Selection::kDontScrollSelection, nil);
 }
 

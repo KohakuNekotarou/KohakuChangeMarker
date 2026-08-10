@@ -22,6 +22,16 @@
 //      Adding a table row and inserting an inline both moved Text and Attr, and Other stayed put
 //      in every case measured. The aggregate is the only reading that cannot be wrong-footed.
 //
+//      *** OTHER HAS NEVER ONCE MOVED, AND IT HAS NOW BEEN LOOKED FOR PROPERLY. *** 2026-08-11, nine
+//      more edits in one comparison (work/kescm-storytest/make-kinds-docs.jsx): a table cell's fill,
+//      merging cells, column width, applying a table style, an inline's fill, an inline's size, a
+//      footnote, a condition, a hyperlink. SEVEN of them reported "Attr" alone - and since the label
+//      names the FIRST kind that moved in the order Text, Attr, Other, "Attr" alone proves Other did
+//      not move. (The two that read "Text+" - merging cells, adding a footnote - keep their second
+//      kind hidden behind the "+", and the user chose to leave it at that.) All nine WERE listed,
+//      which is the point: the aggregate caught every one of them.
+//      Full record: docs/ai-notes/kescm-story-counters-2026-08-09.md.
+//
 //    - The three sub-counters name what moved, and nothing more. They are not the test: the header
 //      promises the aggregate moves for any change to them, but never promises it is their sum.
 //

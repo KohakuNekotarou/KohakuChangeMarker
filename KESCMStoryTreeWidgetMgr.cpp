@@ -4,8 +4,9 @@
 //
 //  Kohaku Change Marker (KESCM)
 //
-//  How one row of the Story Edits list is built and filled: the story's opening words on the left,
-//  the kinds of change that moved on the right.
+//  How one row of the Story Edits list is built and filled. Three cells, left to right: the story's
+//  UID, its opening words, and what kind of change moved (2026-08-10 - it was two cells before, and
+//  the kind column spelled every kind out; now it names the first and says "+" for the rest).
 //
 //  Five methods, and four of them are one line. The list is flat, so this file does none of the
 //  indent arithmetic that KBS's widget manager exists for.
@@ -50,11 +51,17 @@
 namespace
 {
 
-/** Name the kinds of change that moved, in a fixed order.
+/** Name the kind of change that moved - the first one, with a '+' when there were others.
 
-	Fixed so that two rows whose changes are the same read the same way - "Text Attr" never comes
-	back as "Attr Text". Added stands alone rather than joining the others: there is no older story
-	to have compared anything against, so no kind could have been named for it.
+	★ONE WORD, NOT A LIST (user's call, 2026-08-10: "when there are two or more, something like a
+	+"). The column is 62px wide and does not ellipsize, so a spelled-out "Text Attr" was being
+	CLIPPED rather than shortened - the reader saw a word cut off mid-stroke and no sign that
+	anything was missing. "Text+" fits, and the '+' is the sign.
+
+	The order the kinds are tested in is fixed, so the word before the '+' is always the same one
+	for the same set of changes - "Text+" never comes back as "Attr+". Added stands alone rather
+	than joining the others: there is no older story to have compared anything against, so no kind
+	could have been named for it, and no '+' can follow it.
 */
 PMString KindLabel(uint32 kinds)
 {
@@ -69,25 +76,30 @@ PMString KindLabel(uint32 kinds)
 	PMString out;
 	out.SetTranslatable(kFalse);	// composed, so no longer a key - see the note in KESCMStoryList.cpp
 
-	// A flag rather than a test for emptiness: it says what it means ("is this the first word?")
-	// and keeps this out of the deprecated corner of PMString.
-	bool16 first = kTrue;
-
 	const uint32 bits[3] = { kKESCMStoryKindText, kKESCMStoryKindAttr, kKESCMStoryKindOther };
 	const char* const keys[3] = { kKESCMStoryKindTextKey, kKESCMStoryKindAttrKey, kKESCMStoryKindOtherKey };
 
+	// Which one to name, and whether anything else moved. Counting first rather than appending as
+	// we go, because the '+' depends on what comes AFTER the word that gets printed.
+	int32 firstKind = -1;
+	int32 kindCount = 0;
 	for (int32 i = 0; i < 3; ++i)
 	{
 		if ((kinds & bits[i]) == 0)
 			continue;
+		if (firstKind < 0)
+			firstKind = i;
+		++kindCount;
+	}
 
-		PMString word(keys[i]);
+	if (firstKind >= 0)
+	{
+		PMString word(keys[firstKind]);
 		word.Translate();
-
-		if (!first)
-			out.Append(" ");
 		out.Append(word);
-		first = kFalse;
+
+		if (kindCount > 1)
+			out.Append("+");
 	}
 
 	return out;
@@ -154,6 +166,36 @@ public:
 		return this->GetTreeViewWidth();
 	}
 
+	// ★★★THE FRAMEWORK'S INDENT IS TURNED OFF HERE, AND IT HAS TO BE.
+	//
+	//   CTreeViewWidgetMgr::ApplyIndentToWidget rewrites the left edge of every cell that is bound
+	//   on BOTH sides (CTreeViewWidgetMgr.cpp:244-250):
+	//       previousOffset = frame.Left() - fBaseIndentOffset;
+	//       frame.Left( frame.Left() + indent - previousOffset );
+	//   A flat list has indent == 0, so that reduces to frame.Left(fBaseIndentOffset) - every such
+	//   cell is dragged to fBaseIndentOffset. ★And ours is ZERO: that member is only ever assigned
+	//   from a REGISTERED STYLE WIDGET (:315), and this manager builds its rows in
+	//   CreateWidgetForNode instead of registering styles, so it keeps the 0 it was constructed
+	//   with (:71-74 does not name it in the initialiser list).
+	//
+	//   ⚠WHAT THAT COST, measured 2026-08-10: the text cell's left edge in the .fr was being thrown
+	//   away on every single apply. It went unnoticed while that cell was the leftmost thing on the
+	//   row - it simply sat further left than written, which read as "the list has no padding".
+	//   It stopped being invisible the moment a UID column was put in front of it: a cell bound on
+	//   ONE side is NOT moved (:229-230), so the UID stayed where the .fr put it and the text
+	//   landed on top of it.
+	//
+	//   ★The override is empty rather than clever, because a list with no hierarchy has nothing to
+	//   indent. The base class asks for exactly this when its scheme does not fit
+	//   (CTreeViewWidgetMgr.cpp:226: "You may want to override this method handle indent in your
+	//   own way if the default way of handling indent doesn't work for you").
+	//
+	//   ⚠If this list is ever given levels, this override has to go and the cells have to be
+	//   re-thought - not the other way round.
+	virtual void ApplyIndentToWidget(const NodeID& /*node*/, IPanelControlData* /*widgetList*/, int32 /*message*/) const
+	{
+	}
+
 	virtual bool16 ApplyDataToWidget(const NodeID& node, IPanelControlData* widgetList, int32 /*message*/) const
 	{
 		if (widgetList == nil)
@@ -162,18 +204,25 @@ public:
 		TreeNodePtr<ListIndexNodeID> nodeID(node);
 		const KESCMStoryRow* row = nodeID != nil ? KESCMStoryList::GetRow(nodeID->GetIndex()) : nil;
 
-		// ★Both cells are written on EVERY apply, including the empty case. Row widgets are recycled
-		//   as the list scrolls, so a cell left alone keeps whatever the row it used to be had in it.
+		// ★All THREE cells are written on EVERY apply, including the empty case. Row widgets are
+		//   recycled as the list scrolls, so a cell left alone keeps whatever the row it used to be
+		//   had in it.
 		//
 		// ★An unreadable node writes blanks and still answers kTrue. Answering kFalse would be
 		//   telling the framework to throw this widget away, build another and ask again
 		//   (CTreeViewWidgetMgr.h:160-163) - which cannot help, because a row the model no longer
 		//   holds will be missing from the new widget too.
-		PMString text, kinds;
+		PMString uid, text, kinds;
+		uid.SetTranslatable(kFalse);
 		text.SetTranslatable(kFalse);
 		kinds.SetTranslatable(kFalse);
 		if (row != nil)
 		{
+			// ★UID as a plain decimal number (user's request, 2026-08-10). The cast is to the type
+			//   AppendNumber takes (PMString.h:568); UID::Get() answers uint32 (OMTypes.h:78), and a
+			//   document's object numbers are counted in thousands, nowhere near where the two types
+			//   part company.
+			uid.AppendNumber(static_cast<int32>(row->fStoryUID.Get()));
 			text = row->fText;
 			kinds = KindLabel(row->fKinds);
 		}
@@ -186,6 +235,7 @@ public:
 			text.SetTranslatable(kFalse);
 		}
 
+		this->SetNodeName(widgetList, uid, kKESCMStoryRowUIDWidgetID);
 		this->SetNodeName(widgetList, text, kKESCMStoryRowTextWidgetID);
 		this->SetNodeName(widgetList, kinds, kKESCMStoryRowKindWidgetID);
 		return kTrue;

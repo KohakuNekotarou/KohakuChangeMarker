@@ -51,7 +51,9 @@ const int32 kStorySectionPaneIndex = 1;
 
 // How tall the section opens the first time, before it has ever been closed at a height of its own.
 // Matches the lower pane's Frame in KESCM.fr, so the first open looks like what the resource says.
-const int32 kStorySectionDefaultHeight = 100;
+// ★The list's own share is the 100; the heading band above it is added on rather than taken out of
+//   it, so making the band thicker never costs a row (KESCMID.h holds the one copy of its height).
+const int32 kStorySectionDefaultHeight = 100 + kKESCMStoryHeaderHeight;
 
 /** The whole panel's height, measured off the splitter - which fills the panel edge to edge.
 */
