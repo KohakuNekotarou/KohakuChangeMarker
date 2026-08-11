@@ -672,6 +672,17 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKESCMExportChangedPagesMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
+		// "Compare Books" on the panel flyout. Plain command. Compares TWO OPEN BOOKS chapter by
+		// chapter and reports, per chapter, whether anything changed - it does not draw rings and
+		// does not arm anything, so it can be run while a document comparison is active.
+		// Target is the book whose tab is in FRONT in the Book panel; source is the first other
+		// open book. Enabled only when both can be resolved (kCustomEnabling; UpdateActionStates
+		// runs the same resolver the action itself uses). Work in KESCMBookCompare.cpp.
+		kKESCMPopupCompareBooksActionID,
+		kKESCMPopupMenuPath,
+		kKESCMCompareBooksMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
 		// Separator above the Find Overset group (independent single-doc overset check).
 		kKESCMPopupOversetSepActionID,
 		kKESCMPopupMenuPath kSDKDefDelimiterAndSeparatorPath,
@@ -943,6 +954,15 @@ resource ActionDef (kSDKDefActionResourceID)
 		kOtherActionArea,
 		kNormalAction,
 		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates enables only while a comparison is active (sDB != nil)
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		kKESCMActionComponentBoss,
+		kKESCMPopupCompareBooksActionID,
+		kKESCMCompareBooksMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates enables only when both books resolve (front tab + one other)
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 

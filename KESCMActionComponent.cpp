@@ -52,6 +52,7 @@
 #include "KESCMPanelState.h"		// KESCMSavePanelState(フライアウト「Save Panel Settings」)
 #include "KESCMOversetScan.h"		// KESCMCollectOversetLocations(Find Overset の検出=アクティブ文書走査)
 #include "KESCMChangedPagesTSV.h"	// KESCMExportChangedPagesTSV(フライアウト「Export Changed Pages...」)
+#include "KESCMBookPair.h"			// KESCMResolveBookPair / KESCMBookDisplayName(フライアウト「Compare Books」)
 #include "KESCMChangeNav.h"			// KESCMRefreshNavPosition(overset トグルで Prev/Next の対象数を更新)
 #include "KESCMPanelAlpha.h"		// KESCMGetPanelTranslucent/Set/Apply(フライアウト「Translucent Panel」)
 #include "IActiveContext.h"			// GetContextDocument(アクティブ文書の解決)
@@ -461,6 +462,60 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 			KESCMExportChangedPagesTSV();
 			break;
 
+		// フライアウトの「Compare Books」: ブックパネルで前面タブのブック=Target、それ以外で最初に
+		// 開いているブック=Source として、章(ドキュメント)単位で「変更あり/なし」を判定する。
+		// ★既存の文書比較(Start)とは完全に独立=arm しない・枠を作らない・sDB/sEntries を触らない。
+		// ⚠段階1 の途中: いまは解決した2ブックの名前をステータスに出すだけ(比較の実体は次の段階)。
+		case kKESCMPopupCompareBooksActionID:
+		{
+			IBook* target = nil;
+			IBook* source = nil;
+			PMString msg;
+			if (KESCMResolveBookPair(target, source))
+			{
+				// 章を並び順で組む。相手のいない章はこの時点で答えが出ている(Added/Deleted)ので、
+				// 開くことも比べることも要らない。
+				std::vector<KESCMChapterResult> chapters;
+				KESCMBuildChapterPairing(target, source, chapters);
+
+				int32 paired = 0, added = 0, deleted = 0;
+				for (size_t c = 0; c < chapters.size(); ++c)
+				{
+					if (chapters[c].fState == kKESCMChapterAdded)
+						++added;
+					else if (chapters[c].fState == kKESCMChapterDeleted)
+						++deleted;
+					else
+						++paired;
+				}
+
+				msg = PMString("book compare: ");
+				msg.AppendNumber(int32(chapters.size()));
+				msg.Append(" chapters (");
+				msg.AppendNumber(paired);
+				msg.Append(" paired, ");
+				msg.AppendNumber(added);
+				msg.Append(" added, ");
+				msg.AppendNumber(deleted);
+				msg.Append(" deleted)");
+				// ★選んだ2つの名前は必ず画面に出す。3つ以上ブックが開いていると Source は
+				//   「最初に見つかった別のブック」なので、食い違いに気づける手がかりはこれだけ。
+				msg.Append(" target=");
+				msg.Append(KESCMBookDisplayName(target));
+				msg.Append(" source=");
+				msg.Append(KESCMBookDisplayName(source));
+			}
+			else
+			{
+				// 前面タブが特定できない(パネルがアイコン化/閉じている/前面タブ無し)か、ブックが
+				// 1つしか開いていない。★アクティブブックへは落とさない(理由は KESCMBookPair.h)。
+				msg = PMString("book compare: need a book tab in front and a second open book");
+			}
+			msg.SetTranslatable(kFalse);
+			KESCMSetStatus(msg);
+			break;
+		}
+
 		default:
 			break;
 	}
@@ -633,6 +688,17 @@ void KESCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionSta
 		{
 			// 比較中(sDB≠nil)のみ有効=書き出す変更データが在り得るとき。未 Start は灰色。
 			listToUpdate->SetNthActionState(i, (KESCMDrawEventHandler::sDB != nil) ? kEnabledAction : kDisabled_Unselected);
+		}
+		else if (action == kKESCMPopupCompareBooksActionID)
+		{
+			// ★実行と同じ解決子を通す=メニューの見た目と押した結果がずれない。有効になるのは
+			//   「ブックパネルに前面タブがあり、かつ別のブックも開いている」ときだけ。
+			//   ⚠ここはメニューを開くたびに走り、中でパネルを全走査する。フライアウトを開く頻度
+			//     でしか呼ばれないので許容している(KBS も同じ走査を同じ場所でしている)。
+			IBook* target = nil;
+			IBook* source = nil;
+			listToUpdate->SetNthActionState(i, KESCMResolveBookPair(target, source) ? kEnabledAction
+			                                                                        : kDisabled_Unselected);
 		}
 	}
 }

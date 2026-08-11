@@ -53,6 +53,7 @@ resource StringTable (kSDKDefStringsResourceID + index_enUS)
                 kKESCMFindOversetMenuKey,			"Find Overset",
                 kKESCMRefreshOversetMenuKey,		"Refresh Overset",
                 kKESCMExportChangedPagesMenuKey,	"Export Changed Pages...",
+                kKESCMCompareBooksMenuKey,			"Compare Books",
                 kKESCMIgnorePageNumMenuKey,			"Ignore Page Number Marker",
                 kKESCMHoldToHideMarksMenuKey,			"Hold to Hide Marks",
 

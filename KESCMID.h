@@ -221,8 +221,8 @@ DECLARE_PMID(kActionIDSpace, kKESCMPopupTranslucentPagesActionID, kKESCMPrefix +
 //   **番号は再利用しない** = ショートカット設定(.indk)はアクションを数値の ActionID で保存するので、
 //   割り当て済みの番号を別機能へ回すと、そのショートカットが無関係な機能を叩く。押下中 HUD を撤去した
 //   ときの +35 とまったく同じ扱い。
-// (+15..+23 are all declared above - stale placeholders for them removed 2026-08-05 audit. Next free: +39)
-//DECLARE_PMID(kActionIDSpace, kKESCMActionID, kKESCMPrefix + 39)
+DECLARE_PMID(kActionIDSpace, kKESCMPopupCompareBooksActionID, kKESCMPrefix + 39)	// パネルのフライアウトの「Compare Books」(実行アクション)。★ブックパネルで前面タブのブック=Target / それ以外で最初に開いているブック=Source として、章(ドキュメント)単位で「変更あり/なし」を判定する。★既存の文書比較(Start)とは完全に独立=arm しない・枠を作らない・KESCMDrawEventHandler の static を触らない。kCustomEnabling(2ブックそろい、かつ前面タブが特定できるときだけ有効)。実体 KESCMBookCompare.cpp / 対象の解決 KESCMBookPair.cpp
+// (+15..+23 are all declared above - stale placeholders for them removed 2026-08-05 audit. Next free: +40)
 //DECLARE_PMID(kActionIDSpace, kKESCMActionID, kKESCMPrefix + 40)
 // kKESCMPrefix + 24/25/26/28 は使用中(KCM: Check / Save Check & Register / Load Check & Register / RtMenuPagesPanel の区切り線)。+27 は廃止・予約(上記)
 
@@ -364,6 +364,7 @@ DECLARE_PMID(kScriptInfoIDSpace, kKESCMStatusPropertyScriptElement, kKESCMPrefix
 #define kKESCMFindOversetMenuKey	kKESCMStringPrefix "kKESCMFindOversetMenuKey"	// パネルのフライアウト「Find Overset」トグルのメニュー名
 #define kKESCMRefreshOversetMenuKey	kKESCMStringPrefix "kKESCMRefreshOversetMenuKey"	// パネルのフライアウト「Refresh Overset」項目のメニュー名
 #define kKESCMExportChangedPagesMenuKey	kKESCMStringPrefix "kKESCMExportChangedPagesMenuKey"	// パネルのフライアウト「Export Changed Pages...」項目のメニュー名
+#define kKESCMCompareBooksMenuKey	kKESCMStringPrefix "kKESCMCompareBooksMenuKey"	// パネルのフライアウト「Compare Books」項目のメニュー名(ブック同士を章単位で比較)
 #define kKESCMTranslucentPanelMenuKey	kKESCMStringPrefix "kKESCMTranslucentPanelMenuKey"	// パネルのフライアウト「Translucent Panel」トグルのメニュー名
 #define kKESCMTranslucentPagesPanelMenuKey	kKESCMStringPrefix "kKESCMTranslucentPagesPanelMenuKey"	// パネルのフライアウト「Translucent Pages Panel」トグルのメニュー名(対象は本体のページパネル)
 // (kKESCMTranslucentToolboxMenuKey は 2026-08-07 に機能ごと撤去。文字列キーは ActionID と違って
@@ -526,6 +527,7 @@ DECLARE_PMID(kScriptInfoIDSpace, kKESCMStatusPropertyScriptElement, kKESCMPrefix
 #define kKESCMSaveChecksMenuItemPosition	9.58	// 実行アクション「Save Check & Register」
 #define kKESCMLoadChecksMenuItemPosition	9.60	// 実行アクション「Load Check & Register」
 #define kKESCMExportChangedPagesMenuItemPosition	9.53	// 実行アクション「Export Changed Pages...」(変更ページ一覧をTSVで保存)。Align の直下(2026-07-25 ユーザー指定)
+#define kKESCMCompareBooksMenuItemPosition	9.54	// 実行アクション「Compare Books」(ブック同士を章単位で比較)。★文書比較(Start)とは独立した経路なので、Start 群ではなく実行アクション群に置く
 // ── 情報系(末尾) ──
 #define kKESCMSep2MenuItemPosition			9.95	// How to Use の上の区切り線(パス末尾 ":-")
 #define kKESCMUsageMenuItemPosition			10.0	// 「使い方」
