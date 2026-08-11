@@ -1,0 +1,17 @@
+# Build outputs / intermediates (this folder is the SDK build tree's source dir; keep only sources).
+*.obj
+*.pch
+*.pdb
+*.ilk
+*.exp
+*.lib
+*.res
+*.fres
+*.tlog
+*.log
+*.pln
+*.sdk.pln
+Debug/
+Release/
+x64/
+Win32/

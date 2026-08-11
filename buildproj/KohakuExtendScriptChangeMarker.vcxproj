@@ -215,55 +215,55 @@
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMActionComponent.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMBookCompare.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMBookDialog.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMBookDialogObserver.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMBookPair.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMBookTreeAdapter.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMBookTreeWidgetMgr.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMChangedPagesTSV.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMChangeNav.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMColorSampler.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMCore.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMDrawEventHandler.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMOversetScan.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMPageMap.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMPageCheck.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMDocUidSet.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMStoryStamp.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMStoryList.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMStoryJump.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMStoryRowEH.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMStoryTreeEH.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMPanelView.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMNoTip.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMStoryTreeAdapter.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMStoryTreeWidgetMgr.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMStorySection.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMStorySectionObserver.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMPageNumberMarker.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMPanelAlpha.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMPanelObserver.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMPanelState.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMThumbnailRefresh.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMThumbIdleTask.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMScrollMap.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMPeek.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMTool.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMTracker.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMTrackerRegister.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMCursorProvider.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMDocResponder.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMIconTip.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMScriptProvider.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMTrackerHud.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMActionComponent.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMBookCompare.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMBookDialog.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMBookDialogObserver.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMBookPair.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMBookTreeAdapter.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMBookTreeWidgetMgr.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMChangedPagesTSV.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMChangeNav.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMColorSampler.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMCore.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMDrawEventHandler.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMOversetScan.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMPageMap.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMPageCheck.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMDocUidSet.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryStamp.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryList.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryJump.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryRowEH.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryTreeEH.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMPanelView.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMNoTip.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryTreeAdapter.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryTreeWidgetMgr.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMStorySection.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMStorySectionObserver.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMPageNumberMarker.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMPanelAlpha.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMPanelObserver.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMPanelState.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMThumbnailRefresh.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMThumbIdleTask.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMScrollMap.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMPeek.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMTool.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMTracker.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMTrackerRegister.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMCursorProvider.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMDocResponder.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMIconTip.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMScriptProvider.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMTrackerHud.cpp" />
     <ClCompile Include="$(id_sdk_dir)\source\public\libs\publiclib\statics\PlugInStatics.cpp" />
     <ClCompile Include="$(ID_SDK_DIR)\source\sdksamples\common\SDKPlugInEntrypoint.cpp" />
     <ClCompile Include="$(ID_SDK_DIR)\source\sdksamples\common\SDKFileHelper.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMID.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMNoStrip.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\TriggerResourceDeps.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMID.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMNoStrip.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\TriggerResourceDeps.cpp" />
     <ClCompile Include="$(id_sdk_dir)\source\precomp\msvc\VCPlugInHeaders.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Create</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Create</PrecompiledHeader>
@@ -272,86 +272,86 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMBookCompare.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMBookDialog.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMBookPair.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMBookResult.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMBookTree.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMChangedPagesTSV.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMChangeNav.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMCheckGlyph.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMColorSampler.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMConstants.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMCore.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMDrawEventHandler.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMOversetScan.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMID.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMLoc.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMFactoryList.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMPageMap.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMPageCheck.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMDocUidSet.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMStoryStamp.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMStoryList.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMStoryJump.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMStoryTree.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMStorySection.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMPageNumberMarker.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMPanelAlpha.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMPanelState.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMPeek.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMThumbnailRefresh.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMThumbIdleTask.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMScrollMap.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMTrackerHud.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMScriptingDefs.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMBookCompare.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMBookDialog.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMBookPair.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMBookResult.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMBookTree.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMChangedPagesTSV.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMChangeNav.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMCheckGlyph.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMColorSampler.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMConstants.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMCore.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMDrawEventHandler.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMOversetScan.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMID.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMLoc.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMFactoryList.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMPageMap.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMPageCheck.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMDocUidSet.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryStamp.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryList.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryJump.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryTree.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMStorySection.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMPageNumberMarker.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMPanelAlpha.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMPanelState.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMPeek.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMThumbnailRefresh.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMThumbIdleTask.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMScrollMap.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMTrackerHud.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMScriptingDefs.h" />
   </ItemGroup>
   <ItemGroup>
-    <CustomBuild Include="..\..\..\source\sdksamples\KESCM\KESCM.fr">
+    <CustomBuild Include="..\..\..\source\sdksamples\KESCM\source\KESCM.fr">
       <Command Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
-        odfrc $(ODFRC_ADDITIONAL_FLAGS) "%(FullPath)" -o "$(IntDir)%(Filename).fres" -d DEBUG  -i "..\..\..\source\sdksamples\KESCM" @"KohakuExtendScriptChangeMarkerodfrc.rsp"
+        odfrc $(ODFRC_ADDITIONAL_FLAGS) "%(FullPath)" -o "$(IntDir)%(Filename).fres" -d DEBUG  -i "..\..\..\source\sdksamples\KESCM\source" @"KohakuExtendScriptChangeMarkerodfrc.rsp"
       </Command>
       <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">$(IntDir)TriggerResourceDeps.obj;%(AdditionalInputs)</AdditionalInputs>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">$(IntDir)%(Filename).fres;%(Outputs)</Outputs>
       <Command Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-        odfrc $(ODFRC_ADDITIONAL_FLAGS) "%(FullPath)" -o "$(IntDir)%(Filename).fres" -d DEBUG  -i "..\..\..\source\sdksamples\KESCM" @"KohakuExtendScriptChangeMarkerodfrc.rsp"
+        odfrc $(ODFRC_ADDITIONAL_FLAGS) "%(FullPath)" -o "$(IntDir)%(Filename).fres" -d DEBUG  -i "..\..\..\source\sdksamples\KESCM\source" @"KohakuExtendScriptChangeMarkerodfrc.rsp"
       </Command>
       <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(IntDir)TriggerResourceDeps.obj;%(AdditionalInputs)</AdditionalInputs>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(IntDir)%(Filename).fres;%(Outputs)</Outputs>
       <Command Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
-        odfrc $(ODFRC_ADDITIONAL_FLAGS) "%(FullPath)" -o "$(IntDir)%(Filename).fres" -i "..\..\..\source\sdksamples\KESCM" @"KohakuExtendScriptChangeMarkerodfrc.rsp"
+        odfrc $(ODFRC_ADDITIONAL_FLAGS) "%(FullPath)" -o "$(IntDir)%(Filename).fres" -i "..\..\..\source\sdksamples\KESCM\source" @"KohakuExtendScriptChangeMarkerodfrc.rsp"
       </Command>
       <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">$(IntDir)TriggerResourceDeps.obj;%(AdditionalInputs)</AdditionalInputs>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">$(IntDir)%(Filename).fres;%(Outputs)</Outputs>
       <Command Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
-        odfrc $(ODFRC_ADDITIONAL_FLAGS) "%(FullPath)" -o "$(IntDir)%(Filename).fres" -i "..\..\..\source\sdksamples\KESCM" @"KohakuExtendScriptChangeMarkerodfrc.rsp"
+        odfrc $(ODFRC_ADDITIONAL_FLAGS) "%(FullPath)" -o "$(IntDir)%(Filename).fres" -i "..\..\..\source\sdksamples\KESCM\source" @"KohakuExtendScriptChangeMarkerodfrc.rsp"
       </Command>
       <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(IntDir)TriggerResourceDeps.obj;%(AdditionalInputs)</AdditionalInputs>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(IntDir)%(Filename).fres;%(Outputs)</Outputs>
     </CustomBuild>
   </ItemGroup>
   <ItemGroup>
-    <ResourceCompile Include="..\..\..\source\sdksamples\KESCM\KESCM.rc">
+    <ResourceCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCM.rc">
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">_CRT_SECURE_NO_DEPRECATE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <Culture Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">0x0809</Culture>
-      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">..\..\..\source\sdksamples\KESCM;..\..\..\source\sdksamples\KESCM;$(ID_SDK_DIR)\source\precomp\msvc;$(ID_SDK_DIR)\source\public\includes;$(ID_SDK_DIR)\source\sdksamples\common;%(AdditionalIncludeDirectories)
+      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">..\..\..\source\sdksamples\KESCM\source;..\..\..\source\sdksamples\KESCM\source;$(ID_SDK_DIR)\source\precomp\msvc;$(ID_SDK_DIR)\source\public\includes;$(ID_SDK_DIR)\source\sdksamples\common;%(AdditionalIncludeDirectories)
       </AdditionalIncludeDirectories>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">_CRT_SECURE_NO_DEPRECATE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <Culture Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">0x0809</Culture>
-      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">..\..\..\source\sdksamples\KESCM;..\..\..\source\sdksamples\KESCM;$(ID_SDK_DIR)\source\precomp\msvc;$(ID_SDK_DIR)\source\public\includes;$(ID_SDK_DIR)\source\sdksamples\common;%(AdditionalIncludeDirectories)
+      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">..\..\..\source\sdksamples\KESCM\source;..\..\..\source\sdksamples\KESCM\source;$(ID_SDK_DIR)\source\precomp\msvc;$(ID_SDK_DIR)\source\public\includes;$(ID_SDK_DIR)\source\sdksamples\common;%(AdditionalIncludeDirectories)
       </AdditionalIncludeDirectories>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">_CRT_SECURE_NO_DEPRECATE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <Culture Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">0x0809</Culture>
-      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">..\..\..\source\sdksamples\KESCM;..\..\..\source\sdksamples\KESCM;$(ID_SDK_DIR)\source\precomp\msvc;$(ID_SDK_DIR)\source\public\includes;$(ID_SDK_DIR)\source\sdksamples\common;%(AdditionalIncludeDirectories)
+      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">..\..\..\source\sdksamples\KESCM\source;..\..\..\source\sdksamples\KESCM\source;$(ID_SDK_DIR)\source\precomp\msvc;$(ID_SDK_DIR)\source\public\includes;$(ID_SDK_DIR)\source\sdksamples\common;%(AdditionalIncludeDirectories)
       </AdditionalIncludeDirectories>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Release|x64'">_CRT_SECURE_NO_DEPRECATE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <Culture Condition="'$(Configuration)|$(Platform)'=='Release|x64'">0x0809</Culture>
-      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release|x64'">..\..\..\source\sdksamples\KESCM;..\..\..\source\sdksamples\KESCM;$(ID_SDK_DIR)\source\precomp\msvc;$(ID_SDK_DIR)\source\public\includes;$(ID_SDK_DIR)\source\sdksamples\common;%(AdditionalIncludeDirectories)
+      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release|x64'">..\..\..\source\sdksamples\KESCM\source;..\..\..\source\sdksamples\KESCM\source;$(ID_SDK_DIR)\source\precomp\msvc;$(ID_SDK_DIR)\source\public\includes;$(ID_SDK_DIR)\source\sdksamples\common;%(AdditionalIncludeDirectories)
       </AdditionalIncludeDirectories>
     </ResourceCompile>
   </ItemGroup>
   <ItemGroup>
-    <None Include="..\..\..\source\sdksamples\KESCM\KESCM_enUS.fr" />
+    <None Include="..\..\..\source\sdksamples\KESCM\source\KESCM_enUS.fr" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets" />
