@@ -40,6 +40,15 @@ ErrorCode KESCMCompareBooks(IBook* target, IBook* source,
                             std::vector<KESCMChapterResult>& outChapters,
                             PMString& outReport);
 
+/** The last comparison as one block of text: one line per chapter, "name<TAB>state", and a failed
+    chapter adds "<TAB>why". Empty until something has been compared.
+
+    ***** Kept in the module, so it answers whether or not a panel is open. ***** Same reason
+    app.kcmStatus keeps its line in KESCMCore rather than in the panel widget: a comparison run
+    from a script has to be readable from a script, with nothing on screen. This is what
+    app.kcmBookResult returns. */
+void KESCMGetBookResultText(PMString& out);
+
 #endif // __KESCMBookCompare_h__
 
 // End, KESCMBookCompare.h.

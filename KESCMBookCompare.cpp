@@ -45,6 +45,10 @@
 namespace
 {
 
+/** The last comparison, as the text app.kcmBookResult hands back. Module-level so it survives
+    whatever happens to any panel, and so a script can read it with nothing on screen. */
+PMString gBookResultText;
+
 /** Does this open document live in that file?
 
     ***** A document's identity is its FILE. ***** Asked through IDataBase::GetSysFile. A document
@@ -561,7 +565,31 @@ ErrorCode KESCMCompareBooks(IBook* target, IBook* source,
 	}
 	outReport.SetTranslatable(kFalse);
 
+	// The per-chapter read-out, built HERE from the same list the caller receives - so the summary
+	// line and the detail can never disagree about what happened.
+	gBookResultText.Clear();
+	gBookResultText.SetTranslatable(kFalse);
+	for (size_t i = 0; i < outChapters.size(); ++i)
+	{
+		const KESCMChapterResult& chapter = outChapters[i];
+		if (i > 0)
+			gBookResultText.Append("\n");
+		gBookResultText.Append(chapter.fName);
+		gBookResultText.Append("\t");
+		gBookResultText.Append(KESCMChapterStateText(chapter.fState));
+		if (chapter.fState == kKESCMChapterFailed && !chapter.fWhy.IsEmpty())
+		{
+			gBookResultText.Append("\t");
+			gBookResultText.Append(chapter.fWhy);
+		}
+	}
+
 	return kSuccess;
+}
+
+void KESCMGetBookResultText(PMString& out)
+{
+	out = gBookResultText;
 }
 
 // End, KESCMBookCompare.cpp.

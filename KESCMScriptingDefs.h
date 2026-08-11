@@ -4,7 +4,8 @@
 //
 //  ScriptIDs (four-character codes) published by KESCM.
 //
-//  WHAT IS EXPOSED: one READ-ONLY property, app.kcmStatus, and the toolbox tool's identity.
+//  WHAT IS EXPOSED: two READ-ONLY properties - app.kcmStatus and app.kcmBookResult - and the
+//  toolbox tool's identity.
 //  No methods and no script objects - the ones this plug-in used to have (kescmToast and the
 //  rest) were removed 2026-08-05 and are not coming back; the panel is the interface.
 //
@@ -52,7 +53,10 @@ enum KESCMScriptEnums
 /** Properties KESCM adds to the application object. */
 enum KESCMScriptProperties
 {
-	p_KESCMStatus = 'pKGm'	// p = property, K = Kohaku, G = KESCM, m = message (app.kcmStatus)
+	p_KESCMStatus     = 'pKGm',	// p = property, K = Kohaku, G = KESCM, m = message (app.kcmStatus)
+	p_KESCMBookResult = 'pKGb'	// b = book. app.kcmBookResult - the last book comparison, one line
+								// per chapter ("name<TAB>state"). Checked against the registry in
+								// docs/ai-notes/kes-scriptid-registry.md before use (2026-08-11).
 };
 
 #endif // __KESCMScriptingDefs_h__

@@ -4,7 +4,8 @@
 //
 //  KohakuChangeMarker (KESCM)
 //
-//  Scripting: app.kcmStatus - the last message the panel put on its status line, read-only.
+//  Scripting: app.kcmStatus       - the last message the panel put on its status line, read-only.
+//             app.kcmBookResult   - the last book comparison, one line per chapter, read-only.
 //
 //  WHY THIS EXISTS
 //
@@ -50,8 +51,11 @@
 #include "KESCMID.h"
 #include "KESCMScriptingDefs.h"
 #include "KESCMCore.h"			// KESCMGetSessionStatus - the status line, kept in the module
+#include "KESCMBookCompare.h"	// KESCMGetBookResultText - the last book comparison, also in the module
 
-/** Serves this plug-in's scripting addition. One property, on the application object. */
+/** Serves this plug-in's scripting additions. Two read-only properties, both on the application
+    object: app.kcmStatus (the panel's status line) and app.kcmBookResult (the last book
+    comparison, one line per chapter). */
 class KESCMScriptProvider : public CScriptProvider
 {
 public:
@@ -67,15 +71,15 @@ CREATE_PMINTERFACE(KESCMScriptProvider, kKESCMScriptProviderImpl)
 
 ErrorCode KESCMScriptProvider::AccessProperty(ScriptID propID, IScriptRequestData* data, IScript* script)
 {
-	if (propID.Get() != p_KESCMStatus)
+	if (propID.Get() != p_KESCMStatus && propID.Get() != p_KESCMBookResult)
 		return CScriptProvider::AccessProperty(propID, data, script);
 
 	if (data == nil)
 		return kFailure;
 
-	// Read-only. The declaration in KESCM.fr says kReadOnly, so the engine should refuse an
-	// assignment before it ever reaches here; this is the backstop, and it fails rather than
-	// quietly accepting a value that would then not be there on the next read.
+	// Read-only, both of them. The declarations in KESCM.fr say kReadOnly, so the engine should
+	// refuse an assignment before it ever reaches here; this is the backstop, and it fails rather
+	// than quietly accepting a value that would then not be there on the next read.
 	if (data->IsPropertyPut())
 		return kFailure;
 
@@ -83,7 +87,10 @@ ErrorCode KESCMScriptProvider::AccessProperty(ScriptID propID, IScriptRequestDat
 		return CScriptProvider::AccessProperty(propID, data, script);
 
 	PMString value;
-	KESCMGetSessionStatus(value);
+	if (propID.Get() == p_KESCMStatus)
+		KESCMGetSessionStatus(value);		// the panel's status line
+	else
+		KESCMGetBookResultText(value);		// the last book comparison, one line per chapter
 
 	ScriptData outputData;
 	outputData.SetWideString(WideString(value));

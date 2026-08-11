@@ -1834,6 +1834,21 @@ resource VersionedScriptElementInfo(10)
 			kNoAttributeClass,					// attribute class ID
 		}
 
+		// app.kcmBookResult (2026-08-11) - the last book comparison, one line per chapter,
+		// "name<TAB>state". Same shape and same purpose as the property above: the status line
+		// holds one line, so the per-chapter answers need their own way out to be checkable
+		// without looking at the screen.
+		Property
+		{
+			kKESCMBookResultPropertyScriptElement,
+			p_KESCMBookResult,
+			"kcm book result",					// name -> app.kcmBookResult
+			"The last book comparison, one line per chapter: name, tab, state.",
+			StringType,
+			{}
+			kNoAttributeClass,
+		}
+
 		// Puts the property ON the application object.
 		//
 		// Object{}, not Parent{}: Object names an EXISTING scripting object to add members to,
@@ -1846,6 +1861,7 @@ resource VersionedScriptElementInfo(10)
 			{
 				Object{ kApplicationObjectScriptElement },
 				Property{ kKESCMStatusPropertyScriptElement, kReadOnly },
+				Property{ kKESCMBookResultPropertyScriptElement, kReadOnly },
 			}
 		}
 	}
