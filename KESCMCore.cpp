@@ -468,7 +468,24 @@ ErrorCode KESCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMStri
 	// 差分・全再比較のどちらでも使い、末尾で次回差分用の前回ペアリング(sPrevPairTargetToSource)に記録する。
 	std::vector<UID> tPages, sPages;
 	KESCMBuildPairing(targetDB, sourceDB, tPages, sPages);
-	const size_t n = tPages.size();	// KESCMBuildPairing は既に短い方へ切り詰め済み(tPages/sPagesは同じ長さ)
+
+	// ★マスタースプレッドのページを後ろに連結する(2026-08-11)。従来はマスターが一度も比較されて
+	// いなかった(KESCMCollectPageUIDs が ISpreadList=通常スプレッドしか回さないため。マスターに
+	// 出ていた枠はあふれ「+」だけ)。
+	// ★★連結するだけでよい理由: この後の比較ループ・進捗バーの総数・差分再比較のキャッシュ
+	//   (sPrevPairTargetToSource)・Source 側の対応表(sSrcPageToTarget)は、すべて tPages/sPages の
+	//   添字で回っている。MakeEntry はページの UIDRef しか見ない(中身が通常ページかマスターページかを
+	//   気にしない)ので、ここに足すだけで全部が乗る。2026-08-11 に実機で実証済み。
+	// ★KESCMBuildPairing 自体には足さない: あれの契約は「通常ページの除外対応表」で、TSV 出力など
+	//   他の呼び手も居る。連結は呼び出し側の責任にする。
+	{
+		std::vector<UID> tMaster, sMaster;
+		KESCMBuildMasterPairing(targetDB, sourceDB, tMaster, sMaster);
+		tPages.insert(tPages.end(), tMaster.begin(), tMaster.end());
+		sPages.insert(sPages.end(), sMaster.begin(), sMaster.end());
+	}
+
+	const size_t n = tPages.size();	// 各 Build 関数が短い方へ切り詰め済み(tPages/sPagesは同じ長さ)
 
 	// 今回ペアリングの map 化(差分の O(1) 逆引き＋末尾の記録に使う)。
 	std::map<UID, UID> newMap;
