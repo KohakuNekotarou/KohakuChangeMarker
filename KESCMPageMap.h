@@ -84,6 +84,17 @@ void KESCMBuildPairing(IDataBase* targetDB, IDataBase* sourceDB,
 	std::vector<UID>& outTargetPages, std::vector<UID>& outSourcePages,
 	std::vector<UID>* outOverflowTargetPages = nil, std::vector<UID>* outOverflowSourcePages = nil);
 
+// マスタースプレッドどうしを**名前で**対応付け、一致したスプレッドのページを順に組む(2026-08-11)。
+// outTargetPages / outSourcePages は同じ長さで、i 番目どうしが比較する組(呼び出し時に clear する)。
+// ★上の KESCMBuildPairing(通常ページ)とは対応の規則そのものが違うので、別関数にしてある:
+//   通常ページは「順番」対応だが、マスターは名前(A-親ページ 等)で対応させる。マスターは追加や
+//   並べ替えが起きても名前で一意に指せるのに対し、順番で組むと片方にマスターが1つ増えただけで
+//   別のマスターどうしを比べてしまうため。
+// ★片方にしか無い名前は組まない(相手なし=比較しない)。ページ数が違う組は短い方に切り詰める。
+// 実体は KESCMPageMap.cpp。
+void KESCMBuildMasterPairing(IDataBase* targetDB, IDataBase* sourceDB,
+	std::vector<UID>& outTargetPages, std::vector<UID>& outSourcePages);
+
 // targetPageUID(targetDB内)に対応する sourceDB 側のページを1つ求める(内部で KESCMBuildPairing を
 // 使う)。targetPageUID 自身が登録済み(除外対象)か、対応表の範囲外(対応相手なし)なら kFalse で
 // outSourcePageUID は不定。

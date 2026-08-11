@@ -33,6 +33,9 @@
 #include "IDataBase.h"
 #include "IActionStateList.h"	// メニューの有効/チェック/動的ラベル(SetNthActionName)
 #include "ILayoutUIUtils.h"		// GetSelectedPages(ページパネル選択の公式取得)
+#include "IMasterSpreadList.h"	// GetMasterSpreadCount / GetNthMasterSpreadUID / FindMasterByName
+#include "IMasterSpread.h"		// GetPrefix / GetBasename(マスタースプレッドの名前対応)
+#include "ISpread.h"			// GetNumPages / GetNthPageUID(マスタースプレッド内のページ)
 #include "Utils.h"
 #include "UIDList.h"
 #include "PMString.h"
@@ -384,6 +387,68 @@ void KESCMBuildPairing(IDataBase* targetDB, IDataBase* sourceDB,
 		outOverflowTargetPages->assign(tFiltered.begin() + n, tFiltered.end());
 	if (outOverflowSourcePages && sFiltered.size() > n)
 		outOverflowSourcePages->assign(sFiltered.begin() + n, sFiltered.end());
+}
+
+//========================================================================================
+// KESCMBuildMasterPairing(KESCMPageMap.h で宣言)
+//   マスタースプレッドどうしを名前で対応付け、一致した組のページを順に並べる(2026-08-11)。
+//   ★上の KESCMBuildPairing とは対応の規則が違う(あちらは順番、こちらは名前)ので別関数。理由は
+//   ヘッダーのコメント参照。★登録済み(比較相手なし)ページの除外はしない: 登録はページパネルの
+//   選択から作られ、ILayoutUIUtils::GetSelectedPages が bIncludeMasters=kFalse でマスターを外す
+//   ので、マスターページが登録集合に入ることはない。
+//
+//   ★Source 側の名前引きは公式 API IMasterSpreadList::FindMasterByName(prefix, basename)
+//   (IMasterSpreadList.h:138)。自前で全マスターを回して名前を突き合わせる形も書けるが、
+//   「名前で master を引く」ものが公式にある以上そちらが正道。
+//   ⚠この API は SDK にも source/open にも呼び手がゼロで、ヘッダーは「見つからなかったとき何を
+//   返すか」を書いていない。ここでは kInvalidUID を想定しつつ、返った UID は必ず ISpread として
+//   開いて nil を弾く(壊れた値が来ても落ちない形)。相手のいないマスターでの実挙動は実機で確認する。
+//========================================================================================
+void KESCMBuildMasterPairing(IDataBase* targetDB, IDataBase* sourceDB,
+	std::vector<UID>& outTargetPages, std::vector<UID>& outSourcePages)
+{
+	outTargetPages.clear();
+	outSourcePages.clear();
+	if (targetDB == nil || sourceDB == nil)
+		return;
+
+	InterfacePtr<IMasterSpreadList> tList(targetDB, targetDB->GetRootUID(), UseDefaultIID());
+	InterfacePtr<IMasterSpreadList> sList(sourceDB, sourceDB->GetRootUID(), UseDefaultIID());
+	if (tList == nil || sList == nil)
+		return;
+
+	// Target 側をマスタースプレッド順に回し、同名の Source があれば組む。
+	const int32 tn = tList->GetMasterSpreadCount();
+	for (int32 i = 0; i < tn; ++i)
+	{
+		const UID tu = tList->GetNthMasterSpreadUID(i);
+		InterfacePtr<IMasterSpread> tms(targetDB, tu, UseDefaultIID());
+		if (tms == nil)
+			continue;
+
+		// ★名前は prefix("A")と basename("親ページ"/"Master")に分けて聞く。GetName() が返す
+		//   "A-親ページ" を自分で割る必要はない(公式 API がこの2つを受け取る形になっている)。
+		PMString prefix, basename;
+		tms->GetPrefix(&prefix);
+		tms->GetBasename(&basename);
+
+		const UID su = sList->FindMasterByName(prefix, basename);
+		if (su == kInvalidUID)
+			continue;			// 相手なし: このマスターは比較しない
+
+		InterfacePtr<ISpread> tsp(targetDB, tu, UseDefaultIID());
+		InterfacePtr<ISpread> ssp(sourceDB, su, UseDefaultIID());
+		if (tsp == nil || ssp == nil)
+			continue;
+		const int32 tp = tsp->GetNumPages();
+		const int32 sp = ssp->GetNumPages();
+		const int32 np = (tp < sp) ? tp : sp;	// ページ数が違う組は短い方に切り詰める
+		for (int32 p = 0; p < np; ++p)
+		{
+			outTargetPages.push_back(tsp->GetNthPageUID(p));
+			outSourcePages.push_back(ssp->GetNthPageUID(p));
+		}
+	}
 }
 
 // (KESCMPageMapHasOverflow は 2026-07-25 監査で削除: 描画側が sOverflowT/sOverflowS キャッシュ方式へ
