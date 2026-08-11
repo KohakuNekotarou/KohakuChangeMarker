@@ -54,6 +54,7 @@ resource StringTable (kSDKDefStringsResourceID + index_enUS)
                 kKESCMRefreshOversetMenuKey,		"Refresh Overset",
                 kKESCMExportChangedPagesMenuKey,	"Export Changed Pages...",
                 kKESCMCompareBooksMenuKey,			"Compare Books",
+                kKESCMBookDialogTitleKey,			"Compare Books",
                 kKESCMIgnorePageNumMenuKey,			"Ignore Page Number Marker",
                 kKESCMHoldToHideMarksMenuKey,			"Hold to Hide Marks",
 

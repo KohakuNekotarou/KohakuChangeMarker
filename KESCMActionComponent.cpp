@@ -52,8 +52,8 @@
 #include "KESCMPanelState.h"		// KESCMSavePanelState(フライアウト「Save Panel Settings」)
 #include "KESCMOversetScan.h"		// KESCMCollectOversetLocations(Find Overset の検出=アクティブ文書走査)
 #include "KESCMChangedPagesTSV.h"	// KESCMExportChangedPagesTSV(フライアウト「Export Changed Pages...」)
-#include "KESCMBookPair.h"			// KESCMResolveBookPair / KESCMBookDisplayName(フライアウト「Compare Books」)
-#include "KESCMBookCompare.h"		// KESCMCompareBooks(章を1組ずつ開いて判定して閉じる本体)
+#include "KESCMBookPair.h"			// KESCMResolveBookPair(「Compare Books」を有効にしてよいかの判定)
+#include "KESCMBookDialog.h"		// KESCMOpenBookDialog(フライアウト「Compare Books」＝ダイアログを開く)
 #include "KESCMChangeNav.h"			// KESCMRefreshNavPosition(overset トグルで Prev/Next の対象数を更新)
 #include "KESCMPanelAlpha.h"		// KESCMGetPanelTranslucent/Set/Apply(フライアウト「Translucent Panel」)
 #include "IActiveContext.h"			// GetContextDocument(アクティブ文書の解決)
@@ -468,34 +468,11 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 		// ★既存の文書比較(Start)とは完全に独立=arm しない・枠を作らない・sDB/sEntries を触らない。
 		// ⚠段階1 の途中: いまは解決した2ブックの名前をステータスに出すだけ(比較の実体は次の段階)。
 		case kKESCMPopupCompareBooksActionID:
-		{
-			IBook* target = nil;
-			IBook* source = nil;
-			PMString msg;
-			if (KESCMResolveBookPair(target, source))
-			{
-				// 章を1組ずつ裏で開いて判定し、その都度閉じる。要約は msg に返る
-				// (「N chapters, X changed, Y unchanged...」= 章数を必ず含む)。
-				std::vector<KESCMChapterResult> chapters;
-				KESCMCompareBooks(target, source, chapters, msg);
-
-				// ★選んだ2つの名前は必ず画面に出す。3つ以上ブックが開いていると Source は
-				//   「最初に見つかった別のブック」なので、食い違いに気づける手がかりはこれだけ。
-				msg.Append(" target=");
-				msg.Append(KESCMBookDisplayName(target));
-				msg.Append(" source=");
-				msg.Append(KESCMBookDisplayName(source));
-			}
-			else
-			{
-				// 前面タブが特定できない(パネルがアイコン化/閉じている/前面タブ無し)か、ブックが
-				// 1つしか開いていない。★アクティブブックへは落とさない(理由は KESCMBookPair.h)。
-				msg = PMString("book compare: need a book tab in front and a second open book");
-			}
-			msg.SetTranslatable(kFalse);
-			KESCMSetStatus(msg);
+			// ★比較そのものはここで走らせない——ダイアログを開くだけ。実行はダイアログの中の
+			//   Compare ボタンで行う＝押す前に対象の2ブック名が目に入るので、ブックパネルの前面タブと
+			//   アクティブブックの食い違いに気づける(食い違いに気づける唯一の手がかりがそれ)。
+			KESCMOpenBookDialog();
 			break;
-		}
 
 		default:
 			break;

@@ -38,6 +38,7 @@ REGISTER_PMINTERFACE(KESCMStoryTreeAdapter, kKESCMStoryTreeAdapterImpl)	// Story
 REGISTER_PMINTERFACE(KESCMStoryTreeWidgetMgr, kKESCMStoryTreeWidgetMgrImpl)	// Story Edits 一覧の行の生成と流し込み(CTreeViewWidgetMgr派生。KESCMStoryTreeWidgetMgr.cpp)
 REGISTER_PMINTERFACE(KESCMStoryRowEH, kKESCMStoryRowEHImpl)	// Story Edits の行のクリック=ジャンプ/ダブルクリック=ストーリー全文を選択(TreeNodeEventHandler派生。KESCMStoryRowEH.cpp)
 REGISTER_PMINTERFACE(KESCMStoryTreeEH, kKESCMStoryTreeEHImpl)	// Story Edits の一覧の↑↓=行を移動して着いた行を表示(TreeViewEventHandler派生。KESCMStoryTreeEH.cpp)
+REGISTER_PMINTERFACE(KESCMBookDialogController, kKESCMBookDialogControllerImpl)	// ブック比較のモードレスダイアログ(CDialogController派生。KESCMBookDialog.cpp)
 REGISTER_PMINTERFACE(KESCMThumbIdleTask, kKESCMThumbIdleTaskImpl)
 REGISTER_PMINTERFACE(KESCMScrollMapView, kKESCMScrollMapViewImpl)
 REGISTER_PMINTERFACE(KESCMTool, kKESCMToolImpl)

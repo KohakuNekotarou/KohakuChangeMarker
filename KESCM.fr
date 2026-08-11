@@ -53,6 +53,7 @@
 #include "IControlViewDefs.h"
 #include "SysControlIds.h"
 #include "TreeViewDefs.h"			// kHideRootNode - the Story Edits list (2026-08-10)
+#include "EveInfo.fh"				// EVE widget types + layout flags - the book comparison dialog (2026-08-11)
 
 // (SpreadID.h / DocFrameworkID.h were only here for the old scripting API, which is gone -
 //  removed 2026-08-05. Everything below resolves from ShuksanID.h / widgetid.h / GraphicsID.h
@@ -434,6 +435,24 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 		kBaseScriptProviderBoss,
 		{
 			IID_ISCRIPTPROVIDER, kKESCMScriptProviderImpl,
+		}
+	},
+
+	/*
+	 * The book comparison dialog (2026-08-11). Stock kDialogBoss plus our controller - the same
+	 * shape as KESCL's Jump Offset dialog and the basicdialog sample.
+	 *
+	 * ***** It is opened MODELESS. ***** That is what lets the user keep working with the
+	 * document while the results are on screen, and it is what keeps the door open for "click a
+	 * row to open that chapter" (a modal dialog could never offer that). The dialog type is not
+	 * declared here - it is an argument to CreateNewDialog (KESCMBookDialog.cpp).
+	 */
+	Class
+	{
+		kKESCMBookDialogBoss,
+		kDialogBoss,
+		{
+			IID_IDIALOGCONTROLLER, kKESCMBookDialogControllerImpl,
 		}
 	},
 }}};
@@ -1239,6 +1258,15 @@ type KESCMStoryRowWidget(kViewRsrcType) : PrimaryResourcePanelWidget(ClassID = k
 // (see kKESCMStoryRowCellBoss above). The field list is InfoStaticTextWidget's, unchanged.
 type KESCMStoryRowCellWidget(kViewRsrcType) : InfoStaticTextWidget(ClassID = kKESCMStoryRowCellBoss) { };
 
+// The book comparison dialog (2026-08-11). "DialogBoss" is the exotic name of what is really a
+// widget type - the basicdialog shape, WidgetEveInfo and all. Same form as KESCL's Jump Offset
+// dialog (KESCL.fr:953), which is the closest working example: a fixed-size dialog by the same
+// author. ⚠ The WidgetEveInfo line is required; without it the resource below will not parse.
+type KESCMBookDialogWidget(kViewRsrcType) : DialogBoss(ClassID = kKESCMBookDialogBoss)
+{
+	WidgetEveInfo;
+};
+
 // Scroll-map strip view resource: instantiated with ::CreateObject(db, RsrcSpec(...,
 // kViewRsrcType, kKESCMScrollMapRsrcID), IID_ICONTROLVIEW) — same runtime-creation pattern as
 // linksui's dynamic info widgets. The Frame here is a placeholder; the real frame/binding are
@@ -1248,6 +1276,16 @@ resource LocaleIndex (kKESCMScrollMapRsrcID)
 	kViewRsrcType,
 	{
 		kWildFS, k_Wild, kKESCMScrollMapRsrcID + index_enUS
+	}
+};
+
+// The book comparison dialog's view (2026-08-11). Not localised as a view: the strings it shows
+// come from the string table, like every other KESCM label.
+resource LocaleIndex (kKESCMBookDialogRsrcID)
+{
+	kViewRsrcType,
+	{
+		kWildFS, k_Wild, kKESCMBookDialogRsrcID + index_enUS
 	}
 };
 
@@ -1865,6 +1903,62 @@ resource VersionedScriptElementInfo(10)
 			}
 		}
 	}
+};
+
+/*
+ * The book comparison dialog's view (2026-08-11).
+ *
+ * ***** Laid out at a FIXED size on purpose. ***** A modeless dialog's panel never follows the
+ * window when the user drags its edge - measured 2026-07-17 over three builds, with EVE at every
+ * layer and with kResizeDialogBoss - so offering a resize handle that does nothing would be worse
+ * than not offering one. The size is chosen generous enough that the chapter list (next task) is
+ * readable without resizing.
+ *
+ * Shape copied from KESCL's Jump Offset dialog (KESCL.fr:1538), which is the closest working
+ * example: a fixed-size dialog by the same author, built on the same stock kDialogBoss.
+ * ⚠ The trailing arrange flag after the children is REQUIRED - without it ODFRC fails with R32697.
+ */
+resource KESCMBookDialogWidget (kKESCMBookDialogRsrcID + index_enUS)
+{
+	__FILE__, __LINE__,
+	kKESCMBookDialogWidgetID,		// WidgetID
+	kPMRsrcID_None,					// RsrcID
+	kBindNone,						// Binding
+	Frame(0, 0, 460, 380),			// Frame (l,t,r,b) - EVE resizes it to fit the children
+	kTrue, kTrue,					// Visible, Enabled
+	kKESCMBookDialogTitleKey,		// Dialog name
+
+	{
+		// ----- the button row. The rest of the dialog (targets, Compare, the list) arrives in
+		//       the next task; this one only has to prove that a modeless dialog opens at all.
+		EVEGenericPanelWidget
+		(
+			kInvalidWidgetID,		// WidgetId
+			0						// RsrcId
+			0,						// Widget EVE Info
+			kBindNone,				// Frame binding
+			Frame(0, 0, 160, 24)	// Frame
+			kTrue,					// Visible
+			kTrue,					// Enabled
+			kEVEAlignRight | kEVERegularSpaceAfter | kEVEArrangeChildrenInRow,
+
+			{
+				EVEDefaultButtonWidget
+				(
+					kOKButtonWidgetID,				// WidgetID (stock)
+					kSysButtonPMRsrcId,				// RsrcID
+					kBindNone,						// Binding
+					Frame(0, 0, 0, 0)				// Frame (l,t,r,b)
+					kTrue, kTrue,					// Visible, Enabled
+					kSDKDefOKButtonApplicationKey,	// Button text
+
+					kEVERegularSpaceAfter,
+				),
+			}
+		),
+	},
+
+	kEVEArrangeChildrenInColumn | kEVELargeMargin,
 };
 
 #endif // __ODFRC__

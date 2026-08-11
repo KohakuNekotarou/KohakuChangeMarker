@@ -98,7 +98,10 @@ DECLARE_PMID(kClassIDSpace, kKESCMStorySectionPanelBoss, kKESCMPrefix + 17)	// k
 DECLARE_PMID(kClassIDSpace, kKESCMStoryTreeWidgetBoss, kKESCMPrefix + 18)	// kTreeViewWidgetBoss継承: Story Edits の一覧(平坦1階層)。載せるのは adapter と widget mgr の2つだけ＝コントローラーは kTreeViewWidgetBoss が既に持っている
 DECLARE_PMID(kClassIDSpace, kKESCMStoryRowWidgetBoss, kKESCMPrefix + 19)	// kTreeNodeWidgetBoss継承: 一覧の1行。載せるのは IID_IEVENTHANDLER(kKESCMStoryRowEHImpl)の1つだけ＝単クリックでジャンプ・ダブルクリックで全文選択。⚠2026-08-11 まで空の Class だった(段階4 で足した)
 DECLARE_PMID(kClassIDSpace, kKESCMStoryRowCellBoss, kKESCMPrefix + 20)	// kInfoStaticTextWidgetBoss継承+IID_ITIP(kKESCMNoTipImpl): 一覧の行のセル。★狙いはツールチップを**消す**こと＝素の静的テキストは省略表示すると全文をポップアップで出す(実機ダンプ: kStaticTextWidgetBoss が IID_ITIP=kTextWidgetTipImpl を持つ)。行に出るのは邪魔なので空の tip を返す実装で上書きする(2026-08-10 ユーザー指定)
-//DECLARE_PMID(kClassIDSpace, kKESCMBoss, kKESCMPrefix + 21)
+// ブック比較のダイアログ(2026-08-11)。★モードレス＝開いたまま文書を触れる。だから未決の
+// 「行クリックでその章を開く」を後から足せる(モーダルだとその道が閉じる)。stock の kDialogBoss に
+// 自前の IDialogController を載せるだけ＝KESCL の Jump Offset ダイアログと同じ形。
+DECLARE_PMID(kClassIDSpace, kKESCMBookDialogBoss, kKESCMPrefix + 21)
 //DECLARE_PMID(kClassIDSpace, kKESCMBoss, kKESCMPrefix + 22)
 //DECLARE_PMID(kClassIDSpace, kKESCMBoss, kKESCMPrefix + 23)
 //DECLARE_PMID(kClassIDSpace, kKESCMBoss, kKESCMPrefix + 24)
@@ -172,6 +175,7 @@ DECLARE_PMID(kImplementationIDSpace, kKESCMStoryRowEHImpl, kKESCMPrefix + 27)	//
 //  撤去した跡地。線を残すユーザー判断なので実装ごと消えている＝経緯は KESCM.fr の行 boss のコメント。
 //  ActionID と違い Impl 番号は外部保存が参照しないので、下記のとおり再利用した。)
 DECLARE_PMID(kImplementationIDSpace, kKESCMStoryTreeEHImpl, kKESCMPrefix + 28)	// IEventHandler 実装(TreeViewEventHandler派生)。★一覧**そのもの**のキー操作＝↑↓で行を移動し、着いた行へジャンプする(KESCMStoryTreeEH.cpp)。行側の kKESCMStoryRowEHImpl とは別物＝あちらはクリック
+DECLARE_PMID(kImplementationIDSpace, kKESCMBookDialogControllerImpl, kKESCMPrefix + 29)	// IDialogController 実装(CDialogController派生)。ブック比較のモードレスダイアログ＝開いたとき対象の2ブック名を埋める(KESCMBookDialog.cpp)
 
 
 // ActionIDs:
@@ -270,6 +274,10 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMStoryHeaderUIDWidgetID, kKESCMPrefix + 53)	//
 DECLARE_PMID(kWidgetIDSpace, kKESCMStoryHeaderTextWidgetID, kKESCMPrefix + 54)	// 見出しの中「Story」(行の kKESCMStoryRowTextWidgetID と同じ 52〜154・kBindLeft|kBindRight＝広げるとここだけ伸びる)
 DECLARE_PMID(kWidgetIDSpace, kKESCMStoryHeaderKindWidgetID, kKESCMPrefix + 55)	// 見出しの右「Change」(行の kKESCMStoryRowKindWidgetID と同じ 154〜216・kBindRight・右寄せ)
 DECLARE_PMID(kWidgetIDSpace, kKESCMStoryHeaderRuleWidgetID, kKESCMPrefix + 56)	// 見出しと一覧を分ける 1px の罫線＝**ErasablePrimaryResourcePanelWidget を高さ1pxで置き kInterfaceSeparatorColor で erase**(その塗りが線)。⚠stock の RuleWidget(Widgets.fh:887 / kRuleWidgetBoss)を先に試したが**パースもビルドも通って何も描かなかった**ので差し替えた(.fr 側に全文)
+
+// ブック比較ダイアログ(2026-08-11)。★OK/Cancel は stock の WidgetID(kOKButtonWidgetID /
+// kCancelButton_WidgetID)を使うので、ここに要るのはダイアログ本体だけ。
+DECLARE_PMID(kWidgetIDSpace, kKESCMBookDialogWidgetID, kKESCMPrefix + 57)
 //DECLARE_PMID(kWidgetIDSpace, kKESCMWidgetID, kKESCMPrefix + 2)
 //DECLARE_PMID(kWidgetIDSpace, kKESCMWidgetID, kKESCMPrefix + 3)
 //DECLARE_PMID(kWidgetIDSpace, kKESCMWidgetID, kKESCMPrefix + 4)
@@ -366,6 +374,7 @@ DECLARE_PMID(kScriptInfoIDSpace, kKESCMBookResultPropertyScriptElement, kKESCMPr
 #define kKESCMRefreshOversetMenuKey	kKESCMStringPrefix "kKESCMRefreshOversetMenuKey"	// パネルのフライアウト「Refresh Overset」項目のメニュー名
 #define kKESCMExportChangedPagesMenuKey	kKESCMStringPrefix "kKESCMExportChangedPagesMenuKey"	// パネルのフライアウト「Export Changed Pages...」項目のメニュー名
 #define kKESCMCompareBooksMenuKey	kKESCMStringPrefix "kKESCMCompareBooksMenuKey"	// パネルのフライアウト「Compare Books」項目のメニュー名(ブック同士を章単位で比較)
+#define kKESCMBookDialogTitleKey	kKESCMStringPrefix "kKESCMBookDialogTitleKey"	// ブック比較ダイアログのタイトル
 #define kKESCMTranslucentPanelMenuKey	kKESCMStringPrefix "kKESCMTranslucentPanelMenuKey"	// パネルのフライアウト「Translucent Panel」トグルのメニュー名
 #define kKESCMTranslucentPagesPanelMenuKey	kKESCMStringPrefix "kKESCMTranslucentPagesPanelMenuKey"	// パネルのフライアウト「Translucent Pages Panel」トグルのメニュー名(対象は本体のページパネル)
 // (kKESCMTranslucentToolboxMenuKey は 2026-08-07 に機能ごと撤去。文字列キーは ActionID と違って
@@ -433,6 +442,10 @@ DECLARE_PMID(kScriptInfoIDSpace, kKESCMBookResultPropertyScriptElement, kKESCMPr
 // Story Edits の行テンプレートのビューリソースID(kViewRsrcType; CreateObjectNoInit で1行ずつ生成する。
 // KESCMStoryTreeWidgetMgr.cpp)。
 #define kKESCMStoryRowRsrcID	1011
+
+// ブック比較ダイアログのビューリソースID(kViewRsrcType)。KESCMBookDialog.cpp が RsrcSpec で指す。
+// ★1010/1011 と同じ採番の続き。手本=KESCL の Jump Offset ダイアログ(あちらは kSDKDefDialogResourceID)。
+#define kKESCMBookDialogRsrcID	1012
 
 // 一覧の行の高さ。★.fr と C++ の両方がこの1つの定数を読む(Adobe の StdHeightWidthConstants.h と同じ形)
 // ＝行リソースの Frame・ツリーのスクロール増分・GetNodeWidgetHeight が同じ事実を語る。値は KBS の
