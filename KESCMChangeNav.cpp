@@ -152,24 +152,52 @@ static void KESCMBuildStops(std::vector<KESCMNavStop>& out)
 			KESCMAppendOversetStopsForPage(u, out);
 	}
 
-	// 3) ★通常スプレッドに載っていない overset を末尾に足す(2026-08-06 ユーザー報告「マスターの
-	//    オーバーセット、見つけますがボタンが押せない」の修正)。
-	//    ★★KESCMCollectPageUIDs が回すのは **ISpreadList = 通常スプレッドだけ**で、マスタースプレッドは
-	//    IMasterSpreadList の別管理なので上のループには一度も現れない。その結果、マスターページ上の
-	//    あふれは検出できていて(サムネイルの「+」は出る)、それでもストップ列から丸ごと落ち、他に
-	//    巡回対象が無ければ **Prev/Next が無効のまま**になっていた＝「見つかるのに飛べない」。
+	// ★★KESCMCollectPageUIDs が回すのは **ISpreadList = 通常スプレッドだけ**で、マスタースプレッドは
+	//    IMasterSpreadList の別管理なので上のループには一度も現れない。以下でマスターを追い足す。
 	//    ★KESCMCollectPageUIDs 自体は変えない: あれは比較のページ対応(KESCMBuildPairing)でも使う共有
 	//    ヘルパで、マスターページを混ぜると**比較する対象そのものが変わる**。ここで足すのが正しい。
 	//    順序は「通常ページを全部回った後」＝ページ順の意味を壊さない。
+	std::set<UID> covered(flat.begin(), flat.end());
+
+	// 3) ★マスタースプレッドのページ(2026-08-06=overset / 2026-08-11=変更枠)。
+	//    overset は 2026-08-06 のユーザー報告「マスターのオーバーセット、見つけますがボタンが押せない」
+	//    の修正で足した(検出はできていてサムネイルの「+」も出るのに、ストップ列から丸ごと落ちていた)。
+	//    ★変更(枠)を 2026-08-11 に同じ場所へ足した: マスターを比較対象に加えた結果、同じ形の
+	//    「枠は出るのに Prev/Next で飛べない」が起きうるため。
+	//    ★通常ページのループと同じく「1ページにつき [枠 → overset...]」の順に足す(あふれだけを別に
+	//    まとめると、マスターが複数あるとき枠とあふれが離れて並ぶ)。
+	if (changeHere || oversetHere)
+	{
+		std::vector<UID> masters;
+		KESCMCollectMasterPageUIDs(navDB, masters);
+		for (size_t i = 0; i < masters.size(); ++i)
+		{
+			const UID u = masters[i];
+			if (covered.find(u) != covered.end())
+				continue;			// 上のループで拾い済み(マスターがそこに出ることは無いが、二重に足さない)
+			covered.insert(u);
+			if (changeHere && KESCMDrawEventHandler::sEntries.find(u) != KESCMDrawEventHandler::sEntries.end())
+			{
+				KESCMNavStop s; s.pageUID = u; s.isOverset = kFalse;
+				out.push_back(s);
+			}
+			if (oversetHere)
+				KESCMAppendOversetStopsForPage(u, out);
+		}
+	}
+
+	// 4) それでも残る overset(通常ページにもマスターページにも属さないページ)を末尾に足す。
+	//    ★2026-08-11 にマスターを 3) で拾うようになった後も残す安全網: ここが空になる保証は
+	//    「ページ UID は通常スプレッドかマスタースプレッドのどちらかに属する」という前提に頼るが、
+	//    その前提はこちらのコードでは担保できない。落ちるより出す。
 	if (oversetHere)
 	{
-		const std::set<UID> covered(flat.begin(), flat.end());
 		std::vector<UID> extra;		// 走査順・重複なし
 		for (size_t j = 0; j < KESCMDrawEventHandler::sOversetLocs.size(); ++j)
 		{
 			const UID pu = KESCMDrawEventHandler::sOversetLocs[j].pageUID;
 			if (covered.find(pu) != covered.end())
-				continue;			// 通常ページ=上のループで拾い済み
+				continue;			// 通常ページ/マスターページ=上で拾い済み
 			bool16 already = kFalse;
 			for (size_t e = 0; e < extra.size() && !already; ++e)
 				if (extra[e] == pu)
