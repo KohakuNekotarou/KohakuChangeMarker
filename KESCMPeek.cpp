@@ -75,6 +75,7 @@
 #include "KESCMDrawEventHandler.h"   // エンジンの共有 static ＋ KESCMQueryPanorama
 #include "KESCMColorSampler.h"       // KESCMSampleCmykUnderMouse
 #include "KESCMCheckGlyph.h"         // KESCMDrawCheckGlyph(✓描画を CMYK カーソルと共有)
+#include "IHierarchy.h"              // GetSpreadUID(宛先ページが載っているスプレッド。2026-08-11)
 #include "KESCMCore.h"               // arm/disarm/状態 宣言
 #include "KESCMPageMap.h"            // KESCMBuildPairing(同期の除外対応表キャッシュ)/KESCMPageMapHasAnyRegistered/KESCMPageMapSweepClosedDocs
 #include "KESCMPageCheck.h"          // KESCMPageCheckClearAllDocs / KESCMPageCheckSweepClosedDocs(✓の後片付け)
@@ -82,6 +83,7 @@
 #include "KESCMThumbnailRefresh.h"   // クローズ後、生存側の Pages パネルサムネイルから枠を消す
 #include "KESCMScrollMap.h"          // スプレッド再比較後にスクロールバー地図を最新化
 #include "KESCMChangeNav.h"          // KESCMRefreshNavPosition(スプレッド再比較後に Prev/Next 位置を最新化)
+                                     // ＋ KESCMEnsureViewShowsSpread(同期先ビューを相手のスプレッドへ。2026-08-11)
 #include "KESCMThumbIdleTask.h"      // クローズ後の再生成を次のidleに遅延(前面切替の過渡を避ける)
 #include "KESCMPanelState.h"         // KESCMLoadPanelStateIfPresent(起動時に保存済みパネル設定を復元)
 #include "KESCMPanelAlpha.h"         // KESCMAttachPanelVisibilityObserver(半透明トグルの追随購読を起動時に開始)
@@ -577,12 +579,17 @@ static const long long kKESCMSyncCacheTtlMs = 250;
 
 // 1文書ぶんの「ページ UID とそのペーストボード矩形」。pages と rects は同じ並び。
 // 幾何を取れなかったページは空矩形(幅・高さ 0)にしておき、判定側で自然に落とす。
+// ★pages は「通常ページ(スプレッド順) → マスターページ(マスタースプレッド順)」の2段構成で、
+//   境目が normalCount(2026-08-11)。マスターを混ぜたのは、同期でマスターページの矩形を引けるように
+//   するため。⚠**最近傍探索には後半を使わない**＝マスタースプレッドは中心が原点の別座標空間にいて
+//   通常ページと矩形が重なりうるので、混ぜると通常ページ表示中にマスターが最寄りと判定されうる。
 struct KESCMPageRectCache
 {
 	IDataBase*          db;
 	std::vector<UID>    pages;
 	std::vector<PMRect> rects;
-	KESCMPageRectCache() : db(nil) {}
+	size_t              normalCount;	// pages[0..normalCount) = 通常ページ / [normalCount..) = マスターページ
+	KESCMPageRectCache() : db(nil), normalCount(0) {}
 };
 // 枠は2つで足りる: arm 中の同期は Target↔Source の2文書だけを行き来する。
 static KESCMPageRectCache sPageRectCache[2];
@@ -691,6 +698,8 @@ static const KESCMPageRectCache* KESCMGetPageRects(IDataBase* db)
 	c.pages.clear();
 	c.rects.clear();
 	KESCMCollectPageUIDs(db, c.pages);
+	c.normalCount = c.pages.size();
+	KESCMCollectMasterPageUIDs(db, c.pages);	// ★マスターは後ろへ続ける(境目=normalCount。2026-08-11)
 	c.rects.resize(c.pages.size());
 	for (size_t i = 0; i < c.pages.size(); ++i)
 	{
@@ -737,7 +746,11 @@ static UID KESCMFindPageAtPasteboard(IDataBase* db, const PBPMPoint& pb)
 	UID best = kInvalidUID;
 	PMReal bestDist2(0);
 	bool16 haveBest = kFalse;
-	for (size_t i = 0; i < c->pages.size(); ++i)
+	// ★通常ページだけを見る(2026-08-11)。マスタースプレッドは中心が原点の別座標空間にいて通常ページと
+	//   矩形が重なりうるので、混ぜると「通常ページを見ているのに最寄りはマスター」という答えが出る。
+	//   マスターページを指しているかは点からは決められない=見ているスプレッドで決まる話なので、
+	//   その判定は呼び出し側(KESCMCorrectedCenterForDoc)が SDK の答えで行う。
+	for (size_t i = 0; i < c->normalCount; ++i)
 	{
 		const PMRect& r = c->rects[i];
 		if (r.Right() <= r.Left() && r.Bottom() <= r.Top())
@@ -778,6 +791,34 @@ static void KESCMEnsureSyncPairing(IDataBase* targetDB, IDataBase* sourceDB)
 		sSyncPairT2S[pairT[i]] = pairS[i];
 		sSyncPairS2T[pairS[i]] = pairT[i];
 	}
+
+	// ★マスタースプレッドの対応も同じ表に入れる(2026-08-11)。ページ UID は文書内で一意なので、
+	//   通常ページの対応と1つの map に同居できる。これで「マスターを見ている窓」でも相手のマスター
+	//   ページを引けるようになる=Sync Layout Views と Align Other Views がマスターでも噛み合う。
+	//   ★比較の対応表(KESCMCore.cpp)と同じ2本立て(通常=順番対応 / マスター=名前対応)を通す。
+	std::vector<UID> mT, mS;
+	KESCMBuildMasterPairing(targetDB, sourceDB, mT, mS);
+	for (size_t i = 0; i < mT.size(); ++i)
+	{
+		sSyncPairT2S[mT[i]] = mS[i];
+		sSyncPairS2T[mS[i]] = mT[i];
+	}
+}
+
+// pageUID(db 内)がマスタースプレッドのページか(矩形キャッシュの並びで判定。2026-08-11)。
+// ★別に IMasterSpreadList を引き直さないのは、この判定が同期ホットパスから呼ばれるため。
+//   キャッシュは同じ通知の中で必ず作られている(矩形もそこから引く)ので追加コストはゼロ。
+static bool16 KESCMIsMasterPage(IDataBase* db, UID pageUID)
+{
+	if (pageUID == kInvalidUID)
+		return kFalse;
+	const KESCMPageRectCache* c = KESCMGetPageRects(db);
+	if (c == nil)
+		return kFalse;
+	for (size_t i = c->normalCount; i < c->pages.size(); ++i)
+		if (c->pages[i] == pageUID)
+			return kTrue;
+	return kFalse;
 }
 
 //----------------------------------------------------------------------------------------
@@ -823,9 +864,10 @@ static UID KESCMQueryViewCenterPage(IControlView* srcView, const PBPMPoint& cent
 //   srcCenter をそのまま返す=従来の生同期にフォールバックする(outSkip=kFalse)。
 //----------------------------------------------------------------------------------------
 static PBPMPoint KESCMCorrectedCenterForDoc(IControlView* srcView, IDataBase* srcDocDb, IDataBase* dstDb,
-                                            const PBPMPoint& srcCenter, bool16& outSkip)
+                                            const PBPMPoint& srcCenter, bool16& outSkip, UID& outDstPage)
 {
 	outSkip = kFalse;
+	outDstPage = kInvalidUID;	// 呼び出し側が「宛先ページのスプレッドを映す」ために使う(2026-08-11)
 
 	if (!sPeekArmed || sPeekTargetDB == nil || sPeekSourceDB == nil)
 		return srcCenter;	// 未 arm: 生同期
@@ -844,9 +886,12 @@ static PBPMPoint KESCMCorrectedCenterForDoc(IControlView* srcView, IDataBase* sr
 
 	// 手本ページ(srcDocDb 側でビュー中心にあるページ)。
 	// ★まず公式ルート(KESCMQueryViewCenterPage)に聞く(2026-08-06 の監査 A-2)。
-	// ★公式ルートは「文書のどのページか」を広く答える。マスタースプレッドのページは対応表に載らない
-	//   (KESCMCollectPageUIDs は ISpreadList=通常スプレッドだけを平坦化し、マスターは IMasterSpreadList の
-	//   別管理)ので、下の find で外れて従来の自前探索へ落ち、挙動が保たれる。
+	// ★★公式ルートは「文書のどのページか」を広く答えるので、マスタースプレッドのページも返ってくる。
+	//   2026-08-11 からは**マスターも対応表に載っている**(KESCMEnsureSyncPairing が名前対応を足す)ので、
+	//   マスターを見ている窓でも相手のマスターページが引ける。
+	//   ⚠**マスターページのときは下の自前探索へ落とさない**＝自前探索は通常ページしか見ないので、
+	//   まったく無関係な通常ページを「最寄り」として掴み、相手窓が別の場所へ飛ぶ。相手のマスターが
+	//   無いなら、そこは Added ページと同じ「相手なし」＝追従側を動かさないのが正しい。
 	//   ⚠隠しスプレッドのページは**対応表に載っている**(平坦化は hide フラグを見ない)ので、この網では
 	//   弾けない=Sync+Hide Unchanged 併用時は隠しページの相手へ同期し得る。これは置き換え前の自前探索
 	//   (同じ平坦列を使う)でも同じだった既存挙動で、2026-08-06 の再点検では「隠しスプレッドも網に掛かる」
@@ -855,8 +900,9 @@ static PBPMPoint KESCMCorrectedCenterForDoc(IControlView* srcView, IDataBase* sr
 	//   (Added/Removed 登録ページも「対応表に無い」ので自前探索へ落ちるが、そちらも同じページを
 	//    返すので結果は変わらない=下の skip 判定に進むだけ。稀なケースで探索が2回になるだけの実害)
 	UID srcPage = KESCMQueryViewCenterPage(srcView, srcCenter);
+	const bool16 srcIsMaster = KESCMIsMasterPage(srcDocDb, srcPage);
 	std::map<UID, UID>::const_iterator pairIt = pairTable.find(srcPage);	// kInvalidUID なら end
-	if (pairIt == pairTable.end())
+	if (pairIt == pairTable.end() && !srcIsMaster)
 	{
 		srcPage = KESCMFindPageAtPasteboard(srcDocDb, srcCenter);
 		if (srcPage == kInvalidUID)
@@ -865,10 +911,11 @@ static PBPMPoint KESCMCorrectedCenterForDoc(IControlView* srcView, IDataBase* sr
 	}
 	if (pairIt == pairTable.end() || pairIt->second == kInvalidUID)
 	{
-		outSkip = kTrue;	// ★相手なし(Added 等): 追従側は動かさない
+		outSkip = kTrue;	// ★相手なし(Added / 相手のいないマスター等): 追従側は動かさない
 		return srcCenter;
 	}
 	const UID dstPage = pairIt->second;
+	outDstPage = dstPage;
 
 	// ページ内相対位置(ページ中心からのオフセット)を保って相手ページ中心へ移す。
 	PMRect srcRect, dstRect;
@@ -982,12 +1029,24 @@ static void KESCMSyncOtherDocViewportsTo(IControlView* srcView, IPanorama* srcPa
 		// 写像してページ内相対位置を保つ)を掛ける。手本中心が Added ページ(相手なし)なら skip=この宛先は
 		// 同期しない(追従側を据え置く)。補正不能だが skip でもないなら srcCenter がそのまま返る(生同期)。
 		PBPMPoint dstCenter = srcCenter;
+		UID dstPage = kInvalidUID;
 		if (applyPageOffset)
 		{
 			bool16 skipThisDoc = kFalse;
-			dstCenter = KESCMCorrectedCenterForDoc(srcView, srcDocDb, db, srcCenter, skipThisDoc);
+			dstCenter = KESCMCorrectedCenterForDoc(srcView, srcDocDb, db, srcCenter, skipThisDoc, dstPage);
 			if (skipThisDoc)
 				continue;	// ★手本中心が Added ページ(相手なし)=この宛先文書は同期しない
+		}
+
+		// ★宛先ページが載っているスプレッド(2026-08-11)。下でビューごとに「そのスプレッドを映して
+		//   いるか」を確かめる。補正が効かなかった経路(生同期)では kInvalidUID のままで、従来どおり
+		//   スクロールだけになる。
+		UID dstSpread = kInvalidUID;
+		if (dstPage != kInvalidUID)
+		{
+			InterfacePtr<IHierarchy> pageHier(db, dstPage, UseDefaultIID());
+			if (pageHier != nil)
+				dstSpread = pageHier->GetSpreadUID();
 		}
 
 		K2Vector<IControlView*> views;
@@ -1002,6 +1061,16 @@ static void KESCMSyncOtherDocViewportsTo(IControlView* srcView, IPanorama* srcPa
 			InterfacePtr<IPanorama> pano(KESCMQueryPanorama(view));
 			if (pano == nil)
 				continue;
+
+			// ★★宛先ページのスプレッドを先にこのビューへ映す(2026-08-11)。
+			//   スクロール(IPanorama)は今映しているスプレッドの座標空間の中でしか動けないので、
+			//   別スプレッド——とくに**マスタースプレッド(中心が原点の別空間)**——へは届かず、
+			//   空のペーストボードに着地する([[scroll-needs-spread-switch]])。判定は「マスターか」
+			//   ではなく「違うスプレッドか」＝公式の作法(手本 SnapTracker.cpp:224 に特例なし)で、
+			//   Prev/Next と同じ関数を通す([[one-question-one-place]])。既に映していれば何もしない
+			//   ので、通常スプレッド内をスクロールしている間はコマンドが1回も走らない。
+			if (dstSpread != kInvalidUID)
+				KESCMEnsureViewShowsSpread(view, db, dstSpread);
 
 			// 既に手本と一致しているビューは触らない。スクロールドラッグ/ズーム操作中は通知が高頻度で
 			// 来るため(自動同期経由)、一致済みビューへの再スクロール+forceRedraw を毎回打たない。

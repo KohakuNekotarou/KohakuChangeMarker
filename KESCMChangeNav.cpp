@@ -275,6 +275,44 @@ static PMReal KESCMReadDocZoom(IDataBase* db)
 //   スクロール先が揃うように。既存の KESCMScrollDocToPBPoint と同じ範囲)。
 // 取れないビューは黙って飛ばす=そのビューは従来どおりスクロールだけになり、悪化はしない。
 //----------------------------------------------------------------------------------------
+// KESCMEnsureViewShowsSpread(KESCMChangeNav.h で宣言) — 1つのビューぶん。
+// ★1ビュー単位で括り出してある(2026-08-11)。同期経路(KESCMPeek.cpp)も「このビューを相手の
+//   マスタースプレッドへ移す」ために同じ判断を要るようになったため＝判断の置き場は1つ
+//   ([[one-question-one-place]])。下の KESCMEnsureSpreadInView は db の全ビューにこれを配るだけ。
+bool16 KESCMEnsureViewShowsSpread(IControlView* view, IDataBase* db, UID spreadUID)
+{
+	if (view == nil || db == nil || spreadUID == kInvalidUID)
+		return kFalse;
+	InterfacePtr<ILayoutControlData> layout(view, UseDefaultIID());
+	if (layout == nil)
+		return kFalse;
+	if (layout->GetSpreadRef().GetUID() == spreadUID)
+		return kFalse;	// もう映している=通常のケース。いちばん安い出口
+
+	// コマンドはビューを名指しするので、その「ビュー自身の文書」を渡す(KBS/SnapTracker と同じ)。
+	IDocument* const viewDoc = layout->GetDocument();
+	if (viewDoc == nil)
+		return kFalse;
+	// UID は出どころの db の外では意味を持たない。同じはずだが確かめてから渡す。
+	if (::GetDataBase(viewDoc) != db)
+		return kFalse;
+
+	InterfacePtr<ICommand> setSpreadCmd(CmdUtils::CreateCommand(kSetSpreadCmdBoss));
+	if (setSpreadCmd == nil)
+		return kFalse;
+	InterfacePtr<ILayoutCmdData> cmdData(setSpreadCmd, UseDefaultIID());
+	if (cmdData == nil)
+		return kFalse;
+	cmdData->Set(::GetUIDRef(viewDoc), layout);
+	setSpreadCmd->SetItemList(UIDList(db, spreadUID));
+	if (CmdUtils::ProcessCommand(setSpreadCmd) != kSuccess)
+	{
+		ErrorUtils::PMSetGlobalErrorCode(kSuccess);	// スクロールは続行。後続コマンドを巻き添えにしない
+		return kFalse;
+	}
+	return kTrue;
+}
+
 static void KESCMEnsureSpreadInView(IDataBase* db, UID itemUID)
 {
 	if (db == nil || itemUID == kInvalidUID)
@@ -290,34 +328,7 @@ static void KESCMEnsureSpreadInView(IDataBase* db, UID itemUID)
 	K2Vector<IControlView*> views;
 	Utils<ILayoutViewUtils>()->GetAllLayoutViews(views, nil, db);
 	for (int32 i = 0; i < (int32)views.size(); ++i)
-	{
-		if (views[i] == nil)
-			continue;
-		InterfacePtr<ILayoutControlData> layout(views[i], UseDefaultIID());
-		if (layout == nil)
-			continue;
-		if (layout->GetSpreadRef().GetUID() == spreadUID)
-			continue;	// もう映している=通常のケース。いちばん安い出口
-
-		// コマンドはビューを名指しするので、その「ビュー自身の文書」を渡す(KBS/SnapTracker と同じ)。
-		IDocument* const viewDoc = layout->GetDocument();
-		if (viewDoc == nil)
-			continue;
-		// UID は出どころの db の外では意味を持たない。同じはずだが確かめてから渡す。
-		if (::GetDataBase(viewDoc) != db)
-			continue;
-
-		InterfacePtr<ICommand> setSpreadCmd(CmdUtils::CreateCommand(kSetSpreadCmdBoss));
-		if (setSpreadCmd == nil)
-			continue;
-		InterfacePtr<ILayoutCmdData> cmdData(setSpreadCmd, UseDefaultIID());
-		if (cmdData == nil)
-			continue;
-		cmdData->Set(::GetUIDRef(viewDoc), layout);
-		setSpreadCmd->SetItemList(UIDList(db, spreadUID));
-		if (CmdUtils::ProcessCommand(setSpreadCmd) != kSuccess)
-			ErrorUtils::PMSetGlobalErrorCode(kSuccess);	// スクロールは続行。後続コマンドを巻き添えにしない
-	}
+		KESCMEnsureViewShowsSpread(views[i], db, spreadUID);	// nil ビューは中で弾く
 }
 
 //----------------------------------------------------------------------------------------

@@ -18,6 +18,16 @@
 #include "OMTypes.h"	// UID
 
 class IDataBase;
+class IControlView;
+
+// view が spreadUID を映していなければ、公式コマンド kSetSpreadCmdBoss で切り替える(2026-08-11 に
+// 1ビュー単位で括り出して公開)。既に映していれば何もしないので、何度呼んでも安い。
+// ★スクロールだけでは別スプレッド(とくにマスタースプレッド)へは届かない＝空のペーストボードに
+//   着地する。「違うスプレッドなら切り替える」は公式の作法(手本 SnapTracker.cpp:224 に特例なし)。
+// ★Prev/Next(この .cpp 内)と、レイアウトビュー同期(KESCMPeek.cpp)の両方が呼ぶ＝同じ判断を
+//   2か所に書かないため([[one-question-one-place]])。
+// 戻り値: 実際に切り替えたら kTrue(既に映していた・失敗した場合は kFalse)。
+bool16 KESCMEnsureViewShowsSpread(IControlView* view, IDataBase* db, UID spreadUID);
 
 // 次/前の「見るべきページ」へレイアウトビューをスクロールする。未 Start(sDB==nil)や対象0件のときは
 // スクロールせず、パネルのステータス行にその旨を出すだけ(安全に何度でも呼べる)。
