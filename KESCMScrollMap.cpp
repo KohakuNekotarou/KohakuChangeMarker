@@ -619,8 +619,7 @@ void KESCMScrollMapDetachAll()
 			if (sib == nil || sib == strip)
 				continue;
 			PMRect sf = sib->GetFrame();
-			PMReal gap = sf.Right() - stripFrame.Left();
-			if (gap < 0) gap = -gap;
+			const PMReal gap = abs(sf.Right() - stripFrame.Left());
 			if (gap <= PMReal(0.5) &&
 				sf.Top() < stripFrame.Bottom() && sf.Bottom() > stripFrame.Top())
 			{

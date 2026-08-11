@@ -191,8 +191,8 @@ void KESCMTrackerHudDraw(IGraphicsPort* gPort, IControlView* view, const PMPoint
 	PMReal sx = 1.0, sy = 1.0;
 	{
 		const PMMatrix toWindow = view->GetContentToWindowMatrix();
-		sx = toWindow.GetXScale();	if (sx < 0) sx = -sx;
-		sy = toWindow.GetYScale();	if (sy < 0) sy = -sy;
+		sx = abs(toWindow.GetXScale());
+		sy = abs(toWindow.GetYScale());
 	}
 	if (sx == 0 || sy == 0)
 		return;

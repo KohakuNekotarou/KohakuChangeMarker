@@ -320,9 +320,8 @@ static bool16 KESCMScrollDocToPBPoint(IDataBase* db, const PBPMPoint& pbPoint, P
 		// 倍率で正しく中央に来る(KESCMPeek のビューポート同期と同じ順序)。
 		if (applyZoom > PMReal(0.0))
 		{
-			PMReal cur = pano->GetXScaleFactor(kTrue);
-			PMReal diff = cur - applyZoom; if (diff < 0) diff = -diff;
-			if (diff > PMReal(0.0001))
+			const PMReal cur = pano->GetXScaleFactor(kTrue);
+			if (abs(cur - applyZoom) > PMReal(0.0001))
 			{
 				InterfacePtr<ICommand> zoomCmd(Utils<ILayoutUIUtils>()->MakeZoomCmd(view, applyZoom));
 				if (zoomCmd == nil || CmdUtils::ProcessCommand(zoomCmd) != kSuccess)

@@ -41,12 +41,27 @@ namespace
 // The list. See the header for why this is a file static rather than a boss.
 std::vector<KESCMStoryRow> gRows;
 
-// How many characters of the story to keep. SnpCreateCrossReference.cpp:179 uses 30 for the same
-// job - naming a story in a list - and the panel is 224px wide, so nothing longer could be read.
+// A safety valve, NOT a display limit. How much of a story's opening text is shown is decided by
+// the row's text cell alone: it is kEllipsizeMiddle and bound kBindLeft|kBindRight (KESCM.fr), so
+// it is the one cell that grows when the panel is widened, and it shortens its own text to fit.
 //
-// No ellipsis is appended when the text is cut here. The row's cell ellipsizes in the middle by
-// itself, and a string that already ends in "..." would be shortened again around it.
-const int32 kMaxRowTextChars = 30;
+// ★This panel already answered this exact question once. KESCMDocNameFromDB used to shorten the
+//   Target / Source document names by character count in C++; the block 8 A-2 audit (2026-08-06)
+//   deleted that and left the shortening to kEllipsizeMiddle, so the question is asked in one
+//   place only (memory one-question-one-place). A character cap here was the same duplicate, and
+//   it went unnoticed until the panel became resizable on 2026-08-10: from then on 30 characters
+//   silently capped every width, so widening the panel bought empty space rather than more text.
+//   The old cap took its number from SnpCreateCrossReference.cpp:179, which names stories in a
+//   fixed-width dialog - a list that cannot be resized has no such question to answer.
+//
+// The number below only has to sit past anything a cell could ever show. A palette-font character
+// is never narrower than about 3px, so even a text cell spanning a 4K screen (~3700px) runs out
+// before ~1300 characters. 2000 leaves room and still bounds a pathological single-paragraph
+// story, which is the only thing this limit exists to stop.
+//
+// No ellipsis is appended when the text is cut here: the cell adds its own, and a string already
+// ending in "..." would be shortened again around it.
+const int32 kRowTextSafetyLimit = 2000;
 
 /* IsReadable
 	Is this character worth putting in a row? Only characters a reader would recognise as the story's
@@ -119,7 +134,7 @@ PMString FirstReadableText(ITextModel* model)
 		bool16 pendingGap = kFalse;
 		const int32 charCount = para.CharCount();
 
-		for (int32 i = 0; i < charCount && kept.CharCount() < kMaxRowTextChars; ++i)
+		for (int32 i = 0; i < charCount && kept.CharCount() < kRowTextSafetyLimit; ++i)
 		{
 			const UTF32TextChar ch = para.GetChar(i);
 

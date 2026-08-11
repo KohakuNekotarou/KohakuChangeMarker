@@ -146,8 +146,7 @@ static void KESCMPeekShowUnderMouse(IDataBase* targetDB, IDataBase* sourceDB)
 
 	// 現在のズーム(content→window スケール=ズーム×デバイス倍率)から、画面と 1:1 になる解像度を決める。
 	// dpi = 72 × スケール。1:1 のとき最も綺麗(画像px=画面px)。
-	PMReal curScale = view->GetContentToWindowMatrix().GetXScale();
-	if (curScale < 0) curScale = -curScale;
+	PMReal curScale = abs(view->GetContentToWindowMatrix().GetXScale());
 	if (curScale <= 0) curScale = 1.0;
 
 	// 【低ズームの下限=UI 50%】UIズーム(ユーザーに見える拡大率, デバイス倍率を含まない)が 50% を下回る時は
@@ -209,8 +208,7 @@ static void KESCMPeekShowUnderMouse(IDataBase* targetDB, IDataBase* sourceDB)
 	// ズームが変わっていたら(キャッシュ時と解像度が合わない)作り直す。差が2%以内なら再利用。
 	if (cached && KESCMDrawEventHandler::sOrigScale > 0)
 	{
-		PMReal d = effScale - KESCMDrawEventHandler::sOrigScale;
-		if (d < 0) d = -d;
+		const PMReal d = abs(effScale - KESCMDrawEventHandler::sOrigScale);
 		if (d > KESCMDrawEventHandler::sOrigScale * PMReal(0.02))
 			cached = kFalse;
 	}
@@ -1009,14 +1007,13 @@ static void KESCMSyncOtherDocViewportsTo(IControlView* srcView, IPanorama* srcPa
 			// 来るため(自動同期経由)、一致済みビューへの再スクロール+forceRedraw を毎回打たない。
 			// 中心の許容差はズーム換算で約1.5画面px(スクロール位置は画面px量子化されるため、pt固定の
 			// 微小許容差だと低倍率で永遠に「不一致」になる)。この範囲のズレは見た目に出ない。
-			PMReal zoomDiff = pano->GetXScaleFactor(kTrue) - srcZoom;
-			if (zoomDiff < 0) zoomDiff = -zoomDiff;
+			const PMReal zoomDiff = abs(pano->GetXScaleFactor(kTrue) - srcZoom);
 			const bool16 zoomMatched = (zoomDiff <= PMReal(0.0001));
 			if (zoomMatched)
 			{
 				const PMPoint curCenter = pano->GetContentLocationAtFrameCenter();
-				PMReal dx = curCenter.X() - dstCenter.X(); if (dx < 0) dx = -dx;
-				PMReal dy = curCenter.Y() - dstCenter.Y(); if (dy < 0) dy = -dy;
+				const PMReal dx = abs(curCenter.X() - dstCenter.X());
+				const PMReal dy = abs(curCenter.Y() - dstCenter.Y());
 				const PMReal tol = (srcZoom > PMReal(0.0001)) ? (PMReal(1.5) / srcZoom) : PMReal(1.0);
 				if (dx <= tol && dy <= tol)
 					continue;	// 位置も拡大率も一致済み
@@ -1214,9 +1211,9 @@ void KESCMLayoutSyncObserver::Update(const ClassID& theChange, ISubject* theSubj
 	const PBPMPoint curCenter(srcPano->GetContentLocationAtFrameCenter());
 	if (sHaveLastSrcState && sLastSrcPano == (IPanorama*)srcPano)
 	{
-		PMReal dz = curZoom - sLastSrcZoom;                 if (dz < 0) dz = -dz;
-		PMReal dcx = curCenter.X() - sLastSrcCenter.X();    if (dcx < 0) dcx = -dcx;
-		PMReal dcy = curCenter.Y() - sLastSrcCenter.Y();    if (dcy < 0) dcy = -dcy;
+		const PMReal dz  = abs(curZoom - sLastSrcZoom);
+		const PMReal dcx = abs(curCenter.X() - sLastSrcCenter.X());
+		const PMReal dcy = abs(curCenter.Y() - sLastSrcCenter.Y());
 		if (dz <= PMReal(0.0) && dcx <= PMReal(0.0) && dcy <= PMReal(0.0))
 			return;	// 手本は前回複製時から1ミリも動いていない
 	}

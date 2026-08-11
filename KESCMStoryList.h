@@ -36,7 +36,8 @@ class IDataBase;
 struct KESCMStoryRow
 {
 	UID			fStoryUID;	// the target document's story
-	PMString	fText;		// first readable words, already shortened - what the row shows
+	PMString	fText;		// first readable words. NOT shortened for display - the row's text cell
+							// is kEllipsizeMiddle and does that itself, at whatever width it has
 	uint32		fKinds;		// OR of KESCMStoryChangeKind - named on the right of the row
 	UID			fFrameUID;	// the story's FIRST frame - what a click scrolls to. kInvalidUID for an
 							// unplaced story (no frame at all), which cannot be jumped to

@@ -1367,7 +1367,7 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	if (zview != nil)
 	{
 		PMMatrix toWin = zview->GetContentToWindowMatrix();	// content→window(画面px), 現ズーム
-		sxr = toWin.GetXScale(); if (sxr < 0) sxr = -sxr;
+		sxr = abs(toWin.GetXScale());	// 負スケールもあり得る(PMReal 版 abs = PMReal.h)
 	}
 
 	// ★描画モードの決定(サムネイル生成は関数冒頭で早期 return 済みなのでここには来ない)。
