@@ -51,6 +51,9 @@
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMBookDialog.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMBookDialogObserver.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMBookPair.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>

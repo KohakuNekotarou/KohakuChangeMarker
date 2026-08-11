@@ -55,6 +55,8 @@ resource StringTable (kSDKDefStringsResourceID + index_enUS)
                 kKESCMExportChangedPagesMenuKey,	"Export Changed Pages...",
                 kKESCMCompareBooksMenuKey,			"Compare Books",
                 kKESCMBookDialogTitleKey,			"Compare Books",
+                kKESCMBookCompareKey,				"Compare",
+                kKESCMBookReadyKey,					"Press Compare to compare the two books chapter by chapter.",
                 kKESCMIgnorePageNumMenuKey,			"Ignore Page Number Marker",
                 kKESCMHoldToHideMarksMenuKey,			"Hold to Hide Marks",
 

@@ -218,6 +218,7 @@
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMActionComponent.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMBookCompare.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMBookDialog.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMBookDialogObserver.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMBookPair.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMChangedPagesTSV.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMChangeNav.cpp" />

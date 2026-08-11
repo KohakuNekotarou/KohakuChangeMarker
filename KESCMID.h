@@ -176,6 +176,7 @@ DECLARE_PMID(kImplementationIDSpace, kKESCMStoryRowEHImpl, kKESCMPrefix + 27)	//
 //  ActionID と違い Impl 番号は外部保存が参照しないので、下記のとおり再利用した。)
 DECLARE_PMID(kImplementationIDSpace, kKESCMStoryTreeEHImpl, kKESCMPrefix + 28)	// IEventHandler 実装(TreeViewEventHandler派生)。★一覧**そのもの**のキー操作＝↑↓で行を移動し、着いた行へジャンプする(KESCMStoryTreeEH.cpp)。行側の kKESCMStoryRowEHImpl とは別物＝あちらはクリック
 DECLARE_PMID(kImplementationIDSpace, kKESCMBookDialogControllerImpl, kKESCMPrefix + 29)	// IDialogController 実装(CDialogController派生)。ブック比較のモードレスダイアログ＝開いたとき対象の2ブック名を埋める(KESCMBookDialog.cpp)
+DECLARE_PMID(kImplementationIDSpace, kKESCMBookDialogObserverImpl, kKESCMPrefix + 30)	// IObserver 実装(CObserver派生)。ブック比較ダイアログの Compare ボタンの押下を受けて比較を走らせる(KESCMBookDialogObserver.cpp)。★ダイアログ boss に載せる＝ボタン用の独自 boss は要らない(パネルと同じ形)
 
 
 // ActionIDs:
@@ -278,6 +279,10 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMStoryHeaderRuleWidgetID, kKESCMPrefix + 56)	/
 // ブック比較ダイアログ(2026-08-11)。★OK/Cancel は stock の WidgetID(kOKButtonWidgetID /
 // kCancelButton_WidgetID)を使うので、ここに要るのはダイアログ本体だけ。
 DECLARE_PMID(kWidgetIDSpace, kKESCMBookDialogWidgetID, kKESCMPrefix + 57)
+DECLARE_PMID(kWidgetIDSpace, kKESCMBookTargetTextWidgetID, kKESCMPrefix + 58)	// 「Target: new.indb」(前面タブのブック)
+DECLARE_PMID(kWidgetIDSpace, kKESCMBookSourceTextWidgetID, kKESCMPrefix + 59)	// 「Source: old.indb」(それ以外で最初に開いているブック)
+DECLARE_PMID(kWidgetIDSpace, kKESCMBookCompareButtonWidgetID, kKESCMPrefix + 60)	// 「Compare」ボタン。★押す前に上の2行が目に入るのが要点
+DECLARE_PMID(kWidgetIDSpace, kKESCMBookStatusTextWidgetID, kKESCMPrefix + 61)	// ステータス行(比較の要約。章数を必ず含む)
 //DECLARE_PMID(kWidgetIDSpace, kKESCMWidgetID, kKESCMPrefix + 2)
 //DECLARE_PMID(kWidgetIDSpace, kKESCMWidgetID, kKESCMPrefix + 3)
 //DECLARE_PMID(kWidgetIDSpace, kKESCMWidgetID, kKESCMPrefix + 4)
@@ -375,6 +380,8 @@ DECLARE_PMID(kScriptInfoIDSpace, kKESCMBookResultPropertyScriptElement, kKESCMPr
 #define kKESCMExportChangedPagesMenuKey	kKESCMStringPrefix "kKESCMExportChangedPagesMenuKey"	// パネルのフライアウト「Export Changed Pages...」項目のメニュー名
 #define kKESCMCompareBooksMenuKey	kKESCMStringPrefix "kKESCMCompareBooksMenuKey"	// パネルのフライアウト「Compare Books」項目のメニュー名(ブック同士を章単位で比較)
 #define kKESCMBookDialogTitleKey	kKESCMStringPrefix "kKESCMBookDialogTitleKey"	// ブック比較ダイアログのタイトル
+#define kKESCMBookCompareKey		kKESCMStringPrefix "kKESCMBookCompareKey"		// ブック比較ダイアログの「Compare」ボタン
+#define kKESCMBookReadyKey			kKESCMStringPrefix "kKESCMBookReadyKey"			// 比較前のステータス文(押す前の案内)
 #define kKESCMTranslucentPanelMenuKey	kKESCMStringPrefix "kKESCMTranslucentPanelMenuKey"	// パネルのフライアウト「Translucent Panel」トグルのメニュー名
 #define kKESCMTranslucentPagesPanelMenuKey	kKESCMStringPrefix "kKESCMTranslucentPagesPanelMenuKey"	// パネルのフライアウト「Translucent Pages Panel」トグルのメニュー名(対象は本体のページパネル)
 // (kKESCMTranslucentToolboxMenuKey は 2026-08-07 に機能ごと撤去。文字列キーは ActionID と違って

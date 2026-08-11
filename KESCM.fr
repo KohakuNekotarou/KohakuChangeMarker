@@ -453,6 +453,10 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 		kDialogBoss,
 		{
 			IID_IDIALOGCONTROLLER, kKESCMBookDialogControllerImpl,
+			// The Compare button's click. Put on the DIALOG rather than on a button boss of our
+			// own, exactly as the panel does it (KESCMPanelObserver): one observer, AutoAttach,
+			// and a switch on the widget ID. A custom button boss would buy nothing here.
+			IID_IOBSERVER, kKESCMBookDialogObserverImpl,
 		}
 	},
 }}};
@@ -1929,8 +1933,75 @@ resource KESCMBookDialogWidget (kKESCMBookDialogRsrcID + index_enUS)
 	kKESCMBookDialogTitleKey,		// Dialog name
 
 	{
-		// ----- the button row. The rest of the dialog (targets, Compare, the list) arrives in
-		//       the next task; this one only has to prove that a modeless dialog opens at all.
+		// ----- what is about to be compared -----
+		// ***** These two lines are the whole safety net. ***** Target is whichever book has the
+		// front tab in the Book panel, and that is NOT the same thing as InDesign's "active book"
+		// - the two drift apart silently. Showing both names before the button is pressed is the
+		// only chance the user gets to notice a mismatch.
+		// ⚠ Convert ampersands = kFalse: a book called "A&B.indb" would otherwise display as
+		// "AB.indb" (the ampersand is eaten as an accelerator marker).
+		EVEStaticTextWidget
+		(
+			kKESCMBookTargetTextWidgetID,	// WidgetId
+			kSysStaticTextPMRsrcId,			// RsrcId
+			kBindNone,						// Frame binding
+			Frame(0, 0, 420, 20)			// Frame (l,t,r,b)
+			kTrue, kTrue, kAlignLeft,		// Visible, Enabled, Alignment
+			kEllipsizeEnd, kFalse,			// Ellipsize style, Convert ampersands
+			"",								// Text (the controller fills it)
+			kInvalidWidgetID				// Associated control (none)
+
+			kEVEAlignLeft | kEVERegularSpaceAfter,
+		),
+
+		EVEStaticTextWidget
+		(
+			kKESCMBookSourceTextWidgetID,	// WidgetId
+			kSysStaticTextPMRsrcId,			// RsrcId
+			kBindNone,						// Frame binding
+			Frame(0, 0, 420, 20)			// Frame (l,t,r,b)
+			kTrue, kTrue, kAlignLeft,		// Visible, Enabled, Alignment
+			kEllipsizeEnd, kFalse,			// Ellipsize style, Convert ampersands
+			"",								// Text (the controller fills it)
+			kInvalidWidgetID				// Associated control (none)
+
+			kEVEAlignLeft | kEVELargeSpaceAfter,
+		),
+
+		// ----- the Compare button -----
+		// Not the OK button: pressing it must run the comparison and leave the dialog open, which
+		// is exactly what a modeless dialog is for. The click is picked up by the observer on the
+		// dialog boss (KESCMBookDialogObserver.cpp).
+		EVEButtonWidget
+		(
+			kKESCMBookCompareButtonWidgetID,	// WidgetID
+			kSysButtonPMRsrcId,					// RsrcID
+			kBindNone,							// Binding
+			Frame(0, 0, 90, 22)					// Frame (l,t,r,b)
+			kTrue, kTrue,						// Visible, Enabled
+			kKESCMBookCompareKey,				// Button text
+
+			kEVEAlignLeft | kEVERegularSpaceAfter,
+		),
+
+		// ----- the status line -----
+		// Always states the chapter COUNT, so "nothing listed" can never be misread as "nothing
+		// could be opened".
+		EVEStaticTextWidget
+		(
+			kKESCMBookStatusTextWidgetID,	// WidgetId
+			kSysStaticTextPMRsrcId,			// RsrcId
+			kBindNone,						// Frame binding
+			Frame(0, 0, 420, 20)			// Frame (l,t,r,b)
+			kTrue, kTrue, kAlignLeft,		// Visible, Enabled, Alignment
+			kEllipsizeEnd, kFalse,			// Ellipsize style, Convert ampersands
+			kKESCMBookReadyKey,				// Text (replaced after each comparison)
+			kInvalidWidgetID				// Associated control (none)
+
+			kEVEAlignLeft | kEVELargeSpaceAfter,
+		),
+
+		// ----- the button row. The chapter list arrives in the next task.
 		EVEGenericPanelWidget
 		(
 			kInvalidWidgetID,		// WidgetId
