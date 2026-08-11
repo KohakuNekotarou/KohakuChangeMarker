@@ -45,6 +45,8 @@
 #include "IWidgetParent.h"
 #include "IDocumentPresentation.h"	// IID_IDOCUMENTPRESENTATION(文書ウィンドウ判定)
 #include "ILayoutViewUtils.h"		// GetAllLayoutViews(Split Window 両ペイン+全窓の列挙)
+#include "ILayoutControlData.h"		// GetSpreadRef(この窓が今どのスプレッドを見ているか)
+#include "IMasterSpreadList.h"		// マスタースプレッドかの判定(表示中スプレッドの切り分け)
 #include "IPanorama.h"				// GetBounds(パノラマのスクロール全域=スクロールバーが表す範囲)
 #include "IGraphicsPort.h"
 #include "IGeometry.h"				// ページ矩形(pasteboard 写像用)
@@ -194,6 +196,59 @@ static void KESCMScrollMapProbeWindow(IControlView* strip, PMReal& outArrowH,
 	}
 }
 
+// stripPres の窓が今どのスプレッドを見ているか。分からなければ kInvalidUID(2026-08-11)。
+// ★道筋: db の各レイアウトビューの親 presentation を、strip 自身の presentation と突き合わせ、
+//   一致したビューに ILayoutControlData::GetSpreadRef() を聞く(手本=KESCMChangeNav.cpp:262-271)。
+//   presentation どうしの同一性をポインタで見るのは、下の KESCMCollectPresentationPanels(:478)と
+//   同じ流儀(同じ IID の QI 結果同士なので比較できる)。
+// ⚠Split Window では1つの presentation に複数のビューが載るが、strip は縦スクロールバーの隣に
+//   1つしか注入されないので、最初に一致したビューを採る。
+static UID KESCMSpreadShownInPresentation(IDocumentPresentation* stripPres, IDataBase* db)
+{
+	if (stripPres == nil || db == nil)
+		return kInvalidUID;
+
+	K2Vector<IControlView*> views;
+	Utils<ILayoutViewUtils>()->GetAllLayoutViews(views, nil, db);
+	for (int32 i = 0; i < (int32)views.size(); ++i)
+	{
+		if (views[i] == nil)
+			continue;
+		InterfacePtr<IWidgetParent> wp(views[i], IID_IWIDGETPARENT);
+		if (wp == nil)
+			continue;
+		InterfacePtr<IDocumentPresentation> pres(
+			(IDocumentPresentation*)wp->QueryParentFor(IID_IDOCUMENTPRESENTATION));
+		if (pres == nil)
+			continue;
+		if ((IPMUnknown*)(IDocumentPresentation*)pres != (IPMUnknown*)stripPres)
+			continue;
+		InterfacePtr<ILayoutControlData> layout(views[i], UseDefaultIID());
+		if (layout == nil)
+			continue;
+		return layout->GetSpreadRef().GetUID();
+	}
+	return kInvalidUID;
+}
+
+// spreadUID が db のマスタースプレッドなら kTrue(2026-08-11)。
+// ★IMasterSpreadList::GetMasterSpreadIndex(UID) は使わない: 「マスターでない UID を渡したとき何を
+//   返すか」がヘッダーに書かれていない(IMasterSpreadList.h:101-107 は "Return the index" としか
+//   言わない)。負が返る保証の無いものを判定に使わず、自分で突き合わせる。マスターは通常数枚なので安い。
+static bool16 KESCMIsMasterSpread(IDataBase* db, UID spreadUID)
+{
+	if (db == nil || spreadUID == kInvalidUID)
+		return kFalse;
+	InterfacePtr<IMasterSpreadList> ml(db, db->GetRootUID(), UseDefaultIID());
+	if (ml == nil)
+		return kFalse;
+	const int32 nm = ml->GetMasterSpreadCount();
+	for (int32 m = 0; m < nm; ++m)
+		if (ml->GetNthMasterSpreadUID(m) == spreadUID)
+			return kTrue;
+	return kFalse;
+}
+
 // フェーズ2の実データ描画(表示専用。クリック移動等は付けない=ユーザー指定 2026-07-11)。
 //   ・背景 = テーマ地色(kInterfacePaletteFill)
 //   ・変更ページ(sEntries) = 赤の塗りつぶし
@@ -236,14 +291,12 @@ void KESCMScrollMapView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 	// この strip が属する窓の文書を特定し(presentation の GetDocumentUIDRef)、Target 窓か
 	// Source 窓かでマークの供給元を切り替える(2026-07-11 ユーザー要望で Source 窓にも表示)。
 	// どちらの文書でもない・未 arm・クローズ済みなら背景のみ。
-	IDataBase* db = nil;
-	{
-		InterfacePtr<IWidgetParent> wp(this, IID_IWIDGETPARENT);
-		InterfacePtr<IDocumentPresentation> pres(
-			wp != nil ? (IDocumentPresentation*)wp->QueryParentFor(IID_IDOCUMENTPRESENTATION) : nil);
-		if (pres != nil)
-			db = pres->GetDocumentUIDRef().GetDataBase();
-	}
+	// ★stripPres は下の「今どのスプレッドを見ているか」でも使うので、ここで持っておく(2026-08-11。
+	//   同じ親を二度たどらない)。
+	InterfacePtr<IWidgetParent> stripParent(this, IID_IWIDGETPARENT);
+	InterfacePtr<IDocumentPresentation> stripPres(
+		stripParent != nil ? (IDocumentPresentation*)stripParent->QueryParentFor(IID_IDOCUMENTPRESENTATION) : nil);
+	IDataBase* const db = (stripPres != nil) ? stripPres->GetDocumentUIDRef().GetDataBase() : nil;
 	const bool16 isTarget = (db != nil && db == KESCMArmedTargetDB());
 	const bool16 isSource = (!isTarget && db != nil && db == KESCMArmedSourceDB());
 	// ★Find Overset の帯(2026-07-24): 比較(arm)とは独立に、走査した文書(sOversetDB)の窓にも
@@ -258,7 +311,26 @@ void KESCMScrollMapView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 	// Spreads / ページパネルの Hide Spread)は除外する: 隠すと表示中スプレッドは再配置(座標更新)される
 	// のに、隠れたスプレッドは旧座標のまま残るため、含めると正規化が汚れて全マークがズレる
 	// (ユーザー報告 2026-07-11。KESCMFindPageUnderMouse のヒットテスト除外と同じ理由・同じ判定)。
+	// ★★載せるページは「この窓が今どのスプレッドを見ているか」で切り替える(2026-08-11)。
+	// マスタースプレッドは通常スプレッドとは別の座標空間に居るので、マスターを表示している窓に
+	// 通常ページの帯を並べると、Y の分母(パノラマのスクロール全域=そのときはマスター側の範囲)と
+	// 噛み合わず、まったく別の場所に帯が出る。マスター表示中はそのマスタースプレッドのページだけを
+	// 載せる(枠も overset も無ければ何も描かれない=自然に空になる)。
+	const UID shownSpread = KESCMSpreadShownInPresentation(stripPres, db);
+	const bool16 showingMaster = KESCMIsMasterSpread(db, shownSpread);
+
 	std::vector<UID> pages;
+	if (showingMaster)
+	{
+		// ★マスター側で隠しフラグを見ないのは、マスタースプレッドが Hide Spread の対象ではないため。
+		InterfacePtr<ISpread> spread(db, shownSpread, UseDefaultIID());
+		if (spread == nil)
+			return;
+		const int32 np = spread->GetNumPages();
+		for (int32 p = 0; p < np; ++p)
+			pages.push_back(spread->GetNthPageUID(p));
+	}
+	else
 	{
 		InterfacePtr<ISpreadList> spreadList(db, db->GetRootUID(), UseDefaultIID());
 		if (spreadList == nil)
@@ -676,8 +748,36 @@ static uint32 KESCMHiddenFingerprint(IDataBase* db)
 	return h;
 }
 
+// db の窓が「今どのマスタースプレッドを見ているか」の指紋(2026-08-11)。
+// ★地図に載せるページは表示中スプレッドで変わる(マスター表示中はそのマスターのページだけ)のに、
+//   スプレッドの切り替えは KESCM のどのフックも通らない。必ず再描画は起こるので、隠しフラグと
+//   同じ便乗経路で拾う。
+// ★通常スプレッドは 0 に畳む: 通常スプレッドの間を移動しても地図は全ページを載せたままで中身が
+//   変わらないため、そこで Invalidate しても再描画が無駄になるだけ。
+static uint32 KESCMShownMasterFingerprint(IDataBase* db)
+{
+	if (db == nil || !KESCMIsDocDBOpen(db))
+		return 0;
+	K2Vector<IControlView*> views;
+	Utils<ILayoutViewUtils>()->GetAllLayoutViews(views, nil, db);
+	uint32 h = 0;
+	for (int32 i = 0; i < (int32)views.size(); ++i)
+	{
+		if (views[i] == nil)
+			continue;
+		InterfacePtr<ILayoutControlData> layout(views[i], UseDefaultIID());
+		if (layout == nil)
+			continue;
+		const UID shown = layout->GetSpreadRef().GetUID();
+		h = h * 131u + (KESCMIsMasterSpread(db, shown) ? shown.Get() : 0u);
+	}
+	return h;
+}
+
 static std::chrono::steady_clock::time_point sHiddenCheckLast;	// 前回チェック時刻(スロットル用)
 static bool16 sHiddenCheckStarted = kFalse;	// 一度でもチェックしたか(初回は必ず通す。time_point 既定値との比較を避ける)
+// 指紋は「隠しフラグ構成」と「表示中マスタースプレッド」の合成(2026-08-11 に後者を追加)。
+// どちらが変わっても地図の中身が変わるので、1本の数にまとめて比較する。
 static uint32 sHiddenFingerT = 0;			// 前回の Target 側指紋
 static uint32 sHiddenFingerS = 0;			// 前回の Source 側指紋
 static uint32 sHiddenFingerO = 0;			// 前回の overset 走査文書側指紋(Find Overset 単独時の隠し追従)
@@ -708,10 +808,12 @@ void KESCMScrollMapNoticeDrawEvent()
 	sHiddenCheckStarted = kTrue;
 	sHiddenCheckLast = now;
 
-	const uint32 ft = KESCMHiddenFingerprint(KESCMArmedTargetDB());
-	const uint32 fs = KESCMHiddenFingerprint(KESCMArmedSourceDB());
-	const uint32 fo = KESCMHiddenFingerprint(
-		(KESCMDrawEventHandler::sOversetOn) ? KESCMDrawEventHandler::sOversetDB : nil);
+	IDataBase* const tDB = KESCMArmedTargetDB();
+	IDataBase* const sDB = KESCMArmedSourceDB();
+	IDataBase* const oDB = (KESCMDrawEventHandler::sOversetOn) ? KESCMDrawEventHandler::sOversetDB : nil;
+	const uint32 ft = KESCMHiddenFingerprint(tDB) * 31u + KESCMShownMasterFingerprint(tDB);
+	const uint32 fs = KESCMHiddenFingerprint(sDB) * 31u + KESCMShownMasterFingerprint(sDB);
+	const uint32 fo = KESCMHiddenFingerprint(oDB) * 31u + KESCMShownMasterFingerprint(oDB);
 	if (ft != sHiddenFingerT || fs != sHiddenFingerS || fo != sHiddenFingerO)
 	{
 		sHiddenFingerT = ft;
