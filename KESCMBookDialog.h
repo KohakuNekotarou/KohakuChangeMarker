@@ -21,6 +21,10 @@
 
 #include "PMString.h"
 
+#include <vector>
+
+#include "KESCMBookResult.h"	// KESCMChapterResult - what the list holds
+
 class IPanelControlData;
 
 /** Open the book comparison dialog.
@@ -39,6 +43,19 @@ void KESCMBookDialogUpdateTargets(IPanelControlData* panelData);
 
 /** Put a line in the dialog's status area. */
 void KESCMBookDialogSetStatus(IPanelControlData* panelData, const PMString& message);
+
+/** What the chapter list is showing right now, and how to replace it.
+
+    ***** The rows outlive the dialog window. ***** They are held in this module, not in the tree
+    widget, so that closing the dialog does not throw away a comparison that took real time to
+    compute - reopening it (kCacheDialog) finds them still here. The tree's hierarchy adapter reads
+    this and nothing else.
+
+    The comparison's summary line is kept separately (KESCMGetBookResultText). These are the same
+    facts in a different shape: a list needs rows, and re-parsing a sentence back into rows would be
+    two answers to one question. */
+const std::vector<KESCMChapterResult>& KESCMBookDialogRows();
+void KESCMBookDialogSetRows(const std::vector<KESCMChapterResult>& rows);
 
 #endif // __KESCMBookDialog_h__
 

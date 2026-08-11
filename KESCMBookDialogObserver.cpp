@@ -28,9 +28,10 @@
 
 // Project includes:
 #include "KESCMBookCompare.h"		// KESCMCompareBooks
-#include "KESCMBookDialog.h"		// KESCMBookDialogUpdateTargets / KESCMBookDialogSetStatus
+#include "KESCMBookDialog.h"		// KESCMBookDialogUpdateTargets / SetStatus / SetRows
 #include "KESCMBookPair.h"			// KESCMResolveBookPair
 #include "KESCMBookResult.h"		// KESCMChapterResult
+#include "KESCMBookTree.h"			// KESCMBookTreeRebuild
 #include "KESCMID.h"
 
 /** Watches the book comparison dialog's Compare button. */
@@ -126,6 +127,12 @@ void KESCMBookDialogObserver::RunComparison()
 		PMString msg("Select a book tab in the Book panel, and open a second book.");
 		msg.SetTranslatable(kFalse);
 		KESCMBookDialogSetStatus(panelData, msg);
+
+		// ★The list goes too. What is on screen has to describe the run that just happened, and
+		//   this run produced nothing - leaving the previous book's chapters up there would be
+		//   showing an answer to a question nobody asked any more.
+		KESCMBookDialogSetRows(std::vector<KESCMChapterResult>());
+		KESCMBookTreeRebuild(panelData);
 		return;
 	}
 
@@ -136,6 +143,12 @@ void KESCMBookDialogObserver::RunComparison()
 	KESCMCompareBooks(target, source, chapters, report);
 
 	KESCMBookDialogSetStatus(panelData, report);
+
+	// The summary says how many of each; the list says which. ★Set the rows BEFORE rebuilding:
+	// the tree asks the adapter how many rows there are while ChangeRoot runs, and the adapter
+	// reads exactly what was just stored.
+	KESCMBookDialogSetRows(chapters);
+	KESCMBookTreeRebuild(panelData);
 }
 
 // End, KESCMBookDialogObserver.cpp.

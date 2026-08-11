@@ -102,9 +102,12 @@ DECLARE_PMID(kClassIDSpace, kKESCMStoryRowCellBoss, kKESCMPrefix + 20)	// kInfoS
 // 「行クリックでその章を開く」を後から足せる(モーダルだとその道が閉じる)。stock の kDialogBoss に
 // 自前の IDialogController を載せるだけ＝KESCL の Jump Offset ダイアログと同じ形。
 DECLARE_PMID(kClassIDSpace, kKESCMBookDialogBoss, kKESCMPrefix + 21)
-//DECLARE_PMID(kClassIDSpace, kKESCMBoss, kKESCMPrefix + 22)
-//DECLARE_PMID(kClassIDSpace, kKESCMBoss, kKESCMPrefix + 23)
-//DECLARE_PMID(kClassIDSpace, kKESCMBoss, kKESCMPrefix + 24)
+// ブック比較ダイアログの中の章一覧(2026-08-11)。★Story Edits の一覧と**同じ3点セット**＝
+// ツリー本体(adapter+widget mgr)／行／行のセル。あちらとの違いは住む場所だけで、
+// パレットではなくダイアログに載る＝テーマが kIDDialogTheme・フォントがダイアログ用になる。
+DECLARE_PMID(kClassIDSpace, kKESCMBookTreeWidgetBoss, kKESCMPrefix + 22)	// kTreeViewWidgetBoss継承: 章の一覧(平坦1階層)。載せるのは adapter と widget mgr の2つだけ
+DECLARE_PMID(kClassIDSpace, kKESCMBookRowWidgetBoss, kKESCMPrefix + 23)	// kTreeNodeWidgetBoss継承: 一覧の1行。★今は何も足していない空の Class＝行クリック(段階4「その章を開く」)で IID_IEVENTHANDLER を載せる場所として先に採ってある。Story Edits の行 boss がたどったのと同じ順序
+DECLARE_PMID(kClassIDSpace, kKESCMBookRowCellBoss, kKESCMPrefix + 24)	// kInfoStaticTextWidgetBoss継承+IID_ITIP(kKESCMNoTipImpl): 行のセル。素の静的テキストは省略表示すると全文をポップアップで出すので、一覧の行では黙らせる(Story Edits と同じ判断=2026-08-10 ユーザー指定)
 //DECLARE_PMID(kClassIDSpace, kKESCMBoss, kKESCMPrefix + 25)
 
 
@@ -177,6 +180,8 @@ DECLARE_PMID(kImplementationIDSpace, kKESCMStoryRowEHImpl, kKESCMPrefix + 27)	//
 DECLARE_PMID(kImplementationIDSpace, kKESCMStoryTreeEHImpl, kKESCMPrefix + 28)	// IEventHandler 実装(TreeViewEventHandler派生)。★一覧**そのもの**のキー操作＝↑↓で行を移動し、着いた行へジャンプする(KESCMStoryTreeEH.cpp)。行側の kKESCMStoryRowEHImpl とは別物＝あちらはクリック
 DECLARE_PMID(kImplementationIDSpace, kKESCMBookDialogControllerImpl, kKESCMPrefix + 29)	// IDialogController 実装(CDialogController派生)。ブック比較のモードレスダイアログ＝開いたとき対象の2ブック名を埋める(KESCMBookDialog.cpp)
 DECLARE_PMID(kImplementationIDSpace, kKESCMBookDialogObserverImpl, kKESCMPrefix + 30)	// IObserver 実装(CObserver派生)。ブック比較ダイアログの Compare ボタンの押下を受けて比較を走らせる(KESCMBookDialogObserver.cpp)。★ダイアログ boss に載せる＝ボタン用の独自 boss は要らない(パネルと同じ形)
+DECLARE_PMID(kImplementationIDSpace, kKESCMBookTreeAdapterImpl, kKESCMPrefix + 31)	// ITreeViewHierarchyAdapter 実装(ListTreeViewAdapter派生。KESCMBookTreeAdapter.cpp)。ブック比較ダイアログの章一覧＝行数を答えるだけ
+DECLARE_PMID(kImplementationIDSpace, kKESCMBookTreeWidgetMgrImpl, kKESCMPrefix + 32)	// ITreeViewWidgetMgr 実装(CTreeViewWidgetMgr派生。KESCMBookTreeWidgetMgr.cpp)。章一覧の行の生成と流し込み(章名 / 状態の2列)
 
 
 // ActionIDs:
@@ -283,6 +288,10 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMBookTargetTextWidgetID, kKESCMPrefix + 58)	//
 DECLARE_PMID(kWidgetIDSpace, kKESCMBookSourceTextWidgetID, kKESCMPrefix + 59)	// 「Source: old.indb」(それ以外で最初に開いているブック)
 DECLARE_PMID(kWidgetIDSpace, kKESCMBookCompareButtonWidgetID, kKESCMPrefix + 60)	// 「Compare」ボタン。★押す前に上の2行が目に入るのが要点
 DECLARE_PMID(kWidgetIDSpace, kKESCMBookStatusTextWidgetID, kKESCMPrefix + 61)	// ステータス行(比較の要約。章数を必ず含む)
+DECLARE_PMID(kWidgetIDSpace, kKESCMBookTreeWidgetID, kKESCMPrefix + 62)		// 章一覧のツリー本体(ダイアログの中で一番大きい部品)
+DECLARE_PMID(kWidgetIDSpace, kKESCMBookRowWidgetID, kKESCMPrefix + 63)		// 行テンプレート自身。★GetWidgetTypeForNode が返すのはこれ
+DECLARE_PMID(kWidgetIDSpace, kKESCMBookRowNameWidgetID, kKESCMPrefix + 64)	// 行の左=章のファイル名(Failed のときだけ「 - 理由」が後ろに付く)
+DECLARE_PMID(kWidgetIDSpace, kKESCMBookRowStateWidgetID, kKESCMPrefix + 65)	// 行の右=判定(Changed / NoChange / ChapterAdded / ChapterDeleted / Failed)。固定幅・右寄せ
 //DECLARE_PMID(kWidgetIDSpace, kKESCMWidgetID, kKESCMPrefix + 2)
 //DECLARE_PMID(kWidgetIDSpace, kKESCMWidgetID, kKESCMPrefix + 3)
 //DECLARE_PMID(kWidgetIDSpace, kKESCMWidgetID, kKESCMPrefix + 4)
@@ -453,6 +462,20 @@ DECLARE_PMID(kScriptInfoIDSpace, kKESCMBookResultPropertyScriptElement, kKESCMPr
 // ブック比較ダイアログのビューリソースID(kViewRsrcType)。KESCMBookDialog.cpp が RsrcSpec で指す。
 // ★1010/1011 と同じ採番の続き。手本=KESCL の Jump Offset ダイアログ(あちらは kSDKDefDialogResourceID)。
 #define kKESCMBookDialogRsrcID	1012
+
+// ブック比較ダイアログの章一覧の、行テンプレートのビューリソースID(kViewRsrcType;
+// CreateObjectNoInit で1行ずつ生成する。KESCMBookTreeWidgetMgr.cpp)。★1011(Story Edits の行)と
+// 同じ作りで、違うのは中身が2列であることとダイアログ用のフォントを使うことだけ。
+#define kKESCMBookRowRsrcID	1013
+
+// 章一覧の行の高さ。★Story Edits の kKESCMStoryRowHeight と同じく .fr と C++ の両方がこの1つの定数を
+// 読む(行リソースの Frame・ツリーのスクロール増分・GetNodeWidgetHeight)。
+// ★下の 19 と違って、こちらは SDK 標準の kCC2016PanelTreeNodeHeight と同じ 22
+// (StdHeightWidthConstants.h:50)。パレットの一覧が 19 なのは**パレットフォントを実測して決めた値**
+// (2026-08-11)で、ダイアログのフォントは測っていない＝測っていない側では標準に従う。製品の
+// AutoCorrect 環境設定のリストも、ダイアログの中の一覧をこの定数で組んでいる
+// (AutoCorrectPrefsPanel_enUS.fr:288)。
+#define kKESCMBookRowHeight	22
 
 // 一覧の行の高さ。★.fr と C++ の両方がこの1つの定数を読む(Adobe の StdHeightWidthConstants.h と同じ形)
 // ＝行リソースの Frame・ツリーのスクロール増分・GetNodeWidgetHeight が同じ事実を語る。値は KBS の

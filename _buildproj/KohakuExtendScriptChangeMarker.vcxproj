@@ -220,6 +220,8 @@
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMBookDialog.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMBookDialogObserver.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMBookPair.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMBookTreeAdapter.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMBookTreeWidgetMgr.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMChangedPagesTSV.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMChangeNav.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMColorSampler.cpp" />
@@ -274,6 +276,7 @@
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMBookDialog.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMBookPair.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMBookResult.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMBookTree.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMChangedPagesTSV.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMChangeNav.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMCheckGlyph.h" />

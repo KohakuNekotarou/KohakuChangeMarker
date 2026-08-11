@@ -40,6 +40,8 @@ REGISTER_PMINTERFACE(KESCMStoryRowEH, kKESCMStoryRowEHImpl)	// Story Edits の�
 REGISTER_PMINTERFACE(KESCMStoryTreeEH, kKESCMStoryTreeEHImpl)	// Story Edits の一覧の↑↓=行を移動して着いた行を表示(TreeViewEventHandler派生。KESCMStoryTreeEH.cpp)
 REGISTER_PMINTERFACE(KESCMBookDialogController, kKESCMBookDialogControllerImpl)	// ブック比較のモードレスダイアログ(CDialogController派生。KESCMBookDialog.cpp)
 REGISTER_PMINTERFACE(KESCMBookDialogObserver, kKESCMBookDialogObserverImpl)	// 同ダイアログの Compare ボタンの押下(CObserver派生。KESCMBookDialogObserver.cpp)
+REGISTER_PMINTERFACE(KESCMBookTreeAdapter, kKESCMBookTreeAdapterImpl)	// 同ダイアログの章一覧の中身(ListTreeViewAdapter派生。KESCMBookTreeAdapter.cpp)
+REGISTER_PMINTERFACE(KESCMBookTreeWidgetMgr, kKESCMBookTreeWidgetMgrImpl)	// 同ダイアログの章一覧の行の生成と流し込み(CTreeViewWidgetMgr派生。KESCMBookTreeWidgetMgr.cpp)
 REGISTER_PMINTERFACE(KESCMThumbIdleTask, kKESCMThumbIdleTaskImpl)
 REGISTER_PMINTERFACE(KESCMScrollMapView, kKESCMScrollMapViewImpl)
 REGISTER_PMINTERFACE(KESCMTool, kKESCMToolImpl)

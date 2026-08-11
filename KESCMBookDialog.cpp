@@ -66,6 +66,11 @@ void KESCMBookDialogController::InitializeDialogFields(IActiveContext* context)
 namespace
 {
 
+/** The chapter list's rows. ★Module scope, not a member of the dialog: the dialog window is
+	created and destroyed as it is opened and closed, and results that survive only as long as the
+	window would make closing it the same as discarding them. */
+std::vector<KESCMChapterResult> gDialogRows;
+
 /** Put text into one of the dialog's static text widgets. Does nothing if it is not there. */
 void SetLine(IPanelControlData* panelData, const WidgetID& widgetID, const PMString& text)
 {
@@ -127,6 +132,16 @@ void KESCMBookDialogUpdateTargets(IPanelControlData* panelData)
 void KESCMBookDialogSetStatus(IPanelControlData* panelData, const PMString& message)
 {
 	SetLine(panelData, kKESCMBookStatusTextWidgetID, message);
+}
+
+const std::vector<KESCMChapterResult>& KESCMBookDialogRows()
+{
+	return gDialogRows;
+}
+
+void KESCMBookDialogSetRows(const std::vector<KESCMChapterResult>& rows)
+{
+	gDialogRows = rows;
 }
 
 void KESCMBookDialogController::ApplyDialogFields(IActiveContext* context, const WidgetID& widgetId)

@@ -459,6 +459,51 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 			IID_IOBSERVER, kKESCMBookDialogObserverImpl,
 		}
 	},
+
+	// The chapter list inside that dialog. Same two interfaces as the Story Edits list, for the
+	// same reason: kTreeViewWidgetBoss already brings the controller and the event handling, so a
+	// flat list only has to say what the rows ARE and how they are DRAWN.
+	// ★No IID_IEVENTHANDLER here. The panel's list has one because its rows can be walked with the
+	//   arrow keys; this list is not walked - there is nowhere to go yet. It arrives with the row
+	//   click, not before.
+	Class
+	{
+		kKESCMBookTreeWidgetBoss,
+		kTreeViewWidgetBoss,
+		{
+			IID_ITREEVIEWHIERARCHYADAPTER, kKESCMBookTreeAdapterImpl,
+			IID_ITREEVIEWWIDGETMGR, kKESCMBookTreeWidgetMgrImpl,
+		}
+	},
+
+	// One row of that list. ***** Deliberately empty. ***** The stock tree node already handles
+	// what a row IS - selection, highlight, keyboard - and this list adds nothing to it yet. It
+	// exists as a boss of our own so that the row click ("open that chapter"), when it comes, is a
+	// line added here rather than a change of type in the resource. That is the order the Story
+	// Edits row went through, and the .fr change it saved is exactly the one that is easy to get
+	// wrong.
+	Class
+	{
+		kKESCMBookRowWidgetBoss,
+		kTreeNodeWidgetBoss,
+		{
+		}
+	},
+
+	// The two cells inside that row. As on the panel's list, the only thing this boss changes is
+	// the tooltip, and it changes it to nothing: a stock static text pops its full string up
+	// whenever the cell had to shorten it, which is a kindness on a dialog label and a nuisance on
+	// a list the pointer only crosses on its way somewhere (user's call, 2026-08-10, about the
+	// panel's list - the same list, in a different window). ITip.h:37-41 defines an empty string as
+	// "no tip"; implementation KESCMNoTip.cpp, shared with the panel.
+	Class
+	{
+		kKESCMBookRowCellBoss,
+		kInfoStaticTextWidgetBoss,
+		{
+			IID_ITIP, kKESCMNoTipImpl,
+		}
+	},
 }}};
 
 /*  
@@ -1271,6 +1316,25 @@ type KESCMBookDialogWidget(kViewRsrcType) : DialogBoss(ClassID = kKESCMBookDialo
 	WidgetEveInfo;
 };
 
+// The chapter list inside that dialog. ★WidgetEveInfo, unlike the panel's tree: this one lives
+// among EVE children, so it has to carry the trailing EVE flag they all carry. Both official
+// examples of a tree in an EVE dialog declare their tree type exactly this way - the product's
+// linksui (LinksUIViews.fr:95, "EVETreeViewWidget") and the SDK's basicselectabledialog
+// (BscSlDlg.fr:373).
+type KESCMBookTreeWidget(kViewRsrcType) : TreeViewWidget(ClassID = kKESCMBookTreeWidgetBoss)
+{
+	WidgetEveInfo;
+};
+
+// One row of that list - same construction as the panel's row (PrimaryResourcePanelWidget so that
+// the manager can create the boss first, set the theme, and only then build the cells).
+type KESCMBookRowWidget(kViewRsrcType) : PrimaryResourcePanelWidget(ClassID = kKESCMBookRowWidgetBoss) { };
+
+// One cell of that row: an InfoStaticText that stays silent on hover (see kKESCMBookRowCellBoss).
+// The field list is InfoStaticTextWidget's, unchanged. ⚠ No WidgetEveInfo: the cells are children
+// of the row, not of the dialog, and the row is built outside EVE.
+type KESCMBookRowCellWidget(kViewRsrcType) : InfoStaticTextWidget(ClassID = kKESCMBookRowCellBoss) { };
+
 // Scroll-map strip view resource: instantiated with ::CreateObject(db, RsrcSpec(...,
 // kViewRsrcType, kKESCMScrollMapRsrcID), IID_ICONTROLVIEW) — same runtime-creation pattern as
 // linksui's dynamic info widgets. The Frame here is a placeholder; the real frame/binding are
@@ -1396,6 +1460,69 @@ resource KESCMStoryRowWidget(kKESCMStoryRowRsrcID + index_enUS)
 			"",								// Text Control Data
 			0,								// WidgetId for associated control for shortcut focus
 			kPaletteWindowSystemScriptFontId, kPaletteWindowSystemScriptFontId,
+		),
+	}
+};
+
+// One row of the book comparison dialog's chapter list, created at runtime by
+// KESCMBookTreeWidgetMgr. Same construction as the Story Edits row above - including the
+// LocaleIndex wrapper, which is required rather than decorative: the widget manager asks for the
+// row with RsrcSpec(LocaleSetting::GetLocale(), ...), so the base ID has to resolve through a
+// locale table before it finds a body. Both cells are stamped at runtime, so one wild locale row
+// is the whole table.
+resource LocaleIndex (kKESCMBookRowRsrcID)
+{
+	kViewRsrcType,
+	{
+		kWildFS, k_Wild, kKESCMBookRowRsrcID + index_enUS
+	}
+};
+
+resource KESCMBookRowWidget(kKESCMBookRowRsrcID + index_enUS)
+{
+	__FILE__, __LINE__,
+	kKESCMBookRowWidgetID, kPMRsrcID_None,	// WidgetId, RsrcId
+	kBindLeft | kBindRight,				// Frame binding: follow the list's width
+	Frame(0, 0, 500, kKESCMBookRowHeight),	// Frame (left, top, right, bottom)
+	kTrue, kTrue,						// Visible, Enabled
+	"",									// Panel name
+	{
+		// Left: the chapter's file name, and for a chapter that could not be opened the reason
+		// after it. ★Ellipsized in the MIDDLE so that both the start and the extension survive -
+		// "ch01_final_v3.indd" and "ch01_final_v4.indd" differ near the end, and a chapter list
+		// whose rows all read "ch01_fi..." would be unreadable.
+		// ★Convert ampersands = kFalse: a chapter called "A&B.indd" would otherwise display as
+		//   "AB.indd" (memory ampersand-eaten-in-ui-strings).
+		KESCMBookRowCellWidget
+		(
+			kKESCMBookRowNameWidgetID,		// WidgetId
+			kPMRsrcID_None,					// RsrcId
+			kBindLeft | kBindRight,			// Frame binding: this is the cell that gives way
+			Frame(8, 1, 380, kKESCMBookRowHeight - 2),	// Frame
+			kTrue, kTrue,					// Visible, Enabled
+			kAlignLeft,						// Alignment
+			kEllipsizeMiddle, kFalse,		// Ellipsize style, Convert ampersands
+			"",								// Text Control Data
+			0,								// WidgetId for associated control for shortcut focus
+			kDialogWindowSystemScriptFontId, kDialogWindowSystemScriptFontId,
+		),
+
+		// Right: the verdict. A fixed column so the words line up down the list, wide enough for
+		// the longest of them ("ChapterDeleted") because kDontEllipsize means anything wider is
+		// clipped without a sign that something is missing - the mistake the panel's kind column
+		// made before it was narrowed to one word.
+		KESCMBookRowCellWidget
+		(
+			kKESCMBookRowStateWidgetID,		// WidgetId
+			kPMRsrcID_None,					// RsrcId
+			kBindRight,						// Frame binding: stay at the row's right edge
+			Frame(380, 1, 492, kKESCMBookRowHeight - 2),	// Frame (112px)
+			kTrue, kTrue,					// Visible, Enabled
+			kAlignRight,					// Alignment
+			kDontEllipsize, kFalse,			// Ellipsize style, Convert ampersands
+			"",								// Text Control Data
+			0,								// WidgetId for associated control for shortcut focus
+			kDialogWindowSystemScriptFontId, kDialogWindowSystemScriptFontId,
 		),
 	}
 };
@@ -1928,7 +2055,7 @@ resource KESCMBookDialogWidget (kKESCMBookDialogRsrcID + index_enUS)
 	kKESCMBookDialogWidgetID,		// WidgetID
 	kPMRsrcID_None,					// RsrcID
 	kBindNone,						// Binding
-	Frame(0, 0, 460, 380),			// Frame (l,t,r,b) - EVE resizes it to fit the children
+	Frame(0, 0, 540, 420),			// Frame (l,t,r,b) - EVE resizes it to fit the children
 	kTrue, kTrue,					// Visible, Enabled
 	kKESCMBookDialogTitleKey,		// Dialog name
 
@@ -1945,9 +2072,12 @@ resource KESCMBookDialogWidget (kKESCMBookDialogRsrcID + index_enUS)
 			kKESCMBookTargetTextWidgetID,	// WidgetId
 			kSysStaticTextPMRsrcId,			// RsrcId
 			kBindNone,						// Frame binding
-			Frame(0, 0, 420, 20)			// Frame (l,t,r,b)
+			Frame(0, 0, 500, 20)			// Frame (l,t,r,b)
 			kTrue, kTrue, kAlignLeft,		// Visible, Enabled, Alignment
-			kEllipsizeEnd, kFalse,			// Ellipsize style, Convert ampersands
+			// ★Ellipsized in the MIDDLE, like the panel's Target / Source lines and the chapter
+			//   names below: what identifies a book is often its tail ("...-2026-final.indb"), and
+			//   cutting the end away leaves two different books reading identically.
+			kEllipsizeMiddle, kFalse,		// Ellipsize style, Convert ampersands
 			"",								// Text (the controller fills it)
 			kInvalidWidgetID				// Associated control (none)
 
@@ -1959,9 +2089,9 @@ resource KESCMBookDialogWidget (kKESCMBookDialogRsrcID + index_enUS)
 			kKESCMBookSourceTextWidgetID,	// WidgetId
 			kSysStaticTextPMRsrcId,			// RsrcId
 			kBindNone,						// Frame binding
-			Frame(0, 0, 420, 20)			// Frame (l,t,r,b)
+			Frame(0, 0, 500, 20)			// Frame (l,t,r,b)
 			kTrue, kTrue, kAlignLeft,		// Visible, Enabled, Alignment
-			kEllipsizeEnd, kFalse,			// Ellipsize style, Convert ampersands
+			kEllipsizeMiddle, kFalse,		// Ellipsize style, Convert ampersands
 			"",								// Text (the controller fills it)
 			kInvalidWidgetID				// Associated control (none)
 
@@ -1987,21 +2117,58 @@ resource KESCMBookDialogWidget (kKESCMBookDialogRsrcID + index_enUS)
 		// ----- the status line -----
 		// Always states the chapter COUNT, so "nothing listed" can never be misread as "nothing
 		// could be opened".
+		// ⚠★Ellipsized in the MIDDLE, and that is not cosmetic. The summary grows a clause per
+		// non-zero outcome and the LAST of them is "N failed" - the one clause the reader must not
+		// miss. Measured 2026-08-11 with 15 chapters: ending-ellipsis cut it to "...1 fai…". The
+		// middle is the safe place to lose text, because both the chapter count and the failure
+		// count survive there.
 		EVEStaticTextWidget
 		(
 			kKESCMBookStatusTextWidgetID,	// WidgetId
 			kSysStaticTextPMRsrcId,			// RsrcId
 			kBindNone,						// Frame binding
-			Frame(0, 0, 420, 20)			// Frame (l,t,r,b)
+			Frame(0, 0, 500, 20)			// Frame (l,t,r,b)
 			kTrue, kTrue, kAlignLeft,		// Visible, Enabled, Alignment
-			kEllipsizeEnd, kFalse,			// Ellipsize style, Convert ampersands
+			kEllipsizeMiddle, kFalse,		// Ellipsize style, Convert ampersands
 			kKESCMBookReadyKey,				// Text (replaced after each comparison)
 			kInvalidWidgetID				// Associated control (none)
 
 			kEVEAlignLeft | kEVELargeSpaceAfter,
 		),
 
-		// ----- the button row. The chapter list arrives in the next task.
+		// ----- the chapter list -----
+		// One row per chapter: its file name on the left, the verdict on the right. The status
+		// line above says how many of each; this says WHICH.
+		// ⚠ A fixed height, and it has to be: a modeless dialog's panel never follows its window,
+		// so nothing here can grow later. Ten rows at a glance, and the scroll bar for the rest.
+		// ★kDrawBorder is what makes it read as a list box rather than as text on the dialog's
+		//   background - the same option basicselectabledialog gives its tree (BscSlDlg.fr:414).
+		KESCMBookTreeWidget
+		(
+			kKESCMBookTreeWidgetID, kPMRsrcID_None,	// WidgetId, RsrcId
+			kBindNone,						// Frame binding (EVE places it)
+			Frame(0, 0, 500, kKESCMBookRowHeight * 10)	// Frame
+			kTrue, kTrue,					// Visible, Enabled
+			kTrue,							// EraseBeforeDraw
+			kInterfacePaletteFill,			// InterfaceColor
+			"",								// Panel name
+			kHideRootNode | kDrawBorder,	// Options: the root is not a row
+			kFalse,							// Use H scroll bar
+			kTrue,							// Use V scroll bar
+			kKESCMBookRowHeight,			// fVScrollButtonIncrement (one row)
+			kKESCMBookRowHeight,			// fVThumbScrollIncrement
+			kKESCMBookRowHeight,			// fHScrollButtonIncrement (unused, no H bar)
+			kKESCMBookRowHeight,			// fHThumbScrollIncrement
+			1,								// Items selectable: 1 = single selection
+			kFalse,							// Allow children from multiple parents to be selected
+			kFalse,							// Allow discontiguous selection
+			{
+			},
+
+			kEVEAlignFill | kEVELargeSpaceAfter,
+		),
+
+		// ----- the button row.
 		EVEGenericPanelWidget
 		(
 			kInvalidWidgetID,		// WidgetId
