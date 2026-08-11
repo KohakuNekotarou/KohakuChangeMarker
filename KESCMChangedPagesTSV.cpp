@@ -19,6 +19,11 @@
 //    Windows でしか成立しない。macOS/clang の wchar_t は 32bit なので、同じキャストは文字化けに
 //    加えて元バッファの 2 倍を読む(バッファ外読み取り)。PMString なら UTF-16 のまま扱えて
 //    プラットフォームに依存しない。ラベルは全て ASCII なので Append(const char*) で足りる。
+//  ・★マスタースプレッドのページも出す(2026-08-11)。ただし出すのは **変更(Changed)だけ**——
+//    マスターどうしは KESCMBuildMasterPairing が「名前で」対応付け、相手のいないマスターは組まずに
+//    飛ばすので、通常ページの Inserted/Deleted に相当する状態(=対応表からあふれる)が存在しない
+//    (ユーザー指定 2026-08-11)。Page 列はマスタースプレッド名("A-親ページ")で、見開きマスターの
+//    左右は末尾の " (1)" / " (2)" で分ける。
 //  ・★オーバーセット(sOverset*)は一切参照しない(ユーザー指定 2026-07-24)。
 //
 //========================================================================================
@@ -33,6 +38,9 @@
 #include "IDocument.h"			// GetName(suggested filename)
 #include "ISession.h"			// GetExecutionContextSession
 #include "IDataBase.h"			// GetRootUID
+#include "IHierarchy.h"			// GetSpreadUID(マスターページ→そのマスタースプレッド)
+#include "IMasterSpread.h"		// GetName("A-親ページ")
+#include "ISpread.h"			// GetNumPages / GetNthPageUID(見開きマスターの左右を分ける)
 
 // General includes:
 #include "PMString.h"
@@ -44,7 +52,7 @@
 #include <set>
 
 // Project includes:
-#include "KESCMCore.h"				// KESCMSetStatus / KESCMCollectPageUIDs
+#include "KESCMCore.h"				// KESCMSetStatus / KESCMCollectPageUIDs / KESCMCollectMasterPageUIDs
 #include "KESCMDrawEventHandler.h"	// sEntries / sDB / sSrcDB
 #include "KESCMPageMap.h"			// KESCMBuildPairing / KESCMPageMapCollectRegistered
 #include "KESCMChangedPagesTSV.h"
@@ -100,6 +108,65 @@ PMString PageDisplay(IDataBase* db, UID pageUID)
 		return out;
 	pageList->GetPageString(pageUID, &out, kTrue, kFalse, kDefaultPageType, kTrue, kFalse);
 	out.SetTranslatable(kFalse);	// GetPageString が付け直す可能性に備えて再設定
+	return out;
+}
+
+// マスターページ(db 内)の表示名。"A-親ページ"(IMasterSpread::GetName)を返す。同じマスタースプレッドに
+// 2ページ以上あるときだけ、スプレッド内の位置を " (1)" / " (2)" で添える——見開きマスターの左右は
+// InDesign では同じ1つの名前しか持たないので、両ページが変わると同じ文字列が2行並んでしまう
+// (ユーザー指定 2026-08-11)。マスターページでない/名前が引けないときは空を返す(呼び手が
+// PageDisplay へ落とす)。
+//
+// ★通常ページの PageDisplay(GetPageString)と分けてあるのは、マスターページに GetPageString を
+//   渡すと prefix("A")しか返らず、どのマスターかは分かってもマスターだと分からないため。
+//   IPageList.h:138 の bAbbreviate の説明が長形("A-Master")に触れているのは **spreadUID を
+//   渡したとき**の話で、ページ UID には効かない。
+PMString MasterPageDisplay(IDataBase* db, UID pageUID)
+{
+	PMString out;
+	out.SetTranslatable(kFalse);
+	if (db == nil || pageUID == kInvalidUID)
+		return out;
+
+	// ページ → そのページが載っているスプレッド。IHierarchy::GetSpreadUID は「この階層ノードの
+	// スプレッド」を返す契約でページ限定ではない(KESCMPeek / KESCMChangeNav と同じ聞き方)。
+	InterfacePtr<IHierarchy> pageHier(db, pageUID, UseDefaultIID());
+	if (pageHier == nil)
+		return out;
+	const UID spreadUID = pageHier->GetSpreadUID();
+	if (spreadUID == kInvalidUID)
+		return out;
+
+	// 通常スプレッドは IID_IMASTERSPREAD を持たないので、この Query が「マスターか」の判定を兼ねる。
+	InterfacePtr<IMasterSpread> master(db, spreadUID, UseDefaultIID());
+	if (master == nil)
+		return out;
+	master->GetName(&out);
+	// ★文書側の実データ(ユーザーが付けた名前)なので翻訳キーとして扱わせない。GetName が
+	//   translatable を立てて返す可能性に備えて取った後に落とす(PageDisplay と同じ流儀)。
+	out.SetTranslatable(kFalse);
+	if (out.NumUTF16TextChars() == 0)
+		return out;
+
+	const int32 posBase = 1;	// 人に見せる番号は 1 始まり
+	InterfacePtr<ISpread> spread(db, spreadUID, UseDefaultIID());
+	if (spread != nil)
+	{
+		const int32 np = spread->GetNumPages();
+		if (np > 1)
+		{
+			for (int32 p = 0; p < np; ++p)
+			{
+				if (spread->GetNthPageUID(p) == pageUID)
+				{
+					out.Append(" (");
+					out.AppendNumber(p + posBase);
+					out.Append(")");
+					break;
+				}
+			}
+		}
+	}
 	return out;
 }
 
@@ -212,6 +279,28 @@ bool16 CollectRows(IDataBase* targetDB, IDataBase* sourceDB, std::vector<KESCMCh
 			row.kind = kKindInserted;
 			rows.push_back(row);
 		}
+	}
+
+	// ---- Target のマスタースプレッド: 変更のみ(2026-08-11) ----
+	// ★マスタースプレッドは IMasterSpreadList の別管理で、上の KESCMCollectPageUIDs(=ISpreadList)には
+	//   一度も現れない。並び順は Prev/Next(KESCMBuildStops)と peek が使うのと同じ
+	//   KESCMCollectMasterPageUIDs に借りる(マスターの列挙順を決める場所を2つにしない)。
+	//   位置は「Target の通常ページを全部出した後・Source の削除の前」= Prev/Next の巡回順と同じ並び。
+	// ★Inserted/Deleted は扱わない(冒頭の注記): 相手のいないマスターは KESCMBuildMasterPairing が
+	//   組まないので比較されず、sEntries にも対応表のあふれにも現れない。
+	std::vector<UID> masterOrder;
+	KESCMCollectMasterPageUIDs(targetDB, masterOrder);
+	for (size_t i = 0; i < masterOrder.size(); ++i)
+	{
+		const UID m = masterOrder[i];
+		if (KESCMDrawEventHandler::sEntries.count(m) == 0)
+			continue;
+		KESCMChangeRow row;
+		row.page = MasterPageDisplay(targetDB, m);
+		if (row.page.NumUTF16TextChars() == 0)
+			row.page = PageDisplay(targetDB, m);	// 名前が引けないときの保険(prefix だけでも出す)
+		row.kind = kKindChanged;
+		rows.push_back(row);
 	}
 
 	// ---- Source をドキュメント順に: 削除(相手なしの Source ページ) ----
