@@ -216,6 +216,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMActionComponent.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMBookCompare.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMBookPair.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMChangedPagesTSV.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\KESCMChangeNav.cpp" />
@@ -267,6 +268,7 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMBookCompare.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMBookPair.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMBookResult.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\KESCMChangedPagesTSV.h" />

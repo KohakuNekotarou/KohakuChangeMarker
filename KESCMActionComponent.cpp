@@ -53,6 +53,7 @@
 #include "KESCMOversetScan.h"		// KESCMCollectOversetLocations(Find Overset の検出=アクティブ文書走査)
 #include "KESCMChangedPagesTSV.h"	// KESCMExportChangedPagesTSV(フライアウト「Export Changed Pages...」)
 #include "KESCMBookPair.h"			// KESCMResolveBookPair / KESCMBookDisplayName(フライアウト「Compare Books」)
+#include "KESCMBookCompare.h"		// KESCMCompareBooks(章を1組ずつ開いて判定して閉じる本体)
 #include "KESCMChangeNav.h"			// KESCMRefreshNavPosition(overset トグルで Prev/Next の対象数を更新)
 #include "KESCMPanelAlpha.h"		// KESCMGetPanelTranslucent/Set/Apply(フライアウト「Translucent Panel」)
 #include "IActiveContext.h"			// GetContextDocument(アクティブ文書の解決)
@@ -473,31 +474,11 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 			PMString msg;
 			if (KESCMResolveBookPair(target, source))
 			{
-				// 章を並び順で組む。相手のいない章はこの時点で答えが出ている(Added/Deleted)ので、
-				// 開くことも比べることも要らない。
+				// 章を1組ずつ裏で開いて判定し、その都度閉じる。要約は msg に返る
+				// (「N chapters, X changed, Y unchanged...」= 章数を必ず含む)。
 				std::vector<KESCMChapterResult> chapters;
-				KESCMBuildChapterPairing(target, source, chapters);
+				KESCMCompareBooks(target, source, chapters, msg);
 
-				int32 paired = 0, added = 0, deleted = 0;
-				for (size_t c = 0; c < chapters.size(); ++c)
-				{
-					if (chapters[c].fState == kKESCMChapterAdded)
-						++added;
-					else if (chapters[c].fState == kKESCMChapterDeleted)
-						++deleted;
-					else
-						++paired;
-				}
-
-				msg = PMString("book compare: ");
-				msg.AppendNumber(int32(chapters.size()));
-				msg.Append(" chapters (");
-				msg.AppendNumber(paired);
-				msg.Append(" paired, ");
-				msg.AppendNumber(added);
-				msg.Append(" added, ");
-				msg.AppendNumber(deleted);
-				msg.Append(" deleted)");
 				// ★選んだ2つの名前は必ず画面に出す。3つ以上ブックが開いていると Source は
 				//   「最初に見つかった別のブック」なので、食い違いに気づける手がかりはこれだけ。
 				msg.Append(" target=");
