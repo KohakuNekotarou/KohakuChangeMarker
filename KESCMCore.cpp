@@ -25,6 +25,7 @@
 #include "IGeometry.h"
 #include "ISpread.h"
 #include "ISpreadList.h"
+#include "IMasterSpreadList.h"		// GetMasterSpreadCount / GetNthMasterSpreadUID(マスターページの収集)
 #include "IBoolData.h"				// スプレッドの隠し状態(IID_IHIDESPREADBOOLDATA)の読み取り
 #include "SpreadID.h"				// IID_IHIDESPREADBOOLDATA(kSpreadBoss 上の IBoolData。docs の boss 一覧で裏取り済み)
 #include "PMString.h"
@@ -73,6 +74,32 @@ void KESCMCollectPageUIDs(IDataBase* db, std::vector<UID>& out)
 	for (int32 s = 0; s < ns; ++s)
 	{
 		const UID spreadUID = spreadList->GetNthSpreadUID(s);
+		InterfacePtr<ISpread> spread(db, spreadUID, UseDefaultIID());
+		if (spread == nil)
+			continue;
+		const int32 np = spread->GetNumPages();
+		for (int32 p = 0; p < np; ++p)
+			out.push_back(spread->GetNthPageUID(p));
+	}
+}
+
+//========================================================================================
+// KESCMCollectMasterPageUIDs(KESCMCore.h で宣言)
+//   マスタースプレッドのページを集める。上の KESCMCollectPageUIDs と対になるが、意図的に別関数。
+//   ★マスタースプレッドは IMasterSpreadList の別管理で、ISpreadList には一度も現れない。
+//   ★out をクリアしないので、通常ページの列の後ろへそのまま連結できる。
+//========================================================================================
+void KESCMCollectMasterPageUIDs(IDataBase* db, std::vector<UID>& out)
+{
+	if (db == nil)
+		return;
+	InterfacePtr<IMasterSpreadList> masterList(db, db->GetRootUID(), UseDefaultIID());
+	if (masterList == nil)
+		return;
+	const int32 nm = masterList->GetMasterSpreadCount();
+	for (int32 m = 0; m < nm; ++m)
+	{
+		const UID spreadUID = masterList->GetNthMasterSpreadUID(m);
 		InterfacePtr<ISpread> spread(db, spreadUID, UseDefaultIID());
 		if (spread == nil)
 			continue;

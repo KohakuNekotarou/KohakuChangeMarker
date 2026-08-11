@@ -25,6 +25,13 @@ class IControlView;
 // 色サンプラが共有するヘルパ。実体は KESCMCore.cpp。
 void		KESCMCollectPageUIDs(IDataBase* db, std::vector<UID>& out);
 
+// マスタースプレッドのページUIDを、マスタースプレッド順・ページ順で out に足す(out はクリアしない)。
+// ★上の KESCMCollectPageUIDs とは別物。あちらは ISpreadList=通常スプレッドだけを平坦化するヘルパで、
+//   比較のページ対応・Prev/Next・TSV・Sync・Hide Unchanged が共有している。そこへマスターを混ぜると
+//   「比較する対象そのものが変わる」ので、マスターは常に別に集めて呼び手が足す(overset と同じ流儀)。
+// ⚠out をクリアしないのは、通常ページの列の後ろへ連結する使い方を想定しているため。
+void		KESCMCollectMasterPageUIDs(IDataBase* db, std::vector<UID>& out);
+
 // ページアイテムの UID → そのアイテムが載っているページ UID(どのページにも載らないなら kInvalidUID)。
 // あふれ位置の報告(KESCMOversetScan)と Story Edits の一覧が同じ問いを持つので1本を共有する。
 // ★答えは必ず実ページ(kPageBoss)で、spread の UID は返らない。理由は実体側のコメント(KESCMCore.cpp)。
