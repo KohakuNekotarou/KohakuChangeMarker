@@ -32,6 +32,7 @@
 // Project includes:
 #include "KESCMBookDialog.h"
 #include "KESCMBookPair.h"		// KESCMResolveBookPair / KESCMBookDisplayName
+#include "KESCMBookTree.h"		// KESCMBookTreeRebuild - the list, redrawn when the dialog opens
 #include "KESCMID.h"
 
 /** The dialog's controller.
@@ -57,6 +58,13 @@ void KESCMBookDialogController::InitializeDialogFields(IActiveContext* context)
 
 	InterfacePtr<IPanelControlData> panelData(this, UseDefaultIID());
 	KESCMBookDialogUpdateTargets(panelData);
+
+	// ★The list is rebuilt from the module's rows on every open, so that what is on screen is
+	//   always what this plug-in actually holds. Measured 2026-08-11: kCacheDialog does keep the
+	//   rows on screen across close and reopen, so this is not what makes reopening work - it is
+	//   what keeps the two from ever disagreeing if the cached dialog is dropped. Rebuilding an
+	//   already-correct list of a few rows costs nothing.
+	KESCMBookTreeRebuild(panelData);
 }
 
 //----------------------------------------------------------------------------------------

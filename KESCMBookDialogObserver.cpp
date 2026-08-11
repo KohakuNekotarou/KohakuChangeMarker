@@ -6,9 +6,19 @@
 //
 //  Book comparison dialog: the Compare button.
 //
-//  Lives on the DIALOG boss, not on a button boss of its own - the same arrangement the panel
-//  uses (KESCMPanelObserver): one observer, AutoAttach, and a switch on the widget ID. A custom
-//  button boss would add a Class and an Impl and buy nothing.
+//  Lives on the DIALOG boss, not on a button boss of its own - the arrangement every dialog sample
+//  in the SDK uses (basicdialog, basiclocalization, writefishprice): one observer on the dialog,
+//  and a switch on the widget ID.
+//
+//  ***** IT DERIVES FROM CDialogObserver, AND THAT IS NOT A DETAIL. *****
+//  Naming IID_IOBSERVER on the dialog boss REPLACES the stock implementation, and the stock one is
+//  what makes OK, Cancel and the close box work at all: CDialogObserver attaches to those buttons
+//  and to the dialog's window, validates, applies and closes (CDialogObserver.cpp:266-326 /
+//  :68-185). A CObserver-derived class put here therefore does not "add" a button - it silently
+//  takes the dialog's own machinery away.
+//  ⚠ MEASURED 2026-08-11: while this class derived from CObserver, OK did nothing at all - a real
+//  mouse click on it left the dialog open. Every override below calls its base FIRST, exactly as
+//  basicdialog does (BscDlgDialogObserver.cpp:99 / :124 / :155).
 //
 //========================================================================================
 
@@ -18,10 +28,11 @@
 #include "IBooleanControlData.h"	// how a plain button is subscribed to
 #include "IControlView.h"
 #include "IPanelControlData.h"
-#include "ISubject.h"
+#include "ISubject.h"				// Update's subject - a complete type is needed to ask it for
+									// IID_ICONTROLVIEW (CDialogObserver.h does not bring it in)
 
 // General includes:
-#include "CObserver.h"
+#include "CDialogObserver.h"
 #include "widgetid.h"				// kTrueStateMessage
 
 #include <vector>
@@ -34,11 +45,12 @@
 #include "KESCMBookTree.h"			// KESCMBookTreeRebuild
 #include "KESCMID.h"
 
-/** Watches the book comparison dialog's Compare button. */
-class KESCMBookDialogObserver : public CObserver
+/** Watches the book comparison dialog's Compare button, on top of everything CDialogObserver
+	already does for OK, Cancel and the close box. */
+class KESCMBookDialogObserver : public CDialogObserver
 {
 public:
-	KESCMBookDialogObserver(IPMUnknown* boss) : CObserver(boss) {}
+	KESCMBookDialogObserver(IPMUnknown* boss) : CDialogObserver(boss) {}
 	virtual ~KESCMBookDialogObserver() {}
 
 	virtual void AutoAttach();
@@ -47,8 +59,6 @@ public:
 	                    const PMIID& protocol, void* changedBy);
 
 private:
-	void AttachWidget(const InterfacePtr<IPanelControlData>& pcd, const WidgetID& wid, const PMIID& iid);
-	void DetachWidget(const InterfacePtr<IPanelControlData>& pcd, const WidgetID& wid, const PMIID& iid);
 	void RunComparison();
 };
 
@@ -56,50 +66,38 @@ CREATE_PMINTERFACE(KESCMBookDialogObserver, kKESCMBookDialogObserverImpl)
 
 void KESCMBookDialogObserver::AutoAttach()
 {
-	InterfacePtr<IPanelControlData> pcd(this, UseDefaultIID());
-	if (pcd == nil)
+	// ***** The base FIRST. ***** It is what subscribes to OK, Cancel and the dialog's window;
+	// without it this dialog would have no way of closing (measured - see the file header).
+	CDialogObserver::AutoAttach();
+
+	InterfacePtr<IPanelControlData> panelData(this, UseDefaultIID());
+	if (panelData == nil)
 		return;
 
 	// A plain button reports through IBooleanControlData - same as the panel's Prev / Next.
-	this->AttachWidget(pcd, kKESCMBookCompareButtonWidgetID, IBooleanControlData::kDefaultIID);
+	// AttachToWidget is the base's own helper (AbstractDialogObserver.h:51), so this line says
+	// exactly what basicdialog's line says.
+	this->AttachToWidget(kKESCMBookCompareButtonWidgetID, IBooleanControlData::kDefaultIID, panelData);
 }
 
 void KESCMBookDialogObserver::AutoDetach()
 {
-	InterfacePtr<IPanelControlData> pcd(this, UseDefaultIID());
-	if (pcd == nil)
+	CDialogObserver::AutoDetach();
+
+	InterfacePtr<IPanelControlData> panelData(this, UseDefaultIID());
+	if (panelData == nil)
 		return;
 
-	this->DetachWidget(pcd, kKESCMBookCompareButtonWidgetID, IBooleanControlData::kDefaultIID);
-}
-
-void KESCMBookDialogObserver::AttachWidget(const InterfacePtr<IPanelControlData>& pcd,
-                                           const WidgetID& wid, const PMIID& iid)
-{
-	IControlView* cv = pcd->FindWidget(wid);
-	if (cv == nil)
-		return;
-
-	InterfacePtr<ISubject> subject(cv, UseDefaultIID());
-	if (subject != nil && !subject->IsAttached(this, iid))
-		subject->AttachObserver(this, iid);
-}
-
-void KESCMBookDialogObserver::DetachWidget(const InterfacePtr<IPanelControlData>& pcd,
-                                           const WidgetID& wid, const PMIID& iid)
-{
-	IControlView* cv = pcd->FindWidget(wid);
-	if (cv == nil)
-		return;
-
-	InterfacePtr<ISubject> subject(cv, UseDefaultIID());
-	if (subject != nil && subject->IsAttached(this, iid))
-		subject->DetachObserver(this, iid);
+	this->DetachFromWidget(kKESCMBookCompareButtonWidgetID, IBooleanControlData::kDefaultIID, panelData);
 }
 
 void KESCMBookDialogObserver::Update(const ClassID& theChange, ISubject* theSubject,
-                                     const PMIID& /*protocol*/, void* /*changedBy*/)
+                                     const PMIID& protocol, void* changedBy)
 {
+	// The base first, again: OK / Cancel / the close box are its business, and the Compare button
+	// is not one of the widgets it reacts to, so nothing here can be swallowed by it.
+	CDialogObserver::Update(theChange, theSubject, protocol, changedBy);
+
 	InterfacePtr<IControlView> cv(theSubject, UseDefaultIID());
 	if (cv == nil)
 		return;
