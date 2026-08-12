@@ -22,6 +22,7 @@
 #include "IPanelControlData.h"	// FindWidget - reaching the dialog's own widgets
 #include "ISession.h"
 #include "ITextControlData.h"	// SetString - the Target/Source lines and the status area
+#include "IWindow.h"			// GetSysWindow - the platform window behind the dialog (minimize box)
 
 // General includes:
 #include "CDialogController.h"
@@ -34,6 +35,12 @@
 #include "KESCMBookPair.h"		// KESCMResolveBookPair / KESCMBookDisplayName
 #include "KESCMBookTree.h"		// KESCMBookTreeRebuild - the list, redrawn when the dialog opens
 #include "KESCMID.h"
+
+// *windows.h goes AFTER the SDK headers, so its macros cannot collide with SDK names.
+//  (The same order KESCMPanelAlpha.cpp uses.)
+#ifdef WINDOWS
+#include <windows.h>
+#endif
 
 /** The dialog's controller.
 
@@ -157,6 +164,67 @@ void KESCMBookDialogController::ApplyDialogFields(IActiveContext* context, const
 	CDialogController::ApplyDialogFields(context, widgetId);
 }
 
+namespace
+{
+
+/** Put a MINIMIZE BOX on the dialog's own window, so a comparison that took real time to compute can
+    be pushed out of the way instead of closed.
+
+    *****WHY THIS NEEDS WIN32.***** The SDK cannot do it, and says so: a window's decorations are
+    fixed when it is created (IWindow::InitWindow), a modeless dialog's standard controls are
+    kCloseWindowControl ALONE (IWindow.h:125), and IWindow::SetWindowPolicy states that for an
+    EXISTING window "only ... kSideTitlebarControl" can be changed (IWindow.h:405).
+
+    *****IT TAKES TWO BITS, AND THE OBVIOUS ONE IS NOT ENOUGH.***** WS_MINIMIZEBOX on its own changes
+    nothing that can be seen; ***taking WS_EX_TOOLWINDOW OFF is what makes the button appear***,
+    because Windows does not draw minimize or maximize on a tool-window frame. WS_EX_APPWINDOW is
+    added as well so the minimised dialog lands on the TASKBAR - without it Windows leaves a 160x28
+    title-bar stub at the bottom left of the screen (the old owned-popup behaviour).
+    All of it measured on the real application, 2026-08-12; the full record, including the three
+    faults this cost to find, is memory/window-minimize-presentation-system.md.
+
+    *****NOTHING IS PUT BACK, AND THAT IS THE POINT OF DOING IT HERE.***** KBS does the same thing to
+    InDesign's OWN Find/Change dialog and has to hold a record of what it changed, undo it when its
+    toggle goes off, and undo it again at shutdown - because that window belongs to somebody else.
+    This one is OURS: it is created by KESCMOpenBookDialog and destroyed when the dialog closes, so
+    there is no window to hand back and no state to keep. That is also why there is no menu toggle:
+    a dialog of our own can simply have the button (the user's call, 2026-08-12). */
+void KESCMPutMinimizeBoxOnDialog(IDialog* dialog)
+{
+#ifdef WINDOWS
+	if (dialog == nil)
+		return;
+
+	// *The IWindow sits on the same boss as the dialog, so this is a plain QueryInterface - no
+	//  walking of the application's window list, which is what KBS has to do to find a window that
+	//  is not its own.
+	InterfacePtr<IWindow> window(dialog, IID_IWINDOW);
+	if (window == nil)
+		return;
+
+	HWND hwnd = (HWND)window->GetSysWindow();
+	if (hwnd == nullptr || !::IsWindow(hwnd))
+		return;		// no platform window yet - nothing to decorate
+
+	// *Idempotent: the dialog is created with kCacheDialog, so reopening it can hand back a window
+	//  that already carries these bits. Setting them again costs nothing.
+	::SetWindowLongPtr(hwnd, GWL_STYLE,
+		::GetWindowLongPtr(hwnd, GWL_STYLE) | WS_MINIMIZEBOX);
+	::SetWindowLongPtr(hwnd, GWL_EXSTYLE,
+		(::GetWindowLongPtr(hwnd, GWL_EXSTYLE) & ~WS_EX_TOOLWINDOW) | WS_EX_APPWINDOW);
+
+	// *SWP_NOACTIVATE is ours, so re-framing cannot re-order anything; the other four are the
+	//  combination Microsoft's SetWindowPos Remarks prescribe for making a SetWindowLongPtr style
+	//  change take effect.
+	::SetWindowPos(hwnd, nullptr, 0, 0, 0, 0,
+		SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+	::RedrawWindow(hwnd, nullptr, nullptr,
+		RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN | RDW_FRAME | RDW_UPDATENOW);
+#endif
+}
+
+}	// anonymous namespace
+
 void KESCMOpenBookDialog()
 {
 	ISession* session = GetExecutionContextSession();
@@ -198,6 +266,9 @@ void KESCMOpenBookDialog()
 	// ***** doWait = kFalse. ***** Open() waits by default (IDialog.h:59-65), which would make a
 	// modeless dialog behave like a modal one - the exact thing this dialog exists not to do.
 	dialog->Open(nil, kFalse);
+
+	// AFTER Open, not before: the platform window does not exist until the dialog is opened.
+	KESCMPutMinimizeBoxOnDialog(dialog);
 }
 
 // End, KESCMBookDialog.cpp.
