@@ -96,6 +96,10 @@ static bool16 KESCMReadCmykPixel(const UIDRef& pageRef, const PMPoint& spreadPt,
 	//   文字の色ではなく帯の色を CMYK として読んでしまう。しかも hover/other とも同じ帯になるため値が
 	//   揃って見え、誤りだと気づけない。★画素を読む用途では greek 無効が正しい=比較ラスタ化(MakeEntry)と
 	//   同じ判断。代償はラスタ化がわずかに遅くなることだけ(対象は kKESCMSampleHalfPt の 2pt 四方)。
+	// ★非印刷オブジェクト(第8引数 bDrawNonPrintingObjects)は**既定 kTrue のまま=描かせる**。ここだけ
+	//   比較ラスタ(2026-08-12 に kFalse へ変更。KESCMDrawEventHandler.cpp / KESCMBookCompare.cpp)と
+	//   **わざと違える**: あちらは「刷り上がりが変わったか」を問うが、こちらは**ユーザーが画面で見て
+	//   クリックした点の色**を答える機能なので、画面に出ているものは印刷されなくても拾うのが正しい。
 	ErrorCode drew;
 	{
 		KESCMRasterizingGuard rg;	// この Draw 中の再入でマークを描かせない(RAII、2026-07-25)

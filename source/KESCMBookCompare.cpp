@@ -350,6 +350,13 @@ ErrorCode PageDiffers(const UIDRef& targetPage, const UIDRef& sourcePage, bool16
 	//   - AA off, so sub-pixel shifts do not show up as grey fringes
 	//   - greek 0.0, or small type is drawn as a grey band with no glyphs and changes in it hide
 	//   - fullResolutionGraphics = kFalse, because kTrue makes the document dirty
+	//   - bDrawNonPrintingObjects = kFalse (2026-08-12; the default is kTrue), so that moving an item
+	//     marked non-printing - a working note, an instruction to the printer - is NOT a change. The
+	//     mark states that the PRINTED result changed. Found by reading guide vol1-09; the argument is
+	//     documented at SnapshotUtilsEx.h:241-242, which also warns it does NOT affect non-printing
+	//     LAYERS. Arguments 5-7 are the defaults spelled out, because the 8th cannot be reached without
+	//     them: kXPHigh (lowering it would hide changes to shadows, feathers and blends), no abort
+	//     callback (cancellation is checked at page boundaries, see KESCMCore.cpp), no viewport map
 	const PMReal hiRes = kKESCMResolution * kKESCMHiResMul;
 
 	SnapshotUtilsEx*  snapT  = nil;
@@ -372,8 +379,10 @@ ErrorCode PageDiffers(const UIDRef& targetPage, const UIDRef& sourcePage, bool16
 		ErrorCode drewS = kFailure;
 		{
 			KESCMRasterizingGuard rg;	// a re-entrant draw event must not paint marks into our raster
-			drewT = snapT->Draw(IShape::kPreviewMode, kFalse, 0.0, kFalse);
-			drewS = snapS->Draw(IShape::kPreviewMode, kFalse, 0.0, kFalse);
+			drewT = snapT->Draw(IShape::kPreviewMode, kFalse, 0.0, kFalse,
+			                    SnapshotUtils::kXPHigh, nil, nil, kFalse);
+			drewS = snapS->Draw(IShape::kPreviewMode, kFalse, 0.0, kFalse,
+			                    SnapshotUtils::kXPHigh, nil, nil, kFalse);
 		}
 
 		accT = (drewT == kSuccess) ? snapT->CreateAGMImageAccessor() : nil;

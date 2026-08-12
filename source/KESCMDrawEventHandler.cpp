@@ -289,10 +289,20 @@ ErrorCode KESCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef
 	//   画素比較なので、字形を必ず描かせる 0.0 を渡す(代償=小さい文字が多いページのラスタ化がやや遅くなる)。
 	//   ⚠公式サンプル(snapshot/SnapTracker.cpp:318)は既定のままだが、あちらの目的は「見た目のスナップ
 	//   ショット」で前提が違う。★target/source は必ず同じ値で(片方だけ greek すると全文字が差分になる)。
+	// ★第8引数 bDrawNonPrintingObjects=kFalse は**意図的**(2026-08-12。既定は kTrue)。既定のままだと
+	//   「非印刷」に設定したページアイテム(作業用の指示書き・注釈・トンボ脇のメモなど)を動かしただけで
+	//   変更ページになり、**刷り上がりは同じなのにマークが出る**。KESCM のマークは「刷り上がりの変更」を
+	//   指すものと決めたので描かせない(ガイド vol1-09 通読で発見。根拠=SnapshotUtilsEx.h:241-242)。
+	//   ⚠ヘッダーが明記するとおり**レイヤーの非印刷設定には効かない**(非印刷レイヤーの扱いは別の話)。
+	//   ⚠第5〜7引数は**既定値をそのまま書いているだけ**(第8引数を指定するために省略できない):
+	//     transparencyQuality=kXPHigh(落とすと影・ぼかし・ブレンドの変更を拾えなくなるので下げない) /
+	//     abortCheck=nil(中断はページ境界で見る=KESCMCore.cpp) / pVPAttrMap=nil。
+	//   ★target/source は必ず同じ値で(片方だけ描かせると全差分になる)。
 	ErrorCode drewTH;
 	{
 		KESCMRasterizingGuard rg;	// この Draw 中に再入する HandleDrawEvent はマークを描かない(自己参照防止)
-		drewTH = snapTH->Draw(IShape::kPreviewMode, kFalse, 0.0, kFalse);
+		drewTH = snapTH->Draw(IShape::kPreviewMode, kFalse, 0.0, kFalse,
+		                      SnapshotUtils::kXPHigh, nil, nil, kFalse);
 	}
 	AGMImageAccessor* accTH = (drewTH == kSuccess) ? snapTH->CreateAGMImageAccessor() : nil;
 
@@ -306,7 +316,9 @@ ErrorCode KESCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef
 	ErrorCode drewSH;
 	{
 		KESCMRasterizingGuard rg;
-		drewSH = snapSH->Draw(IShape::kPreviewMode, kFalse, 0.0, kFalse);	// 同上: greek 無効・AA OFF(両者同条件)
+		// 同上: greek 無効・AA OFF・非印刷オブジェクトを描かない(両者必ず同条件)
+		drewSH = snapSH->Draw(IShape::kPreviewMode, kFalse, 0.0, kFalse,
+		                      SnapshotUtils::kXPHigh, nil, nil, kFalse);
 	}
 	AGMImageAccessor* accSH = (drewSH == kSuccess) ? snapSH->CreateAGMImageAccessor() : nil;
 
@@ -596,6 +608,12 @@ ErrorCode KESCMDrawEventHandler::MakeOrigImage(const UIDRef& targetRef, const UI
 
 	// source(旧)を resolution(dpi)で不透明ラスタ化。addTransparencyAlpha=kFalse=ページを不透明に描く(べた載せ用)。
 	// オフスクリーンは1枚だけ。画素を自前 buf へコピーしたら即破棄(下)＝同時に複数生存しない=安全。
+	// ★引数は既定のまま(greek 7.0・AA on・非印刷オブジェクトも描く)。**比較ラスタとはわざと違える**:
+	//   比較(MakeEntry)は「刷り上がりが変わったか」を問うので 2026-08-12 に非印刷オブジェクトを
+	//   描かないようにしたが、この画像は**旧版の見た目をそのまま重ねて見せる**ためのもので、
+	//   画面で見えていたものが消えると「前はこうだった」の再現にならない。
+	//   ⚠∴「旧版画像には見えるのにマークは出ない」差分がありうる(非印刷オブジェクトを動かした場合)。
+	//   これは意図した非対称。揃えるなら両方を kFalse にする。
 	SnapshotUtilsEx* snap = new (std::nothrow) SnapshotUtilsEx(sourceRef, 1.0, 1.0, resolution, resolution, 0.0, SnapshotUtilsEx::kCsRGB, kFalse);
 	if (snap == nil)
 		return kFailure;	// nothrow: OOM でもこのページの旧版画像を作らないだけで安全に続行(MakeEntry と同方針)
@@ -1199,7 +1217,15 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	if (sRasterizing)
 		return kFalse;
 	// 印刷文脈か(kPrinting=512)。印刷時はマークの ON/OFF を sPrintMarks で決める。通常の画面描画では立たない。
-	// ※PDF 書き出し(File>Export)はこのスプレッド描画イベントを発火しないため対象外(print-to-PDF を使う)。
+	// ★2026-08-12 訂正: 旧コメント「PDF 書き出し(File>Export)はこのスプレッド描画イベントを発火しないため
+	//   対象外(print-to-PDF を使う)」は**誤り**。kPrinting は「印刷 **または** PDF 書き出し」で立つ
+	//   (公式サンプル basicdrwevthandler/BscDEHDrwEvtHandler.cpp:278-282 が " Printing or PDF Output" と明記)。
+	//   draw event の描画が File>Export>PDF に焼き込まれることは実機で確認済み(本体内蔵の透かしをプローブに
+	//   実測。docs/ai-notes/draw-event-pdf-export-experiment-2026-08-12.md)。
+	//   ∴ここは「印刷にも PDF 書き出しにも効く」判定として読むこと。sPrintMarks(Print comparison marks)が
+	//   ON なら下の suppressForPrint が外れ、書き出し PDF にもマークが出る**はず**の経路になっている。
+	//   ⚠ただし「kEndSpreadMessage が書き出し中に飛ぶか」だけは未実測(透かしがどのメッセージを購読して
+	//   いるかは製品バイナリなので不明)。ここを変更するときは実機で 1 回確かめること。
 	// 自己参照(自前スナップショット)は上の sRasterizing で防ぐので、ここで kPreviewMode は見ない。
 	const bool16 printing = (ded->flags & IShape::kPrinting) != 0;
 
