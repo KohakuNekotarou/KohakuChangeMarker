@@ -17,19 +17,28 @@
 #include "VCPlugInHeaders.h"
 
 // Interface includes:
+#include "ICommand.h"			// the window-opening command, for a chapter that is open windowless
 #include "IDataBase.h"			// GetSysFile - a document's identity is its FILE, never its UID
 #include "IDocument.h"
 #include "IDocumentCommands.h"	// Open - with a window, and with the UI left on
 #include "IDocumentList.h"		// FindDoc - is this chapter already open?
+#include "IDocumentPresentation.h"	// MakeActive - raise the window a chapter already has
+#include "IDocumentUIUtils.h"	// FindPresentationForDocument - HAS this chapter a window at all?
+#include "IGlobalRecompose.h"	// ForceRecompositionToComplete - see ComposeChapter
 #include "ISession.h"
 
 // General includes:
+#include "CmdUtils.h"			// CreateCommand / ProcessCommand
+#include "CreateObject.h"
 #include "ErrorUtils.h"			// GlobalErrorStatePreserver - an open that may fail must not poison
 								// the caller's next command
+#include "LayoutUIID.h"			// kOpenLayoutCmdBoss - a chapter's first window
 #include "PersistUtils.h"		// ::GetUIDRef / ::GetDataBase
 #include "SDKFileHelper.h"		// GetPath - a chapter the book names no file for
-#include "Utils.h"				// Utils<IDocumentCommands>() - named rather than relied on through
-								// another header, as this plug-in's other files do
+#include "UIDList.h"			// the open-window command's item list
+#include "Utils.h"				// Utils<IDocumentCommands>() / Utils<IDocumentUIUtils>() - named
+								// rather than relied on through another header, as this plug-in's
+								// other files do
 
 #include <vector>
 
@@ -88,6 +97,98 @@ bool16 DocumentLivesInFile(IDocument* doc, const PMString& wantedPath)
 	return (helper.GetPath() == wantedPath) ? kTrue : kFalse;
 }
 
+/** Accept any presentation at all.
+
+    ***** WHY A PREDICATE OF OUR OWN. ***** The stock criteria (is_active, is_layout, …) live in the
+    WidgetBin shared library, and IDocumentUIUtils.h:40-46 says so, telling callers that cannot link
+    it to "create local implementations" and printing this exact two-line shape. KBS and KESCL each
+    carry the same one for the same reason (KBSBookScope.cpp:234 / KESCLFindInDoc.cpp:676). */
+bool KESCMAcceptAnyPresentation(IDocumentPresentation* /*p*/)
+{
+	return true;
+}
+
+/** Make sure this chapter is IN FRONT - and that it has a window at all.
+
+    ***** OPENING A DOCUMENT THAT IS ALREADY OPEN NEITHER RAISES IT NOR WINDOWS IT. ***** Two
+    separate faults lived here, and one route closes both:
+
+      - a chapter already open behind another tab stayed exactly where it was, so a double click on
+        its row appeared to do nothing: the status line said "2 documents open" and the screen did
+        not change;
+      - IDocumentList::FindDoc answers for a WINDOWLESS document too - which is precisely what the
+        book comparison leaves behind when its own CloseChapter fails (its `leftOpen` counter). Such
+        a chapter was reported as open with nothing on screen, and "Start Change Marker" on it armed
+        a comparison whose marks had no window to be drawn in.
+
+    ★FindPresentationForDocument, not GetFrontmostPresentationForDocument: the latter answers nil for
+    a window sitting behind another tab, which would send us on to open a SECOND window for a
+    document that already has one. Both sibling plug-ins learned this and say so
+    (KESCLFindInDoc.cpp:716-718 / KBSBookScope.cpp:239-241).
+
+    ⚠ The comment that used to be at the double-click's status line claimed there was "no published
+    route from a document to its window … IWindowUtils has nothing either (searched 2026-08-12)".
+    That was wrong: the search had covered IDocument, ILayoutUIUtils and IWindowUtils but not
+    IDocumentUIUtils, which is where it is (IDocumentUIUtils.h:88 / IDocumentPresentation.h:112) and
+    where KBS and KESCL were already using it in four places. */
+bool16 BringChapterToFront(const UIDRef& docRef)
+{
+	IDataBase* db = docRef.GetDataBase();
+	if (db == nil)
+		return kFalse;
+
+	FindPresentation_PreferCriteria noPreference;	// the first window found is fine
+	IDocumentPresentation* pres = Utils<IDocumentUIUtils>()->FindPresentationForDocument(
+		db, KESCMAcceptAnyPresentation, noPreference);
+	if (pres != nil)
+	{
+		pres->MakeActive();
+		return kTrue;
+	}
+
+	// No window at all: the chapter is open windowless. Give it its first layout window, which also
+	// makes it active - the shape KESCL uses (KESCLFindInDoc.cpp:731-747), without the zoom it
+	// inherits from the front view, because this path has no view to inherit one from.
+	InterfacePtr<ICommand> openWinCmd(CmdUtils::CreateCommand(kOpenLayoutCmdBoss));
+	if (openWinCmd == nil)
+		return kFalse;
+	openWinCmd->SetItemList(UIDList(docRef));
+
+	GlobalErrorStatePreserver openWinErrorState;
+	ErrorUtils::PMSetGlobalErrorCode(kSuccess);
+	return (CmdUtils::ProcessCommand(openWinCmd) == kSuccess) ? kTrue : kFalse;
+}
+
+/** Finish composing a chapter before the comparison reads its pixels.
+
+    ***** A DOCUMENT THAT HAS JUST BEEN OPENED IS NOT COMPOSED YET. ***** Rasterising it in that
+    state paints composition in progress, and two chapters with identical content then come out
+    different. KESHR measured the same thing as "identical content gave different hashes".
+
+    ★★WHY THIS IS NEEDED HERE, WHEN THE PANEL'S OWN Start DOES NOT DO IT. KESCMBookCompare.cpp:187-198
+    states the reason the document comparison never had to: "it only ever rasterises documents the
+    user has open on screen, which are composed by the time anyone asks". ***THAT PREMISE IS THE ONE
+    THIS FILE BROKE*** - "Start Change Marker" hands KESCMStartComparisonFor two chapters opened a
+    moment earlier. So the call the book comparison makes before every chapter has to be made here
+    too, on the same two documents, before the comparison starts.
+
+    ⚠ MakeEntry deliberately does NOT do this - it can be reached from inside a draw event, where
+    recomposing would re-enter - so it cannot be fixed down there. It belongs to whoever opened the
+    documents. This path is a menu command, so it is safe here.
+
+    Six lines written out rather than shared: the book comparison's copy lives in an anonymous
+    namespace, and this file already keeps its own DocumentLivesInFile for the same reason. */
+void ComposeChapter(const UIDRef& docRef)
+{
+	InterfacePtr<IDocument> doc(docRef, UseDefaultIID());
+	if (doc == nil)
+		return;
+
+	InterfacePtr<IGlobalRecompose> recompose(doc, IID_IGLOBALRECOMPOSE);
+	if (recompose != nil)
+		recompose->ForceRecompositionToComplete();
+}
+
 /** Open a chapter WITH A WINDOW, or hand back the one that is already open.
 
     outWasAlreadyOpen separates "it is on screen because of this click" from "it was there all
@@ -113,7 +214,11 @@ bool16 OpenChapterWindowed(const IDFile& file, UIDRef& outDocRef, bool16& outWas
 			{
 				outDocRef         = ::GetUIDRef(openDoc);
 				outWasAlreadyOpen = kTrue;
-				return kTrue;
+				// ***** Raise it - and window it if it has none. ***** Without this, a double click
+				// on a chapter that was already open did nothing a user could see, and a chapter
+				// open WINDOWLESS was reported as open with nothing on screen. Both are one route:
+				// see BringChapterToFront.
+				return BringChapterToFront(outDocRef);
 			}
 		}
 	}
@@ -139,6 +244,10 @@ bool16 OpenChapterWindowed(const IDFile& file, UIDRef& outDocRef, bool16& outWas
 		return kFalse;
 
 	outDocRef = docRef;
+	// A fresh open is in front already; raising it anyway is what makes the caller's rule - "the
+	// TARGET is opened last, so it is the one left in front" - true for BOTH sides. Before this, a
+	// pair whose chapters were both already open left whichever window happened to be frontmost.
+	BringChapterToFront(docRef);
 	return kTrue;
 }
 
@@ -235,10 +344,11 @@ void KESCMBookOpenChapterForRow(int32 rowIndex)
 		else ++failed;
 	}
 
-	// ⚠ An already-open chapter is NOT re-opened and NOT brought forward. There is no published
-	// route from a document to its window - IDocument has no presentation accessor, ILayoutUIUtils
-	// only answers for the FRONTMOST one, and IWindowUtils has nothing either (searched 2026-08-12).
-	// Rather than guess at one, this says what the state is; the document is in the Window menu.
+	// ★An already-open chapter IS raised now, and windowed if it had no window (2026-08-12). The
+	// route is Utils<IDocumentUIUtils>()->FindPresentationForDocument + MakeActive - see
+	// BringChapterToFront, which also records why the claim that used to stand here ("there is no
+	// published route from a document to its window") was wrong.
+	// ∴ "N documents open" now means N windows the user can actually look at.
 	PMString msg;
 	if (opened == 0 && already == 0)
 	{
@@ -319,6 +429,39 @@ void KESCMBookStartComparisonForRow(int32 rowIndex)
 		Say(msg);
 		return;
 	}
+
+	// ***** COMPOSE BOTH SIDES FIRST - AND DO NOT DIRTY THEM DOING IT. *****
+	// These two chapters were opened moments ago, so their composition is not finished, and comparing
+	// them in that state rasterises composition in progress. The book comparison does exactly this
+	// before every chapter, wrapped exactly this way (KESCMBookCompare.cpp:576-581); ComposeChapter
+	// records why the panel's own Start can skip it and this path cannot.
+	// ⚠ The guards matter as much as the compose: composing touches the document, and a chapter the
+	//   user only asked to LOOK at must not start asking to be saved. "Do not dirty it" means "if it
+	//   was clean going in, it is clean coming out" - the rule KESCMDoMarkChangesDoc already applies
+	//   to the comparison itself (KESCMCore.cpp:436-440).
+	{
+		IDataBase* targetDB = targetRef.GetDataBase();
+		IDataBase* sourceDB = sourceRef.GetDataBase();
+		if (targetDB != nil && sourceDB != nil)
+		{
+			IDataBase::SaveRestoreModifiedState targetDirtyGuard(targetDB);
+			IDataBase::SaveRestoreModifiedState sourceDirtyGuard(sourceDB);
+
+			ComposeChapter(targetRef);
+			ComposeChapter(sourceRef);
+		}
+	}
+
+	// ***** THE TARGET GOES IN FRONT, AND IT HAS TO BE RAISED LAST TO GET THERE. *****
+	// This function opens TARGET FIRST on purpose - a target that will not open must cost nothing on
+	// the source side - so the side raised last is the SOURCE, and that is what the user would be left
+	// looking at. ⚠ MEASURED 2026-08-12: without this line the active document after "Start Change
+	// Marker" was old/ch01.indd. The marks are drawn on the target, so the target is the window that
+	// has to be in front.
+	// ★The double click has the opposite order (source, then target) and therefore needs no such line;
+	//   both paths end with the target in front, by different means. Do not "tidy" the two into the
+	//   same order without re-reading why this one opens the target first.
+	BringChapterToFront(targetRef);
 
 	// ★The status line is left to the comparison itself - it ends by writing its own report there
 	// (page counts, failures), which is more use than anything this function could add.

@@ -167,8 +167,11 @@ void KESCMBookDialogController::ApplyDialogFields(IActiveContext* context, const
 namespace
 {
 
-/** Put a MINIMIZE BOX on the dialog's own window, so a comparison that took real time to compute can
-    be pushed out of the way instead of closed.
+/** Prepare the dialog's own platform window: give it a MINIMIZE BOX, and bring it back when it is
+    sitting minimized.
+
+    The minimize box is so that a comparison that took real time to compute can be pushed out of the
+    way instead of closed. The restore is the other half of that, and is described at the bottom.
 
     *****WHY THIS NEEDS WIN32.***** The SDK cannot do it, and says so: a window's decorations are
     fixed when it is created (IWindow::InitWindow), a modeless dialog's standard controls are
@@ -188,8 +191,12 @@ namespace
     toggle goes off, and undo it again at shutdown - because that window belongs to somebody else.
     This one is OURS: it is created by KESCMOpenBookDialog and destroyed when the dialog closes, so
     there is no window to hand back and no state to keep. That is also why there is no menu toggle:
-    a dialog of our own can simply have the button (the user's call, 2026-08-12). */
-void KESCMPutMinimizeBoxOnDialog(IDialog* dialog)
+    a dialog of our own can simply have the button (the user's call, 2026-08-12).
+
+    *****AND IT HAS TO BE RESTORED - A FAULT THE MINIMIZE BOX ITSELF INTRODUCED.***** Until there was
+    a minimize box there was no way to leave this dialog in a state that reopening could not recover
+    from. Now there is, and reopening does not recover from it: see the end of the function. */
+void KESCMPrepareBookDialogWindow(IDialog* dialog)
 {
 #ifdef WINDOWS
 	if (dialog == nil)
@@ -220,6 +227,20 @@ void KESCMPutMinimizeBoxOnDialog(IDialog* dialog)
 		SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
 	::RedrawWindow(hwnd, nullptr, nullptr,
 		RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN | RDW_FRAME | RDW_UPDATENOW);
+
+	// *****A MINIMIZED DIALOG MUST BE BROUGHT BACK, OR THE MENU ITEM LOOKS DEAD.*****
+	// IDialogMgr hands back the EXISTING dialog instead of making a second one - "If
+	// allowMultipleCopies is false and the dialog is already open, the existing dialog is returned"
+	// (IDialogMgr.h:66-67), and a modeless dialog is single-copy regardless (:67) - and Open() on an
+	// already-open window does NOT un-minimize it.
+	// ⚠ MEASURED 2026-08-12: minimize the dialog, then choose "Compare Books" from the flyout again -
+	//   the menu item is ENABLED, invoking it reports success, and IsIconic stays true with the window
+	//   parked at -32000,-32000 as a 160x28 stub. Nothing appears. An enabled item that does nothing
+	//   is the worst shape for this: a greyed one at least says why.
+	// ★Neither SetWindowPos(SWP_FRAMECHANGED) above nor Open() itself restores it - only this does
+	//   (both measured the same day).
+	if (::IsIconic(hwnd))
+		::ShowWindow(hwnd, SW_RESTORE);
 #endif
 }
 
@@ -267,8 +288,10 @@ void KESCMOpenBookDialog()
 	// modeless dialog behave like a modal one - the exact thing this dialog exists not to do.
 	dialog->Open(nil, kFalse);
 
-	// AFTER Open, not before: the platform window does not exist until the dialog is opened.
-	KESCMPutMinimizeBoxOnDialog(dialog);
+	// AFTER Open, not before: the platform window does not exist until the dialog is opened. ★And on
+	// EVERY open, not just the first - this call is also what brings the dialog back when the last
+	// thing the user did to it was minimize it.
+	KESCMPrepareBookDialogWindow(dialog);
 }
 
 // End, KESCMBookDialog.cpp.
