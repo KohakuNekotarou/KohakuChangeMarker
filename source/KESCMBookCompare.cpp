@@ -31,6 +31,7 @@
 #include "ErrorUtils.h"			// GlobalErrorStatePreserver - an open or a close that is allowed to
 								// fail must not poison the caller's next command
 #include "PersistUtils.h"		// ::GetUIDRef / ::GetDataBase
+#include "ProgressBar.h"		// RangeProgressBar - the progress and the cancel (see KESCMCompareBooks)
 #include "SDKFileHelper.h"		// GetPath - documents are compared by their path
 #include "SnapshotUtilsEx.h"	// the rasteriser, on the SAME terms the document comparison uses
 
@@ -409,9 +410,18 @@ ErrorCode PageDiffers(const UIDRef& targetPage, const UIDRef& sourcePage, bool16
       (1) a different page count IS the answer, and costs no rasterising at all
       (2) within a page, the first differing pixel ends the page
       (3) the first differing page ends the CHAPTER - the rest is never opened
-    So the only chapters read to the end are the unchanged ones. */
-KESCMChapterState CompareChapter(IDataBase* targetDB, IDataBase* sourceDB, PMString& outWhy)
+    So the only chapters read to the end are the unchanged ones.
+
+    progress/baseTicks move the bar WITHIN this chapter (baseTicks is where this chapter's slice of
+    the bar starts). outCancelled is set when the user pressed Cancel, and the return is then
+    kKESCMChapterNotCompared - a chapter whose remaining pages were never read cannot be called
+    unchanged, however many of its pages had already compared equal. */
+KESCMChapterState CompareChapter(IDataBase* targetDB, IDataBase* sourceDB,
+                                 CProgressBar& progress, int32 baseTicks,
+                                 bool16& outCancelled, PMString& outWhy)
 {
+	outCancelled = kFalse;
+
 	std::vector<UID> targetPages;
 	std::vector<UID> sourcePages;
 	KESCMCollectPageUIDs(targetDB, targetPages);	// the shared helper; not modified for this
@@ -427,6 +437,8 @@ KESCMChapterState CompareChapter(IDataBase* targetDB, IDataBase* sourceDB, PMStr
 	// (1)
 	if (targetPages.size() != sourcePages.size())
 		return kKESCMChapterChanged;
+
+	const int32 pageCount = (int32)targetPages.size();
 
 	for (size_t i = 0; i < targetPages.size(); ++i)
 	{
@@ -444,6 +456,23 @@ KESCMChapterState CompareChapter(IDataBase* targetDB, IDataBase* sourceDB, PMStr
 		}
 		if (differs)
 			return kKESCMChapterChanged;			// (3)
+
+		// This chapter's slice of the bar, divided by its pages. ★Multiply BEFORE dividing, or every
+		// chapter with more pages than the span would sit at 0 until it finished. The arithmetic is
+		// done in size_t (i is one), so the product cannot overflow on the 64-bit build this
+		// plug-in ships as.
+		progress.SetPosition(baseTicks + (int32)((i + 1) * (size_t)kKESCMChapterProgressSpan / (size_t)pageCount));
+
+		// ***** The cancel is asked at the PAGE BOUNDARY. ***** WasCancelled runs events, so it must
+		// not be called inside the rasterising or the pixel walk - the same rule the document
+		// comparison states at its own Draw call ("cancellation is checked at page boundaries").
+		// kFalse = do not raise the global error state; raising it would make whatever command runs
+		// next fail as collateral ([[command-sequence-rollback-on-error]]).
+		if (progress.WasCancelled(kFalse))
+		{
+			outCancelled = kTrue;
+			return kKESCMChapterNotCompared;
+		}
 	}
 
 	return kKESCMChapterNoChange;
@@ -458,9 +487,49 @@ ErrorCode KESCMCompareBooks(IBook* target, IBook* source,
 
 	int32 leftOpen = 0;
 
+	// ***** THE PROGRESS BAR. *****
+	// RangeProgressBar rather than the TaskProgressBar the document comparison uses, because this
+	// walk is not "N items, one step each": a chapter is a slice of the bar that the pages inside it
+	// move through. The SDK has both and they are chosen by use (linksui counts files with
+	// TaskProgressBar; textimportfilter counts bytes with RangeProgressBar+SetPosition).
+	//
+	// ★showImmediate = kTrue, unconditionally. The document comparison needs the
+	// kKESCMProgressBarMinPages threshold because a two-page incremental recompare is instant; a
+	// book comparison never is - every chapter is opened, composed and rasterised, which measured at
+	// ~200 ms per chapter even on small test chapters (15 chapters ≈ 3 s, 2026-08-12). ⚠ kFalse does
+	// NOT mean "appear if it takes a while"; it means the bar never appears at all (measured
+	// 2026-07-27, when a 100-page comparison showed nothing).
+	const int32 chapterCount = (int32)outChapters.size();
+	PMString barTitle(chapterCount == 1 ? "Comparing 1 chapter..." : "Comparing books...");
+	barTitle.SetTranslatable(kFalse);
+	RangeProgressBar progress(barTitle, 0, chapterCount * kKESCMChapterProgressSpan, kTrue);
+
+	// ⚠ Opening a chapter can raise a progress bar of its own. Suppressing it has to happen HERE,
+	// before the loop - KBS had this call after its chapters were already open and it therefore
+	// never affected the bar it was meant to suppress. This comparison wants no child bars at all
+	// (nothing inside a chapter reports progress), so the blanket kTrue is right.
+	progress.DisableChildProgressBars(kTrue);
+
+	bool16 cancelled = kFalse;
+
 	for (size_t i = 0; i < outChapters.size(); ++i)
 	{
 		KESCMChapterResult& chapter = outChapters[i];
+
+		// ***** Asked BEFORE the chapter is opened. ***** Cancelling has to be able to stop the next
+		// open, not just the next comparison - opening and composing a chapter is most of the cost.
+		if (progress.WasCancelled(kFalse))
+		{
+			cancelled = kTrue;
+			break;
+		}
+
+		// Where this chapter's slice of the bar begins, and what the bar says it is doing. Both are
+		// set before the open so the name on screen is the chapter being waited for, not the last
+		// one finished.
+		const int32 baseTicks = (int32)i * kKESCMChapterProgressSpan;
+		progress.SetPosition(baseTicks);
+		progress.SetTaskText(chapter.fName);
 
 		// Already answered by the pairing: no counterpart on the other side, or no file to open.
 		if (chapter.fState != kKESCMChapterUnknown)
@@ -512,19 +581,50 @@ ErrorCode KESCMCompareBooks(IBook* target, IBook* source,
 				RecomposeChapter(sourceRef);
 
 				PMString why;
-				chapter.fState = CompareChapter(targetDB, sourceDB, why);
+				bool16   chapterCancelled = kFalse;
+				chapter.fState = CompareChapter(targetDB, sourceDB, progress, baseTicks,
+				                                chapterCancelled, why);
 				if (chapter.fState == kKESCMChapterFailed)
 					chapter.fWhy = why;
+				if (chapterCancelled)
+					cancelled = kTrue;
 			}
 		}
 
+		// ***** The chapters this run opened are closed even when it was cancelled. ***** Cancelling
+		// stops the comparison, not the tidying up: a chapter left open would go on locking its
+		// .indd with no window for the user to close it by.
 		if (!CloseChapter(sourceRef, sourceMine))
 			++leftOpen;
 		if (!CloseChapter(targetRef, targetMine))
 			++leftOpen;
+
+		if (cancelled)
+			break;
 	}
 
-	int32 changed = 0, unchanged = 0, added = 0, deleted = 0, failed = 0;
+	// ***** ASKED ONCE MORE, AFTER THE LOOP. *****
+	// A cancel pressed while the LAST chapter was being compared is never seen by a test that only
+	// runs at the top of the next iteration - there is no next iteration. KBS spent a day on the
+	// symptom this produces ("cancel works on the first chapter but not the last", and never at all
+	// in a one-chapter book). The work is already done by this point; what this decides is what the
+	// run is REPORTED as, and a run the user stopped must not claim to have finished.
+	if (!cancelled && progress.WasCancelled(kFalse))
+		cancelled = kTrue;
+
+	// ***** Chapters the cancel never reached get a word of their own. *****
+	// kKESCMChapterUnknown is the internal "not judged yet" and must not reach the screen; leaving it
+	// would print "Unknown", and calling it NoChange would assert something this run never checked.
+	if (cancelled)
+	{
+		for (size_t i = 0; i < outChapters.size(); ++i)
+		{
+			if (outChapters[i].fState == kKESCMChapterUnknown)
+				outChapters[i].fState = kKESCMChapterNotCompared;
+		}
+	}
+
+	int32 changed = 0, unchanged = 0, added = 0, deleted = 0, failed = 0, notCompared = 0;
 	for (size_t i = 0; i < outChapters.size(); ++i)
 	{
 		switch (outChapters[i].fState)
@@ -534,44 +634,65 @@ ErrorCode KESCMCompareBooks(IBook* target, IBook* source,
 			case kKESCMChapterAdded:		++added;		break;
 			case kKESCMChapterDeleted:		++deleted;		break;
 			case kKESCMChapterFailed:		++failed;		break;
-			default:									break;
+			case kKESCMChapterNotCompared:	++notCompared;	break;
+			default:										break;
 		}
 	}
 
-	// ***** The chapter COUNT is always stated. ***** An empty list has to be readable as "every
-	// chapter was compared and none changed" rather than "nothing could be opened" - conflating
-	// those two is the fault that took a day to find in KBS.
-	outReport = PMString("book compare: ");
-	outReport.AppendNumber(int32(outChapters.size()));
-	outReport.Append(" chapters, ");
-	outReport.AppendNumber(changed);
-	outReport.Append(" changed, ");
-	outReport.AppendNumber(unchanged);
-	outReport.Append(" unchanged");
-	if (added > 0)
+	// ***** The chapter COUNT is always stated, and it comes FIRST. ***** An empty list has to be
+	// readable as "every chapter was compared and none changed" rather than "nothing could be
+	// opened" - conflating those two is the fault that took a day to find in KBS.
+	//
+	// ***** ONLY NON-ZERO COUNTS ARE LISTED, AND THE LINE HAS NO PREAMBLE. *****
+	// ⚠ This is not tidiness, it is a MEASURED defect (2026-08-12). The line lives in one status
+	// widget that ellipsizes in the MIDDLE, and a cancelled run adds two more counts to it. The
+	// earlier wording overflowed and came out as
+	//     "book co...5 chapters, 0 changed, 0 unchanged, 1 added, 14 not compared - cancelled"
+	// - which reads as FIVE chapters. Ellipsis in the middle of a number does not look like damage,
+	// it looks like a smaller number, so an overflowing summary here does not merely lose detail: it
+	// states a wrong figure. Middle-ellipsis was itself the fix for the previous overflow, where the
+	// failed count fell off the end (段階2), so the answer cannot be to move the truncation around
+	// again - the line has to be short enough not to truncate.
+	//   - dropping "book compare: " saves 14 characters and loses nothing: the dialog is titled
+	//     "Compare Books" and this is the only status line in it. It also restores the wording the
+	//     design specified (§4-2: "12 chapters: 5 changed, 6 unchanged, 1 failed").
+	//   - dropping zeroes saves the rest. The parts always sum to the chapter count, which is
+	//     printed, so a reader can still tell "15 chapters: 15 unchanged" from a partial run.
+	const int32 total = (int32)outChapters.size();
+	outReport = PMString();
+	outReport.AppendNumber(total);
+	outReport.Append(total == 1 ? " chapter" : " chapters");
+
+	struct { int32 count; const char* word; } parts[] =
 	{
-		outReport.Append(", ");
-		outReport.AppendNumber(added);
-		outReport.Append(" added");
-	}
-	if (deleted > 0)
+		{ changed,     " changed"     },
+		{ unchanged,   " unchanged"   },
+		{ added,       " added"       },
+		{ deleted,     " deleted"     },
+		// ★Before "failed": with chapters left uncompared, "1 changed, 5 unchanged" describes a
+		// part of the book rather than the book.
+		{ notCompared, " not compared" },
+		{ failed,      " failed"      },
+		{ leftOpen,    " left open"   },
+	};
+	bool16 firstPart = kTrue;
+	for (size_t p = 0; p < sizeof(parts) / sizeof(parts[0]); ++p)
 	{
-		outReport.Append(", ");
-		outReport.AppendNumber(deleted);
-		outReport.Append(" deleted");
+		if (parts[p].count <= 0)
+			continue;
+		outReport.Append(firstPart ? ": " : ", ");	// the colon arrives with the first count, so a
+		outReport.AppendNumber(parts[p].count);		// book with no chapters ends at "0 chapters"
+		outReport.Append(parts[p].word);
+		firstPart = kFalse;
 	}
-	if (failed > 0)
-	{
-		outReport.Append(", ");
-		outReport.AppendNumber(failed);
-		outReport.Append(" failed");
-	}
-	if (leftOpen > 0)
-	{
-		outReport.Append(", ");
-		outReport.AppendNumber(leftOpen);
-		outReport.Append(" left open");
-	}
+
+	// ★Last, and set off by a dash rather than a comma - it qualifies the whole line instead of
+	// adding another count to it. Same shape the Refresh path uses ("refreshed 5 (changed 2) -
+	// cancelled"). ⚠ It can appear with no "not compared" at all, when the cancel arrived as the
+	// last chapter finished: nothing was lost, but the user did press Cancel, and the report says
+	// what happened rather than what would have been tidier to say.
+	if (cancelled)
+		outReport.Append(" - cancelled");
 	outReport.SetTranslatable(kFalse);
 
 	// The per-chapter read-out, built HERE from the same list the caller receives - so the summary

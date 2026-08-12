@@ -35,8 +35,18 @@ enum KESCMChapterState
 	kKESCMChapterNoChange,		// every page compared equal
 	kKESCMChapterAdded,			// present in the target book only
 	kKESCMChapterDeleted,		// present in the source book only
-	kKESCMChapterFailed			// could not be opened; fWhy says what the book knows about it
+	kKESCMChapterFailed,		// could not be opened; fWhy says what the book knows about it
+	kKESCMChapterNotCompared	// the run was cancelled before this chapter was judged (see below)
 };
+
+//  ***** WHY kKESCMChapterNotCompared IS NOT THE SAME AS kKESCMChapterUnknown. *****
+//  Unknown is the internal "paired, not judged yet" value and never reaches the screen. NotCompared
+//  is a FINISHED answer: the user cancelled, and this chapter was never looked at. They have to be
+//  separate from NoChange for the reason that cost KBS a day - "could not be processed" and
+//  "processed, and nothing had changed" must never share a word. A cancelled run that reported its
+//  untouched chapters as NoChange would be claiming they are clean, which is the one thing it does
+//  not know. Cancelling mid-chapter also lands here: the pages already compared showed no
+//  difference, but the rest were never read, so the chapter as a whole has no answer.
 
 /** One chapter's outcome. */
 struct KESCMChapterResult
@@ -59,10 +69,11 @@ inline const char* KESCMChapterStateText(KESCMChapterState state)
 	{
 		case kKESCMChapterChanged:	return "Changed";
 		case kKESCMChapterNoChange:	return "NoChange";
-		case kKESCMChapterAdded:	return "ChapterAdded";
-		case kKESCMChapterDeleted:	return "ChapterDeleted";
-		case kKESCMChapterFailed:	return "Failed";
-		default:					return "Unknown";
+		case kKESCMChapterAdded:		return "ChapterAdded";
+		case kKESCMChapterDeleted:		return "ChapterDeleted";
+		case kKESCMChapterFailed:		return "Failed";
+		case kKESCMChapterNotCompared:	return "NotCompared";
+		default:						return "Unknown";
 	}
 }
 
