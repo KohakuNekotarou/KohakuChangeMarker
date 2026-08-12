@@ -46,6 +46,17 @@ bool16 KESCMResolveBookPair(IBook*& outTarget, IBook*& outSource);
     "new.indb", not "new". */
 PMString KESCMBookDisplayName(IBook* book);
 
+/** The book's FULL PATH, as the file system spells it.
+
+    ***** Why the name is not enough. ***** Two books being compared are usually two versions of the
+    same job, and the job keeps its file name across versions - "New\a.indb" and "Old\a.indb" both
+    read as "a.indb". The name alone therefore identifies the pair as ONE book twice over, which is
+    the one thing the Target/Source lines exist to rule out (the user's call, 2026-08-12).
+
+    Falls back to the display name if the book cannot name a file, so a caller never has to handle
+    an empty string. */
+PMString KESCMBookDisplayPath(IBook* book);
+
 /** Pair the two books' chapters BY POSITION - first with first, second with second, and so on.
     That is the user's choice (2026-08-11); file names are deliberately not matched, so renaming a
     chapter does not break the pairing, while inserting one shifts everything after it.

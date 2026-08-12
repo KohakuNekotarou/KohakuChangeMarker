@@ -16,7 +16,7 @@
 
 // Interface includes:
 #include "IApplication.h"
-#include "IControlView.h"		// Enable / Disable - the Compare button
+#include "IControlView.h"		// what FindWidget hands back - the line being written to
 #include "IDialog.h"
 #include "IDialogMgr.h"
 #include "IPanelControlData.h"	// FindWidget - reaching the dialog's own widgets
@@ -32,7 +32,6 @@
 
 // Project includes:
 #include "KESCMBookDialog.h"
-#include "KESCMBookPair.h"		// KESCMResolveBookPair / KESCMBookDisplayName
 #include "KESCMBookTree.h"		// KESCMBookTreeRebuild - the list, redrawn when the dialog opens
 #include "KESCMID.h"
 
@@ -42,38 +41,6 @@
 #include <windows.h>
 #endif
 
-/** The dialog's controller.
-
-    There is nothing to fill in or apply yet - the Target/Source labels, the Compare button and the
-    chapter list all arrive in the next tasks. The class exists now because the boss names this
-    implementation, and a boss naming an implementation that is not registered simply fails to
-    produce the interface (silently - which is the whole difficulty of that class of bug). */
-class KESCMBookDialogController : public CDialogController
-{
-public:
-	KESCMBookDialogController(IPMUnknown* boss) : CDialogController(boss) {}
-
-	virtual void InitializeDialogFields(IActiveContext* context);
-	virtual void ApplyDialogFields(IActiveContext* context, const WidgetID& widgetId);
-};
-
-CREATE_PMINTERFACE(KESCMBookDialogController, kKESCMBookDialogControllerImpl)
-
-void KESCMBookDialogController::InitializeDialogFields(IActiveContext* context)
-{
-	CDialogController::InitializeDialogFields(context);
-
-	InterfacePtr<IPanelControlData> panelData(this, UseDefaultIID());
-	KESCMBookDialogUpdateTargets(panelData);
-
-	// ★The list is rebuilt from the module's rows on every open, so that what is on screen is
-	//   always what this plug-in actually holds. Measured 2026-08-11: kCacheDialog does keep the
-	//   rows on screen across close and reopen, so this is not what makes reopening work - it is
-	//   what keeps the two from ever disagreeing if the cached dialog is dropped. Rebuilding an
-	//   already-correct list of a few rows costs nothing.
-	KESCMBookTreeRebuild(panelData);
-}
-
 //----------------------------------------------------------------------------------------
 // Filling the dialog in
 //----------------------------------------------------------------------------------------
@@ -81,10 +48,15 @@ void KESCMBookDialogController::InitializeDialogFields(IActiveContext* context)
 namespace
 {
 
-/** The chapter list's rows. ★Module scope, not a member of the dialog: the dialog window is
-	created and destroyed as it is opened and closed, and results that survive only as long as the
-	window would make closing it the same as discarding them. */
+/** Everything the dialog shows, held for it. ★Module scope, not members of the dialog: the dialog
+	window is created and destroyed as it is opened and closed, and results that survive only as
+	long as the window would make closing it the same as discarding them.
+	★The four are written together (KESCMBookDialogSetResult) because they describe ONE run - see
+	  the header for why the paths are stored rather than resolved again at paint time. */
 std::vector<KESCMChapterResult> gDialogRows;
+PMString gTargetPath;
+PMString gSourcePath;
+PMString gSummary;
 
 /** Put text into one of the dialog's static text widgets. Does nothing if it is not there. */
 void SetLine(IPanelControlData* panelData, const WidgetID& widgetID, const PMString& text)
@@ -101,52 +73,43 @@ void SetLine(IPanelControlData* panelData, const WidgetID& widgetID, const PMStr
 		textData->SetString(text);		// SetString invalidates by itself - no Invalidate() here
 }
 
-}	// anonymous namespace
-
-void KESCMBookDialogUpdateTargets(IPanelControlData* panelData)
+/** Paint the three text lines from what the last run stored. Called when the dialog opens - which,
+	since 2026-08-12, is the only time it can need painting: the dialog no longer runs anything, so
+	nothing can change underneath it while it is open. */
+void KESCMBookDialogPaintResult(IPanelControlData* panelData)
 {
 	if (panelData == nil)
 		return;
 
-	IBook* target = nil;
-	IBook* source = nil;
-	const bool16 resolved = KESCMResolveBookPair(target, source);
-
+	// ★The labels stay English (the plug-in's UI language rule); only the paths vary.
 	PMString targetLine("Target: ");
-	PMString sourceLine("Source: ");
-	if (resolved)
-	{
-		targetLine.Append(KESCMBookDisplayName(target));
-		sourceLine.Append(KESCMBookDisplayName(source));
-	}
-	else
-	{
-		// ***** Say WHICH half is missing, and never guess. ***** The front tab is deliberately
-		// not allowed to fall back to InDesign's active book (see KESCMBookPair.h), so when it
-		// cannot be identified the honest thing is to say so and refuse to run.
-		targetLine.Append("(no book tab in front)");
-		sourceLine.Append("(no second open book)");
-	}
+	targetLine.Append(gTargetPath);
 	targetLine.SetTranslatable(kFalse);
+
+	PMString sourceLine("Source: ");
+	sourceLine.Append(gSourcePath);
 	sourceLine.SetTranslatable(kFalse);
 
 	SetLine(panelData, kKESCMBookTargetTextWidgetID, targetLine);
 	SetLine(panelData, kKESCMBookSourceTextWidgetID, sourceLine);
 
-	// Compare is only pressable when there is something to compare.
-	IControlView* compareButton = panelData->FindWidget(kKESCMBookCompareButtonWidgetID);
-	if (compareButton != nil)
-	{
-		if (resolved)
-			compareButton->Enable();
-		else
-			compareButton->Disable();
-	}
+	// ★Only when there is one. The resource carries "Ready" for the case where the dialog is
+	//   somehow opened before any run - overwriting it with an empty line would replace a sentence
+	//   that explains itself with one that says nothing.
+	if (!gSummary.IsEmpty())
+		SetLine(panelData, kKESCMBookStatusTextWidgetID, gSummary);
 }
 
-void KESCMBookDialogSetStatus(IPanelControlData* panelData, const PMString& message)
+}	// anonymous namespace
+
+void KESCMBookDialogSetResult(const PMString& targetPath, const PMString& sourcePath,
+                              const PMString& summary,
+                              const std::vector<KESCMChapterResult>& rows)
 {
-	SetLine(panelData, kKESCMBookStatusTextWidgetID, message);
+	gTargetPath = targetPath;
+	gSourcePath = sourcePath;
+	gSummary = summary;
+	gDialogRows = rows;
 }
 
 const std::vector<KESCMChapterResult>& KESCMBookDialogRows()
@@ -154,9 +117,43 @@ const std::vector<KESCMChapterResult>& KESCMBookDialogRows()
 	return gDialogRows;
 }
 
-void KESCMBookDialogSetRows(const std::vector<KESCMChapterResult>& rows)
+//----------------------------------------------------------------------------------------
+// The dialog's controller
+//----------------------------------------------------------------------------------------
+
+/** The dialog's controller: it paints what the last run left behind, and applies nothing.
+
+    ***** There is nothing to apply. ***** Since 2026-08-12 this dialog has no controls at all - the
+    comparison is started from the flyout menu and confirmed in an alert (KESCMBookRun.cpp), and
+    what is left here is a report. ApplyDialogFields is still overridden, and still calls its base,
+    because the close box goes through the dialog's own machinery either way.
+
+    It is declared BELOW the helpers above on purpose: InitializeDialogFields calls one of them, and
+    a file-static has to be seen before it is used. */
+class KESCMBookDialogController : public CDialogController
 {
-	gDialogRows = rows;
+public:
+	KESCMBookDialogController(IPMUnknown* boss) : CDialogController(boss) {}
+
+	virtual void InitializeDialogFields(IActiveContext* context);
+	virtual void ApplyDialogFields(IActiveContext* context, const WidgetID& widgetId);
+};
+
+CREATE_PMINTERFACE(KESCMBookDialogController, kKESCMBookDialogControllerImpl)
+
+void KESCMBookDialogController::InitializeDialogFields(IActiveContext* context)
+{
+	CDialogController::InitializeDialogFields(context);
+
+	InterfacePtr<IPanelControlData> panelData(this, UseDefaultIID());
+	KESCMBookDialogPaintResult(panelData);
+
+	// ★The list is rebuilt from the module's rows on every open, so that what is on screen is
+	//   always what this plug-in actually holds. Measured 2026-08-11: kCacheDialog does keep the
+	//   rows on screen across close and reopen, so this is not what makes reopening work - it is
+	//   what keeps the two from ever disagreeing if the cached dialog is dropped. Rebuilding an
+	//   already-correct list of a few rows costs nothing.
+	KESCMBookTreeRebuild(panelData);
 }
 
 void KESCMBookDialogController::ApplyDialogFields(IActiveContext* context, const WidgetID& widgetId)

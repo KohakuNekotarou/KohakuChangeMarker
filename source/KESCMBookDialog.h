@@ -25,37 +25,39 @@
 
 #include "KESCMBookResult.h"	// KESCMChapterResult - what the list holds
 
-class IPanelControlData;
-
 /** Open the book comparison dialog.
 
     Nothing here guards against a second copy appearing: IDialogMgr enforces "one at a time" for
     modeless dialogs whatever the allowMultipleCopies argument says (IDialogMgr.h:67). */
 void KESCMOpenBookDialog();
 
-/** Fill the Target/Source lines from the CURRENT front tab, and enable or disable Compare.
+/** Hand the dialog everything it shows: which two books were compared, the summary, and the rows.
 
-    Called when the dialog opens and again immediately before each comparison. ***** Both times,
-    on purpose. ***** The dialog is modeless, so the user can change the front tab while it is
-    open; refreshing just before the run is what guarantees that the names on screen and the books
-    actually compared are the same two. */
-void KESCMBookDialogUpdateTargets(IPanelControlData* panelData);
+    ***** ONE call, made once, by the run that produced all of it. ***** The four things describe a
+    single comparison, and the dialog paints them together when it opens (KESCMBookRun.cpp calls
+    this and then opens the dialog).
 
-/** Put a line in the dialog's status area. */
-void KESCMBookDialogSetStatus(IPanelControlData* panelData, const PMString& message);
+    ***** The paths are STORED, not looked up again. ***** Until 2026-08-12 the dialog re-resolved
+    the front tab of the Book panel every time it opened, which meant the labels described the
+    CURRENT tab while the rows below them described the run - two answers to "which books is this
+    about?", and a modeless dialog gives the user all the time in the world to change the front tab
+    between them. Storing what was actually compared makes the disagreement impossible rather than
+    unlikely.
 
-/** What the chapter list is showing right now, and how to replace it.
+    ***** And it all outlives the dialog window. ***** Held in the module, not in the widgets, so
+    that closing the dialog does not throw away a comparison that took real time to compute -
+    reopening it (kCacheDialog) finds it still here. */
+void KESCMBookDialogSetResult(const PMString& targetPath, const PMString& sourcePath,
+                              const PMString& summary,
+                              const std::vector<KESCMChapterResult>& rows);
 
-    ***** The rows outlive the dialog window. ***** They are held in this module, not in the tree
-    widget, so that closing the dialog does not throw away a comparison that took real time to
-    compute - reopening it (kCacheDialog) finds them still here. The tree's hierarchy adapter reads
-    this and nothing else.
+/** What the chapter list is showing right now. The tree's hierarchy adapter reads this and
+    nothing else.
 
-    The comparison's summary line is kept separately (KESCMGetBookResultText). These are the same
-    facts in a different shape: a list needs rows, and re-parsing a sentence back into rows would be
-    two answers to one question. */
+    The comparison's full text is kept separately (KESCMGetBookResultText). These are the same facts
+    in a different shape: a list needs rows, and re-parsing a report back into rows would be two
+    answers to one question. */
 const std::vector<KESCMChapterResult>& KESCMBookDialogRows();
-void KESCMBookDialogSetRows(const std::vector<KESCMChapterResult>& rows);
 
 #endif // __KESCMBookDialog_h__
 

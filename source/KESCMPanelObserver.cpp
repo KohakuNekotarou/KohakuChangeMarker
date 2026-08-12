@@ -35,6 +35,7 @@
 #include "CObserver.h"
 #include "widgetid.h"				// kTrueStateMessage / kFalseStateMessage
 #include "PersistUtils.h"			// ::GetUIDRef
+#include "SDKFileHelper.h"			// IDFile -> パス文字列(Target/Source をフルパスで出す。2026-08-12)
 
 // プロジェクト内:
 #include "KESCMID.h"
@@ -124,16 +125,40 @@ bool16 KESCMCanStartComparison()
 	return KESCMResolveComparisonPair(target, source);
 }
 
-// db を所有する文書の表示名(そのまま返す。ラベル幅への収まりは widget の ellipsize が引き受ける)。
-// ★旧記述「JSX パネルと同様、ラベルに収まるよう短縮する」は 2026-08-06 の監査(ブロック8 A-2)で
-//   自前短縮を撤去した時点で陳腐化していた(2026-08-06 の再確認で現行化)。呼び出しは下の
-//   Target/Source ラベル2箇所だけで、どちらも .fr が kEllipsizeMiddle。
-static PMString KESCMDocNameFromDB(IDataBase* db)
+// db を所有する文書の**フルパス**(取れなければ文書名)。
+//
+// ★★2026-08-12 に「名前だけ」から変更(ユーザー指示「パネルの方も」)。理由はブック比較の
+//   ダイアログと同じ＝**比べる2つは同じ仕事の版違いで、ファイル名まで同じことが多い**。名前だけだと
+//   Target と Source が同じ文字列になり、2行が「どちらがどちらか」を何も語らなくなる。
+//
+// ★★同日に**末尾2つ(親フォルダー\ファイル名)→フルパス**へ再変更(ユーザー指示「フルパスにしてみて、
+//   ...がつくかも」)。**溢れることを承知の上での指定**なので、収まりの判断は widget に一任し、ここでは
+//   一切削らない。この行の幅は 208px しか無いのでフルパスはたいてい溢れ、対の `.fr` が
+//   kEllipsizeBeginning ＝ **前が削られる**(`…\new\ch01.indd`)。⚠溢れた行では行頭の「Target: 」
+//   ラベルも一緒に消える——2行の上下(上が Target・下が Source)がその代わりになる。
+//   ★ブック比較ダイアログ側も同じくフルパス＋前方省略。**2か所とも同じ答えになった。**
+//
+// ★未保存の文書はファイルを持たない(IDataBase.h:270-273 が明記)ので、そのときは文書名へ落ちる。
+// 呼び出しは下の Target/Source ラベル2箇所だけ。
+static PMString KESCMDocPathFromDB(IDataBase* db)
 {
 	PMString name;
 	name.SetTranslatable(kFalse);
 	if (db == nil)
 		return name;
+
+	// ★パスは db に直接聞く＝文書リストを引く必要がない。名前(下の fallback)だけが IDocument 経由。
+	const IDFile* sysFile = db->GetSysFile();
+	if (sysFile != nil)
+	{
+		SDKFileHelper helper(*sysFile);
+		PMString path = helper.GetPath();
+		if (!path.IsEmpty())
+		{
+			path.SetTranslatable(kFalse);
+			return path;
+		}
+	}
 
 	InterfacePtr<IApplication> app(GetExecutionContextSession() ? GetExecutionContextSession()->QueryApplication() : nil);
 	InterfacePtr<IDocumentList> docList(app ? app->QueryDocumentList() : nil);
@@ -144,12 +169,12 @@ static PMString KESCMDocNameFromDB(IDataBase* db)
 	if (d != nil)
 		d->GetName(name);
 
-	// ★長い名前の切り詰めはここでは行わない。widget 側の ellipsize に一任する(KESCM.fr の
-	//   kKESCMTargetTextWidgetID / kKESCMSourceTextWidgetID = kEllipsizeMiddle)。製品 Links パネルが
-	//   リンクファイル名に採っているのと同じ方式で、文字数ではなくフレーム幅で判断するため、
-	//   日本語(全角)名でも正しく収まり「Target: 」ラベルと拡張子の両端が残る。
-	//   (2026-08-06 監査 A-2: 従来はここで文字数ベースに先頭を切っていたが、.fr は kEllipsizeEnd で
-	//    末尾を切る設定=二重かつ逆方向に効いており、末尾を見せる目的が達成できていなかった。)
+	// ★長い文字列の切り詰めはここでは行わない。widget 側の ellipsize に一任する(KESCM.fr の
+	//   kKESCMTargetTextWidgetID / kKESCMSourceTextWidgetID)。文字数ではなくフレーム幅で判断するので、
+	//   日本語(全角)混じりでも正しく収まる。
+	//   (2026-08-06 監査 A-2: 従来はここで文字数ベースに先頭を切っていたが、.fr は末尾を切る設定=
+	//    二重かつ逆方向に効いており、末尾を見せる目的が達成できていなかった。)
+	name.SetTranslatable(kFalse);
 	return name;
 }
 
@@ -541,13 +566,13 @@ static void KESCMApplyPanelInfo(const InterfacePtr<IPanelControlData>& pcd)
 	if (started)
 	{
 		target.Append(" ");
-		target.Append(KESCMDocNameFromDB(KESCMArmedTargetDB()));
+		target.Append(KESCMDocPathFromDB(KESCMArmedTargetDB()));
 	}
 	PMString source("Source:"); source.SetTranslatable(kFalse);
 	if (started && KESCMArmedSourceDB() != nil)
 	{
 		source.Append(" ");
-		source.Append(KESCMDocNameFromDB(KESCMArmedSourceDB()));
+		source.Append(KESCMDocPathFromDB(KESCMArmedSourceDB()));
 	}
 
 	IControlView* tView = pcd->FindWidget(kKESCMTargetTextWidgetID);

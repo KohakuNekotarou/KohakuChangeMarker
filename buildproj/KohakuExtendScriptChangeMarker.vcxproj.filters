@@ -57,7 +57,7 @@
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMBookDialog.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMBookDialogObserver.cpp">
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMBookRun.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMBookPair.cpp">
@@ -154,6 +154,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMNoTip.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMSplitterEH.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryTreeAdapter.cpp">

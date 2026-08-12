@@ -278,6 +278,35 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 		}
 	},
 
+	// The splitter that divides the panel into the fixed block of controls above and the "Story
+	// Edits" section below. Identical to the stock kSplitterPanelWidgetBoss except for one thing:
+	// the interface that receives the mouse is replaced by an implementation that does nothing, so
+	// ★THE DIVIDER CANNOT BE DRAGGED (user's call, 2026-08-12).
+	//
+	// ★Why "make it not move" needs an implementation at all: there is no way to REMOVE an interface
+	//   from an inherited boss, so the way to switch a behaviour off is to name a different
+	//   implementation for it. KESCMNoTip.cpp silences a tooltip the same way, for the same reason.
+	//
+	// ★What was actually lost: dragging UP was already stopped by the top snap (KESCM.fr gives it the
+	//   designed height of the upper pane, and Widgets.fh:418 says the slider does not move beyond a
+	//   snap position). Only dragging DOWN was left, and that grew the upper pane past the block of
+	//   fixed-coordinate controls it holds - leaving a dead strip with nothing in it. The section is
+	//   sized by dragging the edge of the PANEL instead, which is what KESCMPanelView already assumes.
+	//
+	// ★The drag would very likely have stopped anyway, without the event handler: the splitter drag is
+	//   run by a tracker, and trackers are looked up by the widget's CLASS ID (ITrackerFactory.h:44-50),
+	//   so a boss of our own is not the class the stock tracker was installed for. That is an untested
+	//   inference about someone else's registration though, and this one is not - the mouse cannot get
+	//   in at all. Both work in the same direction; neither is relied on alone.
+	Class
+	{
+		kKESCMSplitterPanelBoss,
+		kSplitterPanelWidgetBoss,
+		{
+			IID_IEVENTHANDLER, kKESCMSplitterEHImpl,
+		}
+	},
+
 	// The "Story Edits" section itself - a plain panel plus one number: how tall the section was
 	// when it was last closed, so the next open restores that height instead of a fixed default.
 	// The interface is declared as ours but implemented by the SDK's stock kPersistIntDataImpl and
@@ -453,10 +482,16 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 		kDialogBoss,
 		{
 			IID_IDIALOGCONTROLLER, kKESCMBookDialogControllerImpl,
-			// The Compare button's click. Put on the DIALOG rather than on a button boss of our
-			// own, exactly as the panel does it (KESCMPanelObserver): one observer, AutoAttach,
-			// and a switch on the widget ID. A custom button boss would buy nothing here.
-			IID_IOBSERVER, kKESCMBookDialogObserverImpl,
+			// ★★2026-08-12: IID_IOBSERVER IS GONE, AND THAT IS THE FIX RATHER THAN A LOSS. It named
+			//   kKESCMBookDialogObserverImpl, whose whole job was the Compare button - and that
+			//   button no longer exists (the comparison is confirmed in an alert and run from the
+			//   menu now, KESCMBookRun.cpp). What is left is a dialog with no controls at all.
+			//   ⚠Naming an observer here REPLACES the stock one, and the stock one is what makes the
+			//     close box work (CDialogObserver attaches to the dialog window). Removing the line
+			//     hands that back to kDialogBoss, which carries IID_IOBSERVER =
+			//     kCDialogObserverImpl of its own (verified in the live boss dump, Boss.txt:4902).
+			//     The alternative - keeping a subclass that only forwards to its base - would have
+			//     been a file, an ImplementationID and a registration that all say nothing.
 		}
 	},
 
@@ -1330,6 +1365,11 @@ type KESCMStorySectionToggleWidget(kViewRsrcType) : RollOverIconButtonWidget(Cla
 // (LinksUIViews.fr:45 for the type, LinksUIClass.fr:91 for the interface).
 type KESCMStorySectionPanelWidget(kViewRsrcType) : GenericPanelWidget(ClassID = kKESCMStorySectionPanelBoss) { };
 
+// The splitter itself, backed by kKESCMSplitterPanelBoss so that its divider cannot be dragged (see
+// that Class above). ★The field list is SplitterPanelWidget's, unchanged - the resource below is
+// byte for byte what it was, and the layout with it.
+type KESCMSplitterPanelWidget(kViewRsrcType) : SplitterPanelWidget(ClassID = kKESCMSplitterPanelBoss) { };
+
 // The "Story Edits" list itself.
 type KESCMStoryTreeWidget(kViewRsrcType) : TreeViewWidget(ClassID = kKESCMStoryTreeWidgetBoss) { };
 
@@ -1606,7 +1646,9 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 	//   Field order is CSplitterPanelControlData (Widgets.fh:403-431) - fourteen of them. The trailing
 	//   IsSplitBarRecessed field is NOT written: it carries a default, and default-bearing fields fail
 	//   to parse when spelled out. linksui leaves it out for the same reason.
-	SplitterPanelWidget
+	// ★2026-08-12: KESCMSplitterPanelWidget, not the stock SplitterPanelWidget - same fields, same
+	//   numbers, but a boss whose divider cannot be dragged (see kKESCMSplitterPanelBoss above).
+	KESCMSplitterPanelWidget
 	(
 		kKESCMSplitterWidgetID, kPMRsrcID_None,
 		kBindAll,
@@ -1649,10 +1691,16 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 			kBindLeft | kBindRight | kBindTop,
 			Frame(8, 8, 216, 24)		// 右端 206→216(パネル+10px 拡張, 2026-08-06)
 			kTrue, kTrue,
-			// ★kEllipsizeMiddle: 長い文書名はフレーム幅に合わせて中央を省略する。「Target: 」ラベル
-			//   (先頭)と拡張子(末尾)の両方が残る。製品 Links パネルがリンクファイル名に採っているのと
-			//   同じ方式(LinksUIViews_enUS.fr:412 ほか)。★C++ 側(KESCMDocNameFromDB)にあった文字数
-			//   ベースの自前短縮は 2026-08-06 の監査(ブロック8 A-2)で撤去=判断はここ1か所。
+			// ★★kEllipsizeBeginning(2026-08-12。旧 kEllipsizeMiddle)。この行が出すのは 2026-08-12 から
+			//   文書名ではなく**フルパス**で(KESCMDocPathFromDB)、比べる2つは同じ仕事の版違い＝
+			//   ファイル名まで同じことが多いため、見分けの決め手はパスの末尾側(親フォルダー)になる。
+			//   ⇒ 溢れたら**前を削る**＝決め手とファイル名を残す(`…\new\ch01.indd`)。中央省略だと
+			//     その親フォルダーがちょうど消えて2行が同じ文字列に見える。ブック比較ダイアログも同じ。
+			//   ⚠**この行の幅は 208px なのでフルパスはたいてい溢れ、行頭の「Target: 」ラベルも
+			//     一緒に消える**。承知のうえでの指定(2026-08-12 ユーザー「フルパスにしてみて、
+			//     ...がつくかも」)＝上下の並び(上が Target・下が Source)がラベルの代わりになる。
+			//   ★収まりの判断はここ1か所＝C++ 側は一切削らない(文字数ベースの自前短縮は 2026-08-06 の
+			//     監査ブロック8 A-2 で撤去済み)。
 			// ★末尾の kFalse = Convert ampersands を切る。kTrue だと単独の '&' がキーボード
 			//   アクセラレータとして食われ、"A&B.indd" が "AB.indd"(B に下線)になる。
 			//   KESCM の StaticText は4つとも associated widget が kInvalidWidgetID =
@@ -1663,7 +1711,7 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 			//     KBS はツリー行と CAlert(=.fr が届かない層)を持つのでそちらを採っている。
 			//     KESCM は CAlert に可変文字列を載せずツリーも無いので、widget 側で切る方が
 			//     「新しいメッセージで二重化を通し忘れる」経路ごと消える(2026-08-06 ユーザー判断)。
-			kAlignLeft, kEllipsizeMiddle, kFalse,
+			kAlignLeft, kEllipsizeBeginning, kFalse,
 			kKESCMTargetLabelKey,
 			kInvalidWidgetID,
 		),
@@ -1674,7 +1722,7 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 			kBindLeft | kBindRight | kBindTop,
 			Frame(8, 26, 216, 42)		// 右端 206→216(パネル+10px 拡張, 2026-08-06)
 			kTrue, kTrue,
-			kAlignLeft, kEllipsizeMiddle, kFalse,	// ★ellipsize も ampersand も Target 側と同じ理由(上のコメント参照)
+			kAlignLeft, kEllipsizeBeginning, kFalse,	// ★ellipsize も ampersand も Target 側と同じ理由(上のコメント参照)
 			kKESCMSourceLabelKey,
 			kInvalidWidgetID,
 		),
@@ -2095,13 +2143,14 @@ resource KESCMBookDialogWidget (kKESCMBookDialogRsrcID + index_enUS)
 	kKESCMBookDialogTitleKey,		// Dialog name
 
 	{
-		// ----- what is about to be compared -----
-		// ***** These two lines are the whole safety net. ***** Target is whichever book has the
-		// front tab in the Book panel, and that is NOT the same thing as InDesign's "active book"
-		// - the two drift apart silently. Showing both names before the button is pressed is the
-		// only chance the user gets to notice a mismatch.
-		// ⚠ Convert ampersands = kFalse: a book called "A&B.indb" would otherwise display as
-		// "AB.indb" (the ampersand is eaten as an accelerator marker).
+		// ----- which two books this report is about -----
+		// ***** These two lines are the whole safety net. ***** Target is whichever book had the
+		// front tab in the Book panel, and that is NOT the same thing as InDesign's "active book" -
+		// the two drift apart silently. ★Since 2026-08-12 the same two strings are shown in the
+		// confirmation alert BEFORE anything is read (KESCMBookRun.cpp), and what is printed here is
+		// what that run was given - not a fresh look at the Book panel, which by now may have moved.
+		// ⚠ Convert ampersands = kFalse: a path through a folder called "Q&A" would otherwise display
+		// as "QA" (the ampersand is eaten as an accelerator marker).
 		EVEStaticTextWidget
 		(
 			kKESCMBookTargetTextWidgetID,	// WidgetId
@@ -2109,10 +2158,12 @@ resource KESCMBookDialogWidget (kKESCMBookDialogRsrcID + index_enUS)
 			kBindNone,						// Frame binding
 			Frame(0, 0, 500, 20)			// Frame (l,t,r,b)
 			kTrue, kTrue, kAlignLeft,		// Visible, Enabled, Alignment
-			// ★Ellipsized in the MIDDLE, like the panel's Target / Source lines and the chapter
-			//   names below: what identifies a book is often its tail ("...-2026-final.indb"), and
-			//   cutting the end away leaves two different books reading identically.
-			kEllipsizeMiddle, kFalse,		// Ellipsize style, Convert ampersands
+			// ★★Ellipsized at the BEGINNING (2026-08-12, was kEllipsizeMiddle). These lines carry a
+			//   FULL PATH now, and what tells two versions of one job apart is the tail - the last
+			//   folder and the file name ("...\New\a.indb" against "...\Old\a.indb"). The middle is
+			//   exactly where that distinguishing folder sits, so a middle ellipsis would eat the
+			//   one part worth reading. (The user asked for the front to go, 2026-08-12.)
+			kEllipsizeBeginning, kFalse,	// Ellipsize style, Convert ampersands
 			"",								// Text (the controller fills it)
 			kInvalidWidgetID				// Associated control (none)
 
@@ -2126,28 +2177,17 @@ resource KESCMBookDialogWidget (kKESCMBookDialogRsrcID + index_enUS)
 			kBindNone,						// Frame binding
 			Frame(0, 0, 500, 20)			// Frame (l,t,r,b)
 			kTrue, kTrue, kAlignLeft,		// Visible, Enabled, Alignment
-			kEllipsizeMiddle, kFalse,		// Ellipsize style, Convert ampersands
+			kEllipsizeBeginning, kFalse,	// Ellipsize style, Convert ampersands (as Target above)
 			"",								// Text (the controller fills it)
 			kInvalidWidgetID				// Associated control (none)
 
 			kEVEAlignLeft | kEVELargeSpaceAfter,
 		),
 
-		// ----- the Compare button -----
-		// Not the OK button: pressing it must run the comparison and leave the dialog open, which
-		// is exactly what a modeless dialog is for. The click is picked up by the observer on the
-		// dialog boss (KESCMBookDialogObserver.cpp).
-		EVEButtonWidget
-		(
-			kKESCMBookCompareButtonWidgetID,	// WidgetID
-			kSysButtonPMRsrcId,					// RsrcID
-			kBindNone,							// Binding
-			Frame(0, 0, 90, 22)					// Frame (l,t,r,b)
-			kTrue, kTrue,						// Visible, Enabled
-			kKESCMBookCompareKey,				// Button text
-
-			kEVEAlignLeft | kEVERegularSpaceAfter,
-		),
+		// (The Compare button stood here until 2026-08-12. The comparison is now confirmed in an
+		//  alert and run from the flyout, so the dialog opens with the answer already in it and has
+		//  nothing left to press - see KESCMBookRun.h. Its WidgetID and its label string are kept
+		//  declared, unused, so the pair can be put back together if the flow is ever reverted.)
 
 		// ----- the status line -----
 		// Always states the chapter COUNT, so "nothing listed" can never be misread as "nothing
@@ -2203,32 +2243,14 @@ resource KESCMBookDialogWidget (kKESCMBookDialogRsrcID + index_enUS)
 			kEVEAlignFill | kEVELargeSpaceAfter,
 		),
 
-		// ----- the button row.
-		EVEGenericPanelWidget
-		(
-			kInvalidWidgetID,		// WidgetId
-			0						// RsrcId
-			0,						// Widget EVE Info
-			kBindNone,				// Frame binding
-			Frame(0, 0, 160, 24)	// Frame
-			kTrue,					// Visible
-			kTrue,					// Enabled
-			kEVEAlignRight | kEVERegularSpaceAfter | kEVEArrangeChildrenInRow,
-
-			{
-				EVEDefaultButtonWidget
-				(
-					kOKButtonWidgetID,				// WidgetID (stock)
-					kSysButtonPMRsrcId,				// RsrcID
-					kBindNone,						// Binding
-					Frame(0, 0, 0, 0)				// Frame (l,t,r,b)
-					kTrue, kTrue,					// Visible, Enabled
-					kSDKDefOKButtonApplicationKey,	// Button text
-
-					kEVERegularSpaceAfter,
-				),
-			}
-		),
+		// (The button row - an OK button in a right-aligned panel - stood here until 2026-08-12.
+		//  ***** REMOVED AT THE USER'S REQUEST, and it costs nothing. ***** A modeless dialog is
+		//  closed with its close box, and this one also has a minimize box put on by hand
+		//  (KESCMPrepareBookDialogWindow); OK was a third way to do what the close box already does.
+		//  ⚠What DOES change is the keyboard: a default button is what Enter presses, so Enter no
+		//    longer closes this dialog. Whether Esc still closes it is NOT claimed here - the Escape
+		//    key reaches a dialog through its Cancel button, and this one never had one. The close
+		//    box is the way out, and that path is measured (2026-08-11, book comparison stage 2).)
 	},
 
 	kEVEArrangeChildrenInColumn | kEVELargeMargin,

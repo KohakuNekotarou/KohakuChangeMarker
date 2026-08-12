@@ -53,7 +53,7 @@
 #include "KESCMOversetScan.h"		// KESCMCollectOversetLocations(Find Overset の検出=アクティブ文書走査)
 #include "KESCMChangedPagesTSV.h"	// KESCMExportChangedPagesTSV(フライアウト「Export Changed Pages...」)
 #include "KESCMBookPair.h"			// KESCMResolveBookPair(「Compare Books」を有効にしてよいかの判定)
-#include "KESCMBookDialog.h"		// KESCMOpenBookDialog(フライアウト「Compare Books」＝ダイアログを開く)
+#include "KESCMBookRun.h"		// KESCMRunBookComparison(フライアウト「Compare Books」＝確認して比較して見せる)
 #include "KESCMBookOpen.h"			// KESCMBookMenuRow/CanStart/StartComparisonForRow(章行の右クリック「Start Change Marker」)
 #include "KESCMChangeNav.h"			// KESCMRefreshNavPosition(overset トグルで Prev/Next の対象数を更新)
 #include "KESCMPanelAlpha.h"		// KESCMGetPanelTranslucent/Set/Apply(フライアウト「Translucent Panel」)
@@ -469,10 +469,11 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 		// ★既存の文書比較(Start)とは完全に独立=arm しない・枠を作らない・sDB/sEntries を触らない。
 		// ⚠段階1 の途中: いまは解決した2ブックの名前をステータスに出すだけ(比較の実体は次の段階)。
 		case kKESCMPopupCompareBooksActionID:
-			// ★比較そのものはここで走らせない——ダイアログを開くだけ。実行はダイアログの中の
-			//   Compare ボタンで行う＝押す前に対象の2ブック名が目に入るので、ブックパネルの前面タブと
-			//   アクティブブックの食い違いに気づける(食い違いに気づける唯一の手がかりがそれ)。
-			KESCMOpenBookDialog();
+			// ★★2026-08-12 に流れが変わった(ユーザー指示)。**確認アラート → OK で比較 → 結果ダイアログ**。
+			//   旧: ダイアログを先に開き、中の Compare ボタンで実行(そのボタンは撤去済み)。
+			//   ⚠**対象2ブックを押す前に見せる**という眼目は変わっていない——見せる場所がダイアログの
+			//     2行からアラートの本文へ移り、名前ではなく**フルパス**になった(同名のブックが多いため)。
+			KESCMRunBookComparison();
 			break;
 
 		// ブック比較ダイアログの**章行の右クリック**「Start Change Marker」(2026-08-12)。

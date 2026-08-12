@@ -220,7 +220,7 @@
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMBookOpen.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMBookRowEH.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMBookDialog.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMBookDialogObserver.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMBookRun.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMBookPair.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMBookTreeAdapter.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMBookTreeWidgetMgr.cpp" />
@@ -240,6 +240,7 @@
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryTreeEH.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMPanelView.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMNoTip.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMSplitterEH.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryTreeAdapter.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryTreeWidgetMgr.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMStorySection.cpp" />

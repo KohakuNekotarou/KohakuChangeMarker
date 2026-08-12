@@ -58,6 +58,7 @@
 														//     (旧記述「進捗バーとキャンセルはまだ無い。押すと固まると受け取られるので提出説明に載せない」は解消済み。実測では 100ページのブックに約3秒、変更の無い200ページで十数秒かかっていた。)
 														//     ⚠**版数は 1.4.0 のまま**でよい。1.4.0 は**まだ提出していない**ので、公開版 1.3.0 から見た増分がこのリストに増えるだけ(1.2.1→1.3.0 のときと同じ考え方＝提出していない版数は繰り上げずに中身を足す)。
 //   ⑥内部の安全修正だけ(2026-08-12)。★**提出説明には書かない** ＝ 画面にも操作にも見える変化が無い。ここに残すのは、次に差分を洗う人が「これは説明に要る変更か」を毎回考え直さずに済むようにするため。中身は2つ＝①**終了時に半透明トグルの購読を外す**(KESCMDetachPanelVisibilityObserver 新設。購読している間セッションが握るのはこの .pln の中へのポインタで、終了処理中のパネル破棄は実際に通知を飛ばす) ②**Win32 フックを外せなかったときハンドルを捨てない**(UnhookWinEvent が失敗する条件は3つあり、うち1つではフックが生きたまま残る＝捨てると二度と外せない)。★どちらも **KBS が先に直していて、こちらへ歩いてこなかった分**(KBS ブロック14 の3周目が兄弟報告として検出し、同日ユーザー指示で移植)。
+//   ⑦UI の細部2件(2026-08-12 ユーザー指定。どちらも公開版 1.3.0 から見て目に見えるが、**提出説明に書くほどではない**)。①**Story Edits の分割バーをドラッグで動かせなくした** ＝ 上ペインは固定座標のコントロールの塊で正しい高さが1つしか無く(Top snap がその高さ)、下げられる方向だけが残っていて、下げると下に何も無い帯ができた。セクションの高さはパネルの縁のドラッグで決まる。②フライアウトの「Compare Books」を**Start の直下**へ(9.54→9.05)＝比較を始める項目を1つの群にまとめた。あわせて Hide Unchanged Spreads と**同じ位置番号 9.54 で重複していた**のも解消。
 														//   ■1.3.1 で撤去したもの: 「Translucent Toolbox」トグル(フローティング中の**ツールボックス**を半透明にする)。★★**提出説明に「機能を削除した」と書かないこと** ＝ **提出した 1.3.0 のビルドに最初から入っていない**(2026-08-07 ユーザー明言)ので、公開版から見れば存在しなかった機能。ActionID +38 は欠番のまま再利用しない。
 														//   ⚠**①②とも「版数が 1.3.0 だった時期にコードへ入れた」もの**だが、提出した 1.3.0 のビルド(commit 5ff22c5 時点)には入っていない。**版数コメントが載っている位置で「提出済みか」を判断しない**。
 														//
@@ -113,7 +114,12 @@ DECLARE_PMID(kClassIDSpace, kKESCMBookDialogBoss, kKESCMPrefix + 21)
 DECLARE_PMID(kClassIDSpace, kKESCMBookTreeWidgetBoss, kKESCMPrefix + 22)	// kTreeViewWidgetBoss継承: 章の一覧(平坦1階層)。載せるのは adapter と widget mgr の2つだけ
 DECLARE_PMID(kClassIDSpace, kKESCMBookRowWidgetBoss, kKESCMPrefix + 23)	// kTreeNodeWidgetBoss継承: 一覧の1行。★今は何も足していない空の Class＝行クリック(段階4「その章を開く」)で IID_IEVENTHANDLER を載せる場所として先に採ってある。Story Edits の行 boss がたどったのと同じ順序
 DECLARE_PMID(kClassIDSpace, kKESCMBookRowCellBoss, kKESCMPrefix + 24)	// kInfoStaticTextWidgetBoss継承+IID_ITIP(kKESCMNoTipImpl): 行のセル。素の静的テキストは省略表示すると全文をポップアップで出すので、一覧の行では黙らせる(Story Edits と同じ判断=2026-08-10 ユーザー指定)
-//DECLARE_PMID(kClassIDSpace, kKESCMBoss, kKESCMPrefix + 25)
+// パネルを上下に割る分割バー(2026-08-12)。★中身は素の kSplitterPanelWidgetBoss と同じで、
+// IID_IEVENTHANDLER だけを「何もしない」実装に差し替えてある＝**バーをドラッグして動かせなくする**
+// (ユーザー指定 2026-08-12)。継承した boss からインターフェイスを**取り除く道は無い**ので、消し方は
+// 「別の答えを返す実装で上書きする」になる ---- kKESCMStoryRowCellBoss(+20)がツールチップを黙らせたのと同じ形。
+DECLARE_PMID(kClassIDSpace, kKESCMSplitterPanelBoss, kKESCMPrefix + 25)	// kSplitterPanelWidgetBoss継承+IID_IEVENTHANDLER(kKESCMSplitterEHImpl): 分割バーを掴めない SplitterPanelWidget
+//DECLARE_PMID(kClassIDSpace, kKESCMBoss, kKESCMPrefix + 26)
 
 
 // InterfaceIDs:
@@ -184,10 +190,12 @@ DECLARE_PMID(kImplementationIDSpace, kKESCMStoryRowEHImpl, kKESCMPrefix + 27)	//
 //  ActionID と違い Impl 番号は外部保存が参照しないので、下記のとおり再利用した。)
 DECLARE_PMID(kImplementationIDSpace, kKESCMStoryTreeEHImpl, kKESCMPrefix + 28)	// IEventHandler 実装(TreeViewEventHandler派生)。★一覧**そのもの**のキー操作＝↑↓で行を移動し、着いた行へジャンプする(KESCMStoryTreeEH.cpp)。行側の kKESCMStoryRowEHImpl とは別物＝あちらはクリック
 DECLARE_PMID(kImplementationIDSpace, kKESCMBookDialogControllerImpl, kKESCMPrefix + 29)	// IDialogController 実装(CDialogController派生)。ブック比較のモードレスダイアログ＝開いたとき対象の2ブック名を埋める(KESCMBookDialog.cpp)
-DECLARE_PMID(kImplementationIDSpace, kKESCMBookDialogObserverImpl, kKESCMPrefix + 30)	// IObserver 実装(CObserver派生)。ブック比較ダイアログの Compare ボタンの押下を受けて比較を走らせる(KESCMBookDialogObserver.cpp)。★ダイアログ boss に載せる＝ボタン用の独自 boss は要らない(パネルと同じ形)
+// (退役 2026-08-12)kKESCMBookDialogObserverImpl(kKESCMPrefix + 30)＝ブック比較ダイアログの Compare ボタンの押下を受けていた IObserver。
+//   ★ボタンごと撤去した(確認アラート→OK で比較する流れへ変更)ので実装ファイルごと削除し、IID_IOBSERVER は kDialogBoss の stock(kCDialogObserverImpl)へ戻した。スロットは予約のまま再利用しない。
 DECLARE_PMID(kImplementationIDSpace, kKESCMBookTreeAdapterImpl, kKESCMPrefix + 31)	// ITreeViewHierarchyAdapter 実装(ListTreeViewAdapter派生。KESCMBookTreeAdapter.cpp)。ブック比較ダイアログの章一覧＝行数を答えるだけ
 DECLARE_PMID(kImplementationIDSpace, kKESCMBookTreeWidgetMgrImpl, kKESCMPrefix + 32)	// ITreeViewWidgetMgr 実装(CTreeViewWidgetMgr派生。KESCMBookTreeWidgetMgr.cpp)。章一覧の行の生成と流し込み(章名 / 状態の2列)
 DECLARE_PMID(kImplementationIDSpace, kKESCMBookRowEHImpl, kKESCMPrefix + 33)	// IEventHandler 実装(TreeNodeEventHandler派生。KESCMBookRowEH.cpp)。ブック比較の章行＝**ダブルクリックでその章を開く**・**右クリックで行メニュー**(Start Change Marker)。★単クリックは何もしない(Story Edits の行と違う＝あちらは開いている文書の中を移動するだけだが、こちらは文書を開いてしまうため)。実際の動作は KESCMBookOpen.cpp
+DECLARE_PMID(kImplementationIDSpace, kKESCMSplitterEHImpl, kKESCMPrefix + 34)	// IEventHandler 実装(CEventHandler派生＝全メソッドが kFalse を返すだけの基底をそのまま使う)。パネルの分割バーが押下を受け取らなくなる＝ドラッグで動かせない(KESCMSplitterEH.cpp)
 
 
 // ActionIDs:
@@ -452,8 +460,12 @@ DECLARE_PMID(kScriptInfoIDSpace, kKESCMBookResultPropertyScriptElement, kKESCMPr
 #define kKESCMExportChangedPagesMenuKey	kKESCMStringPrefix "kKESCMExportChangedPagesMenuKey"	// パネルのフライアウト「Export Changed Pages...」項目のメニュー名
 #define kKESCMCompareBooksMenuKey	kKESCMStringPrefix "kKESCMCompareBooksMenuKey"	// パネルのフライアウト「Compare Books」項目のメニュー名(ブック同士を章単位で比較)
 #define kKESCMBookDialogTitleKey	kKESCMStringPrefix "kKESCMBookDialogTitleKey"	// ブック比較ダイアログのタイトル
-#define kKESCMBookCompareKey		kKESCMStringPrefix "kKESCMBookCompareKey"		// ブック比較ダイアログの「Compare」ボタン
-#define kKESCMBookReadyKey			kKESCMStringPrefix "kKESCMBookReadyKey"			// 比較前のステータス文(押す前の案内)
+#define kKESCMBookCompareKey		kKESCMStringPrefix "kKESCMBookCompareKey"		// (退役 2026-08-12)旧「Compare」ボタンのラベル。ボタンごと撤去したので参照は無いが、enUS テーブルの行とともに残してある＝復活させるとき対で戻せる
+#define kKESCMBookReadyKey			kKESCMStringPrefix "kKESCMBookReadyKey"			// 比較前のステータス文。★2026-08-12 以降ここに来るのは「比較を1度もしていないのにダイアログが開いた」場合だけ(通常は結果の要約で上書きされる)
+// ★ブック比較の確認アラート(2026-08-12 ユーザー指示「Compare... をするとアラートを出し、OK が押されると比較する」)。
+//   ⚠ここは**日本語 UI では日本語で出す**＝KESCMLoc の対象が2箇所から4箇所へ増えた(理由は KESCMLoc.h の冒頭)。
+#define kKESCMBookCompareConfirmKey	kKESCMStringPrefix "kKESCMBookCompareConfirmKey"	// 「これから比較する」確認アラートの1行目(この下に target: / source: のフルパスが続く)
+#define kKESCMBookNoPairKey			kKESCMStringPrefix "kKESCMBookNoPairKey"			// 2ブックを解決できなかったときの警告アラート(通常はメニューが灰色なので到達しない)
 #define kKESCMBookRowStartMenuKey	kKESCMStringPrefix "kKESCMBookRowStartMenuKey"	// 章行の右クリックメニューの「Start Change Marker」項目名
 // 章行の右クリックメニュー(2026-08-12)。この名前の MenuDef サブツリーを KESCMBookRowEH::RButtonDn が
 // IMenuManager::HandlePopupMenu でカーソル位置に出す＝製品の Links / Layers パネルの行メニューと
@@ -600,13 +612,13 @@ DECLARE_PMID(kScriptInfoIDSpace, kKESCMBookResultPropertyScriptElement, kKESCMPr
 #define kKESCMToolIconResID	1030
 
 // Menu item positions (flyout order, 2026-07-24 に大幅入れ替え):
-//   Start/Stop(9.0) → ─線Sep1(9.1) →
+//   Start/Stop(9.0) → Compare Books(9.05) → ─線Sep1(9.1) →
 //   [表示系トグル群] Hold to Hide Marks(9.20) → Ignore Page Number Marker(9.22) → Marks opacity ▸(9.24) →
 //     Print comparison marks(9.26) → Show Original Page Numbers(9.28) →
 //     Show Marks on Source(9.30) → Show Scrollbar Map(9.32) → Sync Layout Views(9.34) →
 //     Translucent Panel(9.36) →
 //   ─線OversetSep(9.40) → Find Overset(9.42) → Refresh Overset(9.44) →
-//   ─線Sep3(9.50) → [実行アクション群] Align Other Views to Active(9.52) → Export Changed Pages...(9.53) →
+//   ─線Sep3(9.50) → [実行アクション群] Align Other Views to Active(9.52) → Export Changed Pages...(9.53) →	★Compare Books はここに居たが 2026-08-12 に Start の直下へ移した
 //     Hide Unchanged Spreads(9.54) → Save Panel Settings(9.56) → Save Check & Register(9.58) →
 //     Load Check & Register(9.60) →
 //   ─線Sep2(9.95) → How to Use(10) → About this plug-in(12)。 ※About Scripting(11)は 2026-07-25 撤去
@@ -635,12 +647,16 @@ DECLARE_PMID(kScriptInfoIDSpace, kKESCMBookResultPropertyScriptElement, kKESCMPr
 // ── 実行アクション群 ──
 #define kKESCMSep3MenuItemPosition			9.50	// Refresh Overset の下の区切り線(パス末尾 ":-")。この下に実行アクション群を置く
 #define kKESCMAlignViewsMenuItemPosition	9.52	// 実行アクション「Align Other Views to Active」を実行アクション群の先頭に(2026-07-24)
-#define kKESCMHideUnchangedMenuItemPosition	9.54	// チェック式トグル「Hide Unchanged Spreads」
+#define kKESCMHideUnchangedMenuItemPosition	9.54	// チェック式トグル「Hide Unchanged Spreads」。⚠2026-08-12 まで下の Compare Books と**同じ 9.54 で重複していた**(同値だと並びを決めるのは MenuDef の登録順だけになる)。Compare Books が Start の直下へ抜けたので重複は解消済み
 #define kKESCMSavePanelStateMenuItemPosition	9.56	// 実行アクション「Save Panel Settings」
 #define kKESCMSaveChecksMenuItemPosition	9.58	// 実行アクション「Save Check & Register」
 #define kKESCMLoadChecksMenuItemPosition	9.60	// 実行アクション「Load Check & Register」
 #define kKESCMExportChangedPagesMenuItemPosition	9.53	// 実行アクション「Export Changed Pages...」(変更ページ一覧をTSVで保存)。Align の直下(2026-07-25 ユーザー指定)
-#define kKESCMCompareBooksMenuItemPosition	9.54	// 実行アクション「Compare Books」(ブック同士を章単位で比較)。★文書比較(Start)とは独立した経路なので、Start 群ではなく実行アクション群に置く
+// ★★Compare Books の位置は 9.54(実行アクション群) → 9.53 → **9.05** と 2026-08-12 に二度動いた(ユーザー指定
+//   「一つ上へ」→「Start のすぐ下に」)。9.05 は **Start(9.0) と 区切り線 Sep1(9.1) の間**＝Start との間に線が
+//   入らない位置で、比較を**始める**2つの項目が1つの群になる。⚠**旧コメントの「文書比較(Start)とは独立した
+//   経路なので Start 群ではなく実行アクション群に置く」は撤回**(2026-08-12 ユーザー判断)。
+#define kKESCMCompareBooksMenuItemPosition	9.05	// 実行アクション「Compare Books」(ブック同士を章単位で比較)。Start の直下
 // ブック比較ダイアログの章行の右クリックメニュー内の位置。★このメニューは項目が1つしかないので
 // 値そのものに意味は無い(パネルのフライアウトとは別の木＝kKESCMBookRowMenuName の下)。
 #define kKESCMBookRowStartMenuItemPosition	1.0		// 章行の右クリック「Start Change Marker」

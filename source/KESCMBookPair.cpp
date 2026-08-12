@@ -289,6 +289,24 @@ PMString KESCMBookDisplayName(IBook* book)
 	return name;
 }
 
+PMString KESCMBookDisplayPath(IBook* book)
+{
+	if (book == nil)
+		return PMString();
+
+	// IBook names its own file (IBook.h:102) - no walk of the Book panel needed, and no second
+	// source of truth: this is the same book object the comparison is about to be handed.
+	const IDFile file = book->GetBookFileSpec();
+	SDKFileHelper helper(file);
+
+	PMString path = helper.GetPath();
+	if (path.IsEmpty())
+		return KESCMBookDisplayName(book);	// unsaved or unnamed - the title is all there is
+
+	path.SetTranslatable(kFalse);
+	return path;
+}
+
 void KESCMBuildChapterPairing(IBook* target, IBook* source, std::vector<KESCMChapterResult>& out)
 {
 	out.clear();
