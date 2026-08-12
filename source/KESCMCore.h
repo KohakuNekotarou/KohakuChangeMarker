@@ -190,6 +190,18 @@ void		KESCMRefreshPanel();
 // フライアウト項目 kKESCMPopupStartStopActionID の DoAction から呼ぶ。実体は KESCMPanelObserver.cpp。
 void		KESCMToggleStartStop();
 
+// ★上のトグルを2つに割ったもの(2026-08-12)。**解決子(どの2文書か)と手順(何をするか)を分ける**ため。
+// 呼び手が2つになったので切り出した＝フライアウトの Start/Stop と、ブック比較の行の右クリック
+// 「Start Change Marker」(その章の2ファイルを開いてから明示的に渡す)。手順を書き写すと必ずずれる
+// ([[one-question-one-place]])。どちらもパネル表示の更新(KESCMRefreshPanel)まで自分で行うので、
+// 呼び手は結果を整える必要が無い。実体は KESCMPanelObserver.cpp。
+//
+// KESCMStartComparisonFor: **この2文書で**比較を開始する。どちらを Target にするかは呼び手が決める
+// (ここには一切の解決ロジックが無い)。nil を渡したら何もしない。⚠既に arm 中でも構わず上書きするので、
+// 「Stop してから Start」にしたい呼び手は先に KESCMStopComparison を呼ぶこと。
+void		KESCMStopComparison();
+void		KESCMStartComparisonFor(IDocument* target, IDocument* source);
+
 // 比較を開始できるか＝アクティブ(前面)文書があり、かつ別の開いている文書が1つ以上ある(=Target と
 // Source が揃う)。フライアウトの「Start」を有効にしてよいかの判定に使う(2026-08-06 ユーザー指定:
 // 文書が2つ以上開かれていなければ押せない)。★KESCMToggleStartStop の開始分岐と同じ解決子を通るので、

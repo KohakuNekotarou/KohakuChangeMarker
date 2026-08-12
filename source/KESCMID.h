@@ -187,6 +187,7 @@ DECLARE_PMID(kImplementationIDSpace, kKESCMBookDialogControllerImpl, kKESCMPrefi
 DECLARE_PMID(kImplementationIDSpace, kKESCMBookDialogObserverImpl, kKESCMPrefix + 30)	// IObserver 実装(CObserver派生)。ブック比較ダイアログの Compare ボタンの押下を受けて比較を走らせる(KESCMBookDialogObserver.cpp)。★ダイアログ boss に載せる＝ボタン用の独自 boss は要らない(パネルと同じ形)
 DECLARE_PMID(kImplementationIDSpace, kKESCMBookTreeAdapterImpl, kKESCMPrefix + 31)	// ITreeViewHierarchyAdapter 実装(ListTreeViewAdapter派生。KESCMBookTreeAdapter.cpp)。ブック比較ダイアログの章一覧＝行数を答えるだけ
 DECLARE_PMID(kImplementationIDSpace, kKESCMBookTreeWidgetMgrImpl, kKESCMPrefix + 32)	// ITreeViewWidgetMgr 実装(CTreeViewWidgetMgr派生。KESCMBookTreeWidgetMgr.cpp)。章一覧の行の生成と流し込み(章名 / 状態の2列)
+DECLARE_PMID(kImplementationIDSpace, kKESCMBookRowEHImpl, kKESCMPrefix + 33)	// IEventHandler 実装(TreeNodeEventHandler派生。KESCMBookRowEH.cpp)。ブック比較の章行＝**ダブルクリックでその章を開く**・**右クリックで行メニュー**(Start Change Marker)。★単クリックは何もしない(Story Edits の行と違う＝あちらは開いている文書の中を移動するだけだが、こちらは文書を開いてしまうため)。実際の動作は KESCMBookOpen.cpp
 
 
 // ActionIDs:
@@ -237,8 +238,13 @@ DECLARE_PMID(kActionIDSpace, kKESCMPopupTranslucentPagesActionID, kKESCMPrefix +
 //   割り当て済みの番号を別機能へ回すと、そのショートカットが無関係な機能を叩く。押下中 HUD を撤去した
 //   ときの +35 とまったく同じ扱い。
 DECLARE_PMID(kActionIDSpace, kKESCMPopupCompareBooksActionID, kKESCMPrefix + 39)	// パネルのフライアウトの「Compare Books」(実行アクション)。★ブックパネルで前面タブのブック=Target / それ以外で最初に開いているブック=Source として、章(ドキュメント)単位で「変更あり/なし」を判定する。★既存の文書比較(Start)とは完全に独立=arm しない・枠を作らない・KESCMDrawEventHandler の static を触らない。kCustomEnabling(2ブックそろい、かつ前面タブが特定できるときだけ有効)。実体 KESCMBookCompare.cpp / 対象の解決 KESCMBookPair.cpp
-// (+15..+23 are all declared above - stale placeholders for them removed 2026-08-05 audit. Next free: +40)
-//DECLARE_PMID(kActionIDSpace, kKESCMActionID, kKESCMPrefix + 40)
+// ブック比較ダイアログの章行の右クリックメニュー(2026-08-12)。★パネルのフライアウトではなく
+// **行の上に出るポップアップ**なので、置き場所は MenuDef のサブツリー kKESCMBookRowMenuName。
+// 押されたときに「どの行か」を知る手段はこのアクション自身には無い(ActionID しか渡らない)ので、
+// 行は右クリックの時点で KESCMBookSetMenuRow が控える＝KBS の結果行と同じ作り。
+DECLARE_PMID(kActionIDSpace, kKESCMBookRowStartActionID, kKESCMPrefix + 40)	// 章行の右クリック「Start Change Marker」= その章の Target/Source 2文書を窓付きで開き、比較中なら一度 Stop してから比較を開始する(KESCMBookOpen.cpp)。★両側のファイルが揃っていない行(ChapterAdded/ChapterDeleted・ファイル無し)では灰色(kCustomEnabling → KESCMBookRowCanStart)
+// (+15..+23 are all declared above - stale placeholders for them removed 2026-08-05 audit. Next free: +41)
+//DECLARE_PMID(kActionIDSpace, kKESCMActionID, kKESCMPrefix + 41)
 // kKESCMPrefix + 24/25/26/28 は使用中(KCM: Check / Save Check & Register / Load Check & Register / RtMenuPagesPanel の区切り線)。+27 は廃止・予約(上記)
 
 
@@ -294,29 +300,60 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMBookSourceTextWidgetID, kKESCMPrefix + 59)	//
 DECLARE_PMID(kWidgetIDSpace, kKESCMBookCompareButtonWidgetID, kKESCMPrefix + 60)	// 「Compare」ボタン。★押す前に上の2行が目に入るのが要点
 DECLARE_PMID(kWidgetIDSpace, kKESCMBookStatusTextWidgetID, kKESCMPrefix + 61)	// ステータス行(比較の要約。章数を必ず含む)
 DECLARE_PMID(kWidgetIDSpace, kKESCMBookTreeWidgetID, kKESCMPrefix + 62)		// 章一覧のツリー本体(ダイアログの中で一番大きい部品)
-DECLARE_PMID(kWidgetIDSpace, kKESCMBookRowWidgetID, kKESCMPrefix + 63)		// 行テンプレート自身。★GetWidgetTypeForNode が返すのはこれ
-DECLARE_PMID(kWidgetIDSpace, kKESCMBookRowNameWidgetID, kKESCMPrefix + 64)	// 行の左=章のファイル名(Failed のときだけ「 - 理由」が後ろに付く)
-DECLARE_PMID(kWidgetIDSpace, kKESCMBookRowStateWidgetID, kKESCMPrefix + 65)	// 行の右=判定(Changed / NoChange / ChapterAdded / ChapterDeleted / Failed)。固定幅・右寄せ
+// ★★★下の3つは「Story Edits」の行と **WidgetID を共有する**(2026-08-12。新しい番号を1つも使わない)。
+//   根拠 = **widget ID がアプリ全体で一意である必要は無い**。公式ガイド vol2-12:71 が、
+//   グローバルに一意でなければならない文字列キーと**対比して**こう書いている:
+//     "widget identifiers need be unique only within the list of descendants of a given widget,
+//      so ... you can reuse a widget identifier (for example, across different dialog boxes or
+//      panels you own)"
+//   機構の裏づけ = IPanelControlData::FindWidget(WidgetID, searchLevels) は**自分の部分木を再帰探索
+//   するだけ**で、グローバルな「widget ID → widget」レジストリではない(IPanelControlData.h:89)。
+//   実例 = stock の kOKButtonWidgetID / kCancelButton_WidgetID を source/sdksamples の **39 ファイル**が
+//   共有している(上の +57 のブロックで既にそれを使っている)。
+//   ここでは「パネルの Story Edits 一覧」と「このダイアログの章一覧」が**別の部分木**に属するので衝突しない。
+//   ⇒ これで **+63〜+65 の KESCL 領域(0x205554/55/56)への食い込みが消えた**(下の採番メモ参照)。
+//   ⚠ 共有してよいのは**子 widget だけ**。パネル/ダイアログの**ルート**の WidgetID は
+//     IPanelMgr::GetPanelFromWidgetID がアプリ全体から引くので一意でなければならない。
+//   ⚠ 対応関係は役割まで一致させてある(行テンプレ↔行テンプレ / 左セル↔左セル / 右セル↔右セル)。
+//     ずらすと読む側が混乱するだけで、得は何も無い。
+DECLARE_PMID(kWidgetIDSpace, kKESCMBookRowWidgetID, kKESCMPrefix + 51)		// ＝kKESCMStoryRowWidgetID と同値。行テンプレート自身。★GetWidgetTypeForNode が返すのはこれ
+DECLARE_PMID(kWidgetIDSpace, kKESCMBookRowNameWidgetID, kKESCMPrefix + 48)	// ＝kKESCMStoryRowTextWidgetID と同値。行の左=章のファイル名(Failed のときだけ「 - 理由」が後ろに付く)
+DECLARE_PMID(kWidgetIDSpace, kKESCMBookRowStateWidgetID, kKESCMPrefix + 49)	// ＝kKESCMStoryRowKindWidgetID と同値。行の右=判定(Changed / NoChange / ChapterAdded / ChapterDeleted / Failed)。固定幅・右寄せ
 //====================================================================================
-// ★★採番の上限に注意 — この prefix の枠は「+0 〜 +62」しかない
+// ★★採番の上限に注意 — この prefix で安全に使えるのは「+0 〜 +62」まで
 //
 //  prefix は 32bit ID の上位ビットで、本来は 1 プラグインにつき各 ID 空間 256 個(+0〜+255)
-//  ぶんの枠が与えられる。ところが KESCM(0x205515) と KESCL(0x205554) の間隔は 0x3F = 63 しかなく、
-//  この widget ID は +63/+64/+65 で **既に KESCL の領域(0x205554/55/56)へ食い込んでいる**。
-//  今ぶつかっていないのは KESCL が widget ID を +9 からしか使っていないという偶然にすぎない。
+//  ぶんの枠が与えられる。ところが KESCM(0x205515) と KESCL(0x205554) の間隔は 0x3F = 63 しかない。
+//  ∴ **+63 以降は KESCL の領域**で、そこへ両者が届いた瞬間に「2つのプラグインが同じ ID を主張」する
+//     状態になり、起動時のオブジェクトモデル構築("Completing object model" 段)で **弾かれる**
+//     (＝静かな誤動作ではなく、読み込まれない)。
 //
-//  ∴ ここに widget を足すときは **+66 以降を使わない**こと。KESCL の +9(0x20555D) まで残り 6 個で、
-//     そこへ届いた瞬間に「2つのプラグインが同じ ID を主張」する状態になり、起動時のオブジェクトモデル
-//     構築("Completing object model" 段)で **弾かれる**(＝静かな誤動作ではなく、読み込まれない)。
+//  ★2026-08-12: **食い込みは解消済み**。ブック比較ダイアログの行 widget 3つが +63/+64/+65 を
+//    使っていたが、下記 (a) の方法で Story Edits の行と ID を共有する形に変えた(上のブロック参照)。
+//    現在の最大は **+62**(kKESCMBookTreeWidgetID)。
 //
-//  使ってよい空き:
-//    (a) **+27 〜 +33 の穴(7個)** — 現在どこからも使われていない。まずここを使う。
-//        ⚠ 過去に使って消した番号の可能性があるので、再利用の前に git 履歴を見ること
+//  widget を足すときは、この順に検討する:
+//
+//    (a) ★★★**そもそも新しい番号を採らない** — **widget ID がアプリ全体で一意である必要は無い**。
+//        「**同じ親の子孫の中でだけ**一意」ならよく、**別のダイアログ/パネルでは再利用してよい**
+//        (公式ガイド vol2-12:71 が、グローバル一意が必須の文字列キーと**対比して**明言)。
+//        機構 = IPanelControlData::FindWidget は**自分の部分木を再帰探索するだけ**(:89)。
+//        実例 = stock の kOKButtonWidgetID を source/sdksamples の **39 ファイル**が共有。
+//        ⇒ **ID 空間を1つも消費しない**ので、まずこれを検討する。
+//        ⚠ ただし**ルート**の WidgetID は IPanelMgr::GetPanelFromWidgetID がアプリ全体から引くので
+//          一意でなければならない(パネル本体・ダイアログ本体は再利用不可)。
+//        ⚠ widget は状態を saved data に永続するので、**初めて再利用する形を入れたら実機で確認する**。
+//
+//    (b) **+27 〜 +33 の穴(7個)** — 現在どこからも使われていない。
+//        ⚠ 過去に使って消した番号なので、再利用の前に git 履歴を見ること
 //        (widget ID はワークスペース＝パネル配置の永続データに現れうる)
-//    (b) それでも足りなくなったら **セカンダリ prefix を1本用意する**(既存 ID は1つも動かさない。
-//        公開済みバージョンとの互換を保ったまま 256 枠を新規に確保できる)
+//
+//    (c) それでも足りなくなったら **セカンダリ prefix を1本用意する**(既存 ID は1つも動かさない。
+//        公開済みバージョンとの互換を保ったまま 256 枠を新規に確保できる)。正攻法は
+//        wwds@adobe.com に prefix ID の発行を依頼すること。
 //
 //  調査の全記録 = docs/ai-notes/guide-gs-04-object-model-read-2026-08-12.md §1
+//                 docs/ai-notes/guide-vol2-12-ui-fundamentals-read-2026-08-12.md §0 ((a) の根拠)
 //====================================================================================
 //DECLARE_PMID(kWidgetIDSpace, kKESCMWidgetID, kKESCMPrefix + 2)
 //DECLARE_PMID(kWidgetIDSpace, kKESCMWidgetID, kKESCMPrefix + 3)
@@ -417,6 +454,12 @@ DECLARE_PMID(kScriptInfoIDSpace, kKESCMBookResultPropertyScriptElement, kKESCMPr
 #define kKESCMBookDialogTitleKey	kKESCMStringPrefix "kKESCMBookDialogTitleKey"	// ブック比較ダイアログのタイトル
 #define kKESCMBookCompareKey		kKESCMStringPrefix "kKESCMBookCompareKey"		// ブック比較ダイアログの「Compare」ボタン
 #define kKESCMBookReadyKey			kKESCMStringPrefix "kKESCMBookReadyKey"			// 比較前のステータス文(押す前の案内)
+#define kKESCMBookRowStartMenuKey	kKESCMStringPrefix "kKESCMBookRowStartMenuKey"	// 章行の右クリックメニューの「Start Change Marker」項目名
+// 章行の右クリックメニュー(2026-08-12)。この名前の MenuDef サブツリーを KESCMBookRowEH::RButtonDn が
+// IMenuManager::HandlePopupMenu でカーソル位置に出す＝製品の Links / Layers パネルの行メニューと
+// 同じ機構で、KBS の結果行(kKBSResultRowMenuName)・KESCL のレポート行と同じ作り。
+// ★この根の名前は画面に出ないので、翻訳キーではなく素のリテラルでよい。
+#define kKESCMBookRowMenuName		"KESCMRtMenuBookRow"
 #define kKESCMTranslucentPanelMenuKey	kKESCMStringPrefix "kKESCMTranslucentPanelMenuKey"	// パネルのフライアウト「Translucent Panel」トグルのメニュー名
 #define kKESCMTranslucentPagesPanelMenuKey	kKESCMStringPrefix "kKESCMTranslucentPagesPanelMenuKey"	// パネルのフライアウト「Translucent Pages Panel」トグルのメニュー名(対象は本体のページパネル)
 // (kKESCMTranslucentToolboxMenuKey は 2026-08-07 に機能ごと撤去。文字列キーは ActionID と違って
@@ -598,6 +641,9 @@ DECLARE_PMID(kScriptInfoIDSpace, kKESCMBookResultPropertyScriptElement, kKESCMPr
 #define kKESCMLoadChecksMenuItemPosition	9.60	// 実行アクション「Load Check & Register」
 #define kKESCMExportChangedPagesMenuItemPosition	9.53	// 実行アクション「Export Changed Pages...」(変更ページ一覧をTSVで保存)。Align の直下(2026-07-25 ユーザー指定)
 #define kKESCMCompareBooksMenuItemPosition	9.54	// 実行アクション「Compare Books」(ブック同士を章単位で比較)。★文書比較(Start)とは独立した経路なので、Start 群ではなく実行アクション群に置く
+// ブック比較ダイアログの章行の右クリックメニュー内の位置。★このメニューは項目が1つしかないので
+// 値そのものに意味は無い(パネルのフライアウトとは別の木＝kKESCMBookRowMenuName の下)。
+#define kKESCMBookRowStartMenuItemPosition	1.0		// 章行の右クリック「Start Change Marker」
 // ── 情報系(末尾) ──
 #define kKESCMSep2MenuItemPosition			9.95	// How to Use の上の区切り線(パス末尾 ":-")
 #define kKESCMUsageMenuItemPosition			10.0	// 「使い方」

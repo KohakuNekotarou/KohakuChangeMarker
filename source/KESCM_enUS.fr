@@ -57,6 +57,7 @@ resource StringTable (kSDKDefStringsResourceID + index_enUS)
                 kKESCMBookDialogTitleKey,			"Compare Books",
                 kKESCMBookCompareKey,				"Compare",
                 kKESCMBookReadyKey,					"Press Compare to compare the two books chapter by chapter.",
+                kKESCMBookRowStartMenuKey,			"Start Change Marker",
                 kKESCMIgnorePageNumMenuKey,			"Ignore Page Number Marker",
                 kKESCMHoldToHideMarksMenuKey,			"Hold to Hide Marks",
 

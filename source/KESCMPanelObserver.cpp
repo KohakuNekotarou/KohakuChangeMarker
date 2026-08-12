@@ -359,74 +359,101 @@ void KESCMPanelObserver::Update(const ClassID& theChange, ISubject* theSubject, 
 // KESCMToggleStartStop(KESCMCore.h で宣言) — 比較の開始/解除トグル。旧パネルの Start/Stop ボタンの
 // DoStart/DoClear を統合した自由関数で、フライアウト項目 kKESCMPopupStartStopActionID の DoAction から
 // 呼ぶ。arm 済みなら解除、未 arm なら開始。表示更新は KESCMRefreshPanel(可視パネルを arm 状態へ)。
+// KESCMStopComparison(KESCMCore.h で宣言) — 比較を解除する(旧 DoClear)。
+// ★KESCMToggleStartStop の解除分岐をそのまま切り出したもの。切り出した理由は下の
+//   KESCMStartComparisonFor と同じ＝**手順を1か所にする**([[one-question-one-place]])。
+void KESCMStopComparison()
+{
+	// アクティブ文書は再描画にだけ使う(nil でも可)。KESCMDoClearMarks / KESCMDoDisarmMousePeek は
+	// 内部で「実際にマークが描かれていた文書」(sDB / arm 済み target)を控えて再描画するので、
+	// 文書が1つも開いていなくても消去・解除は常に成立させる。
+	IDocument* active = KESCMActiveDoc();
+	IDataBase* db = (active != nil) ? ::GetUIDRef(active).GetDataBase() : nil;
+
+	KESCMDoClearMarks(db);
+	KESCMDoDisarmMousePeek(db);
+	// スクロールバー地図: まず比較用の strip を全窓(Target/Source 両方)から取り外す。
+	// ★Find Overset が単独 ON 中なら、続けて overset 文書(sOversetDB)だけへ strip を貼り直す
+	//   (比較解除で Source 窓に strip が残らないようにする 2026-07-24)。あわせて overset を再走査して
+	//   リフレッシュする(ユーザー報告: overset 有りで Start→編集で解消→Stop すると、集合が編集前のまま
+	//   残り「まだ有る」と判断していた)。KESCMApplyOversetForDoc は sOversetDB を再走査し、サムネイル/
+	//   地図の Attach+Invalidate/Prev-Next をまとめて更新する。
+	KESCMScrollMapDetachAll();	// スクロールバー地図stripを全窓(Target/Source)から取り外す
+	if (KESCMDrawEventHandler::sOversetOn)
+		KESCMApplyOversetForDoc(KESCMDrawEventHandler::sOversetDB);
+	PMString s("marks cleared"); s.SetTranslatable(kFalse);
+	KESCMSetStatus(s);
+
+	KESCMRefreshPanel();	// Target/Source 名・アイコン・Prev/Next 有効無効を arm 状態へ更新
+}
+
+// KESCMStartComparisonFor(KESCMCore.h で宣言) — **この2文書で**比較を開始する(旧 DoStart の本体)。
+//
+// ★★**解決子(どの2文書か)と手順(何をするか)を分けてある。** ここには「どの文書を選ぶか」の判断が
+//   一切無く、渡された2つでそのまま始める。理由＝呼び手が2つあるため:
+//     ①KESCMToggleStartStop  … アクティブ文書=Target・別の開いている文書=Source と解決してから呼ぶ
+//     ②ブック比較の行の右クリック「Start Change Marker」… その章の2ファイルを開いてから呼ぶ
+//   手順をそれぞれに書き写すと必ずずれる([[one-question-one-place]])。実際 Start の手順は
+//   「sSrcMarksOn を戻す」「キャンセルなら arm しない」「strip を両窓へ」「overset を貼り直す」の
+//   4つの決定を含んでいて、どれも忘れると静かに壊れる種類のもの。
+void KESCMStartComparisonFor(IDocument* target, IDocument* source)
+{
+	if (target == nil || source == nil)
+		return;
+
+	IDataBase* targetDB = ::GetUIDRef(target).GetDataBase();
+	IDataBase* sourceDB = ::GetUIDRef(source).GetDataBase();
+
+	PMString report;
+	// 「Show Marks on Source」は Start のたびに既定 ON へ戻す(仕様)。再比較(登録トグル/Ignore 切替)で
+	// 黙って ON に戻さないよう、KESCMDoMarkChangesDoc 側ではなく Start 経路のここで立てる(2026-07-25)。
+	KESCMDrawEventHandler::sSrcMarksOn = kTrue;
+	// ★比較をユーザーがキャンセルしたら(ページ数が多いときは進捗バーに Cancel が出る)Start しない。
+	//   マークは KESCMDoMarkChangesDoc 側で破棄済みなので、arm も strip 注入もせず「押す前」の状態へ
+	//   戻す(中途半端に arm だけ残して、枠が1つも無い Start 中を作らない)。
+	if (KESCMDoMarkChangesDoc(targetDB, sourceDB, report) == kSuccess)
+	{
+		KESCMDoArmMousePeek(targetDB, sourceDB);
+		KESCMScrollMapAttach(targetDB);	// Target の各文書窓にスクロールバー地図stripを注入
+		KESCMScrollMapAttach(sourceDB);	// Source 窓にも表示(2026-07-11 ユーザー要望。strip 側が窓の文書を見て供給元を切替)
+		// ★Find Overset が ON のままなら、Start 時に必ず比較 Target を再走査して overset を貼り直す(2026-07-24)。
+		//   これで (a) Start 後も Prev/Next が「変更(枠)→ overset」を同じ Target 文書で巡れる(overset が
+		//   sOversetDB!=sDB で黙って巡回対象から外れる不具合の防止)＋(b) 同一文書でも編集で増減した overset を
+		//   リフレッシュできる(ユーザー報告: 同一文書だと再走査せず古い集合が残っていた)。
+		if (KESCMDrawEventHandler::sOversetOn)
+			KESCMApplyOversetForDoc(targetDB);
+	}
+	KESCMSetStatus(report);
+
+	KESCMRefreshPanel();
+}
+
 void KESCMToggleStartStop()
 {
 	const bool16 armed = KESCMIsArmed() && (KESCMArmedTargetDB() != nil);
 	if (armed)
 	{
-		// 解除(旧 DoClear)。アクティブ文書は再描画にだけ使う(nil でも可)。KESCMDoClearMarks /
-		// KESCMDoDisarmMousePeek は内部で「実際にマークが描かれていた文書」(sDB / arm 済み target)を
-		// 控えて再描画するので、文書が1つも開いていなくても消去・解除は常に成立させる。
-		IDocument* active = KESCMActiveDoc();
-		IDataBase* db = (active != nil) ? ::GetUIDRef(active).GetDataBase() : nil;
-
-		KESCMDoClearMarks(db);
-		KESCMDoDisarmMousePeek(db);
-		// スクロールバー地図: まず比較用の strip を全窓(Target/Source 両方)から取り外す。
-		// ★Find Overset が単独 ON 中なら、続けて overset 文書(sOversetDB)だけへ strip を貼り直す
-		//   (比較解除で Source 窓に strip が残らないようにする 2026-07-24)。あわせて overset を再走査して
-		//   リフレッシュする(ユーザー報告: overset 有りで Start→編集で解消→Stop すると、集合が編集前のまま
-		//   残り「まだ有る」と判断していた)。KESCMApplyOversetForDoc は sOversetDB を再走査し、サムネイル/
-		//   地図の Attach+Invalidate/Prev-Next をまとめて更新する。
-		KESCMScrollMapDetachAll();	// スクロールバー地図stripを全窓(Target/Source)から取り外す
-		if (KESCMDrawEventHandler::sOversetOn)
-			KESCMApplyOversetForDoc(KESCMDrawEventHandler::sOversetDB);
-		PMString s("marks cleared"); s.SetTranslatable(kFalse);
-		KESCMSetStatus(s);
+		KESCMStopComparison();
+		return;
 	}
-	else
+
+	// 開始。アクティブ(前面)文書=Target、別の開いている文書=Source。
+	// ★フライアウトの Start は文書が2つ揃っていなければ灰色なので(KESCMCanStartComparison=同じ
+	//   解決子を通る)、通常ここで欠けることは無い。メニューを開いたまま文書が閉じた場合などの保険。
+	IDocument* target = nil;
+	IDocument* source = nil;
+	if (!KESCMResolveComparisonPair(target, source))
 	{
-		// 開始(旧 DoStart)。アクティブ(前面)文書=Target、別の開いている文書=Source。
-		// ★フライアウトの Start は文書が2つ揃っていなければ灰色なので(KESCMCanStartComparison=同じ
-		//   解決子を通る)、通常ここで欠けることは無い。メニューを開いたまま文書が閉じた場合などの保険。
-		IDocument* target = nil;
-		IDocument* source = nil;
-		if (!KESCMResolveComparisonPair(target, source))
-		{
-			// 実際に欠けているものを言う(target が居るなら足りないのは Source だけ。2026-08-06 再点検)。
-			PMString s(target == nil ? "Target and source documents not found."
-			                         : "Source document not found.");
-			s.SetTranslatable(kFalse);
-			KESCMSetStatus(s);
-			return;
-		}
-
-		IDataBase* targetDB = ::GetUIDRef(target).GetDataBase();
-		IDataBase* sourceDB = ::GetUIDRef(source).GetDataBase();
-
-		PMString report;
-		// 「Show Marks on Source」は Start のたびに既定 ON へ戻す(仕様)。再比較(登録トグル/Ignore 切替)で
-		// 黙って ON に戻さないよう、KESCMDoMarkChangesDoc 側ではなく Start 経路のここで立てる(2026-07-25)。
-		KESCMDrawEventHandler::sSrcMarksOn = kTrue;
-		// ★比較をユーザーがキャンセルしたら(ページ数が多いときは進捗バーに Cancel が出る)Start しない。
-		//   マークは KESCMDoMarkChangesDoc 側で破棄済みなので、arm も strip 注入もせず「押す前」の状態へ
-		//   戻す(中途半端に arm だけ残して、枠が1つも無い Start 中を作らない)。
-		if (KESCMDoMarkChangesDoc(targetDB, sourceDB, report) == kSuccess)
-		{
-			KESCMDoArmMousePeek(targetDB, sourceDB);
-			KESCMScrollMapAttach(targetDB);	// Target の各文書窓にスクロールバー地図stripを注入
-			KESCMScrollMapAttach(sourceDB);	// Source 窓にも表示(2026-07-11 ユーザー要望。strip 側が窓の文書を見て供給元を切替)
-			// ★Find Overset が ON のままなら、Start 時に必ず比較 Target を再走査して overset を貼り直す(2026-07-24)。
-			//   これで (a) Start 後も Prev/Next が「変更(枠)→ overset」を同じ Target 文書で巡れる(overset が
-			//   sOversetDB!=sDB で黙って巡回対象から外れる不具合の防止)＋(b) 同一文書でも編集で増減した overset を
-			//   リフレッシュできる(ユーザー報告: 同一文書だと再走査せず古い集合が残っていた)。
-			if (KESCMDrawEventHandler::sOversetOn)
-				KESCMApplyOversetForDoc(targetDB);
-		}
-		KESCMSetStatus(report);
+		// 実際に欠けているものを言う(target が居るなら足りないのは Source だけ。2026-08-06 再点検)。
+		PMString s(target == nil ? "Target and source documents not found."
+		                         : "Source document not found.");
+		s.SetTranslatable(kFalse);
+		KESCMSetStatus(s);
+		KESCMRefreshPanel();	// ★この経路でも要る(旧実装では関数末尾の1回が担っていた)
+		return;
 	}
 
-	KESCMRefreshPanel();	// Target/Source 名・アイコン・Prev/Next 有効無効を arm 状態へ更新
+	KESCMStartComparisonFor(target, source);
 }
 
 // KESCMSetMarkOpacity25(KESCMCore.h で宣言) — 枠の不透明度を 25%/75% に設定。旧パネルの opacity ラジオの

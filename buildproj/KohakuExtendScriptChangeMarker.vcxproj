@@ -217,6 +217,8 @@
   <ItemGroup>
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMActionComponent.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMBookCompare.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMBookOpen.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMBookRowEH.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMBookDialog.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMBookDialogObserver.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMBookPair.cpp" />
@@ -273,6 +275,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMBookCompare.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMBookOpen.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMBookDialog.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMBookPair.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMBookResult.h" />

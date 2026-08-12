@@ -54,6 +54,7 @@
 #include "KESCMChangedPagesTSV.h"	// KESCMExportChangedPagesTSV(フライアウト「Export Changed Pages...」)
 #include "KESCMBookPair.h"			// KESCMResolveBookPair(「Compare Books」を有効にしてよいかの判定)
 #include "KESCMBookDialog.h"		// KESCMOpenBookDialog(フライアウト「Compare Books」＝ダイアログを開く)
+#include "KESCMBookOpen.h"			// KESCMBookMenuRow/CanStart/StartComparisonForRow(章行の右クリック「Start Change Marker」)
 #include "KESCMChangeNav.h"			// KESCMRefreshNavPosition(overset トグルで Prev/Next の対象数を更新)
 #include "KESCMPanelAlpha.h"		// KESCMGetPanelTranslucent/Set/Apply(フライアウト「Translucent Panel」)
 #include "IActiveContext.h"			// GetContextDocument(アクティブ文書の解決)
@@ -474,6 +475,14 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 			KESCMOpenBookDialog();
 			break;
 
+		// ブック比較ダイアログの**章行の右クリック**「Start Change Marker」(2026-08-12)。
+		// その章の Target/Source 2文書を窓付きで開き、比較中なら一度 Stop してから比較を開始する。
+		// ★どの行かは右クリックの時点で KESCMBookSetMenuRow が控えている——アクションには ActionID
+		//   しか渡らないので、これが「どの章の話か」を知る唯一の手段(KBS の結果行と同じ作り)。
+		case kKESCMBookRowStartActionID:
+			KESCMBookStartComparisonForRow(KESCMBookMenuRow());
+			break;
+
 		default:
 			break;
 	}
@@ -657,6 +666,15 @@ void KESCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionSta
 			IBook* source = nil;
 			listToUpdate->SetNthActionState(i, KESCMResolveBookPair(target, source) ? kEnabledAction
 			                                                                        : kDisabled_Unselected);
+		}
+		else if (action == kKESCMBookRowStartActionID)
+		{
+			// ★実行と同じ判定を通す(KESCMBookRowCanStart)=メニューの見た目と押した結果がずれない。
+			//   有効になるのは「その行が Target と Source の両方のファイルを持つ」ときだけ＝
+			//   片側にしか無い章(ChapterAdded / ChapterDeleted)と、ブックがファイルを示さない章では灰色。
+			//   比較には2つの文書が要る、というだけの話で、パネルの Start が文書2つを要求するのと同じ。
+			listToUpdate->SetNthActionState(i, KESCMBookRowCanStart(KESCMBookMenuRow()) ? kEnabledAction
+			                                                                            : kDisabled_Unselected);
 		}
 	}
 }

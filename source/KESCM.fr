@@ -476,17 +476,19 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 		}
 	},
 
-	// One row of that list. ***** Deliberately empty. ***** The stock tree node already handles
-	// what a row IS - selection, highlight, keyboard - and this list adds nothing to it yet. It
-	// exists as a boss of our own so that the row click ("open that chapter"), when it comes, is a
-	// line added here rather than a change of type in the resource. That is the order the Story
-	// Edits row went through, and the .fr change it saved is exactly the one that is easy to get
-	// wrong.
+	// One row of that list. The stock tree node handles what a row IS - selection, highlight,
+	// keyboard - and this adds the one thing it cannot know: what a CHAPTER row means when it is
+	// clicked. ★That is the single line this boss was created empty for (2026-08-11), and it went
+	// in on 2026-08-12 exactly as planned - no change of type in the resource, which is the part
+	// that is easy to get wrong. The Story Edits row went through the same two steps.
+	//   double click -> open that chapter        right click -> the row menu ("Start Change Marker")
+	// Implementation: KESCMBookRowEH.cpp (which click is which) / KESCMBookOpen.cpp (what it does).
 	Class
 	{
 		kKESCMBookRowWidgetBoss,
 		kTreeNodeWidgetBoss,
 		{
+			IID_IEVENTHANDLER, kKESCMBookRowEHImpl,
 		}
 	},
 
@@ -840,6 +842,25 @@ resource MenuDef (kSDKDefMenuResourceID)
 		"RtMenuPagesPanel",
 		kKESCMPageRefreshCompareMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
+
+		// ----- The book comparison dialog's chapter rows: right-click menu (2026-08-12) -----
+		// A menu of its own - neither the panel flyout nor a built-in InDesign menu - so its path is
+		// a name nobody else uses and it is written last, after the menus above have been laid out.
+		// It is popped at the cursor by the row's event handler
+		// (KESCMBookRowEH::RButtonDn -> IMenuManager::HandlePopupMenu with this subtree's name),
+		// which is the machinery the real Links / Layers panel row menus use, and the one KBS's
+		// result rows and KESCL's report rows are built on.
+		//
+		// "Start Change Marker": open BOTH sides of that chapter and run the document comparison on
+		// them, stopping whatever comparison was running first. It is the step that turns a verdict
+		// in this list ("ch05 Changed") into the marks that say WHERE - and it belongs on the row
+		// rather than on the flyout for the same reason KBS moved Check All here: a flyout has no
+		// row to ask about. ★Greyed for a chapter that exists on one side only, or that the book
+		// names no file for (kCustomEnabling -> KESCMBookRowCanStart).
+		kKESCMBookRowStartActionID,
+		kKESCMBookRowMenuName,
+		kKESCMBookRowStartMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
 	}
 };
 
@@ -1031,6 +1052,18 @@ resource ActionDef (kSDKDefActionResourceID)
 		kOtherActionArea,
 		kNormalAction,
 		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates enables only when both books resolve (front tab + one other)
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		// "Start Change Marker" on the chapter rows' right-click menu in the book comparison dialog.
+		// ⚠ Not on the flyout: it acts on the ROW the menu was popped over, which a flyout has no way
+		// of naming (KESCMBookRowEH stashes it, KESCMBookOpen reads it back).
+		kKESCMActionComponentBoss,
+		kKESCMBookRowStartActionID,
+		kKESCMBookRowStartMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates greys it for a row with only one side (KESCMBookRowCanStart)
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 
