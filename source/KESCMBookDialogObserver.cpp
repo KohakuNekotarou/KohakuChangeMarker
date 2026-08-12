@@ -134,8 +134,11 @@ void KESCMBookDialogObserver::RunComparison()
 		return;
 	}
 
-	// ⚠ This blocks until the whole comparison is done - there is no progress bar yet (that is a
-	// later stage). On a large book the dialog will sit still for a while.
+	// ⚠ This blocks until the whole comparison is done. The wait is not silent, though: KESCMCompareBooks
+	// raises its own progress bar with a Cancel on it (2026-08-12), naming the chapter it is waiting for,
+	// so a long book says where it is and can be stopped. A cancelled run comes back with the chapters
+	// it never reached marked NotCompared - which is why this function can store what it is handed
+	// without asking whether the run finished.
 	std::vector<KESCMChapterResult> chapters;
 	PMString report;
 	KESCMCompareBooks(target, source, chapters, report);

@@ -449,7 +449,10 @@ void KESCMToggleStartStop()
 		                         : "Source document not found.");
 		s.SetTranslatable(kFalse);
 		KESCMSetStatus(s);
-		KESCMRefreshPanel();	// ★この経路でも要る(旧実装では関数末尾の1回が担っていた)
+		// ★この経路でも要る。⚠**旧実装では呼ばれていなかった**——この分岐は else ブロックの中で return
+		//   しており、関数末尾の KESCMRefreshPanel には届いていなかった。∴これは切り出しに伴う挙動の
+		//   **変更**(望ましい方向の)で、元の動作の保存ではない。
+		KESCMRefreshPanel();
 		return;
 	}
 

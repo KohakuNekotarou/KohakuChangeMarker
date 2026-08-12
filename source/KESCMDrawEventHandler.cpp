@@ -1222,10 +1222,16 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	//   (公式サンプル basicdrwevthandler/BscDEHDrwEvtHandler.cpp:278-282 が " Printing or PDF Output" と明記)。
 	//   draw event の描画が File>Export>PDF に焼き込まれることは実機で確認済み(本体内蔵の透かしをプローブに
 	//   実測。docs/ai-notes/draw-event-pdf-export-experiment-2026-08-12.md)。
-	//   ∴ここは「印刷にも PDF 書き出しにも効く」判定として読むこと。sPrintMarks(Print comparison marks)が
-	//   ON なら下の suppressForPrint が外れ、書き出し PDF にもマークが出る**はず**の経路になっている。
-	//   ⚠ただし「kEndSpreadMessage が書き出し中に飛ぶか」だけは未実測(透かしがどのメッセージを購読して
-	//   いるかは製品バイナリなので不明)。ここを変更するときは実機で 1 回確かめること。
+	//   ∴ここは「印刷にも PDF 書き出しにも効く」判定として読むこと。
+	//   ⚠★★2026-08-12 追記＝**それでも KESCM のマークが書き出し PDF に出るとは限らない**。KESCM は
+	//     `kUIPlugIn` として登録されており(KESCM.fr:108)、**UI プラグインの boss は PDF 書き出しを走らせる
+	//     バックグラウンドスレッドから見えない**(2x2 の実測＝memory/model-ui-plugin-separation.md)＝
+	//     draw event がそもそもこのハンドラへ配られない。
+	//     ⚠**上の「実機で確認済み」は本体内蔵の透かしをプローブにした測定**で、自作 UI プラグインの
+	//       ハンドラで測ったものではない——「kPrinting が PDF でも立つ」ことの証拠にはなるが、
+	//       「**このハンドラが呼ばれる**」ことの証拠にはならない。一般化してはいけないところ。
+	//     ★測るなら app.ktDrawProbe(KT/KTDrawProbe.cpp)で「その描画はどの出力先か」を実測する。
+	//       ここの記述を根拠に実装を変える前に、必ず1回測ること。
 	// 自己参照(自前スナップショット)は上の sRasterizing で防ぐので、ここで kPreviewMode は見ない。
 	const bool16 printing = (ded->flags & IShape::kPrinting) != 0;
 

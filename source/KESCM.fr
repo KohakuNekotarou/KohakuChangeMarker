@@ -855,8 +855,10 @@ resource MenuDef (kSDKDefMenuResourceID)
 		// them, stopping whatever comparison was running first. It is the step that turns a verdict
 		// in this list ("ch05 Changed") into the marks that say WHERE - and it belongs on the row
 		// rather than on the flyout for the same reason KBS moved Check All here: a flyout has no
-		// row to ask about. ★Greyed for a chapter that exists on one side only, or that the book
-		// names no file for (kCustomEnabling -> KESCMBookRowCanStart).
+		// row to ask about. ★Enabled ONLY on a row whose verdict is Changed and which names both of
+		// its files (kCustomEnabling -> KESCMBookRowCanStart) - so NoChange, Failed, NotCompared and
+		// the one-sided chapters are all greyed too. ⚠Being the only item in this menu, greyed means
+		// the menu does not appear at all, which is the intended behaviour.
 		kKESCMBookRowStartActionID,
 		kKESCMBookRowMenuName,
 		kKESCMBookRowStartMenuItemPosition,

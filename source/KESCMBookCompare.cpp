@@ -656,8 +656,13 @@ ErrorCode KESCMCompareBooks(IBook* target, IBook* source,
 	//   - dropping "book compare: " saves 14 characters and loses nothing: the dialog is titled
 	//     "Compare Books" and this is the only status line in it. It also restores the wording the
 	//     design specified (§4-2: "12 chapters: 5 changed, 6 unchanged, 1 failed").
-	//   - dropping zeroes saves the rest. The parts always sum to the chapter count, which is
+	//   - dropping zeroes saves the rest. The VERDICT counts sum to the chapter count, which is
 	//     printed, so a reader can still tell "15 chapters: 15 unchanged" from a partial run.
+	//     ⚠ "left open" is NOT one of those, and the sum does not hold once it appears: it counts
+	//       DOCUMENTS this run could not close - up to two per chapter - so a run that failed to close
+	//       both sides of one chapter reads "3 chapters: 3 unchanged, 2 left open", whose parts add up
+	//       to 5. It is listed here anyway because it is rare and has to be said; the reading to keep
+	//       is that the five VERDICTS before it account for every chapter.
 	const int32 total = (int32)outChapters.size();
 	outReport = PMString();
 	outReport.AppendNumber(total);

@@ -670,9 +670,11 @@ void KESCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionSta
 		else if (action == kKESCMBookRowStartActionID)
 		{
 			// ★実行と同じ判定を通す(KESCMBookRowCanStart)=メニューの見た目と押した結果がずれない。
-			//   有効になるのは「その行が Target と Source の両方のファイルを持つ」ときだけ＝
-			//   片側にしか無い章(ChapterAdded / ChapterDeleted)と、ブックがファイルを示さない章では灰色。
-			//   比較には2つの文書が要る、というだけの話で、パネルの Start が文書2つを要求するのと同じ。
+			//   有効になるのは **判定が Changed の行だけ**(ユーザー指定 2026-08-12)で、かつ Target と
+			//   Source の両方のファイルを持つ行。∴灰色になるのは片側にしか無い章(ChapterAdded /
+			//   ChapterDeleted)とファイルを示さない章に限らず、**NoChange / Failed / NotCompared も灰色**。
+			//   ⚠この項目は行メニューの唯一の項目なので、灰色のとき**メニュー自体が出ない**(InDesign の挙動。
+			//     それが仕様＝空メニューを出す実装に「改善」しないこと)。
 			listToUpdate->SetNthActionState(i, KESCMBookRowCanStart(KESCMBookMenuRow()) ? kEnabledAction
 			                                                                            : kDisabled_Unselected);
 		}
