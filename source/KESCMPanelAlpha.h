@@ -57,11 +57,21 @@ bool16	KESCMApplyPagesPanelTranslucency();
 void	KESCMApplyAllPanelTranslucency();
 
 // パネルの表示状態変化(開く/閉じる/ドッキング⇄フローティング)の購読を始める。
-// ★起動時に1回だけ呼ぶ(KESCMPeekStartup::Startup)。以後、パネルをフローティングに戻したり
-//   開き直したりしても、ON なら自動で半透明が貼り直される。
+// ★呼ぶ場所は**2か所**で、何度呼んでも安全: KESCMPeekStartup::Startup と パネルの AutoAttach
+//   (KESCMPanelObserver.cpp)。★2つめは念のためではない ---- パネルマネージャは本体の起動シーケンスの
+//   途中で立ち上がるので Startup の時点では nil のことがあり、その購読は AutoAttach の回で拾う。
+//   どの購読も IsAttached を先に聞くので、重ねて呼んでも二重には付かない。
 // ★仕組み: kPanelManagerBoss の IID_IPANELMGR subject に飛ぶ kPaletteVisibilityChangedMessage を
 //   受ける(2026-07-29 に Debug 版の Spy で実測して特定。ドッキング切り替えのたびに飛ぶ)。
+//   もう1つ kAppBoss / IID_IAPPLICATION も購読する(関数本体のコメント参照)。
 void	KESCMAttachPanelVisibilityObserver();
+
+// 上が張った購読を全部外す。プラグイン終了時(KESCMPeekStartup::Shutdown)から、**KESCMShutdownPanelAlpha
+// より前に**呼ぶ ＝ 通知を止めてからタイマーとフックを畳む。
+// ★なぜ要るか(2026-08-12): 購読している間、セッションが持っているのはこの .pln の中へのポインタで、
+//   終了処理中のパネル破棄は実際に通知を飛ばす ---- 消えかけのコードで Update が走ることになる。
+//   KBS が 2026-08-08 に同じ理由で新設した対で、こちらには来ていなかった分。
+void	KESCMDetachPanelVisibilityObserver();
 
 // (KESCMResetPanelHover は 2026-07-29 に撤去。「カーソルが乗っているか」は旗で持たず
 //  KESCMApplyPanelTranslucency のたびに Win32 で実測する方式へ変更したので、落とすべき状態が

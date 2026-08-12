@@ -683,12 +683,22 @@ static void KESCMInstallWinEventHook()
 									  WINEVENT_OUTOFCONTEXT);		// ★注入なし
 }
 
+// ★★★フックを**本当に外せたときだけ**ハンドルを忘れる(2026-08-12。KBS が 08-11 に直した形を移植)。
+//   !以前は戻り値を見ずに nullptr を代入していた。MSDN は UnhookWinEvent が失敗する条件を3つ挙げており
+//     (ハンドルが無効／既に外されている／**張ったスレッド以外から呼んだ**)、3つ目のときフックは**まだ生きている**。
+//     そこでハンドルを捨てると二度と外す手段が無くなる ---- KESCMShutdownPanelAlpha は nullptr を見て
+//     「済んだ」と判断し、**OS が KESCMWinEventProc(参照カウントされない生関数ポインタ)を握ったまま
+//     .pln が降りる**。このファイルが ICallbackTimer について二重に防いでいる当の状態そのもの。
+//   ★ハンドルを残す副作用は無い: KESCMInstallWinEventHook は生きたハンドルを見れば二重には張らず、
+//     次にここへ来たときもう一度外しにいく。
+//   !今日の呼び手はすべてメインスレッド(メニュー押下と Shutdown)so実際に失敗したことは無い。
+//     狙いは「失敗を握りつぶさない」ことにある。
 static void KESCMRemoveWinEventHook()
 {
 	if (sWinEventHook != nullptr)
 	{
-		::UnhookWinEvent(sWinEventHook);
-		sWinEventHook = nullptr;
+		if (::UnhookWinEvent(sWinEventHook))
+			sWinEventHook = nullptr;
 	}
 }
 
@@ -945,5 +955,52 @@ void KESCMAttachPanelVisibilityObserver()
 		!appSubject->IsAttached(ISubject::kRegularAttachment, obs, IID_IAPPLICATION, IID_IKESCMPANELVISIBILITYOBSERVER))
 	{
 		appSubject->AttachObserver(ISubject::kRegularAttachment, obs, IID_IAPPLICATION, IID_IKESCMPANELVISIBILITYOBSERVER);
+	}
+}
+
+// ★上の鏡像。プラグイン終了時(KESCMPeekStartup::Shutdown)から、**KESCMShutdownPanelAlpha より前に**呼ぶ
+//   ＝通知を止めてから道具(タイマーと Win32 フック)を畳む。2026-08-12 追加。
+//   ★★なぜ要るか: 購読している間、セッションが握っているのは**この .pln の中へのポインタ**。終了処理の
+//     途中でパネルが壊されると通知が飛ぶので、消えかけのコードで Update が走る。
+//     ★KBS が 2026-08-08 に同じ理由で新設した(KBSDetachPanelVisibilityObserver)分で、こちらへは
+//       歩いてこなかった ---- **修正は兄弟へ自分では歩いてこない**(このプラグインが KBS から
+//       ferror チェックや再武装ガードを受け取ったのと、向きが逆になっただけ)。
+//   ★Attach 側と**同じ attachment type** で外す(ISubject.h:288 が :280 の対)。Regular で付けたものは
+//     Regular で外す。
+//   ★外す前に IsAttached を聞くのは、Attach 側が付ける前に聞くのと同じ理由。Attach は2か所から呼ばれる
+//     (起動サービスと パネルの AutoAttach)ので、「本当に付いているか」は両側で正直な問い。
+//   ★パネルマネージャは終了処理中には既に降りていることがある。そこが nil でも kAppBoss 側の購読は
+//     独立so道連れにしない(Attach 側が 2026-08-06 に学んだのと同じ形)。
+void KESCMDetachPanelVisibilityObserver()
+{
+	ISession* session = GetExecutionContextSession();
+	IActiveContext* ctx = (session != nil) ? session->GetActiveContext() : nil;
+	if (ctx == nil)
+		return;
+
+	InterfacePtr<IObserver> obs((IObserver*)ctx->QueryInterface(IID_IKESCMPANELVISIBILITYOBSERVER));
+	if (obs == nil)
+		return;
+
+	InterfacePtr<IApplication> app(session->QueryApplication());
+	if (app == nil)
+		return;
+
+	InterfacePtr<IPanelMgr> panelMgr(app->QueryPanelManager());
+	if (panelMgr != nil)
+	{
+		InterfacePtr<ISubject> subject(panelMgr, IID_ISUBJECT);
+		if (subject != nil &&
+			subject->IsAttached(ISubject::kRegularAttachment, obs, IID_IPANELMGR, IID_IKESCMPANELVISIBILITYOBSERVER))
+		{
+			subject->DetachObserver(ISubject::kRegularAttachment, obs, IID_IPANELMGR, IID_IKESCMPANELVISIBILITYOBSERVER);
+		}
+	}
+
+	InterfacePtr<ISubject> appSubject(app, IID_ISUBJECT);
+	if (appSubject != nil &&
+		appSubject->IsAttached(ISubject::kRegularAttachment, obs, IID_IAPPLICATION, IID_IKESCMPANELVISIBILITYOBSERVER))
+	{
+		appSubject->DetachObserver(ISubject::kRegularAttachment, obs, IID_IAPPLICATION, IID_IKESCMPANELVISIBILITYOBSERVER);
 	}
 }

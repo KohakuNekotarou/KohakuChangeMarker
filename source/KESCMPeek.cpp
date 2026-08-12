@@ -2164,6 +2164,11 @@ void KESCMPeekStartup::Shutdown()
 	KESCMShutdownThumbIdleTask();
 	// 一括クローズの保留も捨てる(終了後に流れることは無いが、状態を残さない)。
 	sDeferredCloseUiPending = kFalse;
+	// ★先に購読を止める(2026-08-12)。購読している間セッションが握っているのは**この .pln の中への
+	//   ポインタ**で、終了処理中のパネル破棄は実際に通知を飛ばす ---- 消えかけのコードで Update が走る。
+	//   通知を止めてから、下の行で道具(タイマーと Win32 フック)を畳む順序。
+	//   ★KBS が 2026-08-08 に新設した対を移植した分(KESCM 側にだけ無かった)。
+	KESCMDetachPanelVisibilityObserver();
 	// パネル半透明の遅延再適用タイマーも同様に止める(同じく生関数ポインタを残さないため)。
 	KESCMShutdownPanelAlpha();
 	// 押下中 HUD が抱えるフォント参照を返す。押下中に quit した経路でも確実に片付ける。
