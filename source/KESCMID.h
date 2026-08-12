@@ -296,6 +296,27 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMBookTreeWidgetID, kKESCMPrefix + 62)		// 章�
 DECLARE_PMID(kWidgetIDSpace, kKESCMBookRowWidgetID, kKESCMPrefix + 63)		// 行テンプレート自身。★GetWidgetTypeForNode が返すのはこれ
 DECLARE_PMID(kWidgetIDSpace, kKESCMBookRowNameWidgetID, kKESCMPrefix + 64)	// 行の左=章のファイル名(Failed のときだけ「 - 理由」が後ろに付く)
 DECLARE_PMID(kWidgetIDSpace, kKESCMBookRowStateWidgetID, kKESCMPrefix + 65)	// 行の右=判定(Changed / NoChange / ChapterAdded / ChapterDeleted / Failed)。固定幅・右寄せ
+//====================================================================================
+// ★★採番の上限に注意 — この prefix の枠は「+0 〜 +62」しかない
+//
+//  prefix は 32bit ID の上位ビットで、本来は 1 プラグインにつき各 ID 空間 256 個(+0〜+255)
+//  ぶんの枠が与えられる。ところが KESCM(0x205515) と KESCL(0x205554) の間隔は 0x3F = 63 しかなく、
+//  この widget ID は +63/+64/+65 で **既に KESCL の領域(0x205554/55/56)へ食い込んでいる**。
+//  今ぶつかっていないのは KESCL が widget ID を +9 からしか使っていないという偶然にすぎない。
+//
+//  ∴ ここに widget を足すときは **+66 以降を使わない**こと。KESCL の +9(0x20555D) まで残り 6 個で、
+//     そこへ届いた瞬間に「2つのプラグインが同じ ID を主張」する状態になり、起動時のオブジェクトモデル
+//     構築("Completing object model" 段)で **弾かれる**(＝静かな誤動作ではなく、読み込まれない)。
+//
+//  使ってよい空き:
+//    (a) **+27 〜 +33 の穴(7個)** — 現在どこからも使われていない。まずここを使う。
+//        ⚠ 過去に使って消した番号の可能性があるので、再利用の前に git 履歴を見ること
+//        (widget ID はワークスペース＝パネル配置の永続データに現れうる)
+//    (b) それでも足りなくなったら **セカンダリ prefix を1本用意する**(既存 ID は1つも動かさない。
+//        公開済みバージョンとの互換を保ったまま 256 枠を新規に確保できる)
+//
+//  調査の全記録 = docs/ai-notes/guide-gs-04-object-model-read-2026-08-12.md §1
+//====================================================================================
 //DECLARE_PMID(kWidgetIDSpace, kKESCMWidgetID, kKESCMPrefix + 2)
 //DECLARE_PMID(kWidgetIDSpace, kKESCMWidgetID, kKESCMPrefix + 3)
 //DECLARE_PMID(kWidgetIDSpace, kKESCMWidgetID, kKESCMPrefix + 4)
