@@ -82,16 +82,22 @@
 //   動いた＝この作りが対象を選ばないことの実証にはなっている。実測した窓構造と狙い撃ち先の記録は
 //   memory/translucent-toolbox-idea.md に残してあるので、再挑戦するならそこから。)
 //----------------------------------------------------------------------------------------
+//  ★★3つ目 = **ブック比較ダイアログ**(2026-08-13 ユーザー要望)。ここで初めて「パネルではないもの」が
+//    対象に入った。**この作りが吸収できなかったのは1点だけ＝窓の見つけ方**で、それは
+//    KESCMQueryPaletteWindow と KESCMQueryTranslucentTarget の2か所を which で分岐して収めてある。
+//    alpha の書き込み・カーソルで不透明に戻す判定・遅延再適用・Win32 フックへの追随は、
+//    パネルと1行も変わらずそのまま効く。
 enum
 {
-	kKESCMAlphaSelf  = 0,		// 自分のパネル(Kohaku Change Marker)
-	kKESCMAlphaPages = 1,		// 本体のページパネル
-	kKESCMAlphaCount = 2
+	kKESCMAlphaSelf       = 0,	// 自分のパネル(Kohaku Change Marker)
+	kKESCMAlphaPages      = 1,	// 本体のページパネル
+	kKESCMAlphaBookDialog = 2,	// ★自分のブック比較ダイアログ(パネルではない=窓の出所が違う)
+	kKESCMAlphaCount      = 3
 };
 
 // トグル状態(セッション内で保持。永続化は KESCMPanelState.cpp が担当)。★既定 OFF
 // ※Mac でも状態だけは持つ(適用側が何もしないだけ)。
-static bool16 sTranslucentOn[kKESCMAlphaCount] = { kFalse, kFalse };
+static bool16 sTranslucentOn[kKESCMAlphaCount] = { kFalse, kFalse, kFalse };
 
 // どれか1つでも ON か。★Win32 フックを張る/外す判断と、遅延再適用を続ける/やめる判断で共有する
 //   (同じことを2か所で数えると必ずずれる)。
@@ -314,14 +320,18 @@ static HWND KESCMQueryPanelPaletteFromSDK(const WidgetID& panelWidgetID)
 //   複数回飛ぶ(2026-07-29 実測)。そのたびに SDK へ問い合わせるのは無駄で、しかも下の Win32 フックは
 //   マウス移動のたびに走る ＝ **Win32 コールバックからモデルへ触る回数は最小に保ちたい**
 //   (KBS が同じ理由で負のキャッシュまで置いている: KBSPanelAlpha.cpp:492-502)。
-static HWND sPaletteWnd[kKESCMAlphaCount] = { nullptr, nullptr };
+static HWND sPaletteWnd[kKESCMAlphaCount] = { nullptr, nullptr, nullptr };
 
 // 対象ごとの狙い撃ち先。★enum の並びと必ず同じ順にすること。
 //  ※WidgetID ではなく生の uint32 で持つ: DECLARE_PMID が作るのは uint32 で、静的初期化に使える。
+//  ⚠3つ目(ブック比較ダイアログ)は **WidgetID では引けない**。パネルマネージャが知っているのは
+//    パネルだけで、ダイアログはそこに載っていない ---- 窓はダイアログ自身が
+//    KESCMSetBookDialogWindow で教えてくる。表を揃えるためだけに 0 を置いてある(使われない)。
 static const uint32 kKESCMAlphaWidgetIDs[kKESCMAlphaCount] =
 {
 	kKESCMPanelWidgetID,		// kKESCMAlphaSelf  = 自分のパネル
-	kPagesPanelWidgetID			// kKESCMAlphaPages = 本体のページパネル
+	kPagesPanelWidgetID,		// kKESCMAlphaPages = 本体のページパネル
+	0							// kKESCMAlphaBookDialog = 引かない(上記)
 };
 
 // キャッシュ優先でパネル窓を得る。★ハンドルは OS が使い回すので、生存確認だけでなくクラス名の
@@ -332,6 +342,19 @@ static const uint32 kKESCMAlphaWidgetIDs[kKESCMAlphaCount] =
 //     そこでキャッシュを捨てているので、ここはクラス名までで足りる。
 static HWND KESCMQueryPaletteWindow(int32 which)
 {
+	// ★★ダイアログは自分で名乗る(2026-08-13)。パネルマネージャに載っていないので下の SDK 経路は
+	//   使えず、代わりに KESCMBookDialog.cpp が窓を用意した直後に教えてくる。ここでやることは
+	//   「その窓がまだ生きているか」だけ ---- 閉じられていれば忘れる(次に開いたときまた教わる)。
+	//   ⚠クラス名では確かめない: ダイアログの窓は "OWL.Palette" ではないし、"DroverLord - Window Class"
+	//     は本体中の至る所が使う名前なので、確かめても何かを保証したことにならない。IsWindow で足りる
+	//     理由は、この値の出どころが自分のダイアログ1か所しかないから。
+	if (which == kKESCMAlphaBookDialog)
+	{
+		if (sPaletteWnd[which] != nullptr && !::IsWindow(sPaletteWnd[which]))
+			sPaletteWnd[which] = nullptr;
+		return sPaletteWnd[which];
+	}
+
 	HWND cached = sPaletteWnd[which];
 	if (cached != nullptr && ::IsWindow(cached) && KESCMClassIs(cached, L"OWL.Palette"))
 		return cached;
@@ -361,10 +384,17 @@ static bool KESCMClassIs(HWND h, const wchar_t* wanted)
 //     "OWL.FrameDrawer" アイコンをクリックしたドロワー展開。EXSTYLE=0x08080000
 //   後ろ 2 つは InDesign 自身が WS_EX_LAYERED を立てているので、まったく同じ扱いでよい。
 // ⚠"OWL.Dock" だけで判定していると、ドロワー展開が黙って対象外になる(2026-07-29 まで実際にそうだった)。
-static HWND KESCMQueryTranslucentTarget(HWND palette)
+static HWND KESCMQueryTranslucentTarget(int32 which, HWND palette)
 {
 	if (palette == nullptr)
 		return nullptr;
+
+	// ★★ダイアログは**それ自身がトップレベル窓**なので、この関数がパネルのためにしている解決
+	//   （「今どのドックに載っているか」を GA_ROOT で辿る）が丸ごと要らない。
+	//   ⇒ 副産物として、パネル側にある「ドック内で展開中は単独で透かせない」という制限も無い:
+	//     ダイアログは常にフローティングなので、いつ押しても効く。
+	if (which == kKESCMAlphaBookDialog)
+		return palette;
 
 	HWND root = ::GetAncestor(palette, GA_ROOT);
 	if (root == nullptr || root == palette)
@@ -387,15 +417,28 @@ static bool16 KESCMApplyFor(int32 which)
 {
 #ifdef WINDOWS
 	HWND palette = KESCMQueryPaletteWindow(which);
-	HWND target  = KESCMQueryTranslucentTarget(palette);
+	HWND target  = KESCMQueryTranslucentTarget(which, palette);
 	if (target == nullptr)
-		return kFalse;		// パネルが無い / ドック内で展開中 → 何もしない
+		return kFalse;		// パネルが無い / ドック内で展開中 / ダイアログが閉じている → 何もしない
 
 	// ★カーソルが乗っている間は不透明に戻す(KESCMEffectiveAlpha が今の位置を実測して判断)。
 	//   タブ帯・タイトル帯の上でも「乗っている」になる ＝ 対象窓がそれらを含むため。
 	const BYTE alpha = KESCMEffectiveAlpha(which, target);
 
-	// ★WS_EX_LAYERED は InDesign が最初から立てているので触らない。
+	// ★★ダイアログには WS_EX_LAYERED を**自分で立てる**(2026-08-13)。パネル側でこれが要らないのは
+	//   InDesign が OWL.Dock / OWL.FrameDrawer に最初から立てているからで、窓一般の性質ではない
+	//   ---- ダイアログの窓には立っておらず、実測すると SetLayeredWindowAttributes は失敗し、
+	//   GetLayeredWindowAttributes も "not layered" を返した(この機能で最初に踏んだ壁)。
+	//   ⚠OFF に戻すときも外さない: 見た目は alpha 255 で戻るし、外す/立てるを往復させると
+	//     per-pixel 描画との切り替わりを招きかねない(影で同じ罠を踏んでいる。下のコメント参照)。
+	if (which == kKESCMAlphaBookDialog)
+	{
+		const LONG_PTR ex = ::GetWindowLongPtr(target, GWL_EXSTYLE);
+		if ((ex & WS_EX_LAYERED) == 0)
+			::SetWindowLongPtr(target, GWL_EXSTYLE, ex | WS_EX_LAYERED);
+	}
+
+	// ★パネルでは WS_EX_LAYERED は InDesign が最初から立てているので触らない(上のダイアログ分岐参照)。
 	const BOOL ok = ::SetLayeredWindowAttributes(target, 0, alpha, LWA_ALPHA);
 
 	// ★影(OWL.ShadowView)も一緒に処理する。影は Dock の owner にあたる「別のトップレベル窓」なので、
@@ -437,6 +480,33 @@ bool16 KESCMApplyPanelTranslucency()
 bool16 KESCMApplyPagesPanelTranslucency()
 {
 	return KESCMApplyFor(kKESCMAlphaPages);
+}
+
+bool16 KESCMGetBookDialogTranslucent()
+{
+	return sTranslucentOn[kKESCMAlphaBookDialog];
+}
+
+void KESCMSetBookDialogTranslucent(bool16 on)
+{
+	KESCMSetTranslucentFor(kKESCMAlphaBookDialog, on);
+}
+
+bool16 KESCMApplyBookDialogTranslucency()
+{
+	return KESCMApplyFor(kKESCMAlphaBookDialog);
+}
+
+// ダイアログが自分の窓を教えてくる/手放す。★KESCMBookDialog.cpp から、窓を用意した直後に呼ばれる。
+//  ⚠ここは alpha を書かない ---- 「窓を覚える」と「今の状態を貼る」は別の仕事で、後者は呼び出し側が
+//    続けて KESCMApplyBookDialogTranslucency を呼ぶ(トグルが OFF なら何も起きないのが正しい)。
+void KESCMSetBookDialogWindow(void* sysWindow)
+{
+#ifdef WINDOWS
+	sPaletteWnd[kKESCMAlphaBookDialog] = static_cast<HWND>(sysWindow);
+#else
+	(void)sysWindow;
+#endif
 }
 
 // 全対象へ貼り直す。★通知・遅延再適用・Win32 フックからはこちらを呼ぶ
@@ -613,7 +683,11 @@ static void CALLBACK KESCMWinEventProc(HWINEVENTHOOK /*hook*/, DWORD /*event*/, 
 		//   ⚠2026-08-06: 旧実装はここで窓タイトルも照合していた(自分のパネルかを綴りで見ていた)。
 		//     引き直しが WidgetID 狙い撃ちになったので綴りを合わせる相手が無くなり、クラス名までにした。
 		//     ここで捨てれば次の Apply が SDK から正しい窓を引き直す。
-		if (isWindowEvent && !KESCMClassIs(sPaletteWnd[which], L"OWL.Palette"))
+		//   ⚠★**ダイアログはこの照合から外す**(2026-08-13)。その窓は "OWL.Palette" ではないので、
+		//     ここを通すと窓イベントが来るたびに捨てられ、半透明が一瞬で解ける。あちらは引き直しの
+		//     当てが無い(SDK に聞けない)ので、捨ててよい相手でもない。上の IsWindow で失効は拾える。
+		if (isWindowEvent && which != kKESCMAlphaBookDialog
+			&& !KESCMClassIs(sPaletteWnd[which], L"OWL.Palette"))
 		{
 			sPaletteWnd[which] = nullptr;
 			continue;
@@ -625,7 +699,7 @@ static void CALLBACK KESCMWinEventProc(HWINEVENTHOOK /*hook*/, DWORD /*event*/, 
 		//   → 発信元は問わず、「イベントが来たら対象パネルの今のトップレベル窓を引き直して、
 		//     alpha がずれていたら貼る」方式にする。判定は GetAncestor + 属性読みだけで、
 		//     ずれていなければ即 continue するので、大量に飛んできても実害はない。
-		HWND target = KESCMQueryTranslucentTarget(sPaletteWnd[which]);
+		HWND target = KESCMQueryTranslucentTarget(which, sPaletteWnd[which]);
 		if (target == nullptr)
 			continue;				// ドック内で展開中 = 対象外
 
@@ -668,6 +742,17 @@ static void CALLBACK KESCMWinEventProc(HWINEVENTHOOK /*hook*/, DWORD /*event*/, 
 
 static void KESCMInstallWinEventHook()
 {
+	// ★★Shutdown 後は張り直さない(2026-08-13)。**上の KESCMScheduleReapply と同じ理由・同じ形**で、
+	//   こちらにだけ無かった分。KESCMSetTranslucentFor は「どれか1つでも ON なら張る」ので、
+	//   KESCMShutdownPanelAlpha が外した後にトグルを触る経路ができると、**OS が KESCMWinEventProc
+	//   (参照カウントされない生関数ポインタ)を握ったまま .pln が降りる**——このファイルが
+	//   ICallbackTimer について何重にも防いでいる当の状態が、フックの側から再現してしまう。
+	//   ⚠**Remove 側は塞がない**。あちらは「外す」方向なので、OFF にしたときの復元経路を殺さないため。
+	//   ※今日の呼び手はメニュー押下だけで Shutdown の後には来ない＝実害は出ていない。塞ぐのは
+	//     「同じ性質の予約(タイマーとフック)のうち片方だけが守られている」非対称そのものに対して。
+	if (sPanelAlphaShutdown)
+		return;
+
 	if (sWinEventHook != nullptr)
 		return;		// 既に張ってある
 
@@ -866,7 +951,8 @@ bool8 KESCMPanelRollOver::IsMouseOver() const
 	//   (本体のページパネルには AddIn できない。あちらのホバーは Win32 フックの OBJID_CURSOR で拾う)。
 	if (!sTranslucentOn[kKESCMAlphaSelf])
 		return kFalse;
-	return KESCMCursorOverWindow(KESCMQueryTranslucentTarget(KESCMQueryPaletteWindow(kKESCMAlphaSelf))) ? kTrue : kFalse;
+	return KESCMCursorOverWindow(
+		KESCMQueryTranslucentTarget(kKESCMAlphaSelf, KESCMQueryPaletteWindow(kKESCMAlphaSelf))) ? kTrue : kFalse;
 #else
 	return kFalse;
 #endif

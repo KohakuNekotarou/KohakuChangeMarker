@@ -251,7 +251,8 @@ DECLARE_PMID(kActionIDSpace, kKESCMPopupCompareBooksActionID, kKESCMPrefix + 39)
 // 押されたときに「どの行か」を知る手段はこのアクション自身には無い(ActionID しか渡らない)ので、
 // 行は右クリックの時点で KESCMBookSetMenuRow が控える＝KBS の結果行と同じ作り。
 DECLARE_PMID(kActionIDSpace, kKESCMBookRowStartActionID, kKESCMPrefix + 40)	// 章行の右クリック「Start Change Marker」= その章の Target/Source 2文書を窓付きで開き、比較中なら一度 Stop してから比較を開始する(KESCMBookOpen.cpp)。★両側のファイルが揃っていない行(ChapterAdded/ChapterDeleted・ファイル無し)では灰色(kCustomEnabling → KESCMBookRowCanStart)
-// (+15..+23 are all declared above - stale placeholders for them removed 2026-08-05 audit. Next free: +41)
+DECLARE_PMID(kActionIDSpace, kKESCMPopupTranslucentBookDialogActionID, kKESCMPrefix + 41)	// ★パネルのフライアウトの「Translucent Book Dialog」チェック式トグル(2026-08-13 ユーザー要望「ダイアログも半透明に出来る様に」)。上の +36/+37 と**同じ実体**(KESCMPanelAlpha.cpp)で対象だけが違う。⚠ただし対象がパネルではないので**窓の出所だけが別**＝ダイアログ自身が KESCMSetBookDialogWindow で教える(パネルマネージャは WidgetID で引けるが、ダイアログはそこに載っていない)。★パネル側と違い**ドッキングの概念が無いので「押しても効かない状態」が無い**。既定 OFF
+// (+15..+23 are all declared above - stale placeholders for them removed 2026-08-05 audit. Next free: +42)
 //DECLARE_PMID(kActionIDSpace, kKESCMActionID, kKESCMPrefix + 41)
 // kKESCMPrefix + 24/25/26/28 は使用中(KCM: Check / Save Check & Register / Load Check & Register / RtMenuPagesPanel の区切り線)。+27 は廃止・予約(上記)
 
@@ -308,6 +309,12 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMBookSourceTextWidgetID, kKESCMPrefix + 59)	//
 DECLARE_PMID(kWidgetIDSpace, kKESCMBookCompareButtonWidgetID, kKESCMPrefix + 60)	// 「Compare」ボタン。★押す前に上の2行が目に入るのが要点
 DECLARE_PMID(kWidgetIDSpace, kKESCMBookStatusTextWidgetID, kKESCMPrefix + 61)	// ステータス行(比較の要約。章数を必ず含む)
 DECLARE_PMID(kWidgetIDSpace, kKESCMBookTreeWidgetID, kKESCMPrefix + 62)		// 章一覧のツリー本体(ダイアログの中で一番大きい部品)
+// ★★**番号が +2 なのは書き間違いではない**(2026-08-13)。ダイアログのメッセージを2行にする(2行目＝行の
+//   右クリックの案内)ために widget を1つ足したが、**+63 から先は KESCL の prefix 領域**(0x205554)なので
+//   後ろへは伸ばせない。一方 **+2〜+25 は宣言ごと空いていた**(下のプレースホルダ群。+1 の次は +26)＝
+//   予約済み 256 枠の内側の未使用番号なので、**ID 空間の消費はゼロで衝突も無い**。
+//   ⇒ 逃げ道は「借用(同じ親の子孫でだけ一意)」だけではなく、**前方の穴**もある＝[[id-prefix-256-slot-budget]]
+DECLARE_PMID(kWidgetIDSpace, kKESCMBookHintTextWidgetID, kKESCMPrefix + 2)	// ステータスの2行目=「Right-click a changed chapter to start Change Marker.」(固定文。.fr が初期テキストとして持ち、C++ は触らない)
 // ★★★下の3つは「Story Edits」の行と **WidgetID を共有する**(2026-08-12。新しい番号を1つも使わない)。
 //   根拠 = **widget ID がアプリ全体で一意である必要は無い**。公式ガイド vol2-12:71 が、
 //   グローバルに一意でなければならない文字列キーと**対比して**こう書いている:
@@ -363,7 +370,7 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMBookRowStateWidgetID, kKESCMPrefix + 49)	// �
 //  調査の全記録 = docs/ai-notes/guide-gs-04-object-model-read-2026-08-12.md §1
 //                 docs/ai-notes/guide-vol2-12-ui-fundamentals-read-2026-08-12.md §0 ((a) の根拠)
 //====================================================================================
-//DECLARE_PMID(kWidgetIDSpace, kKESCMWidgetID, kKESCMPrefix + 2)
+// (+2 is IN USE since 2026-08-13 - kKESCMBookHintTextWidgetID, declared with the dialog's widgets above.)
 //DECLARE_PMID(kWidgetIDSpace, kKESCMWidgetID, kKESCMPrefix + 3)
 //DECLARE_PMID(kWidgetIDSpace, kKESCMWidgetID, kKESCMPrefix + 4)
 //DECLARE_PMID(kWidgetIDSpace, kKESCMWidgetID, kKESCMPrefix + 5)
@@ -462,8 +469,11 @@ DECLARE_PMID(kScriptInfoIDSpace, kKESCMBookResultPropertyScriptElement, kKESCMPr
 #define kKESCMBookDialogTitleKey	kKESCMStringPrefix "kKESCMBookDialogTitleKey"	// ブック比較ダイアログのタイトル
 #define kKESCMBookCompareKey		kKESCMStringPrefix "kKESCMBookCompareKey"		// (退役 2026-08-12)旧「Compare」ボタンのラベル。ボタンごと撤去したので参照は無いが、enUS テーブルの行とともに残してある＝復活させるとき対で戻せる
 #define kKESCMBookReadyKey			kKESCMStringPrefix "kKESCMBookReadyKey"			// 比較前のステータス文。★2026-08-12 以降ここに来るのは「比較を1度もしていないのにダイアログが開いた」場合だけ(通常は結果の要約で上書きされる)
+#define kKESCMBookHintKey			kKESCMStringPrefix "kKESCMBookHintKey"			// ★ステータスの2行目(2026-08-13 ユーザー指示)=行の右クリックで比較を始められることの案内。**固定文**なので .fr が初期テキストとして持ち、C++ は一度も書き換えない(要約と違い run ごとに変わらないため)
 // ★ブック比較の確認アラート(2026-08-12 ユーザー指示「Compare... をするとアラートを出し、OK が押されると比較する」)。
-//   ⚠ここは**日本語 UI では日本語で出す**＝KESCMLoc の対象が2箇所から4箇所へ増えた(理由は KESCMLoc.h の冒頭)。
+//   ⚠★**2026-08-13 訂正**＝旧記述「ここは日本語 UI では日本語で出す＝KESCMLoc の対象が4箇所へ増えた」は
+//     **下の確認キーについては失効**。ユーザー指示「英語で良いです」で確認アラートは全ロケール英語に戻り、
+//     KESCMLoc の対象は3箇所になった。**日本語のままなのは次の kKESCMBookNoPairKey だけ**。
 #define kKESCMBookCompareConfirmKey	kKESCMStringPrefix "kKESCMBookCompareConfirmKey"	// 「これから比較する」確認アラートの1行目(この下に target: / source: のフルパスが続く)
 #define kKESCMBookNoPairKey			kKESCMStringPrefix "kKESCMBookNoPairKey"			// 2ブックを解決できなかったときの警告アラート(通常はメニューが灰色なので到達しない)
 #define kKESCMBookRowStartMenuKey	kKESCMStringPrefix "kKESCMBookRowStartMenuKey"	// 章行の右クリックメニューの「Start Change Marker」項目名
@@ -474,6 +484,7 @@ DECLARE_PMID(kScriptInfoIDSpace, kKESCMBookResultPropertyScriptElement, kKESCMPr
 #define kKESCMBookRowMenuName		"KESCMRtMenuBookRow"
 #define kKESCMTranslucentPanelMenuKey	kKESCMStringPrefix "kKESCMTranslucentPanelMenuKey"	// パネルのフライアウト「Translucent Panel」トグルのメニュー名
 #define kKESCMTranslucentPagesPanelMenuKey	kKESCMStringPrefix "kKESCMTranslucentPagesPanelMenuKey"	// パネルのフライアウト「Translucent Pages Panel」トグルのメニュー名(対象は本体のページパネル)
+#define kKESCMTranslucentBookDialogMenuKey	kKESCMStringPrefix "kKESCMTranslucentBookDialogMenuKey"	// パネルのフライアウト「Translucent Book Dialog」トグルのメニュー名(対象はブック比較ダイアログ。2026-08-13 追加)
 // (kKESCMTranslucentToolboxMenuKey は 2026-08-07 に機能ごと撤去。文字列キーは ActionID と違って
 //  外部に保存されないので、跡地を残す必要は無い＝行ごと削除してある。)
 
@@ -640,6 +651,7 @@ DECLARE_PMID(kScriptInfoIDSpace, kKESCMBookResultPropertyScriptElement, kKESCMPr
 #define kKESCMTranslucentPagesPanelMenuItemPosition	9.36	// チェック式トグル「Translucent Pages Panel」(★Windows 専用=フローティング中の**本体のページパネル**を半透明に。2026-08-06 追加。★同日ユーザー指定で Translucent Panel より上へ)
 // (9.37 は「Translucent Toolbox」の跡地。2026-08-07 に機能ごと撤去したので空き番。)
 #define kKESCMTranslucentPanelMenuItemPosition	9.38	// チェック式トグル「Translucent Panel」(表示系トグル群の末尾。★Windows 専用=フローティング中のパネル自身を半透明に。2026-08-06 に Pages 側と上下を入れ替え)
+#define kKESCMTranslucentBookDialogMenuItemPosition	9.39	// チェック式トグル「Translucent Book Dialog」(★Windows 専用=ブック比較ダイアログを半透明に。2026-08-13 追加。Translucent 3兄弟の末尾＝9.36 Pages / 9.38 Panel / 9.39 ここ)
 // ── Overset 群 ──
 #define kKESCMOversetSepMenuItemPosition	9.40	// Find Overset 群の上の区切り線(パス末尾 ":-")
 #define kKESCMFindOversetMenuItemPosition	9.42	// チェック式トグル「Find Overset」(アクティブ文書の overset ページに十字)

@@ -48,6 +48,26 @@ bool16	KESCMGetPagesPanelTranslucent();
 void	KESCMSetPagesPanelTranslucent(bool16 on);
 bool16	KESCMApplyPagesPanelTranslucency();
 
+//----------------------------------------------------------------------------------------
+// ブック比較ダイアログ用(2026-08-13 追加。ユーザー要望「ダイアログも半透明に出来る様に」)。
+//
+//  ★★上の2つと違うのは**窓の見つけ方だけ**。あちらは WidgetID で本体のパネルマネージャに聞けるが、
+//    ダイアログはパネルではないので同じ道が無い ---- 代わりに**ダイアログ側が窓を教える**
+//    (KESCMBookDialog.cpp が窓を用意した直後に KESCMSetBookDialogWindow を呼ぶ)。
+//  ★もう1つの違い: ダイアログは**それ自身がトップレベル窓**なので、パネルのような
+//    「今どのドックに載っているか」の解決が要らない ＝ ドッキング中は効かない、という制限も無い。
+//  ⚠**窓は開いている間しか無い**。トグルだけ ON にして閉じている間は何も起きず、次に開いたときに
+//    効く(適用は KESCMBookDialog.cpp が開くたびに呼ぶ)。
+//----------------------------------------------------------------------------------------
+bool16	KESCMGetBookDialogTranslucent();
+void	KESCMSetBookDialogTranslucent(bool16 on);
+bool16	KESCMApplyBookDialogTranslucency();
+
+// ブック比較ダイアログの窓を教える(閉じるときは nil)。
+// ★HWND をこのヘッダーに出さないために void* で受ける ---- KESCMPanelAlpha.h は BaseType.h しか
+//   include しておらず、windows.h を持ち込むと他の .cpp 全部に波及する。実体側でキャストする。
+void	KESCMSetBookDialogWindow(void* sysWindow);
+
 // (ツールボックス用の3つは 2026-08-07 に追加し、同日ユーザー判断で撤去した。対象を1つ足すだけで
 //  動いたが、本体 UI の見た目を変える機能なので KESCM には載せない、という判断。実測値の記録は
 //  memory/translucent-toolbox-idea.md に残してある。)

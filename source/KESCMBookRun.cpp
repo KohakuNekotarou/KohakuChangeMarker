@@ -55,7 +55,14 @@ namespace
     variable string in an alert - the widget-side switch does not reach it. */
 PMString ShownPath(const PMString& path)
 {
-	PMString shown(path);
+	// ***** SHORTENED THE SAME WAY THE DIALOG SHORTENS IT. ***** (User, 2026-08-13: "the target and
+	// source in the alert - could you make the front an ellipsis like the others".) The function
+	// lives in KESCMBookPair because BOTH places that show a path call it; an alert cannot use the
+	// widget-side kEllipsizeBeginning that the dialog's lines carry, and two hand-written versions
+	// of "how much of a path to show" would drift (memory one-question-one-place).
+	// ⚠ Elided BEFORE the ampersand doubling below, so the length being judged is the path the user
+	//   has, not one inflated by display escapes.
+	PMString shown(KESCMElidePathFront(path));
 	shown.SetTranslatable(kFalse);
 
 	if (Utils<IMenuUtils>().Exists())
@@ -91,7 +98,17 @@ void KESCMRunBookComparison()
 
 	// ⚠kLineSeparatorString rather than "\n": it is "\r" on the Mac (CoreResTypes.h:150/159), and
 	//   CAlert's own documentation names this define as the way to break a line (CAlert.h:119-121).
-	PMString message = KESCMLoc::Text(kKESCMBookCompareConfirmKey, KESCMJa::kBookCompareConfirm);
+	// ***** ENGLISH IN EVERY UI LANGUAGE. ***** (User, 2026-08-13: "the alert part that says
+	// 'ブックを比較します。' - English is fine".) It went through KESCMLoc::Text until then, which is
+	// the plug-in's "say this one in Japanese on a Japanese UI" helper; taking it out of there puts
+	// this alert back with the rest of KESCM's UI, which has been English-only in every locale since
+	// 2026-08-06. What is left in KESCMLoc is the case it was built for: text that ASKS THE USER TO
+	// DECIDE something with consequences (How to Use, the Hide Unchanged confirmation).
+	// ⚠ The paired warning for "no two books to compare" (kKESCMBookNoPairKey, further up) is STILL
+	//   Japanese on a Japanese UI - it was not part of the request. Two alerts of one feature now
+	//   answer in different languages.
+	PMString message(kKESCMBookCompareConfirmKey);
+	message.Translate();				// from the enUS table, like every other English string here
 	message.Append(kLineSeparatorString);
 	message.Append(kLineSeparatorString);
 	message.Append("target: ");

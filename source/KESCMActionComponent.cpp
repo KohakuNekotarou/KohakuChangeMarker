@@ -333,6 +333,35 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 		//  ＝本体のツールボックスの見た目を変える機能は KESCM には載せない。ActionID +38 は
 		//  欠番のまま再利用しない(.indk はショートカットを数値の ActionID で保存するため)。)
 
+		// 「Translucent Book Dialog」トグル: **自分のブック比較ダイアログ**を半透明にするか
+		// (2026-08-13 ユーザー要望「ダイアログも半透明に出来る様に」)。上2つと同じ実体
+		// (KESCMPanelAlpha.cpp)で対象だけが違う。
+		// ★上2つと違う点が2つある:
+		//   ①ダイアログは**常にフローティング**なので「押しても効かない状態」が無い ⇒ 文言を
+		//     「ドッキング中なので効かない」で分ける必要がそもそも無い。分かれるのは「今そのダイアログが
+		//     開いているか」だけ。
+		//   ②**OFF に戻したときの貼り直しが要らない**。上2つが KESCMApplyAllPanelTranslucency を
+		//     呼ぶのは、パネル同士が同じフローティンググループに入ると 255 の復元が相手を巻き込むから
+		//     (2026-08-07 の実害)。ダイアログは自分だけの窓なので、その共有が起こらない。
+		case kKESCMPopupTranslucentBookDialogActionID:
+		{
+			const bool16 on = !KESCMGetBookDialogTranslucent();
+			KESCMSetBookDialogTranslucent(on);
+
+			const bool16 applied = KESCMApplyBookDialogTranslucency();
+
+			PMString msg;
+			if (!on)
+				msg = "Translucent book dialog: off.";
+			else if (applied)
+				msg = "Translucent book dialog: on.";
+			else
+				msg = "Translucent book dialog: on - takes effect the next time the dialog is open.";
+			msg.SetTranslatable(kFalse);
+			KESCMSetStatus(msg);
+			break;
+		}
+
 		// 「Hold to Hide Marks」トグル: 枠表示の極性反転(フラグ反転のみ)。ON=画面に枠を常時表示し、
 		// ツール左hold中だけ隠す(押下/解放は KESCMPeek.cpp のトラッカー(KESCMTrackerRevealBegin/End)が sMarksTempHidden を上下)。
 		// OFF=従来(既定非表示・押下中だけ表示)。画面のみ=印刷は Print comparison marks が別管理。
@@ -592,6 +621,15 @@ void KESCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionSta
 			//   (「今フローティングか」で灰色にすると、ドックに入れた瞬間に設定を戻せなくなる。)
 			int16 actionState = kEnabledAction;
 			if (KESCMGetPagesPanelTranslucent())
+				actionState |= kSelectedAction;	// ON ならチェックマーク
+			listToUpdate->SetNthActionState(i, actionState);
+		}
+		else if (action == kKESCMPopupTranslucentBookDialogActionID)
+		{
+			// ★上2つと同じ方針: ダイアログが今開いていなくても選べる。閉じている間に決めた設定は
+			//   次に開いたときに効く(KESCMBookDialog.cpp が開くたびに貼る)。
+			int16 actionState = kEnabledAction;
+			if (KESCMGetBookDialogTranslucent())
 				actionState |= kSelectedAction;	// ON ならチェックマーク
 			listToUpdate->SetNthActionState(i, actionState);
 		}

@@ -696,6 +696,20 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKESCMTranslucentPagesPanelMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
+		// "Translucent Book Dialog" - the same toggle again, pointed at THIS plug-in's book comparison
+		// dialog (user request, 2026-08-13: "make it so the dialog can be translucent too").
+		// ★What is shared: the alpha value, the "opaque again while the pointer is over it" behaviour,
+		//   the delayed re-apply and the Win32 hook. All of it, unchanged.
+		// ★What is different, and it is only this: WHERE THE WINDOW COMES FROM. The two toggles above
+		//   ask the panel manager by WidgetID; a dialog is not a panel and is not in there, so the
+		//   dialog hands its window over as it opens (KESCMBookDialog.cpp -> KESCMSetBookDialogWindow).
+		// ★A consequence worth knowing: a dialog is always floating, so unlike the two above this one
+		//   has no "you can tick it but it does nothing while docked" state.
+		kKESCMPopupTranslucentBookDialogActionID,
+		kKESCMPopupMenuPath,
+		kKESCMTranslucentBookDialogMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
 		// ("Translucent Toolbox" was added on 2026-08-07 and taken out again the same day: a KESCM
 		// toggle is not the place to change how InDesign's OWN toolbox looks. It needed only one more
 		// target to work, which is itself evidence that this mechanism does not care WHICH palette it
@@ -1032,6 +1046,15 @@ resource ActionDef (kSDKDefActionResourceID)
 		kKESCMActionComponentBoss,
 		kKESCMPopupTranslucentPagesActionID,
 		kKESCMTranslucentPagesPanelMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates supplies the check mark (kSelectedAction)
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		kKESCMActionComponentBoss,
+		kKESCMPopupTranslucentBookDialogActionID,
+		kKESCMTranslucentBookDialogMenuKey,
 		kOtherActionArea,
 		kNormalAction,
 		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates supplies the check mark (kSelectedAction)
@@ -1558,7 +1581,11 @@ resource KESCMBookRowWidget(kKESCMBookRowRsrcID + index_enUS)
 	__FILE__, __LINE__,
 	kKESCMBookRowWidgetID, kPMRsrcID_None,	// WidgetId, RsrcId
 	kBindLeft | kBindRight,				// Frame binding: follow the list's width
-	Frame(0, 0, 500, kKESCMBookRowHeight),	// Frame (left, top, right, bottom)
+	// 364 to match the list it sits in (2026-08-13). ★The binding above means this is only a starting
+	// size - the row is stretched to the list's real width - but a template whose numbers disagree
+	// with the list's is a trap for whoever reads the cell frames below and works out the insets
+	// from them.
+	Frame(0, 0, 364, kKESCMBookRowHeight),	// Frame (left, top, right, bottom)
 	kTrue, kTrue,						// Visible, Enabled
 	"",									// Panel name
 	{
@@ -1568,12 +1595,17 @@ resource KESCMBookRowWidget(kKESCMBookRowRsrcID + index_enUS)
 		// whose rows all read "ch01_fi..." would be unreadable.
 		// ★Convert ampersands = kFalse: a chapter called "A&B.indd" would otherwise display as
 		//   "AB.indd" (memory ampersand-eaten-in-ui-strings).
+		// ***** 11px IN FROM THE ROW'S EDGE, NOT 8. ***** (User, 2026-08-13: "the list part, another
+		// 3px wider still".) ★This works only because ApplyIndentToWidget is overridden empty in
+		// KESCMBookTreeWidgetMgr.cpp:129 - a cell bound on BOTH sides has its .fr left edge thrown
+		// away by the framework's version, which is what memory treeview-indent-overwrites-cell-frames
+		// is about. Change that override and this number silently becomes 0.
 		KESCMBookRowCellWidget
 		(
 			kKESCMBookRowNameWidgetID,		// WidgetId
 			kPMRsrcID_None,					// RsrcId
 			kBindLeft | kBindRight,			// Frame binding: this is the cell that gives way
-			Frame(8, 1, 380, kKESCMBookRowHeight - 2),	// Frame
+			Frame(11, 1, 241, kKESCMBookRowHeight - 2),	// Frame
 			kTrue, kTrue,					// Visible, Enabled
 			kAlignLeft,						// Alignment
 			kEllipsizeMiddle, kFalse,		// Ellipsize style, Convert ampersands
@@ -1591,7 +1623,12 @@ resource KESCMBookRowWidget(kKESCMBookRowRsrcID + index_enUS)
 			kKESCMBookRowStateWidgetID,		// WidgetId
 			kPMRsrcID_None,					// RsrcId
 			kBindRight,						// Frame binding: stay at the row's right edge
-			Frame(380, 1, 492, kKESCMBookRowHeight - 2),	// Frame (112px)
+			// ★Moved as a WHOLE rather than narrowed, every time the row changed width: 380→377 for
+			//   the wider inset, then 377→347→197→241 as the dialog was resized. The right inset
+			//   stays 11px, matching the left (364 - 11 = 353), and the column KEEPS ITS 112px
+			//   throughout. Narrowing it instead would have clipped "ChapterDeleted" without a sign -
+			//   see the note above.
+			Frame(241, 1, 353, kKESCMBookRowHeight - 2),	// Frame (112px)
 			kTrue, kTrue,					// Visible, Enabled
 			kAlignRight,					// Alignment
 			kDontEllipsize, kFalse,			// Ellipsize style, Convert ampersands
@@ -2138,7 +2175,26 @@ resource KESCMBookDialogWidget (kKESCMBookDialogRsrcID + index_enUS)
 	kKESCMBookDialogWidgetID,		// WidgetID
 	kPMRsrcID_None,					// RsrcID
 	kBindNone,						// Binding
-	Frame(0, 0, 540, 420),			// Frame (l,t,r,b) - EVE resizes it to fit the children
+	// ⚠★★THIS FRAME DOES NOT SET THE DIALOG'S SIZE - NEITHER NUMBER. Measured 2026-08-13 over eight
+	//   builds, and the old comment here ("EVE resizes it to fit the children") had it backwards:
+	//
+	//       window width = max(widest CHILD frame, widest CHILD's own text) + 2 x margin + 16
+	//
+	//   This frame is not in that formula. It was set to 540, 510, 340 and 390 while the window went
+	//   540→506→356→356, following the CHILDREN every time. Each measurement:
+	//       child 500, 74-char path, margin  5  → 600      child 500, same path, margin 10 → 610
+	//       child 470, same path,    margin 10 → 610      child 470, path shortened      → 506
+	//       child 320, path shortened, margin 10 → 356    (this frame 340 and 390 both → 356)
+	//   ⇒ To change the width, change the CHILD frames below (they are all kept equal), or shorten
+	//     the text they are given. Changing this line does nothing.
+	//
+	// ★WHY THE PATHS ARE SHORTENED IN C++. While the Target/Source lines held a full 74-character
+	//   path, the second term of that formula won and the dialog was 610px wide - the child frames,
+	//   this frame, kEVEAlignFill and the window title were all tried against it and all measured at
+	//   610. KESCMElidePathFront is what took the width back.
+	// ★HEIGHT does follow the children (393 measured against the 420 written here), which is
+	//   presumably how the old comment came to be believed.
+	Frame(0, 0, 390, 420),			// Frame (l,t,r,b) - ★NOT the dialog's size; see above
 	kTrue, kTrue,					// Visible, Enabled
 	kKESCMBookDialogTitleKey,		// Dialog name
 
@@ -2156,7 +2212,18 @@ resource KESCMBookDialogWidget (kKESCMBookDialogRsrcID + index_enUS)
 			kKESCMBookTargetTextWidgetID,	// WidgetId
 			kSysStaticTextPMRsrcId,			// RsrcId
 			kBindNone,						// Frame binding
-			Frame(0, 0, 500, 20)			// Frame (l,t,r,b)
+			// ***** 364 HERE IS WHAT MAKES THE WINDOW 400px WIDE. ***** This number, not the root
+			// frame, is the dialog's width: 364 + 2x10 margin + 16 = 400 (formula and the eight
+			// measurements behind it are at the root frame above).
+			// ★400 is what the TITLE needs. At 356 it came out as "Kohaku Change Marker - Compare
+			//   ..." - 32 of its 36 characters - and the user asked for a size where it fits
+			//   properly. The title is invisible to EVE, so it can only be served from here.
+			//   ⚠ Re-measure if the title string changes.
+			// ★The hint line ("Right-click a changed chapter...", ~318px) is the widest CONTENT, so
+			//   anything from ~318 up is safe for the content itself; the extra is for the title.
+			// ⚠ EVERY CHILD BELOW CARRIES THE SAME NUMBER, and they must stay equal - the widest one
+			//   wins silently, so a stale 500 in any of them would set the width on its own.
+			Frame(0, 0, 364, 20)			// Frame (l,t,r,b)
 			kTrue, kTrue, kAlignLeft,		// Visible, Enabled, Alignment
 			// ★★Ellipsized at the BEGINNING (2026-08-12, was kEllipsizeMiddle). These lines carry a
 			//   FULL PATH now, and what tells two versions of one job apart is the tail - the last
@@ -2167,7 +2234,30 @@ resource KESCMBookDialogWidget (kKESCMBookDialogRsrcID + index_enUS)
 			"",								// Text (the controller fills it)
 			kInvalidWidgetID				// Associated control (none)
 
-			kEVEAlignLeft | kEVERegularSpaceAfter,
+			// ***** THE GAP TO Source IS THE PANEL'S GAP. ***** (User, 2026-08-13: "the line spacing
+			// between target and source is wide - make it about the same as the panel's target and
+			// source".) The panel's two labels were measured with app.ktWidgetMap the same day:
+			//   Target: y 196→212, Source: y 214→230  ⇒ 2px between them
+			// kEVEVerySmallSpaceAfter is Spacing 2 (EveInfo.fh:48) - that number exactly. It was
+			// kEVERegularSpaceAfter, which is 5 (:44).
+			// ⚠ The remaining difference is the LINE HEIGHT, not the gap: these two widgets are 20px
+			//   tall where the panel's are 16, so the pitch stays 4px looser than the panel's. Left
+			//   alone deliberately - a Japanese UI needs 18px of line box (memory
+			//   palette-font-line-height-by-ui-language), and trimming the frame to match the panel
+			//   would risk clipping the text to win back pixels nobody asked for.
+			//
+			// ***** Fill, NOT Left - AND THAT IS WHAT FIXES THE DIALOG'S WIDTH. ***** (2026-08-13)
+			// ⚠★kEVEAlignLeft let EVE widen this widget to whatever its TEXT needed, and the text here
+			//   is a full path. The dialog was therefore as wide as the longest path it had been asked
+			//   to show - measured at 610px for a 74-character path, and UNMOVED by changing the
+			//   frames (500→470), the root frame (540→510) or the title. All three were tried.
+			//   Two things follow from it, and the second is worse than the first:
+			//     - the width was never ours to set;
+			//     - kEllipsizeBeginning NEVER RAN. A widget grown to fit its text has nothing to
+			//       elide, so the whole "keep the tail, drop the front" design above was dead code.
+			//   kEVEAlignFill makes the widget take the PARENT's width instead, which is what the
+			//   ellipsis needs to have something to do.
+			kEVEAlignFill | kEVEVerySmallSpaceAfter,
 		),
 
 		EVEStaticTextWidget
@@ -2175,13 +2265,13 @@ resource KESCMBookDialogWidget (kKESCMBookDialogRsrcID + index_enUS)
 			kKESCMBookSourceTextWidgetID,	// WidgetId
 			kSysStaticTextPMRsrcId,			// RsrcId
 			kBindNone,						// Frame binding
-			Frame(0, 0, 500, 20)			// Frame (l,t,r,b)
+			Frame(0, 0, 364, 20)			// Frame (l,t,r,b) - same width as Target above
 			kTrue, kTrue, kAlignLeft,		// Visible, Enabled, Alignment
 			kEllipsizeBeginning, kFalse,	// Ellipsize style, Convert ampersands (as Target above)
 			"",								// Text (the controller fills it)
 			kInvalidWidgetID				// Associated control (none)
 
-			kEVEAlignLeft | kEVELargeSpaceAfter,
+			kEVEAlignFill | kEVELargeSpaceAfter,	// Fill, for the reason spelled out on Target above
 		),
 
 		// (The Compare button stood here until 2026-08-12. The comparison is now confirmed in an
@@ -2202,13 +2292,45 @@ resource KESCMBookDialogWidget (kKESCMBookDialogRsrcID + index_enUS)
 			kKESCMBookStatusTextWidgetID,	// WidgetId
 			kSysStaticTextPMRsrcId,			// RsrcId
 			kBindNone,						// Frame binding
-			Frame(0, 0, 500, 20)			// Frame (l,t,r,b)
+			Frame(0, 0, 364, 20)			// Frame (l,t,r,b) - same width as the lines above
 			kTrue, kTrue, kAlignLeft,		// Visible, Enabled, Alignment
 			kEllipsizeMiddle, kFalse,		// Ellipsize style, Convert ampersands
 			kKESCMBookReadyKey,				// Text (replaced after each comparison)
 			kInvalidWidgetID				// Associated control (none)
 
-			kEVEAlignLeft | kEVELargeSpaceAfter,
+			// Close up to the hint below it: the two lines are ONE message (see the next widget).
+			// Fill for the same reason as the two path lines: a summary is short, but a widget that
+			// sizes to its own text is a width nobody controls.
+			kEVEAlignFill | kEVEVerySmallSpaceAfter,
+		),
+
+		// ----- the status line's second line: how to act on a row -----
+		// ***** A SECOND LINE, NOT A LONGER FIRST ONE. ***** (User, 2026-08-13: "make the dialog's
+		// message part two lines, and on the second line put something like - you can start from a
+		// right click on a row - as a message, in English".) The first line reports THIS RUN and is
+		// rewritten after every comparison; this one is a standing instruction and never changes, so
+		// it is filled from the resource and no C++ ever touches it. Appending it to the summary
+		// instead would have put a sentence that never varies through the summary's middle-ellipsis,
+		// where a long report would eat it.
+		//
+		// ★"a CHANGED chapter", not "a row": the item is only enabled where the question "where did
+		//   it change?" has an answer (KESCMBookOpen.cpp's KESCMBookRowCanStart), and InDesign does
+		//   not show a popup whose every item is disabled - so on the other rows a right click
+		//   produces nothing at all. Naming the row type is what keeps that from reading as a fault.
+		// ★Ellipsized at the END, unlike the two path lines above: this is a sentence, and a sentence
+		//   is read from the front.
+		EVEStaticTextWidget
+		(
+			kKESCMBookHintTextWidgetID,		// WidgetId
+			kSysStaticTextPMRsrcId,			// RsrcId
+			kBindNone,						// Frame binding
+			Frame(0, 0, 364, 20)			// Frame (l,t,r,b) - same width as the lines above
+			kTrue, kTrue, kAlignLeft,		// Visible, Enabled, Alignment
+			kEllipsizeEnd, kFalse,			// Ellipsize style, Convert ampersands
+			kKESCMBookHintKey,				// Text (fixed - nothing rewrites this)
+			kInvalidWidgetID				// Associated control (none)
+
+			kEVEAlignFill | kEVELargeSpaceAfter,	// Fill, as the lines above
 		),
 
 		// ----- the chapter list -----
@@ -2222,7 +2344,7 @@ resource KESCMBookDialogWidget (kKESCMBookDialogRsrcID + index_enUS)
 		(
 			kKESCMBookTreeWidgetID, kPMRsrcID_None,	// WidgetId, RsrcId
 			kBindNone,						// Frame binding (EVE places it)
-			Frame(0, 0, 500, kKESCMBookRowHeight * 10)	// Frame
+			Frame(0, 0, 364, kKESCMBookRowHeight * 10)	// Frame - same width as the lines above
 			kTrue, kTrue,					// Visible, Enabled
 			kTrue,							// EraseBeforeDraw
 			kInterfacePaletteFill,			// InterfaceColor
@@ -2253,7 +2375,26 @@ resource KESCMBookDialogWidget (kKESCMBookDialogRsrcID + index_enUS)
 		//    box is the way out, and that path is measured (2026-08-11, book comparison stage 2).)
 	},
 
-	kEVEArrangeChildrenInColumn | kEVELargeMargin,
+	// ***** THE MARGIN WAS SET FROM MEASUREMENT, THEN FROM THE EYE. ***** (User, 2026-08-13: the gap
+	// between the edge and the text "looks different from the application's own panels - match them",
+	// then, on seeing the result, "a little narrow - about 2px wider".)
+	//
+	// kEVELargeMargin [15,15,15,15] (EveInfo.fh:92) stood here first. Measured with app.ktWidgetMap
+	// on 2026-08-13, InDesign's own panels put their text 5px from the edge:
+	//   Links panel   root x1=697 → #LinkInfoNameStr x1=702, #SelectedLinkInfoSectionName x1=702  = +5
+	//   Pages panel   root x1=383 → its list runs edge to edge                                    = +0
+	// kEVESmallMargin [5,5,5,5] matched that exactly and was tried - and read as slightly tight.
+	//
+	// ⚠★EVE HAS NO 7. Its margins are a fixed ladder, not a number: 0 / 1 / 5 / 10 / 15 / 20
+	//   (EveInfo.fh:89-93 - the field is a 4-bit index, so intermediate values cannot be written at
+	//   all). The choice was therefore 5 or 10 (7px was reachable only by nesting wrapper panels to
+	//   stack their margins, which is two extra widgets to move the text 2px). ★The user chose 10.
+	// ⚠ The dialog is 10px narrower and shorter each way than it was at 15. EVE sizes the window from
+	//   the children (all 500 wide) plus the margin; the fixed Frame above is overridden.
+	// ★For the record, KESCM's own panel sits at +8 (root x1=119 → labels at x1=127) - but that is
+	//   drawn from absolute coordinates in its .fr, not by EVE, which is why it can hold a value the
+	//   ladder does not have.
+	kEVEArrangeChildrenInColumn | kEVERegularMargin,
 };
 
 #endif // __ODFRC__

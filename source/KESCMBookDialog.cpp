@@ -32,8 +32,10 @@
 
 // Project includes:
 #include "KESCMBookDialog.h"
+#include "KESCMBookPair.h"		// KESCMElidePathFront - keeps a long path from setting the width
 #include "KESCMBookTree.h"		// KESCMBookTreeRebuild - the list, redrawn when the dialog opens
 #include "KESCMID.h"
+#include "KESCMPanelAlpha.h"	// KESCMSetBookDialogWindow / KESCMApplyBookDialogTranslucency
 
 // *windows.h goes AFTER the SDK headers, so its macros cannot collide with SDK names.
 //  (The same order KESCMPanelAlpha.cpp uses.)
@@ -82,12 +84,21 @@ void KESCMBookDialogPaintResult(IPanelControlData* panelData)
 		return;
 
 	// ★The labels stay English (the plug-in's UI language rule); only the paths vary.
+	//
+	// ***** THE PATH IS SHORTENED BEFORE IT REACHES THE WIDGET, AND THAT IS WHAT FIXES THE DIALOG'S
+	// WIDTH. ***** (2026-08-13) EVE grows a static text widget to fit its own text and pushes the
+	// parent out with it, so a long path made a wide dialog - 610px for a 74-character path, and
+	// unmoved by the child frames, the root frame, kEVEAlignFill or the window title (all measured
+	// that day). The widget's own kEllipsizeBeginning could never help: a widget grown to fit its
+	// text has nothing left to elide. Handing it a string that already fits is what puts the width
+	// back under the .fr's control - and it is the same shortening the confirmation alert shows,
+	// from the same function, so the two never disagree about one file.
 	PMString targetLine("Target: ");
-	targetLine.Append(gTargetPath);
+	targetLine.Append(KESCMElidePathFront(gTargetPath));
 	targetLine.SetTranslatable(kFalse);
 
 	PMString sourceLine("Source: ");
-	sourceLine.Append(gSourcePath);
+	sourceLine.Append(KESCMElidePathFront(gSourcePath));
 	sourceLine.SetTranslatable(kFalse);
 
 	SetLine(panelData, kKESCMBookTargetTextWidgetID, targetLine);
@@ -109,7 +120,27 @@ void KESCMBookDialogSetResult(const PMString& targetPath, const PMString& source
 	gTargetPath = targetPath;
 	gSourcePath = sourcePath;
 	gSummary = summary;
-	gDialogRows = rows;
+
+	// ***** UNCHANGED CHAPTERS ARE NOT LISTED. ***** (User, 2026-08-13: "in the comparison dialog's
+	// row part, do not show the NoChange ones".) The list exists to answer "which chapters changed?",
+	// and a run over a long book is mostly rows that say nothing happened.
+	//
+	// ★THE COUNT STILL COMES FROM ALL OF THEM. gSummary above is built by the comparison over the
+	//   full set ("3 chapters: 1 changed, 2 unchanged"), so what is filtered out here is still
+	//   accounted for one line above the list. That is what keeps an empty list readable: it means
+	//   "nothing changed", and the summary says so in numbers - never "nothing could be opened"
+	//   (the reason the status line states the chapter count at all - see KESCM.fr).
+	// ★EVERY OTHER STATE STAYS, including NotCompared and Failed: they are chapters with no answer
+	//   yet, which is the opposite of "no change" and must not disappear with it
+	//   (KESCMBookResult.h:42-49 is the same distinction, written out).
+	// ★app.kcmBookResult IS NOT AFFECTED - it is built from gBookResultText in KESCMBookCompare.cpp
+	//   over the full set, so scripts and tests still see every chapter.
+	gDialogRows.clear();
+	for (size_t i = 0; i < rows.size(); ++i)
+	{
+		if (rows[i].fState != kKESCMChapterNoChange)
+			gDialogRows.push_back(rows[i]);
+	}
 }
 
 const std::vector<KESCMChapterResult>& KESCMBookDialogRows()
@@ -238,6 +269,17 @@ void KESCMPrepareBookDialogWindow(IDialog* dialog)
 	//   (both measured the same day).
 	if (::IsIconic(hwnd))
 		::ShowWindow(hwnd, SW_RESTORE);
+
+	// ***** TELL THE TRANSLUCENCY CODE WHERE THIS WINDOW IS, THEN LET IT PAINT. ***** (User,
+	// 2026-08-13: "make it so the dialog can be translucent too".) The two panel toggles find their
+	// window by asking the panel manager for a WidgetID; a dialog is not a panel and is not in there,
+	// so this is the only place that knows the handle.
+	// ★BOTH CALLS, AND IN THIS ORDER, ON EVERY OPEN. Registering is not applying: the toggle may have
+	//   been switched while the dialog was closed, and a cached dialog (kCacheDialog) comes back with
+	//   whatever alpha it had last time. Applying every time is what makes those two agree.
+	// ★Nothing is needed on close - the apply path drops the handle by itself once IsWindow fails.
+	KESCMSetBookDialogWindow(hwnd);
+	KESCMApplyBookDialogTranslucency();
 #endif
 }
 

@@ -54,9 +54,16 @@ void KESCMBookDialogSetResult(const PMString& targetPath, const PMString& source
 /** What the chapter list is showing right now. The tree's hierarchy adapter reads this and
     nothing else.
 
-    The comparison's full text is kept separately (KESCMGetBookResultText). These are the same facts
-    in a different shape: a list needs rows, and re-parsing a report back into rows would be two
-    answers to one question. */
+    ⚠★THIS IS NOT THE WHOLE COMPARISON. Since 2026-08-13 the chapters that came back NoChange are
+    left out of it at the user's request, so this holds the chapters WORTH LOOKING AT rather than all
+    of them. Anything that needs every chapter must go to KESCMGetBookResultText (which app.kcmBookResult
+    returns) - that one is still built over the full set.
+    ★Row indices therefore index THIS list, not the comparison's. The double click and the row's
+      context menu both go through it (KESCMBookOpen.cpp's RowAt), so they stay consistent by
+      construction - but a new caller holding an index from the comparison would be pointing at the
+      wrong chapter.
+    ⚠ The count in the summary line is still the full one, which is what makes an empty list mean
+      "nothing changed" rather than "nothing ran". */
 const std::vector<KESCMChapterResult>& KESCMBookDialogRows();
 
 #endif // __KESCMBookDialog_h__

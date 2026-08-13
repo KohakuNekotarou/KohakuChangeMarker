@@ -309,9 +309,21 @@ void KESCMBookOpenChapterForRow(int32 rowIndex)
 	if (row == nil)
 		return;
 
-	const PMString name        = row->fName;
-	const bool16   hasTarget   = FileIsNamed(row->fTargetFile);
-	const bool16   hasSource   = FileIsNamed(row->fSourceFile);
+	// ***** COPY THE ROW OFF BEFORE OPENING ANYTHING. ***** RowAt hands back a pointer INTO
+	// gDialogRows, and that vector is REPLACED WHOLE when a comparison finishes
+	// (KESCMBookDialog.cpp:112, `gDialogRows = rows;`) - which frees every element the old one held.
+	// Opening a document is not a moment this file controls: it is long, and it is the caller's own
+	// menu command, so the safe assumption is that anything can have happened by the time it returns.
+	// fName was already taken by value here (why, the old code does not say); the two IDFiles were not,
+	// and they were being read AFTER the first open. Three values, copied once - the cheapest possible
+	// version of "do not hold a pointer across a call that can invalidate it".
+	const PMString name       = row->fName;
+	const IDFile   targetFile = row->fTargetFile;
+	const IDFile   sourceFile = row->fSourceFile;
+	// ★row is not touched again below this line.
+
+	const bool16   hasTarget  = FileIsNamed(targetFile);
+	const bool16   hasSource  = FileIsNamed(sourceFile);
 
 	if (!hasTarget && !hasSource)
 	{
@@ -335,12 +347,12 @@ void KESCMBookOpenChapterForRow(int32 rowIndex)
 
 	if (hasSource)
 	{
-		if (OpenChapterWindowed(row->fSourceFile, docRef, wasOpen)) { if (wasOpen) ++already; else ++opened; }
+		if (OpenChapterWindowed(sourceFile, docRef, wasOpen)) { if (wasOpen) ++already; else ++opened; }
 		else ++failed;
 	}
 	if (hasTarget)
 	{
-		if (OpenChapterWindowed(row->fTargetFile, docRef, wasOpen)) { if (wasOpen) ++already; else ++opened; }
+		if (OpenChapterWindowed(targetFile, docRef, wasOpen)) { if (wasOpen) ++already; else ++opened; }
 		else ++failed;
 	}
 
@@ -387,18 +399,24 @@ void KESCMBookStartComparisonForRow(int32 rowIndex)
 	if (row == nil)
 		return;
 
-	const PMString name = row->fName;
+	// Copied off the row before the first open, for the reason spelled out in
+	// KESCMBookOpenChapterForRow: gDialogRows is replaced whole when a comparison finishes, and this
+	// function reads the SECOND file after the first document has already been opened.
+	const PMString name       = row->fName;
+	const IDFile   targetFile = row->fTargetFile;
+	const IDFile   sourceFile = row->fSourceFile;
+	// ★row is not touched again below this line.
 
 	UIDRef targetRef, sourceRef;
 	bool16 targetWasOpen = kFalse, sourceWasOpen = kFalse;
-	if (!OpenChapterWindowed(row->fTargetFile, targetRef, targetWasOpen))
+	if (!OpenChapterWindowed(targetFile, targetRef, targetWasOpen))
 	{
 		PMString msg("could not open the target side of ");
 		msg.Append(name);
 		Say(msg);
 		return;
 	}
-	if (!OpenChapterWindowed(row->fSourceFile, sourceRef, sourceWasOpen))
+	if (!OpenChapterWindowed(sourceFile, sourceRef, sourceWasOpen))
 	{
 		// ⚠ The target side stays open. It was opened at the user's request and holds no state of
 		// this run; closing it again would undo something they asked for to tidy up after something

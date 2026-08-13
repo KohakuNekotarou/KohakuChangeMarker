@@ -173,6 +173,14 @@ void CollectChapters(IBook* book, std::vector<ChapterEntry>& out)
 	}
 }
 
+/** The last separator in a path, whichever kind it is. -1 when there is none. */
+CharCounter LastSeparator(const PMString& s)
+{
+	const CharCounter back = s.LastIndexOfWChar(UTF32TextChar('\\'));
+	const CharCounter fwd  = s.LastIndexOfWChar(UTF32TextChar('/'));
+	return (back > fwd) ? back : fwd;
+}
+
 }	// anonymous namespace
 
 bool16 KESCMGetPanelBookFile(IDFile& outFile)
@@ -305,6 +313,33 @@ PMString KESCMBookDisplayPath(IBook* book)
 
 	path.SetTranslatable(kFalse);
 	return path;
+}
+
+PMString KESCMElidePathFront(const PMString& path)
+{
+	// Long enough that a plain "C:\Users\me\Jobs\New\a.indb" is still shown whole, short enough that
+	// the dialog's width comes from its .fr rather than from this string. See the header.
+	const CharCounter kMaxShownChars = 56;
+	if (path.CharCount() <= kMaxShownChars)
+		return path;
+
+	// The last separator, and then the one before it: between them lies the parent folder, and the
+	// parent folder plus the file name is what tells two versions of one job apart.
+	PMString upToParent(path);
+	const CharCounter lastSep = LastSeparator(upToParent);
+	if (lastSep < 0)
+		return path;					// no folders at all - nothing to drop
+
+	upToParent.Truncate(upToParent.CharCount() - lastSep);	// keep [0, lastSep)
+	const CharCounter parentSep = LastSeparator(upToParent);
+	if (parentSep < 0)
+		return path;					// only one folder deep - dropping it would say less, not shorter
+
+	PMString shown(path);
+	shown.Remove(0, parentSep);			// leaves "\<parent>\<file>"
+	shown.Insert(PMString("..."), 0);
+	shown.SetTranslatable(kFalse);
+	return shown;
 }
 
 void KESCMBuildChapterPairing(IBook* target, IBook* source, std::vector<KESCMChapterResult>& out)
