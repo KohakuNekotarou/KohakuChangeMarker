@@ -53,7 +53,11 @@ void	KESCMNotify(ClassID theChange);
 //                cursor back to the first change every time a page is registered, which is a
 //                behaviour change a user would notice.
 //
-// ★Task 12 replaces this with IKESCMMarkData, where the UI ASKS instead of being told.
+// ★2026-08-13 (Task 12) correction: this does NOT get replaced by IKESCMMarkData. Asking works
+// for the CURRENT state, but the thumbnail refresh needs the pages that CHANGED -- the marks a
+// recompare has just thrown away, the page whose flag was just cleared -- and no amount of asking
+// recovers those. What is missing here is a page set travelling alongside the documents, in
+// exactly the way the documents themselves travel. See KESCMPurgeAllPageThumbs.
 void	KESCMNotifyDocs(ClassID theChange, IDataBase* docA, IDataBase* docB, bool16 navReset = kFalse);
 
 // Three-document form. Closing a document can leave THREE survivors that all need their

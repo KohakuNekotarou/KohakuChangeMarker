@@ -371,8 +371,9 @@ static bool16 KESCMRefreshComparisonCore(IDataBase* targetDB, IDataBase* sourceD
 	//   ⚠**navReset は kFalse** ---- 選択ページだけの部分再比較で巡回の基準点を捨てると、1ページ直す
 	//     たびに Prev/Next が先頭へ戻る。文書は変わっていないので基準点は有効なまま。
 	//   ⚠ touchedTargetPages / touchedSourcePages(触れたページだけの絞り込み)は**通知では運べない**ので、
-	//     UI は両文書の全ページを作り直す。Task 12 で IKESCMMarkData が入ったら絞り込みへ戻す
-	//     (理由は KESCMThumbnailRefresh.h の KESCMPurgeAllPageThumbs)。
+	//     UI は両文書の全ページを作り直す。★戻すには通知にページ集合を載せる＝2026-08-13 の Task 12 で
+	//     「IKESCMMarkData では戻せない」ことが判明した(触れたページは現在状態から復元できない)。
+	//     理由の全文は KESCMThumbnailRefresh.h の KESCMPurgeAllPageThumbs。
 	//   ⚠ 旧実装が Source 側を「sSrcMarksOn か srcHadChecks のときだけ」更新していたのは per-UID Purge の
 	//     節約のため。全ページ Purge になったので条件ごと落としてある(常に両方を作り直す＝取りこぼしなし)。
 	KESCMNotifyDocs(kKESCMMarksRebuiltMessage, targetDB, sourceDB, kFalse /*navReset*/);

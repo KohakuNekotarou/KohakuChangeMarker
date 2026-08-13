@@ -818,7 +818,8 @@ void KESCMPageCheckLoadFromFile()
 
 		if (!affected.empty())
 		{
-			// ★2026-08-13(Task 10): 通知へ(上のトグルと同じ。対象ページの絞り込みは Task 12 で戻す)。
+			// ★2026-08-13(Task 10): 通知へ(上のトグルと同じ)。⚠対象ページの絞り込みは、通知に
+			//   ページ集合を載せるまで戻せない(Task 12 で判明。KESCMPurgeAllPageThumbs 参照)。
 			KESCMNotifyDocs(kKESCMPageFlagsChangedMessage, db, nil);
 			// ★レイアウトビュー版の ✓(2026-07-12 追加)も即反映する。フェーズ2の再比較(KESCMDoMarkChangesDoc)
 			// が両文書を Invalidate するのは「復元前の ✓ 状態」に対してなので、ここで復元後の状態で

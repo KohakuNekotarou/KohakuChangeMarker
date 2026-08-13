@@ -99,7 +99,8 @@ void KESCMModelChangeObserver::Update(const ClassID& theChange, ISubject* /*theS
 		}
 
 		// Pages パネルのサムネイル。⚠**全ページ Purge**である理由は KESCMThumbnailRefresh.h の
-		// KESCMPurgeAllPageThumbs を参照(旧マーク集合を通知で運べないため。Task 12 で絞り込みへ戻す)。
+		// KESCMPurgeAllPageThumbs を参照(旧マーク集合を通知で運べないため。戻すには通知に集合を
+		// 載せる＝Task 12 で「IKESCMMarkData では戻せない」と判明した。理由は同ヘッダー)。
 		// ForceRedraw は2文書ぶんを畳んで最後の1回だけ(2026-07-25 のバッチ化を壊さない)。
 		if (docA != nil)                 KESCMPurgeAllPageThumbs(docA, kFalse /*redrawNow*/);
 		if (docB != nil && docB != docA) KESCMPurgeAllPageThumbs(docB, kFalse /*redrawNow*/);
