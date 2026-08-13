@@ -52,22 +52,18 @@
 #include "KESCMDrawEventHandler.h"   // エンジンの共有 static ＋ KESCMQueryPanorama
 #include "KESCMCore.h"               // arm/disarm/状態 宣言
 #include "KESCMModelNotify.h"	// KESCMNotifyStatus - the model tells the UI, it never calls it (Task 9)
-#include "KESCMUIShared.h"	// panel / status line / nav readout / tool button (split from KESCMCore.h on 2026-08-13)
 #include "KESCMViewLookup.h"         // KESCMQueryViewUnderMouse / KESCMQueryMouseContentPoint
                                      // (2026-08-13 に KESCMCore.h から移動。⚠ここも逆流＝Task 4 で確定)
 #include "KESCMPageMap.h"            // KESCMBuildPairing(比較の除外対応表)/KESCMPageMapReadSelection/KESCMPageMapSweepClosedDocs
 #include "KESCMPageCheck.h"          // KESCMPageCheckClearAllDocs / KESCMPageCheckSweepClosedDocs(✓の後片付け)
 #include "KESCMPageNumberMarker.h"   // KESCMInvalidatePageNumberMarkerRects(ノンブル除外矩形キャッシュの破棄)
-#include "KESCMThumbnailRefresh.h"   // クローズ後、生存側の Pages パネルサムネイルから枠を消す
-#include "KESCMScrollMap.h"          // スプレッド再比較後にスクロールバー地図を最新化
-#include "KESCMChangeNav.h"          // KESCMRefreshNavPosition(スプレッド再比較後に Prev/Next 位置を最新化)
-#include "KESCMThumbIdleTask.h"      // クローズ後の再生成を次のidleに遅延(前面切替の過渡を避ける)
 // (★KESCMPanelState.h / KESCMPanelAlpha.h / KESCMTrackerHud.h / KESCMCmykCursor.h は 2026-08-13
 //  Task 8 で外した＝起動/終了の UI の仕事ごと KESCMUIStartup.cpp へ移したため)
+// (★★KESCMThumbnailRefresh.h / KESCMScrollMap.h / KESCMChangeNav.h / KESCMThumbIdleTask.h /
+//  KESCMViewSync.h / KESCMPeekGesture.h は 2026-08-13 Task 10 で外した＝サムネイル・地図・Prev/Next・
+//  遅延再生成・同期キャッシュ・覗き状態は全部 UI の持ち物で、通知(KESCMNotifyDocs)を受けた
+//  KESCMModelChangeObserver がやるようになった)
 #include "KESCMStoryList.h"          // KESCMStoryList::ShutdownCleanup(行が抱える PMString を終了時に手放す)
-#include "KESCMViewSync.h"           // KESCMInvalidateSyncCaches(arm/disarm/クローズで同期キャッシュを捨てる)
-									 // ★KESCMViewSyncShutdown の呼びは Task 8 で KESCMUIStartup.cpp へ移った
-#include "KESCMPeekGesture.h"        // 押下中状態のリセット / クローズ後片付けの保留 / 購読開始(同上)
 #include "KESCMHideUnchanged.h"      // KESCMResetHideUnchanged / 隠している文書の getter(2026-08-13 に移動)
 #include "KESCMPeek.h"
 
@@ -370,19 +366,16 @@ static bool16 KESCMRefreshComparisonCore(IDataBase* targetDB, IDataBase* sourceD
 	if (sourceDB != targetDB)
 		KESCMInvalidateDB(sourceDB);
 
-	// スクロールバー地図 strip も最新化する(この部分再比較は KESCMDoMarkChangesDoc を通らない独立経路)。
-	KESCMScrollMapInvalidateAll();
-
-	// レイアウトビューだけでなく Pages パネルのサムネイルも即時更新する。触れたページだけを per-UID Purge
-	// する KESCMRefreshThumbnailsForPages を使う(触っていない他ページのサムネイルは再生成しない)。変化
-	// あり/なし両方を渡すので、変化なしに戻ったページの古いリングも確実に消える。
-	// (2文書とも Purge のみ→最後に1回だけ ForceRedraw。2026-07-25 監査: 多重実行の削減)
-	KESCMRefreshThumbnailsForPages(targetDB, touchedTargetPages, kFalse /*redrawNow*/);
-	// Source 側サムネイルのリングは Show Marks on Source(sSrcMarksOn)ON のときだけ出る。ただし ✓ は
-	// sSrcMarksOn と無関係にサムネイルへ出るので、prune 前に Source にチェックがあった場合も更新する。
-	if (KESCMDrawEventHandler::sSrcMarksOn || srcHadChecks)
-		KESCMRefreshThumbnailsForPages(sourceDB, touchedSourcePages, kFalse /*redrawNow*/);
-	KESCMForceRedrawPagesPanelNow();
+	// ★★2026-08-13(Task 10): スクロールバー地図・Pages パネルのサムネイル・Prev/Next の位置は
+	//   すべて UI の持ち物なので、この独立再比較路(KESCMDoMarkChangesDoc を通らない)でも通知1本にする。
+	//   ⚠**navReset は kFalse** ---- 選択ページだけの部分再比較で巡回の基準点を捨てると、1ページ直す
+	//     たびに Prev/Next が先頭へ戻る。文書は変わっていないので基準点は有効なまま。
+	//   ⚠ touchedTargetPages / touchedSourcePages(触れたページだけの絞り込み)は**通知では運べない**ので、
+	//     UI は両文書の全ページを作り直す。Task 12 で IKESCMMarkData が入ったら絞り込みへ戻す
+	//     (理由は KESCMThumbnailRefresh.h の KESCMPurgeAllPageThumbs)。
+	//   ⚠ 旧実装が Source 側を「sSrcMarksOn か srcHadChecks のときだけ」更新していたのは per-UID Purge の
+	//     節約のため。全ページ Purge になったので条件ごと落としてある(常に両方を作り直す＝取りこぼしなし)。
+	KESCMNotifyDocs(kKESCMMarksRebuiltMessage, targetDB, sourceDB, kFalse /*navReset*/);
 
 	if (outChanged) *outChanged = changedCount;
 	if (outFailed)  *outFailed = failedCount;
@@ -430,9 +423,8 @@ bool16 KESCMRefreshComparisonForSelectedPages(int32* outPages, int32* outChanged
 	if (!ok)
 		return kFalse;
 
-	// この経路は KESCMDoMarkChangesDoc を通らない独立再比較なので、Prev/Next 間の位置表示と
-	// ボタン有効/無効もここで最新化する(選択ページの再比較で変更ページ集合が増減し得るため)。
-	KESCMRefreshNavPosition();
+	// (Prev/Next 間の位置表示とボタン有効/無効の更新は、上の KESCMRefreshComparisonCore が投げる
+	//  kKESCMMarksRebuiltMessage に含まれる ---- 2026-08-13・Task 10 でここの直接呼びを畳んだ。)
 
 	// ★Story Edits の一覧も同じ理由でここから作り直す(2026-08-10)。**選択ページぶんだけ**の更新には
 	//   できない——1つのストーリーが、再比較したページとしなかったページにまたがって流れうるので、
@@ -580,12 +572,12 @@ void KESCMDoArmMousePeek(IDataBase* targetDB, IDataBase* sourceDB)
 	if (sPeekSourceDB != sourceDB || sPeekTargetDB != targetDB)
 		KESCMDrawEventHandler::DropAllOrig();
 
-	KESCMInvalidateSyncCaches();	// 比較対象の組み合わせが変わる=同期キャッシュは作り直し(2026-07-25 追補)
-
+	// ★2026-08-13(Task 10): 同期キャッシュの破棄(KESCMViewSync)と覗き状態の初期化(KESCMPeekGesture)は
+	//   どちらも UI 側の状態なので、ここでは呼ばない。arm の直後に KESCMStartComparisonFor が
+	//   kKESCMMarksRebuiltMessage を投げ、それを受けた UI が自分の状態を初期化する。
 	sPeekTargetDB = targetDB;
 	sPeekSourceDB = sourceDB;
 	sPeekArmed = kTrue;
-	KESCMResetPeekGestureState();	// 覗き状態を初期化(実体は KESCMPeekGesture.cpp)
 	KESCMDrawEventHandler::sMarksTempHidden = kFalse;	// Hold to Hide Marks の一時退避も初期化(押下中フラグの取りこぼし対策)
 	KESCMDrawEventHandler::sSrcMarksTempHidden = kFalse;	// Source 側の一時退避も初期化
 	KESCMDrawEventHandler::sMarksVisible = kFalse;	// 既定(非表示)へ。arm 中も枠は押下中だけ表示
@@ -598,12 +590,11 @@ void KESCMDoDisarmMousePeek(IDataBase* db)
 	// するため(タイル表示等で対象文書が同時に見えている場合に効く)。
 	IDataBase* armedTargetDB = sPeekTargetDB;
 
-	KESCMInvalidateSyncCaches();	// 対象が無くなる=同期キャッシュを捨てる(2026-07-25 追補)
-
+	// ★2026-08-13(Task 10): arm 側と対称に、同期キャッシュの破棄と覗き状態の解除は UI に任せる
+	//   ---- disarm の直後に KESCMStopComparison が kKESCMMarksClearedMessage を投げる。
 	sPeekArmed = kFalse;
 	sPeekTargetDB = nil;
 	sPeekSourceDB = nil;
-	KESCMResetPeekGestureState();	// 覗き状態を解除(実体は KESCMPeekGesture.cpp)
 	KESCMDrawEventHandler::sMarksTempHidden = kFalse;	// Hold to Hide Marks の一時退避を解除
 	KESCMDrawEventHandler::sSrcMarksTempHidden = kFalse;	// Source 側の一時退避も解除
 	KESCMDrawEventHandler::sMarksVisible = kFalse;	// 既定(非表示)のまま
@@ -649,7 +640,8 @@ void KESCMHandleDocsClosed()
 
 	// 文書が閉じた=ページ構成も db ポインタも当てにならないので、同期キャッシュは無条件に捨てる
 	// (2026-07-25 追補。コンテナを空にするだけ=deref しないので終了処理中でも安全)。
-	KESCMInvalidateSyncCaches();
+	// ★2026-08-13(Task 10): キャッシュの持ち主は UI(KESCMViewSync)なので、捨てるのは末尾の通知を
+	//   受けた UI。**「無条件」という性質**は、その通知を changed で絞らないことで保っている。
 	// ノンブル除外矩形のキャッシュも同じ理由で捨てる(キーに db ポインタを含むので、閉じた文書の
 	// エントリを残さない。2026-08-06 の監査 E-3)。生存側の分は次の描画で1回測り直すだけ。
 	KESCMInvalidatePageNumberMarkerRects();
@@ -664,9 +656,11 @@ void KESCMHandleDocsClosed()
 
 	// ★一括クローズ(複数文書を続けて閉じる)の最中は、UI の後片付けを保留して全部閉じ終わってから
 	//   1回だけ流す(2026-07-27)。状態(メモリ)の破棄は保留せずその場で行うので、閉じた db を持ち越さない
-	//   従来どおりの安全性は保たれる。フラグを引けない環境(Links UI 無効)では kFalse=従来動作。
-	const bool16 deferUi = !quitting && KESCMBatchCloseInProgress();
-	const bool16 doUiNow = !quitting && !deferUi;
+	//   従来どおりの安全性は保たれる。
+	//   ★★2026-08-13(Task 10): **この判定は UI 側へ移した**。KESCMBatchCloseInProgress() は UI 側が
+	//     持つ状態で、model がそれを聞くこと自体が逆流だった。今は末尾の通知を受けた observer が
+	//     「保留するか、今やるか」を決める。model に残っているのは quitting の判定だけ
+	//     ---- こちらは KESCMAppIsQuitting()＝model 側の問いで、コマンドを打つかどうかにも効く。
 
 	// ★Find Overset(比較とは独立): 走査した文書が閉じていたら十字状態を捨てる。sOversetDB は描画時に
 	//   ポインタ一致だけを見る(deref しない)が、閉じたまま残すと別文書へアドレスが再利用された時に
@@ -690,13 +684,17 @@ void KESCMHandleDocsClosed()
 		 ((sPeekTargetDB != nil && docList->FindDocByDataBase(sPeekTargetDB) == nil) ||
 		  (sPeekSourceDB != nil && docList->FindDocByDataBase(sPeekSourceDB) == nil)));
 
+	// ★2026-08-13(Task 10): 生存側の db は関数末尾の通知にも載せるので、宣言をブロックの外へ出した。
+	//   ⚠ここに入るのは**生存確認(FindDocByDataBase)を通ったポインタだけ**。閉じた db は決して拾わない
+	//   ---- 通知の受け手はこれを deref する(閉じた IDataBase* はアドレスが再利用される)。
+	IDataBase* survivorTargetDB = nil;
+	IDataBase* survivorOrigDB   = nil;
+	IDataBase* survivorSrcDB    = nil;	// Source側枠(Show Marks on Source)が出ている文書
+
 	if (comparisonDocClosed)
 	{
 		// DropAll/DropAllOrig で nil にする前に、まだ開いている側の db を控えておく(生存確認済みなので
-		// 後で安全に InvalidateViews できる)。閉じた方の db は決して拾わない。
-		IDataBase* survivorTargetDB = nil;
-		IDataBase* survivorOrigDB   = nil;
-		IDataBase* survivorSrcDB    = nil;	// Source側枠(Show Marks on Source)が出ている文書
+		// 後で安全に InvalidateViews できる)。
 		if (KESCMDrawEventHandler::sDB != nil && docList->FindDocByDataBase(KESCMDrawEventHandler::sDB) != nil)
 			survivorTargetDB = KESCMDrawEventHandler::sDB;
 		if (KESCMDrawEventHandler::sOrigDB != nil && docList->FindDocByDataBase(KESCMDrawEventHandler::sOrigDB) != nil)
@@ -717,7 +715,7 @@ void KESCMHandleDocsClosed()
 		sPeekArmed     = kFalse;
 		sPeekTargetDB  = nil;
 		sPeekSourceDB  = nil;
-		KESCMResetPeekGestureState();	// 覗き状態も解除(実体は KESCMPeekGesture.cpp)
+		// (覗き状態の解除＝KESCMResetPeekGestureState は UI 側の状態なので、末尾の通知を受けた UI がやる)
 		KESCMDrawEventHandler::sMarksTempHidden = kFalse;	// Hold to Hide Marks の一時退避も解除
 		KESCMDrawEventHandler::sSrcMarksTempHidden = kFalse;	// Source 側の一時退避も解除
 		KESCMDrawEventHandler::sMarksVisible = kFalse;
@@ -737,50 +735,30 @@ void KESCMHandleDocsClosed()
 		KESCMStoryList::Clear();
 		// ★巡回の基準点も忘れる(2026-08-06 再点検)。Stop(KESCMDoClearMarks)は KESCMResetNav を呼ぶのに、
 		//   この「Stop 相当のフルクリーンアップ」だけ抜けていた。閉じた文書のページ UID を基準点に残すと、
-		//   次の対象文書で UID が偶然一致して途中から巡回が始まり得る(static の代入のみ=終了中でも安全)。
-		KESCMResetNav();
-		// ★スクロールバー地図 strip も Stop と同様に取り外す(2026-07-11 セルフレビューで発見)。
-		//   これを怠ると、生存側の窓に孤児 strip が残り、レイアウトビューも 5px 詰めたままになる。
-		//   DetachAll は「今開いている窓」だけを走査する(閉じた窓の widget は窓ごと消えている)ので安全。
-		//   ★終了中(quitting)はスキップ: 解体中の窓の widget 除去/SetFrame が危険な上、窓ごと消えるので
-		//   取り外す意味も無い(以下の UI 仕事も同様にスキップ)。
-		if (doUiNow)
-		{
-			// ★Find Overset が(走査文書が生存したまま)単独 ON 中なら地図を残す(赤帯だけ描き直す)。
-			//   overset 文書自身が閉じた場合は上で DropOverset 済み=sOversetOn が false なので
-			//   通常どおり撤去される(2026-07-24)。
-			if (KESCMDrawEventHandler::sOversetOn)
-				KESCMScrollMapInvalidateAll();
-			else
-				KESCMScrollMapDetachAll();
-		}
+		//   次の対象文書で UID が偶然一致して途中から巡回が始まり得る。
+		//   ★2026-08-13(Task 10): 基準点は UI 側の状態なので、末尾の通知に navReset として乗せる。
 		changed = kTrue;
 
-		if (doUiNow)
+		// ★2026-08-13(Task 10): ここにあった画面側の後片付け ---- strip の撤去(または Find Overset が
+		//   単独 ON 中なら赤帯の描き直し)・生存側の再描画・**次の idle へ遅延させる**サムネイル作り直し
+		//   ---- は、すべて末尾の kKESCMComparisonDocsClosedMessage を受けた UI がやる。
+		//   ⚠遅延させる理由(2026-07-08 実機): 閉じたのが Target で生存側がこれからアクティブ化する場合、
+		//     その場で ForceRedraw しても前面切替の過渡で再生成が起こりきらず枠が残る。
+		//   ⚠「終了中は触らない」「一括クローズ中は保留する」の判断も UI へ移した(どちらも UI の都合)。
+
+		// 生存している側のレイアウトビューを再描画して枠を即座に消すのは model の仕事(描画データを
+		// 持っているのはこちら)。★終了中は窓ごと消えるので触らない。
+		if (!quitting)
 		{
 			PMString s("marks cleared");	// Stop ボタン(DoClear)と同じメッセージ
 			s.SetTranslatable(kFalse);
 			KESCMNotifyStatus(s);
 
-			// Stop ボタン(KESCMDoClearMarks)と同じく、生存している側を再描画して枠を即座に消す
-			// (Source 側の常時枠が出ていた文書も含む)。
 			KESCMInvalidateDB(survivorTargetDB);
 			if (survivorOrigDB != survivorTargetDB)
 				KESCMInvalidateDB(survivorOrigDB);
 			if (survivorSrcDB != survivorTargetDB && survivorSrcDB != survivorOrigDB)
 				KESCMInvalidateDB(survivorSrcDB);
-
-			// 生存側の Pages パネルサムネイルからも枠/斜線を消す。★その場(同期)で呼ぶと、閉じたのが
-			// ターゲットで生存側がこれからアクティブ化する場合、パネルの前面切替の過渡で ForceRedraw が
-			// 再生成を起こしきれず枠が残る(2026-07-08 実機で確認)。そこで「次の idle」に遅延させ、切替が
-			// 落ち着いてから purge＋ForceRedraw する(KESCMScheduleThumbRefresh)。DropAll 済みなので
-			// 再生成される isThumb 描画は早期 return し枠は描かれない。survivor* は生存確認済みポインタ
-			// のみ=閉じた db は決して渡さない(nil はスケジューラ側で弾く。重複 db も集約される)。
-			KESCMScheduleThumbRefresh(survivorTargetDB);
-			if (survivorOrigDB != survivorTargetDB)
-				KESCMScheduleThumbRefresh(survivorOrigDB);
-			if (survivorSrcDB != survivorTargetDB && survivorSrcDB != survivorOrigDB)
-				KESCMScheduleThumbRefresh(survivorSrcDB);
 		}
 	}
 
@@ -810,14 +788,22 @@ void KESCMHandleDocsClosed()
 	KESCMPageMapSweepClosedDocs();
 	KESCMPageCheckSweepClosedDocs();	// 「KCM: Check」の✓も、閉じた文書の分を状態だけ捨てる(deref なし)
 
-	// 何か片付けたらパネルの ON/OFF 表示を実状態に合わせる(①「ON 固着」の解消)。
-	// ★終了中はパネル widget へ触らない(パネルも解体中の可能性がある)。
-	// ★一括クローズ中は保留し、全部閉じ終わった通知でまとめて流す(実体は KESCMPeekGesture.cpp)。
-	if (changed)
-	{
-		if (doUiNow)
-			KESCMRefreshPanel();
-		else if (deferUi)
-			KESCMDeferCloseUi();
-	}
+	// ★★2026-08-13(Task 10): 画面側の後片付けは**ここ1本の通知**にまとめた。
+	//
+	// ⚠**changed を見ずに無条件で投げる。** ビュー同期のページ矩形/除外対応キャッシュ
+	//   (KESCMViewSync)は「どの文書が閉じても捨てる」ものだったため ---- 以前はこの関数の頭で
+	//   KESCMInvalidateSyncCaches() を無条件に呼んでいた。パネルの表示合わせも冪等なので、
+	//   比較と無関係な文書が閉じたときに通っても害は無い。
+	//
+	// ⚠**終了中(quitting)でも投げる。** 「終了中は widget に触らない」「一括クローズ中は保留して
+	//   全部閉じ終わってから1回だけ流す」は**どちらも UI の都合**なので、UI 側の observer が
+	//   KESCMAppIsQuitting() と KESCMBatchCloseInProgress() を見て決める。
+	//   ★これが逆流を断つ肝: KESCMBatchCloseInProgress() は UI 側の状態で、**model がそれを聞いて
+	//     いたこと自体が逆流だった**。
+	//
+	// 付随データ＝比較が終わったときだけ、**生存している側**の db を最大3つ(Target / 旧版べた載せ /
+	// Source 側枠)。閉じた db は決して載せない。navReset も「比較が終わった」ときだけ立てる。
+	KESCMNotifyDocs(kKESCMComparisonDocsClosedMessage,
+	                survivorTargetDB, survivorOrigDB, survivorSrcDB,
+	                comparisonDocClosed /*navReset*/);
 }

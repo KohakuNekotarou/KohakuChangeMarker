@@ -41,7 +41,9 @@
 #include "KESCMPageCheck.h"
 #include "KESCMPageMap.h"		// KESCMPageMapCollectRegistered(保存) / KESCMPageMapReplaceRegistered(読込)
 #include "KESCMDocUidSet.h"		// 「文書DB→ページUID集合」の共通の入れ物(登録側と共有。2026-08-06 監査 C-1)
-#include "KESCMThumbnailRefresh.h"	// KESCMRefreshThumbnailsForPages(トグルページの明示サムネイル更新)
+#include "KESCMID.h"				// kKESCMPageFlagsChangedMessage(通知の ID)
+// ★2026-08-13(Task 10): UI 側ヘッダー KESCMThumbnailRefresh.h の include を落とした。サムネイルを
+//   作り直すのは通知を受けた UI の仕事。★KESCMCollectChangedPageUIDs も同日 KESCMCore.h へ移った。
 
 // チェック済みページ: 文書DB → ページUIDの集合。セッション内のみ。
 // 空になった文書のエントリは即座に消える(KESCMDocUidSet の規約)。
@@ -124,9 +126,10 @@ void KESCMPageCheckToggleSelectedPages()
 	msg.Append(", total ");
 	msg.AppendNumber(sChecked.CountIn(db));
 
-	// トグルしたページ(マーク付きに限定済み=サムネイルが確実に作り直される)のサムネイルを即更新して
-	// ✓ を反映する(比較には影響しないので再比較は不要)。
-	KESCMRefreshThumbnailsForPages(db, pages);
+	// トグルしたページのサムネイルを即更新して ✓ を反映する(比較には影響しないので再比較は不要)。
+	// ★2026-08-13(Task 10): 直接呼びから通知へ。⚠**どのページかは通知では運べない**ので、UI は db の
+	//   全ページを作り直す(理由と戻し方は KESCMThumbnailRefresh.h の KESCMPurgeAllPageThumbs)。
+	KESCMNotifyDocs(kKESCMPageFlagsChangedMessage, db, nil);
 
 	// ★レイアウトビュー版の ✓(2026-07-12 追加)も即反映する。✓ は常時表示なので、トグルした文書の
 	// レイアウトビューを InvalidateViews で再描画しないと、次の再描画機会(スクロール等)まで
@@ -815,8 +818,8 @@ void KESCMPageCheckLoadFromFile()
 
 		if (!affected.empty())
 		{
-			std::vector<UID> pages(affected.begin(), affected.end());
-			KESCMRefreshThumbnailsForPages(db, pages);
+			// ★2026-08-13(Task 10): 通知へ(上のトグルと同じ。対象ページの絞り込みは Task 12 で戻す)。
+			KESCMNotifyDocs(kKESCMPageFlagsChangedMessage, db, nil);
 			// ★レイアウトビュー版の ✓(2026-07-12 追加)も即反映する。フェーズ2の再比較(KESCMDoMarkChangesDoc)
 			// が両文書を Invalidate するのは「復元前の ✓ 状態」に対してなので、ここで復元後の状態で
 			// もう一度 Invalidate しないと、復元/消去された ✓ がレイアウト画面に出ない(トグルと同じ理屈)。

@@ -41,11 +41,20 @@ IControlView* KESCMGetVisiblePagesPanel();
 //     (2026-07-25 監査: 1操作で最大9回走っていた同期 ForceRedraw の多重実行を削減)。
 void KESCMTryRefreshPagesPanelThumbnails(IDataBase* db, const std::set<UID>* extraPages = nil, bool16 redrawNow = kTrue);
 
-// db が現在の比較対象(sDB/sSrcDB)なら、「今マークが出得るページ UID」(変更リング+overflow「/」+
-// 登録「/」)を outPages へ追加して kTrue を返す。比較対象でなければ何もせず kFalse。
-// ★「何がマーク済みか」の定義はこの1箇所に集約する(KESCMDoMarkChangesDoc の再比較前退避もこれを
-// 使う)。マークの種類を増やす時はここへ足せば、退避と Purge の両方が自動で追随する。
-bool16 KESCMCollectChangedPageUIDs(IDataBase* db, std::set<UID>& outPages);
+// ★KESCMCollectChangedPageUIDs は **KESCMCore.h へ移した**(2026-08-13・model/UI 分割 第1段 Task 10)。
+//   widget を1つも触らない model の問いで、呼び手も model 側だけだった(逆流台帳 §2-1)。
+
+// db の**全ページ**(通常＋マスター)を per-UID Purge して、Pages パネルのサムネイルを作り直させる。
+//
+// ★★なぜ「全ページ」という乱暴な入口が要るか(2026-08-13・Task 10)。
+//   model は UI を直接呼ばなくなり、代わりに通知(kKESCM*Message)を投げる。**通知は ClassID しか
+//   運べない**ので、KESCMTryRefreshPagesPanelThumbnails の extraPages ---- 「再比較の**前**に枠が
+//   付いていた旧集合」---- を渡す道が無い。旧集合は再比較で失われるため、今の集合だけを Purge すると
+//   **枠が消えたページのサムネイルに古い枠が残る**(この .cpp が 2026-07-08 に直した当の不具合)。
+//   全ページを Purge すれば取りこぼしは原理的に起きない ---- ページ数に比例して遅くなるだけ。
+//   ⚠**これは一時的な後退**。Task 12 で IKESCMMarkData(model 側が旧集合を答えられる窓口)が入ったら、
+//     絞り込みへ戻すこと。TODO ではなく「Task 12 で戻す」と決まっている。
+void KESCMPurgeAllPageThumbs(IDataBase* db, bool16 redrawNow = kTrue);
 
 // db 内の指定ページ UID 群だけを per-UID Purge → Pages パネル再描画する。登録/解除トグルの直後など、
 // 「変更ページ集合(sEntries/overflow)には自動では入らないが、確実にサムネイルを作り直したい」特定

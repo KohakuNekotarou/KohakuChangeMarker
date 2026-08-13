@@ -50,7 +50,9 @@
 #include "KESCMComparisonRun.h"	// KESCMToggleStartStop(2026-08-13 に KESCMCore.h から移動)
 #include "KESCMPageMap.h"
 #include "KESCMDocUidSet.h"		// 「文書DB→ページUID集合」の共通の入れ物(✓側と共有。2026-08-06 監査 C-1)
-#include "KESCMThumbnailRefresh.h"	// KESCMRefreshThumbnailsForPages(トグルページの明示サムネイル更新)
+#include "KESCMID.h"				// kKESCMPageFlagsChangedMessage(通知の ID)
+// ★2026-08-13(Task 10): UI 側ヘッダー KESCMThumbnailRefresh.h の include を落とした。サムネイルを
+//   作り直すのは通知を受けた UI の仕事。
 
 // 登録済み「比較相手なしページ」: 文書DB → ページUIDの集合。セッション内のみ。
 // 空になった文書のエントリは即座に消える(KESCMDocUidSet の規約)。
@@ -234,8 +236,11 @@ void KESCMPageMapToggleSelectedPages()
 	//   登録追加で再比較済みの場合はスキップ: トグル済みページは sRegistered に入っており、再比較側の
 	//   KESCMCollectChangedPageUIDs(登録ページ込み)が既に Purge+ForceRedraw している。ここでも呼ぶと
 	//   同じページを二重ラスタ化+パネル二重再描画(点滅)するだけで無意味(2026-07-10 レビューで判明)。
+	// ★2026-08-13(Task 10): 直接呼びから通知へ。⚠**どのページかは通知では運べない**ので、UI は db の
+	//   全ページを作り直す(理由と戻し方は KESCMThumbnailRefresh.h の KESCMPurgeAllPageThumbs)。
+	//   ⇒ 上の「二重ラスタ化を避ける」条件は**残す意味がある**: 通知を出さなければ UI は動かない。
 	if (!recompared || !anyUnregistered)
-		KESCMRefreshThumbnailsForPages(db, pages);
+		KESCMNotifyDocs(kKESCMPageFlagsChangedMessage, db, nil);
 
 	KESCMNotifyStatus(msg);
 }

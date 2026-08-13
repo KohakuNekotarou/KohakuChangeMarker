@@ -35,6 +35,20 @@
 #define kKESCMPluginName	"KohakuExtendScriptChangeMarker"			// Name of this plug-in. 内部名(ID系・.rc の InternalName)。互換のため据え置き。
 #define kKESCMDisplayName	"Kohaku Change Marker"			// 表示名(About メニュー項目・About ボックス本文・パネル/ツール名)。KBS の "Kohaku Search Panel" に合わせ、単語間をスペースで区切る(2026-07-25)。
 #define kKESCMFileName		"KohakuChangeMarker"			// 出力ファイル名の基底(.rc の OriginalFilename)。vcxproj の TargetName と一致させること。表示名と違いスペースは入れない。
+// ★★★**Adobe から受け取った原文（2026-08-13。忘れないようにここへ残す＝ユーザー指示）**:
+//
+//     "Following Prefix ID has been registered as per your request below : 0x1EA500 - 0x1EA5FF ."
+//
+//   ⇒ **登録されたのは 1 個の値ではなく `0x1EA500`〜`0x1EA5FF` の 256 枠**。この帯の中でどう割るかは
+//     こちらの自由で、**model と UI で分け合ってよい**:
+//         `0x1EA500` … このプラグイン（model / KohakuExtendScriptChangeMarker）
+//         `0x1EA580` … KohakuChangeMarkerUI（KCMUI・model/UI 分割 第2段で使う）
+//   ★1本の帯を model と UI で分けるのは **Adobe 自身のやり方**。SDK 実測: `customdatalink`(0xb3300) と
+//     `customdatalinkui`(0xb3380) はオフセット +0..37 と +0..17 ＝ **両方とも 0xb33xx に収まっている**。
+//     ほかに xdocbookworkflow 対は 16 刻み、0x572xx は4本のサンプルが共有している。
+//   ★**この 1 帯で自作5本ぜんぶ賄える**（最大オフセットの合計は ActionID で 122/256。widget ID は
+//     グローバルに一意である必要が無いので予算に数えない）。割り当て案は
+//     docs/superpowers/specs/2026-08-13-kescm-model-ui-split-stage1-design.md §1.3-2。
 #define kKESCMPrefixNumber	0x1EA500 		// Unique prefix number for this plug-in(*Must* be obtained from Adobe Developer Support).
 													// ★★2026-08-13: Adobe が発行した正規の prefix に差し替えた。wwds@adobe.com へメールで依頼し
 													// 「0x1EA500 - 0x1EA5FF」を受領＝**各 ID 空間 256 枠が予約された**(自作プラグインで唯一)。
@@ -220,6 +234,13 @@ DECLARE_PMID(kMessageIDSpace, kKESCMPageFlagsChangedMessage,  kKESCMPrefix + 2)	
 DECLARE_PMID(kMessageIDSpace, kKESCMStoryEditsRebuiltMessage, kKESCMPrefix + 3)	// Story Edits のモデルが作り直された
 DECLARE_PMID(kMessageIDSpace, kKESCMStatusTextMessage,        kKESCMPrefix + 4)	// ステータス行の文字列が変わった(文字列自体は KESCMGetSessionStatus で取る)
 DECLARE_PMID(kMessageIDSpace, kKESCMOversetRescannedMessage,  kKESCMPrefix + 5)	// overset の走査結果が更新された
+DECLARE_PMID(kMessageIDSpace, kKESCMComparisonDocsClosedMessage, kKESCMPrefix + 6)	// ★比較していた文書が閉じられ、Stop 相当の後片付けが済んだ(2026-08-13・Task 10)。
+																					// ⚠**Stop(kKESCMMarksClearedMessage)とは別**にした理由＝UI 側の後始末が3点違う:
+																					//   ①サムネイルの作り直しは**次の idle へ遅延**させる(前面切替の過渡で ForceRedraw が
+																					//     効かず枠が残る＝2026-07-08 実機で確認)②**一括クローズ中は保留**して全部閉じ終えて
+																					//     から1回だけ流す ③Find Overset が単独 ON 中なら strip は**残す**(赤帯だけ描き直す)。
+																					//   ★付随データ＝**生存している側**の db を最大3つ(Target/旧版/Source側枠)。閉じた db は
+																					//     決して渡さない(通知の受け手が deref するため)。
 DECLARE_PMID(kImplementationIDSpace, kKESCMUIDrawEventSrvcImpl, kKESCMPrefix + 35)	// CServiceProvider 実装(kDrawEventService。UI 専用の描画サービス。KESCMUIDrawEvent.cpp)。★GetThreadingPolicy は手書きしない＝CServiceProvider がプラグインの型から既定を返す
 DECLARE_PMID(kImplementationIDSpace, kKESCMUIDrawEventHandlerImpl, kKESCMPrefix + 36)	// IDrwEvtHandler 実装(押下中 HUD の描画だけ。画面専用＝PDF 書き出しに出なくてよい。KESCMUIDrawEvent.cpp)
 DECLARE_PMID(kImplementationIDSpace, kKESCMSplitterEHImpl, kKESCMPrefix + 34)	// IEventHandler 実装(CEventHandler派生＝全メソッドが kFalse を返すだけの基底をそのまま使う)。パネルの分割バーが押下を受け取らなくなる＝ドラッグで動かせない(KESCMSplitterEH.cpp)

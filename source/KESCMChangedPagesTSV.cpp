@@ -53,7 +53,8 @@
 
 // Project includes:
 #include "KESCMCore.h"				// KESCMSetStatus / KESCMCollectPageUIDs / KESCMCollectMasterPageUIDs
-#include "KESCMUIShared.h"	// panel / status line / nav readout / tool button (split from KESCMCore.h on 2026-08-13)
+// (★KESCMUIShared.h は 2026-08-13 Task 10 で外した＝ステータス行への出力は Task 9 で戻り値へ変わり、
+//  このファイルから UI を呼ぶ経路は1つも残っていない。保存先パスは呼び手のフライアウトが表示する)
 #include "KESCMDrawEventHandler.h"	// sEntries / sDB / sSrcDB
 #include "KESCMPageMap.h"			// KESCMBuildPairing / KESCMPageMapCollectRegistered
 #include "KESCMChangedPagesTSV.h"

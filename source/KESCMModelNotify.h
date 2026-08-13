@@ -29,10 +29,46 @@
 #include "PMString.h"
 #include "OMTypes.h"		// ClassID
 
+class IDataBase;
+
 // Emit one of the kKESCM*Message notifications (KESCMID.h) on the application's subject.
 // Safe to call when nothing is listening and safe to call during shutdown (it checks that
 // the session and the application are still there and returns quietly if not).
 void	KESCMNotify(ClassID theChange);
+
+// Emit a notification that carries WHICH DOCUMENTS it is about (2026-08-13, Task 10).
+//
+// A notification can only carry a ClassID, so anything else the UI needs has to be left here
+// for it to pick up. That is not a workaround bolted on: it is the same shape KESCMNotifyStatus
+// already uses for the status text, and it keeps the state on the model side, which is where
+// the split says it belongs. The UI reads these inside Update(), and Change() is synchronous,
+// so what it reads is always what this call just stored.
+//
+//   docA / docB  the target and source databases the change is about. ★They have to travel
+//                with the notification rather than be asked for: by the time Stop notifies,
+//                the model has already dropped its own pointers (KESCMArmedTargetDB is nil),
+//                and the UI still has to purge those two documents' thumbnails.
+//   navReset     kTrue when the change invalidates the Prev/Next cursor. ⚠ A FULL rebuild and
+//                a Stop do; an INCREMENTAL recompare does NOT -- resetting there would send the
+//                cursor back to the first change every time a page is registered, which is a
+//                behaviour change a user would notice.
+//
+// ★Task 12 replaces this with IKESCMMarkData, where the UI ASKS instead of being told.
+void	KESCMNotifyDocs(ClassID theChange, IDataBase* docA, IDataBase* docB, bool16 navReset = kFalse);
+
+// Three-document form. Closing a document can leave THREE survivors that all need their
+// thumbnails rebuilt -- the compare target, the document the "original" overlay came from, and
+// the one carrying the source-side frames -- and they are not always the same document.
+// ⚠ Only ever pass documents that have been checked to be still open: the receiver dereferences
+// them (a closed IDataBase* is a dangling pointer whose address gets reused).
+void	KESCMNotifyDocs(ClassID theChange, IDataBase* docA, IDataBase* docB, IDataBase* docC, bool16 navReset);
+
+// The values left by the last KESCMNotifyDocs. Meaningful only while handling that
+// notification -- do not cache them (a database pointer outlives nothing here).
+IDataBase*	KESCMNotifiedDocA();
+IDataBase*	KESCMNotifiedDocB();
+IDataBase*	KESCMNotifiedDocC();		// nil unless the three-document form was used
+bool16		KESCMNotifiedNavReset();
 
 // Set the status text and emit kKESCMStatusTextMessage.
 //

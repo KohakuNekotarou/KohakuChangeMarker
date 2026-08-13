@@ -29,11 +29,12 @@
 
 // プロジェクト内:
 #include "KESCMComparisonRun.h"
-#include "KESCMCore.h"				// arm/disarm・比較実行・印刷マーク設定・KESCMRefreshPanel
-#include "KESCMModelNotify.h"	// KESCMNotifyStatus - the model tells the UI, it never calls it (Task 9)
-#include "KESCMUIShared.h"	// panel / status line / nav readout / tool button (split from KESCMCore.h on 2026-08-13)
+#include "KESCMCore.h"				// arm/disarm・比較実行・印刷マーク設定
+#include "KESCMID.h"				// kKESCMMarksRebuiltMessage / kKESCMMarksClearedMessage
+#include "KESCMModelNotify.h"	// KESCMNotifyStatus / KESCMNotify - the model tells the UI, it never calls it
 #include "KESCMDrawEventHandler.h"	// sSrcMarksOn / sOversetOn / sOversetDB
-#include "KESCMScrollMap.h"			// スクロールバー地図strip(Startで注入/Stopで取り外し)
+// ★2026-08-13(Task 10): UI 側ヘッダー2本(KESCMUIShared / KESCMScrollMap)の include を落とした。
+//   Start/Stop が画面に対してすることは、もう「通知を投げる」だけ。
 #include "KESCMOversetApply.h"		// KESCMApplyOversetForDoc(Start/Stop 時の overset 貼り直し)
 
 //----------------------------------------------------------------------------------------
@@ -109,13 +110,19 @@ void KESCMStopComparison()
 	//   リフレッシュする(ユーザー報告: overset 有りで Start→編集で解消→Stop すると、集合が編集前のまま
 	//   残り「まだ有る」と判断していた)。KESCMApplyOversetForDoc は sOversetDB を再走査し、サムネイル/
 	//   地図の Attach+Invalidate/Prev-Next をまとめて更新する。
-	KESCMScrollMapDetachAll();	// スクロールバー地図stripを全窓(Target/Source)から取り外す
+	// ★2026-08-13(Task 10): strip の取り外しは、上の KESCMDoClearMarks が投げる
+	//   kKESCMMarksClearedMessage を受けた UI がやる(ここで直接呼んでいた KESCMScrollMapDetachAll は削除)。
 	if (KESCMDrawEventHandler::sOversetOn)
 		KESCMApplyOversetForDoc(KESCMDrawEventHandler::sOversetDB);
 	PMString s("marks cleared"); s.SetTranslatable(kFalse);
 	KESCMNotifyStatus(s);
 
-	KESCMRefreshPanel();	// Target/Source 名・アイコン・Prev/Next 有効無効を arm 状態へ更新
+	// ⚠**もう一度 Cleared を投げる**。上の KESCMDoClearMarks が投げた時点では、まだ
+	//   KESCMDoDisarmMousePeek(105行)を通っていない＝arm 状態が立ったままなので、パネルは「比較中」の
+	//   見た目のまま作り直されてしまう。disarm を終えたここで投げ直すと、Target/Source 名・アイコン・
+	//   Prev/Next の有効無効が「解除後」の状態で作り直される。
+	//   ★文書は渡さない(docA/docB は nil)＝サムネイルの Purge は済んでいるので繰り返さない。
+	KESCMNotify(kKESCMMarksClearedMessage);
 }
 
 // KESCMStartComparisonFor(KESCMComparisonRun.h で宣言) — **この2文書で**比較を開始する(旧 DoStart の本体)。
@@ -145,8 +152,9 @@ void KESCMStartComparisonFor(IDocument* target, IDocument* source)
 	if (KESCMDoMarkChangesDoc(targetDB, sourceDB, report) == kSuccess)
 	{
 		KESCMDoArmMousePeek(targetDB, sourceDB);
-		KESCMScrollMapAttach(targetDB);	// Target の各文書窓にスクロールバー地図stripを注入
-		KESCMScrollMapAttach(sourceDB);	// Source 窓にも表示(2026-07-11 ユーザー要望。strip 側が窓の文書を見て供給元を切替)
+		// ★2026-08-13(Task 10): スクロールバー地図 strip の注入は、上の KESCMDoMarkChangesDoc が投げた
+		//   kKESCMMarksRebuiltMessage を受けた UI がやる ---- Target/Source の両方へ(Source 窓にも出すのは
+		//   2026-07-11 のユーザー要望。strip 側が窓の文書を見て供給元を切り替える)。直接呼びは削除。
 		// ★Find Overset が ON のままなら、Start 時に必ず比較 Target を再走査して overset を貼り直す(2026-07-24)。
 		//   これで (a) Start 後も Prev/Next が「変更(枠)→ overset」を同じ Target 文書で巡れる(overset が
 		//   sOversetDB!=sDB で黙って巡回対象から外れる不具合の防止)＋(b) 同一文書でも編集で増減した overset を
@@ -156,7 +164,11 @@ void KESCMStartComparisonFor(IDocument* target, IDocument* source)
 	}
 	KESCMNotifyStatus(report);
 
-	KESCMRefreshPanel();
+	// ⚠**arm した後にもう一度 Rebuilt を投げる**。比較そのものが投げた通知の時点では
+	//   KESCMDoArmMousePeek をまだ通っていない＝パネルは「比較前」の見た目のまま作り直されてしまう
+	//   (Stop 側と対称の事情。KESCMStopComparison の末尾を参照)。
+	//   ★文書は渡さない(docA/docB は nil)＝サムネイルの Purge を繰り返さない。表示の更新だけが目的。
+	KESCMNotify(kKESCMMarksRebuiltMessage);
 }
 
 void KESCMToggleStartStop()
@@ -183,7 +195,8 @@ void KESCMToggleStartStop()
 		// ★この経路でも要る。⚠**旧実装では呼ばれていなかった**——この分岐は else ブロックの中で return
 		//   しており、関数末尾の KESCMRefreshPanel には届いていなかった。∴これは切り出しに伴う挙動の
 		//   **変更**(望ましい方向の)で、元の動作の保存ではない。
-		KESCMRefreshPanel();
+		//   ★2026-08-13(Task 10): 直接呼びから通知へ。文書は渡さない＝表示を今の状態に合わせるだけ。
+		KESCMNotify(kKESCMMarksRebuiltMessage);
 		return;
 	}
 

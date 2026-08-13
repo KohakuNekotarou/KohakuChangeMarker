@@ -28,9 +28,10 @@
 #include "KESCMCore.h"				// KESCMActiveDocDB / KESCMInvalidateDB
 #include "KESCMDrawEventHandler.h"	// sOversetOn/sOversetDB/sOversetPages/sOversetLocs/sDB(走査状態)
 #include "KESCMOversetScan.h"		// KESCMCollectOversetLocations / KESCMOversetLoc(検出そのもの)
-#include "KESCMThumbnailRefresh.h"	// KESCMRefreshThumbnailsForPages / KESCMForceRedrawPagesPanelNow
-#include "KESCMScrollMap.h"			// KESCMScrollMapAttach / KESCMScrollMapInvalidateAll
-#include "KESCMChangeNav.h"			// KESCMResetNav / KESCMRefreshNavPosition(Prev/Next の対象更新)
+#include "KESCMID.h"				// kKESCMOversetRescannedMessage
+#include "KESCMModelNotify.h"		// KESCMNotifyDocs(model は UI を呼ばない ---- 知らせるだけ)
+// ★2026-08-13(Task 10): UI 側ヘッダー3本(KESCMThumbnailRefresh / KESCMScrollMap / KESCMChangeNav)の
+//   include を落とした。あふれ走査の結果をどう見せるかは、通知を受けた UI が決める。
 
 /* KESCMApplyOversetForDoc(KESCMOversetApply.h で宣言) — db を走査して overset を反映する共有処理。
    Find Overset(ON)/Refresh Overset(armed時Target)/Start(overset ON時) から呼ぶ。前回と別文書なら
@@ -50,9 +51,12 @@ void KESCMApplyOversetForDoc(IDataBase* db)
 	if (docList == nil || docList->FindDocByDataBase(db) == nil)
 		return;
 
-	// 前回の状態を退避(別文書へ移ったら前の文書の目印を消す/同一文書で抜けたページの目印を消すため)。
+	// 前回の走査対象を控える(別文書へ移ったら、前の文書の目印を消す必要がある)。
+	// ★2026-08-13(Task 10): **旧ページ集合はもう控えていない。** サムネイルの Purge は UI 側へ移り、
+	//   通知では集合を運べないので、UI は対象文書の全ページを Purge する(理由と戻し方は
+	//   KESCMThumbnailRefresh.h の KESCMPurgeAllPageThumbs)。同一文書で「あふれが解消したページ」の
+	//   ＋を消すのも、全ページ Purge なら取りこぼしようがない。
 	IDataBase* prevDB = KESCMDrawEventHandler::sOversetDB;
-	std::set<UID> oldPages = KESCMDrawEventHandler::sOversetPages;
 
 	// db を走査して overset 位置(＋点)とページを集める。
 	std::vector<KESCMOversetLoc> locs;
@@ -66,38 +70,25 @@ void KESCMApplyOversetForDoc(IDataBase* db)
 	KESCMDrawEventHandler::sOversetPages.swap(pages);
 	KESCMDrawEventHandler::sOversetLocs.swap(locs);
 
-	// ★走査対象の文書が変わったら巡回の基準点も捨てる(2026-08-06 再点検)。「同じ作りの文書は UID まで
-	//   同じ」(KESCMChangeNav.h)なので、前の文書の基準点を持ち越すと UID の偶然一致で途中から巡回が
-	//   始まり得る。別文書へ移るのは未 arm(アクティブ文書走査)のときだけ=比較の巡回には影響しない。
-	if (prevDB != nil && prevDB != db)
-		KESCMResetNav();
+	// ★走査対象の文書が変わったか。変わったなら巡回の基準点も捨てる(2026-08-06 再点検)。「同じ作りの
+	//   文書は UID まで同じ」(KESCMChangeNav.h)なので、前の文書の基準点を持ち越すと UID の偶然一致で
+	//   途中から巡回が始まり得る。別文書へ移るのは未 arm(アクティブ文書走査)のときだけ=比較の巡回には
+	//   影響しない。⚠**同一文書での再走査では捨てない** ---- あふれを1つ直すたびに巡回が先頭へ戻る。
+	const bool16 movedToAnotherDoc = (prevDB != nil && prevDB != db);
 
-	// Pages パネルのサムネイル更新。別文書へ移ったら前の文書の枠/＋を消し、新旧のページを作り直す。
-	if (prevDB != nil && prevDB != db)
-	{
-		std::vector<UID> oldVec(oldPages.begin(), oldPages.end());
-		// 2文書とも Purge のみ→呼び出しの最後(下の2回目)で1回だけ ForceRedraw(2026-07-25 バッチ化)。
-		KESCMRefreshThumbnailsForPages(prevDB, oldVec, kFalse /*redrawNow*/);	// 前の文書の枠/＋を消す
-		KESCMInvalidateDB(prevDB);
-		std::vector<UID> newVec(KESCMDrawEventHandler::sOversetPages.begin(),
-		                        KESCMDrawEventHandler::sOversetPages.end());
-		KESCMRefreshThumbnailsForPages(db, newVec, kFalse /*redrawNow*/);
-		KESCMForceRedrawPagesPanelNow();
-	}
-	else
-	{
-		// 同一文書 or 初回(prevDB==nil): 旧∪新のサムネイルを作り直す(oldPages 空なら新のみ)。
-		std::set<UID> u = oldPages;
-		u.insert(KESCMDrawEventHandler::sOversetPages.begin(), KESCMDrawEventHandler::sOversetPages.end());
-		std::vector<UID> uv(u.begin(), u.end());
-		KESCMRefreshThumbnailsForPages(db, uv);
-	}
-
-	// スクロールバー地図を db の窓へ注入(既にあればスキップ)＋再描画。比較未Startでも赤帯を出す。
-	KESCMScrollMapAttach(db);
-	KESCMScrollMapInvalidateAll();
+	// レイアウトビューの無効化は model の仕事(描画データを持っているのはこちら)。
 	KESCMInvalidateDB(db);
-	KESCMRefreshNavPosition();	// Prev/Next の対象(有効化・位置 k/N)を更新
+	if (movedToAnotherDoc)
+		KESCMInvalidateDB(prevDB);
+
+	// ★★2026-08-13(Task 10): ここから先 ---- Pages パネルのサムネイル・スクロールバー地図の注入と
+	//   描き直し・Prev/Next の対象と位置 ---- は**すべて UI の持ち物**なので、通知1本にまとめた。
+	//   docA=今の走査対象／docB=直前の走査対象(別文書へ移ったときだけ。同じ文書なら nil を渡す＝
+	//   UI は1文書ぶんだけ作り直す)。
+	KESCMNotifyDocs(kKESCMOversetRescannedMessage,
+	                db,
+	                movedToAnotherDoc ? prevDB : nil,
+	                movedToAnotherDoc /*navReset*/);
 }
 
 // 比較中なら overset の走査対象は必ず比較 Target 文書(sDB)にする(変更(枠)と overset を同じ文書で

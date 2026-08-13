@@ -46,7 +46,9 @@
 #include "KESCMDrawEventHandler.h"	// sDB/sEntries(「変更あり」の判定材料)
 #include "KESCMPageMap.h"	// KESCMBuildPairing(除外対応表、Source 側の分類で使用)
 							// ＋ KESCMPageMapIsRegistered / KESCMPageMapHasAnyRegistered
-#include "KESCMScrollMap.h"	// KESCMScrollMapInvalidateAll(隠し/戻しの後に地図を描き直す)
+#include "KESCMID.h"		// kKESCMPageFlagsChangedMessage(通知の ID)
+// ★2026-08-13(Task 10): UI 側ヘッダー KESCMScrollMap.h の include を落とした。隠し/戻しの後に地図を
+//   描き直すのは、通知を受けた UI の仕事。
 
 // 「Hide Unchanged Spreads」トグルの状態。ON の間、sHiddenSpreads = 自分が隠したスプレッド UID の控え
 // (OFF でこれ「だけ」を再表示する。ユーザーがページパネル等で別途隠したスプレッドは巻き込まない)。
@@ -110,7 +112,11 @@ void KESCMHideUnchangedToggle()
 	if (sHideUnchangedOn)
 	{
 		KESCMResetHideUnchanged(kTrue);
-		KESCMScrollMapInvalidateAll();	// スクロールバー地図を再表示後の配置で描き直す(2026-07-11)
+		// スクロールバー地図を再表示後の配置で描き直す(隠しスプレッドは地図から除外される。2026-07-11)。
+		// ★2026-08-13(Task 10): 地図は UI の持ち物なので通知へ。スプレッドの表示/非表示は「ページの
+		//   見え方が変わった」ことなので kKESCMPageFlagsChangedMessage に相乗りする。
+		//   ★文書は渡さない＝サムネイルの Purge は要らない(変わるのは strip の配置だけ)。
+		KESCMNotify(kKESCMPageFlagsChangedMessage);
 		KESCMHideStatus("Hide Unchanged: hidden spreads restored.");
 		return;
 	}
@@ -314,7 +320,8 @@ void KESCMHideUnchangedToggle()
 	KESCMNotifyStatus(msg);
 
 	// スクロールバー地図を隠し後の配置で描き直す(隠しスプレッドは地図から除外される。Target/Source 両窓)。
-	KESCMScrollMapInvalidateAll();
+	// ★2026-08-13(Task 10): 上の ON→OFF 側と同じ理由で通知へ。
+	KESCMNotify(kKESCMPageFlagsChangedMessage);
 }
 
 // 文書の生存確認は共有ヘルパ KESCMIsDocDBOpen(KESCMCore.h)を使う(旧ここ static、2026-07-10 共有化)。

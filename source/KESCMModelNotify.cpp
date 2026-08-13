@@ -59,6 +59,50 @@ void KESCMNotify(ClassID theChange)
 	subject->Change(theChange, IID_IKESCMMODELCHANGEOBSERVER);
 }
 
+//----------------------------------------------------------------------------------------
+// 直近の KESCMNotifyDocs が置いていった付随データ(2026-08-13・Task 10)。
+//
+// ★通知は ClassID しか運べない。「どの文書か」「Prev/Next の基準点を捨てるか」は、投げる直前に
+//   ここへ置き、受け手が Update の中で読む ---- 上の sSessionStatus とまったく同じ形。
+// ⚠**db ポインタを持ち越さない**。ここに残るのは「今まさに配っている通知の付随物」であって、
+//   次の通知まで有効な状態ではない(閉じた文書の db を後から触ると落ちる＝KESCM 全体の共通規約)。
+//----------------------------------------------------------------------------------------
+static IDataBase* sNotifiedDocA   = nil;
+static IDataBase* sNotifiedDocB   = nil;
+static IDataBase* sNotifiedDocC   = nil;
+static bool16     sNotifiedNavRst = kFalse;
+
+// KESCMNotifyDocs(KESCMModelNotify.h で宣言) — 2文書版。★3文書版もここへ合流するので、
+// **後始末(全部 nil に戻す)はこの1か所だけ**にしてある。
+void KESCMNotifyDocs(ClassID theChange, IDataBase* docA, IDataBase* docB, bool16 navReset)
+{
+	sNotifiedDocA   = docA;
+	sNotifiedDocB   = docB;
+	sNotifiedNavRst = navReset;
+
+	KESCMNotify(theChange);
+
+	// ★配り終えたら手放す。誰も聞いていなくても(=UI プラグインが居ない InDesign Server でも)
+	//   ここは通るので、閉じられうる db へのポインタが静的変数に居座らない。
+	sNotifiedDocA   = nil;
+	sNotifiedDocB   = nil;
+	sNotifiedDocC   = nil;
+	sNotifiedNavRst = kFalse;
+}
+
+// KESCMNotifyDocs(KESCMModelNotify.h で宣言) — 3文書版。C だけ先に置いて上へ合流する。
+void KESCMNotifyDocs(ClassID theChange, IDataBase* docA, IDataBase* docB, IDataBase* docC, bool16 navReset)
+{
+	sNotifiedDocC = docC;
+	KESCMNotifyDocs(theChange, docA, docB, navReset);
+}
+
+// KESCMNotifiedDocA / DocB / DocC / NavReset(KESCMModelNotify.h で宣言)
+IDataBase* KESCMNotifiedDocA()    { return sNotifiedDocA; }
+IDataBase* KESCMNotifiedDocB()    { return sNotifiedDocB; }
+IDataBase* KESCMNotifiedDocC()    { return sNotifiedDocC; }
+bool16     KESCMNotifiedNavReset() { return sNotifiedNavRst; }
+
 // KESCMNotifyStatus(KESCMModelNotify.h で宣言)
 void KESCMNotifyStatus(const PMString& s, bool16 forceRedrawNow)
 {

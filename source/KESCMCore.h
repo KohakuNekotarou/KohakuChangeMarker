@@ -17,6 +17,7 @@
 #include "PMReal.h"			// PMReal(ヒットテストヘルパのマウス座標)
 #include "OMTypes.h"			// UID (typedef IDType<UID_tag>)
 #include <vector>
+#include <set>				// KESCMCollectChangedPageUIDs の出力集合
 
 class IDataBase;
 class IControlView;
@@ -31,6 +32,16 @@ void		KESCMCollectPageUIDs(IDataBase* db, std::vector<UID>& out);
 //   「比較する対象そのものが変わる」ので、マスターは常に別に集めて呼び手が足す(overset と同じ流儀)。
 // ⚠out をクリアしないのは、通常ページの列の後ろへ連結する使い方を想定しているため。
 void		KESCMCollectMasterPageUIDs(IDataBase* db, std::vector<UID>& out);
+
+// db が現在の比較対象(sDB/sSrcDB)なら、「今マークが出得るページ UID」(変更リング + overflow「/」+
+// 登録「/」)を outPages へ**足して** kTrue を返す。比較対象でなければ何もせず kFalse。
+// ★「何がマーク済みか」の定義はこの1箇所に集約する。マークの種類を増やす時はここへ足せば、
+//   再比較前の退避(KESCMDoMarkChangesDoc)と、UI 側のサムネイル Purge の両方が自動で追随する。
+// ★★2026-08-13 に KESCMThumbnailRefresh.h からここへ移した(model/UI 分割 第1段 Task 10)。
+//   widget にも view にも触らない **model の問い**で、呼び手も model 側だけ ---- UI 側ヘッダーに
+//   置いてあったせいで、呼び手3ファイルが UI を include しているように見えていた(逆流台帳 §2-1)。
+//   ⚠ UI 側(KESCMThumbnailRefresh.cpp)は今後もこれを**呼ぶ**。UI→model は許される向き。
+bool16		KESCMCollectChangedPageUIDs(IDataBase* db, std::set<UID>& outPages);
 
 // ページアイテムの UID → そのアイテムが載っているページ UID(どのページにも載らないなら kInvalidUID)。
 // あふれ位置の報告(KESCMOversetScan)と Story Edits の一覧が同じ問いを持つので1本を共有する。

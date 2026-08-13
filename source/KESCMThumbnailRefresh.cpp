@@ -72,46 +72,11 @@ static void KESCMForceRedrawSubPanel(IPanelControlData* pcd, const WidgetID& sub
 		subView->ForceRedraw(nil, kTrue);
 }
 
-// この db の「サムネイルを作り直したいページ UID 集合」を outPages へ集める。
-//   Target(db==sDB)   : sEntries(変更リング)のキー ＋ sOverflowT(overflow="/"斜線)
-//   Source(db==sSrcDB): sSrcPageToTarget(変更リング)のキー ＋ sOverflowS(overflow="/"斜線)
-// どちらでもなければ kFalse(=集合を引けない)。
-//   ★斜線「/」は変更リング(sEntries)とは別集合(sOverflowT/sOverflowS)なので、これを含めないと
-//     overflow ページのサムネイルが Purge されず、斜線が即時に出ない(2026-07-08 実機で判明)。
-//     overflow キャッシュが現在のペア(sDB,sSrcDB)用に作られている時だけ加える(別文書用の UID を
-//     誤って Purge しないための安全ガード)。
-// (KESCMThumbnailRefresh.h で宣言=KESCMDoMarkChangesDoc の再比較前退避と共用)
-bool16 KESCMCollectChangedPageUIDs(IDataBase* db, std::set<UID>& outPages)
-{
-	const bool16 overflowCacheMatches =
-		(KESCMDrawEventHandler::sOverflowCacheDB == KESCMDrawEventHandler::sDB &&
-		 KESCMDrawEventHandler::sOverflowCacheSrcDB == KESCMDrawEventHandler::sSrcDB);
-
-	if (db != nil && db == KESCMDrawEventHandler::sDB)
-	{
-		for (std::map<UID, KESCMOverlayEntry*>::iterator it = KESCMDrawEventHandler::sEntries.begin();
-			 it != KESCMDrawEventHandler::sEntries.end(); ++it)
-			outPages.insert(it->first);
-		if (overflowCacheMatches)
-			outPages.insert(KESCMDrawEventHandler::sOverflowT.begin(), KESCMDrawEventHandler::sOverflowT.end());
-		// ★登録ページ(Added=緑「/」)も含める。sEntries/overflow とは別集合なので、含めないと
-		//   再比較時に登録ページのサムネイルが Purge されず緑「/」が即時に出ない(START 時も同様)。
-		KESCMPageMapCollectRegistered(db, outPages);
-		return kTrue;
-	}
-	if (db != nil && db == KESCMDrawEventHandler::sSrcDB)
-	{
-		for (std::map<UID, UID>::iterator it = KESCMDrawEventHandler::sSrcPageToTarget.begin();
-			 it != KESCMDrawEventHandler::sSrcPageToTarget.end(); ++it)
-			outPages.insert(it->first);
-		if (overflowCacheMatches)
-			outPages.insert(KESCMDrawEventHandler::sOverflowS.begin(), KESCMDrawEventHandler::sOverflowS.end());
-		// ★登録ページ(Removed=緑「/」)も含める(上と同じ理由)。
-		KESCMPageMapCollectRegistered(db, outPages);
-		return kTrue;
-	}
-	return kFalse;
-}
+// ★KESCMCollectChangedPageUIDs は 2026-08-13 に **KESCMCore.cpp へ移した**(model/UI 分割 第1段
+//   Task 10)。「今どのページにマークが出得るか」は widget を1つも触らない **model の問い**で、
+//   呼び手も model 側(KESCMCore / KESCMPageCheck / KESCMPageMap)だけだった ---- ここに置いてあった
+//   せいで、その3ファイルが UI ヘッダーを include し続けていた(逆流台帳 §2-1)。
+//   宣言は KESCMCore.h。このファイルは下の Purge でそれを**呼ぶ側**に回る(UI→model は許される向き)。
 
 // ④ 指定ページ UID 群を per-UID Purge(共有画像キャッシュ無効化)。ワークスペースは実効セッションから。
 //    UID 列の入れ物は呼び出し側の都合で set/vector の両方が来るため、実体はイテレータ範囲テンプレートに
@@ -202,6 +167,24 @@ void KESCMTryRefreshPagesPanelThumbnails(IDataBase* db, const std::set<UID>* ext
 		KESCMCollectPageUIDs(db, allPages);
 		KESCMPurgePageThumbs(db, allPages);
 	}
+
+	if (redrawNow)
+		KESCMForceRedrawPagesPanelNow();
+}
+
+void KESCMPurgeAllPageThumbs(IDataBase* db, bool16 redrawNow)
+{
+	if (db == nil)
+		return;
+
+	// ★通常ページとマスターページの両方。マスターにもマークは出る(KESCMBuildMasterPairing で
+	//   ペアリングされ、KESCMDoMarkChangesDoc の対象に連結されている)ので、片方だけ Purge すると
+	//   マスターのサムネイルに古い枠が残る。KESCMCollectMasterPageUIDs は out をクリアしない契約
+	//   なので、そのまま後ろへ連結してよい。
+	std::vector<UID> allPages;
+	KESCMCollectPageUIDs(db, allPages);
+	KESCMCollectMasterPageUIDs(db, allPages);
+	KESCMPurgePageThumbs(db, allPages);
 
 	if (redrawNow)
 		KESCMForceRedrawPagesPanelNow();
