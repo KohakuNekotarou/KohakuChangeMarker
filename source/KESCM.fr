@@ -163,6 +163,19 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 		}
 	},
 
+	// UI 側の起動/終了サービス(2026-08-13・model/UI 分割 第1段 Task 8)。上の kKESCMPeekStartupBoss と対。
+	// ★終了時の順序が意味を持つ: 購読を外してからパネル周りを畳む(KESCMUIStartup.cpp の冒頭コメント参照)。
+	// ⚠2つのサービスの**相対順序は保証されない**。分割時に1行ずつ確認して前後関係が無いことを確かめてある。
+	Class
+	{
+		kKESCMUIStartupBoss,
+		kInvalidClass,
+		{
+			IID_ISTARTUPSHUTDOWN,   kKESCMUIStartupImpl,
+			IID_IK2SERVICEPROVIDER, kLazyStartupShutdownProviderImpl,
+		}
+	},
+
 	// Action component: handles the About menu items (main menu + panel flyout).
 	Class
 	{

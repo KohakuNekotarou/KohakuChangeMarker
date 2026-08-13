@@ -61,12 +61,11 @@
 #include "KESCMScrollMap.h"          // スプレッド再比較後にスクロールバー地図を最新化
 #include "KESCMChangeNav.h"          // KESCMRefreshNavPosition(スプレッド再比較後に Prev/Next 位置を最新化)
 #include "KESCMThumbIdleTask.h"      // クローズ後の再生成を次のidleに遅延(前面切替の過渡を避ける)
-#include "KESCMPanelState.h"         // KESCMLoadPanelStateIfPresent(起動時に保存済みパネル設定を復元)
-#include "KESCMPanelAlpha.h"         // KESCMAttachPanelVisibilityObserver(半透明トグルの追随購読を起動時に開始)
-#include "KESCMTrackerHud.h"         // KESCMTrackerHudShutdown(押下中 HUD のフォント参照を終了時に返す)
+// (★KESCMPanelState.h / KESCMPanelAlpha.h / KESCMTrackerHud.h / KESCMCmykCursor.h は 2026-08-13
+//  Task 8 で外した＝起動/終了の UI の仕事ごと KESCMUIStartup.cpp へ移したため)
 #include "KESCMStoryList.h"          // KESCMStoryList::ShutdownCleanup(行が抱える PMString を終了時に手放す)
-#include "KESCMViewSync.h"           // KESCMInvalidateSyncCaches / KESCMViewSyncShutdown(2026-08-13 の分割で移動)
-#include "KESCMCmykCursor.h"         // KESCMCmykShutdown(同上)
+#include "KESCMViewSync.h"           // KESCMInvalidateSyncCaches(arm/disarm/クローズで同期キャッシュを捨てる)
+									 // ★KESCMViewSyncShutdown の呼びは Task 8 で KESCMUIStartup.cpp へ移った
 #include "KESCMPeekGesture.h"        // 押下中状態のリセット / クローズ後片付けの保留 / 購読開始(同上)
 #include "KESCMHideUnchanged.h"      // KESCMResetHideUnchanged / 隠している文書の getter(2026-08-13 に移動)
 #include "KESCMPeek.h"
@@ -515,44 +514,24 @@ CREATE_PMINTERFACE(KESCMPeekStartup, kKESCMPeekStartupImpl)
 void KESCMPeekStartup::Startup()
 {
 	// ★レイアウトビュー同期は既定 OFF(ユーザー指定 2026-07-24。旧・既定 ON を撤回)。sLayoutSyncOn は
-	// 初期値 kFalse なので、ここで明示的に ON にしなければ OFF のまま。保存済み設定(下の読み込み)で
-	// syncLayoutViews=true を復元したユーザーだけ ON になる。
+	// 初期値 kFalse なので、ここで明示的に ON にしなければ OFF のまま。保存済み設定の復元で
+	// syncLayoutViews=true を復元したユーザーだけ ON になる(その復元は下記のとおり UI 側へ移った)。
 
-	// ★続けて保存済みパネル設定(独自 JSON)をここで読み込む(ユーザー指定 2026-07-15)。
-	// 同期は Stop 中でもトグル ON なら動くため、「パネル初回オープン時に復元」の従来タイミングだと、
-	// ON を保存したユーザーは起動〜パネルを開くまでの間だけ同期が止まってしまう。起動時に読み込めば
-	// その窓が無くなる(保存が無ければ上の既定 OFF のまま)。
-	// 各トグルの復元先は全部エンジン側のフラグ/購読で、パネルにも文書にも依存しない=起動時に安全
-	// (KESCMDoSetPrintMarks は db=nil のフラグのみ、ScrollMap/IgnoreMarker/HoldToHide 等は平の代入)。
-	// 内部の「セッション一度きり」ガードにより、パネル AutoAttach からの既存呼び出しは no-op のまま残る
-	// (起動サービスの順序が万一変わっても取りこぼさない保険)。
-	KESCMLoadPanelStateIfPresent();
-
-	// 一括クローズ完了(kPendingDocumentsClosedMsg)の購読を開始する。以後、複数文書を続けて閉じても
-	// UI の後片付けは「全部閉じ終わってから1回」に畳まれる(実体は KESCMPeekGesture.cpp)。
-	KESCMAttachDocsClosedObserver();
-
-	// パネルの表示状態変化(kPaletteVisibilityChangedMessage)の購読を開始する。「Translucent Panel」が
-	// ON のとき、パネルを開き直したりドッキング⇄フローティングを切り替えたりしても半透明が残る
-	// (半透明の付け先である OWL.Dock 窓がそのたびに作り直されるため)。実体は KESCMPanelAlpha.cpp。
-	KESCMAttachPanelVisibilityObserver();
+	// ★★2026-08-13(Task 8): **起動時の仕事は3つとも UI 側へ移した** ---- パネル設定の復元
+	//   (KESCMLoadPanelStateIfPresent)・一括クローズの購読(KESCMAttachDocsClosedObserver)・
+	//   半透明の追随購読(KESCMAttachPanelVisibilityObserver)。行き先は KESCMUIStartup.cpp。
+	//   ⇒ **model 側の起動処理は空になった。** 分けてみて初めて「元の起動処理は丸ごと UI だった」と
+	//     分かった形で、これは分割が正しい線で入っている証拠でもある。
+	//   ⚠**空でもこのメソッドは残す**(IStartupShutdownService の契約)。第2段で model 側に起動時の
+	//     仕事ができたらここへ足す。
 }
 
 void KESCMPeekStartup::Shutdown()
 {
-	// 遅延サムネイル更新の idle task を解放(予約中なら RemoveTask してから)。
-	KESCMShutdownThumbIdleTask();
-	// 一括クローズの保留も捨てる(終了後に流れることは無いが、状態を残さない)。
-	KESCMPeekGestureShutdown();
-	// ★先に購読を止める(2026-08-12)。購読している間セッションが握っているのは**この .pln の中への
-	//   ポインタ**で、終了処理中のパネル破棄は実際に通知を飛ばす ---- 消えかけのコードで Update が走る。
-	//   通知を止めてから、下の行で道具(タイマーと Win32 フック)を畳む順序。
-	//   ★KBS が 2026-08-08 に新設した対を移植した分(KESCM 側にだけ無かった)。
-	KESCMDetachPanelVisibilityObserver();
-	// パネル半透明の遅延再適用タイマーも同様に止める(同じく生関数ポインタを残さないため)。
-	KESCMShutdownPanelAlpha();
-	// 押下中 HUD が抱えるフォント参照を返す。押下中に quit した経路でも確実に片付ける。
-	KESCMTrackerHudShutdown();
+	// ★★2026-08-13(Task 8): **UI の後片付け5件はここから UI 側へ移した** ---- 遅延サムネイル
+	//   idle task の解放 / 一括クローズの保留の破棄 / 半透明の購読解除 / 半透明タイマーの停止 /
+	//   押下中 HUD のフォント返却。行き先は KESCMUIStartup.cpp で、**順序も向こうで保っている**
+	//   (購読を外してから道具を畳む ---- 消えかけのコードで Update が走るのを避けるため)。
 	// 保持していたマーク/旧版画像バッファを解放(終了時もきれいに片付ける)。
 	KESCMDrawEventHandler::DropAll();
 	KESCMDrawEventHandler::DropAllOrig();
@@ -567,7 +546,6 @@ void KESCMPeekStartup::Shutdown()
 	KESCMPageMapClearAllDocs();				// 登録(Added/Removed)
 	KESCMPageCheckClearAllDocs();			// 「KCM: Check」の✓
 	KESCMResetHideUnchanged(kFalse);		// Hide Unchanged の控え(kFalse=文書には一切触らない)
-	KESCMInvalidateSyncCaches();			// 同期のページ矩形表・対応表・前回状態(2026-07-25 追補)
 	KESCMInvalidatePageNumberMarkerRects();	// ノンブル除外矩形のキャッシュ(2026-08-06 の監査 E-3)
 	// ★Story Edits の一覧(2026-08-10)。★★他と違い**中身が PMString** なので、これを忘れると
 	//   unload 時に静的な PMString がデストラクトされる ---- KBS が3度続けて忘れて記録した形
@@ -581,15 +559,10 @@ void KESCMPeekStartup::Shutdown()
 	sPeekTargetDB = nil;
 	sPeekSourceDB = nil;
 
-	// レイアウトビュー同期の後始末(状態フラグを落とすだけ。理由は KESCMViewSync.cpp の実体側)。
-	KESCMViewSyncShutdown();
-
-	// ★file-static PMString を空にして、プラグイン unload 時の静的デストラクタを実質 no-op にする
-	// (Windows では実害なしの実績だが、Mac は unload 順が異なるため heap バッファを持ち越さない方が
-	// 安全。2026-07-15 終了堅牢化)。★CMYK 側(カーソル文字列・押下中のフォント/文書ポインタ)は
-	// KESCMCmykShutdown が同じ方針で片付ける(2026-08-13 の分割で移動)。
-	KESCMCmykShutdown();
-	KESCMClearSessionStatus();	// パネルのステータス記憶(gSessionStatus)も同様に空へ
+	// (★同期キャッシュの破棄・同期フラグの後始末・CMYK の後片付け・ステータス記憶の消去も
+	//  2026-08-13 Task 8 で UI 側 KESCMUIStartup.cpp へ移した。どれも UI のファイルが持つ状態。
+	//  ⚠**ステータス記憶(gSessionStatus)だけは第2段の予定が違う**: 設計書 §3.3 のとおり文字列の保持は
+	//    model 側へ来る(app.kcmStatus がパネルを閉じていても答える仕様のため)＝Task 9 で移る。)
 
 	// 旧ページ番号バッジのフォントキャッシュも同じ理由(静的破棄前の明示解放)でここで捨てる(2026-07-25)。
 	KESCMReleaseOldNumFontCache();

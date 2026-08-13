@@ -119,6 +119,7 @@ DECLARE_PMID(kClassIDSpace, kKESCMBookRowCellBoss, kKESCMPrefix + 24)	// kInfoSt
 // (ユーザー指定 2026-08-12)。継承した boss からインターフェイスを**取り除く道は無い**ので、消し方は
 // 「別の答えを返す実装で上書きする」になる ---- kKESCMStoryRowCellBoss(+20)がツールチップを黙らせたのと同じ形。
 DECLARE_PMID(kClassIDSpace, kKESCMSplitterPanelBoss, kKESCMPrefix + 25)	// kSplitterPanelWidgetBoss継承+IID_IEVENTHANDLER(kKESCMSplitterEHImpl): 分割バーを掴めない SplitterPanelWidget
+DECLARE_PMID(kClassIDSpace, kKESCMUIStartupBoss, kKESCMPrefix + 27)	// IStartupShutdown: **UI 側**の起動/終了処理(2026-08-13・model/UI 分割 第1段 Task 8)。パネル設定の復元・半透明の購読/解除・HUD のフォント返却・一括クローズの購読・遅延サムネイル idle task の解放。★model 側の kKESCMPeekStartupBoss と**対**。第2段でこの Class ごと KCMUI へ移る
 DECLARE_PMID(kClassIDSpace, kKESCMUIDrawEventServiceBoss, kKESCMPrefix + 26)	// IK2ServiceProvider+IDrwEvtHandler: **UI 専用**の描画サービス(2026-08-13・model/UI 分割 第1段 Task 6)。押下中 HUD だけを持つ。★上の kKESCMDrawEventServiceBoss(比較マーク)と役割が違う＝あちらは印刷と PDF 書き出しに出なければならないので model 側、こちらは画面専用。kDrawEventService は複数プロバイダ登録が前提(本体だけで20以上)。第2段でこの Class ごと KCMUI へ移る
 
 
@@ -195,6 +196,7 @@ DECLARE_PMID(kImplementationIDSpace, kKESCMBookDialogControllerImpl, kKESCMPrefi
 DECLARE_PMID(kImplementationIDSpace, kKESCMBookTreeAdapterImpl, kKESCMPrefix + 31)	// ITreeViewHierarchyAdapter 実装(ListTreeViewAdapter派生。KESCMBookTreeAdapter.cpp)。ブック比較ダイアログの章一覧＝行数を答えるだけ
 DECLARE_PMID(kImplementationIDSpace, kKESCMBookTreeWidgetMgrImpl, kKESCMPrefix + 32)	// ITreeViewWidgetMgr 実装(CTreeViewWidgetMgr派生。KESCMBookTreeWidgetMgr.cpp)。章一覧の行の生成と流し込み(章名 / 状態の2列)
 DECLARE_PMID(kImplementationIDSpace, kKESCMBookRowEHImpl, kKESCMPrefix + 33)	// IEventHandler 実装(TreeNodeEventHandler派生。KESCMBookRowEH.cpp)。ブック比較の章行＝**ダブルクリックでその章を開く**・**右クリックで行メニュー**(Start Change Marker)。★単クリックは何もしない(Story Edits の行と違う＝あちらは開いている文書の中を移動するだけだが、こちらは文書を開いてしまうため)。実際の動作は KESCMBookOpen.cpp
+DECLARE_PMID(kImplementationIDSpace, kKESCMUIStartupImpl, kKESCMPrefix + 38)	// IStartupShutdown 実装(UI 側の起動/終了。KESCMUIStartup.cpp)
 DECLARE_PMID(kImplementationIDSpace, kKESCMUIDrawEventSrvcImpl, kKESCMPrefix + 35)	// CServiceProvider 実装(kDrawEventService。UI 専用の描画サービス。KESCMUIDrawEvent.cpp)。★GetThreadingPolicy は手書きしない＝CServiceProvider がプラグインの型から既定を返す
 DECLARE_PMID(kImplementationIDSpace, kKESCMUIDrawEventHandlerImpl, kKESCMPrefix + 36)	// IDrwEvtHandler 実装(押下中 HUD の描画だけ。画面専用＝PDF 書き出しに出なくてよい。KESCMUIDrawEvent.cpp)
 DECLARE_PMID(kImplementationIDSpace, kKESCMSplitterEHImpl, kKESCMPrefix + 34)	// IEventHandler 実装(CEventHandler派生＝全メソッドが kFalse を返すだけの基底をそのまま使う)。パネルの分割バーが押下を受け取らなくなる＝ドラッグで動かせない(KESCMSplitterEH.cpp)

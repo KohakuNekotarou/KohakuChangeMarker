@@ -123,6 +123,9 @@
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMUIDrawEvent.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMUIStartup.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMPageMap.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
