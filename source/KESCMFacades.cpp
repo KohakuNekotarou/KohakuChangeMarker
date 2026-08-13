@@ -13,6 +13,11 @@
 //  address the other plug-in can reach. Putting logic here would mean the same decision lived
 //  in two places.
 //
+//  ★ONE BODY IS NOT A PURE FORWARD: IKESCMStoryEditsFacade::GetRow copies five fields out of
+//  the model's row. That is a change of ownership rather than a decision -- the model hands out
+//  a pointer into a list it can rebuild, which is safe only while caller and list are in the
+//  same plug-in (see the interface header).
+//
 //  All of them are AddIn'd to kUtilsBoss (see KESCM.fr), so the UI reaches them with
 //  Utils<IKESCMxxx>(). The implementations are our own -- adding somebody else's stock
 //  implementation to an existing boss is how you collide with another vendor's plug-in and
@@ -30,6 +35,7 @@
 #include "IKESCMCompareFacade.h"
 #include "IKESCMMarkData.h"
 #include "IKESCMPageFlagsFacade.h"
+#include "IKESCMStoryEditsFacade.h"
 #include "KESCMComparisonRun.h"		// ToggleStartStop / Stop / StartFor / CanStart / print marks
 #include "KESCMCore.h"				// MarkChanges / ClearMarks / DoSetPrintMarks / getters
 #include "KESCMPeek.h"				// armed docs alive / peek / RefreshSelectedPages / base opacity
@@ -39,6 +45,7 @@
 #include "KESCMDrawEventHandler.h"	// the engine's shared state, which these two publish
 #include "KESCMPageMap.h"			// registered pages, the page pairing, and the Register toggle
 #include "KESCMPageCheck.h"			// the Check toggle and the Save/Load of both flags
+#include "KESCMStoryList.h"			// the Story Edits rows, and where a story begins in a document
 
 //========================================================================================
 // KESCMCompareFacade -- IKESCMCompareFacade
@@ -266,5 +273,47 @@ public:
 };
 
 CREATE_PMINTERFACE(KESCMPageFlagsFacade, kKESCMPageFlagsFacadeImpl)
+
+
+//========================================================================================
+// KESCMStoryEditsFacade -- IKESCMStoryEditsFacade
+//
+// The read side of the Story Edits list, plus the two "where does this story begin" questions
+// the navigation asks of whichever document it is about to scroll.
+//
+// ★NO Build/Clear/ShutdownCleanup. The callers were grepped before this class was written and
+// all of them are model-side (KESCMCore.cpp builds and clears, KESCMPeek.cpp clears and empties
+// at shutdown), so the plan's draft Rebuild() would have been a method nobody calls.
+//========================================================================================
+class KESCMStoryEditsFacade : public CPMUnknown<IKESCMStoryEditsFacade>
+{
+public:
+	KESCMStoryEditsFacade(IPMUnknown* boss) : CPMUnknown<IKESCMStoryEditsFacade>(boss) {}
+
+	virtual int32	GetRowCount()	{ return KESCMStoryList::GetRowCount(); }
+
+	virtual bool16	GetRow(int32 nth, Row& out)
+	{
+		const KESCMStoryRow* row = KESCMStoryList::GetRow(nth);
+		if (row == nil)
+			return kFalse;	// out of range, or the placeholder row -- out is left as the caller had it
+
+		// Five of the row's six fields. fPageIndex is the list's sort key and no caller reads it.
+		out.fStoryUID	= row->fStoryUID;
+		out.fText		= row->fText;
+		out.fKinds		= row->fKinds;
+		out.fFrameUID	= row->fFrameUID;
+		out.fPageUID	= row->fPageUID;
+		return kTrue;
+	}
+
+	virtual UID		GetFirstFrameUID(IDataBase* db, UID storyUID)
+					{ return KESCMStoryFirstFrameUID(db, storyUID); }
+
+	virtual bool16	GetStoryStartPoint(IDataBase* db, UID storyUID, UID& outFrame, PBPMPoint& outPb)
+					{ return KESCMStoryStartPoint(db, storyUID, outFrame, outPb); }
+};
+
+CREATE_PMINTERFACE(KESCMStoryEditsFacade, kKESCMStoryEditsFacadeImpl)
 
 // End of KESCMFacades.cpp.

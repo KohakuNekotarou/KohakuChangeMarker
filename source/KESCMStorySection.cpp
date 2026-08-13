@@ -44,7 +44,7 @@
 #include "IKESCMCompareFacade.h"	// IsArmed(2026-08-13・分割 第1段 Task 11 で Facade 経由へ。
 									//  KESCMGetVisibleOwnPanel は Task 5 で KESCMUIShared.h へ移っている)
 #include "KESCMUIShared.h"	// panel / status line / nav readout / tool button (split from KESCMCore.h on 2026-08-13)
-#include "KESCMStoryList.h"			// GetRowCount - the number in the heading
+#include "IKESCMStoryEditsFacade.h"	// GetRowCount - the number in the heading (Facade since 2026-08-13, Task 14)
 #include "KESCMStorySection.h"
 
 namespace
@@ -358,7 +358,7 @@ void KESCMUpdateStorySectionLabel()
 	if (Utils<IKESCMCompareFacade>()->IsArmed())
 	{
 		text.Append(" (");
-		text.AppendNumber(KESCMStoryList::GetRowCount());
+		text.AppendNumber(Utils<IKESCMStoryEditsFacade>()->GetRowCount());
 		text.Append(")");
 	}
 

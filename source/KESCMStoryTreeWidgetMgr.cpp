@@ -46,7 +46,10 @@
 #include "KESCMID.h"
 #include "KESCMCore.h"				// KESCMGetVisibleOwnPanel
 #include "KESCMUIShared.h"	// panel / status line / nav readout / tool button (split from KESCMCore.h on 2026-08-13)
-#include "KESCMStoryList.h"
+#include "Utils.h"					// Utils<IKESCMStoryEditsFacade>()
+#include "IKESCMStoryEditsFacade.h"	// the rows themselves (Facade since 2026-08-13, Task 14)
+#include "KESCMStoryStamp.h"		// KESCMStoryChangeKind - the bits KindLabel names. A type only,
+									// which is why it may be included from either side of the split
 #include "KESCMStoryTree.h"
 
 namespace
@@ -202,8 +205,13 @@ public:
 		if (widgetList == nil)
 			return kTrue;
 
+		// ★A row COPIED out of the model, not a pointer into its list (Task 14). The three cells
+		//   below are written from it and nothing here outlives the call, so the copy costs one
+		//   PMString per row drawn.
 		TreeNodePtr<ListIndexNodeID> nodeID(node);
-		const KESCMStoryRow* row = nodeID != nil ? KESCMStoryList::GetRow(nodeID->GetIndex()) : nil;
+		IKESCMStoryEditsFacade::Row row;
+		const bool16 haveRow = (nodeID != nil)
+			&& Utils<IKESCMStoryEditsFacade>()->GetRow(nodeID->GetIndex(), row);
 
 		// ★All THREE cells are written on EVERY apply, including the empty case. Row widgets are
 		//   recycled as the list scrolls, so a cell left alone keeps whatever the row it used to be
@@ -217,17 +225,17 @@ public:
 		uid.SetTranslatable(kFalse);
 		text.SetTranslatable(kFalse);
 		kinds.SetTranslatable(kFalse);
-		if (row != nil)
+		if (haveRow)
 		{
 			// ★UID as a plain decimal number (user's request, 2026-08-10). The cast is to the type
 			//   AppendNumber takes (PMString.h:568); UID::Get() answers uint32 (OMTypes.h:78), and a
 			//   document's object numbers are counted in thousands, nowhere near where the two types
 			//   part company.
-			uid.AppendNumber(static_cast<int32>(row->fStoryUID.Get()));
-			text = row->fText;
-			kinds = KindLabel(row->fKinds);
+			uid.AppendNumber(static_cast<int32>(row.fStoryUID.Get()));
+			text = row.fText;
+			kinds = KindLabel(row.fKinds);
 		}
-		else if (KESCMStoryList::GetRowCount() == 0)
+		else if (Utils<IKESCMStoryEditsFacade>()->GetRowCount() == 0)
 		{
 			// ★The placeholder the adapter asks for while a comparison is running and found nothing
 			//   (see GetNumListItems). Left cell only: there is no kind to name.

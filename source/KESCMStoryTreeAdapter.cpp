@@ -19,6 +19,10 @@
 //  what KESCMStoryList::GetRow() wants. (KBS writes a node class of its own because its nodes are
 //  a triple of chapter, font and hit; a flat list has no such need.)
 //
+//  ★2026-08-13 (Task 14): the row index is now handed to IKESCMStoryEditsFacade::GetRow rather
+//  than to KESCMStoryList::GetRow directly. Nothing about the node class changes -- the index
+//  ListIndexNodeID carries is what the boundary takes as well.
+//
 //========================================================================================
 
 #include "VCPlugInHeaders.h"
@@ -30,7 +34,7 @@
 #include "KESCMID.h"
 #include "Utils.h"					// Utils<IKESCMCompareFacade>()
 #include "IKESCMCompareFacade.h"	// IsArmed - is a comparison running at all (Facade since 2026-08-13, Task 11)
-#include "KESCMStoryList.h"
+#include "IKESCMStoryEditsFacade.h"	// GetRowCount - how long the list is (Facade since 2026-08-13, Task 14)
 
 /** Hierarchy adapter for the Story Edits list: a flat list, as long as the model is.
 */
@@ -43,7 +47,7 @@ public:
 protected:
 	virtual int32 GetNumListItems() const
 	{
-		const int32 rows = KESCMStoryList::GetRowCount();
+		const int32 rows = Utils<IKESCMStoryEditsFacade>()->GetRowCount();
 		if (rows > 0)
 			return rows;
 

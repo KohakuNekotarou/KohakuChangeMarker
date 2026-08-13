@@ -60,3 +60,4 @@ REGISTER_PMINTERFACE(KESCMScriptProvider, kKESCMScriptProviderImpl)	// app.kcmSt
 REGISTER_PMINTERFACE(KESCMCompareFacade, kKESCMCompareFacadeImpl)	// UI が比較エンジンに頼む窓口(kUtilsBoss へ AddIn。KESCMFacades.cpp)
 REGISTER_PMINTERFACE(KESCMMarkData, kKESCMMarkDataImpl)	// UI が比較結果を読む窓口(同上。★読み取り専用。KESCMFacades.cpp)
 REGISTER_PMINTERFACE(KESCMPageFlagsFacade, kKESCMPageFlagsFacadeImpl)	// UI が Register/Check を書き換える窓口(同上。KESCMFacades.cpp)
+REGISTER_PMINTERFACE(KESCMStoryEditsFacade, kKESCMStoryEditsFacadeImpl)	// UI が Story Edits の一覧を読む窓口(同上。★読み取り専用。KESCMFacades.cpp)

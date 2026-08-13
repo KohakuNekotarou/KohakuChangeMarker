@@ -34,7 +34,7 @@
 #include "KESCMCore.h"		// KESCMIsDocDBOpen
 #include "KESCMUIShared.h"	// panel / status line / nav readout / tool button (split from KESCMCore.h on 2026-08-13)
 #include "KESCMStoryJump.h"
-#include "KESCMStoryList.h"
+#include "IKESCMStoryEditsFacade.h"	// the row a click landed on (Facade since 2026-08-13, Task 14)
 
 namespace
 {
@@ -77,8 +77,8 @@ PMString PageLabel(IDataBase* db, UID pageUID)
 //----------------------------------------------------------------------------------------
 bool16 KESCMStoryJumpToRow(int32 rowIndex)
 {
-	const KESCMStoryRow* row = KESCMStoryList::GetRow(rowIndex);
-	if (row == nil)
+	IKESCMStoryEditsFacade::Row row;
+	if (!Utils<IKESCMStoryEditsFacade>()->GetRow(rowIndex, row))
 		return kFalse;	// out of range, or the "No edits" placeholder - nowhere to go, silently
 
 	// ★The list belongs to the comparison that built it, so the document to move is the armed
@@ -96,7 +96,7 @@ bool16 KESCMStoryJumpToRow(int32 rowIndex)
 
 	// A story with no frame at all is a real edit - it is in the document and it changed - but there
 	// is nowhere on a page to show it. Say so rather than moving to an arbitrary place.
-	if (row->fFrameUID == kInvalidUID)
+	if (row.fFrameUID == kInvalidUID)
 	{
 		PMString s("That story is not placed in a frame.");
 		s.SetTranslatable(kFalse);
@@ -104,7 +104,7 @@ bool16 KESCMStoryJumpToRow(int32 rowIndex)
 		return kFalse;
 	}
 
-	if (!KESCMGotoStoryFrame(db, row->fFrameUID, row->fPageUID, row->fStoryUID))
+	if (!KESCMGotoStoryFrame(db, row.fFrameUID, row.fPageUID, row.fStoryUID))
 	{
 		PMString s("Could not scroll.");	// 文言は Prev/Next の失敗時と同じ(同じ出来事なので)
 		s.SetTranslatable(kFalse);
@@ -112,7 +112,7 @@ bool16 KESCMStoryJumpToRow(int32 rowIndex)
 		return kFalse;
 	}
 
-	KESCMSetStatus(PageLabel(db, row->fPageUID));
+	KESCMSetStatus(PageLabel(db, row.fPageUID));
 	return kTrue;
 }
 
@@ -121,8 +121,8 @@ bool16 KESCMStoryJumpToRow(int32 rowIndex)
 //----------------------------------------------------------------------------------------
 bool16 KESCMStorySelectWholeStory(int32 rowIndex)
 {
-	const KESCMStoryRow* row = KESCMStoryList::GetRow(rowIndex);
-	if (row == nil)
+	IKESCMStoryEditsFacade::Row row;
+	if (!Utils<IKESCMStoryEditsFacade>()->GetRow(rowIndex, row))
 		return kFalse;
 
 	// Both of these have just been reported by the single click that preceded this one - see the
@@ -130,10 +130,10 @@ bool16 KESCMStorySelectWholeStory(int32 rowIndex)
 	IDataBase* db = Utils<IKESCMCompareFacade>()->GetArmedTargetDB();
 	if (db == nil || !KESCMIsDocDBOpen(db))
 		return kFalse;
-	if (row->fFrameUID == kInvalidUID)
+	if (row.fFrameUID == kInvalidUID)
 		return kFalse;
 
-	const UIDRef storyRef(db, row->fStoryUID);
+	const UIDRef storyRef(db, row.fStoryUID);
 	InterfacePtr<ITextModel> model(storyRef, UseDefaultIID());
 	if (model == nil)
 		return kFalse;

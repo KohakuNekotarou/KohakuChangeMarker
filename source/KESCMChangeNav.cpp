@@ -68,7 +68,8 @@
                                     // ＋ GetPagePairing(Source 側連動スクロールの対応表。2026-08-13 Task 13 で
                                     //   KESCMPageMap.h から IKESCMMarkData 経由へ)
 #include "KESCMThumbnailRefresh.h"	// KESCMGetVisiblePagesPanel(表示中 Pages パネル取得の共有ヘルパ)
-#include "KESCMStoryList.h"			// KESCMStoryFirstFrameUID(Source 側で「同じストーリー」の先頭フレームを引く)
+#include "IKESCMStoryEditsFacade.h"	// GetFirstFrameUID(Source 側で「同じストーリー」の先頭フレームを引く)／
+									// GetStoryStartPoint(本文の書き出し位置)。2026-08-13 Task 14 で Facade 経由へ
 #include "KESCMChangeNav.h"
 
 // 巡回の1ストップ。change=そのページの変更(枠)= ページ中心へスクロール / overset=あふれ「+」箇所=
@@ -676,7 +677,8 @@ static void KESCMSyncCompanionViews(IDataBase* navDB, UID pageUID)
 // 文書 db のビューを、storyUID の「**一番最初**」が画面中央に来るようスクロールする。
 //
 // ★★飛び先はフレームの中心ではなく**本文の書き出し**(ユーザー決定 2026-08-10)。背の高いフレームでは
-//   中心は本文の途中で、読みたいのは書き出しの方。点の算出は KESCMStoryStartPoint
+//   中心は本文の途中で、読みたいのは書き出しの方。点の算出は IKESCMStoryEditsFacade::GetStoryStartPoint
+//   (実体は KESCMStoryList.cpp の KESCMStoryStartPoint)
 //   (＝overset の「+」を出す KESCMLastPlacedOutport の鏡像。同じ3つの座標系を同じ順に通る)。
 // ★点へ寄せる手順も overset とまったく同じ＝**先にスプレッドを出してから** pb 点へ。pb 点への
 //   スクロールは「そのビューが既にそのスプレッドを映している」ことが前提だから(上の
@@ -689,7 +691,7 @@ static bool16 KESCMScrollDocToStoryStart(IDataBase* db, UID storyUID, UID fallba
 {
 	UID startFrame = kInvalidUID;
 	PBPMPoint startPb;
-	if (KESCMStoryStartPoint(db, storyUID, startFrame, startPb))
+	if (Utils<IKESCMStoryEditsFacade>()->GetStoryStartPoint(db, storyUID, startFrame, startPb))
 	{
 		outFrame = startFrame;
 		KESCMEnsureSpreadInView(db, startFrame);
@@ -806,7 +808,7 @@ bool16 KESCMGotoStoryFrame(IDataBase* db, UID frameUID, UID pageUID, UID storyUI
 	IDataBase* sourceDB = Utils<IKESCMMarkData>()->GetMarkedSourceDB();
 	if (sourceDB != nil && sourceDB != db && storyUID != kInvalidUID)
 	{
-		UID srcFrame = KESCMStoryFirstFrameUID(sourceDB, storyUID);
+		UID srcFrame = Utils<IKESCMStoryEditsFacade>()->GetFirstFrameUID(sourceDB, storyUID);
 		if (srcFrame != kInvalidUID)
 		{
 			// ★Sync layout views が ON のときは Source を手動で動かさない ---- Sync のオブザーバ
