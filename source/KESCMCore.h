@@ -122,12 +122,9 @@ ErrorCode	KESCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMStri
 // 両方を確実に再描画するための共有ヘルパ(2つが同じ db なら二重には呼ばない)。
 void		KESCMInvalidateDB(IDataBase* db);
 
-// Find Overset を db に対して走査・反映する共有処理(実体は KESCMActionComponent.cpp)。db(非nil)の overset
-// 位置/ページを集めて sOverset* に格納し、Pages パネルのサムネイル・スクロール地図・Prev/Next の位置表示を
-// 更新する。ステータス行は出さない(呼び出し側が用途別メッセージを出す)。★比較中は必ず Target 文書に紐づけ
-// 直すために、Find Overset/Refresh(armed 時)と Start(overset ON 時)から呼ぶ。前回と別文書なら前の文書の
-// サムネイルの目印も消す。
-void		KESCMApplyOversetForDoc(IDataBase* db);
+// (★Find Overset の走査結果を反映する KESCMApplyOversetForDoc の宣言は、2026-08-13 の
+//  model/UI 分割 第1段 Task 2 で **KESCMOversetApply.h** へ移した。実体も KESCMOversetApply.cpp。
+//  対象文書を選ぶ KESCMOversetScanTargetDB も同じヘッダーに出ている。)
 
 // オーバーレイ全体(と旧版画像のキャッシュ)を破棄し、db を再描画する。
 void		KESCMDoClearMarks(IDataBase* db);
@@ -264,20 +261,10 @@ void		KESCMSetToolButtonSelected(bool16 selected);
 // (Split Target on Start(KESCMGetSplitOnStart/KESCMDoSplitTarget)は 2026-07-04 撤去。
 //  仕組みは docs/ai-notes/kescm-split-target-mechanism.md と git 履歴 69c4b07 に保存)
 
-// フライアウト「Hide Unchanged Spreads」トグルの状態リセット(Target/Source 両側)。
-// restoreSpreads=kTrue なら、覚えている「自分が隠したスプレッド」を kHideSpreadCmdBoss(kFalse) で
-// 再表示してから状態を捨てる(削除済み UID はスキップ)。★文書の生存確認は内部で行う
-// (IDocumentList へのポインタ比較のみ)ので、片方が閉じていても kTrue で安全(生存側のみ再表示)。
-// kFalse なら db に一切触れず状態だけ捨てる。
-// 呼び所: 再比較(KESCMDoMarkChangesDoc)・Stop(KESCMDoClearMarks)・クローズスイープ
-// (KESCMHandleDocsClosed)はいずれも kTrue でよい。実体は KESCMActionComponent.cpp。
-void		KESCMResetHideUnchanged(bool16 restoreSpreads);
-
-// 「Hide Unchanged Spreads」で現在スプレッドを隠している文書(未使用なら nil)。Target 側と Source 側。
-// クローズスイープが生存確認(FindDocByDataBase への比較のみ、deref しない)に使う。
-// 実体は KESCMActionComponent.cpp。
-IDataBase*	KESCMGetHideUnchangedDB();
-IDataBase*	KESCMGetHideUnchangedSrcDB();
+// (★フライアウト「Hide Unchanged Spreads」の宣言3本(KESCMResetHideUnchanged /
+//  KESCMGetHideUnchangedDB / KESCMGetHideUnchangedSrcDB)は、2026-08-13 の model/UI 分割
+//  第1段 Task 2 で **KESCMHideUnchanged.h** へ移した。実体も KESCMHideUnchanged.cpp で、
+//  トグル本体(旧 KESCMActionComponent::DoHideUnchangedToggle)も一緒に移っている。)
 
 // (★フライアウト「Sync Layout Views」トグル(KESCMGetLayoutSync / KESCMSetLayoutSync)と
 //  「Align Other Views to Active」(KESCMAlignOtherViewsToActiveNow)の宣言は、2026-08-13 の

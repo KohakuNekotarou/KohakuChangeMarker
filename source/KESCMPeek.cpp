@@ -65,6 +65,7 @@
 #include "KESCMViewSync.h"           // KESCMInvalidateSyncCaches / KESCMViewSyncShutdown(2026-08-13 の分割で移動)
 #include "KESCMCmykCursor.h"         // KESCMCmykShutdown(同上)
 #include "KESCMPeekGesture.h"        // 押下中状態のリセット / クローズ後片付けの保留 / 購読開始(同上)
+#include "KESCMHideUnchanged.h"      // KESCMResetHideUnchanged / 隠している文書の getter(2026-08-13 に移動)
 #include "KESCMPeek.h"
 
 //========================================================================================

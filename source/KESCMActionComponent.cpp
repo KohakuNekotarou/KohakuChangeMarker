@@ -17,41 +17,32 @@
 #include "IActionStateList.h"		// UpdateActionStates(チェックマーク表示)。IPMUnknown 派生ではない
 #include "PMString.h"
 
-// Hide Unchanged Spreads(kHideSpreadCmdBoss)用:
-#include "CmdUtils.h"				// CreateCommand/ProcessCommand(モデル変更は必ず Command 経由)
-#include "ICommand.h"
-#include "IBoolData.h"				// kHideSpreadCmdBoss は専用 CmdData を持たず汎用 IBoolData で方向指定(kLockLayerCmdBoss と同型)
-#include "UIDList.h"
-#include "ISpread.h"
-#include "ISpreadList.h"
-#include "SpreadID.h"				// kHideSpreadCmdBoss / IID_IHIDESPREADBOOLDATA
-#include "ISession.h"				// GetExecutionContextSession(リセット時の文書生存確認)
-#include "IApplication.h"
-#include "IDocumentList.h"			// FindDocByDataBase(閉じた db を deref しないための生存確認)
-#include <vector>
-#include <map>
-#include <set>
-
-#include "IDataBase.h"				// GetRootUID()(Hide Unchanged のスプレッド走査)
+// ★Hide Unchanged Spreads(kHideSpreadCmdBoss)と overset 走査の適用は 2026-08-13 に
+//   KESCMHideUnchanged.cpp / KESCMOversetApply.cpp へ移した(model/UI 分割 第1段 Task 2)。
+//   ここに在った SDK インクルード(CmdUtils / ICommand / IBoolData / UIDList / ISpread /
+//   ISpreadList / SpreadID / ISession / IApplication / IDocumentList / IDataBase と <map> / <set>)も、
+//   それを使う側と一緒に移っている。
+#include <vector>					// DoFindOversetToggle(サムネイル更新へ渡すページ列)
 
 // (Split Target(90/10)機能は 2026-07-04 撤去。専用 include 群も削除。
 //  仕組みは docs/ai-notes/kescm-split-target-mechanism.md と git 履歴 69c4b07 に保存)
 
 // プロジェクト内:
 #include "KESCMID.h"
-#include "KESCMLoc.h"		// 実行時の日本語切替(How to Use と Hide Unchanged の確認の2箇所だけ)
+#include "KESCMLoc.h"		// 実行時の日本語切替(How to Use の1箇所だけ。Hide Unchanged の確認文言は
+							// 2026-08-13 に本体ごと KESCMHideUnchanged.cpp へ移った)
 #include "KESCMCore.h"		// KESCMOpenAboutURL
-#include "KESCMDrawEventHandler.h"	// sEntries/sDB/sShowOldNumbers(Hide Unchanged と旧番号バッジの状態参照)
+#include "KESCMDrawEventHandler.h"	// sDB/sSrcDB/sShowOldNumbers/sOverset*(表示トグルが読み書きする状態)
 #include "KESCMPageMap.h"	// KESCMPageMapToggleSelectedPages / KESCMPageMapUpdateToggleState(追加/削除ページ登録トグル)
-							// ＋ KESCMBuildPairing(除外対応表、Hide Unchanged の Source 側分類で使用)
 #include "KESCMPageCheck.h"	// KESCMPageCheckToggleSelectedPages / KESCMPageCheckUpdateToggleState(「KCM: Check」の✓トグル)
 #include "KESCMPageNumberMarker.h"	// KESCMGetIgnorePageNumberMarker/KESCMSetIgnorePageNumberMarker(ノンブル除外トグル)
 #include "KESCMThumbnailRefresh.h"	// KESCMTryRefreshPagesPanelThumbnails(Source サムネイルの枠を即 ON/OFF)
 #include "KESCMPeek.h"				// KESCMBaseScreenOpacity(Hold to Hide Marks 切替時に常時表示の基準不透明度を反映)
 #include "KESCMViewSync.h"			// KESCMGetLayoutSync/Set/KESCMAlignOtherViewsToActiveNow(2026-08-13 に KESCMCore.h から移動)
-#include "KESCMScrollMap.h"		// KESCMScrollMapInvalidateAll(Hide Unchanged 切替後に地図を描き直す)
+#include "KESCMScrollMap.h"		// KESCMScrollMapAttach/DetachAll/InvalidateAll(地図トグルと Find Overset)
 #include "KESCMPanelState.h"		// KESCMSavePanelState(フライアウト「Save Panel Settings」)
-#include "KESCMOversetScan.h"		// KESCMCollectOversetLocations(Find Overset の検出=アクティブ文書走査)
+#include "KESCMHideUnchanged.h"		// KESCMHideUnchangedToggle / KESCMGetHideUnchangedOn(2026-08-13 に分離した本体)
+#include "KESCMOversetApply.h"		// KESCMApplyOversetForDoc / KESCMOversetScanTargetDB(同上)
 #include "KESCMChangedPagesTSV.h"	// KESCMExportChangedPagesTSV(フライアウト「Export Changed Pages...」)
 #include "KESCMBookPair.h"			// KESCMResolveBookPair(「Compare Books」を有効にしてよいかの判定)
 #include "KESCMBookRun.h"		// KESCMRunBookComparison(フライアウト「Compare Books」＝確認して比較して見せる)
@@ -73,21 +64,13 @@ namespace GoToURLUtils
 	PUBLIC_DECL void GoToURL(const PMString& goToURL, bool16 isAGoURL);
 }
 
-// 「Hide Unchanged Spreads」トグルの状態。ON の間、sHiddenSpreads = 自分が隠したスプレッド UID の控え
-// (OFF でこれ「だけ」を再表示する。ユーザーがページパネル等で別途隠したスプレッドは巻き込まない)。
-// sHiddenDB は隠した先の文書。他の static と同じくセッション内のみ保持(kHideSpreadCmdBoss は永続変更
-// なので、隠し状態そのものは .indd に残る=dirty 化はユーザー了承済みの仕様)。
-// Source 側も同じ分類で自動的に隠す(sHiddenSrcDB / sHiddenSrcSpreads に別控え。Source も dirty になる)。
-static bool16 sHideUnchangedOn = kFalse;
-static std::vector<UID> sHiddenSpreads;
-static IDataBase* sHiddenDB = nil;
-static std::vector<UID> sHiddenSrcSpreads;
-static IDataBase* sHiddenSrcDB = nil;
+// (「Hide Unchanged Spreads」の状態5本 —— トグルの旗と、Target/Source 各側の IDataBase* と
+//  隠したスプレッド UID の控え —— は 2026-08-13 に KESCMHideUnchanged.cpp へ移した。書き手である
+//  トグル本体を一緒に移してあるので、状態が分割の両側に割れることはない。ここから読むのは
+//  メニューのチェックマークだけで、KESCMGetHideUnchangedOn() で聞く。)
 
-// overset 走査の対象文書(比較中は Target、未 Start はアクティブ文書)。定義はこのファイルの下の方
-// (DoFindOversetToggle の直前)。UpdateActionStates が「Find Overset を有効にしてよいか」を実行側と
-// 同じ基準で聞くために前方宣言する。
-static IDataBase* KESCMOversetScanTargetDB();
+// (overset 走査の対象文書を返す KESCMOversetScanTargetDB は KESCMOversetApply.h の宣言を使う。
+//  以前はこのファイルの下の方に static で持っており、ここに前方宣言があった。)
 
 /** ChangeMarker プラグインのメニュー項目に対する IActionComponent の実装。
 */
@@ -105,7 +88,6 @@ public:
 private:
 	void DoAbout();
 	void DoUsage();
-	void DoHideUnchangedToggle();
 	void DoFindOversetToggle();		// フライアウト「Find Overset」: アクティブ文書を走査して十字表示/消去(トグル)
 	void DoRefreshOverset();		// フライアウト「Refresh Overset」: ON時のみ・アクティブ文書を再走査
 };
@@ -169,9 +151,10 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 		}
 
 		// 「Hide Unchanged Spreads」トグル: OFF→ON は確認ダイアログ→変更なしスプレッドを隠す。
-		// ON→OFF は自分が隠した分だけ再表示。本体は DoHideUnchangedToggle。
+		// ON→OFF は自分が隠した分だけ再表示。本体は KESCMHideUnchanged.cpp の自由関数
+		// (2026-08-13 に DoHideUnchangedToggle から移動＝隠す/戻すのは model 側の仕事)。
 		case kKESCMPopupHideUnchangedActionID:
-			this->DoHideUnchangedToggle();
+			KESCMHideUnchangedToggle();
 			break;
 
 		// フライアウト「Find Overset」トグル: アクティブ文書を走査し overset のあるページへ十字表示/OFFで消去。
@@ -583,7 +566,7 @@ void KESCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionSta
 			if (!KESCMIsArmed())
 				actionState = kDisabled_Unselected;
 			else
-				actionState = sHideUnchangedOn ? (kEnabledAction | kSelectedAction) : kEnabledAction;
+				actionState = KESCMGetHideUnchangedOn() ? (kEnabledAction | kSelectedAction) : kEnabledAction;
 			listToUpdate->SetNthActionState(i, actionState);
 		}
 		else if (action == kKESCMPopupShowOldNumsActionID)
@@ -757,307 +740,6 @@ void KESCMActionComponent::DoUsage()
 	);
 }
 
-//========================================================================================
-// Hide Unchanged Spreads(フライアウトのチェック式トグル)
-//========================================================================================
-
-// 状態メッセージをパネルのステータス行へ(既存の Split Target と同じ英語・非翻訳の流儀)。
-static void KESCMHideStatus(const char* text)
-{
-	PMString msg(text);
-	msg.SetTranslatable(kFalse);
-	KESCMSetStatus(msg);
-}
-
-// uids を1つの kHideSpreadCmdBoss で隠す/再表示する。hide=kTrue で隠す。
-// ★IBoolData の方向は kTrue=隠す(2026-07-04 実機確認済み。kLockLayerCmdBoss と同型)。
-static ErrorCode KESCMProcessHideSpreadCmd(IDataBase* db, const std::vector<UID>& uids, bool16 hide)
-{
-	if (db == nil || uids.empty())
-		return kFailure;
-
-	InterfacePtr<ICommand> cmd(CmdUtils::CreateCommand(kHideSpreadCmdBoss));
-	if (cmd == nil)
-		return kFailure;
-
-	UIDList list(db);
-	for (size_t i = 0; i < uids.size(); ++i)
-		list.Append(uids[i]);
-	cmd->SetItemList(list);
-
-	InterfacePtr<IBoolData> data(cmd, IID_IBOOLDATA);
-	if (data == nil)
-		return kFailure;
-	data->Set(hide);
-
-	return CmdUtils::ProcessCommand(cmd);
-}
-
-/* DoHideUnchangedToggle — フライアウト「Hide Unchanged Spreads」。
-   OFF→ON: 確認ダイアログ(Yes/No、ロケール連動文言)→ Yes なら、比較マーク(sEntries)が1ページも
-   無いスプレッドを集めて kHideSpreadCmdBoss で一括で隠し、UID を控えてチェック ON。続けて Source 側も
-   同じ分類(平坦ページ番号対応)で自動的に隠す(両文書とも dirty になる)。
-   ON→OFF: 控えた分だけ両文書とも再表示(確認なし)。
-   ガード: 比較マークが無い(Start 前/変更ゼロ)なら何もしない。特に「変更のあったスプレッドが1つも
-   ない」場合は全スプレッドを隠すことになり、InDesign は全スプレッド非表示を許さないため中止する
-   (Source 側のみ全対象になった場合は Source 側だけスキップ)。 */
-void KESCMActionComponent::DoHideUnchangedToggle()
-{
-	// ON→OFF: 自分が隠した分だけ再表示して状態を捨てる。
-	if (sHideUnchangedOn)
-	{
-		KESCMResetHideUnchanged(kTrue);
-		KESCMScrollMapInvalidateAll();	// スクロールバー地図を再表示後の配置で描き直す(2026-07-11)
-		KESCMHideStatus("Hide Unchanged: hidden spreads restored.");
-		return;
-	}
-
-	// OFF→ON。
-	IDataBase* db = KESCMDrawEventHandler::sDB;
-	if (db == nil)
-	{
-		// Start 前。
-		KESCMHideStatus("Hide Unchanged: Start first.");
-		return;
-	}
-
-	// ★「/」が付く overflow ページ(登録されていないのに、文書間のページ数差で比較相手が無い=未比較の
-	//   ページ)を含むスプレッドは、変更ありページや登録済み("Added")ページと同じく隠さない
-	//   (未比較の見落としを防ぐ。ユーザー要望 2026-07-06)。ここで Target 側の overflow 集合を作る
-	//   (Source 側は下の分類が対応表外ページを既に「変更あり」扱いにしているので隠れない)。
-	// ★対応表(tPages/sPages)は下の「Source 側も隠す」でもそのまま使う。以前はここと下で
-	//   KESCMBuildPairing を2回呼び、同じ表を2度作っていた(2026-08-06 監査 C-2 で1回に統合)。
-	//   対応表の構築はページ数に比例するので、大きい文書ほど無駄が効いていた。
-	IDataBase* const srcDB = KESCMArmedSourceDB();
-	const bool16 hasSource = (srcDB != nil && srcDB != db);
-	std::vector<UID> tPages, sPages, tOverflow, sOverflow;
-	if (hasSource)
-		KESCMBuildPairing(db, srcDB, tPages, sPages, &tOverflow, &sOverflow);
-	const std::set<UID> tOverflowSet(tOverflow.begin(), tOverflow.end());
-
-	// sEntries が空でも、登録済み(比較相手なし="Added")ページや overflow ページがあれば続行する
-	// (それら自体が「変更あり=残す」扱いになるため)。全部無ければ全スプレッドが対象になり、
-	// 全スプレッド非表示は InDesign が許さないので中止する。
-	if (KESCMDrawEventHandler::sEntries.empty() && !KESCMPageMapHasAnyRegistered(db) && tOverflowSet.empty())
-	{
-		KESCMHideStatus("Hide Unchanged: no changes to hide.");
-		return;
-	}
-
-	// 変更なしスプレッド = 所属ページが1つも sEntries に載っていないスプレッド。
-	InterfacePtr<ISpreadList> spreadList(db, db->GetRootUID(), UseDefaultIID());
-	if (spreadList == nil)
-	{
-		KESCMHideStatus("Hide Unchanged: spread list not available.");
-		return;
-	}
-	std::vector<UID> unchanged;
-	int32 visibleCount = 0;		// 現在表示中(=隠れていない)のスプレッド数。全スプレッド非表示ガードの分母
-	const int32 ns = spreadList->GetSpreadCount();
-	for (int32 s = 0; s < ns; ++s)
-	{
-		const UID spreadUID = spreadList->GetNthSpreadUID(s);
-		InterfacePtr<ISpread> spread(db, spreadUID, UseDefaultIID());
-		if (spread == nil)
-			continue;
-		// 既に隠れているスプレッド(ユーザーがページパネル等で隠した分)は対象にしない。
-		// 自分のリストに入れると ON→OFF でユーザーが隠した分まで再表示してしまうため。
-		// 隠し状態は kSpreadBoss 上の IBoolData(IID_IHIDESPREADBOOLDATA、kTrue=隠し中)で読む。
-		InterfacePtr<IBoolData> hideFlag(db, spreadUID, IID_IHIDESPREADBOOLDATA);
-		if (hideFlag != nil && hideFlag->GetBool())
-			continue;
-		++visibleCount;
-		bool16 changed = kFalse;
-		const int32 np = spread->GetNumPages();
-		for (int32 p = 0; p < np; ++p)
-		{
-			const UID pageUID = spread->GetNthPageUID(p);
-			// 登録済み(比較相手なし="Added")ページは比較対象外で sEntries には載らないが、緑枠つきの
-			// 「変更あり」ページとして扱う。overflow ページ("/"、文書間のページ数差で未比較)も同様に
-			// 「変更あり=残す」扱いにして、隠さない(誤って未比較ページを隠すのを防ぐ)。
-			if (KESCMDrawEventHandler::sEntries.count(pageUID) > 0 ||
-			    KESCMPageMapIsRegistered(db, pageUID) ||
-			    tOverflowSet.count(pageUID) > 0)
-			{
-				changed = kTrue;
-				break;
-			}
-		}
-		if (!changed)
-			unchanged.push_back(spreadUID);
-	}
-
-	if (unchanged.empty())
-	{
-		KESCMHideStatus("Hide Unchanged: all changed; none to hide.");
-		return;
-	}
-	if ((int32)unchanged.size() >= visibleCount)
-	{
-		// 保険(sEntries が非空なら通常ここへは来ない): 表示中スプレッドを全部隠すことになる場合は中止
-		// (InDesign は全スプレッド非表示を許さない。分母は「現在表示中」の数=手動で隠し済みの分は除く)。
-		KESCMHideStatus("Hide Unchanged: can't hide all spreads.");
-		return;
-	}
-
-	// 確認ダイアログ(kHideSpreadCmdBoss は永続変更=文書が dirty になり、隠し状態は保存ファイルにも残る)。
-	// 文言はロケール連動(enUS=英語/jaJP=日本語)。ボタンは Windows の制約で標準 Yes/No のみ。
-	const int16 clicked = CAlert::ModalAlert
-	(
-		// "This feature modifies the document file. Continue?" / 日本語 UI では日本語(KESCMLoc)。
-		// ★文書を変更する前の確認なので、意味を取り違えられないよう日本語 UI では日本語で出す
-		//   (2026-08-06 ユーザー指示)。
-		KESCMLoc::Text(kKESCMHideConfirmKey, KESCMJa::kHideConfirm),
-		kYesString,
-		kNoString,
-		kNullString,
-		1,							// Yes を既定ボタンに
-		CAlert::eWarningIcon
-	);
-	if (clicked != 1)
-		return;						// No: チェックも付けず何もしない
-
-	const ErrorCode err = KESCMProcessHideSpreadCmd(db, unchanged, kTrue /*hide*/);
-	if (err != kSuccess)
-	{
-		KESCMHideStatus("Hide Unchanged: hide command failed.");
-		return;
-	}
-
-	sHideUnchangedOn = kTrue;
-	sHiddenDB = db;
-	sHiddenSpreads = unchanged;
-
-	// ---- Source 側も同じ分類で自動的に隠す ----
-	// 「変更あり」を除外対応表(登録済み=比較相手なしページを除いた順番対応)経由で Source ページの
-	// 集合にし、Source のスプレッドを走査して、変更ありページに対応するページを1つも含まない
-	// スプレッドを隠す。対応表に無い Source ページ(登録済み=削除ページ扱い)は安全側で「変更あり」
-	// 扱いにする(縁枠合成(ステップ3)が入るまでの暫定方針)。
-	// Source 側が失敗/スキップでも Target 側の隠しはそのまま生かす(致命ではないため)。
-	int32 srcHiddenCount = 0;
-	bool16 srcSkippedAll = kFalse;
-	if (hasSource)
-	{
-		// 対応表(tPages/sPages)は関数先頭で1回だけ作ったものを使う(2026-08-06 監査 C-2)。
-		std::map<UID, bool16> srcChangedMap;	// 対応表にあるSourceページ→対応Targetページが変更ありか
-		for (size_t i = 0; i < tPages.size(); ++i)
-			srcChangedMap[sPages[i]] = (KESCMDrawEventHandler::sEntries.count(tPages[i]) > 0) ? kTrue : kFalse;
-
-		InterfacePtr<ISpreadList> srcSpreadList(srcDB, srcDB->GetRootUID(), UseDefaultIID());
-		if (srcSpreadList != nil)
-		{
-			std::vector<UID> srcUnchanged;
-			int32 srcVisibleCount = 0;	// Source 側の全スプレッド非表示ガードの分母(表示中のみ)
-			const int32 nss = srcSpreadList->GetSpreadCount();
-			for (int32 s = 0; s < nss; ++s)
-			{
-				const UID srcSpreadUID = srcSpreadList->GetNthSpreadUID(s);
-				InterfacePtr<ISpread> srcSpread(srcDB, srcSpreadUID, UseDefaultIID());
-				if (srcSpread == nil)
-					continue;
-				const int32 np = srcSpread->GetNumPages();
-				// 手動で隠し済みの Source スプレッドは巻き込まない(Target 側と同じ方針)。
-				InterfacePtr<IBoolData> srcHideFlag(srcDB, srcSpreadUID, IID_IHIDESPREADBOOLDATA);
-				if (srcHideFlag != nil && srcHideFlag->GetBool())
-					continue;
-				++srcVisibleCount;
-				bool16 srcChanged = kFalse;
-				for (int32 p = 0; p < np; ++p)
-				{
-					const UID srcPageUID = srcSpread->GetNthPageUID(p);
-					std::map<UID, bool16>::const_iterator mit = srcChangedMap.find(srcPageUID);
-					if (mit == srcChangedMap.end() || mit->second)
-					{
-						srcChanged = kTrue;
-						break;
-					}
-				}
-				if (!srcChanged)
-					srcUnchanged.push_back(srcSpreadUID);
-			}
-
-			if (!srcUnchanged.empty())
-			{
-				if ((int32)srcUnchanged.size() >= srcVisibleCount)
-				{
-					// 全スプレッド非表示は不可(例: 変更が Target の追加ページに集中していて、対応する
-					// Source ページが存在しない場合は全 Source スプレッドが「変更なし」になり得る)。
-					// その場合は Source 側だけスキップし、Target 側の隠しは生かす。
-					srcSkippedAll = kTrue;
-				}
-				else if (KESCMProcessHideSpreadCmd(srcDB, srcUnchanged, kTrue /*hide*/) == kSuccess)
-				{
-					sHiddenSrcDB = srcDB;
-					sHiddenSrcSpreads = srcUnchanged;
-					srcHiddenCount = (int32)srcUnchanged.size();
-				}
-			}
-		}
-	}
-
-	PMString msg("Hide Unchanged: hid ");
-	msg.SetTranslatable(kFalse);
-	msg.AppendNumber((int32)unchanged.size());
-	msg.Append(" target spread(s)");
-	if (srcHiddenCount > 0)
-	{
-		msg.Append(" + ");
-		msg.AppendNumber(srcHiddenCount);
-		msg.Append(" source spread(s)");
-	}
-	msg.Append(".");
-	if (srcSkippedAll)
-		msg.Append(" Source not hidden (would hide all its spreads).");
-	KESCMSetStatus(msg);
-
-	// スクロールバー地図を隠し後の配置で描き直す(隠しスプレッドは地図から除外される。Target/Source 両窓)。
-	KESCMScrollMapInvalidateAll();
-}
-
-// 文書の生存確認は共有ヘルパ KESCMIsDocDBOpen(KESCMCore.h)を使う(旧ここ static、2026-07-10 共有化)。
-
-// 片側(db+控えリスト)の再表示と状態破棄。restore=kTrue かつ db が生存している場合のみ再表示コマンドを
-// 打つ(途中で削除されたスプレッドは ISpread クエリが nil になるのでスキップ)。db が閉じていれば
-// deref せず黙って状態だけ捨てる。db は参照渡しで nil に戻す。
-static void KESCMRestoreHiddenList(IDataBase*& db, std::vector<UID>& list, bool16 restore)
-{
-	if (restore && db != nil && !list.empty() && KESCMIsDocDBOpen(db))
-	{
-		std::vector<UID> alive;
-		for (size_t i = 0; i < list.size(); ++i)
-		{
-			InterfacePtr<ISpread> spread(db, list[i], UseDefaultIID());
-			if (spread != nil)
-				alive.push_back(list[i]);
-		}
-		if (!alive.empty())
-			KESCMProcessHideSpreadCmd(db, alive, kFalse /*unhide*/);
-	}
-	list.clear();
-	db = nil;
-}
-
-// KESCMResetHideUnchanged(KESCMCore.h で宣言) — トグル状態のリセット(Target/Source 両側)。
-//   restoreSpreads=kTrue: 控えているスプレッドを再表示してから状態を捨てる(再比較/Stop/手動 OFF/
-//     クローズスイープ)。文書の生存は内部で確認するので、片方が閉じていても安全(生存側のみ再表示)。
-//   restoreSpreads=kFalse: db に一切触れず状態だけ捨てる。
-void KESCMResetHideUnchanged(bool16 restoreSpreads)
-{
-	KESCMRestoreHiddenList(sHiddenDB, sHiddenSpreads, restoreSpreads);
-	KESCMRestoreHiddenList(sHiddenSrcDB, sHiddenSrcSpreads, restoreSpreads);
-	sHideUnchangedOn = kFalse;
-}
-
-IDataBase* KESCMGetHideUnchangedDB()
-{
-	return sHiddenDB;
-}
-
-IDataBase* KESCMGetHideUnchangedSrcDB()
-{
-	return sHiddenSrcDB;
-}
-
 // (KESCMDoSplitTarget(Split Target 90/10)は 2026-07-04 撤去。実装全文と実測知見は
 //  docs/ai-notes/kescm-split-target-mechanism.md と git 履歴 69c4b07 に保存=他プラグインへの転用候補)
 
@@ -1068,83 +750,6 @@ IDataBase* KESCMGetHideUnchangedSrcDB()
 //========================================================================================
 
 // (アクティブ文書の解決は KESCMActiveDocDB(KESCMCore)に統合。2026-07-25 重複解消)
-
-/* KESCMApplyOversetForDoc(KESCMCore.h で宣言) — db を走査して overset を反映する共有処理。
-   Find Overset(ON)/Refresh Overset(armed時Target)/Start(overset ON時) から呼ぶ。前回と別文書なら
-   前の文書のサムネイル目印を消す。ステータス行は呼び出し側が用途別に出す。 */
-void KESCMApplyOversetForDoc(IDataBase* db)
-{
-	if (db == nil)
-		return;
-
-	// ★最終ライン防御(2026-07-24): 大半の呼び出し(DoFindOverset/DoRefreshOverset/Start 経路)は
-	//   その場解決した生きた db を渡すが、Stop 経路だけは保存済みの sOversetDB を渡す。クローズ
-	//   responder が漏れて閉じた文書のポインタが来た場合に、下の走査(KESCMCollectOversetLocations)で
-	//   解放済み IDataBase を deref しないよう、ここで一度だけ生存確認する(FindDocByDataBase への
-	//   ポインタ比較のみ=deref しない。KESCM 全体の共通規約)。死んでいたら何もせず戻る。
-	InterfacePtr<IApplication> app(GetExecutionContextSession() ? GetExecutionContextSession()->QueryApplication() : nil);
-	InterfacePtr<IDocumentList> docList(app != nil ? app->QueryDocumentList() : nil);
-	if (docList == nil || docList->FindDocByDataBase(db) == nil)
-		return;
-
-	// 前回の状態を退避(別文書へ移ったら前の文書の目印を消す/同一文書で抜けたページの目印を消すため)。
-	IDataBase* prevDB = KESCMDrawEventHandler::sOversetDB;
-	std::set<UID> oldPages = KESCMDrawEventHandler::sOversetPages;
-
-	// db を走査して overset 位置(＋点)とページを集める。
-	std::vector<KESCMOversetLoc> locs;
-	KESCMCollectOversetLocations(db, locs);
-	std::set<UID> pages;
-	for (size_t i = 0; i < locs.size(); ++i)
-		pages.insert(locs[i].pageUID);
-
-	KESCMDrawEventHandler::sOversetOn = kTrue;
-	KESCMDrawEventHandler::sOversetDB = db;
-	KESCMDrawEventHandler::sOversetPages.swap(pages);
-	KESCMDrawEventHandler::sOversetLocs.swap(locs);
-
-	// ★走査対象の文書が変わったら巡回の基準点も捨てる(2026-08-06 再点検)。「同じ作りの文書は UID まで
-	//   同じ」(KESCMChangeNav.h)なので、前の文書の基準点を持ち越すと UID の偶然一致で途中から巡回が
-	//   始まり得る。別文書へ移るのは未 arm(アクティブ文書走査)のときだけ=比較の巡回には影響しない。
-	if (prevDB != nil && prevDB != db)
-		KESCMResetNav();
-
-	// Pages パネルのサムネイル更新。別文書へ移ったら前の文書の枠/＋を消し、新旧のページを作り直す。
-	if (prevDB != nil && prevDB != db)
-	{
-		std::vector<UID> oldVec(oldPages.begin(), oldPages.end());
-		// 2文書とも Purge のみ→呼び出しの最後(下の2回目)で1回だけ ForceRedraw(2026-07-25 バッチ化)。
-		KESCMRefreshThumbnailsForPages(prevDB, oldVec, kFalse /*redrawNow*/);	// 前の文書の枠/＋を消す
-		KESCMInvalidateDB(prevDB);
-		std::vector<UID> newVec(KESCMDrawEventHandler::sOversetPages.begin(),
-		                        KESCMDrawEventHandler::sOversetPages.end());
-		KESCMRefreshThumbnailsForPages(db, newVec, kFalse /*redrawNow*/);
-		KESCMForceRedrawPagesPanelNow();
-	}
-	else
-	{
-		// 同一文書 or 初回(prevDB==nil): 旧∪新のサムネイルを作り直す(oldPages 空なら新のみ)。
-		std::set<UID> u = oldPages;
-		u.insert(KESCMDrawEventHandler::sOversetPages.begin(), KESCMDrawEventHandler::sOversetPages.end());
-		std::vector<UID> uv(u.begin(), u.end());
-		KESCMRefreshThumbnailsForPages(db, uv);
-	}
-
-	// スクロールバー地図を db の窓へ注入(既にあればスキップ)＋再描画。比較未Startでも赤帯を出す。
-	KESCMScrollMapAttach(db);
-	KESCMScrollMapInvalidateAll();
-	KESCMInvalidateDB(db);
-	KESCMRefreshNavPosition();	// Prev/Next の対象(有効化・位置 k/N)を更新
-}
-
-// 比較中なら overset の走査対象は必ず比較 Target 文書(sDB)にする(変更(枠)と overset を同じ文書で
-// Prev/Next 巡回できるように=nav の navDB と一致させる)。未 Start ならアクティブ文書。
-static IDataBase* KESCMOversetScanTargetDB()
-{
-	if (KESCMDrawEventHandler::sDB != nil)
-		return KESCMDrawEventHandler::sDB;	// = KESCMNavDoc() の armed 分岐と同じ
-	return KESCMActiveDocDB();
-}
 
 /* DoFindOversetToggle — フライアウト「Find Overset」トグル。
    OFF→ON: 走査対象文書(比較中はTarget/それ以外はアクティブ)を走査→ overset を反映。

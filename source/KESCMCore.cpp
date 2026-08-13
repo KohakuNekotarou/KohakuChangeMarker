@@ -59,6 +59,7 @@
 #include "KESCMStoryList.h"          // 変更のあったストーリーの一覧(Story Edits セクションが読むモデル)
 #include "KESCMStoryTree.h"          // KESCMStoryTreeRebuild(モデルを作り直したら画面も作り直す)
 #include "KESCMStorySection.h"       // KESCMUpdateStorySectionLabel(見出しの件数)
+#include "KESCMHideUnchanged.h"      // KESCMResetHideUnchanged(2026-08-13 に KESCMCore.h から移動)
 #include "KESCMCore.h"
 
 //========================================================================================

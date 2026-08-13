@@ -257,6 +257,8 @@
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMPeekGesture.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMCmykCursor.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMViewSync.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMHideUnchanged.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMOversetApply.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMTool.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMTracker.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMTrackerRegister.cpp" />
@@ -310,6 +312,8 @@
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMPeekGesture.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMCmykCursor.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMViewSync.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMHideUnchanged.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMOversetApply.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMThumbnailRefresh.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMThumbIdleTask.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMScrollMap.h" />
