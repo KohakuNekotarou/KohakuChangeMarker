@@ -57,7 +57,7 @@
 #include "KESCMPageMap.h"            // KESCMPageMapIsRegistered/KESCMPageMapHasAnyRegistered(追加/削除ページ縁枠)
 #include "KESCMPageCheck.h"          // KESCMPageCheckIsChecked/KESCMPageCheckHasAny(「KCM: Check」の✓)
 #include "KESCMPageNumberMarker.h"   // KESCMGetIgnorePageNumberMarker/KESCMAppendPageNumberMarkerRects(ノンブル除外)
-#include "KESCMScrollMap.h"          // KESCMScrollMapNoticeDrawEvent(手動 Hide/Show Spread の検出)
+// (★KESCMScrollMap.h の include は 2026-08-13 Task 7 で外した＝下の理由と同じ)
 // (★押下中 HUD は 2026-08-13 に **UI 側の描画サービス** KESCMUIDrawEvent.cpp へ移した
 //  ＝model/UI 分割 第1段 Task 6。押下中かどうかはツール(UI)の状態で、model からは見えないため。
 //  ⇒ このファイルは KESCMTrackerHud.h を include しない。)
@@ -1211,11 +1211,10 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	// 自己参照(自前スナップショット)は上の sRasterizing で防ぐので、ここで kPreviewMode は見ない。
 	const bool16 printing = (ded->flags & IShape::kPrinting) != 0;
 
-	// スクロールバー地図: ページパネルからの手動 Hide/Show Spread を検出する軽量チェック(250ms
-	// スロットル付きの指紋比較)。手動の隠し/再表示は KESCM のフックを通らないが必ず再描画は起こす
-	// ので、スプレッド描画イベントに便乗して拾う(Undo/Redo による変化も同経路)。KESCMScrollMap.cpp。
-	if (!printing)
-		KESCMScrollMapNoticeDrawEvent();
+	// (★手動 Hide/Show Spread の検出(KESCMScrollMapNoticeDrawEvent)は 2026-08-13 に UI 側の描画サービス
+	//  KESCMUIDrawEvent.cpp へ移した＝model/UI 分割 第1段 Task 7。スクロールバー地図は文書窓へ strip を
+	//  注入する widget ＝ UI なので、その更新のきっかけを拾うのも UI 側の仕事。
+	//  ⇒ **このファイルから UI ヘッダーの include が1つも無くなった。**)
 
 	// ★サムネイル実験(2026-07-06): Pagesパネルのサムネイル生成(view無し・kPreviewMode・非印刷。診断ログ
 	// flags=0x1800=kPreviewMode|kDrawFrameEdge)を検出。sThumbExperiment ON の間は、サムネイルにも枠を
