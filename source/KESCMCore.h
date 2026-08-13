@@ -159,41 +159,11 @@ IControlView*	KESCMGetVisibleOwnPanel();
 // (再表示時に AutoAttach が反映する)。実体は KESCMPanelObserver.cpp。
 void		KESCMRefreshPanel();
 
-// 比較の開始/解除トグル(旧パネルの Start/Stop ボタン→2026-07-10 フライアウトメニュー化)。
-// arm 済みなら解除(マーク消去+peek 解除)、未 arm なら開始(アクティブ文書=Target・別の開いている
-// 文書=Source を解決して比較+peek arm)。実行後に KESCMRefreshPanel でパネル表示を更新する。
-// フライアウト項目 kKESCMPopupStartStopActionID の DoAction から呼ぶ。実体は KESCMPanelObserver.cpp。
-void		KESCMToggleStartStop();
-
-// ★上のトグルを2つに割ったもの(2026-08-12)。**解決子(どの2文書か)と手順(何をするか)を分ける**ため。
-// 呼び手が2つになったので切り出した＝フライアウトの Start/Stop と、ブック比較の行の右クリック
-// 「Start Change Marker」(その章の2ファイルを開いてから明示的に渡す)。手順を書き写すと必ずずれる
-// ([[one-question-one-place]])。どちらもパネル表示の更新(KESCMRefreshPanel)まで自分で行うので、
-// 呼び手は結果を整える必要が無い。実体は KESCMPanelObserver.cpp。
-//
-// KESCMStartComparisonFor: **この2文書で**比較を開始する。どちらを Target にするかは呼び手が決める
-// (ここには一切の解決ロジックが無い)。nil を渡したら何もしない。⚠既に arm 中でも構わず上書きするので、
-// 「Stop してから Start」にしたい呼び手は先に KESCMStopComparison を呼ぶこと。
-void		KESCMStopComparison();
-void		KESCMStartComparisonFor(IDocument* target, IDocument* source);
-
-// 比較を開始できるか＝アクティブ(前面)文書があり、かつ別の開いている文書が1つ以上ある(=Target と
-// Source が揃う)。フライアウトの「Start」を有効にしてよいかの判定に使う(2026-08-06 ユーザー指定:
-// 文書が2つ以上開かれていなければ押せない)。★KESCMToggleStartStop の開始分岐と同じ解決子を通るので、
-// メニューの見た目と押した結果がずれない。実体は KESCMPanelObserver.cpp。
-bool16		KESCMCanStartComparison();
-
-// 印刷マーク ON/OFF トグル(旧パネルのチェックボックス→2026-07-10 フライアウトメニュー化)。
-// 現在の印刷フラグ(KESCMGetPrintMarks)を反転し、不透明度は現在の選択(KESCMGetMarkOpacity25)を維持して
-// KESCMDoSetPrintMarks を呼ぶ。フライアウト項目 kKESCMPopupPrintMarksActionID の DoAction から呼ぶ。
-// 実体は KESCMPanelObserver.cpp。
-void		KESCMTogglePrintMarks();
-
-// 枠の不透明度を 25%(op25=kTrue)/75%(kFalse)に設定(旧パネルの opacity ラジオ→2026-07-10 フライアウト
-// メニュー化)。現在の印刷フラグ(KESCMGetPrintMarks)を維持したまま KESCMDoSetPrintMarks を呼ぶ。
-// フライアウト項目 kKESCMPopupOpacity25ActionID / kKESCMPopupOpacity75ActionID の DoAction から呼ぶ。
-// 実体は KESCMPanelObserver.cpp。
-void		KESCMSetMarkOpacity25(bool16 op25);
+// (★比較の開始/解除の6本(KESCMToggleStartStop / KESCMStopComparison / KESCMStartComparisonFor /
+//  KESCMCanStartComparison / KESCMTogglePrintMarks / KESCMSetMarkOpacity25)の宣言は、2026-08-13 の
+//  model/UI 分割 第1段 Task 4 で **KESCMComparisonRun.h** へ移した。実体も KESCMComparisonRun.cpp
+//  (パネルのファイルに同居していたが、動かしているのはパネルではなく比較そのもの＝model 側)。
+//  Facade が転送する先はこの6本になる。)
 
 // パネルのステータス行を更新する(KESCMPanelObserver::SetStatus と同じ処理を自由関数として公開)。
 // パネルが隠れていてもセッション状態は覚えておき、再表示時に復元する。forceRedrawNow=kTrue なら、

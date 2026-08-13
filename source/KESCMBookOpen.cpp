@@ -46,8 +46,9 @@
 #include "KESCMBookDialog.h"	// KESCMBookDialogRows - the model the list is drawn from
 #include "KESCMBookOpen.h"
 #include "KESCMBookResult.h"
-#include "KESCMCore.h"			// KESCMSetStatus / KESCMIsArmed / KESCMStopComparison /
-								// KESCMStartComparisonFor / KESCMArmedTargetDB
+#include "KESCMCore.h"			// KESCMSetStatus / KESCMIsArmed / KESCMArmedTargetDB
+#include "KESCMComparisonRun.h"	// KESCMStopComparison / KESCMStartComparisonFor
+								// (2026-08-13 に KESCMCore.h から移動)
 
 namespace
 {

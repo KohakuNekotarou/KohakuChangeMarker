@@ -6,8 +6,10 @@
 //  ★2026-07-10 に Start/Clear・印刷トグル・25%/75% はフライアウトメニューへ移行済みで、現在のパネルは
 //    Target:/Source: の文書名ラベル・Prev/Next ボタン・ステータス行・イラストアイコンだけを持つ。
 //    ここが担うのは (a)Prev/Next のボタン押下 (b)AutoAttach での実状態反映(固定既定値は書かない=
-//    [[panel-autoattach-read-real-state]]) (c)Start/Stop 実行の実体(KESCMToggleStartStop。フライアウトの
-//    Start/Stop と Load の Stop 戻しから呼ばれる)。
+//    [[panel-autoattach-read-real-state]]) (c)パネルの表示更新の口(KESCMRefreshPanel / KESCMSetStatus /
+//    KESCMSetNavPosition / KESCMGetVisibleOwnPanel)。
+//  ★(c)にあった「Start/Stop 実行の実体」は 2026-08-13 に KESCMComparisonRun.cpp へ移した
+//    (model/UI 分割 第1段 Task 4)＝**このファイルはパネルの表示だけを担う**。
 //  Target:/Source: ラベルと ON/OFF アイコンは arm 済み(「開始済み」)状態を反映する。これはアプリ全体で
 //  共有される(KESCMIsArmed/…)ので、パネルを開き直しても正しい状態が表示され続ける。
 //
@@ -34,16 +36,16 @@
 // 一般:
 #include "CObserver.h"
 #include "widgetid.h"				// kTrueStateMessage / kFalseStateMessage
-#include "PersistUtils.h"			// ::GetUIDRef
+#include "IDataBase.h"				// GetSysFile(Target/Source のフルパス表示。生存確認の後だけ deref する)
 #include "SDKFileHelper.h"			// IDFile -> パス文字列(Target/Source をフルパスで出す。2026-08-12)
 
 // プロジェクト内:
 #include "KESCMID.h"
 #include "KESCMCore.h"
 #include "KESCMChangeNav.h"			// KESCMGotoNextChange / KESCMGotoPrevChange(◀ Prev / Next ▶ ボタン)
-#include "KESCMScrollMap.h"			// スクロールバー地図strip(Startで注入/Stopで取り外し)
-#include "KESCMDrawEventHandler.h"	// KESCMDrawEventHandler::sOversetOn(Stop 時に Find Overset 単独 ON なら地図を残す判定)
-#include "KESCMOversetApply.h"		// KESCMApplyOversetForDoc(2026-08-13 に KESCMCore.h から移動)
+// ★比較の開始/解除の6本は 2026-08-13 に KESCMComparisonRun.cpp へ移した(model/UI 分割 第1段 Task 4)。
+//   それだけが使っていた include(KESCMScrollMap.h / KESCMDrawEventHandler.h / KESCMOversetApply.h /
+//   PersistUtils.h)も一緒に移っている。⇒ このファイルは**パネルの表示だけ**を担う UI になった。
 #include "KESCMPanelState.h"		// KESCMLoadPanelStateIfPresent(読込の主経路は起動時=KESCMPeekStartup。ここは保険)
 #include "KESCMPanelAlpha.h"		// KESCMApplyPanelTranslucency(パネル再表示時に半透明を貼り直す)
 #include "KESCMStorySection.h"		// KESCMUpdateStorySectionLabel(見出しの件数も arm 状態の表示の一部)
@@ -82,49 +84,6 @@ namespace { PMString gSessionStatus; }
 //----------------------------------------------------------------------------------------
 // ローカルヘルパ
 //----------------------------------------------------------------------------------------
-
-// (アクティブ(前面)文書=比較の Target の解決は KESCMActiveDoc(KESCMCore)に統合。2026-07-25 重複解消)
-
-// 比較の Target/Source を解決する唯一の場所。アクティブ(前面)文書=Target、それ以外で最初に開いて
-// いる文書=Source。両方引けたときだけ kTrue を返す(引けなかった側は nil のまま返るので、呼び出し側は
-// どちらが欠けたかで文言を選べる)。
-// ★ここに集約する理由: 「比較を始められるか」をメニューの有効/無効(KESCMCanStartComparison)と実行
-//   (KESCMToggleStartStop)の2か所で別々に書くと、必ずどこかでずれる([[one-question-one-place]])。
-static bool16 KESCMResolveComparisonPair(IDocument*& outTarget, IDocument*& outSource);
-
-// target 以外で最初に開いている文書 = 比較の Source(旧版)。
-static IDocument* KESCMFirstOtherDoc(IDocument* target)
-{
-	InterfacePtr<IApplication> app(GetExecutionContextSession() ? GetExecutionContextSession()->QueryApplication() : nil);
-	InterfacePtr<IDocumentList> docList(app ? app->QueryDocumentList() : nil);
-	if (docList == nil)
-		return nil;
-	const int32 n = docList->GetDocCount();
-	for (int32 i = 0; i < n; ++i)
-	{
-		IDocument* d = docList->GetNthDoc(i);
-		if (d != nil && d != target)
-			return d;
-	}
-	return nil;
-}
-
-// 上で宣言した解決子の実体。
-static bool16 KESCMResolveComparisonPair(IDocument*& outTarget, IDocument*& outSource)
-{
-	outTarget = KESCMActiveDoc();
-	outSource = (outTarget != nil) ? KESCMFirstOtherDoc(outTarget) : nil;
-	return (outTarget != nil && outSource != nil) ? kTrue : kFalse;
-}
-
-// 比較を開始できるか(KESCMCore.h で宣言)。フライアウトの「Start」を有効にしてよいかの判定で、
-// 実行側 KESCMToggleStartStop と同じ解決子を通る。
-bool16 KESCMCanStartComparison()
-{
-	IDocument* target = nil;
-	IDocument* source = nil;
-	return KESCMResolveComparisonPair(target, source);
-}
 
 // db を所有する文書の**フルパス**(取れなければ文書名)。
 //
@@ -385,154 +344,6 @@ void KESCMPanelObserver::Update(const ClassID& theChange, ISubject* theSubject, 
 			default: break;
 		}
 	}
-}
-
-//----------------------------------------------------------------------------------------
-// アクション
-//----------------------------------------------------------------------------------------
-
-// KESCMToggleStartStop(KESCMCore.h で宣言) — 比較の開始/解除トグル。旧パネルの Start/Stop ボタンの
-// DoStart/DoClear を統合した自由関数で、フライアウト項目 kKESCMPopupStartStopActionID の DoAction から
-// 呼ぶ。arm 済みなら解除、未 arm なら開始。表示更新は KESCMRefreshPanel(可視パネルを arm 状態へ)。
-// KESCMStopComparison(KESCMCore.h で宣言) — 比較を解除する(旧 DoClear)。
-// ★KESCMToggleStartStop の解除分岐をそのまま切り出したもの。切り出した理由は下の
-//   KESCMStartComparisonFor と同じ＝**手順を1か所にする**([[one-question-one-place]])。
-void KESCMStopComparison()
-{
-	// アクティブ文書は再描画にだけ使う(nil でも可)。KESCMDoClearMarks / KESCMDoDisarmMousePeek は
-	// 内部で「実際にマークが描かれていた文書」(sDB / arm 済み target)を控えて再描画するので、
-	// 文書が1つも開いていなくても消去・解除は常に成立させる。
-	IDocument* active = KESCMActiveDoc();
-	IDataBase* db = (active != nil) ? ::GetUIDRef(active).GetDataBase() : nil;
-
-	KESCMDoClearMarks(db);
-	KESCMDoDisarmMousePeek(db);
-	// スクロールバー地図: まず比較用の strip を全窓(Target/Source 両方)から取り外す。
-	// ★Find Overset が単独 ON 中なら、続けて overset 文書(sOversetDB)だけへ strip を貼り直す
-	//   (比較解除で Source 窓に strip が残らないようにする 2026-07-24)。あわせて overset を再走査して
-	//   リフレッシュする(ユーザー報告: overset 有りで Start→編集で解消→Stop すると、集合が編集前のまま
-	//   残り「まだ有る」と判断していた)。KESCMApplyOversetForDoc は sOversetDB を再走査し、サムネイル/
-	//   地図の Attach+Invalidate/Prev-Next をまとめて更新する。
-	KESCMScrollMapDetachAll();	// スクロールバー地図stripを全窓(Target/Source)から取り外す
-	if (KESCMDrawEventHandler::sOversetOn)
-		KESCMApplyOversetForDoc(KESCMDrawEventHandler::sOversetDB);
-	PMString s("marks cleared"); s.SetTranslatable(kFalse);
-	KESCMSetStatus(s);
-
-	KESCMRefreshPanel();	// Target/Source 名・アイコン・Prev/Next 有効無効を arm 状態へ更新
-}
-
-// KESCMStartComparisonFor(KESCMCore.h で宣言) — **この2文書で**比較を開始する(旧 DoStart の本体)。
-//
-// ★★**解決子(どの2文書か)と手順(何をするか)を分けてある。** ここには「どの文書を選ぶか」の判断が
-//   一切無く、渡された2つでそのまま始める。理由＝呼び手が2つあるため:
-//     ①KESCMToggleStartStop  … アクティブ文書=Target・別の開いている文書=Source と解決してから呼ぶ
-//     ②ブック比較の行の右クリック「Start Change Marker」… その章の2ファイルを開いてから呼ぶ
-//   手順をそれぞれに書き写すと必ずずれる([[one-question-one-place]])。実際 Start の手順は
-//   「sSrcMarksOn を戻す」「キャンセルなら arm しない」「strip を両窓へ」「overset を貼り直す」の
-//   4つの決定を含んでいて、どれも忘れると静かに壊れる種類のもの。
-void KESCMStartComparisonFor(IDocument* target, IDocument* source)
-{
-	if (target == nil || source == nil)
-		return;
-
-	IDataBase* targetDB = ::GetUIDRef(target).GetDataBase();
-	IDataBase* sourceDB = ::GetUIDRef(source).GetDataBase();
-
-	PMString report;
-	// 「Show Marks on Source」は Start のたびに既定 ON へ戻す(仕様)。再比較(登録トグル/Ignore 切替)で
-	// 黙って ON に戻さないよう、KESCMDoMarkChangesDoc 側ではなく Start 経路のここで立てる(2026-07-25)。
-	KESCMDrawEventHandler::sSrcMarksOn = kTrue;
-	// ★比較をユーザーがキャンセルしたら(ページ数が多いときは進捗バーに Cancel が出る)Start しない。
-	//   マークは KESCMDoMarkChangesDoc 側で破棄済みなので、arm も strip 注入もせず「押す前」の状態へ
-	//   戻す(中途半端に arm だけ残して、枠が1つも無い Start 中を作らない)。
-	if (KESCMDoMarkChangesDoc(targetDB, sourceDB, report) == kSuccess)
-	{
-		KESCMDoArmMousePeek(targetDB, sourceDB);
-		KESCMScrollMapAttach(targetDB);	// Target の各文書窓にスクロールバー地図stripを注入
-		KESCMScrollMapAttach(sourceDB);	// Source 窓にも表示(2026-07-11 ユーザー要望。strip 側が窓の文書を見て供給元を切替)
-		// ★Find Overset が ON のままなら、Start 時に必ず比較 Target を再走査して overset を貼り直す(2026-07-24)。
-		//   これで (a) Start 後も Prev/Next が「変更(枠)→ overset」を同じ Target 文書で巡れる(overset が
-		//   sOversetDB!=sDB で黙って巡回対象から外れる不具合の防止)＋(b) 同一文書でも編集で増減した overset を
-		//   リフレッシュできる(ユーザー報告: 同一文書だと再走査せず古い集合が残っていた)。
-		if (KESCMDrawEventHandler::sOversetOn)
-			KESCMApplyOversetForDoc(targetDB);
-	}
-	KESCMSetStatus(report);
-
-	KESCMRefreshPanel();
-}
-
-void KESCMToggleStartStop()
-{
-	const bool16 armed = KESCMIsArmed() && (KESCMArmedTargetDB() != nil);
-	if (armed)
-	{
-		KESCMStopComparison();
-		return;
-	}
-
-	// 開始。アクティブ(前面)文書=Target、別の開いている文書=Source。
-	// ★フライアウトの Start は文書が2つ揃っていなければ灰色なので(KESCMCanStartComparison=同じ
-	//   解決子を通る)、通常ここで欠けることは無い。メニューを開いたまま文書が閉じた場合などの保険。
-	IDocument* target = nil;
-	IDocument* source = nil;
-	if (!KESCMResolveComparisonPair(target, source))
-	{
-		// 実際に欠けているものを言う(target が居るなら足りないのは Source だけ。2026-08-06 再点検)。
-		PMString s(target == nil ? "Target and source documents not found."
-		                         : "Source document not found.");
-		s.SetTranslatable(kFalse);
-		KESCMSetStatus(s);
-		// ★この経路でも要る。⚠**旧実装では呼ばれていなかった**——この分岐は else ブロックの中で return
-		//   しており、関数末尾の KESCMRefreshPanel には届いていなかった。∴これは切り出しに伴う挙動の
-		//   **変更**(望ましい方向の)で、元の動作の保存ではない。
-		KESCMRefreshPanel();
-		return;
-	}
-
-	KESCMStartComparisonFor(target, source);
-}
-
-// KESCMSetMarkOpacity25(KESCMCore.h で宣言) — 枠の不透明度を 25%/75% に設定。旧パネルの opacity ラジオの
-// 代わりに、フライアウト項目 kKESCMPopupOpacity25ActionID / kKESCMPopupOpacity75ActionID の DoAction から
-// 呼ぶ。現在の印刷フラグ(KESCMGetPrintMarks)を維持したまま不透明度だけを反映する。ラジオ相当の見た目
-// (選択中の項目に✓)はメニューを開いたときに UpdateActionStates が KESCMGetMarkOpacity25 を読んで反映する。
-void KESCMSetMarkOpacity25(bool16 op25)
-{
-	IDocument* active = KESCMActiveDoc();
-	IDataBase* db = (active != nil) ? ::GetUIDRef(active).GetDataBase() : nil;
-
-	const bool16 flag = KESCMGetPrintMarks();	// 現在の印刷 ON/OFF を維持
-	KESCMDoSetPrintMarks(flag, op25, db);
-
-	PMString report;
-	report.SetTranslatable(kFalse);
-	report.Append(op25 ? "kescm: marks opacity 25%" : "kescm: marks opacity 75%");
-	report.Append(flag ? "; will print (and stay visible on screen)"
-	                   : "; screen-only (won't print)");
-	KESCMSetStatus(report);
-}
-
-// KESCMTogglePrintMarks(KESCMCore.h で宣言) — 印刷マーク ON/OFF トグル。旧パネルのチェックボックスの
-// 代わりに、フライアウト項目 kKESCMPopupPrintMarksActionID の DoAction から呼ぶ。現在の印刷フラグを反転し、
-// 不透明度は現在の選択(KESCMGetMarkOpacity25)を維持して反映する。表示更新はステータス行のみ
-// (チェックマークはメニューを開いたときに UpdateActionStates が KESCMGetPrintMarks を読んで反映する)。
-void KESCMTogglePrintMarks()
-{
-	IDocument* active = KESCMActiveDoc();
-	IDataBase* db = (active != nil) ? ::GetUIDRef(active).GetDataBase() : nil;
-
-	const bool16 newFlag = !KESCMGetPrintMarks();
-	const bool16 op25    = KESCMGetMarkOpacity25();
-	KESCMDoSetPrintMarks(newFlag, op25, db);
-
-	PMString report;
-	report.SetTranslatable(kFalse);
-	report.Append(op25 ? "kescm: marks opacity 25%" : "kescm: marks opacity 75%");
-	report.Append(newFlag ? "; will print (and stay visible on screen)"
-	                      : "; screen-only (won't print)");
-	KESCMSetStatus(report);
 }
 
 //----------------------------------------------------------------------------------------

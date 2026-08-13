@@ -41,6 +41,7 @@
 #include "KESCMViewSync.h"			// KESCMGetLayoutSync/Set/KESCMAlignOtherViewsToActiveNow(2026-08-13 に KESCMCore.h から移動)
 #include "KESCMScrollMap.h"		// KESCMScrollMapAttach/DetachAll/InvalidateAll(地図トグルと Find Overset)
 #include "KESCMPanelState.h"		// KESCMSavePanelState(フライアウト「Save Panel Settings」)
+#include "KESCMComparisonRun.h"		// Start/Stop・CanStart・印刷マーク・不透明度(2026-08-13 に KESCMCore.h から移動)
 #include "KESCMHideUnchanged.h"		// KESCMHideUnchangedToggle / KESCMGetHideUnchangedOn(2026-08-13 に分離した本体)
 #include "KESCMOversetApply.h"		// KESCMApplyOversetForDoc / KESCMOversetScanTargetDB(同上)
 #include "KESCMChangedPagesTSV.h"	// KESCMExportChangedPagesTSV(フライアウト「Export Changed Pages...」)

@@ -35,6 +35,7 @@
 #include <cstdio>				// FILE / fread / fwrite / fclose
 
 #include "KESCMCore.h"			// KESCMCollectPageUIDs / KESCMCollectMasterPageUIDs / KESCMIsArmed / KESCMArmedTargetDB / KESCMArmedSourceDB / KESCMSetStatus / KESCMDoMarkChangesDoc
+#include "KESCMComparisonRun.h"	// KESCMToggleStartStop(2026-08-13 に KESCMCore.h から移動)
 #include "KESCMPageCheck.h"
 #include "KESCMPageMap.h"		// KESCMPageMapCollectRegistered(保存) / KESCMPageMapReplaceRegistered(読込)
 #include "KESCMDocUidSet.h"		// 「文書DB→ページUID集合」の共通の入れ物(登録側と共有。2026-08-06 監査 C-1)

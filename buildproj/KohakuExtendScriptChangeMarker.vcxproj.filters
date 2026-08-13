@@ -117,6 +117,9 @@
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMViewLookup.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMComparisonRun.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMPageMap.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -225,6 +228,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMViewLookup.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMComparisonRun.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMPageMap.h">
