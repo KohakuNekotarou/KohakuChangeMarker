@@ -42,32 +42,10 @@ UID			KESCMFramePageUID(IDataBase* db, UID frameUID);
 // Hide Unchanged の復元・遅延サムネイル更新などが共有する。実体は KESCMCore.cpp。
 bool16		KESCMIsDocDBOpen(IDataBase* db);
 
-// 現在のマウス位置を、このビューの content(ペーストボード)座標で読む(画面→窓→content)。view が nil なら
-// kFalse。peek と色サンプラが同じ流儀でカーソル位置を求めるための共有ヘルパ。
-bool16		KESCMQueryMouseContentPoint(IControlView* view, PMReal& outX, PMReal& outY);
-
-// マウス下のレイアウトビューを求める(Split Window対応)。ILayoutUIUtils::QueryFrontView() は
-// 「front presentationの代表ビュー」を1つ返すだけでマウス位置を見ないため、1文書がSplit Window中
-// (kLayoutWidgetBoss＋kLayoutSecondaryPanelWidgetID)だと常に元側を返してしまう(実測で確認済み:
-// スプリットの新しい側で操作しても反応しない)。本関数は QueryWindowUnderPoint→
-// IPanelControlData::FindWidget(windowPt) のヒットテストで、実際にマウスが乗っているペイン
-// (元側/新しい側)を正しく特定する。戻り値は QueryFrontView() と同じ契約(+1 ref、呼び出し側で
-// InterfacePtr 等による Release が必要)。見つからなければ nil。
-IControlView*	KESCMQueryViewUnderMouse();
-
-// view がどの文書のレイアウトビューかを特定する(見つからなければ nil)。同期オブザーバの通知元ビューの
-// 所属文書判定と、色サンプラの窓同一性ガードが共有する。実体は KESCMCore.cpp
-// (2026-07-25 に KESCMPeek.cpp の file-static から移動)。
-// ★2026-08-06 の API 監査(A-1)で公式ルートへ変更: レイアウトビュー boss の ILayoutControlData に
-//   GetDocument() を聞く(ILayoutControlData.h:181。手本=CPathCreationTracker.cpp:277-285)。
-//   引けなかった場合だけ、従来の「全文書 × GetAllLayoutViews のポインタ照合」へ落ちる。
-IDataBase*	KESCMFindDocDbForView(IControlView* view);
-
-// 上の関数のフォールバック経路が持つ「直前にヒットした文書」ヒントを捨てる(2026-07-25 追補)。ヒントは
-// 答えを決めるものではなく「どの db から照合を試すか」だけなので正しさには影響しないが、文書クローズ・
-// arm 切替・同期 OFF の直後は外れが確定しているので捨てておく。実体は KESCMCore.cpp。
-// (★公式ルートが効いている限りフォールバックは走らないので、この呼び出しは実質 no-op になる)
-void		KESCMForgetViewDbHint();
+// (★ビューに向かって聞く4本(KESCMQueryMouseContentPoint / KESCMQueryViewUnderMouse /
+//  KESCMFindDocDbForView / KESCMForgetViewDbHint)の宣言は、2026-08-13 の model/UI 分割 第1段 Task 3 で
+//  **KESCMViewLookup.h** へ移した。実体も KESCMViewLookup.cpp。どれも IControlView を受け取るか返す
+//  UI 側の問いで、model からは呼べない。)
 
 // アクティブ(前面)文書とその db(無ければ nil)。ActiveContext 経由の解決を1箇所に集約
 // (2026-07-25 重複解消: 旧 KESCMPanelObserver 内 KESCMActiveDoc と KESCMActionComponent 内

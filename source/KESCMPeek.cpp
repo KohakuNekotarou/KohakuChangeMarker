@@ -51,6 +51,8 @@
 #include "KESCMConstants.h"
 #include "KESCMDrawEventHandler.h"   // エンジンの共有 static ＋ KESCMQueryPanorama
 #include "KESCMCore.h"               // arm/disarm/状態 宣言
+#include "KESCMViewLookup.h"         // KESCMQueryViewUnderMouse / KESCMQueryMouseContentPoint
+                                     // (2026-08-13 に KESCMCore.h から移動。⚠ここも逆流＝Task 4 で確定)
 #include "KESCMPageMap.h"            // KESCMBuildPairing(比較の除外対応表)/KESCMPageMapReadSelection/KESCMPageMapSweepClosedDocs
 #include "KESCMPageCheck.h"          // KESCMPageCheckClearAllDocs / KESCMPageCheckSweepClosedDocs(✓の後片付け)
 #include "KESCMPageNumberMarker.h"   // KESCMInvalidatePageNumberMarkerRects(ノンブル除外矩形キャッシュの破棄)

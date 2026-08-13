@@ -22,7 +22,10 @@
 
 #include "KESCMConstants.h"
 #include "KESCMDrawEventHandler.h"   // KESCMDrawEventHandler::sRasterizing
-#include "KESCMCore.h"               // KESCMQueryMouseContentPoint / KESCMFindPageUnderMouse
+#include "KESCMCore.h"               // KESCMFindPageUnderMouse
+#include "KESCMViewLookup.h"         // KESCMQueryMouseContentPoint / KESCMQueryViewUnderMouse /
+                                     // KESCMFindDocDbForView(2026-08-13 に KESCMCore.h から移動)
+                                     // ⚠ここが model→UI の逆流(Task 4 で全量を確定し、Task 9/10 で切る)
 #include "KESCMPageMap.h"            // KESCMMapTargetToSource / KESCMBuildPairing(除外対応表)
 #include "KESCMColorSampler.h"
 

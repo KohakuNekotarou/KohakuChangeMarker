@@ -39,7 +39,8 @@
 // プロジェクト内インクルード:
 #include "KESCMColorSampler.h"       // KESCMSampleCmykUnderMouse
 #include "KESCMCheckGlyph.h"         // KESCMDrawCheckGlyph(✓描画を CMYK カーソルと共有)
-#include "KESCMCore.h"               // arm 状態アクセサ / ビュー探索 / KESCMSetStatus
+#include "KESCMCore.h"               // arm 状態アクセサ / KESCMSetStatus
+#include "KESCMViewLookup.h"         // KESCMQueryViewUnderMouse / KESCMFindDocDbForView(2026-08-13 に KESCMCore.h から移動)
 #include "KESCMPeek.h"               // KESCMArmedDocsAlive(arm 済み文書の生存検査)
 #include "KESCMCmykCursor.h"
 

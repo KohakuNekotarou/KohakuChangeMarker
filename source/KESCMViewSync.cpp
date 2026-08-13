@@ -55,7 +55,8 @@
 // プロジェクト内インクルード:
 #include "KESCMID.h"
 #include "KESCMDrawEventHandler.h"   // KESCMQueryPanorama
-#include "KESCMCore.h"               // KESCMCollectPageUIDs / KESCMFindDocDbForView / arm 状態アクセサ
+#include "KESCMCore.h"               // KESCMCollectPageUIDs / arm 状態アクセサ
+#include "KESCMViewLookup.h"         // KESCMFindDocDbForView / KESCMForgetViewDbHint(2026-08-13 に KESCMCore.h から移動)
 #include "KESCMPageMap.h"            // KESCMBuildPairing / KESCMBuildMasterPairing(除外対応表)
 #include "KESCMChangeNav.h"          // KESCMEnsureViewShowsSpread(同期先ビューを相手のスプレッドへ。2026-08-11)
 #include "KESCMViewSync.h"

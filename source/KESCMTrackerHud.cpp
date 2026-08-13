@@ -25,7 +25,8 @@
 #include "PMMatrix.h"
 #include "PMRect.h"
 
-#include "KESCMCore.h"			// KESCMIsArmed / KESCMArmedTargetDB / KESCMArmedSourceDB / KESCMFindDocDbForView
+#include "KESCMCore.h"			// KESCMIsArmed / KESCMArmedTargetDB / KESCMArmedSourceDB / KESCMInvalidateDB
+#include "KESCMViewLookup.h"	// KESCMFindDocDbForView(2026-08-13 に KESCMCore.h から移動)
 #include "KESCMTrackerHud.h"
 
 //----------------------------------------------------------------------------------------
