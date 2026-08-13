@@ -35,7 +35,18 @@
 #define kKESCMPluginName	"KohakuExtendScriptChangeMarker"			// Name of this plug-in. 内部名(ID系・.rc の InternalName)。互換のため据え置き。
 #define kKESCMDisplayName	"Kohaku Change Marker"			// 表示名(About メニュー項目・About ボックス本文・パネル/ツール名)。KBS の "Kohaku Search Panel" に合わせ、単語間をスペースで区切る(2026-07-25)。
 #define kKESCMFileName		"KohakuChangeMarker"			// 出力ファイル名の基底(.rc の OriginalFilename)。vcxproj の TargetName と一致させること。表示名と違いスペースは入れない。
-#define kKESCMPrefixNumber	0x205515 		// Unique prefix number for this plug-in(*Must* be obtained from Adobe Developer Support).
+#define kKESCMPrefixNumber	0x1EA500 		// Unique prefix number for this plug-in(*Must* be obtained from Adobe Developer Support).
+													// ★★2026-08-13: Adobe が発行した正規の prefix に差し替えた。wwds@adobe.com へメールで依頼し
+													// 「0x1EA500 - 0x1EA5FF」を受領＝**各 ID 空間 256 枠が予約された**(自作プラグインで唯一)。
+													// ⚠旧値 0x205515 は Adobe Developer Console のプラグイン ID(10進 205515)に 0x を付けて
+													// 16進として読み替えただけの数値で、**Adobe の採番体系とは無関係＝1枠も予約されていなかった**。
+													// 実害として KESCL(0x205554) と 0x3F=63 しか離れておらず、widget 枠が残り6個まで逼迫していた。
+													// ★引っ越しても既存の .indd は壊れない(実測): KESCM は文書に永続データを一切書いていない
+													// ——KESCM.fr の AddIn は 1 か所だけで相手は kActiveContextBoss(セッション常駐=実行時のみ)、
+													// Class は全て UI か実行時オブジェクト、唯一の永続 IID_IKESCMSAVEDSECTIONHEIGHT は
+													// パネル下ペインの高さ(ワークスペース側)。失うのはショートカット割り当てとパネル配置だけ。
+													// ⚠ UI 側プラグイン KCMUI の prefix は別途 2 本目を発行依頼中(暫定 0x205792)。model/UI で
+													// prefix を分けるのはガイド vol1-07:113 の指示であり、SDK のペア14組も全て別 prefix。
 #define kKESCMVersion		"1.4.0"						// Version of this plug-in。About ボックス本文・.rc の FileVersion・PluginVersion リソースの3か所に出る。1.0.1 → 1.1.0(2026-07-25) → 1.1.1(2026-07-26) → 1.2.0(2026-07-30) → 1.2.1(2026-08-06) → 1.3.0(2026-08-07) → 1.3.1(2026-08-07) → 1.4.0(2026-08-09)。
 														// ★1.4.0 で minor を上げた理由 = **新機能 Story Edits**(パネル下部に開閉セクションを設け、変更のあったストーリーを一覧する)。1.2.1→1.3.0 のときと同じ基準＝機能追加が入るなら patch では足りない。★**2026-08-10 に段階4(ジャンプ)まで完成**(下記③)。
 														// ★Adobe Exchange の公開版は **1.3.0**(2026-08-07 承認・公開)。1.2.1 は提出しないまま 1.3.0 へ繰り上げた(機能追加が入ったので patch では足りない)。
