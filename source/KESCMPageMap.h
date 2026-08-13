@@ -26,10 +26,17 @@ class IDataBase;
 
 // ページパネルの選択ページを読む共通リーダー。outDB=選択が属する文書(=アクティブ/最前面文書)、
 // outPages=文書のページ列に実在する選択ページUID(重複除去済み)。有効なページが1つ以上あれば kTrue。
-// 取得は公式 API Utils<ILayoutUIUtils>()->GetSelectedPages(masters除外/スプレッド選択もページUIDへ展開)。
+// 取得は公式 API Utils<ILayoutUIUtils>()->GetSelectedPages(スプレッド選択もページUIDへ展開)。
 // ★ページパネル右クリック3機能(Register/Check/Refresh)共通の唯一の読み口(2026-07-15 に3重コピーを統合)。
 //   「選択ページ」の意味を変えるときは必ずここ1箇所で。実体は KESCMPageMap.cpp。
-bool16 KESCMPageMapReadSelection(IDataBase*& outDB, std::vector<UID>& outPages);
+//
+// ★includeMasters(2026-08-13) = マスターページも選択として読むか。3機能で答えが割れるので引数にした。
+//   ・kTrue …… Check と Refresh。マスタースプレッドは 2026-08-11 から比較対象なので(名前で対応付け=
+//               KESCMBuildMasterPairing)、マスターページにも枠が出る=✓ も部分再比較も意味を持つ。
+//   ・kFalse … Register(既定)。**マスターに登録を許してはいけない**: マスターの対応付けは名前で行い、
+//               登録による除外を一切見ない(KESCMBuildMasterPairing の契約)。通すと「登録はできるのに
+//               比較は何も変わらない」メニューになる。
+bool16 KESCMPageMapReadSelection(IDataBase*& outDB, std::vector<UID>& outPages, bool16 includeMasters = kFalse);
 
 // ページパネル右クリックのトグル「KCM: Register as Added/Removed Pages」の実行。選択ページを
 // 「比較相手なしページ」として登録/解除する(1つでも未登録があれば全登録、全部登録済みなら全解除)。

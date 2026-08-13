@@ -247,7 +247,8 @@ static void KESCMPeekShowUnderMouse(IDataBase* targetDB, IDataBase* sourceDB)
 
 
 // ページ比較の部分更新(共通コア): targetPages(= targetDB 上のページUID列)を再比較して枠(リング)を
-// 更新する。source 対応は除外対応表(登録済みページを除いた順番対応)で引く。
+// 更新する。source 対応は除外対応表(通常ページ=登録済みを除いた順番対応 / マスター=名前対応。
+// 2026-08-13 にマスターぶんを合流させた)で引く。
 //   ・各ページを MakeEntry で取り直し(編集後の差分に更新)。変化が無くなったページは古い枠を消す。
 //   ・旧版画像キャッシュ(sOrigImages)は古いので破棄(次の peek で作り直し)。
 //   ・✓ の剪定/レイアウト・スクロールバー地図・Pages パネルサムネイルの更新まで行う。
@@ -285,6 +286,19 @@ static bool16 KESCMRefreshComparisonCore(IDataBase* targetDB, IDataBase* sourceD
 	std::map<UID, UID> targetToSource;
 	for (size_t k = 0; k < pairT.size(); ++k)
 		targetToSource[pairT[k]] = pairS[k];
+
+	// ★マスタースプレッドの対応も同じ表に入れる(2026-08-13)。ページ UID は文書内で一意なので通常
+	//   ページの対応と1つの map に同居できる(Sync 側の KESCMEnsureSyncPairing と同じ形)。
+	//   これを入れるまで、マスターページを選んで Refresh すると対応表に無く「対象0件」で黙って
+	//   何も起きなかった——2026-08-11 に比較(KESCMDoMarkChangesDoc)がマスターを扱うようになり、
+	//   **枠は出るのに部分再比較だけ届かない**という食い違いになっていた。
+	//   ★比較の対応表(KESCMCore.cpp)と同じ2本立て(通常=順番対応 / マスター=名前対応)を通す。
+	{
+		std::vector<UID> mT, mS;
+		KESCMBuildMasterPairing(targetDB, sourceDB, mT, mS);
+		for (size_t k = 0; k < mT.size(); ++k)
+			targetToSource[mT[k]] = mS[k];
+	}
 
 	// 指定ページを再比較して枠を更新。触れたページ(target とその source 対応)を集めておき、後で Pages
 	// パネルのサムネイルを per-UID Purge する。変化あり/なしの両方を入れる=変化なしに戻って sEntries から
@@ -434,7 +448,9 @@ bool16 KESCMRefreshComparisonForSelectedPages(int32* outPages, int32* outChanged
 	// KESCMRefreshComparisonAvailable と対)。
 	IDataBase* db = nil;
 	std::vector<UID> selPages;
-	if (!KESCMPageMapReadSelection(db, selPages) || db != targetDB)
+	// ★includeMasters=kTrue(2026-08-13): マスタースプレッドも比較対象なので部分再比較の対象にする。
+	//   対応表側(KESCMRefreshComparisonCore)にマスターのペアを入れるのと対で意味を持つ。
+	if (!KESCMPageMapReadSelection(db, selPages, kTrue /*includeMasters*/) || db != targetDB)
 		return kFalse;
 
 	// 再比較コアは Target ページで駆動する(前面=Target のみなので選択ページがそのまま対象)。

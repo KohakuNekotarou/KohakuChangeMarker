@@ -10,6 +10,14 @@
 //  構造は KESCMPageMap.cpp を踏襲(選択取得=共通リーダー KESCMPageMapReadSelection、状態=
 //  文書DBごとの UID セット、クローズスイープは deref なしのポインタ比較のみ)。
 //
+//  ★★マスターページも対象にする(2026-08-13)。共通リーダーを includeMasters=kTrue で呼ぶ点だけが
+//  Register(kFalse)との違い。理由=マスタースプレッドは 2026-08-11 から比較され枠が出るので、
+//  「枠の付いたページに読んだ印を付ける」という Check の意味がそのまま成立する。⚠それまでは
+//  リーダーがマスターを1つも返さず、UpdateToggleState が必ず kDisabled_Unselected を返していた
+//  =コンテキストメニューは無効項目を出さないので「マスターだけ KCM: Check が消える」に見えた。
+//  ★描画側は元からマスターで動く(サムネイル ✓ もレイアウト ✓ も「今描いているスプレッドのページ」を
+//  回すだけ・Purge はページ UID 単位・KESCMForceRedrawPagesPanelNow は Master サブパネルも再描画)。
+//
 //========================================================================================
 
 #include "VCPlugInHeaders.h"
@@ -26,7 +34,7 @@
 #include <string>
 #include <cstdio>				// FILE / fread / fwrite / fclose
 
-#include "KESCMCore.h"			// KESCMCollectPageUIDs / KESCMIsArmed / KESCMArmedTargetDB / KESCMArmedSourceDB / KESCMSetStatus / KESCMDoMarkChangesDoc
+#include "KESCMCore.h"			// KESCMCollectPageUIDs / KESCMCollectMasterPageUIDs / KESCMIsArmed / KESCMArmedTargetDB / KESCMArmedSourceDB / KESCMSetStatus / KESCMDoMarkChangesDoc
 #include "KESCMPageCheck.h"
 #include "KESCMPageMap.h"		// KESCMPageMapCollectRegistered(保存) / KESCMPageMapReplaceRegistered(読込)
 #include "KESCMDocUidSet.h"		// 「文書DB→ページUID集合」の共通の入れ物(登録側と共有。2026-08-06 監査 C-1)
@@ -69,7 +77,7 @@ void KESCMPageCheckToggleSelectedPages()
 {
 	IDataBase* db = nil;
 	std::vector<UID> selPages;
-	if (!KESCMPageMapReadSelection(db, selPages))
+	if (!KESCMPageMapReadSelection(db, selPages, kTrue /*includeMasters*/))
 		return;		// メニューは kCustomEnabling で無効化済みのはずだが保険
 
 	// チェックは「比較を Start 中(arm 済み)」かつ「選択文書が Target/Source」のときだけ可能。
@@ -132,7 +140,7 @@ void KESCMPageCheckUpdateToggleState(IActionStateList* listToUpdate, int32 index
 {
 	IDataBase* db = nil;
 	std::vector<UID> pages;
-	if (!KESCMPageMapReadSelection(db, pages))
+	if (!KESCMPageMapReadSelection(db, pages, kTrue /*includeMasters*/))
 	{
 		listToUpdate->SetNthActionState(index, kDisabled_Unselected);
 		return;
@@ -241,6 +249,9 @@ bool16 KESCMPageCheckHasAny(IDataBase* db)
 //     再オープンしても一致する。トレードオフ: 文書を移動/別名保存してパスが変わると一致しない)。
 //   値 = チェック済み(✓)ページUID + 登録済み(Added/Removed=緑「/」)ページUID の2集合。パスは UTF-8 で
 //   格納(日本語パス/Shift-JIS の 0x5C 問題を回避)。
+//   ★"checks" には**マスターページの UID も入りうる**(2026-08-13)。"registered" は通常ページのみ
+//     (マスターに登録は無い)。UID は文書内で一意なのでファイル形式も旧ファイルとの互換も変わらない
+//     (読み込み側が「その文書に実在するページか」を必ず突合するため)。
 //
 //   形式(version 2):
 //     {
@@ -689,7 +700,12 @@ void KESCMPageCheckLoadFromFile()
 
 	// 各文書の平坦ページ列は Phase1 で集めて Phase3 でも使い回す(再比較でページ構造は増減しない前提。
 	// 保存データを持つ文書=saveIt[i]!=end のときだけ埋まる。二重収集を避けるためのキャッシュ)。
+	// ★マスターページ列は別のキャッシュに分けて持つ(2026-08-13)。Phase3(Check の復元)は両方を見るが、
+	//   Phase1(Register の復元)は**通常ページだけ**を見る——マスターに登録は存在しない(Register は
+	//   共通リーダーを includeMasters=kFalse で呼ぶ)ので、連結した1本を両方に流用すると
+	//   「マスターにも登録があり得る」という誤った前提をコードに書き込むことになる。
 	std::vector<UID> flatCache[2];
+	std::vector<UID> masterCache[2];
 
 	//--- フェーズ1: Register を両文書へ適用する(再比較の前=除外対応表に効かせるため)。--------------
 	// 保存 registered UID のうち、この文書に実在するページだけを登録集合に置き換える(setter)。
@@ -712,6 +728,7 @@ void KESCMPageCheckLoadFromFile()
 		std::vector<UID> regPages;
 		std::vector<UID>& flat = flatCache[i];
 		KESCMCollectPageUIDs(db, flat);		// Phase3 でも同じ flat を使い回す
+		KESCMCollectMasterPageUIDs(db, masterCache[i]);	// ★Phase3(Check の復元)専用。ここでは使わない
 		for (size_t k = 0; k < flat.size(); ++k)
 		{
 			const UID u = flat[k];
@@ -767,13 +784,21 @@ void KESCMPageCheckLoadFromFile()
 		std::set<UID> marked;
 		KESCMCollectMarked(db, marked);
 
+		// ★通常ページとマスターページの両方から復元する(2026-08-13)。マスターも比較対象=枠が付く
+		//   ので ✓ も付く。⚠**Save 側は元からマスターの ✓ も書いていた**(sChecked の UID をそのまま
+		//   書き出すだけなので通常/マスターの区別が無い)。ここが通常ページ列としか突合していなかった
+		//   ため、保存はできるのに Load で黙って消える非対称になっていた。
 		std::set<UID> newSet;
-		const std::vector<UID>& flat = flatCache[i];	// Phase1 で収集済み(再収集しない)
-		for (size_t k = 0; k < flat.size(); ++k)
+		const std::vector<UID>* lists[2] = { &flatCache[i], &masterCache[i] };	// Phase1 で収集済み(再収集しない)
+		for (int L = 0; L < 2; ++L)
 		{
-			const UID u = flat[k];
-			if (savedChecks.count((uint32)u.Get()) > 0 && marked.count(u) > 0)
-				newSet.insert(u);
+			const std::vector<UID>& flat = *lists[L];
+			for (size_t k = 0; k < flat.size(); ++k)
+			{
+				const UID u = flat[k];
+				if (savedChecks.count((uint32)u.Get()) > 0 && marked.count(u) > 0)
+					newSet.insert(u);
+			}
 		}
 
 		// 影響ページ(旧チェック ∪ 新チェック)のサムネイルを更新する(✓の付与/消去を反映)。

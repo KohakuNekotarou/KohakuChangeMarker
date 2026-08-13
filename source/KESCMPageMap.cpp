@@ -8,8 +8,9 @@
 //  同じ「比較相手なし」(対応表からの除外)なので、入れ物は文書DBごとの UID セット1種類。
 //
 //  - 選択の取得: ★Utils<ILayoutUIUtils>()->GetSelectedPages()(公式API、ILayoutUIUtils.h:183)。
-//    bPagesOnly=kTrue でスプレッド選択も所属ページUIDへ展開、bIncludeMasters=kFalse でマスター
-//    除外。★実使用例は3つあるが目的で引数が分かれる: 製品 PageTransitionsPanelObserver.cpp:672 は
+//    bPagesOnly=kTrue でスプレッド選択も所属ページUIDへ展開、bIncludeMasters は呼び出し側が決める
+//    (この Register は kFalse=マスター除外。理由は KESCMPageMap.h の includeMasters のコメント)。
+//    ★実使用例は3つあるが目的で引数が分かれる: 製品 PageTransitionsPanelObserver.cpp:672 は
 //    bPagesOnly=kFalse(スプレッド単位のトランジションが目的でページ/スプレッド混在を欲しがる)、
 //    codesnippets/SnpModifyLayoutGrid.cpp:959 と SnpInspectLayoutGrid.cpp:690 は既定(=kTrue)。
 //    KESCM はページ単位で対応表を作るので kTrue が正しい(2026-08-06 ブロック9 監査で確認)。
@@ -43,7 +44,7 @@
 #include <set>
 #include <vector>
 
-#include "KESCMCore.h"			// KESCMCollectPageUIDs / KESCMArmedTargetDB / KESCMArmedSourceDB / KESCMSetStatus
+#include "KESCMCore.h"			// KESCMCollectPageUIDs / KESCMCollectMasterPageUIDs / KESCMArmedTargetDB / KESCMArmedSourceDB / KESCMSetStatus
 #include "KESCMPageMap.h"
 #include "KESCMDocUidSet.h"		// 「文書DB→ページUID集合」の共通の入れ物(✓側と共有。2026-08-06 監査 C-1)
 #include "KESCMThumbnailRefresh.h"	// KESCMRefreshThumbnailsForPages(トグルページの明示サムネイル更新)
@@ -71,14 +72,21 @@ static bool16 KESCMVecContains(const std::vector<UID>& v, UID u)
 // outDB=選択が属する文書(=アクティブ文書)、outPages=文書のページ列に実在する選択ページUID。
 // 有効なページが1つ以上あれば kTrue。
 // 取得は公式 API Utils<ILayoutUIUtils>()->GetSelectedPages():
-//   ・bIncludeMasters=kFalse … マスターページ/マスタースプレッドを除外(比較対象外)
+//   ・bIncludeMasters=引数 includeMasters … マスターページ/マスタースプレッドを読むか(下記)
 //   ・bPagesOnly=kTrue …… 見開き全体の選択(パネル内部ではスプレッド扱い)も所属ページUIDへ展開
 //   ・bCurrentPageOnly=kTrue はパネル非表示時のフォールバック規定(このメニューはパネルからしか
 //     開けないため実質使われない)
-// 返ったUIDは念のため文書の平坦ページ列(KESCMCollectPageUIDs)と突合し、重複も除去する。
+// 返ったUIDは念のため文書の平坦ページ列と突合し、重複も除去する。
 // ★Register(ここ)/Check(KESCMPageCheck.cpp)/Refresh(KESCMPeek.cpp)の3機能共通(2026-07-15 統合)。
+//
+// ★★includeMasters(2026-08-13。既定 kFalse=従来どおり通常ページのみ)。意味と、どちらを渡すかの
+//   判断基準はヘッダー KESCMPageMap.h のコメントに書いてある(3機能で答えが割れるので引数にした)。
+//   ⚠**除外は2段構えだった**: GetSelectedPages の bIncludeMasters だけでなく、突合相手の
+//   KESCMCollectPageUIDs も ISpreadList=通常スプレッドしか回さない(KESCMCore.cpp:66)。片方だけ
+//   直してもマスターは flatSet に無く落ちるので、**必ず両方を同じ includeMasters で揃える**。
+//   マスターページの列は KESCMCollectMasterPageUIDs が後ろへ連結する(out をクリアしない契約)。
 //========================================================================================
-bool16 KESCMPageMapReadSelection(IDataBase*& outDB, std::vector<UID>& outPages)
+bool16 KESCMPageMapReadSelection(IDataBase*& outDB, std::vector<UID>& outPages, bool16 includeMasters)
 {
 	outDB = nil;
 	outPages.clear();
@@ -96,11 +104,13 @@ bool16 KESCMPageMapReadSelection(IDataBase*& outDB, std::vector<UID>& outPages)
 		return kFalse;
 
 	UIDList sel(db);
-	Utils<ILayoutUIUtils>()->GetSelectedPages(sel, kFalse /*masters除外*/, kTrue /*currentPageOnly*/, kTrue /*pagesOnly*/);
+	Utils<ILayoutUIUtils>()->GetSelectedPages(sel, includeMasters, kTrue /*currentPageOnly*/, kTrue /*pagesOnly*/);
 
 	// 突合相手は「文書の全ページ」なので set で引く(上の KESCMVecContains のコメント参照)。
 	std::vector<UID> flat;
 	KESCMCollectPageUIDs(db, flat);
+	if (includeMasters)
+		KESCMCollectMasterPageUIDs(db, flat);	// ★マスターは後ろへ連結される(out をクリアしない)
 	const std::set<UID> flatSet(flat.begin(), flat.end());
 	const int32 n = sel.Length();
 	for (int32 i = 0; i < n; ++i)
@@ -394,8 +404,11 @@ void KESCMBuildPairing(IDataBase* targetDB, IDataBase* sourceDB,
 //   マスタースプレッドどうしを名前で対応付け、一致した組のページを順に並べる(2026-08-11)。
 //   ★上の KESCMBuildPairing とは対応の規則が違う(あちらは順番、こちらは名前)ので別関数。理由は
 //   ヘッダーのコメント参照。★登録済み(比較相手なし)ページの除外はしない: 登録はページパネルの
-//   選択から作られ、ILayoutUIUtils::GetSelectedPages が bIncludeMasters=kFalse でマスターを外す
-//   ので、マスターページが登録集合に入ることはない。
+//   選択から作られ、その読み口(KESCMPageMapReadSelection)を Register だけは includeMasters=kFalse で
+//   呼ぶので、マスターページが登録集合に入ることはない。
+//   ⚠**この前提はこの関数の正しさの土台**: ここは登録集合を一度も見ないので、もし Register が
+//   マスターを受け付けるようになったら「登録したのに比較から外れない」という嘘になる
+//   (2026-08-13 に Check/Refresh だけマスターを通す形にしたときも、Register は kFalse のまま据え置いた)。
 //
 //   ★Source 側の名前引きは公式 API IMasterSpreadList::FindMasterByName(prefix, basename)
 //   (IMasterSpreadList.h:138)。自前で全マスターを回して名前を突き合わせる形も書けるが、
