@@ -1719,7 +1719,15 @@ public:
 	//   と同じ流儀。⚠サンプル basicdrwevthandler/BscDEHDrwEvtSrvc.cpp:131 は SetKey=2流儀(2026-08-06 に製品側へ)。
 	//   ⚠末尾の "\0" はそのサンプルの写しだったので落とした(C 文字列は終端で切れるので挙動は元から同じ)。
 	virtual void GetName(PMString* pName) { pName->SetCString("KESCMDrawEventSrvc"); }
-	virtual IPlugIn::ThreadingPolicy GetThreadingPolicy() const { return IPlugIn::kMainThreadOnly; }
+	// ★★GetThreadingPolicy は**書かない**(2026-08-14 に手書き override を撤去した)。
+	//   CServiceProvider が「boss の居るプラグインの型」から既定を返す ---- UI→kMainThreadOnly /
+	//   model→kMultipleThreads(ガイド vol1-07「Threading and service providers」)。
+	//   ∴ kUIPlugIn の現在は撤去前と**完全に同値**(動作は1バイトも変わらない)で、第2段で
+	//   kModelPlugIn にした瞬間に**自動で kMultipleThreads** になる。
+	//   ⚠**手書きで kMainThreadOnly を返していると、model にしても PDF 書き出しにマークが出ない**
+	//     (2x2 実測の3行目 = docs/ai-notes/draw-event-pdf-export-experiment-2026-08-12.md)。
+	//     つまり「消し忘れ」が分割の目的を**無言で**殺す。だから第2段を待たず先に消してある。
+	//   ★同じ理由を KESCMUIDrawEvent.cpp の冒頭にも書いてある(あちらは最初から書いていない)。
 };
 
 CREATE_PMINTERFACE(KESCMDrawEventSrvc, kKESCMDrawEventSrvcImpl)

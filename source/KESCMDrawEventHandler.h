@@ -87,6 +87,28 @@ struct KESCMOrigImage
 // KESCMDrawEventHandler
 //   ページUID→オーバーレイの集合を保持し、スプレッド描画時に、そのスプレッドに属する
 //   各ページのリングを blit する。リング太さは描画時のズームに追従。非永続=.indd に残らない。
+//
+// ⚠★★★2026-08-14: **model/UI 分割の第2段(kModelPlugIn 化)の前に、必ずここを読むこと。**
+//   下の static 群は**この設計のままではバックグラウンドスレッドで正しく動かない**。
+//   理由は2つあり、どちらもガイド vol1-07 Multithreading の本文が根拠:
+//
+//   (1) **BG スレッドが見る DB は「クローンされた別の DB」**
+//       ("provides a separate execution context (a cloned copy of the database) for each thread")。
+//       ⇒ 描画に渡ってくる db は sDB とは**別ポインタ**になる。下の sDB / sOverflowCacheDB は
+//         「同じ文書か」を**生ポインタの一致で判定**しているので、BG では必ず食い違い、
+//         ①マークが出ない か ②EnsureOverflowCache が**描画のたびに作り直す**(=下の(2))。
+//       ★直す方向 = 生ポインタ比較をやめ、IDataBase::GetSysFile(ファイル)で同一性を聞く
+//         (閉じた文書のポインタがアドレス再利用で別文書と一致する問題も同時に消える)。
+//
+//   (2) **スレッドは object model のインスタンスは共有しないが、static は共有する**
+//       ("Threads do not share object-model instances. They do share globals and statics")。
+//       ⇒ 下の可変 static は main と BG から同時に触られる。とくに **sEntries は生ポインタの map で
+//         DropAll() が delete する**ので、**BG が読んでいる最中に main が Stop すると解放済みメモリを読む**。
+//       ★守らないと "InDesign will behave inconsistently and **may randomly crash**"(ガイドの原文)。
+//
+//   ⇒ 実測タスク = 第2段計画書の **Task 11C**(クローン DB で UID が引けるか) と
+//     **Task 12B**(スレッド安全化)。**測る前に kMultipleThreads で本番を回さないこと。**
+//     計画 = docs/superpowers/plans/2026-08-13-kescm-model-ui-split-stage2.md
 //========================================================================================
 class KESCMDrawEventHandler : public CPMUnknown<IDrwEvtHandler>
 {
@@ -99,8 +121,10 @@ public:
 	virtual bool16 HandleDrawEvent(ClassID eventID, void* eventData);
 
 	// ページUID → オーバーレイ。変化のあったページだけ登録される。
+	// ⚠★中身は生ポインタで DropAll() が delete する = BG と main で同時に触ると解放済み読み(冒頭の(2))。
 	static std::map<UID, KESCMOverlayEntry*> sEntries;
 	// 全エントリが属する単一ドキュメント。別dbをmarkしたら作り直す(UIDはdb内のみ一意なため)。
+	// ⚠★BG には**クローンの別ポインタ**が渡るので、この生ポインタでの一致判定は必ず外れる(冒頭の(1))。
 	static IDataBase* sDB;
 	// 上書き表示(変更リング)の master 表示トグル。データ(sEntries)は消さず
 	// 表示だけ切り替える。★既定=kFalse(非表示)。シングルツール左ボタンを押している間だけ kTrue にして枠等を

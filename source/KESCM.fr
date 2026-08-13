@@ -153,6 +153,20 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 
 	// Startup/shutdown service. The middle-button watcher was removed (2026-07-13); this now only
 	// tears down held resources at app shutdown (see KESCMPeekStartup in KESCMPeek.cpp).
+	//
+	// !!! 2026-08-14 - BEFORE switching this plug-in to kModelPlugIn (split stage 2), settle the
+	// threading policy of this service. Guide vol1-07 "Threading and startup/shutdown services" states
+	// that a startup/shutdown boss living in a MODEL plug-in is called on background thread startup and
+	// shutdown too. KESCMPeekStartup::Shutdown() wipes the entire comparison state (DropAll, DropOverset,
+	// page map / check / hide-unchanged, story list), so being called per background thread would erase
+	// the marks on every PDF export - which is exactly what stage 2 is trying to make work.
+	// Note kLazyStartupShutdownProviderImpl is NOT one of the three implementations the guide documents
+	// (kCMainThreadStartupShutdownProviderImpl / kCMTStartupShutdownProviderImpl /
+	// kCStartupShutdownProviderImpl), and IStartupShutdownService.h:44-47 says nothing about threading,
+	// so the behaviour has to be measured - see Task 11B in the stage 2 plan. If it does get called on
+	// background threads, switch to kCMainThreadStartupShutdownProviderImpl HERE (fix it in the resource,
+	// not by adding an "am I on a background thread" guard inside Shutdown(); such a guard risks skipping
+	// the real shutdown as well).
 	Class
 	{
 		kKESCMPeekStartupBoss,

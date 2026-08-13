@@ -492,6 +492,24 @@ bool16 KESCMArmedDocsAlive()
 //   レイアウト同期フラグ)を片付けるためだけに残している。
 //   ★2026-08-13 の分割後も**このサービスは1本のまま**(第1段では新しい ClassID を使わない)。
 //     出ていった3ファイルの後片付けは、それぞれが公開する Shutdown 入口を下から呼ぶ。
+//
+// ⚠★★★2026-08-14: **kModelPlugIn 化(第2段)の前に、このサービスの threading policy を確定させること。**
+//   ガイド vol1-07「Threading and startup/shutdown services」の本文:
+//     "Returning IPlugIn::kMultipleThreads means the service **will be called on both the main thread
+//      and background thread startup and shutdown.**"
+//     "kCStartupShutdownProviderImpl derives its implementation of GetThreadingPolicy from
+//      CServiceProvider. **If the startup/shutdown service boss resides in a model plug-in, the service
+//      will be called on both main and background thread startup and shutdown.**"
+//   ⇒ 下の Shutdown() は **DropAll() ほかで比較状態を丸ごと消す**ので、これが BG スレッドの終了ごとに
+//     呼ばれると **PDF を1本書き出すたびにマークが全部消える**。
+//   ⚠KESCM.fr:162 が指定しているのは **kLazyStartupShutdownProviderImpl** で、これは**上のガイドの
+//     3択に載っていない**(kCMainThreadStartupShutdownProviderImpl / kCMTStartupShutdownProviderImpl /
+//     kCStartupShutdownProviderImpl)。IStartupShutdownService.h:44-47 も「起動を遅くしたくなければ
+//     Lazy を使え」としか書いておらず **threading policy には触れていない**
+//     ⇒ **どちらに転ぶかは実測でしか分からない**(第2段計画書 Task 11B で測る)。
+//   ★BG でも呼ばれるなら kCMainThreadStartupShutdownProviderImpl へ替える。
+//     ⚠**この Shutdown() の側に「BG なら何もしない」ガードを入れて塞ぐのは筋が悪い**
+//       ---- 本当の終了時にも取りこぼしうる。**サービスの宣言側(.fr)で解決する。**
 //========================================================================================
 class KESCMPeekStartup : public CPMUnknown<IStartupShutdownService>
 {
