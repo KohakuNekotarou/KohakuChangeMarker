@@ -153,7 +153,7 @@ static void KESCMBuildStops(std::vector<KESCMNavStop>& out)
 		marks->GetOversetLocations(locs);
 
 	std::vector<UID> flat;
-	KESCMCollectPageUIDs(navDB, flat);
+	Utils<IKESCMMarkData>()->GetAllPageUIDs(navDB, flat);
 	for (size_t i = 0; i < flat.size(); ++i)
 	{
 		const UID u = flat[i];
@@ -185,7 +185,7 @@ static void KESCMBuildStops(std::vector<KESCMNavStop>& out)
 	if (changeHere || oversetHere)
 	{
 		std::vector<UID> masters;
-		KESCMCollectMasterPageUIDs(navDB, masters);
+		Utils<IKESCMMarkData>()->GetMasterPageUIDs(navDB, masters);
 		for (size_t i = 0; i < masters.size(); ++i)
 		{
 			const UID u = masters[i];
@@ -465,7 +465,7 @@ static UID KESCMSourcePageForTarget(IDataBase* targetDB, IDataBase* sourceDB, UI
 
 	// 相手なし(Added/Overflow)。ページ順で最も近いペア済みページの Source 相手へ寄せる。
 	std::vector<UID> flat;
-	KESCMCollectPageUIDs(targetDB, flat);
+	Utils<IKESCMMarkData>()->GetAllPageUIDs(targetDB, flat);
 	int32 idx = -1;
 	for (size_t i = 0; i < flat.size(); ++i)
 		if (flat[i] == targetPageUID) { idx = (int32)i; break; }
@@ -794,7 +794,7 @@ bool16 KESCMGotoStoryFrame(IDataBase* db, UID frameUID, UID pageUID, UID storyUI
 	// Pages パネルも、**実際に着地したフレーム**のページへ(ページに載っていないなら中で何もしない)。
 	// ★行が覚えている pageUID ではなく着地側から引く: 先頭フレームにパーセルが1つも配置されていない
 	//   ときは、着地するのは次のフレーム＝別のページのことがある。表示と実際がずれない方を採る。
-	KESCMScrollPagesPanelToPage(db, (landedFrame != kInvalidUID) ? KESCMFramePageUID(db, landedFrame) : pageUID);
+	KESCMScrollPagesPanelToPage(db, (landedFrame != kInvalidUID) ? Utils<IKESCMMarkData>()->GetFramePageUID(db, landedFrame) : pageUID);
 
 	// ***** Source 側も連れて行く。ただし合わせるのは「ページ」ではなく「ストーリー」。*****
 	//
@@ -830,7 +830,7 @@ bool16 KESCMGotoStoryFrame(IDataBase* db, UID frameUID, UID pageUID, UID storyUI
 
 			// Pages パネルは Sync の対象外なので ON/OFF に関わらず追随させる(Source が前面のときだけ
 			// 中で効く。Target が前面なら上の呼び出しの方が効いている)。
-			KESCMScrollPagesPanelToPage(sourceDB, KESCMFramePageUID(sourceDB, srcFrame));
+			KESCMScrollPagesPanelToPage(sourceDB, Utils<IKESCMMarkData>()->GetFramePageUID(sourceDB, srcFrame));
 		}
 	}
 

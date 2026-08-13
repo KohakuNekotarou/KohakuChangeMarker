@@ -56,7 +56,6 @@
 #include "KESCMID.h"
 #include "Utils.h"                   // Utils<IKESCMCompareFacade>()
 #include "IKESCMCompareFacade.h"     // arm 状態(2026-08-13・分割 第1段 Task 11 で Facade 経由へ)
-#include "KESCMCore.h"               // KESCMCollectPageUIDs
 #include "KESCMViewLookup.h"         // KESCMFindDocDbForView / KESCMForgetViewDbHint(2026-08-13 に KESCMCore.h から移動)
                                      // ＋ KESCMQueryPanorama(2026-08-13 に KESCMDrawEventHandler.h から移動)
 #include "IKESCMMarkData.h"          // GetPagePairing / GetMasterPagePairing(除外対応表)。
@@ -223,9 +222,9 @@ static const KESCMPageRectCache* KESCMGetPageRects(IDataBase* db)
 	c.db = db;
 	c.pages.clear();
 	c.rects.clear();
-	KESCMCollectPageUIDs(db, c.pages);
+	Utils<IKESCMMarkData>()->GetAllPageUIDs(db, c.pages);
 	c.normalCount = c.pages.size();
-	KESCMCollectMasterPageUIDs(db, c.pages);	// ★マスターは後ろへ続ける(境目=normalCount。2026-08-11)
+	Utils<IKESCMMarkData>()->GetMasterPageUIDs(db, c.pages);	// ★マスターは後ろへ続ける(境目=normalCount。2026-08-11)
 	c.rects.resize(c.pages.size());
 	for (size_t i = 0; i < c.pages.size(); ++i)
 	{

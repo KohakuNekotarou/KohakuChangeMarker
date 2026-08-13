@@ -260,6 +260,15 @@ public:
 	{
 		KESCMBuildMasterPairing(targetDB, sourceDB, outTargetPages, outSourcePages);
 	}
+
+	virtual void		GetAllPageUIDs(IDataBase* db, std::vector<UID>& out)
+													{ KESCMCollectPageUIDs(db, out); }
+	virtual void		GetMasterPageUIDs(IDataBase* db, std::vector<UID>& out)
+													{ KESCMCollectMasterPageUIDs(db, out); }
+	virtual bool16		GetMarkablePageUIDs(IDataBase* db, std::set<UID>& outPages)
+													{ return KESCMCollectChangedPageUIDs(db, outPages); }
+	virtual UID			GetFramePageUID(IDataBase* db, UID frameUID)
+													{ return KESCMFramePageUID(db, frameUID); }
 };
 
 CREATE_PMINTERFACE(KESCMMarkData, kKESCMMarkDataImpl)

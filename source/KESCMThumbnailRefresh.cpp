@@ -58,7 +58,8 @@
 #include <vector>
 
 #include "KESCMThumbnailRefresh.h"
-#include "KESCMCore.h"				// KESCMCollectPageUIDs(全ページ列挙)
+#include "IKESCMMarkData.h"			// GetAllPageUIDs / GetMasterPageUIDs / GetMarkablePageUIDs
+									// (2026-08-14 Task 16 で Facade 経由へ)
 
 // サブパネル(Layout 用/Master 用)を1枚再描画する(③)。
 static void KESCMForceRedrawSubPanel(IPanelControlData* pcd, const WidgetID& subPanelWID)
@@ -140,7 +141,7 @@ void KESCMTryRefreshPagesPanelThumbnails(IDataBase* db, const std::set<UID>* ext
 		return;
 
 	std::set<UID> changedPages;
-	if (KESCMCollectChangedPageUIDs(db, changedPages))
+	if (Utils<IKESCMMarkData>()->GetMarkablePageUIDs(db, changedPages))
 	{
 		// ── 比較中の db(START/再比較) ──
 		// ★変更ページ＋overflow斜線ページ＋登録ページ(ページ UID)だけを狙って Purge。変更のない
@@ -162,7 +163,7 @@ void KESCMTryRefreshPagesPanelThumbnails(IDataBase* db, const std::set<UID>* ext
 		//   DropAll 済み=枠データが無いので、作り直されるサムネイルはクリーン(枠が消える)。
 		//   終端操作なのでパネル全体が一瞬リフレッシュされても許容。
 		std::vector<UID> allPages;
-		KESCMCollectPageUIDs(db, allPages);
+		Utils<IKESCMMarkData>()->GetAllPageUIDs(db, allPages);
 		KESCMPurgePageThumbs(db, allPages);
 	}
 
@@ -180,8 +181,8 @@ void KESCMPurgeAllPageThumbs(IDataBase* db, bool16 redrawNow)
 	//   マスターのサムネイルに古い枠が残る。KESCMCollectMasterPageUIDs は out をクリアしない契約
 	//   なので、そのまま後ろへ連結してよい。
 	std::vector<UID> allPages;
-	KESCMCollectPageUIDs(db, allPages);
-	KESCMCollectMasterPageUIDs(db, allPages);
+	Utils<IKESCMMarkData>()->GetAllPageUIDs(db, allPages);
+	Utils<IKESCMMarkData>()->GetMasterPageUIDs(db, allPages);
 	KESCMPurgePageThumbs(db, allPages);
 
 	if (redrawNow)

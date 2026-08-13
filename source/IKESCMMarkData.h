@@ -139,6 +139,39 @@ public:
 		that exists on only one side simply has no partner. Same output shape as above. */
 	virtual void		GetMasterPagePairing(IDataBase* targetDB, IDataBase* sourceDB,
 								std::vector<UID>& outTargetPages, std::vector<UID>& outSourcePages) = 0;
+
+	// ---- walking a document's pages (2026-08-14, Task 16) --------------------------------
+	//
+	// Not comparison results, but reads all the same, and every UI-side caller was reaching
+	// KESCMCore.h's free functions for them. A free function cannot be linked from the other
+	// .pln, so they come through here with the rest of the reading.
+
+	/** Every page of the document, flattened in spread order and then page order. out is
+		cleared first.
+
+		★NORMAL SPREADS ONLY (ISpreadList). Masters are collected separately and on purpose:
+		this same walk is what the comparison pairs pages by, so folding masters in would change
+		what gets compared rather than just what gets listed. */
+	virtual void		GetAllPageUIDs(IDataBase* db, std::vector<UID>& out) = 0;
+
+	/** The master spreads' pages, in master-spread order and then page order.
+
+		★ADDS to out -- it does NOT clear it -- because the callers append masters after the
+		normal pages and remember the count in between as the boundary. */
+	virtual void		GetMasterPageUIDs(IDataBase* db, std::vector<UID>& out) = 0;
+
+	/** Every page of db that could be carrying a mark right now: the changed ring, the overflow
+		"/" and the registered "/". ADDS to outPages, and answers kTrue only when db is one of
+		the two documents currently being compared -- otherwise it touches nothing and answers
+		kFalse.
+
+		★"What counts as marked" is defined in this one place, so adding a kind of mark keeps
+		the pre-comparison save and the thumbnail purge in step without either being edited. */
+	virtual bool16		GetMarkablePageUIDs(IDataBase* db, std::set<UID>& outPages) = 0;
+
+	/** The page a page item sits on, or kInvalidUID when it sits on none. Always a real page
+		(kPageBoss) -- a spread's UID never comes back from this. */
+	virtual UID			GetFramePageUID(IDataBase* db, UID frameUID) = 0;
 };
 
 #endif // __IKESCMMarkData_h__
