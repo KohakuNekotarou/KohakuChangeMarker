@@ -132,6 +132,9 @@
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMModelChangeObserver.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMFacades.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMPageMap.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -246,6 +249,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMModelNotify.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\IKESCMCompareFacade.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMPageMap.h">

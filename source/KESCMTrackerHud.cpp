@@ -25,7 +25,9 @@
 #include "PMMatrix.h"
 #include "PMRect.h"
 
-#include "KESCMCore.h"			// KESCMIsArmed / KESCMArmedTargetDB / KESCMArmedSourceDB / KESCMInvalidateDB
+#include "Utils.h"				// Utils<IKESCMCompareFacade>()
+#include "IKESCMCompareFacade.h"	// arm 状態(2026-08-13・分割 第1段 Task 11 で Facade 経由へ)
+#include "KESCMCore.h"			// KESCMInvalidateDB
 #include "KESCMViewLookup.h"	// KESCMFindDocDbForView(2026-08-13 に KESCMCore.h から移動)
 #include "KESCMTrackerHud.h"
 
@@ -125,14 +127,14 @@ static PMString KESCMTrackerHudLabel(IControlView* view)
 {
 	PMString out;
 
-	if (!KESCMIsArmed())
+	if (!Utils<IKESCMCompareFacade>()->IsArmed())
 		out = PMString("Not comparing");
 	else
 	{
 		IDataBase* const db = KESCMFindDocDbForView(view);	// 押した窓の文書(ポインタ比較のみ)
-		if (db != nil && db == KESCMArmedTargetDB())
+		if (db != nil && db == Utils<IKESCMCompareFacade>()->GetArmedTargetDB())
 			out = PMString("Target");
-		else if (db != nil && db == KESCMArmedSourceDB())
+		else if (db != nil && db == Utils<IKESCMCompareFacade>()->GetArmedSourceDB())
 			out = PMString("Source");
 		else
 			out = PMString("Not in comparison");

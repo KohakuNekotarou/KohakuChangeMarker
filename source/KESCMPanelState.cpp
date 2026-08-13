@@ -19,7 +19,8 @@
 
 // プロジェクト内(各トグルの状態アクセサ):
 #include "KESCMPanelState.h"
-#include "KESCMCore.h"				// KESCMGetPrintMarks / KESCMGetMarkOpacity25 / KESCMDoSetPrintMarks
+#include "Utils.h"					// Utils<IKESCMCompareFacade>()
+#include "IKESCMCompareFacade.h"	// 印刷マーク設定の読み書き(2026-08-13・分割 第1段 Task 11 で Facade 経由へ)
 #include "KESCMUIShared.h"	// panel / status line / nav readout / tool button (split from KESCMCore.h on 2026-08-13)
 #include "KESCMViewSync.h"			// KESCMGetLayoutSync / KESCMSetLayoutSync(2026-08-13 に KESCMCore.h から移動)
 #include "KESCMDrawEventHandler.h"	// sAlwaysShowMarks / sSrcMarksOn / sShowOldNumbers(公開 static)
@@ -100,8 +101,8 @@ void KESCMSavePanelState()
 	std::string json;
 	json += "{\n";
 	json += "  \"version\": 1,\n";
-	json += "  \"printMarks\": ";             json += KESCMBoolLiteral(KESCMGetPrintMarks());                       json += ",\n";
-	json += "  \"opacity25\": ";              json += KESCMBoolLiteral(KESCMGetMarkOpacity25());                    json += ",\n";
+	json += "  \"printMarks\": ";             json += KESCMBoolLiteral(Utils<IKESCMCompareFacade>()->GetPrintMarks());     json += ",\n";
+	json += "  \"opacity25\": ";              json += KESCMBoolLiteral(Utils<IKESCMCompareFacade>()->GetMarkOpacity25());  json += ",\n";
 	json += "  \"holdToHideMarks\": ";        json += KESCMBoolLiteral(KESCMDrawEventHandler::sAlwaysShowMarks);    json += ",\n";
 	json += "  \"showSrcMarks\": ";           json += KESCMBoolLiteral(KESCMDrawEventHandler::sSrcMarksOn);         json += ",\n";
 	json += "  \"showOldNumbers\": ";         json += KESCMBoolLiteral(KESCMDrawEventHandler::sShowOldNumbers);     json += ",\n";
@@ -183,9 +184,9 @@ void KESCMLoadPanelStateIfPresent()
 	KESCMDrawEventHandler::sSrcMarksOn      = KESCMJsonReadBool(text, "showSrcMarks",    KESCMDrawEventHandler::sSrcMarksOn);
 	KESCMDrawEventHandler::sShowOldNumbers  = KESCMJsonReadBool(text, "showOldNumbers",  KESCMDrawEventHandler::sShowOldNumbers);
 
-	const bool16 printMarks = KESCMJsonReadBool(text, "printMarks", KESCMGetPrintMarks());
-	const bool16 opacity25  = KESCMJsonReadBool(text, "opacity25",  KESCMGetMarkOpacity25());
-	KESCMDoSetPrintMarks(printMarks, opacity25, nil);	// db=nil: フラグ設定のみ(未 Start なので再描画対象は無い)
+	const bool16 printMarks = KESCMJsonReadBool(text, "printMarks", Utils<IKESCMCompareFacade>()->GetPrintMarks());
+	const bool16 opacity25  = KESCMJsonReadBool(text, "opacity25",  Utils<IKESCMCompareFacade>()->GetMarkOpacity25());
+	Utils<IKESCMCompareFacade>()->SetPrintMarks(printMarks, opacity25, nil);	// db=nil: フラグ設定のみ(未 Start なので再描画対象は無い)
 
 	KESCMSetLayoutSync            (KESCMJsonReadBool(text, "syncLayoutViews",         KESCMGetLayoutSync()));
 	KESCMSetScrollMapEnabled      (KESCMJsonReadBool(text, "scrollbarMap",           KESCMGetScrollMapEnabled()));

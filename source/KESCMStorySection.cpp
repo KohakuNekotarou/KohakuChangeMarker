@@ -40,7 +40,9 @@
 
 // ----- Project -----
 #include "KESCMID.h"
-#include "KESCMCore.h"				// KESCMGetVisibleOwnPanel / KESCMIsArmed
+#include "Utils.h"					// Utils<IKESCMCompareFacade>()
+#include "IKESCMCompareFacade.h"	// IsArmed(2026-08-13・分割 第1段 Task 11 で Facade 経由へ。
+									//  KESCMGetVisibleOwnPanel は Task 5 で KESCMUIShared.h へ移っている)
 #include "KESCMUIShared.h"	// panel / status line / nav readout / tool button (split from KESCMCore.h on 2026-08-13)
 #include "KESCMStoryList.h"			// GetRowCount - the number in the heading
 #include "KESCMStorySection.h"
@@ -353,7 +355,7 @@ void KESCMUpdateStorySectionLabel()
 	// ★件数を出すのは比較中だけ。Stop 中は一覧そのものが空なので "(0)" は「変更が無かった」ではなく
 	//   「まだ何も比べていない」を意味してしまう ---- 数字を出さないことでその取り違えを断つ
 	//   (行の側でも同じ区別をしていて、Stop 中は空、比較中の0件は "No edits" の1行)。
-	if (KESCMIsArmed())
+	if (Utils<IKESCMCompareFacade>()->IsArmed())
 	{
 		text.Append(" (");
 		text.AppendNumber(KESCMStoryList::GetRowCount());

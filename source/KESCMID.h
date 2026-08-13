@@ -153,7 +153,7 @@ DECLARE_PMID(kInterfaceIDSpace, IID_IKESCMLAYOUTSYNCOBSERVER, kKESCMPrefix + 0)	
 DECLARE_PMID(kInterfaceIDSpace, IID_IKESCMDOCSCLOSEDOBSERVER, kKESCMPrefix + 1)	// 一括クローズ完了(kPendingDocumentsClosedMsg)を受けるオブザーバのアタッチ識別ID
 DECLARE_PMID(kInterfaceIDSpace, IID_IKESCMPANELVISIBILITYOBSERVER, kKESCMPrefix + 2)	// パネルの表示状態変化(kPaletteVisibilityChangedMessage)を受けるオブザーバのアタッチ識別ID。半透明トグルをドッキング切り替え/開き直しに追随させるために使う
 DECLARE_PMID(kInterfaceIDSpace, IID_IKESCMSAVEDSECTIONHEIGHT, kKESCMPrefix + 3)	// IIntData として扱う: Story Edits セクションを閉じた瞬間の高さ(px)。次に開くときこの高さで開く。実装は SDK 標準の kPersistIntDataImpl(手本=linksui の IID_ISAVEDINFOPANESIZE)
-//DECLARE_PMID(kInterfaceIDSpace, IID_IKESCMINTERFACE, kKESCMPrefix + 4)
+DECLARE_PMID(kInterfaceIDSpace, IID_IKESCMCOMPAREFACADE, kKESCMPrefix + 4)	// UI が比較エンジンに頼む窓口(kUtilsBoss に AddIn。UI 側は Utils<IKESCMCompareFacade>() で引く)。2026-08-13・model/UI 分割 第1段 Task 11。手本=sdksamples/customconditionaltext の IID_ICUSCONDTXTFACADE
 //DECLARE_PMID(kInterfaceIDSpace, IID_IKESCMINTERFACE, kKESCMPrefix + 5)
 //DECLARE_PMID(kInterfaceIDSpace, IID_IKESCMINTERFACE, kKESCMPrefix + 6)
 //DECLARE_PMID(kInterfaceIDSpace, IID_IKESCMINTERFACE, kKESCMPrefix + 7)
@@ -223,6 +223,7 @@ DECLARE_PMID(kImplementationIDSpace, kKESCMBookTreeWidgetMgrImpl, kKESCMPrefix +
 DECLARE_PMID(kImplementationIDSpace, kKESCMBookRowEHImpl, kKESCMPrefix + 33)	// IEventHandler 実装(TreeNodeEventHandler派生。KESCMBookRowEH.cpp)。ブック比較の章行＝**ダブルクリックでその章を開く**・**右クリックで行メニュー**(Start Change Marker)。★単クリックは何もしない(Story Edits の行と違う＝あちらは開いている文書の中を移動するだけだが、こちらは文書を開いてしまうため)。実際の動作は KESCMBookOpen.cpp
 DECLARE_PMID(kImplementationIDSpace, kKESCMUIStartupImpl, kKESCMPrefix + 38)	// IStartupShutdown 実装(UI 側の起動/終了。KESCMUIStartup.cpp)
 DECLARE_PMID(kImplementationIDSpace, kKESCMModelChangeObserverImpl, kKESCMPrefix + 37)	// IObserver 実装(model の通知を受けて画面を作り直す **UI 側**。KESCMModelChangeObserver.cpp)
+DECLARE_PMID(kImplementationIDSpace, kKESCMCompareFacadeImpl, kKESCMPrefix + 39)	// IKESCMCompareFacade 実装(KESCMFacades.cpp)。★kUtilsBoss へ AddIn する＝**必ず自作の実装**(SDK 提供の実装を既存 boss に足すと他社と衝突して起動に失敗する。衝突の単位は IID ではなく ImplementationID)
 
 // MessageIDs: model が UI へ「何が変わったか」を知らせる通知(2026-08-13・model/UI 分割 第1段 Task 9)。
 //   ★kMessageIDSpace は KESCM がこれまで1つも使っていなかったので +0 から採る。

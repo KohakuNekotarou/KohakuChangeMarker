@@ -28,7 +28,8 @@
 
 // Project includes:
 #include "KESCMID.h"
-#include "KESCMCore.h"				// KESCMIsArmed - is a comparison running at all
+#include "Utils.h"					// Utils<IKESCMCompareFacade>()
+#include "IKESCMCompareFacade.h"	// IsArmed - is a comparison running at all (Facade since 2026-08-13, Task 11)
 #include "KESCMStoryList.h"
 
 /** Hierarchy adapter for the Story Edits list: a flat list, as long as the model is.
@@ -50,7 +51,7 @@ protected:
 		//   "nothing has been compared yet" do not look identical - an empty list would say both.
 		//   The row itself reads "No edits"; the widget manager writes it when the model has no row
 		//   to answer with. Stopped, the list is genuinely empty and stays that way.
-		return KESCMIsArmed() ? 1 : 0;
+		return Utils<IKESCMCompareFacade>()->IsArmed() ? 1 : 0;
 	}
 };
 

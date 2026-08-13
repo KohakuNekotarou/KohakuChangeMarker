@@ -30,7 +30,8 @@
 // Project includes:
 #include "KESCMID.h"
 #include "KESCMChangeNav.h"	// KESCMGotoStoryFrame
-#include "KESCMCore.h"		// KESCMArmedTargetDB / KESCMIsDocDBOpen / KESCMSetStatus
+#include "IKESCMCompareFacade.h"	// arm 状態(2026-08-13・分割 第1段 Task 11 で Facade 経由へ)
+#include "KESCMCore.h"		// KESCMIsDocDBOpen
 #include "KESCMUIShared.h"	// panel / status line / nav readout / tool button (split from KESCMCore.h on 2026-08-13)
 #include "KESCMStoryJump.h"
 #include "KESCMStoryList.h"
@@ -84,7 +85,7 @@ bool16 KESCMStoryJumpToRow(int32 rowIndex)
 	//   TARGET - not whatever happens to be in front. Checked for life rather than trusted: the list
 	//   is dropped when a compared document closes, but a click already on its way when that
 	//   happened would otherwise arrive here holding a database that is gone.
-	IDataBase* db = KESCMArmedTargetDB();
+	IDataBase* db = Utils<IKESCMCompareFacade>()->GetArmedTargetDB();
 	if (db == nil || !KESCMIsDocDBOpen(db))
 	{
 		PMString s("The comparison is no longer running.");
@@ -126,7 +127,7 @@ bool16 KESCMStorySelectWholeStory(int32 rowIndex)
 
 	// Both of these have just been reported by the single click that preceded this one - see the
 	// header for why the second one says nothing.
-	IDataBase* db = KESCMArmedTargetDB();
+	IDataBase* db = Utils<IKESCMCompareFacade>()->GetArmedTargetDB();
 	if (db == nil || !KESCMIsDocDBOpen(db))
 		return kFalse;
 	if (row->fFrameUID == kInvalidUID)

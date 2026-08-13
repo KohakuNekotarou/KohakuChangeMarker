@@ -41,9 +41,12 @@
 
 // プロジェクト内:
 #include "KESCMID.h"
+#include "Utils.h"					// Utils<IKESCMCompareFacade>()
+#include "IKESCMCompareFacade.h"	// ★arm 状態とステータス文字列を model に聞く窓口(2026-08-13 Task 11)
 #include "KESCMCore.h"
 #include "KESCMUIShared.h"	// panel / status line / nav readout / tool button (split from KESCMCore.h on 2026-08-13)
-#include "KESCMModelNotify.h"	// KESCMStoreSessionStatus / KESCMGetSessionStatus(記憶は model 側。Task 9)
+#include "KESCMModelNotify.h"	// KESCMStoreSessionStatus(記憶は model 側。Task 9。★読み出しは Task 11 から
+								//  Facade の GetSessionStatus。書き込み側はまだ Facade に無い＝第2段の課題)
 #include "KESCMChangeNav.h"			// KESCMGotoNextChange / KESCMGotoPrevChange(◀ Prev / Next ▶ ボタン)
 // ★比較の開始/解除の6本は 2026-08-13 に KESCMComparisonRun.cpp へ移した(model/UI 分割 第1段 Task 4)。
 //   それだけが使っていた include(KESCMScrollMap.h / KESCMDrawEventHandler.h / KESCMOversetApply.h /
@@ -194,7 +197,7 @@ void KESCMPanelObserver::AutoAttach()
 	//   同じヒント文をそのまま復元する(画面の見え方は同じ)。★app.kcmStatus も同じ値を返すので、
 	//   スクリプトから「未操作」を見分けることはできない。
 	PMString saved;
-	KESCMGetSessionStatus(saved);	// ★覚えているのは model 側(2026-08-13 Task 9 で移動)
+	Utils<IKESCMCompareFacade>()->GetSessionStatus(saved);	// ★覚えているのは model 側(2026-08-13 Task 9 で移動・Task 11 で Facade 経由へ)
 	if (saved.CharCount() == 0)
 	{
 		PMString hint("Open the target and source documents (the active one becomes the Target), then choose Start from the panel menu.");
@@ -384,20 +387,20 @@ static void KESCMApplyPanelInfo(const InterfacePtr<IPanelControlData>& pcd)
 	if (pcd == nil)
 		return;
 
-	const bool16 started = KESCMIsArmed() && (KESCMArmedTargetDB() != nil);
+	const bool16 started = Utils<IKESCMCompareFacade>()->IsArmed() && (Utils<IKESCMCompareFacade>()->GetArmedTargetDB() != nil);
 
 	// Target:/Source: ラベルは常時。名前は開始中のみ表示(英語固定: 現状英語のまま)。
 	PMString target("Target:"); target.SetTranslatable(kFalse);
 	if (started)
 	{
 		target.Append(" ");
-		target.Append(KESCMDocPathFromDB(KESCMArmedTargetDB()));
+		target.Append(KESCMDocPathFromDB(Utils<IKESCMCompareFacade>()->GetArmedTargetDB()));
 	}
 	PMString source("Source:"); source.SetTranslatable(kFalse);
-	if (started && KESCMArmedSourceDB() != nil)
+	if (started && Utils<IKESCMCompareFacade>()->GetArmedSourceDB() != nil)
 	{
 		source.Append(" ");
-		source.Append(KESCMDocPathFromDB(KESCMArmedSourceDB()));
+		source.Append(KESCMDocPathFromDB(Utils<IKESCMCompareFacade>()->GetArmedSourceDB()));
 	}
 
 	IControlView* tView = pcd->FindWidget(kKESCMTargetTextWidgetID);

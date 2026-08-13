@@ -76,7 +76,8 @@
 // Project includes:
 #include "KESCMID.h"
 #include "KESCMScrollMap.h"
-#include "KESCMCore.h"				// KESCMArmedTargetDB / KESCMArmedSourceDB / KESCMIsDocDBOpen
+#include "IKESCMCompareFacade.h"	// arm 状態(2026-08-13・分割 第1段 Task 11 で Facade 経由へ)
+#include "KESCMCore.h"				// KESCMIsDocDBOpen
 #include "KESCMDrawEventHandler.h"	// sEntries / sDB(変更ページ=赤マークの供給元)
 #include "KESCMPageMap.h"			// KESCMPageMapCollectRegistered(Add/Remove 登録ページ=緑マーク)
 
@@ -297,8 +298,8 @@ void KESCMScrollMapView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 	InterfacePtr<IDocumentPresentation> stripPres(
 		stripParent != nil ? (IDocumentPresentation*)stripParent->QueryParentFor(IID_IDOCUMENTPRESENTATION) : nil);
 	IDataBase* const db = (stripPres != nil) ? stripPres->GetDocumentUIDRef().GetDataBase() : nil;
-	const bool16 isTarget = (db != nil && db == KESCMArmedTargetDB());
-	const bool16 isSource = (!isTarget && db != nil && db == KESCMArmedSourceDB());
+	const bool16 isTarget = (db != nil && db == Utils<IKESCMCompareFacade>()->GetArmedTargetDB());
+	const bool16 isSource = (!isTarget && db != nil && db == Utils<IKESCMCompareFacade>()->GetArmedSourceDB());
 	// ★Find Overset の帯(2026-07-24): 比較(arm)とは独立に、走査した文書(sOversetDB)の窓にも
 	//   overset ページを赤帯で出す。比較していない文書でもこの strip は描く(=オーバーセット検査だけでも
 	//   地図が出る)。比較と同じ文書なら赤どうしで自然に重なる。
@@ -791,7 +792,7 @@ void KESCMScrollMapNoticeDrawEvent()
 	if (!sScrollMapOn)
 		return;		// 「Show Scrollbar Map」OFF 中は strip も無い=毎描画の指紋計算を省く
 	// 未 arm でも Find Overset 単独なら strip があり得るので、その場合は続行する(2026-07-24)。
-	if (KESCMArmedTargetDB() == nil &&
+	if (Utils<IKESCMCompareFacade>()->GetArmedTargetDB() == nil &&
 		!(KESCMDrawEventHandler::sOversetOn && KESCMDrawEventHandler::sOversetDB != nil))
 		return;		// arm も overset も無い = strip も無い(指紋は無意味なので触らない)
 
@@ -808,8 +809,8 @@ void KESCMScrollMapNoticeDrawEvent()
 	sHiddenCheckStarted = kTrue;
 	sHiddenCheckLast = now;
 
-	IDataBase* const tDB = KESCMArmedTargetDB();
-	IDataBase* const sDB = KESCMArmedSourceDB();
+	IDataBase* const tDB = Utils<IKESCMCompareFacade>()->GetArmedTargetDB();
+	IDataBase* const sDB = Utils<IKESCMCompareFacade>()->GetArmedSourceDB();
 	IDataBase* const oDB = (KESCMDrawEventHandler::sOversetOn) ? KESCMDrawEventHandler::sOversetDB : nil;
 	const uint32 ft = KESCMHiddenFingerprint(tDB) * 31u + KESCMShownMasterFingerprint(tDB);
 	const uint32 fs = KESCMHiddenFingerprint(sDB) * 31u + KESCMShownMasterFingerprint(sDB);

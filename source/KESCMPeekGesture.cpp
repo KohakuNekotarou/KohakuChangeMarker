@@ -51,7 +51,9 @@
 #include "KESCMPageMap.h"            // KESCMPageMapHasAnyRegistered
 #include "KESCMScrollMap.h"          // 一括クローズ後の地図 strip の撤去/再描画
 #include "KESCMThumbIdleTask.h"      // クローズ後の再生成を次のidleに遅延(前面切替の過渡を避ける)
-#include "KESCMPeek.h"               // KESCMGesture / KESCMPeekShowUnderMouse / KESCMArmedDocsAlive / KESCMBaseScreenOpacity
+#include "Utils.h"                   // Utils<IKESCMCompareFacade>()
+#include "IKESCMCompareFacade.h"     // peek の表示・arm 状態・基準不透明度(2026-08-13・分割 第1段 Task 11)
+#include "KESCMPeek.h"               // enum KESCMGesture ★型の定義だけ(型はシンボルを参照しないので境界を跨いでよい)
 #include "KESCMCmykCursor.h"         // KESCMCmykBeginPress / KESCMCmykEndPress(押下中の CMYK 状態はあちらが持つ)
 #include "KESCMPeekGesture.h"
 
@@ -97,7 +99,8 @@ static IDataBase* KESCMQueryDocDbUnderMouse()
 
 static bool16 KESCMFrontViewIsOverTarget()
 {
-	return (KESCMArmedTargetDB() != nil && KESCMQueryDocDbUnderMouse() == KESCMArmedTargetDB()) ? kTrue : kFalse;
+	IDataBase* const armedTarget = Utils<IKESCMCompareFacade>()->GetArmedTargetDB();
+	return (armedTarget != nil && KESCMQueryDocDbUnderMouse() == armedTarget) ? kTrue : kFalse;
 }
 
 // マウス下のドキュメントウィンドウが Source(比較の旧側=常時表示枠を載せている sSrcDB)かどうか。
@@ -128,13 +131,14 @@ static bool16 KESCMFrontViewIsOverSource()
 // マウスをキャプチャ済みで、ドラッグは ContinueTracking へ行くため不要)。
 static void KESCMTrackerBeginPeek(PMReal opacity)
 {
-	if (!KESCMArmedDocsAlive() || !KESCMFrontViewIsOverTarget())
+	if (!Utils<IKESCMCompareFacade>()->ArmedDocsAlive() || !KESCMFrontViewIsOverTarget())
 		return;	// 未 Start / 比較文書が閉じ済み / Target 窓以外では反応しない(旧・中ボタン peek 分岐と同じ条件)
 	sPeekActive = kTrue;
 	KESCMDrawEventHandler::sPeekOpacity = opacity;	// 旧版べた載せの不透明度(描画時に参照)
 	sSingleShowing = kFalse;
 	KESCMDrawEventHandler::sMarksVisible = kFalse;	// 覗き中は枠等を出さない(旧版だけ)
-	KESCMPeekShowUnderMouse(KESCMArmedTargetDB(), KESCMArmedSourceDB());
+	InterfacePtr<IKESCMCompareFacade> compare(Utils<IKESCMCompareFacade>().QueryUtilInterface());
+	compare->ShowPeekUnderMouse(compare->GetArmedTargetDB(), compare->GetArmedSourceDB());
 }
 
 // 修飾キー→ジェスチャの分類(KESCMPeekGesture.h 参照)。★割当の定義はここ1本だけ: トラッカーの押下時分岐
@@ -262,7 +266,7 @@ void KESCMTrackerRevealEnd()
 		if (KESCMDrawEventHandler::sShowOriginal)
 		{
 			KESCMDrawEventHandler::sShowOriginal = kFalse;
-			KESCMInvalidateDB(KESCMArmedTargetDB());
+			KESCMInvalidateDB(Utils<IKESCMCompareFacade>()->GetArmedTargetDB());
 		}
 	}
 	else if (sSingleShowing)
@@ -271,7 +275,7 @@ void KESCMTrackerRevealEnd()
 		// sSingleShowing 復元と同じ)。
 		sSingleShowing = kFalse;
 		KESCMDrawEventHandler::sMarksVisible = kFalse;
-		KESCMDrawEventHandler::sMarkScreenOpacity = KESCMBaseScreenOpacity();
+		KESCMDrawEventHandler::sMarkScreenOpacity = Utils<IKESCMCompareFacade>()->GetBaseScreenOpacity();
 		KESCMInvalidateMarksDoc();
 	}
 }
@@ -334,7 +338,7 @@ static void KESCMFlushDeferredCloseUi()
 	//   ★arm 中なら片付けるものは無い: 保留が立つのは KESCMHandleDocsClosed が比較状態を破棄した
 	//     (=disarm した)ときだけで、その後の Start が strip 注入もステータスもパネル更新も済ませている。
 	//     閉じた文書の窓は窓ごと消えているので strip も残らない。∴ 旗を下ろすだけでよい。
-	if (KESCMIsArmed())
+	if (Utils<IKESCMCompareFacade>()->IsArmed())
 		return;
 
 	// Find Overset が(走査文書が生存したまま)単独 ON なら地図は残す。それ以外は撤去する

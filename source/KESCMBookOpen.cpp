@@ -48,7 +48,7 @@
 #include "KESCMBookResult.h"
 #include "KESCMCore.h"			// KESCMSetStatus / KESCMIsArmed / KESCMArmedTargetDB
 #include "KESCMUIShared.h"	// panel / status line / nav readout / tool button (split from KESCMCore.h on 2026-08-13)
-#include "KESCMComparisonRun.h"	// KESCMStopComparison / KESCMStartComparisonFor
+#include "IKESCMCompareFacade.h"	// Stop / StartComparisonFor / arm 状態(2026-08-13・分割 第1段 Task 11)
 								// (2026-08-13 に KESCMCore.h から移動)
 
 namespace
@@ -435,8 +435,8 @@ void KESCMBookStartComparisonForRow(int32 rowIndex)
 	// documents nobody is comparing any more. The user asked for "start on this chapter", and
 	// stopping the previous one is part of that (their words, 2026-08-12: "if it is already started,
 	// stop and start").
-	if (KESCMIsArmed() && KESCMArmedTargetDB() != nil)
-		KESCMStopComparison();
+	if (Utils<IKESCMCompareFacade>()->IsArmed() && Utils<IKESCMCompareFacade>()->GetArmedTargetDB() != nil)
+		Utils<IKESCMCompareFacade>()->StopComparison();
 
 	// Held for the length of the call: KESCMStartComparisonFor takes raw IDocument pointers, and
 	// these references are what keep them alive while it runs.
@@ -485,7 +485,7 @@ void KESCMBookStartComparisonForRow(int32 rowIndex)
 
 	// ★The status line is left to the comparison itself - it ends by writing its own report there
 	// (page counts, failures), which is more use than anything this function could add.
-	KESCMStartComparisonFor(targetDoc, sourceDoc);
+	Utils<IKESCMCompareFacade>()->StartComparisonFor(targetDoc, sourceDoc);
 }
 
 // End, KESCMBookOpen.cpp.

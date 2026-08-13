@@ -24,11 +24,14 @@
 #include "PMString.h"
 
 #include "KESCMID.h"
-#include "KESCMModelNotify.h"		// KESCMGetSessionStatus / KESCMStatusWantsForceRedraw(model 側の値を読む)
+#include "Utils.h"					// Utils<IKESCMCompareFacade>()
+#include "IKESCMCompareFacade.h"	// GetSessionStatus(2026-08-13・分割 第1段 Task 11 で Facade 経由へ)
+#include "KESCMModelNotify.h"		// KESCMStatusWantsForceRedraw / 通知に載った付随データ(★これらは
+									// まだ Facade に載っていない＝第2段の課題。計画書 Task 16 Step 2 参照)
 #include "KESCMUIShared.h"			// KESCMSetStatus(表示。UI 内部専用) / KESCMRefreshPanel
 // ★ここから下は**全部 UI 側のヘッダー**。この observer は「通知を受けて画面を作り直す」係なので、
 //   UI を呼ぶのが仕事＝逆流ではない。model 側を読む KESCMCore.h も、UI→model という許された向き。
-#include "KESCMCore.h"				// KESCMArmedTargetDB / KESCMArmedSourceDB / KESCMAppIsQuitting
+#include "KESCMCore.h"				// KESCMAppIsQuitting(arm 状態は上の Facade で聞く)
 #include "KESCMDrawEventHandler.h"	// sOversetOn(Find Overset が単独 ON 中かどうか＝model の状態を読む)
 #include "KESCMPeekGesture.h"		// KESCMResetPeekGestureState / KESCMBatchCloseInProgress / KESCMDeferCloseUi
 #include "KESCMThumbIdleTask.h"		// KESCMScheduleThumbRefresh(クローズ後の作り直しを次の idle へ)
@@ -62,7 +65,7 @@ void KESCMModelChangeObserver::Update(const ClassID& theChange, ISubject* /*theS
 	{
 		// ★文字列は model 側が持っている。ここは「表示する」だけ。
 		PMString s;
-		KESCMGetSessionStatus(s);
+		Utils<IKESCMCompareFacade>()->GetSessionStatus(s);
 		KESCMSetStatus(s, KESCMStatusWantsForceRedraw());
 		return;
 	}

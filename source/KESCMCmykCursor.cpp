@@ -42,7 +42,8 @@
 #include "KESCMCore.h"               // arm 状態アクセサ / KESCMSetStatus
 #include "KESCMUIShared.h"	// panel / status line / nav readout / tool button (split from KESCMCore.h on 2026-08-13)
 #include "KESCMViewLookup.h"         // KESCMQueryViewUnderMouse / KESCMFindDocDbForView(2026-08-13 に KESCMCore.h から移動)
-#include "KESCMPeek.h"               // KESCMArmedDocsAlive(arm 済み文書の生存検査)
+#include "Utils.h"                   // Utils<IKESCMCompareFacade>()
+#include "IKESCMCompareFacade.h"     // arm 状態 / ArmedDocsAlive(2026-08-13・分割 第1段 Task 11)
 #include "KESCMCmykCursor.h"
 
 // Alt+左(CMYK 色ピック)の押下中モード。押下時に「マウス下の文書」で決めて固定し、RevealEnd で捨てる
@@ -161,7 +162,7 @@ static void KESCMShowHalo(IGraphicsPort* gPort, const PMReal& x, const PMReal& y
 // ★Start 中の第3の文書は表示こそ単独1行(Stop と同じ)だが、✓は黒のまま=「比較は動いている」を示す。
 static void KESCMDrawCmykCursorCheck(IGraphicsPort* gPort)
 {
-	if (KESCMIsArmed())
+	if (Utils<IKESCMCompareFacade>()->IsArmed())
 		KESCMDrawCheckGlyph(gPort);											// 黒✓(Start)
 	else
 		KESCMDrawCheckGlyph(gPort, PMReal(1.0), PMReal(0.0), PMReal(5.0));	// 白抜き✓(Stop)
@@ -291,7 +292,7 @@ bool16 KESCMToolCursorShouldBeBlack(IControlView* viewUnderMouse)
 {
 	if (viewUnderMouse == nil)
 		return kFalse;
-	return KESCMArmedDocsAlive();
+	return Utils<IKESCMCompareFacade>()->ArmedDocsAlive();
 }
 
 // KESCMTrackerUpdateCmykDrag(KESCMCmykCursor.h 参照) — ドラッグ中の CMYK ライブ更新。
@@ -315,7 +316,7 @@ static bool16 KESCMCmykDocsAlive()
 	if (sCmykHoverDB == nil)
 		return kFalse;
 	if (sCmykOtherDB != nil)
-		return KESCMArmedDocsAlive();
+		return Utils<IKESCMCompareFacade>()->ArmedDocsAlive();
 	ISession* session = GetExecutionContextSession();	// 終了処理中は nil になり得る
 	InterfacePtr<IApplication> app(session != nil ? session->QueryApplication() : nil);
 	InterfacePtr<IDocumentList> docList(app ? app->QueryDocumentList() : nil);
@@ -445,10 +446,11 @@ void KESCMCmykBeginPress()
 		// 回避。向きも押下時のまま固定。破棄は RevealEnd)。単独モードはページ対応が無いので不要。
 		IDataBase* otherDB      = nil;
 		bool16     hoverIsTarget = kFalse;
-		if (KESCMArmedDocsAlive())	// 比較中か(解放済み db との照合を避けるため生存検査を先に通す)
+		InterfacePtr<IKESCMCompareFacade> compare(Utils<IKESCMCompareFacade>().QueryUtilInterface());	// ★この分岐で4回聞く(Utils.h:74-80)
+		if (compare->ArmedDocsAlive())	// 比較中か(解放済み db との照合を避けるため生存検査を先に通す)
 		{
-			if (hoverDB == KESCMArmedTargetDB())      { otherDB = KESCMArmedSourceDB(); hoverIsTarget = kTrue;  }
-			else if (hoverDB == KESCMArmedSourceDB()) { otherDB = KESCMArmedTargetDB(); hoverIsTarget = kFalse; }
+			if (hoverDB == compare->GetArmedTargetDB())      { otherDB = compare->GetArmedSourceDB(); hoverIsTarget = kTrue;  }
+			else if (hoverDB == compare->GetArmedSourceDB()) { otherDB = compare->GetArmedTargetDB(); hoverIsTarget = kFalse; }
 		}
 		sCmykHoverDB       = hoverDB;
 		sCmykOtherDB       = otherDB;

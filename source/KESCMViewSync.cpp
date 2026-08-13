@@ -55,7 +55,9 @@
 // プロジェクト内インクルード:
 #include "KESCMID.h"
 #include "KESCMDrawEventHandler.h"   // KESCMQueryPanorama
-#include "KESCMCore.h"               // KESCMCollectPageUIDs / arm 状態アクセサ
+#include "Utils.h"                   // Utils<IKESCMCompareFacade>()
+#include "IKESCMCompareFacade.h"     // arm 状態(2026-08-13・分割 第1段 Task 11 で Facade 経由へ)
+#include "KESCMCore.h"               // KESCMCollectPageUIDs
 #include "KESCMViewLookup.h"         // KESCMFindDocDbForView / KESCMForgetViewDbHint(2026-08-13 に KESCMCore.h から移動)
 #include "KESCMPageMap.h"            // KESCMBuildPairing / KESCMBuildMasterPairing(除外対応表)
 #include "KESCMChangeNav.h"          // KESCMEnsureViewShowsSpread(同期先ビューを相手のスプレッドへ。2026-08-11)
@@ -392,19 +394,22 @@ static PBPMPoint KESCMCorrectedCenterForDoc(IControlView* srcView, IDataBase* sr
 	outSkip = kFalse;
 	outDstPage = kInvalidUID;	// 呼び出し側が「宛先ページのスプレッドを映す」ために使う(2026-08-11)
 
-	if (!KESCMIsArmed() || KESCMArmedTargetDB() == nil || KESCMArmedSourceDB() == nil)
+	// ★arm 状態をこの関数だけで7回聞くので、インターフェイスは1回引いて使い回す
+	//  (Utils.h:74-80 が明示している作法＝「several places で使うなら InterfacePtr に受けるほうが効率的」)。
+	InterfacePtr<IKESCMCompareFacade> compare(Utils<IKESCMCompareFacade>().QueryUtilInterface());
+	if (!compare->IsArmed() || compare->GetArmedTargetDB() == nil || compare->GetArmedSourceDB() == nil)
 		return srcCenter;	// 未 arm: 生同期
 
 	// ペアリング方向。arm ペア(Target/Source)以外の第3文書は補正しない=生同期。
-	const bool16 t2s = (srcDocDb == KESCMArmedTargetDB() && dstDb == KESCMArmedSourceDB());
-	const bool16 s2t = (srcDocDb == KESCMArmedSourceDB() && dstDb == KESCMArmedTargetDB());
+	const bool16 t2s = (srcDocDb == compare->GetArmedTargetDB() && dstDb == compare->GetArmedSourceDB());
+	const bool16 s2t = (srcDocDb == compare->GetArmedSourceDB() && dstDb == compare->GetArmedTargetDB());
 	if (!t2s && !s2t)
 		return srcCenter;
 
 	// 相手ページを引くための対応表を先に用意する。Added/Removed(登録)・overflow は相手なし →
 	// そのページでは同期しない(skip)。★対応表はキャッシュから引く(2026-07-25 追補)。挙動は
 	// KESCMMapTargetToSource/SourceToTarget と同一で、「対応表に無い=相手なし」を skip として扱う点も同じ。
-	KESCMEnsureSyncPairing(KESCMArmedTargetDB(), KESCMArmedSourceDB());
+	KESCMEnsureSyncPairing(compare->GetArmedTargetDB(), compare->GetArmedSourceDB());
 	const std::map<UID, UID>& pairTable = t2s ? sSyncPairT2S : sSyncPairS2T;
 
 	// 手本ページ(srcDocDb 側でビュー中心にあるページ)。
@@ -477,11 +482,12 @@ static void KESCMSyncOtherDocViewportsTo(IControlView* srcView, IPanorama* srcPa
 	//       ★2026-07-24 変更: 旧仕様は「Stop 中は KESCM ツール選択中のみ同期」(誤同期回避が目的)だったが、
 	//       この関数に来る時点で ONトグル(sLayoutSyncOn)は必ず ON 確定なので、それを作動条件と見なし、
 	//       ツールの選択状態に関係なく同期する(ユーザー指定)。
-	const bool16 armed = (KESCMIsArmed() && KESCMArmedTargetDB() != nil && KESCMArmedSourceDB() != nil);
+	InterfacePtr<IKESCMCompareFacade> compare(Utils<IKESCMCompareFacade>().QueryUtilInterface());	// ★1回引いて使い回す(Utils.h:74-80)
+	const bool16 armed = (compare->IsArmed() && compare->GetArmedTargetDB() != nil && compare->GetArmedSourceDB() != nil);
 	bool16 stopBroadSync = kFalse;
 	if (armed)
 	{
-		if (srcDocDb != KESCMArmedTargetDB() && srcDocDb != KESCMArmedSourceDB())
+		if (srcDocDb != compare->GetArmedTargetDB() && srcDocDb != compare->GetArmedSourceDB())
 			return;
 	}
 	else
@@ -511,7 +517,7 @@ static void KESCMSyncOtherDocViewportsTo(IControlView* srcView, IPanorama* srcPa
 	dstDbs.reserve(2);
 	if (!stopBroadSync)
 	{
-		IDataBase* dstDb = (srcDocDb == KESCMArmedTargetDB()) ? KESCMArmedSourceDB() : KESCMArmedTargetDB();
+		IDataBase* dstDb = (srcDocDb == compare->GetArmedTargetDB()) ? compare->GetArmedSourceDB() : compare->GetArmedTargetDB();
 		// 相手がまだ開いているかだけ確認する(旧実装は docList 全走査が暗黙に保証していた条件)。
 		// ★FindDocByDataBase へのポインタ比較のみ=閉じた db を deref しない(KESCM 共通規約)。
 		if (dstDb != nil && dstDb != srcDocDb && docList->FindDocByDataBase(dstDb) != nil)
@@ -891,8 +897,9 @@ bool16 KESCMAlignOtherViewsToActiveNow()
 	// ★Start 中(arm)は同期エンジンが Target↔Source 間だけに限定し、最前面が第3文書なら何もせず戻る。
 	//   その場合に「そろえた」と誤って成功表示を出さないよう、engine と同じ条件をここで先読みして kFalse を
 	//   返す(2026-07-24。下の KESCMSyncOtherDocViewportsTo の armed ガードと必ず同条件に保つ)。
-	if (KESCMIsArmed() && KESCMArmedTargetDB() != nil && KESCMArmedSourceDB() != nil &&
-	    db != KESCMArmedTargetDB() && db != KESCMArmedSourceDB())
+	InterfacePtr<IKESCMCompareFacade> compare(Utils<IKESCMCompareFacade>().QueryUtilInterface());
+	if (compare->IsArmed() && compare->GetArmedTargetDB() != nil && compare->GetArmedSourceDB() != nil &&
+	    db != compare->GetArmedTargetDB() && db != compare->GetArmedSourceDB())
 		return kFalse;
 	KESCMSyncOtherDocViewportsTo(front, pano, db, kTrue /*applyPageOffset(arm時のみ補正・未arm時は関数内でkFalse強制)*/);
 	return kTrue;

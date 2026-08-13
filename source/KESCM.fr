@@ -284,6 +284,30 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 		}
 	},
 
+	// The boundary the UI goes through to reach the comparison engine (2026-08-13, Stage 1 Task 11).
+	//
+	// Once the model and the UI are separate plug-ins, a free function declared in a shared header
+	// cannot be linked - its body lives in the other .pln - so every call that crosses the boundary
+	// has to go through an interface on a boss. Putting it on kUtilsBoss is what the SDK's own
+	// model/UI pair does: customconditionaltext publishes ICusCondTxtFacade here (CusCondTxt.fr:159-169,
+	// "Puts our command facade onto the Utils boss to let client code use it") and its UI half calls
+	// Utils<ICusCondTxtFacade>() and nothing else.
+	//
+	// WARNING: the implementation named here must be OUR OWN. Adding somebody else's stock
+	// implementation to an existing boss is how you collide with another vendor's plug-in and fail to
+	// load, and the unit of collision is the ImplementationID, not the IID.
+	//
+	// Tasks 12-15 add their four interfaces to THIS block - they do not open a second AddIn.
+	AddIn
+	{
+		kUtilsBoss,
+		kInvalidClass,
+		{
+			// Implementation: KESCMFacades.cpp
+			IID_IKESCMCOMPAREFACADE, kKESCMCompareFacadeImpl,
+		}
+	},
+
 	// Subclass of the system rollover icon button used for the panel illustration
 	// (kKESCMIconOnWidgetID/kKESCMIconOffWidgetID), adding IID_ITIP so hovering it shows a tooltip
 	// with the repo URL (same pattern as kLinksUIButtonBoss in open/components/linksui).
