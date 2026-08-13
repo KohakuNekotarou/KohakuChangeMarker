@@ -58,7 +58,6 @@
 #include <vector>
 
 #include "KESCMThumbnailRefresh.h"
-#include "KESCMDrawEventHandler.h"	// sEntries / sDB / sSrcDB / sSrcPageToTarget
 #include "KESCMCore.h"				// KESCMCollectPageUIDs(全ページ列挙)
 #include "KESCMPageMap.h"			// KESCMPageMapCollectRegistered(登録ページ=緑「/」)
 

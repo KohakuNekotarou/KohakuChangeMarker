@@ -32,7 +32,7 @@
 // ★ここから下は**全部 UI 側のヘッダー**。この observer は「通知を受けて画面を作り直す」係なので、
 //   UI を呼ぶのが仕事＝逆流ではない。model 側を読む KESCMCore.h も、UI→model という許された向き。
 #include "KESCMCore.h"				// KESCMAppIsQuitting(arm 状態は上の Facade で聞く)
-#include "KESCMDrawEventHandler.h"	// sOversetOn(Find Overset が単独 ON 中かどうか＝model の状態を読む)
+#include "IKESCMMarkData.h"			// GetOversetOn(Find Overset が単独 ON 中かどうか＝model の状態を読む)
 #include "KESCMPeekGesture.h"		// KESCMResetPeekGestureState / KESCMBatchCloseInProgress / KESCMDeferCloseUi
 #include "KESCMThumbIdleTask.h"		// KESCMScheduleThumbRefresh(クローズ後の作り直しを次の idle へ)
 #include "KESCMThumbnailRefresh.h"	// KESCMPurgeAllPageThumbs / KESCMForceRedrawPagesPanelNow
@@ -195,7 +195,7 @@ void KESCMModelChangeObserver::Update(const ClassID& theChange, ISubject* /*theS
 			// strip: ★Find Overset が(走査文書が生存したまま)単独 ON 中なら**残して**赤帯だけ描き直す。
 			//   overset 文書自身が閉じた場合は model 側で DropOverset 済み＝sOversetOn が false なので
 			//   通常どおり撤去される(2026-07-24)。
-			if (KESCMDrawEventHandler::sOversetOn)
+			if (Utils<IKESCMMarkData>()->GetOversetOn())
 				KESCMScrollMapInvalidateAll();
 			else
 				KESCMScrollMapDetachAll();

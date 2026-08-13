@@ -98,6 +98,64 @@ public:
 	virtual bool16		GetPrintMarks() = 0;
 	virtual bool16		GetMarkOpacity25() = 0;
 
+	// ---- display toggles ---------------------------------------------------------------
+	//
+	// Read and written by the flyout toggles, by Save/Load Panel Settings and by the press
+	// gesture. These are settings OF the comparison, which is why they sit here beside
+	// GetPrintMarks() rather than in IKESCMMarkData -- that interface is read-only by design.
+	//
+	// ★The plan named a different three (source marks / old page numbers / overset). Grepping
+	// the real callers before writing this showed the UI never writes the overset flag -- it
+	// only reads it, and clears the whole feature through ClearOverset() below -- while it does
+	// write "Hold to Hide Marks". The three here are the three the UI actually writes.
+
+	/** "Show Marks on Source": the Source document carries the same rings at all times. */
+	virtual bool16		GetShowSourceMarks() = 0;
+	virtual void		SetShowSourceMarks(bool16 on) = 0;
+
+	/** "Show Original Page Numbers": the badge showing what a page was numbered before spreads
+		were hidden. */
+	virtual bool16		GetShowOldPageNumbers() = 0;
+	virtual void		SetShowOldPageNumbers(bool16 on) = 0;
+
+	/** "Hold to Hide Marks": inverts the on-screen polarity. Marks are shown permanently and
+		the press hides them, instead of the default (hidden, shown while pressed). */
+	virtual bool16		GetHoldToHideMarks() = 0;
+	virtual void		SetHoldToHideMarks(bool16 on) = 0;
+
+	// ---- press-time display state ------------------------------------------------------
+	//
+	// What the tool's left button does to the marks while it is held. The state lives with the
+	// drawing engine because the engine reads it on every draw; the decision of WHEN to change
+	// it is the UI's, because it depends on which document window the mouse is over -- and the
+	// model has no windows.
+	//
+	// ⚠ Setters only change the state. Redrawing is the caller's job, exactly as it was before
+	// the split: which document to invalidate differs per gesture (Target only, Source only, or
+	// both), and folding it in here would repaint documents the old code left alone.
+
+	/** The master "are the rings on screen right now" flag. */
+	virtual void		SetMarksVisible(bool16 on) = 0;
+
+	/** The opacity the rings are actually drawn at, and the 25%/75% value the panel radio
+		selects. The press puts the selected value in; releasing puts GetBaseScreenOpacity()
+		back. */
+	virtual void		SetMarkScreenOpacity(const PMReal& opacity) = 0;
+	virtual PMReal		GetSelectedMarkOpacity() = 0;
+
+	/** Hold to Hide Marks: the permanent rings are parked while the button is down. Target and
+		Source are separate because only the window under the mouse hides its own. */
+	virtual bool16		GetMarksTempHidden() = 0;
+	virtual void		SetMarksTempHidden(bool16 on) = 0;
+	virtual bool16		GetSrcMarksTempHidden() = 0;
+	virtual void		SetSrcMarksTempHidden(bool16 on) = 0;
+
+	/** The old-version overlay shown by Shift+left (1.0) and Shift+Alt+left (0.5). Set the
+		opacity before asking for the overlay; clear ShowOriginal when the button comes up. */
+	virtual void		SetPeekOpacity(const PMReal& opacity) = 0;
+	virtual bool16		GetShowOriginal() = 0;
+	virtual void		SetShowOriginal(bool16 on) = 0;
+
 	// ---- the status line ---------------------------------------------------------------
 
 	/** The last string the model published. The UI reads this when it receives
@@ -137,6 +195,13 @@ public:
 		menu handlers and UpdateActionStates all ask this before calling ApplyOversetForDoc, so
 		leaving it out would have left three UI callers reaching into the model directly. */
 	virtual IDataBase*	GetOversetScanTargetDB() = 0;
+
+	/** Switch Find Overset off and drop what the scan found. The caller repaints -- it knows
+		which document was being scanned, because it asked before calling this.
+		★Added over the plan's draft interface (2026-08-13): the flyout toggle called
+		KESCMDrawEventHandler::DropOverset() directly, which is a static member of a model class
+		and therefore not reachable once the UI is its own plug-in. */
+	virtual void		ClearOverset() = 0;
 
 	// ---- Hide Unchanged Spreads --------------------------------------------------------
 

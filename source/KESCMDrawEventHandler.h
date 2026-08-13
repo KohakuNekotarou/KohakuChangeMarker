@@ -287,8 +287,8 @@ public:
 	~KESCMRasterizingGuard() { KESCMDrawEventHandler::sRasterizing = kFalse; }
 };
 
-// IControlView から可視範囲(IPanorama)を辿る小ヘルパ。エンジンと peek の双方で使うため公開する。
-IPanorama* KESCMQueryPanorama(IControlView* view);
+// (KESCMQueryPanorama は 2026-08-13 に KESCMViewLookup.h へ移した＝model/UI 分割 第1段 Task 12。
+//  戻り値が IPanorama = 窓の問いなので UI 側が持つ。呼び手は #include "KESCMViewLookup.h" へ。)
 
 // 旧ページ番号バッジのフォントキャッシュを解放する(KESCMPeekStartup::Shutdown から呼ぶ。2026-07-25)。
 // 実体は KESCMDrawEventHandler.cpp(キャッシュ本体と同居)。

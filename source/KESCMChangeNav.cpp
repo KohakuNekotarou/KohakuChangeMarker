@@ -62,7 +62,8 @@
 #include "KESCMCore.h"				// KESCMCollectPageUIDs / KESCMArmed* / KESCMSetStatus
 #include "KESCMUIShared.h"	// panel / status line / nav readout / tool button (split from KESCMCore.h on 2026-08-13)
 #include "KESCMViewSync.h"			// KESCMGetLayoutSync(同期 ON なら連動スクロールを任せる。2026-08-13 に KESCMCore.h から移動)
-#include "KESCMDrawEventHandler.h"	// sDB / sSrcDB / sEntries / sOverset* / KESCMQueryPanorama
+#include "IKESCMMarkData.h"			// 比較結果の読み取り(変更ページ・変化セル数・overset 箇所)。2026-08-13 Task 12
+#include "KESCMViewLookup.h"		// KESCMQueryPanorama(同 Task 12 に KESCMDrawEventHandler.h から移動)
 #include "KESCMOversetScan.h"		// KESCMOversetLoc(overset「+」箇所の位置)
 #include "KESCMPageMap.h"			// KESCMBuildPairing(Source 側連動スクロールの対応表。2026-07-25 コメント現行化)
 #include "KESCMThumbnailRefresh.h"	// KESCMGetVisiblePagesPanel(表示中 Pages パネル取得の共有ヘルパ)
@@ -93,10 +94,11 @@ static int32  sNavOversetOrd = 0;
 //----------------------------------------------------------------------------------------
 static IDataBase* KESCMNavDoc()
 {
-	if (KESCMDrawEventHandler::sDB != nil)
-		return KESCMDrawEventHandler::sDB;
-	if (KESCMDrawEventHandler::sOversetOn && KESCMDrawEventHandler::sOversetDB != nil)
-		return KESCMDrawEventHandler::sOversetDB;
+	InterfacePtr<IKESCMMarkData> marks(Utils<IKESCMMarkData>().QueryUtilInterface());
+	if (marks->GetMarkedTargetDB() != nil)
+		return marks->GetMarkedTargetDB();
+	if (marks->GetOversetOn() && marks->GetOversetDB() != nil)
+		return marks->GetOversetDB();
 	return nil;
 }
 
@@ -113,16 +115,19 @@ static IDataBase* KESCMNavDoc()
 // pageUID に載る overset「+」箇所を走査順にストップとして足す(ページ内の枝番と件数もここで振る)。
 // ★通常ページ用のループとマスターページ等の追い足しの両方から呼ぶので、枝番の付け方が2箇所に
 //   分かれないようここへ切り出してある。
-static void KESCMAppendOversetStopsForPage(UID pageUID, std::vector<KESCMNavStop>& out)
+// ★locs は呼び手が1回だけ引いた「今の overset 箇所」の写し(2026-08-13 Task 12)。境界の向こうから
+//   毎ページ引き直すと同じものを何度もコピーすることになるので、走査の間ずっと使い回す。
+static void KESCMAppendOversetStopsForPage(UID pageUID, const std::vector<KESCMOversetLoc>& locs,
+										   std::vector<KESCMNavStop>& out)
 {
 	std::vector<size_t> onPage;
-	for (size_t j = 0; j < KESCMDrawEventHandler::sOversetLocs.size(); ++j)
-		if (KESCMDrawEventHandler::sOversetLocs[j].pageUID == pageUID)
+	for (size_t j = 0; j < locs.size(); ++j)
+		if (locs[j].pageUID == pageUID)
 			onPage.push_back(j);
 	const int32 cnt = (int32)onPage.size();
 	for (int32 k = 0; k < cnt; ++k)
 	{
-		const KESCMOversetLoc& loc = KESCMDrawEventHandler::sOversetLocs[onPage[k]];
+		const KESCMOversetLoc& loc = locs[onPage[k]];
 		KESCMNavStop s; s.pageUID = pageUID; s.isOverset = kTrue; s.pb = loc.pb;
 		s.oversetOrd = k; s.oversetCountOnPage = cnt;
 		out.push_back(s);
@@ -135,8 +140,14 @@ static void KESCMBuildStops(std::vector<KESCMNavStop>& out)
 	IDataBase* navDB = KESCMNavDoc();
 	if (navDB == nil)
 		return;
-	const bool16 changeHere  = (KESCMDrawEventHandler::sDB == navDB);	// 変更(枠)を混ぜるのは比較 Target のときだけ
-	const bool16 oversetHere = (KESCMDrawEventHandler::sOversetOn && KESCMDrawEventHandler::sOversetDB == navDB);
+	InterfacePtr<IKESCMMarkData> marks(Utils<IKESCMMarkData>().QueryUtilInterface());
+	const bool16 changeHere  = (marks->GetMarkedTargetDB() == navDB);	// 変更(枠)を混ぜるのは比較 Target のときだけ
+	const bool16 oversetHere = (marks->GetOversetOn() && marks->GetOversetDB() == navDB);
+
+	// overset 箇所は3か所から引くので、ここで1回だけ写しを取る(下の3つのブロックが使い回す)。
+	std::vector<KESCMOversetLoc> locs;
+	if (oversetHere)
+		marks->GetOversetLocations(locs);
 
 	std::vector<UID> flat;
 	KESCMCollectPageUIDs(navDB, flat);
@@ -144,14 +155,14 @@ static void KESCMBuildStops(std::vector<KESCMNavStop>& out)
 	{
 		const UID u = flat[i];
 		// 1) そのページの変更(枠)= ページ中心。
-		if (changeHere && KESCMDrawEventHandler::sEntries.find(u) != KESCMDrawEventHandler::sEntries.end())
+		if (changeHere && marks->HasEntryForPage(u))
 		{
 			KESCMNavStop s; s.pageUID = u; s.isOverset = kFalse;
 			out.push_back(s);
 		}
 		// 2) そのページの overset「+」箇所(走査順に1つずつ)。
 		if (oversetHere)
-			KESCMAppendOversetStopsForPage(u, out);
+			KESCMAppendOversetStopsForPage(u, locs, out);
 	}
 
 	// ★★KESCMCollectPageUIDs が回すのは **ISpreadList = 通常スプレッドだけ**で、マスタースプレッドは
@@ -178,13 +189,13 @@ static void KESCMBuildStops(std::vector<KESCMNavStop>& out)
 			if (covered.find(u) != covered.end())
 				continue;			// 上のループで拾い済み(マスターがそこに出ることは無いが、二重に足さない)
 			covered.insert(u);
-			if (changeHere && KESCMDrawEventHandler::sEntries.find(u) != KESCMDrawEventHandler::sEntries.end())
+			if (changeHere && marks->HasEntryForPage(u))
 			{
 				KESCMNavStop s; s.pageUID = u; s.isOverset = kFalse;
 				out.push_back(s);
 			}
 			if (oversetHere)
-				KESCMAppendOversetStopsForPage(u, out);
+				KESCMAppendOversetStopsForPage(u, locs, out);
 		}
 	}
 
@@ -195,9 +206,9 @@ static void KESCMBuildStops(std::vector<KESCMNavStop>& out)
 	if (oversetHere)
 	{
 		std::vector<UID> extra;		// 走査順・重複なし
-		for (size_t j = 0; j < KESCMDrawEventHandler::sOversetLocs.size(); ++j)
+		for (size_t j = 0; j < locs.size(); ++j)
 		{
-			const UID pu = KESCMDrawEventHandler::sOversetLocs[j].pageUID;
+			const UID pu = locs[j].pageUID;
 			if (covered.find(pu) != covered.end())
 				continue;			// 通常ページ/マスターページ=上で拾い済み
 			bool16 already = kFalse;
@@ -208,7 +219,7 @@ static void KESCMBuildStops(std::vector<KESCMNavStop>& out)
 				extra.push_back(pu);
 		}
 		for (size_t e = 0; e < extra.size(); ++e)
-			KESCMAppendOversetStopsForPage(extra[e], out);
+			KESCMAppendOversetStopsForPage(extra[e], locs, out);
 	}
 }
 
@@ -599,10 +610,10 @@ static PMString KESCMStopLabel(IDataBase* db, const KESCMNavStop& stop)
 	{
 		// 変更ストップ: そのページの変更の割合を足す(例 "Page: 3, Change 12%")。分子=比較時に数えた変化セル数、
 		// 分母=そのページの低解像度セル数(= w * h。エントリの画像寸法がそのまま分母)。
-		std::map<UID, KESCMOverlayEntry*>::const_iterator it = KESCMDrawEventHandler::sEntries.find(stop.pageUID);
-		if (it != KESCMDrawEventHandler::sEntries.end() && it->second != nil)
+		int32 changedCells = 0, totalCells = 0;
+		if (Utils<IKESCMMarkData>()->GetChangeCells(stop.pageUID, changedCells, totalCells))
 		{
-			const PMString ratio = KESCMFormatChangeRatio(it->second->changedCells, it->second->w * it->second->h);
+			const PMString ratio = KESCMFormatChangeRatio(changedCells, totalCells);
 			if (ratio.NumUTF16TextChars() > 0)
 			{
 				label.Append(", Change ");	// 何の % なのか分かるようにラベルを付ける("Page: 3, Change 12%")
@@ -636,7 +647,7 @@ static void KESCMSyncCompanionViews(IDataBase* navDB, UID pageUID)
 	// ページの追加/削除でズレていても対応表で正しい相手へ、相手が無い Added/Overflow は近傍へ寄せる。
 	// ★Source の拡大率も Target に合わせる。overset ストップでも「そのページ」の対応 Source ページへ寄せる。
 	// ベストエフォート: Source ビューが無い/相手が引けなくても navDB 側の移動は成立させる。
-	IDataBase* sourceDB = KESCMDrawEventHandler::sSrcDB;
+	IDataBase* sourceDB = Utils<IKESCMMarkData>()->GetMarkedSourceDB();
 	if (sourceDB != nil && sourceDB != navDB)
 	{
 		const UID srcPage = KESCMSourcePageForTarget(navDB, sourceDB, pageUID);
@@ -791,7 +802,7 @@ bool16 KESCMGotoStoryFrame(IDataBase* db, UID frameUID, UID pageUID, UID storyUI
 	// ★UID で引き当てられる根拠は、この機能全体が乗っているのと同じ前提＝**別名保存では story UID が
 	//   引き継がれる**(KESCMStoryStamp.h:36-38 に実測済み)。Source に無いストーリー(=Added の行)は
 	//   kInvalidUID が返るので、そのときは Target だけが動く。
-	IDataBase* sourceDB = KESCMDrawEventHandler::sSrcDB;
+	IDataBase* sourceDB = Utils<IKESCMMarkData>()->GetMarkedSourceDB();
 	if (sourceDB != nil && sourceDB != db && storyUID != kInvalidUID)
 	{
 		UID srcFrame = KESCMStoryFirstFrameUID(sourceDB, storyUID);

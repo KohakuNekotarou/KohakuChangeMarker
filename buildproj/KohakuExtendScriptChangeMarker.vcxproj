@@ -325,6 +325,7 @@
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMComparisonRun.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMModelNotify.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\IKESCMCompareFacade.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\IKESCMMarkData.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMThumbnailRefresh.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMThumbIdleTask.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMScrollMap.h" />

@@ -45,7 +45,8 @@
 
 // プロジェクト内インクルード:
 #include "KESCMID.h"
-#include "KESCMDrawEventHandler.h"   // エンジンの共有 static
+#include "IKESCMMarkData.h"          // マーク/overset の読み取り(2026-08-13 Task 12。押下中の表示状態の
+                                     // 読み書きは IKESCMCompareFacade 側＝あちらは書ける)
 #include "KESCMCore.h"               // KESCMInvalidateDB / KESCMSetStatus / KESCMRefreshPanel / arm 状態アクセサ
 #include "KESCMUIShared.h"	// panel / status line / nav readout / tool button (split from KESCMCore.h on 2026-08-13)
 #include "KESCMPageMap.h"            // KESCMPageMapHasAnyRegistered
@@ -63,11 +64,11 @@ static const PMReal kKESCMPeekSemiOpacity = 0.5;	// Shift+Alt+左時の旧版の
 static bool16 sPeekActive        = kFalse;	// Shift/Shift+Alt+左を押し込み中(=覗き表示中)か
 static bool16 sSingleShowing     = kFalse;	// 修飾なしのツール左hold中(=全マークを選択不透明度25%/75%で一時表示中)か。離すと隠す＋基準opacityへ
 
-// マーク(枠/変更数)の表示を切り替えた後、マークが属するドキュメント(sDB)を再描画して
-// 即反映する。arm の有無に依らず使えるよう、peek 用の sPeekTargetDB ではなく sDB を使う(arm 不要)。
+// マーク(枠/変更数)の表示を切り替えた後、マークが属するドキュメントを再描画して即反映する。
+// arm の有無に依らず使えるよう、peek 用の arm 済み Target ではなく「マークが載っている文書」を使う。
 static void KESCMInvalidateMarksDoc()
 {
-	KESCMInvalidateDB(KESCMDrawEventHandler::sDB);
+	KESCMInvalidateDB(Utils<IKESCMMarkData>()->GetMarkedTargetDB());
 }
 
 // マウス下のドキュメントが、arm 済みの対象(Target)文書と一致するか。CMYK サンプリング
@@ -109,15 +110,16 @@ static bool16 KESCMFrontViewIsOverTarget()
 // 正とする(arm の sPeekSourceDB と同一文書だが、判定はマークの実 db に紐づける)。
 static bool16 KESCMFrontViewIsOverSource()
 {
-	return (KESCMDrawEventHandler::sSrcDB != nil &&
-	        KESCMQueryDocDbUnderMouse() == KESCMDrawEventHandler::sSrcDB) ? kTrue : kFalse;
+	IDataBase* const markedSrcDB = Utils<IKESCMMarkData>()->GetMarkedSourceDB();
+	return (markedSrcDB != nil &&
+	        KESCMQueryDocDbUnderMouse() == markedSrcDB) ? kTrue : kFalse;
 }
 
 //========================================================================================
 // トラッカー(左ボタン)用の共有入口。KESCM ツール選択中の左ボタン押下/解放から呼ばれる
 // (KESCMTracker.cpp)。修飾なし押下=マーク reveal を基本に、修飾キーで peek/CMYK を切り替える。
-// ここはファイル内の peek 状態(sSingleShowing)と描画状態(KESCMDrawEventHandler::sMarks*)に
-// アクセスできる。
+// ここはファイル内の peek 状態(sSingleShowing)を持ち、描画状態(押下中の表示)は
+// IKESCMCompareFacade 越しに上下する。
 //
 // ★由来(2026-07-12〜13): もとは中ボタン＋修飾キーのジェスチャだったものをツールの左ボタンへ移植した。
 //   修飾なし=マーク一時表示 / Hold to Hide Marks の窓別 temp-hide(Target/Source) /
@@ -134,10 +136,10 @@ static void KESCMTrackerBeginPeek(PMReal opacity)
 	if (!Utils<IKESCMCompareFacade>()->ArmedDocsAlive() || !KESCMFrontViewIsOverTarget())
 		return;	// 未 Start / 比較文書が閉じ済み / Target 窓以外では反応しない(旧・中ボタン peek 分岐と同じ条件)
 	sPeekActive = kTrue;
-	KESCMDrawEventHandler::sPeekOpacity = opacity;	// 旧版べた載せの不透明度(描画時に参照)
-	sSingleShowing = kFalse;
-	KESCMDrawEventHandler::sMarksVisible = kFalse;	// 覗き中は枠等を出さない(旧版だけ)
 	InterfacePtr<IKESCMCompareFacade> compare(Utils<IKESCMCompareFacade>().QueryUtilInterface());
+	compare->SetPeekOpacity(opacity);	// 旧版べた載せの不透明度(描画時に参照)
+	sSingleShowing = kFalse;
+	compare->SetMarksVisible(kFalse);	// 覗き中は枠等を出さない(旧版だけ)
 	compare->ShowPeekUnderMouse(compare->GetArmedTargetDB(), compare->GetArmedSourceDB());
 }
 
@@ -174,18 +176,19 @@ void KESCMTrackerRevealBegin(bool16 shiftDown, bool16 altDown, bool16 cmdDown, b
 	// ★CMYK(Alt 単独)は隠さない=枠を出したままサンプリング(旧・中ボタン Shift+Ctrl+Alt でも枠は
 	// 隠れない仕様に一致)。押した窓の枠だけを隠す(Target/Source 別)。
 	const bool16 tempHideGesture = (gesture != kKESCMGestureCmyk);
-	if (KESCMDrawEventHandler::sAlwaysShowMarks && tempHideGesture)
+	InterfacePtr<IKESCMCompareFacade> compare(Utils<IKESCMCompareFacade>().QueryUtilInterface());
+	if (compare->GetHoldToHideMarks() && tempHideGesture)
 	{
-		if (!KESCMDrawEventHandler::sMarksTempHidden && KESCMFrontViewIsOverTarget())
+		if (!compare->GetMarksTempHidden() && KESCMFrontViewIsOverTarget())
 		{
-			KESCMDrawEventHandler::sMarksTempHidden = kTrue;
-			KESCMInvalidateMarksDoc();	// Target(sDB)を再描画
+			compare->SetMarksTempHidden(kTrue);
+			KESCMInvalidateMarksDoc();	// Target を再描画
 		}
-		if (KESCMDrawEventHandler::sSrcMarksOn && !KESCMDrawEventHandler::sSrcMarksTempHidden &&
+		if (compare->GetShowSourceMarks() && !compare->GetSrcMarksTempHidden() &&
 		    KESCMFrontViewIsOverSource())
 		{
-			KESCMDrawEventHandler::sSrcMarksTempHidden = kTrue;
-			KESCMInvalidateDB(KESCMDrawEventHandler::sSrcDB);	// Source(sSrcDB)を再描画
+			compare->SetSrcMarksTempHidden(kTrue);
+			KESCMInvalidateDB(Utils<IKESCMMarkData>()->GetMarkedSourceDB());	// Source を再描画
 		}
 	}
 
@@ -212,19 +215,13 @@ void KESCMTrackerRevealBegin(bool16 shiftDown, bool16 altDown, bool16 cmdDown, b
 
 	// ---- 修飾なし: 通常モードのマーク一時表示(reveal) ----
 	// Hold to Hide モード中は上で temp-hide 済み=ここでは何もしない(reveal はしない)。
-	if (KESCMDrawEventHandler::sAlwaysShowMarks)
+	if (compare->GetHoldToHideMarks())
 		return;
 
 	// 「マークがある」の判定は旧・中ボタンの修飾なし分岐と同一(anyMarkableContent 相当)。
-	// overflow 集合は現在の (sDB,sSrcDB) 用へ合わせてから読む。
-	KESCMDrawEventHandler::EnsureOverflowCache();
-	const bool16 haveContent =
-		!KESCMDrawEventHandler::sEntries.empty() ||
-		!KESCMDrawEventHandler::sOverflowT.empty() ||
-		!KESCMDrawEventHandler::sOverflowS.empty() ||
-		(KESCMDrawEventHandler::sDB    != nil && KESCMPageMapHasAnyRegistered(KESCMDrawEventHandler::sDB)) ||
-		(KESCMDrawEventHandler::sSrcDB != nil && KESCMPageMapHasAnyRegistered(KESCMDrawEventHandler::sSrcDB));
-	if (!haveContent)
+	// ★中身は分割前と同じ5つの OR(変更・overflow 両側・登録 両側)で、overflow 集合を現在の文書対へ
+	//   合わせるのも向こうがやる(2026-08-13 Task 12 で IKESCMMarkData へ移した)。
+	if (!Utils<IKESCMMarkData>()->HasAnyMarkableContent())
 		return;
 
 	// 通常モード(マーク非表示→押下中だけ表示)。Target 窓の上でだけ reveal する(Source や無関係な窓では
@@ -233,8 +230,8 @@ void KESCMTrackerRevealBegin(bool16 shiftDown, bool16 altDown, bool16 cmdDown, b
 		return;
 
 	sSingleShowing = kTrue;
-	KESCMDrawEventHandler::sMarkScreenOpacity = KESCMDrawEventHandler::SelectedMarkOpacity();	// パネルの 25%/75%
-	KESCMDrawEventHandler::sMarksVisible = kTrue;	// 押下中だけ枠等を表示
+	compare->SetMarkScreenOpacity(compare->GetSelectedMarkOpacity());	// パネルの 25%/75%
+	compare->SetMarksVisible(kTrue);	// 押下中だけ枠等を表示
 	KESCMInvalidateMarksDoc();
 }
 
@@ -247,15 +244,16 @@ void KESCMTrackerRevealEnd()
 	// 「Hold to Hide Marks」で押下中に隠していた常時表示の枠を戻す(離すと再表示)。押した窓に応じて
 	// Target/Source どちらか(または両方)が立っている。モード OFF なら両方 kFalse なので無影響
 	// (旧・中ボタン解放時の temp-hide 復元と同一)。
-	if (KESCMDrawEventHandler::sMarksTempHidden)
+	InterfacePtr<IKESCMCompareFacade> compare(Utils<IKESCMCompareFacade>().QueryUtilInterface());
+	if (compare->GetMarksTempHidden())
 	{
-		KESCMDrawEventHandler::sMarksTempHidden = kFalse;
-		KESCMInvalidateMarksDoc();	// Target(sDB)を再描画
+		compare->SetMarksTempHidden(kFalse);
+		KESCMInvalidateMarksDoc();	// Target を再描画
 	}
-	if (KESCMDrawEventHandler::sSrcMarksTempHidden)
+	if (compare->GetSrcMarksTempHidden())
 	{
-		KESCMDrawEventHandler::sSrcMarksTempHidden = kFalse;
-		KESCMInvalidateDB(KESCMDrawEventHandler::sSrcDB);	// Source(sSrcDB)を再描画
+		compare->SetSrcMarksTempHidden(kFalse);
+		KESCMInvalidateDB(Utils<IKESCMMarkData>()->GetMarkedSourceDB());	// Source を再描画
 	}
 
 	if (sPeekActive)
@@ -263,10 +261,10 @@ void KESCMTrackerRevealEnd()
 		// Shift／Shift+Alt+左を離した → 旧版べた載せを隠す(マークは触らない)。キャッシュは保持
 		// (再 peek は即時)。旧・中ボタン解放時の sPeekActive 復元と同一。
 		sPeekActive = kFalse;
-		if (KESCMDrawEventHandler::sShowOriginal)
+		if (compare->GetShowOriginal())
 		{
-			KESCMDrawEventHandler::sShowOriginal = kFalse;
-			KESCMInvalidateDB(Utils<IKESCMCompareFacade>()->GetArmedTargetDB());
+			compare->SetShowOriginal(kFalse);
+			KESCMInvalidateDB(compare->GetArmedTargetDB());
 		}
 	}
 	else if (sSingleShowing)
@@ -274,8 +272,8 @@ void KESCMTrackerRevealEnd()
 		// 通常モードの reveal 解除 → 枠表示を解除し、不透明度を基準値へ戻す＋非表示へ(旧・中ボタン解放時の
 		// sSingleShowing 復元と同じ)。
 		sSingleShowing = kFalse;
-		KESCMDrawEventHandler::sMarksVisible = kFalse;
-		KESCMDrawEventHandler::sMarkScreenOpacity = Utils<IKESCMCompareFacade>()->GetBaseScreenOpacity();
+		compare->SetMarksVisible(kFalse);
+		compare->SetMarkScreenOpacity(compare->GetBaseScreenOpacity());
 		KESCMInvalidateMarksDoc();
 	}
 }
@@ -343,7 +341,7 @@ static void KESCMFlushDeferredCloseUi()
 
 	// Find Overset が(走査文書が生存したまま)単独 ON なら地図は残す。それ以外は撤去する
 	// (KESCMHandleDocsClosed 側で即時に行っていた処理と同じ判断)。
-	if (KESCMDrawEventHandler::sOversetOn)
+	if (Utils<IKESCMMarkData>()->GetOversetOn())
 		KESCMScrollMapInvalidateAll();
 	else
 		KESCMScrollMapDetachAll();

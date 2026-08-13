@@ -78,7 +78,7 @@
 #include "KESCMScrollMap.h"
 #include "IKESCMCompareFacade.h"	// arm 状態(2026-08-13・分割 第1段 Task 11 で Facade 経由へ)
 #include "KESCMCore.h"				// KESCMIsDocDBOpen
-#include "KESCMDrawEventHandler.h"	// sEntries / sDB(変更ページ=赤マークの供給元)
+#include "IKESCMMarkData.h"			// 変更ページ・overflow・overset の読み取り(赤/薄赤/濃赤の供給元)。2026-08-13 Task 12
 #include "KESCMPageMap.h"			// KESCMPageMapCollectRegistered(Add/Remove 登録ページ=緑マーク)
 
 // strip の幅(px)。縦スクロールバーの左辺にこの幅で並べる(6→5px、ユーザー指定 2026-07-11。
@@ -303,8 +303,9 @@ void KESCMScrollMapView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 	// ★Find Overset の帯(2026-07-24): 比較(arm)とは独立に、走査した文書(sOversetDB)の窓にも
 	//   overset ページを赤帯で出す。比較していない文書でもこの strip は描く(=オーバーセット検査だけでも
 	//   地図が出る)。比較と同じ文書なら赤どうしで自然に重なる。
-	const bool16 isOverset = (db != nil && KESCMDrawEventHandler::sOversetOn &&
-		db == KESCMDrawEventHandler::sOversetDB);
+	InterfacePtr<IKESCMMarkData> marks(Utils<IKESCMMarkData>().QueryUtilInterface());
+	const bool16 isOverset = (db != nil && marks->GetOversetOn() &&
+		db == marks->GetOversetDB());
 	if ((!isTarget && !isSource && !isOverset) || !KESCMIsDocDBOpen(db))
 		return;
 
@@ -385,14 +386,11 @@ void KESCMScrollMapView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 	//   Target 窓 = 変更ページ(sEntries) + overflow(sOverflowT=登録されていないのに相手が無い「/」)
 	//   Source 窓 = 変更ペアの Source 側(sSrcPageToTarget のキー) + overflow(sOverflowS)
 	// 緑 = Add/Remove 登録ページ(その db のもの)。両方に該当したら赤を優先。
-	// overflow キャッシュは現在の(sDB,sSrcDB)へ合わせてから読む(一致時は no-op)。
-	KESCMDrawEventHandler::EnsureOverflowCache();
-	const bool16 engineMatch = isTarget ? (KESCMDrawEventHandler::sDB == db)
-	                                    : (KESCMDrawEventHandler::sSrcDB == db);
-	const bool16 overflowMatch = isTarget ? (KESCMDrawEventHandler::sOverflowCacheDB == db)
-	                                      : (KESCMDrawEventHandler::sOverflowCacheSrcDB == db);
-	const std::set<UID>& overflowSet = isTarget ? KESCMDrawEventHandler::sOverflowT
-	                                            : KESCMDrawEventHandler::sOverflowS;
+	// ★overflow キャッシュを現在の文書対へ合わせるのは IsOverflowPage の中でやる(2026-08-13 Task 12)。
+	//   キャッシュがどの文書対のものかの照合も向こうが持つ＝ここからは「このページは overflow か」
+	//   だけを聞く。合わせ直しは sDB/sSrcDB を書かないので、engineMatch の答えは変わらない。
+	const bool16 engineMatch = isTarget ? (marks->GetMarkedTargetDB() == db)
+	                                    : (marks->GetMarkedSourceDB() == db);
 	std::set<UID> greens;
 	KESCMPageMapCollectRegistered(db, greens);
 
@@ -474,22 +472,18 @@ void KESCMScrollMapView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 		if (engineMatch)
 		{
 			if (isTarget)
-				isRed = (KESCMDrawEventHandler::sEntries.find(pages[i]) !=
-						 KESCMDrawEventHandler::sEntries.end());
+				isRed = marks->HasEntryForPage(pages[i]);
 			else
-				isRed = (KESCMDrawEventHandler::sSrcPageToTarget.find(pages[i]) !=
-						 KESCMDrawEventHandler::sSrcPageToTarget.end());
+				isRed = marks->IsSourcePageMarked(pages[i]);
 		}
-		if (!isRed && overflowMatch &&
-			overflowSet.find(pages[i]) != overflowSet.end())
+		if (!isRed && marks->IsOverflowPage(db, pages[i], isTarget))
 		{
 			isRed = kTrue;			// 純粋な overflow(変更ではない)だけ薄い赤にする
 			isOverflowRed = kTrue;	// 変更ページが overflow にも入る場合は上で先に確定=枠色優先
 		}
 		const bool16 isGreen = (!isRed && greens.find(pages[i]) != greens.end());
 		// ★overset ページ(この文書が sOversetDB のとき)=しっかりした赤(＋マークと揃える。ユーザー指定 2026-07-24)。
-		const bool16 isOversetRed = (isOverset &&
-			KESCMDrawEventHandler::sOversetPages.find(pages[i]) != KESCMDrawEventHandler::sOversetPages.end());
+		const bool16 isOversetRed = (isOverset && marks->IsOversetPage(pages[i]));
 
 		int32 c = 0;
 		if (isOversetRed)   c = 4;					// overset = 最優先(最後に描いて上へ)
@@ -792,8 +786,9 @@ void KESCMScrollMapNoticeDrawEvent()
 	if (!sScrollMapOn)
 		return;		// 「Show Scrollbar Map」OFF 中は strip も無い=毎描画の指紋計算を省く
 	// 未 arm でも Find Overset 単独なら strip があり得るので、その場合は続行する(2026-07-24)。
+	InterfacePtr<IKESCMMarkData> marks(Utils<IKESCMMarkData>().QueryUtilInterface());
 	if (Utils<IKESCMCompareFacade>()->GetArmedTargetDB() == nil &&
-		!(KESCMDrawEventHandler::sOversetOn && KESCMDrawEventHandler::sOversetDB != nil))
+		!(marks->GetOversetOn() && marks->GetOversetDB() != nil))
 		return;		// arm も overset も無い = strip も無い(指紋は無意味なので触らない)
 
 	// スロットル(250ms)。steady_clock は単調増加なのでラップ/負 delta の心配は無い(旧 clock_t 版に
@@ -811,7 +806,7 @@ void KESCMScrollMapNoticeDrawEvent()
 
 	IDataBase* const tDB = Utils<IKESCMCompareFacade>()->GetArmedTargetDB();
 	IDataBase* const sDB = Utils<IKESCMCompareFacade>()->GetArmedSourceDB();
-	IDataBase* const oDB = (KESCMDrawEventHandler::sOversetOn) ? KESCMDrawEventHandler::sOversetDB : nil;
+	IDataBase* const oDB = marks->GetOversetOn() ? marks->GetOversetDB() : nil;
 	const uint32 ft = KESCMHiddenFingerprint(tDB) * 31u + KESCMShownMasterFingerprint(tDB);
 	const uint32 fs = KESCMHiddenFingerprint(sDB) * 31u + KESCMShownMasterFingerprint(sDB);
 	const uint32 fo = KESCMHiddenFingerprint(oDB) * 31u + KESCMShownMasterFingerprint(oDB);

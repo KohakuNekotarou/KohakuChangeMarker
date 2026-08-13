@@ -37,7 +37,7 @@
 									//  すべてこれ経由。手本＝customconditionaltextui が Utils<ICusCondTxtFacade>() だけを使う形
 #include "KESCMCore.h"		// KESCMInvalidateDB(まだ Facade に載っていない model の呼び。Task 12〜15 で整理する)
 #include "KESCMUIShared.h"	// panel / status line / nav readout / tool button (split from KESCMCore.h on 2026-08-13)
-#include "KESCMDrawEventHandler.h"	// sDB/sSrcDB/sShowOldNumbers/sOverset*(表示トグルが読み書きする状態)
+#include "IKESCMMarkData.h"			// マーク/overset の読み取り(2026-08-13 Task 12。表示トグルの読み書きは IKESCMCompareFacade 側)
 #include "KESCMPageMap.h"	// KESCMPageMapToggleSelectedPages / KESCMPageMapUpdateToggleState(追加/削除ページ登録トグル)
 #include "KESCMPageCheck.h"	// KESCMPageCheckToggleSelectedPages / KESCMPageCheckUpdateToggleState(「KCM: Check」の✓トグル)
 #include "KESCMPageNumberMarker.h"	// KESCMGetIgnorePageNumberMarker/KESCMSetIgnorePageNumberMarker(ノンブル除外トグル)
@@ -140,14 +140,17 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 		// 出る。不透明度はパネルの 25%/75% 選択に連動)。Start のたびに既定 ON へ戻る(KESCMDoMarkChangesDoc)。
 		case kKESCMPopupShowSrcMarksActionID:
 		{
-			KESCMDrawEventHandler::sSrcMarksOn = !KESCMDrawEventHandler::sSrcMarksOn;
-			KESCMInvalidateDB(KESCMDrawEventHandler::sSrcDB);
+			InterfacePtr<IKESCMCompareFacade> compare(Utils<IKESCMCompareFacade>().QueryUtilInterface());
+			const bool16 srcMarksOn = !compare->GetShowSourceMarks();
+			compare->SetShowSourceMarks(srcMarksOn);
+			IDataBase* const srcDB = Utils<IKESCMMarkData>()->GetMarkedSourceDB();
+			KESCMInvalidateDB(srcDB);
 			// ★レイアウトビューだけでなく Pages パネルの Source サムネイルも即時更新する。Source 側の枠は
 			//   wantSrcMarks(=sSrcMarksOn)に依存し、サムネイル(isThumb)でも強制表示されないため、トグルで
 			//   サムネイルを作り直さないと OFF にしても枠が残る/ON にしても出ない。対象ページは Source の
 			//   変更/overflow/登録集合(KESCMCollectChangedPageUIDs が引く)で、枠が出得るページと一致する。
-			KESCMTryRefreshPagesPanelThumbnails(KESCMDrawEventHandler::sSrcDB);
-			PMString msg(KESCMDrawEventHandler::sSrcMarksOn ? "Source marks: on." : "Source marks: off.");
+			KESCMTryRefreshPagesPanelThumbnails(srcDB);
+			PMString msg(srcMarksOn ? "Source marks: on." : "Source marks: off.");
 			msg.SetTranslatable(kFalse);
 			KESCMSetStatus(msg);
 			break;
@@ -176,11 +179,14 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 		// 次の自然な再描画で反映される)。
 		case kKESCMPopupShowOldNumsActionID:
 		{
-			KESCMDrawEventHandler::sShowOldNumbers = !KESCMDrawEventHandler::sShowOldNumbers;
-			KESCMInvalidateDB(KESCMDrawEventHandler::sDB);
-			if (Utils<IKESCMCompareFacade>()->GetArmedSourceDB() != KESCMDrawEventHandler::sDB)
-				KESCMInvalidateDB(Utils<IKESCMCompareFacade>()->GetArmedSourceDB());
-			PMString msg(KESCMDrawEventHandler::sShowOldNumbers ? "Show original page numbers: on." : "Show original page numbers: off.");
+			InterfacePtr<IKESCMCompareFacade> compare(Utils<IKESCMCompareFacade>().QueryUtilInterface());
+			const bool16 showOldNums = !compare->GetShowOldPageNumbers();
+			compare->SetShowOldPageNumbers(showOldNums);
+			IDataBase* const markedDB = Utils<IKESCMMarkData>()->GetMarkedTargetDB();
+			KESCMInvalidateDB(markedDB);
+			if (compare->GetArmedSourceDB() != markedDB)
+				KESCMInvalidateDB(compare->GetArmedSourceDB());
+			PMString msg(showOldNums ? "Show original page numbers: on." : "Show original page numbers: off.");
 			msg.SetTranslatable(kFalse);
 			KESCMSetStatus(msg);
 			break;
@@ -230,11 +236,12 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 			KESCMSetScrollMapEnabled(on);
 			if (on)
 			{
-				if (KESCMDrawEventHandler::sDB    != nil) KESCMScrollMapAttach(KESCMDrawEventHandler::sDB);
-				if (KESCMDrawEventHandler::sSrcDB != nil) KESCMScrollMapAttach(KESCMDrawEventHandler::sSrcDB);
+				InterfacePtr<IKESCMMarkData> marks(Utils<IKESCMMarkData>().QueryUtilInterface());
+				if (marks->GetMarkedTargetDB() != nil) KESCMScrollMapAttach(marks->GetMarkedTargetDB());
+				if (marks->GetMarkedSourceDB() != nil) KESCMScrollMapAttach(marks->GetMarkedSourceDB());
 				// Find Overset 単独で ON 中なら、その走査文書窓にも地図を復帰させる(2026-07-24)。
-				if (KESCMDrawEventHandler::sOversetOn && KESCMDrawEventHandler::sOversetDB != nil)
-					KESCMScrollMapAttach(KESCMDrawEventHandler::sOversetDB);
+				if (marks->GetOversetOn() && marks->GetOversetDB() != nil)
+					KESCMScrollMapAttach(marks->GetOversetDB());
 				KESCMScrollMapInvalidateAll();
 			}
 			else
@@ -355,11 +362,13 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 		// 切替時に一時退避を解除し、常時表示の基準不透明度(常時表示ON中は25%/75%)を反映して sDB を再描画。
 		case kKESCMPopupHoldToHideMarksActionID:
 		{
-			KESCMDrawEventHandler::sAlwaysShowMarks = !KESCMDrawEventHandler::sAlwaysShowMarks;
-			KESCMDrawEventHandler::sMarksTempHidden = kFalse;	// モード切替時は一時退避を解除
-			KESCMDrawEventHandler::sMarkScreenOpacity = Utils<IKESCMCompareFacade>()->GetBaseScreenOpacity();	// 常時表示の不透明度を即反映
-			KESCMInvalidateDB(KESCMDrawEventHandler::sDB);
-			PMString msg(KESCMDrawEventHandler::sAlwaysShowMarks ? "Hold to Hide Marks: on." : "Hold to Hide Marks: off.");
+			InterfacePtr<IKESCMCompareFacade> compare(Utils<IKESCMCompareFacade>().QueryUtilInterface());
+			const bool16 holdToHide = !compare->GetHoldToHideMarks();
+			compare->SetHoldToHideMarks(holdToHide);
+			compare->SetMarksTempHidden(kFalse);	// モード切替時は一時退避を解除
+			compare->SetMarkScreenOpacity(compare->GetBaseScreenOpacity());	// 常時表示の不透明度を即反映
+			KESCMInvalidateDB(Utils<IKESCMMarkData>()->GetMarkedTargetDB());
+			PMString msg(holdToHide ? "Hold to Hide Marks: on." : "Hold to Hide Marks: off.");
 			msg.SetTranslatable(kFalse);
 			KESCMSetStatus(msg);
 			break;
@@ -373,7 +382,10 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 			KESCMSetIgnorePageNumberMarker(!KESCMGetIgnorePageNumberMarker());
 			PMString msg(KESCMGetIgnorePageNumberMarker() ? "Ignore page number marker: on." : "Ignore page number marker: off.");
 			msg.SetTranslatable(kFalse);
-			if (KESCMDrawEventHandler::sDB != nil && KESCMDrawEventHandler::sSrcDB != nil)
+			InterfacePtr<IKESCMMarkData> marks(Utils<IKESCMMarkData>().QueryUtilInterface());
+			IDataBase* const markedDB    = marks->GetMarkedTargetDB();
+			IDataBase* const markedSrcDB = marks->GetMarkedSourceDB();
+			if (markedDB != nil && markedSrcDB != nil)
 			{
 				PMString report;
 				// ★ここは allowIncremental を渡していない=全ページ再比較なので、ページ数が多ければ
@@ -381,7 +393,7 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 				//   全部破棄され kFailure が返る。戻り値を捨てると arm だけが残って「枠が1つも無い
 				//   Start 中」になるので、Start 経路(KESCMToggleStartStop)と同じ考え方で Stop まで戻す
 				//   (KESCMToggleStartStop は arm 中に呼べば Stop 分岐に入る)。2026-07-29 の自己レビューで発見。
-				if (Utils<IKESCMCompareFacade>()->MarkChanges(KESCMDrawEventHandler::sDB, KESCMDrawEventHandler::sSrcDB, report) == kSuccess)
+				if (Utils<IKESCMCompareFacade>()->MarkChanges(markedDB, markedSrcDB, report) == kSuccess)
 				{
 					msg.Append(" (recompared)");
 				}
@@ -582,7 +594,7 @@ void KESCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionSta
 		else if (action == kKESCMPopupShowOldNumsActionID)
 		{
 			int16 actionState = kEnabledAction;
-			if (KESCMDrawEventHandler::sShowOldNumbers)
+			if (Utils<IKESCMCompareFacade>()->GetShowOldPageNumbers())
 				actionState |= kSelectedAction;
 			listToUpdate->SetNthActionState(i, actionState);
 		}
@@ -630,14 +642,14 @@ void KESCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionSta
 		else if (action == kKESCMPopupHoldToHideMarksActionID)
 		{
 			int16 actionState = kEnabledAction;
-			if (KESCMDrawEventHandler::sAlwaysShowMarks)
+			if (Utils<IKESCMCompareFacade>()->GetHoldToHideMarks())
 				actionState |= kSelectedAction;	// ON ならチェックマーク
 			listToUpdate->SetNthActionState(i, actionState);
 		}
 		else if (action == kKESCMPopupShowSrcMarksActionID)
 		{
 			int16 actionState = kEnabledAction;
-			if (KESCMDrawEventHandler::sSrcMarksOn)
+			if (Utils<IKESCMCompareFacade>()->GetShowSourceMarks())
 				actionState |= kSelectedAction;
 			listToUpdate->SetNthActionState(i, actionState);
 		}
@@ -672,7 +684,7 @@ void KESCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionSta
 			//   無ければ灰色にする(2026-08-06 ユーザー指定)。対象の決め方は実行側 DoFindOversetToggle
 			//   と同じ GetOversetScanTargetDB()＝比較中は Target、未 Start はアクティブ文書。
 			//   (従来はここが常に有効で、文書を開かずに押すと "no active document" とだけ出ていた。)
-			const bool16 on = KESCMDrawEventHandler::sOversetOn;
+			const bool16 on = Utils<IKESCMMarkData>()->GetOversetOn();
 			int16 actionState = (on || Utils<IKESCMCompareFacade>()->GetOversetScanTargetDB() != nil) ? kEnabledAction
 			                                                              : kDisabled_Unselected;
 			if (on)
@@ -682,12 +694,12 @@ void KESCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionSta
 		else if (action == kKESCMPopupRefreshOversetActionID)
 		{
 			// Find Overset が ON のときだけ有効(=再走査可能)。OFF 時は灰色(kDisabled_Unselected)。
-			listToUpdate->SetNthActionState(i, KESCMDrawEventHandler::sOversetOn ? kEnabledAction : kDisabled_Unselected);
+			listToUpdate->SetNthActionState(i, Utils<IKESCMMarkData>()->GetOversetOn() ? kEnabledAction : kDisabled_Unselected);
 		}
 		else if (action == kKESCMPopupExportChangedPagesActionID)
 		{
-			// 比較中(sDB≠nil)のみ有効=書き出す変更データが在り得るとき。未 Start は灰色。
-			listToUpdate->SetNthActionState(i, (KESCMDrawEventHandler::sDB != nil) ? kEnabledAction : kDisabled_Unselected);
+			// 比較中(マークの Target 文書が在る)のみ有効=書き出す変更データが在り得るとき。未 Start は灰色。
+			listToUpdate->SetNthActionState(i, (Utils<IKESCMMarkData>()->GetMarkedTargetDB() != nil) ? kEnabledAction : kDisabled_Unselected);
 		}
 		else if (action == kKESCMPopupCompareBooksActionID)
 		{
@@ -756,7 +768,7 @@ void KESCMActionComponent::DoUsage()
 
 //========================================================================================
 // Find Overset(フライアウト): アクティブ1文書を走査し、overset のあるページに十字を出す/消す。
-// 比較(sEntries)とは完全に独立。状態は KESCMDrawEventHandler::sOversetOn/sOversetDB/sOversetPages。
+// 比較とは完全に独立。状態は model 側が持ち、ここからは IKESCMMarkData / IKESCMCompareFacade で読み書きする。
 //========================================================================================
 
 // (アクティブ文書の解決は KESCMActiveDocDB(KESCMCore)に統合。2026-07-25 重複解消)
@@ -767,13 +779,14 @@ void KESCMActionComponent::DoUsage()
 void KESCMActionComponent::DoFindOversetToggle()
 {
 	// ON→OFF: ＋を消す。
-	if (KESCMDrawEventHandler::sOversetOn)
+	InterfacePtr<IKESCMMarkData> marks(Utils<IKESCMMarkData>().QueryUtilInterface());
+	if (marks->GetOversetOn())
 	{
-		IDataBase* prevDB = KESCMDrawEventHandler::sOversetDB;
+		IDataBase* prevDB = marks->GetOversetDB();
 		// Pages パネルのサムネイルから＋を消すため、消える前にページ集合を控える。
-		std::vector<UID> prevPages(KESCMDrawEventHandler::sOversetPages.begin(),
-		                           KESCMDrawEventHandler::sOversetPages.end());
-		KESCMDrawEventHandler::DropOverset();
+		std::vector<UID> prevPages;
+		marks->GetOversetPageUIDs(prevPages);
+		Utils<IKESCMCompareFacade>()->ClearOverset();
 		KESCMRefreshThumbnailsForPages(prevDB, prevPages);	// サムネイルを作り直して＋を消す
 		// スクロールバー地図: 比較もしていなければ全窓から撤去、比較中なら残して赤帯だけ描き直す。
 		if (Utils<IKESCMCompareFacade>()->IsArmed())
@@ -801,7 +814,7 @@ void KESCMActionComponent::DoFindOversetToggle()
 
 	PMString msg("Find Overset: on (");
 	msg.SetTranslatable(kFalse);
-	msg.AppendNumber((int32)KESCMDrawEventHandler::sOversetPages.size());
+	msg.AppendNumber(Utils<IKESCMMarkData>()->GetOversetPageCount());
 	msg.Append(" page(s)).");
 	KESCMSetStatus(msg);
 }
@@ -811,7 +824,7 @@ void KESCMActionComponent::DoFindOversetToggle()
    前の文書の十字も消す。 */
 void KESCMActionComponent::DoRefreshOverset()
 {
-	if (!KESCMDrawEventHandler::sOversetOn)
+	if (!Utils<IKESCMMarkData>()->GetOversetOn())
 		return;	// OFF時は無効(保険。通常はメニューが灰色で呼ばれない)
 
 	IDataBase* db = Utils<IKESCMCompareFacade>()->GetOversetScanTargetDB();
@@ -826,7 +839,7 @@ void KESCMActionComponent::DoRefreshOverset()
 
 	PMString msg("Refresh Overset: ");
 	msg.SetTranslatable(kFalse);
-	msg.AppendNumber((int32)KESCMDrawEventHandler::sOversetPages.size());
+	msg.AppendNumber(Utils<IKESCMMarkData>()->GetOversetPageCount());
 	msg.Append(" page(s).");
 	KESCMSetStatus(msg);
 }

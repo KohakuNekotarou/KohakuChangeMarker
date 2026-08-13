@@ -720,20 +720,8 @@ void KESCMDrawEventHandler::UnRegister(IDrwEvtDispatcher* d)
 }
 
 
-// ビューから IPanorama を取る。ページアイテム系の子ウィジェットは panorama を持たないため、
-// CTracker::QueryPanorama と同じく自身→親(LayoutWidget)の順で辿る。呼び出し側で Release すること。
-IPanorama* KESCMQueryPanorama(IControlView* view)
-{
-	if (view == nil)
-		return nil;
-	IPanorama* pano = (IPanorama*)view->QueryInterface(IID_IPANORAMA);
-	if (pano != nil)
-		return pano;
-	InterfacePtr<IWidgetParent> parent(view, IID_IWIDGETPARENT);
-	if (parent == nil)
-		return nil;
-	return (IPanorama*)parent->QueryParentFor(IID_IPANORAMA);
-}
+// (KESCMQueryPanorama は 2026-08-13 に KESCMViewLookup.cpp へ移した＝model/UI 分割 第1段 Task 12。
+//  IPanorama を返す＝窓が無ければ答えの無い問いなので、描画エンジンの持ち場ではない。)
 
 //========================================================================================
 // 印刷/PDF 用のリング描画。画面は image() blit でよいが(画素 alpha を honor する)、印刷のフラットナ

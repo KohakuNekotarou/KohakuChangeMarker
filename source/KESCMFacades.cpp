@@ -28,12 +28,15 @@
 // Project includes:
 #include "KESCMID.h"
 #include "IKESCMCompareFacade.h"
+#include "IKESCMMarkData.h"
 #include "KESCMComparisonRun.h"		// ToggleStartStop / Stop / StartFor / CanStart / print marks
 #include "KESCMCore.h"				// MarkChanges / ClearMarks / DoSetPrintMarks / getters
 #include "KESCMPeek.h"				// armed docs alive / peek / RefreshSelectedPages / base opacity
 #include "KESCMModelNotify.h"		// GetSessionStatus
 #include "KESCMOversetApply.h"		// ApplyOversetForDoc / OversetScanTargetDB
 #include "KESCMHideUnchanged.h"		// the Hide Unchanged toggle and its state
+#include "KESCMDrawEventHandler.h"	// the engine's shared state, which these two publish
+#include "KESCMPageMap.h"			// KESCMPageMapHasAnyRegistered (HasAnyMarkableContent)
 
 //========================================================================================
 // KESCMCompareFacade -- IKESCMCompareFacade
@@ -86,6 +89,35 @@ public:
 
 	virtual void		ApplyOversetForDoc(IDataBase* db)	{ KESCMApplyOversetForDoc(db); }
 	virtual IDataBase*	GetOversetScanTargetDB()	{ return KESCMOversetScanTargetDB(); }
+	virtual void		ClearOverset()			{ KESCMDrawEventHandler::DropOverset(); }
+
+	// ---- display toggles and press-time display state (Task 12) --------------------------
+	// These reach the engine's static members rather than a free function, because there was
+	// never a function: the UI assigned to the statics directly. The bodies are the assignments
+	// that used to sit in KESCMActionComponent.cpp, KESCMPanelState.cpp and
+	// KESCMPeekGesture.cpp, moved behind the boundary and nothing else. No caller lost or
+	// gained a redraw -- invalidation stayed with the callers, where the choice of which
+	// document to repaint is made.
+
+	virtual bool16		GetShowSourceMarks()	{ return KESCMDrawEventHandler::sSrcMarksOn; }
+	virtual void		SetShowSourceMarks(bool16 on)		{ KESCMDrawEventHandler::sSrcMarksOn = on; }
+	virtual bool16		GetShowOldPageNumbers()	{ return KESCMDrawEventHandler::sShowOldNumbers; }
+	virtual void		SetShowOldPageNumbers(bool16 on)	{ KESCMDrawEventHandler::sShowOldNumbers = on; }
+	virtual bool16		GetHoldToHideMarks()	{ return KESCMDrawEventHandler::sAlwaysShowMarks; }
+	virtual void		SetHoldToHideMarks(bool16 on)		{ KESCMDrawEventHandler::sAlwaysShowMarks = on; }
+
+	virtual void		SetMarksVisible(bool16 on)			{ KESCMDrawEventHandler::sMarksVisible = on; }
+	virtual void		SetMarkScreenOpacity(const PMReal& opacity)
+														{ KESCMDrawEventHandler::sMarkScreenOpacity = opacity; }
+	virtual PMReal		GetSelectedMarkOpacity()	{ return KESCMDrawEventHandler::SelectedMarkOpacity(); }
+	virtual bool16		GetMarksTempHidden()	{ return KESCMDrawEventHandler::sMarksTempHidden; }
+	virtual void		SetMarksTempHidden(bool16 on)		{ KESCMDrawEventHandler::sMarksTempHidden = on; }
+	virtual bool16		GetSrcMarksTempHidden()	{ return KESCMDrawEventHandler::sSrcMarksTempHidden; }
+	virtual void		SetSrcMarksTempHidden(bool16 on)	{ KESCMDrawEventHandler::sSrcMarksTempHidden = on; }
+	virtual void		SetPeekOpacity(const PMReal& opacity)
+														{ KESCMDrawEventHandler::sPeekOpacity = opacity; }
+	virtual bool16		GetShowOriginal()		{ return KESCMDrawEventHandler::sShowOriginal; }
+	virtual void		SetShowOriginal(bool16 on)			{ KESCMDrawEventHandler::sShowOriginal = on; }
 
 	virtual void		ResetHideUnchanged(bool16 restoreSpreads)
 													{ KESCMResetHideUnchanged(restoreSpreads); }
@@ -96,5 +128,97 @@ public:
 };
 
 CREATE_PMINTERFACE(KESCMCompareFacade, kKESCMCompareFacadeImpl)
+
+
+//========================================================================================
+// KESCMMarkData -- IKESCMMarkData
+//
+// The read-only half. Every method answers a question about the state the drawing engine
+// holds; not one of them changes it.
+//
+// ★These bodies are the very expressions the UI used to write inline. Deliberately so: the
+// point of Task 12 is to move WHERE the question is asked, not WHAT the answer is. The two
+// places that do a little more than a lookup (IsOverflowPage and HasAnyMarkableContent) call
+// EnsureOverflowCache first because the callers did, in the same position.
+//========================================================================================
+class KESCMMarkData : public CPMUnknown<IKESCMMarkData>
+{
+public:
+	KESCMMarkData(IPMUnknown* boss) : CPMUnknown<IKESCMMarkData>(boss) {}
+
+	virtual IDataBase*	GetMarkedTargetDB()		{ return KESCMDrawEventHandler::sDB; }
+	virtual IDataBase*	GetMarkedSourceDB()		{ return KESCMDrawEventHandler::sSrcDB; }
+
+	virtual bool16		HasEntryForPage(UID pageUID)
+	{
+		return (KESCMDrawEventHandler::sEntries.find(pageUID) !=
+				KESCMDrawEventHandler::sEntries.end()) ? kTrue : kFalse;
+	}
+
+	virtual bool16		IsSourcePageMarked(UID sourcePageUID)
+	{
+		return (KESCMDrawEventHandler::sSrcPageToTarget.find(sourcePageUID) !=
+				KESCMDrawEventHandler::sSrcPageToTarget.end()) ? kTrue : kFalse;
+	}
+
+	virtual bool16		GetChangeCells(UID pageUID, int32& outChanged, int32& outTotal)
+	{
+		outChanged = 0;
+		outTotal   = 0;
+		std::map<UID, KESCMOverlayEntry*>::const_iterator it = KESCMDrawEventHandler::sEntries.find(pageUID);
+		if (it == KESCMDrawEventHandler::sEntries.end() || it->second == nil)
+			return kFalse;
+		outChanged = it->second->changedCells;
+		outTotal   = it->second->w * it->second->h;	// the entry's image is the denominator
+		return kTrue;
+	}
+
+	virtual bool16		IsOverflowPage(IDataBase* db, UID pageUID, bool16 isTargetSide)
+	{
+		KESCMDrawEventHandler::EnsureOverflowCache();	// no-op when the cache already matches
+		const bool16 cacheMatch = isTargetSide ? (KESCMDrawEventHandler::sOverflowCacheDB == db)
+											   : (KESCMDrawEventHandler::sOverflowCacheSrcDB == db);
+		if (!cacheMatch)
+			return kFalse;
+		const std::set<UID>& overflowSet = isTargetSide ? KESCMDrawEventHandler::sOverflowT
+													   : KESCMDrawEventHandler::sOverflowS;
+		return (overflowSet.find(pageUID) != overflowSet.end()) ? kTrue : kFalse;
+	}
+
+	virtual bool16		HasAnyMarkableContent()
+	{
+		KESCMDrawEventHandler::EnsureOverflowCache();
+		return (!KESCMDrawEventHandler::sEntries.empty() ||
+				!KESCMDrawEventHandler::sOverflowT.empty() ||
+				!KESCMDrawEventHandler::sOverflowS.empty() ||
+				(KESCMDrawEventHandler::sDB    != nil && KESCMPageMapHasAnyRegistered(KESCMDrawEventHandler::sDB)) ||
+				(KESCMDrawEventHandler::sSrcDB != nil && KESCMPageMapHasAnyRegistered(KESCMDrawEventHandler::sSrcDB)))
+			? kTrue : kFalse;
+	}
+
+	virtual bool16		GetOversetOn()			{ return KESCMDrawEventHandler::sOversetOn; }
+	virtual IDataBase*	GetOversetDB()			{ return KESCMDrawEventHandler::sOversetDB; }
+
+	virtual bool16		IsOversetPage(UID pageUID)
+	{
+		return (KESCMDrawEventHandler::sOversetPages.find(pageUID) !=
+				KESCMDrawEventHandler::sOversetPages.end()) ? kTrue : kFalse;
+	}
+
+	virtual int32		GetOversetPageCount()	{ return (int32)KESCMDrawEventHandler::sOversetPages.size(); }
+
+	virtual void		GetOversetPageUIDs(std::vector<UID>& out)
+	{
+		out.assign(KESCMDrawEventHandler::sOversetPages.begin(),
+				   KESCMDrawEventHandler::sOversetPages.end());
+	}
+
+	virtual void		GetOversetLocations(std::vector<KESCMOversetLoc>& out)
+	{
+		out = KESCMDrawEventHandler::sOversetLocs;
+	}
+};
+
+CREATE_PMINTERFACE(KESCMMarkData, kKESCMMarkDataImpl)
 
 // End of KESCMFacades.cpp.

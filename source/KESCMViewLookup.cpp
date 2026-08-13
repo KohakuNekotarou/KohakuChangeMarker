@@ -30,6 +30,8 @@
 #include "IWindowUtils.h"			// QueryWindowUnderPoint(マウス下の窓)
 #include "IDocumentPresentation.h"
 #include "IPanelControlData.h"		// FindWidget(ヒットテストと代表ビューの取得)
+#include "IPanorama.h"				// KESCMQueryPanorama(2026-08-13 に KESCMDrawEventHandler.cpp から移動)
+#include "IWidgetParent.h"			// 同上(自身に panorama が無ければ親を辿る)
 #include "LayoutUIID.h"				// kLayoutWidgetBoss / kLayoutSecondaryPanelWidgetID
 #include "ILayoutViewUtils.h"		// GetAllLayoutViews(KESCMFindDocDbForView のフォールバック)
 #include "ILayoutControlData.h"		// GetDocument(view→文書の公式ルート。KESCMFindDocDbForView)
@@ -186,6 +188,26 @@ IDataBase* KESCMFindDocDbForView(IControlView* view)
 		}
 	}
 	return nil;
+}
+
+
+// ビューから IPanorama を取る。ページアイテム系の子ウィジェットは panorama を持たないため、
+// CTracker::QueryPanorama と同じく自身→親(LayoutWidget)の順で辿る。呼び出し側で Release すること。
+//
+// ★2026-08-13 に KESCMDrawEventHandler.cpp から移した(model/UI 分割 第1段 Task 12)。中身は無変更。
+//   IPanorama は「窓のどこが見えているか」＝窓が無ければ答えの無い問いなので、描画エンジン(model)
+//   ではなくここが持ち場になる。
+IPanorama* KESCMQueryPanorama(IControlView* view)
+{
+	if (view == nil)
+		return nil;
+	IPanorama* pano = (IPanorama*)view->QueryInterface(IID_IPANORAMA);
+	if (pano != nil)
+		return pano;
+	InterfacePtr<IWidgetParent> parent(view, IID_IWIDGETPARENT);
+	if (parent == nil)
+		return nil;
+	return (IPanorama*)parent->QueryParentFor(IID_IPANORAMA);
 }
 
 // KESCMViewLookup.cpp 終わり。

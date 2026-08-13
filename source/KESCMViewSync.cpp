@@ -54,11 +54,11 @@
 
 // プロジェクト内インクルード:
 #include "KESCMID.h"
-#include "KESCMDrawEventHandler.h"   // KESCMQueryPanorama
 #include "Utils.h"                   // Utils<IKESCMCompareFacade>()
 #include "IKESCMCompareFacade.h"     // arm 状態(2026-08-13・分割 第1段 Task 11 で Facade 経由へ)
 #include "KESCMCore.h"               // KESCMCollectPageUIDs
 #include "KESCMViewLookup.h"         // KESCMFindDocDbForView / KESCMForgetViewDbHint(2026-08-13 に KESCMCore.h から移動)
+                                     // ＋ KESCMQueryPanorama(2026-08-13 に KESCMDrawEventHandler.h から移動)
 #include "KESCMPageMap.h"            // KESCMBuildPairing / KESCMBuildMasterPairing(除外対応表)
 #include "KESCMChangeNav.h"          // KESCMEnsureViewShowsSpread(同期先ビューを相手のスプレッドへ。2026-08-11)
 #include "KESCMViewSync.h"

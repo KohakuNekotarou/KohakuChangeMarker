@@ -305,6 +305,7 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 		{
 			// Implementation: KESCMFacades.cpp
 			IID_IKESCMCOMPAREFACADE, kKESCMCompareFacadeImpl,
+			IID_IKESCMMARKDATA, kKESCMMarkDataImpl,
 		}
 	},
 

@@ -23,7 +23,6 @@
 #include "IKESCMCompareFacade.h"	// 印刷マーク設定の読み書き(2026-08-13・分割 第1段 Task 11 で Facade 経由へ)
 #include "KESCMUIShared.h"	// panel / status line / nav readout / tool button (split from KESCMCore.h on 2026-08-13)
 #include "KESCMViewSync.h"			// KESCMGetLayoutSync / KESCMSetLayoutSync(2026-08-13 に KESCMCore.h から移動)
-#include "KESCMDrawEventHandler.h"	// sAlwaysShowMarks / sSrcMarksOn / sShowOldNumbers(公開 static)
 #include "KESCMScrollMap.h"			// KESCMGetScrollMapEnabled / KESCMSetScrollMapEnabled
 #include "KESCMPageNumberMarker.h"	// KESCMGetIgnorePageNumberMarker / KESCMSetIgnorePageNumberMarker
 #include "KESCMPanelAlpha.h"		// KESCMGetPanelTranslucent / KESCMSetPanelTranslucent(Translucent Panel)
@@ -98,14 +97,16 @@ void KESCMSavePanelState()
 	}
 
 	// 現在の状態を JSON 文字列に組み立てる。
+	// ★5つ聞くので InterfacePtr で1回引く(Utils.h:74-80。3回以上ならこの形が公式)。
+	InterfacePtr<IKESCMCompareFacade> compare(Utils<IKESCMCompareFacade>().QueryUtilInterface());
 	std::string json;
 	json += "{\n";
 	json += "  \"version\": 1,\n";
-	json += "  \"printMarks\": ";             json += KESCMBoolLiteral(Utils<IKESCMCompareFacade>()->GetPrintMarks());     json += ",\n";
-	json += "  \"opacity25\": ";              json += KESCMBoolLiteral(Utils<IKESCMCompareFacade>()->GetMarkOpacity25());  json += ",\n";
-	json += "  \"holdToHideMarks\": ";        json += KESCMBoolLiteral(KESCMDrawEventHandler::sAlwaysShowMarks);    json += ",\n";
-	json += "  \"showSrcMarks\": ";           json += KESCMBoolLiteral(KESCMDrawEventHandler::sSrcMarksOn);         json += ",\n";
-	json += "  \"showOldNumbers\": ";         json += KESCMBoolLiteral(KESCMDrawEventHandler::sShowOldNumbers);     json += ",\n";
+	json += "  \"printMarks\": ";             json += KESCMBoolLiteral(compare->GetPrintMarks());                   json += ",\n";
+	json += "  \"opacity25\": ";              json += KESCMBoolLiteral(compare->GetMarkOpacity25());                json += ",\n";
+	json += "  \"holdToHideMarks\": ";        json += KESCMBoolLiteral(compare->GetHoldToHideMarks());              json += ",\n";
+	json += "  \"showSrcMarks\": ";           json += KESCMBoolLiteral(compare->GetShowSourceMarks());              json += ",\n";
+	json += "  \"showOldNumbers\": ";         json += KESCMBoolLiteral(compare->GetShowOldPageNumbers());           json += ",\n";
 	json += "  \"syncLayoutViews\": ";        json += KESCMBoolLiteral(KESCMGetLayoutSync());                       json += ",\n";
 	json += "  \"scrollbarMap\": ";           json += KESCMBoolLiteral(KESCMGetScrollMapEnabled());                 json += ",\n";
 	json += "  \"ignorePageNumberMarker\": "; json += KESCMBoolLiteral(KESCMGetIgnorePageNumberMarker());           json += ",\n";
@@ -177,16 +178,17 @@ void KESCMLoadPanelStateIfPresent()
 		return;
 
 	// ---- 各トグルへ適用 ----
-	// ★順序: 不透明度に影響する平の static(Hold to Hide Marks)を先に反映してから KESCMDoSetPrintMarks を
-	//   呼ぶ。KESCMDoSetPrintMarks は常時表示の画面不透明度(sMarkScreenOpacity)を現在の Hold/25-75 選択から
-	//   再計算するため、先に sAlwaysShowMarks を復元しておく必要がある。
-	KESCMDrawEventHandler::sAlwaysShowMarks = KESCMJsonReadBool(text, "holdToHideMarks", KESCMDrawEventHandler::sAlwaysShowMarks);
-	KESCMDrawEventHandler::sSrcMarksOn      = KESCMJsonReadBool(text, "showSrcMarks",    KESCMDrawEventHandler::sSrcMarksOn);
-	KESCMDrawEventHandler::sShowOldNumbers  = KESCMJsonReadBool(text, "showOldNumbers",  KESCMDrawEventHandler::sShowOldNumbers);
+	// ★順序: 不透明度に影響する表示トグル(Hold to Hide Marks)を先に反映してから SetPrintMarks を
+	//   呼ぶ。SetPrintMarks は常時表示の画面不透明度を現在の Hold/25-75 選択から再計算するため、
+	//   先に Hold to Hide Marks を復元しておく必要がある。
+	InterfacePtr<IKESCMCompareFacade> compare(Utils<IKESCMCompareFacade>().QueryUtilInterface());
+	compare->SetHoldToHideMarks   (KESCMJsonReadBool(text, "holdToHideMarks", compare->GetHoldToHideMarks()));
+	compare->SetShowSourceMarks   (KESCMJsonReadBool(text, "showSrcMarks",    compare->GetShowSourceMarks()));
+	compare->SetShowOldPageNumbers(KESCMJsonReadBool(text, "showOldNumbers",  compare->GetShowOldPageNumbers()));
 
-	const bool16 printMarks = KESCMJsonReadBool(text, "printMarks", Utils<IKESCMCompareFacade>()->GetPrintMarks());
-	const bool16 opacity25  = KESCMJsonReadBool(text, "opacity25",  Utils<IKESCMCompareFacade>()->GetMarkOpacity25());
-	Utils<IKESCMCompareFacade>()->SetPrintMarks(printMarks, opacity25, nil);	// db=nil: フラグ設定のみ(未 Start なので再描画対象は無い)
+	const bool16 printMarks = KESCMJsonReadBool(text, "printMarks", compare->GetPrintMarks());
+	const bool16 opacity25  = KESCMJsonReadBool(text, "opacity25",  compare->GetMarkOpacity25());
+	compare->SetPrintMarks(printMarks, opacity25, nil);	// db=nil: フラグ設定のみ(未 Start なので再描画対象は無い)
 
 	KESCMSetLayoutSync            (KESCMJsonReadBool(text, "syncLayoutViews",         KESCMGetLayoutSync()));
 	KESCMSetScrollMapEnabled      (KESCMJsonReadBool(text, "scrollbarMap",           KESCMGetScrollMapEnabled()));
