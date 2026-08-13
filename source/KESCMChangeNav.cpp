@@ -65,7 +65,8 @@
 #include "IKESCMMarkData.h"			// 比較結果の読み取り(変更ページ・変化セル数・overset 箇所)。2026-08-13 Task 12
 #include "KESCMViewLookup.h"		// KESCMQueryPanorama(同 Task 12 に KESCMDrawEventHandler.h から移動)
 #include "KESCMOversetScan.h"		// KESCMOversetLoc(overset「+」箇所の位置)
-#include "KESCMPageMap.h"			// KESCMBuildPairing(Source 側連動スクロールの対応表。2026-07-25 コメント現行化)
+                                    // ＋ GetPagePairing(Source 側連動スクロールの対応表。2026-08-13 Task 13 で
+                                    //   KESCMPageMap.h から IKESCMMarkData 経由へ)
 #include "KESCMThumbnailRefresh.h"	// KESCMGetVisiblePagesPanel(表示中 Pages パネル取得の共有ヘルパ)
 #include "KESCMStoryList.h"			// KESCMStoryFirstFrameUID(Source 側で「同じストーリー」の先頭フレームを引く)
 #include "KESCMChangeNav.h"
@@ -449,7 +450,7 @@ static UID KESCMSourcePageForTarget(IDataBase* targetDB, IDataBase* sourceDB, UI
 		return kInvalidUID;
 
 	std::vector<UID> tPages, sPages;
-	KESCMBuildPairing(targetDB, sourceDB, tPages, sPages);	// ペア済み(登録除外・ズレ吸収済み)
+	Utils<IKESCMMarkData>()->GetPagePairing(targetDB, sourceDB, tPages, sPages);	// ペア済み(登録除外・ズレ吸収済み)
 
 	// 直接の相手(Target→Source)を探す。
 	std::map<UID, UID> t2s;

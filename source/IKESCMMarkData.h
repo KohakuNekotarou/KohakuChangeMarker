@@ -33,6 +33,7 @@
 // General includes:
 #include "UIDRef.h"				// UID
 #include <vector>
+#include <set>
 
 // Project includes:
 #include "KESCMID.h"
@@ -108,6 +109,36 @@ public:
 	/** Every individual overset location, in scan order -- one per "+" rather than one per
 		page, because Prev/Next stops at each of them. out is cleared first. */
 	virtual void		GetOversetLocations(std::vector<KESCMOversetLoc>& out) = 0;
+
+	// ---- the page flags, read side (2026-08-13, Task 13) ---------------------------------
+	//
+	// Writing them is IKESCMPageFlagsFacade. Reading them is here, with the rest of the
+	// read-only questions, so that "what is registered" has one answer and one place.
+
+	/** Every page of db registered as Added/Removed. ADDS to out -- it does not clear it --
+		because both callers merge it into a set they are already filling. */
+	virtual void		GetRegisteredPages(IDataBase* db, std::set<UID>& out) = 0;
+
+	// ---- the page pairing ----------------------------------------------------------------
+	//
+	// Which page of the Source document corresponds to which page of the Target. Registered
+	// pages are taken out first, then what is left is matched in order, so inserting or
+	// deleting a page shifts the rest without breaking the correspondence.
+	//
+	// ★The whole table, not one page at a time. Both callers build their own map out of it and
+	// keep it (the view sync caches it for a 250 ms generation, because it is asked dozens of
+	// times a second while scrolling). Asking page by page across the boundary would turn one
+	// call into hundreds.
+
+	/** The normal-spread pairing. Both vectors come back the same length: outTargetPages[i]
+		pairs with outSourcePages[i]. Both are cleared first. */
+	virtual void		GetPagePairing(IDataBase* targetDB, IDataBase* sourceDB,
+								std::vector<UID>& outTargetPages, std::vector<UID>& outSourcePages) = 0;
+
+	/** The master-spread pairing, which is matched BY NAME rather than in order -- a master
+		that exists on only one side simply has no partner. Same output shape as above. */
+	virtual void		GetMasterPagePairing(IDataBase* targetDB, IDataBase* sourceDB,
+								std::vector<UID>& outTargetPages, std::vector<UID>& outSourcePages) = 0;
 };
 
 #endif // __IKESCMMarkData_h__

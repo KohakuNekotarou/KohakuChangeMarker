@@ -155,7 +155,7 @@ DECLARE_PMID(kInterfaceIDSpace, IID_IKESCMPANELVISIBILITYOBSERVER, kKESCMPrefix 
 DECLARE_PMID(kInterfaceIDSpace, IID_IKESCMSAVEDSECTIONHEIGHT, kKESCMPrefix + 3)	// IIntData として扱う: Story Edits セクションを閉じた瞬間の高さ(px)。次に開くときこの高さで開く。実装は SDK 標準の kPersistIntDataImpl(手本=linksui の IID_ISAVEDINFOPANESIZE)
 DECLARE_PMID(kInterfaceIDSpace, IID_IKESCMCOMPAREFACADE, kKESCMPrefix + 4)	// UI が比較エンジンに頼む窓口(kUtilsBoss に AddIn。UI 側は Utils<IKESCMCompareFacade>() で引く)。2026-08-13・model/UI 分割 第1段 Task 11。手本=sdksamples/customconditionaltext の IID_ICUSCONDTXTFACADE
 DECLARE_PMID(kInterfaceIDSpace, IID_IKESCMMARKDATA, kKESCMPrefix + 5)	// UI が比較結果(変更枠・overset)を**読む**窓口(kUtilsBoss に AddIn)。2026-08-13・model/UI 分割 第1段 Task 12。★読み取り専用＝マークを作るのは IID_IKESCMCOMPAREFACADE の1か所だけ
-//DECLARE_PMID(kInterfaceIDSpace, IID_IKESCMINTERFACE, kKESCMPrefix + 6)
+DECLARE_PMID(kInterfaceIDSpace, IID_IKESCMPAGEFLAGSFACADE, kKESCMPrefix + 6)	// UI が Register(Added/Removed)と Check(✓)を書き換える窓口(kUtilsBoss に AddIn)。2026-08-13・model/UI 分割 第1段 Task 13
 //DECLARE_PMID(kInterfaceIDSpace, IID_IKESCMINTERFACE, kKESCMPrefix + 7)
 //DECLARE_PMID(kInterfaceIDSpace, IID_IKESCMINTERFACE, kKESCMPrefix + 8)
 DECLARE_PMID(kInterfaceIDSpace, IID_IKESCMMODELCHANGEOBSERVER, kKESCMPrefix + 9)	// model の通知を受ける **UI 側**オブザーバのアタッチ識別ID(AttachObserver の observerIID)。2026-08-13・model/UI 分割 第1段 Task 9。★上の3本と同じ流儀＝アプリの subject に自作 protocol IID で attach する(ISubject の AddIn はしない)
@@ -225,6 +225,7 @@ DECLARE_PMID(kImplementationIDSpace, kKESCMUIStartupImpl, kKESCMPrefix + 38)	// 
 DECLARE_PMID(kImplementationIDSpace, kKESCMModelChangeObserverImpl, kKESCMPrefix + 37)	// IObserver 実装(model の通知を受けて画面を作り直す **UI 側**。KESCMModelChangeObserver.cpp)
 DECLARE_PMID(kImplementationIDSpace, kKESCMCompareFacadeImpl, kKESCMPrefix + 39)	// IKESCMCompareFacade 実装(KESCMFacades.cpp)。★kUtilsBoss へ AddIn する＝**必ず自作の実装**(SDK 提供の実装を既存 boss に足すと他社と衝突して起動に失敗する。衝突の単位は IID ではなく ImplementationID)
 DECLARE_PMID(kImplementationIDSpace, kKESCMMarkDataImpl, kKESCMPrefix + 40)	// IKESCMMarkData 実装(KESCMFacades.cpp)。上と同じ kUtilsBoss への AddIn で、こちらは**読み取り専用**
+DECLARE_PMID(kImplementationIDSpace, kKESCMPageFlagsFacadeImpl, kKESCMPrefix + 41)	// IKESCMPageFlagsFacade 実装(KESCMFacades.cpp)。同じく kUtilsBoss へ AddIn
 
 // MessageIDs: model が UI へ「何が変わったか」を知らせる通知(2026-08-13・model/UI 分割 第1段 Task 9)。
 //   ★kMessageIDSpace は KESCM がこれまで1つも使っていなかったので +0 から採る。

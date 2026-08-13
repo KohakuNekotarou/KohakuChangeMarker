@@ -79,7 +79,7 @@
 #include "IKESCMCompareFacade.h"	// arm 状態(2026-08-13・分割 第1段 Task 11 で Facade 経由へ)
 #include "KESCMCore.h"				// KESCMIsDocDBOpen
 #include "IKESCMMarkData.h"			// 変更ページ・overflow・overset の読み取り(赤/薄赤/濃赤の供給元)。2026-08-13 Task 12
-#include "KESCMPageMap.h"			// KESCMPageMapCollectRegistered(Add/Remove 登録ページ=緑マーク)
+                                    // ＋ GetRegisteredPages(Add/Remove 登録ページ=緑マーク。2026-08-13 Task 13)
 
 // strip の幅(px)。縦スクロールバーの左辺にこの幅で並べる(6→5px、ユーザー指定 2026-07-11。
 // 移動はバー自体のクリックで足りるため表示は細めに)。
@@ -392,7 +392,7 @@ void KESCMScrollMapView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 	const bool16 engineMatch = isTarget ? (marks->GetMarkedTargetDB() == db)
 	                                    : (marks->GetMarkedSourceDB() == db);
 	std::set<UID> greens;
-	KESCMPageMapCollectRegistered(db, greens);
+	marks->GetRegisteredPages(db, greens);
 
 	// 帯の色(背景=テーマ地色との混色で半透明風)。枠(変更)=kKESCMScrollMapMarkAlpha、
 	// overflow「/」=kKESCMScrollMapOverflowAlpha と、赤でも α を分けて濃さに差を付ける

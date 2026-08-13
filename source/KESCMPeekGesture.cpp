@@ -49,7 +49,6 @@
                                      // 読み書きは IKESCMCompareFacade 側＝あちらは書ける)
 #include "KESCMCore.h"               // KESCMInvalidateDB / KESCMSetStatus / KESCMRefreshPanel / arm 状態アクセサ
 #include "KESCMUIShared.h"	// panel / status line / nav readout / tool button (split from KESCMCore.h on 2026-08-13)
-#include "KESCMPageMap.h"            // KESCMPageMapHasAnyRegistered
 #include "KESCMScrollMap.h"          // 一括クローズ後の地図 strip の撤去/再描画
 #include "KESCMThumbIdleTask.h"      // クローズ後の再生成を次のidleに遅延(前面切替の過渡を避ける)
 #include "Utils.h"                   // Utils<IKESCMCompareFacade>()

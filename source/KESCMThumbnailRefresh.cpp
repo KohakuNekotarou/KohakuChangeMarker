@@ -59,7 +59,6 @@
 
 #include "KESCMThumbnailRefresh.h"
 #include "KESCMCore.h"				// KESCMCollectPageUIDs(全ページ列挙)
-#include "KESCMPageMap.h"			// KESCMPageMapCollectRegistered(登録ページ=緑「/」)
 
 // サブパネル(Layout 用/Master 用)を1枚再描画する(③)。
 static void KESCMForceRedrawSubPanel(IPanelControlData* pcd, const WidgetID& subPanelWID)

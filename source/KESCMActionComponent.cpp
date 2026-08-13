@@ -38,8 +38,8 @@
 #include "KESCMCore.h"		// KESCMInvalidateDB(まだ Facade に載っていない model の呼び。Task 12〜15 で整理する)
 #include "KESCMUIShared.h"	// panel / status line / nav readout / tool button (split from KESCMCore.h on 2026-08-13)
 #include "IKESCMMarkData.h"			// マーク/overset の読み取り(2026-08-13 Task 12。表示トグルの読み書きは IKESCMCompareFacade 側)
-#include "KESCMPageMap.h"	// KESCMPageMapToggleSelectedPages / KESCMPageMapUpdateToggleState(追加/削除ページ登録トグル)
-#include "KESCMPageCheck.h"	// KESCMPageCheckToggleSelectedPages / KESCMPageCheckUpdateToggleState(「KCM: Check」の✓トグル)
+#include "IKESCMPageFlagsFacade.h"	// Register(追加/削除ページ)と Check(✓)の2トグル＋メニュー状態＋Save/Load。
+									// 2026-08-13 Task 13 で KESCMPageMap.h / KESCMPageCheck.h から移した
 #include "KESCMPageNumberMarker.h"	// KESCMGetIgnorePageNumberMarker/KESCMSetIgnorePageNumberMarker(ノンブル除外トグル)
 #include "KESCMThumbnailRefresh.h"	// KESCMTryRefreshPagesPanelThumbnails(Source サムネイルの枠を即 ON/OFF)
 #include "KESCMViewSync.h"			// KESCMGetLayoutSync/Set/KESCMAlignOtherViewsToActiveNow(2026-08-13 に KESCMCore.h から移動)
@@ -420,13 +420,13 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 		// 選択ページを「比較相手なし」として登録/解除する(実体は KESCMPageMap.cpp。このステップでは
 		// 登録の保持とチェック表示まで。比較の除外対応表への反映は次ステップ)。
 		case kKESCMPageMapToggleActionID:
-			KESCMPageMapToggleSelectedPages();
+			Utils<IKESCMPageFlagsFacade>()->ToggleRegisterForSelection();
 			break;
 
 		// ページパネルのページ右クリック「KCM: Check」トグル。選択ページに✓印を付け外しする
 		// (実体は KESCMPageCheck.cpp。✓の描画は KESCMDrawEventHandler の isThumb 分岐)。
 		case kKESCMPageCheckToggleActionID:
-			KESCMPageCheckToggleSelectedPages();
+			Utils<IKESCMPageFlagsFacade>()->ToggleCheckForSelection();
 			break;
 
 		// ページパネルのページ右クリック「KCM: Refresh Page Comparison」(実行アクション)。選択ページの
@@ -476,13 +476,13 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 		// (Added/Removed)を独自 JSON(KESCM\KESCMPageChecks.json, v2)へマージ保存し、保存先パスをステータス行に
 		// 出す(実体 KESCMPageCheck.cpp)。
 		case kKESCMPopupSaveChecksActionID:
-			KESCMPageCheckSaveToFile();
+			Utils<IKESCMPageFlagsFacade>()->SaveChecksAndRegister();
 			break;
 
 		// フライアウトの「Load Check & Register」: Start中だけ有効。上記 JSON から Register を両文書へ適用→再比較→
 		// Check(今もマーク付きのページだけ)を復元する(実体 KESCMPageCheck.cpp)。
 		case kKESCMPopupLoadChecksActionID:
-			KESCMPageCheckLoadFromFile();
+			Utils<IKESCMPageFlagsFacade>()->LoadChecksAndRegister();
 			break;
 
 		// フライアウトの「Export Changed Pages...」: 現在の比較(Start 後)の変更ページ一覧を
@@ -664,13 +664,13 @@ void KESCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionSta
 		{
 			// ページパネル右クリックの登録トグル: 有効/無効(選択の有無)・チェック(全登録=✓/
 			// 一部=中間)・ラベル(Target=Added/Source=Removed)をまとめて KESCMPageMap.cpp 側で設定。
-			KESCMPageMapUpdateToggleState(listToUpdate, i);
+			Utils<IKESCMPageFlagsFacade>()->UpdateRegisterToggleState(listToUpdate, i);
 		}
 		else if (action == kKESCMPageCheckToggleActionID)
 		{
 			// ページパネル右クリックの「KCM: Check」トグル: 有効/無効(Start中+Target/Source+選択)と
 			// チェック(全部✓/一部=中間)を KESCMPageCheck.cpp 側で設定。
-			KESCMPageCheckUpdateToggleState(listToUpdate, i);
+			Utils<IKESCMPageFlagsFacade>()->UpdateCheckToggleState(listToUpdate, i);
 		}
 		else if (action == kKESCMPageRefreshCompareActionID)
 		{

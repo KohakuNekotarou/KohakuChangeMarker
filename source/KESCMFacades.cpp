@@ -29,6 +29,7 @@
 #include "KESCMID.h"
 #include "IKESCMCompareFacade.h"
 #include "IKESCMMarkData.h"
+#include "IKESCMPageFlagsFacade.h"
 #include "KESCMComparisonRun.h"		// ToggleStartStop / Stop / StartFor / CanStart / print marks
 #include "KESCMCore.h"				// MarkChanges / ClearMarks / DoSetPrintMarks / getters
 #include "KESCMPeek.h"				// armed docs alive / peek / RefreshSelectedPages / base opacity
@@ -36,7 +37,8 @@
 #include "KESCMOversetApply.h"		// ApplyOversetForDoc / OversetScanTargetDB
 #include "KESCMHideUnchanged.h"		// the Hide Unchanged toggle and its state
 #include "KESCMDrawEventHandler.h"	// the engine's shared state, which these two publish
-#include "KESCMPageMap.h"			// KESCMPageMapHasAnyRegistered (HasAnyMarkableContent)
+#include "KESCMPageMap.h"			// registered pages, the page pairing, and the Register toggle
+#include "KESCMPageCheck.h"			// the Check toggle and the Save/Load of both flags
 
 //========================================================================================
 // KESCMCompareFacade -- IKESCMCompareFacade
@@ -217,8 +219,52 @@ public:
 	{
 		out = KESCMDrawEventHandler::sOversetLocs;
 	}
+
+	virtual void		GetRegisteredPages(IDataBase* db, std::set<UID>& out)
+	{
+		KESCMPageMapCollectRegistered(db, out);
+	}
+
+	virtual void		GetPagePairing(IDataBase* targetDB, IDataBase* sourceDB,
+							std::vector<UID>& outTargetPages, std::vector<UID>& outSourcePages)
+	{
+		KESCMBuildPairing(targetDB, sourceDB, outTargetPages, outSourcePages);
+	}
+
+	virtual void		GetMasterPagePairing(IDataBase* targetDB, IDataBase* sourceDB,
+							std::vector<UID>& outTargetPages, std::vector<UID>& outSourcePages)
+	{
+		KESCMBuildMasterPairing(targetDB, sourceDB, outTargetPages, outSourcePages);
+	}
 };
 
 CREATE_PMINTERFACE(KESCMMarkData, kKESCMMarkDataImpl)
+
+
+//========================================================================================
+// KESCMPageFlagsFacade -- IKESCMPageFlagsFacade
+//
+// The writing half of the two per-page flags. Six forwarders, no logic: which pages are
+// selected, what the menu label should say, where the JSON file goes -- all of that already
+// lives in KESCMPageMap.cpp / KESCMPageCheck.cpp and stays there.
+//========================================================================================
+class KESCMPageFlagsFacade : public CPMUnknown<IKESCMPageFlagsFacade>
+{
+public:
+	KESCMPageFlagsFacade(IPMUnknown* boss) : CPMUnknown<IKESCMPageFlagsFacade>(boss) {}
+
+	virtual void	ToggleRegisterForSelection()	{ KESCMPageMapToggleSelectedPages(); }
+	virtual void	ToggleCheckForSelection()		{ KESCMPageCheckToggleSelectedPages(); }
+
+	virtual void	UpdateRegisterToggleState(IActionStateList* listToUpdate, int32 index)
+													{ KESCMPageMapUpdateToggleState(listToUpdate, index); }
+	virtual void	UpdateCheckToggleState(IActionStateList* listToUpdate, int32 index)
+													{ KESCMPageCheckUpdateToggleState(listToUpdate, index); }
+
+	virtual void	SaveChecksAndRegister()			{ KESCMPageCheckSaveToFile(); }
+	virtual void	LoadChecksAndRegister()			{ KESCMPageCheckLoadFromFile(); }
+};
+
+CREATE_PMINTERFACE(KESCMPageFlagsFacade, kKESCMPageFlagsFacadeImpl)
 
 // End of KESCMFacades.cpp.

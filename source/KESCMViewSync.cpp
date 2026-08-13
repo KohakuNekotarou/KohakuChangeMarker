@@ -59,7 +59,8 @@
 #include "KESCMCore.h"               // KESCMCollectPageUIDs
 #include "KESCMViewLookup.h"         // KESCMFindDocDbForView / KESCMForgetViewDbHint(2026-08-13 に KESCMCore.h から移動)
                                      // ＋ KESCMQueryPanorama(2026-08-13 に KESCMDrawEventHandler.h から移動)
-#include "KESCMPageMap.h"            // KESCMBuildPairing / KESCMBuildMasterPairing(除外対応表)
+#include "IKESCMMarkData.h"          // GetPagePairing / GetMasterPagePairing(除外対応表)。
+                                     //   2026-08-13 Task 13 で KESCMPageMap.h から移した
 #include "KESCMChangeNav.h"          // KESCMEnsureViewShowsSpread(同期先ビューを相手のスプレッドへ。2026-08-11)
 #include "KESCMViewSync.h"
 
@@ -309,8 +310,9 @@ static void KESCMEnsureSyncPairing(IDataBase* targetDB, IDataBase* sourceDB)
 	sSyncPairBuilt    = kTrue;	// 対応が空(全ページ登録済み等)でも「作った」ことは覚える
 	if (targetDB == nil || sourceDB == nil)
 		return;
+	InterfacePtr<IKESCMMarkData> marks(Utils<IKESCMMarkData>().QueryUtilInterface());
 	std::vector<UID> pairT, pairS;
-	KESCMBuildPairing(targetDB, sourceDB, pairT, pairS);
+	marks->GetPagePairing(targetDB, sourceDB, pairT, pairS);
 	for (size_t i = 0; i < pairT.size(); ++i)
 	{
 		sSyncPairT2S[pairT[i]] = pairS[i];
@@ -322,7 +324,7 @@ static void KESCMEnsureSyncPairing(IDataBase* targetDB, IDataBase* sourceDB)
 	//   ページを引けるようになる=Sync Layout Views と Align Other Views がマスターでも噛み合う。
 	//   ★比較の対応表(KESCMCore.cpp)と同じ2本立て(通常=順番対応 / マスター=名前対応)を通す。
 	std::vector<UID> mT, mS;
-	KESCMBuildMasterPairing(targetDB, sourceDB, mT, mS);
+	marks->GetMasterPagePairing(targetDB, sourceDB, mT, mS);
 	for (size_t i = 0; i < mT.size(); ++i)
 	{
 		sSyncPairT2S[mT[i]] = mS[i];

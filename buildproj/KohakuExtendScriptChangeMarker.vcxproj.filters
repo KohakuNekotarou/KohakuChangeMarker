@@ -257,6 +257,9 @@
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\IKESCMMarkData.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\IKESCMPageFlagsFacade.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMPageMap.h">
       <Filter>Header Files</Filter>
     </ClInclude>
