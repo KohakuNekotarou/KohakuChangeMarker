@@ -308,6 +308,7 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 			IID_IKESCMMARKDATA, kKESCMMarkDataImpl,
 			IID_IKESCMPAGEFLAGSFACADE, kKESCMPageFlagsFacadeImpl,
 			IID_IKESCMSTORYEDITSFACADE, kKESCMStoryEditsFacadeImpl,
+			IID_IKESCMBOOKFACADE, kKESCMBookFacadeImpl,
 		}
 	},
 

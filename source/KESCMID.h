@@ -157,7 +157,7 @@ DECLARE_PMID(kInterfaceIDSpace, IID_IKESCMCOMPAREFACADE, kKESCMPrefix + 4)	// UI
 DECLARE_PMID(kInterfaceIDSpace, IID_IKESCMMARKDATA, kKESCMPrefix + 5)	// UI が比較結果(変更枠・overset)を**読む**窓口(kUtilsBoss に AddIn)。2026-08-13・model/UI 分割 第1段 Task 12。★読み取り専用＝マークを作るのは IID_IKESCMCOMPAREFACADE の1か所だけ
 DECLARE_PMID(kInterfaceIDSpace, IID_IKESCMPAGEFLAGSFACADE, kKESCMPrefix + 6)	// UI が Register(Added/Removed)と Check(✓)を書き換える窓口(kUtilsBoss に AddIn)。2026-08-13・model/UI 分割 第1段 Task 13
 DECLARE_PMID(kInterfaceIDSpace, IID_IKESCMSTORYEDITSFACADE, kKESCMPrefix + 7)	// UI が Story Edits の一覧(変更のあったストーリー)を**読む**窓口(kUtilsBoss に AddIn)。2026-08-13・model/UI 分割 第1段 Task 14。★読み取り専用＝一覧を作るのも捨てるのも model 側(KESCMCore.cpp / KESCMPeek.cpp)だけ
-//DECLARE_PMID(kInterfaceIDSpace, IID_IKESCMINTERFACE, kKESCMPrefix + 8)
+DECLARE_PMID(kInterfaceIDSpace, IID_IKESCMBOOKFACADE, kKESCMPrefix + 8)	// UI がブック比較を頼む窓口(kUtilsBoss に AddIn)。2026-08-14・model/UI 分割 第1段 Task 15(境界の5本目=最後)。⚠ResolveBookPair は中で Book パネルの前面タブを見ている＝第2段の課題
 DECLARE_PMID(kInterfaceIDSpace, IID_IKESCMMODELCHANGEOBSERVER, kKESCMPrefix + 9)	// model の通知を受ける **UI 側**オブザーバのアタッチ識別ID(AttachObserver の observerIID)。2026-08-13・model/UI 分割 第1段 Task 9。★上の3本と同じ流儀＝アプリの subject に自作 protocol IID で attach する(ISubject の AddIn はしない)
 //DECLARE_PMID(kInterfaceIDSpace, IID_IKESCMINTERFACE, kKESCMPrefix + 10)
 //DECLARE_PMID(kInterfaceIDSpace, IID_IKESCMINTERFACE, kKESCMPrefix + 11)
@@ -227,6 +227,7 @@ DECLARE_PMID(kImplementationIDSpace, kKESCMCompareFacadeImpl, kKESCMPrefix + 39)
 DECLARE_PMID(kImplementationIDSpace, kKESCMMarkDataImpl, kKESCMPrefix + 40)	// IKESCMMarkData 実装(KESCMFacades.cpp)。上と同じ kUtilsBoss への AddIn で、こちらは**読み取り専用**
 DECLARE_PMID(kImplementationIDSpace, kKESCMPageFlagsFacadeImpl, kKESCMPrefix + 41)	// IKESCMPageFlagsFacade 実装(KESCMFacades.cpp)。同じく kUtilsBoss へ AddIn
 DECLARE_PMID(kImplementationIDSpace, kKESCMStoryEditsFacadeImpl, kKESCMPrefix + 42)	// IKESCMStoryEditsFacade 実装(KESCMFacades.cpp)。同じく kUtilsBoss へ AddIn。★読み取り専用
+DECLARE_PMID(kImplementationIDSpace, kKESCMBookFacadeImpl, kKESCMPrefix + 43)	// IKESCMBookFacade 実装(KESCMFacades.cpp)。同じく kUtilsBoss へ AddIn
 
 // MessageIDs: model が UI へ「何が変わったか」を知らせる通知(2026-08-13・model/UI 分割 第1段 Task 9)。
 //   ★kMessageIDSpace は KESCM がこれまで1つも使っていなかったので +0 から採る。

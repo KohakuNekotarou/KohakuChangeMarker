@@ -66,6 +66,26 @@ void KESCMBookDialogSetResult(const PMString& targetPath, const PMString& source
       "nothing changed" rather than "nothing ran". */
 const std::vector<KESCMChapterResult>& KESCMBookDialogRows();
 
+/** The same path with its FRONT replaced by an ellipsis - "...\New\a.indb" - or unchanged if it is
+    short enough to read whole.
+
+    ***** ONE ANSWER, TWO PLACES THAT SHOW A PATH. ***** The confirmation alert and the dialog's
+    Target/Source lines are the same two strings shown twice, and they must shorten the same way or
+    the user is left comparing two different-looking claims about one file (memory
+    one-question-one-place).
+
+    ★★AND THE DIALOG NEEDS IT FOR A SECOND REASON - ITS WIDTH. Measured 2026-08-13: EVE sizes a
+      static text widget to fit its own TEXT and pushes the parent out to match, so the dialog was as
+      wide as the longest path it had been handed (610px for a 74-character path). Neither the child
+      frames, nor the root frame, nor kEVEAlignFill, nor the window title moved it - all measured.
+      Shortening the STRING is what puts the width back under the .fr's control, and it is also what
+      finally gives kEllipsizeBeginning something to do (a widget grown to fit its text never elides).
+
+    ★It lives HERE, and not in KESCMBookPair where it was written, since 2026-08-14 (Stage 1,
+      Task 15): every caller is UI-side, and this file is the VIEW half of the feature. A model-side
+      home would have put a display rule on the wrong side of the split. */
+PMString KESCMElidePathFront(const PMString& path);
+
 #endif // __KESCMBookDialog_h__
 
 // End, KESCMBookDialog.h.

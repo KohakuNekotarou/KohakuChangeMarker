@@ -46,7 +46,7 @@
 #include "KESCMScrollMap.h"		// KESCMScrollMapAttach/DetachAll/InvalidateAll(地図トグルと Find Overset)
 #include "KESCMPanelState.h"		// KESCMSavePanelState(フライアウト「Save Panel Settings」)
 #include "KESCMChangedPagesTSV.h"	// KESCMExportChangedPagesTSV(フライアウト「Export Changed Pages...」)
-#include "KESCMBookPair.h"			// KESCMResolveBookPair(「Compare Books」を有効にしてよいかの判定)
+#include "IKESCMBookFacade.h"		// ResolveBookPair(「Compare Books」を有効にしてよいかの判定)。2026-08-14 Task 15 で Facade 経由へ
 #include "KESCMBookRun.h"		// KESCMRunBookComparison(フライアウト「Compare Books」＝確認して比較して見せる)
 #include "KESCMBookOpen.h"			// KESCMBookMenuRow/CanStart/StartComparisonForRow(章行の右クリック「Start Change Marker」)
 #include "KESCMChangeNav.h"			// KESCMRefreshNavPosition(overset トグルで Prev/Next の対象数を更新)
@@ -709,8 +709,9 @@ void KESCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionSta
 			//     でしか呼ばれないので許容している(KBS も同じ走査を同じ場所でしている)。
 			IBook* target = nil;
 			IBook* source = nil;
-			listToUpdate->SetNthActionState(i, KESCMResolveBookPair(target, source) ? kEnabledAction
-			                                                                        : kDisabled_Unselected);
+			listToUpdate->SetNthActionState(i,
+				Utils<IKESCMBookFacade>()->ResolveBookPair(target, source) ? kEnabledAction
+				                                                          : kDisabled_Unselected);
 		}
 		else if (action == kKESCMBookRowStartActionID)
 		{

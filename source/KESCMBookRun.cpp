@@ -30,9 +30,9 @@
 #include <vector>
 
 // Project includes:
-#include "KESCMBookCompare.h"	// KESCMCompareBooks
-#include "KESCMBookDialog.h"	// KESCMBookDialogSetResult / KESCMOpenBookDialog
-#include "KESCMBookPair.h"		// KESCMResolveBookPair / KESCMBookDisplayPath
+#include "IKESCMBookFacade.h"	// ResolveBookPair / GetBookDisplayPath / CompareBooks
+								// (2026-08-14・分割 第1段 Task 15 で Facade 経由へ)
+#include "KESCMBookDialog.h"	// KESCMBookDialogSetResult / KESCMOpenBookDialog / KESCMElidePathFront
 #include "KESCMBookResult.h"	// KESCMChapterResult
 #include "KESCMBookRun.h"
 #include "KESCMID.h"
@@ -56,10 +56,12 @@ namespace
 PMString ShownPath(const PMString& path)
 {
 	// ***** SHORTENED THE SAME WAY THE DIALOG SHORTENS IT. ***** (User, 2026-08-13: "the target and
-	// source in the alert - could you make the front an ellipsis like the others".) The function
-	// lives in KESCMBookPair because BOTH places that show a path call it; an alert cannot use the
-	// widget-side kEllipsizeBeginning that the dialog's lines carry, and two hand-written versions
-	// of "how much of a path to show" would drift (memory one-question-one-place).
+	// source in the alert - could you make the front an ellipsis like the others".) BOTH places that
+	// show a path call the one function; an alert cannot use the widget-side kEllipsizeBeginning that
+	// the dialog's lines carry, and two hand-written versions of "how much of a path to show" would
+	// drift (memory one-question-one-place).
+	// ★It lives in KESCMBookDialog since 2026-08-14 (Task 15) - it used to be in KESCMBookPair, which
+	//   is model-side, and shortening a path for display is not a model question.
 	// ⚠ Elided BEFORE the ampersand doubling below, so the length being judged is the path the user
 	//   has, not one inflated by display escapes.
 	PMString shown(KESCMElidePathFront(path));
@@ -78,10 +80,15 @@ void KESCMRunBookComparison()
 	IBook* target = nil;
 	IBook* source = nil;
 
+	// ★Queried once and held: this function asks the boundary FOUR times (resolve, two paths, the
+	//   comparison). Utils.h:74-80 asks for exactly this above three calls; below it, Utils<IXxx>()
+	//   inline is the plainer form.
+	InterfacePtr<IKESCMBookFacade> books(Utils<IKESCMBookFacade>().QueryUtilInterface());
+
 	// ***** The same resolver the greying uses. ***** UpdateActionStates calls this too, so the
 	// menu's appearance and the result of choosing it cannot disagree. Reaching here with no pair
 	// therefore means the front tab changed between the menu being built and the item being chosen.
-	if (!KESCMResolveBookPair(target, source))
+	if (!books->ResolveBookPair(target, source))
 	{
 		CAlert::ModalAlert(
 			KESCMLoc::Text(kKESCMBookNoPairKey, KESCMJa::kBookNoPair),
@@ -93,8 +100,8 @@ void KESCMRunBookComparison()
 
 	// ★Resolved ONCE, here, and carried from here on. What is confirmed, what is compared and what
 	//   the dialog ends up displaying are then the same two strings by construction.
-	const PMString targetPath = KESCMBookDisplayPath(target);
-	const PMString sourcePath = KESCMBookDisplayPath(source);
+	const PMString targetPath = books->GetBookDisplayPath(target);
+	const PMString sourcePath = books->GetBookDisplayPath(source);
 
 	// ⚠kLineSeparatorString rather than "\n": it is "\r" on the Mac (CoreResTypes.h:150/159), and
 	//   CAlert's own documentation names this define as the way to break a line (CAlert.h:119-121).
@@ -134,7 +141,7 @@ void KESCMRunBookComparison()
 	// without asking whether the run finished - "not compared" is an answer worth showing.
 	std::vector<KESCMChapterResult> chapters;
 	PMString report;
-	KESCMCompareBooks(target, source, chapters, report);
+	books->CompareBooks(target, source, chapters, report);
 
 	// ★Hand the dialog the whole result BEFORE opening it: the tree asks for its rows while it is
 	//   being built, so the dialog has to be able to answer from the moment it opens.

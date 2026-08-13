@@ -61,3 +61,4 @@ REGISTER_PMINTERFACE(KESCMCompareFacade, kKESCMCompareFacadeImpl)	// UI が比�
 REGISTER_PMINTERFACE(KESCMMarkData, kKESCMMarkDataImpl)	// UI が比較結果を読む窓口(同上。★読み取り専用。KESCMFacades.cpp)
 REGISTER_PMINTERFACE(KESCMPageFlagsFacade, kKESCMPageFlagsFacadeImpl)	// UI が Register/Check を書き換える窓口(同上。KESCMFacades.cpp)
 REGISTER_PMINTERFACE(KESCMStoryEditsFacade, kKESCMStoryEditsFacadeImpl)	// UI が Story Edits の一覧を読む窓口(同上。★読み取り専用。KESCMFacades.cpp)
+REGISTER_PMINTERFACE(KESCMBookFacade, kKESCMBookFacadeImpl)	// UI がブック比較を頼む窓口(同上。境界の5本目=最後。KESCMFacades.cpp)

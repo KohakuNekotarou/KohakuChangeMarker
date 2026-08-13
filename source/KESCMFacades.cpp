@@ -36,6 +36,7 @@
 #include "IKESCMMarkData.h"
 #include "IKESCMPageFlagsFacade.h"
 #include "IKESCMStoryEditsFacade.h"
+#include "IKESCMBookFacade.h"
 #include "KESCMComparisonRun.h"		// ToggleStartStop / Stop / StartFor / CanStart / print marks
 #include "KESCMCore.h"				// MarkChanges / ClearMarks / DoSetPrintMarks / getters
 #include "KESCMPeek.h"				// armed docs alive / peek / RefreshSelectedPages / base opacity
@@ -46,6 +47,8 @@
 #include "KESCMPageMap.h"			// registered pages, the page pairing, and the Register toggle
 #include "KESCMPageCheck.h"			// the Check toggle and the Save/Load of both flags
 #include "KESCMStoryList.h"			// the Story Edits rows, and where a story begins in a document
+#include "KESCMBookPair.h"			// which two books, and their display paths
+#include "KESCMBookCompare.h"		// the book comparison itself
 
 //========================================================================================
 // KESCMCompareFacade -- IKESCMCompareFacade
@@ -315,5 +318,33 @@ public:
 };
 
 CREATE_PMINTERFACE(KESCMStoryEditsFacade, kKESCMStoryEditsFacadeImpl)
+
+
+//========================================================================================
+// KESCMBookFacade -- IKESCMBookFacade
+//
+// Book comparison: the fifth and last boundary of Stage 1. Three forwarders.
+//
+// ★What is NOT here was decided by grepping callers, not by the plan: KESCMGetBookResultText
+// is read only by KESCMScriptProvider (model-side), KESCMBuildChapterPairing only by
+// KESCMCompareBooks, and KESCMElidePathFront moved to the UI in this same task.
+//========================================================================================
+class KESCMBookFacade : public CPMUnknown<IKESCMBookFacade>
+{
+public:
+	KESCMBookFacade(IPMUnknown* boss) : CPMUnknown<IKESCMBookFacade>(boss) {}
+
+	virtual bool16		ResolveBookPair(IBook*& outTarget, IBook*& outSource)
+						{ return KESCMResolveBookPair(outTarget, outSource); }
+
+	virtual PMString	GetBookDisplayPath(IBook* book)
+						{ return KESCMBookDisplayPath(book); }
+
+	virtual ErrorCode	CompareBooks(IBook* target, IBook* source,
+							std::vector<KESCMChapterResult>& outChapters, PMString& outReport)
+						{ return KESCMCompareBooks(target, source, outChapters, outReport); }
+};
+
+CREATE_PMINTERFACE(KESCMBookFacade, kKESCMBookFacadeImpl)
 
 // End of KESCMFacades.cpp.
