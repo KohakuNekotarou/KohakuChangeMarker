@@ -147,7 +147,23 @@ static PMString KESCMDocPathFromDB(IDataBase* db)
 	if (db == nil)
 		return name;
 
-	// ★パスは db に直接聞く＝文書リストを引く必要がない。名前(下の fallback)だけが IDocument 経由。
+	// ★★**生存確認が先**(2026-08-13 の再検査で順序を戻した)。この db は arm 中の Target/Source を
+	//   生ポインタで持っているもので、文書が閉じた瞬間から `KESCMHandleDocsClosed` が disarm する
+	//   までの間は**指す先が無い**。KESCM 全体の規約は「閉じた db は FindDocByDataBase への
+	//   ポインタ比較だけに使い、絶対に deref しない」で、`GetSysFile()` はその deref にあたる。
+	//   ⚠この関数はパネルの Update から呼ばれ、**終了処理中でもパネルの Update は走る**ことが
+	//     2026-08-12 に実測されている(KESCMDetachPanelVisibilityObserver を新設した理由)。
+	//   ★生存が確かめられた後の db なら deref してよい ---- 下の GetSysFile はその位置にある。
+	InterfacePtr<IApplication> app(GetExecutionContextSession() ? GetExecutionContextSession()->QueryApplication() : nil);
+	InterfacePtr<IDocumentList> docList(app ? app->QueryDocumentList() : nil);
+	if (docList == nil)
+		return name;
+
+	IDocument* d = docList->FindDocByDataBase(db);
+	if (d == nil)
+		return name;			// 閉じた/知らない db = 何も返さない(触りもしない)
+
+	// ★パスは db に直接聞く(生存確認済み)。名前は下の fallback で IDocument 経由。
 	const IDFile* sysFile = db->GetSysFile();
 	if (sysFile != nil)
 	{
@@ -160,14 +176,7 @@ static PMString KESCMDocPathFromDB(IDataBase* db)
 		}
 	}
 
-	InterfacePtr<IApplication> app(GetExecutionContextSession() ? GetExecutionContextSession()->QueryApplication() : nil);
-	InterfacePtr<IDocumentList> docList(app ? app->QueryDocumentList() : nil);
-	if (docList == nil)
-		return name;
-
-	IDocument* d = docList->FindDocByDataBase(db);
-	if (d != nil)
-		d->GetName(name);
+	d->GetName(name);
 
 	// ★長い文字列の切り詰めはここでは行わない。widget 側の ellipsize に一任する(KESCM.fr の
 	//   kKESCMTargetTextWidgetID / kKESCMSourceTextWidgetID)。文字数ではなくフレーム幅で判断するので、

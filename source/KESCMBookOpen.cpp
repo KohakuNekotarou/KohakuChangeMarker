@@ -310,8 +310,8 @@ void KESCMBookOpenChapterForRow(int32 rowIndex)
 		return;
 
 	// ***** COPY THE ROW OFF BEFORE OPENING ANYTHING. ***** RowAt hands back a pointer INTO
-	// gDialogRows, and that vector is REPLACED WHOLE when a comparison finishes
-	// (KESCMBookDialog.cpp:112, `gDialogRows = rows;`) - which frees every element the old one held.
+	// gDialogRows, and that vector is REBUILT WHOLE when a comparison finishes - cleared and refilled
+	// in KESCMBookDialogSetResult (KESCMBookDialog.cpp) - which frees every element the old one held.
 	// Opening a document is not a moment this file controls: it is long, and it is the caller's own
 	// menu command, so the safe assumption is that anything can have happened by the time it returns.
 	// fName was already taken by value here (why, the old code does not say); the two IDFiles were not,

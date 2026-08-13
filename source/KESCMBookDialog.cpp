@@ -277,7 +277,12 @@ void KESCMPrepareBookDialogWindow(IDialog* dialog)
 	// ★BOTH CALLS, AND IN THIS ORDER, ON EVERY OPEN. Registering is not applying: the toggle may have
 	//   been switched while the dialog was closed, and a cached dialog (kCacheDialog) comes back with
 	//   whatever alpha it had last time. Applying every time is what makes those two agree.
-	// ★Nothing is needed on close - the apply path drops the handle by itself once IsWindow fails.
+	// ★Nothing is needed on close, but NOT because the handle stops being valid on its own: a closed
+	//   window's HANDLE VALUE gets handed out again to some other window, and IsWindow says yes to
+	//   that one too. What makes closing safe is that KESCMSetBookDialogWindow also records THIS
+	//   window's title and every later use is checked against it (KESCMPanelAlpha.cpp, 2026-08-13) -
+	//   so a recycled handle is dropped rather than painted on. Registering it here is what feeds
+	//   that check; there is no matching "forget" call to write.
 	KESCMSetBookDialogWindow(hwnd);
 	KESCMApplyBookDialogTranslucency();
 #endif

@@ -334,6 +334,31 @@ static const uint32 kKESCMAlphaWidgetIDs[kKESCMAlphaCount] =
 	0							// kKESCMAlphaBookDialog = 引かない(上記)
 };
 
+// ★★ダイアログの窓を登録したときの**窓タイトル**(照合用。2026-08-13 の再検査で追加)。
+//   ⚠これが要る理由＝**HWND の値は OS が別の窓へ使い回す**。ダイアログは閉じると窓ごと消えるのに
+//     (IDialogMgr.h:63「the dialog will take care of destructing itself when the dialog is closed」)、
+//     こちらはハンドルを持ち続けるので、使い回された瞬間から `IsWindow` は他人の窓に対して真を返す。
+//     そのまま進むと **無関係な窓に WS_EX_LAYERED を立てて alpha 77 を書く** ＝ 2026-07-29 に
+//     パネルで実際に起きた「他人のパネルを透かす」と同じ事故になる。
+//   ★パネルはクラス名("OWL.Palette")で同じことを確かめている。ダイアログのクラス名は
+//     本体中が使う汎用名で証拠にならないので、**代わりに登録時の綴りを控えて突き合わせる**
+//     (自分のダイアログのタイトルは固定文＝`.fr` が持つ 1 つだけ)。
+static wchar_t sBookDialogTitle[128] = { 0 };
+
+// 窓タイトルが登録時と同じか。★控えが空のときは kTrue を返す(＝照合できない＝従来どおり
+//   IsWindow だけで通す)。控えが取れないのは GetWindowTextW が失敗したときだけで、そこで
+//   弾いてしまうと自分のダイアログを二度と透かせなくなる。
+static bool KESCMTitleMatchesBookDialog(HWND h)
+{
+	if (h == nullptr)
+		return false;
+	if (sBookDialogTitle[0] == L'\0')
+		return true;			// 控えが無い = 照合しない(従来の振る舞い)
+	wchar_t title[128] = { 0 };
+	::GetWindowTextW(h, title, 128);
+	return ::wcscmp(title, sBookDialogTitle) == 0;
+}
+
 // キャッシュ優先でパネル窓を得る。★ハンドルは OS が使い回すので、生存確認だけでなくクラス名の
 //   一致も見てから使う(SDK へ問い合わせ直すより安い)。
 //   ⚠旧実装はここで窓タイトルも照合していた。それは「本当に自分のパネルか」を見るためだったが、
@@ -344,14 +369,15 @@ static HWND KESCMQueryPaletteWindow(int32 which)
 {
 	// ★★ダイアログは自分で名乗る(2026-08-13)。パネルマネージャに載っていないので下の SDK 経路は
 	//   使えず、代わりに KESCMBookDialog.cpp が窓を用意した直後に教えてくる。ここでやることは
-	//   「その窓がまだ生きているか」だけ ---- 閉じられていれば忘れる(次に開いたときまた教わる)。
-	//   ⚠クラス名では確かめない: ダイアログの窓は "OWL.Palette" ではないし、"DroverLord - Window Class"
-	//     は本体中の至る所が使う名前なので、確かめても何かを保証したことにならない。IsWindow で足りる
-	//     理由は、この値の出どころが自分のダイアログ1か所しかないから。
+	//   「その窓がまだ生きていて、まだ**あの**窓か」の2つ ---- どちらか崩れていれば忘れる
+	//   (次に開いたときまた教わる。引き直す当ては無いので、捨てる=OFF と同じ安全側に倒れる)。
 	if (which == kKESCMAlphaBookDialog)
 	{
-		if (sPaletteWnd[which] != nullptr && !::IsWindow(sPaletteWnd[which]))
+		if (sPaletteWnd[which] != nullptr &&
+			(!::IsWindow(sPaletteWnd[which]) || !KESCMTitleMatchesBookDialog(sPaletteWnd[which])))
+		{
 			sPaletteWnd[which] = nullptr;
+		}
 		return sPaletteWnd[which];
 	}
 
@@ -503,7 +529,14 @@ bool16 KESCMApplyBookDialogTranslucency()
 void KESCMSetBookDialogWindow(void* sysWindow)
 {
 #ifdef WINDOWS
-	sPaletteWnd[kKESCMAlphaBookDialog] = static_cast<HWND>(sysWindow);
+	HWND hwnd = static_cast<HWND>(sysWindow);
+	sPaletteWnd[kKESCMAlphaBookDialog] = hwnd;
+
+	// ★同時に窓タイトルを控える(2026-08-13 の再検査)。以後の照合はこの綴りとの一致だけで行う
+	//   ＝**「あのとき教わった窓」以外には絶対に書かない**。理由は sBookDialogTitle の宣言のところ。
+	sBookDialogTitle[0] = L'\0';
+	if (hwnd != nullptr && ::IsWindow(hwnd))
+		::GetWindowTextW(hwnd, sBookDialogTitle, 128);
 #else
 	(void)sysWindow;
 #endif
@@ -683,14 +716,22 @@ static void CALLBACK KESCMWinEventProc(HWINEVENTHOOK /*hook*/, DWORD /*event*/, 
 		//   ⚠2026-08-06: 旧実装はここで窓タイトルも照合していた(自分のパネルかを綴りで見ていた)。
 		//     引き直しが WidgetID 狙い撃ちになったので綴りを合わせる相手が無くなり、クラス名までにした。
 		//     ここで捨てれば次の Apply が SDK から正しい窓を引き直す。
-		//   ⚠★**ダイアログはこの照合から外す**(2026-08-13)。その窓は "OWL.Palette" ではないので、
-		//     ここを通すと窓イベントが来るたびに捨てられ、半透明が一瞬で解ける。あちらは引き直しの
-		//     当てが無い(SDK に聞けない)ので、捨ててよい相手でもない。上の IsWindow で失効は拾える。
-		if (isWindowEvent && which != kKESCMAlphaBookDialog
-			&& !KESCMClassIs(sPaletteWnd[which], L"OWL.Palette"))
+		//   ⚠★**ダイアログはクラス名では照合できない**(2026-08-13)。その窓は "OWL.Palette" ではなく、
+		//     クラス名は本体中が使う汎用名なので、ここを通すと窓イベントのたびに捨てられて半透明が
+		//     一瞬で解ける。★かといって**照合ゼロで通してはいけない**(2026-08-13 の再検査): ハンドルは
+		//     使い回されるので、`IsWindow` だけでは他人の窓を透かしうる ---- パネルがこの行で防いで
+		//     いるのと**同じ事故**。∴ダイアログには**登録時の窓タイトル**を突き合わせる
+		//     (KESCMTitleMatchesBookDialog。同じ窓イベントのときだけ＝コストの掛け方もパネルと同じ)。
+		if (isWindowEvent)
 		{
-			sPaletteWnd[which] = nullptr;
-			continue;
+			const bool stillOurs = (which == kKESCMAlphaBookDialog)
+				? KESCMTitleMatchesBookDialog(sPaletteWnd[which])
+				: KESCMClassIs(sPaletteWnd[which], L"OWL.Palette");
+			if (!stillOurs)
+			{
+				sPaletteWnd[which] = nullptr;
+				continue;
+			}
 		}
 
 		// ★★当初は「hwnd == sPaletteWnd」で絞っていたが、**OWL.Palette 宛てのイベントは
