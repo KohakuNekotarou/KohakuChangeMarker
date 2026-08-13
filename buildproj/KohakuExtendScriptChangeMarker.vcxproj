@@ -261,6 +261,7 @@
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMOversetApply.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMViewLookup.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMComparisonRun.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMUIDrawEvent.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMTool.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMTracker.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMTrackerRegister.cpp" />

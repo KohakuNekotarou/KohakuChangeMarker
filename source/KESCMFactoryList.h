@@ -22,6 +22,8 @@
 //========================================================================================
 REGISTER_PMINTERFACE(KESCMDrawEventSrvc, kKESCMDrawEventSrvcImpl)
 REGISTER_PMINTERFACE(KESCMDrawEventHandler, kKESCMDrawEventHandlerImpl)
+REGISTER_PMINTERFACE(KESCMUIDrawEventSrvc, kKESCMUIDrawEventSrvcImpl)	// UI 専用の描画サービス(押下中 HUD。KESCMUIDrawEvent.cpp)
+REGISTER_PMINTERFACE(KESCMUIDrawEventHandler, kKESCMUIDrawEventHandlerImpl)	// 同上のハンドラ(画面専用＝PDF 書き出しに出ない)
 REGISTER_PMINTERFACE(KESCMPeekStartup, kKESCMPeekStartupImpl)
 REGISTER_PMINTERFACE(KESCMPanelObserver, kKESCMPanelObserverImpl)
 REGISTER_PMINTERFACE(KESCMActionComponent, kKESCMActionComponentImpl)

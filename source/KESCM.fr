@@ -138,6 +138,19 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 		}
 	},
 
+	// UI 専用の描画サービス(2026-08-13・model/UI 分割 第1段 Task 6)。押下中 HUD だけを持つ。
+	// ★上の kKESCMDrawEventServiceBoss(比較マーク)と役割が違う: あちらは印刷と PDF 書き出しに出なければ
+	//   ならないので model 側、こちらは画面専用。kDrawEventService は複数プロバイダ登録が前提。
+	Class
+	{
+		kKESCMUIDrawEventServiceBoss,
+		kInvalidClass,
+		{
+			IID_IK2SERVICEPROVIDER, kKESCMUIDrawEventSrvcImpl,
+			IID_IDRWEVTHANDLER,     kKESCMUIDrawEventHandlerImpl,
+		}
+	},
+
 	// Startup/shutdown service. The middle-button watcher was removed (2026-07-13); this now only
 	// tears down held resources at app shutdown (see KESCMPeekStartup in KESCMPeek.cpp).
 	Class
