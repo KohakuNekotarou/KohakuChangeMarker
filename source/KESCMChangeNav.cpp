@@ -62,6 +62,7 @@
 #include "KESCMCore.h"				// KESCMCollectPageUIDs / KESCMArmed* / KESCMSetStatus
 #include "KESCMUIShared.h"	// panel / status line / nav readout / tool button (split from KESCMCore.h on 2026-08-13)
 #include "KESCMViewSync.h"			// KESCMGetLayoutSync(同期 ON なら連動スクロールを任せる。2026-08-13 に KESCMCore.h から移動)
+#include "IKESCMCompareFacade.h"		// GetActiveDocDB(2026-08-14 Task 16 で Facade 経由へ)
 #include "IKESCMMarkData.h"			// 比較結果の読み取り(変更ページ・変化セル数・overset 箇所)。2026-08-13 Task 12
 #include "KESCMViewLookup.h"		// KESCMQueryPanorama(同 Task 12 に KESCMDrawEventHandler.h から移動)
 #include "KESCMOversetScan.h"		// KESCMOversetLoc(overset「+」箇所の位置)
@@ -509,7 +510,7 @@ static void KESCMScrollPagesPanelToPage(IDataBase* db, UID pageUID)
 	//   「Pages パネルが今どの文書を見せているか」は KESCMPageMapReadSelection と同じ問いなので、
 	//   同じ口で聞く([[one-question-one-place]])。旧実装の GetFrontDocument() は契約が
 	//   「frontmost *layout* presentation の文書」(ILayoutUIUtils.h:95-98)で、アクティブ文書と食い違い得る。
-	if (KESCMActiveDocDB() != db)
+	if (Utils<IKESCMCompareFacade>()->GetActiveDocDB() != db)
 		return;
 
 	// パネル取得は共有ヘルパ(KESCMThumbnailRefresh.h)に一本化(2026-07-10)。

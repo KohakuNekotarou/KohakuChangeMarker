@@ -217,6 +217,55 @@ public:
 		on the UI side, so both of these cross the boundary. */
 	virtual void		HideUnchangedToggle() = 0;
 	virtual bool16		GetHideUnchangedOn() = 0;
+
+	// ---- documents, redraw, and the application (2026-08-14, Task 16) --------------------
+	//
+	// These are not about the comparison, and that is exactly why they were easy to miss: they
+	// were plain free functions in KESCMCore.h, which works only while everything shares one
+	// .pln. A free function's body lives in the plug-in that defines it, so the UI half could
+	// not link to any of them once the two are separated. Counted before adding: 23 calls
+	// across 10 UI-side files.
+
+	/** kTrue when db still belongs to an open document.
+
+		★NEVER DEREFERENCE A DATABASE TO FIND OUT. A closed one is a dangling pointer whose
+		address gets reused, so the test is a pointer comparison against IDocumentList and
+		nothing else -- KESCM's rule everywhere it holds a database. */
+	virtual bool16		IsDocDBOpen(IDataBase* db) = 0;
+
+	/** Redraw every view of this document. nil is ignored, so callers that may or may not have
+		a second document to repaint can call it twice without testing. */
+	virtual void		InvalidateDB(IDataBase* db) = 0;
+
+	/** The front document's database, or nil when there is none. Resolved through
+		IActiveContext, in one place, so that "which document is the user looking at" has a
+		single answer. */
+	virtual IDataBase*	GetActiveDocDB() = 0;
+
+	/** kTrue while the application is shutting down (kQuitting / kShuttingDown).
+
+		★While it is, UI work -- touching widgets, forcing redraws, booking idle tasks -- has to
+		be skipped and the code reduced to discarding state: the teardown order of windows and
+		panels is platform-dependent, and on the Mac it is not the Windows order. The close-all
+		phase of a quit, where the user can still cancel at a save prompt, is NOT this: that one
+		is still kRunning. */
+	virtual bool16		IsAppQuitting() = 0;
+
+	// ---- the page number marker exclusion -----------------------------------------------
+	//
+	// Whether the folio (page number) area is left out of the pixel comparison. A flyout item
+	// flips it and the saved panel state reads and writes it, both UI-side.
+
+	virtual bool16		GetIgnorePageNumberMarker() = 0;
+	virtual void		SetIgnorePageNumberMarker(bool16 on) = 0;
+
+	// ---- exporting -----------------------------------------------------------------------
+
+	/** Write the changed pages out as TSV, and describe what happened in outMessage -- the
+		path written, or why nothing was. ★The message comes back rather than being shown from
+		inside: the status line belongs to the UI, and the flyout item that asked is the one
+		that reports (the same shape the plan gives for KESCMChangedPagesTSV in §3.3). */
+	virtual void		ExportChangedPagesTSV(PMString& outMessage) = 0;
 };
 
 #endif // __IKESCMCompareFacade_h__

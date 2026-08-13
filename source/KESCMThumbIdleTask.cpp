@@ -28,7 +28,9 @@
 #include "KESCMID.h"
 #include "KESCMThumbIdleTask.h"
 #include "KESCMThumbnailRefresh.h"	// KESCMTryRefreshPagesPanelThumbnails
-#include "KESCMCore.h"				// KESCMIsDocDBOpen(閉じた db を deref しない生存確認)
+#include "Utils.h"					// Utils<IKESCMCompareFacade>()
+#include "IKESCMCompareFacade.h"	// IsDocDBOpen(閉じた db を deref しない生存確認) / IsAppQuitting
+									// (2026-08-14 Task 16 で Facade 経由へ)
 
 // 切替が落ち着くのを待つ遅延(ms)。クローズ時の前面切替は速いので控えめでよい。取りこぼす場合は増やす。
 static const uint32 kKESCMThumbRefreshDelayMs = 150;
@@ -61,7 +63,7 @@ uint32 KESCMThumbIdleTask::RunTask(uint32 flags, IdleTimer* /*idleTimer*/)
 	// ★終了堅牢化(2026-07-15): アプリが終了処理中なら Pages パネルへ触らず、予約を捨てて自分を外す。
 	// quit 中の doc close がこのタスクを予約→Shutdown(RemoveTask)より前に idle が回った場合の保険
 	// (解体中のパネルへの purge+ForceRedraw が Mac 限定 crash-on-quit の典型形)。
-	if (KESCMAppIsQuitting())
+	if (Utils<IKESCMCompareFacade>()->IsAppQuitting())
 	{
 		sPendingDBs.clear();
 		this->UninstallTask();
@@ -80,7 +82,7 @@ uint32 KESCMThumbIdleTask::RunTask(uint32 flags, IdleTimer* /*idleTimer*/)
 	for (std::vector<IDataBase*>::iterator it = dbs.begin(); it != dbs.end(); ++it)
 	{
 		// 予約から idle までの間に閉じた db は触らない(deref 禁止=共有ヘルパ KESCMIsDocDBOpen)。
-		if (KESCMIsDocDBOpen(*it))
+		if (Utils<IKESCMCompareFacade>()->IsDocDBOpen(*it))
 		{
 			KESCMTryRefreshPagesPanelThumbnails(*it, nil, kFalse /*redrawNow*/);	// Purge のみ
 			purgedAny = kTrue;
@@ -107,7 +109,7 @@ uint32 KESCMThumbIdleTask::RunTask(uint32 flags, IdleTimer* /*idleTimer*/)
 //========================================================================================
 void KESCMScheduleThumbRefresh(IDataBase* db)
 {
-	if (db == nil || sShutdown || KESCMAppIsQuitting())
+	if (db == nil || sShutdown || Utils<IKESCMCompareFacade>()->IsAppQuitting())
 		return;		// ★Shutdown 後・アプリ終了中は再アーム禁止(タスク再生成リーク/ティアダウン中発火の防止)
 
 	if (sThumbTask == nil)

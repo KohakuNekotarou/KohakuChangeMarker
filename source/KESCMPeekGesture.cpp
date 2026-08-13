@@ -47,7 +47,6 @@
 #include "KESCMID.h"
 #include "IKESCMMarkData.h"          // マーク/overset の読み取り(2026-08-13 Task 12。押下中の表示状態の
                                      // 読み書きは IKESCMCompareFacade 側＝あちらは書ける)
-#include "KESCMCore.h"               // KESCMInvalidateDB / KESCMSetStatus / KESCMRefreshPanel / arm 状態アクセサ
 #include "KESCMUIShared.h"	// panel / status line / nav readout / tool button (split from KESCMCore.h on 2026-08-13)
 #include "KESCMScrollMap.h"          // 一括クローズ後の地図 strip の撤去/再描画
 #include "KESCMThumbIdleTask.h"      // クローズ後の再生成を次のidleに遅延(前面切替の過渡を避ける)
@@ -67,7 +66,7 @@ static bool16 sSingleShowing     = kFalse;	// 修飾なしのツール左hold中
 // arm の有無に依らず使えるよう、peek 用の arm 済み Target ではなく「マークが載っている文書」を使う。
 static void KESCMInvalidateMarksDoc()
 {
-	KESCMInvalidateDB(Utils<IKESCMMarkData>()->GetMarkedTargetDB());
+	Utils<IKESCMCompareFacade>()->InvalidateDB(Utils<IKESCMMarkData>()->GetMarkedTargetDB());
 }
 
 // マウス下のドキュメントが、arm 済みの対象(Target)文書と一致するか。CMYK サンプリング
@@ -187,7 +186,7 @@ void KESCMTrackerRevealBegin(bool16 shiftDown, bool16 altDown, bool16 cmdDown, b
 		    KESCMFrontViewIsOverSource())
 		{
 			compare->SetSrcMarksTempHidden(kTrue);
-			KESCMInvalidateDB(Utils<IKESCMMarkData>()->GetMarkedSourceDB());	// Source を再描画
+			Utils<IKESCMCompareFacade>()->InvalidateDB(Utils<IKESCMMarkData>()->GetMarkedSourceDB());	// Source を再描画
 		}
 	}
 
@@ -252,7 +251,7 @@ void KESCMTrackerRevealEnd()
 	if (compare->GetSrcMarksTempHidden())
 	{
 		compare->SetSrcMarksTempHidden(kFalse);
-		KESCMInvalidateDB(Utils<IKESCMMarkData>()->GetMarkedSourceDB());	// Source を再描画
+		Utils<IKESCMCompareFacade>()->InvalidateDB(Utils<IKESCMMarkData>()->GetMarkedSourceDB());	// Source を再描画
 	}
 
 	if (sPeekActive)
@@ -263,7 +262,7 @@ void KESCMTrackerRevealEnd()
 		if (compare->GetShowOriginal())
 		{
 			compare->SetShowOriginal(kFalse);
-			KESCMInvalidateDB(compare->GetArmedTargetDB());
+			Utils<IKESCMCompareFacade>()->InvalidateDB(compare->GetArmedTargetDB());
 		}
 	}
 	else if (sSingleShowing)
@@ -324,7 +323,7 @@ static void KESCMFlushDeferredCloseUi()
 		return;
 	sDeferredCloseUiPending = kFalse;
 
-	if (KESCMAppIsQuitting())
+	if (Utils<IKESCMCompareFacade>()->IsAppQuitting())
 		return;		// 終了中は UI に触らない(状態は Shutdown が破棄する)
 
 	// ★★保留している間に新しい比較が始まっていたら、この後片付けは走らせない(2026-07-30 の再確認で追加)。
@@ -364,7 +363,7 @@ static void KESCMFlushDeferredCloseUi()
 			if (doc == nil)
 				continue;
 			IDataBase* db = ::GetUIDRef(doc).GetDataBase();
-			KESCMInvalidateDB(db);
+			Utils<IKESCMCompareFacade>()->InvalidateDB(db);
 			KESCMScheduleThumbRefresh(db);	// 遅延サムネイル再生成(同じ db は集約される)
 		}
 	}

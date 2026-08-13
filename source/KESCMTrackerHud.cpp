@@ -27,7 +27,6 @@
 
 #include "Utils.h"				// Utils<IKESCMCompareFacade>()
 #include "IKESCMCompareFacade.h"	// arm 状態(2026-08-13・分割 第1段 Task 11 で Facade 経由へ)
-#include "KESCMCore.h"			// KESCMInvalidateDB
 #include "KESCMViewLookup.h"	// KESCMFindDocDbForView(2026-08-13 に KESCMCore.h から移動)
 #include "KESCMTrackerHud.h"
 
@@ -159,7 +158,7 @@ static PMString KESCMTrackerHudLabel(IControlView* view)
 static void KESCMTrackerHudInvalidate(IControlView* view)
 {
 	if (view != nil)
-		KESCMInvalidateDB(KESCMFindDocDbForView(view));
+		Utils<IKESCMCompareFacade>()->InvalidateDB(KESCMFindDocDbForView(view));
 }
 
 void KESCMTrackerHudBegin(IControlView* view)

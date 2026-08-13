@@ -35,17 +35,14 @@
 #include "IKESCMCompareFacade.h"	// ★UI が比較エンジンに頼む唯一の窓口(2026-08-13・model/UI 分割 第1段 Task 11)。
 									//  Start/Stop・arm 状態・比較の実行・印刷マーク・overset・Hide Unchanged は
 									//  すべてこれ経由。手本＝customconditionaltextui が Utils<ICusCondTxtFacade>() だけを使う形
-#include "KESCMCore.h"		// KESCMInvalidateDB(まだ Facade に載っていない model の呼び。Task 12〜15 で整理する)
 #include "KESCMUIShared.h"	// panel / status line / nav readout / tool button (split from KESCMCore.h on 2026-08-13)
 #include "IKESCMMarkData.h"			// マーク/overset の読み取り(2026-08-13 Task 12。表示トグルの読み書きは IKESCMCompareFacade 側)
 #include "IKESCMPageFlagsFacade.h"	// Register(追加/削除ページ)と Check(✓)の2トグル＋メニュー状態＋Save/Load。
 									// 2026-08-13 Task 13 で KESCMPageMap.h / KESCMPageCheck.h から移した
-#include "KESCMPageNumberMarker.h"	// KESCMGetIgnorePageNumberMarker/KESCMSetIgnorePageNumberMarker(ノンブル除外トグル)
 #include "KESCMThumbnailRefresh.h"	// KESCMTryRefreshPagesPanelThumbnails(Source サムネイルの枠を即 ON/OFF)
 #include "KESCMViewSync.h"			// KESCMGetLayoutSync/Set/KESCMAlignOtherViewsToActiveNow(2026-08-13 に KESCMCore.h から移動)
 #include "KESCMScrollMap.h"		// KESCMScrollMapAttach/DetachAll/InvalidateAll(地図トグルと Find Overset)
 #include "KESCMPanelState.h"		// KESCMSavePanelState(フライアウト「Save Panel Settings」)
-#include "KESCMChangedPagesTSV.h"	// KESCMExportChangedPagesTSV(フライアウト「Export Changed Pages...」)
 #include "IKESCMBookFacade.h"		// ResolveBookPair(「Compare Books」を有効にしてよいかの判定)。2026-08-14 Task 15 で Facade 経由へ
 #include "KESCMBookRun.h"		// KESCMRunBookComparison(フライアウト「Compare Books」＝確認して比較して見せる)
 #include "KESCMBookOpen.h"			// KESCMBookMenuRow/CanStart/StartComparisonForRow(章行の右クリック「Start Change Marker」)
@@ -144,7 +141,7 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 			const bool16 srcMarksOn = !compare->GetShowSourceMarks();
 			compare->SetShowSourceMarks(srcMarksOn);
 			IDataBase* const srcDB = Utils<IKESCMMarkData>()->GetMarkedSourceDB();
-			KESCMInvalidateDB(srcDB);
+			Utils<IKESCMCompareFacade>()->InvalidateDB(srcDB);
 			// ★レイアウトビューだけでなく Pages パネルの Source サムネイルも即時更新する。Source 側の枠は
 			//   wantSrcMarks(=sSrcMarksOn)に依存し、サムネイル(isThumb)でも強制表示されないため、トグルで
 			//   サムネイルを作り直さないと OFF にしても枠が残る/ON にしても出ない。対象ページは Source の
@@ -183,9 +180,9 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 			const bool16 showOldNums = !compare->GetShowOldPageNumbers();
 			compare->SetShowOldPageNumbers(showOldNums);
 			IDataBase* const markedDB = Utils<IKESCMMarkData>()->GetMarkedTargetDB();
-			KESCMInvalidateDB(markedDB);
+			Utils<IKESCMCompareFacade>()->InvalidateDB(markedDB);
 			if (compare->GetArmedSourceDB() != markedDB)
-				KESCMInvalidateDB(compare->GetArmedSourceDB());
+				Utils<IKESCMCompareFacade>()->InvalidateDB(compare->GetArmedSourceDB());
 			PMString msg(showOldNums ? "Show original page numbers: on." : "Show original page numbers: off.");
 			msg.SetTranslatable(kFalse);
 			KESCMSetStatus(msg);
@@ -367,7 +364,7 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 			compare->SetHoldToHideMarks(holdToHide);
 			compare->SetMarksTempHidden(kFalse);	// モード切替時は一時退避を解除
 			compare->SetMarkScreenOpacity(compare->GetBaseScreenOpacity());	// 常時表示の不透明度を即反映
-			KESCMInvalidateDB(Utils<IKESCMMarkData>()->GetMarkedTargetDB());
+			Utils<IKESCMCompareFacade>()->InvalidateDB(Utils<IKESCMMarkData>()->GetMarkedTargetDB());
 			PMString msg(holdToHide ? "Hold to Hide Marks: on." : "Hold to Hide Marks: off.");
 			msg.SetTranslatable(kFalse);
 			KESCMSetStatus(msg);
@@ -379,8 +376,9 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 		// 登録トグルと同じ理由で全体再比較して即座に反映する。
 		case kKESCMPopupIgnorePageNumActionID:
 		{
-			KESCMSetIgnorePageNumberMarker(!KESCMGetIgnorePageNumberMarker());
-			PMString msg(KESCMGetIgnorePageNumberMarker() ? "Ignore page number marker: on." : "Ignore page number marker: off.");
+			InterfacePtr<IKESCMCompareFacade> folio(Utils<IKESCMCompareFacade>().QueryUtilInterface());
+			folio->SetIgnorePageNumberMarker(!folio->GetIgnorePageNumberMarker());
+			PMString msg(folio->GetIgnorePageNumberMarker() ? "Ignore page number marker: on." : "Ignore page number marker: off.");
 			msg.SetTranslatable(kFalse);
 			InterfacePtr<IKESCMMarkData> marks(Utils<IKESCMMarkData>().QueryUtilInterface());
 			IDataBase* const markedDB    = marks->GetMarkedTargetDB();
@@ -493,7 +491,7 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 				// ★2026-08-13(Task 9): 書き出し本体は model 側で、**メッセージは戻り値で受けて
 				//   ここ(UI)が出す**。成功時は無言＝空で返るので、そのときは何も出さない。
 				PMString exportMsg;
-				KESCMExportChangedPagesTSV(exportMsg);
+				Utils<IKESCMCompareFacade>()->ExportChangedPagesTSV(exportMsg);
 				if (exportMsg.CharCount() > 0)
 					KESCMSetStatus(exportMsg);
 			}
@@ -656,7 +654,7 @@ void KESCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionSta
 		else if (action == kKESCMPopupIgnorePageNumActionID)
 		{
 			int16 actionState = kEnabledAction;
-			if (KESCMGetIgnorePageNumberMarker())
+			if (Utils<IKESCMCompareFacade>()->GetIgnorePageNumberMarker())
 				actionState |= kSelectedAction;
 			listToUpdate->SetNthActionState(i, actionState);
 		}
@@ -794,7 +792,7 @@ void KESCMActionComponent::DoFindOversetToggle()
 			KESCMScrollMapInvalidateAll();
 		else
 			KESCMScrollMapDetachAll();
-		KESCMInvalidateDB(prevDB);	// nil 安全(他の呼び出しと同じ)
+		Utils<IKESCMCompareFacade>()->InvalidateDB(prevDB);	// nil 安全(他の呼び出しと同じ)
 		KESCMRefreshNavPosition();	// Prev/Next から overset 箇所を外す(比較のみ/対象なしへ)
 		PMString msg("Find Overset: off.");
 		msg.SetTranslatable(kFalse);

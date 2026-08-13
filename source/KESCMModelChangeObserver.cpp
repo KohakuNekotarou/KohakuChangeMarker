@@ -31,7 +31,6 @@
 #include "KESCMUIShared.h"			// KESCMSetStatus(表示。UI 内部専用) / KESCMRefreshPanel
 // ★ここから下は**全部 UI 側のヘッダー**。この observer は「通知を受けて画面を作り直す」係なので、
 //   UI を呼ぶのが仕事＝逆流ではない。model 側を読む KESCMCore.h も、UI→model という許された向き。
-#include "KESCMCore.h"				// KESCMAppIsQuitting(arm 状態は上の Facade で聞く)
 #include "IKESCMMarkData.h"			// GetOversetOn(Find Overset が単独 ON 中かどうか＝model の状態を読む)
 #include "KESCMPeekGesture.h"		// KESCMResetPeekGestureState / KESCMBatchCloseInProgress / KESCMDeferCloseUi
 #include "KESCMThumbIdleTask.h"		// KESCMScheduleThumbRefresh(クローズ後の作り直しを次の idle へ)
@@ -180,7 +179,7 @@ void KESCMModelChangeObserver::Update(const ClassID& theChange, ISubject* /*theS
 
 		// ★終了中は widget へ触らない。窓もパネルも解体中でありうる ---- 解体中の widget を触るのが
 		//   Mac 限定 crash-on-quit の典型形。窓ごと消えるので strip を外す意味も無い。
-		if (KESCMAppIsQuitting())
+		if (Utils<IKESCMCompareFacade>()->IsAppQuitting())
 			return;
 
 		// ★一括クローズ(複数文書を続けて閉じる)の最中は保留し、全部閉じ終わった通知でまとめて

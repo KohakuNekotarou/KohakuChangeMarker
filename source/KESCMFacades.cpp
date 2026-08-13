@@ -49,6 +49,8 @@
 #include "KESCMStoryList.h"			// the Story Edits rows, and where a story begins in a document
 #include "KESCMBookPair.h"			// which two books, and their display paths
 #include "KESCMBookCompare.h"		// the book comparison itself
+#include "KESCMPageNumberMarker.h"	// the folio exclusion toggle
+#include "KESCMChangedPagesTSV.h"	// the TSV export
 
 //========================================================================================
 // KESCMCompareFacade -- IKESCMCompareFacade
@@ -137,6 +139,18 @@ public:
 	virtual IDataBase*	GetHideUnchangedSrcDB()	{ return KESCMGetHideUnchangedSrcDB(); }
 	virtual void		HideUnchangedToggle()	{ KESCMHideUnchangedToggle(); }
 	virtual bool16		GetHideUnchangedOn()	{ return KESCMGetHideUnchangedOn(); }
+
+	virtual bool16		IsDocDBOpen(IDataBase* db)	{ return KESCMIsDocDBOpen(db); }
+	virtual void		InvalidateDB(IDataBase* db)	{ KESCMInvalidateDB(db); }
+	virtual IDataBase*	GetActiveDocDB()		{ return KESCMActiveDocDB(); }
+	virtual bool16		IsAppQuitting()			{ return KESCMAppIsQuitting(); }
+
+	virtual bool16		GetIgnorePageNumberMarker()	{ return KESCMGetIgnorePageNumberMarker(); }
+	virtual void		SetIgnorePageNumberMarker(bool16 on)
+													{ KESCMSetIgnorePageNumberMarker(on); }
+
+	virtual void		ExportChangedPagesTSV(PMString& outMessage)
+													{ KESCMExportChangedPagesTSV(outMessage); }
 };
 
 CREATE_PMINTERFACE(KESCMCompareFacade, kKESCMCompareFacadeImpl)

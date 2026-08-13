@@ -24,7 +24,6 @@
 #include "KESCMUIShared.h"	// panel / status line / nav readout / tool button (split from KESCMCore.h on 2026-08-13)
 #include "KESCMViewSync.h"			// KESCMGetLayoutSync / KESCMSetLayoutSync(2026-08-13 に KESCMCore.h から移動)
 #include "KESCMScrollMap.h"			// KESCMGetScrollMapEnabled / KESCMSetScrollMapEnabled
-#include "KESCMPageNumberMarker.h"	// KESCMGetIgnorePageNumberMarker / KESCMSetIgnorePageNumberMarker
 #include "KESCMPanelAlpha.h"		// KESCMGetPanelTranslucent / KESCMSetPanelTranslucent(Translucent Panel)
 
 // 保存ファイル名(Roaming 直下。★サブフォルダーは 2026-07-12 に廃止=下の KESCMPanelStateFile と
@@ -109,7 +108,7 @@ void KESCMSavePanelState()
 	json += "  \"showOldNumbers\": ";         json += KESCMBoolLiteral(compare->GetShowOldPageNumbers());           json += ",\n";
 	json += "  \"syncLayoutViews\": ";        json += KESCMBoolLiteral(KESCMGetLayoutSync());                       json += ",\n";
 	json += "  \"scrollbarMap\": ";           json += KESCMBoolLiteral(KESCMGetScrollMapEnabled());                 json += ",\n";
-	json += "  \"ignorePageNumberMarker\": "; json += KESCMBoolLiteral(KESCMGetIgnorePageNumberMarker());           json += ",\n";
+	json += "  \"ignorePageNumberMarker\": "; json += KESCMBoolLiteral(Utils<IKESCMCompareFacade>()->GetIgnorePageNumberMarker()); json += ",\n";
 	json += "  \"translucentPanel\": ";       json += KESCMBoolLiteral(KESCMGetPanelTranslucent());                 json += ",\n";
 	json += "  \"translucentPagesPanel\": ";  json += KESCMBoolLiteral(KESCMGetPagesPanelTranslucent());            json += ",\n";
 	json += "  \"translucentBookDialog\": ";  json += KESCMBoolLiteral(KESCMGetBookDialogTranslucent());            json += "\n";
@@ -192,7 +191,8 @@ void KESCMLoadPanelStateIfPresent()
 
 	KESCMSetLayoutSync            (KESCMJsonReadBool(text, "syncLayoutViews",         KESCMGetLayoutSync()));
 	KESCMSetScrollMapEnabled      (KESCMJsonReadBool(text, "scrollbarMap",           KESCMGetScrollMapEnabled()));
-	KESCMSetIgnorePageNumberMarker(KESCMJsonReadBool(text, "ignorePageNumberMarker", KESCMGetIgnorePageNumberMarker()));
+	Utils<IKESCMCompareFacade>()->SetIgnorePageNumberMarker(
+		KESCMJsonReadBool(text, "ignorePageNumberMarker", Utils<IKESCMCompareFacade>()->GetIgnorePageNumberMarker()));
 
 	// ★ここでは窓に触らない(触れない): この復元は起動時(KESCMPeekStartup::Startup)に走るので、
 	//   まだパネルが存在しない。実際に半透明を貼るのはパネルの AutoAttach と

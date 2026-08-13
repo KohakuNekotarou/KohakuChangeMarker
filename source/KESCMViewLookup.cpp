@@ -40,7 +40,8 @@
 #include "PMReal.h"
 
 #include "KESCMViewLookup.h"
-#include "KESCMCore.h"				// KESCMIsDocDBOpen(公式ルートで得た db の生存確認)
+#include "Utils.h"					// Utils<IKESCMCompareFacade>()
+#include "IKESCMCompareFacade.h"	// IsDocDBOpen(公式ルートで得た db の生存確認。2026-08-14 Task 16 で Facade 経由へ)
 
 //========================================================================================
 // マウス位置・ヒットテストの共有ヘルパ(peek と色サンプラが同じ流儀でカーソル位置を求める)。
@@ -153,7 +154,7 @@ IDataBase* KESCMFindDocDbForView(IControlView* view)
 			//   公式ルートはビューに聞くだけなのでその保証が無く、黙って落とすと KESCM 全体の規約
 			//   (閉じた db を持ち回らない/deref しない)が崩れる。ここで確認して従来の性質を保つ。
 			//   引けなければ下のフォールバックへ流す(全走査でも見つからなければ nil)。
-			if (KESCMIsDocDBOpen(db))
+			if (Utils<IKESCMCompareFacade>()->IsDocDBOpen(db))
 				return db;
 		}
 	}

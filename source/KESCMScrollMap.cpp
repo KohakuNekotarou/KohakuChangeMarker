@@ -77,7 +77,6 @@
 #include "KESCMID.h"
 #include "KESCMScrollMap.h"
 #include "IKESCMCompareFacade.h"	// arm 状態(2026-08-13・分割 第1段 Task 11 で Facade 経由へ)
-#include "KESCMCore.h"				// KESCMIsDocDBOpen
 #include "IKESCMMarkData.h"			// 変更ページ・overflow・overset の読み取り(赤/薄赤/濃赤の供給元)。2026-08-13 Task 12
                                     // ＋ GetRegisteredPages(Add/Remove 登録ページ=緑マーク。2026-08-13 Task 13)
 
@@ -306,7 +305,7 @@ void KESCMScrollMapView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 	InterfacePtr<IKESCMMarkData> marks(Utils<IKESCMMarkData>().QueryUtilInterface());
 	const bool16 isOverset = (db != nil && marks->GetOversetOn() &&
 		db == marks->GetOversetDB());
-	if ((!isTarget && !isSource && !isOverset) || !KESCMIsDocDBOpen(db))
+	if ((!isTarget && !isSource && !isOverset) || !Utils<IKESCMCompareFacade>()->IsDocDBOpen(db))
 		return;
 
 	// 全ページの pasteboard Y 帯をスプレッド順・ページ順で集める。★隠しスプレッド(Hide Unchanged
@@ -726,7 +725,7 @@ void KESCMScrollMapInvalidateAll()
 // db が nil/クローズ済みなら 0(=arm 解除後は両指紋 0 で安定し、比較は常に一致)。
 static uint32 KESCMHiddenFingerprint(IDataBase* db)
 {
-	if (db == nil || !KESCMIsDocDBOpen(db))
+	if (db == nil || !Utils<IKESCMCompareFacade>()->IsDocDBOpen(db))
 		return 0;
 	InterfacePtr<ISpreadList> spreadList(db, db->GetRootUID(), UseDefaultIID());
 	if (spreadList == nil)
@@ -751,7 +750,7 @@ static uint32 KESCMHiddenFingerprint(IDataBase* db)
 //   変わらないため、そこで Invalidate しても再描画が無駄になるだけ。
 static uint32 KESCMShownMasterFingerprint(IDataBase* db)
 {
-	if (db == nil || !KESCMIsDocDBOpen(db))
+	if (db == nil || !Utils<IKESCMCompareFacade>()->IsDocDBOpen(db))
 		return 0;
 	K2Vector<IControlView*> views;
 	Utils<ILayoutViewUtils>()->GetAllLayoutViews(views, nil, db);
