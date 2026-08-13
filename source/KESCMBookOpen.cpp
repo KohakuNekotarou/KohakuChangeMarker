@@ -46,7 +46,6 @@
 #include "KESCMBookDialog.h"	// KESCMBookDialogRows - the model the list is drawn from
 #include "KESCMBookOpen.h"
 #include "KESCMBookResult.h"
-#include "KESCMCore.h"			// KESCMSetStatus / KESCMIsArmed / KESCMArmedTargetDB
 #include "KESCMUIShared.h"	// panel / status line / nav readout / tool button (split from KESCMCore.h on 2026-08-13)
 #include "IKESCMCompareFacade.h"	// Stop / StartComparisonFor / arm 状態(2026-08-13・分割 第1段 Task 11)
 								// (2026-08-13 に KESCMCore.h から移動)

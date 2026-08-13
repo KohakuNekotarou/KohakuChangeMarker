@@ -20,7 +20,20 @@
 #define __KESCMPeekGesture_h__
 
 #include "BaseType.h"
-#include "KESCMPeek.h"		// KESCMGesture
+
+// 修飾キー→ジェスチャの分類の結果。
+// ★2026-08-14(第1段 Task 16)に KESCMPeek.h(model 側)から移した。定義はあちらに在ったが、
+//   **参照していたのはこのファイルと KESCMPeekGesture.cpp と KESCMTracker.cpp の3つだけ**で、
+//   KESCMPeek.cpp は一度も使っていなかった＝置き場所が model 側である理由が無かった。
+//   これで UI 側から KESCMPeek.h を include する必要が消える(第1段の完了条件1)。
+enum KESCMGesture
+{
+	kKESCMGestureNone = 0,	// Ctrl(cmd)または Mac の Control を含む=未割当(何もしない)
+	kKESCMGestureReveal,	// 修飾なし: マーク一時表示(reveal) / Hold to Hide の temp-hide
+	kKESCMGesturePeek100,	// Shift: 旧版べた載せ peek 100%
+	kKESCMGesturePeek50,	// Shift+Alt(Mac: Shift+Option): 旧版べた載せ peek 50%
+	kKESCMGestureCmyk		// Alt 単独(Mac: Option 単独): CMYK 色サンプリング(カーソル表示)
+};
 
 // 修飾キー→ジェスチャの分類。★割当の定義はこの1本だけ(2026-07-15 に3箇所の独立判定を統合):
 // KESCMTracker.cpp の BeginTracking(CMYK を先に発動させるかの判定)・RevealBegin の分岐・

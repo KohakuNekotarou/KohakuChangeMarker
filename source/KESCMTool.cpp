@@ -21,7 +21,6 @@
 #include "Utils.h"				// Utils<> - how every SDK utility is reached
 #include "PersistUtils.h"		// ::GetClass - is the active tool ours?
 
-#include "KESCMCore.h"			// KESCMActivateOwnTool (declared there, called from the panel)
 #include "KESCMUIShared.h"	// panel / status line / nav readout / tool button (split from KESCMCore.h on 2026-08-13)
 #include "KESCMID.h"
 #include "KESCMScriptingDefs.h"	// en_KESCMTool (this tool's ScriptID, registered in KESCM.fr)

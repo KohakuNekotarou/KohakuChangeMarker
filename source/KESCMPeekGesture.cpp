@@ -52,7 +52,6 @@
 #include "KESCMThumbIdleTask.h"      // クローズ後の再生成を次のidleに遅延(前面切替の過渡を避ける)
 #include "Utils.h"                   // Utils<IKESCMCompareFacade>()
 #include "IKESCMCompareFacade.h"     // peek の表示・arm 状態・基準不透明度(2026-08-13・分割 第1段 Task 11)
-#include "KESCMPeek.h"               // enum KESCMGesture ★型の定義だけ(型はシンボルを参照しないので境界を跨いでよい)
 #include "KESCMCmykCursor.h"         // KESCMCmykBeginPress / KESCMCmykEndPress(押下中の CMYK 状態はあちらが持つ)
 #include "KESCMPeekGesture.h"
 

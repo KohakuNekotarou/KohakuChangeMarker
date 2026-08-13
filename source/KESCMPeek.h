@@ -27,19 +27,10 @@ class IDataBase;
 // peek を離したときの経路と KESCMDoSetPrintMarks が使う。実体は KESCMPeek.cpp。
 PMReal KESCMBaseScreenOpacity();
 
-// 修飾キー→ジェスチャの分類の結果。★割当の定義は KESCMClassifyGesture(KESCMPeekGesture.cpp)の1本だけ
-// (2026-07-15 に3箇所の独立判定を統合): KESCMTracker.cpp の BeginTracking(CMYK を先に発動させるかの判定)・
-// RevealBegin の分岐・Hold to Hide の temp-hide 判定がすべてこれを使う。ジェスチャ割当を変えるときは
-// KESCMClassifyGesture だけを直す。
-// (★型はここに置いたまま: KESCMPeekGesture.h がこれを include して分類関数を宣言する。)
-enum KESCMGesture
-{
-	kKESCMGestureNone = 0,	// Ctrl(cmd)または Mac の Control を含む=未割当(何もしない)
-	kKESCMGestureReveal,	// 修飾なし: マーク一時表示(reveal) / Hold to Hide の temp-hide
-	kKESCMGesturePeek100,	// Shift: 旧版べた載せ peek 100%
-	kKESCMGesturePeek50,	// Shift+Alt(Mac: Shift+Option): 旧版べた載せ peek 50%
-	kKESCMGestureCmyk		// Alt 単独(Mac: Option 単独): CMYK 色サンプリング(カーソル表示)
-};
+// (★enum KESCMGesture は 2026-08-14 に **KESCMPeekGesture.h**(UI 側)へ移した＝第1段 Task 16。
+//  定義はここに在ったが、**使っていたのは UI 側の3ファイルだけ**で KESCMPeek.cpp は1度も参照して
+//  いなかった。修飾キーの読み取りは窓の話なので、置き場所も UI が正しい。これで UI 側から
+//  KESCMPeek.h を include する理由が無くなった＝第1段の完了条件1が満たせる。)
 
 // 前面レイアウトビューで「マウス下スプレッド」の旧版べた載せを表示する(実体は KESCMPeek.cpp)。
 // targetDB=表示中(新)ドキュメント, sourceDB=重ねる旧ドキュメント。そのスプレッドが既にキャッシュ済みなら

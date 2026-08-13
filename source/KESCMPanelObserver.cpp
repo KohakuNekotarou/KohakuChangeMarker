@@ -43,7 +43,6 @@
 #include "KESCMID.h"
 #include "Utils.h"					// Utils<IKESCMCompareFacade>()
 #include "IKESCMCompareFacade.h"	// ★arm 状態とステータス文字列を model に聞く窓口(2026-08-13 Task 11)
-#include "KESCMCore.h"
 #include "KESCMUIShared.h"	// panel / status line / nav readout / tool button (split from KESCMCore.h on 2026-08-13)
 #include "KESCMModelNotify.h"	// KESCMStoreSessionStatus(記憶は model 側。Task 9。★読み出しは Task 11 から
 								//  Facade の GetSessionStatus。書き込み側はまだ Facade に無い＝第2段の課題)

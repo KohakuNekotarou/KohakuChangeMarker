@@ -59,7 +59,6 @@
 #include <set>			// 通常スプレッドに載るページの集合(マスターページ上の overset を見分ける)
 #include <vector>
 
-#include "KESCMCore.h"				// KESCMCollectPageUIDs / KESCMArmed* / KESCMSetStatus
 #include "KESCMUIShared.h"	// panel / status line / nav readout / tool button (split from KESCMCore.h on 2026-08-13)
 #include "KESCMViewSync.h"			// KESCMGetLayoutSync(同期 ON なら連動スクロールを任せる。2026-08-13 に KESCMCore.h から移動)
 #include "IKESCMCompareFacade.h"		// GetActiveDocDB(2026-08-14 Task 16 で Facade 経由へ)
