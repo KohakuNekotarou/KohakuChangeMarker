@@ -217,11 +217,11 @@
   <ItemGroup>
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMActionComponent.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMBookCompare.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMBookOpen.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMBookRowEH.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMBookDialog.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMBookRun.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMBookOpen.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMBookPair.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMBookRowEH.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMBookTreeAdapter.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMBookTreeWidgetMgr.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMChangedPagesTSV.cpp" />
@@ -252,7 +252,11 @@
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMThumbnailRefresh.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMThumbIdleTask.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMScrollMap.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMTrackerHud.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMPeek.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMPeekGesture.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMCmykCursor.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMViewSync.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMTool.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMTracker.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMTrackerRegister.cpp" />
@@ -260,7 +264,6 @@
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMDocResponder.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMIconTip.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMScriptProvider.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMTrackerHud.cpp" />
     <ClCompile Include="$(id_sdk_dir)\source\public\libs\publiclib\statics\PlugInStatics.cpp" />
     <ClCompile Include="$(ID_SDK_DIR)\source\sdksamples\common\SDKPlugInEntrypoint.cpp" />
     <ClCompile Include="$(ID_SDK_DIR)\source\sdksamples\common\SDKFileHelper.cpp" />
@@ -304,6 +307,9 @@
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMPanelAlpha.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMPanelState.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMPeek.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMPeekGesture.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMCmykCursor.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMViewSync.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMThumbnailRefresh.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMThumbIdleTask.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMScrollMap.h" />

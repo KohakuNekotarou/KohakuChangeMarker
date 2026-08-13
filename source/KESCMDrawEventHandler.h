@@ -163,7 +163,7 @@ public:
 	// パネル選択の 25%/75%(KESCMBaseScreenOpacity が sAlwaysShowMarks ON も選択不透明度を返す)。
 	static bool16 sAlwaysShowMarks;
 	// Hold to Hide Marks モード中、ツール左ボタンを押している間だけ kTrue(常時表示の枠を一時退避)。離すと kFalse。
-	// KESCMPeek.cpp のトラッカー(KESCMTrackerRevealBegin/End)が上下させる。モード OFF の間は常に kFalse で無影響。
+	// KESCMPeekGesture.cpp のトラッカー(KESCMTrackerRevealBegin/End)が上下させる。モード OFF の間は常に kFalse で無影響。
 	// ★これは Target 窓上でツール左ボタンを押したときだけ立てる(押した窓の枠だけ隠す=ウィンドウ別)。
 	static bool16 sMarksTempHidden;
 	// sMarksTempHidden の Source 版。「Show Marks on Source」ON かつ「Hold to Hide Marks」ON のとき、

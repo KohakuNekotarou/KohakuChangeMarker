@@ -60,6 +60,7 @@
 #include <vector>
 
 #include "KESCMCore.h"				// KESCMCollectPageUIDs / KESCMArmed* / KESCMSetStatus
+#include "KESCMViewSync.h"			// KESCMGetLayoutSync(同期 ON なら連動スクロールを任せる。2026-08-13 に KESCMCore.h から移動)
 #include "KESCMDrawEventHandler.h"	// sDB / sSrcDB / sEntries / sOverset* / KESCMQueryPanorama
 #include "KESCMOversetScan.h"		// KESCMOversetLoc(overset「+」箇所の位置)
 #include "KESCMPageMap.h"			// KESCMBuildPairing(Source 側連動スクロールの対応表。2026-07-25 コメント現行化)

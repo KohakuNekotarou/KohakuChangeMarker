@@ -29,7 +29,7 @@
 #include "CursorSpec.h"			// CursorSpec
 #include "CursorDefs.h"			// kCrsrNone
 
-#include "KESCMPeek.h"			// KESCMToolCursorShouldBeBlack(黒/白抜きの判定。Start 中は文書を問わず黒)
+#include "KESCMCmykCursor.h"	// KESCMToolCursorShouldBeBlack(黒/白抜きの判定。Start 中は文書を問わず黒)
 
 //----------------------------------------------------------------------------------------
 //  カーソルプロバイダ本体

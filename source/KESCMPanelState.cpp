@@ -19,8 +19,8 @@
 
 // プロジェクト内(各トグルの状態アクセサ):
 #include "KESCMPanelState.h"
-#include "KESCMCore.h"				// KESCMGetPrintMarks / KESCMGetMarkOpacity25 / KESCMDoSetPrintMarks /
-									// KESCMGetLayoutSync / KESCMSetLayoutSync
+#include "KESCMCore.h"				// KESCMGetPrintMarks / KESCMGetMarkOpacity25 / KESCMDoSetPrintMarks
+#include "KESCMViewSync.h"			// KESCMGetLayoutSync / KESCMSetLayoutSync(2026-08-13 に KESCMCore.h から移動)
 #include "KESCMDrawEventHandler.h"	// sAlwaysShowMarks / sSrcMarksOn / sShowOldNumbers(公開 static)
 #include "KESCMScrollMap.h"			// KESCMGetScrollMapEnabled / KESCMSetScrollMapEnabled
 #include "KESCMPageNumberMarker.h"	// KESCMGetIgnorePageNumberMarker / KESCMSetIgnorePageNumberMarker

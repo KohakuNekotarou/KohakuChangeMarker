@@ -37,7 +37,9 @@
 
 #include "KESCMID.h"
 #include "KESCMConstants.h"	// kKESCMCursorSettleMillis(設置後の落ち着き待ち)
-#include "KESCMPeek.h"		// KESCMTrackerRevealBegin / KESCMTrackerRevealEnd / CMYK カーソル入口
+#include "KESCMPeek.h"		// KESCMGesture(ジェスチャの種類)
+#include "KESCMPeekGesture.h"	// KESCMClassifyGesture / KESCMTrackerRevealBegin / KESCMTrackerRevealEnd
+#include "KESCMCmykCursor.h"	// CMYK カーソル入口(HasPending / CursorProc / UpdateCmykDrag)
 #include "KESCMTrackerHud.h"	// 押下中だけビュー左上に Target/Source を出す(描画は Draw Event 側)
 
 #include <chrono>			// milliseconds(カーソル設置後の落ち着き待ち)

@@ -49,6 +49,7 @@
 
 #include "KESCMDrawEventHandler.h"   // 描画エンジン＋共有 static
 #include "KESCMPeek.h"               // KESCMBaseScreenOpacity
+#include "KESCMViewSync.h"           // KESCMInvalidateSyncCaches(2026-08-13 に KESCMPeek.h から移動)
 #include "KESCMPageMap.h"            // KESCMBuildPairing(除外対応表)
 #include "KESCMPageCheck.h"          // KESCMPageCheckClearAllDocs(Stop で✓を全消去)
 #include "KESCMThumbnailRefresh.h"   // ★実験: 既表示サムネイルの再生成トライ(2026-07-06)
