@@ -147,17 +147,12 @@ bool16		KESCMGetMarkOpacity25();	// 枠不透明度の選択: kTrue=25% / kFalse
 // 実体は KESCMPeek.cpp(peek の file-local 状態にアクセスできる唯一の場所)。
 void		KESCMHandleDocsClosed();
 
-// 表示中の自分のパネル(kKESCMPanelWidgetID)。隠れていれば nil。
-// ★終了処理中に session が nil になる経路まで吸収済み(2026-07-25 の規約)。
-// 「session → app → panelMgr → GetVisiblePanel」の定型を持つのはこの1か所だけにしてある
-// (2026-08-06 監査 C-1 で3か所を一本化 → 2026-08-09 に公開して4人目の使い手を迎えた)。
-// 実体は KESCMPanelObserver.cpp。
-IControlView*	KESCMGetVisibleOwnPanel();
-
-// 現在表示中のパネルがあれば、その ON/OFF 表示(Target/Source 名・アイコン・トグルラベル)を
-// 現在の arm 状態(KESCMIsArmed 等)に合わせて更新する。パネルが隠れていれば何もしない
-// (再表示時に AutoAttach が反映する)。実体は KESCMPanelObserver.cpp。
-void		KESCMRefreshPanel();
+// (★widget に触る8本の宣言は、2026-08-13 の model/UI 分割 第1段 Task 5 で **KESCMUIShared.h** へ移した
+//  ＝KESCMGetVisibleOwnPanel / KESCMRefreshPanel / KESCMSetStatus / KESCMSetNavPosition /
+//  KESCMSetToolButtonSelected / KESCMActivateOwnTool / KESCMIsOwnToolActive / KESCMOpenAboutURL。
+//  ★★**model 側のファイルが KESCMUIShared.h を include していたら、それが逆流**——という判定基準を
+//  作るための分割で、今それを破っている箇所の全量は
+//  docs/ai-notes/kescm-reverse-flow-ledger-2026-08-13.md に台帳化してある(Task 6〜10 で空にする)。)
 
 // (★比較の開始/解除の6本(KESCMToggleStartStop / KESCMStopComparison / KESCMStartComparisonFor /
 //  KESCMCanStartComparison / KESCMTogglePrintMarks / KESCMSetMarkOpacity25)の宣言は、2026-08-13 の
@@ -165,46 +160,11 @@ void		KESCMRefreshPanel();
 //  (パネルのファイルに同居していたが、動かしているのはパネルではなく比較そのもの＝model 側)。
 //  Facade が転送する先はこの6本になる。)
 
-// パネルのステータス行を更新する(KESCMPanelObserver::SetStatus と同じ処理を自由関数として公開)。
-// パネルが隠れていてもセッション状態は覚えておき、再表示時に復元する。forceRedrawNow=kTrue なら、
-// この後にブロッキング処理が続く場合でも次のイベントループを待たずに今すぐ描画する
-// (KESCMDoMarkChangesDoc の比較ループ前の busyMsg 表示に使う)。実体は KESCMPanelObserver.cpp。
-void		KESCMSetStatus(const PMString& s, bool16 forceRedrawNow = kFalse);
-
 // KESCMSetStatus が最後に出した文字列。app.kcmStatus(KESCMScriptProvider.cpp)が返す値で、
 // 実体はパネルの widget ではなくモジュール側の変数なので、★パネルを閉じていても答える。
 // (パネルの widget から読むと、閉じている間は空になるうえ、再表示のたびに作り直される。)
 // 実体は KESCMPanelObserver.cpp。
 void		KESCMGetSessionStatus(PMString& out);
-
-// Prev/Next の間に出す現在位置表示(例 "3/12")と、Prev/Next ボタンの有効/無効をまとめて更新する。
-// ステータス行とは別ウィジェット(kKESCMNavPosTextWidgetID / kKESCMPrevChangeButtonWidgetID /
-// kKESCMNextChangeButtonWidgetID)。posText 空でクリア。navButtonsEnabled=kFalse で両ボタンを無効化。
-// 通常は KESCMChangeNav.cpp の KESCMRefreshNavPosition から呼ぶ(表示規則はそちら参照)。パネルが
-// 隠れていれば何もしない(再表示時に KESCMRefreshNavPosition が実状態を反映)。実体は KESCMPanelObserver.cpp。
-void		KESCMSetNavPosition(const PMString& posText, bool16 navButtonsEnabled);
-
-// パネルのイラスト(ON/OFF アイコン)をクリックしたときに呼ぶ。「このプラグインについて」に載せている
-// 配布元URL(kKESCMRepoURL, KESCMID.h)を既定のブラウザで開く。実体は KESCMActionComponent.cpp。
-void		KESCMOpenAboutURL();
-
-// ★パネルのツール切替ボタン(kKESCMToolButtonWidgetID、Prev の左)を押したときに呼ぶ。
-//   このプラグインのツール(kKESCMToolBoss ＝ ツールボックスに出ている琥珀のツール)を
-//   アクティブツールにする。ツールボックスでそのツールを直接クリックしたのと同じ状態になる。
-//   ★ツールボックスが無い実行構成(サーバー等)では何もしない。実体は KESCMTool.cpp。
-//   戻り値: 実際にアクティブになったら kTrue(SetActiveTool の答えをそのまま返す)。
-//   ★押した結果をステータス行に出すために使う ＝ 効かなかったときに無反応に見えないように。
-bool16		KESCMActivateOwnTool();
-
-// ★このプラグインのツールが今アクティブか(実体は KESCMTool.cpp)。パネルを組み立て直したときに
-//   ボタンの押下表示を実状態へ合わせるために使う ＝ 固定の既定値を書かない([[panel-autoattach-read-real-state]])。
-bool16		KESCMIsOwnToolActive();
-
-// ★パネルのツール切替ボタンを「押されている/いない」表示にする(実体は KESCMPanelObserver.cpp)。
-//   ★呼び元は KESCMTool::Select / Deselect の2つだけ ＝ ツールボックスで選んでもパネルのボタンで
-//     選んでもショートカットでも、必ずここを通る(状態を2か所で管理しない=[[one-question-one-place]])。
-//   パネルが隠れていれば何もしない(再表示時に KESCMIsOwnToolActive から復元される)。
-void		KESCMSetToolButtonSelected(bool16 selected);
 
 // (Split Target on Start(KESCMGetSplitOnStart/KESCMDoSplitTarget)は 2026-07-04 撤去。
 //  仕組みは docs/ai-notes/kescm-split-target-mechanism.md と git 履歴 69c4b07 に保存)

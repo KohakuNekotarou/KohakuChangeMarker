@@ -41,6 +41,7 @@
 // ----- Project -----
 #include "KESCMID.h"
 #include "KESCMCore.h"				// KESCMGetVisibleOwnPanel / KESCMIsArmed
+#include "KESCMUIShared.h"	// panel / status line / nav readout / tool button (split from KESCMCore.h on 2026-08-13)
 #include "KESCMStoryList.h"			// GetRowCount - the number in the heading
 #include "KESCMStorySection.h"
 

@@ -55,6 +55,7 @@
 #include "KESCMStorySection.h"       // KESCMUpdateStorySectionLabel(見出しの件数)
 #include "KESCMHideUnchanged.h"      // KESCMResetHideUnchanged(2026-08-13 に KESCMCore.h から移動)
 #include "KESCMCore.h"
+#include "KESCMUIShared.h"	// panel / status line / nav readout / tool button (split from KESCMCore.h on 2026-08-13)
 
 //========================================================================================
 // ヘルパ: ドキュメント内の全ページUIDを、スプレッド順・ページ順で平坦に集める。

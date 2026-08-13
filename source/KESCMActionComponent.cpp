@@ -31,7 +31,8 @@
 #include "KESCMID.h"
 #include "KESCMLoc.h"		// 実行時の日本語切替(How to Use の1箇所だけ。Hide Unchanged の確認文言は
 							// 2026-08-13 に本体ごと KESCMHideUnchanged.cpp へ移った)
-#include "KESCMCore.h"		// KESCMOpenAboutURL
+#include "KESCMCore.h"		// KESCMInvalidateDB / KESCMIsArmed / arm 状態アクセサ / KESCMDoMarkChangesDoc
+#include "KESCMUIShared.h"	// panel / status line / nav readout / tool button (split from KESCMCore.h on 2026-08-13)
 #include "KESCMDrawEventHandler.h"	// sDB/sSrcDB/sShowOldNumbers/sOverset*(表示トグルが読み書きする状態)
 #include "KESCMPageMap.h"	// KESCMPageMapToggleSelectedPages / KESCMPageMapUpdateToggleState(追加/削除ページ登録トグル)
 #include "KESCMPageCheck.h"	// KESCMPageCheckToggleSelectedPages / KESCMPageCheckUpdateToggleState(「KCM: Check」の✓トグル)

@@ -30,6 +30,7 @@
 // プロジェクト内:
 #include "KESCMComparisonRun.h"
 #include "KESCMCore.h"				// arm/disarm・比較実行・印刷マーク設定・KESCMSetStatus / KESCMRefreshPanel
+#include "KESCMUIShared.h"	// panel / status line / nav readout / tool button (split from KESCMCore.h on 2026-08-13)
 #include "KESCMDrawEventHandler.h"	// sSrcMarksOn / sOversetOn / sOversetDB
 #include "KESCMScrollMap.h"			// スクロールバー地図strip(Startで注入/Stopで取り外し)
 #include "KESCMOversetApply.h"		// KESCMApplyOversetForDoc(Start/Stop 時の overset 貼り直し)

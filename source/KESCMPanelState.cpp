@@ -20,6 +20,7 @@
 // プロジェクト内(各トグルの状態アクセサ):
 #include "KESCMPanelState.h"
 #include "KESCMCore.h"				// KESCMGetPrintMarks / KESCMGetMarkOpacity25 / KESCMDoSetPrintMarks
+#include "KESCMUIShared.h"	// panel / status line / nav readout / tool button (split from KESCMCore.h on 2026-08-13)
 #include "KESCMViewSync.h"			// KESCMGetLayoutSync / KESCMSetLayoutSync(2026-08-13 に KESCMCore.h から移動)
 #include "KESCMDrawEventHandler.h"	// sAlwaysShowMarks / sSrcMarksOn / sShowOldNumbers(公開 static)
 #include "KESCMScrollMap.h"			// KESCMGetScrollMapEnabled / KESCMSetScrollMapEnabled

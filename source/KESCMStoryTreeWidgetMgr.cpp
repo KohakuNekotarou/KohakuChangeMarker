@@ -45,6 +45,7 @@
 // Project includes:
 #include "KESCMID.h"
 #include "KESCMCore.h"				// KESCMGetVisibleOwnPanel
+#include "KESCMUIShared.h"	// panel / status line / nav readout / tool button (split from KESCMCore.h on 2026-08-13)
 #include "KESCMStoryList.h"
 #include "KESCMStoryTree.h"
 

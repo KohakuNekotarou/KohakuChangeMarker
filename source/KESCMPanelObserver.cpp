@@ -42,6 +42,7 @@
 // プロジェクト内:
 #include "KESCMID.h"
 #include "KESCMCore.h"
+#include "KESCMUIShared.h"	// panel / status line / nav readout / tool button (split from KESCMCore.h on 2026-08-13)
 #include "KESCMChangeNav.h"			// KESCMGotoNextChange / KESCMGotoPrevChange(◀ Prev / Next ▶ ボタン)
 // ★比較の開始/解除の6本は 2026-08-13 に KESCMComparisonRun.cpp へ移した(model/UI 分割 第1段 Task 4)。
 //   それだけが使っていた include(KESCMScrollMap.h / KESCMDrawEventHandler.h / KESCMOversetApply.h /

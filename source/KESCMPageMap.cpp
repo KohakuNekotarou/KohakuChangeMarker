@@ -45,6 +45,7 @@
 #include <vector>
 
 #include "KESCMCore.h"			// KESCMCollectPageUIDs / KESCMCollectMasterPageUIDs / KESCMArmedTargetDB / KESCMArmedSourceDB / KESCMSetStatus
+#include "KESCMUIShared.h"	// panel / status line / nav readout / tool button (split from KESCMCore.h on 2026-08-13)
 #include "KESCMComparisonRun.h"	// KESCMToggleStartStop(2026-08-13 に KESCMCore.h から移動)
 #include "KESCMPageMap.h"
 #include "KESCMDocUidSet.h"		// 「文書DB→ページUID集合」の共通の入れ物(✓側と共有。2026-08-06 監査 C-1)

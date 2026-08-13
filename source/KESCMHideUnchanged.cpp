@@ -42,6 +42,7 @@
 #include "KESCMLoc.h"		// 実行時の日本語切替(文書を変える前の確認アラート)
 #include "KESCMHideUnchanged.h"
 #include "KESCMCore.h"		// KESCMSetStatus / KESCMIsDocDBOpen / KESCMArmedSourceDB
+#include "KESCMUIShared.h"	// panel / status line / nav readout / tool button (split from KESCMCore.h on 2026-08-13)
 #include "KESCMDrawEventHandler.h"	// sDB/sEntries(「変更あり」の判定材料)
 #include "KESCMPageMap.h"	// KESCMBuildPairing(除外対応表、Source 側の分類で使用)
 							// ＋ KESCMPageMapIsRegistered / KESCMPageMapHasAnyRegistered

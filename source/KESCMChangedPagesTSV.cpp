@@ -53,6 +53,7 @@
 
 // Project includes:
 #include "KESCMCore.h"				// KESCMSetStatus / KESCMCollectPageUIDs / KESCMCollectMasterPageUIDs
+#include "KESCMUIShared.h"	// panel / status line / nav readout / tool button (split from KESCMCore.h on 2026-08-13)
 #include "KESCMDrawEventHandler.h"	// sEntries / sDB / sSrcDB
 #include "KESCMPageMap.h"			// KESCMBuildPairing / KESCMPageMapCollectRegistered
 #include "KESCMChangedPagesTSV.h"

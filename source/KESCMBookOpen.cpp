@@ -47,6 +47,7 @@
 #include "KESCMBookOpen.h"
 #include "KESCMBookResult.h"
 #include "KESCMCore.h"			// KESCMSetStatus / KESCMIsArmed / KESCMArmedTargetDB
+#include "KESCMUIShared.h"	// panel / status line / nav readout / tool button (split from KESCMCore.h on 2026-08-13)
 #include "KESCMComparisonRun.h"	// KESCMStopComparison / KESCMStartComparisonFor
 								// (2026-08-13 に KESCMCore.h から移動)
 

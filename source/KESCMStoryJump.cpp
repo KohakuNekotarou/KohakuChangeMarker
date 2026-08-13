@@ -31,6 +31,7 @@
 #include "KESCMID.h"
 #include "KESCMChangeNav.h"	// KESCMGotoStoryFrame
 #include "KESCMCore.h"		// KESCMArmedTargetDB / KESCMIsDocDBOpen / KESCMSetStatus
+#include "KESCMUIShared.h"	// panel / status line / nav readout / tool button (split from KESCMCore.h on 2026-08-13)
 #include "KESCMStoryJump.h"
 #include "KESCMStoryList.h"
 
