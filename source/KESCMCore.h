@@ -63,7 +63,6 @@ bool16		KESCMAppIsQuitting();
 // Shutdown 専用: パネルのステータス行のセッション記憶(gSessionStatus)を空にする。static PMString の
 // 静的デストラクタをプラグイン unload 時の実質 no-op にするため(Mac の unload 順は Windows と異なり、
 // 破棄時に生きた heap バッファを持たせない方が安全)。実体は KESCMPanelObserver.cpp。
-void		KESCMClearSessionStatus();
 
 // マウス下のページを特定した結果(KESCMFindPageUnderMouse 参照)。globalPageBase は自身の文書内での
 // 平坦ページ番号(KESCMCollectPageUIDs と一致)。旧ドキュメント側のページは(登録済み=比較相手なし
@@ -160,11 +159,10 @@ void		KESCMHandleDocsClosed();
 //  (パネルのファイルに同居していたが、動かしているのはパネルではなく比較そのもの＝model 側)。
 //  Facade が転送する先はこの6本になる。)
 
-// KESCMSetStatus が最後に出した文字列。app.kcmStatus(KESCMScriptProvider.cpp)が返す値で、
-// 実体はパネルの widget ではなくモジュール側の変数なので、★パネルを閉じていても答える。
-// (パネルの widget から読むと、閉じている間は空になるうえ、再表示のたびに作り直される。)
-// 実体は KESCMPanelObserver.cpp。
-void		KESCMGetSessionStatus(PMString& out);
+// (★ステータス文字列の保持(KESCMGetSessionStatus / KESCMClearSessionStatus)は、2026-08-13 の
+//  model/UI 分割 第1段 Task 9 で **KESCMModelNotify.h** へ移した。実体も KESCMModelNotify.cpp
+//  ＝**保持は model・表示は UI**(app.kcmStatus はパネルを閉じていても答えるので、記憶は model 側で
+//  なければならない。設計書 §3.3)。)
 
 // (Split Target on Start(KESCMGetSplitOnStart/KESCMDoSplitTarget)は 2026-07-04 撤去。
 //  仕組みは docs/ai-notes/kescm-split-target-mechanism.md と git 履歴 69c4b07 に保存)

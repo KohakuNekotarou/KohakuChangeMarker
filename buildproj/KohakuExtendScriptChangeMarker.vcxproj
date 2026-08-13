@@ -263,6 +263,8 @@
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMComparisonRun.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMUIDrawEvent.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMUIStartup.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMModelNotify.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMModelChangeObserver.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMTool.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMTracker.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMTrackerRegister.cpp" />
@@ -320,6 +322,7 @@
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMOversetApply.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMViewLookup.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMComparisonRun.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMModelNotify.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMThumbnailRefresh.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMThumbIdleTask.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMScrollMap.h" />

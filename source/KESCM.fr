@@ -268,6 +268,11 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 			// refresh) N times; now the UI half is deferred and flushed once. Lives on the same
 			// active-context boss for the same proven reason as the sync observer above.
 			IID_IKESCMDOCSCLOSEDOBSERVER, kKESCMDocsClosedObserverImpl,
+			// Model-change observer (2026-08-13, Stage 1 Task 9). The model no longer calls the UI:
+			// it raises a notification on the application subject under our own protocol IID, and
+			// this observer turns it back into UI work. Same shape as the two above -- nothing new
+			// is introduced, and with nobody listening the model simply does nothing (Server-safe).
+			IID_IKESCMMODELCHANGEOBSERVER, kKESCMModelChangeObserverImpl,
 			// Panel visibility observer (2026-07-29). Subscribes to the panel manager's subject and
 			// waits for kPaletteVisibilityChangedMessage, which fires whenever a panel is opened,
 			// closed or moved between docked and floating. The "Translucent Panel" toggle applies its

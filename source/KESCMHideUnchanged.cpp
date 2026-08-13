@@ -13,7 +13,7 @@
 //    消すため——本体を UI 側に残すと、同じ状態が分割の両側に割れる。
 //
 //  model 側: kHideSpreadCmdBoss を出す=文書を変える(両文書が dirty になる)。
-//  ⚠この時点では確認アラート(CAlert)とステータス行(KESCMSetStatus)がまだこのファイルに居る=逆流。
+//  ⚠この時点では確認アラート(CAlert)がまだこのファイルに居る=第2段の宿題。ステータス行は Task 9 で
 //    相手にするのは Task 7/9(ステータス行は通知へ反転する)。
 //
 //========================================================================================
@@ -41,8 +41,8 @@
 #include "KESCMID.h"
 #include "KESCMLoc.h"		// 実行時の日本語切替(文書を変える前の確認アラート)
 #include "KESCMHideUnchanged.h"
-#include "KESCMCore.h"		// KESCMSetStatus / KESCMIsDocDBOpen / KESCMArmedSourceDB
-#include "KESCMUIShared.h"	// panel / status line / nav readout / tool button (split from KESCMCore.h on 2026-08-13)
+#include "KESCMCore.h"		// KESCMIsDocDBOpen / KESCMArmedSourceDB
+#include "KESCMModelNotify.h"	// KESCMNotifyStatus - the model tells the UI, it never calls it (Task 9)
 #include "KESCMDrawEventHandler.h"	// sDB/sEntries(「変更あり」の判定材料)
 #include "KESCMPageMap.h"	// KESCMBuildPairing(除外対応表、Source 側の分類で使用)
 							// ＋ KESCMPageMapIsRegistered / KESCMPageMapHasAnyRegistered
@@ -68,7 +68,7 @@ static void KESCMHideStatus(const char* text)
 {
 	PMString msg(text);
 	msg.SetTranslatable(kFalse);
-	KESCMSetStatus(msg);
+	KESCMNotifyStatus(msg);
 }
 
 // uids を1つの kHideSpreadCmdBoss で隠す/再表示する。hide=kTrue で隠す。
@@ -311,7 +311,7 @@ void KESCMHideUnchangedToggle()
 	msg.Append(".");
 	if (srcSkippedAll)
 		msg.Append(" Source not hidden (would hide all its spreads).");
-	KESCMSetStatus(msg);
+	KESCMNotifyStatus(msg);
 
 	// スクロールバー地図を隠し後の配置で描き直す(隠しスプレッドは地図から除外される。Target/Source 両窓)。
 	KESCMScrollMapInvalidateAll();

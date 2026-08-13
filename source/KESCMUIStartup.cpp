@@ -35,11 +35,10 @@
 #include "KESCMThumbIdleTask.h"		// KESCMShutdownThumbIdleTask(遅延サムネイル idle task の解放)
 #include "KESCMViewSync.h"			// KESCMInvalidateSyncCaches / KESCMViewSyncShutdown
 #include "KESCMCmykCursor.h"		// KESCMCmykShutdown(カーソル文字列とフォント参照)
-#include "KESCMCore.h"				// KESCMClearSessionStatus(パネルのステータス記憶)
-									// ⚠★宣言が **KESCMCore.h(model 側)** に在るのは意図的＝設計書 §3.3 のとおり
-									//   「**文字列の保持は model・表示は UI**」(app.kcmStatus はパネルを閉じていても
-									//   答える仕様なので、記憶は model 側に無ければならない)。実装は今のところ
-									//   KESCMPanelObserver.cpp に在るが、Task 9 で model 側へ移る。
+#include "KESCMUIShared.h"			// KESCMAttachModelChangeObserver / KESCMDetachModelChangeObserver(Task 9)
+#include "KESCMModelNotify.h"		// KESCMClearSessionStatus(ステータス記憶の破棄)
+									// ★保持は model 側(設計書 §3.3)＝app.kcmStatus はパネルを閉じていても答えるため。
+									//   2026-08-13 Task 9 で KESCMPanelObserver.cpp から移した。
 
 class KESCMUIStartup : public CPMUnknown<IStartupShutdownService>
 {
@@ -73,6 +72,11 @@ void KESCMUIStartup::Startup()
 	// ON のとき、パネルを開き直したりドッキング⇄フローティングを切り替えたりしても半透明が残る
 	// (半透明の付け先である OWL.Dock 窓がそのたびに作り直されるため)。実体は KESCMPanelAlpha.cpp。
 	KESCMAttachPanelVisibilityObserver();
+
+	// ★model からの通知(kKESCM*Message)の購読を開始する(2026-08-13 Task 9)。これが繋がっていないと
+	//   model 側の仕事が画面に出ない ---- ただし**エラーも警告も出ず「何も起きない」形**で現れるので、
+	//   実機で必ず確かめること。実体は KESCMModelChangeObserver.cpp。
+	KESCMAttachModelChangeObserver();
 }
 
 void KESCMUIStartup::Shutdown()
@@ -81,6 +85,9 @@ void KESCMUIStartup::Shutdown()
 	KESCMShutdownThumbIdleTask();
 	// 一括クローズの保留も捨てる(終了後に流れることは無いが、状態を残さない)。
 	KESCMPeekGestureShutdown();
+	// ★model からの通知の購読も止める(2026-08-13 Task 9)。**パネル周りを畳むより前**＝下の
+	//   KESCMDetachPanelVisibilityObserver と同じ理由(消えかけのコードで Update が走るのを避ける)。
+	KESCMDetachModelChangeObserver();
 	// ★先に購読を止める(2026-08-12)。購読している間セッションが握っているのは**この .pln の中への
 	//   ポインタ**で、終了処理中のパネル破棄は実際に通知を飛ばす ---- 消えかけのコードで Update が走る。
 	//   通知を止めてから、下の行で道具(タイマーと Win32 フック)を畳む順序。

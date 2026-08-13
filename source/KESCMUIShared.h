@@ -39,7 +39,18 @@ void			KESCMRefreshPanel();
 
 // Write the panel's status line. forceRedrawNow=kTrue paints immediately instead of waiting
 // for the next event loop (used before a blocking comparison loop).
+//
+// ★UI 内部専用。model 側からは呼ばない -- model は KESCMNotifyStatus() を使う
+//   (KESCMModelNotify.h)。この関数の呼び手は、通知を受けた KESCMModelChangeObserver と、
+//   UI 側の直接の操作(メニュー・ボタン・行クリック)だけ。
+// ★どちらの経路でも文字列は model 側に覚えられる(この関数が KESCMStoreSessionStatus を呼ぶ)。
+//   app.kcmStatus はそこから答えるので、**パネルを閉じていても正しい値が返る**。
 void			KESCMSetStatus(const PMString& s, bool16 forceRedrawNow = kFalse);
+
+// model からの通知を受ける UI 側 Observer の購読を開始/停止する(KESCMModelChangeObserver.cpp)。
+// Startup で attach し、Shutdown では **パネル周りを畳むより前**に detach する。
+void			KESCMAttachModelChangeObserver();
+void			KESCMDetachModelChangeObserver();
 
 // The Prev/Next position readout ("3/12") and the enabled state of both buttons. Empty
 // posText clears. Does nothing when the panel is hidden.

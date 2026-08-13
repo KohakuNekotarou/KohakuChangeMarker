@@ -476,7 +476,14 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 		// TSV(新ページ/旧ページ/種別=変更/挿入/削除)で保存する(実体 KESCMChangedPagesTSV.cpp)。
 		// 比較中(sDB≠nil)のみ有効。オーバーセットは含めない。
 		case kKESCMPopupExportChangedPagesActionID:
-			KESCMExportChangedPagesTSV();
+			{
+				// ★2026-08-13(Task 9): 書き出し本体は model 側で、**メッセージは戻り値で受けて
+				//   ここ(UI)が出す**。成功時は無言＝空で返るので、そのときは何も出さない。
+				PMString exportMsg;
+				KESCMExportChangedPagesTSV(exportMsg);
+				if (exportMsg.CharCount() > 0)
+					KESCMSetStatus(exportMsg);
+			}
 			break;
 
 		// フライアウトの「Compare Books」: ブックパネルで前面タブのブック=Target、それ以外で最初に

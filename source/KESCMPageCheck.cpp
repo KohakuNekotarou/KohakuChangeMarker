@@ -34,8 +34,9 @@
 #include <string>
 #include <cstdio>				// FILE / fread / fwrite / fclose
 
-#include "KESCMCore.h"			// KESCMCollectPageUIDs / KESCMCollectMasterPageUIDs / KESCMIsArmed / KESCMArmedTargetDB / KESCMArmedSourceDB / KESCMSetStatus / KESCMDoMarkChangesDoc
-#include "KESCMUIShared.h"	// panel / status line / nav readout / tool button (split from KESCMCore.h on 2026-08-13)
+#include "KESCMCore.h"			// KESCMCollectPageUIDs / KESCMCollectMasterPageUIDs / KESCMIsArmed / KESCMArmedTargetDB / KESCMArmedSourceDB / KESCMDoMarkChangesDoc
+								// (ステータス行は 2026-08-13 Task 9 で KESCMNotifyStatus＝通知へ移った)
+#include "KESCMModelNotify.h"	// KESCMNotifyStatus - the model tells the UI, it never calls it (Task 9)
 #include "KESCMComparisonRun.h"	// KESCMToggleStartStop(2026-08-13 に KESCMCore.h から移動)
 #include "KESCMPageCheck.h"
 #include "KESCMPageMap.h"		// KESCMPageMapCollectRegistered(保存) / KESCMPageMapReplaceRegistered(読込)
@@ -132,7 +133,7 @@ void KESCMPageCheckToggleSelectedPages()
 	// 付け外しが画面に出ない(ユーザー報告: OFF にしても ✓ が残る)。サムネイル更新とは別経路。
 	KESCMInvalidateDB(db);
 
-	KESCMSetStatus(msg);
+	KESCMNotifyStatus(msg);
 }
 
 //========================================================================================
@@ -585,7 +586,7 @@ void KESCMPageCheckSaveToFile()
 	{
 		PMString msg("Save: start first");	// ステータス行は幅が狭い(約152px×4行)ので短く
 		msg.SetTranslatable(kFalse);
-		KESCMSetStatus(msg, kTrue /*forceRedrawNow*/);
+		KESCMNotifyStatus(msg, kTrue /*forceRedrawNow*/);
 		return;
 	}
 
@@ -600,7 +601,7 @@ void KESCMPageCheckSaveToFile()
 		//   (2026-07-25 監査で追加)。
 		PMString err("Save failed (read old)");
 		err.SetTranslatable(kFalse);
-		KESCMSetStatus(err, kTrue /*forceRedrawNow*/);
+		KESCMNotifyStatus(err, kTrue /*forceRedrawNow*/);
 		return;
 	}
 
@@ -651,7 +652,7 @@ void KESCMPageCheckSaveToFile()
 	{
 		PMString msg(skippedUnsaved > 0 ? "Save doc first" : "Nothing to save");
 		msg.SetTranslatable(kFalse);
-		KESCMSetStatus(msg, kTrue /*forceRedrawNow*/);
+		KESCMNotifyStatus(msg, kTrue /*forceRedrawNow*/);
 		return;
 	}
 
@@ -660,14 +661,14 @@ void KESCMPageCheckSaveToFile()
 	{
 		PMString err("Save failed (write)");	// 短い状態表示(ステータス行)。open/書込/close いずれの失敗も含む
 		err.SetTranslatable(kFalse);
-		KESCMSetStatus(err, kTrue /*forceRedrawNow*/);
+		KESCMNotifyStatus(err, kTrue /*forceRedrawNow*/);
 		return;
 	}
 
 	PMString msg;
 	msg.SetTranslatable(kFalse);
 	msg.Append(FileUtils::SysFileToPMString(outFile));	// パスのみ(ラベル/件数を付けるとステータス行から溢れるため)
-	KESCMSetStatus(msg, kTrue /*forceRedrawNow*/);
+	KESCMNotifyStatus(msg, kTrue /*forceRedrawNow*/);
 }
 
 //----------------------------------------------------------------------------------------
@@ -679,7 +680,7 @@ void KESCMPageCheckLoadFromFile()
 	{
 		PMString msg("Load: start first");	// ステータス行は狭いので短く
 		msg.SetTranslatable(kFalse);
-		KESCMSetStatus(msg, kTrue /*forceRedrawNow*/);
+		KESCMNotifyStatus(msg, kTrue /*forceRedrawNow*/);
 		return;
 	}
 
@@ -688,7 +689,7 @@ void KESCMPageCheckLoadFromFile()
 	{
 		PMString msg("No saved data");
 		msg.SetTranslatable(kFalse);
-		KESCMSetStatus(msg, kTrue /*forceRedrawNow*/);
+		KESCMNotifyStatus(msg, kTrue /*forceRedrawNow*/);
 		return;
 	}
 
@@ -745,7 +746,7 @@ void KESCMPageCheckLoadFromFile()
 	{
 		PMString msg("No saved data for docs");
 		msg.SetTranslatable(kFalse);
-		KESCMSetStatus(msg, kTrue /*forceRedrawNow*/);
+		KESCMNotifyStatus(msg, kTrue /*forceRedrawNow*/);
 		return;
 	}
 
@@ -767,7 +768,7 @@ void KESCMPageCheckLoadFromFile()
 			KESCMToggleStartStop();		// arm 中なので Stop 分岐(strip 撤去・disarm・Check/Register 破棄)
 			PMString msg("Load cancelled");
 			msg.SetTranslatable(kFalse);
-			KESCMSetStatus(msg, kTrue /*forceRedrawNow*/);
+			KESCMNotifyStatus(msg, kTrue /*forceRedrawNow*/);
 			return;
 		}
 	}
@@ -830,7 +831,7 @@ void KESCMPageCheckLoadFromFile()
 	msg.AppendNumber(checksRestored);
 	msg.Append(" reg");
 	msg.AppendNumber(regApplied);
-	KESCMSetStatus(msg, kTrue /*forceRedrawNow*/);
+	KESCMNotifyStatus(msg, kTrue /*forceRedrawNow*/);
 }
 
 // KESCMPageCheck.cpp 終わり。

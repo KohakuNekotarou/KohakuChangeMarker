@@ -43,6 +43,7 @@
 #include "KESCMID.h"
 #include "KESCMCore.h"
 #include "KESCMUIShared.h"	// panel / status line / nav readout / tool button (split from KESCMCore.h on 2026-08-13)
+#include "KESCMModelNotify.h"	// KESCMStoreSessionStatus / KESCMGetSessionStatus(記憶は model 側。Task 9)
 #include "KESCMChangeNav.h"			// KESCMGotoNextChange / KESCMGotoPrevChange(◀ Prev / Next ▶ ボタン)
 // ★比較の開始/解除の6本は 2026-08-13 に KESCMComparisonRun.cpp へ移した(model/UI 分割 第1段 Task 4)。
 //   それだけが使っていた include(KESCMScrollMap.h / KESCMDrawEventHandler.h / KESCMOversetApply.h /
@@ -73,14 +74,14 @@ private:
 CREATE_PMINTERFACE(KESCMPanelObserver, kKESCMPanelObserverImpl)
 
 //----------------------------------------------------------------------------------------
-// 今セッションで最後に表示したステータス文字列。
-// StaticMultiLineTextWidget の内容はワークスペースに永続化されるため、InDesign を再起動して
-// アイコン状態のパネルを開くと前回セッションの文字列(例: "marks start / pages compared=22")が残って
-// しまう。そこで「今セッションで表示したメッセージ」だけをここに覚えておき、AutoAttach で必ず
-// 上書きする。未操作(空文字)の場合は AutoAttach が初期ヒントを表示する(2026-07-25 コメント現行化。
-// 旧記述「空なら何も表示されない」は初期ヒント導入前のもの)。
+// (★今セッションのステータス文字列を覚えるのは **model 側**の仕事になった＝2026-08-13 Task 9 で
+//  KESCMModelNotify.cpp へ移動。理由は設計書 §3.3 ＝ app.kcmStatus(ScriptProvider＝model 側)が
+//  **パネルを閉じていても答える**という仕様と、パネルは再表示のたびに widget を作り直すこと。
+//  ★このファイルに残るのは**表示だけ**。KESCMSetStatus は書いた文字列を KESCMStoreSessionStatus で
+//  model 側へ預け、AutoAttach は KESCMGetSessionStatus で読み戻す。
+//  ⚠StaticMultiLineTextWidget の内容はワークスペースに永続化されるので、再起動後にアイコン状態から
+//  開くと**前回セッションの文字列が残る** ---- だから AutoAttach で必ず上書きする、という事情は不変。)
 //----------------------------------------------------------------------------------------
-namespace { PMString gSessionStatus; }
 
 //----------------------------------------------------------------------------------------
 // ローカルヘルパ
@@ -192,7 +193,9 @@ void KESCMPanelObserver::AutoAttach()
 	//   KESCMSetStatus を通って gSessionStatus が埋まる**)。∴ 2回目以降は必ず else 側を通り、
 	//   同じヒント文をそのまま復元する(画面の見え方は同じ)。★app.kcmStatus も同じ値を返すので、
 	//   スクリプトから「未操作」を見分けることはできない。
-	if (gSessionStatus.CharCount() == 0)
+	PMString saved;
+	KESCMGetSessionStatus(saved);	// ★覚えているのは model 側(2026-08-13 Task 9 で移動)
+	if (saved.CharCount() == 0)
 	{
 		PMString hint("Open the target and source documents (the active one becomes the Target), then choose Start from the panel menu.");
 		hint.SetTranslatable(kFalse);
@@ -200,7 +203,7 @@ void KESCMPanelObserver::AutoAttach()
 	}
 	else
 	{
-		KESCMSetStatus(gSessionStatus);
+		KESCMSetStatus(saved);
 	}
 
 	// Prev/Next の間の現在位置表示とボタン有効/無効は、上の UpdateInfoDisplay(→KESCMApplyPanelInfo
@@ -521,7 +524,10 @@ void KESCMRefreshPanel()
 //========================================================================================
 void KESCMSetStatus(const PMString& s, bool16 forceRedrawNow)
 {
-	gSessionStatus = s;	// パネルを隠して再表示したときに復元できるよう、今セッションの表示内容を覚えておく
+	// ★覚えるのは model 側(KESCMModelNotify.cpp)。パネルを隠して再表示したときの復元と、
+	//   app.kcmStatus の答えが、そこ1か所から出る(2026-08-13 Task 9)。
+	//   ⚠ここで通知は出さない ---- この関数は**通知を受けた側**でもあるので、輪になる。
+	KESCMStoreSessionStatus(s);
 
 	IControlView* panel = KESCMGetVisibleOwnPanel();
 	if (panel == nil)
@@ -542,28 +548,9 @@ void KESCMSetStatus(const PMString& s, bool16 forceRedrawNow)
 		panel->ForceRedraw(nil, kTrue);
 }
 
-//========================================================================================
-// KESCMGetSessionStatus(KESCMCore.h で宣言)
-//   KESCMSetStatus が最後に出した文字列を返す。app.kcmStatus(KESCMScriptProvider.cpp)の値。
-//   ★読む先は widget ではなく gSessionStatus なので、パネルが閉じていても答えられる
-//     (スクリプトから実行して結果だけ読み取るテストは、パネルを開く必要が無い)。
-//========================================================================================
-void KESCMGetSessionStatus(PMString& out)
-{
-	out = gSessionStatus;
-	out.SetTranslatable(kFalse);	// 状態表示は組み立て済みの文で翻訳キーではない
-}
-
-//========================================================================================
-// KESCMClearSessionStatus(KESCMCore.h で宣言)
-//   Shutdown 専用。gSessionStatus(file-static PMString)を空にして、プラグイン unload 時の
-//   静的デストラクタを実質 no-op にする(UI には一切触らない。KESCMSetStatus は使わないこと=
-//   あちらはパネル widget を探しに行くため終了処理中は不可)。
-//========================================================================================
-void KESCMClearSessionStatus()
-{
-	gSessionStatus.Clear();
-}
+// (★KESCMGetSessionStatus と KESCMClearSessionStatus は 2026-08-13 Task 9 で
+//  **KESCMModelNotify.cpp(model 側)**へ移した。文字列を持つ場所と、それを答える場所
+//  (app.kcmStatus＝ScriptProvider も model 側)を揃えるため。このファイルは表示だけを担う。)
 
 //========================================================================================
 // KESCMSetNavPosition(KESCMCore.h で宣言)

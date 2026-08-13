@@ -44,8 +44,9 @@
 #include <set>
 #include <vector>
 
-#include "KESCMCore.h"			// KESCMCollectPageUIDs / KESCMCollectMasterPageUIDs / KESCMArmedTargetDB / KESCMArmedSourceDB / KESCMSetStatus
-#include "KESCMUIShared.h"	// panel / status line / nav readout / tool button (split from KESCMCore.h on 2026-08-13)
+#include "KESCMCore.h"			// KESCMCollectPageUIDs / KESCMCollectMasterPageUIDs / KESCMArmedTargetDB / KESCMArmedSourceDB
+								// (ステータス行は 2026-08-13 Task 9 で KESCMNotifyStatus＝通知へ移った)
+#include "KESCMModelNotify.h"	// KESCMNotifyStatus - the model tells the UI, it never calls it (Task 9)
 #include "KESCMComparisonRun.h"	// KESCMToggleStartStop(2026-08-13 に KESCMCore.h から移動)
 #include "KESCMPageMap.h"
 #include "KESCMDocUidSet.h"		// 「文書DB→ページUID集合」の共通の入れ物(✓側と共有。2026-08-06 監査 C-1)
@@ -218,7 +219,7 @@ void KESCMPageMapToggleSelectedPages()
 			KESCMToggleStartStop();		// arm 中なので Stop 分岐(マーク/登録/Check 破棄・disarm・パネル更新)
 			PMString cmsg("Recompare cancelled");
 			cmsg.SetTranslatable(kFalse);
-			KESCMSetStatus(cmsg, kTrue /*forceRedrawNow*/);
+			KESCMNotifyStatus(cmsg, kTrue /*forceRedrawNow*/);
 			return;
 		}
 		msg.Append(" (recompared)");
@@ -236,7 +237,7 @@ void KESCMPageMapToggleSelectedPages()
 	if (!recompared || !anyUnregistered)
 		KESCMRefreshThumbnailsForPages(db, pages);
 
-	KESCMSetStatus(msg);
+	KESCMNotifyStatus(msg);
 }
 
 //========================================================================================

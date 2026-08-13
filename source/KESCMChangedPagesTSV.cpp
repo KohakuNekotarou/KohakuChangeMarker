@@ -86,11 +86,16 @@ struct KESCMChangeRow
 };
 
 // ステータス行(KESCL/KESCM 共通の非翻訳・英語の流儀)。
+// ★★2026-08-13(Task 9): **ステータス行へ直接書かず、呼び手へ返す文字列を覚えるだけにした。**
+//   理由＝TSV 書き出しは「成功/失敗と保存先パス」を**返すのが自然**で、通知を投げる理由が無い
+//   (設計書 §3.3)。ここは model 側で、表示は UI 側の呼び手(フライアウトの Export Changed Pages)が行う。
+//   ⚠関数名と呼び所は元のまま＝本体のどの経路(早期 return を含む)からでも今までどおり呼べる。
+PMString gExportMessage;
+
 void ShowStatus(const char* text)
 {
-	PMString s(text);
-	s.SetTranslatable(kFalse);
-	KESCMSetStatus(s);
+	gExportMessage = PMString(text);
+	gExportMessage.SetTranslatable(kFalse);
 }
 
 // pageUID(db 内)の「画面に見えている表示ページ番号」を返す。取れなければ空。
@@ -345,9 +350,10 @@ PMString BuildReportText(const std::vector<KESCMChangeRow>& rows)
 } // anonymous namespace
 
 //========================================================================================
-// KESCMExportChangedPagesTSV(KESCMChangedPagesTSV.h で宣言)
+// 本体。★2026-08-13(Task 9)に static 化し、公開関数は下のラッパにした。中身は1行も変えていない
+//   ＝早期 return がいくつもあるので、**最後の1か所で out へ書ける形**にするために包んだ。
 //========================================================================================
-void KESCMExportChangedPagesTSV()
+static void KESCMExportChangedPagesTSVRun()
 {
 	IDataBase* targetDB = KESCMDrawEventHandler::sDB;
 	IDataBase* sourceDB = KESCMDrawEventHandler::sSrcDB;
@@ -410,6 +416,20 @@ void KESCMExportChangedPagesTSV()
 	// 成功時は無言(ファイルが指定場所にできる=ステータス行に足すことは無い)。失敗のみ出す(KESCL の流儀)。
 	if (failed)
 		ShowStatus("Could not write the file.");
+}
+
+//========================================================================================
+// KESCMExportChangedPagesTSV(KESCMChangedPagesTSV.h で宣言)
+//   ★2026-08-13(Task 9): **ステータス行へ書かず、出したい文字列を out で返す。**
+//   TSV 書き出しは「成功/失敗と保存先パス」を返すのが自然で、通知を投げる理由が無い(設計書 §3.3)。
+//   ⇒ ここは model 側、表示は呼び手(フライアウトの Export Changed Pages＝UI)。
+//   ★出すことが無ければ out は空で返る(成功時は無言、が従来の仕様)。
+//========================================================================================
+void KESCMExportChangedPagesTSV(PMString& outMessage)
+{
+	gExportMessage.Clear();
+	KESCMExportChangedPagesTSVRun();
+	outMessage = gExportMessage;
 }
 
 // End, KESCMChangedPagesTSV.cpp.

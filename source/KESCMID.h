@@ -133,7 +133,7 @@ DECLARE_PMID(kInterfaceIDSpace, IID_IKESCMSAVEDSECTIONHEIGHT, kKESCMPrefix + 3)	
 //DECLARE_PMID(kInterfaceIDSpace, IID_IKESCMINTERFACE, kKESCMPrefix + 6)
 //DECLARE_PMID(kInterfaceIDSpace, IID_IKESCMINTERFACE, kKESCMPrefix + 7)
 //DECLARE_PMID(kInterfaceIDSpace, IID_IKESCMINTERFACE, kKESCMPrefix + 8)
-//DECLARE_PMID(kInterfaceIDSpace, IID_IKESCMINTERFACE, kKESCMPrefix + 9)
+DECLARE_PMID(kInterfaceIDSpace, IID_IKESCMMODELCHANGEOBSERVER, kKESCMPrefix + 9)	// model の通知を受ける **UI 側**オブザーバのアタッチ識別ID(AttachObserver の observerIID)。2026-08-13・model/UI 分割 第1段 Task 9。★上の3本と同じ流儀＝アプリの subject に自作 protocol IID で attach する(ISubject の AddIn はしない)
 //DECLARE_PMID(kInterfaceIDSpace, IID_IKESCMINTERFACE, kKESCMPrefix + 10)
 //DECLARE_PMID(kInterfaceIDSpace, IID_IKESCMINTERFACE, kKESCMPrefix + 11)
 //DECLARE_PMID(kInterfaceIDSpace, IID_IKESCMINTERFACE, kKESCMPrefix + 12)
@@ -197,6 +197,18 @@ DECLARE_PMID(kImplementationIDSpace, kKESCMBookTreeAdapterImpl, kKESCMPrefix + 3
 DECLARE_PMID(kImplementationIDSpace, kKESCMBookTreeWidgetMgrImpl, kKESCMPrefix + 32)	// ITreeViewWidgetMgr 実装(CTreeViewWidgetMgr派生。KESCMBookTreeWidgetMgr.cpp)。章一覧の行の生成と流し込み(章名 / 状態の2列)
 DECLARE_PMID(kImplementationIDSpace, kKESCMBookRowEHImpl, kKESCMPrefix + 33)	// IEventHandler 実装(TreeNodeEventHandler派生。KESCMBookRowEH.cpp)。ブック比較の章行＝**ダブルクリックでその章を開く**・**右クリックで行メニュー**(Start Change Marker)。★単クリックは何もしない(Story Edits の行と違う＝あちらは開いている文書の中を移動するだけだが、こちらは文書を開いてしまうため)。実際の動作は KESCMBookOpen.cpp
 DECLARE_PMID(kImplementationIDSpace, kKESCMUIStartupImpl, kKESCMPrefix + 38)	// IStartupShutdown 実装(UI 側の起動/終了。KESCMUIStartup.cpp)
+DECLARE_PMID(kImplementationIDSpace, kKESCMModelChangeObserverImpl, kKESCMPrefix + 37)	// IObserver 実装(model の通知を受けて画面を作り直す **UI 側**。KESCMModelChangeObserver.cpp)
+
+// MessageIDs: model が UI へ「何が変わったか」を知らせる通知(2026-08-13・model/UI 分割 第1段 Task 9)。
+//   ★kMessageIDSpace は KESCM がこれまで1つも使っていなかったので +0 から採る。
+//   受け手は UI 側の1本の Observer(kKESCMModelChangeObserverImpl)だけで、changeID で振り分ける。
+//   ★★**model は UI に何があるか知らない**。誰も聞いていなければ何も起きない＝InDesign Server でも安全。
+DECLARE_PMID(kMessageIDSpace, kKESCMMarksRebuiltMessage,      kKESCMPrefix + 0)	// 比較が走ってマークが作り直された(Prev/Next の位置・スクロール地図・Pages サムネイル・Story Edits の一覧が対象)
+DECLARE_PMID(kMessageIDSpace, kKESCMMarksClearedMessage,      kKESCMPrefix + 1)	// Stop でマークが消えた
+DECLARE_PMID(kMessageIDSpace, kKESCMPageFlagsChangedMessage,  kKESCMPrefix + 2)	// Register(Added/Removed)または Check(✓)が変わった
+DECLARE_PMID(kMessageIDSpace, kKESCMStoryEditsRebuiltMessage, kKESCMPrefix + 3)	// Story Edits のモデルが作り直された
+DECLARE_PMID(kMessageIDSpace, kKESCMStatusTextMessage,        kKESCMPrefix + 4)	// ステータス行の文字列が変わった(文字列自体は KESCMGetSessionStatus で取る)
+DECLARE_PMID(kMessageIDSpace, kKESCMOversetRescannedMessage,  kKESCMPrefix + 5)	// overset の走査結果が更新された
 DECLARE_PMID(kImplementationIDSpace, kKESCMUIDrawEventSrvcImpl, kKESCMPrefix + 35)	// CServiceProvider 実装(kDrawEventService。UI 専用の描画サービス。KESCMUIDrawEvent.cpp)。★GetThreadingPolicy は手書きしない＝CServiceProvider がプラグインの型から既定を返す
 DECLARE_PMID(kImplementationIDSpace, kKESCMUIDrawEventHandlerImpl, kKESCMPrefix + 36)	// IDrwEvtHandler 実装(押下中 HUD の描画だけ。画面専用＝PDF 書き出しに出なくてよい。KESCMUIDrawEvent.cpp)
 DECLARE_PMID(kImplementationIDSpace, kKESCMSplitterEHImpl, kKESCMPrefix + 34)	// IEventHandler 実装(CEventHandler派生＝全メソッドが kFalse を返すだけの基底をそのまま使う)。パネルの分割バーが押下を受け取らなくなる＝ドラッグで動かせない(KESCMSplitterEH.cpp)

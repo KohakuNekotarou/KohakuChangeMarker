@@ -11,7 +11,7 @@
 //    KESCMCanStartComparison と KESCMToggleStartStop の2本だけで、どちらもここへ来るため。
 //
 //  model 側: 比較そのものを動かす。呼ぶ側(フライアウトの項目・ブック比較の行の右クリック)は UI に残る。
-//  ⚠この時点では6本とも末尾で KESCMRefreshPanel / KESCMSetStatus を呼んでいる＝逆流。
+//  ⚠この時点では6本とも末尾で KESCMRefreshPanel を呼んでいる＝逆流(Task 10 で通知へ)。
 //    Task 9 で通知へ反転する。
 //
 //========================================================================================
@@ -29,7 +29,8 @@
 
 // プロジェクト内:
 #include "KESCMComparisonRun.h"
-#include "KESCMCore.h"				// arm/disarm・比較実行・印刷マーク設定・KESCMSetStatus / KESCMRefreshPanel
+#include "KESCMCore.h"				// arm/disarm・比較実行・印刷マーク設定・KESCMRefreshPanel
+#include "KESCMModelNotify.h"	// KESCMNotifyStatus - the model tells the UI, it never calls it (Task 9)
 #include "KESCMUIShared.h"	// panel / status line / nav readout / tool button (split from KESCMCore.h on 2026-08-13)
 #include "KESCMDrawEventHandler.h"	// sSrcMarksOn / sOversetOn / sOversetDB
 #include "KESCMScrollMap.h"			// スクロールバー地図strip(Startで注入/Stopで取り外し)
@@ -112,7 +113,7 @@ void KESCMStopComparison()
 	if (KESCMDrawEventHandler::sOversetOn)
 		KESCMApplyOversetForDoc(KESCMDrawEventHandler::sOversetDB);
 	PMString s("marks cleared"); s.SetTranslatable(kFalse);
-	KESCMSetStatus(s);
+	KESCMNotifyStatus(s);
 
 	KESCMRefreshPanel();	// Target/Source 名・アイコン・Prev/Next 有効無効を arm 状態へ更新
 }
@@ -153,7 +154,7 @@ void KESCMStartComparisonFor(IDocument* target, IDocument* source)
 		if (KESCMDrawEventHandler::sOversetOn)
 			KESCMApplyOversetForDoc(targetDB);
 	}
-	KESCMSetStatus(report);
+	KESCMNotifyStatus(report);
 
 	KESCMRefreshPanel();
 }
@@ -178,7 +179,7 @@ void KESCMToggleStartStop()
 		PMString s(target == nil ? "Target and source documents not found."
 		                         : "Source document not found.");
 		s.SetTranslatable(kFalse);
-		KESCMSetStatus(s);
+		KESCMNotifyStatus(s);
 		// ★この経路でも要る。⚠**旧実装では呼ばれていなかった**——この分岐は else ブロックの中で return
 		//   しており、関数末尾の KESCMRefreshPanel には届いていなかった。∴これは切り出しに伴う挙動の
 		//   **変更**(望ましい方向の)で、元の動作の保存ではない。
@@ -206,7 +207,7 @@ void KESCMSetMarkOpacity25(bool16 op25)
 	report.Append(op25 ? "kescm: marks opacity 25%" : "kescm: marks opacity 75%");
 	report.Append(flag ? "; will print (and stay visible on screen)"
 	                   : "; screen-only (won't print)");
-	KESCMSetStatus(report);
+	KESCMNotifyStatus(report);
 }
 
 // KESCMTogglePrintMarks(KESCMComparisonRun.h で宣言) — 印刷マーク ON/OFF トグル。旧パネルのチェックボックスの
@@ -227,7 +228,7 @@ void KESCMTogglePrintMarks()
 	report.Append(op25 ? "kescm: marks opacity 25%" : "kescm: marks opacity 75%");
 	report.Append(newFlag ? "; will print (and stay visible on screen)"
 	                      : "; screen-only (won't print)");
-	KESCMSetStatus(report);
+	KESCMNotifyStatus(report);
 }
 
 // KESCMComparisonRun.cpp 終わり。

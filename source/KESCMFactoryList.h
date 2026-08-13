@@ -26,6 +26,7 @@ REGISTER_PMINTERFACE(KESCMUIDrawEventSrvc, kKESCMUIDrawEventSrvcImpl)	// UI 専�
 REGISTER_PMINTERFACE(KESCMUIDrawEventHandler, kKESCMUIDrawEventHandlerImpl)	// 同上のハンドラ(画面専用＝PDF 書き出しに出ない)
 REGISTER_PMINTERFACE(KESCMPeekStartup, kKESCMPeekStartupImpl)
 REGISTER_PMINTERFACE(KESCMUIStartup, kKESCMUIStartupImpl)	// UI 側の起動/終了(KESCMUIStartup.cpp)。上の model 側と対
+REGISTER_PMINTERFACE(KESCMModelChangeObserver, kKESCMModelChangeObserverImpl)	// model の通知を受けて画面を作り直す UI 側(KESCMModelChangeObserver.cpp)
 REGISTER_PMINTERFACE(KESCMPanelObserver, kKESCMPanelObserverImpl)
 REGISTER_PMINTERFACE(KESCMActionComponent, kKESCMActionComponentImpl)
 REGISTER_PMINTERFACE(KESCMDocResponder, kKESCMDocResponderImpl)	// ServiceProvider は API 提供の実装を .fr で名指し(2026-08-06)

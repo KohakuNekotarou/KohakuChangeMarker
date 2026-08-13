@@ -51,6 +51,7 @@
 #include "KESCMConstants.h"
 #include "KESCMDrawEventHandler.h"   // エンジンの共有 static ＋ KESCMQueryPanorama
 #include "KESCMCore.h"               // arm/disarm/状態 宣言
+#include "KESCMModelNotify.h"	// KESCMNotifyStatus - the model tells the UI, it never calls it (Task 9)
 #include "KESCMUIShared.h"	// panel / status line / nav readout / tool button (split from KESCMCore.h on 2026-08-13)
 #include "KESCMViewLookup.h"         // KESCMQueryViewUnderMouse / KESCMQueryMouseContentPoint
                                      // (2026-08-13 に KESCMCore.h から移動。⚠ここも逆流＝Task 4 で確定)
@@ -759,7 +760,7 @@ void KESCMHandleDocsClosed()
 		{
 			PMString s("marks cleared");	// Stop ボタン(DoClear)と同じメッセージ
 			s.SetTranslatable(kFalse);
-			KESCMSetStatus(s);
+			KESCMNotifyStatus(s);
 
 			// Stop ボタン(KESCMDoClearMarks)と同じく、生存している側を再描画して枠を即座に消す
 			// (Source 側の常時枠が出ていた文書も含む)。
