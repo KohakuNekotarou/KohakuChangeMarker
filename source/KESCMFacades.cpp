@@ -101,6 +101,18 @@ public:
 
 	virtual void		GetSessionStatus(PMString& out)	{ KESCMGetSessionStatus(out); }
 
+	// ---- the status line and the notification payload (stage 2) --------------------------
+	// ★Six more free functions from KESCMModelNotify.h. The UI observer, the panel's status
+	// writer and the UI shutdown were calling them directly -- a legal direction (UI -> model)
+	// but not one that links across two .pln. Same shape as the CMYK three below.
+	virtual void		StoreSessionStatus(const PMString& s)	{ KESCMStoreSessionStatus(s); }
+	virtual void		ClearSessionStatus()	{ KESCMClearSessionStatus(); }
+	virtual bool16		StatusWantsForceRedraw(){ return KESCMStatusWantsForceRedraw(); }
+	virtual IDataBase*	GetNotifiedDocA()		{ return KESCMNotifiedDocA(); }
+	virtual IDataBase*	GetNotifiedDocB()		{ return KESCMNotifiedDocB(); }
+	virtual IDataBase*	GetNotifiedDocC()		{ return KESCMNotifiedDocC(); }
+	virtual bool16		GetNotifiedNavReset()	{ return KESCMNotifiedNavReset(); }
+
 	virtual bool16		ArmedDocsAlive()		{ return KESCMArmedDocsAlive(); }
 	virtual void		ShowPeekAt(IDataBase* targetDB, IDataBase* sourceDB,
 								   const PMReal& mx, const PMReal& my,

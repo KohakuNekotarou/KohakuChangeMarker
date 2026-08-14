@@ -25,9 +25,10 @@
 
 #include "KESCMID.h"
 #include "Utils.h"					// Utils<IKESCMCompareFacade>()
-#include "IKESCMCompareFacade.h"	// GetSessionStatus(2026-08-13・分割 第1段 Task 11 で Facade 経由へ)
-#include "KESCMModelNotify.h"		// KESCMStatusWantsForceRedraw / 通知に載った付随データ(★これらは
-									// まだ Facade に載っていない＝第2段の課題。計画書 Task 16 Step 2 参照)
+#include "IKESCMCompareFacade.h"	// GetSessionStatus(第1段 Task 11)＋ StatusWantsForceRedraw と
+									// 通知に載った付随データ(2026-08-15・第2段で Facade 経由へ。
+									// KESCMModelNotify.h は model 側の自由関数なので別 .pln から
+									// リンクできない ---- 直 include をここで断った)
 #include "KESCMUIShared.h"			// KESCMSetStatus(表示。UI 内部専用) / KESCMRefreshPanel
 // ★ここから下は**全部 UI 側のヘッダー**。この observer は「通知を受けて画面を作り直す」係なので、
 //   UI を呼ぶのが仕事＝逆流ではない。model 側を読む KESCMCore.h も、UI→model という許された向き。
@@ -65,20 +66,22 @@ void KESCMModelChangeObserver::Update(const ClassID& theChange, ISubject* /*theS
 		// ★文字列は model 側が持っている。ここは「表示する」だけ。
 		PMString s;
 		Utils<IKESCMCompareFacade>()->GetSessionStatus(s);
-		KESCMSetStatus(s, KESCMStatusWantsForceRedraw());
+		KESCMSetStatus(s, Utils<IKESCMCompareFacade>()->StatusWantsForceRedraw());
 		return;
 	}
 
 	// ---- ここから下が Task 10 で埋めた分(2026-08-13) ----
 	//
-	// ★★**どれも「何が起きたか」しか受け取らない。** 対象の文書は KESCMNotifiedDocA/DocB で読む
-	//   (通知に付随して model が置いたもの)。⚠Stop の後は KESCMArmedTargetDB が nil なので、
+	// ★★**どれも「何が起きたか」しか受け取らない。** 対象の文書は GetNotifiedDocA/DocB で読む
+	//   (通知に付随して model が置いたもの)。⚠Stop の後は GetArmedTargetDB が nil なので、
 	//   「掃除すべき2文書」は付随データからしか分からない ---- そこが Attach 系と違う。
 
 	if (theChange == kKESCMMarksRebuiltMessage || theChange == kKESCMMarksClearedMessage)
 	{
-		IDataBase* const docA = KESCMNotifiedDocA();		// Target
-		IDataBase* const docB = KESCMNotifiedDocB();		// Source(同一文書の比較なら docA と同じ)
+		// ★この分岐で3回聞くので1回引いて使い回す(Utils.h:74-80)。
+		InterfacePtr<IKESCMCompareFacade> compare(Utils<IKESCMCompareFacade>().QueryUtilInterface());
+		IDataBase* const docA = compare->GetNotifiedDocA();		// Target
+		IDataBase* const docB = compare->GetNotifiedDocB();		// Source(同一文書の比較なら docA と同じ)
 
 		// ビュー同期が持つページ矩形/除外対応表のキャッシュは、比較の組み合わせが変わると無効。
 		// (呼び忘れても 250ms の TTL で追従するが、明示すれば次の1通知から正しい)
@@ -109,7 +112,7 @@ void KESCMModelChangeObserver::Update(const ClassID& theChange, ISubject* /*theS
 
 		// ⚠巡回基準点を捨てるのは「全再比較」と「Stop」だけ。差分再比較(登録トグル)で捨てると
 		//   ページを登録するたびに Prev/Next が先頭へ戻る＝目に見える挙動変化になる。
-		if (KESCMNotifiedNavReset())
+		if (compare->GetNotifiedNavReset())
 			KESCMResetNav();
 		KESCMRefreshNavPosition();
 		return;
@@ -119,8 +122,9 @@ void KESCMModelChangeObserver::Update(const ClassID& theChange, ISubject* /*theS
 	{
 		// Register(Added/Removed)や Check(✓)が変わった＝サムネイルの絵と地図の点だけが変わる。
 		// パネルの表示内容も Prev/Next の位置も、この通知では変わらない。
-		IDataBase* const docA = KESCMNotifiedDocA();
-		IDataBase* const docB = KESCMNotifiedDocB();
+		InterfacePtr<IKESCMCompareFacade> compare(Utils<IKESCMCompareFacade>().QueryUtilInterface());
+		IDataBase* const docA = compare->GetNotifiedDocA();
+		IDataBase* const docB = compare->GetNotifiedDocB();
 		if (docA != nil)                 KESCMPurgeAllPageThumbs(docA, kFalse /*redrawNow*/);
 		if (docB != nil && docB != docA) KESCMPurgeAllPageThumbs(docB, kFalse /*redrawNow*/);
 		KESCMForceRedrawPagesPanelNow();
@@ -142,8 +146,10 @@ void KESCMModelChangeObserver::Update(const ClassID& theChange, ISubject* /*theS
 	{
 		// あふれ走査の結果が変わった。⚠比較(marks)とは独立した機能なので、対象は1文書のことも
 		//   2文書のこともある(走査先を切り替えた直後は「前の文書」の＋を消す必要がある＝docB)。
-		IDataBase* const docA = KESCMNotifiedDocA();	// 今の走査対象
-		IDataBase* const docB = KESCMNotifiedDocB();	// 直前の走査対象(切り替え時のみ。無ければ nil)
+		// ★この分岐でも3回聞くので1回引く(Utils.h:74-80)。
+		InterfacePtr<IKESCMCompareFacade> compare(Utils<IKESCMCompareFacade>().QueryUtilInterface());
+		IDataBase* const docA = compare->GetNotifiedDocA();	// 今の走査対象
+		IDataBase* const docB = compare->GetNotifiedDocB();	// 直前の走査対象(切り替え時のみ。無ければ nil)
 		if (docA != nil)                 KESCMPurgeAllPageThumbs(docA, kFalse /*redrawNow*/);
 		if (docB != nil && docB != docA) KESCMPurgeAllPageThumbs(docB, kFalse /*redrawNow*/);
 		KESCMForceRedrawPagesPanelNow();
@@ -152,7 +158,7 @@ void KESCMModelChangeObserver::Update(const ClassID& theChange, ISubject* /*theS
 			KESCMScrollMapAttach(docA);	// 比較していなくても地図は出す(単独点検の経路)
 		KESCMScrollMapInvalidateAll();
 
-		if (KESCMNotifiedNavReset())
+		if (compare->GetNotifiedNavReset())
 			KESCMResetNav();
 		KESCMRefreshNavPosition();		// Prev/Next の対象数(比較＋あふれ)を作り直す
 		return;
@@ -168,9 +174,12 @@ void KESCMModelChangeObserver::Update(const ClassID& theChange, ISubject* /*theS
 		// ビュー同期のページ矩形/除外対応キャッシュは捨てる。コンテナを空にするだけ＝終了中でも安全。
 		KESCMInvalidateSyncCaches();
 
+		// ★この分岐で5回聞くので1回引いて使い回す(Utils.h:74-80)。
+		InterfacePtr<IKESCMCompareFacade> compare(Utils<IKESCMCompareFacade>().QueryUtilInterface());
+
 		// 「比較が終わった(Stop 相当のフルクリーンアップが走った)」かどうかは navReset で分かる。
 		// 比較と無関係な文書が閉じただけなら kFalse で、下の重い後片付けは要らない。
-		const bool16 comparisonEnded = KESCMNotifiedNavReset();
+		const bool16 comparisonEnded = compare->GetNotifiedNavReset();
 		if (comparisonEnded)
 		{
 			KESCMResetPeekGestureState();	// 押下中の覗き状態
@@ -179,7 +188,7 @@ void KESCMModelChangeObserver::Update(const ClassID& theChange, ISubject* /*theS
 
 		// ★終了中は widget へ触らない。窓もパネルも解体中でありうる ---- 解体中の widget を触るのが
 		//   Mac 限定 crash-on-quit の典型形。窓ごと消えるので strip を外す意味も無い。
-		if (Utils<IKESCMCompareFacade>()->IsAppQuitting())
+		if (compare->IsAppQuitting())
 			return;
 
 		// ★一括クローズ(複数文書を続けて閉じる)の最中は保留し、全部閉じ終わった通知でまとめて
@@ -203,9 +212,9 @@ void KESCMModelChangeObserver::Update(const ClassID& theChange, ISubject* /*theS
 			// ★サムネイルは**その場で作り直さず次の idle へ遅延**させる。閉じたのが Target で生存側が
 			//   これからアクティブ化する場合、前面切替の過渡では ForceRedraw しても再生成が起こりきらず
 			//   枠が残る(2026-07-08 実機で確認)。nil はスケジューラ側で弾かれ、重複 db も集約される。
-			KESCMScheduleThumbRefresh(KESCMNotifiedDocA());
-			KESCMScheduleThumbRefresh(KESCMNotifiedDocB());
-			KESCMScheduleThumbRefresh(KESCMNotifiedDocC());
+			KESCMScheduleThumbRefresh(compare->GetNotifiedDocA());
+			KESCMScheduleThumbRefresh(compare->GetNotifiedDocB());
+			KESCMScheduleThumbRefresh(compare->GetNotifiedDocC());
 		}
 
 		KESCMRefreshPanel();	// パネルの ON/OFF 表示を実状態へ合わせる(「ON 固着」の解消)

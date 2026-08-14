@@ -42,10 +42,11 @@
 // プロジェクト内:
 #include "KESCMID.h"
 #include "Utils.h"					// Utils<IKESCMCompareFacade>()
-#include "IKESCMCompareFacade.h"	// ★arm 状態とステータス文字列を model に聞く窓口(2026-08-13 Task 11)
+#include "IKESCMCompareFacade.h"	// ★arm 状態とステータス文字列を model に頼む窓口(2026-08-13 Task 11)。
+								//  読み出しは GetSessionStatus、書き込みは StoreSessionStatus ---- 後者は
+								//  2026-08-15(第2段)にここへ来た。それまでは KESCMModelNotify.h の自由関数を
+								//  直に呼んでいたが、それは別 .pln からリンクできない。
 #include "KESCMUIShared.h"	// panel / status line / nav readout / tool button (split from KESCMCore.h on 2026-08-13)
-#include "KESCMModelNotify.h"	// KESCMStoreSessionStatus(記憶は model 側。Task 9。★読み出しは Task 11 から
-								//  Facade の GetSessionStatus。書き込み側はまだ Facade に無い＝第2段の課題)
 #include "KESCMChangeNav.h"			// KESCMGotoNextChange / KESCMGotoPrevChange(◀ Prev / Next ▶ ボタン)
 // ★比較の開始/解除の6本は 2026-08-13 に KESCMComparisonRun.cpp へ移した(model/UI 分割 第1段 Task 4)。
 //   それだけが使っていた include(KESCMScrollMap.h / KESCMDrawEventHandler.h / KESCMOversetApply.h /
@@ -79,8 +80,9 @@ CREATE_PMINTERFACE(KESCMPanelObserver, kKESCMPanelObserverImpl)
 // (★今セッションのステータス文字列を覚えるのは **model 側**の仕事になった＝2026-08-13 Task 9 で
 //  KESCMModelNotify.cpp へ移動。理由は設計書 §3.3 ＝ app.kcmStatus(ScriptProvider＝model 側)が
 //  **パネルを閉じていても答える**という仕様と、パネルは再表示のたびに widget を作り直すこと。
-//  ★このファイルに残るのは**表示だけ**。KESCMSetStatus は書いた文字列を KESCMStoreSessionStatus で
-//  model 側へ預け、AutoAttach は KESCMGetSessionStatus で読み戻す。
+//  ★このファイルに残るのは**表示だけ**。KESCMSetStatus は書いた文字列を Facade の
+//  StoreSessionStatus で model 側へ預け、AutoAttach は GetSessionStatus で読み戻す
+//  (2026-08-15・第2段。それまでは KESCMModelNotify.h の自由関数を直に呼んでいた)。
 //  ⚠StaticMultiLineTextWidget の内容はワークスペースに永続化されるので、再起動後にアイコン状態から
 //  開くと**前回セッションの文字列が残る** ---- だから AutoAttach で必ず上書きする、という事情は不変。)
 //----------------------------------------------------------------------------------------
@@ -529,7 +531,7 @@ void KESCMSetStatus(const PMString& s, bool16 forceRedrawNow)
 	// ★覚えるのは model 側(KESCMModelNotify.cpp)。パネルを隠して再表示したときの復元と、
 	//   app.kcmStatus の答えが、そこ1か所から出る(2026-08-13 Task 9)。
 	//   ⚠ここで通知は出さない ---- この関数は**通知を受けた側**でもあるので、輪になる。
-	KESCMStoreSessionStatus(s);
+	Utils<IKESCMCompareFacade>()->StoreSessionStatus(s);
 
 	IControlView* panel = KESCMGetVisibleOwnPanel();
 	if (panel == nil)
@@ -552,7 +554,9 @@ void KESCMSetStatus(const PMString& s, bool16 forceRedrawNow)
 
 // (★KESCMGetSessionStatus と KESCMClearSessionStatus は 2026-08-13 Task 9 で
 //  **KESCMModelNotify.cpp(model 側)**へ移した。文字列を持つ場所と、それを答える場所
-//  (app.kcmStatus＝ScriptProvider も model 側)を揃えるため。このファイルは表示だけを担う。)
+//  (app.kcmStatus＝ScriptProvider も model 側)を揃えるため。このファイルは表示だけを担う。
+//  ⚠2026-08-15 以降、UI からその2本を**直に呼ぶことはできない**(別 .pln になるとリンクできない)
+//  ＝IKESCMCompareFacade の GetSessionStatus / ClearSessionStatus を通す。)
 
 //========================================================================================
 // KESCMSetNavPosition(KESCMCore.h で宣言)

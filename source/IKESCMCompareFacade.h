@@ -163,6 +163,56 @@ public:
 		Kept on the model side so app.kcmStatus can answer while the panel is closed. */
 	virtual void		GetSessionStatus(PMString& out) = 0;
 
+	/** Remember a string the UI raised itself, WITHOUT emitting a notification.
+
+		★This is what the UI's own KESCMSetStatus calls. A message raised by a UI action -- a menu
+		item, a button, a row click -- is painted by the UI directly and does not need to travel
+		through the notification, but it still has to be REMEMBERED on the model side, because
+		app.kcmStatus answers from that string and because the panel's widgets are rebuilt on
+		every re-show.
+		⚠ It must not notify: KESCMSetStatus is also what the observer calls when a notification
+		arrives, so notifying from here would loop. */
+	virtual void		StoreSessionStatus(const PMString& s) = 0;
+
+	/** Shutdown only: empty the stored string, so the model's static PMString has no live heap
+		buffer to free when the plug-ins unload (Mac unload order differs from Windows).
+
+		★Called from the UI's shutdown, not the model's, and that is deliberate: a model
+		plug-in's startup/shutdown service is run again on every background-thread teardown
+		(guide vol1-07 L245-253), so clearing it there would empty the status line every time a
+		PDF is exported. */
+	virtual void		ClearSessionStatus() = 0;
+
+	/** kTrue when the status notification being handled asked for an immediate repaint. It is
+		part of the notification rather than of the text: the comparison loop sets it because it
+		is about to block, so the observer has to paint before it returns. */
+	virtual bool16		StatusWantsForceRedraw() = 0;
+
+	// ---- what the notification being handled is about (2026-08-15, stage 2) -------------
+	//
+	// A notification can carry nothing but a ClassID, so everything else the UI needs is left on
+	// the model side for it to pick up inside Update(). Change() is synchronous, so what the
+	// observer reads here is always what the emitting call just stored.
+	//
+	// ⚠ Meaningful ONLY while handling that notification. Do not cache them: a closed
+	// IDataBase* is a dangling pointer whose address gets reused.
+	//
+	// ★These were free functions in KESCMModelNotify.h, which the UI observer read directly.
+	// That links only while both halves share one .pln -- the same reason the whole of this
+	// interface exists (see the file header).
+
+	/** The documents the change is about. ★They travel with the notification rather than being
+		asked for: by the time Stop notifies, the model has already dropped its own pointers
+		(GetArmedTargetDB is nil) and the UI still has to purge those documents' thumbnails. */
+	virtual IDataBase*	GetNotifiedDocA() = 0;
+	virtual IDataBase*	GetNotifiedDocB() = 0;
+	virtual IDataBase*	GetNotifiedDocC() = 0;		// nil unless the three-document form was used
+
+	/** kTrue when the change invalidates the Prev/Next cursor. ⚠ A full rebuild and a Stop do;
+		an incremental recompare does NOT -- resetting there would send the cursor back to the
+		first change every time a page is registered. */
+	virtual bool16		GetNotifiedNavReset() = 0;
+
 	// ---- the peek overlay --------------------------------------------------------------
 
 	/** Whether both armed documents are still open. Returns kFalse after running the full

@@ -36,9 +36,15 @@
 #include "KESCMViewSync.h"			// KESCMInvalidateSyncCaches / KESCMViewSyncShutdown
 #include "KESCMCmykCursor.h"		// KESCMCmykShutdown(カーソル文字列とフォント参照)
 #include "KESCMUIShared.h"			// KESCMAttachModelChangeObserver / KESCMDetachModelChangeObserver(Task 9)
-#include "KESCMModelNotify.h"		// KESCMClearSessionStatus(ステータス記憶の破棄)
+#include "Utils.h"					// Utils<IKESCMCompareFacade>()
+#include "IKESCMCompareFacade.h"	// ClearSessionStatus(ステータス記憶の破棄)
 									// ★保持は model 側(設計書 §3.3)＝app.kcmStatus はパネルを閉じていても答えるため。
-									//   2026-08-13 Task 9 で KESCMPanelObserver.cpp から移した。
+									//   2026-08-13 Task 9 で KESCMPanelObserver.cpp から移し、2026-08-15(第2段)で
+									//   Facade 経由にした ---- model の自由関数は別 .pln からリンクできない。
+									// ★★捨てるのが**UI 側の shutdown**なのは意図的。model 側の
+									//   startup/shutdown サービスは**バックグラウンドスレッドの終了ごとにも
+									//   呼ばれる**(ガイド vol1-07 L245-253)ので、あちらで捨てると
+									//   PDF を書き出すたびにステータス行が消える。
 
 class KESCMUIStartup : public CPMUnknown<IStartupShutdownService>
 {
@@ -107,7 +113,12 @@ void KESCMUIStartup::Shutdown()
 	// (Windows では実害なしの実績だが、Mac は unload 順が異なるため heap バッファを持ち越さない方が
 	// 安全。2026-07-15 終了堅牢化)。CMYK 側(カーソル文字列・押下中のフォント/文書ポインタ)。
 	KESCMCmykShutdown();
-	KESCMClearSessionStatus();	// パネルのステータス記憶(gSessionStatus)も同様に空へ
+	// パネルのステータス記憶(gSessionStatus)も同様に空へ。⚠**nil 検査つき**＝終了処理中は
+	// kUtilsBoss 側が先に落ちている可能性がある(2026-08-15・Task 4B で KESCMCmykShutdown の
+	// EndColorDrag に付けたのと同じ理由。同じ shutdown の隣の行なので同じ扱いにする)。
+	InterfacePtr<IKESCMCompareFacade> compare(Utils<IKESCMCompareFacade>().QueryUtilInterface());
+	if (compare != nil)
+		compare->ClearSessionStatus();
 }
 
 // KESCMUIStartup.cpp 終わり。
