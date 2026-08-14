@@ -37,12 +37,18 @@
 #include <chrono>				// steady_clock(ドラッグ中ライブ再サンプルのスロットル)
 
 // プロジェクト内インクルード:
-#include "KESCMColorSampler.h"       // KESCMSampleCmykUnderMouse
+// ★★2026-08-15(第2段 Task 4B): **KESCMColorSampler.h(model 側)の include を落とした**。
+//   このファイルは UI 側なので向き自体は合法だったが、呼んでいた3本(KESCMSampleCmykUnderMouse /
+//   KESCMSampleCmykBeginDrag / KESCMSampleCmykEndDrag)は**自由関数**で、別 .pln になった途端に
+//   リンクできない。⇒ IKESCMCompareFacade の SampleColorAt / BeginColorDrag / EndColorDrag へ通した。
 #include "KESCMCheckGlyph.h"         // KESCMDrawCheckGlyph(✓描画を CMYK カーソルと共有)
 #include "KESCMUIShared.h"	// panel / status line / nav readout / tool button (split from KESCMCore.h on 2026-08-13)
-#include "KESCMViewLookup.h"         // KESCMQueryViewUnderMouse / KESCMFindDocDbForView(2026-08-13 に KESCMCore.h から移動)
+#include "KESCMViewLookup.h"         // KESCMQueryViewUnderMouse / KESCMFindDocDbForView / KESCMQueryMouseContentPoint
+                                     // (2026-08-13 に KESCMCore.h から移動。★3本目は 2026-08-15 に増えた＝
+                                     //  サンプリング点の解決がサンプラーからこちらへ来たため)
 #include "Utils.h"                   // Utils<IKESCMCompareFacade>()
 #include "IKESCMCompareFacade.h"     // arm 状態 / ArmedDocsAlive(2026-08-13・分割 第1段 Task 11)
+                                     // ＋ CMYK サンプリング3本(2026-08-15・第2段 Task 4B)
 #include "KESCMCmykCursor.h"
 
 // Alt+左(CMYK 色ピック)の押下中モード。押下時に「マウス下の文書」で決めて固定し、RevealEnd で捨てる
@@ -350,11 +356,22 @@ bool16 KESCMTrackerUpdateCmykDrag()
 	if (!KESCMCmykDocsAlive())
 		return kFalse;
 
-	// 現在のマウス位置でサンプリング(KESCMSampleCmykUnderMouse は毎回マウス位置を読み直す)。単独モードは
-	// other=nil で hover だけ(1行)。ページ外・押した窓から外れた・取得失敗なら「値なし(--- …)」表示にして
-	// 拾えていないことを示す(ユーザー要望 2026-07-13。直前値を残さない=誤読防止)。
+	// 現在のマウス位置でサンプリング。単独モードは other=nil で hover だけ(1行)。ページ外・押した窓から
+	// 外れた・取得失敗なら「値なし(--- …)」表示にして拾えていないことを示す(ユーザー要望 2026-07-13。
+	// 直前値を残さない=誤読防止)。
+	//
+	// ★★2026-08-15(第2段 Task 4B): **マウス位置の読み直しと「押した窓から外れていないか」の判定は、
+	//   以前はサンプラー(model 側)の中に在った**。窓に向かって聞く問いなので UI 側へ引き取っている。
+	//   ⚠**この2行を落とすと、別の窓の座標を sCmykHoverDB のページ座標として誤って読む**
+	//   (2026-07-25 監査で入れたガード)。3つの条件は && の短絡で、旧実装の3連続 return と同じ順序・
+	//   同じ結果(どれか1つでも駄目なら「値なし」表示)。
 	PMString panelMsg, cursorMsg;
-	if (!KESCMSampleCmykUnderMouse(sCmykHoverDB, sCmykOtherDB, sCmykHoverIsTarget, panelMsg, cursorMsg))
+	InterfacePtr<IControlView> viewUnderMouse(KESCMQueryViewUnderMouse());
+	PMReal mx = 0.0, my = 0.0;
+	if (KESCMFindDocDbForView(viewUnderMouse) != sCmykHoverDB ||
+	    !KESCMQueryMouseContentPoint(viewUnderMouse, mx, my) ||
+	    !Utils<IKESCMCompareFacade>()->SampleColorAt(sCmykHoverDB, sCmykOtherDB, sCmykHoverIsTarget,
+	                                                 mx, my, panelMsg, cursorMsg))
 	{
 		if (solo) { KESCMBuildCmykNoValueSolo(cursorMsg); KESCMBuildCmykNoValuePanelSolo(panelMsg); }
 		else      { KESCMBuildCmykNoValue(cursorMsg, sCmykHoverIsTarget);
@@ -381,7 +398,7 @@ static void KESCMBuildCmykNoValue(PMString& out, bool16 hoverIsTarget)
 	out.Append(hoverIsTarget ? "--- --- --- --- s" : "--- --- --- --- t");
 }
 
-// パネル版の「値なし」表示。値ごとに見出し文字を添え t/s にする。KESCMSampleCmykUnderMouse
+// パネル版の「値なし」表示。値ごとに見出し文字を添え t/s にする。KESCMSampleCmykAt
 // 成功時のパネル表記(KESCMColorSampler.cpp の KESCMAppendCmykLabeled)と揃える(2026-07-14)。
 static void KESCMBuildCmykNoValuePanel(PMString& out, bool16 hoverIsTarget)
 {
@@ -445,7 +462,7 @@ void KESCMCmykBeginPress()
 		// 回避。向きも押下時のまま固定。破棄は RevealEnd)。単独モードはページ対応が無いので不要。
 		IDataBase* otherDB      = nil;
 		bool16     hoverIsTarget = kFalse;
-		InterfacePtr<IKESCMCompareFacade> compare(Utils<IKESCMCompareFacade>().QueryUtilInterface());	// ★この分岐で4回聞く(Utils.h:74-80)
+		InterfacePtr<IKESCMCompareFacade> compare(Utils<IKESCMCompareFacade>().QueryUtilInterface());	// ★この分岐で6回聞く(Utils.h:74-80。2026-08-15 に BeginColorDrag / SampleColorAt が増えて 4→6)
 		if (compare->ArmedDocsAlive())	// 比較中か(解放済み db との照合を避けるため生存検査を先に通す)
 		{
 			if (hoverDB == compare->GetArmedTargetDB())      { otherDB = compare->GetArmedSourceDB(); hoverIsTarget = kTrue;  }
@@ -457,10 +474,16 @@ void KESCMCmykBeginPress()
 
 		const bool16 solo = (otherDB == nil);
 		if (!solo)
-			KESCMSampleCmykBeginDrag(hoverDB, otherDB, hoverIsTarget);
+			compare->BeginColorDrag(hoverDB, otherDB, hoverIsTarget);
 
+		// ★2026-08-15(第2段 Task 4B): サンプリング点はここで読む(以前はサンプラーの中で読んでいた)。
+		//   ここでは「押した窓から外れていないか」の判定は要らない ---- hoverDB は今まさに
+		//   viewUnderMouse から引いた db なので、定義上一致している(ドラッグ中の
+		//   KESCMTrackerUpdateCmykDrag ではマウスが動くので、あちらには判定が要る)。
 		PMString panelMsg, cursorMsg;
-		if (!KESCMSampleCmykUnderMouse(hoverDB, otherDB, hoverIsTarget, panelMsg, cursorMsg))
+		PMReal mx = 0.0, my = 0.0;
+		if (!KESCMQueryMouseContentPoint(viewUnderMouse, mx, my) ||
+		    !compare->SampleColorAt(hoverDB, otherDB, hoverIsTarget, mx, my, panelMsg, cursorMsg))
 		{
 			// ページ外など: 拾えないことを示す(値なし --- 表示)。
 			if (solo) { KESCMBuildCmykNoValueSolo(cursorMsg); KESCMBuildCmykNoValuePanelSolo(panelMsg); }
@@ -486,7 +509,7 @@ void KESCMCmykEndPress()
 		sCmykCursorFont->Release();
 		sCmykCursorFont = nil;
 	}
-	KESCMSampleCmykEndDrag();
+	Utils<IKESCMCompareFacade>()->EndColorDrag();
 	// 押下中に固定していた CMYK モード(hover/other)の保持を解除(押下の外では持たない)。
 	sCmykHoverDB       = nil;
 	sCmykOtherDB       = nil;
@@ -536,5 +559,12 @@ void KESCMCmykShutdown()
 	sCmykOtherDB       = nil;
 	sCmykHoverIsTarget = kFalse;
 	sCmykDragThrottleStarted = kFalse;	// ドラッグ用スロットルの旗も残さない(監査 C-1)
-	KESCMSampleCmykEndDrag();	// 押下中のページ対応表キャッシュ(hover→other)も同様に破棄
+
+	// 押下中のページ対応表キャッシュ(hover→other)も同様に破棄。
+	// ★2026-08-15(第2段 Task 4B)に自由関数 KESCMSampleCmykEndDrag() から Facade 経由へ変えた。
+	// ⚠**ここだけは nil 検査を付ける**: 終了処理中は kUtilsBoss 側が先に落ちている可能性があり、
+	//   Utils<>()->M() の形だと nil 参照になる。上の KESCMCmykEndPress は押下解放=通常時なので素で呼ぶ。
+	InterfacePtr<IKESCMCompareFacade> compare(Utils<IKESCMCompareFacade>().QueryUtilInterface());
+	if (compare != nil)
+		compare->EndColorDrag();
 }

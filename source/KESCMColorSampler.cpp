@@ -9,7 +9,6 @@
 #include "VCPlugInHeaders.h"
 
 #include "IDataBase.h"
-#include "IControlView.h"
 #include "IGeometry.h"
 #include "IShape.h"
 #include "TransformUtils.h"
@@ -23,9 +22,11 @@
 #include "KESCMConstants.h"
 #include "KESCMDrawEventHandler.h"   // KESCMDrawEventHandler::sRasterizing
 #include "KESCMCore.h"               // KESCMFindPageUnderMouse
-#include "KESCMViewLookup.h"         // KESCMQueryMouseContentPoint / KESCMQueryViewUnderMouse /
-                                     // KESCMFindDocDbForView(2026-08-13 に KESCMCore.h から移動)
-                                     // ⚠ここが model→UI の逆流(Task 4 で全量を確定し、Task 9/10 で切る)
+// ★★2026-08-15(第2段 Task 4B): **KESCMViewLookup.h の include を落とした**。ここが最後まで残っていた
+//   model→UI の逆流2件のうちの1本で、KESCMQueryViewUnderMouse / KESCMFindDocDbForView /
+//   KESCMQueryMouseContentPoint の3本を呼んでいた。⇒ ビュー解決は呼び手(UI)へ出し、この .cpp は
+//   「渡された点の色は何か」だけを答える。⚠**3本目(KESCMFindDocDbForView)を落とさないこと**
+//   ---- 押した窓から外れたときのガードで、呼び手側にそのまま移してある(KESCMColorSampler.h の注記)。
 #include "KESCMPageMap.h"            // KESCMMapTargetToSource / KESCMBuildPairing(除外対応表)
 #include "KESCMColorSampler.h"
 
@@ -172,13 +173,22 @@ static void KESCMAppendCmykLabeled(PMString& s, const uint8 c[4])
 	s.Append(" K"); KESCMAppend3(s, KESCMByteToPct(c[3]));
 }
 
-// ツール Alt+左クリック(旧・中ボタン Shift＋Ctrl＋Alt＋ミドル): マウス下ページのクリック点 CMYK 生値を
-// hover(マウスが乗っている窓)・other(比較相手)でサンプリングし、"…000 t(改行)…000 s"(各値3桁ゼロ埋め、
-// 1行目が必ず hover 側)を outCursor/outPanel に組む。成功で kTrue。
-//   hover→other のページは平坦通し番号で対応。クリック点を inner(ページ内)座標へ戻し、hover/other
+// ツール Alt+左クリック(旧・中ボタン Shift＋Ctrl＋Alt＋ミドル): **渡された点**の CMYK 生値を
+// hover(マウスが乗っている窓の文書)・other(比較相手)でサンプリングし、"…000 t(改行)…000 s"
+// (各値3桁ゼロ埋め、1行目が必ず hover 側)を outCursor/outPanel に組む。成功で kTrue。
+//   hover→other のページは平坦通し番号で対応。渡された点を inner(ページ内)座標へ戻し、hover/other
 //   それぞれの spread 座標へ写してから各ページを極小ラスタ化する(新旧の幾何一致が前提)。
-bool16 KESCMSampleCmykUnderMouse(IDataBase* hoverDB, IDataBase* otherDB, bool16 hoverIsTarget,
-                                 PMString& outPanel, PMString& outCursor)
+//
+// ★★2026-08-15(第2段 Task 4B)に「マウス下」から「この点」へ変えた(旧 KESCMSampleCmykUnderMouse)。
+//   ここに在った3行 ---- ①マウス下のビューを引く ②その文書が hoverDB か確かめる ③マウスの content
+//   座標を読む ---- は **呼び手(UI)へ出した**。窓への問いは窓が無ければ答えが無く、model プラグインからは
+//   引けないため(UI プラグインの boss は BG スレッドから見えず nil が返る)。
+// ⚠**②の窓の同一性ガードは消えたのではなく移った**。落とすと「押した窓から別の窓へドラッグしたとき、
+//   その窓の座標を hoverDB のページ座標として誤読する」が戻る(2026-07-25 監査で入れたもの)。
+//   呼び手2つ(KESCMCmykCursor.cpp)がどちらも同じ判定を先に通してからここへ来る。
+bool16 KESCMSampleCmykAt(IDataBase* hoverDB, IDataBase* otherDB, bool16 hoverIsTarget,
+                         const PMReal& mx, const PMReal& my,
+                         PMString& outPanel, PMString& outCursor)
 {
 	if (hoverDB == nil)
 		return kFalse;
@@ -186,19 +196,7 @@ bool16 KESCMSampleCmykUnderMouse(IDataBase* hoverDB, IDataBase* otherDB, bool16 
 	// = Stop 中、および Start 中でも比較に無関係な第3の文書の上のとき(2026-07-26)。
 	const bool16 solo = (otherDB == nil);
 
-	// マウスが乗っているレイアウトビュー(Split Window対応、KESCMQueryViewUnderMouse参照)。
-	InterfacePtr<IControlView> view(KESCMQueryViewUnderMouse());
-	// ★窓の同一性ガード(2026-07-25 監査で追加): 押下時にモード(hover 文書)は固定されるが、ドラッグ更新は
-	//   ここが唯一の検査点。押した窓から別の窓へドラッグで入ると、その窓のペーストボード座標を hoverDB の
-	//   ページ座標として誤解釈した誤値を表示するため、マウス下ビューの所属文書が hoverDB のときだけ
-	//   サンプリングする(外れている間は呼び出し側が「値なし ---」を出す)。
-	if (KESCMFindDocDbForView(view) != hoverDB)
-		return kFalse;
-	PMReal mx = 0.0, my = 0.0;
-	if (!KESCMQueryMouseContentPoint(view, mx, my))
-		return kFalse;
-
-	// マウス下のページを特定(平坦通し番号も取得)。共有ヘルパ KESCMFindPageUnderMouse に集約。
+	// 渡された点のページを特定(平坦通し番号も取得)。共有ヘルパ KESCMFindPageUnderMouse に集約。
 	KESCMPageHit hit;
 	if (!KESCMFindPageUnderMouse(hoverDB, mx, my, hit))
 		return kFalse;

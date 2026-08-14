@@ -32,10 +32,9 @@
 #include "LayoutUIID.h"
 #include "DocumentContextID.h"
 
-// ジオメトリ / ビュー:
-#include "IControlView.h"
-#include "IPanorama.h"
-#include "PMMatrix.h"				// GetContentToWindowMatrix の戻り値(ズーム倍率の読み取り)
+// ジオメトリ:
+// ★2026-08-15(第2段 Task 4B): IControlView.h / IPanorama.h / PMMatrix.h を落とした。
+//   ビューとパノラマを引いてズームを読む3行が呼び手(UI)へ出たので、このファイルには使い手が居なくなった。
 #include "PMPoint.h"
 #include "PMReal.h"
 
@@ -49,11 +48,15 @@
 // プロジェクト内インクルード:
 #include "KESCMID.h"
 #include "KESCMConstants.h"
-#include "KESCMDrawEventHandler.h"   // エンジンの共有 static ＋ KESCMQueryPanorama
+#include "KESCMDrawEventHandler.h"   // エンジンの共有 static
+                                     // (★「＋ KESCMQueryPanorama」と書いてあったが、それは 2026-08-13 に
+                                     //  KESCMViewLookup.h へ移った後の陳腐化コメント。2026-08-15 に訂正)
 #include "KESCMCore.h"               // arm/disarm/状態 宣言
 #include "KESCMModelNotify.h"	// KESCMNotifyStatus - the model tells the UI, it never calls it (Task 9)
-#include "KESCMViewLookup.h"         // KESCMQueryViewUnderMouse / KESCMQueryMouseContentPoint
-                                     // (2026-08-13 に KESCMCore.h から移動。⚠ここも逆流＝Task 4 で確定)
+// ★★2026-08-15(第2段 Task 4B): **KESCMViewLookup.h の include を落とした**。ここが最後まで残っていた
+//   model→UI の逆流2件のうちの1本(もう1本は KESCMColorSampler.cpp)。KESCMQueryViewUnderMouse /
+//   KESCMQueryMouseContentPoint / KESCMQueryPanorama の3本を呼んでいた。
+//   ⇒ ビュー解決は呼び手(UI)へ出し、この .cpp は「渡された点のスプレッドを覗く」だけを担う。
 #include "KESCMPageMap.h"            // KESCMBuildPairing(比較の除外対応表)/KESCMPageMapReadSelection/KESCMPageMapSweepClosedDocs
 #include "KESCMPageCheck.h"          // KESCMPageCheckClearAllDocs / KESCMPageCheckSweepClosedDocs(✓の後片付け)
 #include "KESCMPageNumberMarker.h"   // KESCMInvalidatePageNumberMarkerRects(ノンブル除外矩形キャッシュの破棄)
@@ -89,53 +92,46 @@ PMReal KESCMBaseScreenOpacity()
 	       ? KESCMDrawEventHandler::SelectedMarkOpacity() : PMReal(1.0);
 }
 
-// 前面レイアウトビューで「マウス下スプレッド」の旧版べた載せを表示する。
+// **渡された点**のスプレッドの旧版べた載せを表示する。
 //   targetDB=表示中(新)ドキュメント, sourceDB=重ねる旧ドキュメント。
 //   そのスプレッドが既にキャッシュ済みなら再利用(即時)。未キャッシュなら旧キャッシュを捨てて、その
 //   スプレッドだけをその場でラスタ化(保持は常に1スプレッド)。成功時に sShowOriginal を立てて再描画。
 //   (2026-07-25 監査: 旧・中ボタン watcher/スクリプト報告用の戻り値 KESCMPeekResult と
 //    outSpread/outPages は、唯一の呼び出し側が全て捨てていたため撤去して void 化)
 //   ★2026-08-13: 呼び手(KESCMTrackerBeginPeek)が KESCMPeekGesture.cpp へ移ったので static を外した。
-//     宣言は KESCMPeek.h。**Task 9 で Facade 経由へ張り替える。**
-void KESCMPeekShowUnderMouse(IDataBase* targetDB, IDataBase* sourceDB)
+//     宣言は KESCMPeek.h。
+//   ★★2026-08-15(第2段 Task 4B): **ビュー解決3本を呼び手(UI)へ出して座標と倍率を引数で受け取る形にした**
+//     (旧 KESCMPeekShowUnderMouse)。落としたのは「どのビューか・その倍率は・マウスはどこか」の**観測**だけで、
+//     「その倍率をどの dpi に翻訳するか」の**方針**(下限 50% の頭打ち・16〜300dpi クランプ)はここに残した
+//     ＝計算式は1文字も動いていない。引数の意味は KESCMPeek.h を参照。
+void KESCMPeekShowAt(IDataBase* targetDB, IDataBase* sourceDB,
+                     const PMReal& mx, const PMReal& my,
+                     const PMReal& viewScale, const PMReal& uiZoom)
 {
 	if (targetDB == nil || sourceDB == nil)
 		return;
 
-	// マウスが乗っているレイアウトビュー(Split Window対応、KESCMQueryViewUnderMouse参照)。
-	InterfacePtr<IControlView> view(KESCMQueryViewUnderMouse());
-	if (view == nil)
-		return;
-
-	// 現在のズーム(content→window スケール=ズーム×デバイス倍率)から、画面と 1:1 になる解像度を決める。
+	// 呼び手が測ったズーム(content→window スケール=ズーム×デバイス倍率)から、画面と 1:1 になる解像度を決める。
 	// dpi = 72 × スケール。1:1 のとき最も綺麗(画像px=画面px)。
-	PMReal curScale = abs(view->GetContentToWindowMatrix().GetXScale());
+	PMReal curScale = abs(viewScale);
 	if (curScale <= 0) curScale = 1.0;
 
 	// 【低ズームの下限=UI 50%】UIズーム(ユーザーに見える拡大率, デバイス倍率を含まない)が 50% を下回る時は
 	// 「50% 相当の解像度」で頭打ちにする。50%以上は画面と 1:1 のままくっきり。50%未満は画像が画面より高精細に
 	// なり、縮小blit(点サンプリング)で多少粗くなる(=10% などは汚くてよい、という方針)。下限を UI% で決めるので
-	// デバイス倍率に依らず、画面に見える 50% がそのまま境界になる。パノラマ不明時は 1:1(従来=全ズーム綺麗)。
+	// デバイス倍率に依らず、画面に見える 50% がそのまま境界になる。パノラマ不明時は 1:1(従来=全ズーム綺麗)
+	// ＝呼び手はその場合 uiZoom に 0 を渡す(下の if を素通りして effScale = curScale のまま)。
 	PMReal effScale = curScale;
-	InterfacePtr<IPanorama> peekPano(KESCMQueryPanorama(view));
-	if (peekPano != nil)
+	if (uiZoom > 0)
 	{
-		const PMReal uiZoom = peekPano->GetXScaleFactor(kFalse);	// UIズーム(例: 0.5=50%)
-		if (uiZoom > 0)
-		{
-			const PMReal deviceScale = curScale / uiZoom;			// 画面デバイス倍率(=curScale/uiZoom)
-			const PMReal flooredZoom = (uiZoom < PMReal(0.5)) ? PMReal(0.5) : uiZoom;	// UI 50% で頭打ち
-			effScale = flooredZoom * deviceScale;
-		}
+		const PMReal deviceScale = curScale / uiZoom;			// 画面デバイス倍率(=curScale/uiZoom)
+		const PMReal flooredZoom = (uiZoom < PMReal(0.5)) ? PMReal(0.5) : uiZoom;	// UI 50% で頭打ち
+		effScale = flooredZoom * deviceScale;
 	}
 
 	PMReal peekDpi = PMReal(72.0) * effScale;
 	if (peekDpi < 16.0)  peekDpi = 16.0;	// 安全下限(degenerate 回避。通常は効かない)
 	if (peekDpi > 300.0) peekDpi = 300.0;	// 過大メモリ防止(300dpi A4 ≒ 35MB/頁)
-
-	PMReal mx = 0.0, my = 0.0;
-	if (!KESCMQueryMouseContentPoint(view, mx, my))
-		return;
 
 	// マウス下のスプレッド/ページを特定(平坦通し番号も取得)。共有ヘルパ KESCMFindPageUnderMouse に集約。
 	KESCMPageHit hit;

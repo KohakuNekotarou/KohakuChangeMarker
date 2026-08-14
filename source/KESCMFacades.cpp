@@ -40,6 +40,7 @@
 #include "KESCMComparisonRun.h"		// ToggleStartStop / Stop / StartFor / CanStart / print marks
 #include "KESCMCore.h"				// MarkChanges / ClearMarks / DoSetPrintMarks / getters
 #include "KESCMPeek.h"				// armed docs alive / peek / RefreshSelectedPages / base opacity
+#include "KESCMColorSampler.h"		// the Alt+left CMYK sample and its drag-time pairing cache
 #include "KESCMModelNotify.h"		// GetSessionStatus
 #include "KESCMOversetApply.h"		// ApplyOversetForDoc / OversetScanTargetDB
 #include "KESCMHideUnchanged.h"		// the Hide Unchanged toggle and its state
@@ -59,9 +60,13 @@
 // grepping for the actual callers before writing this file (Global Constraints: "check the
 // move table against the real code"): HideUnchangedToggle / GetHideUnchangedOn /
 // GetOversetScanTargetDB are all called from KESCMActionComponent.cpp, and ArmedDocsAlive /
-// ShowPeekUnderMouse / GetBaseScreenOpacity from KESCMPeekGesture.cpp, KESCMCmykCursor.cpp
+// ShowPeekAt / GetBaseScreenOpacity from KESCMPeekGesture.cpp, KESCMCmykCursor.cpp
 // and KESCMActionComponent.cpp -- every one of them a UI-side file. Left out, six calls would
 // have kept crossing the boundary as free functions.
+// ★★2026-08-15 (stage 2, task 4B) made it nine: SampleColorAt / BeginColorDrag / EndColorDrag
+// were found the same way -- KESCMCmykCursor.cpp (UI) was including KESCMColorSampler.h (model)
+// and calling its three free functions. Same reason as the six above, found one pass later
+// because the grep that produced them looked for facade callers, not for cross-side includes.
 //========================================================================================
 class KESCMCompareFacade : public CPMUnknown<IKESCMCompareFacade>
 {
@@ -97,9 +102,24 @@ public:
 	virtual void		GetSessionStatus(PMString& out)	{ KESCMGetSessionStatus(out); }
 
 	virtual bool16		ArmedDocsAlive()		{ return KESCMArmedDocsAlive(); }
-	virtual void		ShowPeekUnderMouse(IDataBase* targetDB, IDataBase* sourceDB)
-													{ KESCMPeekShowUnderMouse(targetDB, sourceDB); }
+	virtual void		ShowPeekAt(IDataBase* targetDB, IDataBase* sourceDB,
+								   const PMReal& mx, const PMReal& my,
+								   const PMReal& viewScale, const PMReal& uiZoom)
+													{ KESCMPeekShowAt(targetDB, sourceDB, mx, my, viewScale, uiZoom); }
 	virtual PMReal		GetBaseScreenOpacity()	{ return KESCMBaseScreenOpacity(); }
+
+	// ---- the CMYK sampler (stage 2, task 4B) --------------------------------------------
+	// ★These three are new to the facade. KESCMCmykCursor.cpp (UI) was calling the free
+	// functions in KESCMColorSampler.h (model) directly -- a legal direction while both sit in
+	// one .pln, but a free function cannot be linked across two. Task 4B is the pass that
+	// touches those very files, so they go through the boundary here rather than in task 9.
+	virtual bool16		SampleColorAt(IDataBase* hoverDB, IDataBase* otherDB, bool16 hoverIsTarget,
+									  const PMReal& mx, const PMReal& my,
+									  PMString& outPanel, PMString& outCursor)
+													{ return KESCMSampleCmykAt(hoverDB, otherDB, hoverIsTarget, mx, my, outPanel, outCursor); }
+	virtual void		BeginColorDrag(IDataBase* hoverDB, IDataBase* otherDB, bool16 hoverIsTarget)
+													{ KESCMSampleCmykBeginDrag(hoverDB, otherDB, hoverIsTarget); }
+	virtual void		EndColorDrag()			{ KESCMSampleCmykEndDrag(); }
 
 	virtual void		ApplyOversetForDoc(IDataBase* db)	{ KESCMApplyOversetForDoc(db); }
 	virtual IDataBase*	GetOversetScanTargetDB()	{ return KESCMOversetScanTargetDB(); }

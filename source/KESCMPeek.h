@@ -32,13 +32,25 @@ PMReal KESCMBaseScreenOpacity();
 //  いなかった。修飾キーの読み取りは窓の話なので、置き場所も UI が正しい。これで UI 側から
 //  KESCMPeek.h を include する理由が無くなった＝第1段の完了条件1が満たせる。)
 
-// 前面レイアウトビューで「マウス下スプレッド」の旧版べた載せを表示する(実体は KESCMPeek.cpp)。
+// **指定された点**のスプレッドの旧版べた載せを表示する(実体は KESCMPeek.cpp)。
 // targetDB=表示中(新)ドキュメント, sourceDB=重ねる旧ドキュメント。そのスプレッドが既にキャッシュ済みなら
 // 再利用(即時)、未キャッシュならその場でラスタ化する(保持は常に1スプレッド)。
-// ★呼び手は KESCMPeekGesture.cpp の KESCMTrackerBeginPeek ただ1つ＝**UI 側のジェスチャが model 側の
-//   表示を起動する**関係なので、ここは第1段では直接呼ばせている。**Task 9 で Facade 経由へ張り替える。**
-//   (2026-08-13 の分割まではこのファイル内の static だった)
-void KESCMPeekShowUnderMouse(IDataBase* targetDB, IDataBase* sourceDB);
+//   mx, my    = 覗く点。targetDB の**ペーストボード(content)座標**
+//   viewScale = その窓の content→window スケール(= ズーム × デバイス倍率)。ラスタ化解像度の基準
+//   uiZoom    = その窓の UI ズーム(ユーザーに見える拡大率。デバイス倍率を含まない)。
+//               ★**0 以下 = 「パノラマが引けなかった」**＝下限 50% の頭打ちを掛けずに viewScale をそのまま使う
+//               (分離前に peekPano == nil だったときと同じ振る舞い)
+//
+// ★★2026-08-15(第2段 Task 4B)に「マウス下」から「この点」へ変えた(旧 KESCMPeekShowUnderMouse)。
+//   ここに在ったビュー解決3本(KESCMQueryViewUnderMouse / KESCMQueryPanorama /
+//   KESCMQueryMouseContentPoint)は呼び手(UI)へ出した。
+//   ⇒ ★**観測値は UI が採り、その値からどの dpi でラスタ化するかは model が決める。**
+//     下限 50% の頭打ちと 16〜300dpi のクランプは「解像度の方針」なので model 側に残っている
+//     ＝分離で計算式は1文字も動いていない。
+// ★呼び手は KESCMPeekGesture.cpp の KESCMTrackerBeginPeek ただ1つ(Facade 経由)。
+void KESCMPeekShowAt(IDataBase* targetDB, IDataBase* sourceDB,
+                     const PMReal& mx, const PMReal& my,
+                     const PMReal& viewScale, const PMReal& uiZoom);
 
 // armed 中の Target/Source が IDocumentList に現存するかの最終ライン防御(実体は KESCMPeek.cpp)。
 // 失格なら KESCMHandleDocsClosed() で Stop 相当のフルクリーンアップ(arm 解除を含む)をして kFalse を返す。

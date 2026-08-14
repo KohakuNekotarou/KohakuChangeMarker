@@ -171,17 +171,52 @@ public:
 		IDataBase* is a dangling pointer whose address gets reused. */
 	virtual bool16		ArmedDocsAlive() = 0;
 
-	/** Show the old version of the spread under the pointer, over the front layout view.
+	/** Show the old version of the spread at (mx, my), over the front layout view.
 		Rasterises that one spread on first use and keeps exactly one cached.
-		⚠ Still resolves the view under the pointer internally, which is the last piece of
-		reverse flow left in the model (see the ledger §2-2). Moving that resolution out to the
-		caller is a behaviour-affecting change, so it is deliberately NOT part of this pass. */
-	virtual void		ShowPeekUnderMouse(IDataBase* targetDB, IDataBase* sourceDB) = 0;
+		  mx, my    -- the point to peek at, in targetDB's pasteboard (content) coordinates
+		  viewScale -- that window's content-to-window scale (zoom x device scale). The
+		               rasterisation dpi is derived from it.
+		  uiZoom    -- that window's UI zoom (what the user sees; no device scale). Pass 0 when
+		               the panorama could not be queried -- that reproduces exactly what the
+		               model used to do for itself when IPanorama came back nil.
+		★2026-08-15 (stage 2, task 4B): renamed from ShowPeekUnderMouse and the view resolution
+		moved out to the caller. Deciding *which window the pointer is over* is a question only
+		the UI can answer; the model now only answers *what is at this point, at this dpi*.
+		The dpi arithmetic itself did not move -- see KESCMPeek.h. */
+	virtual void		ShowPeekAt(IDataBase* targetDB, IDataBase* sourceDB,
+								   const PMReal& mx, const PMReal& my,
+								   const PMReal& viewScale, const PMReal& uiZoom) = 0;
 
 	/** The on-screen opacity marks are drawn at when they are shown permanently (printing ON
 		gives the 25%/75% choice, printing OFF gives fully opaque). The UI needs it when the
 		"Hold to Hide Marks" toggle flips, to put the permanent value back straight away. */
 	virtual PMReal		GetBaseScreenOpacity() = 0;
+
+	// ---- the CMYK sampler (Alt+left) ---------------------------------------------------
+
+	/** Read the raw CMYK at (mx, my) on hoverDB and, when otherDB is not nil, at the matching
+		point on the paired page of otherDB. Returns kFalse when there is no page under the
+		point or the sample could not be taken; the two strings are only valid on kTrue.
+		  hoverDB       -- the document the pointer is over. This is the side reported first.
+		  otherDB       -- the comparison partner, or nil for the single-document mode.
+		  hoverIsTarget -- kTrue when hoverDB is the comparison Target (new) side. Selects the
+		                   page-mapping direction and the t/s labels.
+		  mx, my        -- the sample point, in hoverDB's pasteboard (content) coordinates.
+		  outPanel      -- compact form for the panel status line (152px).
+		  outCursor     -- the numbers alone, for the cursor bitmap to draw.
+		⚠ The caller must have checked that the pointer is still over hoverDB's own window
+		before calling. That guard used to live inside the sampler; it moved out with the view
+		resolution in 2026-08-15 (stage 2, task 4B). Dropping it makes another window's
+		coordinates get read as if they were hoverDB's. */
+	virtual bool16		SampleColorAt(IDataBase* hoverDB, IDataBase* otherDB, bool16 hoverIsTarget,
+									  const PMReal& mx, const PMReal& my,
+									  PMString& outPanel, PMString& outCursor) = 0;
+
+	/** Cache the hover-to-other page pairing for the duration of an Alt+left drag. Begin on
+		button down, End on button up; between them SampleColorAt skips rebuilding the pairing
+		on every sample (up to 20/s). Not used in the single-document mode. */
+	virtual void		BeginColorDrag(IDataBase* hoverDB, IDataBase* otherDB, bool16 hoverIsTarget) = 0;
+	virtual void		EndColorDrag() = 0;
 
 	// ---- overset -----------------------------------------------------------------------
 

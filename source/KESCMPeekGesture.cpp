@@ -33,6 +33,11 @@
 #include "IWindowUtils.h"
 #include "IDocumentPresentation.h"
 
+// ビューとその倍率(2026-08-15・第2段 Task 4B で model 側から引き取った peek の観測):
+#include "IControlView.h"
+#include "IPanorama.h"
+#include "PMMatrix.h"				// GetContentToWindowMatrix の戻り値(ズーム倍率の読み取り)
+
 // 一括クローズ(複数文書を続けて閉じる)の集約用:
 #include "CObserver.h"				// 完了通知オブザーバの基底
 #include "ISubject.h"				// AttachObserver/IsAttached
@@ -53,6 +58,8 @@
 #include "Utils.h"                   // Utils<IKESCMCompareFacade>()
 #include "IKESCMCompareFacade.h"     // peek の表示・arm 状態・基準不透明度(2026-08-13・分割 第1段 Task 11)
 #include "KESCMCmykCursor.h"         // KESCMCmykBeginPress / KESCMCmykEndPress(押下中の CMYK 状態はあちらが持つ)
+#include "KESCMViewLookup.h"         // KESCMQueryViewUnderMouse / KESCMQueryMouseContentPoint /
+                                     // KESCMQueryPanorama(いずれも UI 側。2026-08-15・第2段 Task 4B)
 #include "KESCMPeekGesture.h"
 
 // Shift+左=旧版を不透明(100%)で / Shift+Alt+左=旧版を 50% で重ねて peek。
@@ -128,6 +135,13 @@ static bool16 KESCMFrontViewIsOverSource()
 // トラッカー(左ボタン)用の peek 開始。arm 済み(Start 後)かつ Target 窓上のときだけ、マウス下スプレッドの
 // 旧版を opacity(1.0=不透明 / 0.5=半透明)で重ねる。ハンドツールへの一時切替はしない(トラッカーが既に
 // マウスをキャプチャ済みで、ドラッグは ContinueTracking へ行くため不要)。
+//
+// ★★2026-08-15(第2段 Task 4B): **ビュー解決3本をここへ引き取った**。以前は model 側の
+//   KESCMPeekShowUnderMouse がこの3本を自分で呼んでいたが、「どの窓か・そのズームは・マウスはどこか」は
+//   窓が無ければ答えの無い問いなので、UI 側で観測して値を渡す形にした。
+//   ⚠**2つの早期 return は旧実装の同じ位置**(ビューが取れない / 座標が取れない)。そこで戻ると
+//   sPeekActive と SetMarksVisible(kFalse) は立ったままになるが、これも旧実装と同じ
+//   (＝ボタンを離したときの KESCMTrackerRevealEnd が元に戻すので、状態は取り残されない)。
 static void KESCMTrackerBeginPeek(PMReal opacity)
 {
 	if (!Utils<IKESCMCompareFacade>()->ArmedDocsAlive() || !KESCMFrontViewIsOverTarget())
@@ -137,7 +151,28 @@ static void KESCMTrackerBeginPeek(PMReal opacity)
 	compare->SetPeekOpacity(opacity);	// 旧版べた載せの不透明度(描画時に参照)
 	sSingleShowing = kFalse;
 	compare->SetMarksVisible(kFalse);	// 覗き中は枠等を出さない(旧版だけ)
-	compare->ShowPeekUnderMouse(compare->GetArmedTargetDB(), compare->GetArmedSourceDB());
+
+	// マウスが乗っているレイアウトビュー(Split Window対応、KESCMQueryViewUnderMouse参照)。
+	InterfacePtr<IControlView> view(KESCMQueryViewUnderMouse());
+	if (view == nil)
+		return;
+
+	PMReal mx = 0.0, my = 0.0;
+	if (!KESCMQueryMouseContentPoint(view, mx, my))
+		return;
+
+	// 観測値2つ。content→window スケール(ズーム×デバイス倍率)と、UI ズーム(ユーザーに見える拡大率)。
+	// ★これを何 dpi のラスタにするか(下限 50% の頭打ち・16〜300dpi のクランプ)は model 側の判断なので
+	//   ここでは触らない。パノラマが引けなければ uiZoom=0 を渡す＝model 側が「頭打ちなし」で扱う
+	//   (分離前に peekPano == nil だったときと同じ)。
+	const PMReal viewScale = view->GetContentToWindowMatrix().GetXScale();
+	PMReal uiZoom = 0.0;
+	InterfacePtr<IPanorama> peekPano(KESCMQueryPanorama(view));
+	if (peekPano != nil)
+		uiZoom = peekPano->GetXScaleFactor(kFalse);
+
+	compare->ShowPeekAt(compare->GetArmedTargetDB(), compare->GetArmedSourceDB(),
+	                    mx, my, viewScale, uiZoom);
 }
 
 // 修飾キー→ジェスチャの分類(KESCMPeekGesture.h 参照)。★割当の定義はここ1本だけ: トラッカーの押下時分岐
