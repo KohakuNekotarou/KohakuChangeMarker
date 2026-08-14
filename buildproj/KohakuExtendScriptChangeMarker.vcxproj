@@ -238,9 +238,6 @@
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryJump.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryRowEH.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryTreeEH.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMPanelView.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMNoTip.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMSplitterEH.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryTreeAdapter.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryTreeWidgetMgr.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMStorySection.cpp" />
@@ -271,7 +268,6 @@
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMTrackerRegister.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMCursorProvider.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMDocResponder.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMIconTip.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMScriptProvider.cpp" />
     <ClCompile Include="$(id_sdk_dir)\source\public\libs\publiclib\statics\PlugInStatics.cpp" />
     <ClCompile Include="$(ID_SDK_DIR)\source\sdksamples\common\SDKPlugInEntrypoint.cpp" />
@@ -327,6 +323,8 @@
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\IKESCMCompareFacade.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\IKESCMMarkData.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\IKESCMPageFlagsFacade.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\IKESCMStoryEditsFacade.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\IKESCMBookFacade.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMThumbnailRefresh.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMThumbIdleTask.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMScrollMap.h" />

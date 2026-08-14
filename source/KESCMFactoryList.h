@@ -30,15 +30,17 @@ REGISTER_PMINTERFACE(KESCMModelChangeObserver, kKESCMModelChangeObserverImpl)	//
 REGISTER_PMINTERFACE(KESCMPanelObserver, kKESCMPanelObserverImpl)
 REGISTER_PMINTERFACE(KESCMActionComponent, kKESCMActionComponentImpl)
 REGISTER_PMINTERFACE(KESCMDocResponder, kKESCMDocResponderImpl)	// ServiceProvider は API 提供の実装を .fr で名指し(2026-08-06)
-REGISTER_PMINTERFACE(KESCMIconTip, kKESCMIconTipImpl)
+// (KESCMIconTip は 2026-08-15・第2段 Task 5 で KCMUI へ移した。登録は KCMUIFactoryList.h。
+//  ⚠**Impl ID `kKESCMIconTipImpl` は KESCMID.h に残したまま**＝この Impl を名指ししている
+//  `.fr` の AddIn ブロックがまだ KESCM.fr 側にある(boss が移るのは Task 7)ため。番号の振り替えは
+//  boss と一緒に行う。KESCMNoTip / KESCMSplitterEH / KESCMPanelView も同じ扱い。)
 REGISTER_PMINTERFACE(KESCMLayoutSyncObserver, kKESCMLayoutSyncObserverImpl)
 REGISTER_PMINTERFACE(KESCMDocsClosedObserver, kKESCMDocsClosedObserverImpl)	// 一括クローズ完了で保留した後片付けを流す(KESCMPeek.cpp)
 REGISTER_PMINTERFACE(KESCMPanelVisibilityObserver, kKESCMPanelVisibilityObserverImpl)	// パネルの開閉/ドッキング切り替えで半透明を貼り直す(KESCMPanelAlpha.cpp)
 REGISTER_PMINTERFACE(KESCMStorySectionToggleObserver, kKESCMStorySectionToggleObserverImpl)	// パネル下部「Story Edits」セクションの開閉ボタン(KESCMStorySectionObserver.cpp)
 REGISTER_PMINTERFACE(KESCMPanelRollOver, kKESCMPanelRollOverImpl)	// カーソルが乗っている間だけ半透明を解除(IMouseRollOver。KESCMPanelAlpha.cpp)
-REGISTER_PMINTERFACE(KESCMPanelView, kKESCMPanelViewImpl)	// パネルの最小サイズを守る(PalettePanelView派生。KESCMPanelView.cpp)
-REGISTER_PMINTERFACE(KESCMNoTip, kKESCMNoTipImpl)	// ツールチップを出さない ITip(KESCMNoTip.cpp)
-REGISTER_PMINTERFACE(KESCMSplitterEH, kKESCMSplitterEHImpl)	// 分割バーを掴めなくする IEventHandler(KESCMSplitterEH.cpp)
+// (KESCMPanelView / KESCMNoTip / KESCMSplitterEH の3本も 2026-08-15・第2段 Task 5 で KCMUI へ移した。
+//  上の KESCMIconTip の注記を参照。)
 REGISTER_PMINTERFACE(KESCMStoryTreeAdapter, kKESCMStoryTreeAdapterImpl)	// Story Edits 一覧の中身(ListTreeViewAdapter派生。KESCMStoryTreeAdapter.cpp)
 REGISTER_PMINTERFACE(KESCMStoryTreeWidgetMgr, kKESCMStoryTreeWidgetMgrImpl)	// Story Edits 一覧の行の生成と流し込み(CTreeViewWidgetMgr派生。KESCMStoryTreeWidgetMgr.cpp)
 REGISTER_PMINTERFACE(KESCMStoryRowEH, kKESCMStoryRowEHImpl)	// Story Edits の行のクリック=ジャンプ/ダブルクリック=ストーリー全文を選択(TreeNodeEventHandler派生。KESCMStoryRowEH.cpp)

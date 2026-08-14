@@ -42,6 +42,11 @@
 
 // Project includes:
 #include "KCMUIID.h"
+// ★2026-08-15(第2段 Task 5): model 側の ID ヘッダー。下の KCMUIFactoryList.h が、KESCM から移ってきた
+//   4本の Impl を **`kKESCM*Impl` という元の番号のまま**名指ししているので要る（振り替えは boss が
+//   移る Task 6/7 まで待つ＝理由は KCMUIFactoryList.h に書いてある）。
+//   ⇒ **UI が model のヘッダーを読む向きなので正しい。**逆（model が KCMUIID.h を読む）は禁じられている。
+#include "KESCMID.h"
 #include "GenericID.h"
 #include "ShuksanID.h"
 #include "TextID.h"

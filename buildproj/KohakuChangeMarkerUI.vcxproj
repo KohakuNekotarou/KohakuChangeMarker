@@ -88,6 +88,10 @@
       </Midl>
       <ClCompile>
          <AdditionalOptions>/vmg @"KohakuChangeMarkerUIcpp.rsp"</AdditionalOptions>
+         <!-- 2026-08-15(第2段 Task 5): model 側の source/ を検索路へ。移ってきた .cpp が KESCMID.h を
+              読む（ID・widget ID・文字列キー・定数はまだ model 側にある）。UI→model なので向きは正しい。
+              ⚠ .rsp ファイルは KESCM リポジトリの控え(buildproj/)に無いので、ここ(vcxproj)に書く。 -->
+         <AdditionalIncludeDirectories>..\..\..\source\sdksamples\KESCM\source;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
          <PrecompiledHeaderOutputFile>$(IntDir)KohakuChangeMarkerUI.pch</PrecompiledHeaderOutputFile>
          <PreprocessorDefinitions>_CRT_SECURE_NO_DEPRECATE;BOOST_SYSTEM_NO_DEPRECATED;DEBUG;STRICT;%(PreprocessorDefinitions)</PreprocessorDefinitions>
          <PrecompiledHeader>Use</PrecompiledHeader>
@@ -121,6 +125,10 @@
       </Midl>
       <ClCompile>
          <AdditionalOptions>/vmg @"KohakuChangeMarkerUIcpp.rsp"</AdditionalOptions>
+         <!-- 2026-08-15(第2段 Task 5): model 側の source/ を検索路へ。移ってきた .cpp が KESCMID.h を
+              読む（ID・widget ID・文字列キー・定数はまだ model 側にある）。UI→model なので向きは正しい。
+              ⚠ .rsp ファイルは KESCM リポジトリの控え(buildproj/)に無いので、ここ(vcxproj)に書く。 -->
+         <AdditionalIncludeDirectories>..\..\..\source\sdksamples\KESCM\source;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
          <PreprocessorDefinitions>_CRT_SECURE_NO_DEPRECATE;BOOST_SYSTEM_NO_DEPRECATED;DEBUG;STRICT;%(PreprocessorDefinitions)</PreprocessorDefinitions>
          <PrecompiledHeader>Use</PrecompiledHeader>
          <PrecompiledHeaderFile>VCPlugInHeaders.h</PrecompiledHeaderFile>
@@ -154,6 +162,10 @@
       </Midl>
       <ClCompile>
          <AdditionalOptions>/vmg @"KohakuChangeMarkerUIcpp.rsp"</AdditionalOptions>
+         <!-- 2026-08-15(第2段 Task 5): model 側の source/ を検索路へ。移ってきた .cpp が KESCMID.h を
+              読む（ID・widget ID・文字列キー・定数はまだ model 側にある）。UI→model なので向きは正しい。
+              ⚠ .rsp ファイルは KESCM リポジトリの控え(buildproj/)に無いので、ここ(vcxproj)に書く。 -->
+         <AdditionalIncludeDirectories>..\..\..\source\sdksamples\KESCM\source;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
          <PreprocessorDefinitions>_CRT_SECURE_NO_DEPRECATE;BOOST_SYSTEM_NO_DEPRECATED;STRICT;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
          <StringPooling>true</StringPooling>
          <PrecompiledHeader>Use</PrecompiledHeader>
@@ -189,6 +201,10 @@
       </Midl>
       <ClCompile>
          <AdditionalOptions>/vmg @"KohakuChangeMarkerUIcpp.rsp"</AdditionalOptions>
+         <!-- 2026-08-15(第2段 Task 5): model 側の source/ を検索路へ。移ってきた .cpp が KESCMID.h を
+              読む（ID・widget ID・文字列キー・定数はまだ model 側にある）。UI→model なので向きは正しい。
+              ⚠ .rsp ファイルは KESCM リポジトリの控え(buildproj/)に無いので、ここ(vcxproj)に書く。 -->
+         <AdditionalIncludeDirectories>..\..\..\source\sdksamples\KESCM\source;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
          <PreprocessorDefinitions>_CRT_SECURE_NO_DEPRECATE;BOOST_SYSTEM_NO_DEPRECATED;STRICT;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
          <StringPooling>true</StringPooling>
          <PrecompiledHeader>Use</PrecompiledHeader>
@@ -216,6 +232,11 @@
    </ItemDefinitionGroup>
    <ItemGroup>
       <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KCMUIActionComponent.cpp"/>
+      <!-- 2026-08-15: model/UI 分割 第2段 Task 5（葉の UI 部品）で KESCM から移ってきた4本 -->
+      <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMIconTip.cpp"/>
+      <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMNoTip.cpp"/>
+      <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMSplitterEH.cpp"/>
+      <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMPanelView.cpp"/>
       <ClCompile Include="$(id_sdk_dir)\source\public\libs\publiclib\statics\PlugInStatics.cpp"/>
       <ClCompile Include="$(ID_SDK_DIR)\source\sdksamples\common\SDKPlugInEntrypoint.cpp"/>
       <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KCMUIID.cpp"/>
@@ -235,22 +256,22 @@
    <ItemGroup>
       <CustomBuild Include="..\..\..\source\sdksamples\KESCM\ui\KCMUI.fr">
          <Command Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
-        odfrc $(ODFRC_ADDITIONAL_FLAGS) "%(FullPath)" -o "$(IntDir)%(Filename).fres" -d DEBUG  -i "..\..\..\source\sdksamples\KESCM\ui" @"KohakuChangeMarkerUIodfrc.rsp"
+        odfrc $(ODFRC_ADDITIONAL_FLAGS) "%(FullPath)" -o "$(IntDir)%(Filename).fres" -d DEBUG  -i "..\..\..\source\sdksamples\KESCM\ui" -i "..\..\..\source\sdksamples\KESCM\source" @"KohakuChangeMarkerUIodfrc.rsp"
       </Command>
          <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">$(IntDir)TriggerResourceDeps.obj;%(AdditionalInputs)</AdditionalInputs>
          <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">$(IntDir)%(Filename).fres;%(Outputs)</Outputs>
          <Command Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-        odfrc $(ODFRC_ADDITIONAL_FLAGS) "%(FullPath)" -o "$(IntDir)%(Filename).fres" -d DEBUG  -i "..\..\..\source\sdksamples\KESCM\ui" @"KohakuChangeMarkerUIodfrc.rsp"
+        odfrc $(ODFRC_ADDITIONAL_FLAGS) "%(FullPath)" -o "$(IntDir)%(Filename).fres" -d DEBUG  -i "..\..\..\source\sdksamples\KESCM\ui" -i "..\..\..\source\sdksamples\KESCM\source" @"KohakuChangeMarkerUIodfrc.rsp"
       </Command>
          <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(IntDir)TriggerResourceDeps.obj;%(AdditionalInputs)</AdditionalInputs>
          <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(IntDir)%(Filename).fres;%(Outputs)</Outputs>
          <Command Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
-        odfrc $(ODFRC_ADDITIONAL_FLAGS) "%(FullPath)" -o "$(IntDir)%(Filename).fres" -i "..\..\..\source\sdksamples\KESCM\ui" @"KohakuChangeMarkerUIodfrc.rsp"
+        odfrc $(ODFRC_ADDITIONAL_FLAGS) "%(FullPath)" -o "$(IntDir)%(Filename).fres" -i "..\..\..\source\sdksamples\KESCM\ui" -i "..\..\..\source\sdksamples\KESCM\source" @"KohakuChangeMarkerUIodfrc.rsp"
       </Command>
          <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">$(IntDir)TriggerResourceDeps.obj;%(AdditionalInputs)</AdditionalInputs>
          <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">$(IntDir)%(Filename).fres;%(Outputs)</Outputs>
          <Command Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
-        odfrc $(ODFRC_ADDITIONAL_FLAGS) "%(FullPath)" -o "$(IntDir)%(Filename).fres" -i "..\..\..\source\sdksamples\KESCM\ui" @"KohakuChangeMarkerUIodfrc.rsp"
+        odfrc $(ODFRC_ADDITIONAL_FLAGS) "%(FullPath)" -o "$(IntDir)%(Filename).fres" -i "..\..\..\source\sdksamples\KESCM\ui" -i "..\..\..\source\sdksamples\KESCM\source" @"KohakuChangeMarkerUIodfrc.rsp"
       </Command>
          <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(IntDir)TriggerResourceDeps.obj;%(AdditionalInputs)</AdditionalInputs>
          <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(IntDir)%(Filename).fres;%(Outputs)</Outputs>

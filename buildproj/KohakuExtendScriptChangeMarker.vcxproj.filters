@@ -21,9 +21,6 @@
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMDocResponder.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMIconTip.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="$(id_sdk_dir)\source\public\libs\publiclib\statics\PlugInStatics.cpp">
       <Filter>Source Files\Plugin</Filter>
     </ClCompile>

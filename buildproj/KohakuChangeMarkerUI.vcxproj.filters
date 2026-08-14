@@ -18,6 +18,18 @@
       <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KCMUIActionComponent.cpp">
          <Filter>Source Files</Filter>
       </ClCompile>
+      <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMIconTip.cpp">
+         <Filter>Source Files</Filter>
+      </ClCompile>
+      <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMNoTip.cpp">
+         <Filter>Source Files</Filter>
+      </ClCompile>
+      <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMSplitterEH.cpp">
+         <Filter>Source Files</Filter>
+      </ClCompile>
+      <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMPanelView.cpp">
+         <Filter>Source Files</Filter>
+      </ClCompile>
       <ClCompile Include="$(id_sdk_dir)\source\public\libs\publiclib\statics\PlugInStatics.cpp">
          <Filter>Source Files\Plugin</Filter>
       </ClCompile>
