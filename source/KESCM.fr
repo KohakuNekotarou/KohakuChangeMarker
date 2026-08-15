@@ -55,9 +55,13 @@
 						// ★2026-08-15 (Task 10): IID_ISPRITE / IID_IPATHGEOMETRY / kPathGeometryImpl left with the
 						//   tracker in Task 6B-2. Only the draw-event handler is still declared on this side.
 
+#include "TextScriptID.h"	// kStoryObjectScriptElement (TextScriptID.h:49) - the story object the
+							// four change-counter properties are added to (2026-08-15)
+
 // Project includes:
 #include "KESCMID.h"
 #include "KESCMScriptingDefs.h"	// p_KESCMStatus / p_KESCMBookResult (this half's two read-only properties)
+								// + the four story counters: p_KESCMChangeCount and friends (2026-08-15)
 								// ★2026-08-15 (Task 6B-2): en_KESCMTool (the toolbox tool's ScriptID) moved to
 								//   the UI half's copy of this header, with the tool.
 // (GenericID.h / TextID.h and a duplicate ShuksanID.h were scripting-era leftovers with no
@@ -224,6 +228,25 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 			IID_ISCRIPTPROVIDER, kKESCMScriptProviderImpl,
 		}
 	},
+
+	/*
+	 * The STORY half of this plug-in's scripting (2026-08-15): the four ITextModel change
+	 * counters, served on the story object itself.
+	 *
+	 * ★A SECOND provider boss, not a second Provider block on the one above. A Provider block
+	 * puts every property it lists onto every object it lists - which is exactly what BPI.fr:603-612
+	 * wants (one property, two kinds of page item) and exactly what we do NOT want here: merging
+	 * would grow app.kcmChangeCount and stories[n].kcmStatus, both nonsense. The official
+	 * candlechart sample splits the same way (kCdlChartScriptProviderBoss / kCdlStockScriptProviderBoss).
+	 */
+	Class
+	{
+		kKESCMStoryScriptProviderBoss,
+		kBaseScriptProviderBoss,
+		{
+			IID_ISCRIPTPROVIDER, kKESCMStoryScriptProviderImpl,
+		}
+	},
 }}};
 
 /*  
@@ -343,6 +366,79 @@ resource VersionedScriptElementInfo(10)
 				Object{ kApplicationObjectScriptElement },
 				Property{ kKESCMStatusPropertyScriptElement, kReadOnly },
 				Property{ kKESCMBookResultPropertyScriptElement, kReadOnly },
+			}
+		}
+
+		/*
+		 * The four ITextModel change counters, on the STORY object (2026-08-15, at the user's
+		 * request):  app.documents[0].stories[2].kcmChangeCount
+		 *
+		 * ★The aggregate is the number that DECIDES whether a story shows up in the panel's Story
+		 * Edits list (KESCMStoryStamp.cpp compares the two documents' readings and skips the story
+		 * when they match). Until now it could not be read from outside, and that cost a whole
+		 * investigation on the day this was added: a list came back empty for two documents whose
+		 * text plainly differed, and nothing short of reading the source could tell "broken" from
+		 * "the two files genuinely read the same". They read the same - both had been built by the
+		 * same script with the same number of edits, and a counter is a version number for the
+		 * story's state rather than a count of edits.
+		 *
+		 * Int32Type rather than a string: a test wants to compare these with == and <, not parse.
+		 */
+		Property
+		{
+			kKESCMChangeCountPropertyScriptElement,
+			p_KESCMChangeCount,
+			"kcm change count",					// name -> stories[n].kcmChangeCount
+			"The story's all-changes counter - the reading Story Edits compares between two documents.",
+			Int32Type,
+			{}
+			kNoAttributeClass,
+		}
+
+		Property
+		{
+			kKESCMTextChangeCountPropertyScriptElement,
+			p_KESCMTextChangeCount,
+			"kcm text change count",			// name -> stories[n].kcmTextChangeCount
+			"The story's text counter: characters inserted, removed or replaced.",
+			Int32Type,
+			{}
+			kNoAttributeClass,
+		}
+
+		Property
+		{
+			kKESCMAttrChangeCountPropertyScriptElement,
+			p_KESCMAttrChangeCount,
+			"kcm attr change count",			// name -> stories[n].kcmAttrChangeCount
+			"The story's attribute counter: formatting, applied styles and overrides.",
+			Int32Type,
+			{}
+			kNoAttributeClass,
+		}
+
+		Property
+		{
+			kKESCMOtherChangeCountPropertyScriptElement,
+			p_KESCMOtherChangeCount,
+			"kcm other change count",			// name -> stories[n].kcmOtherChangeCount
+			"The story's other counter. Nothing measured so far has ever moved it.",
+			Int32Type,
+			{}
+			kNoAttributeClass,
+		}
+
+		// Puts those four ON the story object - a SECOND provider boss, because a Provider block
+		// puts every property it lists onto every object it lists (see the boss's comment above).
+		Provider
+		{
+			kKESCMStoryScriptProviderBoss,
+			{
+				Object{ kStoryObjectScriptElement },
+				Property{ kKESCMChangeCountPropertyScriptElement, kReadOnly },
+				Property{ kKESCMTextChangeCountPropertyScriptElement, kReadOnly },
+				Property{ kKESCMAttrChangeCountPropertyScriptElement, kReadOnly },
+				Property{ kKESCMOtherChangeCountPropertyScriptElement, kReadOnly },
 			}
 		}
 	}

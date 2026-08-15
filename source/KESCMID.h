@@ -74,12 +74,15 @@
 // ★★2026-08-15（第2段 Task 6B-2）: **値の定義は KESCMBoundaryID.h へ移した**（model と UI の
 //   2つの .pln が同じ版数を名乗るため）。⚠**版数の履歴と「次に提出する分」の増分は、引き続き
 //   下のコメントがこのプロジェクトの正本**。動いたのは値の置き場所だけ。
-//#define kKESCMVersion		"1.4.0"						// Version of this plug-in。About ボックス本文・.rc の FileVersion・PluginVersion リソースの3か所に出る。1.0.1 → 1.1.0(2026-07-25) → 1.1.1(2026-07-26) → 1.2.0(2026-07-30) → 1.2.1(2026-08-06) → 1.3.0(2026-08-07) → 1.3.1(2026-08-07) → 1.4.0(2026-08-09)。
+//#define kKESCMVersion		"1.5.0"						// Version of this plug-in。About ボックス本文・.rc の FileVersion・PluginVersion リソースの3か所に出る。1.0.1 → 1.1.0(2026-07-25) → 1.1.1(2026-07-26) → 1.2.0(2026-07-30) → 1.2.1(2026-08-06) → 1.3.0(2026-08-07) → 1.3.1(2026-08-07) → 1.4.0(2026-08-09) → **1.5.0(2026-08-15)**。
 														// ★1.4.0 で minor を上げた理由 = **新機能 Story Edits**(パネル下部に開閉セクションを設け、変更のあったストーリーを一覧する)。1.2.1→1.3.0 のときと同じ基準＝機能追加が入るなら patch では足りない。★**2026-08-10 に段階4(ジャンプ)まで完成**(下記③)。
+														// ★★**1.5.0 で minor を上げた理由(2026-08-15 ユーザー決定)** = **model/UI 分割の完了**で **PDF 書き出しに比較マークが出るようになった**(下記⑧)＋**Story の変更カウンターをスクリプトに公開**(下記⑨)。
+														//   ⚠**1.4.0 は提出しないまま 1.5.0 へ繰り上げた**(1.2.1→1.3.0 と同じ形)。∴ 下の増分リストは**公開版 1.3.0 から見た全部**で、①〜⑦は 1.4.0 のときのまま据え置き。
+														//   ★このとき下の「■■【1.4.0 = 次に提出する分】」の見出しも 1.5.0 へ書き換えてある＝**見出しの版数と kKESCMVersion は必ず一致させること**(ずれると「どれを提出説明に使うか」が読めなくなる)。
 														// ★Adobe Exchange の公開版は **1.3.0**(2026-08-07 承認・公開)。1.2.1 は提出しないまま 1.3.0 へ繰り上げた(機能追加が入ったので patch では足りない)。
 														// ★★**「版数が◯◯だった時期にコードへ入れた」ことと「提出した◯◯のビルドに入っている」ことは別物**。取り違えると提出説明を誤る(2026-08-07 に実際に踏んだ)ので、増分は**提出したビルドを境に**2段へ分けてある。★提出文を起こすときは【次に提出する分】だけを読むこと。
 														//
-														// ■■【1.4.0 = 次に提出する分】★公開版 1.3.0 から見た増分。**提出説明はここだけを使う**。(版数は 1.3.1 から繰り上げ。中身は①②に③が加わっただけで、①②は 1.3.1 のときと同一)
+														// ■■【1.5.0 = 次に提出する分】★公開版 1.3.0 から見た増分。**提出説明はここだけを使う**。(版数は 1.3.1→1.4.0→1.5.0 と繰り上げ。①〜⑦は 1.4.0 のときと同一で、2026-08-15 に⑧⑨が加わった)
 														//   ①パネルにツール切替ボタン(kKESCMToolButtonWidgetID) = 押すとツールボックスの琥珀のツールがアクティブになる。絵はツールボックスと同じリソースを参照。★押下表示はツールボックスと双方向に同期する(状態を書くのは ITool::Select/Deselect の1か所だけなので、どちらから選んでも食い違わない)。How to Use の冒頭も「ツールボックス、またはパネルのツールボタン」へ追随済み。
 														//   ②半透明パネルの「不透明に戻す」判定を変更 = カーソルがパネルの矩形の中にある限り、その上にフライアウト・子メニュー・ツールチップが出ていても不透明のまま。公開版 1.3.0 は自分の窓が上に出ると薄くなった(KBS と同じ判定へ揃えたもの)。
 														//   ③★★**Story Edits(パネル下部の開閉セクション) = minor を上げた理由。★2026-08-10 に完成(段階1〜4)＝提出説明に書いてよい。**
@@ -97,6 +100,12 @@
 														//     ⚠**版数は 1.4.0 のまま**でよい。1.4.0 は**まだ提出していない**ので、公開版 1.3.0 から見た増分がこのリストに増えるだけ(1.2.1→1.3.0 のときと同じ考え方＝提出していない版数は繰り上げずに中身を足す)。
 //   ⑥内部の安全修正だけ(2026-08-12)。★**提出説明には書かない** ＝ 画面にも操作にも見える変化が無い。ここに残すのは、次に差分を洗う人が「これは説明に要る変更か」を毎回考え直さずに済むようにするため。中身は2つ＝①**終了時に半透明トグルの購読を外す**(KESCMDetachPanelVisibilityObserver 新設。購読している間セッションが握るのはこの .pln の中へのポインタで、終了処理中のパネル破棄は実際に通知を飛ばす) ②**Win32 フックを外せなかったときハンドルを捨てない**(UnhookWinEvent が失敗する条件は3つあり、うち1つではフックが生きたまま残る＝捨てると二度と外せない)。★どちらも **KBS が先に直していて、こちらへ歩いてこなかった分**(KBS ブロック14 の3周目が兄弟報告として検出し、同日ユーザー指示で移植)。
 //   ⑦UI の細部2件(2026-08-12 ユーザー指定。どちらも公開版 1.3.0 から見て目に見えるが、**提出説明に書くほどではない**)。①**Story Edits の分割バーをドラッグで動かせなくした** ＝ 上ペインは固定座標のコントロールの塊で正しい高さが1つしか無く(Top snap がその高さ)、下げられる方向だけが残っていて、下げると下に何も無い帯ができた。セクションの高さはパネルの縁のドラッグで決まる。②フライアウトの「Compare Books」を**Start の直下**へ(9.54→9.05)＝比較を始める項目を1つの群にまとめた。あわせて Hide Unchanged Spreads と**同じ位置番号 9.54 で重複していた**のも解消。
+														//   ⑧★★★**PDF 書き出しに比較マークが出るようになった**(2026-08-15。公開版 1.3.0 から見て**いちばん大きな変化**)。従来は「Print comparison marks」を ON にしても、**File ▸ Export ▸ Adobe PDF で書き出した PDF には1画素も出なかった**(印刷には出ていた)。⇒ プラグインを **model と UI の2本に分割**し(KohakuChangeMarker.pln ＋ KohakuChangeMarkerUI.pln)、比較マークの描画をバックグラウンドスレッドから届く側へ移した。★**利用者から見た使い方は何も変わらない**——インストールは従来どおり両方を入れるだけで、パネルもメニューも同じ。
+														//     ⚠**同時に PDF 書き出し用の描き方も作り直した**＝PDF 書き出しのポートは透明を一切通さない(画像のアルファも捨てる)ので、**リングをベクターで塗り、不透明度を色に溶かす**形にした。**印刷経路は従来のまま**(2026-08-15 に実測して確認済み)。
+														//   ⑨★★**ストーリーの変更カウンターをスクリプトから読めるようにした**(2026-08-15 ユーザー要望)＝`app.documents[0].stories[2].kcmChangeCount` ほか3本(`kcmTextChangeCount` / `kcmAttrChangeCount` / `kcmOtherChangeCount`)。すべて**読み取り専用の整数**。
+														//     何の役に立つか: **Story Edits に行が出るかどうかを決めているのが、この集約カウンターの一致/不一致**。読めるようにしたことで「一覧が空なのは変更が無いからか、それとも見落としか」を**利用者自身が確かめられる**。⚠**カウンターは編集回数ではなく状態のバージョン番号**なので、**別々に作った2つの文書は、中身が違っても同じ値を持つことがある**——Story Edits が意味を持つのは「元の文書を別名保存して片方を編集した」対に対してであり、この4本はそれを外から確認する手段でもある。
+														//     ⚠**KESCM の「メソッドは公開しない」方針は変えていない**(足したのは読み取り専用プロパティだけ)。公開済みの `app.kcmStatus` / `app.kcmBookResult` と同じ性格。
+														//   ⑩⚠★★**利用者の設定が初期化される**(1.3.0 からの更新時に1回だけ)。**リリースノートに必ず書く**——書かないと不具合として報告される種類の変化: ①**キーボードショートカットの割り当て** ②**パネルの配置**(表示されない場合はウィンドウメニューから開き直す) ③**Story Edits セクションの高さ** ④**ツールの選択状態**。いずれも UI 側が別プラグインになり ID が振り替わったため。**比較の結果や保存した Check/Register のデータには影響しない。**
 														//   ■1.3.1 で撤去したもの: 「Translucent Toolbox」トグル(フローティング中の**ツールボックス**を半透明にする)。★★**提出説明に「機能を削除した」と書かないこと** ＝ **提出した 1.3.0 のビルドに最初から入っていない**(2026-08-07 ユーザー明言)ので、公開版から見れば存在しなかった機能。ActionID +38 は欠番のまま再利用しない。
 														//   ⚠**①②とも「版数が 1.3.0 だった時期にコードへ入れた」もの**だが、提出した 1.3.0 のビルド(commit 5ff22c5 時点)には入っていない。**版数コメントが載っている位置で「提出済みか」を判断しない**。
 														//
@@ -137,6 +146,7 @@ DECLARE_PMID(kClassIDSpace, kKESCMDrawEventServiceBoss, kKESCMPrefix + 4)
 // kKESCMPeekWatcherBoss (kKESCMPrefix + 5) は中ボタンウォッチャ撤去(2026-07-13)により廃止。スロットは予約のまま。
 DECLARE_PMID(kClassIDSpace, kKESCMPeekStartupBoss, kKESCMPrefix + 6)	// IStartupShutdown: アプリ起動時に peek ウォッチャを開始
 DECLARE_PMID(kClassIDSpace, kKESCMDocResponderServiceBoss, kKESCMPrefix + 10)	// IK2ServiceProvider+IResponder: ドキュメントクローズ監視(閉じた文書の追跡状態を確定クリーンアップ)
+DECLARE_PMID(kClassIDSpace, kKESCMStoryScriptProviderBoss, kKESCMPrefix + 11)	// story の ScriptProvider(2026-08-15)。★**上の kKESCMScriptProviderBoss とは別 boss にした**＝.fr の Provider ブロックは「その中の Property を、その中の Object 全部に載せる」(BPI.fr:603-612 が2つの Object に同じ property を載せている)。1つに混ぜると app.kcmStatus が story にも、kcmChangeCount が app にも生えて DOM が濁る。⇒ **オブジェクトごとに boss を分ける**(公式も candlechart が kCdlChartScriptProviderBoss / kCdlStockScriptProviderBoss と分けている)
 
 
 // InterfaceIDs:
@@ -180,6 +190,7 @@ DECLARE_PMID(kImplementationIDSpace, kKESCMMarkDataImpl, kKESCMPrefix + 40)	// I
 DECLARE_PMID(kImplementationIDSpace, kKESCMPageFlagsFacadeImpl, kKESCMPrefix + 41)	// IKESCMPageFlagsFacade 実装(KESCMFacades.cpp)。同じく kUtilsBoss へ AddIn
 DECLARE_PMID(kImplementationIDSpace, kKESCMStoryEditsFacadeImpl, kKESCMPrefix + 42)	// IKESCMStoryEditsFacade 実装(KESCMFacades.cpp)。同じく kUtilsBoss へ AddIn。★読み取り専用
 DECLARE_PMID(kImplementationIDSpace, kKESCMBookFacadeImpl, kKESCMPrefix + 43)	// IKESCMBookFacade 実装(KESCMFacades.cpp)。同じく kUtilsBoss へ AddIn
+DECLARE_PMID(kImplementationIDSpace, kKESCMStoryScriptProviderImpl, kKESCMPrefix + 44)	// story の4カウンターを返す CScriptProvider 実装(KESCMStoryScriptProvider.cpp。2026-08-15)
 
 // MessageIDs: model が UI へ「何が変わったか」を知らせる通知(2026-08-13・model/UI 分割 第1段 Task 9)。
 //   ★★2026-08-15（第2段 Task 6B）に **7本すべて KESCMBoundaryID.h へ移した**
@@ -214,6 +225,14 @@ DECLARE_PMID(kImplementationIDSpace, kKESCMBookFacadeImpl, kKESCMPrefix + 43)	//
 // ★+1〜+12 は「メソッド」の跡地なので再利用せず、新しいプロパティは +13 から採る(旧用途と混同しないため)。
 DECLARE_PMID(kScriptInfoIDSpace, kKESCMStatusPropertyScriptElement, kKESCMPrefix + 13)	// app.kcmStatus(読み取り専用。パネルのステータス行の最後の1行)
 DECLARE_PMID(kScriptInfoIDSpace, kKESCMBookResultPropertyScriptElement, kKESCMPrefix + 14)	// app.kcmBookResult(読み取り専用。直近のブック比較の結果を章ごと1行の TSV「章名<TAB>状態」で返す)。★ステータス行は1行しか出せないので、章ごとの一覧を人手ゼロで検証するにはこの口が要る(狙いは kcmStatus と同じ)
+// ★2026-08-15: story の変更カウンター4本(読み取り専用)。app.documents[0].stories[2].kcmChangeCount のように**ストーリーそのもの**から読む。
+//   ⚠これは application ではなく **story オブジェクト**に載る＝.fr の Provider は kKESCMStoryScriptProviderBoss(別 boss)。
+//   ★狙い＝**Story Edits が行を出すかどうかを決めている当の数値**(集約カウンター)を外から読めるようにすること。
+//     これが読めないと「一覧が空」のとき、不具合なのか2文書が本当に同じ読みなのかを**ソースを読む以外に確かめる術がない**(2026-08-15 に実際に困った)。
+DECLARE_PMID(kScriptInfoIDSpace, kKESCMChangeCountPropertyScriptElement, kKESCMPrefix + 15)	// stories[n].kcmChangeCount(集約。ITextModel::GetChangeCount)
+DECLARE_PMID(kScriptInfoIDSpace, kKESCMTextChangeCountPropertyScriptElement, kKESCMPrefix + 16)	// stories[n].kcmTextChangeCount(本文。GetTextChangeCount)
+DECLARE_PMID(kScriptInfoIDSpace, kKESCMAttrChangeCountPropertyScriptElement, kKESCMPrefix + 17)	// stories[n].kcmAttrChangeCount(書式。GetAttrChangeCount)
+DECLARE_PMID(kScriptInfoIDSpace, kKESCMOtherChangeCountPropertyScriptElement, kKESCMPrefix + 18)	// stories[n].kcmOtherChangeCount(その他。GetOtherChangeCount)
 // (ツールの列挙子は本体の kToolBoxEnumScriptElement に載せるので、こちら側の ID は要らない。)
 
 // StringKeys:

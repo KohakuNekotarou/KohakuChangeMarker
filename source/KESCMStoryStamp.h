@@ -116,6 +116,19 @@ struct KESCMStoryDiff
 
 namespace KESCMStoryEdits
 {
+	/** Read ONE story's change counters.
+
+		Added 2026-08-15 for the script properties (stories[n].kcmChangeCount and the three
+		sub-counters). CollectStamps below is written in terms of this, so the panel and a script
+		can never read the story differently.
+
+		@param storyRef the story to read.
+		@param out filled only when kTrue is returned; untouched otherwise.
+		@return kTrue when the reference names something with an ITextModel, kFalse when it does
+		        not (a script can hand us any object, so this is a real answer, not a can't-happen).
+	*/
+	bool16 ReadStamp(const UIDRef& storyRef, KESCMStoryStamp& out);
+
 	/** Read every user-accessible story's change counter in this document.
 
 		User-accessible only, not every story: IStoryList.h:38-42 states that internal stories are

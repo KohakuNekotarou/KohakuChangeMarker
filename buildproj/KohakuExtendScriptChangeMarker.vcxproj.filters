@@ -93,6 +93,9 @@
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMScriptProvider.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryScriptProvider.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMID.h">

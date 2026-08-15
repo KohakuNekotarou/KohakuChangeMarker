@@ -20,6 +20,22 @@
 
 #include <map>
 
+/* ReadStamp
+*/
+bool16 KESCMStoryEdits::ReadStamp(const UIDRef& storyRef, KESCMStoryStamp& out)
+{
+	InterfacePtr<ITextModel> model(storyRef, UseDefaultIID());
+	if (model == nil)
+		return kFalse;	// not a story - a script may hand us any object it likes
+
+	out.fStoryUID    = storyRef.GetUID();
+	out.fChangeCount = model->GetChangeCount();
+	out.fTextCount   = model->GetTextChangeCount();
+	out.fAttrCount   = model->GetAttrChangeCount();
+	out.fOtherCount  = model->GetOtherChangeCount();
+	return kTrue;
+}
+
 /* CollectStamps
 */
 void KESCMStoryEdits::CollectStamps(IDataBase* db, std::vector<KESCMStoryStamp>& out)
@@ -35,18 +51,11 @@ void KESCMStoryEdits::CollectStamps(IDataBase* db, std::vector<KESCMStoryStamp>&
 	const int32 storyCount = storyList->GetUserAccessibleStoryCount();
 	for (int32 i = 0; i < storyCount; ++i)
 	{
-		const UIDRef storyRef = storyList->GetNthUserAccessibleStoryUID(i);
-		InterfacePtr<ITextModel> model(storyRef, UseDefaultIID());
-		if (model == nil)
-			continue;	// a story that cannot be read contributes nothing to either side
-
+		// One reading, one place. The script properties go through the same call, so the panel
+		// and app.documents[0].stories[n].kcmChangeCount can never disagree about a story.
 		KESCMStoryStamp stamp;
-		stamp.fStoryUID = storyRef.GetUID();
-		stamp.fChangeCount = model->GetChangeCount();
-		stamp.fTextCount   = model->GetTextChangeCount();
-		stamp.fAttrCount   = model->GetAttrChangeCount();
-		stamp.fOtherCount  = model->GetOtherChangeCount();
-		out.push_back(stamp);
+		if (ReadStamp(storyList->GetNthUserAccessibleStoryUID(i), stamp))
+			out.push_back(stamp);	// a story that cannot be read contributes nothing to either side
 	}
 }
 
