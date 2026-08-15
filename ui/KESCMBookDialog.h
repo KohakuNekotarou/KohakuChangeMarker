@@ -83,8 +83,11 @@ const std::vector<KESCMChapterResult>& KESCMBookDialogRows();
 
     ★It lives HERE, and not in KESCMBookPair where it was written, since 2026-08-14 (Stage 1,
       Task 15): every caller is UI-side, and this file is the VIEW half of the feature. A model-side
-      home would have put a display rule on the wrong side of the split. */
-PMString KESCMElidePathFront(const PMString& path);
+      home would have put a display rule on the wrong side of the split.
+
+    ★2026-08-15: the separators are normalised to "/" on the way in (KESCMPathDisplay.h), so this
+      and the panel's Target:/Source: lines cannot end up looking different from each other. */
+PMString KESCMElidePathFront(const PMString& rawPath);
 
 #endif // __KESCMBookDialog_h__
 

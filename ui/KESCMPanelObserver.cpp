@@ -53,6 +53,7 @@
 //   PersistUtils.h)も一緒に移っている。⇒ このファイルは**パネルの表示だけ**を担う UI になった。
 #include "KESCMPanelState.h"		// KESCMLoadPanelStateIfPresent(読込の主経路は起動時=KESCMPeekStartup。ここは保険)
 #include "KESCMPanelAlpha.h"		// KESCMApplyPanelTranslucency(パネル再表示時に半透明を貼り直す)
+#include "KESCMPathDisplay.h"		// KESCMPathForDisplay(Target:/Source: のパスを "/" 区切りで見せる)
 #include "KESCMStorySection.h"		// KESCMUpdateStorySectionLabel(見出しの件数も arm 状態の表示の一部)
 #include "KESCMStoryTree.h"			// KESCMStoryTreeRebuild(一覧の中身も同じく arm 状態で変わる)
 
@@ -137,8 +138,10 @@ static PMString KESCMDocPathFromDB(IDataBase* db)
 		PMString path = helper.GetPath();
 		if (!path.IsEmpty())
 		{
-			path.SetTranslatable(kFalse);
-			return path;
+			// ★2026-08-15(ユーザー要望): 区切りは "/" で見せる。日本語環境では "\" が円記号で
+			//   描かれ、"…\new\ch01.indd" が "…¥new¥ch01.indd" と読めてしまうため。
+			//   規則は KESCMPathDisplay.h の1か所だけ(ブック比較の2行も同じ関数を通る)。
+			return KESCMPathForDisplay(path);
 		}
 	}
 

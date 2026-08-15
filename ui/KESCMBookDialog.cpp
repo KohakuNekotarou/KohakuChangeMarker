@@ -35,6 +35,7 @@
 #include "KESCMBookTree.h"		// KESCMBookTreeRebuild - the list, redrawn when the dialog opens
 #include "KCMUIID.h"
 #include "KESCMPanelAlpha.h"	// KESCMSetBookDialogWindow / KESCMApplyBookDialogTranslucency
+#include "KESCMPathDisplay.h"	// KESCMPathForDisplay - the "/" separators, shared with the panel
 
 // *windows.h goes AFTER the SDK headers, so its macros cannot collide with SDK names.
 //  (The same order KESCMPanelAlpha.cpp uses.)
@@ -163,9 +164,15 @@ const std::vector<KESCMChapterResult>& KESCMBookDialogRows()
 //   ため ---- 表示のために文字列をどう縮めるかは view の決めごとで、境界に載せる話ではない。
 //   ロジックは1文字も変えていない。
 //----------------------------------------------------------------------------------------
-PMString KESCMElidePathFront(const PMString& path)
+PMString KESCMElidePathFront(const PMString& rawPath)
 {
-	// Long enough that a plain "C:\Users\me\Jobs\New\a.indb" is still shown whole, short enough that
+	// ★2026-08-15(ユーザー要望): まず区切りを "/" に揃えてから縮める。パネルの Target:/Source: と
+	//   同じ関数を通すので、**2か所の見た目が食い違わない**(規則は KESCMPathDisplay.h の1か所だけ)。
+	//   ⚠置換は1文字→1文字なので下の文字数判定には影響しない。区切りの探索(LastSeparator)は
+	//     元から "\" と "/" の両方を見るので、順序を入れ替えても答えは変わらない。
+	const PMString path(KESCMPathForDisplay(rawPath));
+
+	// Long enough that a plain "C:/Users/me/Jobs/New/a.indb" is still shown whole, short enough that
 	// the dialog's width comes from its .fr rather than from this string. See the header.
 	const CharCounter kMaxShownChars = 56;
 	if (path.CharCount() <= kMaxShownChars)
