@@ -28,6 +28,7 @@
 #include "SpreadID.h"				// IID_IHIDESPREADBOOLDATA(kSpreadBoss 上の IBoolData。docs の boss 一覧で裏取り済み)
 #include "PMString.h"
 #include "PMRect.h"
+#include "PMPoint.h"				// PMRect::PointIn に渡す点(間接includeに頼らず明示 2026-08-16)
 #include "IGeometryFacade.h"		// GetItemBounds(ページ矩形をペーストボード座標で。手本=SnapTracker.cpp:610-616)
 // ★ビュー探索の3本は 2026-08-13 に KESCMViewLookup.cpp へ移した(model/UI 分割 第1段 Task 3)。
 //   それだけが使っていた SDK インクルード(IControlView / IEventUtils / IWindow / IWindowUtils /
@@ -216,6 +217,7 @@ bool16 KESCMFindPageUnderMouse(IDataBase* targetDB, PMReal mx, PMReal my, KESCMP
 		return kFalse;
 	const int32 ns = spreadList->GetSpreadCount();
 	int32 globalIndex = 0;
+	const PMPoint pt(mx, my);	// 聞く相手は PMRect::PointIn(下の2箇所で使う)
 	for (int32 s = 0; s < ns; ++s)
 	{
 		const UID spreadUID = spreadList->GetNthSpreadUID(s);
@@ -237,6 +239,22 @@ bool16 KESCMFindPageUnderMouse(IDataBase* targetDB, PMReal mx, PMReal my, KESCMP
 			continue;
 		}
 
+		// ★★2026-08-16(API 監査 B3・A-2): まず**スプレッドの箱**で落とす。
+		//   手本＝snapshot/SnapTracker.cpp:599-600(「点はこのスプレッドの上か」を GetPagesBounds + PointIn で聞く)。
+		//   当たらないスプレッドのページ実測がまるごと消える——この関数は peek と色サンプラが
+		//   **マウスが動くたびに**通る。
+		//   ⚠**globalIndex の加算はここでも必ず続ける**（平坦ページ番号は「隠していない/外していない時と
+		//     同じ番号」でないと、旧ドキュメントの平坦ページ列と対応が取れない）。
+		//   ⚠聞いているのは「ページの上か」なので **GetPagesBounds**（ページだけ）。ペーストボードに置いた
+		//     アイテムまで含める GetPagesAndItemsBounds は KBS のあふれマーカーの用途で、ここでは広すぎる。
+		PMRect spreadBounds = spread->GetPagesBounds(Transform::PasteboardCoordinates());
+		spreadBounds.Normalize();
+		if (!spreadBounds.PointIn(pt))
+		{
+			globalIndex += np;
+			continue;
+		}
+
 		// マウスがこのスプレッドのいずれかのページ上にあるか?(最初に当たったページを採用)
 		for (int32 p = 0; p < np; ++p)
 		{
@@ -250,12 +268,16 @@ bool16 KESCMFindPageUnderMouse(IDataBase* targetDB, PMReal mx, PMReal my, KESCMP
 			//   手本 snapshot/SnapTracker.cpp:610-616 が**ページに対して**同じことをしている。
 			//   ★上の nil 判定と下の入れ替えは残す: 「幾何を持つか」も「矩形が正規化済みか」も
 			//   Facade は担保しない(旧実装がついでに担保していたぶん)。
-			const PMRect bb = Utils<Facade::IGeometryFacade>()->GetItemBounds(
+			PMRect bb = Utils<Facade::IGeometryFacade>()->GetItemBounds(
 				::GetUIDRef(geo), Transform::PasteboardCoordinates(), Geometry::PathBounds());
-			PMReal L = bb.Left(), R = bb.Right(), T = bb.Top(), B = bb.Bottom();
-			if (L > R) { PMReal t = L; L = R; R = t; }
-			if (T > B) { PMReal t = T; T = B; B = t; }
-			if (mx >= L && mx <= R && my >= T && my <= B)
+			// ★2026-08-16(B3・A-2): 内包判定も公式へ＝**PMRect::Normalize()**(PMRect.h:622)＋
+			//   **PMRect::PointIn()**(:814-816 = 閉区間・PMReal の epsilon 比較)。手書きの入れ替え＋4項比較と
+			//   **まったく同じ判定**で、行が減る。手本＝SnapTracker.cpp:616-617。
+			//   ⚠**Normalize は落とさない**——PointIn は left<=right / top<=bottom を前提にした素の比較なので、
+			//     非正規化の箱を渡すと**常に kFalse**(＝ページが1枚も当たらなくなる)。旧実装が手で入れ替えて
+			//     いた担保がこれで、Facade は矩形が正規化済みだとは担保しない。
+			bb.Normalize();
+			if (bb.PointIn(pt))
 			{
 				out.spreadIndex    = s;
 				out.spreadUID      = spreadUID;

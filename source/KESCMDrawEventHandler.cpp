@@ -33,7 +33,9 @@
 #include "PMMatrix.h"
 #include "PMReal.h"
 #include "PMString.h"			// GetPageString の受け(旧: KESCMDrawEventHandler.h 経由の間接include に依存していた)
-#include "TransformUtils.h"
+// (★TransformUtils.h の include は 2026-08-16 の API 監査 B3・A-1 で外した＝このファイルが使っていた
+//  ::InnerToSpreadMatrix が 8箇所とも IGeometryFacade::GetItemBounds へ移り、参照がゼロになったため。)
+#include "IGeometryFacade.h"	// ★GetItemBounds(ページの箱を spread 座標で。手本=snapshot/SnapTracker.cpp:621)
 #include "SnapshotUtilsEx.h"
 #include "AGMImageAccessor.h"
 #include "GraphicsExternal.h"
@@ -127,16 +129,29 @@ void KESCMReleaseOldNumFontCache()
 //========================================================================================
 void KESCMDrawEventHandler::RebuildOverflowCache()
 {
-	sOverflowT.clear();
-	sOverflowS.clear();
+	// ★★2026-08-16(API 監査 B3 §5)= **走査はロックの外・集合の差し替えだけロックの中。**
+	//   ①sOverflowT/S は **main が書き、BG(PDF の非同期書き出し)が描画で count する**
+	//     (HandleDrawEvent の2つのループ)＝KESCMThreadSafety.h:76-81 が守れと書いている条件そのもの。
+	//     以前は clear() + insert() を素でやっていたので、**main が木を回している最中に BG が count する**
+	//     窓が開いていた(sEntries を守っているのと同じ理由・同じ相手)。
+	//   ②とはいえ KESCMBuildPairing は**両文書の全ページ走査**なので、ロックしたまま回してはいけない
+	//     (同ヘッダー :88-89「ロックしたまま長い処理をしない」)。∴ 先に手元の集合へ作り、swap で差し替える。
+	//   ★副産物: 作り直しの最中に描画が来ても**空集合ではなく前回の集合が見える**(以前は clear 直後に
+	//     描かれると "/" が一瞬消えた)。swap は O(1) で例外も投げない。
 	sOverflowCacheDB    = sDB;
 	sOverflowCacheSrcDB = sSrcDB;
+	std::set<UID> newT, newS;
 	if (sDB != nil && sSrcDB != nil)
 	{
 		std::vector<UID> tp, sp, tov, sov;
 		KESCMBuildPairing(sDB, sSrcDB, tp, sp, &tov, &sov);
-		sOverflowT.insert(tov.begin(), tov.end());
-		sOverflowS.insert(sov.begin(), sov.end());
+		newT.insert(tov.begin(), tov.end());
+		newS.insert(sov.begin(), sov.end());
+	}
+	{
+		KESCMMarkStateLock lock(KESCMMarkStateMutex());
+		sOverflowT.swap(newT);
+		sOverflowS.swap(newS);
 	}
 }
 
@@ -594,13 +609,19 @@ ErrorCode KESCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef
 						std::map<UID, KESCMOverlayEntry*>::iterator old = sEntries.find(key);
 						if (old != sEntries.end()) { delete old->second; sEntries.erase(old); }
 						sEntries[key] = e;
-					}
 
-					// Source 側描画(Show Marks on Source)用の対応表もここで記録する。エントリ登録と同じ場所に
-					// 置くことで、旧 Ctrl+ミドルのスプレッド再比較(MakeEntry 直呼び)でも対応が自動で維持される。
-					// 対応表の掃除は DropAll(エントリと運命共同体)。
-					sSrcDB = sourceRef.GetDataBase();
-					sSrcPageToTarget[sourceRef.GetUID()] = key;
+						// Source 側描画(Show Marks on Source)用の対応表もここで記録する。エントリ登録と同じ場所に
+						// 置くことで、旧 Ctrl+ミドルのスプレッド再比較(MakeEntry 直呼び)でも対応が自動で維持される。
+						// 対応表の掃除は DropAll(エントリと運命共同体)。
+						// ★★2026-08-16(API 監査 B3 §5)= **この2行も同じロックの中に入れた。**
+						//   sSrcPageToTarget は **main が insert し、BG(PDF の非同期書き出し)が描画で find する**
+						//   (HandleDrawEvent の Source ループ)＝KESCMThreadSafety.h:76-81 が守れと書いている条件
+						//   そのもの。以前はロックのスコープを閉じた直後に素で書いていたので、
+						//   **main が木を回している最中に BG が find する**窓が開いていた。
+						//   ⚠**捨てる側(DropAll)は最初から clear() をロック内でやっていた**＝作る側だけが漏れていた。
+						sSrcDB = sourceRef.GetDataBase();
+						sSrcPageToTarget[sourceRef.GetUID()] = key;
+					}
 
 					// dist / bgRed / buf は entry が所有(mask M は dist 生成後に解放済み)。スナップショットは下の後始末で即破棄。
 					changed = kTrue;
@@ -974,11 +995,19 @@ static void KESCMDrawEntryOnPage(IGraphicsPort* gPort, KESCMOverlayEntry* e, IDa
 	if (iw <= 0 || ih <= 0 || pageGeo == nil)
 		return;
 
-	// 【座標の肝】kEndSpreadMessage の描画ポートは spread 座標。ページ inner bbox を
-	// InnerToSpreadMatrix で spread 座標へ変換してフィットさせる。
-	PMRect pr = pageGeo->GetPathBoundingBox();			// ページ inner
-	PMMatrix m = ::InnerToSpreadMatrix(pageGeo);
-	m.Transform(&pr);									// → spread(=描画ポート)座標
+	// 【座標の肝】kEndSpreadMessage の描画ポートは spread 座標。ページの箱を spread 座標で取ってフィットさせる。
+	// ★★2026-08-16(API 監査 B3・A-1)= 手組み(GetPathBoundingBox + ::InnerToSpreadMatrix + Transform)から
+	//   **公式の Facade へ寄せた**。手本 = snapshot/SnapTracker.cpp:621
+	//   (★同じ関数の :616 は同じページを PasteboardCoordinates で取っている＝**座標系を変えて2回呼ぶ**のが
+	//     公式の形。⚠ヘッダー IGeometryFacade.h:209 は Pasteboard/Parent/Inner の3つしか挙げないが書き落としで、
+	//     製品 CPageItemAdaptiveTransform.cpp:197,362 と public lib CPathCreationTracker.cpp:300 も
+	//     SpreadCoordinates で呼んでいる)。
+	//   ⚠**IGeometry の Query と nil 判定は残す**——「この UID が本当に幾何を持つか」は Facade が担保しない
+	//     (手本 :610-615 も同じ順序)。★渡すのは UIDRef(db,pageUID)＝Facade のために Query を増やさない。
+	//   ⚠**Geometry::PathBounds() を渡すこと**(手本は OuterStrokeBounds だが、GetPathBoundingBox と
+	//     同義なのはこちら)。この関数の下流はページ矩形しか使わないので、行列そのものはもう要らない。
+	PMRect pr = Utils<Facade::IGeometryFacade>()->GetItemBounds(
+		UIDRef(db, pageUID), Transform::SpreadCoordinates(), Geometry::PathBounds());
 
 	// 【リング太さ】モードごとに膨張半径(画像px)を決め、前回と違えば描き直す。
 	if (e->dist != nil)
@@ -1079,10 +1108,10 @@ static void KESCMDrawPageBorder(IGraphicsPort* gPort, IDataBase* db, UID pageUID
 	if (pageGeo == nil)
 		return;
 
-	// 【座標】KESCMDrawEntryOnPage と同じく、ページ inner bbox を spread 座標へ変換。
-	PMRect pr = pageGeo->GetPathBoundingBox();
-	PMMatrix m = ::InnerToSpreadMatrix(pageGeo);
-	m.Transform(&pr);
+	// 【座標】KESCMDrawEntryOnPage と同じく、ページの箱を Facade で spread 座標のまま取る
+	// (★2026-08-16 の API 監査 B3・A-1。理由と手本はあちらのコメント)。
+	PMRect pr = Utils<Facade::IGeometryFacade>()->GetItemBounds(
+		UIDRef(db, pageUID), Transform::SpreadCoordinates(), Geometry::PathBounds());
 
 	// 【太さ】画面/印刷はズーム適応(px/sxr)、サムネイル(sxr<=0)はページ短辺の固定比率(枠専用の除数)。
 	const PMReal minDim = (pr.Width() < pr.Height() ? pr.Width() : pr.Height());
@@ -1142,9 +1171,9 @@ static void KESCMDrawPageNumberMarkerFill(IGraphicsPort* gPort, IDataBase* db, U
 	if (pageGeo == nil)
 		return;
 
-	PMRect pr = pageGeo->GetPathBoundingBox();		// ページ inner
-	PMMatrix m = ::InnerToSpreadMatrix(pageGeo);
-	m.Transform(&pr);								// → spread(=描画ポート)座標
+	// ★2026-08-16(B3・A-1): ページの箱は Facade で spread 座標のまま取る(理由は KESCMDrawEntryOnPage)。
+	const PMRect pr = Utils<Facade::IGeometryFacade>()->GetItemBounds(
+		UIDRef(db, pageUID), Transform::SpreadCoordinates(), Geometry::PathBounds());
 
 	AutoGSave ag(gPort);
 	gPort->setopacity(kKESCMExcludeFillOpacity, kFalse);
@@ -1174,9 +1203,9 @@ static void KESCMDrawPageDiagonal(IGraphicsPort* gPort, IDataBase* db, UID pageU
 	if (pageGeo == nil)
 		return;
 
-	PMRect pr = pageGeo->GetPathBoundingBox();
-	PMMatrix m = ::InnerToSpreadMatrix(pageGeo);
-	m.Transform(&pr);
+	// ★2026-08-16(B3・A-1): ページの箱は Facade で spread 座標のまま取る(理由は KESCMDrawEntryOnPage)。
+	const PMRect pr = Utils<Facade::IGeometryFacade>()->GetItemBounds(
+		UIDRef(db, pageUID), Transform::SpreadCoordinates(), Geometry::PathBounds());
 
 	// 太さ: 画面/印刷=ズーム適応、サムネイル(sxr<=0)=ページ短辺の固定比率(「/」専用の除数)。
 	const PMReal minDim = (pr.Width() < pr.Height() ? pr.Width() : pr.Height());
@@ -1218,9 +1247,9 @@ static void KESCMDrawPageCrossOutlined(IGraphicsPort* gPort, IDataBase* db, UID 
 	if (pageGeo == nil)
 		return;
 
-	PMRect pr = pageGeo->GetPathBoundingBox();
-	PMMatrix m = ::InnerToSpreadMatrix(pageGeo);
-	m.Transform(&pr);								// → spread(=描画ポート)座標
+	// ★2026-08-16(B3・A-1): ページの箱は Facade で spread 座標のまま取る(理由は KESCMDrawEntryOnPage)。
+	const PMRect pr = Utils<Facade::IGeometryFacade>()->GetItemBounds(
+		UIDRef(db, pageUID), Transform::SpreadCoordinates(), Geometry::PathBounds());
 
 	// 赤線の太さ = ページ短辺 ÷ 専用除数(「/」より太い)。白縁はこれより太く引いて左右にはみ出させる。
 	const PMReal minDim = (pr.Width() < pr.Height() ? pr.Width() : pr.Height());
@@ -1280,9 +1309,9 @@ static void KESCMDrawPageCheck(IGraphicsPort* gPort, IDataBase* db, UID pageUID,
 	if (pageGeo == nil)
 		return;
 
-	PMRect pr = pageGeo->GetPathBoundingBox();
-	PMMatrix m = ::InnerToSpreadMatrix(pageGeo);
-	m.Transform(&pr);
+	// ★2026-08-16(B3・A-1): ページの箱は Facade で spread 座標のまま取る(理由は KESCMDrawEntryOnPage)。
+	const PMRect pr = Utils<Facade::IGeometryFacade>()->GetItemBounds(
+		UIDRef(db, pageUID), Transform::SpreadCoordinates(), Geometry::PathBounds());
 
 	const PMReal minDim = (pr.Width() < pr.Height() ? pr.Width() : pr.Height());
 	// ✓ 全体サイズ(短辺比): レイアウト版はかなり大きく、サムネイルは従来値(2026-07-11 に 0.42→0.52)。
@@ -1629,9 +1658,9 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 			InterfacePtr<IGeometry> pageGeo(db, pageUID, UseDefaultIID());
 			if (pageGeo == nil)
 				continue;
-			PMRect pr = pageGeo->GetPathBoundingBox();		// ページ inner
-			PMMatrix m = ::InnerToSpreadMatrix(pageGeo);
-			m.Transform(&pr);								// → spread(=描画ポート)座標
+			// ★2026-08-16(B3・A-1): Facade で spread 座標のまま取る(理由は KESCMDrawEntryOnPage)。
+			const PMRect pr = Utils<Facade::IGeometryFacade>()->GetItemBounds(
+				UIDRef(db, pageUID), Transform::SpreadCoordinates(), Geometry::PathBounds());
 			AutoGSave ag(gPort);
 			gPort->setopacity(sPeekOpacity, kFalse);		// Shift peek=1.0(不透明) / Shift+Alt peek=0.5(半透明)
 			gPort->translate(pr.Left(), pr.Top());
@@ -1744,9 +1773,9 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 				InterfacePtr<IGeometry> pageGeo(db, pageUID, UseDefaultIID());
 				if (pageGeo == nil)
 					continue;
-				PMRect pr = pageGeo->GetPathBoundingBox();		// ページ inner
-				PMMatrix pm = ::InnerToSpreadMatrix(pageGeo);
-				pm.Transform(&pr);								// → spread(=描画ポート)座標
+				// ★2026-08-16(B3・A-1): Facade で spread 座標のまま取る(理由は KESCMDrawEntryOnPage)。
+				const PMRect pr = Utils<Facade::IGeometryFacade>()->GetItemBounds(
+					UIDRef(db, pageUID), Transform::SpreadCoordinates(), Geometry::PathBounds());
 
 				PMReal textW = 0.0;
 				if (fontInst != nil)
