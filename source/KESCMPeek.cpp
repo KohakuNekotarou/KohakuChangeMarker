@@ -59,6 +59,7 @@
 //   ⇒ ビュー解決は呼び手(UI)へ出し、この .cpp は「渡された点のスプレッドを覗く」だけを担う。
 #include "KESCMPageMap.h"            // KESCMBuildPairing(比較の除外対応表)/KESCMPageMapReadSelection/KESCMPageMapSweepClosedDocs
 #include "KESCMPageCheck.h"          // KESCMPageCheckClearAllDocs / KESCMPageCheckSweepClosedDocs(✓の後片付け)
+#include "IDThreadingPrimitives.h"   // IDThreading::IsMainThreadDomain(BG では文書の生存を判定できない。第2段 Task 11C)
 #include "KESCMPageNumberMarker.h"   // KESCMInvalidatePageNumberMarkerRects(ノンブル除外矩形キャッシュの破棄)
 // (★KESCMPanelState.h / KESCMPanelAlpha.h / KESCMTrackerHud.h / KESCMCmykCursor.h は 2026-08-13
 //  Task 8 で外した＝起動/終了の UI の仕事ごと KESCMUIStartup.cpp へ移したため)
@@ -655,6 +656,23 @@ IDataBase* KESCMArmedSourceDB()  { return sPeekSourceDB; }
 //========================================================================================
 void KESCMHandleDocsClosed()
 {
+	// ★★★2026-08-15（第2段 Task 11C）＝**バックグラウンドスレッドからは何もしない。**
+	//
+	//   この関数は「**追跡中の db が文書リストに居なければ閉じた**」という推論で全状態を捨てる。
+	//   ⚠**その推論は BG では必ず誤る**——BG は**クローンされた別の DB** を見る（ガイド vol1-07 L93）ので、
+	//     main で控えた `sDB` は**開いているのに文書リストから引けない**。
+	//   ⇒ 実害を再現済み: `Document.asynchronousExportFile()` で PDF を書き出すと、書き出しの
+	//     クローン DB が閉じる時に `kAfterCloseDoc` が BG で発火し、ここが走って
+	//     **マークが全部消えていた**（`marks cleared` / メニューが無効化。2026-08-15 実測）。
+	//
+	//   ★**呼び手ごとではなく、この入口1か所で塞ぐ**（[[one-question-one-place]]）。呼び手は3つある
+	//     ---- `KESCMDocResponder`（kAfterCloseDoc）・描画イベントの保険・peek の生存確認 ---- が、
+	//     「BG では文書の生存を判定できない」という事実は**関数の性質**であって呼び手の事情ではない。
+	//   ★**取りこぼしは起きない**: 文書のクローズは main thread で起きるので、`kAfterCloseDoc` は
+	//     main でも必ず飛ぶ。BG の分は「クローン DB が用済みになった」という別の出来事にすぎない。
+	if (!IDThreading::IsMainThreadDomain())
+		return;
+
 	// session は終了処理中に nil になり得る(2026-07-25 追補 に KESCM 全体で統一)。引けなければ
 	// 生存判定そのものができないので、何も片付けずに戻る(状態は Shutdown が破棄する)。
 	ISession* session = GetExecutionContextSession();

@@ -1321,6 +1321,20 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	if (db == nil)
 		return kFalse;
 
+	// ★★★2026-08-15（第2段 Task 11C）に、ここで実測した3つの答え。**次に読む人は測り直さなくてよい。**
+	//
+	//   MAIN  db=…23FB4A80  sDB=…23FB4A80  entries=2 firstUID=258 class=1295
+	//   *BG*  db=…295BE390  sDB=…23FB4A80  entries=2 firstUID=258 class=1295
+	//
+	//   ①**バックグラウンドスレッドにも描画イベントが配られる**（`kModelPlugIn` 化が効いている）
+	//   ②**渡される db はクローンの別ポインタ**＝`sDB` とは必ず食い違う（ガイド vol1-07 L93 のとおり）
+	//   ③★★★**UID はクローンをまたいで保たれる**——`sEntries` のキー(258)を BG の db で引くと
+	//      **同じ ClassID(1295) のページが返る**。
+	//
+	// ⇒ ★**同一性は「db ポインタ」ではなく「UID＋ファイル」で聞ける**。これは
+	//   [[uidref-reuse-after-close]]（閉じた文書のポインタはアドレス再利用で別文書と一致する）と
+	//   **同じ結論**＝1つ直すと2つ直る。⚠**ポインタ比較を `IDataBase::GetSysFile` へ移す作業は Task 12B。**
+
 	// (★押下中 HUD の「帯の前面」ぶんの描画も 2026-08-13 に KESCMUIDrawEvent.cpp へ移した。
 	//  ⚠あちらでは**この位置に置く必要がある**という制約は無い＝HUD だけを見るハンドラなので、
 	//    「描くものが無い」経路の return に巻き込まれる心配がそもそも無い。)
@@ -1336,6 +1350,17 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	//   ★sOversetDB も対象(2026-07-25 監査で追加): Find Overset を未 arm で単独使用中にその文書を閉じ、
 	//   responder が漏れた場合でも、stale な sOversetPages がアドレス再利用された新文書のサムネイルへ
 	//   誤マークされないようにする。
+	//   ★★★2026-08-15（第2段 Task 11C）＝**メインスレッド限定にした。実害を再現して直した箇所。**
+	//     この保険は「draw は開いている文書についてしか来ない」＝**文書リストに居なければ閉じた**、という
+	//     推論で書かれている。⚠**その推論はバックグラウンドスレッドでは成り立たない**——BG は
+	//     **クローンされた別の DB** を見る（ガイド vol1-07 L93）ので、`FindDocByDataBase(sDB)` は
+	//     **開いているのに nil を返す**。結果、PDF を非同期で書き出すたびに
+	//     `KESCMHandleDocsClosed()`（Stop 相当のフルクリーンアップ）が走り、**マークが全部消えていた**
+	//     （2026-08-15 に `Document.asynchronousExportFile()` で再現。`marks cleared` が出る）。
+	//   ⇒ **塞いだのは `KESCMHandleDocsClosed()` の入口**（呼び手はここを含めて3つあり、「BG では文書の
+	//     生存を判定できない」のは**関数の性質**だから＝[[one-question-one-place]]）。ここは素のまま。
+	//   ⚠**「BG では何もしない」で正しいのは、あれが後始末（状態を捨てる側）だから。**
+	//     描く側を BG で止めたら、それは第2段の目的そのものを止めることになる。
 	if (sDB != nil || sOrigDB != nil || sSrcDB != nil || sOversetDB != nil)
 	{
 		ISession* session = GetExecutionContextSession();	// 終了処理中は nil になり得る(2026-07-25 追補 統一)
