@@ -1350,6 +1350,13 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	}
 
 	// 画面スケール(ズーム)を一度だけ取得。画面描画時のみ非nil。
+	// ★★2026-08-15（第2段 Task 10）＝**この nil チェックはマルチスレッド適合そのもの**。
+	//   `IControlView*` を**描画の署名からフレームワークに手渡されている**形は model 側で正規
+	//   （SDK の `FrmLblAdornment.cpp` / `TranFxAdornment.cpp` も同じで、両方 `kModelPlugIn`）。
+	//   ⚠ただしガイド vol1-07 L101 が "It is critical that you write model code that expects to be
+	//     able to receive nil pointers" と書いている当の場所でもある＝**印刷・PDF 書き出しでは
+	//     窓が無いので nil で来る**。ここは元から nil を想定して書かれており（sxr=0 のまま進む）、
+	//     直す必要は無い。**この形を新しく書くときも必ずこのガードを付ける。**
 	PMReal sxr = 0.0;
 	IControlView* zview = gd->GetView();
 	if (zview != nil)

@@ -24,36 +24,13 @@
 #include "VCPlugInHeaders.h"
 
 // General includes:
-#include "MenuDef.fh"
-#include "ActionDef.fh"
-#include "ActionDefs.h"
-#include "AdobeMenuPositions.h"
 #include "LocaleIndex.h"
 #include "PMLocaleIds.h"
 #include "StringTable.fh"
 #include "ObjectModelTypes.fh"
 #include "ShuksanID.h"
-#include "ActionID.h"
-#include "CommandID.h"
-#include "WorkspaceID.h"
-#include "WidgetID.h"
 #include "BuildNumber.h"
 #include "PlugInModel_UIAttributes.h"
-
-// Panel / widget resources:
-#include "PanelList.fh"
-#include "Widgets.fh"				// PalettePanelWidget and the standard control widgets
-// Splitter constants (kFirstWidgetIsTop / kHorizontalSplitter / kDontSnapSlider / ...). Reached by a
-// relative path on purpose: this header lives under source/open, and the ODFRC response file that
-// feeds this build lists ONLY source/public directories - it is generated, sits outside the repo,
-// and has no counterpart in _buildproj, so a -i added there would not survive. The path is relative
-// to this .fr, which is how the preprocessor resolves quoted includes.
-#include "../../open/includes/ui/SplitterPanelDefs.h"
-#include "InterfaceColorDefines.h"
-#include "IControlViewDefs.h"
-#include "SysControlIds.h"
-#include "TreeViewDefs.h"			// kHideRootNode - the Story Edits list (2026-08-10)
-#include "EveInfo.fh"				// EVE widget types + layout flags - the book comparison dialog (2026-08-11)
 
 // (SpreadID.h / DocFrameworkID.h were only here for the old scripting API, which is gone -
 //  removed 2026-08-05. Everything below resolves from ShuksanID.h / widgetid.h / GraphicsID.h
@@ -62,31 +39,27 @@
 // kApplicationObjectScriptElement, the object the property is put on. The official scripting
 // sample credits this header with exactly that (BPI.fr:55).
 #include "AppFrameworkID.h"
-// ScriptInfoTypes.fh came back on 2026-08-06: a toolbox tool has to register its ScriptID in
-// kToolBoxEnumScriptElement (ITool.h:192-223) - that is the tool's identity, not a scripting API.
-// This single header is enough for the resource at the end of this file: it also pulls in
-// ScriptingID.h (kCoreScriptManagerBoss) and defines kCS5ScriptVersion.
-#include "ScriptInfoTypes.fh"	// VersionedScriptElementInfo / Enumerator
+// ScriptInfoTypes.fh came back on 2026-08-06. This single header is enough for the resource at
+// the end of this file: it also pulls in ScriptingID.h (kCoreScriptManagerBoss) and defines
+// kCS5ScriptVersion.
+// ★2026-08-15 (Task 6B-2): the reason it was added has MOVED. It came in for the toolbox tool's
+//   ScriptID registration (kToolBoxEnumScriptElement, ITool.h:192-223) - and the tool is a UI boss,
+//   so that Enumerator now lives in KCMUI.fr. What keeps this header here is the OTHER half of the
+//   same resource: app.kcmStatus and app.kcmBookResult, served by kKESCMScriptProviderBoss.
+#include "ScriptInfoTypes.fh"	// VersionedScriptElementInfo / Property / Provider
 // DocumentID.h came back on 2026-08-06 for a different reason than the old scripting API: the
 // close-document responder boss names the API's OWN service provider implementation instead of
 // carrying a hand-written one (see that Class below).
 #include "DocumentID.h"	// kAfterCloseDocSignalRespServiceImpl
-#include "GraphicsID.h"	// for IID_IDRWEVTHANDLER / IID_ISPRITE / IID_IPATHGEOMETRY / kPathGeometryImpl
-#include "TipsID.h"		// for IID_ITIP
-
-// Toolbox tool:
-#include "Tool.fh"			// ToolDef resource type
-#include "ToolBoxDefs.h"	// tool group / tool number constants (kSixthAdobeToolsGroup, kFirstAdobeTool, kDoesNotApply)
-#include "ToolboxID.h"		// kGenericToolBoss
-#include "LayoutUIID.h"		// kPointerToolBoss (ToolDef tool type)
-#include "CursorID.h"		// IID_ICURSORPROVIDER (tool cursor provider)
-#include "Cursor.fh"		// PNGC / SVGC / HOTC resource types (cursor image and hotspot)
-#include "CursorDefs.h"	// kHIDPICrsrOffset / kHIDPI150CrsrOffset(2x / Win 1.5x のカーソルID)
-#include "IconPNGDefs.h"	// kHIDPIIconOffset/kHIDPIIconOffset150(ツール専用アイコンの2x/Win1.5x)
+#include "GraphicsID.h"	// IID_IDRWEVTHANDLER (the comparison marks' draw service - the whole point of the model half)
+						// ★2026-08-15 (Task 10): IID_ISPRITE / IID_IPATHGEOMETRY / kPathGeometryImpl left with the
+						//   tracker in Task 6B-2. Only the draw-event handler is still declared on this side.
 
 // Project includes:
 #include "KESCMID.h"
-#include "KESCMScriptingDefs.h"	// en_KESCMTool (the toolbox tool's ScriptID)
+#include "KESCMScriptingDefs.h"	// p_KESCMStatus / p_KESCMBookResult (this half's two read-only properties)
+								// ★2026-08-15 (Task 6B-2): en_KESCMTool (the toolbox tool's ScriptID) moved to
+								//   the UI half's copy of this header, with the tool.
 // (GenericID.h / TextID.h and a duplicate ShuksanID.h were scripting-era leftovers with no
 //  remaining reference in this file - removed 2026-08-05.)
 

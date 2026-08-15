@@ -108,6 +108,24 @@ bool16 KESCMPageMapReadSelection(IDataBase*& outDB, std::vector<UID>& outPages, 
 	if (db == nil)
 		return kFalse;
 
+	// ★★★2026-08-15（第2段 Task 10）＝**なぜ UI 由来の Utils が model 側に残っているのか**
+	//
+	//  `ILayoutUIUtils` は名前のとおり **UI プラグイン由来**で、ガイド vol1-07 L101 の
+	//  「UI プラグインの boss はバックグラウンドスレッドから実体化できず nil が返る」に当たる。
+	//  にもかかわらずここに残しているのは、**この関数が BG から到達しないことを実測したから**:
+	//
+	//    ・呼び手は KESCMPageMapToggleSelectedPages と KESCMPageMapUpdateToggleState の2つだけ。
+	//      どちらも Facade（IKESCMPageFlagsFacade）越しに **UI のメニュー操作**から入る。
+	//    ・BG で走るのは描画パス（KESCMDrawEventHandler::HandleDrawEvent）だけで、そこが呼ぶ
+	//      ページマップ系は **KESCMPageMapIsRegistered / KESCMPageMapHasAnyRegistered の読み取り2本**
+	//      のみ（2026-08-15 に呼び出し全数を Grep して確認）。この関数へは辿り着かない。
+	//
+	//  ⚠**「今は届かない」であって「構造的に届かない」ではない。** 次のどれかをやるなら、
+	//    ここは真っ先に見直す対象になる:
+	//      ①描画パスから選択を読む ②この関数を新しい経路から呼ぶ ③InDesign Server 対応
+	//    （現在の `.fr` は `{ kInDesignProduct }` のみ＝Server では読み込まれない）。
+	//  ★見直すときの形は決まっている＝**Task 4B / 9B と同じ「観測は UI・方針は model」**
+	//    ＝UI が選択を取り、model は UIDList を引数で受け取る。
 	UIDList sel(db);
 	Utils<ILayoutUIUtils>()->GetSelectedPages(sel, includeMasters, kTrue /*currentPageOnly*/, kTrue /*pagesOnly*/);
 

@@ -374,6 +374,13 @@ static void KESCMExportChangedPagesTSVRun()
 
 	// 保存先(sdksamples/common の共通チューザ)。タイトル/初期名は KESCM の他 UI と同じく英語固定。
 	// 'TEXT'/'CWIE' は SDK のテキスト書き出しが渡す古典的な Mac type/creator(Windows では無意味だが API が要求)。
+	// ★★2026-08-15（第2段 Task 10）＝**model 側から出しているファイルダイアログ**。残す判断の根拠は
+	//   KESCMHideUnchanged.cpp の CAlert と同じ:
+	//   ・`SDKFileSaveChooser` は `sdksamples/common` のヘルパーで、**UI プラグイン由来の boss ではない**。
+	//   ・この経路（Export Changed Pages...）は Facade 越しに**フライアウトの操作**からしか入らず、
+	//     **BG で走る描画パスからは到達しない**（2026-08-15 に呼び出し全数を Grep して確認）。
+	//   ⚠BG から書き出させたくなったら、**保存先を UI が決めて `IDFile` を引数で渡す**形へ変える
+	//     （Task 9B の KESCMGetPanelBookFile とまったく同じ形）。チューザは BG では開けない。
 	SDKFileSaveChooser chooser;
 	PMString title("Export Changed Pages");
 	title.SetTranslatable(kFalse);

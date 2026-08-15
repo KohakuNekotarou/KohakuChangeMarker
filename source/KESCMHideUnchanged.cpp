@@ -211,6 +211,14 @@ void KESCMHideUnchangedToggle()
 
 	// 確認ダイアログ(kHideSpreadCmdBoss は永続変更=文書が dirty になり、隠し状態は保存ファイルにも残る)。
 	// 文言はロケール連動(enUS=英語/jaJP=日本語)。ボタンは Windows の制約で標準 Yes/No のみ。
+	// ★★2026-08-15（第2段 Task 10）＝**model 側から窓を出している唯一のアラート**。残す判断の根拠:
+	//   ・`CAlert` は `Public.lib` の静的クラスで、**UI プラグイン由来の boss ではない**
+	//     ＝ガイド L101 の「BG で nil が返る」型ではない（リンカにも Grep にも出ないのはそのため）。
+	//   ・この関数（KESCMHideUnchangedToggle）は Facade 越しに**フライアウトの操作**からしか入らず、
+	//     **BG で走る描画パスからは到達しない**（2026-08-15 に呼び出し全数を Grep して確認）。
+	//   ⚠それでも「model が人に問うている」ことに変わりはない。**BG から呼ぶ経路を作るなら、
+	//     問いを UI 側へ出して結果を引数で受け取る形へ変える**（Task 4B / 9B と同じ）。
+	//     ⚠BG でモーダルを出そうとすると、応答する人が居ないまま**そのスレッドが止まる**。
 	const int16 clicked = CAlert::ModalAlert
 	(
 		// "This feature modifies the document file. Continue?" / 日本語 UI では日本語(KESCMLoc)。
