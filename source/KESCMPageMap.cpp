@@ -86,7 +86,8 @@ static bool16 KESCMVecContains(const std::vector<UID>& v, UID u)
 // ★★includeMasters(2026-08-13。既定 kFalse=従来どおり通常ページのみ)。意味と、どちらを渡すかの
 //   判断基準はヘッダー KESCMPageMap.h のコメントに書いてある(3機能で答えが割れるので引数にした)。
 //   ⚠**除外は2段構えだった**: GetSelectedPages の bIncludeMasters だけでなく、突合相手の
-//   KESCMCollectPageUIDs も ISpreadList=通常スプレッドしか回さない(KESCMCore.cpp:66)。片方だけ
+//   KESCMCollectPageUIDs にもマスターが入らない(2026-08-16 以降は `IPageList.h:81` の契約
+//   "does not include master pages" が根拠。それ以前は ISpreadList を回していたから)。片方だけ
 //   直してもマスターは flatSet に無く落ちるので、**必ず両方を同じ includeMasters で揃える**。
 //   マスターページの列は KESCMCollectMasterPageUIDs が後ろへ連結する(out をクリアしない契約)。
 //========================================================================================

@@ -24,6 +24,7 @@
 #include "ISpread.h"
 #include "ISpreadList.h"
 #include "IMasterSpreadList.h"		// GetMasterSpreadCount / GetNthMasterSpreadUID(マスターページの収集)
+#include "IPageList.h"				// ★GetPageCount / GetNthPageUID(文書の平坦なページ列。2026-08-16 の監査 B3・A-3)
 #include "IBoolData.h"				// スプレッドの隠し状態(IID_IHIDESPREADBOOLDATA)の読み取り
 #include "SpreadID.h"				// IID_IHIDESPREADBOOLDATA(kSpreadBoss 上の IBoolData。docs の boss 一覧で裏取り済み)
 #include "PMString.h"
@@ -58,26 +59,39 @@
 #include "KESCMModelNotify.h"	// KESCMNotifyStatus / KESCMNotifyDocs - the model tells the UI, it never calls it
 
 //========================================================================================
-// ヘルパ: ドキュメント内の全ページUIDを、スプレッド順・ページ順で平坦に集める。
+// ヘルパ: ドキュメント内の全ページUIDを、文書のページ順(平坦)で集める。
+//
+// ★★2026-08-16(API 監査 B3・A-3)= **ISpreadList → ISpread の2重ループから IPageList へ寄せた。**
+//   `IPageList.h:71-74` が自分でこう名指ししている ---- 「caches commonly needed information about
+//   pages in the document. All the information is computed only when needed. It is ***much* more
+//   efficient to use this than to compute the same information from other sources**」。
+//   旧実装(スプレッドを回してページを拾う)は、まさにその "other sources" だった。
+//
+// ★**寄せてよいと決めた根拠は実測**(2026-08-16)。ヘッダーの契約は "does not include master pages"
+//   (`:81`)までしか言わず、**隠しスプレッドの扱いを書いていない**(`GetPageIndex` にだけ
+//   `includePagesOfHiddenSpread` がある＝`:104`)。KESCM の平坦ページ番号は「隠していない時と同じ番号」
+//   であることが新旧対応の土台なので、**Hide Unchanged で2スプレッドを隠した状態のまま件数と UID 列を
+//   全数突き合わせ**た ⇒ `[pl=4 walk=4 SAME-ORDER]`＝**隠しページも含み、順序も2重ループと完全に同じ**。
+//   全文＝docs/ai-notes/kescm-api-audit-b3-2026-08-16.md
+//
+// ⚠**マスターページを含まない性質は変わらない**(`:81` が明記)。呼び手のうち比較(下の
+//   KESCMDoMarkChangesDoc)・TSV・Prev/Next の3つが「マスターは別に足す」と書いてその性質に依存して
+//   いるが、寄せても前提は保たれる(**根拠が ISpreadList から IPageList の契約に移っただけ**)。
+// ⚠**out はクリアしない**(呼び手が通常ページの列の後ろへマスターを連結する使い方)。
 //========================================================================================
 void KESCMCollectPageUIDs(IDataBase* db, std::vector<UID>& out)
 {
 	if (db == nil)
 		return;
-	InterfacePtr<ISpreadList> spreadList(db, db->GetRootUID(), UseDefaultIID());
-	if (spreadList == nil)
+	InterfacePtr<IPageList> pageList(db, db->GetRootUID(), UseDefaultIID());
+	if (pageList == nil)
 		return;
-	const int32 ns = spreadList->GetSpreadCount();
-	for (int32 s = 0; s < ns; ++s)
-	{
-		const UID spreadUID = spreadList->GetNthSpreadUID(s);
-		InterfacePtr<ISpread> spread(db, spreadUID, UseDefaultIID());
-		if (spread == nil)
-			continue;
-		const int32 np = spread->GetNumPages();
-		for (int32 p = 0; p < np; ++p)
-			out.push_back(spread->GetNthPageUID(p));
-	}
+	const int32 n = pageList->GetPageCount();
+	if (n <= 0)
+		return;
+	out.reserve(out.size() + (size_t)n);
+	for (int32 i = 0; i < n; ++i)
+		out.push_back(pageList->GetNthPageUID(i));
 }
 
 //========================================================================================
@@ -392,8 +406,9 @@ ErrorCode KESCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMStri
 	KESCMBuildPairing(targetDB, sourceDB, tPages, sPages);
 
 	// ★マスタースプレッドのページを後ろに連結する(2026-08-11)。従来はマスターが一度も比較されて
-	// いなかった(KESCMCollectPageUIDs が ISpreadList=通常スプレッドしか回さないため。マスターに
-	// 出ていた枠はあふれ「+」だけ)。
+	// いなかった(KESCMCollectPageUIDs にマスターが入らないため。マスターに出ていた枠はあふれ「+」だけ)。
+	// ⚠2026-08-16 に KESCMCollectPageUIDs の中身が ISpreadList の2重ループから IPageList へ移ったが、
+	//   **マスターを含まないことは変わらない**(`IPageList.h:81` が契約として明記)＝この連結は今も要る。
 	// ★★連結するだけでよい理由: この後の比較ループ・進捗バーの総数・差分再比較のキャッシュ
 	//   (sPrevPairTargetToSource)・Source 側の対応表(sSrcPageToTarget)は、すべて tPages/sPages の
 	//   添字で回っている。MakeEntry はページの UIDRef しか見ない(中身が通常ページかマスターページかを

@@ -289,8 +289,9 @@ bool16 CollectRows(IDataBase* targetDB, IDataBase* sourceDB, std::vector<KESCMCh
 	}
 
 	// ---- Target のマスタースプレッド: 変更のみ(2026-08-11) ----
-	// ★マスタースプレッドは IMasterSpreadList の別管理で、上の KESCMCollectPageUIDs(=ISpreadList)には
-	//   一度も現れない。並び順は Prev/Next(KESCMBuildStops)と peek が使うのと同じ
+	// ★マスタースプレッドは IMasterSpreadList の別管理で、上の KESCMCollectPageUIDs には一度も現れない
+	//   (2026-08-16 に中身が IPageList へ移ったが、**マスターを含まないのは契約**＝`IPageList.h:81`
+	//    "does not include master pages"。根拠が ISpreadList からヘッダーの明文へ移っただけ)。並び順は Prev/Next(KESCMBuildStops)と peek が使うのと同じ
 	//   KESCMCollectMasterPageUIDs に借りる(マスターの列挙順を決める場所を2つにしない)。
 	//   位置は「Target の通常ページを全部出した後・Source の削除の前」= Prev/Next の巡回順と同じ並び。
 	// ★Inserted/Deleted は扱わない(冒頭の注記): 相手のいないマスターは KESCMBuildMasterPairing が

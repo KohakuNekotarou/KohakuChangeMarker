@@ -167,8 +167,10 @@ static void KESCMBuildStops(std::vector<KESCMNavStop>& out)
 			KESCMAppendOversetStopsForPage(u, locs, out);
 	}
 
-	// ★★KESCMCollectPageUIDs が回すのは **ISpreadList = 通常スプレッドだけ**で、マスタースプレッドは
+	// ★★KESCMCollectPageUIDs が返すのは **文書の通常ページだけ**で、マスタースプレッドは
 	//    IMasterSpreadList の別管理なので上のループには一度も現れない。以下でマスターを追い足す。
+	//    (2026-08-16 に中身が ISpreadList の2重ループから **IPageList** へ移ったが、マスターを
+	//     含まないのは契約＝`IPageList.h:81` "does not include master pages"。前提は不変。)
 	//    ★KESCMCollectPageUIDs 自体は変えない: あれは比較のページ対応(KESCMBuildPairing)でも使う共有
 	//    ヘルパで、マスターページを混ぜると**比較する対象そのものが変わる**。ここで足すのが正しい。
 	//    順序は「通常ページを全部回った後」＝ページ順の意味を壊さない。

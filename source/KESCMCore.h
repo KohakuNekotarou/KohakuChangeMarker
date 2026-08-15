@@ -22,12 +22,16 @@
 class IDataBase;
 class IControlView;
 
-// ドキュメント内の全ページUIDを、スプレッド順・ページ順で平坦に集める。比較(KESCMDoMarkChangesDoc)と
+// ドキュメント内の全ページUIDを、文書のページ順(平坦)で集める。比較(KESCMDoMarkChangesDoc)と
 // 色サンプラが共有するヘルパ。実体は KESCMCore.cpp。
+// ★2026-08-16(監査 B3・A-3): 中身は **IPageList**(`GetPageCount`/`GetNthPageUID`)。ヘッダー自身が
+//   「other sources から同じ情報を計算するより *much* more efficient」と名指しする公式の道。
+//   **隠しスプレッドのページも含む**(実測で確認済み。理由は実体側のコメント)。
 void		KESCMCollectPageUIDs(IDataBase* db, std::vector<UID>& out);
 
 // マスタースプレッドのページUIDを、マスタースプレッド順・ページ順で out に足す(out はクリアしない)。
-// ★上の KESCMCollectPageUIDs とは別物。あちらは ISpreadList=通常スプレッドだけを平坦化するヘルパで、
+// ★上の KESCMCollectPageUIDs とは別物。あちらは **IPageList**＝文書の通常ページだけを平坦に返すヘルパで
+//   (マスターを含まないのは契約＝`IPageList.h:81` "does not include master pages")、
 //   比較のページ対応・Prev/Next・TSV・Sync・Hide Unchanged が共有している。そこへマスターを混ぜると
 //   「比較する対象そのものが変わる」ので、マスターは常に別に集めて呼び手が足す(overset と同じ流儀)。
 // ⚠out をクリアしないのは、通常ページの列の後ろへ連結する使い方を想定しているため。

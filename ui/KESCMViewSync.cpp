@@ -426,6 +426,9 @@ static PBPMPoint KESCMCorrectedCenterForDoc(IControlView* srcView, IDataBase* sr
 	//   (同じ平坦列を使う)でも同じだった既存挙動で、2026-08-06 の再点検では「隠しスプレッドも網に掛かる」
 	//   と書いていた旧コメントの方を訂正した。塞ぐなら参照側に hide 判定(IID_IHIDESPREADBOOLDATA)を足す
 	//   (★KESCMCollectPageUIDs 自体は比較ペアリングと共用のため変えない)。
+	//   ⚠2026-08-16 に KESCMCollectPageUIDs の中身が ISpreadList の2重ループから **IPageList** へ移ったが、
+	//     **隠しスプレッドのページを含むことは実測で確認済み**(Hide Unchanged で隠した状態で UID 列を
+	//     全数突き合わせて一致)＝ここの前提は不変。
 	//   (Added/Removed 登録ページも「対応表に無い」ので自前探索へ落ちるが、そちらも同じページを
 	//    返すので結果は変わらない=下の skip 判定に進むだけ。稀なケースで探索が2回になるだけの実害)
 	UID srcPage = KESCMQueryViewCenterPage(srcView, srcCenter);
