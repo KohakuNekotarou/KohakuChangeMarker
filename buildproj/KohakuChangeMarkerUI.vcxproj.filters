@@ -235,4 +235,9 @@
          <Filter>Resource Files</Filter>
       </CustomBuild>
    </ItemGroup>
+   <ItemGroup>
+      <None Include="..\..\..\source\sdksamples\KESCM\ui\KCMUI_enUS.fr">
+         <Filter>Resource Files</Filter>
+      </None>
+   </ItemGroup>
 </Project>
