@@ -1178,6 +1178,14 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	// 描かない(自己参照=マークがスナップショットに写り込む feedback を防ぐ)。以前は kPreviewMode ビットで
 	// 弾いていたが、それは PDF 書き出しの kPDFExportMode と同一ビット(4096)で export を巻き込んでいたため、
 	// 明示的な再入フラグ sRasterizing に置き換えた。
+	// ★2026-08-15 裏取り＝この「同一ビット」は**偶然の衝突ではなく Adobe の意図的な設計**なので、
+	//   将来 値がずれることは期待できない＝sRasterizing への置き換えは恒久的に正しい(kPreviewMode に戻さないこと)。
+	//   kPreviewMode は draw flags(IShape.h:89)、kPDFExportMode は iterate flags(IShape.h:159)で**別の enum**
+	//   なのにどちらも 4096。理由は IShape.h:144 が明言している——
+	//     "Due to lack up type checking for IShape enums, this must match kPrinting above
+	//      since they are unfortunately used interchangeably in the codebase."
+	//   (同じ理由で kIteratePrinting=512 も kPrinting=512 に揃えてある)
+	//   ⇒ IShape の flags は enum をまたいで同じ値が渡される前提なので、別 enum の定数とも衝突を検討すること。
 	if (sRasterizing)
 		return kFalse;
 	// 印刷文脈か(kPrinting=512)。印刷時はマークの ON/OFF を sPrintMarks で決める。通常の画面描画では立たない。
