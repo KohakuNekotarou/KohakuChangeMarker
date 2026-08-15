@@ -15,9 +15,6 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMActionComponent.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMDocResponder.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -45,31 +42,13 @@
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMBookCompare.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMBookOpen.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMBookRowEH.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMBookDialog.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMBookDialogObserver.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMBookPair.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMBookTreeAdapter.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMBookTreeWidgetMgr.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMChangedPagesTSV.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMChangeNav.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMColorSampler.cpp">
@@ -84,25 +63,7 @@
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMOversetScan.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMPanelAlpha.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMPanelObserver.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMPanelState.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMPeek.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMPeekGesture.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMCmykCursor.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMViewSync.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMHideUnchanged.cpp">
@@ -111,22 +72,10 @@
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMOversetApply.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMViewLookup.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMComparisonRun.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMUIDrawEvent.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMUIStartup.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMModelNotify.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMModelChangeObserver.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMFacades.cpp">
@@ -139,27 +88,6 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMPageNumberMarker.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMThumbnailRefresh.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMThumbIdleTask.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMScrollMap.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMTool.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMTracker.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMTrackerRegister.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMCursorProvider.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMScriptProvider.cpp">
@@ -176,28 +104,13 @@
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMBookCompare.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMBookOpen.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMBookDialog.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMBookPair.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMBookResult.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMBookTree.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMChangedPagesTSV.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMChangeNav.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMCheckGlyph.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMColorSampler.h">
@@ -215,31 +128,13 @@
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMOversetScan.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMPanelAlpha.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMPanelState.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMPeek.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMPeekGesture.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMCmykCursor.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMViewSync.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMHideUnchanged.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMOversetApply.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMViewLookup.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMComparisonRun.h">
@@ -264,15 +159,6 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMPageNumberMarker.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMThumbnailRefresh.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMThumbIdleTask.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMScrollMap.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
