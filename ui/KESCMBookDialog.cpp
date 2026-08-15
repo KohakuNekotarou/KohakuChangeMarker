@@ -60,14 +60,6 @@ PMString gTargetPath;
 PMString gSourcePath;
 PMString gSummary;
 
-/** The last separator in a path, whichever kind it is. -1 when there is none. */
-CharCounter LastSeparator(const PMString& s)
-{
-	const CharCounter back = s.LastIndexOfWChar(UTF32TextChar('\\'));
-	const CharCounter fwd  = s.LastIndexOfWChar(UTF32TextChar('/'));
-	return (back > fwd) ? back : fwd;
-}
-
 /** Put text into one of the dialog's static text widgets. Does nothing if it is not there. */
 void SetLine(IPanelControlData* panelData, const WidgetID& widgetID, const PMString& text)
 {
@@ -93,20 +85,27 @@ void KESCMBookDialogPaintResult(IPanelControlData* panelData)
 
 	// ★The labels stay English (the plug-in's UI language rule); only the paths vary.
 	//
-	// ***** THE PATH IS SHORTENED BEFORE IT REACHES THE WIDGET, AND THAT IS WHAT FIXES THE DIALOG'S
-	// WIDTH. ***** (2026-08-13) EVE grows a static text widget to fit its own text and pushes the
-	// parent out with it, so a long path made a wide dialog - 610px for a 74-character path, and
-	// unmoved by the child frames, the root frame, kEVEAlignFill or the window title (all measured
-	// that day). The widget's own kEllipsizeBeginning could never help: a widget grown to fit its
-	// text has nothing left to elide. Handing it a string that already fits is what puts the width
-	// back under the .fr's control - and it is the same shortening the confirmation alert shows,
-	// from the same function, so the two never disagree about one file.
+	// ***** THE WHOLE PATH GOES IN; THE WIDGET SHORTENS IT. ***** (2026-08-15, user: "make the paths
+	// match the way the panel puts them out".) The panel's Target:/Source: lines hand their widget
+	// the complete path and let kEllipsizeBeginning cut the front off, and these two now do the same.
+	//
+	// ⚠THE OLD COMMENT HERE WAS WRONG, AND IT IS WORTH KNOWING WHY. It said the C++ shortening was
+	//   what fixed the dialog's width and that kEVEAlignFill had been tried and did nothing - while
+	//   KCMUI.fr, about the same day and the same widget, said Fill was the fix. Removing the
+	//   shortening settled it: the dialog went to 593px, so neither claim was the whole story.
+	// ★What actually holds the width is kKESCMBookPathTextWidgetBoss (KCMUI.fr): EVE asks a widget's
+	//   IID_IEVEINFO for its size, and that boss answers "the size the resource wrote"
+	//   (kFixedSizeEVEInfoImpl). Without it, the width in a .fr is only a MINIMUM - the guide says so
+	//   in as many words ("we treat the width in the .fr file as a minimum width", Using EVE,
+	//   Example 2) - and Fill cannot help because Fill takes the PARENT's width, and the parent is
+	//   itself grown by the child asking for more. With it, the dialog measured 400px carrying a
+	//   66-character path, and the ellipsis does the shortening the string used to do.
 	PMString targetLine("Target: ");
-	targetLine.Append(KESCMElidePathFront(gTargetPath));
+	targetLine.Append(KESCMPathForDisplay(gTargetPath));
 	targetLine.SetTranslatable(kFalse);
 
 	PMString sourceLine("Source: ");
-	sourceLine.Append(KESCMElidePathFront(gSourcePath));
+	sourceLine.Append(KESCMPathForDisplay(gSourcePath));
 	sourceLine.SetTranslatable(kFalse);
 
 	SetLine(panelData, kKESCMBookTargetTextWidgetID, targetLine);
@@ -156,46 +155,6 @@ const std::vector<KESCMChapterResult>& KESCMBookDialogRows()
 	return gDialogRows;
 }
 
-//----------------------------------------------------------------------------------------
-// KESCMElidePathFront(KESCMBookDialog.h で宣言)
-//
-// ★2026-08-14(第1段 Task 15)に KESCMBookPair.cpp から移した。呼び手3つ(この下の2行と、
-//   確認アラートの KESCMBookRun.cpp)が全部 UI 側で、model 側からは一度も呼ばれていなかった
-//   ため ---- 表示のために文字列をどう縮めるかは view の決めごとで、境界に載せる話ではない。
-//   ロジックは1文字も変えていない。
-//----------------------------------------------------------------------------------------
-PMString KESCMElidePathFront(const PMString& rawPath)
-{
-	// ★2026-08-15(ユーザー要望): まず区切りを "/" に揃えてから縮める。パネルの Target:/Source: と
-	//   同じ関数を通すので、**2か所の見た目が食い違わない**(規則は KESCMPathDisplay.h の1か所だけ)。
-	//   ⚠置換は1文字→1文字なので下の文字数判定には影響しない。区切りの探索(LastSeparator)は
-	//     元から "\" と "/" の両方を見るので、順序を入れ替えても答えは変わらない。
-	const PMString path(KESCMPathForDisplay(rawPath));
-
-	// Long enough that a plain "C:/Users/me/Jobs/New/a.indb" is still shown whole, short enough that
-	// the dialog's width comes from its .fr rather than from this string. See the header.
-	const CharCounter kMaxShownChars = 56;
-	if (path.CharCount() <= kMaxShownChars)
-		return path;
-
-	// The last separator, and then the one before it: between them lies the parent folder, and the
-	// parent folder plus the file name is what tells two versions of one job apart.
-	PMString upToParent(path);
-	const CharCounter lastSep = LastSeparator(upToParent);
-	if (lastSep < 0)
-		return path;					// no folders at all - nothing to drop
-
-	upToParent.Truncate(upToParent.CharCount() - lastSep);	// keep [0, lastSep)
-	const CharCounter parentSep = LastSeparator(upToParent);
-	if (parentSep < 0)
-		return path;					// only one folder deep - dropping it would say less, not shorter
-
-	PMString shown(path);
-	shown.Remove(0, parentSep);			// leaves "\<parent>\<file>"
-	shown.Insert(PMString("..."), 0);
-	shown.SetTranslatable(kFalse);
-	return shown;
-}
 
 //----------------------------------------------------------------------------------------
 // The dialog's controller

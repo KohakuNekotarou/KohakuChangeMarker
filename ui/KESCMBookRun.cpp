@@ -33,9 +33,10 @@
 #include "IKESCMBookFacade.h"	// ResolveBookPair / GetBookDisplayPath / CompareBooks
 #include "KESCMBookPanelLookup.h"	// KESCMGetPanelBookFile(前面タブの観測。2026-08-15 Task 9B で UI 側へ)
 								// (2026-08-14・分割 第1段 Task 15 で Facade 経由へ)
-#include "KESCMBookDialog.h"	// KESCMBookDialogSetResult / KESCMOpenBookDialog / KESCMElidePathFront
+#include "KESCMBookDialog.h"	// KESCMBookDialogSetResult / KESCMOpenBookDialog
 #include "KESCMBookResult.h"	// KESCMChapterResult
 #include "KESCMBookRun.h"
+#include "KESCMPathDisplay.h"	// KESCMPathForDisplay - how a path is shown, shared with the panel
 #include "KCMUIID.h"
 #include "KESCMLoc.h"			// Japanese in a Japanese UI, English everywhere else
 
@@ -56,16 +57,17 @@ namespace
     variable string in an alert - the widget-side switch does not reach it. */
 PMString ShownPath(const PMString& path)
 {
-	// ***** SHORTENED THE SAME WAY THE DIALOG SHORTENS IT. ***** (User, 2026-08-13: "the target and
-	// source in the alert - could you make the front an ellipsis like the others".) BOTH places that
-	// show a path call the one function; an alert cannot use the widget-side kEllipsizeBeginning that
-	// the dialog's lines carry, and two hand-written versions of "how much of a path to show" would
-	// drift (memory one-question-one-place).
-	// ★It lives in KESCMBookDialog since 2026-08-14 (Task 15) - it used to be in KESCMBookPair, which
-	//   is model-side, and shortening a path for display is not a model question.
-	// ⚠ Elided BEFORE the ampersand doubling below, so the length being judged is the path the user
-	//   has, not one inflated by display escapes.
-	PMString shown(KESCMElidePathFront(path));
+	// ***** THE WHOLE PATH, SHOWN THE WAY THE PANEL SHOWS ONE. ***** (User, 2026-08-15: "make the
+	// paths match the way the panel puts them out".) The panel hands its widget the complete path and
+	// lets the widget's kEllipsizeBeginning do the shortening; since the same day the comparison
+	// dialog does that too. So no C++ shortening is left anywhere - the rule is "give out the whole
+	// path" and one place decides how it is spelled (KESCMPathDisplay.h).
+	// ★AN ALERT HAS NO WIDGET, so nothing elides this one and the alert grows as wide as the path.
+	//   That is the accepted cost of matching: this alert exists to answer "are these the two books
+	//   you meant?", and a complete path answers it better than a shortened one.
+	// ⚠ Separators are normalised BEFORE the ampersand doubling below, so what gets escaped for
+	//   display is the path as it will be read.
+	PMString shown(KESCMPathForDisplay(path));
 	shown.SetTranslatable(kFalse);
 
 	if (Utils<IMenuUtils>().Exists())

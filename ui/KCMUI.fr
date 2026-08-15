@@ -50,6 +50,7 @@
 // to this .fr, which is how the preprocessor resolves quoted includes.
 #include "../../open/includes/ui/SplitterPanelDefs.h"
 #include "InterfaceColorDefines.h"
+#include "DialogLayoutID.h"		// IID_IEVEINFO / kFixedSizeEVEInfoImpl - the book dialog's path lines
 #include "IControlViewDefs.h"
 #include "SysControlIds.h"
 #include "TreeViewDefs.h"			// kHideRootNode - the Story Edits list (2026-08-10)
@@ -538,6 +539,36 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 		kInfoStaticTextWidgetBoss,
 		{
 			IID_ITIP, kKESCMNoTipImpl,
+		}
+	},
+
+	// ***** A STATIC TEXT THAT DOES NOT GROW TO FIT ITS TEXT. ***** (2026-08-15) The dialog's
+	// Target:/Source: lines carry a full path, and that made the whole window as wide as the path:
+	// 593px measured, against the 400 its frames ask for.
+	//
+	// ★WHY THE FRAMES DID NOT HOLD IT. The guide is explicit - "we treat the width in the .fr file
+	//   as a MINIMUM width" (Using EVE, Example 2), and EVE "automatically resizes static text,
+	//   buttons, check boxes, radio buttons and drop-down lists" to fit their labels. So 364 in the
+	//   frame is a floor, never a ceiling.
+	// ⚠ kEVEAlignFill does not stop it either, and the older comments that said it did were wrong:
+	//   Fill means "take the PARENT's width", and the parent is itself grown by the child that asks
+	//   for more. Fill decides how the space is shared, not how much there is.
+	//
+	// ★THE HANDLE IS IID_IEVEINFO: EVE asks a widget's own EveInfo implementation for its size, so a
+	//   widget that must not be measured names an implementation that answers "the size the resource
+	//   wrote" - kFixedSizeEVEInfoImpl. That is also what the guide means when it says the few
+	//   widgets that cannot measure themselves "still need appropriate bottom (height) and right
+	//   (width) values in the FRAME directive": with this implementation the frame IS the answer.
+	//   Same handle KBS uses for its glyph frame (KBS.fr:289-293).
+	// ⇒ The widget's own kEllipsizeBeginning finally has something to do, so the path is shortened
+	//   BY THE WIDGET - which is how the panel's Target:/Source: lines have always done it, and the
+	//   point of the change (user, 2026-08-15: "make the paths match the way the panel puts them out").
+	Class
+	{
+		kKESCMBookPathTextWidgetBoss,
+		kStaticTextWidgetBoss,
+		{
+			IID_IEVEINFO, kFixedSizeEVEInfoImpl,
 		}
 	},
 }}};
@@ -1432,6 +1463,11 @@ type KESCMBookRowWidget(kViewRsrcType) : PrimaryResourcePanelWidget(ClassID = kK
 // of the row, not of the dialog, and the row is built outside EVE.
 type KESCMBookRowCellWidget(kViewRsrcType) : InfoStaticTextWidget(ClassID = kKESCMBookRowCellBoss) { };
 
+// The dialog's Target:/Source: lines. Field for field an EVEStaticTextWidget - only the boss differs,
+// and with it the answer EVE gets when it asks how wide this widget wants to be (see
+// kKESCMBookPathTextWidgetBoss: the frame becomes the size instead of the minimum).
+type KESCMBookPathTextWidget(kViewRsrcType) : EVEStaticTextWidget(ClassID = kKESCMBookPathTextWidgetBoss) { };
+
 // Scroll-map strip view resource: instantiated with ::CreateObject(db, RsrcSpec(...,
 // kViewRsrcType, kKESCMScrollMapRsrcID), IID_ICONTROLVIEW) — same runtime-creation pattern as
 // linksui's dynamic info widgets. The Frame here is a placeholder; the real frame/binding are
@@ -2149,10 +2185,15 @@ resource KESCMBookDialogWidget (kKESCMBookDialogRsrcID + index_enUS)
 	//   ⇒ To change the width, change the CHILD frames below (they are all kept equal), or shorten
 	//     the text they are given. Changing this line does nothing.
 	//
-	// ★WHY THE PATHS ARE SHORTENED IN C++. While the Target/Source lines held a full 74-character
-	//   path, the second term of that formula won and the dialog was 610px wide - the child frames,
-	//   this frame, kEVEAlignFill and the window title were all tried against it and all measured at
-	//   610. KESCMElidePathFront is what took the width back.
+	// ★★AND WHY THE CHILD FRAMES NOW HOLD. Until 2026-08-15 they did not: a full 74-character path
+	//   made the window 610px wide whatever the frames said, because EVE treats a .fr width as a
+	//   MINIMUM and resizes static text to fit its label ("we treat the width in the .fr file as a
+	//   minimum width" - Using EVE, Example 2). The path was therefore shortened in C++ before it
+	//   reached the widget, which hid the problem rather than fixing it.
+	//   ⇒ The two path lines are now KESCMBookPathTextWidget, whose boss answers EVE's size question
+	//     with "what the resource wrote" (kFixedSizeEVEInfoImpl). Measured after the change: 400px
+	//     with a 66-character path in it, and the widget's own kEllipsizeBeginning shortening it -
+	//     the same way the panel's Target:/Source: lines do.
 	// ★HEIGHT does follow the children (393 measured against the 420 written here), which is
 	//   presumably how the old comment came to be believed.
 	Frame(0, 0, 390, 420),			// Frame (l,t,r,b) - ★NOT the dialog's size; see above
@@ -2168,7 +2209,7 @@ resource KESCMBookDialogWidget (kKESCMBookDialogRsrcID + index_enUS)
 		// what that run was given - not a fresh look at the Book panel, which by now may have moved.
 		// ⚠ Convert ampersands = kFalse: a path through a folder called "Q&A" would otherwise display
 		// as "QA" (the ampersand is eaten as an accelerator marker).
-		EVEStaticTextWidget
+		KESCMBookPathTextWidget
 		(
 			kKESCMBookTargetTextWidgetID,	// WidgetId
 			kSysStaticTextPMRsrcId,			// RsrcId
@@ -2207,21 +2248,20 @@ resource KESCMBookDialogWidget (kKESCMBookDialogRsrcID + index_enUS)
 			//   palette-font-line-height-by-ui-language), and trimming the frame to match the panel
 			//   would risk clipping the text to win back pixels nobody asked for.
 			//
-			// ***** Fill, NOT Left - AND THAT IS WHAT FIXES THE DIALOG'S WIDTH. ***** (2026-08-13)
-			// ⚠★kEVEAlignLeft let EVE widen this widget to whatever its TEXT needed, and the text here
-			//   is a full path. The dialog was therefore as wide as the longest path it had been asked
-			//   to show - measured at 610px for a 74-character path, and UNMOVED by changing the
-			//   frames (500→470), the root frame (540→510) or the title. All three were tried.
-			//   Two things follow from it, and the second is worse than the first:
-			//     - the width was never ours to set;
-			//     - kEllipsizeBeginning NEVER RAN. A widget grown to fit its text has nothing to
-			//       elide, so the whole "keep the tail, drop the front" design above was dead code.
-			//   kEVEAlignFill makes the widget take the PARENT's width instead, which is what the
-			//   ellipsis needs to have something to do.
+			// ***** Fill, not Left - but ⚠ FILL IS NOT WHAT FIXES THE WIDTH. ***** The comment here
+			// used to say it was, and 2026-08-15 disproved it: with the C++ shortening taken out,
+			// this dialog measured 593px, Fill and all. Fill means "take the PARENT's width", and
+			// the parent is itself grown by whichever child asks for more - so Fill decides how the
+			// space is shared, never how much of it there is to share.
+			// ★What holds the width is the BOSS of these two lines (KESCMBookPathTextWidget →
+			//   kKESCMBookPathTextWidgetBoss), which answers EVE's size question with the frame
+			//   rather than with the text. Fill still earns its keep: it makes this widget span the
+			//   parent, so the frame above is the width actually used - and that is what leaves
+			//   kEllipsizeBeginning something to elide (a widget grown to fit its text never elides).
 			kEVEAlignFill | kEVEVerySmallSpaceAfter,
 		),
 
-		EVEStaticTextWidget
+		KESCMBookPathTextWidget
 		(
 			kKESCMBookSourceTextWidgetID,	// WidgetId
 			kSysStaticTextPMRsrcId,			// RsrcId

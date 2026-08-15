@@ -66,28 +66,19 @@ void KESCMBookDialogSetResult(const PMString& targetPath, const PMString& source
       "nothing changed" rather than "nothing ran". */
 const std::vector<KESCMChapterResult>& KESCMBookDialogRows();
 
-/** The same path with its FRONT replaced by an ellipsis - "...\New\a.indb" - or unchanged if it is
-    short enough to read whole.
+/* ⚠ KESCMElidePathFront IS GONE (2026-08-15). It shortened a path in C++ - "...\New\a.indb" - for
+   the alert and for these two lines, and nothing shortens them now: the whole path goes in and the
+   WIDGET elides it, which is how the panel's Target:/Source: lines always worked (user's call the
+   same day: "make the paths match the way the panel puts them out"). How a path is spelled is
+   decided in one place, KESCMPathDisplay.h.
 
-    ***** ONE ANSWER, TWO PLACES THAT SHOW A PATH. ***** The confirmation alert and the dialog's
-    Target/Source lines are the same two strings shown twice, and they must shorten the same way or
-    the user is left comparing two different-looking claims about one file (memory
-    one-question-one-place).
-
-    ★★AND THE DIALOG NEEDS IT FOR A SECOND REASON - ITS WIDTH. Measured 2026-08-13: EVE sizes a
-      static text widget to fit its own TEXT and pushes the parent out to match, so the dialog was as
-      wide as the longest path it had been handed (610px for a 74-character path). Neither the child
-      frames, nor the root frame, nor kEVEAlignFill, nor the window title moved it - all measured.
-      Shortening the STRING is what puts the width back under the .fr's control, and it is also what
-      finally gives kEllipsizeBeginning something to do (a widget grown to fit its text never elides).
-
-    ★It lives HERE, and not in KESCMBookPair where it was written, since 2026-08-14 (Stage 1,
-      Task 15): every caller is UI-side, and this file is the VIEW half of the feature. A model-side
-      home would have put a display rule on the wrong side of the split.
-
-    ★2026-08-15: the separators are normalised to "/" on the way in (KESCMPathDisplay.h), so this
-      and the panel's Target:/Source: lines cannot end up looking different from each other. */
-PMString KESCMElidePathFront(const PMString& rawPath);
+   ★AND THE REASON IT USED TO BE NEEDED IS FIXED AT THE SOURCE. The dialog's width came from these
+     lines: EVE treats the width in a .fr as a MINIMUM ("we treat the width in the .fr file as a
+     minimum width" - Using EVE, Example 2) and resizes static text to fit its label, so a full path
+     made the window 593px wide (measured) against the 400 its frames ask for. Handing the widget a
+     pre-shortened string hid that; it did not fix it. The fix is kKESCMBookPathTextWidgetBoss in
+     KCMUI.fr - an EveInfo implementation that answers "the size the resource wrote" - after which
+     the window measured 400px with the full path in it. */
 
 #endif // __KESCMBookDialog_h__
 
