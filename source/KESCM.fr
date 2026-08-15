@@ -123,26 +123,42 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 	// Startup/shutdown service. The middle-button watcher was removed (2026-07-13); this now only
 	// tears down held resources at app shutdown (see KESCMPeekStartup in KESCMPeek.cpp).
 	//
-	// !!! 2026-08-14 - BEFORE switching this plug-in to kModelPlugIn (split stage 2), settle the
-	// threading policy of this service. Guide vol1-07 "Threading and startup/shutdown services" states
-	// that a startup/shutdown boss living in a MODEL plug-in is called on background thread startup and
-	// shutdown too. KESCMPeekStartup::Shutdown() wipes the entire comparison state (DropAll, DropOverset,
-	// page map / check / hide-unchanged, story list), so being called per background thread would erase
-	// the marks on every PDF export - which is exactly what stage 2 is trying to make work.
-	// Note kLazyStartupShutdownProviderImpl is NOT one of the three implementations the guide documents
-	// (kCMainThreadStartupShutdownProviderImpl / kCMTStartupShutdownProviderImpl /
-	// kCStartupShutdownProviderImpl), and IStartupShutdownService.h:44-47 says nothing about threading,
-	// so the behaviour has to be measured - see Task 11B in the stage 2 plan. If it does get called on
-	// background threads, switch to kCMainThreadStartupShutdownProviderImpl HERE (fix it in the resource,
-	// not by adding an "am I on a background thread" guard inside Shutdown(); such a guard risks skipping
-	// the real shutdown as well).
+	// ***** SETTLED 2026-08-15 (Stage 2, Task 11B). The TODO that stood here is answered. *****
+	//
+	// THE DANGER: guide vol1-07 "Threading and startup/shutdown services" says a startup/shutdown boss
+	// living in a MODEL plug-in is called on background thread startup and shutdown TOO. And
+	// KESCMPeekStartup::Shutdown() wipes the entire comparison state - DropAll, DropAllOrig,
+	// DropOverset, the page map, the checks, hide-unchanged, the story list, the peek arming. Called
+	// once per background thread, it would erase the marks on every PDF export, which is the exact
+	// thing this stage exists to make work.
+	//
+	// THE FIX IS HERE, IN THE RESOURCE, NOT IN Shutdown(). An "am I on a background thread" guard
+	// inside Shutdown() would risk skipping the REAL shutdown as well; the threading policy is what
+	// the guide gives us to say this properly.
+	//
+	// ★kCMainThreadStartupShutdownProviderImpl - and this is not a guess. Adobe's own DiagnosticLog
+	//   is a kModelPlugIn (DiagLogClass.fr:59) that names exactly this implementation for exactly this
+	//   reason, and says so (DiagLogClass.fr:93-100):
+	//       "This is a model plug-in, but we only want the startup shutdown service to run in main thread."
+	//   SDK-wide there are 2 users of it; the other (xmlcataloghandler) is boilerplate with no comment.
+	//   ⇒ The threading question needed no measurement once the precedent was found.
+	//
+	// ⚠WHAT DID CHANGE IS THE TIMING, and the guide does not discuss it. kLazyStartupShutdownProviderImpl
+	//   runs through kAppLazyStartupShutdownService - an idle task AFTER startup completes (gs-06) -
+	//   while this one does not, so Startup() now runs EARLIER. That is safe here for a plain reason:
+	//   ★KESCMPeekStartup::Startup() IS EMPTY. Stage 1 Task 8 moved all three startup jobs to the UI
+	//   half (panel state restore / batch-close subscription / translucency subscription), so there is
+	//   nothing left that could depend on "after startup". If work ever comes back to Startup(), check
+	//   this assumption again before adding it.
 	Class
 	{
 		kKESCMPeekStartupBoss,
 		kInvalidClass,
 		{
 			IID_ISTARTUPSHUTDOWN,   kKESCMPeekStartupImpl,
-			IID_IK2SERVICEPROVIDER, kLazyStartupShutdownProviderImpl,
+			// This is a model plug-in, but we only want the startup shutdown service to run in
+			// main thread. (Same line, same reason, as Adobe's DiagLogClass.fr:93-100.)
+			IID_IK2SERVICEPROVIDER, kCMainThreadStartupShutdownProviderImpl,
 		}
 	},
 

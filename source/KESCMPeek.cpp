@@ -536,6 +536,16 @@ void KESCMPeekStartup::Startup()
 
 void KESCMPeekStartup::Shutdown()
 {
+	// ★★★2026-08-15（第2段 Task 11B）＝**この関数はメインスレッドでしか呼ばれない**。
+	//   KESCM は `kModelPlugIn` になったので、放っておくとガイド vol1-07 のとおり
+	//   **バックグラウンドスレッドの起動・終了ごとにも呼ばれる**＝下の DropAll 以下が走り、
+	//   **PDF を書き出すたびにマークが全部消える**。
+	//   ⇒ 塞いだのは **`.fr` の宣言側**（`kCMainThreadStartupShutdownProviderImpl`）。
+	//   ⚠**ここに「BG なら何もしない」ガードを入れてはいけない**——本当の終了時にも取りこぼしうる。
+	//     スレッド方針はサービスの宣言で表すのが筋で、ガイドが threading policy を用意しているのはそのため。
+	//   ★手本＝Adobe 製 DiagnosticLog（`DiagLogClass.fr:93-100`）が **model プラグインのまま
+	//     startup/shutdown だけをメインスレッド限定にし、その理由をコメントに書いている**。
+
 	// ★★2026-08-13(Task 8): **UI の後片付け5件はここから UI 側へ移した** ---- 遅延サムネイル
 	//   idle task の解放 / 一括クローズの保留の破棄 / 半透明の購読解除 / 半透明タイマーの停止 /
 	//   押下中 HUD のフォント返却。行き先は KESCMUIStartup.cpp で、**順序も向こうで保っている**
