@@ -21,6 +21,23 @@
 //  
 //========================================================================================
 
+// ***** READ THIS FILE AS CP1252, NOT AS THE MACHINE'S ANSI CODE PAGE. ***** (2026-08-15.)
+//
+// Same line, same reason, as source/KESCM.rc -- see there for the full account. In short:
+// kShortCopyRightStr holds the sign as the raw byte 0xA9, which is the copyright sign only in
+// CP1252, and rc.exe defaults to the SYSTEM's ANSI code page (CP932 here), where it decodes as
+// U+FF69, a halfwidth katakana. Measured on the built .pln both ways.
+//
+// ⚠This half was left out when the model half was fixed earlier the same day, which put the two
+//  .pln of ONE product in disagreement: KohakuChangeMarker.pln said U+00A9 while
+//  KohakuChangeMarkerUI.pln still said U+FF69. Fixing only the half you happen to be auditing is
+//  how that happens -- the audit blocks are a reading order, not a boundary for a one-line fix.
+//
+// *Do not put non-ASCII characters in this file, comments included: the pragma tells rc.exe how
+//  to read the WHOLE file.
+// *KESCL and KT still carry the same fault -- they share this template.
+#pragma code_page(1252)
+
 #include "WinRezFlags.h"
 #include "BuildNumber.h"
 #include "KCMUIID.h"
