@@ -81,6 +81,16 @@ public:
 	void PruneEmptyDocs();
 
 private:
+	// ★★2026-08-15(第2段 Task 12B): db に対応するエントリを引く共通の口。
+	//   fMap のキーは IDataBase* なので、**バックグラウンド(PDF の非同期書き出し)から
+	//   クローン DB で引くと必ず外れる**(＝登録ページの緑「/」や ✓ が書き出しに出ない)。
+	//   ⇒ ポインタで外したら**ファイル同一性(KESCMIsSameDoc)で引き直す**。
+	//   ⚠参照系(Contains/HasAny/CountIn/CollectInto)だけがこれを使う。**更新系は使わない**
+	//     ——更新は必ずメインスレッドで、しかも「今その db に足す」意味なので、
+	//     クローンのエントリを勝手に育てるとかえって取り違える。
+	//   計算量: fMap の要素数＝開いている文書数(数個)。ポインタ一致で外れた時だけの線形探索。
+	Map::const_iterator FindDoc(IDataBase* db) const;
+
 	Map fMap;
 };
 

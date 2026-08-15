@@ -1,4 +1,4 @@
-//========================================================================================
+﻿//========================================================================================
 //
 //  Owner: KohakuNekotarou
 //
@@ -50,7 +50,10 @@
 // Project includes:
 #include "KESCMID.h"
 #include "KESCMScriptingDefs.h"
-#include "KESCMCore.h"			// KESCMGetSessionStatus - the status line, kept in the module
+#include "KESCMModelNotify.h"	// KESCMGetSessionStatus - the status line, kept on the model side (Task 9)
+// (★KESCMUIShared.h は include しない ---- 2026-08-13 の Task 5 で一度足したが、この ScriptProvider は
+//  widget に触る8本を1つも呼んでいなかった＝**死んだ依存**だったので外した。読んでいるのは
+//  KESCMGetSessionStatus(KESCMCore.h。文字列の保持は model 側)だけで、これは逆流ではない。)
 #include "KESCMBookCompare.h"	// KESCMGetBookResultText - the last book comparison, also in the module
 
 /** Serves this plug-in's scripting additions. Two read-only properties, both on the application

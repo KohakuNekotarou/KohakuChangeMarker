@@ -1,4 +1,4 @@
-//========================================================================================
+﻿//========================================================================================
 //
 //  KESCMScriptingDefs.h
 //
@@ -41,15 +41,6 @@
 #ifndef __KESCMScriptingDefs_h__
 #define __KESCMScriptingDefs_h__
 
-/** ScriptIDs that KESCM contributes to enumerations that already exist in the object model.
-	Scripts read this one as app.toolBoxTools.currentTool, and select the tool by assigning
-	app.toolBoxTools.currentTool = UITools.KOHAKU_CHANGE_MARKER_TOOL.
-*/
-enum KESCMScriptEnums
-{
-	en_KESCMTool = 'nKGt'	// n = enumerator, K = Kohaku, G = KESCM, t = tool
-};
-
 /** Properties KESCM adds to the application object. */
 enum KESCMScriptProperties
 {
@@ -57,6 +48,35 @@ enum KESCMScriptProperties
 	p_KESCMBookResult = 'pKGb'	// b = book. app.kcmBookResult - the last book comparison, one line
 								// per chapter ("name<TAB>state"). Checked against the registry in
 								// docs/ai-notes/kes-scriptid-registry.md before use (2026-08-11).
+};
+
+/** Properties KESCM adds to the STORY object (2026-08-15, at the user's request).
+
+	These are ITextModel's four change counters, read straight off the story the script names:
+
+		app.documents[0].stories[2].kcmChangeCount   ->  8
+
+	WHY THEY ARE WORTH PUBLISHING. The aggregate counter is what decides whether a story appears
+	in the panel's Story Edits list (KESCMStoryStamp.cpp:84 - "if the two readings match, skip").
+	Until now that number could not be seen from outside, so when a list came back EMPTY there was
+	no way to tell "the plug-in is wrong" from "the two documents genuinely read the same" without
+	reading the source. Measured 2026-08-15: two documents built by the same script, with different
+	text, carry the SAME counters - because a counter is a version number for the story's state,
+	not a count of edits, and both files went through the same number of edits. Publishing the
+	numbers turns that from a guess into a reading.
+
+	READ-ONLY, all four. They are the application's own counters; a script that could set them
+	would be able to make the panel report a change that never happened.
+
+	Codes follow docs/ai-notes/kes-scriptid-registry.md (p = property, K = Kohaku, G = KESCM) and
+	were checked against ScriptingDefs.h / GenericID.h for collisions before use - none.
+*/
+enum KESCMStoryScriptProperties
+{
+	p_KESCMChangeCount      = 'pKGC',	// C = Change  - the all-changes counter (the one that decides)
+	p_KESCMTextChangeCount  = 'pKGT',	// T = Text    - characters inserted, removed or replaced
+	p_KESCMAttrChangeCount  = 'pKGA',	// A = Attr    - effective attributes, styles and overrides
+	p_KESCMOtherChangeCount = 'pKGO'	// O = Other   - the counter nothing measured has ever moved
 };
 
 #endif // __KESCMScriptingDefs_h__

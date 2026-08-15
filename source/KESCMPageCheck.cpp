@@ -34,11 +34,17 @@
 #include <string>
 #include <cstdio>				// FILE / fread / fwrite / fclose
 
-#include "KESCMCore.h"			// KESCMCollectPageUIDs / KESCMCollectMasterPageUIDs / KESCMIsArmed / KESCMArmedTargetDB / KESCMArmedSourceDB / KESCMSetStatus / KESCMDoMarkChangesDoc
+#include "KESCMCore.h"			// KESCMCollectPageUIDs / KESCMCollectMasterPageUIDs / KESCMIsArmed / KESCMArmedTargetDB / KESCMArmedSourceDB / KESCMDoMarkChangesDoc
+								// (ステータス行は 2026-08-13 Task 9 で KESCMNotifyStatus＝通知へ移った)
+#include "KESCMModelNotify.h"	// KESCMNotifyStatus - the model tells the UI, it never calls it (Task 9)
+#include "KESCMComparisonRun.h"	// KESCMToggleStartStop(2026-08-13 に KESCMCore.h から移動)
 #include "KESCMPageCheck.h"
 #include "KESCMPageMap.h"		// KESCMPageMapCollectRegistered(保存) / KESCMPageMapReplaceRegistered(読込)
 #include "KESCMDocUidSet.h"		// 「文書DB→ページUID集合」の共通の入れ物(登録側と共有。2026-08-06 監査 C-1)
-#include "KESCMThumbnailRefresh.h"	// KESCMRefreshThumbnailsForPages(トグルページの明示サムネイル更新)
+#include "KESCMThreadSafety.h"	// ★共有状態のロック(GetMap で入れ物の内側を直接いじるとき)
+#include "KESCMID.h"				// kKESCMPageFlagsChangedMessage(通知の ID)
+// ★2026-08-13(Task 10): UI 側ヘッダー KESCMThumbnailRefresh.h の include を落とした。サムネイルを
+//   作り直すのは通知を受けた UI の仕事。★KESCMCollectChangedPageUIDs も同日 KESCMCore.h へ移った。
 
 // チェック済みページ: 文書DB → ページUIDの集合。セッション内のみ。
 // 空になった文書のエントリは即座に消える(KESCMDocUidSet の規約)。
@@ -121,16 +127,17 @@ void KESCMPageCheckToggleSelectedPages()
 	msg.Append(", total ");
 	msg.AppendNumber(sChecked.CountIn(db));
 
-	// トグルしたページ(マーク付きに限定済み=サムネイルが確実に作り直される)のサムネイルを即更新して
-	// ✓ を反映する(比較には影響しないので再比較は不要)。
-	KESCMRefreshThumbnailsForPages(db, pages);
+	// トグルしたページのサムネイルを即更新して ✓ を反映する(比較には影響しないので再比較は不要)。
+	// ★2026-08-13(Task 10): 直接呼びから通知へ。⚠**どのページかは通知では運べない**ので、UI は db の
+	//   全ページを作り直す(理由と戻し方は KESCMThumbnailRefresh.h の KESCMPurgeAllPageThumbs)。
+	KESCMNotifyDocs(kKESCMPageFlagsChangedMessage, db, nil);
 
 	// ★レイアウトビュー版の ✓(2026-07-12 追加)も即反映する。✓ は常時表示なので、トグルした文書の
 	// レイアウトビューを InvalidateViews で再描画しないと、次の再描画機会(スクロール等)まで
 	// 付け外しが画面に出ない(ユーザー報告: OFF にしても ✓ が残る)。サムネイル更新とは別経路。
 	KESCMInvalidateDB(db);
 
-	KESCMSetStatus(msg);
+	KESCMNotifyStatus(msg);
 }
 
 //========================================================================================
@@ -206,6 +213,11 @@ void KESCMPageCheckPruneToMarked()
 		return;
 	// ★文書ごとにマーク集合を1回だけ作って絞るので、入れ物の集合を直接いじる口(GetMap)を使う。
 	//   空になった文書のエントリは最後に PruneEmptyDocs() で捨てる(KESCMDocUidSet.h の規約)。
+	// ★★2026-08-15(第2段 Task 12B): **GetMap() は入れ物の内側を素で渡す口なので、
+	//   入れ物のメソッドが自前で取っているロックが効かない。** ここで明示的に取る
+	//   (BG の描画が同じ集合を読んでいる最中に erase すると壊れる)。再帰ロックなので
+	//   下の PruneEmptyDocs() が同じロックを取り直しても問題ない。
+	KESCMMarkStateLock lock(KESCMMarkStateMutex());
 	KESCMDocUidSet::Map& m = sChecked.GetMap();
 	for (KESCMDocUidSet::Map::iterator it = m.begin(); it != m.end(); ++it)
 	{
@@ -583,7 +595,7 @@ void KESCMPageCheckSaveToFile()
 	{
 		PMString msg("Save: start first");	// ステータス行は幅が狭い(約152px×4行)ので短く
 		msg.SetTranslatable(kFalse);
-		KESCMSetStatus(msg, kTrue /*forceRedrawNow*/);
+		KESCMNotifyStatus(msg, kTrue /*forceRedrawNow*/);
 		return;
 	}
 
@@ -598,7 +610,7 @@ void KESCMPageCheckSaveToFile()
 		//   (2026-07-25 監査で追加)。
 		PMString err("Save failed (read old)");
 		err.SetTranslatable(kFalse);
-		KESCMSetStatus(err, kTrue /*forceRedrawNow*/);
+		KESCMNotifyStatus(err, kTrue /*forceRedrawNow*/);
 		return;
 	}
 
@@ -649,7 +661,7 @@ void KESCMPageCheckSaveToFile()
 	{
 		PMString msg(skippedUnsaved > 0 ? "Save doc first" : "Nothing to save");
 		msg.SetTranslatable(kFalse);
-		KESCMSetStatus(msg, kTrue /*forceRedrawNow*/);
+		KESCMNotifyStatus(msg, kTrue /*forceRedrawNow*/);
 		return;
 	}
 
@@ -658,14 +670,14 @@ void KESCMPageCheckSaveToFile()
 	{
 		PMString err("Save failed (write)");	// 短い状態表示(ステータス行)。open/書込/close いずれの失敗も含む
 		err.SetTranslatable(kFalse);
-		KESCMSetStatus(err, kTrue /*forceRedrawNow*/);
+		KESCMNotifyStatus(err, kTrue /*forceRedrawNow*/);
 		return;
 	}
 
 	PMString msg;
 	msg.SetTranslatable(kFalse);
 	msg.Append(FileUtils::SysFileToPMString(outFile));	// パスのみ(ラベル/件数を付けるとステータス行から溢れるため)
-	KESCMSetStatus(msg, kTrue /*forceRedrawNow*/);
+	KESCMNotifyStatus(msg, kTrue /*forceRedrawNow*/);
 }
 
 //----------------------------------------------------------------------------------------
@@ -677,7 +689,7 @@ void KESCMPageCheckLoadFromFile()
 	{
 		PMString msg("Load: start first");	// ステータス行は狭いので短く
 		msg.SetTranslatable(kFalse);
-		KESCMSetStatus(msg, kTrue /*forceRedrawNow*/);
+		KESCMNotifyStatus(msg, kTrue /*forceRedrawNow*/);
 		return;
 	}
 
@@ -686,7 +698,7 @@ void KESCMPageCheckLoadFromFile()
 	{
 		PMString msg("No saved data");
 		msg.SetTranslatable(kFalse);
-		KESCMSetStatus(msg, kTrue /*forceRedrawNow*/);
+		KESCMNotifyStatus(msg, kTrue /*forceRedrawNow*/);
 		return;
 	}
 
@@ -743,7 +755,7 @@ void KESCMPageCheckLoadFromFile()
 	{
 		PMString msg("No saved data for docs");
 		msg.SetTranslatable(kFalse);
-		KESCMSetStatus(msg, kTrue /*forceRedrawNow*/);
+		KESCMNotifyStatus(msg, kTrue /*forceRedrawNow*/);
 		return;
 	}
 
@@ -765,7 +777,7 @@ void KESCMPageCheckLoadFromFile()
 			KESCMToggleStartStop();		// arm 中なので Stop 分岐(strip 撤去・disarm・Check/Register 破棄)
 			PMString msg("Load cancelled");
 			msg.SetTranslatable(kFalse);
-			KESCMSetStatus(msg, kTrue /*forceRedrawNow*/);
+			KESCMNotifyStatus(msg, kTrue /*forceRedrawNow*/);
 			return;
 		}
 	}
@@ -812,8 +824,9 @@ void KESCMPageCheckLoadFromFile()
 
 		if (!affected.empty())
 		{
-			std::vector<UID> pages(affected.begin(), affected.end());
-			KESCMRefreshThumbnailsForPages(db, pages);
+			// ★2026-08-13(Task 10): 通知へ(上のトグルと同じ)。⚠対象ページの絞り込みは、通知に
+			//   ページ集合を載せるまで戻せない(Task 12 で判明。KESCMPurgeAllPageThumbs 参照)。
+			KESCMNotifyDocs(kKESCMPageFlagsChangedMessage, db, nil);
 			// ★レイアウトビュー版の ✓(2026-07-12 追加)も即反映する。フェーズ2の再比較(KESCMDoMarkChangesDoc)
 			// が両文書を Invalidate するのは「復元前の ✓ 状態」に対してなので、ここで復元後の状態で
 			// もう一度 Invalidate しないと、復元/消去された ✓ がレイアウト画面に出ない(トグルと同じ理屈)。
@@ -828,7 +841,7 @@ void KESCMPageCheckLoadFromFile()
 	msg.AppendNumber(checksRestored);
 	msg.Append(" reg");
 	msg.AppendNumber(regApplied);
-	KESCMSetStatus(msg, kTrue /*forceRedrawNow*/);
+	KESCMNotifyStatus(msg, kTrue /*forceRedrawNow*/);
 }
 
 // KESCMPageCheck.cpp 終わり。

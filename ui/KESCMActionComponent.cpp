@@ -1,0 +1,868 @@
+﻿//========================================================================================
+//
+//  KESCMActionComponent.cpp
+//
+//  プラグインの全メニューアクションの中枢。About・パネルフライアウトの全項目(Start/Stop・表示トグル・
+//  Save/Load・Find Overset 等)・ページパネル右クリック(KCM: Check / Register / Refresh)の DoAction と
+//  UpdateActionStates(動的ラベル・条件付き有効化)をここで担う。骨格は BasicPanel サンプル
+//  (BscPnlActionComponent.cpp)を手本にしている(当初は About 2項目だけだった)。
+//
+//========================================================================================
+
+#include "VCPlugInHeaders.h"
+
+// 一般:
+#include "CActionComponent.h"
+#include "CAlert.h"
+#include "IActionStateList.h"		// UpdateActionStates(チェックマーク表示)。IPMUnknown 派生ではない
+#include "PMString.h"
+
+// ★Hide Unchanged Spreads(kHideSpreadCmdBoss)と overset 走査の適用は 2026-08-13 に
+//   KESCMHideUnchanged.cpp / KESCMOversetApply.cpp へ移した(model/UI 分割 第1段 Task 2)。
+//   ここに在った SDK インクルード(CmdUtils / ICommand / IBoolData / UIDList / ISpread /
+//   ISpreadList / SpreadID / ISession / IApplication / IDocumentList / IDataBase と <map> / <set>)も、
+//   それを使う側と一緒に移っている。
+#include <vector>					// DoFindOversetToggle(サムネイル更新へ渡すページ列)
+
+// (Split Target(90/10)機能は 2026-07-04 撤去。専用 include 群も削除。
+//  仕組みは docs/ai-notes/kescm-split-target-mechanism.md と git 履歴 69c4b07 に保存)
+
+// プロジェクト内:
+#include "KCMUIID.h"
+#include "KESCMLoc.h"		// 実行時の日本語切替(How to Use の1箇所だけ。Hide Unchanged の確認文言は
+							// 2026-08-13 に本体ごと KESCMHideUnchanged.cpp へ移った)
+#include "Utils.h"					// Utils<IKESCMCompareFacade>()
+#include "IKESCMCompareFacade.h"	// ★UI が比較エンジンに頼む唯一の窓口(2026-08-13・model/UI 分割 第1段 Task 11)。
+									//  Start/Stop・arm 状態・比較の実行・印刷マーク・overset・Hide Unchanged は
+									//  すべてこれ経由。手本＝customconditionaltextui が Utils<ICusCondTxtFacade>() だけを使う形
+#include "KESCMUIShared.h"	// panel / status line / nav readout / tool button (split from KESCMCore.h on 2026-08-13)
+#include "IKESCMMarkData.h"			// マーク/overset の読み取り(2026-08-13 Task 12。表示トグルの読み書きは IKESCMCompareFacade 側)
+#include "IKESCMPageFlagsFacade.h"	// Register(追加/削除ページ)と Check(✓)の2トグル＋メニュー状態＋Save/Load。
+									// 2026-08-13 Task 13 で KESCMPageMap.h / KESCMPageCheck.h から移した
+#include "KESCMThumbnailRefresh.h"	// KESCMTryRefreshPagesPanelThumbnails(Source サムネイルの枠を即 ON/OFF)
+#include "KESCMViewSync.h"			// KESCMGetLayoutSync/Set/KESCMAlignOtherViewsToActiveNow(2026-08-13 に KESCMCore.h から移動)
+#include "KESCMScrollMap.h"		// KESCMScrollMapAttach/DetachAll/InvalidateAll(地図トグルと Find Overset)
+#include "KESCMPanelState.h"		// KESCMSavePanelState(フライアウト「Save Panel Settings」)
+#include "IKESCMBookFacade.h"		// ResolveBookPair(「Compare Books」を有効にしてよいかの判定)。2026-08-14 Task 15 で Facade 経由へ
+#include "KESCMBookPanelLookup.h"	// KESCMGetPanelBookFile(前面タブの観測。2026-08-15 Task 9B で UI 側へ)
+#include "KESCMBookRun.h"		// KESCMRunBookComparison(フライアウト「Compare Books」＝確認して比較して見せる)
+#include "KESCMBookOpen.h"			// KESCMBookMenuRow/CanStart/StartComparisonForRow(章行の右クリック「Start Change Marker」)
+#include "KESCMChangeNav.h"			// KESCMRefreshNavPosition(overset トグルで Prev/Next の対象数を更新)
+#include "KESCMPanelAlpha.h"		// KESCMGetPanelTranslucent/Set/Apply(フライアウト「Translucent Panel」)
+#include "IActiveContext.h"			// GetContextDocument(アクティブ文書の解決)
+#include "IDocument.h"
+#include "PersistUtils.h"			// ::GetUIDRef(doc)(アクティブ文書 → db)
+
+// ★注意: source/public/includes/URLUtils.h は "namespace URLUtils { PUBLIC_DECL void GoToURL(...); }" と
+// 宣言しているが、これはヘッダーとバイナリの不一致(Public.lib 側の実エクスポート名と食い違っている)。
+// build/win/objrx64/Public.lib の生シンボルを確認したところ、実際にリンク可能な名前は
+// "?GoToURL@GoToURLUtils@@YAXAEBVPMString@@F@Z" = void GoToURLUtils::GoToURL(const PMString&, bool16)
+// であり、URLUtils 名前空間版は存在しない(リンクエラー確認済み)。ヘッダーは信用せず、実バイナリに
+// 合わせてここで自前に前方宣言する。
+namespace GoToURLUtils
+{
+	PUBLIC_DECL void GoToURL(const PMString& goToURL, bool16 isAGoURL);
+}
+
+// (「Hide Unchanged Spreads」の状態5本 —— トグルの旗と、Target/Source 各側の IDataBase* と
+//  隠したスプレッド UID の控え —— は 2026-08-13 に KESCMHideUnchanged.cpp へ移した。書き手である
+//  トグル本体を一緒に移してあるので、状態が分割の両側に割れることはない。ここから読むのは
+//  メニューのチェックマークだけで、Facade の GetHideUnchangedOn() で聞く。)
+
+// (overset 走査の対象文書を返す KESCMOversetScanTargetDB も、2026-08-13 の Task 11 から
+//  Facade の GetOversetScanTargetDB() で聞く。以前はこのファイルの下の方に static で持っており、
+//  ここに前方宣言があった。)
+
+/** ChangeMarker プラグインのメニュー項目に対する IActionComponent の実装。
+*/
+class KESCMActionComponent : public CActionComponent
+{
+public:
+	KESCMActionComponent(IPMUnknown* boss) : CActionComponent(boss) {}
+
+	/** Execute the requested menu action. */
+	void DoAction(IActiveContext* ac, ActionID actionID, GSysPoint mousePoint = kInvalidMousePoint, IPMUnknown* widget = nil);
+
+	/** チェック式トグル(kCustomEnabling)のチェックマークを現在の状態に合わせて更新する。 */
+	virtual void UpdateActionStates(IActiveContext* ac, IActionStateList* listToUpdate, GSysPoint mousePoint = kInvalidMousePoint, IPMUnknown* widget = nil);
+
+private:
+	void DoAbout();
+	void DoUsage();
+	void DoFindOversetToggle();		// フライアウト「Find Overset」: アクティブ文書を走査して十字表示/消去(トグル)
+	void DoRefreshOverset();		// フライアウト「Refresh Overset」: ON時のみ・アクティブ文書を再走査
+};
+
+/* Binds the C++ implementation class onto its ImplementationID. */
+CREATE_PMINTERFACE(KESCMActionComponent, kKESCMActionComponentImpl)
+
+/* DoAction */
+void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSysPoint /*mousePoint*/, IPMUnknown* /*widget*/)
+{
+	switch (actionID.Get())
+	{
+		case kKESCMAboutActionID:
+		case kKESCMPopupAboutThisActionID:
+			this->DoAbout();
+			break;
+
+		// フライアウト先頭の「Start / Stop」: 比較の開始/解除トグル(旧パネルボタン→2026-07-10 メニュー化)。
+		// 実体は KESCMComparisonRun.cpp の自由関数(arm 状態を見て開始 or 解除、実行後にパネル更新)。
+		case kKESCMPopupStartStopActionID:
+			Utils<IKESCMCompareFacade>()->ToggleStartStop();
+			break;
+
+		// フライアウトの「Print comparison marks」: 印刷マーク ON/OFF トグル(旧パネルのチェックボックス
+		// →2026-07-10 メニュー化)。実体は KESCMPanelObserver.cpp の自由関数。
+		case kKESCMPopupPrintMarksActionID:
+			Utils<IKESCMCompareFacade>()->TogglePrintMarks();
+			break;
+
+		// フライアウトの「Marks opacity 25% / 75%」(ラジオ風): 選んだ方の不透明度に設定する。
+		// 実体は KESCMPanelObserver.cpp の自由関数(印刷フラグは維持し不透明度だけ変更)。
+		case kKESCMPopupOpacity25ActionID:
+			Utils<IKESCMCompareFacade>()->SetMarkOpacity25(kTrue);
+			break;
+		case kKESCMPopupOpacity75ActionID:
+			Utils<IKESCMCompareFacade>()->SetMarkOpacity25(kFalse);
+			break;
+
+		// (kKESCMPopupAboutScriptActionID / DoAboutScript は 2026-07-25 撤去=About Scripting 項目削除。)
+
+		case kKESCMPopupUsageActionID:
+			this->DoUsage();
+			break;
+
+		// 「Show Marks on Source」トグル: フラグを反転して Source 文書を再描画するだけ(表示判定と描画は
+		// KESCMDrawEventHandler::HandleDrawEvent の Source 分岐。ON の間は常時表示・OPPでも表示・印刷にも
+		// 出る。不透明度はパネルの 25%/75% 選択に連動)。Start のたびに既定 ON へ戻る(KESCMDoMarkChangesDoc)。
+		case kKESCMPopupShowSrcMarksActionID:
+		{
+			InterfacePtr<IKESCMCompareFacade> compare(Utils<IKESCMCompareFacade>().QueryUtilInterface());
+			const bool16 srcMarksOn = !compare->GetShowSourceMarks();
+			compare->SetShowSourceMarks(srcMarksOn);
+			IDataBase* const srcDB = Utils<IKESCMMarkData>()->GetMarkedSourceDB();
+			Utils<IKESCMCompareFacade>()->InvalidateDB(srcDB);
+			// ★レイアウトビューだけでなく Pages パネルの Source サムネイルも即時更新する。Source 側の枠は
+			//   wantSrcMarks(=sSrcMarksOn)に依存し、サムネイル(isThumb)でも強制表示されないため、トグルで
+			//   サムネイルを作り直さないと OFF にしても枠が残る/ON にしても出ない。対象ページは Source の
+			//   変更/overflow/登録集合(KESCMCollectChangedPageUIDs が引く)で、枠が出得るページと一致する。
+			KESCMTryRefreshPagesPanelThumbnails(srcDB);
+			PMString msg(srcMarksOn ? "Source marks: on." : "Source marks: off.");
+			msg.SetTranslatable(kFalse);
+			KESCMSetStatus(msg);
+			break;
+		}
+
+		// 「Hide Unchanged Spreads」トグル: OFF→ON は確認ダイアログ→変更なしスプレッドを隠す。
+		// ON→OFF は自分が隠した分だけ再表示。本体は KESCMHideUnchanged.cpp の自由関数
+		// (2026-08-13 に DoHideUnchangedToggle から移動＝隠す/戻すのは model 側の仕事)。
+		case kKESCMPopupHideUnchangedActionID:
+			Utils<IKESCMCompareFacade>()->HideUnchangedToggle();
+			break;
+
+		// フライアウト「Find Overset」トグル: アクティブ文書を走査し overset のあるページへ十字表示/OFFで消去。
+		case kKESCMPopupFindOversetActionID:
+			this->DoFindOversetToggle();
+			break;
+
+		// フライアウト「Refresh Overset」: Find Overset が ON のときだけ有効=アクティブ文書を再走査して貼り直す。
+		case kKESCMPopupRefreshOversetActionID:
+			this->DoRefreshOverset();
+			break;
+
+		// 「Show Original Page Numbers」トグル: フラグを反転して再描画するだけ(バッジの表示判定と描画は
+		// KESCMDrawEventHandler::HandleDrawEvent。表示は枠と同じ可視条件=印刷マークONの常時表示、または
+		// ツール左hold中)。再描画は隠しの当事者になりやすい Target(sDB)と Source を対象にする(他の文書は
+		// 次の自然な再描画で反映される)。
+		case kKESCMPopupShowOldNumsActionID:
+		{
+			InterfacePtr<IKESCMCompareFacade> compare(Utils<IKESCMCompareFacade>().QueryUtilInterface());
+			const bool16 showOldNums = !compare->GetShowOldPageNumbers();
+			compare->SetShowOldPageNumbers(showOldNums);
+			IDataBase* const markedDB = Utils<IKESCMMarkData>()->GetMarkedTargetDB();
+			Utils<IKESCMCompareFacade>()->InvalidateDB(markedDB);
+			if (compare->GetArmedSourceDB() != markedDB)
+				Utils<IKESCMCompareFacade>()->InvalidateDB(compare->GetArmedSourceDB());
+			PMString msg(showOldNums ? "Show original page numbers: on." : "Show original page numbers: off.");
+			msg.SetTranslatable(kFalse);
+			KESCMSetStatus(msg);
+			break;
+		}
+
+		// 「Sync Layout Views」トグル: レイアウトビュー同期の ON/OFF(既定 ON)。実体は KESCMPeek.cpp の
+		// KESCMSetLayoutSync(購読の付け外し+ON時は即時に一度そろえる)。作動条件は2モード(判定は
+		// KESCMSyncOtherDocViewportsTo のガード):
+		//   (A) Start 中: Target↔Source 間のみ・追加/削除補正あり(2026-07-11)。
+		//   (B) Stop 中 + KESCM ツール選択中: アクティブ文書へ他の全文書を同期・補正なし(2026-07-15)。
+		// トグル ON でも上記いずれの条件も満たさなければ(Stop かつツール非選択)購読はするが同期は no-op。
+		case kKESCMPopupSyncViewsActionID:
+		{
+			KESCMSetLayoutSync(!KESCMGetLayoutSync());
+			PMString msg;
+			if (KESCMGetLayoutSync())
+				msg = "Sync layout views: on.";
+			else
+				msg = "Sync layout views: off.";
+			msg.SetTranslatable(kFalse);
+			KESCMSetStatus(msg);
+			break;
+		}
+
+		// 「Align Other Views to Active」(実行アクション・ショートカット割当可): アクティブ(最前面)
+		// レイアウトビューの位置+拡大率を他文書の全ビューへ1回そろえる。Sync Layout Views トグルとは独立
+		// (OFF でも効く)。Start 中はページの Add/Remove 補正あり。実体は KESCMPeek.cpp の
+		// KESCMAlignOtherViewsToActiveNow(トグル ON 時の初回そろえと同じ同期エンジン)。
+		case kKESCMPopupAlignViewsActionID:
+		{
+			const bool16 ok = KESCMAlignOtherViewsToActiveNow();
+			// false は2通り: (a) 最前面レイアウトビューが無い / (b) Start 中で最前面が Target/Source 以外の
+			// 第3文書(engine が同期しない)。どちらも「実際にそろえていない」ので成功表示は出さない。
+			PMString msg(ok ? "Aligned other views to the active view."
+			                : "Align: no view to align from (while Started, use the Target or Source view).");
+			msg.SetTranslatable(kFalse);
+			KESCMSetStatus(msg);
+			break;
+		}
+
+		// 「Show Scrollbar Map」トグル: 文書窓の縦スクロールバー脇に変更位置の地図 strip を出すか(既定 ON)。
+		// ON にしたら現在の比較対象(sDB/sSrcDB)へ即 attach して表示、OFF にしたら全窓から即 detach。
+		// 未 arm(sDB=nil)で ON にした場合は attach が no-op=次の Start で自然に出る(フラグは ON のまま)。
+		case kKESCMPopupScrollMapActionID:
+		{
+			const bool16 on = !KESCMGetScrollMapEnabled();
+			KESCMSetScrollMapEnabled(on);
+			if (on)
+			{
+				InterfacePtr<IKESCMMarkData> marks(Utils<IKESCMMarkData>().QueryUtilInterface());
+				if (marks->GetMarkedTargetDB() != nil) KESCMScrollMapAttach(marks->GetMarkedTargetDB());
+				if (marks->GetMarkedSourceDB() != nil) KESCMScrollMapAttach(marks->GetMarkedSourceDB());
+				// Find Overset 単独で ON 中なら、その走査文書窓にも地図を復帰させる(2026-07-24)。
+				if (marks->GetOversetOn() && marks->GetOversetDB() != nil)
+					KESCMScrollMapAttach(marks->GetOversetDB());
+				KESCMScrollMapInvalidateAll();
+			}
+			else
+				KESCMScrollMapDetachAll();	// 既存 strip を全窓から撤去
+			PMString msg(on ? "Scrollbar map: on." : "Scrollbar map: off.");
+			msg.SetTranslatable(kFalse);
+			KESCMSetStatus(msg);
+			break;
+		}
+
+		// (★「Show HUD」トグルは 2026-08-06 に廃止＝押下中 HUD は**常に出る**ので、出す/出さないを
+		//  選ぶメニュー項目が無い。⚠**HUD 自体は現役**: 2026-08-06 に sprite 版を全廃し、2026-08-07 に
+		//  Draw Event で作り直した(KESCMTrackerHud.cpp。押した窓が Target/Source かを左上に出す)。
+		//  ここには全廃した当日の「機能そのものを無くした」が同日中の作り直しを反映しないまま残っていた。)
+
+		// 「Translucent Panel」トグル: このパネル自身を半透明(alpha は kKESCMPanelAlphaValue=77 ≒ 30%。
+		// 2026-07-29 に 128 から変更)にするか
+		// (★Windows 専用・既定 OFF)。効くのは「フローティング中」と「アイコンからのドロワー展開中」の
+		// 2 つ。ドック内で展開中は選べるが見た目は変わらない=フラグだけ立ち、上記のどちらかに
+		// 戻した時点で効く(その追随は KESCMPanelObserver.cpp が
+		// kPaletteVisibilityChangedMessage を購読して行う)。実体は KESCMPanelAlpha.cpp。
+		case kKESCMPopupTranslucentPanelActionID:
+		{
+			const bool16 on = !KESCMGetPanelTranslucent();
+			KESCMSetPanelTranslucent(on);
+
+			// 実際に窓へ届いたかでステータス文言を分ける。ドック内で展開中に押しても画面が
+			// 変わらないので、「なぜ効かないか」を言葉で返す。
+			const bool16 applied = KESCMApplyPanelTranslucency();
+
+			// ★★OFF に戻すと alpha 255 と影の再表示を**その対象の今のトップレベル窓**へ書くが、
+			//   両パネルが**同じフローティンググループ**にいるとその窓は相手と共有なので、ON のまま
+			//   の相手の半透明まで消える。ON の対象だけ貼り直して取り戻す(ON にしたときは呼ばない)。
+			//   ⚠2026-08-07 の再点検で発見。同日 48f0a6b が KESCMApplyAllPanelTranslucency に入れた
+			//     「OFF は飛ばす」の取り残しで、こちらは**対象を名指しで呼ぶ**復元経路だった。
+			if (!on)
+				KESCMApplyAllPanelTranslucency();
+
+			PMString msg;
+			if (!on)
+				msg = "Translucent panel: off.";
+			else if (applied)
+				msg = "Translucent panel: on.";
+			else
+				msg = "Translucent panel: on - has no effect while the panel is docked.";
+			msg.SetTranslatable(kFalse);
+			KESCMSetStatus(msg);
+			break;
+		}
+
+		// 「Translucent Pages Panel」トグル: **本体のページパネル**を半透明にするか(2026-08-06 追加)。
+		// 上の Translucent Panel と同じ仕組み・同じ制約で、対象だけが違う。
+		// ★対象の窓は WidgetID(kPagesPanelWidgetID = 数値)から引く。窓タイトルは UI 言語で変わる
+		//   ("Pages" / 「ページ」)ので、タイトル照合では本体パネルに届かない。実体 KESCMPanelAlpha.cpp。
+		case kKESCMPopupTranslucentPagesActionID:
+		{
+			const bool16 on = !KESCMGetPagesPanelTranslucent();
+			KESCMSetPagesPanelTranslucent(on);
+
+			// 実際に窓へ届いたかでステータス文言を分ける。ドック内で展開中に押しても画面が
+			// 変わらないので、「なぜ効かないか」を言葉で返す。
+			// ★ページパネルは既定でドックに入っているので、こちらの方が「効かない」に当たりやすい。
+			const bool16 applied = KESCMApplyPagesPanelTranslucency();
+
+			// ★上の Translucent Panel と同じ理由で、OFF に戻したときだけ ON の対象を貼り直す
+			//   (同じフローティンググループに入れていると、こちらの 255 復元が相手を巻き込むため)。
+			if (!on)
+				KESCMApplyAllPanelTranslucency();
+
+			PMString msg;
+			if (!on)
+				msg = "Translucent Pages panel: off.";
+			else if (applied)
+				msg = "Translucent Pages panel: on.";
+			else
+				msg = "Translucent Pages panel: on - has no effect while the Pages panel is docked or closed.";
+			msg.SetTranslatable(kFalse);
+			KESCMSetStatus(msg);
+			break;
+		}
+
+		// (「Translucent Toolbox」トグルは 2026-08-07 に追加し、同日ユーザー判断で撤去した
+		//  ＝本体のツールボックスの見た目を変える機能は KESCM には載せない。ActionID +38 は
+		//  欠番のまま再利用しない(.indk はショートカットを数値の ActionID で保存するため)。)
+
+		// 「Translucent Book Dialog」トグル: **自分のブック比較ダイアログ**を半透明にするか
+		// (2026-08-13 ユーザー要望「ダイアログも半透明に出来る様に」)。上2つと同じ実体
+		// (KESCMPanelAlpha.cpp)で対象だけが違う。
+		// ★上2つと違う点が2つある:
+		//   ①ダイアログは**常にフローティング**なので「押しても効かない状態」が無い ⇒ 文言を
+		//     「ドッキング中なので効かない」で分ける必要がそもそも無い。分かれるのは「今そのダイアログが
+		//     開いているか」だけ。
+		//   ②**OFF に戻したときの貼り直しが要らない**。上2つが KESCMApplyAllPanelTranslucency を
+		//     呼ぶのは、パネル同士が同じフローティンググループに入ると 255 の復元が相手を巻き込むから
+		//     (2026-08-07 の実害)。ダイアログは自分だけの窓なので、その共有が起こらない。
+		case kKESCMPopupTranslucentBookDialogActionID:
+		{
+			const bool16 on = !KESCMGetBookDialogTranslucent();
+			KESCMSetBookDialogTranslucent(on);
+
+			const bool16 applied = KESCMApplyBookDialogTranslucency();
+
+			PMString msg;
+			if (!on)
+				msg = "Translucent book dialog: off.";
+			else if (applied)
+				msg = "Translucent book dialog: on.";
+			else
+				msg = "Translucent book dialog: on - takes effect the next time the dialog is open.";
+			msg.SetTranslatable(kFalse);
+			KESCMSetStatus(msg);
+			break;
+		}
+
+		// 「Hold to Hide Marks」トグル: 枠表示の極性反転(フラグ反転のみ)。ON=画面に枠を常時表示し、
+		// ツール左hold中だけ隠す(押下/解放は KESCMPeek.cpp のトラッカー(KESCMTrackerRevealBegin/End)が sMarksTempHidden を上下)。
+		// OFF=従来(既定非表示・押下中だけ表示)。画面のみ=印刷は Print comparison marks が別管理。
+		// 切替時に一時退避を解除し、常時表示の基準不透明度(常時表示ON中は25%/75%)を反映して sDB を再描画。
+		case kKESCMPopupHoldToHideMarksActionID:
+		{
+			InterfacePtr<IKESCMCompareFacade> compare(Utils<IKESCMCompareFacade>().QueryUtilInterface());
+			const bool16 holdToHide = !compare->GetHoldToHideMarks();
+			compare->SetHoldToHideMarks(holdToHide);
+			compare->SetMarksTempHidden(kFalse);	// モード切替時は一時退避を解除
+			compare->SetMarkScreenOpacity(compare->GetBaseScreenOpacity());	// 常時表示の不透明度を即反映
+			Utils<IKESCMCompareFacade>()->InvalidateDB(Utils<IKESCMMarkData>()->GetMarkedTargetDB());
+			PMString msg(holdToHide ? "Hold to Hide Marks: on." : "Hold to Hide Marks: off.");
+			msg.SetTranslatable(kFalse);
+			KESCMSetStatus(msg);
+			break;
+		}
+
+		// 「Ignore Page Number Marker」トグル: ノンブル(自動ページ番号)マーカーを含むフレームを
+		// 比較(CMYKピクセル差分)から除外するか(既定ON)。フラグを反転し、既にStart済みなら
+		// 登録トグルと同じ理由で全体再比較して即座に反映する。
+		case kKESCMPopupIgnorePageNumActionID:
+		{
+			InterfacePtr<IKESCMCompareFacade> folio(Utils<IKESCMCompareFacade>().QueryUtilInterface());
+			folio->SetIgnorePageNumberMarker(!folio->GetIgnorePageNumberMarker());
+			PMString msg(folio->GetIgnorePageNumberMarker() ? "Ignore page number marker: on." : "Ignore page number marker: off.");
+			msg.SetTranslatable(kFalse);
+			InterfacePtr<IKESCMMarkData> marks(Utils<IKESCMMarkData>().QueryUtilInterface());
+			IDataBase* const markedDB    = marks->GetMarkedTargetDB();
+			IDataBase* const markedSrcDB = marks->GetMarkedSourceDB();
+			if (markedDB != nil && markedSrcDB != nil)
+			{
+				PMString report;
+				// ★ここは allowIncremental を渡していない=全ページ再比較なので、ページ数が多ければ
+				//   進捗バーに Cancel が出る。キャンセルされると KESCMDoMarkChangesDoc 側でマークが
+				//   全部破棄され kFailure が返る。戻り値を捨てると arm だけが残って「枠が1つも無い
+				//   Start 中」になるので、Start 経路(KESCMToggleStartStop)と同じ考え方で Stop まで戻す
+				//   (KESCMToggleStartStop は arm 中に呼べば Stop 分岐に入る)。2026-07-29 の自己レビューで発見。
+				if (Utils<IKESCMCompareFacade>()->MarkChanges(markedDB, markedSrcDB, report) == kSuccess)
+				{
+					msg.Append(" (recompared)");
+				}
+				else
+				{
+					Utils<IKESCMCompareFacade>()->ToggleStartStop();		// マーク破棄済み → strip 撤去・disarm まで揃えて Stop へ
+					msg.Append(" (cancelled - stopped)");
+				}
+			}
+			KESCMSetStatus(msg);
+			break;
+		}
+
+		// フライアウトの「Save Panel Settings」: 現在の設定系トグルを独自 JSON でローカルへ保存し、
+		// 保存先パスを**パネルのステータス行**に出す(実体は KESCMPanelState.cpp:132-137)。
+		// 読み込みは起動時(KESCMPeekStartup::Startup。2026-07-15 に「パネル初回オープン時」から前倒し=
+		// KESCMPanelState.h の説明が正)。(旧コメントの「ダイアログ表示する」は 2026-07-11 に
+		// モーダルからステータス行へ変えた時点で陳腐化していた。2026-08-06 監査で現行化。)
+		case kKESCMPopupSavePanelStateActionID:
+			KESCMSavePanelState();
+			break;
+
+		// ページパネルのページ右クリック「KCM: Register as Added/Removed Pages」トグル。
+		// 選択ページを「比較相手なし」として登録/解除する(実体は KESCMPageMap.cpp。このステップでは
+		// 登録の保持とチェック表示まで。比較の除外対応表への反映は次ステップ)。
+		case kKESCMPageMapToggleActionID:
+			Utils<IKESCMPageFlagsFacade>()->ToggleRegisterForSelection();
+			break;
+
+		// ページパネルのページ右クリック「KCM: Check」トグル。選択ページに✓印を付け外しする
+		// (実体は KESCMPageCheck.cpp。✓の描画は KESCMDrawEventHandler の isThumb 分岐)。
+		case kKESCMPageCheckToggleActionID:
+			Utils<IKESCMPageFlagsFacade>()->ToggleCheckForSelection();
+			break;
+
+		// ページパネルのページ右クリック「KCM: Refresh Page Comparison」(実行アクション)。選択ページの
+		// 比較を再検出して枠/サムネイルを更新する(旧 Ctrl+ミドルのスプレッド再比較を移設。2026-07-13)。
+		// 実体は KESCMPeek.cpp。結果をステータス行に短く出す。
+		case kKESCMPageRefreshCompareActionID:
+		{
+			int32 nPages = 0, nChanged = 0, nFailed = 0;
+			bool16 wasCancelled = kFalse;
+			if (Utils<IKESCMCompareFacade>()->RefreshSelectedPages(&nPages, &nChanged, &wasCancelled, &nFailed))
+			{
+				PMString msg("refreshed ");
+				msg.SetTranslatable(kFalse);
+				msg.AppendNumber(nPages);
+				msg.Append(" (changed ");
+				msg.AppendNumber(nChanged);
+				msg.Append(")");
+				// ★比較できなかったページ(ページサイズ不一致・ラスタ化失敗)は隠さない。その分の枠は
+				//   前回のまま=最新でないことをユーザーに伝える(2026-08-06 再点検)。
+				if (nFailed > 0)
+				{
+					msg.Append(" (failed ");
+					msg.AppendNumber(nFailed);
+					msg.Append(")");
+				}
+				// ★途中で止めた場合は明示する(残りの選択ページは古いままなので、全部終わったと
+				//   誤解させない。2026-07-27 に進捗バー＋キャンセルを追加)。
+				if (wasCancelled)
+					msg.Append(" - cancelled");
+				KESCMSetStatus(msg);
+			}
+			else
+			{
+				// 有効化判定(KESCMRefreshComparisonAvailable)は選択の中身まで見ないため、選択が空/全ページ
+				// 未対応(Added/Removed 登録等)だと何も処理せず kFalse で戻る。その場合も無反応にせず
+				// 「今回は何も再比較しなかった」ことをステータス行に出す(前回の refreshed 表示の残留による
+				// 成功誤認を防ぐ。2026-07-15)。※キャンセルは押した時点のページを処理済み=上の枝に入るので、
+				// ここへ来るのは通常「対象が無かった」ときだけ。出し分けは念のため残す。
+				PMString msg(wasCancelled ? "refresh cancelled." : "refresh: no comparable pages.");
+				msg.SetTranslatable(kFalse);
+				KESCMSetStatus(msg);
+			}
+			break;
+		}
+
+		// フライアウトの「Save Check & Register」: Start中の Target/Source の現在の Check(✓)+ Register
+		// (Added/Removed)を独自 JSON(KESCM\KESCMPageChecks.json, v2)へマージ保存し、保存先パスをステータス行に
+		// 出す(実体 KESCMPageCheck.cpp)。
+		case kKESCMPopupSaveChecksActionID:
+			Utils<IKESCMPageFlagsFacade>()->SaveChecksAndRegister();
+			break;
+
+		// フライアウトの「Load Check & Register」: Start中だけ有効。上記 JSON から Register を両文書へ適用→再比較→
+		// Check(今もマーク付きのページだけ)を復元する(実体 KESCMPageCheck.cpp)。
+		case kKESCMPopupLoadChecksActionID:
+			Utils<IKESCMPageFlagsFacade>()->LoadChecksAndRegister();
+			break;
+
+		// フライアウトの「Export Changed Pages...」: 現在の比較(Start 後)の変更ページ一覧を
+		// TSV(新ページ/旧ページ/種別=変更/挿入/削除)で保存する(実体 KESCMChangedPagesTSV.cpp)。
+		// 比較中(sDB≠nil)のみ有効。オーバーセットは含めない。
+		case kKESCMPopupExportChangedPagesActionID:
+			{
+				// ★2026-08-13(Task 9): 書き出し本体は model 側で、**メッセージは戻り値で受けて
+				//   ここ(UI)が出す**。成功時は無言＝空で返るので、そのときは何も出さない。
+				PMString exportMsg;
+				Utils<IKESCMCompareFacade>()->ExportChangedPagesTSV(exportMsg);
+				if (exportMsg.CharCount() > 0)
+					KESCMSetStatus(exportMsg);
+			}
+			break;
+
+		// フライアウトの「Compare Books」: ブックパネルで前面タブのブック=Target、それ以外で最初に
+		// 開いているブック=Source として、章(ドキュメント)単位で「変更あり/なし」を判定する。
+		// ★既存の文書比較(Start)とは完全に独立=arm しない・枠を作らない・sDB/sEntries を触らない。
+		// ⚠段階1 の途中: いまは解決した2ブックの名前をステータスに出すだけ(比較の実体は次の段階)。
+		case kKESCMPopupCompareBooksActionID:
+			// ★★2026-08-12 に流れが変わった(ユーザー指示)。**確認アラート → OK で比較 → 結果ダイアログ**。
+			//   旧: ダイアログを先に開き、中の Compare ボタンで実行(そのボタンは撤去済み)。
+			//   ⚠**対象2ブックを押す前に見せる**という眼目は変わっていない——見せる場所がダイアログの
+			//     2行からアラートの本文へ移り、名前ではなく**フルパス**になった(同名のブックが多いため)。
+			KESCMRunBookComparison();
+			break;
+
+		// ブック比較ダイアログの**章行の右クリック**「Start Change Marker」(2026-08-12)。
+		// その章の Target/Source 2文書を窓付きで開き、比較中なら一度 Stop してから比較を開始する。
+		// ★どの行かは右クリックの時点で KESCMBookSetMenuRow が控えている——アクションには ActionID
+		//   しか渡らないので、これが「どの章の話か」を知る唯一の手段(KBS の結果行と同じ作り)。
+		case kKESCMBookRowStartActionID:
+			KESCMBookStartComparisonForRow(KESCMBookMenuRow());
+			break;
+
+		default:
+			break;
+	}
+}
+
+/* UpdateActionStates — チェック式トグルは ON なら kSelectedAction を立てる(docwatch の
+   DocWchActionComponent::UpdateActionStates と同じ流儀)。条件付きの有効/無効・動的ラベルもここで返す:
+   Start/Stop(名前の出し分け＋Start は文書2つ未満で灰色)・Hide Unchanged Spreads(Start 中のみ有効。
+   2026-08-06 変更)・Find Overset(走査対象文書が無ければ灰色。ON 中は常に有効)・Refresh Overset/
+   Export 等の条件付き有効化。ページパネル右クリックの「KCM: Register as Added/Removed Pages」だけは
+   選択依存の有効/無効・中間チェック・動的ラベルがあるため KESCMPageMapUpdateToggleState
+   (KESCMPageMap.cpp)へ委譲する。 */
+void KESCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionStateList* listToUpdate, GSysPoint /*mousePoint*/, IPMUnknown* /*widget*/)
+{
+	for (int32 i = 0; i < listToUpdate->Length(); i++)
+	{
+		const ActionID action = listToUpdate->GetNthAction(i);
+		if (action == kKESCMPopupStartStopActionID)
+		{
+			// arm 状態でメニュー名を出し分け(arm 中=Stop / 未 arm=Start)。
+			// (kSelectedAction は付けない=チェックマークではなく名前そのものを切り替える。)
+			const bool16 armed = Utils<IKESCMCompareFacade>()->IsArmed() && (Utils<IKESCMCompareFacade>()->GetArmedTargetDB() != nil);
+			PMString name(armed ? "Stop" : "Start");
+			name.SetTranslatable(kFalse);
+			listToUpdate->SetNthActionName(i, name);
+			// ★Stop は常に有効: 文書が1つも開いていなくてもマーク消去・peek 解除は成立させる
+			//   (KESCMToggleStartStop の解除分岐が「実際にマークが描かれていた文書」を自分で控える)。
+			//   Start は Target と Source の2文書が要るので、揃っていなければ灰色にする
+			//   (2026-08-06 ユーザー指定)。判定は実行側と同じ CanStartComparison() を通るので、
+			//   メニューの見た目と押した結果がずれない。
+			listToUpdate->SetNthActionState(i,
+				(armed || Utils<IKESCMCompareFacade>()->CanStartComparison()) ? kEnabledAction : kDisabled_Unselected);
+		}
+		else if (action == kKESCMPopupPrintMarksActionID)
+		{
+			int16 actionState = kEnabledAction;
+			if (Utils<IKESCMCompareFacade>()->GetPrintMarks())
+				actionState |= kSelectedAction;	// ON ならチェックマーク
+			listToUpdate->SetNthActionState(i, actionState);
+		}
+		else if (action == kKESCMPopupOpacity25ActionID)
+		{
+			// ラジオ風: 現在 25% ならこの項目に✓(75% と相互排他)。
+			int16 actionState = kEnabledAction;
+			if (Utils<IKESCMCompareFacade>()->GetMarkOpacity25())
+				actionState |= kSelectedAction;
+			listToUpdate->SetNthActionState(i, actionState);
+		}
+		else if (action == kKESCMPopupOpacity75ActionID)
+		{
+			// ラジオ風: 現在 75%(=!25%)ならこの項目に✓。
+			int16 actionState = kEnabledAction;
+			if (!Utils<IKESCMCompareFacade>()->GetMarkOpacity25())
+				actionState |= kSelectedAction;
+			listToUpdate->SetNthActionState(i, actionState);
+		}
+		else if (action == kKESCMPopupHideUnchangedActionID)
+		{
+			// ★Start 中(arm 済み)でなければ灰色にする(2026-08-06 ユーザー指定)。この機能は比較マーク
+			//   (sEntries)を根拠に「変更のないスプレッド」を選ぶので、Start していなければ何も選べない
+			//   (DoHideUnchangedToggle 側も同じ理由で先頭にガードがある)。他の実行アクションと同じ
+			//   kDisabled_Unselected を使う(Refresh Overset / Export Changed Pages と揃えた)。
+			// ★「ON のまま灰色になって戻せない」状態は作れない: Stop(KESCMDoClearMarks)が必ず
+			//   ResetHideUnchanged(kTrue) を呼び、隠したスプレッドを戻してトグルを OFF にする
+			//   (KESCMCore.cpp:566)。再比較・文書クローズも同じ(KESCMCore.cpp:312 / KESCMPeek.cpp:2267)。
+			int16 actionState;
+			if (!Utils<IKESCMCompareFacade>()->IsArmed())
+				actionState = kDisabled_Unselected;
+			else
+				actionState = Utils<IKESCMCompareFacade>()->GetHideUnchangedOn() ? (kEnabledAction | kSelectedAction) : kEnabledAction;
+			listToUpdate->SetNthActionState(i, actionState);
+		}
+		else if (action == kKESCMPopupShowOldNumsActionID)
+		{
+			int16 actionState = kEnabledAction;
+			if (Utils<IKESCMCompareFacade>()->GetShowOldPageNumbers())
+				actionState |= kSelectedAction;
+			listToUpdate->SetNthActionState(i, actionState);
+		}
+		else if (action == kKESCMPopupSyncViewsActionID)
+		{
+			int16 actionState = kEnabledAction;
+			if (KESCMGetLayoutSync())
+				actionState |= kSelectedAction;
+			listToUpdate->SetNthActionState(i, actionState);
+		}
+		else if (action == kKESCMPopupScrollMapActionID)
+		{
+			int16 actionState = kEnabledAction;
+			if (KESCMGetScrollMapEnabled())
+				actionState |= kSelectedAction;	// ON(既定)ならチェックマーク
+			listToUpdate->SetNthActionState(i, actionState);
+		}
+		else if (action == kKESCMPopupTranslucentPanelActionID)
+		{
+			// ★ドッキング中でも選べる(グレーアウトしない)=ユーザー指定 2026-07-29。
+			// 押した結果が見えないケースは DoAction 側がステータス文言で伝える。
+			int16 actionState = kEnabledAction;
+			if (KESCMGetPanelTranslucent())
+				actionState |= kSelectedAction;	// ON ならチェックマーク
+			listToUpdate->SetNthActionState(i, actionState);
+		}
+		else if (action == kKESCMPopupTranslucentPagesActionID)
+		{
+			// ★上と同じ方針: ページパネルがドッキング中/閉じていても選べる。
+			//   (「今フローティングか」で灰色にすると、ドックに入れた瞬間に設定を戻せなくなる。)
+			int16 actionState = kEnabledAction;
+			if (KESCMGetPagesPanelTranslucent())
+				actionState |= kSelectedAction;	// ON ならチェックマーク
+			listToUpdate->SetNthActionState(i, actionState);
+		}
+		else if (action == kKESCMPopupTranslucentBookDialogActionID)
+		{
+			// ★上2つと同じ方針: ダイアログが今開いていなくても選べる。閉じている間に決めた設定は
+			//   次に開いたときに効く(KESCMBookDialog.cpp が開くたびに貼る)。
+			int16 actionState = kEnabledAction;
+			if (KESCMGetBookDialogTranslucent())
+				actionState |= kSelectedAction;	// ON ならチェックマーク
+			listToUpdate->SetNthActionState(i, actionState);
+		}
+		else if (action == kKESCMPopupHoldToHideMarksActionID)
+		{
+			int16 actionState = kEnabledAction;
+			if (Utils<IKESCMCompareFacade>()->GetHoldToHideMarks())
+				actionState |= kSelectedAction;	// ON ならチェックマーク
+			listToUpdate->SetNthActionState(i, actionState);
+		}
+		else if (action == kKESCMPopupShowSrcMarksActionID)
+		{
+			int16 actionState = kEnabledAction;
+			if (Utils<IKESCMCompareFacade>()->GetShowSourceMarks())
+				actionState |= kSelectedAction;
+			listToUpdate->SetNthActionState(i, actionState);
+		}
+		else if (action == kKESCMPopupIgnorePageNumActionID)
+		{
+			int16 actionState = kEnabledAction;
+			if (Utils<IKESCMCompareFacade>()->GetIgnorePageNumberMarker())
+				actionState |= kSelectedAction;
+			listToUpdate->SetNthActionState(i, actionState);
+		}
+		else if (action == kKESCMPageMapToggleActionID)
+		{
+			// ページパネル右クリックの登録トグル: 有効/無効(選択の有無)・チェック(全登録=✓/
+			// 一部=中間)・ラベル(Target=Added/Source=Removed)をまとめて KESCMPageMap.cpp 側で設定。
+			Utils<IKESCMPageFlagsFacade>()->UpdateRegisterToggleState(listToUpdate, i);
+		}
+		else if (action == kKESCMPageCheckToggleActionID)
+		{
+			// ページパネル右クリックの「KCM: Check」トグル: 有効/無効(Start中+Target/Source+選択)と
+			// チェック(全部✓/一部=中間)を KESCMPageCheck.cpp 側で設定。
+			Utils<IKESCMPageFlagsFacade>()->UpdateCheckToggleState(listToUpdate, i);
+		}
+		else if (action == kKESCMPageRefreshCompareActionID)
+		{
+			// ページパネル右クリックの「KCM: Refresh Page Comparison」(トグルではない実行アクション):
+			// Start中(arm済み)かつ前面文書が Target/Source のときだけ有効化。それ以外はグレーアウト。
+			listToUpdate->SetNthActionState(i, Utils<IKESCMCompareFacade>()->RefreshComparisonAvailable() ? kEnabledAction : kDisabled_Unselected);
+		}
+		else if (action == kKESCMPopupFindOversetActionID)
+		{
+			// ★ON の間は常に有効(OFF に戻して十字を消せる必要がある)。OFF のときは走査する文書が
+			//   無ければ灰色にする(2026-08-06 ユーザー指定)。対象の決め方は実行側 DoFindOversetToggle
+			//   と同じ GetOversetScanTargetDB()＝比較中は Target、未 Start はアクティブ文書。
+			//   (従来はここが常に有効で、文書を開かずに押すと "no active document" とだけ出ていた。)
+			const bool16 on = Utils<IKESCMMarkData>()->GetOversetOn();
+			int16 actionState = (on || Utils<IKESCMCompareFacade>()->GetOversetScanTargetDB() != nil) ? kEnabledAction
+			                                                              : kDisabled_Unselected;
+			if (on)
+				actionState |= kSelectedAction;	// ON ならチェックマーク
+			listToUpdate->SetNthActionState(i, actionState);
+		}
+		else if (action == kKESCMPopupRefreshOversetActionID)
+		{
+			// Find Overset が ON のときだけ有効(=再走査可能)。OFF 時は灰色(kDisabled_Unselected)。
+			listToUpdate->SetNthActionState(i, Utils<IKESCMMarkData>()->GetOversetOn() ? kEnabledAction : kDisabled_Unselected);
+		}
+		else if (action == kKESCMPopupExportChangedPagesActionID)
+		{
+			// 比較中(マークの Target 文書が在る)のみ有効=書き出す変更データが在り得るとき。未 Start は灰色。
+			listToUpdate->SetNthActionState(i, (Utils<IKESCMMarkData>()->GetMarkedTargetDB() != nil) ? kEnabledAction : kDisabled_Unselected);
+		}
+		else if (action == kKESCMPopupCompareBooksActionID)
+		{
+			// ★実行と同じ解決子を通す=メニューの見た目と押した結果がずれない。有効になるのは
+			//   「ブックパネルに前面タブがあり、かつ別のブックも開いている」ときだけ。
+			//   ⚠ここはメニューを開くたびに走り、中でパネルを全走査する。フライアウトを開く頻度
+			//     でしか呼ばれないので許容している(KBS も同じ走査を同じ場所でしている)。
+			//   ★★2026-08-15(第2段 Task 9B): 前面タブの観測が **こちら側(UI)へ移った**。
+			//     パネル走査には PaletteRefUtils / IBookUIUtils / IPanelMgr が要り、model プラグイン
+			//     はそのどれにも触れない(WidgetBin.lib を外した瞬間にリンカが名指しした)。
+			//     ⚠**判定は変わっていない**＝観測に失敗したら Facade を呼ばない。これは以前
+			//       model 側の ResolveBookPair が中で kFalse を返していたのと同じ結果。
+			IBook* target = nil;
+			IBook* source = nil;
+			IDFile panelBookFile;
+			const bool16 canCompareBooks =
+				KESCMGetPanelBookFile(panelBookFile)
+				&& Utils<IKESCMBookFacade>()->ResolveBookPair(panelBookFile, target, source);
+			listToUpdate->SetNthActionState(i,
+				canCompareBooks ? kEnabledAction : kDisabled_Unselected);
+		}
+		else if (action == kKESCMBookRowStartActionID)
+		{
+			// ★実行と同じ判定を通す(KESCMBookRowCanStart)=メニューの見た目と押した結果がずれない。
+			//   有効になるのは **判定が Changed の行だけ**(ユーザー指定 2026-08-12)で、かつ Target と
+			//   Source の両方のファイルを持つ行。∴灰色になるのは片側にしか無い章(ChapterAdded /
+			//   ChapterDeleted)とファイルを示さない章に限らず、**NoChange / Failed / NotCompared も灰色**。
+			//   ⚠この項目は行メニューの唯一の項目なので、灰色のとき**メニュー自体が出ない**(InDesign の挙動。
+			//     それが仕様＝空メニューを出す実装に「改善」しないこと)。
+			listToUpdate->SetNthActionState(i, KESCMBookRowCanStart(KESCMBookMenuRow()) ? kEnabledAction
+			                                                                            : kDisabled_Unselected);
+		}
+	}
+}
+
+/* DoAbout */
+void KESCMActionComponent::DoAbout()
+{
+	CAlert::ModalAlert
+	(
+		// 文字列キーを渡す(CAlert が翻訳する)。★2026-08-06 に UI を英語のみへ戻したので、
+		// 実行時の日本語切替(旧 KESCMLoc.h)は撤去した。中身は enUS テーブルの1行=「名前, version x.y.z」。
+		PMString(kKESCMAboutBoxStringKey),
+		kOKString,					// OK button
+		kNullString,				// No second button
+		kNullString,				// No third button
+		1,							// Set OK button to default
+		CAlert::eInformationIcon	// Information icon
+	);
+}
+
+/* (DoAboutScript は 2026-07-25 撤去=About Scripting 項目削除。スクリプトAPIは元々撤去済みで、
+    "No scripts are currently available." を出すだけの項目だった。) */
+
+/* DoUsage — パネルのフライアウト「使い方」。操作リファレンス(=旧パネルの説明文)を表示する。 */
+void KESCMActionComponent::DoUsage()
+{
+	CAlert::ModalAlert
+	(
+		// 完成済みテキスト(キーではない): 日本語 UI なら日本語、他は enUS テーブルの英語。
+		// ★使い方の案内は日本語 UI では日本語で出す(2026-08-06 ユーザー指示)。初めて使う人への説明なので、
+		//   メニュー/パネル/ステータス行を英語で統一する方針の例外にする(KBS と同じ線引き)。
+		KESCMLoc::Text(kKESCMHintKey, KESCMJa::kHint),
+		kOKString,					// OK button
+		kNullString,				// No second button
+		kNullString,				// No third button
+		1,							// Set OK button to default
+		CAlert::eInformationIcon	// Information icon
+	);
+}
+
+// (KESCMDoSplitTarget(Split Target 90/10)は 2026-07-04 撤去。実装全文と実測知見は
+//  docs/ai-notes/kescm-split-target-mechanism.md と git 履歴 69c4b07 に保存=他プラグインへの転用候補)
+
+
+//========================================================================================
+// Find Overset(フライアウト): アクティブ1文書を走査し、overset のあるページに十字を出す/消す。
+// 比較とは完全に独立。状態は model 側が持ち、ここからは IKESCMMarkData / IKESCMCompareFacade で読み書きする。
+//========================================================================================
+
+// (アクティブ文書の解決は KESCMActiveDocDB(KESCMCore)に統合。2026-07-25 重複解消)
+
+/* DoFindOversetToggle — フライアウト「Find Overset」トグル。
+   OFF→ON: 走査対象文書(比較中はTarget/それ以外はアクティブ)を走査→ overset を反映。
+   ON→OFF: 集合を空にしてトグル OFF、走査していた文書を再描画して目印を消す。 */
+void KESCMActionComponent::DoFindOversetToggle()
+{
+	// ON→OFF: ＋を消す。
+	InterfacePtr<IKESCMMarkData> marks(Utils<IKESCMMarkData>().QueryUtilInterface());
+	if (marks->GetOversetOn())
+	{
+		IDataBase* prevDB = marks->GetOversetDB();
+		// Pages パネルのサムネイルから＋を消すため、消える前にページ集合を控える。
+		std::vector<UID> prevPages;
+		marks->GetOversetPageUIDs(prevPages);
+		Utils<IKESCMCompareFacade>()->ClearOverset();
+		KESCMRefreshThumbnailsForPages(prevDB, prevPages);	// サムネイルを作り直して＋を消す
+		// スクロールバー地図: 比較もしていなければ全窓から撤去、比較中なら残して赤帯だけ描き直す。
+		if (Utils<IKESCMCompareFacade>()->IsArmed())
+			KESCMScrollMapInvalidateAll();
+		else
+			KESCMScrollMapDetachAll();
+		Utils<IKESCMCompareFacade>()->InvalidateDB(prevDB);	// nil 安全(他の呼び出しと同じ)
+		KESCMRefreshNavPosition();	// Prev/Next から overset 箇所を外す(比較のみ/対象なしへ)
+		PMString msg("Find Overset: off.");
+		msg.SetTranslatable(kFalse);
+		KESCMSetStatus(msg);
+		return;
+	}
+
+	// OFF→ON: 走査対象文書(比較中は Target、未 arm はアクティブ)を走査して反映。
+	IDataBase* db = Utils<IKESCMCompareFacade>()->GetOversetScanTargetDB();
+	if (db == nil)
+	{
+		PMString msg("Find Overset: no active document.");
+		msg.SetTranslatable(kFalse);
+		KESCMSetStatus(msg);
+		return;
+	}
+	Utils<IKESCMCompareFacade>()->ApplyOversetForDoc(db);
+
+	PMString msg("Find Overset: on (");
+	msg.SetTranslatable(kFalse);
+	msg.AppendNumber(Utils<IKESCMMarkData>()->GetOversetPageCount());
+	msg.Append(" page(s)).");
+	KESCMSetStatus(msg);
+}
+
+/* DoRefreshOverset — フライアウト「Refresh Overset」。Find Overset が ON のときだけ有効(OFF時は
+   UpdateActionStates で灰色)。アクティブ文書を再走査して集合を貼り直す。文書が切り替わっていたら
+   前の文書の十字も消す。 */
+void KESCMActionComponent::DoRefreshOverset()
+{
+	if (!Utils<IKESCMMarkData>()->GetOversetOn())
+		return;	// OFF時は無効(保険。通常はメニューが灰色で呼ばれない)
+
+	IDataBase* db = Utils<IKESCMCompareFacade>()->GetOversetScanTargetDB();
+	if (db == nil)
+	{
+		PMString msg("Refresh Overset: no active document.");
+		msg.SetTranslatable(kFalse);
+		KESCMSetStatus(msg);
+		return;
+	}
+	Utils<IKESCMCompareFacade>()->ApplyOversetForDoc(db);	// 再走査・反映(別文書なら前の文書の目印も消す)は共有処理に集約
+
+	PMString msg("Refresh Overset: ");
+	msg.SetTranslatable(kFalse);
+	msg.AppendNumber(Utils<IKESCMMarkData>()->GetOversetPageCount());
+	msg.Append(" page(s).");
+	KESCMSetStatus(msg);
+}
+
+// KESCMOpenAboutURL(KESCMCore.h で宣言) — パネルのイラストクリックから呼ばれる。「このプラグインに
+// ついて」本文と同じ配布元URL(kKESCMRepoURL)を既定のブラウザで開く。ドキュメントモデルには一切
+// 触れない(=OSへの外部起動要求のみ)ため、Command 化は不要。
+// GoToURLUtils::GoToURL は IURLAccess(hyperlink 用の内部インターフェイス)経由で Win/Mac 双方の既定
+// ブラウザを起動する InDesign 純正のユーティリティ関数(PUBLIC_DECL、boss/IID 取得不要)。
+// isAGoURL=kFalse は Adobe の "go.adobe.com" 短縮リンク専用フラグで、通常の外部URLでは使わない。
+void KESCMOpenAboutURL()
+{
+	PMString url(kKESCMRepoURL);
+	url.SetTranslatable(kFalse);
+	GoToURLUtils::GoToURL(url, kFalse);
+}
+
+// KESCMActionComponent.cpp 終わり。

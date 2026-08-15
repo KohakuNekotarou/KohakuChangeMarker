@@ -1,0 +1,356 @@
+﻿//========================================================================================
+//
+//  IKESCMCompareFacade.h
+//
+//  What the UI may ask of the comparison engine.
+//
+//  Created 2026-08-13 for the model/UI split (Stage 1). Modelled on the SDK's own pair
+//  sample: customconditionaltext (model) publishes ICusCondTxtFacade.h and AddIns it to
+//  kUtilsBoss; customconditionaltextui (UI) calls Utils<ICusCondTxtFacade>() and nothing else.
+//
+//  ★WHY AN INTERFACE AND NOT A HEADER OF FUNCTIONS. Once the model and the UI are separate
+//  plug-ins, a free function declared in a shared header cannot be linked -- its body lives in
+//  the other .pln. Every call that crosses the boundary has to go through an interface on a
+//  boss. That is the whole reason this file exists.
+//
+//========================================================================================
+
+#ifndef __IKESCMCompareFacade_h__
+#define __IKESCMCompareFacade_h__
+
+// Interface includes:
+#include "IPMUnknown.h"
+
+// General includes:
+#include "PMString.h"
+#include "PMReal.h"		// GetBaseScreenOpacity
+
+// Project includes:
+#include "KESCMID.h"
+
+class IDataBase;
+class IDocument;
+
+class IKESCMCompareFacade : public IPMUnknown
+{
+public:
+	enum { kDefaultIID = IID_IKESCMCOMPAREFACADE };
+
+	// ---- starting and stopping ----------------------------------------------------------
+
+	/** The Start/Stop toggle. When armed, clears; when not armed, resolves the active
+		document as Target and another open document as Source, and starts. */
+	virtual void		ToggleStartStop() = 0;
+
+	/** Stop: remove the marks and disarm the peek. */
+	virtual void		StopComparison() = 0;
+
+	/** Start with these two documents. No resolution happens here -- the caller decides which
+		is the Target. nil does nothing.
+		@warning overwrites an existing armed state without asking; call StopComparison first
+		if you want "stop, then start". */
+	virtual void		StartComparisonFor(IDocument* target, IDocument* source) = 0;
+
+	/** Whether a comparison can be started: an active document plus at least one other open
+		document. Goes through the same resolver as the start branch, so what the menu shows
+		and what pressing it does cannot disagree. */
+	virtual bool16		CanStartComparison() = 0;
+
+	// ---- state -------------------------------------------------------------------------
+
+	/** kTrue between Start and Stop. */
+	virtual bool16		IsArmed() = 0;
+	virtual IDataBase*	GetArmedTargetDB() = 0;
+	virtual IDataBase*	GetArmedSourceDB() = 0;
+
+	// ---- running a comparison ----------------------------------------------------------
+
+	/** Compare every page of targetDB against the same-numbered page of sourceDB and rebuild
+		the mark overlay. outReport receives the same status string the script API returns.
+
+		allowIncremental=kTrue attempts a differential re-comparison: pages whose pairing is
+		unchanged since the last run reuse their previous result instead of being rasterised
+		again. That is safe ONLY for the Register toggle, where the document content does not
+		change and only the pairing moves. Pass kFalse (the default) for Start and for the
+		Ignore Page Number Marker toggle, where content or exclusions may differ. */
+	virtual ErrorCode	MarkChanges(IDataBase* targetDB, IDataBase* sourceDB,
+								PMString& outReport, bool16 allowIncremental = kFalse) = 0;
+
+	/** Re-compare only the pages selected in the Pages panel. Returns kFalse when there was
+		nothing to do. Cancelling here KEEPS what was already refreshed -- this is a partial
+		update, so stopping half way leaves a narrower version of the same operation. */
+	virtual bool16		RefreshSelectedPages(int32* outPages, int32* outChanged,
+								bool16* outCancelled = nil, int32* outFailed = nil) = 0;
+
+	/** Whether "Refresh Page Comparison" may be offered right now. */
+	virtual bool16		RefreshComparisonAvailable() = 0;
+
+	/** Throw away the whole overlay (and the cached old-version images) and redraw db. */
+	virtual void		ClearMarks(IDataBase* db) = 0;
+
+	// ---- mark display settings ---------------------------------------------------------
+
+	/** Whether marks are printed (and therefore also shown on screen at all times), and the
+		frame opacity: kTrue=25%, kFalse=75%. */
+	virtual void		SetPrintMarks(bool16 printFlag, bool16 opacity25Flag, IDataBase* db) = 0;
+	virtual void		TogglePrintMarks() = 0;
+	virtual void		SetMarkOpacity25(bool16 op25) = 0;
+	virtual bool16		GetPrintMarks() = 0;
+	virtual bool16		GetMarkOpacity25() = 0;
+
+	// ---- display toggles ---------------------------------------------------------------
+	//
+	// Read and written by the flyout toggles, by Save/Load Panel Settings and by the press
+	// gesture. These are settings OF the comparison, which is why they sit here beside
+	// GetPrintMarks() rather than in IKESCMMarkData -- that interface is read-only by design.
+	//
+	// ★The plan named a different three (source marks / old page numbers / overset). Grepping
+	// the real callers before writing this showed the UI never writes the overset flag -- it
+	// only reads it, and clears the whole feature through ClearOverset() below -- while it does
+	// write "Hold to Hide Marks". The three here are the three the UI actually writes.
+
+	/** "Show Marks on Source": the Source document carries the same rings at all times. */
+	virtual bool16		GetShowSourceMarks() = 0;
+	virtual void		SetShowSourceMarks(bool16 on) = 0;
+
+	/** "Show Original Page Numbers": the badge showing what a page was numbered before spreads
+		were hidden. */
+	virtual bool16		GetShowOldPageNumbers() = 0;
+	virtual void		SetShowOldPageNumbers(bool16 on) = 0;
+
+	/** "Hold to Hide Marks": inverts the on-screen polarity. Marks are shown permanently and
+		the press hides them, instead of the default (hidden, shown while pressed). */
+	virtual bool16		GetHoldToHideMarks() = 0;
+	virtual void		SetHoldToHideMarks(bool16 on) = 0;
+
+	// ---- press-time display state ------------------------------------------------------
+	//
+	// What the tool's left button does to the marks while it is held. The state lives with the
+	// drawing engine because the engine reads it on every draw; the decision of WHEN to change
+	// it is the UI's, because it depends on which document window the mouse is over -- and the
+	// model has no windows.
+	//
+	// ⚠ Setters only change the state. Redrawing is the caller's job, exactly as it was before
+	// the split: which document to invalidate differs per gesture (Target only, Source only, or
+	// both), and folding it in here would repaint documents the old code left alone.
+
+	/** The master "are the rings on screen right now" flag. */
+	virtual void		SetMarksVisible(bool16 on) = 0;
+
+	/** The opacity the rings are actually drawn at, and the 25%/75% value the panel radio
+		selects. The press puts the selected value in; releasing puts GetBaseScreenOpacity()
+		back. */
+	virtual void		SetMarkScreenOpacity(const PMReal& opacity) = 0;
+	virtual PMReal		GetSelectedMarkOpacity() = 0;
+
+	/** Hold to Hide Marks: the permanent rings are parked while the button is down. Target and
+		Source are separate because only the window under the mouse hides its own. */
+	virtual bool16		GetMarksTempHidden() = 0;
+	virtual void		SetMarksTempHidden(bool16 on) = 0;
+	virtual bool16		GetSrcMarksTempHidden() = 0;
+	virtual void		SetSrcMarksTempHidden(bool16 on) = 0;
+
+	/** The old-version overlay shown by Shift+left (1.0) and Shift+Alt+left (0.5). Set the
+		opacity before asking for the overlay; clear ShowOriginal when the button comes up. */
+	virtual void		SetPeekOpacity(const PMReal& opacity) = 0;
+	virtual bool16		GetShowOriginal() = 0;
+	virtual void		SetShowOriginal(bool16 on) = 0;
+
+	// ---- the status line ---------------------------------------------------------------
+
+	/** The last string the model published. The UI reads this when it receives
+		kKESCMStatusTextMessage and again from AutoAttach when the panel re-appears.
+		Kept on the model side so app.kcmStatus can answer while the panel is closed. */
+	virtual void		GetSessionStatus(PMString& out) = 0;
+
+	/** Remember a string the UI raised itself, WITHOUT emitting a notification.
+
+		★This is what the UI's own KESCMSetStatus calls. A message raised by a UI action -- a menu
+		item, a button, a row click -- is painted by the UI directly and does not need to travel
+		through the notification, but it still has to be REMEMBERED on the model side, because
+		app.kcmStatus answers from that string and because the panel's widgets are rebuilt on
+		every re-show.
+		⚠ It must not notify: KESCMSetStatus is also what the observer calls when a notification
+		arrives, so notifying from here would loop. */
+	virtual void		StoreSessionStatus(const PMString& s) = 0;
+
+	/** Shutdown only: empty the stored string, so the model's static PMString has no live heap
+		buffer to free when the plug-ins unload (Mac unload order differs from Windows).
+
+		★Called from the UI's shutdown, not the model's, and that is deliberate: a model
+		plug-in's startup/shutdown service is run again on every background-thread teardown
+		(guide vol1-07 L245-253), so clearing it there would empty the status line every time a
+		PDF is exported. */
+	virtual void		ClearSessionStatus() = 0;
+
+	/** kTrue when the status notification being handled asked for an immediate repaint. It is
+		part of the notification rather than of the text: the comparison loop sets it because it
+		is about to block, so the observer has to paint before it returns. */
+	virtual bool16		StatusWantsForceRedraw() = 0;
+
+	// ---- what the notification being handled is about (2026-08-15, stage 2) -------------
+	//
+	// A notification can carry nothing but a ClassID, so everything else the UI needs is left on
+	// the model side for it to pick up inside Update(). Change() is synchronous, so what the
+	// observer reads here is always what the emitting call just stored.
+	//
+	// ⚠ Meaningful ONLY while handling that notification. Do not cache them: a closed
+	// IDataBase* is a dangling pointer whose address gets reused.
+	//
+	// ★These were free functions in KESCMModelNotify.h, which the UI observer read directly.
+	// That links only while both halves share one .pln -- the same reason the whole of this
+	// interface exists (see the file header).
+
+	/** The documents the change is about. ★They travel with the notification rather than being
+		asked for: by the time Stop notifies, the model has already dropped its own pointers
+		(GetArmedTargetDB is nil) and the UI still has to purge those documents' thumbnails. */
+	virtual IDataBase*	GetNotifiedDocA() = 0;
+	virtual IDataBase*	GetNotifiedDocB() = 0;
+	virtual IDataBase*	GetNotifiedDocC() = 0;		// nil unless the three-document form was used
+
+	/** kTrue when the change invalidates the Prev/Next cursor. ⚠ A full rebuild and a Stop do;
+		an incremental recompare does NOT -- resetting there would send the cursor back to the
+		first change every time a page is registered. */
+	virtual bool16		GetNotifiedNavReset() = 0;
+
+	// ---- the peek overlay --------------------------------------------------------------
+
+	/** Whether both armed documents are still open. Returns kFalse after running the full
+		Stop-equivalent clean-up, so a caller that gets kFalse must not touch either database.
+		★The gesture code asks this before every peek and on every drag update: a closed
+		IDataBase* is a dangling pointer whose address gets reused. */
+	virtual bool16		ArmedDocsAlive() = 0;
+
+	/** Show the old version of the spread at (mx, my), over the front layout view.
+		Rasterises that one spread on first use and keeps exactly one cached.
+		  mx, my    -- the point to peek at, in targetDB's pasteboard (content) coordinates
+		  viewScale -- that window's content-to-window scale (zoom x device scale). The
+		               rasterisation dpi is derived from it.
+		  uiZoom    -- that window's UI zoom (what the user sees; no device scale). Pass 0 when
+		               the panorama could not be queried -- that reproduces exactly what the
+		               model used to do for itself when IPanorama came back nil.
+		★2026-08-15 (stage 2, task 4B): renamed from ShowPeekUnderMouse and the view resolution
+		moved out to the caller. Deciding *which window the pointer is over* is a question only
+		the UI can answer; the model now only answers *what is at this point, at this dpi*.
+		The dpi arithmetic itself did not move -- see KESCMPeek.h. */
+	virtual void		ShowPeekAt(IDataBase* targetDB, IDataBase* sourceDB,
+								   const PMReal& mx, const PMReal& my,
+								   const PMReal& viewScale, const PMReal& uiZoom) = 0;
+
+	/** The on-screen opacity marks are drawn at when they are shown permanently (printing ON
+		gives the 25%/75% choice, printing OFF gives fully opaque). The UI needs it when the
+		"Hold to Hide Marks" toggle flips, to put the permanent value back straight away. */
+	virtual PMReal		GetBaseScreenOpacity() = 0;
+
+	// ---- the CMYK sampler (Alt+left) ---------------------------------------------------
+
+	/** Read the raw CMYK at (mx, my) on hoverDB and, when otherDB is not nil, at the matching
+		point on the paired page of otherDB. Returns kFalse when there is no page under the
+		point or the sample could not be taken; the two strings are only valid on kTrue.
+		  hoverDB       -- the document the pointer is over. This is the side reported first.
+		  otherDB       -- the comparison partner, or nil for the single-document mode.
+		  hoverIsTarget -- kTrue when hoverDB is the comparison Target (new) side. Selects the
+		                   page-mapping direction and the t/s labels.
+		  mx, my        -- the sample point, in hoverDB's pasteboard (content) coordinates.
+		  outPanel      -- compact form for the panel status line (152px).
+		  outCursor     -- the numbers alone, for the cursor bitmap to draw.
+		⚠ The caller must have checked that the pointer is still over hoverDB's own window
+		before calling. That guard used to live inside the sampler; it moved out with the view
+		resolution in 2026-08-15 (stage 2, task 4B). Dropping it makes another window's
+		coordinates get read as if they were hoverDB's. */
+	virtual bool16		SampleColorAt(IDataBase* hoverDB, IDataBase* otherDB, bool16 hoverIsTarget,
+									  const PMReal& mx, const PMReal& my,
+									  PMString& outPanel, PMString& outCursor) = 0;
+
+	/** Cache the hover-to-other page pairing for the duration of an Alt+left drag. Begin on
+		button down, End on button up; between them SampleColorAt skips rebuilding the pairing
+		on every sample (up to 20/s). Not used in the single-document mode. */
+	virtual void		BeginColorDrag(IDataBase* hoverDB, IDataBase* otherDB, bool16 hoverIsTarget) = 0;
+	virtual void		EndColorDrag() = 0;
+
+	// ---- overset -----------------------------------------------------------------------
+
+	/** Scan db for overset locations and store them in the engine state. Emits
+		kKESCMOversetRescannedMessage. Does not write the status line. */
+	virtual void		ApplyOversetForDoc(IDataBase* db) = 0;
+
+	/** Which document an overset scan should look at: the comparison Target while a comparison
+		is running, the active document otherwise. nil when there is nothing to scan.
+		★Added over the plan's draft interface (2026-08-13): the Find Overset / Refresh Overset
+		menu handlers and UpdateActionStates all ask this before calling ApplyOversetForDoc, so
+		leaving it out would have left three UI callers reaching into the model directly. */
+	virtual IDataBase*	GetOversetScanTargetDB() = 0;
+
+	/** Switch Find Overset off and drop what the scan found. The caller repaints -- it knows
+		which document was being scanned, because it asked before calling this.
+		★Added over the plan's draft interface (2026-08-13): the flyout toggle called
+		KESCMDrawEventHandler::DropOverset() directly, which is a static member of a model class
+		and therefore not reachable once the UI is its own plug-in. */
+	virtual void		ClearOverset() = 0;
+
+	// ---- Hide Unchanged Spreads --------------------------------------------------------
+
+	/** Reset the toggle on both sides. restoreSpreads=kTrue shows the spreads we hid again
+		before dropping the state; document liveness is checked internally, so kTrue is safe
+		even when one side has been closed. */
+	virtual void		ResetHideUnchanged(bool16 restoreSpreads) = 0;
+	virtual IDataBase*	GetHideUnchangedDB() = 0;
+	virtual IDataBase*	GetHideUnchangedSrcDB() = 0;
+
+	/** The toggle itself, and its state for the menu's check mark.
+		★Added over the plan's draft interface (2026-08-13): the flyout item that flips it stays
+		on the UI side, so both of these cross the boundary. */
+	virtual void		HideUnchangedToggle() = 0;
+	virtual bool16		GetHideUnchangedOn() = 0;
+
+	// ---- documents, redraw, and the application (2026-08-14, Task 16) --------------------
+	//
+	// These are not about the comparison, and that is exactly why they were easy to miss: they
+	// were plain free functions in KESCMCore.h, which works only while everything shares one
+	// .pln. A free function's body lives in the plug-in that defines it, so the UI half could
+	// not link to any of them once the two are separated. Counted before adding: 23 calls
+	// across 10 UI-side files.
+
+	/** kTrue when db still belongs to an open document.
+
+		★NEVER DEREFERENCE A DATABASE TO FIND OUT. A closed one is a dangling pointer whose
+		address gets reused, so the test is a pointer comparison against IDocumentList and
+		nothing else -- KESCM's rule everywhere it holds a database. */
+	virtual bool16		IsDocDBOpen(IDataBase* db) = 0;
+
+	/** Redraw every view of this document. nil is ignored, so callers that may or may not have
+		a second document to repaint can call it twice without testing. */
+	virtual void		InvalidateDB(IDataBase* db) = 0;
+
+	/** The front document's database, or nil when there is none. Resolved through
+		IActiveContext, in one place, so that "which document is the user looking at" has a
+		single answer. */
+	virtual IDataBase*	GetActiveDocDB() = 0;
+
+	/** kTrue while the application is shutting down (kQuitting / kShuttingDown).
+
+		★While it is, UI work -- touching widgets, forcing redraws, booking idle tasks -- has to
+		be skipped and the code reduced to discarding state: the teardown order of windows and
+		panels is platform-dependent, and on the Mac it is not the Windows order. The close-all
+		phase of a quit, where the user can still cancel at a save prompt, is NOT this: that one
+		is still kRunning. */
+	virtual bool16		IsAppQuitting() = 0;
+
+	// ---- the page number marker exclusion -----------------------------------------------
+	//
+	// Whether the folio (page number) area is left out of the pixel comparison. A flyout item
+	// flips it and the saved panel state reads and writes it, both UI-side.
+
+	virtual bool16		GetIgnorePageNumberMarker() = 0;
+	virtual void		SetIgnorePageNumberMarker(bool16 on) = 0;
+
+	// ---- exporting -----------------------------------------------------------------------
+
+	/** Write the changed pages out as TSV, and describe what happened in outMessage -- the
+		path written, or why nothing was. ★The message comes back rather than being shown from
+		inside: the status line belongs to the UI, and the flyout item that asked is the one
+		that reports (the same shape the plan gives for KESCMChangedPagesTSV in §3.3). */
+	virtual void		ExportChangedPagesTSV(PMString& outMessage) = 0;
+};
+
+#endif // __IKESCMCompareFacade_h__

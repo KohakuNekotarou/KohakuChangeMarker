@@ -53,6 +53,8 @@
 
 // Project includes:
 #include "KESCMCore.h"				// KESCMSetStatus / KESCMCollectPageUIDs / KESCMCollectMasterPageUIDs
+// (★KESCMUIShared.h は 2026-08-13 Task 10 で外した＝ステータス行への出力は Task 9 で戻り値へ変わり、
+//  このファイルから UI を呼ぶ経路は1つも残っていない。保存先パスは呼び手のフライアウトが表示する)
 #include "KESCMDrawEventHandler.h"	// sEntries / sDB / sSrcDB
 #include "KESCMPageMap.h"			// KESCMBuildPairing / KESCMPageMapCollectRegistered
 #include "KESCMChangedPagesTSV.h"
@@ -85,11 +87,16 @@ struct KESCMChangeRow
 };
 
 // ステータス行(KESCL/KESCM 共通の非翻訳・英語の流儀)。
+// ★★2026-08-13(Task 9): **ステータス行へ直接書かず、呼び手へ返す文字列を覚えるだけにした。**
+//   理由＝TSV 書き出しは「成功/失敗と保存先パス」を**返すのが自然**で、通知を投げる理由が無い
+//   (設計書 §3.3)。ここは model 側で、表示は UI 側の呼び手(フライアウトの Export Changed Pages)が行う。
+//   ⚠関数名と呼び所は元のまま＝本体のどの経路(早期 return を含む)からでも今までどおり呼べる。
+PMString gExportMessage;
+
 void ShowStatus(const char* text)
 {
-	PMString s(text);
-	s.SetTranslatable(kFalse);
-	KESCMSetStatus(s);
+	gExportMessage = PMString(text);
+	gExportMessage.SetTranslatable(kFalse);
 }
 
 // pageUID(db 内)の「画面に見えている表示ページ番号」を返す。取れなければ空。
@@ -344,9 +351,10 @@ PMString BuildReportText(const std::vector<KESCMChangeRow>& rows)
 } // anonymous namespace
 
 //========================================================================================
-// KESCMExportChangedPagesTSV(KESCMChangedPagesTSV.h で宣言)
+// 本体。★2026-08-13(Task 9)に static 化し、公開関数は下のラッパにした。中身は1行も変えていない
+//   ＝早期 return がいくつもあるので、**最後の1か所で out へ書ける形**にするために包んだ。
 //========================================================================================
-void KESCMExportChangedPagesTSV()
+static void KESCMExportChangedPagesTSVRun()
 {
 	IDataBase* targetDB = KESCMDrawEventHandler::sDB;
 	IDataBase* sourceDB = KESCMDrawEventHandler::sSrcDB;
@@ -366,6 +374,13 @@ void KESCMExportChangedPagesTSV()
 
 	// 保存先(sdksamples/common の共通チューザ)。タイトル/初期名は KESCM の他 UI と同じく英語固定。
 	// 'TEXT'/'CWIE' は SDK のテキスト書き出しが渡す古典的な Mac type/creator(Windows では無意味だが API が要求)。
+	// ★★2026-08-15（第2段 Task 10）＝**model 側から出しているファイルダイアログ**。残す判断の根拠は
+	//   KESCMHideUnchanged.cpp の CAlert と同じ:
+	//   ・`SDKFileSaveChooser` は `sdksamples/common` のヘルパーで、**UI プラグイン由来の boss ではない**。
+	//   ・この経路（Export Changed Pages...）は Facade 越しに**フライアウトの操作**からしか入らず、
+	//     **BG で走る描画パスからは到達しない**（2026-08-15 に呼び出し全数を Grep して確認）。
+	//   ⚠BG から書き出させたくなったら、**保存先を UI が決めて `IDFile` を引数で渡す**形へ変える
+	//     （Task 9B の KESCMGetPanelBookFile とまったく同じ形）。チューザは BG では開けない。
 	SDKFileSaveChooser chooser;
 	PMString title("Export Changed Pages");
 	title.SetTranslatable(kFalse);
@@ -409,6 +424,20 @@ void KESCMExportChangedPagesTSV()
 	// 成功時は無言(ファイルが指定場所にできる=ステータス行に足すことは無い)。失敗のみ出す(KESCL の流儀)。
 	if (failed)
 		ShowStatus("Could not write the file.");
+}
+
+//========================================================================================
+// KESCMExportChangedPagesTSV(KESCMChangedPagesTSV.h で宣言)
+//   ★2026-08-13(Task 9): **ステータス行へ書かず、出したい文字列を out で返す。**
+//   TSV 書き出しは「成功/失敗と保存先パス」を返すのが自然で、通知を投げる理由が無い(設計書 §3.3)。
+//   ⇒ ここは model 側、表示は呼び手(フライアウトの Export Changed Pages＝UI)。
+//   ★出すことが無ければ out は空で返る(成功時は無言、が従来の仕様)。
+//========================================================================================
+void KESCMExportChangedPagesTSV(PMString& outMessage)
+{
+	gExportMessage.Clear();
+	KESCMExportChangedPagesTSVRun();
+	outMessage = gExportMessage;
 }
 
 // End, KESCMChangedPagesTSV.cpp.

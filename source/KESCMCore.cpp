@@ -20,8 +20,6 @@
 #include "ILayoutUtils.h"
 #include "ITextUtils.h"				// GetPageUIDRef(KESCMFramePageUID の主経路)
 #include "IHierarchy.h"				// GetOwnerPageUID へ渡す(KESCMFramePageUID のフォールバック)
-#include "IControlView.h"
-#include "IEventUtils.h"
 #include "IGeometry.h"
 #include "ISpread.h"
 #include "ISpreadList.h"
@@ -29,17 +27,13 @@
 #include "IBoolData.h"				// スプレッドの隠し状態(IID_IHIDESPREADBOOLDATA)の読み取り
 #include "SpreadID.h"				// IID_IHIDESPREADBOOLDATA(kSpreadBoss 上の IBoolData。docs の boss 一覧で裏取り済み)
 #include "PMString.h"
-#include "PMPoint.h"
 #include "PMRect.h"
 #include "IGeometryFacade.h"		// GetItemBounds(ページ矩形をペーストボード座標で。手本=SnapTracker.cpp:610-616)
-#include "IWindow.h"
-#include "IWindowUtils.h"
-#include "ILayoutViewUtils.h"		// GetAllLayoutViews(KESCMFindDocDbForView のフォールバック)
-#include "ILayoutControlData.h"		// GetDocument(view→文書の公式ルート。KESCMFindDocDbForView)
-#include "K2Vector.h"				// GetAllLayoutViews の out コンテナ(間接includeに頼らず明示)
-#include "IDocumentPresentation.h"
-#include "IPanelControlData.h"
-#include "LayoutUIID.h"				// kLayoutWidgetBoss / kLayoutSecondaryPanelWidgetID
+// ★ビュー探索の3本は 2026-08-13 に KESCMViewLookup.cpp へ移した(model/UI 分割 第1段 Task 3)。
+//   それだけが使っていた SDK インクルード(IControlView / IEventUtils / IWindow / IWindowUtils /
+//   IDocumentPresentation / IPanelControlData / LayoutUIID / ILayoutViewUtils / ILayoutControlData /
+//   K2Vector / PMPoint)も一緒に移っている。
+//   ⇒ **このファイルはビュー系のヘッダーを1本も include しなくなった**(model 側に必要な条件の1つ)。
 #include "ProgressBar.h"			// TaskProgressBar(重い比較の進捗バー＋キャンセル)
 #include "ErrorUtils.h"				// PMSetGlobalErrorCode(キャンセル後にグローバルエラーを残さない)
 
@@ -49,16 +43,18 @@
 
 #include "KESCMDrawEventHandler.h"   // 描画エンジン＋共有 static
 #include "KESCMPeek.h"               // KESCMBaseScreenOpacity
-#include "KESCMPageMap.h"            // KESCMBuildPairing(除外対応表)
+#include "KESCMPageMap.h"            // KESCMBuildPairing(除外対応表) / KESCMPageMapCollectRegistered
 #include "KESCMPageCheck.h"          // KESCMPageCheckClearAllDocs(Stop で✓を全消去)
-#include "KESCMThumbnailRefresh.h"   // ★実験: 既表示サムネイルの再生成トライ(2026-07-06)
-#include "KESCMChangeNav.h"          // KESCMResetNav(セッションを跨いだ巡回基準点の持ち越しを断つ)
-#include "KESCMScrollMap.h"          // KESCMScrollMapInvalidateAll(比較後にスクロールバー地図を最新化)
 #include "KESCMStoryStamp.h"         // ストーリーの変更カウンター(テキストが編集されたか＝画素比較には出せない情報)
 #include "KESCMStoryList.h"          // 変更のあったストーリーの一覧(Story Edits セクションが読むモデル)
-#include "KESCMStoryTree.h"          // KESCMStoryTreeRebuild(モデルを作り直したら画面も作り直す)
-#include "KESCMStorySection.h"       // KESCMUpdateStorySectionLabel(見出しの件数)
+#include "KESCMHideUnchanged.h"      // KESCMResetHideUnchanged(2026-08-13 に KESCMCore.h から移動)
+// ★★2026-08-13(Task 10): **UI 側ヘッダー6本の include を落とした** ---- KESCMViewSync /
+//   KESCMThumbnailRefresh / KESCMChangeNav / KESCMScrollMap / KESCMStoryTree / KESCMStorySection。
+//   比較の後始末のうち「画面を作り直す」部分は全部 KESCMNotify*() の通知になり、このファイルは
+//   **何が変わったかを言うだけ**になった。⇒ 比較エンジンから UI への依存はゼロ。
 #include "KESCMCore.h"
+#include "KESCMID.h"			// kKESCM*Message(通知の ID。Task 10 で使い始めた)
+#include "KESCMModelNotify.h"	// KESCMNotifyStatus / KESCMNotifyDocs - the model tells the UI, it never calls it
 
 //========================================================================================
 // ヘルパ: ドキュメント内の全ページUIDを、スプレッド順・ページ順で平坦に集める。
@@ -81,6 +77,53 @@ void KESCMCollectPageUIDs(IDataBase* db, std::vector<UID>& out)
 		for (int32 p = 0; p < np; ++p)
 			out.push_back(spread->GetNthPageUID(p));
 	}
+}
+
+//========================================================================================
+// KESCMCollectChangedPageUIDs(KESCMCore.h で宣言)
+//   db が現在の比較対象(sDB/sSrcDB)なら「今マークが出得るページ UID」(変更リング + overflow「/」+
+//   登録「/」)を outPages へ足して kTrue。比較対象でなければ何もせず kFalse。
+//   ★「何がマーク済みか」の定義はこの1箇所に集約する。マークの種類を増やす時はここへ足せば、
+//     再比較前の退避(KESCMDoMarkChangesDoc)とサムネイルの Purge(UI 側)の両方が自動で追随する。
+//
+// ★★2026-08-13 に KESCMThumbnailRefresh.cpp からここへ移した(model/UI 分割 第1段 Task 10)。
+//   置いてあったファイル名は「サムネイル更新」だが、**中身は純粋に model の問い**——読むのは
+//   sEntries / overflow キャッシュ / 登録ページだけで、widget にも view にも一切触らない。
+//   UI 側ファイルに置いたままだと、これを呼ぶだけの model 側3ファイル(このファイル・PageCheck・
+//   PageMap)が UI ヘッダーを include し続けることになっていた。
+//   ⇒ **これは通知で切る逆流ではなく、宣言の置き場所の誤りだった**(逆流台帳 §2-1)。
+//   ⚠「UI ヘッダーを include している」だけでは逆流と断定できない、という実例そのもの。
+//========================================================================================
+bool16 KESCMCollectChangedPageUIDs(IDataBase* db, std::set<UID>& outPages)
+{
+	const bool16 overflowCacheMatches =
+		(KESCMDrawEventHandler::sOverflowCacheDB == KESCMDrawEventHandler::sDB &&
+		 KESCMDrawEventHandler::sOverflowCacheSrcDB == KESCMDrawEventHandler::sSrcDB);
+
+	if (db != nil && db == KESCMDrawEventHandler::sDB)
+	{
+		for (std::map<UID, KESCMOverlayEntry*>::iterator it = KESCMDrawEventHandler::sEntries.begin();
+			 it != KESCMDrawEventHandler::sEntries.end(); ++it)
+			outPages.insert(it->first);
+		if (overflowCacheMatches)
+			outPages.insert(KESCMDrawEventHandler::sOverflowT.begin(), KESCMDrawEventHandler::sOverflowT.end());
+		// ★登録ページ(Added=緑「/」)も含める。sEntries/overflow とは別集合なので、含めないと
+		//   再比較時に登録ページのサムネイルが Purge されず緑「/」が即時に出ない(START 時も同様)。
+		KESCMPageMapCollectRegistered(db, outPages);
+		return kTrue;
+	}
+	if (db != nil && db == KESCMDrawEventHandler::sSrcDB)
+	{
+		for (std::map<UID, UID>::iterator it = KESCMDrawEventHandler::sSrcPageToTarget.begin();
+			 it != KESCMDrawEventHandler::sSrcPageToTarget.end(); ++it)
+			outPages.insert(it->first);
+		if (overflowCacheMatches)
+			outPages.insert(KESCMDrawEventHandler::sOverflowS.begin(), KESCMDrawEventHandler::sOverflowS.end());
+		// ★登録ページ(Removed=緑「/」)も含める(上と同じ理由)。
+		KESCMPageMapCollectRegistered(db, outPages);
+		return kTrue;
+	}
+	return kFalse;
 }
 
 //========================================================================================
@@ -148,64 +191,6 @@ UID KESCMFramePageUID(IDataBase* db, UID frameUID)
 	return kInvalidUID;	// どのページにも載らない(ペーストボード等)=スキップ
 }
 
-//========================================================================================
-// マウス位置・ヒットテストの共有ヘルパ(peek と色サンプラが同じ流儀でカーソル位置を求める)。
-//========================================================================================
-bool16 KESCMQueryMouseContentPoint(IControlView* view, PMReal& outX, PMReal& outY)
-{
-	outX = 0.0; outY = 0.0;
-	if (view == nil)
-		return kFalse;
-	// マウス: 画面 → 窓 → コンテンツ(ペーストボード)座標。
-	GSysPoint gm = Utils<IEventUtils>()->GetGlobalMouseLocation();
-	PMPoint pt((PMReal)gm.x, (PMReal)gm.y);
-	pt = view->GlobalToWindow(pt);
-	view->WindowToContentTransform(&pt);
-	outX = pt.X();
-	outY = pt.Y();
-	return kTrue;
-}
-
-// マウス下のレイアウトビューを求める(Split Window対応)。KESCMCore.h のコメント参照。
-IControlView* KESCMQueryViewUnderMouse()
-{
-	GSysPoint globalPt = Utils<IEventUtils>()->GetGlobalMouseLocation();
-
-	InterfacePtr<IWindow> hitWindow(Utils<IWindowUtils>()->QueryWindowUnderPoint(globalPt, kFalse));
-	if (hitWindow == nil)
-		return nil;
-
-	InterfacePtr<IDocumentPresentation> hitPres(hitWindow, UseDefaultIID());
-	if (hitPres == nil)
-		return nil;
-
-	InterfacePtr<IPanelControlData> hitPanelData(hitPres, UseDefaultIID());
-	if (hitPanelData == nil)
-		return nil;
-
-	IControlView* primaryView = hitPanelData->FindWidget(kLayoutWidgetBoss);
-	if (primaryView == nil)
-		return nil;
-
-	// primaryView は「グローバル→ウィンドウ座標への変換」にだけ使う(どの子ウィジェット経由でも同じ
-	// ウィンドウ座標系になるため)。実際にマウス下にあるビューは FindWidget(windowPt) のヒットテストで
-	// 特定する(キャンバス以外=ルーラ等に当たった場合は primaryView にフォールバック)。
-	IControlView* hitView = primaryView;
-	const PMPoint globalPM((PMReal)globalPt.x, (PMReal)globalPt.y);
-	const PMPoint winPM = primaryView->GlobalToWindow(globalPM);
-	SysPoint winPt;
-	winPt.x = ::ToInt32(winPM.X());
-	winPt.y = ::ToInt32(winPM.Y());
-
-	IControlView* pointHit = hitPanelData->FindWidget(winPt);
-	if (pointHit != nil &&
-	    (pointHit->GetWidgetID() == kLayoutWidgetBoss || pointHit->GetWidgetID() == kLayoutSecondaryPanelWidgetID))
-		hitView = pointHit;
-
-	hitView->AddRef();	// QueryFrontView() と同じ「+1 ref、呼び出し側で Release」の契約に合わせる
-	return hitView;
-}
-
 // アクティブ(前面)文書とその db。KESCMCore.h のコメント参照(2026-07-25 重複解消で集約)。
 IDocument* KESCMActiveDoc()
 {
@@ -218,96 +203,6 @@ IDataBase* KESCMActiveDocDB()
 {
 	IDocument* doc = KESCMActiveDoc();
 	return doc ? ::GetUIDRef(doc).GetDataBase() : nil;
-}
-
-// view が db のレイアウトビュー群に含まれるか(1文書ぶんのポインタ照合)。下の2用途で共有する。
-static bool16 KESCMViewBelongsToDb(IControlView* view, IDataBase* db)
-{
-	if (view == nil || db == nil)
-		return kFalse;
-	K2Vector<IControlView*> views;
-	Utils<ILayoutViewUtils>()->GetAllLayoutViews(views, nil, db);	// 閉じた db なら空が返るだけ=安全
-	for (int32 vi = 0; vi < (int32)views.size(); ++vi)
-		if (views[vi] == view)
-			return kTrue;
-	return kFalse;
-}
-
-// ★直前にヒットした文書(2026-07-25 追補)。ホットパス最適化のためだけの「当たりを付ける」ヒント。
-//   Sync Layout Views のスクロール追従とツールカーソルの黒/白判定は、同じビューについて連続で
-//   (マウス移動のたび=数十回/秒)この関数を呼ぶ。毎回「全文書 × GetAllLayoutViews」を回すと
-//   文書数ぶんの K2Vector 構築が積み上がるので、まず前回の db だけを試す。
-//   ★誤りが混入しない作り: ヒントは「どの db から試すか」を決めるだけで、答えは必ず
-//   KESCMViewBelongsToDb による実照合で確定する。外れたら従来どおり全走査へフォールバックする。
-//   閉じた db が残っていても GetAllLayoutViews が空を返して外れるだけ(deref しない)。
-static IDataBase* sLastViewHitDb = nil;
-
-// 直前ヒントを捨てる(KESCMCore.h で宣言)。文書クローズ・arm 切替・同期 OFF から呼ぶ。
-void KESCMForgetViewDbHint()
-{
-	sLastViewHitDb = nil;
-}
-
-// view がどの文書のレイアウトビューかを特定する。KESCMCore.h のコメント参照。
-// (2026-07-25: KESCMPeek.cpp の file-static から共有ヘルパへ移動。色サンプラの窓ガードでも使うため)
-IDataBase* KESCMFindDocDbForView(IControlView* view)
-{
-	if (view == nil)
-		return nil;
-
-	// ★①公式ルート(2026-08-06 の API 監査 A-1): レイアウトビュー boss は ILayoutControlData を持ち、
-	//   そのビューが今表示している文書を直接返す。ビュー自身に聞くので列挙 API の結果に依存しない。
-	//   契約=ILayoutControlData.h:181 / 手本=CPathCreationTracker.cpp:277-285(ほか
-	//   CusDtLnkUIDDTargetFlavorHelper.cpp:197 / BscDNDCustomFlavorHelper.cpp:194)。
-	//   boss に載っていることは実機ダンプで確認済み(kLayoutWidgetBoss + IID_ILAYOUTCONTROLDATA)。
-	//   ★GetDocument() は AddRef しない生ポインタを返す(=Release 不要)。
-	InterfacePtr<ILayoutControlData> layoutData(view, IID_ILAYOUTCONTROLDATA);
-	if (layoutData != nil)
-	{
-		IDocument* doc = layoutData->GetDocument();
-		if (doc != nil)
-		{
-			IDataBase* db = ::GetUIDRef(doc).GetDataBase();
-			// ★生存確認を明示的に行う(2026-08-06 の自己レビューで追加)。従来の経路は IDocumentList を
-			//   走査して照合していたので「返る db は必ず開いている文書のもの」が**暗黙に保証**されていた。
-			//   公式ルートはビューに聞くだけなのでその保証が無く、黙って落とすと KESCM 全体の規約
-			//   (閉じた db を持ち回らない/deref しない)が崩れる。ここで確認して従来の性質を保つ。
-			//   引けなければ下のフォールバックへ流す(全走査でも見つからなければ nil)。
-			if (KESCMIsDocDBOpen(db))
-				return db;
-		}
-	}
-
-	// ---- 以下は①が引けなかったときのフォールバック(従来実装) ----
-	// ★Split Window の 2枚目ペインでも ILayoutControlData が引けるかは実機未確認なので、旧経路を
-	//   残してある(引けるなら以下は一度も走らない)。実機で確認が取れたら丸ごと畳んでよい。
-
-	// ②前回ヒットした文書を先に試す(連続呼び出しはほぼここで確定する)。
-	if (sLastViewHitDb != nil && KESCMViewBelongsToDb(view, sLastViewHitDb))
-		return sLastViewHitDb;
-
-	// ③外れたら全文書を走査(従来どおり)。見つかった db を次回のヒントにする。
-	ISession* session = GetExecutionContextSession();	// 終了処理中は nil になり得る(下の共通規約参照)
-	InterfacePtr<IApplication> app(session != nil ? session->QueryApplication() : nil);
-	InterfacePtr<IDocumentList> docList(app ? app->QueryDocumentList() : nil);
-	if (docList == nil)
-		return nil;
-	const int32 docCount = docList->GetDocCount();
-	for (int32 d = 0; d < docCount; ++d)
-	{
-		IDocument* doc = docList->GetNthDoc(d);
-		if (doc == nil)
-			continue;
-		IDataBase* db = ::GetUIDRef(doc).GetDataBase();
-		if (db == sLastViewHitDb)
-			continue;	// ②で試して外れている
-		if (KESCMViewBelongsToDb(view, db))
-		{
-			sLastViewHitDb = db;
-			return db;
-		}
-	}
-	return nil;
 }
 
 bool16 KESCMFindPageUnderMouse(IDataBase* targetDB, PMReal mx, PMReal my, KESCMPageHit& out)
@@ -424,8 +319,9 @@ void KESCMRebuildStoryEdits(IDataBase* targetDB, IDataBase* sourceDB)
 	// ★★件数はステータス行ではなく**見出し**に出す。ステータス欄は4行枠がすでに埋まっており、
 	//   もう1行増えると failed=N がはみ出す(段階3の申し送り)。見出しなら、セクションを閉じた
 	//   ままでも件数が読める。
-	KESCMStoryTreeRebuild();
-	KESCMUpdateStorySectionLabel();
+	// ★2026-08-13(Task 10): ツリーと見出しを直接呼ぶのをやめ、通知1本にした。model は「一覧を作り
+	//   直した」とだけ言い、それを画面のどこへどう出すかは UI が決める。
+	KESCMNotify(kKESCMStoryEditsRebuiltMessage);
 }
 
 ErrorCode KESCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMString& outReport, bool16 allowIncremental)
@@ -447,9 +343,13 @@ ErrorCode KESCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMStri
 	//   列挙は KESCMCollectChangedPageUIDs に一本化(「何がマーク済みか」の定義を二重実装しない)。
 	//   同関数は db が現在の sDB/sSrcDB と一致する時だけ集める=「前回比較が今回と同じ文書の時だけ
 	//   旧 UID を拾う」ガード(UID は db 固有。別文書対への再 Start で誤 Purge しない)も兼ねる。
-	std::set<UID> prevTargetMarked, prevSourceMarked;
-	KESCMCollectChangedPageUIDs(targetDB, prevTargetMarked);
-	KESCMCollectChangedPageUIDs(sourceDB, prevSourceMarked);
+	//
+	// ★★2026-08-13(Task 10): **この退避は今は取っていない。** サムネイルの Purge は UI 側へ移り、
+	//   通知は ClassID しか運べないので、旧集合を渡す道が無くなった。代わりに UI は**全ページ**を
+	//   Purge する ---- 取りこぼしは原理的に起きず、ページ数ぶん遅くなるだけ(KESCMThumbnailRefresh.h
+	//   の KESCMPurgeAllPageThumbs に理由を書いてある)。
+	//   ⚠**Task 12 で IKESCMMarkData が入ったら、ここで退避を取り直して絞り込みへ戻すこと。**
+	//     上の段落は、そのとき何をなぜ集めていたかの記録として残してある。
 
 	// 差分再比較の可否。登録トグル専用(allowIncremental=kTrue)で、かつ前回比較と同じドキュメント対を
 	// 対象にしていて前回ペアリングが残っている場合のみ差分にする。それ以外(Start・Ignore Page Number
@@ -498,7 +398,7 @@ ErrorCode KESCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMStri
 	{
 		PMString busyMsg("Comparing changes...");
 		busyMsg.SetTranslatable(kFalse);
-		KESCMSetStatus(busyMsg, kTrue /*forceRedrawNow*/);
+		KESCMNotifyStatus(busyMsg, kTrue /*forceRedrawNow*/);
 	}
 
 	// ★これから実際にラスタ化するページ(tPages/sPages の添字)を先に確定する。進捗バーの総数に使うほか、
@@ -535,7 +435,8 @@ ErrorCode KESCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMStri
 		KESCMDrawEventHandler::sDB = targetDB;
 		// 対象文書を丸ごと入れ替えるので、変更ページ巡回(Next/Prev)の基準点も捨てる。旧文書のページ UID を
 		// 持ち越すと、別文書での UID 偶然一致で誤った位置から巡回が始まるため(差分再比較の側は同一文書なので触らない)。
-		KESCMResetNav();
+		// ★2026-08-13(Task 10): 基準点は UI 側が持つ状態なので、ここでは捨てられない。末尾の通知に
+		//   navReset として乗せ、UI に捨てさせる。条件はこの else に居ること＝`!doIncremental` そのもの。
 		toRaster.reserve(n);
 		for (size_t i = 0; i < n; ++i)
 			toRaster.push_back(i);
@@ -631,9 +532,9 @@ ErrorCode KESCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMStri
 	// すべて通る唯一の再比較路なので、これらの操作後は描画側が最新の overflow を使う(描画のたびの
 	// 全文書走査は EnsureOverflowCache 側で回避)。
 	KESCMDrawEventHandler::RebuildOverflowCache();
-	// ビューポート同期が持つ除外対応表キャッシュも同じ理由でここで捨てる(登録 Add/解除でペアが動く。
-	// 2026-07-25 追補。呼び忘れても 250ms の TTL で追従するが、明示しておけば次の1通知から正しい)。
-	KESCMInvalidateSyncCaches();
+	// ビューポート同期が持つ除外対応表キャッシュも同じ理由で捨てる(登録 Add/解除でペアが動く。
+	// 2026-07-25 追補)。★2026-08-13(Task 10): キャッシュは UI 側(KESCMViewSync)の持ち物なので、
+	// 末尾の kKESCMMarksRebuiltMessage を受けた UI が捨てる。
 
 	// ★「KCM: Check」の✓: 再比較で「マーク(枠/「/」)が無くなったページ」のチェックを忘れる
 	//   (ユーザー指定 2026-07-11)。この後のサムネイル更新で、マークが消えたページは prevMarked 経由で
@@ -648,22 +549,13 @@ ErrorCode KESCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMStri
 	if (sourceDB != targetDB)
 		KESCMInvalidateDB(sourceDB);	// Source 側の常時枠を即反映
 
-	// スクロールバー地図 strip のマークも最新化(Start/旧 Ctrl+ミドル再比較/登録トグルの全経路がここを通る)。
-	KESCMScrollMapInvalidateAll();
+	// スクロールバー地図 strip のマークも最新化(Start/旧 Ctrl+ミドル再比較/登録トグルの全経路がここを通る)
+	// ---- ★2026-08-13(Task 10): strip も UI。末尾の通知を受けた UI が注入と描き直しをする。
 
-	// ★サムネイル実験(2026-07-06): 既表示サムネイルの再生成を試みる(KESCMThumbnailRefresh)。
-	// 従来 2026-07-05 に「文書の変更でしか無効化されない内部キャッシュがあり、InvalidatePageWidget/
-	// InvalidateSpreadWidget・UpdatePagesPanel(bForcePurge)・ForceRedraw は全て不発」と確認済みだが、
-	// 未検証だった IPendingUpdateController::Update()(保留更新の消化)と IImageCacheMgr::Purge(db) を
-	// 合わせて叩いてみる(微かな望み)。効果が無ければこの1行と KESCMThumbnailRefresh.* を外すだけで戻せる。
-	// (サムネイル自体への枠描画は sThumbExperiment 経由=描画エンジン側で ON。)詳細: memory
-	// kescm-pages-panel-thumbnails。
-	// Target/Source の2回とも Purge だけ行い、Pages パネルの ForceRedraw は最後の1回に畳む
-	// (2026-07-25 監査: 同期 ForceRedraw の多重実行を削減)。
-	KESCMTryRefreshPagesPanelThumbnails(targetDB, &prevTargetMarked, kFalse /*redrawNow*/);
-	if (sourceDB != targetDB)
-		KESCMTryRefreshPagesPanelThumbnails(sourceDB, &prevSourceMarked, kFalse /*redrawNow*/);
-	KESCMForceRedrawPagesPanelNow();
+	// ★Pages パネルのサムネイルの作り直しも UI の仕事＝末尾の通知に含めた(2026-08-13・Task 10)。
+	//   何をどう叩けば既表示のサムネイルが作り直されるか(IImageCacheMgr::Purge をページ UID 単位で
+	//   → Pages パネルを ForceRedraw)という 2026-07-06 の切り分けの結果は KESCMThumbnailRefresh.* に
+	//   そのまま残っている。ここが知っている必要はもう無い。
 
 	PMString report;
 	report.SetTranslatable(kFalse);
@@ -693,11 +585,18 @@ ErrorCode KESCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMStri
 	}
 	outReport = report;
 
-	// Prev/Next 間の現在位置表示(k/N・-)と Prev/Next ボタンの有効/無効を、確定した最新の変更ページ集合で
-	// 作り直す。Start・差分再比較・登録(Add/Remove)・Check がすべてこの関数を通るので、Next/Prev を
-	// 押さなくても集合の変化に即時追従する(ユーザー要望 2026-07-15。全再比較路では上で KESCMResetNav 済み
-	// =未巡回扱いで "1/N")。
-	KESCMRefreshNavPosition();
+	// ★★ここまでで model 側の仕事は終わり。**画面の作り直しは通知1本にまとめて UI に任せる**
+	//   (2026-08-13・Task 10)＝ビュー同期キャッシュの破棄・strip の注入と描き直し・Pages パネルの
+	//   サムネイル・パネルの表示・Prev/Next の位置。順序は受け手(KESCMModelChangeObserver)が持つ。
+	//
+	// ⚠**navReset は `!doIncremental`**。Prev/Next 間の現在位置は「確定した最新の変更ページ集合」で
+	//   作り直され(Start・差分再比較・登録 Add/Remove・Check がすべてここを通るので、押さなくても
+	//   集合の変化に即時追従する＝ユーザー要望 2026-07-15)、**全再比較のときだけ基準点も捨てて**
+	//   未巡回扱いの "1/N" に戻す。差分再比較で捨てると、ページを1つ登録するたびに巡回が先頭へ
+	//   戻ってしまう。
+	// ⚠ キャンセルされた場合も投げる ---- 途中まで作られたマークと、消えたマークの両方が画面に
+	//   反映されなければならない(この関数は cancelled でも同じ後始末をしていた)。
+	KESCMNotifyDocs(kKESCMMarksRebuiltMessage, targetDB, sourceDB, !doIncremental);
 	// ★キャンセルは kFailure で返す。Start 経路(KESCMToggleStartStop)はこの戻り値を見て arm するかどうかを
 	//   決めるので、ここを常に kSuccess にすると「キャンセルしたのに arm され、メニューが Stop のまま」
 	//   になる(2026-07-27 実機で発生)。
@@ -782,28 +681,25 @@ void KESCMDoClearMarks(IDataBase* db)
 	if (srcDB != markedDB && srcDB != db)
 		KESCMInvalidateDB(srcDB);			// Source 側の常時枠も即座に消す
 
-	// ★Pages パネルのサムネイルからも枠/斜線を消す。KESCMInvalidateDB(=InvalidateViews)はレイアウト
-	// ビューだけを無効化し、サムネイルの共有画像キャッシュには届かない。Start 側(比較実行後)が枠を
-	// 付けるのと対称に、Stop でも Purge+ForceRedraw でクリーンなサムネイルへ作り直させる。DropAll 済みで
-	// マーク対象が無い状態なので、再生成される isThumb 描画は早期 return し枠は描かれない。
-	// 2文書とも Purge だけ行い、ForceRedraw は最後の1回に畳む(2026-07-25 監査: 多重実行の削減)。
-	KESCMTryRefreshPagesPanelThumbnails(markedDB, nil, kFalse /*redrawNow*/);
-	if (srcDB != nil && srcDB != markedDB)
-		KESCMTryRefreshPagesPanelThumbnails(srcDB, nil, kFalse /*redrawNow*/);
-	KESCMForceRedrawPagesPanelNow();
-
-	// 変更ページ巡回(Next/Prev)の基準点も忘れる(次の比較へ持ち越さない)。
-	KESCMResetNav();
-	// Stop で sDB は nil(DropAll 済み)なので、位置表示は空・Prev/Next ボタンは無効へ戻る。
-	KESCMRefreshNavPosition();
+	// ★Stop の後始末のうち**画面側は通知1本**にまとめた(2026-08-13・Task 10)＝strip の撤去・
+	//   Pages パネルのサムネイルの作り直し・パネルの表示・Prev/Next の基準点と位置。
+	//   (サムネイルの共有画像キャッシュは KESCMInvalidateDB=InvalidateViews では届かないので、
+	//    Start 側と対称に Purge+ForceRedraw が要る ---- その手順は UI 側が持っている。DropAll 済みで
+	//    マーク対象が無いため、作り直される isThumb 描画は早期 return し枠は描かれない。)
+	//
+	// ⚠★**掃除する2文書は通知に載せなければならない。** ここへ来るまでに DropAll 済みで
+	//   sDB/sSrcDB は nil ＝ UI が KESCMArmedTargetDB() を聞いても答えは返らず、どの文書の
+	//   サムネイルを作り直せばよいか分からない。Rebuilt と違って**聞けない**のがこちら。
+	// ★navReset=kTrue ＝ Stop では巡回の基準点を次の比較へ持ち越さない。
+	KESCMNotifyDocs(kKESCMMarksClearedMessage, markedDB, srcDB, kTrue /*navReset*/);
 
 	// ★Story Edits の一覧も同じく忘れる。次の比較まで残しておくと、もう比較していない2文書の
 	//   差分を指したまま**クリックすれば飛べてしまう**行が並ぶことになる(ジャンプは段階4)。
-	// ★見出しは括弧つきの件数を落として "Story Edits" に戻る ---- KESCMUpdateStorySectionLabel が
-	//   arm 状態を見て決めるので、ここは順番に呼ぶだけでよい。
+	// ★見出しは括弧つきの件数を落として "Story Edits" に戻る ---- 見出しの文言は
+	//   KESCMUpdateStorySectionLabel が arm 状態を見て決めるので、model は「一覧が変わった」と
+	//   言うだけでよい(2026-08-13・Task 10 で通知化)。
 	KESCMStoryList::Clear();
-	KESCMStoryTreeRebuild();
-	KESCMUpdateStorySectionLabel();
+	KESCMNotify(kKESCMStoryEditsRebuiltMessage);
 }
 
 void KESCMDoSetPrintMarks(bool16 printFlag, bool16 opacity25Flag, IDataBase* db)

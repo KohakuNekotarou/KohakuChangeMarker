@@ -38,6 +38,7 @@
 #include "AGMImageAccessor.h"
 #include "GraphicsExternal.h"
 #include "IXPUtils.h"
+#include "IPDFLibraryUtilsPublic.h"	// ★IsPDFExportPort(PDF 書き出しポートの判別。KESCMIsPDFExportPort)
 
 
 // 旧ページ番号バッジ(Show Original Page Numbers)用:
@@ -57,8 +58,11 @@
 #include "KESCMPageMap.h"            // KESCMPageMapIsRegistered/KESCMPageMapHasAnyRegistered(追加/削除ページ縁枠)
 #include "KESCMPageCheck.h"          // KESCMPageCheckIsChecked/KESCMPageCheckHasAny(「KCM: Check」の✓)
 #include "KESCMPageNumberMarker.h"   // KESCMGetIgnorePageNumberMarker/KESCMAppendPageNumberMarkerRects(ノンブル除外)
-#include "KESCMScrollMap.h"          // KESCMScrollMapNoticeDrawEvent(手動 Hide/Show Spread の検出)
-#include "KESCMTrackerHud.h"         // 押下中 HUD(枠と同じ描画パスで右上に Target/Source を出す)
+#include "KESCMThreadSafety.h"       // ★KESCMIsSameDoc(BG のクローン DB)/KESCMIsMainThread/マーク集合のロック
+// (★KESCMScrollMap.h の include は 2026-08-13 Task 7 で外した＝下の理由と同じ)
+// (★押下中 HUD は 2026-08-13 に **UI 側の描画サービス** KESCMUIDrawEvent.cpp へ移した
+//  ＝model/UI 分割 第1段 Task 6。押下中かどうかはツール(UI)の状態で、model からは見えないため。
+//  ⇒ このファイルは KESCMTrackerHud.h を include しない。)
 #include "KESCMDrawEventHandler.h"
 
 CREATE_PMINTERFACE(KESCMDrawEventHandler, kKESCMDrawEventHandlerImpl)
@@ -81,7 +85,9 @@ std::set<UID> KESCMDrawEventHandler::sOverflowT;					// overflow("/")ページ�
 std::set<UID> KESCMDrawEventHandler::sOverflowS;					// 同(Source側)
 IDataBase* KESCMDrawEventHandler::sOverflowCacheDB = nil;			// 上記キャッシュを作った時の sDB
 IDataBase* KESCMDrawEventHandler::sOverflowCacheSrcDB = nil;			// 同 sSrcDB
-bool16 KESCMDrawEventHandler::sRasterizing = kFalse;	// 自前ラスタ化中だけ kTrue(自己参照防止)
+// ★スレッドローカル(第2段 Task 12B)。初期値 kFalse は「どのスレッドから最初に読んでも kFalse」の意味。
+//   宣言側のコメント(KESCMDrawEventHandler.h)に、素の static だと何が壊れるかを書いてある。
+IDThreading::ThreadLocal<bool16> KESCMDrawEventHandler::tl_Rasterizing(kFalse);	// 自前ラスタ化中だけ kTrue(自己参照防止)
 bool16 KESCMDrawEventHandler::sThumbExperiment = kTrue;	// ★サムネイル実験(2026-07-06)。kFalseで従来動作へ即復帰
 std::map<UID, KESCMOrigImage*> KESCMDrawEventHandler::sOrigImages;
 IDataBase* KESCMDrawEventHandler::sOrigDB = nil;
@@ -139,8 +145,21 @@ void KESCMDrawEventHandler::EnsureOverflowCache()
 	// 控えた (sDB,sSrcDB) が現在と食い違う時だけ作り直す(文書切替・別文書へのスプレッド再比較の保険)。
 	// 登録Add/Start/Ignore切替は KESCMDoMarkChangesDoc が RebuildOverflowCache を直接呼ぶので、ここは
 	// 「同じ文書対のまま」の通常描画では何もしない=毎描画の全文書走査を避ける。
-	if (sOverflowCacheDB != sDB || sOverflowCacheSrcDB != sSrcDB)
-		RebuildOverflowCache();
+	// ★比較しているのは**static どうし**(sOverflowCacheDB と sDB)なので、判定結果はスレッドによらず同じ。
+	if (sOverflowCacheDB == sDB && sOverflowCacheSrcDB == sSrcDB)
+		return;
+
+	// ★★2026-08-15(第2段 Task 12B)= **バックグラウンドでは作り直さない。**
+	//   RebuildOverflowCache() は sOverflowT/sOverflowS/sOverflowCacheDB/sOverflowCacheSrcDB という
+	//   **共有 static を書き換える**うえ、中で両文書の全ページを走査する。BG(PDF の非同期書き出し)から
+	//   これを走らせると、メインスレッドが同じ集合を読んでいる最中に作り替えることになる
+	//   (ガイド vol1-07 L104 "They do share globals and statics")。
+	//   ⚠ここへ BG で来るのは「main がまだ一度も作っていない/文書対が変わった直後」だけで、
+	//     そのときは overflow の "/" が出ないだけ(マーク本体は sEntries から出る)。**描かないほうが安全。**
+	if (!KESCMIsMainThread())
+		return;
+
+	RebuildOverflowCache();
 }
 
 void KESCMDrawEventHandler::BuildRing(uint8* buf, int32 rb, int32 bpp, int32 wt, int32 ht,
@@ -566,10 +585,16 @@ ErrorCode KESCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef
 					e->rec.colorTab.numColors = 0;  e->rec.colorTab.theColors = nil;
 
 					// 既存エントリがあれば置換。
+					// ★2026-08-15(第2段 Task 12B): **置換は古いエントリを delete する**ので、
+					//   描画中の BG が同じポインタを読んでいないようロックを取る(DropAll と同じ理由)。
+					//   ⚠ロックは「集合をいじる区間」だけ。上のラスタ化・リング生成は外に置いてある。
 					UID key = targetRef.GetUID();
-					std::map<UID, KESCMOverlayEntry*>::iterator old = sEntries.find(key);
-					if (old != sEntries.end()) { delete old->second; sEntries.erase(old); }
-					sEntries[key] = e;
+					{
+						KESCMMarkStateLock lock(KESCMMarkStateMutex());
+						std::map<UID, KESCMOverlayEntry*>::iterator old = sEntries.find(key);
+						if (old != sEntries.end()) { delete old->second; sEntries.erase(old); }
+						sEntries[key] = e;
+					}
 
 					// Source 側描画(Show Marks on Source)用の対応表もここで記録する。エントリ登録と同じ場所に
 					// 置くことで、旧 Ctrl+ミドルのスプレッド再比較(MakeEntry 直呼び)でも対応が自動で維持される。
@@ -705,38 +730,21 @@ void KESCMDrawEventHandler::Register(IDrwEvtDispatcher* d)
 	// スプレッド単位で配られる描画イベント。ポートは spread 座標。枠/変更数・旧版べた載せをこちらで描く。
 	d->RegisterHandler(ClassID(kEndSpreadMessage), this, kDEHLowestPriority);
 
-	// ★★ウィンドウ単位(全スプレッド描画後に1回)。ポートは pasteboard 座標。
-	//   2026-07-04 のトースト撤去で一度外したが、2026-08-07 に押下中 HUD(KESCMTrackerHud)のために戻した。
-	//   ★この2系統の関係が「ビューの隅に描けるか」の答え:
-	//     kEndSpreadMessage           … 帯(スプレッド/ペーストボード)に clip されるが**前面**
-	//     kAfterLastSpreadDrawMessage … clip されないが**背面**(= 何も被さらないカンバス部分にだけ見える)
-	//   ∴ 併用すると各画素はどちらか一方だけが担当し、**二重描きなしでビュー全域**を覆える。
-	//   ⚠これを知らずに memory/layout-screen-overlay.md は「Draw Event はペーストボードに clip される
-	//     ので窓の隅に描けない」と結論していた(2026-08-07 訂正)。制約は clip ではなく Z 順だった。
-	d->RegisterHandler(ClassID(kAfterLastSpreadDrawMessage), this, kDEHLowestPriority);
+	// ★★2026-08-13(Task 6): **kAfterLastSpreadDrawMessage の登録をやめた。**
+	//   あれは 2026-08-07 に**押下中 HUD のためだけ**に戻したもので、HUD が UI 側の描画サービス
+	//   (KESCMUIDrawEvent.cpp)へ移った今、このハンドラには用が無い(受けても描くものが無い)。
+	//   ★2系統を併用する理由(clip と Z 順の関係)は、使う側である KESCMUIDrawEvent.cpp の
+	//     HandleDrawEvent のコメントへ移した。
 }
 
 void KESCMDrawEventHandler::UnRegister(IDrwEvtDispatcher* d)
 {
 	d->UnRegisterHandler(ClassID(kEndSpreadMessage), this);
-	d->UnRegisterHandler(ClassID(kAfterLastSpreadDrawMessage), this);
 }
 
 
-// ビューから IPanorama を取る。ページアイテム系の子ウィジェットは panorama を持たないため、
-// CTracker::QueryPanorama と同じく自身→親(LayoutWidget)の順で辿る。呼び出し側で Release すること。
-IPanorama* KESCMQueryPanorama(IControlView* view)
-{
-	if (view == nil)
-		return nil;
-	IPanorama* pano = (IPanorama*)view->QueryInterface(IID_IPANORAMA);
-	if (pano != nil)
-		return pano;
-	InterfacePtr<IWidgetParent> parent(view, IID_IWIDGETPARENT);
-	if (parent == nil)
-		return nil;
-	return (IPanorama*)parent->QueryParentFor(IID_IPANORAMA);
-}
+// (KESCMQueryPanorama は 2026-08-13 に KESCMViewLookup.cpp へ移した＝model/UI 分割 第1段 Task 12。
+//  IPanorama を返す＝窓が無ければ答えの無い問いなので、描画エンジンの持ち場ではない。)
 
 //========================================================================================
 // 印刷/PDF 用のリング描画。画面は image() blit でよいが(画素 alpha を honor する)、印刷のフラットナ
@@ -746,6 +754,37 @@ IPanorama* KESCMQueryPanorama(IControlView* view)
 // マスクで2回 fill する。呼び出し側で translate/scale 済み(user 空間 = 画像px)であること。
 //   e->buf は ARGB(先頭=alpha, 続いて R,G,B)。
 //========================================================================================
+//========================================================================================
+// ★★★このポートは「PDF 書き出し」か(2026-08-15・第2段 Task 12B で追加)。
+//
+//   ★公式の書き方をそのまま採った(2026-08-15 に SDK を実測。**製品コード2本が同じ形**):
+//     open/components/buttonui/misc/FormFieldLabelDrawer.cpp:139-140
+//     open/components/dynamicdocumentsui/motion/AnimationAdormentDrawer.cpp:112-113
+//         Utils<IPDFLibraryUtilsPublic const> utils;
+//         if (utils.Exists() && utils->IsPDFExportPort(gd->GetGraphicsPort())) ...
+//     ⚠ どちらも「PDF 書き出しなら**描かずに帰る**」ための判定で、KESCM とは目的が逆(こちらは
+//       出したい)。**判定の書き方だけを借りている。**
+//
+//   ★なぜ要るのか = **印刷と PDF 書き出しは同じ kPrinting で来るのに、描ける道具が違う。**
+//     下の KESCMDrawRingForPrint はアルファサーバ(CreateImagePaintServer + SetAlphaServer)で
+//     リング形状を作るが、**PDF 書き出しポートではそのマスクが落ち、矩形 fill だけが残る**
+//     ＝変更ページが**全面ベタ塗り**になってページの中身が完全に隠れる(2026-08-15 実測。
+//       PDF の中身も Image=0/SMask=2・増分 220B で、マスク画像が入っていないことを確認)。
+//     ★Adobe 自身も同じ性質に言及している —— FormFieldLabelDrawer.cpp:136-137
+//       "We don't need to do any of this when exporting to PDF. And the icon stuff breaks
+//        (while trying to set up the context for doing the bitmap...)"
+//     ⚠**本物の印刷では正常**(Microsoft Print to PDF で実測 = Image=10/SMask=5、枠もリングも正しい絵)。
+//       ∴ **印刷経路は1行も触らない。** 分けるのは PDF 書き出しだけ。
+//========================================================================================
+static bool16 KESCMIsPDFExportPort(IGraphicsPort* gPort)
+{
+	if (gPort == nil)
+		return kFalse;
+	Utils<IPDFLibraryUtilsPublic const> utils;	// ★const 版で引くのも公式2本と同じ
+	return (utils.Exists() && utils->IsPDFExportPort(gPort)) ? kTrue : kFalse;
+}
+
+
 static void KESCMDrawRingForPrint(IGraphicsPort* gPort, KESCMOverlayEntry* e)
 {
 	if (gPort == nil || e == nil || e->buf == nil || e->w <= 0 || e->h <= 0 || e->bpp < 4)
@@ -842,6 +881,88 @@ enum { kKESCMDrawModeScreen = 0, kKESCMDrawModePrint = 1 };
 //   ★Target と Source を別ズームで表示中は e->lastRadius が行き来して BuildRing が走り直すが、
 //   リング画像は 36dpi 化済みでバッファが小さく実害はない。
 //========================================================================================
+//========================================================================================
+// ★★★PDF 書き出し専用のリング描画(2026-08-15・第2段 Task 12B)。
+//
+//   ■ 前提: **PDF 書き出しポートは「透明」を一切受け付けない。** 2026-08-15 に4つ試し、
+//     出来上がった PDF を毎回バイナリで検分して確かめた:
+//       ①アルファサーバ(CreateImagePaintServer + SetAlphaServer)
+//            → マスクごと落ち、rectpath だけが残って **変更ページが全面ベタ塗り**
+//              (PDF は Image=0・増分わずか 220B)。⚠**本物の印刷では正常に効く**のがややこしい。
+//       ②setopacity + image()            → PDF の ExtGState は **`/ca 1.0` `/CA 1.0`**(不透明)
+//       ③setopacity + 透明グループ + image() → PDF に **`/Group` が1つも出ない**(グループごと無視)
+//       ④画素 alpha に不透明度を焼いて image()
+//            → ★**決定打**: 出来た PDF の画像オブジェクトは `/Width 213 /Height 284 /BitsPerComponent 8`
+//              で **`/SMask` が付いていない**。⇒ **このポートは画像のアルファチャンネルを捨てる。**
+//              (①②③が効かない理由も全部これ。「透明が消える」という一つの事実の別の顔)
+//     一方 ★**ベクターの塗りと色は正しく出る**(①の全面ベタが「純青」で出ていたのが逆説的な証拠)。
+//
+//   ■ ⇒ 採った道: **リングの形をベクターで塗り、不透明度は色に溶かす。**
+//     ・形 = リング画像の「alpha≠0 の画素」を1行ずつランレングスで矩形にまとめて塗る
+//       (画像そのままの形なので、画面・印刷と同じリングになる)
+//     ・濃さ = 白と混ぜた淡色 c' = 255 - (255 - c) * opacity で**不透明**に塗る
+//       ⚠白背景を前提にした近似。下地が白でない場所ではマークが浮く。それでも
+//         「全面ベタで中身が読めない」より遥かによく、印刷(Print to PDF)の見た目とも一致する。
+//     ・赤/青の2パスに分けるのは KESCMDrawRingForPrint と同じ(背景が赤っぽい所は青リング)。
+//========================================================================================
+static void KESCMDrawRingVectorForPDF(IGraphicsPort* gPort, KESCMOverlayEntry* e, const PMReal& opacity)
+{
+	if (gPort == nil || e == nil || e->buf == nil || e->w <= 0 || e->h <= 0 || e->bpp < 4)
+		return;
+	const int32 w = e->w, h = e->h, rb = e->rowBytes, bpp = e->bpp;
+
+	struct PassDef { uint8 r, g, b; bool16 wantBlue; };
+	const PassDef passes[2] = { { 255, 0, 0, kFalse }, { 0, 0, 255, kTrue } };	// 赤 / 青
+
+	for (int p = 0; p < 2; ++p)
+	{
+		// 白と混ぜた「見た目の色」。opacity=0.25 なら赤は (255,191,191)。
+		const PMReal cr = (PMReal(255.0) - (PMReal(255.0) - PMReal(passes[p].r)) * opacity) / PMReal(255.0);
+		const PMReal cg = (PMReal(255.0) - (PMReal(255.0) - PMReal(passes[p].g)) * opacity) / PMReal(255.0);
+		const PMReal cb = (PMReal(255.0) - (PMReal(255.0) - PMReal(passes[p].b)) * opacity) / PMReal(255.0);
+
+		AutoGSave ag(gPort);
+		gPort->setopacity(PMReal(1.0), kFalse);	// このポートでは効かないが、意図を明示して不透明に固定
+		gPort->setrgbcolor(cr, cg, cb);
+		gPort->newpath();
+		bool16 anyRun = kFalse;
+		for (int32 y = 0; y < h; ++y)
+		{
+			const uint8* row = e->buf + (size_t)y * rb;
+			int32 x = 0;
+			while (x < w)
+			{
+				// このパスに属する画素 = alpha≠0 かつ 色の判定(青は B>R)が一致するもの
+				while (x < w)
+				{
+					const uint8* px = row + (size_t)x * bpp;	// [alpha, R, G, B]
+					const bool16 isBlue = (px[3] > px[1]) ? kTrue : kFalse;
+					if (px[0] != 0 && isBlue == passes[p].wantBlue)
+						break;
+					++x;
+				}
+				if (x >= w)
+					break;
+				const int32 x0 = x;
+				while (x < w)
+				{
+					const uint8* px = row + (size_t)x * bpp;
+					const bool16 isBlue = (px[3] > px[1]) ? kTrue : kFalse;
+					if (px[0] == 0 || isBlue != passes[p].wantBlue)
+						break;
+					++x;
+				}
+				// user 空間 = 画像px(呼び出し側で translate/scale 済み)。1px 高の横帯を1本のサブパスに。
+				gPort->rectpath(PMReal(x0), PMReal(y), PMReal(x - x0), PMReal(1.0));
+				anyRun = kTrue;
+			}
+		}
+		if (anyRun)
+			gPort->fill();
+	}
+}
+
+
 static void KESCMDrawEntryOnPage(IGraphicsPort* gPort, KESCMOverlayEntry* e, IDataBase* db, UID pageUID,
 	const PMReal& sxr, int32 drawMode, const PMReal& screenOpacity)
 {
@@ -905,17 +1026,38 @@ static void KESCMDrawEntryOnPage(IGraphicsPort* gPort, KESCMOverlayEntry* e, IDa
 		                pr.Width()  - kKESCMClipInset * 2.0, pr.Height() - kKESCMClipInset * 2.0);
 		gPort->translate(pr.Left(), pr.Top());				// ページ左上へ
 		gPort->scale(pr.Width() / iw, pr.Height() / ih);	// 画像px → ページ矩形にフィット
-		// ★印刷/PDF 時は image() blit だと枠が不透明になる(フラットナが画像の部分 alpha を honor しない)。
+		// ★印刷時は image() blit だと枠が不透明になる(フラットナが画像の部分 alpha を honor しない)。
 		// アルファサーバ＋純色ベクター fill＋setopacity で半透明に描く(透明合成エンジンが honor)。
 		// 画面は image() blit(画素 alpha を honor=実測確認済み)+選択不透明度(25%/75%)。
-		if (drawMode == kKESCMDrawModePrint)
+		//
+		// ★★★2026-08-15(第2段 Task 12B)= **PDF 書き出しは image() 側へ回す。**
+		//   印刷と PDF 書き出しはどちらも kPrinting で来るが、**アルファサーバは PDF 書き出しポートでは
+		//   効かない**(マスクが落ちて矩形が全面ベタになる)。判定の根拠と実測は KESCMIsPDFExportPort の
+		//   コメントに全部書いてある。⚠**本物の印刷は実測で正常なので従来のまま**にする。
+		const bool16 pdfExport = (drawMode == kKESCMDrawModePrint) && KESCMIsPDFExportPort(gPort);
+		if (drawMode == kKESCMDrawModePrint && !pdfExport)
 			KESCMDrawRingForPrint(gPort, e);
 		else
 		{
 			// サムネイル(sxr<=0)は不透明100%で描く(極小表示で 25%/75% だと沈んで見えないため)。
-			const PMReal blitOpacity = (sxr <= 0) ? PMReal(1.0) : screenOpacity;
-			gPort->setopacity(blitOpacity, kFalse);
-			gPort->image(&e->rec, PMMatrix(), 0);			// 自前レコード(buf を指す)を blit
+			// ★PDF 書き出し(=printing かつ PDF ポート。sxr は呼び出し側で 1.0 固定)は、印刷と同じ
+			//   SelectedMarkOpacity を使う——screenOpacity は印刷経路では意味を持たない値が渡ってくるので、
+			//   ここで印刷側の単一の供給元に合わせる(画面・印刷・PDF の3つで見た目が一致する)。
+			const PMReal blitOpacity = (sxr <= 0) ? PMReal(1.0)
+				: ((drawMode == kKESCMDrawModePrint) ? KESCMDrawEventHandler::SelectedMarkOpacity()
+				                                     : screenOpacity);
+			if (pdfExport)
+			{
+				// ★★★PDF 書き出しは**ベクターで塗り、不透明度は色に溶かす**。
+				//   このポートが透明を一切通さない(画像のアルファすら捨てる)ことを4通り試して
+				//   確かめたうえでの形。実測値と理由は KESCMDrawRingVectorForPDF の冒頭に全部ある。
+				KESCMDrawRingVectorForPDF(gPort, e, blitOpacity);
+			}
+			else
+			{
+				gPort->setopacity(blitOpacity, kFalse);
+				gPort->image(&e->rec, PMMatrix(), 0);		// 自前レコード(buf を指す)を blit
+			}
 		}
 	}
 }
@@ -1180,30 +1322,9 @@ static void KESCMDrawPageCheck(IGraphicsPort* gPort, IDataBase* db, UID pageUID,
 }
 
 
-//========================================================================================
-// pasteboard 座標 → このスプレッドの spread 座標 への変換オフセット(= pasteboard - spread)。
-//   pasteboard 座標はドキュメント全体で1つ。スプレッドは pasteboard 上で(主に縦に)積まれ、各々が
-//   オフセットを持つ(spread[0] だけ偶然 0)。同一の inner 原点(0,0)を InnerToSpreadMatrix と
-//   InnerToPasteboardMatrix の両方で写し、その差を取ればこのスプレッドのオフセットになる。
-//   pasteboard 座標の点からこれを引けば、そのスプレッドの spread 座標における点が得られる。
-//   ★2026-07-04 のトースト撤去で消えたが、2026-08-07 に押下中 HUD のために戻した(元コード
-//     = git 068d8fb^ の KESCMDrawEventHandler.cpp:534-548)。
-//========================================================================================
-static PMPoint KESCMSpreadOffsetFromPasteboard(IDataBase* db, ISpread* spread)
-{
-	PMPoint off(0.0, 0.0);
-	if (db == nil || spread == nil || spread->GetNumPages() < 1)
-		return off;
-	InterfacePtr<IGeometry> pg(db, spread->GetNthPageUID(0), UseDefaultIID());
-	if (pg == nil)
-		return off;
-	PMMatrix mS = ::InnerToSpreadMatrix(pg);
-	PMMatrix mP = ::InnerToPasteboardMatrix(pg);
-	PMPoint ps(0.0, 0.0), pp(0.0, 0.0);
-	mS.Transform(&ps);
-	mP.Transform(&pp);
-	return PMPoint(pp.X() - ps.X(), pp.Y() - ps.Y());
-}
+// (★pasteboard→spread のオフセットを求める KESCMSpreadOffsetFromPasteboard は、唯一の呼び手だった
+//  押下中 HUD と一緒に 2026-08-13 に KESCMUIDrawEvent.cpp へ移した(model/UI 分割 第1段 Task 6)。
+//  中身は1行も変えていない。)
 
 bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 {
@@ -1214,7 +1335,17 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	// 描かない(自己参照=マークがスナップショットに写り込む feedback を防ぐ)。以前は kPreviewMode ビットで
 	// 弾いていたが、それは PDF 書き出しの kPDFExportMode と同一ビット(4096)で export を巻き込んでいたため、
 	// 明示的な再入フラグ sRasterizing に置き換えた。
-	if (sRasterizing)
+	// ★2026-08-15 裏取り＝この「同一ビット」は**偶然の衝突ではなく Adobe の意図的な設計**なので、
+	//   将来 値がずれることは期待できない＝sRasterizing への置き換えは恒久的に正しい(kPreviewMode に戻さないこと)。
+	//   kPreviewMode は draw flags(IShape.h:89)、kPDFExportMode は iterate flags(IShape.h:159)で**別の enum**
+	//   なのにどちらも 4096。理由は IShape.h:144 が明言している——
+	//     "Due to lack up type checking for IShape enums, this must match kPrinting above
+	//      since they are unfortunately used interchangeably in the codebase."
+	//   (同じ理由で kIteratePrinting=512 も kPrinting=512 に揃えてある)
+	//   ⇒ IShape の flags は enum をまたいで同じ値が渡される前提なので、別 enum の定数とも衝突を検討すること。
+	// ★2026-08-15: スレッドローカルになった(第2段 Task 12B)。**このスレッドが**ラスタ化中のときだけ弾く。
+	//   以前は素の static だったので、メインスレッドの比較ラスタ化が BG の PDF 書き出しまで巻き添えにしていた。
+	if (KESCMDrawEventHandler::tl_Rasterizing.Get())
 		return kFalse;
 	// 印刷文脈か(kPrinting=512)。印刷時はマークの ON/OFF を sPrintMarks で決める。通常の画面描画では立たない。
 	// ★2026-08-12 訂正: 旧コメント「PDF 書き出し(File>Export)はこのスプレッド描画イベントを発火しないため
@@ -1235,11 +1366,10 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	// 自己参照(自前スナップショット)は上の sRasterizing で防ぐので、ここで kPreviewMode は見ない。
 	const bool16 printing = (ded->flags & IShape::kPrinting) != 0;
 
-	// スクロールバー地図: ページパネルからの手動 Hide/Show Spread を検出する軽量チェック(250ms
-	// スロットル付きの指紋比較)。手動の隠し/再表示は KESCM のフックを通らないが必ず再描画は起こす
-	// ので、スプレッド描画イベントに便乗して拾う(Undo/Redo による変化も同経路)。KESCMScrollMap.cpp。
-	if (!printing)
-		KESCMScrollMapNoticeDrawEvent();
+	// (★手動 Hide/Show Spread の検出(KESCMScrollMapNoticeDrawEvent)は 2026-08-13 に UI 側の描画サービス
+	//  KESCMUIDrawEvent.cpp へ移した＝model/UI 分割 第1段 Task 7。スクロールバー地図は文書窓へ strip を
+	//  注入する widget ＝ UI なので、その更新のきっかけを拾うのも UI 側の仕事。
+	//  ⇒ **このファイルから UI ヘッダーの include が1つも無くなった。**)
 
 	// ★サムネイル実験(2026-07-06): Pagesパネルのサムネイル生成(view無し・kPreviewMode・非印刷。診断ログ
 	// flags=0x1800=kPreviewMode|kDrawFrameEdge)を検出。sThumbExperiment ON の間は、サムネイルにも枠を
@@ -1315,13 +1445,10 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	// Start と無関係に描く「登録専用パス」があり、未 Start でも右クリック登録すると緑「/」が出ていたが、
 	// これを撤去した(登録自体も arm 済みのときだけ可能に変更)。よって登録「/」は下の Target/Source メイン
 	// ループ(db==sDB / db==sSrcDB。=Start 中のみ成立)だけが描く。ここでの Anywhere 判定・専用パスは不要。
-	// ★押下中 HUD(KESCMTrackerHud.cpp)。左ボタンを押している間、押した窓の左上に「その窓が比較の
-	//   何なのか」(Target/Source/…)を出す。
-	//   画面だけ(印刷/PDF には出さない)。サムネイル生成(view 無し)も対象外。判定の本体は
-	//   KESCMTrackerHudWantsDraw = 「押下中」かつ「押した窓のビュー」。
-	const bool16 wantHud = !printing && !isThumb && KESCMTrackerHudWantsDraw(ded->gd->GetView());
+	// (★押下中 HUD の判定と描画は 2026-08-13 に UI 側の描画サービス KESCMUIDrawEvent.cpp へ移した。
+	//  このハンドラは HUD のことを一切知らない＝押下状態(UI の状態)への依存が無くなった。)
 
-	if (!wantMarks && !wantOrig && !wantOldNums && !wantSrcMarks && !wantChecks && !wantOversetThumb && !wantHud)
+	if (!wantMarks && !wantOrig && !wantOldNums && !wantSrcMarks && !wantChecks && !wantOversetThumb)
 		return kFalse;
 
 	GraphicsData* gd = ded->gd;
@@ -1341,17 +1468,9 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 		// 実験ON: このまま続行してサムネイルにも枠を描く。
 	}
 
-	// ★★ウィンドウ単位イベント(全スプレッド描画後に1回・CTM=pasteboard 座標)。
-	//   このポートはスプレッド/ペーストボード帯の**背面**に来るので、何も被さらないカンバス部分にだけ
-	//   見える。帯の上に乗る分は下の per-spread(kEndSpreadMessage)側が描く ＝ 2系統で分担すると
-	//   二重描きなしでビュー全域を覆える(Register のコメント参照)。
-	//   ⚠changedBy はスプレッドではないので、この分岐は下の ISpread 取得より前に置くこと。
-	if (eventID == ClassID(kAfterLastSpreadDrawMessage))
-	{
-		if (wantHud)
-			KESCMTrackerHudDraw(gPort, gd->GetView(), PMPoint(0.0, 0.0));	// pasteboard 座標なのでオフセット無し
-		return kFalse;
-	}
+	// (★ウィンドウ単位イベント kAfterLastSpreadDrawMessage の分岐は 2026-08-13 に撤去した。
+	//  この登録は押下中 HUD のためだけのもので、HUD ごと KESCMUIDrawEvent.cpp へ移ったため
+	//  Register からも外してある＝このハンドラへは二度と配られない。)
 
 	// changedBy = 今描いているスプレッド。
 	InterfacePtr<ISpread> spread(ded->changedBy, UseDefaultIID());
@@ -1361,13 +1480,23 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	if (db == nil)
 		return kFalse;
 
-	// ★押下中 HUD の「帯の前面」ぶん。このポートは spread 座標で、帯(スプレッド/ペーストボード)に
-	//   clip される = HUD のうち帯に重なる部分だけがここで描かれ、残り(カンバス背景の上)は上の
-	//   kAfterLastSpreadDrawMessage が描く。**各画素はどちらか一方だけ**なので二重に濃くならない。
-	//   ⚠ここは db 確定の直後に置くこと: この先には「描くものが無い」経路の return が複数あり、
-	//     HUD だけが理由でここへ来た場合に末尾まで到達しない。
-	if (wantHud)
-		KESCMTrackerHudDraw(gPort, gd->GetView(), KESCMSpreadOffsetFromPasteboard(db, spread));
+	// ★★★2026-08-15（第2段 Task 11C）に、ここで実測した3つの答え。**次に読む人は測り直さなくてよい。**
+	//
+	//   MAIN  db=…23FB4A80  sDB=…23FB4A80  entries=2 firstUID=258 class=1295
+	//   *BG*  db=…295BE390  sDB=…23FB4A80  entries=2 firstUID=258 class=1295
+	//
+	//   ①**バックグラウンドスレッドにも描画イベントが配られる**（`kModelPlugIn` 化が効いている）
+	//   ②**渡される db はクローンの別ポインタ**＝`sDB` とは必ず食い違う（ガイド vol1-07 L93 のとおり）
+	//   ③★★★**UID はクローンをまたいで保たれる**——`sEntries` のキー(258)を BG の db で引くと
+	//      **同じ ClassID(1295) のページが返る**。
+	//
+	// ⇒ ★**同一性は「db ポインタ」ではなく「UID＋ファイル」で聞ける**。これは
+	//   [[uidref-reuse-after-close]]（閉じた文書のポインタはアドレス再利用で別文書と一致する）と
+	//   **同じ結論**＝1つ直すと2つ直る。⚠**ポインタ比較を `IDataBase::GetSysFile` へ移す作業は Task 12B。**
+
+	// (★押下中 HUD の「帯の前面」ぶんの描画も 2026-08-13 に KESCMUIDrawEvent.cpp へ移した。
+	//  ⚠あちらでは**この位置に置く必要がある**という制約は無い＝HUD だけを見るハンドラなので、
+	//    「描くものが無い」経路の return に巻き込まれる心配がそもそも無い。)
 
 	// ★保持マークのドキュメントが閉じられていたら破棄する(クローズ監視の代わり)。draw は開いている
 	//   ドキュメントについてのみ発火するので、ここで sDB/sOrigDB の生存を確認できる。
@@ -1380,6 +1509,17 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	//   ★sOversetDB も対象(2026-07-25 監査で追加): Find Overset を未 arm で単独使用中にその文書を閉じ、
 	//   responder が漏れた場合でも、stale な sOversetPages がアドレス再利用された新文書のサムネイルへ
 	//   誤マークされないようにする。
+	//   ★★★2026-08-15（第2段 Task 11C）＝**メインスレッド限定にした。実害を再現して直した箇所。**
+	//     この保険は「draw は開いている文書についてしか来ない」＝**文書リストに居なければ閉じた**、という
+	//     推論で書かれている。⚠**その推論はバックグラウンドスレッドでは成り立たない**——BG は
+	//     **クローンされた別の DB** を見る（ガイド vol1-07 L93）ので、`FindDocByDataBase(sDB)` は
+	//     **開いているのに nil を返す**。結果、PDF を非同期で書き出すたびに
+	//     `KESCMHandleDocsClosed()`（Stop 相当のフルクリーンアップ）が走り、**マークが全部消えていた**
+	//     （2026-08-15 に `Document.asynchronousExportFile()` で再現。`marks cleared` が出る）。
+	//   ⇒ **塞いだのは `KESCMHandleDocsClosed()` の入口**（呼び手はここを含めて3つあり、「BG では文書の
+	//     生存を判定できない」のは**関数の性質**だから＝[[one-question-one-place]]）。ここは素のまま。
+	//   ⚠**「BG では何もしない」で正しいのは、あれが後始末（状態を捨てる側）だから。**
+	//     描く側を BG で止めたら、それは第2段の目的そのものを止めることになる。
 	if (sDB != nil || sOrigDB != nil || sSrcDB != nil || sOversetDB != nil)
 	{
 		ISession* session = GetExecutionContextSession();	// 終了処理中は nil になり得る(2026-07-25 追補 統一)
@@ -1394,6 +1534,13 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	}
 
 	// 画面スケール(ズーム)を一度だけ取得。画面描画時のみ非nil。
+	// ★★2026-08-15（第2段 Task 10）＝**この nil チェックはマルチスレッド適合そのもの**。
+	//   `IControlView*` を**描画の署名からフレームワークに手渡されている**形は model 側で正規
+	//   （SDK の `FrmLblAdornment.cpp` / `TranFxAdornment.cpp` も同じで、両方 `kModelPlugIn`）。
+	//   ⚠ただしガイド vol1-07 L101 が "It is critical that you write model code that expects to be
+	//     able to receive nil pointers" と書いている当の場所でもある＝**印刷・PDF 書き出しでは
+	//     窓が無いので nil で来る**。ここは元から nil を想定して書かれており（sxr=0 のまま進む）、
+	//     直す必要は無い。**この形を新しく書くときも必ずこのガードを付ける。**
 	PMReal sxr = 0.0;
 	IControlView* zview = gd->GetView();
 	if (zview != nil)
@@ -1528,7 +1675,13 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	{
 		InterfacePtr<IPageList> pageList(db, db->GetRootUID(), UseDefaultIID());
 		// フォント/インスタンスはファイル先頭のキャッシュ(sOldNumFont/sOldNumFontInst)から。初回だけ取得。
-		if (!sOldNumFontTried)
+		// ★★2026-08-15(第2段 Task 12B)= **初回取得はメインスレッドだけが行う。**
+		//   ここは3つの共有 static(sOldNumFontTried/sOldNumFont/sOldNumFontInst)を書き換える唯一の場所で、
+		//   BG と main が同時に通ると **QueryFont を二重に発行し、片方のポインタを取りこぼす**(=解放漏れ)。
+		//   ⚠BG で未取得のときは numFont==nil になり、下の `numFont != nil` でバッジだけ描かれない。
+		//     旧番号バッジは既定 OFF のトグルで、ON なら画面描画(main)が先に必ずキャッシュを埋めるので、
+		//     実際に「PDF だけバッジが無い」状態になるのは "画面に一度も出していない" ときだけ。
+		if (!sOldNumFontTried && KESCMIsMainThread())
 		{
 			sOldNumFontTried = kTrue;
 			// ★InterfacePtr(p, iid) は p==nil を許す(InterfacePtr.h:459 QueryInterface_ が nil チェック済み)
@@ -1645,8 +1798,14 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	// ここへ来る(印刷経路は KESCMDrawRingForPrint が同じ SelectedMarkOpacity を使う=画面と印刷の
 	// 見た目一致。OPP は 2026-07-05 からそもそも抑制対象外)。
 	// Target と同一 db(想定外の自己比較)は下の Target 側描画に任せ、二重描画を避ける。
-	if (wantSrcMarks && db == sSrcDB && db != sDB)
+	// ★★★2026-08-15(第2段 Task 12B)= **生ポインタ比較を KESCMIsSameDoc へ置き換えた。**
+	//   バックグラウンド(PDF の非同期書き出し)には**クローンされた別 DB** が渡るので、`db == sSrcDB` は
+	//   必ず偽になり、Source 側の枠が書き出しに一切出なかった。同一性はファイル(GetSysFile)で聞く。
+	//   ⚠メインスレッドでは同一ポインタで即決するので、従来の判定と結果は1つも変わらない。
+	if (wantSrcMarks && KESCMIsSameDoc(db, sSrcDB) && !KESCMIsSameDoc(db, sDB))
 	{
+		// ★2026-08-15(第2段 Task 12B): Target 側ループと同じ理由でロックを取る(下の return まで保持)。
+		KESCMMarkStateLock srcMarkLock(KESCMMarkStateMutex());
 		const int32 nps = spread->GetNumPages();
 		// ★緑ベタ塗りは「どこを比較から外しているか」を見せる**画面用の診断表示**なので、印刷/PDF には出さない
 		//   (!printing。2026-08-06 の監査 E-4)。リングのような校正マークと違い下のデザインを覆うため。
@@ -1700,7 +1859,14 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	// master 表示トグル(sMarksVisible)が OFF の間、またはこのスプレッドを覗き中(旧版べた載せ中)は描かない
 	// (データは保持=再表示で即復帰)。覗いていない他のスプレッドのマークは通常どおり残る。
 	// ★印刷マーク(sPrintMarks)が ON の間は、ツール左hold に関係なく常に描く(画面=WYSIWYG / 印刷・PDF にも出る)。
-	if (peekingThisSpread || !wantMarks || sDB == nil || db != sDB)
+	// ★★★2026-08-15(第2段 Task 12B)= **ここが「PDF 書き出しにマークが出ない」の本体だった。**
+	//   `db != sDB` は BG では必ず真(クローンの別ポインタ)になるので、Target 側のマークが1つも描かれず、
+	//   非同期書き出しの PDF は「Print comparison marks を OFF にしたもの」と**バイト単位で同一**だった
+	//   (2026-08-15 実測 = docs/ai-notes/kescm-task12-pdf-export-marks-2026-08-15.md)。
+	//   ⇒ ファイル同一性で聞き直す。★下のループは**ページ UID で sEntries を引く**ので、
+	//     ここさえ通れば中身は1行も変えずに BG でも正しく動く(UID がクローンをまたいで保たれることは
+	//     Task 11C で実測済み)。
+	if (peekingThisSpread || !wantMarks || sDB == nil || !KESCMIsSameDoc(db, sDB))
 		return kFalse;
 
 	// 画面マークの実効不透明度。sMarkScreenOpacity は常に実効値を保持する(下の各ソースが設定):
@@ -1710,6 +1876,12 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	const PMReal screenMarkOp = sMarkScreenOpacity;
 
 	// このスプレッドの各ページについて、エントリがあれば描く(描画本体は KESCMDrawEntryOnPage に共通化)。
+	// ★★2026-08-15(第2段 Task 12B): **ここから先はマーク集合を読むのでロックを取る。**
+	//   守っているのは2つ: ①sEntries の要素が読んでいる最中に DropAll/MakeEntry で delete されること
+	//   ②KESCMDrawEntryOnPage が e->buf を BuildRing で書き替えるので、main(画面ズーム基準の半径)と
+	//     BG(印刷用に sxr=1.0 固定の半径)が**同じバッファを取り合う**こと。
+	//   ⚠ロックはこの関数の残り(＝描画ループ)を丸ごと覆う。描画自体は数msなので待ちは実用上問題ない。
+	KESCMMarkStateLock markLock(KESCMMarkStateMutex());
 	const int32 np = spread->GetNumPages();
 	// ★緑ベタ塗りは「どこを比較から外しているか」を見せる**画面用の診断表示**なので、印刷/PDF には出さない
 	//   (!printing。2026-08-06 の監査 E-4)。リングのような校正マークと違い下のデザインを覆うため。
@@ -1771,7 +1943,15 @@ public:
 	//   と同じ流儀。⚠サンプル basicdrwevthandler/BscDEHDrwEvtSrvc.cpp:131 は SetKey=2流儀(2026-08-06 に製品側へ)。
 	//   ⚠末尾の "\0" はそのサンプルの写しだったので落とした(C 文字列は終端で切れるので挙動は元から同じ)。
 	virtual void GetName(PMString* pName) { pName->SetCString("KESCMDrawEventSrvc"); }
-	virtual IPlugIn::ThreadingPolicy GetThreadingPolicy() const { return IPlugIn::kMainThreadOnly; }
+	// ★★GetThreadingPolicy は**書かない**(2026-08-14 に手書き override を撤去した)。
+	//   CServiceProvider が「boss の居るプラグインの型」から既定を返す ---- UI→kMainThreadOnly /
+	//   model→kMultipleThreads(ガイド vol1-07「Threading and service providers」)。
+	//   ∴ kUIPlugIn の現在は撤去前と**完全に同値**(動作は1バイトも変わらない)で、第2段で
+	//   kModelPlugIn にした瞬間に**自動で kMultipleThreads** になる。
+	//   ⚠**手書きで kMainThreadOnly を返していると、model にしても PDF 書き出しにマークが出ない**
+	//     (2x2 実測の3行目 = docs/ai-notes/draw-event-pdf-export-experiment-2026-08-12.md)。
+	//     つまり「消し忘れ」が分割の目的を**無言で**殺す。だから第2段を待たず先に消してある。
+	//   ★同じ理由を KESCMUIDrawEvent.cpp の冒頭にも書いてある(あちらは最初から書いていない)。
 };
 
 CREATE_PMINTERFACE(KESCMDrawEventSrvc, kKESCMDrawEventSrvcImpl)

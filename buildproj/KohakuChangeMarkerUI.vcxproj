@@ -1,0 +1,360 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003" DefaultTargets="Build" ToolsVersion="15.0">
+   <ItemGroup Label="ProjectConfigurations">
+      <ProjectConfiguration Include="Debug|Win32">
+         <Configuration>Debug</Configuration>
+         <Platform>Win32</Platform>
+      </ProjectConfiguration>
+      <ProjectConfiguration Include="Debug|x64">
+         <Configuration>Debug</Configuration>
+         <Platform>x64</Platform>
+      </ProjectConfiguration>
+      <ProjectConfiguration Include="Release|Win32">
+         <Configuration>Release</Configuration>
+         <Platform>Win32</Platform>
+      </ProjectConfiguration>
+      <ProjectConfiguration Include="Release|x64">
+         <Configuration>Release</Configuration>
+         <Platform>x64</Platform>
+      </ProjectConfiguration>
+   </ItemGroup>
+   <PropertyGroup Label="Globals">
+      <ProjectName>KohakuChangeMarkerUI</ProjectName>
+      <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+      <ProjectGuid>{83EAC044-5929-43FF-9ADF-9BF3D3FFB98F}</ProjectGuid>
+   </PropertyGroup>
+   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props"/>
+   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
+      <ConfigurationType>DynamicLibrary</ConfigurationType>
+      <PlatformToolset>v143</PlatformToolset>
+   </PropertyGroup>
+   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
+      <ConfigurationType>DynamicLibrary</ConfigurationType>
+      <PlatformToolset>v143</PlatformToolset>
+   </PropertyGroup>
+   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+      <ConfigurationType>DynamicLibrary</ConfigurationType>
+      <PlatformToolset>v143</PlatformToolset>
+   </PropertyGroup>
+   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+      <ConfigurationType>DynamicLibrary</ConfigurationType>
+      <PlatformToolset>v143</PlatformToolset>
+   </PropertyGroup>
+   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props"/>
+   <ImportGroup Label="ExtensionSettings"/>
+   <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="PropertySheets">
+      <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform"/>
+      <Import Project="KCMUIReleaseWin32.sdk.props"/>
+   </ImportGroup>
+   <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="PropertySheets">
+      <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform"/>
+      <Import Project="KCMUIDebugWin32.sdk.props"/>
+   </ImportGroup>
+   <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="PropertySheets">
+      <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform"/>
+      <Import Project="KCMUIReleaseX64.sdk.props"/>
+   </ImportGroup>
+   <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="PropertySheets">
+      <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform"/>
+      <Import Project="KCMUIDebugX64.sdk.props"/>
+   </ImportGroup>
+   <PropertyGroup Label="UserMacros"/>
+   <PropertyGroup>
+      <_ProjectFileVersion>10.0.40219.1</_ProjectFileVersion>
+      <OutDir Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">..\debug\sdk\</OutDir>
+      <IntDir Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">..\objD\KohakuChangeMarkerUI\</IntDir>
+      <OutDir Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">..\debugx64\sdk\</OutDir>
+      <IntDir Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">..\objDx64\KohakuChangeMarkerUI\</IntDir>
+      <OutDir Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">..\release\sdk\</OutDir>
+      <IntDir Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">..\objR\KohakuChangeMarkerUI\</IntDir>
+      <OutDir Condition="'$(Configuration)|$(Platform)'=='Release|x64'">..\releasex64\sdk\</OutDir>
+      <IntDir Condition="'$(Configuration)|$(Platform)'=='Release|x64'">..\objRx64\KohakuChangeMarkerUI\</IntDir>
+      <TargetName Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">KohakuChangeMarkerUI</TargetName>
+      <TargetName Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">KohakuChangeMarkerUI</TargetName>
+      <TargetName Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">KohakuChangeMarkerUI</TargetName>
+      <TargetName Condition="'$(Configuration)|$(Platform)'=='Release|x64'">KohakuChangeMarkerUI</TargetName>
+      <TargetExt Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">.pln</TargetExt>
+      <TargetExt Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">.pln</TargetExt>
+      <TargetExt Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">.pln</TargetExt>
+      <TargetExt Condition="'$(Configuration)|$(Platform)'=='Release|x64'">.pln</TargetExt>
+   </PropertyGroup>
+   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+      <Midl>
+         <PreprocessorDefinitions>_CRT_SECURE_NO_DEPRECATE;_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+         <MkTypLibCompatible>true</MkTypLibCompatible>
+         <TargetEnvironment>Win32</TargetEnvironment>
+         <TypeLibraryName>$(IntDir)KohakuChangeMarkerUI.tlb</TypeLibraryName>
+         <HeaderFileName/>
+      </Midl>
+      <ClCompile>
+         <AdditionalOptions>/vmg @"KohakuChangeMarkerUIcpp.rsp"</AdditionalOptions>
+         <!-- 2026-08-15(第2段 Task 5): model 側の source/ を検索路へ。移ってきた .cpp が KESCMID.h を
+              読む（ID・widget ID・文字列キー・定数はまだ model 側にある）。UI→model なので向きは正しい。
+              ⚠ .rsp ファイルは KESCM リポジトリの控え(buildproj/)に無いので、ここ(vcxproj)に書く。 -->
+         <AdditionalIncludeDirectories>..\..\..\source\sdksamples\KESCM\source;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+         <PrecompiledHeaderOutputFile>$(IntDir)KohakuChangeMarkerUI.pch</PrecompiledHeaderOutputFile>
+         <PreprocessorDefinitions>_CRT_SECURE_NO_DEPRECATE;BOOST_SYSTEM_NO_DEPRECATED;DEBUG;STRICT;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+         <PrecompiledHeader>Use</PrecompiledHeader>
+         <PrecompiledHeaderFile>VCPlugInHeaders.h</PrecompiledHeaderFile>
+         <ObjectFileName>$(IntDir)</ObjectFileName>
+      </ClCompile>
+      <ResourceCompile>
+         <PreprocessorDefinitions>_CRT_SECURE_NO_DEPRECATE;DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+         <Culture>0x0409</Culture>
+      </ResourceCompile>
+      <PreLinkEvent>
+         <Command>merge_res.cmd "$(IntDir)"  KCMUI &amp; echo Deleting old resources... &amp; del /f /s "$(TargetDir)($(TargetName) Resources)\"*.idrc &gt; $(IntDir)prevDeletedResources.txt &amp;  xcopy /Q /E "$(IntDir)"*.idrc "$(TargetDir)($(TargetName) Resources)\" /Y</Command>
+      </PreLinkEvent>
+      <Link>
+         <AdditionalDependencies>$(UI_PLUGIN_LINKLIST);user32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+         <OutputFile>$(OutDir)$(TargetName)$(TargetExt)</OutputFile>
+         <ProgramDatabaseFile>..\debug\sdk\KohakuChangeMarkerUI.pdb</ProgramDatabaseFile>
+         <ImportLibrary>$(LIB_DIR)\KohakuChangeMarkerUI/KohakuChangeMarkerUI.lib</ImportLibrary>
+      </Link>
+      <PostBuildEvent>
+         <Command>restore_res.cmd "$(IntDir)"  KCMUI</Command>
+      </PostBuildEvent>
+   </ItemDefinitionGroup>
+   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+      <Midl>
+         <PreprocessorDefinitions>_CRT_SECURE_NO_DEPRECATE;_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+         <MkTypLibCompatible>true</MkTypLibCompatible>
+         <TargetEnvironment>X64</TargetEnvironment>
+         <TypeLibraryName>$(IntDir)KohakuChangeMarkerUI.tlb</TypeLibraryName>
+         <HeaderFileName/>
+      </Midl>
+      <ClCompile>
+         <AdditionalOptions>/vmg @"KohakuChangeMarkerUIcpp.rsp"</AdditionalOptions>
+         <!-- 2026-08-15(第2段 Task 5): model 側の source/ を検索路へ。移ってきた .cpp が KESCMID.h を
+              読む（ID・widget ID・文字列キー・定数はまだ model 側にある）。UI→model なので向きは正しい。
+              ⚠ .rsp ファイルは KESCM リポジトリの控え(buildproj/)に無いので、ここ(vcxproj)に書く。 -->
+         <AdditionalIncludeDirectories>..\..\..\source\sdksamples\KESCM\source;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+         <PreprocessorDefinitions>_CRT_SECURE_NO_DEPRECATE;BOOST_SYSTEM_NO_DEPRECATED;DEBUG;STRICT;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+         <PrecompiledHeader>Use</PrecompiledHeader>
+         <PrecompiledHeaderFile>VCPlugInHeaders.h</PrecompiledHeaderFile>
+         <PrecompiledHeaderOutputFile>$(IntDir)KohakuChangeMarkerUI.pch</PrecompiledHeaderOutputFile>
+         <ObjectFileName>$(IntDir)</ObjectFileName>
+      </ClCompile>
+      <ResourceCompile>
+         <PreprocessorDefinitions>_CRT_SECURE_NO_DEPRECATE;DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+         <Culture>0x0409</Culture>
+      </ResourceCompile>
+      <PreLinkEvent>
+         <Command>merge_res.cmd "$(IntDir)"  KCMUI &amp; echo Deleting old resources... &amp; del /f /s "$(TargetDir)($(TargetName) Resources)\"*.idrc &gt; $(IntDir)prevDeletedResources.txt &amp;  xcopy /Q /E "$(IntDir)"*.idrc "$(TargetDir)($(TargetName) Resources)\" /Y</Command>
+      </PreLinkEvent>
+      <Link>
+         <AdditionalDependencies>$(UI_PLUGIN_LINKLIST);user32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+         <OutputFile>$(OutDir)$(TargetName)$(TargetExt)</OutputFile>
+         <ProgramDatabaseFile>..\debugx64\sdk\KohakuChangeMarkerUI.pdb</ProgramDatabaseFile>
+         <ImportLibrary>$(LIB_DIR)\KohakuChangeMarkerUI/KohakuChangeMarkerUI.lib</ImportLibrary>
+      </Link>
+      <PostBuildEvent>
+         <Command>restore_res.cmd "$(IntDir)"  KCMUI</Command>
+      </PostBuildEvent>
+   </ItemDefinitionGroup>
+   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+      <Midl>
+         <PreprocessorDefinitions>_CRT_SECURE_NO_DEPRECATE;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+         <MkTypLibCompatible>true</MkTypLibCompatible>
+         <TargetEnvironment>Win32</TargetEnvironment>
+         <TypeLibraryName>$(IntDir)KohakuChangeMarkerUI.tlb</TypeLibraryName>
+         <HeaderFileName/>
+      </Midl>
+      <ClCompile>
+         <AdditionalOptions>/vmg @"KohakuChangeMarkerUIcpp.rsp"</AdditionalOptions>
+         <!-- 2026-08-15(第2段 Task 5): model 側の source/ を検索路へ。移ってきた .cpp が KESCMID.h を
+              読む（ID・widget ID・文字列キー・定数はまだ model 側にある）。UI→model なので向きは正しい。
+              ⚠ .rsp ファイルは KESCM リポジトリの控え(buildproj/)に無いので、ここ(vcxproj)に書く。 -->
+         <AdditionalIncludeDirectories>..\..\..\source\sdksamples\KESCM\source;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+         <PreprocessorDefinitions>_CRT_SECURE_NO_DEPRECATE;BOOST_SYSTEM_NO_DEPRECATED;STRICT;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+         <StringPooling>true</StringPooling>
+         <PrecompiledHeader>Use</PrecompiledHeader>
+         <PrecompiledHeaderFile>VCPlugInHeaders.h</PrecompiledHeaderFile>
+         <PrecompiledHeaderOutputFile>$(IntDir)KohakuChangeMarkerUI.pch</PrecompiledHeaderOutputFile>
+         <ObjectFileName>$(IntDir)</ObjectFileName>
+      </ClCompile>
+      <ResourceCompile>
+         <PreprocessorDefinitions>_CRT_SECURE_NO_DEPRECATE;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+         <Culture>0x0409</Culture>
+      </ResourceCompile>
+      <PreLinkEvent>
+         <Command>merge_res.cmd "$(IntDir)"  KCMUI &amp; echo Deleting old resources... &amp; del /f /s "$(TargetDir)($(TargetName) Resources)\"*.idrc &gt; $(IntDir)prevDeletedResources.txt &amp;  xcopy /Q /E "$(IntDir)"*.idrc "$(TargetDir)($(TargetName) Resources)\" /Y</Command>
+      </PreLinkEvent>
+      <Link>
+         <AdditionalOptions>/IGNORE:4089 %(AdditionalOptions)</AdditionalOptions>
+         <AdditionalDependencies>$(UI_PLUGIN_LINKLIST);user32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+         <OutputFile>$(OutDir)$(TargetName)$(TargetExt)</OutputFile>
+         <ProgramDatabaseFile>..\release\sdk\KohakuChangeMarkerUI.pdb</ProgramDatabaseFile>
+         <ImportLibrary>$(LIB_DIR)\KohakuChangeMarkerUI/KohakuChangeMarkerUI.lib</ImportLibrary>
+      </Link>
+      <PostBuildEvent>
+         <Command>restore_res.cmd "$(IntDir)"  KCMUI</Command>
+      </PostBuildEvent>
+   </ItemDefinitionGroup>
+   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+      <Midl>
+         <PreprocessorDefinitions>_CRT_SECURE_NO_DEPRECATE;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+         <MkTypLibCompatible>true</MkTypLibCompatible>
+         <TargetEnvironment>X64</TargetEnvironment>
+         <TypeLibraryName>$(IntDir)KohakuChangeMarkerUI.tlb</TypeLibraryName>
+         <HeaderFileName/>
+      </Midl>
+      <ClCompile>
+         <AdditionalOptions>/vmg @"KohakuChangeMarkerUIcpp.rsp"</AdditionalOptions>
+         <!-- 2026-08-15(第2段 Task 5): model 側の source/ を検索路へ。移ってきた .cpp が KESCMID.h を
+              読む（ID・widget ID・文字列キー・定数はまだ model 側にある）。UI→model なので向きは正しい。
+              ⚠ .rsp ファイルは KESCM リポジトリの控え(buildproj/)に無いので、ここ(vcxproj)に書く。 -->
+         <AdditionalIncludeDirectories>..\..\..\source\sdksamples\KESCM\source;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+         <PreprocessorDefinitions>_CRT_SECURE_NO_DEPRECATE;BOOST_SYSTEM_NO_DEPRECATED;STRICT;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+         <StringPooling>true</StringPooling>
+         <PrecompiledHeader>Use</PrecompiledHeader>
+         <PrecompiledHeaderFile>VCPlugInHeaders.h</PrecompiledHeaderFile>
+         <PrecompiledHeaderOutputFile>$(IntDir)KohakuChangeMarkerUI.pch</PrecompiledHeaderOutputFile>
+         <ObjectFileName>$(IntDir)</ObjectFileName>
+      </ClCompile>
+      <ResourceCompile>
+         <PreprocessorDefinitions>_CRT_SECURE_NO_DEPRECATE;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+         <Culture>0x0409</Culture>
+      </ResourceCompile>
+      <PreLinkEvent>
+         <Command>merge_res.cmd "$(IntDir)"  KCMUI &amp; echo Deleting old resources... &amp; del /f /s "$(TargetDir)($(TargetName) Resources)\"*.idrc &gt; $(IntDir)prevDeletedResources.txt &amp;  xcopy /Q /E "$(IntDir)"*.idrc "$(TargetDir)($(TargetName) Resources)\" /Y</Command>
+      </PreLinkEvent>
+      <Link>
+         <AdditionalOptions>/IGNORE:4089 %(AdditionalOptions)</AdditionalOptions>
+         <AdditionalDependencies>$(UI_PLUGIN_LINKLIST);user32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+         <OutputFile>$(OutDir)$(TargetName)$(TargetExt)</OutputFile>
+         <ProgramDatabaseFile>..\releasex64\sdk\KohakuChangeMarkerUI.pdb</ProgramDatabaseFile>
+         <ImportLibrary>$(LIB_DIR)\KohakuChangeMarkerUI/KohakuChangeMarkerUI.lib</ImportLibrary>
+      </Link>
+      <PostBuildEvent>
+         <Command>restore_res.cmd "$(IntDir)"  KCMUI</Command>
+      </PostBuildEvent>
+   </ItemDefinitionGroup>
+   <ItemGroup>
+      <!-- 2026-08-15: model/UI 分割 第2段 Task 5（葉の UI 部品）で KESCM から移ってきた4本 -->
+      <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMIconTip.cpp"/>
+      <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMNoTip.cpp"/>
+      <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMSplitterEH.cpp"/>
+      <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMPanelView.cpp"/>
+      <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMPanelObserver.cpp"/>
+      <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMUIStartup.cpp"/>
+      <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMUIDrawEvent.cpp"/>
+      <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMModelChangeObserver.cpp"/>
+      <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMActionComponent.cpp"/>
+      <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMStoryTreeAdapter.cpp"/>
+      <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMStoryTreeWidgetMgr.cpp"/>
+      <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMStoryTreeEH.cpp"/>
+      <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMStoryRowEH.cpp"/>
+      <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMStorySectionObserver.cpp"/>
+      <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMCursorProvider.cpp"/>
+      <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMTool.cpp"/>
+      <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMTracker.cpp"/>
+      <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMTrackerRegister.cpp"/>
+      <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMBookTreeAdapter.cpp"/>
+      <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMBookTreeWidgetMgr.cpp"/>
+      <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMBookRowEH.cpp"/>
+      <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMPanelAlpha.cpp"/>
+      <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMPathDisplay.cpp"/>
+      <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMPanelState.cpp"/>
+      <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMScrollMap.cpp"/>
+      <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMStorySection.cpp"/>
+      <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMStoryJump.cpp"/>
+      <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMChangeNav.cpp"/>
+      <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMViewSync.cpp"/>
+      <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMViewLookup.cpp"/>
+      <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMPeekGesture.cpp"/>
+      <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMCmykCursor.cpp"/>
+      <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMTrackerHud.cpp"/>
+      <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMThumbnailRefresh.cpp"/>
+      <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMThumbIdleTask.cpp"/>
+      <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMBookDialog.cpp"/>
+      <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMBookRun.cpp"/>
+      <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMBookOpen.cpp"/>
+      <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMBookPanelLookup.cpp"/>
+      <ClCompile Include="$(id_sdk_dir)\source\public\libs\publiclib\statics\PlugInStatics.cpp"/>
+      <ClCompile Include="$(ID_SDK_DIR)\source\sdksamples\common\SDKPlugInEntrypoint.cpp"/>
+      <ClCompile Include="$(ID_SDK_DIR)\source\sdksamples\common\SDKFileHelper.cpp"/>
+      <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KCMUIID.cpp"/>
+      <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KCMUINoStrip.cpp"/>
+      <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\TriggerResourceDeps.cpp"/>
+      <ClCompile Include="$(id_sdk_dir)\source\precomp\msvc\VCPlugInHeaders.cpp">
+         <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Create</PrecompiledHeader>
+         <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Create</PrecompiledHeader>
+         <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Create</PrecompiledHeader>
+         <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Create</PrecompiledHeader>
+      </ClCompile>
+   </ItemGroup>
+   <ItemGroup>
+      <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\KCMUIID.h"/>
+      <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\KESCMBoundaryID.h"/>
+      <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\KCMUIFactoryList.h"/>
+      <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\KESCMUIShared.h"/>
+      <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\KESCMStoryTree.h"/>
+      <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\KESCMCheckGlyph.h"/>
+      <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\KESCMBookTree.h"/>
+      <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\KESCMPanelAlpha.h"/>
+      <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\KESCMPathDisplay.h"/>
+      <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\KESCMPanelState.h"/>
+      <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\KESCMScrollMap.h"/>
+      <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\KESCMStorySection.h"/>
+      <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\KESCMStoryJump.h"/>
+      <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\KESCMChangeNav.h"/>
+      <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\KESCMViewSync.h"/>
+      <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\KESCMViewLookup.h"/>
+      <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\KESCMPeekGesture.h"/>
+      <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\KESCMCmykCursor.h"/>
+      <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\KESCMTrackerHud.h"/>
+      <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\KESCMThumbnailRefresh.h"/>
+      <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\KESCMThumbIdleTask.h"/>
+      <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\KESCMBookDialog.h"/>
+      <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\KESCMBookRun.h"/>
+      <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\KESCMBookOpen.h"/>
+      <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\KESCMBookPanelLookup.h"/>
+   </ItemGroup>
+   <ItemGroup>
+      <CustomBuild Include="..\..\..\source\sdksamples\KESCM\ui\KCMUI.fr">
+         <Command Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+        odfrc $(ODFRC_ADDITIONAL_FLAGS) "%(FullPath)" -o "$(IntDir)%(Filename).fres" -d DEBUG  -i "..\..\..\source\sdksamples\KESCM\ui" -i "..\..\..\source\sdksamples\KESCM\source" @"KohakuChangeMarkerUIodfrc.rsp"
+      </Command>
+         <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">$(IntDir)TriggerResourceDeps.obj;%(AdditionalInputs)</AdditionalInputs>
+         <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">$(IntDir)%(Filename).fres;%(Outputs)</Outputs>
+         <Command Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+        odfrc $(ODFRC_ADDITIONAL_FLAGS) "%(FullPath)" -o "$(IntDir)%(Filename).fres" -d DEBUG  -i "..\..\..\source\sdksamples\KESCM\ui" -i "..\..\..\source\sdksamples\KESCM\source" @"KohakuChangeMarkerUIodfrc.rsp"
+      </Command>
+         <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(IntDir)TriggerResourceDeps.obj;%(AdditionalInputs)</AdditionalInputs>
+         <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(IntDir)%(Filename).fres;%(Outputs)</Outputs>
+         <Command Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+        odfrc $(ODFRC_ADDITIONAL_FLAGS) "%(FullPath)" -o "$(IntDir)%(Filename).fres" -i "..\..\..\source\sdksamples\KESCM\ui" -i "..\..\..\source\sdksamples\KESCM\source" @"KohakuChangeMarkerUIodfrc.rsp"
+      </Command>
+         <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">$(IntDir)TriggerResourceDeps.obj;%(AdditionalInputs)</AdditionalInputs>
+         <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">$(IntDir)%(Filename).fres;%(Outputs)</Outputs>
+         <Command Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+        odfrc $(ODFRC_ADDITIONAL_FLAGS) "%(FullPath)" -o "$(IntDir)%(Filename).fres" -i "..\..\..\source\sdksamples\KESCM\ui" -i "..\..\..\source\sdksamples\KESCM\source" @"KohakuChangeMarkerUIodfrc.rsp"
+      </Command>
+         <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(IntDir)TriggerResourceDeps.obj;%(AdditionalInputs)</AdditionalInputs>
+         <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(IntDir)%(Filename).fres;%(Outputs)</Outputs>
+      </CustomBuild>
+   </ItemGroup>
+   <ItemGroup>
+      <ResourceCompile Include="..\..\..\source\sdksamples\KESCM\ui\KCMUI.rc">
+         <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">_CRT_SECURE_NO_DEPRECATE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+         <Culture Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">0x0809</Culture>
+         <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">..\..\..\source\sdksamples\KESCM\ui;..\..\..\source\sdksamples\KESCM\ui;$(ID_SDK_DIR)\source\precomp\msvc;$(ID_SDK_DIR)\source\public\includes;$(ID_SDK_DIR)\source\sdksamples\common;%(AdditionalIncludeDirectories)
+      </AdditionalIncludeDirectories>
+         <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">_CRT_SECURE_NO_DEPRECATE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+         <Culture Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">0x0809</Culture>
+         <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">..\..\..\source\sdksamples\KESCM\ui;..\..\..\source\sdksamples\KESCM\ui;$(ID_SDK_DIR)\source\precomp\msvc;$(ID_SDK_DIR)\source\public\includes;$(ID_SDK_DIR)\source\sdksamples\common;%(AdditionalIncludeDirectories)
+      </AdditionalIncludeDirectories>
+         <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">_CRT_SECURE_NO_DEPRECATE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+         <Culture Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">0x0809</Culture>
+         <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">..\..\..\source\sdksamples\KESCM\ui;..\..\..\source\sdksamples\KESCM\ui;$(ID_SDK_DIR)\source\precomp\msvc;$(ID_SDK_DIR)\source\public\includes;$(ID_SDK_DIR)\source\sdksamples\common;%(AdditionalIncludeDirectories)
+      </AdditionalIncludeDirectories>
+         <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Release|x64'">_CRT_SECURE_NO_DEPRECATE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+         <Culture Condition="'$(Configuration)|$(Platform)'=='Release|x64'">0x0809</Culture>
+         <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release|x64'">..\..\..\source\sdksamples\KESCM\ui;..\..\..\source\sdksamples\KESCM\ui;$(ID_SDK_DIR)\source\precomp\msvc;$(ID_SDK_DIR)\source\public\includes;$(ID_SDK_DIR)\source\sdksamples\common;%(AdditionalIncludeDirectories)
+      </AdditionalIncludeDirectories>
+      </ResourceCompile>
+   </ItemGroup>
+   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets"/>
+   <ImportGroup Label="ExtensionTargets"/>
+</Project>

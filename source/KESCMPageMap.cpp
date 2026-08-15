@@ -44,10 +44,15 @@
 #include <set>
 #include <vector>
 
-#include "KESCMCore.h"			// KESCMCollectPageUIDs / KESCMCollectMasterPageUIDs / KESCMArmedTargetDB / KESCMArmedSourceDB / KESCMSetStatus
+#include "KESCMCore.h"			// KESCMCollectPageUIDs / KESCMCollectMasterPageUIDs / KESCMArmedTargetDB / KESCMArmedSourceDB
+								// (ステータス行は 2026-08-13 Task 9 で KESCMNotifyStatus＝通知へ移った)
+#include "KESCMModelNotify.h"	// KESCMNotifyStatus - the model tells the UI, it never calls it (Task 9)
+#include "KESCMComparisonRun.h"	// KESCMToggleStartStop(2026-08-13 に KESCMCore.h から移動)
 #include "KESCMPageMap.h"
 #include "KESCMDocUidSet.h"		// 「文書DB→ページUID集合」の共通の入れ物(✓側と共有。2026-08-06 監査 C-1)
-#include "KESCMThumbnailRefresh.h"	// KESCMRefreshThumbnailsForPages(トグルページの明示サムネイル更新)
+#include "KESCMID.h"				// kKESCMPageFlagsChangedMessage(通知の ID)
+// ★2026-08-13(Task 10): UI 側ヘッダー KESCMThumbnailRefresh.h の include を落とした。サムネイルを
+//   作り直すのは通知を受けた UI の仕事。
 
 // 登録済み「比較相手なしページ」: 文書DB → ページUIDの集合。セッション内のみ。
 // 空になった文書のエントリは即座に消える(KESCMDocUidSet の規約)。
@@ -103,6 +108,24 @@ bool16 KESCMPageMapReadSelection(IDataBase*& outDB, std::vector<UID>& outPages, 
 	if (db == nil)
 		return kFalse;
 
+	// ★★★2026-08-15（第2段 Task 10）＝**なぜ UI 由来の Utils が model 側に残っているのか**
+	//
+	//  `ILayoutUIUtils` は名前のとおり **UI プラグイン由来**で、ガイド vol1-07 L101 の
+	//  「UI プラグインの boss はバックグラウンドスレッドから実体化できず nil が返る」に当たる。
+	//  にもかかわらずここに残しているのは、**この関数が BG から到達しないことを実測したから**:
+	//
+	//    ・呼び手は KESCMPageMapToggleSelectedPages と KESCMPageMapUpdateToggleState の2つだけ。
+	//      どちらも Facade（IKESCMPageFlagsFacade）越しに **UI のメニュー操作**から入る。
+	//    ・BG で走るのは描画パス（KESCMDrawEventHandler::HandleDrawEvent）だけで、そこが呼ぶ
+	//      ページマップ系は **KESCMPageMapIsRegistered / KESCMPageMapHasAnyRegistered の読み取り2本**
+	//      のみ（2026-08-15 に呼び出し全数を Grep して確認）。この関数へは辿り着かない。
+	//
+	//  ⚠**「今は届かない」であって「構造的に届かない」ではない。** 次のどれかをやるなら、
+	//    ここは真っ先に見直す対象になる:
+	//      ①描画パスから選択を読む ②この関数を新しい経路から呼ぶ ③InDesign Server 対応
+	//    （現在の `.fr` は `{ kInDesignProduct }` のみ＝Server では読み込まれない）。
+	//  ★見直すときの形は決まっている＝**Task 4B / 9B と同じ「観測は UI・方針は model」**
+	//    ＝UI が選択を取り、model は UIDList を引数で受け取る。
 	UIDList sel(db);
 	Utils<ILayoutUIUtils>()->GetSelectedPages(sel, includeMasters, kTrue /*currentPageOnly*/, kTrue /*pagesOnly*/);
 
@@ -165,8 +188,11 @@ void KESCMPageMapToggleSelectedPages()
 		}
 	}
 
-	// ★パネルのステータス欄は幅・行数とも小さいため(KESCM.fr の kKESCMStatusTextWidgetID は
+	// ★パネルのステータス欄は幅・行数とも小さいため(ui/KCMUI.fr の kKESCMStatusTextWidgetID は
 	// 176×52px 程度で自動省略もされない)、メッセージは短く1行に収める。
+	// ⚠ この欄は UI 側にあり、ここ(model)からは通知経由でしか届かない。**それでも文面の長さは
+	//   ここで決まる**＝送り手が短くするしかない(受け手には切る以外の逃げ道が無く、
+	//   数字の途中で切れると別の数に見える＝[[ellipsis-in-status-line-breaks-numbers]])。
 	PMString msg;
 	msg.SetTranslatable(kFalse);
 	if (anyUnregistered)
@@ -216,7 +242,7 @@ void KESCMPageMapToggleSelectedPages()
 			KESCMToggleStartStop();		// arm 中なので Stop 分岐(マーク/登録/Check 破棄・disarm・パネル更新)
 			PMString cmsg("Recompare cancelled");
 			cmsg.SetTranslatable(kFalse);
-			KESCMSetStatus(cmsg, kTrue /*forceRedrawNow*/);
+			KESCMNotifyStatus(cmsg, kTrue /*forceRedrawNow*/);
 			return;
 		}
 		msg.Append(" (recompared)");
@@ -231,10 +257,13 @@ void KESCMPageMapToggleSelectedPages()
 	//   登録追加で再比較済みの場合はスキップ: トグル済みページは sRegistered に入っており、再比較側の
 	//   KESCMCollectChangedPageUIDs(登録ページ込み)が既に Purge+ForceRedraw している。ここでも呼ぶと
 	//   同じページを二重ラスタ化+パネル二重再描画(点滅)するだけで無意味(2026-07-10 レビューで判明)。
+	// ★2026-08-13(Task 10): 直接呼びから通知へ。⚠**どのページかは通知では運べない**ので、UI は db の
+	//   全ページを作り直す(理由と戻し方は KESCMThumbnailRefresh.h の KESCMPurgeAllPageThumbs)。
+	//   ⇒ 上の「二重ラスタ化を避ける」条件は**残す意味がある**: 通知を出さなければ UI は動かない。
 	if (!recompared || !anyUnregistered)
-		KESCMRefreshThumbnailsForPages(db, pages);
+		KESCMNotifyDocs(kKESCMPageFlagsChangedMessage, db, nil);
 
-	KESCMSetStatus(msg);
+	KESCMNotifyStatus(msg);
 }
 
 //========================================================================================

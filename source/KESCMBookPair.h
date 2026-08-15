@@ -25,21 +25,21 @@
 
 class IBook;
 
-/** The book whose tab is in FRONT in the Book panel.
-    kFalse when no front tab can be identified: the panel is iconised, its palette is closed, or
-    no book is open.
+// ★KESCMGetPanelBookFile moved OUT of this header on 2026-08-15 (Stage 2, Task 9B) to
+//   ui/KESCMBookPanelLookup.h. Walking the Book panel needs PaletteRefUtils (WidgetBin.lib),
+//   Utils<IBookUIUtils>() and IPanelMgr - all three are the UI half's to reach, and the linker
+//   said so the moment WidgetBin came off the model project. Same shape as Task 15's
+//   KESCMElidePathFront and Task 4B's view lookups: OBSERVE in the UI, DECIDE in the model.
 
-    ***** This deliberately does NOT fall back to the active book. ***** IBookManager's active book
-    does not follow tab switches - it only changes when a chapter is touched - so falling back
-    would silently compare a book the user is not looking at. KBS does fall back at this point,
-    because a search that picks the wrong book merely reads; a comparison's entire meaning is
-    which two books it was run on. */
-bool16 KESCMGetPanelBookFile(IDFile& outFile);
+/** Resolve the comparison pair: target = the book in `panelBookFile`, source = first other open
+    book. kTrue only when BOTH were found. Whichever could not be resolved is left nil, so the
+    caller can word its message from which one is missing.
 
-/** Resolve the comparison pair: target = front tab, source = first other open book.
-    kTrue only when BOTH were found. Whichever could not be resolved is left nil, so the caller
-    can word its message from which one is missing. */
-bool16 KESCMResolveBookPair(IBook*& outTarget, IBook*& outSource);
+    ⚠`panelBookFile` is the FRONT TAB's book, observed by the UI half
+    (ui/KESCMBookPanelLookup.h's KESCMGetPanelBookFile). When that observation fails the caller
+    must not call this at all - handing in a blank file, or substituting the active book, is
+    exactly what the old model-side code refused to do. */
+bool16 KESCMResolveBookPair(const IDFile& panelBookFile, IBook*& outTarget, IBook*& outSource);
 
 /** The book's display name: IBook::GetBookTitleName().
     That INCLUDES the .indb extension - measured 2026-08-11, an open book called new.indb reports
@@ -57,21 +57,10 @@ PMString KESCMBookDisplayName(IBook* book);
     an empty string. */
 PMString KESCMBookDisplayPath(IBook* book);
 
-/** The same path with its FRONT replaced by an ellipsis - "...\New\a.indb" - or unchanged if it is
-    short enough to read whole.
-
-    ***** ONE ANSWER, TWO PLACES THAT SHOW A PATH. ***** The confirmation alert and the dialog's
-    Target/Source lines are the same two strings shown twice, and they must shorten the same way or
-    the user is left comparing two different-looking claims about one file (memory
-    one-question-one-place).
-
-    ★★AND THE DIALOG NEEDS IT FOR A SECOND REASON - ITS WIDTH. Measured 2026-08-13: EVE sizes a
-      static text widget to fit its own TEXT and pushes the parent out to match, so the dialog was as
-      wide as the longest path it had been handed (610px for a 74-character path). Neither the child
-      frames, nor the root frame, nor kEVEAlignFill, nor the window title moved it - all measured.
-      Shortening the STRING is what puts the width back under the .fr's control, and it is also what
-      finally gives kEllipsizeBeginning something to do (a widget grown to fit its text never elides). */
-PMString KESCMElidePathFront(const PMString& path);
+// ★KESCMElidePathFront moved OUT of this header on 2026-08-14 (Stage 1, Task 15). Shortening a
+//   path for display is the view's business and all three callers were UI-side, so it now lives in
+//   KESCMBookDialog.h -- the file this feature's own division of labour calls "the VIEW". Leaving it
+//   here would have meant publishing it across the model/UI boundary for nobody's benefit.
 
 /** Pair the two books' chapters BY POSITION - first with first, second with second, and so on.
     That is the user's choice (2026-08-11); file names are deliberately not matched, so renaming a

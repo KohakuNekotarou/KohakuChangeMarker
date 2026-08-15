@@ -21,6 +21,8 @@
 #include "GraphicsExternal.h"   // AGMImageRecord (構造体メンバ)
 #include "UIDRef.h"             // UID / UIDRef
 #include "PMReal.h"
+#include "IDThreading.h"        // IDThreading::ThreadLocal(下の tl_Rasterizing)
+#include "KESCMThreadSafety.h"  // ★KESCMMarkStateMutex/KESCMMarkStateLock(sEntries を delete する側で使う)
 
 class IDataBase;
 class IDrwEvtDispatcher;
@@ -87,6 +89,28 @@ struct KESCMOrigImage
 // KESCMDrawEventHandler
 //   ページUID→オーバーレイの集合を保持し、スプレッド描画時に、そのスプレッドに属する
 //   各ページのリングを blit する。リング太さは描画時のズームに追従。非永続=.indd に残らない。
+//
+// ⚠★★★2026-08-14: **model/UI 分割の第2段(kModelPlugIn 化)の前に、必ずここを読むこと。**
+//   下の static 群は**この設計のままではバックグラウンドスレッドで正しく動かない**。
+//   理由は2つあり、どちらもガイド vol1-07 Multithreading の本文が根拠:
+//
+//   (1) **BG スレッドが見る DB は「クローンされた別の DB」**
+//       ("provides a separate execution context (a cloned copy of the database) for each thread")。
+//       ⇒ 描画に渡ってくる db は sDB とは**別ポインタ**になる。下の sDB / sOverflowCacheDB は
+//         「同じ文書か」を**生ポインタの一致で判定**しているので、BG では必ず食い違い、
+//         ①マークが出ない か ②EnsureOverflowCache が**描画のたびに作り直す**(=下の(2))。
+//       ★直す方向 = 生ポインタ比較をやめ、IDataBase::GetSysFile(ファイル)で同一性を聞く
+//         (閉じた文書のポインタがアドレス再利用で別文書と一致する問題も同時に消える)。
+//
+//   (2) **スレッドは object model のインスタンスは共有しないが、static は共有する**
+//       ("Threads do not share object-model instances. They do share globals and statics")。
+//       ⇒ 下の可変 static は main と BG から同時に触られる。とくに **sEntries は生ポインタの map で
+//         DropAll() が delete する**ので、**BG が読んでいる最中に main が Stop すると解放済みメモリを読む**。
+//       ★守らないと "InDesign will behave inconsistently and **may randomly crash**"(ガイドの原文)。
+//
+//   ⇒ 実測タスク = 第2段計画書の **Task 11C**(クローン DB で UID が引けるか) と
+//     **Task 12B**(スレッド安全化)。**測る前に kMultipleThreads で本番を回さないこと。**
+//     計画 = docs/superpowers/plans/2026-08-13-kescm-model-ui-split-stage2.md
 //========================================================================================
 class KESCMDrawEventHandler : public CPMUnknown<IDrwEvtHandler>
 {
@@ -99,8 +123,10 @@ public:
 	virtual bool16 HandleDrawEvent(ClassID eventID, void* eventData);
 
 	// ページUID → オーバーレイ。変化のあったページだけ登録される。
+	// ⚠★中身は生ポインタで DropAll() が delete する = BG と main で同時に触ると解放済み読み(冒頭の(2))。
 	static std::map<UID, KESCMOverlayEntry*> sEntries;
 	// 全エントリが属する単一ドキュメント。別dbをmarkしたら作り直す(UIDはdb内のみ一意なため)。
+	// ⚠★BG には**クローンの別ポインタ**が渡るので、この生ポインタでの一致判定は必ず外れる(冒頭の(1))。
 	static IDataBase* sDB;
 	// 上書き表示(変更リング)の master 表示トグル。データ(sEntries)は消さず
 	// 表示だけ切り替える。★既定=kFalse(非表示)。シングルツール左ボタンを押している間だけ kTrue にして枠等を
@@ -163,7 +189,7 @@ public:
 	// パネル選択の 25%/75%(KESCMBaseScreenOpacity が sAlwaysShowMarks ON も選択不透明度を返す)。
 	static bool16 sAlwaysShowMarks;
 	// Hold to Hide Marks モード中、ツール左ボタンを押している間だけ kTrue(常時表示の枠を一時退避)。離すと kFalse。
-	// KESCMPeek.cpp のトラッカー(KESCMTrackerRevealBegin/End)が上下させる。モード OFF の間は常に kFalse で無影響。
+	// KESCMPeekGesture.cpp のトラッカー(KESCMTrackerRevealBegin/End)が上下させる。モード OFF の間は常に kFalse で無影響。
 	// ★これは Target 窓上でツール左ボタンを押したときだけ立てる(押した窓の枠だけ隠す=ウィンドウ別)。
 	static bool16 sMarksTempHidden;
 	// sMarksTempHidden の Source 版。「Show Marks on Source」ON かつ「Hold to Hide Marks」ON のとき、
@@ -182,7 +208,16 @@ public:
 	static PMReal SelectedMarkOpacity() { return sMarkOpacity25 ? kKESCMMarkOpacity25 : kKESCMMarkOpacity75; }
 	// 自前のラスタ化(MakeEntry/MakeOrigImage の SnapshotUtilsEx::Draw)中だけ kTrue。HandleDrawEvent が
 	// 再入したらマークを描かない(自己参照防止)。kPreviewMode ビットに頼ると PDF 書き出し(同ビット)を巻き込むため。
-	static bool16 sRasterizing;
+	// ★★★2026-08-15(第2段 Task 12B)= **スレッドローカルにした**(旧: 素の static bool16)。
+	//   理由 = これは「**このスレッドが今ラスタ化の最中か**」という問いで、スレッドをまたぐと意味が壊れる。
+	//   素の static のままだと、メインスレッドが比較でラスタ化している間に**バックグラウンドの
+	//   PDF 書き出しがこれを見て「再入だ」と判断し、マークを黙って描かない**(＝出たり出なかったりする)。
+	//   ⚠この壊れ方は「たまたま同時に走ったときだけ」出るので、1回の書き出しでは絶対に再現しない。
+	//   ★公式の手本 = open/components/incopyfileactions/InCopyDocFileHandler.cpp:261 が
+	//     **同じ用途(再入防止)** で `IDThreading::ThreadLocalManagedObject< K2Vector<IDataBase*> >` を使う。
+	//     `ThreadLocal<bool16>` 自体も open/includes/architecture/bossrecycler.h:159 に前例がある。
+	//     命名の `tl_` プレフィックスも公式に合わせた。
+	static IDThreading::ThreadLocal<bool16> tl_Rasterizing;
 
 	// 旧版べた載せ(kescmShowOriginal / kescmHideOriginal)。マーク(sEntries)とは完全に独立。
 	// 実行時に覗いたページの旧版画像を sOrigImages に保持し、sShowOriginal が ON の間その db のページに不透明 blit する。
@@ -244,6 +279,9 @@ public:
 	// エントリ/対応表が無ければ何もしない(不変・変化ゼロページに対しても安全に呼べる)。
 	static void DropOneEntry(UID targetUID, UID oldSourceUID)
 	{
+		// ★2026-08-15(第2段 Task 12B): 描画中のバックグラウンドスレッドが同じエントリを読んでいる
+		//   可能性があるので、delete する側はロックを取る(理由は KESCMThreadSafety.h)。
+		KESCMMarkStateLock lock(KESCMMarkStateMutex());
 		std::map<UID, KESCMOverlayEntry*>::iterator it = sEntries.find(targetUID);
 		if (it != sEntries.end()) { delete it->second; sEntries.erase(it); }
 		std::map<UID, UID>::iterator sp = sSrcPageToTarget.find(oldSourceUID);
@@ -255,6 +293,12 @@ public:
 	// (トグル sSrcMarksOn 自体は「ユーザーの好み」として保持。エントリが無ければ何も描かないので無害)。
 	static void DropAll()
 	{
+		// ★★★2026-08-15(第2段 Task 12B): **ここが最も危ない場所だった。**
+		//   sEntries は生ポインタの map で、ここが delete する。バックグラウンドの PDF 書き出しが
+		//   同じエントリを描いている最中に main が Stop すると**解放済みメモリの読み取り**になる
+		//   (ガイド vol1-07 L95 "may randomly crash")。描画側(HandleDrawEvent の2つのループ)も
+		//   同じロックを取るので、待ち合わせが成立する。
+		KESCMMarkStateLock lock(KESCMMarkStateMutex());
 		for (std::map<UID, KESCMOverlayEntry*>::iterator it = sEntries.begin(); it != sEntries.end(); ++it)
 			delete it->second;
 		sEntries.clear();
@@ -278,17 +322,19 @@ public:
 	}
 };
 
-// sRasterizing を例外安全に立てる/戻す RAII(2026-07-25 監査で追加)。SnapshotUtilsEx::Draw が万一
+// tl_Rasterizing を例外安全に立てる/戻す RAII(2026-07-25 監査で追加)。SnapshotUtilsEx::Draw が万一
 // throw(AGM 内部の bad_alloc 等)してもフラグが立ちっぱなし(=以後マーク描画が全抑止)にならない。
+// ★2026-08-15: 中身がスレッドローカルになったが、**呼び手(6か所)は1行も変わらない**
+//   ——RAII に包んであったおかげで、スレッド対応の変更がこのクラスの中だけで済んだ。
 class KESCMRasterizingGuard
 {
 public:
-	KESCMRasterizingGuard()  { KESCMDrawEventHandler::sRasterizing = kTrue; }
-	~KESCMRasterizingGuard() { KESCMDrawEventHandler::sRasterizing = kFalse; }
+	KESCMRasterizingGuard()  { KESCMDrawEventHandler::tl_Rasterizing.Set(kTrue); }
+	~KESCMRasterizingGuard() { KESCMDrawEventHandler::tl_Rasterizing.Set(kFalse); }
 };
 
-// IControlView から可視範囲(IPanorama)を辿る小ヘルパ。エンジンと peek の双方で使うため公開する。
-IPanorama* KESCMQueryPanorama(IControlView* view);
+// (KESCMQueryPanorama は 2026-08-13 に KESCMViewLookup.h へ移した＝model/UI 分割 第1段 Task 12。
+//  戻り値が IPanorama = 窓の問いなので UI 側が持つ。呼び手は #include "KESCMViewLookup.h" へ。)
 
 // 旧ページ番号バッジのフォントキャッシュを解放する(KESCMPeekStartup::Shutdown から呼ぶ。2026-07-25)。
 // 実体は KESCMDrawEventHandler.cpp(キャッシュ本体と同居)。
