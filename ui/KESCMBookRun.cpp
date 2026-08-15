@@ -31,6 +31,7 @@
 
 // Project includes:
 #include "IKESCMBookFacade.h"	// ResolveBookPair / GetBookDisplayPath / CompareBooks
+#include "KESCMBookPanelLookup.h"	// KESCMGetPanelBookFile(前面タブの観測。2026-08-15 Task 9B で UI 側へ)
 								// (2026-08-14・分割 第1段 Task 15 で Facade 経由へ)
 #include "KESCMBookDialog.h"	// KESCMBookDialogSetResult / KESCMOpenBookDialog / KESCMElidePathFront
 #include "KESCMBookResult.h"	// KESCMChapterResult
@@ -88,7 +89,13 @@ void KESCMRunBookComparison()
 	// ***** The same resolver the greying uses. ***** UpdateActionStates calls this too, so the
 	// menu's appearance and the result of choosing it cannot disagree. Reaching here with no pair
 	// therefore means the front tab changed between the menu being built and the item being chosen.
-	if (!books->ResolveBookPair(target, source))
+	// ★★2026-08-15(第2段 Task 9B): 前面タブの観測は **こちら側(UI)の仕事**になった
+	//   (ui/KESCMBookPanelLookup.h)。⚠**分岐の意味は変わっていない**＝観測に失敗しても、対の
+	//   解決に失敗しても、同じ「2ブックが揃わない」警告に落ちる。以前は両方とも model 側の
+	//   ResolveBookPair が kFalse で答えていた。
+	IDFile panelBookFile;
+	if (!KESCMGetPanelBookFile(panelBookFile)
+		|| !books->ResolveBookPair(panelBookFile, target, source))
 	{
 		CAlert::ModalAlert(
 			KESCMLoc::Text(kKESCMBookNoPairKey, KESCMJa::kBookNoPair),

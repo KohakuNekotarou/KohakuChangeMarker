@@ -39,6 +39,7 @@
 #include "IPMUnknown.h"
 
 // General includes:
+#include "IDFile.h"		// ResolveBookPair takes the front tab's book file, observed by the UI half
 #include "PMString.h"
 #include <vector>
 
@@ -54,17 +55,27 @@ class IKESCMBookFacade : public IPMUnknown
 public:
 	enum { kDefaultIID = IID_IKESCMBOOKFACADE };
 
-	/** Which two books a comparison would run on: Target is the book whose tab is in FRONT in the
-		Book panel, Source is the first OTHER open book. kTrue only when both were found; whichever
-		could not be resolved is left nil, so a caller can word its message from which is missing.
+	/** Which two books a comparison would run on: Target is the book in `panelBookFile`, Source is
+		the first OTHER open book. kTrue only when both were found; whichever could not be resolved
+		is left nil, so a caller can word its message from which is missing.
 
 		★THE POINTERS ARE NON-OWNING. They belong to IBookManager -- do not release them.
+
+		★★2026-08-15 (Stage 2, Task 9B): `panelBookFile` IS NEW, and it is what closed the debt
+		this header used to describe as "KNOWN, AND LEFT TO STAGE 2". Answering "which tab is in
+		FRONT" needs PaletteRefUtils (WidgetBin.lib), Utils<IBookUIUtils>() and IPanelMgr, and a
+		model plug-in may reach none of them -- so the CALLER observes it, through
+		ui/KESCMBookPanelLookup.h's KESCMGetPanelBookFile, and hands the answer across.
+		⚠When that observation fails, DO NOT CALL THIS. Handing in a blank file, or substituting
+		  the active book, is precisely what the old model-side walk refused to do (IBookManager's
+		  active book does not follow tab switches).
 
 		★Two callers, which is the whole point: the flyout item's grey state and the command behind
 		it both ask this, so what the menu promises and what choosing it does cannot drift apart.
 		(They can still differ in time -- the front tab may change between the menu being built and
 		the item being chosen -- which is why the command re-asks rather than trusting the grey.) */
-	virtual bool16		ResolveBookPair(IBook*& outTarget, IBook*& outSource) = 0;
+	virtual bool16		ResolveBookPair(const IDFile& panelBookFile,
+									IBook*& outTarget, IBook*& outSource) = 0;
 
 	/** The book's FULL PATH as the file system spells it, falling back to its title when it has no
 		file yet, so a caller never has to handle an empty string.

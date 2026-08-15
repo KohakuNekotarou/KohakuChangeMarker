@@ -44,6 +44,7 @@
 #include "KESCMScrollMap.h"		// KESCMScrollMapAttach/DetachAll/InvalidateAll(地図トグルと Find Overset)
 #include "KESCMPanelState.h"		// KESCMSavePanelState(フライアウト「Save Panel Settings」)
 #include "IKESCMBookFacade.h"		// ResolveBookPair(「Compare Books」を有効にしてよいかの判定)。2026-08-14 Task 15 で Facade 経由へ
+#include "KESCMBookPanelLookup.h"	// KESCMGetPanelBookFile(前面タブの観測。2026-08-15 Task 9B で UI 側へ)
 #include "KESCMBookRun.h"		// KESCMRunBookComparison(フライアウト「Compare Books」＝確認して比較して見せる)
 #include "KESCMBookOpen.h"			// KESCMBookMenuRow/CanStart/StartComparisonForRow(章行の右クリック「Start Change Marker」)
 #include "KESCMChangeNav.h"			// KESCMRefreshNavPosition(overset トグルで Prev/Next の対象数を更新)
@@ -705,11 +706,19 @@ void KESCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionSta
 			//   「ブックパネルに前面タブがあり、かつ別のブックも開いている」ときだけ。
 			//   ⚠ここはメニューを開くたびに走り、中でパネルを全走査する。フライアウトを開く頻度
 			//     でしか呼ばれないので許容している(KBS も同じ走査を同じ場所でしている)。
+			//   ★★2026-08-15(第2段 Task 9B): 前面タブの観測が **こちら側(UI)へ移った**。
+			//     パネル走査には PaletteRefUtils / IBookUIUtils / IPanelMgr が要り、model プラグイン
+			//     はそのどれにも触れない(WidgetBin.lib を外した瞬間にリンカが名指しした)。
+			//     ⚠**判定は変わっていない**＝観測に失敗したら Facade を呼ばない。これは以前
+			//       model 側の ResolveBookPair が中で kFalse を返していたのと同じ結果。
 			IBook* target = nil;
 			IBook* source = nil;
+			IDFile panelBookFile;
+			const bool16 canCompareBooks =
+				KESCMGetPanelBookFile(panelBookFile)
+				&& Utils<IKESCMBookFacade>()->ResolveBookPair(panelBookFile, target, source);
 			listToUpdate->SetNthActionState(i,
-				Utils<IKESCMBookFacade>()->ResolveBookPair(target, source) ? kEnabledAction
-				                                                          : kDisabled_Unselected);
+				canCompareBooks ? kEnabledAction : kDisabled_Unselected);
 		}
 		else if (action == kKESCMBookRowStartActionID)
 		{

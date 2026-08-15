@@ -25,21 +25,21 @@
 
 class IBook;
 
-/** The book whose tab is in FRONT in the Book panel.
-    kFalse when no front tab can be identified: the panel is iconised, its palette is closed, or
-    no book is open.
+// ★KESCMGetPanelBookFile moved OUT of this header on 2026-08-15 (Stage 2, Task 9B) to
+//   ui/KESCMBookPanelLookup.h. Walking the Book panel needs PaletteRefUtils (WidgetBin.lib),
+//   Utils<IBookUIUtils>() and IPanelMgr - all three are the UI half's to reach, and the linker
+//   said so the moment WidgetBin came off the model project. Same shape as Task 15's
+//   KESCMElidePathFront and Task 4B's view lookups: OBSERVE in the UI, DECIDE in the model.
 
-    ***** This deliberately does NOT fall back to the active book. ***** IBookManager's active book
-    does not follow tab switches - it only changes when a chapter is touched - so falling back
-    would silently compare a book the user is not looking at. KBS does fall back at this point,
-    because a search that picks the wrong book merely reads; a comparison's entire meaning is
-    which two books it was run on. */
-bool16 KESCMGetPanelBookFile(IDFile& outFile);
+/** Resolve the comparison pair: target = the book in `panelBookFile`, source = first other open
+    book. kTrue only when BOTH were found. Whichever could not be resolved is left nil, so the
+    caller can word its message from which one is missing.
 
-/** Resolve the comparison pair: target = front tab, source = first other open book.
-    kTrue only when BOTH were found. Whichever could not be resolved is left nil, so the caller
-    can word its message from which one is missing. */
-bool16 KESCMResolveBookPair(IBook*& outTarget, IBook*& outSource);
+    ⚠`panelBookFile` is the FRONT TAB's book, observed by the UI half
+    (ui/KESCMBookPanelLookup.h's KESCMGetPanelBookFile). When that observation fails the caller
+    must not call this at all - handing in a blank file, or substituting the active book, is
+    exactly what the old model-side code refused to do. */
+bool16 KESCMResolveBookPair(const IDFile& panelBookFile, IBook*& outTarget, IBook*& outSource);
 
 /** The book's display name: IBook::GetBookTitleName().
     That INCLUDES the .indb extension - measured 2026-08-11, an open book called new.indb reports

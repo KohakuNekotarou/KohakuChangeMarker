@@ -389,8 +389,9 @@ class KESCMBookFacade : public CPMUnknown<IKESCMBookFacade>
 public:
 	KESCMBookFacade(IPMUnknown* boss) : CPMUnknown<IKESCMBookFacade>(boss) {}
 
-	virtual bool16		ResolveBookPair(IBook*& outTarget, IBook*& outSource)
-						{ return KESCMResolveBookPair(outTarget, outSource); }
+	virtual bool16		ResolveBookPair(const IDFile& panelBookFile,
+								IBook*& outTarget, IBook*& outSource)
+						{ return KESCMResolveBookPair(panelBookFile, outTarget, outSource); }
 
 	virtual PMString	GetBookDisplayPath(IBook* book)
 						{ return KESCMBookDisplayPath(book); }
