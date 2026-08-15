@@ -23,7 +23,7 @@
 #include "ISubject.h"
 #include "PMString.h"
 
-#include "KESCMID.h"
+#include "KCMUIID.h"
 #include "Utils.h"					// Utils<IKESCMCompareFacade>()
 #include "IKESCMCompareFacade.h"	// GetSessionStatus(第1段 Task 11)＋ StatusWantsForceRedraw と
 									// 通知に載った付随データ(2026-08-15・第2段で Facade 経由へ。

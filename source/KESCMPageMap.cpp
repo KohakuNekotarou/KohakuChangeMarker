@@ -170,8 +170,11 @@ void KESCMPageMapToggleSelectedPages()
 		}
 	}
 
-	// ★パネルのステータス欄は幅・行数とも小さいため(KESCM.fr の kKESCMStatusTextWidgetID は
+	// ★パネルのステータス欄は幅・行数とも小さいため(ui/KCMUI.fr の kKESCMStatusTextWidgetID は
 	// 176×52px 程度で自動省略もされない)、メッセージは短く1行に収める。
+	// ⚠ この欄は UI 側にあり、ここ(model)からは通知経由でしか届かない。**それでも文面の長さは
+	//   ここで決まる**＝送り手が短くするしかない(受け手には切る以外の逃げ道が無く、
+	//   数字の途中で切れると別の数に見える＝[[ellipsis-in-status-line-breaks-numbers]])。
 	PMString msg;
 	msg.SetTranslatable(kFalse);
 	if (anyUnregistered)

@@ -231,7 +231,6 @@
       </PostBuildEvent>
    </ItemDefinitionGroup>
    <ItemGroup>
-      <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KCMUIActionComponent.cpp"/>
       <!-- 2026-08-15: model/UI 分割 第2段 Task 5（葉の UI 部品）で KESCM から移ってきた4本 -->
       <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMIconTip.cpp"/>
       <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMNoTip.cpp"/>

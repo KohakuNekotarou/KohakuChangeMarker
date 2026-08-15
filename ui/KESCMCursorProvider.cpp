@@ -22,7 +22,7 @@
 
 #include "VCPlugInHeaders.h"
 
-#include "KESCMID.h"
+#include "KCMUIID.h"
 
 #include "CToolCursorProvider.h"	// 基底(ツール用カーソルプロバイダ。ズーム/ハンド等の既定処理を持つ)
 #include "ICursorMgr.h"			// eCursorModifierState

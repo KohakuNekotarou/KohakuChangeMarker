@@ -27,7 +27,7 @@
 #include "CPMUnknown.h"
 #include "IStartupShutdownService.h"
 
-#include "KESCMID.h"
+#include "KCMUIID.h"
 #include "KESCMPanelState.h"		// KESCMLoadPanelStateIfPresent(保存済みパネル設定の復元)
 #include "KESCMPanelAlpha.h"		// 半透明トグルの購読/解除と後片付け
 #include "KESCMTrackerHud.h"		// KESCMTrackerHudShutdown(押下中 HUD のフォント返却)

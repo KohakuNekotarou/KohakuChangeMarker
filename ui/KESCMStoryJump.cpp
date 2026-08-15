@@ -28,7 +28,7 @@
 #include "Utils.h"
 
 // Project includes:
-#include "KESCMID.h"
+#include "KCMUIID.h"
 #include "KESCMChangeNav.h"	// KESCMGotoStoryFrame
 #include "IKESCMCompareFacade.h"	// arm 状態(2026-08-13・分割 第1段 Task 11 で Facade 経由へ)
 #include "KESCMUIShared.h"	// panel / status line / nav readout / tool button (split from KESCMCore.h on 2026-08-13)

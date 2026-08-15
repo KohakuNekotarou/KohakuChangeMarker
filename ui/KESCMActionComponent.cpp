@@ -28,7 +28,7 @@
 //  仕組みは docs/ai-notes/kescm-split-target-mechanism.md と git 履歴 69c4b07 に保存)
 
 // プロジェクト内:
-#include "KESCMID.h"
+#include "KCMUIID.h"
 #include "KESCMLoc.h"		// 実行時の日本語切替(How to Use の1箇所だけ。Hide Unchanged の確認文言は
 							// 2026-08-13 に本体ごと KESCMHideUnchanged.cpp へ移った)
 #include "Utils.h"					// Utils<IKESCMCompareFacade>()

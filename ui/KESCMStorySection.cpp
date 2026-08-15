@@ -39,7 +39,7 @@
 #include "PaletteRefUtils.h"		// IsPaletteFloating / GetPaletteBounds / SetPaletteSize
 
 // ----- Project -----
-#include "KESCMID.h"
+#include "KCMUIID.h"
 #include "Utils.h"					// Utils<IKESCMCompareFacade>()
 #include "IKESCMCompareFacade.h"	// IsArmed(2026-08-13・分割 第1段 Task 11 で Facade 経由へ。
 									//  KESCMGetVisibleOwnPanel は Task 5 で KESCMUIShared.h へ移っている)

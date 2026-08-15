@@ -43,7 +43,7 @@
 #include "PMMatrix.h"
 #include "PMPoint.h"
 
-#include "KESCMID.h"
+#include "KCMUIID.h"
 #include "KESCMTrackerHud.h"		// 押下中 HUD(2026-08-13 に model 側ハンドラからこちらへ移した)
 #include "KESCMScrollMap.h"			// KESCMScrollMapNoticeDrawEvent(手動 Hide/Show Spread の検出。同上)
 

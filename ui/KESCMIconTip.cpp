@@ -40,7 +40,7 @@
 #include "PMString.h"
 
 // プロジェクト内:
-#include "KESCMID.h"
+#include "KCMUIID.h"
 
 /** kKESCMIconWidgetBoss のツールチップ: イラストなら飛び先(配布元URL)、ツール切替ボタンならツール名。 */
 class KESCMIconTip : public AbstractTip

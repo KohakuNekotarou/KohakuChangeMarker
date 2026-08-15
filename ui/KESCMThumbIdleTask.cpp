@@ -25,7 +25,7 @@
 #include <algorithm>
 #include <vector>
 
-#include "KESCMID.h"
+#include "KCMUIID.h"
 #include "KESCMThumbIdleTask.h"
 #include "KESCMThumbnailRefresh.h"	// KESCMTryRefreshPagesPanelThumbnails
 #include "Utils.h"					// Utils<IKESCMCompareFacade>()

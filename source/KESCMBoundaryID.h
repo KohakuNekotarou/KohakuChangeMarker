@@ -34,6 +34,39 @@
 #include "SDKDef.h"
 
 //----------------------------------------------------------------------------------------
+// 両側が同じ値で名乗る**表示文字列**（ID ではないが、食い違うと製品が2つに見える）
+//
+// ★★2026-08-15（第2段 Task 6B-2）にここへ集約した。理由は [[one-question-one-place]]:
+//   版数と表示名は **1 つの製品の事実**で、model と UI が別々に持つと必ずずれる。
+//   実際、KCMUI は雛形の kSDKDefPluginVersionString を名乗ったまま Task 2〜6 を通ってきた
+//   ＝プラグイン一覧に **別の版数の別プラグイン**として並んでいた。
+//
+//   使い手: 両側の .rc（FileDescription / FileVersion）／両側の .fr（PluginVersion・
+//   ExtraPluginInfo・About 文字列・メニュー束ね名）／両側の KESCMLoc.h（kKESCMAltKeyName）。
+//
+// ⚠ kKESCMPluginName（内部名）と kKESCMFileName（出力 .pln 名）は**側ごとに違う**ので
+//   ここには置かない ---- model は KESCMID.h、UI は KCMUIID.h が自分の名前を持つ。
+//----------------------------------------------------------------------------------------
+#define kKESCMCompanyKey	"KohakuNekotarou"	// Company name used internally for menu paths and the like. Must be globally unique, only A-Z, 0-9, space and "_".
+#define kKESCMCompanyValue	"KohakuNekotarou"	// Company name displayed externally.
+#define kKESCMDisplayName	"Kohaku Change Marker"	// 表示名(About メニュー項目・About ボックス本文・パネル/ツール名)。KBS の "Kohaku Search Panel" に合わせ、単語間をスペースで区切る(2026-07-25)。
+#define kKESCMVersion		"1.4.0"				// ★製品の版数（model と UI で必ず同じ）。About ボックス本文・両側の .rc の FileVersion・両側の PluginVersion リソースに出る。履歴と「次に提出する分」の増分は **KESCMID.h の長いコメント**が正本。
+
+// ★プラットフォーム別の修飾キー表記（2026-07-25 追補 Mac 対応）。
+//   実装側は SDK の IEvent が差を吸収する（OptionAltKeyDown = Win の Alt / Mac の Option、
+//   CmdKeyDown = Win の Ctrl / Mac の Command）ので、切り替えるのは「ユーザーに見せる名前」だけ。
+//   この定数は文字列リテラルなので、.fr の StringTable でも C++ でも隣接連結でそのまま埋め込める
+//   （例: "Hold Left + " kKESCMAltKeyName "="）。MACINTOSH は Mac ビルドの xcconfig
+//   （GCC_PREPROCESSOR_DEFINITIONS）と odfrc の双方で定義される。
+// ★**両側に要る**: UI 側の How to Use 本文（KESCM_enUS.fr の kKESCMHintKey と ui/KESCMLoc.h の
+//   日本語版）と、model 側の KESCMLoc.h が同じ表記を使う。
+#ifdef MACINTOSH
+#define kKESCMAltKeyName	"Option"
+#else
+#define kKESCMAltKeyName	"Alt"
+#endif
+
+//----------------------------------------------------------------------------------------
 // model 側の prefix。
 //
 // ★**両側のコピーともこの値**（UI 側の KCMUIID.h は自分用に kKCMUIPrefix を別に持つ）。

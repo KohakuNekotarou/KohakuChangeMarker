@@ -61,7 +61,7 @@
 #include "../../open/includes/widgets/TreeNodeEventHandler.h"	// stock base for a tree row
 
 // Project includes:
-#include "KESCMID.h"
+#include "KCMUIID.h"
 #include "KESCMStoryJump.h"
 
 namespace

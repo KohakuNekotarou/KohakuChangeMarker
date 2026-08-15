@@ -35,7 +35,7 @@
 #include "IApplication.h"	// QueryApplication(ICursorMgr 取得)
 #include "ICursorMgr.h"		// Hide/Show(カーソル設置の1フレームを隠す。ClearCache は撤去済み 2026-07-15)
 
-#include "KESCMID.h"
+#include "KCMUIID.h"
 #include "KESCMConstants.h"	// kKESCMCursorSettleMillis(設置後の落ち着き待ち)
 #include "KESCMPeekGesture.h"	// KESCMClassifyGesture / KESCMTrackerRevealBegin / KESCMTrackerRevealEnd
 #include "KESCMCmykCursor.h"	// CMYK カーソル入口(HasPending / CursorProc / UpdateCmykDrag)

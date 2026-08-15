@@ -56,7 +56,7 @@
 #include "../../open/includes/widgets/TreeViewEventHandler.h"	// stock base for a tree widget
 
 // Project includes:
-#include "KESCMID.h"
+#include "KCMUIID.h"
 #include "KESCMStoryJump.h"
 
 namespace

@@ -22,7 +22,7 @@
 #include "PersistUtils.h"		// ::GetClass - is the active tool ours?
 
 #include "KESCMUIShared.h"	// panel / status line / nav readout / tool button (split from KESCMCore.h on 2026-08-13)
-#include "KESCMID.h"
+#include "KCMUIID.h"
 #include "KESCMScriptingDefs.h"	// en_KESCMTool (this tool's ScriptID, registered in KESCM.fr)
 
 /** The KESCM tool's ITool implementation, based on the partial implementation CTool. */

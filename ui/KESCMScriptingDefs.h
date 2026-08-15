@@ -41,13 +41,13 @@
 #ifndef __KESCMScriptingDefs_h__
 #define __KESCMScriptingDefs_h__
 
-/** Properties KESCM adds to the application object. */
-enum KESCMScriptProperties
+/** ScriptIDs that KESCM contributes to enumerations that already exist in the object model.
+	Scripts read this one as app.toolBoxTools.currentTool, and select the tool by assigning
+	app.toolBoxTools.currentTool = UITools.KOHAKU_CHANGE_MARKER_TOOL.
+*/
+enum KESCMScriptEnums
 {
-	p_KESCMStatus     = 'pKGm',	// p = property, K = Kohaku, G = KESCM, m = message (app.kcmStatus)
-	p_KESCMBookResult = 'pKGb'	// b = book. app.kcmBookResult - the last book comparison, one line
-								// per chapter ("name<TAB>state"). Checked against the registry in
-								// docs/ai-notes/kes-scriptid-registry.md before use (2026-08-11).
+	en_KESCMTool = 'nKGt'	// n = enumerator, K = Kohaku, G = KESCM, t = tool
 };
 
 #endif // __KESCMScriptingDefs_h__

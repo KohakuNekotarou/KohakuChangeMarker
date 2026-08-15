@@ -53,7 +53,7 @@
 #include <chrono>				// steady_clock(キャッシュの TTL)
 
 // プロジェクト内インクルード:
-#include "KESCMID.h"
+#include "KCMUIID.h"
 #include "Utils.h"                   // Utils<IKESCMCompareFacade>()
 #include "IKESCMCompareFacade.h"     // arm 状態(2026-08-13・分割 第1段 Task 11 で Facade 経由へ)
 #include "KESCMViewLookup.h"         // KESCMFindDocDbForView / KESCMForgetViewDbHint(2026-08-13 に KESCMCore.h から移動)

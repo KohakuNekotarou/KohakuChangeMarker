@@ -40,7 +40,7 @@
 #include "CEventHandler.h"		// IEventHandler の入門実装(全メソッドが kFalse を返す)
 
 // プロジェクト内:
-#include "KESCMID.h"
+#include "KCMUIID.h"
 
 /** どのイベントも処理しない IEventHandler。基底をそのまま名前を付けて載せるだけ。
 

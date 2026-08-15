@@ -47,7 +47,7 @@
 #include "PalettePanelView.h"
 
 // プロジェクト内:
-#include "KESCMID.h"				// kKESCMPanelMinWidth / kKESCMPanelTopPaneHeight
+#include "KCMUIID.h"				// kKESCMPanelMinWidth / kKESCMPanelTopPaneHeight
 
 /** パネルのビュー: PalettePanelView に最小サイズを足したもの。 */
 class KESCMPanelView : public PalettePanelView

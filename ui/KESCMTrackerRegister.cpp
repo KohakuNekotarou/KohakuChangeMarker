@@ -20,7 +20,7 @@
 #include "CPMUnknown.h"
 #include "LayoutUIID.h"		// kLayoutWidgetBoss
 
-#include "KESCMID.h"
+#include "KCMUIID.h"
 
 /** Installs KESCM's tracker so it runs for the KESCM tool on the layout widget. */
 class KESCMTrackerRegister : public CPMUnknown<ITrackerRegister>

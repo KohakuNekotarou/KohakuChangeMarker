@@ -74,7 +74,7 @@
 									// 旧 std::clock は Win=壁時計/POSIX(Mac)=CPU時間 と意味が食い違うため置換)
 
 // Project includes:
-#include "KESCMID.h"
+#include "KCMUIID.h"
 #include "KESCMScrollMap.h"
 #include "IKESCMCompareFacade.h"	// arm 状態(2026-08-13・分割 第1段 Task 11 で Facade 経由へ)
 #include "IKESCMMarkData.h"			// 変更ページ・overflow・overset の読み取り(赤/薄赤/濃赤の供給元)。2026-08-13 Task 12
@@ -610,7 +610,7 @@ void KESCMScrollMapAttach(IDataBase* targetDB)
 		// 実行時生成(linksui と同じ標準形)。db は親 widget 群と同じ UI データベース。
 		InterfacePtr<IControlView> strip((IControlView*)::CreateObject(
 			::GetDataBase(sbParentPanel),
-			RsrcSpec(LocaleSetting::GetLocale(), kKESCMPluginID, kViewRsrcType, kKESCMScrollMapRsrcID),
+			RsrcSpec(LocaleSetting::GetLocale(), kKCMUIPluginID, kViewRsrcType, kKESCMScrollMapRsrcID),
 			IID_ICONTROLVIEW));
 		if (strip == nil)
 			continue;

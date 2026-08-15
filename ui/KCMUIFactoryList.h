@@ -29,7 +29,15 @@
 //   `CREATE_PERSIST_PMINTERFACE` の**両方**を Grep し、結果と1対1で突き合わせて作ること
 //   （★tool と自前 view は PERSIST 版を使うので、前者だけ見ると 3 本落ちる）。
 //
-REGISTER_PMINTERFACE(KCMUIActionComponent, kKCMUIActionComponentImpl)
+// ★★2026-08-15（第2段 Task 6B-2）: **DollyXs 雛形の About 一式を撤去した**
+//   （KCMUIActionComponent.cpp ＋ kKCMUIActionComponentBoss / kKCMUIActionComponentImpl /
+//    kKCMUIAboutActionID ＋ KCMUI.fr の Class・MenuDef・ActionDef）。
+//   理由は2つ:
+//     ①**ActionID +0 が衝突する**——ID をオフセット保存で移したので、KESCM の About(+0) と
+//       雛形の About(+0) が同じ番号になる。
+//     ②**KESCM 本体の ActionComponent が UI 側へ来る**（ActionComponent は UI 必須）ので、
+//       About は本来の1つに戻るのが正しい。Task 2 以降 About が2つ並んでいたのは暫定状態だった。
+//   ⇒ 下の KESCMActionComponent が About を含むフライアウト全部を担う。
 
 // ---- 2026-08-15: model/UI 分割 第2段 Task 5（葉の UI 部品）で KESCM から移ってきた4本 ----
 //

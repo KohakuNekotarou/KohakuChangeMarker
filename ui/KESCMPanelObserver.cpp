@@ -40,7 +40,7 @@
 #include "SDKFileHelper.h"			// IDFile -> パス文字列(Target/Source をフルパスで出す。2026-08-12)
 
 // プロジェクト内:
-#include "KESCMID.h"
+#include "KCMUIID.h"
 #include "Utils.h"					// Utils<IKESCMCompareFacade>()
 #include "IKESCMCompareFacade.h"	// ★arm 状態とステータス文字列を model に頼む窓口(2026-08-13 Task 11)。
 								//  読み出しは GetSessionStatus、書き込みは StoreSessionStatus ---- 後者は

@@ -49,7 +49,7 @@
 #include "PMString.h"
 
 // プロジェクト内インクルード:
-#include "KESCMID.h"
+#include "KCMUIID.h"
 #include "IKESCMMarkData.h"          // マーク/overset の読み取り(2026-08-13 Task 12。押下中の表示状態の
                                      // 読み書きは IKESCMCompareFacade 側＝あちらは書ける)
 #include "KESCMUIShared.h"	// panel / status line / nav readout / tool button (split from KESCMCore.h on 2026-08-13)

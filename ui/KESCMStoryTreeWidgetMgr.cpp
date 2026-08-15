@@ -43,7 +43,7 @@
 #include "../../open/includes/widgets/DVPublicUtilities.h"	// dv_utils::SetThemeForView
 
 // Project includes:
-#include "KESCMID.h"
+#include "KCMUIID.h"
 #include "KESCMUIShared.h"	// panel / status line / nav readout / tool button (split from KESCMCore.h on 2026-08-13)
 #include "Utils.h"					// Utils<IKESCMStoryEditsFacade>()
 #include "IKESCMStoryEditsFacade.h"	// the rows themselves (Facade since 2026-08-13, Task 14)
@@ -136,7 +136,7 @@ public:
 		// the tree decides what to do without one.
 		IPMUnknown* newObject = ::CreateObjectNoInit(
 			::GetDataBase(this),
-			RsrcSpec(LocaleSetting::GetLocale(), kKESCMPluginID, kViewRsrcType, kKESCMStoryRowRsrcID),
+			RsrcSpec(LocaleSetting::GetLocale(), kKCMUIPluginID, kViewRsrcType, kKESCMStoryRowRsrcID),
 			IID_ICONTROLVIEW);
 		InterfacePtr<IControlView> view(newObject, UseDefaultIID());
 		if (view != nil)

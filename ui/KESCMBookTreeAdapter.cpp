@@ -27,7 +27,7 @@
 
 // Project includes:
 #include "KESCMBookDialog.h"		// KESCMBookDialogRows - the model
-#include "KESCMID.h"
+#include "KCMUIID.h"
 
 /** Hierarchy adapter for the chapter list: a flat list, as long as the last result.
 */

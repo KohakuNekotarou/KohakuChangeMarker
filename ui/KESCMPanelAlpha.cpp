@@ -33,7 +33,7 @@
 // プロジェクト内:
 #include "KESCMPanelAlpha.h"
 #include "KESCMConstants.h"		// kKESCMPanelAlphaValue
-#include "KESCMID.h"			// kKESCMDisplayName(=窓 title で引くパネル名)/独自 IID・ImplID
+#include "KCMUIID.h"			// kKESCMDisplayName(=窓 title で引くパネル名)/独自 IID・ImplID
 
 // パネルの表示状態変化を購読するオブザーバ用:
 #include "CObserver.h"

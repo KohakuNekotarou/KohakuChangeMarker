@@ -35,7 +35,7 @@
 #include "KESCMBookDialog.h"	// KESCMBookDialogSetResult / KESCMOpenBookDialog / KESCMElidePathFront
 #include "KESCMBookResult.h"	// KESCMChapterResult
 #include "KESCMBookRun.h"
-#include "KESCMID.h"
+#include "KCMUIID.h"
 #include "KESCMLoc.h"			// Japanese in a Japanese UI, English everywhere else
 
 namespace

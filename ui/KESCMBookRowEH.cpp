@@ -59,7 +59,7 @@
 
 // Project includes:
 #include "KESCMBookOpen.h"
-#include "KESCMID.h"
+#include "KCMUIID.h"
 
 namespace
 {

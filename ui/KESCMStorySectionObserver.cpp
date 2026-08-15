@@ -23,7 +23,7 @@
 #include "widgetid.h"				// kTrueStateMessage
 
 // ----- Project -----
-#include "KESCMID.h"
+#include "KCMUIID.h"
 #include "KESCMStorySection.h"
 
 //========================================================================================

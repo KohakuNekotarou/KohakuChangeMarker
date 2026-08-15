@@ -45,7 +45,7 @@
 #include "KESCMBookDialog.h"		// KESCMBookDialogRows - the model
 #include "KESCMBookResult.h"		// KESCMChapterResult / KESCMChapterStateText
 #include "KESCMBookTree.h"
-#include "KESCMID.h"
+#include "KCMUIID.h"
 
 /** Builds and fills the rows of the chapter list.
 */
@@ -74,7 +74,7 @@ public:
 		// the tree decides what to do without one.
 		IPMUnknown* newObject = ::CreateObjectNoInit(
 			::GetDataBase(this),
-			RsrcSpec(LocaleSetting::GetLocale(), kKESCMPluginID, kViewRsrcType, kKESCMBookRowRsrcID),
+			RsrcSpec(LocaleSetting::GetLocale(), kKCMUIPluginID, kViewRsrcType, kKESCMBookRowRsrcID),
 			IID_ICONTROLVIEW);
 		InterfacePtr<IControlView> view(newObject, UseDefaultIID());
 		if (view != nil)

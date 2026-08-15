@@ -33,7 +33,7 @@
 // Project includes:
 #include "KESCMBookDialog.h"
 #include "KESCMBookTree.h"		// KESCMBookTreeRebuild - the list, redrawn when the dialog opens
-#include "KESCMID.h"
+#include "KCMUIID.h"
 #include "KESCMPanelAlpha.h"	// KESCMSetBookDialogWindow / KESCMApplyBookDialogTranslucency
 
 // *windows.h goes AFTER the SDK headers, so its macros cannot collide with SDK names.
@@ -349,7 +349,7 @@ void KESCMOpenBookDialog()
 	RsrcSpec dialogSpec
 	(
 		LocaleSetting::GetLocale(),		// Locale index
-		kKESCMPluginID,					// This plug-in
+		kKCMUIPluginID,					// This plug-in
 		kViewRsrcType,
 		kKESCMBookDialogRsrcID,			// The dialog's view resource
 		kTrue							// Initially visible

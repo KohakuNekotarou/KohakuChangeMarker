@@ -31,7 +31,7 @@
 #include "ListTreeViewAdapter.h"
 
 // Project includes:
-#include "KESCMID.h"
+#include "KCMUIID.h"
 #include "Utils.h"					// Utils<IKESCMCompareFacade>()
 #include "IKESCMCompareFacade.h"	// IsArmed - is a comparison running at all (Facade since 2026-08-13, Task 11)
 #include "IKESCMStoryEditsFacade.h"	// GetRowCount - how long the list is (Facade since 2026-08-13, Task 14)

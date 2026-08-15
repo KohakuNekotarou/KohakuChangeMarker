@@ -33,7 +33,7 @@
 #include "PMString.h"
 
 // プロジェクト内:
-#include "KESCMID.h"
+#include "KCMUIID.h"
 
 /** 常に空を返す ITip。空文字列＝「ツールチップ無し」がインターフェイスの定義。 */
 class KESCMNoTip : public AbstractTip

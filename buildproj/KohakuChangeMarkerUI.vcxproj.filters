@@ -15,9 +15,6 @@
       </Filter>
    </ItemGroup>
    <ItemGroup>
-      <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KCMUIActionComponent.cpp">
-         <Filter>Source Files</Filter>
-      </ClCompile>
       <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMIconTip.cpp">
          <Filter>Source Files</Filter>
       </ClCompile>
