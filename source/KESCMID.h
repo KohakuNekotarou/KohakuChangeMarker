@@ -49,7 +49,8 @@
 //   ★**この 1 帯で自作5本ぜんぶ賄える**（最大オフセットの合計は ActionID で 122/256。widget ID は
 //     グローバルに一意である必要が無いので予算に数えない）。割り当て案は
 //     docs/superpowers/specs/2026-08-13-kescm-model-ui-split-stage1-design.md §1.3-2。
-#define kKESCMPrefixNumber	0x1EA500 		// Unique prefix number for this plug-in(*Must* be obtained from Adobe Developer Support).
+// ★★2026-08-15（第2段 Task 6B）: **prefix の定義そのものは KESCMBoundaryID.h へ移した**
+//   ＝UI 側（KCMUI）のコピーと値を1つにするため。下に続くコメントは経緯の記録としてここに残す。
 													// ★★2026-08-13: Adobe が発行した正規の prefix に差し替えた。wwds@adobe.com へメールで依頼し
 													// 「0x1EA500 - 0x1EA5FF」を受領＝**各 ID 空間 256 枠が予約された**(自作プラグインで唯一)。
 													// ⚠旧値 0x205515 は Adobe Developer Console のプラグイン ID(10進 205515)に 0x を付けて
@@ -107,9 +108,14 @@
 														// ■全14ブロックの API 監査(2026-08-05〜08-07)とバグ特化の全コード再点検(08-06)を実施済み。全文=docs/ai-notes/kescm-file-map.md の各ブロックノート／kescm-bug-recheck-2026-08-06.md。
 // (kKESCMAuthor はテンプレート残骸(どこからも未参照)のため削除 2026-07-25)
 
-// Plug-in Prefix: (please change kKESCMPrefixNumber above to modify the prefix.)
-#define kKESCMPrefix		RezLong(kKESCMPrefixNumber)				// The unique numeric prefix for all object model IDs for this plug-in.
-#define kKESCMStringPrefix	SDK_DEF_STRINGIZE(kKESCMPrefixNumber)	// The string equivalent of the unique prefix number for  this plug-in.
+// Plug-in Prefix ＋ 境界の ID:
+//
+// ★★2026-08-15（第2段 Task 6B）: `kKESCMPrefixNumber` / `kKESCMPrefix` / `kKESCMStringPrefix` と、
+//   **model と UI の両方が同じ値で知っていなければならない ID**（Facade 5本の IID・通知の
+//   protocol IID・MessageID 7本）は **KESCMBoundaryID.h** へ移した。
+//   ⚠**あちらは KCMUI 側にも同じ内容のコピーがある。片方だけ直すと黙ってずれる。**
+//   このファイルに残るのは **model 専用の ID** だけ。
+#include "KESCMBoundaryID.h"
 
 // Missing plug-in: (see ExtraPluginInfo resource)
 #define kKESCMMissingPluginURLValue		kSDKDefPartnersStandardValue_enUS // URL displayed in Missing Plug-in dialog
@@ -162,12 +168,9 @@ DECLARE_PMID(kInterfaceIDSpace, IID_IKESCMLAYOUTSYNCOBSERVER, kKESCMPrefix + 0)	
 DECLARE_PMID(kInterfaceIDSpace, IID_IKESCMDOCSCLOSEDOBSERVER, kKESCMPrefix + 1)	// 一括クローズ完了(kPendingDocumentsClosedMsg)を受けるオブザーバのアタッチ識別ID
 DECLARE_PMID(kInterfaceIDSpace, IID_IKESCMPANELVISIBILITYOBSERVER, kKESCMPrefix + 2)	// パネルの表示状態変化(kPaletteVisibilityChangedMessage)を受けるオブザーバのアタッチ識別ID。半透明トグルをドッキング切り替え/開き直しに追随させるために使う
 DECLARE_PMID(kInterfaceIDSpace, IID_IKESCMSAVEDSECTIONHEIGHT, kKESCMPrefix + 3)	// IIntData として扱う: Story Edits セクションを閉じた瞬間の高さ(px)。次に開くときこの高さで開く。実装は SDK 標準の kPersistIntDataImpl(手本=linksui の IID_ISAVEDINFOPANESIZE)
-DECLARE_PMID(kInterfaceIDSpace, IID_IKESCMCOMPAREFACADE, kKESCMPrefix + 4)	// UI が比較エンジンに頼む窓口(kUtilsBoss に AddIn。UI 側は Utils<IKESCMCompareFacade>() で引く)。2026-08-13・model/UI 分割 第1段 Task 11。手本=sdksamples/customconditionaltext の IID_ICUSCONDTXTFACADE
-DECLARE_PMID(kInterfaceIDSpace, IID_IKESCMMARKDATA, kKESCMPrefix + 5)	// UI が比較結果(変更枠・overset)を**読む**窓口(kUtilsBoss に AddIn)。2026-08-13・model/UI 分割 第1段 Task 12。★読み取り専用＝マークを作るのは IID_IKESCMCOMPAREFACADE の1か所だけ
-DECLARE_PMID(kInterfaceIDSpace, IID_IKESCMPAGEFLAGSFACADE, kKESCMPrefix + 6)	// UI が Register(Added/Removed)と Check(✓)を書き換える窓口(kUtilsBoss に AddIn)。2026-08-13・model/UI 分割 第1段 Task 13
-DECLARE_PMID(kInterfaceIDSpace, IID_IKESCMSTORYEDITSFACADE, kKESCMPrefix + 7)	// UI が Story Edits の一覧(変更のあったストーリー)を**読む**窓口(kUtilsBoss に AddIn)。2026-08-13・model/UI 分割 第1段 Task 14。★読み取り専用＝一覧を作るのも捨てるのも model 側(KESCMCore.cpp / KESCMPeek.cpp)だけ
-DECLARE_PMID(kInterfaceIDSpace, IID_IKESCMBOOKFACADE, kKESCMPrefix + 8)	// UI がブック比較を頼む窓口(kUtilsBoss に AddIn)。2026-08-14・model/UI 分割 第1段 Task 15(境界の5本目=最後)。⚠ResolveBookPair は中で Book パネルの前面タブを見ている＝第2段の課題
-DECLARE_PMID(kInterfaceIDSpace, IID_IKESCMMODELCHANGEOBSERVER, kKESCMPrefix + 9)	// model の通知を受ける **UI 側**オブザーバのアタッチ識別ID(AttachObserver の observerIID)。2026-08-13・model/UI 分割 第1段 Task 9。★上の3本と同じ流儀＝アプリの subject に自作 protocol IID で attach する(ISubject の AddIn はしない)
+// ★★+4〜+9（Facade 5本の IID ＋ 通知の protocol IID）は 2026-08-15（第2段 Task 6B）に
+//   **KESCMBoundaryID.h へ移した**＝UI 側と同じ値でなければ意味を成さない ID だから。
+//   ⚠ 番号は動いていない（+4..+9 のまま）。スロットとしては使用中なので再利用しないこと。
 //DECLARE_PMID(kInterfaceIDSpace, IID_IKESCMINTERFACE, kKESCMPrefix + 10)
 //DECLARE_PMID(kInterfaceIDSpace, IID_IKESCMINTERFACE, kKESCMPrefix + 11)
 //DECLARE_PMID(kInterfaceIDSpace, IID_IKESCMINTERFACE, kKESCMPrefix + 12)
@@ -239,16 +242,14 @@ DECLARE_PMID(kImplementationIDSpace, kKESCMStoryEditsFacadeImpl, kKESCMPrefix + 
 DECLARE_PMID(kImplementationIDSpace, kKESCMBookFacadeImpl, kKESCMPrefix + 43)	// IKESCMBookFacade 実装(KESCMFacades.cpp)。同じく kUtilsBoss へ AddIn
 
 // MessageIDs: model が UI へ「何が変わったか」を知らせる通知(2026-08-13・model/UI 分割 第1段 Task 9)。
-//   ★kMessageIDSpace は KESCM がこれまで1つも使っていなかったので +0 から採る。
-//   受け手は UI 側の1本の Observer(kKESCMModelChangeObserverImpl)だけで、changeID で振り分ける。
-//   ★★**model は UI に何があるか知らない**。誰も聞いていなければ何も起きない＝InDesign Server でも安全。
-DECLARE_PMID(kMessageIDSpace, kKESCMMarksRebuiltMessage,      kKESCMPrefix + 0)	// 比較が走ってマークが作り直された(Prev/Next の位置・スクロール地図・Pages サムネイル・Story Edits の一覧が対象)
-DECLARE_PMID(kMessageIDSpace, kKESCMMarksClearedMessage,      kKESCMPrefix + 1)	// Stop でマークが消えた
-DECLARE_PMID(kMessageIDSpace, kKESCMPageFlagsChangedMessage,  kKESCMPrefix + 2)	// Register(Added/Removed)または Check(✓)が変わった
-DECLARE_PMID(kMessageIDSpace, kKESCMStoryEditsRebuiltMessage, kKESCMPrefix + 3)	// Story Edits のモデルが作り直された
-DECLARE_PMID(kMessageIDSpace, kKESCMStatusTextMessage,        kKESCMPrefix + 4)	// ステータス行の文字列が変わった(文字列自体は KESCMGetSessionStatus で取る)
-DECLARE_PMID(kMessageIDSpace, kKESCMOversetRescannedMessage,  kKESCMPrefix + 5)	// overset の走査結果が更新された
-DECLARE_PMID(kMessageIDSpace, kKESCMComparisonDocsClosedMessage, kKESCMPrefix + 6)	// ★比較していた文書が閉じられ、Stop 相当の後片付けが済んだ(2026-08-13・Task 10)。
+//   ★★2026-08-15（第2段 Task 6B）に **7本すべて KESCMBoundaryID.h へ移した**
+//     ＝送り手（model）と受け手（UI）が同じ値を見ていなければ、ビルドは通るのに**黙って何も起きない**。
+//   ⚠ 番号は動いていない（+0..+6）。以下は跡地の記録:
+//     +0 kKESCMMarksRebuiltMessage / +1 kKESCMMarksClearedMessage / +2 kKESCMPageFlagsChangedMessage /
+//     +3 kKESCMStoryEditsRebuiltMessage / +4 kKESCMStatusTextMessage / +5 kKESCMOversetRescannedMessage /
+//     +6 kKESCMComparisonDocsClosedMessage
+//   （下に残しているのは +6 を Stop と別建てにした理由の説明。移動先のヘッダーにも同じ説明がある。）
+//   ★比較していた文書が閉じられ、Stop 相当の後片付けが済んだ(2026-08-13・Task 10)。
 																					// ⚠**Stop(kKESCMMarksClearedMessage)とは別**にした理由＝UI 側の後始末が3点違う:
 																					//   ①サムネイルの作り直しは**次の idle へ遅延**させる(前面切替の過渡で ForceRedraw が
 																					//     効かず枠が残る＝2026-07-08 実機で確認)②**一括クローズ中は保留**して全部閉じ終えて

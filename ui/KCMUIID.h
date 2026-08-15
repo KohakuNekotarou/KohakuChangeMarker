@@ -27,6 +27,14 @@
 
 #include "SDKDef.h"
 
+// ★★2026-08-15（第2段 Task 6B）: **model と UI の両方が同じ値で知っていなければならない ID**
+//   （Facade 5本の IID・通知の protocol IID・MessageID 7本、および model 側の prefix）は
+//   KESCMBoundaryID.h にある。**このファイルは ui/ 側のコピーを読む**（相方 = source/KESCMBoundaryID.h）。
+//   ⚠ 片方だけ直すと黙ってずれる。必ず両方直すこと。
+//   ★あちらが定義する kKESCMPrefix（0x1EA500）は **model 側の番号**で、下の kKCMUIPrefix（0x1EA580）
+//     とは別物。UI 専用の ID はこのファイルで kKCMUIPrefix から採る。
+#include "KESCMBoundaryID.h"
+
 // Company:
 #define kKCMUICompanyKey	kSDKDefPlugInCompanyKey		// Company name used internally for menu paths and the like. Must be globally unique, only A-Z, 0-9, space and "_".
 #define kKCMUICompanyValue	kSDKDefPlugInCompanyValue	// Company name displayed externally.

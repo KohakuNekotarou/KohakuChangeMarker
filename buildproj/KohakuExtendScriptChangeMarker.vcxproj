@@ -260,6 +260,7 @@
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMDrawEventHandler.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMOversetScan.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMID.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMBoundaryID.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMLoc.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMFactoryList.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMPageMap.h" />
