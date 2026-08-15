@@ -141,12 +141,19 @@
 //   オフセットは動かしていない＝あちらで `kKCMUIPrefix + 同じ数字` になっているだけ。
 //   ⚠ よって **この帯の +7 +8 +9 +11〜+27 は「空き」ではない**（UI 側の同じ数字と対応が付いている）。
 //   ★ここに残る4つが「窓が無くても成り立つ仕事」＝比較マークの描画・起動終了・文書クローズ・ScriptProvider。
-DECLARE_PMID(kClassIDSpace, kKESCMScriptProviderBoss, kKESCMPrefix + 3)	// app.kcmStatus を返す ScriptProvider(2026-08-06 復活。旧スクリプトAPI(kescmToast 等)は撤去済みで、公開するのは読み取り専用の1プロパティだけ)
+DECLARE_PMID(kClassIDSpace, kKESCMScriptProviderBoss, kKESCMPrefix + 3)	// ★このプラグインが公開する ScriptProvider は**これ1つだけ**＝app の2プロパティ(kcmStatus/kcmBookResult)と story の4カウンターを両方この boss が serve する(2026-08-15 に集約)。.fr は**同じ boss に Provider ブロックを2つ**書いて Object ごとに Property を分けている(KESCM.fr の末尾2ブロック)。旧スクリプトAPI(kescmToast 等)は撤去済みで、公開するのは読み取り専用プロパティだけ
 DECLARE_PMID(kClassIDSpace, kKESCMDrawEventServiceBoss, kKESCMPrefix + 4)
 // kKESCMPeekWatcherBoss (kKESCMPrefix + 5) は中ボタンウォッチャ撤去(2026-07-13)により廃止。スロットは予約のまま。
 DECLARE_PMID(kClassIDSpace, kKESCMPeekStartupBoss, kKESCMPrefix + 6)	// IStartupShutdown: アプリ起動時に peek ウォッチャを開始
 DECLARE_PMID(kClassIDSpace, kKESCMDocResponderServiceBoss, kKESCMPrefix + 10)	// IK2ServiceProvider+IResponder: ドキュメントクローズ監視(閉じた文書の追跡状態を確定クリーンアップ)
-DECLARE_PMID(kClassIDSpace, kKESCMStoryScriptProviderBoss, kKESCMPrefix + 11)	// story の ScriptProvider(2026-08-15)。★**上の kKESCMScriptProviderBoss とは別 boss にした**＝.fr の Provider ブロックは「その中の Property を、その中の Object 全部に載せる」(BPI.fr:603-612 が2つの Object に同じ property を載せている)。1つに混ぜると app.kcmStatus が story にも、kcmChangeCount が app にも生えて DOM が濁る。⇒ **オブジェクトごとに boss を分ける**(公式も candlechart が kCdlChartScriptProviderBoss / kCdlStockScriptProviderBoss と分けている)
+// kKESCMStoryScriptProviderBoss (kKESCMPrefix + 11) は 2026-08-15 に廃止。スロットは予約のまま(再利用しない)。
+//   ★経緯＝story の4カウンターを公開したとき「1つの boss では app と story を分けられない」と考えて2つ目の
+//   boss を作ったが、**それが誤り**だった。ガイドの Provider element の定義が答え＝Property は「**直前の**
+//   Object が指すオブジェクトに載る」(vol1-11:1302。Object 側は「**後続の**フィールドが載る」:1300)、かつ
+//   provider は「**複数の場所で定義できる**」(vol1-11:1237)。⇒ **分けるのは boss ではなく Object/ブロック**。
+//   公式の証拠＝basicshape が Adobe 自身の kPageItemScriptProviderBoss に**3ブロック**を与えている
+//   (BscShp.fr:370-404。Contexts は :317 の1件だけ)。⇒ ブロックを2つに保ったまま boss を一本化した。
+//   ★実機で確認済み(2026-08-15)＝`'kcmChangeCount' in app` も `'kcmStatus' in story` も **false**（混ざらない）。
 
 
 // InterfaceIDs:
@@ -190,7 +197,8 @@ DECLARE_PMID(kImplementationIDSpace, kKESCMMarkDataImpl, kKESCMPrefix + 40)	// I
 DECLARE_PMID(kImplementationIDSpace, kKESCMPageFlagsFacadeImpl, kKESCMPrefix + 41)	// IKESCMPageFlagsFacade 実装(KESCMFacades.cpp)。同じく kUtilsBoss へ AddIn
 DECLARE_PMID(kImplementationIDSpace, kKESCMStoryEditsFacadeImpl, kKESCMPrefix + 42)	// IKESCMStoryEditsFacade 実装(KESCMFacades.cpp)。同じく kUtilsBoss へ AddIn。★読み取り専用
 DECLARE_PMID(kImplementationIDSpace, kKESCMBookFacadeImpl, kKESCMPrefix + 43)	// IKESCMBookFacade 実装(KESCMFacades.cpp)。同じく kUtilsBoss へ AddIn
-DECLARE_PMID(kImplementationIDSpace, kKESCMStoryScriptProviderImpl, kKESCMPrefix + 44)	// story の4カウンターを返す CScriptProvider 実装(KESCMStoryScriptProvider.cpp。2026-08-15)
+// kKESCMStoryScriptProviderImpl (kKESCMPrefix + 44) は 2026-08-15 に廃止(実装ごと kKESCMScriptProviderImpl へ
+//   統合)。スロットは予約のまま(再利用しない)。理由は上の kKESCMStoryScriptProviderBoss の欠番コメント。
 
 // MessageIDs: model が UI へ「何が変わったか」を知らせる通知(2026-08-13・model/UI 分割 第1段 Task 9)。
 //   ★★2026-08-15（第2段 Task 6B）に **7本すべて KESCMBoundaryID.h へ移した**
@@ -226,7 +234,8 @@ DECLARE_PMID(kImplementationIDSpace, kKESCMStoryScriptProviderImpl, kKESCMPrefix
 DECLARE_PMID(kScriptInfoIDSpace, kKESCMStatusPropertyScriptElement, kKESCMPrefix + 13)	// app.kcmStatus(読み取り専用。パネルのステータス行の最後の1行)
 DECLARE_PMID(kScriptInfoIDSpace, kKESCMBookResultPropertyScriptElement, kKESCMPrefix + 14)	// app.kcmBookResult(読み取り専用。直近のブック比較の結果を章ごと1行の TSV「章名<TAB>状態」で返す)。★ステータス行は1行しか出せないので、章ごとの一覧を人手ゼロで検証するにはこの口が要る(狙いは kcmStatus と同じ)
 // ★2026-08-15: story の変更カウンター4本(読み取り専用)。app.documents[0].stories[2].kcmChangeCount のように**ストーリーそのもの**から読む。
-//   ⚠これは application ではなく **story オブジェクト**に載る＝.fr の Provider は kKESCMStoryScriptProviderBoss(別 boss)。
+//   ⚠これは application ではなく **story オブジェクト**に載る＝.fr では**同じ kKESCMScriptProviderBoss の2つ目の
+//     Provider ブロック**に置く(2026-08-15 に別 boss から集約。分けるのは boss ではなくブロック＝BscShp.fr:370-404)。
 //   ★狙い＝**Story Edits が行を出すかどうかを決めている当の数値**(集約カウンター)を外から読めるようにすること。
 //     これが読めないと「一覧が空」のとき、不具合なのか2文書が本当に同じ読みなのかを**ソースを読む以外に確かめる術がない**(2026-08-15 に実際に困った)。
 DECLARE_PMID(kScriptInfoIDSpace, kKESCMChangeCountPropertyScriptElement, kKESCMPrefix + 15)	// stories[n].kcmChangeCount(集約。ITextModel::GetChangeCount)

@@ -214,11 +214,25 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 	},
 
 	/*
-	 * Scripting provider: serves app.kcmStatus and nothing else. Derives from
-	 * kBaseScriptProviderBoss, which brings the machinery that dispatches script requests; all this
-	 * boss adds is our own handler. The property itself is declared in the
-	 * VersionedScriptElementInfo resource at the end of this file. Same shape as KBS
+	 * Scripting provider: serves EVERYTHING this plug-in publishes - app.kcmStatus and
+	 * app.kcmBookResult on the application object, and the four ITextModel change counters on the
+	 * story object. Derives from kBaseScriptProviderBoss, which brings the machinery that dispatches
+	 * script requests; all this boss adds is our own handler. The properties themselves are declared
+	 * in the VersionedScriptElementInfo resource at the end of this file. Same shape as KBS
 	 * (KBS.fr:406-413), which follows the official scripting sample BPI.fr.
+	 *
+	 * ★★★ONE boss for both objects (2026-08-15). There used to be a SECOND boss here for the story
+	 * counters, on the belief that one boss could not keep two objects apart. That was wrong, and
+	 * the guide says why: a Property is "added to the script object referenced by the PRECEDING
+	 * Object field" (vol1-11:1302), and a provider element "can be defined (used) in multiple
+	 * places" (vol1-11:1237). So properties follow the Object that stands before them, and one boss
+	 * may own several Provider blocks. basicshape does exactly that with Adobe's own
+	 * kPageItemScriptProviderBoss - three blocks inside one VersionedScriptElementInfo whose
+	 * Contexts list has a single entry (BscShp.fr:370-404, :317).
+	 *
+	 * ★実機で確認済み(2026-08-15)＝`'kcmChangeCount' in app` と `'kcmStatus' in story` が**どちらも
+	 * false**（互いのメンバーが生えていない）／それぞれの側では読めて値も動く。
+	 * See the two Provider blocks at the end of this file and the header of KESCMScriptProvider.cpp.
 	 */
 	Class
 	{
@@ -226,25 +240,6 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 		kBaseScriptProviderBoss,
 		{
 			IID_ISCRIPTPROVIDER, kKESCMScriptProviderImpl,
-		}
-	},
-
-	/*
-	 * The STORY half of this plug-in's scripting (2026-08-15): the four ITextModel change
-	 * counters, served on the story object itself.
-	 *
-	 * ★A SECOND provider boss, not a second Provider block on the one above. A Provider block
-	 * puts every property it lists onto every object it lists - which is exactly what BPI.fr:603-612
-	 * wants (one property, two kinds of page item) and exactly what we do NOT want here: merging
-	 * would grow app.kcmChangeCount and stories[n].kcmStatus, both nonsense. The official
-	 * candlechart sample splits the same way (kCdlChartScriptProviderBoss / kCdlStockScriptProviderBoss).
-	 */
-	Class
-	{
-		kKESCMStoryScriptProviderBoss,
-		kBaseScriptProviderBoss,
-		{
-			IID_ISCRIPTPROVIDER, kKESCMStoryScriptProviderImpl,
 		}
 	},
 }}};
@@ -428,11 +423,19 @@ resource VersionedScriptElementInfo(10)
 			kNoAttributeClass,
 		}
 
-		// Puts those four ON the story object - a SECOND provider boss, because a Provider block
-		// puts every property it lists onto every object it lists (see the boss's comment above).
+		// Puts those four ON the story object - a SECOND Provider block on the SAME boss as the
+		// application properties above. What separates them is the Object field: a Property is
+		// added to the object named by the PRECEDING Object (vol1-11:1302), so the four counters
+		// below follow Object{kStoryObjectScriptElement} and the two strings above follow
+		// Object{kApplicationObjectScriptElement}. Appending them to the block above - after that
+		// block's Object{Application} and with no Object of their own - is what would have grown
+		// app.kcmChangeCount. One boss serving several blocks is what basicshape does with Adobe's
+		// own kPageItemScriptProviderBoss (BscShp.fr:370-404, three blocks, one Contexts entry at
+		// :317), and vol1-11:1237 states it plainly: a provider "can be defined (used) in multiple
+		// places".
 		Provider
 		{
-			kKESCMStoryScriptProviderBoss,
+			kKESCMScriptProviderBoss,
 			{
 				Object{ kStoryObjectScriptElement },
 				Property{ kKESCMChangeCountPropertyScriptElement, kReadOnly },

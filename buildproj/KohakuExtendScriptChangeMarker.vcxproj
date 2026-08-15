@@ -237,7 +237,6 @@
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMFacades.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMDocResponder.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMScriptProvider.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryScriptProvider.cpp" />
     <ClCompile Include="$(id_sdk_dir)\source\public\libs\publiclib\statics\PlugInStatics.cpp" />
     <ClCompile Include="$(ID_SDK_DIR)\source\sdksamples\common\SDKPlugInEntrypoint.cpp" />
     <ClCompile Include="$(ID_SDK_DIR)\source\sdksamples\common\SDKFileHelper.cpp" />

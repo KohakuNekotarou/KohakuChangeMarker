@@ -40,7 +40,6 @@ REGISTER_PMINTERFACE(KESCMDrawEventHandler, kKESCMDrawEventHandlerImpl)	// 同�
 REGISTER_PMINTERFACE(KESCMPeekStartup, kKESCMPeekStartupImpl)	// model 側の起動/終了(KESCMPeek.cpp)。UI 側の対は KCMUI の KESCMUIStartup
 REGISTER_PMINTERFACE(KESCMDocResponder, kKESCMDocResponderImpl)	// ServiceProvider は API 提供の実装を .fr で名指し(2026-08-06)
 REGISTER_PMINTERFACE(KESCMScriptProvider, kKESCMScriptProviderImpl)	// app.kcmStatus(読み取り専用)。★ScriptProvider は UI ではない(設計書 §4.1)
-REGISTER_PMINTERFACE(KESCMStoryScriptProvider, kKESCMStoryScriptProviderImpl)	// stories[n].kcmChangeCount ほか3本(読み取り専用。KESCMStoryScriptProvider.cpp。2026-08-15)
 REGISTER_PMINTERFACE(KESCMCompareFacade, kKESCMCompareFacadeImpl)	// UI が比較エンジンに頼む窓口(kUtilsBoss へ AddIn。KESCMFacades.cpp)
 REGISTER_PMINTERFACE(KESCMMarkData, kKESCMMarkDataImpl)	// UI が比較結果を読む窓口(同上。★読み取り専用)
 REGISTER_PMINTERFACE(KESCMPageFlagsFacade, kKESCMPageFlagsFacadeImpl)	// UI が Register/Check を書き換える窓口(同上)
