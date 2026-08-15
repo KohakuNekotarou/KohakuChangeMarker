@@ -78,7 +78,16 @@ resource PluginVersion (kSDKDefPluginVersionResourceID)
 	kKESCMCurrentMajorFormatNumber, kKESCMCurrentMinorFormatNumber,
 	{ kInDesignProduct },
 	{ kWildFS },
-	kUIPlugIn,
+	// ★★★2026-08-15 (Stage 2, Task 11): kUIPlugIn -> kModelPlugIn. THIS IS THE LINE THE WHOLE
+	//   SPLIT WAS FOR. PlugInModel_UIAttributes.h:31-32 - a plug-in declares one or the other,
+	//   never both, and this field is what decides whether the plug-in is available to work that
+	//   runs on BACKGROUND THREADS (gs-03:50 "Only model plug-ins are available for operations
+	//   that occur on background threads").
+	//   ⇒ From here on, the comparison marks' draw handler can be reached by the PDF export.
+	//   ⚠What this also means: every boss declared in THIS file must be reachable without the UI.
+	//     The three object-model rules are checked at startup (guide vol1-07); breaking rule 3 is
+	//     the dangerous one because it only warns and then IGNORES the override.
+	kModelPlugIn,
 	kKESCMVersion
 };
 

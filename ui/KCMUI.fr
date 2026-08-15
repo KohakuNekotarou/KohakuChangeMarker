@@ -119,9 +119,33 @@ resource PluginVersion (kSDKDefPluginVersionResourceID)
 resource ExtraPluginInfo(1)
 {
 	kKCMUICompanyValue,			// Company name
-	kKCMUIMissingPluginURLValue,	// URL 
+	kKCMUIMissingPluginURLValue,	// URL
 	kKCMUIMissingPluginAlertValue,	// Missing plug-in alert text
 };
+
+/*
+ * ★★★This half does not stand on its own (2026-08-15, Stage 2 Task 11).
+ *
+ * Everything the panel shows comes from the model plug-in through the five facades, so KCMUI
+ * without KohakuExtendScriptChangeMarker is a panel with nothing behind it. Guide gs-03:55 puts
+ * it plainly: a UI plug-in makes no sense without its model half - so say so here and let
+ * InDesign enforce the load order and report the missing half, instead of failing later with
+ * nil facades and no explanation.
+ *
+ * Shape copied from the SDK's own model/UI pair: transparencyeffectui/TranFxUI.fr:77-86.
+ * ⚠The dependency is ONE-WAY. The model half must NOT declare a dependency on this one - it has
+ *   to keep working when only it is installed (that is the whole point of the split).
+ */
+resource PluginDependency(kSDKDefPluginDependencyResourceID)
+{
+	kWildFS
+	{
+		kKESCMPluginID,			// the model half's PluginID (KESCMBoundaryID.h)
+		kKESCMPluginName,		// "KohakuExtendScriptChangeMarker"
+		kSDKDefPlugInMajorVersionNumber,
+		kSDKDefPlugInMinorVersionNumber,
+	}
+}
 
 /* 
  * Boss class definitions.

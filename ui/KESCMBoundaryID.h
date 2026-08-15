@@ -44,8 +44,13 @@
 //   使い手: 両側の .rc（FileDescription / FileVersion）／両側の .fr（PluginVersion・
 //   ExtraPluginInfo・About 文字列・メニュー束ね名）／両側の KESCMLoc.h（kKESCMAltKeyName）。
 //
-// ⚠ kKESCMPluginName（内部名）と kKESCMFileName（出力 .pln 名）は**側ごとに違う**ので
-//   ここには置かない ---- model は KESCMID.h、UI は KCMUIID.h が自分の名前を持つ。
+// ⚠ kKESCMFileName（出力 .pln 名）は**側ごとに違う**のでここには置かない
+//   ---- model は KESCMID.h、UI は KCMUIID.h が自分のファイル名を持つ。
+//
+// ★★2026-08-15（第2段 Task 11）に **kKESCMPluginName もここへ来た**。UI 側が
+//   `PluginDependency` リソースで「自分は model プラグインが無ければ意味を成さない」と宣言する
+//   のに、**依存先の内部名と PluginID が要る**ため（ガイド gs-03:55）。
+//   ⇒ 相方の名前を名乗る以上、これは境界の情報になった。
 //----------------------------------------------------------------------------------------
 #define kKESCMCompanyKey	"KohakuNekotarou"	// Company name used internally for menu paths and the like. Must be globally unique, only A-Z, 0-9, space and "_".
 #define kKESCMCompanyValue	"KohakuNekotarou"	// Company name displayed externally.
@@ -66,6 +71,10 @@
 #define kKESCMAltKeyName	"Alt"
 #endif
 
+// model プラグインの内部名（ID 系・.rc の InternalName）。互換のため据え置き。
+// ★UI 側は `PluginDependency` でこの名前を名乗る（下の kKESCMPluginID と対）。
+#define kKESCMPluginName	"KohakuExtendScriptChangeMarker"
+
 //----------------------------------------------------------------------------------------
 // model 側の prefix。
 //
@@ -81,6 +90,14 @@
 #define kKESCMPrefixNumber	0x1EA500
 #define kKESCMPrefix		RezLong(kKESCMPrefixNumber)				// The unique numeric prefix for all object model IDs for this plug-in.
 #define kKESCMStringPrefix	SDK_DEF_STRINGIZE(kKESCMPrefixNumber)	// The string equivalent of the unique prefix number for this plug-in.
+
+// model プラグインの PluginID。
+// ★★2026-08-15（第2段 Task 11）に KESCMID.h からここへ移した＝**UI 側が `PluginDependency` で
+//   依存先として名指しする**（ガイド gs-03:55「UI プラグインは model が無ければ意味を成さない」／
+//   手本＝`transparencyeffectui/TranFxUI.fr:77-86`）。⇒ 両側が同じ値で知る必要がある。
+// ⚠ UI 自身の PluginID は `kKCMUIPluginID`（KCMUIID.h）で別物。**依存の向きは UI → model の一方向**
+//   なので、model 側が KCMUI の PluginID を知る必要は無い（知ったらそれ自体が逆流）。
+DECLARE_PMID(kPlugInIDSpace, kKESCMPluginID, kKESCMPrefix + 0)
 
 //----------------------------------------------------------------------------------------
 // Facade の InterfaceID — UI が model に頼む窓口（kUtilsBoss へ AddIn。model/UI 分割 第1段）

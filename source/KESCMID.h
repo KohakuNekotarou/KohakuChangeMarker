@@ -32,7 +32,8 @@
 //   ここに残るのは **model 側だけの名前** 2つ。UI 側の名前は KCMUIID.h が持つ。
 
 // Plug-in:
-#define kKESCMPluginName	"KohakuExtendScriptChangeMarker"			// Name of this plug-in. 内部名(ID系・.rc の InternalName)。互換のため据え置き。
+// ★2026-08-15（第2段 Task 11）: `kKESCMPluginName` は KESCMBoundaryID.h へ移した
+//   ＝UI 側が `PluginDependency` で依存先として名乗るため（両側が同じ値を知る必要がある）。
 #define kKESCMFileName		"KohakuChangeMarker"			// 出力ファイル名の基底(.rc の OriginalFilename)。vcxproj の TargetName と一致させること。表示名と違いスペースは入れない。
 // ★★★**Adobe から受け取った原文（2026-08-13。忘れないようにここへ残す＝ユーザー指示）**:
 //
@@ -123,8 +124,8 @@
 #define kKESCMMissingPluginURLValue		kSDKDefPartnersStandardValue_enUS // URL displayed in Missing Plug-in dialog
 #define kKESCMMissingPluginAlertValue	kSDKDefMissingPluginAlertValue // Message displayed in Missing Plug-in dialog - provide a string that instructs user how to solve their missing plug-in problem
 
-// PluginID:
-DECLARE_PMID(kPlugInIDSpace, kKESCMPluginID, kKESCMPrefix + 0)
+// PluginID: ★2026-08-15（第2段 Task 11）に KESCMBoundaryID.h へ移した
+//   ＝UI 側が `PluginDependency` で依存先として名指しするので、両側が同じ値を知る必要がある。
 
 // ClassIDs:
 // ★★2026-08-15（第2段 Task 6B-2）: **UI 側の boss 20 個は ui/KCMUIID.h へ移した**（+7 +8 +9 +11〜+27）。
