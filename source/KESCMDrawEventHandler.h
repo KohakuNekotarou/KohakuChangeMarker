@@ -21,6 +21,8 @@
 #include "GraphicsExternal.h"   // AGMImageRecord (構造体メンバ)
 #include "UIDRef.h"             // UID / UIDRef
 #include "PMReal.h"
+#include "IDThreading.h"        // IDThreading::ThreadLocal(下の tl_Rasterizing)
+#include "KESCMThreadSafety.h"  // ★KESCMMarkStateMutex/KESCMMarkStateLock(sEntries を delete する側で使う)
 
 class IDataBase;
 class IDrwEvtDispatcher;
@@ -206,7 +208,16 @@ public:
 	static PMReal SelectedMarkOpacity() { return sMarkOpacity25 ? kKESCMMarkOpacity25 : kKESCMMarkOpacity75; }
 	// 自前のラスタ化(MakeEntry/MakeOrigImage の SnapshotUtilsEx::Draw)中だけ kTrue。HandleDrawEvent が
 	// 再入したらマークを描かない(自己参照防止)。kPreviewMode ビットに頼ると PDF 書き出し(同ビット)を巻き込むため。
-	static bool16 sRasterizing;
+	// ★★★2026-08-15(第2段 Task 12B)= **スレッドローカルにした**(旧: 素の static bool16)。
+	//   理由 = これは「**このスレッドが今ラスタ化の最中か**」という問いで、スレッドをまたぐと意味が壊れる。
+	//   素の static のままだと、メインスレッドが比較でラスタ化している間に**バックグラウンドの
+	//   PDF 書き出しがこれを見て「再入だ」と判断し、マークを黙って描かない**(＝出たり出なかったりする)。
+	//   ⚠この壊れ方は「たまたま同時に走ったときだけ」出るので、1回の書き出しでは絶対に再現しない。
+	//   ★公式の手本 = open/components/incopyfileactions/InCopyDocFileHandler.cpp:261 が
+	//     **同じ用途(再入防止)** で `IDThreading::ThreadLocalManagedObject< K2Vector<IDataBase*> >` を使う。
+	//     `ThreadLocal<bool16>` 自体も open/includes/architecture/bossrecycler.h:159 に前例がある。
+	//     命名の `tl_` プレフィックスも公式に合わせた。
+	static IDThreading::ThreadLocal<bool16> tl_Rasterizing;
 
 	// 旧版べた載せ(kescmShowOriginal / kescmHideOriginal)。マーク(sEntries)とは完全に独立。
 	// 実行時に覗いたページの旧版画像を sOrigImages に保持し、sShowOriginal が ON の間その db のページに不透明 blit する。
@@ -268,6 +279,9 @@ public:
 	// エントリ/対応表が無ければ何もしない(不変・変化ゼロページに対しても安全に呼べる)。
 	static void DropOneEntry(UID targetUID, UID oldSourceUID)
 	{
+		// ★2026-08-15(第2段 Task 12B): 描画中のバックグラウンドスレッドが同じエントリを読んでいる
+		//   可能性があるので、delete する側はロックを取る(理由は KESCMThreadSafety.h)。
+		KESCMMarkStateLock lock(KESCMMarkStateMutex());
 		std::map<UID, KESCMOverlayEntry*>::iterator it = sEntries.find(targetUID);
 		if (it != sEntries.end()) { delete it->second; sEntries.erase(it); }
 		std::map<UID, UID>::iterator sp = sSrcPageToTarget.find(oldSourceUID);
@@ -279,6 +293,12 @@ public:
 	// (トグル sSrcMarksOn 自体は「ユーザーの好み」として保持。エントリが無ければ何も描かないので無害)。
 	static void DropAll()
 	{
+		// ★★★2026-08-15(第2段 Task 12B): **ここが最も危ない場所だった。**
+		//   sEntries は生ポインタの map で、ここが delete する。バックグラウンドの PDF 書き出しが
+		//   同じエントリを描いている最中に main が Stop すると**解放済みメモリの読み取り**になる
+		//   (ガイド vol1-07 L95 "may randomly crash")。描画側(HandleDrawEvent の2つのループ)も
+		//   同じロックを取るので、待ち合わせが成立する。
+		KESCMMarkStateLock lock(KESCMMarkStateMutex());
 		for (std::map<UID, KESCMOverlayEntry*>::iterator it = sEntries.begin(); it != sEntries.end(); ++it)
 			delete it->second;
 		sEntries.clear();
@@ -302,13 +322,15 @@ public:
 	}
 };
 
-// sRasterizing を例外安全に立てる/戻す RAII(2026-07-25 監査で追加)。SnapshotUtilsEx::Draw が万一
+// tl_Rasterizing を例外安全に立てる/戻す RAII(2026-07-25 監査で追加)。SnapshotUtilsEx::Draw が万一
 // throw(AGM 内部の bad_alloc 等)してもフラグが立ちっぱなし(=以後マーク描画が全抑止)にならない。
+// ★2026-08-15: 中身がスレッドローカルになったが、**呼び手(6か所)は1行も変わらない**
+//   ——RAII に包んであったおかげで、スレッド対応の変更がこのクラスの中だけで済んだ。
 class KESCMRasterizingGuard
 {
 public:
-	KESCMRasterizingGuard()  { KESCMDrawEventHandler::sRasterizing = kTrue; }
-	~KESCMRasterizingGuard() { KESCMDrawEventHandler::sRasterizing = kFalse; }
+	KESCMRasterizingGuard()  { KESCMDrawEventHandler::tl_Rasterizing.Set(kTrue); }
+	~KESCMRasterizingGuard() { KESCMDrawEventHandler::tl_Rasterizing.Set(kFalse); }
 };
 
 // (KESCMQueryPanorama は 2026-08-13 に KESCMViewLookup.h へ移した＝model/UI 分割 第1段 Task 12。

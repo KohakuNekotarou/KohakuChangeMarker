@@ -41,6 +41,7 @@
 #include "KESCMPageCheck.h"
 #include "KESCMPageMap.h"		// KESCMPageMapCollectRegistered(保存) / KESCMPageMapReplaceRegistered(読込)
 #include "KESCMDocUidSet.h"		// 「文書DB→ページUID集合」の共通の入れ物(登録側と共有。2026-08-06 監査 C-1)
+#include "KESCMThreadSafety.h"	// ★共有状態のロック(GetMap で入れ物の内側を直接いじるとき)
 #include "KESCMID.h"				// kKESCMPageFlagsChangedMessage(通知の ID)
 // ★2026-08-13(Task 10): UI 側ヘッダー KESCMThumbnailRefresh.h の include を落とした。サムネイルを
 //   作り直すのは通知を受けた UI の仕事。★KESCMCollectChangedPageUIDs も同日 KESCMCore.h へ移った。
@@ -212,6 +213,11 @@ void KESCMPageCheckPruneToMarked()
 		return;
 	// ★文書ごとにマーク集合を1回だけ作って絞るので、入れ物の集合を直接いじる口(GetMap)を使う。
 	//   空になった文書のエントリは最後に PruneEmptyDocs() で捨てる(KESCMDocUidSet.h の規約)。
+	// ★★2026-08-15(第2段 Task 12B): **GetMap() は入れ物の内側を素で渡す口なので、
+	//   入れ物のメソッドが自前で取っているロックが効かない。** ここで明示的に取る
+	//   (BG の描画が同じ集合を読んでいる最中に erase すると壊れる)。再帰ロックなので
+	//   下の PruneEmptyDocs() が同じロックを取り直しても問題ない。
+	KESCMMarkStateLock lock(KESCMMarkStateMutex());
 	KESCMDocUidSet::Map& m = sChecked.GetMap();
 	for (KESCMDocUidSet::Map::iterator it = m.begin(); it != m.end(); ++it)
 	{
