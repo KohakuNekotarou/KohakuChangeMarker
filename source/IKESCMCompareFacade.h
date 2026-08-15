@@ -183,35 +183,19 @@ public:
 		PDF is exported. */
 	virtual void		ClearSessionStatus() = 0;
 
-	/** kTrue when the status notification being handled asked for an immediate repaint. It is
-		part of the notification rather than of the text: the comparison loop sets it because it
-		is about to block, so the observer has to paint before it returns. */
-	virtual bool16		StatusWantsForceRedraw() = 0;
-
-	// ---- what the notification being handled is about (2026-08-15, stage 2) -------------
+	// ---- what the notification being handled is about ------------------------------------
 	//
-	// A notification can carry nothing but a ClassID, so everything else the UI needs is left on
-	// the model side for it to pick up inside Update(). Change() is synchronous, so what the
-	// observer reads here is always what the emitting call just stored.
+	// ★★NOT HERE ANY MORE (2026-08-15, API audit B2). Five methods used to sit at this spot --
+	// StatusWantsForceRedraw and GetNotifiedDocA/B/C/NavReset -- because the model kept the
+	// notification's payload in statics and the UI had to come back and ask for it.
 	//
-	// ⚠ Meaningful ONLY while handling that notification. Do not cache them: a closed
-	// IDataBase* is a dangling pointer whose address gets reused.
+	// It travels WITH the notification now: ISubject::Change takes a third argument, void*
+	// changedBy (ISubject.h:150), which reaches the listener as IObserver::Update's fourth. The
+	// struct is KESCMNotifyPayload (KESCMModelNotify.h), and the listener casts changedBy back to
+	// it -- the shape Adobe's own linksui uses (EditOriginalResumeObserver.cpp:127).
 	//
-	// ★These were free functions in KESCMModelNotify.h, which the UI observer read directly.
-	// That links only while both halves share one .pln -- the same reason the whole of this
-	// interface exists (see the file header).
-
-	/** The documents the change is about. ★They travel with the notification rather than being
-		asked for: by the time Stop notifies, the model has already dropped its own pointers
-		(GetArmedTargetDB is nil) and the UI still has to purge those documents' thumbnails. */
-	virtual IDataBase*	GetNotifiedDocA() = 0;
-	virtual IDataBase*	GetNotifiedDocB() = 0;
-	virtual IDataBase*	GetNotifiedDocC() = 0;		// nil unless the three-document form was used
-
-	/** kTrue when the change invalidates the Prev/Next cursor. ⚠ A full rebuild and a Stop do;
-		an incremental recompare does NOT -- resetting there would send the cursor back to the
-		first change every time a page is registered. */
-	virtual bool16		GetNotifiedNavReset() = 0;
+	// ⇒ Five methods off the boundary and four statics out of a model plug-in. See the struct's
+	//   comment for why the statics were safe and still wrong.
 
 	// ---- the peek overlay --------------------------------------------------------------
 

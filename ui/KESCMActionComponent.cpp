@@ -662,14 +662,51 @@ void KESCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionSta
 		else if (action == kKESCMPageMapToggleActionID)
 		{
 			// ページパネル右クリックの登録トグル: 有効/無効(選択の有無)・チェック(全登録=✓/
-			// 一部=中間)・ラベル(Target=Added/Source=Removed)をまとめて KESCMPageMap.cpp 側で設定。
-			Utils<IKESCMPageFlagsFacade>()->UpdateRegisterToggleState(listToUpdate, i);
+			// 一部=中間)・ラベル(Target=Added/Source=Removed)。★**数えるのは model・書くのはここ。**
+			// ★★2026-08-15(API 監査 B2 の A-2): model は**答えるだけ**になり、メニューに書き込むのと
+			//   ラベルの文字列を持つのはここ(UI)になった。理由＝KESCMPageMap.h の KESCMPageToggleState。
+			const KESCMPageToggleState st = Utils<IKESCMPageFlagsFacade>()->GetRegisterToggleState();
+			if (!st.fEnabled)
+			{
+				listToUpdate->SetNthActionState(i, kDisabled_Unselected);
+			}
+			else
+			{
+				int16 actionState = kEnabledAction;
+				if (st.fTick == kKESCMPageTickAll)
+					actionState |= kSelectedAction;			// 全部登録済み=チェック
+				else if (st.fTick == kKESCMPageTickSome)
+					actionState |= kMultiSelectedAction;	// 一部だけ登録済み=中間チェック
+				listToUpdate->SetNthActionState(i, actionState);
+
+				// 動的ラベル(英語固定=パネル UI と同方針)。IActionStateList.h:78 の
+				// 「状態でメニュー名を動的に変える」用途そのもの(dynamic menu の仕組みは不要)。
+				// ⚠無効のときは名前を触らない ---- 旧実装と同じ挙動(.fr の既定名のまま)。
+				PMString name(st.fRole == kKESCMPageRoleSource ? "KCM: Register as Removed Pages"
+															   : "KCM: Register as Added Pages");
+				name.SetTranslatable(kFalse);
+				listToUpdate->SetNthActionName(i, name);
+			}
 		}
 		else if (action == kKESCMPageCheckToggleActionID)
 		{
 			// ページパネル右クリックの「KCM: Check」トグル: 有効/無効(Start中+Target/Source+選択)と
-			// チェック(全部✓/一部=中間)を KESCMPageCheck.cpp 側で設定。
-			Utils<IKESCMPageFlagsFacade>()->UpdateCheckToggleState(listToUpdate, i);
+			// チェック(全部✓/一部=中間)。★登録トグルと同じく、数えるのは model・書くのはここ。
+			// ★同上。Check はラベルが固定なので fRole は読まない。
+			const KESCMPageToggleState st = Utils<IKESCMPageFlagsFacade>()->GetCheckToggleState();
+			if (!st.fEnabled)
+			{
+				listToUpdate->SetNthActionState(i, kDisabled_Unselected);
+			}
+			else
+			{
+				int16 actionState = kEnabledAction;
+				if (st.fTick == kKESCMPageTickAll)
+					actionState |= kSelectedAction;			// マーク付き選択が全部チェック済み=✓
+				else if (st.fTick == kKESCMPageTickSome)
+					actionState |= kMultiSelectedAction;	// 一部だけチェック済み=中間チェック
+				listToUpdate->SetNthActionState(i, actionState);
+			}
 		}
 		else if (action == kKESCMPageRefreshCompareActionID)
 		{

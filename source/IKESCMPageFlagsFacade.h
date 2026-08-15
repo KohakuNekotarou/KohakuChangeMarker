@@ -24,8 +24,8 @@
 
 // Project includes:
 #include "KESCMID.h"
-
-class IActionStateList;
+#include "KESCMPageMap.h"	// KESCMPageToggleState (a type only -- types cross the boundary fine,
+							// the same way IKESCMMarkData borrows KESCMOversetLoc)
 
 class IKESCMPageFlagsFacade : public IPMUnknown
 {
@@ -45,19 +45,21 @@ public:
 
 	// ---- what the context menu should look like ------------------------------------------
 	//
-	// Both items use kCustomEnabling, and the Register item's label is dynamic (it says
-	// "register" or "unregister" depending on what is selected), so the menu asks before it is
-	// drawn. The list and the index are passed straight through.
+	// Both items use kCustomEnabling, so the menu asks before it is drawn: whether the item is
+	// enabled, whether it shows a tick or the intermediate dash, and -- for Register -- which of
+	// the two documents the selection is in, because that decides the wording.
 	//
-	// ★These take the action state list rather than returning flags for the caller to apply.
-	// The plan proposed the returning form, and as a division of labour it is the better one --
-	// the menu is the UI's business. It is not done here because the bodies would have to be
-	// rewritten (they set the state AND the dynamic label in one pass), and Stage 1's rule is
-	// that behaviour does not change. Nothing is lost by waiting: IActionStateList is a pure
-	// interface, so it costs the model no library it would not otherwise link.
-	// ⇒ Revisit when Stage 2 turns the model into kModelPlugIn.
-	virtual void	UpdateRegisterToggleState(IActionStateList* listToUpdate, int32 index) = 0;
-	virtual void	UpdateCheckToggleState(IActionStateList* listToUpdate, int32 index) = 0;
+	// ★★2026-08-15 (API audit B2): THESE USED TO TAKE AN IActionStateList AND WRITE INTO IT.
+	// The header said so itself and left a note: "as a division of labour [returning flags] is the
+	// better one -- the menu is the UI's business ... ⇒ Revisit when Stage 2 turns the model into
+	// kModelPlugIn." Stage 2 did, so this is that revisit.
+	//
+	// What moved with it: SetNthActionState, SetNthActionName, and the label STRINGS -- those are
+	// UI text and now live in ui/KESCMActionComponent.cpp. What stayed: the counting.
+	// ⇒ The model no longer names a UI type on its boundary, which is what the SDK's own model/UI
+	//   pair does (ICusCondTxtFacade has no menu-state method at all).
+	virtual KESCMPageToggleState	GetRegisterToggleState() = 0;
+	virtual KESCMPageToggleState	GetCheckToggleState() = 0;
 
 	// ---- the JSON store ------------------------------------------------------------------
 

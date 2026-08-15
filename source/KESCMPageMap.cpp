@@ -32,7 +32,6 @@
 #include "VCPlugInHeaders.h"
 
 #include "IDataBase.h"
-#include "IActionStateList.h"	// メニューの有効/チェック/動的ラベル(SetNthActionName)
 #include "ILayoutUIUtils.h"		// GetSelectedPages(ページパネル選択の公式取得)
 #include "IMasterSpreadList.h"	// GetMasterSpreadCount / GetNthMasterSpreadUID / FindMasterByName
 #include "IMasterSpread.h"		// GetPrefix / GetBasename(マスタースプレッドの名前対応)
@@ -267,30 +266,30 @@ void KESCMPageMapToggleSelectedPages()
 }
 
 //========================================================================================
-// KESCMPageMapUpdateToggleState(KESCMPageMap.h で宣言)
-//   kCustomEnabling のメニュー状態更新。KESCMActionComponent::UpdateActionStates から呼ばれる。
-//   ・選択に文書ページが無い(選択なし/マスターのみ)→グレーアウト
-//   ・選択が全部登録済み→チェック/一部だけ登録済み→中間チェック(kMultiSelectedAction=dash)
-//   ・ラベルはアクティブ文書の役割で出し分け(SetNthActionName。IActionStateList.h:78 の
-//     「状態でメニュー名を動的に変える」用途そのもの。dynamic menu の仕組みは不要)
+// KESCMPageMapGetToggleState(KESCMPageMap.h で宣言)
+//   kCustomEnabling のトグルが今どう見えるべきかを**答えるだけ**。
+//   ・選択に文書ページが無い(選択なし/マスターのみ)→無効
+//   ・選択が全部登録済み→All / 一部だけ登録済み→Some(中間チェック)
+//   ・fRole は「アクティブ文書が Target か Source か」(呼び手がラベルを選ぶ材料)
+//
+//   ★★2026-08-15(API 監査 B2 の A-2): **IActionStateList を受け取るのをやめた。**
+//   メニューへの書き込み(SetNthActionState / SetNthActionName)と**ラベルの文字列**は
+//   ui/KESCMActionComponent.cpp へ移した ---- メニューは UI の仕事だから(理由の全文は
+//   KESCMPageMap.h の KESCMPageToggleState)。ここに残るのは「数える」ことだけ。
 //========================================================================================
-void KESCMPageMapUpdateToggleState(IActionStateList* listToUpdate, int32 index)
+KESCMPageToggleState KESCMPageMapGetToggleState()
 {
+	KESCMPageToggleState st;	// 既定は「無効」
+
 	IDataBase* db = nil;
 	std::vector<UID> pages;
 	if (!KESCMPageMapReadSelection(db, pages))
-	{
-		listToUpdate->SetNthActionState(index, kDisabled_Unselected);
-		return;
-	}
+		return st;
 
 	// ★2026-07-11(ユーザー指定): 登録は「比較を Start 中(arm 済み)」かつ「選択文書が Target/Source」の
 	//   ときだけ可能=それ以外はグレーアウト。未 Start / 第3文書のページパネルではメニューを無効表示にする。
 	if (!KESCMIsArmed() || (db != KESCMArmedTargetDB() && db != KESCMArmedSourceDB()))
-	{
-		listToUpdate->SetNthActionState(index, kDisabled_Unselected);
-		return;
-	}
+		return st;
 
 	int32 regCount = 0;
 	for (size_t i = 0; i < pages.size(); ++i)
@@ -299,23 +298,17 @@ void KESCMPageMapUpdateToggleState(IActionStateList* listToUpdate, int32 index)
 			++regCount;
 	}
 
-	int16 state = kEnabledAction;
+	st.fEnabled = kTrue;
 	if (regCount == (int32)pages.size())
-		state |= kSelectedAction;			// 全部登録済み=チェック
+		st.fTick = kKESCMPageTickAll;		// 全部登録済み=チェック
 	else if (regCount > 0)
-		state |= kMultiSelectedAction;		// 一部だけ登録済み=中間チェック
-	listToUpdate->SetNthActionState(index, state);
+		st.fTick = kKESCMPageTickSome;		// 一部だけ登録済み=中間チェック
 
-	// 動的ラベル(英語固定=パネルUIと同方針)。未 arm や第3文書では総称のまま。
-	PMString name;
-	if (db == KESCMArmedTargetDB())
-		name = "KCM: Register as Added Pages";
-	else if (db == KESCMArmedSourceDB())
-		name = "KCM: Register as Removed Pages";
-	else
-		name = "KCM: Register as Added/Removed Pages";
-	name.SetTranslatable(kFalse);
-	listToUpdate->SetNthActionName(index, name);
+	// ラベルを選ぶ材料。⚠上のガードを抜けている以上、db は Target か Source のどちらかしかない
+	//   ---- 旧実装の3つ目のラベル("Added/Removed" の総称)は**到達しない分岐だった**ので
+	//   持ち越していない(kKESCMPageRoleNone は fEnabled=kFalse の場合の既定値としてのみ残る)。
+	st.fRole = (db == KESCMArmedTargetDB()) ? kKESCMPageRoleTarget : kKESCMPageRoleSource;
+	return st;
 }
 
 //========================================================================================

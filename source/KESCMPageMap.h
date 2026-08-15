@@ -21,8 +21,44 @@
 #include <vector>
 #include <set>
 
-class IActionStateList;
 class IDataBase;
+
+//----------------------------------------------------------------------------------------
+// ページ単位トグル(Register / Check)が今どう見えるべきか。
+//
+// ★★2026-08-15(API 監査 B2 の A-2): **メニューに書き込むのは UI の仕事**なので、model は
+//   「有効か」「全部か一部か」「どちらの役割の文書か」を答えるだけにした。
+//   ⇒ `IActionStateList` が model 側の境界から消える。手本の `ICusCondTxtFacade` に
+//     メニュー状態のメソッドが1つも無いのと同じ形。**ラベルの文字列も UI が持つ**(UI 文字列だから)。
+//   ⚠この形が良いことは `IKESCMPageFlagsFacade.h` に自分で書いてあった——「返す形の方が良い分業
+//     だが、第1段は挙動を変えない規則なので見送る ⇒ **第2段で model プラグインになったら見直す**」。
+//     その第2段が終わったので実施した。
+//
+// ★Register と Check で同じ型を使う。答えの形が同じで、違うのは「何を数えるか」だけ。
+//----------------------------------------------------------------------------------------
+enum KESCMPageTick
+{
+	kKESCMPageTickNone = 0,		// 1つも付いていない
+	kKESCMPageTickSome,			// 一部だけ付いている(中間チェック=kMultiSelectedAction)
+	kKESCMPageTickAll			// 選択が全部付いている(チェック=kSelectedAction)
+};
+
+enum KESCMPageRole
+{
+	kKESCMPageRoleNone = 0,		// 比較していない、または第3の文書
+	kKESCMPageRoleTarget,		// 比較の Target(新)側
+	kKESCMPageRoleSource		// 比較の Source(旧)側
+};
+
+struct KESCMPageToggleState
+{
+	bool16			fEnabled;	// kFalse ならメニューはグレー(そのとき fTick / fRole は意味を持たない)
+	KESCMPageTick	fTick;
+	KESCMPageRole	fRole;		// Register のラベル出し分け用。Check は読まない
+
+	KESCMPageToggleState()
+		: fEnabled(kFalse), fTick(kKESCMPageTickNone), fRole(kKESCMPageRoleNone) {}
+};
 
 // ページパネルの選択ページを読む共通リーダー。outDB=選択が属する文書(=アクティブ/最前面文書)、
 // outPages=文書のページ列に実在する選択ページUID(重複除去済み)。有効なページが1つ以上あれば kTrue。
@@ -43,12 +79,13 @@ bool16 KESCMPageMapReadSelection(IDataBase*& outDB, std::vector<UID>& outPages, 
 // 結果はパネルのステータス行に出す。実体は KESCMPageMap.cpp。
 void KESCMPageMapToggleSelectedPages();
 
-// 上のトグルのメニュー状態更新(kCustomEnabling)。listToUpdate の index 番目に、
-//   ・有効/無効(ページパネルの選択に文書ページが1つも無ければグレー)
-//   ・チェック(選択が全部登録済み=✓/一部だけ=中間チェック)
-//   ・動的ラベル(アクティブ文書が Target=Added/Source=Removed/それ以外=Added/Removed)
-// を設定する。KESCMActionComponent::UpdateActionStates から呼ぶ。
-void KESCMPageMapUpdateToggleState(IActionStateList* listToUpdate, int32 index);
+// 上のトグル(kCustomEnabling)が今どう見えるべきか。
+//   ・fEnabled … ページパネルの選択に文書ページが1つも無い/未 Start/第3文書ならグレー
+//   ・fTick …… 選択が全部登録済みなら All / 一部だけなら Some
+//   ・fRole …… アクティブ文書が Target(=Added) か Source(=Removed) か
+// ★**メニューには触らない**。SetNthActionState / SetNthActionName を呼ぶのは呼び手
+//   (ui/KESCMActionComponent.cpp の UpdateActionStates)。
+KESCMPageToggleState KESCMPageMapGetToggleState();
 
 // ドキュメントクローズ後の生存スイープ(KESCMHandleDocsClosed から呼ぶ)。閉じた文書の登録を
 // 状態だけ捨てる。★閉じた db は deref しない(IDocumentList::FindDocByDataBase へのポインタ

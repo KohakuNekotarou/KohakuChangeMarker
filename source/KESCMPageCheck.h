@@ -21,7 +21,8 @@
 #include "OMTypes.h"		// UID
 #include <set>
 
-class IActionStateList;
+#include "KESCMPageMap.h"	// KESCMPageToggleState ---- Register と共通の答えの形(型のためだけ)
+
 class IDataBase;
 
 // ページパネル右クリックのトグル「KCM: Check」の実行。選択ページのチェックを付け外しする
@@ -29,10 +30,10 @@ class IDataBase;
 // 出す。トグルしたページのサムネイルは即更新して ✓ を反映する。実体は KESCMPageCheck.cpp。
 void KESCMPageCheckToggleSelectedPages();
 
-// 上のトグルのメニュー状態更新(kCustomEnabling)。listToUpdate の index 番目に、有効/無効
-// (未 Start・第3文書・選択なしはグレー)と、チェック(全部チェック済み=✓/一部=中間)を設定する。
-// KESCMActionComponent::UpdateActionStates から呼ぶ。
-void KESCMPageCheckUpdateToggleState(IActionStateList* listToUpdate, int32 index);
+// 上のトグル(kCustomEnabling)が今どう見えるべきか。fEnabled=有効/無効(未 Start・第3文書・選択なし・
+// 選択にマーク付きページが無ければグレー)、fTick=全部チェック済みなら All / 一部なら Some。
+// ⚠**fRole は使わない**(Check のラベルは固定)。★メニューに触らないのは Register 側と同じ。
+KESCMPageToggleState KESCMPageCheckGetToggleState();
 
 // ドキュメントクローズ後の生存スイープ(KESCMHandleDocsClosed から呼ぶ)。閉じた文書のチェックを
 // 状態だけ捨てる。★閉じた db は deref しない(FindDocByDataBase へのポインタ比較のみ)。

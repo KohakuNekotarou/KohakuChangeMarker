@@ -101,17 +101,15 @@ public:
 
 	virtual void		GetSessionStatus(PMString& out)	{ KESCMGetSessionStatus(out); }
 
-	// ---- the status line and the notification payload (stage 2) --------------------------
-	// ★Six more free functions from KESCMModelNotify.h. The UI observer, the panel's status
-	// writer and the UI shutdown were calling them directly -- a legal direction (UI -> model)
-	// but not one that links across two .pln. Same shape as the CMYK three below.
+	// ---- the status line (stage 2) --------------------------------------------------------
+	// ★Free functions from KESCMModelNotify.h. The panel's status writer and the UI shutdown
+	// were calling them directly -- a legal direction (UI -> model) but not one that links
+	// across two .pln. Same shape as the CMYK three below.
+	// ⚠2026-08-15 (API audit B2): the five that used to stand here with them -- the notification
+	//   payload -- are GONE. They travel on Change()'s changedBy now; see IKESCMCompareFacade.h
+	//   at the spot they were removed from.
 	virtual void		StoreSessionStatus(const PMString& s)	{ KESCMStoreSessionStatus(s); }
 	virtual void		ClearSessionStatus()	{ KESCMClearSessionStatus(); }
-	virtual bool16		StatusWantsForceRedraw(){ return KESCMStatusWantsForceRedraw(); }
-	virtual IDataBase*	GetNotifiedDocA()		{ return KESCMNotifiedDocA(); }
-	virtual IDataBase*	GetNotifiedDocB()		{ return KESCMNotifiedDocB(); }
-	virtual IDataBase*	GetNotifiedDocC()		{ return KESCMNotifiedDocC(); }
-	virtual bool16		GetNotifiedNavReset()	{ return KESCMNotifiedNavReset(); }
 
 	virtual bool16		ArmedDocsAlive()		{ return KESCMArmedDocsAlive(); }
 	virtual void		ShowPeekAt(IDataBase* targetDB, IDataBase* sourceDB,
@@ -321,10 +319,8 @@ public:
 	virtual void	ToggleRegisterForSelection()	{ KESCMPageMapToggleSelectedPages(); }
 	virtual void	ToggleCheckForSelection()		{ KESCMPageCheckToggleSelectedPages(); }
 
-	virtual void	UpdateRegisterToggleState(IActionStateList* listToUpdate, int32 index)
-													{ KESCMPageMapUpdateToggleState(listToUpdate, index); }
-	virtual void	UpdateCheckToggleState(IActionStateList* listToUpdate, int32 index)
-													{ KESCMPageCheckUpdateToggleState(listToUpdate, index); }
+	virtual KESCMPageToggleState	GetRegisterToggleState()	{ return KESCMPageMapGetToggleState(); }
+	virtual KESCMPageToggleState	GetCheckToggleState()		{ return KESCMPageCheckGetToggleState(); }
 
 	virtual void	SaveChecksAndRegister()			{ KESCMPageCheckSaveToFile(); }
 	virtual void	LoadChecksAndRegister()			{ KESCMPageCheckLoadFromFile(); }

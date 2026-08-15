@@ -23,7 +23,6 @@
 #include "VCPlugInHeaders.h"
 
 #include "IDataBase.h"			// GetSysFile(保存キー=文書ファイルパス)
-#include "IActionStateList.h"	// メニューの有効/チェック
 #include "PMString.h"
 #include "FileUtils.h"			// GetAppRoamingDataFolder / AppendPath / OpenFile / DoesFileExist / SysFileToPMString
 #include "IDFile.h"
@@ -141,34 +140,29 @@ void KESCMPageCheckToggleSelectedPages()
 }
 
 //========================================================================================
-// KESCMPageCheckUpdateToggleState(KESCMPageCheck.h で宣言)
+// KESCMPageCheckGetToggleState(KESCMPageCheck.h で宣言)
+//   ★★2026-08-15(API 監査 B2 の A-2): IActionStateList を受け取るのをやめ、**答えるだけ**に
+//   した(Register 側と対。理由は KESCMPageMap.h の KESCMPageToggleState)。
 //========================================================================================
-void KESCMPageCheckUpdateToggleState(IActionStateList* listToUpdate, int32 index)
+KESCMPageToggleState KESCMPageCheckGetToggleState()
 {
+	KESCMPageToggleState st;	// 既定は「無効」
+
 	IDataBase* db = nil;
 	std::vector<UID> pages;
 	if (!KESCMPageMapReadSelection(db, pages, kTrue /*includeMasters*/))
-	{
-		listToUpdate->SetNthActionState(index, kDisabled_Unselected);
-		return;
-	}
+		return st;
 
 	// Start 中かつ選択文書が Target/Source のときだけ有効。それ以外はグレーアウト。
 	if (!KESCMIsArmed() || (db != KESCMArmedTargetDB() && db != KESCMArmedSourceDB()))
-	{
-		listToUpdate->SetNthActionState(index, kDisabled_Unselected);
-		return;
-	}
+		return st;
 
 	// ★選択にマーク付き(枠/「/」の付く=サムネイルが作り直される)ページが無ければ無効化する
 	//   (枠の無いページでは「チェック」を出さない=ユーザー指定 2026-07-11)。
 	std::vector<UID> marked;
 	KESCMFilterToMarked(db, pages, marked);
 	if (marked.empty())
-	{
-		listToUpdate->SetNthActionState(index, kDisabled_Unselected);
-		return;
-	}
+		return st;
 
 	int32 chkCount = 0;
 	for (size_t i = 0; i < marked.size(); ++i)
@@ -177,12 +171,14 @@ void KESCMPageCheckUpdateToggleState(IActionStateList* listToUpdate, int32 index
 			++chkCount;
 	}
 
-	int16 state = kEnabledAction;
+	st.fEnabled = kTrue;
 	if (chkCount == (int32)marked.size())
-		state |= kSelectedAction;			// マーク付き選択が全部チェック済み=✓
+		st.fTick = kKESCMPageTickAll;		// マーク付き選択が全部チェック済み=✓
 	else if (chkCount > 0)
-		state |= kMultiSelectedAction;		// 一部だけチェック済み=中間チェック
-	listToUpdate->SetNthActionState(index, state);
+		st.fTick = kKESCMPageTickSome;		// 一部だけチェック済み=中間チェック
+
+	// ⚠fRole は設定しない ---- Check のメニュー名は固定で、出し分ける材料が要らない。
+	return st;
 }
 
 //========================================================================================

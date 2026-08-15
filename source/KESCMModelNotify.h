@@ -31,18 +31,55 @@
 
 class IDataBase;
 
+// What a notification carries besides its ClassID.
+//
+// ★★2026-08-15 (API audit B2): THIS USED TO BE FOUR STATICS IN THE .cpp, on a belief that was
+// written down in this very header -- "a notification can only carry a ClassID". It can carry
+// more. ISubject::Change takes a third argument, `void* changedBy` (ISubject.h:150), and it
+// reaches the listener as IObserver::Update's fourth. Adobe's own product code uses it for plain
+// data rather than for the "object that caused the change" its wording suggests:
+// open/components/linksui/EditOriginalResumeObserver.cpp:127 reads it back as
+// `const PMIID& what = *((const PMIID*)changedBy);`
+//
+// ★WHY IT MATTERS HERE, beyond being the documented route. Change() is synchronous, so a struct
+// on the emitting stack outlives the whole delivery -- which makes the payload per-call and
+// per-thread. Statics in a MODEL plug-in are neither: background threads get their own databases
+// but SHARE the statics ([[model-plugin-thread-safety]]). Nothing emitted a notification off the
+// main thread (all 67 call sites were counted; none is in KESCMDrawEventHandler.cpp, the only
+// path that runs on one) and no listener wrote back into the model from inside Update(), so the
+// statics were in fact safe -- but safe as a property of TODAY'S CALLERS, not of the structure.
+// That is the same shape as the bug stage 2 actually hit: KESCMHandleDocsClosed was correct for
+// as long as this was a UI plug-in and became wrong the moment it was not.
+//
+// ⚠ Valid only while the notification is being delivered. A listener must not keep the pointers:
+// a closed IDataBase* is a dangling pointer whose address gets reused.
+struct KESCMNotifyPayload
+{
+	IDataBase*	fDocA;				// the documents the change is about (see KESCMNotifyDocs)
+	IDataBase*	fDocB;
+	IDataBase*	fDocC;				// nil unless the three-document form was used
+	bool16		fNavReset;			// kTrue when the change invalidates the Prev/Next cursor
+	bool16		fStatusForceRedraw;	// kTrue when a status change asks for an immediate repaint
+
+	KESCMNotifyPayload()
+		: fDocA(nil), fDocB(nil), fDocC(nil), fNavReset(kFalse), fStatusForceRedraw(kFalse) {}
+};
+
 // Emit one of the kKESCM*Message notifications (KESCMID.h) on the application's subject.
+//
+// payload is handed to the listener as Update()'s changedBy. nil -- the default -- means "this
+// notification carries nothing but its ClassID", and a listener must handle that: several of the
+// kKESCM*Message kinds are emitted with no payload at all.
+//
 // Safe to call when nothing is listening and safe to call during shutdown (it checks that
 // the session and the application are still there and returns quietly if not).
-void	KESCMNotify(ClassID theChange);
+void	KESCMNotify(ClassID theChange, const KESCMNotifyPayload* payload = nil);
 
 // Emit a notification that carries WHICH DOCUMENTS it is about (2026-08-13, Task 10).
 //
-// A notification can only carry a ClassID, so anything else the UI needs has to be left here
-// for it to pick up. That is not a workaround bolted on: it is the same shape KESCMNotifyStatus
-// already uses for the status text, and it keeps the state on the model side, which is where
-// the split says it belongs. The UI reads these inside Update(), and Change() is synchronous,
-// so what it reads is always what this call just stored.
+// The documents travel in the payload above, on Change()'s changedBy. (Until 2026-08-15 they
+// travelled in statics; see the struct's comment for why that was the wrong route even though it
+// worked.)
 //
 //   docA / docB  the target and source databases the change is about. ★They have to travel
 //                with the notification rather than be asked for: by the time Stop notifies,
@@ -67,13 +104,6 @@ void	KESCMNotifyDocs(ClassID theChange, IDataBase* docA, IDataBase* docB, bool16
 // them (a closed IDataBase* is a dangling pointer whose address gets reused).
 void	KESCMNotifyDocs(ClassID theChange, IDataBase* docA, IDataBase* docB, IDataBase* docC, bool16 navReset);
 
-// The values left by the last KESCMNotifyDocs. Meaningful only while handling that
-// notification -- do not cache them (a database pointer outlives nothing here).
-IDataBase*	KESCMNotifiedDocA();
-IDataBase*	KESCMNotifiedDocB();
-IDataBase*	KESCMNotifiedDocC();		// nil unless the three-document form was used
-bool16		KESCMNotifiedNavReset();
-
 // Set the status text and emit kKESCMStatusTextMessage.
 //
 // The string is KEPT HERE, on the model side, not in the panel. Two reasons: app.kcmStatus
@@ -82,13 +112,11 @@ bool16		KESCMNotifiedNavReset();
 // in a widget would not survive. The UI reads the string back with KESCMGetSessionStatus
 // when it receives the notification, and again from AutoAttach when the panel re-appears.
 //
-// forceRedrawNow is passed through to the listener: kTrue means "paint before you return",
-// which the comparison loop needs because it is about to block.
+// forceRedrawNow travels in the payload's fStatusForceRedraw: kTrue means "paint before you
+// return", which the comparison loop needs because it is about to block. ★It is part of the
+// NOTIFICATION, not of the text -- which is exactly why it belongs on the payload and the text
+// does not (the text is session state that app.kcmStatus answers from at any time).
 void	KESCMNotifyStatus(const PMString& s, bool16 forceRedrawNow = kFalse);
-
-// kTrue when the last KESCMNotifyStatus asked for an immediate repaint. The UI observer reads
-// this to decide whether to force the paint; it is part of the notification, not of the text.
-bool16	KESCMStatusWantsForceRedraw();
 
 // Store the status text WITHOUT emitting a notification.
 //

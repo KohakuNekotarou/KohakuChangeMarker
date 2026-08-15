@@ -30,8 +30,11 @@
 //
 // ⚠2026-08-13 に KESCMPanelObserver.cpp(UI 側)からここへ移した。表示だけが UI に残る。
 //----------------------------------------------------------------------------------------
+// ⚠**ここに残るのは「セッションの状態」1本だけ**。通知の付随物(どの文書か・巡回を捨てるか・
+//   即時再描画か)は 2026-08-15 の API 監査 B2 で **static をやめ、Change の changedBy へ移した**
+//   (理由は KESCMModelNotify.h の KESCMNotifyPayload)。この文字列だけが残る理由は上の①②＝
+//   **通知の付随物ではなく、通知と無関係にいつでも答える値**だから。
 static PMString sSessionStatus;
-static bool16   sStatusForceRedraw = kFalse;
 
 // アプリの subject を引く。終了処理中は session/app が引けないので、その場合は nil を返して
 // 呼び手が静かに諦める(KESCM 全体の共通規約=閉じた/消えた相手は触らない)。
@@ -47,7 +50,7 @@ static ISubject* KESCMQueryAppSubject()
 }
 
 // KESCMNotify(KESCMModelNotify.h で宣言)
-void KESCMNotify(ClassID theChange)
+void KESCMNotify(ClassID theChange, const KESCMNotifyPayload* payload)
 {
 	InterfacePtr<ISubject> subject(KESCMQueryAppSubject());
 	if (subject == nil)
@@ -56,59 +59,59 @@ void KESCMNotify(ClassID theChange)
 	// ★protocol は自作の IID_IKESCMMODELCHANGEOBSERVER。これで「この通知は KESCM の UI 宛」と分かる。
 	//   ⚠既存3本の Observer が **IID_IAPPLICATION の通知**を受けているのと違い、こちらは
 	//     自作 protocol で送る＝本体の通知と混ざらない。
-	subject->Change(theChange, IID_IKESCMMODELCHANGEOBSERVER);
+	// ★★第3引数 changedBy に付随データの**アドレス**を載せる(ISubject.h:150)。受け手には
+	//   IObserver::Update の第4引数としてそのまま届く。Change は同期なので、呼び手のスタックに
+	//   置いた構造体が配り終わるまで生きている＝寿命管理が要らない。
+	//   ⚠payload が nil のこともある(付随物を持たない通知)。受け手は必ず nil を見ること。
+	subject->Change(theChange, IID_IKESCMMODELCHANGEOBSERVER, (void*)payload);
 }
 
 //----------------------------------------------------------------------------------------
-// 直近の KESCMNotifyDocs が置いていった付随データ(2026-08-13・Task 10)。
+// 通知の付随データ(2026-08-13・Task 10 / ★2026-08-15 の API 監査 B2 で static から payload へ)。
 //
-// ★通知は ClassID しか運べない。「どの文書か」「Prev/Next の基準点を捨てるか」は、投げる直前に
-//   ここへ置き、受け手が Update の中で読む ---- 上の sSessionStatus とまったく同じ形。
-// ⚠**db ポインタを持ち越さない**。ここに残るのは「今まさに配っている通知の付随物」であって、
-//   次の通知まで有効な状態ではない(閉じた文書の db を後から触ると落ちる＝KESCM 全体の共通規約)。
+// ★★**static はもう無い。** 「どの文書か」「Prev/Next の基準点を捨てるか」は呼び手のスタックに
+//   構造体を1つ置き、そのアドレスを Change の changedBy に載せて配る。Change は同期なので、
+//   配り終わるまで構造体は生きている ---- ∴ **後始末そのものが要らない**(旧実装が配布後に
+//   4本を nil へ戻していたのは、static だったからやらねばならなかった仕事)。
+// ⚠受け手は payload を**持ち越さない**。閉じた文書の db を後から触ると落ちる(KESCM 全体の共通規約)。
 //----------------------------------------------------------------------------------------
-static IDataBase* sNotifiedDocA   = nil;
-static IDataBase* sNotifiedDocB   = nil;
-static IDataBase* sNotifiedDocC   = nil;
-static bool16     sNotifiedNavRst = kFalse;
 
-// KESCMNotifyDocs(KESCMModelNotify.h で宣言) — 2文書版。★3文書版もここへ合流するので、
-// **後始末(全部 nil に戻す)はこの1か所だけ**にしてある。
+// KESCMNotifyDocs(KESCMModelNotify.h で宣言) — 2文書版。
 void KESCMNotifyDocs(ClassID theChange, IDataBase* docA, IDataBase* docB, bool16 navReset)
 {
-	sNotifiedDocA   = docA;
-	sNotifiedDocB   = docB;
-	sNotifiedNavRst = navReset;
+	KESCMNotifyPayload payload;
+	payload.fDocA     = docA;
+	payload.fDocB     = docB;
+	payload.fNavReset = navReset;
 
-	KESCMNotify(theChange);
-
-	// ★配り終えたら手放す。誰も聞いていなくても(=UI プラグインが居ない InDesign Server でも)
-	//   ここは通るので、閉じられうる db へのポインタが静的変数に居座らない。
-	sNotifiedDocA   = nil;
-	sNotifiedDocB   = nil;
-	sNotifiedDocC   = nil;
-	sNotifiedNavRst = kFalse;
+	KESCMNotify(theChange, &payload);
 }
 
-// KESCMNotifyDocs(KESCMModelNotify.h で宣言) — 3文書版。C だけ先に置いて上へ合流する。
+// KESCMNotifyDocs(KESCMModelNotify.h で宣言) — 3文書版。
+// ⚠**2文書版へは合流しない**(合流すると docC を渡す口が無い)。旧実装は static だったので
+//   「docC を先に置いてから2文書版を呼ぶ」ことができたが、payload は呼び手が丸ごと組む。
 void KESCMNotifyDocs(ClassID theChange, IDataBase* docA, IDataBase* docB, IDataBase* docC, bool16 navReset)
 {
-	sNotifiedDocC = docC;
-	KESCMNotifyDocs(theChange, docA, docB, navReset);
+	KESCMNotifyPayload payload;
+	payload.fDocA     = docA;
+	payload.fDocB     = docB;
+	payload.fDocC     = docC;
+	payload.fNavReset = navReset;
+
+	KESCMNotify(theChange, &payload);
 }
 
-// KESCMNotifiedDocA / DocB / DocC / NavReset(KESCMModelNotify.h で宣言)
-IDataBase* KESCMNotifiedDocA()    { return sNotifiedDocA; }
-IDataBase* KESCMNotifiedDocB()    { return sNotifiedDocB; }
-IDataBase* KESCMNotifiedDocC()    { return sNotifiedDocC; }
-bool16     KESCMNotifiedNavReset() { return sNotifiedNavRst; }
-
 // KESCMNotifyStatus(KESCMModelNotify.h で宣言)
+// ★文字列は static のまま(セッションの状態＝app.kcmStatus がいつでも答える値)、
+//   「今すぐ描き直せ」だけが payload に乗る(その通知に限った付随物)。
 void KESCMNotifyStatus(const PMString& s, bool16 forceRedrawNow)
 {
 	sSessionStatus = s;
-	sStatusForceRedraw = forceRedrawNow;
-	KESCMNotify(kKESCMStatusTextMessage);
+
+	KESCMNotifyPayload payload;
+	payload.fStatusForceRedraw = forceRedrawNow;
+
+	KESCMNotify(kKESCMStatusTextMessage, &payload);
 }
 
 // KESCMStoreSessionStatus(KESCMModelNotify.h で宣言) — 通知を出さずに覚えるだけ。
@@ -118,12 +121,6 @@ void KESCMNotifyStatus(const PMString& s, bool16 forceRedrawNow)
 void KESCMStoreSessionStatus(const PMString& s)
 {
 	sSessionStatus = s;
-}
-
-// KESCMStatusWantsForceRedraw(KESCMModelNotify.h で宣言)
-bool16 KESCMStatusWantsForceRedraw()
-{
-	return sStatusForceRedraw;
 }
 
 // KESCMGetSessionStatus(KESCMModelNotify.h で宣言)
@@ -137,7 +134,6 @@ void KESCMGetSessionStatus(PMString& out)
 void KESCMClearSessionStatus()
 {
 	sSessionStatus.Clear();
-	sStatusForceRedraw = kFalse;
 }
 
 // KESCMModelNotify.cpp 終わり。
