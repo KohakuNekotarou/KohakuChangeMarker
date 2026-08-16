@@ -90,6 +90,7 @@
 
 // Interface includes:
 #include "IScript.h"
+#include "IScriptErrorUtils.h"	// SetReadOnlyPropertyErrorData - how the base class refuses a put
 #include "IScriptRequestData.h"
 
 // General includes:
@@ -144,17 +145,44 @@ ErrorCode KESCMScriptProvider::AccessProperty(ScriptID propID, IScriptRequestDat
 	if (!isAppString && !isStoryCounter)
 		return CScriptProvider::AccessProperty(propID, data, script);
 
+	// ★The one kFailure that stays. IScriptErrorUtils writes the reason INTO the request data, and
+	// there is no request data here - so there is nothing better to return (2026-08-16, audit B11).
 	if (data == nil)
 		return kFailure;
 
-	// Read-only, all six. The declarations in KESCM.fr say kReadOnly, so the engine should refuse
-	// an assignment before it ever reaches here; this is the backstop, and it fails rather than
+	// Read-only, all six. The declarations in KESCM.fr say kReadOnly, so the engine refuses an
+	// assignment before it ever reaches here; this is the backstop, and it refuses rather than
 	// quietly accepting a value that would then not be there on the next read.
+	//
+	// ★MEASURED 2026-08-16: `app.kcmStatus = "x"` comes back as error 30474 "'kcmStatus' のプロパティ
+	// は読み取り専用です。" - so the sentence above is not a hope, the engine really does stop it and
+	// this line is not reached in normal use.
+	//
+	// ★Refused the way the base class refuses a put on the read-only properties IT owns: all five of
+	// CScriptProvider's own read-only refusals end with this same call (CScriptProvider.cpp:369,
+	// 1096, 1116, 1135, 1250), as do snippetrunner (SnpRunnableScriptProvider.cpp:226) and basicshape
+	// (BscShpScriptProvider.cpp:268). A bare kFailure says nothing about why - and the guide is
+	// blunter than that: "If it returns kFailure, you will get an assert" (vol1-11:456), which for a
+	// plug-in that gets driven by scripts under a Debug build is a stopped test rather than a
+	// message. ⚠KBS had already moved to this call (KBSScriptProvider.cpp:93, 2026-08-11); this file
+	// was written from that one and did not bring the change with it.
 	if (data->IsPropertyPut())
-		return kFailure;
+		return Utils<IScriptErrorUtils>()->SetReadOnlyPropertyErrorData(data, propID);
 
 	if (!data->IsPropertyGet())
 		return CScriptProvider::AccessProperty(propID, data, script);
+
+	// ★NO "a run is going" GUARD HERE, and that is a decision rather than an omission (2026-08-16).
+	// KBS has one (KBSScriptProvider.cpp:107 - KBSRunGuard::IsAnyRunning): a run of its stands behind
+	// a modal progress bar, the bar PUMPS EVENTS, so a COM read dispatched mid-run would be answered
+	// with the PREVIOUS run's sentence and a polling harness would read that as "finished".
+	// KESCM shows the same kind of bar (TaskProgressBar, KESCMCore.cpp:577), so the machinery is
+	// there - what is missing is the reader: every harness that reads these properties invokes the
+	// action and reads afterwards, on ONE COM connection, where the read cannot start until the
+	// comparison has returned.
+	// ⚠It stops being true the moment anything POLLS from a second connection (a Start-Job in
+	// PowerShell, a CEP panel on a timer). Then this needs KBS's shape: a flag the comparison sets,
+	// and a "busy" sentence returned instead of the stale one.
 
 	return isAppString ? this->ReadAppString(id, propID, data, script)
 					   : this->ReadStoryCounter(id, propID, data, script);
