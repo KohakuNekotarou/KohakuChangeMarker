@@ -364,11 +364,13 @@ void KESCMPanelObserver::Update(const ClassID& theChange, ISubject* theSubject, 
 // 表示中の ChangeMarker パネルの IControlView を返す(隠れている/引けないときは nil)。
 // ★下の KESCMRefreshPanel / KESCMSetStatus / KESCMSetNavPosition が
 //   「session → app → panelMgr → GetVisiblePanel」の定型を丸ごと3回持っていたので一本化した
-//   (2026-08-06 監査 C-1)。同じプラグイン内の KESCMGetVisiblePagesPanel
-//   (KESCMThumbnailRefresh.h:24-27)と同じ作り＝Pages パネル側だけ解いてあった穴を埋める形。
+//   (2026-08-06 監査 C-1)。同じプラグイン内の **KESCMGetVisiblePagesPanel**
+//   (KESCMThumbnailRefresh.h で宣言)と同じ作り＝Pages パネル側だけ解いてあった穴を埋める形。
+//   (⚠旧引用 ":24-27" は空行を指していた＝2026-08-16 の監査 B-U3 で関数名へ。)
 // ★session の nil ガードもここで吸収する: 3つともクローズ responder から呼ばれ、アプリ終了の
 //   ティアダウン中にも到達し得る(2026-07-25 に KESCM 全体で統一した規約)。
-// ★2026-08-09: static を外して KESCMCore.h から公開した。4人目の使い手が別ファイルに現れたため
+// ★2026-08-09: static を外して公開した(当時の置き場は KESCMCore.h。2026-08-13 の model/UI 分割で
+//   **KESCMUIShared.h** へ移った)。4人目の使い手が別ファイルに現れたため
 //   (KESCMStorySection.cpp = Story Edits セクションの開閉。パネルの寸法を触るのに同じパネルが要る)。
 //   ここを複製すると「どのパネルを指すか」の判断が2か所に分かれるので、公開する方を選んだ。
 IControlView* KESCMGetVisibleOwnPanel()
@@ -391,20 +393,27 @@ static void KESCMApplyPanelInfo(const InterfacePtr<IPanelControlData>& pcd)
 	if (pcd == nil)
 		return;
 
-	const bool16 started = Utils<IKESCMCompareFacade>()->IsArmed() && (Utils<IKESCMCompareFacade>()->GetArmedTargetDB() != nil);
+	// ★5回聞くので InterfacePtr で1回引く(2026-08-16・監査 B-U3)。`Utils.h:74-80` が
+	//   「several places で使うなら一度引いて InterfacePtr に持て、その方が QueryInterface と
+	//   Release が1回で済む」と明記している。⚠**公式は回数を数字で示していない**——手元の
+	//   「3回以上なら」は目安([[utils-boss-facade-access]])。同じプラグインの
+	//   KESCMPanelState.cpp / KESCMActionComponent.cpp は既にこの形なので、割れを揃えた形。
+	// ⚠nil 検査は**足していない**＝従来と同じ挙動を保つため(Utils<>()-> も nil なら同じく落ちる)。
+	InterfacePtr<IKESCMCompareFacade> compare(Utils<IKESCMCompareFacade>().QueryUtilInterface());
+	const bool16 started = compare->IsArmed() && (compare->GetArmedTargetDB() != nil);
 
 	// Target:/Source: ラベルは常時。名前は開始中のみ表示(英語固定: 現状英語のまま)。
 	PMString target("Target:"); target.SetTranslatable(kFalse);
 	if (started)
 	{
 		target.Append(" ");
-		target.Append(KESCMDocPathFromDB(Utils<IKESCMCompareFacade>()->GetArmedTargetDB()));
+		target.Append(KESCMDocPathFromDB(compare->GetArmedTargetDB()));
 	}
 	PMString source("Source:"); source.SetTranslatable(kFalse);
-	if (started && Utils<IKESCMCompareFacade>()->GetArmedSourceDB() != nil)
+	if (started && compare->GetArmedSourceDB() != nil)
 	{
 		source.Append(" ");
-		source.Append(KESCMDocPathFromDB(Utils<IKESCMCompareFacade>()->GetArmedSourceDB()));
+		source.Append(KESCMDocPathFromDB(compare->GetArmedSourceDB()));
 	}
 
 	IControlView* tView = pcd->FindWidget(kKESCMTargetTextWidgetID);
@@ -468,7 +477,7 @@ static void KESCMApplyPanelInfo(const InterfacePtr<IPanelControlData>& pcd)
 }
 
 //========================================================================================
-// KESCMSetToolButtonSelected(KESCMCore.h で宣言)
+// KESCMSetToolButtonSelected(KESCMUIShared.h で宣言)
 //   パネルのツール切替ボタンを「押されている/いない」表示にする。ツールボックスのツール枠と同じ
 //   見た目(くぼみ)になるのは、.fr でこの widget を kADBEIconSuiteButtonDrawWellType にしてあるため。
 //
@@ -508,7 +517,7 @@ void KESCMPanelObserver::UpdateInfoDisplay()
 }
 
 //========================================================================================
-// KESCMRefreshPanel(KESCMCore.h で宣言)
+// KESCMRefreshPanel(KESCMUIShared.h で宣言)
 //   現在表示中の ChangeMarker パネルがあれば、その ON/OFF 表示を現在の arm 状態へ更新する。
 //   パネルが隠れていれば何もしない(次に開いたとき AutoAttach が実状態を反映する)。
 //   クローズレスポンダ(KESCMHandleDocsClosed)から、追跡文書が閉じてパネルを OFF に戻すときに呼ぶ。
@@ -524,7 +533,7 @@ void KESCMRefreshPanel()
 }
 
 //========================================================================================
-// KESCMSetStatus(KESCMCore.h で宣言)
+// KESCMSetStatus(KESCMUIShared.h で宣言)
 //   パネルのステータス行を更新する。メンバ SetStatus(自パネル)と同じ処理を自由関数として公開し、
 //   クローズレスポンダ(KESCMHandleDocsClosed)からも Stop 相当のメッセージを出せるようにする。
 //   パネルが隠れていてもセッション状態(gSessionStatus)は覚えておき、再表示時に復元する。
@@ -562,7 +571,7 @@ void KESCMSetStatus(const PMString& s, bool16 forceRedrawNow)
 //  ＝IKESCMCompareFacade の GetSessionStatus / ClearSessionStatus を通す。)
 
 //========================================================================================
-// KESCMSetNavPosition(KESCMCore.h で宣言)
+// KESCMSetNavPosition(KESCMUIShared.h で宣言)
 //   Prev/Next の間の現在位置表示(kKESCMNavPosTextWidgetID、例 "3/12")と、Prev/Next ボタンの
 //   有効/無効をまとめて更新する。パネルが隠れていれば何もしない(再表示時に KESCMRefreshNavPosition が
 //   実状態を反映する)。値の決定は呼び出し側(KESCMRefreshNavPosition)に集約。

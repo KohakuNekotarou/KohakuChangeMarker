@@ -100,7 +100,9 @@ void KESCMSavePanelState()
 	}
 
 	// 現在の状態を JSON 文字列に組み立てる。
-	// ★5つ聞くので InterfacePtr で1回引く(Utils.h:74-80。3回以上ならこの形が公式)。
+	// ★何度も聞くので InterfacePtr で1回引く(`Utils.h:74-80`＝「several places で使うなら一度引いて
+	//   InterfacePtr に持て」)。⚠**公式は回数を数字で示していない**——「3回以上なら」は手元の目安で、
+	//   旧コメントはそれを「公式」と書いていた(2026-08-16・監査 B-U3 で訂正)。
 	InterfacePtr<IKESCMCompareFacade> compare(Utils<IKESCMCompareFacade>().QueryUtilInterface());
 	std::string json;
 	json += "{\n";
@@ -112,7 +114,7 @@ void KESCMSavePanelState()
 	json += "  \"showOldNumbers\": ";         json += KESCMBoolLiteral(compare->GetShowOldPageNumbers());           json += ",\n";
 	json += "  \"syncLayoutViews\": ";        json += KESCMBoolLiteral(KESCMGetLayoutSync());                       json += ",\n";
 	json += "  \"scrollbarMap\": ";           json += KESCMBoolLiteral(KESCMGetScrollMapEnabled());                 json += ",\n";
-	json += "  \"ignorePageNumberMarker\": "; json += KESCMBoolLiteral(Utils<IKESCMCompareFacade>()->GetIgnorePageNumberMarker()); json += ",\n";
+	json += "  \"ignorePageNumberMarker\": "; json += KESCMBoolLiteral(compare->GetIgnorePageNumberMarker());               json += ",\n";
 	json += "  \"translucentPanel\": ";       json += KESCMBoolLiteral(KESCMGetPanelTranslucent());                 json += ",\n";
 	json += "  \"translucentPagesPanel\": ";  json += KESCMBoolLiteral(KESCMGetPagesPanelTranslucent());            json += ",\n";
 	json += "  \"translucentBookDialog\": ";  json += KESCMBoolLiteral(KESCMGetBookDialogTranslucent());            json += "\n";
@@ -195,8 +197,8 @@ void KESCMLoadPanelStateIfPresent()
 
 	KESCMSetLayoutSync            (KESCMJsonReadBool(text, "syncLayoutViews",         KESCMGetLayoutSync()));
 	KESCMSetScrollMapEnabled      (KESCMJsonReadBool(text, "scrollbarMap",           KESCMGetScrollMapEnabled()));
-	Utils<IKESCMCompareFacade>()->SetIgnorePageNumberMarker(
-		KESCMJsonReadBool(text, "ignorePageNumberMarker", Utils<IKESCMCompareFacade>()->GetIgnorePageNumberMarker()));
+	compare->SetIgnorePageNumberMarker(
+		KESCMJsonReadBool(text, "ignorePageNumberMarker", compare->GetIgnorePageNumberMarker()));
 
 	// ★ここでは窓に触らない(触れない): この復元は起動時(KESCMPeekStartup::Startup)に走るので、
 	//   まだパネルが存在しない。実際に半透明を貼るのはパネルの AutoAttach と

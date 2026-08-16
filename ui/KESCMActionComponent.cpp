@@ -407,7 +407,8 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 		}
 
 		// フライアウトの「Save Panel Settings」: 現在の設定系トグルを独自 JSON でローカルへ保存し、
-		// 保存先パスを**パネルのステータス行**に出す(実体は KESCMPanelState.cpp:132-137)。
+		// 保存先パスを**パネルのステータス行**に出す(実体は KESCMPanelState.cpp の KESCMSavePanelState。
+		// ⚠旧引用 ":132-137" は 2026-08-16 の監査 B-U3 時点で fclose のエラー処理を指していた＝関数名で引く)。
 		// 読み込みは起動時(KESCMPeekStartup::Startup。2026-07-15 に「パネル初回オープン時」から前倒し=
 		// KESCMPanelState.h の説明が正)。(旧コメントの「ダイアログ表示する」は 2026-07-11 に
 		// モーダルからステータス行へ変えた時点で陳腐化していた。2026-08-06 監査で現行化。)
@@ -501,7 +502,10 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 		// フライアウトの「Compare Books」: ブックパネルで前面タブのブック=Target、それ以外で最初に
 		// 開いているブック=Source として、章(ドキュメント)単位で「変更あり/なし」を判定する。
 		// ★既存の文書比較(Start)とは完全に独立=arm しない・枠を作らない・sDB/sEntries を触らない。
-		// ⚠段階1 の途中: いまは解決した2ブックの名前をステータスに出すだけ(比較の実体は次の段階)。
+		// ⚠2026-08-16(監査 B-U3)に**陳腐化を1行削った**＝旧「段階1 の途中: いまは解決した2ブックの
+		//   名前をステータスに出すだけ(比較の実体は次の段階)」。**比較も結果ダイアログも章行の右クリックも
+		//   完成している**(2026-08-16 の監査 B8 で公式ルートへの照合と実機 PASS まで済み)。
+		//   ★★すぐ下の3行が「2026-08-12 に流れが変わった」と新しい姿を説明しており、**新旧が同居**していた。
 		case kKESCMPopupCompareBooksActionID:
 			// ★★2026-08-12 に流れが変わった(ユーザー指示)。**確認アラート → OK で比較 → 結果ダイアログ**。
 			//   旧: ダイアログを先に開き、中の Compare ボタンで実行(そのボタンは撤去済み)。
@@ -539,7 +543,10 @@ void KESCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionSta
 		{
 			// arm 状態でメニュー名を出し分け(arm 中=Stop / 未 arm=Start)。
 			// (kSelectedAction は付けない=チェックマークではなく名前そのものを切り替える。)
-			const bool16 armed = Utils<IKESCMCompareFacade>()->IsArmed() && (Utils<IKESCMCompareFacade>()->GetArmedTargetDB() != nil);
+			// ★3回聞くので InterfacePtr で1回引く(`Utils.h:74-80`。2026-08-16・監査 B-U3 で
+			//   このファイルの他の分岐と揃えた ---- :141 / :180 / :363 は既にこの形だった)。
+			InterfacePtr<IKESCMCompareFacade> compare(Utils<IKESCMCompareFacade>().QueryUtilInterface());
+			const bool16 armed = compare->IsArmed() && (compare->GetArmedTargetDB() != nil);
 			PMString name(armed ? "Stop" : "Start");
 			name.SetTranslatable(kFalse);
 			listToUpdate->SetNthActionName(i, name);
@@ -549,7 +556,7 @@ void KESCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionSta
 			//   (2026-08-06 ユーザー指定)。判定は実行側と同じ CanStartComparison() を通るので、
 			//   メニューの見た目と押した結果がずれない。
 			listToUpdate->SetNthActionState(i,
-				(armed || Utils<IKESCMCompareFacade>()->CanStartComparison()) ? kEnabledAction : kDisabled_Unselected);
+				(armed || compare->CanStartComparison()) ? kEnabledAction : kDisabled_Unselected);
 		}
 		else if (action == kKESCMPopupPrintMarksActionID)
 		{
@@ -580,9 +587,13 @@ void KESCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionSta
 			//   (sEntries)を根拠に「変更のないスプレッド」を選ぶので、Start していなければ何も選べない
 			//   (DoHideUnchangedToggle 側も同じ理由で先頭にガードがある)。他の実行アクションと同じ
 			//   kDisabled_Unselected を使う(Refresh Overset / Export Changed Pages と揃えた)。
-			// ★「ON のまま灰色になって戻せない」状態は作れない: Stop(KESCMDoClearMarks)が必ず
-			//   ResetHideUnchanged(kTrue) を呼び、隠したスプレッドを戻してトグルを OFF にする
-			//   (KESCMCore.cpp:566)。再比較・文書クローズも同じ(KESCMCore.cpp:312 / KESCMPeek.cpp:2267)。
+			// ★「ON のまま灰色になって戻せない」状態は作れない: Stop(**KESCMDoClearMarks**)が必ず
+			//   ResetHideUnchanged(kTrue) を呼び、隠したスプレッドを戻してトグルを OFF にする。
+			//   再比較(**KESCMDoMarkChangesDoc**)と文書クローズ(**KESCMHandleDocsClosed**)も同じ。
+			// ⚠2026-08-16(監査 B-U3)に**行番号での引用をやめた**——3つとも外れていた
+			//   (旧: KESCMCore.cpp:566 / :312 / KESCMPeek.cpp:2267。前2つは無関係な行を指しており、
+			//   **KESCMPeek.cpp に至ってはファイルが 906 行しかない**＝EOF の1,300行以上先)。
+			//   model/UI 分割でファイルが大きく動いたため。★**関数名で引けば動かない。**
 			int16 actionState;
 			if (!Utils<IKESCMCompareFacade>()->IsArmed())
 				actionState = kDisabled_Unselected;
@@ -889,7 +900,7 @@ void KESCMActionComponent::DoRefreshOverset()
 	KESCMSetStatus(msg);
 }
 
-// KESCMOpenAboutURL(KESCMCore.h で宣言) — パネルのイラストクリックから呼ばれる。「このプラグインに
+// KESCMOpenAboutURL(KESCMUIShared.h で宣言) — パネルのイラストクリックから呼ばれる。「このプラグインに
 // ついて」本文と同じ配布元URL(kKESCMRepoURL)を既定のブラウザで開く。ドキュメントモデルには一切
 // 触れない(=OSへの外部起動要求のみ)ため、Command 化は不要。
 // GoToURLUtils::GoToURL は IURLAccess(hyperlink 用の内部インターフェイス)経由で Win/Mac 双方の既定
