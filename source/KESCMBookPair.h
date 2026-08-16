@@ -72,6 +72,19 @@ PMString KESCMBookDisplayPath(IBook* book);
     comparison to judge. */
 void KESCMBuildChapterPairing(IBook* target, IBook* source, std::vector<KESCMChapterResult>& out);
 
+/** What the BOOK says about its chapter at `chapterIndex` - "missing", "out of date", "in use" or
+    "open", and EMPTY when the book considers the chapter normal.
+
+    ***** For failure paths only. ***** "Could not be opened" is one sentence for a chapter that was
+    deleted, one another user has open, and one saved by a newer version - three faults with nothing
+    in common to do about them. IBookUtils::GetBookContentStatus (IBookUtils.h:113-117) tells them
+    apart, so a failed chapter can say which it was.
+
+    Asked here rather than kept from the pairing because the pairing hands on IDFiles and lets go of
+    the IBookContent: a chapter's status is only wanted when something has gone wrong, and asking
+    then costs a normal run nothing. Empty is a valid answer and means "add no word". */
+PMString KESCMChapterStatusText(IBook* book, int32 chapterIndex);
+
 #endif // __KESCMBookPair_h__
 
 // End, KESCMBookPair.h.

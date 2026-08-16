@@ -551,6 +551,26 @@ ErrorCode KESCMCompareBooks(IBook* target, IBook* source,
 			if (!CloseChapter(targetRef, targetMine))
 				++leftOpen;
 
+			// ***** THE BOOK KNOWS WHY, SO ASK IT. ***** On its own "could not be opened" is the
+			// same sentence for a chapter that was deleted, one another user has open, and one
+			// saved by a newer version. GetBookContentStatus tells those apart
+			// (see KESCMChapterStatusText), and it is asked ONLY here, on the failing path, so a
+			// run where everything opens pays nothing for it. Same call KBS makes for its skipped
+			// chapters (KBSBookScope.cpp:1400-1413).
+			//
+			// Which side failed is readable from the refs: the two opens above are short-circuited
+			// and each clears its own out-ref first, so a null target means the target's open is
+			// the one that never reached a document. Only chapters present in BOTH books get this
+			// far (the others were answered by the pairing), so the index is valid in either book.
+			const PMString statusWord =
+				KESCMChapterStatusText((targetRef == UIDRef::gNull) ? target : source, (int32)i);
+			if (!statusWord.IsEmpty())
+			{
+				why.Append(" (");
+				why.Append(statusWord);
+				why.Append(")");
+			}
+
 			chapter.fState = kKESCMChapterFailed;
 			chapter.fWhy   = why;
 			continue;

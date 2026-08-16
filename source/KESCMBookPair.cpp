@@ -15,10 +15,11 @@
 #include "VCPlugInHeaders.h"
 
 // Interface includes:
-#include "IBook.h"				// GetBookTitleName - the display name and the ClassID backstop
+#include "IBook.h"				// GetBookTitleName / IsOpen - the display name and the ClassID backstop
 #include "IBookContent.h"		// GetIDFile / GetShortName - one chapter
 #include "IBookContentMgr.h"	// GetContentCount / GetNthContent - the chapter list, in book order
 #include "IBookManager.h"		// GetBookCount / GetNthBook / FindOpenBookByName
+#include "IBookUtils.h"			// GetBookContentStatus - what the book knows about a chapter
 #include "IDataBase.h"			// the book's own database, which its chapter UIDs live in
 #include "ISession.h"
 
@@ -95,6 +96,23 @@ void CollectChapters(IBook* book, std::vector<ChapterEntry>& out)
 	}
 }
 
+/** The word for one BookContentStatus::State.
+
+    ***** Empty for kDocNormal. ***** "The book has nothing to add" is not a reason, and appending
+    "(normal)" to a failure would say less than saying nothing. The caller only appends a non-empty
+    word, so a chapter the book considers fine fails with the plain sentence it always had. */
+const char* StatusWord(BookContentStatus::State state)
+{
+	switch (state)
+	{
+		case BookContentStatus::kDocMising:		return "missing";		// (sic - the SDK's spelling)
+		case BookContentStatus::kDocOutofDate:	return "out of date";
+		case BookContentStatus::kDocInUse:		return "in use";
+		case BookContentStatus::kDocOpen:		return "open";
+		default:								return "";				// kDocNormal - see above
+	}
+}
+
 }	// anonymous namespace
 
 bool16 KESCMResolveBookPair(const IDFile& panelBookFile, IBook*& outTarget, IBook*& outSource)
@@ -116,9 +134,19 @@ bool16 KESCMResolveBookPair(const IDFile& panelBookFile, IBook*& outTarget, IBoo
 	// Target, the first OTHER open book is the Source.
 	// ⚠A caller that could not identify a front tab must not call this at all - it must NOT hand in
 	//   a blank file and it must NOT fall back to the active book (see KESCMBookPanelLookup.h).
+	// ***** "IS IT LISTED" IS NOT THE SAME QUESTION AS "IS IT OPEN". ***** A book that is closing is
+	// still on IBookManager's list, still reports IsOpen and still has a live database at the moment
+	// its close is broadcast - measured on the release build 2026-07-27 as
+	// "books=1, ours listed, IsOpen=1, db=1". The lookup alone therefore hands back books that
+	// nothing may be run against; IBook::IsOpen (IBook.h:78) is the flag the close clears, so it is
+	// asked as well. KBS keeps the same two tests together and says not to separate them when
+	// tidying (KBSBookScope::FindOpenBookByPath, :283-289).
 	outTarget = bookMgr->FindOpenBookByName(panelBookFile);	// non-owning; nil means "not open"
-	if (outTarget == nil)
+	if (outTarget == nil || !outTarget->IsOpen())
+	{
+		outTarget = nil;		// the contract is "whichever could not be resolved is left nil"
 		return kFalse;
+	}
 
 	// The first OTHER open book is the source (the older version). Same rule as the document
 	// comparison's KESCMFirstOtherDoc (KESCMPanelObserver.cpp), including its known limitation:
@@ -128,7 +156,10 @@ bool16 KESCMResolveBookPair(const IDFile& panelBookFile, IBook*& outTarget, IBoo
 	for (int32 i = 0; i < bookCount; ++i)
 	{
 		IBook* book = bookMgr->GetNthBook(i);				// non-owning pointer - no release
-		if (book != nil && book != outTarget)
+		// IsOpen() for the reason given at the target above, and it weighs MORE here: this takes the
+		// first book that is not the target, so a book in the middle of closing is precisely what it
+		// would otherwise pick up - and the user would be shown its name as the Source.
+		if (book != nil && book != outTarget && book->IsOpen())
 		{
 			outSource = book;
 			break;
@@ -211,6 +242,54 @@ void KESCMBuildChapterPairing(IBook* target, IBook* source, std::vector<KESCMCha
 
 		out.push_back(result);
 	}
+}
+
+PMString KESCMChapterStatusText(IBook* book, int32 chapterIndex)
+{
+	PMString out;
+	out.SetTranslatable(kFalse);
+
+	if (book == nil || chapterIndex < 0)
+		return out;
+
+	InterfacePtr<IBookContentMgr> contentMgr(book, UseDefaultIID());
+	IDataBase* bookDB = ::GetDataBase(book);
+	if (contentMgr == nil || bookDB == nil)
+		return out;
+
+	// The index is the pairing's, and the pairing was built from this same list - but it was built
+	// BEFORE the chapters were opened, and this runs after. A book edited in between would make the
+	// index name a different chapter, so it is bounds-checked and no word is given rather than a
+	// wrong one. (Nothing in this plug-in edits a book; the caller is a failure path, which is
+	// exactly where an assumption is least worth making.)
+	if (chapterIndex >= contentMgr->GetContentCount())
+		return out;
+
+	const UID contentUID = contentMgr->GetNthContent(chapterIndex);
+	if (contentUID == kInvalidUID)
+		return out;
+
+	InterfacePtr<IBookContent> content(bookDB, contentUID, UseDefaultIID());
+	if (content == nil)
+		return out;
+
+	// Utils<IBookUtils> is kUtilsBoss - the same boss this plug-in already reaches for
+	// Utils<IDocumentCommands> and Utils<IDocumentUtils> in KESCMBookCompare.cpp. All three are
+	// IID_I*UTILS entries on kUtilsBoss served by APPFRAMEWORK.RPLN, so a model plug-in reaches this
+	// one on exactly the terms it already reaches those.
+	//
+	// Exists() is asked even so. Utils.h:68-72 gives the bare one-line call as the ordinary form
+	// (what KBS uses at KBSBookScope.cpp:1413) and offers Exists() at :103-104 for "the plug-in that
+	// supplies the interface has been removed" - which APPFRAMEWORK is not. The difference is which
+	// path this sits on: the function only runs once a chapter has ALREADY failed to open, the one
+	// path a working test run never takes. A nil here would turn a reportable failure into a crash,
+	// found by a user rather than by us, and the test that prevents it is one comparison.
+	Utils<IBookUtils> bookUtils;
+	if (!bookUtils.Exists())
+		return out;
+
+	out.Append(StatusWord(bookUtils->GetBookContentStatus(content)));
+	return out;
 }
 
 // End, KESCMBookPair.cpp.
