@@ -13,7 +13,7 @@
 //  呼ばれ、完成前のバッファが1フレーム見えることだった(切り分け 2026-07-25)。リソースカーソルなら
 //  再設置でバッファ描画が起きないので、発生源そのものが無くなる。
 //  ※コールバック描画がプロバイダ経路(GetCursor)でも効くことは 2026-07-13〜実機で実証済み。手法自体は
-//    有効で、CMYK 情報カーソル(KESCMPeek.cpp の KESCMCmykCursorBitmapProc = 毎回内容が変わるので
+//    有効で、CMYK 情報カーソル(KESCMCmykCursor.cpp の KESCMCmykCursorBitmapProc = 毎回内容が変わるので
 //    リソース化できない)では引き続き使っている。✓は内容が固定なのでリソースで足りる。
 //  画像は KESCMCheckGlyph.h と同じ幾何(頂点 5,12 - 10,18 - 20,5 / halo 3.5 or 5.0 / body 2.4 / 丸端)で
 //  生成したもの: KESCM_Check_10_18.png(黒✓) / KESCM_CheckOff_10_18.png(白抜き✓)、各 @2x / @3to2x。

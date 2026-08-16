@@ -51,7 +51,7 @@
 // ★比較の開始/解除の6本は 2026-08-13 に KESCMComparisonRun.cpp へ移した(model/UI 分割 第1段 Task 4)。
 //   それだけが使っていた include(KESCMScrollMap.h / KESCMDrawEventHandler.h / KESCMOversetApply.h /
 //   PersistUtils.h)も一緒に移っている。⇒ このファイルは**パネルの表示だけ**を担う UI になった。
-#include "KESCMPanelState.h"		// KESCMLoadPanelStateIfPresent(読込の主経路は起動時=KESCMPeekStartup。ここは保険)
+#include "KESCMPanelState.h"		// KESCMLoadPanelStateIfPresent(読込の主経路は起動時=KESCMUIStartup。ここは保険)
 #include "KESCMPanelAlpha.h"		// KESCMApplyPanelTranslucency(パネル再表示時に半透明を貼り直す)
 #include "KESCMPathDisplay.h"		// KESCMPathForDisplay(Target:/Source: のパスを "/" 区切りで見せる)
 #include "KESCMStorySection.h"		// KESCMUpdateStorySectionLabel(見出しの件数も arm 状態の表示の一部)
@@ -162,7 +162,7 @@ static PMString KESCMDocPathFromDB(IDataBase* db)
 
 void KESCMPanelObserver::AutoAttach()
 {
-	// ★保存済みのパネル設定(独自 JSON)の読み込みは起動時(KESCMPeekStartup::Startup)へ前倒し済み
+	// ★保存済みのパネル設定(独自 JSON)の読み込みは起動時(KESCMUIStartup::Startup)へ前倒し済み
 	//   (2026-07-15: 同期が Stop 中+ツール選択でも動くため、パネルを開く前でも保存設定を効かせる)。
 	//   ここは起動サービスの順序が万一変わっても取りこぼさないための保険呼び出し(通常はセッション
 	//   一度きりの内部ガードで no-op。途中変更を巻き戻すこともない)。
@@ -234,7 +234,7 @@ void KESCMPanelObserver::AutoAttach()
 	//   ★注意: この AutoAttach は widget を作り直すたびに走るので、固定の既定値を書く場所ではない
 	//   (KESCMGetPanelTranslucent の現在値を読んで反映するだけ)。
 	//
-	// ★起動時(KESCMPeekStartup::Startup)にはパネルマネージャがまだ立ち上がっておらず購読に
+	// ★起動時(KESCMUIStartup::Startup)にはパネルマネージャがまだ立ち上がっておらず購読に
 	//   失敗している可能性があるため、ここでも購読を試す(IsAttached ガードがあるので二重にならない)。
 	KESCMAttachPanelVisibilityObserver();
 	// (「乗っている」状態を落とす KESCMResetPanelHover の呼び出しは 2026-07-29 に撤去。判定を

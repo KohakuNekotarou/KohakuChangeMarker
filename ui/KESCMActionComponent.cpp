@@ -409,7 +409,7 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 		// フライアウトの「Save Panel Settings」: 現在の設定系トグルを独自 JSON でローカルへ保存し、
 		// 保存先パスを**パネルのステータス行**に出す(実体は KESCMPanelState.cpp の KESCMSavePanelState。
 		// ⚠旧引用 ":132-137" は 2026-08-16 の監査 B-U3 時点で fclose のエラー処理を指していた＝関数名で引く)。
-		// 読み込みは起動時(KESCMPeekStartup::Startup。2026-07-15 に「パネル初回オープン時」から前倒し=
+		// 読み込みは起動時(KESCMUIStartup::Startup。2026-07-15 に「パネル初回オープン時」から前倒し=
 		// KESCMPanelState.h の説明が正)。(旧コメントの「ダイアログ表示する」は 2026-07-11 に
 		// モーダルからステータス行へ変えた時点で陳腐化していた。2026-08-06 監査で現行化。)
 		case kKESCMPopupSavePanelStateActionID:

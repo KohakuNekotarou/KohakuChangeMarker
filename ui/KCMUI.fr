@@ -168,7 +168,8 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 		}
 	},
 
-	// UI 側の起動/終了サービス(2026-08-13・model/UI 分割 第1段 Task 8)。上の kKESCMPeekStartupBoss と対。
+	// UI 側の起動/終了サービス(2026-08-13・model/UI 分割 第1段 Task 8)。model 側の KESCM.fr が持つ
+	// kKESCMPeekStartupBoss と対(★「上の」と書いてあったのは分割前の名残＝この .fr には無い。2026-08-17 訂正)。
 	// ★終了時の順序が意味を持つ: 購読を外してからパネル周りを畳む(KESCMUIStartup.cpp の冒頭コメント参照)。
 	// ⚠2つのサービスの**相対順序は保証されない**。分割時に1行ずつ確認して前後関係が無いことを確かめてある。
 	Class

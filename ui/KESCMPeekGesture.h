@@ -82,7 +82,7 @@ bool16			KESCMBatchCloseInProgress();
 void			KESCMDeferCloseUi();
 
 // Shutdown: drop the pending flag so nothing is left booked. Called from
-// KESCMPeekStartup::Shutdown.
+// KESCMUIStartup::Shutdown.
 void			KESCMPeekGestureShutdown();
 
 #endif // __KESCMPeekGesture_h__

@@ -16,10 +16,19 @@
 //  base CTracker::BeginTracking/EndTracking, return the base's result, and NEVER touch
 //  DisableUpdates/EnableUpdates. A companion CTrackerEventHandler (IID_IEVENTHANDLER on the same
 //  boss) forwards the button-up during capture to EndTracking.
+//  ⚠ONE DELIBERATE DEPARTURE FROM THAT PATTERN, and it is the last clause: this tracker DOES
+//    override DisableUpdates/EnableUpdates - as no-ops. The reason is written at those two methods
+//    below (the base's suppression is exactly what silences KESCM's InvalidateViews-based reveal).
 //
-//  ★押下中 HUD(レイアウトビュー左上に "Target"/"Source" の1行を出す機能)は 2026-08-06 に
-//    ユーザー指示で全廃した。sprite 描画層・専用フォント選定・one-shot タイマーもすべて一緒に
-//    落としてある。実装と、そこへ至るまでの実測は git 履歴と docs/ai-notes/kescm-tracker-hud.md に残す。
+//  ★押下中 HUD(押したレイアウトビューの**左上**に "Target" / "Source" / "Not in comparison" /
+//    "Not comparing" の1行を出す機能)は**現役**。このファイルが KESCMTrackerHudBegin / End を呼び、
+//    描く実体は Draw Event 経路(KESCMTrackerHud.cpp / KESCMTrackerHud.h)。
+//    ⚠2026-08-06 に全廃したのは**旧 sprite 版**(sprite 描画層・専用フォント選定・one-shot タイマー)で、
+//      **翌 2026-08-07 に Draw Event 方式で作り直された** ---- 枠とまったく同じ描画パスに乗せて
+//      **枠と同時に出す**ため(旧版は押下から遅れて出ていた)。
+//    ⚠ここに「全廃した」とだけ書いてあった記述は **2026-08-17(監査 B-U6)に訂正**。同じファイルが
+//      HUD を呼んでいるのに全廃したと宣言している状態が10日続いていた。
+//      経緯と実測は docs/ai-notes/kescm-tracker-hud.md、仕様は KESCMTrackerHud.h の冒頭。
 //
 //========================================================================================
 
@@ -192,7 +201,10 @@ public:
 				//   その1回の描画に枠も HUD も乗る ＝ **枠と同時に出る**(旧 sprite 版が枠に遅れて
 				//   いた点の是正)。
 				//   ⚠2026-08-07 まで、ここには「reveal が呼ぶ InvalidateViews に相乗りする」と
-				//     書いてあったが、あれは**Target 窓の上でしか走らない**(KESCMPeek.cpp:1841-1844)。
+				//     書いてあったが、あれは**Target 窓の上でしか走らない**
+				//     (KESCMPeekGesture.cpp の KESCMTrackerRevealBegin＝`KESCMFrontViewIsOverTarget()`
+				//      が偽なら早期 return する。★2026-08-17 に参照先を訂正＝旧記述の
+				//      `KESCMPeek.cpp:1841-1844` は分割前の行で、あのファイルは今 907 行しかない)。
 				//     そのため Source 窓・Stop 中・第3の文書では HUD が1度も描かれなかった。以後 HUD は
 				//     自分で再描画を要求する(理由の全文は KESCMTrackerHud.cpp の Invalidate のコメント)。
 				//   描画の実体は KESCMDrawEventHandler の2系統(帯の前面 / カンバス背景)。

@@ -34,7 +34,7 @@ void	KESCMSetLayoutSync(bool16 on);
 bool16	KESCMAlignOtherViewsToActiveNow();
 
 // Shutdown: drop the toggle so any notification still in flight is ignored by the observer's
-// leading guard. Called from KESCMPeekStartup::Shutdown.
+// leading guard. Called from KESCMUIStartup::Shutdown.
 //
 // ★This is NOT KESCMSetLayoutSync(kFalse) -- see the comment on the implementation for why
 //  taking that route during teardown crashed every time.

@@ -1099,7 +1099,7 @@ void KESCMAttachPanelVisibilityObserver()
 	}
 }
 
-// ★上の鏡像。プラグイン終了時(KESCMPeekStartup::Shutdown)から、**KESCMShutdownPanelAlpha より前に**呼ぶ
+// ★上の鏡像。プラグイン終了時(KESCMUIStartup::Shutdown)から、**KESCMShutdownPanelAlpha より前に**呼ぶ
 //   ＝通知を止めてから道具(タイマーと Win32 フック)を畳む。2026-08-12 追加。
 //   ★★なぜ要るか: 購読している間、セッションが握っているのは**この .pln の中へのポインタ**。終了処理の
 //     途中でパネルが壊されると通知が飛ぶので、消えかけのコードで Update が走る。

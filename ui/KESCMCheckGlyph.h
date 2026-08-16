@@ -5,7 +5,8 @@
 //  Shared drawing of the KESCM check mark (✓) into an IGraphicsPort: a white halo stroke
 //  under a black body, at fixed logical (1x px) coordinates whose vertex (10,18) is the
 //  cursor hotspot. Used by the Alt+left CMYK readout cursor, which keeps the ✓ on top of the
-//  numbers (KESCMPeek.cpp). The caller owns the buffer clear and setopacity; this only strokes
+//  numbers (KESCMCmykCursor.cpp - it was KESCMPeek.cpp until the 2026-08-13 split; corrected
+//  2026-08-17, audit B-U6). The caller owns the buffer clear and setopacity; this only strokes
 //  the glyph.
 //
 //  ★★形を変えるときは PNG も作り直すこと(2026-07-25)。ツール選択中の常時✓カーソルは、押下時のゴミ対策で
@@ -29,8 +30,13 @@
 #include <cstring>			// std::memset(KESCMCursorBitmapBegin の透明クリア)
 
 //----------------------------------------------------------------------------------------
-// カーソルビットマップ・コールバック共通の前処理(2026-07-15 に2つのコールバックの重複約16行を集約。
-// 使用箇所 = ✓カーソル KESCMCursorProvider.cpp / CMYK 情報カーソル KESCMPeek.cpp)。
+// カーソルビットマップ・コールバック共通の前処理(2026-07-15 に2つのコールバックの重複約16行を集約)。
+// ★**現在の呼び手は KESCMCmykCursor.cpp ただ1つ**(2026-08-17・監査 B-U6 で Grep 全数を数え直した)。
+//   集約した当時の2つのうち片方=✓カーソル(KESCMCursorProvider.cpp)は **2026-07-25 に PNG リソース方式へ
+//   変わってコールバック自体を持たなくなり**、もう片方は 2026-08-13 の分割で KESCMPeek.cpp から
+//   KESCMCmykCursor.cpp へ移った ---- つまり**書いてあった2つとも今は違う**。
+//   ⚠それでも共通化は解かない: この2段(Begin/Finish)は「透明クリア→サイズ確定→AGM ポート」という
+//     カーソルビットマップの手順そのもので、次に動的カーソルを足すときの入口になる。
 // 手順: Begin(確保全域を透明クリア+論理最大サイズ取得) → 呼び出し側が論理サイズを決める →
 //       Finish(クランプ+出力サイズ設定+AGM ポート取得)。
 //----------------------------------------------------------------------------------------

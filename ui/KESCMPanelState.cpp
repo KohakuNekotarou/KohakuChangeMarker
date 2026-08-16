@@ -149,7 +149,7 @@ void KESCMSavePanelState()
 }
 
 //----------------------------------------------------------------------------------------
-// 復元(起動時=KESCMPeekStartup::Startup から呼ばれる。セッション内一度だけ。
+// 復元(起動時=KESCMUIStartup::Startup から呼ばれる。セッション内一度だけ。
 //   パネル AutoAttach からの呼び出しは内部ガードで no-op になる保険として残る。KESCMPanelState.h 参照)
 //----------------------------------------------------------------------------------------
 
@@ -200,7 +200,7 @@ void KESCMLoadPanelStateIfPresent()
 	compare->SetIgnorePageNumberMarker(
 		KESCMJsonReadBool(text, "ignorePageNumberMarker", compare->GetIgnorePageNumberMarker()));
 
-	// ★ここでは窓に触らない(触れない): この復元は起動時(KESCMPeekStartup::Startup)に走るので、
+	// ★ここでは窓に触らない(触れない): この復元は起動時(KESCMUIStartup::Startup)に走るので、
 	//   まだパネルが存在しない。実際に半透明を貼るのはパネルの AutoAttach と
 	//   kPaletteVisibilityChangedMessage の購読(KESCMPanelAlpha.cpp)。
 	//   ★ただし「フラグを戻すだけ」ではない: ON を復元すると KESCMSetPanelTranslucent が Win32 の

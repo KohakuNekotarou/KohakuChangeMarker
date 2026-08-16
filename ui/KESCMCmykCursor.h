@@ -52,7 +52,8 @@ void					KESCMCmykBeginPress();
 void					KESCMCmykEndPress();
 
 // Shutdown: hand back the borrowed font and empty the strings, so the plug-in unloads with no
-// live heap buffer in a static PMString. Called from KESCMPeekStartup::Shutdown.
+// live heap buffer in a static PMString. Called from KESCMUIStartup::Shutdown (KESCMUIStartup.cpp;
+// it said KESCMPeekStartup - the MODEL half's service - until 2026-08-17, audit B-U6).
 void					KESCMCmykShutdown();
 
 #endif // __KESCMCmykCursor_h__

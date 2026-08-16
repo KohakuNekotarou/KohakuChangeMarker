@@ -77,7 +77,7 @@ void	KESCMSetBookDialogWindow(void* sysWindow);
 void	KESCMApplyAllPanelTranslucency();
 
 // パネルの表示状態変化(開く/閉じる/ドッキング⇄フローティング)の購読を始める。
-// ★呼ぶ場所は**2か所**で、何度呼んでも安全: KESCMPeekStartup::Startup と パネルの AutoAttach
+// ★呼ぶ場所は**2か所**で、何度呼んでも安全: KESCMUIStartup::Startup と パネルの AutoAttach
 //   (KESCMPanelObserver.cpp)。★2つめは念のためではない ---- パネルマネージャは本体の起動シーケンスの
 //   途中で立ち上がるので Startup の時点では nil のことがあり、その購読は AutoAttach の回で拾う。
 //   どの購読も IsAttached を先に聞くので、重ねて呼んでも二重には付かない。
@@ -86,7 +86,7 @@ void	KESCMApplyAllPanelTranslucency();
 //   もう1つ kAppBoss / IID_IAPPLICATION も購読する(関数本体のコメント参照)。
 void	KESCMAttachPanelVisibilityObserver();
 
-// 上が張った購読を全部外す。プラグイン終了時(KESCMPeekStartup::Shutdown)から、**KESCMShutdownPanelAlpha
+// 上が張った購読を全部外す。プラグイン終了時(KESCMUIStartup::Shutdown)から、**KESCMShutdownPanelAlpha
 // より前に**呼ぶ ＝ 通知を止めてからタイマーとフックを畳む。
 // ★なぜ要るか(2026-08-12): 購読している間、セッションが持っているのはこの .pln の中へのポインタで、
 //   終了処理中のパネル破棄は実際に通知を飛ばす ---- 消えかけのコードで Update が走ることになる。
@@ -97,7 +97,7 @@ void	KESCMDetachPanelVisibilityObserver();
 //  KESCMApplyPanelTranslucency のたびに Win32 で実測する方式へ変更したので、落とすべき状態が
 //  そもそも存在しない＝張り付きが構造的に起きない。)
 
-// 遅延再適用に使う one-shot タイマーの後始末。プラグイン終了時(KESCMPeekStartup::Shutdown)から
+// 遅延再適用に使う one-shot タイマーの後始末。プラグイン終了時(KESCMUIStartup::Shutdown)から
 // 呼ぶ。★ICallbackTimer のコールバックは参照カウントされない生関数ポインタなので、予約を残した
 // まま .pln が降りるとクラッシュする。実体は KESCMPanelAlpha.cpp(Mac では空実装)。
 void	KESCMShutdownPanelAlpha();
