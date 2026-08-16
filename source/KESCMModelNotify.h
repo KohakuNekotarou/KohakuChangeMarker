@@ -27,7 +27,9 @@
 
 #include "BaseType.h"
 #include "PMString.h"
-#include "OMTypes.h"		// ClassID
+#include "OMTypes.h"		// ClassID / UID
+
+#include <set>			// KESCMNotifyPayload::fPagesA(どのページの絵が変わったか)
 
 class IDataBase;
 
@@ -61,8 +63,26 @@ struct KESCMNotifyPayload
 	bool16		fNavReset;			// kTrue when the change invalidates the Prev/Next cursor
 	bool16		fStatusForceRedraw;	// kTrue when a status change asks for an immediate repaint
 
+	// ★★2026-08-16 (API audit B4): WHICH PAGES of fDocA had their picture change, when the
+	// emitter knows. nil means "not known" and the listener must fall back to redoing the whole
+	// document -- which is what EVERY page-flag notification used to do, on the same wrong belief
+	// the four statics above were built on ("a notification can only carry a ClassID").
+	// KESCMThumbnailRefresh.h called that fallback "a temporary regression" when it introduced it
+	// (Task 10); this field is what ends it.
+	//
+	// ⚠ Only fDocA has one. All three emitters of kKESCMPageFlagsChangedMessage are about a single
+	// document (KESCMPageMap's and KESCMPageCheck's toggles, and Load's per-document restore loop).
+	// Add fPagesB the day a two-document emitter appears -- do not add it before, or it becomes a
+	// field nobody sets that readers still have to reason about.
+	//
+	// ⚠ Same lifetime rule as the pointers above: valid only while the notification is being
+	// delivered. Point it at a set on the emitting stack; Change() is synchronous, so it outlives
+	// the delivery and nothing has to be cleaned up.
+	const std::set<UID>*	fPagesA;
+
 	KESCMNotifyPayload()
-		: fDocA(nil), fDocB(nil), fDocC(nil), fNavReset(kFalse), fStatusForceRedraw(kFalse) {}
+		: fDocA(nil), fDocB(nil), fDocC(nil), fNavReset(kFalse), fStatusForceRedraw(kFalse),
+		  fPagesA(nil) {}
 };
 
 // Emit one of the kKESCM*Message notifications (KESCMID.h) on the application's subject.
@@ -95,7 +115,26 @@ void	KESCMNotify(ClassID theChange, const KESCMNotifyPayload* payload = nil);
 // recompare has just thrown away, the page whose flag was just cleared -- and no amount of asking
 // recovers those. What is missing here is a page set travelling alongside the documents, in
 // exactly the way the documents themselves travel. See KESCMPurgeAllPageThumbs.
+//
+// ★★2026-08-16 (API audit B4): that page set now exists -- for the page-flag route, below.
+// ⚠ NOT for this one. The marks route needs the set of pages that carried a mark BEFORE the
+// recompare, and by the time this is called the recompare has already dropped it; supplying it
+// means saving it on the model side first. Until then this route keeps redoing the whole document,
+// and now for a reason that is actually true.
 void	KESCMNotifyDocs(ClassID theChange, IDataBase* docA, IDataBase* docB, bool16 navReset = kFalse);
+
+// Emit a notification that carries WHICH PAGES of one document changed their picture
+// (2026-08-16, API audit B4). Used for kKESCMPageFlagsChangedMessage: a Register or Check toggle
+// changes the drawing of exactly the pages it touched, and the listener can purge just those
+// instead of rebuilding every thumbnail in the document.
+//
+//   pages  ★the caller's own set, by reference -- it travels on the payload as a pointer and is
+//          read during delivery only. It must hold EVERY page whose picture can change, including
+//          the ones the flag was taken OFF: a page that just lost its green "/" is not in any
+//          current-state set, so asking cannot recover it (that is the whole reason this travels).
+//
+// ⚠ The single-document shape is deliberate; see KESCMNotifyPayload::fPagesA.
+void	KESCMNotifyPages(ClassID theChange, IDataBase* doc, const std::set<UID>& pages);
 
 // Three-document form. Closing a document can leave THREE survivors that all need their
 // thumbnails rebuilt -- the compare target, the document the "original" overlay came from, and

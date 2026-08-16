@@ -101,6 +101,19 @@ void KESCMNotifyDocs(ClassID theChange, IDataBase* docA, IDataBase* docB, IDataB
 	KESCMNotify(theChange, &payload);
 }
 
+// KESCMNotifyPages(KESCMModelNotify.h で宣言) — 1文書＋「絵が変わったページ集合」版。
+// ★2026-08-16(API 監査 B4)。**集合はコピーせずアドレスだけを載せる**——Change は同期なので、
+//   呼び手のスタック(あるいは呼び手が持っている変数)がそのまま配り終わるまで生きている。
+//   文書ポインタ2本を運ぶのと**まったく同じ仕組み**で、新しい機構は1つも要らなかった。
+void KESCMNotifyPages(ClassID theChange, IDataBase* doc, const std::set<UID>& pages)
+{
+	KESCMNotifyPayload payload;
+	payload.fDocA   = doc;
+	payload.fPagesA = &pages;
+
+	KESCMNotify(theChange, &payload);
+}
+
 // KESCMNotifyStatus(KESCMModelNotify.h で宣言)
 // ★文字列は static のまま(セッションの状態＝app.kcmStatus がいつでも答える値)、
 //   「今すぐ描き直せ」だけが payload に乗る(その通知に限った付随物)。

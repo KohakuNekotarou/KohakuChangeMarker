@@ -257,11 +257,20 @@ void KESCMPageMapToggleSelectedPages()
 	//   登録追加で再比較済みの場合はスキップ: トグル済みページは sRegistered に入っており、再比較側の
 	//   KESCMCollectChangedPageUIDs(登録ページ込み)が既に Purge+ForceRedraw している。ここでも呼ぶと
 	//   同じページを二重ラスタ化+パネル二重再描画(点滅)するだけで無意味(2026-07-10 レビューで判明)。
-	// ★2026-08-13(Task 10): 直接呼びから通知へ。⚠**どのページかは通知では運べない**ので、UI は db の
-	//   全ページを作り直す(理由と戻し方は KESCMThumbnailRefresh.h の KESCMPurgeAllPageThumbs)。
-	//   ⇒ 上の「二重ラスタ化を避ける」条件は**残す意味がある**: 通知を出さなければ UI は動かない。
+	// ★2026-08-13(Task 10): 直接呼びから通知へ。
+	// ★★2026-08-16(API 監査 B4): **トグルしたページ集合を通知に載せる**ので、UI は per-UID Purge に
+	//   戻った。⚠旧記述「**どのページかは通知では運べない**ので UI は db の全ページを作り直す」は
+	//   **誤り**だった——ISubject::Change の第3引数 changedBy で運べる(2026-08-15 の監査 B2 で
+	//   判明していたのに、その訂正がこの行まで配られていなかった)。
+	//   ⚠**渡す集合が「絵が変わり得るページ」を漏らしていないか**は、上の2ケース分析がそのまま答える:
+	//     解除ページは sRegistered からも sEntries/overflow からも消えるのでどの**現在**集合にも
+	//     入らない=「トグルしたページ」を運ぶ以外に拾う道が無い。
+	//   ⇒ 上の「二重ラスタ化を避ける」条件も**残す意味がある**: 通知を出さなければ UI は動かない。
 	if (!recompared || !anyUnregistered)
-		KESCMNotifyDocs(kKESCMPageFlagsChangedMessage, db, nil);
+	{
+		const std::set<UID> touched(pages.begin(), pages.end());
+		KESCMNotifyPages(kKESCMPageFlagsChangedMessage, db, touched);
+	}
 
 	KESCMNotifyStatus(msg);
 }

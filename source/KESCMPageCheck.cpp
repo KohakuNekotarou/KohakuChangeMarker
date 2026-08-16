@@ -127,9 +127,14 @@ void KESCMPageCheckToggleSelectedPages()
 	msg.AppendNumber(sChecked.CountIn(db));
 
 	// トグルしたページのサムネイルを即更新して ✓ を反映する(比較には影響しないので再比較は不要)。
-	// ★2026-08-13(Task 10): 直接呼びから通知へ。⚠**どのページかは通知では運べない**ので、UI は db の
-	//   全ページを作り直す(理由と戻し方は KESCMThumbnailRefresh.h の KESCMPurgeAllPageThumbs)。
-	KESCMNotifyDocs(kKESCMPageFlagsChangedMessage, db, nil);
+	// ★2026-08-13(Task 10): 直接呼びから通知へ。
+	// ★★2026-08-16(API 監査 B4): **トグルしたページ集合を載せる**ので UI は per-UID Purge に戻った
+	//   (旧記述「どのページかは通知では運べない」は誤り＝changedBy で運べる。理由は KESCMModelNotify.h)。
+	//   ✓ の付け外しで絵が変わるのは触ったページだけなので、この集合で漏れは無い。
+	{
+		const std::set<UID> touched(pages.begin(), pages.end());
+		KESCMNotifyPages(kKESCMPageFlagsChangedMessage, db, touched);
+	}
 
 	// ★レイアウトビュー版の ✓(2026-07-12 追加)も即反映する。✓ は常時表示なので、トグルした文書の
 	// レイアウトビューを InvalidateViews で再描画しないと、次の再描画機会(スクロール等)まで
@@ -270,6 +275,45 @@ bool16 KESCMPageCheckHasAny(IDataBase* db)
 //     }
 //   ★読み込みは寛容: version は見ない。旧 v1 の "pages" 配列は "checks" として受理する
 //     (registered が無い旧ファイルは登録なしとして扱う)。
+//
+//  ─────────────────────────────────────────────────────────────────────────────
+//  ★★**なぜ SDK 公式の JSON クラスを使わず自前で書き読みするのか**(2026-08-16・API 監査 B4 で
+//    決着。⚠**ここを読まずに再検討しないこと**)。
+//
+//    公式のものは在る＝`public/interfaces/utils/IJsonUtils.h` の `class PUBLIC_DECL JSON`
+//    (boost property_tree のラッパ)。実例も製品側にある＝`publiclib/links/
+//    HTTPAssetLinkResourceStateUpdater.cpp:176-182`(addValue → write_json)／
+//    `open/components/linksui/aem/ChromiumImportHelperAEMLinks.cpp:141-193`
+//    (read_json を try/catch → GetListAt → checkKey/GetString)／サンプル `CustomHttpLink/
+//    CusHttpLnkResourceServerAPIWrapper.cpp:524-580`。
+//    ★★**使えることは 2026-08-16 に実測した**＝このプラグインの1ファイルに `#include "IJsonUtils.h"` と
+//      `JSON j; j.addValue(...); j.write_json(s); j.GetListAt(...)` を仮に置いてビルド＝
+//      **追加設定ゼロでコンパイルもリンクも通った**(include は `build/win/prj/Base.props:20` の
+//      $(BOOST_HEADER_SEARCH_PATH) が vcxproj → …ReleaseX64.sdk.props → ReleaseX64.props →
+//      Release.props → Base.props と継承される)。**使えないのではない。**
+//      ⚠台帳 `api-official-examples.md` の旧記述「include パスが標準のコンパイルオプションに無いので
+//        vcxproj 全構成に足す必要がある」は**誤り**だった(`SDKCPPOptions.rsp` だけを見ていた)。
+//
+//    それでも使わない理由は4つ(⚠**どれも「依存が重い」ではない**——上のとおり依存は無料だった):
+//      1. ★**書き出し側に公式の実例が1つも無い。** ここが書くのは
+//         `docs:[{path, checks:[数値…], registered:[数値…]}]` ＝**オブジェクト配列＋数値配列**。
+//         公式の使用例は全部が `addValue(key, 文字列)` の**平坦なオブジェクト**で、配列を書いて
+//         いるものは製品にもサンプルにもゼロ(`AddValue(key, JSONArray)`/`PushValue` は API には
+//         在るが呼び手ゼロ)。⇒「stock の型でも実例ゼロなら道ではない」。
+//      2. 読みだけ寄せると、**この形式の知識が公式パーサと自前ライタの2か所に割れる**。
+//      3. ★**寛容パースを失う。** boost の read_json は壊れていたら**全体が例外**。下の実装は
+//         「壊れた doc エントリ1件だけ飛ばして残りは活かす」——これは 2026-07-25 の監査で
+//         「1エントリの破損で全部放棄すると、その状態の Save マージで**他文書の保存分が消える**」
+//         として意図的に入れた性質で、寄せると黙って失われる。
+//      4. std::stringstream 経由になるので、今 UTF-8 で明示的に握っている文字コードが1枚遠くなる。
+//
+//  ★★**なぜ IPMStream ではなく stdio(FileUtils::OpenFile)なのか**(2026-08-10 に KBS 側で決着済み。
+//    全文＝`KBS/source/KBSPanelState.cpp:13-27`)。要点だけ: SDK の主流は
+//    `StreamUtil::CreateFileStreamRead/Write` だが、**`IPMStream::Close()` も `Flush()` も戻り値が
+//    void**(`IPMStream.h:321,368`)なので、**フラッシュ中に失敗する書き込み(ディスクフル)を検出する
+//    documented な道が無い**。`fclose` は返す。⇒ 主流 API へ寄せると、下の「書けていないのに
+//    『保存した』と言わない」チェック(2026-07-25 監査)が黙って弱くなる。
+//    ⚠この理由は移植先の KBS にしか書かれていなかった(2026-08-16 の監査 B4 でこちらにも置いた)。
 //========================================================================================
 
 // 1文書ぶんの保存単位: チェック済み(✓)と登録済み(Added/Removed)の生 UID(uint32)集合。
@@ -820,9 +864,12 @@ void KESCMPageCheckLoadFromFile()
 
 		if (!affected.empty())
 		{
-			// ★2026-08-13(Task 10): 通知へ(上のトグルと同じ)。⚠対象ページの絞り込みは、通知に
-			//   ページ集合を載せるまで戻せない(Task 12 で判明。KESCMPurgeAllPageThumbs 参照)。
-			KESCMNotifyDocs(kKESCMPageFlagsChangedMessage, db, nil);
+			// ★2026-08-13(Task 10): 通知へ(上のトグルと同じ)。
+			// ★★2026-08-16(API 監査 B4): 「通知にページ集合を載せるまで戻せない」と書いていた
+			//   対象ページの絞り込みを**実際に載せて戻した**。★渡すのは affected(旧チェック∪新チェック)
+			//   ——**外れた ✓ は新しい集合のどこにも居ない**ので、現在状態から復元できない
+			//   (これが「集合を運ぶ」以外に道が無い理由そのもの)。
+			KESCMNotifyPages(kKESCMPageFlagsChangedMessage, db, affected);
 			// ★レイアウトビュー版の ✓(2026-07-12 追加)も即反映する。フェーズ2の再比較(KESCMDoMarkChangesDoc)
 			// が両文書を Invalidate するのは「復元前の ✓ 状態」に対してなので、ここで復元後の状態で
 			// もう一度 Invalidate しないと、復元/消去された ✓ がレイアウト画面に出ない(トグルと同じ理屈)。

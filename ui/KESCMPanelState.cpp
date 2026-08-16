@@ -48,6 +48,10 @@ static bool16 KESCMPanelStateFile(IDFile& outFile)
 //----------------------------------------------------------------------------------------
 // 極小 JSON(自前で書き/寛容 read)
 //   保存内容はフラットな真偽値だけなので、boost(IJsonUtils)依存を避けて自前で扱う。
+//   ★公式クラス(`public/interfaces/utils/IJsonUtils.h` の `JSON`)の実例と、寄せない理由の全文は
+//     `source/KESCMPageCheck.cpp` の保存/読み込みブロック(2026-08-16・API 監査 B4)。
+//   ★**stdio(FileUtils::OpenFile)を使い IPMStream を使わない理由も同じ場所**＝IPMStream の
+//     Close()/Flush() が void で、ディスクフルを検出できないため(2026-08-10 に KBS 側で決着)。
 //----------------------------------------------------------------------------------------
 
 static const char* KESCMBoolLiteral(bool16 b)

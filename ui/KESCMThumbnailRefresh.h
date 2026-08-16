@@ -46,18 +46,26 @@ void KESCMTryRefreshPagesPanelThumbnails(IDataBase* db, const std::set<UID>* ext
 
 // db の**全ページ**(通常＋マスター)を per-UID Purge して、Pages パネルのサムネイルを作り直させる。
 //
-// ★★なぜ「全ページ」という乱暴な入口が要るか(2026-08-13・Task 10)。
-//   model は UI を直接呼ばなくなり、代わりに通知(kKESCM*Message)を投げる。**通知は ClassID しか
-//   運べない**ので、KESCMTryRefreshPagesPanelThumbnails の extraPages ---- 「再比較の**前**に枠が
-//   付いていた旧集合」---- を渡す道が無い。旧集合は再比較で失われるため、今の集合だけを Purge すると
+// ★★なぜ「全ページ」という乱暴な入口が在るか(2026-08-13・Task 10)。
+//   model は UI を直接呼ばなくなり、代わりに通知(kKESCM*Message)を投げる。そのとき
+//   KESCMTryRefreshPagesPanelThumbnails の extraPages ---- 「再比較の**前**に枠が付いていた旧集合」
+//   ---- を渡す道が無かった。旧集合は再比較で失われるため、今の集合だけを Purge すると
 //   **枠が消えたページのサムネイルに古い枠が残る**(この .cpp が 2026-07-08 に直した当の不具合)。
 //   全ページを Purge すれば取りこぼしは原理的に起きない ---- ページ数に比例して遅くなるだけ。
-//   ⚠**これは一時的な後退**。ただし戻し方は当初の見込みと違う(2026-08-13・Task 12 で判明):
-//     **IKESCMMarkData では戻せない**。あれが答えられるのは「今の集合」だけで、絞り込みに要るのは
-//     「**変わったページ**」＝再比較前の旧集合・今トグルしたページ集合であり、どちらも現在状態から
-//     復元できない(現在状態で絞ると、旗を**下ろした**ページが漏れて古い緑/✓が残る)。
-//     ⇒ 正しい解は**通知にページ集合を載せること**＝KESCMNotifyDocs が文書2つを運ぶのと同じ形で、
-//       model 側が持っている集合をそのまま添える。通知機構(Task 9/10)側の作業なので別タスク。
+//
+// ⚠★★★**2026-08-16(API 監査 B4)訂正**: ここに書いてあった理由「**通知は ClassID しか運べない**」は
+//   **誤りだった**。ISubject::Change の第3引数 changedBy で運べる(`ISubject.h:150`。本体の実例＝
+//   `linksui/EditOriginalResumeObserver.cpp:127`)。2026-08-15 の監査 B2 が model 側の static 4本を
+//   その道へ移した時点で覆っていたのに、**その訂正がこのヘッダーまで配られていなかった**
+//   (同じ誤った命題が4箇所に残っていた＝[[verify-claims-in-comments]])。
+//   ⇒ **ページフラグ(Register/✓)の経路は 2026-08-16 に per-UID へ戻した**＝model が
+//     `KESCMNotifyPages` で「トグルしたページ集合」を載せ、受け手(KESCMModelChangeObserver)が
+//     下の KESCMRefreshThumbnailsForPages へ渡す。**Task 10 の「一時的な後退」はここで終わり。**
+//
+// ★**この入口が残っている用途は2つ**:
+//   ①**マーク経路**(kKESCMMarksRebuilt/Cleared)＝要るのは「再比較の**前**に枠が付いていた旧集合」で、
+//     通知を出す時点で既に捨てられている。載せるには model 側で先に退避する必要がある(未実施)。
+//   ②通知にページ集合が付いていないとき(fPagesA == nil)のフォールバック。
 void KESCMPurgeAllPageThumbs(IDataBase* db, bool16 redrawNow = kTrue);
 
 // db 内の指定ページ UID 群だけを per-UID Purge → Pages パネル再描画する。登録/解除トグルの直後など、
@@ -65,7 +73,10 @@ void KESCMPurgeAllPageThumbs(IDataBase* db, bool16 redrawNow = kTrue);
 // ページを明示更新するために使う。特に登録解除は sRegistered から先に消えるため、解除したページの
 // 緑「/」を消すにはこの明示 Purge が必要。db が nil か pages が空なら何もしない。安全に何度でも呼べる。
 // redrawNow の意味は KESCMTryRefreshPagesPanelThumbnails と同じ(kFalse=Purge のみ、バッチ化用)。
+// ★std::set 版(2026-08-16・API 監査 B4)＝通知が運んでくるページ集合をそのまま渡すため。中身の
+//   Purge は元から入れ物を選ばないテンプレートなので、実装は1行の転送(使い捨ての vector を作らない)。
 void KESCMRefreshThumbnailsForPages(IDataBase* db, const std::vector<UID>& pages, bool16 redrawNow = kTrue);
+void KESCMRefreshThumbnailsForPages(IDataBase* db, const std::set<UID>& pages, bool16 redrawNow = kTrue);
 
 // Pages パネルが表示されていれば今すぐ再描画する(Purge 済みサムネイルの作り直しトリガー)。
 // redrawNow=kFalse でバッチ化した呼び出し側が、最後に1回だけ呼ぶための公開版。

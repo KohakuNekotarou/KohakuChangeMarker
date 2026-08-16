@@ -108,6 +108,19 @@ void KESCMCollectPageUIDs(IDataBase* db, std::vector<UID>& out)
 //   PageMap)が UI ヘッダーを include し続けることになっていた。
 //   ⇒ **これは通知で切る逆流ではなく、宣言の置き場所の誤りだった**(逆流台帳 §2-1)。
 //   ⚠「UI ヘッダーを include している」だけでは逆流と断定できない、という実例そのもの。
+//
+// ⚠★★**なぜここは共有状態(sEntries ほか)をロックを取らずに全走査してよいのか**(2026-08-16・
+//   API 監査 B4 で明文化)。KESCMThreadSafety.h:76-81 の契約は「main が書き、**BG(PDF の非同期
+//   書き出し)が描画で読む**から守る」であって、**この関数はその BG 側ではない**——呼び手を
+//   全数数えると4つとも**メインスレッド**しかない:
+//     ・KESCMPageCheck.cpp の KESCMCollectMarked(トグル/メニュー状態/Load の復元)
+//     ・KESCMPageCheck.cpp の KESCMPageCheckPruneToMarked(★呼び手が既にロック済み)
+//     ・このファイルの再比較前の旧集合の退避(KESCMDoMarkChangesDoc)
+//     ・KESCMFacades.cpp の IKESCMMarkData 経由(＝UI から)
+//   書き手も main だけなので、同一スレッド内では走査中に書き換わらない。⇒ ロックは要らない。
+//   ★★**これは「今の呼び手の性質」であって構造ではない。** BG から呼ぶ経路を1つ足したら、
+//     その瞬間に**解放済みメモリの読み取り**になる(sEntries は生ポインタの map で DropAll が
+//     delete する)。**新しい呼び手を足すときは、それがどのスレッドで走るかを先に決めること。**
 //========================================================================================
 bool16 KESCMCollectChangedPageUIDs(IDataBase* db, std::set<UID>& outPages)
 {

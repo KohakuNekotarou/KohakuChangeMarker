@@ -201,4 +201,15 @@ void KESCMRefreshThumbnailsForPages(IDataBase* db, const std::vector<UID>& pages
 		KESCMForceRedrawPagesPanelNow();
 }
 
+// ★std::set 版(2026-08-16・API 監査 B4)。通知(KESCMNotifyPages)が運んでくる集合の入れ物が set
+//   なので、詰め替えずにそのまま流す。Purge 本体は入れ物を選ばない(KESCMPurgePageThumbsRange)。
+void KESCMRefreshThumbnailsForPages(IDataBase* db, const std::set<UID>& pages, bool16 redrawNow)
+{
+	if (db == nil || pages.empty())
+		return;
+	KESCMPurgePageThumbs(db, pages);
+	if (redrawNow)
+		KESCMForceRedrawPagesPanelNow();
+}
+
 // KESCMThumbnailRefresh.cpp 終わり。

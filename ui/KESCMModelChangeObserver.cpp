@@ -37,7 +37,8 @@
 #include "IKESCMMarkData.h"			// GetOversetOn(Find Overset が単独 ON 中かどうか＝model の状態を読む)
 #include "KESCMPeekGesture.h"		// KESCMResetPeekGestureState / KESCMBatchCloseInProgress / KESCMDeferCloseUi
 #include "KESCMThumbIdleTask.h"		// KESCMScheduleThumbRefresh(クローズ後の作り直しを次の idle へ)
-#include "KESCMThumbnailRefresh.h"	// KESCMPurgeAllPageThumbs / KESCMForceRedrawPagesPanelNow
+#include "KESCMThumbnailRefresh.h"	// KESCMPurgeAllPageThumbs / KESCMRefreshThumbnailsForPages /
+									// KESCMForceRedrawPagesPanelNow
 #include "KESCMChangeNav.h"			// KESCMResetNav / KESCMRefreshNavPosition
 #include "KESCMScrollMap.h"			// KESCMScrollMapAttach / DetachAll / InvalidateAll
 #include "KESCMStoryTree.h"			// KESCMStoryTreeRebuild
@@ -112,9 +113,12 @@ void KESCMModelChangeObserver::Update(const ClassID& theChange, ISubject* /*theS
 			KESCMScrollMapDetachAll();		// Stop: strip を全窓から取り外す
 		}
 
-		// Pages パネルのサムネイル。⚠**全ページ Purge**である理由は KESCMThumbnailRefresh.h の
-		// KESCMPurgeAllPageThumbs を参照(旧マーク集合を通知で運べないため。戻すには通知に集合を
-		// 載せる＝Task 12 で「IKESCMMarkData では戻せない」と判明した。理由は同ヘッダー)。
+		// Pages パネルのサムネイル。⚠**この経路が全ページ Purge のままである理由**(2026-08-16 に
+		// 書き直した): 絞り込みに要るのは「再比較の**前**に枠が付いていた旧集合」だが、この通知が
+		// 出る時点で再比較は既にそれを捨てている。⇒ **運べないのではなく、載せる物が手元に無い**
+		// (載せるには model 側で退避してから通知する必要がある＝未実施)。
+		// ★旧記述「旧マーク集合を通知で運べないため」は誤り＝ページフラグの経路は 2026-08-16 に
+		//   集合を載せて per-UID へ戻した(KESCMNotifyPages / 下の kKESCMPageFlagsChangedMessage)。
 		// ForceRedraw は2文書ぶんを畳んで最後の1回だけ(2026-07-25 のバッチ化を壊さない)。
 		if (docA != nil)                 KESCMPurgeAllPageThumbs(docA, kFalse /*redrawNow*/);
 		if (docB != nil && docB != docA) KESCMPurgeAllPageThumbs(docB, kFalse /*redrawNow*/);
@@ -136,8 +140,21 @@ void KESCMModelChangeObserver::Update(const ClassID& theChange, ISubject* /*theS
 		// パネルの表示内容も Prev/Next の位置も、この通知では変わらない。
 		IDataBase* const docA = n.fDocA;
 		IDataBase* const docB = n.fDocB;
-		if (docA != nil)                 KESCMPurgeAllPageThumbs(docA, kFalse /*redrawNow*/);
-		if (docB != nil && docB != docA) KESCMPurgeAllPageThumbs(docB, kFalse /*redrawNow*/);
+
+		// ★★2026-08-16(API 監査 B4): **どのページが変わったかが通知に載ってくる**ようになったので、
+		//   そのページだけを per-UID Purge する。Task 10 以来ここは db の全ページを作り直していた
+		//   ---- 理由が「通知は ClassID しか運べない」という**誤った前提**だったため
+		//   (2026-08-15 の監査 B2 で覆っていたのに、この分岐まで訂正が配られていなかった)。
+		//   ⚠fPagesA が nil の通知は従来どおり全ページ(送り手が集合を持たない場合の逃げ道)。
+		if (n.fPagesA != nil)
+		{
+			KESCMRefreshThumbnailsForPages(docA, *n.fPagesA, kFalse /*redrawNow*/);
+		}
+		else
+		{
+			if (docA != nil)                 KESCMPurgeAllPageThumbs(docA, kFalse /*redrawNow*/);
+			if (docB != nil && docB != docA) KESCMPurgeAllPageThumbs(docB, kFalse /*redrawNow*/);
+		}
 		KESCMForceRedrawPagesPanelNow();
 		KESCMScrollMapInvalidateAll();
 		return;
