@@ -1573,9 +1573,9 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	// 自前のラスタ化(MakeEntry の比較スナップショット / MakeOrigImage の旧版スナップショット)中の再入は
 	// 描かない(自己参照=マークがスナップショットに写り込む feedback を防ぐ)。以前は kPreviewMode ビットで
 	// 弾いていたが、それは PDF 書き出しの kPDFExportMode と同一ビット(4096)で export を巻き込んでいたため、
-	// 明示的な再入フラグ sRasterizing に置き換えた。
+	// 明示的な再入フラグ(現在の **tl_Rasterizing**)に置き換えた。
 	// ★2026-08-15 裏取り＝この「同一ビット」は**偶然の衝突ではなく Adobe の意図的な設計**なので、
-	//   将来 値がずれることは期待できない＝sRasterizing への置き換えは恒久的に正しい(kPreviewMode に戻さないこと)。
+	//   将来 値がずれることは期待できない＝この置き換えは恒久的に正しい(kPreviewMode に戻さないこと)。
 	//   kPreviewMode は draw flags(IShape.h:89)、kPDFExportMode は iterate flags(IShape.h:159)で**別の enum**
 	//   なのにどちらも 4096。理由は IShape.h:144 が明言している——
 	//     "Due to lack up type checking for IShape enums, this must match kPrinting above
@@ -1593,16 +1593,15 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	//   draw event の描画が File>Export>PDF に焼き込まれることは実機で確認済み(本体内蔵の透かしをプローブに
 	//   実測。docs/ai-notes/draw-event-pdf-export-experiment-2026-08-12.md)。
 	//   ∴ここは「印刷にも PDF 書き出しにも効く」判定として読むこと。
-	//   ⚠★★2026-08-12 追記＝**それでも KESCM のマークが書き出し PDF に出るとは限らない**。KESCM は
-	//     `kUIPlugIn` として登録されており(KESCM.fr:108)、**UI プラグインの boss は PDF 書き出しを走らせる
-	//     バックグラウンドスレッドから見えない**(2x2 の実測＝memory/model-ui-plugin-separation.md)＝
-	//     draw event がそもそもこのハンドラへ配られない。
-	//     ⚠**上の「実機で確認済み」は本体内蔵の透かしをプローブにした測定**で、自作 UI プラグインの
-	//       ハンドラで測ったものではない——「kPrinting が PDF でも立つ」ことの証拠にはなるが、
-	//       「**このハンドラが呼ばれる**」ことの証拠にはならない。一般化してはいけないところ。
-	//     ★測るなら app.ktDrawProbe(KT/KTDrawProbe.cpp)で「その描画はどの出力先か」を実測する。
-	//       ここの記述を根拠に実装を変える前に、必ず1回測ること。
-	// 自己参照(自前スナップショット)は上の sRasterizing で防ぐので、ここで kPreviewMode は見ない。
+	//   ★★★2026-08-15 に解決済み＝**マークは書き出し PDF に出る**(第2段の目的そのもの・実機 PASS)。
+	//     旧記述「KESCM は `kUIPlugIn` なので BG から見えず、draw event がそもそもこのハンドラへ配られない」
+	//     は**もう当たらない**——KESCM は第2段 Task 11 で **`kModelPlugIn`** になり、**BG にも描画イベントが
+	//     配られることを実測した**(Task 11C)。⇒ **このハンドラは BG でも呼ばれる前提で読むこと。**
+	//     ⚠**残る注意は「同じ static を共有するが db は別」という点**＝BG が見る `db` は**クローンの別
+	//       ポインタ**なので、文書の同一性をポインタで聞いてはいけない(`KESCMIsSameDoc`＝KESCMThreadSafety.h)。
+	//     ⚠**PDF 書き出しポートは透明を一切通さない**(Task 12B の実測)＝ベクターで塗り、不透明度は色に溶かす。
+	//     ★出力先を測る道具は今も有効＝app.ktDrawProbe(KT/KTDrawProbe.cpp)で「その描画はどの出力先か」を実測する。
+	// 自己参照(自前スナップショット)は上の tl_Rasterizing で防ぐので、ここで kPreviewMode は見ない。
 	const bool16 printing = (ded->flags & IShape::kPrinting) != 0;
 
 	// (★手動 Hide/Show Spread の検出(KESCMScrollMapNoticeDrawEvent)は 2026-08-13 に UI 側の描画サービス
@@ -1724,6 +1723,7 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	IDataBase* db = ::GetDataBase(ded->changedBy);
 	if (db == nil)
 		return kFalse;
+
 
 	// ★★★2026-08-15（第2段 Task 11C）に、ここで実測した3つの答え。**次に読む人は測り直さなくてよい。**
 	//

@@ -540,23 +540,24 @@ bool16 KESCMArmedDocsAlive()
 //   ★2026-08-13 の分割後も**このサービスは1本のまま**(第1段では新しい ClassID を使わない)。
 //     出ていった3ファイルの後片付けは、それぞれが公開する Shutdown 入口を下から呼ぶ。
 //
-// ⚠★★★2026-08-14: **kModelPlugIn 化(第2段)の前に、このサービスの threading policy を確定させること。**
-//   ガイド vol1-07「Threading and startup/shutdown services」の本文:
-//     "Returning IPlugIn::kMultipleThreads means the service **will be called on both the main thread
-//      and background thread startup and shutdown.**"
+// ★★★このサービスは**メインスレッドでしか呼ばれない**(2026-08-15・第2段 Task 11B で決着済み)。
+//   KESCM は kModelPlugIn なので、放っておけばガイド vol1-07「Threading and startup/shutdown services」
+//   のとおり **BG スレッドの起動・終了ごとにも呼ばれる**:
 //     "kCStartupShutdownProviderImpl derives its implementation of GetThreadingPolicy from
 //      CServiceProvider. **If the startup/shutdown service boss resides in a model plug-in, the service
 //      will be called on both main and background thread startup and shutdown.**"
-//   ⇒ 下の Shutdown() は **DropAll() ほかで比較状態を丸ごと消す**ので、これが BG スレッドの終了ごとに
-//     呼ばれると **PDF を1本書き出すたびにマークが全部消える**。
-//   ⚠KESCM.fr:162 が指定しているのは **kLazyStartupShutdownProviderImpl** で、これは**上のガイドの
-//     3択に載っていない**(kCMainThreadStartupShutdownProviderImpl / kCMTStartupShutdownProviderImpl /
-//     kCStartupShutdownProviderImpl)。IStartupShutdownService.h:44-47 も「起動を遅くしたくなければ
-//     Lazy を使え」としか書いておらず **threading policy には触れていない**
-//     ⇒ **どちらに転ぶかは実測でしか分からない**(第2段計画書 Task 11B で測る)。
-//   ★BG でも呼ばれるなら kCMainThreadStartupShutdownProviderImpl へ替える。
-//     ⚠**この Shutdown() の側に「BG なら何もしない」ガードを入れて塞ぐのは筋が悪い**
-//       ---- 本当の終了時にも取りこぼしうる。**サービスの宣言側(.fr)で解決する。**
+//   ⇒ 下の Shutdown() は **DropAll() ほかで比較状態を丸ごと消す**ので、そうなると
+//     **PDF を1本書き出すたびにマークが全部消える**。
+//   ★塞いだのは **`.fr` の宣言側**＝**`KESCM.fr:165` が `kCMainThreadStartupShutdownProviderImpl`**
+//     を指定している(理由は同 `KESCM.fr:138-156`)。★手本＝Adobe 製 DiagnosticLog(`DiagLogClass.fr:93-100`)
+//     が **model プラグインのまま startup/shutdown だけをメインスレッド限定にし、理由をコメントで
+//     書いている** ⇒ **前例が見つかった時点で、threading の問いは実測を要さなくなった**。
+//   ⚠**この Shutdown() の側に「BG なら何もしない」ガードを入れて塞いではいけない**
+//     ---- 本当の終了時にも取りこぼしうる。**スレッド方針はサービスの宣言側で表すのが筋。**
+//   ⚠**替えたことで変わったのはタイミング軸のほう**(ガイドは触れていない)＝旧 `kLazyStartupShutdownProviderImpl`
+//     は kAppLazyStartupShutdownService＝**起動完了後の idle task**(gs-06)で呼ばれたが、こちらはそうではなく
+//     **Startup() がより早く走る**。ここでは安全＝★**Startup() は空**(第1段 Task 8 で3つとも UI 側へ移した)。
+//     ★Startup() に仕事を戻すときは、この前提を確かめ直すこと。
 //========================================================================================
 class KESCMPeekStartup : public CPMUnknown<IStartupShutdownService>
 {

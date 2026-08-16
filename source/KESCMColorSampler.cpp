@@ -20,7 +20,7 @@
 #include "AGMImageAccessor.h"
 
 #include "KESCMConstants.h"
-#include "KESCMDrawEventHandler.h"   // KESCMDrawEventHandler::sRasterizing
+#include "KESCMDrawEventHandler.h"   // KESCMRasterizingGuard / KESCMDrawEventHandler::tl_Rasterizing
 #include "KESCMCore.h"               // KESCMFindPageUnderMouse
 // ★★2026-08-15(第2段 Task 4B): **KESCMViewLookup.h の include を落とした**。ここが最後まで残っていた
 //   model→UI の逆流2件のうちの1本で、KESCMQueryViewUnderMouse / KESCMFindDocDbForView /

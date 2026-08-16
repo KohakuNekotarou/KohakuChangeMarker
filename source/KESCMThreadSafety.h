@@ -66,7 +66,19 @@ bool16 KESCMIsMainThread();
 //     ⇒ ★**バックグラウンドのクローン DB でも真になる**(これが本題)
 //   ・どちらかが nil、または未保存でファイルが無いときは偽
 //     ⚠ 未保存文書は BG では同一と判定できない(＝BG ではマークが出ない)。これは
-//       分割前から出ていなかったので劣化ではない。★直すならファイル以外の同一性の口が要る。
+//       分割前から出ていなかったので劣化ではない。
+//     ★★★**その「ファイル以外の同一性の口」は見つかった＝`IDataBase::GetDocumentID()`**
+//       (2026-08-16・API 監査 B9 で実測。未保存文書2つを比較して非同期 PDF 書き出し)。判った4点:
+//         ①**未保存文書にも値が付く**——`GetSysFile()` が nil でも `xmp.did:…` が返る
+//         ②**Target と Source は別の値**を持つ(a3097be8… ⇔ 6322d72a…)＝**同一性の判定に使える**
+//         ③★**BG のクローン DB でも main と完全に一致**(db ポインタは違うのに ID は同じ)
+//         ④`sDB` は BG でも main が入れたポインタのまま(static 共有の再確認)
+//       ⚠**寄せ先が2つある。実装の前にどちらか決めること**＝`IDataBase::GetDocumentID()` 自身が
+//         "FOR INTERNAL USE ONLY / FOR EXTERNAL USE : Recommended to use
+//         IAdobeMediaMgmtMetaData::GetDocumentID" と書いている(`IDataBase.h:715-717`)。
+//         ★ただし**Adobe 製 linksui は内部用の方を使っている**(`ClosingDocumentsResponder.cpp:118`)。
+//         外部用の口も実在し公式例つき(`IAdobeMediaMgmtMetaData.h` / `SnpPerformXMPCommands.cpp`)。
+//       全文＝`docs/ai-notes/kescm-api-audit-b9-2026-08-16.md`
 //----------------------------------------------------------------------------------------
 bool16 KESCMIsSameDoc(IDataBase* a, IDataBase* b);
 

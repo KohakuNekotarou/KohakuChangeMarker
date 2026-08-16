@@ -15,10 +15,31 @@
 //  (A hand-written KESCMDocServiceProvider did this until 2026-08-06 - it did exactly what the
 //  API's implementation does.)
 //
-//  We deliberately use AfterClose rather than BeforeClose: BeforeClose can be followed by
-//  a user cancel (which would wrongly drop the marks), and AfterClose gives no usable
-//  document UIDRef anyway, so identifying "which db closed" is done by a liveness sweep
-//  (KESCMHandleDocsClosed) rather than from the signal data.
+//  We deliberately use AfterClose rather than BeforeClose: BeforeClose can be followed by a user
+//  cancel, so DROPPING the marks there would drop them for a close that never happened. AfterClose
+//  gives no usable document in the signal data either, so identifying "which db closed" is done by
+//  a liveness sweep (KESCMHandleDocsClosed) rather than from the signal.
+//
+//  ***** THE OFFICIAL SHAPE IS A TWO-STEP, AND IT DOES NOT HAVE THAT PROBLEM. ***** The argument
+//  above only rules out DROPPING on BeforeClose - it does not rule out LISTENING on it. Adobe's own
+//  linksui does precisely that (ClosingDocumentsResponder.cpp:150-186): on kBeforeCloseDoc it builds
+//  a key from the document (path + IDataBase::GetDocumentID) and merely REMEMBERS it; on
+//  kAfterCloseDoc - where its own comment states "Document is null in the signal data at this point
+//  of time" - it uses the remembered key. A cancelled close just leaves a stale key that the next
+//  one overwrites, so nothing is dropped early. That names the closed document exactly, no sweep.
+//
+//  WHY WE STILL SWEEP - a trade, not an oversight. Adopting the two-step means answering two
+//  signals from one boss (the CServiceProvider + HasMultipleIDs shape) and rebuilding
+//  KESCMHandleDocsClosed around "drop this one" instead of "drop whatever vanished". The sweep also
+//  does something the two-step cannot: it catches databases that went away without a close signal
+//  this plug-in saw. Revisit if the sweep ever becomes expensive.
+//  Full reasoning: docs/ai-notes/kescm-api-audit-b9-2026-08-16.md
+//
+//  The sweep's own hazard is known and already closed: on a background thread every database is a
+//  CLONE with a different pointer, so "not in the document list" is always true there and the sweep
+//  would drop everything. The guard sits at the single entry of KESCMHandleDocsClosed
+//  (IsMainThreadDomain), not here - it has three callers and this is one question
+//  ([[one-question-one-place]]).
 //
 //========================================================================================
 
