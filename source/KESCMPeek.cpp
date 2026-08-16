@@ -111,7 +111,8 @@ PMReal KESCMBaseScreenOpacity()
 //     ＝計算式は1文字も動いていない。引数の意味は KESCMPeek.h を参照。
 void KESCMPeekShowAt(IDataBase* targetDB, IDataBase* sourceDB,
                      const PMReal& mx, const PMReal& my,
-                     const PMReal& viewScale, const PMReal& uiZoom)
+                     const PMReal& viewScale, const PMReal& uiZoom,
+                     UID viewSpreadUID)
 {
 	if (targetDB == nil || sourceDB == nil)
 		return;
@@ -140,7 +141,7 @@ void KESCMPeekShowAt(IDataBase* targetDB, IDataBase* sourceDB,
 
 	// マウス下のスプレッド/ページを特定(平坦通し番号も取得)。共有ヘルパ KESCMFindPageUnderMouse に集約。
 	KESCMPageHit hit;
-	if (!KESCMFindPageUnderMouse(targetDB, mx, my, hit))
+	if (!KESCMFindPageUnderMouse(targetDB, mx, my, hit, viewSpreadUID))
 		return;
 
 	const int32 np          = hit.numPages;
@@ -191,6 +192,16 @@ void KESCMPeekShowAt(IDataBase* targetDB, IDataBase* sourceDB,
 		std::map<UID, UID> targetToSource;
 		for (size_t k = 0; k < pairT.size(); ++k)
 			targetToSource[pairT[k]] = pairS[k];
+		// ★★2026-08-16: **マスタースプレッドの対応も同じ表に入れる**(ユーザー報告＝マスターページで
+		//   peek が出ない)。ページ UID は文書内で一意なので1つの map に同居できる
+		//   ——部分再比較(KESCMRefreshComparisonCore)と Sync(KESCMEnsureSyncPairing)が先に取っている形。
+		//   ⚠**規則そのものは違う**(通常＝順番対応 / マスター＝名前対応)ので、表を作る側は別関数のまま。
+		{
+			std::vector<UID> mT, mS;
+			KESCMBuildMasterPairing(targetDB, sourceDB, mT, mS);
+			for (size_t k = 0; k < mT.size(); ++k)
+				targetToSource[mT[k]] = mS[k];
+		}
 		for (int32 p = 0; p < np; ++p)
 		{
 			const UID tPageUID = spread->GetNthPageUID(p);
@@ -202,6 +213,7 @@ void KESCMPeekShowAt(IDataBase* targetDB, IDataBase* sourceDB,
 			KESCMDrawEventHandler::MakeOrigImage(tRef, sRef, peekDpi);	// 失敗ページは重ねずスキップ(従来同挙動)
 		}
 	}
+
 	KESCMDrawEventHandler::sShowOriginal = kTrue;
 
 	KESCMInvalidateDB(targetDB);

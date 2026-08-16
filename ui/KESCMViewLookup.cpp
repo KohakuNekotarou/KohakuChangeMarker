@@ -131,6 +131,20 @@ void KESCMForgetViewDbHint()
 
 // view がどの文書のレイアウトビューかを特定する。KESCMViewLookup.h のコメント参照。
 // (2026-07-25: KESCMPeek.cpp の file-static から共有ヘルパへ移動。色サンプラの窓ガードでも使うため)
+// ★★★2026-08-16: そのビューが今表示しているスプレッド(KESCMViewLookup.h に理由の全文)。
+//   上の KESCMFindDocDbForView と同じ boss・同じインターフェイスに、別の問いをするだけ。
+//   ⚠フォールバックは無い——引けなければ kInvalidUID を返し、呼び手は「全走査」に落ちる
+//     (＝2026-08-16 より前の挙動。マスタースプレッド表示中は誤るが、通常表示では正しい)。
+UID KESCMQuerySpreadUIDForView(IControlView* view)
+{
+	if (view == nil)
+		return kInvalidUID;
+	InterfacePtr<ILayoutControlData> layoutData(view, IID_ILAYOUTCONTROLDATA);
+	if (layoutData == nil)
+		return kInvalidUID;
+	return layoutData->GetSpreadRef().GetUID();
+}
+
 IDataBase* KESCMFindDocDbForView(IControlView* view)
 {
 	if (view == nil)

@@ -233,10 +233,12 @@ IDataBase* KESCMActiveDocDB()
 	return doc ? ::GetUIDRef(doc).GetDataBase() : nil;
 }
 
-bool16 KESCMFindPageUnderMouse(IDataBase* targetDB, PMReal mx, PMReal my, KESCMPageHit& out)
+bool16 KESCMFindPageUnderMouse(IDataBase* targetDB, PMReal mx, PMReal my, KESCMPageHit& out,
+                               UID onlySpreadUID)
 {
 	out.spreadIndex = -1; out.spreadUID = kInvalidUID; out.numPages = 0;
 	out.globalPageBase = 0; out.hitPageIndex = -1; out.hitPageUID = kInvalidUID;
+	out.isMaster = kFalse;
 	if (targetDB == nil)
 		return kFalse;
 	InterfacePtr<ISpreadList> spreadList(targetDB, targetDB->GetRootUID(), UseDefaultIID());
@@ -252,6 +254,15 @@ bool16 KESCMFindPageUnderMouse(IDataBase* targetDB, PMReal mx, PMReal my, KESCMP
 		if (spread == nil)
 			continue;
 		const int32 np = spread->GetNumPages();
+
+		// ★★2026-08-16: 呼び手が「今表示しているスプレッド」を指定したら、それ以外は見ない
+		//   (理由は KESCMCore.h＝マスターと通常はペーストボード座標で重なる)。
+		//   ⚠**globalIndex の加算は続ける**＝平坦ページ番号は「絞り込みの有無で変わらない」。
+		if (onlySpreadUID != kInvalidUID && spreadUID != onlySpreadUID)
+		{
+			globalIndex += np;
+			continue;
+		}
 
 		// ★隠しスプレッド(Hide Unchanged Spreads / ページパネルの Hide Spread)は当たり判定から除外する。
 		//   隠すと表示中スプレッドが再配置されて座標が動くのに、隠れたスプレッドの旧座標が同じ場所に
@@ -316,6 +327,61 @@ bool16 KESCMFindPageUnderMouse(IDataBase* targetDB, PMReal mx, PMReal my, KESCMP
 			}
 		}
 		globalIndex += np;
+	}
+
+	// ★★2026-08-16: **マスタースプレッドも当たり判定に入れる**（ユーザー報告＝「マスターページでは
+	//   peek も CMYK も出ない。違いの枠は出ているのに」）。比較そのものは 2026-08-11 からマスターを
+	//   扱っている（名前対応＝KESCMBuildMasterPairing）のに、**マウス下のページを探すこの関数だけが
+	//   ISpreadList＝通常スプレッドしか見ていなかった**。
+	//
+	// ⚠**なぜ「通常を全部見てから」なのか**＝★**順序で正しくなるのではない**（ここが要）。
+	//   **2つの矩形は重なる**（2026-08-16 実測＝マスタースプレッドを表示したまま絞りなしで走査すると
+	//   通常ページに当たった）ので、**通常を先に見てもマスターを先に見ても、片方を表示中は必ず誤る**。
+	//   正しさを担保しているのは順序ではなく onlySpreadUID の絞り込み（理由の全文は KESCMCore.h）。
+	//   ∴ 通常を先に置く意味は「絞りを渡さない呼び手(kInvalidUID)に従来と同じ答えを返す」ことだけ。
+	//
+	// ⚠**隠しスプレッドの除外は入れない**——マスタースプレッドを隠す機能は InDesign に無く、
+	//   IID_IHIDESPREADBOOLDATA は kSpreadBoss 上の通常スプレッドの話。
+	// ⚠**globalIndex は加算しない**——マスターは平坦ページ列（IPageList）に居ないので番号を持たない。
+	InterfacePtr<IMasterSpreadList> mList(targetDB, targetDB->GetRootUID(), UseDefaultIID());
+	const int32 nm = (mList != nil) ? mList->GetMasterSpreadCount() : 0;
+	for (int32 m = 0; m < nm; ++m)
+	{
+		const UID msUID = mList->GetNthMasterSpreadUID(m);
+		if (onlySpreadUID != kInvalidUID && msUID != onlySpreadUID)
+			continue;	// ★表示中のスプレッドだけを見る(平坦番号はマスターには無いので加算も無い)
+		InterfacePtr<ISpread> ms(targetDB, msUID, UseDefaultIID());
+		if (ms == nil)
+			continue;
+		const int32 mp = ms->GetNumPages();
+
+		// 通常スプレッドと同じ2段（スプレッドの箱で足切り → ページごとに内包判定）。
+		PMRect msBounds = ms->GetPagesBounds(Transform::PasteboardCoordinates());
+		msBounds.Normalize();
+		if (!msBounds.PointIn(pt))
+			continue;
+
+		for (int32 p = 0; p < mp; ++p)
+		{
+			const UID pageUID = ms->GetNthPageUID(p);
+			InterfacePtr<IGeometry> geo(targetDB, pageUID, UseDefaultIID());
+			if (geo == nil)
+				continue;
+			PMRect bb = Utils<Facade::IGeometryFacade>()->GetItemBounds(
+				::GetUIDRef(geo), Transform::PasteboardCoordinates(), Geometry::PathBounds());
+			bb.Normalize();
+			if (bb.PointIn(pt))
+			{
+				out.spreadIndex    = -1;			// マスターはスプレッドリストに居ない
+				out.spreadUID      = msUID;
+				out.numPages       = mp;
+				out.globalPageBase = -1;			// 平坦ページ番号を持たない
+				out.hitPageIndex   = p;
+				out.hitPageUID     = pageUID;
+				out.isMaster       = kTrue;
+				return kTrue;
+			}
+		}
 	}
 	return kFalse;
 }

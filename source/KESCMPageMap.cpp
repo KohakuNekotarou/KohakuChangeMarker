@@ -504,6 +504,14 @@ void KESCMBuildMasterPairing(IDataBase* targetDB, IDataBase* sourceDB,
 //   1ページ単位の対応変換。内部で KESCMBuildPairing を呼んで対応表を作り、探しているページを
 //   線形探索で引く(ページ数は高々数百なので毎回作り直しても軽い。呼び出し側は既に1スプレッド分
 //   =数ページの粒度でしか呼ばないため実測コストも小さい)。
+//
+// ★★2026-08-16: **マスタースプレッドのページも引けるようにした**(ユーザー報告＝マスターページで
+//   CMYK が出ない)。通常ページの対応表で見つからなかったときだけ、マスターの対応表
+//   (KESCMBuildMasterPairing＝名前対応)も引く。
+//   ⚠**2つの表を1つに混ぜてよい**理由＝ページ UID は文書内で一意なので、同じ UID が両方の表に
+//     現れることはない。**比較の対応表(KESCMCore.cpp)と部分再比較(KESCMPeek.cpp)が先に同じ形を
+//     取っている**(1つの std::map に通常とマスターを同居させる)ので、流儀も揃う。
+//   ⚠**順番は通常が先**＝通常ページで引けるならマスターの表を作らずに済む(こちらが常用経路)。
 //========================================================================================
 bool16 KESCMMapTargetToSource(IDataBase* targetDB, IDataBase* sourceDB,
 	UID targetPageUID, UID& outSourcePageUID)
@@ -516,6 +524,17 @@ bool16 KESCMMapTargetToSource(IDataBase* targetDB, IDataBase* sourceDB,
 		if (tPages[i] == targetPageUID)
 		{
 			outSourcePageUID = sPages[i];
+			return kTrue;
+		}
+	}
+	// ★マスタースプレッドのページ(名前対応)。通常で引けなかったときだけ作る。
+	std::vector<UID> mT, mS;
+	KESCMBuildMasterPairing(targetDB, sourceDB, mT, mS);
+	for (size_t k = 0; k < mT.size(); ++k)
+	{
+		if (mT[k] == targetPageUID)
+		{
+			outSourcePageUID = mS[k];
 			return kTrue;
 		}
 	}
@@ -533,6 +552,17 @@ bool16 KESCMMapSourceToTarget(IDataBase* targetDB, IDataBase* sourceDB,
 		if (sPages[i] == sourcePageUID)
 		{
 			outTargetPageUID = tPages[i];
+			return kTrue;
+		}
+	}
+	// ★マスタースプレッドのページ(上と対称)。
+	std::vector<UID> mT, mS;
+	KESCMBuildMasterPairing(targetDB, sourceDB, mT, mS);
+	for (size_t k = 0; k < mS.size(); ++k)
+	{
+		if (mS[k] == sourcePageUID)
+		{
+			outTargetPageUID = mT[k];
 			return kTrue;
 		}
 	}

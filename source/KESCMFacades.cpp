@@ -114,8 +114,9 @@ public:
 	virtual bool16		ArmedDocsAlive()		{ return KESCMArmedDocsAlive(); }
 	virtual void		ShowPeekAt(IDataBase* targetDB, IDataBase* sourceDB,
 								   const PMReal& mx, const PMReal& my,
-								   const PMReal& viewScale, const PMReal& uiZoom)
-													{ KESCMPeekShowAt(targetDB, sourceDB, mx, my, viewScale, uiZoom); }
+								   const PMReal& viewScale, const PMReal& uiZoom,
+								   UID viewSpreadUID)
+													{ KESCMPeekShowAt(targetDB, sourceDB, mx, my, viewScale, uiZoom, viewSpreadUID); }
 	virtual PMReal		GetBaseScreenOpacity()	{ return KESCMBaseScreenOpacity(); }
 
 	// ---- the CMYK sampler (stage 2, task 4B) --------------------------------------------
@@ -125,8 +126,9 @@ public:
 	// touches those very files, so they go through the boundary here rather than in task 9.
 	virtual bool16		SampleColorAt(IDataBase* hoverDB, IDataBase* otherDB, bool16 hoverIsTarget,
 									  const PMReal& mx, const PMReal& my,
+									  UID viewSpreadUID,
 									  PMString& outPanel, PMString& outCursor)
-													{ return KESCMSampleCmykAt(hoverDB, otherDB, hoverIsTarget, mx, my, outPanel, outCursor); }
+													{ return KESCMSampleCmykAt(hoverDB, otherDB, hoverIsTarget, mx, my, viewSpreadUID, outPanel, outCursor); }
 	virtual void		BeginColorDrag(IDataBase* hoverDB, IDataBase* otherDB, bool16 hoverIsTarget)
 													{ KESCMSampleCmykBeginDrag(hoverDB, otherDB, hoverIsTarget); }
 	virtual void		EndColorDrag()			{ KESCMSampleCmykEndDrag(); }

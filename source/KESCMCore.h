@@ -85,17 +85,37 @@ bool16		KESCMAppIsQuitting();
 // KESCMMapTargetToSource/KESCMMapSourceToTarget)を使うこと。
 struct KESCMPageHit
 {
-	int32 spreadIndex;		// 当たったスプレッドのスプレッドリスト内インデックス
+	int32 spreadIndex;		// 当たったスプレッドのスプレッドリスト内インデックス(★マスターは -1)
 	UID   spreadUID;		// そのスプレッドのUID(必要に応じて ISpread を引き直す)
 	int32 numPages;			// そのスプレッドのページ数
-	int32 globalPageBase;	// このスプレッド先頭の平坦ページ番号
+	int32 globalPageBase;	// このスプレッド先頭の平坦ページ番号(★マスターは -1＝平坦列に居ない)
 	int32 hitPageIndex;		// スプレッド内でカーソル下にあるページの 0 始まりインデックス
 	UID   hitPageUID;		// そのページのUID
+	// ★2026-08-16: 当たったのがマスタースプレッドのページか。
+	//   ⚠**kTrue のとき spreadIndex と globalPageBase は -1 で意味を持たない**——マスターは
+	//     ISpreadList にも IPageList にも居ないので、平坦ページ番号という概念が無い。
+	//   ★相手ページの引き方は変わらない: KESCMMapTargetToSource / KESCMMapSourceToTarget が
+	//     通常とマスターの両方を引く(マスターは名前対応＝KESCMBuildMasterPairing)。
+	bool16 isMaster;
 };
 
 // マウス(content/ペーストボード座標)を targetDB の全ページにスプレッド順・ページ順でヒットテストする。
 // 最初に (mx,my) を含むページで 'out' を埋めて kTrue を返す。無ヒットなら kFalse。
-bool16		KESCMFindPageUnderMouse(IDataBase* targetDB, PMReal mx, PMReal my, KESCMPageHit& out);
+//
+// ★★★onlySpreadUID(2026-08-16・ユーザー報告「マスターページで peek も CMYK も出ない」の決着):
+//   **そのスプレッドのページだけを見る**(通常/マスターを問わない)。kInvalidUID なら従来どおり全走査。
+//   ⚠**渡すのは「そのビューが今表示しているスプレッド」**＝`ILayoutControlData::GetSpreadRef()`
+//     (`ILayoutControlData.h:256`「the spread this view is currently viewing」)。UI 側が観測して渡す。
+//
+//   ★★**なぜ必要か(実測 2026-08-16)**＝**マスタースプレッドと通常スプレッドのペーストボード矩形は重なる。**
+//     マスタースプレッドを表示していても、マウスの content 座標は通常スプレッドのページにも当たるので、
+//     全走査だと**通常ページを掴んでしまう**(診断で `normal` と出た)。その結果:
+//       ・peek …… 通常ページの旧版を作るが、描画中のスプレッドはマスター＝**何も出ない**
+//       ・CMYK … **通常ページの色を「マスターの色」として表示する**(値が出るので気づけない)
+//     ⇒ **「どのスプレッドを見ているか」は窓にしか答えられない問い**なので、model では解けない。
+//   ⚠**順序では解けない**(通常を先に見てもマスターを先に見ても、片方が必ず誤る)。
+bool16		KESCMFindPageUnderMouse(IDataBase* targetDB, PMReal mx, PMReal my, KESCMPageHit& out,
+                                    UID onlySpreadUID = kInvalidUID);
 
 // targetDB の各ページを sourceDB の同番号ページと比較し、変更マークのオーバーレイを(再)構築する。
 // outReport にはスクリプトメソッドが返すのと同じ状態文字列が入る。

@@ -65,6 +65,18 @@ void KESCMSampleCmykBeginDrag(IDataBase* hoverDB, IDataBase* otherDB, bool16 hov
 		if (hoverIsTarget) sDragCacheH2O[pairT[k]] = pairS[k];
 		else               sDragCacheH2O[pairS[k]] = pairT[k];
 	}
+	// ★★2026-08-16: **マスタースプレッドの対応も同じキャッシュに入れる**。⚠これを忘れると
+	//   「単発クリックではマスターの CMYK が出るのに、押したままドラッグすると出なくなる」という
+	//   **押下中だけ挙動が変わる**形になる(キャッシュが有効な間は KESCMMapTargetToSource を通らない)。
+	{
+		std::vector<UID> mT, mS;
+		KESCMBuildMasterPairing(targetDB, sourceDB, mT, mS);
+		for (size_t k = 0; k < mT.size(); ++k)
+		{
+			if (hoverIsTarget) sDragCacheH2O[mT[k]] = mS[k];
+			else               sDragCacheH2O[mS[k]] = mT[k];
+		}
+	}
 	sDragCacheActive = kTrue;
 }
 
@@ -188,6 +200,7 @@ static void KESCMAppendCmykLabeled(PMString& s, const uint8 c[4])
 //   呼び手2つ(KESCMCmykCursor.cpp)がどちらも同じ判定を先に通してからここへ来る。
 bool16 KESCMSampleCmykAt(IDataBase* hoverDB, IDataBase* otherDB, bool16 hoverIsTarget,
                          const PMReal& mx, const PMReal& my,
+                         UID viewSpreadUID,
                          PMString& outPanel, PMString& outCursor)
 {
 	if (hoverDB == nil)
@@ -198,7 +211,7 @@ bool16 KESCMSampleCmykAt(IDataBase* hoverDB, IDataBase* otherDB, bool16 hoverIsT
 
 	// 渡された点のページを特定(平坦通し番号も取得)。共有ヘルパ KESCMFindPageUnderMouse に集約。
 	KESCMPageHit hit;
-	if (!KESCMFindPageUnderMouse(hoverDB, mx, my, hit))
+	if (!KESCMFindPageUnderMouse(hoverDB, mx, my, hit, viewSpreadUID))
 		return kFalse;
 
 	const UID hPageUID = hit.hitPageUID;

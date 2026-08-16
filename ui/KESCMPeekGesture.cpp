@@ -171,8 +171,12 @@ static void KESCMTrackerBeginPeek(PMReal opacity)
 	if (peekPano != nil)
 		uiZoom = peekPano->GetXScaleFactor(kFalse);
 
+	// ★★★2026-08-16: **そのビューが今表示しているスプレッド**も渡す。これが無いと、マスタースプレッドを
+	//   表示していても点が通常ページに当たり(両者はペーストボード座標で重なる)、**旧版が1枚も出ない**。
+	//   「どのスプレッドを見ているか」は窓の問い＝UI が観測して model へ渡す(Task 4B と同じ分業)。
 	compare->ShowPeekAt(compare->GetArmedTargetDB(), compare->GetArmedSourceDB(),
-	                    mx, my, viewScale, uiZoom);
+	                    mx, my, viewScale, uiZoom,
+	                    KESCMQuerySpreadUIDForView(view));
 }
 
 // 修飾キー→ジェスチャの分類(KESCMPeekGesture.h 参照)。★割当の定義はここ1本だけ: トラッカーの押下時分岐

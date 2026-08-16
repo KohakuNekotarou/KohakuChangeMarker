@@ -142,6 +142,8 @@ void KESCMBuildMasterPairing(IDataBase* targetDB, IDataBase* sourceDB,
 // targetPageUID(targetDB内)に対応する sourceDB 側のページを1つ求める(内部で KESCMBuildPairing を
 // 使う)。targetPageUID 自身が登録済み(除外対象)か、対応表の範囲外(対応相手なし)なら kFalse で
 // outSourcePageUID は不定。
+// ★2026-08-16: **マスタースプレッドのページも引ける**(通常で見つからなければ KESCMBuildMasterPairing
+//   ＝名前対応も引く)。⚠ページ UID は文書内で一意なので2つの表は衝突しない。
 bool16 KESCMMapTargetToSource(IDataBase* targetDB, IDataBase* sourceDB,
 	UID targetPageUID, UID& outSourcePageUID);
 

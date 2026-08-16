@@ -17,6 +17,7 @@
 #include "BaseType.h"
 #include "PMReal.h"		// サンプリング点(ペーストボード座標)
 #include "PMString.h"
+#include "OMTypes.h"	// UID(表示中スプレッドの指定。2026-08-16)
 
 class IDataBase;
 
@@ -39,8 +40,13 @@ class IDataBase;
 //   KESCMFindDocDbForView(view) != hoverDB を見て kFalse を返していた ---- **その判定を落とすと、
 //   別の窓の座標を hoverDB のページ座標として誤って読む**(2026-07-25 監査で入れたガード)。
 //   呼び手は KESCMCmykCursor.cpp の2か所で、どちらも同じ判定を先に通してからここへ来る。
+// ★★★viewSpreadUID(2026-08-16) = **そのビューが今表示しているスプレッド**。
+//   ⚠**必須の観測値**——マスタースプレッドと通常スプレッドはペーストボード座標で重なるので、
+//     これが無いと**マスターを表示しているのに通常ページの色を読んで「マスターの色」として出す**
+//     (値が出るので誤りに気づけない＝2026-08-16 に実際に起きていた)。理由の全文は KESCMCore.h。
 bool16 KESCMSampleCmykAt(IDataBase* hoverDB, IDataBase* otherDB, bool16 hoverIsTarget,
                          const PMReal& mx, const PMReal& my,
+                         UID viewSpreadUID,
                          PMString& outPanel, PMString& outCursor);
 
 // Alt+左ホールド(ドラッグ)中の hover→other ページ対応表キャッシュ。Begin=押下時(RevealBegin の

@@ -18,6 +18,7 @@
 
 #include "BaseType.h"
 #include "PMReal.h"
+#include "OMTypes.h"	// UID(KESCMQuerySpreadUIDForView)
 
 class IControlView;
 class IDataBase;
@@ -44,6 +45,19 @@ IControlView*	KESCMQueryViewUnderMouse();
 // Only when that fails does it fall back to matching pointers across every document's
 // GetAllLayoutViews.
 IDataBase*		KESCMFindDocDbForView(IControlView* view);
+
+// ★★★Which spread this view is CURRENTLY SHOWING, or kInvalidUID (2026-08-16).
+//
+// ILayoutControlData::GetSpreadRef() -- "current spread UIDRef, the spread this view is
+// currently viewing" (ILayoutControlData.h:252-256). Same interface, same view boss, as
+// KESCMFindDocDbForView above; only the question differs.
+//
+// ⚠ WHY THIS IS NEEDED AT ALL: a master spread and the ordinary spreads OVERLAP in pasteboard
+// coordinates (measured 2026-08-16). So "which page is under the mouse" cannot be answered from
+// the point alone -- the same point belongs to a page of the master AND to a page of an ordinary
+// spread, and only the window knows which of them is on screen. The model therefore cannot
+// answer it; the UI observes the spread and passes it down (KESCMCore.h has the full story).
+UID				KESCMQuerySpreadUIDForView(IControlView* view);
 
 // Drop the fallback route's "document that matched last time" hint. The hint never decides
 // the answer -- it only picks which database to try first -- so correctness is unaffected,

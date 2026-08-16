@@ -20,6 +20,7 @@
 
 #include "BaseType.h"
 #include "PMReal.h"
+#include "OMTypes.h"		// UID(表示中スプレッドの指定。2026-08-16)
 
 class IDataBase;
 
@@ -48,9 +49,15 @@ PMReal KESCMBaseScreenOpacity();
 //     下限 50% の頭打ちと 16〜300dpi のクランプは「解像度の方針」なので model 側に残っている
 //     ＝分離で計算式は1文字も動いていない。
 // ★呼び手は KESCMPeekGesture.cpp の KESCMTrackerBeginPeek ただ1つ(Facade 経由)。
+//
+// ★★★viewSpreadUID(2026-08-16) = **そのビューが今表示しているスプレッド**。
+//   ⚠**必須の観測値**——マスタースプレッドと通常スプレッドはペーストボード座標で重なるので、
+//     これが無いと「マスターを表示しているのに通常ページを覗く」ことになり、**旧版が1枚も出ない**
+//     (作った画像は通常ページのもので、描いているスプレッドはマスターだから)。理由の全文は KESCMCore.h。
 void KESCMPeekShowAt(IDataBase* targetDB, IDataBase* sourceDB,
                      const PMReal& mx, const PMReal& my,
-                     const PMReal& viewScale, const PMReal& uiZoom);
+                     const PMReal& viewScale, const PMReal& uiZoom,
+                     UID viewSpreadUID);
 
 // armed 中の Target/Source が IDocumentList に現存するかの最終ライン防御(実体は KESCMPeek.cpp)。
 // 失格なら KESCMHandleDocsClosed() で Stop 相当のフルクリーンアップ(arm 解除を含む)をして kFalse を返す。

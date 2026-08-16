@@ -370,8 +370,10 @@ bool16 KESCMTrackerUpdateCmykDrag()
 	PMReal mx = 0.0, my = 0.0;
 	if (KESCMFindDocDbForView(viewUnderMouse) != sCmykHoverDB ||
 	    !KESCMQueryMouseContentPoint(viewUnderMouse, mx, my) ||
+	    // ★2026-08-16: 表示中スプレッドも渡す(無いとマスター表示中に通常ページの色を読む＝KESCMCore.h)。
 	    !Utils<IKESCMCompareFacade>()->SampleColorAt(sCmykHoverDB, sCmykOtherDB, sCmykHoverIsTarget,
-	                                                 mx, my, panelMsg, cursorMsg))
+	                                                 mx, my, KESCMQuerySpreadUIDForView(viewUnderMouse),
+	                                                 panelMsg, cursorMsg))
 	{
 		if (solo) { KESCMBuildCmykNoValueSolo(cursorMsg); KESCMBuildCmykNoValuePanelSolo(panelMsg); }
 		else      { KESCMBuildCmykNoValue(cursorMsg, sCmykHoverIsTarget);
@@ -482,8 +484,10 @@ void KESCMCmykBeginPress()
 		//   KESCMTrackerUpdateCmykDrag ではマウスが動くので、あちらには判定が要る)。
 		PMString panelMsg, cursorMsg;
 		PMReal mx = 0.0, my = 0.0;
+		// ★2026-08-16: 表示中スプレッドも渡す(理由は KESCMCore.h＝マスターと通常は座標が重なる)。
 		if (!KESCMQueryMouseContentPoint(viewUnderMouse, mx, my) ||
-		    !compare->SampleColorAt(hoverDB, otherDB, hoverIsTarget, mx, my, panelMsg, cursorMsg))
+		    !compare->SampleColorAt(hoverDB, otherDB, hoverIsTarget, mx, my,
+		                            KESCMQuerySpreadUIDForView(viewUnderMouse), panelMsg, cursorMsg))
 		{
 			// ページ外など: 拾えないことを示す(値なし --- 表示)。
 			if (solo) { KESCMBuildCmykNoValueSolo(cursorMsg); KESCMBuildCmykNoValuePanelSolo(panelMsg); }

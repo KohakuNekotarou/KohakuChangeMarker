@@ -216,10 +216,16 @@ public:
 		★2026-08-15 (stage 2, task 4B): renamed from ShowPeekUnderMouse and the view resolution
 		moved out to the caller. Deciding *which window the pointer is over* is a question only
 		the UI can answer; the model now only answers *what is at this point, at this dpi*.
-		The dpi arithmetic itself did not move -- see KESCMPeek.h. */
+		The dpi arithmetic itself did not move -- see KESCMPeek.h.
+		★★★2026-08-16: viewSpreadUID added -- the spread that view is CURRENTLY SHOWING
+		(ILayoutControlData::GetSpreadRef). ⚠ Not optional: a master spread and the ordinary
+		spreads OVERLAP in pasteboard coordinates, so without it the point lands on an ordinary
+		page while the view is showing a master, and the peek image is built for the wrong
+		spread -- nothing appears at all. Measured 2026-08-16; full reasoning in KESCMCore.h. */
 	virtual void		ShowPeekAt(IDataBase* targetDB, IDataBase* sourceDB,
 								   const PMReal& mx, const PMReal& my,
-								   const PMReal& viewScale, const PMReal& uiZoom) = 0;
+								   const PMReal& viewScale, const PMReal& uiZoom,
+								   UID viewSpreadUID) = 0;
 
 	/** The on-screen opacity marks are drawn at when they are shown permanently (printing ON
 		gives the 25%/75% choice, printing OFF gives fully opaque). The UI needs it when the
@@ -241,9 +247,13 @@ public:
 		⚠ The caller must have checked that the pointer is still over hoverDB's own window
 		before calling. That guard used to live inside the sampler; it moved out with the view
 		resolution in 2026-08-15 (stage 2, task 4B). Dropping it makes another window's
-		coordinates get read as if they were hoverDB's. */
+		coordinates get read as if they were hoverDB's.
+		★★★2026-08-16: viewSpreadUID added, same reason as ShowPeekAt above -- and here the
+		failure was SILENT: with a master spread on screen the sampler read an ORDINARY page's
+		colour and presented it as the master's. A wrong number looks exactly like a right one. */
 	virtual bool16		SampleColorAt(IDataBase* hoverDB, IDataBase* otherDB, bool16 hoverIsTarget,
 									  const PMReal& mx, const PMReal& my,
+									  UID viewSpreadUID,
 									  PMString& outPanel, PMString& outCursor) = 0;
 
 	/** Cache the hover-to-other page pairing for the duration of an Alt+left drag. Begin on
