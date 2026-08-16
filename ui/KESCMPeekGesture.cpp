@@ -429,9 +429,27 @@ void KESCMDocsClosedObserver::Update(const ClassID& theChange, ISubject* /*theSu
 		KESCMFlushDeferredCloseUi();
 }
 
-// アプリ subject への購読を付ける(Startup から1回)。アプリもオブザーバの同居先も
-// セッションと同じ寿命なので、終了時に明示 detach はしない(detach 自体がクラッシュ要因になる。
-// レイアウト同期オブザーバの Shutdown 方針と同じ)。
+// アプリ subject への購読を付ける(Startup から1回)。
+//
+// ★★**この1本だけ終了時に detach しない。** 同じ構成(kActiveContextBoss に同居・アプリ subject を
+//   購読)の兄弟2本 ---- KESCMModelChangeObserver と KESCMPanelVisibilityObserver ---- は
+//   どちらも detach する。**差は Update が終了中に何をするかで決まる**:
+//     ・あちらの2本 … 分岐の大半が無防備(ModelChange は6分岐のうち IsAppQuitting ガードを持つのが
+//                      1つだけ)なので、消えかけのコードで UI を触りうる ⇒ **detach が要る**
+//     ・こちら       … Update の中身は KESCMFlushDeferredCloseUi ただ1つで、その**入口が二重に
+//                      守られている** ⇒ 走っても何もしない(下の2点)
+//       ① KESCMPeekGestureShutdown() が sDeferredCloseUiPending を落とすので :360 で即 return
+//       ② その先も :364 の IsAppQuitting() ガードで UI に触らずに返る
+//   ⇒ **この非対称は意図であって書き忘れではない。**⚠ただし**根拠は上の2点だけ**なので、
+//     どちらかを外すならここに detach を足すこと(足しても害は無い ---- 実際 ModelChange 側が
+//     終了時に同じ GetActiveContext() を触って detach しており、Task 13 の終了安全性で PASS している)。
+//
+// ⚠★★2026-08-16(監査 B-U2)に**理由を書き直した**。旧記述は「**detach 自体がクラッシュ要因になる**
+//   (レイアウト同期オブザーバの Shutdown 方針と同じ)」だったが、これは**一般化しすぎ**だった:
+//   あちらで落ちたのは KESCMSetLayoutSync(kFalse) の経路＝**GetAllLayoutViews で解体中の全ビューを
+//   走査する**からで(KESCMViewSync.cpp)、**detach という操作そのものではない**。
+//   ★反証は同じプラグインの中にあった＝KESCMDetachModelChangeObserver は終了時に GetActiveContext()
+//     を触って detach しているのに落ちていない。**「危ないのは何か」を1段細かく見れば済んだ。**
 void KESCMAttachDocsClosedObserver()
 {
 	ISession* session = GetExecutionContextSession();
@@ -459,6 +477,12 @@ void KESCMDeferCloseUi()
 // KESCMPeekGestureShutdown(KESCMPeekGesture.h 参照) — 終了時の後始末。
 void KESCMPeekGestureShutdown()
 {
-	// 一括クローズの保留も捨てる(終了後に流れることは無いが、状態を残さない)。
+	// ★★★**この1行が守りである。**「念のため状態を残さない」ではない ---- KESCMDocsClosedObserver は
+	//   終了時に detach しない(理由は KESCMAttachDocsClosedObserver の上のコメント)ので、Shutdown の
+	//   あとでも kPendingDocumentsClosedMsg が届けば Update は走る。そのとき
+	//   KESCMFlushDeferredCloseUi を :360 で即 return させているのがこの代入。
+	// ⚠2026-08-16(監査 B-U2)に書き直した。旧記述は「**終了後に流れることは無いが**、状態を残さない」で、
+	//   **流れないことを前提に、自分が守りであることを認識していなかった**。
+	//   ⇒ この行を「無駄だから」と外すと、守りが :364 の IsAppQuitting() 一枚だけになる。
 	sDeferredCloseUiPending = kFalse;
 }

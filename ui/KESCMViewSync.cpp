@@ -914,9 +914,18 @@ void KESCMViewSyncShutdown()
 {
 	// レイアウトビュー同期の後始末は「状態フラグを落とすだけ」にする(以後の通知は Update 先頭の
 	// ガードで無視される)。★KESCMSetLayoutSync(kFalse) をここで呼んではならない: その経路は
-	// GetActiveContext()/GetAllLayoutViews に触るが、アプリ終了処理中はセッション/コンテキストが
-	// 解体中で deref すると 100% クラッシュする(実機で確認済み。ON のまま終了→必ず落ちた)。
+	// **GetAllLayoutViews で開いている全ビューを走査する**が、アプリ終了処理中はその窓とビューが
+	// 解体中で、deref すると 100% クラッシュする(実機で確認済み。ON のまま終了→必ず落ちた)。
 	// 手本の KESLayoutScrollObserver も終了時は何も外さず無事故=購読(依存)は subject/observer の
 	// boss 破棄と一緒に IChangeManager から消えるので、明示的な解除は不要。
+	//
+	// ⚠★★2026-08-16(監査 B-U2)に**危ないものを1つに絞った**。旧記述は
+	//   「**GetActiveContext()/GetAllLayoutViews に触ると**…100% クラッシュ」と2つ並べていたが、
+	//   **GetActiveContext() は終了処理中に触っても落ちない** ---- KESCMDetachModelChangeObserver と
+	//   KESCMDetachPanelVisibilityObserver が終了時にまさにそれを呼んでおり、Task 13 の終了安全性
+	//   (書き出し10本キュー直後の終了を含む)で PASS している。
+	// ⇒ ★**危険物を並べて書くと、そのうち1つだけを使う操作まで禁止に見える。**
+	//   実際この2つ並びが KESCMPeekGesture.cpp で「**detach 自体がクラッシュ要因**」という
+	//   一段広い禁止に化け、あちらの observer を detach しない理由として3日間使われていた。
 	sLayoutSyncOn = kFalse;
 }
