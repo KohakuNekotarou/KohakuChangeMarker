@@ -12,6 +12,19 @@
 //  結果なので、組み直さずに聞くと「もう直したあふれ」「まだ出ていないあふれ」を答え得る)。窓なし文書でも
 //  dirty にしないよう全体を IDataBase::SaveRestoreModifiedState で囲む。
 //
+//  ★★「あふれ箇所を列挙する」には**本体のプリフライトという上位ルートが実在する**——ルール boss
+//    kOversetTextRuleBoss(PackageAndPreflightID.h:165)、criteria は3つに分かれていて
+//    kPreflightRC_OversetTextFrame / **OversetFootnote** / OversetTableCell(:938-940)、
+//    入口も Facade::IPreflightFacade がある。**それでも自前で走査している理由は3つで、どれも決定的**
+//    (2026-08-16 の API 監査 B6 で照合):
+//      (1) **結果に座標が無い**。GetPreflightResults が返すのは「Node ID / エラー名 / **ページ番号の
+//          文字列**」の3つ組だけ(IPreflightFacade.h:528-537)。KESCM が要るのは「+」点のペーストボード
+//          座標なので、プリフライトに聞いてもこの走査は結局要る。
+//      (2) **ユーザーの設定に依存する**。プロファイルで overset ルールが有効でなければ結果が出ず、
+//          TurnOnPreflighting はユーザーのプリフライト設定そのものを書き換えてしまう(:120)。
+//      (3) **非同期**(background idle loop)。Find Overset は押した瞬間に答えが要る。
+//    ⇒ 寄せない。⚠**この検討を次に最初からやり直さないために、ここに理由を残す。**
+//
 //========================================================================================
 
 #include "VCPlugInHeaders.h"
@@ -207,9 +220,29 @@ static bool16 KESCMThreadIsOverset(ITextModel* textModel, TextIndex pos)
 //   ★★平坦なので再帰はしない(するとセルの中の表を二度歩き、入れ子セルを二重に報告する)。
 //   取得: story(kTextStoryBoss)の UID から NextUID で辞書を辿り、ITableModel を Query できた辞書＝表
 //         (できない辞書＝プライマリストーリー自身。SnpIterTableUseDictHier.cpp:219-225 の見分け方)。
-//         各表は const_iterator でアンカーセルを回し、GetGridID→dict->QueryThread→GetTextStart。
-//   ★性能: コストは Σ(rows×cols)。大きな表で重い（Find Overset はオンデマンドなので許容）。安価な
-//     「表にあふれセルが在るか」の事前判定 API は SDK に無い（確認済み）。
+//         各表は const_iterator で**格子要素**を回し、GetGridID→dict->QueryThread→GetTextStart。
+//   ⚠★★2026-08-16(API 監査 B6)訂正: 旧「const_iterator で**アンカーセル**を回し」は**誤り**。
+//     **イテレータはアンカーを返さない。格子要素を全部返す**(ITableModel.h:391-392「traverse through
+//     the **GridAddress locations**」。CellIterator::MoveForward() の実装は SDK に無く本体内なので
+//     契約だけが頼りだが、**IsAnchor(:137) が在ること自体が「アドレスはアンカーとは限らない」の証拠**)。
+//     ★**1セル1回になるのは下の QueryThread が非アンカーに nil を返すから**——セルのスレッドは
+//     **アンカーの GridID にだけ**紐づく(ITextStoryThreadDict.h:78-83)。∴ 結合セルは何マス占めても1回。
+//     ⚠**QueryThread を経由しない走査を足すときは自分で IsAnchor で弾く必要がある**(例＝セルの属性や
+//     GetCellType を直接引く)。★KBS は 2026-08-11 に自分で訂正済み(KBSOversetScanEngine.cpp:271-272)で、
+//     その訂正がこちらに届いていなかった。結論(1セル1回)は合っていたが**理由が違った**。
+//   ⚠★**脚注はこの walk を通らない**——見るのは ITableModel を持つ辞書だけなので、脚注のスレッド辞書は
+//     素通りする。**それで取りこぼさない**: 脚注が入りきらないと**フレームリスト自体が overset になる**
+//     ので、下の (1) が既に拾っている(KBS が 2026-08-10 に実測＝本文64字の下に脚注4,183字で、最後の
+//     フレームが overflows=true)。⚠Adobe のプリフライトは OversetFootnote を独立した criteria にして
+//     いる(ファイル冒頭)ので、「脚注を別に数えるべきでは」は将来また出る問い。**出たらこの3行を読む。**
+//   ★性能: コストは Σ(rows×cols)。大きな表で重い（Find Overset はオンデマンドなので許容）。
+//   ⚠★★2026-08-16(同上)訂正: 旧「安価な『表にあふれセルが在るか』の事前判定 API は SDK に無い
+//     （確認済み）」は**誤り**。**在る**——ITextParcelList::GetParcelContainsOversetContent
+//     (ITextParcelList.h:705-713)＝「Tables や Footnotes のような複雑内容が overset か」をパーセル
+//     1つにつき1コールで答える。**採らないのは実測の結果**(KBS が 2026-08-10 に5文書で突き合わせ):
+//     ①表については答えが完全に一致 ②速度は**どちらにも転ぶ**(表の無い500ストーリーで walk 70us 対
+//     parcels 1,540us ／ 861 あふれセルの表1つで walk 53us 対 parcels 24us)＝事前判定として安いとは
+//     限らない ③唯一の食い違いは**あふれた脚注**(あちらは見える)で、それは上のとおり (1) が拾う。
 //========================================================================================
 static void KESCMCollectOversetCells(IDataBase* db, const UIDRef& storyRef, ITextModel* textModel,
 	std::vector<KESCMOversetLoc>& out)
@@ -237,7 +270,7 @@ static void KESCMCollectOversetCells(IDataBase* db, const UIDRef& storyRef, ITex
 
 		for (ITableModel::const_iterator it(tableModel->begin()), end(tableModel->end()); it != end; ++it)
 		{
-			const GridAddress ga = *it;					// アンカーセル（マージセルも1回）
+			const GridAddress ga = *it;					// ★格子要素。アンカーとは限らない(上の ★★ 参照)
 			const GridID gridID = tableModel->GetGridID(ga);
 			InterfacePtr<ITextStoryThread> thread(dict->QueryThread(gridID));	// ref+1
 			if (thread == nil)
