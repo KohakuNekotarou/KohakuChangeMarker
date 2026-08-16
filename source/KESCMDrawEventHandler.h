@@ -311,6 +311,16 @@ public:
 	}
 
 	// 旧版画像を全破棄(kescmClearMarks / 別ドキュメント切替時)。表示トグルもOFFへ。
+	//
+	// ⚠★★**ここは DropAll と違ってロックを取らない。理由**(2026-08-16・API 監査 B5 で明文化):
+	//   sOrigImages も生ポインタの map で、ここが delete する ---- 形は DropAll とまったく同じなのに
+	//   ロックが無い、という非対称が説明なしで置かれていた。**読み手がメインスレッドにしか居ないから**
+	//   で正しい: 描画側の入口が `wantOrig = !suppressForPrint && !printing && sShowOriginal &&
+	//   !sOrigImages.empty()` (HandleDrawEvent)で、**`!printing` が先に立つので BG(PDF 書き出し)は
+	//   短絡評価で map に一切触れない**。さらに実際に読む所は `wantOrig && !isThumb` の下にある。
+	//   ⇒ 旧版べた載せ(peek)は**画面だけの機能**なので、BG と競合しようがない。
+	//   ★**この前提が崩れる変更**＝「peek の絵を印刷/PDF にも出す」「サムネイルにも出す」。
+	//     そのときは DropAll と同じく KESCMMarkStateLock をここと MakeOrigImage に入れること。
 	static void DropAllOrig()
 	{
 		for (std::map<UID, KESCMOrigImage*>::iterator it = sOrigImages.begin(); it != sOrigImages.end(); ++it)

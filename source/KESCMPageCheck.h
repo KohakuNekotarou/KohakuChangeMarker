@@ -19,6 +19,7 @@
 
 #include "BaseType.h"		// int32, bool16
 #include "OMTypes.h"		// UID
+#include <map>				// KESCMPageCheckPruneToMarked の「外したページ」(文書ごと)
 #include <set>
 
 #include "KESCMPageMap.h"	// KESCMPageToggleState ---- Register と共通の答えの形(型のためだけ)
@@ -47,7 +48,16 @@ void KESCMPageCheckClearAllDocs();
 // チェックを外す(ユーザー指定 2026-07-11:「枠が無くなったらチェックの記憶も外れる」)。マーク集合は
 // KESCMCollectChangedPageUIDs で引く(db が比較対象=sDB/sSrcDB でなければ空=その文書のチェックは
 // 全部外れる)。KESCMDoMarkChangesDoc の末尾(サムネイル更新の前)から呼ぶ。
-void KESCMPageCheckPruneToMarked();
+//
+// ★outUnchecked(任意, nil可) = **実際に外したページ**を文書ごとに追記する(2026-08-16・API 監査 B5)。
+//   ⚠**サムネイルを per-UID で作り直す呼び手には必須**——✓ が外れたページは絵が変わるのに、
+//     外れた後は「今チェックが付いている集合」のどこにも居ないので**現在状態から復元できない**
+//     (B4 が Register/✓ のトグルで踏んだのと同じ形。KESCMModelNotify.h の fPagesA 参照)。
+//   ★ここが答えるのは「この prune が外した分」だけで、呼び手が自分で触ったページとは別物。
+//     ∴ 呼び手は**自分の集合に足す**のであって、置き換えてはいけない。
+//   ⚠キーの IDataBase* は deref しない(集合の持ち主を指すだけ)。呼び手も deref する前に
+//     生存を確かめること(この関数は「閉じた文書のチェック」も掃除の対象にする)。
+void KESCMPageCheckPruneToMarked(std::map<IDataBase*, std::set<UID> >* outUnchecked = nil);
 
 // pageUID(db内)がチェック済みか。db が nil、または該当文書のチェックが無ければ kFalse。
 // 描画側(KESCMDrawEventHandler の isThumb 分岐)が ✓ を描くかの判定に使う。

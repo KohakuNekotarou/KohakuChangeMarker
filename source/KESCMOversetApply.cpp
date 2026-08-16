@@ -52,10 +52,12 @@ void KESCMApplyOversetForDoc(IDataBase* db)
 		return;
 
 	// 前回の走査対象を控える(別文書へ移ったら、前の文書の目印を消す必要がある)。
-	// ★2026-08-13(Task 10): **旧ページ集合はもう控えていない。** サムネイルの Purge は UI 側へ移り、
-	//   通知では集合を運べないので、UI は対象文書の全ページを Purge する(理由と戻し方は
-	//   KESCMThumbnailRefresh.h の KESCMPurgeAllPageThumbs)。同一文書で「あふれが解消したページ」の
-	//   ＋を消すのも、全ページ Purge なら取りこぼしようがない。
+	// ★2026-08-13(Task 10): 旧ページ集合はもう控えず、UI は対象文書の全ページを Purge していた。
+	// ⚠★★2026-08-16(API 監査 B5)訂正: その理由「**通知では集合を運べない**」は**誤りだった**
+	//   ---- ISubject::Change の第3引数 changedBy で運べる(2026-08-15 の監査 B2)。
+	//   ★しかも**旧集合はここに在る**: 下の `sOversetPages.swap(pages)` は入れ替えなので、swap の後の
+	//     `pages` が**そのまま旧集合**になる(捨てていたのは「控えていなかったから」ではなく、
+	//     運べないと思っていたから)。⇒ per-UID Purge へ戻した(下の通知)。
 	IDataBase* prevDB = KESCMDrawEventHandler::sOversetDB;
 
 	// db を走査して overset 位置(＋点)とページを集める。
@@ -85,10 +87,21 @@ void KESCMApplyOversetForDoc(IDataBase* db)
 	//   描き直し・Prev/Next の対象と位置 ---- は**すべて UI の持ち物**なので、通知1本にまとめた。
 	//   docA=今の走査対象／docB=直前の走査対象(別文書へ移ったときだけ。同じ文書なら nil を渡す＝
 	//   UI は1文書ぶんだけ作り直す)。
-	KESCMNotifyDocs(kKESCMOversetRescannedMessage,
-	                db,
-	                movedToAnotherDoc ? prevDB : nil,
-	                movedToAnotherDoc /*navReset*/);
+	// ★★2026-08-16(API 監査 B5): **「＋」の絵が変わりうるページ集合も載せる**(per-UID Purge へ復帰)。
+	//   数え上げは2通りしかない ---- ①同一文書で走り直した＝**新集合 ∪ 旧集合**(＋が消えたページは
+	//   新集合に居ないので、旧集合を足さないと古い＋が残る) ②別文書へ移った＝docA は新集合だけ、
+	//   docB(前の文書)は**旧集合そのもの**(あちらの＋は全部消える)。
+	//   ★旧集合は上の swap で `pages` に残っている(捨てずに済むことに気づいたのがこの監査)。
+	std::set<UID> affectedA(KESCMDrawEventHandler::sOversetPages);	// 新集合(swap 後の状態)
+	std::set<UID> affectedB;										// 別文書へ移ったときだけ中身が入る
+	if (movedToAnotherDoc)
+		affectedB.swap(pages);										// 旧集合＝前の文書のページ
+	else
+		affectedA.insert(pages.begin(), pages.end());				// 同一文書＝新 ∪ 旧
+	KESCMNotifyDocsPages(kKESCMOversetRescannedMessage,
+	                     db, affectedA,
+	                     movedToAnotherDoc ? prevDB : nil, affectedB,
+	                     movedToAnotherDoc /*navReset*/);
 }
 
 // 比較中なら overset の走査対象は必ず比較 Target 文書(sDB)にする(変更(枠)と overset を同じ文書で

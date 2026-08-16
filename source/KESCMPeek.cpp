@@ -43,6 +43,7 @@
 #include "ErrorUtils.h"				// PMSetGlobalErrorCode(キャンセル後にエラーを持ち越さない)
 
 #include <map>
+#include <set>			// 触れたページ集合(通知に載せて per-UID でサムネイルを作り直させる。B5)
 #include <vector>
 
 // プロジェクト内インクルード:
@@ -59,7 +60,10 @@
 //   ⇒ ビュー解決は呼び手(UI)へ出し、この .cpp は「渡された点のスプレッドを覗く」だけを担う。
 #include "KESCMPageMap.h"            // KESCMBuildPairing(比較の除外対応表)/KESCMPageMapReadSelection/KESCMPageMapSweepClosedDocs
 #include "KESCMPageCheck.h"          // KESCMPageCheckClearAllDocs / KESCMPageCheckSweepClosedDocs(✓の後片付け)
-#include "IDThreadingPrimitives.h"   // IDThreading::IsMainThreadDomain(BG では文書の生存を判定できない。第2段 Task 11C)
+#include "KESCMThreadSafety.h"       // KESCMIsMainThread(BG では文書の生存を判定できない。第2段 Task 11C)
+                                     // ★2026-08-16(API 監査 B5): IDThreadingPrimitives.h の直 include から
+                                     //   共有の道具へ。ここだけが素の IDThreading::IsMainThreadDomain() を
+                                     //   呼んでいた＝同じ問いの2つ目の綴り。
 #include "KESCMPageNumberMarker.h"   // KESCMInvalidatePageNumberMarkerRects(ノンブル除外矩形キャッシュの破棄)
 // (★KESCMPanelState.h / KESCMPanelAlpha.h / KESCMTrackerHud.h / KESCMCmykCursor.h は 2026-08-13
 //  Task 8 で外した＝起動/終了の UI の仕事ごと KESCMUIStartup.cpp へ移したため)
@@ -292,7 +296,13 @@ static bool16 KESCMRefreshComparisonCore(IDataBase* targetDB, IDataBase* sourceD
 	int32 changedCount = 0;
 	int32 failedCount = 0;
 	bool16 cancelled = kFalse;
-	std::vector<UID> touchedTargetPages, touchedSourcePages;
+	// ★2026-08-16(API 監査 B5): 触れたページ＝**この操作で絵が変わりうるページ**。末尾の通知に
+	//   載せて、UI に per-UID でサムネイルを作り直させる(全ページ Purge をやめる)。
+	//   入れ物を vector から set にしたのは、下で prune が外した ✓ のページを合流させるため
+	//   (重複を持たない)。⚠**報告用の件数を size() から取らない**——集合は後から増えるので、
+	//   「実際に再比較したページ数」は専用のカウンタで数える。
+	int32 processedCount = 0;
+	std::set<UID> touchedTargetPages, touchedSourcePages;
 	for (size_t i = 0; i < toCompareT.size(); ++i)
 	{
 		PMString item("Page ");
@@ -304,8 +314,9 @@ static bool16 KESCMRefreshComparisonCore(IDataBase* targetDB, IDataBase* sourceD
 
 		const UID tUID = toCompareT[i];
 		const UID sUID = toCompareS[i];
-		touchedTargetPages.push_back(tUID);
-		touchedSourcePages.push_back(sUID);
+		touchedTargetPages.insert(tUID);
+		touchedSourcePages.insert(sUID);
+		++processedCount;
 		bool16 changed = kFalse;
 		const ErrorCode mkErr = KESCMDrawEventHandler::MakeEntry(UIDRef(targetDB, tUID), UIDRef(sourceDB, sUID), changed);
 		if (mkErr != kSuccess)
@@ -343,8 +354,8 @@ static bool16 KESCMRefreshComparisonCore(IDataBase* targetDB, IDataBase* sourceD
 	// 報告用の処理数=実際に MakeEntry/DropOneEntry まで到達したページ数(対応表に無くて対象から外れた
 	// 選択ページは数えない。キャンセル時はそこまでに処理した数。ステータス行の「refreshed N」が実態と
 	// 一致するように。2026-07-15)。
-	if (outProcessed) *outProcessed = (int32)touchedTargetPages.size();
-	if (touchedTargetPages.empty())
+	if (outProcessed) *outProcessed = processedCount;
+	if (processedCount == 0)
 		return kFalse;
 
 	// 旧版画像キャッシュは古いので破棄(次の peek で現ズームで作り直し)。
@@ -352,10 +363,28 @@ static bool16 KESCMRefreshComparisonCore(IDataBase* targetDB, IDataBase* sourceD
 
 	// ★「KCM: Check」の✓: この部分再比較でマーク(枠)が消えたページのチェックも忘れる(ユーザー指定
 	//   2026-07-11「枠が無くなったらチェックの記憶も外れる」)。★必ず下の KESCMInvalidateDB より前に呼ぶ
-	//   (Invalidate 後に外すと古い ✓ でレイアウトが描き直される)。prune 前に Source 側のチェック有無を
-	//   控える(最後の1個が外れた場合もサムネイルを確実に更新するため)。
-	const bool16 srcHadChecks = KESCMPageCheckHasAny(sourceDB);
-	KESCMPageCheckPruneToMarked();
+	//   (Invalidate 後に外すと古い ✓ でレイアウトが描き直される)。
+	// ★★2026-08-16(API 監査 B5): **prune が外したページを受け取って、触れたページへ合流させる。**
+	//   ⚠これを取らないと per-UID の Purge から必ず漏れる ---- ✓ が消えればサムネイルの絵は変わるのに、
+	//     外れた後は「今チェックが付いている集合」のどこにも居ないので**現在状態から復元できない**
+	//     (B4 が Register/✓ のトグルで踏んだのと同じ形＝KESCMPageCheck.h の outUnchecked)。
+	//   ⚠**旧実装の `srcHadChecks`(prune の前に Source 側の ✓ の有無を控える)はここで役目を終えた**
+	//     ---- あれは「Source 側のサムネイルを作り直すか」を条件で決めていた頃の名残で、
+	//     2026-08-13 に全ページ Purge へ変わったとき条件だけが落ち、**読み手のいない const 変数が
+	//     残っていた**。今は「外れた ✓ のページ」そのものが集合で手に入るので、有無を控える必要が無い。
+	std::map<IDataBase*, std::set<UID> > uncheckedByDoc;
+	KESCMPageCheckPruneToMarked(&uncheckedByDoc);
+	{
+		std::map<IDataBase*, std::set<UID> >::const_iterator u = uncheckedByDoc.find(targetDB);
+		if (u != uncheckedByDoc.end())
+			touchedTargetPages.insert(u->second.begin(), u->second.end());
+		u = uncheckedByDoc.find(sourceDB);
+		if (u != uncheckedByDoc.end())
+			touchedSourcePages.insert(u->second.begin(), u->second.end());
+		// ⚠**target/source 以外の文書の分は拾わない**(通知が運べるのは2文書まで)。そこに入るページは
+		//   そもそも無い ---- ✓ は Start 中の Target/Source にしか付かず、Stop で全消去される
+		//   (KESCMPageCheck.h)。★もし第3の文書に ✓ が付く仕様になったら、ここが取りこぼしになる。
+	}
 
 	KESCMInvalidateDB(targetDB);
 	// Source 側のレイアウトビューも再描画する。エントリの増減は Source の常時枠(Show Marks on Source)や
@@ -367,13 +396,22 @@ static bool16 KESCMRefreshComparisonCore(IDataBase* targetDB, IDataBase* sourceD
 	//   すべて UI の持ち物なので、この独立再比較路(KESCMDoMarkChangesDoc を通らない)でも通知1本にする。
 	//   ⚠**navReset は kFalse** ---- 選択ページだけの部分再比較で巡回の基準点を捨てると、1ページ直す
 	//     たびに Prev/Next が先頭へ戻る。文書は変わっていないので基準点は有効なまま。
-	//   ⚠ touchedTargetPages / touchedSourcePages(触れたページだけの絞り込み)は**通知では運べない**ので、
-	//     UI は両文書の全ページを作り直す。★戻すには通知にページ集合を載せる＝2026-08-13 の Task 12 で
-	//     「IKESCMMarkData では戻せない」ことが判明した(触れたページは現在状態から復元できない)。
-	//     理由の全文は KESCMThumbnailRefresh.h の KESCMPurgeAllPageThumbs。
-	//   ⚠ 旧実装が Source 側を「sSrcMarksOn か srcHadChecks のときだけ」更新していたのは per-UID Purge の
-	//     節約のため。全ページ Purge になったので条件ごと落としてある(常に両方を作り直す＝取りこぼしなし)。
-	KESCMNotifyDocs(kKESCMMarksRebuiltMessage, targetDB, sourceDB, kFalse /*navReset*/);
+	//   ★★2026-08-16(API 監査 B5): **触れたページ集合を通知に載せて per-UID Purge へ戻した。**
+	//     ここには「touched…は**通知では運べない**」と書いてあった ---- その命題は 2026-08-15 の監査 B2
+	//     (ISubject::Change の第3引数 changedBy)で既に覆っており、B4 が同じ誤りを4箇所訂正して
+	//     Register/✓ の経路を per-UID へ戻していた。**この行はその数え上げから漏れていた**
+	//     (B4 は自分のブロックの6ファイルしか grep しなかった＝ブロックの境界が grep の境界になった)。
+	//   ★**全再比較(KESCMDoMarkChangesDoc)と違ってここは載せられる**: あちらが要るのは「再比較の“前”に
+	//     枠が付いていた旧集合」で、通知の時点では既に捨てている。こちらは**どのページを触るかを
+	//     先に決めてから回る**(toCompareT/S)ので、集合が最初から手元にある。
+	//   ⚠**漏れたら古いサムネイルが残る**(全ページ Purge は原理的に漏れなかった)。数え上げ＝
+	//     ①再比較したページ(target とその source 対応。変化なしに戻ってリングが消えた分も込み)
+	//     ②上の prune で ✓ が外れたページ。★③旧版べた載せ(DropAllOrig)は**サムネイルに描かないので対象外**
+	//     (描画側が `wantOrig && !isThumb` で弾く)。④登録(緑「/」)と overflow はこの経路では変わらない。
+	KESCMNotifyDocsPages(kKESCMMarksRebuiltMessage,
+	                     targetDB, touchedTargetPages,
+	                     sourceDB, touchedSourcePages,
+	                     kFalse /*navReset*/);
 
 	if (outChanged) *outChanged = changedCount;
 	if (outFailed)  *outFailed = failedCount;
@@ -670,7 +708,10 @@ void KESCMHandleDocsClosed()
 	//     「BG では文書の生存を判定できない」という事実は**関数の性質**であって呼び手の事情ではない。
 	//   ★**取りこぼしは起きない**: 文書のクローズは main thread で起きるので、`kAfterCloseDoc` は
 	//     main でも必ず飛ぶ。BG の分は「クローン DB が用済みになった」という別の出来事にすぎない。
-	if (!IDThreading::IsMainThreadDomain())
+	// ★2026-08-16(API 監査 B5): 直呼びをやめて共有の道具へ。KESCMThreadSafety.h が「今メインスレッドか」
+	//   を KESCMIsMainThread() として持っており、KESCMDrawEventHandler.cpp の2箇所はそちらを呼んでいる。
+	//   **同じ問いを2つの綴りで書いていた**のは、この道具を作った Task 11 と同じ日にここを書いたため。
+	if (!KESCMIsMainThread())
 		return;
 
 	// session は終了処理中に nil になり得る(2026-07-25 追補 に KESCM 全体で統一)。引けなければ

@@ -70,19 +70,24 @@ struct KESCMNotifyPayload
 	// KESCMThumbnailRefresh.h called that fallback "a temporary regression" when it introduced it
 	// (Task 10); this field is what ends it.
 	//
-	// ⚠ Only fDocA has one. All three emitters of kKESCMPageFlagsChangedMessage are about a single
-	// document (KESCMPageMap's and KESCMPageCheck's toggles, and Load's per-document restore loop).
-	// Add fPagesB the day a two-document emitter appears -- do not add it before, or it becomes a
-	// field nobody sets that readers still have to reason about.
-	//
 	// ⚠ Same lifetime rule as the pointers above: valid only while the notification is being
 	// delivered. Point it at a set on the emitting stack; Change() is synchronous, so it outlives
 	// the delivery and nothing has to be cleaned up.
 	const std::set<UID>*	fPagesA;
 
+	// ★★2026-08-16 (API audit B5): fDocB's set. B4 wrote here "add fPagesB the day a two-document
+	// emitter appears" -- and that day had already come and gone: KESCMRefreshComparisonCore
+	// (Refresh Page Comparison) touches pages in BOTH documents and had been collecting both sets
+	// all along, right next to a comment claiming a notification could not carry them. It was not
+	// found in B4 because B4 grepped its own six files; this one lives in block B5.
+	//
+	// ⚠ Set it only together with fDocB, and only when the set is COMPLETE for that document (see
+	// KESCMNotifyDocsPages). A listener told "these pages" will not look at any other page.
+	const std::set<UID>*	fPagesB;
+
 	KESCMNotifyPayload()
 		: fDocA(nil), fDocB(nil), fDocC(nil), fNavReset(kFalse), fStatusForceRedraw(kFalse),
-		  fPagesA(nil) {}
+		  fPagesA(nil), fPagesB(nil) {}
 };
 
 // Emit one of the kKESCM*Message notifications (KESCMID.h) on the application's subject.
@@ -117,11 +122,30 @@ void	KESCMNotify(ClassID theChange, const KESCMNotifyPayload* payload = nil);
 // exactly the way the documents themselves travel. See KESCMPurgeAllPageThumbs.
 //
 // ★★2026-08-16 (API audit B4): that page set now exists -- for the page-flag route, below.
-// ⚠ NOT for this one. The marks route needs the set of pages that carried a mark BEFORE the
-// recompare, and by the time this is called the recompare has already dropped it; supplying it
-// means saving it on the model side first. Until then this route keeps redoing the whole document,
-// and now for a reason that is actually true.
+// ⚠ NOT for this form of the marks route. A FULL recompare (KESCMDoMarkChangesDoc) needs the set of
+// pages that carried a mark BEFORE it ran, and by the time it notifies it has already dropped it;
+// supplying it means saving it on the model side first (not done). So this form keeps redoing the
+// whole document -- and now for a reason that is actually true.
+// ★2026-08-16 (API audit B5): the PARTIAL recompare does not have that problem, because it decides
+// up front which pages it is going to touch. It uses KESCMNotifyDocsPages below.
 void	KESCMNotifyDocs(ClassID theChange, IDataBase* docA, IDataBase* docB, bool16 navReset = kFalse);
+
+// Emit a two-document notification that also carries WHICH PAGES of each document had their
+// picture change (2026-08-16, API audit B5). Used by the partial recompare (Refresh Page
+// Comparison), which knows its page set exactly: it picks the pages to compare before it starts.
+//
+//   pagesA / pagesB  the caller's own sets, by reference -- they travel on the payload as pointers
+//                    and are read during delivery only.
+//
+// ⚠ Each set must hold EVERY page of that document whose picture can change, including pages that
+// LOST something: a page whose ring disappeared, or whose ✓ was pruned away because its ring went,
+// is in no current-state set at all, so asking cannot recover it. That is the whole reason the sets
+// travel rather than being asked for. Miss one and its stale thumbnail stays on screen -- which is
+// exactly what the whole-document purge this replaces could not get wrong.
+void	KESCMNotifyDocsPages(ClassID theChange,
+	                         IDataBase* docA, const std::set<UID>& pagesA,
+	                         IDataBase* docB, const std::set<UID>& pagesB,
+	                         bool16 navReset = kFalse);
 
 // Emit a notification that carries WHICH PAGES of one document changed their picture
 // (2026-08-16, API audit B4). Used for kKESCMPageFlagsChangedMessage: a Register or Check toggle

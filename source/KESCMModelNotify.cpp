@@ -114,6 +114,25 @@ void KESCMNotifyPages(ClassID theChange, IDataBase* doc, const std::set<UID>& pa
 	KESCMNotify(theChange, &payload);
 }
 
+// KESCMNotifyDocsPages(KESCMModelNotify.h で宣言) — 2文書＋各文書の「絵が変わったページ集合」版。
+// ★2026-08-16(API 監査 B5)。B4 の1文書版(上)と**まったく同じ仕組み**で、違いは集合が2つ載ることだけ。
+//   ⚠2文書版を別関数にしてあるのは、片方だけ集合を持つ呼び手を作らせないため——受け手は
+//     「集合がある＝そのページだけ見ればよい」と読むので、**半分だけ正しい集合は取りこぼしになる**。
+void KESCMNotifyDocsPages(ClassID theChange,
+                          IDataBase* docA, const std::set<UID>& pagesA,
+                          IDataBase* docB, const std::set<UID>& pagesB,
+                          bool16 navReset)
+{
+	KESCMNotifyPayload payload;
+	payload.fDocA     = docA;
+	payload.fDocB     = docB;
+	payload.fPagesA   = &pagesA;
+	payload.fPagesB   = &pagesB;
+	payload.fNavReset = navReset;
+
+	KESCMNotify(theChange, &payload);
+}
+
 // KESCMNotifyStatus(KESCMModelNotify.h で宣言)
 // ★文字列は static のまま(セッションの状態＝app.kcmStatus がいつでも答える値)、
 //   「今すぐ描き直せ」だけが payload に乗る(その通知に限った付随物)。

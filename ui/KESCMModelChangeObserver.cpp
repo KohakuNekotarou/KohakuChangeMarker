@@ -45,6 +45,8 @@
 #include "KESCMStorySection.h"		// KESCMUpdateStorySectionLabel
 #include "KESCMViewSync.h"			// KESCMInvalidateSyncCaches
 
+#include <set>						// 同一文書比較のときに2つのページ集合を合わせる(API 監査 B5)
+
 /* model の通知を受ける UI 側のオブザーバ。kActiveContextBoss に IID_IKESCMMODELCHANGEOBSERVER として
    同居させている(同居先の理由はレイアウト同期オブザーバと同じ=実証済みの構成)。購読先はアプリの subject。 */
 class KESCMModelChangeObserver : public CObserver
@@ -113,15 +115,38 @@ void KESCMModelChangeObserver::Update(const ClassID& theChange, ISubject* /*theS
 			KESCMScrollMapDetachAll();		// Stop: strip を全窓から取り外す
 		}
 
-		// Pages パネルのサムネイル。⚠**この経路が全ページ Purge のままである理由**(2026-08-16 に
-		// 書き直した): 絞り込みに要るのは「再比較の**前**に枠が付いていた旧集合」だが、この通知が
-		// 出る時点で再比較は既にそれを捨てている。⇒ **運べないのではなく、載せる物が手元に無い**
-		// (載せるには model 側で退避してから通知する必要がある＝未実施)。
-		// ★旧記述「旧マーク集合を通知で運べないため」は誤り＝ページフラグの経路は 2026-08-16 に
-		//   集合を載せて per-UID へ戻した(KESCMNotifyPages / 下の kKESCMPageFlagsChangedMessage)。
+		// Pages パネルのサムネイル。★★2026-08-16(API 監査 B5): **部分再比較(Refresh Page Comparison)は
+		// 触れたページ集合を載せてくる**ので、そのページだけを per-UID Purge する。
+		// ⚠**全ページ Purge が残るのは2つの場合だけ**:
+		//   ①全再比較(KESCMDoMarkChangesDoc)と Stop ---- 絞り込みに要るのは「再比較の**前**に枠が
+		//     付いていた旧集合」で、この通知が出る時点で既に捨てられている。⇒ **運べないのではなく、
+		//     載せる物が手元に無い**(載せるには model 側で先に退避する必要がある＝未実施)。
+		//   ②集合が付いていない通知(送り手が集合を持たない場合の逃げ道)。
+		// ★旧記述「旧マーク集合を通知で運べないため」は誤り＝changedBy で運べる(2026-08-15 の監査 B2)。
+		// ⚠**片方だけ集合が付く通知は作らない**(KESCMNotifyDocsPages が必ず両方まとめて載せる)。
+		//   docA だけ絞って docB は全ページ、のような混在にすると、どちらが正しいのか読めなくなる。
 		// ForceRedraw は2文書ぶんを畳んで最後の1回だけ(2026-07-25 のバッチ化を壊さない)。
-		if (docA != nil)                 KESCMPurgeAllPageThumbs(docA, kFalse /*redrawNow*/);
-		if (docB != nil && docB != docA) KESCMPurgeAllPageThumbs(docB, kFalse /*redrawNow*/);
+		if (n.fPagesA != nil && n.fPagesB != nil)
+		{
+			if (docB == docA)
+			{
+				// 同一文書どうしの比較。2つの集合は同じ文書のページなので、合わせて1回で Purge する
+				// (下の分岐のまま docB を落とすと、Source 側として触れたページが**取りこぼしになる**)。
+				std::set<UID> both(*n.fPagesA);
+				both.insert(n.fPagesB->begin(), n.fPagesB->end());
+				if (docA != nil) KESCMRefreshThumbnailsForPages(docA, both, kFalse /*redrawNow*/);
+			}
+			else
+			{
+				if (docA != nil) KESCMRefreshThumbnailsForPages(docA, *n.fPagesA, kFalse /*redrawNow*/);
+				if (docB != nil) KESCMRefreshThumbnailsForPages(docB, *n.fPagesB, kFalse /*redrawNow*/);
+			}
+		}
+		else
+		{
+			if (docA != nil)                 KESCMPurgeAllPageThumbs(docA, kFalse /*redrawNow*/);
+			if (docB != nil && docB != docA) KESCMPurgeAllPageThumbs(docB, kFalse /*redrawNow*/);
+		}
 		KESCMForceRedrawPagesPanelNow();
 
 		KESCMRefreshPanel();				// Target/Source 名・アイコン・Prev/Next の有効無効
@@ -176,8 +201,20 @@ void KESCMModelChangeObserver::Update(const ClassID& theChange, ISubject* /*theS
 		//   2文書のこともある(走査先を切り替えた直後は「前の文書」の＋を消す必要がある＝docB)。
 		IDataBase* const docA = n.fDocA;	// 今の走査対象
 		IDataBase* const docB = n.fDocB;	// 直前の走査対象(切り替え時のみ。無ければ nil)
-		if (docA != nil)                 KESCMPurgeAllPageThumbs(docA, kFalse /*redrawNow*/);
-		if (docB != nil && docB != docA) KESCMPurgeAllPageThumbs(docB, kFalse /*redrawNow*/);
+		// ★★2026-08-16(API 監査 B5): 送り手が「＋の絵が変わりうるページ」を載せてくるので per-UID
+		//   Purge。同一文書の走り直しなら fPagesA が**新 ∪ 旧**、別文書へ移ったなら fPagesB が
+		//   前の文書の旧集合(KESCMOversetApply.cpp)。⚠集合が無い通知は従来どおり全ページ。
+		if (n.fPagesA != nil && n.fPagesB != nil)
+		{
+			if (docA != nil) KESCMRefreshThumbnailsForPages(docA, *n.fPagesA, kFalse /*redrawNow*/);
+			if (docB != nil && docB != docA)
+				KESCMRefreshThumbnailsForPages(docB, *n.fPagesB, kFalse /*redrawNow*/);
+		}
+		else
+		{
+			if (docA != nil)                 KESCMPurgeAllPageThumbs(docA, kFalse /*redrawNow*/);
+			if (docB != nil && docB != docA) KESCMPurgeAllPageThumbs(docB, kFalse /*redrawNow*/);
+		}
 		KESCMForceRedrawPagesPanelNow();
 
 		if (docA != nil)

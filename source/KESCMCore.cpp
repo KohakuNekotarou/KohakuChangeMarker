@@ -394,9 +394,14 @@ ErrorCode KESCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMStri
 	//   旧 UID を拾う」ガード(UID は db 固有。別文書対への再 Start で誤 Purge しない)も兼ねる。
 	//
 	// ★★2026-08-13(Task 10): **この退避は今は取っていない。** サムネイルの Purge は UI 側へ移り、
-	//   通知は ClassID しか運べないので、旧集合を渡す道が無くなった。代わりに UI は**全ページ**を
-	//   Purge する ---- 取りこぼしは原理的に起きず、ページ数ぶん遅くなるだけ(KESCMThumbnailRefresh.h
-	//   の KESCMPurgeAllPageThumbs に理由を書いてある)。
+	//   旧集合を渡す道が無くなった。代わりに UI は**全ページ**を Purge する ---- 取りこぼしは原理的に
+	//   起きず、ページ数ぶん遅くなるだけ(KESCMThumbnailRefresh.h の KESCMPurgeAllPageThumbs)。
+	// ⚠★★2026-08-16(API 監査 B5)訂正: ここに書いてあった理由「**通知は ClassID しか運べない**」は
+	//   **誤りだった**——ISubject::Change の第3引数 changedBy で運べる(2026-08-15 の監査 B2 で判明)。
+	//   ★**正しい理由は「載せる物が手元に無い」**: 要るのは「再比較の**前**に枠が付いていたページ」で、
+	//     それを知るにはこの退避を復活させる必要がある(＝今も未実施)。∴ 全ページ Purge のままで正しい。
+	//   ★対照＝**部分再比較(KESCMRefreshComparisonCore)は載せている**。あちらは触るページを先に
+	//     決めてから回るので、集合が最初から手元にある。
 	//   ⚠**Task 12 で IKESCMMarkData が入ったら、ここで退避を取り直して絞り込みへ戻すこと。**
 	//     上の段落は、そのとき何をなぜ集めていたかの記録として残してある。
 

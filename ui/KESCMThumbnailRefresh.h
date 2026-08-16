@@ -62,9 +62,15 @@ void KESCMTryRefreshPagesPanelThumbnails(IDataBase* db, const std::set<UID>* ext
 //     `KESCMNotifyPages` で「トグルしたページ集合」を載せ、受け手(KESCMModelChangeObserver)が
 //     下の KESCMRefreshThumbnailsForPages へ渡す。**Task 10 の「一時的な後退」はここで終わり。**
 //
+// ★★2026-08-16(API 監査 B5)でさらに2経路が per-UID へ戻った＝**部分再比較**(Refresh Page Comparison。
+//   触るページを先に決めてから回るので集合が手元にある)と**あふれ走査**(Find Overset。旧集合は
+//   `sOversetPages.swap()` の後に残っているのを捨てていただけだった)。どちらも B4 の
+//   「全数4箇所」の数え上げから漏れていた ---- **B4 が自分のブロックの6ファイルだけを grep したため**。
+//
 // ★**この入口が残っている用途は2つ**:
-//   ①**マーク経路**(kKESCMMarksRebuilt/Cleared)＝要るのは「再比較の**前**に枠が付いていた旧集合」で、
+//   ①**全再比較(KESCMDoMarkChangesDoc)と Stop**＝要るのは「再比較の**前**に枠が付いていた旧集合」で、
 //     通知を出す時点で既に捨てられている。載せるには model 側で先に退避する必要がある(未実施)。
+//     ⚠**部分再比較はこちらではない**(上記)。
 //   ②通知にページ集合が付いていないとき(fPagesA == nil)のフォールバック。
 void KESCMPurgeAllPageThumbs(IDataBase* db, bool16 redrawNow = kTrue);
 

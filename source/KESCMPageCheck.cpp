@@ -208,7 +208,7 @@ void KESCMPageCheckClearAllDocs()
 //   チェックは忘れる)。KESCMCollectChangedPageUIDs は db が sDB/sSrcDB のときだけ現在のマーク集合を
 //   返す(それ以外は空=その db の全チェックが外れる)。ポインタは deref しない。
 //========================================================================================
-void KESCMPageCheckPruneToMarked()
+void KESCMPageCheckPruneToMarked(std::map<IDataBase*, std::set<UID> >* outUnchecked)
 {
 	if (sChecked.IsEmpty())
 		return;
@@ -228,7 +228,14 @@ void KESCMPageCheckPruneToMarked()
 		for (std::set<UID>::iterator c = chk.begin(); c != chk.end(); )
 		{
 			if (marked.count(*c) == 0)
+			{
+				// ★2026-08-16(API 監査 B5): 外したページを呼び手へ知らせる(要求されたときだけ)。
+				//   ✓ が消えればサムネイルの絵は変わるが、外れた後の集合には残らないので
+				//   **ここで拾わないと per-UID の Purge から永久に漏れる**(KESCMPageCheck.h)。
+				if (outUnchecked != nil)
+					(*outUnchecked)[it->first].insert(*c);
 				chk.erase(c++);		// もうマークが無いページ=チェックを忘れる
+			}
 			else
 				++c;
 		}
