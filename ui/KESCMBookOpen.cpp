@@ -25,7 +25,9 @@
 #include "IDocumentPresentation.h"	// MakeActive - raise the window a chapter already has
 #include "IDocumentUIUtils.h"	// FindPresentationForDocument - HAS this chapter a window at all?
 #include "IGlobalRecompose.h"	// ForceRecompositionToComplete - see ComposeChapter
+#include "IOpenLayoutCmdData.h"	// GetResultingPresentation - did the window actually appear?
 #include "ISession.h"
+#include "IWindow.h"			// the window kOpenLayoutCmdBoss is supposed to have produced
 
 // General includes:
 #include "CmdUtils.h"			// CreateCommand / ProcessCommand
@@ -101,9 +103,15 @@ bool16 DocumentLivesInFile(IDocument* doc, const PMString& wantedPath)
 /** Accept any presentation at all.
 
     ***** WHY A PREDICATE OF OUR OWN. ***** The stock criteria (is_active, is_layout, …) live in the
-    WidgetBin shared library, and IDocumentUIUtils.h:40-46 says so, telling callers that cannot link
-    it to "create local implementations" and printing this exact two-line shape. KBS and KESCL each
-    carry the same one for the same reason (KBSBookScope.cpp:234 / KESCLFindInDoc.cpp:676). */
+    WidgetBin shared library, and DocumentPresFindCriteria.h:40-46 says so, telling callers that
+    cannot link it to "create local implementations" and printing this exact two-line shape. KBS and
+    KESCL each carry the same one for the same reason (KBSBookScope.cpp:234 / KESCLFindInDoc.cpp:676).
+    ⚠ That sentence was attributed to IDocumentUIUtils.h until 2026-08-17 (audit B-U5). It is the
+    OTHER header - the one the criteria themselves live in - and both files happen to have something
+    at 40-46, which is why the wrong name read as checkable and survived.
+    ★KBS states it correctly (KBSBookScope.cpp:226-233 names DocumentPresFindCriteria.h:82 for the
+      stock predicate and then says "that file's own preamble (:40-46)"), so this was KESCM losing
+      the citation in the copy, not a rule the two disagree about. */
 bool KESCMAcceptAnyPresentation(IDocumentPresentation* /*p*/)
 {
 	return true;
@@ -150,14 +158,43 @@ bool16 BringChapterToFront(const UIDRef& docRef)
 	// No window at all: the chapter is open windowless. Give it its first layout window, which also
 	// makes it active - the shape KESCL uses (KESCLFindInDoc.cpp:731-747), without the zoom it
 	// inherits from the front view, because this path has no view to inherit one from.
+	//
+	// ***** THE WINDOW IS ALLOWED NOT TO APPEAR - this function's kFalse says so - so its error state
+	// stays in here. ***** Placed ahead of the command rather than around the processing alone, so
+	// that all THREE ways this can end without a window are covered: the command that would not
+	// build, the one that has no data interface, and the one that failed.
+	GlobalErrorStatePreserver openWinErrorState;
+	ErrorUtils::PMSetGlobalErrorCode(kSuccess);
+
 	InterfacePtr<ICommand> openWinCmd(CmdUtils::CreateCommand(kOpenLayoutCmdBoss));
 	if (openWinCmd == nil)
 		return kFalse;
 	openWinCmd->SetItemList(UIDList(docRef));
 
-	GlobalErrorStatePreserver openWinErrorState;
-	ErrorUtils::PMSetGlobalErrorCode(kSuccess);
-	return (CmdUtils::ProcessCommand(openWinCmd) == kSuccess) ? kTrue : kFalse;
+	// ***** NO DATA INTERFACE = FAILURE, AND THE COMMAND IS NOT RUN AT ALL. ***** Taken BEFORE
+	// processing, because the answer is read back off it afterwards. Nothing is set on it - the
+	// defaults are what a chapter window should get. The SDK's own recipe for this command breaks off
+	// at exactly this point too (SDKLayoutHelper.cpp:268-272).
+	InterfacePtr<IOpenLayoutPresentationCmdData> openData(openWinCmd, IID_IOPENLAYOUTCMDDATA);
+	if (openData == nil)
+		return kFalse;
+
+	if (CmdUtils::ProcessCommand(openWinCmd) != kSuccess)
+		return kFalse;		// whatever it raised goes back with the preserver above
+
+	// ***** "THE COMMAND SUCCEEDED" AND "THERE IS A WINDOW" ARE TWO DIFFERENT STATEMENTS. *****
+	// SDKLayoutHelper::OpenLayoutWindow does not stop at the return code either - it reads
+	// GetResultingPresentation() and checks that an IWindow comes out of it (SDKLayoutHelper.cpp:282-287,
+	// "If we couldn't get an IWindow the postconditions won't be met").
+	// ★WHY IT MATTERS HERE IN PARTICULAR: this kTrue is counted into the caller's status line as
+	//   "N documents open", which is the one claim this whole function exists to make true. Reporting
+	//   a window that is not there is the same fault it was written to fix - a chapter open WINDOWLESS
+	//   being reported as open with nothing on screen.
+	// ⚠ Added 2026-08-17 (audit B-U5). KBS has had both steps since its own block 11 audit
+	//   (2026-08-08, KBSBookScope::ShowChapterWindow) - this file was ported from it before that, and
+	//   the correction did not travel with the copy.
+	InterfacePtr<IWindow> window(openData->GetResultingPresentation(), UseDefaultIID());
+	return (window != nil) ? kTrue : kFalse;
 }
 
 /** Finish composing a chapter before the comparison reads its pixels.
@@ -452,12 +489,16 @@ void KESCMBookStartComparisonForRow(int32 rowIndex)
 	// ***** COMPOSE BOTH SIDES FIRST - AND DO NOT DIRTY THEM DOING IT. *****
 	// These two chapters were opened moments ago, so their composition is not finished, and comparing
 	// them in that state rasterises composition in progress. The book comparison does exactly this
-	// before every chapter, wrapped exactly this way (KESCMBookCompare.cpp:576-581); ComposeChapter
-	// records why the panel's own Start can skip it and this path cannot.
+	// before every chapter, wrapped exactly this way - KESCMCompareBooks' chapter loop, the two
+	// SaveRestoreModifiedState guards it puts around RecomposeChapter; ComposeChapter records why the
+	// panel's own Start can skip it and this path cannot.
 	// ⚠ The guards matter as much as the compose: composing touches the document, and a chapter the
 	//   user only asked to LOOK at must not start asking to be saved. "Do not dirty it" means "if it
 	//   was clean going in, it is clean coming out" - the rule KESCMDoMarkChangesDoc already applies
-	//   to the comparison itself (KESCMCore.cpp:436-440).
+	//   to the comparison itself.
+	// ★Both references name FUNCTIONS rather than line numbers (2026-08-17, audit B-U5): the line
+	//   numbers they used to carry were correct when written and were moved by later edits to those
+	//   very files - the B8 audit shifted the guards by twenty lines the same week.
 	{
 		IDataBase* targetDB = targetRef.GetDataBase();
 		IDataBase* sourceDB = sourceRef.GetDataBase();

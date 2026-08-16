@@ -11,9 +11,11 @@
 //  walk, the container test, the name backstop and every early return are byte-for-byte what the
 //  model half ran, so a comparison started today resolves the same pair it resolved yesterday.
 //
-//  The walk itself is ported from KBS (KBSBookScope.cpp:1007), measured on this machine
+//  The walk itself is ported from KBS (KBSBookScope::GetPanelBookFile), measured on this machine
 //  2026-07-28 and in use since. What is NOT ported is KBS's fall back to the active book when no
 //  front tab is found - the header says why.
+//  (Named by function rather than by line: the line number written here in 2026-08-15 pointed at
+//   AppendUnclosedNote by the time it was checked - audit B-U5, 2026-08-17.)
 //
 //========================================================================================
 

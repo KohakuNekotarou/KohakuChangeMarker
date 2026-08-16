@@ -84,8 +84,11 @@ void KESCMRunBookComparison()
 	IBook* source = nil;
 
 	// ★Queried once and held: this function asks the boundary FOUR times (resolve, two paths, the
-	//   comparison). Utils.h:74-80 asks for exactly this above three calls; below it, Utils<IXxx>()
-	//   inline is the plainer form.
+	//   comparison), and Utils.h:74-80 asks for exactly this shape when an interface is used "in
+	//   several places" - one QueryInterface and one Release instead of one of each per call.
+	// ⚠ The header sets no number: "several places" is all it says, so where the line falls is a
+	//   judgement, not a rule. This note claimed "above three calls" until 2026-08-17 (audit B-U5) -
+	//   the same over-reading that B-U3 corrected in three other files a day earlier.
 	InterfacePtr<IKESCMBookFacade> books(Utils<IKESCMBookFacade>().QueryUtilInterface());
 
 	// ***** The same resolver the greying uses. ***** UpdateActionStates calls this too, so the
