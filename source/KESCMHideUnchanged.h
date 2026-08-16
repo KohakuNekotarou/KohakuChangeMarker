@@ -27,6 +27,11 @@ class IDataBase;
 // the same way through the pairing table and hidden too. ON -> OFF: show back exactly what
 // we hid, on both sides, without asking.
 //
+// ★Both commands (Target and Source) run inside ONE CmdUtils::SequenceContext, in both
+// directions -- a hide/restore that spans two documents must be one undo step. Splitting it
+// per document is the shape that leaves one document stranded when the user hits Ctrl+Z
+// (measured 2026-08-16: kHideSpreadCmdBoss pushes one undo step per call). API audit B10.
+//
 // ★Split out of KESCMActionComponent::DoHideUnchangedToggle on 2026-08-13, body unchanged.
 //  It moved as a whole because the five statics it writes (the toggle, and the database +
 //  spread list for each side) are the same ones KESCMResetHideUnchanged clears -- leaving

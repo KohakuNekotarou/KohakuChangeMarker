@@ -12,9 +12,11 @@
 //    本体が書く5本の static(トグル・両側の IDataBase* と UID 控え)を KESCMResetHideUnchanged が
 //    消すため——本体を UI 側に残すと、同じ状態が分割の両側に割れる。
 //
-//  model 側: kHideSpreadCmdBoss を出す=文書を変える(両文書が dirty になる)。
-//  ⚠この時点では確認アラート(CAlert)がまだこのファイルに居る=第2段の宿題。ステータス行は Task 9 で
-//    相手にするのは Task 7/9(ステータス行は通知へ反転する)。
+//  model 側: kHideSpreadCmdBoss を出す=文書を変える(両文書が dirty になる)。★Target と Source の2本は
+//  1つの CmdUtils::SequenceContext に入れて打つ=Ctrl+Z 一回で両方が戻る(2026-08-16 の API 監査 B10)。
+//  ⚠旧記述「この時点では確認アラート(CAlert)がまだこのファイルに居る=第2段の宿題／ステータス行は
+//    Task 9 で通知へ反転する」は 2026-08-16 に撤回=どちらも決着済み。CAlert は**残す判断**(根拠は
+//    KESCMHideUnchangedToggle の中のコメント)、ステータス行は既に KESCMNotifyStatus 経由で UI へ渡す。
 //
 //========================================================================================
 
@@ -25,8 +27,9 @@
 #include "PMString.h"
 
 // Hide Unchanged Spreads(kHideSpreadCmdBoss)用:
-#include "CmdUtils.h"				// CreateCommand/ProcessCommand(モデル変更は必ず Command 経由)
+#include "CmdUtils.h"				// CreateCommand/ProcessCommand(モデル変更は必ず Command 経由)/SequenceContext
 #include "ICommand.h"
+#include "ErrorUtils.h"				// GlobalErrorStatePreserver - 隠す/戻すは失敗しうるので、立てたエラーをここから外へ出さない
 #include "IBoolData.h"				// kHideSpreadCmdBoss は専用 CmdData を持たず汎用 IBoolData で方向指定(kLockLayerCmdBoss と同型)
 #include "UIDList.h"
 #include "ISpread.h"
@@ -60,6 +63,11 @@ static std::vector<UID> sHiddenSpreads;
 static IDataBase* sHiddenDB = nil;
 static std::vector<UID> sHiddenSrcSpreads;
 static IDataBase* sHiddenSrcDB = nil;
+
+// 戻し(再表示)の本体。公開関数 KESCMResetHideUnchanged は void で、境界の Facade もそう宣言している
+// ので、「再表示コマンドが何本失敗したか」はこの内部版だけが返す。トグルの ON→OFF はこれを直に呼ぶ
+// ＝戻せなかったときにステータス行で「restored」と嘘をつかないため(2026-08-16 の API 監査 B10)。
+static int32 KESCMResetHideUnchangedCore(bool16 restoreSpreads);
 
 //========================================================================================
 // Hide Unchanged Spreads(フライアウトのチェック式トグル)
@@ -111,13 +119,19 @@ void KESCMHideUnchangedToggle()
 	// ON→OFF: 自分が隠した分だけ再表示して状態を捨てる。
 	if (sHideUnchangedOn)
 	{
-		KESCMResetHideUnchanged(kTrue);
+		const int32 failed = KESCMResetHideUnchangedCore(kTrue);
 		// スクロールバー地図を再表示後の配置で描き直す(隠しスプレッドは地図から除外される。2026-07-11)。
 		// ★2026-08-13(Task 10): 地図は UI の持ち物なので通知へ。スプレッドの表示/非表示は「ページの
 		//   見え方が変わった」ことなので kKESCMPageFlagsChangedMessage に相乗りする。
 		//   ★文書は渡さない＝サムネイルの Purge は要らない(変わるのは strip の配置だけ)。
 		KESCMNotify(kKESCMPageFlagsChangedMessage);
-		KESCMHideStatus("Hide Unchanged: hidden spreads restored.");
+		// ★2026-08-16(API 監査 B10): 以前は結果を見ずに必ず "restored." と出していた＝戻せなかったときも
+		//   「戻した」と報告していた。控えは成否にかかわらず捨てる(次の Start で作り直す)ので、失敗した
+		//   ぶんはユーザーが自分でページパネルから再表示するしかない＝黙って消してよい失敗ではない。
+		if (failed > 0)
+			KESCMHideStatus("Hide Unchanged: could not show all hidden spreads back.");
+		else
+			KESCMHideStatus("Hide Unchanged: hidden spreads restored.");
 		return;
 	}
 
@@ -234,82 +248,117 @@ void KESCMHideUnchangedToggle()
 	if (clicked != 1)
 		return;						// No: チェックも付けず何もしない
 
-	const ErrorCode err = KESCMProcessHideSpreadCmd(db, unchanged, kTrue /*hide*/);
+	// ---- ここから Target と Source の2本を「1つのシーケンス」で打つ ----
+	// ★2026-08-16(API 監査 B10): 以前は文書ごとに別々の ProcessCommand で、undo が2段に割れていた。
+	//   2026-08-16 に実機で測ったところ kHideSpreadCmdBoss は **1本につき1段** 積む(スプレッドを2つ
+	//   別々に隠して Ctrl+Z を1回 → 2つ目だけが戻った)。つまり分けたままだと Ctrl+Z 一回で Source
+	//   だけが戻り、Target は隠れたままなのに KESCM の控えは「両方隠している」と言う。
+	//   ⚠文書をまたぐ操作を文書ごとに別のシーケンスへ割ると、片方を undo したとき他方が「履歴からは
+	//   消えるのに戻らない」形になる(2026-07-28 実測)。公式の受け皿 = CmdUtils::SequenceContext
+	//   (CmdUtils.h:186-222 = 既にシーケンスがあれば合流する側。Adobe の実例 =
+	//   conditionaltextui/ConditionSetDropDownObserver.cpp:476)。★シーケンス名は渡さない = undo メニュー
+	//   の表記は本体の「スプレッドを隠す」のまま(KESCM の UI 文字列は英語固定なので、日本語 UI の
+	//   編集メニューに英語を混ぜない)。
+	// ★宣言の順序に意味がある: GlobalErrorStatePreserver を先に作る = 後から作った seq が先に壊れる。
+	//   seq が閉じる瞬間のグローバルエラーが kSuccess かどうかで commit か巻き戻しかが決まるので
+	//   (CmdUtils.h:189-193)、失敗はすべてステータス行へ変換してからエラーを落とす。立てたまま次の
+	//   コマンドを投げると protective shutdown になる(CmdUtils.h:72-77)。
+	//   この形は KESCM 内の先例と同じ(KESCMBookCompare.cpp:132-136 / KESCMBookOpen.cpp:158-160)。
+	ErrorCode err = kFailure;
+	int32 srcHiddenCount = 0;
+	bool16 srcSkippedAll = kFalse;
+	bool16 srcFailed = kFalse;		// Source を隠すコマンドが失敗した(以前はここが完全に無言だった)
+	{
+		GlobalErrorStatePreserver hideErrorState;
+		ErrorUtils::PMSetGlobalErrorCode(kSuccess);
+		CmdUtils::SequenceContext hideSeq;
+
+		err = KESCMProcessHideSpreadCmd(db, unchanged, kTrue /*hide*/);
+		if (err == kSuccess)
+		{
+			sHideUnchangedOn = kTrue;
+			sHiddenDB = db;
+			sHiddenSpreads = unchanged;
+
+			// ---- Source 側も同じ分類で自動的に隠す ----
+			// 「変更あり」を除外対応表(登録済み=比較相手なしページを除いた順番対応)経由で Source ページの
+			// 集合にし、Source のスプレッドを走査して、変更ありページに対応するページを1つも含まない
+			// スプレッドを隠す。対応表に無い Source ページ(登録済み=削除ページ扱い)は安全側で「変更あり」
+			// 扱いにする(縁枠合成(ステップ3)が入るまでの暫定方針)。
+			// Source 側が失敗/スキップでも Target 側の隠しはそのまま生かす(致命ではないため)。
+			// ⚠だからこそ失敗をエラー状態に残せない = 残すと seq が閉じるとき Target の隠しごと巻き戻る。
+			if (hasSource)
+			{
+				// 対応表(tPages/sPages)は関数先頭で1回だけ作ったものを使う(2026-08-06 監査 C-2)。
+				std::map<UID, bool16> srcChangedMap;	// 対応表にあるSourceページ→対応Targetページが変更ありか
+				for (size_t i = 0; i < tPages.size(); ++i)
+					srcChangedMap[sPages[i]] = (KESCMDrawEventHandler::sEntries.count(tPages[i]) > 0) ? kTrue : kFalse;
+
+				InterfacePtr<ISpreadList> srcSpreadList(srcDB, srcDB->GetRootUID(), UseDefaultIID());
+				if (srcSpreadList != nil)
+				{
+					std::vector<UID> srcUnchanged;
+					int32 srcVisibleCount = 0;	// Source 側の全スプレッド非表示ガードの分母(表示中のみ)
+					const int32 nss = srcSpreadList->GetSpreadCount();
+					for (int32 s = 0; s < nss; ++s)
+					{
+						const UID srcSpreadUID = srcSpreadList->GetNthSpreadUID(s);
+						InterfacePtr<ISpread> srcSpread(srcDB, srcSpreadUID, UseDefaultIID());
+						if (srcSpread == nil)
+							continue;
+						const int32 np = srcSpread->GetNumPages();
+						// 手動で隠し済みの Source スプレッドは巻き込まない(Target 側と同じ方針)。
+						InterfacePtr<IBoolData> srcHideFlag(srcDB, srcSpreadUID, IID_IHIDESPREADBOOLDATA);
+						if (srcHideFlag != nil && srcHideFlag->GetBool())
+							continue;
+						++srcVisibleCount;
+						bool16 srcChanged = kFalse;
+						for (int32 p = 0; p < np; ++p)
+						{
+							const UID srcPageUID = srcSpread->GetNthPageUID(p);
+							std::map<UID, bool16>::const_iterator mit = srcChangedMap.find(srcPageUID);
+							if (mit == srcChangedMap.end() || mit->second)
+							{
+								srcChanged = kTrue;
+								break;
+							}
+						}
+						if (!srcChanged)
+							srcUnchanged.push_back(srcSpreadUID);
+					}
+
+					if (!srcUnchanged.empty())
+					{
+						if ((int32)srcUnchanged.size() >= srcVisibleCount)
+						{
+							// 全スプレッド非表示は不可(例: 変更が Target の追加ページに集中していて、対応する
+							// Source ページが存在しない場合は全 Source スプレッドが「変更なし」になり得る)。
+							// その場合は Source 側だけスキップし、Target 側の隠しは生かす。
+							srcSkippedAll = kTrue;
+						}
+						else if (KESCMProcessHideSpreadCmd(srcDB, srcUnchanged, kTrue /*hide*/) == kSuccess)
+						{
+							sHiddenSrcDB = srcDB;
+							sHiddenSrcSpreads = srcUnchanged;
+							srcHiddenCount = (int32)srcUnchanged.size();
+						}
+						else
+							srcFailed = kTrue;
+					}
+				}
+			}
+		}
+
+		// 失敗はこの下のステータス行に変換し終えたので、seq が閉じる前に落とす(消してよい条件 =
+		// 「失敗が別の形で生き残っている」。握りつぶしではない)。
+		if (err != kSuccess || srcFailed)
+			ErrorUtils::PMSetGlobalErrorCode(kSuccess);
+	}
+
 	if (err != kSuccess)
 	{
 		KESCMHideStatus("Hide Unchanged: hide command failed.");
 		return;
-	}
-
-	sHideUnchangedOn = kTrue;
-	sHiddenDB = db;
-	sHiddenSpreads = unchanged;
-
-	// ---- Source 側も同じ分類で自動的に隠す ----
-	// 「変更あり」を除外対応表(登録済み=比較相手なしページを除いた順番対応)経由で Source ページの
-	// 集合にし、Source のスプレッドを走査して、変更ありページに対応するページを1つも含まない
-	// スプレッドを隠す。対応表に無い Source ページ(登録済み=削除ページ扱い)は安全側で「変更あり」
-	// 扱いにする(縁枠合成(ステップ3)が入るまでの暫定方針)。
-	// Source 側が失敗/スキップでも Target 側の隠しはそのまま生かす(致命ではないため)。
-	int32 srcHiddenCount = 0;
-	bool16 srcSkippedAll = kFalse;
-	if (hasSource)
-	{
-		// 対応表(tPages/sPages)は関数先頭で1回だけ作ったものを使う(2026-08-06 監査 C-2)。
-		std::map<UID, bool16> srcChangedMap;	// 対応表にあるSourceページ→対応Targetページが変更ありか
-		for (size_t i = 0; i < tPages.size(); ++i)
-			srcChangedMap[sPages[i]] = (KESCMDrawEventHandler::sEntries.count(tPages[i]) > 0) ? kTrue : kFalse;
-
-		InterfacePtr<ISpreadList> srcSpreadList(srcDB, srcDB->GetRootUID(), UseDefaultIID());
-		if (srcSpreadList != nil)
-		{
-			std::vector<UID> srcUnchanged;
-			int32 srcVisibleCount = 0;	// Source 側の全スプレッド非表示ガードの分母(表示中のみ)
-			const int32 nss = srcSpreadList->GetSpreadCount();
-			for (int32 s = 0; s < nss; ++s)
-			{
-				const UID srcSpreadUID = srcSpreadList->GetNthSpreadUID(s);
-				InterfacePtr<ISpread> srcSpread(srcDB, srcSpreadUID, UseDefaultIID());
-				if (srcSpread == nil)
-					continue;
-				const int32 np = srcSpread->GetNumPages();
-				// 手動で隠し済みの Source スプレッドは巻き込まない(Target 側と同じ方針)。
-				InterfacePtr<IBoolData> srcHideFlag(srcDB, srcSpreadUID, IID_IHIDESPREADBOOLDATA);
-				if (srcHideFlag != nil && srcHideFlag->GetBool())
-					continue;
-				++srcVisibleCount;
-				bool16 srcChanged = kFalse;
-				for (int32 p = 0; p < np; ++p)
-				{
-					const UID srcPageUID = srcSpread->GetNthPageUID(p);
-					std::map<UID, bool16>::const_iterator mit = srcChangedMap.find(srcPageUID);
-					if (mit == srcChangedMap.end() || mit->second)
-					{
-						srcChanged = kTrue;
-						break;
-					}
-				}
-				if (!srcChanged)
-					srcUnchanged.push_back(srcSpreadUID);
-			}
-
-			if (!srcUnchanged.empty())
-			{
-				if ((int32)srcUnchanged.size() >= srcVisibleCount)
-				{
-					// 全スプレッド非表示は不可(例: 変更が Target の追加ページに集中していて、対応する
-					// Source ページが存在しない場合は全 Source スプレッドが「変更なし」になり得る)。
-					// その場合は Source 側だけスキップし、Target 側の隠しは生かす。
-					srcSkippedAll = kTrue;
-				}
-				else if (KESCMProcessHideSpreadCmd(srcDB, srcUnchanged, kTrue /*hide*/) == kSuccess)
-				{
-					sHiddenSrcDB = srcDB;
-					sHiddenSrcSpreads = srcUnchanged;
-					srcHiddenCount = (int32)srcUnchanged.size();
-				}
-			}
-		}
 	}
 
 	PMString msg("Hide Unchanged: hid ");
@@ -325,6 +374,8 @@ void KESCMHideUnchangedToggle()
 	msg.Append(".");
 	if (srcSkippedAll)
 		msg.Append(" Source not hidden (would hide all its spreads).");
+	if (srcFailed)
+		msg.Append(" Source not hidden (hide command failed).");
 	KESCMNotifyStatus(msg);
 
 	// スクロールバー地図を隠し後の配置で描き直す(隠しスプレッドは地図から除外される。Target/Source 両窓)。
@@ -337,8 +388,12 @@ void KESCMHideUnchangedToggle()
 // 片側(db+控えリスト)の再表示と状態破棄。restore=kTrue かつ db が生存している場合のみ再表示コマンドを
 // 打つ(途中で削除されたスプレッドは ISpread クエリが nil になるのでスキップ)。db が閉じていれば
 // deref せず黙って状態だけ捨てる。db は参照渡しで nil に戻す。
-static void KESCMRestoreHiddenList(IDataBase*& db, std::vector<UID>& list, bool16 restore)
+// ★戻り値 kTrue = 再表示コマンドを打ったが失敗した(2026-08-16 の API 監査 B10。以前は戻り値を捨てて
+//   いたので、戻せなかったことが呼び手にもユーザーにも一切伝わらなかった)。控えを捨てるのは成否に
+//   関係なく従来どおり = 次の Start で作り直すものなので、持ち越しても意味がない。
+static bool16 KESCMRestoreHiddenList(IDataBase*& db, std::vector<UID>& list, bool16 restore)
 {
+	bool16 failed = kFalse;
 	if (restore && db != nil && !list.empty() && KESCMIsDocDBOpen(db))
 	{
 		std::vector<UID> alive;
@@ -348,22 +403,55 @@ static void KESCMRestoreHiddenList(IDataBase*& db, std::vector<UID>& list, bool1
 			if (spread != nil)
 				alive.push_back(list[i]);
 		}
-		if (!alive.empty())
-			KESCMProcessHideSpreadCmd(db, alive, kFalse /*unhide*/);
+		if (!alive.empty() && KESCMProcessHideSpreadCmd(db, alive, kFalse /*unhide*/) != kSuccess)
+			failed = kTrue;
 	}
 	list.clear();
 	db = nil;
+	return failed;
 }
 
-// KESCMResetHideUnchanged(KESCMHideUnchanged.h で宣言) — トグル状態のリセット(Target/Source 両側)。
+// KESCMResetHideUnchangedCore(このファイルの上で前方宣言) — リセットの本体。戻り値 = 失敗した再表示
+// コマンドの本数(0..2)。
 //   restoreSpreads=kTrue: 控えているスプレッドを再表示してから状態を捨てる(再比較/Stop/手動 OFF/
 //     クローズスイープ)。文書の生存は内部で確認するので、片方が閉じていても安全(生存側のみ再表示)。
-//   restoreSpreads=kFalse: db に一切触れず状態だけ捨てる。
+//   restoreSpreads=kFalse: db に一切触れず状態だけ捨てる(コマンドを打たない = シーケンスも要らない)。
+// ★2026-08-16(API 監査 B10): 隠すときと同じ理由で、Target と Source の再表示も1つのシーケンスに入れる
+//   (ここは元々2本を連続で投げており、1本目が失敗するとエラーを立てたまま2本目を投げていた =
+//   CmdUtils.h:72-77 が protective shutdown と書いている形そのもの)。
+static int32 KESCMResetHideUnchangedCore(bool16 restoreSpreads)
+{
+	int32 failed = 0;
+	if (restoreSpreads)
+	{
+		GlobalErrorStatePreserver restoreErrorState;
+		ErrorUtils::PMSetGlobalErrorCode(kSuccess);
+		CmdUtils::SequenceContext restoreSeq;
+
+		if (KESCMRestoreHiddenList(sHiddenDB, sHiddenSpreads, kTrue))
+			++failed;
+		if (KESCMRestoreHiddenList(sHiddenSrcDB, sHiddenSrcSpreads, kTrue))
+			++failed;
+
+		// 失敗は戻り値(とトグルのステータス行)に変換済み = seq が閉じる前に落とす。立てたまま閉じると
+		// 成功した側の再表示まで巻き戻り、「戻したのに隠れたまま」になる(CmdUtils.h:189-193)。
+		if (failed > 0)
+			ErrorUtils::PMSetGlobalErrorCode(kSuccess);
+	}
+	else
+	{
+		KESCMRestoreHiddenList(sHiddenDB, sHiddenSpreads, kFalse);
+		KESCMRestoreHiddenList(sHiddenSrcDB, sHiddenSrcSpreads, kFalse);
+	}
+	sHideUnchangedOn = kFalse;
+	return failed;
+}
+
+// KESCMResetHideUnchanged(KESCMHideUnchanged.h で宣言) — 上の本体の公開版。呼び手(再比較/Stop/クローズ
+// スイープ)は「戻せたか」で振る舞いを変えないので void のまま = 境界の Facade も触らない。
 void KESCMResetHideUnchanged(bool16 restoreSpreads)
 {
-	KESCMRestoreHiddenList(sHiddenDB, sHiddenSpreads, restoreSpreads);
-	KESCMRestoreHiddenList(sHiddenSrcDB, sHiddenSrcSpreads, restoreSpreads);
-	sHideUnchangedOn = kFalse;
+	(void)KESCMResetHideUnchangedCore(restoreSpreads);
 }
 
 // KESCMGetHideUnchangedOn(KESCMHideUnchanged.h で宣言) — メニューのチェックマーク用。
