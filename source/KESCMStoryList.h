@@ -73,10 +73,23 @@ UID KESCMStoryFirstFrameUID(IDataBase* db, UID storyUID);
 	text, and what a reader wants is the beginning of it (user's call, 2026-08-10). So this walks the
 	parcels forward from the first and takes the leading corner of the first one actually placed.
 
-	★VERTICAL TEXT NEEDS NO SPECIAL CASE. The corner is taken in PARCEL-LOCAL coordinates and
-	GetParcelToFrameMatrix absorbs the writing direction - the same formula the overset scan uses for
-	the opposite corner, and that one was verified on real vertical text
-	(KESCMOversetScan.cpp:59-62). ⚠Do not add a writing-direction branch here.
+	★VERTICAL TEXT NEEDS NO SPECIAL CASE - AND THAT IS NOW MEASURED HERE, NOT INHERITED (2026-08-16,
+	audit B7). The corner is taken in PARCEL-LOCAL coordinates and GetParcelToFrameMatrix absorbs the
+	writing direction. Until then this claim rested on the overset scan's measurement of the OPPOSITE
+	corner (KESCMOversetScan.cpp:71-74); it has now been measured for THIS corner. Two frames of
+	identical size in one document, one vertical and one horizontal, with the point printed beside
+	all four corners of its own frame in one coordinate space:
+	    vertical   -> the point landed on the frame's TOP-RIGHT, where line 1 begins (DOM: h=146.75
+	                  against a right edge of 150, baseline 22.86 against a top edge of 20)
+	    horizontal -> the point landed on the frame's TOP-LEFT, where line 1 begins (DOM: h=20.00)
+
+	★★AND THE FRAMES ARE NOT ROTATED - rotationAngle was 0 for both. It is the INNER COORDINATE SPACE
+	of a vertical frame that is turned a quarter turn, so IGeometry's inner rectangle has its
+	Left/Right running down the PAGE'S VERTICAL axis and its Top/Bottom across it (measured: the
+	inner rectangle's Top-to-Bottom span came back as the frame's WIDTH). Anything that reads an
+	inner rectangle and takes "Left" to mean "towards the left of the page" is wrong on vertical
+	text. This file is safe because it never interprets a corner - it only hands corners to the
+	matrices. ⚠Do not add a writing-direction branch here.
 
 	@param db which document to ask - the newer one for the click, the older one for its window.
 	@param storyUID the story.

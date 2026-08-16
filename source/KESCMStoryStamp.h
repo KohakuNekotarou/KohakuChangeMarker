@@ -53,6 +53,21 @@
 //  Reading counters composes nothing, so no SaveRestoreModifiedState guard is needed here - the
 //  same note KESCL's CaptureDocStamp carries (KESCLFindInDoc.cpp:375-397).
 //
+//  *** WHY NOT TRACK CHANGES? *** InCopy's track-changes feature answers a question that LOOKS like
+//  this one: ITrackChangeUtils::StoryHasChanges(UIDRef) is literally "did this story change?"
+//  (incopy/ITrackChangeUtils.h:154), with RangeHasChanges, GetDeletedText and the redline's kind and
+//  colour beside it. It is not the road for this feature, and any ONE of these three would be enough
+//  on its own (audit B7, 2026-08-16):
+//    - it records nothing unless the user switched it on BEFORE the edits were made, whereas KESCM
+//      is a tool for comparing two versions after the fact;
+//    - it lives inside ONE story's own history and does not span two documents, which is the entire
+//      problem here;
+//    - it tracks insertions, deletions and moves (MarkInsertChanges / MarkDeleteChanges /
+//      MarkMoveChanges) and NOT formatting - so it cannot answer the one thing this file exists to
+//      answer beyond the pixels: were it the words, or their attributes?
+//  Recorded here so the question is not re-opened from scratch the next time somebody notices that
+//  InDesign already has a "what changed" feature.
+//
 //  *** THIS FILE KEEPS NO STATE. *** Both functions fill a vector the caller owns. Nothing has to
 //  be cleared at shutdown, and nothing survives between comparisons.
 //

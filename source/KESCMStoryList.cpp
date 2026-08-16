@@ -39,6 +39,21 @@ namespace
 {
 
 // The list. See the header for why this is a file static rather than a boss.
+//
+// *** NO LOCK, AND THE REASON IS THAT NOTHING ON A BACKGROUND THREAD READS IT. *** Every caller
+// runs on the main thread (call sites counted 2026-08-16, audit B7): the comparison builds it
+// (KESCMCore.cpp), the panel reads it through the facade (KESCMFacades.cpp - and a UI plug-in's
+// bosses are invisible to a background thread anyway), Clear() comes off the document-close path
+// (which KESCMPeek's IsMainThread guard already covers) and ShutdownCleanup() off the shutdown
+// service. ***** The background thread runs the DRAWING path only, and the drawing path never asks
+// about story edits ***** - it reads the page map and the mark state, neither of which is here.
+//
+// ⚠WHAT WOULD BREAK IT: drawing a story-edit marker on the page (a badge on a changed story's
+// frame, say), or building this list from a background export. Either one puts a reader on the BG
+// thread, and then this needs KESCMMarkStateLock exactly as the mark maps do.
+//
+// ★Same shape as KESCMDrawEventHandler::DropAllOrig (audit B5): what was missing there was not a
+// lock but the REASON - and the condition under which the reason stops holding.
 std::vector<KESCMStoryRow> gRows;
 
 // A safety valve, NOT a display limit. How much of a story's opening text is shown is decided by
@@ -123,6 +138,12 @@ PMString FirstReadableText(ITextModel* model)
 
 		// excludeEOS = kFalse so that a story ending without a CR still reports its last paragraph,
 		// which is the only paragraph a short story has.
+		// ★THE DEFAULT REVERSED, deliberately. The parameter defaults to kTrue
+		// (IComposeScanner.h:94) and all three of Adobe's own calls take that default by passing two
+		// arguments (spellpanel's SpellCheckWalkerData.cpp:435,452 and
+		// AutoCorrectTypingIdleTask.cpp:353). They walk text the user is editing, where the
+		// end-of-story mark is not a paragraph worth reporting; this list is looking for the first
+		// words that exist AT ALL, so a story that is one CR-less paragraph long has to count.
 		const TextIndex paraStart = scanner->FindSurroundingParagraph(pos, &span, kFalse);
 		if (paraStart < 0 || span <= 0)
 			break;
@@ -304,6 +325,15 @@ void KESCMStoryList::Build(IDataBase* db, const std::vector<KESCMStoryDiff>& dif
 			// Master pages answer with a negative index (IPageList.h:96-104 counts pages within the
 			// pub, and a master is not one of them). Those keep kMaxInt32 and sort to the end rather
 			// than to the front, where a negative index would have put them.
+			//
+			// ★AND THE SECOND ARGUMENT IS LEFT AT ITS DEFAULT ON PURPOSE: includePagesOfHiddenSpread
+			// defaults to kTrue (IPageList.h:104), so a page whose spread is hidden still counts.
+			// ***** That is what keeps Hide Unchanged from renumbering this list ***** - hide two
+			// spreads and the rows keep the positions they had. It is the same property the
+			// comparison's own page walk depends on, measured 2026-08-16 in audit B3: IPageList
+			// includes the pages of hidden spreads and enumerates them in the same order as the
+			// spread walk it replaced. ⚠Passing kFalse here would reorder the panel every time a
+			// spread is hidden.
 			const int32 idx = pageList->GetPageIndex(row.fPageUID);
 			if (idx >= 0)
 				row.fPageIndex = idx;
