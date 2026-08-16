@@ -56,22 +56,25 @@
 #include "TreeViewDefs.h"			// kHideRootNode - the Story Edits list (2026-08-10)
 #include "EveInfo.fh"				// EVE widget types + layout flags - the book comparison dialog (2026-08-11)
 
-// (SpreadID.h / DocFrameworkID.h were only here for the old scripting API, which is gone -
-//  removed 2026-08-05. Everything below resolves from ShuksanID.h / widgetid.h / GraphicsID.h
-//  and the tool headers.)
-// AppFrameworkID.h came back on 2026-08-06 with app.kcmStatus: it defines
-// kApplicationObjectScriptElement, the object the property is put on. The official scripting
-// sample credits this header with exactly that (BPI.fr:55).
-#include "AppFrameworkID.h"
-// ScriptInfoTypes.fh came back on 2026-08-06: a toolbox tool has to register its ScriptID in
-// kToolBoxEnumScriptElement (ITool.h:192-223) - that is the tool's identity, not a scripting API.
-// This single header is enough for the resource at the end of this file: it also pulls in
-// ScriptingID.h (kCoreScriptManagerBoss) and defines kCS5ScriptVersion.
+// ★★2026-08-16(監査 B-U1): **AppFrameworkID.h と DocumentID.h をここから外した。**
+//   このファイルは 2026-08-15(第2段 Task 6B-2)に KESCM.fr から作られたので、include の並びと
+//   **その理由を説明する文章**が丸ごとコピーされていた。ところが2本の理由は model 側にしか無い:
+//     ・AppFrameworkID.h … kApplicationObjectScriptElement(AppFrameworkID.h:427)を定義する
+//                          ＝app.kcmStatus / app.kcmBookResult を**載せる先**。その2つ(と story の
+//                          4カウンター)を serve するのは model 側の kKESCMScriptProviderBoss。
+//     ・DocumentID.h     … kAfterCloseDocSignalRespServiceImpl ＝ close-document responder の
+//                          サービス実装。旧コメントの "see that Class below" が指す Class は
+//                          **このファイルに無い**(KESCM.fr:183 にある)。
+//   ⇒ 2つとも KCMUI.fr での使用はゼロ(2026-08-16 に Grep で実測＝コメントの中にしか現れなかった)。
+//     外して UI をビルドし、0警告0エラーで通ることを確認した。
+//   ⚠**下の AddIn が使う kActiveContextBoss は AppFrameworkID.h ではなく ShuksanID.h:99**
+//     (kUtilsBoss も同 :241)。だからこの削除は AddIn に影響しない ---- 「Boss だから
+//     AppFrameworkID.h だろう」と当てずに、定義元を引いてから外すこと。
+// ScriptInfoTypes.fh: a toolbox tool has to register its ScriptID in kToolBoxEnumScriptElement
+// (ITool.h:192-223) - that is the tool's identity, not a scripting API. This single header is
+// enough for the resource at the end of this file: it also pulls in ScriptingID.h
+// (kCoreScriptManagerBoss) and defines kCS5ScriptVersion.
 #include "ScriptInfoTypes.fh"	// VersionedScriptElementInfo / Enumerator
-// DocumentID.h came back on 2026-08-06 for a different reason than the old scripting API: the
-// close-document responder boss names the API's OWN service provider implementation instead of
-// carrying a hand-written one (see that Class below).
-#include "DocumentID.h"	// kAfterCloseDocSignalRespServiceImpl
 #include "GraphicsID.h"	// for IID_IDRWEVTHANDLER / IID_ISPRITE / IID_IPATHGEOMETRY / kPathGeometryImpl
 #include "TipsID.h"		// for IID_ITIP
 
@@ -87,9 +90,7 @@
 
 // Project includes:
 #include "KCMUIID.h"
-#include "KESCMScriptingDefs.h"	// en_KESCMTool (the toolbox tool's ScriptID)
-// (GenericID.h / TextID.h and a duplicate ShuksanID.h were scripting-era leftovers with no
-//  remaining reference in this file - removed 2026-08-05.)
+#include "KESCMScriptingDefs.h"	// en_KESCMTool (the toolbox tool's ScriptID) - the UI half's copy
 
 
 #ifdef __ODFRC__
@@ -726,8 +727,11 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKESCMTranslucentPagesPanelMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
-		// "Translucent Book Dialog" - the same toggle again, pointed at THIS plug-in's book comparison
-		// dialog (user request, 2026-08-13: "make it so the dialog can be translucent too").
+		// "Translucent Dialog" on the flyout - the same toggle again, pointed at THIS plug-in's book
+		// comparison dialog (user request, 2026-08-13: "make it so the dialog can be translucent too").
+		// ⚠The ID and this file's identifiers say "BookDialog", but the LABEL the user reads is
+		//  "Translucent Dialog" (KCMUI_enUS.fr:50) - it was shortened and the names were not. Do not
+		//  quote the identifier as the menu text (checked 2026-08-16, audit B-U1).
 		// ★What is shared: the alpha value, the "opaque again while the pointer is over it" behaviour,
 		//   the delayed re-apply and the Win32 hook. All of it, unchanged.
 		// ★What is different, and it is only this: WHERE THE WINDOW COMES FROM. The two toggles above

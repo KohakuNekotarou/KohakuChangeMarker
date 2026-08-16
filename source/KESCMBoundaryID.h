@@ -63,8 +63,10 @@
 //   この定数は文字列リテラルなので、.fr の StringTable でも C++ でも隣接連結でそのまま埋め込める
 //   （例: "Hold Left + " kKESCMAltKeyName "="）。MACINTOSH は Mac ビルドの xcconfig
 //   （GCC_PREPROCESSOR_DEFINITIONS）と odfrc の双方で定義される。
-// ★**両側に要る**: UI 側の How to Use 本文（KESCM_enUS.fr の kKESCMHintKey と ui/KESCMLoc.h の
+// ★**両側に要る**: UI 側の How to Use 本文（**KCMUI_enUS.fr** の kKESCMHintKey と ui/KESCMLoc.h の
 //   日本語版）と、model 側の KESCMLoc.h が同じ表記を使う。
+//   ⚠2026-08-16（監査 B-U1）に "KESCM_enUS.fr" を訂正した＝文字列テーブルは 2026-08-15 の分割で
+//     UI 側へ丸ごと移っており、**この行だけが移る前の名前を指したまま**だった。
 #ifdef MACINTOSH
 #define kKESCMAltKeyName	"Option"
 #else

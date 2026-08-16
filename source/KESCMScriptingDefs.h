@@ -2,12 +2,20 @@
 //
 //  KESCMScriptingDefs.h
 //
-//  ScriptIDs (four-character codes) published by KESCM.
+//  ScriptIDs (four-character codes) published by the MODEL half of KESCM.
 //
-//  WHAT IS EXPOSED: two READ-ONLY properties - app.kcmStatus and app.kcmBookResult - and the
-//  toolbox tool's identity.
+//  WHAT IS EXPOSED: SIX READ-ONLY properties - app.kcmStatus and app.kcmBookResult on the
+//  application object, plus the four story change counters below (added 2026-08-15).
 //  No methods and no script objects - the ones this plug-in used to have (kescmToast and the
 //  rest) were removed 2026-08-05 and are not coming back; the panel is the interface.
+//
+//  ***** THIS FILE IS ONE HALF OF A SPLIT. ***** The toolbox tool's ScriptID (en_KESCMTool) is
+//  NOT here - it went to ui/KESCMScriptingDefs.h with the tool on 2026-08-15 (split stage 2,
+//  task 6B-2), because a tool is a UI boss. Read that half for it; do not restate it here.
+//  Until the B-U1 audit (2026-08-16) this header still announced the tool's identity as one of
+//  the things it publishes, and still counted the properties as two: THE FILE WAS SPLIT, ITS
+//  COMMENT WAS NOT, and the story counters had been added the same day without the count at
+//  the top being redone. The same had happened to KESCMLoc.h on both sides.
 //
 //  app.kcmStatus (2026-08-06, at the user's request) reports the last line the panel put on its
 //  status area, which is the plug-in's whole account of what it just did: "marks start / pages
@@ -17,24 +25,14 @@
 //  KESCMScriptProvider.cpp): a script must not be able to make the panel appear to say something
 //  it never said.
 //
-//  The tool entry below is what ITool.h:192-223 requires every tool to have: "when adding a new
-//  tool to the Tool Box, you must first define a new ScriptID and then add it to
-//  kToolBoxEnumScriptElement", then return it from ITool::GetScriptID. The registration itself
-//  lives in KESCM.fr (VersionedScriptElementInfo), and KESCMTool.cpp returns this value.
+//  The registration of all six is in KESCM.fr (VersionedScriptElementInfo, one Provider block
+//  per object - Application and Story), and KESCMScriptProvider.cpp serves them.
 //
-//  Why it matters (measured 2026-08-06, audit block 7): without it the tool returns en_None
-//  ('none' = 1852796517), which is the value meaning "no tool at all" - so
-//  app.toolBoxTools.currentTool cannot tell this tool apart from "nothing selected", AND the
-//  tool cannot be picked from a script, because currentTool only accepts UITools enumerators
-//  ("Error: expected UITools enumerator" when handed a raw ScriptID). Official samples do
-//  exactly this: SnapTool -> en_SnapTool (Snap.fr:2085-2101) and SawWaveTool -> en_SawWaveTl
-//  (WavTl.fr:319-336).
-//
-//  The code follows the private numbering scheme in docs/ai-notes/kes-scriptid-registry.md:
-//    [1] kind  'n' = enumerator ('e' = method, 'p' = property/parameter)
+//  The codes follow the private numbering scheme in docs/ai-notes/kes-scriptid-registry.md:
+//    [1] kind  'p' = property/parameter ('e' = method, 'n' = enumerator)
 //    [2] 'K'   fixed - the author's signature, shared by every Kohaku plug-in
 //    [3] 'G'   the plug-in tag for KESCM (chanGe; 'C' and 'M' were already taken)
-//    [4] 't'   member letter within this plug-in and kind - tool
+//    [4]       member letter within this plug-in and kind (see each line below)
 //  Checked against ScriptingDefs.h / GenericID.h for collisions before use (none).
 //
 //========================================================================================

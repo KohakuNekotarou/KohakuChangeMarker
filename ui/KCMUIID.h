@@ -60,7 +60,13 @@
 //   放っておくと model(1.4.0) と UI(SDK 既定) が**別々の版数の別プラグイン**として並ぶ。
 //   値の正本＝KESCMBoundaryID.h ／ 履歴と「次に提出する分」の増分＝source/KESCMID.h。
 #define kKCMUIVersion		kKESCMVersion					// Version of this plug-in (for the About Box).
-#define kKCMUIAuthor		""					// Author of this plug-in (for the About Box).
+// (kKCMUIAuthor は雛形の残骸(どこからも未参照)のため **削除**した ---- 2026-08-16・監査 B-U1。
+//  ★model 側の kKESCMAuthor は**同じ理由で 2026-07-25 に消えている**(KESCMID.h:121)。このファイルは
+//    2026-08-15 に DollyXs 雛形から作られたので、相方が1年近く前に落とした残骸が復活していた
+//    ＝**雛形から作り直した側には、相方がすでに済ませた掃除が来ない。**
+//  ⚠公式サンプルはこれを About ボックス本文で使う(BscPnl_enUS.fr:58 = "…version X by <Author>")。
+//    KESCM が使わないのは、About が 2026-08-06 に「名前＋版数」の1行だけになったから(ユーザー指定)
+//    ＝**公式が持つものを持たない側の判断**であって、書き忘れではない。)
 
 // Plug-in Prefix: (please change kKCMUIPrefixNumber above to modify the prefix.)
 #define kKCMUIPrefix		RezLong(kKCMUIPrefixNumber)				// The unique numeric prefix for all object model IDs for this plug-in.
@@ -85,8 +91,14 @@ DECLARE_PMID(kPlugInIDSpace, kKCMUIPluginID, kKCMUIPrefix + 0)
 //      ★最大オフセットは WidgetID の +62 ＝ kKCMUIPrefix(0x1EA580) に許された 128 枠に収まっている。
 //
 //   ② **ID の名前は `kKESCM*` のまま変えていない** — `kKCMUI*` へ改名していない。
-//      ⇒ C++ 側は 53 ファイルの `#include "KCMUIID.h"` を `"KCMUIID.h"` に変えるだけで済み、
-//        コードは1行も動かなかった。**コードとコメントの中の ID 名がすべてそのまま有効**。
+//      ⇒ C++ 側は `#include "KESCMID.h"` を `"KCMUIID.h"` に差し替えるだけで済み、コードは
+//        1行も動かなかった。**コードとコメントの中の ID 名がすべてそのまま有効**。
+//      ⚠2026-08-16(監査 B-U1)にこの2行を直した。旧文は **差し替えの前と後を同じ文字列で書き**
+//        (「`#include "KCMUIID.h"` を `"KCMUIID.h"` に」)、件数も「53 ファイル」で実態と違った
+//        ＝計画書の 53 は間接 include を数えた値、実測の差し替えは 31 ファイル、
+//        **現在このヘッダーを include している ui/ のファイルは 35**(2026-08-16 実測)。
+//        ★手順を書いた文が壊れていても**ビルドは何も言わない**ので、こういう行は読んだ人が
+//          気づくまで残る。
 //
 //  ⚠ 文字列キーだけは別扱い＝値は `kKESCMStringPrefix`（model の prefix）のまま。
 //    **文字列キーはグローバルに一意でなければならず、widget ID のように借用できない**
@@ -230,7 +242,7 @@ DECLARE_PMID(kActionIDSpace, kKESCMPopupCompareBooksActionID, kKCMUIPrefix + 39)
 // 押されたときに「どの行か」を知る手段はこのアクション自身には無い(ActionID しか渡らない)ので、
 // 行は右クリックの時点で KESCMBookSetMenuRow が控える＝KBS の結果行と同じ作り。
 DECLARE_PMID(kActionIDSpace, kKESCMBookRowStartActionID, kKCMUIPrefix + 40)	// 章行の右クリック「Start Change Marker」= その章の Target/Source 2文書を窓付きで開き、比較中なら一度 Stop してから比較を開始する(KESCMBookOpen.cpp)。★両側のファイルが揃っていない行(ChapterAdded/ChapterDeleted・ファイル無し)では灰色(kCustomEnabling → KESCMBookRowCanStart)
-DECLARE_PMID(kActionIDSpace, kKESCMPopupTranslucentBookDialogActionID, kKCMUIPrefix + 41)	// ★パネルのフライアウトの「Translucent Book Dialog」チェック式トグル(2026-08-13 ユーザー要望「ダイアログも半透明に出来る様に」)。上の +36/+37 と**同じ実体**(KESCMPanelAlpha.cpp)で対象だけが違う。⚠ただし対象がパネルではないので**窓の出所だけが別**＝ダイアログ自身が KESCMSetBookDialogWindow で教える(パネルマネージャは WidgetID で引けるが、ダイアログはそこに載っていない)。★パネル側と違い**ドッキングの概念が無いので「押しても効かない状態」が無い**。既定 OFF
+DECLARE_PMID(kActionIDSpace, kKESCMPopupTranslucentBookDialogActionID, kKCMUIPrefix + 41)	// ★パネルのフライアウトの「Translucent Dialog」チェック式トグル(2026-08-13 ユーザー要望「ダイアログも半透明に出来る様に」)。上の +36/+37 と**同じ実体**(KESCMPanelAlpha.cpp)で対象だけが違う。⚠ただし対象がパネルではないので**窓の出所だけが別**＝ダイアログ自身が KESCMSetBookDialogWindow で教える(パネルマネージャは WidgetID で引けるが、ダイアログはそこに載っていない)。★パネル側と違い**ドッキングの概念が無いので「押しても効かない状態」が無い**。既定 OFF
 // (+15..+23 are all declared above - stale placeholders for them removed 2026-08-05 audit. Next free: +42)
 //DECLARE_PMID(kActionIDSpace, kKESCMActionID, kKCMUIPrefix + 41)
 // kKCMUIPrefix + 24/25/26/28 は使用中(KCM: Check / Save Check & Register / Load Check & Register / RtMenuPagesPanel の区切り線)。+27 は廃止・予約(上記)
@@ -433,7 +445,7 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMBookRowStateWidgetID, kKCMUIPrefix + 49)	// �
 #define kKESCMBookRowMenuName		"KESCMRtMenuBookRow"
 #define kKESCMTranslucentPanelMenuKey	kKESCMStringPrefix "kKESCMTranslucentPanelMenuKey"	// パネルのフライアウト「Translucent Panel」トグルのメニュー名
 #define kKESCMTranslucentPagesPanelMenuKey	kKESCMStringPrefix "kKESCMTranslucentPagesPanelMenuKey"	// パネルのフライアウト「Translucent Pages Panel」トグルのメニュー名(対象は本体のページパネル)
-#define kKESCMTranslucentBookDialogMenuKey	kKESCMStringPrefix "kKESCMTranslucentBookDialogMenuKey"	// パネルのフライアウト「Translucent Book Dialog」トグルのメニュー名(対象はブック比較ダイアログ。2026-08-13 追加)
+#define kKESCMTranslucentBookDialogMenuKey	kKESCMStringPrefix "kKESCMTranslucentBookDialogMenuKey"	// パネルのフライアウト「Translucent Dialog」トグルのメニュー名(対象はブック比較ダイアログ。2026-08-13 追加)
 // (kKESCMTranslucentToolboxMenuKey は 2026-08-07 に機能ごと撤去。文字列キーは ActionID と違って
 //  外部に保存されないので、跡地を残す必要は無い＝行ごと削除してある。)
 
@@ -600,7 +612,7 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMBookRowStateWidgetID, kKCMUIPrefix + 49)	// �
 #define kKESCMTranslucentPagesPanelMenuItemPosition	9.36	// チェック式トグル「Translucent Pages Panel」(★Windows 専用=フローティング中の**本体のページパネル**を半透明に。2026-08-06 追加。★同日ユーザー指定で Translucent Panel より上へ)
 // (9.37 は「Translucent Toolbox」の跡地。2026-08-07 に機能ごと撤去したので空き番。)
 #define kKESCMTranslucentPanelMenuItemPosition	9.38	// チェック式トグル「Translucent Panel」(表示系トグル群の末尾。★Windows 専用=フローティング中のパネル自身を半透明に。2026-08-06 に Pages 側と上下を入れ替え)
-#define kKESCMTranslucentBookDialogMenuItemPosition	9.39	// チェック式トグル「Translucent Book Dialog」(★Windows 専用=ブック比較ダイアログを半透明に。2026-08-13 追加。Translucent 3兄弟の末尾＝9.36 Pages / 9.38 Panel / 9.39 ここ)
+#define kKESCMTranslucentBookDialogMenuItemPosition	9.39	// チェック式トグル「Translucent Dialog」(★Windows 専用=ブック比較ダイアログを半透明に。2026-08-13 追加。Translucent 3兄弟の末尾＝9.36 Pages / 9.38 Panel / 9.39 ここ)
 // ── Overset 群 ──
 #define kKESCMOversetSepMenuItemPosition	9.40	// Find Overset 群の上の区切り線(パス末尾 ":-")
 #define kKESCMFindOversetMenuItemPosition	9.42	// チェック式トグル「Find Overset」(アクティブ文書の overset ページに十字)

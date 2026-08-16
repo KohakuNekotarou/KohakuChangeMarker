@@ -2,25 +2,25 @@
 //
 //  KESCMScriptingDefs.h
 //
-//  ScriptIDs (four-character codes) published by KESCM.
+//  The ScriptID this half publishes: the toolbox tool's identity, and nothing else.
 //
-//  WHAT IS EXPOSED: two READ-ONLY properties - app.kcmStatus and app.kcmBookResult - and the
-//  toolbox tool's identity.
-//  No methods and no script objects - the ones this plug-in used to have (kescmToast and the
-//  rest) were removed 2026-08-05 and are not coming back; the panel is the interface.
+//  ***** THIS FILE IS ONE HALF OF A SPLIT. ***** Its name-mate, source/KESCMScriptingDefs.h,
+//  holds the SIX read-only properties the model half serves (app.kcmStatus, app.kcmBookResult
+//  and the four story change counters). The two are not copies of each other: they were divided
+//  on 2026-08-15 (split stage 2, task 6B-2) along the same line the plug-ins were - the tool is
+//  a UI boss (kGenericToolBoss cannot live in a kModelPlugIn), the properties are the model's
+//  answers. Read the other half for the properties; do not restate them here.
 //
-//  app.kcmStatus (2026-08-06, at the user's request) reports the last line the panel put on its
-//  status area, which is the plug-in's whole account of what it just did: "marks start / pages
-//  compared=4 changed=2", "refreshed 1 (changed 1)", "Page: 3, Change 12%". Reading it needs one
-//  line of JavaScript, so a test can check what the panel said without a person looking at the
-//  screen - the same thing KBS gets from app.kfcStatus. Writing is refused (see
-//  KESCMScriptProvider.cpp): a script must not be able to make the panel appear to say something
-//  it never said.
+//  Until the B-U1 audit (2026-08-16) this header still carried the model half's account of
+//  those properties word for word, including a claim about where the tool is registered that
+//  had been false since the day of the split: THE FILE WAS SPLIT, ITS COMMENT WAS NOT. The
+//  same had happened to KESCMLoc.h on both sides.
 //
 //  The tool entry below is what ITool.h:192-223 requires every tool to have: "when adding a new
 //  tool to the Tool Box, you must first define a new ScriptID and then add it to
 //  kToolBoxEnumScriptElement", then return it from ITool::GetScriptID. The registration itself
-//  lives in KESCM.fr (VersionedScriptElementInfo), and KESCMTool.cpp returns this value.
+//  lives in KCMUI.fr (the VersionedScriptElementInfo at the end of that file), and
+//  KESCMTool.cpp returns this value.
 //
 //  Why it matters (measured 2026-08-06, audit block 7): without it the tool returns en_None
 //  ('none' = 1852796517), which is the value meaning "no tool at all" - so
