@@ -30,7 +30,7 @@
 //  arithmetic KBS had to delete after it disagreed (KBSResultTreeEH.cpp:19-26).
 //
 //  ! THIS CLASS ONLY EXISTS IF SOMETHING ASKS FOR IT. Interface implementations are created on first
-//    QueryInterface, so naming it in KESCM.fr is not enough - the key-focus hand-off at the foot of
+//    QueryInterface, so naming it in KCMUI.fr is not enough - the key-focus hand-off at the foot of
 //    KESCMStoryRowEH::LButtonUp is what brings it into being, and what puts the arrows here at all.
 //
 //  Same shape as KBS's KBSResultTreeEH, minus the branch handling: this list is flat, so there is

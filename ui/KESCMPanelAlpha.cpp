@@ -901,9 +901,10 @@ void        KESCMShutdownPanelAlpha() {}
 //   ★仕組み: IMouseRollOver(ui/IMouseRollOver.h)は widget に roll-over 挙動を付けるための
 //     公開インターフェイス。MouseEnter / MouseOver / MouseLeave が呼ばれる。
 //     .fr でパネル boss(kKESCMPanelWidgetBoss)に IID_IMOUSEROLLOVER として AddIn する。
-//   ★★載せ先 = kKESCMPanelWidgetBoss(パネル本体。kPalettePanelWidgetBoss 派生)。AddIn は KESCM.fr:166。
-//     **パネル全域で反応することを実機で確認済み**(2026-07-29。記録は KESCM.fr:154 のコメント)。
-//     ⚠**ファクトリ登録(KESCMFactoryList.h)を忘れると、何のエラーも出ずに黙って呼ばれない**
+//   ★★載せ先 = kKESCMPanelWidgetBoss(パネル本体。kPalettePanelWidgetBoss 派生)。名指ししているのは
+//     KCMUI.fr の kKESCMPanelWidgetBoss の Class ブロック。
+//     **パネル全域で反応することを実機で確認済み**(2026-07-29。記録は同じ Class ブロックのコメント)。
+//     ⚠**ファクトリ登録(KCMUIFactoryList.h)を忘れると、何のエラーも出ずに黙って呼ばれない**
 //       (CREATE_PMINTERFACE だけでは足りない)。効かなくなったらまずそこを疑う。
 //   ★調査の記録: 実機ダンプ(IObjectModel_RomanFS.txt)で IID_IMOUSEROLLOVER を実際に持つ boss を洗うと、
 //     本体側で実装を持っているのは次の系統だった(載せ先を変えるときの手掛かり)。

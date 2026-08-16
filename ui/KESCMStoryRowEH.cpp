@@ -159,7 +159,8 @@ bool16 KESCMStoryRowEH::LButtonUp(IEvent* e)
 	InterfacePtr<IEventHandler> treeEH(treeController, UseDefaultIID());
 	// The session is nil while the app is tearing down - this plug-in's standing rule is to ask
 	// before dereferencing it, and every other call site here does (2026-08-11, block 15 audit C-1:
-	// these two event handlers were the only ones that did not, KESCMStorySection.cpp:130 included).
+	// these two event handlers were the only ones that did not; KESCMStorySection.cpp asks in both
+	// of the places it needs the session, KeepPanelOnScreen and ResizePanelByDelta).
 	ISession* session = GetExecutionContextSession();
 	InterfacePtr<IApplication> app(session != nil ? session->QueryApplication() : nil);
 	InterfacePtr<IKeyBoard> keyBoard(app, UseDefaultIID());

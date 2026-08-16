@@ -136,7 +136,7 @@ void KESCMBookDialogSetResult(const PMString& targetPath, const PMString& source
 	//   full set ("3 chapters: 1 changed, 2 unchanged"), so what is filtered out here is still
 	//   accounted for one line above the list. That is what keeps an empty list readable: it means
 	//   "nothing changed", and the summary says so in numbers - never "nothing could be opened"
-	//   (the reason the status line states the chapter count at all - see KESCM.fr).
+	//   (the reason the status line states the chapter count at all - see KCMUI.fr).
 	// ★EVERY OTHER STATE STAYS, including NotCompared and Failed: they are chapters with no answer
 	//   yet, which is the opposite of "no change" and must not disappear with it
 	//   (KESCMBookResult.h:42-49 is the same distinction, written out).

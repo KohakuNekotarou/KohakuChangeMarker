@@ -6,7 +6,7 @@
 //
 //  ***** なぜ「動かなくする」のに実装が要るのか *****
 //
-//  分割バーは SplitterPanelWidget(KESCM.fr)そのものの一部で、掴んで動かす処理は stock の
+//  分割バーは SplitterPanelWidget(KCMUI.fr)そのものの一部で、掴んで動かす処理は stock の
 //  kSplitterPanelWidgetBoss が持つ IID_IEVENTHANDLER(kSplitterPanelEHImpl)が入口になっている
 //  (実機の boss ダンプで確認)。★継承した boss からインターフェイスを**取り除く道は無い**ので、
 //  止め方は「別の答えを返す実装で上書きする」になる ---- KESCMNoTip.cpp がツールチップを黙らせて

@@ -175,7 +175,7 @@ DECLARE_PMID(kImplementationIDSpace, kKESCMNoTipImpl, kKCMUIPrefix + 25)	// ITip
 DECLARE_PMID(kImplementationIDSpace, kKESCMPanelViewImpl, kKCMUIPrefix + 26)	// IControlView 実装(PalettePanelView派生。ConstrainDimensions でパネルの最小サイズを守る。KESCMPanelView.cpp)
 DECLARE_PMID(kImplementationIDSpace, kKESCMStoryRowEHImpl, kKCMUIPrefix + 27)	// IEventHandler 実装(TreeNodeEventHandler派生。Story Edits の行=単クリックでジャンプ・ダブルクリックでストーリー全文を選択。KESCMStoryRowEH.cpp)
 // (kKCMUIPrefix + 28 は一度 kKESCMStoryRowViewImpl=行の間の区切り線を消す IControlView に使い、同日
-//  撤去した跡地。線を残すユーザー判断なので実装ごと消えている＝経緯は KESCM.fr の行 boss のコメント。
+//  撤去した跡地。線を残すユーザー判断なので実装ごと消えている＝経緯は KCMUI.fr の行 boss のコメント。
 //  ActionID と違い Impl 番号は外部保存が参照しないので、下記のとおり再利用した。)
 DECLARE_PMID(kImplementationIDSpace, kKESCMStoryTreeEHImpl, kKCMUIPrefix + 28)	// IEventHandler 実装(TreeViewEventHandler派生)。★一覧**そのもの**のキー操作＝↑↓で行を移動し、着いた行へジャンプする(KESCMStoryTreeEH.cpp)。行側の kKESCMStoryRowEHImpl とは別物＝あちらはクリック
 DECLARE_PMID(kImplementationIDSpace, kKESCMBookDialogControllerImpl, kKCMUIPrefix + 29)	// IDialogController 実装(CDialogController派生)。ブック比較のモードレスダイアログ＝開いたとき対象の2ブック名を埋める(KESCMBookDialog.cpp)
@@ -285,7 +285,7 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMStoryRowWidgetID, kKCMUIPrefix + 51)		// 行�
 DECLARE_PMID(kWidgetIDSpace, kKESCMStoryRowUIDWidgetID, kKCMUIPrefix + 52)	// ★行の左端=ストーリーの UID(10進。2026-08-10 ユーザー要望「UID・テキスト・変更部分」)。行の同一性を目で追える識別子＝本文が同じ文言でも別のストーリーだと分かる
 // ★一覧の列見出し(2026-08-10 ユーザー要望「一番上の列に UID / Text / 変更のようなのを付けて欲しい」)。
 //   ツリーの中ではなく**下ペインの中でツリーの上**に置く固定の帯＝行をスクロールしても動かない。
-//   ★3つとも行のセルと**同じ x 座標・同じ binding**を与えてある(KESCM.fr)。それが列が揃い続ける唯一の
+//   ★3つとも行のセルと**同じ x 座標・同じ binding**を与えてある(KCMUI.fr)。それが列が揃い続ける唯一の
 //   保証で、片方だけ動かすと可変幅パネルでずれる。
 DECLARE_PMID(kWidgetIDSpace, kKESCMStoryHeaderUIDWidgetID, kKCMUIPrefix + 53)	// 見出しの左「UID」(行の kKESCMStoryRowUIDWidgetID と同じ 8〜48・kBindLeft)
 DECLARE_PMID(kWidgetIDSpace, kKESCMStoryHeaderTextWidgetID, kKCMUIPrefix + 54)	// 見出しの中「Story」(行の kKESCMStoryRowTextWidgetID と同じ 52〜154・kBindLeft|kBindRight＝広げるとここだけ伸びる)
@@ -537,7 +537,7 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMBookRowStateWidgetID, kKCMUIPrefix + 49)	// �
 
 // 一覧の列見出しの帯の高さ(ラベル 14px ＋ 罫線 1px ＋ 上下の余白 3px。2026-08-10)。
 // ★行高と同じく .fr と C++ の両方がこの1つの定数を読む＝帯を厚くすれば、ツリーの位置も
-//   セクションの最小・既定の高さも同時に動く(KESCM.fr / KESCMStorySection.cpp)。
+//   セクションの最小・既定の高さも同時に動く(KCMUI.fr / KESCMStorySection.cpp)。
 #define kKESCMStoryHeaderHeight	18
 
 // ★★パネルの最小サイズ(2026-08-10 ユーザー指定「今のを最小の設定で、パネルの大きさは固定ではなく」)。
@@ -556,7 +556,7 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMBookRowStateWidgetID, kKCMUIPrefix + 49)	// �
 // ✓チェックマークカーソルのリソースID。CursorSpec の CursorID として使い、HOTC(このID)でホットスポット
 // (✓の折れ点=座標取得点)を指定する。★2026-07-25: 画像はコールバック描画から PNGC リソースへ変更
 // (KESCM_Check_10_18.png ＋ @2x=+kHIDPICrsrOffset / @3to2x=+kHIDPI150CrsrOffset)。押下時のゴミの発生源
-// =基底のモーダルカーソル取得によるコールバック再実行 を断つため。KESCMCursorProvider.cpp / KESCM.fr。
+// =基底のモーダルカーソル取得によるコールバック再実行 を断つため。KESCMCursorProvider.cpp / KCMUI.fr。
 #define kKESCMCheckCursorResID	1020
 
 // Alt+左「色比較」の CMYK 情報カーソルのリソースID。✓カーソルと HOTC は同じ(10,18)だが CursorID は
@@ -575,7 +575,7 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMBookRowStateWidgetID, kKCMUIPrefix + 49)	// �
 // 効かない」の明示(ユーザー指定 2026-07-15。灰色本体は判別しづらく反転式に変更)。CursorID を分けるのは
 // キャッシュの取り違え防止(1021/1022 と同じ理由)+ClearCache 不要で切り替えるため。
 // HOTC は ✓ と同じ (10,18)。画像は黒✓と同様 PNGC リソース(KESCM_CheckOff_10_18.png ＋ @2x / @3to2x。
-// 2026-07-25)。KESCMCursorProvider.cpp / KESCM.fr。
+// 2026-07-25)。KESCMCursorProvider.cpp / KCMUI.fr。
 #define kKESCMCheckCursorInactiveResID	1023
 
 // ツールボックスの KESCM ツール専用アイコン(32×32 通常 / 64×64 = +kHIDPIIconOffset)。従来はパネル用

@@ -27,7 +27,7 @@
 // carry such a directory - the vcxproj and the generated ODFRC response file - both live outside
 // this plug-in's repository, and the response file has no counterpart in _buildproj at all, so a
 // path added there would not survive a fresh checkout. The same reasoning is written next to the
-// matching include in KESCM.fr. These three headers are listed in the SDK's own OpenTestHeader.h,
+// matching include in KCMUI.fr. These three headers are listed in the SDK's own OpenTestHeader.h,
 // which is its statement that they are meant to compile from outside source/open.
 #include "../../open/interfaces/ui/ISplitterPanelControlData.h"
 #include "../../open/interfaces/ui/ISplitterPanelController.h"
@@ -54,9 +54,9 @@ namespace
 const int32 kStorySectionPaneIndex = 1;
 
 // How tall the section opens the first time, before it has ever been closed at a height of its own.
-// Matches the lower pane's Frame in KESCM.fr, so the first open looks like what the resource says.
+// Matches the lower pane's Frame in KCMUI.fr, so the first open looks like what the resource says.
 // ★The list's own share is the 100; the heading band above it is added on rather than taken out of
-//   it, so making the band thicker never costs a row (KESCMID.h holds the one copy of its height).
+//   it, so making the band thicker never costs a row (KCMUIID.h holds the one copy of its height).
 const int32 kStorySectionDefaultHeight = 100 + kKESCMStoryHeaderHeight;
 
 /** The whole panel's height, measured off the splitter - which fills the panel edge to edge.
@@ -81,7 +81,7 @@ int32 CurrentSectionHeight(ISplitterPanelControlData* splitter)
 
 /** The one height the top pane is allowed to be.
 
-	It is read from the splitter's "top snap" figure, which KESCM.fr sets to the panel's designed
+	It is read from the splitter's "top snap" figure, which KCMUI.fr sets to the panel's designed
 	height on purpose. The widgets up there are a fixed block laid out at fixed coordinates, so the
 	top pane has exactly one correct size, and that number belongs in the resource next to the
 	layout it describes rather than repeated here.
@@ -101,7 +101,7 @@ int32 DesignedTopPaneHeight(ISplitterPanelControlData* splitter)
 
 /** The height the section was left at when it was last closed, or 0 if it never has been.
 
-	Held on the lower pane's own widget (KESCM.fr gives kKESCMStorySectionPanelBoss a persistent
+	Held on the lower pane's own widget (KCMUI.fr gives kKESCMStorySectionPanelBoss a persistent
 	IIntData under IID_IKESCMSAVEDSECTIONHEIGHT), which is where the Links panel keeps the same
 	figure. Not a static: the panel throws its widgets away and rebuilds them whenever it is
 	re-shown, so anything remembered outside them is remembered wrongly.

@@ -147,7 +147,7 @@ static PMString KESCMDocPathFromDB(IDataBase* db)
 
 	d->GetName(name);
 
-	// ★長い文字列の切り詰めはここでは行わない。widget 側の ellipsize に一任する(KESCM.fr の
+	// ★長い文字列の切り詰めはここでは行わない。widget 側の ellipsize に一任する(KCMUI.fr の
 	//   kKESCMTargetTextWidgetID / kKESCMSourceTextWidgetID)。文字数ではなくフレーム幅で判断するので、
 	//   日本語(全角)混じりでも正しく収まる。
 	//   (2026-08-06 監査 A-2: 従来はここで文字数ベースに先頭を切っていたが、.fr は末尾を切る設定=

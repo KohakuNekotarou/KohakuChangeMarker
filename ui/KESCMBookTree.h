@@ -7,7 +7,7 @@
 //  The one call the rest of the plug-in makes to the chapter list in the book comparison dialog.
 //
 //  Everything else about that tree - the hierarchy adapter and the row widget manager - is reached
-//  only by the tree framework, through the interfaces KESCM.fr puts on kKESCMBookTreeWidgetBoss.
+//  only by the tree framework, through the interfaces KCMUI.fr puts on kKESCMBookTreeWidgetBoss.
 //  What the caller needs is a way to say "the rows changed, draw them again", and that is this.
 //
 //  Same shape as KESCMStoryTree.h, with one difference: the panel's list can be found from

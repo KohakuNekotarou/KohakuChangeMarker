@@ -23,7 +23,7 @@
 
 #include "KESCMUIShared.h"	// panel / status line / nav readout / tool button (split from KESCMCore.h on 2026-08-13)
 #include "KCMUIID.h"
-#include "KESCMScriptingDefs.h"	// en_KESCMTool (this tool's ScriptID, registered in KESCM.fr)
+#include "KESCMScriptingDefs.h"	// en_KESCMTool (this tool's ScriptID, registered in KCMUI.fr)
 
 /** The KESCM tool's ITool implementation, based on the partial implementation CTool. */
 class KESCMTool : public CTool
@@ -38,7 +38,7 @@ public:
 
 	/** Returns the ScriptID that identifies this tool inside the en_ToolBoxTools enumeration.
 		ITool.h:192-223 requires every toolbox tool to define one and register it in
-		kToolBoxEnumScriptElement (done in KESCM.fr); the base class ASSERTs if it is not
+		kToolBoxEnumScriptElement (done in KCMUI.fr); the base class ASSERTs if it is not
 		implemented. Scripts read it as app.toolBoxTools.currentTool and select this tool with
 		app.toolBoxTools.currentTool = UITools.KOHAKU_CHANGE_MARKER_TOOL.
 		This is the tool's identity, not a scripting API - KESCM still exposes no methods and no

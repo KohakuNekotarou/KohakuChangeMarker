@@ -3,7 +3,8 @@
 //  KESCMModelChangeObserver.cpp
 //
 //  model が投げた通知を受けて画面を作り直す **UI 側**の1本(2026-08-13・model/UI 分割 第1段 Task 9)。
-//  送り手は KESCMModelNotify.cpp、通知の種類は KESCMID.h の kKESCM*Message。
+//  送り手は KESCMModelNotify.cpp、通知の種類は KESCMBoundaryID.h の kKESCM*Message
+//  (★境界を跨ぐ ID なので両側が同じコピーを持つ。model 専用の KESCMID.h ではない)。
 //
 //  ★同居先は kActiveContextBoss。既存3本(レイアウト同期 / 一括クローズ / パネル表示)と同じ実証済みの
 //    構成で、**新しい機構は何も足していない**。

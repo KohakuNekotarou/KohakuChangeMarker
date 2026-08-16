@@ -26,6 +26,9 @@
 #include "TextEditorID.h"			// kIBeamToolBoss - the Type tool the double click switches to
 #include "UIDRef.h"
 #include "Utils.h"
+#include "WritingModeID2.h"			// IID_ITEMPTEXTSELECTION_SUITE - the second way to ask for the
+									//  text selection suite (see SelectWholeStory). Only the IID is
+									//  published; there is no ITemptextselection_suite.h in the SDK
 
 // Project includes:
 #include "KCMUIID.h"
@@ -161,7 +164,9 @@ bool16 KESCMStorySelectWholeStory(int32 rowIndex)
 	// here is asking for. The tool goes on before the selection is made, as in the sample.
 	// ! This takes the KESCM tool off, if it was on. Deliberate (user's call, 2026-08-10), and
 	//   written down in How to Use so that it is not a surprise.
-	// ★The nil test on the active tool is ours: the sample only ASSERTs there.
+	// ★The nil test on the active tool is ours: the sample does not test it at all - it calls
+	//   IsTextTool() straight off whatever QueryActiveTool answered (GTTxtEdtUtils.cpp:118-119).
+	//   The ASSERT a few lines below it is on the I-beam tool queried next, not on this one.
 	InterfacePtr<ITool> activeTool(Utils<IToolBoxUtils>()->QueryActiveTool());
 	if (activeTool == nil || !activeTool->IsTextTool())
 	{
@@ -172,7 +177,29 @@ bool16 KESCMStorySelectWholeStory(int32 rowIndex)
 			return kFalse;
 	}
 
+	// ***** ASK TWICE. THE DEFAULT IID IS NIL WHENEVER A TEXT EDITING WINDOW IS IN FRONT. *****
+	// Story editor, galley and notes each run their own selection, and it does not answer to
+	// ITextSelectionSuite's kDefaultIID - it answers to IID_ITEMPTEXTSELECTION_SUITE
+	// (WritingModeID2.h:246; the IID is published but no header for the suite is). The product asks
+	// both ways wherever it has to work "for whatever view": InCopyDocUtils.cpp:716-718, and three
+	// more times in that same file (:799, :3780, :4014), always in this order and with this reset.
+	// ! Before 2026-08-17 this asked once and returned kFalse when the answer was nil - and the
+	//   refusal is deliberately silent (see the header), so a double click in the list did nothing
+	//   whatsoever while the story editor was in front, with no message to say why.
+	// ★MEASURED BOTH WAYS (2026-08-17, audit B-U4), because "the default IID is nil there" was
+	//   inherited belief rather than something this plug-in had ever seen: a build with the second
+	//   ask taken out again answered sel=0 with the story editor in front - and WORSE than doing
+	//   nothing, because the DeselectAll above had already run, so the caret the user was holding
+	//   was taken away and nothing was put back. With the second ask, the same double click selects
+	//   the whole story (Paragraph, 15 chars), exactly as it does from a layout window.
+	// ⚠STILL NOT POSSIBLE, and this is the suite's own rule rather than something to work around
+	//   here: a row whose story the front story editor is NOT showing. That window's selection
+	//   belongs to its own story, so SetTextSelection for any other one is refused - measured on
+	//   the two rows either side of it. The jump on the first click still reports the page, so the
+	//   click is not silent; only the selecting half of it declines.
 	InterfacePtr<ITextSelectionSuite> textSelectionSuite(selectionManager, UseDefaultIID());
+	if (textSelectionSuite == nil)
+		textSelectionSuite.reset(InterfacePtr<ITextSelectionSuite>(selectionManager, IID_ITEMPTEXTSELECTION_SUITE).forget());
 	if (textSelectionSuite == nil)
 		return kFalse;
 

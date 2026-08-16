@@ -41,13 +41,15 @@
 
 // ---- 2026-08-15: model/UI 分割 第2段 Task 5（葉の UI 部品）で KESCM から移ってきた4本 ----
 //
-// ★**Impl ID は `kKESCM*Impl` のまま**（`kKCMUI*Impl` へ振り替えていない）。これらを名指ししている
-//   `.fr` の Class / AddIn ブロックは、まだ KESCM.fr 側にある——boss（パネル・アイコン widget・
-//   分割バー・行セル）が移るのは **Task 6B** だから。ここで番号だけ KCMUI へ振り替えると、
-//   **KESCM.fr が KCMUIID.h を include する**ことになり、model→UI という禁じられた向きになる。
-//   ⇒ **番号の振り替えは boss と一緒に**（Task 6B）。それまで ID の定義は KESCMID.h に残る。
+// ★**Impl の「名前」は `kKESCM*Impl` のまま**（`kKCMUI*Impl` へ改名していない）＝分割の方針そのもので、
+//   おかげで C++ もコメントも ID 名を1つも書き換えずに済んだ。動いたのは**番号だけ**で、
+//   `kKCMUIPrefix + N` として KCMUIID.h が定義し、名指ししている Class ブロックは KCMUI.fr にある。
 //
-// ⚠ そのため **KCMUI.fr は KESCMID.h を include している**（UI→model なので向きは正しい）。
+// ⚠2026-08-17（監査 B-U4）にこの節を書き直した。旧記述は「`.fr` の Class / AddIn ブロックはまだ
+//   KESCM.fr 側にある／番号の振り替えは boss と一緒（Task 6B）／それまで ID の定義は KESCMID.h に
+//   残る／そのため KCMUI.fr は KESCMID.h を include している」で、**4つとも Task 6B-2 の完了で
+//   覆っていた**（KCMUI.fr が include しているのは KCMUIID.h と KESCMScriptingDefs.h の2本だけ）。
+//   ＝★**予告した作業が終わっても、予告を書いた場所には誰も戻ってこない。**
 REGISTER_PMINTERFACE(KESCMIconTip, kKESCMIconTipImpl)		// パネルのイラスト/ツール切替ボタンのツールチップ(KESCMIconTip.cpp)
 REGISTER_PMINTERFACE(KESCMNoTip, kKESCMNoTipImpl)			// ツールチップを出さない ITip(KESCMNoTip.cpp)
 REGISTER_PMINTERFACE(KESCMSplitterEH, kKESCMSplitterEHImpl)	// 分割バーを掴めなくする IEventHandler(KESCMSplitterEH.cpp)

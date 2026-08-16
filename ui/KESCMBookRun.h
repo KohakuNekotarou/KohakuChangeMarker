@@ -11,7 +11,7 @@
 //  button was pressed. The user asked for the opposite order: choose the menu item, confirm the two
 //  books in an alert, and get a dialog that already has the answer in it. That moved the whole
 //  "which books, and does the user really mean it" step out of the dialog - and the dialog lost its
-//  buttons with it (KESCM.fr).
+//  buttons with it (KCMUI.fr).
 //
 //  The four files of this feature now divide cleanly:
 //    KESCMBookPair     - WHICH two books (and which chapter pairs up with which)

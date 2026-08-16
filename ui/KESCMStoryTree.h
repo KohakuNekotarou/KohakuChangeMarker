@@ -7,7 +7,7 @@
 //  The one call the rest of the plug-in makes to the Story Edits list on screen.
 //
 //  Everything else about the tree - the hierarchy adapter and the row widget manager - is reached
-//  only by the tree framework, through the interfaces KESCM.fr puts on kKESCMStoryTreeWidgetBoss.
+//  only by the tree framework, through the interfaces KCMUI.fr puts on kKESCMStoryTreeWidgetBoss.
 //  What the model side needs is a way to say "the list changed, draw it again", and that is this.
 //
 //========================================================================================

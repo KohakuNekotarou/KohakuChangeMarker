@@ -12,7 +12,7 @@
 //  コールバック描画をやめて PNG リソース(KESCM_Check_10_18.png / KESCM_CheckOff_10_18.png ＋ @2x/@3to2x)に
 //  なったため、✓の絵の出どころが「この関数」と「PNG」の2つある。PNG はこの関数と同じ幾何(頂点・線幅・
 //  丸端)で生成したもので、再生成スクリプト = work/kescm-make-check-cursor.ps1(引数=出力フォルダー)。
-//  生成後は source/sdksamples/KESCM/ へ置き、**KESCM.fr を touch してから**ビルドすること
+//  生成後は source/sdksamples/KESCM/ui/ へ置き、**KCMUI.fr を touch してから**ビルドすること
 //  (PNG だけ差し替えても ODFRC が走らず古い画像がリンクされ続ける既知の罠)。
 //
 //  Header-only inline (no .cpp / no build-system change): both callers already include

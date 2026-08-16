@@ -204,7 +204,7 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 			// Roll-over: undim the panel while the pointer is over it (verified on the whole
 			// panel area, 2026-07-29). Note that IMouseRollOver has no usage example anywhere
 			// in the SDK; besides this AddIn it needs CREATE_PMINTERFACE *and* an entry in
-			// KESCMFactoryList.h - a missing factory entry fails completely silently.
+			// KCMUIFactoryList.h - a missing factory entry fails completely silently.
 			// Implementation: KESCMPanelAlpha.cpp.
 			IID_IMOUSEROLLOVER, kKESCMPanelRollOverImpl,
 			// The panel's view replaced (2026-08-10): PalettePanelView plus a floor under how small
@@ -304,7 +304,7 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 	//   from an inherited boss, so the way to switch a behaviour off is to name a different
 	//   implementation for it. KESCMNoTip.cpp silences a tooltip the same way, for the same reason.
 	//
-	// ★What was actually lost: dragging UP was already stopped by the top snap (KESCM.fr gives it the
+	// ★What was actually lost: dragging UP was already stopped by the top snap (this file gives it the
 	//   designed height of the upper pane, and Widgets.fh:418 says the slider does not move beyond a
 	//   snap position). Only dragging DOWN was left, and that grew the upper pane past the block of
 	//   fixed-coordinate controls it holds - leaving a dead strip with nothing in it. The section is
@@ -748,7 +748,7 @@ resource MenuDef (kSDKDefMenuResourceID)
 		// toggle is not the place to change how InDesign's OWN toolbox looks. It needed only one more
 		// target to work, which is itself evidence that this mechanism does not care WHICH palette it
 		// is pointed at; the measured window structure is kept in memory/translucent-toolbox-idea.md.
-		// Its ActionID (+38) stays retired - see KESCMID.h.)
+		// Its ActionID (+38) stays retired - see KCMUIID.h.)
 
 		// "Align Other Views to Active" on the panel flyout (popup) menu. Plain command (not a toggle):
 		// sets every OTHER document's layout views to the active (frontmost) view's position + zoom, once.
@@ -781,7 +781,7 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kSDKDefIsNotDynamicMenuFlag,
 
 		// Separator below "Refresh Overset" (path ending in ":-" renders a menu separator; no ActionDef
-		// needed). Position table: KESCMID.h の ActionID 位置一覧(9.50)。(2026-07-25 コメント現行化。
+		// needed). Position table: KCMUIID.h の ActionID 位置一覧(9.50)。(2026-07-25 コメント現行化。
 		// 旧記述の "Invoke Panel Shortcut" は 2026-07-13 廃止済み)
 		kKESCMPopupSep3ActionID,
 		kKESCMPopupMenuPath kSDKDefDelimiterAndSeparatorPath,
@@ -1369,7 +1369,7 @@ resource PNGC(kKESCMCheckCursorResID + kHIDPI150CrsrOffset) "KESCM_Check_10_18@3
 resource HOTC(kKESCMCheckCursorResID) {10, 18};
 
 // Alt+左「色比較」の CMYK 情報カーソルのホットスポット。✓と同じ折れ点(10,18)=クリック点に一致させる。
-// CursorID は ✓ と分けてある(キャッシュ取り違えによる初回フレームのゴミ対策。KESCMID.h 参照)。
+// CursorID は ✓ と分けてある(キャッシュ取り違えによる初回フレームのゴミ対策。KCMUIID.h 参照)。
 resource HOTC(kKESCMCmykCursorResID) {10, 18};
 
 // 同・交互切替用の第2ID。ドラッグ中の数値更新は kFalse カーソルの入れ直しで行い、同一スペック再設定の
