@@ -41,12 +41,18 @@ namespace
 // The list. See the header for why this is a file static rather than a boss.
 //
 // *** NO LOCK, AND THE REASON IS THAT NOTHING ON A BACKGROUND THREAD READS IT. *** Every caller
-// runs on the main thread (call sites counted 2026-08-16, audit B7): the comparison builds it
-// (KESCMCore.cpp), the panel reads it through the facade (KESCMFacades.cpp - and a UI plug-in's
-// bosses are invisible to a background thread anyway), Clear() comes off the document-close path
-// (which KESCMPeek's IsMainThread guard already covers) and ShutdownCleanup() off the shutdown
-// service. ***** The background thread runs the DRAWING path only, and the drawing path never asks
-// about story edits ***** - it reads the page map and the mark state, neither of which is here.
+// runs on the main thread. FIVE of them, re-counted one by one on 2026-08-17 (the 2026-08-16 count
+// named four and folded the two Clear() callers into one):
+//   1. Build()            - the comparison (KESCMCore::KESCMRebuildStoryEdits, itself reached from
+//                           Start and from Refresh Page Comparison, both main-thread commands);
+//   2. GetRowCount/GetRow - the panel, through the facade (KESCMFacades.cpp) - and a UI plug-in's
+//                           bosses are invisible to a background thread anyway;
+//   3. Clear()            - Stop (KESCMCore.cpp, KESCMDoClearMarks);
+//   4. Clear()            - a compared document closing (KESCMPeek.cpp, which the IsMainThread
+//                           guard on that path already covers);
+//   5. ShutdownCleanup()  - the shutdown service.
+// ***** The background thread runs the DRAWING path only, and the drawing path never asks about
+// story edits ***** - it reads the page map and the mark state, neither of which is here.
 //
 // ⚠WHAT WOULD BREAK IT: drawing a story-edit marker on the page (a badge on a changed story's
 // frame, say), or building this list from a background export. Either one puts a reader on the BG
@@ -57,7 +63,10 @@ namespace
 std::vector<KESCMStoryRow> gRows;
 
 // A safety valve, NOT a display limit. How much of a story's opening text is shown is decided by
-// the row's text cell alone: it is kEllipsizeMiddle and bound kBindLeft|kBindRight (KESCM.fr), so
+// the row's text cell alone: it is kEllipsizeMiddle and bound kBindLeft|kBindRight (the cell is
+// kKESCMStoryRowTextWidgetID, declared UI-side in ui/KCMUI.fr - ⚠this note said "KESCM.fr" until
+// 2026-08-17, which is this file's own copy of the stale name audit B4 fixed in KESCMPageMap.cpp;
+// that fix did not go looking for its siblings, and this was the only other one), so
 // it is the one cell that grows when the panel is widened, and it shortens its own text to fit.
 //
 // ★This panel already answered this exact question once. KESCMDocNameFromDB used to shorten the
@@ -88,9 +97,15 @@ bool16 IsReadable(const UTF32TextChar& ch)
 
 	// Everything below the space character, in one test. That single boundary covers the paragraph
 	// and line breaks, the tab, the table anchors (0x0016/0x0017) and the page-number and
-	// section-name placeholders (0x0018/0x0019): InDesign packs all of its own special characters
-	// into the control range, which is exactly why TextChar.h:558-559 draws its line at
-	// kTextChar_Space too.
+	// section-name placeholders (0x0018/0x0019), because InDesign packs all of its own special
+	// characters into the control range - which is what IsK2SpecificChar is for: "the low-ascii
+	// characters that have meaning to InDesign ... standard values like tab, carriage return and
+	// special ones like IndentToHere, Table" (TextChar.h, its declaration).
+	//
+	// ⚠This used to cite IsIllegalControlChar as drawing the same line "too". It does not: it is
+	// (n < kTextChar_Space && !IsK2SpecificChar(n)), so it EXCLUDES the very characters this test
+	// exists to drop. The SDK has no predicate for what is wanted here, which is why the boundary
+	// is spelled out rather than borrowed.
 	if (v < kTextChar_Space)
 		return kFalse;
 
@@ -109,8 +124,12 @@ bool16 IsReadable(const UTF32TextChar& ch)
 
 	The scan runs paragraph by paragraph and stops at the first paragraph holding anything readable.
 	It runs to TotalLength() rather than to the end of the primary thread on purpose: table cells and
-	footnotes are further threads inside the SAME model (ITextModel.h:140,145), so a frame holding
-	nothing but a table only says something once the scan is allowed past the main thread.
+	footnotes are further threads inside the SAME model, so a frame holding nothing but a table only
+	says something once the scan is allowed past the main thread. ⚠The headers state this for TABLE
+	CELLS only - TotalLength "including data for embedded tables" against GetPrimaryStoryThreadSpan
+	"does not include any characters that are part of story threads for table cells"
+	(ITextModel.h:137-145). That FOOTNOTES sit there too is measured, not documented: audit B6
+	scanned a document whose only overset was a footnote and got its one stop (2026-08-17).
 
 	★Where this parts company with the official example. SnpCreateCrossReference.cpp:206-222 does
 	the same job and copies span-1 characters so that the paragraph's CR is left behind. Here the
@@ -138,12 +157,21 @@ PMString FirstReadableText(ITextModel* model)
 
 		// excludeEOS = kFalse so that a story ending without a CR still reports its last paragraph,
 		// which is the only paragraph a short story has.
-		// ★THE DEFAULT REVERSED, deliberately. The parameter defaults to kTrue
-		// (IComposeScanner.h:94) and all three of Adobe's own calls take that default by passing two
-		// arguments (spellpanel's SpellCheckWalkerData.cpp:435,452 and
-		// AutoCorrectTypingIdleTask.cpp:353). They walk text the user is editing, where the
-		// end-of-story mark is not a paragraph worth reporting; this list is looking for the first
-		// words that exist AT ALL, so a story that is one CR-less paragraph long has to count.
+		// ★THE DEFAULT REVERSED - AND ADOBE REVERSES IT FOR THIS SAME JOB. The parameter defaults to
+		// kTrue (IComposeScanner.h:94). Every call to it in the SDK, counted 2026-08-17, and they
+		// split by what the walk is FOR:
+		//   - walking text the user is EDITING takes the default, because there the end-of-story
+		//     mark is not a paragraph worth reporting: spellpanel's SpellCheckWalkerData.cpp:435,452
+		//     and AutoCorrectTypingIdleTask.cpp:353;
+		//   - walking stories in order to NAME them passes kFalse, exactly as here:
+		//     SnpCreateCrossReference.cpp:206 - the same snippet this file takes as its example
+		//     twice over (see kRowTextSafetyLimit and the note below).
+		// This list is looking for the first words that exist AT ALL, so a story that is one
+		// CR-less paragraph long has to count.
+		//
+		// ⚠Until 2026-08-17 this note read "all three of Adobe's own calls take that default". It
+		// had counted the product code and left out the snippet it was already quoting - so the one
+		// official call that had made the SAME choice was the one missing from the count.
 		const TextIndex paraStart = scanner->FindSurroundingParagraph(pos, &span, kFalse);
 		if (paraStart < 0 || span <= 0)
 			break;
@@ -216,7 +244,8 @@ bool RowIsBefore(const KESCMStoryRow& a, const KESCMStoryRow& b)
 
 	★RecomposeThruLastFrame is deliberately NOT called. This asks where the story STARTS, not where
 	its text overflows, so there is nothing to compose - and composing here would cost the property
-	stage 1 measured and wrote down: reading what changed changes nothing (KESCMStoryStamp.h:42-43).
+	stage 1 measured and wrote down: reading what changed changes nothing (KESCMStoryStamp.h,
+	"READING COUNTERS COMPOSES NOTHING").
 */
 UID KESCMStoryFirstFrameUID(IDataBase* db, UID storyUID)
 {
@@ -322,9 +351,19 @@ void KESCMStoryList::Build(IDataBase* db, const std::vector<KESCMStoryDiff>& dif
 
 		if (row.fPageUID != kInvalidUID && pageList != nil)
 		{
-			// Master pages answer with a negative index (IPageList.h:96-104 counts pages within the
-			// pub, and a master is not one of them). Those keep kMaxInt32 and sort to the end rather
-			// than to the front, where a negative index would have put them.
+			// A story on a MASTER PAGE keeps kMaxInt32 and sorts to the END, which is what is wanted:
+			// it is a real edit, but it belongs after the pages. IPageList.h:96-104 counts pages
+			// within the pub and a master is not one of them, so the index cannot come back as a
+			// position among them.
+			//
+			// ★MEASURED 2026-08-17, and measured so it could have come out the other way. The first
+			// attempt built its stories in page order, which made story UID order and page order
+			// AGREE - and RowIsBefore breaks a tie by UID, so rows carrying kMaxInt32 would have come
+			// out in that same order either way. The second pair built them in reverse (master first,
+			// so the master story holds the LOWEST uid) and the panel listed page 1, then page 3,
+			// then the master - the exact opposite of UID order. ⚠What is NOT distinguished: whether
+			// GetPageIndex answered negative or KESCMFramePageUID never produced a page UID at all.
+			// Both land here as kMaxInt32, and the row goes to the end either way.
 			//
 			// ★AND THE SECOND ARGUMENT IS LEFT AT ITS DEFAULT ON PURPOSE: includePagesOfHiddenSpread
 			// defaults to kTrue (IPageList.h:104), so a page whose spread is hidden still counts.

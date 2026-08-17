@@ -55,7 +55,7 @@ enum KESCMScriptProperties
 		app.documents[0].stories[2].kcmChangeCount   ->  8
 
 	WHY THEY ARE WORTH PUBLISHING. The aggregate counter is what decides whether a story appears
-	in the panel's Story Edits list (KESCMStoryStamp.cpp:84 - "if the two readings match, skip").
+	in the panel's Story Edits list (KESCMStoryEdits::Compare - "if the two readings match, skip").
 	Until now that number could not be seen from outside, so when a list came back EMPTY there was
 	no way to tell "the plug-in is wrong" from "the two documents genuinely read the same" without
 	reading the source. Measured 2026-08-15: two documents built by the same script, with different

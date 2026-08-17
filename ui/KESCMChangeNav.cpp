@@ -835,7 +835,9 @@ bool16 KESCMGotoStoryFrame(IDataBase* db, UID frameUID, UID pageUID, UID storyUI
 	//   ∴ Source でも同じ story UID の先頭フレームを引き、それを中心に出す ---- ページ番号を経由すると、
 	//   まさにこの機能が見せたい「動いたストーリー」を見失う。
 	// ★UID で引き当てられる根拠は、この機能全体が乗っているのと同じ前提＝**別名保存では story UID が
-	//   引き継がれる**(KESCMStoryStamp.h:36-38 に実測済み)。Source に無いストーリー(=Added の行)は
+	//   引き継がれる**(KESCMStoryStamp.h の "WHY TWO VERSIONS CAN BE MATCHED AT ALL" に実測済み。
+	//   ⚠2026-08-17 訂正＝旧「:36-38」は挿入で腐った行番号で、実体は10行下だった)。
+	//   Source に無いストーリー(=Added の行)は
 	//   kInvalidUID が返るので、そのときは Target だけが動く。
 	IDataBase* sourceDB = marks->GetMarkedSourceDB();
 	if (sourceDB != nil && sourceDB != db && storyUID != kInvalidUID)

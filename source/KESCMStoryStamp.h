@@ -40,18 +40,26 @@
 //  aggregate; what was missing was saying which kind of change it had been.)
 //
 //  A table is NOT a story of its own. Table cells and footnotes are further story threads inside
-//  the same ITextModel (ITextModel.h:140,145), so an edit in a cell moves the counter of the story
-//  the table sits in. There is no way to list a table as its own row, and no need to.
+//  the same ITextModel, so an edit in a cell moves the counter of the story the table sits in.
+//  There is no way to list a table as its own row, and no need to. (⚠The headers say this of table
+//  cells only - ITextModel.h:137-145, TotalLength against GetPrimaryStoryThreadSpan. Footnotes are
+//  measured rather than documented; see the same note in KESCMStoryList.cpp's FirstReadableText.)
 //
-//  Two properties measured on 2026-08-08 are what make this work at all:
+//  *** WHY TWO VERSIONS CAN BE MATCHED AT ALL. *** Two properties measured on 2026-08-08:
 //    - saving under a new name carries both the story UIDs and the counters across, so the old
 //      and the new version of a document can be matched story by story;
 //    - the counters are persisted in the file and wind back on Undo, so they are a version number
 //      for the story's state rather than a count of edits. "Edited and then undone" reads as
 //      unchanged, so no false row appears.
+//  *** THE TWO HEADINGS ABOVE AND BELOW ARE HOW THIS IS QUOTED, NOT LINE NUMBERS. *** Three other
+//  places lean on this paragraph (KESCMStoryList.h, IKESCMStoryEditsFacade.h, KESCMChangeNav.cpp)
+//  and two on the one below (KESCMStoryList.h and .cpp). Every one of them cited a line range until
+//  2026-08-17, and all five had rotted by 9-11 lines - one insertion into this comment moved the
+//  lot at once, and only the reference written on the day of the split had ever been re-counted.
+//  Quote the heading; it survives an edit above it.
 //
-//  Reading counters composes nothing, so no SaveRestoreModifiedState guard is needed here - the
-//  same note KESCL's CaptureDocStamp carries (KESCLFindInDoc.cpp:375-397).
+//  *** READING COUNTERS COMPOSES NOTHING. *** So no SaveRestoreModifiedState guard is needed here
+//  - the same note KESCL's CaptureDocStamp carries (KESCLFindInDoc.cpp:375-397).
 //
 //  *** WHY NOT TRACK CHANGES? *** InCopy's track-changes feature answers a question that LOOKS like
 //  this one: ITrackChangeUtils::StoryHasChanges(UIDRef) is literally "did this story change?"

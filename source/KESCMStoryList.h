@@ -12,10 +12,14 @@
 //
 //  *** THE LIST IS A FILE-STATIC GLOBAL, NOT A BOSS. *** It is built by one comparison and thrown
 //  away by the next, so there is nothing to persist and nobody to share it with. KBS keeps its
-//  result list exactly this way (KBSResultModel.cpp:27-29). The one obligation that comes with it:
-//  ShutdownCleanup() has to empty it during a controlled shutdown, because these rows hold PMStrings
-//  and a static PMString still holding storage at DLL unload is the crash KBS logged three times
-//  over (KBSResultModel.cpp:363-377).
+//  result list exactly this way (KBSResultModel's gChapters). The one obligation that comes with
+//  it: ShutdownCleanup() has to empty it during a controlled shutdown, because these rows hold
+//  PMStrings, and nothing of ours should still be holding storage when the DLL unloads.
+//
+//  ⚠KBS found FIVE statics doing exactly that, one at a time - not the three this note used to
+//  claim. They are counted in ONE place, KBSReplaceConfirmDialog::ShutdownCleanup: gChangeText,
+//  gSearchedFindAttrs, gLastStatus, KBSEditStamp's gPending and sMessage. The reference here used
+//  to point at KBSResultModel's ShutdownCleanup, which explains only the first of the five.
 //
 //========================================================================================
 
@@ -55,7 +59,8 @@ struct KESCMStoryRow
 	target for it, and a click asks the SOURCE for the same story's frame, because the two versions
 	can hold the story in DIFFERENT PLACES - the older window cannot be aimed by page number alone
 	(user's observation, 2026-08-10). Matching by story UID works for the same reason the whole
-	feature does: saving under a new name carries the UIDs across (KESCMStoryStamp.h:36-38).
+	feature does: saving under a new name carries the UIDs across (KESCMStoryStamp.h, "WHY TWO
+	VERSIONS CAN BE MATCHED AT ALL").
 
 	⚠ For two documents that are NOT versions of each other, a UID means nothing in common - the
 	same reading as everywhere else in this feature, where the rows simply come out as "Added"
@@ -76,7 +81,10 @@ UID KESCMStoryFirstFrameUID(IDataBase* db, UID storyUID);
 	★VERTICAL TEXT NEEDS NO SPECIAL CASE - AND THAT IS NOW MEASURED HERE, NOT INHERITED (2026-08-16,
 	audit B7). The corner is taken in PARCEL-LOCAL coordinates and GetParcelToFrameMatrix absorbs the
 	writing direction. Until then this claim rested on the overset scan's measurement of the OPPOSITE
-	corner (KESCMOversetScan.cpp:71-74); it has now been measured for THIS corner. Two frames of
+	corner (the preamble to KESCMLastPlacedOutport in KESCMOversetScan.cpp, at the line that says the
+	same formula holds for vertical text - the line numbers this used to give pointed at the
+	paragraph above it, and moved again when audit B6 edited that file); it has now been measured for
+	THIS corner. Two frames of
 	identical size in one document, one vertical and one horizontal, with the point printed beside
 	all four corners of its own frame in one coordinate space:
 	    vertical   -> the point landed on the frame's TOP-RIGHT, where line 1 begins (DOM: h=146.75
@@ -108,7 +116,8 @@ namespace KESCMStoryList
 		no page index and sorts to the end rather than being dropped - it is still a real edit.
 
 		Reads only. Nothing here composes, which keeps the property stage 1 measured and wrote into
-		KESCMStoryStamp.h:42-43: looking at what changed costs no recomposition.
+		KESCMStoryStamp.h ("READING COUNTERS COMPOSES NOTHING"): looking at what changed costs no
+		recomposition.
 
 		@param targetDB the newer document. nil clears the list.
 		@param diffs what KESCMStoryEdits::Compare produced for this comparison.
