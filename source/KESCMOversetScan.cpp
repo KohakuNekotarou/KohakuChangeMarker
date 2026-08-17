@@ -6,8 +6,13 @@
 //  オーバーセット(あふれ)を含むページの UID を集める。overset の判定は Utils<ITextUtils>::IsOverset、
 //  「+」を出しているフレーム(=最後の配置済みパーセルのフレーム)の特定は KBSOversetLocator.cpp の
 //  ロジックをここにインライン複製した(KBS プラグインへの依存を持たないため)。フレーム→ページ UID の
-//  変換は ITextUtils::GetPageUIDRef を主に、ILayoutUtils::GetOwnerPageUID をフォールバックに使い、
-//  どちらも実ページ(kPageBoss)であることを検証してからページ集合に入れる(ペーストボードは自然に脱落)。
+//  変換は KESCMFramePageUID(KESCMCore.cpp)に任せる。ページに載らないフレームには kInvalidUID が返る
+//  ので、ペーストボードは自然に脱落する。
+//  ⚠★**その中身をここで説明しない**——2026-08-09 に KESCMCore.cpp へ移した関数で、どの API を主に
+//    しどれをフォールバックにし何を検証するかは**あちらのコメントが正本**。ここには 2026-08-17 まで
+//    「GetPageUIDRef を主に GetOwnerPageUID をフォールバックに…kPageBoss を検証して」という**移設前の
+//    実装説明**が残っていた(下の :180 で「移した」と書いてある同じファイルの冒頭で)。
+//    ⇒ **関数を別ファイルへ移しても、その関数を説明したコメントと include は一緒に移らない。**
 //  走査は読み取り目的。ただし聞く前に古い組版だけは最新化する(RecomposeThruLastFrame。あふれは組版の
 //  結果なので、組み直さずに聞くと「もう直したあふれ」「まだ出ていないあふれ」を答え得る)。窓なし文書でも
 //  dirty にしないよう全体を IDataBase::SaveRestoreModifiedState で囲む。
@@ -30,18 +35,19 @@
 #include "VCPlugInHeaders.h"
 
 // オブジェクトモデル / テキスト / テーブル / レイアウト:
-#include "IDataBase.h"			// GetRootUID / GetClass / SaveRestoreModifiedState
+#include "IDataBase.h"			// GetRootUID / SaveRestoreModifiedState
 #include "IStoryList.h"			// GetUserAccessibleStoryCount / GetNthUserAccessibleStoryUID
 #include "ITextModel.h"			// QueryFrameList / GetPrimaryStoryThreadSpan / QueryTextParcelList
 #include "IFrameList.h"			// IsOverset の引数 / GetFirstDamagedFrameIndex(組版が古いか)
 #include "IFrameListComposer.h"	// RecomposeThruLastFrame(あふれを聞く前に古い組版を最新化する)
 #include "ITextParcelList.h"
 #include "IParcelList.h"		// GetLastParcelKey / GetPreviousParcelKey / GetParcelFrameUID
-#include "ITextUtils.h"			// IsOverset / GetPageUIDRef
+#include "ITextUtils.h"			// IsOverset
 #include "ITableUtils.h"		// InsideTable / TableToPrimaryTextIndex(セルが押し出された時の anchor 登り)
-#include "ILayoutUtils.h"		// GetOwnerPageUID(off-page なら spread UID を返す=ページ非所属判定)
-#include "IHierarchy.h"
 #include "IGeometry.h"			// フレーム inner→pasteboard 変換(「+」点の算出)
+// ⚠ILayoutUtils.h / IHierarchy.h / SpreadID.h は 2026-08-17 に外した。3本とも
+//   KESCMFramePageUID が使っていたもので、あの関数は 2026-08-09 に KESCMCore.cpp へ移っている
+//   (向こうの include はそのまま生きている)。**関数は移り、include は残っていた。**
 #include "TransformUtils.h"		// ::InnerToPasteboardMatrix
 #include "PMMatrix.h"
 #include "PMPoint.h"			// PBPMPoint
@@ -55,7 +61,6 @@
 
 // 一般:
 #include "ParcelKey.h"			// ParcelKey::IsValid
-#include "SpreadID.h"			// kPageBoss(実ページかの検証)
 #include "Utils.h"
 
 // プロジェクト内:
@@ -154,6 +159,16 @@ static bool16 KESCMThreadHasPlacedParcel(ITextModel* textModel, TextIndex pos)
 // あふれているスレッドの「+」の位置を求める。まず pos 自身のスレッドを見て、配置済みが無ければ(=セルが
 // 行ごとフレーム外へ押し出された等)テーブルアンカーを親スレッドへ登り、最初に配置済みフレームを持つ祖先
 // の「+」を採る(KBSFindOversetLocator 相当)。非進行/深ネストは guard で止める。
+//
+// ⚠★**登り(下のループ)には KESCM の2つの呼び手からは到達しない**(2026-08-17 に数えた)。**残す**が、
+//   「効いている」と読まないこと:
+//     ・セル経路 …… 呼ぶ直前に KESCMThreadHasPlacedParcel が真を確かめている＝押し出されたセルは
+//                    そこで弾かれるので、最初の KESCMLastPlacedOutport が必ず答える
+//     ・プライマリ経路 … pos はプライマリスレッドの末尾なので InsideTable が偽＝初回の break
+//   ∴ ここが説明している状況(「配置済みが無い」)を、**呼び手のほうが先に落としている**。
+//   ★**移植元の KBS では生きている**——あちらの KBSFindOversetLocator は KBSJump からも呼ばれ、
+//     そちらに HasPlacedParcel のガードは無い。**同じコードでも呼び手が違えば生死が変わる**ので、
+//     KBS と揃えたまま残す(消すと次に移植を突き合わせたとき差分の意味が読めなくなる)。
 //========================================================================================
 static bool16 KESCMFindOversetOutport(ITextModel* textModel, IDataBase* db, TextIndex pos,
 	UID& outFrame, PBPMPoint& outPb)
@@ -227,6 +242,11 @@ static bool16 KESCMThreadIsOverset(ITextModel* textModel, TextIndex pos)
 //     契約だけが頼りだが、**IsAnchor(:137) が在ること自体が「アドレスはアンカーとは限らない」の証拠**)。
 //     ★**1セル1回になるのは下の QueryThread が非アンカーに nil を返すから**——セルのスレッドは
 //     **アンカーの GridID にだけ**紐づく(ITextStoryThreadDict.h:78-83)。∴ 結合セルは何マス占めても1回。
+//     ⚠★**公式の手本はこの nil 検査を持っていない**(SnpIterTableUseDictHier.cpp:256-262 は QueryThread
+//       の返りをそのまま GetTextStart に渡す)。**手本どおりに写すと非アンカーの格子要素で落ちる**ので、
+//       ここは意図的に手本と違う。KBS も同じ検査を持ち、その旨を書いている
+//       (KBSOversetScanEngine.cpp:269-270「The official walk is these same three lines without the
+//       test」)。2026-08-17 に KESCM 側にも書き足した＝**移植で落ちていた但し書き**。
 //     ⚠**QueryThread を経由しない走査を足すときは自分で IsAnchor で弾く必要がある**(例＝セルの属性や
 //     GetCellType を直接引く)。★KBS は 2026-08-11 に自分で訂正済み(KBSOversetScanEngine.cpp:271-272)で、
 //     その訂正がこちらに届いていなかった。結論(1セル1回)は合っていたが**理由が違った**。
@@ -329,17 +349,29 @@ void KESCMCollectOversetLocations(IDataBase* db, std::vector<KESCMOversetLoc>& o
 		//   最後にそう言った」を読むだけなので、最後に組んでから編集されたストーリーは、もう直した
 		//   あふれを報告したり、今出たばかりのあふれを黙っていたりする。
 		//   公式ルート= SnpInspectTextModel.cpp:724-733(damaged 添字を見てから RecomposeThruLastFrame)。
-		//   ★兄弟の KBS は 2026-08-03 に同じ手当てを入れている(KBSOversetScanEngine.cpp:371-384 /
-		//   KBSJump.cpp:169-174)が、KESCM に届いていなかった。
-		//   ★フレームリストを組むとその中のテーブルも落ち着くので、下の (2) のセル走査も最新の組版を読む。
-		//   ⚠この関数は Find Overset のオンデマンド1経路(KESCMApplyOversetForDoc)からしか呼ばれない＝
-		//   描画イベント中には走らない。
+		//   ★兄弟の KBS は 2026-08-03 に同じ手当てを入れている(KBSOversetScanEngine.cpp:428-437 /
+		//   KBSJump.cpp:161-163 が理由・:175-179 が実装)が、KESCM に届いていなかった。
+		//   ⚠2026-08-17 に実測して行番号を直した——旧「:371-384 / :169-174」は**どちらも別の段落**を
+		//     指していた(:371-384 は「キャンセルを章の中で聞く」の説明)。
+		//   ★下の (2) のセル走査も最新の組版を読む。⚠**ただし理由は「フレームリストを組めばテーブルも
+		//     落ち着くから」ではない**(2026-08-17 訂正)——それは [[text-composition-damage-and-recompose]]
+		//     が「未確認」と書いている問いで、ここが勝手に断言していた。**本当の理由は、セルの判定に使う
+		//     ITextParcelList::GetIsOverset() が聞くだけで組むから**(KBS 実測)。∴ (2) はこの (0) が
+		//     無くても最新を読む。(0) が要るのは (1) の IsOverset(frameList) のほう——あちらは frame list
+		//     の damage を自分では解消しない。
+		//   ⚠この関数の呼び手は KESCMApplyOversetForDoc ただ1つだが、**その Apply の呼び手は4つある**
+		//     (Find Overset / Refresh Overset / Start / Stop。全数は KESCMOversetApply.h)。
+		//     ★**「描画イベント中には走らない」は、その4つを数えて初めて言える。** 4つとも数えた＝UI の
+		//     メニュー2つ／Start は KESCMDoMarkChangesDoc が全ページのラスタ化を終えた後／Stop はマーク
+		//     破棄の後。どれも描画イベントの外。**呼び手が増えたら数え直すこと**(2026-08-17 まで
+		//     「オンデマンド1経路だから」を根拠にしており、Start と Stop を数えていなかった)。
 		//   ⚠★**組めば文書は dirty になる**。冒頭の SaveRestoreModifiedState は「dirty にしない」ので
 		//   はなく「**入る前が clean だったときに限り、出るときに clean へ戻す**」ガード
 		//   (IDataBase.h:389-412。既に dirty なら fDB=nil にして何もしない=ユーザーの編集を消さない)。
 		//   ★この呼び出しで新しく生じる副作用ではない: スレッドに組版のことを聞けば**聞くだけで組む**ので、
 		//   下の IsOverset / GetIsOverset だけでも同じことが起きていた——ガードが元からここに在るのは
-		//   そのため(KBSOversetScanEngine.cpp:340-343 が同じ理由を書いている)。明示的に組むのは、暗黙に
+		//   そのため(KBSOversetScanEngine.cpp:393-396 が同じ理由を書いている。⚠旧「:340-343」は脚注の
+		//   測定結果を指していた＝2026-08-17 に実測して訂正)。明示的に組むのは、暗黙に
 		//   起きていたことを確実かつ最後まで行うだけで、生成される wax も次の描画で出来るものと同じ。
 		InterfacePtr<IFrameList> frameList(textModel->QueryFrameList());
 		if (frameList != nil && frameList->GetFirstDamagedFrameIndex() != -1)

@@ -92,6 +92,18 @@ bool16 KESCMIsSameDoc(IDataBase* a, IDataBase* b);
 //     ⇒ main が insert して木を回転している最中に BG が find すると壊れる
 //   (ガイド vol1-07 L95: "InDesign will behave inconsistently and **may randomly crash**")
 //
+// ★★**守っていない共有状態が2つある。安全なのは「BG が読まないから」で、それを担保しているのは
+//   && の項の順番だけ**(2026-08-17 の不具合再検査 B6 で数えた):
+//     ・`sOversetPages`(std::set) / `sOversetLocs`(std::vector) …… main の KESCMApplyOversetForDoc が
+//       **swap() で丸ごと入れ替える**。形は上の2つと同じで、BG が読んでいる最中に入れ替われば壊れる。
+//   ⇒ **読む側が Pages パネルのサムネイルしかない**ので今は届かない:
+//       KESCMDrawEventHandler.cpp の `wantOversetThumb = isThumb && sOversetOn && sOversetDB != nil
+//       && !sOversetPages.empty()` ---- ★**`isThumb` が第1項**なので、BG(PDF の非同期書き出し＝
+//       isThumb 偽)では**短絡評価で set に一度も触れない**。`count()` を引く描画ブロックも同じ枝の中。
+//   ⚠∴ **これは設計された防御ではなく、条件式の並び順が結果的に守っている状態。** 「＋」をサムネイル
+//     以外(カンバス・印刷・書き出し)へ出す日が来たら、その瞬間にこの2つをロックの対象へ載せること。
+//     判定の順番を入れ替えるだけでも同じ。
+//
 // ★★**recursive_mutex にしてある理由**(2026-08-15 に実際に踏みかけた):
 //   描画ループは自分でロックを取ったうえで、その中から KESCMPageMapIsRegistered() /
 //   KESCMPageCheckIsChecked() を**ページごとに**呼ぶ。呼ばれる側もロックを取るので、

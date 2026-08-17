@@ -871,6 +871,20 @@ void KESCMActionComponent::DoFindOversetToggle()
 	}
 	Utils<IKESCMCompareFacade>()->ApplyOversetForDoc(db);
 
+	// ★トグルが実際に立ったかを聞いてから報告する(2026-08-17)。ApplyOversetForDoc は渡された db が
+	//   文書リストに居なければ**何もせず戻る**(閉じた文書のポインタを deref しないための最終ライン防御)
+	//   ので、そのときトグルは OFF のまま。以前はここが無条件に "on" と書いていたため、
+	//   **OFF なのに「on」と報告し、フライアウトのチェックだけが外れている**状態になり得た。
+	//   ⚠到達条件は稀＝GetOversetScanTargetDB() が返した db がその直後に死んでいる場合(クローズの生存
+	//   スイープ漏れ)。稀でも「表示と実態が食い違う」形なので、状態を読み直して答える。
+	if (!Utils<IKESCMMarkData>()->GetOversetOn())
+	{
+		PMString msg("Find Overset: document is gone.");
+		msg.SetTranslatable(kFalse);
+		KESCMSetStatus(msg);
+		return;
+	}
+
 	PMString msg("Find Overset: on (");
 	msg.SetTranslatable(kFalse);
 	msg.AppendNumber(Utils<IKESCMMarkData>()->GetOversetPageCount());
@@ -896,6 +910,9 @@ void KESCMActionComponent::DoRefreshOverset()
 	}
 	Utils<IKESCMCompareFacade>()->ApplyOversetForDoc(db);	// 再走査・反映(別文書なら前の文書の目印も消す)は共有処理に集約
 
+	// ★こちらに上の ON 経路と同じ読み直しは要らない(2026-08-17 に数えて確認)。Apply が db の死亡で早期
+	//   return しても**トグルは既に ON** なので「on と言いながら OFF」にはならず、前回の件数がそのまま
+	//   出る＝「再走査したが増減が無かった」と見分けが付かないだけ。∴ 実行文は足さない。
 	PMString msg("Refresh Overset: ");
 	msg.SetTranslatable(kFalse);
 	msg.AppendNumber(Utils<IKESCMMarkData>()->GetOversetPageCount());
