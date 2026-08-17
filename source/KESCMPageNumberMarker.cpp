@@ -410,6 +410,22 @@ void KESCMAppendPageNumberMarkerRects(const UIDRef& pageRef, std::vector<PMRect>
 //   アイテム収集＋wax 走査＋グリフ bbox」を回す。これを描画イベントのたびに全ページぶんやっていた
 //   (緑ベタ塗りの可視化)ので、結果を (db, ページUID) で覚えて引くだけにする。
 //   ★db ポインタは照合専用で deref しない。閉じた db のエントリは Invalidate で捨てる。
+//
+// ⚠★★**なぜここはロック(KESCMMarkStateLock)を取らないのか**(2026-08-17・不具合再検査 B3 の2周目で
+//   明文化)。形は sEntries とまったく同じ ---- **描画イベントの中から引かれる std::map** で、
+//   引くだけに見えて**キャッシュミスなら insert する**(＝木を回す)。それでも要らない理由:
+//     ★**読み手も書き手もメインスレッドにしか居ない**。呼び手は3つで、
+//       ①KESCMDrawPageNumberMarkerFill(描画) …… 呼び出し側が `fillExcluded = !printing && …` で
+//         ゲートしている＝**BG(PDF の非同期書き出し)は printing なので、ここへ一度も来ない**
+//         (緑ベタ塗りは「どこを比較から外したか」を見せる**画面用の診断表示**で、印刷/PDF には出さない
+//          ＝2026-08-06 の監査 E-4 の決定。その決定がそのままスレッドの境界にもなっている)
+//       ②MakeEntry(比較) …… 比較はメインスレッドでしか走らない
+//       ③KESCMSetIgnorePageNumberMarker / KESCMHandleDocsClosed / Shutdown(捨てる側) …… いずれも main
+//   ⇒ ★**DropAllOrig と同じ形の「読み手が main だけだから守らなくてよい」**(あちらは
+//     KESCMDrawEventHandler.h に理由が書いてある。ここには書いていなかったので足した)。
+//   ★★**この前提が崩れる変更**＝「緑ベタ塗りを印刷/PDF にも出す」。そのときは
+//     KESCMGetPageNumberMarkerRects と KESCMInvalidatePageNumberMarkerRects の両方に
+//     KESCMMarkStateLock を入れること(捨てる側だけ守るのは無意味＝B3 §5 で踏んだ形)。
 //========================================================================================
 typedef std::pair<IDataBase*, UID>              KESCMMarkerRectKey;
 typedef std::map<KESCMMarkerRectKey, std::vector<PMRect> > KESCMMarkerRectMap;

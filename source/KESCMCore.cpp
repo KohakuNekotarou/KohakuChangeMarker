@@ -659,8 +659,28 @@ ErrorCode KESCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMStri
 		//   だけでなく登録トグルの差分再比較・Ignore Page Number 切替の再比較も通るため、ここで kTrue に
 		//   戻すとユーザーが OFF にした直後の再比較で黙って ON に戻ってしまう。既定 ON へ戻すのは仕様どおり
 		//   Start 経路(KESCMToggleStartStop)のみ。
+		// ⚠★2026-08-17(不具合再検査 B3 の2周目): **ここにマーク集合のロックは要らない。**
+		//   MakeEntry 側の同じ代入はロックの中にあるが、あちらが守っているのは隣の
+		//   sSrcPageToTarget(std::map=挿入で木を回す)で、sSrcDB はそのスコープに同居しているだけ。
+		//   ポインタ1個の代入は、読み手(描画)が新旧どちらの値を見ても壊れない
+		//   ---- 古ければ Source 枠が出ない、新しければ出る、それだけ。
+		//   ★この但し書きが無かったため、2026-08-17 の再検査でここを一度「ロック漏れ」と誤診した。
 		KESCMDrawEventHandler::sSrcDB = sourceDB;
 	}
+
+	// ★★2026-08-17(不具合再検査 B3 の2周目): **ラスタ化に失敗したページがあったときも、
+	//   そこで立った可能性のあるエラーを持ち越さない。** 上のキャンセル分岐と同じ理由で、
+	//   同じ扱いに揃える(以前はキャンセルのときだけ落としていた＝同じ問いに2つの答え)。
+	//   ★失敗は report の failed=N として利用者へ伝えるので、**エラー状態で伝える必要は無い**。
+	//     立てたまま返すと、呼び手が次に投げるコマンドが巻き添えで失敗する
+	//     (CmdUtils.h:72-77 の protective shutdown / シーケンスなら丸ごと巻き戻る)。
+	//   ⚠**失敗の中身は2種類**で、エラーを立て得るのは後者だけ:
+	//     ①ページサイズ不一致(wth!=wsh) …… ラスタ化自体は成功しているので何も立たない
+	//     ②SnapshotUtilsEx::Draw の失敗・OOM …… 立て得る(SDK 内部なので確かめる術が無い)
+	//   ⇒ **測れない側に安全側で倒す**。落としてよい根拠＝この関数は失敗を戻り値では区別せず
+	//     (kFailure を返すのはキャンセルのときだけ)、失敗ページは report で報告し切っている。
+	if (failedCount > 0)
+		ErrorUtils::PMSetGlobalErrorCode(kSuccess);
 
 	// overflow("/")キャッシュを今の対応表から作り直す。ここは Start・登録 Add/解除・Ignore 切替が
 	// すべて通る唯一の再比較路なので、これらの操作後は描画側が最新の overflow を使う(描画のたびの
@@ -730,6 +750,16 @@ ErrorCode KESCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMStri
 	//   戻ってしまう。
 	// ⚠ キャンセルされた場合も投げる ---- 途中まで作られたマークと、消えたマークの両方が画面に
 	//   反映されなければならない(この関数は cancelled でも同じ後始末をしていた)。
+	//
+	// ⚠★★2026-08-17(不具合再検査 B3 の2周目)＝**「キャンセル × 差分再比較」だけは
+	//   navReset が kFalse になる。** マークは DropAll で全部消えたのに、巡回の基準点は残る
+	//   ---- ここだけ読むと「もう無いページを指したまま Prev/Next が始まる」ように見える。
+	//   ★**成立しない。呼び手を4つとも開くと、全部その後で Stop へ戻る**(kFailure を返すため)＝
+	//     Stop が navReset=kTrue の Cleared を投げ直すので、基準点はそこで必ず捨てられる。
+	//     内訳は上のキャンセル分岐に書いた4つと同じ(Start は arm しない・残り3つは
+	//     KESCMToggleStartStop() で Stop)。
+	//   ⇒ **この式を `!doIncremental && !cancelled` へ変える必要は無い。** 同じ後始末を
+	//     2か所ですると、片方だけ直したときに必ずずれる([[one-question-one-place]])。
 	KESCMNotifyDocs(kKESCMMarksRebuiltMessage, targetDB, sourceDB, !doIncremental);
 	// ★キャンセルは kFailure で返す。Start 経路(KESCMToggleStartStop)はこの戻り値を見て arm するかどうかを
 	//   決めるので、ここを常に kSuccess にすると「キャンセルしたのに arm され、メニューが Stop のまま」

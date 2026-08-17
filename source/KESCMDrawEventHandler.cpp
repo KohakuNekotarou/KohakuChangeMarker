@@ -108,6 +108,19 @@ std::vector<KESCMOversetLoc> KESCMDrawEventHandler::sOversetLocs;	// overset「+
 // ページ矩形クリップの内側縮め量(pt)。見開きはノドで隙間なく隣接するため、ページ矩形ぴったりで
 // クリップすると枠/斜線の最外周が共有線に乗り、隣(変化なし)ページ側に 1px 線が出る。約1pt 内側に
 // 縮めて防ぐ(2026-07-25: 4関数のローカル重複定義をファイルスコープへ集約)。
+//
+// ★★2026-08-17(不具合再検査 B3 の2周目)＝**「ページが細すぎて rectclip の幅が負になる」は起きない。**
+//   この値を使う4関数(KESCMDrawEntryOnPage / KESCMDrawPageBorder / KESCMDrawPageDiagonal /
+//   KESCMDrawPageCrossOutlined)は `pr.Width() - kKESCMClipInset * 2.0` をそのまま rectclip へ渡すので、
+//   **ページ幅が 2.0pt を下回ると負の幅を渡す**ことになる。実際に作れるかを実機で測った(2026-08-17):
+//     ・**最小ページ幅 = 114.38〜114.39pt**(≒1.5888 inch ≒ 40.4mm)。これより小さい値を
+//       `documentPreferences.pageWidth` へ代入すると「データが範囲外です」(30481)で拒否される。
+//       ⚠マージンや段組をすべて 0 にしても下限は動かない＝**本体側の固定の下限**。
+//     ・最大は 15,551.996pt(216.000 inch = 5486.4mm)。
+//   ⇒ **最小ページでも inset の 57 倍の幅がある**ので、負の幅は原理的に渡らない。
+//   ∴ **4関数にガードを足す必要は無い**(足しても到達しないコードが増えるだけ)。
+//   ⚠**測る前に一度「4関数中1つしかガードを持っていない＝非対称だ」と読んだ**が、
+//     これは非対称ではなく**どれにも要らない**が正しかった(下の KESCMDrawPageBorder も参照)。
 static const PMReal kKESCMClipInset = 1.0;
 
 //========================================================================================
@@ -592,6 +605,16 @@ ErrorCode KESCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef
 						return kFailure;
 					}
 					BuildRing(e->buf, rbL, bppL, wl, hl, e->dist, BG, kKESCMBaseRadius);
+					// ★★2026-08-17(不具合再検査 B3 の2周目)＝**ここの int16 キャストは溢れない。**
+					//   AGMImageRecord.bounds は int16(上限 32,767)で、wl/hl は**保存解像度**
+					//   kKESCMResolution=36dpi の画素数。実機で測った最大ページは
+					//   **15,551.996pt = 216.000 inch(5486.4mm)**なので、最大でも **216 × 36 = 7,776 px**
+					//   ＝上限の 24% にしかならない(2026-08-17 実測)。
+					//   ⚠**下の MakeOrigImage には明示ガード(`b.right <= 32767`)がある**が、あちらは
+					//     kKESCMOrigResolution=**72dpi**、しかも peek は現在のズームから dpi を渡すので
+					//     **216 inch × 300dpi = 64,800 で本当に溢れる**——**非対称は正しい**。
+					//   ★比較解像度(144dpi)側の wth/hth は 31,104 px になるが、あちらは int32 のまま
+					//     扱っていて int16 に落とさないので無関係。
 					e->rec.bounds.xMin = 0;             e->rec.bounds.yMin = 0;
 					e->rec.bounds.xMax = (int16)wl;     e->rec.bounds.yMax = (int16)hl;
 					e->rec.baseAddr     = e->buf;
@@ -623,6 +646,18 @@ ErrorCode KESCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef
 						//   そのもの。以前はロックのスコープを閉じた直後に素で書いていたので、
 						//   **main が木を回している最中に BG が find する**窓が開いていた。
 						//   ⚠**捨てる側(DropAll)は最初から clear() をロック内でやっていた**＝作る側だけが漏れていた。
+						//
+						// ⚠★★2026-08-17(不具合再検査 B3 の2周目)= **ロックが守っているのは
+						//   sSrcPageToTarget(std::map)だけで、sSrcDB はそうではない。**
+						//   上の説明が「この2行」とまとめて書いてあるため、次に読む人(＝私)が
+						//   **「sSrcDB はロックが要る変数だ」と読み、KESCMCore.cpp の
+						//   `sSrcDB = sourceDB;`(比較の成功枝。ロック外)を不具合だと誤診した。**
+						//   ★正しくは: **ロックは複合状態の一貫性を守る道具**で、木を回す map には要るが、
+						//     ポインタ1個の代入には要らない(読み手が見るのは新旧どちらかの値で、
+						//     どちらでも描画は壊れない ---- 古ければ Source 枠が出ない、新しければ出る)。
+						//   ⇒ **KESCMCore.cpp のあの1行にロックを足す必要は無い。**
+						//     ここが囲まれているのは「同じ場所で書いているから」であって、
+						//     sSrcDB のために取ったロックではない。
 						sSrcDB = sourceRef.GetDataBase();
 						sSrcPageToTarget[sourceRef.GetUID()] = key;
 					}
@@ -683,6 +718,10 @@ ErrorCode KESCMDrawEventHandler::MakeOrigImage(const UIDRef& targetRef, const UI
 		const int32 bpp = (int32)acc->GetBitsPerPixel() / 8;
 		const uint8* p = acc->GetBaseAddr();
 		// AGMImageRecord.bounds は int16。300dpi で超大型ページ(幅/高さ>32767px≒109inch)だと破綻するので弾く。
+		// ★★2026-08-17(不具合再検査 B3 の2周目)＝**このガードは本当に到達する。** 実機で測った
+		//   最大ページは **216.000 inch(15,551.996pt = 5486.4mm)**なので、300dpi なら 64,800 px＝
+		//   上限の2倍近い。⇒ **MakeEntry 側に同じガードが無いのは手抜きではない**(あちらは 36dpi で
+		//   最大 7,776 px＝溢れない。理由はあちらの e->rec.bounds のコメント)。
 		if (p != nil && w > 0 && h > 0 && rb > 0 && bpp >= 3 && b.right <= 32767 && b.bottom <= 32767)
 		{
 			// nothrow: 300dpi の大判ページ(A2 で buf 約140MB)は OOM が現実に起こり得る筆頭。
@@ -1167,13 +1206,29 @@ static void KESCMDrawEntryOnPage(IGraphicsPort* gPort, IViewPortAttributes* vpAt
 //========================================================================================
 // ページ全体を囲む縁枠(色指定)。用途: Pages パネルのサムネイルで「変更ページ」を赤枠で示す
 // (極小サムネイルでは差分リングが潰れて見えないため、ページ枠に置き換える。KESCMDrawEventHandler の
-// isThumb 分岐から呼ぶ)。ベクター矩形塗り+setopacity なので screen/print/サムネイル とも正しく合成される。
-// 太さ: 画面/印刷 = 画面 kKESCMRingTargetPx 相当(pt=px/sxr。印刷は呼び出し側で sxr=1.0)。
-//       サムネイル(sxr<=0)= ページ短辺 / kKESCMThumbBorderDivisor(ズーム式が使えないので潰れない固定比率)。
-// 不透明度: サムネイルは kKESCMThumbMarkOpacity(0.75=少し透ける)、印刷は SelectedMarkOpacity、画面は screenOpacity。
+// isThumb 分岐から呼ぶ)。ベクター矩形塗り+setopacity なので正しく半透明合成される。
+// 太さ: ページ短辺 / kKESCMThumbBorderDivisor(ズーム式が使えないので潰れない固定比率)。
+// 不透明度: kKESCMThumbMarkOpacity(0.75=少し透ける)。
+//
+// ★★★2026-08-17(不具合再検査 B3 の2周目)＝**この関数は Pages パネルのサムネイル専用**であることを
+//   引数の形にも反映した。以前は sxr / drawMode / screenOpacity を受け取り、
+//   「画面/印刷はズーム適応」「印刷は CMYK」「画面は screenOpacity」と3通りに分岐していたが、
+//   **呼び手を全数(3つ)開いたら、3つとも `isThumb` の枝からしか呼んでいなかった**:
+//     ・Find Overset のサムネイル(wantOversetThumb ＝ isThumb が前提)
+//     ・Source ループの `if (isThumb)`
+//     ・Target ループの `if (isThumb)`
+//   `isThumb` は定義からして **!printing かつ GetView()==nil**(＝sxr は 0 のまま)なので、
+//   **sxr>0 の枝にも drawMode==Print の枝にも一度も入らない**＝到達しないコードだった。
+//   ★**それが実害の形で表に出ていた**＝呼び手が渡す不透明度が **`SelectedMarkOpacity()` と
+//     `screenMarkOp` に割れており、しかもどちらも使われていなかった**(サムネイル枝が
+//     kKESCMThumbMarkOpacity を選ぶため)。**同じ問いに2つの答えがあるのに、動作では絶対に
+//     表面化しない**形で、次にここを触る人は「不透明度が効かない」と悩むことになる。
+//   ⇒ 引数を落として**呼び手の食い違いごと消した**。B2 の A-1「誰も呼ばない約束」と同型で、
+//     こちらは「**誰も渡さない値を受け取る約束**」。[[verify-claims-in-comments]]
+//   ⚠**レイアウトビューにも枠を出したくなったら、引数を戻すのではなく
+//     KESCMDrawPageDiagonal(あちらは sxr>0 も printing も本当に来る)の形を写すこと。**
 //========================================================================================
 static void KESCMDrawPageBorder(IGraphicsPort* gPort, IDataBase* db, UID pageUID,
-	const PMReal& sxr, int32 drawMode, const PMReal& screenOpacity,
 	uint8 cr, uint8 cg, uint8 cb)
 {
 	InterfacePtr<IGeometry> pageGeo(db, pageUID, UseDefaultIID());
@@ -1185,9 +1240,13 @@ static void KESCMDrawPageBorder(IGraphicsPort* gPort, IDataBase* db, UID pageUID
 	PMRect pr = Utils<Facade::IGeometryFacade>()->GetItemBounds(
 		UIDRef(db, pageUID), Transform::SpreadCoordinates(), Geometry::PathBounds());
 
-	// 【太さ】画面/印刷はズーム適応(px/sxr)、サムネイル(sxr<=0)はページ短辺の固定比率(枠専用の除数)。
+	// 【太さ】ページ短辺の固定比率(枠専用の除数)。サムネイルは view が無くズーム式が使えない。
 	const PMReal minDim = (pr.Width() < pr.Height() ? pr.Width() : pr.Height());
-	PMReal w = (sxr > 0) ? (kKESCMRingTargetPx / sxr) : (minDim / PMReal(kKESCMThumbBorderDivisor));
+	PMReal w = minDim / PMReal(kKESCMThumbBorderDivisor);
+	// ⚠下の2つは**現在のページサイズの下限では到達しない**(2026-08-17 実測＝最小ページ幅 114.39pt。
+	//   w = minDim/6 なので w<0.5 は minDim<3pt、maxW を超えるのは minDim<1.5pt)。
+	//   **本体がページサイズの下限を変えたときのための保険として残す**——引数の値域(上のコメント)と違い、
+	//   こちらは外から与えられる数値に対する防御なので、到達しないことを理由に外さない。
 	const PMReal maxW = minDim / PMReal(2.0) - PMReal(0.5);
 	if (w > maxW) w = maxW;
 	if (w < PMReal(0.5))
@@ -1197,10 +1256,9 @@ static void KESCMDrawPageBorder(IGraphicsPort* gPort, IDataBase* db, UID pageUID
 	const PMReal L = pr.Left()   + kKESCMClipInset, R = pr.Right()  - kKESCMClipInset;
 	const PMReal T = pr.Top()    + kKESCMClipInset, B = pr.Bottom() - kKESCMClipInset;
 	if (R <= L || B <= T)
-		return;
+		return;	// 同上(最小ページ幅の実測は kKESCMClipInset の定義を見よ)
 
-	const PMReal opacity = (sxr <= 0) ? kKESCMThumbMarkOpacity
-		: ((drawMode == kKESCMDrawModePrint) ? KESCMDrawEventHandler::SelectedMarkOpacity() : screenOpacity);
+	const PMReal opacity = kKESCMThumbMarkOpacity;
 
 	AutoGSave ag(gPort);
 	// ★サムネイル生成ポートでは、描画前に有効なクリップ矩形を設定しないと fill が出ない(KESCMDrawEntryOnPage の
@@ -1209,8 +1267,10 @@ static void KESCMDrawPageBorder(IGraphicsPort* gPort, IDataBase* db, UID pageUID
 	gPort->rectclip(pr.Left()   + kKESCMClipInset, pr.Top()    + kKESCMClipInset,
 	                pr.Width()  - kKESCMClipInset * 2.0, pr.Height() - kKESCMClipInset * 2.0);
 	gPort->setopacity(opacity, kFalse);
-	// ★2026-08-16: 印刷/PDF は CMYK で塗る(PDF/X-1a は RGB を許さない＝KESCMSetOutputColor 参照)。
-	KESCMSetOutputColor(gPort, cr, cg, cb, (drawMode == kKESCMDrawModePrint) ? kTrue : kFalse);
+	// ★色は RGB 固定。**サムネイル生成は印刷でも PDF 書き出しでもない**ので CMYK 指定は要らない
+	//   (CMYK が要る理由＝PDF/X-1a は RGB を許さない、は KESCMSetOutputColor の冒頭。
+	//    2026-08-17 に引数 drawMode を落とした＝上の説明を参照)。
+	KESCMSetOutputColor(gPort, cr, cg, cb, kFalse /*RGB*/);
 	gPort->rectfill(L,     T,     R - L, w);					// 上
 	gPort->rectfill(L,     B - w, R - L, w);					// 下
 	gPort->rectfill(L,     T + w, w,     (B - T) - w * PMReal(2.0));	// 左
@@ -1708,7 +1768,7 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 			const UID puid = spread->GetNthPageUID(i);
 			if (sOversetPages.count(puid) > 0)
 			{
-				KESCMDrawPageBorder(gPort, db, puid, sxr, drawMode, SelectedMarkOpacity(),
+				KESCMDrawPageBorder(gPort, db, puid,
 					kKESCMRingR, kKESCMRingG, kKESCMRingB);	// 変更と同じ赤枠(視認性のため復活)
 				KESCMDrawPageCrossOutlined(gPort, db, puid);	// 中央に赤＋白縁の＋
 			}
@@ -1950,7 +2010,7 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 				if (it != sEntries.end())
 				{
 					if (isThumb)
-						KESCMDrawPageBorder(gPort, db, srcPageUID, sxr, drawMode, SelectedMarkOpacity(), kKESCMRingR, kKESCMRingG, kKESCMRingB);
+						KESCMDrawPageBorder(gPort, db, srcPageUID, kKESCMRingR, kKESCMRingG, kKESCMRingB);
 					else
 						KESCMDrawEntryOnPage(gPort, vpAttr, it->second, db, srcPageUID, sxr, drawMode, SelectedMarkOpacity());
 				}
@@ -2023,7 +2083,7 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 		if (it != sEntries.end())
 		{
 			if (isThumb)
-				KESCMDrawPageBorder(gPort, db, pageUID, sxr, drawMode, screenMarkOp, kKESCMRingR, kKESCMRingG, kKESCMRingB);
+				KESCMDrawPageBorder(gPort, db, pageUID, kKESCMRingR, kKESCMRingG, kKESCMRingB);
 			else
 				KESCMDrawEntryOnPage(gPort, vpAttr, it->second, db, pageUID, sxr, drawMode, screenMarkOp);
 		}
