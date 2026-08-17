@@ -152,8 +152,10 @@ static void KESCMBuildStops(std::vector<KESCMNavStop>& out)
 	if (oversetHere)
 		marks->GetOversetLocations(locs);
 
+	// ★marks は上で InterfacePtr に引いてあるので、そのまま使う(Utils.h:74-80。2026-08-17 の
+	//   API 監査 B-U8＝同じ関数の中で InterfacePtr と直呼びが混在していた)。
 	std::vector<UID> flat;
-	Utils<IKESCMMarkData>()->GetAllPageUIDs(navDB, flat);
+	marks->GetAllPageUIDs(navDB, flat);
 	for (size_t i = 0; i < flat.size(); ++i)
 	{
 		const UID u = flat[i];
@@ -187,7 +189,7 @@ static void KESCMBuildStops(std::vector<KESCMNavStop>& out)
 	if (changeHere || oversetHere)
 	{
 		std::vector<UID> masters;
-		Utils<IKESCMMarkData>()->GetMasterPageUIDs(navDB, masters);
+		marks->GetMasterPageUIDs(navDB, masters);	// ★上で引いた InterfacePtr を使う(Utils.h:74-80)
 		for (size_t i = 0; i < masters.size(); ++i)
 		{
 			const UID u = masters[i];
@@ -294,7 +296,7 @@ static PMReal KESCMReadDocZoom(IDataBase* db)
 // 取れないビューは黙って飛ばす=そのビューは従来どおりスクロールだけになり、悪化はしない。
 //----------------------------------------------------------------------------------------
 // KESCMEnsureViewShowsSpread(KESCMChangeNav.h で宣言) — 1つのビューぶん。
-// ★1ビュー単位で括り出してある(2026-08-11)。同期経路(KESCMPeek.cpp)も「このビューを相手の
+// ★1ビュー単位で括り出してある(2026-08-11)。同期経路(KESCMViewSync.cpp。分割前は KESCMPeek.cpp)も「このビューを相手の
 //   マスタースプレッドへ移す」ために同じ判断を要るようになったため＝判断の置き場は1つ
 //   ([[one-question-one-place]])。下の KESCMEnsureSpreadInView は db の全ビューにこれを配るだけ。
 bool16 KESCMEnsureViewShowsSpread(IControlView* view, IDataBase* db, UID spreadUID)
@@ -408,7 +410,11 @@ static bool16 KESCMScrollDocToPBPoint(IDataBase* db, const PBPMPoint& pbPoint, P
 		// ★名称は新しい方(2026-08-06 ブロック10 監査で寄せた)。IPanorama.h:141-145 が旧 ScrollViewCenterTo を
 		//   「An obsolete name … New code should call ScrollContentLocationToFrameCenter … this function
 		//   will go away in a future release」と明記している。中身は同じ(:135-138 の inline が旧名を呼ぶ)。
-		//   ★KESCMPeek.cpp は既に新名称(:1010 ほか)＝このファイルだけが取り残されていた。
+		//   ⚠2026-08-17 訂正(API 監査 B-U8): 旧記述は「★KESCMPeek.cpp は既に新名称(:1010 ほか)」だったが、
+		//   **KESCMPeek.cpp は906行しかなく、そもそもこの API を1回も呼んでいない**(全数 Grep)。
+		//   分割で同期エンジンが移ったため＝新名称を使っているもう1つは **KESCMViewSync.cpp:681**
+		//   (ほかに KESCMStoryJump.cpp が説明として引用)。★行番号でよそのファイルを指す引用は、
+		//   そのファイルが分割・改名されると黙って嘘になる ---- B-U6 で同型を2件直したのに続く3件目。
 		pano->ScrollContentLocationToFrameCenter(pbPoint, kTrue /*forceRedraw*/);
 		any = kTrue;
 	}
@@ -542,6 +548,11 @@ static void KESCMScrollPagesPanelToPage(IDataBase* db, UID pageUID)
 	// ★マスターページはレイアウト側サブパネル(kLayoutPagesSubPanelWidgetID)の管轄外なので渡さない
 	//   (2026-08-06 追補。マスター overset へのジャンプ自体はスプレッド切替で成立し、パネル連動だけ
 	//   諦める)。通常ページかどうかは IPageList への所属(GetPageIndex>=0)で判定する(IPageList.h:97-104)。
+	// ★2026-08-17 追記(API 監査 B-U8): **第2引数 includePagesOfHiddenSpread の既定 kTrue に依存している。**
+	//   ここで欲しいのは「マスターではない=通常ページか」であって、隠れているかどうかは関係ない
+	//   ---- Hide Unchanged で隠れているページも通常ページなので kTrue が正しい。⚠ここを kFalse にすると
+	//   「隠したページへは Pages パネルが連動しない」に化ける(B7 A-2 で Story Edits の並び順が同じ引数の
+	//   既定に依存していたのと同型＝**依存していること自体を書いておく**)。
 	InterfacePtr<IPageList> pageList(db, db->GetRootUID(), UseDefaultIID());
 	if (pageList == nil || pageList->GetPageIndex(pageUID) < 0)
 		return;
@@ -673,7 +684,8 @@ static void KESCMSyncCompanionViews(IDataBase* navDB, UID pageUID)
 		if (srcPage != kInvalidUID)
 		{
 			// ★Sync layout views が ON のときは Source の「ビュー」スクロールをしない。理由: Sync オブザーバ
-			//   (KESCMPeek.cpp)が navDB(Target)のスクロールをページオフセット込みで Source へ自動ミラーする。
+			//   (KESCMViewSync.cpp。2026-08-13 の分割で KESCMPeek.cpp から移った)が navDB(Target)の
+			//   スクロールをページオフセット込みで Source へ自動ミラーする。
 			//   ここで Source を手動スクロールすると、その変化が Sync により Target へ逆ミラーされ、overset の
 			//   「+」スクロールがページ中心に打ち消される(2026-07-24 ユーザー発見: sync OFF なら overset に飛ぶ)。
 			//   sync ON では Target のスクロール(呼び手がやった分)を Sync が Source へ伝える。
@@ -807,10 +819,13 @@ bool16 KESCMGotoStoryFrame(IDataBase* db, UID frameUID, UID pageUID, UID storyUI
 	if (!KESCMScrollDocToStoryStart(db, storyUID, frameUID, landedFrame))
 		return kFalse;
 
+	// ★この関数だけで3回聞くので InterfacePtr に1回受ける(Utils.h:74-80。2026-08-17 の API 監査 B-U8)。
+	InterfacePtr<IKESCMMarkData> marks(Utils<IKESCMMarkData>().QueryUtilInterface());
+
 	// Pages パネルも、**実際に着地したフレーム**のページへ(ページに載っていないなら中で何もしない)。
 	// ★行が覚えている pageUID ではなく着地側から引く: 先頭フレームにパーセルが1つも配置されていない
 	//   ときは、着地するのは次のフレーム＝別のページのことがある。表示と実際がずれない方を採る。
-	KESCMScrollPagesPanelToPage(db, (landedFrame != kInvalidUID) ? Utils<IKESCMMarkData>()->GetFramePageUID(db, landedFrame) : pageUID);
+	KESCMScrollPagesPanelToPage(db, (landedFrame != kInvalidUID) ? marks->GetFramePageUID(db, landedFrame) : pageUID);
 
 	// ***** Source 側も連れて行く。ただし合わせるのは「ページ」ではなく「ストーリー」。*****
 	//
@@ -822,14 +837,14 @@ bool16 KESCMGotoStoryFrame(IDataBase* db, UID frameUID, UID pageUID, UID storyUI
 	// ★UID で引き当てられる根拠は、この機能全体が乗っているのと同じ前提＝**別名保存では story UID が
 	//   引き継がれる**(KESCMStoryStamp.h:36-38 に実測済み)。Source に無いストーリー(=Added の行)は
 	//   kInvalidUID が返るので、そのときは Target だけが動く。
-	IDataBase* sourceDB = Utils<IKESCMMarkData>()->GetMarkedSourceDB();
+	IDataBase* sourceDB = marks->GetMarkedSourceDB();
 	if (sourceDB != nil && sourceDB != db && storyUID != kInvalidUID)
 	{
 		UID srcFrame = Utils<IKESCMStoryEditsFacade>()->GetFirstFrameUID(sourceDB, storyUID);
 		if (srcFrame != kInvalidUID)
 		{
 			// ★Sync layout views が ON のときは Source を手動で動かさない ---- Sync のオブザーバ
-			//   (KESCMPeek.cpp)が、すぐ上でやった Target のスクロールを Source へ既にミラーしている。
+			//   (KESCMViewSync.cpp)が、すぐ上でやった Target のスクロールを Source へ既にミラーしている。
 			//   ここでも動かすと二重になり、しかもその変化が Sync 経由で Target へ逆ミラーされて、
 			//   出したはずのフレームが押し戻される(2026-07-24 に overset で実際に起きた形)。
 			//   ⚠ ON のとき Source が映すのは「Target と同じ座標」なので、ストーリーの位置がずれて
@@ -846,7 +861,7 @@ bool16 KESCMGotoStoryFrame(IDataBase* db, UID frameUID, UID pageUID, UID storyUI
 
 			// Pages パネルは Sync の対象外なので ON/OFF に関わらず追随させる(Source が前面のときだけ
 			// 中で効く。Target が前面なら上の呼び出しの方が効いている)。
-			KESCMScrollPagesPanelToPage(sourceDB, Utils<IKESCMMarkData>()->GetFramePageUID(sourceDB, srcFrame));
+			KESCMScrollPagesPanelToPage(sourceDB, marks->GetFramePageUID(sourceDB, srcFrame));
 		}
 	}
 

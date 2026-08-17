@@ -4,7 +4,7 @@
 //
 //  スクロールバー地図: 文書ウィンドウ(kLayoutPresentationBoss)の縦スクロールバー左隣に、
 //  KESCM の枠(変更マーク)ページ位置を示す細い strip を実行時注入する(VS の検索マーク風)。
-//  SDK 裏取りの全記録は docs/ai-notes/scrollbar-minimap.md(SDK ルート)。要点:
+//  SDK 裏取りの全記録は docs/ai-notes/scrollbar-minimap.md(SDK ルートからの相対パス)。要点:
 //    - 注入先: presentation の IPanelControlData(kOWLHostedPanelControlDataImpl)。
 //      スクロールバー boss 自身は IPanelControlData を持たないので子にはできない。
 //    - 実行時生成→注入の標準形は open/components/linksui/LinkInfoPanelObserver.cpp:281
@@ -19,9 +19,13 @@
 //  変更ページ(sEntries)=赤 / Add/Remove 登録ページ=緑(色はユーザー指定)。表示専用で
 //  クリック移動等は付けない(ユーザー指定 2026-07-11)→イベントハンドラ不要のシンプル構成。
 //
-//  ライフサイクル: Start(比較開始)で KESCMScrollMapAttach、Stop/Clear で KESCMScrollMapDetachAll
-//  (KESCMPanelObserver.cpp の KESCMToggleStartStop から呼ぶ)。strip へのポインタは一切保持しない
-//  (毎回 FindWidget で探す)ので、窓ごと閉じられて widget が消えていても安全。
+//  ライフサイクル: Start(比較開始)で KESCMScrollMapAttach、Stop/Clear で KESCMScrollMapDetachAll。
+//  ⚠2026-08-17 訂正(API 監査 B-U8): 旧記述は「KESCMPanelObserver.cpp の KESCMToggleStartStop から
+//  呼ぶ」だったが、**KESCMToggleStartStop は model 側(KESCMComparisonRun.cpp)にあり、この UI 関数を
+//  呼べない**。今は model が比較の開始/終了を**通知**し、UI 側の KESCMModelChangeObserver が受けて
+//  Attach/DetachAll する(フライアウトのトグル操作は KESCMActionComponent から)。
+//  strip へのポインタは一切保持しない(毎回 FindWidget で探す)ので、窓ごと閉じられて widget が
+//  消えていても安全。
 //
 //  ★ビルド時リンク依存:
 //    このファイルは 2 つの追加ライブラリを要求する(Dolly 既定の PMRuntime / Public だけでは未解決
@@ -29,7 +33,7 @@
 //      - DV_WidgetBin ... 下で継承している DVControlView(自前描画ビュー基底。#include "DVControlView.h")
 //      - WidgetBin    ... ::CreateObject + kViewRsrcType + AddWidget によるウィジェット実行時生成
 //    Windows(.vcxproj)では AdditionalDependencies に WidgetBin.lib / DV_WidgetBin.lib を追加済み
-//    (_buildproj のバックアップ参照)。
+//    (repo 内の控え = KESCM/buildproj/。⚠2026-08-17 訂正: 旧記述の「_buildproj」は存在しない)。
 //    ★Mac は追加不要(2026-07-25 追補で訂正): Mac 側の実体は libPublicPlugIn.a の 1 本だけで、
 //    Windows で 4 つに分かれているもの(PMRuntime / Public / WidgetBin / DV_WidgetBin)がそこに統合
 //    されている。DVControlView を使う SDK サンプル customdatalinkui の Xcode プロジェクトも、
@@ -252,7 +256,8 @@ static bool16 KESCMIsMasterSpread(IDataBase* db, UID spreadUID)
 // フェーズ2の実データ描画(表示専用。クリック移動等は付けない=ユーザー指定 2026-07-11)。
 //   ・背景 = テーマ地色(kInterfacePaletteFill)
 //   ・変更ページ(sEntries) = 赤の塗りつぶし
-//   ・Add/Remove 登録ページ(KESCMPageMapCollectRegistered) = 緑の塗りつぶし
+//   ・Add/Remove 登録ページ(IKESCMMarkData::GetRegisteredPages。実体は model 側の
+//     KESCMPageMapCollectRegistered) = 緑の塗りつぶし
 // 写像は「文書全体基準」(VS方式)。★2026-07-29 にスクロールバー実物へ合わせて基準を直した:
 // 縦の範囲は strip の全高ではなく「つまみが動けるトラック(上下の矢印ボタンの内側)」、Y の分母は
 // ページ矩形の全域ではなく「パノラマのスクロール全域(IPanorama::GetBounds。ペーストボード余白込み)」。
@@ -297,21 +302,30 @@ void KESCMScrollMapView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 	InterfacePtr<IDocumentPresentation> stripPres(
 		stripParent != nil ? (IDocumentPresentation*)stripParent->QueryParentFor(IID_IDOCUMENTPRESENTATION) : nil);
 	IDataBase* const db = (stripPres != nil) ? stripPres->GetDocumentUIDRef().GetDataBase() : nil;
-	const bool16 isTarget = (db != nil && db == Utils<IKESCMCompareFacade>()->GetArmedTargetDB());
-	const bool16 isSource = (!isTarget && db != nil && db == Utils<IKESCMCompareFacade>()->GetArmedSourceDB());
+	// ★この Draw だけで3回聞くので InterfacePtr に1回受ける(Utils.h:74-80。2026-08-17 の API 監査 B-U8)。
+	//   ここは strip の再描画のたびに通る＝下の marks と同じ扱いに揃える。
+	InterfacePtr<IKESCMCompareFacade> compare(Utils<IKESCMCompareFacade>().QueryUtilInterface());
+	const bool16 isTarget = (db != nil && db == compare->GetArmedTargetDB());
+	const bool16 isSource = (!isTarget && db != nil && db == compare->GetArmedSourceDB());
 	// ★Find Overset の帯(2026-07-24): 比較(arm)とは独立に、走査した文書(sOversetDB)の窓にも
 	//   overset ページを赤帯で出す。比較していない文書でもこの strip は描く(=オーバーセット検査だけでも
 	//   地図が出る)。比較と同じ文書なら赤どうしで自然に重なる。
 	InterfacePtr<IKESCMMarkData> marks(Utils<IKESCMMarkData>().QueryUtilInterface());
 	const bool16 isOverset = (db != nil && marks->GetOversetOn() &&
 		db == marks->GetOversetDB());
-	if ((!isTarget && !isSource && !isOverset) || !Utils<IKESCMCompareFacade>()->IsDocDBOpen(db))
+	if ((!isTarget && !isSource && !isOverset) || !compare->IsDocDBOpen(db))
 		return;
 
 	// 全ページの pasteboard Y 帯をスプレッド順・ページ順で集める。★隠しスプレッド(Hide Unchanged
 	// Spreads / ページパネルの Hide Spread)は除外する: 隠すと表示中スプレッドは再配置(座標更新)される
 	// のに、隠れたスプレッドは旧座標のまま残るため、含めると正規化が汚れて全マークがズレる
 	// (ユーザー報告 2026-07-11。KESCMFindPageUnderMouse のヒットテスト除外と同じ理由・同じ判定)。
+	// ★★2026-08-17(API 監査 B-U8): **ここは IPageList へ寄せない。** 平坦なページ列を集めるだけなら
+	//   IPageList が公式ルートで、KESCMCollectPageUIDs は 2026-08-16 の B3 A-3 でそちらへ寄せてある。
+	//   だが **IPageList は隠しスプレッドのページも含み、除外する口を持たない**(実測で確認済み＝
+	//   `IPageList.h:104` の includePagesOfHiddenSpread は GetPageIndex にしか無い)。この地図は
+	//   「隠れているページを載せない」ことが成立条件なので、スプレッドを1つずつ見て
+	//   IID_IHIDESPREADBOOLDATA を聞ける ISpreadList の道が要る。⇒ **意図的な非対称であって寄せ漏れではない。**
 	// ★★載せるページは「この窓が今どのスプレッドを見ているか」で切り替える(2026-08-11)。
 	// マスタースプレッドは通常スプレッドとは別の座標空間に居るので、マスターを表示している窓に
 	// 通常ページの帯を並べると、Y の分母(パノラマのスクロール全域=そのときはマスター側の範囲)と
@@ -700,9 +714,13 @@ void KESCMScrollMapDetachAll()
 }
 
 // KESCMScrollMapInvalidateAll(KESCMScrollMap.h 参照) — 注入済みの全 strip を再描画する。
-// 呼び所は2箇所: ①KESCMDoMarkChangesDoc の末尾(Start/登録トグルの全再比較・差分再比較)、
-// ②KESCMPeek.cpp のスプレッド再比較(旧 Ctrl+ミドル。★KESCMDoMarkChangesDoc を通らない独立経路
-// なので個別に呼ぶ必要がある=ユーザー報告 2026-07-11 で判明)。
+// ⚠2026-08-17 訂正(API 監査 B-U8): 旧記述は「呼び所は2箇所(①KESCMDoMarkChangesDoc の末尾
+// ②KESCMPeek.cpp のスプレッド再比較)」だったが、**どちらも model 側でこの UI 関数を呼べない**。
+// 分割で「比較が動いた」は通知になり、受け手の UI が地図を描き直す形になっている。
+// 全数 Grep での現状は**7箇所**＝KESCMModelChangeObserver.cpp(4＝全再比較/部分再比較/overset/クローズ)、
+// KESCMActionComponent.cpp(2＝地図トグル ON と Find Overset)、KESCMPeekGesture.cpp(1＝一括クローズ完了)。
+// ★数より大事なのは「独立経路が複数ある」ことで、それは分割後も変わっていない
+// (＝比較の再実行を1か所で捕まえることはできないので、増えたら都度ここを呼ぶ)。
 void KESCMScrollMapInvalidateAll()
 {
 	K2Vector<IPanelControlData*> panels;
@@ -785,8 +803,11 @@ void KESCMScrollMapNoticeDrawEvent()
 	if (!sScrollMapOn)
 		return;		// 「Show Scrollbar Map」OFF 中は strip も無い=毎描画の指紋計算を省く
 	// 未 arm でも Find Overset 単独なら strip があり得るので、その場合は続行する(2026-07-24)。
+	// ★この関数だけで3回聞くので InterfacePtr に1回受ける(Utils.h:74-80。2026-08-17 の API 監査 B-U8)。
+	//   ここは**描画イベントごと**に通る経路なので、marks と同じ扱いに揃える。
 	InterfacePtr<IKESCMMarkData> marks(Utils<IKESCMMarkData>().QueryUtilInterface());
-	if (Utils<IKESCMCompareFacade>()->GetArmedTargetDB() == nil &&
+	InterfacePtr<IKESCMCompareFacade> compare(Utils<IKESCMCompareFacade>().QueryUtilInterface());
+	if (compare->GetArmedTargetDB() == nil &&
 		!(marks->GetOversetOn() && marks->GetOversetDB() != nil))
 		return;		// arm も overset も無い = strip も無い(指紋は無意味なので触らない)
 
@@ -803,8 +824,8 @@ void KESCMScrollMapNoticeDrawEvent()
 	sHiddenCheckStarted = kTrue;
 	sHiddenCheckLast = now;
 
-	IDataBase* const tDB = Utils<IKESCMCompareFacade>()->GetArmedTargetDB();
-	IDataBase* const sDB = Utils<IKESCMCompareFacade>()->GetArmedSourceDB();
+	IDataBase* const tDB = compare->GetArmedTargetDB();
+	IDataBase* const sDB = compare->GetArmedSourceDB();
 	IDataBase* const oDB = marks->GetOversetOn() ? marks->GetOversetDB() : nil;
 	const uint32 ft = KESCMHiddenFingerprint(tDB) * 31u + KESCMShownMasterFingerprint(tDB);
 	const uint32 fs = KESCMHiddenFingerprint(sDB) * 31u + KESCMShownMasterFingerprint(sDB);

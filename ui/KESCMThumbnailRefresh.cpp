@@ -75,7 +75,9 @@ static void KESCMForceRedrawSubPanel(IPanelControlData* pcd, const WidgetID& sub
 //   Task 10)。「今どのページにマークが出得るか」は widget を1つも触らない **model の問い**で、
 //   呼び手も model 側(KESCMCore / KESCMPageCheck / KESCMPageMap)だけだった ---- ここに置いてあった
 //   せいで、その3ファイルが UI ヘッダーを include し続けていた(逆流台帳 §2-1)。
-//   宣言は KESCMCore.h。このファイルは下の Purge でそれを**呼ぶ側**に回る(UI→model は許される向き)。
+//   ⚠2026-08-17 訂正(API 監査 B-U8): ここは「宣言は KESCMCore.h」と書いていたが、**ui/ から
+//   KESCMCore.h は見えない**(model 側のヘッダー)。UI 側の入口は **IKESCMMarkData::GetMarkablePageUIDs**
+//   (境界の Facade。実体は model 側の KESCMCollectChangedPageUIDs)＝下の Purge はそれを呼んでいる。
 
 // ④ 指定ページ UID 群を per-UID Purge(共有画像キャッシュ無効化)。ワークスペースは実効セッションから。
 //    UID 列の入れ物は呼び出し側の都合で set/vector の両方が来るため、実体はイテレータ範囲テンプレートに
@@ -162,9 +164,18 @@ void KESCMTryRefreshPagesPanelThumbnails(IDataBase* db, const std::set<UID>* ext
 		//   無効化として実機で効かなかった(枠が消えない)ため、proven な per-UID を全ページに回す。
 		//   DropAll 済み=枠データが無いので、作り直されるサムネイルはクリーン(枠が消える)。
 		//   終端操作なのでパネル全体が一瞬リフレッシュされても許容。
-		std::vector<UID> allPages;
-		Utils<IKESCMMarkData>()->GetAllPageUIDs(db, allPages);
-		KESCMPurgePageThumbs(db, allPages);
+		// ★★2026-08-17(API 監査 B-U8): ここは下の KESCMPurgeAllPageThumbs へ委譲する。
+		//   **旧実装は GetAllPageUIDs しか呼んでおらず、マスターページが Purge から漏れていた**
+		//   ---- 同じファイルの KESCMPurgeAllPageThumbs は「片方だけ Purge するとマスターのサムネイルに
+		//   古い枠が残る」と自分で書いて両方を Purge しているのに、こちらだけが通常ページ止まりだった
+		//   (マスターにもマークは出る＝KESCMBuildMasterPairing でペアリングされている)。
+		//   ⚠この分岐は今も走る＝クローズ後の遅延 Purge(KESCMThumbIdleTask)がここを通る。
+		//   ★★実測で両方向を確認した(2026-08-17。Purge 件数を出す一時診断ビルドと、旧形へ戻した
+		//   反証ビルドの2本)＝**通常4ページ＋マスター1ページの文書で、Target を閉じた後の Purge が
+		//   旧形では 4、この形では 5**。つまり漏れていたのはちょうどマスターページ1枚だった。
+		//   ⇒ 「全ページを Purge する」の定義を1か所に寄せる([[one-question-one-place]])。
+		//   redraw は下の if (redrawNow) が担うので kFalse で呼ぶ(二重に描かない)。
+		KESCMPurgeAllPageThumbs(db, kFalse /*redrawNow*/);
 	}
 
 	if (redrawNow)
@@ -180,9 +191,11 @@ void KESCMPurgeAllPageThumbs(IDataBase* db, bool16 redrawNow)
 	//   ペアリングされ、KESCMDoMarkChangesDoc の対象に連結されている)ので、片方だけ Purge すると
 	//   マスターのサムネイルに古い枠が残る。KESCMCollectMasterPageUIDs は out をクリアしない契約
 	//   なので、そのまま後ろへ連結してよい。
+	// ★2回続けて聞くので InterfacePtr に1回受ける(Utils.h:74-80。2026-08-17 の API 監査 B-U8)。
+	InterfacePtr<IKESCMMarkData> marks(Utils<IKESCMMarkData>().QueryUtilInterface());
 	std::vector<UID> allPages;
-	Utils<IKESCMMarkData>()->GetAllPageUIDs(db, allPages);
-	Utils<IKESCMMarkData>()->GetMasterPageUIDs(db, allPages);
+	marks->GetAllPageUIDs(db, allPages);
+	marks->GetMasterPageUIDs(db, allPages);
 	KESCMPurgePageThumbs(db, allPages);
 
 	if (redrawNow)
