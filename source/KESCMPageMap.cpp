@@ -17,9 +17,11 @@
 //    ★旧実装の自前 IUIDListControlData 読み(kPagesPanelWidgetBoss 直上)は「ページアイコン選択」
 //    しか拾えず、見開き(スプレッド)として選択されると空になり項目が出なかった(2026-07-05 実機)。
 //    パネルには文書ページ用/マスター用のサブパネルが2つあり、選択の置き場は1本ではない。
-//  - メニュー: KESCM.fr がページパネルのページ右クリックメニュー(内部名 RtMenuPagesPanel、
-//    2026-07-05 実機確定)へトグル項目を追加している。内部名は非翻訳キーなので全ロケール共通。
-//    チェック/有効無効/動的ラベルは kCustomEnabling → KESCMPageMapUpdateToggleState。
+//  - メニュー: ★**ui/KCMUI.fr**(:891-926)がページパネルのページ右クリックメニュー(内部名
+//    RtMenuPagesPanel、2026-07-05 実機確定)へトグル項目を追加している。内部名は非翻訳キーなので
+//    全ロケール共通。⚠2026-08-17 訂正: ここは分割前の「KESCM.fr」のままだった ---- メニューは
+//    第2段(Task 6B-2)で UI 側へ出ており、model 側 KESCM.fr に RtMenuPagesPanel は1件も無い。
+//    チェック/有効無効/動的ラベルは kCustomEnabling → KESCMPageMapGetToggleState。
 //  - 登録の保持: セッション内のみ(文書ファイルには保存しない=dirty にもならない)。文書クローズ時は
 //    KESCMHandleDocsClosed からの KESCMPageMapSweepClosedDocs で状態だけ捨てる(deref なし)。
 //  - ステップ2(2026-07-05): 除外対応表(KESCMBuildPairing/KESCMMapTargetToSource/
@@ -114,7 +116,7 @@ bool16 KESCMPageMapReadSelection(IDataBase*& outDB, std::vector<UID>& outPages, 
 	//  「UI プラグインの boss はバックグラウンドスレッドから実体化できず nil が返る」に当たる。
 	//  にもかかわらずここに残しているのは、**この関数が BG から到達しないことを実測したから**:
 	//
-	//    ・呼び手は KESCMPageMapToggleSelectedPages と KESCMPageMapUpdateToggleState の2つだけ。
+	//    ・呼び手は KESCMPageMapToggleSelectedPages と KESCMPageMapGetToggleState の2つだけ。
 	//      どちらも Facade（IKESCMPageFlagsFacade）越しに **UI のメニュー操作**から入る。
 	//    ・BG で走るのは描画パス（KESCMDrawEventHandler::HandleDrawEvent）だけで、そこが呼ぶ
 	//      ページマップ系は **KESCMPageMapIsRegistered / KESCMPageMapHasAnyRegistered の読み取り2本**
@@ -174,7 +176,7 @@ void KESCMPageMapToggleSelectedPages()
 		return;		// メニューは kCustomEnabling で無効化済みのはずだが保険
 
 	// ★2026-07-11(ユーザー指定): 登録は「比較を Start 中(arm 済み)」かつ「選択文書が Target/Source」の
-	//   ときだけ可能。メニューは UpdateToggleState で無効化済みのはずだが、保険としてここでも弾く。
+	//   ときだけ可能。メニューは KESCMPageMapGetToggleState の答えで無効化済みのはずだが、保険としてここでも弾く。
 	if (!KESCMIsArmed() || (db != KESCMArmedTargetDB() && db != KESCMArmedSourceDB()))
 		return;
 
@@ -188,8 +190,11 @@ void KESCMPageMapToggleSelectedPages()
 		}
 	}
 
-	// ★パネルのステータス欄は幅・行数とも小さいため(ui/KCMUI.fr の kKESCMStatusTextWidgetID は
-	// 176×52px 程度で自動省略もされない)、メッセージは短く1行に収める。
+	// ★パネルのステータス欄は幅・行数とも小さいため(ui/KCMUI.fr:1921 の kKESCMStatusTextWidgetID は
+	// Frame(8,76,216,150)＝**208×74px の4行**で、kDontEllipsize＝自動省略もされない)、
+	// メッセージは短く1行に収める。⚠2026-08-17 訂正: ここは「176×52px 程度」と書いていた(2026-08-06
+	// 世代の値)。同じ欄を KESCMPageCheck.cpp が「約152px×4行」(2026-07-15 世代)と書いており、
+	// **同じ問いに2つの古い答えがあった**＝[[one-question-one-place]]。寸法は .fr で実測すること。
 	// ⚠ この欄は UI 側にあり、ここ(model)からは通知経由でしか届かない。**それでも文面の長さは
 	//   ここで決まる**＝送り手が短くするしかない(受け手には切る以外の逃げ道が無く、
 	//   数字の途中で切れると別の数に見える＝[[ellipsis-in-status-line-breaks-numbers]])。
@@ -251,12 +256,22 @@ void KESCMPageMapToggleSelectedPages()
 
 	// ★トグルしたページのサムネイル明示 per-UID Purge。必要なのは次の2ケースだけ:
 	//   ・再比較が走らなかった(未 arm 等) … 他に refresh 経路が無い
-	//   ・登録解除 … 解除ページは sRegistered からも sEntries/overflow(※)からも消えるため、再比較の
-	//     Purge 集合(現在の集合∪再比較前の sEntries/overflow 退避)のどこにも入らない=ここで拾うしかない
-	//     (※登録中はペアリングから除外されていたので、退避した旧 overflow にも入っていない)
+	//   ・登録解除 … 解除ページは sRegistered からも sEntries/overflow(※)からも消えるため、
+	//     **現在の状態から作れるどの集合にも入らない**=ここで拾うしかない
+	//     (※登録中はペアリングから除外されていたので、旧 overflow にも入っていない)
 	//   登録追加で再比較済みの場合はスキップ: トグル済みページは sRegistered に入っており、再比較側の
 	//   KESCMCollectChangedPageUIDs(登録ページ込み)が既に Purge+ForceRedraw している。ここでも呼ぶと
 	//   同じページを二重ラスタ化+パネル二重再描画(点滅)するだけで無意味(2026-07-10 レビューで判明)。
+	// ⚠★★2026-08-17(不具合再検査 B4)訂正＝上の「再比較の Purge 集合(現在の集合∪**再比較前の
+	//   sEntries/overflow 退避**)」という根拠は**もう存在しない**。その退避は 2026-08-13(Task 10)に
+	//   廃止され(KESCMCore.cpp の KESCMDoMarkChangesDoc 冒頭が「この退避は今は取っていない」と明記)、
+	//   **全再比較の通知はページ集合を載せない**⇒受け手の UI は db の**全ページ**を Purge している
+	//   (ui/KESCMModelChangeObserver.cpp の fPagesA/fPagesB が nil の分岐)。
+	//   ∴ 今の解除経路は「全ページ Purge のあとに触ったページをもう一度 Purge」＝**二重**になっている
+	//   (上の段落が避けよと書いているものと同じ形。害は点滅と再ラスタ化だけで、絵は正しい)。
+	//   ★**それでもこの通知は残す**: KESCMDoMarkChangesDoc の宿題「Task 12 で IKESCMMarkData が入ったら
+	//     退避を取り直して per-UID Purge へ戻す」が生きており、戻した瞬間に**解除ページを拾えるのは
+	//     この経路だけ**になる(戻すときに一緒に消すこと)。
 	// ★2026-08-13(Task 10): 直接呼びから通知へ。
 	// ★★2026-08-16(API 監査 B4): **トグルしたページ集合を通知に載せる**ので、UI は per-UID Purge に
 	//   戻った。⚠旧記述「**どのページかは通知では運べない**ので UI は db の全ページを作り直す」は
@@ -333,13 +348,8 @@ void KESCMPageMapSweepClosedDocs()
 	sRegistered.SweepClosedDocs();	// 終了中の nil ガードも deref 回避も入れ物側の責務(KESCMDocUidSet.cpp)
 }
 
-//========================================================================================
-// KESCMPageMapClearAll(KESCMPageMap.h で宣言)
-//========================================================================================
-void KESCMPageMapClearAll(IDataBase* db)
-{
-	sRegistered.ClearDoc(db);
-}
+// (KESCMPageMapClearAll は 2026-08-17 の不具合再検査 B4 で削除: 呼び手ゼロで、しかもヘッダーが
+//  「Stop から呼ぶ」と実在しない呼び手を宣言していた。Stop が呼ぶのは下の KESCMPageMapClearAllDocs。)
 
 //========================================================================================
 // KESCMPageMapClearAllDocs(KESCMPageMap.h で宣言)

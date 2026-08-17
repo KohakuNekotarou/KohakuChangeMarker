@@ -532,8 +532,11 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
    Start/Stop(名前の出し分け＋Start は文書2つ未満で灰色)・Hide Unchanged Spreads(Start 中のみ有効。
    2026-08-06 変更)・Find Overset(走査対象文書が無ければ灰色。ON 中は常に有効)・Refresh Overset/
    Export 等の条件付き有効化。ページパネル右クリックの「KCM: Register as Added/Removed Pages」だけは
-   選択依存の有効/無効・中間チェック・動的ラベルがあるため KESCMPageMapUpdateToggleState
-   (KESCMPageMap.cpp)へ委譲する。 */
+   選択依存の有効/無効・中間チェック・動的ラベルがあるため、model へ「今どう見えるべきか」を聞いてから
+   メニューへ書き込む(IKESCMPageFlagsFacade::GetRegisterToggleState → KESCMPageMapGetToggleState /
+   KESCMPageMap.cpp)。⚠2026-08-17 訂正: ここは旧名 KESCMPageMapUpdateToggleState のうえ「委譲する」と
+   書いていた ---- 2026-08-15 の API 監査 B2(A-2)で **SetNthActionState/SetNthActionName を呼ぶのは
+   この UI 側**になり、model は答えるだけになっている。 */
 void KESCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionStateList* listToUpdate, GSysPoint /*mousePoint*/, IPMUnknown* /*widget*/)
 {
 	for (int32 i = 0; i < listToUpdate->Length(); i++)

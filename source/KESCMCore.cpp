@@ -110,7 +110,7 @@ void KESCMCollectPageUIDs(IDataBase* db, std::vector<UID>& out)
 //   ⚠「UI ヘッダーを include している」だけでは逆流と断定できない、という実例そのもの。
 //
 // ⚠★★**なぜここは共有状態(sEntries ほか)をロックを取らずに全走査してよいのか**(2026-08-16・
-//   API 監査 B4 で明文化)。KESCMThreadSafety.h:76-81 の契約は「main が書き、**BG(PDF の非同期
+//   API 監査 B4 で明文化)。KESCMThreadSafety.h:86-93 の契約は「main が書き、**BG(PDF の非同期
 //   書き出し)が描画で読む**から守る」であって、**この関数はその BG 側ではない**——呼び手を
 //   全数数えると4つとも**メインスレッド**しかない:
 //     ・KESCMPageCheck.cpp の KESCMCollectMarked(トグル/メニュー状態/Load の復元)

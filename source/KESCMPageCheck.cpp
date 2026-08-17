@@ -13,7 +13,7 @@
 //  ★★マスターページも対象にする(2026-08-13)。共通リーダーを includeMasters=kTrue で呼ぶ点だけが
 //  Register(kFalse)との違い。理由=マスタースプレッドは 2026-08-11 から比較され枠が出るので、
 //  「枠の付いたページに読んだ印を付ける」という Check の意味がそのまま成立する。⚠それまでは
-//  リーダーがマスターを1つも返さず、UpdateToggleState が必ず kDisabled_Unselected を返していた
+//  リーダーがマスターを1つも返さず、トグル状態(現 KESCMPageCheckGetToggleState)が必ず「無効」を返していた
 //  =コンテキストメニューは無効項目を出さないので「マスターだけ KCM: Check が消える」に見えた。
 //  ★描画側は元からマスターで動く(サムネイル ✓ もレイアウト ✓ も「今描いているスプレッドのページ」を
 //  回すだけ・Purge はページ UID 単位・KESCMForceRedrawPagesPanelNow は Master サブパネルも再描画)。
@@ -50,8 +50,9 @@
 static KESCMDocUidSet sChecked;
 
 // db の「マーク付きページ」集合を1回だけ作る。マーク付き = KESCM の変更リング(sEntries)/登録「/」/
-// overflow「/」のいずれか。実体は KESCMCollectChangedPageUIDs(KESCMThumbnailRefresh.h。db が sDB/sSrcDB の
-// ときだけ true+集合を返す)。★複数ページを判定するときは、これを1回呼んでから outMarked.count() で引くこと
+// overflow「/」のいずれか。実体は KESCMCollectChangedPageUIDs(★**KESCMCore.h**。db が sDB/sSrcDB の
+// ときだけ true+集合を返す)。⚠2026-08-17 訂正: ここは所在を「KESCMThumbnailRefresh.h」と書いていたが、
+// それは UI 側のヘッダーで、2026-08-13(Task 10)に KESCMCore.h へ移っている(上の :46 が正しく書いている)。★複数ページを判定するときは、これを1回呼んでから outMarked.count() で引くこと
 // (KESCMCollectChangedPageUIDs は毎回 sEntries を全走査するため、ページごとに呼ぶと O(ページ数×変更数)になる)。
 static bool16 KESCMCollectMarked(IDataBase* db, std::set<UID>& outMarked)
 {
@@ -640,7 +641,7 @@ void KESCMPageCheckSaveToFile()
 {
 	if (!KESCMIsArmed())
 	{
-		PMString msg("Save: start first");	// ステータス行は幅が狭い(約152px×4行)ので短く
+		PMString msg("Save: start first");	// ステータス行は狭い(208×74px の4行=ui/KCMUI.fr:1921)ので短く
 		msg.SetTranslatable(kFalse);
 		KESCMNotifyStatus(msg, kTrue /*forceRedrawNow*/);
 		return;

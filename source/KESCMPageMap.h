@@ -92,9 +92,10 @@ KESCMPageToggleState KESCMPageMapGetToggleState();
 // 比較のみ)。
 void KESCMPageMapSweepClosedDocs();
 
-// db の登録(比較相手なしページ)を全部消す。db が nil、または登録が無ければ何もしない。
-// Stop(KESCMDoClearMarks)から呼ぶ他、将来のフライアウト「Clear Registered Pages」でも使う想定。
-void KESCMPageMapClearAll(IDataBase* db);
+// (KESCMPageMapClearAll(db)=1文書分の登録だけ消す口は 2026-08-17 の不具合再検査 B4 で削除した。
+//  ★呼び手はリポジトリ全体でゼロだったのに、ここには「Stop(KESCMDoClearMarks)から呼ぶ」と書いてあった
+//  ---- 実際に Stop が呼ぶのは下の KESCMPageMapClearAllDocs()。**実在しない呼び手を宣言していた**。
+//  「Clear Registered Pages」を作るときは、そのとき呼び手と一緒に戻すこと。)
 
 // 全文書の登録を丸ごと忘れる。Stop で比較を解除したら Add/Remove の登録も残さないために使う
 // (ユーザー指定 2026-07-11)。ポインタは触らず map を空にするだけ。

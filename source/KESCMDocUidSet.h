@@ -16,7 +16,7 @@
 //    ・★閉じた db は絶対に deref しない。生存スイープは IDocumentList::FindDocByDataBase への
 //      ポインタ比較のみで判定する([[uidref-reuse-after-close]])。
 //    ・空になった文書のエントリは即座に捨てる(スイープと「登録あり文書」の判定を軽く保つ)。
-//      Insert と Replace(非空) がエントリを作り、Erase / ClearDoc / Replace(空) が捨てる。
+//      Insert と Replace(非空) がエントリを作り、Erase / Replace(空) が捨てる(全消去は ClearAllDocs)。
 //
 //========================================================================================
 #ifndef __KESCMDocUidSet_h__
@@ -50,8 +50,9 @@ public:
 	// db の集合から uid を外す。空になったらエントリごと捨てる。
 	void Erase(IDataBase* db, UID uid);
 
-	// db のエントリを丸ごと捨てる(db が nil / エントリが無ければ何もしない)。
-	void ClearDoc(IDataBase* db);
+	// (ClearDoc(db)=1文書分だけ捨てる口は 2026-08-17 の不具合再検査 B4 で削除した。唯一の呼び手だった
+	//  KESCMPageMapClearAll 自身が呼び手ゼロだったため。「1文書分だけ忘れる」需要が出たら、そのとき
+	//  呼び手と一緒に戻すこと ---- 呼び手のいない口は守られない約束になる。)
 
 	// 全文書ぶんを忘れる。★ポインタは触らず map を空にするだけ(deref なし = 安全)。
 	void ClearAllDocs();
