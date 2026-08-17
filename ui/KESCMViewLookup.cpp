@@ -7,8 +7,9 @@
 //  どのビューか(Split Window 対応)・そのビューはどの文書のものか、の3つ。
 //
 //  ★分離では関数の中身を1行も変えていない。変えたのは「どのファイルに座るか」と「誰から見えるか」だけ。
-//    「直前にヒットした文書」ヒント(sLastViewHitDb)と、それを使う照合ヘルパも一緒に移した
-//    ——読み書きする3関数が全部ここへ来るので、状態が分割の両側に割れることはない。
+//    ⚠2026-08-17(API 監査 B-U7): このファイルは**状態を1つも持たなくなった**。分離のとき一緒に
+//    連れてきた「直前にヒットした文書」ヒント(sLastViewHitDb)と照合ヘルパは、
+//    KESCMFindDocDbForView のフォールバックごと畳んだ(下の実測を見よ)。
 //
 //  UI 側: どの関数も IControlView を受け取るか返すので、model プラグインからは触れない。
 //  ★逆流(model 側 KESCMColorSampler.cpp / KESCMPeek.cpp からの呼び出し)は 2026-08-15 の第2段
@@ -20,9 +21,6 @@
 #include "VCPlugInHeaders.h"
 
 #include "PersistUtils.h"			// ::GetUIDRef(doc)(view→文書→db)
-#include "ISession.h"				// GetExecutionContextSession(全文書走査のフォールバック)
-#include "IApplication.h"			// QueryDocumentList(同上)
-#include "IDocumentList.h"			// GetNthDoc / GetDocCount(同上)
 #include "IDataBase.h"
 #include "IDocument.h"
 #include "IControlView.h"
@@ -34,9 +32,7 @@
 #include "IPanorama.h"				// KESCMQueryPanorama(2026-08-13 に KESCMDrawEventHandler.cpp から移動)
 #include "IWidgetParent.h"			// 同上(自身に panorama が無ければ親を辿る)
 #include "LayoutUIID.h"				// kLayoutWidgetID / kLayoutSecondaryPanelWidgetID
-#include "ILayoutViewUtils.h"		// GetAllLayoutViews(KESCMFindDocDbForView のフォールバック)
-#include "ILayoutControlData.h"		// GetDocument(view→文書の公式ルート。KESCMFindDocDbForView)
-#include "K2Vector.h"				// GetAllLayoutViews の out コンテナ(間接includeに頼らず明示)
+#include "ILayoutControlData.h"		// GetDocument / GetSpreadRef(view→文書・表示中スプレッドの公式ルート)
 #include "PMPoint.h"
 #include "PMReal.h"
 
@@ -128,34 +124,6 @@ IControlView* KESCMQueryViewUnderMouse()
 	return hitView;
 }
 
-// view が db のレイアウトビュー群に含まれるか(1文書ぶんのポインタ照合)。下の2用途で共有する。
-static bool16 KESCMViewBelongsToDb(IControlView* view, IDataBase* db)
-{
-	if (view == nil || db == nil)
-		return kFalse;
-	K2Vector<IControlView*> views;
-	Utils<ILayoutViewUtils>()->GetAllLayoutViews(views, nil, db);	// 閉じた db なら空が返るだけ=安全
-	for (int32 vi = 0; vi < (int32)views.size(); ++vi)
-		if (views[vi] == view)
-			return kTrue;
-	return kFalse;
-}
-
-// ★直前にヒットした文書(2026-07-25 追補)。ホットパス最適化のためだけの「当たりを付ける」ヒント。
-//   Sync Layout Views のスクロール追従とツールカーソルの黒/白判定は、同じビューについて連続で
-//   (マウス移動のたび=数十回/秒)この関数を呼ぶ。毎回「全文書 × GetAllLayoutViews」を回すと
-//   文書数ぶんの K2Vector 構築が積み上がるので、まず前回の db だけを試す。
-//   ★誤りが混入しない作り: ヒントは「どの db から試すか」を決めるだけで、答えは必ず
-//   KESCMViewBelongsToDb による実照合で確定する。外れたら従来どおり全走査へフォールバックする。
-//   閉じた db が残っていても GetAllLayoutViews が空を返して外れるだけ(deref しない)。
-static IDataBase* sLastViewHitDb = nil;
-
-// 直前ヒントを捨てる(KESCMViewLookup.h で宣言)。文書クローズ・arm 切替・同期 OFF から呼ぶ。
-void KESCMForgetViewDbHint()
-{
-	sLastViewHitDb = nil;
-}
-
 // view がどの文書のレイアウトビューかを特定する。KESCMViewLookup.h のコメント参照。
 // (2026-07-25: KESCMPeek.cpp の file-static から共有ヘルパへ移動。色サンプラの窓ガードでも使うため)
 // ★★★2026-08-16: そのビューが今表示しているスプレッド(KESCMViewLookup.h に理由の全文)。
@@ -183,57 +151,28 @@ IDataBase* KESCMFindDocDbForView(IControlView* view)
 	//   CusDtLnkUIDDTargetFlavorHelper.cpp:197 / BscDNDCustomFlavorHelper.cpp:194)。
 	//   boss に載っていることは実機ダンプで確認済み(kLayoutWidgetBoss + IID_ILAYOUTCONTROLDATA)。
 	//   ★GetDocument() は AddRef しない生ポインタを返す(=Release 不要)。
+	//
+	// ★★★2026-08-17(API 監査 B-U7): **これ1本になった。** それまでは①が引けなかったときのために
+	//   「前回ヒットした db を試す → 外れたら全文書 × GetAllLayoutViews でポインタ照合」という
+	//   従来実装(約40行 + sLastViewHitDb のヒント)を残してあり、その理由は
+	//   「**Split Window の2枚目ペインで ILayoutControlData が引けるか実機未確認**」だった。
+	//   ⇒ **一時診断ビルドで実測して決着**＝「ウィンドウを分割」した文書の GetAllLayoutViews は
+	//   **2本返り、両方とも widget ID は kLayoutWidgetID、両方とも ILayoutControlData を持ち、
+	//   GetDocument() が自分の文書を正しく返す**。∴ フォールバックは一度も走らない ⇒ 畳んだ。
+	//   ⚠**戻す必要が出たときのために**: 旧実装が担保していたのは「返る db は必ず開いている文書のもの」
+	//   だけで、それは下の IsDocDBOpen が明示的に引き継いでいる(旧は IDocumentList 走査が暗黙に保証していた)。
 	InterfacePtr<ILayoutControlData> layoutData(view, IID_ILAYOUTCONTROLDATA);
-	if (layoutData != nil)
-	{
-		IDocument* doc = layoutData->GetDocument();
-		if (doc != nil)
-		{
-			IDataBase* db = ::GetUIDRef(doc).GetDataBase();
-			// ★生存確認を明示的に行う(2026-08-06 の自己レビューで追加)。従来の経路は IDocumentList を
-			//   走査して照合していたので「返る db は必ず開いている文書のもの」が**暗黙に保証**されていた。
-			//   公式ルートはビューに聞くだけなのでその保証が無く、黙って落とすと KESCM 全体の規約
-			//   (閉じた db を持ち回らない/deref しない)が崩れる。ここで確認して従来の性質を保つ。
-			//   引けなければ下のフォールバックへ流す(全走査でも見つからなければ nil)。
-			if (Utils<IKESCMCompareFacade>()->IsDocDBOpen(db))
-				return db;
-		}
-	}
-
-	// ---- 以下は①が引けなかったときのフォールバック(従来実装) ----
-	// ★★★2026-08-17 に実測した(API 監査 B-U7)＝**Split Window の2枚目ペインでも ILayoutControlData は
-	//   引ける**。一時診断ビルドで「ウィンドウを分割」した文書の GetAllLayoutViews を全数見たところ、
-	//   返る2本とも `lcd=YES doc=OK same=SAME`(＝どちらも自分の文書を正しく答える)だった。
-	//   ⇒ **この下は一度も走らない**ことが確かめられたので、丸ごと畳める(sLastViewHitDb のヒントごと)。
-	//   ⚠畳むかどうかはユーザー判断待ちなので、今は残してある。畳むときは KESCMForgetViewDbHint の
-	//     呼び手3か所(同期キャッシュの無効化・arm 切替・文書クローズ)も一緒に消すこと。
-
-	// ②前回ヒットした文書を先に試す(連続呼び出しはほぼここで確定する)。
-	if (sLastViewHitDb != nil && KESCMViewBelongsToDb(view, sLastViewHitDb))
-		return sLastViewHitDb;
-
-	// ③外れたら全文書を走査(従来どおり)。見つかった db を次回のヒントにする。
-	ISession* session = GetExecutionContextSession();	// 終了処理中は nil になり得る(下の共通規約参照)
-	InterfacePtr<IApplication> app(session != nil ? session->QueryApplication() : nil);
-	InterfacePtr<IDocumentList> docList(app ? app->QueryDocumentList() : nil);
-	if (docList == nil)
+	if (layoutData == nil)
 		return nil;
-	const int32 docCount = docList->GetDocCount();
-	for (int32 d = 0; d < docCount; ++d)
-	{
-		IDocument* doc = docList->GetNthDoc(d);
-		if (doc == nil)
-			continue;
-		IDataBase* db = ::GetUIDRef(doc).GetDataBase();
-		if (db == sLastViewHitDb)
-			continue;	// ②で試して外れている
-		if (KESCMViewBelongsToDb(view, db))
-		{
-			sLastViewHitDb = db;
-			return db;
-		}
-	}
-	return nil;
+	IDocument* doc = layoutData->GetDocument();
+	if (doc == nil)
+		return nil;
+
+	// ★生存確認を明示的に行う(2026-08-06 の自己レビューで追加)。ビューに聞くだけでは
+	//   「その文書がまだ開いているか」は分からないので、ここで確認して KESCM 全体の規約
+	//   (閉じた db を持ち回らない/deref しない)を守る。
+	IDataBase* db = ::GetUIDRef(doc).GetDataBase();
+	return Utils<IKESCMCompareFacade>()->IsDocDBOpen(db) ? db : nil;
 }
 
 

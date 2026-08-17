@@ -60,7 +60,7 @@
 #include "KCMUIID.h"
 #include "Utils.h"                   // Utils<IKESCMCompareFacade>()
 #include "IKESCMCompareFacade.h"     // arm 状態(2026-08-13・分割 第1段 Task 11 で Facade 経由へ)
-#include "KESCMViewLookup.h"         // KESCMFindDocDbForView / KESCMForgetViewDbHint(2026-08-13 に KESCMCore.h から移動)
+#include "KESCMViewLookup.h"         // KESCMFindDocDbForView(2026-08-13 に KESCMCore.h から移動)
                                      // ＋ KESCMQueryPanorama(2026-08-13 に KESCMDrawEventHandler.h から移動)
 #include "IKESCMMarkData.h"          // GetPagePairing / GetMasterPagePairing(除外対応表)。
                                      //   2026-08-13 Task 13 で KESCMPageMap.h から移した
@@ -159,7 +159,8 @@ void KESCMInvalidateSyncCaches()
 	sSyncPairBuilt    = kFalse;
 	sLastSrcPano      = nil;
 	sHaveLastSrcState = kFalse;
-	KESCMForgetViewDbHint();	// view→db の「直前ヒット」ヒントも一緒に捨てる
+	// (2026-08-17: ここで KESCMForgetViewDbHint() も呼んでいたが、view→db のヒントごと
+	//  フォールバックが畳まれて無くなった＝KESCMFindDocDbForView は毎回ビュー自身に聞く)
 }
 
 // 通知1回ぶんの入口で呼ぶ。TTL を過ぎていたらキャッシュを捨てて世代を切り直す。

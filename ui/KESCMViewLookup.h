@@ -45,10 +45,14 @@ IControlView*	KESCMQueryViewUnderMouse();
 
 // Which document's layout view this is, or nil.
 //
-// The official route is asked first: the layout view boss answers ILayoutControlData
-// ::GetDocument() (ILayoutControlData.h:181; the model is CPathCreationTracker.cpp:277-285).
-// Only when that fails does it fall back to matching pointers across every document's
-// GetAllLayoutViews.
+// The layout view boss answers ILayoutControlData::GetDocument() (ILayoutControlData.h:181;
+// the model is CPathCreationTracker.cpp:277-285). nil when the view has no layout control
+// data, or when the document it names is no longer open.
+//
+// ★Until 2026-08-17 this also carried a fallback (match the view pointer against every
+// document's GetAllLayoutViews, with a "last hit" hint to skip the scan). It was kept only
+// because it was unknown whether a split window's second pane answers ILayoutControlData.
+// It does -- measured -- so the fallback was removed; see the .cpp for the measurement.
 IDataBase*		KESCMFindDocDbForView(IControlView* view);
 
 // ★★★Which spread this view is CURRENTLY SHOWING, or kInvalidUID (2026-08-16).
@@ -64,12 +68,6 @@ IDataBase*		KESCMFindDocDbForView(IControlView* view);
 // answer it; the UI observes the spread and passes it down. The full story is on the model side,
 // in source/KESCMCore.h (the onlySpreadUID comment) -- not in any header this plug-in can include.
 UID				KESCMQuerySpreadUIDForView(IControlView* view);
-
-// Drop the fallback route's "document that matched last time" hint. The hint never decides
-// the answer -- it only picks which database to try first -- so correctness is unaffected,
-// but after a document close, an arm change, or sync being turned off it is known stale.
-// (While the official route works the fallback never runs, so this is effectively a no-op.)
-void			KESCMForgetViewDbHint();
 
 // The visible region (IPanorama) behind a view: scroll position and zoom live there. Page-item
 // child widgets have no panorama of their own, so this walks self -> parent (the layout widget)
