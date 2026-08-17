@@ -43,7 +43,8 @@
 #include "IXPManager.h"				// ★GetDocumentBlendingSpace / ReleaseBlendingSpace(PDF 書き出しの透明グループ)
 #include "IViewPortAttributes.h"		// ★kPDFExportVPAttr / kPDFIsFlattenerTargetVPAttr を GetAttr で聞く
 #include "PDFID.h"					// ★同上の ViewPortAttr ID(PDFID.h:1543-1544)
-#include "IPDFLibraryUtilsPublic.h"	// ★IsPDFExportPort(PDF 書き出しポートの判別。KESCMIsPDFExportPort)
+// (★IPDFLibraryUtilsPublic.h の include は 2026-08-17 の不具合再検査 B3 で外した＝それを使う
+//  KESCMIsPDFExportPort が呼び手ゼロだったため。跡地の記録は KESCMDrawRingForPrint の直前。)
 
 
 // 旧ページ番号バッジ(Show Original Page Numbers)用:
@@ -778,35 +779,13 @@ void KESCMDrawEventHandler::UnRegister(IDrwEvtDispatcher* d)
 // マスクで2回 fill する。呼び出し側で translate/scale 済み(user 空間 = 画像px)であること。
 //   e->buf は ARGB(先頭=alpha, 続いて R,G,B)。
 //========================================================================================
-//========================================================================================
-// ★★★このポートは「PDF 書き出し」か(2026-08-15・第2段 Task 12B で追加)。
-//
-//   ★公式の書き方をそのまま採った(2026-08-15 に SDK を実測。**製品コード2本が同じ形**):
-//     open/components/buttonui/misc/FormFieldLabelDrawer.cpp:139-140
-//     open/components/dynamicdocumentsui/motion/AnimationAdormentDrawer.cpp:112-113
-//         Utils<IPDFLibraryUtilsPublic const> utils;
-//         if (utils.Exists() && utils->IsPDFExportPort(gd->GetGraphicsPort())) ...
-//     ⚠ どちらも「PDF 書き出しなら**描かずに帰る**」ための判定で、KESCM とは目的が逆(こちらは
-//       出したい)。**判定の書き方だけを借りている。**
-//
-//   ★なぜ要るのか = **印刷と PDF 書き出しは同じ kPrinting で来るのに、描ける道具が違う。**
-//     下の KESCMDrawRingForPrint はアルファサーバ(CreateImagePaintServer + SetAlphaServer)で
-//     リング形状を作るが、**PDF 書き出しポートではそのマスクが落ち、矩形 fill だけが残る**
-//     ＝変更ページが**全面ベタ塗り**になってページの中身が完全に隠れる(2026-08-15 実測。
-//       PDF の中身も Image=0/SMask=2・増分 220B で、マスク画像が入っていないことを確認)。
-//     ★Adobe 自身も同じ性質に言及している —— FormFieldLabelDrawer.cpp:136-137
-//       "We don't need to do any of this when exporting to PDF. And the icon stuff breaks
-//        (while trying to set up the context for doing the bitmap...)"
-//     ⚠**本物の印刷では正常**(Microsoft Print to PDF で実測 = Image=10/SMask=5、枠もリングも正しい絵)。
-//       ∴ **印刷経路は1行も触らない。** 分けるのは PDF 書き出しだけ。
-//========================================================================================
-static bool16 KESCMIsPDFExportPort(IGraphicsPort* gPort)
-{
-	if (gPort == nil)
-		return kFalse;
-	Utils<IPDFLibraryUtilsPublic const> utils;	// ★const 版で引くのも公式2本と同じ
-	return (utils.Exists() && utils->IsPDFExportPort(gPort)) ? kTrue : kFalse;
-}
+// (★`KESCMIsPDFExportPort()` は 2026-08-17 の不具合再検査 B3 で**削除した＝呼び手ゼロ**。
+//  印刷と PDF 書き出しを**別々に描いていた時期**の判定で、2026-08-16 に両方を下の
+//  KESCMDrawRingForPrint 1本へ統一したときに呼び手が消えていた。PDF 固有の初期化(透明グループ)が
+//  要るかどうかは、あちらが `vpAttr->GetAttr(kPDFExportVPAttr)` で**直接ポートに聞いている**ので、
+//  この関数を経由する道はもう無い。⚠一緒に `IPDFLibraryUtilsPublic.h` の include も外した。
+//  ★公式の書き方(製品2本 FormFieldLabelDrawer.cpp:139-140 / AnimationAdormentDrawer.cpp:112-113 と
+//    同形)は docs/ai-notes/kescm-task12-pdf-export-marks-2026-08-15.md に残してある。)
 
 
 //========================================================================================
@@ -881,6 +860,20 @@ static void KESCMDrawRingForPrint(IGraphicsPort* gPort, IViewPortAttributes* vpA
 	//     ★手がかりは台帳（api-official-examples.md「印刷/PDF でも半透明のまま図形を描く」）に最初から
 	//       注記してあったのに、引かずに独自の結論へ進んでいた。
 	//     全文＝docs/ai-notes/kescm-pdf-transparency-2026-08-16.md
+	//
+	//   ★★★**透明グループが要るのは「アルファサーバで塗る」この関数だけ**
+	//     (2026-08-17・不具合再検査 B3 で実測。**次に同じ疑いを持った人は測り直さなくてよい**)。
+	//     同じ描画イベントで印刷/PDF に出る他のマーク —— 登録/あふれの「/」(KESCMDrawPageDiagonal)・
+	//     ✓(KESCMDrawPageCheck)・ページ枠(KESCMDrawPageBorder) —— は `setopacity` ＋ ベクター塗りだけで
+	//     透明グループを開いていない。**それで正しい**:
+	//       ・PDF **1.4** … あふれ「/」しか出ないページ(ページ数差で余った1枚)を 25% と 75% で
+	//         書き出して比べたところ、**`/ca 0.25` `/CA 0.25`**(と 0.75)が**そのまま PDF に載っていた**
+	//         ＝ 透明グループ無しでも半透明で出る。
+	//       ・PDF **1.3** … 同じページが **`/ca 1.0`** ＝ 不透明になる(1.3 に透明の表現が無いため)。
+	//         ⚠ただし**全面ベタにはならない**(「/」の形は保たれる) ＝ **全面ベタはアルファサーバ固有の
+	//         症状**で、マスクを使わない「/」「✓」「枠」には起きない。
+	//     ⇒ ★**「透明グループが無いから PDF で不透明になる」ではない。** 分かれ目は
+	//       **マスク(アルファサーバ)を使うかどうか**。資材＝work/kescm-selftest/b3/ov{25,75,13,off}.pdf
 	//========================================================================================
 	bool16 needTransparencyGroup = kFalse;
 	if (vpAttr != nil)
@@ -1019,6 +1012,17 @@ static void KESCMDrawRingForPrint(IGraphicsPort* gPort, IViewPortAttributes* vpA
 //   パネルには枠を一切出さない方針に変更=HandleDrawEvent 側でこの描画コンテキストを早期 return)
 enum { kKESCMDrawModeScreen = 0, kKESCMDrawModePrint = 1 };
 
+// (★`KESCMDrawRingVectorForPDF()` は 2026-08-17 の不具合再検査 B3 で**削除した＝呼び手ゼロ**。
+//  中身は「PDF 書き出しポートは透明を一切通さないので、リング画素をランレングス矩形で塗り、
+//  不透明度は**白と混ぜた色に溶かす**」という近似(2026-08-15)だった。
+//  ⚠★★**その前提は 2026-08-16 に誤りだと判明している**——欠けていたのは公式が要求する追加初期化
+//    (PDF ポートでの `starttransparencygroup`)だけで、足したら 1.4 でも 1.3 でも半透明で出た。
+//    同日 KESCMDrawEntryOnPage の印刷/PDF 分岐を1本へ畳んだ時点で呼び手が消えたが、**関数と
+//    「この関数が全プリセットで安全な唯一の実装・動かすな」という 70 行の解説だけが残っていた**
+//    ＝いま動いている実装(アルファサーバ1本)を「落ちる道」と読ませる状態。⚠その「落ちる」も
+//    撤回済み(PID の変化を証拠にした誤り)。
+//  ★近似そのものが要らなくなった理由と実験の全文＝docs/ai-notes/kescm-pdf-transparency-2026-08-16.md)
+
 //========================================================================================
 // ページ1枚分のリング描画(HandleDrawEvent の Target ループから括り出した共通部)。
 //   db/pageUID のページ矩形へ e のリング画像をフィットさせて描く。リング太さの再計算
@@ -1030,145 +1034,6 @@ enum { kKESCMDrawModeScreen = 0, kKESCMDrawModePrint = 1 };
 //   ★Target と Source を別ズームで表示中は e->lastRadius が行き来して BuildRing が走り直すが、
 //   リング画像は 36dpi 化済みでバッファが小さく実害はない。
 //========================================================================================
-//========================================================================================
-// ★★★PDF 書き出し専用のリング描画(2026-08-15・第2段 Task 12B)。
-//
-//   ⚠⚠⚠**2026-08-16 に下の「前提」は誤りだと判明した。真因は別で、しかも直そうとしたら落ちた。**
-//     ここを読む人は**必ず下の【2026-08-16 の決着】まで読むこと**。要約:
-//       ①「ポートが透明を受け付けない」のではなく、**あの日の書き出しプリセットが PDF 1.3 だった**。
-//          ガイド vol1-09「Flattening」＝ "PostScript and PDF 1.3 have no representation of
-//          transparency information." ⇒ ①〜④が全滅した理由はこの1点。
-//       ②**PDF 1.4 なら透明はちゃんと出る**（実測＝[高品質印刷] で /Group=14・/SMask=6・/ca=6、目視も良好）。
-//       ③⚠**しかし公式どおり透明グループを足すと、PDF 1.3 の書き出しで InDesign が落ちる**（実測）。
-//          ⇒ **下のベクター塗り（この関数）が、全プリセットで安全な唯一の実装**。動かさないこと。
-//
-//   ■ （2026-08-15 当時の記述。**上のとおり前提は誤り**だが、実験の内容自体は記録として残す）
-//     4つ試し、出来上がった PDF を毎回バイナリで検分して確かめた:
-//       ①アルファサーバ(CreateImagePaintServer + SetAlphaServer)
-//            → マスクごと落ち、rectpath だけが残って **変更ページが全面ベタ塗り**
-//              (PDF は Image=0・増分わずか 220B)。⚠**本物の印刷では正常に効く**のがややこしい。
-//       ②setopacity + image()            → PDF の ExtGState は **`/ca 1.0` `/CA 1.0`**(不透明)
-//       ③setopacity + 透明グループ + image() → PDF に **`/Group` が1つも出ない**(グループごと無視)
-//       ④画素 alpha に不透明度を焼いて image()
-//            → ★**決定打**: 出来た PDF の画像オブジェクトは `/Width 213 /Height 284 /BitsPerComponent 8`
-//              で **`/SMask` が付いていない**。⇒ **このポートは画像のアルファチャンネルを捨てる。**
-//              (①②③が効かない理由も全部これ。「透明が消える」という一つの事実の別の顔)
-//     一方 ★**ベクターの塗りと色は正しく出る**(①の全面ベタが「純青」で出ていたのが逆説的な証拠)。
-//
-//   ■ ⇒ 採った道: **リングの形をベクターで塗り、不透明度は色に溶かす。**
-//     ・形 = リング画像の「alpha≠0 の画素」を1行ずつランレングスで矩形にまとめて塗る
-//       (画像そのままの形なので、画面・印刷と同じリングになる)
-//     ・濃さ = 白と混ぜた淡色 c' = 255 - (255 - c) * opacity で**不透明**に塗る
-//       ⚠白背景を前提にした近似。下地が白でない場所ではマークが浮く。それでも
-//         「全面ベタで中身が読めない」より遥かによく、印刷(Print to PDF)の見た目とも一致する。
-//     ・赤/青の2パスに分けるのは KESCMDrawRingForPrint と同じ(背景が赤っぽい所は青リング)。
-//
-//========================================================================================
-// 【2026-08-16 の決着】★★★この関数を動かす前に必ず読むこと。
-//
-//  ■ 真因 ＝ **書き出しプリセットの互換性レベル**（ポートの性質ではなかった）
-//    実測: 既定で使われていたのは `acrobatCompatibility = "Ac40"` ＝ **Acrobat 4 ＝ PDF 1.3**。
-//    ガイド vol1-09「Flattening」が明記 ---- "**PostScript and PDF 1.3 have no representation of
-//    transparency information.**" ⇒ /ca が 1.0 に潰れるのも /Group が出ないのも /SMask が付かないのも、
-//    **すべてこの1点で説明が付く**。★教訓＝**「実測した」が示せるのは「その条件では出なかった」まで。**
-//
-//  ■ ⚠**日本の入稿プリセットはほぼ PDF 1.3**（実測）:
-//    [PDF/X-1a:2001 (日本)] / [PDF/X-3:2002 (日本)] / [雑誌広告送稿用] ＝ **Acrobat 4**。
-//    [高品質印刷]・[プレス品質]＝1.4、[最小ファイルサイズ]＝1.5、[PDF/X-4:2008]＝1.6。
-//
-//  ■ ★**PDF 1.4 なら透明は出せる**（公式どおりアルファサーバ＋透明グループにした場合）:
-//    `transparencyeffect/TranFxAdornment.cpp:392-407` の形（`isPDFExport && !isPDFFlattenerExport` の
-//    ときだけ `starttransparencygroup(bounds, xpManager->GetDocumentBlendingSpace(gPort), …)`）で実測
-//    ⇒ **[高品質印刷] で /Group=14・/SMask=6・/ca=6、サイズ +8,623B、目視でも枠が半透明**。
-//
-//  ■ ⚠⚠⚠**だが採用できない。PDF 1.3 で書き出すと InDesign が落ちる**（2026-08-16 実測・PID が変化）。
-//    理由＝**公式の判定は互換性レベルを見ていない**。PDF 1.3 の書き出しでも
-//    `kPDFExportVPAttr`=1 / `kPDFIsFlattenerTargetVPAttr`=0（KT の `app.ktDrawProbe` で実測）なので
-//    条件が成立し、**1.3 の出力先に透明グループを開いてしまう**。
-//    ★**描画中に互換性レベルを知る手段は未発見**（上の2属性では判定できない）。見つかれば分岐できる。
-//
-//  ■ ★**もう一つ否定された道**＝「ベクターのパス ＋ setopacity」（この関数の色計算を setopacity に
-//    置き換えたもの）＝ PDF では**不透明のまま**で、さらに**バックグラウンドタスクがエラー**になった。
-//    リング1つが数千本の 1px 帯サブパスなので、半透明にするとフラットナが破綻すると見られる。
-//
-//  ■ ★**対照実験（ユーザー提案。効いた）**＝本体の 25% 不透明度の矩形を [PDF/X-1a] で書き出すと **387KB**
-//    （PDF 1.4 なら 6KB）＝**フラットナがラスタ化して見た目を保っている**。つまり「1.3 では半透明が使えない」
-//    は本体には当てはまらない。draw event handler の描画は**フラットナの入力に入らない**ので保たれない
-//    （ガイド vol1-09「透明は page-item adornments 経由でデバイスへレンダリングされる」と整合）。
-//    ⚠ ただし adornment 化は `IPageItemAdornmentList` が**永続インターフェイス**なので .indd に書き込まれる
-//      （`AddAdornment(ClassID, bool16)` の第2引数は "**kTrue will mark the document as dirty**" ＝
-//       永続の有無ではない＝`IPageItemAdornmentList.h:91-95`）。KESCM の「文書を書き換えない」設計と両立しない。
-//
-//  ⇒ **結論＝この関数（ベクター塗り・不透明度を色に溶かす）が全プリセットで安全な唯一の実装。**
-//     全文＝docs/ai-notes/kescm-pdf-transparency-2026-08-16.md
-//========================================================================================
-static void KESCMDrawRingVectorForPDF(IGraphicsPort* gPort, KESCMOverlayEntry* e, const PMReal& opacity)
-{
-	if (gPort == nil || e == nil || e->buf == nil || e->w <= 0 || e->h <= 0 || e->bpp < 4)
-		return;
-	const int32 w = e->w, h = e->h, rb = e->rowBytes, bpp = e->bpp;
-
-	// ★2026-08-16: 色は画面(BuildRing)と同じ定数を使う。2パス目は**シアン**（旧: 純青。画面と食い違っていた）。
-	struct PassDef { uint8 r, g, b; bool16 wantBlue; };
-	const PassDef passes[2] = {
-		{ kKESCMRingR,    kKESCMRingG,    kKESCMRingB,    kFalse },	// 赤
-		{ kKESCMRingAltR, kKESCMRingAltG, kKESCMRingAltB, kTrue  }	// シアン
-	};
-
-	for (int p = 0; p < 2; ++p)
-	{
-		// 白と混ぜた「見た目の色」。opacity=0.25 なら赤は (255,191,191)。
-		const PMReal cr = (PMReal(255.0) - (PMReal(255.0) - PMReal(passes[p].r)) * opacity) / PMReal(255.0);
-		const PMReal cg = (PMReal(255.0) - (PMReal(255.0) - PMReal(passes[p].g)) * opacity) / PMReal(255.0);
-		const PMReal cb = (PMReal(255.0) - (PMReal(255.0) - PMReal(passes[p].b)) * opacity) / PMReal(255.0);
-
-		AutoGSave ag(gPort);
-		gPort->setopacity(PMReal(1.0), kFalse);	// 濃さは色に溶かしてあるので、ここは不透明に固定
-		// ★2026-08-16: **CMYK で塗る**（PDF/X-1a は RGB を許さない＝KESCMSetOutputColor 参照）。
-		//   ⚠ここは「白と混ぜた淡色」なので、CMYK でも淡い色になる（赤25% → C0 M25 Y25 K0）。
-		KESCMSetOutputColor(gPort,
-			(uint8)::ToInt32(::Round(cr * PMReal(255.0))),
-			(uint8)::ToInt32(::Round(cg * PMReal(255.0))),
-			(uint8)::ToInt32(::Round(cb * PMReal(255.0))), kTrue /*CMYK*/);
-		gPort->newpath();
-		bool16 anyRun = kFalse;
-		for (int32 y = 0; y < h; ++y)
-		{
-			const uint8* row = e->buf + (size_t)y * rb;
-			int32 x = 0;
-			while (x < w)
-			{
-				// このパスに属する画素 = alpha≠0 かつ 色の判定(青は B>R)が一致するもの
-				while (x < w)
-				{
-					const uint8* px = row + (size_t)x * bpp;	// [alpha, R, G, B]
-					const bool16 isBlue = (px[3] > px[1]) ? kTrue : kFalse;
-					if (px[0] != 0 && isBlue == passes[p].wantBlue)
-						break;
-					++x;
-				}
-				if (x >= w)
-					break;
-				const int32 x0 = x;
-				while (x < w)
-				{
-					const uint8* px = row + (size_t)x * bpp;
-					const bool16 isBlue = (px[3] > px[1]) ? kTrue : kFalse;
-					if (px[0] == 0 || isBlue != passes[p].wantBlue)
-						break;
-					++x;
-				}
-				// user 空間 = 画像px(呼び出し側で translate/scale 済み)。1px 高の横帯を1本のサブパスに。
-				gPort->rectpath(PMReal(x0), PMReal(y), PMReal(x - x0), PMReal(1.0));
-				anyRun = kTrue;
-			}
-		}
-		if (anyRun)
-			gPort->fill();
-	}
-}
-
-
 static void KESCMDrawEntryOnPage(IGraphicsPort* gPort, IViewPortAttributes* vpAttr,
 	KESCMOverlayEntry* e, IDataBase* db, UID pageUID,
 	const PMReal& sxr, int32 drawMode, const PMReal& screenOpacity)
@@ -1599,7 +1464,14 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	//     配られることを実測した**(Task 11C)。⇒ **このハンドラは BG でも呼ばれる前提で読むこと。**
 	//     ⚠**残る注意は「同じ static を共有するが db は別」という点**＝BG が見る `db` は**クローンの別
 	//       ポインタ**なので、文書の同一性をポインタで聞いてはいけない(`KESCMIsSameDoc`＝KESCMThreadSafety.h)。
-	//     ⚠**PDF 書き出しポートは透明を一切通さない**(Task 12B の実測)＝ベクターで塗り、不透明度は色に溶かす。
+	//     ⚠★★**旧記述「PDF 書き出しポートは透明を一切通さない(Task 12B の実測)＝ベクターで塗り、
+	//       不透明度は色に溶かす」は 2026-08-16 に撤回した**(2026-08-17 の不具合再検査 B3 でここに反映)。
+	//       欠けていたのは**公式が要求する追加初期化**(PDF ポートでの `starttransparencygroup`)だけで、
+	//       足したら **PDF 1.4 でも 1.3 でも半透明で出た**。⇒ 今は**印刷と PDF が同じ処理**
+	//       (アルファサーバ1本＝KESCMDrawRingForPrint)で、ベクター近似の関数は削除済み。
+	//       ⚠残る既知の制限は「**PDF 1.3 かつ透明を1つも含まないページではリングが全面ベタ**」だけ
+	//         (アルファサーバのマスクが解決されないため)。How to Use に「書き出しの互換性は
+	//         Acrobat 5(PDF 1.4)以上に」と明記してある＝**コードでは分岐しない**(ユーザー判断)。
 	//     ★出力先を測る道具は今も有効＝app.ktDrawProbe(KT/KTDrawProbe.cpp)で「その描画はどの出力先か」を実測する。
 	// 自己参照(自前スナップショット)は上の tl_Rasterizing で防ぐので、ここで kPreviewMode は見ない。
 	const bool16 printing = (ded->flags & IShape::kPrinting) != 0;

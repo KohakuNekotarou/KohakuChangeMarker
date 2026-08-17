@@ -634,6 +634,19 @@ ErrorCode KESCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMStri
 		KESCMDrawEventHandler::DropAll();
 		changedCount = 0;
 		ErrorUtils::PMSetGlobalErrorCode(kSuccess);	// 中断で立った可能性のあるエラーを持ち越さない
+		// ★★2026-08-17(不具合再検査 B3): **ここで Story Edits の一覧を捨てる必要は無い。**
+		//   一度は「マークは全部消えるのに一覧だけ前回の比較のまま残り、もう比較していない2文書の
+		//   差分を指したままクリックで飛べる行が並ぶ」と読んで KESCMStoryList::Clear() を足したが、
+		//   **呼び手を4つとも開いたら成立しなかった**——この関数が kFailure(=キャンセル)を返したとき:
+		//     ・Start(KESCMComparisonRun.cpp:152)              … arm しない。そこへ来る前は必ず未 arm
+		//       ＝一覧は空(ブック比較の「Start Change Marker」も KESCMBookOpen.cpp:477 で先に Stop する)
+		//     ・登録トグル(KESCMPageMap.cpp:242)               … KESCMToggleStartStop() で Stop へ戻す
+		//     ・Load Check & Register(KESCMPageCheck.cpp:824)  … 同上
+		//     ・Ignore トグル(ui/KESCMActionComponent.cpp:401) … 同上
+		//   ⇒ **4つとも Stop へ戻す**ので、Stop(KESCMDoClearMarks)の KESCMStoryList::Clear() が必ず走る。
+		//   ⚠★**この関数の中だけを読むと「一覧が残る」ように見える**(後始末が呼び手側にあるため)。
+		//     次に同じ疑いを持ったらここを読むこと。実測＝30ページの再比較を進捗バーでキャンセルし、
+		//     見出しが "Story Edits (3)" → "Story Edits" へ戻ることを確認(2026-08-17)。
 	}
 	else
 	{

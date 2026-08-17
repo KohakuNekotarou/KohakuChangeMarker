@@ -90,27 +90,34 @@ struct KESCMOrigImage
 //   ページUID→オーバーレイの集合を保持し、スプレッド描画時に、そのスプレッドに属する
 //   各ページのリングを blit する。リング太さは描画時のズームに追従。非永続=.indd に残らない。
 //
-// ⚠★★★2026-08-14: **model/UI 分割の第2段(kModelPlugIn 化)の前に、必ずここを読むこと。**
-//   下の static 群は**この設計のままではバックグラウンドスレッドで正しく動かない**。
-//   理由は2つあり、どちらもガイド vol1-07 Multithreading の本文が根拠:
+// ★★★バックグラウンドスレッド(PDF の非同期書き出し)からも、このハンドラは呼ばれる。
+//   2026-08-14 にここへ「第2段(kModelPlugIn 化)の**前に**必ず読め・測る前に本番を回すな」と書いた警告は、
+//   **第2段の完了(2026-08-15)で2つとも片付いた**。⚠その後も「これから直す」形のまま残っていたので、
+//   2026-08-17 の不具合再検査 B3 で**現状**へ書き換えた。根拠はどちらもガイド vol1-07 Multithreading:
 //
 //   (1) **BG スレッドが見る DB は「クローンされた別の DB」**
 //       ("provides a separate execution context (a cloned copy of the database) for each thread")。
-//       ⇒ 描画に渡ってくる db は sDB とは**別ポインタ**になる。下の sDB / sOverflowCacheDB は
-//         「同じ文書か」を**生ポインタの一致で判定**しているので、BG では必ず食い違い、
-//         ①マークが出ない か ②EnsureOverflowCache が**描画のたびに作り直す**(=下の(2))。
-//       ★直す方向 = 生ポインタ比較をやめ、IDataBase::GetSysFile(ファイル)で同一性を聞く
-//         (閉じた文書のポインタがアドレス再利用で別文書と一致する問題も同時に消える)。
+//       ⇒ 描画に渡ってくる db は sDB とは**必ず別ポインタ**になる。
+//       ✅**解決済み** = 描画側の同一性判定は **`KESCMIsSameDoc()`**(ファイルで聞く。KESCMThreadSafety.h)。
+//         ★同時に [[uidref-reuse-after-close]](閉じた文書のポインタがアドレス再利用で別文書と一致する)も消えた。
+//       ⚠**`sOverflowCacheDB` / `sOverflowCacheSrcDB` だけは今も生ポインタ比較で、それが正しい**——
+//         あれが比べるのは **static どうし**(sOverflowCacheDB と sDB)なので、どのスレッドから見ても
+//         同じ答えになる(理由は .cpp の EnsureOverflowCache)。**「全部 GetSysFile へ寄せる」ではない。**
 //
 //   (2) **スレッドは object model のインスタンスは共有しないが、static は共有する**
 //       ("Threads do not share object-model instances. They do share globals and statics")。
 //       ⇒ 下の可変 static は main と BG から同時に触られる。とくに **sEntries は生ポインタの map で
-//         DropAll() が delete する**ので、**BG が読んでいる最中に main が Stop すると解放済みメモリを読む**。
-//       ★守らないと "InDesign will behave inconsistently and **may randomly crash**"(ガイドの原文)。
+//         DropAll() が delete する**ので、**BG が読んでいる最中に main が Stop すると解放済みメモリを読む**
+//         ("InDesign will behave inconsistently and **may randomly crash**" =ガイドの原文)。
+//       ✅**解決済み** = マーク集合を触る所は **KESCMMarkStateLock** で守る(DropAll / DropOneEntry /
+//         MakeEntry の置換 / HandleDrawEvent の描画2ループ / RebuildOverflowCache の差し替え)。
+//         ラスタ化中フラグは**スレッドローカル**(tl_Rasterizing)。
+//       ⚠**守る条件は「main が書き、BG が描画で読む」**＝新しい共有状態を足したら、その条件に当てはまるかを
+//         必ず数えること。過去に **sSrcPageToTarget と overflow キャッシュの「書き手」が2つとも漏れていた**
+//         (捨てる側だけ守られていた。2026-08-16 の API 監査 B3 §5 で是正)。
 //
-//   ⇒ 実測タスク = 第2段計画書の **Task 11C**(クローン DB で UID が引けるか) と
-//     **Task 12B**(スレッド安全化)。**測る前に kMultipleThreads で本番を回さないこと。**
-//     計画 = docs/superpowers/plans/2026-08-13-kescm-model-ui-split-stage2.md
+//   ★実測の中身は KESCMThreadSafety.h、経緯は docs/ai-notes/kescm-task12-pdf-export-marks-2026-08-15.md
+//     と kescm-bg-clone-db-probe-2026-08-15.md。
 //========================================================================================
 class KESCMDrawEventHandler : public CPMUnknown<IDrwEvtHandler>
 {
@@ -123,10 +130,12 @@ public:
 	virtual bool16 HandleDrawEvent(ClassID eventID, void* eventData);
 
 	// ページUID → オーバーレイ。変化のあったページだけ登録される。
-	// ⚠★中身は生ポインタで DropAll() が delete する = BG と main で同時に触ると解放済み読み(冒頭の(2))。
+	// ⚠★中身は生ポインタで DropAll() が delete する = BG と main で同時に触ると解放済み読みになる
+	//   ⇒ **触る所は KESCMMarkStateLock で守ってある**(冒頭の(2))。新しい呼び手を足すときも同じ。
 	static std::map<UID, KESCMOverlayEntry*> sEntries;
 	// 全エントリが属する単一ドキュメント。別dbをmarkしたら作り直す(UIDはdb内のみ一意なため)。
-	// ⚠★BG には**クローンの別ポインタ**が渡るので、この生ポインタでの一致判定は必ず外れる(冒頭の(1))。
+	// ⚠★BG には**クローンの別ポインタ**が渡るので、**この値と生ポインタで比べてはいけない**
+	//   ⇒ 描画側は `KESCMIsSameDoc(db, sDB)` で聞く(冒頭の(1))。
 	static IDataBase* sDB;
 	// 上書き表示(変更リング)の master 表示トグル。データ(sEntries)は消さず
 	// 表示だけ切り替える。★既定=kFalse(非表示)。シングルツール左ボタンを押している間だけ kTrue にして枠等を
