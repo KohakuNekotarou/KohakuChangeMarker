@@ -202,7 +202,7 @@ public:
 				//   いた点の是正)。
 				//   ⚠2026-08-07 まで、ここには「reveal が呼ぶ InvalidateViews に相乗りする」と
 				//     書いてあったが、あれは**Target 窓の上でしか走らない**
-				//     (KESCMPeekGesture.cpp の KESCMTrackerRevealBegin＝`KESCMFrontViewIsOverTarget()`
+				//     (KESCMPeekGesture.cpp の KESCMTrackerRevealBegin＝`KESCMMouseIsOverTarget()`
 				//      が偽なら早期 return する。★2026-08-17 に参照先を訂正＝旧記述の
 				//      `KESCMPeek.cpp:1841-1844` は分割前の行で、あのファイルは今 907 行しかない)。
 				//     そのため Source 窓・Stop 中・第3の文書では HUD が1度も描かれなかった。以後 HUD は

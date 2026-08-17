@@ -44,7 +44,8 @@
 #include "ILayoutControlData.h"	// GetSpreadRef(そのビューが今どのスプレッドを見ているか)/GetDocument
 #include "ILayoutCmdData.h"		// kSetSpreadCmdBoss が要求するデータ(対象の文書とビュー)
 #include "SpreadID.h"			// kSetSpreadCmdBoss(レイアウトビューにスプレッドを出すコマンド)
-#include "ErrorUtils.h"			// PMSetGlobalErrorCode(切替に失敗しても後続コマンドを巻き添えにしない)
+#include "ErrorUtils.h"			// PMSetGlobalErrorCode / GlobalErrorStatePreserver
+								//   (切替やズームに失敗しても後続コマンドを巻き添えにせず、外へも出さない)
 #include "PersistUtils.h"		// ::GetUIDRef / ::GetDataBase
 #include "UIDList.h"			// SetItemList(切替先スプレッド)
 #include "IPageList.h"			// GetPageString / kDefaultPageType(飛んだページ番号の表示ラベル "Page: 1" 等)
@@ -314,6 +315,13 @@ bool16 KESCMEnsureViewShowsSpread(IControlView* view, IDataBase* db, UID spreadU
 	if (::GetDataBase(viewDoc) != db)
 		return kFalse;
 
+	// ★失敗したスプレッド切替をこの関数の外へ出さない(2026-08-17 の API 監査 B-U7)。下の
+	//   PMSetGlobalErrorCode(kSuccess) だけだと**入る前に立っていたエラーまで消す**。公式の口は
+	//   ErrorUtils.h:118。KESCM では BookCompare / BookOpen / HideUnchanged(B10)が採用済みで、
+	//   ここと KESCMViewSync のズームだけが取り残されていた(全数3箇所)。
+	//   ★早期 return を全部抜けた後＝実際にコマンドを出す直前に作る(上の3つの出口は何も壊さない)。
+	GlobalErrorStatePreserver setSpreadErrorState;
+
 	InterfacePtr<ICommand> setSpreadCmd(CmdUtils::CreateCommand(kSetSpreadCmdBoss));
 	if (setSpreadCmd == nil)
 		return kFalse;
@@ -360,6 +368,13 @@ static bool16 KESCMScrollDocToPBPoint(IDataBase* db, const PBPMPoint& pbPoint, P
 {
 	if (db == nil)
 		return kFalse;
+
+	// ★失敗したズームをこの関数の外へ出さない(2026-08-17 の API 監査 B-U7。理由と全数は
+	//   KESCMEnsureViewShowsSpread の同じ宣言を見よ)。⚠保存はコンストラクタで必ず起きる＝
+	//   applyZoom <= 0 のときも作られるが、その経路はコマンドを1本も出さずエラー状態を動かさないので、
+	//   デストラクタの復元は同じ値を書き戻すだけになる。
+	GlobalErrorStatePreserver scrollZoomErrorState;
+
 	K2Vector<IControlView*> views;
 	Utils<ILayoutViewUtils>()->GetAllLayoutViews(views, nil, db);
 	bool16 any = kFalse;

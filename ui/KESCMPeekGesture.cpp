@@ -7,8 +7,11 @@
 //  文書ウィンドウ判定、そして一括クローズ後の UI 後片付けを持つ。
 //
 //  ★分離では関数の中身を1行も変えていない。変えたのは「どのファイルに座るか」と「誰から見えるか」だけ。
-//    arm 状態(sPeekArmed / sPeekTargetDB / sPeekSourceDB)は KESCMPeek.cpp に残るので、ここからは
-//    KESCMCore.h が公開しているアクセサ(KESCMIsArmed / KESCMArmedTargetDB / KESCMArmedSourceDB)で読む。
+//    arm 状態(sPeekArmed / sPeekTargetDB / sPeekSourceDB)は model 側の KESCMPeek.cpp に残るので、
+//    ここからは **IKESCMCompareFacade** 越しに読む(IsArmed / GetArmedTargetDB / GetArmedSourceDB)。
+//    ⚠2026-08-17 訂正: 分離当初の「KESCMCore.h のアクセサ(KESCMIsArmed 等)で読む」は第1段 Task 11 で
+//    Facade 経由に変わっている。**同名の関数は model 側に今も実在する**ため、古い記述を残すと
+//    「UI が model を直に呼んでいる」と誤読させる(KESCMViewSync.cpp の冒頭にも同じ誤りがあった)。
 //    CMYK(Alt+左)の押下中状態は KESCMCmykCursor.cpp が持つので、押下の開始/終了はそちらの入口を呼ぶ。
 //
 //  UI 側: ツールが押されているかという、model からは見えない状態を読む。
@@ -83,10 +86,22 @@ static void KESCMInvalidateMarksDoc()
 // ★以前は Utils<ILayoutUIUtils>()->GetFrontDocument()(「front(アクティブ)なドキュメント」)で
 // 判定していたが、Split Window の新しい側(kLayoutSecondaryPanelWidgetID)を操作しても OWL 内部の
 // アクティブ状態追跡が元側のままになるらしく、判定に失敗していた(ユーザー実測で確認)。
-// KESCMSyncScrollOtherWindowsUnderMouse と同じ QueryWindowUnderPoint ベースの判定に統一し、
-// マウス位置そのものからドキュメントを特定する(アクティブ状態を一切参照しない)。
+// ⇒ QueryWindowUnderPoint ベースに切り替え、マウス位置そのものからドキュメントを特定する
+// (アクティブ状態を一切参照しない)。
+// ⚠2026-08-17 訂正(API 監査 B-U7): ここは「KESCMSyncScrollOtherWindowsUnderMouse と同じ判定に統一」と
+//   書いていたが、**その名前の関数は KESCM に存在しない**(全数 Grep でこの行だけ)。旧・中ボタン時代の
+//   名残で、今この道を共有しているのは KESCMViewLookup.cpp の KESCMQueryViewUnderMouse。
+// ★★その2つは前半3手(GetGlobalMouseLocation → QueryWindowUnderPoint → IDocumentPresentation)が同じで、
+//   **同じ問いを2か所で持っている形**。それでも畳まないのは、聞いていることが違うため:
+//     ・こちら … 「マウス下の**文書**は Target/Source か」＝文書の問い。3手で答えが出る
+//     ・あちら … 「マウス下の**ビュー**はどれか」＝Split Window のペイン特定まで要る(FindWidget + ヒットテスト)
+//   あちらを流用すると、ペイン特定という要らない仕事が付いた上に、**レイアウト widget を持たない窓
+//   (ストーリーエディター等)で nil になり答えが変わる**。⇒ 片方の窓解決を直すときは、必ずもう片方も見ること。
 // 共通部: マウス直下のドキュメントウィンドウの db を返す(無ければ nil)。Target/Source 判定の
 // 差分は比較先 db だけなので、窓解決を1本に畳んだ(2026-07-25 監査で重複解消)。
+// ★名前は 2026-08-17 に KESCMFrontViewIsOverTarget/Source から改めた＝**この判定は front view を
+//   一切見ない**のに、名前だけが GetFrontDocument 時代のまま残っていた(呼び手7箇所と他ファイルの
+//   コメント2箇所も同時に追随させた)。
 static IDataBase* KESCMQueryDocDbUnderMouse()
 {
 	GSysPoint globalPt = Utils<IEventUtils>()->GetGlobalMouseLocation();
@@ -102,7 +117,7 @@ static IDataBase* KESCMQueryDocDbUnderMouse()
 	return hitPres->GetDocumentUIDRef().GetDataBase();
 }
 
-static bool16 KESCMFrontViewIsOverTarget()
+static bool16 KESCMMouseIsOverTarget()
 {
 	IDataBase* const armedTarget = Utils<IKESCMCompareFacade>()->GetArmedTargetDB();
 	return (armedTarget != nil && KESCMQueryDocDbUnderMouse() == armedTarget) ? kTrue : kFalse;
@@ -110,9 +125,9 @@ static bool16 KESCMFrontViewIsOverTarget()
 
 // マウス下のドキュメントウィンドウが Source(比較の旧側=常時表示枠を載せている sSrcDB)かどうか。
 // 「Hold to Hide Marks」＋「Show Marks on Source」併用時、Source 窓でツール左ボタンを押したときだけ Source 枠を
-// 一時退避させるための窓判定(Target 版 KESCMFrontViewIsOverTarget と対称)。Source マークの所属は sSrcDB を
+// 一時退避させるための窓判定(Target 版 KESCMMouseIsOverTarget と対称)。Source マークの所属は sSrcDB を
 // 正とする(arm の sPeekSourceDB と同一文書だが、判定はマークの実 db に紐づける)。
-static bool16 KESCMFrontViewIsOverSource()
+static bool16 KESCMMouseIsOverSource()
 {
 	IDataBase* const markedSrcDB = Utils<IKESCMMarkData>()->GetMarkedSourceDB();
 	return (markedSrcDB != nil &&
@@ -144,7 +159,7 @@ static bool16 KESCMFrontViewIsOverSource()
 //   (＝ボタンを離したときの KESCMTrackerRevealEnd が元に戻すので、状態は取り残されない)。
 static void KESCMTrackerBeginPeek(PMReal opacity)
 {
-	if (!Utils<IKESCMCompareFacade>()->ArmedDocsAlive() || !KESCMFrontViewIsOverTarget())
+	if (!Utils<IKESCMCompareFacade>()->ArmedDocsAlive() || !KESCMMouseIsOverTarget())
 		return;	// 未 Start / 比較文書が閉じ済み / Target 窓以外では反応しない(旧・中ボタン peek 分岐と同じ条件)
 	sPeekActive = kTrue;
 	InterfacePtr<IKESCMCompareFacade> compare(Utils<IKESCMCompareFacade>().QueryUtilInterface());
@@ -215,16 +230,16 @@ void KESCMTrackerRevealBegin(bool16 shiftDown, bool16 altDown, bool16 cmdDown, b
 	InterfacePtr<IKESCMCompareFacade> compare(Utils<IKESCMCompareFacade>().QueryUtilInterface());
 	if (compare->GetHoldToHideMarks() && tempHideGesture)
 	{
-		if (!compare->GetMarksTempHidden() && KESCMFrontViewIsOverTarget())
+		if (!compare->GetMarksTempHidden() && KESCMMouseIsOverTarget())
 		{
 			compare->SetMarksTempHidden(kTrue);
 			KESCMInvalidateMarksDoc();	// Target を再描画
 		}
 		if (compare->GetShowSourceMarks() && !compare->GetSrcMarksTempHidden() &&
-		    KESCMFrontViewIsOverSource())
+		    KESCMMouseIsOverSource())
 		{
 			compare->SetSrcMarksTempHidden(kTrue);
-			Utils<IKESCMCompareFacade>()->InvalidateDB(Utils<IKESCMMarkData>()->GetMarkedSourceDB());	// Source を再描画
+			compare->InvalidateDB(Utils<IKESCMMarkData>()->GetMarkedSourceDB());	// Source を再描画(compare は上で引いてある)
 		}
 	}
 
@@ -262,7 +277,7 @@ void KESCMTrackerRevealBegin(bool16 shiftDown, bool16 altDown, bool16 cmdDown, b
 
 	// 通常モード(マーク非表示→押下中だけ表示)。Target 窓の上でだけ reveal する(Source や無関係な窓では
 	// 出さない。旧・中ボタンと同じ方針)。
-	if (!KESCMFrontViewIsOverTarget())
+	if (!KESCMMouseIsOverTarget())
 		return;
 
 	sSingleShowing = kTrue;
@@ -289,7 +304,7 @@ void KESCMTrackerRevealEnd()
 	if (compare->GetSrcMarksTempHidden())
 	{
 		compare->SetSrcMarksTempHidden(kFalse);
-		Utils<IKESCMCompareFacade>()->InvalidateDB(Utils<IKESCMMarkData>()->GetMarkedSourceDB());	// Source を再描画
+		compare->InvalidateDB(Utils<IKESCMMarkData>()->GetMarkedSourceDB());	// Source を再描画(compare は上で引いてある)
 	}
 
 	if (sPeekActive)
@@ -300,7 +315,7 @@ void KESCMTrackerRevealEnd()
 		if (compare->GetShowOriginal())
 		{
 			compare->SetShowOriginal(kFalse);
-			Utils<IKESCMCompareFacade>()->InvalidateDB(compare->GetArmedTargetDB());
+			compare->InvalidateDB(compare->GetArmedTargetDB());
 		}
 	}
 	else if (sSingleShowing)
@@ -361,7 +376,11 @@ static void KESCMFlushDeferredCloseUi()
 		return;
 	sDeferredCloseUiPending = kFalse;
 
-	if (Utils<IKESCMCompareFacade>()->IsAppQuitting())
+	// ★この関数だけで3回聞く(下の2つの入口ガードと、末尾のループの中の InvalidateDB)ので、
+	//   1回引いて使い回す(Utils.h:74-80。2026-08-17 の API 監査 B-U7)。
+	InterfacePtr<IKESCMCompareFacade> compare(Utils<IKESCMCompareFacade>().QueryUtilInterface());
+
+	if (compare->IsAppQuitting())
 		return;		// 終了中は UI に触らない(状態は Shutdown が破棄する)
 
 	// ★★保留している間に新しい比較が始まっていたら、この後片付けは走らせない(2026-07-30 の再確認で追加)。
@@ -372,7 +391,7 @@ static void KESCMFlushDeferredCloseUi()
 	//   ★arm 中なら片付けるものは無い: 保留が立つのは KESCMHandleDocsClosed が比較状態を破棄した
 	//     (=disarm した)ときだけで、その後の Start が strip 注入もステータスもパネル更新も済ませている。
 	//     閉じた文書の窓は窓ごと消えているので strip も残らない。∴ 旗を下ろすだけでよい。
-	if (Utils<IKESCMCompareFacade>()->IsArmed())
+	if (compare->IsArmed())
 		return;
 
 	// Find Overset が(走査文書が生存したまま)単独 ON なら地図は残す。それ以外は撤去する
@@ -401,7 +420,7 @@ static void KESCMFlushDeferredCloseUi()
 			if (doc == nil)
 				continue;
 			IDataBase* db = ::GetUIDRef(doc).GetDataBase();
-			Utils<IKESCMCompareFacade>()->InvalidateDB(db);
+			compare->InvalidateDB(db);
 			KESCMScheduleThumbRefresh(db);	// 遅延サムネイル再生成(同じ db は集約される)
 		}
 	}

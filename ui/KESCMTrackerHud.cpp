@@ -147,7 +147,7 @@ static PMString KESCMTrackerHudLabel(IControlView* view)
 	★★これが要る理由(2026-08-07 実機報告「ソースの方で Source と出ない」「Stop 中でも Not と出ない」):
 	  HUD は Draw Event で描く = **誰かが再描画を起こしてくれること**が前提になる。押下で再描画を
 	  起こしているのは reveal / temp-hide だが、あれは **Target 窓の上でしか走らない**
-	  (KESCMPeekGesture.cpp の KESCMTrackerRevealBegin が `KESCMFrontViewIsOverTarget()` で早期 return
+	  (KESCMPeekGesture.cpp の KESCMTrackerRevealBegin が `KESCMMouseIsOverTarget()` で早期 return
 	   する。★2026-08-17 に参照先を訂正＝旧記述の `KESCMPeek.cpp:1841-1844` は 2026-08-13 の分割前の
 	   行番号で、ジェスチャはあのファイルから出ており、残った本体は今 907 行しかない)。
 	  ∴ Source 窓・Stop 中・第3の文書では

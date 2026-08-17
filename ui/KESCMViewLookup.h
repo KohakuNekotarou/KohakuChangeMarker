@@ -36,6 +36,11 @@ bool16			KESCMQueryMouseContentPoint(IControlView* view, PMReal& outX, PMReal& o
 // IPanelControlData::FindWidget(windowPt) instead, so the pane the mouse is really over
 // wins. Same contract as QueryFrontView(): +1 ref, the caller releases (use InterfacePtr).
 // nil when nothing is found.
+//
+// ★Measured 2026-08-17 (audit B-U7): in a split window BOTH panes' layout views carry the
+// same widget id, kLayoutWidgetID. Landing on the secondary PANEL instead (its margin) is
+// handled the way the product does it -- ask that panel for its kLayoutWidgetID child --
+// so a widget without a panorama is never returned.
 IControlView*	KESCMQueryViewUnderMouse();
 
 // Which document's layout view this is, or nil.
@@ -56,7 +61,8 @@ IDataBase*		KESCMFindDocDbForView(IControlView* view);
 // coordinates (measured 2026-08-16). So "which page is under the mouse" cannot be answered from
 // the point alone -- the same point belongs to a page of the master AND to a page of an ordinary
 // spread, and only the window knows which of them is on screen. The model therefore cannot
-// answer it; the UI observes the spread and passes it down (KESCMCore.h has the full story).
+// answer it; the UI observes the spread and passes it down. The full story is on the model side,
+// in source/KESCMCore.h (the onlySpreadUID comment) -- not in any header this plug-in can include.
 UID				KESCMQuerySpreadUIDForView(IControlView* view);
 
 // Drop the fallback route's "document that matched last time" hint. The hint never decides

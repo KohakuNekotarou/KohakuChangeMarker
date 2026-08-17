@@ -11,8 +11,9 @@
 //    ——読み書きする3関数が全部ここへ来るので、状態が分割の両側に割れることはない。
 //
 //  UI 側: どの関数も IControlView を受け取るか返すので、model プラグインからは触れない。
-//  ⚠この時点では model 側(KESCMColorSampler.cpp / KESCMPeek.cpp)からも呼ばれている＝逆流。
-//    その全量を確定させるのは Task 4、切るのは Task 9/10。
+//  ★逆流(model 側 KESCMColorSampler.cpp / KESCMPeek.cpp からの呼び出し)は 2026-08-15 の第2段
+//    Task 4B で切れている。2026-08-17 に全数 Grep で再確認＝model 側に残っているのは
+//    「以前はここから呼んでいた」と書いた**コメントだけ**で、呼び出しは1本も無い。
 //
 //========================================================================================
 
@@ -32,7 +33,7 @@
 #include "IPanelControlData.h"		// FindWidget(ヒットテストと代表ビューの取得)
 #include "IPanorama.h"				// KESCMQueryPanorama(2026-08-13 に KESCMDrawEventHandler.cpp から移動)
 #include "IWidgetParent.h"			// 同上(自身に panorama が無ければ親を辿る)
-#include "LayoutUIID.h"				// kLayoutWidgetBoss / kLayoutSecondaryPanelWidgetID
+#include "LayoutUIID.h"				// kLayoutWidgetID / kLayoutSecondaryPanelWidgetID
 #include "ILayoutViewUtils.h"		// GetAllLayoutViews(KESCMFindDocDbForView のフォールバック)
 #include "ILayoutControlData.h"		// GetDocument(view→文書の公式ルート。KESCMFindDocDbForView)
 #include "K2Vector.h"				// GetAllLayoutViews の out コンテナ(間接includeに頼らず明示)
@@ -78,7 +79,13 @@ IControlView* KESCMQueryViewUnderMouse()
 	if (hitPanelData == nil)
 		return nil;
 
-	IControlView* primaryView = hitPanelData->FindWidget(kLayoutWidgetBoss);
+	// ★引くのは widget なので widget ID で聞く(2026-08-17 の API 監査 B-U7)。kLayoutWidgetBoss は
+	//   ClassID(kClassIDSpace, kLayoutUIPrefix+3)、kLayoutWidgetID は WidgetID(kWidgetIDSpace, 同+3)で
+	//   **数値が同じなのでどちらを渡しても動く**(DECLARE_PMID は enum を作るだけ=IDFactory.h:48)。
+	//   製品も主ペイン側は ClassID を渡している(spellpanel/PrivateSpellingUtils.cpp:356)が、同じ関数の
+	//   副ペイン側 :362 は kLayoutWidgetID＝**問いに合う方**を使っている。KESCM 内でも
+	//   KESCMScrollMap.cpp が同じ理由で既に kLayoutWidgetID へ寄せてあり、ここだけ残っていた。
+	IControlView* primaryView = hitPanelData->FindWidget(kLayoutWidgetID);
 	if (primaryView == nil)
 		return nil;
 
@@ -92,10 +99,30 @@ IControlView* KESCMQueryViewUnderMouse()
 	winPt.x = ::ToInt32(winPM.X());
 	winPt.y = ::ToInt32(winPM.Y());
 
+	// ★GetWidgetID() が答えるのは widget ID なので、比べる相手も widget ID にする(上と同じ理由)。
+	// ★★2026-08-17 実測(API 監査 B-U7): Split Window にすると GetAllLayoutViews は2本返し、
+	//   **両方とも widget ID は kLayoutWidgetID(118787)** で、**どちらも ILayoutControlData を持ち
+	//   GetDocument() が正しい文書を返す**。⇒ 副ペインのビュー本体に当たれば下の1つ目で確定する。
 	IControlView* pointHit = hitPanelData->FindWidget(winPt);
-	if (pointHit != nil &&
-	    (pointHit->GetWidgetID() == kLayoutWidgetBoss || pointHit->GetWidgetID() == kLayoutSecondaryPanelWidgetID))
-		hitView = pointHit;
+	if (pointHit != nil)
+	{
+		if (pointHit->GetWidgetID() == kLayoutWidgetID)
+		{
+			hitView = pointHit;		// 主ペイン・副ペインとも、ビュー本体はこの ID
+		}
+		else if (pointHit->GetWidgetID() == kLayoutSecondaryPanelWidgetID)
+		{
+			// ★副ペインの**パネル**に当たった＝中のビューには当たらなかった(枠の余白など)。
+			//   パネルは panorama を持たないので、そのまま返すと KESCMQueryPanorama が親を辿って
+			//   **主ペインの panorama を掴む**。製品はここでパネルの中のビューを引き直している
+			//   (spellpanel/PrivateSpellingUtils.cpp:360-362 の splitPanelData->FindWidget(kLayoutWidgetID))
+			//   ので、同じ形にする。引けなければ primaryView のまま＝従来どおり。
+			InterfacePtr<IPanelControlData> splitPanelData(pointHit, UseDefaultIID());
+			IControlView* splitView = (splitPanelData != nil) ? splitPanelData->FindWidget(kLayoutWidgetID) : nil;
+			if (splitView != nil)
+				hitView = splitView;
+		}
+	}
 
 	hitView->AddRef();	// QueryFrontView() と同じ「+1 ref、呼び出し側で Release」の契約に合わせる
 	return hitView;
@@ -174,8 +201,12 @@ IDataBase* KESCMFindDocDbForView(IControlView* view)
 	}
 
 	// ---- 以下は①が引けなかったときのフォールバック(従来実装) ----
-	// ★Split Window の 2枚目ペインでも ILayoutControlData が引けるかは実機未確認なので、旧経路を
-	//   残してある(引けるなら以下は一度も走らない)。実機で確認が取れたら丸ごと畳んでよい。
+	// ★★★2026-08-17 に実測した(API 監査 B-U7)＝**Split Window の2枚目ペインでも ILayoutControlData は
+	//   引ける**。一時診断ビルドで「ウィンドウを分割」した文書の GetAllLayoutViews を全数見たところ、
+	//   返る2本とも `lcd=YES doc=OK same=SAME`(＝どちらも自分の文書を正しく答える)だった。
+	//   ⇒ **この下は一度も走らない**ことが確かめられたので、丸ごと畳める(sLastViewHitDb のヒントごと)。
+	//   ⚠畳むかどうかはユーザー判断待ちなので、今は残してある。畳むときは KESCMForgetViewDbHint の
+	//     呼び手3か所(同期キャッシュの無効化・arm 切替・文書クローズ)も一緒に消すこと。
 
 	// ②前回ヒットした文書を先に試す(連続呼び出しはほぼここで確定する)。
 	if (sLastViewHitDb != nil && KESCMViewBelongsToDb(view, sLastViewHitDb))

@@ -7,8 +7,12 @@
 //  (Align Other Views to Active)・パノラマ購読オブザーバを持つ。
 //
 //  ★分離では関数の中身を1行も変えていない。変えたのは「どのファイルに座るか」と「誰から見えるか」だけ。
-//    arm 状態(sPeekArmed / sPeekTargetDB / sPeekSourceDB)は KESCMPeek.cpp に残るので、ここからは
-//    KESCMCore.h が公開しているアクセサ(KESCMIsArmed / KESCMArmedTargetDB / KESCMArmedSourceDB)で読む。
+//    arm 状態(sPeekArmed / sPeekTargetDB / sPeekSourceDB)は model 側の KESCMPeek.cpp に残るので、
+//    ここからは **IKESCMCompareFacade** 越しに読む(IsArmed / GetArmedTargetDB / GetArmedSourceDB)。
+//    ⚠2026-08-17 訂正: 分離当初は「KESCMCore.h が公開しているアクセサ(KESCMIsArmed 等)で読む」と
+//    書いていたが、それは第1段 Task 11 で Facade 経由に変わっている。**同名の関数は model 側に今も
+//    実在する**(KESCMCore.h:154 / KESCMPeek.cpp:686)ので、この記述を残すと「UI が model の関数を
+//    直に呼んでいる」= 分割の一方向依存が破れている、と誤読させる。
 //
 //  UI 側: IControlView と IPanorama を相手にするので、model プラグインからは触れない。
 //
@@ -46,7 +50,7 @@
 #include "IGeometryFacade.h"		// GetItemBounds(ページ矩形をペーストボード座標で。手本=SnapTracker.cpp:610-616)
 #include "IHierarchy.h"				// GetSpreadUID(宛先ページが載っているスプレッド。2026-08-11)
 
-#include "ErrorUtils.h"				// PMSetGlobalErrorCode(ズーム失敗を持ち越さない)
+#include "ErrorUtils.h"				// PMSetGlobalErrorCode / GlobalErrorStatePreserver(ズーム失敗を持ち越さず、外へも出さない)
 
 #include <map>
 #include <vector>
@@ -78,8 +82,10 @@
 // それを拾って同期し返す(無限ループ/ピンポン)のを防ぐ。複製ループの間だけ kTrue。
 static bool16 sLayoutSyncBroadcasting = kFalse;
 
-// (KESCMFindDocDbForView は 2026-07-25 に KESCMCore.cpp の共有ヘルパへ移動。宣言は KESCMCore.h。
-//  色サンプラの窓同一性ガードでも使うため。本ファイルの呼び出しは全てそのまま)
+// (KESCMFindDocDbForView は 2026-07-25 に KESCMCore.cpp の共有ヘルパへ移動し、2026-08-13 の分割
+//  第1段 Task 3 で KESCMViewLookup.cpp へ移った。**宣言は KESCMViewLookup.h**(上の include 参照)。
+//  ⚠2026-08-17 訂正: ここは「宣言は KESCMCore.h」のままだった＝B-U3 が UI 側6箇所で直したのと
+//  同じ型の壊れた参照。ui/ に KESCMCore.h は存在しない)
 
 //========================================================================================
 // ★ビューポート同期のホットパス用 短命キャッシュ(2026-07-25 追補)
@@ -222,9 +228,11 @@ static const KESCMPageRectCache* KESCMGetPageRects(IDataBase* db)
 	c.db = db;
 	c.pages.clear();
 	c.rects.clear();
-	Utils<IKESCMMarkData>()->GetAllPageUIDs(db, c.pages);
+	// ★2回続けて聞くので InterfacePtr に1回受ける(Utils.h:74-80。下の KESCMEnsureSyncPairing と同じ形)。
+	InterfacePtr<IKESCMMarkData> marks(Utils<IKESCMMarkData>().QueryUtilInterface());
+	marks->GetAllPageUIDs(db, c.pages);
 	c.normalCount = c.pages.size();
-	Utils<IKESCMMarkData>()->GetMasterPageUIDs(db, c.pages);	// ★マスターは後ろへ続ける(境目=normalCount。2026-08-11)
+	marks->GetMasterPageUIDs(db, c.pages);	// ★マスターは後ろへ続ける(境目=normalCount。2026-08-11)
 	c.rects.resize(c.pages.size());
 	for (size_t i = 0; i < c.pages.size(); ++i)
 	{
@@ -280,7 +288,13 @@ static UID KESCMFindPageAtPasteboard(IDataBase* db, const PBPMPoint& pb)
 		const PMRect& r = c->rects[i];
 		if (r.Right() <= r.Left() && r.Bottom() <= r.Top())
 			continue;	// 空矩形=幾何が取れなかったページ
-		if (pb.X() >= r.Left() && pb.X() <= r.Right() && pb.Y() >= r.Top() && pb.Y() <= r.Bottom())
+		// ★内包判定は PMRect::PointIn(PMRect.h:250)＝公式の口(2026-08-17 の API 監査 B-U7)。
+		//   手本は snapshot/SnapTracker.cpp:600,617 で、**上の KESCMPagePasteboardRectRaw が矩形取得の
+		//   手本として引いている :610-616 の直後**にある。model 側 KESCMCore.cpp は 2026-08-16 の B3 で
+		//   既に寄せてあり、ここだけが手書きの L/R/T/B 比較で残っていた。
+		//   ⚠PointIn は素の閉区間比較なので非正規化の箱では常に kFalse になるが、この表の矩形は
+		//   KESCMPagePasteboardRectRaw が min/max を取って正規化済みなので Normalize() は要らない。
+		if (r.PointIn(pb))
 			return c->pages[i];	// 内包するページが確定
 		const PMReal cx = (r.Left() + r.Right()) / PMReal(2.0);
 		const PMReal cy = (r.Top()  + r.Bottom()) / PMReal(2.0);
@@ -546,6 +560,19 @@ static void KESCMSyncOtherDocViewportsTo(IControlView* srcView, IPanorama* srcPa
 	if (dstDbs.empty())
 		return;	// 複製先が無い(=何もしない)。再入ガードを立てる前に抜ける
 
+	// ★ズームの失敗をこの関数の外へ出さない(2026-08-17 の API 監査 B-U7)。下の複製ループは失敗した
+	//   ズームを握り潰して続行するが、その掃除が ErrorUtils::PMSetGlobalErrorCode(kSuccess) だけだと
+	//   **この関数に入る前に立っていたエラーまで消してしまう**。公式の口は ErrorUtils.h:118 の
+	//   GlobalErrorStatePreserver で、KESCM でも BookCompare / BookOpen / HideUnchanged(B10)は採用済み
+	//   ＝ここと KESCMChangeNav が取り残されていた。★broadcastGuard より先に作る＝あとから作った方が
+	//   先に壊れるので、エラー状態の復元がいちばん外側になる(B10 で確かめた宣言順の効き方と同じ)。
+	GlobalErrorStatePreserver syncErrorState;
+
+	// ★ズームコマンドは宛先ビューの数だけ作るので、ヘルパは1回引いて使い回す(Utils.h:74-80)。
+	//   旧実装はループの中で Utils<ILayoutUIUtils>() を組み立てていた＝ビューごとに QueryInterface と
+	//   Release が走る形で、ここは毎秒数十回通るホットパス。
+	InterfacePtr<ILayoutUIUtils> layoutUIUtils(Utils<ILayoutUIUtils>().QueryUtilInterface());
+
 	// 再入ガードを RAII で立てる(2026-07-25 監査で変更): 複製ループ中の ProcessCommand が万一 throw
 	// してもフラグが立ちっぱなし(=以後の同期が永久に無効化)にならない。
 	struct KESCMSyncBroadcastGuard
@@ -624,6 +651,9 @@ static void KESCMSyncOtherDocViewportsTo(IControlView* srcView, IPanorama* srcPa
 			// 拡大率を手本と同じ実効スケールへ。ズームは UI のズーム欄と同じ公式コマンド
 			// (kZoomToCmdBoss)で行う。既定引数=ビュー中心基準。
 			// ★ILayoutViewUtils::ZoomLayoutViews 直呼びは他文書のビューに効かない(実機確認)ため不可。
+			//   ★★2026-08-17 追記: 実機で確かめる前に**ヘッダー自身が "Internal use only" と書いている**
+			//     (ILayoutViewUtils.h:71。GatherSpreadRects / TransformPointToNewSpread も同じ扱い)＝
+			//     3rd party が呼ぶ API ではない。∴ 効く効かない以前に寄せる先ではない。
 			// ★★ズームは Command なのに下のスクロールは IPanorama 直操作、という非対称には理由がある
 			//   (2026-08-06 の API 監査で確認): 公式のスクロールコマンドは
 			//   ILayoutUIUtils::MakeScrollToSpreadCmd(:252) だけで、行き先が「スプレッド中心 または
@@ -631,7 +661,7 @@ static void KESCMSyncOtherDocViewportsTo(IControlView* srcView, IPanorama* srcPa
 			//   スクロール位置はモデルではなくビュー状態なので、Command を通さないこと自体は筋が通る。
 			if (!zoomMatched)
 			{
-				InterfacePtr<ICommand> zoomCmd(Utils<ILayoutUIUtils>()->MakeZoomCmd(view, srcZoom));
+				InterfacePtr<ICommand> zoomCmd(layoutUIUtils->MakeZoomCmd(view, srcZoom));
 				if (zoomCmd == nil || CmdUtils::ProcessCommand(zoomCmd) != kSuccess)
 				{
 					// ★ズーム合わせは同期表示の便宜で、失敗してもスクロール同期は続けてよい。ただし
@@ -759,7 +789,8 @@ static void KESCMLayoutSyncAttachContext(bool16 attach)
 class KESCMLayoutSyncObserver : public CObserver
 {
 public:
-	// ★第2引数は「この実装が boss 上で実際に載っている IID」(CObserver.h:55 の fAttachIID)。
+	// ★第2引数は「この実装が boss 上で実際に載っている IID」(CObserver.h:55 の第2引数。
+	//   受け取った値の保持先は同ヘッダー :81 の fAttachIID)。
 	//   .fr の AddIn は IID_IKESCMLAYOUTSYNCOBSERVER で載せ、Attach もその IID で行うので、
 	//   ここも同じものを渡して自己申告と実態を一致させる(公式=layerpanel/CLayoutLayerListObserver.cpp:112。
 	//   2026-08-06 の API 監査 A-3。既定のままだと GetAttachIID() が IID_IOBSERVER を返して食い違う)。
@@ -780,6 +811,9 @@ void KESCMLayoutSyncObserver::Update(const ClassID& theChange, ISubject* theSubj
 	// (未購読分にだけ付く。手本の KESLayoutScrollObserver は文書切替のみだったが、ビュー切替も見る
 	// ことで、ON 中に作られた同一文書の新規ウィンドウ/Split Window の新側ペインも、クリックして
 	// アクティブになった瞬間に購読される=そのペインを動かしても手本になれる)。
+	// ★changedBy を ContextInfo* に読み替えて Key() で「何が変わったか」を見るのは公式の形。
+	//   手本＝製品 linksui/LinksUIPanelTreeObserver.cpp:215-217(同じ2行を IID_IDOCUMENT で判定)／
+	//   buttonui/actiondatapanels/gotourl/GoToURLPanelObserver.cpp:222-224。
 	if (protocol.Get() == IID_IACTIVECONTEXT)
 	{
 		IActiveContext::ContextInfo* info = (IActiveContext::ContextInfo*)changedBy;
@@ -796,6 +830,14 @@ void KESCMLayoutSyncObserver::Update(const ClassID& theChange, ISubject* theSubj
 
 	// 通知元(=手本)のパノラマ。theSubject はレイアウトビュー boss の subject なので、
 	// 同じ boss から IPanorama / IControlView を引ける。
+	//
+	// ★★changedBy を使わないのは意図(2026-08-17 の API 監査 B-U7 で理由を明文化)。パノラマの通知は
+	//   changedBy に **PanoramaUpdateParams\*** を載せてくる(IPanorama.h:352-356 が明記)が、あれが
+	//   運ぶのは「**どれだけ動いたか**」(fOffset / fXScaleFactor)＝ライブスクロールとハードウェア
+	//   スクロールを支えるための差分で、こちらが要るのは「**今どこを見ているか**」の絶対値。
+	//   ⚠しかも同ヘッダー :358-359 が「**kScrollToMessage を投げるとき offset の符号が逆になるバグが
+	//   あり、observer 側で考慮が要る**」と自分で書いている＝差分を採ると踏む。
+	//   ∴ subject からパノラマを引いて現在値を読み直す(下の GetXScaleFactor / 可視中心)のが正しい。
 	InterfacePtr<IPanorama> srcPano(theSubject, UseDefaultIID());
 	if (srcPano == nil)
 		return;
