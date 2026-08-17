@@ -622,10 +622,17 @@ void KESCMScrollMapAttach(IDataBase* targetDB)
 			continue;
 
 		// 実行時生成(linksui と同じ標準形)。db は親 widget 群と同じ UI データベース。
-		InterfacePtr<IControlView> strip((IControlView*)::CreateObject(
+		// ★2026-08-17(API 監査 B-U9 の A-3)＝C スタイルキャストの ::CreateObject から**型つきの
+		//   ::CreateObject2<IControlView>(db, spec)** へ(CreateObject.h:190-203)。
+		//   **公式実例＝`widgetbin/treeview/CTreeViewWidgetMgr.cpp:519`** が行ごと同型
+		//   (`::CreateObject2<IControlView>(::GetDataBase(this), fCurrentStyleRsrcSpec)`)。
+		//   ⚠この形は IID を渡さず FACE::kDefaultIID を使う＝`IControlView` の既定 IID は
+		//     IID_ICONTROLVIEW なので、旧コードが明示していた IID と同じものが要求される。
+		//   ★ここは B-U8 の担当ファイルだが、**命題はブロックに属さない**(B5 の教訓)ので
+		//     「CreateObject＋手キャスト」を数えたこの回にまとめて直した。
+		InterfacePtr<IControlView> strip(::CreateObject2<IControlView>(
 			::GetDataBase(sbParentPanel),
-			RsrcSpec(LocaleSetting::GetLocale(), kKCMUIPluginID, kViewRsrcType, kKESCMScrollMapRsrcID),
-			IID_ICONTROLVIEW));
+			RsrcSpec(LocaleSetting::GetLocale(), kKCMUIPluginID, kViewRsrcType, kKESCMScrollMapRsrcID)));
 		if (strip == nil)
 			continue;
 

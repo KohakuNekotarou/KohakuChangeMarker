@@ -32,8 +32,11 @@
 
 // プロジェクト内:
 #include "KESCMPanelAlpha.h"
-#include "KESCMConstants.h"		// kKESCMPanelAlphaValue
-#include "KCMUIID.h"			// kKESCMDisplayName(=窓 title で引くパネル名)/独自 IID・ImplID
+#include "KESCMConstants.h"		// kKESCMPanelAlphaValue / kKESCMPanelAlphaReapplyTries / …DelayMillis
+#include "KCMUIID.h"			// kKESCMPanelWidgetID(狙い撃ちする WidgetID)/独自 IID・ImplID
+								// ⚠2026-08-17 訂正: 旧コメントは kKESCMDisplayName(=窓 title で引く
+								//   パネル名)と書いていたが、**窓タイトル照合は 2026-08-06 に捨てた**
+								//   ので、このファイルはその定数をもう使っていない
 
 // パネルの表示状態変化を購読するオブザーバ用:
 #include "CObserver.h"
@@ -47,7 +50,7 @@
 
 // 通知の「あと」に窓が作り直されるので、一巡させてから貼り直すための one-shot タイマー:
 #include "ICallbackTimer.h"		// StartTimer/StopTimer(IIdleTask 派生。kEndOfTime もここ経由)
-#include "CreateObject.h"		// ::CreateObject(kCallbackTimerBoss, IID_ICALLBACKTIMER)
+#include "CreateObject.h"		// ::CreateObject2<ICallbackTimer>(kCallbackTimerBoss, IID_ICALLBACKTIMER)
 
 // カーソルが乗っている間だけ不透明に戻すため:
 #include "CPMUnknown.h"			// 実装の基底
@@ -61,9 +64,12 @@
 //   ⚠ここは 2026-08-06 のブロック13監査で「パネルの HWND を SDK から得る道は無い(4ルート全滅)」と
 //     結論した箇所の訂正。5つ目のルートがこれで、実機で全パネル到達を確認済み。
 #include "IControlView.h"		// GetPanelFromWidgetID が返すパネル
-#include "PaletteRef.h"			// PaletteRef::GetOWLControl(=HWND) / GetPaletteRefType
-#include "PaletteRefUtils.h"	// GetParentOfPalette(階層を上がる)
+#include "PaletteRef.h"			// PaletteRef::GetOWLControl(=HWND)
 #include "PagesPanelID.h"		// kPagesPanelWidgetID(:391) - 本体ページパネルの狙い撃ち先
+								// ⚠"PaletteRefUtils.h" はここに長く include されていたが
+								//   (コメントは「GetParentOfPalette(階層を上がる)」)、このファイルは
+								//   一度も呼んでいなかった。2026-08-17(B-U9)に実測してから外した
+								//   ＝理由は下の KESCMQueryTranslucentTarget を見よ
 
 // ★windows.h は SDK ヘッダーより後に置くこと(マクロが SDK 側の名前とぶつからないように)。
 #ifdef WINDOWS
@@ -319,7 +325,10 @@ static HWND KESCMQueryPanelPaletteFromSDK(const WidgetID& panelWidgetID)
 //   ここを入れる理由: 購読している kPaletteVisibilityChangedMessage は「文書を1つ開く」だけでも
 //   複数回飛ぶ(2026-07-29 実測)。そのたびに SDK へ問い合わせるのは無駄で、しかも下の Win32 フックは
 //   マウス移動のたびに走る ＝ **Win32 コールバックからモデルへ触る回数は最小に保ちたい**
-//   (KBS が同じ理由で負のキャッシュまで置いている: KBSPanelAlpha.cpp:492-502)。
+//   (KBS が同じ理由で負のキャッシュまで置いている ＝ KBSQueryFindChangeWindow の sFcLookedUp
+//    「探したが無かった。窓リストが変わるまで探し直さない」。⚠2026-08-17 訂正＝ここは長く
+//    KBSPanelAlpha.cpp:492-502 と行番号で引いていたが、その行は別関数(Find/Change の IWindow 取得)
+//    だった＝**兄弟のファイルも動くので、行番号でなく関数名で引く**)。
 static HWND sPaletteWnd[kKESCMAlphaCount] = { nullptr, nullptr, nullptr };
 
 // 対象ごとの狙い撃ち先。★enum の並びと必ず同じ順にすること。
@@ -410,6 +419,26 @@ static bool KESCMClassIs(HWND h, const wchar_t* wanted)
 //     "OWL.FrameDrawer" アイコンをクリックしたドロワー展開。EXSTYLE=0x08080000
 //   後ろ 2 つは InDesign 自身が WS_EX_LAYERED を立てているので、まったく同じ扱いでよい。
 // ⚠"OWL.Dock" だけで判定していると、ドロワー展開が黙って対象外になる(2026-07-29 まで実際にそうだった)。
+//
+// ★★★**この3分岐を SDK(PaletteRefUtils)へ寄せられないか＝2026-08-17(監査 B-U9)に一時診断ビルドで
+//   測って「寄せない」で決着した。** 動機は正当だった——クラス名文字列は undocumented な OWL の内部名で、
+//   **同じ理由(窓タイトルは翻訳される)で 2026-08-06 に窓の探し方を WidgetID へ移している**。
+//   しかも「浮いているか」を聞く公式の口は実在し、**このプラグイン自身が別ファイルで使っている**
+//   (PaletteRefUtils::IsPaletteFloating ＝ KESCMStorySection.cpp。製品も linksui/LinksUIUtils.cpp が使用)。
+//   ⇒ **測って2つとも外れた**(パネルを ①フローティング ②ドック内展開 ③ドロワー展開 で往復させて採取):
+//     ①**IsPaletteFloating はドロワーで 0 と 1 の両方を返した**——端のドックをアイコン化して開いた
+//       ドロワーでは 0、浮きドック(flotilla)をアイコン化して開いたドロワーでは 1。
+//       ＝この API が答えているのは「**所属しているドックが浮いているか**」であって、
+//         このコードが聞きたい「**今このパネルは単独で透かせるトップレベル窓を持つか**」ではない。
+//     ②★**"OWL.FrameDrawer" の HWND はパレット階層に一度も現れない**(実測 0x150260 / 0x0D06AA。
+//       階層を根まで辿っても出てこず、Dock が名乗るのは別の HWND)。PaletteRefType(PaletteRef.h:127-166)
+//       の全11型にドロワーに当たる型が無いことの、実測版。⇒ **SDK は貼るべき窓そのものを返せない。**
+//   ∴ **GA_ROOT + クラス名照合が、この3状態を1本で正しく分ける唯一の道**。⚠**次に監査する人へ**:
+//     ここは「Win32 の文字列比較が残っている」ように見えるが、**寄せ先を測ったうえで残している**。
+//   ★ついでに採れた検算2つ＝**OWL.Palette の HWND は3状態・往復6回とも不変**(0x060AE2。キャッシュ
+//     設計の根拠そのもの)／**Dock の HWND はフローティングし直すと変わる**(0x140260→0x0B067A＝
+//     ファイル冒頭の主張どおり)。★フローティング時だけは Dock の GetOWLControl() が GA_ROOT と一致した
+//     (0x140260)＝**「①だけなら SDK でも取れる」が、②③を同じ道で扱えないので採らない**。
 static HWND KESCMQueryTranslucentTarget(int32 which, HWND palette)
 {
 	if (palette == nullptr)
@@ -457,11 +486,38 @@ static bool16 KESCMApplyFor(int32 which)
 	//   GetLayeredWindowAttributes も "not layered" を返した(この機能で最初に踏んだ壁)。
 	//   ⚠OFF に戻すときも外さない: 見た目は alpha 255 で戻るし、外す/立てるを往復させると
 	//     per-pixel 描画との切り替わりを招きかねない(影で同じ罠を踏んでいる。下のコメント参照)。
+	//   ★**スタイルを足す側に SetWindowPos は要らない**(KBS が 2026-08-11 に実測して決着した分。
+	//     MSDN の SetWindowPos Remarks は「SetWindowLong で変えた *certain window data* は
+	//     SetWindowPos(SWP_NOMOVE|SWP_NOSIZE|SWP_NOZORDER|SWP_FRAMECHANGED)を呼ぶまで効かない」と
+	//     書くが、**何がそれに当たるかは書いていない**＝測るしかない領域。実測では WS_EX_LAYERED の
+	//     追加は SetWindowPos 無しで効いた(直後の SetLayeredWindowAttributes がコミットしている)。
+	//     ⚠**外す側は事情が違う**＝スタイルが消えたことを窓に伝えて描き直させる必要があるので
+	//       SetWindowPos + RedrawWindow が要る＝**非対称には理由がある**。この関数は外さないので不要。
+	//       (同じダイアログの枠スタイルを変える KESCMBookDialog.cpp は、外す側なので4フラグを使う。)
 	if (which == kKESCMAlphaBookDialog)
 	{
 		const LONG_PTR ex = ::GetWindowLongPtr(target, GWL_EXSTYLE);
 		if ((ex & WS_EX_LAYERED) == 0)
+		{
+			// ★★2026-08-17(API 監査 B-U9 の A-2)＝**まだ layered でない窓に、alpha 255 を書くためだけに
+			//   スタイルを立てない。** 呼び手(KESCMBookDialog.cpp)は開くたびに**無条件で**ここへ来る。
+			//   ⚠その無条件呼びは正しい＝**閉じている間にトグルが ON へ動いていることがあり、
+			//     開き直した窓は必ず不透明から始まる**ので、77 は毎回書き直すしかない(実測 PASS)。
+			//   ★だが逆向き(トグル OFF のまま開いた)には復元すべき値が無い——**窓は開くたびに新品**
+			//     (2026-08-17 実測＝3回開いて HWND が3つとも別・再オープン直後は非 layered。
+			//      kCacheDialog が保つのは中身の行であって OS の窓ではない)。
+			//     ⇒ そこで 255 を書くために本体が作った窓へ WS_EX_LAYERED を立て続けるのは、この機能が
+			//       「ON のときだけ動く」というユーザー方針(2026-07-29)にも反する。
+			//   ★★**見るのはトグルではなく「この窓が layered か」と「狙いが 255 か」**＝だから
+			//     KESCMApplyFor 本体に OFF ガードを入れる話にはならない(上の 255 復元経路は生きたまま)。
+			//   ★返り値は kTrue＝「窓には届いている」。ここに来るのはトグル ON でカーソルが乗っている
+			//     場合(＝望みが 255)もあり、そのときパネル側は kTrue を返す＝**メニューの文言を
+			//     パネルと同じにする**(kFalse は「ダイアログが閉じている」の意味に取ってある)。
+			if (alpha == 255)
+				return kTrue;
+
 			::SetWindowLongPtr(target, GWL_EXSTYLE, ex | WS_EX_LAYERED);
+		}
 	}
 
 	// ★パネルでは WS_EX_LAYERED は InDesign が最初から立てているので触らない(上のダイアログ分岐参照)。
@@ -477,6 +533,14 @@ static bool16 KESCMApplyFor(int32 which)
 	//   一様 alpha(SetLayeredWindowAttributes)と per-pixel alpha は排他で、一度でも前者を設定すると
 	//   255 に戻しても per-pixel 描画には復帰せず、OFF にしたとき影が不自然な塊になる。
 	//   表示/非表示の切り替えなら描画方式に触らないので安全。
+	//   ★★2026-08-17 追記(MSDN の Remarks で裏取り。KBS が 08-11 に確定した書き分けがこちらへ
+	//     来ていなかった分)＝**「復帰しない」ではなく「我々にとって一方通行」が正確**:
+	//     "once SetLayeredWindowAttributes has been called for a layered window, subsequent
+	//      UpdateLayeredWindow calls will fail **until the layering style bit is cleared and set
+	//      again**" ＝ 公式は回復手段まで書いている(WS_EX_LAYERED を外して付け直す)。
+	//     ⚠**判断は変わらない**＝相手は InDesign が持つ窓で、このファイル自身が冒頭で
+	//       「そのスタイルを外すと本体の描画が壊れる」と書いている ⇒ その道は採らない。
+	//     ★2026-07-29 の実測が公式契約で裏付けられた例(measurement が contract に格上げされた)。
 	//   ※ SW_SHOWNA = アクティブ化せずに表示(影の窓は WS_EX_NOACTIVATE で、前面化させたくない)。
 	//   ※ドロワー展開("OWL.FrameDrawer")の owner が ShadowView でない場合は、下の判定で素通りする。
 	//   ★★影の出し入れは alpha ではなく**トグルの ON/OFF だけ**で決める(2026-07-29 修正)。
@@ -553,7 +617,11 @@ void KESCMSetBookDialogWindow(void* sysWindow)
 //     半透明が打ち消される(影も SW_HIDE→SW_SHOWNA で往復する)。ほかに、OFF 側の影を勝手に出して
 //     しまう(ドラッグ確定前に当たると「位置が更新されない影が取り残される」= 2026-07-29 に潰した形)。
 //   ★ここで絞ってよい理由 = OFF へ切り替えた瞬間の 255 復元と影の再表示は、フライアウトのハンドラが
-//     対象を名指しで Apply して担っている(KESCMActionComponent.cpp:274 / :299)。この関数は
+//     対象を名指しで Apply して担っている(KESCMActionComponent.cpp の
+//     kKESCMPopupTranslucentPanelActionID / kKESCMPopupTranslucentPagesActionID の case が
+//     KESCMApplyPanelTranslucency / KESCMApplyPagesPanelTranslucency をそれぞれ呼ぶ。
+//     ⚠2026-08-17 訂正＝旧記述の「:274 / :299」は**2件とも外れていた**＝どちらもコメント行と
+//     代入行を指しており、実体は :271 / :305 だった。**自分側のファイルは行番号で引かない**)。この関数は
 //     「ON を貼り直す」ためのものなので、OFF を回す必要がそもそも無い。
 //     ⚠だから KESCMApplyFor 本体には OFF ガードを入れないこと(上記の復元経路が死ぬ)。
 void KESCMApplyAllPanelTranslucency()
@@ -609,8 +677,17 @@ static void KESCMScheduleReapply()
 	if (sReapplyLeft <= 0)
 		return;		// 定数 0 = 遅延再適用そのものを止める設定
 
+	// ★2026-08-17(API 監査 B-U9 の A-1)＝C スタイルキャストの ::CreateObject から
+	//   **型つきの ::CreateObject2** へ。CreateObject.h:144-158 が「face pointer を正しい型へ
+	//   coerce して返す」版として用意しているもので、KBS が 2026-08-11 のグローバル関数照合で
+	//   3か所とも寄せた形。⚠**KESCM 内でも KESCMThumbIdleTask.cpp が既にこの形**＝同一プラグイン内の割れ。
+	//   ⚠★**1引数形 CreateObject2<ICallbackTimer>(kCallbackTimerBoss) は使えない**＝1引数形は
+	//     FACE::kDefaultIID を要求する(CreateObject.h:136-142)が、**ICallbackTimer は自前の
+	//     kDefaultIID を持たず基底 IIdleTask のもの(IID_IIDLETASK)を継承する**ので、
+	//     IID_IIDLETASK を要求して ICallbackTimer* へ static_cast する＝型が壊れる。
+	//     ∴ **IID を明示する2引数形が正しい寄せ先**。
 	if (sReapplyTimer == nil)
-		sReapplyTimer = (ICallbackTimer*)::CreateObject(kCallbackTimerBoss, IID_ICALLBACKTIMER);
+		sReapplyTimer = ::CreateObject2<ICallbackTimer>(kCallbackTimerBoss, IID_ICALLBACKTIMER);
 	if (sReapplyTimer == nil)
 		return;
 
@@ -662,6 +739,14 @@ static uint32 KESCMReapplyTimerProc(void* /*refPtr*/)
 //
 //   ★自プロセス限定 + WINEVENT_OUTOFCONTEXT(他プロセスへの DLL 注入なし)で影響範囲は閉じている。
 //   ★ON の間だけ張り、OFF と終了時に必ず外す(UnhookWinEvent 漏れはリソースリークになる)。
+//
+//   ⚠★**再入は公式が名指しで警告している**(2026-08-17 追記)＝"While a hook function processes an
+//     event, additional events may be triggered, which may cause the hook function to **reenter**"。
+//     **このファイルは自分で再入を起こす**＝KESCMApplyFor の中の ShowWindow が
+//     EVENT_OBJECT_SHOW(0x8002)/HIDE(0x8003) を出し、どちらも下で張る範囲 0x8002〜0x800B の中にある。
+//     ★**それでも直さない**＝このコールバックは「望みの状態と違うときだけ書く」冪等な形
+//     (alphaOk && shadowOk なら即 continue)なので、再入は1段で収束する。公式が言う「順序が狂う」害は
+//     順序に依存していないので出ない。⇒ **状態を積む処理をここへ足すなら、この前提が崩れる。**
 //========================================================================================
 
 static HWINEVENTHOOK sWinEventHook = nullptr;
@@ -748,6 +833,15 @@ static void CALLBACK KESCMWinEventProc(HWINEVENTHOOK /*hook*/, DWORD /*event*/, 
 		//   (実測では総イベント 1477 件に対し、実際の書き込みは 1 件だけだった)。
 
 		// ①alpha が望みの値か(カーソルが乗っていれば不透明が「望みの値」になる)
+		// ★★**失敗の腕は「念のため」ではなく、この窓の documented な状態**(2026-08-17 追記。
+		//   MSDN の Remarks: "GetLayeredWindowAttributes can be called only if the application has
+		//   previously called SetLayeredWindowAttributes on the window. The function will fail if the
+		//   layered window was setup with UpdateLayeredWindow.")。
+		//   ★パネル側の WS_EX_LAYERED を立てたのは **InDesign** であってこちらではない(ファイル冒頭)
+		//     ⇒ **こちらが一度書くまで、この読み取りは正当に失敗しうる**。
+		//   ∴ **「読めない」は必ず「適用する」に倒すこと**(「もう正しい」と読んではいけない)＝
+		//     倒し方が逆だと、作り直された Dock がトグル ON のまま不透明で残る。
+		//   ★一度書けば以後は読めるので、下の「1477 イベント中の書き込み1件」は定常状態の話。
 		const BYTE want = KESCMEffectiveAlpha(which, target);
 		BYTE  cur = 0;
 		DWORD key = 0, flags = 0;

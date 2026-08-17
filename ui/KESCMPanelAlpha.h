@@ -9,10 +9,12 @@
 //  ★効くのは「フローティング中」のときだけ。ドッキング中のパネルはメインフレームの子窓に
 //    なるため単独では透かせない(その場合は何もしない=フラグだけ立つ)。
 //
-//  ★★対象は2つ(2026-08-06 にユーザー要望で拡張):
-//     ①自分のパネル ②**本体のページパネル**
+//  ★★対象は**3つ**(⚠2026-08-17 訂正＝ここは長く「対象は2つ」のままだった。3つ目は 2026-08-13 に
+//    足してあり、**この同じファイルの下のほうにその説明が書いてある**＝新旧が同居していた):
+//     ①自分のパネル ②**本体のページパネル**(2026-08-06) ③**自分のブック比較ダイアログ**(2026-08-13)
 //     それぞれ独立したトグルを持つ。実装は KESCMPanelAlpha.cpp 内で1本化されていて、
-//     対象は WidgetID(数値)で狙い撃ちする ＝ 窓タイトル(UI 言語で変わる)に依存しない。
+//     ①②は WidgetID(数値)で狙い撃ちする ＝ 窓タイトル(UI 言語で変わる)に依存しない
+//     (③だけは窓の見つけ方が違う。下の専用ブロックを見よ)。
 //
 //  技術的根拠(実測の全記録) = docs/ai-notes/win32-window-transparency.md
 //                             memory/win32-window-alpha-transparency.md
@@ -33,8 +35,12 @@ void	KESCMSetPanelTranslucent(bool16 on);
 
 // 現在のフラグをパネルの窓へ反映する。
 //  - パネルが見つからない / ドッキング中 のときは何もしない(エラーにしない)
-//  - 呼ぶ場所: メニュー押下時(KESCMActionComponent.cpp)と パネルの AutoAttach 時・
-//    ドッキング切り替え時(KESCMPanelObserver.cpp)
+//  - 呼ぶ場所は**3つ**(2026-08-17 訂正。⚠旧記述は KESCMPanelObserver.cpp を挙げていたが、あちらが
+//    呼ぶのは KESCMApplyAllPanelTranslucency のほうで、この関数ではない。逆に**同じファイルの
+//    IMouseRollOver の2つ**を数えていなかった):
+//      ①メニュー押下時 = KESCMActionComponent.cpp の kKESCMPopupTranslucentPanelActionID
+//      ②③カーソルの出入り = KESCMPanelAlpha.cpp の KESCMPanelRollOver::MouseEnter / MouseLeave
+//         (どちらもトグル OFF なら呼ばずに返る)
 //  - 返り値: 実際に窓へ alpha を設定できたら kTrue。パネルが無い/ドッキング中/Mac なら kFalse
 //    (メニュー押下時のステータス文言を「効いた」「ドッキング中なので効かない」で分けるために使う)
 bool16	KESCMApplyPanelTranslucency();
@@ -58,6 +64,10 @@ bool16	KESCMApplyPagesPanelTranslucency();
 //    「今どのドックに載っているか」の解決が要らない ＝ ドッキング中は効かない、という制限も無い。
 //  ⚠**窓は開いている間しか無い**。トグルだけ ON にして閉じている間は何も起きず、次に開いたときに
 //    効く(適用は KESCMBookDialog.cpp が開くたびに呼ぶ)。
+//  ★2026-08-17(監査 B-U9)＝その「開くたびの無条件 Apply」は**正しい**(⚠理由は「kCacheDialog が
+//    前回の alpha ごと窓を返すから」ではない——**窓は開くたびに新品で必ず不透明から始まる**ので、
+//    ON なら 77 を毎回書き直すしかない。実測＝3回開いて HWND は3つとも別)。
+//    その上で**一度も透かしていない窓には触らない**ようにした＝未 layered かつ狙いが 255 なら何もしない。
 //----------------------------------------------------------------------------------------
 bool16	KESCMGetBookDialogTranslucent();
 void	KESCMSetBookDialogTranslucent(bool16 on);

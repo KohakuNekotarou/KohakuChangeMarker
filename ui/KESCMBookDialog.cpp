@@ -282,9 +282,18 @@ void KESCMPrepareBookDialogWindow(IDialog* dialog)
 	// 2026-08-13: "make it so the dialog can be translucent too".) The two panel toggles find their
 	// window by asking the panel manager for a WidgetID; a dialog is not a panel and is not in there,
 	// so this is the only place that knows the handle.
-	// ★BOTH CALLS, AND IN THIS ORDER, ON EVERY OPEN. Registering is not applying: the toggle may have
-	//   been switched while the dialog was closed, and a cached dialog (kCacheDialog) comes back with
-	//   whatever alpha it had last time. Applying every time is what makes those two agree.
+	// ★BOTH CALLS, AND IN THIS ORDER, ON EVERY OPEN. Registering is not applying: the toggle can be
+	//   switched while the dialog is closed, and the window that comes back knows nothing about it.
+	// ⚠**MEASURED 2026-08-17 (B-U9), correcting what stood here.** This used to say "a cached dialog
+	//   (kCacheDialog) comes back with whatever alpha it had last time", and that is NOT what happens:
+	//   opening the dialog three times produced THREE DIFFERENT HWNDs (0x63FADC, 0x220CB6, 0x460854),
+	//   and a reopened window read back as NOT LAYERED AT ALL. **kCacheDialog keeps the dialog's
+	//   CONTENTS (the rows - see InitializeDialogFields), not the platform window.**
+	//   ★The file already said so 60 lines up: "it is created by KESCMOpenBookDialog and destroyed
+	//     when the dialog closes" - two statements in one file, and the false one was the one being
+	//     used as a reason. The remaining reason is the one that matters anyway: **with the toggle ON,
+	//     a brand-new window starts opaque, so 77 has to be written on every open** (measured: reopen
+	//     with the toggle ON comes up at 77).
 	// ★Nothing is needed on close, but NOT because the handle stops being valid on its own: a closed
 	//   window's HANDLE VALUE gets handed out again to some other window, and IsWindow says yes to
 	//   that one too. What makes closing safe is that KESCMSetBookDialogWindow also records THIS

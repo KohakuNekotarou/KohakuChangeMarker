@@ -160,6 +160,14 @@ static const PMReal kKESCMOldNumPadEm  = 0.20;	// 透明グループ bbox の余
 // ★77 ≒ 30%(ユーザー指定 2026-07-29。当初 128≒50% から変更)。カーソルを乗せれば不透明に戻る
 // (IMouseRollOver)ので、待機中はもっと薄くしてよい、という判断。段階指定やスライダーは作らないので、
 // 濃さを変えたいときはここ1箇所を書き換える。★Windows 専用(実体 KESCMPanelAlpha.cpp)。
+// ⚠★★**ただし 0 にしてはいけない**(2026-08-17 追記。MSDN *Window Features* の Layered Windows 節で
+//   裏取り。KBS が 2026-08-11 に確定した分がこちらへ来ていなかった)＝
+//   "Hit testing of a layered window is based on the shape and transparency of the window. This means
+//    that the areas of the window that are color-keyed or **whose alpha value is zero will let the
+//    mouse messages through**"。
+//   ⇒ 0 にするとパネルが**ポインタを一切受け取らなくなる**。この機能は「カーソルが乗ったら不透明に
+//     戻す」で成り立っているので、**薄くする道と一緒に戻る道まで失う**。
+//   ★上の「0=完全透明」は**引数の意味の説明**であって、ここに入れてよい値ではない。
 static const uint8 kKESCMPanelAlphaValue = 77;
 // ★通知を受けた「あと」にもう一度貼り直す回数と間隔(2026-07-29 実測で追加)。
 //   kPaletteVisibilityChangedMessage を受けた時点で alpha を書いても、その直後に InDesign が
@@ -175,5 +183,10 @@ static const uint32 kKESCMPanelAlphaReapplyDelayMillis = 50;	// 50ms × 8 回 �
 // (パネルの影(OWL.ShadowView)は alpha ではなく表示/非表示で制御する。影は per-pixel alpha で
 //  描かれていて一様 alpha と排他のため、alpha を一度設定すると OFF に戻しても元の影に復帰しない
 //  =2026-07-29 に実機で確認。詳細は KESCMPanelAlpha.cpp のコメント。よって濃さの定数は持たない)
+// ⚠2026-08-17 訂正＝正確には「**復帰させる手段はあるが、我々は採らない**」。MSDN は
+//  "subsequent UpdateLayeredWindow calls will fail **until the layering style bit is cleared and set
+//   again**" と回復手段まで書いている ＝ WS_EX_LAYERED を外して付け直せば戻る。**それでも採らない**
+//  のは相手が InDesign の持つ窓で、そのスタイルを外すと本体の描画が壊れるから(実測 2026-07-29)。
+//  ⇒ **我々にとって一方通行**、が正しい言い方。結論(濃さの定数を持たない)は変わらない。
 
 #endif // __KESCMConstants_h__

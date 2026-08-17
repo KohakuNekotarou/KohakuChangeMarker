@@ -31,7 +31,10 @@
 
 // General includes:
 #include "CmdUtils.h"			// CreateCommand / ProcessCommand
-#include "CreateObject.h"
+								// (*"CreateObject.h" was included here and never used - the only
+								//  command this file makes comes from CmdUtils::CreateCommand.
+								//  Dropped 2026-08-17, B-U9. It was also the one include in this
+								//  list with no note saying what it was for.)
 #include "ErrorUtils.h"			// GlobalErrorStatePreserver - an open that may fail must not poison
 								// the caller's next command
 #include "LayoutUIID.h"			// kOpenLayoutCmdBoss - a chapter's first window
