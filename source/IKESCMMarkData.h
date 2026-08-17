@@ -36,8 +36,11 @@
 #include <set>
 
 // Project includes:
-#include "KESCMID.h"
-#include "KESCMOversetScan.h"	// KESCMOversetLoc (a type only -- types cross the boundary fine)
+#include "KESCMBoundaryID.h"	// IID_IKESCMMARKDATA。★2026-08-17 に KESCMID.h から絞った(理由は
+								// IKESCMCompareFacade.h の同じ位置。境界が要るのは自分の IID だけ)
+#include "KESCMOversetScan.h"	// KESCMOversetLoc を借りるため。⚠2026-08-17 訂正＝旧「a type only」は
+								// 不正確で、このヘッダーは free function の宣言も 1 本連れてくる(実測)。
+								// 型が目的なのは本当だが、UI 側にはその 1 本も見えている(呼べばリンクエラー)
 
 class IDataBase;
 

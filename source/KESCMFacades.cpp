@@ -90,7 +90,7 @@ public:
 								bool16* outCancelled, int32* outFailed)
 								{ return KESCMRefreshComparisonForSelectedPages(outPages, outChanged, outCancelled, outFailed); }
 	virtual bool16		RefreshComparisonAvailable()	{ return KESCMRefreshComparisonAvailable(); }
-	virtual void		ClearMarks(IDataBase* db)		{ KESCMDoClearMarks(db); }
+	// (ClearMarks was here until 2026-08-17 -- removed with its declaration; see the interface.)
 
 	virtual void		SetPrintMarks(bool16 printFlag, bool16 opacity25Flag, IDataBase* db)
 													{ KESCMDoSetPrintMarks(printFlag, opacity25Flag, db); }
@@ -165,10 +165,8 @@ public:
 	virtual bool16		GetShowOriginal()		{ return KESCMDrawEventHandler::sShowOriginal; }
 	virtual void		SetShowOriginal(bool16 on)			{ KESCMDrawEventHandler::sShowOriginal = on; }
 
-	virtual void		ResetHideUnchanged(bool16 restoreSpreads)
-													{ KESCMResetHideUnchanged(restoreSpreads); }
-	virtual IDataBase*	GetHideUnchangedDB()	{ return KESCMGetHideUnchangedDB(); }
-	virtual IDataBase*	GetHideUnchangedSrcDB()	{ return KESCMGetHideUnchangedSrcDB(); }
+	// (ResetHideUnchanged / GetHideUnchangedDB / GetHideUnchangedSrcDB were here until 2026-08-17.
+	//  The model-side functions they forwarded to are still in use -- from the model. See the interface.)
 	virtual void		HideUnchangedToggle()	{ KESCMHideUnchangedToggle(); }
 	virtual bool16		GetHideUnchangedOn()	{ return KESCMGetHideUnchangedOn(); }
 

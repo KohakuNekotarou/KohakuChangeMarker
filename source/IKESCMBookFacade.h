@@ -44,9 +44,12 @@
 #include <vector>
 
 // Project includes:
-#include "KESCMID.h"
+#include "KESCMBoundaryID.h"	// IID_IKESCMBOOKFACADE。★2026-08-17 に KESCMID.h から絞った
+								// (理由は IKESCMCompareFacade.h の同じ位置)
 #include "KESCMBookResult.h"	// KESCMChapterResult / KESCMChapterState -- plain data and one
-								// inline function, so this header crosses the boundary fine
+								// inline function, so this header crosses the boundary fine.
+								// ★2026-08-17 に実測して確認＝free function の宣言は **0 本**で、
+								// 申告どおりなのは境界が借りる4本の型ヘッダーのうちこれだけだった
 
 class IBook;
 

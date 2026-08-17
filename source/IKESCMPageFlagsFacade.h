@@ -23,9 +23,13 @@
 #include "IPMUnknown.h"
 
 // Project includes:
-#include "KESCMID.h"
-#include "KESCMPageMap.h"	// KESCMPageToggleState (a type only -- types cross the boundary fine,
-							// the same way IKESCMMarkData borrows KESCMOversetLoc)
+#include "KESCMBoundaryID.h"	// IID_IKESCMPAGEFLAGSFACADE。★2026-08-17 に KESCMID.h から絞った
+							// (理由は IKESCMCompareFacade.h の同じ位置)
+#include "KESCMPageMap.h"	// KESCMPageToggleState を借りるため。⚠★★2026-08-17 訂正＝旧「a type only」は
+							// **このブロックで一番外れていた**＝実測でこのヘッダーは free function の宣言を
+							// **13 本**連れてくる。型が目的なのは本当だが、UI 側にはその 13 本も見えている
+							// (呼べばリンクエラーになるので静かには壊れない)。★4本の型持ち込みのうち
+							// 申告どおり 0 本なのは KESCMBookResult.h だけ＝最後に作った境界が一番きれい
 
 class IKESCMPageFlagsFacade : public IPMUnknown
 {

@@ -26,7 +26,12 @@
 #include "PMReal.h"		// GetBaseScreenOpacity
 
 // Project includes:
-#include "KESCMID.h"
+// ★2026-08-17 (bug recheck B2): KESCMID.h だったのを境界のヘッダーへ絞った。ここが要るのは
+//   自分の IID(IID_IKESCMCOMPAREFACADE)だけで、それは KESCMBoundaryID.h にある——そして
+//   あちらの :25 が「ここに置いてよいのは境界の ID だけ。**model 専用は KESCMID.h**」と自分で
+//   線を引いている。KESCMID.h を引くと、UI が include するこのヘッダーが model 専用の
+//   ClassID / ImplID / ScriptInfoID 一式まで連れてくる(値が違うので衝突はしないが、分離の意図が届かない)。
+#include "KESCMBoundaryID.h"
 
 class IDataBase;
 class IDocument;
@@ -85,8 +90,14 @@ public:
 	/** Whether "Refresh Page Comparison" may be offered right now. */
 	virtual bool16		RefreshComparisonAvailable() = 0;
 
-	/** Throw away the whole overlay (and the cached old-version images) and redraw db. */
-	virtual void		ClearMarks(IDataBase* db) = 0;
+	// ★★NOT HERE ANY MORE (2026-08-17, bug recheck B2). ClearMarks(IDataBase*) stood at this spot
+	// from Task 11 and was never called from anywhere: the UI ends a comparison with
+	// ToggleStartStop() or StopComparison(), and the model's own KESCMDoClearMarks is reached
+	// directly by KESCMComparisonRun.cpp:105. It came in with the plan's DRAFT interface and no
+	// grep for callers ever ran over it -- unlike every method below marked "Added over the plan's
+	// draft interface", each of which was found by grepping and each of which is called.
+	// ⇒ "a method on a boundary that nobody calls is a promise nobody keeps"
+	//   (IKESCMStoryEditsFacade.h:19, which wrote that while dropping its own draft's Rebuild()).
 
 	// ---- mark display settings ---------------------------------------------------------
 
@@ -284,12 +295,16 @@ public:
 
 	// ---- Hide Unchanged Spreads --------------------------------------------------------
 
-	/** Reset the toggle on both sides. restoreSpreads=kTrue shows the spreads we hid again
-		before dropping the state; document liveness is checked internally, so kTrue is safe
-		even when one side has been closed. */
-	virtual void		ResetHideUnchanged(bool16 restoreSpreads) = 0;
-	virtual IDataBase*	GetHideUnchangedDB() = 0;
-	virtual IDataBase*	GetHideUnchangedSrcDB() = 0;
+	// ★★NOT HERE ANY MORE (2026-08-17, bug recheck B2). ResetHideUnchanged(bool16),
+	// GetHideUnchangedDB() and GetHideUnchangedSrcDB() stood here from Task 11 and not one of the
+	// three was ever called across the boundary.
+	//
+	// ★The three model-side functions are alive and busy -- KESCMResetHideUnchanged from
+	// KESCMCore.cpp:485,778 (re-compare and Stop) and KESCMPeek.cpp:618,878 (shutdown and close),
+	// the two getters from KESCMPeek.cpp:867-868 -- but every one of those callers is MODEL-side.
+	// The reset happens below this boundary, which is why the UI never had to ask for it: the
+	// flyout only needs to flip the toggle and read its state, and those two are right here.
+	// Same origin as ClearMarks above: the plan's draft interface, never grepped for callers.
 
 	/** The toggle itself, and its state for the menu's check mark.
 		★Added over the plan's draft interface (2026-08-13): the flyout item that flips it stays

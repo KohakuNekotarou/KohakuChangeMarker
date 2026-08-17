@@ -39,8 +39,10 @@
 #include "UIDRef.h"				// UID
 
 // Project includes:
-#include "KESCMID.h"
-#include "KESCMStoryStamp.h"	// KESCMStoryChangeKind (a type only -- types cross the boundary fine)
+#include "KESCMBoundaryID.h"	// IID_IKESCMSTORYEDITSFACADE。★2026-08-17 に KESCMID.h から絞った
+								// (理由は IKESCMCompareFacade.h の同じ位置)
+#include "KESCMStoryStamp.h"	// KESCMStoryChangeKind を借りるため。⚠2026-08-17 訂正＝旧「a type only」は
+								// 不正確で、このヘッダーは free function の宣言も 3 本連れてくる(実測)
 
 class IDataBase;
 
