@@ -60,6 +60,7 @@
 //   ⇒ ビュー解決は呼び手(UI)へ出し、この .cpp は「渡された点のスプレッドを覗く」だけを担う。
 #include "KESCMPageMap.h"            // KESCMBuildPairing(比較の除外対応表)/KESCMPageMapReadSelection/KESCMPageMapSweepClosedDocs
 #include "KESCMPageCheck.h"          // KESCMPageCheckClearAllDocs / KESCMPageCheckSweepClosedDocs(✓の後片付け)
+#include "KESCMColorSampler.h"       // KESCMSampleCmykEndDrag(Alt+左ホールド中のページ対応表キャッシュ。Shutdown で空にする)
 #include "KESCMThreadSafety.h"       // KESCMIsMainThread(BG では文書の生存を判定できない。第2段 Task 11C)
                                      // ★2026-08-16(API 監査 B5): IDThreadingPrimitives.h の直 include から
                                      //   共有の道具へ。ここだけが素の IDThreading::IsMainThreadDomain() を
@@ -180,6 +181,17 @@ void KESCMPeekShowAt(IDataBase* targetDB, IDataBase* sourceDB,
 
 	if (!cached)
 	{
+		// ★★2026-08-17(不具合再検査 B5): **ラスタ化は未組版ストーリーの lazy recompose を誘発し得る
+		//   =組めば dirty になる。** 入る前が clean なら出るとき clean へ戻す。
+		//   ⚠**この防御は KESCM の中に4か所あった**(Start=KESCMCore.cpp / 部分再比較=この下の
+		//     KESCMRefreshComparisonCore / ブック比較=KESCMBookCompare.cpp / あふれ走査=KESCMOversetScan.cpp)
+		//     のに、**ページを丸ごと最大 300dpi でラスタ化するこの経路にだけ無かった**
+		//     ---- 同じファイルの中で非対称だった。「モデルを書き換えない・dirty にしない」は KESCM の
+		//     設計の核なので、覗いただけで旧ドキュメントに保存を促すことがあってはならない。
+		//   ★キャッシュヒット(=同一スプレッドの再 peek。最頻ケース)では作らない＝この分岐の中に置く。
+		IDataBase::SaveRestoreModifiedState targetDirtyGuard(targetDB);
+		IDataBase::SaveRestoreModifiedState sourceDirtyGuard(sourceDB);
+
 		// 新→旧のページ対応は除外対応表(登録済み=比較相手なしページを除いた順番対応)で引く。
 		// 実際にラスタ化するこの分岐でだけ必要(キャッシュヒット=同一スプレッドの再 peek が最頻ケースで、
 		// その度に対応表を作り直すのは無駄だった)。
@@ -337,6 +349,15 @@ static bool16 KESCMRefreshComparisonCore(IDataBase* targetDB, IDataBase* sourceD
 			//   (2026-08-06 再点検): changed==kFalse を「変化が無くなった」と読んで DropOneEntry すると、
 			//   一時的な失敗で前回の正しい枠が黙って消える。古い枠は残し、件数を failed としてステータスへ。
 			++failedCount;
+			// ★★2026-08-17(不具合再検査 B5): **差分再比較の前回ペアリングからも外す。**
+			//   Start 経路(KESCMCore.cpp の newMap.erase)が同じ位置で同じことをしており、その理由も
+			//   書いてある ---- 載せたままだと、次の登録トグルの差分再比較が「ペア不変=前回結果を再利用」と
+			//   判定して MakeEntry を呼ばず、**このページを更新できなかったこと自体が「比較済み・差なし」の
+			//   見た目で固定化される**。Refresh は「選んだページを最新にする」機能なので、更新に失敗した
+			//   ページこそ次の機会に必ず比較し直させる。
+			//   ⚠**外すのは前回ペアリングだけ**(エントリは上のとおり残す)。この2つは役割が違う
+			//     ---- エントリ=今の枠 / 前回ペアリング=次に再利用してよいかの判断材料。
+			KESCMDrawEventHandler::sPrevPairTargetToSource.erase(tUID);
 		}
 		else if (changed)
 			++changedCount;
@@ -362,6 +383,20 @@ static bool16 KESCMRefreshComparisonCore(IDataBase* targetDB, IDataBase* sourceD
 		}
 	}
 	if (outCancelled) *outCancelled = cancelled;
+
+	// ★★2026-08-17(不具合再検査 B5): **ラスタ化に失敗したページがあったときも、そこで立った可能性の
+	//   あるエラーを持ち越さない。** 上のキャンセル分岐と同じ扱いに揃える。
+	//   ⚠**これは Start 経路(KESCMCore.cpp の同名の措置)の2本目**で、あちらを直した 2026-08-17 の
+	//     B3(2周目)は「キャンセルのときだけ落としている」関数を1本しか数えていなかった。
+	//     ★**命題はブロックに属さない**(B5→B4 の指摘の3例目)。
+	//   失敗の中身は2種類で、エラーを立て得るのは後者だけ ---- ①ページサイズ不一致(ラスタ化自体は成功)
+	//   ②SnapshotUtilsEx::Draw の失敗・OOM(SDK 内部なので確かめる術が無い) ⇒ 測れない側へ安全側で倒す。
+	//   落としてよい根拠＝失敗は outFailed で呼び手へ返し、ステータス行に failed=N として報告し切っている
+	//   ＝**エラー状態で伝える必要が無い**。立てたまま返すと、この後の後片付け(✓ の剪定・通知を受けた UI の
+	//   仕事)や呼び手が次に投げるコマンドが巻き添えで失敗する
+	//   (CmdUtils.h:72-77 の protective shutdown / シーケンスなら丸ごと巻き戻る)。
+	if (failedCount > 0)
+		ErrorUtils::PMSetGlobalErrorCode(kSuccess);
 
 	// 報告用の処理数=実際に MakeEntry/DropOneEntry まで到達したページ数(対応表に無くて対象から外れた
 	// 選択ページは数えない。キャンセル時はそこまでに処理した数。ステータス行の「refreshed N」が実態と
@@ -617,6 +652,12 @@ void KESCMPeekStartup::Shutdown()
 	KESCMPageCheckClearAllDocs();			// 「KCM: Check」の✓
 	KESCMResetHideUnchanged(kFalse);		// Hide Unchanged の控え(kFalse=文書には一切触らない)
 	KESCMInvalidatePageNumberMarkerRects();	// ノンブル除外矩形のキャッシュ(2026-08-06 の監査 E-3)
+	// ★★2026-08-17(不具合再検査 B5): Alt+左ホールド中の hover→other ページ対応表キャッシュ
+	//   (KESCMColorSampler.cpp の sDragCacheH2O)。**上の列挙から漏れていた model 側の static コンテナ。**
+	//   ⚠実際に空にしていたのは UI 側の KESCMCmykShutdown()→EndColorDrag で、しかも**nil 検査つき**
+	//     (終了処理中は kUtilsBoss が先に落ちている可能性があるため)＝**呼べないことがある**。
+	//     model の static は model の Shutdown が閉じるのが筋で、二重に呼んでも冪等(clear するだけ)。
+	KESCMSampleCmykEndDrag();
 	// ★Story Edits の一覧(2026-08-10)。★★他と違い**中身が PMString** なので、これを忘れると
 	//   unload 時に静的な PMString がデストラクトされる ---- KBS が3度続けて忘れて記録した形
 	//   (KBSResultTree.h:76-77)。UI には触らない(行を捨てるだけ)ので終了処理中でも安全。

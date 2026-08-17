@@ -97,6 +97,16 @@ static bool16 KESCMReadCmykPixel(const UIDRef& pageRef, const PMPoint& spreadPt,
 	if (pageRef.GetDataBase() == nil || pageRef.GetUID() == kInvalidUID)
 		return kFalse;
 
+	// ★★2026-08-17(不具合再検査 B5): **ラスタ化は未組版ストーリーの lazy recompose を誘発し得る
+	//   =組めば dirty になる。** 入る前が clean なら出るとき clean へ戻す(hover/other それぞれの db に
+	//   対して1回ずつ掛かる＝この関数は各文書につき1回呼ばれる)。
+	//   ⚠**旧記述「プロキシ描画(fullRes=kFalse)なので dirty にせず guard は不要」は、別の問いに
+	//     答えていた**——fullRes が防ぐのは「配置画像のフル解像度生成」で、組版とは別の話。
+	//     KESCM で dirty を作るのは組版のほうで、だからこそ Start・部分再比較・ブック比較・あふれ走査の
+	//     4か所が同じ guard を持っている(2026-08-06 に入れた再点検)。ここと peek だけが例外だった。
+	//   ★コストはフラグの控えと復元だけ＝Alt+左ドラッグ中(≦20回/秒)に置いても問題にならない。
+	IDataBase::SaveRestoreModifiedState dirtyGuard(pageRef.GetDataBase());
+
 	// クリック点まわりの極小矩形(spread 座標)。boundsToSpreadMatrix=identity(=既に spread 座標)。
 	const PMReal hp = kKESCMSampleHalfPt;
 	PMRect clip(spreadPt.X() - hp, spreadPt.Y() - hp, spreadPt.X() + hp, spreadPt.Y() + hp);
@@ -105,13 +115,19 @@ static bool16 KESCMReadCmykPixel(const UIDRef& pageRef, const PMPoint& spreadPt,
 		kKESCMSampleDpi, 72.0, 0.0, SnapshotUtilsEx::kCsCMYK, kFalse);
 	if (snap == nil)
 		return kFalse;	// nothrow: OOM でもサンプル1回を諦めるだけ(KESCMDrawEventHandler と同方針、2026-07-25)
-	// 枠の比較(KESCMDrawEventHandler)と同じプロキシ描画(fullRes=kFalse)。配置画像のフル解像度生成を
-	// 誘発しないので文書を dirty にせず、dirty 回避の SaveRestoreModifiedState guard は不要。
+	// 枠の比較(KESCMDrawEventHandler)と同じプロキシ描画(fullRes=kFalse)＝配置画像のフル解像度生成を
+	// 誘発しない(dirty の防御は上の SaveRestoreModifiedState が別に持つ。理由もそこに書いた)。
 	// ★greek は 0.0=無効(2026-08-06 ブロック7 監査 A-1)。既定の 7.0 だと「そのポイント数未満の文字」が
 	//   字形を持たない灰色の帯として描かれる(SnapshotUtilsEx.h:224-225)ので、小さい文字の上をクリックすると
 	//   文字の色ではなく帯の色を CMYK として読んでしまう。しかも hover/other とも同じ帯になるため値が
 	//   揃って見え、誤りだと気づけない。★画素を読む用途では greek 無効が正しい=比較ラスタ化(MakeEntry)と
 	//   同じ判断。代償はラスタ化がわずかに遅くなることだけ(対象は kKESCMSampleHalfPt の 2pt 四方)。
+	//   ⚠★2026-08-17(不具合再検査 B5)の但し書き＝**greek の閾値には解像度のスケールが掛かる**
+	//     (SnapshotUtilsEx.h:224-225「its point size multiplied by the scaling is less than the greek
+	//     below value」)。∴ここは 300dpi=4.17倍なので、既定 7.0 のままでも実際に greek されるのは
+	//     **約 1.68pt 未満**の文字だけ＝上の危険は「書いてあるほど広くはない」。
+	//     ★**その代わり比較ラスタ(MakeEntry)では決定的**——あちらは 36dpi=0.5倍なので、既定のままだと
+	//     **14pt 未満が greek される**(＝本文がまるごと灰色の帯)。同じ 0.0 でも効き目の大きさが違う。
 	// ★非印刷オブジェクト(第8引数 bDrawNonPrintingObjects)は**既定 kTrue のまま=描かせる**。ここだけ
 	//   比較ラスタ(2026-08-12 に kFalse へ変更。KESCMDrawEventHandler.cpp / KESCMBookCompare.cpp)と
 	//   **わざと違える**: あちらは「刷り上がりが変わったか」を問うが、こちらは**ユーザーが画面で見て

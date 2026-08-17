@@ -253,7 +253,10 @@ public:
 		  hoverIsTarget -- kTrue when hoverDB is the comparison Target (new) side. Selects the
 		                   page-mapping direction and the t/s labels.
 		  mx, my        -- the sample point, in hoverDB's pasteboard (content) coordinates.
-		  outPanel      -- compact form for the panel status line (152px).
+		  outPanel      -- compact form for the panel status line, which is narrow: measured
+		                   2026-08-17, ui/KCMUI.fr:1921 Frame(8,76,216,150) = 208x74px, 4 lines.
+		                   (An older "152px" travelled through three files here; the width is in
+		                   the .fr and nowhere else - read it there rather than copying it again.)
 		  outCursor     -- the numbers alone, for the cursor bitmap to draw.
 		⚠ The caller must have checked that the pointer is still over hoverDB's own window
 		before calling. That guard used to live inside the sampler; it moved out with the view

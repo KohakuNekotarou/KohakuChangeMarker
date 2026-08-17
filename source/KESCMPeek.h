@@ -25,7 +25,15 @@
 class IDataBase;
 
 // 常時表示マークの画面上の「基準」不透明度。印刷設定から決まる(印刷ON => 選択不透明度25%/75%、印刷OFF => 1.0)。
-// peek を離したときの経路と KESCMDoSetPrintMarks が使う。実体は KESCMPeek.cpp。
+// 実体は KESCMPeek.cpp。
+// ★★呼び手は3つ(2026-08-17 の不具合再検査 B5 で全数を数え直した。**旧記述「peek を離したときの経路と
+//   KESCMDoSetPrintMarks」は誤り**＝peek を離す分岐はこれを呼ばない):
+//     ・KESCMDoSetPrintMarks(KESCMCore.cpp) …… 印刷マーク/不透明度トグルの即時反映
+//     ・KESCMTrackerRevealEnd(ui/KESCMPeekGesture.cpp) …… **reveal(修飾なし押下)を離したとき**。
+//       Shift 系の peek を離す分岐は sShowOriginal を落とすだけで、不透明度には触らない
+//       (押下中の値は SetPeekOpacity が別に持つ)
+//     ・KESCMActionComponent.cpp の不透明度トグル …… 常時表示中の見た目を即反映
+//   ⚠どちらの UI 側も Facade の GetBaseScreenOpacity() 越しに呼ぶので、**grep するときは両方の綴りで引く**。
 PMReal KESCMBaseScreenOpacity();
 
 // (★enum KESCMGesture は 2026-08-14 に **KESCMPeekGesture.h**(UI 側)へ移した＝第1段 Task 16。

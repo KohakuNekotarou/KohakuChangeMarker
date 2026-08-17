@@ -28,7 +28,9 @@ class IDataBase;
 //                 (KESCMMapTargetToSource / KESCMMapSourceToTarget)と行末ラベル(t/s)の割り当てに効く。
 //                 単独モードでは使わない。
 // mx, my        = ★サンプリングする点。hoverDB の**ペーストボード(content)座標**。
-// outPanel  = パネルのステータス行用(幅152px制約のため略語 t/s の compact 表記)。
+// outPanel  = パネルのステータス行用(欄が狭いので略語 t/s の compact 表記)。⚠**寸法をここに書き写さない**
+//             ＝正本は `ui/KCMUI.fr:1921` の `Frame(8,76,216,150)`(2026-08-17 実測＝208×74px・4行)。
+//             旧「幅152px」は 2026-07-15 世代の値で、同じ古い数字が3ファイルに残っていた(不具合再検査 B5)。
 // outCursor = カーソル自身に描く用(ラベルは t/s の1文字。C/M/Y/K見出しはKESCMCmykCursor.cpp のビットマップ
 //             カーソル側で別途描画するため、渡す文字列は数値行のみでよい)。
 //
