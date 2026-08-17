@@ -139,7 +139,13 @@
 // ClassIDs:
 // ★★2026-08-15（第2段 Task 6B-2）: **UI 側の boss 20 個は ui/KCMUIID.h へ移した**（+7 +8 +9 +11〜+27）。
 //   オフセットは動かしていない＝あちらで `kKCMUIPrefix + 同じ数字` になっているだけ。
-//   ⚠ よって **この帯の +7 +8 +9 +11〜+27 は「空き」ではない**（UI 側の同じ数字と対応が付いている）。
+// ★★2026-08-17（不具合再検査 B1・D-2）に全数を実測して訂正: **UI 側の ClassID は今 21 個で +28 まで伸びている**
+//   （+7 +8 +9 +11〜+28）。増えた1つは **+28 `kKESCMBookPathTextWidgetBoss`**（ui/KCMUIID.h:141＝ブック比較
+//   ダイアログの Target:/Source: 行）で、**移動ではなく同じ 2026-08-15 の新設**。⇒ 上の「移した 20 個」は
+//   その時点として正しく、**その後に増えた分がこの台帳へ来ていなかった**だけ。
+//   ⚠ よって **この帯の +7 +8 +9 +11〜+28 は「空き」ではない**（UI 側の同じ数字と対応が付いている）。
+//   ★これは「値が衝突する」という意味ではない（model は 0x1EA5 0x〜 / UI は 0x1EA5 8x〜で別物）。
+//     **番号を読み替えるための手がかり**として空けてある、という意味。
 //   ★ここに残る4つが「窓が無くても成り立つ仕事」＝比較マークの描画・起動終了・文書クローズ・ScriptProvider。
 DECLARE_PMID(kClassIDSpace, kKESCMScriptProviderBoss, kKESCMPrefix + 3)	// ★このプラグインが公開する ScriptProvider は**これ1つだけ**＝app の2プロパティ(kcmStatus/kcmBookResult)と story の4カウンターを両方この boss が serve する(2026-08-15 に集約)。.fr は**同じ boss に Provider ブロックを2つ**書いて Object ごとに Property を分けている(KESCM.fr の末尾2ブロック)。旧スクリプトAPI(kescmToast 等)は撤去済みで、公開するのは読み取り専用プロパティだけ
 DECLARE_PMID(kClassIDSpace, kKESCMDrawEventServiceBoss, kKESCMPrefix + 4)
@@ -183,7 +189,7 @@ DECLARE_PMID(kClassIDSpace, kKESCMDocResponderServiceBoss, kKESCMPrefix + 10)	//
 // ImplementationIDs:
 // ★★2026-08-15（第2段 Task 6B-2）: **UI 側の実装 26 本は ui/KCMUIID.h へ移した**（+5 +6 +7 +10〜+38 の UI 分）。
 //   オフセットは据え置き。⚠ここに残る 10 本は ui/KCMUIFactoryList.h ではなく source/KESCMFactoryList.h に載る。
-DECLARE_PMID(kImplementationIDSpace, kKESCMScriptProviderImpl, kKESCMPrefix + 0)	// CScriptProvider 実装(app.kcmStatus を返す。KESCMScriptProvider.cpp)
+DECLARE_PMID(kImplementationIDSpace, kKESCMScriptProviderImpl, kKESCMPrefix + 0)	// CScriptProvider 実装(KESCMScriptProvider.cpp)。★★2026-08-17 訂正＝旧「app.kcmStatus を返す」は 2026-08-15 の統合前の姿。**この1本が公開6プロパティ全部を serve する**(app の2本＋story の4本)＝上の kKESCMScriptProviderBoss の説明が正
 DECLARE_PMID(kImplementationIDSpace, kKESCMDrawEventSrvcImpl, kKESCMPrefix + 1)
 DECLARE_PMID(kImplementationIDSpace, kKESCMDrawEventHandlerImpl, kKESCMPrefix + 2)
 // kKESCMPeekWatcherImpl (kKESCMPrefix + 3) は中ボタンウォッチャ撤去(2026-07-13)により廃止。スロットは予約のまま。
@@ -217,7 +223,10 @@ DECLARE_PMID(kImplementationIDSpace, kKESCMBookFacadeImpl, kKESCMPrefix + 43)	//
 																					//     決して渡さない(通知の受け手が deref するため)。
 
 
-// スクリプト要素 ID(スクリプトAPIは全撤去済み=+1〜+12 はすべて空き。再利用時は旧用途との衝突に注意)
+// スクリプト要素 ID。★**現役は +13〜+18 の6本**(下記。app の2本 + story の4本＝すべて読み取り専用プロパティ)。
+// 旧スクリプトAPI(メソッド)は全撤去済みで **+1〜+12 がその跡地**＝再利用時は旧用途との衝突に注意
+//   ⚠2026-08-17 訂正: 旧見出しは「スクリプトAPIは全撤去済み=+1〜+12 はすべて空き」だけで、**見出しだけ読むと
+//     このスペース全体が空きに見えた**(実際は +13〜+18 が現役)。2026-08-15 に story の4本が加わった分。
 // kScriptInfoIDSpace +1 は現在空き(ページ単位 kescmMarkChanges は廃止; kescmMarkChangesDoc を使う)
 // kScriptInfoIDSpace +2 は現在空き(旧 kKESCMClearMarksMethodScriptElement; スクリプトAPI撤去)
 // kScriptInfoIDSpace +3 は現在空き(旧 kKESCMMarkChangesDocMethodScriptElement; 同上)

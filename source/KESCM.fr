@@ -303,20 +303,42 @@ resource VersionedScriptElementInfo(10)
 {
 	//Contexts
 	{
-		// ★★feature set が kInDesignAllLanguagesFS(=InDesign 全言語。InCopy と InDesign Server を除く)
-		//   なのは**正しい**。手本 = snapshot/Snap.fr:2089 —— **SnapTool の ScriptID を
-		//   kToolBoxEnumScriptElement へ登録しているリソースが、まさに同じ kInDesignAllLanguagesFS 単独**。
-		//   理由もはっきりしている: **ツールボックスは InDesign デスクトップにしか無い**(InCopy にも
-		//   Server にも無い)ので、ツールの列挙子を登録する context は InDesign に絞るのが筋。
-		//   ★同じ snapshot が **Snap.fr:1795 では kWildFS を使っている**(あちらはツールを含まない
-		//     スクリプト API のリソース) ＝ **公式は1つのプラグイン内で内容によって使い分けている。**
-		//   ⚠**KBS(KBS.fr:1282)が kWildFS なのは割れではない**。KBS のリソースは Property だけで
-		//     ツールを含まないため。**内容が違うので正しく違う。**
+		// ★★★2026-08-17(不具合再検査 B1・D-1): **下の2つを選ばせた根拠は、もうこのリソースに無い。**
+		//   2026-08-15(Task 6B-2)に**ツールの列挙子が KCMUI.fr へ出て行った**(上の :282-285)ので、
+		//   ここに残るのは **Property だけ**(app 2本 + story 4本)。ところが選択の理由は3つとも
+		//   「ツールがある前提」のままだった——旧記述はこう言っていた:
+		//     ①feature set が kInDesignAllLanguagesFS なのは、手本 Snap.fr:2089 が**ツールの ScriptID を
+		//       kToolBoxEnumScriptElement へ登録するリソース**で、**ツールボックスは InDesign にしか無い**から
+		//     ②KBS が kWildFS なのは「KBS は Property だけでツールを含まない＝**内容が違うので正しく違う**」から
+		//     ③script version が kCS5 なのは Snap.fr:2089 のツール登録も kCS5 だから
+		//   ⇒ ①③の手本は**当たらなくなり**、②の区別は**内容が同じになったので成立しない**。
+		//
+		// ★**それでも値は据え置く。根拠が入れ替わっただけで、動作は1ビットも変わらないから**:
+		//   このプラグインの PluginVersion は対象製品が **{ kInDesignProduct } 単独**(:83)で、InCopy にも
+		//   InDesign Server にもロードされない。∴ kInDesignAllLanguagesFS と kWildFS で
+		//   **引ける場面が1つも違わない**。★寄せるなら feature set だけを見ないこと＝この resource ID の
+		//   「10」も、ツールの手本(ITool.h:202)が選ばせた番号で**同じ日に根拠を失っている**
+		//   (Property だけのリソースは 1 が主流＝KBS.fr:1326 / BPI.fr:526 / CusCondTxt.fr:271)。
+		//
+		// ⚠**script version(kCS5)だけは「動作が同じ」と言い切れていない**＝兄弟の KBS は
+		//   **kCS2ScriptVersion** で、しかも**理由が書いてある**(KBS.fr:1328-1329「動きえた一番古い版から
+		//   宣言するのが SDK サンプルの流儀。新しいアプリでも尊重される」)。KESCM は
+		//   **app.kcmStatus / app.kcmBookResult を検証の自動化に使っている**ので、
+		//   「app.scriptPreferences.version を CS5 未満に落としたスクリプトから見えなくなるか」を
+		//   **測ってから**でなければ動かさない(未測定＝docs/ai-notes/kescm-bug-recheck-b1-2026-08-17.md E-1)。
+		//
+		// ★引用の裏取り(2026-08-17 実測): Snap.fr:2089 は実在し、記述も正確
+		//   (kCS5ScriptVersion, kCoreScriptManagerBoss, kInDesignAllLanguagesFS, k_Wild)。
+		//   同じ snapshot が **Snap.fr:1795 では kWildFS**(ツールを含まないリソース)＝
+		//   **公式は1つのプラグイン内で内容によって使い分けている**——この観察自体は今も生きており、
+		//   むしろ「内容が変わったら選び直す」という上の判断の裏付けになっている。
+		//   ⚠**KBS の参照は KBS.fr:1282 ではなく KBS.fr:1326**(:1282 は widget 定義)＝旧記述の行番号は
+		//     壊れていた。★**同じ 2026-08-15 の API 監査 A-2 の表は :1326 を正しく引いている**
+		//     ＝正しい行番号を手元に持ちながら、こちらを直さなかった。
 		// ⚠2026-08-07 に一度 kWildFS へ変えたが**同日中に撤回した**。「kInDesignAllLanguagesFS 単独の
 		//   公式実例はゼロ」と判定したのが誤りで、走査結果の件数上限で Snap.fr:2089 を見落としていた
 		//   (経緯 = docs/ai-notes/kescm-api-audit-block14-2026-08-07.md の A-1)。
-		// ★script version は kCS5。公式サンプルは CS2〜CS5〜Firedrake と幅があり、新しい版を選ぶこと
-		//   自体が公式の範囲内(CustSE / XDocBk / **Snap.fr:2089 のツール登録も kCS5**)。
+		//   ★**その撤回は今も有効**(実例は在る)。今回変わったのは「その実例が KESCM の手本として当たるか」。
 		kCS5ScriptVersion, kCoreScriptManagerBoss, kInDesignAllLanguagesFS, k_Wild,
 	}
 	//Elements
