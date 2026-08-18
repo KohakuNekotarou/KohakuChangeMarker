@@ -464,7 +464,13 @@ void KESCMCmykBeginPress()
 		// 回避。向きも押下時のまま固定。破棄は RevealEnd)。単独モードはページ対応が無いので不要。
 		IDataBase* otherDB      = nil;
 		bool16     hoverIsTarget = kFalse;
-		InterfacePtr<IKESCMCompareFacade> compare(Utils<IKESCMCompareFacade>().QueryUtilInterface());	// ★この分岐で6回聞く(Utils.h:74-80。2026-08-15 に BeginColorDrag / SampleColorAt が増えて 4→6)
+		// ★この分岐は**実行時に最大6回**聞く(押した窓が Source のとき＝ArmedDocsAlive 1 +
+		//   GetArmedTargetDB / GetArmedSourceDB / GetArmedTargetDB 3 + BeginColorDrag 1 + SampleColorAt 1)。
+		//   根拠は Utils.h:74-80(何度も使うなら InterfacePtr に控えろ)。2026-08-15 に
+		//   BeginColorDrag / SampleColorAt が増えて 4→6。
+		//   ⚠**ソース上の `compare->` の出現は7つ**で、if/else if の片側しか走らないので数が合わない。
+		//     2026-08-19 の不具合再検査 B-U6 で「7つでは」と数え違えかけたため、何を数えた数字かを明記する。
+		InterfacePtr<IKESCMCompareFacade> compare(Utils<IKESCMCompareFacade>().QueryUtilInterface());
 		if (compare->ArmedDocsAlive())	// 比較中か(解放済み db との照合を避けるため生存検査を先に通す)
 		{
 			if (hoverDB == compare->GetArmedTargetDB())      { otherDB = compare->GetArmedSourceDB(); hoverIsTarget = kTrue;  }

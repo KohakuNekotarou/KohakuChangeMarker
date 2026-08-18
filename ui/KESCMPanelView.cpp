@@ -40,7 +40,8 @@
 //  KCMUIID.h の kKESCMPanelTopPaneHeight を読むが、KESCMStorySection.cpp の DesignedTopPaneHeight は
 //  **同じ数字を splitter の Top snap から**取る ---- そちらのコメントは「その数字はレイアウトを
 //  記述しているリソースの隣にあるべきで、ここで繰り返すべきではない」と書いている。現状は
-//  **両方 185 で一致している**(KCMUIID.h:554 と KCMUI.fr の Top snap。2026-08-18 実測)ので実害は無いが、
+//  **両方 185 で一致している**(KCMUIID.h の kKESCMPanelTopPaneHeight と KCMUI.fr の Top snap。
+//  2026-08-18 実測)ので実害は無いが、
 //  片方だけ動かすと閉じる操作の目標高さと上限がずれる ⇒ **動かすときは必ず両方**([[one-question-one-place]])。
 //  ここを splitter に聞く形へ寄せきれないのは、下のとおり **splitter が引けないときの答えも要る**ため。
 //

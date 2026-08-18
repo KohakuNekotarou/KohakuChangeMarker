@@ -53,7 +53,10 @@
 #include "DocumentID.h"	// kAfterCloseDocSignalRespServiceImpl
 #include "GraphicsID.h"	// IID_IDRWEVTHANDLER (the comparison marks' draw service - the whole point of the model half)
 						// ★2026-08-15 (Task 10): IID_ISPRITE / IID_IPATHGEOMETRY / kPathGeometryImpl left with the
-						//   tracker in Task 6B-2. Only the draw-event handler is still declared on this side.
+						//   tracker in Task 6B-2. ★2026-08-19 (bug recheck B-U6): the tracker does not declare
+						//   them either any more - CTracker never queries ISprite, so only CPathCreationTracker /
+						//   CLayoutTracker descendants need them (see KCMUI.fr's kKESCMTrackerBoss Class).
+						//   Only the draw-event handler is still declared on this side.
 
 #include "INXCoreID.h"	// kINXScriptManagerBoss (INXCoreID.h:58) - the Contexts of the INX-only
 						// resource at the end of this file, which keeps the story counters out of IDML

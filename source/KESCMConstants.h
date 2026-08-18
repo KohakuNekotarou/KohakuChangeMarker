@@ -152,9 +152,12 @@ static const PMReal kKESCMOldNumR = 0.0, kKESCMOldNumG = 0.0, kKESCMOldNumB = 0.
 static const PMReal kKESCMOldNumHaloEm = 0.06;	// 白フチの太さ(em比)
 static const PMReal kKESCMOldNumPadEm  = 0.20;	// 透明グループ bbox の余白(em比。白フチのはみ出しを含む)
 
-// (★押下中 HUD の3定数 — kKESCMHudSettleTries / kKESCMHudSettleDelayMillis /
-//  kKESCMHudFirstDrawDelayMillis — は 2026-08-06 に機能ごと全廃した。点滅対策の実測の経緯は
-//  git 履歴と docs/ai-notes/kescm-tracker-hud.md に残してある。)
+// (★旧 sprite 版 HUD の点滅対策だった3定数 — kKESCMHudSettleTries / kKESCMHudSettleDelayMillis /
+//  kKESCMHudFirstDrawDelayMillis — は 2026-08-06 に**その仕組みごと**撤去した。点滅対策の実測の経緯は
+//  git 履歴と docs/ai-notes/kescm-tracker-hud.md に残してある。
+//  ⚠**押下中 HUD 自体は現役**＝翌 2026-08-07 に Draw Event 方式で作り直され、待ち時間の定数を
+//    必要としない作りになった(UI 側 KESCMTrackerHud.cpp)。ここは 2026-08-19(不具合再検査 B-U6)まで
+//    「押下中 HUD の3定数…**機能ごと全廃**した」と書いてあり、機能が無いように読めた。)
 
 // パネル半透明トグル(フライアウト「Translucent Panel」)の alpha 値(0=完全透明 255=不透明)。
 // ★77 ≒ 30%(ユーザー指定 2026-07-29。当初 128≒50% から変更)。カーソルを乗せれば不透明に戻る

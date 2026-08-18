@@ -37,9 +37,11 @@ public:
 	virtual void Init(RsrcID iconID, const PluginID& pluginID);
 
 	/** Returns the ScriptID that identifies this tool inside the en_ToolBoxTools enumeration.
-		ITool.h:192-223 requires every toolbox tool to define one and register it in
-		kToolBoxEnumScriptElement (done in KCMUI.fr); the base class ASSERTs if it is not
-		implemented. Scripts read it as app.toolBoxTools.currentTool and select this tool with
+		The doc comment on ITool::GetScriptID requires every toolbox tool to define one and register
+		it in kToolBoxEnumScriptElement (done in KCMUI.fr); CTool's default GetScriptID calls
+		ASSERT_UNIMPLEMENTED() and returns en_None, so not overriding it asserts.
+		(This was quoted as "ITool.h:192-223" until the 2026-08-19 bug recheck; the range ran one
+		line past the declaration, so both ends are named instead.) Scripts read it as app.toolBoxTools.currentTool and select this tool with
 		app.toolBoxTools.currentTool = UITools.KOHAKU_CHANGE_MARKER_TOOL.
 		This is the tool's identity, not a scripting API - KESCM still exposes no methods and no
 		properties. Until 2026-08-06 this returned en_None ('none' = "no tool at all"), which left

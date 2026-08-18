@@ -119,9 +119,11 @@ public:
 		freeze the UI. We only need a static reveal, so refuse every timer. Mouse-up still ends
 		tracking via the CTrackerEventHandler, not the timer, so this is safe.
 		The blanket kFalse is not a shortcut: CTracker::BeginTracking asks for three timers
-		(kPatientUserBoss / kMouseTrackerBoss / kDynamicPauseTimerBoss, CTracker.cpp:350-370) but the
-		base only ever answers kTrue for kMouseTrackerBoss (CTracker.cpp:905-911), so refusing all
-		three behaves exactly like refusing that one - the other two were already off. */
+		(kPatientUserBoss / kMouseTrackerBoss / kDynamicPauseTimerBoss - the three WantTimer() calls in
+		CTracker::BeginTracking) but the base's own CTracker::WantTimer only ever answers kTrue for
+		kMouseTrackerBoss, so refusing all three behaves exactly like refusing that one - the other two
+		were already off. (Both were quoted by line number until the 2026-08-19 bug recheck; the second
+		one was off by a couple of lines, so they are named instead.) */
 	virtual bool16 WantTimer(ClassID /*trackerTimerBoss*/) { return kFalse; }
 
 	/** Mouse down. Engage on a left-button press only (middle/right keep their normal handling, e.g.

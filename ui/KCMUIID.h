@@ -162,9 +162,13 @@ DECLARE_PMID(kImplementationIDSpace, kKESCMTrackerRegisterImpl, kKCMUIPrefix + 1
 DECLARE_PMID(kImplementationIDSpace, kKESCMTrackerEHImpl, kKCMUIPrefix + 16)	// IEventHandler 実装(CTrackerEventHandler派生; 押下中のボタン解放を EndTracking へ転送。KESCMTracker.cpp)
 DECLARE_PMID(kImplementationIDSpace, kKESCMCursorProviderImpl, kKCMUIPrefix + 17)	// ICursorProvider 実装(CToolCursorProvider派生; ツール選択中は常時✓カーソル。KESCMCursorProvider.cpp)
 // (+6..+17 are all declared above - stale placeholders for them removed 2026-08-05 audit)
-// (+18 = kKESCMSpriteImpl は 2026-08-06 に押下中 HUD ごと撤去。★**この番号は再利用しない**。
-//  トラッカー boss の IID_ISPRITE は SDK 標準実装 kNoHandleSpriteImpl に戻してある=公式サンプル
-//  wavetool の boss 構成(WavTl.fr:151,155)と同じ形)
+// (+18 = kKESCMSpriteImpl は 2026-08-06 に**旧 sprite 版**の押下中 HUD ごと撤去。★**この番号は再利用しない**。
+//  ⚠**押下中 HUD 自体は現役**＝翌 2026-08-07 に Draw Event 方式で作り直した(KESCMTrackerHud.cpp)。
+//  ★★2026-08-19(不具合再検査 B-U6): トラッカー boss の **IID_ISPRITE / IID_IPATHGEOMETRY も外した**。
+//   旧記述の「SDK 標準実装に戻してある＝公式サンプル wavetool の boss 構成と同じ形」は
+//   **母集合の取り違え**で、sprite が要るのは **CPathCreationTracker / CLayoutTracker 派生**だけ
+//   (wavetool の2本はその派生)。CTracker 直接派生の KESCM は持たない側が公式と同じ形。
+//   理由の全文は KCMUI.fr の kKESCMTrackerBoss の Class コメント)
 DECLARE_PMID(kImplementationIDSpace, kKESCMDocsClosedObserverImpl, kKCMUIPrefix + 19)	// IObserver 実装(一括クローズ完了で、保留した後片付けを1回だけ流す。KESCMPeek.cpp)
 DECLARE_PMID(kImplementationIDSpace, kKESCMPanelVisibilityObserverImpl, kKCMUIPrefix + 20)	// IObserver 実装(パネルの表示状態が変わったら半透明を貼り直す。KESCMPanelAlpha.cpp)
 DECLARE_PMID(kImplementationIDSpace, kKESCMPanelRollOverImpl, kKCMUIPrefix + 21)	// IMouseRollOver 実装(パネルにカーソルが乗っている間だけ半透明を解除。KESCMPanelAlpha.cpp)

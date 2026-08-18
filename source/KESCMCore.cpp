@@ -277,6 +277,40 @@ bool16 KESCMFindPageUnderMouse(IDataBase* targetDB, PMReal mx, PMReal my, KESCMP
 	const int32 ns = spreadList->GetSpreadCount();
 	int32 globalIndex = 0;
 	const PMPoint pt(mx, my);	// 聞く相手は PMRect::PointIn(下の2箇所で使う)
+
+	// ★★★2026-08-19(不具合再検査 B-U6): 絞り込みは**種別(マスター/通常)の一段だけ**にする。
+	//   2026-08-16〜2026-08-19 は下の2つのループがどちらも「**表示中スプレッド以外は全部落とす**」
+	//   形で、**通常スプレッド同士まで落としていた**。⇒ ユーザー報告(2026-08-19)＝
+	//   「**選択されているスプレッド/ページの上でしか CMYK も Shift+ の peek も効かない。
+	//     他のページへカーソルを持っていくと `---` になる**」。
+	//   ★**曖昧なのはマスター⇔通常の間だけ**(そこだけがペーストボード座標で重なる＝KESCMCore.h の実測)。
+	//     **通常スプレッド同士は重ならない**——その証拠は、2026-08-16 に絞りを入れるまで
+	//     **この関数はずっと通常スプレッドを全走査していて、通常同士の取り違えは一度も出ていない**こと。
+	//   ∴ 表示中がマスターなら「通常を見ない＋そのマスターだけ」、表示中が通常なら
+	//     「マスターを見ない＋**通常は全部見る**」。kInvalidUID(絞りなし)は従来どおり全走査。
+	//   ⚠**Query は1回増える**(2026-08-19 に自分で書いた「増えない」を訂正)。旧は
+	//     **通常スプレッドでヒットした時点で return するのでマスター一覧を引かなかった**——
+	//     引くのは通常で外れた時だけだった。新は種別の判定に要るので**常に引く**。
+	//     ⇒ この関数はマウスが動くたび通るが、増えるのは同じ DB のルート UID への Query 1回で、
+	//       既にやっている ISpreadList + スプレッドごとの ISpread + ページごとの IGeometry に比べれば誤差。
+	//       **速さより「絞りの単位を1か所で決める」ことを採った**([[one-question-one-place]])。
+	//   ★判定の形は UI 側の先例 KESCMScrollMap.cpp の KESCMIsMasterSpread に合わせた
+	//     (IMasterSpreadList::GetMasterSpreadIndex は「マスターでない UID を渡したときの戻り」が
+	//      ヘッダーに書かれていないので使わない、という同じ理由)。
+	InterfacePtr<IMasterSpreadList> mList(targetDB, targetDB->GetRootUID(), UseDefaultIID());
+	const int32 nm = (mList != nil) ? mList->GetMasterSpreadCount() : 0;
+	bool16 viewingMaster = kFalse;
+	if (onlySpreadUID != kInvalidUID)
+	{
+		for (int32 m = 0; m < nm; ++m)
+		{
+			if (mList->GetNthMasterSpreadUID(m) == onlySpreadUID)
+			{
+				viewingMaster = kTrue;
+				break;
+			}
+		}
+	}
 	for (int32 s = 0; s < ns; ++s)
 	{
 		const UID spreadUID = spreadList->GetNthSpreadUID(s);
@@ -285,10 +319,12 @@ bool16 KESCMFindPageUnderMouse(IDataBase* targetDB, PMReal mx, PMReal my, KESCMP
 			continue;
 		const int32 np = spread->GetNumPages();
 
-		// ★★2026-08-16: 呼び手が「今表示しているスプレッド」を指定したら、それ以外は見ない
+		// ★★2026-08-16 → 2026-08-19 改訂: **表示中がマスターのときだけ**通常スプレッドを見送る
 		//   (理由は KESCMCore.h＝マスターと通常はペーストボード座標で重なる)。
+		//   ⚠**旧実装はここが `spreadUID != onlySpreadUID` で、通常スプレッド同士まで落としていた**
+		//     ＝「選択中のスプレッド以外では CMYK も peek も効かない」の原因(関数冒頭の但し書き)。
 		//   ⚠**globalIndex の加算は続ける**＝平坦ページ番号は「絞り込みの有無で変わらない」。
-		if (onlySpreadUID != kInvalidUID && spreadUID != onlySpreadUID)
+		if (onlySpreadUID != kInvalidUID && viewingMaster)
 		{
 			globalIndex += np;
 			continue;
@@ -373,13 +409,15 @@ bool16 KESCMFindPageUnderMouse(IDataBase* targetDB, PMReal mx, PMReal my, KESCMP
 	// ⚠**隠しスプレッドの除外は入れない**——マスタースプレッドを隠す機能は InDesign に無く、
 	//   IID_IHIDESPREADBOOLDATA は kSpreadBoss 上の通常スプレッドの話。
 	// ⚠**globalIndex は加算しない**——マスターは平坦ページ列（IPageList）に居ないので番号を持たない。
-	InterfacePtr<IMasterSpreadList> mList(targetDB, targetDB->GetRootUID(), UseDefaultIID());
-	const int32 nm = (mList != nil) ? mList->GetMasterSpreadCount() : 0;
+	// ★mList / nm は関数冒頭で引いてある(種別の判定に要るため)。⚠そのぶん、通常スプレッドで
+	//   ヒットする普通の経路でも一覧を1回引くようになった(旧はここまで来なければ引かなかった)。
 	for (int32 m = 0; m < nm; ++m)
 	{
 		const UID msUID = mList->GetNthMasterSpreadUID(m);
-		if (onlySpreadUID != kInvalidUID && msUID != onlySpreadUID)
-			continue;	// ★表示中のスプレッドだけを見る(平坦番号はマスターには無いので加算も無い)
+		// ★2026-08-19: 表示中が**通常**スプレッドならマスターは一切見ない/表示中が**マスター**なら
+		//   その表示中のマスターだけを見る(平坦番号はマスターには無いので加算も無い)。
+		if (onlySpreadUID != kInvalidUID && (!viewingMaster || msUID != onlySpreadUID))
+			continue;
 		InterfacePtr<ISpread> ms(targetDB, msUID, UseDefaultIID());
 		if (ms == nil)
 			continue;

@@ -2,9 +2,13 @@
 //
 //  KESCMTrackerHud.cpp
 //
-//  左ボタンを押している間だけ、押したビューの右上に「その窓が比較の何なのか」を出す
+//  左ボタンを押している間だけ、押したビューの**左上**に「その窓が比較の何なのか」を出す
 //    (Target / Source / Not in comparison / Not comparing)。仕様・経緯・「なぜ Draw Event で
 //    隅に描けるのか」は KESCMTrackerHud.h の冒頭。
+//  ⚠ここは 2026-08-19(不具合再検査 B-U6)まで「右上」と書いてあった。実装は下の
+//    kKESCMTrackerHudLeftPx が boundsPb.Left() 基準＝左上で、KESCMTrackerHud.h も KESCMTracker.cpp も
+//    「左上」と書いており、**このファイルの1行だけが逆**だった。旧 sprite 版も左上
+//    (git 19015e3^:KESCMTracker.cpp:908「ビュー左上からの位置(画面 px)」)。
 //
 //  ここが持つのは「押下中か」「どのビューか」の2つだけ(比較状態は KESCMCore/KESCMPeek 側に
 //  聞く = 状態を二重に持たない)。描画の呼び出しは

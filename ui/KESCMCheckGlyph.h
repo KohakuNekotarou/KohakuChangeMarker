@@ -16,8 +16,13 @@
 //  生成後は source/sdksamples/KESCM/ui/ へ置き、**KCMUI.fr を touch してから**ビルドすること
 //  (PNG だけ差し替えても ODFRC が走らず古い画像がリンクされ続ける既知の罠)。
 //
-//  Header-only inline (no .cpp / no build-system change): both callers already include
-//  IGraphicsPort.h, and inlining avoids an ODR clash across the two translation units.
+//  Header-only inline (no .cpp / no build-system change): the caller already includes
+//  IGraphicsPort.h, and inlining keeps that true if a second translation unit ever picks it up again.
+//  ⚠2026-08-19(不具合再検査 B-U6)訂正: ここは「**both callers** … across the **two** translation
+//    units」と書いてあったが、**呼び手は 2026-07-25 以降ずっと1つ**(KESCMCmykCursor.cpp)＝✓カーソルが
+//    PNG リソース方式へ変わってコールバックを持たなくなった日から。**同じファイルの14行下**が
+//    「現在の呼び手は…ただ1つ(2026-08-17・監査 B-U6 で Grep 全数を数え直した)」と書いているのに、
+//    **数え直した当人がこの段落を直していなかった**(近い兄弟ほど残る)。
 //
 //========================================================================================
 #ifndef __KESCMCheckGlyph_h__

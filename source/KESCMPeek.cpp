@@ -585,8 +585,9 @@ bool16 KESCMArmedDocsAlive()
 //      will be called on both main and background thread startup and shutdown.**"
 //   ⇒ 下の Shutdown() は **DropAll() ほかで比較状態を丸ごと消す**ので、そうなると
 //     **PDF を1本書き出すたびにマークが全部消える**。
-//   ★塞いだのは **`.fr` の宣言側**＝**`KESCM.fr:165` が `kCMainThreadStartupShutdownProviderImpl`**
-//     を指定している(理由は同 `KESCM.fr:138-156`)。★手本＝Adobe 製 DiagnosticLog(`DiagLogClass.fr:93-100`)
+//   ★塞いだのは **`.fr` の宣言側**＝**`KESCM.fr` の `kKESCMPeekStartupBoss` の Class が
+//     `kCMainThreadStartupShutdownProviderImpl`** を指定している(理由は同ファイルの見出し
+//     "THE FIX IS HERE, IN THE RESOURCE, NOT IN Shutdown()." の段落)。★手本＝Adobe 製 DiagnosticLog(`DiagLogClass.fr:93-100`)
 //     が **model プラグインのまま startup/shutdown だけをメインスレッド限定にし、理由をコメントで
 //     書いている** ⇒ **前例が見つかった時点で、threading の問いは実測を要さなくなった**。
 //   ⚠**この Shutdown() の側に「BG なら何もしない」ガードを入れて塞いではいけない**

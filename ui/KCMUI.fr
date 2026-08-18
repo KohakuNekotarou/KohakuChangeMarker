@@ -64,7 +64,8 @@
 //                          4カウンター)を serve するのは model 側の kKESCMScriptProviderBoss。
 //     ・DocumentID.h     … kAfterCloseDocSignalRespServiceImpl ＝ close-document responder の
 //                          サービス実装。旧コメントの "see that Class below" が指す Class は
-//                          **このファイルに無い**(KESCM.fr:183 にある)。
+//                          **このファイルに無い**(KESCM.fr の kKESCMDocResponderServiceBoss の
+//                          Class にある)。
 //   ⇒ 2つとも KCMUI.fr での使用はゼロ(2026-08-16 に Grep で実測＝コメントの中にしか現れなかった)。
 //     外して UI をビルドし、0警告0エラーで通ることを確認した。
 //   ⚠**下の AddIn が使う kActiveContextBoss は AppFrameworkID.h ではなく ShuksanID.h:99**
@@ -75,7 +76,9 @@
 // enough for the resource at the end of this file: it also pulls in ScriptingID.h
 // (kCoreScriptManagerBoss) and defines kCS5ScriptVersion.
 #include "ScriptInfoTypes.fh"	// VersionedScriptElementInfo / Enumerator
-#include "GraphicsID.h"	// for IID_IDRWEVTHANDLER / IID_ISPRITE / IID_IPATHGEOMETRY / kPathGeometryImpl
+#include "GraphicsID.h"	// for IID_IDRWEVTHANDLER (the UI half's draw-event handler boss).
+						// ★IID_ISPRITE / IID_IPATHGEOMETRY / kPathGeometryImpl は 2026-08-19 に
+						//   トラッカー boss ごと外した(理由は kKESCMTrackerBoss の Class コメント)。
 #include "TipsID.h"		// for IID_ITIP
 
 // Toolbox tool:
@@ -446,7 +449,26 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 	// The KESCM tool's capturing tracker. IID_ITRACKER is the tracker (reveals marks while the
 	// left button is held); IID_IEVENTHANDLER (a CTrackerEventHandler subclass) forwards the
 	// button-up during capture to EndTracking. Same shape as the SDK's real capturing tracker
-	// (dynamicdocumentsui AnimationUIButtonTriggerTrackerBoss).
+	// (dynamicdocumentsui AnimationUIButtonTriggerTrackerBoss) - and "same shape" now means
+	// exactly these two interfaces, nothing else. Why, and what used to be here:
+	//
+	// ★★★sprite を持たせない(2026-08-19・不具合再検査 B-U6 で全数を数え直した)。
+	//   2026-08-06〜2026-08-19 はここに IID_ISPRITE(kNoHandleSpriteImpl) と
+	//   IID_IPATHGEOMETRY(kPathGeometryImpl) が在り、理由を「手本は wavetool の kSawWaveTrackerBoss
+	//   ＝**SDK のトラッカー boss はこの2つを必ず持つ**」と書いていた。**この全称は誤り**だった:
+	//     ・ISprite を Query するのは **CLayoutTracker**(AbortTracking ほか)と
+	//       **CPathCreationTracker**(4箇所)だけで、**CTracker は一度も触らない**。
+	//     ・CPathCreationTracker.h 自身が「この基底でグリッド作成を使うなら boss に
+	//       IID_ISPRITE, kNoHandleSpriteImpl を入れよ」と**基底の側の条件**として書いている。
+	//   ∴ 数えるべき母集合は「トラッカー boss」ではなく「その基底クラス」だった。SDK 全数=
+	//     トラッカー boss 4つのうち sprite を持つのは wavetool の2つ(kSawWave/kSineWave)だけで、
+	//     **どちらも CPathCreationTracker 派生**。CTracker 直接派生の2つ
+	//     ---- snapshot kSnapTrackerBoss / 上記 dynamicdocumentsui ---- は**どちらも持たない**。
+	//   KESCMTracker も **CTracker 直接派生**なので、**持たない側が「公式と同じ形」**。
+	//   旧コメントは「公式の boss 構成から外れないよう残す」と書いていたが、実際は
+	//   **残すことで外れていた**(4本中ここだけが CTracker 派生で sprite を持っていた)。
+	//   ⇒ 図形を作るトラッカー(CPathCreationTracker 派生)へ作り替える日が来たら、そのとき
+	//     **基底のヘッダーが要求する組**を入れ直すこと。「トラッカーだから」では入れない。
 	Class
 	{
 		kKESCMTrackerBoss,
@@ -454,16 +476,6 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 		{
 			IID_ITRACKER,      kKESCMTrackerImpl,
 			IID_IEVENTHANDLER, kKESCMTrackerEHImpl,
-			// トラッキング中の画面更新機構。手本は sdksamples/wavetool の kSawWaveTrackerBoss
-			// (WavTl.fr:151,155 / :193,197)＝**SDK のトラッカー boss はこの2つを必ず持つ**ので、
-			// KESCM も同じ形に揃えてある(2つとも API 既製の実装)。
-			// ★2026-08-06: 押下中 HUD を全廃したのに伴い、IID_ISPRITE の実装を自前の kKESCMSpriteImpl
-			//   (CreateTrackerPaths に HUD の描画を載せていた NoHandleSprite 派生)から、SDK 標準の
-			//   kNoHandleSpriteImpl へ戻した。KESCM のトラッカーは図形を作らないので sprite を自分から
-			//   使うことはもう無いが、公式の boss 構成から外れないようここは残す(誰も Query しなければ
-			//   実体は作られない=コストは無い)。
-			IID_ISPRITE,       kNoHandleSpriteImpl,
-			IID_IPATHGEOMETRY, kPathGeometryImpl,
 		}
 	},
 
@@ -1389,7 +1401,13 @@ resource HOTC(kKESCMCmykCursorResID) {10, 18};
 resource HOTC(kKESCMCmykCursor2ResID) {10, 18};
 
 // ✓カーソルの非アクティブ版(白抜き=黒フチ+白本体)。ホットスポットは黒✓と同じ折れ点 (10,18)=切替で
-// カーソル位置は動かない。「Start 中かつマウス下が Target 文書」以外で出す(KESCMCursorProvider.cpp)。
+// カーソル位置は動かない。出す条件は **Stop 中(比較していない)、またはレイアウトビューの上に居ないとき**
+// (KESCMCursorProvider.cpp → KESCMToolCursorShouldBeBlack)。
+// ⚠ここは 2026-08-19(不具合再検査 B-U6)まで「**Start 中かつマウス下が Target 文書**」以外、と
+//   書いてあった。それは 2026-07-26 の**ユーザー指定で撤回された旧仕様**で、以後は
+//   **Start 中ならマウス下がどの文書でも黒**(第3の文書でも黒＝「比較は動いている」を示す)。
+//   実装側(KESCMCmykCursor.cpp の KESCMToolCursorShouldBeBlack)は同日に直っており、
+//   **リソース側の説明文だけが旧仕様のまま残っていた**。
 // こちらも PNG リソース(上の黒✓と同じ理由。2026-07-25)。
 resource PNGC(kKESCMCheckCursorInactiveResID) "KESCM_CheckOff_10_18.png"
 resource PNGC(kKESCMCheckCursorInactiveResID + kHIDPICrsrOffset) "KESCM_CheckOff_10_18@2x.png"
