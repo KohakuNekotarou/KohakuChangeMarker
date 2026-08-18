@@ -21,8 +21,11 @@
 //      KESCM ツール選択中の全文書=KESCMSyncOtherDocViewportsTo のガード参照)
 //    - Show Scrollbar Map
 //    - Ignore Page Number Marker
-//    - Translucent Panel / Translucent Pages Panel(★Windows 専用。前者は自パネル、後者は本体の
-//      ページパネルが対象で、保存キーは "translucentPanel" / "translucentPagesPanel")
+//    - Translucent Panel / Translucent Pages Panel / Translucent Book Dialog(★Windows 専用。
+//      対象は順に 自パネル / 本体のページパネル / 自分のブック比較ダイアログで、保存キーは
+//      "translucentPanel" / "translucentPagesPanel" / "translucentBookDialog"。
+//      ⚠3つ目は 2026-08-13 に足したのにこの一覧へ載っていなかった＝2026-08-18・不具合再検査 B-U3 で
+//        実ファイル(%APPDATA%\...\KESCMPanelState.json)を開いて11キーを数え、追記した)
 //      ★復元されるのはフラグだけで、窓への適用はパネルの AutoAttach とパネル表示状態の購読が
 //      行う(起動時にはまだ自パネルが無いため)。
 //      ★★**再起動直後に貼られることを実機で確認した(2026-08-07)** —— ページパネルを ON にして

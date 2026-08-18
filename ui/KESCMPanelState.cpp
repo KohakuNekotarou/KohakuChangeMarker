@@ -142,8 +142,11 @@ void KESCMSavePanelState()
 
 	// 保存先のフルパスをパネルのステータス行に表示する(ユーザー要望 2026-07-11: モーダルからパネル表示へ)。
 	// ★パスのみ(「Settings saved:」等のラベルを付けるとステータス行から溢れるため)。
-	// ⚠寸法は書き写さない＝正本は `ui/KCMUI.fr:1921` の `Frame(8,76,216,150)`(2026-08-17 実測＝208×74px・
-	//   4行)。旧「幅152px×4行」は 2026-07-15 世代の値で、同じ数字が3ファイルに散っていた(不具合再検査 B5)。
+	// ⚠寸法は書き写さない＝正本は `ui/KCMUI.fr` の kKESCMStatusTextWidgetID(StaticMultiLineTextWidget)の
+	//   `Frame(8,76,216,150)`(208×74px・4行)。旧「幅152px×4行」は 2026-07-15 世代の値で、同じ数字が
+	//   3ファイルに散っていた(不具合再検査 B5)。
+	//   (⚠旧引用 ":1921" は**空行**を指していた＝7行ずれ。2026-08-18・不具合再検査 B-U3 で
+	//    widget 名で引く形へ。行番号は黙って嘘になる＝[[verify-claims-in-comments]]。)
 	PMString msg;
 	msg.SetTranslatable(kFalse);
 	msg.Append(FileUtils::SysFileToPMString(file));

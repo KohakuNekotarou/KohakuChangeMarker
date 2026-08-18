@@ -275,9 +275,14 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 		}
 	},
 
-	// Subclass of the system rollover icon button used for the panel illustration
-	// (kKESCMIconOnWidgetID/kKESCMIconOffWidgetID), adding IID_ITIP so hovering it shows a tooltip
-	// with the repo URL (same pattern as kLinksUIButtonBoss in open/components/linksui).
+	// Subclass of the system rollover icon button, adding IID_ITIP so hovering it shows a tooltip
+	// (same pattern as kLinksUIButtonBoss in open/components/linksui).
+	// ★THREE widgets share this boss, and the tip is NOT the same on all three: the two halves of
+	// the panel illustration (kKESCMIconOnWidgetID/kKESCMIconOffWidgetID) show the repo URL, while
+	// the tool button (kKESCMToolButtonWidgetID) shows the tool's name. KESCMIconTip.cpp tells them
+	// apart by WidgetID - see the head of that file.
+	// (⚠this comment named only the illustration until 2026-08-18, bug recheck B-U3: the tool
+	//  button was given the same boss on 2026-08-07 and nobody came back to widen the sentence.)
 	Class
 	{
 		kKESCMIconWidgetBoss,

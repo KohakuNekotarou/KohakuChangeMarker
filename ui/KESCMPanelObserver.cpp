@@ -29,7 +29,8 @@
 #include "ISession.h"				// GetExecutionContextSession(終了処理中は nil になり得るので型を明示して受ける)
 #include "IApplication.h"			// QueryApplication
 #include "IPanelMgr.h"				// QueryPanelManager / GetVisiblePanel(外部からのパネル更新)
-#include "IActiveContext.h"
+// (IActiveContext.h は 2026-08-18 に撤去＝不具合再検査 B-U3。このファイルはアクティブコンテキストを
+//  一度も引かない。分割前に「アクティブ文書から db を出す」処理がここに在った名残だった。)
 #include "IDocument.h"
 #include "IDocumentList.h"
 
@@ -140,7 +141,10 @@ static PMString KESCMDocPathFromDB(IDataBase* db)
 		{
 			// ★2026-08-15(ユーザー要望): 区切りは "/" で見せる。日本語環境では "\" が円記号で
 			//   描かれ、"…\new\ch01.indd" が "…¥new¥ch01.indd" と読めてしまうため。
-			//   規則は KESCMPathDisplay.h の1か所だけ(ブック比較の2行も同じ関数を通る)。
+			//   規則は KESCMPathDisplay.h の1か所だけ ---- ブック比較も同じ関数を通る
+			//   (★**通り道は3つ**＝このパネルの2行／ダイアログの2行／比較前の確認アラート。
+			//    KESCMPathDisplay.h の冒頭が数えているとおりで、旧「ブック比較の2行」はアラートを
+			//    落としていた。2026-08-18・不具合再検査 B-U3 で全数を確認)。
 			return KESCMPathForDisplay(path);
 		}
 	}
@@ -367,8 +371,16 @@ void KESCMPanelObserver::Update(const ClassID& theChange, ISubject* theSubject, 
 //   (2026-08-06 監査 C-1)。同じプラグイン内の **KESCMGetVisiblePagesPanel**
 //   (KESCMThumbnailRefresh.h で宣言)と同じ作り＝Pages パネル側だけ解いてあった穴を埋める形。
 //   (⚠旧引用 ":24-27" は空行を指していた＝2026-08-16 の監査 B-U3 で関数名へ。)
-// ★session の nil ガードもここで吸収する: 3つともクローズ responder から呼ばれ、アプリ終了の
-//   ティアダウン中にも到達し得る(2026-07-25 に KESCM 全体で統一した規約)。
+// ★session の nil ガードもここで吸収する: 3つとも**アプリ終了のティアダウン中に到達し得る**
+//   (2026-07-25 に KESCM 全体で統一した規約)。
+//   ⚠★根拠の書き換え(2026-08-18・不具合再検査 B-U3)。旧文は「3つともクローズ responder から
+//     呼ばれ」と書いていたが、**それは model/UI 分割の前の話**で、今は成立しない ---- クローズの
+//     掃除(KESCMHandleDocsClosed)は model 側にあり、別 .pln のこの3本を直に呼べない。今の呼び手は
+//     KESCMRefreshPanel=通知の受け手(KESCMModelChangeObserver)と KESCMPeekGesture、
+//     KESCMSetNavPosition=KESCMChangeNav だけ。
+//   ★**結論のほうは生きている**: 終了処理中でもパネルの Update は走ることを 2026-08-12 に実測して
+//     いる(KESCMDetachPanelVisibilityObserver を新設した理由＝下の KESCMDocPathFromDB のコメント)。
+//     ∴ nil ガードは要る。**根拠が失効しても結論が失効するとは限らない**([[verify-claims-in-comments]])。
 // ★2026-08-09: static を外して公開した(当時の置き場は KESCMCore.h。2026-08-13 の model/UI 分割で
 //   **KESCMUIShared.h** へ移った)。4人目の使い手が別ファイルに現れたため
 //   (KESCMStorySection.cpp = Story Edits セクションの開閉。パネルの寸法を触るのに同じパネルが要る)。
@@ -481,9 +493,16 @@ static void KESCMApplyPanelInfo(const InterfacePtr<IPanelControlData>& pcd)
 //   パネルのツール切替ボタンを「押されている/いない」表示にする。ツールボックスのツール枠と同じ
 //   見た目(くぼみ)になるのは、.fr でこの widget を kADBEIconSuiteButtonDrawWellType にしてあるため。
 //
-//   ★呼び元は KESCMTool::Select / Deselect の2つだけ。ツールボックスで選んでも、パネルのボタンで
-//     選んでも、ショートカットでも、スクリプトでも、ITool::Select は必ず呼ばれる ＝ 状態を持つ場所が
-//     1つで済み、パネルとツールボックスが食い違う経路が構造的に無い([[one-question-one-place]])。
+//   ★呼び元は3つ(2026-08-18・不具合再検査 B-U3 で数え直した。旧「KESCMTool::Select / Deselect の
+//     2つだけ」は**同じファイルの3つ目を落としていた**):
+//       ・KESCMTool::Select   … ツールがアクティブになった
+//       ・KESCMTool::Deselect … ツールが降りた
+//       ・**このファイルの Update(kFalseStateMessage)** … push button が自分で状態を落とした後の
+//         塗り直し(2026-08-07 に足した経路。理由はそちらのコメント)
+//   ★数は3つでも**答えの出どころは1つ**なのは変わらない ---- 3つとも「今アクティブか」を
+//     KESCMIsOwnToolActive() に聞いてから渡すので、パネルとツールボックスが食い違う経路は
+//     構造的に無い([[one-question-one-place]])。ツールボックスで選んでも、パネルのボタンで選んでも、
+//     ショートカットでも、スクリプトでも、ITool::Select は必ず呼ばれる。
 //========================================================================================
 void KESCMSetToolButtonSelected(bool16 selected)
 {
@@ -585,8 +604,10 @@ void KESCMSetNavPosition(const PMString& posText, bool16 navButtonsEnabled)
 	if (pcd == nil)
 		return;
 
-	// 位置表示。★inval は SetString がやっている(ITextControlData.h:53-54 の第2引数 invalidate は
-	//   既定 kTrue =「specifies whether the control should be redrawn」)。ただし inval だけでは次の
+	// 位置表示。★inval は SetString がやっている(ITextControlData::SetString の第2引数 invalidate は
+	//   既定 kTrue で、その @param が「specifies whether the control should be redrawn」)。
+	//   (⚠旧引用 ":53-54" は宣言の行で、引いている文言はその上の @param 行にあった＝2026-08-18・
+	//    不具合再検査 B-U3 で名前で引く形へ。)ただし inval だけでは次の
 	//   イベントループまで画面に届かないので、Start での変化や Next/Prev の値変更を即時反映させるため
 	//   ForceRedraw で今すぐ描かせる(IControlView.h:281-286「Redraws the invalid region directly」。
 	//   2026-07-15 ユーザー報告「1/5 が即時更新されない」。重複していた Invalidate() は 2026-08-06 の

@@ -671,7 +671,9 @@ ErrorCode KESCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMStri
 		//     ・Start(KESCMComparisonRun.cpp:152)              … arm しない。そこへ来る前は必ず未 arm
 		//       ＝一覧は空(ブック比較の「Start Change Marker」も KESCMBookOpen.cpp:477 で先に Stop する)
 		//     ・登録トグル(KESCMPageMap.cpp:242)               … KESCMToggleStartStop() で Stop へ戻す
-		//     ・Load Check & Register(KESCMPageCheck.cpp:824)  … 同上
+		//     ・Load Check & Register(KESCMPageCheck.cpp の KESCMPageCheckLoadFromFile)… 同上
+		//       (⚠旧引用 ":824" は12行ずれて別の関数の中を指していた＝2026-08-18・不具合再検査 B-U3。
+		//        **同じ4件のうち外れていたのはこれ1つで、他の3件は当たっていた**。)
 		//     ・Ignore トグル(ui/KESCMActionComponent.cpp:401) … 同上
 		//   ⇒ **4つとも Stop へ戻す**ので、Stop(KESCMDoClearMarks)の KESCMStoryList::Clear() が必ず走る。
 		//   ⚠★**この関数の中だけを読むと「一覧が残る」ように見える**(後始末が呼び手側にあるため)。

@@ -49,9 +49,12 @@
 #include "KESCMBookOpen.h"			// KESCMBookMenuRow/CanStart/StartComparisonForRow(章行の右クリック「Start Change Marker」)
 #include "KESCMChangeNav.h"			// KESCMRefreshNavPosition(overset トグルで Prev/Next の対象数を更新)
 #include "KESCMPanelAlpha.h"		// KESCMGetPanelTranslucent/Set/Apply(フライアウト「Translucent Panel」)
-#include "IActiveContext.h"			// GetContextDocument(アクティブ文書の解決)
-#include "IDocument.h"
-#include "PersistUtils.h"			// ::GetUIDRef(doc)(アクティブ文書 → db)
+// (★`IActiveContext.h` / `IDocument.h` / `PersistUtils.h` の3本は 2026-08-18 に撤去＝不具合再検査 B-U3。
+//  **どれも一度も使っていなかった**。DoAction / UpdateActionStates は `IActiveContext*` を受け取るが
+//  仮引数名ごとコメントアウトしてあり、「アクティブ文書 → db」の解決は 2026-08-13 の model/UI 分割で
+//  model 側(KESCMActiveDoc / GetOversetScanTargetDB)へ出ている。⚠旧コメントは残った include に
+//  「GetContextDocument(アクティブ文書の解決)」と**使っていない機能の説明**を付けており、
+//  読む人には「ここで解決している」と見える形だった。)
 
 // ★注意: source/public/includes/URLUtils.h は "namespace URLUtils { PUBLIC_DECL void GoToURL(...); }" と
 // 宣言しているが、これはヘッダーとバイナリの不一致(Public.lib 側の実エクスポート名と食い違っている)。
@@ -479,8 +482,13 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 			Utils<IKESCMPageFlagsFacade>()->SaveChecksAndRegister();
 			break;
 
-		// フライアウトの「Load Check & Register」: Start中だけ有効。上記 JSON から Register を両文書へ適用→再比較→
+		// フライアウトの「Load Check & Register」: 上記 JSON から Register を両文書へ適用→再比較→
 		// Check(今もマーク付きのページだけ)を復元する(実体 KESCMPageCheck.cpp)。
+		// ⚠★**メニュー項目としては常に押せる**(2026-08-18・不具合再検査 B-U3 で訂正。旧「Start中だけ
+		//   有効」はメニューの有効/無効の話に読めるが、下の UpdateActionStates にこの ActionID の分岐は
+		//   無い)。`.fr` の ActionDef が kCustomEnabling を付けず kDisableIfLowMem だけにしてあり、
+		//   そこに "plain command; guards inside (needs Start)" と書いてある＝**意味を持つのが Start 中
+		//   だけで、断るのは実体の側**。Save Check & Register も同じ作り。
 		case kKESCMPopupLoadChecksActionID:
 			Utils<IKESCMPageFlagsFacade>()->LoadChecksAndRegister();
 			break;
