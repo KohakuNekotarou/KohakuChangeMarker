@@ -321,7 +321,26 @@ bool16 OpenChapterWindowed(const IDFile& file, UIDRef& outDocRef, bool16& outWas
 	return kTrue;
 }
 
-/** Put a message in the panel's status line, untranslated (as every string this plug-in shows is). */
+/** Put a message in the panel's status line, untranslated (as every string this plug-in shows is).
+
+    ⚠★★IT GOES TO THE PANEL, THOUGH THE CLICK HAPPENED IN THE DIALOG - AND THE DIALOG HAS A STATUS
+    LINE OF ITS OWN. That line belongs to the BOOK comparison ("3 chapters: 1 changed…"); these
+    messages are about one chapter, and overwriting the book's summary with them would leave the
+    dialog describing a run it is no longer showing the numbers for. So the two stay apart, and the
+    panel is where a row's outcome is reported.
+
+    ⚠WHAT THAT COSTS, MEASURED 2026-08-19 (bug recheck B-U5, third pass): KESCMSetStatus returns
+    silently when the panel is not visible (KESCMPanelObserver.cpp - "パネルは隠れている… 触る先が
+    無い"), so with the panel closed or behind another tab a double click on a chapter that cannot
+    be opened reports NOTHING ANYWHERE ON SCREEN. The measurement with the panel open: the row was
+    double-clicked, one side opened, and the panel read
+        ch3.indd: 1 document open, 1 could not be opened
+    while the dialog's own status line still read the book summary, unchanged.
+    ★The text is never lost even then - KESCMSetStatus stores it in the session first, which is what
+      app.kcmStatus returns - so this is a matter of where it is SHOWN, not of whether it exists.
+      Left as it is (user's call, 2026-08-19); if a row's outcome ever has to be readable with the
+      panel hidden, the place to put it is the dialog's status line, plus a rule for restoring the
+      summary afterwards. */
 void Say(const PMString& text)
 {
 	PMString msg(text);

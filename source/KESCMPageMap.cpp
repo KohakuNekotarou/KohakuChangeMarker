@@ -182,7 +182,7 @@ void KESCMPageMapToggleSelectedPages()
 
 	const bool16 anyUnregistered = sRegistered.AnyNotIn(db, pages);
 
-	// ★パネルのステータス欄は幅・行数とも小さいため(ui/KCMUI.fr:1921 の kKESCMStatusTextWidgetID は
+	// ★パネルのステータス欄は幅・行数とも小さいため(ui/KCMUI.fr の kKESCMStatusTextWidgetID は
 	// Frame(8,76,216,150)＝**208×74px の4行**で、kDontEllipsize＝自動省略もされない)、
 	// メッセージは短く1行に収める。⚠2026-08-17 訂正: ここは「176×52px 程度」と書いていた(2026-08-06
 	// 世代の値)。同じ欄を KESCMPageCheck.cpp が「約152px×4行」(2026-07-15 世代)と書いており、

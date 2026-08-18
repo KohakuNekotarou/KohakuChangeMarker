@@ -84,7 +84,9 @@ bool16 KESCMDrawEventHandler::sShowOldNumbers = kFalse;	// 既定=OFF(フライ�
 bool16 KESCMDrawEventHandler::sAlwaysShowMarks = kFalse;	// 既定=OFF(フライアウト「Hold to Hide Marks」。ON=枠を画面に常時表示し押下中だけ隠す=極性反転)
 bool16 KESCMDrawEventHandler::sMarksTempHidden = kFalse;	// Hold to Hide Marks モード中、Target 窓でツール左hold中だけ kTrue(Target 常時表示枠の一時退避)
 bool16 KESCMDrawEventHandler::sSrcMarksTempHidden = kFalse;	// 同上の Source 版。Source 窓でツール左hold中だけ kTrue(Source 常時表示枠の一時退避)
-bool16 KESCMDrawEventHandler::sSrcMarksOn = kFalse;	// 既定=OFF。Start(KESCMToggleStartStop)のたびに kTrue へ(フライアウト「Show Marks on Source」。再比較では戻さない 2026-07-25)
+bool16 KESCMDrawEventHandler::sSrcMarksOn = kFalse;	// 既定=OFF。Start のたびに kTrue へ(フライアウト「Show Marks on Source」。再比較では戻さない 2026-07-25)
+													// ⚠立てているのは KESCMStartComparisonFor で、KESCMToggleStartStop はその呼び手の1つ。
+													//   ∴ブック比較の章行「Start Change Marker」も同じ道を通る(2026-08-19 不具合再検査 B-U5 3周目で訂正)
 IDataBase* KESCMDrawEventHandler::sSrcDB = nil;
 std::map<UID, UID> KESCMDrawEventHandler::sSrcPageToTarget;
 std::map<UID, UID> KESCMDrawEventHandler::sPrevPairTargetToSource;	// 前回比較のペアリング(登録トグルの差分再比較用)

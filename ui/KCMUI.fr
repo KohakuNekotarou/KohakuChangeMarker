@@ -1645,6 +1645,19 @@ resource KESCMBookRowWidget(kKESCMBookRowRsrcID + index_enUS)
 		// after it. ★Ellipsized in the MIDDLE so that both the start and the extension survive -
 		// "ch01_final_v3.indd" and "ch01_final_v4.indd" differ near the end, and a chapter list
 		// whose rows all read "ch01_fi..." would be unreadable.
+		// ⚠★★THAT REASONING IS ABOUT A FILE NAME, AND THIS CELL DOES NOT ALWAYS HOLD ONLY ONE.
+		//   On a Failed row the widget manager appends " - <reason>", and then the extension is no
+		//   longer at the end - it is in the MIDDLE, which is the one place this style throws away.
+		//   MEASURED 2026-08-19 (bug recheck B-U5, third pass) with a 43-character row:
+		//       model : ch3.indd - could not be opened (missing)
+		//       screen: ch3.ind...ould not be opened (missing)
+		//   ⇒ the row named "ch3.ind", an extension that does not exist, and the reason was cut at
+		//   both ends. ★THE FIX WENT IN THE REASONS, NOT HERE: they no longer repeat the verdict
+		//   that the state column beside them already carries ("missing", not "could not be opened
+		//   (missing)") - see KESCMBookResult.h's fWhy. The ellipsis stays in the middle because for
+		//   a file name it is still the right choice; what changed is that the strings now fit.
+		//   ⚠So the width here is a BUDGET, not just a layout number: 230px is about 38 characters,
+		//   and a file name plus a reason has to live inside it.
 		// ★Convert ampersands = kFalse: a chapter called "A&B.indd" would otherwise display as
 		//   "AB.indd" (memory ampersand-eaten-in-ui-strings).
 		// ***** 11px IN FROM THE ROW'S EDGE, NOT 8. ***** (User, 2026-08-13: "the list part, another

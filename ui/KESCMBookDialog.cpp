@@ -214,6 +214,18 @@ void KESCMBookDialogShutdown()
 	//   the same omission on this side - nothing in KESCMUIStartup::Shutdown named them, so a
 	//   session that ran one book comparison carried its rows and both paths to unload.
 	// Touches no widget and no document, so it is safe wherever in the teardown it is reached.
+	//
+	// ★★AND IT IS THE ONE PLACE THAT DROPS THE ROWS WITHOUT DROPPING THE STASHED ROW INDEX.
+	//   KESCMBookOpen.h asks anything that replaces or drops rows to call KESCMBookSetMenuRow(-1)
+	//   as KESCMBookDialogSetResult does, and that rule earns its keep because a stale index can
+	//   land on a VALID row of the next result set. Here there is no next result set: this runs
+	//   from KESCMUIStartup::Shutdown, after which no menu is built, no action is dispatched and no
+	//   script can fire one - the index has no reader left. Calling it would be harmless and would
+	//   also be the kind of line that reads as necessary and teaches the next reader the wrong
+	//   rule. ⚠ If this function is ever reused for anything other than teardown - "start over
+	//   without a comparison", say - it becomes a caller of that rule like any other.
+	//   (Noted 2026-08-19, bug recheck B-U5 third pass: the contract was written on the second
+	//   pass and this exception to it was not, so the two read as a contradiction.)
 	gDialogRows = std::vector<KESCMChapterResult>();
 	gTargetPath.Clear();
 	gSourcePath.Clear();

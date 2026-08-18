@@ -254,7 +254,9 @@ public:
 		                   page-mapping direction and the t/s labels.
 		  mx, my        -- the sample point, in hoverDB's pasteboard (content) coordinates.
 		  outPanel      -- compact form for the panel status line, which is narrow: measured
-		                   2026-08-17, ui/KCMUI.fr:1921 Frame(8,76,216,150) = 208x74px, 4 lines.
+		                   2026-08-17, ui/KCMUI.fr's kKESCMStatusTextWidgetID, Frame(8,76,216,150)
+		                   = 208x74px, 4 lines. (Named rather than numbered 2026-08-19: the line
+		                   number it carried was 14 short, in all four files that quoted it.)
 		                   (An older "152px" travelled through three files here; the width is in
 		                   the .fr and nowhere else - read it there rather than copying it again.)
 		  outCursor     -- the numbers alone, for the cursor bitmap to draw.

@@ -39,7 +39,13 @@
     ★It matters because the action can be reached WITHOUT a right click, by a script firing it by
     ActionID - the case KBS names in the same breath ("a caller that never went through the menu -
     a script firing the action - reaches them with whatever is stored"). Both readers below still
-    range-check, as KBS's do; the reset is what stops a stale index from landing on a valid row. */
+    range-check, as KBS's do; the reset is what stops a stale index from landing on a valid row.
+
+    ⚠ONE EXEMPTION, AND IT IS NOT AN OVERSIGHT: KESCMBookDialogShutdown empties the rows and does
+    NOT call this. It runs from KESCMUIStartup::Shutdown, where no menu is built and no action can
+    be dispatched, so the index has no reader left to mislead - the reason is written at that call.
+    Closing the DIALOG is not on this list at all, because closing it does not drop the rows: they
+    outlive the window on purpose, and a right-clicked row still means the chapter it named. */
 void	KESCMBookSetMenuRow(int32 rowIndex);
 int32	KESCMBookMenuRow();
 

@@ -628,7 +628,7 @@ void KESCMPageCheckSaveToFile()
 {
 	if (!KESCMIsArmed())
 	{
-		PMString msg("Save: start first");	// ステータス行は狭い(208×74px の4行=ui/KCMUI.fr:1921)ので短く
+		PMString msg("Save: start first");	// ステータス行は狭い(208×74px の4行＝ui/KCMUI.fr の kKESCMStatusTextWidgetID)ので短く
 		msg.SetTranslatable(kFalse);
 		KESCMNotifyStatus(msg, kTrue /*forceRedrawNow*/);
 		return;

@@ -98,7 +98,13 @@ bool16 OpenChapter(const IDFile& file, UIDRef& outDocRef, bool16& outWeOpened, P
 	const PMString wantedPath = fileHelper.GetPath();
 	if (wantedPath.empty())
 	{
-		outWhy = PMString("the chapter names no file");
+		// ***** THE VERDICT IS NOT REPEATED IN THE REASON. ***** (User's call, 2026-08-19: "it
+		// already says Failed, so the row does not have to say the open failed too".) Every fWhy in
+		// this plug-in is shown NEXT TO the word "Failed" - in the dialog's own state column, and as
+		// the second field of app.kcmBookResult - so a reason that begins "could not be…" spends the
+		// row's width saying what is already on it. What is left here is the part only this line
+		// knows. See KESCMBookResult.h's fWhy for the rule and for what it costs when it is broken.
+		outWhy = PMString("no file");
 		outWhy.SetTranslatable(kFalse);
 		return kFalse;
 	}
@@ -147,7 +153,13 @@ bool16 OpenChapter(const IDFile& file, UIDRef& outDocRef, bool16& outWeOpened, P
 
 	if (err != kSuccess || docRef == UIDRef::gNull)
 	{
-		outWhy = PMString("could not be opened");
+		// ***** THE FALLBACK, AND THE ONLY REASON THAT STILL NAMES THE FAILURE. ***** The caller
+		// replaces this with the BOOK's own word for the chapter ("missing", and the rest of
+		// KESCMChapterStatusText's vocabulary) whenever the book has one - that word is the thing
+		// worth reading, and it says the open failed by implication. This sentence is what is left
+		// when the book answers nothing at all, and then it is all the row would otherwise have
+		// (user's call, 2026-08-19: keep a word for the empty case rather than an empty reason).
+		outWhy = PMString("could not open");
 		outWhy.SetTranslatable(kFalse);
 		return kFalse;
 	}
@@ -464,9 +476,13 @@ KESCMChapterState CompareChapter(IDataBase* targetDB, IDataBase* sourceDB,
 		if (err != kSuccess)
 		{
 			// Could not be compared. Reported as a failure, NEVER as "no change".
+			// ★The page NUMBER is the whole reason; "could not be compared" was the verdict said
+			//   twice (see the note in OpenChapter). ⚠And this is the reason that most needed the
+			//   room: it carries a NUMBER, and a number that loses its middle to an ellipsis does
+			//   not look damaged - it looks like a different number (memory
+			//   ellipsis-in-status-line-breaks-numbers).
 			outWhy = PMString("page ");
 			outWhy.AppendNumber(int32(i + 1));
-			outWhy.Append(" could not be compared");
 			outWhy.SetTranslatable(kFalse);
 			return kKESCMChapterFailed;
 		}
@@ -567,9 +583,9 @@ ErrorCode KESCMCompareBooks(IBook* target, IBook* source,
 			if (!CloseChapter(targetRef, targetMine))
 				++leftOpen;
 
-			// ***** THE BOOK KNOWS WHY, SO ASK IT. ***** On its own "could not be opened" is the
-			// same sentence for a chapter that was deleted, one another user has open, and one
-			// saved by a newer version. GetBookContentStatus tells those apart
+			// ***** THE BOOK KNOWS WHY, SO ASK IT. ***** On its own "could not open" is the same
+			// sentence for a chapter that was deleted, one another user has open, and one saved by
+			// a newer version. GetBookContentStatus tells those apart
 			// (see KESCMChapterStatusText), and it is asked ONLY here, on the failing path, so a
 			// run where everything opens pays nothing for it. Same call KBS makes for its skipped
 			// chapters (KBSBookScope.cpp:1400-1413).
@@ -578,14 +594,21 @@ ErrorCode KESCMCompareBooks(IBook* target, IBook* source,
 			// and each clears its own out-ref first, so a null target means the target's open is
 			// the one that never reached a document. Only chapters present in BOTH books get this
 			// far (the others were answered by the pairing), so the index is valid in either book.
+			//
+			// ***** IT REPLACES THE REASON RATHER THAN BEING APPENDED TO IT. ***** (2026-08-19, bug
+			// recheck B-U5 third pass, user's call.) The book's word is a BETTER answer to the same
+			// question, not an extra one: "could not open (missing)" and "missing" say the same
+			// thing, and the row has room for one of them. ⚠ MEASURED before the change: the row
+			// read "ch3.ind...ould not be opened (missing)" - the file name's own EXTENSION eaten by
+			// the cell's middle ellipsis, so the row named "ch3.ind", a file that does not exist.
+			// The cell cannot elide better than that (KCMUI.fr explains why the ellipsis is in the
+			// middle, and that reasoning holds only for a cell holding a file NAME), and the boss
+			// under it kills the tooltip, so nothing on screen could recover the text. The fix is
+			// to say less, not to display more.
 			const PMString statusWord =
 				KESCMChapterStatusText((targetRef == UIDRef::gNull) ? target : source, (int32)i);
 			if (!statusWord.IsEmpty())
-			{
-				why.Append(" (");
-				why.Append(statusWord);
-				why.Append(")");
-			}
+				why = statusWord;
 
 			chapter.fState = kKESCMChapterFailed;
 			chapter.fWhy   = why;
@@ -598,7 +621,7 @@ ErrorCode KESCMCompareBooks(IBook* target, IBook* source,
 			if (targetDB == nil || sourceDB == nil)
 			{
 				chapter.fState = kKESCMChapterFailed;
-				chapter.fWhy   = PMString("the opened chapter has no database");
+				chapter.fWhy   = PMString("no database");		// the verdict is not repeated - see OpenChapter
 				chapter.fWhy.SetTranslatable(kFalse);
 			}
 			else

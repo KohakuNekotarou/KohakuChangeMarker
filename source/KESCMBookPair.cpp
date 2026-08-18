@@ -285,7 +285,10 @@ void KESCMBuildChapterPairing(IBook* target, IBook* source, std::vector<KESCMCha
 		    (!targetChapters[i].fHasFile || !sourceChapters[i].fHasFile))
 		{
 			result.fState = kKESCMChapterFailed;
-			result.fWhy   = PMString("the book gives no file for this chapter");
+			// ★"in the book" is what separates this from the other no-file reason: OpenChapter's
+			//   says the CHAPTER named no file, this one says the BOOK does not. The verdict itself
+			//   is not repeated here - see KESCMBookResult.h's fWhy.
+			result.fWhy   = PMString("no file in the book");
 			result.fWhy.SetTranslatable(kFalse);
 		}
 

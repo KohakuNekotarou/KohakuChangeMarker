@@ -432,7 +432,11 @@ void KESCMAppendPageNumberMarkerRects(const UIDRef& pageRef, std::vector<PMRect>
 //         (緑ベタ塗りは「どこを比較から外したか」を見せる**画面用の診断表示**で、印刷/PDF には出さない
 //          ＝2026-08-06 の監査 E-4 の決定。その決定がそのままスレッドの境界にもなっている)
 //       ②MakeEntry(比較) …… 比較はメインスレッドでしか走らない
-//       ③★**ブック比較(KESCMBookCompare.cpp:284-285)** …… 章の対を1組ずつ開いて比べる経路。これも main。
+//       ③★**ブック比較(KESCMBookCompare.cpp の KESCMGetPageNumberMarkerRects 呼び2本)** …… 章の対を
+//         1組ずつ開いて比べる経路。これも main。
+//         ⚠2026-08-19(不具合再検査 B-U5 3周目)に行番号(:284-285)から関数名へ。**+11 ずれていた**
+//           (実体は 273-274)。同じ +11 が KESCMDrawEventHandler.h の KESCMRasterizingGuard の参照にも
+//           出ており、**ズレ幅が揃う＝同じ1回の編集が両方を腐らせた**([[verify-claims-in-comments]])。
 //         ⚠2026-08-18(不具合再検査 B9)に**足した**: ここは「呼び手は3つ」と書いて**この1本を数え落として
 //           いた**。結論(全部 main)は変わらないが、**数え落としたまま「3つとも main」と読むと、
 //           4本目が別スレッドから来たときに気づけない**。⇒ 呼び手を数える主張は grep で数え直す。

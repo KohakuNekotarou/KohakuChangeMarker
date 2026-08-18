@@ -154,9 +154,13 @@ public:
 	// すべてが SelectedMarkOpacity() 経由でこの選択を使う(画面と印刷の見た目を一致)。
 	static bool16 sMarkOpacity25;
 	// Source(旧文書)側にも枠を出すトグル(フライアウト「Show Marks on Source」のチェック式)。★既定=kFalse
-	// だが Start 経路(KESCMToggleStartStop)だけが kTrue へ戻す(=Start で既定 ON、OFF にしたければメニューで
-	// 外す。★KESCMDoMarkChangesDoc では戻さない=登録トグル/Ignore 切替の再比較でも通る関数のため。
-	// 2026-07-25 に移動。KESCMCore.cpp の同関数末尾のコメントが正)。
+	// だが Start 経路だけが kTrue へ戻す(=Start で既定 ON、OFF にしたければメニューで外す。
+	// ★KESCMDoMarkChangesDoc では戻さない=登録トグル/Ignore 切替の再比較でも通る関数のため。2026-07-25 に移動)。
+	// ⚠★「Start 経路」＝**KESCMStartComparisonFor**(KESCMComparisonRun.cpp)であって
+	//   KESCMToggleStartStop ではない。後者は前者の呼び手2つのうちの1つで、もう1つは**ブック比較の
+	//   章行の右クリック「Start Change Marker」**。∴ブック行から始めた比較でも Source 枠は ON に戻る。
+	//   (「KESCMToggleStartStop だけ」と書いてあった。2026-08-19 不具合再検査 B-U5 3周目で訂正。
+	//    ★手順が1か所に集めてあるからこう書ける＝KESCMComparisonRun.cpp の [[one-question-one-place]])
 	// ON の間、Source 文書の対応ページに同じリング画像を「常時」表示する(ツール左hold と無関係)。不透明度は
 	// パネルの 25%/75% 選択(SelectedMarkOpacity)に連動し、OPP(オーバープリントプレビュー)でも隠さず、
 	// 印刷/PDF にも常に出す(Target 側の sPrintMarks とは独立)。
@@ -346,7 +350,10 @@ public:
 // ★2026-08-15: 中身がスレッドローカルになったが、**呼び手は1行も変わらない**
 //   ——RAII に包んであったおかげで、スレッド対応の変更がこのクラスの中だけで済んだ。
 //   ⚠2026-08-18(不具合再検査 B9)訂正: ここは「呼び手(6か所)」と書いていたが**実測5か所**
-//     (KESCMDrawEventHandler.cpp:354/369/707・KESCMColorSampler.cpp:137・KESCMBookCompare.cpp:409)。
+//     (KESCMDrawEventHandler.cpp:354/369/707・KESCMColorSampler.cpp:137・KESCMBookCompare.cpp)。
+//     ⚠2026-08-19(B-U5 3周目): 最後の1件は `:409` と書いてあったが実体は 398 で**+11 ずれていた**
+//       ので行番号を外した(この5件は `KESCMRasterizingGuard` を grep すれば全部出る＝**数は数え直せる
+//       が、行番号は黙って嘘になる**)。残る3件+1件は同一ファイル内/未編集ファイルなので当たり。
 //
 // ★★2026-08-18(不具合再検査 B9): **入れ子にしても壊れない形にした**(直前の値を控えて戻す)。
 //   旧実装はデストラクタが**無条件に kFalse** を書いていたので、ガードの中でガードを作ると

@@ -169,6 +169,19 @@ public:
 			// ★Why it failed belongs on the ROW, not only in the summary. Without it, "could not
 			//   be opened" and "no differences" are two rows that look equally settled - and the
 			//   first one means the chapter has not been checked at all.
+			//
+			// ⚠★★THIS APPEND IS WHAT PUTS TWO THINGS IN A CELL SIZED AND ELLIPSIZED FOR ONE.
+			//   The cell is kEllipsizeMiddle because it holds a FILE NAME (KCMUI.fr says so, and
+			//   for a file name it is right); with a reason appended, the middle is where the file's
+			//   extension has moved to. MEASURED 2026-08-19 (bug recheck B-U5, third pass): a row
+			//   whose model read "ch3.indd - could not be opened (missing)" DREW as
+			//   "ch3.ind...ould not be opened (missing)" - a file name that does not exist, and a
+			//   reason unreadable at both ends. The cell's boss answers "no tip"
+			//   (kKESCMNoTipImpl, deliberately - 2026-08-10), so there was no second way to read it.
+			//   ★THE ANSWER WAS TO SHORTEN THE REASONS, not to widen the dialog or to bring the tip
+			//   back: every fWhy is shown beside the word "Failed" already, so none of them has to
+			//   spell out that something failed (KESCMBookResult.h's fWhy carries the rule).
+			//   ⇒ Whatever is appended here must fit next to a file name in ~38 characters.
 			if (row.fState == kKESCMChapterFailed && !row.fWhy.IsEmpty())
 			{
 				name.Append(" - ");

@@ -55,7 +55,29 @@ struct KESCMChapterResult
 	IDFile				fTargetFile;	// empty when the chapter exists in the source book only
 	IDFile				fSourceFile;	// empty when the chapter exists in the target book only
 	KESCMChapterState	fState;
-	PMString			fWhy;			// only filled in for kKESCMChapterFailed
+
+	/** WHY this chapter failed - only filled in for kKESCMChapterFailed.
+
+	    ***** IT SAYS THE REASON AND NOT THE VERDICT. ***** Everywhere this string is shown, the
+	    word "Failed" is shown beside it: the dialog puts it in the row's state column and
+	    app.kcmBookResult puts it in the field before this one. So "could not be opened (missing)"
+	    spends the row on saying "Failed" twice, and "missing" says everything the reader did not
+	    already have. (User's call, 2026-08-19: "it already says Failed, so the row does not have to
+	    say the open failed too".)
+
+	    ⚠ IT IS NOT ONLY WORDINESS - THE ROOM IS REAL, AND IT WAS MEASURED (bug recheck B-U5, third
+	    pass). The dialog draws the chapter's file name and this reason in ONE cell, and that cell
+	    ellipsizes in the MIDDLE - a choice KCMUI.fr justifies by "both the start and the extension
+	    survive", which is true of a cell holding a file name and false as soon as this string is
+	    appended to it. A Failed row read
+
+	        ch3.ind...ould not be opened (missing)
+
+	    - naming "ch3.ind", a file that does not exist, while the reason was unreadable at both ends.
+	    The cell's boss also answers "no tip" (kKESCMNoTipImpl), so nothing on screen could recover
+	    it. ★Anything added here has to fit next to a file name in one row; if a future reason cannot,
+	    the answer is a shorter reason, not a wider dialog. */
+	PMString			fWhy;
 
 	KESCMChapterResult() : fState(kKESCMChapterUnknown) {}
 };
