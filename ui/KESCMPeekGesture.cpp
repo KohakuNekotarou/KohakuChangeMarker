@@ -457,8 +457,12 @@ void KESCMDocsClosedObserver::Update(const ClassID& theChange, ISubject* /*theSu
 //                      1つだけ)なので、消えかけのコードで UI を触りうる ⇒ **detach が要る**
 //     ・こちら       … Update の中身は KESCMFlushDeferredCloseUi ただ1つで、その**入口が二重に
 //                      守られている** ⇒ 走っても何もしない(下の2点)
-//       ① KESCMPeekGestureShutdown() が sDeferredCloseUiPending を落とすので :360 で即 return
-//       ② その先も :364 の IsAppQuitting() ガードで UI に触らずに返る
+//       ① KESCMPeekGestureShutdown() が sDeferredCloseUiPending を落とすので、
+//          KESCMFlushDeferredCloseUi の**入口の 1つ目のガード**(!sDeferredCloseUiPending)で即 return
+//       ② その先も同関数の **IsAppQuitting() ガード**で UI に触らずに返る
+//       ⚠2026-08-18(不具合再検査 B-U2)に行番号(":360" / ":364")をやめて名前で引く形にした。
+//         **書いた 2026-08-16 の時点では4件とも正しく、翌日の B-U7(40d231b)の1回の編集で同時に外れた**
+//         ---- B7 で拾った「行番号参照は1回の挿入で全部同時に腐る」の再現。
 //   ⇒ **この非対称は意図であって書き忘れではない。**⚠ただし**根拠は上の2点だけ**なので、
 //     どちらかを外すならここに detach を足すこと(足しても害は無い ---- 実際 ModelChange 側が
 //     終了時に同じ GetActiveContext() を触って detach しており、Task 13 の終了安全性で PASS している)。
@@ -499,9 +503,10 @@ void KESCMPeekGestureShutdown()
 	// ★★★**この1行が守りである。**「念のため状態を残さない」ではない ---- KESCMDocsClosedObserver は
 	//   終了時に detach しない(理由は KESCMAttachDocsClosedObserver の上のコメント)ので、Shutdown の
 	//   あとでも kPendingDocumentsClosedMsg が届けば Update は走る。そのとき
-	//   KESCMFlushDeferredCloseUi を :360 で即 return させているのがこの代入。
+	//   KESCMFlushDeferredCloseUi を**その入口の 1つ目のガード**(!sDeferredCloseUiPending)で
+	//   即 return させているのが、この代入。
 	// ⚠2026-08-16(監査 B-U2)に書き直した。旧記述は「**終了後に流れることは無いが**、状態を残さない」で、
 	//   **流れないことを前提に、自分が守りであることを認識していなかった**。
-	//   ⇒ この行を「無駄だから」と外すと、守りが :364 の IsAppQuitting() 一枚だけになる。
+	//   ⇒ この行を「無駄だから」と外すと、守りが同関数の IsAppQuitting() 一枚だけになる。
 	sDeferredCloseUiPending = kFalse;
 }

@@ -41,10 +41,19 @@
 									// ★保持は model 側(設計書 §3.3)＝app.kcmStatus はパネルを閉じていても答えるため。
 									//   2026-08-13 Task 9 で KESCMPanelObserver.cpp から移し、2026-08-15(第2段)で
 									//   Facade 経由にした ---- model の自由関数は別 .pln からリンクできない。
-									// ★★捨てるのが**UI 側の shutdown**なのは意図的。model 側の
-									//   startup/shutdown サービスは**バックグラウンドスレッドの終了ごとにも
-									//   呼ばれる**(ガイド vol1-07 L245-253)ので、あちらで捨てると
-									//   PDF を書き出すたびにステータス行が消える。
+									// ⚠★★2026-08-18(不具合再検査 B-U2)訂正＝**捨てる責任は model 側にある**。
+									//   旧記述は「捨てるのが**UI 側の shutdown**なのは意図的。model 側の
+									//   startup/shutdown サービスは**BG スレッドの終了ごとにも呼ばれる**
+									//   (ガイド vol1-07 L245-253)ので、あちらで捨てると PDF を書き出すたびに
+									//   ステータス行が消える」だったが、**その根拠は 2026-08-15(第2段 Task 11B)に
+									//   KESCM.fr の宣言側で塞がれている** ---- kKESCMPeekStartupBoss は
+									//   kCMainThreadStartupShutdownProviderImpl なので、model 側 Shutdown は
+									//   メインスレッドでしか呼ばれない。
+									//   ⇒ **2026-08-18(不具合再検査 B8)が「model の static は model の Shutdown が
+									//     閉じる」と決め、KESCMPeekStartup::Shutdown に KESCMClearSessionStatus() を
+									//     足した。**こちらの呼びは**残す**(Clear するだけで冪等)が、**主でも唯一でもない**。
+									//   ⚠nil 検査が要るのはまさにそのため＝終了処理中は kUtilsBoss が先に落ちている
+									//     ことがあり、**この呼びは飛ぶことがある**(飛んでも model 側が閉じる)。
 
 class KESCMUIStartup : public CPMUnknown<IStartupShutdownService>
 {

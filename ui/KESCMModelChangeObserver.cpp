@@ -9,11 +9,17 @@
 //  ★同居先は kActiveContextBoss。既存3本(レイアウト同期 / 一括クローズ / パネル表示)と同じ実証済みの
 //    構成で、**新しい機構は何も足していない**。
 //
-//  ★**6種すべてが繋がっている**(ステータス行が Task 9、残り5種が Task 10。2026-08-13)。
-//    ⚠2026-08-16(監査 B-U2)にこの節を書き直した。旧記述は「**残り5種の分岐は空のまま置いてある**——
+//  ★**通知7種すべてが繋がっている**(ステータス行が Task 9、残り6種が Task 10。2026-08-13)。
+//    ⚠**種類は7・分岐は6**＝Marks の Rebuilt と Cleared だけが1つの分岐に入る(KESCMBoundaryID.h の
+//      kKESCM*Message は7本)。以後この2つの数を混ぜないこと。
+//    ⚠2026-08-16(監査 B-U2)にこの節を書き直した。旧記述は「**残りの分岐は空のまま置いてある**——
 //    埋めるのは Task 10」で、**その Task 10 が同じ日に終わったあとも3日間そのまま**だった
-//    ＝**30行下の :90 が「ここから下が Task 10 で埋めた分」と書いているのに、冒頭は空だと言い続けていた。**
-//    ⇒ ★**段階実装の「まだ」は、その段階が終わった日に消す**(B9 で拾った「これから測る」と同じ型)。
+//    ＝**下の "ここから下が Task 10 で埋めた分" の見出しが完了を書いているのに、冒頭は空だと
+//      言い続けていた。** ⇒ ★**段階実装の「まだ」は、その段階が終わった日に消す**
+//    (B9 で拾った「これから測る」と同じ型)。
+//    ⚠★2026-08-18(不具合再検査 B-U2)＝**その旧記述が引いていた行番号 ":90" は、書いた日から既に
+//      2行ずれていた**(B-U2 の時点の実体は :92)。行番号でよそを指す引用は**書いた日にしか正しくない**
+//      ので、このファイルの2件とも**見出しの語で引く形**へ直した。
 //
 //========================================================================================
 
@@ -113,9 +119,20 @@ void KESCMModelChangeObserver::Update(const ClassID& theChange, ISubject* /*theS
 			if (docB != nil && docB != docA) KESCMScrollMapAttach(docB);
 			KESCMScrollMapInvalidateAll();
 		}
-		else
+		else if (docA != nil || docB != nil)
 		{
-			KESCMScrollMapDetachAll();		// Stop: strip を全窓から取り外す
+			// Stop: strip を全窓から取り外す。
+			// ⚠★★**文書が載っていない Cleared では触らない**(2026-08-18・不具合再検査 B-U2)。
+			//   送り手(KESCMStopComparison の末尾)は「disarm を終えてからパネルの見た目だけ作り直す」
+			//   ために docA/docB を nil で投げてくる。Stop の順序はこうなっている:
+			//     ① KESCMDoClearMarks が投げる Cleared(文書つき) …… ここで全窓から strip を撤去
+			//     ② KESCMApplyOversetForDoc …… Find Overset が単独 ON なら overset 文書へ**貼り直す**
+			//     ③ この2本目の Cleared(文書なし)
+			//   絞らないと③が②を剥がす ---- ①で既に全部外れている以上、**③の撤去が持ちうる効果は
+			//   ②の打ち消しだけ**だった(＝二度手間ではなく、それ自体が不具合)。
+			//   ★絞りの形は上の Attach 側(docA/docB の nil 判定)と同じ。**Attach は文書で絞られていたのに
+			//     Detach だけ絞られていなかった**、というのがこの不具合の正体。
+			KESCMScrollMapDetachAll();
 		}
 
 		// Pages パネルのサムネイル。★★2026-08-16(API 監査 B5): **部分再比較(Refresh Page Comparison)は
@@ -312,8 +329,9 @@ void KESCMAttachModelChangeObserver()
 //
 // ★★**なぜこちらは detach が要り、KESCMDocsClosedObserver は要らないのか**(2026-08-16・監査 B-U2 で
 //   明記した。同じ構成の observer が2つの方針に分かれるのに、その差がどこにも書かれていなかった):
-//   **上の Update は6分岐あり、IsAppQuitting ガードを持つのは :253 の1つだけ** ---- 残る5分岐は
-//   終了中に走れば widget を触る。⇒ **入口で守れないので、通知そのものを止める。**
+//   **上の Update は6分岐あり、IsAppQuitting ガードを持つのは kKESCMComparisonDocsClosedMessage の
+//   分岐1つだけ** ---- 残る5分岐は終了中に走れば widget を触る。
+//   ⇒ **入口で守れないので、通知そのものを止める。**
 //   あちらは Update の中身が1本で、その入口が二重に守られている(KESCMPeekGesture.cpp の
 //   KESCMAttachDocsClosedObserver のコメント)。**差は「同居先」でも「subject」でもなく、Update の中身。**
 void KESCMDetachModelChangeObserver()

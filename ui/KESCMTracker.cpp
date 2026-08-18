@@ -207,7 +207,8 @@ public:
 				//      `KESCMPeek.cpp:1841-1844` は分割前の行で、あのファイルは今 907 行しかない)。
 				//     そのため Source 窓・Stop 中・第3の文書では HUD が1度も描かれなかった。以後 HUD は
 				//     自分で再描画を要求する(理由の全文は KESCMTrackerHud.cpp の Invalidate のコメント)。
-				//   描画の実体は KESCMDrawEventHandler の2系統(帯の前面 / カンバス背景)。
+				//   描画の実体は**UI 側の KESCMUIDrawEvent.cpp**の2系統(帯の前面 / カンバス背景)。
+				//   ⚠2026-08-18(不具合再検査 B-U2)訂正＝「KESCMDrawEventHandler の2系統」は分割前の名。
 				KESCMTrackerHudBegin(fControlView);
 
 				// CMYK 以外(reveal / peek)は従来どおり基底の後で発動する。CMYK は上で済ませてある。

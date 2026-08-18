@@ -32,7 +32,11 @@ void	KESCMScrollMapDetachAll();
 // 最新化するために呼ぶ(KESCMDoMarkChangesDoc の末尾)。strip が1つも無ければ何もしない。
 void	KESCMScrollMapInvalidateAll();
 
-// スプレッド描画イベントに便乗した「手動 Hide/Show Spread」検出(KESCMDrawEventHandler から呼ぶ)。
+// スプレッド描画イベントに便乗した「手動 Hide/Show Spread」検出。
+// ★呼び手は**UI 側の描画サービス KESCMUIDrawEventHandler::HandleDrawEvent(KESCMUIDrawEvent.cpp)**。
+//   ⚠2026-08-18(不具合再検査 B-U2)訂正＝「KESCMDrawEventHandler から呼ぶ」と書いてあったが、あれは
+//   **model 側**のマーク描画ハンドラで、この検出は 2026-08-13(Task 7)にこちらへ移っている。
+//   B-U6 が同型15件を直したときの取りこぼし(あちらが探した文字列は KESCMPeekStartup だった)。
 // ページパネルからの手動の隠し/再表示は KESCM のどのフックも通らないが、必ず再描画は起こすので、
 // 描画のたび(250msスロットル付き)に Target/Source の隠しフラグ構成の指紋を取り、変化していたら
 // 地図を Invalidate する。Undo/Redo による隠し状態の変化も同じ経路で拾える。未 arm なら即 return。

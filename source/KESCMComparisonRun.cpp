@@ -118,10 +118,13 @@ void KESCMStopComparison()
 	KESCMNotifyStatus(s);
 
 	// ⚠**もう一度 Cleared を投げる**。上の KESCMDoClearMarks が投げた時点では、まだ
-	//   KESCMDoDisarmMousePeek(105行)を通っていない＝arm 状態が立ったままなので、パネルは「比較中」の
-	//   見た目のまま作り直されてしまう。disarm を終えたここで投げ直すと、Target/Source 名・アイコン・
-	//   Prev/Next の有効無効が「解除後」の状態で作り直される。
-	//   ★文書は渡さない(docA/docB は nil)＝サムネイルの Purge は済んでいるので繰り返さない。
+	//   KESCMDoDisarmMousePeek(この関数の3行目の呼び)を通っていない＝arm 状態が立ったままなので、パネルは
+	//   「比較中」の見た目のまま作り直されてしまう。disarm を終えたここで投げ直すと、Target/Source 名・
+	//   アイコン・Prev/Next の有効無効が「解除後」の状態で作り直される。
+	//   ★文書は渡さない(docA/docB は nil)＝**表示を作り直すだけの通知だ**という印になる。受け手
+	//     (KESCMModelChangeObserver)はこの印で「サムネイルの Purge」と「スクロール地図 strip の撤去」の
+	//     両方を飛ばす。⚠**strip のほうは 2026-08-18(不具合再検査 B-U2)まで飛ばしていなかった**ので、
+	//     この直前の KESCMApplyOversetForDoc が貼り直した Find Overset の strip を、この通知が剥がしていた。
 	KESCMNotify(kKESCMMarksClearedMessage);
 }
 

@@ -412,9 +412,14 @@ static bool16 KESCMScrollDocToPBPoint(IDataBase* db, const PBPMPoint& pbPoint, P
 		//   will go away in a future release」と明記している。中身は同じ(:135-138 の inline が旧名を呼ぶ)。
 		//   ⚠2026-08-17 訂正(API 監査 B-U8): 旧記述は「★KESCMPeek.cpp は既に新名称(:1010 ほか)」だったが、
 		//   **KESCMPeek.cpp は906行しかなく、そもそもこの API を1回も呼んでいない**(全数 Grep)。
-		//   分割で同期エンジンが移ったため＝新名称を使っているもう1つは **KESCMViewSync.cpp:681**
+		//   分割で同期エンジンが移ったため＝新名称を使っているもう1つは **KESCMViewSync.cpp の
+		//   KESCMSyncOtherDocViewportsTo(末尾の ScrollContentLocationToFrameCenter)**
 		//   (ほかに KESCMStoryJump.cpp が説明として引用)。★行番号でよそのファイルを指す引用は、
 		//   そのファイルが分割・改名されると黙って嘘になる ---- B-U6 で同型を2件直したのに続く3件目。
+		//   ⚠★★2026-08-18(不具合再検査 B-U2)＝**この一文自身がその通りになった**。ここには
+		//     "KESCMViewSync.cpp:681" と書いてあり、書いた 2026-08-17(B-U8)の時点では**その行がまさに
+		//     当の呼び**だったが、翌日には :686 へずれていた。⇒ **警告を書くだけでは足りない。警告が
+		//     付いている当の引用を、名前で引き直すところまでやる。**
 		pano->ScrollContentLocationToFrameCenter(pbPoint, kTrue /*forceRedraw*/);
 		any = kTrue;
 	}

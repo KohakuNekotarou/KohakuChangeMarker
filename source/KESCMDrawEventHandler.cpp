@@ -2143,8 +2143,10 @@ public:
 	// ★★GetThreadingPolicy は**書かない**(2026-08-14 に手書き override を撤去した)。
 	//   CServiceProvider が「boss の居るプラグインの型」から既定を返す ---- UI→kMainThreadOnly /
 	//   model→kMultipleThreads(ガイド vol1-07「Threading and service providers」)。
-	//   ∴ kUIPlugIn の現在は撤去前と**完全に同値**(動作は1バイトも変わらない)で、第2段で
-	//   kModelPlugIn にした瞬間に**自動で kMultipleThreads** になる。
+	//   ⚠2026-08-18(不具合再検査 B-U2)で**時制を直した**。撤去した当時は「∴ kUIPlugIn の現在は撤去前と
+	//   **完全に同値**で、第2段で kModelPlugIn にした瞬間に**自動で kMultipleThreads** になる」と
+	//   書いていたが、**その第2段は 2026-08-15 に完了している**(KESCM.fr の PluginVersion は
+	//   kModelPlugIn)＝このサービスは**今まさに kMultipleThreads で動いている**。
 	//   ⚠**手書きで kMainThreadOnly を返していると、model にしても PDF 書き出しにマークが出ない**
 	//     (2x2 実測の3行目 = docs/ai-notes/draw-event-pdf-export-experiment-2026-08-12.md)。
 	//     つまり「消し忘れ」が分割の目的を**無言で**殺す。だから第2段を待たず先に消してある。

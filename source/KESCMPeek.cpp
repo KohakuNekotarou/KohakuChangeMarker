@@ -686,10 +686,14 @@ void KESCMPeekStartup::Shutdown()
 	sPeekTargetDB = nil;
 	sPeekSourceDB = nil;
 
-	// (★同期キャッシュの破棄・同期フラグの後始末・CMYK の後片付け・ステータス記憶の消去も
-	//  2026-08-13 Task 8 で UI 側 KESCMUIStartup.cpp へ移した。どれも UI のファイルが持つ状態。
-	//  ⚠**ステータス記憶(gSessionStatus)だけは第2段の予定が違う**: 設計書 §3.3 のとおり文字列の保持は
-	//    model 側へ来る(app.kcmStatus がパネルを閉じていても答える仕様のため)＝Task 9 で移る。)
+	// (★同期キャッシュの破棄・同期フラグの後始末・CMYK の後片付けは 2026-08-13 Task 8 で
+	//  UI 側 KESCMUIStartup.cpp へ移した。どれも UI のファイルが持つ状態。
+	//  ⚠2026-08-18(不具合再検査 B-U2)訂正＝**ステータス記憶はここへ戻ってきている**。旧記述は
+	//    「ステータス記憶(gSessionStatus)の消去も UI 側へ移した／**第2段の予定が違い** Task 9 で
+	//    model へ移る」という**予定のまま**だったが、①文字列の保持は Task 9 で model 側
+	//    (KESCMModelNotify.cpp の sSessionStatus。旧名 gSessionStatus)へ移り、②その消去も
+	//    2026-08-18(B8)に上の KESCMClearSessionStatus() で model 側の仕事になった。
+	//    ★UI 側にも同じ呼びが残っているが、あちらは nil 検査つきの冪等な二重呼びで、主ではない。)
 
 	// 旧ページ番号バッジのフォントキャッシュも同じ理由(静的破棄前の明示解放)でここで捨てる(2026-07-25)。
 	KESCMReleaseOldNumFontCache();

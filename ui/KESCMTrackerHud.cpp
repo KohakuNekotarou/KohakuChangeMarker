@@ -7,8 +7,13 @@
 //    隅に描けるのか」は KESCMTrackerHud.h の冒頭。
 //
 //  ここが持つのは「押下中か」「どのビューか」の2つだけ(比較状態は KESCMCore/KESCMPeek 側に
-//  聞く = 状態を二重に持たない)。描画の呼び出しは KESCMDrawEventHandler::HandleDrawEvent が
-//  2系統(帯の前面 / カンバス背景)から行う。
+//  聞く = 状態を二重に持たない)。描画の呼び出しは
+//  **KESCMUIDrawEventHandler::HandleDrawEvent(KESCMUIDrawEvent.cpp)** が2系統(帯の前面 / カンバス背景)
+//  から行う。
+//  ⚠2026-08-18(不具合再検査 B-U2)訂正＝「KESCMDrawEventHandler::HandleDrawEvent が」と書いてあったが、
+//    あれは**model 側**のマーク描画ハンドラで、HUD は 2026-08-13(Task 6)にこちらへ移っている
+//    (model 側は KESCMDrawEventHandler.cpp が「このファイルは KESCMTrackerHud.h を include しない」と
+//     自分で書いており、両側の記述が食い違っていた)。
 //
 //========================================================================================
 
