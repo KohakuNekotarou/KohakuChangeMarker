@@ -37,6 +37,16 @@ void		KESCMCollectPageUIDs(IDataBase* db, std::vector<UID>& out);
 // ⚠out をクリアしないのは、通常ページの列の後ろへ連結する使い方を想定しているため。
 void		KESCMCollectMasterPageUIDs(IDataBase* db, std::vector<UID>& out);
 
+// そのページが載っているスプレッドが「隠されている」か(Hide Unchanged Spreads / ページパネルの
+// Hide Spread のどちらで隠したかは問わない)。マスターページは隠せないので常に kFalse。
+// ★2026-08-18(不具合再検査 B10 の2周目)に新設。KESCM 内には隠し判定が既に5か所あるが、どれも
+//   「ISpreadList を回りながらそのスプレッドを見る」文脈で、**ページ UID から聞く**問いはここが初めて
+//   ---- 6か所目を素で書かず1本に立てた([[one-question-one-place]])。
+// ★用途: 隠れているページは画面にもPDFにも出ないので、そのページを名指しする出力(Export Changed
+//   Pages の一覧)から外す(ユーザー指定 2026-08-18)。判定は kSpreadBoss 上の IBoolData
+//   (IID_IHIDESPREADBOOLDATA、kTrue=隠し中)で読む＝Hide Unchanged が隠す/除外するのと同じ読み方。
+bool16		KESCMIsPageOnHiddenSpread(IDataBase* db, UID pageUID);
+
 // db が現在の比較対象(sDB/sSrcDB)なら、「今マークが出得るページ UID」(変更リング + overflow「/」+
 // 登録「/」)を outPages へ**足して** kTrue を返す。比較対象でなければ何もせず kFalse。
 // ★「何がマーク済みか」の定義はこの1箇所に集約する。マークの種類を増やす時はここへ足せば、

@@ -7,11 +7,16 @@
 //  テキストで保存する。2列 = Page / Type(Changed / Inserted / Deleted)。ラベルは全て英語で統一
 //  (ユーザー指定 2026-07-25)。Page はそのページ自身の表示名(変更・挿入=Target / 削除=Source)。
 //
-//  ・ページ番号は IPageList::GetPageString(★セクション込み・表示番号)で「画面に見えている番号」を取る。
-//    ⚠KESCMPageNumberMarker とは**引数が違う**(2026-08-06 現行化。以前は「同じ呼び方」と書いてあった):
-//    あちらは 2026-08-06 のブロック5 監査で bIncludeSectionName を kFalse にした——実ノンブルに
-//    セクション名は付かないので、除外矩形を測る用途では付けてはいけない。こちらは人が読む一覧なので
-//    セクション名込み("A:12")が正しい＝台帳の「パネル表記」側。同じ関数だが問いが違う。
+//  ・ページ番号は IPageList::GetPageString(★セクション込み・**ページパネルの番号**)で取る。
+//    ★★★2026-08-18(不具合再検査 B10 の2周目)＝**InDesign のページ番号は2つある**(実機で実測):
+//      ①ページパネル / ページ番号フィールド / DOM page.name / GetPageString(…,kTrue) = 隠しスプレッドも数える
+//      ②ページに刷られる実ノンブル / GetPageString(…,kFalse)                          = 隠しスプレッドを飛ばす
+//    この一覧は「どのページを見に行くか」を人に渡す表なので①(kTrue)で書く。詳細は PageDisplay の注記。
+//    ⚠KESCMPageNumberMarker とは**引数が2つ違う**: あちらは bIncludeSectionName=kFalse(実ノンブルに
+//    セクション名は付かない。2026-08-06 のブロック5 監査)＋ bIncludePagesOfHiddenSpread=kFalse(②の側)。
+//    **どちらの違いも「実際に刷られる字を測る」という用途から来ている**。同じ関数だが問いが違う。
+//  ・★隠れているスプレッドのページは、変更があっても出さない(ユーザー指定 2026-08-18)。判定は
+//    KESCMIsPageOnHiddenSpread。隠すのはユーザー自身の操作＝「今は見ないことにしたページ」なので。
 //  ・出力は UTF-8 + BOM + CRLF(KESCL と同一)。日本語ページ名でも Excel/メモ帳が化けない。
 //  ・成功時は無言、失敗のみステータス行。未 Start / 変更ゼロは短くステータス行に出して戻る。
 //  ・★文字列は最初から最後まで PMString で持つ(2026-07-25 追補 Mac 対応)。旧実装は std::wstring と
@@ -53,6 +58,7 @@
 
 // Project includes:
 #include "KESCMCore.h"				// KESCMSetStatus / KESCMCollectPageUIDs / KESCMCollectMasterPageUIDs
+									// / KESCMIsPageOnHiddenSpread(隠れたスプレッドのページを一覧から外す。2026-08-18)
 // (★KESCMUIShared.h は 2026-08-13 Task 10 で外した＝ステータス行への出力は Task 9 で戻り値へ変わり、
 //  このファイルから UI を呼ぶ経路は1つも残っていない。保存先パスは呼び手のフライアウトが表示する)
 #include "KESCMDrawEventHandler.h"	// sEntries / sDB / sSrcDB / sOverflowT / sOverflowS(★どれも「比較した時点」の
@@ -101,11 +107,25 @@ void ShowStatus(const char* text)
 	gExportMessage.SetTranslatable(kFalse);
 }
 
-// pageUID(db 内)の「画面に見えている表示ページ番号」を返す。取れなければ空。
+// pageUID(db 内)の「ページパネルに出ている表示ページ番号」を返す。取れなければ空。
 // 引数(IPageList.h:141-146): 第3 bIncludeSectionName=kTrue … セクション名込み("A:12")。人が読む一覧なので
-//   どのセクションの 12 かが分かる方が良い。⚠KESCMPageNumberMarker は kFalse(用途が違う。上の冒頭注記)。
+//   どのセクションの 12 かが分かる方が良い。⚠KESCMPageNumberMarker は kFalse(用途が違う。下記)。
 // 第4 bUseIntegerStyle=kFalse … セクションの番号スタイルそのまま(ローマ数字等も画面どおり)。
-// 第7 bIncludePagesOfHiddenSpread=kFalse … 隠しスプレッドを飛ばした表示番号(=画面に出ている番号)。
+//
+// ★★★第7 bIncludePagesOfHiddenSpread=**kTrue**(既定) ---- 2026-08-18(不具合再検査 B10 の2周目)に
+//   kFalse から変更。**InDesign はページ番号を2つ持っている**(同日 実機で実測):
+//     ・ページパネル / ステータスバーのページ番号フィールド / スクリプト DOM の page.name /
+//       GetPageString(…,kTrue) …… **隠しスプレッドのページも数える**(隠しても元の番号のまま)
+//     ・ページに組版される実ノンブル(自動ページ番号マーカー) / GetPageString(…,kFalse)
+//       …… **隠しスプレッドを飛ばす**(先頭スプレッドを隠すと2ページ目に "1" が刷られる。撮影で確認)
+//   旧コメントは kFalse を「(=画面に出ている番号)」と書いていたが、**画面のほうは kTrue**だった。
+//   ⇒ この一覧は「どのページを見に行くか」を人に渡す表で、受け取った人はページパネルで探す。
+//     ∴ ページパネルと同じ番号(kTrue)で書く。
+//   ★これを kFalse のままにすると、Hide Unchanged で変更なしスプレッドを隠したまま書き出したとき、
+//     変更ページ 2,3 が "1,2" と1つずつずれた一覧になっていた(実測)。KESCM の標準的な使い方
+//     ---- 変更なしを隠す → 一覧を書き出す ---- がそのまま当たる。
+//   ⚠**KESCMPageNumberMarker.cpp は kFalse のままで正しい**: あちらは「誌面に実際に刷られる数字」の
+//     インク範囲を測る用途なので、実ノンブルと同じ数え方でなければならない。非対称は意図的。
 PMString PageDisplay(IDataBase* db, UID pageUID)
 {
 	PMString out;
@@ -115,7 +135,7 @@ PMString PageDisplay(IDataBase* db, UID pageUID)
 	InterfacePtr<IPageList> pageList(db, db->GetRootUID(), UseDefaultIID());
 	if (pageList == nil)
 		return out;
-	pageList->GetPageString(pageUID, &out, kTrue, kFalse, kDefaultPageType, kTrue, kFalse);
+	pageList->GetPageString(pageUID, &out, kTrue, kFalse, kDefaultPageType, kTrue, kTrue);
 	out.SetTranslatable(kFalse);	// GetPageString が付け直す可能性に備えて再設定
 	return out;
 }
@@ -278,11 +298,20 @@ bool16 CollectRows(IDataBase* targetDB, IDataBase* sourceDB, std::vector<KESCMCh
 	KESCMPageMapCollectRegistered(sourceDB, registeredS);
 
 	// ---- Target をドキュメント順に: 変更 → 挿入 ----
+	// ★★2026-08-18(不具合再検査 B10 の2周目・ユーザー指定): **隠れているスプレッドのページは、
+	//   変更があっても一覧に出さない。** 隠したスプレッドは画面にも PDF にも出ない ---- 隠すのは
+	//   ユーザー自身の操作なので、「今は見ないことにしたページ」を変更ページ一覧に載せる意味がない。
+	//   ⚠Hide Unchanged が隠すのは変更の無いスプレッドだけなので、この分岐が効くのは
+	//     **ユーザーがページパネルで変更ページのスプレッドを手動で隠したとき**だけ。
+	//   ★副産物: 隠れたページを GetPageString に聞くと、実ノンブル基準(kFalse)では番号を持たないので
+	//     "#" が返っていた ---- 「どのページか特定できない行」が一覧に混じる問題も同時に消える。
 	std::vector<UID> targetOrder;
 	KESCMCollectPageUIDs(targetDB, targetOrder);
 	for (size_t i = 0; i < targetOrder.size(); ++i)
 	{
 		const UID t = targetOrder[i];
+		if (KESCMIsPageOnHiddenSpread(targetDB, t))
+			continue;
 		if (KESCMDrawEventHandler::sEntries.count(t) > 0)
 		{
 			KESCMChangeRow row;
@@ -330,6 +359,8 @@ bool16 CollectRows(IDataBase* targetDB, IDataBase* sourceDB, std::vector<KESCMCh
 	for (size_t i = 0; i < sourceOrder.size(); ++i)
 	{
 		const UID s = sourceOrder[i];
+		if (KESCMIsPageOnHiddenSpread(sourceDB, s))	// Target 側と同じ理由(上のループのコメント)
+			continue;
 		if (registeredS.count(s) > 0 || overflowS.count(s) > 0)
 		{
 			KESCMChangeRow row;

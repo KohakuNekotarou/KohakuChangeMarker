@@ -602,7 +602,16 @@ static PMString KESCMFormatChangeRatio(int32 changed, int32 total)
 // ★2026-07-29 に割合の区切りを半角スペースから ", Change " へ変更(ユーザー指定)＝何の % なのか読んで分かる
 //   ようにするため。overset 側は既に "Overset" の語が付いているので従来どおりスペース区切りのまま。
 // (n)・Overset は半角スペース1つ区切り。ページ番号は IPageList::GetPageString
-// (セクション込み・現在の表示番号)。
+// (セクション込み・**ページパネルの番号**)。
+// ★★★2026-08-18(不具合再検査 B10 の2周目)＝第7 bIncludePagesOfHiddenSpread を kFalse から **kTrue** へ。
+//   InDesign はページ番号を2つ持っており(実機で実測)、kFalse は「ページに刷られる実ノンブル」の側＝
+//   隠しスプレッドを飛ばして数える番号だった。ラベルは「次に見るべきページはどれか」を人に見せる所で、
+//   受け取った人はページパネルで探す ---- ∴ ページパネルと同じ番号(kTrue)で綴る。
+//   ★TSV(KESCMChangedPagesTSV.cpp の PageDisplay)と Story Edits(KESCMStoryJump.cpp の PageLabel)も
+//     同じ日に同じ理由で揃えた。**この3つは「同じページを人にどう綴るか」という1つの問い**なので、
+//     どれか1つだけ直すと Hide 中にパネルと書き出しが食い違う([[one-question-one-place]])。
+//   ⚠ノンブル除外矩形(KESCMPageNumberMarker.cpp)だけは kFalse のままで正しい＝あちらは実際に刷られる
+//     数字のインク範囲を測る用途。用途が違うので揃えてはいけない。
 // ★割合は変更ストップにだけ付ける(overset は「あふれ」であって変更量とは無関係)。エントリが引けない等で
 //   値が作れないときは付けない=従来どおりのラベル。仕様は docs/ai-notes/kescm-change-ratio.md。
 //----------------------------------------------------------------------------------------
@@ -614,7 +623,7 @@ static PMString KESCMStopLabel(IDataBase* db, const KESCMNavStop& stop)
 	InterfacePtr<IPageList> pageList(db, db->GetRootUID(), UseDefaultIID());
 	PMString numStr; numStr.SetTranslatable(kFalse);
 	if (pageList != nil)
-		pageList->GetPageString(stop.pageUID, &numStr, kTrue, kFalse, kDefaultPageType, kTrue, kFalse);
+		pageList->GetPageString(stop.pageUID, &numStr, kTrue, kFalse, kDefaultPageType, kTrue, kTrue);
 	if (numStr.NumUTF16TextChars() > 0)
 		label.Append(numStr);
 	else if (stop.isOverset)

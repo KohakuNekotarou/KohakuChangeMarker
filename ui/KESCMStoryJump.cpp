@@ -46,6 +46,15 @@ namespace
 	★The page number comes from IPageList::GetPageString with the same seven arguments the
 	navigation's own label uses (KESCMChangeNav.cpp's KESCMStopLabel) - section prefixes and all, so
 	that the two places in this panel that name a page never disagree about how a page is spelled.
+
+	★★★2026-08-18 (bug recheck B10, second pass): the seventh argument,
+	bIncludePagesOfHiddenSpread, went from kFalse to kTrue. InDesign carries TWO page numbers
+	(measured on the machine that day): the Pages panel / page-number field / DOM page.name /
+	GetPageString(...,kTrue) all COUNT the pages of hidden spreads, while the folio actually
+	composed onto the page - and GetPageString(...,kFalse) - SKIP them. A label that tells a
+	person which page to go and look at has to be spelled the way the Pages panel spells it,
+	because that is where they will look. KESCMChangeNav's label and the TSV export were changed
+	the same day for the same reason: the three of them answer ONE question and must not drift.
 */
 PMString PageLabel(IDataBase* db, UID pageUID)
 {
@@ -62,7 +71,7 @@ PMString PageLabel(IDataBase* db, UID pageUID)
 	PMString numStr;
 	numStr.SetTranslatable(kFalse);
 	if (pageList != nil)
-		pageList->GetPageString(pageUID, &numStr, kTrue, kFalse, kDefaultPageType, kTrue, kFalse);
+		pageList->GetPageString(pageUID, &numStr, kTrue, kFalse, kDefaultPageType, kTrue, kTrue);
 
 	label.Append("Page: ");
 	if (numStr.NumUTF16TextChars() > 0)

@@ -243,7 +243,19 @@ static PMRect KESCMRealNumberInkInSpread(ITextModel* masterTextModel, TextIndex 
 	//       先頭位置に重ねて Y 方向の bbox を union するだけなので、余計な文字が混じって効くのは
 	//       縦方向だけ。それでも「実際に描かれる字だけを測る」kFalse の方が確かに近い。
 	//   第4 bUseIntegerStyle=kFalse … セクションの番号スタイルそのまま(ローマ数字等も実際の見た目どおり)
-	//   第7 bIncludePagesOfHiddenSpread=kFalse … 隠しスプレッドを飛ばした表示番号(=画面に出ている番号)
+	//   第7 bIncludePagesOfHiddenSpread=kFalse … 隠しスプレッドを飛ばして数えた番号
+	//     ★★★2026-08-18(不具合再検査 B10 の2周目)に**この行の説明を訂正した**。旧記述は「(=画面に
+	//       出ている番号)」だったが、実機で測ると **InDesign はページ番号を2つ持っている**:
+	//         ①ページパネル / ページ番号フィールド / DOM page.name / GetPageString(…,kTrue)
+	//            …… 隠しスプレッドのページも数える(隠しても元の番号のまま)
+	//         ②ページに組版される実ノンブル / GetPageString(…,kFalse)
+	//            …… 隠しスプレッドを飛ばす(先頭スプレッドを隠すと2ページ目に "1" が刷られる。撮影で確認)
+	//       ⇒ 「画面に出ている番号」は①のほうで、ここが使っているのは②。
+	//     ★**ここは kFalse のままで正しい**: この関数は「実際に刷られる数字」のインク範囲を測るので、
+	//       実ノンブルと同じ数え方でなければならない。⚠同日に TSV(KESCMChangedPagesTSV.cpp)・
+	//       Prev/Next(KESCMChangeNav.cpp)・Story Edits(KESCMStoryJump.cpp)の3つは kTrue へ変えたが、
+	//       あちらは「人にページを名指しする」用途＝ページパネルと同じ綴りでなければならない側。
+	//       **用途が違うので揃えてはいけない。この非対称は意図的。**
 	pageList->GetPageString(pageUID, &numStr, kFalse, kFalse, kDefaultPageType, kTrue, kFalse);
 	const int32 nch = numStr.NumUTF16TextChars();
 	if (nch <= 0)

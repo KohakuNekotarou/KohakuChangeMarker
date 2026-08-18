@@ -181,6 +181,31 @@ void KESCMCollectMasterPageUIDs(IDataBase* db, std::vector<UID>& out)
 }
 
 //========================================================================================
+// KESCMIsPageOnHiddenSpread(KESCMCore.h で宣言) — そのページのスプレッドは隠されているか。
+//
+// ★2026-08-18(不具合再検査 B10 の2周目)に新設。KESCM 内の隠し判定5か所は全部「ISpreadList を
+//   回りながらそのスプレッドを見る」形で、**ページ UID から聞く**問いはここが初めて。
+// ページ → スプレッドは IHierarchy::GetSpreadUID(この階層ノードのスプレッドを返す契約で、ページ
+// 限定ではない)。KESCMChangedPagesTSV の MasterPageDisplay / KESCMPeek / KESCMChangeNav と同じ聞き方。
+// ⚠マスタースプレッドは隠せない(ページパネルの Hide Spread は通常スプレッドだけ・Hide Unchanged も
+//   ISpreadList しか回らない)ので、マスターページを渡しても kFalse で返る＝呼び手は場合分け不要。
+//========================================================================================
+bool16 KESCMIsPageOnHiddenSpread(IDataBase* db, UID pageUID)
+{
+	if (db == nil || pageUID == kInvalidUID)
+		return kFalse;
+	InterfacePtr<IHierarchy> pageHier(db, pageUID, UseDefaultIID());
+	if (pageHier == nil)
+		return kFalse;
+	const UID spreadUID = pageHier->GetSpreadUID();
+	if (spreadUID == kInvalidUID)
+		return kFalse;
+	// 隠し状態は kSpreadBoss 上の IBoolData(IID_IHIDESPREADBOOLDATA、kTrue=隠し中)で読む。
+	InterfacePtr<IBoolData> hideFlag(db, spreadUID, IID_IHIDESPREADBOOLDATA);
+	return (hideFlag != nil && hideFlag->GetBool()) ? kTrue : kFalse;
+}
+
+//========================================================================================
 // ページアイテムの UID → そのアイテムが載っているページ UID。どのページにも載らない
 // (ペーストボード等)なら kInvalidUID。
 //
