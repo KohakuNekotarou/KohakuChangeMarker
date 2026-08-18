@@ -55,8 +55,10 @@
 #include "KESCMCore.h"				// KESCMSetStatus / KESCMCollectPageUIDs / KESCMCollectMasterPageUIDs
 // (★KESCMUIShared.h は 2026-08-13 Task 10 で外した＝ステータス行への出力は Task 9 で戻り値へ変わり、
 //  このファイルから UI を呼ぶ経路は1つも残っていない。保存先パスは呼び手のフライアウトが表示する)
-#include "KESCMDrawEventHandler.h"	// sEntries / sDB / sSrcDB
-#include "KESCMPageMap.h"			// KESCMBuildPairing / KESCMPageMapCollectRegistered
+#include "KESCMDrawEventHandler.h"	// sEntries / sDB / sSrcDB / sOverflowT / sOverflowS(★どれも「比較した時点」の
+									// 控え＝画面・サムネイル・地図が見ているものと同じ。2026-08-18 の B10)
+#include "KESCMPageMap.h"			// KESCMPageMapCollectRegistered
+									// (★KESCMBuildPairing の呼びは B10 で無くなった＝あふれ集合は上の控えから読む)
 #include "KESCMChangedPagesTSV.h"
 
 namespace
@@ -254,12 +256,21 @@ PMString BuildSuggestedFileName(IDataBase* targetDB)
 // 続けて Source をドキュメント順(削除)。
 bool16 CollectRows(IDataBase* targetDB, IDataBase* sourceDB, std::vector<KESCMChangeRow>& rows)
 {
-	// 挿入/削除の分類に使う「あふれ集合」を取得(対応ペアリング自体は旧ページ列を廃したので不要)。
-	std::vector<UID> tPairs, sPairs, tOverflow, sOverflow;
-	KESCMBuildPairing(targetDB, sourceDB, tPairs, sPairs, &tOverflow, &sOverflow);
-
-	std::set<UID> overflowT(tOverflow.begin(), tOverflow.end());
-	std::set<UID> overflowS(sOverflow.begin(), sOverflow.end());
+	// 挿入/削除の分類に使う「あふれ集合」。
+	// ★★2026-08-18(不具合再検査 B10) = **描画が使っているキャッシュそのものを読む。**
+	//   このファイルのヘッダーは元から「挿入 = sOverflowT / 削除 = sOverflowS」と宣言していたのに、
+	//   実装はここで KESCMBuildPairing を呼び直し、**今の文書構成から**あふれを計算していた。
+	//   キャッシュのほうは比較した時点で固定される(KESCMDrawEventHandler.h の "生のページ挿入/削除
+	//   (Start無し)には追従しない=次の Start/再比較まで固定(枠=リングと同じ挙動)")ので、Start の後に
+	//   ページを足して再比較していないと、**画面に「/」が出ていないページを Inserted として書いていた**。
+	//   一覧は画面の写しであるべきなので、同じ集合を読むようにした。
+	//   ★副産物: KESCMBuildPairing の戻り値 tPairs/sPairs は**一度も使っていなかった**(旧ページ列を
+	//     廃した 2026-07-25 以降)。あふれ集合のためだけに両文書の全ページ走査を回していたのが丸ごと消える。
+	//   ⚠EnsureOverflowCache は控えた (sDB,sSrcDB) が現在と一致していれば何もしない。呼び手
+	//     (KESCMExportChangedPagesTSVRun)が targetDB/sourceDB をその2つから取っているので必ず一致する。
+	KESCMDrawEventHandler::EnsureOverflowCache();
+	const std::set<UID>& overflowT = KESCMDrawEventHandler::sOverflowT;
+	const std::set<UID>& overflowS = KESCMDrawEventHandler::sOverflowS;
 
 	// 手動登録(Added=Target 側 / Removed=Source 側)。
 	std::set<UID> registeredT, registeredS;

@@ -45,8 +45,14 @@ void		KESCMHideUnchangedToggle();
 // been closed -- only the surviving side is restored. With kFalse the databases are not
 // touched at all and only the state is dropped.
 //
-// Callers: re-comparison (KESCMDoMarkChangesDoc), Stop (KESCMDoClearMarks) and the close
-// sweep (KESCMHandleDocsClosed) may all pass kTrue.
+// Callers -- all FOUR of them (counted 2026-08-18, bug recheck B10):
+//   1. re-comparison  KESCMDoMarkChangesDoc  (KESCMCore.cpp)  -- kTrue
+//   2. Stop           KESCMDoClearMarks      (KESCMCore.cpp)  -- kTrue
+//   3. the close sweep KESCMHandleDocsClosed (KESCMPeek.cpp)  -- kTrue, or kFalse while quitting
+//   4. ★the model's Shutdown                (KESCMPeek.cpp)  -- kFalse
+// ⚠Number 4 was missing from this list, and it is the one the kFalse sentence above is written
+// for: it is the only caller that ALWAYS passes kFalse. A header that explains an argument
+// nobody in its own caller list ever passes is a header that has not been re-counted.
 void		KESCMResetHideUnchanged(bool16 restoreSpreads);
 
 // kTrue while the toggle is ON, i.e. while spreads hidden by this feature are being held.

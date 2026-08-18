@@ -6,6 +6,12 @@
 //  model/UI 分割 第1段 Task 2)。変更マークの無いスプレッドを kHideSpreadCmdBoss で隠し、
 //  自分が隠した分「だけ」を控えて元に戻す。Target/Source の両側を同じ分類で扱う。
 //
+//  ★★2026-08-18(不具合再検査 B10): 「変更マークの無い」を決める材料を、**全部 描画が見ているものと
+//    同じ「比較した時点」の控え**に揃えた ---- あふれ集合は sOverflowT(キャッシュ)、Source 側の
+//    除外対応表は sPrevPairTargetToSource(前回比較のペアリング)。以前は KESCMBuildPairing を呼び直して
+//    **今の**文書構成から計算しており、Start の後にページを足す/消して再比較していないと、
+//    **画面の「/」と、隠す/隠さないの判定が食い違っていた。**
+//
 //  ★分離では関数の中身を1行も変えていない。変えたのは「どのファイルに座るか」と「誰から見えるか」だけ。
 //    トグル本体は元 KESCMActionComponent::DoHideUnchangedToggle で、自由関数
 //    KESCMHideUnchangedToggle になった(呼び手は DoAction の case の1行)。★本体ごと移したのは、
@@ -46,9 +52,12 @@
 #include "KESCMHideUnchanged.h"
 #include "KESCMCore.h"		// KESCMIsDocDBOpen / KESCMArmedSourceDB
 #include "KESCMModelNotify.h"	// KESCMNotifyStatus - the model tells the UI, it never calls it (Task 9)
-#include "KESCMDrawEventHandler.h"	// sDB/sEntries(「変更あり」の判定材料)
-#include "KESCMPageMap.h"	// KESCMBuildPairing(除外対応表、Source 側の分類で使用)
-							// ＋ KESCMPageMapIsRegistered / KESCMPageMapHasAnyRegistered
+#include "KESCMDrawEventHandler.h"	// sDB / sEntries / sOverflowT / sPrevPairTargetToSource(「変更あり」の判定材料)
+							// ★★どれも「比較した時点」の控え＝**画面・サムネイル・地図が見ているものと同じ**。
+							//   隠す/隠さないの判定を画面と揃えるための選択(2026-08-18 の不具合再検査 B10)。
+#include "KESCMPageMap.h"	// KESCMPageMapIsRegistered / KESCMPageMapHasAnyRegistered
+							// (★KESCMBuildPairing の呼びは B10 で無くなった＝あふれ集合も除外対応表も
+							//  上の控えから読む。理由は KESCMHideUnchangedToggle の中のコメント)
 #include "KESCMID.h"		// kKESCMPageFlagsChangedMessage(通知の ID)
 // ★2026-08-13(Task 10): UI 側ヘッダー KESCMScrollMap.h の include を落とした。隠し/戻しの後に地図を
 //   描き直すのは、通知を受けた UI の仕事。
@@ -146,17 +155,28 @@ void KESCMHideUnchangedToggle()
 
 	// ★「/」が付く overflow ページ(登録されていないのに、文書間のページ数差で比較相手が無い=未比較の
 	//   ページ)を含むスプレッドは、変更ありページや登録済み("Added")ページと同じく隠さない
-	//   (未比較の見落としを防ぐ。ユーザー要望 2026-07-06)。ここで Target 側の overflow 集合を作る
+	//   (未比較の見落としを防ぐ。ユーザー要望 2026-07-06)。
 	//   (Source 側は下の分類が対応表外ページを既に「変更あり」扱いにしているので隠れない)。
-	// ★対応表(tPages/sPages)は下の「Source 側も隠す」でもそのまま使う。以前はここと下で
-	//   KESCMBuildPairing を2回呼び、同じ表を2度作っていた(2026-08-06 監査 C-2 で1回に統合)。
-	//   対応表の構築はページ数に比例するので、大きい文書ほど無駄が効いていた。
+	//
+	// ★★2026-08-18(不具合再検査 B10) = **その「/」は、画面に出ている「/」と同じ集合でなければならない。**
+	//   以前はここで KESCMBuildPairing を呼び直し、**今の文書構成から**あふれを計算していた。ところが
+	//   画面・サムネイル・スクロール地図・境界(IKESCMMarkData::IsOverflowPage)はどれも overflow キャッシュ
+	//   (sOverflowT/sOverflowS)を見ており、そちらは**比較した時点で固定**される ---- KESCMDrawEventHandler.h
+	//   の "生のページ挿入/削除(Start無し)には追従しない=次の Start/再比較まで固定(枠=リングと同じ挙動)"。
+	//   ∴ Start の後にページを足す/消して再比較していないと、**画面に「/」が出ていないページを
+	//   「変更あり」と数える**(逆もある)= 上の「『/』が付くスプレッドは隠さない」という約束が、画面が
+	//   言っている「/」とは別のものを指していた。⇒ 描画と同じキャッシュを読む。
+	//   ⚠EnsureOverflowCache は控えた (sDB,sSrcDB) が現在と一致していれば**何もしない**(=通常は読むだけ)。
+	//     作り直す場合も内部でロックを取って swap するので、BG の描画と競合しない。
+	// ⚠★Target は描画エンジンの sDB、Source は arm 状態(KESCMArmedSourceDB=sPeekSourceDB)と、
+	//   **2つの別々の場所**から取っている。食い違わない根拠は実測(2026-08-18・不具合再検査 B10):
+	//   KESCMDoDisarmMousePeek の呼び手は KESCMStopComparison ただ1つで、そこは直前に
+	//   KESCMDoClearMarks(= sDB を落とす)を呼ぶ ---- ∴「arm だけ落ちて sDB が残る」状態は作れない。
+	//   ⚠disarm を単独で呼ぶ経路を足した日に、この前提は消える([[one-question-one-place]])。
 	IDataBase* const srcDB = KESCMArmedSourceDB();
 	const bool16 hasSource = (srcDB != nil && srcDB != db);
-	std::vector<UID> tPages, sPages, tOverflow, sOverflow;
-	if (hasSource)
-		KESCMBuildPairing(db, srcDB, tPages, sPages, &tOverflow, &sOverflow);
-	const std::set<UID> tOverflowSet(tOverflow.begin(), tOverflow.end());
+	KESCMDrawEventHandler::EnsureOverflowCache();
+	const std::set<UID>& tOverflowSet = KESCMDrawEventHandler::sOverflowT;
 
 	// sEntries が空でも、登録済み(比較相手なし="Added")ページや overflow ページがあれば続行する
 	// (それら自体が「変更あり=残す」扱いになるため)。全部無ければ全スプレッドが対象になり、
@@ -263,7 +283,13 @@ void KESCMHideUnchangedToggle()
 	//   seq が閉じる瞬間のグローバルエラーが kSuccess かどうかで commit か巻き戻しかが決まるので
 	//   (CmdUtils.h:189-193)、失敗はすべてステータス行へ変換してからエラーを落とす。立てたまま次の
 	//   コマンドを投げると protective shutdown になる(CmdUtils.h:72-77)。
-	//   この形は KESCM 内の先例と同じ(KESCMBookCompare.cpp:132-136 / KESCMBookOpen.cpp:158-160)。
+	//   この形は KESCM 内の先例と同じ ---- KESCMBookCompare.cpp の見出し
+	//   "THIS OPEN IS ALLOWED TO FAIL" と、KESCMBookOpen.cpp の "THE WINDOW IS ALLOWED NOT TO APPEAR"。
+	//   ★2026-08-18(不具合再検査 B10)に**行番号(:132-136 / :158-160)から見出しの語へ差し替えた** ----
+	//   実測した実体は :142-143 と :169-170 で、**どちらも 10〜11 行ずれていた**(それぞれの側に後から
+	//   足された説明が下を押し下げた)。★両方とも "***** ... *****" の見出しを元から持っていたので、
+	//   B7 の処方(指される側に見出しを立て、見出しの語で引く)は**立てる必要すら無く、引く側が
+	//   使っていなかっただけ**だった。
 	ErrorCode err = kFailure;
 	int32 srcHiddenCount = 0;
 	bool16 srcSkippedAll = kFalse;
@@ -289,10 +315,21 @@ void KESCMHideUnchangedToggle()
 			// ⚠だからこそ失敗をエラー状態に残せない = 残すと seq が閉じるとき Target の隠しごと巻き戻る。
 			if (hasSource)
 			{
-				// 対応表(tPages/sPages)は関数先頭で1回だけ作ったものを使う(2026-08-06 監査 C-2)。
+				// ★★2026-08-18(不具合再検査 B10): 対応表も**比較した時点のもの**を使う。
+				//   sPrevPairTargetToSource は「前回の比較で使った Target→Source のペアリング」で、
+				//   下で参照する sEntries と**同じ1回の比較から**作られる(KESCMCore.cpp が両方を同じ
+				//   tPages/sPages の添字で埋め、末尾で swap する)。以前はここで KESCMBuildPairing を
+				//   呼び直していたので、Start の後にページ構成が変わると「**今の**対応表 × **比較時点の**
+				//   マーク」という、どの瞬間にも存在しなかった組み合わせで Source を分類していた
+				//   (Target 側の overflow を画面と揃えたのと同じ理由。関数先頭のコメント参照)。
+				//   ⚠登録済み(Added/Removed)ページと overflow は元からこの表に載らない ---- find が
+				//     外れて「変更あり」= 隠さない、に倒れる。この安全側の性質は従来と同じ。
+				//   ⚠この表はマスターページの組も含む(KESCMCore.cpp が通常ページの後ろに連結する)が、
+				//     下の走査は ISpreadList = 通常スプレッドしか回らないので、余分な組は引かれない。
 				std::map<UID, bool16> srcChangedMap;	// 対応表にあるSourceページ→対応Targetページが変更ありか
-				for (size_t i = 0; i < tPages.size(); ++i)
-					srcChangedMap[sPages[i]] = (KESCMDrawEventHandler::sEntries.count(tPages[i]) > 0) ? kTrue : kFalse;
+				const std::map<UID, UID>& pairing = KESCMDrawEventHandler::sPrevPairTargetToSource;
+				for (std::map<UID, UID>::const_iterator pit = pairing.begin(); pit != pairing.end(); ++pit)
+					srcChangedMap[pit->second] = (KESCMDrawEventHandler::sEntries.count(pit->first) > 0) ? kTrue : kFalse;
 
 				InterfacePtr<ISpreadList> srcSpreadList(srcDB, srcDB->GetRootUID(), UseDefaultIID());
 				if (srcSpreadList != nil)
