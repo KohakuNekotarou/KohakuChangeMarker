@@ -441,4 +441,14 @@ void KESCMExportChangedPagesTSV(PMString& outMessage)
 	outMessage = gExportMessage;
 }
 
+//========================================================================================
+// KESCMClearExportMessage(KESCMChangedPagesTSV.h で宣言)
+//   ★2026-08-18(不具合再検査 B8)。終了時に file-static PMString を空にする1行。文書にも UI にも
+//   触らないので、終了処理中のどのタイミングで呼ばれても安全。
+//========================================================================================
+void KESCMClearExportMessage()
+{
+	gExportMessage.Clear();
+}
+
 // End, KESCMChangedPagesTSV.cpp.

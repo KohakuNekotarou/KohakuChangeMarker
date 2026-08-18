@@ -6,9 +6,13 @@
 //
 //  Book comparison: which two books. See KESCMBookPair.h for the contract.
 //
-//  The front-tab walk is ported from KBS (KBSBookScope.cpp:1007), measured on this machine
-//  2026-07-28 and in use since. What is NOT ported is KBS's fall back to the active book when no
-//  front tab is found - the header says why.
+//  ⚠THE FRONT-TAB WALK IS NOT IN THIS FILE ANY MORE. It moved to ui/KESCMBookPanelLookup.cpp on
+//  2026-08-15 (Stage 2, Task 9B) because it needs PaletteRefUtils, IBookUIUtils and IPanelMgr, and
+//  a model plug-in may reach none of them; the resolver below is handed the answer. The walk itself
+//  is ported from KBS (KBSBookScope::GetPanelBookFile), measured on this machine 2026-07-28 and in
+//  use since. What is NOT ported is KBS's fall back to the active book when no front tab is found -
+//  the header says why. (This preamble described the walk as living here until 2026-08-18, three
+//  days after it left: the file the note is attached to is not the file the note is about.)
 //
 //========================================================================================
 
@@ -48,7 +52,20 @@ struct ChapterEntry
 
     The name is taken here rather than derived from the path later, because the book already has
     one (GetShortName) and building a second answer to the same question is how the two drift
-    apart. */
+    apart.
+
+    ***** EVERY POSITION IN THE BOOK PRODUCES EXACTLY ONE ENTRY, even one that cannot be read.
+    ***** Two things downstream are counting on index i meaning "the book's i-th chapter", and a
+    silent `continue` here would break both at once (found 2026-08-18, bug recheck B8):
+      1. the pairing is BY POSITION, so dropping one chapter pairs every later chapter with its
+         neighbour - a whole book reported as changed, with no hint why;
+      2. KESCMChapterStatusText is handed this same i and passes it to GetNthContent, so the word
+         the book contributes to a failure ("missing", "in use") would describe another chapter.
+         That function bounds-checks i against the book in case the book was edited in between -
+         which is worth nothing if the list it is checked against was built with gaps in it.
+    ⚠ It also contradicts the rule the pairing states forty lines below and keeps: a chapter that
+      cannot be compared gets a ROW WITH A REASON, because a missing row reads as "nothing to say
+      about this chapter", which is the one meaning it must never carry. */
 void CollectChapters(IBook* book, std::vector<ChapterEntry>& out)
 {
 	if (book == nil)
@@ -65,35 +82,68 @@ void CollectChapters(IBook* book, std::vector<ChapterEntry>& out)
 	const int32 contentCount = contentMgr->GetContentCount();
 	for (int32 i = 0; i < contentCount; ++i)
 	{
-		const UID contentUID = contentMgr->GetNthContent(i);
-		if (contentUID == kInvalidUID)
-			continue;
-
-		InterfacePtr<IBookContent> content(bookDB, contentUID, UseDefaultIID());
-		if (content == nil)
-			continue;
-
 		ChapterEntry entry;
 		entry.fName.SetTranslatable(kFalse);
 
-		// The name is taken FIRST and unconditionally, because a chapter that cannot be opened
-		// still has to be named in the report. Via the UTF-16 buffer: the PMString(char*)
-		// conversions do not survive a Japanese chapter name (KBS arrived at the same route,
-		// KBSBookScope.cpp:1207-1216).
-		WideString shortName = content->GetShortName();
-		const UTF16TextChar* buf = shortName.GrabUTF16Buffer(nil);
-		if (buf != nil)
-			entry.fName.AppendW(buf);
+		// An entry is pushed for this position whatever happens below - see the header note. When
+		// the book has no readable content here, the entry stays as constructed (fHasFile kFalse),
+		// and the pairing turns that into a failed chapter with a reason.
+		const UID contentUID = contentMgr->GetNthContent(i);
+		if (contentUID != kInvalidUID)
+		{
+			InterfacePtr<IBookContent> content(bookDB, contentUID, UseDefaultIID());
+			if (content != nil)
+			{
+				// The name is taken FIRST and unconditionally, because a chapter that cannot be
+				// opened still has to be named in the report. Via the UTF-16 buffer: the
+				// PMString(char*) conversions do not survive a Japanese chapter name (KBS arrived
+				// at the same route, KBSBookScope::ListBookChapters - GetShortName straight into
+				// GrabUTF16Buffer).
+				WideString shortName = content->GetShortName();
+				const UTF16TextChar* buf = shortName.GrabUTF16Buffer(nil);
+				if (buf != nil)
+					entry.fName.AppendW(buf);
 
-		// ***** The answer is checked, not assumed. ***** IBookContent.h:121-125 says GetIDFile
-		// returns "kTrue if a file CAN be obtained", so a chapter without one is a real case. It
-		// cannot be compared - but it still reaches the list, with a reason (see the pairing).
-		// KBS discards this return value; here it is the difference between "no change" and
-		// "never looked", which is exactly the distinction that took a day to find in KBS.
-		entry.fHasFile = content->GetIDFile(entry.fFile);
+				// ***** The answer is checked, not assumed. ***** IBookContent.h:121-125 says
+				// GetIDFile returns "kTrue if a file CAN be obtained", so a chapter without one is
+				// a real case. It cannot be compared - but it still reaches the list, with a
+				// reason (see the pairing). KBS discards this return value; here it is the
+				// difference between "no change" and "never looked", which is exactly the
+				// distinction that took a day to find in KBS.
+				entry.fHasFile = content->GetIDFile(entry.fFile);
+			}
+		}
+
+		// A row still has to say WHICH chapter it is. An unnamed one is only marginally better than
+		// the dropped row this loop refuses to produce, so the position stands in for the name -
+		// the one fact that is known even when nothing else about the chapter could be read.
+		if (entry.fName.IsEmpty())
+		{
+			entry.fName = PMString("(chapter ");
+			entry.fName.AppendNumber(i + 1);
+			entry.fName.Append(")");
+			entry.fName.SetTranslatable(kFalse);
+		}
 
 		out.push_back(entry);
 	}
+}
+
+/** The book's display name: IBook::GetBookTitleName().
+    That INCLUDES the .indb extension - measured 2026-08-11, an open book called new.indb reports
+    "new.indb", not "new".
+
+    ***** File-local since 2026-08-18. ***** Its one caller is the fallback in
+    KESCMBookDisplayPath, right below; nothing outside this file has asked for a book's bare name
+    since the panel and the dialog went over to full paths (2026-08-12). */
+PMString BookDisplayName(IBook* book)
+{
+	if (book == nil)
+		return PMString();
+
+	PMString name = book->GetBookTitleName();	// includes the .indb extension (measured 2026-08-11)
+	name.SetTranslatable(kFalse);
+	return name;
 }
 
 /** The word for one BookContentStatus::State.
@@ -149,7 +199,9 @@ bool16 KESCMResolveBookPair(const IDFile& panelBookFile, IBook*& outTarget, IBoo
 	}
 
 	// The first OTHER open book is the source (the older version). Same rule as the document
-	// comparison's KESCMFirstOtherDoc (KESCMPanelObserver.cpp), including its known limitation:
+	// comparison's KESCMFirstOtherDoc (KESCMComparisonRun.cpp - model side, moved there with the
+	// rest of the resolver in Stage 1 Task 9; it read "KESCMPanelObserver.cpp" until 2026-08-18,
+	// which is a UI file and has not held that function since), including its known limitation:
 	// with three or more books open this picks one of them arbitrarily. That is survivable only
 	// because both names are always shown on screen - see the caller.
 	const int32 bookCount = bookMgr->GetBookCount();
@@ -169,16 +221,6 @@ bool16 KESCMResolveBookPair(const IDFile& panelBookFile, IBook*& outTarget, IBoo
 	return (outSource != nil);
 }
 
-PMString KESCMBookDisplayName(IBook* book)
-{
-	if (book == nil)
-		return PMString();
-
-	PMString name = book->GetBookTitleName();	// includes the .indb extension (measured 2026-08-11)
-	name.SetTranslatable(kFalse);
-	return name;
-}
-
 PMString KESCMBookDisplayPath(IBook* book)
 {
 	if (book == nil)
@@ -191,7 +233,7 @@ PMString KESCMBookDisplayPath(IBook* book)
 
 	PMString path = helper.GetPath();
 	if (path.IsEmpty())
-		return KESCMBookDisplayName(book);	// unsaved or unnamed - the title is all there is
+		return BookDisplayName(book);		// unsaved or unnamed - the title is all there is
 
 	path.SetTranslatable(kFalse);
 	return path;
@@ -233,7 +275,14 @@ void KESCMBuildChapterPairing(IBook* target, IBook* source, std::vector<KESCMCha
 		// A chapter the book cannot name a file for can never be opened, so it is answered here
 		// rather than handed on to the comparison. It is NOT dropped: a missing row would read as
 		// "nothing to say about this chapter", which is the one meaning it must never carry.
-		if ((hasTarget && !targetChapters[i].fHasFile) || (hasSource && !sourceChapters[i].fHasFile))
+		//
+		// ⚠ONLY WHERE A FILE WOULD ACTUALLY HAVE BEEN OPENED - that is, for a PAIR (2026-08-18, bug
+		//  recheck B8). Added and Deleted are finished answers reached without reading anything, so
+		//  overwriting one with "failed" would throw away a correct answer to say we could not do
+		//  something we were never going to do. The header states the principle two paragraphs up:
+		//  "having no counterpart IS the answer; nothing about it needs opening or comparing."
+		if (result.fState == kKESCMChapterUnknown &&
+		    (!targetChapters[i].fHasFile || !sourceChapters[i].fHasFile))
 		{
 			result.fState = kKESCMChapterFailed;
 			result.fWhy   = PMString("the book gives no file for this chapter");

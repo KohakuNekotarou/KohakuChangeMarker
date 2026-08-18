@@ -22,13 +22,16 @@
 //      crossing the boundary.
 //    - KESCMBuildChapterPairing. Model-internal -- only KESCMCompareBooks calls it.
 //
-//  ⚠KNOWN, AND LEFT TO STAGE 2: ResolveBookPair reaches into the UI itself. "Which book tab is in
-//  FRONT" is answered through IBookUIUtils and IPanelMgr (KESCMBookPair.cpp:186-249), and routing
-//  the call through this interface does not change where that question is asked from. It is the
-//  same shape as the view lookups IKESCMCompareFacade still performs (Task 11, finding 3): moving
-//  the question to the UI and passing the answer in would change behaviour, and Stage 1 changes
-//  none. ★IBookUIUtils is the one to watch -- if it turns out to live in a UI plug-in, the model
-//  half cannot query it once the two are split.
+//  ✅CLOSED IN STAGE 2 (Task 9B, 2026-08-15). This header carried a "KNOWN, AND LEFT TO STAGE 2"
+//  paragraph here saying that ResolveBookPair reaches into the UI itself to ask which book tab is
+//  in FRONT. It does not any more: the UI observes the front tab
+//  (ui/KESCMBookPanelLookup.h's KESCMGetPanelBookFile) and hands the file in, which is what the
+//  `panelBookFile` parameter below is for -- and the note two dozen lines down has said so since
+//  the day it was done. ⚠The two paragraphs contradicted each other in one file for three days
+//  (found 2026-08-18, bug recheck B8), and the stale one pointed at KESCMBookPair.cpp:186-249,
+//  where nothing of the sort has lived since the walk moved out. The prediction it ended on was
+//  right, and is why the debt had to be paid: IBookUIUtils, IPanelMgr and PaletteRefUtils are all
+//  out of a model plug-in's reach.
 //
 //========================================================================================
 

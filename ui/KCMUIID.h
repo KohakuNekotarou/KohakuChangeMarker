@@ -236,7 +236,7 @@ DECLARE_PMID(kActionIDSpace, kKESCMPopupTranslucentPagesActionID, kKCMUIPrefix +
 //   **番号は再利用しない** = ショートカット設定(.indk)はアクションを数値の ActionID で保存するので、
 //   割り当て済みの番号を別機能へ回すと、そのショートカットが無関係な機能を叩く。押下中 HUD を撤去した
 //   ときの +35 とまったく同じ扱い。
-DECLARE_PMID(kActionIDSpace, kKESCMPopupCompareBooksActionID, kKCMUIPrefix + 39)	// パネルのフライアウトの「Compare Books」(実行アクション)。★ブックパネルで前面タブのブック=Target / それ以外で最初に開いているブック=Source として、章(ドキュメント)単位で「変更あり/なし」を判定する。★既存の文書比較(Start)とは完全に独立=arm しない・枠を作らない・KESCMDrawEventHandler の static を触らない。kCustomEnabling(2ブックそろい、かつ前面タブが特定できるときだけ有効)。実体 KESCMBookCompare.cpp / 対象の解決 KESCMBookPair.cpp
+DECLARE_PMID(kActionIDSpace, kKESCMPopupCompareBooksActionID, kKCMUIPrefix + 39)	// パネルのフライアウトの「Compare Books」(実行アクション)。★ブックパネルで前面タブのブック=Target / それ以外で最初に開いているブック=Source として、章(ドキュメント)単位で「変更あり/なし」を判定する。★既存の文書比較(Start)とは完全に独立=arm しない・枠(マークエントリ)を作らない・sDB/sSrcDB を触らない(⚠2026-08-18 訂正: 「KESCMDrawEventHandler の static を触らない」と書いていたが、ラスタ化中は tl_Rasterizing を立てる=MakeEntry と同じ作法。理由は KESCMBookCompare.h の同じ段落)。kCustomEnabling(2ブックそろい、かつ前面タブが特定できるときだけ有効)。実体 KESCMBookCompare.cpp / 対象の解決 KESCMBookPair.cpp
 // ブック比較ダイアログの章行の右クリックメニュー(2026-08-12)。★パネルのフライアウトではなく
 // **行の上に出るポップアップ**なので、置き場所は MenuDef のサブツリー kKESCMBookRowMenuName。
 // 押されたときに「どの行か」を知る手段はこのアクション自身には無い(ActionID しか渡らない)ので、

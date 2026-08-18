@@ -73,6 +73,8 @@
 //  遅延再生成・同期キャッシュ・覗き状態は全部 UI の持ち物で、通知(KESCMNotifyDocs)を受けた
 //  KESCMModelChangeObserver がやるようになった)
 #include "KESCMStoryList.h"          // KESCMStoryList::ShutdownCleanup(行が抱える PMString を終了時に手放す)
+#include "KESCMBookCompare.h"        // KESCMClearBookResultText(ブック比較の結果テキスト。同上)
+#include "KESCMChangedPagesTSV.h"    // KESCMClearExportMessage(TSV 書き出しのメッセージ。同上)
 #include "KESCMHideUnchanged.h"      // KESCMResetHideUnchanged / 隠している文書の getter(2026-08-13 に移動)
 #include "KESCMPeek.h"
 
@@ -662,6 +664,20 @@ void KESCMPeekStartup::Shutdown()
 	//   unload 時に静的な PMString がデストラクトされる ---- KBS が3度続けて忘れて記録した形
 	//   (KBSResultTree.h:76-77)。UI には触らない(行を捨てるだけ)ので終了処理中でも安全。
 	KESCMStoryList::ShutdownCleanup();
+	// ★★2026-08-18(不具合再検査 B8): **中身が PMString の static は、この時点で3本あった。**
+	//   上の Story Edits(1本)だけが列挙されており、残り2本が漏れていた ---- どちらも「最後に走った
+	//   1回ぶんの文字列」を unload まで抱える:
+	//     ・KESCMClearBookResultText …… ブック比較の結果(章ごと1行。app.kcmBookResult が返すもの)
+	//     ・KESCMClearExportMessage  …… TSV 書き出しの結果メッセージ(保存先フルパスを含む)
+	//   ⚠B5 で CMYK ドラッグキャッシュを足したときと**同じ形の見落とし**＝「1本直して兄弟を探さない」。
+	//   どちらも Clear するだけ・deref しない・冪等なので、終了処理中のどの順で来ても安全。
+	KESCMClearBookResultText();
+	KESCMClearExportMessage();
+	// ★パネルのステータス記憶(sSessionStatus)も同じ形の3本目。⚠**実際に空にしていたのは UI 側の
+	//   KESCMUIStartup(Facade 越し・nil 検査つき)**で、kUtilsBoss が先に落ちていれば**呼ばれない**。
+	//   B5 の CMYK と全く同じ構図なので同じ結論にする＝**model の static は model の Shutdown が
+	//   閉じる**(UI 側は残す。二重に呼んでも Clear するだけで冪等)。
+	KESCMClearSessionStatus();
 	// ★peek の arm 状態もここで落とす。残したままだと、終了処理後に kAfterCloseDoc responder が
 	// 発火した場合、KESCMHandleDocsClosed が stale な sPeek* から comparisonDocClosed=true を
 	// 再計算し得る(通常の終了順=文書クローズ→Shutdown では起きないはずだが防御的にリセット。

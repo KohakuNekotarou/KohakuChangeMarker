@@ -8,9 +8,12 @@
 //
 //  Target is the book whose tab is in FRONT in the Book panel; source is the first other open
 //  book. This mirrors the document comparison's KESCMResolveComparisonPair
-//  (KESCMPanelObserver.cpp) and exists for the same reason: "can we start?" (the menu's grey
+//  (KESCMComparisonRun.cpp) and exists for the same reason: "can we start?" (the menu's grey
 //  state) and "start" (the action) are two questions that drift apart unless they run the same
 //  resolver.
+//  ⚠The resolver moved to KESCMComparisonRun.cpp in Stage 1 Task 9. This line said
+//  "KESCMPanelObserver.cpp" until 2026-08-18 - a UI file, which would have sent a reader looking
+//  for a model-side rule across the boundary.
 //
 //========================================================================================
 #ifndef __KESCMBookPair_h__
@@ -41,10 +44,12 @@ class IBook;
     exactly what the old model-side code refused to do. */
 bool16 KESCMResolveBookPair(const IDFile& panelBookFile, IBook*& outTarget, IBook*& outSource);
 
-/** The book's display name: IBook::GetBookTitleName().
-    That INCLUDES the .indb extension - measured 2026-08-11, an open book called new.indb reports
-    "new.indb", not "new". */
-PMString KESCMBookDisplayName(IBook* book);
+// ★KESCMBookDisplayName was declared here until 2026-08-18 (bug recheck B8). Its callers were
+//   counted: there is exactly ONE, the fallback inside KESCMBookDisplayPath, in the same .cpp. A
+//   header entry is a promise to callers who do not exist, and this one had outlived the display
+//   that used it (the panel and the dialog were moved to full paths on 2026-08-12). It is now a
+//   file-local helper next to its caller - same shape as B2's "a method nobody calls is a promise
+//   nobody keeps", one level down from the boundary.
 
 /** The book's FULL PATH, as the file system spells it.
 

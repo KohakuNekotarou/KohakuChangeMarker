@@ -12,11 +12,20 @@
 //  ***** ONE PAIR AT A TIME, never all of them first. ***** IBookUtils' own documentation for the
 //  book-side open says that when it runs out of databases it closes documents it opened earlier,
 //  which would invalidate UIDRefs a "open everything, then compare" design is still holding. With
-//  one pair in flight there are never more than two chapters open.
+//  one pair in flight only two chapters are ever opened at once - the exception being a chapter
+//  that REFUSED to close, which stays open and is counted into the report's "left open".
 //
-//  This is independent of the document comparison (Start): nothing here arms anything, draws
-//  anything, or touches KESCMDrawEventHandler's statics, so it can be run while a document
+//  This is independent of the document comparison (Start): nothing here arms or disarms anything,
+//  creates or drops a mark entry, or touches sDB / sSrcDB, so it can be run while a document
 //  comparison is active.
+//  ⚠It is not true that this touches none of KESCMDrawEventHandler's statics, which is what this
+//   paragraph claimed until 2026-08-18: rasterising a page sets the thread-local rasterising guard
+//   (KESCMRasterizingGuard), exactly as the document comparison's own MakeEntry does, so a draw
+//   event re-entering during the snapshot paints no marks into it. It is set and cleared inside one
+//   Draw and carries nothing between chapters. The shared folio-rect cache is written too (with
+//   refresh=kTrue) - and every chapter close empties it through KESCMHandleDocsClosed, so the
+//   document comparison re-measures its own rects on the next compare. Neither is state a running
+//   comparison depends on; "touches nothing" was the wrong way to say "disturbs nothing".
 //
 //========================================================================================
 #ifndef __KESCMBookCompare_h__
@@ -48,6 +57,15 @@ ErrorCode KESCMCompareBooks(IBook* target, IBook* source,
     from a script has to be readable from a script, with nothing on screen. This is what
     app.kcmBookResult returns. */
 void KESCMGetBookResultText(PMString& out);
+
+/** Shutdown only: empty the stored text, so the module's static PMString has no live heap buffer to
+    free when the plug-in unloads (Mac's unload order differs from Windows').
+
+    ★Same contract, and the same one-line body, as KESCMClearSessionStatus and
+    KESCMStoryList::ShutdownCleanup. Added 2026-08-18 (bug recheck B8): the shutdown service lists
+    every static container it empties and says in so many words that a PMString is the kind that
+    must not be missed - and this one, which holds a line per chapter, was not on the list. */
+void KESCMClearBookResultText();
 
 #endif // __KESCMBookCompare_h__
 

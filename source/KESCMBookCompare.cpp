@@ -81,7 +81,14 @@ bool16 DocumentLivesInFile(IDocument* doc, const PMString& wantedPath)
 
     outWeOpened says whether THIS call opened it. ***** A chapter the user already had open is used
     as it stands and never closed afterwards ***** - closing something somebody else opened would
-    surprise them, and it is not ours to close. */
+    surprise them, and it is not ours to close.
+
+    ⚠"AS IT STANDS" INCLUDES EDITS THAT ARE NOT SAVED YET (2026-08-18). A chapter open on screen is
+    compared in the state it is on screen, while its counterpart is read off the disk - so a book
+    comparison can report a chapter as changed for an edit that only exists in memory. That is the
+    right answer for "does this chapter differ from the other book right now", and the wrong one for
+    "do the two books on disk differ"; nothing here can tell which the user meant. Saving the
+    chapters first makes the two questions the same. */
 bool16 OpenChapter(const IDFile& file, UIDRef& outDocRef, bool16& outWeOpened, PMString& outWhy)
 {
 	outDocRef   = UIDRef::gNull;
@@ -123,9 +130,12 @@ bool16 OpenChapter(const IDFile& file, UIDRef& outDocRef, bool16& outWeOpened, P
 	//
 	// ***** THIS OPEN IS ALLOWED TO FAIL, so what it raises must not leave this scope. ***** A
 	// chapter that will not open gets its own row with a reason; an error left standing would
-	// instead fail whatever command runs next. Preserve, then clear (ErrorUtils.h:115-117) - the
-	// shape the SDK itself uses for this operation
-	// (buttonui/actiondatapanels/gotoanchor/GoToAnchorPanelObserver.cpp:395-401).
+	// instead fail whatever command runs next. Preserve (ErrorUtils.h:115-117), then clear.
+	// ★The PRESERVER around a document open that may fail is the SDK's own shape
+	// (buttonui/actiondatapanels/gotoanchor/GoToAnchorPanelObserver.cpp:395-401, measured
+	// 2026-08-18). ⚠The CLEAR is not: that example does not reset the code, it reads
+	// PMGetGlobalErrorCode() afterwards and so quietly assumes the state was clean going in. This
+	// one does not assume it, because a book comparison runs after a whole flyout command of ours.
 	UIDRef    docRef;
 	ErrorCode err = kFailure;
 	{
@@ -148,7 +158,15 @@ bool16 OpenChapter(const IDFile& file, UIDRef& outDocRef, bool16& outWeOpened, P
 }
 
 /** Close a chapter THIS run opened. Anything that was already open is left exactly as it was.
-    kFalse means it is still standing (and the caller counts it, so the user is told). */
+
+    kFalse means the close was NOT ATTEMPTED - no file handler, or CanClose said no - and the caller
+    counts those into the report's "left open", so the user is told.
+    ⚠kTrue means "asked, without being refused up front", not "verified closed" (2026-08-18):
+    IDocFileHandler::Close returns void and whatever it raises is swallowed by the preserver below,
+    so a close that fails inside the command reads here as a success. The count can therefore only
+    under-report. Making it exact would mean asking the document list for the file again after the
+    close; it has not been needed, because the refusals seen in practice are the ones CanClose
+    already answers. */
 bool16 CloseChapter(const UIDRef& docRef, bool16 weOpened)
 {
 	if (!weOpened || docRef == UIDRef::gNull)
@@ -172,10 +190,14 @@ bool16 CloseChapter(const UIDRef& docRef, bool16 weOpened)
 	// between two open documents and all of them.
 	//
 	// ***** kProcess is only legal because this document has no window. ***** Closing a document
-	// that HAS one with kProcess is a stated error - IDocFileHandler::Close's own implementation
-	// asserts "Close() illegal with open document windows and cmdMode == kProcess". Everything
-	// reaching this line was opened by OpenChapter with showInWindow=kFalse, so it is windowless
-	// by construction. Keep that true if this is ever reused.
+	// that HAS one with kProcess is a stated error: the one implementation of the interface in the
+	// SDK's sources asserts on exactly that - "Close() illegal with open document windows and
+	// cmdMode == kProcess" (InCopyDocFileHandler, open/components/incopyfileactions/utils/
+	// InCopyDocUtils.cpp:1383). ⚠IDocFileHandler.h itself says nothing about it and defaults
+	// cmdMode to kSchedule, so the rule is read off an implementation, not off the contract
+	// (counted 2026-08-18: that assert text appears once in the whole SDK). Everything reaching
+	// this line was opened by OpenChapter with showInWindow=kFalse, so it is windowless by
+	// construction. Keep that true if this is ever reused.
 	//
 	// ⚠ Do NOT "improve" this to IBookUtils::CloseDocumentsInBook: it takes no UI flag and no
 	// command mode, closes immediately, and crashed KESCL in 2026-07-17 when called from a
@@ -207,7 +229,12 @@ void RecomposeChapter(const UIDRef& docRef)
 		recompose->ForceRecompositionToComplete();
 }
 
-/** Is x inside any of the exclusion rects covering this row? */
+/** Is x inside any of the exclusion rects covering this row?
+
+    ⚠A COPY of KESCMXInRowRects (KESCMDrawEventHandler.cpp), which is file-static there and cannot
+    be reached from here. The two are identical today (checked 2026-08-18) and each is four lines,
+    so the copy is cheaper than a shared header - but they are a pair: a fix to the folio sieve in
+    one of them is a fix owed to the other. */
 bool16 XInRowRects(int32 x, const std::vector<const Int32Rect*>& rects)
 {
 	for (size_t i = 0; i < rects.size(); ++i)
@@ -745,6 +772,11 @@ ErrorCode KESCMCompareBooks(IBook* target, IBook* source,
 void KESCMGetBookResultText(PMString& out)
 {
 	out = gBookResultText;
+}
+
+void KESCMClearBookResultText()
+{
+	gBookResultText.Clear();
 }
 
 // End, KESCMBookCompare.cpp.

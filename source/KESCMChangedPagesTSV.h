@@ -27,4 +27,11 @@
 //   ★成功時は無言＝outMessage は空で返る(従来の仕様どおり)。
 void KESCMExportChangedPagesTSV(PMString& outMessage);
 
+// Shutdown 専用: 書き出しメッセージの file-static PMString を空にして、プラグイン unload 時の
+// 静的デストラクタに live な heap バッファを渡さない(Mac は unload 順が Windows と異なる)。
+// ★2026-08-18(不具合再検査 B8)に追加。Shutdown の列挙は「中身が PMString のものを忘れるな」と
+//   理由まで書いているのに、載っていたのは Story Edits の1本だけだった。中身は最後の書き出しの
+//   1行(保存先パスを含む)なので、実行後は必ず何か持っている。呼ぶだけ・冪等。
+void KESCMClearExportMessage();
+
 #endif // __KESCMChangedPagesTSV_h__
