@@ -85,7 +85,16 @@ bool16 FileIsNamed(const IDFile& file)
     KESCMBookCompare.cpp's: an answer about "the document for this file" that is not verified
     against the file can put a DIFFERENT chapter in a chapter's place, and go on working. Written
     out again rather than shared because that one lives in an anonymous namespace; two copies of six
-    lines is a smaller risk than a header that exports it. */
+    lines is a smaller risk than a header that exports it.
+
+    ⚠ ASKING GetSysFile IS RIGHT HERE, THOUGH IT WAS WRONG SOMEWHERE ELSE. Bug recheck B9
+    (2026-08-18) found KESCMIsSameDoc identifying documents this way and failing for every UNSAVED
+    one - GetSysFile answers nil, so the test was always false - and moved it to
+    IDataBase::GetDocumentID. This function cannot meet that case: it is only ever asked about a
+    document IDocumentList::FindDoc(file) just handed back, so a file is what it was found by. The
+    question here is "is this the document for THAT FILE", not "are these two documents the same
+    one", and only the second of those has to work without a file. (Noted 2026-08-18, B-U5: the
+    shapes are alike enough that the next reader will wonder.) */
 bool16 DocumentLivesInFile(IDocument* doc, const PMString& wantedPath)
 {
 	if (doc == nil)
@@ -142,7 +151,9 @@ bool KESCMAcceptAnyPresentation(IDocumentPresentation* /*p*/)
     route from a document to its window … IWindowUtils has nothing either (searched 2026-08-12)".
     That was wrong: the search had covered IDocument, ILayoutUIUtils and IWindowUtils but not
     IDocumentUIUtils, which is where it is (IDocumentUIUtils.h:88 / IDocumentPresentation.h:112) and
-    where KBS and KESCL were already using it in four places. */
+    where KBS and KESCL were already using it in FIVE places - KBSBookScope, KBSJump, KESCLBookScope
+    (twice) and KESCLFindInDoc. ⚠"four" until the callers were actually counted (2026-08-18, bug
+    recheck B-U5); named by file rather than by line so the count can be re-run and cannot rot. */
 bool16 BringChapterToFront(const UIDRef& docRef)
 {
 	IDataBase* db = docRef.GetDataBase();
@@ -164,8 +175,12 @@ bool16 BringChapterToFront(const UIDRef& docRef)
 	//
 	// ***** THE WINDOW IS ALLOWED NOT TO APPEAR - this function's kFalse says so - so its error state
 	// stays in here. ***** Placed ahead of the command rather than around the processing alone, so
-	// that all THREE ways this can end without a window are covered: the command that would not
-	// build, the one that has no data interface, and the one that failed.
+	// that all FOUR ways this can end without a window are covered: the command that would not
+	// build, the one that has no data interface, the one that failed, and the one that succeeded
+	// without producing a window.
+	// ⚠ It said THREE until 2026-08-18 (bug recheck B-U5). The fourth was added the day before, by
+	//   the B-U5 audit, at the foot of this very function - and the sentence counting them, four
+	//   lines above the command, was not re-read. Same shape as the miscounts B6 and B10 found.
 	GlobalErrorStatePreserver openWinErrorState;
 	ErrorUtils::PMSetGlobalErrorCode(kSuccess);
 
@@ -206,12 +221,16 @@ bool16 BringChapterToFront(const UIDRef& docRef)
     state paints composition in progress, and two chapters with identical content then come out
     different. KESHR measured the same thing as "identical content gave different hashes".
 
-    ★★WHY THIS IS NEEDED HERE, WHEN THE PANEL'S OWN Start DOES NOT DO IT. KESCMBookCompare.cpp:187-198
-    states the reason the document comparison never had to: "it only ever rasterises documents the
-    user has open on screen, which are composed by the time anyone asks". ***THAT PREMISE IS THE ONE
-    THIS FILE BROKE*** - "Start Change Marker" hands KESCMStartComparisonFor two chapters opened a
-    moment earlier. So the call the book comparison makes before every chapter has to be made here
-    too, on the same two documents, before the comparison starts.
+    ★★WHY THIS IS NEEDED HERE, WHEN THE PANEL'S OWN Start DOES NOT DO IT. KESCMBookCompare.cpp's
+    RecomposeChapter states the reason the document comparison never had to: "it only ever rasterises
+    documents the user has open on screen, which are composed by the time anyone asks". ***THAT
+    PREMISE IS THE ONE THIS FILE BROKE*** - "Start Change Marker" hands KESCMStartComparisonFor two
+    chapters opened a moment earlier. So the call the book comparison makes before every chapter has
+    to be made here too, on the same two documents, before the comparison starts.
+    ⚠ Named by function rather than by line (2026-08-18, bug recheck B-U5): the range written here
+    pointed twenty lines short, at CloseChapter's kProcess note. ★The audit that put the two
+    references at the foot of this file onto function names counted two of them - this was the
+    THIRD, in the same file and of the same kind, and it stayed a number.
 
     ⚠ MakeEntry deliberately does NOT do this - it can be reached from inside a draw event, where
     recomposing would re-enter - so it cannot be fixed down there. It belongs to whoever opened the
@@ -380,6 +399,14 @@ void KESCMBookOpenChapterForRow(int32 rowIndex)
 	// target left them to find the other half through the book panel by hand.
 	// ★A chapter that exists on one side only (ChapterAdded / ChapterDeleted) simply has one side to
 	// open; that is not a failure and is not reported as one.
+	// ★NO SaveRestoreModifiedState HERE, AND THAT IS MEASURED RATHER THAN ASSUMED (2026-08-18, bug
+	//   recheck B-U5). "Start Change Marker" wraps its work in that guard - it RECOMPOSES, which
+	//   touches the document - while this path only opens windows, so there is nothing to undo. It
+	//   was checked in both places it could show up: after a double click the two chapters read
+	//   modified=false AND SO DID BOTH BOOKS. Opening a chapter of a book is exactly the kind of
+	//   thing that could mark the .indb (it holds each chapter's page numbering), so the books were
+	//   read too. ⚠ If anything on this path ever starts writing to the documents, this needs the
+	//   guard - do not conclude from here that it never will.
 	// ⚠ The TARGET IS OPENED LAST, so it is the one InDesign leaves in front - the target is the
 	// version being checked, and it is what the panel's own comparison calls Target too.
 	int32  opened = 0, already = 0, failed = 0;

@@ -89,7 +89,14 @@ public:
 		★Full path, not the name. Two books being compared are usually two versions of one job and
 		the job keeps its file name across versions, so "a.indb" and "a.indb" would identify the
 		pair as one book twice over -- the one thing the Target/Source lines exist to rule out.
-		Shortening it to fit is the caller's business (KESCMBookDialog.h's KESCMElidePathFront). */
+
+		⚠NOBODY SHORTENS IT ANY MORE. This said "shortening it to fit is the caller's business
+		(KESCMBookDialog.h's KESCMElidePathFront)" until 2026-08-18 (bug recheck B-U5), naming a
+		function that no longer exists: it moved to the UI on 2026-08-14 (the note at the head of
+		this file) and was DELETED there the next day. The whole path now goes into the widget and
+		kEllipsizeBeginning does the shortening, so all a caller decides is how the separators are
+		spelled (ui/KESCMPathDisplay.h) -- and the one place with no widget, the confirmation
+		alert, shows the path in full on purpose. */
 	virtual PMString	GetBookDisplayPath(IBook* book) = 0;
 
 	/** Run the comparison. Raises a progress bar naming the chapter being examined, and that bar

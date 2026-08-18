@@ -7,8 +7,15 @@
 //  Book comparison: the dialog. See KESCMBookDialog.h for why it is modeless and fixed-size.
 //
 //  Shape copied from KESCL's Jump Offset dialog (KESCLActionComponent.cpp:384-417), which is the
-//  closest working example in reach - same author, same stock kDialogBoss, also fixed-size. The
-//  one thing changed is the dialog type: kModeless instead of kMovableModal.
+//  closest working example in reach - same author, same stock kDialogBoss, also fixed-size.
+//  ⚠ "The one thing changed is the dialog type" stood here until 2026-08-18 (bug recheck B-U5).
+//    FOUR of the five arguments differ, and each difference is deliberate - they are what a
+//    modeless report needs and a modal prompt does not:
+//        kModeless                 (KESCL: kMovableModal)      - the point of the whole thing
+//        kDontAllowMultipleCopies  (KESCL: kAllowMultipleCopies)
+//        kCacheDialog              (KESCL: kDontCacheDialog)   - the results took time to compute
+//        Open(nil, kFalse)         (KESCL: Open())             - do not take over the event loop
+//    Only the RsrcSpec is built the same way. ★The reasons are on each argument at the call.
 //
 //========================================================================================
 
@@ -75,9 +82,14 @@ void SetLine(IPanelControlData* panelData, const WidgetID& widgetID, const PMStr
 		textData->SetString(text);		// SetString invalidates by itself - no Invalidate() here
 }
 
-/** Paint the three text lines from what the last run stored. Called when the dialog opens - which,
-	since 2026-08-12, is the only time it can need painting: the dialog no longer runs anything, so
-	nothing can change underneath it while it is open. */
+/** Paint the three text lines from what the last run stored.
+
+	⚠"NOTHING CAN CHANGE UNDERNEATH IT WHILE IT IS OPEN" STOOD HERE, AND IT WAS WRONG. Written on
+	2026-08-12 (the day the dialog lost its Compare button) on the grounds that the dialog no longer
+	RUNS anything - which is true, and beside the point: this dialog is MODELESS, so the flyout's
+	"Compare Books" can be chosen while it stands there, and that replaces all four of the values
+	above. Measured 2026-08-18 (bug recheck B-U5); the repaint that fixes it, and the measurement,
+	are in KESCMOpenBookDialog. */
 void KESCMBookDialogPaintResult(IPanelControlData* panelData)
 {
 	if (panelData == nil)
@@ -153,6 +165,27 @@ void KESCMBookDialogSetResult(const PMString& targetPath, const PMString& source
 const std::vector<KESCMChapterResult>& KESCMBookDialogRows()
 {
 	return gDialogRows;
+}
+
+void KESCMBookDialogShutdown()
+{
+	// ***** ALL FOUR, BECAUSE ALL FOUR HOLD HEAP. ***** The three PMStrings, and the rows - whose
+	// KESCMChapterResult carries PMStrings of its own - are emptied so that the static destructors
+	// at DLL unload find nothing left to do. Windows has never shown a fault from leaving them
+	// behind, but the Mac unloads in a different order, which is why this plug-in empties every
+	// static string it keeps (2026-07-15 teardown hardening).
+	// ★ASSIGNED a fresh vector rather than clear()ed: clear() keeps the storage, and with it the
+	//   rows' PMString buffers - the one thing this call exists to release. Same line and same
+	//   reason as KESCMStoryList::ShutdownCleanup.
+	// ⚠ADDED 2026-08-18 (bug recheck B-U5). The model half's Shutdown lists every static of its own
+	//   that holds a PMString, and B8 had just found two missing from that list; these four were
+	//   the same omission on this side - nothing in KESCMUIStartup::Shutdown named them, so a
+	//   session that ran one book comparison carried its rows and both paths to unload.
+	// Touches no widget and no document, so it is safe wherever in the teardown it is reached.
+	gDialogRows = std::vector<KESCMChapterResult>();
+	gTargetPath.Clear();
+	gSourcePath.Clear();
+	gSummary.Clear();
 }
 
 
@@ -348,6 +381,35 @@ void KESCMOpenBookDialog()
 	// ***** doWait = kFalse. ***** Open() waits by default (IDialog.h:59-65), which would make a
 	// modeless dialog behave like a modal one - the exact thing this dialog exists not to do.
 	dialog->Open(nil, kFalse);
+
+	// ***** PAINT IT HERE, BECAUSE A REOPEN NEVER SEES InitializeDialogFields. *****
+	// ⚠MEASURED 2026-08-18 (bug recheck B-U5), and this was a real bug. With the dialog already on
+	//   screen, a second comparison left it showing the FIRST one: IDialogMgr hands back the
+	//   existing dialog (IDialogMgr.h:66-67) and Open() does reach it - the window moved - but the
+	//   controller's InitializeDialogFields is NOT called a second time. So KESCMBookDialogSetResult
+	//   replaced the module's rows and paths underneath a window that went on drawing the old ones.
+	//   Both directions were run:
+	//     - target and source swapped  -> the dialog still read "Target: new / Source: old"
+	//     - one more chapter changed (rows 1 -> 2) -> it still said "1 changed" with one row, AND
+	//       DOUBLE-CLICKING THAT ROW OPENED ch1 WHILE THE ROW READ "ch2.indd"
+	// ★THE SECOND ONE IS WHY THIS MATTERS. Row indices index KESCMBookDialogRows(), which had
+	//   already moved on, so a click meant something other than what it read - the same fault shape
+	//   as the one the header describes being fixed on 2026-08-12 (labels describing one run while
+	//   the rows described another). Storing the paths made the two agree; nothing made them get
+	//   REDRAWN.
+	// ★THE SHAPE IS THE PRODUCT'S OWN: spellpanel opens its modeless dialog and then reaches inside
+	//   it (SpellMenuComponent.cpp:161-168), and IPanelControlData comes straight off the dialog
+	//   boss - the SDK writes this exact line in five places, the framework included
+	//   (CDialogController.cpp:474 / SpellMenuComponent.cpp:212 :253 /
+	//   BscSlDlgActionComponent.cpp:209 / XDocBkUIActionComponent.cpp:209).
+	// ★InitializeDialogFields KEEPS its own copy of these two calls, and that is not the same
+	//   question asked in two places: that one is the framework building the dialog for the first
+	//   time (and it also runs when the cached dialog has been dropped), this one is the reopen.
+	//   Neither decides anything - both paint whatever the module holds at that instant - so the
+	//   first open simply repaints a few rows once more.
+	InterfacePtr<IPanelControlData> panelData(dialog, UseDefaultIID());
+	KESCMBookDialogPaintResult(panelData);
+	KESCMBookTreeRebuild(panelData);
 
 	// AFTER Open, not before: the platform window does not exist until the dialog is opened. ★And on
 	// EVERY open, not just the first - this call is also what brings the dialog back when the last

@@ -35,6 +35,7 @@
 #include "KESCMThumbIdleTask.h"		// KESCMShutdownThumbIdleTask(遅延サムネイル idle task の解放)
 #include "KESCMViewSync.h"			// KESCMInvalidateSyncCaches / KESCMViewSyncShutdown
 #include "KESCMCmykCursor.h"		// KESCMCmykShutdown(カーソル文字列とフォント参照)
+#include "KESCMBookDialog.h"		// KESCMBookDialogShutdown(ブック比較の結果＝行と2つのパスと要約)
 #include "KESCMUIShared.h"			// KESCMAttachModelChangeObserver / KESCMDetachModelChangeObserver(Task 9)
 #include "Utils.h"					// Utils<IKESCMCompareFacade>()
 #include "IKESCMCompareFacade.h"	// ClearSessionStatus(ステータス記憶の破棄)
@@ -122,7 +123,13 @@ void KESCMUIStartup::Shutdown()
 	// (Windows では実害なしの実績だが、Mac は unload 順が異なるため heap バッファを持ち越さない方が
 	// 安全。2026-07-15 終了堅牢化)。CMYK 側(カーソル文字列・押下中のフォント/文書ポインタ)。
 	KESCMCmykShutdown();
-	// パネルのステータス記憶(gSessionStatus)も同様に空へ。⚠**nil 検査つき**＝終了処理中は
+	// ★★2026-08-18(不具合再検査 B-U5): ブック比較ダイアログの控え4つ(章の行・Target/Source の
+	//   パス・要約)。**この列挙から漏れていた UI 側の static** ---- 行(`std::vector<KESCMChapterResult>`)
+	//   は中身が PMString なので、比較を一度でも走らせたセッションは unload まで抱えていた。
+	//   ⚠**model 側 B8 が同じ形の漏れを2本見つけた翌日に、こちら側で3本目〜6本目が出た**形
+	//   ＝「1本直して兄弟を探さない」。widget にも文書にも触らないので終了処理中のどの順でも安全。
+	KESCMBookDialogShutdown();
+	// パネルのステータス記憶(model 側の sSessionStatus)も同様に空へ。⚠**nil 検査つき**＝終了処理中は
 	// kUtilsBoss 側が先に落ちている可能性がある(2026-08-15・Task 4B で KESCMCmykShutdown の
 	// EndColorDrag に付けたのと同じ理由。同じ shutdown の隣の行なので同じ扱いにする)。
 	InterfacePtr<IKESCMCompareFacade> compare(Utils<IKESCMCompareFacade>().QueryUtilInterface());

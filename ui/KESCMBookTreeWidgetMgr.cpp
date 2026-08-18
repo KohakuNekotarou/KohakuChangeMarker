@@ -110,18 +110,27 @@ public:
 	//
 	//   CTreeViewWidgetMgr::ApplyIndentToWidget rewrites the left edge of every cell that is bound
 	//   on BOTH sides (CTreeViewWidgetMgr.cpp:244-250):
-	//       previousOffset = frame.Left() - fBaseIndentOffset;
+	//       if (previousOffset == kMaxInt32)                  // <- only the FIRST such cell sets it
+	//           previousOffset = frame.Left() - fBaseIndentOffset;
 	//       frame.Left( frame.Left() + indent - previousOffset );
-	//   A flat list has indent == 0, so that reduces to frame.Left(fBaseIndentOffset) - every such
-	//   cell is dragged to fBaseIndentOffset. ★And ours is ZERO: that member is only ever assigned
-	//   from a REGISTERED STYLE WIDGET (:315), and this manager builds its rows in
-	//   CreateWidgetForNode instead of registering styles, so it keeps the 0 it was constructed
-	//   with.
+	//   A flat list has indent == 0, so for the first both-bound cell that reduces to
+	//   frame.Left(fBaseIndentOffset). ⚠It does NOT drag every such cell there: previousOffset is
+	//   computed once and reused, so a second both-bound cell would keep its distance from the first
+	//   and only shift by the same amount (2026-08-18, bug recheck B-U5 - this said "every such cell
+	//   is dragged to fBaseIndentOffset", the same wording B-U4 had just corrected on the panel's
+	//   list, and the correction did not come looking for this copy).
+	//   ★HERE THE DISTINCTION COSTS NOTHING, and that is a fact about this row rather than about the
+	//   framework: KCMUI.fr gives the name cell kBindLeft|kBindRight and the state cell kBindRight
+	//   alone, so there is exactly ONE both-bound cell and it is the one that decides previousOffset.
+	//   ★And ours is ZERO: that member is only ever assigned from a REGISTERED STYLE WIDGET (:315),
+	//   and this manager builds its rows in CreateWidgetForNode instead of registering styles, so it
+	//   keeps the 0 its PMReal default gives it (CTreeViewWidgetMgr.h:292 declares it PMReal, whose
+	//   default constructor is 0.0 - the initialiser list simply never names it).
 	//
 	//   ⚠WHAT THAT COSTS, measured on the panel's list 2026-08-10: the name cell's left edge in the
-	//   .fr is thrown away on every apply, so the text starts at 0 instead of 8 - and if a column
-	//   is ever put in front of it, the two land on top of each other (a cell bound on ONE side is
-	//   not moved, :229-230). Here that would be the name cell, which is bound on both.
+	//   .fr is thrown away on every apply, so the text starts at 0 instead of the 11 written here -
+	//   and if a column is ever put in front of it, the two land on top of each other (a cell bound
+	//   on ONE side is not moved, :229-230). Here that would be the name cell, which is bound on both.
 	//
 	//   ★The override is empty rather than clever, because a list with no hierarchy has nothing to
 	//   indent. The base class asks for exactly this when its scheme does not fit

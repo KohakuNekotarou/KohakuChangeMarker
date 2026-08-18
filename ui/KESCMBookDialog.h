@@ -51,8 +51,11 @@ void KESCMBookDialogSetResult(const PMString& targetPath, const PMString& source
                               const PMString& summary,
                               const std::vector<KESCMChapterResult>& rows);
 
-/** What the chapter list is showing right now. The tree's hierarchy adapter reads this and
-    nothing else.
+/** What the chapter list is showing right now. Three readers, all of them in the list's own
+    machinery: the hierarchy adapter (how many rows), the row widget manager (what is IN each row)
+    and KESCMBookOpen.cpp's RowAt (what a click on row N is about).
+    ⚠ It said "the tree's hierarchy adapter reads this and nothing else" until 2026-08-18 (bug
+      recheck B-U5) - the widget manager was there from the same day the adapter was.
 
     ⚠★THIS IS NOT THE WHOLE COMPARISON. Since 2026-08-13 the chapters that came back NoChange are
     left out of it at the user's request, so this holds the chapters WORTH LOOKING AT rather than all
@@ -65,6 +68,12 @@ void KESCMBookDialogSetResult(const PMString& targetPath, const PMString& source
     ⚠ The count in the summary line is still the full one, which is what makes an empty list mean
       "nothing changed" rather than "nothing ran". */
 const std::vector<KESCMChapterResult>& KESCMBookDialogRows();
+
+/** Shutdown: empty the four things above, so the plug-in unloads with no live heap buffer in a
+    static PMString. Called from KESCMUIStartup::Shutdown (KESCMUIStartup.cpp), alongside the other
+    statics this half keeps. Touches no widget - the dialog is long gone by then - so its position
+    among the teardown steps does not matter. */
+void KESCMBookDialogShutdown();
 
 /* ⚠ KESCMElidePathFront IS GONE (2026-08-15). It shortened a path in C++ - "...\New\a.indb" - for
    the alert and for these two lines, and nothing shortens them now: the whole path goes in and the
