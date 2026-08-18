@@ -72,6 +72,7 @@
 #include "LayoutUIID.h"				// kVertScrollBarWidgetID / kLayoutWidgetID(レイアウトビューを名指しで引く)
 #include "CoreResTypes.h"			// kViewRsrcType
 #include "IGeometryFacade.h"		// GetItemBounds(ページ矩形をペーストボード座標で。手本=SnapTracker.cpp:610-616)
+#include <algorithm>				// std::find(presentation の重複判定)
 #include <vector>
 #include <set>
 #include <chrono>					// steady_clock(手動 Hide/Show 検出のスロットル。単調増加の壁時計=Win/Mac 共通で正しい。
@@ -568,18 +569,12 @@ static void KESCMCollectPresentationPanels(IDataBase* db, K2Vector<IPanelControl
 		if (pres == nil)
 			continue;
 
-		bool16 dup = kFalse;
-		for (int32 s = 0; s < (int32)seen.size(); ++s)
-		{
-			if (seen[s] == (IPMUnknown*)(IDocumentPresentation*)pres)
-			{
-				dup = kTrue;
-				break;
-			}
-		}
-		if (dup)
+		// 線形探索は std::find で書く(手本=Adobe 製品コード。K2Vector に対する実例=
+		// open/components/incopyfileactions/InCopyDocFileHandler.cpp:268)。
+		IPMUnknown* const presKey = (IPMUnknown*)(IDocumentPresentation*)pres;
+		if (std::find(seen.begin(), seen.end(), presKey) != seen.end())
 			continue;
-		seen.push_back((IPMUnknown*)(IDocumentPresentation*)pres);
+		seen.push_back(presKey);
 
 		InterfacePtr<IPanelControlData> panel(pres, UseDefaultIID());
 		if (panel == nil)

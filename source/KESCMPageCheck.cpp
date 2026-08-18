@@ -96,15 +96,7 @@ void KESCMPageCheckToggleSelectedPages()
 	if (pages.empty())
 		return;		// 選択にマーク付きページが無い=何もしない(メニューも無効のはず)
 
-	bool16 anyUnchecked = kFalse;
-	for (size_t i = 0; i < pages.size(); ++i)
-	{
-		if (!sChecked.Contains(db, pages[i]))
-		{
-			anyUnchecked = kTrue;
-			break;
-		}
-	}
+	const bool16 anyUnchecked = sChecked.AnyNotIn(db, pages);
 
 	PMString msg;
 	msg.SetTranslatable(kFalse);
@@ -170,12 +162,7 @@ KESCMPageToggleState KESCMPageCheckGetToggleState()
 	if (marked.empty())
 		return st;
 
-	int32 chkCount = 0;
-	for (size_t i = 0; i < marked.size(); ++i)
-	{
-		if (sChecked.Contains(db, marked[i]))
-			++chkCount;
-	}
+	const int32 chkCount = sChecked.CountIn(db, marked);
 
 	st.fEnabled = kTrue;
 	if (chkCount == (int32)marked.size())

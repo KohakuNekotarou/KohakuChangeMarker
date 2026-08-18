@@ -378,4 +378,21 @@ private:
 // 実体は KESCMDrawEventHandler.cpp(キャッシュ本体と同居)。
 void KESCMReleaseOldNumFontCache();
 
+// ノンブル除外領域の行内判定。x が「この行に掛かる矩形」のどれかに入っているか。
+// 文書比較(KESCMDrawEventHandler.cpp の MakeEntry)とブック比較(KESCMBookCompare.cpp の
+// CompareRasters)が同じ判定を使う。★2026-08-18 に一本化: それまでは各 .cpp に同じ4行が複製され、
+// 「片方を直したら他方も直す」という約束をコメントで守っていた(=守り忘れれば黙って割れる形)。
+// ★ヘッダーに inline で置く理由: 呼ばれるのは比較ループの**最内(画素ごと)**なので、
+//   呼び出し側の TU でインライン展開できないと遅くなる。extern の1定義に寄せると、
+//   複製は消えてもブック比較側だけが実関数呼び出しになる。
+// ★引数は「その行に掛かる矩形だけ」に絞り込んだ列(2段ふるいの②)。呼び出し側の絞り込みは
+//   KESCMDrawEventHandler.cpp の MakeEntry のコメントを参照。
+inline bool16 KESCMXInRowRects(int32 x, const std::vector<const Int32Rect*>& rowRects)
+{
+	for (size_t i = 0; i < rowRects.size(); ++i)
+		if (x >= rowRects[i]->left && x < rowRects[i]->right)
+			return kTrue;
+	return kFalse;
+}
+
 #endif // __KESCMDrawEventHandler_h__

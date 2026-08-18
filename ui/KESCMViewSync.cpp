@@ -52,6 +52,7 @@
 
 #include "ErrorUtils.h"				// PMSetGlobalErrorCode / GlobalErrorStatePreserver(ズーム失敗を持ち越さず、外へも出さない)
 
+#include <algorithm>			// std::find(マスターページ判定の線形探索)
 #include <map>
 #include <vector>
 #include <chrono>				// steady_clock(キャッシュの TTL)
@@ -356,10 +357,10 @@ static bool16 KESCMIsMasterPage(IDataBase* db, UID pageUID)
 	const KESCMPageRectCache* c = KESCMGetPageRects(db);
 	if (c == nil)
 		return kFalse;
-	for (size_t i = c->normalCount; i < c->pages.size(); ++i)
-		if (c->pages[i] == pageUID)
-			return kTrue;
-	return kFalse;
+	// 線形探索は std::find で書く(手本=Adobe 製品コード。conditionaltextui/ConditionalTextUIFacade.cpp:335
+	// / buttonui/actionpanel/BehaviorTreeObserver.cpp:587 ほか、SDK 全体で51例ある定型)。
+	return std::find(c->pages.begin() + static_cast<std::ptrdiff_t>(c->normalCount),
+	                 c->pages.end(), pageUID) != c->pages.end();
 }
 
 //----------------------------------------------------------------------------------------

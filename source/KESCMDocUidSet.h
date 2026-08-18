@@ -44,6 +44,20 @@ public:
 	// db の集合の件数(無ければ 0)。
 	int32 CountIn(IDataBase* db) const;
 
+	// ★選択に対する2つの問い(2026-08-18 集約)。登録(PageMap)とチェック(PageCheck)が
+	//   「選択ページのうち何枚が集合に入っているか」「1枚でも入っていないものがあるか」を
+	//   1行違わず同じループで持っていたので、ここへ移した(2026-08-06 ブロック9 C-1 の続き)。
+	//   ★Contains をページ数ぶん呼ぶのと違い、ロックと FindDoc は1回で済む
+	//     ——ページごとにロックし直すと、途中で集合が変わったとき「全部/一部」の判定が
+	//     食い違った状態のまま確定しうる。
+	//   ⚠db が nil / エントリ無し = 「どれも入っていない」と同じ扱い(Contains と一致)。
+
+	// uids のうち db の集合に入っている件数。
+	int32 CountIn(IDataBase* db, const std::vector<UID>& uids) const;
+
+	// uids の中に db の集合へ入っていないものが1つでもあるか(空なら kFalse)。
+	bool16 AnyNotIn(IDataBase* db, const std::vector<UID>& uids) const;
+
 	// db の集合に uid を足す(db が nil なら何もしない)。エントリが無ければ作る。
 	void Insert(IDataBase* db, UID uid);
 

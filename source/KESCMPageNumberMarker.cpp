@@ -63,6 +63,7 @@
 #include "IPageList.h"			// 実ページ番号の文字列(GetPageString)
 #include "CTextEnum.h"			// Text::GlyphID
 
+#include <algorithm>			// std::find(ノンブルマーカーの走査)
 #include <map>					// 除外矩形キャッシュ((db,page) → 矩形列)
 #include <utility>				// std::pair(同キー)
 
@@ -96,14 +97,13 @@ static bool16 KESCMTextRangeHasPageNumberMarker(ITextModel* textModel, TextIndex
 {
 	if (textModel == nil || span <= 0)
 		return kFalse;
+	// TextIterator is a genuine STL bidirectional iterator (textiterator.h:115-119 declares
+	// value_type = UTF32TextChar and iterator_category = std::bidirectional_iterator_tag), so the
+	// scan is one std::find instead of a hand-written loop. Official precedent:
+	// xmlmarkupinjector/XMLMrkSuiteTextCSB.cpp:447 runs std::find_first_of over the same iterator.
 	TextIterator iter(textModel, start);
 	TextIterator endIter(textModel, start + span);
-	for (; iter != endIter; ++iter)
-	{
-		if (*iter == kTextChar_PageNumber)
-			return kTrue;
-	}
-	return kFalse;
+	return std::find(iter, endIter, kTextChar_PageNumber) != endIter;
 }
 
 // itemUID のテキストフレームに自動ページ番号マーカー(0x18)を含む文字があるか。あれば、その

@@ -180,15 +180,7 @@ void KESCMPageMapToggleSelectedPages()
 	if (!KESCMIsArmed() || (db != KESCMArmedTargetDB() && db != KESCMArmedSourceDB()))
 		return;
 
-	bool16 anyUnregistered = kFalse;
-	for (size_t i = 0; i < pages.size(); ++i)
-	{
-		if (!sRegistered.Contains(db, pages[i]))
-		{
-			anyUnregistered = kTrue;
-			break;
-		}
-	}
+	const bool16 anyUnregistered = sRegistered.AnyNotIn(db, pages);
 
 	// ★パネルのステータス欄は幅・行数とも小さいため(ui/KCMUI.fr:1921 の kKESCMStatusTextWidgetID は
 	// Frame(8,76,216,150)＝**208×74px の4行**で、kDontEllipsize＝自動省略もされない)、
@@ -321,12 +313,7 @@ KESCMPageToggleState KESCMPageMapGetToggleState()
 	if (!KESCMIsArmed() || (db != KESCMArmedTargetDB() && db != KESCMArmedSourceDB()))
 		return st;
 
-	int32 regCount = 0;
-	for (size_t i = 0; i < pages.size(); ++i)
-	{
-		if (sRegistered.Contains(db, pages[i]))
-			++regCount;
-	}
+	const int32 regCount = sRegistered.CountIn(db, pages);
 
 	st.fEnabled = kTrue;
 	if (regCount == (int32)pages.size())

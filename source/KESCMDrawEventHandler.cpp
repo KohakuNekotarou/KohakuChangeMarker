@@ -53,6 +53,7 @@
 #include "IPMFont.h"
 #include "IFontInstance.h"		// MeasureWText(中央揃えの幅測定) / GetDescent
 
+#include <algorithm>	// std::min(ページ矩形の短辺。同じ三項演算子が4か所にあったのを揃えた)
 #include <map>
 #include <set>
 #include <new>			// std::nothrow(画像バッファ確保。MSVC の通常 new は失敗時 nil でなく throw のため)
@@ -297,14 +298,10 @@ static void KESCMDistTransform(const uint8* mask, int32 wt, int32 ht, uint8* out
 //     ①ページ全体の union bbox で行/列を粗くふるう
 //     ②行ループの先頭で「その y に掛かる矩形」だけを集めておく
 //   の2段にすると、除外帯の外(=大半の行)は「集合が空か」の1回で抜けられる。
-//   下の KESCMXInRowRects は②で絞り込んだ行内の矩形について x 方向だけを見る。
-static bool16 KESCMXInRowRects(int32 x, const std::vector<const Int32Rect*>& rowRects)
-{
-	for (size_t i = 0; i < rowRects.size(); ++i)
-		if (x >= rowRects[i]->left && x < rowRects[i]->right)
-			return kTrue;
-	return kFalse;
-}
+//   ②で絞り込んだ行内の矩形について x 方向だけを見るのが KESCMXInRowRects。
+//   ★2026-08-18: その判定はブック比較(KESCMBookCompare.cpp)も同じものを使うので、
+//     ここの file-static 定義をやめて KESCMDrawEventHandler.h の inline 関数へ一本化した
+//     (それまでは向こうに同じ4行のコピーがあり、コメントで対応を約束していた)。
 
 ErrorCode KESCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef& sourceRef, bool16& changed)
 {
@@ -1241,7 +1238,7 @@ static void KESCMDrawPageBorder(IGraphicsPort* gPort, IDataBase* db, UID pageUID
 		UIDRef(db, pageUID), Transform::SpreadCoordinates(), Geometry::PathBounds());
 
 	// 【太さ】ページ短辺の固定比率(枠専用の除数)。サムネイルは view が無くズーム式が使えない。
-	const PMReal minDim = (pr.Width() < pr.Height() ? pr.Width() : pr.Height());
+	const PMReal minDim = std::min(pr.Width(), pr.Height());
 	PMReal w = minDim / PMReal(kKESCMThumbBorderDivisor);
 	// ⚠下の2つは**現在のページサイズの下限では到達しない**(2026-08-17 実測＝最小ページ幅 114.39pt。
 	//   w = minDim/6 なので w<0.5 は minDim<3pt、maxW を超えるのは minDim<1.5pt)。
@@ -1341,7 +1338,7 @@ static void KESCMDrawPageDiagonal(IGraphicsPort* gPort, IDataBase* db, UID pageU
 		UIDRef(db, pageUID), Transform::SpreadCoordinates(), Geometry::PathBounds());
 
 	// 太さ: 画面/印刷=ズーム適応、サムネイル(sxr<=0)=ページ短辺の固定比率(「/」専用の除数)。
-	const PMReal minDim = (pr.Width() < pr.Height() ? pr.Width() : pr.Height());
+	const PMReal minDim = std::min(pr.Width(), pr.Height());
 	PMReal w = (sxr > 0) ? (kKESCMRingTargetPx / sxr) : (minDim / PMReal(kKESCMThumbDiagDivisor));
 	const PMReal maxW = minDim / PMReal(2.0);
 	if (w > maxW) w = maxW;
@@ -1386,7 +1383,7 @@ static void KESCMDrawPageCrossOutlined(IGraphicsPort* gPort, IDataBase* db, UID 
 		UIDRef(db, pageUID), Transform::SpreadCoordinates(), Geometry::PathBounds());
 
 	// 赤線の太さ = ページ短辺 ÷ 専用除数(「/」より太い)。白縁はこれより太く引いて左右にはみ出させる。
-	const PMReal minDim = (pr.Width() < pr.Height() ? pr.Width() : pr.Height());
+	const PMReal minDim = std::min(pr.Width(), pr.Height());
 	PMReal redW = minDim / PMReal(kKESCMOversetCrossWidthDivisor);
 	const PMReal maxW = minDim / PMReal(3.0);
 	if (redW > maxW) redW = maxW;
@@ -1447,7 +1444,7 @@ static void KESCMDrawPageCheck(IGraphicsPort* gPort, IDataBase* db, UID pageUID,
 	const PMRect pr = Utils<Facade::IGeometryFacade>()->GetItemBounds(
 		UIDRef(db, pageUID), Transform::SpreadCoordinates(), Geometry::PathBounds());
 
-	const PMReal minDim = (pr.Width() < pr.Height() ? pr.Width() : pr.Height());
+	const PMReal minDim = std::min(pr.Width(), pr.Height());
 	// ✓ 全体サイズ(短辺比): レイアウト版はかなり大きく、サムネイルは従来値(2026-07-11 に 0.42→0.52)。
 	const PMReal s = minDim * (layoutStyle ? kKESCMCheckLayoutSizeRatio : PMReal(0.52));
 	// 太さ: レイアウト版=✓サイズ比例(ズーム/印刷とも相似形)。サムネイル=「/」と同じ固定比率。

@@ -229,21 +229,10 @@ void RecomposeChapter(const UIDRef& docRef)
 		recompose->ForceRecompositionToComplete();
 }
 
-/** Is x inside any of the exclusion rects covering this row?
-
-    ⚠A COPY of KESCMXInRowRects (KESCMDrawEventHandler.cpp), which is file-static there and cannot
-    be reached from here. The two are identical today (checked 2026-08-18) and each is four lines,
-    so the copy is cheaper than a shared header - but they are a pair: a fix to the folio sieve in
-    one of them is a fix owed to the other. */
-bool16 XInRowRects(int32 x, const std::vector<const Int32Rect*>& rects)
-{
-	for (size_t i = 0; i < rects.size(); ++i)
-	{
-		if (x >= rects[i]->left && x < rects[i]->right)
-			return kTrue;
-	}
-	return kFalse;
-}
+/* The folio-exclusion row test (KESCMXInRowRects) used to be copied here, because the document
+   comparison's copy is file-static and could not be reached. The two were a pair held together by
+   a comment. 2026-08-18: the single definition now lives in KESCMDrawEventHandler.h as an inline
+   function, so both comparisons share it and both still inline it in their per-pixel loop. */
 
 /** Compare two rasterised pages.
 
@@ -342,7 +331,7 @@ ErrorCode ComparePages(AGMImageAccessor* accT, AGMImageAccessor* accS,
 
 		for (int32 x = 0; x < wt; ++x)
 		{
-			if (rowHasExclude && x >= exLeft && x < exRight && XInRowRects(x, rowRects))
+			if (rowHasExclude && x >= exLeft && x < exRight && KESCMXInRowRects(x, rowRects))
 				continue;						// inside a folio: not a difference
 
 			const uint8* px = rowT + (size_t)x * bpp + colorOff;

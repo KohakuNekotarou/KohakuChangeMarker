@@ -73,6 +73,41 @@ int32 KESCMDocUidSet::CountIn(IDataBase* db) const
 	return (it != fMap.end()) ? (int32)it->second.size() : 0;
 }
 
+int32 KESCMDocUidSet::CountIn(IDataBase* db, const std::vector<UID>& uids) const
+{
+	if (db == nil)
+		return 0;
+	KESCMMarkStateLock lock(KESCMMarkStateMutex());
+	Map::const_iterator it = FindDoc(db);
+	if (it == fMap.end())
+		return 0;
+	int32 n = 0;
+	for (size_t i = 0; i < uids.size(); ++i)
+	{
+		if (it->second.count(uids[i]) > 0)
+			++n;
+	}
+	return n;
+}
+
+bool16 KESCMDocUidSet::AnyNotIn(IDataBase* db, const std::vector<UID>& uids) const
+{
+	if (uids.empty())
+		return kFalse;					// 問う対象が無い = 「入っていないもの」も無い
+	if (db == nil)
+		return kTrue;					// 集合が引けない = どれも入っていない(Contains が全部 kFalse を返す形)
+	KESCMMarkStateLock lock(KESCMMarkStateMutex());
+	Map::const_iterator it = FindDoc(db);
+	if (it == fMap.end())
+		return kTrue;					// 同上(この文書には1件も登録が無い)
+	for (size_t i = 0; i < uids.size(); ++i)
+	{
+		if (it->second.count(uids[i]) == 0)
+			return kTrue;
+	}
+	return kFalse;
+}
+
 void KESCMDocUidSet::CollectInto(IDataBase* db, std::set<UID>& out) const
 {
 	if (db == nil)
