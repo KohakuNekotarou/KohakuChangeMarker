@@ -156,8 +156,12 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 {{{
 
 	// UI 専用の描画サービス(2026-08-13・model/UI 分割 第1段 Task 6)。押下中 HUD だけを持つ。
-	// ★上の kKESCMDrawEventServiceBoss(比較マーク)と役割が違う: あちらは印刷と PDF 書き出しに出なければ
-	//   ならないので model 側、こちらは画面専用。kDrawEventService は複数プロバイダ登録が前提。
+	// ★model 側の kKESCMDrawEventServiceBoss(比較マーク)と役割が違う: あちらは印刷と PDF 書き出しに
+	//   出なければならないので model 側(KESCM.fr)、こちらは画面専用。kDrawEventService は複数プロバイダ
+	//   登録が前提。
+	// ⚠「**上の**」と書いてあったのを 2026-08-18(不具合再検査 B-U1)に直した＝あちらは分割で model 側に
+	//   残ったので、このファイルには無い。★13行下の kKESCMUIStartupBoss は**同じ誤りを 2026-08-17 に
+	//   直している**——**1本直したときに、同じ形の兄弟を探さなかった**。
 	Class
 	{
 		kKESCMUIDrawEventServiceBoss,
@@ -381,7 +385,9 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 		}
 	},
 
-	// The two cells inside that row. ★The ONLY thing this boss changes is the tooltip, and it
+	// The THREE cells inside that row - UID, story text, kind (the UID column was added 2026-08-10;
+	// this comment said "two" until 2026-08-18, bug recheck B-U1, while the row boss 18 lines above
+	// already said three). ★The ONLY thing this boss changes is the tooltip, and it
 	// changes it to nothing. A stock static text pops its full string up whenever the cell had to
 	// shorten it (kStaticTextWidgetBoss carries IID_ITIP = kTextWidgetTipImpl - read off the live
 	// boss dump), which is a kindness on a dialog label and a nuisance on a list the pointer only
@@ -1388,8 +1394,9 @@ resource PNGC(kKESCMCheckCursorInactiveResID + kHIDPI150CrsrOffset) "KESCM_Check
 resource HOTC(kKESCMCheckCursorInactiveResID) {10, 18};
 
 // Panel LocaleIndex - a single (string-key driven) view is used for every locale; the labels
-// themselves come from the enUS string table (KESCM_enUS.fr). Japanese is switched in at run
-// time by KESCMLoc.h - the jaJP string table was retired on 2026-08-05.
+// themselves come from the enUS string table (KCMUI_enUS.fr - the table moved here whole with the
+// split on 2026-08-15; this line still said "KESCM_enUS.fr" until 2026-08-18, bug recheck B-U1).
+// Japanese is switched in at run time by KESCMLoc.h - the jaJP string table was retired on 2026-08-05.
 resource LocaleIndex (kSDKDefPanelResourceID)
 {
 	kViewRsrcType,
@@ -1432,7 +1439,7 @@ type KESCMSplitterPanelWidget(kViewRsrcType) : SplitterPanelWidget(ClassID = kKE
 type KESCMStoryTreeWidget(kViewRsrcType) : TreeViewWidget(ClassID = kKESCMStoryTreeWidgetBoss) { };
 
 // One row of that list. ★PrimaryResourcePanelWidget is the point: the widget manager creates each
-// row with CreateObjectNoInit (boss only) and calls DoPostCreate() afterwards to build the two
+// row with CreateObjectNoInit (boss only) and calls DoPostCreate() afterwards to build the three
 // cells inside it, which is the sequence that lets the palette theme be set in between.
 type KESCMStoryRowWidget(kViewRsrcType) : PrimaryResourcePanelWidget(ClassID = kKESCMStoryRowWidgetBoss) { };
 
@@ -1922,7 +1929,7 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 			kTrue, kTrue,
 			// ★ampersand 変換は切る(理由は Target のコメント)。ここは Save Panel Settings /
 			//   Save Check & Register / Export Changed Pages が**保存先フルパス**を出す行なので
-			//   (KESCMPanelState.cpp:136 ほか)、"Q&A資料" のようなフォルダ名が消えていた。
+			//   (KESCMPanelState.cpp:144-150 ほか)、"Q&A資料" のようなフォルダ名が消えていた。
 			kAlignLeft, kDontEllipsize, kFalse,
 			kInvalidWidgetID,
 			kPaletteWindowFontId,
@@ -1954,7 +1961,9 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 			kADBEIconSuiteButtonType,
 		),
 
-		// ★セクション見出し。三角の右隣、同じ 20px の帯の中。件数は C++ が実行時に足す
+		// ★セクション見出し。三角の右隣、同じ帯(153〜185=32px)の中。件数は C++ が実行時に足す
+		//   (⚠「20px の帯」と書いてあったのを 2026-08-18・不具合再検査 B-U1 に直した＝帯は 2026-08-10 に
+		//    20→32px になっており、**隣の三角のコメントだけがその時に直っていた**)。
 		//   (KESCMUpdateStorySectionLabel が "Story Edits (3)" に書き換える)。
 		// ★★ここに件数を置くのはステータス欄に余白が無いから＝4行枠は既に埋まっており、
 		//   もう1行増えると `failed=N` がはみ出す。閉じたままでも件数が読めるという利点もある。
@@ -2136,8 +2145,14 @@ resource VersionedScriptElementInfo(10)
 		//   Server にも無い)ので、ツールの列挙子を登録する context は InDesign に絞るのが筋。
 		//   ★同じ snapshot が **Snap.fr:1795 では kWildFS を使っている**(あちらはツールを含まない
 		//     スクリプト API のリソース) ＝ **公式は1つのプラグイン内で内容によって使い分けている。**
-		//   ⚠**KBS(KBS.fr:1282)が kWildFS なのは割れではない**。KBS のリソースは Property だけで
-		//     ツールを含まないため。**内容が違うので正しく違う。**
+		//   ⚠**KBS(KBS.fr:1326)が kWildFS なのは割れではない**。KBS のリソースは Property だけで
+		//     ツールを含まないため。**内容が違うので正しく違う** ---- そして**この側は今もツールを持つ**
+		//     ので、上の「ツールボックスは InDesign にしかない」という根拠はここでは生きている
+		//     (⚠model 側の KESCM.fr で同じ文が失効したのは、ツールがこちらへ出て行ったから＝
+		//      不具合再検査 B1 の D-1)。
+		//   ⚠**参照は KBS.fr:1282 と書いてあった。実体は :1326**(resource VersionedScriptElementInfo(1)。
+		//     1282 行目は widget 定義の途中)。B1 が model 側の同じ参照を壊れていると測ったのが 2026-08-17、
+		//     こちら側のコピーを直したのは 2026-08-18(B-U1)＝**両側コピーの片方だけを直していた**。
 		// ⚠2026-08-07 に一度 kWildFS へ変えたが**同日中に撤回した**。「kInDesignAllLanguagesFS 単独の
 		//   公式実例はゼロ」と判定したのが誤りで、走査結果の件数上限で Snap.fr:2089 を見落としていた
 		//   (経緯 = docs/ai-notes/kescm-api-audit-block14-2026-08-07.md の A-1)。
@@ -2391,12 +2406,21 @@ resource KESCMBookDialogWidget (kKESCMBookDialogRsrcID + index_enUS)
 	//   Pages panel   root x1=383 → its list runs edge to edge                                    = +0
 	// kEVESmallMargin [5,5,5,5] matched that exactly and was tried - and read as slightly tight.
 	//
-	// ⚠★EVE HAS NO 7. Its margins are a fixed ladder, not a number: 0 / 1 / 5 / 10 / 15 / 20
-	//   (EveInfo.fh:89-93 - the field is a 4-bit index, so intermediate values cannot be written at
-	//   all). The choice was therefore 5 or 10 (7px was reachable only by nesting wrapper panels to
-	//   stack their margins, which is two extra widgets to move the text 2px). ★The user chose 10.
+	// ⚠★EVE HAS NO 7. Its margins are a fixed ladder, not a number: on all four sides the whole
+	//   choice is 0 / 1 / 5 / 10 / 15 (EveInfo.fh:89-93 - the field is a 4-bit index, so intermediate
+	//   values cannot be written at all). The choice was therefore 5 or 10 (7px was reachable only by
+	//   nesting wrapper panels to stack their margins, which is two extra widgets to move the text
+	//   2px). ★The user chose 10.
+	//   ⚠"/ 20" stood at the end of that ladder until 2026-08-18 (bug recheck B-U1) and there is no
+	//     such margin: 20 appears only INSIDE an asymmetric one, kEVERegularButExtraLargeTopMargin
+	//     = [10,20,10,10] (EveInfo.fh:96-99, four of those). ★The line named EveInfo.fh:89-93 as its
+	//     own evidence, and those five lines are exactly the five that do not include a 20.
 	// ⚠ The dialog is 10px narrower and shorter each way than it was at 15. EVE sizes the window from
-	//   the children (all 500 wide) plus the margin; the fixed Frame above is overridden.
+	//   the children (all 364 wide) plus the margin; the fixed Frame above is overridden.
+	//   ⚠"all 500 wide" until 2026-08-18 (B-U1): the children were narrowed to 364 on 2026-08-15, and
+	//     the warning further up ("a stale 500 in any of them would set the width on its own") was
+	//     written about exactly that number - the file kept the stale value in the line that explains
+	//     the mechanism while warning about it in the line that lists the frames.
 	// ★For the record, KESCM's own panel sits at +8 (root x1=119 → labels at x1=127) - but that is
 	//   drawn from absolute coordinates in its .fr, not by EVE, which is why it can hold a value the
 	//   ladder does not have.

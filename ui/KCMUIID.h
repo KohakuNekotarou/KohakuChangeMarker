@@ -137,7 +137,7 @@ DECLARE_PMID(kClassIDSpace, kKESCMBookRowCellBoss, kKCMUIPrefix + 24)	// kInfoSt
 // 「別の答えを返す実装で上書きする」になる ---- kKESCMStoryRowCellBoss(+20)がツールチップを黙らせたのと同じ形。
 DECLARE_PMID(kClassIDSpace, kKESCMSplitterPanelBoss, kKCMUIPrefix + 25)	// kSplitterPanelWidgetBoss継承+IID_IEVENTHANDLER(kKESCMSplitterEHImpl): 分割バーを掴めない SplitterPanelWidget
 DECLARE_PMID(kClassIDSpace, kKESCMUIStartupBoss, kKCMUIPrefix + 27)	// IStartupShutdown: **UI 側**の起動/終了処理(2026-08-13・model/UI 分割 第1段 Task 8)。パネル設定の復元・半透明の購読/解除・HUD のフォント返却・一括クローズの購読・遅延サムネイル idle task の解放。★model 側の kKESCMPeekStartupBoss と**対**(あちらは KESCMID.h)。★第2段(2026-08-15)で**この Class ごと KCMUI へ移り終わっている**＝この宣言が KCMUIID.h に在ること自体がその結果(2026-08-17・監査 B-U6 で予告の残骸を現状へ)
-DECLARE_PMID(kClassIDSpace, kKESCMUIDrawEventServiceBoss, kKCMUIPrefix + 26)	// IK2ServiceProvider+IDrwEvtHandler: **UI 専用**の描画サービス(2026-08-13・model/UI 分割 第1段 Task 6)。押下中 HUD だけを持つ。★上の kKESCMDrawEventServiceBoss(比較マーク)と役割が違う＝あちらは印刷と PDF 書き出しに出なければならないので model 側、こちらは画面専用。kDrawEventService は複数プロバイダ登録が前提(本体だけで20以上)。第2段でこの Class ごと KCMUI へ移る
+DECLARE_PMID(kClassIDSpace, kKESCMUIDrawEventServiceBoss, kKCMUIPrefix + 26)	// IK2ServiceProvider+IDrwEvtHandler: **UI 専用**の描画サービス(2026-08-13・model/UI 分割 第1段 Task 6)。押下中 HUD だけを持つ。★**model 側の** kKESCMDrawEventServiceBoss(比較マーク・KESCM.fr)と役割が違う＝あちらは印刷と PDF 書き出しに出なければならないので model 側、こちらは画面専用。kDrawEventService は複数プロバイダ登録が前提(本体だけで20以上)。★第2段(2026-08-15)で**この Class ごと KCMUI へ移り終わっている**(2026-08-18・不具合再検査 B-U1 で「上の」と予告形の2つを現状へ。⚠**すぐ上の kKESCMUIStartupBoss は同じ2つを 2026-08-17 に直していた**＝1本直したときに同じ形の兄弟を探さなかった)
 DECLARE_PMID(kClassIDSpace, kKESCMBookPathTextWidgetBoss, kKCMUIPrefix + 28)	// kStaticTextWidgetBoss継承+IID_IEVEINFO(kFixedSizeEVEInfoImpl): ブック比較ダイアログの Target:/Source: 行(2026-08-15)。★★EVE は **.fr の幅を「最小幅」として扱う**(公式ガイド Using EVE の Example 2「We treat the width in the .fr file as a minimum width」)ので、フルパスを入れると widget が伸び、親ごと広がる(実測 593px)。⚠kEVEAlignFill では止まらない＝Fill は「親の幅を取る」で、その親が子に押し広げられる。⇒ **EVE は widget の寸法を IID_IEVEINFO に聞く**ので、「サイズはリソースが書いたとおり」と答える実装を名乗らせて幅を確定させ、省略は widget 自身の kEllipsizeBeginning に返す＝パネルの Target:/Source: と同じ出方になる。手本=KBS.fr:289-293(グリフ枠。SDK 全体で使用例ゼロだが実機で動作確認済み)
 // InterfaceIDs:
 // ⚠★ここにあるのは **UI 側の boss にだけ載る IID**。境界を跨ぐ IID（Facade 5本＋通知の protocol）は
@@ -297,7 +297,7 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMStoryHeaderRuleWidgetID, kKCMUIPrefix + 56)	/
 DECLARE_PMID(kWidgetIDSpace, kKESCMBookDialogWidgetID, kKCMUIPrefix + 57)
 DECLARE_PMID(kWidgetIDSpace, kKESCMBookTargetTextWidgetID, kKCMUIPrefix + 58)	// 「Target: new.indb」(前面タブのブック)
 DECLARE_PMID(kWidgetIDSpace, kKESCMBookSourceTextWidgetID, kKCMUIPrefix + 59)	// 「Source: old.indb」(それ以外で最初に開いているブック)
-DECLARE_PMID(kWidgetIDSpace, kKESCMBookCompareButtonWidgetID, kKCMUIPrefix + 60)	// 「Compare」ボタン。★押す前に上の2行が目に入るのが要点
+DECLARE_PMID(kWidgetIDSpace, kKESCMBookCompareButtonWidgetID, kKCMUIPrefix + 60)	// (退役 2026-08-12)旧「Compare」ボタン。★ボタンごと撤去した(確認アラート→OK で比較する流れへ変更)ので**この ID はどこからも参照されていない**が、対のラベルキー kKESCMBookCompareKey・enUS テーブルの行・KCMUI.fr の跡地コメントとともに宣言だけ残してある＝復活させるとき対で戻せる。★番号は再利用しない。⚠2026-08-18(不具合再検査 B-U1)にこの但し書きを足した＝**ラベルキー側には最初から「(退役)」と書いてあったのに、こちらは「押す前に上の2行が目に入るのが要点」と現役のままだった**(宣言だけで未使用の ID は、この1本が全 ID 空間で唯一＝機械で数えて分かった)
 DECLARE_PMID(kWidgetIDSpace, kKESCMBookStatusTextWidgetID, kKCMUIPrefix + 61)	// ステータス行(比較の要約。章数を必ず含む)
 DECLARE_PMID(kWidgetIDSpace, kKESCMBookTreeWidgetID, kKCMUIPrefix + 62)		// 章一覧のツリー本体(ダイアログの中で一番大きい部品)
 // ★★**番号が +2 なのは書き間違いではない**(2026-08-13)。ダイアログのメッセージを2行にする(2行目＝行の
@@ -469,7 +469,7 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMBookRowStateWidgetID, kKCMUIPrefix + 49)	// �
 #define kKESCMOpacitySubmenuName		"Marks opacity"
 #define kKESCMOpacitySubmenuPath		kKESCMPopupMenuPath kSDKDefDelimitMenuPath kKESCMOpacitySubmenuName
 
-// パネルの文字列キー(値は KESCM_enUS.fr の StringTable。全ロケールがこの1枚を引く=
+// パネルの文字列キー(値は **KCMUI_enUS.fr** の StringTable。全ロケールがこの1枚を引く=
 // LocaleIndex の全行が index_enUS を指す。KESCM_jaJP.fr は 2026-08-05 に撤去し、日本語で出す
 // 2箇所だけ KESCMLoc.h の実行時切替に移した)。
 #define kKESCMPanelTitleKey		kKESCMStringPrefix "kKESCMPanelTitleKey"
