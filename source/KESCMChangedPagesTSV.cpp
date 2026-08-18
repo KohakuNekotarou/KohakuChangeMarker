@@ -15,8 +15,10 @@
 //    ⚠KESCMPageNumberMarker とは**引数が2つ違う**: あちらは bIncludeSectionName=kFalse(実ノンブルに
 //    セクション名は付かない。2026-08-06 のブロック5 監査)＋ bIncludePagesOfHiddenSpread=kFalse(②の側)。
 //    **どちらの違いも「実際に刷られる字を測る」という用途から来ている**。同じ関数だが問いが違う。
-//  ・★隠れているスプレッドのページは、変更があっても出さない(ユーザー指定 2026-08-18)。判定は
-//    KESCMIsPageOnHiddenSpread。隠すのはユーザー自身の操作＝「今は見ないことにしたページ」なので。
+//  ・★隠れているスプレッドのページも**元のページ番号で出し、"(Hide)" を添える**("2 (Hide)"。
+//    ユーザー指定 2026-08-18)。判定は KESCMIsPageOnHiddenSpread、添えるのは PageDisplay の中だけ。
+//    ⚠一度は「隠れているページは出さない」で作ったが、それだと**変更があったのに一覧に載らない
+//    ページ**が生まれる。番号と状態を同じ列で渡すほうが、受け取った人が迷わない。
 //  ・出力は UTF-8 + BOM + CRLF(KESCL と同一)。日本語ページ名でも Excel/メモ帳が化けない。
 //  ・成功時は無言、失敗のみステータス行。未 Start / 変更ゼロは短くステータス行に出して戻る。
 //  ・★文字列は最初から最後まで PMString で持つ(2026-07-25 追補 Mac 対応)。旧実装は std::wstring と
@@ -137,6 +139,15 @@ PMString PageDisplay(IDataBase* db, UID pageUID)
 		return out;
 	pageList->GetPageString(pageUID, &out, kTrue, kFalse, kDefaultPageType, kTrue, kTrue);
 	out.SetTranslatable(kFalse);	// GetPageString が付け直す可能性に備えて再設定
+
+	// ★★2026-08-18(不具合再検査 B10 の2周目・ユーザー指定): **隠れているスプレッドのページも
+	//   「元のページ番号」で出し、隠れていることが分かる印を添える**("2 (Hide)")。
+	//   一覧を受け取った人が「2ページ目を見に行ったのに無い」で止まらないように、番号と状態を
+	//   同じ列で渡す。⚠**列が数値でなくなる心配は無い**——マスタースプレッドの行は元から
+	//   "A-親ページ (2)" のような文字列で、この列は最初から数値列ではない。
+	//   ★印の綴りはパネルの Prev/Next のステータス行と同じ "(Hide)"(綴りを2つにしない)。
+	if (KESCMIsPageOnHiddenSpread(db, pageUID))
+		out.Append(" (Hide)");
 	return out;
 }
 
@@ -298,20 +309,15 @@ bool16 CollectRows(IDataBase* targetDB, IDataBase* sourceDB, std::vector<KESCMCh
 	KESCMPageMapCollectRegistered(sourceDB, registeredS);
 
 	// ---- Target をドキュメント順に: 変更 → 挿入 ----
-	// ★★2026-08-18(不具合再検査 B10 の2周目・ユーザー指定): **隠れているスプレッドのページは、
-	//   変更があっても一覧に出さない。** 隠したスプレッドは画面にも PDF にも出ない ---- 隠すのは
-	//   ユーザー自身の操作なので、「今は見ないことにしたページ」を変更ページ一覧に載せる意味がない。
-	//   ⚠Hide Unchanged が隠すのは変更の無いスプレッドだけなので、この分岐が効くのは
-	//     **ユーザーがページパネルで変更ページのスプレッドを手動で隠したとき**だけ。
-	//   ★副産物: 隠れたページを GetPageString に聞くと、実ノンブル基準(kFalse)では番号を持たないので
-	//     "#" が返っていた ---- 「どのページか特定できない行」が一覧に混じる問題も同時に消える。
+	// ★★2026-08-18(不具合再検査 B10 の2周目・ユーザー指定): **隠れているスプレッドのページも出す。**
+	//   一度は「隠したのはユーザー自身の操作だから一覧から外す」で作ったが、**外すと『変更があった
+	//   のに一覧に載らないページ』が生まれる**ので、外さずに **PageDisplay が "(Hide)" を添える**形に
+	//   変えた（番号は隠す前と同じ＝ページパネルの番号）。⇒ 判定の場所は PageDisplay ただ1つ。
 	std::vector<UID> targetOrder;
 	KESCMCollectPageUIDs(targetDB, targetOrder);
 	for (size_t i = 0; i < targetOrder.size(); ++i)
 	{
 		const UID t = targetOrder[i];
-		if (KESCMIsPageOnHiddenSpread(targetDB, t))
-			continue;
 		if (KESCMDrawEventHandler::sEntries.count(t) > 0)
 		{
 			KESCMChangeRow row;
@@ -359,8 +365,6 @@ bool16 CollectRows(IDataBase* targetDB, IDataBase* sourceDB, std::vector<KESCMCh
 	for (size_t i = 0; i < sourceOrder.size(); ++i)
 	{
 		const UID s = sourceOrder[i];
-		if (KESCMIsPageOnHiddenSpread(sourceDB, s))	// Target 側と同じ理由(上のループのコメント)
-			continue;
 		if (registeredS.count(s) > 0 || overflowS.count(s) > 0)
 		{
 			KESCMChangeRow row;

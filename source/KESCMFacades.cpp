@@ -241,6 +241,9 @@ public:
 		return (overflowSet.find(pageUID) != overflowSet.end()) ? kTrue : kFalse;
 	}
 
+	virtual bool16		IsPageOnHiddenSpread(IDataBase* db, UID pageUID)
+									{ return KESCMIsPageOnHiddenSpread(db, pageUID); }
+
 	virtual bool16		HasAnyMarkableContent()
 	{
 		KESCMDrawEventHandler::EnsureOverflowCache();

@@ -660,6 +660,21 @@ static PMString KESCMStopLabel(IDataBase* db, const KESCMNavStop& stop)
 			}
 		}
 	}
+
+	// ★★2026-08-18(不具合再検査 B10 の2周目・ユーザー指定): **隠れているスプレッドのページは
+	//   スクロールで行けない**（実測＝押しても `activePage` が動かない）。**ストップは巡回に残したまま、
+	//   「なぜ画面が動かないのか」をここで言う。**
+	//   ⚠**この但し書きは同日の kTrue 化とセットで要る**: 以前はここが実ノンブル基準(kFalse)で、
+	//     隠れたページは番号を持たず "Page: #" と出ていた ---- 異常な見た目そのものが「行けない」の
+	//     合図になっていた。ページパネルの番号にした結果**普通の "Page: 2" に見えるようになった**ので、
+	//     行けない理由を明示しないと「押しても何も起きない」だけが残る。
+	//   ★ステータス行は全ロケール英語（KESCMID.h の表示方針。日本語で出すのは How to Use と
+	//     Hide Unchanged の確認アラートの2つだけ）。
+	//   ★印の綴りは TSV の Page 列と同じ "(Hide)"＝同じ状態を2通りに綴らない
+	//     （KESCMChangedPagesTSV.cpp の PageDisplay）。
+	if (db != nil && Utils<IKESCMMarkData>()->IsPageOnHiddenSpread(db, stop.pageUID))
+		label.Append(" (Hide)");
+
 	return label;
 }
 

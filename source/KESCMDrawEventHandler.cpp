@@ -420,8 +420,10 @@ ErrorCode KESCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef
 					//   除外領域の緑ベタ塗り(可視化)はこの比較で使ったのと同じ矩形を描くことになる
 					//   (2026-08-06 の監査 E-3。以前は描画側が毎回別に実測していた)。
 					// ⚠★2つの参照を同時に持つので、キャッシュは「挿入で既存要素の参照を無効化しない」
-					//   コンテナでなければならない。実体は std::map(KESCMPageNumberMarker.cpp:414-416)で
-					//   その保証がある。★unordered_map / vector に替えると 2 本目の取得で 1 本目
+					//   コンテナでなければならない。実体は std::map(KESCMPageNumberMarker.cpp の
+					//   `typedef std::map<KESCMMarkerRectKey, std::vector<PMRect> > KESCMMarkerRectMap`)で
+					//   その保証がある。⚠2026-08-18(B10 の2周目)に行番号(:414-416)から型名へ差し替えた
+					//   ---- 指していたのは関数の閉じ括弧3行で、既に外れていた。★unordered_map / vector に替えると 2 本目の取得で 1 本目
 					//   (tRects)が宙を指す。替えるなら、ここは値でコピーするか 1 本ずつ使い切る形へ
 					//   直すこと(2026-08-06 の再確認で明文化)。
 					const std::vector<PMRect>& tRects = KESCMGetPageNumberMarkerRects(targetRef, kTrue);

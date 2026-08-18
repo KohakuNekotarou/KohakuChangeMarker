@@ -176,7 +176,7 @@ ErrorCode KESCMScriptProvider::AccessProperty(ScriptID propID, IScriptRequestDat
 	// KBS has one (KBSScriptProvider.cpp:107 - KBSRunGuard::IsAnyRunning): a run of its stands behind
 	// a modal progress bar, the bar PUMPS EVENTS, so a COM read dispatched mid-run would be answered
 	// with the PREVIOUS run's sentence and a polling harness would read that as "finished".
-	// KESCM shows the same kind of bar (TaskProgressBar, KESCMCore.cpp:577), so the machinery is
+	// KESCM shows the same kind of bar (the TaskProgressBar inside KESCMDoMarkChangesDoc), so the machinery is
 	// there - what is missing is the reader: every harness that reads these properties invokes the
 	// action and reads afterwards, on ONE COM connection, where the read cannot start until the
 	// comparison has returned.

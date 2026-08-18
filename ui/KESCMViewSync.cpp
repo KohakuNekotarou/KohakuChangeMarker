@@ -11,8 +11,12 @@
 //    ここからは **IKESCMCompareFacade** 越しに読む(IsArmed / GetArmedTargetDB / GetArmedSourceDB)。
 //    ⚠2026-08-17 訂正: 分離当初は「KESCMCore.h が公開しているアクセサ(KESCMIsArmed 等)で読む」と
 //    書いていたが、それは第1段 Task 11 で Facade 経由に変わっている。**同名の関数は model 側に今も
-//    実在する**(KESCMCore.h:154 / KESCMPeek.cpp:686)ので、この記述を残すと「UI が model の関数を
-//    直に呼んでいる」= 分割の一方向依存が破れている、と誤読させる。
+//    実在する**(KESCMCore.h が `KESCMIsArmed` を宣言し、KESCMPeek.cpp の「パネルの状態アクセサ」の段が
+//    定義している)ので、この記述を残すと「UI が model の関数を直に呼んでいる」= 分割の一方向依存が
+//    破れている、と誤読させる。
+//    ⚠2026-08-18(不具合再検査 B10 の2周目): ここは行番号(KESCMCore.h:154 / KESCMPeek.cpp:686)で
+//    引いていて**両方とも外していた**(前者は別のコメント行、後者は Shutdown の `sPeekTargetDB = nil;`)。
+//    **関数名で引けば挿入で動かない。**
 //
 //  UI 側: IControlView と IPanorama を相手にするので、model プラグインからは触れない。
 //

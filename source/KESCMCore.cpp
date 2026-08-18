@@ -187,8 +187,13 @@ void KESCMCollectMasterPageUIDs(IDataBase* db, std::vector<UID>& out)
 //   回りながらそのスプレッドを見る」形で、**ページ UID から聞く**問いはここが初めて。
 // ページ → スプレッドは IHierarchy::GetSpreadUID(この階層ノードのスプレッドを返す契約で、ページ
 // 限定ではない)。KESCMChangedPagesTSV の MasterPageDisplay / KESCMPeek / KESCMChangeNav と同じ聞き方。
-// ⚠マスタースプレッドは隠せない(ページパネルの Hide Spread は通常スプレッドだけ・Hide Unchanged も
-//   ISpreadList しか回らない)ので、マスターページを渡しても kFalse で返る＝呼び手は場合分け不要。
+// ⚠マスターページを渡しても kFalse で返る＝呼び手は場合分け不要。根拠は**このファイルの
+//   KESCMFindPageUnderMouse がマスターを走査する段の但し書き**（2026-08-16 の監査で明文化）＝
+//   「マスタースプレッドを隠す機能は InDesign に無く、IID_IHIDESPREADBOOLDATA は kSpreadBoss 上の
+//   通常スプレッドの話」。SpreadID.h の include 注記も「kSpreadBoss 上の IBoolData(docs の boss 一覧で
+//   裏取り済み)」と書いている。⇒ Query が nil でも、取れても kFalse でも、どちらでも同じ答えになる。
+// ⚠★**この関数自身がマスターページで呼ばれる経路は今は無い**（TSV のマスターループは通していない）。
+//   上は「将来渡されたときの契約」であって、実測ではない。
 //========================================================================================
 bool16 KESCMIsPageOnHiddenSpread(IDataBase* db, UID pageUID)
 {

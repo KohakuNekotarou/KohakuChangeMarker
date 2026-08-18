@@ -84,6 +84,14 @@ public:
 		The cache is brought up to date internally, so callers do not have to. */
 	virtual bool16		IsOverflowPage(IDataBase* db, UID pageUID, bool16 isTargetSide) = 0;
 
+	/** kTrue when the spread this page sits on is hidden -- by the Pages panel's Hide Spread or
+		by our own Hide Unchanged Spreads, it does not distinguish. Master pages always answer
+		kFalse (InDesign has no way to hide a master spread).
+		★2026-08-18 (bug recheck B10, second pass): the navigation needs this because a stop on a
+		hidden page CANNOT BE SCROLLED TO -- pressing Prev/Next reports the page but the view does
+		not move (measured). The stop stays in the walk; the label says why nothing happened. */
+	virtual bool16		IsPageOnHiddenSpread(IDataBase* db, UID pageUID) = 0;
+
 	// ---- cheap "is there anything at all" ------------------------------------------------
 
 	/** kTrue when there is anything the reveal gesture could show: a changed page, an overflow

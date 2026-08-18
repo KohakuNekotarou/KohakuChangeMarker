@@ -303,8 +303,13 @@ public:
 	// three was ever called across the boundary.
 	//
 	// ★The three model-side functions are alive and busy -- KESCMResetHideUnchanged from
-	// KESCMCore.cpp:485,778 (re-compare and Stop) and KESCMPeek.cpp:618,878 (shutdown and close),
-	// the two getters from KESCMPeek.cpp:867-868 -- but every one of those callers is MODEL-side.
+	// KESCMDoMarkChangesDoc (re-compare) and KESCMDoClearMarks (Stop) in KESCMCore.cpp, and from
+	// the model's Shutdown and the close sweep KESCMHandleDocsClosed in KESCMPeek.cpp; the two
+	// getters from that same close sweep -- but every one of those callers is MODEL-side.
+	// ⚠2026-08-18 (bug recheck B10, second pass): this sentence used to cite line numbers
+	// (KESCMCore.cpp:485,778 / KESCMPeek.cpp:618,878 / :867-868) and ALL FIVE had drifted, two of
+	// them by more than fifty lines. Named callers instead: a function name survives the next
+	// insertion, a line number does not.
 	// The reset happens below this boundary, which is why the UI never had to ask for it: the
 	// flyout only needs to flip the toggle and read its state, and those two are right here.
 	// Same origin as ClearMarks above: the plan's draft interface, never grepped for callers.
