@@ -165,6 +165,16 @@ bool16 BringChapterToFront(const UIDRef& docRef)
 		db, KESCMAcceptAnyPresentation, noPreference);
 	if (pres != nil)
 	{
+		// ★NO GlobalErrorStatePreserver ON THIS BRANCH, AND THE ASYMMETRY WITH THE ONE BELOW IS
+		//   DELIBERATE (checked 2026-08-18, bug recheck B-U5 second pass - the next reader will see
+		//   two branches of one function guarding different amounts and wonder). MakeActive raises
+		//   no command of ours to fail: it returns void and IDocumentPresentation.h promises nothing
+		//   about the error state, and BOTH sibling plug-ins call it bare in the same shape
+		//   (KBSJump.cpp / KESCLFindInDoc.cpp, each with the open-a-window branch guarded and this
+		//   one not). The branch below is guarded because it PROCESSES A COMMAND, which is the thing
+		//   that can leave an error standing. ⚠ Not measured - argued from the header and from three
+		//   implementations agreeing; if MakeActive is ever seen to leave an error up, this is where
+		//   the guard goes.
 		pres->MakeActive();
 		return kTrue;
 	}

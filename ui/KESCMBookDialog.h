@@ -46,7 +46,12 @@ void KESCMOpenBookDialog();
 
     ***** And it all outlives the dialog window. ***** Held in the module, not in the widgets, so
     that closing the dialog does not throw away a comparison that took real time to compute -
-    reopening it (kCacheDialog) finds it still here. */
+    reopening it (kCacheDialog) finds it still here.
+
+    ⚠ IT ALSO DROPS THE ROW INDEX THE ROW MENU STASHED (KESCMBookSetMenuRow(-1)). Replacing the rows
+    is exactly the moment an index into them stops meaning anything, and one caller reads that index
+    without going through the list at all - see the call for the measurement. Anything else that ever
+    replaces or drops rows has to do the same. */
 void KESCMBookDialogSetResult(const PMString& targetPath, const PMString& sourcePath,
                               const PMString& summary,
                               const std::vector<KESCMChapterResult>& rows);

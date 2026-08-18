@@ -37,8 +37,14 @@
 //
 //  ★THE KEYBOARD IS LEFT ALONE - no AcquireKeyFocus anywhere in this file. The panel's list takes
 //  the key focus so the arrows walk it; this list lives in a DIALOG, where the keyboard belongs to
-//  the dialog's own machinery (tab order, Return = OK, Esc = close). Taking it here would break
-//  those for the sake of arrow keys nobody asked for.
+//  the dialog's own machinery. Taking it here would break that for the sake of arrow keys nobody
+//  asked for.
+//  ⚠ That machinery was written out as "tab order, Return = OK, Esc = close" until 2026-08-18 (bug
+//    recheck B-U5, second pass). ***THIS DIALOG HAS NO BUTTONS AT ALL*** - they went when the
+//    Compare button was removed on 2026-08-12 (KCMUI.fr's view resource holds two path lines, the
+//    status line, the hint and this list, and nothing else), so there is no OK for Return to press.
+//    What closes it is the close box and Esc. The examples were quoted from what a dialog USUALLY
+//    has rather than read off this one.
 //
 //========================================================================================
 

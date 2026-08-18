@@ -669,7 +669,13 @@ ErrorCode KESCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMStri
 		//   差分を指したままクリックで飛べる行が並ぶ」と読んで KESCMStoryList::Clear() を足したが、
 		//   **呼び手を4つとも開いたら成立しなかった**——この関数が kFailure(=キャンセル)を返したとき:
 		//     ・Start(KESCMComparisonRun.cpp:152)              … arm しない。そこへ来る前は必ず未 arm
-		//       ＝一覧は空(ブック比較の「Start Change Marker」も KESCMBookOpen.cpp:477 で先に Stop する)
+		//       ＝一覧は空(ブック比較の「Start Change Marker」＝KESCMBookOpen.cpp の
+		//       KESCMBookStartComparisonForRow も、比較を始める前に先に Stop する)
+		//       (⚠旧引用 ":477" は**38行ずれて別の関数の入口**を指していた＝2026-08-18・不具合再検査
+		//        B-U5 の2周目。★**B-U3 がこの4件を検算して「外れていたのは1件だけ」と書いた後で、
+		//        同じ日の B-U5 1周目があちらのファイルに +58 行入れて腐らせた**——検算した参照は
+		//        「検算した時点で当たっていた」だけで、**指される側が編集されれば黙って外れる**。
+		//        ⇒ 関数名へ。名前は行の挿入では動かない。)
 		//     ・登録トグル(KESCMPageMap.cpp:242)               … KESCMToggleStartStop() で Stop へ戻す
 		//     ・Load Check & Register(KESCMPageCheck.cpp の KESCMPageCheckLoadFromFile)… 同上
 		//       (⚠旧引用 ":824" は12行ずれて別の関数の中を指していた＝2026-08-18・不具合再検査 B-U3。

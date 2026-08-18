@@ -26,10 +26,20 @@
 
     ***** A pop-up menu's action has no idea what was under the pointer. ***** The action fires
     later, from the menu, with nothing but its ActionID - so the row has to be recorded when the
-    menu is raised and read back when the item is chosen. KBS's result rows work exactly this way
+    menu is raised and read back when the item is chosen. KBS's result rows work the same way
     (Check All / Uncheck All act on "the row the menu was popped over").
 
-    -1 means "no row", which is what both the enabling test and the action treat as nothing to do. */
+    -1 means "no row", which is what both the enabling test and the action treat as nothing to do.
+
+    ***** AND IT IS PUT BACK TO -1 WHENEVER THE ROWS CHANGE. ***** KESCMBookDialogSetResult calls
+    this with -1 before it replaces the list, because the index describes the list AS IT STOOD when
+    the menu was raised. ⚠ RowAt's range check is not enough on its own: after a second comparison
+    row 0 still exists, it is simply a DIFFERENT CHAPTER - which is what made this a real bug until
+    2026-08-18 (bug recheck B-U5, second pass; the measurement and KBS's wording are at the call).
+    ★It matters because the action can be reached WITHOUT a right click, by a script firing it by
+    ActionID - the case KBS names in the same breath ("a caller that never went through the menu -
+    a script firing the action - reaches them with whatever is stored"). Both readers below still
+    range-check, as KBS's do; the reset is what stops a stale index from landing on a valid row. */
 void	KESCMBookSetMenuRow(int32 rowIndex);
 int32	KESCMBookMenuRow();
 

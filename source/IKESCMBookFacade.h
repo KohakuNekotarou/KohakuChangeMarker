@@ -108,7 +108,16 @@ public:
 
 		@param outChapters one entry per chapter pair, cleared first.
 		@param outReport the one-line summary. It always states how many chapters were looked at, so
-			"nothing listed" can never be read as "nothing could be opened". */
+			"nothing listed" can never be read as "nothing could be opened".
+		@return ★kSuccess, ALWAYS - and the only caller ignores it on purpose. A chapter that could
+			not be opened or compared is not a failure of the run: it comes back as a VERDICT on that
+			chapter (Failed / NotCompared, with a reason), which is the whole point of the result
+			list, and a cancelled run is a normal ending too. The ErrorCode is here because that is
+			the shape a facade method takes (the guide's seventh rule for writing one), not because
+			there is a failure to report. ⚠ Anything that ever DOES return a failure from here has to
+			change KESCMBookRun.cpp, which today stores and shows the result without asking.
+			(Stated 2026-08-18, bug recheck B-U5 second pass: the signature said "this can fail" and
+			nothing said what a caller should do about it.) */
 	virtual ErrorCode	CompareBooks(IBook* target, IBook* source,
 								std::vector<KESCMChapterResult>& outChapters,
 								PMString& outReport) = 0;

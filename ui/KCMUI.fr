@@ -1649,7 +1649,9 @@ resource KESCMBookRowWidget(kKESCMBookRowRsrcID + index_enUS)
 		//   "AB.indd" (memory ampersand-eaten-in-ui-strings).
 		// ***** 11px IN FROM THE ROW'S EDGE, NOT 8. ***** (User, 2026-08-13: "the list part, another
 		// 3px wider still".) ★This works only because ApplyIndentToWidget is overridden empty in
-		// KESCMBookTreeWidgetMgr.cpp:129 - a cell bound on BOTH sides has its .fr left edge thrown
+		// KESCMBookTreeWidgetMgr.cpp (the override itself, named rather than numbered - ":129" was
+		// nine lines short by 2026-08-18, having been pushed down by that file's OWN bug-recheck
+		// corrections the same day) - a cell bound on BOTH sides has its .fr left edge thrown
 		// away by the framework's version, which is what memory treeview-indent-overwrites-cell-frames
 		// is about. Change that override and this number silently becomes 0.
 		KESCMBookRowCellWidget

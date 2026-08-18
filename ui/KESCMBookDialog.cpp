@@ -9,13 +9,22 @@
 //  Shape copied from KESCL's Jump Offset dialog (KESCLActionComponent.cpp:384-417), which is the
 //  closest working example in reach - same author, same stock kDialogBoss, also fixed-size.
 //  ⚠ "The one thing changed is the dialog type" stood here until 2026-08-18 (bug recheck B-U5).
-//    FOUR of the five arguments differ, and each difference is deliberate - they are what a
-//    modeless report needs and a modal prompt does not:
+//    THREE of CreateNewDialog's five arguments differ, and each difference is deliberate - they are
+//    what a modeless report needs and a modal prompt does not:
 //        kModeless                 (KESCL: kMovableModal)      - the point of the whole thing
 //        kDontAllowMultipleCopies  (KESCL: kAllowMultipleCopies)
 //        kCacheDialog              (KESCL: kDontCacheDialog)   - the results took time to compute
+//    …and so does the OPEN that follows it, which is not one of those five:
 //        Open(nil, kFalse)         (KESCL: Open())             - do not take over the event loop
-//    Only the RsrcSpec is built the same way. ★The reasons are on each argument at the call.
+//    What the two share is the RsrcSpec, built the same way, AND kDontAllowUserResize - the fifth
+//    argument, which both pass for reasons of their own (KESCL: "two edit boxes and a button row
+//    have nothing to gain"; here: a modeless dialog's panel does not follow its window - see the
+//    header). ★The reasons are on each argument at the call.
+//    ⚠ The correction above said "FOUR of the five" and "only the RsrcSpec is built the same way"
+//      from 2026-08-18 until later the same day (bug recheck B-U5, second pass): it counted the
+//      Open() call as one of CreateNewDialog's arguments and then reported the fifth argument, which
+//      is IDENTICAL in both, as a difference. Fixing a stale sentence is where a new miscount gets
+//      in - the same shape as the counts B6 / B10 / B-U5 found, this time in a correction.
 //
 //========================================================================================
 
@@ -39,6 +48,7 @@
 
 // Project includes:
 #include "KESCMBookDialog.h"
+#include "KESCMBookOpen.h"		// KESCMBookSetMenuRow - the stashed row index, dropped when the rows change
 #include "KESCMBookTree.h"		// KESCMBookTreeRebuild - the list, redrawn when the dialog opens
 #include "KCMUIID.h"
 #include "KESCMPanelAlpha.h"	// KESCMSetBookDialogWindow / KESCMApplyBookDialogTranslucency
@@ -154,6 +164,28 @@ void KESCMBookDialogSetResult(const PMString& targetPath, const PMString& source
 	//   (KESCMBookResult.h:42-49 is the same distinction, written out).
 	// ★app.kcmBookResult IS NOT AFFECTED - it is built from gBookResultText in KESCMBookCompare.cpp
 	//   over the full set, so scripts and tests still see every chapter.
+	//
+	// ***** THE STASHED ROW INDEX GOES WITH THEM. ***** The right-click menu records which row it was
+	// popped over (KESCMBookOpen.cpp's gMenuRow) because the action it raises is handed no widget
+	// context - and that index means "row N of the list as it stood THEN". The rows below are about
+	// to be replaced, so keeping it would let an index taken from one comparison name a chapter of
+	// the next one.
+	// ⚠ MEASURED 2026-08-18 (bug recheck B-U5, second pass), and it was a real bug: with the dialog
+	//   showing one row (ch2) that row was right-clicked, ch1 was then made to differ as well, the
+	//   comparison was re-run - and firing kKESCMBookRowStartActionID by ID reported enabled=true and
+	//   opened BOTH SIDES OF ch1, a chapter nobody had right-clicked. The range check in RowAt does
+	//   not catch this: 0 is a perfectly valid row in the new list, just a different chapter.
+	// ★THE ROUTE THAT REACHES IT WITHOUT A RIGHT CLICK is a script firing the action by ActionID
+	//   (app.menuActions.itemByID(...).invoke()); a keyboard shortcut cannot, because the action is
+	//   declared kSDKDefInvisibleInKBSCEditorFlag and so never appears in the shortcut editor.
+	// ★THIS IS KBS'S RULE, WRITTEN DOWN IN KBS AND MISSING HERE. KBSResultModel::Clear() ends with
+	//   gContextMenuChapter = kNoContextMenuChapter for exactly this reason, and KBSResultModel.h
+	//   states it as a requirement on anything that drops rows: "an index taken from one result set
+	//   can never name a chapter of the next one … Anything that ever drops chapters WITHOUT the
+	//   aftermath flag has to reset this the way Clear() does." KESCMBookOpen.h claimed this file's
+	//   feature "works exactly this way" as KBS - it did, apart from the one line that puts it back.
+	KESCMBookSetMenuRow(-1);
+
 	gDialogRows.clear();
 	for (size_t i = 0; i < rows.size(); ++i)
 	{
