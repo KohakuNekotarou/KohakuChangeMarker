@@ -173,13 +173,19 @@ public:
 	//
 	//   CTreeViewWidgetMgr::ApplyIndentToWidget rewrites the left edge of every cell that is bound
 	//   on BOTH sides (CTreeViewWidgetMgr.cpp:244-250):
-	//       previousOffset = frame.Left() - fBaseIndentOffset;
+	//       if (previousOffset == kMaxInt32)                  // <- only the FIRST such cell sets it
+	//           previousOffset = frame.Left() - fBaseIndentOffset;
 	//       frame.Left( frame.Left() + indent - previousOffset );
-	//   A flat list has indent == 0, so that reduces to frame.Left(fBaseIndentOffset) - every such
-	//   cell is dragged to fBaseIndentOffset. ★And ours is ZERO: that member is only ever assigned
-	//   from a REGISTERED STYLE WIDGET (:315), and this manager builds its rows in
-	//   CreateWidgetForNode instead of registering styles, so it keeps the 0 it was constructed
-	//   with (:71-74 does not name it in the initialiser list).
+	//   A flat list has indent == 0, so for the first both-bound cell that reduces to
+	//   frame.Left(fBaseIndentOffset). ⚠It does NOT drag every such cell there: previousOffset is
+	//   computed once and reused, so a second both-bound cell keeps its distance from the first and
+	//   only shifts by the same amount (2026-08-18, bug recheck B-U4 - this said "every such cell is
+	//   dragged to fBaseIndentOffset", which happens to describe THIS row because only one cell is
+	//   bound both ways: KCMUI.fr binds the UID cell kBindLeft, the kind cell kBindRight, and the
+	//   text cell kBindLeft|kBindRight).
+	//   ★And ours is ZERO: that member is only ever assigned from a REGISTERED STYLE WIDGET (:315),
+	//   and this manager builds its rows in CreateWidgetForNode instead of registering styles, so it
+	//   keeps the 0 its PMReal default gives it (:71-74 does not name it in the initialiser list).
 	//
 	//   ⚠WHAT THAT COST, measured 2026-08-10: the text cell's left edge in the .fr was being thrown
 	//   away on every single apply. It went unnoticed while that cell was the leftmost thing on the

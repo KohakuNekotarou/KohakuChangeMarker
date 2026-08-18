@@ -275,10 +275,20 @@ void KESCMToggleStorySection()
 
 		splitter->SetPanelVisible(kStorySectionPaneIndex, kFalse);
 
-		// Shrink back to the designed height rather than by the height of the section. The two are
-		// the same number until the divider gets dragged, which grows the top pane past the block of
-		// controls it holds; subtracting only the section would leave that dead strip behind, and it
-		// would still be there every time the panel opened afterwards.
+		// Shrink back to the designed height rather than by the height of the section.
+		// ⚠THE REASON THIS WAS WRITTEN IS GONE, AND THE CODE IS RIGHT ANYWAY. It used to say "the
+		//   two are the same number until the divider gets dragged, which grows the top pane past
+		//   the block of controls it holds" - true until 2026-08-12, when the divider was made
+		//   undraggable (kKESCMSplitterPanelBoss in KCMUI.fr answers the mouse with an event handler
+		//   that does nothing). With no drag, the top pane cannot grow, so aiming at designedTop and
+		//   subtracting sectionHeight now reach the same figure and the branch below is a belt on
+		//   top of braces. ★Kept because what it defends against is the top pane being some other
+		//   height than designed, and nothing in this file is the only thing that can set the
+		//   splitter edge - SetPanelVisible and SyncPanelsToSplitter both move it, and neither has
+		//   been measured to leave it alone.
+		// ★MEASURED 2026-08-18 (bug recheck B-U4): open 303 -> closed 185 -> reopened 303, where 185
+		//   is exactly the designed top pane. So the closing arithmetic lands on the number it aims
+		//   at, and the reopen restores the height the section was closed at (SavedSectionHeight).
 		if (designedTop > 0 && wholeHeight > designedTop)
 			ResizePanelByDelta(panel, designedTop - wholeHeight);
 		else if (designedTop <= 0)

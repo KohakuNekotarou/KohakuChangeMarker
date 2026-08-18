@@ -124,6 +124,25 @@ bool16 KESCMStoryJumpToRow(int32 rowIndex)
 		return kFalse;
 	}
 
+	// ***** NO SaveRestoreModifiedState HERE, AND THAT WAS MEASURED RATHER THAN ASSUMED. *****
+	//
+	// ⚠This looks like an omission, and it is worth saying why it is not, because the shape of the
+	// mistake it resembles has actually been made in this plug-in: bug recheck B5 (2026-08-17) found
+	// that the dirty guard stood in FOUR places on the model side and was missing from a fifth that
+	// rasterises a page, and KBS wraps its own jump - the same kSetSpreadCmdBoss, the same scroll -
+	// in one (KBSJump.cpp:691, :981). So a reader arriving here has every reason to suspect this line.
+	//
+	// ★MEASURED 2026-08-18 (bug recheck B-U4), with a pair built so the answer could come out the
+	//   other way: both documents saved and clean, both layout windows left on page 1, and the row
+	//   clicked was a story on page 3 - a DIFFERENT SPREAD, so KESCMEnsureSpreadInView really did
+	//   run kSetSpreadCmdBoss through CmdUtils::ProcessCommand. Both windows moved to page 3, the
+	//   status line said "Page: 3", and app.documents[i].modified was FALSE for target AND source
+	//   afterwards. Start itself, Next Change, Stop and the double click below were all measured the
+	//   same way and are all clean too.
+	// ⇒ Scrolling and switching the spread do not dirty a document; the guard below is for the
+	//   SELECTION, which is a different operation (see its own note).
+	// ⚠WHAT WOULD CHANGE THE ANSWER: anything added to this path that touches the model rather than
+	//   the view. Then measure again rather than reasoning from here.
 	if (!KESCMGotoStoryFrame(db, row.fFrameUID, row.fPageUID, row.fStoryUID))
 	{
 		PMString s("Could not scroll.");	// 文言は Prev/Next の失敗時と同じ(同じ出来事なので)
@@ -161,6 +180,10 @@ bool16 KESCMStorySelectWholeStory(int32 rowIndex)
 	// ★Making a selection recomposes, and this plug-in may only have the document open in order to
 	//   look at it. IDataBase.h:389-412 restores the flag the document came in with rather than
 	//   forcing it clean - the same guard KBS puts round the identical operation.
+	//   ★It guards the SELECTION, not the jump: the single click above was measured to leave both
+	//     documents clean without one (see the note there). ★And only the target needs it - the
+	//     source document is never selected into, which is why this is one guard where the rest of
+	//     KESCM takes two (KESCMCore.cpp:480-481 and the three like it).
 	IDataBase::SaveRestoreModifiedState dirtyGuard(db);
 
 	ISelectionManager* selectionManager = Utils<ISelectionUtils>()->GetActiveSelection();

@@ -8,7 +8,9 @@
 //  the panel itself to match.
 //
 //  Written from the product implementation of the Links panel's "Link Info" section
-//  (LinksUIUtils.cpp:600-783 and ToggleLinkInfoButtonObserver.cpp), which is the same feature.
+//  (LinksUIUtils.cpp:606-783 and ToggleLinkInfoButtonObserver.cpp), which is the same feature.
+//  ⚠The start of that range said 600 until 2026-08-18 (bug recheck B-U4), which is inside the
+//  function BEFORE it; 606 is where the section's own constants begin.
 //  The thing to carry over from there, and the reason this is not three lines of code:
 //
 //    *** RESIZING TAKES A DIFFERENT ROUTE WHEN THE PALETTE IS DOCKED. ***
@@ -28,7 +30,13 @@
 
 	The section reopens at the height it was closed at. That height is kept on the section's own
 	widget and persists across restarts (kKESCMStorySectionPanelBoss in KCMUI.fr). Closing always
-	returns the panel to its designed height, so a dragged divider cannot leave a dead strip behind.
+	returns the panel to its designed height rather than subtracting the section, so the top pane
+	cannot be left taller than the block of controls it holds.
+	⚠That last sentence used to say "so a dragged divider cannot leave a dead strip behind", which
+	stopped being the reason on 2026-08-12 when the divider was made undraggable. The behaviour is
+	unchanged and is still what is wanted - see the note at the closing branch in the .cpp.
+
+	★MEASURED 2026-08-18 (bug recheck B-U4): open 303 -> closed 185 -> reopened 303 px.
 */
 void KESCMToggleStorySection();
 

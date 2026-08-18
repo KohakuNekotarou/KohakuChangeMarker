@@ -16,10 +16,15 @@
 //    * no Shift/Cmd  - those are selection modifiers, not "take me there".
 //    * IsSelected    - the row the click actually landed on (the press already set the selection).
 //
-//  ★THE KEYBOARD IS LEFT ALONE. KBS takes the key focus onto its tree so the arrows walk the
-//  results; KESCM deliberately does not (user's call, 2026-08-10). This panel's job is to send the
-//  user INTO the document, and a panel holding the keyboard is a panel where the tool shortcuts
-//  have quietly stopped working.
+//  ★THE KEYBOARD IS TAKEN, AND IT USED NOT TO BE. Until 2026-08-11 this file left the key focus
+//  alone on purpose (user's call, 2026-08-10): this panel's job is to send the user INTO the
+//  document, and a panel holding the keyboard is a panel where the tool shortcuts have quietly
+//  stopped working. That was reversed at the user's request - "like KBS, I want to move up and down
+//  with the cursor" - so a click now hands the focus to the list (the foot of LButtonUp) and a
+//  DOUBLE click hands it back. The cost is still real and is still the cost described above; it was
+//  accepted in exchange for being able to walk the list.
+//  ⚠This paragraph said "KESCM deliberately does not" until 2026-08-18 (bug recheck B-U4), while
+//  the code 180 lines below had already been doing the opposite for a week and said so.
 //
 //  ***** THE DOUBLE CLICK'S ONE BIT OF STATE. ***** A double click arrives as FOUR events:
 //
@@ -178,8 +183,16 @@ bool16 KESCMStoryRowEH::LButtonUp(IEvent* e)
 			// nowhere - which is the one thing a user who just selected a story wants to do.
 			// ! Relinquish is a POP, not a hand-off: IKeyBoard.h:49-53 restores the PREVIOUS holder,
 			//   and what makes that the document window is the ORDER of the first click - the jump
-			//   fronted the window and only then did the tree acquire. (Same reasoning, and the same
-			//   caveat, as KBS's KBSResultNodeEH.cpp:175-202.)
+			//   fronted the window and only then did the tree acquire.
+			// ! KBS's KBSResultNodeEH.cpp:175-202 carries the same reasoning and THREE caveats, not
+			//   the one this used to point at: (a) if anything comes to hold the focus between the
+			//   jump and the acquire - another palette, an edit box of ours - the pop hands the
+			//   keyboard to THAT, and it looks like the double click stopped working; (b) the product
+			//   does not lean on the pop when it cares where the focus lands, it remembers the handler
+			//   and calls AcquireKeyFocus(saved) instead (spellpanel's SaveKeyboardEventHandler);
+			//   (c) the bool16 both calls return - kFalse meaning the current holder would not let go
+			//   - is ignored here, as it is at every product call site. Written out rather than
+			//   pointed at, because "the same caveat" lost two of them (2026-08-18, bug recheck B-U4).
 			if (treeEH != nil && keyBoard != nil && keyBoard->GetKeyFocus() == treeEH)
 				keyBoard->RelinquishKeyFocus();
 			return result;
