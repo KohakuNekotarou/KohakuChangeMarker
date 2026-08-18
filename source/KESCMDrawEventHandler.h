@@ -343,13 +343,32 @@ public:
 
 // tl_Rasterizing を例外安全に立てる/戻す RAII(2026-07-25 監査で追加)。SnapshotUtilsEx::Draw が万一
 // throw(AGM 内部の bad_alloc 等)してもフラグが立ちっぱなし(=以後マーク描画が全抑止)にならない。
-// ★2026-08-15: 中身がスレッドローカルになったが、**呼び手(6か所)は1行も変わらない**
+// ★2026-08-15: 中身がスレッドローカルになったが、**呼び手は1行も変わらない**
 //   ——RAII に包んであったおかげで、スレッド対応の変更がこのクラスの中だけで済んだ。
+//   ⚠2026-08-18(不具合再検査 B9)訂正: ここは「呼び手(6か所)」と書いていたが**実測5か所**
+//     (KESCMDrawEventHandler.cpp:354/369/707・KESCMColorSampler.cpp:137・KESCMBookCompare.cpp:409)。
+//
+// ★★2026-08-18(不具合再検査 B9): **入れ子にしても壊れない形にした**(直前の値を控えて戻す)。
+//   旧実装はデストラクタが**無条件に kFalse** を書いていたので、ガードの中でガードを作ると
+//   **内側が終わった時点で外側の保護も消える** ---- そこから先のラスタ化には
+//   **自分のマークが写り込む**(＝比較結果が静かに嘘になる。落ちも警告も出ない)。
+//   ⚠現状5か所とも Draw だけを包む最小スコープで**入れ子は1つも無い**(B9 で全数確認)。
+//     ただし**ブック比較が 2026-08-18 にこのガードを使い始めたばかり**で、あの経路から
+//     MakeEntry を呼ぶ日が来ると即座に入れ子になる ---- そのとき何も起きないようにしておく。
+//   ★2行で済むのは ThreadLocal::Get() が**未設定なら初期値(kFalse)を返す**と保証されているから
+//     (IDThreading.h:107 = PublicThreadLocalStorageGet(fKey, fInitialVal))。
+//     ∴ BG スレッドの1回目でも fPrev はゴミにならない。
 class KESCMRasterizingGuard
 {
 public:
-	KESCMRasterizingGuard()  { KESCMDrawEventHandler::tl_Rasterizing.Set(kTrue); }
-	~KESCMRasterizingGuard() { KESCMDrawEventHandler::tl_Rasterizing.Set(kFalse); }
+	KESCMRasterizingGuard()
+		: fPrev(KESCMDrawEventHandler::tl_Rasterizing.Get())
+	{
+		KESCMDrawEventHandler::tl_Rasterizing.Set(kTrue);
+	}
+	~KESCMRasterizingGuard() { KESCMDrawEventHandler::tl_Rasterizing.Set(fPrev); }
+private:
+	bool16 fPrev;
 };
 
 // (KESCMQueryPanorama は 2026-08-13 に KESCMViewLookup.h へ移した＝model/UI 分割 第1段 Task 12。

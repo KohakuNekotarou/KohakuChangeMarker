@@ -1562,12 +1562,26 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	// キャッシュ(sOverflowT/sOverflowS)を使う。EnsureOverflowCache は (sDB,sSrcDB) が前回作成時と
 	// 変わった時だけ作り直す(通常の描画では全文書走査は走らない)。
 	EnsureOverflowCache();
-	const bool16 anyMarkableContent = !sEntries.empty() ||
-		(sDB    != nil && KESCMPageMapHasAnyRegistered(sDB)) ||
-		(sSrcDB != nil && KESCMPageMapHasAnyRegistered(sSrcDB)) ||
-		(sDB    != nil && KESCMPageCheckHasAny(sDB)) ||		// 「KCM: Check」の✓(サムネイル描画を起こすため)
-		(sSrcDB != nil && KESCMPageCheckHasAny(sSrcDB)) ||
-		(!sOverflowT.empty() || !sOverflowS.empty());
+	// ★★2026-08-18(不具合再検査 B9): **この計算はロックの中で行う。**
+	//   ここは `sEntries` と `sOverflowT/sOverflowS` を読む ---- どれも**この関数の下の描画ループが
+	//   ロックを取って読み、main は DropAll()(delete+clear) / MakeEntry()(insert) / swap() と
+	//   すべてロック下で書いている**集合で、**この行だけが外に居た**。BG(PDF の非同期書き出し)も
+	//   必ず通る行なので、KESCMThreadSafety.h が「main が書き BG が読むから守る」と書いた条件そのもの。
+	//   ⚠**読むのは empty() だけでも守る**: 「軽い読みだから」は理由にならない(B3 §5 で踏んだ
+	//     「片側だけ守るのは無意味」の裏返し＝**書き手だけが守っている**状態だった)。
+	//   ★コストは実質ゼロ ---- 中で呼ぶ KESCMPageMapHasAnyRegistered / KESCMPageCheckHasAny は
+	//     自分でも同じ mutex を取るが、**recursive_mutex なので入れ子で詰まらない**(むしろ
+	//     取り直しが減る)。スコープは6行で閉じ、「ロックしたまま長い処理をしない」規律も守っている。
+	bool16 anyMarkableContent = kFalse;
+	{
+		KESCMMarkStateLock gateLock(KESCMMarkStateMutex());
+		anyMarkableContent = !sEntries.empty() ||
+			(sDB    != nil && KESCMPageMapHasAnyRegistered(sDB)) ||
+			(sSrcDB != nil && KESCMPageMapHasAnyRegistered(sSrcDB)) ||
+			(sDB    != nil && KESCMPageCheckHasAny(sDB)) ||		// 「KCM: Check」の✓(サムネイル描画を起こすため)
+			(sSrcDB != nil && KESCMPageCheckHasAny(sSrcDB)) ||
+			(!sOverflowT.empty() || !sOverflowS.empty());
+	}
 	// 「Hold to Hide Marks」と併用時のみ: Source のレイアウト窓でツール左ボタンを押している間(sSrcMarksTempHidden)は
 	// Source 側の常時表示枠も画面で隠す(押した窓の枠だけ隠す=Target と対称のウィンドウ別の極性反転)。
 	// 印刷は Source 枠を常に出す仕様なので !printing でゲート=印刷/PDF は不変。sAlwaysShowMarks OFF や

@@ -64,21 +64,34 @@ bool16 KESCMIsMainThread();
 //   ・同一ポインタなら真(メインスレッドの通常経路はここで即決 = コスト増ゼロ)
 //   ・違うポインタでも、GetSysFile() が同じファイルを指していれば真
 //     ⇒ ★**バックグラウンドのクローン DB でも真になる**(これが本題)
-//   ・どちらかが nil、または未保存でファイルが無いときは偽
-//     ⚠ 未保存文書は BG では同一と判定できない(＝BG ではマークが出ない)。これは
-//       分割前から出ていなかったので劣化ではない。
-//     ★★★**その「ファイル以外の同一性の口」は見つかった＝`IDataBase::GetDocumentID()`**
-//       (2026-08-16・API 監査 B9 で実測。未保存文書2つを比較して非同期 PDF 書き出し)。判った4点:
+//   ・**ファイルが片方でも無いときは `IDataBase::GetDocumentID()` で聞き直す**(下の★)
+//   ・どちらかが nil のとき、または ID が空のときだけ偽
+//
+//     ★★★**未保存文書の道は 2026-08-18(不具合再検査 B9)に実装した。** それまでは
+//       「ファイルが無い＝偽」で終わっていたので、**一度も保存していない2文書を比較すると
+//       BG(PDF の非同期書き出し)でマークが1つも出なかった**——画面には出るので
+//       **「画面と書き出しが食い違う」**形で、第2段が塞いだはずの穴が未保存文書にだけ残っていた。
+//       (⚠旧コメントは「分割前から出ていなかったので劣化ではない」と書いていたが、それは
+//        **直さない理由にはならない**。実際 B9 の再検査でそのまま不具合として拾い直した。)
+//
+//     ★根拠は 2026-08-16・API 監査 B9 の実測4点(未保存文書2つを比較して非同期 PDF 書き出し):
 //         ①**未保存文書にも値が付く**——`GetSysFile()` が nil でも `xmp.did:…` が返る
 //         ②**Target と Source は別の値**を持つ(a3097be8… ⇔ 6322d72a…)＝**同一性の判定に使える**
 //         ③★**BG のクローン DB でも main と完全に一致**(db ポインタは違うのに ID は同じ)
 //         ④`sDB` は BG でも main が入れたポインタのまま(static 共有の再確認)
-//       ⚠**寄せ先が2つある。実装の前にどちらか決めること**＝`IDataBase::GetDocumentID()` 自身が
-//         "FOR INTERNAL USE ONLY / FOR EXTERNAL USE : Recommended to use
-//         IAdobeMediaMgmtMetaData::GetDocumentID" と書いている(`IDataBase.h:715-717`)。
-//         ★ただし**Adobe 製 linksui は内部用の方を使っている**(`ClosingDocumentsResponder.cpp:118`)。
-//         外部用の口も実在し公式例つき(`IAdobeMediaMgmtMetaData.h` / `SnpPerformXMPCommands.cpp`)。
-//       全文＝`docs/ai-notes/kescm-api-audit-b9-2026-08-16.md`
+//
+//     ⚠**寄せ先が2つあり、内部用の `IDataBase::GetDocumentID()` を選んだ**(2026-08-18・ユーザー判断)。
+//       同メソッドは自ら "FOR INTERNAL USE ONLY / FOR EXTERNAL USE : Recommended to use
+//       IAdobeMediaMgmtMetaData::GetDocumentID" と書いている(`IDataBase.h:715-717`)。それでも選ぶ理由:
+//         ・★**Adobe 製 linksui が同じ内部用の口を使っている**(`ClosingDocumentsResponder.cpp:118`)
+//           ——しかも**用途まで同じ**(閉じる文書の同一性キー。あちらは path と ID を連結する)
+//         ・`IDataBase*` から直接引ける＝**描画イベントの中から呼べる**(外部用は XMP 経由で
+//           Query が要り、nil 経路が増える)。ここは毎描画・毎ページから来る道。
+//       ⇒ 外部用へ寄せるなら `IAdobeMediaMgmtMetaData.h` / `SnpPerformXMPCommands.cpp` が入口。
+//       全文＝`docs/ai-notes/kescm-api-audit-b9-2026-08-16.md` と `kescm-bug-recheck-b9-2026-08-18.md`
+//
+//     ⚠**コストは未保存のときだけ増える**: 保存済み文書は従来どおりファイル比較で終わり、
+//       main の通常経路はそもそも同一ポインタで即決する(この関数の1行目)。
 //----------------------------------------------------------------------------------------
 bool16 KESCMIsSameDoc(IDataBase* a, IDataBase* b);
 
@@ -103,6 +116,18 @@ bool16 KESCMIsSameDoc(IDataBase* a, IDataBase* b);
 //   ⚠∴ **これは設計された防御ではなく、条件式の並び順が結果的に守っている状態。** 「＋」をサムネイル
 //     以外(カンバス・印刷・書き出し)へ出す日が来たら、その瞬間にこの2つをロックの対象へ載せること。
 //     判定の順番を入れ替えるだけでも同じ。
+//
+// ★★★**上の「2つ」は"守っていない集合"の数であって、"守られていない読み"の数ではなかった**
+//   (2026-08-18・不具合再検査 B9)。**守っている集合を、守っていない場所で読んでいた**のが別に1つある:
+//     ・`HandleDrawEvent` 冒頭の `anyMarkableContent` …… `sEntries.empty()` と
+//       `sOverflowT/sOverflowS.empty()` を**ロックの外**で読んでいた。**BG も必ず通る行**で、
+//       同じ集合を main は `DropAll()`(delete+clear) / `MakeEntry`(insert) / `swap()` と
+//       **全部ロック下で書いている**。つまり**書き手だけが守り、読み手の1つが外に居た**
+//       ＝ B3 §5 が踏んだ「捨てる側だけ守るのは無意味」の裏返しの形。
+//   ⇒ 2026-08-18 にその計算をロックで囲んだ。**追加コストは実質ゼロ**(同じ関数の下で
+//     どのみちロックを取る・recursive なので入れ子でも詰まらない)。
+//   ★**教訓＝「守っている/いない」は集合ではなく"触る場所"で数える。** 集合の名前で数えると、
+//     同じ集合の3か所目の読みが視界に入らない。
 //
 // ★★**recursive_mutex にしてある理由**(2026-08-15 に実際に踏みかけた):
 //   描画ループは自分でロックを取ったうえで、その中から KESCMPageMapIsRegistered() /

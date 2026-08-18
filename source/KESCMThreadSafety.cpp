@@ -15,6 +15,7 @@
 #include "IDThreadingPrimitives.h"	// IDThreading::IsMainThreadDomain
 #include "FileUtils.h"				// FileUtils::IsEqual(IDFile,IDFile)
 #include "IDFile.h"
+#include "PMString.h"				// IDataBase::GetDocumentID() の戻り(未保存文書の同一性)
 
 // Project includes:
 #include "KESCMThreadSafety.h"
@@ -39,10 +40,23 @@ bool16 KESCMIsSameDoc(IDataBase* a, IDataBase* b)
 	//   (IDataBase.h:270-274 "Returns nil if there is no file associated yet")。
 	const IDFile* fa = a->GetSysFile();
 	const IDFile* fb = b->GetSysFile();
-	if (fa == nil || fb == nil)
-		return kFalse;
+	if (fa != nil && fb != nil)
+		return FileUtils::IsEqual(*fa, *fb);
 
-	return FileUtils::IsEqual(*fa, *fb);
+	// ★★2026-08-18(不具合再検査 B9): **未保存文書のための第2の口**。ここは以前 kFalse を返して
+	//   いたので、**一度も保存していない2文書を比較すると BG(PDF の非同期書き出し)でマークが
+	//   1つも出なかった**(画面には出る＝「画面と書き出しが食い違う」形)。
+	//   GetDocumentID() は未保存でも値を持ち、BG のクローン DB でも main と一致することを
+	//   2026-08-16 の API 監査 B9 で実測済み。理由と選択の根拠はヘッダーに書いてある。
+	//   ⚠**片方だけファイルがある場合もここへ来る**(保存済み ⇔ 未保存)。その2つは ID が違うので
+	//     正しく偽になる ---- ファイルの有無で先に切り捨てると、BG のクローンが
+	//     GetSysFile を返さない事態(未確認)で静かに壊れるため、判定は ID に委ねる。
+	const PMString ida = a->GetDocumentID();
+	const PMString idb = b->GetDocumentID();
+	if (ida.IsEmpty() || idb.IsEmpty())
+		return kFalse;	// 空どうしを「同じ」と答えない(名前が無いことは同一性の証拠にならない)
+
+	return (ida.Compare(kTrue /*caseSensitive*/, idb) == 0) ? kTrue : kFalse;
 }
 
 //----------------------------------------------------------------------------------------

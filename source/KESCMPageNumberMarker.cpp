@@ -414,13 +414,20 @@ void KESCMAppendPageNumberMarkerRects(const UIDRef& pageRef, std::vector<PMRect>
 // ⚠★★**なぜここはロック(KESCMMarkStateLock)を取らないのか**(2026-08-17・不具合再検査 B3 の2周目で
 //   明文化)。形は sEntries とまったく同じ ---- **描画イベントの中から引かれる std::map** で、
 //   引くだけに見えて**キャッシュミスなら insert する**(＝木を回す)。それでも要らない理由:
-//     ★**読み手も書き手もメインスレッドにしか居ない**。呼び手は3つで、
+//     ★**読み手も書き手もメインスレッドにしか居ない**。呼び手は4つで、
 //       ①KESCMDrawPageNumberMarkerFill(描画) …… 呼び出し側が `fillExcluded = !printing && …` で
 //         ゲートしている＝**BG(PDF の非同期書き出し)は printing なので、ここへ一度も来ない**
 //         (緑ベタ塗りは「どこを比較から外したか」を見せる**画面用の診断表示**で、印刷/PDF には出さない
 //          ＝2026-08-06 の監査 E-4 の決定。その決定がそのままスレッドの境界にもなっている)
 //       ②MakeEntry(比較) …… 比較はメインスレッドでしか走らない
-//       ③KESCMSetIgnorePageNumberMarker / KESCMHandleDocsClosed / Shutdown(捨てる側) …… いずれも main
+//       ③★**ブック比較(KESCMBookCompare.cpp:284-285)** …… 章の対を1組ずつ開いて比べる経路。これも main。
+//         ⚠2026-08-18(不具合再検査 B9)に**足した**: ここは「呼び手は3つ」と書いて**この1本を数え落として
+//           いた**。結論(全部 main)は変わらないが、**数え落としたまま「3つとも main」と読むと、
+//           4本目が別スレッドから来たときに気づけない**。⇒ 呼び手を数える主張は grep で数え直す。
+//         ★あちらは第2引数 refresh=kTrue(強制再取得)で呼ぶ。**章を次々に開いて閉じる経路では
+//           それが要る** ---- キーは (IDataBase*, ページUID) で、閉じた章の db アドレスは
+//           次の章に再利用され得るから([[uidref-reuse-after-close]])。
+//       ④KESCMSetIgnorePageNumberMarker / KESCMHandleDocsClosed / Shutdown(捨てる側) …… いずれも main
 //   ⇒ ★**DropAllOrig と同じ形の「読み手が main だけだから守らなくてよい」**(あちらは
 //     KESCMDrawEventHandler.h に理由が書いてある。ここには書いていなかったので足した)。
 //   ★★**この前提が崩れる変更**＝「緑ベタ塗りを印刷/PDF にも出す」。そのときは
