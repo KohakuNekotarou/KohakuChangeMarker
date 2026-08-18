@@ -37,9 +37,18 @@
 //    [4] 't'   member letter within this plug-in and kind - tool
 //  Checked against ScriptingDefs.h / GenericID.h for collisions before use (none).
 //
+//  ★THE INCLUDE GUARD IS DELIBERATELY NOT THE ONE ITS NAME-MATE USES (__KCMUIScriptingDefs_h__
+//  here, __KESCMScriptingDefs_h__ over there - split apart 2026-08-18, bug recheck B11). The UI
+//  project carries the model half's folder on its include path, so BOTH files are reachable from
+//  one translation unit, and two DIFFERENT files sharing one guard means whichever is included
+//  first silently deletes the other - a missing identifier with no mention of the file that went
+//  missing. ⚠KESCMBoundaryID.h is the opposite case and shares its guard on purpose: those two
+//  ARE the same file, byte for byte (measured the same day - not one line differs), so it does
+//  not matter which copy a translation unit gets.
+//
 //========================================================================================
-#ifndef __KESCMScriptingDefs_h__
-#define __KESCMScriptingDefs_h__
+#ifndef __KCMUIScriptingDefs_h__
+#define __KCMUIScriptingDefs_h__
 
 /** ScriptIDs that KESCM contributes to enumerations that already exist in the object model.
 	Scripts read this one as app.toolBoxTools.currentTool, and select the tool by assigning
@@ -50,6 +59,6 @@ enum KESCMScriptEnums
 	en_KESCMTool = 'nKGt'	// n = enumerator, K = Kohaku, G = KESCM, t = tool
 };
 
-#endif // __KESCMScriptingDefs_h__
+#endif // __KCMUIScriptingDefs_h__
 
 // End, KESCMScriptingDefs.h.

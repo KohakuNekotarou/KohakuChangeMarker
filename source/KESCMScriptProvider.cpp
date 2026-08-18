@@ -17,6 +17,13 @@
 //  (kescmToast and the rest) were removed 2026-08-05 and are not coming back; the panel is the
 //  interface. The toolbox tool's identity (en_KESCMTool) lives on the UI side with the tool.
 //
+//  ★★★THE FOUR STORY COUNTERS ARE HIDDEN FROM IDML/INX (2026-08-18, bug recheck B11). A property
+//  on a document-resident object is written into the user's IDML as an attribute - measured, every
+//  <Story> carried four of ours - so KESCM.fr declares them a second time, in an INX-only resource,
+//  under Provider{kNotSupported}. Scripts see them exactly as before; the file format does not.
+//  The two application properties need nothing: the application object is not in a document's IDML.
+//  Full record: docs/ai-notes/kescm-bug-recheck-b11-2026-08-18.md.
+//
 //  ★★★ ONE BOSS, TWO PROVIDER BLOCKS (2026-08-15)
 //
 //  These properties sit on two different script objects - Application and Story - and until
@@ -106,7 +113,9 @@
 #include "KESCMModelNotify.h"	// KESCMGetSessionStatus - the status line, kept on the model side (Task 9)
 // (★KESCMUIShared.h は include しない ---- 2026-08-13 の Task 5 で一度足したが、この ScriptProvider は
 //  widget に触る8本を1つも呼んでいなかった＝**死んだ依存**だったので外した。読んでいるのは
-//  KESCMGetSessionStatus(KESCMCore.h。文字列の保持は model 側)だけで、これは逆流ではない。)
+//  KESCMGetSessionStatus(★宣言は KESCMModelNotify.h。2026-08-13 の Task 9 に KESCMCore.h から移った
+//  ---- この注記だけが旧ヘッダー名のまま残っていた＝2026-08-18 の再検査 B11 で訂正。すぐ上の include が
+//  最初から正しく書いている＝**同じ問いに2つの答えがあった**)だけで、これは逆流ではない。)
 #include "KESCMBookCompare.h"	// KESCMGetBookResultText - the last book comparison, also in the module
 #include "KESCMStoryStamp.h"	// KESCMStoryEdits::ReadStamp - the SAME reading the panel uses
 
@@ -145,11 +154,13 @@ ErrorCode KESCMScriptProvider::AccessProperty(ScriptID propID, IScriptRequestDat
 	if (!isAppString && !isStoryCounter)
 		return CScriptProvider::AccessProperty(propID, data, script);
 
-	// ★The one kFailure that stays. IScriptErrorUtils writes the reason INTO the request data, and
-	// there is no request data here - so there is nothing better to return (2026-08-16, audit B11).
-	if (data == nil)
-		return kFailure;
-
+	// ★NO nil CHECK ON data OR script, and that is measured rather than assumed (2026-08-18, bug
+	// recheck B11). The framework touches both before it can reach us: CScriptProvider
+	// ::AccessProperties reads data->GetRequestInfo() and returns early on a nil script
+	// (CScriptProvider.cpp:262-265), and AccessPropertyOnObjects reads data->GetNumReturnData(...)
+	// at :148-155 before calling AccessProperty at :168. The `if (data == nil) return kFailure;`
+	// that stood here was therefore unreachable code returning the one value the guide singles out:
+	// "If it returns kFailure, you will get an assert" (vol1-11:456).
 	// Read-only, all six. The declarations in KESCM.fr say kReadOnly, so the engine refuses an
 	// assignment before it ever reaches here; this is the backstop, and it refuses rather than
 	// quietly accepting a value that would then not be there on the next read.

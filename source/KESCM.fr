@@ -55,6 +55,8 @@
 						// ★2026-08-15 (Task 10): IID_ISPRITE / IID_IPATHGEOMETRY / kPathGeometryImpl left with the
 						//   tracker in Task 6B-2. Only the draw-event handler is still declared on this side.
 
+#include "INXCoreID.h"	// kINXScriptManagerBoss (INXCoreID.h:58) - the Contexts of the INX-only
+						// resource at the end of this file, which keeps the story counters out of IDML
 #include "TextScriptID.h"	// kStoryObjectScriptElement (TextScriptID.h:49) - the story object the
 							// four change-counter properties are added to (2026-08-15)
 
@@ -320,12 +322,16 @@ resource VersionedScriptElementInfo(10)
 		//   「10」も、ツールの手本(ITool.h:202)が選ばせた番号で**同じ日に根拠を失っている**
 		//   (Property だけのリソースは 1 が主流＝KBS.fr:1326 / BPI.fr:526 / CusCondTxt.fr:271)。
 		//
-		// ⚠**script version(kCS5)だけは「動作が同じ」と言い切れていない**＝兄弟の KBS は
-		//   **kCS2ScriptVersion** で、しかも**理由が書いてある**(KBS.fr:1328-1329「動きえた一番古い版から
-		//   宣言するのが SDK サンプルの流儀。新しいアプリでも尊重される」)。KESCM は
-		//   **app.kcmStatus / app.kcmBookResult を検証の自動化に使っている**ので、
-		//   「app.scriptPreferences.version を CS5 未満に落としたスクリプトから見えなくなるか」を
-		//   **測ってから**でなければ動かさない(未測定＝docs/ai-notes/kescm-bug-recheck-b1-2026-08-17.md E-1)。
+		// ★★★**script version(kCS5)は 2026-08-18(再検査 B11)に実測した＝これは本当に見える範囲を絞る。**
+		//   `app.scriptPreferences.version` を変えながら聞いた結果:
+		//       7.0(=kCS5) → 見える ／ **6.0 → 見えない** ／ **5.0 → 見えない** ／ 21.0 → 見える
+		//   (`'kcmStatus' in app` も `'kcmChangeCount' in story` も 6.0/5.0 では false)
+		//   ⇒ **B1 が「測ってから決める」と残した宿題への答え**＝feature set と違い、この値は動作を変える。
+		//   ⚠それでも**据え置く**: 古い DOM を明示するスクリプトから読める必要が今は無く(検証ハーネスは
+		//     すべて現行 DOM で走る)、下げるなら**兄弟の KBS(kCS2)と揃える**という別の判断になる。
+		//     ★**据え置きの理由は「同じだから」ではなく「要らないから」に変わった**(測った結果)。
+		//   ⚠**この resource(10) と、末尾の INX 専用 resource(2) は版数が違ってよい**＝後者は
+		//     「IDML に出さない」という指示で、**出しうる全ての版**を覆う必要があるので kCS2 から宣言する。
 		//
 		// ★引用の裏取り(2026-08-17 実測): Snap.fr:2089 は実在し、記述も正確
 		//   (kCS5ScriptVersion, kCoreScriptManagerBoss, kInDesignAllLanguagesFS, k_Wild)。
@@ -374,7 +380,7 @@ resource VersionedScriptElementInfo(10)
 		//
 		// Object{}, not Parent{}: Object names an EXISTING scripting object to add members to,
 		// while Parent hangs a NEW object underneath one. BPI.fr:603-612 is the form followed here
-		// (and KBS.fr:1305-1313, which learned it the hard way - with Parent the property never
+		// (and KBS.fr:1364-1372, which learned it the hard way - with Parent the property never
 		// appeared on app at all).
 		Provider
 		{
@@ -458,6 +464,69 @@ resource VersionedScriptElementInfo(10)
 		Provider
 		{
 			kKESCMScriptProviderBoss,
+			{
+				Object{ kStoryObjectScriptElement },
+				Property{ kKESCMChangeCountPropertyScriptElement, kReadOnly },
+				Property{ kKESCMTextChangeCountPropertyScriptElement, kReadOnly },
+				Property{ kKESCMAttrChangeCountPropertyScriptElement, kReadOnly },
+				Property{ kKESCMOtherChangeCountPropertyScriptElement, kReadOnly },
+			}
+		}
+	}
+};
+
+/*
+ * ★★★KEEPS THE FOUR STORY COUNTERS OUT OF THE USER'S IDML (2026-08-18, bug recheck B11).
+ *
+ * THE PROBLEM. IDML is a mapping of the scripting DOM - "scripting objects become elements,
+ * scripting PROPERTIES become ATTRIBUTES" (idml-01:159) - so the four properties declared above
+ * were written into every IDML the user exported. Measured: every <Story> in Stories/*.xml and the
+ * <XmlStory> in XML/BackingStory.xml carried them, 36 attributes in a 22-file package for a
+ * four-page document, whether or not a comparison had ever run:
+ *
+ *     <Story Self="ufe" ... KcmChangeCount="6" KcmTextChangeCount="2"
+ *                          KcmAttrChangeCount="4" KcmOtherChangeCount="0">
+ *
+ * ⚠Nothing broke - the importer ignores them (the file said 6/2/4/0 and the opened document read
+ * 9/2/7/0, its own numbers), an attribute no plug-in defines is ignored the same way so our files
+ * stay readable where KESCM is not installed, and app.generateIDMLSchema() declares all four
+ * optional for this configuration. This is about not writing volatile session state into someone's
+ * document interchange file, which IDML reserves for "your persistent data" (vol1-11:659).
+ *
+ * WHY A SECOND RESOURCE IS THE ANSWER. The Property declaration itself has no "leave me out of
+ * INX" field - the only per-property control is the access right (kReadOnly / kReadWrite /
+ * kReadOnlyButReadWriteForINX). What the architecture gives instead is a CLIENT-SPECIFIC resource:
+ * a VersionedScriptElementInfo whose Contexts name a particular script manager (vol1-11:797), here
+ * kINXScriptManagerBoss - the base class of all four INX/IDML managers (vol1-11:174-180). Naming
+ * kNotSupported in place of a provider boss removes the elements from THAT DOM only.
+ * BscShp.fr:425-431 calls this "the preferred approach going forward".
+ *
+ * ★★MEASURED, because the SDK never does this to a Property. All three uses in the SDK
+ * (BscShp.fr:432, CdlChart.fr:567, CusDtLnk.fr:735) list Parent / RepresentObject / Method /
+ * CollectionMethod entries. Two builds were made that differed in this resource and nothing else:
+ *
+ *     with this resource:      stories[0].kcmChangeCount -> 6     IDML: no Kcm attribute at all
+ *     without it (control):    stories[0].kcmChangeCount -> 6     IDML: KcmChangeCount="6"
+ *
+ * ⇒ It works on a Property, and it does NOT take the property away from ordinary scripting.
+ *
+ * ⚠The two application properties are deliberately NOT listed here: the application object is not
+ * part of a document's IDML at all (measured - no KcmStatus anywhere in the package), so there is
+ * nothing to remove, and listing them would suggest otherwise.
+ * ⚠kCS2ScriptVersion here, not kCS5: this resource has to cover every IDML version the counters
+ * could appear in, and the SDK's own INX resources all declare from kCS2 (the three above).
+ */
+resource VersionedScriptElementInfo(2)
+{
+	//Contexts
+	{
+		kCS2ScriptVersion, kINXScriptManagerBoss, kWildFS, k_Wild,
+	}
+	//Elements
+	{
+		Provider
+		{
+			kNotSupported,
 			{
 				Object{ kStoryObjectScriptElement },
 				Property{ kKESCMChangeCountPropertyScriptElement, kReadOnly },
