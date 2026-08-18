@@ -37,6 +37,7 @@
 #include "KESCMUIShared.h"	// panel / status line / nav readout / tool button (split from KESCMCore.h on 2026-08-13)
 #include "KESCMStoryJump.h"
 #include "IKESCMStoryEditsFacade.h"	// the row a click landed on (Facade since 2026-08-13, Task 14)
+#include "IKESCMMarkData.h"	// IsPageOnHiddenSpread - a row on a hidden page is labelled, not jumped to (2026-08-18)
 
 namespace
 {
@@ -78,6 +79,14 @@ PMString PageLabel(IDataBase* db, UID pageUID)
 		label.Append(numStr);
 	else
 		label.Append("?");	// 番号が取れないページ(通常は起きない。KESCMStopLabel と同じ受け皿)
+
+	// ★★2026-08-18(不具合再検査 B10 の2周目): 隠れているスプレッドのページなら "(Hide)" を添える
+	//   ---- Prev/Next のラベル(KESCMStopLabel)・書き出しの Page 列(KESCMChangedPagesTSV の PageDisplay)と
+	//   同じ綴り。**同じ状態を3か所で3通りに綴らない**([[one-question-one-place]])。
+	//   ⚠この印は KESCMGotoStoryFrame が「レイアウトを動かさない」と決めた理由そのものなので、
+	//     片方だけ入れると「動かないのに理由が出ない」行ができる。
+	if (db != nil && Utils<IKESCMMarkData>()->IsPageOnHiddenSpread(db, pageUID))
+		label.Append(" (Hide)");
 	return label;
 }
 

@@ -714,7 +714,12 @@ static void KESCMSyncCompanionViews(IDataBase* navDB, UID pageUID)
 			//   「+」スクロールがページ中心に打ち消される(2026-07-24 ユーザー発見: sync OFF なら overset に飛ぶ)。
 			//   sync ON では Target のスクロール(呼び手がやった分)を Sync が Source へ伝える。
 			//   Pages パネルの連動は Sync の対象外なので、そちらは sync の有無に関わらず行う。
-			if (!KESCMGetLayoutSync())
+			// ★★2026-08-18(B10 の2周目): Source 側も**隠れているページへは動かさない**（Target と同じ
+			//   理由＝スプレッドは切り替わらないのにスクロールだけ効いて見当違いへ寄る）。Hide Unchanged は
+			//   両文書の対応スプレッドを隠すので、Target が隠れていれば相手も隠れているのが普通。
+			//   ⚠Pages パネルの連動（下）は隠れていても行う＝「どのページか」は見せる。
+			if (!KESCMGetLayoutSync() &&
+			    !Utils<IKESCMMarkData>()->IsPageOnHiddenSpread(sourceDB, srcPage))
 			{
 				const PMReal targetZoom = KESCMReadDocZoom(navDB);	// 実効ズーム(<=0 ならズームは変えない)
 				KESCMScrollDocToItemCenter(sourceDB, srcPage, targetZoom);
@@ -799,10 +804,24 @@ static void KESCMGoto(int32 dir)
 	// ★overset 経路は pb 点へ直接スクロールするので、ここでスプレッドを出しておく(ページ中心経路は
 	//   KESCMScrollDocToPage の中で同じことをしている)。これが無いとマスタースプレッド上の
 	//   あふれに飛べない=空のペーストボードに着地する(2026-08-06 ユーザー指摘。KBS と同じ手当て)。
-	if (stop.isOverset)
-		KESCMEnsureSpreadInView(navDB, stop.pageUID);
-	const bool16 ok = stop.isOverset ? KESCMScrollDocToPBPoint(navDB, stop.pb)
-	                                 : KESCMScrollDocToItemCenter(navDB, stop.pageUID);
+	// ★★★2026-08-18(不具合再検査 B10 の2周目・ユーザー指定): **隠れているスプレッドのページへは
+	//   レイアウトビューを動かさない。**
+	//   ⚠実測＝隠しページのストップへ飛ぶと、**スプレッドは切り替わらないのにスクロールだけ効く**
+	//     （kSetSpreadCmdBoss は隠しスプレッドを出せないので、今映しているスプレッドのまま、隠れた
+	//     ページのペーストボード座標へ寄ってしまう）＝**画面が見当違いの場所へ動く**。
+	//     「行けないなら動かない」ほうが、押した人の予想と合う。
+	//   ★**ストップ自体は巡回に残す**（ユーザー指定「Prev などには入る」）＝基準の更新・位置表示
+	//     「k/N」・ステータス行のラベル（末尾に "(Hide)"）・**Pages パネルの連動**は下でそのまま行う。
+	//     ⇒ 画面は動かないが、「どのページが変わっているか」はパネルとステータス行で分かる。
+	const bool16 stopHidden = Utils<IKESCMMarkData>()->IsPageOnHiddenSpread(navDB, stop.pageUID);
+	bool16 ok = kTrue;		// 隠れているときは「スクロールしなかった」を成功として扱う(下の早期 return を避ける)
+	if (!stopHidden)
+	{
+		if (stop.isOverset)
+			KESCMEnsureSpreadInView(navDB, stop.pageUID);
+		ok = stop.isOverset ? KESCMScrollDocToPBPoint(navDB, stop.pb)
+		                    : KESCMScrollDocToItemCenter(navDB, stop.pageUID);
+	}
 	if (!ok)
 	{
 		PMString s("Could not scroll."); s.SetTranslatable(kFalse);
@@ -838,13 +857,29 @@ void KESCMGotoPrevChange() { KESCMGoto(-1); }
 //========================================================================================
 bool16 KESCMGotoStoryFrame(IDataBase* db, UID frameUID, UID pageUID, UID storyUID)
 {
+	// ★この関数だけで4回聞くので InterfacePtr に1回受ける(Utils.h:74-80。2026-08-17 の API 監査 B-U8)。
+	// ★2026-08-18(B10 の2周目)に**関数の先頭へ移した**＝すぐ下の隠しページ判定がこれを使うため。
+	InterfacePtr<IKESCMMarkData> marks(Utils<IKESCMMarkData>().QueryUtilInterface());
+
+	// ★★★2026-08-18(不具合再検査 B10 の2周目): **隠れているスプレッドのページへはレイアウトビューを
+	//   動かさない** ---- Prev/Next(KESCMGoto)とまったく同じ判断。あちらだけ直して**ここを直さないと、
+	//   同じ「隠れたページへ行こうとする」が、パネルのボタンでは動かず・Story Edits の行では見当違いの
+	//   場所へ動く**という食い違いになる([[one-question-one-place]])。
+	//   ★Pages パネルの連動は行う＝「どのページか」は見せる。行のラベル(KESCMStoryJump.cpp の PageLabel)
+	//     が末尾に "(Hide)" を出すので、動かなかった理由はユーザーに伝わる。
+	//   ★戻り値は kTrue＝「行けなかった」ではなく「**行かないと決めた**」。呼び手
+	//     (KESCMStoryJumpToRow)は kFalse を "Could not scroll." と綴るので、ここで kFalse を返すと
+	//     失敗でないものを失敗として報告してしまう。
+	if (marks->IsPageOnHiddenSpread(db, pageUID))
+	{
+		KESCMScrollPagesPanelToPage(db, pageUID);
+		return kTrue;
+	}
+
 	// ストーリーの書き出しへ(フレームの中心ではない。上の KESCMScrollDocToStoryStart 参照)。
 	UID landedFrame = kInvalidUID;
 	if (!KESCMScrollDocToStoryStart(db, storyUID, frameUID, landedFrame))
 		return kFalse;
-
-	// ★この関数だけで3回聞くので InterfacePtr に1回受ける(Utils.h:74-80。2026-08-17 の API 監査 B-U8)。
-	InterfacePtr<IKESCMMarkData> marks(Utils<IKESCMMarkData>().QueryUtilInterface());
 
 	// Pages パネルも、**実際に着地したフレーム**のページへ(ページに載っていないなら中で何もしない)。
 	// ★行が覚えている pageUID ではなく着地側から引く: 先頭フレームにパーセルが1つも配置されていない
