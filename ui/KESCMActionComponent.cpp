@@ -820,12 +820,23 @@ void KESCMActionComponent::DoAbout()
 /* DoUsage — パネルのフライアウト「使い方」。操作リファレンス(=旧パネルの説明文)を表示する。 */
 void KESCMActionComponent::DoUsage()
 {
+	// ★本文は**2本に分けて持ち、ここで連結する**(2026-08-19)。読み手からは1本の文章。
+	//   ⚠分けた理由は英語側の都合＝odfrc は StringTable の1文字列に長さ上限があり、ブック比較の節を
+	//     足す余地が enUS の kKESCMHintKey に無かった([[odfrc-long-string-limit]])。上限は文字列ごとに
+	//     掛かるので、2本目を作れば回避できる。免責文は2本目の末尾にある(順序を自然に保つため)。
+	//   ★**Append する前に Translate 済みでなければならない**: KESCMLoc::Text は
+	//     「日本語 UI なら日本語リテラル、他は enUS テーブルを引いた結果」を返す**完成テキスト**
+	//     (untranslatable)なので、連結しても翻訳キーとして壊れない。**キー同士を連結してはいけない。**
+	PMString usage = KESCMLoc::Text(kKESCMHintKey, KESCMJa::kHint);
+	usage.Append(KESCMLoc::Text(kKESCMHintBookKey, KESCMJa::kHintBook));
+	usage.SetTranslatable(kFalse);
+
 	CAlert::ModalAlert
 	(
 		// 完成済みテキスト(キーではない): 日本語 UI なら日本語、他は enUS テーブルの英語。
 		// ★使い方の案内は日本語 UI では日本語で出す(2026-08-06 ユーザー指示)。初めて使う人への説明なので、
 		//   メニュー/パネル/ステータス行を英語で統一する方針の例外にする(KBS と同じ線引き)。
-		KESCMLoc::Text(kKESCMHintKey, KESCMJa::kHint),
+		usage,
 		kOKString,					// OK button
 		kNullString,				// No second button
 		kNullString,				// No third button

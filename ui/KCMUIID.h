@@ -486,6 +486,14 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMBookRowStateWidgetID, kKCMUIPrefix + 49)	// �
 #define kKESCMPrevChangeKey		kKESCMStringPrefix "kKESCMPrevChangeKey"	// パネルの「◀ Prev」ボタンのキャプション(英語固定)
 #define kKESCMNextChangeKey		kKESCMStringPrefix "kKESCMNextChangeKey"	// パネルの「Next ▶」ボタンのキャプション(英語固定)
 #define kKESCMHintKey			kKESCMStringPrefix "kKESCMHintKey"
+// ★How to Use 本文の**2本目**(2026-08-19)。ブック比較の節＋免責文。DoUsage が kKESCMHintKey の
+//   後ろへ連結して1つのアラートに出す＝**読み手からは1本の文章**。
+//   ⚠**なぜ分けたか＝odfrc は StringTable の1文字列に長さ上限がある**([[odfrc-long-string-limit]])。
+//     1本目は実測 3,904B で、単一行なら 4,004B が通った実績に対し残り約100B しかなく、
+//     ブックの節(約500B)が入らなかった。**上限は文字列ごとに掛かる**ので、2本目を作れば回避できる。
+//   ★**免責文はこちらの末尾へ移した**＝単純に後ろへ繋ぐと「免責→ブックの説明」の順になって不自然。
+//     移した分だけ1本目にも余裕ができる。**次に本文を足すときもこちら側へ足すこと。**
+#define kKESCMHintBookKey		kKESCMStringPrefix "kKESCMHintBookKey"
 #define kKESCMToolStringKey		kKESCMStringPrefix "kKESCMToolStringKey"	// ツールボックスのツール名(ツールチップ)。全ロケール英語で統一
 
 // Story Edits セクションの文字列。⚠文言に "text" を使わない——この一覧はテキスト以外の変更も載せる
