@@ -1,4 +1,4 @@
-//========================================================================================
+﻿//========================================================================================
 //
 //  KESCMDocResponder.cpp
 //
@@ -47,11 +47,14 @@
 
 // Interface includes:
 #include "isignalmgr.h"
+#include "IDocumentSignalData.h"	// GetDocument() - the UIDRef of the document about to close
 
 // Implementation includes:
 #include "CResponder.h"
-#include "KESCMCore.h"		// KESCMHandleDocsClosed
+#include "KESCMCore.h"				// KESCMHandleDocsClosed
+#include "KESCMHideUnchanged.h"		// KESCMResetHideUnchanged / the two hidden-side getters
 #include "KESCMID.h"
+#include "KESCMThreadSafety.h"		// KESCMIsMainThread
 
 /** KESCMDocResponder
 	Responds to the "after close document" signal by cleaning up any of KESCM's
@@ -75,6 +78,81 @@ void KESCMDocResponder::Respond(ISignalMgr* /*signalMgr*/)
 	// document UIDRef (it is invalid after close); KESCMHandleDocsClosed() figures out
 	// which tracked databases are gone by checking them against the live document list.
 	KESCMHandleDocsClosed();
+}
+
+/** KESCMBeforeSaveDocResponder
+	Undoes this plug-in's one edit to the USER'S document before that document reaches the disk.
+
+	***** WHY THE SAVE AND NOT THE CLOSE. ***** Everything else KESCM does on a close is dropping
+	its OWN state, and that belongs on AfterClose (see the top of this file). Hide Unchanged is the
+	exception because it changed the user's document: kHideSpreadCmdBoss is a persistent edit, so
+	spreads left hidden are hidden in the saved .indd - and hidden spreads do not print and do not
+	export, which is a page silently missing from whatever gets sent out.
+
+	⚠ MEASURED, in this order (2026-08-19, critical recheck axis 1):
+
+	  1. With Hide Unchanged ON, closing the documents left them hidden in the file. Closing them
+	     one at a time broke whichever was closed FIRST (reversing the order reversed which one
+	     broke); "Close All" broke BOTH. Stopping the comparison first restored them correctly, so
+	     the close was the only broken path. The immediate cause is that KESCMResetHideUnchanged
+	     asks KESCMIsDocDBOpen before restoring, and by kAfterCloseDoc the answer is no - it then
+	     drops the remembered spread list without using it, and returns void, so nothing says so.
+
+	  2. ★So a kBeforeCloseDoc responder was written - and it did NOT fix it. A diagnostic build
+	     reported IDataBase::IsModified() == 0 on entry to that signal: ***** BY kBeforeCloseDoc THE
+	     SAVE HAS ALREADY HAPPENED. ***** Restoring there put the spreads back on screen and made
+	     the document dirty again, while the bytes on disk still had them hidden.
+
+	⇒ The hook belongs on the SAVE. kBeforeSaveDoc covers both ways a document reaches the disk:
+	File > Save, and the save that a close performs on the way out.
+
+	★The spreads are NOT hidden again afterwards (user's call, 2026-08-19). Re-hiding would need
+	kAfterSaveDoc and would immediately re-dirty the document, so every save would leave unsaved
+	changes behind and saving again would repeat it. Restoring and stopping there means what is on
+	disk is always the honest document, and the user turns the toggle back on if they still want it.
+
+	⚠ Save As and Save a Copy raise their own signals (kBeforeSaveAsDocSignalResponderService /
+	kBeforeSaveACopyDocSignalResponderService, DocumentID.h:318,321) and are NOT handled here.
+*/
+class KESCMBeforeSaveDocResponder : public CResponder
+{
+public:
+	KESCMBeforeSaveDocResponder(IPMUnknown* boss) : CResponder(boss) {}
+
+	virtual void Respond(ISignalMgr* signalMgr);
+};
+
+CREATE_PMINTERFACE(KESCMBeforeSaveDocResponder, kKESCMBeforeSaveResponderImpl)
+
+void KESCMBeforeSaveDocResponder::Respond(ISignalMgr* signalMgr)
+{
+	// ⚠ Restoring runs a command (kHideSpreadCmdBoss with kFalse), and this plug-in is
+	// kModelPlugIn, so this responder can be reached on a background thread with a CLONE of the
+	// database. A clone never matches the pointers we remembered, so the test below would be false
+	// anyway - but a model change must not be attempted from there at all, and the guard says why
+	// rather than relying on that. The same question is asked once, at the entry of
+	// KESCMHandleDocsClosed, for the sweep ([[one-question-one-place]]).
+	if (!KESCMIsMainThread())
+		return;
+
+	InterfacePtr<IDocumentSignalData> signalData(signalMgr, UseDefaultIID());
+	if (signalData == nil)
+		return;
+
+	IDataBase* const db = signalData->GetDocument().GetDataBase();
+	if (db == nil)
+		return;
+
+	// Restore only when the document being saved is one of the two we hid into. An unrelated third
+	// document must not clear the toggle.
+	// ★Both sides are restored, not just this one: they were hidden as one undo step and the
+	// remembered lists are dropped together, so putting back only half would leave the other half
+	// hidden with nothing remembering it - the very state this responder exists to prevent.
+	// The other side is usually not being saved in the same breath, but it is still open, and
+	// leaving it hidden would just move the problem to its own save. KESCMResetHideUnchanged
+	// checks liveness per side internally, so a side that has already gone is skipped.
+	if (db == KESCMGetHideUnchangedDB() || db == KESCMGetHideUnchangedSrcDB())
+		KESCMResetHideUnchanged(kTrue);
 }
 
 // End, KESCMDocResponder.cpp.

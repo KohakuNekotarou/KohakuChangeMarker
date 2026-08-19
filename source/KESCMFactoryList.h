@@ -39,6 +39,7 @@ REGISTER_PMINTERFACE(KESCMDrawEventSrvc, kKESCMDrawEventSrvcImpl)	// 比較マ�
 REGISTER_PMINTERFACE(KESCMDrawEventHandler, kKESCMDrawEventHandlerImpl)	// 同ハンドラ。★**出力に出す本体なので model 必須**(分割の目的そのもの)
 REGISTER_PMINTERFACE(KESCMPeekStartup, kKESCMPeekStartupImpl)	// model 側の起動/終了(KESCMPeek.cpp)。UI 側の対は KCMUI の KESCMUIStartup
 REGISTER_PMINTERFACE(KESCMDocResponder, kKESCMDocResponderImpl)	// ServiceProvider は API 提供の実装を .fr で名指し(2026-08-06)
+REGISTER_PMINTERFACE(KESCMBeforeSaveDocResponder, kKESCMBeforeSaveResponderImpl)	// 保存の前に Hide Unchanged を戻す(2026-08-19。同じく ServiceProvider は API 提供)
 REGISTER_PMINTERFACE(KESCMScriptProvider, kKESCMScriptProviderImpl)	// ★この1本が**公開する6プロパティ全部**を serve する(app.kcmStatus / app.kcmBookResult ＋ stories[n] の変更カウンター4本。2026-08-15 に2つの boss を1つへ統合)。すべて読み取り専用でメソッドは0本。★ScriptProvider は UI ではない(設計書 §4.1)
 REGISTER_PMINTERFACE(KESCMCompareFacade, kKESCMCompareFacadeImpl)	// UI が比較エンジンに頼む窓口(kUtilsBoss へ AddIn。KESCMFacades.cpp)
 REGISTER_PMINTERFACE(KESCMMarkData, kKESCMMarkDataImpl)	// UI が比較結果を読む窓口(同上。★読み取り専用)
