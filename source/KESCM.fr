@@ -55,7 +55,9 @@
 #include "GenericID.h"	// IID_IADORNMENTSHAPE (GenericID.h:279) - the adornment route for the same marks
 #include "XPID.h"	// IID_IADORNMENTFLATTENERUSAGE (XPID.h:513) - how the adornment declares its transparency
 					// to the flattener. This is the whole reason the adornment route exists: without it,
-					// a translucent ring goes solid in PDF 1.3 on any page that has no transparency of its own.
+					// a translucent ring goes solid in PDF 1.3. Declaring is necessary but NOT sufficient -
+					// nobody asks unless the document is on IXPManager's item-has-transparency list, which
+					// is what KESCMRingAdornmentRefreshItemXPState() pokes (found and fixed 2026-08-20).
 						// ★2026-08-15 (Task 10): IID_ISPRITE / IID_IPATHGEOMETRY / kPathGeometryImpl left with the
 						//   tracker in Task 6B-2. ★2026-08-19 (bug recheck B-U6): the tracker does not declare
 						//   them either any more - CTracker never queries ISprite, so only CPathCreationTracker /
@@ -139,13 +141,20 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 		.indd is not touched at all. Only one of the two routes paints; the draw event handler
 		stands down while this one is registered.
 
-		WHY IT EXISTS: the translucent ring is drawn with an alpha server, and in PDF 1.3 that
-		only survives on pages that already contain transparency - elsewhere the mask is never
-		resolved and the ring comes out solid. Japanese print-submission presets are almost all
-		1.3 (PDF/X-1a, X-3, magazine ad delivery - all Acrobat 4). The fix is to make the
-		transparency manager notice us, and the only place it asks is
-		IID_IADORNMENTFLATTENERUSAGE - which lives on adornment bosses, never on a draw event
-		service boss. Hence this boss.
+		WHY IT EXISTS: the translucent ring is drawn with an alpha server, and in PDF 1.3 the
+		mask only gets resolved if the flattener runs - otherwise the ring comes out solid.
+		Japanese print-submission presets are almost all 1.3 (PDF/X-1a, X-3, magazine ad
+		delivery - all Acrobat 4). The fix is to make the transparency manager notice us, and
+		the only place it asks is IID_IADORNMENTFLATTENERUSAGE - which lives on adornment
+		bosses, never on a draw event service boss. Hence this boss.
+
+		⚠ Being asked is a second, separate condition, and it took until 2026-08-20 to find:
+		the flattener only runs at all when the document is on IXPManager's list of page items
+		that have transparency, and a session-global adornment is on no item, so it can never
+		join that list by itself. transparencyeffect gets this for free because it attaches its
+		adornment to real items with a command and notifies right after (TranFxUtils.cpp:451).
+		KESCM says the same thing by hand, without touching the document, in
+		KESCMRingAdornmentRefreshItemXPState().
 
 		The two-interface shape (adornment + flattener usage) is exactly what
 		sdksamples/transparencyeffect does (TranFx.fr:150-156). */
