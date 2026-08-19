@@ -24,6 +24,7 @@
 #include "ISession.h"					// GetExecutionContextSession()
 #include "ISpread.h"					// 「今描いているのはスプレッドか」の判定
 #include "IShape.h"
+#include "IGeometry.h"				// GetStrokeBoundingBox(ink bounds の実験)
 #include "IDrwEvtHandler.h"				// DrawEventData(描画本体へ渡す形)
 #include "IGraphicsContext.h"			// GraphicsData
 #include "IStartupShutdownService.h"	// スレッドごとの登録(このファイルの末尾)
@@ -81,6 +82,26 @@ namespace
 		  分けるには従来経路で同じ手順を回すのが唯一の手だった(実際それで
 		  「1.4 のつもりが全部 1.3 で書き出されていた」という**測り方の誤り**を見つけた)。 */
 	const bool16 kUseRingAdornment = kTrue;
+
+	/** ★**実験用。kFalse が正。** kTrue にすると
+		 ①`KESCMRingAdornmentRefreshItemXPState()` を黙って何もしないようにし
+		 ②代わりに `AddToContentInkBounds` で「このアイテム全体にインクを置く」と申告する
+		---- つまり **spellpanel が持っていて KESCM が持っていなかった唯一の口(ink bounds)が、
+		透明マネージャへの通知の代わりになるか**を測るための切り替え。
+
+		★★★**2026-08-20 実測＝ならない。** 同一文書・同一プリセット(`[雑誌広告送稿用]`＝PDF 1.3)・
+		同一の測定スクリプト(`work/kescm-adorn/isolate-doc.ps1`)で:
+
+		| | 変更ページの画素 |
+		|---|---|
+		| 通知あり(＝現行) | **`red 0` / 淡赤 40,847**(半透明) |
+		| 通知を止めて ink bounds を申告 | ⚠**`red 862,283`**(全面ベタ) |
+
+		⇒ **ink bounds はフラットナの判定に一切関与しない**。契約(`IAdornmentShape.h:138-140`＝
+		  「枠基準のアドーンメントは実装不要」)と公式のコメント("used for **resizing textframe** etc."
+		  ＝`TranFxAdornment.cpp:483`)のとおりだった。
+		∴ **`ItemXPChanged` の通知は代替不能。** この定数は結論を書き残すために残してある。 */
+	const bool16 kTestInkBoundsInsteadOfNotify = kFalse;
 }
 
 //========================================================================================
@@ -119,7 +140,16 @@ public:
 											 const PMRect& itemBounds, const PMMatrix& /*innertoview*/)
 		{ return itemBounds; }
 
-	virtual void AddToContentInkBounds(IShape* /*iShape*/, PMRect* /*inOutBounds*/) {}
+	/** ★空実装が正。**契約が明示的にこちらを免除している** ----
+		`IAdornmentShape.h:138-140`＝"This is only used by adornments for which the inking bounds
+		are based on **the content**. Adornments for which inking bboxes are based **solely on the
+		frame** do not need to implement this routine."
+		マークはページ/スプレッドの箱を基準に描く(GetPaintedAdornmentBounds が itemBounds を素で返す)
+		＝枠基準なので免除側。公式も**枠の外へ滲む transparencyeffect だけが実装**しており、
+		`framelabel/FrmLblAdornment.cpp:160` は**空 `{}`**。★用途もフラットナではない ----
+		`TranFxAdornment.cpp:483` のコメントが **"used for resizing textframe etc."** と書いている。
+		⚠**2026-08-20 に実測でも確かめた**（下の kTestInkBoundsInsteadOfNotify を参照）。 */
+	virtual void AddToContentInkBounds(IShape* iShape, PMRect* inOutBounds);
 
 	virtual PMReal GetPriority() { return 0; }
 
@@ -166,6 +196,19 @@ void KESCMRingAdornmentShape::DrawAdornment(IShape* iShape, AdornmentDrawOrder d
 	// ISpread と IDataBase を引くだけで、どちらも同じ boss から取れる(iShape と spread は同一 boss)。
 	DrawEventData ded(iShape, gd, flags);
 	KESCMDrawEventHandler::DrawSpreadMarks(&ded);
+}
+
+/** 契約どおり**何もしない**（上の宣言のコメントを参照）。実験スイッチを立てたときだけ、
+	spellpanel が GetInkBounds でやっているのと同じ「ここにインクを置く」の申告を出す。 */
+void KESCMRingAdornmentShape::AddToContentInkBounds(IShape* iShape, PMRect* inOutBounds)
+{
+	if (!kTestInkBoundsInsteadOfNotify || iShape == nil || inOutBounds == nil)
+		return;
+	InterfacePtr<IGeometry> geo(iShape, UseDefaultIID());
+	if (geo == nil)
+		return;
+	PMRect box = geo->GetStrokeBoundingBox();	// inner 座標(契約 :141「The bounds are based on inner coordinates」)
+	inOutBounds->Union(box);
 }
 
 //========================================================================================
@@ -321,7 +364,9 @@ bool16 KESCMRingAdornmentIsActive()
 void KESCMRingAdornmentRefreshItemXPState(IDataBase* db)
 {
 	// 申告そのものを切ってあるなら、一覧に載せる意味も無い。
-	if (!kUseRingAdornment || !kDeclareFlattenerUsage)
+	// 申告そのものを切ってあるなら、一覧に載せる意味も無い。
+	// kTestInkBoundsInsteadOfNotify は「ink bounds が通知の代わりになるか」を測るための実験スイッチ。
+	if (!kUseRingAdornment || !kDeclareFlattenerUsage || kTestInkBoundsInsteadOfNotify)
 		return;
 	if (db == nil)
 		return;
