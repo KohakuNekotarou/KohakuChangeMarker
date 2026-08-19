@@ -154,7 +154,6 @@ DECLARE_PMID(kClassIDSpace, kKESCMDrawEventServiceBoss, kKESCMPrefix + 4)
 // kKESCMPeekWatcherBoss (kKESCMPrefix + 5) は中ボタンウォッチャ撤去(2026-07-13)により廃止。スロットは予約のまま。
 DECLARE_PMID(kClassIDSpace, kKESCMPeekStartupBoss, kKESCMPrefix + 6)	// IStartupShutdown: アプリ起動時に peek ウォッチャを開始
 DECLARE_PMID(kClassIDSpace, kKESCMDocResponderServiceBoss, kKESCMPrefix + 10)	// IK2ServiceProvider+IResponder: ドキュメントクローズ監視(閉じた文書の追跡状態を確定クリーンアップ)
-DECLARE_PMID(kClassIDSpace, kKESCMBeforeSaveResponderServiceBoss, kKESCMPrefix + 11)	// IK2ServiceProvider+IResponder: ★**保存の「前」**の監視。Hide Unchanged で隠したスプレッドを、ファイルへ書かれる前に戻す(2026-08-19＝致命性再検査 軸①)。⚠**「閉じる前(kBeforeCloseDoc)」では遅い**＝実測で保存のほうが先だった(理由は KESCMDocResponder.cpp)
 // kKESCMStoryScriptProviderBoss (kKESCMPrefix + 11) は 2026-08-15 に廃止。スロットは予約のまま(再利用しない)。
 //   ★経緯＝story の4カウンターを公開したとき「1つの boss では app と story を分けられない」と考えて2つ目の
 //   boss を作ったが、**それが誤り**だった。ガイドの Provider element の定義が答え＝Property は「**直前の**
@@ -206,7 +205,6 @@ DECLARE_PMID(kImplementationIDSpace, kKESCMMarkDataImpl, kKESCMPrefix + 40)	// I
 DECLARE_PMID(kImplementationIDSpace, kKESCMPageFlagsFacadeImpl, kKESCMPrefix + 41)	// IKESCMPageFlagsFacade 実装(KESCMFacades.cpp)。同じく kUtilsBoss へ AddIn
 DECLARE_PMID(kImplementationIDSpace, kKESCMStoryEditsFacadeImpl, kKESCMPrefix + 42)	// IKESCMStoryEditsFacade 実装(KESCMFacades.cpp)。同じく kUtilsBoss へ AddIn。★読み取り専用
 DECLARE_PMID(kImplementationIDSpace, kKESCMBookFacadeImpl, kKESCMPrefix + 43)	// IKESCMBookFacade 実装(KESCMFacades.cpp)。同じく kUtilsBoss へ AddIn
-DECLARE_PMID(kImplementationIDSpace, kKESCMBeforeSaveResponderImpl, kKESCMPrefix + 44)	// IResponder 実装(保存の前に Hide Unchanged の隠しスプレッドを戻す。KESCMDocResponder.cpp)
 // kKESCMStoryScriptProviderImpl (kKESCMPrefix + 44) は 2026-08-15 に廃止(実装ごと kKESCMScriptProviderImpl へ
 //   統合)。スロットは予約のまま(再利用しない)。理由は上の kKESCMStoryScriptProviderBoss の欠番コメント。
 
