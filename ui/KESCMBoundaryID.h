@@ -55,7 +55,7 @@
 #define kKESCMCompanyKey	"KohakuNekotarou"	// Company name used internally for menu paths and the like. Must be globally unique, only A-Z, 0-9, space and "_".
 #define kKESCMCompanyValue	"KohakuNekotarou"	// Company name displayed externally.
 #define kKESCMDisplayName	"Kohaku Change Marker"	// 表示名(About メニュー項目・About ボックス本文・パネル/ツール名)。KBS の "Kohaku Search Panel" に合わせ、単語間をスペースで区切る(2026-07-25)。
-#define kKESCMVersion		"1.5.0"				// ★製品の版数（model と UI で必ず同じ）。About ボックス本文・両側の .rc の FileVersion・両側の PluginVersion リソースに出る。履歴と「次に提出する分」の増分は **KESCMID.h の長いコメント**が正本。
+#define kKESCMVersion		"1.6.0"				// ★製品の版数（model と UI で必ず同じ）。About ボックス本文・両側の .rc の FileVersion・両側の PluginVersion リソースに出る。履歴と「次に提出する分」の増分は **KESCMID.h の長いコメント**が正本。
 
 // ★プラットフォーム別の修飾キー表記（2026-07-25 追補 Mac 対応）。
 //   実装側は SDK の IEvent が差を吸収する（OptionAltKeyDown = Win の Alt / Mac の Option、

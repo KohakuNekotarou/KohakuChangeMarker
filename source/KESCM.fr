@@ -52,6 +52,12 @@
 // carrying a hand-written one (see that Class below).
 #include "DocumentID.h"	// kAfterCloseDocSignalRespServiceImpl
 #include "GraphicsID.h"	// IID_IDRWEVTHANDLER (the comparison marks' draw service - the whole point of the model half)
+#include "GenericID.h"	// IID_IADORNMENTSHAPE (GenericID.h:279) - the adornment route for the same marks
+#include "XPID.h"	// IID_IADORNMENTFLATTENERUSAGE (XPID.h:513) - how the adornment declares its transparency
+					// to the flattener. This is the whole reason the adornment route exists: without it,
+					// a translucent ring goes solid in PDF 1.3. Declaring is necessary but NOT sufficient -
+					// nobody asks unless the document is on IXPManager's item-has-transparency list, which
+					// is what KESCMRingAdornmentRefreshItemXPState() pokes (found and fixed 2026-08-20).
 						// ★2026-08-15 (Task 10): IID_ISPRITE / IID_IPATHGEOMETRY / kPathGeometryImpl left with the
 						//   tracker in Task 6B-2. ★2026-08-19 (bug recheck B-U6): the tracker does not declare
 						//   them either any more - CTracker never queries ISprite, so only CPathCreationTracker /
@@ -126,6 +132,80 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 		{
 			IID_IK2SERVICEPROVIDER, kKESCMDrawEventSrvcImpl,
 			IID_IDRWEVTHANDLER,     kKESCMDrawEventHandlerImpl,
+		}
+	},
+
+	/** The same comparison marks, painted as a GLOBAL page item adornment instead of from the
+		draw event above. Registered once on the session's global adornment list at startup
+		(KESCMRingAdornment.cpp), so it is never attached to anything in the document - the
+		.indd is not touched at all. Only one of the two routes paints; the draw event handler
+		stands down while this one is registered.
+
+		WHY IT EXISTS: the translucent ring is drawn with an alpha server, and in PDF 1.3 the
+		mask only gets resolved if the flattener runs - otherwise the ring comes out solid.
+		Japanese print-submission presets are almost all 1.3 (PDF/X-1a, X-3, magazine ad
+		delivery - all Acrobat 4). The fix is to make the transparency manager notice us, and
+		the only place it asks is IID_IADORNMENTFLATTENERUSAGE - which lives on adornment
+		bosses, never on a draw event service boss. Hence this boss.
+
+		⚠ Being asked is a second, separate condition, and it took until 2026-08-20 to find:
+		the flattener only runs at all when the document is on IXPManager's list of page items
+		that have transparency, and a session-global adornment is on no item, so it can never
+		join that list by itself. transparencyeffect gets this for free because it attaches its
+		adornment to real items with a command and notifies right after (TranFxUtils.cpp:451).
+		KESCM says the same thing by hand, without touching the document, in
+		KESCMRingAdornmentRefreshItemXPState().
+
+		The two-interface shape (adornment + flattener usage) is exactly what
+		sdksamples/transparencyeffect does (TranFx.fr:150-156). */
+	Class
+	{
+		kKESCMRingAdornmentBoss,
+		kInvalidClass,
+		{
+			IID_IADORNMENTSHAPE,          kKESCMRingAdornmentImpl,
+			IID_IADORNMENTFLATTENERUSAGE, kKESCMRingFlattenerUsageImpl,
+		}
+	},
+
+	/** Registers the adornment above on the session's global list - ONCE PER EXECUTION CONTEXT.
+		It exists as a boss of its own for one reason, and the reason is not tidiness:
+
+		A global TEXT adornment needs none of this. It is declared as a service
+		(IID_IK2SERVICEPROVIDER, kGlobalTextAdornmentServiceImpl - spellpanel's dynamic spelling
+		squiggle is exactly that, SpellPanelClass.fr:773-774) and the service registry resolves it
+		separately in every execution context, background threads included. There is no equivalent
+		for page item adornments: the only thing the API ships on that side is
+		kGlobalPageItemAdornmentListImpl, the list itself, not a service provider. So the
+		per-context registration that a service would do for free has to be done by hand, here.
+
+		WHY NOT FOLD IT INTO kKESCMPeekStartupBoss: that one is deliberately pinned to the main
+		thread (kCMainThreadStartupShutdownProviderImpl) because its Shutdown() throws away the
+		entire comparison state - run it on every background thread teardown and the marks vanish
+		on every PDF export, which is a bug that was found and fixed in 2026-08-15. This service
+		only adds and removes a registration, so it is safe - and useless - unless it runs on
+		every thread. Hence a separate boss with the plain (not main-thread-only) provider.
+
+		★ kCStartupShutdownProviderImpl, NOT kLazyStartupShutdownProviderImpl - and this is a
+		deliberate departure from the documented preference. IStartupShutdownService.h:44-47 says
+		to prefer Lazy ("you should use kLazyStartupShutdownProviderImpl to avoid slowing down
+		launch time"), and the SDK follows it 6 files to 4. It does not work here, and the
+		difference was measured rather than reasoned about (2026-08-19, PDF 1.3, same document):
+
+		    provider                              main thread     background thread
+		    kCStartupShutdownProviderImpl         74,503 px       74,503 px      (translucent)
+		    kLazyStartupShutdownProviderImpl      74,503 px       852,047 px     (SOLID - not registered)
+
+		Lazy runs from an idle task after startup completes, and a background export thread never
+		gets there - so the registration this service exists to perform never happens on the very
+		thread that needs it. The launch-time cost being avoided is two Query calls. */
+	Class
+	{
+		kKESCMRingAdornmentStartupBoss,
+		kInvalidClass,
+		{
+			IID_IK2SERVICEPROVIDER, kCStartupShutdownProviderImpl,
+			IID_ISTARTUPSHUTDOWN,   kKESCMRingAdornmentStartupImpl,
 		}
 	},
 

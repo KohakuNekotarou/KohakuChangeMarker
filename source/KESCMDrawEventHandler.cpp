@@ -71,6 +71,7 @@
 //  ＝model/UI 分割 第1段 Task 6。押下中かどうかはツール(UI)の状態で、model からは見えないため。
 //  ⇒ このファイルは KESCMTrackerHud.h を include しない。)
 #include "KESCMDrawEventHandler.h"
+#include "KESCMRingAdornment.h"      // KESCMRingAdornmentIsActive(アドーンメント経路が生きているなら Draw Event 側は描かない)
 
 CREATE_PMINTERFACE(KESCMDrawEventHandler, kKESCMDrawEventHandlerImpl)
 
@@ -1185,11 +1186,16 @@ static void KESCMDrawEntryOnPage(IGraphicsPort* gPort, IViewPortAttributes* vpAt
 			//       **PDF 1.4 以降でも 0 になる**（1.4 は透明をそのまま持てるのでフラットナを使わない）。
 			//     ・つまり「0 だから落とす」と書くと、**本物の半透明が出せる PDF 1.4 まで近似に落ちる**。
 			//       ★ユーザー実測「1.4 では（透明の無いページでも）問題なく半透明になっている」。
-			//     ⇒ **全面ベタになるのは「PDF 1.3 かつ透明が無いページ」だけ**なので、直すには
-			//       **描画中に互換性レベルを知る手段**が要る。候補＝**`kXPFlattenerOffVPAttr`**
-			//       （XPID.h:652「フラットナが OFF か」＝1.4 なら 1、1.3 なら 0 のはず・**未実測**）。
-			//       測って区別できると分かったら、ここに分岐を戻す。
-			//   ⇒ 現状は**アルファサーバ1本**。既知の制限＝**PDF 1.3 で透明を含まないページは枠が全面ベタ**。
+			//     ⇒ **全面ベタになるのは「PDF 1.3 かつ透明が無い文書」だけ**だった。
+			//   ★★★**2026-08-20 に解消。分岐は要らなかった。** 当時ここは「描画中に互換性レベルを
+			//     知る手段（`kXPFlattenerOffVPAttr` 等）を測って分岐を戻す」と書いていたが、
+			//     **直す場所が描画側ではなかった**＝フラットナが動くかどうかは
+			//     `IXPManager` の「透明を持つページアイテムの一覧」だけで決まっており、
+			//     アドーンメントはアイテムでないのでその一覧に入れていなかった。
+			//     ⇒ `KESCMRingAdornmentRefreshItemXPState()` で一覧を聞き直させたら直った
+			//       （経緯と実測は KESCMRingAdornment.h の同関数の宣言）。
+			//     ⇒ **この分岐案は追わないこと。** 近似で描き分ける必要は無くなった。
+			//   ⇒ 現状は**アルファサーバ1本**。残る制限は「ページアイテムが1つも無いスプレッド」だけ。
 			KESCMDrawRingForPrint(gPort, vpAttr, db, e);
 		}
 		else
@@ -1491,9 +1497,20 @@ static void KESCMDrawPageCheck(IGraphicsPort* gPort, IDataBase* db, UID pageUID,
 //  押下中 HUD と一緒に 2026-08-13 に KESCMUIDrawEvent.cpp へ移した(model/UI 分割 第1段 Task 6)。
 //  中身は1行も変えていない。)
 
-bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
+bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID /*eventID*/, void* eventData)
 {
-	DrawEventData* ded = static_cast<DrawEventData*>(eventData);
+	// ★2026-08-19: マークをグローバルページアイテムアドーンメントとして描く経路(KESCMRingAdornment.cpp)が
+	//   生きている間は、この経路は描かない ---- 同じ絵が2回出るのを避けるため。
+	//   ⚠**登録に失敗していれば kFalse が返る**ので、その場合は従来どおりここが描く
+	//     ＝**新しい経路が動かなくても機能は落ちない**(片方向のフォールバック)。
+	//   ★eventID は元から見ていない(登録しているのは kEndSpreadMessage の1本だけ)。
+	if (KESCMRingAdornmentIsActive())
+		return kFalse;
+	return DrawSpreadMarks(static_cast<DrawEventData*>(eventData));
+}
+
+bool16 KESCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
+{
 	if (ded == nil || ded->gd == nil)
 		return kFalse;
 	// 自前のラスタ化(MakeEntry の比較スナップショット / MakeOrigImage の旧版スナップショット)中の再入は
@@ -1530,9 +1547,12 @@ bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	//       欠けていたのは**公式が要求する追加初期化**(PDF ポートでの `starttransparencygroup`)だけで、
 	//       足したら **PDF 1.4 でも 1.3 でも半透明で出た**。⇒ 今は**印刷と PDF が同じ処理**
 	//       (アルファサーバ1本＝KESCMDrawRingForPrint)で、ベクター近似の関数は削除済み。
-	//       ⚠残る既知の制限は「**PDF 1.3 かつ透明を1つも含まないページではリングが全面ベタ**」だけ
-	//         (アルファサーバのマスクが解決されないため)。How to Use に「書き出しの互換性は
-	//         Acrobat 5(PDF 1.4)以上に」と明記してある＝**コードでは分岐しない**(ユーザー判断)。
+	//       ⚠**旧記述「残る既知の制限＝PDF 1.3 かつ透明を1つも含まないページでは全面ベタ」も
+	//         2026-08-20 に解消した。** 原因はアルファサーバではなく**フラットナがそもそも
+	//         動いていなかったこと**で、動かす条件は `IXPManager` の「透明を持つページアイテムの
+	//         一覧」に載ること1つだけだった(アドーンメントはアイテムでないので載れずにいた)。
+	//         ⇒ `KESCMRingAdornmentRefreshItemXPState()` で一覧を聞き直させる。
+	//         残るのは「ページアイテムが1つも無いスプレッド」だけ(載せる代表が取れない)。
 	//     ★出力先を測る道具は今も有効＝app.ktDrawProbe(KT/KTDrawProbe.cpp)で「その描画はどの出力先か」を実測する。
 	// 自己参照(自前スナップショット)は上の tl_Rasterizing で防ぐので、ここで kPreviewMode は見ない。
 	const bool16 printing = (ded->flags & IShape::kPrinting) != 0;

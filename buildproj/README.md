@@ -33,6 +33,19 @@ KESCM の git リポジトリは `source/sdksamples/KESCM/`(このフォルダ�
 - **リンクライブラリに `DV_WidgetBin.lib` を追加**(2026-07-11、全4構成)。`KESCMScrollMap.cpp` の
   自前描画ビュー基底 `DVControlView`(`AbstractControlView`/`DVHostedWidgetView`)の実体は
   `WidgetBin.lib` ではなく `DV_WidgetBin.lib` にあるため(dumpbin で確認)。
+- ★★**ビルド生成物の名前を `KohakuChangeMarker` に統一**(2026-08-19)。`TargetName`(`.pln`)だけが
+  `KohakuChangeMarker` で、**`.pdb` が `KohakuExtendScriptChangeMarker.pdb` のまま出力先に並んでいた**ため。
+  直したのは `.vcxproj` 内の**生成物名だけ**——`ProgramDatabaseFile` / `ImportLibrary` /
+  `PrecompiledHeaderOutputFile` / `TypeLibraryName` / `IntDir` / `.rsp` の参照(全4構成・計32か所)。
+  **`build/win/prj/` の応答ファイル2本もリネームした**:
+  `KohakuExtendScriptChangeMarker{CPP,ODFRC}.rsp` → `KohakuChangeMarker{CPP,ODFRC}.rsp`
+  (中身は `/I`・`-i` のパス列だけで、名前は入っていない)。
+  ⚠**変えていないもの**: `.vcxproj` のファイル名・`SDKSamples.sln` の登録名(`ProjectName` は元から
+  `KohakuChangeMarker` に上書き済み)、`KESCM*.sdk.props` 4本(元から短い `KESCM` 名)、そして
+  **内部名 `kKESCMPluginName`**(`KESCMBoundaryID.h:78`。`.rc` の `InternalName` と KCMUI の
+  `PluginDependency` が名乗る名前で、**互換のため据え置き**)。
+  ⚠`IntDir` が変わるので**中間フォルダーが `objRx64\KohakuChangeMarker` に移り、初回はフルビルド**になる。
+  旧 `objRx64\KohakuExtendScriptChangeMarker` / `objDx64\…` は残骸なので消してよい。
 - 追加のインクルードパスは**無し**(標準構成のまま)。
   ※2026-07-06 まで一時的に `$(ID_SDK_DIR)\source\open\interfaces\ui` を追加していた
   (`IPendingUpdateController.h` 用)が、サムネイル更新を `IImageCacheMgr::Purge` + `ForceRedraw` の
@@ -106,8 +119,9 @@ cp buildproj/KohakuChangeMarkerUI.vcxproj.filters            <SDK>/build/win/prj
 ## ⚠ ソースを移動したときの注意(2026-08-12 に実際に踏んだ)
 `.fr` のパスが変わったビルドは、中間フォルダが**前回の `.fr` のパスを覚えている**ため
 `Previous .fr file ... and current .fr file ... do not match` で落ちる。
-コードの問題ではないので、`build/win/objRx64/KohakuExtendScriptChangeMarker` を削除して
+コードの問題ではないので、`build/win/objRx64/KohakuChangeMarker` を削除して
 ビルドし直せばよい(中身は `.obj` / `.tlog` / `.pdb` などの中間生成物だけ)。
+※フォルダー名は 2026-08-19 に `KohakuExtendScriptChangeMarker` から変わった(上記)。
 
 ## ⚠ Xcode プロジェクトについて
 `KohakuExtendScriptChangeMarker.xcodeproj` と `*.xcconfig` は **Mac 版を取りやめた
