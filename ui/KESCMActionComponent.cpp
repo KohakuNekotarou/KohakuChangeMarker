@@ -823,12 +823,13 @@ void KESCMActionComponent::DoUsage()
 	// ★本文は**2本に分けて持ち、ここで連結する**(2026-08-19)。読み手からは1本の文章。
 	//   ⚠分けた理由は英語側の都合＝odfrc は StringTable の1文字列に長さ上限があり、ブック比較の節を
 	//     足す余地が enUS の kKESCMHintKey に無かった([[odfrc-long-string-limit]])。上限は文字列ごとに
-	//     掛かるので、2本目を作れば回避できる。免責文は2本目の末尾にある(順序を自然に保つため)。
+	//     掛かるので、2本に割れば回避できる。**割れ目はブックの節を置きたい位置**(オーバーセットの
+	//     検出の前)で決めてあり、2本目は「ブック比較以降の後半すべて」＝免責文もその末尾にある。
 	//   ★**Append する前に Translate 済みでなければならない**: KESCMLoc::Text は
 	//     「日本語 UI なら日本語リテラル、他は enUS テーブルを引いた結果」を返す**完成テキスト**
 	//     (untranslatable)なので、連結しても翻訳キーとして壊れない。**キー同士を連結してはいけない。**
 	PMString usage = KESCMLoc::Text(kKESCMHintKey, KESCMJa::kHint);
-	usage.Append(KESCMLoc::Text(kKESCMHintBookKey, KESCMJa::kHintBook));
+	usage.Append(KESCMLoc::Text(kKESCMHint2Key, KESCMJa::kHint2));
 	usage.SetTranslatable(kFalse);
 
 	CAlert::ModalAlert
