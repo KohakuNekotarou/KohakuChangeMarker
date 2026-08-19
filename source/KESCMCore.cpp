@@ -50,6 +50,7 @@
 #include "KESCMStoryStamp.h"         // ストーリーの変更カウンター(テキストが編集されたか＝画素比較には出せない情報)
 #include "KESCMStoryList.h"          // 変更のあったストーリーの一覧(Story Edits セクションが読むモデル)
 #include "KESCMHideUnchanged.h"      // KESCMResetHideUnchanged(2026-08-13 に KESCMCore.h から移動)
+#include "KESCMRingAdornment.h"      // KESCMRingAdornmentRefreshItemXPState(透明マネージャへの通知)
 // ★★2026-08-13(Task 10): **UI 側ヘッダー6本の include を落とした** ---- KESCMViewSync /
 //   KESCMThumbnailRefresh / KESCMChangeNav / KESCMScrollMap / KESCMStoryTree / KESCMStorySection。
 //   比較の後始末のうち「画面を作り直す」部分は全部 KESCMNotify*() の通知になり、このファイルは
@@ -846,6 +847,10 @@ ErrorCode KESCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMStri
 	//   ⇒ **この式を `!doIncremental && !cancelled` へ変える必要は無い。** 同じ後始末を
 	//     2か所ですると、片方だけ直したときに必ずずれる([[one-question-one-place]])。
 	KESCMNotifyDocs(kKESCMMarksRebuiltMessage, targetDB, sourceDB, !doIncremental);
+	// ★マークの有無が変わった＝**書き出しに透明が生じるかどうかも変わった**。透明マネージャに
+	//   聞き直させる(理由は KESCMRingAdornment.h の宣言のコメント。ここが「増えた」側)。
+	KESCMRingAdornmentRefreshItemXPState(targetDB);
+	KESCMRingAdornmentRefreshItemXPState(sourceDB);
 	// ★キャンセルは kFailure で返す。Start 経路(KESCMToggleStartStop)はこの戻り値を見て arm するかどうかを
 	//   決めるので、ここを常に kSuccess にすると「キャンセルしたのに arm され、メニューが Stop のまま」
 	//   になる(2026-07-27 実機で発生)。
@@ -941,6 +946,11 @@ void KESCMDoClearMarks(IDataBase* db)
 	//   サムネイルを作り直せばよいか分からない。Rebuilt と違って**聞けない**のがこちら。
 	// ★navReset=kTrue ＝ Stop では巡回の基準点を次の比較へ持ち越さない。
 	KESCMNotifyDocs(kKESCMMarksClearedMessage, markedDB, srcDB, kTrue /*navReset*/);
+	// ★こちらは「減った」側 ---- 申告が kFalse に変わるので、載せた分を降ろさせる。
+	//   ⚠**上げるほうだけ通知すると、Stop 後もページがフラットナ対象のまま残る**
+	//   (＝何も描いていないのに書き出しの色だけ変わる。対称に呼ぶこと)。
+	KESCMRingAdornmentRefreshItemXPState(markedDB);
+	KESCMRingAdornmentRefreshItemXPState(srcDB);
 
 	// ★Story Edits の一覧も同じく忘れる。次の比較まで残しておくと、もう比較していない2文書の
 	//   差分を指したまま**クリックすれば飛べてしまう**行が並ぶことになる(ジャンプは段階4)。
@@ -967,6 +977,15 @@ void KESCMDoSetPrintMarks(bool16 printFlag, bool16 opacity25Flag, IDataBase* db)
 		KESCMInvalidateDB(db);
 	if (KESCMDrawEventHandler::sSrcDB != KESCMDrawEventHandler::sDB && KESCMDrawEventHandler::sSrcDB != db)
 		KESCMInvalidateDB(KESCMDrawEventHandler::sSrcDB);
+
+	// ★★★再描画だけでは足りない ---- **書き出しに出る/出ないが変わったこと**を透明マネージャにも
+	//   伝える。これが無いと、透明を1つも持たない文書では PDF 1.3 でリングが全面ベタになる
+	//   (理由と実測は KESCMRingAdornment.h の宣言のコメント)。無効化の相手と同じ3つに送る。
+	KESCMRingAdornmentRefreshItemXPState(KESCMDrawEventHandler::sDB);
+	if (db != KESCMDrawEventHandler::sDB)
+		KESCMRingAdornmentRefreshItemXPState(db);
+	if (KESCMDrawEventHandler::sSrcDB != KESCMDrawEventHandler::sDB && KESCMDrawEventHandler::sSrcDB != db)
+		KESCMRingAdornmentRefreshItemXPState(KESCMDrawEventHandler::sSrcDB);
 }
 
 // 現在の印刷マーク設定を返す(パネル再表示時の状態復元に使用)。

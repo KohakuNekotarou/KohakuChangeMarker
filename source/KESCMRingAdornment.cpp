@@ -27,9 +27,15 @@
 #include "IDrwEvtHandler.h"				// DrawEventData(描画本体へ渡す形)
 #include "IGraphicsContext.h"			// GraphicsData
 #include "IStartupShutdownService.h"	// スレッドごとの登録(このファイルの末尾)
+#include "IXPUtils.h"					// QueryXPManager(db)
+#include "IXPManager.h"					// ItemXPChanged(＝「透明を持つアイテムの一覧」を作り直させる)
+#include "ISpreadList.h"				// 文書のスプレッドを辿る
+#include "IDataBase.h"					// GetRootUID
 
 // General includes:
 #include "CPMUnknown.h"
+#include "UIDList.h"
+#include "Utils.h"
 
 // Project includes:
 #include "KESCMID.h"
@@ -306,6 +312,79 @@ bool16 KESCMRingAdornmentIsActive()
 	if (globalList == nil)
 		return kFalse;
 	return globalList->HasAdornment(kKESCMRingAdornmentBoss);
+}
+
+//========================================================================================
+// 3.5) ★★★透明マネージャに「聞き直せ」と言う ---- PDF 1.3 の全面ベタの残り半分
+//========================================================================================
+
+void KESCMRingAdornmentRefreshItemXPState(IDataBase* db)
+{
+	// 申告そのものを切ってあるなら、一覧に載せる意味も無い。
+	if (!kUseRingAdornment || !kDeclareFlattenerUsage)
+		return;
+	if (db == nil)
+		return;
+
+	Utils<IXPUtils> xpUtils;
+	if (!xpUtils)
+		return;
+	InterfacePtr<IXPManager> xpManager(xpUtils->QueryXPManager(db));
+	if (xpManager == nil)
+		return;
+
+	InterfacePtr<ISpreadList> spreadList(db, db->GetRootUID(), UseDefaultIID());
+	if (spreadList == nil)
+		return;
+
+	// ★**スプレッドごとに1つで足りる。** 一覧は「そのスプレッドに透明を持つアイテムが在るか」を
+	//   答えるための材料で、位置は見ていない(`IXPManager.h:114-116`＝"Info is maintained solely on
+	//   the presence of transparent items on spread, **not based on location**")。
+	// ⚠**アイテムが1つも無いスプレッドは載せようがない**＝空ページだけの文書では、この手は効かない
+	//   (アドーンメントは空ページにも枠を描けるが、透明の有無を答える口がアイテムしか無いため)。
+	UIDList items(db);
+	const int32 spreadCount = spreadList->GetSpreadCount();
+	for (int32 i = 0; i < spreadCount; ++i)
+	{
+		InterfacePtr<ISpread> spread(db, spreadList->GetNthSpreadUID(i), UseDefaultIID());
+		if (spread == nil)
+			continue;
+		const int32 pageCount = spread->GetNumPages();
+		for (int32 p = 0; p < pageCount; ++p)
+		{
+			UIDList onPage(db);
+			spread->GetItemsOnPage(p, &onPage, kFalse /*bIncludePage=ページ自身は要らない*/);
+			if (onPage.Length() > 0)
+			{
+				items.Append(onPage[0]);
+				break;			// このスプレッドはもう代表が取れた
+			}
+		}
+	}
+	if (items.Length() == 0)
+		return;
+
+	// ★`kXPC_MayHaveAddedSomeXP` ＝「設定が変わった。増えたか減ったかは分からない」
+	//   (`IXPManager.h:101`)。マークは ON にも OFF にもなるので、これが正しい種別。
+	//   答えを決めるのは**こちらではなく上の IsFlattenerRequired_**＝XPManager がアイテムに
+	//   聞き直し、アイテムは自分のアドーンメントに聞く。∴ この呼び出しは冪等で、
+	//   「マークを出さない設定」のときに透明を偽って申告することにはならない。
+	// ⚠**Command 版(`ProcessItemXPChangedCmd` / `kXPItemXPPrePostCmdBoss`)は使わない。**
+	//   公式サンプルがそちらなのは**アドーンメントの付け外し自体が文書データの変更で Undo に
+	//   乗せる必要がある**から。KESCM の登録はセッション側で文書を1バイトも変えないので、
+	//   Undo スタックに項目を積む理由が無い(積めば Ctrl+Z の意味が壊れる)。
+	//
+	// ⚠★★★**この呼び出しは文書を dirty にする** ---- 2026-08-20 に A/B で実測した
+	//   (この関数を外したビルドでは Start→印刷マーク ON→Stop を通しても `modified=false` のまま。
+	//    入れたビルドでは Stop の後に `modified=true` になった)。**一覧は文書側のデータ**なので、
+	//    公式が Command 経由なのもそのためで、あちらは「アドーンメントを付けた」という本物の
+	//    文書変更に伴う dirty だから正しい。**KESCM は文書を変えていないので戻す。**
+	//   ★KESCM の作法＝`IDataBase::SaveRestoreModifiedState`(入る前が clean なら出るときに戻す)。
+	//     同じ守りが KESCMCore.cpp:527 / KESCMPeek.cpp:194 / KESCMOversetScan.cpp:333 ほか6か所にある。
+	{
+		IDataBase::SaveRestoreModifiedState dirtyGuard(db);
+		xpManager->ItemXPChanged(items, IXPManager::kXPC_MayHaveAddedSomeXP);
+	}
 }
 
 //========================================================================================

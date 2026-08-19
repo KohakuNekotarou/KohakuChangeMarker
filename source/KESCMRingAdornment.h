@@ -54,6 +54,8 @@
 
 #include "BaseType.h"		// bool16
 
+class IDataBase;
+
 // セッションのグローバルページアイテムアドーンメントリストへ登録する(アプリ起動時に1回)。
 // 失敗しても何も壊れない ---- KESCMRingAdornmentIsActive() が kFalse のままになり、
 // 従来の Draw Event 経路がそのまま描く。
@@ -71,5 +73,23 @@ void KESCMRingAdornmentUnregister();
 //   「アドーンメントが描く」と誤って譲り、**両方が描かない**(＝UI の PDF 書き出しから枠が消える)。
 //   ⇒ **その場でセッションに聞く**。実装のコメントに症状と実測値まで書いてある。
 bool16 KESCMRingAdornmentIsActive();
+
+// ★★★マークの見え方が変わったことを**透明マネージャ**に伝え、「透明を持つアイテムの一覧」を
+//   作り直させる(db ＝ 対象文書。nil は無視)。
+//
+//   ⚠**これが無いと PDF 1.3 で全面ベタになる文書がある**(2026-08-20 実測で原因確定):
+//     `IXPManager` は「透明を持つ**ページアイテム**の一覧」で文書の透明の有無を答えており
+//     (`IXPManager.h:80-84`＝"mainly for determining whether there's XP in the document")、
+//     **アドーンメントはアイテムではないのでその一覧に入れない**。一覧が空の文書では書き出しが
+//     フラットナを動かさず、`IsFlattenerRequired_` の申告が使われる場面が来ない ⇒
+//     アルファサーバのマスクが解決されず、リングの外接矩形(＝ページ枠なのでページ全体)がベタになる。
+//     ★実測＝透明を1つも持たない文書に 50% の四角を1つ足すだけで直り、**消すとまた壊れた**
+//       (400,404 画素のベタ ⇔ 半透明)。∴ キャッシュの陳腐化ではなく一覧そのものの問題。
+//   ★公式サンプルが同じことをしている ---- `transparencyeffect` はアドーンメントを付けた直後に
+//     `TranFxUtils::Inval(..., kXPC_AddedSomeXP)` を呼び、コメントに "update the item-has-xp list"
+//     と書いている(`TranFxUtils.cpp:451-457`)。**こちらはその通知だけを、文書を変えずに行う。**
+//   ⚠**フラットナに「動け」と命令する API は無い**(`IFlattenerSettings::SetFlattenerEnabled` は
+//     "Defeats flattener altogether"＝**止める**側のスイッチ)。載せる以外の道が無い。
+void KESCMRingAdornmentRefreshItemXPState(IDataBase* db);
 
 #endif // __KESCMRingAdornment_h__
