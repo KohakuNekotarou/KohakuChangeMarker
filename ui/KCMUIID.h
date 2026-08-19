@@ -291,10 +291,25 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMStoryRowUIDWidgetID, kKCMUIPrefix + 52)	// �
 //   ツリーの中ではなく**下ペインの中でツリーの上**に置く固定の帯＝行をスクロールしても動かない。
 //   ★3つとも行のセルと**同じ x 座標・同じ binding**を与えてある(KCMUI.fr)。それが列が揃い続ける唯一の
 //   保証で、片方だけ動かすと可変幅パネルでずれる。
-DECLARE_PMID(kWidgetIDSpace, kKESCMStoryHeaderUIDWidgetID, kKCMUIPrefix + 53)	// 見出しの左「UID」(行の kKESCMStoryRowUIDWidgetID と同じ 8〜48・kBindLeft)
-DECLARE_PMID(kWidgetIDSpace, kKESCMStoryHeaderTextWidgetID, kKCMUIPrefix + 54)	// 見出しの中「Story」(行の kKESCMStoryRowTextWidgetID と同じ 52〜154・kBindLeft|kBindRight＝広げるとここだけ伸びる)
-DECLARE_PMID(kWidgetIDSpace, kKESCMStoryHeaderKindWidgetID, kKCMUIPrefix + 55)	// 見出しの右「Change」(行の kKESCMStoryRowKindWidgetID と同じ 154〜216・kBindRight・右寄せ)
-DECLARE_PMID(kWidgetIDSpace, kKESCMStoryHeaderRuleWidgetID, kKCMUIPrefix + 56)	// 見出しと一覧を分ける 1px の罫線＝**ErasablePrimaryResourcePanelWidget を高さ1pxで置き kInterfaceSeparatorColor で erase**(その塗りが線)。⚠stock の RuleWidget(Widgets.fh:887 / kRuleWidgetBoss)を先に試したが**パースもビルドも通って何も描かなかった**ので差し替えた(.fr 側に全文)
+// ★★★2026-08-19: **見出しの4つは ID を宣言しない**＝`.fr` で `kInvalidWidgetID`(0) を名乗らせた。
+//   **参照しない widget に ID を振らないのが公式の作法**で、SDK の `.fr` には WidgetId 欄に
+//   `kInvalidWidgetID` を書く例が 10 ファイル以上ある(basicdialog / customconditionaltextui /
+//   framelabelui ほか)。★**0 は一意性の対象外なので同じ親の中に何個あってもよい**
+//   ---- 実測の裏付け＝`framelabelui/FrmLblUI.fr` は**1ファイルに 10 個**あり、
+//   :301/:322/:336/:356 は**同じ親の中**に並んでいる。
+//   ⇒ 見出しの4つは C++ からも `.fr` の他の場所からも一度も参照していない(全数 Grep 済み)ので、
+//     番号を持つ理由が無かった。**空いた番号 +53〜+56 は再利用してよい**(widget ID は `.indk` に
+//     保存されないので、ActionID のような「欠番を再利用しない」制約は掛からない)。
+//   ⚠**参照したくなったらここに宣言を戻し、`.fr` の `kInvalidWidgetID` をその名前へ戻すこと。**
+//     ★対照＝`kKESCMTopPaneWidgetID` は「resize しない widget」として `.fr` 自身が名指しするので
+//     0 にできない。**「C++ から参照が無い」だけでは足りず、`.fr` 内の参照も数えること。**
+//   ⚠**この4つが何だったかは残す**(`.fr` を読む人が「0 の widget は何か」を辿れるように):
+//     +53 見出しの左「UID」   (行の kKESCMStoryRowUIDWidgetID と同じ 8〜48・kBindLeft)
+//     +54 見出しの中「Story」 (行の kKESCMStoryRowTextWidgetID と同じ 52〜154・kBindLeft|kBindRight＝広げるとここだけ伸びる)
+//     +55 見出しの右「Change」(行の kKESCMStoryRowKindWidgetID と同じ 154〜216・kBindRight・右寄せ)
+//     +56 見出しと一覧を分ける 1px の罫線＝**ErasablePrimaryResourcePanelWidget を高さ1pxで置き
+//         kInterfaceSeparatorColor で erase**(その塗りが線)。⚠stock の RuleWidget(Widgets.fh:887 /
+//         kRuleWidgetBoss)を先に試したが**パースもビルドも通って何も描かなかった**ので差し替えた(.fr 側に全文)
 
 // ブック比較ダイアログ(2026-08-11)。★OK/Cancel は stock の WidgetID(kOKButtonWidgetID /
 // kCancelButton_WidgetID)を使うので、ここに要るのはダイアログ本体だけ。
@@ -309,7 +324,10 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMBookTreeWidgetID, kKCMUIPrefix + 62)		// 章�
 //   後ろへは伸ばせない。一方 **+2〜+25 は宣言ごと空いていた**(下のプレースホルダ群。+1 の次は +26)＝
 //   予約済み 256 枠の内側の未使用番号なので、**ID 空間の消費はゼロで衝突も無い**。
 //   ⇒ 逃げ道は「借用(同じ親の子孫でだけ一意)」だけではなく、**前方の穴**もある＝[[id-prefix-256-slot-budget]]
-DECLARE_PMID(kWidgetIDSpace, kKESCMBookHintTextWidgetID, kKCMUIPrefix + 2)	// ステータスの2行目=「Right-click a changed chapter to start Change Marker.」(固定文。.fr が初期テキストとして持ち、C++ は触らない)
+// ★2026-08-19: ステータスの2行目(「Right-click a changed chapter to start Change Marker.」)も
+//   ID を宣言しない＝`.fr` で `kInvalidWidgetID`。**固定文で `.fr` が初期テキストとして持ち、
+//   C++ は一度も触らない**ので番号を持つ理由が無かった(理由と根拠は上の見出し4つと同じ)。
+//   ⇒ **`+2` は再び空き番号**。下の「+2 is IN USE」の行も同時に取り消してある。
 // ★★★下の3つは「Story Edits」の行と **WidgetID を共有する**(2026-08-12。新しい番号を1つも使わない)。
 //   根拠 = **widget ID がアプリ全体で一意である必要は無い**。公式ガイド vol2-12:71 が、
 //   グローバルに一意でなければならない文字列キーと**対比して**こう書いている:
@@ -370,7 +388,8 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMBookRowStateWidgetID, kKCMUIPrefix + 49)	// �
 //  調査の全記録 = docs/ai-notes/guide-gs-04-object-model-read-2026-08-12.md §1
 //                 docs/ai-notes/guide-vol2-12-ui-fundamentals-read-2026-08-12.md §0 ((a) の根拠)
 //====================================================================================
-// (+2 is IN USE since 2026-08-13 - kKESCMBookHintTextWidgetID, declared with the dialog's widgets above.)
+// (+2 was in use 2026-08-13..2026-08-19 for kKESCMBookHintTextWidgetID; that widget now names
+//  kInvalidWidgetID in the .fr, so +2 is FREE again. See the note where it was declared.)
 //DECLARE_PMID(kWidgetIDSpace, kKESCMWidgetID, kKCMUIPrefix + 3)
 //DECLARE_PMID(kWidgetIDSpace, kKESCMWidgetID, kKCMUIPrefix + 4)
 //DECLARE_PMID(kWidgetIDSpace, kKESCMWidgetID, kKCMUIPrefix + 5)

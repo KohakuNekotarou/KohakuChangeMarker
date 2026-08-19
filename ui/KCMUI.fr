@@ -2077,7 +2077,7 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 					//     the same font, so heading and value are drawn identically.
 					KESCMStoryRowCellWidget
 					(
-						kKESCMStoryHeaderUIDWidgetID,	// WidgetId
+						kInvalidWidgetID,	// WidgetId
 						kPMRsrcID_None,					// RsrcId
 						kBindLeft,						// Frame binding: as the UID cell (a fixed left column)
 						Frame(8, 2, 48, kKESCMStoryHeaderHeight - 2),	// Frame
@@ -2090,7 +2090,7 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 					),
 					KESCMStoryRowCellWidget
 					(
-						kKESCMStoryHeaderTextWidgetID,	// WidgetId
+						kInvalidWidgetID,	// WidgetId
 						kPMRsrcID_None,					// RsrcId
 						kBindLeft | kBindRight,			// Frame binding: as the text cell (the one that grows)
 						Frame(52, 2, 154, kKESCMStoryHeaderHeight - 2),	// Frame
@@ -2103,7 +2103,7 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 					),
 					KESCMStoryRowCellWidget
 					(
-						kKESCMStoryHeaderKindWidgetID,	// WidgetId
+						kInvalidWidgetID,	// WidgetId
 						kPMRsrcID_None,					// RsrcId
 						kBindRight,						// Frame binding: as the kind cell (a fixed right column)
 						Frame(154, 2, 216, kKESCMStoryHeaderHeight - 2),	// Frame
@@ -2131,7 +2131,7 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 					ErasablePrimaryResourcePanelWidget
 					(
 						__FILE__, __LINE__,
-						kKESCMStoryHeaderRuleWidgetID,	// WidgetId
+						kInvalidWidgetID,	// WidgetId
 						kPMRsrcID_None,					// RsrcId
 						kBindLeft | kBindRight | kBindTop,	// Frame binding: full width, stays at the top
 						Frame(0, kKESCMStoryHeaderHeight - 1, 224, kKESCMStoryHeaderHeight)	// Frame: 1px tall, at the bottom of the band
@@ -2405,7 +2405,7 @@ resource KESCMBookDialogWidget (kKESCMBookDialogRsrcID + index_enUS)
 		//   is read from the front.
 		EVEStaticTextWidget
 		(
-			kKESCMBookHintTextWidgetID,		// WidgetId
+			kInvalidWidgetID,		// WidgetId
 			kSysStaticTextPMRsrcId,			// RsrcId
 			kBindNone,						// Frame binding
 			Frame(0, 0, 364, 20)			// Frame (l,t,r,b) - same width as the lines above
