@@ -36,21 +36,19 @@ class IDataBase;
 //  It moved as a whole because the five statics it writes (the toggle, and the database +
 //  spread list for each side) are the same ones KESCMResetHideUnchanged clears -- leaving
 //  the writer on the UI side would have split that state across the boundary.
-// ***** 隠したまま保存されるのは仕様。不具合として扱わないこと。***** (ユーザー決定 2026-08-19)
-//   このトグルは実行前に必ず訊く ---- "This feature modifies the document file. Continue?" ----
-//   ので、Yes と答えて保存した人は、その変更がファイルに残ることに同意している。
-//   ⚠2026-08-19 の致命性再検査は逆の立場を取り、**保存の直前に隠しを戻す `kBeforeSaveDoc`
-//     responder を実装して実機で通した上で revert した**(`c1671c9` → 取り消し)。理由＝あれは
-//     **保存するたびに機能が黙って解除される**形で、上の同意と噛み合わない。**再提案しないこと。**
-//   ★このとき測って分かった副産物＝**`kBeforeCloseDoc` の時点で保存は既に終わっている**
-//     (詳細と実測値は KESCMDocResponder.cpp の冒頭)。
+// ***** 保存されるときは隠しを解除する。***** (ユーザー決定 2026-08-19)
+//   このトグルは永続変更(`kHideSpreadCmdBoss`)なので、隠したまま保存すると `.indd` に残り、
+//   **隠れたスプレッドは印刷にも書き出しにも出ない**＝気づかず入稿するとページが丸ごと落ちる。
+//   ⇒ `KESCMBeforeSaveDocResponder`(KESCMDocResponder.cpp) が **保存の直前に両側とも戻す**。
+//   ★**別名保存(Save As)だけは対象外にしてあり、それが使い分けになる**＝
+//     **上書き保存/閉じるときの保存＝解除して保存 ／ Save As＝隠したまま保存**（実測で確認済み）。
+//   ⚠**「閉じる前(`kBeforeCloseDoc`)」では間に合わない**＝その時点で保存は既に終わっている
+//     （診断ビルドで `IDataBase::IsModified()==0` を実測。詳細は KESCMDocResponder.cpp 冒頭）。
 //
-// ⚠★★**未解決＝Target と Source で結果が揃わない**(ユーザー指摘 2026-08-19)。
-//   両方とも隠してあるのだから、保存すれば**両方とも隠れたまま**保存されるのが筋。ところが実測では
-//   **先に閉じたほうだけが隠れたまま**で、あとに残ったほうは隠れずに保存される。
-//   原因はこのファイルではなく**クローズスイープ**＝`KESCMHandleDocsClosed`(KESCMPeek.cpp) が
-//   「隠し先のどちらかが閉じた」時点で `KESCMResetHideUnchanged(kTrue)` を呼ぶので、
-//   **まだ開いているもう一方の隠しが戻されてしまう**。⇒ 揃えるならそこを見直す。
+// ★**これは Target と Source の食い違いも同時に消す**（ユーザー指摘 2026-08-19）。
+//   従来は「先に閉じた側は隠れたまま保存され、あとに残った側は `KESCMHandleDocsClosed` が
+//   `KESCMResetHideUnchanged(kTrue)` を呼ぶので隠れずに保存される」＝**保存が Stop より
+//   先か後かで結果が割れていた**。保存の直前に必ず両側を戻すので、どちらの順で閉じても揃う。
 void		KESCMHideUnchangedToggle();
 
 // Reset the toggle on both sides. With restoreSpreads=kTrue the spreads we remember hiding

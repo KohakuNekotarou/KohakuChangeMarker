@@ -190,6 +190,31 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 		}
 	},
 
+	// ***** THE OTHER HALF: undo our edit to the USER'S document before it reaches the file. *****
+	// The responder above answers AfterClose, which is right for DROPPING our own tracked state.
+	// It is wrong for RESTORING something in the user's document, and so is BeforeClose - MEASURED,
+	// not assumed (2026-08-19): a diagnostic build reported IDataBase::IsModified() == 0 on
+	// kBeforeCloseDoc, i.e. THE SAVE HAS ALREADY HAPPENED by then. Restoring there put the spreads
+	// back on screen and left the document dirty again, but the file on disk still had them hidden.
+	//
+	// So the hook has to sit on the SAVE, not on the close. kBeforeSaveDoc covers both ways a
+	// document reaches the disk: File > Save, and the save that a close performs.
+	// ⚠ Save As and Save a Copy raise their own signals (kBeforeSaveAsDoc /
+	// kBeforeSaveACopyDoc, DocumentID.h:318,321) and are NOT covered here.
+	//
+	// ★Still the "one signal, one boss, no ServiceProvider of its own" shape as above - the
+	// CServiceProvider + HasMultipleIDs shape is only needed by a boss answering several signals,
+	// which linksui/ClosingDocumentsResponder.cpp does and this does not.
+	Class
+	{
+		kKESCMBeforeSaveResponderServiceBoss,
+		kInvalidClass,
+		{
+			IID_IK2SERVICEPROVIDER, kBeforeSaveDocSignalRespServiceImpl,
+			IID_IRESPONDER,         kKESCMBeforeSaveResponderImpl,
+		}
+	},
+
 	// The boundary the UI goes through to reach the comparison engine (2026-08-13, Stage 1 Task 11).
 	//
 	// Once the model and the UI are separate plug-ins, a free function declared in a shared header
