@@ -192,8 +192,17 @@ void KESCMCollectMasterPageUIDs(IDataBase* db, std::vector<UID>& out)
 //   「マスタースプレッドを隠す機能は InDesign に無く、IID_IHIDESPREADBOOLDATA は kSpreadBoss 上の
 //   通常スプレッドの話」。SpreadID.h の include 注記も「kSpreadBoss 上の IBoolData(docs の boss 一覧で
 //   裏取り済み)」と書いている。⇒ Query が nil でも、取れても kFalse でも、どちらでも同じ答えになる。
-// ⚠★**この関数自身がマスターページで呼ばれる経路は今は無い**（TSV のマスターループは通していない）。
-//   上は「将来渡されたときの契約」であって、実測ではない。
+// ⚠★★2026-08-19(不具合再検査 B-U8)訂正＝ここは「**この関数自身がマスターページで呼ばれる経路は
+//   今は無い**（TSV のマスターループは通していない）。上は将来渡されたときの契約であって実測ではない」と
+//   書いてあったが、**書いた日(2026-08-18)には既に経路があった**:
+//     ・Prev/Next の巡回 … KESCMBuildStops は **マスタースプレッドのページをストップに足す**
+//       (2026-08-06 に overset、2026-08-11 に変更枠)。その pageUID がそのまま
+//       KESCMGoto と KESCMStopLabel からここへ渡る(ui/KESCMChangeNav.cpp)。
+//     ・Story Edits の行 … マスター上のフレームの行なら ui/KESCMStoryJump.cpp からも渡る。
+//   ⇒ **契約(マスターは kFalse)は正しく、動作も正しい**。誤っていたのは「経路が無い」という全数宣言で、
+//     TSV(＝この命題を書いた回の担当ファイル)しか数えていなかった。
+//   ★[[verify-claims-in-comments]] §13 の再演＝**機能はブロックに属するが、命題は属さない。**
+//     全数を書くときだけは、担当ファイルの外へ grep を広げる。
 //========================================================================================
 bool16 KESCMIsPageOnHiddenSpread(IDataBase* db, UID pageUID)
 {

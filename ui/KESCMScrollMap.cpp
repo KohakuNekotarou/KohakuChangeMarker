@@ -49,7 +49,8 @@
 #include "IWidgetParent.h"
 #include "IDocumentPresentation.h"	// IID_IDOCUMENTPRESENTATION(文書ウィンドウ判定)
 #include "ILayoutViewUtils.h"		// GetAllLayoutViews(Split Window 両ペイン+全窓の列挙)
-#include "ILayoutControlData.h"		// GetSpreadRef(この窓が今どのスプレッドを見ているか)
+// (ILayoutControlData.h は 2026-08-19 の不具合再検査 B-U8 で外した＝「そのビューは今どのスプレッドか」は
+//  KESCMViewLookup の KESCMQuerySpreadUIDForView に一本化し、このファイルから直接の Query が消えた)
 #include "IMasterSpreadList.h"		// マスタースプレッドかの判定(表示中スプレッドの切り分け)
 #include "IPanorama.h"				// GetBounds(パノラマのスクロール全域=スクロールバーが表す範囲)
 #include "IGraphicsPort.h"
@@ -84,6 +85,8 @@
 #include "IKESCMCompareFacade.h"	// arm 状態(2026-08-13・分割 第1段 Task 11 で Facade 経由へ)
 #include "IKESCMMarkData.h"			// 変更ページ・overflow・overset の読み取り(赤/薄赤/濃赤の供給元)。2026-08-13 Task 12
                                     // ＋ GetRegisteredPages(Add/Remove 登録ページ=緑マーク。2026-08-13 Task 13)
+#include "KESCMViewLookup.h"		// KESCMQuerySpreadUIDForView(「そのビューは今どのスプレッドか」の唯一の口。
+									// 2026-08-19 の不具合再検査 B-U8 でこちらへ寄せた)
 
 // strip の幅(px)。縦スクロールバーの左辺にこの幅で並べる(6→5px、ユーザー指定 2026-07-11。
 // 移動はバー自体のクリックで足りるため表示は細めに)。
@@ -145,6 +148,54 @@ CREATE_PERSIST_PMINTERFACE(KESCMScrollMapView, kKESCMScrollMapViewImpl)
 // 取れなかった分だけ従来の写像へフォールバックする=今より悪くならないようにする。
 // strip はスクロールバーの兄弟として注入してあるので、親パネルを辿ればバーもレイアウトビューも見つかる
 // (IPanorama を持つのはレイアウトビューだけ)。ポインタは保持せず毎 Draw で引き直す(窓ごと閉じられても安全)。
+// この strip が載っている**ペイン**のレイアウトビュー。引けなければ nil。
+//
+// ★★★「この strip はどのペインのものか」を答える唯一の場所([[one-question-one-place]])。
+//   strip は縦スクロールバーの兄弟として注入してあるので、親をたどれば必ず自分のペインに着く。
+//   ⚠Split Window では **1つの presentation に2つのレイアウトビューが載る**
+//   (`ILayoutViewUtils.h:65` が "will return both layout views in a split layout view if both shown"
+//   と明記)。∴ presentation 単位で「最初に一致したビュー」を採ると、**隣のペインの答え**が返り得る。
+//
+// ★2026-08-19(不具合再検査 B-U8)にここへ集約した。それまで「今どのスプレッドを見ているか」だけは
+//   presentation を突き合わせる別関数(KESCMSpreadShownInPresentation)が答えており、**同じ問いに
+//   答えが2つ**あった(Y の分母に使う panorama はこの関数と同じ道で引いていた)。
+//   ★★**実測では両者は一致していた**(2026-08-19。Split Window にして**主ペインだけ**マスタースプレッドへ
+//   動かし、2ペインが別のスプレッドを映す状態を作って測定＝`views=[245,238]` に対し両方の答えが 245)。
+//   ⇒ **不具合ではなかった。** ただし一致の理由は「strip は必ず**主**ペインの縦スクロールバーの隣に
+//   入る」×「GetAllLayoutViews は主ペインを先に返す」という**二重の偶然**で、どちらが崩れても
+//   静かにずれる(片方のペインがマスターを出していると、載せるページと Y の分母が別ペインのものになる)。
+//   ∴ 動作が同じうちに答えを1つへ寄せた。
+static IControlView* KESCMStripLayoutView(IControlView* strip)
+{
+	InterfacePtr<IWidgetParent> wp(strip, IID_IWIDGETPARENT);
+	if (wp == nil)
+		return nil;
+	InterfacePtr<IPanelControlData> parentPanel(wp->GetParent(), UseDefaultIID());
+	if (parentPanel == nil)
+		return nil;
+
+	// ★レイアウトビューは WidgetID で名指しに引く(製品 spellpanel/PrivateSpellingUtils.cpp:362 と同じ)。
+	//   ⚠同じ関数の主ペイン側(:356)は FindWidget(kLayoutWidgetBoss)＝**ClassID** を渡しているが、
+	//   kLayoutWidgetBoss(kClassIDSpace, kLayoutUIPrefix+3) と kLayoutWidgetID(kWidgetIDSpace, 同+3) は
+	//   数値が同じでたまたま動いているだけなので、寄せる先は副ペイン側が使っている kLayoutWidgetID。
+	//   引けなかったときは従来どおり兄弟を総なめする(窓の構成が想定と違っても今より悪くならない)。
+	IControlView* layoutView = parentPanel->FindWidget(kLayoutWidgetID);
+	if (layoutView != nil)
+		return layoutView;
+
+	const int32 numSiblings = parentPanel->Length();
+	for (int32 i = 0; i < numSiblings; ++i)
+	{
+		IControlView* sib = parentPanel->GetWidget(i);
+		if (sib == nil || sib == strip)
+			continue;	// 縦スクロールバーは panorama を持たないので、下の判定で自然に外れる
+		InterfacePtr<IPanorama> sibPano(sib, UseDefaultIID());
+		if (sibPano != nil)
+			return sib;	// パノラマを持つ最初の兄弟=レイアウトビュー
+	}
+	return nil;
+}
+
 static void KESCMScrollMapProbeWindow(IControlView* strip, PMReal& outArrowH,
 									  PMReal& outPanoTop, PMReal& outPanoBottom, bool16& outHasPano)
 {
@@ -163,32 +214,9 @@ static void KESCMScrollMapProbeWindow(IControlView* strip, PMReal& outArrowH,
 	if (sbView != nil)
 		outArrowH = sbView->GetFrame().Width();
 
-	// ★レイアウトビューは WidgetID で名指しに引く(製品 spellpanel/PrivateSpellingUtils.cpp:362 と同じ)。
-	//   ⚠同じ関数の主ペイン側(:356)は FindWidget(kLayoutWidgetBoss)＝**ClassID** を渡しているが、
-	//   kLayoutWidgetBoss(kClassIDSpace, kLayoutUIPrefix+3) と kLayoutWidgetID(kWidgetIDSpace, 同+3) は
-	//   数値が同じでたまたま動いているだけなので、寄せる先は副ペイン側が使っている kLayoutWidgetID。
-	//   引けなかったときは従来どおり兄弟を総なめする(窓の構成が想定と違っても今より悪くならない)。
-	IControlView* layoutView = parentPanel->FindWidget(kLayoutWidgetID);
-	if (layoutView == nil)
-	{
-		const int32 numSiblings = parentPanel->Length();
-		for (int32 i = 0; i < numSiblings; ++i)
-		{
-			IControlView* sib = parentPanel->GetWidget(i);
-			if (sib == nil || sib == strip || sib == sbView)
-				continue;
-			InterfacePtr<IPanorama> sibPano(sib, UseDefaultIID());
-			if (sibPano != nil)
-			{
-				layoutView = sib;	// パノラマを持つ最初の兄弟=レイアウトビュー
-				break;
-			}
-		}
-	}
-
 	// ★IPanorama の Query と nil 判定は残す: 欲しいのは「パノラマを持つビュー」であって widget 名ではない
 	//   (WidgetID で引けても、そこにパノラマが載っているかは別の話)。bounds が不正なら従来の写像へ任せる。
-	InterfacePtr<IPanorama> panorama(layoutView, UseDefaultIID());	// layoutView==nil でも可(InterfacePtr.h:459)
+	InterfacePtr<IPanorama> panorama(KESCMStripLayoutView(strip), UseDefaultIID());	// nil でも可(InterfacePtr.h:459)
 	if (panorama != nil)
 	{
 		const PMRect bounds = panorama->GetBounds();
@@ -199,41 +227,6 @@ static void KESCMScrollMapProbeWindow(IControlView* strip, PMReal& outArrowH,
 			outHasPano    = kTrue;
 		}
 	}
-}
-
-// stripPres の窓が今どのスプレッドを見ているか。分からなければ kInvalidUID(2026-08-11)。
-// ★道筋: db の各レイアウトビューの親 presentation を、strip 自身の presentation と突き合わせ、
-//   一致したビューに ILayoutControlData::GetSpreadRef() を聞く(手本=KESCMChangeNav.cpp:262-271)。
-//   presentation どうしの同一性をポインタで見るのは、下の KESCMCollectPresentationPanels(:478)と
-//   同じ流儀(同じ IID の QI 結果同士なので比較できる)。
-// ⚠Split Window では1つの presentation に複数のビューが載るが、strip は縦スクロールバーの隣に
-//   1つしか注入されないので、最初に一致したビューを採る。
-static UID KESCMSpreadShownInPresentation(IDocumentPresentation* stripPres, IDataBase* db)
-{
-	if (stripPres == nil || db == nil)
-		return kInvalidUID;
-
-	K2Vector<IControlView*> views;
-	Utils<ILayoutViewUtils>()->GetAllLayoutViews(views, nil, db);
-	for (int32 i = 0; i < (int32)views.size(); ++i)
-	{
-		if (views[i] == nil)
-			continue;
-		InterfacePtr<IWidgetParent> wp(views[i], IID_IWIDGETPARENT);
-		if (wp == nil)
-			continue;
-		InterfacePtr<IDocumentPresentation> pres(
-			(IDocumentPresentation*)wp->QueryParentFor(IID_IDOCUMENTPRESENTATION));
-		if (pres == nil)
-			continue;
-		if ((IPMUnknown*)(IDocumentPresentation*)pres != (IPMUnknown*)stripPres)
-			continue;
-		InterfacePtr<ILayoutControlData> layout(views[i], UseDefaultIID());
-		if (layout == nil)
-			continue;
-		return layout->GetSpreadRef().GetUID();
-	}
-	return kInvalidUID;
 }
 
 // spreadUID が db のマスタースプレッドなら kTrue(2026-08-11)。
@@ -297,8 +290,9 @@ void KESCMScrollMapView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 	// この strip が属する窓の文書を特定し(presentation の GetDocumentUIDRef)、Target 窓か
 	// Source 窓かでマークの供給元を切り替える(2026-07-11 ユーザー要望で Source 窓にも表示)。
 	// どちらの文書でもない・未 arm・クローズ済みなら背景のみ。
-	// ★stripPres は下の「今どのスプレッドを見ているか」でも使うので、ここで持っておく(2026-08-11。
-	//   同じ親を二度たどらない)。
+	// ⚠2026-08-19(不具合再検査 B-U8)訂正＝「stripPres は下の『今どのスプレッドを見ているか』でも使う」と
+	//   書いてあったが、その問いは KESCMStripLayoutView(＝**ペイン**単位)へ移した。ここで presentation を
+	//   引くのは**文書を知るため**だけ(GetDocumentUIDRef)。
 	InterfacePtr<IWidgetParent> stripParent(this, IID_IWIDGETPARENT);
 	InterfacePtr<IDocumentPresentation> stripPres(
 		stripParent != nil ? (IDocumentPresentation*)stripParent->QueryParentFor(IID_IDOCUMENTPRESENTATION) : nil);
@@ -332,7 +326,7 @@ void KESCMScrollMapView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 	// 通常ページの帯を並べると、Y の分母(パノラマのスクロール全域=そのときはマスター側の範囲)と
 	// 噛み合わず、まったく別の場所に帯が出る。マスター表示中はそのマスタースプレッドのページだけを
 	// 載せる(枠も overset も無ければ何も描かれない=自然に空になる)。
-	const UID shownSpread = KESCMSpreadShownInPresentation(stripPres, db);
+	const UID shownSpread = KESCMQuerySpreadUIDForView(KESCMStripLayoutView(this));
 	const bool16 showingMaster = KESCMIsMasterSpread(db, shownSpread);
 
 	std::vector<UID> pages;
@@ -719,8 +713,14 @@ void KESCMScrollMapDetachAll()
 // ⚠2026-08-17 訂正(API 監査 B-U8): 旧記述は「呼び所は2箇所(①KESCMDoMarkChangesDoc の末尾
 // ②KESCMPeek.cpp のスプレッド再比較)」だったが、**どちらも model 側でこの UI 関数を呼べない**。
 // 分割で「比較が動いた」は通知になり、受け手の UI が地図を描き直す形になっている。
-// 全数 Grep での現状は**7箇所**＝KESCMModelChangeObserver.cpp(4＝全再比較/部分再比較/overset/クローズ)、
-// KESCMActionComponent.cpp(2＝地図トグル ON と Find Overset)、KESCMPeekGesture.cpp(1＝一括クローズ完了)。
+// 全数 Grep での現状は**8箇所**＝KESCMModelChangeObserver.cpp(4＝全再比較/部分再比較/overset/クローズ)、
+// KESCMActionComponent.cpp(2＝地図トグル ON と Find Overset)、KESCMPeekGesture.cpp(1＝一括クローズ完了)、
+// **このファイル自身(1＝下の KESCMScrollMapNoticeDrawEvent＝手動 Hide/Show とスプレッド切替の検出)**。
+// ⚠2026-08-19(不具合再検査 B-U8)訂正＝2026-08-17 に「7箇所」と数えて3ファイルを名指ししたとき、
+//   **自分のファイルの中にある8つ目を数え落としていた**。しかもそれは「他の7つでは捕まらない変化を
+//   拾うための独立経路」＝下の一文がいちばん大事だと言っている当のもの。
+//   ★**呼び手を数えるときは自分のファイルも母集合に入れる**(B-U3 で「呼び元は2つだけ」の3つ目が
+//     同じファイルの180行上にいたのと同型)。
 // ★数より大事なのは「独立経路が複数ある」ことで、それは分割後も変わっていない
 // (＝比較の再実行を1か所で捕まえることはできないので、増えたら都度ここを呼ぶ)。
 void KESCMScrollMapInvalidateAll()
@@ -777,12 +777,9 @@ static uint32 KESCMShownMasterFingerprint(IDataBase* db)
 	uint32 h = 0;
 	for (int32 i = 0; i < (int32)views.size(); ++i)
 	{
-		if (views[i] == nil)
-			continue;
-		InterfacePtr<ILayoutControlData> layout(views[i], UseDefaultIID());
-		if (layout == nil)
-			continue;
-		const UID shown = layout->GetSpreadRef().GetUID();
+		// ★「そのビューは今どのスプレッドか」は KESCMQuerySpreadUIDForView に一本化してある
+		//   (2026-08-19・不具合再検査 B-U8。引けなければ kInvalidUID＝マスターではないと扱われる)。
+		const UID shown = KESCMQuerySpreadUIDForView(views[i]);	// nil ビューは中で弾く
 		h = h * 131u + (KESCMIsMasterSpread(db, shown) ? shown.Get() : 0u);
 	}
 	return h;
@@ -842,7 +839,9 @@ void KESCMScrollMapNoticeDrawEvent()
 }
 
 // ── 有効/無効フラグ(フライアウト「Show Scrollbar Map」トグル。既定 ON) ─────────────────
-// フラグの反転に伴う strip の attach / detach は操作側(KESCMActionComponent)が担う。ここは値の保持だけ。
+// フラグの反転に伴う strip の attach / detach は呼び手が担う。ここは値の保持だけ。
+// ★呼び手は2つで、後始末をするのは①だけ＝理由と「不具合ではない」根拠は KESCMScrollMap.h の
+//   KESCMSetScrollMapEnabled の宣言に書いてある(2026-08-19・不具合再検査 B-U8)。
 bool16 KESCMGetScrollMapEnabled()      { return sScrollMapOn; }
 void   KESCMSetScrollMapEnabled(bool16 on) { sScrollMapOn = on; }
 

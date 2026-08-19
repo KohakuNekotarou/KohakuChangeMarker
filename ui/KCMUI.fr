@@ -1508,10 +1508,16 @@ type KESCMBookRowCellWidget(kViewRsrcType) : InfoStaticTextWidget(ClassID = kKES
 // kKESCMBookPathTextWidgetBoss: the frame becomes the size instead of the minimum).
 type KESCMBookPathTextWidget(kViewRsrcType) : EVEStaticTextWidget(ClassID = kKESCMBookPathTextWidgetBoss) { };
 
-// Scroll-map strip view resource: instantiated with ::CreateObject(db, RsrcSpec(...,
-// kViewRsrcType, kKESCMScrollMapRsrcID), IID_ICONTROLVIEW) — same runtime-creation pattern as
-// linksui's dynamic info widgets. The Frame here is a placeholder; the real frame/binding are
-// assigned right after AddWidget from the live scrollbar geometry.
+// Scroll-map strip view resource: instantiated with ::CreateObject2<IControlView>(db, RsrcSpec(...,
+// kViewRsrcType, kKESCMScrollMapRsrcID)) — same runtime-creation pattern as linksui's dynamic info
+// widgets, in the typed form the widget bin itself uses (CTreeViewWidgetMgr::CreateWidgetForNode).
+// The Frame here is a placeholder; the real frame/binding are assigned right after AddWidget from
+// the live scrollbar geometry.
+// Corrected on 2026-08-19 (bug re-check B-U8): the C++ moved to the typed CreateObject2 -- which
+// takes no IID -- on 2026-08-17, yet this description of that very call still spelled the old
+// ::CreateObject(..., IID_ICONTROLVIEW). The same stale wording sat in KCMUIID.h beside
+// kKESCMScrollMapRsrcID: when an implementation changes, the resource and the ID header that
+// describe it are siblings, and a grep for the old call spelling finds both at once.
 resource LocaleIndex (kKESCMScrollMapRsrcID)
 {
 	kViewRsrcType,

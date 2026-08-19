@@ -164,8 +164,8 @@ void KESCMModelChangeObserver::Update(const ClassID& theChange, ISubject* /*theS
 		}
 		else
 		{
-			if (docA != nil)                 KESCMPurgeAllPageThumbs(docA, kFalse /*redrawNow*/);
-			if (docB != nil && docB != docA) KESCMPurgeAllPageThumbs(docB, kFalse /*redrawNow*/);
+			if (docA != nil)                 KESCMPurgeAllPageThumbs(docA);
+			if (docB != nil && docB != docA) KESCMPurgeAllPageThumbs(docB);
 		}
 		KESCMForceRedrawPagesPanelNow();
 
@@ -197,8 +197,8 @@ void KESCMModelChangeObserver::Update(const ClassID& theChange, ISubject* /*theS
 		}
 		else
 		{
-			if (docA != nil)                 KESCMPurgeAllPageThumbs(docA, kFalse /*redrawNow*/);
-			if (docB != nil && docB != docA) KESCMPurgeAllPageThumbs(docB, kFalse /*redrawNow*/);
+			if (docA != nil)                 KESCMPurgeAllPageThumbs(docA);
+			if (docB != nil && docB != docA) KESCMPurgeAllPageThumbs(docB);
 		}
 		KESCMForceRedrawPagesPanelNow();
 		KESCMScrollMapInvalidateAll();
@@ -232,8 +232,8 @@ void KESCMModelChangeObserver::Update(const ClassID& theChange, ISubject* /*theS
 		}
 		else
 		{
-			if (docA != nil)                 KESCMPurgeAllPageThumbs(docA, kFalse /*redrawNow*/);
-			if (docB != nil && docB != docA) KESCMPurgeAllPageThumbs(docB, kFalse /*redrawNow*/);
+			if (docA != nil)                 KESCMPurgeAllPageThumbs(docA);
+			if (docB != nil && docB != docA) KESCMPurgeAllPageThumbs(docB);
 		}
 		KESCMForceRedrawPagesPanelNow();
 

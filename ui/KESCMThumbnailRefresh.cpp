@@ -137,7 +137,7 @@ void KESCMForceRedrawPagesPanelNow()
 	panel->ForceRedraw(nil, kTrue);
 }
 
-void KESCMTryRefreshPagesPanelThumbnails(IDataBase* db, const std::set<UID>* extraPages, bool16 redrawNow)
+void KESCMTryRefreshPagesPanelThumbnails(IDataBase* db, bool16 redrawNow)
 {
 	if (db == nil)
 		return;
@@ -150,11 +150,9 @@ void KESCMTryRefreshPagesPanelThumbnails(IDataBase* db, const std::set<UID>* ext
 		//   ページのサムネイルはキャッシュが生き残り点滅しない。サムネイルはページ UID でキャッシュ
 		//   されている(2026-07-07 実機プローブで確定)。集合が空(変更ゼロ)なら何も purge せず、
 		//   下の ForceRedraw だけ行う(無害)。
-		// ★extraPages(再比較前に枠が付いていた旧集合)も合流させる。再ペアリングで旧集合から抜けた
-		//   ページ(overflow を抜けた赤「/」・変更なしに戻ったリング)は新集合に入らず取りこぼすため、
-		//   旧集合も一緒に Purge して古い枠/斜線を確実に消す。
-		if (extraPages != nil)
-			changedPages.insert(extraPages->begin(), extraPages->end());
+		// ⚠2026-08-19(不具合再検査 B-U8)＝ここにあった extraPages(再比較前の旧集合)の合流は撤去した。
+		//   **呼び手2つのどちらも渡していなかった**(全数 Grep)。旧集合の面倒を見るのは
+		//   KESCMPurgeAllPageThumbs と KESCMRefreshThumbnailsForPages＝理由はヘッダー参照。
 		KESCMPurgePageThumbs(db, changedPages);
 	}
 	else
@@ -174,15 +172,15 @@ void KESCMTryRefreshPagesPanelThumbnails(IDataBase* db, const std::set<UID>* ext
 		//   反証ビルドの2本)＝**通常4ページ＋マスター1ページの文書で、Target を閉じた後の Purge が
 		//   旧形では 4、この形では 5**。つまり漏れていたのはちょうどマスターページ1枚だった。
 		//   ⇒ 「全ページを Purge する」の定義を1か所に寄せる([[one-question-one-place]])。
-		//   redraw は下の if (redrawNow) が担うので kFalse で呼ぶ(二重に描かない)。
-		KESCMPurgeAllPageThumbs(db, kFalse /*redrawNow*/);
+		//   redraw は下の if (redrawNow) が担う(KESCMPurgeAllPageThumbs は Purge しかしない)。
+		KESCMPurgeAllPageThumbs(db);
 	}
 
 	if (redrawNow)
 		KESCMForceRedrawPagesPanelNow();
 }
 
-void KESCMPurgeAllPageThumbs(IDataBase* db, bool16 redrawNow)
+void KESCMPurgeAllPageThumbs(IDataBase* db)
 {
 	if (db == nil)
 		return;
@@ -197,9 +195,8 @@ void KESCMPurgeAllPageThumbs(IDataBase* db, bool16 redrawNow)
 	marks->GetAllPageUIDs(db, allPages);
 	marks->GetMasterPageUIDs(db, allPages);
 	KESCMPurgePageThumbs(db, allPages);
-
-	if (redrawNow)
-		KESCMForceRedrawPagesPanelNow();
+	// ★再描画はしない(2026-08-19・不具合再検査 B-U8)。呼び手は全部「2文書ぶんを Purge してから
+	//   最後に1回 KESCMForceRedrawPagesPanelNow」の形なので、ここで描くと二重になる。
 }
 
 void KESCMRefreshThumbnailsForPages(IDataBase* db, const std::vector<UID>& pages, bool16 redrawNow)
@@ -207,7 +204,10 @@ void KESCMRefreshThumbnailsForPages(IDataBase* db, const std::vector<UID>& pages
 	if (db == nil || pages.empty())
 		return;
 	// トグルしたページを明示 per-UID Purge。登録解除は sRegistered から先に消えるため、上の
-	// KESCMCollectChangedPageUIDs 経由では拾えない=ここで直接 Purge して緑「/」を消す。登録追加でも
+	// **IKESCMMarkData::GetMarkablePageUIDs**(実体は model 側の KESCMCollectChangedPageUIDs)経由では
+	// 拾えない=ここで直接 Purge して緑「/」を消す。⚠2026-08-19(不具合再検査 B-U8)訂正＝ここは移設前の
+	// 名前 KESCMCollectChangedPageUIDs を裸で書いていた。**同じ訂正は同ファイルの :74-80 で 2026-08-17 に
+	// 済んでいたのに、130 行下のここが残っていた**＝1本直したら同じ語で grep を1回かける。登録追加でも
 	// 同ページを対称に Purge して、赤「/」(overflow)→緑「/」(登録)の載せ替えを即時反映する。
 	KESCMPurgePageThumbs(db, pages);
 	if (redrawNow)

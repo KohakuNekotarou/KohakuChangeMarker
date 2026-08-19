@@ -509,7 +509,10 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMBookRowStateWidgetID, kKCMUIPrefix + 49)	// �
 #define kKESCMIconOffResID	1002
 #define kKESCMPaletteIconResID	1003	// パネルが折りたたまれた時に出る小さいドックタブアイコン
 
-// スクロールバー地図stripのビューリソースID(kViewRsrcType; ::CreateObject で実行時生成する。KESCMScrollMap.cpp)
+// スクロールバー地図stripのビューリソースID(kViewRsrcType; ::CreateObject2<IControlView> で実行時生成する。
+// KESCMScrollMap.cpp。⚠2026-08-19 訂正＝2026-08-17 に型つきの CreateObject2 へ替えたのに、ここと KCMUI.fr の
+// 同リソースの説明だけが旧綴り「::CreateObject」のまま残っていた＝実装を直したら、それを説明している
+// リソースと ID ヘッダーも兄弟として grep する)
 #define kKESCMScrollMapRsrcID	1010
 
 // Story Edits の行テンプレートのビューリソースID(kViewRsrcType; CreateObjectNoInit で1行ずつ生成する。

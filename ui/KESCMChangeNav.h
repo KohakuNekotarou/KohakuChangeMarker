@@ -24,9 +24,13 @@ class IControlView;
 // 1ビュー単位で括り出して公開)。既に映していれば何もしないので、何度呼んでも安い。
 // ★スクロールだけでは別スプレッド(とくにマスタースプレッド)へは届かない＝空のペーストボードに
 //   着地する。「違うスプレッドなら切り替える」は公式の作法(手本 SnapTracker.cpp:224 に特例なし)。
-// ★Prev/Next(この .cpp 内)と、レイアウトビュー同期(KESCMPeek.cpp)の両方が呼ぶ＝同じ判断を
+// ★Prev/Next(この .cpp 内)と、レイアウトビュー同期(**KESCMViewSync.cpp**)の両方が呼ぶ＝同じ判断を
 //   2か所に書かないため([[one-question-one-place]])。
 // 戻り値: 実際に切り替えたら kTrue(既に映していた・失敗した場合は kFalse)。
+// ⚠2026-08-19(不具合再検査 B-U8)訂正＝上は「KESCMPeek.cpp」と書いていたが、同期エンジンは 2026-08-13 の
+//   model/UI 分割で出て行っている(呼び所は KESCMViewSync.cpp の KESCMSyncOtherDocViewportsTo)。
+//   ★**同じ主張を .cpp 側は 2026-08-17 に訂正済みで、この .h だけが残っていた**＝1本直したときに
+//   同じ形の兄弟を探さなかった型([[verify-claims-in-comments]] の「近い兄弟ほど残る」)。
 bool16 KESCMEnsureViewShowsSpread(IControlView* view, IDataBase* db, UID spreadUID);
 
 // 次/前の「見るべきページ」へレイアウトビューをスクロールする。未 Start(sDB==nil)や対象0件のときは
@@ -41,13 +45,22 @@ void KESCMResetNav();
 
 // Prev/Next の間の現在位置表示を「今の変更ページ集合＋巡回基準点」から作り直してパネルへ送る。
 // KESCL の UpdateNavWidgets と同じ発想で、Next/Prev を押さなくても状態変化に追従させるために、
-// 変更ページ集合が変わり得るすべての契機から呼ぶ(Start/差分再比較/登録/Check=KESCMDoMarkChangesDoc、
-// スプレッド再比較=KESCMRefreshComparisonForSelectedPages、Stop=KESCMDoClearMarks、パネル更新=
-// KESCMApplyPanelInfo)。表示規則:
-//   ・未 Start(比較なし)          → 空
-//   ・Start 済み・変更ページ 0 件  → "/"
-//   ・Start 済み・N 件(未巡回)     → "1/N"(Start 直後に即表示)
-//   ・k 番目を巡回中               → "k/N"
+// 変更ページ集合が変わり得るすべての契機から呼ぶ。
+// ⚠2026-08-19(不具合再検査 B-U8)訂正＝ここには呼び手を4つ名指ししてあったが、**3つは分割で失効していた**
+//   (KESCMDoMarkChangesDoc / KESCMRefreshComparisonForSelectedPages / KESCMDoClearMarks は
+//   いずれも model 側＝別 .pln のこの UI 関数を呼べない)。今の呼び手は全数 Grep で次のとおり:
+//     ・KESCMModelChangeObserver … 比較の再構築/消去の通知と、あふれ走査の通知を受けて(2か所)
+//     ・KESCMActionComponent     … Find Overset を OFF にしたとき(巡回対象からあふれを外す)
+//     ・KESCMPanelObserver       … パネルの表示内容を作り直すとき(KESCMApplyPanelInfo。4つ目だけ生きていた)
+//     ・KESCMChangeNav.cpp 自身  … 巡回の各出口(3か所)
+// 表示規則:
+//   ・巡回対象の文書が無い          → 空(＝未 Start **かつ** Find Overset も OFF)
+//   ・対象文書あり・ストップ 0 件   → "/"
+//   ・対象文書あり・N 件(未巡回)    → "1/N"(Start 直後に即表示)
+//   ・k 番目を巡回中                → "k/N"
+// ⚠同じ 2026-08-19 の訂正＝旧記述は「未 Start(比較なし)→空」だったが、**未 Start でも Find Overset が
+//   ON なら "1/N" が出る**(巡回対象はあふれ箇所)。.cpp 側(KESCMRefreshNavPosition の末尾)は
+//   「未 Start かつ overset 無し」と正しく書いており、ここでも .h だけが古かった。
 void KESCMRefreshNavPosition();
 
 // Story Edits の行から呼ぶジャンプ: そのストーリーの先頭フレームを画面中央に出す。

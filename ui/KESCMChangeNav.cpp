@@ -278,7 +278,10 @@ static PMReal KESCMReadDocZoom(IDataBase* db)
 //   ★マスタースプレッドでこれが露骨に出る: 通常スプレッドの連続したペーストボードに含まれないので、
 //   スクロールをいくらしても絶対に届かず、空のペーストボードに着地する。
 //   ⚠KBS が 2026-08-05 に実測で踏んだ不具合とまったく同じ形(あちらは行の locator は "PA" と正しいのに
-//   クリックすると何も無い場所へ飛んだ)。手当ても同じ＝KBSJump.cpp:280 EnsureSpreadInView の移植。
+//   クリックすると何も無い場所へ飛んだ)。手当ても同じ＝**KBS の `KBSJump.cpp` の `EnsureSpreadInView`** の移植。
+//   ⚠2026-08-19(不具合再検査 B-U8)訂正＝ここは "KBSJump.cpp:280" と行番号で引いていた。**書いた日
+//     (KBS の初出コミット `6ccdf1a`)は :280 ちょうどで当たっていた**が、今は :348 へ動いている(+68)。
+//     ★**他リポジトリを指す参照は sha でも救えない**(こちらの git では検算できない)⇒**関数名で引く**。
 //
 // ★★判定は「マスターかどうか」ではなく「違うスプレッドかどうか」。Adobe 自身がそう書いている
 //   (snapshot/SnapTracker.cpp:224 は ::GetUIDRef(spread) と ILayoutControlData::GetSpreadRef() を
@@ -286,7 +289,7 @@ static PMReal KESCMReadDocZoom(IDataBase* db)
 //   「マスターのときだけ」に絞って書いたが、ユーザー指摘で公式どおり無条件へ直した経緯がある。
 //
 // ★★呼んだ「後」に座標を読むこと(SnapTracker.cpp:234-235 "Re-calculate the starting point")。
-//   下の KESCMScrollDocToPage は幾何を読む前にここを通す。overset の「+」点だけは例外で、
+//   下の KESCMScrollDocToItemCenter は幾何を読む前にここを通す。overset の「+」点だけは例外で、
 //   スキャン時に ::InnerToPasteboardMatrix で確定した**ビュー非依存**の座標なので切替後も有効
 //   (再スキャンせずに使ってよいのはそのため)。
 //
@@ -411,7 +414,10 @@ static bool16 KESCMScrollDocToPBPoint(IDataBase* db, const PBPMPoint& pbPoint, P
 		//   「An obsolete name … New code should call ScrollContentLocationToFrameCenter … this function
 		//   will go away in a future release」と明記している。中身は同じ(:135-138 の inline が旧名を呼ぶ)。
 		//   ⚠2026-08-17 訂正(API 監査 B-U8): 旧記述は「★KESCMPeek.cpp は既に新名称(:1010 ほか)」だったが、
-		//   **KESCMPeek.cpp は906行しかなく、そもそもこの API を1回も呼んでいない**(全数 Grep)。
+		//   **KESCMPeek.cpp はそもそもこの API を1回も呼んでいない**(全数 Grep)。
+		//   ⚠2026-08-19(不具合再検査 B-U8)＝ここには「906行しかなく」と**行数**を根拠に書いてあったが、
+		//     実測 968 行へ増えていた。★**行数は「何行目を指せるか」の根拠にしか使えず、しかも黙って腐る**
+		//     ので落とした——**「1回も呼んでいない」の方は Grep で何度でも引き直せる**。
 		//   分割で同期エンジンが移ったため＝新名称を使っているもう1つは **KESCMViewSync.cpp の
 		//   KESCMSyncOtherDocViewportsTo(末尾の ScrollContentLocationToFrameCenter)**
 		//   (ほかに KESCMStoryJump.cpp が説明として引用)。★行番号でよそのファイルを指す引用は、
@@ -428,9 +434,13 @@ static bool16 KESCMScrollDocToPBPoint(IDataBase* db, const PBPMPoint& pbPoint, P
 
 //----------------------------------------------------------------------------------------
 // 文書 db の全レイアウトビューを、itemUID の矩形中心が画面中央に来るようスクロールする。
-// ★itemUID は**ページでもページアイテムでもよい**(GetItemBounds はどちらにも答える)。呼び手は2つ＝
-//   Prev/Next の巡回はページを渡し(従来どおり)、Story Edits の行ジャンプはストーリーの先頭フレームを
-//   渡す(2026-08-10)。
+// ★itemUID は**ページでもページアイテムでもよい**(GetItemBounds はどちらにも答える)。
+//   ⚠2026-08-19(不具合再検査 B-U8)訂正＝「呼び手は2つ」と書いてあったが、**実測3つ**:
+//     ①Prev/Next の巡回(KESCMGoto)      … ページを渡す
+//     ②Source 側の連動(KESCMSyncCompanionViews) … 対応表で引いた Source のページを渡す ←数え落ち
+//     ③Story Edits の行ジャンプ(KESCMScrollDocToStoryStart のフォールバック) … フレームを渡す(2026-08-10)
+//   ★渡す物の**種類**は2つ(ページ／フレーム)で、そこは正しかった＝**「何を数えているか」を言い直すと
+//     ずれが見える**([[verify-claims-in-comments]] §24)。
 // 上の pb 版へ委譲(inner 中心 → ペーストボード変換)。
 //----------------------------------------------------------------------------------------
 static bool16 KESCMScrollDocToItemCenter(IDataBase* db, UID itemUID, PMReal applyZoom = PMReal(-1.0))
@@ -807,7 +817,7 @@ static void KESCMGoto(int32 dir)
 	// ★基準ストップ(sNav*)の更新はスクロール成功後(2026-07-25 監査で移動): 失敗時に基準だけ先へ進むと、
 	//   位置表示「k/N」が古いまま・次回の巡回起点も移動済み、という不整合が残るため。
 	// ★overset 経路は pb 点へ直接スクロールするので、ここでスプレッドを出しておく(ページ中心経路は
-	//   KESCMScrollDocToPage の中で同じことをしている)。これが無いとマスタースプレッド上の
+	//   KESCMScrollDocToItemCenter の中で同じことをしている)。これが無いとマスタースプレッド上の
 	//   あふれに飛べない=空のペーストボードに着地する(2026-08-06 ユーザー指摘。KBS と同じ手当て)。
 	// ★★★2026-08-18(不具合再検査 B10 の2周目・ユーザー指定): **隠れているスプレッドのページへは
 	//   レイアウトビューを動かさない。**

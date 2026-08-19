@@ -84,7 +84,7 @@ uint32 KESCMThumbIdleTask::RunTask(uint32 flags, IdleTimer* /*idleTimer*/)
 		// 予約から idle までの間に閉じた db は触らない(deref 禁止=共有ヘルパ KESCMIsDocDBOpen)。
 		if (Utils<IKESCMCompareFacade>()->IsDocDBOpen(*it))
 		{
-			KESCMTryRefreshPagesPanelThumbnails(*it, nil, kFalse /*redrawNow*/);	// Purge のみ
+			KESCMTryRefreshPagesPanelThumbnails(*it, kFalse /*redrawNow*/);	// Purge のみ
 			purgedAny = kTrue;
 		}
 	}
