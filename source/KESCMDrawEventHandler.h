@@ -129,6 +129,18 @@ public:
 	virtual void UnRegister(IDrwEvtDispatcher* d);
 	virtual bool16 HandleDrawEvent(ClassID eventID, void* eventData);
 
+	// ★2026-08-19: 描画本体。**入口が2つあるので中身をここへ出した。**
+	//   ①Draw Event（kEndSpreadMessage）＝上の HandleDrawEvent が呼ぶ（従来の経路）
+	//   ②グローバルページアイテムアドーンメント＝KESCMRingAdornment.cpp が、スプレッドに対して
+	//     DrawEventData を組んで呼ぶ（PDF 1.3 の透明のために足した経路。どちらか一方だけが生きる）
+	//   ⚠②が渡す changedBy は「今描いているスプレッド」で、①が渡すものと同じ意味になるようにしてある
+	//     （この関数は changedBy をスプレッドとしか読まない）。
+	//   ★static なのはインスタンスの状態を1つも使わないから（この class の可変状態はすべて static メンバ）。
+	//   ★引数は `DrawEventData*` で受ける ---- `IDrwEvtHandler::HandleDrawEvent` が `void*` なのは
+	//     **1つのハンドラが種類の違うイベントを受け取るから**（`HitTestEventData` もある）であって、
+	//     ここは受け取る型が1つに決まっているので `void*` にする理由が無い。
+	static bool16 DrawSpreadMarks(DrawEventData* ded);
+
 	// ページUID → オーバーレイ。変化のあったページだけ登録される。
 	// ⚠★中身は生ポインタで DropAll() が delete する = BG と main で同時に触ると解放済み読みになる
 	//   ⇒ **触る所は KESCMMarkStateLock で守ってある**(冒頭の(2))。新しい呼び手を足すときも同じ。

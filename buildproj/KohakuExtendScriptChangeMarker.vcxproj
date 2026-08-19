@@ -62,13 +62,13 @@
   <PropertyGroup>
     <_ProjectFileVersion>10.0.40219.1</_ProjectFileVersion>
     <OutDir Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">..\debug\sdk\</OutDir>
-    <IntDir Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">..\objD\KohakuExtendScriptChangeMarker\</IntDir>
+    <IntDir Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">..\objD\KohakuChangeMarker\</IntDir>
     <OutDir Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">..\debugx64\sdk\</OutDir>
-    <IntDir Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">..\objDx64\KohakuExtendScriptChangeMarker\</IntDir>
+    <IntDir Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">..\objDx64\KohakuChangeMarker\</IntDir>
     <OutDir Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">..\release\sdk\</OutDir>
-    <IntDir Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">..\objR\KohakuExtendScriptChangeMarker\</IntDir>
+    <IntDir Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">..\objR\KohakuChangeMarker\</IntDir>
     <OutDir Condition="'$(Configuration)|$(Platform)'=='Release|x64'">..\releasex64\sdk\</OutDir>
-    <IntDir Condition="'$(Configuration)|$(Platform)'=='Release|x64'">..\objRx64\KohakuExtendScriptChangeMarker\</IntDir>
+    <IntDir Condition="'$(Configuration)|$(Platform)'=='Release|x64'">..\objRx64\KohakuChangeMarker\</IntDir>
     <TargetName Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">KohakuChangeMarker</TargetName>
     <TargetName Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">KohakuChangeMarker</TargetName>
     <TargetName Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">KohakuChangeMarker</TargetName>
@@ -83,12 +83,12 @@
       <PreprocessorDefinitions>_CRT_SECURE_NO_DEPRECATE;_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <MkTypLibCompatible>true</MkTypLibCompatible>
       <TargetEnvironment>Win32</TargetEnvironment>
-      <TypeLibraryName>$(IntDir)KohakuExtendScriptChangeMarker.tlb</TypeLibraryName>
+      <TypeLibraryName>$(IntDir)KohakuChangeMarker.tlb</TypeLibraryName>
       <HeaderFileName />
     </Midl>
     <ClCompile>
-      <AdditionalOptions>/vmg @"KohakuExtendScriptChangeMarkercpp.rsp"</AdditionalOptions>
-      <PrecompiledHeaderOutputFile>$(IntDir)KohakuExtendScriptChangeMarker.pch</PrecompiledHeaderOutputFile>
+      <AdditionalOptions>/vmg @"KohakuChangeMarkercpp.rsp"</AdditionalOptions>
+      <PrecompiledHeaderOutputFile>$(IntDir)KohakuChangeMarker.pch</PrecompiledHeaderOutputFile>
       <PreprocessorDefinitions>_CRT_SECURE_NO_DEPRECATE;BOOST_SYSTEM_NO_DEPRECATED;DEBUG;STRICT;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PrecompiledHeader>Use</PrecompiledHeader>
       <PrecompiledHeaderFile>VCPlugInHeaders.h</PrecompiledHeaderFile>
@@ -104,8 +104,8 @@
     <Link>
       <AdditionalDependencies>$(MODEL_PLUGIN_LINKLIST);$(BoostThreadLib);%(AdditionalDependencies)</AdditionalDependencies>
       <OutputFile>$(OutDir)$(TargetName)$(TargetExt)</OutputFile>
-      <ProgramDatabaseFile>..\debug\sdk\KohakuExtendScriptChangeMarker.pdb</ProgramDatabaseFile>
-      <ImportLibrary>$(LIB_DIR)\KohakuExtendScriptChangeMarker/KohakuExtendScriptChangeMarker.lib</ImportLibrary>
+      <ProgramDatabaseFile>..\debug\sdk\KohakuChangeMarker.pdb</ProgramDatabaseFile>
+      <ImportLibrary>$(LIB_DIR)\KohakuChangeMarker/KohakuChangeMarker.lib</ImportLibrary>
     </Link>
     <PostBuildEvent>
       <Command>restore_res.cmd "$(IntDir)"  KESCM</Command>
@@ -116,15 +116,15 @@
       <PreprocessorDefinitions>_CRT_SECURE_NO_DEPRECATE;_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <MkTypLibCompatible>true</MkTypLibCompatible>
       <TargetEnvironment>X64</TargetEnvironment>
-      <TypeLibraryName>$(IntDir)KohakuExtendScriptChangeMarker.tlb</TypeLibraryName>
+      <TypeLibraryName>$(IntDir)KohakuChangeMarker.tlb</TypeLibraryName>
       <HeaderFileName />
     </Midl>
     <ClCompile>
-      <AdditionalOptions>/vmg @"KohakuExtendScriptChangeMarkercpp.rsp"</AdditionalOptions>
+      <AdditionalOptions>/vmg @"KohakuChangeMarkercpp.rsp"</AdditionalOptions>
       <PreprocessorDefinitions>_CRT_SECURE_NO_DEPRECATE;BOOST_SYSTEM_NO_DEPRECATED;DEBUG;STRICT;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PrecompiledHeader>Use</PrecompiledHeader>
       <PrecompiledHeaderFile>VCPlugInHeaders.h</PrecompiledHeaderFile>
-      <PrecompiledHeaderOutputFile>$(IntDir)KohakuExtendScriptChangeMarker.pch</PrecompiledHeaderOutputFile>
+      <PrecompiledHeaderOutputFile>$(IntDir)KohakuChangeMarker.pch</PrecompiledHeaderOutputFile>
       <ObjectFileName>$(IntDir)</ObjectFileName>
     </ClCompile>
     <ResourceCompile>
@@ -137,8 +137,8 @@
     <Link>
       <AdditionalDependencies>$(MODEL_PLUGIN_LINKLIST);$(BoostThreadLib);%(AdditionalDependencies)</AdditionalDependencies>
       <OutputFile>$(OutDir)$(TargetName)$(TargetExt)</OutputFile>
-      <ProgramDatabaseFile>..\debugx64\sdk\KohakuExtendScriptChangeMarker.pdb</ProgramDatabaseFile>
-      <ImportLibrary>$(LIB_DIR)\KohakuExtendScriptChangeMarker/KohakuExtendScriptChangeMarker.lib</ImportLibrary>
+      <ProgramDatabaseFile>..\debugx64\sdk\KohakuChangeMarker.pdb</ProgramDatabaseFile>
+      <ImportLibrary>$(LIB_DIR)\KohakuChangeMarker/KohakuChangeMarker.lib</ImportLibrary>
     </Link>
     <PostBuildEvent>
       <Command>restore_res.cmd "$(IntDir)"  KESCM</Command>
@@ -149,16 +149,16 @@
       <PreprocessorDefinitions>_CRT_SECURE_NO_DEPRECATE;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <MkTypLibCompatible>true</MkTypLibCompatible>
       <TargetEnvironment>Win32</TargetEnvironment>
-      <TypeLibraryName>$(IntDir)KohakuExtendScriptChangeMarker.tlb</TypeLibraryName>
+      <TypeLibraryName>$(IntDir)KohakuChangeMarker.tlb</TypeLibraryName>
       <HeaderFileName />
     </Midl>
     <ClCompile>
-      <AdditionalOptions>/vmg @"KohakuExtendScriptChangeMarkercpp.rsp"</AdditionalOptions>
+      <AdditionalOptions>/vmg @"KohakuChangeMarkercpp.rsp"</AdditionalOptions>
       <PreprocessorDefinitions>_CRT_SECURE_NO_DEPRECATE;BOOST_SYSTEM_NO_DEPRECATED;STRICT;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <StringPooling>true</StringPooling>
       <PrecompiledHeader>Use</PrecompiledHeader>
       <PrecompiledHeaderFile>VCPlugInHeaders.h</PrecompiledHeaderFile>
-      <PrecompiledHeaderOutputFile>$(IntDir)KohakuExtendScriptChangeMarker.pch</PrecompiledHeaderOutputFile>
+      <PrecompiledHeaderOutputFile>$(IntDir)KohakuChangeMarker.pch</PrecompiledHeaderOutputFile>
       <ObjectFileName>$(IntDir)</ObjectFileName>
     </ClCompile>
     <ResourceCompile>
@@ -172,8 +172,8 @@
       <AdditionalOptions>/IGNORE:4089 %(AdditionalOptions)</AdditionalOptions>
       <AdditionalDependencies>$(MODEL_PLUGIN_LINKLIST);$(BoostThreadLib);%(AdditionalDependencies)</AdditionalDependencies>
       <OutputFile>$(OutDir)$(TargetName)$(TargetExt)</OutputFile>
-      <ProgramDatabaseFile>..\release\sdk\KohakuExtendScriptChangeMarker.pdb</ProgramDatabaseFile>
-      <ImportLibrary>$(LIB_DIR)\KohakuExtendScriptChangeMarker/KohakuExtendScriptChangeMarker.lib</ImportLibrary>
+      <ProgramDatabaseFile>..\release\sdk\KohakuChangeMarker.pdb</ProgramDatabaseFile>
+      <ImportLibrary>$(LIB_DIR)\KohakuChangeMarker/KohakuChangeMarker.lib</ImportLibrary>
     </Link>
     <PostBuildEvent>
       <Command>restore_res.cmd "$(IntDir)"  KESCM</Command>
@@ -184,16 +184,16 @@
       <PreprocessorDefinitions>_CRT_SECURE_NO_DEPRECATE;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <MkTypLibCompatible>true</MkTypLibCompatible>
       <TargetEnvironment>X64</TargetEnvironment>
-      <TypeLibraryName>$(IntDir)KohakuExtendScriptChangeMarker.tlb</TypeLibraryName>
+      <TypeLibraryName>$(IntDir)KohakuChangeMarker.tlb</TypeLibraryName>
       <HeaderFileName />
     </Midl>
     <ClCompile>
-      <AdditionalOptions>/vmg @"KohakuExtendScriptChangeMarkercpp.rsp"</AdditionalOptions>
+      <AdditionalOptions>/vmg @"KohakuChangeMarkercpp.rsp"</AdditionalOptions>
       <PreprocessorDefinitions>_CRT_SECURE_NO_DEPRECATE;BOOST_SYSTEM_NO_DEPRECATED;STRICT;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <StringPooling>true</StringPooling>
       <PrecompiledHeader>Use</PrecompiledHeader>
       <PrecompiledHeaderFile>VCPlugInHeaders.h</PrecompiledHeaderFile>
-      <PrecompiledHeaderOutputFile>$(IntDir)KohakuExtendScriptChangeMarker.pch</PrecompiledHeaderOutputFile>
+      <PrecompiledHeaderOutputFile>$(IntDir)KohakuChangeMarker.pch</PrecompiledHeaderOutputFile>
       <ObjectFileName>$(IntDir)</ObjectFileName>
     </ClCompile>
     <ResourceCompile>
@@ -207,8 +207,8 @@
       <AdditionalOptions>/IGNORE:4089 %(AdditionalOptions)</AdditionalOptions>
       <AdditionalDependencies>$(MODEL_PLUGIN_LINKLIST);$(BoostThreadLib);%(AdditionalDependencies)</AdditionalDependencies>
       <OutputFile>$(OutDir)$(TargetName)$(TargetExt)</OutputFile>
-      <ProgramDatabaseFile>..\releasex64\sdk\KohakuExtendScriptChangeMarker.pdb</ProgramDatabaseFile>
-      <ImportLibrary>$(LIB_DIR)\KohakuExtendScriptChangeMarker/KohakuExtendScriptChangeMarker.lib</ImportLibrary>
+      <ProgramDatabaseFile>..\releasex64\sdk\KohakuChangeMarker.pdb</ProgramDatabaseFile>
+      <ImportLibrary>$(LIB_DIR)\KohakuChangeMarker/KohakuChangeMarker.lib</ImportLibrary>
     </Link>
     <PostBuildEvent>
       <Command>restore_res.cmd "$(IntDir)"  KESCM</Command>
@@ -230,6 +230,7 @@
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryList.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMPageNumberMarker.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMPeek.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMRingAdornment.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMHideUnchanged.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMOversetApply.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMComparisonRun.cpp" />
@@ -272,6 +273,7 @@
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryList.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMPageNumberMarker.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMPeek.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMRingAdornment.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMHideUnchanged.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMOversetApply.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMComparisonRun.h" />
@@ -286,22 +288,22 @@
   <ItemGroup>
     <CustomBuild Include="..\..\..\source\sdksamples\KESCM\source\KESCM.fr">
       <Command Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
-        odfrc $(ODFRC_ADDITIONAL_FLAGS) "%(FullPath)" -o "$(IntDir)%(Filename).fres" -d DEBUG  -i "..\..\..\source\sdksamples\KESCM\source" @"KohakuExtendScriptChangeMarkerodfrc.rsp"
+        odfrc $(ODFRC_ADDITIONAL_FLAGS) "%(FullPath)" -o "$(IntDir)%(Filename).fres" -d DEBUG  -i "..\..\..\source\sdksamples\KESCM\source" @"KohakuChangeMarkerodfrc.rsp"
       </Command>
       <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">$(IntDir)TriggerResourceDeps.obj;%(AdditionalInputs)</AdditionalInputs>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">$(IntDir)%(Filename).fres;%(Outputs)</Outputs>
       <Command Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-        odfrc $(ODFRC_ADDITIONAL_FLAGS) "%(FullPath)" -o "$(IntDir)%(Filename).fres" -d DEBUG  -i "..\..\..\source\sdksamples\KESCM\source" @"KohakuExtendScriptChangeMarkerodfrc.rsp"
+        odfrc $(ODFRC_ADDITIONAL_FLAGS) "%(FullPath)" -o "$(IntDir)%(Filename).fres" -d DEBUG  -i "..\..\..\source\sdksamples\KESCM\source" @"KohakuChangeMarkerodfrc.rsp"
       </Command>
       <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(IntDir)TriggerResourceDeps.obj;%(AdditionalInputs)</AdditionalInputs>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(IntDir)%(Filename).fres;%(Outputs)</Outputs>
       <Command Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
-        odfrc $(ODFRC_ADDITIONAL_FLAGS) "%(FullPath)" -o "$(IntDir)%(Filename).fres" -i "..\..\..\source\sdksamples\KESCM\source" @"KohakuExtendScriptChangeMarkerodfrc.rsp"
+        odfrc $(ODFRC_ADDITIONAL_FLAGS) "%(FullPath)" -o "$(IntDir)%(Filename).fres" -i "..\..\..\source\sdksamples\KESCM\source" @"KohakuChangeMarkerodfrc.rsp"
       </Command>
       <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">$(IntDir)TriggerResourceDeps.obj;%(AdditionalInputs)</AdditionalInputs>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">$(IntDir)%(Filename).fres;%(Outputs)</Outputs>
       <Command Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
-        odfrc $(ODFRC_ADDITIONAL_FLAGS) "%(FullPath)" -o "$(IntDir)%(Filename).fres" -i "..\..\..\source\sdksamples\KESCM\source" @"KohakuExtendScriptChangeMarkerodfrc.rsp"
+        odfrc $(ODFRC_ADDITIONAL_FLAGS) "%(FullPath)" -o "$(IntDir)%(Filename).fres" -i "..\..\..\source\sdksamples\KESCM\source" @"KohakuChangeMarkerodfrc.rsp"
       </Command>
       <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(IntDir)TriggerResourceDeps.obj;%(AdditionalInputs)</AdditionalInputs>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(IntDir)%(Filename).fres;%(Outputs)</Outputs>

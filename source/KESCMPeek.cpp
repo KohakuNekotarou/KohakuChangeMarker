@@ -622,6 +622,17 @@ void KESCMPeekStartup::Startup()
 	//     分かった形で、これは分割が正しい線で入っている証拠でもある。
 	//   ⚠**空でもこのメソッドは残す**(IStartupShutdownService の契約)。第2段で model 側に起動時の
 	//     仕事ができたらここへ足す。
+
+	// (★2026-08-19: グローバルページアイテムアドーンメントの登録を一度ここへ置いたが、**外した**。
+	//  ⚠**この Startup はメインスレッド限定**(.fr の kCMainThreadStartupShutdownProviderImpl)で、
+	//    それは下の Shutdown() が比較状態を丸ごと捨てるから必要な限定 ---- ところが**セッションへの
+	//    アドーンメント登録はスレッドをまたがない**ので、メインスレッドだけで登録すると
+	//    **バックグラウンドスレッド(＝UI の PDF 書き出し)では誰も描かなくなる**(2026-08-19 実測)。
+	//  ⇒ 登録は**実行コンテキストごとに呼ばれる専用サービス**へ移した
+	//    ＝`kKESCMRingAdornmentStartupBoss`(実装は KESCMRingAdornment.cpp の末尾)。
+	//  ★**同じ boss に相乗りできなかった**理由がそのまま設計の要点＝
+	//    「Shutdown() で何を捨てるか」がスレッド方針を決めてしまうので、**捨てるものが違う仕事は
+	//    別の boss にする**。)
 }
 
 void KESCMPeekStartup::Shutdown()
@@ -640,6 +651,10 @@ void KESCMPeekStartup::Shutdown()
 	//   idle task の解放 / 一括クローズの保留の破棄 / 半透明の購読解除 / 半透明タイマーの停止 /
 	//   押下中 HUD のフォント返却。行き先は KESCMUIStartup.cpp で、**順序も向こうで保っている**
 	//   (購読を外してから道具を畳む ---- 消えかけのコードで Update が走るのを避けるため)。
+	// (★アドーンメントの解除も上の Startup と対で kKESCMRingAdornmentStartupBoss へ移した。
+	//  ⚠**この Shutdown はメインスレッドでしか呼ばれない**ので、ここで外すと BG の実行コンテキストに
+	//    登録したぶんが残る ---- 登録と解除は**同じスレッド方針のサービス**が持つのが筋。)
+
 	// 保持していたマーク/旧版画像バッファを解放(終了時もきれいに片付ける)。
 	KESCMDrawEventHandler::DropAll();
 	KESCMDrawEventHandler::DropAllOrig();

@@ -71,6 +71,7 @@
 //  ＝model/UI 分割 第1段 Task 6。押下中かどうかはツール(UI)の状態で、model からは見えないため。
 //  ⇒ このファイルは KESCMTrackerHud.h を include しない。)
 #include "KESCMDrawEventHandler.h"
+#include "KESCMRingAdornment.h"      // KESCMRingAdornmentIsActive(アドーンメント経路が生きているなら Draw Event 側は描かない)
 
 CREATE_PMINTERFACE(KESCMDrawEventHandler, kKESCMDrawEventHandlerImpl)
 
@@ -1491,9 +1492,20 @@ static void KESCMDrawPageCheck(IGraphicsPort* gPort, IDataBase* db, UID pageUID,
 //  押下中 HUD と一緒に 2026-08-13 に KESCMUIDrawEvent.cpp へ移した(model/UI 分割 第1段 Task 6)。
 //  中身は1行も変えていない。)
 
-bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
+bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID /*eventID*/, void* eventData)
 {
-	DrawEventData* ded = static_cast<DrawEventData*>(eventData);
+	// ★2026-08-19: マークをグローバルページアイテムアドーンメントとして描く経路(KESCMRingAdornment.cpp)が
+	//   生きている間は、この経路は描かない ---- 同じ絵が2回出るのを避けるため。
+	//   ⚠**登録に失敗していれば kFalse が返る**ので、その場合は従来どおりここが描く
+	//     ＝**新しい経路が動かなくても機能は落ちない**(片方向のフォールバック)。
+	//   ★eventID は元から見ていない(登録しているのは kEndSpreadMessage の1本だけ)。
+	if (KESCMRingAdornmentIsActive())
+		return kFalse;
+	return DrawSpreadMarks(static_cast<DrawEventData*>(eventData));
+}
+
+bool16 KESCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
+{
 	if (ded == nil || ded->gd == nil)
 		return kFalse;
 	// 自前のラスタ化(MakeEntry の比較スナップショット / MakeOrigImage の旧版スナップショット)中の再入は

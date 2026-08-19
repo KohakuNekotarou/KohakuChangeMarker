@@ -66,6 +66,9 @@
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMPeek.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMRingAdornment.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMHideUnchanged.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -129,6 +132,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMPeek.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMRingAdornment.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMHideUnchanged.h">
