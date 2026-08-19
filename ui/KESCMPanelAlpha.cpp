@@ -371,9 +371,32 @@ static bool KESCMTitleMatchesBookDialog(HWND h)
 // キャッシュ優先でパネル窓を得る。★ハンドルは OS が使い回すので、生存確認だけでなくクラス名の
 //   一致も見てから使う(SDK へ問い合わせ直すより安い)。
 //   ⚠旧実装はここで窓タイトルも照合していた。それは「本当に自分のパネルか」を見るためだったが、
-//     引き直しが WidgetID 狙い撃ちになった今、綴りを合わせる相手がいない。窓の作り直しと HWND の
-//     使い回しは kPaletteVisibilityChangedMessage か Win32 フックのどちらかを必ず伴い、
-//     そこでキャッシュを捨てているので、ここはクラス名までで足りる。
+//     引き直しが WidgetID 狙い撃ちになった今、綴りを合わせる相手がいない。
+//
+//   ★★★**2026-08-19(不具合再検査 B-U9)＝ここには長く「窓の作り直しと HWND の使い回しは
+//     kPaletteVisibilityChangedMessage か Win32 フックのどちらかを必ず伴い、そこでキャッシュを
+//     捨てているので、クラス名までで足りる」と書いてあったが、前半は事実ではない**——
+//     **可視性の通知でキャッシュを捨てている場所はどこにも無い**(このファイルの下の Update は
+//     貼り直すだけで、しかも全部 OFF なら即 return する)。捨てているのは Win32 フックだけで、
+//     **そのフックはトグルが ON の間しか張っていない**。
+//   ★上の2つの検査(生存 + クラス名)では「破棄されて、そのハンドルを OS が**別のパネルの**
+//     OWL.Palette に配り直した」を見分けられない(どちらも生きた OWL.Palette になる)。
+//     ⇒ 兄弟の KBS は 2026-08-12(`e1320ca`)に**可視性の通知が来たら無条件にキャッシュを捨てる**
+//     (`KBSForgetPaletteWindow`)を足しており、理由に「ワークスペースの変更がパレットを作り直す」
+//     を挙げている。
+//   ★★★**それを写していないのは、その前提が実測で成り立たなかったから**(2026-08-19・21.0.2.2。
+//     一時診断ビルドで「今キャッシュにある HWND」と「今 IPanelMgr に聞いた HWND」を並べて採取):
+//       ・自分のパネルを閉じる/開く                                    → 0x080DE8 のまま(same=1)
+//       ・ワークスペース切替(Essentials J → Advanced J → Essentials J) → same=1
+//       ・ワークスペースのリセット                                      → same=1
+//       ・本体のページパネルを閉じる → その OWL.Palette(0x0D0746)は**生きたまま**・題名もそのまま
+//     ＝**OWL.Palette はセッション中に破棄されない**。このファイルの冒頭が 2026-07-29 から書いている
+//     「起動時から 55〜56 組が非可視で待機」を、破棄の側から確かめた形になる。使い回しが起きない
+//     以上、捨てる機会も要らない。
+//   ⚠**もしパレットが作り直される経路が見つかったら**、KBS と同じ位置(可視性の通知を受けた直後・
+//     トグルを見るより前)に捨てる処理を足すこと。★**ただし KESCM では丸ごと写せない**——
+//     ダイアログの窓は引き直す当てが無い(ダイアログ自身が教えてくるだけ)ので、捨ててよいのは
+//     **パネルマネージャに聞き直せる対象＝`kKESCMAlphaWidgetIDs[i] != 0` の側だけ**。
 static HWND KESCMQueryPaletteWindow(int32 which)
 {
 	// ★★ダイアログは自分で名乗る(2026-08-13)。パネルマネージャに載っていないので下の SDK 経路は
@@ -432,7 +455,9 @@ static bool KESCMClassIs(HWND h, const wchar_t* wanted)
 //         このコードが聞きたい「**今このパネルは単独で透かせるトップレベル窓を持つか**」ではない。
 //     ②★**"OWL.FrameDrawer" の HWND はパレット階層に一度も現れない**(実測 0x150260 / 0x0D06AA。
 //       階層を根まで辿っても出てこず、Dock が名乗るのは別の HWND)。PaletteRefType(PaletteRef.h:127-166)
-//       の全11型にドロワーに当たる型が無いことの、実測版。⇒ **SDK は貼るべき窓そのものを返せない。**
+//       の**列挙子12個**(⚠2026-08-19 B-U9 で数え直した。旧記述の「全11型」は `kUnknownPaletteType` か
+//       `kTabGroupClusterType_OBSOLETE` のどちらかを落としていた)にドロワーに当たる型が無いことの、
+//       実測版。⇒ **SDK は貼るべき窓そのものを返せない。**
 //   ∴ **GA_ROOT + クラス名照合が、この3状態を1本で正しく分ける唯一の道**。⚠**次に監査する人へ**:
 //     ここは「Win32 の文字列比較が残っている」ように見えるが、**寄せ先を測ったうえで残している**。
 //   ★ついでに採れた検算2つ＝**OWL.Palette の HWND は3状態・往復6回とも不変**(0x060AE2。キャッシュ
@@ -587,7 +612,9 @@ bool16 KESCMApplyBookDialogTranslucency()
 	return KESCMApplyFor(kKESCMAlphaBookDialog);
 }
 
-// ダイアログが自分の窓を教えてくる/手放す。★KESCMBookDialog.cpp から、窓を用意した直後に呼ばれる。
+// ダイアログが自分の窓を教えてくる。★KESCMBookDialog.cpp から、窓を用意した直後に呼ばれる。
+//  ⚠2026-08-19(B-U9)＝**「手放す」呼びは存在しない**(nil を渡す呼び手はゼロ)。閉じるときに何も
+//    要らない理由は下の sBookDialogTitle の照合＝ヘッダーの宣言のところに書いてある。
 //  ⚠ここは alpha を書かない ---- 「窓を覚える」と「今の状態を貼る」は別の仕事で、後者は呼び出し側が
 //    続けて KESCMApplyBookDialogTranslucency を呼ぶ(トグルが OFF なら何も起きないのが正しい)。
 void KESCMSetBookDialogWindow(void* sysWindow)
@@ -620,8 +647,10 @@ void KESCMSetBookDialogWindow(void* sysWindow)
 //     対象を名指しで Apply して担っている(KESCMActionComponent.cpp の
 //     kKESCMPopupTranslucentPanelActionID / kKESCMPopupTranslucentPagesActionID の case が
 //     KESCMApplyPanelTranslucency / KESCMApplyPagesPanelTranslucency をそれぞれ呼ぶ。
-//     ⚠2026-08-17 訂正＝旧記述の「:274 / :299」は**2件とも外れていた**＝どちらもコメント行と
-//     代入行を指しており、実体は :271 / :305 だった。**自分側のファイルは行番号で引かない**)。この関数は
+//     ⚠**この2つの case は行番号で引かない**＝2026-08-17 に「:274 / :299」が外れていたのを
+//       「:271 / :305」へ直したが、**その2つも2日で +8 腐った**(2026-08-19 B-U9 で実測。
+//       腐らせたのは B-U7 ほか4コミット)。⇒ **同じ文が「行番号で引かない」と書きながら
+//       新しい行番号を置いていた**ので、今度は数字を置かず ActionID の名前だけで引く)。この関数は
 //     「ON を貼り直す」ためのものなので、OFF を回す必要がそもそも無い。
 //     ⚠だから KESCMApplyFor 本体には OFF ガードを入れないこと(上記の復元経路が死ぬ)。
 void KESCMApplyAllPanelTranslucency()
@@ -807,6 +836,11 @@ static void CALLBACK KESCMWinEventProc(HWINEVENTHOOK /*hook*/, DWORD /*event*/, 
 		//     使い回されるので、`IsWindow` だけでは他人の窓を透かしうる ---- パネルがこの行で防いで
 		//     いるのと**同じ事故**。∴ダイアログには**登録時の窓タイトル**を突き合わせる
 		//     (KESCMTitleMatchesBookDialog。同じ窓イベントのときだけ＝コストの掛け方もパネルと同じ)。
+		//   ★**カーソルの回に照合しないことで「他人の窓へ書く」道が開くのではないか**——
+		//     2026-08-19(B-U9)に追った結果**開かない**。この下で読むのは属性だけ(GetLayeredWindowAttributes)で、
+		//     **実際に書くのは KESCMApplyFor で、あちらは必ず KESCMQueryPaletteWindow を通る**＝
+		//     パネルならクラス名・ダイアログなら題名を、その場でもう一度照合してから書く。
+		//     ⇒ ここの照合は「捨てるのを早める」ためのもので、書き込みの安全はここに依存していない。
 		if (isWindowEvent)
 		{
 			const bool stillOurs = (which == kKESCMAlphaBookDialog)
@@ -910,7 +944,9 @@ static void KESCMInstallWinEventHook()
 //     「済んだ」と判断し、**OS が KESCMWinEventProc(参照カウントされない生関数ポインタ)を握ったまま
 //     .pln が降りる**。このファイルが ICallbackTimer について二重に防いでいる当の状態そのもの。
 //   ⚠★**2026-08-12 訂正＝旧記述「ハンドルを残す副作用は無い」は言いすぎだった**。
-//     KESCMInstallWinEventHook は `sWinEventHook != nullptr` を見て即 return するので(上の :671)、
+//     KESCMInstallWinEventHook は `sWinEventHook != nullptr` を見て即 return するので、
+//     (⚠2026-08-19 B-U9＝ここは 2026-08-12 に `:671` と行番号で書き、その日は当たっていたが、
+//      model/UI 分割でこのファイルが伸びて **+220 ずれた**。⇒ **指すのは関数名**。)
 //     **フックが実際には消えているのにハンドルだけ残った場合、張り直しがそのセッション中ずっと no-op**
 //     になる＝ドッキング切り替えへの追随が黙って死ぬ。MSDN の失敗3条件のうち「無効なハンドル」
 //     「既に外されている」がそれに当たる。
@@ -918,7 +954,7 @@ static void KESCMInstallWinEventHook()
 //     (張ったスレッド以外から呼んだ)だけ**だから＝そのときフックは**生きている**ので、Install が
 //     no-op になるのは正しい動作になる。呼び手は今もメニュー押下と Shutdown の2つで、どちらもメイン
 //     スレッド。⇒ **別スレッドから呼ぶ経路ができたら、ここを再検討する。**
-//   !今日の呼び手はすべてメインスレッド(メニュー押下と Shutdown)so実際に失敗したことは無い。
+//   !今日の呼び手はすべてメインスレッド(メニュー押下と Shutdown)なので実際に失敗したことは無い。
 //     狙いは「失敗を握りつぶさない」ことにある。
 static void KESCMRemoveWinEventHook()
 {
@@ -1205,7 +1241,7 @@ void KESCMAttachPanelVisibilityObserver()
 //   ★外す前に IsAttached を聞くのは、Attach 側が付ける前に聞くのと同じ理由。Attach は2か所から呼ばれる
 //     (起動サービスと パネルの AutoAttach)ので、「本当に付いているか」は両側で正直な問い。
 //   ★パネルマネージャは終了処理中には既に降りていることがある。そこが nil でも kAppBoss 側の購読は
-//     独立so道連れにしない(Attach 側が 2026-08-06 に学んだのと同じ形)。
+//     独立なので道連れにしない(Attach 側が 2026-08-06 に学んだのと同じ形)。
 void KESCMDetachPanelVisibilityObserver()
 {
 	ISession* session = GetExecutionContextSession();

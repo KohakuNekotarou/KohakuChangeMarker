@@ -53,7 +53,11 @@
 //   それだけが使っていた include(KESCMScrollMap.h / KESCMDrawEventHandler.h / KESCMOversetApply.h /
 //   PersistUtils.h)も一緒に移っている。⇒ このファイルは**パネルの表示だけ**を担う UI になった。
 #include "KESCMPanelState.h"		// KESCMLoadPanelStateIfPresent(読込の主経路は起動時=KESCMUIStartup。ここは保険)
-#include "KESCMPanelAlpha.h"		// KESCMApplyPanelTranslucency(パネル再表示時に半透明を貼り直す)
+#include "KESCMPanelAlpha.h"		// KESCMAttachPanelVisibilityObserver / KESCMApplyAllPanelTranslucency
+									// (パネル再表示時に半透明を貼り直す)。⚠2026-08-19(B-U9)訂正＝ここは
+									// KESCMApplyPanelTranslucency と書いていたが、このファイルが呼ぶのは
+									// **All のほう**。同じ取り違えを KESCMPanelAlpha.h 側が 2026-08-17 に
+									// 直しており、**その兄弟がここに残っていた**
 #include "KESCMPathDisplay.h"		// KESCMPathForDisplay(Target:/Source: のパスを "/" 区切りで見せる)
 #include "KESCMStorySection.h"		// KESCMUpdateStorySectionLabel(見出しの件数も arm 状態の表示の一部)
 #include "KESCMStoryTree.h"			// KESCMStoryTreeRebuild(一覧の中身も同じく arm 状態で変わる)
@@ -231,7 +235,12 @@ void KESCMPanelObserver::AutoAttach()
 	//   MouseEnter/MouseLeave/フック/可視性オブザーバの各入口が OFF を弾くのと同じ方針。
 	//   ★対象ごとの OFF は KESCMApplyAllPanelTranslucency が飛ばす(2026-08-07 修正。片方 ON・
 	//     片方 OFF で両者が同じフローティンググループにいると、OFF 側が同じ窓へ 255 を上書きして
-	//     ON 側の半透明を打ち消していた)。∴ ここの条件は「全部 OFF なら呼ぶ意味が無い」の意味。
+	//     ON 側の半透明を打ち消していた)。∴ ここの条件は「**このパネル2つがどちらも OFF なら**
+	//     呼ぶ意味が無い」の意味。
+	//   ⚠2026-08-19(B-U9)訂正＝ここは「全部 OFF なら」と書いていたが、トグルは**3つ**あり
+	//     (3つ目＝ブック比較ダイアログ・2026-08-13)、この条件はそれを見ていない。**見ないのが正しい**
+	//     ＝ダイアログはパネルではないので、パネルの widget が作り直されても窓は無傷。
+	//     ⇒ 数え落としているのは条件ではなく、この説明文のほうだった。
 	//   ⚠Apply**For** 側に OFF ガードを入れてはいけない: メニューで OFF にした瞬間の 255 復元・
 	//     影の再表示は、対象を名指しで呼ぶあちらが担っている(KESCMActionComponent.cpp のトグル経路)。
 	// ★ここは保険で、主たる追随は KESCMPanelAlpha.cpp のオブザーバ(kPaletteVisibilityChangedMessage)。

@@ -272,13 +272,27 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 			// this observer turns it back into UI work. Same shape as the two above -- nothing new
 			// is introduced, and with nobody listening the model simply does nothing (Server-safe).
 			IID_IKESCMMODELCHANGEOBSERVER, kKESCMModelChangeObserverImpl,
-			// Panel visibility observer (2026-07-29). Subscribes to the panel manager's subject and
-			// waits for kPaletteVisibilityChangedMessage, which fires whenever a panel is opened,
-			// closed or moved between docked and floating. The "Translucent Panel" toggle applies its
-			// alpha to the panel's current top-level window (an OWL.Dock), and that window is thrown
-			// away and recreated by those very actions - so without this the translucency would be
-			// silently lost. Lives on the same active-context boss for the same proven reason as the
-			// two observers above. Implementation: KESCMPanelAlpha.cpp.
+			// Panel visibility observer (2026-07-29). Implementation: KESCMPanelAlpha.cpp.
+			// ★It subscribes to TWO subjects and acts on THREE messages (widened 2026-08-19, bug
+			//   recheck B-U9 - this comment named one of each, which was true only on the day it
+			//   was written):
+			//     kPanelManagerBoss / IID_IPANELMGR -> kPaletteVisibilityChangedMessage
+			//     kAppBoss / IID_IAPPLICATION       -> kDockedPaletteAreaChangedByUserMsg (2025 only;
+			//                                          measured NOT to fire on 2026) and
+			//                                          kApplicationSuspendMsg (the pointer was on the
+			//                                          panel and left for another application).
+			// ⚠kPaletteVisibilityChangedMessage is about VISIBILITY, exactly as its name says: it
+			//   fires when a panel is opened, closed, iconised or pulled out as a drawer, and it does
+			//   NOT fire when the panel merely changes PLACE (docked <-> floating). That gap is the
+			//   whole reason the Win32 event hook in KESCMPanelAlpha.cpp exists - so this AddIn must
+			//   not be read as covering the docking transitions.
+			// The toggles write their alpha to the target's current top-level window (an OWL.Dock, or
+			// an OWL.FrameDrawer while it is a drawer), and that window is thrown away and rebuilt by
+			// the very actions this message reports - so without this observer the translucency would
+			// be silently lost. THREE targets share it: this panel, InDesign's own Pages panel
+			// (2026-08-06) and this plug-in's book comparison dialog (2026-08-13).
+			// Lives on the same active-context boss for the same proven reason as the two observers
+			// above.
 			IID_IKESCMPANELVISIBILITYOBSERVER, kKESCMPanelVisibilityObserverImpl,
 		}
 	},

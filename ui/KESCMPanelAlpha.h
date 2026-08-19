@@ -73,7 +73,12 @@ bool16	KESCMGetBookDialogTranslucent();
 void	KESCMSetBookDialogTranslucent(bool16 on);
 bool16	KESCMApplyBookDialogTranslucency();
 
-// ブック比較ダイアログの窓を教える(閉じるときは nil)。
+// ブック比較ダイアログの窓を教える。★呼び手は**1つだけ**＝KESCMBookDialog.cpp が**開くたび**に呼ぶ。
+//  ⚠2026-08-19(B-U9)訂正＝旧記述は「(閉じるときは nil)」と書いていたが、**そう呼ぶ呼び手は一度も
+//    存在しない**。閉じるときに何も要らないのは、窓が死ぬからではなく(ハンドルの値は別の窓へ配り
+//    直される)、**登録時にこの窓の題名も控えて以後の使用を毎回それと突き合わせる**から＝使い回された
+//    ハンドルは書く前に捨てられる。呼ぶ側にも同じことが書いてある(KESCMBookDialog.cpp の
+//    「there is no matching "forget" call to write」)。nil を渡すこと自体は今も安全。
 // ★HWND をこのヘッダーに出さないために void* で受ける ---- KESCMPanelAlpha.h は BaseType.h しか
 //   include しておらず、windows.h を持ち込むと他の .cpp 全部に波及する。実体側でキャストする。
 void	KESCMSetBookDialogWindow(void* sysWindow);
