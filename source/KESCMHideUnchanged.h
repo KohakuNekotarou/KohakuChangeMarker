@@ -49,6 +49,21 @@ class IDataBase;
 //   従来は「先に閉じた側は隠れたまま保存され、あとに残った側は `KESCMHandleDocsClosed` が
 //   `KESCMResetHideUnchanged(kTrue)` を呼ぶので隠れずに保存される」＝**保存が Stop より
 //   先か後かで結果が割れていた**。保存の直前に必ず両側を戻すので、どちらの順で閉じても揃う。
+//
+// ***** 控えは Undo/Redo に追随しない。これは既知で、現状維持と決まっている。*****
+//   (ユーザー決定 2026-08-19。**再提案しないこと。**)
+//   `kHideSpreadCmdBoss` は **undo 可能な永続コマンド**だが、下の5つの static はそうではないので、
+//   Undo を挟むと文書と控えが食い違う。2026-08-19 に両経路を実測した:
+//     ・Hide ON → Undo …… 文書は戻る(`[-,-,-,-]`)のにトグルは ON のまま
+//       ⇒ 実害小(トグルを押すと、既に表示されているものを再表示するだけ)
+//     ・Hide ON → 保存 → Undo → Redo …… **文書は隠れる**のにトグルは OFF
+//       ⇒ 控えが空なので**このトグルでは戻せない**(Pages パネルで手動、または再 Start)
+//   ★**保存の解除コマンドが undo スタックに積まれない**ことが後者の機序(実測)。保存が undo 履歴を
+//     汚さないのは良い性質だが、その分スタックとモデルが食い違い、Redo で表に出る。
+//   ⚠**`undoName` は hide も unhide も同じ `スプレッドを隠す`** なので、名前を見ても何が積まれて
+//     いるか分からない ---- 実際に Undo/Redo を走らせて初めて判明した。
+//   ★公式には解がある(Snapshot interface = 非永続データを Undo/Redo に追随させる)が、
+//     **起こる操作が稀なので採らない**と決めた。作り直すときだけ再検討する。
 void		KESCMHideUnchangedToggle();
 
 // Reset the toggle on both sides. With restoreSpreads=kTrue the spreads we remember hiding
