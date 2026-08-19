@@ -214,15 +214,20 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 
 		// 「Align Other Views to Active」(実行アクション・ショートカット割当可): アクティブ(最前面)
 		// レイアウトビューの位置+拡大率を他文書の全ビューへ1回そろえる。Sync Layout Views トグルとは独立
-		// (OFF でも効く)。Start 中はページの Add/Remove 補正あり。実体は KESCMPeek.cpp の
+		// (OFF でも効く)。Start 中はページの Add/Remove 補正あり。実体は ui/KESCMViewSync.cpp の
 		// KESCMAlignOtherViewsToActiveNow(トグル ON 時の初回そろえと同じ同期エンジン)。
+		// ⚠2026-08-19(不具合再検査 B-U7)に置き場所を訂正＝**分割で KESCMPeek.cpp から出て行った**のに
+		//   「実体は KESCMPeek.cpp」と書いたままだった(KCMUIID.h:219 にも同じ誤りが残っていた=兄弟2件)。
 		case kKESCMPopupAlignViewsActionID:
 		{
 			const bool16 ok = KESCMAlignOtherViewsToActiveNow();
-			// false は2通り: (a) 最前面レイアウトビューが無い / (b) Start 中で最前面が Target/Source 以外の
-			// 第3文書(engine が同期しない)。どちらも「実際にそろえていない」ので成功表示は出さない。
+			// false は3通り: (a) 最前面レイアウトビューが無い / (b) Start 中で最前面が Target/Source 以外の
+			// 第3文書(engine が同期しない) / ★(c) そろえる相手の窓が1つも無い(文書が1つだけ・相手が閉じた・
+			// Target と Source が同じ文書)。どれも「実際にそろえていない」ので成功表示は出さない。
+			// ⚠(c) は 2026-08-19 まで**呼び手に伝わらず、成功表示になっていた**(不具合再検査 B-U7 の A-1)。
+			//   文言も「no view to align **from**」＝手本が無い意味だったので、3通りに当てはまる形へ改めた。
 			PMString msg(ok ? "Aligned other views to the active view."
-			                : "Align: no view to align from (while Started, use the Target or Source view).");
+			                : "Align: no other view to align (while Started, use the Target or Source view).");
 			msg.SetTranslatable(kFalse);
 			KESCMSetStatus(msg);
 			break;

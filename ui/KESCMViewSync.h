@@ -17,8 +17,15 @@
 
 #include "BaseType.h"
 
-// Drop the cached page geometry used by the sync engine. Call this whenever the pages of a
-// tracked document may have moved (comparison start/stop, page add/remove, document close).
+// Drop the cached page geometry used by the sync engine. Called on comparison start/stop, document
+// close, sync toggle on/off, "Align Other Views" and shutdown -- i.e. wherever the set of tracked
+// documents changes.
+//
+// ⚠2026-08-19 (bug recheck B-U7): this used to say "page add/remove" too, and nothing calls it from
+// there -- by design. Page geometry that moves while the sync is running is caught by the cache's
+// 250ms TTL instead (see the second half of the invalidation comment in the .cpp), because adding a
+// page raises no notification this plug-in listens to. Saying "call this on page add/remove" made
+// the absence of such a call read like an oversight.
 void	KESCMInvalidateSyncCaches();
 
 // The "Sync Layout Views" flyout toggle. While ON, scrolling or zooming any layout view
@@ -29,8 +36,15 @@ void	KESCMSetLayoutSync(bool16 on);
 
 // The "Align Other Views to Active" flyout action. Mirrors the active (frontmost) layout
 // view's position and zoom onto the other documents' layout views once. Works whether or
-// not the Sync toggle is ON. Returns kTrue when an active layout view was found and the
-// sync ran.
+// not the Sync toggle is ON.
+//
+// ★Returns kTrue only when views were actually aligned. kFalse has three causes and the caller
+// must not report success for any of them (2026-08-19, bug recheck B-U7 -- the third one used to
+// report success):
+//   (a) no frontmost layout view / it has no panorama or document
+//   (b) armed and the front document is a third document (the engine syncs Target<->Source only)
+//   (c) ★there was nothing to align TO -- only one document open, the partner was closed, or
+//       Target and Source are the same document
 bool16	KESCMAlignOtherViewsToActiveNow();
 
 // Shutdown: drop the toggle so any notification still in flight is ignored by the observer's

@@ -415,8 +415,10 @@ static PBPMPoint KESCMCorrectedCenterForDoc(IControlView* srcView, IDataBase* sr
 	outSkip = kFalse;
 	outDstPage = kInvalidUID;	// 呼び出し側が「宛先ページのスプレッドを映す」ために使う(2026-08-11)
 
-	// ★arm 状態をこの関数だけで7回聞くので、インターフェイスは1回引いて使い回す
+	// ★arm 状態をこの関数だけで9回聞くので、インターフェイスは1回引いて使い回す
 	//  (Utils.h:74-80 が明示している作法＝「several places で使うなら InterfacePtr に受けるほうが効率的」)。
+	//  ⚠2026-08-19(不具合再検査 B-U7)に数え直した＝旧記述の「7回」は誤り(実測9回。1行に2〜3回ある行を
+	//    1回と数えていた)。★数は行ではなく呼び出しで数える。
 	InterfacePtr<IKESCMCompareFacade> compare(Utils<IKESCMCompareFacade>().QueryUtilInterface());
 	if (!compare->IsArmed() || compare->GetArmedTargetDB() == nil || compare->GetArmedSourceDB() == nil)
 		return srcCenter;	// 未 arm: 生同期
@@ -488,11 +490,19 @@ static PBPMPoint KESCMCorrectedCenterForDoc(IControlView* srcView, IDataBase* sr
 //  ジェスチャ自体の全廃で呼び出しゼロになっていたため削除。同期は常に Start 中の Target↔Source 限定。)
 // ★srcView は手本(操作した)ビュー。ページ対応の補正で「ビュー中心にあるページ」を SDK に聞くために
 //   使う(公式ルート=KESCMQueryViewCenterPage。2026-08-06 の監査 A-2)。nil でも動く(自前探索へ落ちる)。
-static void KESCMSyncOtherDocViewportsTo(IControlView* srcView, IPanorama* srcPano, IDataBase* srcDocDb,
-                                         bool16 applyPageOffset = kFalse)
+//
+// ★★★戻り値=「複製先のビューが1つでもあったか」(2026-08-19・不具合再検査 B-U7)。
+//   **「そろえたか」を答えられるのはこの関数だけ**なので、ここが答える。以前は void で、唯一それを
+//   知りたい呼び手(KESCMAlignOtherViewsToActiveNow)が**この関数のガードを手で写した先読み**を持ち、
+//   「engine と必ず同条件に保つ」とコメントしていた ---- そして**写し漏れた出口(下の dstDbs.empty())**
+//   があったため、**文書を1つしか開いていない状態で「そろえた」と表示していた**(実機で実測)。
+//   ⇒ 判定は1か所([[one-question-one-place]])。⚠kFalse は「失敗」ではなく「**複製先が無かった**」の意。
+//   自動同期の2つの呼び手(Update / トグル ON の初回そろえ)は答えを使わない=従来どおり。
+static bool16 KESCMSyncOtherDocViewportsTo(IControlView* srcView, IPanorama* srcPano, IDataBase* srcDocDb,
+                                           bool16 applyPageOffset = kFalse)
 {
 	if (srcPano == nil)
-		return;
+		return kFalse;
 
 	// キャッシュ世代の更新はここでも行う(2026-07-25 追補)。Update 経由なら既に呼ばれているので no-op だが、
 	// Align Other Views / Sync ON の初回そろえはこの関数を直接呼ぶため、TTL をここでも効かせておく。
@@ -512,7 +522,7 @@ static void KESCMSyncOtherDocViewportsTo(IControlView* srcView, IPanorama* srcPa
 	if (armed)
 	{
 		if (srcDocDb != compare->GetArmedTargetDB() && srcDocDb != compare->GetArmedSourceDB())
-			return;
+			return kFalse;	// 手本が第3文書=同期しない
 	}
 	else
 	{
@@ -529,7 +539,7 @@ static void KESCMSyncOtherDocViewportsTo(IControlView* srcView, IPanorama* srcPa
 	InterfacePtr<IApplication> app(session != nil ? session->QueryApplication() : nil);
 	InterfacePtr<IDocumentList> docList(app ? app->QueryDocumentList() : nil);
 	if (docList == nil)
-		return;
+		return kFalse;
 
 	// ★宛先文書を先に確定する(2026-07-25 追補)。
 	//   arm 中(A) … 手本は上のガードで Target/Source のどちらかに確定しているので、宛先は「対の相手」
@@ -564,7 +574,9 @@ static void KESCMSyncOtherDocViewportsTo(IControlView* srcView, IPanorama* srcPa
 		}
 	}
 	if (dstDbs.empty())
-		return;	// 複製先が無い(=何もしない)。再入ガードを立てる前に抜ける
+		return kFalse;	// ★複製先が無い(=何もしない)。再入ガードを立てる前に抜ける。
+	                	//   ここが「文書が1つしか開いていない」「相手が閉じた」「Target と Source が
+	                	//   同じ文書」の出口＝**2026-08-19 まで呼び手に伝わっていなかった** kFalse。
 
 	// ★ズームの失敗をこの関数の外へ出さない(2026-08-17 の API 監査 B-U7)。下の複製ループは失敗した
 	//   ズームを握り潰して続行するが、その掃除が ErrorUtils::PMSetGlobalErrorCode(kSuccess) だけだと
@@ -687,6 +699,7 @@ static void KESCMSyncOtherDocViewportsTo(IControlView* srcView, IPanorama* srcPa
 		}
 	}
 	// (sLayoutSyncBroadcasting は broadcastGuard のデストラクタが戻す)
+	return kTrue;	// 複製先があった(ビューごとに「既に一致」で触らなかった場合も含む=それも「そろっている」)
 }
 
 //========================================================================================
@@ -696,7 +709,9 @@ static void KESCMSyncOtherDocViewportsTo(IControlView* srcView, IPanorama* srcPa
 //   さらに ActiveContext(文書切替)も購読し、新しく開いた文書のビューを購読へ追加する。
 //   Start(枠)とは完全に独立=単独で ON にできる。
 //
-//   手本=ユーザー自作の旧KESプラグインの KESLayoutScrollObserver(work/ に原本)。改善点:
+//   手本=ユーザー自作の旧KESプラグインの KESLayoutScrollObserver。改善点:
+//   (⚠2026-08-19 の不具合再検査 B-U7 で「work/ に原本」を削った＝**このリポジトリのどこにも無い**
+//    (全数 find で0件)。手本にした事実は残すが、置き場所は名指しできない。)
 //   ①購読対象を「アクティブ文書の最初のプレゼンテーションの元側ペインのみ(QueryFrontView 一致時)」
 //     から「全文書の全レイアウトビュー(スプリット新側・2枚目以降のウィンドウ込み)」へ拡大。
 //     どのウィンドウを動かしてもそれが手本になり、QueryFrontView のアクティブ追跡ズレ
@@ -946,15 +961,14 @@ bool16 KESCMAlignOtherViewsToActiveNow()
 	IDataBase* db = KESCMFindDocDbForView(front);
 	if (pano == nil || db == nil)
 		return kFalse;
-	// ★Start 中(arm)は同期エンジンが Target↔Source 間だけに限定し、最前面が第3文書なら何もせず戻る。
-	//   その場合に「そろえた」と誤って成功表示を出さないよう、engine と同じ条件をここで先読みして kFalse を
-	//   返す(2026-07-24。下の KESCMSyncOtherDocViewportsTo の armed ガードと必ず同条件に保つ)。
-	InterfacePtr<IKESCMCompareFacade> compare(Utils<IKESCMCompareFacade>().QueryUtilInterface());
-	if (compare->IsArmed() && compare->GetArmedTargetDB() != nil && compare->GetArmedSourceDB() != nil &&
-	    db != compare->GetArmedTargetDB() && db != compare->GetArmedSourceDB())
-		return kFalse;
-	KESCMSyncOtherDocViewportsTo(front, pano, db, kTrue /*applyPageOffset(arm時のみ補正・未arm時は関数内でkFalse強制)*/);
-	return kTrue;
+	// ★★★「そろえたか」は engine が答える(2026-08-19・不具合再検査 B-U7)。
+	//   ここには 2026-07-24 から「Start 中に最前面が第3文書なら engine が何もしない」を**手で写した
+	//   先読みガード**があり、コメントは「engine の armed ガードと必ず同条件に保つ」と書いていた。
+	//   ⇒ 実際には engine にもう1つの出口(**複製先が1つも無い**)があって写し漏れており、
+	//     **文書を1つしか開いていない状態で「Aligned other views to the active view.」と表示していた**
+	//     (2026-08-19 に実機で実測＝1文書でも2文書でも同じ文言)。**同じ判断を2か所で持てば必ずずれる**
+	//     ([[one-question-one-place]])ので、写しをやめて engine の答えをそのまま返す。
+	return KESCMSyncOtherDocViewportsTo(front, pano, db, kTrue /*applyPageOffset(arm時のみ補正・未arm時は関数内でkFalse強制)*/);
 }
 
 // KESCMViewSyncShutdown(KESCMViewSync.h で宣言) — 終了時の後始末。

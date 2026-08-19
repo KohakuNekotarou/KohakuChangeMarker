@@ -246,9 +246,14 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 	// notifications; a free-floating observer boss did NOT receive them in practice).
 	// While the flyout "Sync Layout Views" toggle is ON, this observer subscribes to the IPanorama
 	// subject of every open layout view (and to the active context for document switches). Whenever
-	// any view scrolls or zooms, the change is mirrored to all layout views of the OTHER documents
-	// (position + zoom; same engine as Alt+middle). A re-entrancy guard suppresses the
-	// notifications caused by the mirroring itself.
+	// any view scrolls or zooms, the change is mirrored (position + zoom) to the layout views of the
+	// OTHER documents. A re-entrancy guard suppresses the notifications caused by the mirroring itself.
+	// ⚠Two corrections on 2026-08-19 (bug recheck B-U7), both stale since mid-July:
+	//   - "all ... OTHER documents" holds only while STOPPED. While a comparison is armed the mirroring
+	//     is limited to the Target<->Source pair (user's decision, 2026-07-11); a third document is
+	//     neither a source nor a destination.
+	//   - "same engine as Alt+middle": the middle-button gestures were removed on 2026-07-13. The engine
+	//     is shared with the "Align Other Views to Active" flyout action instead.
 	AddIn
 	{
 		kActiveContextBoss,

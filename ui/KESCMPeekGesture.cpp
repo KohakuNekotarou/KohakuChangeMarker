@@ -100,8 +100,10 @@ static void KESCMInvalidateMarksDoc()
 // 共通部: マウス直下のドキュメントウィンドウの db を返す(無ければ nil)。Target/Source 判定の
 // 差分は比較先 db だけなので、窓解決を1本に畳んだ(2026-07-25 監査で重複解消)。
 // ★名前は 2026-08-17 に KESCMFrontViewIsOverTarget/Source から改めた＝**この判定は front view を
-//   一切見ない**のに、名前だけが GetFrontDocument 時代のまま残っていた(呼び手7箇所と他ファイルの
-//   コメント2箇所も同時に追随させた)。
+//   一切見ない**のに、名前だけが GetFrontDocument 時代のまま残っていた(このファイルの7箇所＝定義2・
+//   コメント1・**呼び出し4**と、他ファイルのコメント2箇所を同時に追随させた)。
+//   ⚠2026-08-19(不具合再検査 B-U7)に数え直した＝旧記述の「呼び手7箇所」は誤りで、**呼び手は4つ**
+//     (KESCMTrackerBeginPeek / temp-hide の Target・Source / reveal の窓判定)。7は「触った箇所」の数。
 static IDataBase* KESCMQueryDocDbUnderMouse()
 {
 	GSysPoint globalPt = Utils<IEventUtils>()->GetGlobalMouseLocation();
@@ -330,8 +332,21 @@ void KESCMTrackerRevealEnd()
 }
 
 // KESCMResetPeekGestureState(KESCMPeekGesture.h 参照) — 押下中の表示状態を初期化する。
-// ★2026-08-13 の分割で新設。呼び手は model 側の3か所(KESCMDoArmMousePeek / KESCMDoDisarmMousePeek /
-//   KESCMHandleDocsClosed)で、分割前はいずれも同じ2行を直接書いていた。
+// ★2026-08-13 の分割で新設。分割前は model 側の3か所(KESCMDoArmMousePeek / KESCMDoDisarmMousePeek /
+//   KESCMHandleDocsClosed)がいずれも同じ2行を直接書いていた。
+//
+// ⚠★★2026-08-19(不具合再検査 B-U7)に数え直した＝**呼び手は1つだけ**。旧記述の「呼び手は model 側の
+//   3か所」は分割後に成り立っていない ---- model 側は3か所とも「これは UI の状態なので UI がやる」に
+//   書き換わり(KESCMPeek.cpp の arm/disarm/クローズ掃除)、UI 側で実際に呼んでいるのは
+//   **KESCMModelChangeObserver の kKESCMComparisonDocsClosedMessage 分岐(比較が終わったときだけ)**
+//   の1か所。arm(Start)と disarm(Stop)の通知分岐からは呼んでいない。
+// ★★**それでも不具合ではない**(2026-08-19 に全経路を確認した):
+//   この2つのフラグが立つのは押下中だけで、押下の終わり方は3つしかなく、**3つとも
+//   KESCMTrackerRevealEnd を通る** ---- KESCMTracker.cpp の EndTracking(通常の解放)・AbortTracking
+//   (メニュー等で中断)・BeginTracking で基底がトラッキングを断った経路。∴ Start/Stop の時点で
+//   フラグが残っていることは無く、万一残っても次の解放で必ず落ちる。
+//   ⇒ **足すべきは呼び出しではなく、この説明**(消えかけの「保険」を復活させると、なぜ在るのか
+//     分からない行がもう1つ増える)。
 void KESCMResetPeekGestureState()
 {
 	sPeekActive    = kFalse;

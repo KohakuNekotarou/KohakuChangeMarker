@@ -64,9 +64,13 @@ void			KESCMTrackerRevealEnd();
 // Called at startup.
 void			KESCMAttachDocsClosedObserver();
 
-// Forget that a press is showing anything. Called from arm, disarm and the close sweep, which
-// all reset the same two flags. (Split out on 2026-08-13: those three callers live on the
-// model side and cannot see this file's statics.)
+// Forget that a press is showing anything. Split out on 2026-08-13 because the callers of the day
+// lived on the model side and cannot see this file's statics.
+//
+// ⚠2026-08-19 (bug recheck B-U7): the one caller left is the UI's close handling (the
+// comparison-docs-closed branch of KESCMModelChangeObserver). Arm and disarm no longer call it, and
+// that is not an oversight -- see the .cpp for why the three ways a press can end all funnel through
+// KESCMTrackerRevealEnd, so the flags cannot outlive a press.
 void			KESCMResetPeekGestureState();
 
 // Is a batch close running right now? Reads the session flag the application's Links UI keeps

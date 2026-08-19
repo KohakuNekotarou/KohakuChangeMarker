@@ -169,7 +169,7 @@ DECLARE_PMID(kImplementationIDSpace, kKESCMCursorProviderImpl, kKCMUIPrefix + 17
 //   **母集合の取り違え**で、sprite が要るのは **CPathCreationTracker / CLayoutTracker 派生**だけ
 //   (wavetool の2本はその派生)。CTracker 直接派生の KESCM は持たない側が公式と同じ形。
 //   理由の全文は KCMUI.fr の kKESCMTrackerBoss の Class コメント)
-DECLARE_PMID(kImplementationIDSpace, kKESCMDocsClosedObserverImpl, kKCMUIPrefix + 19)	// IObserver 実装(一括クローズ完了で、保留した後片付けを1回だけ流す。KESCMPeek.cpp)
+DECLARE_PMID(kImplementationIDSpace, kKESCMDocsClosedObserverImpl, kKCMUIPrefix + 19)	// IObserver 実装(一括クローズ完了で、保留した後片付けを1回だけ流す。ui/KESCMPeekGesture.cpp。⚠2026-08-19 訂正=分割で KESCMPeek.cpp から出た。KCMUIFactoryList.h:68 は正しく直っていた=兄弟の取りこぼし)
 DECLARE_PMID(kImplementationIDSpace, kKESCMPanelVisibilityObserverImpl, kKCMUIPrefix + 20)	// IObserver 実装(パネルの表示状態が変わったら半透明を貼り直す。KESCMPanelAlpha.cpp)
 DECLARE_PMID(kImplementationIDSpace, kKESCMPanelRollOverImpl, kKCMUIPrefix + 21)	// IMouseRollOver 実装(パネルにカーソルが乗っている間だけ半透明を解除。KESCMPanelAlpha.cpp)
 DECLARE_PMID(kImplementationIDSpace, kKESCMStorySectionToggleObserverImpl, kKCMUIPrefix + 22)	// IObserver 実装(開閉ボタンの押下を受けて Story Edits セクションを開閉。KESCMStorySectionObserver.cpp)
@@ -216,7 +216,7 @@ DECLARE_PMID(kActionIDSpace, kKESCMPopupSep1ActionID, kKCMUIPrefix + 17)	// フ�
 DECLARE_PMID(kActionIDSpace, kKESCMPopupSep2ActionID, kKCMUIPrefix + 18)	// フライアウト: How to Use の上の区切り線
 DECLARE_PMID(kActionIDSpace, kKESCMPopupHoldToHideMarksActionID, kKCMUIPrefix + 19)	// パネルのフライアウトの「Hold to Hide Marks」チェック式トグル(ON=枠を画面に常時表示し、ツール左hold中だけ隠す=極性反転。画面のみ・印刷は Print comparison marks が別管理。KESCMActionComponent.cpp)
 // kKESCMPopupPanelShortcutActionID (kKCMUIPrefix + 20) は中ボタン撤去(2026-07-13)に伴い廃止。スロットを 2026-07-24 に再利用:
-DECLARE_PMID(kActionIDSpace, kKESCMPopupAlignViewsActionID, kKCMUIPrefix + 20)	// パネルのフライアウトの「Align Other Views to Active」(実行アクション)。アクティブ(最前面)文書のビューの位置+拡大率を他文書のビューへ1回そろえる。Start中はページのAdd/Remove補正あり。ショートカット割当可(kKESCMPanelMenuActionArea+VisibleInKBSC)。実体 KESCMPeek.cpp の KESCMAlignOtherViewsToActiveNow
+DECLARE_PMID(kActionIDSpace, kKESCMPopupAlignViewsActionID, kKCMUIPrefix + 20)	// パネルのフライアウトの「Align Other Views to Active」(実行アクション)。アクティブ(最前面)文書のビューの位置+拡大率を他文書のビューへ1回そろえる。Start中はページのAdd/Remove補正あり。ショートカット割当可(kKESCMPanelMenuActionArea+VisibleInKBSC)。実体 ui/KESCMViewSync.cpp の KESCMAlignOtherViewsToActiveNow(⚠2026-08-19 訂正=分割で KESCMPeek.cpp から出た)
 DECLARE_PMID(kActionIDSpace, kKESCMPopupScrollMapActionID, kKCMUIPrefix + 21)	// パネルのフライアウトの「Show Scrollbar Map」チェック式トグル(ON=文書窓の縦スクロールバー脇に変更位置地図stripを表示。既定ON。実体 KESCMScrollMap.cpp の sScrollMapOn)
 DECLARE_PMID(kActionIDSpace, kKESCMPopupSavePanelStateActionID, kKCMUIPrefix + 22)	// パネルのフライアウトの「Save Panel Settings」(チェックではなく実行アクション)。現在の設定系トグルを独自JSONでローカルへ保存し保存先パスを表示。読込は起動時(KESCMUIStartup::Startup。2026-07-15 前倒し)。実体 KESCMPanelState.cpp
 DECLARE_PMID(kActionIDSpace, kKESCMPopupSep3ActionID, kKCMUIPrefix + 23)	// フライアウト: Refresh Overset の下(9.50)の区切り線(MenuDef のパス末尾 ":-"。ActionDef 不要)。現配置は下の位置一覧(9.50)が正(2026-07-25 コメント現行化)
