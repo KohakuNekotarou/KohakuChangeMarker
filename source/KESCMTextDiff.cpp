@@ -11,8 +11,13 @@
 //  moving right consumes one baseline element (a deletion) and moving down consumes one target
 //  element (an insertion), and a diagonal step is free because the two elements are equal. For
 //  each edit distance D in turn, record how far each diagonal k = x - y has reached; the first
-//  D that reaches (n,m) is the answer. Keeping every step's row lets the path be walked back
-//  afterwards, which is what turns "the distance is 3" into "here are the three edits".
+//  D that reaches (n,m) is the answer.
+//
+//  ⚠**2026-08-21: how the answer is turned back into a list of edits changed.** It used to keep
+//  every step's row and walk the path back, which is simple and costs O(D^2) memory - and that
+//  memory was the reason the search had to give up past 2000 edits. It now searches from both
+//  ends until the frontiers meet and recurses on the two halves (Myers' §4b refinement), which
+//  keeps only two rows: **O(N+M) memory, no ceiling**. See the block above FrontierRows.
 //
 //========================================================================================
 
@@ -57,6 +62,228 @@ namespace
 		changes.push_back(change);
 	}
 
+	//------------------------------------------------------------------------------------
+	// The search, in linear space (2026-08-21).
+	//------------------------------------------------------------------------------------
+	//
+	// ★★★**WHY THIS REPLACED THE STRAIGHTFORWARD VERSION.** The obvious way to turn "the
+	//   distance is D" into "here are the D edits" is to keep every step's row and walk the path
+	//   back afterwards - which is what this file did until 2026-08-21. It is correct, but it
+	//   costs **O(D²) memory**: D+1 rows of 2D+3 integers. At the old ceiling of D=2000 that is
+	//   about 31 MB, and raising the ceiling squares it (D=10,000 → ~800 MB). ⇒ **the ceiling
+	//   was not a policy, it was the only thing standing between the plug-in and that number**,
+	//   and every story that needed more edits than the ceiling got NO detail at all (the
+	//   paragraph pass returned kFalse) or a coarse one (the character pass fell back to "this
+	//   whole run changed").
+	//
+	// ★**The fix is Myers' own refinement (§4b of the 1986 paper): divide and conquer.**
+	//   Search from both ends at once until the two frontiers meet; the place they meet - the
+	//   "middle snake" - splits the problem into two smaller ones that are solved the same way.
+	//   Nothing but the two frontier rows is ever kept, so the memory is **O(N+M)** no matter how
+	//   different the two texts are: 50,000 characters against 50,000 costs under a megabyte.
+	//   The time stays O((N+M)·D) with a constant factor of roughly two ---- the user's call was
+	//   "slower is fine, but it must not be wrong and it should not eat memory" (2026-08-21).
+	//
+	// ⚠**The ceiling still exists, but it now guards TIME, not memory.** It is raised to a value
+	//   no real document reaches (see KESCMTextDiff.h); it is kept only so that a pathological
+	//   pair cannot spin forever.
+
+	/* FrontierRows
+	   The two rows the divide-and-conquer search works on, allocated ONCE for the whole run and
+	   reused by every level of the recursion - allocating them per level would put the O(N+M)
+	   back into the inner loop.
+	     forward[offset + k] - how far the forward search has reached on diagonal k
+	     reverse[offset + k] - the same for the search that starts at the far end
+	   `budget` is what is left of the edit distance the caller allowed; it is spent by each
+	   middle snake and, when it runs out, `gaveUp` is set and every level unwinds.
+	*/
+	struct FrontierRows
+	{
+		std::vector<int32> forward;
+		std::vector<int32> reverse;
+		int32              offset;
+		int32              budget;
+		bool16             gaveUp;
+	};
+
+	/* FindMiddleSnake
+	   Runs the two frontiers forward until they overlap, and reports the snake they met on:
+	   (outX,outY) is where it starts and (outU,outV) is where it ends, both in this section's own
+	   coordinates. outD is the edit distance of the whole section.
+
+	   ★**It cannot fail to find one** - the frontiers must meet by d = (n+m+1)/2 - so there is no
+	     "not found" path. What it can do is cost more than the caller allowed, which is the
+	     budget check at the top of each step.
+
+	   ⚠**The reverse search runs in its own coordinates** (x' counted from the far end), and its
+	     diagonal k' corresponds to the forward diagonal delta-k'. Every conversion between the
+	     two is written out below rather than folded into an index, because getting one of them
+	     backwards produces a plausible-looking diff that is subtly wrong.
+	*/
+	void FindMiddleSnake(const int32* a, int32 n, const int32* b, int32 m, FrontierRows& rows,
+						 int32& outX, int32& outY, int32& outU, int32& outV, int32& outD)
+	{
+		const int32 offset = rows.offset;
+		const int32 delta  = n - m;
+		const bool16 odd   = ((delta & 1) != 0) ? kTrue : kFalse;
+		const int32 maxD   = (n + m + 1) / 2 + 1;
+
+		std::vector<int32>& vf = rows.forward;
+		std::vector<int32>& vr = rows.reverse;
+
+		// Clear what this call can touch. Both searches read one diagonal either side of the one
+		// they are writing, and the overlap test reads the OTHER row at delta-k, so the span has
+		// to cover |delta| as well as maxD.
+		// ⚠**n+m is NOT enough.** With one side much longer than the other, |delta-k| reaches
+		//   |delta| + maxD ≈ (n+m) + (n+m)/2 (e.g. n=10, m=2: delta=8, maxD=7, so 15 > 12). The
+		//   rows are sized to the same 2*(n+m)+3 at the top level, so this stays inside them.
+		const int32 span = 2 * (n + m) + 3;
+		for (int32 i = -span; i <= span; ++i)
+		{
+			vf[offset + i] = 0;
+			vr[offset + i] = 0;
+		}
+
+		for (int32 d = 0; d <= maxD; ++d)
+		{
+			if (rows.budget >= 0 && d * 2 > rows.budget)
+			{
+				rows.gaveUp = kTrue;
+				outX = outY = outU = outV = 0;
+				outD = 0;
+				return;
+			}
+
+			// ---- forward one step ----
+			for (int32 k = -d; k <= d; k += 2)
+			{
+				int32 x;
+				if (k == -d || (k != d && vf[offset + k - 1] < vf[offset + k + 1]))
+					x = vf[offset + k + 1];			// down: took one element from b
+				else
+					x = vf[offset + k - 1] + 1;		// right: took one element from a
+
+				int32 y = x - k;
+				const int32 snakeX = x, snakeY = y;	// where the free diagonal run begins
+
+				while (x < n && y < m && a[x] == b[y])
+				{
+					++x;
+					++y;
+				}
+				vf[offset + k] = x;
+
+				// The frontiers can only cross on a diagonal the reverse search has already
+				// reached, which for an ODD delta is exactly during a forward step.
+				if (odd && (delta - k) >= -(d - 1) && (delta - k) <= (d - 1))
+				{
+					if (vf[offset + k] + vr[offset + delta - k] >= n)
+					{
+						outX = snakeX; outY = snakeY;
+						outU = x;      outV = y;
+						outD = 2 * d - 1;
+						return;
+					}
+				}
+			}
+
+			// ---- reverse one step ----
+			for (int32 k = -d; k <= d; k += 2)
+			{
+				int32 x;
+				if (k == -d || (k != d && vr[offset + k - 1] < vr[offset + k + 1]))
+					x = vr[offset + k + 1];
+				else
+					x = vr[offset + k - 1] + 1;
+
+				int32 y = x - k;
+				const int32 snakeX = x, snakeY = y;	// in REVERSE coordinates
+
+				while (x < n && y < m && a[n - 1 - x] == b[m - 1 - y])
+				{
+					++x;
+					++y;
+				}
+				vr[offset + k] = x;
+
+				// ...and for an EVEN delta, only during a reverse step.
+				if (!odd && (delta - k) >= -d && (delta - k) <= d)
+				{
+					if (vr[offset + k] + vf[offset + delta - k] >= n)
+					{
+						// Back into forward coordinates: the reverse search's (x,y) counts from
+						// the far end, so its END is the snake's START and vice versa.
+						outX = n - x;      outY = m - y;
+						outU = n - snakeX; outV = m - snakeY;
+						outD = 2 * d;
+						return;
+					}
+				}
+			}
+		}
+
+		// Unreachable: the frontiers must meet by maxD. Treated as "gave up" rather than
+		// asserted, so that a future change to the loop bound cannot turn into a wrong answer.
+		rows.gaveUp = kTrue;
+		outX = outY = outU = outV = 0;
+		outD = 0;
+	}
+
+	/* SearchSection
+	   One level of the divide and conquer. aOfs/bOfs are where this section sits in the sequences
+	   the caller handed in, so that the edits are reported in those coordinates.
+
+	   ★**The common head and tail are stripped again at every level.** That is what makes the
+	     d<=1 cases disappear: once both ends differ and neither side is empty, the distance is at
+	     least 2, so the middle snake always splits the problem into strictly smaller pieces and
+	     the recursion cannot stand still.
+
+	   ★**Left half first.** Append() merges an edit into the previous one when they touch, which
+	     is how a replacement (a deletion and an insertion at the same spot) arrives as one entry
+	     ---- and that only works if the edits arrive in order.
+	*/
+	void SearchSection(const int32* a, int32 aOfs, int32 n, const int32* b, int32 bOfs, int32 m,
+					   FrontierRows& rows, std::vector<Change>& changes)
+	{
+		if (rows.gaveUp)
+			return;
+
+		// Strip the common head and tail of THIS section.
+		int32 head = 0;
+		while (head < n && head < m && a[head] == b[head])
+			++head;
+		a += head; b += head; aOfs += head; bOfs += head; n -= head; m -= head;
+
+		int32 tail = 0;
+		while (tail < n && tail < m && a[n - 1 - tail] == b[m - 1 - tail])
+			++tail;
+		n -= tail; m -= tail;
+
+		if (n == 0 && m == 0)
+			return;								// identical section
+		if (n == 0)
+		{
+			Append(changes, aOfs, 0, bOfs, m);	// pure insertion
+			return;
+		}
+		if (m == 0)
+		{
+			Append(changes, aOfs, n, bOfs, 0);	// pure deletion
+			return;
+		}
+
+		int32 x = 0, y = 0, u = 0, v = 0, d = 0;
+		FindMiddleSnake(a, n, b, m, rows, x, y, u, v, d);
+		if (rows.gaveUp)
+			return;
+
+		if (rows.budget >= 0)
+			rows.budget -= d;
+
+		SearchSection(a,     aOfs,     x,     b,     bOfs,     y,     rows, changes);
+		SearchSection(a + u, aOfs + u, n - u, b + v, bOfs + v, m - v, rows, changes);
+	}
+
 	/* MyersSearch
 	   The core. Works on the middle section only - the caller has already stripped whatever head
 	   and tail the two sequences share - and reports positions relative to that section, which
@@ -81,96 +308,31 @@ namespace
 			return kTrue;
 		}
 
-		const int32 maxD = (n + m < maxEdits) ? (n + m) : maxEdits;
-		const int32 offset = maxD + 1;			// k runs -maxD..maxD, so shift it to index an array
-		const int32 width = 2 * maxD + 3;
+		// The search itself is SearchSection / FindMiddleSnake above; all this does is hand them
+		// the rows to work in and decide what "gave up" means to the caller.
+		//
+		// ★**Allocated once for the whole run.** The width has to cover more than the diagonals
+		//   the search writes: the overlap test reads the OTHER row at delta-k, and |delta-k| can
+		//   reach (n+m) + (n+m)/2 when one side is much longer than the other. 2*(n+m)+3 covers
+		//   that with room to spare and is still O(N+M) ---- 50,000 against 50,000 is 1.6 MB for
+		//   both rows together, against the 31 MB the old row-per-step search needed at D=2000.
+		FrontierRows rows;
+		rows.offset = 2 * (n + m) + 3;
+		rows.forward.assign(2 * rows.offset + 1, 0);
+		rows.reverse.assign(2 * rows.offset + 1, 0);
+		rows.budget = (maxEdits > 0) ? maxEdits : -1;	// <=0 means no ceiling (see the header)
+		rows.gaveUp = kFalse;
 
-		std::vector<int32> v(width, 0);
-		std::vector<std::vector<int32> > trace;	// one row per step, so the path can be walked back
-		trace.reserve(maxD + 1);
+		SearchSection(a, 0, n, b, 0, m, rows, changes);
 
-		int32 foundD = -1;
-		for (int32 d = 0; d <= maxD; ++d)
+		if (rows.gaveUp)
 		{
-			// The row is saved BEFORE this step's writes, so trace[d] is the state the step
-			// started from - that is what the backward walk needs.
-			trace.push_back(v);
-
-			for (int32 k = -d; k <= d; k += 2)
-			{
-				const int32 index = k + offset;
-
-				int32 x = 0;
-				if (k == -d || (k != d && v[index - 1] < v[index + 1]))
-					x = v[index + 1];			// down: took one element from b
-				else
-					x = v[index - 1] + 1;		// right: took one element from a
-
-				int32 y = x - k;
-
-				while (x < n && y < m && a[x] == b[y])
-				{
-					++x;
-					++y;
-				}
-
-				v[index] = x;
-
-				if (x >= n && y >= m)
-				{
-					foundD = d;
-					break;
-				}
-			}
-
-			if (foundD >= 0)
-				break;
+			// ⚠**A half-built list is worse than none**: the contract with the caller is that an
+			//   empty list plus kFalse means "treat the whole section as changed", and a partial
+			//   list would instead claim that the parts it did not reach are unchanged.
+			changes.clear();
+			return kFalse;
 		}
-
-		if (foundD < 0)
-			return kFalse;		// gave up at maxEdits; the caller decides what that means
-
-		// Walk back. At each step the row that produced the current point says which move was
-		// taken to get onto this diagonal, and the free diagonal run before it is skipped.
-		int32 x = n;
-		int32 y = m;
-		std::vector<Change> reversed;
-
-		for (int32 d = foundD; d > 0; --d)
-		{
-			const std::vector<int32>& previous = trace[d];
-			const int32 k = x - y;
-			const int32 index = k + offset;
-
-			int32 previousK = 0;
-			if (k == -d || (k != d && previous[index - 1] < previous[index + 1]))
-				previousK = k + 1;		// arrived by a down move
-			else
-				previousK = k - 1;		// arrived by a right move
-
-			const int32 previousX = previous[previousK + offset];
-			const int32 previousY = previousX - previousK;
-
-			// Skip the diagonal run - those elements are equal and are not part of any edit.
-			while (x > previousX && y > previousY)
-			{
-				--x;
-				--y;
-			}
-
-			if (previousK == k + 1)
-				Append(reversed, x, 0, previousY, 1);		// an insertion of b[previousY]
-			else
-				Append(reversed, previousX, 1, y, 0);		// a deletion of a[previousX]
-
-			x = previousX;
-			y = previousY;
-		}
-
-		// The walk produced the edits back to front, and Append merged neighbours in that order,
-		// so reverse the list and rebuild each entry's start from its own numbers.
-		for (int32 i = static_cast<int32>(reversed.size()) - 1; i >= 0; --i)
-			Append(changes, reversed[i].aStart, reversed[i].aCount, reversed[i].bStart, reversed[i].bCount);
 
 		return kTrue;
 	}

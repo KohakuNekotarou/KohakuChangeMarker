@@ -64,14 +64,31 @@ namespace KESCMTextDiff
 		@param a IN the baseline sequence.
 		@param b IN the target sequence.
 		@param changes OUT the runs of difference, in order. Emptied first.
-		@param maxEdits IN give up once the edit distance exceeds this. The search keeps one
-		row per step, so an unbounded run on two unrelated sequences would cost O(D^2) memory;
-		a caller that hits the limit is told so rather than made to wait.
-		@return kTrue if the comparison completed, kFalse if it gave up at maxEdits - in which
-		case changes is left empty and the caller should treat the whole sequence as changed.
+		@param maxEdits IN an optional ceiling on the edit distance. ★★**0 - the default - means
+		no ceiling, and that is what every caller uses** (user's call 2026-08-21: "slower is fine,
+		but it must not be wrong").
+
+		★★★**Why there used to be one, and why there need not be now.** Until 2026-08-21 the
+		search kept one row per step so that the path could be walked back, which costs O(D^2)
+		MEMORY - about 31 MB at the old ceiling of 2000, and four times that for every doubling.
+		The ceiling was the only thing holding that number down, and the price was that any story
+		needing more edits than the ceiling got no detail at all. The search now runs in LINEAR
+		SPACE (Myers' own divide-and-conquer refinement), so distance costs time and not memory:
+		**50,000 tokens against 50,000 unrelated ones needs 1.6 MB.**
+
+		⚠What a ceiling would still buy is a bound on TIME, which is O((N+M)*D). Measured
+		2026-08-21 (work/textdiff-test): 8,000 vs 8,000 with one percent changed = **1 ms**;
+		3,000 vs 3,000 sharing nothing = **90 ms**; 50,000 vs 50,000 sharing nothing = **24 s**.
+		Only the last is uncomfortable, and it is a shape real text does not take - two versions
+		of a document share most of their characters even when every sentence was rewritten.
+
+		@return kTrue if the comparison completed, kFalse if it hit maxEdits - in which case
+		changes is left empty and the caller should treat the whole sequence as changed.
+		★With the default there is no ceiling to hit, so kFalse cannot happen; the callers still
+		check, because that is the contract and not an accident of today's default.
 	*/
 	bool16 Diff(const std::vector<int32>& a, const std::vector<int32>& b,
-				std::vector<Change>& changes, int32 maxEdits = 2000);
+				std::vector<Change>& changes, int32 maxEdits = 0);
 
 	/** Merges neighbouring changes that are separated by only a short unchanged run.
 
