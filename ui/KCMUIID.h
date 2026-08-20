@@ -159,6 +159,13 @@ DECLARE_PMID(kClassIDSpace, kKESCMStoryMarkerBoss, kKCMUIPrefix + 30)	// IK2Serv
 // 書いている。IdleTask は boss 上のインターフェイスなので終了処理で普通に Release できる。
 // ⚠[[avoid-timers-and-idle-tasks]] の例外＝**壁時計で消えねばならないものは他に無い**。
 DECLARE_PMID(kClassIDSpace, kKESCMStoryMarkerExpiryBoss, kKCMUIPrefix + 31)	// IIdleTask: 上のマーカーの期限切れ(KESCMStoryMarkerExpiry.cpp)
+// パネルのメッセージ欄(2026-08-20)。★**stock の StaticMultiLineTextWidget を差し替えたもの**＝
+// あちらは1本の文字列を1色で描くので、変更行をクリックしたときに出す「もう一方の側」の中で
+// **どの文字が違うのか**を言えない。⇒ 上の変更行のセルと同じ形(kGenericPanelWidgetBoss＋自前 view)。
+// ⚠**違いは行数**＝あちらは1行で `PMEllipsizeString` に任せられるが、こちらは箱に入るだけ折り返す
+//   ＝**折り返しは stock から失われる唯一の機能なので自分で書いた**(KESCMStatusTextView.cpp)。
+// ★WidgetID と Frame は据え置き(`kKESCMStatusTextWidgetID` / `Frame(8,76,216,150)`)＝位置も大きさも動かない。
+DECLARE_PMID(kClassIDSpace, kKESCMStatusTextWidgetBoss, kKCMUIPrefix + 32)	// kGenericPanelWidgetBoss継承+IID_ICONTROLVIEW(kKESCMStatusTextViewImpl)+IID_IKESCMSTATUSTEXTDATA(kKESCMStatusTextDataImpl): パネルのメッセージ欄。見出し＋3片(前の文脈/変更された文字/後の文脈)を受け取り、折り返して最大2色で描く(KESCMStatusTextView.cpp)
 // InterfaceIDs:
 // ⚠★ここにあるのは **UI 側の boss にだけ載る IID**。境界を跨ぐ IID（Facade 5本＋通知の protocol）は
 //   **KESCMBoundaryID.h** にあり、あちらは model 側の `kKESCMPrefix` のまま名乗る
@@ -167,6 +174,7 @@ DECLARE_PMID(kInterfaceIDSpace, IID_IKESCMLAYOUTSYNCOBSERVER, kKCMUIPrefix + 0)	
 DECLARE_PMID(kInterfaceIDSpace, IID_IKESCMDOCSCLOSEDOBSERVER, kKCMUIPrefix + 1)	// 一括クローズ完了(kPendingDocumentsClosedMsg)を受けるオブザーバのアタッチ識別ID
 DECLARE_PMID(kInterfaceIDSpace, IID_IKESCMPANELVISIBILITYOBSERVER, kKCMUIPrefix + 2)	// パネルの表示状態変化(kPaletteVisibilityChangedMessage)を受けるオブザーバのアタッチ識別ID。半透明トグルをドッキング切り替え/開き直しに追随させるために使う
 DECLARE_PMID(kInterfaceIDSpace, IID_IKESCMSTORYCELLDATA, kKCMUIPrefix + 4)	// IKESCMStoryCellData: 変更行のテキストセルが描く3片(前の文脈/変更された文字/後の文脈)の入れ物。★行 widget は使い回されるので、毎回の流し込みで3片とも書き直す(ui/IKESCMStoryCellData.h)
+DECLARE_PMID(kInterfaceIDSpace, IID_IKESCMSTATUSTEXTDATA, kKCMUIPrefix + 5)	// IKESCMStatusTextData: パネルのメッセージ欄が描く4片(見出し/前の文脈/変更された文字/後の文脈)の入れ物。★普通のメッセージは真ん中1片だけ＝1色で描かれる(ui/IKESCMStatusTextData.h)
 DECLARE_PMID(kInterfaceIDSpace, IID_IKESCMSAVEDSECTIONHEIGHT, kKCMUIPrefix + 3)	// IIntData として扱う: Story Edits セクションを閉じた瞬間の高さ(px)。次に開くときこの高さで開く。実装は SDK 標準の kPersistIntDataImpl(手本=linksui の IID_ISAVEDINFOPANESIZE)
 // ImplementationIDs:
 // ⚠ ここに載せた実装は **ui/KCMUIFactoryList.h** にも 1 対 1 で登録されていること
@@ -217,6 +225,8 @@ DECLARE_PMID(kImplementationIDSpace, kKESCMStoryMarkerAdornmentImpl, kKCMUIPrefi
 DECLARE_PMID(kImplementationIDSpace, kKESCMStoryMarkerExpiryImpl, kKCMUIPrefix + 42)	// IIdleTask 実装(上のマーカーを1秒ほどで引っ込める。KESCMStoryMarkerExpiry.cpp)
 DECLARE_PMID(kImplementationIDSpace, kKESCMStoryCellViewImpl, kKCMUIPrefix + 39)	// IControlView 実装(DVControlView派生)。Story Edits の**変更行**のテキストセル＝変更された文字はテーマの文字色、前後の文脈は背景へ寄せた薄い色で描く(KESCMStoryCellView.cpp)。★手本は KBS の KBSColorTextView(あちらは検索ヒットの一致部分を強調する)
 DECLARE_PMID(kImplementationIDSpace, kKESCMStoryCellDataImpl, kKCMUIPrefix + 40)	// IKESCMStoryCellData 実装(非永続の3片の入れ物。上のセルと同じ boss に同居する。KESCMStoryCellView.cpp)
+DECLARE_PMID(kImplementationIDSpace, kKESCMStatusTextViewImpl, kKCMUIPrefix + 43)	// IControlView 実装(DVControlView派生)。パネルのメッセージ欄＝箱に入るだけ折り返し、変更された文字はテーマの文字色、見出しと前後の文脈は背景へ寄せた薄い色で描く(KESCMStatusTextView.cpp)。★**PERSIST 版**＝パネルの .fr から作られる widget なので、土台の kGenericPanelWidgetBoss が持つ IID_ICONTROLVIEW と同じく永続でなければならない
+DECLARE_PMID(kImplementationIDSpace, kKESCMStatusTextDataImpl, kKCMUIPrefix + 44)	// IKESCMStatusTextData 実装(非永続の4片の入れ物。上の欄と同じ boss に同居する。KESCMStatusTextView.cpp)
 DECLARE_PMID(kImplementationIDSpace, kKESCMSplitterEHImpl, kKCMUIPrefix + 34)	// IEventHandler 実装(CEventHandler派生＝全メソッドが kFalse を返すだけの基底をそのまま使う)。パネルの分割バーが押下を受け取らなくなる＝ドラッグで動かせない(KESCMSplitterEH.cpp)
 // ActionIDs:
 DECLARE_PMID(kActionIDSpace, kKESCMAboutActionID, kKCMUIPrefix + 0)

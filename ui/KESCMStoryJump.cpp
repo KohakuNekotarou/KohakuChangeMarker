@@ -254,28 +254,38 @@ bool16 KESCMStoryJumpToChange(int32 rowIndex, int32 changeIndex)
 	//   not "old".
 	//
 	// ★A LABEL ON THE FIRST LINE, THE TEXT FROM THE SECOND (user's call, 2026-08-20, after seeing
-	//   the plain version: "一行目をOld 2行目から旧テキストかな"). The message area is four lines
-	//   deep, so the label costs one line and buys the reader the one thing a bare sentence in this
-	//   box does not say - which version they are looking at.
+	//   the plain version: "一行目をOld 2行目から旧テキストかな"). The message area holds four lines
+	//   in a Japanese UI and six in an English one, so the label costs one line and buys the reader
+	//   the one thing a bare sentence in this box does not say - which version they are looking at.
 	//
-	// ★★"Source:" / "Target:", NOT "Old" / "New" - BECAUSE THE PANEL ALREADY SPEAKS THAT WAY. Two
+	// ★★"Source" / "Target", NOT "Old" / "New" - BECAUSE THE PANEL ALREADY SPEAKS THAT WAY. Two
 	//   lines at the top of it name the documents being compared, "Target:" and "Source:", so the
 	//   reader has been told which is which before ever reaching this box. A second pair of names
 	//   for one pair of documents would be the panel disagreeing with itself
 	//   ([[one-question-one-place]] applied to words rather than to code).
+	//   ★★AND "TEXT" AFTER IT (user's call, 2026-08-21: "ソースとなっているところを、ソーステキスト
+	//     にしましょうか"). Those two lines at the top name FILES; this names the WORDS inside one of
+	//     them. Borrowing their word without saying which of the two things is meant made one label
+	//     answer for both - "Source Text:" says it is the same document and a different thing.
 	//   ⚠"Target:" FOR A DELETION, and that is not a special case bolted on: the row shows the side
 	//     that CHANGED, so for a deletion the row holds the words that were REMOVED and what lands
 	//     here is the text that closed up over them. Calling that the source would be false, and a
 	//     deletion is the row where the reader most needs to know what stands there now.
 	//     (fKind: 0 = replace, 1 = insert, 2 = delete - IKESCMStoryEditsFacade.h.)
-	PMString otherSide;
-	otherSide.SetTranslatable(kFalse);
-	otherSide.Append((change.fKind == 2) ? "Target:" : "Source:");
-	otherSide.Append("\n");		// the stock status widget is multi-line and breaks on '\n'
-	otherSide.Append(change.fOtherTextPre);
-	otherSide.Append(change.fOtherText);
-	otherSide.Append(change.fOtherTextPost);
-	KESCMSetStatus(otherSide);
+	//
+	// ★★AND IT GOES OVER IN THREE PIECES, NOT AS ONE SENTENCE (2026-08-20). The box is drawn by
+	//   hand now (KESCMStatusTextView.cpp), so it can do here what the ROW already does: draw the
+	//   characters that differ at the theme's text colour and fade the words around them. The split
+	//   is not made here and could not be - the boundary between context and change is a code point
+	//   index into text that has been cut at both ends, and PMString counts UTF-16. The model made
+	//   it (KESCMStoryDiffRun's Slice) and it travels on the Change.
+	//   ★The label is its own argument rather than the head of the first piece: when the message
+	//     does not fit, the CONTEXT gives way from its outer ends, and a label living in the context
+	//     would be the first thing cut. It is the one piece that has to survive.
+	PMString label;
+	label.SetTranslatable(kFalse);
+	label.Append((change.fKind == 2) ? "Target Text:" : "Source Text:");
+	KESCMSetStatusSegments(label, change.fOtherTextPre, change.fOtherText, change.fOtherTextPost);
 
 	return moved;
 }

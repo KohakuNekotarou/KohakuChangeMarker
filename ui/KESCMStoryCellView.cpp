@@ -49,6 +49,7 @@
 // Project includes:
 #include "IKESCMStoryCellData.h"
 #include "KCMUIID.h"
+#include "KESCMPanelTextDraw.h"	// kKESCMContextTextWeight, KESCMBlendColor - shared with the message area
 
 namespace
 {
@@ -58,11 +59,11 @@ namespace
 // and the same reason, as KBS's kKBSHiliteParentSteps.
 const int32 kKESCMHiliteParentSteps = 3;
 
-// How much of the theme's text colour the CONTEXT keeps. 0 = the background itself (invisible),
-// 1 = the full text colour (no fade at all). ★The same 0.65 KBS settled on - half and half made
-// the surrounding words harder to read than they needed to be, and the change still stands out at
-// this weight (user's call there, 2026-08-02; "KBS を参考に" here, 2026-08-20).
-const double kKESCMContextTextWeight = 0.65;
+// ★kKESCMContextTextWeight (how far the context fades) and KESCMBlendColor (how) MOVED OUT on
+// 2026-08-20, to KESCMPanelTextDraw.h. The panel's message area draws the other side of the same
+// edit the same way, and two copies of "0.65" would drift apart the first time one was tuned
+// ([[one-question-one-place]]). ⚠What did NOT move is the colour lookup below: this cell asks
+// whether its ROW is hilited and switches both colours; the message area is never hilited.
 
 /* KESCMViewOrParentIsHilited
    True if this view, or a widget above it, is drawn hilited - i.e. this cell belongs to the row the
@@ -84,19 +85,6 @@ bool16 KESCMViewOrParentIsHilited(IControlView* view, int32 stepsLeft)
 		return kFalse;
 	InterfacePtr<IControlView> parentView((IControlView*)parent->QueryParentFor(IID_ICONTROLVIEW));
 	return KESCMViewOrParentIsHilited(parentView, stepsLeft - 1);
-}
-
-/* KESCMBlendColor
-   Linear blend of two RGB colours (t = 0 -> bg, t = 1 -> fg). RealAGMColor's components are
-   PMReal, hence the ToDouble on the way back into its constructor.
-*/
-RealAGMColor KESCMBlendColor(const RealAGMColor& bg, const RealAGMColor& fg, const PMReal& t)
-{
-	const PMReal u = PMReal(1.0) - t;
-	return RealAGMColor(
-		ToDouble(bg.red   * u + fg.red   * t),
-		ToDouble(bg.green * u + fg.green * t),
-		ToDouble(bg.blue  * u + fg.blue  * t));
 }
 
 }	// anonymous namespace

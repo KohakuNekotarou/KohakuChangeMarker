@@ -103,6 +103,9 @@ public:
 	virtual void				SetCompareMode(KESCMCompareMode m)	{ KESCMSetCompareMode(m); }
 
 	virtual void		GetSessionStatus(PMString& out)	{ KESCMGetSessionStatus(out); }
+	virtual void		GetSessionStatusSegments(PMString& outLabel, PMString& outPre,
+												 PMString& outMid, PMString& outPost)
+							{ KESCMGetSessionStatusSegments(outLabel, outPre, outMid, outPost); }
 
 	// ---- the status line (stage 2) --------------------------------------------------------
 	// ★Free functions from KESCMModelNotify.h. The panel's status writer and the UI shutdown
@@ -112,6 +115,9 @@ public:
 	//   payload -- are GONE. They travel on Change()'s changedBy now; see IKESCMCompareFacade.h
 	//   at the spot they were removed from.
 	virtual void		StoreSessionStatus(const PMString& s)	{ KESCMStoreSessionStatus(s); }
+	virtual void		StoreSessionStatusSegments(const PMString& label, const PMString& pre,
+												   const PMString& mid, const PMString& post)
+							{ KESCMStoreSessionStatusSegments(label, pre, mid, post); }
 	virtual void		ClearSessionStatus()	{ KESCMClearSessionStatus(); }
 
 	virtual bool16		ArmedDocsAlive()		{ return KESCMArmedDocsAlive(); }

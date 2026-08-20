@@ -182,8 +182,10 @@ public:
 	// ---- the status line ---------------------------------------------------------------
 
 	/** The last string the model published. The UI reads this when it receives
-		kKESCMStatusTextMessage and again from AutoAttach when the panel re-appears.
-		Kept on the model side so app.kcmStatus can answer while the panel is closed. */
+		kKESCMStatusTextMessage, and app.kcmStatus answers from it.
+		Kept on the model side so app.kcmStatus can answer while the panel is closed.
+		★Since 2026-08-20 it is ASSEMBLED from the four pieces below (heading, break, body). A
+		message stored as one string has three of them empty, so the answer is that string itself. */
 	virtual void		GetSessionStatus(PMString& out) = 0;
 
 	/** Remember a string the UI raised itself, WITHOUT emitting a notification.
@@ -196,6 +198,28 @@ public:
 		⚠ It must not notify: KESCMSetStatus is also what the observer calls when a notification
 		arrives, so notifying from here would loop. */
 	virtual void		StoreSessionStatus(const PMString& s) = 0;
+
+	/** The same store, told where the message's COLOUR changes (2026-08-20).
+
+		★The panel's message area is drawn by hand and can show two colours, so that the other side
+		of a clicked edit has its differing characters at full strength and the words around them
+		faded. label is a heading on its own line, mid is what differs, pre/post is the context.
+
+		★WHY THE SPLIT CROSSES THE BOUNDARY INSTEAD OF BEING MADE IN THE PANEL. It cannot be made
+		there: the boundary between context and change is a code point index into text that has
+		already been cut at both ends, and PMString counts UTF-16. The model made the split
+		(KESCMStoryDiffRun's Slice) and this is the same journey the change ROW's three pieces
+		already make on IKESCMStoryEditsFacade::Change.
+
+		⚠Like StoreSessionStatus, it must not notify. */
+	virtual void		StoreSessionStatusSegments(const PMString& label, const PMString& pre,
+												   const PMString& mid, const PMString& post) = 0;
+
+	/** The stored message in its four pieces. The UI reads this back when the panel re-appears, so
+		that a coloured message comes back coloured rather than flattening into one colour.
+		★A message stored as one string answers with that string in outMid and three empty pieces. */
+	virtual void		GetSessionStatusSegments(PMString& outLabel, PMString& outPre,
+												 PMString& outMid, PMString& outPost) = 0;
 
 	/** Shutdown only: empty the stored string, so the model's static PMString has no live heap
 		buffer to free when the plug-ins unload (Mac unload order differs from Windows).

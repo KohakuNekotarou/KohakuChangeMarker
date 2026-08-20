@@ -482,6 +482,22 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 		}
 	},
 
+	// The panel's MESSAGE AREA (2026-08-20), built the same way as the cell above and for the same
+	// reason: it shows the OTHER side of the edit whose row was clicked, and "which characters
+	// differ" is a question one colour cannot answer. ★It replaces a StaticMultiLineTextWidget, and
+	// what that gave for free was the WRAPPING - which is written out in KESCMStatusTextView.cpp
+	// rather than lost, because several messages in this box are full save paths.
+	// ★★It keeps the same WidgetID and the same Frame, so nothing around it moves.
+	Class
+	{
+		kKESCMStatusTextWidgetBoss,
+		kGenericPanelWidgetBoss,
+		{
+			IID_ICONTROLVIEW, kKESCMStatusTextViewImpl,
+			IID_IKESCMSTATUSTEXTDATA, kKESCMStatusTextDataImpl,
+		}
+	},
+
 	// Scroll-map strip: a thin custom-drawn widget injected at runtime next to the document
 	// window's vertical scrollbar (KESCMScrollMap.cpp). Same pattern as customdatalinkui's
 	// kCusDtLnkUITreeCViewPanelWidgetBoss: kGenericPanelWidgetBoss + own IControlView.
@@ -1586,6 +1602,13 @@ type KESCMStoryRowCellWidget(kViewRsrcType) : InfoStaticTextWidget(ClassID = kKE
 //  it ends with a child list rather than a text string.
 type KESCMStoryChangeCellWidget(kViewRsrcType) : GenericPanelWidget(ClassID = kKESCMStoryChangeCellBoss) { };
 
+// The panel's message area: drawn by hand for the same reason (see kKESCMStatusTextWidgetBoss).
+// ⚠The field list is GenericPanelWidget's, NOT StaticMultiLineTextWidget's - gone from the line
+//  that uses it are the alignment, the ellipsize style, the ampersand flag, the font ID, the LINE
+//  COUNT and the initial string. The drawing code decides all of them, and the line count is now
+//  the box's own height rather than a number that can disagree with it (KESCMStatusTextView.cpp).
+type KESCMStatusTextWidget(kViewRsrcType) : GenericPanelWidget(ClassID = kKESCMStatusTextWidgetBoss) { };
+
 // The book comparison dialog (2026-08-11). "DialogBoss" is the exotic name of what is really a
 // widget type - the basicdialog shape, WidgetEveInfo and all. Same form as KESCL's Jump Offset
 // dialog (KESCL.fr:953), which is the closest working example: a fixed-size dialog by the same
@@ -2217,22 +2240,29 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 		),
 
 		// Status text (filled in by the observer with the result of each action).
-		StaticMultiLineTextWidget
+		// ★★2026-08-20: これは StaticMultiLineTextWidget だった。**変わったのは描き方だけ**＝
+		//   WidgetID も Frame も binding も、KESCMSetStatus で届くメッセージも同じ。stock に出来なかった
+		//   のは**1つの箱に2色**で、変更行をクリックしたときこの箱は**その編集のもう一方の側**を出す
+		//   ＝読み手の問いは「どの文字が違うのか」(KESCMStatusTextView.cpp / IKESCMStatusTextData.h)。
+		// ⚠以下は GenericPanelWidget のフィールド。**5つ消えた**のは描画側が決めるようになったから＝
+		//   alignment(常に左)/ellipsize style(折り返す箱に「1行」は無い)/ampersand(kFalse のまま。理由は下)/
+		//   font ID/**行数**。
+		//   ★★**行数**が要点＝ここは 4 と書いていたが、自前描画の箱は**高さが持てるだけ**取る
+		//     ＝日本語UIでは 4行(74px の箱に 17.9px の行)、英語UIでは 6行。stock はその余りを空けていた。
+		// ★ampersand 変換は切る(理由は Target のコメント)。ここは Save Panel Settings /
+		//   Save Check & Register / Export Changed Pages が**保存先フルパス**を出す行なので
+		//   (KESCMPanelState.cpp:144-150 ほか)、"Q&A資料" のようなフォルダ名が消えていた。
+		//   ⇒ 描画側も同じ kFalse を明示している(KESCMStatusTextView.cpp)。
+		KESCMStatusTextWidget
 		(
 			kKESCMStatusTextWidgetID,
 			kPMRsrcID_None,
 			kBindLeft | kBindRight | kBindTop,
 			Frame(8, 76, 216, 150)		// ★★2026-08-11: 下端 145→150(+5px)。**日本語UIでは4行が入っていなかった**——パレットフォントの1行の実高は 17.9px(実測: ascent 12.7 + descent 5.2 / leading 0。測り方は memory palette-font-line-height-by-ui-language)で、4行に 74px 要るのに枠は 69px しかなく、4行目が約5px 切れていた。★英語UIは1行12px=48pxなので、広げた分は余るだけで無害。★下の Story Edits の帯(153〜)との隙間は 8→3px に詰まるが、上の Prev/Next(〜70)との 6px は触っていない。⚠「4行のまま余裕ができた」という下の旧記述は**文字数の話**で、高さは足りていなかった。★2026-08-10: 右 180→216。猫イラストが Story Edits の帯へ下りて、その 36px が空いた(ユーザー指定「猫が下に降りたぶん横に広げて」)。右端 216 は Target/Source 行・Next ボタンと揃う。★4行のまま行あたりの文字数が増えるので、`failed=N` が付いても折り返しに余裕ができる。以下は旧記述: 右180まで=イラスト(184-216)と横並び(4px間隔)。下端を 128→145 に拡張(3→4行)。メッセージ部分を+12px広げるためパネル全体も192→204に拡張(2026-07-14)。+10px拡張で右 160→170・パネル204→214(2026-07-15)。さらに+10pxで右 170→180・パネル214→224(2026-08-06)
 			kTrue, kTrue,
-			// ★ampersand 変換は切る(理由は Target のコメント)。ここは Save Panel Settings /
-			//   Save Check & Register / Export Changed Pages が**保存先フルパス**を出す行なので
-			//   (KESCMPanelState.cpp:144-150 ほか)、"Q&A資料" のようなフォルダ名が消えていた。
-			kAlignLeft, kDontEllipsize, kFalse,
-			kInvalidWidgetID,
-			kPaletteWindowFontId,
-			4,
-			2, 0,
-			"",
+			"",								// Panel name (none)
+			{
+			}
 		),
 
 		// ★Story Edits セクションの開閉ボタン(2026-08-09 新設)。
