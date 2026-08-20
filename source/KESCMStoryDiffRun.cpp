@@ -25,6 +25,7 @@
 #include "VCPlugInHeaders.h"
 
 // Interface includes:
+#include "IDataBase.h"		// SaveRestoreModifiedState - see Run()
 #include "ITextModel.h"
 
 // General includes:
@@ -458,6 +459,13 @@ int32 KESCMStoryDiffRun::Run(IDataBase* targetDB, IDataBase* sourceDB)
 {
 	if (targetDB == nil || sourceDB == nil)
 		return 0;
+
+	// ★THE GUARD BELONGS HERE, NOT AT THE CALLER - see the header for the two callers and which
+	//   one of them lacks it. Exporting a snippet can compose (asking for text that has never been
+	//   laid out lays it out), and composing sets the modified flag on a document this feature only
+	//   ever reads. KESCM's whole premise is that comparing changes nothing.
+	IDataBase::SaveRestoreModifiedState targetDirtyGuard(targetDB);
+	IDataBase::SaveRestoreModifiedState sourceDirtyGuard(sourceDB);
 
 	int32 total = 0;
 

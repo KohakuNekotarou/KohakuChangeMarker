@@ -41,9 +41,19 @@ namespace KESCMStoryDiffRun
 		Call this AFTER KESCMStoryList::Build - the rows have to exist, and they have to be in
 		their final order, because a change names its row by position.
 
-		★NO dirty guard of its own. The comparison path already holds one for both databases
-		(KESCMCore.cpp, at the top of the marking run), and a guard inside a guard would be a
-		second answer to "who protects the modified flag here".
+		★IT GUARDS THE MODIFIED FLAG ITSELF, and it has to - which was measured rather than
+		assumed (2026-08-20). This is reached through KESCMRebuildStoryEdits, and THAT has two
+		callers, only one of which is inside a guard:
+
+		    KESCMCore.cpp:823   the full comparison    -> inside KESCMDoMarkChangesDoc's guard ✅
+		    KESCMPeek.cpp:518   Refresh Page Comparison -> NOT guarded ⚠
+
+		The second one sits in KESCMRefreshComparisonForSelectedPages, past the end of
+		KESCMRefreshComparisonCore whose guard (KESCMPeek.cpp:263-264) covers only itself. Reading
+		the change counters needed no guard either way - counters compose nothing - but exporting
+		a snippet can compose, so the story diff would have left that path dirtying documents it
+		only read. Guarding here covers both callers, and a guard inside a guard is harmless:
+		each one restores the value it found, so the outer one restores the same value.
 
 		@param targetDB the newer document. nil does nothing.
 		@param sourceDB the older document. nil does nothing.
