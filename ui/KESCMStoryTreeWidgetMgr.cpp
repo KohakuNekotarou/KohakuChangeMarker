@@ -31,7 +31,7 @@
 #include "CTreeViewWidgetMgr.h"
 #include "CoreResTypes.h"			// kViewRsrcType
 #include "CreateObject.h"			// CreateObjectNoInit
-#include "ListIndexNodeID.h"		// the node class ListTreeViewAdapter hands out
+#include "KESCMStoryNodeID.h"		// our node class: (row, change). Was ListIndexNodeID until 2026-08-20
 #include "LocaleSetting.h"
 #include "PMString.h"
 #include "RsrcSpec.h"
@@ -115,13 +115,23 @@ PMString KindLabel(uint32 kinds)
 class KESCMStoryTreeWidgetMgr : public CTreeViewWidgetMgr
 {
 public:
-	// kList, not kHierarchical: this list has no levels, and the flag is what tells the base class
-	// to leave the indent machinery alone (CTreeViewWidgetMgr.h:59-63).
-	KESCMStoryTreeWidgetMgr(IPMUnknown* boss) : CTreeViewWidgetMgr(boss, kList) {}
+	// ★kHierarchical since 2026-08-20: the list HAS levels now (a story row can hold the changes
+	//   found inside it). It said kList until then, which told the base class to leave the indent
+	//   machinery alone - see ApplyIndentToWidget below for why that machinery still must not be
+	//   allowed to run on a story row, and what is done instead.
+	KESCMStoryTreeWidgetMgr(IPMUnknown* boss) : CTreeViewWidgetMgr(boss, kHierarchical) {}
 	virtual ~KESCMStoryTreeWidgetMgr() {}
 
-	virtual IControlView* CreateWidgetForNode(const NodeID& /*node*/) const
+	virtual IControlView* CreateWidgetForNode(const NodeID& node) const
 	{
+		// ★Two row templates since 2026-08-20: a story row and a change row. They are the same
+		//   three-cell shape (see the .fr) so that the indent arithmetic below behaves the same on
+		//   both - what differs is what the cells hold and where they start.
+		TreeNodePtr<KESCMStoryNodeID> nodeID(node);
+		const RsrcID rsrcID = (nodeID != nil && nodeID->IsChangeRow())
+							  ? kKESCMStoryChangeRowRsrcID
+							  : kKESCMStoryRowRsrcID;
+
 		// ★THREE STEPS, NOT ONE CreateObject, AND THE ORDER IS THE POINT:
 		//   1. CreateObjectNoInit - make the row boss, but do not build the cells inside it yet.
 		//   2. SetThemeForView(kIDPanelTheme) - say that this widget is going to live in a palette.
@@ -136,7 +146,7 @@ public:
 		// the tree decides what to do without one.
 		IPMUnknown* newObject = ::CreateObjectNoInit(
 			::GetDataBase(this),
-			RsrcSpec(LocaleSetting::GetLocale(), kKCMUIPluginID, kViewRsrcType, kKESCMStoryRowRsrcID),
+			RsrcSpec(LocaleSetting::GetLocale(), kKCMUIPluginID, kViewRsrcType, rsrcID),
 			IID_ICONTROLVIEW);
 		InterfacePtr<IControlView> view(newObject, UseDefaultIID());
 		if (view != nil)
@@ -150,9 +160,15 @@ public:
 		return view;
 	}
 
-	virtual WidgetID GetWidgetTypeForNode(const NodeID& /*node*/) const
+	virtual WidgetID GetWidgetTypeForNode(const NodeID& node) const
 	{
-		return kKESCMStoryRowWidgetID;
+		// ★THE TWO KINDS MUST ANSWER DIFFERENT IDs. This is what the framework uses to decide
+		//   whether a recycled widget can be reused for a node - answer the same ID for both and a
+		//   change row would be handed a story row's widget (and vice versa) as the list scrolls.
+		TreeNodePtr<KESCMStoryNodeID> nodeID(node);
+		return (nodeID != nil && nodeID->IsChangeRow())
+			   ? kKESCMStoryChangeRowWidgetID
+			   : kKESCMStoryRowWidgetID;
 	}
 
 	// Answer both size questions rather than letting the base class build a widget and measure it.
@@ -194,13 +210,30 @@ public:
 	//   ONE side is NOT moved (:229-230), so the UID stayed where the .fr put it and the text
 	//   landed on top of it.
 	//
-	//   ★The override is empty rather than clever, because a list with no hierarchy has nothing to
-	//   indent. The base class asks for exactly this when its scheme does not fit
-	//   (CTreeViewWidgetMgr.cpp:226: "You may want to override this method handle indent in your
-	//   own way if the default way of handling indent doesn't work for you").
+	//   ★The override is empty rather than clever. The base class asks for exactly this when its
+	//   scheme does not fit (CTreeViewWidgetMgr.cpp:226: "You may want to override this method
+	//   handle indent in your own way if the default way of handling indent doesn't work for you").
 	//
-	//   ⚠If this list is ever given levels, this override has to go and the cells have to be
-	//   re-thought - not the other way round.
+	//   ★★★2026-08-20 - THE LIST WAS GIVEN LEVELS, AND THIS OVERRIDE STAYED EMPTY.
+	//
+	//   The note here used to say "if this list is ever given levels, this override has to go".
+	//   It did not have to go, and writing an indent here would have been a mistake:
+	//
+	//     ⚠ROW WIDGETS ARE RECYCLED. This is called every time one is applied to a node, so an
+	//       indent expressed as "move the cells right by N" ACCUMULATES - the same widget drifts
+	//       further right each time it is scrolled back into view. Expressing it as an absolute
+	//       position is what the base class does, and it needs fBaseIndentOffset to do it, which
+	//       is 0 here for the reason given above.
+	//
+	//   ⇒ The second level's indent lives in ITS OWN RESOURCE instead: kKESCMStoryChangeRowRsrcID
+	//     writes the change row's cells further right than the story row's, once, statically. It
+	//     cannot accumulate, it cannot depend on a member that was never assigned, and - the point
+	//     that decided it - ★THE STORY ROW'S PATH THROUGH THIS FUNCTION IS UNCHANGED, so the pixel
+	//     mode's list is not merely expected to look the same, it executes the same instructions.
+	//
+	//   ⚠A THIRD level would break this: two levels can be two resources, ten cannot. Anyone adding
+	//     one has to come back here and do the arithmetic properly - starting by giving
+	//     fBaseIndentOffset a value (RegisterStyleWidget), not by adding to frame.Left().
 	virtual void ApplyIndentToWidget(const NodeID& /*node*/, IPanelControlData* /*widgetList*/, int32 /*message*/) const
 	{
 	}
@@ -210,13 +243,20 @@ public:
 		if (widgetList == nil)
 			return kTrue;
 
+		TreeNodePtr<KESCMStoryNodeID> nodeID(node);
+
+		// ★A CHANGE ROW IS WRITTEN BY ITS OWN BRANCH AND RETURNS. Its three cells hold different
+		//   things from a story row's, and its widget came from a different resource, so nothing
+		//   below applies to it.
+		if (nodeID != nil && nodeID->IsChangeRow())
+			return this->ApplyChangeRow(*nodeID, widgetList);
+
 		// ★A row COPIED out of the model, not a pointer into its list (Task 14). The three cells
 		//   below are written from it and nothing here outlives the call, so the copy costs one
 		//   PMString per row drawn.
-		TreeNodePtr<ListIndexNodeID> nodeID(node);
 		IKESCMStoryEditsFacade::Row row;
 		const bool16 haveRow = (nodeID != nil)
-			&& Utils<IKESCMStoryEditsFacade>()->GetRow(nodeID->GetIndex(), row);
+			&& Utils<IKESCMStoryEditsFacade>()->GetRow(nodeID->GetRow(), row);
 
 		// ★All THREE cells are written on EVERY apply, including the empty case. Row widgets are
 		//   recycled as the list scrolls, so a cell left alone keeps whatever the row it used to be
@@ -254,6 +294,55 @@ public:
 		this->SetNodeName(widgetList, kinds, kKESCMStoryRowKindWidgetID);
 		return kTrue;
 	}
+
+private:
+	/** Fills one CHANGE row: what sort of edit it was, and the words it concerns.
+
+		★THE SAME THREE CELLS AS A STORY ROW, and all three are written here too - a recycled
+		widget keeps whatever the row it used to be had in it.
+
+		★THE CELL IDs ARE THE STORY ROW'S. A widget ID has to be unique only among the descendants
+		of one parent (guide vol2-12), and these two rows are never each other's descendants. The
+		same reuse is already in this plug-in: the book dialog's row shares all three
+		(kKESCMBookRowNameWidgetID == kKESCMStoryRowTextWidgetID, and so on).
+	*/
+	bool16 ApplyChangeRow(const KESCMStoryNodeID& nodeID, IPanelControlData* widgetList) const
+	{
+		IKESCMStoryEditsFacade::Change change;
+		const bool16 have = Utils<IKESCMStoryEditsFacade>()->GetChange(
+								nodeID.GetRow(), nodeID.GetChange(), change);
+
+		PMString kind, text, right;
+		kind.SetTranslatable(kFalse);
+		text.SetTranslatable(kFalse);
+		right.SetTranslatable(kFalse);
+
+		if (have)
+		{
+			// ★A SIGN, NOT A WORD. The left cell is narrow and the reader is scanning a column of
+			//   them; "+ / - / ~" tells insert / delete / replace apart at a glance and needs no
+			//   translation. (The story row above it names its kinds in words because there the
+			//   words are the answer - Text, Attr, Other - and there is one per story, not one per
+			//   edit.)
+			switch (change.fKind)
+			{
+				case 1:  kind = PMString("+"); break;	// insert
+				case 2:  kind = PMString("-"); break;	// delete
+				default: kind = PMString("~"); break;	// replace
+			}
+			kind.SetTranslatable(kFalse);
+
+			// ★Already the right side for its kind, and already cut to length - the model decided
+			//   both (KESCMStoryList.h). Nothing is chosen here.
+			text = change.fText;
+			text.SetTranslatable(kFalse);
+		}
+
+		this->SetNodeName(widgetList, kind, kKESCMStoryRowUIDWidgetID);
+		this->SetNodeName(widgetList, text, kKESCMStoryRowTextWidgetID);
+		this->SetNodeName(widgetList, right, kKESCMStoryRowKindWidgetID);
+		return kTrue;
+	}
 };
 
 CREATE_PMINTERFACE(KESCMStoryTreeWidgetMgr, kKESCMStoryTreeWidgetMgrImpl)
@@ -283,6 +372,21 @@ void KESCMStoryTreeRebuild()
 	// so the tree can size itself without measuring row by row.
 	treeMgr->ClearTree(kTrue);
 	treeMgr->ChangeRoot(kTrue);
+
+	// ★★THE SECOND LEVEL IS OPEN FROM THE START (2026-08-20). A tree node is collapsed by default,
+	//   and a collapsed tree here would hide the very thing the Story Changes mode exists to show -
+	//   the reader would have to open each story to find out what changed in it, one at a time,
+	//   which is the question they already asked by choosing the mode.
+	//
+	//   ⚠kTrue = expand the descendants too, from the hidden root, so this opens every story in one
+	//   call. The pixel mode reaches this line as well and nothing happens there: no row has
+	//   children, so there is nothing to expand (which is why this is not guarded by the mode - a
+	//   guard would be describing the same emptiness twice).
+	//
+	//   ⚠The expansion is redone on every rebuild because ClearTree(kTrue) drops the remembered
+	//   list. That is wanted: a rebuild means a new comparison, and a new comparison's rows are not
+	//   the ones the reader had opened or closed.
+	treeMgr->ExpandNode(KESCMStoryNodeID::CreateRoot(), kTrue /*expandAllDescendants*/);
 }
 
 // End, KESCMStoryTreeWidgetMgr.cpp.

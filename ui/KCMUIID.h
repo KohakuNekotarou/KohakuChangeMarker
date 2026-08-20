@@ -288,6 +288,7 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMStoryRowTextWidgetID, kKCMUIPrefix + 48)	// �
 DECLARE_PMID(kWidgetIDSpace, kKESCMStoryRowKindWidgetID, kKCMUIPrefix + 49)	// 行の右=変わった種類(Text / Attr / Other / Added)
 DECLARE_PMID(kWidgetIDSpace, kKESCMStorySectionLabelWidgetID, kKCMUIPrefix + 50)	// 上ペインの三角の隣=「Story Edits (3)」。件数は C++ が実行時に付ける
 DECLARE_PMID(kWidgetIDSpace, kKESCMStoryRowWidgetID, kKCMUIPrefix + 51)		// 行テンプレート自身。★GetWidgetTypeForNode が返すのはこれ
+DECLARE_PMID(kWidgetIDSpace, kKESCMStoryChangeRowWidgetID, kKCMUIPrefix + 63)	// ★**変更行**(第2階層)のテンプレート自身。2026-08-20 追加。★上の +51 と**別の値でなければならない**＝GetWidgetTypeForNode が返すこの ID で、フレームワークは「使い回せる widget か」を判定する(同じ値を返すと、スクロールで変更行にストーリー行の widget が渡る)。⚠**中のセル3つは +48/+49/+52 を使い回す**＝widget ID の一意性は「同じ親の子孫の中だけ」で足りる(ガイド vol2-12)。前例＝ブック行が同じ3つを共有している
 DECLARE_PMID(kWidgetIDSpace, kKESCMStoryRowUIDWidgetID, kKCMUIPrefix + 52)	// ★行の左端=ストーリーの UID(10進。2026-08-10 ユーザー要望「UID・テキスト・変更部分」)。行の同一性を目で追える識別子＝本文が同じ文言でも別のストーリーだと分かる
 // ★一覧の列見出し(2026-08-10 ユーザー要望「一番上の列に UID / Text / 変更のようなのを付けて欲しい」)。
 //   ツリーの中ではなく**下ペインの中でツリーの上**に置く固定の帯＝行をスクロールしても動かない。
@@ -568,6 +569,12 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMBookRowStateWidgetID, kKCMUIPrefix + 49)	// �
 // CreateObjectNoInit で1行ずつ生成する。KESCMBookTreeWidgetMgr.cpp)。★1011(Story Edits の行)と
 // 同じ作りで、違うのは中身が2列であることとダイアログ用のフォントを使うことだけ。
 #define kKESCMBookRowRsrcID	1013
+
+// ★Story Edits の**変更行**(第2階層)のテンプレート。2026-08-20 追加。1011(ストーリー行)を写した
+// 3セル構成で、違うのは**セルの開始位置が右にずれていること**だけ＝これが階層のインデントの実体。
+// ⚠**インデントをコードで足さない**理由は KESCMStoryTreeWidgetMgr.cpp の ApplyIndentToWidget に
+//   書いてある(行 widget は使い回されるので「右へ N 動かす」は累積する)。
+#define kKESCMStoryChangeRowRsrcID	1014
 
 // 章一覧の行の高さ。★Story Edits の kKESCMStoryRowHeight と同じく .fr と C++ の両方がこの1つの定数を
 // 読む(行リソースの Frame・ツリーのスクロール増分・GetNodeWidgetHeight)。

@@ -55,7 +55,7 @@
 #include "IWidgetParent.h"			// QueryParentFor - the row -> the tree that owns the selection
 
 // General includes:
-#include "ListIndexNodeID.h"		// the node class ListTreeViewAdapter hands out (KESCMStoryTreeAdapter.cpp)
+#include "KESCMStoryNodeID.h"		// our node class: (row, change). Was ListIndexNodeID until 2026-08-20
 
 // Published under source/open, reached by a relative path rather than by adding an include
 // directory - the same reasoning, and the same route, as KESCMStoryTreeWidgetMgr.cpp's
@@ -109,7 +109,7 @@ int32 KESCMStoryRowEH::RowForClick(IEvent* e, bool16 baseHandled) const
 	if (nodeData == nil)
 		return -1;
 	const NodeID& node = nodeData->Get();
-	TreeNodePtr<ListIndexNodeID> nodeID(node);
+	TreeNodePtr<KESCMStoryNodeID> nodeID(node);
 	if (nodeID == nil)
 		return -1;
 
@@ -122,7 +122,10 @@ int32 KESCMStoryRowEH::RowForClick(IEvent* e, bool16 baseHandled) const
 	if (treeController == nil || !treeController->IsSelected(node))
 		return -1;
 
-	return nodeID->GetIndex();
+	// ★A CHANGE ROW ANSWERS ITS STORY'S index (2026-08-20). Clicking one is handled separately -
+	//   it jumps to the edit itself rather than to the top of the story - but everything that asks
+	//   "which row is this" wants the story either way, and a change row belongs to exactly one.
+	return nodeID->GetRow();
 }
 
 // Nothing of this plug-in's own happens on the way DOWN. The one job here is to start every click

@@ -1695,6 +1695,96 @@ resource KESCMStoryRowWidget(kKESCMStoryRowRsrcID + index_enUS)
 	}
 };
 
+// ---------------------------------------------------------------------------------------
+// One CHANGE row of the Story Edits list - the second level, added 2026-08-20 with the Story
+// Changes mode. It hangs under a story row and names one difference found inside that story.
+//
+// ★★★THIS RESOURCE *IS* THE INDENT. The cells start further right than the story row's, and that
+// is the whole of the hierarchy's visual offset - nothing moves them at runtime. The reason is in
+// KESCMStoryTreeWidgetMgr::ApplyIndentToWidget: row widgets are recycled, so an indent applied as
+// "move right by N" accumulates every time the row is scrolled back into view, and the absolute
+// form the base class uses needs fBaseIndentOffset, which is 0 in this manager.
+// ⇒ Two levels, two resources. ⚠A THIRD level cannot be done this way.
+//
+// ★Same three-cell shape as the story row, on purpose: the two rows then behave identically under
+// every part of the framework that walks cells, and only the numbers differ.
+// ★Same cell WidgetIDs as the story row, too (48 / 52 / 49). A widget ID has to be unique only
+// among one parent's descendants, and these rows are never each other's descendants - the book
+// dialog's row already shares the same three.
+// ---------------------------------------------------------------------------------------
+resource LocaleIndex (kKESCMStoryChangeRowRsrcID)
+{
+	kViewRsrcType,
+	{
+		kWildFS, k_Wild, kKESCMStoryChangeRowRsrcID + index_enUS
+	}
+};
+
+resource KESCMStoryRowWidget(kKESCMStoryChangeRowRsrcID + index_enUS)
+{
+	__FILE__, __LINE__,
+	kKESCMStoryChangeRowWidgetID, kPMRsrcID_None,	// WidgetId (★NOT the story row's - see KCMUIID.h)
+	kBindLeft | kBindRight,				// Frame binding: follow the list's width
+	Frame(0, 0, 224, kKESCMStoryRowHeight),	// Frame (left, top, right, bottom)
+	kTrue, kTrue,						// Visible, Enabled
+	"",									// Panel name
+	{
+		// Left: WHAT SORT of edit, as one sign - "+" inserted, "-" deleted, "~" replaced.
+		// ★A sign rather than a word: this column is being scanned down, not read, and a sign needs
+		//   no translation. (The story row's right-hand column names its kinds in words because
+		//   there the words ARE the answer, and there is one per story rather than one per edit.)
+		// ★Starts at 24 where the story row's first cell starts at 8: 16px is the indent.
+		KESCMStoryRowCellWidget
+		(
+			kKESCMStoryRowUIDWidgetID,		// WidgetId (reused - see the header comment)
+			kPMRsrcID_None,					// RsrcId
+			kBindLeft,						// Frame binding: stay at the row's left edge
+			Frame(24, 1, 44, kKESCMStoryRowHeight - 2),	// Frame
+			kTrue, kTrue,					// Visible, Enabled
+			kAlignLeft,						// Alignment
+			kDontEllipsize, kFalse,			// Ellipsize style, Convert ampersands
+			"",								// Text Control Data
+			0,								// WidgetId for associated control for shortcut focus
+			kPaletteWindowSystemScriptFontId, kPaletteWindowSystemScriptFontId,
+		),
+
+		// Middle: the words the edit concerns. ★For a deletion this is what was REMOVED (the model
+		// chose which side - KESCMStoryList.h); for everything else it is the new text.
+		// ★Starts at 68 where the story row's text cell starts at 52 - the same 16px indent, so the
+		//   two levels line up with each other rather than each finding its own offset.
+		KESCMStoryRowCellWidget
+		(
+			kKESCMStoryRowTextWidgetID,		// WidgetId (reused)
+			kPMRsrcID_None,					// RsrcId
+			kBindLeft | kBindRight,			// Frame binding: this is the cell that grows
+			Frame(68, 1, 154, kKESCMStoryRowHeight - 2),	// Frame
+			kTrue, kTrue,					// Visible, Enabled
+			kAlignLeft,						// Alignment
+			kEllipsizeMiddle, kFalse,		// Ellipsize style, Convert ampersands
+			"",								// Text Control Data
+			0,								// WidgetId for associated control for shortcut focus
+			kPaletteWindowSystemScriptFontId, kPaletteWindowSystemScriptFontId,
+		),
+
+		// Right: empty today. ★It exists so that the two row shapes match cell for cell, and it is
+		// where an attribute difference will name what changed when that arrives (KESCMStoryList.h's
+		// fWhat). Written blank on every apply, like every other cell, because widgets are recycled.
+		KESCMStoryRowCellWidget
+		(
+			kKESCMStoryRowKindWidgetID,		// WidgetId (reused)
+			kPMRsrcID_None,					// RsrcId
+			kBindRight,						// Frame binding: stay at the row's right edge
+			Frame(154, 1, 216, kKESCMStoryRowHeight - 2),	// Frame
+			kTrue, kTrue,					// Visible, Enabled
+			kAlignRight,					// Alignment
+			kDontEllipsize, kFalse,			// Ellipsize style, Convert ampersands
+			"",								// Text Control Data
+			0,								// WidgetId for associated control for shortcut focus
+			kPaletteWindowSystemScriptFontId, kPaletteWindowSystemScriptFontId,
+		),
+	}
+};
+
 // One row of the book comparison dialog's chapter list, created at runtime by
 // KESCMBookTreeWidgetMgr. Same construction as the Story Edits row above - including the
 // LocaleIndex wrapper, which is required rather than decorative: the widget manager asks for the

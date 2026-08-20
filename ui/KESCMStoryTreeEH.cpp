@@ -1,4 +1,4 @@
-//========================================================================================
+﻿//========================================================================================
 //
 //  Owner: KohakuNekotarou
 //
@@ -49,7 +49,7 @@
 
 // General includes:
 #include "keyboarddefs.h"			// kVirtualUpArrowKey / kVirtualDownArrowKey
-#include "ListIndexNodeID.h"		// the node class ListTreeViewAdapter hands out
+#include "KESCMStoryNodeID.h"		// our node class: (row, change). Was ListIndexNodeID until 2026-08-20
 
 // Published under source/open, reached by a relative path rather than by adding an include
 // directory - the same reasoning, and the same route, as KESCMStoryRowEH.cpp's TreeNodeEventHandler.
@@ -113,13 +113,17 @@ bool16 KESCMStoryTreeEH::HandleUpDownKey(IEvent* e, const VirtualKey& key)
 	if (selected.size() != 1)
 		return handled;
 
-	TreeNodePtr<ListIndexNodeID> node(selected[0]);
+	TreeNodePtr<KESCMStoryNodeID> node(selected[0]);
 	if (node == nil)
 		return handled;
 
 	// The row's action - the same one a click on it would run. It reports its own refusals to the
 	// status line, and answers kFalse quietly for the "No edits" placeholder row.
-	KESCMStoryJumpToRow(node->GetIndex());
+	// ★Walking onto a CHANGE row jumps to its story, not to the edit (2026-08-20). ⚠This is a
+	//   stated limitation, not an oversight: the keyboard walk exists to move the view along with
+	//   the selection, and it fires on every arrow press. Selecting text on each one would fight
+	//   whatever the user is doing in the document. A click on a change row does go to the edit.
+	KESCMStoryJumpToRow(node->GetRow());
 
 	// ***** TAKE THE KEYBOARD BACK. ***** That jump activated a document window, which took the key
 	// focus with it; without this, the NEXT arrow press would go to the document and the walk would

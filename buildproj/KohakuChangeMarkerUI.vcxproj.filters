@@ -164,6 +164,9 @@
       <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\KESCMStoryTree.h">
          <Filter>Header Files</Filter>
       </ClInclude>
+      <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\KESCMStoryNodeID.h">
+         <Filter>Header Files</Filter>
+      </ClInclude>
       <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\KESCMCheckGlyph.h">
          <Filter>Header Files</Filter>
       </ClInclude>

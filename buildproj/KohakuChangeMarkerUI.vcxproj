@@ -291,6 +291,7 @@
       <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\KCMUIFactoryList.h"/>
       <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\KESCMUIShared.h"/>
       <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\KESCMStoryTree.h"/>
+      <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\KESCMStoryNodeID.h"/>
       <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\KESCMCheckGlyph.h"/>
       <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\KESCMBookTree.h"/>
       <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\KESCMPanelAlpha.h"/>
