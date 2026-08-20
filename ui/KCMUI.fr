@@ -1783,32 +1783,28 @@ resource KESCMStoryRowWidget(kKESCMStoryChangeRowRsrcID + index_enUS)
 	kTrue, kTrue,						// Visible, Enabled
 	"",									// Panel name
 	{
-		// Left: WHAT SORT of edit, as one sign - "+" inserted, "-" deleted, "~" replaced.
-		// ★A sign rather than a word: this column is being scanned down, not read, and a sign needs
-		//   no translation. (The story row's right-hand column names its kinds in words because
-		//   there the words ARE the answer, and there is one per story rather than one per edit.)
-		// ★Starts at 40 where the story row's first cell starts at 24: 16px is the indent.
-		//   (Both moved by 16 on 2026-08-20 when the expander took the story row's left edge.)
-		// ⚠A change row has NO expander of its own - it is a leaf. The 16px where the story row's
-		//   arrow sits is simply part of this row's indent.
-		KESCMStoryRowCellWidget
-		(
-			kKESCMStoryRowUIDWidgetID,		// WidgetId (reused - see the header comment)
-			kPMRsrcID_None,					// RsrcId
-			kBindLeft,						// Frame binding: stay at the row's left edge
-			Frame(40, 1, 60, kKESCMStoryRowHeight - 2),	// Frame
-			kTrue, kTrue,					// Visible, Enabled
-			kAlignLeft,						// Alignment
-			kDontEllipsize, kFalse,			// Ellipsize style, Convert ampersands
-			"",								// Text Control Data
-			0,								// WidgetId for associated control for shortcut focus
-			kPaletteWindowSystemScriptFontId, kPaletteWindowSystemScriptFontId,
-		),
-
-		// Middle: the words the edit concerns. ★For a deletion this is what was REMOVED (the model
+		// ★★★TWO CELLS, NOT THREE, SINCE 2026-08-20 (user's call). The sign that says what sort of
+		//   edit this was used to sit HERE, in front of the text, in the column the story row uses
+		//   for its UID. It now sits in the RIGHT-HAND column instead, so that the two levels put
+		//   the same kind of answer in the same place: the story row's right-hand cell names what
+		//   changed in that story ("Text+"), and the change row's names what this one edit was
+		//   ("+" / "-" / "≠"). ⇒ The left column belongs to the UID alone, and the text starts
+		//   where the sign used to.
+		//   ⚠The note above this resource said the two shapes match cell for cell. They no longer
+		//     do, and nothing needed them to - the framework walks each row's own cell list.
+		//
+		// Left: the words the edit concerns. ★For a deletion this is what was REMOVED (the model
 		// chose which side - KESCMStoryList.h); for everything else it is the new text.
-		// ★Starts at 84 where the story row's text cell starts at 68 - the same 16px indent, so the
-		//   two levels line up with each other rather than each finding its own offset.
+		//
+		// ★★★IT STARTS WHERE THE STORY ROW'S TEXT STARTS - 68, THE SAME NUMBER (user's call,
+		//   2026-08-20: "子供の文字の始まりは、親の文字の始まりと同じにして欲しい"). It went 84 ->
+		//   40 -> 68 in one afternoon, and the last move is the one to keep: the two levels read as
+		//   one column of text, and a change reads directly under the story it belongs to.
+		//   ⇒ ★THE INDENT IS NOT IN THE TEXT ANY MORE. What says "this row hangs under that one" is
+		//     the expander in front of the story row and the blank where a change row's would be -
+		//     the 24px column at the left that only a story row fills. Nothing needs the text to
+		//     say it a second time, and saying it cost the cell 28px of the little width it has.
+		// ⚠A change row has NO expander of its own - it is a leaf.
 		//
 		// ★★DRAWN BY HAND, WHERE THE STORY ROW'S IS A STOCK STATIC TEXT (2026-08-20). The changed
 		//   characters keep the theme's text colour and the context on either side of them is faded
@@ -1825,22 +1821,32 @@ resource KESCMStoryRowWidget(kKESCMStoryChangeRowRsrcID + index_enUS)
 			kKESCMStoryRowTextWidgetID,		// WidgetId (reused)
 			kPMRsrcID_None,					// RsrcId
 			kBindLeft | kBindRight,			// Frame binding: this is the cell that grows
-			Frame(84, 1, 154, kKESCMStoryRowHeight - 2),	// Frame
+			Frame(68, 1, 176, kKESCMStoryRowHeight - 2),	// Frame (84 -> 68 = the story row's text cell;
+															// right edge 154 -> 176, see the sign's cell below)
 			kTrue, kTrue,					// Visible, Enabled
 			"",								// Panel name (none)
 			{
 			}
 		),
 
-		// Right: empty today. ★It exists so that the two row shapes match cell for cell, and it is
-		// where an attribute difference will name what changed when that arrives (KESCMStoryList.h's
-		// fWhat). Written blank on every apply, like every other cell, because widgets are recycled.
+		// Right: WHAT SORT of edit, as one sign - "+" inserted, "-" deleted, "≠" replaced ("it is
+		// not equal any more" - user's call, 2026-08-20).
+		// ★A sign rather than a word: this column is being scanned down, not read, and a sign needs
+		//   no translation. (The story row's right-hand column names its kinds in WORDS because
+		//   there the words ARE the answer, and there is one per story rather than one per edit.)
+		// ★★It moved here from the left on 2026-08-20 - see the note at the top of this list.
+		//   ⚠It is 40px wide where the story row's kind column is 62: a sign needs no more, and the
+		//     40 goes to the text cell, which is the one that runs out of room. The two columns
+		//     still END at the same place (216), so the signs line up under "Text+" rather than
+		//     starting under it.
+		// ★This is also where an attribute difference will name what changed when that arrives
+		//   (KESCMStoryList.h's fWhat) - it will be a word there, beside these signs.
 		KESCMStoryRowCellWidget
 		(
 			kKESCMStoryRowKindWidgetID,		// WidgetId (reused)
 			kPMRsrcID_None,					// RsrcId
 			kBindRight,						// Frame binding: stay at the row's right edge
-			Frame(154, 1, 216, kKESCMStoryRowHeight - 2),	// Frame
+			Frame(176, 1, 216, kKESCMStoryRowHeight - 2),	// Frame (154 -> 176: the text cell took it)
 			kTrue, kTrue,					// Visible, Enabled
 			kAlignRight,					// Alignment
 			kDontEllipsize, kFalse,			// Ellipsize style, Convert ampersands
@@ -2262,9 +2268,18 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 					//
 					//   ★★What keeps the headings lined up with the cells below them is that each one
 					//     repeats its cell's Frame and its cell's binding EXACTLY (compare the row
-					//     resource above): 8..48 fixed at the left, 52..154 stretching, 154..216 fixed
-					//     at the right. Change a column here and the row has to change with it - the
-					//     agreement is only in these numbers, nothing enforces it.
+					//     resource above): 24..64 fixed at the left, 68..154 stretching, 154..216
+					//     fixed at the right. Change a column here and the row has to change with it -
+					//     the agreement is only in these numbers, nothing enforces it.
+					//     ⚠★★AND IT WENT WRONG EXACTLY THAT WAY (fixed 2026-08-20, user's report:
+					//       "UID の位置を数値が始まる辺りに / Story の位置も Text が始まる辺りに").
+					//       When the expander was put in front of the story row on 2026-08-20, every
+					//       cell in the row moved 16px right - and these three did not follow, because
+					//       nothing links them. They read 8..48 and 52..154 against cells that had
+					//       become 24..64 and 68..154, so both headings sat a column-and-a-half to the
+					//       left of what they name. ⇒ When one side of an agreement that "nothing
+					//       enforces" moves, the comment saying so is not a warning to the future -
+					//       it is a task for the same commit.
 					//
 					//   ★The heading cells are KESCMStoryRowCellWidget for the same reason the row's
 					//     are: that boss stays silent on hover (kKESCMStoryRowCellBoss). They also take
@@ -2274,7 +2289,7 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 						kInvalidWidgetID,	// WidgetId
 						kPMRsrcID_None,					// RsrcId
 						kBindLeft,						// Frame binding: as the UID cell (a fixed left column)
-						Frame(8, 2, 48, kKESCMStoryHeaderHeight - 2),	// Frame
+						Frame(24, 2, 64, kKESCMStoryHeaderHeight - 2),	// Frame (8..48 -> 24..64: the row's UID cell)
 						kTrue, kTrue,					// Visible, Enabled
 						kAlignLeft,						// Alignment
 						kDontEllipsize, kFalse,			// Ellipsize style, Convert ampersands
@@ -2287,7 +2302,7 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 						kInvalidWidgetID,	// WidgetId
 						kPMRsrcID_None,					// RsrcId
 						kBindLeft | kBindRight,			// Frame binding: as the text cell (the one that grows)
-						Frame(52, 2, 154, kKESCMStoryHeaderHeight - 2),	// Frame
+						Frame(68, 2, 154, kKESCMStoryHeaderHeight - 2),	// Frame (52..154 -> 68..154: the row's text cell)
 						kTrue, kTrue,					// Visible, Enabled
 						kAlignLeft,						// Alignment
 						kDontEllipsize, kFalse,			// Ellipsize style, Convert ampersands

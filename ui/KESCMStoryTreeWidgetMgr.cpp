@@ -226,11 +226,18 @@ public:
 	//       position is what the base class does, and it needs fBaseIndentOffset to do it, which
 	//       is 0 here for the reason given above.
 	//
-	//   ⇒ The second level's indent lives in ITS OWN RESOURCE instead: kKESCMStoryChangeRowRsrcID
-	//     writes the change row's cells further right than the story row's, once, statically. It
-	//     cannot accumulate, it cannot depend on a member that was never assigned, and - the point
-	//     that decided it - ★THE STORY ROW'S PATH THROUGH THIS FUNCTION IS UNCHANGED, so the pixel
-	//     mode's list is not merely expected to look the same, it executes the same instructions.
+	//   ⇒ Each level's layout lives in ITS OWN RESOURCE instead - one for the story row, one for
+	//     the change row - written once, statically. It cannot accumulate, it cannot depend on a
+	//     member that was never assigned, and - the point that decided it - ★THE STORY ROW'S PATH
+	//     THROUGH THIS FUNCTION IS UNCHANGED, so the pixel mode's list is not merely expected to
+	//     look the same, it executes the same instructions.
+	//
+	//   ★★AND THE SECOND LEVEL NO LONGER INDENTS ITS TEXT AT ALL (2026-08-20, user's call): a
+	//     change row's text starts at exactly the story row's text, 68. What says the row hangs
+	//     under the one above is the expander in front of a story row and the blank where a change
+	//     row's would be. So the two resources now differ in what they HOLD, not in where they put
+	//     it. (Which is another reason not to hand this to the framework: the answer here was to
+	//     indent by nothing, and an indent machine has no way to express that.)
 	//
 	//   ⚠A THIRD level would break this: two levels can be two resources, ten cannot. Anyone adding
 	//     one has to come back here and do the arithmetic properly - starting by giving
@@ -306,19 +313,21 @@ public:
 private:
 	/** Fills one CHANGE row: what sort of edit it was, and the words it concerns.
 
-		★THE SAME THREE CELLS AS A STORY ROW, and all three are written here too - a recycled
-		widget keeps whatever the row it used to be had in it.
+		★TWO CELLS, WHERE A STORY ROW HAS THREE (2026-08-20): the words on the left, and the sign
+		that says what sort of edit it was on the right, in the column the story row names its
+		kinds in. Both are written on every apply - a recycled widget keeps whatever the row it
+		used to be had in it.
 
 		★THE CELL IDs ARE THE STORY ROW'S. A widget ID has to be unique only among the descendants
 		of one parent (guide vol2-12), and these two rows are never each other's descendants. The
-		same reuse is already in this plug-in: the book dialog's row shares all three
+		same reuse is already in this plug-in: the book dialog's row shares them too
 		(kKESCMBookRowNameWidgetID == kKESCMStoryRowTextWidgetID, and so on).
 
-		⚠THE MIDDLE CELL IS NOT WRITTEN THE SAME WAY AS THE OTHER TWO (2026-08-20). It is drawn by
-		hand so that the changed characters can keep the theme's text colour while the words around
-		them fade, and a hand-drawn cell holds no ITextControlData for SetNodeName to write - it is
-		handed its three pieces through IKESCMStoryCellData instead. The other two cells are stock
-		static texts and still go through SetNodeName.
+		⚠THE TWO CELLS ARE NOT WRITTEN THE SAME WAY. The text cell is drawn by hand so that the
+		changed characters can keep the theme's text colour while the words around them fade, and a
+		hand-drawn cell holds no ITextControlData for SetNodeName to write - it is handed its three
+		pieces through IKESCMStoryCellData instead. The sign's cell is a stock static text and
+		still goes through SetNodeName.
 	*/
 	bool16 ApplyChangeRow(const KESCMStoryNodeID& nodeID, IPanelControlData* widgetList) const
 	{
@@ -326,26 +335,41 @@ private:
 		const bool16 have = Utils<IKESCMStoryEditsFacade>()->GetChange(
 								nodeID.GetRow(), nodeID.GetChange(), change);
 
-		PMString kind, right;
+		PMString kind;
 		PMString textPre, textMid, textPost;
 		kind.SetTranslatable(kFalse);
-		right.SetTranslatable(kFalse);
 		textPre.SetTranslatable(kFalse);
 		textMid.SetTranslatable(kFalse);
 		textPost.SetTranslatable(kFalse);
 
 		if (have)
 		{
-			// ★A SIGN, NOT A WORD. The left cell is narrow and the reader is scanning a column of
-			//   them; "+ / - / ~" tells insert / delete / replace apart at a glance and needs no
-			//   translation. (The story row above it names its kinds in words because there the
-			//   words are the answer - Text, Attr, Other - and there is one per story, not one per
-			//   edit.)
+			// ★A SIGN, NOT A WORD. The column is narrow and the reader is scanning down it; a sign
+			//   tells the kinds apart at a glance and needs no translation. (The story row names
+			//   its kinds in the same column in WORDS - Text, Attr, Other - because there the
+			//   words are the answer, and there is one per story rather than one per edit.)
+			//
+			// ★★A REPLACEMENT IS "≠" (U+2260), THE THIRD SIGN - "it is not equal any more"
+			//   (user's call, 2026-08-20). It took three tries to land there, and the middle one is
+			//   worth keeping: "~" was tried first and rejected as saying nothing, then the column
+			//   was left EMPTY for a replacement - and empty turned out to be worse than a poor
+			//   sign, because "+" and "-" were then the only marks and a replacement read as an
+			//   unmarked row rather than as a kind of its own. ⇒ ★An absence is not a symbol.
+			//
+			// ⚠NOT AN ASCII CHARACTER, so it is set as UTF-16 rather than written as a narrow
+			//   literal - MSVC would convert a narrow "≠" to the system code page and the cell
+			//   would show whatever that came to (memory cpp-japanese-needs-bom, and the same
+			//   reason KESCMLoc.h keeps its Japanese in u"..." and calls SetXString).
 			switch (change.fKind)
 			{
 				case 1:  kind = PMString("+"); break;	// insert
 				case 2:  kind = PMString("-"); break;	// delete
-				default: kind = PMString("~"); break;	// replace
+				default:								// replace
+				{
+					const char16_t notEqual[] = u"≠";
+					kind.SetXString(reinterpret_cast<const UTF16TextChar*>(notEqual), 1);
+					break;
+				}
 			}
 			kind.SetTranslatable(kFalse);
 
@@ -362,8 +386,10 @@ private:
 			textPost.SetTranslatable(kFalse);
 		}
 
-		this->SetNodeName(widgetList, kind, kKESCMStoryRowUIDWidgetID);
-		this->SetNodeName(widgetList, right, kKESCMStoryRowKindWidgetID);
+		// ★The sign goes in the RIGHT-HAND cell, the one the story row uses to name its kinds
+		//   (2026-08-20, user's call - see the .fr). A change row has no left-hand cell at all
+		//   now, so there is nothing else to write here.
+		this->SetNodeName(widgetList, kind, kKESCMStoryRowKindWidgetID);
 
 		// ★The hand-drawn cell, written through its own interface. A nil here would mean the row
 		//   resource and this code disagree about what the middle cell is, which nothing at runtime
