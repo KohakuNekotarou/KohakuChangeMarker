@@ -107,4 +107,13 @@ void KESCMRingAdornmentUnregister();
 //     "Defeats flattener altogether"＝**止める**側のスイッチ)。載せる以外の道が無い。
 
 
+// ★★2026-08-20: `document.kcmTransparencyItemCount` の実体。
+//   「透明を持つページアイテムの一覧」に今この文書が何件載せているかを返す
+//   (`IXPManager::GetNumItemsWithXP`＝`IXPManager.h:86`)。db が nil / XPManager が取れなければ -1。
+//   ⚠**KESCM が載せた分だけではない** ---- 本物の透明(影・不透明度<100 等)を持つページアイテムも
+//     同じ一覧に入る。⇒ 判定に使うなら「KESCM を通していない同じ内容の文書」との対照を取ること。
+//   ★用途＝**書き出しのあいだだけ載せる**この仕組みが、**載せたまま保存していないか**を外から測る口。
+//     一覧は `.indd` に永続するので、保存 → 閉じる → 開き直して読めば「書き込まれたか」がそのまま判る。
+int32 KESCMGetNumItemsWithXP(IDataBase* db);
+
 #endif // __KESCMRingAdornment_h__

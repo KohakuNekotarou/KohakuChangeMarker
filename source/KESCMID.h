@@ -186,7 +186,7 @@ DECLARE_PMID(kClassIDSpace, kKESCMRingAdornmentStartupBoss, kKESCMPrefix + 30)	/
 //   ★手本＝`customconditionaltext`(PDF と印刷の両方で「前に変えて後で戻す」を実装している唯一のサンプル)。
 //   ⚠**保存の前後(kBeforeSaveDoc)には置かない**＝そこで落ちると文書を失う。書き出しなら失敗してもやり直せる
 //     (2026-08-20 ユーザー判断＝「どこで失敗しても許される場所に置く」)。
-DECLARE_PMID(kClassIDSpace, kKESCMExportXPResponderServiceBoss, kKESCMPrefix + 31)	// IK2ServiceProvider(CServiceProvider・HasMultipleIDs)+IResponder: 書き出しの Before で載せ、After と Failed で降ろす。★1つの boss で3シグナル＝公式の形(CusCondTxtServiceProvider.cpp:108-111)
+DECLARE_PMID(kClassIDSpace, kKESCMPDFExportSetupBoss, kKESCMPrefix + 31)	// IK2ServiceProvider(Adobe 提供の kPDFExportSetupServiceImpl)+IPDFExportSetupProvider: PDF 書き出しの BeginExport で透明の一覧に載せ、EndExport で降ろす。★★★**非同期書き出しではここに「書き出し用のクローン db」が渡る**＝元の文書を一度も触らずに出力だけ変えられる(2026-08-20 実測)。⚠**旧 kKESCMExportXPResponderServiceBoss(同じ +31)の後継**＝あちらは kBeforeExport/kAfterExport/kFailedExport の3シグナルで**元の文書**に載せていたので、書き出し中に保存されると一覧が .indd に焼き付いた
 														// ⚠**印刷側の対(kPrintSetupService+IPrintSetupProvider)は無い**＝公式に倣って一度書いたが(旧 +32/+50)、**2026-08-20 のユーザー判断で外した**。⚠**効かないからではない**＝載せれば印刷でもマークは濃くなる(実測 16,076 ⇔ 8,407 画素。どちらもベタにはならない)が、**印刷にそこまでの厳密性は要らない・印刷会社へ出すのは PDF** という判断。★A/B と復活手順は KESCMRingAdornment.cpp の節5。**次の新規 boss は +32 から採ってよい**
 
 // InterfaceIDs:
@@ -236,8 +236,8 @@ DECLARE_PMID(kImplementationIDSpace, kKESCMRingAdornmentImpl, kKESCMPrefix + 45)
 DECLARE_PMID(kImplementationIDSpace, kKESCMRingFlattenerUsageImpl, kKESCMPrefix + 46)	// IAdornmentFlattenerUsage 実装(同上)。★★これが本命＝**透明マネージャに「このアドーンメントは透明を使う」と申告する唯一の口**。PDF 1.3(透明を含まないページ)でリングが全面ベタになる既知の制限を解くために足した。手本=transparencyeffect/TranFxFlattenerUsage.cpp
 DECLARE_PMID(kImplementationIDSpace, kKESCMRingAdornmentStartupImpl, kKESCMPrefix + 47)	// IStartupShutdownService 実装(KESCMRingAdornment.cpp の末尾)。中身は Register/Unregister を呼ぶだけ。★**実行コンテキストごとに**呼ばれる必要があるので kKESCMPeekStartupImpl とは別の boss に載せる
 // ★2026-08-20: 上の2 boss の実装(いずれも KESCMRingAdornment.cpp の末尾)。透明の申告と同じ関心事なので同居させる。
-DECLARE_PMID(kImplementationIDSpace, kKESCMExportXPResponderImpl, kKESCMPrefix + 48)		// IResponder 実装(書き出しの Before/After/Failed)
-DECLARE_PMID(kImplementationIDSpace, kKESCMExportXPServiceProviderImpl, kKESCMPrefix + 49)	// IK2ServiceProvider 実装(CServiceProvider 派生。3つの ServiceID を名乗るので自作が要る＝stock の1シグナル用実装では足りない)
+DECLARE_PMID(kImplementationIDSpace, kKESCMPDFExportSetupImpl, kKESCMPrefix + 48)		// IPDFExportSetupProvider 実装(KESCMRingAdornment.cpp)。★ServiceProvider 側は Adobe 提供の kPDFExportSetupServiceImpl をそのまま .fr で名指しするので、自作はこの1本だけ。手本=sdksamples/pdfvt。⚠**旧 kKESCMExportXPResponderImpl(同じ +48)の後継**
+// kKESCMExportXPServiceProviderImpl (kKESCMPrefix + 49) は 2026-08-20 に廃止＝書き出しシグナル3本を1つの boss で受けるための自作 ServiceProvider だったが、PDF 書き出しサービスへ移して不要になった(あちらは ServiceProvider が Adobe 提供)。スロットは予約のまま。
 														// ⚠**印刷側の IPrintSetupProvider 実装は無い**(旧 +50。理由は上の Class 側の注記と KESCMRingAdornment.cpp の節5)。**次の新規 Impl は +50 から採ってよい**
 
 // MessageIDs: model が UI へ「何が変わったか」を知らせる通知(2026-08-13・model/UI 分割 第1段 Task 9)。
@@ -290,6 +290,8 @@ DECLARE_PMID(kScriptInfoIDSpace, kKESCMChangeCountPropertyScriptElement, kKESCMP
 DECLARE_PMID(kScriptInfoIDSpace, kKESCMTextChangeCountPropertyScriptElement, kKESCMPrefix + 16)	// stories[n].kcmTextChangeCount(本文。GetTextChangeCount)
 DECLARE_PMID(kScriptInfoIDSpace, kKESCMAttrChangeCountPropertyScriptElement, kKESCMPrefix + 17)	// stories[n].kcmAttrChangeCount(書式。GetAttrChangeCount)
 DECLARE_PMID(kScriptInfoIDSpace, kKESCMOtherChangeCountPropertyScriptElement, kKESCMPrefix + 18)	// stories[n].kcmOtherChangeCount(その他。GetOtherChangeCount)
+// ★★2026-08-20 追加。⚠**上の4本と同じく、KESCM.fr の「2つ目の VersionedScriptElementInfo」にも同じ ID を書く**(片方だけ直すと黙って IDML に出る)。
+DECLARE_PMID(kScriptInfoIDSpace, kKESCMTransparencyItemCountPropertyScriptElement, kKESCMPrefix + 19)	// document.kcmTransparencyItemCount(読み取り専用。IXPManager の「透明を持つページアイテムの一覧」の件数＝**載せたまま保存していないかを外から確かめる口**。一覧は .indd に永続するので、保存→閉じる→開き直して読めば「書き込まれたか」が判る)
 // (ツールの列挙子は本体の kToolBoxEnumScriptElement に載せるので、こちら側の ID は要らない。)
 
 // StringKeys:

@@ -33,20 +33,14 @@
 #include "IXPManager.h"					// ItemXPChanged(＝「透明を持つアイテムの一覧」を作り直させる)
 #include "ISpreadList.h"				// 文書のスプレッドを辿る
 #include "IDataBase.h"					// GetRootUID
-// ★2026-08-20: 書き出しのあいだだけ一覧に載せるためのサービス(このファイルの末尾)。
-#include "isignalmgr.h"					// GetServiceID()
-#include "IExportProviderSignalData.h"	// 書き出しシグナルの添付データ(文書・フォーマット)
-#include "DocFrameworkID.h"				// k*ExportSignalResponderService
-#include "IDocument.h"
-#include "PersistUtils.h"				// ::GetUIDRef
+// ★2026-08-20: PDF 書き出しのあいだだけ「**クローンの**」一覧に載せるためのサービス(このファイルの末尾)。
+#include "IPDFExportSetupProvider.h"	// PDFProcessEvent(IPDFExportController.h を巻き込む＝PDFExportEvent)
+#include "IDThreading.h"				// IDThreading::ThreadLocal(いま書き出している db を持つ)
 
 // General includes:
 #include "CPMUnknown.h"
-#include "CResponder.h"
-#include "CServiceProvider.h"
 #include "UIDList.h"
 #include "Utils.h"
-#include <map>							// 書き出しごとの入れ子カウント(文書別)
 
 // Project includes:
 #include "KESCMID.h"
@@ -499,163 +493,168 @@ CREATE_PMINTERFACE(KESCMRingAdornmentStartup, kKESCMRingAdornmentStartupImpl)
 //    (InDesign が落ちて復帰になる)。書き出しなら失敗してもやり直せるだけ。
 //    ⇒ **どこで失敗しても許される場所に置く。**
 //
-//  ■ 2026-08-20 の実測(このファイルの診断ビルドで採取)
-//    ・書き出しシグナルは**同期(exportFile)・非同期(asynchronousExportFile)とも飛ぶ**
-//    ・★**どちらもメインスレッドで、元の `IDataBase`** を持って飛ぶ(BG では飛ばない)
-//      ⇒ ここで載せた状態から**書き出し用のクローン DB が作られる**ので、出力には乗り、
-//        After で元から降ろせば**元の文書には残らない**。
-//    ・⚠**フォーマット名が経路で違う**＝同期 `Adobe PDF` / 非同期 `Adobe PDF (Print)`
-//      (公式が3つ列挙している理由。1つだけ見ると片方で外す)
+//  ■ ★★★2026-08-20: **書き出しシグナル(kBeforeExport)ではなく、クローンに載せる形へ移した**
+//    旧実装は `kBeforeExport`/`kAfterExport`/`kFailedExport` の3シグナルで**元の文書**に載せ外ししていた。
+//    ⚠**それには穴があった** ---- シグナルは**メインスレッドで元の db** を持って飛ぶので、
+//      「元の文書に載っている時間」が生じ、**非同期書き出し(BG)の最中にユーザーが保存すると
+//      一覧が `.indd` に焼き付く**。★実測＝書き出し中に `save()` したら、開き直した文書の
+//      `document.kcmTransparencyItemCount` が **4**(通常の経路では 0)。
+//    ⇒ ★**`kPDFExportSetupService` の `BeginExport` へ移した**。非同期ではそこに
+//      **書き出し用のクローン db** が渡るので、**元の文書を一度も触らずに出力だけ変えられる**。
+//      詳細と実測は下の実装のコメント／`docs/ai-notes/pdf-export-setup-service-and-clone-db-2026-08-20.md`。
+//    ★**旧実装で分かったこと自体は正しく、記録として残す価値がある**:
+//      ・書き出しシグナルは**同期・非同期とも飛ぶ**が、**どちらもメインスレッドで元の `IDataBase`**
+//      ・⚠**フォーマット名が経路で違う**＝同期 `Adobe PDF` / 非同期 `Adobe PDF (Print)`
+//        (公式が3つ列挙している理由。1つだけ見ると片方で外す)
 //========================================================================================
 
-// 文書ごとに「いま何本の書き出しが走っているか」。
-// ⚠**入れ子と同時実行のために数える** ---- BG の書き出しは複数キューできるので、
-//   1本目の完了で降ろすと、まだ走っている2本目の出力からマークが消える。
-// ⚠**メインスレッドからしか触らない**(上の実測どおり、載せ外しの入口は3シグナルとも main)。
-static std::map<IDataBase*, int32> gKESCMOutputXPRaise;
+// この実行コンテキストが「いま書き出している db」。書き出していなければ nil。
+//
+// ★★★**スレッドローカルであることが設計の要**(2026-08-20)。載せる(`BeginExport`)・聞かれる
+//   (`IsFlattenerRequired_`)・降ろす(`EndExport`)の3つが、**非同期なら全部 BG・同期なら全部 main** と
+//   1本のスレッドで完結するので、**mutex が要らない**。
+//   ⚠**static にしてはいけない** ---- ガイド vol1-07 の "Threads do not share object-model instances.
+//     **They do share globals and statics**" にそのまま当たる(BG の書き出し中に main 側の描画が
+//     「出力中だ」と誤答する)。同じ罠で 2026-08-19 に一度やられている(Register のコメント)。
+// ⚠1つのスレッドが同時に2つの文書を書き出すことはない ---- イベントの構成が
+//   `BeginExport → 描画 → EndExport` の直列だから。∴ 1つ持てば足りる。
+static IDThreading::ThreadLocal<IDataBase*> tl_ExportingDB(nil);
 
+
+/** いま書き出している db から降りる。`EndExport` と、ブック書き出しの文書切り替えで呼ぶ。 */
+static void KESCMEndExportOnThisThread()
+{
+	IDataBase* const db = tl_ExportingDB.Get();
+	if (db == nil)
+		return;
+
+	// ★★**先に倒してから通知する。** `kXPC_RemovedSomeXP` は「消せ」ではなく「**聞き直せ**」なので、
+	//   この時点で `IsFlattenerRequired_` が「まだ透明がある」と答えると**一覧から降りない**
+	//   (2026-08-20 実測＝`xp 0->4` のまま戻らなかった)。
+	tl_ExportingDB.Set(nil);
+	KESCMSetItemXPState(db, kKESCMXPListRemove);
+}
+
+/** 書き出しが始まった／ブック書き出しで文書が切り替わった ---- 透明が生じるときだけ一覧へ載せる。 */
+static void KESCMBeginExportOn(IDataBase* db)
+{
+	// ブックの `NewDocument` はここへ来る＝前の章の db から先に降りる。
+	// ⚠これを忘れると、2章目以降で**前の章の db を載せっぱなし**にする。
+	KESCMEndExportOnThisThread();
+
+	if (db == nil)
+		return;
+	// ★載せるかどうかは「マークが半透明を使いうるか」で決める。
+	//   ⚠**`KESCMMarksDeclareTransparency()` ではない** ---- あちらは「いま書き出し中か」を含むので、
+	//     まだ tl_ExportingDB を立てていないこの時点では必ず kFalse になり、**一度も載らなくなる**。
+	if (!KESCMMarksCouldBeTranslucent())
+		return;
+
+	// ★★**先に立ててから通知する。** 下の KESCMSetItemXPState() が出す通知を受けて XPManager が
+	//   `IsFlattenerRequired_` を聞きに来るので、その時点で「書き出し中」になっていないと
+	//   kFalse と答えてしまい、載らない。
+	tl_ExportingDB.Set(db);
+	KESCMSetItemXPState(db, kKESCMXPListAdd);
+}
 
 // ★★★`IsFlattenerRequired_` の答え(前方宣言はファイル冒頭。理由もそこに書いてある)。
-//   ⚠**この定義がカウンタより後ろに居るのは意図的** ---- 「いま出力中か」を見るため。
 static bool16 KESCMMarksDeclareTransparency()
 {
-	// ⚠**書き出しの最中でなければ「透明は無い」と答える。**
-	//   これが無いと、降ろす通知(`kXPC_RemovedSomeXP`＝「聞き直せ」)に対して
-	//   「マークはまだある」と答えてしまい、**一覧から永久に降りない**(2026-08-20 実測)。
-	if (gKESCMOutputXPRaise.empty())
+	// ⚠**書き出しの最中でなければ「透明は無い」と答える。** 理由は上の
+	//   KESCMEndExportOnThisThread() のコメント。
+	if (tl_ExportingDB.Get() == nil)
 		return kFalse;
 
 	return KESCMMarksCouldBeTranslucent();
 }
 
-/** 書き出しが始まる ---- 透明が生じるときだけ一覧へ載せる。 */
-static void KESCMRaiseItemXPForOutput(IDataBase* db)
+//----------------------------------------------------------------------------------------
+// ★★★PDF 書き出しに割り込んで「**クローンにだけ**」載せる (kPDFExportSetupService)
+//
+//  ■ なぜ書き出しシグナル(kBeforeExport)ではなく、こちらなのか(2026-08-20 ユーザー判断)
+//    `kBeforeExport` は**メインスレッドで、元の文書の db** を持って飛ぶ。そこで載せると
+//    「元の文書に載っている時間」が生じ、**その隙にユーザーが保存すると一覧が .indd に焼き付く**。
+//    ★実測＝非同期書き出しの最中に `save()` すると、開き直した文書の
+//      `kcmTransparencyItemCount` が **4** になった(通常の経路では 0)。
+//    ⇒ 一方 `kPDFExportSetupService` の `BeginExport` は、**非同期では書き出し用のクローン db** を
+//      渡してくる(2026-08-20 実測＝元の Target/Source どちらとも違うポインタ)。
+//      **そこへ載せれば元の文書は一度も触られない。**
+//    ★**クローンに載せても出力にはちゃんと効く**(PDF 1.3 の半透明が、元に載せていたときと
+//      1ドット違わない絵で出た)。全文＝`docs/ai-notes/pdf-export-setup-service-and-clone-db-2026-08-20.md`。
+//    ⚠**同期書き出しではクローンが作られない**(db が元そのもの)。そこは載せて降ろすしかないが、
+//      同期は呼び出しが返るまでブロックするので**保存の隙自体が無い**。
+//
+//  ■ 手本＝`sdksamples/pdfvt/PDFVTExportProvider.cpp:165-230`(SDK 唯一の実装例)／`pdfvt/PDFVT.fr:113-121`
+//  ⚠**ServiceProvider は Adobe 提供の `kPDFExportSetupServiceImpl` を `.fr` でそのまま名指しする**ので、
+//    自作するのはこの1本だけ(サービス ID は実装側が返す＝`.fr` に ServiceID を書く必要も無い)。
+//----------------------------------------------------------------------------------------
+
+class KESCMPDFExportSetup : public CPMUnknown<IPDFExportSetupProvider>
 {
-	if (db == nil)
-		return;
-	// ★載せるかどうかは「マークが半透明を使いうるか」で決める。
-	//   ⚠**`KESCMMarksDeclareTransparency()` ではない** ---- あちらは「いま出力中か」を含むので、
-	//     まだカウンタを立てていないこの時点では必ず kFalse になり、**一度も載らなくなる**。
-	if (!KESCMMarksCouldBeTranslucent())
+public:
+	KESCMPDFExportSetup(IPMUnknown* boss) : CPMUnknown<IPDFExportSetupProvider>(boss) {}
+	~KESCMPDFExportSetup() {}
+
+	virtual bool16 PDFProcessEvent(PDFExportEvent* pdfExportEvent, int32 pageNum);
+};
+
+CREATE_PMINTERFACE(KESCMPDFExportSetup, kKESCMPDFExportSetupImpl)
+
+bool16 KESCMPDFExportSetup::PDFProcessEvent(PDFExportEvent* ev, int32 /*pageNum*/)
+{
+	if (ev != nil)
 	{
-		return;
+		switch (ev->id)
+		{
+			case kPDFExportEventBeginExport:
+				KESCMBeginExportOn(ev->db);
+				break;
+
+			// ★ブック書き出しで文書が切り替わったとき(2章のブックで実測)。
+			//   ⚠受けずに BeginExport の db だけを使い回すと、**2章目以降で違う文書を相手にする**。
+			case kPDFExportEventNewDocument:
+				KESCMBeginExportOn(ev->db);
+				break;
+
+			// ⚠**このイベントの db は必ず nil**(同期・非同期とも実測)。⇒ 降りる相手は控えたものを使う。
+			case kPDFExportEventEndExport:
+				KESCMEndExportOnThisThread();
+				break;
+
+			default:
+				break;
+		}
 	}
 
-	// ★★**カウンタを先に立ててから通知する。** 下の KESCMSetItemXPState() が出す通知を受けて
-	//   XPManager が `IsFlattenerRequired_` を聞きに来るので、その時点で「出力中」になっていないと
-	//   kFalse と答えてしまい、載らない。
-	const int32 depth = ++gKESCMOutputXPRaise[db];
-	if (depth == 1)
-		KESCMSetItemXPState(db, kKESCMXPListAdd);
-}
-
-/** 書き出しが終わった(成功・失敗・キャンセルのいずれでも) ---- 最後の1本が終わったら降ろす。 */
-static void KESCMLowerItemXPForOutput(IDataBase* db)
-{
-	if (db == nil)
-		return;
-
-	std::map<IDataBase*, int32>::iterator it = gKESCMOutputXPRaise.find(db);
-	// ★★**載せていないなら降ろさない。** `kXPC_RemovedSomeXP` は「聞き直せ」なので本物の透明を持つ
-	//   アイテムは残るはずだが、**それは未実測**(2026-08-20)。⇒ 自分が載せた分だけを相手にする。
-	if (it == gKESCMOutputXPRaise.end())
-	{
-		return;
-	}
-	if (--(it->second) > 0)
-		return;					// まだ別の出力が走っている
-
-	gKESCMOutputXPRaise.erase(it);
-	KESCMSetItemXPState(db, kKESCMXPListRemove);
+	// ⚠**必ず kTrue を返す。** kFalse は「**そのイベントの既定処理をスキップ**」という意味
+	//   (`IPDFExportSetupProvider.h:52-53`)＝書き出しそのものを壊す。
+	return kTrue;
 }
 
 //----------------------------------------------------------------------------------------
-// 書き出し(PDF ほか) ---- Before で載せ、After と Failed で降ろす
-//   ※印刷側の対(`IPrintSetupProvider`)は**置かない**。理由は上の節に実測つきで書いてある。
+// 5-2) 外から件数を読む口 ---- document.kcmTransparencyItemCount
 //----------------------------------------------------------------------------------------
 
-/** ★1つの boss で3シグナルを受けるので ServiceProvider を自作する
-	(stock の1シグナル用実装では足りない)。形は `CusCondTxtServiceProvider.cpp:108-111` と同じ。 */
-class KESCMExportXPServiceProvider : public CServiceProvider
+/** 「透明を持つページアイテムの一覧」の件数。宣言のコメント(KESCMRingAdornment.h)に用途がある。
+
+	★**この1本があるだけで、上の載せ外しが正しいかを画素を数えずに検算できる。**
+	  一覧は `.indd` に永続するので ---- 書き出しの前後で `0 → n → 0` に戻ることを読めば
+	  「降ろせている」が判り、**保存 → 閉じる → 開き直して 0 なら「書き込まれていない」**が判る。
+	⚠**dirty フラグでは代用できない** ---- `SaveRestoreModifiedState` のガードは「保存を促さない」
+	  だけで「保存されるのを防がない」。⇒ 測るべきは dirty ではなく**一覧そのもの**。 */
+int32 KESCMGetNumItemsWithXP(IDataBase* db)
 {
-public:
-	KESCMExportXPServiceProvider(IPMUnknown* boss);
-	virtual ~KESCMExportXPServiceProvider() {}
-
-	virtual void        GetName(PMString* pName)  { pName->SetKey("KESCM Export Transparency Service"); }
-	virtual ServiceID   GetServiceID()            { return fSupportedServiceIDs[0]; }	// HasMultipleIDs が kTrue なので呼ばれない
-	virtual bool16      IsDefaultServiceProvider(){ return kFalse; }
-	virtual InstancePerX GetInstantiationPolicy() { return kInstancePerSession; }
-	virtual bool16      HasMultipleIDs() const    { return kTrue; }
-	virtual void        GetServiceIDs(K2Vector<ServiceID>& serviceIDs) { serviceIDs = fSupportedServiceIDs; }
-
-private:
-	K2Vector<ServiceID> fSupportedServiceIDs;
-};
-
-CREATE_PMINTERFACE(KESCMExportXPServiceProvider, kKESCMExportXPServiceProviderImpl)
-
-KESCMExportXPServiceProvider::KESCMExportXPServiceProvider(IPMUnknown* boss)
-	: CServiceProvider(boss)
-{
-	fSupportedServiceIDs.clear();
-	fSupportedServiceIDs.push_back(kBeforeExportSignalResponderService);
-	fSupportedServiceIDs.push_back(kAfterExportSignalResponderService);
-	// ⚠**Failed は「失敗」だけでなく「キャンセル」でも飛ぶ** ---- これを落とすと、
-	//   中断した書き出しのぶんだけ載せっぱなしになる(ガイド vol1-07 の非同期書き出しの節)。
-	fSupportedServiceIDs.push_back(kFailedExportSignalResponderService);
-}
-
-class KESCMExportXPResponder : public CResponder
-{
-public:
-	KESCMExportXPResponder(IPMUnknown* boss) : CResponder(boss) {}
-
-	virtual void Respond(ISignalMgr* signalMgr);
-};
-
-CREATE_PMINTERFACE(KESCMExportXPResponder, kKESCMExportXPResponderImpl)
-
-void KESCMExportXPResponder::Respond(ISignalMgr* signalMgr)
-{
-	if (signalMgr == nil)
-		return;
-
-	InterfacePtr<IExportProviderSignalData> data(signalMgr, UseDefaultIID());
-	if (data == nil)
-		return;
-
-	IDocument* const doc = data->GetDocument();
-	if (doc == nil)
-		return;
-	IDataBase* const db = ::GetUIDRef(doc).GetDataBase();
 	if (db == nil)
-		return;
+		return -1;
 
-	// ★フォーマットは見ない。
-	//   公式(`CusCondTxtResponder.cpp:126-131`)は "Adobe PDF" 系だけを相手にするが、あちらは
-	//   **IDML と PDF で切り替える属性が違う**ため。こちらが載せる申告は「マークが透明を使う」という
-	//   出力形式によらない事実で、**必要としない形式に載っていても `IsFlattenerRequired_` が答えるまで**
-	//   何も起きない。⇒ **形式で絞る理由が無い**(絞ると、上と下で違う条件を書く隙が生まれる)。
-	//   ⚠形式名は経路で変わる(同期 `Adobe PDF` / 非同期 `Adobe PDF (Print)`)ので、
-	//     絞るなら3つとも書く必要がある ---- それも絞らない理由のひとつ。
-	switch (signalMgr->GetServiceID().Get())
-	{
-		case kBeforeExportSignalResponderService:
-			KESCMRaiseItemXPForOutput(db);
-			break;
+	Utils<IXPUtils> xpUtils;
+	if (!xpUtils)
+		return -1;
+	InterfacePtr<IXPManager> xpManager(xpUtils->QueryXPManager(db));
+	if (xpManager == nil)
+		return -1;
 
-		case kAfterExportSignalResponderService:
-			KESCMLowerItemXPForOutput(db);
-			break;
-
-		case kFailedExportSignalResponderService:	// ★失敗とキャンセルの両方
-			KESCMLowerItemXPForOutput(db);
-			break;
-
-		default:
-			break;
-	}
+	return xpManager->GetNumItemsWithXP();
 }
 
 // End, KESCMRingAdornment.cpp.
