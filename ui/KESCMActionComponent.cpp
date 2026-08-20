@@ -99,6 +99,50 @@ private:
 /* Binds the C++ implementation class onto its ImplementationID. */
 CREATE_PMINTERFACE(KESCMActionComponent, kKESCMActionComponentImpl)
 
+/* KESCMApplyCompareMode — 比較モードを切り替え、Start 中ならその場で比較し直す(2026-08-20)。
+
+   ★**2つの入口が同じ手順を通るように関数にした**。Pixel / Story のどちらを選んでも起きることは
+   同じで、違うのは渡す値だけ(Marks opacity 25%/75% が Facade の1関数を共有しているのと同型)。
+
+   ⚠**同じモードを選び直したときは何もしない**。すでに Story を見ている人がもう一度 Story を選んで
+   比較が走り直したら、待たされた末に同じ画面が出るだけになる。
+*/
+static void KESCMApplyCompareMode(KESCMCompareMode mode)
+{
+	InterfacePtr<IKESCMCompareFacade> compare(Utils<IKESCMCompareFacade>().QueryUtilInterface());
+	if (compare == nil || compare->GetCompareMode() == mode)
+		return;
+
+	compare->SetCompareMode(mode);
+
+	PMString msg(mode == kKESCMModeStory ? "Compare mode: story changes." : "Compare mode: pixel changes.");
+	msg.SetTranslatable(kFalse);
+
+	// ★Start 中なら、新しいモードで全体を比較し直す。比較していないときは設定を変えるだけ＝
+	//   次に Start したときに効く。
+	InterfacePtr<IKESCMMarkData> marks(Utils<IKESCMMarkData>().QueryUtilInterface());
+	IDataBase* const markedDB    = (marks != nil) ? marks->GetMarkedTargetDB() : nil;
+	IDataBase* const markedSrcDB = (marks != nil) ? marks->GetMarkedSourceDB() : nil;
+	if (markedDB != nil && markedSrcDB != nil)
+	{
+		PMString report;
+		// ★allowIncremental は渡さない=全ページ再比較。差分再比較は「前回と同じ比較方法で、
+		//   ペアの変わったページだけやり直す」ための道具で、比較方法そのものが変わるここでは
+		//   前回の結果を1つも再利用できない。
+		// ★キャンセルされたときの後始末は Ignore Page Number Marker と同じ理由で Stop まで戻す
+		//   (マークは破棄済みなので、arm だけ残ると「枠が1つも無い Start 中」になる)。
+		if (compare->MarkChanges(markedDB, markedSrcDB, report) == kSuccess)
+			msg.Append(" (recompared)");
+		else
+		{
+			compare->ToggleStartStop();
+			msg.Append(" (cancelled - stopped)");
+		}
+	}
+
+	KESCMSetStatus(msg);
+}
+
 /* DoAction */
 void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSysPoint /*mousePoint*/, IPMUnknown* /*widget*/)
 {
@@ -414,6 +458,18 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 			break;
 		}
 
+		// ★★フライアウトの「Compare mode > Pixel Changes / Story Changes」(2026-08-20)。
+		//   何を比べるかを切り替える。上の「Ignore Page Number Marker」と同じ形＝設定を変えて、
+		//   既に Start 済みならその場で全体を比較し直す。
+		//   ⚠**前のモードの結果は捨てる**。2つの結果を同時に持つと「いま画面が見せているのはどちら
+		//     なのか」の答えが2か所に生まれる([[one-question-one-place]])。
+		case kKESCMPopupModePixelActionID:
+			KESCMApplyCompareMode(kKESCMModePixel);
+			break;
+		case kKESCMPopupModeStoryActionID:
+			KESCMApplyCompareMode(kKESCMModeStory);
+			break;
+
 		// フライアウトの「Save Panel Settings」: 現在の設定系トグルを独自 JSON でローカルへ保存し、
 		// 保存先パスを**パネルのステータス行**に出す(実体は KESCMPanelState.cpp の KESCMSavePanelState。
 		// ⚠旧引用 ":132-137" は 2026-08-16 の監査 B-U3 時点で fclose のエラー処理を指していた＝関数名で引く)。
@@ -594,6 +650,22 @@ void KESCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionSta
 			// ラジオ風: 現在 75%(=!25%)ならこの項目に✓。
 			int16 actionState = kEnabledAction;
 			if (!Utils<IKESCMCompareFacade>()->GetMarkOpacity25())
+				actionState |= kSelectedAction;
+			listToUpdate->SetNthActionState(i, actionState);
+		}
+		// ★「Compare mode」の2項目(2026-08-20)。上の Marks opacity と同じラジオ風＝いま効いている
+		//   方に✓。**どちらも常に有効**＝比較していないときでも選べる(次の Start に効く)。
+		else if (action == kKESCMPopupModePixelActionID)
+		{
+			int16 actionState = kEnabledAction;
+			if (Utils<IKESCMCompareFacade>()->GetCompareMode() == kKESCMModePixel)
+				actionState |= kSelectedAction;
+			listToUpdate->SetNthActionState(i, actionState);
+		}
+		else if (action == kKESCMPopupModeStoryActionID)
+		{
+			int16 actionState = kEnabledAction;
+			if (Utils<IKESCMCompareFacade>()->GetCompareMode() == kKESCMModeStory)
 				actionState |= kSelectedAction;
 			listToUpdate->SetNthActionState(i, actionState);
 		}

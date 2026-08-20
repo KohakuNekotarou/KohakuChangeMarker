@@ -703,6 +703,26 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKESCMOpacity75SubMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
+		// "Compare mode" on the panel flyout (popup) menu (2026-08-20). Two children, exclusive,
+		// with a check on whichever one is in force - the same shape as "Marks opacity" above.
+		// Pixel Changes rasterises pages and compares them; Story Changes compares the text of the
+		// stories and lists what differs, and draws no rings at all.
+		// Submenu parent node: actionID 0 + path ending in a delimiter, as above.
+		0,
+		kKESCMCompareModeSubmenuPath kSDKDefDelimitMenuPath,
+		kKESCMCompareModeSubmenuMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
+		kKESCMPopupModePixelActionID,
+		kKESCMCompareModeSubmenuPath,
+		kKESCMModePixelSubMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
+		kKESCMPopupModeStoryActionID,
+		kKESCMCompareModeSubmenuPath,
+		kKESCMModeStorySubMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
 		// "Show Marks on Source" on the panel flyout (popup) menu. Check-mark toggle:
 		// while ON, the same comparison rings are also drawn on the corresponding pages of the
 		// Source document — always visible (independent of the middle button), shown in
@@ -1049,6 +1069,24 @@ resource ActionDef (kSDKDefActionResourceID)
 		kOtherActionArea,
 		kNormalAction,
 		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates checks whichever opacity is selected (radio-style)
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		kKESCMActionComponentBoss,
+		kKESCMPopupModePixelActionID,
+		kKESCMModePixelKey,					// "Pixel Changes"
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates checks whichever mode is in force (radio-style)
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		kKESCMActionComponentBoss,
+		kKESCMPopupModeStoryActionID,
+		kKESCMModeStoryKey,					// "Story Changes"
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates checks whichever mode is in force (radio-style)
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 

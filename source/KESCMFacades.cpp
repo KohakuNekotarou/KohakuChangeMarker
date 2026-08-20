@@ -99,6 +99,9 @@ public:
 	virtual bool16		GetPrintMarks()			{ return KESCMGetPrintMarks(); }
 	virtual bool16		GetMarkOpacity25()		{ return KESCMGetMarkOpacity25(); }
 
+	virtual KESCMCompareMode	GetCompareMode()					{ return KESCMGetCompareMode(); }
+	virtual void				SetCompareMode(KESCMCompareMode m)	{ KESCMSetCompareMode(m); }
+
 	virtual void		GetSessionStatus(PMString& out)	{ KESCMGetSessionStatus(out); }
 
 	// ---- the status line (stage 2) --------------------------------------------------------

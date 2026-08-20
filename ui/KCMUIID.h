@@ -247,7 +247,9 @@ DECLARE_PMID(kActionIDSpace, kKESCMPopupCompareBooksActionID, kKCMUIPrefix + 39)
 // 行は右クリックの時点で KESCMBookSetMenuRow が控える＝KBS の結果行と同じ作り。
 DECLARE_PMID(kActionIDSpace, kKESCMBookRowStartActionID, kKCMUIPrefix + 40)	// 章行の右クリック「Start Change Marker」= その章の Target/Source 2文書を窓付きで開き、比較中なら一度 Stop してから比較を開始する(KESCMBookOpen.cpp)。★両側のファイルが揃っていない行(ChapterAdded/ChapterDeleted・ファイル無し)では灰色(kCustomEnabling → KESCMBookRowCanStart)
 DECLARE_PMID(kActionIDSpace, kKESCMPopupTranslucentBookDialogActionID, kKCMUIPrefix + 41)	// ★パネルのフライアウトの「Translucent Dialog」チェック式トグル(2026-08-13 ユーザー要望「ダイアログも半透明に出来る様に」)。上の +36/+37 と**同じ実体**(KESCMPanelAlpha.cpp)で対象だけが違う。⚠ただし対象がパネルではないので**窓の出所だけが別**＝ダイアログ自身が KESCMSetBookDialogWindow で教える(パネルマネージャは WidgetID で引けるが、ダイアログはそこに載っていない)。★パネル側と違い**ドッキングの概念が無いので「押しても効かない状態」が無い**。既定 OFF
-// (+15..+23 are all declared above - stale placeholders for them removed 2026-08-05 audit. Next free: +42)
+DECLARE_PMID(kActionIDSpace, kKESCMPopupModePixelActionID, kKCMUIPrefix + 42)	// ★フライアウトの「Compare mode > Pixel Changes」(2026-08-20)。既定。ページをラスタ化して画素を比べる本来の比較。Story Changes と相互排他=選択中の方に✓(kCustomEnabling+kSelectedAction。Marks opacity 25%/75% と同じ形)。実体 KESCMActionComponent.cpp
+DECLARE_PMID(kActionIDSpace, kKESCMPopupModeStoryActionID, kKCMUIPrefix + 43)	// ★フライアウトの「Compare mode > Story Changes」(2026-08-20)。ストーリーの本文を段落→文字の二段で比べ、Story Edits を「親=ストーリー / 子=変更箇所」のツリーで出す。★このモードでは枠を描かず、ページ単位の表示機能(スクロール地図・Hide Unchanged・Export Changed Pages・Prev/Next)は灰色になる
+// (+15..+23 are all declared above - stale placeholders for them removed 2026-08-05 audit. Next free: +44)
 //DECLARE_PMID(kActionIDSpace, kKESCMActionID, kKCMUIPrefix + 41)
 // kKCMUIPrefix + 24/25/26/28 は使用中(KCM: Check / Save Check & Register / Load Check & Register / RtMenuPagesPanel の区切り線)。+27 は廃止・予約(上記)
 
@@ -492,6 +494,13 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMBookRowStateWidgetID, kKCMUIPrefix + 49)	// �
 #define kKESCMOpacitySubmenuName		"Marks opacity"
 #define kKESCMOpacitySubmenuPath		kKESCMPopupMenuPath kSDKDefDelimitMenuPath kKESCMOpacitySubmenuName
 
+// フライアウトの「Compare mode」サブメニュー(中に Pixel Changes / Story Changes)。2026-08-20 追加。
+// ★上の「Marks opacity」と同じ形(親は actionID 0・子は相互排他で選択中に✓)。
+// ★★**サブメニューにした理由**＝フライアウトの項目はもう十数個あり、比較の設定と表示の設定が
+//   同じ高さに並ぶと、どれが「何を比べるか」でどれが「どう見せるか」なのか読み取れなくなる。
+#define kKESCMCompareModeSubmenuName	"Compare mode"
+#define kKESCMCompareModeSubmenuPath	kKESCMPopupMenuPath kSDKDefDelimitMenuPath kKESCMCompareModeSubmenuName
+
 // パネルの文字列キー(値は **KCMUI_enUS.fr** の StringTable。全ロケールがこの1枚を引く=
 // LocaleIndex の全行が index_enUS を指す。KESCM_jaJP.fr は 2026-08-05 に撤去し、日本語で出す
 // 2箇所だけ KESCMLoc.h の実行時切替に移した)。
@@ -502,6 +511,8 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMBookRowStateWidgetID, kKCMUIPrefix + 49)	// �
 #define kKESCMPrintCheckKey		kKESCMStringPrefix "kKESCMPrintCheckKey"	// フライアウト「Print comparison marks」トグルのメニュー名(旧パネルチェックボックスのキャプションキーを流用)
 #define kKESCMOpacity25Key		kKESCMStringPrefix "kKESCMOpacity25Key"	// サブメニュー「Marks opacity」内の子項目名(="25%")
 #define kKESCMOpacity75Key		kKESCMStringPrefix "kKESCMOpacity75Key"	// サブメニュー「Marks opacity」内の子項目名(="75%")
+#define kKESCMModePixelKey		kKESCMStringPrefix "kKESCMModePixelKey"	// サブメニュー「Compare mode」内の子項目名(="Pixel Changes")
+#define kKESCMModeStoryKey		kKESCMStringPrefix "kKESCMModeStoryKey"	// サブメニュー「Compare mode」内の子項目名(="Story Changes")
 #define kKESCMPrevChangeKey		kKESCMStringPrefix "kKESCMPrevChangeKey"	// パネルの「◀ Prev」ボタンのキャプション(英語固定)
 #define kKESCMNextChangeKey		kKESCMStringPrefix "kKESCMNextChangeKey"	// パネルの「Next ▶」ボタンのキャプション(英語固定)
 #define kKESCMHintKey			kKESCMStringPrefix "kKESCMHintKey"
@@ -634,6 +645,9 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMBookRowStateWidgetID, kKCMUIPrefix + 49)	// �
 // ※メニュー名は日本語ロケールでも英語で統一(2026-07-04)。区切り線は Sep1/OversetSep/Sep3/Sep2 の4本を再利用。
 #define kKESCMStartStopMenuItemPosition		9.0	// 「Start / Stop」(比較開始/解除)をフライアウト先頭に。名前は arm 状態で動的に Start↔Stop
 #define kKESCMSep1MenuItemPosition			9.1	// Start の下の区切り線(パス末尾 ":-")
+#define kKESCMCompareModeSubmenuMenuItemPosition	9.15	// ★「Compare mode」サブメニュー(中に Pixel Changes / Story Changes)。2026-08-20 追加。**Sep1 の直後＝表示系トグル群(9.20〜)の上**に置く: 「何を比べるか」は「どう見せるか」より先に決めるもので、順序がそのまま意味になる
+#define kKESCMModePixelSubMenuItemPosition		1.0	// サブメニュー「Compare mode」内: Pixel Changes(選択中に✓)
+#define kKESCMModeStorySubMenuItemPosition		2.0	// サブメニュー「Compare mode」内: Story Changes(Pixel と相互排他)
 // ── 表示系トグル群 ──
 #define kKESCMHoldToHideMarksMenuItemPosition	9.20	// チェック式トグル「Hold to Hide Marks」(枠表示の極性反転)。Sep1 の直後(群の先頭)
 #define kKESCMIgnorePageNumMenuItemPosition	9.22	// チェック式トグル「Ignore Page Number Marker」

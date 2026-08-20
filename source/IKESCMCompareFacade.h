@@ -109,6 +109,18 @@ public:
 	virtual bool16		GetPrintMarks() = 0;
 	virtual bool16		GetMarkOpacity25() = 0;
 
+	/** Which comparison the Start runs: pixels (the original) or story text (2026-08-20).
+
+		★A SETTING OF THE COMPARISON, which is why it sits here next to GetPrintMarks() rather
+		than anywhere on the UI side. The model reads it and acts on it; the flyout only chooses.
+
+		⚠SetCompareMode CHANGES THE SETTING AND NOTHING ELSE. It does not re-run a comparison
+		that is already armed - the caller decides that, because the same setter is used when the
+		panel restores its saved state at start-up, where re-comparing would be wrong. The flyout
+		re-compares; start-up does not. */
+	virtual KESCMCompareMode	GetCompareMode() = 0;
+	virtual void				SetCompareMode(KESCMCompareMode mode) = 0;
+
 	// ---- display toggles ---------------------------------------------------------------
 	//
 	// Read and written by the flyout toggles, by Save/Load Panel Settings and by the press
