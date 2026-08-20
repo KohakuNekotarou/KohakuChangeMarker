@@ -1,4 +1,4 @@
-//========================================================================================
+﻿//========================================================================================
 //
 //  Owner: KohakuNekotarou
 //
@@ -264,7 +264,24 @@ void KESCMTextDiff::MergeNearbyChanges(std::vector<Change>& changes)
 			const int32 previousSize = (previous.aCount > previous.bCount) ? previous.aCount : previous.bCount;
 			const int32 currentSize = (current.aCount > current.bCount) ? current.aCount : current.bCount;
 
-			if (gap >= 0 && gap <= previousSize && gap <= currentSize)
+			// ★★★STRICTLY SHORTER, NOT "no longer than" (2026-08-20). The gap has to be SMALLER
+			//   than both neighbours to be swallowed. ⚠With <= , two ONE-character edits a single
+			//   character apart always merged (1 <= 1 on both sides) - which in Japanese is not an
+			//   edge case but the ordinary sentence: 琥珀猫太郎 -> 琥あ珀犬太郎 came out as one
+			//   change reading "珀猫" -> "あ珀犬", when what happened is that あ was inserted and 猫
+			//   became 犬 (user's report, 2026-08-20; Myers had said exactly that and this rule
+			//   undid it).
+			//   ★Measured against 10 cases outside InDesign before changing it: the ONLY one that
+			//     moves is that one. Everything this rule exists for still merges, because those
+			//     gaps are strictly smaller than their neighbours - "sleeping"->"awake" (1 < 4 and
+			//     1 < 5), "postponed"->"cancelled", and two 2-character edits one character apart
+			//     (1 < 2). A one-character gap between two one-character edits is the only shape
+			//     that <= caught and < does not, and it is precisely the shape that should not be
+			//     caught: there is nothing to say those two edits are one.
+			//   ⚠The header said BOTH things at once - "no longer than EACH" in one sentence and
+			//     "shorter than both" in the next. The implementation followed the first. Fixed
+			//     there too.
+			if (gap >= 0 && gap < previousSize && gap < currentSize)
 			{
 				previous.aCount = (current.aStart + current.aCount) - previous.aStart;
 				previous.bCount = (current.bStart + current.bCount) - previous.bStart;

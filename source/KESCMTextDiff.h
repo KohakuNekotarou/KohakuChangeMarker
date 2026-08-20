@@ -1,4 +1,4 @@
-//========================================================================================
+﻿//========================================================================================
 //
 //  Owner: KohakuNekotarou
 //
@@ -81,9 +81,17 @@ namespace KESCMTextDiff
 		shorter. Nobody reads it that way.
 
 		The rule is the one Google's diff-match-patch calls a semantic cleanup: if the unchanged
-		run between two changes is no longer than EACH of the changes around it, swallow it and
-		make them one. Requiring it to be shorter than both, rather than than the larger of them,
-		is what stops a long edit from dragging unrelated neighbours into itself.
+		run between two changes is STRICTLY SHORTER than EACH of the changes around it, swallow it
+		and make them one. Requiring it to be shorter than both, rather than than the larger of
+		them, is what stops a long edit from dragging unrelated neighbours into itself.
+
+		⚠"Strictly" is the whole of a bug fixed on 2026-08-20. This sentence used to say "no
+		longer than", the next one said "shorter than both", and the code followed the first -
+		so a gap the SAME size as its neighbours was swallowed. In English that is rare; in
+		Japanese it is the ordinary sentence, because one character is one word's worth of
+		meaning: 琥珀猫太郎 -> 琥あ珀犬太郎 arrived as a single change reading "珀猫" -> "あ珀犬"
+		instead of "あ was inserted" and "猫 became 犬". Nothing that this rule exists for is
+		lost by the strictness - those gaps are genuinely smaller than the edits around them.
 
 		The idea is taken from that library's behaviour, not its code - the algorithm is written
 		here from the description above.
