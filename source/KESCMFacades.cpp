@@ -367,6 +367,30 @@ public:
 		return kTrue;
 	}
 
+	virtual int32	GetChangeCount(int32 nth)
+	{
+		const KESCMStoryRow* row = KESCMStoryList::GetRow(nth);
+		return (row != nil) ? static_cast<int32>(row->fChanges.size()) : 0;
+	}
+
+	virtual bool16	GetChange(int32 nth, int32 which, Change& out)
+	{
+		const KESCMStoryRow* row = KESCMStoryList::GetRow(nth);
+		if (row == nil || which < 0 || which >= static_cast<int32>(row->fChanges.size()))
+			return kFalse;
+
+		const KESCMStoryChange& change = row->fChanges[which];
+		out.fKind		= static_cast<int32>(change.fKind);
+		out.fWhat		= static_cast<int32>(change.fWhat);
+		out.fTargetStart = change.fTargetStart;
+		out.fTargetEnd	= change.fTargetEnd;
+		out.fSourceStart = change.fSourceStart;
+		out.fSourceEnd	= change.fSourceEnd;
+		out.fHasSource	= change.fHasSource;
+		out.fText		= change.fText;
+		return kTrue;
+	}
+
 	virtual UID		GetFirstFrameUID(IDataBase* db, UID storyUID)
 					{ return KESCMStoryFirstFrameUID(db, storyUID); }
 

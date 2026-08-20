@@ -92,6 +92,41 @@ public:
 		map of the lot.) */
 	virtual bool16	GetRow(int32 nth, Row& out) = 0;
 
+	// ---- the children: what differs inside a story (Story Changes mode, 2026-08-20) --------
+
+	/** One difference inside a story, in the fields the tree and the click actually read.
+
+		★A COPY, for the same reason Row is one, and ★FLATTENED: the model's enums come across as
+		int32. An enum on the boundary would have to be defined somewhere both plug-ins agree on,
+		and that is a decision to take when there is a second reason to take it - the row's fKinds
+		is already an int with named bits and nothing has suffered for it. */
+	struct Change
+	{
+		int32		fKind;			// 0 = replace, 1 = insert, 2 = delete
+		int32		fWhat;			// 0 = text, 1 = attribute. ★ALWAYS 0 today (see KESCMStoryList.h)
+		TextIndex	fTargetStart;	// in the NEWER document
+		TextIndex	fTargetEnd;		// ★an END, not a length (RangeData.h:69)
+		TextIndex	fSourceStart;	// in the OLDER document; meaningless unless fHasSource
+		TextIndex	fSourceEnd;
+		bool16		fHasSource;		// kFalse for an insertion - nothing in the older version to point at
+		PMString	fText;			// the words to show. ★For a DELETION this is the older side's text
+
+		Change()
+			: fKind(0), fWhat(0), fTargetStart(0), fTargetEnd(0),
+			  fSourceStart(0), fSourceEnd(0), fHasSource(kFalse) {}
+	};
+
+	/** How many differences row nth holds.
+
+		★0 IS THE NORMAL ANSWER IN THE PIXEL MODE - nothing runs the text diff there, so no row has
+		children and the tree stays one level deep. It is also the answer for a story that could not
+		be compared (added, too different, or a failed length check); the row is still there. */
+	virtual int32	GetChangeCount(int32 nth) = 0;
+
+	/** Fill out with difference which of row nth. kFalse when either index is out of range,
+		leaving out untouched. One at a time, for the same reason GetRow is. */
+	virtual bool16	GetChange(int32 nth, int32 which, Change& out) = 0;
+
 	// ---- where a story begins, in either document ------------------------------------------
 
 	/** The first frame this story is placed in. kInvalidUID when the document has no such story
