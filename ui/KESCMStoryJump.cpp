@@ -253,15 +253,25 @@ bool16 KESCMStoryJumpToChange(int32 rowIndex, int32 changeIndex)
 	//   text that closed up over it - see KESCMStoryList.h for why the field is called "other" and
 	//   not "old".
 	//
-	// ⚠★PLAIN TEXT FOR NOW, ON PURPOSE (2026-08-20). The three pieces are concatenated and handed
-	//   to the stock status widget, which draws one colour. The request is for the changed part to
-	//   stand out here the way it does in the row - that needs this widget replaced by the
-	//   hand-drawn cell, WITH word wrapping, since the message area is four lines deep and existing
-	//   messages (a saved file's full path) rely on wrapping. ⇒ The user asked to see the plain
-	//   version first and decide whether this is the right PLACE before that work is done. Keep the
-	//   concatenation order; only the drawing changes.
+	// ★A LABEL ON THE FIRST LINE, THE TEXT FROM THE SECOND (user's call, 2026-08-20, after seeing
+	//   the plain version: "一行目をOld 2行目から旧テキストかな"). The message area is four lines
+	//   deep, so the label costs one line and buys the reader the one thing a bare sentence in this
+	//   box does not say - which version they are looking at.
+	//
+	// ★★"Source:" / "Target:", NOT "Old" / "New" - BECAUSE THE PANEL ALREADY SPEAKS THAT WAY. Two
+	//   lines at the top of it name the documents being compared, "Target:" and "Source:", so the
+	//   reader has been told which is which before ever reaching this box. A second pair of names
+	//   for one pair of documents would be the panel disagreeing with itself
+	//   ([[one-question-one-place]] applied to words rather than to code).
+	//   ⚠"Target:" FOR A DELETION, and that is not a special case bolted on: the row shows the side
+	//     that CHANGED, so for a deletion the row holds the words that were REMOVED and what lands
+	//     here is the text that closed up over them. Calling that the source would be false, and a
+	//     deletion is the row where the reader most needs to know what stands there now.
+	//     (fKind: 0 = replace, 1 = insert, 2 = delete - IKESCMStoryEditsFacade.h.)
 	PMString otherSide;
 	otherSide.SetTranslatable(kFalse);
+	otherSide.Append((change.fKind == 2) ? "Target:" : "Source:");
+	otherSide.Append("\n");		// the stock status widget is multi-line and breaks on '\n'
 	otherSide.Append(change.fOtherTextPre);
 	otherSide.Append(change.fOtherText);
 	otherSide.Append(change.fOtherTextPost);
