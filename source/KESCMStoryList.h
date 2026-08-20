@@ -74,14 +74,30 @@ struct KESCMStoryChange
 	TextIndex	fSourceEnd;
 	bool16		fHasSource;
 
-	/** The words the row shows.
+	/** The words the row shows, in THREE PIECES: what stands before the change, the changed
+		characters themselves, and what stands after.
 
-		★WHICH SIDE THIS COMES FROM DEPENDS ON THE KIND: the newer text for a replacement or an
+		★WHICH SIDE THESE COME FROM DEPENDS ON THE KIND: the newer text for a replacement or an
 		insertion, and the OLDER text for a deletion. What was removed is precisely what the
 		reader needs to see, and the newer side has nothing there to show. (KohakuTest reported
 		the newer side only and left deletions empty, which is correct for a script reading a
-		report and useless in a panel - a column of blank rows.) */
+		report and useless in a panel - a column of blank rows.)
+
+		★THREE RATHER THAN ONE SINCE 2026-08-20, so that the row can draw the change at full
+		strength and fade the context around it - the way a KBS hit row draws its match (user's
+		request: "変更されたところ以外は薄い色にして欲しい、KBSを参考に"). Concatenated they are
+		exactly the one string this used to be.
+
+		★THE SPLIT IS MADE WHERE THE INFORMATION IS. Which characters were the change is known in
+		code points, inside a string that has already been cut at both ends and had its break
+		characters replaced (KESCMStoryDiffRun's Slice). Handing the panel one string and an offset
+		would ask it to count code points in a PMString, whose own index is UTF-16.
+
+		★THE ELLIPSES BELONG TO THE CONTEXT PIECES. An ellipsis stands for words that were cut
+		away, and those are always context, never the change - so a faded ellipsis is right. */
+	PMString	fTextPre;
 	PMString	fText;
+	PMString	fTextPost;
 
 	int32		fParaIndex;		// which paragraph it fell in. Not drawn; kept for ordering and for
 								// anything later that wants to group changes by paragraph

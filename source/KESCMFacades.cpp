@@ -387,7 +387,9 @@ public:
 		out.fSourceStart = change.fSourceStart;
 		out.fSourceEnd	= change.fSourceEnd;
 		out.fHasSource	= change.fHasSource;
+		out.fTextPre	= change.fTextPre;
 		out.fText		= change.fText;
+		out.fTextPost	= change.fTextPost;
 		return kTrue;
 	}
 

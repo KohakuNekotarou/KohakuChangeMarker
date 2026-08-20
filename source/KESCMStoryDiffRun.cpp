@@ -298,54 +298,112 @@ std::string MarkUpBreaks(const std::string& utf8)
    shows what stands on either side of it, the way a KBS hit row shows its context. An ellipsis marks
    each end that was cut, so a fragment is never mistaken for the whole of something.
 
+   ★★IT HANDS BACK THREE PIECES, NOT ONE (user's request, 2026-08-20: the row is to draw the
+   changed characters at full strength and fade the context around them, the way a KBS hit row
+   draws its match). The split has to be made HERE: by the time the row is drawn, the only thing
+   that knows which characters were the change is this function - the boundary between the context
+   and the change is a code point index into a string that has already been cut at both ends and
+   had its break characters replaced. Handing over one string plus an offset would ask the panel to
+   count code points in a PMString, whose own index is UTF-16.
+
    @param from/count name the CHANGE, in code points, within text.
    @param context how many code points to keep on each side. 0 = the change alone.
+   @param outPre [out] what stands before the change, with a leading ellipsis when the text was cut
+	  there. Empty when the change begins the text.
+   @param outMid [out] the changed characters themselves - what the row draws at full strength.
+	  Empty for the side of a change that has nothing there (a deletion seen from the newer side).
+   @param outPost [out] what stands after it, with a trailing ellipsis on the same terms as outPre.
 */
-std::string Slice(const std::string& text, const std::vector<int32>& byteOffsets,
-				  int32 from, int32 count, int32 context)
+void Slice(const std::string& text, const std::vector<int32>& byteOffsets,
+		   int32 from, int32 count, int32 context,
+		   std::string& outPre, std::string& outMid, std::string& outPost)
 {
+	outPre.clear();
+	outMid.clear();
+	outPost.clear();
+
 	const int32 total = static_cast<int32>(byteOffsets.size());
 	if (total <= 0 || from < 0)
-		return std::string();
+		return;
 
 	// ★A DELETION HAS count == 0 ON THE SIDE THAT LOST IT, and it still has a place - the words that
 	//   closed up over it. So an empty range is not refused here; only an empty RESULT is.
 	int32 first = from - context;
 	if (first < 0)
 		first = 0;
-	int32 last = from + count + context;		// exclusive
+	int32 midFrom = (from < total) ? from : total;
+	int32 midTo = from + count;			// exclusive
+	if (midTo > total)
+		midTo = total;
+	if (midTo < midFrom)
+		midTo = midFrom;
+	int32 last = from + count + context;	// exclusive
 	if (last > total)
 		last = total;
+	if (last < midTo)
+		last = midTo;
 	if (last <= first)
-		return std::string();
-
-	const int32 begin = byteOffsets[first];
-	const int32 end = (last < total) ? byteOffsets[last] : static_cast<int32>(text.size());
-	if (end <= begin)
-		return std::string();
-
-	std::string out = text.substr(begin, end - begin);
+		return;
 
 	// Long enough to fill the cell and no longer. The cell ellipsizes for itself.
-	std::vector<int32> codePoints;
-	std::vector<int32> offsets;
-	KESCMTextDiff::ToCodePoints(out, codePoints, &offsets);
-	if (static_cast<int32>(codePoints.size()) > kExcerptCodePoints)
+	//
+	// ★Counted on the WHOLE excerpt, exactly as it was when this returned one string: the cut lands
+	//   at the same code point it always did. It can fall inside the change itself when a single
+	//   change is longer than the whole allowance - which is the honest outcome, since the change is
+	//   what the excerpt is for. Both boundaries are pulled back with it so that no piece can end up
+	//   naming a range outside the one being kept.
+	//   ⚠THE TRAILING ELLIPSIS THIS FORCES WAS NEVER DRAWN UNTIL 2026-08-20. The old code said
+	//     "last = total; // force the trailing ellipsis", and the test just below it is
+	//     "if (last < total)" - so setting last TO total turned the ellipsis OFF, and turned it off
+	//     even for an excerpt that would have carried one anyway. A flag says it instead, because a
+	//     flag cannot be read as its own opposite.
+	bool16 truncated = kFalse;
+	if (last - first > kExcerptCodePoints)
 	{
-		out = out.substr(0, offsets[kExcerptCodePoints]);
-		last = total;		// force the trailing ellipsis: something was cut here too
+		last = first + kExcerptCodePoints;
+		truncated = kTrue;		// force the trailing ellipsis: something was cut here too
+		if (midTo > last)
+			midTo = last;
+		if (midFrom > last)
+			midFrom = last;
 	}
 
-	out = MarkUpBreaks(out);
+	// The byte where a code point begins - or the end of the text for the one-past-the-last index.
+	// byteOffsets holds one entry per code point, so the last boundary has no entry of its own.
+	struct ByteAt
+	{
+		const std::string& fText;
+		const std::vector<int32>& fOffsets;
+		int32 fTotal;
+		int32 operator()(int32 cp) const
+		{
+			return (cp < fTotal) ? fOffsets[cp] : static_cast<int32>(fText.size());
+		}
+	};
+	const ByteAt byteAt = { text, byteOffsets, total };
+
+	const int32 beginByte = byteAt(first);
+	const int32 midFromByte = byteAt(midFrom);
+	const int32 midToByte = byteAt(midTo);
+	const int32 endByte = byteAt(last);
+	if (endByte <= beginByte)
+		return;
+
+	// ★Each piece goes through MarkUpBreaks on its own. The marks replace one break character each,
+	//   so nothing straddles a boundary and the three marked-up pieces read exactly as the one
+	//   marked-up string used to.
+	outPre = MarkUpBreaks(text.substr(beginByte, midFromByte - beginByte));
+	outMid = MarkUpBreaks(text.substr(midFromByte, midToByte - midFromByte));
+	outPost = MarkUpBreaks(text.substr(midToByte, endByte - midToByte));
 
 	// ★The ellipses say "this is a window onto something longer". Without them the reader cannot
 	//   tell a change that begins a paragraph from one that merely appears to.
+	//   They belong to the CONTEXT pieces, which is also where they belong visually: an ellipsis
+	//   stands for words that were cut away, and those words are context, never the change.
 	if (first > 0)
-		out = "\xE2\x80\xA6" + out;		// U+2026 HORIZONTAL ELLIPSIS
-	if (last < total)
-		out += "\xE2\x80\xA6";
-
-	return out;
+		outPre = "\xE2\x80\xA6" + outPre;	// U+2026 HORIZONTAL ELLIPSIS
+	if (last < total || truncated)
+		outPost += "\xE2\x80\xA6";
 }
 
 /* LengthAgrees
@@ -405,14 +463,22 @@ void Add(std::vector<KESCMStoryChange>& out, int32 paraIndex,
 
 	// ★A deletion shows the OLDER side: what was taken out is what the reader has to see, and
 	//   the newer side has nothing there to show. Everything else shows the newer side.
-	const std::string words = (change.fKind == KESCMStoryChange::kDelete)
-							  ? Slice(sourceText, sourceBytes, sFrom, sCount, kContextCodePoints)
-							  : Slice(targetText, targetBytes, tFrom, tCount, kContextCodePoints);
+	std::string pre, mid, post;
+	if (change.fKind == KESCMStoryChange::kDelete)
+		Slice(sourceText, sourceBytes, sFrom, sCount, kContextCodePoints, pre, mid, post);
+	else
+		Slice(targetText, targetBytes, tFrom, tCount, kContextCodePoints, pre, mid, post);
 
-	change.fText.SetUTF8String(words);
+	change.fTextPre.SetUTF8String(pre);
+	change.fText.SetUTF8String(mid);
+	change.fTextPost.SetUTF8String(post);
 	// ★Text out of a document is not a translation key. Without this it can be looked up in the
 	//   string tables and come back as something else entirely (memory menu-string-translation-traps).
+	//   All three pieces, not just the middle one: they are all document text, and the two context
+	//   pieces are the ones most likely to be a short common word that a table has an entry for.
+	change.fTextPre.SetTranslatable(kFalse);
 	change.fText.SetTranslatable(kFalse);
+	change.fTextPost.SetTranslatable(kFalse);
 
 	out.push_back(change);
 }

@@ -139,6 +139,13 @@ DECLARE_PMID(kClassIDSpace, kKESCMSplitterPanelBoss, kKCMUIPrefix + 25)	// kSpli
 DECLARE_PMID(kClassIDSpace, kKESCMUIStartupBoss, kKCMUIPrefix + 27)	// IStartupShutdown: **UI 側**の起動/終了処理(2026-08-13・model/UI 分割 第1段 Task 8)。パネル設定の復元・半透明の購読/解除・HUD のフォント返却・一括クローズの購読・遅延サムネイル idle task の解放。★model 側の kKESCMPeekStartupBoss と**対**(あちらは KESCMID.h)。★第2段(2026-08-15)で**この Class ごと KCMUI へ移り終わっている**＝この宣言が KCMUIID.h に在ること自体がその結果(2026-08-17・監査 B-U6 で予告の残骸を現状へ)
 DECLARE_PMID(kClassIDSpace, kKESCMUIDrawEventServiceBoss, kKCMUIPrefix + 26)	// IK2ServiceProvider+IDrwEvtHandler: **UI 専用**の描画サービス(2026-08-13・model/UI 分割 第1段 Task 6)。押下中 HUD だけを持つ。★**model 側の** kKESCMDrawEventServiceBoss(比較マーク・KESCM.fr)と役割が違う＝あちらは印刷と PDF 書き出しに出なければならないので model 側、こちらは画面専用。kDrawEventService は複数プロバイダ登録が前提(本体だけで20以上)。★第2段(2026-08-15)で**この Class ごと KCMUI へ移り終わっている**(2026-08-18・不具合再検査 B-U1 で「上の」と予告形の2つを現状へ。⚠**すぐ上の kKESCMUIStartupBoss は同じ2つを 2026-08-17 に直していた**＝1本直したときに同じ形の兄弟を探さなかった)
 DECLARE_PMID(kClassIDSpace, kKESCMBookPathTextWidgetBoss, kKCMUIPrefix + 28)	// kStaticTextWidgetBoss継承+IID_IEVEINFO(kFixedSizeEVEInfoImpl): ブック比較ダイアログの Target:/Source: 行(2026-08-15)。★★EVE は **.fr の幅を「最小幅」として扱う**(公式ガイド Using EVE の Example 2「We treat the width in the .fr file as a minimum width」)ので、フルパスを入れると widget が伸び、親ごと広がる(実測 593px)。⚠kEVEAlignFill では止まらない＝Fill は「親の幅を取る」で、その親が子に押し広げられる。⇒ **EVE は widget の寸法を IID_IEVEINFO に聞く**ので、「サイズはリソースが書いたとおり」と答える実装を名乗らせて幅を確定させ、省略は widget 自身の kEllipsizeBeginning に返す＝パネルの Target:/Source: と同じ出方になる。手本=KBS.fr:289-293(グリフ枠。SDK 全体で使用例ゼロだが実機で動作確認済み)
+// Story Edits の**変更行**のテキストセル(2026-08-20)。★狙いは「変更された文字だけを通常の色で描き、
+// 前後の文脈を薄くする」こと(ユーザー指定＝「KBS を参考に」)。素の StaticText は**1行=1色**なので、
+// 色を分けるには自前描画のセルに差し替えるしかない ---- KBS の kKBSColorTextViewBoss と同じ形。
+// ★土台が kGenericPanelWidgetBoss なのは、そこに描く場所だけがあって文字も色も持っていないから。
+//   ⇒ ツールチップも持たないので、行のセルを黙らせる kKESCMNoTipImpl(+20 の boss がやっている)は
+//     こちらには要らない＝**沈黙は自動的に手に入る**。
+DECLARE_PMID(kClassIDSpace, kKESCMStoryChangeCellBoss, kKCMUIPrefix + 29)	// kGenericPanelWidgetBoss継承+IID_ICONTROLVIEW(kKESCMStoryCellViewImpl)+IID_IKESCMSTORYCELLDATA(kKESCMStoryCellDataImpl): 変更行のテキストセル。3片(前の文脈/変更された文字/後の文脈)を受け取り、真ん中だけテーマの文字色で、前後は背景へ寄せた薄い色で描く(KESCMStoryCellView.cpp)
 // InterfaceIDs:
 // ⚠★ここにあるのは **UI 側の boss にだけ載る IID**。境界を跨ぐ IID（Facade 5本＋通知の protocol）は
 //   **KESCMBoundaryID.h** にあり、あちらは model 側の `kKESCMPrefix` のまま名乗る
@@ -146,6 +153,7 @@ DECLARE_PMID(kClassIDSpace, kKESCMBookPathTextWidgetBoss, kKCMUIPrefix + 28)	// 
 DECLARE_PMID(kInterfaceIDSpace, IID_IKESCMLAYOUTSYNCOBSERVER, kKCMUIPrefix + 0)	// レイアウトビュー同期オブザーバのアタッチ識別ID(AttachObserver の observerIID)
 DECLARE_PMID(kInterfaceIDSpace, IID_IKESCMDOCSCLOSEDOBSERVER, kKCMUIPrefix + 1)	// 一括クローズ完了(kPendingDocumentsClosedMsg)を受けるオブザーバのアタッチ識別ID
 DECLARE_PMID(kInterfaceIDSpace, IID_IKESCMPANELVISIBILITYOBSERVER, kKCMUIPrefix + 2)	// パネルの表示状態変化(kPaletteVisibilityChangedMessage)を受けるオブザーバのアタッチ識別ID。半透明トグルをドッキング切り替え/開き直しに追随させるために使う
+DECLARE_PMID(kInterfaceIDSpace, IID_IKESCMSTORYCELLDATA, kKCMUIPrefix + 4)	// IKESCMStoryCellData: 変更行のテキストセルが描く3片(前の文脈/変更された文字/後の文脈)の入れ物。★行 widget は使い回されるので、毎回の流し込みで3片とも書き直す(ui/IKESCMStoryCellData.h)
 DECLARE_PMID(kInterfaceIDSpace, IID_IKESCMSAVEDSECTIONHEIGHT, kKCMUIPrefix + 3)	// IIntData として扱う: Story Edits セクションを閉じた瞬間の高さ(px)。次に開くときこの高さで開く。実装は SDK 標準の kPersistIntDataImpl(手本=linksui の IID_ISAVEDINFOPANESIZE)
 // ImplementationIDs:
 // ⚠ ここに載せた実装は **ui/KCMUIFactoryList.h** にも 1 対 1 で登録されていること
@@ -192,6 +200,8 @@ DECLARE_PMID(kImplementationIDSpace, kKESCMUIStartupImpl, kKCMUIPrefix + 38)	// 
 DECLARE_PMID(kImplementationIDSpace, kKESCMModelChangeObserverImpl, kKCMUIPrefix + 37)	// IObserver 実装(model の通知を受けて画面を作り直す **UI 側**。KESCMModelChangeObserver.cpp)
 DECLARE_PMID(kImplementationIDSpace, kKESCMUIDrawEventSrvcImpl, kKCMUIPrefix + 35)	// CServiceProvider 実装(kDrawEventService。UI 専用の描画サービス。KESCMUIDrawEvent.cpp)。★GetThreadingPolicy は手書きしない＝CServiceProvider がプラグインの型から既定を返す
 DECLARE_PMID(kImplementationIDSpace, kKESCMUIDrawEventHandlerImpl, kKCMUIPrefix + 36)	// IDrwEvtHandler 実装(押下中 HUD の描画だけ。画面専用＝PDF 書き出しに出なくてよい。KESCMUIDrawEvent.cpp)
+DECLARE_PMID(kImplementationIDSpace, kKESCMStoryCellViewImpl, kKCMUIPrefix + 39)	// IControlView 実装(DVControlView派生)。Story Edits の**変更行**のテキストセル＝変更された文字はテーマの文字色、前後の文脈は背景へ寄せた薄い色で描く(KESCMStoryCellView.cpp)。★手本は KBS の KBSColorTextView(あちらは検索ヒットの一致部分を強調する)
+DECLARE_PMID(kImplementationIDSpace, kKESCMStoryCellDataImpl, kKCMUIPrefix + 40)	// IKESCMStoryCellData 実装(非永続の3片の入れ物。上のセルと同じ boss に同居する。KESCMStoryCellView.cpp)
 DECLARE_PMID(kImplementationIDSpace, kKESCMSplitterEHImpl, kKCMUIPrefix + 34)	// IEventHandler 実装(CEventHandler派生＝全メソッドが kFalse を返すだけの基底をそのまま使う)。パネルの分割バーが押下を受け取らなくなる＝ドラッグで動かせない(KESCMSplitterEH.cpp)
 // ActionIDs:
 DECLARE_PMID(kActionIDSpace, kKESCMAboutActionID, kKCMUIPrefix + 0)

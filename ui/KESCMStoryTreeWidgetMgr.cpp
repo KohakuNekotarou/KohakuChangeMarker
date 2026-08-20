@@ -43,6 +43,7 @@
 #include "../../open/includes/widgets/DVPublicUtilities.h"	// dv_utils::SetThemeForView
 
 // Project includes:
+#include "IKESCMStoryCellData.h"	// the change row's hand-drawn text cell takes its three pieces here
 #include "KCMUIID.h"
 #include "KESCMUIShared.h"	// panel / status line / nav readout / tool button (split from KESCMCore.h on 2026-08-13)
 #include "Utils.h"					// Utils<IKESCMStoryEditsFacade>()
@@ -312,6 +313,12 @@ private:
 		of one parent (guide vol2-12), and these two rows are never each other's descendants. The
 		same reuse is already in this plug-in: the book dialog's row shares all three
 		(kKESCMBookRowNameWidgetID == kKESCMStoryRowTextWidgetID, and so on).
+
+		⚠THE MIDDLE CELL IS NOT WRITTEN THE SAME WAY AS THE OTHER TWO (2026-08-20). It is drawn by
+		hand so that the changed characters can keep the theme's text colour while the words around
+		them fade, and a hand-drawn cell holds no ITextControlData for SetNodeName to write - it is
+		handed its three pieces through IKESCMStoryCellData instead. The other two cells are stock
+		static texts and still go through SetNodeName.
 	*/
 	bool16 ApplyChangeRow(const KESCMStoryNodeID& nodeID, IPanelControlData* widgetList) const
 	{
@@ -319,10 +326,13 @@ private:
 		const bool16 have = Utils<IKESCMStoryEditsFacade>()->GetChange(
 								nodeID.GetRow(), nodeID.GetChange(), change);
 
-		PMString kind, text, right;
+		PMString kind, right;
+		PMString textPre, textMid, textPost;
 		kind.SetTranslatable(kFalse);
-		text.SetTranslatable(kFalse);
 		right.SetTranslatable(kFalse);
+		textPre.SetTranslatable(kFalse);
+		textMid.SetTranslatable(kFalse);
+		textPost.SetTranslatable(kFalse);
 
 		if (have)
 		{
@@ -339,15 +349,38 @@ private:
 			}
 			kind.SetTranslatable(kFalse);
 
-			// ★Already the right side for its kind, and already cut to length - the model decided
-			//   both (KESCMStoryList.h). Nothing is chosen here.
-			text = change.fText;
-			text.SetTranslatable(kFalse);
+			// ★Already the right side for its kind, already cut to length, and already SPLIT where
+			//   the colour changes - the model decided all three (KESCMStoryList.h). Nothing is
+			//   chosen here, and in particular the split is not made here: the boundary between the
+			//   context and the change is a code point index into text that has been cut at both
+			//   ends, and PMString counts UTF-16.
+			textPre = change.fTextPre;
+			textMid = change.fText;
+			textPost = change.fTextPost;
+			textPre.SetTranslatable(kFalse);
+			textMid.SetTranslatable(kFalse);
+			textPost.SetTranslatable(kFalse);
 		}
 
 		this->SetNodeName(widgetList, kind, kKESCMStoryRowUIDWidgetID);
-		this->SetNodeName(widgetList, text, kKESCMStoryRowTextWidgetID);
 		this->SetNodeName(widgetList, right, kKESCMStoryRowKindWidgetID);
+
+		// ★The hand-drawn cell, written through its own interface. A nil here would mean the row
+		//   resource and this code disagree about what the middle cell is, which nothing at runtime
+		//   could repair - so it is a quiet skip, and what shows is an empty cell rather than a
+		//   stale one (the row above still names the story, so the reader is not misled).
+		IControlView* textCell = widgetList->FindWidget(kKESCMStoryRowTextWidgetID);
+		InterfacePtr<IKESCMStoryCellData> cellData(textCell, UseDefaultIID());
+		if (cellData != nil)
+		{
+			cellData->SetSegments(textPre, textMid, textPost);
+			// ★Writing the strings does not ask for a redraw - SetNodeName does that for a stock
+			//   cell, and this one has no such courtesy. Without it a recycled row can keep the
+			//   picture the row it used to be left behind. (KBS's widget manager makes the same
+			//   call for the same reason, right after handing its cell its segments.)
+			textCell->Invalidate();
+		}
+
 		return kTrue;
 	}
 };

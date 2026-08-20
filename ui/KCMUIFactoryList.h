@@ -82,6 +82,8 @@ REGISTER_PMINTERFACE(KESCMStoryTreeAdapter, kKESCMStoryTreeAdapterImpl)	// 一�
 REGISTER_PMINTERFACE(KESCMStoryTreeWidgetMgr, kKESCMStoryTreeWidgetMgrImpl)	// 行の生成と流し込み(CTreeViewWidgetMgr派生。KESCMStoryTreeWidgetMgr.cpp)
 REGISTER_PMINTERFACE(KESCMStoryRowEH, kKESCMStoryRowEHImpl)	// 行のクリック=ジャンプ/ダブルクリック=ストーリー全文を選択(KESCMStoryRowEH.cpp)
 REGISTER_PMINTERFACE(KESCMStoryTreeEH, kKESCMStoryTreeEHImpl)	// 一覧の↑↓=行を移動して着いた行を表示(KESCMStoryTreeEH.cpp)
+REGISTER_PMINTERFACE(KESCMStoryCellData, kKESCMStoryCellDataImpl)	// 変更行のセルが描く3片(前の文脈/変更された文字/後の文脈)の入れ物(KESCMStoryCellView.cpp)
+REGISTER_PMINTERFACE(KESCMStoryCellView, kKESCMStoryCellViewImpl)	// ★PERSIST 版(変更行のテキストセル。変更された文字だけ通常色・前後は薄く。DVControlView派生。KESCMStoryCellView.cpp)
 
 // ブック比較ダイアログとその章一覧（kDialogBoss 由来＝UI 確定）
 REGISTER_PMINTERFACE(KESCMBookDialogController, kKESCMBookDialogControllerImpl)	// モードレスダイアログ(CDialogController派生。KESCMBookDialog.cpp)

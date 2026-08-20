@@ -109,7 +109,17 @@ public:
 		TextIndex	fSourceStart;	// in the OLDER document; meaningless unless fHasSource
 		TextIndex	fSourceEnd;
 		bool16		fHasSource;		// kFalse for an insertion - nothing in the older version to point at
-		PMString	fText;			// the words to show. ★For a DELETION this is the older side's text
+
+		// The words to show, in three pieces: context, the changed characters, context.
+		// ★For a DELETION they come from the older side's text (see KESCMStoryList.h).
+		// ★THREE SINCE 2026-08-20, so the row can draw the change at full strength and fade the
+		//   rest around it. Concatenated they are the one string fText used to be; the boundary
+		//   between them cannot be recovered on this side once it is gone (it is a code point
+		//   index, and PMString counts UTF-16), which is why it is carried across rather than
+		//   worked out here.
+		PMString	fTextPre;
+		PMString	fText;
+		PMString	fTextPost;
 
 		Change()
 			: fKind(0), fWhat(0), fTargetStart(0), fTargetEnd(0),

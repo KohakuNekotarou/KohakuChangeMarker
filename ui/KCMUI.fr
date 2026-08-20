@@ -430,6 +430,24 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 		}
 	},
 
+	// The text cell of a CHANGE row (2026-08-20): a generic panel widget whose IControlView is our
+	// own, plus the three text pieces it paints. ★It exists because a stock static text draws its
+	// whole string in ONE colour, and this cell has to draw the changed characters at the theme's
+	// text colour with the words around them faded toward the background (user's request, "KBS を
+	// 参考に"). Same construction as KBS's kKBSColorTextWidgetBoss, which highlights a search hit
+	// the same way, and as the scroll-map strip below - kGenericPanelWidgetBoss plus one view.
+	// ★No IID_ITIP here, unlike the cell above: a generic panel has no tooltip to silence, so the
+	//   silence these rows were given in 2026-08-10 comes free.
+	Class
+	{
+		kKESCMStoryChangeCellBoss,
+		kGenericPanelWidgetBoss,
+		{
+			IID_ICONTROLVIEW, kKESCMStoryCellViewImpl,
+			IID_IKESCMSTORYCELLDATA, kKESCMStoryCellDataImpl,
+		}
+	},
+
 	// Scroll-map strip: a thin custom-drawn widget injected at runtime next to the document
 	// window's vertical scrollbar (KESCMScrollMap.cpp). Same pattern as customdatalinkui's
 	// kCusDtLnkUITreeCViewPanelWidgetBoss: kGenericPanelWidgetBoss + own IControlView.
@@ -1527,6 +1545,13 @@ type KESCMStoryRowWidget(kViewRsrcType) : PrimaryResourcePanelWidget(ClassID = k
 // (see kKESCMStoryRowCellBoss above). The field list is InfoStaticTextWidget's, unchanged.
 type KESCMStoryRowCellWidget(kViewRsrcType) : InfoStaticTextWidget(ClassID = kKESCMStoryRowCellBoss) { };
 
+// The text cell of a CHANGE row: drawn by hand so that the changed characters can keep the theme's
+// text colour while the context around them fades (see kKESCMStoryChangeCellBoss above).
+// ⚠The field list is GenericPanelWidget's, NOT the cell type above it: no alignment, no ellipsize
+//  style, no font IDs - a hand-drawn cell decides all three itself (KESCMStoryCellView.cpp), and
+//  it ends with a child list rather than a text string.
+type KESCMStoryChangeCellWidget(kViewRsrcType) : GenericPanelWidget(ClassID = kKESCMStoryChangeCellBoss) { };
+
 // The book comparison dialog (2026-08-11). "DialogBoss" is the exotic name of what is really a
 // widget type - the basicdialog shape, WidgetEveInfo and all. Same form as KESCL's Jump Offset
 // dialog (KESCL.fr:953), which is the closest working example: a fixed-size dialog by the same
@@ -1784,18 +1809,27 @@ resource KESCMStoryRowWidget(kKESCMStoryChangeRowRsrcID + index_enUS)
 		// chose which side - KESCMStoryList.h); for everything else it is the new text.
 		// ★Starts at 84 where the story row's text cell starts at 68 - the same 16px indent, so the
 		//   two levels line up with each other rather than each finding its own offset.
-		KESCMStoryRowCellWidget
+		//
+		// ★★DRAWN BY HAND, WHERE THE STORY ROW'S IS A STOCK STATIC TEXT (2026-08-20). The changed
+		//   characters keep the theme's text colour and the context on either side of them is faded
+		//   toward the panel's background, which one static text cannot do - it has one colour for
+		//   its whole string (user's request: "変更されたところ以外は薄い色にして欲しい、KBSを参考に").
+		//   ⚠The three cells are therefore NO LONGER the same widget type on the two rows. Everything
+		//     that matters stays the same: the same WidgetID, the same frame, the same font (named in
+		//     KESCMStoryCellView.cpp, since a generic panel carries no font field). What is gone from
+		//     this line is what the drawing code now decides: alignment (always left), the ellipsize
+		//     style (kEllipsizeMiddle would cut away the change itself - the middle is exactly where
+		//     it is) and the ampersand conversion (kFalse either way; this is document text).
+		KESCMStoryChangeCellWidget
 		(
 			kKESCMStoryRowTextWidgetID,		// WidgetId (reused)
 			kPMRsrcID_None,					// RsrcId
 			kBindLeft | kBindRight,			// Frame binding: this is the cell that grows
 			Frame(84, 1, 154, kKESCMStoryRowHeight - 2),	// Frame
 			kTrue, kTrue,					// Visible, Enabled
-			kAlignLeft,						// Alignment
-			kEllipsizeMiddle, kFalse,		// Ellipsize style, Convert ampersands
-			"",								// Text Control Data
-			0,								// WidgetId for associated control for shortcut focus
-			kPaletteWindowSystemScriptFontId, kPaletteWindowSystemScriptFontId,
+			"",								// Panel name (none)
+			{
+			}
 		),
 
 		// Right: empty today. ★It exists so that the two row shapes match cell for cell, and it is

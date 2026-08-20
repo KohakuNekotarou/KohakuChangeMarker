@@ -74,6 +74,18 @@ DollyXs が生成した雛形は**そのままではビルドもロードもで�
   ⚠ 変えたときは**古い `KohakuChangeMarkerUI.sdk.pln` と `(… .sdk Resources)` を消すこと**——
   残すと InDesign が2本ロードしようとして ID が衝突する。
 
+- ★★**応答ファイル `KohakuChangeMarkerUICPP.rsp` にインクルードパスを1本足した**(2026-08-20):
+  `/I "..\..\..\source\open\includes\widgets"`。Story Edits の**変更行のテキストセル**
+  (`KESCMStoryCellView.cpp`)が `DrawStringUtils.h`＝**パレットの文字を任意の色で描く公式ヘルパー**を
+  使うため。
+  ⚠**呼ぶ側で相対パス include しても解決しない**——`DrawStringUtils.h` **自身**が
+  `DVPublicUtilities.h` を include しており、**プリプロセッサは include 文を見た時点でファイルを
+  探しに行く**(インクルードガードは見つかった後にしか効かない)。⇒ パスを通すしかない。
+  ★**KBS が同じ理由で同じ1行を持っている**(`KohakuFindChangeCPP.rsp`)＝社内で同じ問いの答えは1つ。
+  ⚠★**`.rsp` はこのリポジトリに控えが無い**(実体は `build/win/prj/` だけ)。
+  **クリーン環境へ復元したらこの1行を手で足すこと**——足さないと
+  `error C1083: 'DVPublicUtilities.h'` で `KESCMStoryCellView.cpp` だけが落ちる。
+
 ## ⚠★★KCMUI で実際に踏んだ罠 — `KCMUIID.h` は **UTF-8 BOM 必須**
 
 DollyXs 生成後に日本語コメント(prefix の由来)を書き足したが**BOM が無かった**ため、MSVC が CP932 と誤読して
@@ -96,6 +108,9 @@ cp buildproj/KohakuChangeMarkerUI.vcxproj.filters            <SDK>/build/win/prj
 
 ⚠ **`SDKSamples.sln` への KCMUI の登録は控えていない**(sln は SDK 共有物のため)。
 復元時は上の「`ProjectGuid` と sln 登録」を手で入れ直すこと。
+
+⚠ **応答ファイル(`.rsp`)も控えていない。** `build/win/prj/KohakuChangeMarkerUICPP.rsp` に
+`/I "..\..\..\source\open\includes\widgets"` を手で足すこと(理由は上の KCMUI の節)。
 
 2. プラグインのソース(このリポジトリの `source/` フォルダー — `.cpp` / `.h` / `.fr` / `.rc` / `.png`)を
    `source/sdksamples/KESCM/source/` へ置く。**SDK 側のフォルダー名は短い `KESCM` のまま**で、
