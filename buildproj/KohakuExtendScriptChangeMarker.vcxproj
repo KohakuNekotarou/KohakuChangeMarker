@@ -228,6 +228,7 @@
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMThreadSafety.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryStamp.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryList.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMTextDiff.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMPageNumberMarker.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMPeek.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMRingAdornment.cpp" />
@@ -271,6 +272,7 @@
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMThreadSafety.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryStamp.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryList.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMTextDiff.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMPageNumberMarker.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMPeek.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMRingAdornment.h" />
