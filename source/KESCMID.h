@@ -161,9 +161,9 @@
 //   ⚠ よって **この帯の +7 +8 +9 +11〜+28 は「空き」ではない**（UI 側の同じ数字と対応が付いている）。
 //   ★これは「値が衝突する」という意味ではない（model は 0x1EA5 0x〜 / UI は 0x1EA5 8x〜で別物）。
 //     **番号を読み替えるための手がかり**として空けてある、という意味。
-//   ★ここに残る4つが「窓が無くても成り立つ仕事」＝比較マークの描画・起動終了・文書クローズ・ScriptProvider。
+//   ★ここに残るのが「窓が無くても成り立つ仕事」＝比較マークの描画・起動終了・文書クローズ・ScriptProvider。
 DECLARE_PMID(kClassIDSpace, kKESCMScriptProviderBoss, kKESCMPrefix + 3)	// ★このプラグインが公開する ScriptProvider は**これ1つだけ**＝app の2プロパティ(kcmStatus/kcmBookResult)と story の4カウンターを両方この boss が serve する(2026-08-15 に集約)。.fr は**同じ boss に Provider ブロックを2つ**書いて Object ごとに Property を分けている(KESCM.fr の末尾2ブロック)。旧スクリプトAPI(kescmToast 等)は撤去済みで、公開するのは読み取り専用プロパティだけ
-DECLARE_PMID(kClassIDSpace, kKESCMDrawEventServiceBoss, kKESCMPrefix + 4)
+// kKESCMDrawEventServiceBoss (kKESCMPrefix + 4) は 2026-08-20 に廃止＝マークの描画を kKESCMRingAdornmentBoss(グローバルページアイテムアドーンメント)へ**一本化**し、Draw Event の受け口を撤去した。スロットは予約のまま。
 // kKESCMPeekWatcherBoss (kKESCMPrefix + 5) は中ボタンウォッチャ撤去(2026-07-13)により廃止。スロットは予約のまま。
 DECLARE_PMID(kClassIDSpace, kKESCMPeekStartupBoss, kKESCMPrefix + 6)	// IStartupShutdown: アプリ起動時に peek ウォッチャを開始
 DECLARE_PMID(kClassIDSpace, kKESCMDocResponderServiceBoss, kKESCMPrefix + 10)	// IK2ServiceProvider+IResponder: ドキュメントクローズ監視(閉じた文書の追跡状態を確定クリーンアップ)
@@ -187,7 +187,7 @@ DECLARE_PMID(kClassIDSpace, kKESCMRingAdornmentStartupBoss, kKESCMPrefix + 30)	/
 //   ⚠**保存の前後(kBeforeSaveDoc)には置かない**＝そこで落ちると文書を失う。書き出しなら失敗してもやり直せる
 //     (2026-08-20 ユーザー判断＝「どこで失敗しても許される場所に置く」)。
 DECLARE_PMID(kClassIDSpace, kKESCMExportXPResponderServiceBoss, kKESCMPrefix + 31)	// IK2ServiceProvider(CServiceProvider・HasMultipleIDs)+IResponder: 書き出しの Before で載せ、After と Failed で降ろす。★1つの boss で3シグナル＝公式の形(CusCondTxtServiceProvider.cpp:108-111)
-DECLARE_PMID(kClassIDSpace, kKESCMPrintXPSetupProviderBoss, kKESCMPrefix + 32)		// IK2ServiceProvider(Adobe 提供の kPrintSetupServiceImpl)+IPrintSetupProvider: 印刷の BeforePrintGatherCmd で載せ、EndPrint で降ろす
+														// ⚠**印刷側の対(kPrintSetupService+IPrintSetupProvider)は無い**＝公式に倣って一度書いたが(旧 +32/+50)、**2026-08-20 のユーザー判断で外した**。⚠**効かないからではない**＝載せれば印刷でもマークは濃くなる(実測 16,076 ⇔ 8,407 画素。どちらもベタにはならない)が、**印刷にそこまでの厳密性は要らない・印刷会社へ出すのは PDF** という判断。★A/B と復活手順は KESCMRingAdornment.cpp の節5。**次の新規 boss は +32 から採ってよい**
 
 // InterfaceIDs:
 // ★★+0〜+3（Observer 3本のアタッチ識別 ID ＋ Story Edits セクション高さ）は 2026-08-15（第2段
@@ -217,8 +217,7 @@ DECLARE_PMID(kClassIDSpace, kKESCMPrintXPSetupProviderBoss, kKESCMPrefix + 32)		
 // ★★2026-08-15（第2段 Task 6B-2）: **UI 側の実装 26 本は ui/KCMUIID.h へ移した**（+5 +6 +7 +10〜+38 の UI 分）。
 //   オフセットは据え置き。⚠ここに残る 10 本は ui/KCMUIFactoryList.h ではなく source/KESCMFactoryList.h に載る。
 DECLARE_PMID(kImplementationIDSpace, kKESCMScriptProviderImpl, kKESCMPrefix + 0)	// CScriptProvider 実装(KESCMScriptProvider.cpp)。★★2026-08-17 訂正＝旧「app.kcmStatus を返す」は 2026-08-15 の統合前の姿。**この1本が公開6プロパティ全部を serve する**(app の2本＋story の4本)＝上の kKESCMScriptProviderBoss の説明が正
-DECLARE_PMID(kImplementationIDSpace, kKESCMDrawEventSrvcImpl, kKESCMPrefix + 1)
-DECLARE_PMID(kImplementationIDSpace, kKESCMDrawEventHandlerImpl, kKESCMPrefix + 2)
+// kKESCMDrawEventSrvcImpl (kKESCMPrefix + 1) / kKESCMDrawEventHandlerImpl (kKESCMPrefix + 2) は 2026-08-20 に廃止(上の kKESCMDrawEventServiceBoss と同じ理由＝アドーンメントへの一本化)。スロットは予約のまま。
 // kKESCMPeekWatcherImpl (kKESCMPrefix + 3) は中ボタンウォッチャ撤去(2026-07-13)により廃止。スロットは予約のまま。
 DECLARE_PMID(kImplementationIDSpace, kKESCMPeekStartupImpl, kKESCMPrefix + 4)	// IStartupShutdown 実装(peek ウォッチャを開始)
 // kKESCMDocServiceProviderImpl (kKESCMPrefix + 8) は自前 ServiceProvider の撤去(2026-08-06)により廃止。
@@ -239,7 +238,7 @@ DECLARE_PMID(kImplementationIDSpace, kKESCMRingAdornmentStartupImpl, kKESCMPrefi
 // ★2026-08-20: 上の2 boss の実装(いずれも KESCMRingAdornment.cpp の末尾)。透明の申告と同じ関心事なので同居させる。
 DECLARE_PMID(kImplementationIDSpace, kKESCMExportXPResponderImpl, kKESCMPrefix + 48)		// IResponder 実装(書き出しの Before/After/Failed)
 DECLARE_PMID(kImplementationIDSpace, kKESCMExportXPServiceProviderImpl, kKESCMPrefix + 49)	// IK2ServiceProvider 実装(CServiceProvider 派生。3つの ServiceID を名乗るので自作が要る＝stock の1シグナル用実装では足りない)
-DECLARE_PMID(kImplementationIDSpace, kKESCMPrintXPSetupProviderImpl, kKESCMPrefix + 50)	// IPrintSetupProvider 実装(印刷。ServiceProvider 側は Adobe 提供の kPrintSetupServiceImpl をそのまま使う)
+														// ⚠**印刷側の IPrintSetupProvider 実装は無い**(旧 +50。理由は上の Class 側の注記と KESCMRingAdornment.cpp の節5)。**次の新規 Impl は +50 から採ってよい**
 
 // MessageIDs: model が UI へ「何が変わったか」を知らせる通知(2026-08-13・model/UI 分割 第1段 Task 9)。
 //   ★★2026-08-15（第2段 Task 6B）に **7本すべて KESCMBoundaryID.h へ移した**

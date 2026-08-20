@@ -71,9 +71,6 @@
 //  ＝model/UI 分割 第1段 Task 6。押下中かどうかはツール(UI)の状態で、model からは見えないため。
 //  ⇒ このファイルは KESCMTrackerHud.h を include しない。)
 #include "KESCMDrawEventHandler.h"
-#include "KESCMRingAdornment.h"      // KESCMRingAdornmentIsActive(アドーンメント経路が生きているなら Draw Event 側は描かない)
-
-CREATE_PMINTERFACE(KESCMDrawEventHandler, kKESCMDrawEventHandlerImpl)
 
 std::map<UID, KESCMOverlayEntry*> KESCMDrawEventHandler::sEntries;
 IDataBase* KESCMDrawEventHandler::sDB = nil;
@@ -791,24 +788,6 @@ ErrorCode KESCMDrawEventHandler::MakeOrigImage(const UIDRef& targetRef, const UI
 }
 
 
-void KESCMDrawEventHandler::Register(IDrwEvtDispatcher* d)
-{
-	// スプレッド単位で配られる描画イベント。ポートは spread 座標。枠/変更数・旧版べた載せをこちらで描く。
-	d->RegisterHandler(ClassID(kEndSpreadMessage), this, kDEHLowestPriority);
-
-	// ★★2026-08-13(Task 6): **kAfterLastSpreadDrawMessage の登録をやめた。**
-	//   あれは 2026-08-07 に**押下中 HUD のためだけ**に戻したもので、HUD が UI 側の描画サービス
-	//   (KESCMUIDrawEvent.cpp)へ移った今、このハンドラには用が無い(受けても描くものが無い)。
-	//   ★2系統を併用する理由(clip と Z 順の関係)は、使う側である KESCMUIDrawEvent.cpp の
-	//     HandleDrawEvent のコメントへ移した。
-}
-
-void KESCMDrawEventHandler::UnRegister(IDrwEvtDispatcher* d)
-{
-	d->UnRegisterHandler(ClassID(kEndSpreadMessage), this);
-}
-
-
 // (KESCMQueryPanorama は 2026-08-13 に KESCMViewLookup.cpp へ移した＝model/UI 分割 第1段 Task 12。
 //  IPanorama を返す＝窓が無ければ答えの無い問いなので、描画エンジンの持ち場ではない。)
 
@@ -1497,18 +1476,6 @@ static void KESCMDrawPageCheck(IGraphicsPort* gPort, IDataBase* db, UID pageUID,
 //  押下中 HUD と一緒に 2026-08-13 に KESCMUIDrawEvent.cpp へ移した(model/UI 分割 第1段 Task 6)。
 //  中身は1行も変えていない。)
 
-bool16 KESCMDrawEventHandler::HandleDrawEvent(ClassID /*eventID*/, void* eventData)
-{
-	// ★2026-08-19: マークをグローバルページアイテムアドーンメントとして描く経路(KESCMRingAdornment.cpp)が
-	//   生きている間は、この経路は描かない ---- 同じ絵が2回出るのを避けるため。
-	//   ⚠**登録に失敗していれば kFalse が返る**ので、その場合は従来どおりここが描く
-	//     ＝**新しい経路が動かなくても機能は落ちない**(片方向のフォールバック)。
-	//   ★eventID は元から見ていない(登録しているのは kEndSpreadMessage の1本だけ)。
-	if (KESCMRingAdornmentIsActive())
-		return kFalse;
-	return DrawSpreadMarks(static_cast<DrawEventData*>(eventData));
-}
-
 bool16 KESCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 {
 	if (ded == nil || ded->gd == nil)
@@ -2142,38 +2109,4 @@ bool16 KESCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 
 	return kFalse;	// 他のハンドラ・描画を続行させる
 }
-
-
-//========================================================================================
-// KESCMDrawEventSrvc
-//   kDrawEventService サービスとして自身を登録する。アプリ起動時にこのサービスが見つかり、
-//   同じ boss 上の IDrwEvtHandler が描画イベントディスパッチャに登録される。
-//========================================================================================
-class KESCMDrawEventSrvc : public CServiceProvider
-{
-public:
-	KESCMDrawEventSrvc(IPMUnknown* boss) : CServiceProvider(boss) {}
-	~KESCMDrawEventSrvc() {}
-
-	virtual ServiceID GetServiceID() { return kDrawEventService; }
-	virtual bool16 IsDefaultServiceProvider() { return kFalse; }
-	virtual InstancePerX GetInstantiationPolicy() { return IK2ServiceProvider::kInstancePerSession; }
-	// ★内部名(翻訳対象ではない)なので SetCString。製品 dynamicdocumentsui/motion/MotionPathDrawService.cpp:44
-	//   と同じ流儀。⚠サンプル basicdrwevthandler/BscDEHDrwEvtSrvc.cpp:131 は SetKey=2流儀(2026-08-06 に製品側へ)。
-	//   ⚠末尾の "\0" はそのサンプルの写しだったので落とした(C 文字列は終端で切れるので挙動は元から同じ)。
-	virtual void GetName(PMString* pName) { pName->SetCString("KESCMDrawEventSrvc"); }
-	// ★★GetThreadingPolicy は**書かない**(2026-08-14 に手書き override を撤去した)。
-	//   CServiceProvider が「boss の居るプラグインの型」から既定を返す ---- UI→kMainThreadOnly /
-	//   model→kMultipleThreads(ガイド vol1-07「Threading and service providers」)。
-	//   ⚠2026-08-18(不具合再検査 B-U2)で**時制を直した**。撤去した当時は「∴ kUIPlugIn の現在は撤去前と
-	//   **完全に同値**で、第2段で kModelPlugIn にした瞬間に**自動で kMultipleThreads** になる」と
-	//   書いていたが、**その第2段は 2026-08-15 に完了している**(KESCM.fr の PluginVersion は
-	//   kModelPlugIn)＝このサービスは**今まさに kMultipleThreads で動いている**。
-	//   ⚠**手書きで kMainThreadOnly を返していると、model にしても PDF 書き出しにマークが出ない**
-	//     (2x2 実測の3行目 = docs/ai-notes/draw-event-pdf-export-experiment-2026-08-12.md)。
-	//     つまり「消し忘れ」が分割の目的を**無言で**殺す。だから第2段を待たず先に消してある。
-	//   ★同じ理由を KESCMUIDrawEvent.cpp の冒頭にも書いてある(あちらは最初から書いていない)。
-};
-
-CREATE_PMINTERFACE(KESCMDrawEventSrvc, kKESCMDrawEventSrvcImpl)
 

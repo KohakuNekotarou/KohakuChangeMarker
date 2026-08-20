@@ -51,8 +51,7 @@
 // close-document responder boss names the API's OWN service provider implementation instead of
 // carrying a hand-written one (see that Class below).
 #include "DocumentID.h"	// kAfterCloseDocSignalRespServiceImpl
-#include "DocFrameworkID.h"	// k*ExportSignalResponderServiceImpl (書き出しのあいだだけ透明を申告する - 下の2 boss)
-#include "PrintID.h"	// kPrintSetupServiceImpl / IID_IPRINTSETUPPROVIDER (同上の印刷側)
+#include "DocFrameworkID.h"	// k*ExportSignalResponderServiceImpl (書き出しのあいだだけ透明を申告する - 下の boss)
 #include "GraphicsID.h"	// IID_IDRWEVTHANDLER (the comparison marks' draw service - the whole point of the model half)
 #include "GenericID.h"	// IID_IADORNMENTSHAPE (GenericID.h:279) - the adornment route for the same marks
 #include "XPID.h"	// IID_IADORNMENTFLATTENERUSAGE (XPID.h:513) - how the adornment declares its transparency
@@ -127,18 +126,14 @@ resource ExtraPluginInfo(1)
  */
 resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 {{{
-	Class
-	{
-		kKESCMDrawEventServiceBoss,
-		kInvalidClass,
-		{
-			IID_IK2SERVICEPROVIDER, kKESCMDrawEventSrvcImpl,
-			IID_IDRWEVTHANDLER,     kKESCMDrawEventHandlerImpl,
-		}
-	},
+	// (★2026-08-20: kKESCMDrawEventServiceBoss（kDrawEventService + IID_IDRWEVTHANDLER）はここにあったが
+	//  撤去した。マークの描画は下のグローバルページアイテムアドーンメントに**一本化**した
+	//  ＝ユーザー判断「登録に失敗していたら枠が出なくてよい」。残していたのはフォールバックのためだけで、
+	//  削除した HandleDrawEvent の中身は「アドーンメントが生きていれば return / さもなくば
+	//  DrawSpreadMarks を呼ぶ」の2行しかなかった＝**絵は1つも失われていない**。)
 
-	/** The same comparison marks, painted as a GLOBAL page item adornment instead of from the
-		draw event above. Registered once on the session's global adornment list at startup
+	/** The comparison marks, painted as a GLOBAL page item adornment. Registered once on the
+		session's global adornment list at startup
 		(KESCMRingAdornment.cpp), so it is never attached to anything in the document - the
 		.indd is not touched at all. Only one of the two routes paints; the draw event handler
 		stands down while this one is registered.
@@ -297,15 +292,23 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 		}
 	},
 
-	// ★★★2026-08-20: 透明の申告を「書き出し／印刷のあいだだけ」立てる2 boss。
+	// ★★★2026-08-20: 透明の申告を「書き出しのあいだだけ」立てる boss。
 	//
 	// ⚠**なぜ要るか**＝IXPManager の「透明を持つページアイテムの一覧」は**文書側のデータで .indd に永続する**
 	//   (実測＝比較して保存した文書を開き直すと1件残っており、開くだけでは再検証されない)。比較中ずっと
 	//   載せておくと、ユーザーが保存した瞬間に**根拠のない記録が焼き付く**。⇒ **要る瞬間だけ載せる。**
-	//   ★フラットナが要るのは書き出しと印刷のときだけで、画面描画にもサムネイルにも一覧は要らない。
+	//   ★フラットナが要るのは書き出しのときだけで、画面描画にもサムネイルにも一覧は要らない。
 	// ★手本＝customconditionaltext (PDF と印刷の両方で「前に変えて後で戻す」を実装している唯一のサンプル)。
 	// ⚠**保存の前後(kBeforeSaveDoc)には置かない** ---- そこで落ちると文書を失う。書き出しならやり直せる。
-	// 実装はどちらも KESCMRingAdornment.cpp の末尾(透明の申告と同じ関心事なので同居させている)。
+	// 実装は KESCMRingAdornment.cpp の末尾(透明の申告と同じ関心事なので同居させている)。
+	//
+	// ★★★**印刷側の対(kPrintSetupService + IPrintSetupProvider)は置かない。**
+	//   ⚠**効かないからではない。効く** ---- 印刷でも載せればフラットナが走り、マークが濃くなる
+	//   (実測＝載せると色付き画素 16,076/13,635 / 載せないと 8,407/7,379＝**1.5.0 と同じ薄さ**。
+	//    ★ただし**どちらもベタにはならない**＝差は濃度だけで、PDF 1.3 の全面ベタとは別の壊れ方)。
+	//   ★**外した理由は「印刷にそこまでの厳密性は要らない・印刷会社へ出すのは PDF」というユーザー判断**
+	//   (2026-08-20・実機で確認済み)。⇒ 濃度を揃えたくなったら bd44eec の実装ごと戻す。
+	//   詳細と A/B の条件は KESCMRingAdornment.cpp の節5 のコメント。
 
 	// 書き出し: Before で載せ、After と Failed(＝失敗とキャンセルの両方)で降ろす。
 	// ★**1つの boss で3シグナル**を受けるので ServiceProvider を自作する(HasMultipleIDs が kTrue)。
@@ -318,19 +321,6 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 		{
 			IID_IK2SERVICEPROVIDER, kKESCMExportXPServiceProviderImpl,
 			IID_IRESPONDER,         kKESCMExportXPResponderImpl,
-		}
-	},
-
-	// 印刷: BeforePrintGatherCmd で載せ、EndPrint で降ろす。
-	// ★**ServiceProvider は Adobe 提供の実装をそのまま名指しする**(自作は IPrintSetupProvider の1本だけ)
-	//   ＝CusCondTxt.fr:181-196 と同じ形。
-	Class
-	{
-		kKESCMPrintXPSetupProviderBoss,
-		kInvalidClass,
-		{
-			IID_IK2SERVICEPROVIDER,  kPrintSetupServiceImpl,
-			IID_IPRINTSETUPPROVIDER, kKESCMPrintXPSetupProviderImpl,
 		}
 	},
 

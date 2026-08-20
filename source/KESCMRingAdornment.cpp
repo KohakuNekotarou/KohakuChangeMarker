@@ -7,11 +7,13 @@
 //
 //    1) KESCMRingAdornmentShape       … IAdornmentShape。**スプレッドに対してだけ**描画本体を呼ぶ
 //    2) KESCMRingFlattenerUsage       … IAdornmentFlattenerUsage。★本命＝透明マネージャへの申告口
-//    3) 登録/解除/判定の3関数         … セッションのグローバルリストへの出し入れ
+//    3) 登録/解除の2関数              … セッションのグローバルリストへの出し入れ
 //
-//  ★描画の中身は1行も持たない。KESCMDrawEventHandler::DrawSpreadMarks() をそのまま呼ぶので、
-//    **絵は Draw Event 経路と同一**(リング・斜線・✓・旧番号バッジ・除外塗り、印刷/PDF の
-//    アルファサーバ経路まで全部)。この経路が足すのは「誰に呼ばれるか」と「透明の申告」だけ。
+//  ★★★2026-08-20: **マークを描く経路はこれ1つになった**(Draw Event の受け口＝
+//    kKESCMDrawEventServiceBoss / KESCMDrawEventSrvc / HandleDrawEvent を撤去した)。
+//  ★描画の中身は1行も持たない。KESCMDrawEventHandler::DrawSpreadMarks() をそのまま呼ぶ
+//    (リング・斜線・✓・旧番号バッジ・除外塗り・Find Overset の「＋」、印刷/PDF のアルファサーバ
+//    経路まで全部)。この経路が足すのは「誰に呼ばれるか」と「透明の申告」だけ。
 //
 //========================================================================================
 
@@ -24,7 +26,6 @@
 #include "ISession.h"					// GetExecutionContextSession()
 #include "ISpread.h"					// 「今描いているのはスプレッドか」の判定
 #include "IShape.h"
-#include "IGeometry.h"				// GetStrokeBoundingBox(ink bounds の実験)
 #include "IDrwEvtHandler.h"				// DrawEventData(描画本体へ渡す形)
 #include "IGraphicsContext.h"			// GraphicsData
 #include "IStartupShutdownService.h"	// スレッドごとの登録(このファイルの末尾)
@@ -32,11 +33,10 @@
 #include "IXPManager.h"					// ItemXPChanged(＝「透明を持つアイテムの一覧」を作り直させる)
 #include "ISpreadList.h"				// 文書のスプレッドを辿る
 #include "IDataBase.h"					// GetRootUID
-// ★2026-08-20: 出力(書き出し・印刷)のあいだだけ一覧に載せるための2サービス(このファイルの末尾)。
+// ★2026-08-20: 書き出しのあいだだけ一覧に載せるためのサービス(このファイルの末尾)。
 #include "isignalmgr.h"					// GetServiceID()
 #include "IExportProviderSignalData.h"	// 書き出しシグナルの添付データ(文書・フォーマット)
 #include "DocFrameworkID.h"				// k*ExportSignalResponderService
-#include "IActiveContext.h"				// 印刷側は文書が引数で来ないのでアクティブコンテキストから取る(公式と同じ)
 #include "IDocument.h"
 #include "PersistUtils.h"				// ::GetUIDRef
 
@@ -44,10 +44,9 @@
 #include "CPMUnknown.h"
 #include "CResponder.h"
 #include "CServiceProvider.h"
-#include "CPrintSetupProvider.h"
 #include "UIDList.h"
 #include "Utils.h"
-#include <map>							// 出力ごとの入れ子カウント(文書別)
+#include <map>							// 書き出しごとの入れ子カウント(文書別)
 
 // Project includes:
 #include "KESCMID.h"
@@ -59,69 +58,22 @@
 // 登録状態
 //========================================================================================
 
-namespace
-{
-	// (★ここに「登録できているか」を憶える static bool があったが **2026-08-19 に削除した**。
-	//  static はスレッドをまたいで共有されるのに、登録先のセッションはまたがない ---- その食い違いが
-	//  「UI の PDF 書き出しから枠が消える」を生んだ。**状態はセッションに聞く。憶えない。**
-	//  経緯は KESCMRingAdornmentIsActive() の中のコメント。)
-
-	/** 透明の申告(IsFlattenerRequired_)を出すか。**kTrue が正**で、kFalse は切り戻し用。
-
-		★★★**この1つで PDF 1.3 の全面ベタが決まる**(2026-08-19 実測。A/B とも同一文書・同一プリセット
-		`[雑誌広告送稿用]`＝Acrobat 4・透明を1つも含まないページで計測):
-
-		| kDeclareFlattenerUsage | そのページの絵 | 主要色 |
-		|---|---|---|
-		| **kTrue**  | **リングが半透明** (74,503 画素) | `240,192,176` ＝白地に25%の赤 |
-		| kFalse | **ページ全面が赤いベタ** (850,175 画素) | `224,0,16` ＝ほぼ純赤 |
-
-		★同期(メインスレッド)・非同期(BG＝UI の書き出し)とも同じ値になった＝**申告は両方のスレッドで
-		  Query されている**(グローバル登録した boss にもちゃんと聞きに来る)。
-		⇒ ★**「アドーンメントにする」だけでは足りない。効いているのは申告のほう。**
-		  アドーンメント化が要るのは、**申告する口(IID_IADORNMENTFLATTENERUSAGE)がアドーンメント boss
-		  にしか載らないから**であって、描き方が変わるからではない。 */
-	const bool16 kDeclareFlattenerUsage = kTrue;
-
-	/** アドーンメント経路を使うか。**kTrue が正**で、kFalse は**切り戻し用の非常口**
-		(登録しない ⇒ KESCMRingAdornmentIsActive() が常に kFalse ⇒ 従来の Draw Event 経路が全部描く)。
-
-		★残してあるのは、**この2経路が同じ絵を描く**ように作ってあるから ---- 描画の中身は
-		KESCMDrawEventHandler::DrawSpreadMarks() 1本で、変わるのは「誰に呼ばれるか」だけ。
-		∴ 倒せば 2026-08-19 以前の挙動にそのまま戻る(PDF 1.3 の全面ベタも戻るが、それ以外は同じ)。
-		★**測り方の検算にも使った**＝新経路の PDF がおかしいとき、「新経路の症状か / 測り方の問題か」を
-		  分けるには従来経路で同じ手順を回すのが唯一の手だった(実際それで
-		  「1.4 のつもりが全部 1.3 で書き出されていた」という**測り方の誤り**を見つけた)。 */
-	const bool16 kUseRingAdornment = kTrue;
-
-	/** ★**実験用。kFalse が正。** kTrue にすると
-		 ①`KESCMRingAdornmentRefreshItemXPState()` を黙って何もしないようにし
-		 ②代わりに `AddToContentInkBounds` で「このアイテム全体にインクを置く」と申告する
-		---- つまり **spellpanel が持っていて KESCM が持っていなかった唯一の口(ink bounds)が、
-		透明マネージャへの通知の代わりになるか**を測るための切り替え。
-
-		★★★**2026-08-20 実測＝ならない。** 同一文書・同一プリセット(`[雑誌広告送稿用]`＝PDF 1.3)・
-		同一の測定スクリプト(`work/kescm-adorn/isolate-doc.ps1`)で:
-
-		| | 変更ページの画素 |
-		|---|---|
-		| 通知あり(＝現行) | **`red 0` / 淡赤 40,847**(半透明) |
-		| 通知を止めて ink bounds を申告 | ⚠**`red 862,283`**(全面ベタ) |
-
-		⇒ **ink bounds はフラットナの判定に一切関与しない**。契約(`IAdornmentShape.h:138-140`＝
-		  「枠基準のアドーンメントは実装不要」)と公式のコメント("used for **resizing textframe** etc."
-		  ＝`TranFxAdornment.cpp:483`)のとおりだった。
-		∴ **`ItemXPChanged` の通知は代替不能。** この定数は結論を書き残すために残してある。 */
-	const bool16 kTestInkBoundsInsteadOfNotify = kFalse;
-
-}
+// (★★2026-08-20: ここにあった**実験用スイッチ3つを全部撤去した**。3つとも「倒しても意味が無い /
+//  倒すと必ず壊れる」ことが実測で確定しており、**選択肢ではなかった**ため。結論は使う場所へ移してある:
+//    ・kUseRingAdornment             … アドーンメント経路を使うか
+//                                      → 切り戻し先だった Draw Event 経路を同日に撤去したので、
+//                                        倒すと「何も描かない」になるだけになった
+//    ・kDeclareFlattenerUsage        … 透明の申告を出すか  → KESCMRingFlattenerUsage のコメント
+//    ・kTestInkBoundsInsteadOfNotify … ink bounds で代用   → AddToContentInkBounds のコメント
+//  ★「登録できているか」を憶える static bool も 2026-08-19 に削除済み ---- **状態はセッションに聞く。
+//    憶えない。**(理由は KESCMRingAdornmentRegister() のコメントへ移した))
 
 /** 「マークが半透明を**使いうる**か」＝設定とマークの有無だけを見る。出力中かは見ない。
 	★**一覧へ載せるかどうかはこちらで決める**(載せる瞬間はまだ出力が始まっていないため)。 */
 static bool16 KESCMMarksCouldBeTranslucent();
 
 /** ★★★「**いまこの出力に**マークの半透明が乗るか」＝`IsFlattenerRequired_` の答えそのもの。
-	上の判定に加えて「**いま書き出し／印刷の最中か**」を見る。
+	上の判定に加えて「**いま書き出しの最中か**」を見る。
 
 	⚠★★★**「出力中か」を含めるのが要**(2026-08-20 実測で判明)。含めないと**一覧から降ろせない** ----
 	  `kXPC_RemovedSomeXP` は「消せ」ではなく「**聞き直せ**」なので、降ろす通知を出しても
@@ -179,8 +131,19 @@ public:
 		＝枠基準なので免除側。公式も**枠の外へ滲む transparencyeffect だけが実装**しており、
 		`framelabel/FrmLblAdornment.cpp:160` は**空 `{}`**。★用途もフラットナではない ----
 		`TranFxAdornment.cpp:483` のコメントが **"used for resizing textframe etc."** と書いている。
-		⚠**2026-08-20 に実測でも確かめた**（下の kTestInkBoundsInsteadOfNotify を参照）。 */
-	virtual void AddToContentInkBounds(IShape* iShape, PMRect* inOutBounds);
+		⚠★★**2026-08-20 に実測でも確かめた** ---- 「ink bounds を申告すれば `ItemXPChanged` の通知の
+		代わりになるのでは」を A/B した(spellpanel が持っていて KESCM が持っていなかった唯一の口が
+		これだったため)。同一文書・同一プリセット(`[雑誌広告送稿用]`＝PDF 1.3)・同一スクリプト
+		(`work/kescm-adorn/isolate-doc.ps1`)で:
+
+		| | 変更ページの画素 |
+		|---|---|
+		| 通知あり(＝現行) | **`red 0` / 淡赤 40,847**(半透明) |
+		| 通知を止めて ink bounds を申告 | ⚠**`red 862,283`**(全面ベタ) |
+
+		⇒ ★**ink bounds はフラットナの判定に一切関与しない。`ItemXPChanged` は代替不能。**
+		  (実験用スイッチ `kTestInkBoundsInsteadOfNotify` はこの結論を得て 2026-08-20 に撤去) */
+	virtual void AddToContentInkBounds(IShape* /*iShape*/, PMRect* /*inOutBounds*/) {}
 
 	virtual PMReal GetPriority() { return 0; }
 
@@ -229,19 +192,6 @@ void KESCMRingAdornmentShape::DrawAdornment(IShape* iShape, AdornmentDrawOrder d
 	KESCMDrawEventHandler::DrawSpreadMarks(&ded);
 }
 
-/** 契約どおり**何もしない**（上の宣言のコメントを参照）。実験スイッチを立てたときだけ、
-	spellpanel が GetInkBounds でやっているのと同じ「ここにインクを置く」の申告を出す。 */
-void KESCMRingAdornmentShape::AddToContentInkBounds(IShape* iShape, PMRect* inOutBounds)
-{
-	if (!kTestInkBoundsInsteadOfNotify || iShape == nil || inOutBounds == nil)
-		return;
-	InterfacePtr<IGeometry> geo(iShape, UseDefaultIID());
-	if (geo == nil)
-		return;
-	PMRect box = geo->GetStrokeBoundingBox();	// inner 座標(契約 :141「The bounds are based on inner coordinates」)
-	inOutBounds->Union(box);
-}
-
 //========================================================================================
 // 2) ★本命 ---- 透明マネージャへの申告
 //========================================================================================
@@ -258,7 +208,22 @@ void KESCMRingAdornmentShape::AddToContentInkBounds(IShape* iShape, PMRect* inOu
 	⚠**申告の相手は2種類あって別物**(IID も別):
 	  ・`IFlattenerUsage`(`IsFlattenerRequired`)          … **ページアイテム**用。SDK に実装例ゼロ
 	  ・`IAdornmentFlattenerUsage`(`IsFlattenerRequired_`)… **アドーンメント**用 ← こちら
-	末尾のアンダースコアが目印。間違えると誰も Query しないので黙って効かない。 */
+	末尾のアンダースコアが目印。間違えると誰も Query しないので黙って効かない。
+
+	★★★**A/B で確定している**(2026-08-19 実測。同一文書・同一プリセット `[雑誌広告送稿用]`＝Acrobat 4・
+	  **透明を1つも含まないページ**で計測):
+
+	| 申告を出すか | そのページの絵 | 主要色 |
+	|---|---|---|
+	| **出す(＝現行)** | **リングが半透明** (74,503 画素) | `240,192,176` ＝白地に25%の赤 |
+	| 出さない          | ⚠**ページ全面が赤いベタ** (850,175 画素) | `224,0,16` ＝ほぼ純赤 |
+
+	★同期(メインスレッド)・非同期(BG＝UI の書き出し)とも同じ値になった＝**申告は両方のスレッドで
+	  Query されている**(グローバル登録した boss にもちゃんと聞きに来る)。
+	⇒ ★**「アドーンメントにする」だけでは足りない。効いているのは申告のほう。**
+	  アドーンメント化が要るのは、**申告する口(`IID_IADORNMENTFLATTENERUSAGE`)がアドーンメント boss に
+	  しか載らないから**であって、描き方が変わるからではない。
+	  (この A/B 用の実験スイッチ `kDeclareFlattenerUsage` は、結論を得て 2026-08-20 に撤去した) */
 class KESCMRingFlattenerUsage : public CPMUnknown<IAdornmentFlattenerUsage>
 {
 public:
@@ -288,10 +253,6 @@ bool32 KESCMRingFlattenerUsage::IsFlattenerRequired_(IPMUnknown* /*iThing*/,
 
 static bool16 KESCMMarksCouldBeTranslucent()
 {
-	// ★実験用スイッチ(上の kDeclareFlattenerUsage の説明を参照)。
-	if (!kDeclareFlattenerUsage)
-		return kFalse;
-
 	// 印刷/書き出しにマークを出さない設定なら、出力に透明は生じない。
 	//   ・sPrintMarks   … Target 側の「Print comparison marks」
 	//   ・sSrcMarksOn   … Source 側の枠(こちらは仕様上、印刷に常に出す)
@@ -311,14 +272,25 @@ static bool16 KESCMMarksCouldBeTranslucent()
 
 void KESCMRingAdornmentRegister()
 {
-	// ★実験用スイッチ(上の kUseRingAdornment の説明を参照)。倒すと従来の Draw Event 経路のまま。
-	if (!kUseRingAdornment)
-		return;
-
 	// ⚠★★「もう登録した」を static で憶えて早期 return してはいけない ---- **この関数は
 	//   実行コンテキストごとに1回ずつ呼ばれる必要がある**(メインスレッド＋バックグラウンドスレッド)。
 	//   static で弾くと、最初の1回(メインスレッド)しか登録されず BG が素通りする。
 	//   二重登録は下の HasAdornment が防ぐので、ガードはそちらだけでよい。
+	//
+	// ★★★**なぜ static で憶えてはいけないか**(2026-08-19 に実際に踏んだ)。ガイド vol1-07 の一文が
+	//   両方を説明する ---- "Threads do not share object-model instances. **They do share globals and statics**":
+	//     (1) **前半**: 登録先は「**セッションのインターフェイス・インスタンス**」なので、
+	//         メインスレッドで AddAdornment した内容は **BG スレッドの実行コンテキストからは見えない**
+	//         ⇒ そこで登録し直さないと、BG では誰も DrawAdornment を呼ばない。
+	//     (2) **後半**: ところが「登録できたか」を static に持つと **BG でも kTrue に見える**
+	//         ⇒ 当時あった Draw Event 側が「アドーンメントが描くから」と譲って降りた。
+	//   ⇒ **両方が描かない。** 症状は「UI の File > 書き出しの PDF にだけ枠が1つも出ない」
+	//     (実測 2026-08-19・PDF 1.4：同期=77,240 画素 / **非同期=0**)。
+	//   ★一般化＝**「どちらか一方が担当する」という取り決めを static に持たせると、スレッドを
+	//     またいだ瞬間に「どちらも担当しない」に化ける。** 担当の判定は、その担当が成立している場所
+	//     (ここではセッション)に**実地で聞く**のが正しい。
+	//   ⚠2026-08-20 に Draw Event 経路を撤去して**描く経路はこれ1つになった**ので、(2) の
+	//     「譲り合い」はもう存在しない。それでも (1) は変わらない＝**登録はスレッドをまたがない**。
 
 	// ⚠**専用ヘッダー `IGlobalPageItemAdornmentList.h` は存在しない。** インターフェイスは普通の
 	//   IPageItemAdornmentList で、**セッションから別の IID で取る**のが全て
@@ -338,9 +310,6 @@ void KESCMRingAdornmentRegister()
 
 void KESCMRingAdornmentUnregister()
 {
-	if (!kUseRingAdornment)
-		return;
-
 	ISession* session = GetExecutionContextSession();	// 終了処理中は nil になり得る
 	if (session == nil)
 		return;
@@ -350,47 +319,6 @@ void KESCMRingAdornmentUnregister()
 
 	if (globalList->HasAdornment(kKESCMRingAdornmentBoss))
 		globalList->RemoveAdornment(kKESCMRingAdornmentBoss, kFalse);
-}
-
-bool16 KESCMRingAdornmentIsActive()
-{
-	// ★★★2026-08-19 実測で直した ---- **static を返してはいけない。**
-	//
-	//   ■ 症状: UI の File > 書き出しで PDF を作ると、**どのページにも枠が出ない**。
-	//     画面には正しく出る。同期書き出し(スクリプトの exportFile)にも出る。
-	//     出ないのは**非同期書き出し(＝UI の書き出し。バックグラウンドスレッド)だけ**
-	//     （実測 2026-08-19・PDF 1.4：同期=77,240 画素 / 非同期=**0**）。
-	//
-	//   ■ 原因は2つが噛み合ったこと。ガイド vol1-07 の一文が両方を説明する ----
-	//     "Threads do not share object-model instances. **They do share globals and statics**"
-	//       (1) **前半**: グローバルアドーンメントの登録先は「**セッションのインターフェイス・
-	//           インスタンス**」なので、メインスレッドで AddAdornment した内容は
-	//           **BG スレッドの実行コンテキストからは見えない** ⇒ BG では誰も DrawAdornment を呼ばない。
-	//       (2) **後半**: ところが当時ここが返していた static のフラグは **BG でも kTrue に見える**
-	//           ⇒ Draw Event 側が「アドーンメントが描くから」と譲って降りる。
-	//     ⇒ **両方が描かない。** ★「登録に失敗しても従来経路が描くから機能は落ちない」という
-	//       このファイルの設計は、**BG では成り立っていなかった**。
-	//
-	//   ■ 直し方: **その実行コンテキストのセッションに、実地で聞く。**
-	//     BG では kFalse が返る ⇒ Draw Event 経路が描く ⇒ 書き出しは従来どおり。
-	//     ⇒ **フォールバックが宣言どおり働くようになる。**
-	//
-	//   ★教訓として一般化できる形: **「どちらか一方が担当する」という取り決めを static に持たせると、
-	//     スレッドをまたいだ瞬間に「どちらも担当しない」に化ける。** 担当の判定は、
-	//     その担当が成立している場所（ここではセッション）に聞くのが正しい。
-	//
-	// ⚠ ここは描画のたびに通る。実験スイッチが切ってあるときは Query を1つも出さない
-	//   (定数なのでコンパイル時に消える)。生きているときの Query 2つは、描画1回あたりでは無視できる。
-	if (!kUseRingAdornment)
-		return kFalse;
-
-	ISession* session = GetExecutionContextSession();
-	if (session == nil)
-		return kFalse;
-	InterfacePtr<IPageItemAdornmentList> globalList(session, IID_IGLOBALPAGEITEMADORNMENTLIST);
-	if (globalList == nil)
-		return kFalse;
-	return globalList->HasAdornment(kKESCMRingAdornmentBoss);
 }
 
 //========================================================================================
@@ -412,10 +340,6 @@ enum KESCMXPListAction
 
 static void KESCMSetItemXPState(IDataBase* db, KESCMXPListAction action)
 {
-	// 申告そのものを切ってあるなら、一覧に載せる意味も無い。
-	// kTestInkBoundsInsteadOfNotify は「ink bounds が通知の代わりになるか」を測るための実験スイッチ。
-	if (!kUseRingAdornment || !kDeclareFlattenerUsage || kTestInkBoundsInsteadOfNotify)
-		return;
 	if (db == nil)
 		return;
 
@@ -532,18 +456,43 @@ public:
 CREATE_PMINTERFACE(KESCMRingAdornmentStartup, kKESCMRingAdornmentStartupImpl)
 
 //========================================================================================
-// 5) ★★★出力(書き出し・印刷)のあいだだけ、透明の一覧に載せる
+// 5) ★★★書き出しのあいだだけ、透明の一覧に載せる
 //
 //  ■ なぜ「あいだだけ」なのか
 //    `IXPManager` の一覧は**文書側のデータで、`.indd` に永続する**(2026-08-20 実測＝比較して保存した
 //    文書を開き直すと1件残っており、**開くだけでは再検証されない**)。比較中ずっと載せておくと、
 //    ユーザーが何かの拍子に保存した瞬間に**根拠のない記録が焼き付く** ---- KESCM を持たない人が
 //    その `.indd` を開いても残る。⇒ **要る瞬間だけ載せて、終わったら降ろす。**
-//    ★フラットナが要るのは**書き出しと印刷のときだけ**で、画面描画にもサムネイルにも一覧は要らない。
+//    ★フラットナが要るのは**書き出しのときだけ**で、画面描画にもサムネイルにも一覧は要らない
+//    (印刷が要らないことは下記のとおり実測で確定した)。
 //
 //  ■ 手本＝`customconditionaltext`(PDF と印刷の両方で「前に変えて後で戻す」を実装している唯一のサンプル)
 //    ・PDF   … `CusCondTxtResponder.cpp:118-152`  (Before で変え、After と **Failed** で戻す)
 //    ・印刷  … `CusCondTxtPrintSetupProvider.cpp:93-116` (BeforePrintGatherCmd → EndPrint)
+//
+//  ■ ★★★なぜ印刷側は**実装しない**のか(2026-08-20 ユーザー判断)
+//    ⚠**「効かないから」ではない。効く。** 印刷でも一覧に載せればフラットナが走り、マークが濃くなる:
+//
+//      | 印刷時に一覧へ載せるか | 変更ページの色付き画素(p2/p3) | 見え方 |
+//      |---|--:|---|
+//      | 載せる(公式と同じ形。実装は `bd44eec` にある) | **16,076 / 13,635** | 画面と同じはっきりした薄赤 |
+//      | 載せない(＝現行)                              | **8,407 / 7,379**   | ずっと薄い＝**1.5.0(Draw Event 経路)と同じ見え方** |
+//
+//      (A/B の条件＝同一文書 `work/kescm-selftest/kescm-target.indd`(**透明を1つも持たない**)・
+//       Microsoft Print to PDF・`work/kescm-adorn/verify16-print.ps1`。PDF は 92,702 ⇔ 153,221 バイト。
+//       ★**どちらも `red=0`＝ベタにはならない**。差は濃度だけで、PDF 1.3 の「全面ベタ」とは別の壊れ方)
+//
+//    ★**外した理由＝「印刷にそこまでの厳密性は要らない」**(2026-08-20 ユーザー判断・実機で確認済み)。
+//      印刷は最終出力ではなく、**印刷会社へ出すのは PDF**。⇒ **厳密さが要るのは書き出しの側だけ**。
+//      ⇒ 印刷の濃度も揃えたくなったら `bd44eec` の `KESCMPrintXPSetupProvider` を戻せばよい
+//        (`kKESCMPrintXPSetupProviderBoss` / `kKESCMPrintXPSetupProviderImpl` ごと)。
+//
+//    ⚠★★★**この節は一度「印刷では一覧を経由しないので効かない」と書いていた ---- 誤りだった。**
+//      根拠にしたのは「印刷 PDF 3本が 92,702 バイトで一致」だが、そのうち 00:07 採取の1本を
+//      **「通知を足したコミット(01:00)より前だから通知なしの版だ」と推定した**もので、
+//      実際に外して測ったら結果が変わった(＝3本とも通知ありの版だった)。
+//      ⇒ ★**「この成果物はこのコミットのビルドだ」は、測って確かめるまで仮定にすぎない。**
+//        **コミット時刻はビルド内容を語らない**(書いて測ってからコミットすれば前後が逆になる)。
 //
 //  ■ ⚠ なぜ「保存の前後」ではないのか(2026-08-20 ユーザー判断)
 //    同じ目的は `kBeforeSaveDocSignalResponderService` でも果たせるが、**そこで落ちると文書を失う**
@@ -559,10 +508,10 @@ CREATE_PMINTERFACE(KESCMRingAdornmentStartup, kKESCMRingAdornmentStartupImpl)
 //      (公式が3つ列挙している理由。1つだけ見ると片方で外す)
 //========================================================================================
 
-// 文書ごとに「いま何本の出力が走っているか」。
+// 文書ごとに「いま何本の書き出しが走っているか」。
 // ⚠**入れ子と同時実行のために数える** ---- BG の書き出しは複数キューできるので、
 //   1本目の完了で降ろすと、まだ走っている2本目の出力からマークが消える。
-// ⚠**メインスレッドからしか触らない**(上の実測どおり、載せ外しの入口は4つとも main)。
+// ⚠**メインスレッドからしか触らない**(上の実測どおり、載せ外しの入口は3シグナルとも main)。
 static std::map<IDataBase*, int32> gKESCMOutputXPRaise;
 
 
@@ -570,7 +519,7 @@ static std::map<IDataBase*, int32> gKESCMOutputXPRaise;
 //   ⚠**この定義がカウンタより後ろに居るのは意図的** ---- 「いま出力中か」を見るため。
 static bool16 KESCMMarksDeclareTransparency()
 {
-	// ⚠**出力(書き出し・印刷)の最中でなければ「透明は無い」と答える。**
+	// ⚠**書き出しの最中でなければ「透明は無い」と答える。**
 	//   これが無いと、降ろす通知(`kXPC_RemovedSomeXP`＝「聞き直せ」)に対して
 	//   「マークはまだある」と答えてしまい、**一覧から永久に降りない**(2026-08-20 実測)。
 	if (gKESCMOutputXPRaise.empty())
@@ -579,7 +528,7 @@ static bool16 KESCMMarksDeclareTransparency()
 	return KESCMMarksCouldBeTranslucent();
 }
 
-/** 出力が始まる ---- 透明が生じるときだけ一覧へ載せる。 */
+/** 書き出しが始まる ---- 透明が生じるときだけ一覧へ載せる。 */
 static void KESCMRaiseItemXPForOutput(IDataBase* db)
 {
 	if (db == nil)
@@ -600,7 +549,7 @@ static void KESCMRaiseItemXPForOutput(IDataBase* db)
 		KESCMSetItemXPState(db, kKESCMXPListAdd);
 }
 
-/** 出力が終わった(成功・失敗・キャンセルのいずれでも) ---- 最後の1本が終わったら降ろす。 */
+/** 書き出しが終わった(成功・失敗・キャンセルのいずれでも) ---- 最後の1本が終わったら降ろす。 */
 static void KESCMLowerItemXPForOutput(IDataBase* db)
 {
 	if (db == nil)
@@ -621,7 +570,8 @@ static void KESCMLowerItemXPForOutput(IDataBase* db)
 }
 
 //----------------------------------------------------------------------------------------
-// 5-1) 書き出し(PDF ほか) ---- Before で載せ、After と Failed で降ろす
+// 書き出し(PDF ほか) ---- Before で載せ、After と Failed で降ろす
+//   ※印刷側の対(`IPrintSetupProvider`)は**置かない**。理由は上の節に実測つきで書いてある。
 //----------------------------------------------------------------------------------------
 
 /** ★1つの boss で3シグナルを受けるので ServiceProvider を自作する
@@ -706,62 +656,6 @@ void KESCMExportXPResponder::Respond(ISignalMgr* signalMgr)
 		default:
 			break;
 	}
-}
-
-//----------------------------------------------------------------------------------------
-// 5-2) 印刷 ---- BeforePrintGatherCmd で載せ、EndPrint で降ろす
-//----------------------------------------------------------------------------------------
-
-/** ⚠**ServiceProvider は Adobe 提供の `kPrintSetupServiceImpl` をそのまま `.fr` で名指しする**ので、
-	自作するのはこの1本だけ(`CusCondTxt.fr:181-196` と同じ形)。 */
-class KESCMPrintXPSetupProvider : public CPrintSetupProvider
-{
-public:
-	// ★基底ではなく HELPER_METHODS_INIT で初期化する(DECLARE_HELPER_METHODS を使う形の作法)。
-	//   公式も同じ＝CusCondTxtPrintSetupProvider.cpp:79-82。
-	KESCMPrintXPSetupProvider(IPMUnknown* boss) : HELPER_METHODS_INIT(boss), fPrintingDB(nil) {}
-	virtual ~KESCMPrintXPSetupProvider() {}
-
-	virtual void BeforePrintGatherCmd(bool16& bReturn, IPrintData* iPrintData, IOutputPages* iOutputPages);
-	virtual void EndPrint(void);
-
-	DECLARE_HELPER_METHODS()
-
-private:
-	// ⚠**EndPrint には文書が渡ってこない**ので、載せた相手を憶えておく。
-	//   ★アクティブ文書を EndPrint でもう一度引くのは危険 ---- 印刷中に前面が変わりうるので、
-	//     **載せた文書と降ろす文書が食い違う**。公式は「戻す」操作が文書を跨いでも無害な内容
-	//     (条件テキストの可視性)なのでアクティブを引き直しているが、こちらは数えているので合わせない。
-	IDataBase* fPrintingDB;
-};
-
-CREATE_PMINTERFACE(KESCMPrintXPSetupProvider, kKESCMPrintXPSetupProviderImpl)
-DEFINE_HELPER_METHODS(KESCMPrintXPSetupProvider)
-
-void KESCMPrintXPSetupProvider::BeforePrintGatherCmd(bool16& /*bReturn*/,
-													 IPrintData* /*iPrintData*/,
-													 IOutputPages* /*iOutputPages*/)
-{
-	// 公式と同じく、印刷される文書はアクティブコンテキストから取る(この口には引数で来ない)。
-	ISession* const session = GetExecutionContextSession();
-	if (session == nil)
-		return;
-	IActiveContext* const context = session->GetActiveContext();
-	if (context == nil)
-		return;
-	IDocument* const doc = context->GetContextDocument();
-	if (doc == nil)
-		return;
-
-	IDataBase* const db = ::GetUIDRef(doc).GetDataBase();
-	KESCMRaiseItemXPForOutput(db);
-	fPrintingDB = db;			// 載せた相手だけを憶える(載せていなくても Lower 側が数えていないので無害)
-}
-
-void KESCMPrintXPSetupProvider::EndPrint(void)
-{
-	KESCMLowerItemXPForOutput(fPrintingDB);
-	fPrintingDB = nil;
 }
 
 // End, KESCMRingAdornment.cpp.

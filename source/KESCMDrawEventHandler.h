@@ -119,26 +119,30 @@ struct KESCMOrigImage
 //   ★実測の中身は KESCMThreadSafety.h、経緯は docs/ai-notes/kescm-task12-pdf-export-marks-2026-08-15.md
 //     と kescm-bg-clone-db-probe-2026-08-15.md。
 //========================================================================================
-class KESCMDrawEventHandler : public CPMUnknown<IDrwEvtHandler>
+/** ★★★2026-08-20: **このクラスはもう `IDrwEvtHandler` の実装ではない。**
+
+	マークの描画を**グローバルページアイテムアドーンメント**(KESCMRingAdornment.cpp)に**一本化**し、
+	Draw Event の受け口(`HandleDrawEvent` / `Register` / `UnRegister`)と `kKESCMDrawEventServiceBoss`・
+	`KESCMDrawEventSrvc` を撤去した(2026-08-20 ユーザー判断＝「登録に失敗していたら枠が出なくてよい」)。
+
+	⚠**それまで残していたのは「アドーンメントの登録に失敗したときのフォールバック」としてで、
+	  機能上の役割はゼロだった** ---- 削除した `HandleDrawEvent` の中身は
+	  「アドーンメントが生きていれば return / さもなくば `DrawSpreadMarks` を呼ぶ」の2行だけ。
+	  ∴ **絵は1つも失われない**(✓チェック・斜線・×・ノンブル塗り・Find Overset の「＋」まで、
+	  描くものは全部 `DrawSpreadMarks` の中にある)。
+
+	⇒ ここに残っているのは**描画本体 `DrawSpreadMarks` と、マークの状態を持つ static 群**だけで、
+	  **インスタンスは1つも作られない**(可変状態はすべて static だったので、そのまま成り立つ)。
+	⚠**クラス名とファイル名は歴史的なもの**。`IDrwEvtHandler` を継承していないので boss には載らない。
+	★`DrawEventData` 型だけは今も使う ---- 「今描いているスプレッド + GraphicsData + flags」を
+	  1つにまとめて渡す器として都合がよいため(`IDrwEvtHandler.h` が定義している構造体)。 */
+class KESCMDrawEventHandler
 {
 public:
-	KESCMDrawEventHandler(IPMUnknown* boss) : CPMUnknown<IDrwEvtHandler>(boss) {}
-	~KESCMDrawEventHandler() {}
-
-	virtual void Register(IDrwEvtDispatcher* d);
-	virtual void UnRegister(IDrwEvtDispatcher* d);
-	virtual bool16 HandleDrawEvent(ClassID eventID, void* eventData);
-
-	// ★2026-08-19: 描画本体。**入口が2つあるので中身をここへ出した。**
-	//   ①Draw Event（kEndSpreadMessage）＝上の HandleDrawEvent が呼ぶ（従来の経路）
-	//   ②グローバルページアイテムアドーンメント＝KESCMRingAdornment.cpp が、スプレッドに対して
-	//     DrawEventData を組んで呼ぶ（PDF 1.3 の透明のために足した経路。どちらか一方だけが生きる）
-	//   ⚠②が渡す changedBy は「今描いているスプレッド」で、①が渡すものと同じ意味になるようにしてある
-	//     （この関数は changedBy をスプレッドとしか読まない）。
+	// ★描画本体。呼び手は**グローバルページアイテムアドーンメント(KESCMRingAdornment.cpp)ただ1つ**で、
+	//   スプレッドに対して DrawEventData を組んで呼ばれる。
+	//   ⚠渡される changedBy は「今描いているスプレッド」(この関数は changedBy をスプレッドとしか読まない)。
 	//   ★static なのはインスタンスの状態を1つも使わないから（この class の可変状態はすべて static メンバ）。
-	//   ★引数は `DrawEventData*` で受ける ---- `IDrwEvtHandler::HandleDrawEvent` が `void*` なのは
-	//     **1つのハンドラが種類の違うイベントを受け取るから**（`HitTestEventData` もある）であって、
-	//     ここは受け取る型が1つに決まっているので `void*` にする理由が無い。
 	static bool16 DrawSpreadMarks(DrawEventData* ded);
 
 	// ページUID → オーバーレイ。変化のあったページだけ登録される。

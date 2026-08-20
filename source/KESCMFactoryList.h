@@ -35,17 +35,18 @@
 //   ⚠**Impl ID の番号はまだ `kKESCMPrefix + N` のまま**。移した実装を名指ししている `.fr` の
 //     Class / AddIn ブロックが KESCM.fr 側に残っているため（振り替えは Task 6B）。
 //
-REGISTER_PMINTERFACE(KESCMDrawEventSrvc, kKESCMDrawEventSrvcImpl)	// 比較マークの描画サービス(KESCMDrawEventHandler.cpp)
-REGISTER_PMINTERFACE(KESCMDrawEventHandler, kKESCMDrawEventHandlerImpl)	// 同ハンドラ。★**出力に出す本体なので model 必須**(分割の目的そのもの)
-REGISTER_PMINTERFACE(KESCMRingAdornmentShape, kKESCMRingAdornmentImpl)	// 同じマークをアドーンメントとして描く経路(KESCMRingAdornment.cpp)。★描画本体は持たず DrawSpreadMarks を呼ぶだけ
+// (★2026-08-20: KESCMDrawEventSrvc / KESCMDrawEventHandler の2本はここにあったが撤去した＝マークの描画を
+//  下のアドーンメントへ一本化したため。⚠**KESCMDrawEventHandler クラス自体は今も在る**が、
+//  IDrwEvtHandler を継承しない「描画本体 DrawSpreadMarks と static 群の入れ物」になったので、
+//  boss にも FactoryList にも載らない。)
+REGISTER_PMINTERFACE(KESCMRingAdornmentShape, kKESCMRingAdornmentImpl)	// ★**マークを描く唯一の経路**(KESCMRingAdornment.cpp)。★描画本体は持たず KESCMDrawEventHandler::DrawSpreadMarks を呼ぶだけ
 REGISTER_PMINTERFACE(KESCMRingFlattenerUsage, kKESCMRingFlattenerUsageImpl)	// ★★上と対になる透明の申告口。**これが無いと PDF 1.3 でリングが全面ベタになる**(足した理由そのもの)
 REGISTER_PMINTERFACE(KESCMRingAdornmentStartup, kKESCMRingAdornmentStartupImpl)	// ★上の2つを**実行コンテキストごとに**セッションへ登録する(BG スレッドを含む)。テキスト版のサービス宣言に相当するものを手で書いた形
 REGISTER_PMINTERFACE(KESCMPeekStartup, kKESCMPeekStartupImpl)	// model 側の起動/終了(KESCMPeek.cpp)。UI 側の対は KCMUI の KESCMUIStartup
 REGISTER_PMINTERFACE(KESCMDocResponder, kKESCMDocResponderImpl)	// ServiceProvider は API 提供の実装を .fr で名指し(2026-08-06)
 REGISTER_PMINTERFACE(KESCMBeforeSaveDocResponder, kKESCMBeforeSaveResponderImpl)	// 保存の前に Hide Unchanged を戻す(2026-08-19。同じく ServiceProvider は API 提供)
 REGISTER_PMINTERFACE(KESCMExportXPServiceProvider, kKESCMExportXPServiceProviderImpl)	// 書き出しの3シグナルを1つの boss で受けるための自作 ServiceProvider(KESCMRingAdornment.cpp)
-REGISTER_PMINTERFACE(KESCMExportXPResponder, kKESCMExportXPResponderImpl)	// ★書き出しの Before で透明の一覧に載せ、After/Failed で降ろす(同上)
-REGISTER_PMINTERFACE(KESCMPrintXPSetupProvider, kKESCMPrintXPSetupProviderImpl)	// ★印刷側の同じ仕事(BeforePrintGatherCmd → EndPrint。ServiceProvider は Adobe 提供)
+REGISTER_PMINTERFACE(KESCMExportXPResponder, kKESCMExportXPResponderImpl)	// ★書き出しの Before で透明の一覧に載せ、After/Failed で降ろす(同上)。⚠**印刷側の対は無い**＝効かないからではなく「印刷にそこまでの厳密性は要らない」というユーザー判断で外した(2026-08-20。載せれば印刷も濃くなる＝A/B と復活手順は KESCMRingAdornment.cpp の節5)
 REGISTER_PMINTERFACE(KESCMScriptProvider, kKESCMScriptProviderImpl)	// ★この1本が**公開する6プロパティ全部**を serve する(app.kcmStatus / app.kcmBookResult ＋ stories[n] の変更カウンター4本。2026-08-15 に2つの boss を1つへ統合)。すべて読み取り専用でメソッドは0本。★ScriptProvider は UI ではない(設計書 §4.1)
 REGISTER_PMINTERFACE(KESCMCompareFacade, kKESCMCompareFacadeImpl)	// UI が比較エンジンに頼む窓口(kUtilsBoss へ AddIn。KESCMFacades.cpp)
 REGISTER_PMINTERFACE(KESCMMarkData, kKESCMMarkDataImpl)	// UI が比較結果を読む窓口(同上。★読み取り専用)
