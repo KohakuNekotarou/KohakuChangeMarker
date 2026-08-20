@@ -54,6 +54,12 @@
       <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMStoryCellView.cpp">
          <Filter>Source Files</Filter>
       </ClCompile>
+      <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMStoryMarker.cpp">
+         <Filter>Source Files</Filter>
+      </ClCompile>
+      <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMStoryMarkerExpiry.cpp">
+         <Filter>Source Files</Filter>
+      </ClCompile>
       <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMStoryRowEH.cpp">
          <Filter>Source Files</Filter>
       </ClCompile>
@@ -171,6 +177,12 @@
          <Filter>Header Files</Filter>
       </ClInclude>
       <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\IKESCMStoryCellData.h">
+         <Filter>Header Files</Filter>
+      </ClInclude>
+      <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\KESCMStoryMarker.h">
+         <Filter>Header Files</Filter>
+      </ClInclude>
+      <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\KESCMStoryMarkerExpiry.h">
          <Filter>Header Files</Filter>
       </ClInclude>
       <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\KESCMCheckGlyph.h">

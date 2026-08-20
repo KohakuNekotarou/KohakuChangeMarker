@@ -40,6 +40,7 @@
 #include "IKESCMCompareFacade.h"	// arm 状態(2026-08-13・分割 第1段 Task 11 で Facade 経由へ)
 #include "KESCMUIShared.h"	// panel / status line / nav readout / tool button (split from KESCMCore.h on 2026-08-13)
 #include "KESCMStoryJump.h"
+#include "KESCMStoryMarker.h"	// the flash over the characters a change row goes to (2026-08-20)
 #include "IKESCMStoryEditsFacade.h"	// the row a click landed on (Facade since 2026-08-13, Task 14)
 #include "IKESCMMarkData.h"	// IsPageOnHiddenSpread - a row on a hidden page is labelled, not jumped to (2026-08-18)
 
@@ -232,11 +233,85 @@ bool16 KESCMStoryJumpToChange(int32 rowIndex, int32 changeIndex)
 	// Both windows move here - the target to this frame, the source to the same story.
 	const bool16 moved = KESCMGotoStoryFrame(db, frameUID, pageUID, row.fStoryUID);
 
-	// ***** NOW SELECT THE WORDS. ***** Everything below mirrors the double click's selection path;
-	// see KESCMStorySelectWholeStory for why the tool goes on first and why the suite is asked twice.
+	// ***** AND LIGHT THE CHARACTERS UP FOR A MOMENT. *****
+	//
+	// ★★★A MARK, NOT A SELECTION (2026-08-20, user's call: "その文字のところに移動＋マーカーを少しの
+	//   時間出す感じに"). Until then this made a text selection, which had three costs a pointer does
+	//   not: it threw away whatever the reader had selected, it forced the Type tool on, and it left
+	//   the words sitting selected long after the reader had looked at them. The mark says "here" and
+	//   then gets out of the way. ⇒ The selection is still available - it is what a DOUBLE click does
+	//   now (KESCMStorySelectChange below).
+	// ★It is drawn ON the characters by the text engine (KESCMStoryMarker.cpp), so it needs no
+	//   coordinates from here: the story and the character range are the whole of the request.
+	KESCMStoryMarker::Show(db, row.fStoryUID, from, to);
+
+	// ***** AND THE OTHER SIDE OF THE EDIT GOES TO THE PANEL'S MESSAGE AREA. *****
+	//
+	// ★The row shows the side that CHANGED; this shows the other one, so that "what it used to say"
+	//   is readable without leaving the panel (user's request, 2026-08-20: "パネルのメッセージ部分の
+	//   有効活用"). For a deletion the row is showing what was removed, so what lands here is the
+	//   text that closed up over it - see KESCMStoryList.h for why the field is called "other" and
+	//   not "old".
+	//
+	// ⚠★PLAIN TEXT FOR NOW, ON PURPOSE (2026-08-20). The three pieces are concatenated and handed
+	//   to the stock status widget, which draws one colour. The request is for the changed part to
+	//   stand out here the way it does in the row - that needs this widget replaced by the
+	//   hand-drawn cell, WITH word wrapping, since the message area is four lines deep and existing
+	//   messages (a saved file's full path) rely on wrapping. ⇒ The user asked to see the plain
+	//   version first and decide whether this is the right PLACE before that work is done. Keep the
+	//   concatenation order; only the drawing changes.
+	PMString otherSide;
+	otherSide.SetTranslatable(kFalse);
+	otherSide.Append(change.fOtherTextPre);
+	otherSide.Append(change.fOtherText);
+	otherSide.Append(change.fOtherTextPost);
+	KESCMSetStatus(otherSide);
+
+	return moved;
+}
+
+bool16 KESCMStorySelectChange(int32 rowIndex, int32 changeIndex)
+{
+	IKESCMStoryEditsFacade::Row row;
+	IKESCMStoryEditsFacade::Change change;
+	if (!Utils<IKESCMStoryEditsFacade>()->GetRow(rowIndex, row))
+		return kFalse;
+	if (!Utils<IKESCMStoryEditsFacade>()->GetChange(rowIndex, changeIndex, change))
+		return kFalse;
+
+	IDataBase* db = Utils<IKESCMCompareFacade>()->GetArmedTargetDB();
+	if (db == nil || !Utils<IKESCMCompareFacade>()->IsDocDBOpen(db))
+		return kFalse;
+
+	const UIDRef storyRef(db, row.fStoryUID);
+	InterfacePtr<ITextModel> model(storyRef, UseDefaultIID());
+	if (model == nil)
+		return kFalse;
+
+	// Clamped to the story as it stands NOW, for the same reason the jump clamps: the reader may
+	// have edited it since the comparison ran, and a stale end is refused while a stale start
+	// silently selects the wrong words.
+	const TextIndex total = model->TotalLength();
+	TextIndex from = change.fTargetStart;
+	TextIndex to = change.fTargetEnd;
+	if (from < 0) from = 0;
+	if (to > total) to = total;
+	if (from > total) from = total;
+	if (to < from) to = from;
+
+	// Making a selection recomposes - the same guard, and the same reason, as everywhere else here.
+	IDataBase::SaveRestoreModifiedState dirtyGuard(db);
+
+	// ★THE MARK COMES DOWN. The single click that opened this double click put one up; leaving it
+	//   there would put an inversion on top of the selection's own inversion, and the text under
+	//   both is unreadable (KBS records exactly this in KBSJump.cpp).
+	KESCMStoryMarker::Clear();
+
+	// Everything below mirrors the whole-story double click's selection path; see
+	// KESCMStorySelectWholeStory for why the tool goes on first and why the suite is asked twice.
 	ISelectionManager* selectionManager = Utils<ISelectionUtils>()->GetActiveSelection();
 	if (selectionManager == nil)
-		return moved;
+		return kFalse;
 
 	selectionManager->DeselectAll(nil);
 
@@ -245,16 +320,16 @@ bool16 KESCMStoryJumpToChange(int32 rowIndex, int32 changeIndex)
 	{
 		InterfacePtr<ITool> iBeamTool(Utils<IToolBoxUtils>()->QueryTool(kIBeamToolBoss));
 		if (iBeamTool == nil)
-			return moved;
+			return kFalse;
 		if (!Utils<IToolBoxUtils>()->SetActiveTool(iBeamTool))
-			return moved;
+			return kFalse;
 	}
 
 	InterfacePtr<ITextSelectionSuite> textSelectionSuite(selectionManager, UseDefaultIID());
 	if (textSelectionSuite == nil)
 		textSelectionSuite.reset(InterfacePtr<ITextSelectionSuite>(selectionManager, IID_ITEMPTEXTSELECTION_SUITE).forget());
 	if (textSelectionSuite == nil)
-		return moved;
+		return kFalse;
 
 	// ⚠A DELETION HAS NO WIDTH on this side - the words are gone. RangeData(n, n) is the caret case,
 	//   and RangeData.h:114-125 says a caret needs a lean to settle which side new text joins.
@@ -264,11 +339,10 @@ bool16 KESCMStoryJumpToChange(int32 rowIndex, int32 changeIndex)
 							? RangeData(from, to)
 							: RangeData(from, from, RangeData::kLeanForward);
 
-	// kDontScrollSelection: KESCMGotoStoryFrame above has already centred the frame, and
+	// kDontScrollSelection: the first click of this double click already centred the frame, and
 	// kScrollIntoView would only promise the selection is somewhere on screen - undoing the better
-	// answer just given.
-	textSelectionSuite->SetTextSelection(storyRef, range, Selection::kDontScrollSelection, nil);
-	return moved;
+	// answer already given.
+	return textSelectionSuite->SetTextSelection(storyRef, range, Selection::kDontScrollSelection, nil);
 }
 
 bool16 KESCMStorySelectWholeStory(int32 rowIndex)

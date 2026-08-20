@@ -121,6 +121,18 @@ public:
 		PMString	fText;
 		PMString	fTextPost;
 
+		// The OTHER side of the same edit, in the same three pieces - what the panel's message area
+		// shows while this row is selected (2026-08-20).
+		// ★NOT "the old side": the row already shows whichever side CHANGED, so this is the old
+		//   text for a replacement or an insertion and the NEW text for a deletion (where the row is
+		//   showing what was removed, and what the reader wants beside it is what stands there now).
+		//   The full reasoning is on KESCMStoryChange in KESCMStoryList.h.
+		// ★The middle is empty where nothing stood on that side; the context pieces are not, which
+		//   is what makes an empty middle read as a place rather than as an absence.
+		PMString	fOtherTextPre;
+		PMString	fOtherText;
+		PMString	fOtherTextPost;
+
 		Change()
 			: fKind(0), fWhat(0), fTargetStart(0), fTargetEnd(0),
 			  fSourceStart(0), fSourceEnd(0), fHasSource(kFalse) {}

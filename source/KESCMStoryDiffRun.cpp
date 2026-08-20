@@ -461,24 +461,39 @@ void Add(std::vector<KESCMStoryChange>& out, int32 paraIndex,
 		change.fSourceEnd = change.fSourceStart + sCount;
 	}
 
-	// ★A deletion shows the OLDER side: what was taken out is what the reader has to see, and
-	//   the newer side has nothing there to show. Everything else shows the newer side.
-	std::string pre, mid, post;
-	if (change.fKind == KESCMStoryChange::kDelete)
-		Slice(sourceText, sourceBytes, sFrom, sCount, kContextCodePoints, pre, mid, post);
-	else
-		Slice(targetText, targetBytes, tFrom, tCount, kContextCodePoints, pre, mid, post);
+	// ★BOTH SIDES ARE CUT, ALWAYS (2026-08-20). The row shows the side that changed; the panel's
+	//   message area shows the other one while that row is selected, so that the reader can see
+	//   what the words used to be (or, for a deletion, what stands there now).
+	std::string newPre, newMid, newPost;
+	Slice(targetText, targetBytes, tFrom, tCount, kContextCodePoints, newPre, newMid, newPost);
 
-	change.fTextPre.SetUTF8String(pre);
-	change.fText.SetUTF8String(mid);
-	change.fTextPost.SetUTF8String(post);
+	std::string oldPre, oldMid, oldPost;
+	Slice(sourceText, sourceBytes, sFrom, sCount, kContextCodePoints, oldPre, oldMid, oldPost);
+
+	// ★A deletion shows the OLDER side on the row: what was taken out is what the reader has to
+	//   see, and the newer side has nothing there to show. Everything else shows the newer side.
+	//   ⇒ Whichever of the two that is, the OTHER one goes to fOtherText - see KESCMStoryList.h for
+	//     why it is named that rather than "old".
+	const bool16 rowShowsOldSide = (change.fKind == KESCMStoryChange::kDelete);
+
+	change.fTextPre.SetUTF8String(rowShowsOldSide ? oldPre : newPre);
+	change.fText.SetUTF8String(rowShowsOldSide ? oldMid : newMid);
+	change.fTextPost.SetUTF8String(rowShowsOldSide ? oldPost : newPost);
+
+	change.fOtherTextPre.SetUTF8String(rowShowsOldSide ? newPre : oldPre);
+	change.fOtherText.SetUTF8String(rowShowsOldSide ? newMid : oldMid);
+	change.fOtherTextPost.SetUTF8String(rowShowsOldSide ? newPost : oldPost);
+
 	// ★Text out of a document is not a translation key. Without this it can be looked up in the
 	//   string tables and come back as something else entirely (memory menu-string-translation-traps).
-	//   All three pieces, not just the middle one: they are all document text, and the two context
-	//   pieces are the ones most likely to be a short common word that a table has an entry for.
+	//   All six pieces, not just the middles: they are all document text, and the context pieces are
+	//   the ones most likely to be a short common word that a table has an entry for.
 	change.fTextPre.SetTranslatable(kFalse);
 	change.fText.SetTranslatable(kFalse);
 	change.fTextPost.SetTranslatable(kFalse);
+	change.fOtherTextPre.SetTranslatable(kFalse);
+	change.fOtherText.SetTranslatable(kFalse);
+	change.fOtherTextPost.SetTranslatable(kFalse);
 
 	out.push_back(change);
 }

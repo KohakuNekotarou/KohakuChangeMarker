@@ -99,6 +99,27 @@ struct KESCMStoryChange
 	PMString	fText;
 	PMString	fTextPost;
 
+	/** The OTHER side of the same edit, in the same three pieces - what the panel's message area
+		shows while the row is selected (user's request, 2026-08-20: "その行が選択されたらパネルの
+		行に旧のテキストを出せるかな、変化しているところとそうでないところを色が変わると最良").
+
+		★"THE OTHER SIDE", NOT "THE OLD SIDE", and the distinction is the whole point. The row
+		already shows the side that CHANGED, and which side that is depends on the kind:
+		    replacement -> the row shows the new words,  so this holds the OLD ones
+		    insertion   -> the row shows what was added, so this holds the old text with nothing
+		                   between the context (there was nothing there to show)
+		    deletion    -> the row shows what was REMOVED, so this holds the NEW text - the words
+		                   that closed up over the gap
+		Naming it "old" would have made the deletion case a lie, and a deletion is exactly the case
+		where the reader most wants to see what is there now.
+
+		★fOtherText is empty for an insertion (nothing stood there) and for a deletion (nothing
+		stands there now). The two context pieces are not: they are the words on either side, which
+		is what makes the empty middle readable as a place rather than as an absence. */
+	PMString	fOtherTextPre;
+	PMString	fOtherText;
+	PMString	fOtherTextPost;
+
 	int32		fParaIndex;		// which paragraph it fell in. Not drawn; kept for ordering and for
 								// anything later that wants to group changes by paragraph
 

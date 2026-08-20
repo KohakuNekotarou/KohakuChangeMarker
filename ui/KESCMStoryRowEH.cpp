@@ -184,16 +184,21 @@ bool16 KESCMStoryRowEH::LButtonUp(IEvent* e)
 	InterfacePtr<IApplication> app(session != nil ? session->QueryApplication() : nil);
 	InterfacePtr<IKeyBoard> keyBoard(app, UseDefaultIID());
 
-	// ***** The second click of a double click SELECTS THE STORY, rather than jumping again. *****
-	// The first click already moved the view there, so repeating it would only redo that. What is
-	// added is handing the user the text itself - Type tool, the whole story selected.
-	// ★NOT ON A CHANGE ROW (2026-08-20). "The whole story" is the answer to a double click on the
-	//   row that NAMES a story; on a row that names one edit inside it, widening the selection to
-	//   the story would undo what the first click just did. A change row's double click therefore
-	//   does what its single click does - which is already done by the time we get here.
-	if (selectRatherThanJump && changeIndex < 0)
+	// ***** The second click of a double click SELECTS, rather than jumping again. ***** The first
+	// click already moved the view there, so repeating it would only redo that. What is added is
+	// handing the user the text itself - Type tool, and a selection.
+	// ★WHAT gets selected depends on which row it is, and the two answers are not the same size:
+	//     * a STORY row  -> the whole story. That is what a row naming a story is a report of.
+	//     * a CHANGE row -> just the words that edit names (2026-08-20, user's call). Widening to
+	//       the story here would throw away the very thing the reader double-clicked on.
+	//   ⚠Until 2026-08-20 a change row's double click did NOTHING, because its SINGLE click already
+	//     made this selection. The single click is a mark now, so the selection moved here.
+	if (selectRatherThanJump)
 	{
-		if (KESCMStorySelectWholeStory(rowIndex))
+		const bool16 selected = (changeIndex >= 0)
+								? KESCMStorySelectChange(rowIndex, changeIndex)
+								: KESCMStorySelectWholeStory(rowIndex);
+		if (selected)
 		{
 			// ***** AND GIVE THE KEYBOARD BACK. ***** The FIRST click of this double click ended in
 			// the AcquireKeyFocus below, so the tree is holding the keyboard right now. Left that

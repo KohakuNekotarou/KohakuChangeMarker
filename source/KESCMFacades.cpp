@@ -390,6 +390,9 @@ public:
 		out.fTextPre	= change.fTextPre;
 		out.fText		= change.fText;
 		out.fTextPost	= change.fTextPost;
+		out.fOtherTextPre	= change.fOtherTextPre;
+		out.fOtherText		= change.fOtherText;
+		out.fOtherTextPost	= change.fOtherTextPost;
 		return kTrue;
 	}
 
