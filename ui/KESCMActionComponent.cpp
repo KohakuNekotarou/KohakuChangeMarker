@@ -682,11 +682,23 @@ void KESCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionSta
 			//   (旧: KESCMCore.cpp:566 / :312 / KESCMPeek.cpp:2267。前2つは無関係な行を指しており、
 			//   **KESCMPeek.cpp に至ってはファイルが 906 行しかない**＝EOF の1,300行以上先)。
 			//   model/UI 分割でファイルが大きく動いたため。★**関数名で引けば動かない。**
+			// ★★2026-08-21(Story 変更モード Task 8): **Story モードでも灰色にする。**
+			//   この機能が隠すのは「比較マーク(sEntries)が1ページも無いスプレッド」で、ストーリー差分は
+			//   entry を1つも作らない ---- ∴ Story モードで押すと「登録ページや overflow のあるスプレッド
+			//   だけ残して、他を全部隠す」になる。
+			//   ⚠**実行側の安全網では止まらない**: KESCMHideUnchangedToggle が中止するのは
+			//     「sEntries も登録も overflow も**全部**空」のときと「表示中スプレッドを**全部**隠すことに
+			//     なる」ときだけで、登録や overflow が1つでもあれば素通りして隠してしまう。⇒ ここで断る。
+			//   ★「ON のまま灰色になって戻せない」状態は作れない: モード切替(KESCMApplyCompareMode)は
+			//     Start 中なら必ず MarkChanges で全体を比較し直し、その入口の KESCMDoMarkChangesDoc が
+			//     KESCMResetHideUnchanged(kTrue) を呼ぶ。Start していなければ IsArmed が偽で元から灰色。
+			// ★3回聞くので InterfacePtr で1回引く(Utils.h:74-80。上の Start/Stop 分岐と同じ形)。
+			InterfacePtr<IKESCMCompareFacade> compare(Utils<IKESCMCompareFacade>().QueryUtilInterface());
 			int16 actionState;
-			if (!Utils<IKESCMCompareFacade>()->IsArmed())
+			if (!compare->IsArmed() || compare->GetCompareMode() == kKESCMModeStory)
 				actionState = kDisabled_Unselected;
 			else
-				actionState = Utils<IKESCMCompareFacade>()->GetHideUnchangedOn() ? (kEnabledAction | kSelectedAction) : kEnabledAction;
+				actionState = compare->GetHideUnchangedOn() ? (kEnabledAction | kSelectedAction) : kEnabledAction;
 			listToUpdate->SetNthActionState(i, actionState);
 		}
 		else if (action == kKESCMPopupShowOldNumsActionID)
