@@ -121,6 +121,35 @@ enum KESCMStoryScriptProperties
 	p_KESCMOtherChangeCount = 'pKGO'	// O = Other   - the counter nothing measured has ever moved
 };
 
+/** ★★2026-08-20 追加。**document のプロパティ1本**。
+
+	`app.activeDocument.kcmTransparencyItemCount` ＝ `IXPManager` が持つ
+	**「透明を持つページアイテムの一覧」の件数**(`IXPManager::GetNumItemsWithXP`＝`IXPManager.h:86`)。
+	読み取り専用。
+
+	★★★**何のためにあるか** ---- KESCM は PDF 1.3 で比較マークを半透明にするために、
+	  **書き出しのあいだだけ**この一覧へ自分を載せる(KESCMRingAdornment.cpp の節5)。
+	  ⚠**一覧は `.indd` に永続し、開き直しても再検証されない**(2026-08-20 に交絡なしの対照で実測)。
+	  ∴ 「**載せたまま保存してしまっていないか**」を外から確かめる口が要る ---- それがこれ。
+	  ⇒ **保存 → 閉じる → 開き直して読めば、書き込まれたかどうかがそのまま判る。**
+
+	⚠**KESCM が載せた分だけを数えるのではない** ---- 本物の透明(ドロップシャドウ・不透明度<100・
+	  描画モード等)を持つページアイテムも同じ一覧に入る。∴ 判定に使うときは
+	  **「KESCM を通していない同じ内容の文書」との対照**を取ること(2026-08-20 の調査もそうした)。
+
+	★**IDML には出さない** ---- この一覧は揮発するセッション状態であって、文書の交換フォーマットに
+	  書くべき「自分の永続データ」ではない。止め方は story カウンター4本と同じ
+	  (`KESCM.fr` の2つ目の `VersionedScriptElementInfo`＝`kINXScriptManagerBoss` + `Provider{kNotSupported}`)。
+
+	Code follows docs/ai-notes/kes-scriptid-registry.md (p = property, K = Kohaku, G = KESCM) and was
+	checked against ScriptingDefs.h / GenericID.h for collisions before use - none.
+	★検査は**測り方を先に検算してから**行った(実在する 'move' / 'cflo' が当たることを確かめた上で
+	  'pKGx' が 0 件＝空き。何にも当たらない検索は全候補を「空き」と報告してしまうため)。 */
+enum KESCMDocumentScriptProperties
+{
+	p_KESCMTransparencyItemCount = 'pKGx'	// x = XP (transparency) - document.kcmTransparencyItemCount
+};
+
 #endif // __KESCMScriptingDefs_h__
 
 // End, KESCMScriptingDefs.h.

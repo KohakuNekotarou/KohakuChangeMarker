@@ -51,6 +51,10 @@
 // close-document responder boss names the API's OWN service provider implementation instead of
 // carrying a hand-written one (see that Class below).
 #include "DocumentID.h"	// kAfterCloseDocSignalRespServiceImpl
+#include "DocFrameworkID.h"	// kDocumentObjectScriptElement (document.kcmTransparencyItemCount の対象オブジェクト)
+#include "PDFID.h"	// kPDFExportSetupServiceImpl / IID_IPDFEXPORTSETUPPROVIDER (PDF 書き出しのあいだだけ
+					// 透明を申告する - 下の boss)。⚠これが無いと ODFRC が
+					// "R32725: Identifier 'kPDFExportSetupServiceImpl' does not name a numeric value." で落ちる
 #include "GraphicsID.h"	// IID_IDRWEVTHANDLER (the comparison marks' draw service - the whole point of the model half)
 #include "GenericID.h"	// IID_IADORNMENTSHAPE (GenericID.h:279) - the adornment route for the same marks
 #include "XPID.h"	// IID_IADORNMENTFLATTENERUSAGE (XPID.h:513) - how the adornment declares its transparency
@@ -125,18 +129,14 @@ resource ExtraPluginInfo(1)
  */
 resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 {{{
-	Class
-	{
-		kKESCMDrawEventServiceBoss,
-		kInvalidClass,
-		{
-			IID_IK2SERVICEPROVIDER, kKESCMDrawEventSrvcImpl,
-			IID_IDRWEVTHANDLER,     kKESCMDrawEventHandlerImpl,
-		}
-	},
+	// (★2026-08-20: kKESCMDrawEventServiceBoss（kDrawEventService + IID_IDRWEVTHANDLER）はここにあったが
+	//  撤去した。マークの描画は下のグローバルページアイテムアドーンメントに**一本化**した
+	//  ＝ユーザー判断「登録に失敗していたら枠が出なくてよい」。残していたのはフォールバックのためだけで、
+	//  削除した HandleDrawEvent の中身は「アドーンメントが生きていれば return / さもなくば
+	//  DrawSpreadMarks を呼ぶ」の2行しかなかった＝**絵は1つも失われていない**。)
 
-	/** The same comparison marks, painted as a GLOBAL page item adornment instead of from the
-		draw event above. Registered once on the session's global adornment list at startup
+	/** The comparison marks, painted as a GLOBAL page item adornment. Registered once on the
+		session's global adornment list at startup
 		(KESCMRingAdornment.cpp), so it is never attached to anything in the document - the
 		.indd is not touched at all. Only one of the two routes paints; the draw event handler
 		stands down while this one is registered.
@@ -292,6 +292,42 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 		{
 			IID_IK2SERVICEPROVIDER, kBeforeSaveDocSignalRespServiceImpl,
 			IID_IRESPONDER,         kKESCMBeforeSaveResponderImpl,
+		}
+	},
+
+	// ★★★2026-08-20: 透明の申告を「書き出しのあいだだけ」立てる boss。
+	//
+	// ⚠**なぜ要るか**＝IXPManager の「透明を持つページアイテムの一覧」は**文書側のデータで .indd に永続する**
+	//   (実測＝比較して保存した文書を開き直すと1件残っており、開くだけでは再検証されない)。比較中ずっと
+	//   載せておくと、ユーザーが保存した瞬間に**根拠のない記録が焼き付く**。⇒ **要る瞬間だけ載せる。**
+	//   ★フラットナが要るのは書き出しのときだけで、画面描画にもサムネイルにも一覧は要らない。
+	// ★手本＝customconditionaltext (PDF と印刷の両方で「前に変えて後で戻す」を実装している唯一のサンプル)。
+	// ⚠**保存の前後(kBeforeSaveDoc)には置かない** ---- そこで落ちると文書を失う。書き出しならやり直せる。
+	// 実装は KESCMRingAdornment.cpp の末尾(透明の申告と同じ関心事なので同居させている)。
+	//
+	// ★★★**印刷側の対(kPrintSetupService + IPrintSetupProvider)は置かない。**
+	//   ⚠**効かないからではない。効く** ---- 印刷でも載せればフラットナが走り、マークが濃くなる
+	//   (実測＝載せると色付き画素 16,076/13,635 / 載せないと 8,407/7,379＝**1.5.0 と同じ薄さ**。
+	//    ★ただし**どちらもベタにはならない**＝差は濃度だけで、PDF 1.3 の全面ベタとは別の壊れ方)。
+	//   ★**外した理由は「印刷にそこまでの厳密性は要らない・印刷会社へ出すのは PDF」というユーザー判断**
+	//   (2026-08-20・実機で確認済み)。⇒ 濃度を揃えたくなったら bd44eec の実装ごと戻す。
+	//   詳細と A/B の条件は KESCMRingAdornment.cpp の節5 のコメント。
+
+	// ★★★PDF 書き出し: BeginExport で載せ、EndExport で降ろす。
+	//   **非同期書き出しではここに「書き出し用のクローン db」が渡る**ので、
+	//   **元の文書を一度も触らずに出力だけを変えられる**(2026-08-20 実測)。
+	//   ⚠**旧実装(kBeforeExport/kAfterExport/kFailedExport の3シグナル)には穴があった** ----
+	//     シグナルはメインスレッドで**元の db** を持って飛ぶので、書き出し中にユーザーが保存すると
+	//     一覧が .indd に焼き付いた(実測＝開き直すと kcmTransparencyItemCount が 4)。
+	//   ★**ServiceProvider は Adobe 提供の kPDFExportSetupServiceImpl をそのまま名指しする**ので、
+	//     自作は IPDFExportSetupProvider の1本だけ＝pdfvt/PDFVT.fr:113-121 と同じ形。
+	Class
+	{
+		kKESCMPDFExportSetupBoss,
+		kInvalidClass,
+		{
+			IID_IK2SERVICEPROVIDER,      kPDFExportSetupServiceImpl,
+			IID_IPDFEXPORTSETUPPROVIDER, kKESCMPDFExportSetupImpl,
 		}
 	},
 
@@ -559,6 +595,22 @@ resource VersionedScriptElementInfo(10)
 			kNoAttributeClass,
 		}
 
+		// ★★2026-08-20: the document property. ⚠**A Property has to be DECLARED here before a
+		//   Provider block can list it** - listing it in the Provider alone leaves it out of the DOM
+		//   entirely, with no build error and no warning ('kcmTransparencyItemCount' in doc -> false).
+		//   That is how this was first written, and it took comparing against hostadapter/IDHA.fr:527
+		//   (the SDK's one example of Object{kDocumentObjectScriptElement}) to see the missing half.
+		Property
+		{
+			kKESCMTransparencyItemCountPropertyScriptElement,
+			p_KESCMTransparencyItemCount,
+			"kcm transparency item count",		// name -> document.kcmTransparencyItemCount
+			"How many page items the document's transparency manager currently lists as having transparency.",
+			Int32Type,
+			{}
+			kNoAttributeClass,
+		}
+
 		// Puts those four ON the story object - a SECOND Provider block on the SAME boss as the
 		// application properties above. What separates them is the Object field: a Property is
 		// added to the object named by the PRECEDING Object (vol1-11:1302), so the four counters
@@ -578,6 +630,24 @@ resource VersionedScriptElementInfo(10)
 				Property{ kKESCMTextChangeCountPropertyScriptElement, kReadOnly },
 				Property{ kKESCMAttrChangeCountPropertyScriptElement, kReadOnly },
 				Property{ kKESCMOtherChangeCountPropertyScriptElement, kReadOnly },
+			}
+		},
+
+		// ★★2026-08-20: document に1本。app / story と同じく Object ごとに Provider ブロックを分ける
+		//   (上のコメントの理由そのまま＝Object を持たない Property は直前の Object に付いてしまう)。
+		//
+		// document.kcmTransparencyItemCount ＝ IXPManager の「透明を持つページアイテムの一覧」の件数。
+		// ★これは KESCM の内部状態ではなく**本体が文書ごとに持っている一覧**の件数で、
+		//   KESCM が書き出しのあいだだけ載せる分も、本物の透明(影・不透明度<100 等)も同じく数える。
+		// ★★用途＝**載せたまま保存していないかを外から確かめる**こと。一覧は .indd に永続するので、
+		//   保存 → 閉じる → 開き直して読めば「書き込まれたか」がそのまま判る。
+		// ⚠この Property は下の2つ目のリソースで IDML から除外している(story の4本と同じ理由)。
+		Provider
+		{
+			kKESCMScriptProviderBoss,
+			{
+				Object{ kDocumentObjectScriptElement },
+				Property{ kKESCMTransparencyItemCountPropertyScriptElement, kReadOnly },
 			}
 		}
 	}
@@ -641,6 +711,19 @@ resource VersionedScriptElementInfo(2)
 				Property{ kKESCMTextChangeCountPropertyScriptElement, kReadOnly },
 				Property{ kKESCMAttrChangeCountPropertyScriptElement, kReadOnly },
 				Property{ kKESCMOtherChangeCountPropertyScriptElement, kReadOnly },
+			}
+		},
+
+		// ★★2026-08-20: document のプロパティも同じ理由で IDML から外す。
+		//   ⚠**こちらは story の4本より外す理由が強い** ---- 件数は「いまこの瞬間の本体の状態」で、
+		//   書き出しのあいだだけ増える**揮発するセッション状態**そのものだから。文書の交換フォーマットに
+		//   書けば、開いた側は「この文書には透明が n 個ある」という**古くて根拠のない数**を受け取る。
+		Provider
+		{
+			kNotSupported,
+			{
+				Object{ kDocumentObjectScriptElement },
+				Property{ kKESCMTransparencyItemCountPropertyScriptElement, kReadOnly },
 			}
 		}
 	}

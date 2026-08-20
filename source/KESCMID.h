@@ -161,9 +161,9 @@
 //   ⚠ よって **この帯の +7 +8 +9 +11〜+28 は「空き」ではない**（UI 側の同じ数字と対応が付いている）。
 //   ★これは「値が衝突する」という意味ではない（model は 0x1EA5 0x〜 / UI は 0x1EA5 8x〜で別物）。
 //     **番号を読み替えるための手がかり**として空けてある、という意味。
-//   ★ここに残る4つが「窓が無くても成り立つ仕事」＝比較マークの描画・起動終了・文書クローズ・ScriptProvider。
+//   ★ここに残るのが「窓が無くても成り立つ仕事」＝比較マークの描画・起動終了・文書クローズ・ScriptProvider。
 DECLARE_PMID(kClassIDSpace, kKESCMScriptProviderBoss, kKESCMPrefix + 3)	// ★このプラグインが公開する ScriptProvider は**これ1つだけ**＝app の2プロパティ(kcmStatus/kcmBookResult)と story の4カウンターを両方この boss が serve する(2026-08-15 に集約)。.fr は**同じ boss に Provider ブロックを2つ**書いて Object ごとに Property を分けている(KESCM.fr の末尾2ブロック)。旧スクリプトAPI(kescmToast 等)は撤去済みで、公開するのは読み取り専用プロパティだけ
-DECLARE_PMID(kClassIDSpace, kKESCMDrawEventServiceBoss, kKESCMPrefix + 4)
+// kKESCMDrawEventServiceBoss (kKESCMPrefix + 4) は 2026-08-20 に廃止＝マークの描画を kKESCMRingAdornmentBoss(グローバルページアイテムアドーンメント)へ**一本化**し、Draw Event の受け口を撤去した。スロットは予約のまま。
 // kKESCMPeekWatcherBoss (kKESCMPrefix + 5) は中ボタンウォッチャ撤去(2026-07-13)により廃止。スロットは予約のまま。
 DECLARE_PMID(kClassIDSpace, kKESCMPeekStartupBoss, kKESCMPrefix + 6)	// IStartupShutdown: アプリ起動時に peek ウォッチャを開始
 DECLARE_PMID(kClassIDSpace, kKESCMDocResponderServiceBoss, kKESCMPrefix + 10)	// IK2ServiceProvider+IResponder: ドキュメントクローズ監視(閉じた文書の追跡状態を確定クリーンアップ)
@@ -178,6 +178,16 @@ DECLARE_PMID(kClassIDSpace, kKESCMBeforeSaveResponderServiceBoss, kKESCMPrefix +
 //   ★実機で確認済み(2026-08-15)＝`'kcmChangeCount' in app` も `'kcmStatus' in story` も **false**（混ざらない）。
 DECLARE_PMID(kClassIDSpace, kKESCMRingAdornmentBoss, kKESCMPrefix + 29)	// IAdornmentShape + IAdornmentFlattenerUsage: 比較マークをアドーンメントとして描く boss(KESCMRingAdornment.cpp)。★セッションの**グローバル**ページアイテムアドーンメントリスト(IID_IGLOBALPAGEITEMADORNMENTLIST)へ登録するので、文書には一切付けない=.indd を1バイトも変えない。★★番号を +7〜+28 から採らないのは上のとおり(あの帯は UI 側の同じ数字と対応が付いている)＝**新規は +29 以降から採る**
 DECLARE_PMID(kClassIDSpace, kKESCMRingAdornmentStartupBoss, kKESCMPrefix + 30)	// IStartupShutdown: 上のアドーンメントを**実行コンテキストごとに**登録/解除するだけの boss。★★**kKESCMPeekStartupBoss とは別にする必要がある**＝あちらは Shutdown で比較状態を捨てるのでメインスレッド限定(kCMainThreadStartupShutdownProviderImpl)だが、こちらは**BG スレッドでも呼ばれなければ意味が無い**(セッションへの登録はスレッドをまたがない)
+// ★★★2026-08-20: 透明の申告を「書き出し／印刷のあいだだけ」立てるための2 boss。
+//   ⚠**なぜ要るか**＝`IXPManager` の「透明を持つページアイテムの一覧」は**文書側のデータで、`.indd` に永続する**
+//     (2026-08-20 実測＝開き直しても再検証されない)。比較中ずっと載せておくと、ユーザーが保存した瞬間に
+//     **根拠のない記録が文書へ焼き付く**(KESCM を持たない人が開いても残る)。⇒ **要る瞬間だけ載せて、すぐ降ろす。**
+//   ★フラットナが要るのは**書き出しと印刷のときだけ**で、画面描画にもサムネイルにも一覧は要らない。
+//   ★手本＝`customconditionaltext`(PDF と印刷の両方で「前に変えて後で戻す」を実装している唯一のサンプル)。
+//   ⚠**保存の前後(kBeforeSaveDoc)には置かない**＝そこで落ちると文書を失う。書き出しなら失敗してもやり直せる
+//     (2026-08-20 ユーザー判断＝「どこで失敗しても許される場所に置く」)。
+DECLARE_PMID(kClassIDSpace, kKESCMPDFExportSetupBoss, kKESCMPrefix + 31)	// IK2ServiceProvider(Adobe 提供の kPDFExportSetupServiceImpl)+IPDFExportSetupProvider: PDF 書き出しの BeginExport で透明の一覧に載せ、EndExport で降ろす。★★★**非同期書き出しではここに「書き出し用のクローン db」が渡る**＝元の文書を一度も触らずに出力だけ変えられる(2026-08-20 実測)。⚠**旧 kKESCMExportXPResponderServiceBoss(同じ +31)の後継**＝あちらは kBeforeExport/kAfterExport/kFailedExport の3シグナルで**元の文書**に載せていたので、書き出し中に保存されると一覧が .indd に焼き付いた
+														// ⚠**印刷側の対(kPrintSetupService+IPrintSetupProvider)は無い**＝公式に倣って一度書いたが(旧 +32/+50)、**2026-08-20 のユーザー判断で外した**。⚠**効かないからではない**＝載せれば印刷でもマークは濃くなる(実測 16,076 ⇔ 8,407 画素。どちらもベタにはならない)が、**印刷にそこまでの厳密性は要らない・印刷会社へ出すのは PDF** という判断。★A/B と復活手順は KESCMRingAdornment.cpp の節5。**次の新規 boss は +32 から採ってよい**
 
 // InterfaceIDs:
 // ★★+0〜+3（Observer 3本のアタッチ識別 ID ＋ Story Edits セクション高さ）は 2026-08-15（第2段
@@ -207,8 +217,7 @@ DECLARE_PMID(kClassIDSpace, kKESCMRingAdornmentStartupBoss, kKESCMPrefix + 30)	/
 // ★★2026-08-15（第2段 Task 6B-2）: **UI 側の実装 26 本は ui/KCMUIID.h へ移した**（+5 +6 +7 +10〜+38 の UI 分）。
 //   オフセットは据え置き。⚠ここに残る 10 本は ui/KCMUIFactoryList.h ではなく source/KESCMFactoryList.h に載る。
 DECLARE_PMID(kImplementationIDSpace, kKESCMScriptProviderImpl, kKESCMPrefix + 0)	// CScriptProvider 実装(KESCMScriptProvider.cpp)。★★2026-08-17 訂正＝旧「app.kcmStatus を返す」は 2026-08-15 の統合前の姿。**この1本が公開6プロパティ全部を serve する**(app の2本＋story の4本)＝上の kKESCMScriptProviderBoss の説明が正
-DECLARE_PMID(kImplementationIDSpace, kKESCMDrawEventSrvcImpl, kKESCMPrefix + 1)
-DECLARE_PMID(kImplementationIDSpace, kKESCMDrawEventHandlerImpl, kKESCMPrefix + 2)
+// kKESCMDrawEventSrvcImpl (kKESCMPrefix + 1) / kKESCMDrawEventHandlerImpl (kKESCMPrefix + 2) は 2026-08-20 に廃止(上の kKESCMDrawEventServiceBoss と同じ理由＝アドーンメントへの一本化)。スロットは予約のまま。
 // kKESCMPeekWatcherImpl (kKESCMPrefix + 3) は中ボタンウォッチャ撤去(2026-07-13)により廃止。スロットは予約のまま。
 DECLARE_PMID(kImplementationIDSpace, kKESCMPeekStartupImpl, kKESCMPrefix + 4)	// IStartupShutdown 実装(peek ウォッチャを開始)
 // kKESCMDocServiceProviderImpl (kKESCMPrefix + 8) は自前 ServiceProvider の撤去(2026-08-06)により廃止。
@@ -226,6 +235,10 @@ DECLARE_PMID(kImplementationIDSpace, kKESCMBeforeSaveResponderImpl, kKESCMPrefix
 DECLARE_PMID(kImplementationIDSpace, kKESCMRingAdornmentImpl, kKESCMPrefix + 45)	// IAdornmentShape 実装(KESCMRingAdornment.cpp)。描画本体は持たず、スプレッドに対して KESCMDrawEventHandler::DrawSpreadMarks() をそのまま呼ぶ=描画ロジックは Draw Event 経路と1本のまま
 DECLARE_PMID(kImplementationIDSpace, kKESCMRingFlattenerUsageImpl, kKESCMPrefix + 46)	// IAdornmentFlattenerUsage 実装(同上)。★★これが本命＝**透明マネージャに「このアドーンメントは透明を使う」と申告する唯一の口**。PDF 1.3(透明を含まないページ)でリングが全面ベタになる既知の制限を解くために足した。手本=transparencyeffect/TranFxFlattenerUsage.cpp
 DECLARE_PMID(kImplementationIDSpace, kKESCMRingAdornmentStartupImpl, kKESCMPrefix + 47)	// IStartupShutdownService 実装(KESCMRingAdornment.cpp の末尾)。中身は Register/Unregister を呼ぶだけ。★**実行コンテキストごとに**呼ばれる必要があるので kKESCMPeekStartupImpl とは別の boss に載せる
+// ★2026-08-20: 上の2 boss の実装(いずれも KESCMRingAdornment.cpp の末尾)。透明の申告と同じ関心事なので同居させる。
+DECLARE_PMID(kImplementationIDSpace, kKESCMPDFExportSetupImpl, kKESCMPrefix + 48)		// IPDFExportSetupProvider 実装(KESCMRingAdornment.cpp)。★ServiceProvider 側は Adobe 提供の kPDFExportSetupServiceImpl をそのまま .fr で名指しするので、自作はこの1本だけ。手本=sdksamples/pdfvt。⚠**旧 kKESCMExportXPResponderImpl(同じ +48)の後継**
+// kKESCMExportXPServiceProviderImpl (kKESCMPrefix + 49) は 2026-08-20 に廃止＝書き出しシグナル3本を1つの boss で受けるための自作 ServiceProvider だったが、PDF 書き出しサービスへ移して不要になった(あちらは ServiceProvider が Adobe 提供)。スロットは予約のまま。
+														// ⚠**印刷側の IPrintSetupProvider 実装は無い**(旧 +50。理由は上の Class 側の注記と KESCMRingAdornment.cpp の節5)。**次の新規 Impl は +50 から採ってよい**
 
 // MessageIDs: model が UI へ「何が変わったか」を知らせる通知(2026-08-13・model/UI 分割 第1段 Task 9)。
 //   ★★2026-08-15（第2段 Task 6B）に **7本すべて KESCMBoundaryID.h へ移した**
@@ -277,6 +290,8 @@ DECLARE_PMID(kScriptInfoIDSpace, kKESCMChangeCountPropertyScriptElement, kKESCMP
 DECLARE_PMID(kScriptInfoIDSpace, kKESCMTextChangeCountPropertyScriptElement, kKESCMPrefix + 16)	// stories[n].kcmTextChangeCount(本文。GetTextChangeCount)
 DECLARE_PMID(kScriptInfoIDSpace, kKESCMAttrChangeCountPropertyScriptElement, kKESCMPrefix + 17)	// stories[n].kcmAttrChangeCount(書式。GetAttrChangeCount)
 DECLARE_PMID(kScriptInfoIDSpace, kKESCMOtherChangeCountPropertyScriptElement, kKESCMPrefix + 18)	// stories[n].kcmOtherChangeCount(その他。GetOtherChangeCount)
+// ★★2026-08-20 追加。⚠**上の4本と同じく、KESCM.fr の「2つ目の VersionedScriptElementInfo」にも同じ ID を書く**(片方だけ直すと黙って IDML に出る)。
+DECLARE_PMID(kScriptInfoIDSpace, kKESCMTransparencyItemCountPropertyScriptElement, kKESCMPrefix + 19)	// document.kcmTransparencyItemCount(読み取り専用。IXPManager の「透明を持つページアイテムの一覧」の件数＝**載せたまま保存していないかを外から確かめる口**。一覧は .indd に永続するので、保存→閉じる→開き直して読めば「書き込まれたか」が判る)
 // (ツールの列挙子は本体の kToolBoxEnumScriptElement に載せるので、こちら側の ID は要らない。)
 
 // StringKeys:

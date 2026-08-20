@@ -118,6 +118,7 @@
 //  最初から正しく書いている＝**同じ問いに2つの答えがあった**)だけで、これは逆流ではない。)
 #include "KESCMBookCompare.h"	// KESCMGetBookResultText - the last book comparison, also in the module
 #include "KESCMStoryStamp.h"	// KESCMStoryEdits::ReadStamp - the SAME reading the panel uses
+#include "KESCMRingAdornment.h"	// KESCMGetNumItemsWithXP - document.kcmTransparencyItemCount (2026-08-20)
 
 /** Serves every scripting addition this plug-in makes: two read-only strings on the application
     object and four read-only counters on the story object. One boss, because the .fr splits them
@@ -128,7 +129,7 @@ public:
 	KESCMScriptProvider(IPMUnknown* boss) : CScriptProvider(boss) {}
 	virtual ~KESCMScriptProvider() {}
 
-	/** Read (or refuse to write) one of our six properties. Anything not ours goes to the base
+	/** Read (or refuse to write) one of our seven properties. Anything not ours goes to the base
 	    class, which is what keeps the rest of the scripting working on whichever object we were
 	    asked about. */
 	virtual ErrorCode AccessProperty(ScriptID propID, IScriptRequestData* data, IScript* script);
@@ -139,6 +140,12 @@ private:
 
 	/** stories[n].kcm*ChangeCount - read off the story the script object names. */
 	ErrorCode ReadStoryCounter(int32 id, ScriptID propID, IScriptRequestData* data, IScript* script);
+
+	/** document.kcmTransparencyItemCount - the XPManager's item-has-transparency list, counted
+	    (2026-08-20). ★This is the one property here that reads the HOST's state rather than our
+	    own: it exists so that "did we leave ourselves on that list when the document was saved?"
+	    can be answered from outside, and the list persists in the .indd. */
+	ErrorCode ReadTransparencyItemCount(ScriptID propID, IScriptRequestData* data, IScript* script);
 };
 
 CREATE_PMINTERFACE(KESCMScriptProvider, kKESCMScriptProviderImpl)
@@ -150,8 +157,9 @@ ErrorCode KESCMScriptProvider::AccessProperty(ScriptID propID, IScriptRequestDat
 	const bool16 isAppString = (id == p_KESCMStatus || id == p_KESCMBookResult);
 	const bool16 isStoryCounter = (id == p_KESCMChangeCount || id == p_KESCMTextChangeCount ||
 								   id == p_KESCMAttrChangeCount || id == p_KESCMOtherChangeCount);
+	const bool16 isDocXPCount = (id == p_KESCMTransparencyItemCount);
 
-	if (!isAppString && !isStoryCounter)
+	if (!isAppString && !isStoryCounter && !isDocXPCount)
 		return CScriptProvider::AccessProperty(propID, data, script);
 
 	// ★NO nil CHECK ON data OR script, and that is measured rather than assumed (2026-08-18, bug
@@ -195,8 +203,11 @@ ErrorCode KESCMScriptProvider::AccessProperty(ScriptID propID, IScriptRequestDat
 	// PowerShell, a CEP panel on a timer). Then this needs KBS's shape: a flag the comparison sets,
 	// and a "busy" sentence returned instead of the stale one.
 
-	return isAppString ? this->ReadAppString(id, propID, data, script)
-					   : this->ReadStoryCounter(id, propID, data, script);
+	if (isAppString)
+		return this->ReadAppString(id, propID, data, script);
+	if (isDocXPCount)
+		return this->ReadTransparencyItemCount(propID, data, script);
+	return this->ReadStoryCounter(id, propID, data, script);
 }
 
 ErrorCode KESCMScriptProvider::ReadAppString(int32 id, ScriptID propID, IScriptRequestData* data, IScript* script)
@@ -238,6 +249,28 @@ ErrorCode KESCMScriptProvider::ReadStoryCounter(int32 id, ScriptID propID, IScri
 	// after ordinary editing), so the cast cannot lose anything a reader would notice.
 	ScriptData outputData;
 	outputData.SetInt32(static_cast<int32>(value));
+	data->AppendReturnData(script, propID, outputData);
+	return kSuccess;
+}
+
+ErrorCode KESCMScriptProvider::ReadTransparencyItemCount(ScriptID propID, IScriptRequestData* data, IScript* script)
+{
+	// The script object names the document to read - same move as ReadStoryCounter above, except
+	// that here only the DATABASE is wanted: the item-has-transparency list is per-document state
+	// held by the host's XPManager, not something hanging off a particular UID of ours.
+	UIDList target(script);
+	IDataBase* const db = target.GetDataBase();
+	if (db == nil)
+		return kInvalidScriptTargetError;
+
+	const int32 count = KESCMGetNumItemsWithXP(db);
+	if (count < 0)
+		return kInvalidScriptTargetError;	// XPManager could not be reached for that database
+
+	// Int32Type in the .fr, like the story counters - a script compares this with 0 to answer
+	// "was anything left on the list?", so it must not arrive as a string.
+	ScriptData outputData;
+	outputData.SetInt32(count);
 	data->AppendReturnData(script, propID, outputData);
 	return kSuccess;
 }
