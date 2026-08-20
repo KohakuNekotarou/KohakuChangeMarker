@@ -32,11 +32,22 @@
 #include "IXPManager.h"					// ItemXPChanged(＝「透明を持つアイテムの一覧」を作り直させる)
 #include "ISpreadList.h"				// 文書のスプレッドを辿る
 #include "IDataBase.h"					// GetRootUID
+// ★2026-08-20: 出力(書き出し・印刷)のあいだだけ一覧に載せるための2サービス(このファイルの末尾)。
+#include "isignalmgr.h"					// GetServiceID()
+#include "IExportProviderSignalData.h"	// 書き出しシグナルの添付データ(文書・フォーマット)
+#include "DocFrameworkID.h"				// k*ExportSignalResponderService
+#include "IActiveContext.h"				// 印刷側は文書が引数で来ないのでアクティブコンテキストから取る(公式と同じ)
+#include "IDocument.h"
+#include "PersistUtils.h"				// ::GetUIDRef
 
 // General includes:
 #include "CPMUnknown.h"
+#include "CResponder.h"
+#include "CServiceProvider.h"
+#include "CPrintSetupProvider.h"
 #include "UIDList.h"
 #include "Utils.h"
+#include <map>							// 出力ごとの入れ子カウント(文書別)
 
 // Project includes:
 #include "KESCMID.h"
@@ -102,7 +113,27 @@ namespace
 		  ＝`TranFxAdornment.cpp:483`)のとおりだった。
 		∴ **`ItemXPChanged` の通知は代替不能。** この定数は結論を書き残すために残してある。 */
 	const bool16 kTestInkBoundsInsteadOfNotify = kFalse;
+
 }
+
+/** 「マークが半透明を**使いうる**か」＝設定とマークの有無だけを見る。出力中かは見ない。
+	★**一覧へ載せるかどうかはこちらで決める**(載せる瞬間はまだ出力が始まっていないため)。 */
+static bool16 KESCMMarksCouldBeTranslucent();
+
+/** ★★★「**いまこの出力に**マークの半透明が乗るか」＝`IsFlattenerRequired_` の答えそのもの。
+	上の判定に加えて「**いま書き出し／印刷の最中か**」を見る。
+
+	⚠★★★**「出力中か」を含めるのが要**(2026-08-20 実測で判明)。含めないと**一覧から降ろせない** ----
+	  `kXPC_RemovedSomeXP` は「消せ」ではなく「**聞き直せ**」なので、降ろす通知を出しても
+	  この関数が「マークはまだある」と kTrue を返す限り、XPManager は一覧に残したままにする
+	  (実測＝載せ外しは正しく呼ばれているのに `xp 0->4` のまま戻らなかった)。
+	⇒ **出力が終わったら「もう透明は無い」と答える**ことで、初めて降りる。
+	★画面描画やサムネイルで kFalse になるのは正しい ---- フラットナはそこでは走らないので、
+	  申告を聞きに来る相手がいない。
+
+	⚠**匿名 namespace の外に置くこと** ---- 中に宣言して外で定義すると別物になり、
+	  「オーバーロード解決できない」で落ちる(2026-08-20 に踏んだ)。 */
+static bool16 KESCMMarksDeclareTransparency();
 
 //========================================================================================
 // 1) アドーンメント本体
@@ -252,6 +283,11 @@ bool32 KESCMRingFlattenerUsage::IsFlattenerRequired_(IPMUnknown* /*iThing*/,
 	//     「付け外しで透明の有無が決まるなら kTrue 固定でよい／設定次第で消えるならそこを見て返せ」。
 	//     こちらは後者(トグルで消える)。
 
+	return KESCMMarksDeclareTransparency();
+}
+
+static bool16 KESCMMarksCouldBeTranslucent()
+{
 	// ★実験用スイッチ(上の kDeclareFlattenerUsage の説明を参照)。
 	if (!kDeclareFlattenerUsage)
 		return kFalse;
@@ -361,9 +397,21 @@ bool16 KESCMRingAdornmentIsActive()
 // 3.5) ★★★透明マネージャに「聞き直せ」と言う ---- PDF 1.3 の全面ベタの残り半分
 //========================================================================================
 
-void KESCMRingAdornmentRefreshItemXPState(IDataBase* db)
+/** 一覧へ載せるのか、降ろすのか。**方向を引数で受け取る。**
+	⚠★★★**2026-08-20 に引数を足した。** それまでは1本の関数が上げ下げ両方に使われ、**どちらにも
+	`kXPC_MayHaveAddedSomeXP` を送っていた** ---- 名前のとおりこの種別は**増える方向にしか効かない**ので、
+	呼び手は「対称に呼ぶこと」と書いて実際に対称に呼んでいたのに、**降ろす側が一度も効いていなかった**
+	(A/B 実測＝同じ文書に `MayHaveAdded` で `1->1` / `RemovedSomeXP` で `1->0`)。
+	★**教訓＝同じ関数が両方向に使われるなら、方向を引数で受け取る。** 呼び出しの対称性は、
+	意味の対称性を保証しない。 */
+enum KESCMXPListAction
 {
-	// 申告そのものを切ってあるなら、一覧に載せる意味も無い。
+	kKESCMXPListAdd,		///< 出力に透明が生じる ---- 一覧へ載せる(kXPC_AddedSomeXP)
+	kKESCMXPListRemove		///< 生じない ---- 一覧から降ろす(kXPC_RemovedSomeXP)
+};
+
+static void KESCMSetItemXPState(IDataBase* db, KESCMXPListAction action)
+{
 	// 申告そのものを切ってあるなら、一覧に載せる意味も無い。
 	// kTestInkBoundsInsteadOfNotify は「ink bounds が通知の代わりになるか」を測るための実験スイッチ。
 	if (!kUseRingAdornment || !kDeclareFlattenerUsage || kTestInkBoundsInsteadOfNotify)
@@ -409,26 +457,39 @@ void KESCMRingAdornmentRefreshItemXPState(IDataBase* db)
 	if (items.Length() == 0)
 		return;
 
-	// ★`kXPC_MayHaveAddedSomeXP` ＝「設定が変わった。増えたか減ったかは分からない」
-	//   (`IXPManager.h:101`)。マークは ON にも OFF にもなるので、これが正しい種別。
-	//   答えを決めるのは**こちらではなく上の IsFlattenerRequired_**＝XPManager がアイテムに
-	//   聞き直し、アイテムは自分のアドーンメントに聞く。∴ この呼び出しは冪等で、
-	//   「マークを出さない設定」のときに透明を偽って申告することにはならない。
+	// ★★★**種別は方向で選ぶ**(`IXPManager.h:95-101`)。
+	//   ・載せる＝`kXPC_AddedSomeXP`     …「透明が足された」。手本の transparencyeffect も同じ
+	//                                      (`TranFxUtils.cpp:451-457`＝"update the item-has-xp list")。
+	//   ・降ろす＝`kXPC_RemovedSomeXP`   …「透明が外れた」。
+	//   ⚠★★★**`kXPC_MayHaveAddedSomeXP` を「どちらでもよい種別」として使ってはいけない。**
+	//     2026-08-20 に A/B で実測＝同じ文書へ `MayHaveAdded` を送ると **1->1(降りない)**、
+	//     `RemovedSomeXP` なら **1->0(降りる)**。ヘッダーの "will ask the item(s) for their new XP
+	//     state, and if it changes, will update" をそのまま読むと外す ---- **名前のとおり
+	//     `MayHave**Added**` は増える方向にしか効かない。**
+	//   ★どちらの向きでも、載る/降りるを最終的に決めるのは `IsFlattenerRequired_`(＝
+	//     `KESCMMarksDeclareTransparency`)＝XPManager がアイテムに聞き直し、アイテムが
+	//     自分のアドーンメントに聞く。∴ **透明を偽って申告することにはならない。**
 	// ⚠**Command 版(`ProcessItemXPChangedCmd` / `kXPItemXPPrePostCmdBoss`)は使わない。**
 	//   公式サンプルがそちらなのは**アドーンメントの付け外し自体が文書データの変更で Undo に
 	//   乗せる必要がある**から。KESCM の登録はセッション側で文書を1バイトも変えないので、
 	//   Undo スタックに項目を積む理由が無い(積めば Ctrl+Z の意味が壊れる)。
 	//
 	// ⚠★★★**この呼び出しは文書を dirty にする** ---- 2026-08-20 に A/B で実測した
-	//   (この関数を外したビルドでは Start→印刷マーク ON→Stop を通しても `modified=false` のまま。
-	//    入れたビルドでは Stop の後に `modified=true` になった)。**一覧は文書側のデータ**なので、
-	//    公式が Command 経由なのもそのためで、あちらは「アドーンメントを付けた」という本物の
-	//    文書変更に伴う dirty だから正しい。**KESCM は文書を変えていないので戻す。**
+	//   (ガードを外したビルドでは、フライアウトを1回押しただけで `modified=true` になった)。
+	//   **一覧は文書側のデータ**なので、公式が Command 経由なのもそのためで、あちらは
+	//   「アドーンメントを付けた」という本物の文書変更に伴う dirty だから正しい。
+	//   **KESCM は文書を変えていないので戻す。**
 	//   ★KESCM の作法＝`IDataBase::SaveRestoreModifiedState`(入る前が clean なら出るときに戻す)。
-	//     同じ守りが KESCMCore.cpp:527 / KESCMPeek.cpp:194 / KESCMOversetScan.cpp:333 ほか6か所にある。
+	//     同じ守りが KESCMCore.cpp / KESCMPeek.cpp / KESCMOversetScan.cpp ほかにもある。
+	//   ⚠★★**ただしガードは「保存を促さない」だけで「保存されるのを防がない」** ---- 一覧の更新自体は
+	//     データベースに残るので、ユーザーが別の理由で保存すれば一緒に `.indd` へ書かれる
+	//     (2026-08-20 実測＝**開き直しても残り、再検証もされない**)。
+	//     ⇒ **だからこの関数は「書き出し／印刷のあいだだけ」呼ぶ**(下の 3.6 節)。
 	{
 		IDataBase::SaveRestoreModifiedState dirtyGuard(db);
-		xpManager->ItemXPChanged(items, IXPManager::kXPC_MayHaveAddedSomeXP);
+		xpManager->ItemXPChanged(items,
+								 (action == kKESCMXPListAdd) ? IXPManager::kXPC_AddedSomeXP
+															 : IXPManager::kXPC_RemovedSomeXP);
 	}
 }
 
@@ -469,3 +530,238 @@ public:
 };
 
 CREATE_PMINTERFACE(KESCMRingAdornmentStartup, kKESCMRingAdornmentStartupImpl)
+
+//========================================================================================
+// 5) ★★★出力(書き出し・印刷)のあいだだけ、透明の一覧に載せる
+//
+//  ■ なぜ「あいだだけ」なのか
+//    `IXPManager` の一覧は**文書側のデータで、`.indd` に永続する**(2026-08-20 実測＝比較して保存した
+//    文書を開き直すと1件残っており、**開くだけでは再検証されない**)。比較中ずっと載せておくと、
+//    ユーザーが何かの拍子に保存した瞬間に**根拠のない記録が焼き付く** ---- KESCM を持たない人が
+//    その `.indd` を開いても残る。⇒ **要る瞬間だけ載せて、終わったら降ろす。**
+//    ★フラットナが要るのは**書き出しと印刷のときだけ**で、画面描画にもサムネイルにも一覧は要らない。
+//
+//  ■ 手本＝`customconditionaltext`(PDF と印刷の両方で「前に変えて後で戻す」を実装している唯一のサンプル)
+//    ・PDF   … `CusCondTxtResponder.cpp:118-152`  (Before で変え、After と **Failed** で戻す)
+//    ・印刷  … `CusCondTxtPrintSetupProvider.cpp:93-116` (BeforePrintGatherCmd → EndPrint)
+//
+//  ■ ⚠ なぜ「保存の前後」ではないのか(2026-08-20 ユーザー判断)
+//    同じ目的は `kBeforeSaveDocSignalResponderService` でも果たせるが、**そこで落ちると文書を失う**
+//    (InDesign が落ちて復帰になる)。書き出しなら失敗してもやり直せるだけ。
+//    ⇒ **どこで失敗しても許される場所に置く。**
+//
+//  ■ 2026-08-20 の実測(このファイルの診断ビルドで採取)
+//    ・書き出しシグナルは**同期(exportFile)・非同期(asynchronousExportFile)とも飛ぶ**
+//    ・★**どちらもメインスレッドで、元の `IDataBase`** を持って飛ぶ(BG では飛ばない)
+//      ⇒ ここで載せた状態から**書き出し用のクローン DB が作られる**ので、出力には乗り、
+//        After で元から降ろせば**元の文書には残らない**。
+//    ・⚠**フォーマット名が経路で違う**＝同期 `Adobe PDF` / 非同期 `Adobe PDF (Print)`
+//      (公式が3つ列挙している理由。1つだけ見ると片方で外す)
+//========================================================================================
+
+// 文書ごとに「いま何本の出力が走っているか」。
+// ⚠**入れ子と同時実行のために数える** ---- BG の書き出しは複数キューできるので、
+//   1本目の完了で降ろすと、まだ走っている2本目の出力からマークが消える。
+// ⚠**メインスレッドからしか触らない**(上の実測どおり、載せ外しの入口は4つとも main)。
+static std::map<IDataBase*, int32> gKESCMOutputXPRaise;
+
+
+// ★★★`IsFlattenerRequired_` の答え(前方宣言はファイル冒頭。理由もそこに書いてある)。
+//   ⚠**この定義がカウンタより後ろに居るのは意図的** ---- 「いま出力中か」を見るため。
+static bool16 KESCMMarksDeclareTransparency()
+{
+	// ⚠**出力(書き出し・印刷)の最中でなければ「透明は無い」と答える。**
+	//   これが無いと、降ろす通知(`kXPC_RemovedSomeXP`＝「聞き直せ」)に対して
+	//   「マークはまだある」と答えてしまい、**一覧から永久に降りない**(2026-08-20 実測)。
+	if (gKESCMOutputXPRaise.empty())
+		return kFalse;
+
+	return KESCMMarksCouldBeTranslucent();
+}
+
+/** 出力が始まる ---- 透明が生じるときだけ一覧へ載せる。 */
+static void KESCMRaiseItemXPForOutput(IDataBase* db)
+{
+	if (db == nil)
+		return;
+	// ★載せるかどうかは「マークが半透明を使いうるか」で決める。
+	//   ⚠**`KESCMMarksDeclareTransparency()` ではない** ---- あちらは「いま出力中か」を含むので、
+	//     まだカウンタを立てていないこの時点では必ず kFalse になり、**一度も載らなくなる**。
+	if (!KESCMMarksCouldBeTranslucent())
+	{
+		return;
+	}
+
+	// ★★**カウンタを先に立ててから通知する。** 下の KESCMSetItemXPState() が出す通知を受けて
+	//   XPManager が `IsFlattenerRequired_` を聞きに来るので、その時点で「出力中」になっていないと
+	//   kFalse と答えてしまい、載らない。
+	const int32 depth = ++gKESCMOutputXPRaise[db];
+	if (depth == 1)
+		KESCMSetItemXPState(db, kKESCMXPListAdd);
+}
+
+/** 出力が終わった(成功・失敗・キャンセルのいずれでも) ---- 最後の1本が終わったら降ろす。 */
+static void KESCMLowerItemXPForOutput(IDataBase* db)
+{
+	if (db == nil)
+		return;
+
+	std::map<IDataBase*, int32>::iterator it = gKESCMOutputXPRaise.find(db);
+	// ★★**載せていないなら降ろさない。** `kXPC_RemovedSomeXP` は「聞き直せ」なので本物の透明を持つ
+	//   アイテムは残るはずだが、**それは未実測**(2026-08-20)。⇒ 自分が載せた分だけを相手にする。
+	if (it == gKESCMOutputXPRaise.end())
+	{
+		return;
+	}
+	if (--(it->second) > 0)
+		return;					// まだ別の出力が走っている
+
+	gKESCMOutputXPRaise.erase(it);
+	KESCMSetItemXPState(db, kKESCMXPListRemove);
+}
+
+//----------------------------------------------------------------------------------------
+// 5-1) 書き出し(PDF ほか) ---- Before で載せ、After と Failed で降ろす
+//----------------------------------------------------------------------------------------
+
+/** ★1つの boss で3シグナルを受けるので ServiceProvider を自作する
+	(stock の1シグナル用実装では足りない)。形は `CusCondTxtServiceProvider.cpp:108-111` と同じ。 */
+class KESCMExportXPServiceProvider : public CServiceProvider
+{
+public:
+	KESCMExportXPServiceProvider(IPMUnknown* boss);
+	virtual ~KESCMExportXPServiceProvider() {}
+
+	virtual void        GetName(PMString* pName)  { pName->SetKey("KESCM Export Transparency Service"); }
+	virtual ServiceID   GetServiceID()            { return fSupportedServiceIDs[0]; }	// HasMultipleIDs が kTrue なので呼ばれない
+	virtual bool16      IsDefaultServiceProvider(){ return kFalse; }
+	virtual InstancePerX GetInstantiationPolicy() { return kInstancePerSession; }
+	virtual bool16      HasMultipleIDs() const    { return kTrue; }
+	virtual void        GetServiceIDs(K2Vector<ServiceID>& serviceIDs) { serviceIDs = fSupportedServiceIDs; }
+
+private:
+	K2Vector<ServiceID> fSupportedServiceIDs;
+};
+
+CREATE_PMINTERFACE(KESCMExportXPServiceProvider, kKESCMExportXPServiceProviderImpl)
+
+KESCMExportXPServiceProvider::KESCMExportXPServiceProvider(IPMUnknown* boss)
+	: CServiceProvider(boss)
+{
+	fSupportedServiceIDs.clear();
+	fSupportedServiceIDs.push_back(kBeforeExportSignalResponderService);
+	fSupportedServiceIDs.push_back(kAfterExportSignalResponderService);
+	// ⚠**Failed は「失敗」だけでなく「キャンセル」でも飛ぶ** ---- これを落とすと、
+	//   中断した書き出しのぶんだけ載せっぱなしになる(ガイド vol1-07 の非同期書き出しの節)。
+	fSupportedServiceIDs.push_back(kFailedExportSignalResponderService);
+}
+
+class KESCMExportXPResponder : public CResponder
+{
+public:
+	KESCMExportXPResponder(IPMUnknown* boss) : CResponder(boss) {}
+
+	virtual void Respond(ISignalMgr* signalMgr);
+};
+
+CREATE_PMINTERFACE(KESCMExportXPResponder, kKESCMExportXPResponderImpl)
+
+void KESCMExportXPResponder::Respond(ISignalMgr* signalMgr)
+{
+	if (signalMgr == nil)
+		return;
+
+	InterfacePtr<IExportProviderSignalData> data(signalMgr, UseDefaultIID());
+	if (data == nil)
+		return;
+
+	IDocument* const doc = data->GetDocument();
+	if (doc == nil)
+		return;
+	IDataBase* const db = ::GetUIDRef(doc).GetDataBase();
+	if (db == nil)
+		return;
+
+	// ★フォーマットは見ない。
+	//   公式(`CusCondTxtResponder.cpp:126-131`)は "Adobe PDF" 系だけを相手にするが、あちらは
+	//   **IDML と PDF で切り替える属性が違う**ため。こちらが載せる申告は「マークが透明を使う」という
+	//   出力形式によらない事実で、**必要としない形式に載っていても `IsFlattenerRequired_` が答えるまで**
+	//   何も起きない。⇒ **形式で絞る理由が無い**(絞ると、上と下で違う条件を書く隙が生まれる)。
+	//   ⚠形式名は経路で変わる(同期 `Adobe PDF` / 非同期 `Adobe PDF (Print)`)ので、
+	//     絞るなら3つとも書く必要がある ---- それも絞らない理由のひとつ。
+	switch (signalMgr->GetServiceID().Get())
+	{
+		case kBeforeExportSignalResponderService:
+			KESCMRaiseItemXPForOutput(db);
+			break;
+
+		case kAfterExportSignalResponderService:
+			KESCMLowerItemXPForOutput(db);
+			break;
+
+		case kFailedExportSignalResponderService:	// ★失敗とキャンセルの両方
+			KESCMLowerItemXPForOutput(db);
+			break;
+
+		default:
+			break;
+	}
+}
+
+//----------------------------------------------------------------------------------------
+// 5-2) 印刷 ---- BeforePrintGatherCmd で載せ、EndPrint で降ろす
+//----------------------------------------------------------------------------------------
+
+/** ⚠**ServiceProvider は Adobe 提供の `kPrintSetupServiceImpl` をそのまま `.fr` で名指しする**ので、
+	自作するのはこの1本だけ(`CusCondTxt.fr:181-196` と同じ形)。 */
+class KESCMPrintXPSetupProvider : public CPrintSetupProvider
+{
+public:
+	// ★基底ではなく HELPER_METHODS_INIT で初期化する(DECLARE_HELPER_METHODS を使う形の作法)。
+	//   公式も同じ＝CusCondTxtPrintSetupProvider.cpp:79-82。
+	KESCMPrintXPSetupProvider(IPMUnknown* boss) : HELPER_METHODS_INIT(boss), fPrintingDB(nil) {}
+	virtual ~KESCMPrintXPSetupProvider() {}
+
+	virtual void BeforePrintGatherCmd(bool16& bReturn, IPrintData* iPrintData, IOutputPages* iOutputPages);
+	virtual void EndPrint(void);
+
+	DECLARE_HELPER_METHODS()
+
+private:
+	// ⚠**EndPrint には文書が渡ってこない**ので、載せた相手を憶えておく。
+	//   ★アクティブ文書を EndPrint でもう一度引くのは危険 ---- 印刷中に前面が変わりうるので、
+	//     **載せた文書と降ろす文書が食い違う**。公式は「戻す」操作が文書を跨いでも無害な内容
+	//     (条件テキストの可視性)なのでアクティブを引き直しているが、こちらは数えているので合わせない。
+	IDataBase* fPrintingDB;
+};
+
+CREATE_PMINTERFACE(KESCMPrintXPSetupProvider, kKESCMPrintXPSetupProviderImpl)
+DEFINE_HELPER_METHODS(KESCMPrintXPSetupProvider)
+
+void KESCMPrintXPSetupProvider::BeforePrintGatherCmd(bool16& /*bReturn*/,
+													 IPrintData* /*iPrintData*/,
+													 IOutputPages* /*iOutputPages*/)
+{
+	// 公式と同じく、印刷される文書はアクティブコンテキストから取る(この口には引数で来ない)。
+	ISession* const session = GetExecutionContextSession();
+	if (session == nil)
+		return;
+	IActiveContext* const context = session->GetActiveContext();
+	if (context == nil)
+		return;
+	IDocument* const doc = context->GetContextDocument();
+	if (doc == nil)
+		return;
+
+	IDataBase* const db = ::GetUIDRef(doc).GetDataBase();
+	KESCMRaiseItemXPForOutput(db);
+	fPrintingDB = db;			// 載せた相手だけを憶える(載せていなくても Lower 側が数えていないので無害)
+}
+
+void KESCMPrintXPSetupProvider::EndPrint(void)
+{
+	KESCMLowerItemXPForOutput(fPrintingDB);
+	fPrintingDB = nil;
+}
+
+// End, KESCMRingAdornment.cpp.

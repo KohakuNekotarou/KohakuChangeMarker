@@ -178,6 +178,16 @@ DECLARE_PMID(kClassIDSpace, kKESCMBeforeSaveResponderServiceBoss, kKESCMPrefix +
 //   ★実機で確認済み(2026-08-15)＝`'kcmChangeCount' in app` も `'kcmStatus' in story` も **false**（混ざらない）。
 DECLARE_PMID(kClassIDSpace, kKESCMRingAdornmentBoss, kKESCMPrefix + 29)	// IAdornmentShape + IAdornmentFlattenerUsage: 比較マークをアドーンメントとして描く boss(KESCMRingAdornment.cpp)。★セッションの**グローバル**ページアイテムアドーンメントリスト(IID_IGLOBALPAGEITEMADORNMENTLIST)へ登録するので、文書には一切付けない=.indd を1バイトも変えない。★★番号を +7〜+28 から採らないのは上のとおり(あの帯は UI 側の同じ数字と対応が付いている)＝**新規は +29 以降から採る**
 DECLARE_PMID(kClassIDSpace, kKESCMRingAdornmentStartupBoss, kKESCMPrefix + 30)	// IStartupShutdown: 上のアドーンメントを**実行コンテキストごとに**登録/解除するだけの boss。★★**kKESCMPeekStartupBoss とは別にする必要がある**＝あちらは Shutdown で比較状態を捨てるのでメインスレッド限定(kCMainThreadStartupShutdownProviderImpl)だが、こちらは**BG スレッドでも呼ばれなければ意味が無い**(セッションへの登録はスレッドをまたがない)
+// ★★★2026-08-20: 透明の申告を「書き出し／印刷のあいだだけ」立てるための2 boss。
+//   ⚠**なぜ要るか**＝`IXPManager` の「透明を持つページアイテムの一覧」は**文書側のデータで、`.indd` に永続する**
+//     (2026-08-20 実測＝開き直しても再検証されない)。比較中ずっと載せておくと、ユーザーが保存した瞬間に
+//     **根拠のない記録が文書へ焼き付く**(KESCM を持たない人が開いても残る)。⇒ **要る瞬間だけ載せて、すぐ降ろす。**
+//   ★フラットナが要るのは**書き出しと印刷のときだけ**で、画面描画にもサムネイルにも一覧は要らない。
+//   ★手本＝`customconditionaltext`(PDF と印刷の両方で「前に変えて後で戻す」を実装している唯一のサンプル)。
+//   ⚠**保存の前後(kBeforeSaveDoc)には置かない**＝そこで落ちると文書を失う。書き出しなら失敗してもやり直せる
+//     (2026-08-20 ユーザー判断＝「どこで失敗しても許される場所に置く」)。
+DECLARE_PMID(kClassIDSpace, kKESCMExportXPResponderServiceBoss, kKESCMPrefix + 31)	// IK2ServiceProvider(CServiceProvider・HasMultipleIDs)+IResponder: 書き出しの Before で載せ、After と Failed で降ろす。★1つの boss で3シグナル＝公式の形(CusCondTxtServiceProvider.cpp:108-111)
+DECLARE_PMID(kClassIDSpace, kKESCMPrintXPSetupProviderBoss, kKESCMPrefix + 32)		// IK2ServiceProvider(Adobe 提供の kPrintSetupServiceImpl)+IPrintSetupProvider: 印刷の BeforePrintGatherCmd で載せ、EndPrint で降ろす
 
 // InterfaceIDs:
 // ★★+0〜+3（Observer 3本のアタッチ識別 ID ＋ Story Edits セクション高さ）は 2026-08-15（第2段
@@ -226,6 +236,10 @@ DECLARE_PMID(kImplementationIDSpace, kKESCMBeforeSaveResponderImpl, kKESCMPrefix
 DECLARE_PMID(kImplementationIDSpace, kKESCMRingAdornmentImpl, kKESCMPrefix + 45)	// IAdornmentShape 実装(KESCMRingAdornment.cpp)。描画本体は持たず、スプレッドに対して KESCMDrawEventHandler::DrawSpreadMarks() をそのまま呼ぶ=描画ロジックは Draw Event 経路と1本のまま
 DECLARE_PMID(kImplementationIDSpace, kKESCMRingFlattenerUsageImpl, kKESCMPrefix + 46)	// IAdornmentFlattenerUsage 実装(同上)。★★これが本命＝**透明マネージャに「このアドーンメントは透明を使う」と申告する唯一の口**。PDF 1.3(透明を含まないページ)でリングが全面ベタになる既知の制限を解くために足した。手本=transparencyeffect/TranFxFlattenerUsage.cpp
 DECLARE_PMID(kImplementationIDSpace, kKESCMRingAdornmentStartupImpl, kKESCMPrefix + 47)	// IStartupShutdownService 実装(KESCMRingAdornment.cpp の末尾)。中身は Register/Unregister を呼ぶだけ。★**実行コンテキストごとに**呼ばれる必要があるので kKESCMPeekStartupImpl とは別の boss に載せる
+// ★2026-08-20: 上の2 boss の実装(いずれも KESCMRingAdornment.cpp の末尾)。透明の申告と同じ関心事なので同居させる。
+DECLARE_PMID(kImplementationIDSpace, kKESCMExportXPResponderImpl, kKESCMPrefix + 48)		// IResponder 実装(書き出しの Before/After/Failed)
+DECLARE_PMID(kImplementationIDSpace, kKESCMExportXPServiceProviderImpl, kKESCMPrefix + 49)	// IK2ServiceProvider 実装(CServiceProvider 派生。3つの ServiceID を名乗るので自作が要る＝stock の1シグナル用実装では足りない)
+DECLARE_PMID(kImplementationIDSpace, kKESCMPrintXPSetupProviderImpl, kKESCMPrefix + 50)	// IPrintSetupProvider 実装(印刷。ServiceProvider 側は Adobe 提供の kPrintSetupServiceImpl をそのまま使う)
 
 // MessageIDs: model が UI へ「何が変わったか」を知らせる通知(2026-08-13・model/UI 分割 第1段 Task 9)。
 //   ★★2026-08-15（第2段 Task 6B）に **7本すべて KESCMBoundaryID.h へ移した**

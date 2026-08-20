@@ -84,8 +84,7 @@ void KESCMRingAdornmentUnregister();
 //   ⇒ **その場でセッションに聞く**。実装のコメントに症状と実測値まで書いてある。
 bool16 KESCMRingAdornmentIsActive();
 
-// ★★★マークの見え方が変わったことを**透明マネージャ**に伝え、「透明を持つアイテムの一覧」を
-//   作り直させる(db ＝ 対象文書。nil は無視)。
+// ★★★「透明を持つページアイテムの一覧」への載せ外しは、**このヘッダーからは公開していない**。
 //
 //   ⚠**これが無いと PDF 1.3 で全面ベタになる文書がある**(2026-08-20 実測で原因確定):
 //     `IXPManager` は「透明を持つ**ページアイテム**の一覧」で文書の透明の有無を答えており
@@ -95,11 +94,14 @@ bool16 KESCMRingAdornmentIsActive();
 //     アルファサーバのマスクが解決されず、リングの外接矩形(＝ページ枠なのでページ全体)がベタになる。
 //     ★実測＝透明を1つも持たない文書に 50% の四角を1つ足すだけで直り、**消すとまた壊れた**
 //       (400,404 画素のベタ ⇔ 半透明)。∴ キャッシュの陳腐化ではなく一覧そのものの問題。
-//   ★公式サンプルが同じことをしている ---- `transparencyeffect` はアドーンメントを付けた直後に
-//     `TranFxUtils::Inval(..., kXPC_AddedSomeXP)` を呼び、コメントに "update the item-has-xp list"
-//     と書いている(`TranFxUtils.cpp:451-457`)。**こちらはその通知だけを、文書を変えずに行う。**
+//
+//   ★★★**載せるのは「書き出し／印刷のあいだだけ」**＝呼ぶのは .cpp 末尾の2つのサービスだけで、
+//     比較の開始・停止・トグルからは呼ばない。**理由は一覧が `.indd` に永続すること**(2026-08-20 実測＝
+//     開き直しても再検証されない) ---- 比較中ずっと載せておくと、ユーザーが保存した瞬間に
+//     **根拠のない記録が文書へ焼き付く**。⇒ 詳細と ID は `KESCMID.h` の
+//     `kKESCMExportXPResponderServiceBoss` / `kKESCMPrintXPSetupProviderBoss` の注記。
 //   ⚠**フラットナに「動け」と命令する API は無い**(`IFlattenerSettings::SetFlattenerEnabled` は
 //     "Defeats flattener altogether"＝**止める**側のスイッチ)。載せる以外の道が無い。
-void KESCMRingAdornmentRefreshItemXPState(IDataBase* db);
+
 
 #endif // __KESCMRingAdornment_h__

@@ -51,6 +51,8 @@
 // close-document responder boss names the API's OWN service provider implementation instead of
 // carrying a hand-written one (see that Class below).
 #include "DocumentID.h"	// kAfterCloseDocSignalRespServiceImpl
+#include "DocFrameworkID.h"	// k*ExportSignalResponderServiceImpl (書き出しのあいだだけ透明を申告する - 下の2 boss)
+#include "PrintID.h"	// kPrintSetupServiceImpl / IID_IPRINTSETUPPROVIDER (同上の印刷側)
 #include "GraphicsID.h"	// IID_IDRWEVTHANDLER (the comparison marks' draw service - the whole point of the model half)
 #include "GenericID.h"	// IID_IADORNMENTSHAPE (GenericID.h:279) - the adornment route for the same marks
 #include "XPID.h"	// IID_IADORNMENTFLATTENERUSAGE (XPID.h:513) - how the adornment declares its transparency
@@ -292,6 +294,43 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 		{
 			IID_IK2SERVICEPROVIDER, kBeforeSaveDocSignalRespServiceImpl,
 			IID_IRESPONDER,         kKESCMBeforeSaveResponderImpl,
+		}
+	},
+
+	// ★★★2026-08-20: 透明の申告を「書き出し／印刷のあいだだけ」立てる2 boss。
+	//
+	// ⚠**なぜ要るか**＝IXPManager の「透明を持つページアイテムの一覧」は**文書側のデータで .indd に永続する**
+	//   (実測＝比較して保存した文書を開き直すと1件残っており、開くだけでは再検証されない)。比較中ずっと
+	//   載せておくと、ユーザーが保存した瞬間に**根拠のない記録が焼き付く**。⇒ **要る瞬間だけ載せる。**
+	//   ★フラットナが要るのは書き出しと印刷のときだけで、画面描画にもサムネイルにも一覧は要らない。
+	// ★手本＝customconditionaltext (PDF と印刷の両方で「前に変えて後で戻す」を実装している唯一のサンプル)。
+	// ⚠**保存の前後(kBeforeSaveDoc)には置かない** ---- そこで落ちると文書を失う。書き出しならやり直せる。
+	// 実装はどちらも KESCMRingAdornment.cpp の末尾(透明の申告と同じ関心事なので同居させている)。
+
+	// 書き出し: Before で載せ、After と Failed(＝失敗とキャンセルの両方)で降ろす。
+	// ★**1つの boss で3シグナル**を受けるので ServiceProvider を自作する(HasMultipleIDs が kTrue)。
+	//   ⚠stock の kBeforeExportSignalResponderServiceImpl 等は「1シグナル1 boss」用なので、ここでは使えない
+	//   ＝CusCondTxt.fr:171-180 と同じ形。
+	Class
+	{
+		kKESCMExportXPResponderServiceBoss,
+		kInvalidClass,
+		{
+			IID_IK2SERVICEPROVIDER, kKESCMExportXPServiceProviderImpl,
+			IID_IRESPONDER,         kKESCMExportXPResponderImpl,
+		}
+	},
+
+	// 印刷: BeforePrintGatherCmd で載せ、EndPrint で降ろす。
+	// ★**ServiceProvider は Adobe 提供の実装をそのまま名指しする**(自作は IPrintSetupProvider の1本だけ)
+	//   ＝CusCondTxt.fr:181-196 と同じ形。
+	Class
+	{
+		kKESCMPrintXPSetupProviderBoss,
+		kInvalidClass,
+		{
+			IID_IK2SERVICEPROVIDER,  kPrintSetupServiceImpl,
+			IID_IPRINTSETUPPROVIDER, kKESCMPrintXPSetupProviderImpl,
 		}
 	},
 
