@@ -25,6 +25,7 @@
 #include "KESCMViewSync.h"			// KESCMGetLayoutSync / KESCMSetLayoutSync(2026-08-13 に KESCMCore.h から移動)
 #include "KESCMScrollMap.h"			// KESCMGetScrollMapEnabled / KESCMSetScrollMapEnabled
 #include "KESCMPanelAlpha.h"		// KESCMGetPanelTranslucent / KESCMSetPanelTranslucent(Translucent Panel)
+#include "KESCMPanelTitle.h"		// KESCMPanelTitle::Update(復元した比較モードをタブへ反映)
 
 // 保存ファイル名(Roaming 直下。★サブフォルダーは 2026-07-12 に廃止=下の KESCMPanelStateFile と
 // KESCMPanelState.h:11 の説明が正)。
@@ -84,6 +85,33 @@ static bool16 KESCMJsonReadBool(const std::string& text, const char* key, bool16
 	return defVal;
 }
 
+// text の中から "key" を探し、その後の最初の ':' に続く "文字列" を読む。見つからなければ空。
+// ★★**bool にしなかった理由**（2026-08-21）＝比較モードは enum で、`"storyMode": true/false` と
+//   書くと3つ目のモードが増えた日に**保存ファイルの意味が変わる**（false が「pixel」なのか
+//   「story ではない何か」なのか言えなくなる）。名前で書けばその日に読み手を足すだけで済む。
+static std::string KESCMJsonReadString(const std::string& text, const char* key)
+{
+	std::string needle("\"");
+	needle += key;
+	needle += "\"";
+
+	const size_t k = text.find(needle);
+	if (k == std::string::npos)
+		return std::string();
+	const size_t colon = text.find(':', k + needle.size());
+	if (colon == std::string::npos)
+		return std::string();
+
+	const size_t open = text.find('"', colon + 1);
+	if (open == std::string::npos)
+		return std::string();
+	const size_t close = text.find('"', open + 1);
+	if (close == std::string::npos)
+		return std::string();
+
+	return text.substr(open + 1, close - open - 1);
+}
+
 //----------------------------------------------------------------------------------------
 // 保存(フライアウトの「Save Panel Settings」から呼ばれる)
 //----------------------------------------------------------------------------------------
@@ -117,7 +145,13 @@ void KESCMSavePanelState()
 	json += "  \"ignorePageNumberMarker\": "; json += KESCMBoolLiteral(compare->GetIgnorePageNumberMarker());               json += ",\n";
 	json += "  \"translucentPanel\": ";       json += KESCMBoolLiteral(KESCMGetPanelTranslucent());                 json += ",\n";
 	json += "  \"translucentPagesPanel\": ";  json += KESCMBoolLiteral(KESCMGetPagesPanelTranslucent());            json += ",\n";
-	json += "  \"translucentBookDialog\": ";  json += KESCMBoolLiteral(KESCMGetBookDialogTranslucent());            json += "\n";
+	json += "  \"translucentBookDialog\": ";  json += KESCMBoolLiteral(KESCMGetBookDialogTranslucent());            json += ",\n";
+	// ★比較モード（2026-08-21・ユーザー指定）。⚠**唯一の非 bool の項目**なので、上と違って
+	//   値を引用符で囲む。⚠**古い設定ファイルにはこのキーが無い**が、読み手が「無ければ今の値」を
+	//   採るので、旧ファイルを読んでも既定（Pixel）のままになるだけで害は無い。
+	json += "  \"compareMode\": \"";
+	json += (compare->GetCompareMode() == kKESCMModeStory ? "story" : "pixel");
+	json += "\"\n";
 	json += "}\n";
 
 	FILE* fp = FileUtils::OpenFile(file, "wb");
@@ -217,6 +251,24 @@ void KESCMLoadPanelStateIfPresent()
 	//   「パネルがまだ無い」だが、こちらは「ダイアログはそもそも開いていない」のが常態で、窓は開くたびに
 	//   KESCMBookDialog.cpp が教えてくる。ここで戻すのは旗だけでよい。
 	KESCMSetBookDialogTranslucent (KESCMJsonReadBool(text, "translucentBookDialog",  KESCMGetBookDialogTranslucent()));
+
+	// ★★比較モード（2026-08-21・ユーザー指定）。
+	//   ⚠**ここで SetCompareMode を呼ぶのは安全**＝あれは「設定を変えるだけで、走っている比較を
+	//     やり直さない」と契約に明記されている（IKESCMCompareFacade.h）。再比較するかを決めるのは
+	//     呼び手で、フライアウトは再比較し、**起動時の復元はしない**。まさにこの場所のための分岐。
+	//   ⚠キーが無ければ今の値のまま（＝旧い設定ファイルは Pixel のまま）。知らない綴りも同じ扱いに
+	//     する ---- 将来モードが増えた版で保存したファイルを古い版で読んだとき、「知らないから
+	//     Pixel にする」より「触らない」ほうが壊れない。
+	const std::string mode = KESCMJsonReadString(text, "compareMode");
+	if (mode == "story")
+		compare->SetCompareMode(kKESCMModeStory);
+	else if (mode == "pixel")
+		compare->SetCompareMode(kKESCMModePixel);
+
+	// ★タブの名前も復元後の状態に合わせる。起動時（KESCMUIStartup::Startup）から呼ばれた回は
+	//   パネルがまだ無いので中で黙って戻り、実際に書かれるのはパネルの AutoAttach ---- そちらも
+	//   同じ関数を呼ぶ。ここに置くのは「パネルが既にある状態でこの関数が走った回」のため。
+	KESCMPanelTitle::Update();
 	// (「translucentToolbox」= ツールボックスの半透明は 2026-08-07 に機能ごと撤去。古い設定ファイルに
 	//  このキーが残っていても、読まなくなっただけで害は無い＝KESCMJsonReadBool はキーを名指しで探す。)
 }

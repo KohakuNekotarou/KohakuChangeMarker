@@ -43,6 +43,7 @@
 #include "KESCMViewSync.h"			// KESCMGetLayoutSync/Set/KESCMAlignOtherViewsToActiveNow(2026-08-13 に KESCMCore.h から移動)
 #include "KESCMScrollMap.h"		// KESCMScrollMapAttach/DetachAll/InvalidateAll(地図トグルと Find Overset)
 #include "KESCMPanelState.h"		// KESCMSavePanelState(フライアウト「Save Panel Settings」)
+#include "KESCMPanelTitle.h"		// KESCMPanelTitle::Update(タブに Pixel / Story を出す)
 #include "IKESCMBookFacade.h"		// ResolveBookPair(「Compare Books」を有効にしてよいかの判定)。2026-08-14 Task 15 で Facade 経由へ
 #include "KESCMBookPanelLookup.h"	// KESCMGetPanelBookFile(前面タブの観測。2026-08-15 Task 9B で UI 側へ)
 #include "KESCMBookRun.h"		// KESCMRunBookComparison(フライアウト「Compare Books」＝確認して比較して見せる)
@@ -139,6 +140,11 @@ static void KESCMApplyCompareMode(KESCMCompareMode mode)
 			msg.Append(" (cancelled - stopped)");
 		}
 	}
+
+	// ★★タブに今のモードを出す（2026-08-21・ユーザー指定「KBS のドキュメントとブックの様に」）。
+	//   ここは「モードが変わる唯一の場所」なので、書き直す場所もここ1つで足りる。
+	//   （パネルを開き直したときは KESCMPanelObserver::AutoAttach が同じ関数を呼ぶ。）
+	KESCMPanelTitle::Update();
 
 	KESCMSetStatus(msg);
 }

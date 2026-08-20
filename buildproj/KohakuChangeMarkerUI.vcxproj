@@ -260,6 +260,7 @@
       <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMPanelAlpha.cpp"/>
       <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMPathDisplay.cpp"/>
       <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMPanelState.cpp"/>
+      <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMPanelTitle.cpp"/>
       <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMScrollMap.cpp"/>
       <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMStorySection.cpp"/>
       <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMStoryJump.cpp"/>
@@ -306,6 +307,7 @@
       <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\KESCMPanelAlpha.h"/>
       <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\KESCMPathDisplay.h"/>
       <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\KESCMPanelState.h"/>
+      <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\KESCMPanelTitle.h"/>
       <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\KESCMScrollMap.h"/>
       <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\KESCMStorySection.h"/>
       <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\KESCMStoryJump.h"/>

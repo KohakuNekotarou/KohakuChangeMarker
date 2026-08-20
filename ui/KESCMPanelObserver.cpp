@@ -54,6 +54,7 @@
 //   それだけが使っていた include(KESCMScrollMap.h / KESCMDrawEventHandler.h / KESCMOversetApply.h /
 //   PersistUtils.h)も一緒に移っている。⇒ このファイルは**パネルの表示だけ**を担う UI になった。
 #include "KESCMPanelState.h"		// KESCMLoadPanelStateIfPresent(読込の主経路は起動時=KESCMUIStartup。ここは保険)
+#include "KESCMPanelTitle.h"		// KESCMPanelTitle::Update(パネルを開いたときタブへ今のモードを書く)
 #include "KESCMPanelAlpha.h"		// KESCMAttachPanelVisibilityObserver / KESCMApplyAllPanelTranslucency
 									// (パネル再表示時に半透明を貼り直す)。⚠2026-08-19(B-U9)訂正＝ここは
 									// KESCMApplyPanelTranslucency と書いていたが、このファイルが呼ぶのは
@@ -176,6 +177,13 @@ void KESCMPanelObserver::AutoAttach()
 	//   ここは起動サービスの順序が万一変わっても取りこぼさないための保険呼び出し(通常はセッション
 	//   一度きりの内部ガードで no-op。途中変更を巻き戻すこともない)。
 	KESCMLoadPanelStateIfPresent();
+
+	// ★★タブに今のモードを出す（2026-08-21）。**ここが「初めて書ける瞬間」**＝ラベルの書き先は
+	//   パレットだが、そのパレットは `IPanelMgr::GetPanelFromWidgetID` がパネルを返すようになって
+	//   初めて辿れる（起動時の復元ではまだ nil で、KESCMPanelTitle は黙って戻っている）。
+	//   ⚠widget と違ってラベルはパレットの持ち物なので**開き直しても消えない**が、ここで書くのは
+	//     安いうえ、上の復元でモードが変わっている場合の唯一の反映点になる。
+	KESCMPanelTitle::Update();
 
 	InterfacePtr<IPanelControlData> pcd(this, UseDefaultIID());
 	if (pcd == nil)

@@ -29,6 +29,7 @@
 
 #include "KCMUIID.h"
 #include "KESCMPanelState.h"		// KESCMLoadPanelStateIfPresent(保存済みパネル設定の復元)
+#include "KESCMPanelTitle.h"		// KESCMPanelTitle::Restore(終了時にタブを素の名前へ戻す)
 #include "KESCMPanelAlpha.h"		// 半透明トグルの購読/解除と後片付け
 #include "KESCMTrackerHud.h"		// KESCMTrackerHudShutdown(押下中 HUD のフォント返却)
 #include "KESCMPeekGesture.h"		// KESCMAttachDocsClosedObserver / KESCMPeekGestureShutdown
@@ -97,6 +98,12 @@ void KESCMUIStartup::Startup()
 
 void KESCMUIStartup::Shutdown()
 {
+	// ★★タブの名前を素へ戻す（2026-08-21）。**いちばん先に**＝UI がまだ立っているうちに書く
+	//   （KBS の KBSStartupShutdown::Shutdown も同じ理由で先頭に置いている）。
+	//   ⚠戻さないと、パレットのラベルはワークスペースに残るので、**次にこのプラグインを外した後も
+	//     「- Pixel」の付いた名前が居座る**。
+	KESCMPanelTitle::Restore();
+
 	// 遅延サムネイル更新の idle task を解放(予約中なら RemoveTask してから)。
 	KESCMShutdownThumbIdleTask();
 	// 一括クローズの保留も捨てる(終了後に流れることは無いが、状態を残さない)。
