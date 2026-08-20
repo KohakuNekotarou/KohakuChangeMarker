@@ -15,8 +15,12 @@
 #include "IPageList.h"				// GetPageString - the page number the status line names
 #include "ISelectionManager.h"		// DeselectAll / SelectionExists - clearing before selecting
 #include "ISelectionUtils.h"		// GetActiveSelection - the front document's selection manager
+#include "IFrameList.h"				// QueryFrameContaining - which frame an edit falls in (2026-08-20)
+#include "IHierarchy.h"				// GetParentUID - a text column's frame is its parent
+#include "ITextFrameColumn.h"
 #include "ITextModel.h"
 #include "ITextSelectionSuite.h"	// SetTextSelection - the double click's whole point
+#include "ITextUtils.h"				// GetPageUIDRef - which page that frame is on
 #include "ITool.h"					// IsTextTool - is a text tool already active?
 #include "IToolBoxUtils.h"			// QueryActiveTool / QueryTool / SetActiveTool
 
@@ -158,6 +162,115 @@ bool16 KESCMStoryJumpToRow(int32 rowIndex)
 //----------------------------------------------------------------------------------------
 // KESCMStorySelectWholeStory(KESCMStoryJump.h で宣言)
 //----------------------------------------------------------------------------------------
+/* KESCMStoryJumpToChange
+   See the header for what this aims at and why it switches the tool.
+*/
+bool16 KESCMStoryJumpToChange(int32 rowIndex, int32 changeIndex)
+{
+	IKESCMStoryEditsFacade::Row row;
+	IKESCMStoryEditsFacade::Change change;
+	if (!Utils<IKESCMStoryEditsFacade>()->GetRow(rowIndex, row))
+		return kFalse;
+	if (!Utils<IKESCMStoryEditsFacade>()->GetChange(rowIndex, changeIndex, change))
+		return kFalse;
+
+	IDataBase* db = Utils<IKESCMCompareFacade>()->GetArmedTargetDB();
+	if (db == nil || !Utils<IKESCMCompareFacade>()->IsDocDBOpen(db))
+		return kFalse;
+
+	const UIDRef storyRef(db, row.fStoryUID);
+	InterfacePtr<ITextModel> model(storyRef, UseDefaultIID());
+	if (model == nil)
+		return kFalse;
+
+	// ★The range is clamped to the story as it stands NOW. The diff ran against the story as it was
+	//   when the comparison did, and the reader may have edited it since - a stale end would be
+	//   refused by the suite, and a stale start would select the wrong words silently.
+	const TextIndex total = model->TotalLength();
+	TextIndex from = change.fTargetStart;
+	TextIndex to = change.fTargetEnd;
+	if (from < 0) from = 0;
+	if (to > total) to = total;
+	if (from > total) from = total;
+	if (to < from) to = from;
+
+	// Making a selection recomposes - the same guard, and the same reason, as the double click's.
+	IDataBase::SaveRestoreModifiedState dirtyGuard(db);
+
+	// ***** THE FRAME THE EDIT IS IN, not the story's first one. ***** A story threaded across
+	// several frames has its first frame nowhere near an edit late in it.
+	// ⚠The fallback is the story's first frame (what a story row uses), for a story whose frame list
+	//   cannot answer - an unplaced story has none at all.
+	UID frameUID = row.fFrameUID;
+	InterfacePtr<IFrameList> frameList(model->QueryFrameList());
+	if (frameList != nil)
+	{
+		int32 frameIndex = 0;
+		InterfacePtr<ITextFrameColumn> column(frameList->QueryFrameContaining(from, &frameIndex));
+		if (column != nil)
+		{
+			// ★The frame the reader sees is the column's PARENT: a text frame's geometry lives on
+			//   the item, and the column is what holds the text inside it.
+			InterfacePtr<IHierarchy> columnHierarchy(column, UseDefaultIID());
+			if (columnHierarchy != nil)
+			{
+				const UID parentUID = columnHierarchy->GetParentUID();
+				if (parentUID != kInvalidUID)
+					frameUID = parentUID;
+			}
+		}
+	}
+	if (frameUID == kInvalidUID)
+		return kFalse;		// nothing placed - nowhere to go, and the story row says so already
+
+	// ★The page is asked of the frame we are actually going to, not of the story's start: an edit
+	//   late in a threaded story is on a different page from the story's beginning, and this is what
+	//   the Pages panel follows.
+	const UIDRef pageRef = Utils<ITextUtils>()->GetPageUIDRef(UIDRef(db, frameUID));
+	const UID pageUID = (pageRef.GetDataBase() != nil) ? pageRef.GetUID() : row.fPageUID;
+
+	// Both windows move here - the target to this frame, the source to the same story.
+	const bool16 moved = KESCMGotoStoryFrame(db, frameUID, pageUID, row.fStoryUID);
+
+	// ***** NOW SELECT THE WORDS. ***** Everything below mirrors the double click's selection path;
+	// see KESCMStorySelectWholeStory for why the tool goes on first and why the suite is asked twice.
+	ISelectionManager* selectionManager = Utils<ISelectionUtils>()->GetActiveSelection();
+	if (selectionManager == nil)
+		return moved;
+
+	selectionManager->DeselectAll(nil);
+
+	InterfacePtr<ITool> activeTool(Utils<IToolBoxUtils>()->QueryActiveTool());
+	if (activeTool == nil || !activeTool->IsTextTool())
+	{
+		InterfacePtr<ITool> iBeamTool(Utils<IToolBoxUtils>()->QueryTool(kIBeamToolBoss));
+		if (iBeamTool == nil)
+			return moved;
+		if (!Utils<IToolBoxUtils>()->SetActiveTool(iBeamTool))
+			return moved;
+	}
+
+	InterfacePtr<ITextSelectionSuite> textSelectionSuite(selectionManager, UseDefaultIID());
+	if (textSelectionSuite == nil)
+		textSelectionSuite.reset(InterfacePtr<ITextSelectionSuite>(selectionManager, IID_ITEMPTEXTSELECTION_SUITE).forget());
+	if (textSelectionSuite == nil)
+		return moved;
+
+	// ⚠A DELETION HAS NO WIDTH on this side - the words are gone. RangeData(n, n) is the caret case,
+	//   and RangeData.h:114-125 says a caret needs a lean to settle which side new text joins.
+	//   kLeanForward puts it before what followed the deleted text, which is where the text used to
+	//   begin.
+	const RangeData range = (to > from)
+							? RangeData(from, to)
+							: RangeData(from, from, RangeData::kLeanForward);
+
+	// kDontScrollSelection: KESCMGotoStoryFrame above has already centred the frame, and
+	// kScrollIntoView would only promise the selection is somewhere on screen - undoing the better
+	// answer just given.
+	textSelectionSuite->SetTextSelection(storyRef, range, Selection::kDontScrollSelection, nil);
+	return moved;
+}
+
 bool16 KESCMStorySelectWholeStory(int32 rowIndex)
 {
 	IKESCMStoryEditsFacade::Row row;

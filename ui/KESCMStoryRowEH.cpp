@@ -94,13 +94,20 @@ private:
 		Answers -1 for a click the stock handler already used, for a modified click, and for a row
 		that is not the selected one - so a caller gets one test instead of four.
 	*/
-	int32 RowForClick(IEvent* e, bool16 baseHandled) const;
+	/** @param outChange [out] optional. Receives which CHANGE the clicked row names, or -1 when it
+		is a story row. Only meaningful when the return value is >= 0. Added 2026-08-20 with the
+		second level: the two kinds of row do different things on a click, and the node knows which
+		it is - asking it twice would be asking the same question in two places. */
+	int32 RowForClick(IEvent* e, bool16 baseHandled, int32* outChange = nil) const;
 };
 
 CREATE_PMINTERFACE(KESCMStoryRowEH, kKESCMStoryRowEHImpl)
 
-int32 KESCMStoryRowEH::RowForClick(IEvent* e, bool16 baseHandled) const
+int32 KESCMStoryRowEH::RowForClick(IEvent* e, bool16 baseHandled, int32* outChange) const
 {
+	if (outChange != nil)
+		*outChange = -1;
+
 	if (baseHandled || e == nil || e->ShiftKeyDown() || e->CmdKeyDown())
 		return -1;
 
@@ -122,9 +129,12 @@ int32 KESCMStoryRowEH::RowForClick(IEvent* e, bool16 baseHandled) const
 	if (treeController == nil || !treeController->IsSelected(node))
 		return -1;
 
-	// ★A CHANGE ROW ANSWERS ITS STORY'S index (2026-08-20). Clicking one is handled separately -
-	//   it jumps to the edit itself rather than to the top of the story - but everything that asks
-	//   "which row is this" wants the story either way, and a change row belongs to exactly one.
+	// ★A CHANGE ROW ANSWERS ITS STORY'S index (2026-08-20), and says which change it was through
+	//   outChange. Everything that asks "which row is this" wants the story either way - a change
+	//   row belongs to exactly one - and the caller that cares about the difference now has it
+	//   without going back to the node.
+	if (outChange != nil && nodeID->IsChangeRow())
+		*outChange = nodeID->GetChange();
 	return nodeID->GetRow();
 }
 
@@ -154,7 +164,8 @@ bool16 KESCMStoryRowEH::LButtonUp(IEvent* e)
 	// Let the stock handler finish the click first (selection, the end of a drag).
 	const bool16 result = TreeNodeEventHandler::LButtonUp(e);
 
-	const int32 rowIndex = this->RowForClick(e, result);
+	int32 changeIndex = -1;
+	const int32 rowIndex = this->RowForClick(e, result, &changeIndex);
 	if (rowIndex < 0)
 		return result;
 
@@ -176,7 +187,11 @@ bool16 KESCMStoryRowEH::LButtonUp(IEvent* e)
 	// ***** The second click of a double click SELECTS THE STORY, rather than jumping again. *****
 	// The first click already moved the view there, so repeating it would only redo that. What is
 	// added is handing the user the text itself - Type tool, the whole story selected.
-	if (selectRatherThanJump)
+	// ★NOT ON A CHANGE ROW (2026-08-20). "The whole story" is the answer to a double click on the
+	//   row that NAMES a story; on a row that names one edit inside it, widening the selection to
+	//   the story would undo what the first click just did. A change row's double click therefore
+	//   does what its single click does - which is already done by the time we get here.
+	if (selectRatherThanJump && changeIndex < 0)
 	{
 		if (KESCMStorySelectWholeStory(rowIndex))
 		{
@@ -201,6 +216,12 @@ bool16 KESCMStoryRowEH::LButtonUp(IEvent* e)
 			return result;
 		}
 		// It refused, and has said why. Fall through: the arrows below still want the tree.
+	}
+	else if (changeIndex >= 0)
+	{
+		// ★A CHANGE ROW: go to the edit itself and select the words it names (2026-08-20).
+		//   The story row's jump goes to the top of the story; this one goes to the place inside it.
+		KESCMStoryJumpToChange(rowIndex, changeIndex);
 	}
 	else
 	{

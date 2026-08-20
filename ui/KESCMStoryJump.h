@@ -34,6 +34,30 @@
 */
 bool16 KESCMStoryJumpToRow(int32 rowIndex);
 
+/** Single click on a CHANGE row: go to that edit and select the words it names (2026-08-20).
+
+	★IT AIMS AT THE EDIT, NOT AT THE STORY. The row above it already goes to the story; this row
+	exists because the reader wants the place inside it, so the frame it centres is the one the edit
+	actually falls in - which in a threaded story is often not the first frame at all.
+
+	★THE OLDER DOCUMENT'S WINDOW COMES TOO, aimed at the same story (KESCMGotoStoryFrame does that
+	part, exactly as it does for a story row). ⚠It is aimed at the STORY over there, not at the
+	matching character: the source-side TextIndex is known (the diff worked it out), but turning an
+	index into a frame on the source side needs the same walk again, and the value of doing it is
+	that the reader sees the old wording - which they do as soon as the story is on screen.
+
+	★THE TYPE TOOL GOES ON, which a single click on a STORY row deliberately does not do. Selecting
+	text under a tool that cannot act on it is not a selection the reader can use, and the whole
+	point of a change row is "here is the bit that changed" - an invitation to look at it and edit
+	it. The double click's note in KESCMStorySelectWholeStory reasons the same way about the same
+	trade.
+
+	@param rowIndex which story row of KESCMStoryList.
+	@param changeIndex which of that row's changes.
+	@return kTrue when a view actually moved.
+*/
+bool16 KESCMStoryJumpToChange(int32 rowIndex, int32 changeIndex);
+
 /** Double click: select the whole of that story, with the Type tool active.
 
 	★SELECTS EVERYTHING, rather than placing a caret at the start (user's call, 2026-08-10 - it put
