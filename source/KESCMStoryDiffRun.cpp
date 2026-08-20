@@ -45,9 +45,16 @@
 namespace
 {
 
-/** How many code points of a change to keep for the row. The cell ellipsizes in the middle, so
-	this only has to be short enough not to carry a paragraph around in memory per change. */
+/** How many code points of a change to keep for the row, INCLUDING the context on either side.
+	The cell ellipsizes in the middle, so this only has to be short enough not to carry a paragraph
+	around in memory per change. */
 const int32 kExcerptCodePoints = 60;
+
+/** How many code points to keep on EACH SIDE of a change (user's request, 2026-08-20 - the same
+	context a KBS hit row shows). ★Narrow on purpose: two of these plus the change itself has to
+	stay under kExcerptCodePoints, or the context would push the change out of the cell - which is
+	the opposite of what it is for. */
+const int32 kContextCodePoints = 14;
 
 // ---- reading the text out of the snippet ----------------------------------------------
 
@@ -251,20 +258,69 @@ std::string Join(const std::vector<std::string>& paragraphs, int32 start, int32 
 	return out;
 }
 
+/* MarkUpBreaks
+   Turns the break characters into the marks InDesign itself draws with Show Hidden Characters on,
+   so that a row showing text which crosses a paragraph end does not show a gap where the break was.
+
+   ★DISPLAY ONLY - nothing measured or selected ever goes through here. The marks are wider than
+   nothing, so a string that has been through this no longer matches the text it came from.
+
+   Same two marks and the same reasoning as KBS's KBSResultModel::MarkUpBreaksForDisplay: a pilcrow
+   for a paragraph end, a return arrow for a forced line break. Written on UTF-8 here rather than on
+   a PMString's UTF-16 buffer, because at this point in the comparison the text is still the XML's
+   own bytes - both marks are outside ASCII, hence the escapes.
+*/
+std::string MarkUpBreaks(const std::string& utf8)
+{
+	if (utf8.find('\n') == std::string::npos && utf8.find('\r') == std::string::npos)
+		return utf8;		// the common case pays one scan and no allocation
+
+	std::string out;
+	out.reserve(utf8.size() + 8);
+	for (size_t i = 0; i < utf8.size(); ++i)
+	{
+		if (utf8[i] == '\n')
+			out += "\xC2\xB6";			// U+00B6 PILCROW - a paragraph end (what Join puts between paragraphs)
+		else if (utf8[i] == '\r')
+			out += "\xE2\x86\xB5";		// U+21B5 DOWNWARDS ARROW WITH CORNER LEFTWARDS - a forced line break
+		else
+			out += utf8[i];
+	}
+	return out;
+}
+
 /* Slice
    A piece of UTF-8 text named in CODE POINTS, cut on code point boundaries so what comes out is
    still valid UTF-8. byteOffsets is what ToCodePoints filled in for this same string.
+
+   ★IT TAKES THE SURROUNDING WORDS TOO (user's request, 2026-08-20: "KBS のように前後の文字が欲しい").
+   A change on its own reads as a fragment - "awake" says nothing about where it is - so the row
+   shows what stands on either side of it, the way a KBS hit row shows its context. An ellipsis marks
+   each end that was cut, so a fragment is never mistaken for the whole of something.
+
+   @param from/count name the CHANGE, in code points, within text.
+   @param context how many code points to keep on each side. 0 = the change alone.
 */
 std::string Slice(const std::string& text, const std::vector<int32>& byteOffsets,
-				  int32 from, int32 count)
+				  int32 from, int32 count, int32 context)
 {
-	if (count <= 0 || from < 0 || from >= static_cast<int32>(byteOffsets.size()))
+	const int32 total = static_cast<int32>(byteOffsets.size());
+	if (total <= 0 || from < 0)
 		return std::string();
 
-	const int32 begin = byteOffsets[from];
-	const int32 end = (from + count < static_cast<int32>(byteOffsets.size()))
-					  ? byteOffsets[from + count]
-					  : static_cast<int32>(text.size());
+	// ★A DELETION HAS count == 0 ON THE SIDE THAT LOST IT, and it still has a place - the words that
+	//   closed up over it. So an empty range is not refused here; only an empty RESULT is.
+	int32 first = from - context;
+	if (first < 0)
+		first = 0;
+	int32 last = from + count + context;		// exclusive
+	if (last > total)
+		last = total;
+	if (last <= first)
+		return std::string();
+
+	const int32 begin = byteOffsets[first];
+	const int32 end = (last < total) ? byteOffsets[last] : static_cast<int32>(text.size());
 	if (end <= begin)
 		return std::string();
 
@@ -275,7 +331,19 @@ std::string Slice(const std::string& text, const std::vector<int32>& byteOffsets
 	std::vector<int32> offsets;
 	KESCMTextDiff::ToCodePoints(out, codePoints, &offsets);
 	if (static_cast<int32>(codePoints.size()) > kExcerptCodePoints)
+	{
 		out = out.substr(0, offsets[kExcerptCodePoints]);
+		last = total;		// force the trailing ellipsis: something was cut here too
+	}
+
+	out = MarkUpBreaks(out);
+
+	// ★The ellipses say "this is a window onto something longer". Without them the reader cannot
+	//   tell a change that begins a paragraph from one that merely appears to.
+	if (first > 0)
+		out = "\xE2\x80\xA6" + out;		// U+2026 HORIZONTAL ELLIPSIS
+	if (last < total)
+		out += "\xE2\x80\xA6";
 
 	return out;
 }
@@ -338,8 +406,8 @@ void Add(std::vector<KESCMStoryChange>& out, int32 paraIndex,
 	// ★A deletion shows the OLDER side: what was taken out is what the reader has to see, and
 	//   the newer side has nothing there to show. Everything else shows the newer side.
 	const std::string words = (change.fKind == KESCMStoryChange::kDelete)
-							  ? Slice(sourceText, sourceBytes, sFrom, sCount)
-							  : Slice(targetText, targetBytes, tFrom, tCount);
+							  ? Slice(sourceText, sourceBytes, sFrom, sCount, kContextCodePoints)
+							  : Slice(targetText, targetBytes, tFrom, tCount, kContextCodePoints);
 
 	change.fText.SetUTF8String(words);
 	// ★Text out of a document is not a translation key. Without this it can be looked up in the

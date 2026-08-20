@@ -1622,6 +1622,33 @@ resource KESCMStoryRowWidget(kKESCMStoryRowRsrcID + index_enUS)
 	kTrue, kTrue,						// Visible, Enabled
 	"",									// Panel name
 	{
+		// ★★THE EXPAND / COLLAPSE ARROW (user's request, 2026-08-20: "KBS のツリーの様に、UID の
+		//   よこにツリーを閉じたり開いたりするのを付けて欲しい"). Stock part - the tree framework owns
+		//   its clicks and swaps the collapsed / expanded icon itself. Field for field the same as
+		//   KBS's (KBS.fr:1220) and paneltreeview's.
+		// ★It is HIDDEN on a row with no children, by CTreeViewWidgetMgr::HideExpanderIfNotExpandable
+		//   - which the widget manager calls, and which finds this widget by its stock WidgetID. In
+		//   the pixel mode no row has children, so no arrow is ever drawn there.
+		// ⚠The 16px it occupies is taken whether or not an arrow is drawn: the cells after it start
+		//   16px further right than they did before 2026-08-20. That shift is the visible cost of
+		//   having an arrow at all, and it applies to both modes.
+		TreeExpanderWidget
+		(
+			kTreeNodeExpanderWidgetID,		// WidgetId (stock - the base class looks for exactly this)
+			kTreeBranchCollapsedRsrcID,		// RsrcId for collapsed node icon
+			kApplicationRsrcPluginID,		// RsrcPlugin for collapsed node icon
+			kBindNone,						// Frame binding
+			Frame(4, 1, 20, kKESCMStoryRowHeight - 2),	// Frame
+			kTrue, kTrue,					// Visible, Enabled
+			kTreeBranchExpandedRsrcID,		// RsrcId for expanded node icon
+			kApplicationRsrcPluginID,		// RsrcPlugin for expanded node icon
+			kTrue,							// Cmd-Click expands/collapses children
+			kFalse,							// Scroll to show children when expanded
+			kIconNoCentering,
+			kIconRaisedLook,				// Icon look
+			kFalse							// Draws a well
+		),
+
 		// ★Left: the story's UID, in decimal (user's request, 2026-08-10: "UID, text, what changed").
 		//   It is the one thing on the row that is certainly unique - two stories can open with the
 		//   same words, and the kind column repeats by design. ★kBindLeft only: a fixed column at the
@@ -1632,7 +1659,8 @@ resource KESCMStoryRowWidget(kKESCMStoryRowRsrcID + index_enUS)
 			kKESCMStoryRowUIDWidgetID,		// WidgetId
 			kPMRsrcID_None,					// RsrcId
 			kBindLeft,						// Frame binding: stay at the row's left edge
-			Frame(8, 1, 48, kKESCMStoryRowHeight - 2),	// Frame (40px = room for 5-6 digits at the palette font)
+			// ★8 -> 24 on 2026-08-20: the expander above now holds the row's left edge.
+			Frame(24, 1, 64, kKESCMStoryRowHeight - 2),	// Frame (40px = room for 5-6 digits at the palette font)
 			kTrue, kTrue,					// Visible, Enabled
 			kAlignLeft,						// Alignment
 			kDontEllipsize, kFalse,			// Ellipsize style, Convert ampersands
@@ -1664,7 +1692,8 @@ resource KESCMStoryRowWidget(kKESCMStoryRowRsrcID + index_enUS)
 			//   ★★Left edge 8 -> 52 (2026-08-10): the UID column above now holds the row's left
 			//     margin, and this cell starts 4px after it. This is the cell that gives way - it is
 			//     the only one that grows when the panel is widened.
-			Frame(52, 1, 154, kKESCMStoryRowHeight - 2),	// Frame
+			// ★52 -> 68 on 2026-08-20, the same 16px the UID cell moved: the expander took the left edge.
+			Frame(68, 1, 154, kKESCMStoryRowHeight - 2),	// Frame
 			kTrue, kTrue,					// Visible, Enabled
 			kAlignLeft,						// Alignment
 			kEllipsizeMiddle, kFalse,		// Ellipsize style, Convert ampersands
@@ -1733,13 +1762,16 @@ resource KESCMStoryRowWidget(kKESCMStoryChangeRowRsrcID + index_enUS)
 		// ★A sign rather than a word: this column is being scanned down, not read, and a sign needs
 		//   no translation. (The story row's right-hand column names its kinds in words because
 		//   there the words ARE the answer, and there is one per story rather than one per edit.)
-		// ★Starts at 24 where the story row's first cell starts at 8: 16px is the indent.
+		// ★Starts at 40 where the story row's first cell starts at 24: 16px is the indent.
+		//   (Both moved by 16 on 2026-08-20 when the expander took the story row's left edge.)
+		// ⚠A change row has NO expander of its own - it is a leaf. The 16px where the story row's
+		//   arrow sits is simply part of this row's indent.
 		KESCMStoryRowCellWidget
 		(
 			kKESCMStoryRowUIDWidgetID,		// WidgetId (reused - see the header comment)
 			kPMRsrcID_None,					// RsrcId
 			kBindLeft,						// Frame binding: stay at the row's left edge
-			Frame(24, 1, 44, kKESCMStoryRowHeight - 2),	// Frame
+			Frame(40, 1, 60, kKESCMStoryRowHeight - 2),	// Frame
 			kTrue, kTrue,					// Visible, Enabled
 			kAlignLeft,						// Alignment
 			kDontEllipsize, kFalse,			// Ellipsize style, Convert ampersands
@@ -1750,14 +1782,14 @@ resource KESCMStoryRowWidget(kKESCMStoryChangeRowRsrcID + index_enUS)
 
 		// Middle: the words the edit concerns. ★For a deletion this is what was REMOVED (the model
 		// chose which side - KESCMStoryList.h); for everything else it is the new text.
-		// ★Starts at 68 where the story row's text cell starts at 52 - the same 16px indent, so the
+		// ★Starts at 84 where the story row's text cell starts at 68 - the same 16px indent, so the
 		//   two levels line up with each other rather than each finding its own offset.
 		KESCMStoryRowCellWidget
 		(
 			kKESCMStoryRowTextWidgetID,		// WidgetId (reused)
 			kPMRsrcID_None,					// RsrcId
 			kBindLeft | kBindRight,			// Frame binding: this is the cell that grows
-			Frame(68, 1, 154, kKESCMStoryRowHeight - 2),	// Frame
+			Frame(84, 1, 154, kKESCMStoryRowHeight - 2),	// Frame
 			kTrue, kTrue,					// Visible, Enabled
 			kAlignLeft,						// Alignment
 			kEllipsizeMiddle, kFalse,		// Ellipsize style, Convert ampersands

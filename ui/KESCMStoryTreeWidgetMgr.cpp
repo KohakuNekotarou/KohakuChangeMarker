@@ -234,8 +234,15 @@ public:
 	//   ⚠A THIRD level would break this: two levels can be two resources, ten cannot. Anyone adding
 	//     one has to come back here and do the arithmetic properly - starting by giving
 	//     fBaseIndentOffset a value (RegisterStyleWidget), not by adding to frame.Left().
-	virtual void ApplyIndentToWidget(const NodeID& /*node*/, IPanelControlData* /*widgetList*/, int32 /*message*/) const
+	virtual void ApplyIndentToWidget(const NodeID& node, IPanelControlData* widgetList, int32 message) const
 	{
+		// ★★THE ONE THING THAT *IS* DONE HERE: hide the expand arrow on a row that has nothing to
+		//   expand (2026-08-20). The base class's own helper does it, finding the arrow by its stock
+		//   WidgetID, so this is the framework's answer rather than ours - and it is the reason the
+		//   pixel mode shows no arrows at all: nothing there has children.
+		//   ⚠It hides the arrow; it does not reclaim the 16px the arrow occupies. That space is part
+		//     of the row's layout in both modes (see the .fr).
+		this->HideExpanderIfNotExpandable(node, widgetList, message);
 	}
 
 	virtual bool16 ApplyDataToWidget(const NodeID& node, IPanelControlData* widgetList, int32 /*message*/) const
