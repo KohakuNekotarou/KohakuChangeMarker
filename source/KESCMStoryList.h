@@ -152,9 +152,24 @@ struct KESCMStoryRow
 		never disappear because the detail could not be worked out. */
 	std::vector<KESCMStoryChange> fChanges;
 
+	/** Whether the two versions' TEXT was actually put side by side for this row.
+
+		★IT IS WHAT MAKES AN EMPTY fChanges READABLE, and that is the whole reason it exists
+		(2026-08-21). Three quite different situations leave a row with no children, and until
+		this field they looked identical in the panel:
+		    the pixel mode          - no text diff is ever run
+		    could not be compared   - added story, or the diff refused it
+		    compared, and the same  - the words agree; only formatting or a table moved
+		Only the third one is news the reader wants, and it is the one they see after repairing a
+		story and refreshing it. With this, the row can say "None" for that case alone.
+
+		⚠NOT "the story is unchanged". The change counters moved or the row would not be here
+		(KESCMStoryStamp.h); what this says is that the WORDS come out the same. */
+	bool16		fTextCompared;
+
 	KESCMStoryRow()
 		: fStoryUID(kInvalidUID), fKinds(kKESCMStoryKindNone), fFrameUID(kInvalidUID),
-		  fPageUID(kInvalidUID), fPageIndex(kMaxInt32) {}
+		  fPageUID(kInvalidUID), fPageIndex(kMaxInt32), fTextCompared(kFalse) {}
 };
 
 /** The first frame a story is placed in - where a jump to that story should go.
@@ -248,11 +263,45 @@ namespace KESCMStoryList
 		can edit the list behind its back; this is the one door, and it is the one KESCMStoryDiffRun
 		knocks on.
 
+		★THE TWO FACTS TRAVEL TOGETHER (2026-08-21). "What differs" and "was it compared at all"
+		are answered by one attempt and are meaningless apart: an empty list means nothing until
+		you know whether anybody looked. Two setters would let a caller write one and forget the
+		other, and the row would then be claiming something nobody measured
+		([[one-question-one-place]]).
+
 		@param nth the row. Out of range does nothing - the list may have been rebuilt underneath
 			a caller that is still walking the previous one.
 		@param changes what to attach. Copied; the caller keeps ownership of its own vector.
+		@param textCompared kTrue when the two versions' text was actually diffed - see
+			KESCMStoryRow::fTextCompared. An empty `changes` with kTrue is "the words agree";
+			with kFalse it is "nobody could look".
 	*/
-	void SetRowChanges(int32 nth, const std::vector<KESCMStoryChange>& changes);
+	void SetRowChanges(int32 nth, const std::vector<KESCMStoryChange>& changes, bool16 textCompared);
+
+	/** Read row nth's own fields out of the target document again: the words it shows, the frame a
+		click scrolls to, and the page that frame is on.
+
+		★WHAT A REFRESH IS FOR, AND THE PART THAT WAS MISSING (2026-08-21). "Refresh Story
+		Comparison" re-ran the text diff but left the ROW as the comparison had built it, so a
+		reader who edited the first sentence of a story saw the refreshed row still quoting the old
+		one (user's report). The row is drawn from the document, so a refresh has to re-read the
+		document for it - otherwise the panel is showing two different moments in one line.
+
+		⚠fPageIndex IS DELIBERATELY NOT TOUCHED. It is the sort key Build used to ORDER the list,
+		and the list is not re-sorted here - one row is being refreshed, not the sequence. Writing a
+		new index into a sequence that keeps its old order would leave the two disagreeing, and the
+		disagreement would only show up later as rows that sort wrongly after the next rebuild.
+		A story that has genuinely moved to another page therefore shows its new page and keeps its
+		old place in the list until the next full comparison, which is the honest half-answer.
+
+		⚠fKinds is not touched either: it comes from the two documents' change counters rather than
+		from the target's text, and those only ever move forward (KESCMStoryStamp.h) - re-reading
+		them would cost a walk of both documents to produce the same answer.
+
+		@param nth the row. Out of range does nothing.
+		@param targetDB the newer document. nil does nothing.
+	*/
+	void RefreshRowFromDocument(int32 nth, IDataBase* targetDB);
 
 	/** Empty the list during a controlled shutdown. See the file comment for why this exists. */
 	void ShutdownCleanup();

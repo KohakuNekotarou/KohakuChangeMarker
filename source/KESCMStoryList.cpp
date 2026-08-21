@@ -313,6 +313,46 @@ bool16 KESCMStoryStartPoint(IDataBase* db, UID storyUID, UID& outFrame, PBPMPoin
 	return kFalse;
 }
 
+/* ReadRowFromDocument
+   Everything a row takes from the TARGET DOCUMENT ITSELF: the words it shows, the frame a click
+   scrolls to, and the page that frame sits on. Answers kFalse for a story that cannot be read -
+   which cannot be shown or jumped to either, so Build drops it and a refresh leaves the row alone.
+
+   ★ONE PLACE, TWO CALLERS (2026-08-21). Build fills a new row with it, and RefreshRowFromDocument
+   fills an existing one again. It was written out only inside Build until a refreshed row was seen
+   still showing the sentence the story USED to start with (user's report): the words are read from
+   the document, so anything that re-reads the document has to read them the same way, or the two
+   answers drift the moment one of them is edited.
+
+   ★fKinds IS NOT HERE, and that is not an oversight: it comes from the two documents' change
+   counters, not from the target's text (KESCMStoryStamp.h), so it is not the target document's to
+   answer. Nor is fPageIndex - see RefreshRowFromDocument for why a refresh must not touch it.
+*/
+static bool16 ReadRowFromDocument(IDataBase* db, KESCMStoryRow& row)
+{
+	InterfacePtr<ITextModel> model(db, row.fStoryUID, UseDefaultIID());
+	if (model == nil)
+		return kFalse;	// a story that cannot be read cannot be shown, or jumped to later
+
+	row.fText = FirstReadableText(model);
+
+	// ★Document text is not a string key. Left translatable, a PMString that happens to match an
+	//   entry in the built-in table comes back as something else entirely - KESCM has already
+	//   had "Source:" turn into a Japanese style-source label that way.
+	row.fText.SetTranslatable(kFalse);
+
+	// ★The frame is kept as well as the page it sits on, because the two answer different
+	//   questions: the frame is WHERE TO SCROLL (a click centres it), and the page is WHERE IT
+	//   BELONGS (the sort order, and the page the status line names).
+	//   ⚠The page is NOT how the older version's window gets aimed - that goes by story UID,
+	//   because the same story can sit somewhere else entirely over there (2026-08-10; see
+	//   KESCMGotoStoryFrame). Why reading this composes nothing: KESCMStoryFirstFrameUID.
+	row.fFrameUID = KESCMStoryFirstFrameUID(db, row.fStoryUID);
+	row.fPageUID = (row.fFrameUID != kInvalidUID) ? KESCMFramePageUID(db, row.fFrameUID)
+												  : kInvalidUID;
+	return kTrue;
+}
+
 /* Build
 */
 void KESCMStoryList::Build(IDataBase* db, const std::vector<KESCMStoryDiff>& diffs)
@@ -325,29 +365,11 @@ void KESCMStoryList::Build(IDataBase* db, const std::vector<KESCMStoryDiff>& dif
 
 	for (std::vector<KESCMStoryDiff>::const_iterator it = diffs.begin(); it != diffs.end(); ++it)
 	{
-		InterfacePtr<ITextModel> model(db, it->fStoryUID, UseDefaultIID());
-		if (model == nil)
-			continue;	// a story that cannot be read cannot be shown, or jumped to later
-
 		KESCMStoryRow row;
 		row.fStoryUID = it->fStoryUID;
 		row.fKinds = it->fKinds;
-		row.fText = FirstReadableText(model);
-
-		// ★Document text is not a string key. Left translatable, a PMString that happens to match an
-		//   entry in the built-in table comes back as something else entirely - KESCM has already
-		//   had "Source:" turn into a Japanese style-source label that way.
-		row.fText.SetTranslatable(kFalse);
-
-		// ★The frame is kept as well as the page it sits on, because the two answer different
-		//   questions: the frame is WHERE TO SCROLL (a click centres it), and the page is WHERE IT
-		//   BELONGS (the sort order, and the page the status line names).
-		//   ⚠The page is NOT how the older version's window gets aimed - that goes by story UID,
-		//   because the same story can sit somewhere else entirely over there (2026-08-10; see
-		//   KESCMGotoStoryFrame). Why reading this composes nothing: KESCMStoryFirstFrameUID.
-		row.fFrameUID = KESCMStoryFirstFrameUID(db, row.fStoryUID);
-		if (row.fFrameUID != kInvalidUID)
-			row.fPageUID = KESCMFramePageUID(db, row.fFrameUID);
+		if (!ReadRowFromDocument(db, row))
+			continue;
 
 		if (row.fPageUID != kInvalidUID && pageList != nil)
 		{
@@ -410,7 +432,8 @@ const KESCMStoryRow* KESCMStoryList::GetRow(int32 nth)
 
 /* SetRowChanges
 */
-void KESCMStoryList::SetRowChanges(int32 nth, const std::vector<KESCMStoryChange>& changes)
+void KESCMStoryList::SetRowChanges(int32 nth, const std::vector<KESCMStoryChange>& changes,
+								   bool16 textCompared)
 {
 	// The same bounds test GetRow makes, and for the same reason: the list is rebuilt by one
 	// comparison and thrown away by the next, so an index is only ever as good as the moment it
@@ -419,6 +442,20 @@ void KESCMStoryList::SetRowChanges(int32 nth, const std::vector<KESCMStoryChange
 		return;
 
 	gRows[nth].fChanges = changes;
+	gRows[nth].fTextCompared = textCompared;
+}
+
+/* RefreshRowFromDocument
+*/
+void KESCMStoryList::RefreshRowFromDocument(int32 nth, IDataBase* targetDB)
+{
+	if (nth < 0 || nth >= static_cast<int32>(gRows.size()) || targetDB == nil)
+		return;
+
+	// A story that has since been deleted answers kFalse and the row keeps what it had. That is the
+	// same rule the whole feature follows: a row the comparison found must not vanish because
+	// something about it could not be worked out a second time.
+	(void)ReadRowFromDocument(targetDB, gRows[nth]);
 }
 
 /* ShutdownCleanup

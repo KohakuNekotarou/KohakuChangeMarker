@@ -12,12 +12,18 @@
 //  the story such as a table changed -- by matching ITextModel's change counters story by story
 //  (KESCMStoryStamp.h). This interface is how the panel reads what that produced.
 //
-//  ★READ ONLY, for the same reason IKESCMMarkData is. The list is built by one comparison and
-//  thrown away by the next, and both of those happen in the model (KESCMCore.cpp, and the
-//  shutdown path in KESCMPeek.cpp). No UI file builds it, clears it or empties it at shutdown,
-//  so there is no Build() here: a method on a boundary that nobody calls is a promise nobody
-//  keeps. (The plan's draft had a Rebuild() on the strength of a second caller in "Refresh Page
-//  Comparison"; grepping for it before writing this file found that caller is model-side too.)
+//  ★READ ONLY EXCEPT FOR ONE METHOD, AND THE EXCEPTION IS WORTH READING. The list is built by one
+//  comparison and thrown away by the next, and both of those happen in the model (KESCMCore.cpp,
+//  and the shutdown path in KESCMPeek.cpp). No UI file builds it, clears it or empties it at
+//  shutdown, so there is no Build() here: a method on a boundary that nobody calls is a promise
+//  nobody keeps. (The plan's draft had a Rebuild() on the strength of a second caller in "Refresh
+//  Page Comparison"; grepping for it before writing this file found that caller is model-side too.)
+//
+//  RefreshRow() is the one that writes, and it is here rather than on IKESCMCompareFacade beside
+//  "Refresh Page Comparison" because of what it is asked in terms of: a ROW NUMBER. That is this
+//  list's own vocabulary - the compare facade knows about documents and pages and has never heard
+//  of a row - and an interface that has to borrow another one's index to be called is the wrong
+//  interface (2026-08-21).
 //
 //  ★THE LAST TWO METHODS ARE NOT ABOUT THE LIST. They answer "where does this story start in
 //  this document", which the navigation asks of the SOURCE document for a story the list only
@@ -72,9 +78,19 @@ public:
 								// story in no frame at all, which cannot be jumped to
 		UID			fPageUID;	// where the story starts; kInvalidUID when it starts on the pasteboard
 
+		/** Whether the two versions' TEXT was actually diffed for this row (2026-08-21).
+
+			★IT IS HOW AN EMPTY CHILD LIST IS READ. GetChangeCount answers 0 for three unrelated
+			reasons - the pixel mode diffs nothing, the story could not be compared, or it was
+			compared and the words agree - and only the last one is worth telling the reader
+			about. kTrue with no children is that case, and the row draws "None" for it.
+			⚠It does NOT mean the story is unchanged: the change counters moved, or there would
+			be no row (KESCMStoryStamp.h). It means the WORDS come out the same. */
+		bool16		fTextCompared;
+
 		Row()
 			: fStoryUID(kInvalidUID), fKinds(kKESCMStoryKindNone), fFrameUID(kInvalidUID),
-			  fPageUID(kInvalidUID) {}
+			  fPageUID(kInvalidUID), fTextCompared(kFalse) {}
 	};
 
 	// ---- the list ------------------------------------------------------------------------
@@ -148,6 +164,30 @@ public:
 	/** Fill out with difference which of row nth. kFalse when either index is out of range,
 		leaving out untouched. One at a time, for the same reason GetRow is. */
 	virtual bool16	GetChange(int32 nth, int32 which, Change& out) = 0;
+
+	/** Compare row nth's story again against the older document, and replace its differences with
+		what stands there now - "Refresh Story Comparison" on the row's right-click menu.
+
+		★THE ROW IS BROUGHT UP TO DATE AS WELL AS ITS CHILDREN - the words it shows, the frame a
+		click scrolls to and that frame's page are all re-read from the target document. (The
+		first build refreshed only the children, and a row went on quoting the sentence the reader
+		had just rewritten; user's report, 2026-08-21.) ⚠Two things are deliberately left alone:
+		the kinds named on the row's right, which come from the change counters rather than from
+		the text, and the row's PLACE in the list - one row is being refreshed, not the order.
+
+		★THE ROW STAYS, whatever comes of it. A story brought back into agreement comes out with
+		NO children and keeps its row, marked "None" - the panel is answering "what differs now",
+		not "does this row still belong here" (user's call, 2026-08-21). See KESCMStoryDiffRun.h
+		for why the change counters cannot answer the second question anyway.
+
+		★The model tells the panel to redraw the list itself, through the same notification a
+		comparison sends. The caller does not have to rebuild anything.
+
+		@param nth the row, in the order the list is in now.
+		@return how many differences the row has after this, or -1 when the story could not be
+			compared - out of range, an added story, or the diff refused it. Nothing is redrawn
+			for a -1: the list is exactly as it was. */
+	virtual int32	RefreshRow(int32 nth) = 0;
 
 	// ---- where a story begins, in either document ------------------------------------------
 

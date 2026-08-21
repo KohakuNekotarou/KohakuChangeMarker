@@ -66,9 +66,27 @@ namespace
 	for the same set of changes - "Text+" never comes back as "Attr+". Added stands alone rather
 	than joining the others: there is no older story to have compared anything against, so no kind
 	could have been named for it, and no '+' can follow it.
+
+	★"None" STANDS ALONE TOO, AND IT OUTRANKS THE COUNTERS (2026-08-21, user's request after
+	watching a refreshed row lose its children: "何も変更が亡くなった場合 Change のところに表示して
+	欲しい、いまのままだと子供がなくなっただけでわかりずらい"). When the text has actually been put
+	side by side and comes out the same, saying "Text+" would be repeating what the counters said
+	BEFORE anybody looked at the words - which is exactly the reading the refresh just disproved.
+	⚠It is not "unchanged": the counters moved, or there would be no row. It is "no difference in
+	the words", and the sameKind flag is only ever set when the diff really ran (fTextCompared).
+
+	@param sameKind kTrue when the text was compared and nothing differs - see above.
 */
-PMString KindLabel(uint32 kinds)
+PMString KindLabel(uint32 kinds, bool16 sameKind)
 {
+	if (sameKind)
+	{
+		PMString none(kKESCMStoryKindNoneKey);
+		none.Translate();
+		none.SetTranslatable(kFalse);
+		return none;
+	}
+
 	if (kinds & kKESCMStoryKindAdded)
 	{
 		PMString added(kKESCMStoryKindAddedKey);
@@ -293,7 +311,14 @@ public:
 			//   part company.
 			uid.AppendNumber(static_cast<int32>(row.fStoryUID.Get()));
 			text = row.fText;
-			kinds = KindLabel(row.fKinds);
+			// ★"the text was diffed" AND "nothing came of it" - both halves are needed, and they
+			//   live in different places on purpose: the fact that somebody looked is the row's
+			//   (fTextCompared), and what they found is the children's. Asking the row how many
+			//   children it has is the same question the tree itself asks to decide whether to
+			//   draw a triangle, so the two can never disagree.
+			const bool16 sameKind = row.fTextCompared
+				&& (Utils<IKESCMStoryEditsFacade>()->GetChangeCount(nodeID->GetRow()) == 0);
+			kinds = KindLabel(row.fKinds, sameKind);
 		}
 		else if (Utils<IKESCMStoryEditsFacade>()->GetRowCount() == 0)
 		{
