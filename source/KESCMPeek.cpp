@@ -152,11 +152,26 @@ void KESCMPeekShowAt(IDataBase* targetDB, IDataBase* sourceDB,
 	if (spread == nil)
 		return;
 
-	// 【未更新スプレッドの早期スキップ】このドキュメントで比較が実行済み(sDB==targetDB)で、かつ
-	// このスプレッドのどのページも変化エントリ(sEntries)に無いなら、旧版は現行と同一=重ねる意味が
-	// 無い。重いラスタ化を丸ごと省いて即 return する(旧版を出さない)。比較が未実行(sDB!=targetDB)
-	// なら変化の有無を判定できないので、従来どおりラスタ化する(全スキップしない)。
-	if (KESCMDrawEventHandler::sDB == targetDB)
+	// 【未更新スプレッドの早期スキップ】**Pixel モードのときだけ**。このドキュメントで比較が実行済み
+	// (sDB==targetDB)で、かつこのスプレッドのどのページも変化エントリ(sEntries)に無いなら、旧版は
+	// 現行と同一=重ねる意味が無い。重いラスタ化を丸ごと省いて即 return する(旧版を出さない)。比較が
+	// 未実行(sDB!=targetDB)なら変化の有無を判定できないので、従来どおりラスタ化する(全スキップしない)。
+	//
+	// ★★★2026-08-21: **モードの判定を足した**(ユーザー報告=「Story モードでツールを使っているとき
+	//   Shift＋の peek が効かない」)。**効いていないのではなく、ここで必ず return していた**:
+	//     ・Story モードでも sDB は targetDB に差し替わる(KESCMDoMarkChangesDoc の全再比較の分岐。
+	//       Start は allowIncremental=kFalse なので必ずそちらを通る)
+	//     ・そのすぐ後で toRaster を空にする＝**MakeEntry を1回も呼ばない**ので sEntries は必ず空
+	//   ⇒ 条件が全スプレッドで成立し、旧版のラスタ化も sShowOriginal も起きなかった。
+	//     描画側(KESCMDrawEventHandler の wantOrig)は両モードで生きているので、**絵が無いだけ**だった。
+	// ★**直し方の理屈**＝この早期スキップは最適化であって仕様ではなく、根拠は「sEntries が
+	//   *画素を比べた結果* であること」1つ。Story モードは画素を一度も比べていないので
+	//   「このスプレッドは変化なし」と言える根拠を持たない ＝ **比較が未実行(sDB!=targetDB)のときと
+	//   同じ扱い**にして、素直にラスタ化する。
+	// ⚠**3つ目のモードを足すときはここを見ること。** `== kKESCMModePixel` と書いてあるのは意図で、
+	//   「sEntries を作らないモード」が増えても peek は生き続ける(`!= kKESCMModeStory` と書くと
+	//   その新モードで黙って同じ不具合が再発する)。
+	if (KESCMGetCompareMode() == kKESCMModePixel && KESCMDrawEventHandler::sDB == targetDB)
 	{
 		bool16 anyChanged = kFalse;
 		for (int32 p = 0; p < np; ++p)
