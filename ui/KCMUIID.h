@@ -581,7 +581,11 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMBookRowStateWidgetID, kKCMUIPrefix + 49)	// �
 #define kKESCMStoryKindAddedKey		kKESCMStringPrefix "kKESCMStoryKindAddedKey"	// 行の右=Source 側に相手が無い
 // ★行の右=Target 側に相手が無い＝**旧文書にあって新文書から消えたストーリー**(2026-08-21 ユーザー要望)。
 //   ⚠この行だけは **Source 文書の行**で、クリックすると Source 窓だけが動く(KESCMStoryJump.cpp)。
-#define kKESCMStoryKindRemovedKey	kKESCMStringPrefix "kKESCMStoryKindRemovedKey"	// 行の右=Target 側に相手が無い
+// ⚠★**画面に出る語は "Deleted" で、キー名と enum は Removed のまま**(2026-08-21 ユーザー選択)。
+//   "Delete" 単独は動詞の原形＝命令形に読めて、隣の "Added"(過去分詞)と品詞が揃わない。
+//   キーを改名しなかったのは、**文字列キーは表示文字列ではない**から＝改名すると enum・model・UI の
+//   3か所を触ることになり、動くのは画面に一度も出ない4文字だけ。
+#define kKESCMStoryKindRemovedKey	kKESCMStringPrefix "kKESCMStoryKindRemovedKey"	// 行の右=Target 側に相手が無い("Deleted")
 // ★行の右="本文を突き合わせた結果、差が無い"(2026-08-21 ユーザー要望)。⚠「変更なし」ではない
 //   ＝カウンターは動いている(でなければ行が出ない)。言っているのは「語は同じ」。
 //   ⇒ 更新(Refresh Story Comparison)で直し終えた行と、そもそも比較できなかった行が見分けられる。
