@@ -637,14 +637,69 @@ int32 KESCMStoryDiffRun::Run(IDataBase* targetDB, IDataBase* sourceDB)
 							 UIDRef(sourceDB, row->fStoryUID), changes))
 			continue;		// the row keeps its place and loses its detail
 
-		if (changes.empty())
-			continue;		// compared, and the text is the same - a formatting-only edit
-
-		KESCMStoryList::SetRowChanges(i, changes);
+		// ★WRITTEN EVEN WHEN NOTHING DIFFERS (2026-08-21). It used to `continue` here, on the
+		//   grounds that writing an empty list changes nothing - which was true of the CHANGES and
+		//   false of the fact that somebody looked. That fact is what lets the row say "None"
+		//   instead of standing there mute beside the rows that could not be compared at all
+		//   (user's request: "何も変更が亡くなった場合 Change のところに表示して欲しい").
+		KESCMStoryList::SetRowChanges(i, changes, kTrue);
 		total += static_cast<int32>(changes.size());
 	}
 
 	return total;
+}
+
+//----------------------------------------------------------------------------------------
+// RunOne
+//----------------------------------------------------------------------------------------
+
+int32 KESCMStoryDiffRun::RunOne(IDataBase* targetDB, IDataBase* sourceDB, int32 rowIndex)
+{
+	if (targetDB == nil || sourceDB == nil)
+		return -1;
+
+	// ★THE UID IS COPIED OUT BEFORE ANYTHING ELSE HAPPENS. GetRow hands back a pointer into the
+	//   list, and the work below writes to that same list - so the answer to "which story is this
+	//   row about" is taken while the question is still safe to ask.
+	const KESCMStoryRow* row = KESCMStoryList::GetRow(rowIndex);
+	if (row == nil || row->fStoryUID == kInvalidUID)
+		return -1;
+	const UID storyUID = row->fStoryUID;
+	const bool16 added = ((row->fKinds & kKESCMStoryKindAdded) != 0);
+	row = nil;
+
+	// An added story has no partner to compare against - the same judgement Run reads rather than
+	// makes again. The menu greys the item for these rows, so this is the second line of defence.
+	if (added)
+		return -1;
+
+	// See the header: the same guard Run takes, and the only one on this path.
+	IDataBase::SaveRestoreModifiedState targetDirtyGuard(targetDB);
+	IDataBase::SaveRestoreModifiedState sourceDirtyGuard(sourceDB);
+
+	// ★THE ROW ITSELF IS RE-READ FIRST (2026-08-21, user's report: "親の行のテキストの内容が変更
+	//   されたのに変わっていない"). The row quotes the story's opening words, and points at the frame
+	//   a click scrolls to - both read from the document when the comparison ran. Refreshing only the
+	//   CHILDREN left the row quoting a sentence the reader had just rewritten, which is the panel
+	//   showing two different moments on one line.
+	//   ⚠It runs inside the guard for the same reason everything else here does. A story that has
+	//     been deleted since simply leaves the row as it was - the read refuses rather than
+	//     half-writing it, and the diff below is what reports the failure.
+	KESCMStoryList::RefreshRowFromDocument(rowIndex, targetDB);
+
+	std::vector<KESCMStoryChange> changes;
+	const bool16 compared = CompareOneStory(UIDRef(targetDB, storyUID),
+										    UIDRef(sourceDB, storyUID), changes);
+
+	// ★WRITTEN EITHER WAY, INCLUDING EMPTY. What stands under the row after a refresh is what the
+	//   documents say now, and "nothing" is a perfectly good thing for them to say - the row shows
+	//   it as "None" (KESCMStoryRow::fTextCompared), which is how the reader tells "I have just
+	//   repaired this" apart from "this was never looked at".
+	if (!compared)
+		changes.clear();
+	KESCMStoryList::SetRowChanges(rowIndex, changes, compared);
+
+	return compared ? static_cast<int32>(changes.size()) : -1;
 }
 
 // End, KESCMStoryDiffRun.cpp.

@@ -1077,6 +1077,27 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKESCMBookRowMenuName,
 		kKESCMBookRowStartMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
+
+		// ----- The Story Edits rows: right-click menu (2026-08-21) -----
+		// A second menu of its own, on the same machinery as the chapter rows above
+		// (KESCMStoryRowEH::RButtonDn -> IMenuManager::HandlePopupMenu with this subtree's name).
+		//
+		// "Refresh Story Comparison": compare THAT ROW'S story against the older document again and
+		// replace what hangs under it. The reader edits the newer document with the panel open, and
+		// the row goes on showing what differed when the comparison ran - this brings one row up to
+		// date without re-running the comparison over the whole document.
+		// ★A row whose text has been brought back into agreement keeps its row and loses its
+		// children: the question is "what differs now", not "does this row still belong here"
+		// (user's call, 2026-08-21 - and see KESCMStoryDiffRun.h for why the change counters could
+		// not answer the second question anyway).
+		// ★Enabled ONLY in the Story mode, while armed, on a row that has a partner to compare
+		// against (kCustomEnabling -> KESCMStoryRowCanRefresh). ⚠Being the only item in this menu,
+		// greyed means the menu does not appear at all - which is exactly what "Story モードでのみ"
+		// asks for.
+		kKESCMStoryRowRefreshActionID,
+		kKESCMStoryRowMenuName,
+		kKESCMStoryRowRefreshMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
 	}
 };
 
@@ -1307,6 +1328,18 @@ resource ActionDef (kSDKDefActionResourceID)
 		kOtherActionArea,
 		kNormalAction,
 		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates greys it for a row with only one side (KESCMBookRowCanStart)
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		// "Refresh Story Comparison" on the Story Edits rows' right-click menu (2026-08-21).
+		// ⚠ Not on the flyout, for the same reason the chapter item is not: it acts on the ROW the
+		// menu was popped over, which a flyout has no way of naming (KESCMStoryRowEH stashes it).
+		kKESCMActionComponentBoss,
+		kKESCMStoryRowRefreshActionID,
+		kKESCMStoryRowRefreshMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates greys it outside the Story mode (KESCMStoryRowCanRefresh)
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 

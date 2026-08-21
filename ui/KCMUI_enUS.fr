@@ -62,6 +62,7 @@ resource StringTable (kSDKDefStringsResourceID + index_enUS)
                 kKESCMBookCompareConfirmKey,		"These two books will be compared, chapter by chapter.",
                 kKESCMBookNoPairKey,				"Select a book tab in the Book panel, and open a second book.",
                 kKESCMBookRowStartMenuKey,			"Start Change Marker",
+                kKESCMStoryRowRefreshMenuKey,		"Refresh Story Comparison",
                 kKESCMIgnorePageNumMenuKey,			"Ignore Page Number Marker",
                 kKESCMHoldToHideMarksMenuKey,			"Hold to Hide Marks",
 
@@ -96,6 +97,7 @@ resource StringTable (kSDKDefStringsResourceID + index_enUS)
                 kKESCMStoryKindAttrKey,			"Attr",
                 kKESCMStoryKindOtherKey,		"Other",
                 kKESCMStoryKindAddedKey,		"Added",
+                kKESCMStoryKindNoneKey,			"None",
 
                 // The list's column headings. ★"Story" and "Change" rather than "Text" and "Kind":
                 // the words in the rows already use "Text" for one of the kinds, so heading the

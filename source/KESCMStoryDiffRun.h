@@ -62,6 +62,52 @@ namespace KESCMStoryDiffRun
 			move for formatting and for things attached to the story.
 	*/
 	int32 Run(IDataBase* targetDB, IDataBase* sourceDB);
+
+	/** Compare ONE row's story again, and replace what is attached to it.
+
+		"Refresh Story Comparison" on the row's right-click menu (2026-08-21, user's request:
+		"それを使うとそのストーリーだけ比較を更新したい"). The reader edits the newer document with
+		the panel open, and the row keeps showing what differed when the comparison ran - this
+		is how they bring one row up to date without re-running the whole comparison.
+
+		★IT WRITES AN EMPTY RESULT, WHICH IS THE ONE THING Run DOES NOT. Run leaves a row's
+		previous detail alone when the story now compares equal, and it is right to: it is
+		filling in a list that was just built, so there is nothing there to preserve or destroy.
+		Here there is. A row whose text has been brought back into agreement must LOSE its
+		children, because that is the answer the reader asked for - and leaving yesterday's
+		differences under a row that was explicitly refreshed would be showing them something
+		untrue about the document in front of them.
+
+		★The guard is the same one Run takes, and for the same reason (exporting a snippet can
+		compose). A guard inside a guard is harmless; this one is the only guard on this path.
+
+		★THE ROW IS RE-READ TOO - its opening words, the frame a click scrolls to, and that
+		frame's page (KESCMStoryList::RefreshRowFromDocument). ⚠This was missing from the first
+		build and had to be reported before it was noticed (user, 2026-08-21: "親の行のテキストの
+		内容が変更されたのに変わっていない"): the row quotes the document, so a refresh that
+		re-read only the CHILDREN left the row quoting a sentence the reader had just rewritten -
+		one line of the panel showing two different moments.
+
+		⚠What is still NOT re-read is fKinds, and that is deliberate rather than the same
+		oversight: the kinds come from the two documents' change COUNTERS, which move forward as a
+		story is edited and never come back (KESCMStoryStamp.h, "WHY TWO VERSIONS CAN BE MATCHED
+		AT ALL"). Re-reading them costs a walk of both documents to produce the answer they
+		already gave. ⚠Nor is the row's place in the list: see RefreshRowFromDocument for why one
+		row's sort key must not be updated while the sequence keeps its old order.
+
+		Either way the row STAYS. A row that vanished because its text was repaired would be
+		claiming the story is untouched when the counters say otherwise. Refreshing means "what
+		differs NOW", not "does this row still belong here".
+
+		@param targetDB the newer document. nil answers -1.
+		@param sourceDB the older document. nil answers -1.
+		@param rowIndex which row, in the order the list is in now.
+		@return how many differences are attached to the row after this, or **-1** when the story
+			could not be compared at all - out of range, an added story (nothing on the older
+			side to compare against), or the diff refused it. The row keeps its place in every
+			one of those cases; only its detail is cleared.
+	*/
+	int32 RunOne(IDataBase* targetDB, IDataBase* sourceDB, int32 rowIndex);
 }
 
 #endif // __KESCMStoryDiffRun_h__

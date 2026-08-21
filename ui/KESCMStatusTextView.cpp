@@ -69,8 +69,9 @@ namespace
 {
 
 /* One piece of the message as it arrives: a string, and whether it is drawn faded.
-   ★Only two colours exist in this box. A run is either the changed characters or something around
-   them (context, or the heading), and everything in the second group is drawn the same way. */
+   ★Only two colours exist in this box, and the faded one means one thing only: CONTEXT - words
+   carried along so the reader can place the change. Everything the message itself says (the
+   heading, and the characters that differ) is drawn at the theme's text colour. */
 struct KESCMRun
 {
 	PMString	fText;
@@ -348,7 +349,11 @@ std::vector<KESCMRun> KESCMMakeRuns(const PMString& label, const PMString& pre,
 	{
 		PMString heading(label);
 		heading.Append("\n");		// ★the heading owns its break: nothing may share its line
-		runs.push_back(KESCMRun(heading, kTrue));
+		// ★NOT FADED (user's call, 2026-08-21). Faded means context - and the heading is not
+		//   context: it is the box saying WHICH document's words these are, which is the one thing
+		//   the reader cannot work out from the words themselves. It was faded only because it was
+		//   grouped with everything that is not the change; being neither is what it is.
+		runs.push_back(KESCMRun(heading, kFalse));
 	}
 	if (!pre.IsEmpty())
 		runs.push_back(KESCMRun(pre, kTrue));

@@ -45,10 +45,12 @@
 #include "VCPlugInHeaders.h"
 
 // Interface includes:
+#include "IActionManager.h"			// the route from the application to the menu manager
 #include "IApplication.h"			// the app boss carries IKeyBoard
-#include "IEvent.h"					// ShiftKeyDown / CmdKeyDown
+#include "IEvent.h"					// ShiftKeyDown / CmdKeyDown, GlobalWhere
 #include "IEventHandler.h"			// the LIST's handler - the arrow keys' owner (see the hand-off below)
 #include "IKeyBoard.h"				// AcquireKeyFocus / RelinquishKeyFocus
+#include "IMenuManager.h"			// HandlePopupMenu - pops kKESCMStoryRowMenuName at the cursor
 #include "ISession.h"				// GetExecutionContextSession - the route to the application
 #include "ITreeNodeIDData.h"		// this node's NodeID
 #include "ITreeViewController.h"	// IsSelected - is this the row the click landed on?
@@ -68,6 +70,7 @@
 // Project includes:
 #include "KCMUIID.h"
 #include "KESCMStoryJump.h"
+#include "KESCMStoryRefresh.h"		// where the right-click menu's row is stashed for the action to read
 
 namespace
 {
@@ -87,8 +90,22 @@ public:
 	virtual bool16 LButtonDn(IEvent* e);
 	virtual bool16 LButtonUp(IEvent* e);
 	virtual bool16 ButtonDblClk(IEvent* e);
+	virtual bool16 RButtonDn(IEvent* e);
 
 private:
+	/** Which story row this widget IS, read from its own node and nothing else.
+
+		★NOT THE SAME QUESTION AS RowForClick, which is why it is a separate one. That one answers
+		"which row should this CLICK act on" and refuses every row that is not selected - correctly,
+		for a left click, because the press has just moved the selection there. A RIGHT click
+		deliberately does NOT move the selection, so it has no such row to point at: what it acts on
+		is the row the cursor is over, which is this widget. (2026-08-21)
+
+		@param outChange [out] optional. Receives which CHANGE this row names, or -1 for a story row.
+		@return the story row's index, or -1 when this widget carries no node of ours.
+	*/
+	int32 RowFromNode(int32* outChange = nil) const;
+
 	/** Which row this click is for, or -1 when it should be left alone.
 
 		Answers -1 for a click the stock handler already used, for a modified click, and for a row
@@ -103,6 +120,28 @@ private:
 
 CREATE_PMINTERFACE(KESCMStoryRowEH, kKESCMStoryRowEHImpl)
 
+int32 KESCMStoryRowEH::RowFromNode(int32* outChange) const
+{
+	if (outChange != nil)
+		*outChange = -1;
+
+	// The node's NodeID lives on this boss's ITreeNodeIDData (every tree node widget carries it).
+	InterfacePtr<ITreeNodeIDData> nodeData(this, UseDefaultIID());
+	if (nodeData == nil)
+		return -1;
+	TreeNodePtr<KESCMStoryNodeID> nodeID(nodeData->Get());
+	if (nodeID == nil)
+		return -1;
+
+	// ★A CHANGE ROW ANSWERS ITS STORY'S index (2026-08-20), and says which change it was through
+	//   outChange. Everything that asks "which row is this" wants the story either way - a change
+	//   row belongs to exactly one - and the caller that cares about the difference now has it
+	//   without going back to the node.
+	if (outChange != nil && nodeID->IsChangeRow())
+		*outChange = nodeID->GetChange();
+	return nodeID->GetRow();
+}
+
 int32 KESCMStoryRowEH::RowForClick(IEvent* e, bool16 baseHandled, int32* outChange) const
 {
 	if (outChange != nil)
@@ -116,9 +155,6 @@ int32 KESCMStoryRowEH::RowForClick(IEvent* e, bool16 baseHandled, int32* outChan
 	if (nodeData == nil)
 		return -1;
 	const NodeID& node = nodeData->Get();
-	TreeNodePtr<KESCMStoryNodeID> nodeID(node);
-	if (nodeID == nil)
-		return -1;
 
 	// The selection lives on the tree, not on the row, so ask upwards for it.
 	InterfacePtr<const IWidgetParent> widgetParent(this, UseDefaultIID());
@@ -129,13 +165,9 @@ int32 KESCMStoryRowEH::RowForClick(IEvent* e, bool16 baseHandled, int32* outChan
 	if (treeController == nil || !treeController->IsSelected(node))
 		return -1;
 
-	// ★A CHANGE ROW ANSWERS ITS STORY'S index (2026-08-20), and says which change it was through
-	//   outChange. Everything that asks "which row is this" wants the story either way - a change
-	//   row belongs to exactly one - and the caller that cares about the difference now has it
-	//   without going back to the node.
-	if (outChange != nil && nodeID->IsChangeRow())
-		*outChange = nodeID->GetChange();
-	return nodeID->GetRow();
+	// WHICH row this is, and which change, is the node's own answer and is given in one place
+	// (RowFromNode). Everything above was about the CLICK; nothing above it changes the answer.
+	return this->RowFromNode(outChange);
 }
 
 // Nothing of this plug-in's own happens on the way DOWN. The one job here is to start every click
@@ -246,6 +278,50 @@ bool16 KESCMStoryRowEH::LButtonUp(IEvent* e)
 		keyBoard->AcquireKeyFocus(treeEH);
 
 	return result;
+}
+
+// Right-click on a row: pop the row menu at the cursor (2026-08-21). The same machinery as the
+// chapter rows in the book comparison dialog (KESCMBookRowEH::RButtonDn), the real Links / Layers
+// panel row menus, and KBS's result rows: HandlePopupMenu pops the MenuDef subtree named
+// kKESCMStoryRowMenuName, and the item the user picks fires through the ordinary action component.
+//
+// ***** THE ROW IS STASHED FIRST. ***** The action is handed no widget context of its own - it runs
+// later, from the menu, knowing only its ActionID - so KESCMStorySetMenuRow is how it learns which
+// story the menu was about. Both the action and its enabling test read it back.
+//
+// ***** STORY ROWS ONLY. ***** A right click on a CHANGE row raises nothing (user's call,
+// 2026-08-21: "子供の行では、右クリックは出ないようにで"). The first build did offer the menu there,
+// aimed at the change's parent story - which is a defensible answer to "what would it even mean"
+// and the wrong one to give: the reader is pointing at ONE difference and would be handed an action
+// over the whole story, so the menu would be doing something other than what it appears to. A row
+// that has nothing to offer should stay silent rather than offer something adjacent.
+//
+// Deliberately NOT calling the stock handler and NOT changing the selection: a right click that is
+// only asking for a menu should not move the user's place in the list - the same rule the chapter
+// rows and KBS both settled on. ⚠It is also what makes the row under the cursor the ONLY thing this
+// can be about, which is why the row is read from this widget's own node.
+bool16 KESCMStoryRowEH::RButtonDn(IEvent* e)
+{
+	int32 changeIndex = -1;
+	const int32 rowIndex = this->RowFromNode(&changeIndex);
+	if (rowIndex < 0 || changeIndex >= 0 || e == nil)
+		return TreeNodeEventHandler::RButtonDn(e);
+
+	KESCMStorySetMenuRow(rowIndex);
+
+	ISession* session = GetExecutionContextSession();
+	InterfacePtr<IApplication> app(session != nil ? session->QueryApplication() : nil);
+	if (app == nil)
+		return kTrue;
+	InterfacePtr<IActionManager> actionMgr(app->QueryActionManager());
+	if (actionMgr == nil)
+		return kTrue;
+	InterfacePtr<IMenuManager> menuMgr(actionMgr, UseDefaultIID());
+	if (menuMgr == nil)
+		return kTrue;
+
+	menuMgr->HandlePopupMenu(kKESCMStoryRowMenuName, e->GlobalWhere(), e->GlobalWhere(), kTrue, this);
+	return kTrue;
 }
 
 // End, KESCMStoryRowEH.cpp.

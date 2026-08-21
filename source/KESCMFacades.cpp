@@ -48,6 +48,7 @@
 #include "KESCMPageMap.h"			// registered pages, the page pairing, and the Register toggle
 #include "KESCMPageCheck.h"			// the Check toggle and the Save/Load of both flags
 #include "KESCMStoryList.h"			// the Story Edits rows, and where a story begins in a document
+#include "KESCMStoryDiffRun.h"		// RunOne - re-comparing one row's story ("Refresh Story Comparison")
 #include "KESCMBookPair.h"			// which two books, and their display paths
 #include "KESCMBookCompare.h"		// the book comparison itself
 #include "KESCMPageNumberMarker.h"	// the folio exclusion toggle
@@ -364,12 +365,13 @@ public:
 		if (row == nil)
 			return kFalse;	// out of range, or the placeholder row -- out is left as the caller had it
 
-		// Five of the row's six fields. fPageIndex is the list's sort key and no caller reads it.
+		// Six of the row's seven fields. fPageIndex is the list's sort key and no caller reads it.
 		out.fStoryUID	= row->fStoryUID;
 		out.fText		= row->fText;
 		out.fKinds		= row->fKinds;
 		out.fFrameUID	= row->fFrameUID;
 		out.fPageUID	= row->fPageUID;
+		out.fTextCompared = row->fTextCompared;
 		return kTrue;
 	}
 
@@ -400,6 +402,29 @@ public:
 		out.fOtherText		= change.fOtherText;
 		out.fOtherTextPost	= change.fOtherTextPost;
 		return kTrue;
+	}
+
+	virtual int32	RefreshRow(int32 nth)
+	{
+		// The two documents the comparison is holding. ★ASKED FOR AGAIN RATHER THAN REMEMBERED:
+		// the panel can only reach this while a comparison is armed, but "armed" and "still open"
+		// are different questions and the second one is the one that matters here.
+		IDataBase* const targetDB = KESCMArmedTargetDB();
+		IDataBase* const sourceDB = KESCMArmedSourceDB();
+		if (targetDB == nil || sourceDB == nil)
+			return -1;
+		if (!KESCMIsDocDBOpen(targetDB) || !KESCMIsDocDBOpen(sourceDB))
+			return -1;
+
+		const int32 count = KESCMStoryDiffRun::RunOne(targetDB, sourceDB, nth);
+
+		// ★NOTHING IS SAID WHEN NOTHING CHANGED. The notification makes the panel rebuild the
+		//   whole tree, which costs the reader their selection - so a refresh that could not be
+		//   done leaves the list alone rather than shaking it for no result.
+		if (count >= 0)
+			KESCMNotify(kKESCMStoryEditsRebuiltMessage);
+
+		return count;
 	}
 
 	virtual UID		GetFirstFrameUID(IDataBase* db, UID storyUID)

@@ -49,6 +49,7 @@
 #include "KESCMBookRun.h"		// KESCMRunBookComparison(フライアウト「Compare Books」＝確認して比較して見せる)
 #include "KESCMBookOpen.h"			// KESCMBookMenuRow/CanStart/StartComparisonForRow(章行の右クリック「Start Change Marker」)
 #include "KESCMChangeNav.h"			// KESCMRefreshNavPosition(overset トグルで Prev/Next の対象数を更新)
+#include "KESCMStoryRefresh.h"		// KESCMStoryMenuRow/CanRefresh/RefreshMenuRow(Story Edits 行の右クリック「Refresh Story Comparison」)
 #include "KESCMPanelAlpha.h"		// KESCMGetPanelTranslucent/Set/Apply(フライアウト「Translucent Panel」)
 // (★`IActiveContext.h` / `IDocument.h` / `PersistUtils.h` の3本は 2026-08-18 に撤去＝不具合再検査 B-U3。
 //  **どれも一度も使っていなかった**。DoAction / UpdateActionStates は `IActiveContext*` を受け取るが
@@ -597,6 +598,15 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 			KESCMBookStartComparisonForRow(KESCMBookMenuRow());
 			break;
 
+		// Story Edits の**行の右クリック**「Refresh Story Comparison」(2026-08-21)。その行の
+		// ストーリーだけ本文差分を取り直し、子の変更箇所を今の状態に置き換える。
+		// ★どの行かは章行と同じ作り＝右クリックの時点で KESCMStorySetMenuRow が控えている。
+		// ★直し終えて差分が0件になっても**行は残り子だけ消える**(ユーザー判断 2026-08-21)。
+		//   結果はステータス行に出る＝「何も起きなかったのか、差分が無くなったのか」を言い分ける。
+		case kKESCMStoryRowRefreshActionID:
+			KESCMStoryRefreshMenuRow();
+			break;
+
 		default:
 			break;
 	}
@@ -884,6 +894,16 @@ void KESCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionSta
 			//     それが仕様＝空メニューを出す実装に「改善」しないこと)。
 			listToUpdate->SetNthActionState(i, KESCMBookRowCanStart(KESCMBookMenuRow()) ? kEnabledAction
 			                                                                            : kDisabled_Unselected);
+		}
+		else if (action == kKESCMStoryRowRefreshActionID)
+		{
+			// ★実行と同じ判定をそのまま通す(KESCMStoryRowCanRefresh)＝メニューの見た目と押した
+			//   結果がずれない。有効になるのは **Story モードで比較中、かつ相手のあるストーリーの行**
+			//   だけ(ユーザー指定 2026-08-21「ストーリーモードでのみで」)。
+			//   ⚠この項目も行メニューの唯一の項目なので、灰色のとき**メニュー自体が出ない**——
+			//     Pixel モードで右クリックしても何も出ないのは、この一行がそう決めている。
+			listToUpdate->SetNthActionState(i, KESCMStoryRowCanRefresh() ? kEnabledAction
+			                                                            : kDisabled_Unselected);
 		}
 	}
 }

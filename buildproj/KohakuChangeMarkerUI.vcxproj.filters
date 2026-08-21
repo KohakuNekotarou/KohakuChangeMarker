@@ -111,6 +111,9 @@
       <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMStoryJump.cpp">
          <Filter>Source Files</Filter>
       </ClCompile>
+      <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMStoryRefresh.cpp">
+         <Filter>Source Files</Filter>
+      </ClCompile>
       <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMChangeNav.cpp">
          <Filter>Source Files</Filter>
       </ClCompile>
@@ -222,6 +225,9 @@
          <Filter>Header Files</Filter>
       </ClInclude>
       <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\KESCMStoryJump.h">
+         <Filter>Header Files</Filter>
+      </ClInclude>
+      <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\KESCMStoryRefresh.h">
          <Filter>Header Files</Filter>
       </ClInclude>
       <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\KESCMChangeNav.h">
