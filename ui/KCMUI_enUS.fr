@@ -90,13 +90,16 @@ resource StringTable (kSDKDefStringsResourceID + index_enUS)
                 kKESCMNextChangeKey,			"Next >",
 
                 // Story Edits section. The kind words are what a row says on its right; "Added" means
-                // the older version holds no story to compare this one against at all.
+                // the older version holds no story to compare this one against at all, and "Removed"
+                // means the NEWER one does not - that row is a story of the older document, and
+                // clicking it moves the source window alone (2026-08-21).
                 kKESCMStorySectionLabelKey,		"Story Edits",
                 kKESCMStoryNoEditsKey,			"No edits",
                 kKESCMStoryKindTextKey,			"Text",
                 kKESCMStoryKindAttrKey,			"Attr",
                 kKESCMStoryKindOtherKey,		"Other",
                 kKESCMStoryKindAddedKey,		"Added",
+                kKESCMStoryKindRemovedKey,		"Removed",
                 kKESCMStoryKindNoneKey,			"None",
 
                 // The list's column headings. ★"Story" and "Change" rather than "Text" and "Kind":

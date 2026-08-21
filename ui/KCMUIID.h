@@ -579,6 +579,9 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMBookRowStateWidgetID, kKCMUIPrefix + 49)	// �
 #define kKESCMStoryKindAttrKey		kKESCMStringPrefix "kKESCMStoryKindAttrKey"		// 行の右=属性が変わった(適用スタイル・オーバーライド・表の罫線を含む)
 #define kKESCMStoryKindOtherKey		kKESCMStringPrefix "kKESCMStoryKindOtherKey"	// 行の右=上記以外(実測では出にくい。KESCMStoryStamp.h 参照)
 #define kKESCMStoryKindAddedKey		kKESCMStringPrefix "kKESCMStoryKindAddedKey"	// 行の右=Source 側に相手が無い
+// ★行の右=Target 側に相手が無い＝**旧文書にあって新文書から消えたストーリー**(2026-08-21 ユーザー要望)。
+//   ⚠この行だけは **Source 文書の行**で、クリックすると Source 窓だけが動く(KESCMStoryJump.cpp)。
+#define kKESCMStoryKindRemovedKey	kKESCMStringPrefix "kKESCMStoryKindRemovedKey"	// 行の右=Target 側に相手が無い
 // ★行の右="本文を突き合わせた結果、差が無い"(2026-08-21 ユーザー要望)。⚠「変更なし」ではない
 //   ＝カウンターは動いている(でなければ行が出ない)。言っているのは「語は同じ」。
 //   ⇒ 更新(Refresh Story Comparison)で直し終えた行と、そもそも比較できなかった行が見分けられる。

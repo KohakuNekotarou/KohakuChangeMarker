@@ -106,11 +106,26 @@ bool16 KESCMStoryJumpToRow(int32 rowIndex)
 	if (!Utils<IKESCMStoryEditsFacade>()->GetRow(rowIndex, row))
 		return kFalse;	// out of range, or the "No edits" placeholder - nowhere to go, silently
 
-	// ★The list belongs to the comparison that built it, so the document to move is the armed
-	//   TARGET - not whatever happens to be in front. Checked for life rather than trusted: the list
-	//   is dropped when a compared document closes, but a click already on its way when that
+	// ★The list belongs to the comparison that built it, so the document to move is one of the two
+	//   ARMED ones - not whatever happens to be in front. Checked for life rather than trusted: the
+	//   list is dropped when a compared document closes, but a click already on its way when that
 	//   happened would otherwise arrive here holding a database that is gone.
-	IDataBase* db = Utils<IKESCMCompareFacade>()->GetArmedTargetDB();
+	//
+	// ★★WHICH OF THE TWO IS THE ROW'S OWN (2026-08-21). A REMOVED row's story is not in the target
+	//   at all - it is in the older document - and the user's call is that clicking it moves the
+	//   SOURCE window alone ("それを、選択したらソースの方だけジャンプ"). Every other row is a
+	//   target row and behaves exactly as before.
+	//   ★★★AND "ALONE" NEEDS NO EXTRA FLAG: KESCMGotoStoryFrame only brings the companion window
+	//     along when the source it finds is NOT the database it was asked to move
+	//     (`sourceDB != db`). Handing it the source therefore moves the source and stops. ⚠That is
+	//     a property of that function, not an accident of this call - if the companion logic there
+	//     is ever rewritten, this promise has to be re-checked.
+	//   ⚠row.fStoryUID / fFrameUID / fPageUID all belong to whichever document this picks. Reading
+	//     the row against the other one would not fail loudly - a uid can name a DIFFERENT object
+	//     over there rather than nothing.
+	const bool16 removedRow = ((row.fKinds & kKESCMStoryKindRemoved) != 0) ? kTrue : kFalse;
+	IDataBase* db = removedRow ? Utils<IKESCMCompareFacade>()->GetArmedSourceDB()
+							   : Utils<IKESCMCompareFacade>()->GetArmedTargetDB();
 	if (db == nil || !Utils<IKESCMCompareFacade>()->IsDocDBOpen(db))
 	{
 		PMString s("The comparison is no longer running.");
@@ -373,7 +388,13 @@ bool16 KESCMStorySelectWholeStory(int32 rowIndex)
 
 	// Both of these have just been reported by the single click that preceded this one - see the
 	// header for why the second one says nothing.
-	IDataBase* db = Utils<IKESCMCompareFacade>()->GetArmedTargetDB();
+	// ★The database is picked the same way the single click picks it: a REMOVED row's story lives
+	//   in the source, so that is where the selection goes (2026-08-21). The reasoning is written
+	//   out at KESCMStoryJumpToRow; it is not repeated here, but the two must not drift apart -
+	//   selecting in one document after scrolling the other would be two windows disagreeing.
+	const bool16 removedRow = ((row.fKinds & kKESCMStoryKindRemoved) != 0) ? kTrue : kFalse;
+	IDataBase* db = removedRow ? Utils<IKESCMCompareFacade>()->GetArmedSourceDB()
+							   : Utils<IKESCMCompareFacade>()->GetArmedTargetDB();
 	if (db == nil || !Utils<IKESCMCompareFacade>()->IsDocDBOpen(db))
 		return kFalse;
 	if (row.fFrameUID == kInvalidUID)
@@ -388,9 +409,13 @@ bool16 KESCMStorySelectWholeStory(int32 rowIndex)
 	//   look at it. IDataBase.h:389-412 restores the flag the document came in with rather than
 	//   forcing it clean - the same guard KBS puts round the identical operation.
 	//   ★It guards the SELECTION, not the jump: the single click above was measured to leave both
-	//     documents clean without one (see the note there). ★And only the target needs it - the
-	//     source document is never selected into, which is why this is one guard where the rest of
-	//     KESCM takes two (KESCMCore.cpp:480-481 and the three like it).
+	//     documents clean without one (see the note there). ★ONE GUARD, ON THE DOCUMENT BEING
+	//     SELECTED INTO - which is why this is one guard where the rest of KESCM takes two
+	//     (KESCMCore.cpp:480-481 and the three like it): only ever one document is selected into
+	//     by this function, and `db` above already names it.
+	//     ⚠2026-08-21 訂正: この理由は「Source は選択されない」と書いてあったが、**Removed 行では
+	//       選択されるのは Source** になった。守る対象が「Target」でなく「db」だったので中身は
+	//       正しいままで、外れていたのは理由の書き方だけ。
 	IDataBase::SaveRestoreModifiedState dirtyGuard(db);
 
 	ISelectionManager* selectionManager = Utils<ISelectionUtils>()->GetActiveSelection();

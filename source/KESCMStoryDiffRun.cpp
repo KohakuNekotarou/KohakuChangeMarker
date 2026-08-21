@@ -625,11 +625,15 @@ int32 KESCMStoryDiffRun::Run(IDataBase* targetDB, IDataBase* sourceDB)
 		if (row == nil || row->fStoryUID == kInvalidUID)
 			continue;
 
-		// ★An added story has no partner to compare against, and the list already knows that -
-		//   this is the same judgement KESCMStoryStamp made when it built the row, read rather
-		//   than made again. Asking the older document for the UID ourselves would be a second
-		//   place where "does this story exist over there" gets answered.
-		if ((row->fKinds & kKESCMStoryKindAdded) != 0)
+		// ★A story with no partner cannot be compared against anything, and the list already knows
+		//   that - this is the same judgement KESCMStoryStamp made when it built the row, read
+		//   rather than made again. Asking the older document for the UID ourselves would be a
+		//   second place where "does this story exist over there" gets answered.
+		//   ★★kKESCMStoryKindUnpaired COVERS BOTH added AND removed (2026-08-21). ⚠For a removed
+		//     row this is not merely wasted work: its fStoryUID is a SOURCE uid, so the two UIDRefs
+		//     below would ask the TARGET for it - and a uid that means one story over there can
+		//     name a different object over here. The row must never reach that line.
+		if ((row->fKinds & kKESCMStoryKindUnpaired) != 0)
 			continue;
 
 		std::vector<KESCMStoryChange> changes;
@@ -665,12 +669,14 @@ int32 KESCMStoryDiffRun::RunOne(IDataBase* targetDB, IDataBase* sourceDB, int32 
 	if (row == nil || row->fStoryUID == kInvalidUID)
 		return -1;
 	const UID storyUID = row->fStoryUID;
-	const bool16 added = ((row->fKinds & kKESCMStoryKindAdded) != 0);
+	const bool16 unpaired = ((row->fKinds & kKESCMStoryKindUnpaired) != 0);
 	row = nil;
 
-	// An added story has no partner to compare against - the same judgement Run reads rather than
-	// makes again. The menu greys the item for these rows, so this is the second line of defence.
-	if (added)
+	// A story with no partner has nothing to be compared against - the same judgement Run reads
+	// rather than makes again. The menu greys the item for these rows, so this is the second line
+	// of defence. ★Both kinds (added AND removed) since 2026-08-21; for a removed row the uid
+	// above belongs to the SOURCE and must not be handed to the target (see Run's note).
+	if (unpaired)
 		return -1;
 
 	// See the header: the same guard Run takes, and the only one on this path.

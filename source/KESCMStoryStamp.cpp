@@ -1,4 +1,4 @@
-//========================================================================================
+﻿//========================================================================================
 //
 //  Owner: KohakuNekotarou
 //
@@ -19,6 +19,7 @@
 #include "KESCMStoryStamp.h"
 
 #include <map>
+#include <set>		// which story UIDs the target holds - see the Removed sweep in Compare
 
 /* ReadStamp
 */
@@ -104,6 +105,35 @@ void KESCMStoryEdits::Compare(const std::vector<KESCMStoryStamp>& source,
 		KESCMStoryDiff row;
 		row.fStoryUID = it->fStoryUID;
 		row.fKinds = kinds;
+		out.push_back(row);
+	}
+
+	// ---- Removed: a story the SOURCE holds and the target does not (2026-08-21) ----
+	//
+	// ★THESE ROWS CARRY A SOURCE UID. Every row above names a story in the target; these name one
+	//   that is no longer there, so the uid can only be the older document's. Callers tell the two
+	//   apart by kKESCMStoryKindRemoved (KESCMStoryStamp.h's fStoryUID).
+	//
+	// ★A SECOND SET RATHER THAN MARKING sourceByUID AS IT IS MATCHED. Ticking off source entries
+	//   during the walk above would give the same answer only because that walk happens to finish
+	//   first - an order dependency that would break silently if anything were ever moved between
+	//   the two loops. A plain membership test of the target reads correctly whatever the order.
+	//
+	// ★NO KIND CAN BE NAMED, exactly as for Added: there are no two counters to compare, so
+	//   "removed" is the whole answer. (Reading the source's own sub-counters would say what has
+	//   been edited during the older version's OWN history, which is not what this list reports.)
+	std::set<UID> targetUIDs;
+	for (std::vector<KESCMStoryStamp>::const_iterator it = target.begin(); it != target.end(); ++it)
+		targetUIDs.insert(it->fStoryUID);
+
+	for (std::vector<KESCMStoryStamp>::const_iterator it = source.begin(); it != source.end(); ++it)
+	{
+		if (targetUIDs.find(it->fStoryUID) != targetUIDs.end())
+			continue;	// still there - it was reported above, or it read the same
+
+		KESCMStoryDiff row;
+		row.fStoryUID = it->fStoryUID;	// ★the SOURCE document's uid
+		row.fKinds = kKESCMStoryKindRemoved;
 		out.push_back(row);
 	}
 }

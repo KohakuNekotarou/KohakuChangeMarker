@@ -81,10 +81,12 @@ bool16 KESCMStoryRowCanRefresh()
 	if (!Utils<IKESCMStoryEditsFacade>()->GetRow(gMenuRow, row))
 		return kFalse;
 
-	// An added story has no partner in the older document, so there is nothing to compare it with -
-	// the same judgement the model makes, read here so that the item is greyed rather than offered
-	// and then refused (KESCMStoryDiffRun::RunOne answers -1 for these).
-	if ((row.fKinds & kKESCMStoryKindAdded) != 0)
+	// A story with no partner in the other document has nothing to be compared with - the same
+	// judgement the model makes, read here so that the item is greyed rather than offered and then
+	// refused (KESCMStoryDiffRun::RunOne answers -1 for these).
+	// ★kKESCMStoryKindUnpaired covers ADDED and REMOVED alike (2026-08-21): a removed story is not
+	//   in the target at all, so "compare it again" has nothing to point at either.
+	if ((row.fKinds & kKESCMStoryKindUnpaired) != 0)
 		return kFalse;
 
 	return kTrue;
