@@ -408,6 +408,19 @@ const KESCMStoryRow* KESCMStoryList::GetRow(int32 nth)
 	return &gRows[nth];
 }
 
+/* SetRowChanges
+*/
+void KESCMStoryList::SetRowChanges(int32 nth, const std::vector<KESCMStoryChange>& changes)
+{
+	// The same bounds test GetRow makes, and for the same reason: the list is rebuilt by one
+	// comparison and thrown away by the next, so an index is only ever as good as the moment it
+	// was handed out.
+	if (nth < 0 || nth >= static_cast<int32>(gRows.size()))
+		return;
+
+	gRows[nth].fChanges = changes;
+}
+
 /* ShutdownCleanup
 */
 void KESCMStoryList::ShutdownCleanup()

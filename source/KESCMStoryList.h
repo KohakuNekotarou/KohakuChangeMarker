@@ -36,6 +36,98 @@
 
 class IDataBase;
 
+/** One difference inside one story: where it is, what sort it is, and what it reads.
+
+	★NEW WITH THE STORY CHANGES MODE (2026-08-20). A row of this list used to say only THAT a
+	story changed, which is all the change counters in KESCMStoryStamp can answer. These say
+	WHERE, which is what the text diff produces.
+
+	★POSITIONS ARE KEPT FOR BOTH DOCUMENTS, and that is deliberate. Clicking a change moves the
+	newer window to it and the older window to the matching place; both sides are worked out
+	here, while the diff still has them (KESCMTextDiff::Change carries the a-side range as well
+	as the b-side one). Working the older side out at click time would mean diffing again.
+*/
+struct KESCMStoryChange
+{
+	enum Kind { kReplace, kInsert, kDelete };
+
+	/** What sort of thing changed.
+
+		★ALWAYS kText TODAY. The diff reads <Content> and nothing else, so a change of formatting
+		alone is not seen at all. The field exists so that attribute differences can arrive later
+		as another sort of child WITHOUT having to change the row drawing, the click handling and
+		the boundary struct at the same time. */
+	enum What { kText, kAttr };
+
+	Kind		fKind;
+	What		fWhat;
+
+	// ---- the newer document (Target) - what a click jumps to and selects ----
+	TextIndex	fTargetStart;
+	TextIndex	fTargetEnd;		// ★AN END, NOT A LENGTH (RangeData.h:69)
+
+	// ---- the older document (Source) ----
+	// fHasSource is kFalse for an insertion: there is nothing in the older version to point at,
+	// and selecting "where it would have gone" would be selecting something that is not the
+	// change. The older window simply does not move for those.
+	TextIndex	fSourceStart;
+	TextIndex	fSourceEnd;
+	bool16		fHasSource;
+
+	/** The words the row shows, in THREE PIECES: what stands before the change, the changed
+		characters themselves, and what stands after.
+
+		★WHICH SIDE THESE COME FROM DEPENDS ON THE KIND: the newer text for a replacement or an
+		insertion, and the OLDER text for a deletion. What was removed is precisely what the
+		reader needs to see, and the newer side has nothing there to show. (KohakuTest reported
+		the newer side only and left deletions empty, which is correct for a script reading a
+		report and useless in a panel - a column of blank rows.)
+
+		★THREE RATHER THAN ONE SINCE 2026-08-20, so that the row can draw the change at full
+		strength and fade the context around it - the way a KBS hit row draws its match (user's
+		request: "変更されたところ以外は薄い色にして欲しい、KBSを参考に"). Concatenated they are
+		exactly the one string this used to be.
+
+		★THE SPLIT IS MADE WHERE THE INFORMATION IS. Which characters were the change is known in
+		code points, inside a string that has already been cut at both ends and had its break
+		characters replaced (KESCMStoryDiffRun's Slice). Handing the panel one string and an offset
+		would ask it to count code points in a PMString, whose own index is UTF-16.
+
+		★THE ELLIPSES BELONG TO THE CONTEXT PIECES. An ellipsis stands for words that were cut
+		away, and those are always context, never the change - so a faded ellipsis is right. */
+	PMString	fTextPre;
+	PMString	fText;
+	PMString	fTextPost;
+
+	/** The OTHER side of the same edit, in the same three pieces - what the panel's message area
+		shows while the row is selected (user's request, 2026-08-20: "その行が選択されたらパネルの
+		行に旧のテキストを出せるかな、変化しているところとそうでないところを色が変わると最良").
+
+		★"THE OTHER SIDE", NOT "THE OLD SIDE", and the distinction is the whole point. The row
+		already shows the side that CHANGED, and which side that is depends on the kind:
+		    replacement -> the row shows the new words,  so this holds the OLD ones
+		    insertion   -> the row shows what was added, so this holds the old text with nothing
+		                   between the context (there was nothing there to show)
+		    deletion    -> the row shows what was REMOVED, so this holds the NEW text - the words
+		                   that closed up over the gap
+		Naming it "old" would have made the deletion case a lie, and a deletion is exactly the case
+		where the reader most wants to see what is there now.
+
+		★fOtherText is empty for an insertion (nothing stood there) and for a deletion (nothing
+		stands there now). The two context pieces are not: they are the words on either side, which
+		is what makes the empty middle readable as a place rather than as an absence. */
+	PMString	fOtherTextPre;
+	PMString	fOtherText;
+	PMString	fOtherTextPost;
+
+	int32		fParaIndex;		// which paragraph it fell in. Not drawn; kept for ordering and for
+								// anything later that wants to group changes by paragraph
+
+	KESCMStoryChange()
+		: fKind(kReplace), fWhat(kText), fTargetStart(0), fTargetEnd(0),
+		  fSourceStart(0), fSourceEnd(0), fHasSource(kFalse), fParaIndex(0) {}
+};
+
 /** One row of the Story Edits section. */
 struct KESCMStoryRow
 {
@@ -47,6 +139,18 @@ struct KESCMStoryRow
 							// unplaced story (no frame at all), which cannot be jumped to
 	UID			fPageUID;	// where the story starts; kInvalidUID when it starts on the pasteboard
 	int32		fPageIndex;	// sort key only. kMaxInt32 when there is no page, so those sink to the end
+
+	/** The differences found inside this story, in reading order.
+
+		★EMPTY IN THE PIXEL MODE, and that is what makes the tree flat there: the hierarchy
+		adapter asks how many children a row has and gets 0, so no branch grows. Nothing has to
+		switch trees between the modes (user's call, 2026-08-20).
+
+		★ALSO EMPTY when the story could not be compared - it had no partner in the older
+		document (an added story), or the edit distance ran past the limit, or the length check
+		failed. The row still appears; only the detail is missing. A story that changed must
+		never disappear because the detail could not be worked out. */
+	std::vector<KESCMStoryChange> fChanges;
 
 	KESCMStoryRow()
 		: fStoryUID(kInvalidUID), fKinds(kKESCMStoryKindNone), fFrameUID(kInvalidUID),
@@ -133,6 +237,22 @@ namespace KESCMStoryList
 		so that an index the tree asks for after the list was rebuilt cannot walk off the end.
 	*/
 	const KESCMStoryRow* GetRow(int32 nth);
+
+	/** Give row nth the differences the text diff found inside it (Story Changes mode).
+
+		★A SEPARATE STEP FROM Build, ON PURPOSE. Build orders the rows by page, and a change
+		names its row by position in that finished order - so the diff runs after the ordering,
+		not inside it. Doing both at once would mean the diff had to know the sort key.
+
+		★THE ONLY WAY TO WRITE A ROW. GetRow hands out a const pointer precisely so that nothing
+		can edit the list behind its back; this is the one door, and it is the one KESCMStoryDiffRun
+		knocks on.
+
+		@param nth the row. Out of range does nothing - the list may have been rebuilt underneath
+			a caller that is still walking the previous one.
+		@param changes what to attach. Copied; the caller keeps ownership of its own vector.
+	*/
+	void SetRowChanges(int32 nth, const std::vector<KESCMStoryChange>& changes);
 
 	/** Empty the list during a controlled shutdown. See the file comment for why this exists. */
 	void ShutdownCleanup();

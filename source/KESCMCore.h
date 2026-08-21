@@ -13,6 +13,7 @@
 #define __KESCMCore_h__
 
 #include "BaseType.h"		// ErrorCode, bool16
+#include "KESCMBoundaryID.h"	// KESCMCompareMode(境界に出る型。model/UI の両方が読む場所に在る)
 #include "PMString.h"
 #include "PMReal.h"			// PMReal(ヒットテストヘルパのマウス座標)
 #include "OMTypes.h"			// UID (typedef IDType<UID_tag>)
@@ -185,6 +186,13 @@ IDataBase*	KESCMArmedSourceDB();
 // 現在の印刷マーク設定。パネルを開き直したときにチェック/ラジオを実状態へ復元するために使う。
 bool16		KESCMGetPrintMarks();		// 印刷マーク ON/OFF
 bool16		KESCMGetMarkOpacity25();	// 枠不透明度の選択: kTrue=25% / kFalse=75%
+
+// ★比較モード（2026-08-20）。定義は KESCMBoundaryID.h（境界に出る型なので両側が読む場所に置いた）。
+//   ⚠**設定を変えるだけで、比較そのものはやり直さない**＝arm 中に変えたときの再比較は呼び手の仕事
+//   （UI 側の KESCMSetCompareMode。ここに再比較まで書くと「モードを変える」と「比較する」が1つの
+//   関数に混ざり、起動時の復元でも比較が走ってしまう）。
+KESCMCompareMode	KESCMGetCompareMode();
+void				KESCMSetCompareMode(KESCMCompareMode mode);
 
 // ★ページパネルのサムネイル更新は解決済み(2026-07-06)。実体は KESCMThumbnailRefresh.*。
 // 「変更ページの UID を IImageCacheMgr::Purge → Pages パネルを ForceRedraw」の2手で、既に表示済みの

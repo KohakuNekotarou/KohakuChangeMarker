@@ -139,6 +139,33 @@ DECLARE_PMID(kClassIDSpace, kKESCMSplitterPanelBoss, kKCMUIPrefix + 25)	// kSpli
 DECLARE_PMID(kClassIDSpace, kKESCMUIStartupBoss, kKCMUIPrefix + 27)	// IStartupShutdown: **UI 側**の起動/終了処理(2026-08-13・model/UI 分割 第1段 Task 8)。パネル設定の復元・半透明の購読/解除・HUD のフォント返却・一括クローズの購読・遅延サムネイル idle task の解放。★model 側の kKESCMPeekStartupBoss と**対**(あちらは KESCMID.h)。★第2段(2026-08-15)で**この Class ごと KCMUI へ移り終わっている**＝この宣言が KCMUIID.h に在ること自体がその結果(2026-08-17・監査 B-U6 で予告の残骸を現状へ)
 DECLARE_PMID(kClassIDSpace, kKESCMUIDrawEventServiceBoss, kKCMUIPrefix + 26)	// IK2ServiceProvider+IDrwEvtHandler: **UI 専用**の描画サービス(2026-08-13・model/UI 分割 第1段 Task 6)。押下中 HUD だけを持つ。★**model 側の** kKESCMDrawEventServiceBoss(比較マーク・KESCM.fr)と役割が違う＝あちらは印刷と PDF 書き出しに出なければならないので model 側、こちらは画面専用。kDrawEventService は複数プロバイダ登録が前提(本体だけで20以上)。★第2段(2026-08-15)で**この Class ごと KCMUI へ移り終わっている**(2026-08-18・不具合再検査 B-U1 で「上の」と予告形の2つを現状へ。⚠**すぐ上の kKESCMUIStartupBoss は同じ2つを 2026-08-17 に直していた**＝1本直したときに同じ形の兄弟を探さなかった)
 DECLARE_PMID(kClassIDSpace, kKESCMBookPathTextWidgetBoss, kKCMUIPrefix + 28)	// kStaticTextWidgetBoss継承+IID_IEVEINFO(kFixedSizeEVEInfoImpl): ブック比較ダイアログの Target:/Source: 行(2026-08-15)。★★EVE は **.fr の幅を「最小幅」として扱う**(公式ガイド Using EVE の Example 2「We treat the width in the .fr file as a minimum width」)ので、フルパスを入れると widget が伸び、親ごと広がる(実測 593px)。⚠kEVEAlignFill では止まらない＝Fill は「親の幅を取る」で、その親が子に押し広げられる。⇒ **EVE は widget の寸法を IID_IEVEINFO に聞く**ので、「サイズはリソースが書いたとおり」と答える実装を名乗らせて幅を確定させ、省略は widget 自身の kEllipsizeBeginning に返す＝パネルの Target:/Source: と同じ出方になる。手本=KBS.fr:289-293(グリフ枠。SDK 全体で使用例ゼロだが実機で動作確認済み)
+// Story Edits の**変更行**のテキストセル(2026-08-20)。★狙いは「変更された文字だけを通常の色で描き、
+// 前後の文脈を薄くする」こと(ユーザー指定＝「KBS を参考に」)。素の StaticText は**1行=1色**なので、
+// 色を分けるには自前描画のセルに差し替えるしかない ---- KBS の kKBSColorTextViewBoss と同じ形。
+// ★土台が kGenericPanelWidgetBoss なのは、そこに描く場所だけがあって文字も色も持っていないから。
+//   ⇒ ツールチップも持たないので、行のセルを黙らせる kKESCMNoTipImpl(+20 の boss がやっている)は
+//     こちらには要らない＝**沈黙は自動的に手に入る**。
+DECLARE_PMID(kClassIDSpace, kKESCMStoryChangeCellBoss, kKCMUIPrefix + 29)	// kGenericPanelWidgetBoss継承+IID_ICONTROLVIEW(kKESCMStoryCellViewImpl)+IID_IKESCMSTORYCELLDATA(kKESCMStoryCellDataImpl): 変更行のテキストセル。3片(前の文脈/変更された文字/後の文脈)を受け取り、真ん中だけテーマの文字色で、前後は背景へ寄せた薄い色で描く(KESCMStoryCellView.cpp)
+// Story Edits の変更行から飛んだ先を、少しのあいだ光らせる印(2026-08-20)。★★**グローバルテキスト
+// アドーンメント**＝**文字そのものに重ねて描く公式機構**で、**文書を1バイトも変えない**(保存されず
+// Undo にも乗らない)。本体の禁則違反/欠落グリフ/スペル波線と同じ仕組み([[global-text-adornment]])。
+// ★**Draw に waxRun/waxGlyphs が渡ってくる**ので「その run はマーク範囲に重なるか」を TextOrigin と
+//   GetCharCount で判定でき、範囲の一部だけの座標も MapCharsToGlyphs で取れる＝**座標変換が要らない**。
+//   ⇒ KBS の Draw Event 方式(ペーストボード座標の矩形を自分で組む)と違い、縦組みや回転にそのまま乗る。
+// ★API 既製の provider(`kGlobalTextAdornmentServiceImpl`)と自作の実装の2枚だけ＝手本は本体 spellpanel と KT。
+DECLARE_PMID(kClassIDSpace, kKESCMStoryMarkerBoss, kKCMUIPrefix + 30)	// IK2ServiceProvider(kGlobalTextAdornmentServiceImpl)+IID_IGLOBALTEXTADORNMENT(kKESCMStoryMarkerAdornmentImpl): 飛んだ先の文字を反転して見せる一時マーカー(KESCMStoryMarker.cpp)
+// そのマーカーを1秒ほどで引っ込めるタイマー(2026-08-20)。★**IIdleTask にしたのは KBS と同じ判断**＝
+// `ICallbackTimer` のコールバックは参照カウントされない生の関数ポインタで、ヘッダー自身が "Danger!" と
+// 書いている。IdleTask は boss 上のインターフェイスなので終了処理で普通に Release できる。
+// ⚠[[avoid-timers-and-idle-tasks]] の例外＝**壁時計で消えねばならないものは他に無い**。
+DECLARE_PMID(kClassIDSpace, kKESCMStoryMarkerExpiryBoss, kKCMUIPrefix + 31)	// IIdleTask: 上のマーカーの期限切れ(KESCMStoryMarkerExpiry.cpp)
+// パネルのメッセージ欄(2026-08-20)。★**stock の StaticMultiLineTextWidget を差し替えたもの**＝
+// あちらは1本の文字列を1色で描くので、変更行をクリックしたときに出す「もう一方の側」の中で
+// **どの文字が違うのか**を言えない。⇒ 上の変更行のセルと同じ形(kGenericPanelWidgetBoss＋自前 view)。
+// ⚠**違いは行数**＝あちらは1行で `PMEllipsizeString` に任せられるが、こちらは箱に入るだけ折り返す
+//   ＝**折り返しは stock から失われる唯一の機能なので自分で書いた**(KESCMStatusTextView.cpp)。
+// ★WidgetID と Frame は据え置き(`kKESCMStatusTextWidgetID` / `Frame(8,76,216,150)`)＝位置も大きさも動かない。
+DECLARE_PMID(kClassIDSpace, kKESCMStatusTextWidgetBoss, kKCMUIPrefix + 32)	// kGenericPanelWidgetBoss継承+IID_ICONTROLVIEW(kKESCMStatusTextViewImpl)+IID_IKESCMSTATUSTEXTDATA(kKESCMStatusTextDataImpl): パネルのメッセージ欄。見出し＋3片(前の文脈/変更された文字/後の文脈)を受け取り、折り返して最大2色で描く(KESCMStatusTextView.cpp)
 // InterfaceIDs:
 // ⚠★ここにあるのは **UI 側の boss にだけ載る IID**。境界を跨ぐ IID（Facade 5本＋通知の protocol）は
 //   **KESCMBoundaryID.h** にあり、あちらは model 側の `kKESCMPrefix` のまま名乗る
@@ -146,6 +173,8 @@ DECLARE_PMID(kClassIDSpace, kKESCMBookPathTextWidgetBoss, kKCMUIPrefix + 28)	// 
 DECLARE_PMID(kInterfaceIDSpace, IID_IKESCMLAYOUTSYNCOBSERVER, kKCMUIPrefix + 0)	// レイアウトビュー同期オブザーバのアタッチ識別ID(AttachObserver の observerIID)
 DECLARE_PMID(kInterfaceIDSpace, IID_IKESCMDOCSCLOSEDOBSERVER, kKCMUIPrefix + 1)	// 一括クローズ完了(kPendingDocumentsClosedMsg)を受けるオブザーバのアタッチ識別ID
 DECLARE_PMID(kInterfaceIDSpace, IID_IKESCMPANELVISIBILITYOBSERVER, kKCMUIPrefix + 2)	// パネルの表示状態変化(kPaletteVisibilityChangedMessage)を受けるオブザーバのアタッチ識別ID。半透明トグルをドッキング切り替え/開き直しに追随させるために使う
+DECLARE_PMID(kInterfaceIDSpace, IID_IKESCMSTORYCELLDATA, kKCMUIPrefix + 4)	// IKESCMStoryCellData: 変更行のテキストセルが描く3片(前の文脈/変更された文字/後の文脈)の入れ物。★行 widget は使い回されるので、毎回の流し込みで3片とも書き直す(ui/IKESCMStoryCellData.h)
+DECLARE_PMID(kInterfaceIDSpace, IID_IKESCMSTATUSTEXTDATA, kKCMUIPrefix + 5)	// IKESCMStatusTextData: パネルのメッセージ欄が描く4片(見出し/前の文脈/変更された文字/後の文脈)の入れ物。★普通のメッセージは真ん中1片だけ＝1色で描かれる(ui/IKESCMStatusTextData.h)
 DECLARE_PMID(kInterfaceIDSpace, IID_IKESCMSAVEDSECTIONHEIGHT, kKCMUIPrefix + 3)	// IIntData として扱う: Story Edits セクションを閉じた瞬間の高さ(px)。次に開くときこの高さで開く。実装は SDK 標準の kPersistIntDataImpl(手本=linksui の IID_ISAVEDINFOPANESIZE)
 // ImplementationIDs:
 // ⚠ ここに載せた実装は **ui/KCMUIFactoryList.h** にも 1 対 1 で登録されていること
@@ -192,6 +221,12 @@ DECLARE_PMID(kImplementationIDSpace, kKESCMUIStartupImpl, kKCMUIPrefix + 38)	// 
 DECLARE_PMID(kImplementationIDSpace, kKESCMModelChangeObserverImpl, kKCMUIPrefix + 37)	// IObserver 実装(model の通知を受けて画面を作り直す **UI 側**。KESCMModelChangeObserver.cpp)
 DECLARE_PMID(kImplementationIDSpace, kKESCMUIDrawEventSrvcImpl, kKCMUIPrefix + 35)	// CServiceProvider 実装(kDrawEventService。UI 専用の描画サービス。KESCMUIDrawEvent.cpp)。★GetThreadingPolicy は手書きしない＝CServiceProvider がプラグインの型から既定を返す
 DECLARE_PMID(kImplementationIDSpace, kKESCMUIDrawEventHandlerImpl, kKCMUIPrefix + 36)	// IDrwEvtHandler 実装(押下中 HUD の描画だけ。画面専用＝PDF 書き出しに出なくてよい。KESCMUIDrawEvent.cpp)
+DECLARE_PMID(kImplementationIDSpace, kKESCMStoryMarkerAdornmentImpl, kKCMUIPrefix + 41)	// IGlobalTextAdornment 実装(飛んだ先の文字を反転して少しのあいだ見せる。KESCMStoryMarker.cpp)
+DECLARE_PMID(kImplementationIDSpace, kKESCMStoryMarkerExpiryImpl, kKCMUIPrefix + 42)	// IIdleTask 実装(上のマーカーを1秒ほどで引っ込める。KESCMStoryMarkerExpiry.cpp)
+DECLARE_PMID(kImplementationIDSpace, kKESCMStoryCellViewImpl, kKCMUIPrefix + 39)	// IControlView 実装(DVControlView派生)。Story Edits の**変更行**のテキストセル＝変更された文字はテーマの文字色、前後の文脈は背景へ寄せた薄い色で描く(KESCMStoryCellView.cpp)。★手本は KBS の KBSColorTextView(あちらは検索ヒットの一致部分を強調する)
+DECLARE_PMID(kImplementationIDSpace, kKESCMStoryCellDataImpl, kKCMUIPrefix + 40)	// IKESCMStoryCellData 実装(非永続の3片の入れ物。上のセルと同じ boss に同居する。KESCMStoryCellView.cpp)
+DECLARE_PMID(kImplementationIDSpace, kKESCMStatusTextViewImpl, kKCMUIPrefix + 43)	// IControlView 実装(DVControlView派生)。パネルのメッセージ欄＝箱に入るだけ折り返し、変更された文字はテーマの文字色、見出しと前後の文脈は背景へ寄せた薄い色で描く(KESCMStatusTextView.cpp)。★**PERSIST 版**＝パネルの .fr から作られる widget なので、土台の kGenericPanelWidgetBoss が持つ IID_ICONTROLVIEW と同じく永続でなければならない
+DECLARE_PMID(kImplementationIDSpace, kKESCMStatusTextDataImpl, kKCMUIPrefix + 44)	// IKESCMStatusTextData 実装(非永続の4片の入れ物。上の欄と同じ boss に同居する。KESCMStatusTextView.cpp)
 DECLARE_PMID(kImplementationIDSpace, kKESCMSplitterEHImpl, kKCMUIPrefix + 34)	// IEventHandler 実装(CEventHandler派生＝全メソッドが kFalse を返すだけの基底をそのまま使う)。パネルの分割バーが押下を受け取らなくなる＝ドラッグで動かせない(KESCMSplitterEH.cpp)
 // ActionIDs:
 DECLARE_PMID(kActionIDSpace, kKESCMAboutActionID, kKCMUIPrefix + 0)
@@ -247,7 +282,9 @@ DECLARE_PMID(kActionIDSpace, kKESCMPopupCompareBooksActionID, kKCMUIPrefix + 39)
 // 行は右クリックの時点で KESCMBookSetMenuRow が控える＝KBS の結果行と同じ作り。
 DECLARE_PMID(kActionIDSpace, kKESCMBookRowStartActionID, kKCMUIPrefix + 40)	// 章行の右クリック「Start Change Marker」= その章の Target/Source 2文書を窓付きで開き、比較中なら一度 Stop してから比較を開始する(KESCMBookOpen.cpp)。★両側のファイルが揃っていない行(ChapterAdded/ChapterDeleted・ファイル無し)では灰色(kCustomEnabling → KESCMBookRowCanStart)
 DECLARE_PMID(kActionIDSpace, kKESCMPopupTranslucentBookDialogActionID, kKCMUIPrefix + 41)	// ★パネルのフライアウトの「Translucent Dialog」チェック式トグル(2026-08-13 ユーザー要望「ダイアログも半透明に出来る様に」)。上の +36/+37 と**同じ実体**(KESCMPanelAlpha.cpp)で対象だけが違う。⚠ただし対象がパネルではないので**窓の出所だけが別**＝ダイアログ自身が KESCMSetBookDialogWindow で教える(パネルマネージャは WidgetID で引けるが、ダイアログはそこに載っていない)。★パネル側と違い**ドッキングの概念が無いので「押しても効かない状態」が無い**。既定 OFF
-// (+15..+23 are all declared above - stale placeholders for them removed 2026-08-05 audit. Next free: +42)
+DECLARE_PMID(kActionIDSpace, kKESCMPopupModePixelActionID, kKCMUIPrefix + 42)	// ★フライアウトの「Compare mode > Pixel Changes」(2026-08-20)。既定。ページをラスタ化して画素を比べる本来の比較。Story Changes と相互排他=選択中の方に✓(kCustomEnabling+kSelectedAction。Marks opacity 25%/75% と同じ形)。実体 KESCMActionComponent.cpp
+DECLARE_PMID(kActionIDSpace, kKESCMPopupModeStoryActionID, kKCMUIPrefix + 43)	// ★フライアウトの「Compare mode > Story Changes」(2026-08-20)。ストーリーの本文を段落→文字の二段で比べ、Story Edits を「親=ストーリー / 子=変更箇所」のツリーで出す。★このモードでは比較リング(枠)を描かず、Hide Unchanged Spreads だけが灰色になる。⚠2026-08-21 訂正＝旧記述は「スクロール地図・Export Changed Pages・Prev/Next も灰色」と書いていたが**実装と食い違っていた**＝それらの根拠(ページ対応表・登録ページ・overflow「/」)は Story モードでも作られるので機能は生きている(Prev/Next は overset の巡回が独立して動く)。灰色にするのは「押しても何も起きない」ではなく「押すと壊れる」もの＝Hide Unchanged は sEntries が空だと「登録や overflow のあるスプレッド以外を全部隠す」
+// (+15..+23 are all declared above - stale placeholders for them removed 2026-08-05 audit. Next free: +44)
 //DECLARE_PMID(kActionIDSpace, kKESCMActionID, kKCMUIPrefix + 41)
 // kKCMUIPrefix + 24/25/26/28 は使用中(KCM: Check / Save Check & Register / Load Check & Register / RtMenuPagesPanel の区切り線)。+27 は廃止・予約(上記)
 
@@ -286,6 +323,7 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMStoryRowTextWidgetID, kKCMUIPrefix + 48)	// �
 DECLARE_PMID(kWidgetIDSpace, kKESCMStoryRowKindWidgetID, kKCMUIPrefix + 49)	// 行の右=変わった種類(Text / Attr / Other / Added)
 DECLARE_PMID(kWidgetIDSpace, kKESCMStorySectionLabelWidgetID, kKCMUIPrefix + 50)	// 上ペインの三角の隣=「Story Edits (3)」。件数は C++ が実行時に付ける
 DECLARE_PMID(kWidgetIDSpace, kKESCMStoryRowWidgetID, kKCMUIPrefix + 51)		// 行テンプレート自身。★GetWidgetTypeForNode が返すのはこれ
+DECLARE_PMID(kWidgetIDSpace, kKESCMStoryChangeRowWidgetID, kKCMUIPrefix + 63)	// ★**変更行**(第2階層)のテンプレート自身。2026-08-20 追加。★上の +51 と**別の値でなければならない**＝GetWidgetTypeForNode が返すこの ID で、フレームワークは「使い回せる widget か」を判定する(同じ値を返すと、スクロールで変更行にストーリー行の widget が渡る)。⚠**中のセル3つは +48/+49/+52 を使い回す**＝widget ID の一意性は「同じ親の子孫の中だけ」で足りる(ガイド vol2-12)。前例＝ブック行が同じ3つを共有している
 DECLARE_PMID(kWidgetIDSpace, kKESCMStoryRowUIDWidgetID, kKCMUIPrefix + 52)	// ★行の左端=ストーリーの UID(10進。2026-08-10 ユーザー要望「UID・テキスト・変更部分」)。行の同一性を目で追える識別子＝本文が同じ文言でも別のストーリーだと分かる
 // ★一覧の列見出し(2026-08-10 ユーザー要望「一番上の列に UID / Text / 変更のようなのを付けて欲しい」)。
 //   ツリーの中ではなく**下ペインの中でツリーの上**に置く固定の帯＝行をスクロールしても動かない。
@@ -492,6 +530,13 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMBookRowStateWidgetID, kKCMUIPrefix + 49)	// �
 #define kKESCMOpacitySubmenuName		"Marks opacity"
 #define kKESCMOpacitySubmenuPath		kKESCMPopupMenuPath kSDKDefDelimitMenuPath kKESCMOpacitySubmenuName
 
+// フライアウトの「Compare mode」サブメニュー(中に Pixel Changes / Story Changes)。2026-08-20 追加。
+// ★上の「Marks opacity」と同じ形(親は actionID 0・子は相互排他で選択中に✓)。
+// ★★**サブメニューにした理由**＝フライアウトの項目はもう十数個あり、比較の設定と表示の設定が
+//   同じ高さに並ぶと、どれが「何を比べるか」でどれが「どう見せるか」なのか読み取れなくなる。
+#define kKESCMCompareModeSubmenuName	"Compare mode"
+#define kKESCMCompareModeSubmenuPath	kKESCMPopupMenuPath kSDKDefDelimitMenuPath kKESCMCompareModeSubmenuName
+
 // パネルの文字列キー(値は **KCMUI_enUS.fr** の StringTable。全ロケールがこの1枚を引く=
 // LocaleIndex の全行が index_enUS を指す。KESCM_jaJP.fr は 2026-08-05 に撤去し、日本語で出す
 // 2箇所だけ KESCMLoc.h の実行時切替に移した)。
@@ -502,6 +547,8 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMBookRowStateWidgetID, kKCMUIPrefix + 49)	// �
 #define kKESCMPrintCheckKey		kKESCMStringPrefix "kKESCMPrintCheckKey"	// フライアウト「Print comparison marks」トグルのメニュー名(旧パネルチェックボックスのキャプションキーを流用)
 #define kKESCMOpacity25Key		kKESCMStringPrefix "kKESCMOpacity25Key"	// サブメニュー「Marks opacity」内の子項目名(="25%")
 #define kKESCMOpacity75Key		kKESCMStringPrefix "kKESCMOpacity75Key"	// サブメニュー「Marks opacity」内の子項目名(="75%")
+#define kKESCMModePixelKey		kKESCMStringPrefix "kKESCMModePixelKey"	// サブメニュー「Compare mode」内の子項目名(="Pixel Changes")
+#define kKESCMModeStoryKey		kKESCMStringPrefix "kKESCMModeStoryKey"	// サブメニュー「Compare mode」内の子項目名(="Story Changes")
 #define kKESCMPrevChangeKey		kKESCMStringPrefix "kKESCMPrevChangeKey"	// パネルの「◀ Prev」ボタンのキャプション(英語固定)
 #define kKESCMNextChangeKey		kKESCMStringPrefix "kKESCMNextChangeKey"	// パネルの「Next ▶」ボタンのキャプション(英語固定)
 #define kKESCMHintKey			kKESCMStringPrefix "kKESCMHintKey"
@@ -557,6 +604,12 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMBookRowStateWidgetID, kKCMUIPrefix + 49)	// �
 // CreateObjectNoInit で1行ずつ生成する。KESCMBookTreeWidgetMgr.cpp)。★1011(Story Edits の行)と
 // 同じ作りで、違うのは中身が2列であることとダイアログ用のフォントを使うことだけ。
 #define kKESCMBookRowRsrcID	1013
+
+// ★Story Edits の**変更行**(第2階層)のテンプレート。2026-08-20 追加。1011(ストーリー行)を写した
+// 3セル構成で、違うのは**セルの開始位置が右にずれていること**だけ＝これが階層のインデントの実体。
+// ⚠**インデントをコードで足さない**理由は KESCMStoryTreeWidgetMgr.cpp の ApplyIndentToWidget に
+//   書いてある(行 widget は使い回されるので「右へ N 動かす」は累積する)。
+#define kKESCMStoryChangeRowRsrcID	1014
 
 // 章一覧の行の高さ。★Story Edits の kKESCMStoryRowHeight と同じく .fr と C++ の両方がこの1つの定数を
 // 読む(行リソースの Frame・ツリーのスクロール増分・GetNodeWidgetHeight)。
@@ -634,6 +687,9 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMBookRowStateWidgetID, kKCMUIPrefix + 49)	// �
 // ※メニュー名は日本語ロケールでも英語で統一(2026-07-04)。区切り線は Sep1/OversetSep/Sep3/Sep2 の4本を再利用。
 #define kKESCMStartStopMenuItemPosition		9.0	// 「Start / Stop」(比較開始/解除)をフライアウト先頭に。名前は arm 状態で動的に Start↔Stop
 #define kKESCMSep1MenuItemPosition			9.1	// Start の下の区切り線(パス末尾 ":-")
+#define kKESCMCompareModeSubmenuMenuItemPosition	9.15	// ★「Compare mode」サブメニュー(中に Pixel Changes / Story Changes)。2026-08-20 追加。**Sep1 の直後＝表示系トグル群(9.20〜)の上**に置く: 「何を比べるか」は「どう見せるか」より先に決めるもので、順序がそのまま意味になる
+#define kKESCMModePixelSubMenuItemPosition		1.0	// サブメニュー「Compare mode」内: Pixel Changes(選択中に✓)
+#define kKESCMModeStorySubMenuItemPosition		2.0	// サブメニュー「Compare mode」内: Story Changes(Pixel と相互排他)
 // ── 表示系トグル群 ──
 #define kKESCMHoldToHideMarksMenuItemPosition	9.20	// チェック式トグル「Hold to Hide Marks」(枠表示の極性反転)。Sep1 の直後(群の先頭)
 #define kKESCMIgnorePageNumMenuItemPosition	9.22	// チェック式トグル「Ignore Page Number Marker」

@@ -192,12 +192,44 @@ void	KESCMNotifyStatus(const PMString& s, bool16 forceRedrawNow = kFalse);
 // arrives, so notifying from here would loop.
 void	KESCMStoreSessionStatus(const PMString& s);
 
+// Store the status text SPLIT WHERE ITS COLOUR CHANGES, without emitting a notification.
+//
+// ★★2026-08-20: the panel's message area is drawn by hand and can show two colours, so that the
+// other side of a clicked edit can have its differing characters at full strength and the words
+// around them faded (KESCMStatusTextView.cpp). This is the same store as above, told where the
+// pieces begin: label = a heading on its own line, mid = the characters that differ, pre/post =
+// the context on either side.
+//
+// ★WHY THE MODEL HOLDS THE SPLIT AND NOT THE PANEL. The panel's widgets are rebuilt on every
+// re-show, so a split kept there would be lost and the message would come back in one colour --
+// the same sentence looking different depending on the route it took. And the split cannot be
+// re-derived by the panel: the boundary is a code point index into text already cut at both ends,
+// and PMString counts UTF-16. ⇒ One place answers "what does the message area say", and it is the
+// place that already answered it (memory one-question-one-place).
+//
+// ⚠It must not notify, for the same reason as above.
+void	KESCMStoreSessionStatusSegments(const PMString& label, const PMString& pre,
+										const PMString& mid, const PMString& post);
+
 // The last string given to KESCMNotifyStatus or KESCMStoreSessionStatus. This is what
 // app.kcmStatus returns.
+//
+// ★It is ASSEMBLED from the four pieces below: label, a line break, then the body. A message
+// stored as one string is the case where three of the four are empty, so the answer is that string
+// itself -- which is why app.kcmStatus reads exactly as it did before the split existed.
 void	KESCMGetSessionStatus(PMString& out);
 
-// Shutdown only: empty the stored string, so the static PMString's destructor has no live
+// The same message, in the four pieces it was stored in. The UI reads this back when the panel
+// re-appears, so that a coloured message comes back coloured.
+// ★A message stored as one string answers with that string in `outMid` and three empty pieces.
+void	KESCMGetSessionStatusSegments(PMString& outLabel, PMString& outPre,
+									  PMString& outMid, PMString& outPost);
+
+// Shutdown only: empty the stored message, so the static PMStrings' destructors have no live
 // heap buffer to free when the plug-in unloads (Mac unload order differs from Windows).
+// ⚠★★ALL FOUR PIECES, not just the one that used to be here. A static PMString that is added
+//   beside its fellows and left out of this list is the exact shape of the defects found on
+//   2026-08-18 (model B8: three statics, one listed) and again on B-U5 (four missed).
 void	KESCMClearSessionStatus();
 
 #endif // __KESCMModelNotify_h__

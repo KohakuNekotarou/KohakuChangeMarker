@@ -244,6 +244,10 @@
       <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMStoryTreeAdapter.cpp"/>
       <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMStoryTreeWidgetMgr.cpp"/>
       <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMStoryTreeEH.cpp"/>
+      <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMStoryCellView.cpp"/>
+      <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMStatusTextView.cpp"/>
+      <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMStoryMarker.cpp"/>
+      <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMStoryMarkerExpiry.cpp"/>
       <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMStoryRowEH.cpp"/>
       <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMStorySectionObserver.cpp"/>
       <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMCursorProvider.cpp"/>
@@ -256,6 +260,7 @@
       <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMPanelAlpha.cpp"/>
       <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMPathDisplay.cpp"/>
       <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMPanelState.cpp"/>
+      <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMPanelTitle.cpp"/>
       <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMScrollMap.cpp"/>
       <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMStorySection.cpp"/>
       <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMStoryJump.cpp"/>
@@ -291,11 +296,18 @@
       <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\KCMUIFactoryList.h"/>
       <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\KESCMUIShared.h"/>
       <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\KESCMStoryTree.h"/>
+      <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\KESCMStoryNodeID.h"/>
+      <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\IKESCMStoryCellData.h"/>
+      <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\IKESCMStatusTextData.h"/>
+      <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\KESCMPanelTextDraw.h"/>
+      <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\KESCMStoryMarker.h"/>
+      <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\KESCMStoryMarkerExpiry.h"/>
       <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\KESCMCheckGlyph.h"/>
       <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\KESCMBookTree.h"/>
       <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\KESCMPanelAlpha.h"/>
       <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\KESCMPathDisplay.h"/>
       <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\KESCMPanelState.h"/>
+      <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\KESCMPanelTitle.h"/>
       <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\KESCMScrollMap.h"/>
       <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\KESCMStorySection.h"/>
       <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\KESCMStoryJump.h"/>

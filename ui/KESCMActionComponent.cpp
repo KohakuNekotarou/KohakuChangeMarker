@@ -43,6 +43,7 @@
 #include "KESCMViewSync.h"			// KESCMGetLayoutSync/Set/KESCMAlignOtherViewsToActiveNow(2026-08-13 に KESCMCore.h から移動)
 #include "KESCMScrollMap.h"		// KESCMScrollMapAttach/DetachAll/InvalidateAll(地図トグルと Find Overset)
 #include "KESCMPanelState.h"		// KESCMSavePanelState(フライアウト「Save Panel Settings」)
+#include "KESCMPanelTitle.h"		// KESCMPanelTitle::Update(タブに Pixel / Story を出す)
 #include "IKESCMBookFacade.h"		// ResolveBookPair(「Compare Books」を有効にしてよいかの判定)。2026-08-14 Task 15 で Facade 経由へ
 #include "KESCMBookPanelLookup.h"	// KESCMGetPanelBookFile(前面タブの観測。2026-08-15 Task 9B で UI 側へ)
 #include "KESCMBookRun.h"		// KESCMRunBookComparison(フライアウト「Compare Books」＝確認して比較して見せる)
@@ -98,6 +99,55 @@ private:
 
 /* Binds the C++ implementation class onto its ImplementationID. */
 CREATE_PMINTERFACE(KESCMActionComponent, kKESCMActionComponentImpl)
+
+/* KESCMApplyCompareMode — 比較モードを切り替え、Start 中ならその場で比較し直す(2026-08-20)。
+
+   ★**2つの入口が同じ手順を通るように関数にした**。Pixel / Story のどちらを選んでも起きることは
+   同じで、違うのは渡す値だけ(Marks opacity 25%/75% が Facade の1関数を共有しているのと同型)。
+
+   ⚠**同じモードを選び直したときは何もしない**。すでに Story を見ている人がもう一度 Story を選んで
+   比較が走り直したら、待たされた末に同じ画面が出るだけになる。
+*/
+static void KESCMApplyCompareMode(KESCMCompareMode mode)
+{
+	InterfacePtr<IKESCMCompareFacade> compare(Utils<IKESCMCompareFacade>().QueryUtilInterface());
+	if (compare == nil || compare->GetCompareMode() == mode)
+		return;
+
+	compare->SetCompareMode(mode);
+
+	PMString msg(mode == kKESCMModeStory ? "Compare mode: story changes." : "Compare mode: pixel changes.");
+	msg.SetTranslatable(kFalse);
+
+	// ★Start 中なら、新しいモードで全体を比較し直す。比較していないときは設定を変えるだけ＝
+	//   次に Start したときに効く。
+	InterfacePtr<IKESCMMarkData> marks(Utils<IKESCMMarkData>().QueryUtilInterface());
+	IDataBase* const markedDB    = (marks != nil) ? marks->GetMarkedTargetDB() : nil;
+	IDataBase* const markedSrcDB = (marks != nil) ? marks->GetMarkedSourceDB() : nil;
+	if (markedDB != nil && markedSrcDB != nil)
+	{
+		PMString report;
+		// ★allowIncremental は渡さない=全ページ再比較。差分再比較は「前回と同じ比較方法で、
+		//   ペアの変わったページだけやり直す」ための道具で、比較方法そのものが変わるここでは
+		//   前回の結果を1つも再利用できない。
+		// ★キャンセルされたときの後始末は Ignore Page Number Marker と同じ理由で Stop まで戻す
+		//   (マークは破棄済みなので、arm だけ残ると「枠が1つも無い Start 中」になる)。
+		if (compare->MarkChanges(markedDB, markedSrcDB, report) == kSuccess)
+			msg.Append(" (recompared)");
+		else
+		{
+			compare->ToggleStartStop();
+			msg.Append(" (cancelled - stopped)");
+		}
+	}
+
+	// ★★タブに今のモードを出す（2026-08-21・ユーザー指定「KBS のドキュメントとブックの様に」）。
+	//   ここは「モードが変わる唯一の場所」なので、書き直す場所もここ1つで足りる。
+	//   （パネルを開き直したときは KESCMPanelObserver::AutoAttach が同じ関数を呼ぶ。）
+	KESCMPanelTitle::Update();
+
+	KESCMSetStatus(msg);
+}
 
 /* DoAction */
 void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSysPoint /*mousePoint*/, IPMUnknown* /*widget*/)
@@ -414,6 +464,18 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 			break;
 		}
 
+		// ★★フライアウトの「Compare mode > Pixel Changes / Story Changes」(2026-08-20)。
+		//   何を比べるかを切り替える。上の「Ignore Page Number Marker」と同じ形＝設定を変えて、
+		//   既に Start 済みならその場で全体を比較し直す。
+		//   ⚠**前のモードの結果は捨てる**。2つの結果を同時に持つと「いま画面が見せているのはどちら
+		//     なのか」の答えが2か所に生まれる([[one-question-one-place]])。
+		case kKESCMPopupModePixelActionID:
+			KESCMApplyCompareMode(kKESCMModePixel);
+			break;
+		case kKESCMPopupModeStoryActionID:
+			KESCMApplyCompareMode(kKESCMModeStory);
+			break;
+
 		// フライアウトの「Save Panel Settings」: 現在の設定系トグルを独自 JSON でローカルへ保存し、
 		// 保存先パスを**パネルのステータス行**に出す(実体は KESCMPanelState.cpp の KESCMSavePanelState。
 		// ⚠旧引用 ":132-137" は 2026-08-16 の監査 B-U3 時点で fclose のエラー処理を指していた＝関数名で引く)。
@@ -597,6 +659,22 @@ void KESCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionSta
 				actionState |= kSelectedAction;
 			listToUpdate->SetNthActionState(i, actionState);
 		}
+		// ★「Compare mode」の2項目(2026-08-20)。上の Marks opacity と同じラジオ風＝いま効いている
+		//   方に✓。**どちらも常に有効**＝比較していないときでも選べる(次の Start に効く)。
+		else if (action == kKESCMPopupModePixelActionID)
+		{
+			int16 actionState = kEnabledAction;
+			if (Utils<IKESCMCompareFacade>()->GetCompareMode() == kKESCMModePixel)
+				actionState |= kSelectedAction;
+			listToUpdate->SetNthActionState(i, actionState);
+		}
+		else if (action == kKESCMPopupModeStoryActionID)
+		{
+			int16 actionState = kEnabledAction;
+			if (Utils<IKESCMCompareFacade>()->GetCompareMode() == kKESCMModeStory)
+				actionState |= kSelectedAction;
+			listToUpdate->SetNthActionState(i, actionState);
+		}
 		else if (action == kKESCMPopupHideUnchangedActionID)
 		{
 			// ★Start 中(arm 済み)でなければ灰色にする(2026-08-06 ユーザー指定)。この機能は比較マーク
@@ -610,11 +688,23 @@ void KESCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionSta
 			//   (旧: KESCMCore.cpp:566 / :312 / KESCMPeek.cpp:2267。前2つは無関係な行を指しており、
 			//   **KESCMPeek.cpp に至ってはファイルが 906 行しかない**＝EOF の1,300行以上先)。
 			//   model/UI 分割でファイルが大きく動いたため。★**関数名で引けば動かない。**
+			// ★★2026-08-21(Story 変更モード Task 8): **Story モードでも灰色にする。**
+			//   この機能が隠すのは「比較マーク(sEntries)が1ページも無いスプレッド」で、ストーリー差分は
+			//   entry を1つも作らない ---- ∴ Story モードで押すと「登録ページや overflow のあるスプレッド
+			//   だけ残して、他を全部隠す」になる。
+			//   ⚠**実行側の安全網では止まらない**: KESCMHideUnchangedToggle が中止するのは
+			//     「sEntries も登録も overflow も**全部**空」のときと「表示中スプレッドを**全部**隠すことに
+			//     なる」ときだけで、登録や overflow が1つでもあれば素通りして隠してしまう。⇒ ここで断る。
+			//   ★「ON のまま灰色になって戻せない」状態は作れない: モード切替(KESCMApplyCompareMode)は
+			//     Start 中なら必ず MarkChanges で全体を比較し直し、その入口の KESCMDoMarkChangesDoc が
+			//     KESCMResetHideUnchanged(kTrue) を呼ぶ。Start していなければ IsArmed が偽で元から灰色。
+			// ★3回聞くので InterfacePtr で1回引く(Utils.h:74-80。上の Start/Stop 分岐と同じ形)。
+			InterfacePtr<IKESCMCompareFacade> compare(Utils<IKESCMCompareFacade>().QueryUtilInterface());
 			int16 actionState;
-			if (!Utils<IKESCMCompareFacade>()->IsArmed())
+			if (!compare->IsArmed() || compare->GetCompareMode() == kKESCMModeStory)
 				actionState = kDisabled_Unselected;
 			else
-				actionState = Utils<IKESCMCompareFacade>()->GetHideUnchangedOn() ? (kEnabledAction | kSelectedAction) : kEnabledAction;
+				actionState = compare->GetHideUnchangedOn() ? (kEnabledAction | kSelectedAction) : kEnabledAction;
 			listToUpdate->SetNthActionState(i, actionState);
 		}
 		else if (action == kKESCMPopupShowOldNumsActionID)

@@ -99,7 +99,13 @@ public:
 	virtual bool16		GetPrintMarks()			{ return KESCMGetPrintMarks(); }
 	virtual bool16		GetMarkOpacity25()		{ return KESCMGetMarkOpacity25(); }
 
+	virtual KESCMCompareMode	GetCompareMode()					{ return KESCMGetCompareMode(); }
+	virtual void				SetCompareMode(KESCMCompareMode m)	{ KESCMSetCompareMode(m); }
+
 	virtual void		GetSessionStatus(PMString& out)	{ KESCMGetSessionStatus(out); }
+	virtual void		GetSessionStatusSegments(PMString& outLabel, PMString& outPre,
+												 PMString& outMid, PMString& outPost)
+							{ KESCMGetSessionStatusSegments(outLabel, outPre, outMid, outPost); }
 
 	// ---- the status line (stage 2) --------------------------------------------------------
 	// ★Free functions from KESCMModelNotify.h. The panel's status writer and the UI shutdown
@@ -109,6 +115,9 @@ public:
 	//   payload -- are GONE. They travel on Change()'s changedBy now; see IKESCMCompareFacade.h
 	//   at the spot they were removed from.
 	virtual void		StoreSessionStatus(const PMString& s)	{ KESCMStoreSessionStatus(s); }
+	virtual void		StoreSessionStatusSegments(const PMString& label, const PMString& pre,
+												   const PMString& mid, const PMString& post)
+							{ KESCMStoreSessionStatusSegments(label, pre, mid, post); }
 	virtual void		ClearSessionStatus()	{ KESCMClearSessionStatus(); }
 
 	virtual bool16		ArmedDocsAlive()		{ return KESCMArmedDocsAlive(); }
@@ -361,6 +370,35 @@ public:
 		out.fKinds		= row->fKinds;
 		out.fFrameUID	= row->fFrameUID;
 		out.fPageUID	= row->fPageUID;
+		return kTrue;
+	}
+
+	virtual int32	GetChangeCount(int32 nth)
+	{
+		const KESCMStoryRow* row = KESCMStoryList::GetRow(nth);
+		return (row != nil) ? static_cast<int32>(row->fChanges.size()) : 0;
+	}
+
+	virtual bool16	GetChange(int32 nth, int32 which, Change& out)
+	{
+		const KESCMStoryRow* row = KESCMStoryList::GetRow(nth);
+		if (row == nil || which < 0 || which >= static_cast<int32>(row->fChanges.size()))
+			return kFalse;
+
+		const KESCMStoryChange& change = row->fChanges[which];
+		out.fKind		= static_cast<int32>(change.fKind);
+		out.fWhat		= static_cast<int32>(change.fWhat);
+		out.fTargetStart = change.fTargetStart;
+		out.fTargetEnd	= change.fTargetEnd;
+		out.fSourceStart = change.fSourceStart;
+		out.fSourceEnd	= change.fSourceEnd;
+		out.fHasSource	= change.fHasSource;
+		out.fTextPre	= change.fTextPre;
+		out.fText		= change.fText;
+		out.fTextPost	= change.fTextPost;
+		out.fOtherTextPre	= change.fOtherTextPre;
+		out.fOtherText		= change.fOtherText;
+		out.fOtherTextPost	= change.fOtherTextPost;
 		return kTrue;
 	}
 

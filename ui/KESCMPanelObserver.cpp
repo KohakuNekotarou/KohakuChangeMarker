@@ -42,6 +42,7 @@
 
 // プロジェクト内:
 #include "KCMUIID.h"
+#include "IKESCMStatusTextData.h"	// ★メッセージ欄は自前描画＝文字列でなく4片を書き込む(2026-08-20)
 #include "Utils.h"					// Utils<IKESCMCompareFacade>()
 #include "IKESCMCompareFacade.h"	// ★arm 状態とステータス文字列を model に頼む窓口(2026-08-13 Task 11)。
 								//  読み出しは GetSessionStatus、書き込みは StoreSessionStatus ---- 後者は
@@ -53,6 +54,7 @@
 //   それだけが使っていた include(KESCMScrollMap.h / KESCMDrawEventHandler.h / KESCMOversetApply.h /
 //   PersistUtils.h)も一緒に移っている。⇒ このファイルは**パネルの表示だけ**を担う UI になった。
 #include "KESCMPanelState.h"		// KESCMLoadPanelStateIfPresent(読込の主経路は起動時=KESCMUIStartup。ここは保険)
+#include "KESCMPanelTitle.h"		// KESCMPanelTitle::Update(パネルを開いたときタブへ今のモードを書く)
 #include "KESCMPanelAlpha.h"		// KESCMAttachPanelVisibilityObserver / KESCMApplyAllPanelTranslucency
 									// (パネル再表示時に半透明を貼り直す)。⚠2026-08-19(B-U9)訂正＝ここは
 									// KESCMApplyPanelTranslucency と書いていたが、このファイルが呼ぶのは
@@ -176,6 +178,13 @@ void KESCMPanelObserver::AutoAttach()
 	//   一度きりの内部ガードで no-op。途中変更を巻き戻すこともない)。
 	KESCMLoadPanelStateIfPresent();
 
+	// ★★タブに今のモードを出す（2026-08-21）。**ここが「初めて書ける瞬間」**＝ラベルの書き先は
+	//   パレットだが、そのパレットは `IPanelMgr::GetPanelFromWidgetID` がパネルを返すようになって
+	//   初めて辿れる（起動時の復元ではまだ nil で、KESCMPanelTitle は黙って戻っている）。
+	//   ⚠widget と違ってラベルはパレットの持ち物なので**開き直しても消えない**が、ここで書くのは
+	//     安いうえ、上の復元でモードが変わっている場合の唯一の反映点になる。
+	KESCMPanelTitle::Update();
+
 	InterfacePtr<IPanelControlData> pcd(this, UseDefaultIID());
 	if (pcd == nil)
 		return;
@@ -208,9 +217,14 @@ void KESCMPanelObserver::AutoAttach()
 	//   KESCMSetStatus を通って gSessionStatus が埋まる**)。∴ 2回目以降は必ず else 側を通り、
 	//   同じヒント文をそのまま復元する(画面の見え方は同じ)。★app.kcmStatus も同じ値を返すので、
 	//   スクリプトから「未操作」を見分けることはできない。
-	PMString saved;
-	Utils<IKESCMCompareFacade>()->GetSessionStatus(saved);	// ★覚えているのは model 側(2026-08-13 Task 9 で移動・Task 11 で Facade 経由へ)
-	if (saved.CharCount() == 0)
+	// ★★2026-08-20: **4片で取り戻す**。欄が自前描画になり、変更行をクリックしたときのメッセージは
+	//   「見出し／前の文脈／変更された文字／後の文脈」に分かれている。連結した1本で復元すると、
+	//   パネルを閉じて開き直しただけで**色分けだけが静かに消える**——同じ文が、通った経路によって
+	//   別の見え方をすることになる。⇒ 覚える場所は今までどおり model 側の1か所で、そこが4片を持つ。
+	//   ★普通のメッセージは真ん中の1片だけが埋まっているので、この経路を通っても見え方は変わらない。
+	PMString savedLabel, savedPre, savedMid, savedPost;
+	Utils<IKESCMCompareFacade>()->GetSessionStatusSegments(savedLabel, savedPre, savedMid, savedPost);	// ★覚えているのは model 側(2026-08-13 Task 9 で移動・Task 11 で Facade 経由へ)
+	if (savedLabel.IsEmpty() && savedPre.IsEmpty() && savedMid.IsEmpty() && savedPost.IsEmpty())
 	{
 		PMString hint("Open the target and source documents (the active one becomes the Target), then choose Start from the panel menu.");
 		hint.SetTranslatable(kFalse);
@@ -218,7 +232,7 @@ void KESCMPanelObserver::AutoAttach()
 	}
 	else
 	{
-		KESCMSetStatus(saved);
+		KESCMSetStatusSegments(savedLabel, savedPre, savedMid, savedPost);
 	}
 
 	// Prev/Next の間の現在位置表示とボタン有効/無効は、上の UpdateInfoDisplay(→KESCMApplyPanelInfo
@@ -561,18 +575,29 @@ void KESCMRefreshPanel()
 }
 
 //========================================================================================
-// KESCMSetStatus(KESCMUIShared.h で宣言)
+// KESCMSetStatus / KESCMSetStatusSegments(KESCMUIShared.h で宣言)
 //   パネルのステータス行を更新する。メンバ SetStatus(自パネル)と同じ処理を自由関数として公開し、
 //   クローズレスポンダ(KESCMHandleDocsClosed)からも Stop 相当のメッセージを出せるようにする。
-//   パネルが隠れていてもセッション状態(gSessionStatus)は覚えておき、再表示時に復元する。
+//   パネルが隠れていてもセッション状態は覚えておき、再表示時に復元する。
+//
+// ★★2026-08-20: この欄は自前描画になった(KESCMStatusTextView.cpp)。入口は2つに増えたが、
+//   **欄へ流し込む手順は下の1本だけ**＝widget を探す・書く・描き直させるが1か所にある。
 //========================================================================================
-void KESCMSetStatus(const PMString& s, bool16 forceRedrawNow)
+namespace
 {
-	// ★覚えるのは model 側(KESCMModelNotify.cpp)。パネルを隠して再表示したときの復元と、
-	//   app.kcmStatus の答えが、そこ1か所から出る(2026-08-13 Task 9)。
-	//   ⚠ここで通知は出さない ---- この関数は**通知を受けた側**でもあるので、輪になる。
-	Utils<IKESCMCompareFacade>()->StoreSessionStatus(s);
 
+/* KESCMWriteStatusToPanel
+   4片をメッセージ欄へ流し込む。パネルが隠れていれば何もしない(再表示時に AutoAttach が、
+   覚えている値から復元する)。
+
+   ⚠★★**Invalidate を自分で呼ぶ。** stock の静的テキストでは ITextControlData::SetString が
+     やっていた(第2引数 invalidate の既定が kTrue で、その @param が「specifies whether the
+     control should be redrawn」)。自前描画の欄は**ただのデータ入れ物に書くだけ**なので、
+     画面が古くなったことを誰も知らない。「書いたのに変わらない」の原因はここになる。
+*/
+void KESCMWriteStatusToPanel(const PMString& label, const PMString& pre,
+							 const PMString& mid, const PMString& post, bool16 forceRedrawNow)
+{
 	IControlView* panel = KESCMGetVisibleOwnPanel();
 	if (panel == nil)
 		return;		// パネルは隠れている(または終了処理中): 触る先が無い。
@@ -582,14 +607,43 @@ void KESCMSetStatus(const PMString& s, bool16 forceRedrawNow)
 	IControlView* cv = pcd->FindWidget(kKESCMStatusTextWidgetID);
 	if (cv == nil)
 		return;
-	InterfacePtr<ITextControlData> tcd(cv, UseDefaultIID());
-	if (tcd != nil)
-		tcd->SetString(s);
+	InterfacePtr<IKESCMStatusTextData> data(cv, UseDefaultIID());
+	if (data == nil)
+		return;
 
-	// この直後にブロッキング処理(比較ループ等)が続く場合、SetString の invalidate は次の
-	// イベントループまで反映されない。busyMsg 表示のために今すぐ同期描画させる。
+	data->SetSegments(label, pre, mid, post);
+	cv->Invalidate();
+
+	// この直後にブロッキング処理(比較ループ等)が続く場合、Invalidate は次のイベントループまで
+	// 画面に届かない。busyMsg 表示のために今すぐ同期描画させる。
 	if (forceRedrawNow)
 		panel->ForceRedraw(nil, kTrue);
+}
+
+}	// anonymous namespace
+
+void KESCMSetStatus(const PMString& s, bool16 forceRedrawNow)
+{
+	// ★覚えるのは model 側(KESCMModelNotify.cpp)。パネルを隠して再表示したときの復元と、
+	//   app.kcmStatus の答えが、そこ1か所から出る(2026-08-13 Task 9)。
+	//   ⚠ここで通知は出さない ---- この関数は**通知を受けた側**でもあるので、輪になる。
+	Utils<IKESCMCompareFacade>()->StoreSessionStatus(s);
+
+	// ★普通のメッセージは**真ん中の1片**として渡す＝1色で描かれ、stock の静的テキストが
+	//   描いていた絵と同じになる。だから 72 か所ある呼び手は1つも変えていない。
+	const PMString kNothing;
+	KESCMWriteStatusToPanel(kNothing, kNothing, s, kNothing, forceRedrawNow);
+}
+
+void KESCMSetStatusSegments(const PMString& label, const PMString& pre,
+							const PMString& mid, const PMString& post)
+{
+	// ★覚える場所は上とまったく同じ1か所。連結して1本の文字列にするのは model 側なので、
+	//   app.kcmStatus の答えは「見出し + 改行 + 本文」＝この欄に見えているとおりになる。
+	Utils<IKESCMCompareFacade>()->StoreSessionStatusSegments(label, pre, mid, post);
+
+	// ★forceRedrawNow は渡さない＝この経路は行のクリックで、直後にブロッキング処理が続かない。
+	KESCMWriteStatusToPanel(label, pre, mid, post, kFalse);
 }
 
 // (★KESCMGetSessionStatus と KESCMClearSessionStatus は 2026-08-13 Task 9 で

@@ -1595,6 +1595,18 @@ bool16 KESCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 	// !printing ゲートで印刷文脈には一切効かせない=印刷は従来どおり Print comparison marks のみで制御)。
 	const bool16 alwaysScreen = sAlwaysShowMarks && !sMarksTempHidden && !printing;
 	const bool16 wantMarks = !suppressForPrint && (sPrintMarks || sMarksVisible || alwaysScreen || isThumb) && anyMarkableContent;
+	// ★★Story モードでは比較リング(sEntries 由来)を描かない(2026-08-21・Task 8)。ストーリー差分は
+	//   entry を1つも作らないので実際には sEntries が空で、下の find() は必ず外れる ---- が、
+	//   「無いから描かれない」に頼らず、モードを見て明示的に止める。
+	//   (この読みは KESCMCore.cpp の sCompareMode が「⚠BG スレッドからも読まれる(Story モードでは
+	//    枠を描かないので、描画イベントがこれを見る)」と宣言している、まさにその読み。enum 1つの
+	//    読みで、書くのはメニュー操作＝メインスレッドだけ。)
+	// ⚠★★**止めるのはリングだけ。** 登録ページの緑「/」・overflow の赤「/」・ページの✓・
+	//   旧版べた載せ(peek)・元ノンブルのバッジは**ページ対応表**から出ており、Story モードでも根拠を
+	//   持つ ---- KESCMDoMarkChangesDoc が「ここまでは両モードで同じ道を通る。飛ばしてよいものは
+	//   1つも無い」と書いて対応表・overflow キャッシュを両モードで作っているのがその宣言。
+	//   ∴ **この関数の入口で return してはいけない**(peek と ✓ とノンブルまで消える)。
+	const bool16 drawRings = (KESCMGetCompareMode() != kKESCMModeStory);
 	const bool16 wantOrig  = !suppressForPrint && !printing && sShowOriginal && !sOrigImages.empty();
 	// ★「KCM: Check」の ✓ のレイアウトビュー版(2026-07-12)。画面では「常に」表示(ツール左hold・
 	// Hold to Hide Marks・Show Marks on Source 等の枠トグルとは完全に独立)。印刷/PDF は sPrintMarks
@@ -2009,7 +2021,7 @@ bool16 KESCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 			if (mp != sSrcPageToTarget.end())
 			{
 				std::map<UID, KESCMOverlayEntry*>::iterator it = sEntries.find(mp->second);
-				if (it != sEntries.end())
+				if (drawRings && it != sEntries.end())	// ★Story モードではリングを描かない(上の drawRings)
 				{
 					if (isThumb)
 						KESCMDrawPageBorder(gPort, db, srcPageUID, kKESCMRingR, kKESCMRingG, kKESCMRingB);
@@ -2082,7 +2094,7 @@ bool16 KESCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 		const bool16 isRegistered = KESCMPageMapIsRegistered(db, pageUID);
 		const bool16 isOverflow   = (sOverflowT.count(pageUID) > 0);
 		std::map<UID, KESCMOverlayEntry*>::iterator it = sEntries.find(pageUID);
-		if (it != sEntries.end())
+		if (drawRings && it != sEntries.end())	// ★Story モードではリングを描かない(上の drawRings)
 		{
 			if (isThumb)
 				KESCMDrawPageBorder(gPort, db, pageUID, kKESCMRingR, kKESCMRingG, kKESCMRingB);

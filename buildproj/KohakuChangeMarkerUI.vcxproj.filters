@@ -51,6 +51,18 @@
       <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMStoryTreeEH.cpp">
          <Filter>Source Files</Filter>
       </ClCompile>
+      <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMStoryCellView.cpp">
+         <Filter>Source Files</Filter>
+      </ClCompile>
+      <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMStatusTextView.cpp">
+         <Filter>Source Files</Filter>
+      </ClCompile>
+      <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMStoryMarker.cpp">
+         <Filter>Source Files</Filter>
+      </ClCompile>
+      <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMStoryMarkerExpiry.cpp">
+         <Filter>Source Files</Filter>
+      </ClCompile>
       <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMStoryRowEH.cpp">
          <Filter>Source Files</Filter>
       </ClCompile>
@@ -85,6 +97,9 @@
          <Filter>Source Files</Filter>
       </ClCompile>
       <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMPanelState.cpp">
+         <Filter>Source Files</Filter>
+      </ClCompile>
+      <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMPanelTitle.cpp">
          <Filter>Source Files</Filter>
       </ClCompile>
       <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMScrollMap.cpp">
@@ -164,6 +179,24 @@
       <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\KESCMStoryTree.h">
          <Filter>Header Files</Filter>
       </ClInclude>
+      <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\KESCMStoryNodeID.h">
+         <Filter>Header Files</Filter>
+      </ClInclude>
+      <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\IKESCMStoryCellData.h">
+         <Filter>Header Files</Filter>
+      </ClInclude>
+      <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\IKESCMStatusTextData.h">
+         <Filter>Header Files</Filter>
+      </ClInclude>
+      <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\KESCMPanelTextDraw.h">
+         <Filter>Header Files</Filter>
+      </ClInclude>
+      <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\KESCMStoryMarker.h">
+         <Filter>Header Files</Filter>
+      </ClInclude>
+      <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\KESCMStoryMarkerExpiry.h">
+         <Filter>Header Files</Filter>
+      </ClInclude>
       <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\KESCMCheckGlyph.h">
          <Filter>Header Files</Filter>
       </ClInclude>
@@ -177,6 +210,9 @@
          <Filter>Header Files</Filter>
       </ClInclude>
       <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\KESCMPanelState.h">
+         <Filter>Header Files</Filter>
+      </ClInclude>
+      <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\KESCMPanelTitle.h">
          <Filter>Header Files</Filter>
       </ClInclude>
       <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\KESCMScrollMap.h">

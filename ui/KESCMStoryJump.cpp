@@ -15,8 +15,12 @@
 #include "IPageList.h"				// GetPageString - the page number the status line names
 #include "ISelectionManager.h"		// DeselectAll / SelectionExists - clearing before selecting
 #include "ISelectionUtils.h"		// GetActiveSelection - the front document's selection manager
+#include "IFrameList.h"				// QueryFrameContaining - which frame an edit falls in (2026-08-20)
+#include "IHierarchy.h"				// GetParentUID - a text column's frame is its parent
+#include "ITextFrameColumn.h"
 #include "ITextModel.h"
 #include "ITextSelectionSuite.h"	// SetTextSelection - the double click's whole point
+#include "ITextUtils.h"				// GetPageUIDRef - which page that frame is on
 #include "ITool.h"					// IsTextTool - is a text tool already active?
 #include "IToolBoxUtils.h"			// QueryActiveTool / QueryTool / SetActiveTool
 
@@ -36,6 +40,7 @@
 #include "IKESCMCompareFacade.h"	// arm 状態(2026-08-13・分割 第1段 Task 11 で Facade 経由へ)
 #include "KESCMUIShared.h"	// panel / status line / nav readout / tool button (split from KESCMCore.h on 2026-08-13)
 #include "KESCMStoryJump.h"
+#include "KESCMStoryMarker.h"	// the flash over the characters a change row goes to (2026-08-20)
 #include "IKESCMStoryEditsFacade.h"	// the row a click landed on (Facade since 2026-08-13, Task 14)
 #include "IKESCMMarkData.h"	// IsPageOnHiddenSpread - a row on a hidden page is labelled, not jumped to (2026-08-18)
 
@@ -158,6 +163,208 @@ bool16 KESCMStoryJumpToRow(int32 rowIndex)
 //----------------------------------------------------------------------------------------
 // KESCMStorySelectWholeStory(KESCMStoryJump.h で宣言)
 //----------------------------------------------------------------------------------------
+/* KESCMStoryJumpToChange
+   See the header for what this aims at and why it switches the tool.
+*/
+bool16 KESCMStoryJumpToChange(int32 rowIndex, int32 changeIndex)
+{
+	IKESCMStoryEditsFacade::Row row;
+	IKESCMStoryEditsFacade::Change change;
+	if (!Utils<IKESCMStoryEditsFacade>()->GetRow(rowIndex, row))
+		return kFalse;
+	if (!Utils<IKESCMStoryEditsFacade>()->GetChange(rowIndex, changeIndex, change))
+		return kFalse;
+
+	IDataBase* db = Utils<IKESCMCompareFacade>()->GetArmedTargetDB();
+	if (db == nil || !Utils<IKESCMCompareFacade>()->IsDocDBOpen(db))
+		return kFalse;
+
+	const UIDRef storyRef(db, row.fStoryUID);
+	InterfacePtr<ITextModel> model(storyRef, UseDefaultIID());
+	if (model == nil)
+		return kFalse;
+
+	// ★The range is clamped to the story as it stands NOW. The diff ran against the story as it was
+	//   when the comparison did, and the reader may have edited it since - a stale end would be
+	//   refused by the suite, and a stale start would select the wrong words silently.
+	const TextIndex total = model->TotalLength();
+	TextIndex from = change.fTargetStart;
+	TextIndex to = change.fTargetEnd;
+	if (from < 0) from = 0;
+	if (to > total) to = total;
+	if (from > total) from = total;
+	if (to < from) to = from;
+
+	// Making a selection recomposes - the same guard, and the same reason, as the double click's.
+	IDataBase::SaveRestoreModifiedState dirtyGuard(db);
+
+	// ***** THE FRAME THE EDIT IS IN, not the story's first one. ***** A story threaded across
+	// several frames has its first frame nowhere near an edit late in it.
+	// ⚠The fallback is the story's first frame (what a story row uses), for a story whose frame list
+	//   cannot answer - an unplaced story has none at all.
+	UID frameUID = row.fFrameUID;
+	InterfacePtr<IFrameList> frameList(model->QueryFrameList());
+	if (frameList != nil)
+	{
+		int32 frameIndex = 0;
+		InterfacePtr<ITextFrameColumn> column(frameList->QueryFrameContaining(from, &frameIndex));
+		if (column != nil)
+		{
+			// ★The frame the reader sees is the column's PARENT: a text frame's geometry lives on
+			//   the item, and the column is what holds the text inside it.
+			InterfacePtr<IHierarchy> columnHierarchy(column, UseDefaultIID());
+			if (columnHierarchy != nil)
+			{
+				const UID parentUID = columnHierarchy->GetParentUID();
+				if (parentUID != kInvalidUID)
+					frameUID = parentUID;
+			}
+		}
+	}
+	if (frameUID == kInvalidUID)
+		return kFalse;		// nothing placed - nowhere to go, and the story row says so already
+
+	// ★The page is asked of the frame we are actually going to, not of the story's start: an edit
+	//   late in a threaded story is on a different page from the story's beginning, and this is what
+	//   the Pages panel follows.
+	const UIDRef pageRef = Utils<ITextUtils>()->GetPageUIDRef(UIDRef(db, frameUID));
+	const UID pageUID = (pageRef.GetDataBase() != nil) ? pageRef.GetUID() : row.fPageUID;
+
+	// Both windows move here - the target to this frame, the source to the same story.
+	const bool16 moved = KESCMGotoStoryFrame(db, frameUID, pageUID, row.fStoryUID);
+
+	// ***** AND LIGHT THE CHARACTERS UP FOR A MOMENT. *****
+	//
+	// ★★★A MARK, NOT A SELECTION (2026-08-20, user's call: "その文字のところに移動＋マーカーを少しの
+	//   時間出す感じに"). Until then this made a text selection, which had three costs a pointer does
+	//   not: it threw away whatever the reader had selected, it forced the Type tool on, and it left
+	//   the words sitting selected long after the reader had looked at them. The mark says "here" and
+	//   then gets out of the way. ⇒ The selection is still available - it is what a DOUBLE click does
+	//   now (KESCMStorySelectChange below).
+	// ★It is drawn ON the characters by the text engine (KESCMStoryMarker.cpp), so it needs no
+	//   coordinates from here: the story and the character range are the whole of the request.
+	KESCMStoryMarker::Show(db, row.fStoryUID, from, to);
+
+	// ***** AND THE OTHER SIDE OF THE EDIT GOES TO THE PANEL'S MESSAGE AREA. *****
+	//
+	// ★The row shows the side that CHANGED; this shows the other one, so that "what it used to say"
+	//   is readable without leaving the panel (user's request, 2026-08-20: "パネルのメッセージ部分の
+	//   有効活用"). For a deletion the row is showing what was removed, so what lands here is the
+	//   text that closed up over it - see KESCMStoryList.h for why the field is called "other" and
+	//   not "old".
+	//
+	// ★A LABEL ON THE FIRST LINE, THE TEXT FROM THE SECOND (user's call, 2026-08-20, after seeing
+	//   the plain version: "一行目をOld 2行目から旧テキストかな"). The message area holds four lines
+	//   in a Japanese UI and six in an English one, so the label costs one line and buys the reader
+	//   the one thing a bare sentence in this box does not say - which version they are looking at.
+	//
+	// ★★"Source" / "Target", NOT "Old" / "New" - BECAUSE THE PANEL ALREADY SPEAKS THAT WAY. Two
+	//   lines at the top of it name the documents being compared, "Target:" and "Source:", so the
+	//   reader has been told which is which before ever reaching this box. A second pair of names
+	//   for one pair of documents would be the panel disagreeing with itself
+	//   ([[one-question-one-place]] applied to words rather than to code).
+	//   ★★AND "TEXT" AFTER IT (user's call, 2026-08-21: "ソースとなっているところを、ソーステキスト
+	//     にしましょうか"). Those two lines at the top name FILES; this names the WORDS inside one of
+	//     them. Borrowing their word without saying which of the two things is meant made one label
+	//     answer for both - "Source Text:" says it is the same document and a different thing.
+	//   ⚠"Target:" FOR A DELETION, and that is not a special case bolted on: the row shows the side
+	//     that CHANGED, so for a deletion the row holds the words that were REMOVED and what lands
+	//     here is the text that closed up over them. Calling that the source would be false, and a
+	//     deletion is the row where the reader most needs to know what stands there now.
+	//     (fKind: 0 = replace, 1 = insert, 2 = delete - IKESCMStoryEditsFacade.h.)
+	//
+	// ★★AND IT GOES OVER IN THREE PIECES, NOT AS ONE SENTENCE (2026-08-20). The box is drawn by
+	//   hand now (KESCMStatusTextView.cpp), so it can do here what the ROW already does: draw the
+	//   characters that differ at the theme's text colour and fade the words around them. The split
+	//   is not made here and could not be - the boundary between context and change is a code point
+	//   index into text that has been cut at both ends, and PMString counts UTF-16. The model made
+	//   it (KESCMStoryDiffRun's Slice) and it travels on the Change.
+	//   ★The label is its own argument rather than the head of the first piece: when the message
+	//     does not fit, the CONTEXT gives way from its outer ends, and a label living in the context
+	//     would be the first thing cut. It is the one piece that has to survive.
+	PMString label;
+	label.SetTranslatable(kFalse);
+	label.Append((change.fKind == 2) ? "Target Text:" : "Source Text:");
+	KESCMSetStatusSegments(label, change.fOtherTextPre, change.fOtherText, change.fOtherTextPost);
+
+	return moved;
+}
+
+bool16 KESCMStorySelectChange(int32 rowIndex, int32 changeIndex)
+{
+	IKESCMStoryEditsFacade::Row row;
+	IKESCMStoryEditsFacade::Change change;
+	if (!Utils<IKESCMStoryEditsFacade>()->GetRow(rowIndex, row))
+		return kFalse;
+	if (!Utils<IKESCMStoryEditsFacade>()->GetChange(rowIndex, changeIndex, change))
+		return kFalse;
+
+	IDataBase* db = Utils<IKESCMCompareFacade>()->GetArmedTargetDB();
+	if (db == nil || !Utils<IKESCMCompareFacade>()->IsDocDBOpen(db))
+		return kFalse;
+
+	const UIDRef storyRef(db, row.fStoryUID);
+	InterfacePtr<ITextModel> model(storyRef, UseDefaultIID());
+	if (model == nil)
+		return kFalse;
+
+	// Clamped to the story as it stands NOW, for the same reason the jump clamps: the reader may
+	// have edited it since the comparison ran, and a stale end is refused while a stale start
+	// silently selects the wrong words.
+	const TextIndex total = model->TotalLength();
+	TextIndex from = change.fTargetStart;
+	TextIndex to = change.fTargetEnd;
+	if (from < 0) from = 0;
+	if (to > total) to = total;
+	if (from > total) from = total;
+	if (to < from) to = from;
+
+	// Making a selection recomposes - the same guard, and the same reason, as everywhere else here.
+	IDataBase::SaveRestoreModifiedState dirtyGuard(db);
+
+	// ★THE MARK COMES DOWN. The single click that opened this double click put one up; leaving it
+	//   there would put an inversion on top of the selection's own inversion, and the text under
+	//   both is unreadable (KBS records exactly this in KBSJump.cpp).
+	KESCMStoryMarker::Clear();
+
+	// Everything below mirrors the whole-story double click's selection path; see
+	// KESCMStorySelectWholeStory for why the tool goes on first and why the suite is asked twice.
+	ISelectionManager* selectionManager = Utils<ISelectionUtils>()->GetActiveSelection();
+	if (selectionManager == nil)
+		return kFalse;
+
+	selectionManager->DeselectAll(nil);
+
+	InterfacePtr<ITool> activeTool(Utils<IToolBoxUtils>()->QueryActiveTool());
+	if (activeTool == nil || !activeTool->IsTextTool())
+	{
+		InterfacePtr<ITool> iBeamTool(Utils<IToolBoxUtils>()->QueryTool(kIBeamToolBoss));
+		if (iBeamTool == nil)
+			return kFalse;
+		if (!Utils<IToolBoxUtils>()->SetActiveTool(iBeamTool))
+			return kFalse;
+	}
+
+	InterfacePtr<ITextSelectionSuite> textSelectionSuite(selectionManager, UseDefaultIID());
+	if (textSelectionSuite == nil)
+		textSelectionSuite.reset(InterfacePtr<ITextSelectionSuite>(selectionManager, IID_ITEMPTEXTSELECTION_SUITE).forget());
+	if (textSelectionSuite == nil)
+		return kFalse;
+
+	// ⚠A DELETION HAS NO WIDTH on this side - the words are gone. RangeData(n, n) is the caret case,
+	//   and RangeData.h:114-125 says a caret needs a lean to settle which side new text joins.
+	//   kLeanForward puts it before what followed the deleted text, which is where the text used to
+	//   begin.
+	const RangeData range = (to > from)
+							? RangeData(from, to)
+							: RangeData(from, from, RangeData::kLeanForward);
+
+	// kDontScrollSelection: the first click of this double click already centred the frame, and
+	// kScrollIntoView would only promise the selection is somewhere on screen - undoing the better
+	// answer already given.
+	return textSelectionSuite->SetTextSelection(storyRef, range, Selection::kDontScrollSelection, nil);
+}
+
 bool16 KESCMStorySelectWholeStory(int32 rowIndex)
 {
 	IKESCMStoryEditsFacade::Row row;

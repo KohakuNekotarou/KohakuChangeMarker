@@ -47,6 +47,16 @@ void			KESCMRefreshPanel();
 //   app.kcmStatus はそこから答えるので、**パネルを閉じていても正しい値が返る**。
 void			KESCMSetStatus(const PMString& s, bool16 forceRedrawNow = kFalse);
 
+// 同じメッセージ欄に、**色の変わり目つき**で出す(2026-08-20)。
+// ★呼び手は変更行のジャンプ(KESCMStoryJump.cpp)ただ1つ＝「その編集のもう一方の側」を出す経路。
+//   label は見出し(必ず1行を占め、溢れても削られない)、mid が**変更された文字**＝テーマの文字色、
+//   pre/post はその前後の文脈＝背景へ寄せた薄い色。
+// ★★上の KESCMSetStatus はこれの特別な場合ではなく**同じ器の別の詰め方**＝(空, 空, s, 空)。
+//   ⇒ 普通のメッセージは1片＝1色で、stock の静的テキストと同じ絵になる。
+// ⚠溢れたら**文脈が外側から削られる**(変更された文字は必ず残る)。規則は変更行のセルと同じ。
+void			KESCMSetStatusSegments(const PMString& label, const PMString& pre,
+									   const PMString& mid, const PMString& post);
+
 // model からの通知を受ける UI 側 Observer の購読を開始/停止する(KESCMModelChangeObserver.cpp)。
 // Startup で attach し、Shutdown では **パネル周りを畳むより前**に detach する。
 void			KESCMAttachModelChangeObserver();

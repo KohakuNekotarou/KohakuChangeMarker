@@ -92,6 +92,63 @@ public:
 		map of the lot.) */
 	virtual bool16	GetRow(int32 nth, Row& out) = 0;
 
+	// ---- the children: what differs inside a story (Story Changes mode, 2026-08-20) --------
+
+	/** One difference inside a story, in the fields the tree and the click actually read.
+
+		★A COPY, for the same reason Row is one, and ★FLATTENED: the model's enums come across as
+		int32. An enum on the boundary would have to be defined somewhere both plug-ins agree on,
+		and that is a decision to take when there is a second reason to take it - the row's fKinds
+		is already an int with named bits and nothing has suffered for it. */
+	struct Change
+	{
+		int32		fKind;			// 0 = replace, 1 = insert, 2 = delete
+		int32		fWhat;			// 0 = text, 1 = attribute. ★ALWAYS 0 today (see KESCMStoryList.h)
+		TextIndex	fTargetStart;	// in the NEWER document
+		TextIndex	fTargetEnd;		// ★an END, not a length (RangeData.h:69)
+		TextIndex	fSourceStart;	// in the OLDER document; meaningless unless fHasSource
+		TextIndex	fSourceEnd;
+		bool16		fHasSource;		// kFalse for an insertion - nothing in the older version to point at
+
+		// The words to show, in three pieces: context, the changed characters, context.
+		// ★For a DELETION they come from the older side's text (see KESCMStoryList.h).
+		// ★THREE SINCE 2026-08-20, so the row can draw the change at full strength and fade the
+		//   rest around it. Concatenated they are the one string fText used to be; the boundary
+		//   between them cannot be recovered on this side once it is gone (it is a code point
+		//   index, and PMString counts UTF-16), which is why it is carried across rather than
+		//   worked out here.
+		PMString	fTextPre;
+		PMString	fText;
+		PMString	fTextPost;
+
+		// The OTHER side of the same edit, in the same three pieces - what the panel's message area
+		// shows while this row is selected (2026-08-20).
+		// ★NOT "the old side": the row already shows whichever side CHANGED, so this is the old
+		//   text for a replacement or an insertion and the NEW text for a deletion (where the row is
+		//   showing what was removed, and what the reader wants beside it is what stands there now).
+		//   The full reasoning is on KESCMStoryChange in KESCMStoryList.h.
+		// ★The middle is empty where nothing stood on that side; the context pieces are not, which
+		//   is what makes an empty middle read as a place rather than as an absence.
+		PMString	fOtherTextPre;
+		PMString	fOtherText;
+		PMString	fOtherTextPost;
+
+		Change()
+			: fKind(0), fWhat(0), fTargetStart(0), fTargetEnd(0),
+			  fSourceStart(0), fSourceEnd(0), fHasSource(kFalse) {}
+	};
+
+	/** How many differences row nth holds.
+
+		★0 IS THE NORMAL ANSWER IN THE PIXEL MODE - nothing runs the text diff there, so no row has
+		children and the tree stays one level deep. It is also the answer for a story that could not
+		be compared (added, too different, or a failed length check); the row is still there. */
+	virtual int32	GetChangeCount(int32 nth) = 0;
+
+	/** Fill out with difference which of row nth. kFalse when either index is out of range,
+		leaving out untouched. One at a time, for the same reason GetRow is. */
+	virtual bool16	GetChange(int32 nth, int32 which, Change& out) = 0;
+
 	// ---- where a story begins, in either document ------------------------------------------
 
 	/** The first frame this story is placed in. kInvalidUID when the document has no such story

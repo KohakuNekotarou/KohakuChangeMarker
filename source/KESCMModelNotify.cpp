@@ -25,16 +25,29 @@
 //   ①`app.kcmStatus`(KESCMScriptProvider.cpp ＝ model 側)が**パネルを閉じていても答える**という
 //     既存の仕様。widget から読む作りだと、閉じている間は空になる。
 //   ②パネルは再表示のたびに widget を作り直すので、widget に持たせた値は生き残らない
-//     (StaticMultiLineTextWidget の内容はワークスペースに永続化されるため、逆に**前回セッションの
-//     文字列が残る**という別の困りごともある。AutoAttach がここの値で必ず上書きする)。
+//     (欄の内容はワークスペースに永続化されるため、逆に**前回セッションの文字列が残る**という
+//     別の困りごともある。AutoAttach がここの値で必ず上書きする。⚠2026-08-20 に欄が自前描画へ
+//     替わり、持ち物は永続の ITextControlData でなく**非永続の IKESCMStatusTextData** になった
+//     ＝残るのは「widget の文字列」ではなく「ワークスペースに残った widget そのもの」だが、
+//     いずれにせよ上書きするこの経路が答えなので、作法は変わらない)。
 //
 // ⚠2026-08-13 に KESCMPanelObserver.cpp(UI 側)からここへ移した。表示だけが UI に残る。
 //----------------------------------------------------------------------------------------
-// ⚠**ここに残るのは「セッションの状態」1本だけ**。通知の付随物(どの文書か・巡回を捨てるか・
+// ⚠**ここに残る static は「セッションの状態」だけ**(2026-08-20 に 1本→4本 へ分かれたが、
+//   答えているのは同じ1つの値＝メッセージ欄に出ている文)。通知の付随物(どの文書か・巡回を捨てるか・
 //   即時再描画か)は 2026-08-15 の API 監査 B2 で **static をやめ、Change の changedBy へ移した**
 //   (理由は KESCMModelNotify.h の KESCMNotifyPayload)。この文字列だけが残る理由は上の①②＝
 //   **通知の付随物ではなく、通知と無関係にいつでも答える値**だから。
-static PMString sSessionStatus;
+// ★★2026-08-20: **1本から4本へ**。パネルのメッセージ欄が自前描画になり、変更行をクリックした
+//   ときのメッセージは「見出し／前の文脈／変更された文字／後の文脈」に分かれて届く
+//   (KESCMStatusTextView.cpp)。**分け目を持つ場所は、文字列を持つ場所と同じでなければならない**
+//   ＝別々に持つと、パネルを開き直したときに文と色分けが食い違いうる。
+//   ★普通のメッセージは sStatusMid だけが埋まる＝**「1本の文字列」はこの形の特別な場合**。
+//   ⚠4本とも KESCMClearSessionStatus() の列挙に載っていること(下)。
+static PMString sStatusLabel;
+static PMString sStatusPre;
+static PMString sStatusMid;
+static PMString sStatusPost;
 
 // アプリの subject を引く。終了処理中は session/app が引けないので、その場合は nil を返して
 // 呼び手が静かに諦める(KESCM 全体の共通規約=閉じた/消えた相手は触らない)。
@@ -138,7 +151,12 @@ void KESCMNotifyDocsPages(ClassID theChange,
 //   「今すぐ描き直せ」だけが payload に乗る(その通知に限った付随物)。
 void KESCMNotifyStatus(const PMString& s, bool16 forceRedrawNow)
 {
-	sSessionStatus = s;
+	// ★model が出すメッセージに分け目は無い＝本文1片。前のメッセージの見出しや文脈が残ると、
+	//   新しい文の周りに古い言葉が並ぶので、書かない3本は**空にする**(消し忘れは残留になる)。
+	sStatusLabel.Clear();
+	sStatusPre.Clear();
+	sStatusMid = s;
+	sStatusPost.Clear();
 
 	KESCMNotifyPayload payload;
 	payload.fStatusForceRedraw = forceRedrawNow;
@@ -152,20 +170,61 @@ void KESCMNotifyStatus(const PMString& s, bool16 forceRedrawNow)
 //   パネル再表示時に復元する値)。⚠ここで通知を出すと observer→KESCMSetStatus→ここ、と輪になる。
 void KESCMStoreSessionStatus(const PMString& s)
 {
-	sSessionStatus = s;
+	// ★分け目の無いメッセージ＝本文1片(上の KESCMNotifyStatus と同じ理由で他の3本を空にする)。
+	sStatusLabel.Clear();
+	sStatusPre.Clear();
+	sStatusMid = s;
+	sStatusPost.Clear();
+}
+
+// KESCMStoreSessionStatusSegments(KESCMModelNotify.h で宣言) — 分け目つきで覚えるだけ。
+// ★呼び手は UI 側の KESCMSetStatusSegments ただ1つ(変更行のジャンプが「もう一方の側」を出す経路)。
+void KESCMStoreSessionStatusSegments(const PMString& label, const PMString& pre,
+									 const PMString& mid, const PMString& post)
+{
+	sStatusLabel = label;
+	sStatusPre   = pre;
+	sStatusMid   = mid;
+	sStatusPost  = post;
 }
 
 // KESCMGetSessionStatus(KESCMModelNotify.h で宣言)
 void KESCMGetSessionStatus(PMString& out)
 {
-	out = sSessionStatus;
+	// ★4片を**画面に見えているとおりに**繋ぐ＝見出しの後ろで改行し、本文は前の文脈・変更された
+	//   文字・後の文脈の順。分け目の無いメッセージでは3本が空なので、答えはその文字列そのもの
+	//   ＝app.kcmStatus の答えは分割の前と1文字も変わらない。
+	out.Clear();
+	if (!sStatusLabel.IsEmpty())
+	{
+		out.Append(sStatusLabel);
+		out.Append("\n");
+	}
+	out.Append(sStatusPre);
+	out.Append(sStatusMid);
+	out.Append(sStatusPost);
 	out.SetTranslatable(kFalse);	// 状態表示は組み立て済みの文で翻訳キーではない
+}
+
+// KESCMGetSessionStatusSegments(KESCMModelNotify.h で宣言)
+void KESCMGetSessionStatusSegments(PMString& outLabel, PMString& outPre,
+								   PMString& outMid, PMString& outPost)
+{
+	outLabel = sStatusLabel;	outLabel.SetTranslatable(kFalse);
+	outPre   = sStatusPre;		outPre.SetTranslatable(kFalse);
+	outMid   = sStatusMid;		outMid.SetTranslatable(kFalse);
+	outPost  = sStatusPost;		outPost.SetTranslatable(kFalse);
 }
 
 // KESCMClearSessionStatus(KESCMModelNotify.h で宣言)
 void KESCMClearSessionStatus()
 {
-	sSessionStatus.Clear();
+	// ⚠★★**4本とも**。1本でも落とすと、そのぶんのヒープが終了時に残る
+	//   (2026-08-18 の model B8 / UI B-U5 で実際に見つかった形)。
+	sStatusLabel.Clear();
+	sStatusPre.Clear();
+	sStatusMid.Clear();
+	sStatusPost.Clear();
 }
 
 // KESCMModelNotify.cpp 終わり。

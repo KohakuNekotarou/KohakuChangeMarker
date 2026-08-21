@@ -22,7 +22,11 @@
 //    ⇒ **prefix はどちらのコピーでも model 側の 0x1EA500 のまま**。UI 側が自分の 0x1EA580 で
 //      名乗り直すと、model が送ったものを UI が受け取れなくなる。
 //
-//  ⚠ ここに置いてよいのは境界の ID だけ。**model 専用は KESCMID.h、UI 専用は KCMUIID.h。**
+//  ⚠ ここに置いてよいのは境界の ID と、**両側が同じ定義で知っていなければならない型**だけ。
+//    **model 専用は KESCMID.h、UI 専用は KCMUIID.h。**
+//    ★2026-08-20 に **KESCMCompareMode（enum）** を追加した。ID ではないが、置く理由は ID と同じ
+//      ＝**UI が書き、model が読んで動きを変える値**で、定義が片側にしか無いと、もう片方が
+//      「相手のフォルダのヘッダー」を読むことになる。
 //
 //  Created 2026-08-15 for the model/UI split (Stage 2, Task 6B).
 //
@@ -55,7 +59,7 @@
 #define kKESCMCompanyKey	"KohakuNekotarou"	// Company name used internally for menu paths and the like. Must be globally unique, only A-Z, 0-9, space and "_".
 #define kKESCMCompanyValue	"KohakuNekotarou"	// Company name displayed externally.
 #define kKESCMDisplayName	"Kohaku Change Marker"	// 表示名(About メニュー項目・About ボックス本文・パネル/ツール名)。KBS の "Kohaku Search Panel" に合わせ、単語間をスペースで区切る(2026-07-25)。
-#define kKESCMVersion		"1.6.0"				// ★製品の版数（model と UI で必ず同じ）。About ボックス本文・両側の .rc の FileVersion・両側の PluginVersion リソースに出る。履歴と「次に提出する分」の増分は **KESCMID.h の長いコメント**が正本。
+#define kKESCMVersion		"2.0.0"				// ★製品の版数（model と UI で必ず同じ）。About ボックス本文・両側の .rc の FileVersion・両側の PluginVersion リソースに出る。履歴と「次に提出する分」の増分は **KESCMID.h の長いコメント**が正本。
 
 // ★プラットフォーム別の修飾キー表記（2026-07-25 追補 Mac 対応）。
 //   実装側は SDK の IEvent が差を吸収する（OptionAltKeyDown = Win の Alt / Mac の Option、
@@ -142,5 +146,23 @@ DECLARE_PMID(kMessageIDSpace, kKESCMComparisonDocsClosedMessage, kKESCMPrefix + 
 																					//     から1回だけ流す ③Find Overset が単独 ON 中なら strip は**残す**（赤帯だけ描き直す）。
 																					//   ★付随データ＝**生存している側**の db を最大3つ（Target/旧版/Source側枠）。閉じた db は
 																					//     決して渡さない（通知の受け手が deref するため）。
+
+//----------------------------------------------------------------------------------------
+// 比較モード（2026-08-20）
+//----------------------------------------------------------------------------------------
+// ★**比較で何をするか**を決める値。パネルのフライアウトで選び、model が持つ（値を読んで実際に
+//   走らせるのが model なので、置き場所も model 側＝IKESCMCompareFacade の Get/Set）。
+//
+// ⚠**ID ではなく型なのでここに置いた。** このヘッダーは model と UI の**両方**が include する
+//   唯一の場所（IID を配るために両側が読む）で、境界に出る型はここに在るのがいちばん安全＝
+//   どちらか片側のヘッダーに置くと、もう片方が「相手のヘッダー」を読むことになる。
+//
+// ★★**2つの結果を同時に持たない。** モードを変えたら比較はやり直す。両方の結果を保持すると
+//   「いま画面は何を見せているのか」の答えが2か所に生まれる（[[one-question-one-place]]）。
+enum KESCMCompareMode
+{
+	kKESCMModePixel = 0,	// 既定。ページをラスタ化して画素を比べる（KESCM 本来の比較）
+	kKESCMModeStory = 1		// ストーリーの本文を段落→文字の二段で比べる（2026-08-20 追加）
+};
 
 #endif // __KESCMBoundaryID_h__

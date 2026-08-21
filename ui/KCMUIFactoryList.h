@@ -82,6 +82,12 @@ REGISTER_PMINTERFACE(KESCMStoryTreeAdapter, kKESCMStoryTreeAdapterImpl)	// 一�
 REGISTER_PMINTERFACE(KESCMStoryTreeWidgetMgr, kKESCMStoryTreeWidgetMgrImpl)	// 行の生成と流し込み(CTreeViewWidgetMgr派生。KESCMStoryTreeWidgetMgr.cpp)
 REGISTER_PMINTERFACE(KESCMStoryRowEH, kKESCMStoryRowEHImpl)	// 行のクリック=ジャンプ/ダブルクリック=ストーリー全文を選択(KESCMStoryRowEH.cpp)
 REGISTER_PMINTERFACE(KESCMStoryTreeEH, kKESCMStoryTreeEHImpl)	// 一覧の↑↓=行を移動して着いた行を表示(KESCMStoryTreeEH.cpp)
+REGISTER_PMINTERFACE(KESCMStoryMarkerAdornment, kKESCMStoryMarkerAdornmentImpl)	// 飛んだ先の文字を反転して見せる一時マーカー(グローバルテキストアドーンメント。KESCMStoryMarker.cpp)
+REGISTER_PMINTERFACE(KESCMStoryMarkerExpiryTask, kKESCMStoryMarkerExpiryImpl)	// 上のマーカーを1秒ほどで引っ込める IIdleTask(KESCMStoryMarkerExpiry.cpp)
+REGISTER_PMINTERFACE(KESCMStoryCellData, kKESCMStoryCellDataImpl)// 変更行のセルが描く3片(前の文脈/変更された文字/後の文脈)の入れ物(KESCMStoryCellView.cpp)
+REGISTER_PMINTERFACE(KESCMStoryCellView, kKESCMStoryCellViewImpl)	// ★PERSIST 版(変更行のテキストセル。変更された文字だけ通常色・前後は薄く。DVControlView派生。KESCMStoryCellView.cpp)
+REGISTER_PMINTERFACE(KESCMStatusTextData, kKESCMStatusTextDataImpl)	// パネルのメッセージ欄が描く4片(見出し/前の文脈/変更された文字/後の文脈)の入れ物(KESCMStatusTextView.cpp)
+REGISTER_PMINTERFACE(KESCMStatusTextView, kKESCMStatusTextViewImpl)	// ★PERSIST 版(パネルのメッセージ欄。折り返しを自前で持ち、変更された文字だけ通常色・見出しと前後は薄く。DVControlView派生。KESCMStatusTextView.cpp)
 
 // ブック比較ダイアログとその章一覧（kDialogBoss 由来＝UI 確定）
 REGISTER_PMINTERFACE(KESCMBookDialogController, kKESCMBookDialogControllerImpl)	// モードレスダイアログ(CDialogController派生。KESCMBookDialog.cpp)

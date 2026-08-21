@@ -49,6 +49,7 @@
 #include "KESCMPageCheck.h"          // KESCMPageCheckClearAllDocs(Stop で✓を全消去)
 #include "KESCMStoryStamp.h"         // ストーリーの変更カウンター(テキストが編集されたか＝画素比較には出せない情報)
 #include "KESCMStoryList.h"          // 変更のあったストーリーの一覧(Story Edits セクションが読むモデル)
+#include "KESCMStoryDiffRun.h"       // Story モードで「どこがどう変わったか」を行に付ける(2026-08-20)
 #include "KESCMHideUnchanged.h"      // KESCMResetHideUnchanged(2026-08-13 に KESCMCore.h から移動)
 // ★★2026-08-13(Task 10): **UI 側ヘッダー6本の include を落とした** ---- KESCMViewSync /
 //   KESCMThumbnailRefresh / KESCMChangeNav / KESCMScrollMap / KESCMStoryTree / KESCMStorySection。
@@ -505,6 +506,15 @@ void KESCMRebuildStoryEdits(IDataBase* targetDB, IDataBase* sourceDB)
 	// 本文先頭の取り出しは Build の中で完結する。
 	KESCMStoryList::Build(targetDB, storyDiffs);
 
+	// ★★Story モードのときだけ、行に「どこがどう変わったか」を付ける(2026-08-20)。
+	//   カウンターが答えられるのは「このストーリーは変わった」までで、その先＝どの語がどう
+	//   変わったかは本文を突き合わせないと出ない。Pixel モードでは呼ばない＝行は子を持たず、
+	//   一覧はこれまでどおりの平らな見た目のままになる。
+	//   ⚠**Build の後**でなければならない。変更は行を「並べ替え済みの何番目か」で名指しするので、
+	//     並びが決まる前に走らせると別の行に付く。
+	if (KESCMGetCompareMode() == kKESCMModeStory)
+		KESCMStoryDiffRun::Run(targetDB, sourceDB);
+
 	// ★モデルを作ったら画面もその場で作り直し、見出しの件数も書き換える。パネルが閉じていても、
 	//   セクションが畳まれていても呼んでよい(どちらも中で静かに諦める)＝「開いているか」を
 	//   呼び手が知らなくて済む。
@@ -639,6 +649,21 @@ ErrorCode KESCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMStri
 		for (size_t i = 0; i < n; ++i)
 			toRaster.push_back(i);
 	}
+
+	// ★★★**Story モードではページを1枚もラスタ化しない**(2026-08-20)。
+	//
+	//   ここまでは両モードで同じ道を通る。それが要るからで、飛ばしてよいものは1つも無い:
+	//     ・ページ対応表(tPages/sPages)   … peek(旧版を覗く)と元ノンブルのバッジが乗っている
+	//     ・overflow キャッシュ            … 「/」の付くページ
+	//     ・DropAll / sDB の差し替え       … 前のモードで付いた枠をここで捨てる
+	//   違うのは「対応の付いたページを1枚ずつ描いて画素を比べるか」だけなので、その入力である
+	//   toRaster を空にする。ループが0回になり、進捗バーも出ない(rasterCount=0)。
+	//
+	//   ⚠**ここで分岐する**のは、上の2つの分岐(差分/全再比較)がどちらも「どのページを比べるか」を
+	//     決める仕事で、モードはその後段の「そもそも比べるか」だから。中に混ぜると、差分側と全再比較側の
+	//     両方に同じ条件を書くことになる。
+	if (KESCMGetCompareMode() == kKESCMModeStory)
+		toRaster.clear();
 
 	// ★重い比較には進捗バーとキャンセルを出す(2026-07-27)。総数は「これから実際にラスタ化する枚数」
 	//   (差分なら再計算するページだけ)。タイトルは KESCM の他の文言と同じく英語固定＝翻訳キー扱いを
@@ -809,18 +834,48 @@ ErrorCode KESCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMStri
 	{
 		report.Append("marks start");
 		report.AppendW(UTF32TextChar(0x0A));	// 改行 → 2行目へ
-		report.Append("pages compared="); report.AppendNumber((int32)n);
-		report.Append(" changed="); report.AppendNumber(changedCount);
-		// ★比較できなかったページは隠さない(そのページは「枠が無い=変更なし」とは限らない)。
-		if (failedCount > 0)
+
+		// ★Story モードでは「ページを何枚比べたか」は報告しない——1枚も比べていないので、
+		//   "pages compared=100 changed=0" は嘘ではないが、読んだ人に「100ページ比べて差が
+		//   無かった」と伝わる。数えたものを言う。
+		const bool16 storyMode = (KESCMGetCompareMode() == kKESCMModeStory);
+		if (!storyMode)
 		{
-			report.Append(" failed="); report.AppendNumber(failedCount);
+			report.Append("pages compared="); report.AppendNumber((int32)n);
+			report.Append(" changed="); report.AppendNumber(changedCount);
+			// ★比較できなかったページは隠さない(そのページは「枠が無い=変更なし」とは限らない)。
+			if (failedCount > 0)
+			{
+				report.Append(" failed="); report.AppendNumber(failedCount);
+			}
 		}
 
 		// ★Story Edits の一覧。画素比較が答えるのは「このページは違って見える」までで、
 		//   「テキストが変わったのか、レイアウトだけ動いたのか」は区別できない。両者は補い合う
 		//   ——ストーリーが無変更でもページは動きうるし、ページが同じに見えてもテキストは変わりうる。
 		KESCMRebuildStoryEdits(targetDB, sourceDB);
+
+		// ★Story モードの報告は**この後**でしか作れない。件数が出るのは一覧を作り終えてから。
+		if (storyMode)
+		{
+			const int32 storyCount = KESCMStoryList::GetRowCount();
+			int32 editCount = 0;
+			for (int32 i = 0; i < storyCount; ++i)
+			{
+				const KESCMStoryRow* row = KESCMStoryList::GetRow(i);
+				if (row != nil)
+					editCount += static_cast<int32>(row->fChanges.size());
+			}
+
+			report.Append("stories changed="); report.AppendNumber(storyCount);
+			report.Append(" edits="); report.AppendNumber(editCount);
+
+			// ★**差が「0 件」なのと「出せなかった」のは違う**。カウンターが動いたのに本文の差が
+			//   1つも出ないのは、書式だけの変更・比較できなかった(相手が居ない/違いすぎる/長さが
+			//   合わない)のどれか。黙って 0 と出すと「テキストは変わっていない」と読めてしまう。
+			if (storyCount > 0 && editCount == 0)
+				report.Append(" (no text differences located)");
+		}
 	}
 	outReport = report;
 
@@ -998,4 +1053,27 @@ bool16 KESCMGetPrintMarks()
 bool16 KESCMGetMarkOpacity25()
 {
 	return KESCMDrawEventHandler::sMarkOpacity25;
+}
+
+//----------------------------------------------------------------------------------------
+// 比較モード(2026-08-20)
+//----------------------------------------------------------------------------------------
+// ★**セッション全体の設定で、文書ごとではない**。だから db を引数に取らない。印刷マーク
+//   (sPrintMarks)が KESCMDrawEventHandler の static に在るのは「描画の設定」だからで、こちらは
+//   「比較の設定」なので比較を持っているこの翻訳単位に置く。
+//
+// ⚠**BG スレッドからも読まれる**(Story モードでは枠を描かないので、描画イベントがこれを見る)。
+//   書くのはメニュー操作＝メインスレッドだけで、読みは enum 1つ分＝[[model-plugin-thread-safety]]
+//   の言う「BG は別 db を見るが同じ static を共有する」型のうち、共有していて**正しい**ほう
+//   (どのスレッドから見ても同じモードでなければならない)。
+static KESCMCompareMode sCompareMode = kKESCMModePixel;
+
+KESCMCompareMode KESCMGetCompareMode()
+{
+	return sCompareMode;
+}
+
+void KESCMSetCompareMode(KESCMCompareMode mode)
+{
+	sCompareMode = mode;
 }
