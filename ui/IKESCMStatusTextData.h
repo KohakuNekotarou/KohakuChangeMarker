@@ -54,12 +54,13 @@ public:
 		★ALL FOUR, ALWAYS. There is one message area and one message in it; writing only the pieces
 		a caller happens to have would leave the rest of the previous message standing beside it.
 
-		@param label a heading on a line of its own - "Source:" / "Target:" when the box is showing
-			the other side of an edit. Empty for an ordinary message, and then it costs no line.
-		@param pre the words before the changed characters. Empty for an ordinary message.
+		@param label a heading on a line of its own - "Source Text:" / "Target Text:" when the box is
+			showing the other side of an edit. Empty for an ordinary message, and then it costs no
+			line. Drawn at the full text colour: only pre/post are faded (user's call, 2026-08-21).
+		@param pre the words before the changed characters - faded. Empty for an ordinary message.
 		@param mid for an ordinary message, the whole message; for the other side of an edit, the
-			characters that differ - what is drawn at the theme's full text colour.
-		@param post the words after them. Empty for an ordinary message.
+			characters that differ - drawn at the theme's full text colour.
+		@param post the words after them, on the same terms as pre. Empty for an ordinary message.
 	*/
 	virtual void SetSegments(const PMString& label, const PMString& pre,
 							 const PMString& mid, const PMString& post) = 0;
