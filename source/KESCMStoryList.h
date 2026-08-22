@@ -413,6 +413,35 @@ namespace KESCMStoryList
 	*/
 	void SetRowChanges(int32 nth, const std::vector<KESCMStoryChange>& changes, bool16 textCompared);
 
+	/** Drop the rows whose story differs only in HOW IT IS SET - a font, a colour, a style, a
+		table stroke - and keep the ones whose CONTENT differs: the words, or the ruby and kenten
+		written over them (2026-08-22, user's call: "属性の変更は無視。見つけるのは Text とルビと
+		圏点だけ").
+
+		★THE RULE IS KESCMStoryRowFilter.h AND IS NOT REPEATED HERE. It is a free function over
+		three plain numbers precisely so that it can be measured outside InDesign
+		(work/kescm-rowfilter-test), and so that the two comparison modes cannot drift apart -
+		the mode is never asked; the row's own fTextCompared says how much is known about it.
+
+		★★CALL IT LAST, AFTER Build AND AFTER THE DIFF - and there is no way to make that
+		optional. Before the diff, every row in the story mode looks exactly like a row nobody
+		diffed, so a story whose only edit was a ruby would be dropped on its Attr counter a
+		moment before the diff was about to find the ruby. ⇒ KESCMRebuildStoryEdits owns the
+		order, and it is the only caller.
+
+		★IT RENUMBERS THE LIST, which is safe for exactly one reason: nothing outside is holding
+		a row index yet. The changes were attached by position moments earlier (SetRowChanges),
+		and the tree is not told to rebuild until KESCMRebuildStoryEdits sends its notification
+		after this returns. ⚠Calling it at any later moment - from a refresh, say - would move
+		the rows under a tree that is already showing them.
+
+		⚠NOT called by RefreshRow. Repairing a story until it compares equal must leave its row
+		standing (2026-08-21, and see KESCMStoryDiffRun::RunOne): refreshing answers "what differs
+		now", not "does this row still belong here". This answers the second question, and only
+		while the list is being built.
+	*/
+	void DropRowsWithNoContentChange();
+
 	/** Read row nth's own fields out of the target document again: the words it shows, the frame a
 		click scrolls to, and the page that frame is on.
 

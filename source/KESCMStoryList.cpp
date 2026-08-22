@@ -37,12 +37,13 @@
 #include "UnicodeClass.h"		// IsWhiteSpace
 #include "WideString.h"
 
-#include <algorithm>			// std::sort
+#include <algorithm>			// std::sort, std::remove_if
 #include <vector>
 
 // Project includes:
 #include "KESCMCore.h"			// KESCMFramePageUID - shared with the overset scan since 2026-08-09
 #include "KESCMStoryList.h"
+#include "KESCMStoryRowFilter.h"	// KESCMStoryRowHasContentChange - which rows belong in the list
 
 namespace
 {
@@ -697,6 +698,27 @@ void KESCMStoryList::SetRowChanges(int32 nth, const std::vector<KESCMStoryChange
 			break;
 		}
 	}
+}
+
+/* RowIsSettingOnly
+	The one row std::remove_if is looking for: a story that differs only in how it is set.
+
+	★IT ONLY ADAPTS - THE DECISION IS KESCMStoryRowFilter.h's. All this does is read the three
+	fields off the row and turn "keep" into "remove", which is the shape remove_if wants. The rule
+	itself has to stay where it can be built without InDesign and checked case by case
+	(work/kescm-rowfilter-test); a copy of it here would be a second answer to the same question.
+*/
+static bool RowIsSettingOnly(const KESCMStoryRow& row)
+{
+	return KESCMStoryRowHasContentChange(row.fKinds, row.fTextCompared,
+										 static_cast<int32>(row.fChanges.size())) == kFalse;
+}
+
+/* DropRowsWithNoContentChange
+*/
+void KESCMStoryList::DropRowsWithNoContentChange()
+{
+	gRows.erase(std::remove_if(gRows.begin(), gRows.end(), RowIsSettingOnly), gRows.end());
 }
 
 /* RefreshRowFromDocument

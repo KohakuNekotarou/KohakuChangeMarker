@@ -276,6 +276,7 @@
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryStamp.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMSnippetText.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryList.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryRowFilter.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMTextDiff.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMMemXferBytes.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryXml.h" />

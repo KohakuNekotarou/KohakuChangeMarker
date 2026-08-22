@@ -517,6 +517,16 @@ void KESCMRebuildStoryEdits(IDataBase* targetDB, IDataBase* sourceDB)
 	if (KESCMGetCompareMode() == kKESCMModeStory)
 		KESCMStoryDiffRun::Run(targetDB, sourceDB);
 
+	// ★★2026-08-22: **書式だけが動いた行を一覧から落とす**（ユーザー指定「属性の変更は無視。
+	//   見つけるのは Text とルビと圏点だけ」）。カウンターが答えるのは「同じではない」までなので、
+	//   フォント・色・スタイル・表の罫線を変えただけのストーリーもここまでは行になっている。
+	//   ⚠**必ずこの位置**＝Build と Run の**後**。前に置くと、Story モードでルビだけ変えた行が
+	//     「Attr しか動いていない行」に見えたまま、差分がそのルビを見つける直前に落ちる。
+	//   ★判定そのものは `KESCMStoryRowFilter.h`（モードを見ない・InDesign の外で検査してある）。
+	//   ⚠Pixel モードでは差分を走らせないので、**ルビ・圏点だけの変更はここで落ちる**
+	//     （2026-08-22 ユーザー判断＝Pixel では諦めて Text の変更だけ出す）。
+	KESCMStoryList::DropRowsWithNoContentChange();
+
 	// ★モデルを作ったら画面もその場で作り直し、見出しの件数も書き換える。パネルが閉じていても、
 	//   セクションが畳まれていても呼んでよい(どちらも中で静かに諦める)＝「開いているか」を
 	//   呼び手が知らなくて済む。
