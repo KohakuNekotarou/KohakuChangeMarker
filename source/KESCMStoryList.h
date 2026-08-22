@@ -73,12 +73,20 @@ struct KESCMStoryChange
 	TextIndex	fTargetEnd;		// ★AN END, NOT A LENGTH (RangeData.h:69)
 
 	// ---- the older document (Source) ----
-	// fHasSource is kFalse for an insertion: there is nothing in the older version to point at,
-	// and selecting "where it would have gone" would be selecting something that is not the
-	// change. The older window simply does not move for those.
+	/** ★★ALWAYS A REAL PLACE, AND EMPTY FOR AN INSERTION (2026-08-22). fSourceEnd == fSourceStart
+		means "this spot in the older version, and no characters" - the gap the new words were
+		typed into. That is the same shape the NEWER side already has for a deletion, so + and -
+		are mirror images of one another: each has a range on the side it exists and a caret on
+		the side it does not.
+
+		⚠A bool16 fHasSource stood here until then and was kFalse for an insertion, which folded
+		  two questions into one flag ([[one-question-one-place]]): "is there a place over there"
+		  (always yes) and "is there anything to SELECT over there" (no, for an insertion). The
+		  first dragged the second down with it and the older window stopped moving at all - which
+		  is what the user reported ("＋になっているとき ソースの方のジャンプがおかしい様な").
+		⇒ Anything that needs the second question asks fSourceEnd > fSourceStart. */
 	TextIndex	fSourceStart;
 	TextIndex	fSourceEnd;
-	bool16		fHasSource;
 
 	/** The words the row shows, in THREE PIECES: what stands before the change, the changed
 		characters themselves, and what stands after.
@@ -166,7 +174,7 @@ struct KESCMStoryChange
 
 	KESCMStoryChange()
 		: fKind(kReplace), fWhat(kText), fTargetStart(0), fTargetEnd(0),
-		  fSourceStart(0), fSourceEnd(0), fHasSource(kFalse),
+		  fSourceStart(0), fSourceEnd(0),
 		  fAttrKind(kKESCMStoryAttrNone), fParaIndex(0) {}
 };
 

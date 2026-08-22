@@ -62,8 +62,10 @@ bool16 KESCMStoryJumpToRow(int32 rowIndex);
 	story's FIRST frame to choose a spread by, so an edit further down a threaded story scrolled it
 	to a point belonging to another spread (bug recheck 2026-08-22). Both sides now ask
 	IKESCMStoryEditsFacade::GetStoryFrameAt.
-	⚠An INSERTION has no older side (fHasSource is kFalse), and that window keeps doing what it did
-	before - the story's beginning.
+	★AN INSERTION AIMS THE OLDER WINDOW AT ITS PLACE (2026-08-22). It used to be left where it was,
+	on the grounds that there is nothing over there to centre; the CHARACTERS are indeed missing but
+	the SPOT is not, and the spot - the gap the new words went into - is what the reader is looking
+	for. Change::fSourceStart carries it, with fSourceEnd equal to it (an empty range).
 
 	★THE ACTIVE TOOL IS LEFT ALONE, and so is the reader's own selection. Both used to change here,
 	because both are the price of making a text selection; a mark costs neither. (The tool DOES go on
@@ -99,8 +101,10 @@ bool16 KESCMStoryJumpToChange(int32 rowIndex, int32 changeIndex);
 	gets the range the row shows; the older one gets the matching range the diff worked out
 	(Change::fSourceStart / fSourceEnd), which is a DIFFERENT range - the wording either side of it
 	has changed length.
-	⚠An INSERTION has no older side (fHasSource is kFalse there) and nothing is selected in the
-	source for it. Only the target's outcome is reported: the source may not even have a window
+	★AN INSERTION PUTS A CARET IN THE SOURCE (2026-08-22), rather than selecting nothing there as it
+	used to. Its older-side range is empty, and an empty selection IS an insertion point - standing
+	exactly where the new words went in. That mirrors what a DELETION has always done on the target
+	side. Only the target's outcome is reported either way: the source may not even have a window
 	open, and the row is not about it.
 
 	@param rowIndex which story row of KESCMStoryList.

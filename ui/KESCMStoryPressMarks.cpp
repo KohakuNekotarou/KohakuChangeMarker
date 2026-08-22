@@ -166,10 +166,12 @@ void KESCMStoryCollectRanges(IDataBase* db, bool16 useSourceDocument, KESCMStory
 			TextIndex to = 0;
 			if (useSourceDocument)
 			{
-				// ⚠AN INSERTION HAS NO PLACE HERE. fHasSource is kFalse for one precisely because
-				//   there is nothing in the older version to point at (IKESCMStoryEditsFacade.h).
-				if (!change.fHasSource)
-					continue;
+				// ★★AN INSERTION MARKS ITS PLACE HERE, AS A CARET (2026-08-22, user's request:
+				//   "＋されている元の場所で - の時と同じ細いキャレットを表示して欲しい"). It used to
+				//   be skipped, because the older side was said to hold nothing to point at - true
+				//   of characters, false of the place. The range comes through EMPTY for one, and
+				//   the zero-width branch below turns that into a caret without being told, so this
+				//   needed nothing but the removal of the guard.
 				from = change.fSourceStart;
 				to = change.fSourceEnd;
 			}

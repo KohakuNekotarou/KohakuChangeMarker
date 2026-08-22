@@ -515,9 +515,13 @@ bool16 KESCMStoryJumpToChange(int32 rowIndex, int32 changeIndex)
 	//   fSourceStart rather than being handed the target's index (which would name some unrelated
 	//   character over there). ⇒ This is also what finally settles the "第1段" caveat in KESCMID.h
 	//   ⑬: the source window now reaches the corresponding CHARACTER, not just the same story.
-	// ⚠fHasSource IS THE QUESTION for the older side - an insertion has nothing there to centre, so
-	//   that window keeps doing what it did before (the story's start).
-	const TextIndex sourceFocus = change.fHasSource ? change.fSourceStart : kInvalidTextIndex;
+	// ★★AN INSERTION AIMS AT ITS PLACE (2026-08-22, user's report: "＋になっているとき ソースの方の
+	//   ジャンプがおかしい様な"). It used to be excluded here, on the grounds that there is nothing
+	//   in the older version to centre - true of the CHARACTERS and false of the SPOT, which is
+	//   exactly where the reader wants to look: the gap the new words went into. The range is empty
+	//   for one (fSourceEnd == fSourceStart) and centring works off the start, so nothing else has
+	//   to change.
+	const TextIndex sourceFocus = change.fSourceStart;
 	const bool16 moved = KESCMGotoStoryFrame(db, frameUID, pageUID, row.fStoryUID, from, sourceFocus);
 
 	// ***** AND LIGHT THE CHARACTERS UP FOR A MOMENT. *****
@@ -647,20 +651,19 @@ bool16 KESCMStorySelectChange(int32 rowIndex, int32 changeIndex)
 	//   window that is already pointed at the right story.
 	// ★The older side's range is carried on the Change (fSourceStart / fSourceEnd) - the diff
 	//   worked it out and there is nothing to recompute here.
-	// ⚠fHasSource IS THE QUESTION, not "is there a source document": an INSERTION has nothing on
-	//   the older side to point at, and IKESCMStoryEditsFacade.h says the two indices are
-	//   meaningless without it. A caret at a made-up index would be worse than no selection.
+	// ★★AN INSERTION SELECTS ITS PLACE - AS A CARET (2026-08-22). This used to be skipped for one,
+	//   because fSourceStart/fSourceEnd were said to be meaningless there. They are not: the range
+	//   is EMPTY, which puts the insertion point exactly where the new words went in. That is the
+	//   same thing the target side already does for a DELETION, on the very next line - the two are
+	//   mirror images, and one of them was written years before the other was noticed.
 	// ★THE OLDER SIDE GOES FIRST, so that the target's selection is the last one made. Nothing
 	//   here moves the active context, so the order does not decide which window the reader is
 	//   in - but if one of the two ever fails, the one left standing should be the target's.
 	// ★A refusal on that side is SILENT. It is normal: the source may have no window open, and the
 	//   row has just been reported on by the single click. The return value is the target's.
-	if (change.fHasSource)
-	{
-		IDataBase* sourceDB = Utils<IKESCMCompareFacade>()->GetArmedSourceDB();
-		if (sourceDB != nil && Utils<IKESCMCompareFacade>()->IsDocDBOpen(sourceDB))
-			SelectRangeIn(sourceDB, row.fStoryUID, change.fSourceStart, change.fSourceEnd);
-	}
+	IDataBase* sourceDB = Utils<IKESCMCompareFacade>()->GetArmedSourceDB();
+	if (sourceDB != nil && Utils<IKESCMCompareFacade>()->IsDocDBOpen(sourceDB))
+		SelectRangeIn(sourceDB, row.fStoryUID, change.fSourceStart, change.fSourceEnd);
 
 	return SelectRangeIn(targetDB, row.fStoryUID, change.fTargetStart, change.fTargetEnd);
 }

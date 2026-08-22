@@ -988,8 +988,10 @@ bool16 KESCMGotoStoryFrame(IDataBase* db, UID frameUID, UID pageUID, UID storyUI
 				//   ⚠**新旧で文字位置は違う**ので、Target の focusIndex を使い回してはいけない
 				//     (旧版で同じ番号の文字はまったく別の場所にある)。差分が両側の位置を出しているので、
 				//     使うのはそちら＝[[one-question-one-place]] の逆で、**別の問いには別の答え**。
-				//   ⚠挿入(fHasSource が kFalse)では呼び手が kInvalidTextIndex を渡す＝旧側に指す場所が
-				//     無いので、従来どおりストーリーの書き出しへ落ちる。
+				//   ★★2026-08-22＝**挿入でも旧側の位置が来る**。以前は呼び手が kInvalidTextIndex を
+				//     渡していた（「旧側に指す場所が無い」という理由）が、それは**文字**の話で
+				//     **場所**の話ではなかった＝新しい語が入った隙間は旧版にちゃんとある。今は
+				//     fSourceStart（空範囲の開始＝キャレットの位置）が来るので、ここは何も分岐しない。
 				UID srcLanded = kInvalidUID;
 				KESCMScrollDocToStoryStart(sourceDB, storyUID, srcFrame, srcLanded, KESCMReadDocZoom(db),
 										   sourceFocusIndex);

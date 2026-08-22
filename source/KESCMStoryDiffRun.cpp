@@ -313,14 +313,24 @@ void Add(std::vector<KESCMStoryChange>& out, int32 paraIndex,
 	change.fTargetStart = tBase + tFrom;
 	change.fTargetEnd = change.fTargetStart + tCount;
 
-	// ★An insertion has nothing in the older document to point at. Saying "here is where it
-	//   would have been" would be pointing at text that is not the change.
-	change.fHasSource = (sCount > 0);
-	if (change.fHasSource)
-	{
-		change.fSourceStart = sBase + sFrom;
-		change.fSourceEnd = change.fSourceStart + sCount;
-	}
+	// ★★★AN INSERTION HAS A PLACE IN THE OLDER DOCUMENT EVEN THOUGH IT HAS NO CHARACTERS THERE
+	//   (2026-08-22, user's report: "＋になっているとき ソースの方のジャンプがおかしい様な、
+	//   ＋されている元の場所で - の時と同じ細いキャレットを表示して欲しい").
+	//
+	//   ⚠WHAT THIS USED TO SAY, AND WHY IT WAS WRONG: "an insertion has nothing in the older
+	//     document to point at". That is true of CHARACTERS and false of the PLACE - the reader
+	//     wants to see where the new words went in, and the older version has an exact spot for it:
+	//     between the two characters that used to be neighbours. The old wording folded two
+	//     different questions into one flag ([[one-question-one-place]]), and the answer to the
+	//     second one ("is there anything to select over there") dragged the first one down with it,
+	//     so the older window did not move at all.
+	//
+	//   ★AN EMPTY RANGE IS THE ANSWER TO BOTH. fSourceStart == fSourceEnd says "this place, no
+	//     characters" - which is exactly what the newer side already carries for a DELETION, and
+	//     what the marks already draw as a caret (KESCMStoryPressMarks turns a zero-width range
+	//     into KESCMMarkRange::Caret without being asked). ⇒ + and - are now mirror images.
+	change.fSourceStart = sBase + sFrom;
+	change.fSourceEnd = change.fSourceStart + sCount;
 
 	// ★BOTH SIDES ARE CUT, ALWAYS (2026-08-20). The row shows the side that changed; the panel's
 	//   message area shows the other one while that row is selected, so that the reader can see
@@ -389,10 +399,10 @@ void AddAttrChange(KESCMStoryChange::Kind kind, KESCMStoryAttrKind attrKind,
 	change.fTargetStart = tBase + tStart;
 	change.fTargetEnd   = change.fTargetStart + tCount;
 
-	// ⚠fHasSource IS ALWAYS TRUE HERE, and that is not a shortcut: a ruby-only change is found by
-	//   comparing two paragraphs whose TEXT matched, so the same characters exist on both sides.
-	//   (An insertion of ruby is still "these characters, which are in both, now carry a reading".)
-	change.fHasSource   = kTrue;
+	// ⚠THE OLDER SIDE ALWAYS HAS CHARACTERS HERE, unlike a text change: a ruby-only difference is
+	//   found by comparing two paragraphs whose TEXT matched, so the same characters exist on both
+	//   sides. (Ruby being ADDED is still "these characters, which are in both, now carry a
+	//   reading".) ⇒ This range is never empty, where a text insertion's now is.
 	change.fSourceStart = sBase + sStart;
 	change.fSourceEnd   = change.fSourceStart + sCount;
 

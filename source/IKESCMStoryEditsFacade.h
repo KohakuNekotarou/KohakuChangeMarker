@@ -163,9 +163,16 @@ public:
 		int32		fWhat;
 		TextIndex	fTargetStart;	// in the NEWER document
 		TextIndex	fTargetEnd;		// ★an END, not a length (RangeData.h:69)
-		TextIndex	fSourceStart;	// in the OLDER document; meaningless unless fHasSource
+		// ★★IN THE OLDER DOCUMENT, AND ALWAYS A REAL PLACE. An INSERTION comes through with
+		//   fSourceEnd == fSourceStart: the spot the new words were typed into, with no characters
+		//   of its own. That mirrors what fTargetStart/fTargetEnd already do for a DELETION.
+		//   ⚠A bool16 fHasSource stood beside these until 2026-08-22 and was kFalse for an
+		//     insertion. It answered "is there anything to select over there", and every caller
+		//     that meant "is there a place to look at over there" got the wrong answer - the older
+		//     window did not move for an insertion at all.
+		//   ⇒ Ask fSourceEnd > fSourceStart when what is needed is characters, not a place.
+		TextIndex	fSourceStart;
 		TextIndex	fSourceEnd;
-		bool16		fHasSource;		// kFalse for an insertion - nothing in the older version to point at
 
 		// The words to show, in three pieces: context, the changed characters, context.
 		// ★For a DELETION they come from the older side's text (see KESCMStoryList.h).
@@ -217,7 +224,7 @@ public:
 
 		Change()
 			: fKind(0), fWhat(0), fTargetStart(0), fTargetEnd(0),
-			  fSourceStart(0), fSourceEnd(0), fHasSource(kFalse), fAttrKind(0) {}
+			  fSourceStart(0), fSourceEnd(0), fAttrKind(0) {}
 	};
 
 	/** How many differences row nth holds.
