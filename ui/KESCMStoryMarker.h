@@ -52,23 +52,28 @@
 
 class IDataBase;
 
-/** Which characters of which stories a press wants lit up: story UID -> its ranges.
-
-	★ONE DOCUMENT PER SET, WHICH IS WHY THE DATABASE IS NOT IN THE KEY. A press marks the window
-	it was made in and no other (user's call, 2026-08-22), so the whole set belongs to one db and
-	that db is passed alongside it. */
+/** Which characters of which stories are lit up in ONE document: story UID -> its ranges. */
 typedef std::map<UID, KESCMMarkRangeList> KESCMStoryMarkMap;
 
-/** The mark. Two callers drive it and they are EXCLUSIVE, not additive:
+/** The same thing for both compared documents at once: database -> what is lit up in it.
 
-	  Show()       - the jump's pointer: one range, and a countdown that takes it off again.
-	  ShowRanges() - the tool's press: every edit in the document at once, up until the button
-	                 comes back up.
+	★★BOTH AT ONCE IS NOT A LUXURY - "Show Marks on Target" and "Show Marks on Source" can be on
+	together, and then the newer document's edits and the older one's have to be up at the same
+	time (user's request, 2026-08-22). ⚠A press, by contrast, only ever marks the window it was
+	made in; it is the same structure holding one entry. */
+typedef std::map<IDataBase*, KESCMStoryMarkMap> KESCMStoryMarkDocs;
+
+/** The mark. Two kinds of caller drive it and they are EXCLUSIVE, not additive:
+
+	  Show()     - the jump's pointer: one range, and a countdown that takes it off again.
+	  ShowDocs() - everything that stays up: the "Show Marks on ..." toggles, and the tool's press
+	               while the button is held.
 
 	★★WHY EXCLUSIVE. Difference blending inverts what is underneath, so two marks over the same
 	characters would cancel each other out and leave a hole (KESCMStoryMarkRanges.h). Keeping one
-	set at a time makes that impossible rather than making it something the drawing has to handle:
-	a press replaces the jump's mark, and Clear takes down whichever is up.
+	set at a time makes that impossible rather than making it something the drawing has to handle.
+	⇒ ★A standing mark WINS: while one is up the jump does not add its own pointer, because every
+	  character it would have pointed at is already lit.
 
 	Everything goes through these calls so that the mark and its countdown cannot disagree. */
 namespace KESCMStoryMarker
@@ -87,21 +92,22 @@ namespace KESCMStoryMarker
 	*/
 	void Show(IDataBase* db, UID storyUID, TextIndex from, TextIndex to);
 
-	/** Light up every range in the set, and DO NOT start a countdown - it stays up until Clear.
+	/** Light up every range in every document of the set, and DO NOT start a countdown - it stays
+		up until Clear.
 
-		★NO COUNTDOWN IS THE POINT. This is what the tool's left button shows while it is held
-		(user's request, 2026-08-22: "ボタンが押されていると表示されっぱなしにしたい"), so what
-		takes it down is the button coming up, not the clock.
+		★NO COUNTDOWN IS THE POINT. This is what the "Show Marks on ..." toggles put on screen, and
+		what the tool's left button shows while it is held (user's request, 2026-08-22: "ボタンが
+		押されていると表示されっぱなしにしたい" / "ツールでボタンを押さなくても常にマークが出る様に").
+		What takes it down is a toggle going off or the button coming up, never the clock.
 
-		Whatever was showing before is replaced, the jump's mark included - see the note above
-		this namespace for why the two cannot both be up.
+		Whatever was showing before is replaced, the jump's mark included - see the note above this
+		namespace for why the two cannot both be up.
 
-		@param db the document the stories live in. nil, or an empty set, clears the mark.
-		@param byStory the ranges, per story. Merged here, so the caller may hand over overlapping
-			ranges in any order.
+		@param docs the ranges, per document, per story. Merged here, so the caller may hand over
+			overlapping ranges in any order. An empty set clears the mark.
 		@param opacity what to draw at, 0..1. The panel's "Marks opacity 25% / 75%" choice.
 	*/
-	void ShowRanges(IDataBase* db, const KESCMStoryMarkMap& byStory, const PMReal& opacity);
+	void ShowDocs(const KESCMStoryMarkDocs& docs, const PMReal& opacity);
 
 	/** Take the mark down now. Safe when there is none. */
 	void Clear();

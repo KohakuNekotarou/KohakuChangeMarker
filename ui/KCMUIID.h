@@ -240,7 +240,7 @@ DECLARE_PMID(kActionIDSpace, kKESCMPopupUsageActionID, kKCMUIPrefix + 4)	// パ�
 DECLARE_PMID(kActionIDSpace, kKESCMPopupHideUnchangedActionID, kKCMUIPrefix + 7)	// パネルのフライアウトの「Hide Unchanged Spreads」チェック式トグル(ON=変更なしスプレッドを隠す)
 DECLARE_PMID(kActionIDSpace, kKESCMPopupShowOldNumsActionID, kKCMUIPrefix + 8)	// パネルのフライアウトの「Show Original Page Numbers」チェック式トグル(枠表示中/印刷ON時に隠す前の元番号バッジ)
 DECLARE_PMID(kActionIDSpace, kKESCMPopupSyncViewsActionID, kKCMUIPrefix + 9)	// パネルのフライアウトの「Sync Layout Views」チェック式トグル(他文書のビューへ座標+拡大率を自動同期)
-DECLARE_PMID(kActionIDSpace, kKESCMPopupShowSrcMarksActionID, kKCMUIPrefix + 10)	// パネルのフライアウトの「Show Marks on Source」チェック式トグル(Source側にも枠を常時表示。OPPでも表示・印刷にも出す。Startで既定ON)
+DECLARE_PMID(kActionIDSpace, kKESCMPopupShowSrcMarksActionID, kKCMUIPrefix + 10)	// パネルのフライアウトの「Show Marks on Source」チェック式トグル(Source側にも枠を常時表示。OPPでも表示・印刷にも出す)。★既定 OFF で Start は触らない(2026-08-22 変更＝設定はパネル設定に保存され起動時に復元されるので、Start が上書きすると保存した選択が消える)
 DECLARE_PMID(kActionIDSpace, kKESCMPageMapToggleActionID, kKCMUIPrefix + 11)	// ページパネルのページ右クリック(RtMenuPagesPanel)のトグル「KCM: Register as Added/Removed Pages」(選択ページを「比較相手なし」として登録/解除。チェック/動的ラベルは kCustomEnabling。KESCMPageMap.cpp)
 DECLARE_PMID(kActionIDSpace, kKESCMPopupIgnorePageNumActionID, kKCMUIPrefix + 12)	// パネルのフライアウトの「Ignore Page Number Marker」チェック式トグル(ON=ノンブル(自動ページ番号)マーカーを含むフレームを比較から除外。★既定OFF=sIgnorePageNumberMarker の初期値。KESCMPageNumberMarker.cpp)
 DECLARE_PMID(kActionIDSpace, kKESCMPopupStartStopActionID, kKCMUIPrefix + 13)	// パネルのフライアウト先頭の「Start / Stop」(比較の開始/解除。旧トグルボタンをメニュー化。arm 状態で名前が Start↔Stop に動的変化=kCustomEnabling+SetNthActionName。KESCMPanelObserver.cpp の KESCMToggleStartStop)
@@ -285,6 +285,8 @@ DECLARE_PMID(kActionIDSpace, kKESCMPopupTranslucentBookDialogActionID, kKCMUIPre
 DECLARE_PMID(kActionIDSpace, kKESCMPopupModePixelActionID, kKCMUIPrefix + 42)	// ★フライアウトの「Compare mode > Pixel Changes」(2026-08-20)。既定。ページをラスタ化して画素を比べる本来の比較。Story Changes と相互排他=選択中の方に✓(kCustomEnabling+kSelectedAction。Marks opacity 25%/75% と同じ形)。実体 KESCMActionComponent.cpp
 DECLARE_PMID(kActionIDSpace, kKESCMPopupModeStoryActionID, kKCMUIPrefix + 43)	// ★フライアウトの「Compare mode > Story Changes」(2026-08-20)。ストーリーの本文を段落→文字の二段で比べ、Story Edits を「親=ストーリー / 子=変更箇所」のツリーで出す。★このモードでは比較リング(枠)を描かず、Hide Unchanged Spreads だけが灰色になる。⚠2026-08-21 訂正＝旧記述は「スクロール地図・Export Changed Pages・Prev/Next も灰色」と書いていたが**実装と食い違っていた**＝それらの根拠(ページ対応表・登録ページ・overflow「/」)は Story モードでも作られるので機能は生きている(Prev/Next は overset の巡回が独立して動く)。灰色にするのは「押しても何も起きない」ではなく「押すと壊れる」もの＝Hide Unchanged は sEntries が空だと「登録や overflow のあるスプレッド以外を全部隠す」
 DECLARE_PMID(kActionIDSpace, kKESCMStoryRowRefreshActionID, kKCMUIPrefix + 44)	// ★Story Edits の行の右クリック「Refresh Story Comparison」(2026-08-21 ユーザー要望「そのストーリーだけ比較を更新したい」)。その行のストーリーだけ本文差分を取り直し、子の変更箇所を今の状態に置き換える(実体 IKESCMStoryEditsFacade::RefreshRow → KESCMStoryDiffRun::RunOne)。★直し終えて差分が0件になっても**行は残り子だけ消える**＝答えているのは「今どこが違うか」であって「この行がまだ要るか」ではない。★kCustomEnabling で **Story モードのときだけ**有効(Pixel モード・Stop 中・Added の行では灰色)。⚠項目が1つしかないメニューなので、灰色＝**メニュー自体が出ない**(章行メニューと同じ挙動)
+
+DECLARE_PMID(kActionIDSpace, kKESCMPopupShowTgtMarksActionID, kKCMUIPrefix + 45)	// ★パネルのフライアウトの「Show Marks on Target」チェック式トグル(2026-08-22 ユーザー要望「ツールでボタンを押さなくても常にマークが出る様に、それをピクセルの方もストーリーの方にも」)。Source 版(+10)と対で、ON の間は Target 文書のマークを画面に常時表示する。★Pixel では比較リング(sTgtMarksOn→alwaysScreen)、Story では変更箇所の反転(ui/KESCMStoryPressMarks.cpp)＝同じトグルが両モードで意味を持つ。⚠画面のみ＝印刷/PDF は「Print comparison marks」が単独で決める(Source 版が印刷にも出るのとは非対称・意図的)。★既定 OFF で Start は触らない(Source 版と同じ＝設定はパネル設定に保存され、起動時に復元される)
 // (+15..+23 are all declared above - stale placeholders for them removed 2026-08-05 audit. Next free: +45)
 //DECLARE_PMID(kActionIDSpace, kKESCMActionID, kKCMUIPrefix + 41)
 // kKCMUIPrefix + 24/25/26/28 は使用中(KCM: Check / Save Check & Register / Load Check & Register / RtMenuPagesPanel の区切り線)。+27 は廃止・予約(上記)
@@ -476,6 +478,7 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMBookRowStateWidgetID, kKCMUIPrefix + 49)	// �
 #define kKESCMSyncViewsMenuKey		kKESCMStringPrefix "kKESCMSyncViewsMenuKey"	// パネルのフライアウト「Sync Layout Views」トグルのメニュー名
 #define kKESCMAlignViewsMenuKey		kKESCMStringPrefix "kKESCMAlignViewsMenuKey"	// パネルのフライアウト「Align Other Views to Active」(実行アクション)のメニュー名
 #define kKESCMShowSrcMarksMenuKey	kKESCMStringPrefix "kKESCMShowSrcMarksMenuKey"	// パネルのフライアウト「Show Marks on Source」トグルのメニュー名
+#define kKESCMShowTgtMarksMenuKey	kKESCMStringPrefix "kKESCMShowTgtMarksMenuKey"	// パネルのフライアウト「Show Marks on Target」トグルのメニュー名
 #define kKESCMPageMapToggleMenuKey	kKESCMStringPrefix "kKESCMPageMapToggleMenuKey"	// ページパネル右クリックのトグル「KCM: Register as Added/Removed Pages」の既定メニュー名(表示時は UpdateActionStates が Target=Added/Source=Removed に動的差し替え)
 #define kKESCMPageCheckMenuKey		kKESCMStringPrefix "kKESCMPageCheckMenuKey"	// ページパネル右クリックのトグル「KCM: Check」のメニュー名
 #define kKESCMPageRefreshCompareMenuKey	kKESCMStringPrefix "kKESCMPageRefreshCompareMenuKey"	// ページパネル右クリックの「KCM: Refresh Page Comparison」のメニュー名(選択ページの比較を再検出して更新)
@@ -716,6 +719,7 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMBookRowStateWidgetID, kKCMUIPrefix + 49)	// �
 #define kKESCMOpacity75SubMenuItemPosition	2.0	// サブメニュー「Marks opacity」内: 75%(25% と相互排他)
 // (9.27 = 「Show HUD」は 2026-08-06 に機能ごと撤去。位置番号は空き=別項目に使ってよい)
 #define kKESCMShowOldNumsMenuItemPosition	9.28	// チェック式トグル「Show Original Page Numbers」
+#define kKESCMShowTgtMarksMenuItemPosition	9.29	// チェック式トグル「Show Marks on Target」(★Source 版 9.30 の直上＝新旧の並びと同じ順序で読める)
 #define kKESCMShowSrcMarksMenuItemPosition	9.30	// チェック式トグル「Show Marks on Source」
 #define kKESCMScrollMapMenuItemPosition		9.32	// チェック式トグル「Show Scrollbar Map」
 #define kKESCMSyncViewsMenuItemPosition		9.34	// チェック式トグル「Sync Layout Views」

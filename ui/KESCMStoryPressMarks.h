@@ -4,23 +4,29 @@
 //
 //  Kohaku Change Marker (KESCM)
 //
-//  What the KESCM tool shows in the Story mode while the left button is held: EVERY edit in the
-//  window under the cursor, inverted, until the button comes back up.
+//  Which edits the Story mode is showing on the page right now, and in which of the two
+//  documents. Two things ask for them and they add up rather than compete:
 //
-//  ★★IT IS THE STORY MODE'S ANSWER TO THE PIXEL MODE'S REVEAL, AND IT IS DELIBERATELY A
-//  DIFFERENT SHAPE. The Pixel mode has no idea what changed - only which rectangles of the page
-//  came out different - so it draws frames around them. The Story mode knows exactly which
-//  CHARACTERS changed, so it lights those up instead and needs no frame around the page and no
-//  scaling with the zoom (user's request, 2026-08-22: "変化や追加などが有った部分を反転状態で
-//  マークを出して欲しい ... 拡大率で大きさは変わらない、ページへの外枠もいらない").
+//    * the "Show Marks on Target" / "Show Marks on Source" toggles - marks that STAY UP, the
+//      Story mode's half of what those two toggles already do for the Pixel mode's frames
+//      (user's request, 2026-08-22: "ツールでボタンを押さなくても常にマークが出る様に、
+//      それをピクセルの方もストーリーの方にも");
+//    * the KESCM tool's left button while it is held - the window under the cursor, for as long
+//      as the button is down, whether or not its toggle is on.
+//
+//  ★★IT IS THE STORY MODE'S ANSWER TO THE PIXEL MODE'S FRAMES, AND IT IS DELIBERATELY A DIFFERENT
+//  SHAPE. The Pixel mode has no idea what changed - only which rectangles of the page came out
+//  different - so it draws frames around them. The Story mode knows exactly which CHARACTERS
+//  changed, so it lights those up instead and needs no frame around the page and no scaling with
+//  the zoom (user's request: "拡大率で大きさは変わらない、ページへの外枠もいらない").
 //
 //  ★THE MARK ITSELF IS THE JUMP'S, UNCHANGED (user's call: "ジャンプと時につかってるのとおなじで
 //  いいです"). This file works out WHICH ranges; KESCMStoryMarker draws them, as the global text
 //  adornment it already was.
 //
-//  ★THE WINDOW UNDER THE CURSOR DECIDES WHICH DOCUMENT (user's call, 2026-08-22), which is the
-//  same rule the Pixel mode's reveal follows. It also decides what is markable at all: a deletion
-//  only exists in the older document, an insertion only in the newer one.
+//  ★WHICH DOCUMENT DECIDES WHAT IS MARKABLE AT ALL: a deletion only exists in the older document,
+//  an insertion only in the newer one, and a story that was added or removed outright exists in
+//  one of them and not the other.
 //
 //========================================================================================
 
@@ -29,19 +35,26 @@
 
 #include "BaseType.h"
 
-/** Light up every edit in one of the two compared documents, and leave it up.
+/** Work out what should be lit up now and put exactly that on screen.
 
-	Does nothing at all unless a Story comparison is armed - so the caller may call it on any
-	press without asking first.
+	★THE ONE ENTRY POINT, and it is idempotent: it reads the toggles, the press state and the
+	comparison, and installs the result. Callers do not decide what to show - they say "something
+	changed" and this decides. That is why it can be hung off a notification without either side
+	knowing what the other is for.
 
-	@param useSourceDocument kTrue for the older document (the one the source window shows),
-		kFalse for the newer one.
-	@return kTrue if anything was put on screen. kFalse leaves whatever was showing alone, which
-		is what lets a press in the Pixel mode leave a jump's marker where it was.
+	Does nothing (and takes down nothing it did not put up) unless a STORY comparison is armed, so
+	it is safe to call from anywhere, in either mode.
+
+	Call it whenever any of its inputs move: the toggles, the compare mode, a comparison being
+	built or thrown away, a row being refreshed, the button going down or coming up.
 */
-bool16	KESCMStoryPressMarksBegin(bool16 useSourceDocument);
+void	KESCMStoryMarksRefresh();
 
-/** Take them down again, if this file is what put them up. Safe to call on any release. */
+/** The tool's left button went down over one of the two windows. */
+void	KESCMStoryPressMarksBegin(bool16 useSourceDocument);
+
+/** ...and came up again. What the toggles asked for stays; what the press added goes.
+	Safe to call on any release, including one this file never heard the start of. */
 void	KESCMStoryPressMarksEnd();
 
 #endif // __KESCMStoryPressMarks_h__

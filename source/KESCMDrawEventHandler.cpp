@@ -82,7 +82,8 @@ bool16 KESCMDrawEventHandler::sShowOldNumbers = kFalse;	// 既定=OFF(フライ�
 bool16 KESCMDrawEventHandler::sAlwaysShowMarks = kFalse;	// 既定=OFF(フライアウト「Hold to Hide Marks」。ON=枠を画面に常時表示し押下中だけ隠す=極性反転)
 bool16 KESCMDrawEventHandler::sMarksTempHidden = kFalse;	// Hold to Hide Marks モード中、Target 窓でツール左hold中だけ kTrue(Target 常時表示枠の一時退避)
 bool16 KESCMDrawEventHandler::sSrcMarksTempHidden = kFalse;	// 同上の Source 版。Source 窓でツール左hold中だけ kTrue(Source 常時表示枠の一時退避)
-bool16 KESCMDrawEventHandler::sSrcMarksOn = kFalse;	// 既定=OFF。Start のたびに kTrue へ(フライアウト「Show Marks on Source」。再比較では戻さない 2026-07-25)
+bool16 KESCMDrawEventHandler::sSrcMarksOn = kFalse;	// 既定=OFF。フライアウト「Show Marks on Source」。⚠2026-08-22 に「Start のたびに kTrue へ」をやめた＝設定はパネル設定に保存され起動時に復元されるので、Start が上書きすると保存した選択が消える
+bool16 KESCMDrawEventHandler::sTgtMarksOn = kFalse;	// 同上の Target 版(フライアウト「Show Marks on Target」2026-08-22)。⚠画面のみ=印刷/PDF は sPrintMarks が決める。Start は触らない(上と同じ理由)
 													// ⚠立てているのは KESCMStartComparisonFor で、KESCMToggleStartStop はその呼び手の1つ。
 													//   ∴ブック比較の章行「Start Change Marker」も同じ道を通る(2026-08-19 不具合再検査 B-U5 3周目で訂正)
 IDataBase* KESCMDrawEventHandler::sSrcDB = nil;
@@ -1593,7 +1594,12 @@ bool16 KESCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 	// 「Hold to Hide Marks」(極性反転): モード ON の間は画面(!printing)で枠を常時表示。ただしツール左hold中
 	// (sMarksTempHidden)は隠す。画面のみ=印刷/PDF は下の sPrintMarks が独立して決める(alwaysScreen は
 	// !printing ゲートで印刷文脈には一切効かせない=印刷は従来どおり Print comparison marks のみで制御)。
-	const bool16 alwaysScreen = sAlwaysShowMarks && !sMarksTempHidden && !printing;
+	// ★「Show Marks on Target」(sTgtMarksOn)も同じ口から入れる(2026-08-22)。⇒ ツールを押さなくても
+	//   画面に出続ける。⚠**temp-hide は共有する**＝「Hold to Hide Marks」が ON のときだけ立つフラグなので、
+	//   あちらが OFF なら押しても隠れず、ON なら両方が押下中に隠れる(2つのトグルで挙動が割れない)。
+	// ⚠**印刷/PDF には効かせない**＝!printing ゲートの内側に置く。Target 側の出力は sPrintMarks が
+	//   単独で決める仕様(Source 側の sSrcMarksOn が印刷にも出るのとは非対称で、これは意図的)。
+	const bool16 alwaysScreen = (sAlwaysShowMarks || sTgtMarksOn) && !sMarksTempHidden && !printing;
 	const bool16 wantMarks = !suppressForPrint && (sPrintMarks || sMarksVisible || alwaysScreen || isThumb) && anyMarkableContent;
 	// ★★Story モードでは比較リング(sEntries 由来)を描かない(2026-08-21・Task 8)。ストーリー差分は
 	//   entry を1つも作らないので実際には sEntries が空で、下の find() は必ず外れる ---- が、

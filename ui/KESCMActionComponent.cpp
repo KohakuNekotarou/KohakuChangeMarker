@@ -51,6 +51,7 @@
 #include "KESCMChangeNav.h"			// KESCMRefreshNavPosition(overset トグルで Prev/Next の対象数を更新)
 #include "KESCMStoryRefresh.h"		// KESCMStoryMenuRow/CanRefresh/RefreshMenuRow(Story Edits 行の右クリック「Refresh Story Comparison」)
 #include "KESCMPanelAlpha.h"		// KESCMGetPanelTranslucent/Set/Apply(フライアウト「Translucent Panel」)
+#include "KESCMStoryPressMarks.h"	// KESCMStoryMarksRefresh(Story モードの常時表示マークを作り直す)
 // (★`IActiveContext.h` / `IDocument.h` / `PersistUtils.h` の3本は 2026-08-18 に撤去＝不具合再検査 B-U3。
 //  **どれも一度も使っていなかった**。DoAction / UpdateActionStates は `IActiveContext*` を受け取るが
 //  仮引数名ごとコメントアウトしてあり、「アクティブ文書 → db」の解決は 2026-08-13 の model/UI 分割で
@@ -203,6 +204,27 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 			//   変更/overflow/登録集合(KESCMCollectChangedPageUIDs が引く)で、枠が出得るページと一致する。
 			KESCMTryRefreshPagesPanelThumbnails(srcDB);
 			PMString msg(srcMarksOn ? "Source marks: on." : "Source marks: off.");
+			msg.SetTranslatable(kFalse);
+			KESCMSetStatus(msg);
+			break;
+		}
+
+		// 「Show Marks on Target」トグル: フラグを反転して Target 文書を再描画する。★Source 版と対で、
+		// ON の間はツールを押さなくてもマークが出たままになる(2026-08-22 ユーザー要望
+		// 「ツールでボタンを押さなくても常にマークが出る様に」)。Start のたびに既定 ON へ戻る。
+		// ⚠★★**2つの機構に効く**＝Pixel の比較リングは描画側が sTgtMarksOn を直接見る
+		//   (KESCMDrawEventHandler の alwaysScreen)が、Story の反転マークは別機構(グローバルテキスト
+		//   アドーンメント)なので、こちらから作り直しを頼む。同じトグルで両モードが動くのはそのため。
+		// ⚠Pages パネルのサムネイルは触らない＝サムネイルは isThumb で常にマークを描くので、このトグルで
+		//   見た目は変わらない(Source 版が作り直すのは、あちらの枠が wantSrcMarks に依存するため)。
+		case kKESCMPopupShowTgtMarksActionID:
+		{
+			InterfacePtr<IKESCMCompareFacade> compare(Utils<IKESCMCompareFacade>().QueryUtilInterface());
+			const bool16 tgtMarksOn = !compare->GetShowTargetMarks();
+			compare->SetShowTargetMarks(tgtMarksOn);
+			KESCMStoryMarksRefresh();		// Story モードの反転マーク(Pixel モードでは何もしない)
+			compare->InvalidateDB(compare->GetArmedTargetDB());
+			PMString msg(tgtMarksOn ? "Target marks: on." : "Target marks: off.");
 			msg.SetTranslatable(kFalse);
 			KESCMSetStatus(msg);
 			break;
@@ -776,6 +798,13 @@ void KESCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionSta
 		{
 			int16 actionState = kEnabledAction;
 			if (Utils<IKESCMCompareFacade>()->GetShowSourceMarks())
+				actionState |= kSelectedAction;
+			listToUpdate->SetNthActionState(i, actionState);
+		}
+		else if (action == kKESCMPopupShowTgtMarksActionID)
+		{
+			int16 actionState = kEnabledAction;
+			if (Utils<IKESCMCompareFacade>()->GetShowTargetMarks())
 				actionState |= kSelectedAction;
 			listToUpdate->SetNthActionState(i, actionState);
 		}

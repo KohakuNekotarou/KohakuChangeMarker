@@ -36,6 +36,7 @@ resource StringTable (kSDKDefStringsResourceID + index_enUS)
 
                 kSDKDefAboutThisPlugInMenuKey,			kSDKDefAboutThisPlugInMenuValue_enUS,
                 kKESCMUsageMenuKey,				"How to Use...",
+                kKESCMShowTgtMarksMenuKey,			"Show Marks on Target",
                 kKESCMShowSrcMarksMenuKey,			"Show Marks on Source",
                 kKESCMPageMapToggleMenuKey,			"KCM: Register as Added/Removed Pages",
                 kKESCMPageCheckMenuKey,				"KCM: Check",

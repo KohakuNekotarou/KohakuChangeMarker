@@ -157,6 +157,8 @@ public:
 
 	virtual bool16		GetShowSourceMarks()	{ return KESCMDrawEventHandler::sSrcMarksOn; }
 	virtual void		SetShowSourceMarks(bool16 on)		{ KESCMDrawEventHandler::sSrcMarksOn = on; }
+	virtual bool16		GetShowTargetMarks()	{ return KESCMDrawEventHandler::sTgtMarksOn; }
+	virtual void		SetShowTargetMarks(bool16 on)		{ KESCMDrawEventHandler::sTgtMarksOn = on; }
 	virtual bool16		GetShowOldPageNumbers()	{ return KESCMDrawEventHandler::sShowOldNumbers; }
 	virtual void		SetShowOldPageNumbers(bool16 on)	{ KESCMDrawEventHandler::sShowOldNumbers = on; }
 	virtual bool16		GetHoldToHideMarks()	{ return KESCMDrawEventHandler::sAlwaysShowMarks; }

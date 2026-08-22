@@ -31,6 +31,7 @@
 // General includes:
 #include "AutoGSave.h"
 #include "CPMUnknown.h"
+#include <set>			// the documents to repaint when a mark moves between them
 #include "UIDRef.h"
 #include "Utils.h"
 
@@ -52,11 +53,14 @@ namespace
 //   task there, and a global text adornment is drawn there. Unlike the comparison marks, this one
 //   is deliberately NOT drawn for printing or export (see GetIsActive), which is what keeps the
 //   background threads out of it entirely.
-bool16            gHasMark   = kFalse;	// the fast path: !gMarkByStory.empty(), kept as a flag
-IDataBase*        gMarkDB    = nil;		// an ADDRESS, only ever compared against the run's own database
-KESCMStoryMarkMap gMarkByStory;			// story UID -> its ranges, each list merged
-PMReal            gMarkOpacity(1.0);	// 1.0 for the jump; the panel's 25%/75% for a press
-bool16            gShutdown  = kFalse;
+bool16             gHasMark   = kFalse;		// the fast path: !gMarkDocs.empty(), kept as a flag
+KESCMStoryMarkDocs gMarkDocs;				// database -> story UID -> its ranges, each list merged.
+											// ⚠The database is an ADDRESS, only ever compared against
+											// the run's own - never dereferenced
+PMReal             gMarkOpacity(1.0);		// 1.0 for the jump; the panel's 25%/75% for the rest
+bool16             gPersistent = kFalse;	// kTrue while a toggle or a held button is holding it up,
+											// which is what makes the jump stand aside (see Show)
+bool16             gShutdown  = kFalse;
 
 // The whole marked span across every story, which is a free way to refuse most runs before
 // asking any of them which story they belong to (that question costs a Query). Meaningless
@@ -127,11 +131,12 @@ bool16 KESCMStoryMarkerFindRunRanges(const IWaxRun* waxRun, KESCMMarkRangeList& 
 	if (model == nil)
 		return kFalse;
 	const UIDRef modelRef = ::GetUIDRef(model);
-	if (modelRef.GetDataBase() != gMarkDB)
+	KESCMStoryMarkDocs::const_iterator doc = gMarkDocs.find(modelRef.GetDataBase());
+	if (doc == gMarkDocs.end())
 		return kFalse;
 
-	KESCMStoryMarkMap::const_iterator story = gMarkByStory.find(modelRef.GetUID());
-	if (story == gMarkByStory.end())
+	KESCMStoryMarkMap::const_iterator story = doc->second.find(modelRef.GetUID());
+	if (story == doc->second.end())
 		return kFalse;
 
 	KESCMIntersectMarkRanges(story->second, runStart, runEnd, outRanges);
@@ -162,83 +167,97 @@ bool16 KESCMStoryMarkerRunIsMarked(const IWaxRun* waxRun)
 	if (model == nil)
 		return kFalse;
 	const UIDRef modelRef = ::GetUIDRef(model);
-	if (modelRef.GetDataBase() != gMarkDB)
+	KESCMStoryMarkDocs::const_iterator doc = gMarkDocs.find(modelRef.GetDataBase());
+	if (doc == gMarkDocs.end())
 		return kFalse;
 
-	KESCMStoryMarkMap::const_iterator story = gMarkByStory.find(modelRef.GetUID());
-	if (story == gMarkByStory.end())
+	KESCMStoryMarkMap::const_iterator story = doc->second.find(modelRef.GetUID());
+	if (story == doc->second.end())
 		return kFalse;
 
 	return KESCMMarkRangesTouchRun(story->second, runStart, runEnd);
 }
 
-/* KESCMStoryMarkerSetRanges
+/* KESCMStoryMarkerSetDocs
    Install a set of ranges as THE mark, replacing whatever was there. Merging happens here so that
    no caller can hand in overlaps (which would invert twice and leave a hole), and the span the
    fast path tests is worked out in the same pass.
+
+   @param persistent kTrue when a toggle or a held button is holding this up - see Show for what
+      that changes.
 */
-void KESCMStoryMarkerSetRanges(IDataBase* db, const KESCMStoryMarkMap& byStory, const PMReal& opacity)
+void KESCMStoryMarkerSetDocs(const KESCMStoryMarkDocs& docs, const PMReal& opacity, bool16 persistent)
 {
-	gMarkByStory.clear();
-	gMarkDB = nil;
+	gMarkDocs.clear();
 	gHasMark = kFalse;
+	gPersistent = kFalse;
 	gMarkOpacity = opacity;
 	gMarkLowest = 0;
 	gMarkHighest = 0;
 
-	if (db == nil)
-		return;
-
 	bool16 first = kTrue;
-	for (KESCMStoryMarkMap::const_iterator it = byStory.begin(); it != byStory.end(); ++it)
+	for (KESCMStoryMarkDocs::const_iterator doc = docs.begin(); doc != docs.end(); ++doc)
 	{
-		if (it->first == kInvalidUID)
+		if (doc->first == nil)
 			continue;
 
-		KESCMMarkRangeList ranges = it->second;
-		KESCMMergeMarkRanges(ranges);
-		if (ranges.empty())
-			continue;					// a story whose ranges were all empty is not a story to keep
+		KESCMStoryMarkMap kept;
 
-		if (first || ranges.front().fFrom < gMarkLowest)
-			gMarkLowest = ranges.front().fFrom;
-		if (first || ranges.back().fTo > gMarkHighest)
-			gMarkHighest = ranges.back().fTo;
-		first = kFalse;
+		for (KESCMStoryMarkMap::const_iterator it = doc->second.begin(); it != doc->second.end(); ++it)
+		{
+			if (it->first == kInvalidUID)
+				continue;
 
-		gMarkByStory[it->first].swap(ranges);
+			KESCMMarkRangeList ranges = it->second;
+			KESCMMergeMarkRanges(ranges);
+			if (ranges.empty())
+				continue;				// a story whose ranges were all empty is not a story to keep
+
+			if (first || ranges.front().fFrom < gMarkLowest)
+				gMarkLowest = ranges.front().fFrom;
+			if (first || ranges.back().fTo > gMarkHighest)
+				gMarkHighest = ranges.back().fTo;
+			first = kFalse;
+
+			kept[it->first].swap(ranges);
+		}
+
+		if (!kept.empty())
+			gMarkDocs[doc->first].swap(kept);
 	}
 
-	if (!gMarkByStory.empty())
+	if (!gMarkDocs.empty())
 	{
-		gMarkDB = db;
 		gHasMark = kTrue;
+		gPersistent = persistent;
 	}
 }
 
 /* KESCMStoryMarkerInstall
-   Put a set up, take whatever was there down, and repaint both - the half of Show and ShowRanges
-   that is the same for either of them.
+   Put a set up, take whatever was there down, and repaint everything involved - the half of Show
+   and ShowDocs that is the same for either of them.
 
-   ⚠THE OLD SET'S DOCUMENT IS REPAINTED TOO when the new one is somewhere else, or the previous
-   mark would stay on screen in a window nobody is looking at any more. That is not hypothetical
-   here: a press in the source window replaces a jump's mark in the target one.
+   ⚠EVERY DOCUMENT THAT WAS MARKED IS REPAINTED TOO, not just the ones that still are, or a mark
+   would stay on screen in a window nobody is looking at any more. That is not hypothetical here:
+   turning "Show Marks on Source" off leaves the target's marks up and has to wipe the source's.
 
-   @param countdown kTrue for the jump's flash, kFalse for the tool's press (which the mouse
-      button takes down). Either way any countdown already running is dealt with, so a press
-      cannot inherit a jump's clock.
+   @param countdown kTrue for the jump's flash, kFalse for anything that stays up. Either way any
+      countdown already running is dealt with, so a standing mark cannot inherit a jump's clock.
 */
-void KESCMStoryMarkerInstall(IDataBase* db, const KESCMStoryMarkMap& byStory,
-							 const PMReal& opacity, bool16 countdown)
+void KESCMStoryMarkerInstall(const KESCMStoryMarkDocs& docs, const PMReal& opacity,
+							 bool16 countdown, bool16 persistent)
 {
-	IDataBase* const previousDB = gHasMark ? gMarkDB : nil;
+	std::set<IDataBase*> toRepaint;
+	for (KESCMStoryMarkDocs::const_iterator it = gMarkDocs.begin(); it != gMarkDocs.end(); ++it)
+		toRepaint.insert(it->first);
 
-	KESCMStoryMarkerSetRanges(db, byStory, opacity);
+	KESCMStoryMarkerSetDocs(docs, opacity, persistent);
 
-	if (previousDB != nil && previousDB != gMarkDB)
-		KESCMStoryMarkerRepaint(previousDB);
-	if (gMarkDB != nil)
-		KESCMStoryMarkerRepaint(gMarkDB);
+	for (KESCMStoryMarkDocs::const_iterator it = gMarkDocs.begin(); it != gMarkDocs.end(); ++it)
+		toRepaint.insert(it->first);
+
+	for (std::set<IDataBase*>::const_iterator db = toRepaint.begin(); db != toRepaint.end(); ++db)
+		KESCMStoryMarkerRepaint(*db);
 
 	if (countdown && gHasMark)
 		KESCMStoryMarkerExpiry::Start();
@@ -480,6 +499,14 @@ void KESCMStoryMarker::Show(IDataBase* db, UID storyUID, TextIndex from, TextInd
 	if (gShutdown)
 		return;
 
+	// ★★A STANDING MARK WINS, AND THE JUMP SAYS NOTHING (2026-08-22). While "Show Marks on ..." is
+	//   on, or the tool's button is down, every changed character in that document is already lit -
+	//   including the one this jump is aimed at. Putting a second mark up would replace the standing
+	//   one (they are exclusive - see the header), so the reader would watch the whole document go
+	//   dark to gain a pointer at something already visible.
+	if (gHasMark && gPersistent)
+		return;
+
 	if (db == nil || storyUID == kInvalidUID)
 	{
 		KESCMStoryMarker::Clear();
@@ -496,29 +523,29 @@ void KESCMStoryMarker::Show(IDataBase* db, UID storyUID, TextIndex from, TextInd
 	//   ⚠It is widened HERE and not in the range list, which drops empty ranges: what a zero-width
 	//     range should become is a decision about what the reader is being shown, and the list is
 	//     numbers (KESCMStoryMarkRanges.h).
-	KESCMStoryMarkMap one;
-	one[storyUID].push_back(KESCMMarkRange(from, (to > from) ? to : (from + 1)));
+	KESCMStoryMarkDocs one;
+	one[db][storyUID].push_back(KESCMMarkRange(from, (to > from) ? to : (from + 1)));
 
 	// A flash, not a highlight - so this one gets the countdown. Restarting an already-running one
 	// is that call's job, so each jump gets the mark for the full time.
-	KESCMStoryMarkerInstall(db, one, PMReal(1.0), kTrue /*countdown*/);
+	KESCMStoryMarkerInstall(one, PMReal(1.0), kTrue /*countdown*/, kFalse /*persistent*/);
 }
 
-void KESCMStoryMarker::ShowRanges(IDataBase* db, const KESCMStoryMarkMap& byStory, const PMReal& opacity)
+void KESCMStoryMarker::ShowDocs(const KESCMStoryMarkDocs& docs, const PMReal& opacity)
 {
 	if (gShutdown)
 		return;
 
-	if (db == nil || byStory.empty())
+	if (docs.empty())
 	{
 		KESCMStoryMarker::Clear();
 		return;
 	}
 
-	// ★NO COUNTDOWN. What takes this one down is the mouse button coming up, not the clock
-	//   (KESCMStoryPressMarks). Any countdown already running belongs to a jump that this press
+	// ★NO COUNTDOWN. What takes these down is a toggle going off or the mouse button coming up, not
+	//   the clock (KESCMStoryPressMarks). Any countdown already running belongs to a jump that this
 	//   has just replaced, and Install stops it.
-	KESCMStoryMarkerInstall(db, byStory, opacity, kFalse /*countdown*/);
+	KESCMStoryMarkerInstall(docs, opacity, kFalse /*countdown*/, kTrue /*persistent*/);
 }
 
 void KESCMStoryMarker::Clear()
@@ -528,17 +555,21 @@ void KESCMStoryMarker::Clear()
 	if (!gHasMark)
 		return;
 
-	IDataBase* const db = gMarkDB;
+	// ⚠The documents are collected BEFORE the flag comes down, and repainted after, so the redraw
+	//   that follows is the one that takes the mark off. Repainting first would draw it again.
+	std::set<IDataBase*> toRepaint;
+	for (KESCMStoryMarkDocs::const_iterator it = gMarkDocs.begin(); it != gMarkDocs.end(); ++it)
+		toRepaint.insert(it->first);
+
 	gHasMark = kFalse;
-	gMarkDB = nil;
-	gMarkByStory.clear();
+	gPersistent = kFalse;
+	gMarkDocs.clear();
 	gMarkOpacity = PMReal(1.0);
 	gMarkLowest = 0;
 	gMarkHighest = 0;
 
-	// ⚠The flag is down BEFORE the repaint, so the redraw it asks for is the one that takes the
-	//   mark off. Repainting first would draw it again.
-	KESCMStoryMarkerRepaint(db);
+	for (std::set<IDataBase*>::const_iterator db = toRepaint.begin(); db != toRepaint.end(); ++db)
+		KESCMStoryMarkerRepaint(*db);
 }
 
 bool16 KESCMStoryMarker::IsShowing()
@@ -553,8 +584,8 @@ void KESCMStoryMarker::Shutdown()
 	//   ★Same door, and the same reason, as KBS's marker shutdown.
 	gShutdown = kTrue;
 	gHasMark = kFalse;
-	gMarkDB = nil;
-	gMarkByStory.clear();
+	gPersistent = kFalse;
+	gMarkDocs.clear();
 	KESCMStoryMarkerExpiry::Shutdown();
 }
 

@@ -7,10 +7,10 @@
 //  See KESCMStoryPressMarks.h for what this shows and why.
 //
 //  Everything here is a READ of the Story Edits list plus one call to the marker. Nothing is
-//  cached between presses: the list can be rebuilt by a comparison, a refresh or a row's own
+//  cached between refreshes: the list can be rebuilt by a comparison, a refresh or a row's own
 //  right-click menu at any moment, and a cache of ranges would go stale silently - the marks
-//  would keep pointing at where the words used to be. A press over a document with a few
-//  thousand edits builds a few thousand integers, which is not worth being wrong for.
+//  would keep pointing at where the words used to be. Rebuilding costs a few thousand integers
+//  on a document with a few thousand edits, which is not worth being wrong for.
 //
 //========================================================================================
 
@@ -25,7 +25,7 @@
 #include "Utils.h"
 
 // Project includes:
-#include "IKESCMCompareFacade.h"		// armed state, the two databases, the opacity choice
+#include "IKESCMCompareFacade.h"		// armed state, the two databases, the toggles, the opacity
 #include "IKESCMStoryEditsFacade.h"		// the rows and their changes - what is marked
 #include "KESCMBoundaryID.h"			// kKESCMModeStory
 #include "KESCMStoryMarker.h"			// the adornment that draws them
@@ -34,10 +34,16 @@
 namespace
 {
 
-// Is this file what is currently on screen? ⚠Without it, a release in the PIXEL mode would take
-// down a jump's marker that this file never put up - the release path cannot tell the modes apart
-// and should not have to.
-bool16 gPressShowing = kFalse;
+// Is the tool's button down, and over which window? ⚠Not "is anything showing" - the toggles can
+// be holding marks up with no button down at all.
+bool16 gPressActive = kFalse;
+bool16 gPressUseSource = kFalse;
+
+// Is this file what is currently on screen? ⚠Without it, a refresh with nothing to show would take
+// down a JUMP's marker that this file never put up. The jump and these marks share one adornment
+// (they are exclusive - see KESCMStoryMarker.h), so "nothing to show" has to mean "clear what I
+// put up", not "clear whatever is there".
+bool16 gShowing = kFalse;
 
 /* KESCMStoryWholeTextEnd
    One past the last character a reader can see in this story - what an Added or Removed story is
@@ -66,23 +72,18 @@ bool16 KESCMStoryWholeTextEnd(IDataBase* db, UID storyUID, TextIndex& outEnd)
 	return (outEnd > 0) ? kTrue : kFalse;
 }
 
-}	// anonymous namespace
+/* KESCMStoryCollectRanges
+   Every edit that is visible in ONE of the two documents, as ranges per story.
 
-//----------------------------------------------------------------------------------------
-
-bool16 KESCMStoryPressMarksBegin(bool16 useSourceDocument)
+   @param db the document to read the ranges out of.
+   @param useSourceDocument kTrue when db is the older one.
+   @param out [out] cleared, then filled. Empty when nothing in this document is markable.
+*/
+void KESCMStoryCollectRanges(IDataBase* db, bool16 useSourceDocument, KESCMStoryMarkMap& out)
 {
-	InterfacePtr<IKESCMCompareFacade> compare(Utils<IKESCMCompareFacade>().QueryUtilInterface());
-	if (compare == nil || !compare->IsArmed())
-		return kFalse;
-	if (compare->GetCompareMode() != kKESCMModeStory)
-		return kFalse;
-
-	IDataBase* const db = useSourceDocument ? compare->GetArmedSourceDB() : compare->GetArmedTargetDB();
-	if (db == nil || !compare->IsDocDBOpen(db))
-		return kFalse;
-
-	KESCMStoryMarkMap byStory;
+	out.clear();
+	if (db == nil)
+		return;
 
 	const int32 rowCount = Utils<IKESCMStoryEditsFacade>()->GetRowCount();
 	for (int32 n = 0; n < rowCount; ++n)
@@ -175,35 +176,87 @@ bool16 KESCMStoryPressMarksBegin(bool16 useSourceDocument)
 			//   not happen - the list holds one row per story per side - but if it ever did, an
 			//   assignment would silently throw the first one's edits away. Appending cannot: the
 			//   marker merges each story's list before it draws anything.
-			KESCMMarkRangeList& dst = byStory[row.fStoryUID];
+			KESCMMarkRangeList& dst = out[row.fStoryUID];
 			dst.insert(dst.end(), ranges.begin(), ranges.end());
 		}
 	}
-
-	if (byStory.empty())
-		return kFalse;
 
 	// ⚠THE RANGES ARE NOT CLAMPED TO THE STORY AS IT STANDS NOW, and the jump's are. The jump makes
 	//   a selection, which a stale index would have the suite refuse; this only asks the text engine
 	//   "is any of this run marked", and a range past the end of the story simply never meets a run.
 	//   Reading every story's length to clamp them would cost a Query per row for no answer.
-	KESCMStoryMarker::ShowRanges(db, byStory, compare->GetSelectedMarkOpacity());
-	gPressShowing = kTrue;
-	return kTrue;
+}
 
-	// ★WHAT IS DELIBERATELY NOT MARKED: a row whose diff produced nothing and which HAS a partner
-	//   in the other version. The diff either refused it or ran and found the words identical, and
-	//   neither of those is "all of this changed". The row list still names the story, which is
-	//   where "something about this story moved, but not its words" belongs.
+}	// anonymous namespace
+
+//----------------------------------------------------------------------------------------
+
+void KESCMStoryMarksRefresh()
+{
+	KESCMStoryMarkDocs docs;
+	PMReal opacity(1.0);
+
+	InterfacePtr<IKESCMCompareFacade> compare(Utils<IKESCMCompareFacade>().QueryUtilInterface());
+	if (compare != nil && compare->IsArmed() && compare->GetCompareMode() == kKESCMModeStory)
+	{
+		opacity = compare->GetSelectedMarkOpacity();
+
+		// ★A TOGGLE AND A PRESS ASK FOR THE SAME THING, so they are ORed rather than ranked. A
+		//   press over a window whose toggle is already on changes nothing, which is right: every
+		//   edit in it is lit either way.
+		const bool16 wantTarget = compare->GetShowTargetMarks() || (gPressActive && !gPressUseSource);
+		const bool16 wantSource = compare->GetShowSourceMarks() || (gPressActive && gPressUseSource);
+
+		IDataBase* const targetDB = compare->GetArmedTargetDB();
+		IDataBase* const sourceDB = compare->GetArmedSourceDB();
+
+		if (wantTarget && targetDB != nil && compare->IsDocDBOpen(targetDB))
+		{
+			KESCMStoryMarkMap byStory;
+			KESCMStoryCollectRanges(targetDB, kFalse, byStory);
+			if (!byStory.empty())
+				docs[targetDB].swap(byStory);		// ⚠only when non-empty: an empty entry would
+		}											//   make docs look occupied and clear nothing
+
+		if (wantSource && sourceDB != nil && compare->IsDocDBOpen(sourceDB))
+		{
+			KESCMStoryMarkMap byStory;
+			KESCMStoryCollectRanges(sourceDB, kTrue, byStory);
+			if (!byStory.empty())
+				docs[sourceDB].swap(byStory);
+		}
+	}
+
+	if (docs.empty())
+	{
+		// ★ONLY TAKE DOWN WHAT THIS FILE PUT UP. A jump's pointer may be on screen, and it is not
+		//   ours to clear (see gShowing).
+		if (gShowing)
+		{
+			gShowing = kFalse;
+			KESCMStoryMarker::Clear();
+		}
+		return;
+	}
+
+	KESCMStoryMarker::ShowDocs(docs, opacity);
+	gShowing = kTrue;
+}
+
+void KESCMStoryPressMarksBegin(bool16 useSourceDocument)
+{
+	gPressActive = kTrue;
+	gPressUseSource = useSourceDocument;
+	KESCMStoryMarksRefresh();
 }
 
 void KESCMStoryPressMarksEnd()
 {
-	if (!gPressShowing)
-		return;
+	if (!gPressActive)
+		return;					// nothing was pressed - leave a jump's marker, and the toggles, alone
 
-	gPressShowing = kFalse;
-	KESCMStoryMarker::Clear();
+	gPressActive = kFalse;
+	KESCMStoryMarksRefresh();	// what the toggles asked for comes back; the rest goes
 }
 
 // End, KESCMStoryPressMarks.cpp.

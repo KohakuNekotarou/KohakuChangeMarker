@@ -52,6 +52,7 @@
 #include "KESCMScrollMap.h"			// KESCMScrollMapAttach / DetachAll / InvalidateAll
 #include "KESCMStoryTree.h"			// KESCMStoryTreeRebuild
 #include "KESCMStorySection.h"		// KESCMUpdateStorySectionLabel
+#include "KESCMStoryPressMarks.h"	// KESCMStoryMarksRefresh(常時表示マークを比較結果に追随させる)
 #include "KESCMViewSync.h"			// KESCMInvalidateSyncCaches
 
 #include <set>						// 同一文書比較のときに2つのページ集合を合わせる(API 監査 B5)
@@ -110,6 +111,12 @@ void KESCMModelChangeObserver::Update(const ClassID& theChange, ISubject* /*theS
 		// ビュー同期が持つページ矩形/除外対応表のキャッシュは、比較の組み合わせが変わると無効。
 		// (呼び忘れても 250ms の TTL で追従するが、明示すれば次の1通知から正しい)
 		KESCMInvalidateSyncCaches();
+
+		// ★Story モードの常時表示マークも「比較そのもの」なので、ここで作り直す(2026-08-22)。
+		//   Stop なら arm が落ちているので中で消え、比較が成立したなら新しい結果で出し直す。
+		//   ⚠Pixel モードの比較では下の StoryEditsRebuilt が飛ばないことがあるので、**両方の口で呼ぶ**
+		//     ＝Story で出したまま Pixel に切り替えて比較したときに、古いマークが残らない。
+		KESCMStoryMarksRefresh();
 
 		if (theChange == kKESCMMarksRebuiltMessage)
 		{
@@ -212,6 +219,11 @@ void KESCMModelChangeObserver::Update(const ClassID& theChange, ISubject* /*theS
 		//   パネルが閉じていてもセクションが畳まれていても、どちらも中で静かに諦める。
 		KESCMStoryTreeRebuild();
 		KESCMUpdateStorySectionLabel();
+
+		// ★常時表示のマークは比較結果そのものなので、作り直されたら作り直す(2026-08-22)。
+		//   ⚠ここが無いと「Refresh Story Comparison で直した行のマークが古いまま」になる＝
+		//     直した本人には最も気づきにくい壊れ方。冪等なので、出していないときは何もしない。
+		KESCMStoryMarksRefresh();
 		return;
 	}
 
