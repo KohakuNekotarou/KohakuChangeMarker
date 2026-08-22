@@ -156,14 +156,14 @@ struct KESCMStoryChange
 	/** WHICH attribute this is, when fWhat is kAttr (2026-08-22). kKESCMStoryAttrNone for a text
 		change.
 
-		★★fWhat SAYS "not the words", THIS SAYS WHAT INSTEAD - and the panel needs both because it
-		treats them differently. A ruby change is drawn on TWO LINES, the reading above the
-		characters; a KENTEN change is not, because there is nothing to write up there - the mark
-		itself is what changed, and its kind is a name ("KentenBlackCircle") rather than something
-		the reader reads (user's call, 2026-08-22: the kind goes in the Change column instead).
-		⚠So "is this drawn on two lines" is THIS field, never fWhat. Deciding it from fWhat was
-		  right while ruby was the only attribute, and would have given every kenten row an empty
-		  upper line the moment the second one arrived.
+		★★fWhat SAYS "not the words", THIS SAYS WHAT INSTEAD - and the panel needs both because
+		fWhat does not promise the VALUE is something a reader reads. Kenten proved that in a day:
+		its change filled these very fields with a KIND ("KentenBlackCircle"), so anything asking
+		fWhat treated a name as a reading - which the message area did, drawing it over the older
+		text (found 2026-08-23).
+		⚠So "does this carry a reading", and "is this drawn on two lines", is THIS field, never
+		  fWhat. ★Kenten is no longer reported at all (2026-08-23, user's call), which makes the two
+		  agree again - and that is precisely when a stand-in stops being noticed.
 
 		★The row has a field of the same name and the same values (KESCMStoryRow::fAttrKind), worked
 		out from these by SetRowChanges - the row names the attribute, the children carry it. */
@@ -230,14 +230,13 @@ struct KESCMStoryRow
 		the row can name it rather than falling back on "Attr" (2026-08-22, user's request:
 		"Changeは、Rubyで").
 
-		★A NUMBER, NOT A FLAG, because ruby is the first of these and not the last. KENTEN (圏点)
-		is meant to follow, and it is a different mechanism again: ruby is a STRAND
-		(IRubyAttrStrand, run-based, RubyFlag 1/2 in the snippet) while kenten is a set of
-		CHARACTER ATTRIBUTES (the twenty kTAKenten*Boss on kCharAttrStrandBoss, the kind living in
-		kTAKentenKindBoss with Kenten_None for off). What they share is the only thing the panel
-		cares about: the text did not move and something over it did.
-		⇒ Adding kenten is one more value here and one more label - not another field, and not
-		  another branch in every place that draws a row.
+		★A NUMBER, NOT A FLAG, so that a second attribute is one more value here and one more label
+		- not another field, and not another branch in every place that draws a row. KENTEN (圏点)
+		was that second value on 2026-08-22 and was withdrawn on 2026-08-23 (user's call: the list
+		shows text changes and ruby, nothing else), which is the shape working as intended: the
+		comparison stopped producing it and no drawing code had to change.
+		⚠RUBY IS THEREFORE THE ONLY VALUE ANY ROW CARRIES TODAY. Do not simplify this to a flag on
+		  the strength of that - the reason it is a number has not gone away.
 
 		⚠NOT PART OF fKinds. That one comes from the two documents' change COUNTERS, and a row
 		  refresh deliberately leaves it alone because reading the counters again gives the same
@@ -422,9 +421,9 @@ namespace KESCMStoryList
 	void SetRowChanges(int32 nth, const std::vector<KESCMStoryChange>& changes, bool16 textCompared);
 
 	/** Drop the rows whose story differs only in HOW IT IS SET - a font, a colour, a style, a
-		table stroke - and keep the ones whose CONTENT differs: the words, or the ruby and kenten
-		written over them (2026-08-22, user's call: "属性の変更は無視。見つけるのは Text とルビと
-		圏点だけ").
+		table stroke - and keep the ones whose CONTENT differs: the words, or the ruby written over
+		them (2026-08-22, user's call: "属性の変更は無視"; narrowed to text and ruby on 2026-08-23,
+		"ストーリーモードの StoryEdit にでるのは、テキストの変更と、ルビだけで").
 
 		★THE RULE IS KESCMStoryRowFilter.h AND IS NOT REPEATED HERE. It is a free function over
 		three plain numbers precisely so that it can be measured outside InDesign

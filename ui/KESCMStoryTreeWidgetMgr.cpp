@@ -89,8 +89,9 @@ namespace
 	nobody touched, the row can say so.
 	⚠It is checked before the counters and after Added/Removed/None: those three describe the row
 	  itself, this describes what was found inside it.
-	★Kenten (圏点) is meant to join this - one more value in KESCMStoryAttrKind and one more key
-	  here, which is why this takes the kind rather than a "hasRuby" flag.
+	★IT TAKES THE KIND RATHER THAN A "hasRuby" FLAG, so that a second attribute costs a key here and
+	  nothing else. Kenten (圏点) briefly was that second one and is no longer reported at all
+	  (user's call, 2026-08-23) - see the note at the test below.
 
 	@param sameKind kTrue when the text was compared and nothing differs - see above.
 	@param attrKind which attribute the children found, as KESCMStoryAttrKind; 0 for none.
@@ -124,24 +125,16 @@ PMString KindLabel(uint32 kinds, bool16 sameKind, int32 attrKind)
 	// ★What the diff FOUND, ahead of what the counters merely reported. ⚠Only when the text itself
 	//   did not change: a story whose words were rewritten AND whose ruby moved is a text edit
 	//   first, and the "Text+" below already says there was more than one kind of change.
-	// ★★KENTEN (圏点) NAMES ITSELF THE SAME WAY (2026-08-22, user: "Change部分に"). The word is the
-	//   snippet's own spelling - InDesign writes the attribute as KentenKind - so the column says
-	//   what the file says.
-	if ((kinds & kKESCMStoryKindText) == 0)
+	// ⚠★★RUBY IS THE ONLY ONE THE LIST NAMES (2026-08-23, user's call: "ストーリーモードの StoryEdit
+	//   にでるのは、テキストの変更と、ルビだけで"). Kenten had a label here for one day and the
+	//   comparison that produced it has been switched off (KESCMStoryDiffRun's AddAttrOnlyChanges),
+	//   so no child ever arrives carrying that kind and a branch for it would be unreachable.
+	if ((kinds & kKESCMStoryKindText) == 0 && attrKind == kKESCMStoryAttrRuby)
 	{
-		const char* key = nil;
-		if (attrKind == kKESCMStoryAttrRuby)
-			key = kKESCMStoryKindRubyKey;
-		else if (attrKind == kKESCMStoryAttrKenten)
-			key = kKESCMStoryKindKentenKey;
-
-		if (key != nil)
-		{
-			PMString named(key);
-			named.Translate();
-			named.SetTranslatable(kFalse);
-			return named;
-		}
+		PMString named(kKESCMStoryKindRubyKey);
+		named.Translate();
+		named.SetTranslatable(kFalse);
+		return named;
 	}
 
 	PMString out;
@@ -418,11 +411,12 @@ private:
 	bool16 IsTwoLineChange(int32 row, int32 change) const
 	{
 		// ★★RUBY ONLY, AND NOT "any attribute" (corrected 2026-08-22, the same day the first version
-		//   was written). The upper line exists to carry a READING; kenten has no reading - what
-		//   changed is the mark, whose value is a name like "KentenBlackCircle" - so a kenten row is
-		//   an ordinary one-line row and says what it is in the Change column instead (user's call).
-		//   Asking "is this an attribute" was right while ruby was the only one, and would have
-		//   given every kenten row a permanently empty upper line.
+		//   was written). The upper line exists to carry a READING, and being an attribute does not
+		//   make a value one: kenten's was a name like "KentenBlackCircle", so "is this an attribute"
+		//   would have given every kenten row a permanently empty upper line.
+		//   ⚠Kenten is no longer reported at all (2026-08-23, user's call), so today the two
+		//     questions give the same answer - which is exactly why this one stays written as the
+		//     question it is really asking.
 		return Utils<IKESCMStoryEditsFacade>()->GetChangeAttrKind(row, change)
 			   == static_cast<int32>(kKESCMStoryAttrRuby);
 	}

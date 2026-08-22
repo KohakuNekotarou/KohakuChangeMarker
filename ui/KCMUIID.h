@@ -600,7 +600,10 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMBookRowStateWidgetID, kKCMUIPrefix + 49)	// �
 //   ⇒ 更新(Refresh Story Comparison)で直し終えた行と、そもそも比較できなかった行が見分けられる。
 #define kKESCMStoryKindNoneKey		kKESCMStringPrefix "kKESCMStoryKindNoneKey"		// 行の右=本文に差が無い
 #define kKESCMStoryKindRubyKey		kKESCMStringPrefix "kKESCMStoryKindRubyKey"		// 行の右=ルビが変わった(本文は同じ。★カウンター由来の "Attr" より具体的に名指しする＝2026-08-22 ユーザー指定)
-#define kKESCMStoryKindKentenKey	kKESCMStringPrefix "kKESCMStoryKindKentenKey"	// 行の右=圏点が変わった(本文は同じ。2026-08-22 ユーザー指定「Change部分に」)。★訳語は "Kenten"＝**スニペットの綴りに合わせた**(InDesign 自身が KentenKind と書く)。⚠変えたのは種類だけを見る＝大きさ等は無視(ユーザー決定)
+// ⚠★★**圏点(Kenten)のキーは 2026-08-23 に撤去した**＝Story Edits に出すのは「テキストの変更とルビだけ」
+//   (ユーザー決定)。1日だけ存在した kKESCMStoryKindKentenKey は、それを出す比較そのものを止めた時点で
+//   誰も引かない文字列になったので、両方まとめて落としてある(KCMUI_enUS.fr の対も同時)。
+//   ★スニペットから圏点を読む側は残してある(KESCMSnippetText.h)＝再開はその比較1本とこのキーで足りる。
 
 // 一覧の列見出し(2026-08-10)。★中の語をそのまま使わない: 2列目の見出しは "Text" ではなく "Story"、
 // 3列目は "Kind" ではなく "Change"(ユーザー指定)。理由は語の衝突——3列目に出る**値**が "Text" なので、

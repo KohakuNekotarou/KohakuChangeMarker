@@ -121,14 +121,15 @@ enum KESCMStoryChangeKind
 	them again and they say the same, which is why a row refresh leaves them alone. This comes from
 	the DIFF: it does not exist until the two versions have actually been compared.
 
-	★THE LIST IS EXPECTED TO GROW, and the order means nothing - these are names, not ranks. Ruby
-	came first because a Japanese document uses it constantly and it is what the reader asked about
-	("ルビだけ変えると…ChangeはNoneになる"). KENTEN (圏点) is the one already planned to follow, and
-	it is a different mechanism again: ruby is a STRAND (IRubyAttrStrand, run-based, written in the
-	snippet as RubyFlag 1/2 over one CharacterStyleRange per character) while kenten is a set of
-	CHARACTER ATTRIBUTES (the twenty kTAKenten*Boss on kCharAttrStrandBoss, its kind in
-	kTAKentenKindBoss with Kenten_None for off). What the panel cares about is the one thing they
-	share: the text did not move and something over it did.
+	★THE ORDER MEANS NOTHING - these are names, not ranks. Ruby came first because a Japanese
+	document uses it constantly and it is what the reader asked about ("ルビだけ変えると…Changeは
+	Noneになる"). ⚠★★AND RUBY IS ALL THAT IS REPORTED (2026-08-23, user's call: "ストーリーモードの
+	StoryEdit にでるのは、テキストの変更と、ルビだけで"). KENTEN (圏点) was added on 2026-08-22 and
+	withdrawn the next day - it is a different mechanism again: ruby is a STRAND (IRubyAttrStrand,
+	run-based, written in the snippet as RubyFlag 1/2 over one CharacterStyleRange per character)
+	while kenten is a set of CHARACTER ATTRIBUTES (the twenty kTAKenten*Boss on kCharAttrStrandBoss,
+	its kind in kTAKentenKindBoss with Kenten_None for off). What the panel cared about is the one
+	thing they share: the text did not move and something over it did.
 
 	⚠Carried across the model/UI boundary as a plain int32 (IKESCMStoryEditsFacade's
 	  Row::fAttrKind), the same way KESCMStoryChange::What is. ⇒ ADDING A VALUE MEANS TOUCHING BOTH
@@ -138,12 +139,14 @@ enum KESCMStoryAttrKind
 {
 	kKESCMStoryAttrNone = 0,	// the children are text changes, or there are none
 	kKESCMStoryAttrRuby = 1,	// a reading over characters that did not themselves change
-	kKESCMStoryAttrKenten = 2	// ★emphasis marks (圏点) over characters that did not themselves
-								// change (2026-08-22). ⚠WHAT COUNTS AS A CHANGE IS THE KIND ALONE -
-								// black circle becoming white circle - and NOT the size or any of
-								// the other seventeen kenten attributes (user's call: "種類が変った
-								// 時に、変化が有ったかな、大きさとかは変わっても無視で"). Same line
-								// as ruby, which is compared by its reading and not by its font.
+	kKESCMStoryAttrKenten = 2	// ★emphasis marks (圏点). ⚠★★NO CHILD EVER CARRIES THIS TODAY
+								// (2026-08-23, user's call: "ストーリーモードの StoryEdit にでるのは、
+								// テキストの変更と、ルビだけで"). It was reported for one day
+								// (2026-08-22) and the comparison that produced it is switched off in
+								// KESCMStoryDiffRun's AddAttrOnlyChanges; the value is kept because
+								// the snippet parser still READS kenten spans and its test still
+								// proves it reads them rightly. ⇒ Re-enabling is that one call plus a
+								// label, and the number must not be given to anything else meanwhile.
 };
 
 /** The two kinds that mean "this story has no partner in the other version".

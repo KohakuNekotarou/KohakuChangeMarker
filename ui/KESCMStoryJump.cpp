@@ -592,11 +592,20 @@ bool16 KESCMStoryJumpToChange(int32 rowIndex, int32 changeIndex)
 	// ★★THE OTHER SIDE'S READING GOES WITH IT (2026-08-22). The list shows the NEWER version, so a
 	//   reading that was REMOVED can be seen nowhere else - and the row's own upper line is left
 	//   empty for exactly those (user's call). This box is where it is answered.
-	// ⚠ASKED OF fWhat, NOT OF THE STRING. fOtherRuby is only meaningful for an attribute change
-	//   (IKESCMStoryEditsFacade.h says so at the field); a text change leaves it default-constructed
-	//   and reading it anyway would be relying on that rather than on the contract.
+	// ⚠ASKED OF THE STRING'S MEANING, NOT OF THE STRING. fOtherRuby is only filled for an attribute
+	//   change (IKESCMStoryEditsFacade.h says so at the field); a text change leaves it
+	//   default-constructed and reading it anyway would be relying on that rather than on the
+	//   contract.
+	// ⚠★★★AND THE QUESTION IS fAttrKind, NEVER fWhat (corrected 2026-08-23, bug recheck). fWhat says
+	//   "not the words"; it does NOT say the value is something a reader reads. Kenten filled these
+	//   very fields with a KIND - "KentenBlackCircle" - so asking fWhat drew that name over the
+	//   older text as though it were a reading. Kenten is no longer reported at all (user's call the
+	//   same day), which makes the two questions give the same answer again - and that is exactly
+	//   when a stand-in gets left in place until the next attribute arrives. The panel's own cell
+	//   and the row height have asked fAttrKind since the day kenten appeared; this is the third
+	//   place, and it now agrees with them.
 	PMString otherRuby;
-	if (change.fWhat == IKESCMStoryEditsFacade::Change::kWhatAttr)
+	if (change.fAttrKind == static_cast<int32>(kKESCMStoryAttrRuby))
 	{
 		otherRuby = change.fOtherRuby;
 		otherRuby.SetTranslatable(kFalse);

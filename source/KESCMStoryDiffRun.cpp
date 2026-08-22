@@ -83,6 +83,15 @@ void ParagraphStarts(const std::vector<std::string>& paragraphs,
 	int32 index = 0;
 	for (size_t i = 0; i < paragraphs.size(); ++i)
 	{
+		// ★★AND THE ONES STANDING IN FRONT OF IT (2026-08-23). A story that BEGINS with a table -
+		//   a frame holding nothing but a table, which is the ordinary way to make one - has the
+		//   table's character before its first paragraph, where there is no earlier paragraph to
+		//   charge it to. It used to be dropped, the story counted one short, and LengthAgrees
+		//   below then refused the whole thing (no text differences, no ruby). Only the first
+		//   paragraph can carry this - see KESCMParaAttrs::fLeadingChars.
+		if (i < attrs.size())
+			index += attrs[i].fLeadingChars;
+
 		starts.push_back(index);
 
 		std::vector<int32> codePoints;
@@ -100,24 +109,12 @@ void ParagraphStarts(const std::vector<std::string>& paragraphs,
 	total = index;
 }
 
-/* Join
-   The text of a run of paragraphs, with the break characters put back, so that offsets found
-   inside the joined text can be added straight onto the run's start position.
-*/
-std::string Join(const std::vector<std::string>& paragraphs, int32 start, int32 count)
-{
-	std::string out;
-	for (int32 i = 0; i < count; ++i)
-	{
-		const int32 index = start + i;
-		if (index < 0 || index >= static_cast<int32>(paragraphs.size()))
-			continue;
-		if (i > 0)
-			out += "\n";
-		out += paragraphs[index];
-	}
-	return out;
-}
+// ★★Join MOVED OUT on 2026-08-23, into KESCMSnippetText.h as JoinParagraphs. It is one half of a
+// convention - how far apart two paragraphs are once they have been strung together - and the other
+// half (IndexInStory, which turns an offset back into a document position) has to agree with it
+// EXACTLY. While they sat in different files only one of them knew that a table puts extra
+// characters at a paragraph boundary, and a change spanning such a boundary was placed one
+// character early. ⇒ Both are now in the one header the test harness can build without InDesign.
 
 /* MarkUpBreaks
    Turns the break characters into the marks InDesign itself draws with Show Hidden Characters on,
@@ -289,6 +286,36 @@ bool16 LengthAgrees(const UIDRef& storyRef, int32 computed)
 
 // ---- one story --------------------------------------------------------------------------
 
+/* RunSide
+   One run of paragraphs on ONE of the two sides, and the one thing every change asks of it: where
+   an offset into the run's joined text lands in the document.
+
+   ★★IT REPLACED A BARE `base` ON 2026-08-23, AND THAT IS THE WHOLE OF THE FIX. `base + offset` is
+   right only while the joined text and the document agree about how far apart two paragraphs are,
+   and a table makes them disagree - its own character and its row terminators sit exactly at a
+   paragraph boundary (KESCMParaAttrs::fExtraChars). A change covering two adjacent paragraphs with
+   one of those between them came out short, silently, and no length check could see it.
+   ⇒ The run is asked instead of counted on, and the rule it answers with lives beside JoinParagraphs
+   in KESCMSnippetText.h, where the two ends of the convention can be measured against each other.
+*/
+struct RunSide
+{
+	const std::vector<std::string>*		fParagraphs;
+	const std::vector<KESCMParaAttrs>*	fAttrs;
+	int32								fStart;		// first paragraph of the run
+	int32								fCount;		// how many it covers
+	int32								fBase;		// where the run begins, as a TextIndex
+
+	RunSide(const std::vector<std::string>& paragraphs, const std::vector<KESCMParaAttrs>& attrs,
+			int32 start, int32 count, int32 base)
+		: fParagraphs(&paragraphs), fAttrs(&attrs), fStart(start), fCount(count), fBase(base) {}
+
+	int32 Index(int32 joinedOffset) const
+	{
+		return KESCMSnippetText::IndexInStory(*fParagraphs, *fAttrs, fStart, fCount, fBase, joinedOffset);
+	}
+};
+
 /* Add
    Builds one change and appends it. Kept in one place so that the two callers below - a run that
    was narrowed down to characters, and one that was not - cannot describe the same thing in two
@@ -298,9 +325,9 @@ bool16 LengthAgrees(const UIDRef& storyRef, int32 computed)
 */
 void Add(std::vector<KESCMStoryChange>& out, int32 paraIndex,
 		 const std::string& targetText, const std::vector<int32>& targetBytes,
-		 int32 tBase, int32 tFrom, int32 tCount,
+		 const RunSide& tRun, int32 tFrom, int32 tCount,
 		 const std::string& sourceText, const std::vector<int32>& sourceBytes,
-		 int32 sBase, int32 sFrom, int32 sCount)
+		 const RunSide& sRun, int32 sFrom, int32 sCount)
 {
 	KESCMStoryChange change;
 	change.fParaIndex = paraIndex;
@@ -310,8 +337,11 @@ void Add(std::vector<KESCMStoryChange>& out, int32 paraIndex,
 				 : (tCount == 0) ? KESCMStoryChange::kDelete
 								 : KESCMStoryChange::kReplace;
 
-	change.fTargetStart = tBase + tFrom;
-	change.fTargetEnd = change.fTargetStart + tCount;
+	// ⚠BOTH ENDS ARE ASKED FOR, rather than the start plus the count (2026-08-23). A change may run
+	//   across a paragraph boundary, and a boundary can be worth more than the one character the
+	//   joined text spends on it - see RunSide above.
+	change.fTargetStart = tRun.Index(tFrom);
+	change.fTargetEnd = tRun.Index(tFrom + tCount);
 
 	// ★★★AN INSERTION HAS A PLACE IN THE OLDER DOCUMENT EVEN THOUGH IT HAS NO CHARACTERS THERE
 	//   (2026-08-22, user's report: "＋になっているとき ソースの方のジャンプがおかしい様な、
@@ -329,8 +359,8 @@ void Add(std::vector<KESCMStoryChange>& out, int32 paraIndex,
 	//     characters" - which is exactly what the newer side already carries for a DELETION, and
 	//     what the marks already draw as a caret (KESCMStoryPressMarks turns a zero-width range
 	//     into KESCMMarkRange::Caret without being asked). ⇒ + and - are now mirror images.
-	change.fSourceStart = sBase + sFrom;
-	change.fSourceEnd = change.fSourceStart + sCount;
+	change.fSourceStart = sRun.Index(sFrom);
+	change.fSourceEnd = sRun.Index(sFrom + sCount);
 
 	// ★BOTH SIDES ARE CUT, ALWAYS (2026-08-20). The row shows the side that changed; the panel's
 	//   message area shows the other one while that row is selected, so that the reader can see
@@ -370,18 +400,19 @@ void Add(std::vector<KESCMStoryChange>& out, int32 paraIndex,
 }
 
 /* AddAttrChange
-   One ATTRIBUTE difference - a ruby or a kenten - turned into the child row that reports it.
+   One ATTRIBUTE difference - a ruby today - turned into the child row that reports it.
 
    ★THE BASE TEXT IS SHOWN FROM THE NEWER SIDE, ALWAYS - unlike a text change, where a deletion has
    to be shown from the older side because the newer one has nothing there. An attribute is
    different: the characters are in BOTH versions and only what sits over them changed, so the newer
    side always has something to show and there is no case to branch on.
 
-   ★ONE FUNCTION FOR BOTH ATTRIBUTES (2026-08-22). What differs between ruby and kenten is what the
-   VALUE means, and that is carried in attrKind rather than written twice: the reading of a ruby
-   goes into fRuby for the panel to draw above the characters, and the KIND of a kenten goes into
-   the same field for the panel to name - which is why the field is filled the same way for both and
-   read differently by whoever draws it.
+   ★IT TAKES attrKind RATHER THAN ASSUMING RUBY (2026-08-22, and kept after kenten was withdrawn on
+   2026-08-23). What an attribute's VALUE means is not the same for all of them - a ruby's is a
+   READING and a kenten's was a KIND ("KentenBlackCircle") - and the field they travel in is the
+   same one, so whoever draws it has to be told which it is looking at. Filling that in here is what
+   let the mistake be a one-line one when it happened, in the single place that asked the wrong
+   question (KESCMStoryJump's message area).
 */
 void AddAttrChange(KESCMStoryChange::Kind kind, KESCMStoryAttrKind attrKind,
 				   int32 tStart, int32 tCount, int32 sStart, int32 sCount,
@@ -539,14 +570,20 @@ void AddAttrOnlyChanges(const std::vector<KESCMTextDiff::Change>& paragraphChang
 				a < static_cast<int32>(sourceStarts.size()) && b < static_cast<int32>(targetStarts.size()))
 			{
 				// ★EACH ATTRIBUTE IS COMPARED ON ITS OWN LIST, and they cannot be merged into one
-				//   pass: a paragraph can have ruby over one word and kenten over another, and the
-				//   two sets of spans are matched by position within their OWN kind.
+				//   pass: two sets of spans are matched by position within their OWN kind.
+				//
+				// ⚠★★★KENTEN (圏点) IS NOT COMPARED HERE, AND THAT IS A DECISION, NOT AN OMISSION
+				//   (user's call, 2026-08-23: "ストーリーモードの StoryEdit にでるのは、テキストの
+				//   変更と、ルビだけで" / "けんてんですが、違いをだすのをやめますね"). It WAS compared
+				//   for one day (2026-08-22) and the machinery all still stands - the snippet parser
+				//   still reads the spans and the test harness still checks that it reads them
+				//   rightly, because that reading cost a snippet from the user to get right and is
+				//   free to keep (it comes off the same pass as the ruby). What was removed is the
+				//   REPORTING: a kenten-only edit now produces no child row, and its story therefore
+				//   drops out of the list on the row filter, exactly as a font-only edit does.
+				//   ⇒ Turning it back on is this one call and its label. Nothing else was taken out.
 				CompareParagraphAttr(kKESCMStoryAttrRuby,
 									 sourceAttrs[a].fRuby, targetAttrs[b].fRuby,
-									 sourceParas[a], targetParas[b],
-									 sourceStarts[a], targetStarts[b], b, out);
-				CompareParagraphAttr(kKESCMStoryAttrKenten,
-									 sourceAttrs[a].fKenten, targetAttrs[b].fKenten,
 									 sourceParas[a], targetParas[b],
 									 sourceStarts[a], targetStarts[b], b, out);
 			}
@@ -623,8 +660,8 @@ bool16 CompareOneStory(const UIDRef& targetStory, const UIDRef& sourceStory,
 	{
 		const KESCMTextDiff::Change& change = paragraphChanges[c];
 
-		const std::string sourceText = Join(sourceParas, change.aStart, change.aCount);
-		const std::string targetText = Join(targetParas, change.bStart, change.bCount);
+		const std::string sourceText = KESCMSnippetText::JoinParagraphs(sourceParas, change.aStart, change.aCount);
+		const std::string targetText = KESCMSnippetText::JoinParagraphs(targetParas, change.bStart, change.bCount);
 
 		// Where this run starts on each side. A run with no paragraphs of its own sits where the
 		// next surviving paragraph begins.
@@ -632,6 +669,11 @@ bool16 CompareOneStory(const UIDRef& targetStory, const UIDRef& sourceStory,
 							? targetStarts[change.bStart] : targetComputed;
 		const int32 sBase = (change.aStart < static_cast<int32>(sourceStarts.size()))
 							? sourceStarts[change.aStart] : sourceComputed;
+
+		// ★The run itself, so that a position inside it can be asked for rather than added up - see
+		//   RunSide. Built once here because both callers of Add below need the same two.
+		const RunSide tRun(targetParas, targetAttrs, change.bStart, change.bCount, tBase);
+		const RunSide sRun(sourceParas, sourceAttrs, change.aStart, change.aCount, sBase);
 
 		std::vector<int32> sourceCodePoints;
 		std::vector<int32> targetCodePoints;
@@ -670,8 +712,8 @@ bool16 CompareOneStory(const UIDRef& targetStory, const UIDRef& sourceStory,
 			// The whole run, as one change. This is where a run lands when the character pass
 			// cannot place it - not an error, just a coarser answer.
 			Add(out, change.bStart,
-				targetText, targetBytes, tBase, 0, static_cast<int32>(targetCodePoints.size()),
-				sourceText, sourceBytes, sBase, 0, static_cast<int32>(sourceCodePoints.size()));
+				targetText, targetBytes, tRun, 0, static_cast<int32>(targetCodePoints.size()),
+				sourceText, sourceBytes, sRun, 0, static_cast<int32>(sourceCodePoints.size()));
 			continue;
 		}
 
@@ -679,8 +721,8 @@ bool16 CompareOneStory(const UIDRef& targetStory, const UIDRef& sourceStory,
 		{
 			const KESCMTextDiff::Change& fine = fineChanges[k];
 			Add(out, change.bStart,
-				targetText, targetBytes, tBase, fine.bStart, fine.bCount,
-				sourceText, sourceBytes, sBase, fine.aStart, fine.aCount);
+				targetText, targetBytes, tRun, fine.bStart, fine.bCount,
+				sourceText, sourceBytes, sRun, fine.aStart, fine.aCount);
 		}
 	}
 

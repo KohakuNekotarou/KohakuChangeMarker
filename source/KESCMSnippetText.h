@@ -88,6 +88,15 @@ typedef std::vector<KESCMAttrSpan> KESCMAttrSpanList;
 struct KESCMParaAttrs
 {
 	KESCMAttrSpanList	fRuby;
+
+	/** ⚠★★READ, BUT NOT REPORTED (2026-08-23, user's call: "ストーリーモードの StoryEdit にでるのは、
+		テキストの変更と、ルビだけで"). Kenten spans were compared for one day and are not any more -
+		KESCMStoryDiffRun's AddAttrOnlyChanges is where that was switched off, and it is the only
+		place that has to change to switch it back on.
+		★THE READING IS KEPT because it costs nothing (it comes off the same pass as the ruby) and
+		because getting it right cost a snippet from the user: five characters marked with one kind
+		come out as ONE range, where the same five with ruby come out as five. The test harness still
+		proves that, so the knowledge cannot rot while it waits. */
 	KESCMAttrSpanList	fKenten;
 
 	/** Characters the text model counts after this paragraph that are not in its text (2026-08-22).
@@ -106,7 +115,24 @@ struct KESCMParaAttrs
 		⚠A merged cell is simply one cell fewer; nothing about the formula changes (measured). */
 	int32				fExtraChars;
 
-	KESCMParaAttrs() : fExtraChars(0) {}
+	/** The same invisible characters, but standing BEFORE this paragraph rather than after it
+		(2026-08-23).
+
+		★★WHY BOTH ENDS ARE NEEDED. fExtraChars above is charged to the paragraph that has just been
+		finished, which is the right place for every table but one: a story that BEGINS with a table
+		has no finished paragraph to charge, and the character was silently dropped. A text frame
+		holding nothing but a table is the ordinary way to make a table, so this was not an edge:
+		the count came out one short, LengthAgrees refused the story, and it produced no differences
+		at all - the very fault the table support was written to cure.
+		★MEASURED, not reasoned about (2026-08-23, work/kescm-snippet-test): the same table with and
+		without a leading paragraph must differ by exactly that paragraph's characters plus its
+		break. It differed by one more.
+		⚠ONLY THE STORY'S FIRST PARAGRAPH CAN CARRY THIS, because it is only set when nothing has
+		  been finished yet. Anything walking a RUN of paragraphs may therefore leave it alone -
+		  the run's own base position has it already (see IndexInStory below). */
+	int32				fLeadingChars;
+
+	KESCMParaAttrs() : fExtraChars(0), fLeadingChars(0) {}
 };
 
 namespace KESCMSnippetText
@@ -341,11 +367,23 @@ inline void ExtractParagraphs(const std::string& xml,
 	// ⚠It goes on the LAST FINISHED paragraph rather than the one being built: these characters sit
 	//   between paragraphs (a table's anchor, a row's terminator), and ParagraphStarts adds each
 	//   paragraph's own break AFTER its text.
+	//
+	// ★★AND WHEN THERE IS NO FINISHED PARAGRAPH, IT GOES IN FRONT OF THE ONE BEING BUILT
+	//   (2026-08-23). That happens for one story shape and it is a common one: a table at the very
+	//   beginning, which is what a text frame holding nothing but a table looks like. The charge
+	//   used to be DROPPED there - `!attrsPerPara->empty()` and nothing else - so the story counted
+	//   one character short, LengthAgrees refused it, and it produced no differences at all.
+	//   ⚠The paragraph being built is empty at that moment: the table branch only skips the flush
+	//     when it is, so this cannot land in front of text that has already been read.
 	struct Charge
 	{
-		static void One(std::vector<KESCMParaAttrs>* attrsPerPara, int32 n)
+		static void One(KESCMParaAttrs& building, std::vector<KESCMParaAttrs>* attrsPerPara, int32 n)
 		{
-			if (attrsPerPara != nil && !attrsPerPara->empty())
+			if (attrsPerPara == nil)
+				return;
+			if (attrsPerPara->empty())
+				building.fLeadingChars += n;
+			else
 				attrsPerPara->back().fExtraChars += n;
 		}
 	};
@@ -372,7 +410,7 @@ inline void ExtractParagraphs(const std::string& xml,
 				if (!current.empty())
 					Flush::Do(current, currentAttrs, paraPos, paragraphs, attrsPerPara);
 
-				Charge::One(attrsPerPara, 1);		// the table itself, one character
+				Charge::One(currentAttrs, attrsPerPara, 1);	// the table itself, one character
 				lastCellRow = -1;
 			}
 			++tableDepth;
@@ -414,7 +452,7 @@ inline void ExtractParagraphs(const std::string& xml,
 			// ⚠The FIRST cell of the table charges nothing: the terminator belongs to the end of a
 			//   row, and the last row has none (measured - that is why the formula says rows-1).
 			if (row >= 0 && lastCellRow >= 0 && row != lastCellRow)
-				Charge::One(attrsPerPara, 1);
+				Charge::One(currentAttrs, attrsPerPara, 1);
 			lastCellRow = row;
 
 			pos = gt + 1;
@@ -478,9 +516,11 @@ inline void ExtractParagraphs(const std::string& xml,
 			//   PER CHARACTER, so two adjacent stretches of the same kind ARE one stretch, and the
 			//   range boundary between them says nothing about the document - it is wherever some
 			//   OTHER formatting happened to change.
-			//   ⇒ Joining is not an optimisation here, it is what makes the comparison stable:
-			//     without it, italicising one word inside a kenten run would split the span and be
-			//     reported as a kenten change.
+			//   ⇒ Joining is not an optimisation here, it is what makes the reading stable: without
+			//     it, italicising one word inside a kenten run would split the span, which any
+			//     comparison of these spans would read as a change to the marks themselves.
+			//     (⚠Nothing compares them today - see fKenten - so this is what keeps the answer
+			//      right for whoever turns that back on, not something the panel depends on now.)
 			if (!openKenten.empty() && pieceLen > 0)
 			{
 				if (!currentAttrs.fKenten.empty() &&
@@ -573,6 +613,84 @@ inline void ExtractParagraphs(const std::string& xml,
 
 	// The last paragraph has no <Br /> after it.
 	Flush::Do(current, currentAttrs, paraPos, paragraphs, attrsPerPara);
+}
+
+/** The text of a RUN of paragraphs, with the break characters put back.
+
+	★MOVED HERE FROM KESCMStoryDiffRun.cpp ON 2026-08-23, TO STAND BESIDE IndexInStory. The two are
+	one convention seen from both ends - this one says how a run's paragraphs are strung together,
+	that one says where a position in the resulting string lands in the document - and they were in
+	different files while only one of them knew about the invisible characters a table adds. What
+	came of that is below, at IndexInStory.
+
+	@param paragraphs every paragraph of the story.
+	@param start the first paragraph of the run.
+	@param count how many paragraphs the run covers.
+*/
+inline std::string JoinParagraphs(const std::vector<std::string>& paragraphs, int32 start, int32 count)
+{
+	std::string out;
+	for (int32 i = 0; i < count; ++i)
+	{
+		const int32 index = start + i;
+		if (index < 0 || index >= static_cast<int32>(paragraphs.size()))
+			continue;
+		if (i > 0)
+			out += "\n";
+		out += paragraphs[index];
+	}
+	return out;
+}
+
+/** Where an offset into that joined string lands in the document, as a TextIndex.
+
+	★★WHY THIS IS NOT `base + offset` (2026-08-23). JoinParagraphs puts ONE character between two
+	paragraphs; the text model may count more, because a table's own character and a row's
+	terminator sit at exactly such a boundary (fExtraChars). While a change stayed inside one
+	paragraph the two agreed, and a change covering two ADJACENT paragraphs with a table between
+	them did not - the second paragraph's positions came out short by the hidden characters, and
+	the jump, the selection and the press mark all landed on the wrong characters.
+	★MEASURED on the real table snippet (work/kescm-snippet-test): a run over paragraphs 1 and 2
+	put the second at 21 where the document has it at 22, and again at 31 against 32.
+	⚠SILENT, and no length check can catch it: LengthAgrees compares TOTALS, which were right.
+
+	★A BOUNDARY'S HIDDEN CHARACTERS COUNT ONLY ONCE THE BREAK ITSELF HAS BEEN PASSED. They stand
+	AFTER the paragraph's own break character (that is what fExtraChars means), so an offset landing
+	ON the break is still in front of them.
+	⚠fLeadingChars is deliberately NOT added here: only the story's first paragraph can carry it,
+	  and `base` - which the caller took from the paragraph-start table - already includes it.
+
+	@param paragraphs every paragraph of the story.
+	@param attrs the same list ExtractParagraphs filled, one entry per paragraph.
+	@param start the first paragraph of the run.
+	@param count how many paragraphs the run covers.
+	@param base the document position the run starts at (the paragraph-start table's entry for it).
+	@param joinedOffset a position in JoinParagraphs' answer, in CODE POINTS, 0 .. its length.
+	@return the same position as a TextIndex into the story.
+*/
+inline int32 IndexInStory(const std::vector<std::string>& paragraphs,
+						  const std::vector<KESCMParaAttrs>& attrs,
+						  int32 start, int32 count, int32 base, int32 joinedOffset)
+{
+	int32 index = base + joinedOffset;
+
+	int32 joined = 0;		// where the paragraph being looked at begins, inside the joined string
+	for (int32 i = 0; i + 1 < count; ++i)
+	{
+		const int32 which = start + i;
+		if (which < 0 || which >= static_cast<int32>(paragraphs.size()))
+			break;
+
+		joined += CountCodePoints(paragraphs[which]);	// ...now standing on the break character
+		if (joinedOffset <= joined)
+			break;										// the offset is at or before it - nothing to add
+
+		if (which < static_cast<int32>(attrs.size()))
+			index += attrs[which].fExtraChars;
+		++joined;										// step over the break itself
+	}
+
+	return index;
 }
 
 /** True when two paragraphs' ruby differs - the question "did only the ruby change?" is this one

@@ -675,19 +675,16 @@ void KESCMStoryList::SetRowChanges(int32 nth, const std::vector<KESCMStoryChange
 
 	// ★WHICH ATTRIBUTE THE ROW SHOULD NAME, worked out here rather than asked for later: the row
 	//   is drawn many times and the children are walked once.
-	// ⚠★★FIRST ONE STILL WINS, AND NOW THAT MEANS SOMETHING (2026-08-22). Kenten has joined ruby,
-	//   so a story CAN hold both, and such a row is named after whichever comes first in reading
-	//   order. That is a decision left standing rather than one that was taken: the user asked for
-	//   the kinds to be found and named, and said nothing about a row holding two of them. What it
-	//   costs is that the Change column under-reports such a row - it says "Ruby" where "Ruby+"
-	//   would follow this panel's own convention for "and something else" (see KindLabel's Text+).
-	//   ⇒ If that turns out to matter, the fix belongs here and needs one more fact on the row
-	//     (how many kinds were seen), not a change to how the children are made.
-	// ★★2026-08-22 (kenten): THE CHILD NOW CARRIES THE ANSWER, so this no longer guesses it from
-	//   which string is filled. The old test - "fRuby is not empty, or fOtherRuby is" - was really
-	//   asking "is this a ruby", and it could only ever answer that one attribute. A kenten child
-	//   fills the very same fields (with a KIND rather than a reading), so the same test would have
-	//   called every kenten a ruby.
+	// ★FIRST ONE WINS. Only one kind of attribute is reported today (ruby - 2026-08-23, user's
+	//   call), so no row can hold two; the loop is written to survive a second one arriving rather
+	//   than to depend on there being none. ⚠If a second ever does come back, decide then whether a
+	//   row holding both should read "Ruby+" the way KindLabel's "Text+" does - the fix would belong
+	//   here and would need one more fact on the row (how many kinds were seen), not a change to how
+	//   the children are made.
+	// ★★THE CHILD CARRIES THE ANSWER, so this does not guess it from which string is filled. The
+	//   old test - "fRuby is not empty, or fOtherRuby is" - was really asking "is this a ruby", and
+	//   kenten showed within a day why that is not the same question: it filled the very same fields
+	//   with a KIND rather than a reading, and every such test called it a ruby.
 	gRows[nth].fAttrKind = kKESCMStoryAttrNone;
 	for (size_t i = 0; i < changes.size(); ++i)
 	{

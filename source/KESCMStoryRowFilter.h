@@ -10,7 +10,14 @@
 //  The change counters answer "this story is not the same as it was" and nothing finer, so until
 //  2026-08-22 the list showed a row for a story whose only edit was a font, a colour, a style or
 //  a table stroke. The reader is looking for what the text now SAYS (user's call: "属性の変更は
-//  無視。見つけるのは Text とルビと圏点だけ"), and those rows are noise in front of it.
+//  無視"), and those rows are noise in front of it.
+//
+//  ⚠WHAT COUNTS AS CONTENT IS SETTLED ELSEWHERE, AND IT SHRANK ON 2026-08-23: the words, and the
+//    ruby written over them ("ストーリーモードの StoryEdit にでるのは、テキストの変更と、ルビだけ
+//    で"). KENTEN (圏点) was in that list for one day and is no longer reported at all. ★This file
+//    did not have to change for that and must not grow a list of its own: it asks whether the diff
+//    found ANY child, and what the diff looks for is KESCMStoryDiffRun's business
+//    ([[one-question-one-place]]).
 //
 //  *** ONE RULE COVERS BOTH MODES, AND THAT IS WHY IT IS WORTH A FILE OF ITS OWN. *** The two
 //  comparison modes know different amounts about a story, and the temptation is to write a rule
@@ -19,10 +26,10 @@
 //  already carries the answer to "how much do we know about this one": fTextCompared. The rule
 //  below reads that, and the mode never comes into it.
 //
-//  *** WHAT THE PIXEL MODE CANNOT DO, AND THAT IS DELIBERATE. *** Ruby and kenten are ATTRIBUTES,
-//  so a story where only the reading changed moves the Attr counter and nothing else - exactly
-//  like a story where only the font changed. Telling those two apart takes the text diff, which
-//  the pixel mode does not run. Running it there was offered and declined (user, 2026-08-22:
+//  *** WHAT THE PIXEL MODE CANNOT DO, AND THAT IS DELIBERATE. *** Ruby is an ATTRIBUTE, so a story
+//  where only the reading changed moves the Attr counter and nothing else - exactly like a story
+//  where only the font changed. Telling those two apart takes the text diff, which the pixel mode
+//  does not run. Running it there was offered and declined (user, 2026-08-22:
 //  "ピクセルモードでは、ルビとけんてんを見つけるのはあきらめましょう、Text の変更のだけ
 //  StoryEdit にでるようにで") - so in the pixel mode a ruby-only edit does not produce a row.
 //  ⚠A row LOST here is lost from the panel, not from the comparison: the pixel comparison still
@@ -41,8 +48,8 @@
 
 #include "KESCMStoryStamp.h"	// KESCMStoryChangeKind, kKESCMStoryKindUnpaired
 
-/** Does this row's story differ in its CONTENT - the words, or the ruby and kenten written over
-	them - rather than only in how it is set?
+/** Does this row's story differ in its CONTENT - the words, or the ruby written over them - rather
+	than only in how it is set?
 
 	@param kinds the row's fKinds: which change counters moved, plus Added / Removed.
 	@param textCompared kTrue when the two versions' text was actually put side by side for this
@@ -58,10 +65,10 @@
 	  the two tests below would both answer no for the wrong reason. ⚠This is also the one place
 	  where "no children" is not evidence of anything: those rows never get children.
 
-	★A ROW THAT WAS DIFFED IS KEPT WHEN THE DIFF FOUND SOMETHING. Any kind of child will do -
-	  a text edit, a ruby, a kenten - because all three are things the reader is looking for, and
-	  the row's own label already says which it was. Empty means the words and the readings agree
-	  and only the setting moved: that is the row being dropped.
+	★A ROW THAT WAS DIFFED IS KEPT WHEN THE DIFF FOUND SOMETHING. Any kind of child will do - a
+	  text edit or a ruby - because both are things the reader is looking for, and the row's own
+	  label already says which it was. Empty means the words and the readings agree and only the
+	  setting moved: that is the row being dropped.
 	  ⚠NOT "the story is unchanged". The counters moved or the row would never have been built
 	    (KESCMStoryStamp.h). What is being said is that the difference is not one of these.
 

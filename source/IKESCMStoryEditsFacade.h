@@ -99,12 +99,11 @@ public:
 		/** WHICH KIND OF ATTRIBUTE this row's children found a difference in, when they found one
 			(2026-08-22). 0 = none; 1 = ruby.
 
-			★A NUMBER RATHER THAN A FLAG, because ruby is the first of these and not the last:
-			KENTEN (圏点) is meant to follow, and it is a different mechanism again - ruby is a
-			STRAND (IRubyAttrStrand, run-based) while kenten is a set of CHARACTER ATTRIBUTES
-			(kTAKenten*Boss on kCharAttrStrandBoss). What they have in common is exactly this: the
-			text is untouched and something over it moved. ⇒ Adding kenten means one more value
-			here and one more label, not another field and another branch everywhere.
+			★A NUMBER RATHER THAN A FLAG, so that a second attribute costs one more value here and
+			one more label - not another field and another branch everywhere. KENTEN (圏点) was that
+			second value for one day and is no longer reported (2026-08-23, user's call: the list
+			shows text changes and ruby, nothing else); the number it used stays reserved
+			(KESCMStoryStamp.h).
 
 			⚠NOT DERIVED FROM fKinds, which comes from the two documents' CHANGE COUNTERS and is
 			  deliberately left alone by a row refresh ("read it again and it says the same"). This
@@ -211,15 +210,16 @@ public:
 		PMString	fRuby;
 		PMString	fOtherRuby;
 
-		// WHICH attribute this is (2026-08-22): 0 = none, 1 = ruby, 2 = kenten (圏点).
+		// WHICH attribute this is (2026-08-22): 0 = none, 1 = ruby. (2 was kenten, no longer
+		// reported - KESCMStoryStamp.h.)
 		// ★★fWhat SAYS "not the words", THIS SAYS WHAT INSTEAD - and the panel needs both, because
-		//   it draws them differently. A ruby is drawn on TWO LINES with the reading above the
-		//   characters; a kenten is not, because its value is a NAME ("KentenBlackCircle") rather
-		//   than something a reader reads, and it is named in the Change column instead (user's
-		//   call, 2026-08-22).
-		// ⚠So "is this row drawn on two lines" is THIS field, never fWhat. Asking fWhat was right
-		//   while ruby was the only attribute, and would have given every kenten row a permanently
-		//   empty upper line the moment the second one arrived.
+		//   the two are not the same question. fWhat does not promise the value is something a
+		//   reader READS: kenten filled fRuby / fOtherRuby with a KIND ("KentenBlackCircle"), and
+		//   for one day the message area drew that name over the older text as though it were a
+		//   reading, because it asked fWhat (found 2026-08-23, bug recheck).
+		// ⚠So "does this carry a reading" - and "is this row drawn on two lines" - is THIS field,
+		//   never fWhat. Today they happen to give the same answer again, ruby being the only kind
+		//   reported; that is exactly the state in which a stand-in survives unnoticed.
 		int32		fAttrKind;
 
 		Change()
@@ -239,7 +239,7 @@ public:
 	virtual bool16	GetChange(int32 nth, int32 which, Change& out) = 0;
 
 	/** WHICH ATTRIBUTE this difference is in - Change::fAttrKind, and nothing else (0 = none,
-		1 = ruby, 2 = kenten). 0 for a text change and for an index that names no change.
+		1 = ruby). 0 for a text change and for an index that names no change.
 
 		★WHY THE ONE FIELD HAS A CALL OF ITS OWN (2026-08-22). The tree asks this of every row it
 		lays out, to decide how TALL the row is - a ruby change is drawn on two lines, the reading
@@ -248,8 +248,9 @@ public:
 		rebuild. This copies one int.
 		⚠★IT ANSWERED fWhat UNTIL KENTEN ARRIVED, later the same day. "Is this an attribute" was a
 		  correct stand-in for "is this drawn on two lines" only while ruby was the sole attribute;
-		  kenten is an attribute that is NOT drawn on two lines (its value is a name, not a
-		  reading), so the question had to become the one it was really asking. */
+		  kenten was an attribute that is NOT drawn on two lines (its value is a name, not a
+		  reading), so the question had to become the one it was really asking. ★It stays that way
+		  now that kenten is gone again: a stand-in that is true today is what gets left behind. */
 	virtual int32	GetChangeAttrKind(int32 nth, int32 which) = 0;
 
 	/** Compare row nth's story again against the older document, and replace its differences with
