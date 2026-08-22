@@ -94,9 +94,12 @@ static bool16     sPeekArmed    = kFalse;
 //   ツール左ボタンを離したら sMarkScreenOpacity をこの値へ戻す。
 PMReal KESCMBaseScreenOpacity()
 {
-	// 印刷マーク ON、または「Hold to Hide Marks」(枠を画面に常時表示)ON のときは、常時表示の枠を
+	// 印刷マーク ON、または「Show Marks on Target」(枠を画面に常時表示)ON のときは、常時表示の枠を
 	// パネル選択の 25%/75% で描く(押下中の一時表示と見た目を揃える)。どちらも OFF なら 1.0(不透明)。
-	return (KESCMDrawEventHandler::sPrintMarks || KESCMDrawEventHandler::sAlwaysShowMarks)
+	// ★2026-08-22＝2つ目の条件は「Hold to Hide Marks」(sAlwaysShowMarks)だった。**あれを撤去したので、
+	//   「枠が常時出ている」を今なお答えるトグルへ付け替えた**＝sTgtMarksOn(Hold の常時表示は、これと
+	//   完全に重複していた側)。⇒ 常時表示中の濃さは従来どおり 25%/75% に従う。
+	return (KESCMDrawEventHandler::sPrintMarks || KESCMDrawEventHandler::sTgtMarksOn)
 	       ? KESCMDrawEventHandler::SelectedMarkOpacity() : PMReal(1.0);
 }
 
@@ -747,7 +750,7 @@ void KESCMDoArmMousePeek(IDataBase* targetDB, IDataBase* sourceDB)
 	sPeekTargetDB = targetDB;
 	sPeekSourceDB = sourceDB;
 	sPeekArmed = kTrue;
-	KESCMDrawEventHandler::sMarksTempHidden = kFalse;	// Hold to Hide Marks の一時退避も初期化(押下中フラグの取りこぼし対策)
+	KESCMDrawEventHandler::sMarksTempHidden = kFalse;	// 常時表示の一時退避も初期化(押下中フラグの取りこぼし対策)
 	KESCMDrawEventHandler::sSrcMarksTempHidden = kFalse;	// Source 側の一時退避も初期化
 	KESCMDrawEventHandler::sMarksVisible = kFalse;	// 既定(非表示)へ。arm 中も枠は押下中だけ表示
 }
@@ -764,7 +767,7 @@ void KESCMDoDisarmMousePeek(IDataBase* db)
 	sPeekArmed = kFalse;
 	sPeekTargetDB = nil;
 	sPeekSourceDB = nil;
-	KESCMDrawEventHandler::sMarksTempHidden = kFalse;	// Hold to Hide Marks の一時退避を解除
+	KESCMDrawEventHandler::sMarksTempHidden = kFalse;	// 常時表示の一時退避を解除
 	KESCMDrawEventHandler::sSrcMarksTempHidden = kFalse;	// Source 側の一時退避も解除
 	KESCMDrawEventHandler::sMarksVisible = kFalse;	// 既定(非表示)のまま
 	KESCMDrawEventHandler::DropAllOrig();	// sShowOriginal も OFF にし、キャッシュを解放
@@ -905,7 +908,7 @@ void KESCMHandleDocsClosed()
 		sPeekTargetDB  = nil;
 		sPeekSourceDB  = nil;
 		// (覗き状態の解除＝KESCMResetPeekGestureState は UI 側の状態なので、末尾の通知を受けた UI がやる)
-		KESCMDrawEventHandler::sMarksTempHidden = kFalse;	// Hold to Hide Marks の一時退避も解除
+		KESCMDrawEventHandler::sMarksTempHidden = kFalse;	// 常時表示の一時退避も解除
 		KESCMDrawEventHandler::sSrcMarksTempHidden = kFalse;	// Source 側の一時退避も解除
 		KESCMDrawEventHandler::sMarksVisible = kFalse;
 		// ★2026-07-11(ユーザー報告): Stop ボタンは登録(Add/Remove)を全解除するのに、比較文書(Source等)を

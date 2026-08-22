@@ -153,10 +153,13 @@ public:
 	virtual bool16		GetShowOldPageNumbers() = 0;
 	virtual void		SetShowOldPageNumbers(bool16 on) = 0;
 
-	/** "Hold to Hide Marks": inverts the on-screen polarity. Marks are shown permanently and
-		the press hides them, instead of the default (hidden, shown while pressed). */
-	virtual bool16		GetHoldToHideMarks() = 0;
-	virtual void		SetHoldToHideMarks(bool16 on) = 0;
+	/* ★"Hold to Hide Marks" WAS HERE AND IS GONE (2026-08-22, user's call). It stood for "show the
+	   marks permanently, and hide them while the button is held" - and once "Show Marks on Target"
+	   existed, the first half of that was the same switch twice over ([[one-question-one-place]]:
+	   the drawing side literally read `sAlwaysShowMarks || sTgtMarksOn`).
+	   ⇒ The second half became the rule for BOTH toggles instead: **while the button is held,
+	     everything is the other way round** - off shows while held, on hides while held. Nothing
+	     was lost, and there is one switch fewer to explain. */
 
 	// ---- press-time display state ------------------------------------------------------
 	//

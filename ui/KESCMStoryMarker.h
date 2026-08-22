@@ -116,6 +116,17 @@ namespace KESCMStoryMarker
 	    before doing anything. */
 	bool16 IsShowing();
 
+	/** True while what is up is a STANDING mark - one ShowDocs put there, rather than a jump's
+		pointer.
+
+		★★IT EXISTS SO THAT NOBODY KEEPS A SECOND COPY OF THIS ANSWER. KESCMStoryPressMarks used to
+		remember "did I put the current mark up" in a static of its own, which is the same fact
+		written down twice ([[one-question-one-place]]) - and the two drifted the moment anything
+		else called Clear(): the double click's does (KESCMStorySelectChange), and after it the
+		other copy still said a standing mark was on screen when there was none.
+		⇒ Ask the mark, do not remember it. */
+	bool16 IsShowingPersistent();
+
 	/** Take the mark down for good (application shutdown). After this, Show() does nothing.
 
 		★It exists for the same reason KBS's does: Clear() repaints the document the mark was in,

@@ -137,7 +137,7 @@ void KESCMSavePanelState()
 	json += "  \"version\": 1,\n";
 	json += "  \"printMarks\": ";             json += KESCMBoolLiteral(compare->GetPrintMarks());                   json += ",\n";
 	json += "  \"opacity25\": ";              json += KESCMBoolLiteral(compare->GetMarkOpacity25());                json += ",\n";
-	json += "  \"holdToHideMarks\": ";        json += KESCMBoolLiteral(compare->GetHoldToHideMarks());              json += ",\n";
+	// (\"holdToHideMarks\" は 2026-08-22 にトグルごと撤去。古い設定ファイルに残っていても読まれない)
 	json += "  \"showTgtMarks\": ";           json += KESCMBoolLiteral(compare->GetShowTargetMarks());              json += ",\n";
 	json += "  \"showSrcMarks\": ";           json += KESCMBoolLiteral(compare->GetShowSourceMarks());              json += ",\n";
 	json += "  \"showOldNumbers\": ";         json += KESCMBoolLiteral(compare->GetShowOldPageNumbers());           json += ",\n";
@@ -223,11 +223,13 @@ void KESCMLoadPanelStateIfPresent()
 		return;
 
 	// ---- 各トグルへ適用 ----
-	// ★順序: 不透明度に影響する表示トグル(Hold to Hide Marks)を先に反映してから SetPrintMarks を
-	//   呼ぶ。SetPrintMarks は常時表示の画面不透明度を現在の Hold/25-75 選択から再計算するため、
-	//   先に Hold to Hide Marks を復元しておく必要がある。
+	// ★順序: 不透明度に影響する表示トグルを先に反映してから SetPrintMarks を呼ぶ。SetPrintMarks は
+	//   常時表示の画面不透明度を現在の選択から再計算する(KESCMBaseScreenOpacity)ので、その入力が
+	//   先に入っていなければならない。
+	//   ⚠★2026-08-22＝**その入力は「Hold to Hide Marks」から「Show Marks on Target」へ移った**
+	//     (Hold は撤去)。順序の要件は変わっていない＝下の SetShowTargetMarks が SetPrintMarks より
+	//     前にあること。**行を並べ替えるときはこの依存を先に見ること。**
 	InterfacePtr<IKESCMCompareFacade> compare(Utils<IKESCMCompareFacade>().QueryUtilInterface());
-	compare->SetHoldToHideMarks   (KESCMJsonReadBool(text, "holdToHideMarks", compare->GetHoldToHideMarks()));
 	compare->SetShowTargetMarks   (KESCMJsonReadBool(text, "showTgtMarks",    compare->GetShowTargetMarks()));
 	compare->SetShowSourceMarks   (KESCMJsonReadBool(text, "showSrcMarks",    compare->GetShowSourceMarks()));
 	compare->SetShowOldPageNumbers(KESCMJsonReadBool(text, "showOldNumbers",  compare->GetShowOldPageNumbers()));

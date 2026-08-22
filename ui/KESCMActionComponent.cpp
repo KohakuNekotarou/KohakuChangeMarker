@@ -175,11 +175,18 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 
 		// フライアウトの「Marks opacity 25% / 75%」(ラジオ風): 選んだ方の不透明度に設定する。
 		// 実体は KESCMPanelObserver.cpp の自由関数(印刷フラグは維持し不透明度だけ変更)。
+		// ⚠★★**Story の反転マークは「出したときの不透明度」を焼き込んで持っている**(2026-08-22 の
+		//   不具合再検査 A4)。model 側の SetMarkOpacity25 が再描画するのは Pixel の枠だけで、あちらは
+		//   描画のたびに現在値を読み直すが、こちらはアドーンメントに載せた値がそのまま残る。
+		//   ⇒ **設定を変えたら作り直しを頼む**。★model からは頼めない＝あちらは UI プラグインの
+		//     アドーンメントを知らない(model/UI 分割の依存は UI→model の一方向)。∴ここで呼ぶ。
 		case kKESCMPopupOpacity25ActionID:
 			Utils<IKESCMCompareFacade>()->SetMarkOpacity25(kTrue);
+			KESCMStoryMarksRefresh();
 			break;
 		case kKESCMPopupOpacity75ActionID:
 			Utils<IKESCMCompareFacade>()->SetMarkOpacity25(kFalse);
+			KESCMStoryMarksRefresh();
 			break;
 
 		// (kKESCMPopupAboutScriptActionID / DoAboutScript は 2026-07-25 撤去=About Scripting 項目削除。)
@@ -188,14 +195,21 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 			this->DoUsage();
 			break;
 
-		// 「Show Marks on Source」トグル: フラグを反転して Source 文書を再描画するだけ(表示判定と描画は
+		// 「Show Marks on Source」トグル: フラグを反転して Source 文書を再描画する(Pixel の表示判定と描画は
 		// KESCMDrawEventHandler::HandleDrawEvent の Source 分岐。ON の間は常時表示・OPPでも表示・印刷にも
-		// 出る。不透明度はパネルの 25%/75% 選択に連動)。Start のたびに既定 ON へ戻る(KESCMDoMarkChangesDoc)。
+		// 出る。不透明度はパネルの 25%/75% 選択に連動)。★既定 OFF で Start は触らない(2026-08-22 変更＝
+		// 設定はパネル設定に保存され起動時に復元されるので、Start が上書きすると保存した選択が消える)。
+		// ⚠★★**Target 版と同じく2つの機構に効く**(2026-08-22 の不具合再検査 A1)＝Pixel の枠は描画側が
+		//   sSrcMarksOn を直接見るが、Story の反転マークは別機構(グローバルテキストアドーンメント)なので
+		//   こちらから作り直しを頼む。⇒ **これが無いと Story モードでは ON にしても出ず、OFF にしても
+		//   消えない**(内部状態が変わらないので、下の InvalidateDB で描き直しても同じ絵が出るだけ)。
 		case kKESCMPopupShowSrcMarksActionID:
 		{
 			InterfacePtr<IKESCMCompareFacade> compare(Utils<IKESCMCompareFacade>().QueryUtilInterface());
 			const bool16 srcMarksOn = !compare->GetShowSourceMarks();
 			compare->SetShowSourceMarks(srcMarksOn);
+			compare->SetSrcMarksTempHidden(kFalse);	// Target 版と同じ後始末(撤去した Hold から引き継いだ)
+			KESCMStoryMarksRefresh();		// Story モードの反転マーク(Pixel モードでは何もしない)
 			IDataBase* const srcDB = Utils<IKESCMMarkData>()->GetMarkedSourceDB();
 			Utils<IKESCMCompareFacade>()->InvalidateDB(srcDB);
 			// ★レイアウトビューだけでなく Pages パネルの Source サムネイルも即時更新する。Source 側の枠は
@@ -211,7 +225,8 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 
 		// 「Show Marks on Target」トグル: フラグを反転して Target 文書を再描画する。★Source 版と対で、
 		// ON の間はツールを押さなくてもマークが出たままになる(2026-08-22 ユーザー要望
-		// 「ツールでボタンを押さなくても常にマークが出る様に」)。Start のたびに既定 ON へ戻る。
+		// 「ツールでボタンを押さなくても常にマークが出る様に」)。★既定 OFF で Start は触らない
+		// (Source 版と同じ理由＝設定はパネル設定に保存され、起動時に復元される)。
 		// ⚠★★**2つの機構に効く**＝Pixel の比較リングは描画側が sTgtMarksOn を直接見る
 		//   (KESCMDrawEventHandler の alwaysScreen)が、Story の反転マークは別機構(グローバルテキスト
 		//   アドーンメント)なので、こちらから作り直しを頼む。同じトグルで両モードが動くのはそのため。
@@ -222,6 +237,14 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 			InterfacePtr<IKESCMCompareFacade> compare(Utils<IKESCMCompareFacade>().QueryUtilInterface());
 			const bool16 tgtMarksOn = !compare->GetShowTargetMarks();
 			compare->SetShowTargetMarks(tgtMarksOn);
+			// ⚠★★この2行は撤去した「Hold to Hide Marks」から引き継いだ後始末(2026-08-22)。
+			//   ①押下中の一時退避を解除する(押したままトグルを切り替える道は無いが、離す前に
+			//     何かで状態が残ると「ON なのに出ない」になる)。
+			//   ②**常時表示の基準不透明度を即反映する**＝KESCMBaseScreenOpacity は
+			//     「印刷 ON、または枠が常時出ている」ときだけ 25%/75% を返す。⇒ ここで更新しないと、
+			//     ON にした直後の枠が 1.0(不透明)のまま描かれる。
+			compare->SetMarksTempHidden(kFalse);
+			compare->SetMarkScreenOpacity(compare->GetBaseScreenOpacity());
 			KESCMStoryMarksRefresh();		// Story モードの反転マーク(Pixel モードでは何もしない)
 			compare->InvalidateDB(compare->GetArmedTargetDB());
 			PMString msg(tgtMarksOn ? "Target marks: on." : "Target marks: off.");
@@ -435,23 +458,12 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 			break;
 		}
 
-		// 「Hold to Hide Marks」トグル: 枠表示の極性反転(フラグ反転のみ)。ON=画面に枠を常時表示し、
-		// ツール左hold中だけ隠す(押下/解放は KESCMPeek.cpp のトラッカー(KESCMTrackerRevealBegin/End)が sMarksTempHidden を上下)。
-		// OFF=従来(既定非表示・押下中だけ表示)。画面のみ=印刷は Print comparison marks が別管理。
-		// 切替時に一時退避を解除し、常時表示の基準不透明度(常時表示ON中は25%/75%)を反映して sDB を再描画。
-		case kKESCMPopupHoldToHideMarksActionID:
-		{
-			InterfacePtr<IKESCMCompareFacade> compare(Utils<IKESCMCompareFacade>().QueryUtilInterface());
-			const bool16 holdToHide = !compare->GetHoldToHideMarks();
-			compare->SetHoldToHideMarks(holdToHide);
-			compare->SetMarksTempHidden(kFalse);	// モード切替時は一時退避を解除
-			compare->SetMarkScreenOpacity(compare->GetBaseScreenOpacity());	// 常時表示の不透明度を即反映
-			Utils<IKESCMCompareFacade>()->InvalidateDB(Utils<IKESCMMarkData>()->GetMarkedTargetDB());
-			PMString msg(holdToHide ? "Hold to Hide Marks: on." : "Hold to Hide Marks: off.");
-			msg.SetTranslatable(kFalse);
-			KESCMSetStatus(msg);
-			break;
-		}
+		// (★「Hold to Hide Marks」(+19)は 2026-08-22 に撤去＝ユーザー決定。「常時表示」が
+		//  「Show Marks on Target」と完全に重複したため。固有だった「押している間だけ隠す」は
+		//  **両トグル ON のときの標準の挙動**になった＝規則は「押している間は反対になる」の1本。
+		//  ⚠**この case が持っていた後始末2つは上の2つのトグルへ移してある**＝一時退避の解除と、
+		//    常時表示の基準不透明度の即反映(落とすと「ON にしたのに枠が不透明のまま出る」)。
+		//  ActionID +19 は欠番のまま再利用しない。)
 
 		// 「Ignore Page Number Marker」トグル: ノンブル(自動ページ番号)マーカーを含むフレームを
 		// 比較(CMYKピクセル差分)から除外するか(既定ON)。フラグを反転し、既にStart済みなら
@@ -784,13 +796,6 @@ void KESCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionSta
 			//   次に開いたときに効く(KESCMBookDialog.cpp が開くたびに貼る)。
 			int16 actionState = kEnabledAction;
 			if (KESCMGetBookDialogTranslucent())
-				actionState |= kSelectedAction;	// ON ならチェックマーク
-			listToUpdate->SetNthActionState(i, actionState);
-		}
-		else if (action == kKESCMPopupHoldToHideMarksActionID)
-		{
-			int16 actionState = kEnabledAction;
-			if (Utils<IKESCMCompareFacade>()->GetHoldToHideMarks())
 				actionState |= kSelectedAction;	// ON ならチェックマーク
 			listToUpdate->SetNthActionState(i, actionState);
 		}

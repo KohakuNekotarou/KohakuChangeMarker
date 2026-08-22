@@ -249,7 +249,10 @@ DECLARE_PMID(kActionIDSpace, kKESCMPopupOpacity25ActionID, kKCMUIPrefix + 15)	//
 DECLARE_PMID(kActionIDSpace, kKESCMPopupOpacity75ActionID, kKCMUIPrefix + 16)	// パネルのフライアウトの「Marks opacity 75%」(25% と相互排他)
 DECLARE_PMID(kActionIDSpace, kKESCMPopupSep1ActionID, kKCMUIPrefix + 17)	// フライアウト: Start の下の区切り線(MenuDef のパス末尾 ":-"。ActionDef 不要・DoAction 不要=一意なIDだけ要る)
 DECLARE_PMID(kActionIDSpace, kKESCMPopupSep2ActionID, kKCMUIPrefix + 18)	// フライアウト: How to Use の上の区切り線
-DECLARE_PMID(kActionIDSpace, kKESCMPopupHoldToHideMarksActionID, kKCMUIPrefix + 19)	// パネルのフライアウトの「Hold to Hide Marks」チェック式トグル(ON=枠を画面に常時表示し、ツール左hold中だけ隠す=極性反転。画面のみ・印刷は Print comparison marks が別管理。KESCMActionComponent.cpp)
+// kKESCMPopupHoldToHideMarksActionID (kKCMUIPrefix + 19) は「Hold to Hide Marks」トグルで、2026-08-22 に撤去(ユーザー決定)。
+//   ★理由＝**「枠を常時表示」が「Show Marks on Target」(+45)と完全に重複した**(描画側が `sAlwaysShowMarks || sTgtMarksOn` という OR になっていたのが証拠)。
+//   固有だった「押している間だけ隠す」は、**両「Show Marks on ...」トグルが ON のときの標準の挙動**へ畳んだ＝規則は「押している間は反対になる」の1本。
+//   ⇒ 機能は1つも失われていない。⚠**スロット +19 は再利用しない**(欠番)。
 // kKESCMPopupPanelShortcutActionID (kKCMUIPrefix + 20) は中ボタン撤去(2026-07-13)に伴い廃止。スロットを 2026-07-24 に再利用:
 DECLARE_PMID(kActionIDSpace, kKESCMPopupAlignViewsActionID, kKCMUIPrefix + 20)	// パネルのフライアウトの「Align Other Views to Active」(実行アクション)。アクティブ(最前面)文書のビューの位置+拡大率を他文書のビューへ1回そろえる。Start中はページのAdd/Remove補正あり。ショートカット割当可(kKESCMPanelMenuActionArea+VisibleInKBSC)。実体 ui/KESCMViewSync.cpp の KESCMAlignOtherViewsToActiveNow(⚠2026-08-19 訂正=分割で KESCMPeek.cpp から出た)
 DECLARE_PMID(kActionIDSpace, kKESCMPopupScrollMapActionID, kKCMUIPrefix + 21)	// パネルのフライアウトの「Show Scrollbar Map」チェック式トグル(ON=文書窓の縦スクロールバー脇に変更位置地図stripを表示。既定ON。実体 KESCMScrollMap.cpp の sScrollMapOn)
@@ -287,7 +290,9 @@ DECLARE_PMID(kActionIDSpace, kKESCMPopupModeStoryActionID, kKCMUIPrefix + 43)	//
 DECLARE_PMID(kActionIDSpace, kKESCMStoryRowRefreshActionID, kKCMUIPrefix + 44)	// ★Story Edits の行の右クリック「Refresh Story Comparison」(2026-08-21 ユーザー要望「そのストーリーだけ比較を更新したい」)。その行のストーリーだけ本文差分を取り直し、子の変更箇所を今の状態に置き換える(実体 IKESCMStoryEditsFacade::RefreshRow → KESCMStoryDiffRun::RunOne)。★直し終えて差分が0件になっても**行は残り子だけ消える**＝答えているのは「今どこが違うか」であって「この行がまだ要るか」ではない。★kCustomEnabling で **Story モードのときだけ**有効(Pixel モード・Stop 中・Added の行では灰色)。⚠項目が1つしかないメニューなので、灰色＝**メニュー自体が出ない**(章行メニューと同じ挙動)
 
 DECLARE_PMID(kActionIDSpace, kKESCMPopupShowTgtMarksActionID, kKCMUIPrefix + 45)	// ★パネルのフライアウトの「Show Marks on Target」チェック式トグル(2026-08-22 ユーザー要望「ツールでボタンを押さなくても常にマークが出る様に、それをピクセルの方もストーリーの方にも」)。Source 版(+10)と対で、ON の間は Target 文書のマークを画面に常時表示する。★Pixel では比較リング(sTgtMarksOn→alwaysScreen)、Story では変更箇所の反転(ui/KESCMStoryPressMarks.cpp)＝同じトグルが両モードで意味を持つ。⚠画面のみ＝印刷/PDF は「Print comparison marks」が単独で決める(Source 版が印刷にも出るのとは非対称・意図的)。★既定 OFF で Start は触らない(Source 版と同じ＝設定はパネル設定に保存され、起動時に復元される)
-// (+15..+23 are all declared above - stale placeholders for them removed 2026-08-05 audit. Next free: +45)
+// (+15..+23 are all declared above - stale placeholders for them removed 2026-08-05 audit.
+//  ★**Next free: +46**。⚠2026-08-22 に +45 を使ったのに「Next free: +45」のまま残っていたのを直した
+//  (不具合再検査 B2)＝**採番したら同じコミットでこの行を進めること**。+19 は欠番で再利用しない。)
 //DECLARE_PMID(kActionIDSpace, kKESCMActionID, kKCMUIPrefix + 41)
 // kKCMUIPrefix + 24/25/26/28 は使用中(KCM: Check / Save Check & Register / Load Check & Register / RtMenuPagesPanel の区切り線)。+27 は廃止・予約(上記)
 
@@ -483,7 +488,7 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMBookRowStateWidgetID, kKCMUIPrefix + 49)	// �
 #define kKESCMPageCheckMenuKey		kKESCMStringPrefix "kKESCMPageCheckMenuKey"	// ページパネル右クリックのトグル「KCM: Check」のメニュー名
 #define kKESCMPageRefreshCompareMenuKey	kKESCMStringPrefix "kKESCMPageRefreshCompareMenuKey"	// ページパネル右クリックの「KCM: Refresh Page Comparison」のメニュー名(選択ページの比較を再検出して更新)
 #define kKESCMIgnorePageNumMenuKey	kKESCMStringPrefix "kKESCMIgnorePageNumMenuKey"	// パネルのフライアウト「Ignore Page Number Marker」トグルのメニュー名
-#define kKESCMHoldToHideMarksMenuKey	kKESCMStringPrefix "kKESCMHoldToHideMarksMenuKey"	// パネルのフライアウト「Hold to Hide Marks」トグルのメニュー名
+// (kKESCMHoldToHideMarksMenuKey は 2026-08-22 のトグル撤去で不要になった＝ActionID +19 の注記を見よ)
 #define kKESCMScrollMapMenuKey		kKESCMStringPrefix "kKESCMScrollMapMenuKey"	// パネルのフライアウト「Show Scrollbar Map」トグルのメニュー名
 #define kKESCMSavePanelStateMenuKey	kKESCMStringPrefix "kKESCMSavePanelStateMenuKey"	// パネルのフライアウト「Save Panel Settings」項目のメニュー名
 #define kKESCMSaveChecksMenuKey		kKESCMStringPrefix "kKESCMSaveChecksMenuKey"	// パネルのフライアウト「Save Check & Register」項目のメニュー名
@@ -711,7 +716,7 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMBookRowStateWidgetID, kKCMUIPrefix + 49)	// �
 #define kKESCMModePixelSubMenuItemPosition		1.0	// サブメニュー「Compare mode」内: Pixel Changes(選択中に✓)
 #define kKESCMModeStorySubMenuItemPosition		2.0	// サブメニュー「Compare mode」内: Story Changes(Pixel と相互排他)
 // ── 表示系トグル群 ──
-#define kKESCMHoldToHideMarksMenuItemPosition	9.20	// チェック式トグル「Hold to Hide Marks」(枠表示の極性反転)。Sep1 の直後(群の先頭)
+// (9.20 は「Hold to Hide Marks」が使っていた位置。2026-08-22 のトグル撤去で空き＝別項目に使ってよい)
 #define kKESCMIgnorePageNumMenuItemPosition	9.22	// チェック式トグル「Ignore Page Number Marker」
 #define kKESCMOpacitySubmenuMenuItemPosition	9.24	// 「Marks opacity」サブメニュー(中に 25% / 75%)。Print の上へ入れ替え(2026-07-24)
 #define kKESCMPrintMarksMenuItemPosition	9.26	// チェック式トグル「Print comparison marks」。Marks opacity の下へ入れ替え(2026-07-24)

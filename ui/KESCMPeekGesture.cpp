@@ -241,15 +241,20 @@ void KESCMTrackerRevealBegin(bool16 shiftDown, bool16 altDown, bool16 cmdDown, b
 	if (gesture == kKESCMGestureNone)
 		return;	// 未割当(Ctrl/Command 系、Mac の Control)。トラッカーはキャプチャ済みだが描画状態は変えない。
 
-	// ---- 「Hold to Hide Marks」モード(常時表示の極性反転)の窓別 temp-hide ----
+	// ---- 常時表示中の窓別 temp-hide(押している間だけ枠をどけて素の紙面を見る) ----
 	// 隠すジェスチャ=reveal と peek(修飾なし/Shift/Shift+Alt)。
 	// ★CMYK(Alt 単独)は隠さない=枠を出したままサンプリング(旧・中ボタン Shift+Ctrl+Alt でも枠は
 	// 隠れない仕様に一致)。押した窓の枠だけを隠す(Target/Source 別)。
+	// ★★★2026-08-22＝**判定を「Hold to Hide Marks」から各トグル自身へ移した**(ユーザー決定)。
+	//   規則は「**押している間は反対になる**」の1本＝**その窓のマークが出ていれば隠し、出ていなければ出す**
+	//   (出す側は下の reveal と Story 分岐)。⇒ Hold トグルは撤去した。あれの「常時表示」は
+	//   「Show Marks on ...」と完全に重複しており、固有だったのはこの temp-hide だけなので、
+	//   それをトグル ON のときの標準の挙動として畳んである。
 	const bool16 tempHideGesture = (gesture != kKESCMGestureCmyk);
 	InterfacePtr<IKESCMCompareFacade> compare(Utils<IKESCMCompareFacade>().QueryUtilInterface());
-	if (compare->GetHoldToHideMarks() && tempHideGesture)
+	if (tempHideGesture)
 	{
-		if (!compare->GetMarksTempHidden() && KESCMMouseIsOverTarget())
+		if (compare->GetShowTargetMarks() && !compare->GetMarksTempHidden() && KESCMMouseIsOverTarget())
 		{
 			compare->SetMarksTempHidden(kTrue);
 			KESCMInvalidateMarksDoc();	// Target を再描画
@@ -287,9 +292,11 @@ void KESCMTrackerRevealBegin(bool16 shiftDown, bool16 altDown, bool16 cmdDown, b
 	// ★★Pixel の reveal(下)とは別の道で、絵の作り方が根本的に違う。Pixel は「ページのどこが違って
 	//   見えるか」しか知らないので枠を描くが、Story は「どの文字が変わったか」を知っているので、
 	//   その文字を反転する(ユーザー指定 2026-08-22)。⇒ 拡大率で大きさが変わらず、ページの外枠も要らない。
-	// ⚠Hold to Hide の判定より**前**に置く: Story モードには「常時表示の枠」が無い(KESCMDrawEventHandler
-	//   の drawRings が Story では kFalse)ので、あのモードがここで隠すものは何も無い。
-	// ★出すのは**押した窓の側だけ**(ユーザー選択 2026-08-22)。削除された文字は旧版にしか無く、挿入された
+	// ⚠上の temp-hide が扱うのは**枠**だけ(Story モードには枠が無い＝KESCMDrawEventHandler の drawRings が
+	//   Story では kFalse)なので、Story の反転マークの「押している間は反対」はここではなく
+	//   KESCMStoryMarksRefresh が決める＝押した窓のトグルと押下を XOR する(KESCMStoryPressMarks.cpp)。
+	//   ⇒ **トグル OFF の窓を押せば出て、ON の窓を押せば隠れる**。この分岐は「押した」ことだけを伝える。
+	// ★対象は**押した窓の側だけ**(ユーザー選択 2026-08-22)。削除された文字は旧版にしか無く、挿入された
 	//   文字は新版にしか無いので、どちらの文書を見ているかでマークできるものが変わる。
 	if (compare->GetCompareMode() == kKESCMModeStory)
 	{
@@ -301,8 +308,9 @@ void KESCMTrackerRevealBegin(bool16 shiftDown, bool16 altDown, bool16 cmdDown, b
 	}
 
 	// ---- 修飾なし: 通常モードのマーク一時表示(reveal) ----
-	// Hold to Hide モード中は上で temp-hide 済み=ここでは何もしない(reveal はしない)。
-	if (compare->GetHoldToHideMarks())
+	// ★「押している間は反対」の**出す側**。Target のマークが既に出ているなら上で temp-hide 済みなので、
+	//   ここでは何もしない(2026-08-22＝判定を GetHoldToHideMarks から付け替えた。Hold は撤去)。
+	if (compare->GetShowTargetMarks())
 		return;
 
 	// 「マークがある」の判定は旧・中ボタンの修飾なし分岐と同一(anyMarkableContent 相当)。

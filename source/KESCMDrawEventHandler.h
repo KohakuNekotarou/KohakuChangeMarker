@@ -218,17 +218,19 @@ public:
 	// でも番号がズレていれば描く(隠しが無ければ現在番号と一致して何も描かない)。
 	static bool16 sShowOldNumbers;
 
-	// 「Hold to Hide Marks」トグル(フライアウトのチェック式。枠表示の極性反転)。★既定=kFalse。
-	// ON の間、画面では枠(リング)を「常時」表示し、ツール左hold中だけ sMarksTempHidden で
-	// 一時的に隠す(離すと戻る)=既定動作(非表示・押下中だけ表示)の逆。画面のみの挙動で、印刷/PDF への
-	// 出力は sPrintMarks が独立して決める(下の wantMarks では !printing のときだけ効かせる)。不透明度は
-	// パネル選択の 25%/75%(KESCMBaseScreenOpacity が sAlwaysShowMarks ON も選択不透明度を返す)。
-	static bool16 sAlwaysShowMarks;
-	// Hold to Hide Marks モード中、ツール左ボタンを押している間だけ kTrue(常時表示の枠を一時退避)。離すと kFalse。
-	// KESCMPeekGesture.cpp のトラッカー(KESCMTrackerRevealBegin/End)が上下させる。モード OFF の間は常に kFalse で無影響。
+	// (★2026-08-22 に「Hold to Hide Marks」トグル(sAlwaysShowMarks)を撤去した。あれは「枠を常時表示し、
+	//  ツール左hold中だけ隠す」で、**前半が「Show Marks on Target」と完全に重複**していた。固有だった
+	//  後半＝「押している間だけ隠す」は、**トグル ON のときの標準の挙動**として下の sMarksTempHidden に
+	//  畳んである。⇒ 規則は「**押している間は反対になる**」の1本＝OFF なら押下中だけ出る、ON なら
+	//  押下中だけ隠れる。ActionID +19 は欠番のまま再利用しない。)
+
+	// 「Show Marks on Target」ON のとき、Target 窓でツール左ボタンを押している間だけ kTrue
+	// (常時表示の枠を一時退避)。離すと kFalse。
+	// KESCMPeekGesture.cpp のトラッカー(KESCMTrackerRevealBegin/End)が上下させる。トグル OFF の間は
+	// 常に kFalse で無影響(そちらは「押下中だけ出す」reveal が動く)。
 	// ★これは Target 窓上でツール左ボタンを押したときだけ立てる(押した窓の枠だけ隠す=ウィンドウ別)。
 	static bool16 sMarksTempHidden;
-	// sMarksTempHidden の Source 版。「Show Marks on Source」ON かつ「Hold to Hide Marks」ON のとき、
+	// sMarksTempHidden の Source 版。「Show Marks on Source」ON のとき、
 	// Source のレイアウト窓上でツール左ボタンを押している間だけ kTrue(その間だけ Source 側の常時表示枠を画面で隠す)。
 	// 印刷は Source 枠を常に出す仕様なので影響しない(描画側で !printing ゲート)。
 	static bool16 sSrcMarksTempHidden;

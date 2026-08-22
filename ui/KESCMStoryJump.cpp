@@ -52,6 +52,8 @@
 #include "KESCMUIShared.h"	// panel / status line / nav readout / tool button (split from KESCMCore.h on 2026-08-13)
 #include "KESCMStoryJump.h"
 #include "KESCMStoryMarker.h"	// the flash over the characters a change row goes to (2026-08-20)
+#include "KESCMStoryPressMarks.h"	// KESCMStoryMarksRefresh - what the "Show Marks on ..." toggles
+									//  want on screen, put back after this clears the flash (2026-08-22)
 #include "IKESCMStoryEditsFacade.h"	// the row a click landed on (Facade since 2026-08-13, Task 14)
 #include "IKESCMMarkData.h"	// IsPageOnHiddenSpread - a row on a hidden page is labelled, not jumped to (2026-08-18)
 
@@ -586,7 +588,21 @@ bool16 KESCMStorySelectChange(int32 rowIndex, int32 changeIndex)
 	// ★THE MARK COMES DOWN. The single click that opened this double click put one up; leaving it
 	//   there would put an inversion on top of the selection's own inversion, and the text under
 	//   both is unreadable (KBS records exactly this in KBSJump.cpp).
+	// ⚠★★AND THEN WHATEVER STANDS ON ITS OWN GOES BACK UP (2026-08-22 bug recheck A2). Clear() takes
+	//   down the ONE adornment both kinds of mark share, so before this it also wiped the marks the
+	//   "Show Marks on Target / Source" toggles were holding there - and nothing put them back:
+	//   the toggle stayed on, the screen stayed bare, and only a fresh comparison or a press of the
+	//   tool would bring them round again. A reader who turned a toggle on precisely so as not to
+	//   have to hold the tool would never see them return.
+	//   ★The refresh is idempotent and decides for itself, so this says "something changed", not
+	//     "put the marks back" - which is why it is right even when no toggle is on (it then leaves
+	//     the screen clear) and in the Pixel mode (it does nothing at all).
+	//   ★THE INVERSION-ON-INVERSION PROBLEM ABOVE IS NOT REINTRODUCED: a standing mark being hard to
+	//     read under a selection is the reader's own choice of two things at once, and it is a
+	//     choice they can undo from the flyout. The jump's flash is not - it appears unasked, one
+	//     click before this one.
 	KESCMStoryMarker::Clear();
+	KESCMStoryMarksRefresh();
 
 	// ***** AND THE SAME EDIT IS SELECTED ON THE OLDER SIDE TOO (user's call, 2026-08-21). *****
 	//

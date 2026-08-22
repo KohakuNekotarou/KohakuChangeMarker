@@ -577,6 +577,11 @@ bool16 KESCMStoryMarker::IsShowing()
 	return gHasMark;
 }
 
+bool16 KESCMStoryMarker::IsShowingPersistent()
+{
+	return (gHasMark && gPersistent) ? kTrue : kFalse;
+}
+
 void KESCMStoryMarker::Shutdown()
 {
 	// ⚠The flag goes up FIRST: from here on nothing repaints, because the document the mark was in

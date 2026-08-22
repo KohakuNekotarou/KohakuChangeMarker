@@ -5,14 +5,19 @@
 //  Kohaku Change Marker (KESCM)
 //
 //  Which edits the Story mode is showing on the page right now, and in which of the two
-//  documents. Two things ask for them and they add up rather than compete:
+//  documents. Two things decide it, and the second REVERSES the first rather than adding to it:
 //
 //    * the "Show Marks on Target" / "Show Marks on Source" toggles - marks that STAY UP, the
 //      Story mode's half of what those two toggles already do for the Pixel mode's frames
 //      (user's request, 2026-08-22: "ツールでボタンを押さなくても常にマークが出る様に、
 //      それをピクセルの方もストーリーの方にも");
-//    * the KESCM tool's left button while it is held - the window under the cursor, for as long
-//      as the button is down, whether or not its toggle is on.
+//    * the KESCM tool's left button while it is held - which turns the window under the cursor
+//      ROUND for as long as the button is down: marks that were off come on, marks that were on
+//      go off. ★★That is the plug-in's one rule for the button, and it is why the separate
+//      "Hold to Hide Marks" toggle could be retired on 2026-08-22 (user's call) - it had said
+//      "keep them up, and hide them while held", of which the first half was already what
+//      "Show Marks on Target" said. The Pixel mode's frames follow the same rule through two
+//      separate flags (alwaysScreen and sMarksTempHidden, both in KESCMDrawEventHandler).
 //
 //  ★★IT IS THE STORY MODE'S ANSWER TO THE PIXEL MODE'S FRAMES, AND IT IS DELIBERATELY A DIFFERENT
 //  SHAPE. The Pixel mode has no idea what changed - only which rectangles of the page came out

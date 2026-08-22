@@ -65,7 +65,7 @@ resource StringTable (kSDKDefStringsResourceID + index_enUS)
                 kKESCMBookRowStartMenuKey,			"Start Change Marker",
                 kKESCMStoryRowRefreshMenuKey,		"Refresh Story Comparison",
                 kKESCMIgnorePageNumMenuKey,			"Ignore Page Number Marker",
-                kKESCMHoldToHideMarksMenuKey,			"Hold to Hide Marks",
+                // ("Hold to Hide Marks" was retired on 2026-08-22 - see KCMUI.fr's MenuDef note.)
 
                 // Keyboard Shortcuts editor area for shortcut-assignable actions: the value string that
                 // "KBSCE Palette Menus: Kohaku Change Marker: " (kKESCMPanelMenuActionArea) resolves to. This

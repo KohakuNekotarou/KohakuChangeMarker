@@ -161,8 +161,7 @@ public:
 	virtual void		SetShowTargetMarks(bool16 on)		{ KESCMDrawEventHandler::sTgtMarksOn = on; }
 	virtual bool16		GetShowOldPageNumbers()	{ return KESCMDrawEventHandler::sShowOldNumbers; }
 	virtual void		SetShowOldPageNumbers(bool16 on)	{ KESCMDrawEventHandler::sShowOldNumbers = on; }
-	virtual bool16		GetHoldToHideMarks()	{ return KESCMDrawEventHandler::sAlwaysShowMarks; }
-	virtual void		SetHoldToHideMarks(bool16 on)		{ KESCMDrawEventHandler::sAlwaysShowMarks = on; }
+	// (GetHoldToHideMarks / SetHoldToHideMarks は 2026-08-22 に撤去＝IKESCMCompareFacade.h の注記を見よ)
 
 	virtual void		SetMarksVisible(bool16 on)			{ KESCMDrawEventHandler::sMarksVisible = on; }
 	virtual void		SetMarkScreenOpacity(const PMReal& opacity)

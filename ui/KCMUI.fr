@@ -738,16 +738,12 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKESCMPrintMarksMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
-		// "Hold to Hide Marks" on the panel flyout (popup) menu. Check-mark toggle that inverts the
-		// polarity of the marks display: while ON, the comparison marks are kept visible on screen at
-		// all times, and holding the tool's left button (any reveal/peek gesture) temporarily HIDES
-		// them — releasing shows them again (the default is the opposite: marks are hidden and the
-		// left-hold reveals them while held). Screen-only: printing is still governed independently by
-		// "Print comparison marks". The check mark comes from UpdateActionStates (kCustomEnabling).
-		kKESCMPopupHoldToHideMarksActionID,
-		kKESCMPopupMenuPath,
-		kKESCMHoldToHideMarksMenuItemPosition,
-		kSDKDefIsNotDynamicMenuFlag,
+		// ("Hold to Hide Marks" stood here until 2026-08-22. It meant "keep the marks up, and hide
+		//  them while the button is held" — and once "Show Marks on Target" existed, the first half
+		//  of that was the same switch twice over. The second half is now what BOTH "Show Marks on"
+		//  toggles do while the button is held, so the rule is one line: **while the button is held,
+		//  that window is the other way round**. Menu position 9.20 is free; ActionID +19 is not to
+		//  be reused.)
 
 		// "Marks opacity" submenu containing "25%" and "75%". The two children act as a radio pair
 		// (mutually exclusive): UpdateActionStates (kCustomEnabling) puts the check mark on whichever
@@ -1146,14 +1142,7 @@ resource ActionDef (kSDKDefActionResourceID)
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 
-		kKESCMActionComponentBoss,
-		kKESCMPopupHoldToHideMarksActionID,
-		kKESCMHoldToHideMarksMenuKey,
-		kOtherActionArea,
-		kNormalAction,
-		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates supplies the check mark (kSelectedAction)
-		kInvalidInterfaceID,
-		kSDKDefInvisibleInKBSCEditorFlag,
+		// ("Hold to Hide Marks" (+19) was retired on 2026-08-22 — see the note in the MenuDef above.)
 
 		kKESCMActionComponentBoss,
 		kKESCMPopupOpacity25ActionID,
