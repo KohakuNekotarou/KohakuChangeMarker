@@ -95,12 +95,33 @@ void KESCMStoryCollectRanges(IDataBase* db, bool16 useSourceDocument, KESCMStory
 		if (row.fStoryUID == kInvalidUID)
 			continue;
 
-		// ★WHICH DOCUMENT A ROW BELONGS TO IS ANSWERED BY ITS KIND, and by nothing else on the row
-		//   (IKESCMStoryEditsFacade.h). A removed story exists only in the source; every other row
-		//   was read out of the target. Getting this wrong would not draw nothing - a UID names a
-		//   DIFFERENT object in the other document, so it would mark innocent text.
+		// ★★WHICH ROWS EXIST IN THE DOCUMENT BEING ASKED FOR. An ADDED story is only in the newer
+		//   version and a REMOVED one only in the older, so each is skipped on the side it is not
+		//   on. ⇒ **Everything else is in BOTH**, and is marked in whichever one is being asked for.
+		//
+		// ★★★THE SAME UID NAMES THE SAME STORY IN BOTH DOCUMENTS. That is the premise the whole
+		//   feature stands on - the two are versions of one document, and saving under a new name
+		//   carries the UIDs across (KESCMStoryStamp.h, "WHY TWO VERSIONS CAN BE MATCHED AT ALL").
+		//   Two other places already ask exactly this way, which is the check that this is not a
+		//   local assumption: the diff reads the older side with UIDRef(sourceDB, row->fStoryUID)
+		//   (KESCMStoryDiffRun::Run), and the double click selects with it (KESCMStoryJump.cpp).
+		//
+		// ⚠★★★THIS USED TO ASK "is this a removed row?" AND REQUIRE THAT TO **MATCH**
+		//   useSourceDocument, which quietly dropped every ORDINARY row from the source side
+		//   (2026-08-22, found by the user at the running application, not by this file's own
+		//   reasoning). Two things were broken by it and both were invisible from here:
+		//     * holding the button over the older window marked nothing at all, unless a whole
+		//       story happened to have been deleted;
+		//     * ★a DELETION had nowhere left to be shown correctly - the characters survive only
+		//       in the older version, so the source side is the ONLY side that can show one. What
+		//       the reader got instead was the target side's stand-in (see the "to = from + 1"
+		//       note below), which lights the character that closed up over the gap.
+		//   ⇒ The comment that stood here argued from "a uid means a different object in the other
+		//     document", which is true in general and false for this feature. ★An argument that
+		//     proves too much is worth testing against what the neighbours actually do.
+		const bool16 addedRow   = ((row.fKinds & kKESCMStoryKindAdded)   != 0) ? kTrue : kFalse;
 		const bool16 removedRow = ((row.fKinds & kKESCMStoryKindRemoved) != 0) ? kTrue : kFalse;
-		if (removedRow != useSourceDocument)
+		if (useSourceDocument ? addedRow : removedRow)
 			continue;
 
 		const int32 changeCount = Utils<IKESCMStoryEditsFacade>()->GetChangeCount(n);
