@@ -89,6 +89,24 @@ struct KESCMParaAttrs
 {
 	KESCMAttrSpanList	fRuby;
 	KESCMAttrSpanList	fKenten;
+
+	/** Characters the text model counts after this paragraph that are not in its text (2026-08-22).
+
+		★★WHY IT EXISTS: TABLES. A table is not made of text, but ITextModel counts it - one
+		character for the table itself, one at the end of every row but the last - and every position
+		worked out from the XML is off by that much until they are added back. The comparison checks
+		exactly this (KESCMStoryDiffRun's LengthAgrees) and refuses the whole story when it does not
+		add up, which is why a document with ONE table used to produce no differences at all.
+
+		★MEASURED, NOT ASSUMED (2026-08-22, five documents of 0/4/6/6/8 cells plus a merged one):
+		    TotalLength = text + 1 per table + Σ(cell text) + 1 per cell + (rows - 1) per table
+		The "+1 per cell" needs nothing here - a cell IS a paragraph, and ParagraphStarts already
+		adds one break character per paragraph. What is left over is the table's own character and
+		the row terminators, and those are what this carries.
+		⚠A merged cell is simply one cell fewer; nothing about the formula changes (measured). */
+	int32				fExtraChars;
+
+	KESCMParaAttrs() : fExtraChars(0) {}
 };
 
 namespace KESCMSnippetText
@@ -278,13 +296,137 @@ inline void ExtractParagraphs(const std::string& xml,
 	int32 paraPos = 0;					// code points appended to `current` so far
 	size_t pos = storyStart;
 
+	// ★★★TABLES (2026-08-22). A table lives INSIDE the story - its cells' <Content> sits between the
+	//   story's own - so reading every <Content> the way this used to did two things at once: it
+	//   glued the cells onto whatever paragraph the table interrupted, and it made the character
+	//   count disagree with ITextModel::TotalLength. The second one is what the reader saw: the
+	//   comparison's LengthAgrees guard refused the whole story, so a document with a table got NO
+	//   text differences at all - and no ruby or kenten either, since those are found after it.
+	//
+	// ★A CELL IS A PARAGRAPH (user's call, 2026-08-22: "1つのセルを1つの段落様に考えないとかな、
+	//   1つのセルのなかで変化しているか、追加か、削除かですよね"). That is all the diff needs: cells
+	//   become elements of the same sequence the paragraphs are in, so a rewritten cell comes out as
+	//   a change, an added row as insertions and a deleted one as deletions - with no new machinery.
+	//
+	// ★★HOW MANY CHARACTERS A TABLE IS, measured 2026-08-22 on five documents (0/4/6/6/8 cells) and
+	//   checked against a sixth:
+	//        TotalLength = text + 1 (the table's own anchor character)
+	//                           + Σ(cell contents) + one per cell + (rows - 1)
+	//   ⚠The last row has no terminator, which is why it is rows-1 and not rows. All five agreed
+	//     exactly; the real document came to 52 against a measured 52.
+	int32 tableDepth = 0;				// >0 while inside a table (⚠tables can nest)
+	int32 lastCellRow = -1;				// the row the previous cell was in, to spot a row change
+
+	// Finish the paragraph being built and start a new one. ★ONE PLACE, because a paragraph is now
+	// ended by three different things - a <Br />, a cell closing, and the end of the story - and the
+	// three must agree about what "finish" means (decode, push, push the attributes, reset).
+	struct Flush
+	{
+		static void Do(std::string& current, KESCMParaAttrs& attrs, int32& paraPos,
+					   std::vector<std::string>& paragraphs,
+					   std::vector<KESCMParaAttrs>* attrsPerPara)
+		{
+			DecodeEntities(current);
+			paragraphs.push_back(current);
+			if (attrsPerPara != nil)
+				attrsPerPara->push_back(attrs);
+			current.clear();
+			attrs = KESCMParaAttrs();
+			paraPos = 0;
+		}
+	};
+
+	// Charge one of the text model's invisible characters to the paragraph that has just been
+	// finished, so that everything after it is counted from the right place.
+	// ⚠It goes on the LAST FINISHED paragraph rather than the one being built: these characters sit
+	//   between paragraphs (a table's anchor, a row's terminator), and ParagraphStarts adds each
+	//   paragraph's own break AFTER its text.
+	struct Charge
+	{
+		static void One(std::vector<KESCMParaAttrs>* attrsPerPara, int32 n)
+		{
+			if (attrsPerPara != nil && !attrsPerPara->empty())
+				attrsPerPara->back().fExtraChars += n;
+		}
+	};
+
 	while (pos < storyEnd)
 	{
 		const size_t lt = xml.find('<', pos);
 		if (lt == std::string::npos || lt >= storyEnd)
 			break;
 
-		if (xml.compare(lt, 9, "<Content>") == 0)
+		if (xml.compare(lt, 7, "<Table ") == 0)
+		{
+			const size_t gt = xml.find('>', lt);
+			if (gt == std::string::npos || gt > storyEnd)
+				break;
+
+			if (tableDepth == 0)
+			{
+				// ★The story's paragraph stops here - but ONLY IF THERE WAS ONE. A table that begins
+				//   a paragraph (which is the ordinary case: the <Br /> before it has just ended the
+				//   previous one) leaves nothing to flush, and flushing anyway would invent an empty
+				//   paragraph and with it one break character that the text model does not count.
+				//   ⚠Measured before and after: 53 against the model's 52, and 21 against 20.
+				if (!current.empty())
+					Flush::Do(current, currentAttrs, paraPos, paragraphs, attrsPerPara);
+
+				Charge::One(attrsPerPara, 1);		// the table itself, one character
+				lastCellRow = -1;
+			}
+			++tableDepth;
+			pos = gt + 1;
+		}
+		else if (xml.compare(lt, 8, "</Table>") == 0)
+		{
+			if (tableDepth > 0)
+				--tableDepth;
+			if (tableDepth == 0)
+				lastCellRow = -1;
+			pos = lt + 8;
+		}
+		else if (tableDepth > 0 && xml.compare(lt, 6, "<Cell ") == 0)
+		{
+			// ★A CELL IS A PARAGRAPH. Nothing is pushed here - the cell's text is collected the same
+			//   way any paragraph's is, and </Cell> ends it. What this tag is read for is the ROW:
+			//   Name is "column:row", and a change of row means the previous cell was the last one
+			//   in its row, which is where the row's terminator character belongs.
+			const size_t gt = xml.find('>', lt);
+			if (gt == std::string::npos || gt > storyEnd)
+				break;
+
+			const std::string tag(xml, lt, gt - lt);
+			const std::string name = AttrValue(tag, "Name");
+			const size_t colon = name.find(':');
+			int32 row = -1;
+			if (colon != std::string::npos)
+			{
+				row = 0;
+				for (size_t i = colon + 1; i < name.size(); ++i)
+				{
+					if (name[i] < '0' || name[i] > '9')
+						break;
+					row = row * 10 + (name[i] - '0');
+				}
+			}
+
+			// ⚠The FIRST cell of the table charges nothing: the terminator belongs to the end of a
+			//   row, and the last row has none (measured - that is why the formula says rows-1).
+			if (row >= 0 && lastCellRow >= 0 && row != lastCellRow)
+				Charge::One(attrsPerPara, 1);
+			lastCellRow = row;
+
+			pos = gt + 1;
+		}
+		else if (tableDepth > 0 && xml.compare(lt, 7, "</Cell>") == 0)
+		{
+			// The cell's text ends here. Its own break character is what ParagraphStarts adds to
+			// every paragraph, which is exactly the "+1 per cell" the measurement asked for.
+			Flush::Do(current, currentAttrs, paraPos, paragraphs, attrsPerPara);
+			pos = lt + 7;
+		}
+		else if (xml.compare(lt, 9, "<Content>") == 0)
 		{
 			const size_t close = xml.find("</Content>", lt);
 			if (close == std::string::npos || close > storyEnd)
@@ -418,13 +560,7 @@ inline void ExtractParagraphs(const std::string& xml,
 		}
 		else if (xml.compare(lt, 4, "<Br ") == 0 || xml.compare(lt, 4, "<Br/") == 0)
 		{
-			DecodeEntities(current);
-			paragraphs.push_back(current);
-			current.clear();
-			if (attrsPerPara != nil)
-				attrsPerPara->push_back(currentAttrs);
-			currentAttrs = KESCMParaAttrs();
-			paraPos = 0;
+			Flush::Do(current, currentAttrs, paraPos, paragraphs, attrsPerPara);
 
 			const size_t gt = xml.find('>', lt);
 			pos = (gt == std::string::npos) ? storyEnd : gt + 1;
@@ -436,10 +572,7 @@ inline void ExtractParagraphs(const std::string& xml,
 	}
 
 	// The last paragraph has no <Br /> after it.
-	DecodeEntities(current);
-	paragraphs.push_back(current);
-	if (attrsPerPara != nil)
-		attrsPerPara->push_back(currentAttrs);
+	Flush::Do(current, currentAttrs, paraPos, paragraphs, attrsPerPara);
 }
 
 /** True when two paragraphs' ruby differs - the question "did only the ruby change?" is this one

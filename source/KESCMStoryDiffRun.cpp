@@ -74,6 +74,7 @@ const int32 kContextCodePoints = 14;
    always ends with one.
 */
 void ParagraphStarts(const std::vector<std::string>& paragraphs,
+					 const std::vector<KESCMParaAttrs>& attrs,
 					 std::vector<int32>& starts, int32& total)
 {
 	starts.clear();
@@ -87,6 +88,13 @@ void ParagraphStarts(const std::vector<std::string>& paragraphs,
 		std::vector<int32> codePoints;
 		KESCMTextDiff::ToCodePoints(paragraphs[i], codePoints);
 		index += static_cast<int32>(codePoints.size()) + 1;
+
+		// ★★CHARACTERS THE TEXT MODEL COUNTS THAT THE TEXT DOES NOT SHOW (2026-08-22) - a table's
+		//   own character, and one at the end of every row but the last. Without them every position
+		//   after a table is short by that much, and LengthAgrees below refuses the whole story
+		//   rather than aim a jump at the wrong words. See KESCMParaAttrs::fExtraChars.
+		if (i < attrs.size())
+			index += attrs[i].fExtraChars;
 	}
 
 	total = index;
@@ -593,8 +601,8 @@ bool16 CompareOneStory(const UIDRef& targetStory, const UIDRef& sourceStory,
 	std::vector<int32> sourceStarts;
 	int32 targetComputed = 0;
 	int32 sourceComputed = 0;
-	ParagraphStarts(targetParas, targetStarts, targetComputed);
-	ParagraphStarts(sourceParas, sourceStarts, sourceComputed);
+	ParagraphStarts(targetParas, targetAttrs, targetStarts, targetComputed);
+	ParagraphStarts(sourceParas, sourceAttrs, sourceStarts, sourceComputed);
 
 	// ★BOTH SIDES ARE CHECKED. KohakuTest checked only the side it selected in; here a click
 	//   moves both windows, so a mismatch on the older side would aim the older window wrongly.
