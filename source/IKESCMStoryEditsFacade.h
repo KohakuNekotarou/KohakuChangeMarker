@@ -96,9 +96,25 @@ public:
 			be no row (KESCMStoryStamp.h). It means the WORDS come out the same. */
 		bool16		fTextCompared;
 
+		/** WHICH KIND OF ATTRIBUTE this row's children found a difference in, when they found one
+			(2026-08-22). 0 = none; 1 = ruby.
+
+			★A NUMBER RATHER THAN A FLAG, because ruby is the first of these and not the last:
+			KENTEN (圏点) is meant to follow, and it is a different mechanism again - ruby is a
+			STRAND (IRubyAttrStrand, run-based) while kenten is a set of CHARACTER ATTRIBUTES
+			(kTAKenten*Boss on kCharAttrStrandBoss). What they have in common is exactly this: the
+			text is untouched and something over it moved. ⇒ Adding kenten means one more value
+			here and one more label, not another field and another branch everywhere.
+
+			⚠NOT DERIVED FROM fKinds, which comes from the two documents' CHANGE COUNTERS and is
+			  deliberately left alone by a row refresh ("read it again and it says the same"). This
+			  one comes from the DIFF - it is only known after the two versions were compared - so
+			  mixing it into fKinds would break that promise. */
+		int32		fAttrKind;
+
 		Row()
 			: fStoryUID(kInvalidUID), fKinds(kKESCMStoryKindNone), fFrameUID(kInvalidUID),
-			  fPageUID(kInvalidUID), fTextCompared(kFalse) {}
+			  fPageUID(kInvalidUID), fTextCompared(kFalse), fAttrKind(0) {}
 	};
 
 	// ---- the list ------------------------------------------------------------------------

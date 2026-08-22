@@ -671,6 +671,27 @@ void KESCMStoryList::SetRowChanges(int32 nth, const std::vector<KESCMStoryChange
 
 	gRows[nth].fChanges = changes;
 	gRows[nth].fTextCompared = textCompared;
+
+	// ★WHICH ATTRIBUTE THE ROW SHOULD NAME, worked out here rather than asked for later: the row
+	//   is drawn many times and the children are walked once. ⚠First one wins, which is enough
+	//   while there is one kind; when kenten joins it, a row holding both will have to say
+	//   something about that - and this is the line that will have to decide what.
+	gRows[nth].fAttrKind = kKESCMStoryAttrNone;
+	for (size_t i = 0; i < changes.size(); ++i)
+	{
+		if (changes[i].fWhat == KESCMStoryChange::kAttr && !changes[i].fRuby.IsEmpty())
+		{
+			gRows[nth].fAttrKind = kKESCMStoryAttrRuby;
+			break;
+		}
+		// ⚠A ruby that was REMOVED has an empty fRuby and a filled fOtherRuby - it is still a ruby
+		//   change, and the row still has to say so.
+		if (changes[i].fWhat == KESCMStoryChange::kAttr && !changes[i].fOtherRuby.IsEmpty())
+		{
+			gRows[nth].fAttrKind = kKESCMStoryAttrRuby;
+			break;
+		}
+	}
 }
 
 /* RefreshRowFromDocument

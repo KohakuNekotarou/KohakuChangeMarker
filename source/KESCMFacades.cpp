@@ -373,6 +373,7 @@ public:
 		out.fFrameUID	= row->fFrameUID;
 		out.fPageUID	= row->fPageUID;
 		out.fTextCompared = row->fTextCompared;
+		out.fAttrKind	= static_cast<int32>(row->fAttrKind);	// 0 = none, 1 = ruby (kenten later)
 		return kTrue;
 	}
 

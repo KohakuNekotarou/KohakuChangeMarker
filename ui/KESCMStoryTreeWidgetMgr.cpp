@@ -76,9 +76,20 @@ namespace
 	⚠It is not "unchanged": the counters moved, or there would be no row. It is "no difference in
 	the words", and the sameKind flag is only ever set when the diff really ran (fTextCompared).
 
+	★★AN ATTRIBUTE THE DIFF ACTUALLY IDENTIFIED IS NAMED, rather than falling back on the counters'
+	"Attr" (2026-08-22, user's request: "Changeは、Rubyで"). "Attr" is what the two documents'
+	CHANGE COUNTERS say - true but vague, and it is all that could be said before the text was
+	compared. When the comparison has gone further and found that a RUBY moved over characters
+	nobody touched, the row can say so.
+	⚠It is checked before the counters and after Added/Removed/None: those three describe the row
+	  itself, this describes what was found inside it.
+	★Kenten (圏点) is meant to join this - one more value in KESCMStoryAttrKind and one more key
+	  here, which is why this takes the kind rather than a "hasRuby" flag.
+
 	@param sameKind kTrue when the text was compared and nothing differs - see above.
+	@param attrKind which attribute the children found, as KESCMStoryAttrKind; 0 for none.
 */
-PMString KindLabel(uint32 kinds, bool16 sameKind)
+PMString KindLabel(uint32 kinds, bool16 sameKind, int32 attrKind)
 {
 	if (sameKind)
 	{
@@ -102,6 +113,17 @@ PMString KindLabel(uint32 kinds, bool16 sameKind)
 		removed.Translate();
 		removed.SetTranslatable(kFalse);
 		return removed;
+	}
+
+	// ★What the diff FOUND, ahead of what the counters merely reported. ⚠Only when the text itself
+	//   did not change: a story whose words were rewritten AND whose ruby moved is a text edit
+	//   first, and the "Text+" below already says there was more than one kind of change.
+	if (attrKind == kKESCMStoryAttrRuby && (kinds & kKESCMStoryKindText) == 0)
+	{
+		PMString ruby(kKESCMStoryKindRubyKey);
+		ruby.Translate();
+		ruby.SetTranslatable(kFalse);
+		return ruby;
 	}
 
 	PMString out;
@@ -327,7 +349,7 @@ public:
 			//   draw a triangle, so the two can never disagree.
 			const bool16 sameKind = row.fTextCompared
 				&& (Utils<IKESCMStoryEditsFacade>()->GetChangeCount(nodeID->GetRow()) == 0);
-			kinds = KindLabel(row.fKinds, sameKind);
+			kinds = KindLabel(row.fKinds, sameKind, row.fAttrKind);
 		}
 		else if (Utils<IKESCMStoryEditsFacade>()->GetRowCount() == 0)
 		{

@@ -598,6 +598,7 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMBookRowStateWidgetID, kKCMUIPrefix + 49)	// �
 //   ＝カウンターは動いている(でなければ行が出ない)。言っているのは「語は同じ」。
 //   ⇒ 更新(Refresh Story Comparison)で直し終えた行と、そもそも比較できなかった行が見分けられる。
 #define kKESCMStoryKindNoneKey		kKESCMStringPrefix "kKESCMStoryKindNoneKey"		// 行の右=本文に差が無い
+#define kKESCMStoryKindRubyKey		kKESCMStringPrefix "kKESCMStoryKindRubyKey"		// 行の右=ルビが変わった(本文は同じ。★カウンター由来の "Attr" より具体的に名指しする＝2026-08-22 ユーザー指定。圏点を足すときはここに並べる)
 
 // 一覧の列見出し(2026-08-10)。★中の語をそのまま使わない: 2列目の見出しは "Text" ではなく "Story"、
 // 3列目は "Kind" ではなく "Change"(ユーザー指定)。理由は語の衝突——3列目に出る**値**が "Text" なので、

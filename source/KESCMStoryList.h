@@ -195,9 +195,29 @@ struct KESCMStoryRow
 		(KESCMStoryStamp.h); what this says is that the WORDS come out the same. */
 	bool16		fTextCompared;
 
+	/** WHICH KIND OF ATTRIBUTE the children found a difference in, when they found one - so that
+		the row can name it rather than falling back on "Attr" (2026-08-22, user's request:
+		"Changeは、Rubyで").
+
+		★A NUMBER, NOT A FLAG, because ruby is the first of these and not the last. KENTEN (圏点)
+		is meant to follow, and it is a different mechanism again: ruby is a STRAND
+		(IRubyAttrStrand, run-based, RubyFlag 1/2 in the snippet) while kenten is a set of
+		CHARACTER ATTRIBUTES (the twenty kTAKenten*Boss on kCharAttrStrandBoss, the kind living in
+		kTAKentenKindBoss with Kenten_None for off). What they share is the only thing the panel
+		cares about: the text did not move and something over it did.
+		⇒ Adding kenten is one more value here and one more label - not another field, and not
+		  another branch in every place that draws a row.
+
+		⚠NOT PART OF fKinds. That one comes from the two documents' change COUNTERS, and a row
+		  refresh deliberately leaves it alone because reading the counters again gives the same
+		  answer. This is a finding of the DIFF - it does not exist until the two versions have
+		  been compared - so putting it there would break that promise. */
+	KESCMStoryAttrKind fAttrKind;
+
 	KESCMStoryRow()
 		: fStoryUID(kInvalidUID), fKinds(kKESCMStoryKindNone), fFrameUID(kInvalidUID),
-		  fPageUID(kInvalidUID), fPageIndex(kMaxInt32), fTextCompared(kFalse) {}
+		  fPageUID(kInvalidUID), fPageIndex(kMaxInt32), fTextCompared(kFalse),
+		  fAttrKind(kKESCMStoryAttrNone) {}
 };
 
 /** The first frame a story is placed in - where a jump to that story should go.

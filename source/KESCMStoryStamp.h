@@ -114,6 +114,33 @@ enum KESCMStoryChangeKind
 									// kind for which that is true - see KESCMStoryDiff::fStoryUID
 };
 
+/** Which kind of attribute a row's CHILDREN found a difference in (2026-08-22).
+
+	★★NOT THE SAME SORT OF THING AS KESCMStoryChangeKind ABOVE, which is why it is a separate enum
+	rather than more bits in that one. Those come from the two documents' CHANGE COUNTERS - read
+	them again and they say the same, which is why a row refresh leaves them alone. This comes from
+	the DIFF: it does not exist until the two versions have actually been compared.
+
+	★THE LIST IS EXPECTED TO GROW, and the order means nothing - these are names, not ranks. Ruby
+	came first because a Japanese document uses it constantly and it is what the reader asked about
+	("ルビだけ変えると…ChangeはNoneになる"). KENTEN (圏点) is the one already planned to follow, and
+	it is a different mechanism again: ruby is a STRAND (IRubyAttrStrand, run-based, written in the
+	snippet as RubyFlag 1/2 over one CharacterStyleRange per character) while kenten is a set of
+	CHARACTER ATTRIBUTES (the twenty kTAKenten*Boss on kCharAttrStrandBoss, its kind in
+	kTAKentenKindBoss with Kenten_None for off). What the panel cares about is the one thing they
+	share: the text did not move and something over it did.
+
+	⚠Carried across the model/UI boundary as a plain int32 (IKESCMStoryEditsFacade's
+	  Row::fAttrKind), the same way KESCMStoryChange::What is. ⇒ ADDING A VALUE MEANS TOUCHING BOTH
+	  SIDES, and a value must never be renumbered once it has shipped.
+*/
+enum KESCMStoryAttrKind
+{
+	kKESCMStoryAttrNone = 0,	// the children are text changes, or there are none
+	kKESCMStoryAttrRuby = 1		// a reading over characters that did not themselves change
+	// kKESCMStoryAttrKenten = 2 - planned; see the note above for what it will take
+};
+
 /** The two kinds that mean "this story has no partner in the other version".
 
 	★ONE PLACE TO ASK IT (2026-08-21). Added and Removed differ in WHICH document holds the story,
