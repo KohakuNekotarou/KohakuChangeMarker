@@ -131,14 +131,23 @@ struct KESCMStoryChange
 /** One row of the Story Edits section. */
 struct KESCMStoryRow
 {
-	UID			fStoryUID;	// the target document's story
+	/** The story, IN THE DOCUMENT THAT HOLDS IT - the target for every row except a Removed one,
+		which exists only in the source (2026-08-21). Which document that is, is answered by
+		fKinds & kKESCMStoryKindRemoved, and by nothing else on this row: a second field naming the
+		document could disagree with the kind.
+
+		⚠EVERY FIELD BELOW THAT NAMES A PLACE IS READ OUT OF THAT SAME DOCUMENT. fText, fFrameUID,
+		fPageUID and fPageIndex all come from one db, chosen per row in Build. */
+	UID			fStoryUID;
 	PMString	fText;		// first readable words. NOT shortened for display - the row's text cell
 							// is kEllipsizeMiddle and does that itself, at whatever width it has
 	uint32		fKinds;		// OR of KESCMStoryChangeKind - named on the right of the row
 	UID			fFrameUID;	// the story's FIRST frame - what a click scrolls to. kInvalidUID for an
 							// unplaced story (no frame at all), which cannot be jumped to
 	UID			fPageUID;	// where the story starts; kInvalidUID when it starts on the pasteboard
-	int32		fPageIndex;	// sort key only. kMaxInt32 when there is no page, so those sink to the end
+	int32		fPageIndex;	// sort key. kMaxInt32 when there is no page, so those sink to the end.
+							// ⚠A SECOND-LEVEL KEY SINCE 2026-08-21: removed rows are grouped after
+							// every target row first, and only then ordered by this (RowIsBefore)
 
 	/** The differences found inside this story, in reading order.
 
@@ -229,19 +238,27 @@ bool16 KESCMStoryStartPoint(IDataBase* db, UID storyUID, UID& outFrame, PBPMPoin
 
 namespace KESCMStoryList
 {
-	/** Replace the list with one row per entry in diffs, read out of the target document.
+	/** Replace the list with one row per entry in diffs, each read out of the document that holds it.
 
 		Rows come out in page order. A story that starts on the pasteboard, or on a master page, has
 		no page index and sorts to the end rather than being dropped - it is still a real edit.
+
+		★REMOVED ROWS ARE READ OUT OF THE SOURCE (2026-08-21) and are grouped after every target row,
+		in the source's own page order. Their page numbers belong to the OLDER document, and mixing
+		them into the target's numbering would put two documents' page numbers in one column with
+		nothing to tell them apart (user's call; the same order Export Changed Pages already uses -
+		target pages, target masters, then the source's deletions).
 
 		Reads only. Nothing here composes, which keeps the property stage 1 measured and wrote into
 		KESCMStoryStamp.h ("READING COUNTERS COMPOSES NOTHING"): looking at what changed costs no
 		recomposition.
 
 		@param targetDB the newer document. nil clears the list.
+		@param sourceDB the older document - where a Removed row's story, text and page are read from.
+		       nil is tolerated: those rows are then dropped, exactly as an unreadable story is.
 		@param diffs what KESCMStoryEdits::Compare produced for this comparison.
 	*/
-	void Build(IDataBase* targetDB, const std::vector<KESCMStoryDiff>& diffs);
+	void Build(IDataBase* targetDB, IDataBase* sourceDB, const std::vector<KESCMStoryDiff>& diffs);
 
 	/** Empty the list. Called on Stop and when a compared document closes. */
 	void Clear();

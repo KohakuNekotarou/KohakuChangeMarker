@@ -1,4 +1,4 @@
-//========================================================================================
+﻿//========================================================================================
 //
 //  Owner: KohakuNekotarou
 //
@@ -93,8 +93,8 @@ class IDataBase;
 /** Which kind of change moved. Values are OR'd together: one edit can move more than one of them.
 
 	The first three map one-to-one onto ITextModel's three sub-counters (ITextModel.h:158-183).
-	Added is not a counter - it means the source has no story with this UID at all, so there is
-	nothing to have compared.
+	The last two are not counters - they mean one side has no story with this UID at all, so there
+	is nothing to have compared.
 */
 enum KESCMStoryChangeKind
 {
@@ -107,8 +107,25 @@ enum KESCMStoryChangeKind
 									// Attr or Text instead (see the file comment). Kept because the
 									// header defines it, and because Compare names it for the row
 									// whose aggregate moved while no sub-counter did
-	kKESCMStoryKindAdded	= 8		// no story with this UID on the source side
+	kKESCMStoryKindAdded	= 8,	// no story with this UID on the source side
+	kKESCMStoryKindRemoved	= 16	// no story with this UID on the TARGET side: the story was in the
+									// older version and is gone from the newer one (2026-08-21).
+									// ★THE ROW THEN LIVES IN THE SOURCE DOCUMENT, and it is the only
+									// kind for which that is true - see KESCMStoryDiff::fStoryUID
 };
+
+/** The two kinds that mean "this story has no partner in the other version".
+
+	★ONE PLACE TO ASK IT (2026-08-21). Added and Removed differ in WHICH document holds the story,
+	but they agree on everything that follows from having nobody to compare against: no text diff is
+	run for them, they cannot be refreshed, and their label stands alone with no '+' after it. Three
+	of the four places that used to test kKESCMStoryKindAdded on its own want this instead
+	([[one-question-one-place]]).
+
+	⚠THE FOURTH IS THE JUMP, and it must NOT use this: which window moves is exactly the thing the
+	two kinds disagree about. It tests kKESCMStoryKindRemoved by itself (ui/KESCMStoryJump.cpp).
+*/
+const uint32 kKESCMStoryKindUnpaired = kKESCMStoryKindAdded | kKESCMStoryKindRemoved;
 
 /** One story's reading: which story, and what each of its change counters said. */
 struct KESCMStoryStamp
@@ -131,7 +148,15 @@ struct KESCMStoryStamp
 */
 struct KESCMStoryDiff
 {
-	UID		fStoryUID;	// the TARGET side's UID (every row exists in the target)
+	/** The story's UID IN THE DOCUMENT THAT HOLDS IT, and which document that is depends on fKinds:
+		the target for every row except a Removed one, which exists only in the source.
+
+		⚠THIS USED TO READ "the TARGET side's UID (every row exists in the target)" and that was the
+		whole feature's premise until 2026-08-21. Removed rows broke it deliberately - see the
+		Compare contract below and docs/superpowers/specs/2026-08-21-kescm-removed-story-rows-design.md.
+		★NO SECOND FIELD NAMING THE DOCUMENT: fKinds already carries the answer, and a second field
+		could disagree with it. */
+	UID		fStoryUID;
 	uint32	fKinds;		// OR of KESCMStoryChangeKind - what the row names
 
 	KESCMStoryDiff() : fStoryUID(kInvalidUID), fKinds(kKESCMStoryKindNone) {}
@@ -165,10 +190,15 @@ namespace KESCMStoryEdits
 
 	/** Match two readings by story UID and report the stories that differ, with the kinds that moved.
 
-		A row is produced when the same UID reads a different all-changes counter, and when the
-		target holds a UID the source does not (added). Stories that read the same, and stories the
-		source has but the target does not (removed), produce nothing - a removed story cannot be
-		jumped to.
+		A row is produced in three cases: the same UID reads a different all-changes counter, the
+		target holds a UID the source does not (added), and the SOURCE holds a UID the target does
+		not (removed). Only stories that read the same produce nothing.
+
+		★REMOVED ROWS WERE ADDED 2026-08-21, and until then this said "a removed story cannot be
+		jumped to" - which was true, and was the only reason they were dropped. The panel now aims
+		the SOURCE window at them instead of the target (user's call: "それを、選択したらソースの方
+		だけジャンプ"), so the reason is gone. ⚠A removed row's fStoryUID is a SOURCE uid; every
+		other row's is a target uid. Callers tell them apart by kKESCMStoryKindRemoved.
 
 		Each row's fKinds says which of the three sub-counters moved. A row whose aggregate moved
 		while no sub-counter did is reported as Other rather than dropped: nothing in the header

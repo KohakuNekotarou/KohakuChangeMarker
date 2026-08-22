@@ -502,9 +502,11 @@ void KESCMRebuildStoryEdits(IDataBase* targetDB, IDataBase* sourceDB)
 	std::vector<KESCMStoryDiff> storyDiffs;
 	KESCMStoryEdits::Compare(sourceStamps, targetStamps, storyDiffs);
 
-	// 読むのは Target 側だけ(行はすべて Target に存在する=Compare の契約)。ページ順の並べ替えと
-	// 本文先頭の取り出しは Build の中で完結する。
-	KESCMStoryList::Build(targetDB, storyDiffs);
+	// ★★2026-08-21: **両方の文書を渡す**。以前は「読むのは Target 側だけ（行はすべて Target に
+	//   存在する＝Compare の契約）」だったが、**削除されたストーリーの行**は Target に無いので
+	//   Source から読む（本文・先頭フレーム・ページ）。どちらから読むかは行の fKinds が決め、
+	//   Build の中で完結する（ページ順の並べ替えと本文先頭の取り出しも従来どおり中で完結）。
+	KESCMStoryList::Build(targetDB, sourceDB, storyDiffs);
 
 	// ★★Story モードのときだけ、行に「どこがどう変わったか」を付ける(2026-08-20)。
 	//   カウンターが答えられるのは「このストーリーは変わった」までで、その先＝どの語がどう

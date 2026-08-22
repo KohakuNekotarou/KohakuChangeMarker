@@ -11,10 +11,15 @@
 #include "VCPlugInHeaders.h"
 
 // Interface includes:
+#include "IControlView.h"			// a layout view of the OTHER document - what a view selection
+									//  manager is asked of (2026-08-21)
 #include "IDataBase.h"				// SaveRestoreModifiedState
+#include "ILayoutViewUtils.h"		// GetAllLayoutViews - finding that view. The same call, with the
+									//  same arguments, that KESCMViewSync and KESCMReadDocZoom make
 #include "IPageList.h"				// GetPageString - the page number the status line names
 #include "ISelectionManager.h"		// DeselectAll / SelectionExists - clearing before selecting
-#include "ISelectionUtils.h"		// GetActiveSelection - the front document's selection manager
+#include "ISelectionUtils.h"		// QueryActiveSelection (the front document's) /
+									//  QueryViewSelectionManager (any document's) / ActivateView
 #include "IFrameList.h"				// QueryFrameContaining - which frame an edit falls in (2026-08-20)
 #include "IHierarchy.h"				// GetParentUID - a text column's frame is its parent
 #include "ITextFrameColumn.h"
@@ -23,6 +28,12 @@
 #include "ITextUtils.h"				// GetPageUIDRef - which page that frame is on
 #include "ITool.h"					// IsTextTool - is a text tool already active?
 #include "IToolBoxUtils.h"			// QueryActiveTool / QueryTool / SetActiveTool
+#include "DocumentPresFindCriteria.h"	// FindPresCriteria::accept_all - the SDK's own "any
+									//  presentation will do" predicate
+#include "IDocumentPresentation.h"	// MakeActive - what "the active document" actually is
+									//  (2026-08-22; IWindow was not it)
+#include "IDocumentUIUtils.h"		// FindPresentationForDocument - the route KESCMBookOpen, KBS
+									//  and KESCL already take to a document's presentation
 
 // General includes:
 #include "PMString.h"
@@ -95,6 +106,256 @@ PMString PageLabel(IDataBase* db, UID pageUID)
 	return label;
 }
 
+/** A layout view of this document, or nil when it has no layout window open.
+
+	★The same call KESCMViewSync (:631) and KESCMReadDocZoom make, with the same arguments - "every
+	layout view of THIS database". A document with no window (one this plug-in opened invisibly, or
+	one being closed) answers with an empty list, which is a real answer and not an error.
+	★THE FIRST ONE IS TAKEN. What it is wanted for is the document's selection, and a split layout
+	view returns two entries for one window; nothing here has a reason to prefer one pane over the
+	other, and picking is not the same as needing to pick.
+*/
+IControlView* FirstLayoutView(IDataBase* db)
+{
+	if (db == nil)
+		return nil;
+
+	K2Vector<IControlView*> views;
+	Utils<ILayoutViewUtils>()->GetAllLayoutViews(views, nil, db);
+	for (int32 i = 0; i < (int32)views.size(); ++i)
+	{
+		if (views[i] != nil)
+			return views[i];
+	}
+	return nil;
+}
+
+/** The selection manager to make a selection in THIS document with. AddRef'ed - the caller owns it.
+
+	***** TWO ROADS, AND WHICH ONE IS NOT A DETAIL (2026-08-21). *****
+
+	QueryActiveSelection answers "out of the active context" (ISelectionUtils.h:65-76) - the FRONT
+	document's. Asking it to select in the other document is what made a Deleted row's double click
+	do nothing at all while the target was in front (user's report: "ソースが active でないときに
+	ダブルクリックすると、選択されない").
+
+	⇒ The front document keeps the road it had, because THAT is where the story editor and the
+	galley live: their selection does not answer to ITextSelectionSuite's default IID and has to be
+	asked for a second time with IID_ITEMPTEXTSELECTION_SUITE (the note in SelectRangeIn, measured
+	in audit B-U4). Replacing GetActiveSelection with a view-specified manager everywhere would
+	have taken that second ask off the road it was put there for.
+	⇒ Any OTHER document is asked through one of its layout views, which is allowed to be behind
+	  and is the official way to reach a selection that is not the active one (CTracker.cpp:877,
+	  CLayoutTracker.cpp:107, CPathCreationTracker.cpp:592, CShape.cpp:415, and the recipe in
+	  SnpManipulateStructureView.cpp:209-212).
+
+	★"Which document is in front" is asked of GetActiveDocDB() - the one place KESCM asks it through
+	  (IActiveContext::GetContextDocument, KESCMCore.cpp), the same one KESCMChangeNav:550 uses.
+	  ⚠NOT of "is the selection manager the same pointer": with a story editor in front, the active
+	  manager is that editor's and the layout view's is a different object, so a pointer comparison
+	  would call the front document "not active" and quietly drop the second ask.
+*/
+ISelectionManager* QuerySelectionManagerFor(IDataBase* db)
+{
+	if (db == nil)
+		return nil;
+
+	if (Utils<IKESCMCompareFacade>()->GetActiveDocDB() == db)
+		return Utils<ISelectionUtils>()->QueryActiveSelection();
+
+	IControlView* view = FirstLayoutView(db);
+	if (view == nil)
+		return nil;		// no window: nothing to select into, and nothing to say about it
+
+	return Utils<ISelectionUtils>()->QueryViewSelectionManager(view);
+}
+
+/** Make this document the active one, so that a selection made in it is the selection the reader
+	is looking at.
+
+	★ONLY THE DELETED ROW DOES THIS (user's call, 2026-08-21 - and it is a REVERSAL of the same
+	day's earlier "windows do not move": "でりーとされているのは、ソースの方選択したときに、ソースの
+	ドキュメントを active に"). Its story exists in the source alone, so leaving the target in front
+	would put the reader's attention on the one document that has nothing to show.
+	⚠Every other row leaves the front document alone: it has something to show on both sides, and
+	moving the front document under a reader who did not ask for it is a bigger intervention than
+	the selection itself.
+
+	***** "THE ACTIVE DOCUMENT" IS A PRESENTATION, NOT A WINDOW, AND TWO CALLS WERE MEASURED
+		  WRONG BEFORE THIS ONE (2026-08-22). *****
+
+	The obvious two both failed, and they failed QUIETLY - the selection worked, so nothing looked
+	broken until app.activeDocument was actually read:
+
+	  1. `ISelectionUtils::ActivateView` alone. It is the official verb for the SELECTION half ("If
+	     the two do not match the Active selection will be changed to reflect the given view
+	     selection", ISelectionUtils.h:176-181) and the one sample doing this uses it
+	     (SnpManipulateStructureView.cpp:209). ⚠Measured: the source's story came out selected AND
+	     visible in its window, and the front document did not change.
+	  2. `IWindow::BringToFront()`, reached view -> IWidgetParent -> IID_IWINDOW (how the product
+	     gets a document's window: LayerSelectionObserver.cpp:128-130, CTracker.cpp:260-261).
+	     ⚠Measured: no change either, tab strip included. It has no caller in the SDK, and now
+	     there is a reason to think that is not an accident for document windows.
+
+	⇒ `IDocumentPresentation` is the thing that is "active": `MakeActive()` is documented as "Make
+	  this the active/TARGET presentation" (IDocumentPresentation.h:111-112). A window is the
+	  container; the presentation is what the application points at.
+
+	★★AND THE ROUTE TO IT IS THE ONE THIS FAMILY OF PLUG-INS ALREADY USES, in five other places:
+	  Utils<IDocumentUIUtils>()->FindPresentationForDocument + MakeActive - KESCM's own
+	  BringChapterToFront (ui/KESCMBookOpen.cpp), KBSJump.cpp:503, KBSBookScope, and KESCL twice.
+	  ⚠The first build of this function asked a layout view for its parent instead
+	  (QueryParentFor(IID_IDOCUMENTPRESENTATION), as SnpManipulateStructureView.cpp:190 does). That
+	  works, but it makes ONE question - "which presentation shows this document" - answered two
+	  ways in one plug-in ([[one-question-one-place]]), and the established way is better: it does
+	  not need a view at all.
+	  ★NOT GetFrontmostPresentationForDocument: that one answers nil for a window sitting behind
+	    another tab, which is exactly the case this function exists for (KESCMBookOpen.cpp:145-148,
+	    where both sibling plug-ins are recorded as having learned the same thing).
+	★FindPresCriteria::accept_all is the SDK's own "any presentation will do" predicate
+	  (DocumentPresFindCriteria.h:82). The five callers above each wrote their own one-line
+	  predicate; new code should not add a sixth.
+	★ActivateView still runs afterwards, for the selection context itself.
+*/
+void ActivateDocument(IDataBase* db)
+{
+	if (db == nil)
+		return;
+
+	FindPresentation_PreferCriteria noPreference;	// the first presentation found is fine
+	IDocumentPresentation* presentation = Utils<IDocumentUIUtils>()->FindPresentationForDocument(
+		db, &FindPresCriteria::accept_all, noPreference);
+	if (presentation != nil)
+		presentation->MakeActive();
+
+	IControlView* view = FirstLayoutView(db);
+	if (view != nil)
+		Utils<ISelectionUtils>()->ActivateView(view);	// return value is the context; nobody needs it
+}
+
+/** Select from..to of one story in ONE document, with the Type tool on.
+
+	Everything the two double clicks have in common lives here, so that "how KESCM makes a text
+	selection" is written once and the callers are left saying only WHERE.
+
+	@param to the end of the range, or a NEGATIVE value for "to the end of the story" - what the
+		whole-story double click wants. The story has to be opened here to clamp the range anyway,
+		so its length is known here and the caller is not made to open it a second time to say so.
+	@return kFalse when this document has no such story, no window, or the suite refused.
+*/
+bool16 SelectRangeIn(IDataBase* db, UID storyUID, TextIndex from, TextIndex to)
+{
+	if (db == nil || storyUID == kInvalidUID)
+		return kFalse;
+
+	const UIDRef storyRef(db, storyUID);
+	InterfacePtr<ITextModel> model(storyRef, UseDefaultIID());
+	if (model == nil)
+		return kFalse;	// no such story here. Normal on the source side: an added story never
+						//  existed over there, and the two versions have to be versions of each
+						//  other for a uid to mean the same story at all (KESCMStoryStamp.h:46-51)
+
+	// ★The range is clamped to the story as it stands NOW. The diff ran against the story as it was
+	//   when the comparison did, and the reader may have edited it since - a stale end would be
+	//   refused by the suite, and a stale start would select the wrong words silently.
+	const TextIndex total = model->TotalLength();
+	if (to < 0) to = total;		// "the whole story", asked for by the story row
+	if (from < 0) from = 0;
+	if (to > total) to = total;
+	if (from > total) from = total;
+	if (to < from) to = from;
+
+	// ★Making a selection recomposes, and this plug-in may only have the document open in order to
+	//   look at it. IDataBase.h:389-412 restores the flag the document came in with rather than
+	//   forcing it clean - the same guard KBS puts round the identical operation.
+	//   ★ONE GUARD, ON THE DOCUMENT BEING SELECTED INTO - and now that two documents can be
+	//     selected into for one click, each of them gets its own by being its own call.
+	IDataBase::SaveRestoreModifiedState dirtyGuard(db);
+
+	InterfacePtr<ISelectionManager> selectionManager(QuerySelectionManagerFor(db));
+	if (selectionManager == nil)
+		return kFalse;
+
+	// ***** CLEAR THE SELECTION FIRST - THAT IS THE OFFICIAL ORDER. ***** The recipe is
+	// DeselectAll -> Type tool -> SetTextSelection (gotolasttextedit's GTTxtEdtUtils.cpp:113-136),
+	// and it clears UNCONDITIONALLY. A page-item selection left standing is a second selection, in a
+	// different CSB.
+	// ! 2026-08-11, block 15 audit (A-1): this used to run the tool switch first and to ask
+	//   SelectionExists() before clearing. Both are gone - the order now matches the sample, and the
+	//   question is asked once instead of twice (DeselectAll on an empty selection does nothing, so
+	//   the test only duplicated what the call already decides).
+	selectionManager->DeselectAll(nil);
+
+	// ***** THE TYPE TOOL, BECAUSE THIS IS AN INVITATION TO EDIT. ***** Text selected while some
+	// other tool is active is not text the user can act on, which is the whole of what a double click
+	// here is asking for. The tool goes on before the selection is made, as in the sample.
+	// ! This takes the KESCM tool off, if it was on. Deliberate (user's call, 2026-08-10), and
+	//   written down in How to Use so that it is not a surprise.
+	// ★The nil test on the active tool is ours: the sample does not test it at all - it calls
+	//   IsTextTool() straight off whatever QueryActiveTool answered (GTTxtEdtUtils.cpp:118-119).
+	//   The ASSERT a few lines below it is on the I-beam tool queried next, not on this one.
+	// ★The tool is the APPLICATION's, not a document's, so the second call of a two-document click
+	//   finds it already on and does nothing. Asking again costs one Query and keeps this function
+	//   true on its own.
+	InterfacePtr<ITool> activeTool(Utils<IToolBoxUtils>()->QueryActiveTool());
+	if (activeTool == nil || !activeTool->IsTextTool())
+	{
+		InterfacePtr<ITool> iBeamTool(Utils<IToolBoxUtils>()->QueryTool(kIBeamToolBoss));
+		if (iBeamTool == nil)
+			return kFalse;
+		if (!Utils<IToolBoxUtils>()->SetActiveTool(iBeamTool))
+			return kFalse;
+	}
+
+	// ***** ASK TWICE. THE DEFAULT IID IS NIL WHENEVER A TEXT EDITING WINDOW IS IN FRONT. *****
+	// Story editor, galley and notes each run their own selection, and it does not answer to
+	// ITextSelectionSuite's kDefaultIID - it answers to IID_ITEMPTEXTSELECTION_SUITE
+	// (WritingModeID2.h:246; the IID is published but no header for the suite is). The product asks
+	// both ways wherever it has to work "for whatever view": InCopyDocUtils.cpp:716-718, and three
+	// more times in that same file (:799, :3780, :4014), always in this order and with this reset.
+	// ! Before 2026-08-17 this asked once and returned kFalse when the answer was nil - and the
+	//   refusal is deliberately silent (see the header), so a double click in the list did nothing
+	//   whatsoever while the story editor was in front, with no message to say why.
+	// ★MEASURED BOTH WAYS (2026-08-17, audit B-U4), because "the default IID is nil there" was
+	//   inherited belief rather than something this plug-in had ever seen: a build with the second
+	//   ask taken out again answered sel=0 with the story editor in front - and WORSE than doing
+	//   nothing, because the DeselectAll above had already run, so the caret the user was holding
+	//   was taken away and nothing was put back. With the second ask, the same double click selects
+	//   the whole story (Paragraph, 15 chars), exactly as it does from a layout window.
+	// ⚠STILL NOT POSSIBLE, and this is the suite's own rule rather than something to work around
+	//   here: a row whose story the front story editor is NOT showing. That window's selection
+	//   belongs to its own story, so SetTextSelection for any other one is refused - measured on
+	//   the two rows either side of it. The jump on the first click still reports the page, so the
+	//   click is not silent; only the selecting half of it declines.
+	InterfacePtr<ITextSelectionSuite> textSelectionSuite(selectionManager, UseDefaultIID());
+	if (textSelectionSuite == nil)
+		textSelectionSuite.reset(InterfacePtr<ITextSelectionSuite>(selectionManager, IID_ITEMPTEXTSELECTION_SUITE).forget());
+	if (textSelectionSuite == nil)
+		return kFalse;
+
+	// ⚠AN EMPTY RANGE HAS NO WIDTH - a deletion's target side, an insertion's source side.
+	//   RangeData(n, n) is the caret case, and RangeData.h:114-125 says a caret needs a lean to
+	//   settle which side new text joins. kLeanForward puts it before what followed the deleted
+	//   text, which is where the text used to begin.
+	//
+	//   ★For the whole story the range is (0, TotalLength()), which has length, so no lean applies.
+	//     TotalLength() counts every character "including data for embedded tables"
+	//     (ITextModel.h:137-140), so a story that is nothing but a table selects that table's text
+	//     as well - which is what "the whole story" has to mean for a row that was listed BECAUSE a
+	//     table cell was edited. The trailing carriage return is inside the range on purpose: it is
+	//     a character of the story, and InDesign's own Select All takes it too.
+	//
+	//   kDontScrollSelection: the first click of the double click already centred the frame with
+	//   IPanorama::ScrollContentLocationToFrameCenter. kScrollIntoView would only promise the
+	//   selection is somewhere on screen, undoing the better answer already given. (The official
+	//   sample asks for kScrollIntoView because nothing has scrolled on its behalf.)
+	const RangeData range = (to > from)
+							? RangeData(from, to)
+							: RangeData(from, from, RangeData::kLeanForward);
+
+	return textSelectionSuite->SetTextSelection(storyRef, range, Selection::kDontScrollSelection, nil);
+}
+
 }	// anonymous namespace
 
 //----------------------------------------------------------------------------------------
@@ -106,11 +367,26 @@ bool16 KESCMStoryJumpToRow(int32 rowIndex)
 	if (!Utils<IKESCMStoryEditsFacade>()->GetRow(rowIndex, row))
 		return kFalse;	// out of range, or the "No edits" placeholder - nowhere to go, silently
 
-	// ★The list belongs to the comparison that built it, so the document to move is the armed
-	//   TARGET - not whatever happens to be in front. Checked for life rather than trusted: the list
-	//   is dropped when a compared document closes, but a click already on its way when that
+	// ★The list belongs to the comparison that built it, so the document to move is one of the two
+	//   ARMED ones - not whatever happens to be in front. Checked for life rather than trusted: the
+	//   list is dropped when a compared document closes, but a click already on its way when that
 	//   happened would otherwise arrive here holding a database that is gone.
-	IDataBase* db = Utils<IKESCMCompareFacade>()->GetArmedTargetDB();
+	//
+	// ★★WHICH OF THE TWO IS THE ROW'S OWN (2026-08-21). A REMOVED row's story is not in the target
+	//   at all - it is in the older document - and the user's call is that clicking it moves the
+	//   SOURCE window alone ("それを、選択したらソースの方だけジャンプ"). Every other row is a
+	//   target row and behaves exactly as before.
+	//   ★★★AND "ALONE" NEEDS NO EXTRA FLAG: KESCMGotoStoryFrame only brings the companion window
+	//     along when the source it finds is NOT the database it was asked to move
+	//     (`sourceDB != db`). Handing it the source therefore moves the source and stops. ⚠That is
+	//     a property of that function, not an accident of this call - if the companion logic there
+	//     is ever rewritten, this promise has to be re-checked.
+	//   ⚠row.fStoryUID / fFrameUID / fPageUID all belong to whichever document this picks. Reading
+	//     the row against the other one would not fail loudly - a uid can name a DIFFERENT object
+	//     over there rather than nothing.
+	const bool16 removedRow = ((row.fKinds & kKESCMStoryKindRemoved) != 0) ? kTrue : kFalse;
+	IDataBase* db = removedRow ? Utils<IKESCMCompareFacade>()->GetArmedSourceDB()
+							   : Utils<IKESCMCompareFacade>()->GetArmedTargetDB();
 	if (db == nil || !Utils<IKESCMCompareFacade>()->IsDocDBOpen(db))
 	{
 		PMString s("The comparison is no longer running.");
@@ -299,70 +575,42 @@ bool16 KESCMStorySelectChange(int32 rowIndex, int32 changeIndex)
 	if (!Utils<IKESCMStoryEditsFacade>()->GetChange(rowIndex, changeIndex, change))
 		return kFalse;
 
-	IDataBase* db = Utils<IKESCMCompareFacade>()->GetArmedTargetDB();
-	if (db == nil || !Utils<IKESCMCompareFacade>()->IsDocDBOpen(db))
+	// ★A CHILD ROW IS ALWAYS A TARGET ROW. Only a story that exists in both versions is diffed, so
+	//   an added story and a removed one have no children at all (KESCMStoryStamp.h's Unpaired kinds,
+	//   and IKESCMStoryEditsFacade::GetChangeCount says the same). ⇒ No Removed test here; if that
+	//   ever changes, this is one of the places that has to be told.
+	IDataBase* targetDB = Utils<IKESCMCompareFacade>()->GetArmedTargetDB();
+	if (targetDB == nil || !Utils<IKESCMCompareFacade>()->IsDocDBOpen(targetDB))
 		return kFalse;
-
-	const UIDRef storyRef(db, row.fStoryUID);
-	InterfacePtr<ITextModel> model(storyRef, UseDefaultIID());
-	if (model == nil)
-		return kFalse;
-
-	// Clamped to the story as it stands NOW, for the same reason the jump clamps: the reader may
-	// have edited it since the comparison ran, and a stale end is refused while a stale start
-	// silently selects the wrong words.
-	const TextIndex total = model->TotalLength();
-	TextIndex from = change.fTargetStart;
-	TextIndex to = change.fTargetEnd;
-	if (from < 0) from = 0;
-	if (to > total) to = total;
-	if (from > total) from = total;
-	if (to < from) to = from;
-
-	// Making a selection recomposes - the same guard, and the same reason, as everywhere else here.
-	IDataBase::SaveRestoreModifiedState dirtyGuard(db);
 
 	// ★THE MARK COMES DOWN. The single click that opened this double click put one up; leaving it
 	//   there would put an inversion on top of the selection's own inversion, and the text under
 	//   both is unreadable (KBS records exactly this in KBSJump.cpp).
 	KESCMStoryMarker::Clear();
 
-	// Everything below mirrors the whole-story double click's selection path; see
-	// KESCMStorySelectWholeStory for why the tool goes on first and why the suite is asked twice.
-	ISelectionManager* selectionManager = Utils<ISelectionUtils>()->GetActiveSelection();
-	if (selectionManager == nil)
-		return kFalse;
-
-	selectionManager->DeselectAll(nil);
-
-	InterfacePtr<ITool> activeTool(Utils<IToolBoxUtils>()->QueryActiveTool());
-	if (activeTool == nil || !activeTool->IsTextTool())
+	// ***** AND THE SAME EDIT IS SELECTED ON THE OLDER SIDE TOO (user's call, 2026-08-21). *****
+	//
+	// ★The row names ONE edit, and that edit has two ends - what it says now and what it said
+	//   before. Selecting only the new one leaves the reader to find the old words by eye in a
+	//   window that is already pointed at the right story.
+	// ★The older side's range is carried on the Change (fSourceStart / fSourceEnd) - the diff
+	//   worked it out and there is nothing to recompute here.
+	// ⚠fHasSource IS THE QUESTION, not "is there a source document": an INSERTION has nothing on
+	//   the older side to point at, and IKESCMStoryEditsFacade.h says the two indices are
+	//   meaningless without it. A caret at a made-up index would be worse than no selection.
+	// ★THE OLDER SIDE GOES FIRST, so that the target's selection is the last one made. Nothing
+	//   here moves the active context, so the order does not decide which window the reader is
+	//   in - but if one of the two ever fails, the one left standing should be the target's.
+	// ★A refusal on that side is SILENT. It is normal: the source may have no window open, and the
+	//   row has just been reported on by the single click. The return value is the target's.
+	if (change.fHasSource)
 	{
-		InterfacePtr<ITool> iBeamTool(Utils<IToolBoxUtils>()->QueryTool(kIBeamToolBoss));
-		if (iBeamTool == nil)
-			return kFalse;
-		if (!Utils<IToolBoxUtils>()->SetActiveTool(iBeamTool))
-			return kFalse;
+		IDataBase* sourceDB = Utils<IKESCMCompareFacade>()->GetArmedSourceDB();
+		if (sourceDB != nil && Utils<IKESCMCompareFacade>()->IsDocDBOpen(sourceDB))
+			SelectRangeIn(sourceDB, row.fStoryUID, change.fSourceStart, change.fSourceEnd);
 	}
 
-	InterfacePtr<ITextSelectionSuite> textSelectionSuite(selectionManager, UseDefaultIID());
-	if (textSelectionSuite == nil)
-		textSelectionSuite.reset(InterfacePtr<ITextSelectionSuite>(selectionManager, IID_ITEMPTEXTSELECTION_SUITE).forget());
-	if (textSelectionSuite == nil)
-		return kFalse;
-
-	// ⚠A DELETION HAS NO WIDTH on this side - the words are gone. RangeData(n, n) is the caret case,
-	//   and RangeData.h:114-125 says a caret needs a lean to settle which side new text joins.
-	//   kLeanForward puts it before what followed the deleted text, which is where the text used to
-	//   begin.
-	const RangeData range = (to > from)
-							? RangeData(from, to)
-							: RangeData(from, from, RangeData::kLeanForward);
-
-	// kDontScrollSelection: the first click of this double click already centred the frame, and
-	// kScrollIntoView would only promise the selection is somewhere on screen - undoing the better
-	// answer already given.
-	return textSelectionSuite->SetTextSelection(storyRef, range, Selection::kDontScrollSelection, nil);
+	return SelectRangeIn(targetDB, row.fStoryUID, change.fTargetStart, change.fTargetEnd);
 }
 
 bool16 KESCMStorySelectWholeStory(int32 rowIndex)
@@ -373,102 +621,66 @@ bool16 KESCMStorySelectWholeStory(int32 rowIndex)
 
 	// Both of these have just been reported by the single click that preceded this one - see the
 	// header for why the second one says nothing.
-	IDataBase* db = Utils<IKESCMCompareFacade>()->GetArmedTargetDB();
-	if (db == nil || !Utils<IKESCMCompareFacade>()->IsDocDBOpen(db))
-		return kFalse;
+	//
+	// ***** WHICH DOCUMENTS GET SELECTED IS DECIDED BY THE ROW (user's calls, 2026-08-21). *****
+	//
+	//   | the row                        | selected                                    |
+	//   |--------------------------------|---------------------------------------------|
+	//   | a normal changed row (in both) | the target AND the source                   |
+	//   | Added   (target only)          | the target                                  |
+	//   | Deleted (source only)          | the source, and the source is brought to front |
+	//
+	// ★The first line is the new one ("両方選択"). The row is a report about ONE story that exists
+	//   in two versions, and the reader who double clicks it is asking for that story - not for the
+	//   half of it that happens to be in the newer file. Both windows are already pointed at it by
+	//   the single click; this makes both of them usable.
+	// ★The database each half is read out of is picked exactly as the single click picks it - the
+	//   reasoning is written out at KESCMStoryJumpToRow and must not drift apart from this, since
+	//   selecting in one document after scrolling the other would be two windows disagreeing.
+	const bool16 removedRow = ((row.fKinds & kKESCMStoryKindRemoved) != 0) ? kTrue : kFalse;
+	const bool16 addedRow = ((row.fKinds & kKESCMStoryKindAdded) != 0) ? kTrue : kFalse;
+
+	IDataBase* targetDB = Utils<IKESCMCompareFacade>()->GetArmedTargetDB();
+	IDataBase* sourceDB = Utils<IKESCMCompareFacade>()->GetArmedSourceDB();
+
+	// ⚠fFrameUID belongs to the row's OWN document (IKESCMStoryEditsFacade.h), so this one test
+	//   covers whichever side the row is about: a story in no frame at all cannot be shown, and the
+	//   single click has already said so.
 	if (row.fFrameUID == kInvalidUID)
 		return kFalse;
 
-	const UIDRef storyRef(db, row.fStoryUID);
-	InterfacePtr<ITextModel> model(storyRef, UseDefaultIID());
-	if (model == nil)
-		return kFalse;
-
-	// ★Making a selection recomposes, and this plug-in may only have the document open in order to
-	//   look at it. IDataBase.h:389-412 restores the flag the document came in with rather than
-	//   forcing it clean - the same guard KBS puts round the identical operation.
-	//   ★It guards the SELECTION, not the jump: the single click above was measured to leave both
-	//     documents clean without one (see the note there). ★And only the target needs it - the
-	//     source document is never selected into, which is why this is one guard where the rest of
-	//     KESCM takes two (KESCMCore.cpp:480-481 and the three like it).
-	IDataBase::SaveRestoreModifiedState dirtyGuard(db);
-
-	ISelectionManager* selectionManager = Utils<ISelectionUtils>()->GetActiveSelection();
-	if (selectionManager == nil)
-		return kFalse;
-
-	// ***** CLEAR THE SELECTION FIRST - THAT IS THE OFFICIAL ORDER. ***** The recipe is
-	// DeselectAll -> Type tool -> SetTextSelection (gotolasttextedit's GTTxtEdtUtils.cpp:113-136),
-	// and it clears UNCONDITIONALLY. A page-item selection left standing is a second selection, in a
-	// different CSB.
-	// ! 2026-08-11, block 15 audit (A-1): this used to run the tool switch first and to ask
-	//   SelectionExists() before clearing. Both are gone - the order now matches the sample, and the
-	//   question is asked once instead of twice (DeselectAll on an empty selection does nothing, so
-	//   the test only duplicated what the call already decides).
-	selectionManager->DeselectAll(nil);
-
-	// ***** THE TYPE TOOL, BECAUSE THIS IS AN INVITATION TO EDIT. ***** Text selected while some
-	// other tool is active is not text the user can act on, which is the whole of what a double click
-	// here is asking for. The tool goes on before the selection is made, as in the sample.
-	// ! This takes the KESCM tool off, if it was on. Deliberate (user's call, 2026-08-10), and
-	//   written down in How to Use so that it is not a surprise.
-	// ★The nil test on the active tool is ours: the sample does not test it at all - it calls
-	//   IsTextTool() straight off whatever QueryActiveTool answered (GTTxtEdtUtils.cpp:118-119).
-	//   The ASSERT a few lines below it is on the I-beam tool queried next, not on this one.
-	InterfacePtr<ITool> activeTool(Utils<IToolBoxUtils>()->QueryActiveTool());
-	if (activeTool == nil || !activeTool->IsTextTool())
+	// ***** A DELETED ROW: THE SOURCE ALONE, AND THE SOURCE IN FRONT. *****
+	// The story is not in the target at all. Selecting it needs the source's selection manager, and
+	// - this is the part measured the hard way - a selection made in a document that is not the
+	// active one is not the selection the reader is holding, so the document is activated first
+	// (see ActivateDocument for why this row and no other).
+	if (removedRow)
 	{
-		InterfacePtr<ITool> iBeamTool(Utils<IToolBoxUtils>()->QueryTool(kIBeamToolBoss));
-		if (iBeamTool == nil)
+		if (sourceDB == nil || !Utils<IKESCMCompareFacade>()->IsDocDBOpen(sourceDB))
 			return kFalse;
-		if (!Utils<IToolBoxUtils>()->SetActiveTool(iBeamTool))
-			return kFalse;
+
+		ActivateDocument(sourceDB);
+		return SelectRangeIn(sourceDB, row.fStoryUID, 0, -1);
 	}
 
-	// ***** ASK TWICE. THE DEFAULT IID IS NIL WHENEVER A TEXT EDITING WINDOW IS IN FRONT. *****
-	// Story editor, galley and notes each run their own selection, and it does not answer to
-	// ITextSelectionSuite's kDefaultIID - it answers to IID_ITEMPTEXTSELECTION_SUITE
-	// (WritingModeID2.h:246; the IID is published but no header for the suite is). The product asks
-	// both ways wherever it has to work "for whatever view": InCopyDocUtils.cpp:716-718, and three
-	// more times in that same file (:799, :3780, :4014), always in this order and with this reset.
-	// ! Before 2026-08-17 this asked once and returned kFalse when the answer was nil - and the
-	//   refusal is deliberately silent (see the header), so a double click in the list did nothing
-	//   whatsoever while the story editor was in front, with no message to say why.
-	// ★MEASURED BOTH WAYS (2026-08-17, audit B-U4), because "the default IID is nil there" was
-	//   inherited belief rather than something this plug-in had ever seen: a build with the second
-	//   ask taken out again answered sel=0 with the story editor in front - and WORSE than doing
-	//   nothing, because the DeselectAll above had already run, so the caret the user was holding
-	//   was taken away and nothing was put back. With the second ask, the same double click selects
-	//   the whole story (Paragraph, 15 chars), exactly as it does from a layout window.
-	// ⚠STILL NOT POSSIBLE, and this is the suite's own rule rather than something to work around
-	//   here: a row whose story the front story editor is NOT showing. That window's selection
-	//   belongs to its own story, so SetTextSelection for any other one is refused - measured on
-	//   the two rows either side of it. The jump on the first click still reports the page, so the
-	//   click is not silent; only the selecting half of it declines.
-	InterfacePtr<ITextSelectionSuite> textSelectionSuite(selectionManager, UseDefaultIID());
-	if (textSelectionSuite == nil)
-		textSelectionSuite.reset(InterfacePtr<ITextSelectionSuite>(selectionManager, IID_ITEMPTEXTSELECTION_SUITE).forget());
-	if (textSelectionSuite == nil)
+	if (targetDB == nil || !Utils<IKESCMCompareFacade>()->IsDocDBOpen(targetDB))
 		return kFalse;
 
-	// ! THE WHOLE STORY, WHICH IS (0, TotalLength()). The two-argument RangeData is (start, END), not
-	//   (start, length) - RangeData.h:114-125 is explicit about it, and lists RangeData(34, 34) as
-	//   INCORRECT for the caret case. Here the range has length, so no lean is needed: leans only
-	//   settle which side of an insertion point new text joins, and there is no insertion point.
-	//
-	//   ★TotalLength() counts every character in the story "including data for embedded tables"
-	//     (ITextModel.h:137-140), so a story that is nothing but a table selects that table's text
-	//     as well - which is what "the whole story" has to mean for a row that was listed BECAUSE a
-	//     table cell was edited.
-	//   ★The trailing carriage return is inside the range on purpose: it is a character of the story,
-	//     and InDesign's own Select All takes it too.
-	//
-	//   kDontScrollSelection: the first click of this double click already centred the frame with
-	//   IPanorama::ScrollContentLocationToFrameCenter. kScrollIntoView would only promise the
-	//   selection is somewhere on screen, undoing the better answer just given. (The official sample
-	//   asks for kScrollIntoView because nothing has scrolled on its behalf.)
-	return textSelectionSuite->SetTextSelection(storyRef, RangeData(0, model->TotalLength()),
-		Selection::kDontScrollSelection, nil);
+	// ***** A ROW THAT EXISTS IN BOTH: THE OLDER SIDE TOO. *****
+	// ★Added is excluded because there is nothing over there to select - the story is new. It is
+	//   asked as its own question rather than left to SelectRangeIn's "no such story" refusal: that
+	//   refusal is a fallback for a pair of documents that are not versions of each other, and a
+	//   fallback should not be a plug-in's way of expressing a decision it has already made.
+	// ★THE OLDER SIDE GOES FIRST so the target's selection is the last one made, and its refusals
+	//   are SILENT: the source may have no window open, and it is not what the row is about. The
+	//   return value is the target's.
+	// ⚠The source's story can be a different LENGTH - it is the older wording. SelectRangeIn asks
+	//   that document for its own TotalLength, which is the whole point of "-1" being resolved
+	//   there rather than here.
+	if (!addedRow && sourceDB != nil && Utils<IKESCMCompareFacade>()->IsDocDBOpen(sourceDB))
+		SelectRangeIn(sourceDB, row.fStoryUID, 0, -1);
+
+	return SelectRangeIn(targetDB, row.fStoryUID, 0, -1);
 }
 
 // End, KESCMStoryJump.cpp.

@@ -135,8 +135,9 @@ void KESCMStopComparison()
 //     ①KESCMToggleStartStop  … アクティブ文書=Target・別の開いている文書=Source と解決してから呼ぶ
 //     ②ブック比較の行の右クリック「Start Change Marker」… その章の2ファイルを開いてから呼ぶ
 //   手順をそれぞれに書き写すと必ずずれる([[one-question-one-place]])。実際 Start の手順は
-//   「sSrcMarksOn を戻す」「キャンセルなら arm しない」「strip を両窓へ」「overset を貼り直す」の
-//   4つの決定を含んでいて、どれも忘れると静かに壊れる種類のもの。
+//   「キャンセルなら arm しない」「strip を両窓へ」「overset を貼り直す」の3つの決定を含んでいて、
+//   どれも忘れると静かに壊れる種類のもの。⚠2026-08-22 まで4つ目に「sSrcMarksOn を戻す」があったが、
+//   Start が表示トグルを上書きするのをやめたので消えた(理由は下の本体のコメント)。
 void KESCMStartComparisonFor(IDocument* target, IDocument* source)
 {
 	if (target == nil || source == nil)
@@ -146,9 +147,11 @@ void KESCMStartComparisonFor(IDocument* target, IDocument* source)
 	IDataBase* sourceDB = ::GetUIDRef(source).GetDataBase();
 
 	PMString report;
-	// 「Show Marks on Source」は Start のたびに既定 ON へ戻す(仕様)。再比較(登録トグル/Ignore 切替)で
-	// 黙って ON に戻さないよう、KESCMDoMarkChangesDoc 側ではなく Start 経路のここで立てる(2026-07-25)。
-	KESCMDrawEventHandler::sSrcMarksOn = kTrue;
+	// ★★2026-08-22 ユーザー判断＝**Start は「Show Marks on Target / Source」をどちらも触らない。**
+	//   以前はここで両方 kTrue にしていた(Source は 2026-07-25 から)。やめた理由は、**設定がパネル設定に
+	//   保存され、起動時に自動で復元される**(KESCMLoadPanelStateIfPresent ← KESCMUIStartup::Startup)から
+	//   ＝Start が上書きすると「保存した選択が比較のたびに消える」ことになり、保存できる意味が無くなる。
+	//   ⇒ 既定は静的初期値の OFF。そこから先はユーザーの選択がそのまま残る。
 	// ★比較をユーザーがキャンセルしたら(ページ数が多いときは進捗バーに Cancel が出る)Start しない。
 	//   マークは KESCMDoMarkChangesDoc 側で破棄済みなので、arm も strip 注入もせず「押す前」の状態へ
 	//   戻す(中途半端に arm だけ残して、枠が1つも無い Start 中を作らない)。

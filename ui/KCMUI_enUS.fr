@@ -36,6 +36,7 @@ resource StringTable (kSDKDefStringsResourceID + index_enUS)
 
                 kSDKDefAboutThisPlugInMenuKey,			kSDKDefAboutThisPlugInMenuValue_enUS,
                 kKESCMUsageMenuKey,				"How to Use...",
+                kKESCMShowTgtMarksMenuKey,			"Show Marks on Target",
                 kKESCMShowSrcMarksMenuKey,			"Show Marks on Source",
                 kKESCMPageMapToggleMenuKey,			"KCM: Register as Added/Removed Pages",
                 kKESCMPageCheckMenuKey,				"KCM: Check",
@@ -90,13 +91,22 @@ resource StringTable (kSDKDefStringsResourceID + index_enUS)
                 kKESCMNextChangeKey,			"Next >",
 
                 // Story Edits section. The kind words are what a row says on its right; "Added" means
-                // the older version holds no story to compare this one against at all.
+                // the older version holds no story to compare this one against at all, and "Deleted"
+                // means the NEWER one does not - that row is a story of the older document, and
+                // clicking it moves the source window alone (2026-08-21).
+                // ★THE WORD IS "Deleted" WHILE THE KEY AND THE ENUM SAY "Removed", and the mismatch
+                // is deliberate (user's call, 2026-08-21). "Delete" on its own would be a verb in the
+                // imperative - an instruction rather than a report - beside "Added", which is a past
+                // participle; "Deleted" keeps the two the same part of speech. The key was not renamed
+                // with it because a string key is not a display string: renaming it would touch the
+                // enum, the model and the UI to change four letters that never reach the screen.
                 kKESCMStorySectionLabelKey,		"Story Edits",
                 kKESCMStoryNoEditsKey,			"No edits",
                 kKESCMStoryKindTextKey,			"Text",
                 kKESCMStoryKindAttrKey,			"Attr",
                 kKESCMStoryKindOtherKey,		"Other",
                 kKESCMStoryKindAddedKey,		"Added",
+                kKESCMStoryKindRemovedKey,		"Deleted",
                 kKESCMStoryKindNoneKey,			"None",
 
                 // The list's column headings. ★"Story" and "Change" rather than "Text" and "Kind":

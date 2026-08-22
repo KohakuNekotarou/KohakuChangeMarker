@@ -26,8 +26,15 @@
 //  同じように反転が嬉しい"). KBSDrawEventHandler.cpp:533-546 has the reasoning, including why a
 //  plain red rectangle and an XOR raster port were both rejected.
 //
-//  ★IT IS A POINTER, NOT A HIGHLIGHT: it takes itself off the screen after about a second
-//  (KESCMStoryMarkerExpiry).
+//  ★IT IS A POINTER, NOT A HIGHLIGHT, WHEN THE JUMP PUTS IT UP: it takes itself off the screen
+//  after about a second (KESCMStoryMarkerExpiry).
+//
+//  ★★AND IT IS THE WHOLE ANSWER WHEN THE TOOL PUTS IT UP (2026-08-22). Holding the left button
+//  over a window with the KESCM tool marks EVERY edit in it at once and keeps them up until the
+//  button comes back up - the Story mode's answer to the frames the Pixel mode reveals the same
+//  way (KESCMStoryPressMarks). Same adornment, same look, no countdown; and because the mark is
+//  drawn on the characters by the text engine, it neither grows with the zoom nor needs a frame
+//  drawn around the page (user's request: "拡大率で大きさは変わらない、ページへの外枠もいらない").
 //
 //========================================================================================
 
@@ -35,13 +42,40 @@
 #define __KESCMStoryMarker_h__
 
 #include "BaseType.h"		// bool16, int32
+#include "PMReal.h"			// the opacity a press is drawn at
 #include "TextID.h"			// TextIndex
 #include "UIDRef.h"			// UID
 
+#include <map>
+
+#include "KESCMStoryMarkRanges.h"	// KESCMMarkRangeList - what a press hands over
+
 class IDataBase;
 
-/** The jump marker. Only the jump should drive this; everything else asks through Show / Clear so
-    that the mark and its countdown stay in step. */
+/** Which characters of which stories are lit up in ONE document: story UID -> its ranges. */
+typedef std::map<UID, KESCMMarkRangeList> KESCMStoryMarkMap;
+
+/** The same thing for both compared documents at once: database -> what is lit up in it.
+
+	★★BOTH AT ONCE IS NOT A LUXURY - "Show Marks on Target" and "Show Marks on Source" can be on
+	together, and then the newer document's edits and the older one's have to be up at the same
+	time (user's request, 2026-08-22). ⚠A press, by contrast, only ever marks the window it was
+	made in; it is the same structure holding one entry. */
+typedef std::map<IDataBase*, KESCMStoryMarkMap> KESCMStoryMarkDocs;
+
+/** The mark. Two kinds of caller drive it and they are EXCLUSIVE, not additive:
+
+	  Show()     - the jump's pointer: one range, and a countdown that takes it off again.
+	  ShowDocs() - everything that stays up: the "Show Marks on ..." toggles, and the tool's press
+	               while the button is held.
+
+	★★WHY EXCLUSIVE. Difference blending inverts what is underneath, so two marks over the same
+	characters would cancel each other out and leave a hole (KESCMStoryMarkRanges.h). Keeping one
+	set at a time makes that impossible rather than making it something the drawing has to handle.
+	⇒ ★A standing mark WINS: while one is up the jump does not add its own pointer, because every
+	  character it would have pointed at is already lit.
+
+	Everything goes through these calls so that the mark and its countdown cannot disagree. */
 namespace KESCMStoryMarker
 {
 	/** Light up a range of one story, and start its countdown.
@@ -57,6 +91,23 @@ namespace KESCMStoryMarker
 		@param to one past the last. from == to is the caret case described above.
 	*/
 	void Show(IDataBase* db, UID storyUID, TextIndex from, TextIndex to);
+
+	/** Light up every range in every document of the set, and DO NOT start a countdown - it stays
+		up until Clear.
+
+		★NO COUNTDOWN IS THE POINT. This is what the "Show Marks on ..." toggles put on screen, and
+		what the tool's left button shows while it is held (user's request, 2026-08-22: "ボタンが
+		押されていると表示されっぱなしにしたい" / "ツールでボタンを押さなくても常にマークが出る様に").
+		What takes it down is a toggle going off or the button coming up, never the clock.
+
+		Whatever was showing before is replaced, the jump's mark included - see the note above this
+		namespace for why the two cannot both be up.
+
+		@param docs the ranges, per document, per story. Merged here, so the caller may hand over
+			overlapping ranges in any order. An empty set clears the mark.
+		@param opacity what to draw at, 0..1. The panel's "Marks opacity 25% / 75%" choice.
+	*/
+	void ShowDocs(const KESCMStoryMarkDocs& docs, const PMReal& opacity);
 
 	/** Take the mark down now. Safe when there is none. */
 	void Clear();

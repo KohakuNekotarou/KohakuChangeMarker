@@ -177,10 +177,17 @@ public:
 	//   章行の右クリック「Start Change Marker」**。∴ブック行から始めた比較でも Source 枠は ON に戻る。
 	//   (「KESCMToggleStartStop だけ」と書いてあった。2026-08-19 不具合再検査 B-U5 3周目で訂正。
 	//    ★手順が1か所に集めてあるからこう書ける＝KESCMComparisonRun.cpp の [[one-question-one-place]])
-	// ON の間、Source 文書の対応ページに同じリング画像を「常時」表示する(ツール左hold と無関係)。不透明度は
+	// ON の間、Source 文書の対応ページに同じリング画像を「常時」表示する(ツール左hold と無関係)。★既定 OFF で、Start は触らない(2026-08-22 変更。設定はパネル設定に保存され起動時に復元される)。不透明度は
 	// パネルの 25%/75% 選択(SelectedMarkOpacity)に連動し、OPP(オーバープリントプレビュー)でも隠さず、
 	// 印刷/PDF にも常に出す(Target 側の sPrintMarks とは独立)。
 	static bool16 sSrcMarksOn;
+	// ★「Show Marks on Target」(2026-08-22 ユーザー要望「ツールでボタンを押さなくても常にマークが出る様に」)。
+	//   ON の間、Target 文書のマークを**画面に常時**表示する(ツール左hold と無関係)。上の Source 版と対で、
+	//   ★★Story 変更モードでは反転マークが同じトグルで常時表示になる
+	//   (ui/KESCMStoryPressMarks.cpp)＝「ピクセルの方もストーリーの方にも」。
+	// ⚠**画面だけ**＝Source 版と違い印刷/PDF には出さない。Target 側の出力は「Print comparison marks」
+	//   (sPrintMarks)が決める仕様で、こちらが出力に効くとあのトグルの意味が消える。
+	static bool16 sTgtMarksOn;
 	// Source 文書の db。比較実行(KESCMDoMarkChangesDoc/MakeEntry)時に設定し、DropAll で nil に戻す。
 	static IDataBase* sSrcDB;
 	// SourceページUID → TargetページUID の対応表。比較は平坦ページ番号どうしの対応なので、Source の

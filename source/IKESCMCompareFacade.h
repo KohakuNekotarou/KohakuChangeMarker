@@ -136,6 +136,18 @@ public:
 	virtual bool16		GetShowSourceMarks() = 0;
 	virtual void		SetShowSourceMarks(bool16 on) = 0;
 
+	/** "Show Marks on Target": the Target document carries its marks at all times, rather than
+		only while the tool's button is held (2026-08-22).
+
+		★IT MEANS THE SAME THING IN BOTH COMPARE MODES - the Pixel mode's rings and the Story
+		mode's inverted characters (user's request: "ピクセルの方もストーリーの方にも"). The two
+		are drawn by completely different machinery, so each reads this for itself: the rings in
+		KESCMDrawEventHandler, the characters in ui/KESCMStoryPressMarks.
+		⚠ON SCREEN ONLY, where the Source one also prints. What comes out of the Target document
+		is decided by "Print comparison marks" alone, and this must not quietly override it. */
+	virtual bool16		GetShowTargetMarks() = 0;
+	virtual void		SetShowTargetMarks(bool16 on) = 0;
+
 	/** "Show Original Page Numbers": the badge showing what a page was numbered before spreads
 		were hidden. */
 	virtual bool16		GetShowOldPageNumbers() = 0;

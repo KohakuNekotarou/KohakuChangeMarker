@@ -87,13 +87,40 @@ bool16 KESCMStoryJumpToChange(int32 rowIndex, int32 changeIndex);
 	invitation to edit that a double click is asking for. Same trade as
 	KESCMStorySelectWholeStory, and it is written down in How to Use for the same reason.
 
+	★★BOTH SIDES OF THE EDIT ARE SELECTED (2026-08-21, user's call). The row names one edit, and
+	that edit has two ends: what the sentence says now, and what it said before. The newer document
+	gets the range the row shows; the older one gets the matching range the diff worked out
+	(Change::fSourceStart / fSourceEnd), which is a DIFFERENT range - the wording either side of it
+	has changed length.
+	⚠An INSERTION has no older side (fHasSource is kFalse there) and nothing is selected in the
+	source for it. Only the target's outcome is reported: the source may not even have a window
+	open, and the row is not about it.
+
 	@param rowIndex which story row of KESCMStoryList.
 	@param changeIndex which of that row's changes.
-	@return kTrue when the words were selected.
+	@return kTrue when the words were selected in the target.
 */
 bool16 KESCMStorySelectChange(int32 rowIndex, int32 changeIndex);
 
 /** Double click: select the whole of that story, with the Type tool active.
+
+	★★★IN WHICHEVER DOCUMENTS THE ROW IS ABOUT (2026-08-21, user's calls):
+
+	| the row                          | selected                                       |
+	|----------------------------------|------------------------------------------------|
+	| a normal changed row (in both)   | the target AND the source                      |
+	| Added   (target only)            | the target                                     |
+	| Deleted (source only)            | the source, and the source is brought to front |
+
+	★"Both" is what a row about one story in two versions means: the single click has already
+	pointed both windows at it, and this makes both of them usable - the reader can read the old
+	wording, copy it, or paste over it without hunting for it by eye.
+	★★A DELETED ROW ALSO CHANGES WHICH DOCUMENT IS ACTIVE, and it is the only row that does. Its
+	story is in the source alone, and a selection made in a document that is not the active one is
+	not the selection the reader is holding - which is exactly what was reported: "ソースが active
+	でないときにダブルクリックすると、選択されない". Every other row leaves the front document
+	alone, because it has something to show on both sides.
+	⚠The source's refusals are silent, and normal - it may have no window open.
 
 	★SELECTS EVERYTHING, rather than placing a caret at the start (user's call, 2026-08-10 - it put
 	the caret there until then). The row is the report that a story changed, and what the reader
@@ -116,7 +143,8 @@ bool16 KESCMStorySelectChange(int32 rowIndex, int32 changeIndex);
 	been reported by the single click that preceded it, and saying it twice would only overwrite the
 	message with itself.
 
-	@return kTrue when the text was selected.
+	@return kTrue when the text was selected in the document the row is about - the source for a
+		Deleted row, the target for every other one.
 */
 bool16 KESCMStorySelectWholeStory(int32 rowIndex);
 

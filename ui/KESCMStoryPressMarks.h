@@ -1,0 +1,62 @@
+﻿//========================================================================================
+//
+//  Owner: KohakuNekotarou
+//
+//  Kohaku Change Marker (KESCM)
+//
+//  Which edits the Story mode is showing on the page right now, and in which of the two
+//  documents. Two things ask for them and they add up rather than compete:
+//
+//    * the "Show Marks on Target" / "Show Marks on Source" toggles - marks that STAY UP, the
+//      Story mode's half of what those two toggles already do for the Pixel mode's frames
+//      (user's request, 2026-08-22: "ツールでボタンを押さなくても常にマークが出る様に、
+//      それをピクセルの方もストーリーの方にも");
+//    * the KESCM tool's left button while it is held - the window under the cursor, for as long
+//      as the button is down, whether or not its toggle is on.
+//
+//  ★★IT IS THE STORY MODE'S ANSWER TO THE PIXEL MODE'S FRAMES, AND IT IS DELIBERATELY A DIFFERENT
+//  SHAPE. The Pixel mode has no idea what changed - only which rectangles of the page came out
+//  different - so it draws frames around them. The Story mode knows exactly which CHARACTERS
+//  changed, so it lights those up instead and needs no frame around the page and no scaling with
+//  the zoom (user's request: "拡大率で大きさは変わらない、ページへの外枠もいらない").
+//
+//  ★THE MARK ITSELF IS THE JUMP'S, UNCHANGED (user's call: "ジャンプと時につかってるのとおなじで
+//  いいです"). This file works out WHICH ranges; KESCMStoryMarker draws them, as the global text
+//  adornment it already was.
+//
+//  ★WHICH DOCUMENT DECIDES WHAT IS MARKABLE AT ALL: a deletion only exists in the older document,
+//  an insertion only in the newer one, and a story that was added or removed outright exists in
+//  one of them and not the other.
+//
+//========================================================================================
+
+#ifndef __KESCMStoryPressMarks_h__
+#define __KESCMStoryPressMarks_h__
+
+#include "BaseType.h"
+
+/** Work out what should be lit up now and put exactly that on screen.
+
+	★THE ONE ENTRY POINT, and it is idempotent: it reads the toggles, the press state and the
+	comparison, and installs the result. Callers do not decide what to show - they say "something
+	changed" and this decides. That is why it can be hung off a notification without either side
+	knowing what the other is for.
+
+	Does nothing (and takes down nothing it did not put up) unless a STORY comparison is armed, so
+	it is safe to call from anywhere, in either mode.
+
+	Call it whenever any of its inputs move: the toggles, the compare mode, a comparison being
+	built or thrown away, a row being refreshed, the button going down or coming up.
+*/
+void	KESCMStoryMarksRefresh();
+
+/** The tool's left button went down over one of the two windows. */
+void	KESCMStoryPressMarksBegin(bool16 useSourceDocument);
+
+/** ...and came up again. What the toggles asked for stays; what the press added goes.
+	Safe to call on any release, including one this file never heard the start of. */
+void	KESCMStoryPressMarksEnd();
+
+#endif // __KESCMStoryPressMarks_h__
+
+// End, KESCMStoryPressMarks.h.

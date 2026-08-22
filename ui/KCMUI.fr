@@ -795,10 +795,22 @@ resource MenuDef (kSDKDefMenuResourceID)
 		// while ON, the same comparison rings are also drawn on the corresponding pages of the
 		// Source document — always visible (independent of the middle button), shown in
 		// overprint preview, and always printed. Opacity follows the panel's 25%/75% radio.
-		// Turned ON by default every time Start runs.
+		// Remembered in Save Panel Settings and restored at startup; Start does not touch it.
 		kKESCMPopupShowSrcMarksActionID,
 		kKESCMPopupMenuPath,
 		kKESCMShowSrcMarksMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
+		// "Show Marks on Target" on the panel flyout (popup) menu. Check-mark toggle:
+		// while ON, the Target document keeps its marks WITHOUT the tool's button being held —
+		// the Pixel mode's comparison rings and the Story mode's inverted characters alike.
+		// Opacity follows the panel's 25%/75% radio.
+		// On screen only: what the Target document PRINTS is decided by "Print comparison marks"
+		// on its own, which is the one asymmetry with the Source toggle above (that one prints).
+		// Remembered in Save Panel Settings and restored at startup; Start does not touch it.
+		kKESCMPopupShowTgtMarksActionID,
+		kKESCMPopupMenuPath,
+		kKESCMShowTgtMarksMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
 		// "Hide Unchanged Spreads" on the panel flyout (popup) menu. Check-mark toggle:
@@ -1182,6 +1194,15 @@ resource ActionDef (kSDKDefActionResourceID)
 		kKESCMActionComponentBoss,
 		kKESCMPopupShowSrcMarksActionID,
 		kKESCMShowSrcMarksMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates supplies the check mark (kSelectedAction)
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		kKESCMActionComponentBoss,
+		kKESCMPopupShowTgtMarksActionID,
+		kKESCMShowTgtMarksMenuKey,
 		kOtherActionArea,
 		kNormalAction,
 		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates supplies the check mark (kSelectedAction)

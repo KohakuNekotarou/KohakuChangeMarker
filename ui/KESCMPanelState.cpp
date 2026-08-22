@@ -138,6 +138,7 @@ void KESCMSavePanelState()
 	json += "  \"printMarks\": ";             json += KESCMBoolLiteral(compare->GetPrintMarks());                   json += ",\n";
 	json += "  \"opacity25\": ";              json += KESCMBoolLiteral(compare->GetMarkOpacity25());                json += ",\n";
 	json += "  \"holdToHideMarks\": ";        json += KESCMBoolLiteral(compare->GetHoldToHideMarks());              json += ",\n";
+	json += "  \"showTgtMarks\": ";           json += KESCMBoolLiteral(compare->GetShowTargetMarks());              json += ",\n";
 	json += "  \"showSrcMarks\": ";           json += KESCMBoolLiteral(compare->GetShowSourceMarks());              json += ",\n";
 	json += "  \"showOldNumbers\": ";         json += KESCMBoolLiteral(compare->GetShowOldPageNumbers());           json += ",\n";
 	json += "  \"syncLayoutViews\": ";        json += KESCMBoolLiteral(KESCMGetLayoutSync());                       json += ",\n";
@@ -227,6 +228,7 @@ void KESCMLoadPanelStateIfPresent()
 	//   先に Hold to Hide Marks を復元しておく必要がある。
 	InterfacePtr<IKESCMCompareFacade> compare(Utils<IKESCMCompareFacade>().QueryUtilInterface());
 	compare->SetHoldToHideMarks   (KESCMJsonReadBool(text, "holdToHideMarks", compare->GetHoldToHideMarks()));
+	compare->SetShowTargetMarks   (KESCMJsonReadBool(text, "showTgtMarks",    compare->GetShowTargetMarks()));
 	compare->SetShowSourceMarks   (KESCMJsonReadBool(text, "showSrcMarks",    compare->GetShowSourceMarks()));
 	compare->SetShowOldPageNumbers(KESCMJsonReadBool(text, "showOldNumbers",  compare->GetShowOldPageNumbers()));
 

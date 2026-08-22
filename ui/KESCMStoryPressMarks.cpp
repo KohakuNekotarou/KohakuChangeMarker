@@ -1,0 +1,262 @@
+﻿//========================================================================================
+//
+//  Owner: KohakuNekotarou
+//
+//  Kohaku Change Marker (KESCM)
+//
+//  See KESCMStoryPressMarks.h for what this shows and why.
+//
+//  Everything here is a READ of the Story Edits list plus one call to the marker. Nothing is
+//  cached between refreshes: the list can be rebuilt by a comparison, a refresh or a row's own
+//  right-click menu at any moment, and a cache of ranges would go stale silently - the marks
+//  would keep pointing at where the words used to be. Rebuilding costs a few thousand integers
+//  on a document with a few thousand edits, which is not worth being wrong for.
+//
+//========================================================================================
+
+#include "VCPlugInHeaders.h"
+
+// Interface includes:
+#include "ITextModel.h"					// TotalLength - how far a whole-story mark reaches
+
+// General includes:
+#include "PMReal.h"
+#include "UIDRef.h"
+#include "Utils.h"
+
+// Project includes:
+#include "IKESCMCompareFacade.h"		// armed state, the two databases, the toggles, the opacity
+#include "IKESCMStoryEditsFacade.h"		// the rows and their changes - what is marked
+#include "KESCMBoundaryID.h"			// kKESCMModeStory
+#include "KESCMStoryMarker.h"			// the adornment that draws them
+#include "KESCMStoryPressMarks.h"
+
+namespace
+{
+
+// Is the tool's button down, and over which window? ⚠Not "is anything showing" - the toggles can
+// be holding marks up with no button down at all.
+bool16 gPressActive = kFalse;
+bool16 gPressUseSource = kFalse;
+
+// Is this file what is currently on screen? ⚠Without it, a refresh with nothing to show would take
+// down a JUMP's marker that this file never put up. The jump and these marks share one adornment
+// (they are exclusive - see KESCMStoryMarker.h), so "nothing to show" has to mean "clear what I
+// put up", not "clear whatever is there".
+bool16 gShowing = kFalse;
+
+/* KESCMStoryWholeTextEnd
+   One past the last character a reader can see in this story - what an Added or Removed story is
+   marked from 0 to.
+
+   ⚠THE STORY'S OWN LENGTH IS ONE MORE THAN THAT. ITextModel.h:55-56 is explicit that TotalLength
+   counts "the non-editable, must-have carriage return at the end", and a paragraph mark has no
+   glyph to invert. Including it would stretch the range past the last real character for nothing.
+   ★The rest of what TotalLength counts IS wanted: it includes the text of embedded tables
+   (ITextModel.h:138), and in a story that is entirely new the table's words are new as well.
+
+   @return kFalse for a story that is not there or holds nothing but that final return.
+*/
+bool16 KESCMStoryWholeTextEnd(IDataBase* db, UID storyUID, TextIndex& outEnd)
+{
+	outEnd = 0;
+	if (db == nil || storyUID == kInvalidUID)
+		return kFalse;
+
+	InterfacePtr<ITextModel> model(UIDRef(db, storyUID), UseDefaultIID());
+	if (model == nil)
+		return kFalse;
+
+	const TextIndex total = model->TotalLength();
+	outEnd = (total > 1) ? (total - 1) : 0;
+	return (outEnd > 0) ? kTrue : kFalse;
+}
+
+/* KESCMStoryCollectRanges
+   Every edit that is visible in ONE of the two documents, as ranges per story.
+
+   @param db the document to read the ranges out of.
+   @param useSourceDocument kTrue when db is the older one.
+   @param out [out] cleared, then filled. Empty when nothing in this document is markable.
+*/
+void KESCMStoryCollectRanges(IDataBase* db, bool16 useSourceDocument, KESCMStoryMarkMap& out)
+{
+	out.clear();
+	if (db == nil)
+		return;
+
+	const int32 rowCount = Utils<IKESCMStoryEditsFacade>()->GetRowCount();
+	for (int32 n = 0; n < rowCount; ++n)
+	{
+		IKESCMStoryEditsFacade::Row row;
+		if (!Utils<IKESCMStoryEditsFacade>()->GetRow(n, row))
+			continue;
+		if (row.fStoryUID == kInvalidUID)
+			continue;
+
+		// ★WHICH DOCUMENT A ROW BELONGS TO IS ANSWERED BY ITS KIND, and by nothing else on the row
+		//   (IKESCMStoryEditsFacade.h). A removed story exists only in the source; every other row
+		//   was read out of the target. Getting this wrong would not draw nothing - a UID names a
+		//   DIFFERENT object in the other document, so it would mark innocent text.
+		const bool16 removedRow = ((row.fKinds & kKESCMStoryKindRemoved) != 0) ? kTrue : kFalse;
+		if (removedRow != useSourceDocument)
+			continue;
+
+		const int32 changeCount = Utils<IKESCMStoryEditsFacade>()->GetChangeCount(n);
+
+		KESCMMarkRangeList ranges;
+
+		if (changeCount <= 0)
+		{
+			// ★★AN UNPAIRED STORY IS MARKED WHOLE (user's request, 2026-08-22: "AddされたStoryは、
+			//   全テキストになりそうですがマーク出せます？"). An Added story has no partner in the
+			//   older version and a Removed one has none in the newer, so no text diff was ever run
+			//   for either - which is why they arrive here with no changes at all
+			//   (KESCMStoryStamp.h, kKESCMStoryKindUnpaired). Every character of them is new, or
+			//   gone, so every character is the answer to "what changed".
+			// ⚠THE OTHER TWO REASONS FOR AN EMPTY LIST ARE NOT THIS ONE, and must not be marked
+			//   whole: the diff refused the story (it ran out, or the length check failed) or it
+			//   ran and the WORDS AGREE - only formatting or a table moved. Lighting up the whole
+			//   story would claim to know something in the first case and would be plainly wrong
+			//   in the second (IKESCMStoryEditsFacade.h names all three).
+			// ★Asked as Unpaired rather than as Added, which is this plug-in's own rule: the two
+			//   kinds differ only in WHICH document holds the story, and that has already been
+			//   settled by the row filter above (KESCMStoryStamp.h:117-127).
+			if ((row.fKinds & kKESCMStoryKindUnpaired) == 0)
+				continue;
+
+			TextIndex wholeEnd = 0;
+			if (!KESCMStoryWholeTextEnd(db, row.fStoryUID, wholeEnd))
+				continue;
+
+			ranges.push_back(KESCMMarkRange(0, wholeEnd));
+		}
+		else
+			ranges.reserve(changeCount);
+
+		for (int32 i = 0; i < changeCount; ++i)		// no changes = not entered; the whole range is already in
+		{
+			IKESCMStoryEditsFacade::Change change;
+			if (!Utils<IKESCMStoryEditsFacade>()->GetChange(n, i, change))
+				continue;
+
+			TextIndex from = 0;
+			TextIndex to = 0;
+			if (useSourceDocument)
+			{
+				// ⚠AN INSERTION HAS NO PLACE HERE. fHasSource is kFalse for one precisely because
+				//   there is nothing in the older version to point at (IKESCMStoryEditsFacade.h).
+				if (!change.fHasSource)
+					continue;
+				from = change.fSourceStart;
+				to = change.fSourceEnd;
+			}
+			else
+			{
+				from = change.fTargetStart;
+				to = change.fTargetEnd;
+			}
+
+			if (to < from)
+				continue;
+			if (to == from)
+			{
+				// A DELETION HAS NO WIDTH on the side it was deleted from. One character makes the
+				// place it used to stand in front of visible - the same answer the jump's marker
+				// gives (KESCMStoryMarker::Show), so the two agree about what a deletion looks like.
+				to = from + 1;
+			}
+
+			ranges.push_back(KESCMMarkRange(from, to));
+		}
+
+		if (!ranges.empty())
+		{
+			// ⚠APPENDED, NOT ASSIGNED. Two rows naming the same story in the same document should
+			//   not happen - the list holds one row per story per side - but if it ever did, an
+			//   assignment would silently throw the first one's edits away. Appending cannot: the
+			//   marker merges each story's list before it draws anything.
+			KESCMMarkRangeList& dst = out[row.fStoryUID];
+			dst.insert(dst.end(), ranges.begin(), ranges.end());
+		}
+	}
+
+	// ⚠THE RANGES ARE NOT CLAMPED TO THE STORY AS IT STANDS NOW, and the jump's are. The jump makes
+	//   a selection, which a stale index would have the suite refuse; this only asks the text engine
+	//   "is any of this run marked", and a range past the end of the story simply never meets a run.
+	//   Reading every story's length to clamp them would cost a Query per row for no answer.
+}
+
+}	// anonymous namespace
+
+//----------------------------------------------------------------------------------------
+
+void KESCMStoryMarksRefresh()
+{
+	KESCMStoryMarkDocs docs;
+	PMReal opacity(1.0);
+
+	InterfacePtr<IKESCMCompareFacade> compare(Utils<IKESCMCompareFacade>().QueryUtilInterface());
+	if (compare != nil && compare->IsArmed() && compare->GetCompareMode() == kKESCMModeStory)
+	{
+		opacity = compare->GetSelectedMarkOpacity();
+
+		// ★A TOGGLE AND A PRESS ASK FOR THE SAME THING, so they are ORed rather than ranked. A
+		//   press over a window whose toggle is already on changes nothing, which is right: every
+		//   edit in it is lit either way.
+		const bool16 wantTarget = compare->GetShowTargetMarks() || (gPressActive && !gPressUseSource);
+		const bool16 wantSource = compare->GetShowSourceMarks() || (gPressActive && gPressUseSource);
+
+		IDataBase* const targetDB = compare->GetArmedTargetDB();
+		IDataBase* const sourceDB = compare->GetArmedSourceDB();
+
+		if (wantTarget && targetDB != nil && compare->IsDocDBOpen(targetDB))
+		{
+			KESCMStoryMarkMap byStory;
+			KESCMStoryCollectRanges(targetDB, kFalse, byStory);
+			if (!byStory.empty())
+				docs[targetDB].swap(byStory);		// ⚠only when non-empty: an empty entry would
+		}											//   make docs look occupied and clear nothing
+
+		if (wantSource && sourceDB != nil && compare->IsDocDBOpen(sourceDB))
+		{
+			KESCMStoryMarkMap byStory;
+			KESCMStoryCollectRanges(sourceDB, kTrue, byStory);
+			if (!byStory.empty())
+				docs[sourceDB].swap(byStory);
+		}
+	}
+
+	if (docs.empty())
+	{
+		// ★ONLY TAKE DOWN WHAT THIS FILE PUT UP. A jump's pointer may be on screen, and it is not
+		//   ours to clear (see gShowing).
+		if (gShowing)
+		{
+			gShowing = kFalse;
+			KESCMStoryMarker::Clear();
+		}
+		return;
+	}
+
+	KESCMStoryMarker::ShowDocs(docs, opacity);
+	gShowing = kTrue;
+}
+
+void KESCMStoryPressMarksBegin(bool16 useSourceDocument)
+{
+	gPressActive = kTrue;
+	gPressUseSource = useSourceDocument;
+	KESCMStoryMarksRefresh();
+}
+
+void KESCMStoryPressMarksEnd()
+{
+	if (!gPressActive)
+		return;					// nothing was pressed - leave a jump's marker, and the toggles, alone
+
+	gPressActive = kFalse;
+	KESCMStoryMarksRefresh();	// what the toggles asked for comes back; the rest goes
+}
+
+// End, KESCMStoryPressMarks.cpp.

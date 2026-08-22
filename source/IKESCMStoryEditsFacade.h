@@ -70,7 +70,15 @@ public:
 	*/
 	struct Row
 	{
-		UID			fStoryUID;	// the target document's story -- the row's identity, shown as a number
+		/** The story, in the document that holds it -- the row's identity, shown as a number.
+
+			★★WHICH DOCUMENT IS ANSWERED BY fKinds (2026-08-21). Every row is a target story except
+			a REMOVED one, which exists only in the source. The three fields below are read out of
+			that same document, so a caller that jumps to a row must pick its database the same way:
+			GetArmedSourceDB() when kKESCMStoryKindRemoved is set, GetArmedTargetDB() otherwise.
+			⚠A uid is meaningless in the other document -- it can name a different object there
+			rather than nothing -- so this is not a detail a caller may skip. */
+		UID			fStoryUID;
 		PMString	fText;		// the first readable words. NOT shortened here: the row's text cell is
 								// kEllipsizeMiddle and decides for itself at whatever width it has
 		uint32		fKinds;		// OR of KESCMStoryChangeKind -- named on the right of the row

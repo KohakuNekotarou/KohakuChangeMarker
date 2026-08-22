@@ -63,9 +63,10 @@ namespace
 	anything was missing. "Text+" fits, and the '+' is the sign.
 
 	The order the kinds are tested in is fixed, so the word before the '+' is always the same one
-	for the same set of changes - "Text+" never comes back as "Attr+". Added stands alone rather
-	than joining the others: there is no older story to have compared anything against, so no kind
-	could have been named for it, and no '+' can follow it.
+	for the same set of changes - "Text+" never comes back as "Attr+". Added and Removed stand alone
+	rather than joining the others: there is no story on the other side to have compared anything
+	against, so no kind could have been named for either, and no '+' can follow them.
+	(Removed arrived 2026-08-21 - the story is in the older version and gone from the newer one.)
 
 	★"None" STANDS ALONE TOO, AND IT OUTRANKS THE COUNTERS (2026-08-21, user's request after
 	watching a refreshed row lose its children: "何も変更が亡くなった場合 Change のところに表示して
@@ -93,6 +94,14 @@ PMString KindLabel(uint32 kinds, bool16 sameKind)
 		added.Translate();
 		added.SetTranslatable(kFalse);
 		return added;
+	}
+
+	if (kinds & kKESCMStoryKindRemoved)
+	{
+		PMString removed(kKESCMStoryKindRemovedKey);
+		removed.Translate();
+		removed.SetTranslatable(kFalse);
+		return removed;
 	}
 
 	PMString out;

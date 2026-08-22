@@ -229,6 +229,21 @@ PMString FirstReadableText(ITextModel* model)
 */
 bool RowIsBefore(const KESCMStoryRow& a, const KESCMStoryRow& b)
 {
+	// ★★FIRST KEY: WHICH DOCUMENT THE ROW LIVES IN (2026-08-21). Every target row comes before
+	//   every removed one, and only then does the page order below apply - within each group.
+	//   ⇒ The page numbers in the column then come from ONE document at a time, in order, and the
+	//     reader is not asked to notice that the column changed documents part-way down (user's
+	//     call; it is also the order Export Changed Pages has always used).
+	//   ⚠NOT DONE BY GIVING REMOVED ROWS kMaxInt32: that would drop them in among the master-page
+	//     and pasteboard rows, and leave removed rows ordered by uid rather than by page - "which
+	//     document" and "has a page" are different questions and need different keys.
+	//   ★It also keeps the uid tie-break below honest: it now only ever compares two uids from the
+	//     same document, and a uid means nothing across documents.
+	const bool aRemoved = (a.fKinds & kKESCMStoryKindRemoved) != 0;
+	const bool bRemoved = (b.fKinds & kKESCMStoryKindRemoved) != 0;
+	if (aRemoved != bRemoved)
+		return !aRemoved;
+
 	if (a.fPageIndex != b.fPageIndex)
 		return a.fPageIndex < b.fPageIndex;
 
@@ -353,11 +368,25 @@ static bool16 ReadRowFromDocument(IDataBase* db, KESCMStoryRow& row)
 	return kTrue;
 }
 
-/* Build
+/* AddRowsFromDocument
+	Turn into rows every diff whose story lives in THIS document. Build calls it twice: once for the
+	target's rows and once for the source's removed ones (2026-08-21).
+
+	★TWO PASSES RATHER THAN ONE LOOP THAT PICKS A db PER ROW. The page list is a per-document
+	  object, and a row needs it to answer where it sits; opening it once per row would mean a Query
+	  for every row in the list. Splitting by document opens exactly two.
+
+	★AND IT IS A FILTER, NOT A SPLIT OF THE INPUT. Both passes see the whole diff list and take the
+	  half that is theirs, so there is no intermediate vector to keep in step with the original.
+
+	@param db the document to read from. nil adds nothing - that is how a missing source drops its
+	       removed rows, the same silent drop an unreadable story already gets.
+	@param wantRemoved kTrue to take only the removed rows, kFalse to take only the others.
+	@param rows appended to; not cleared.
 */
-void KESCMStoryList::Build(IDataBase* db, const std::vector<KESCMStoryDiff>& diffs)
+static void AddRowsFromDocument(IDataBase* db, const std::vector<KESCMStoryDiff>& diffs,
+                                bool16 wantRemoved, std::vector<KESCMStoryRow>& rows)
 {
-	gRows.clear();
 	if (db == nil)
 		return;
 
@@ -365,6 +394,10 @@ void KESCMStoryList::Build(IDataBase* db, const std::vector<KESCMStoryDiff>& dif
 
 	for (std::vector<KESCMStoryDiff>::const_iterator it = diffs.begin(); it != diffs.end(); ++it)
 	{
+		const bool16 removed = ((it->fKinds & kKESCMStoryKindRemoved) != 0) ? kTrue : kFalse;
+		if (removed != wantRemoved)
+			continue;	// belongs to the other document's pass
+
 		KESCMStoryRow row;
 		row.fStoryUID = it->fStoryUID;
 		row.fKinds = it->fKinds;
@@ -400,8 +433,26 @@ void KESCMStoryList::Build(IDataBase* db, const std::vector<KESCMStoryDiff>& dif
 				row.fPageIndex = idx;
 		}
 
-		gRows.push_back(row);
+		rows.push_back(row);
 	}
+}
+
+/* Build
+*/
+void KESCMStoryList::Build(IDataBase* targetDB, IDataBase* sourceDB,
+                           const std::vector<KESCMStoryDiff>& diffs)
+{
+	gRows.clear();
+	if (targetDB == nil)
+		return;
+
+	AddRowsFromDocument(targetDB, diffs, kFalse, gRows);
+
+	// ★THE REMOVED ROWS ARE READ OUT OF THE OLDER DOCUMENT (2026-08-21). Their story is not in the
+	//   target at all, so there is nothing there to read a name, a frame or a page from.
+	//   ⚠A nil sourceDB is not an error here: those rows simply do not appear, which is the same
+	//     thing that happens to a story whose ITextModel cannot be read.
+	AddRowsFromDocument(sourceDB, diffs, kTrue, gRows);
 
 	std::sort(gRows.begin(), gRows.end(), RowIsBefore);
 }
