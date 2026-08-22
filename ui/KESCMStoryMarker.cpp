@@ -52,12 +52,17 @@ namespace
 //   task there, and a global text adornment is drawn there. Unlike the comparison marks, this one
 //   is deliberately NOT drawn for printing or export (see GetIsActive), which is what keeps the
 //   background threads out of it entirely.
-bool16     gHasMark     = kFalse;
-IDataBase* gMarkDB      = nil;		// an ADDRESS, only ever compared against the run's own database
-UID        gMarkStory   = kInvalidUID;
-TextIndex  gMarkFrom    = 0;
-TextIndex  gMarkTo      = 0;
-bool16     gShutdown    = kFalse;
+bool16            gHasMark   = kFalse;	// the fast path: !gMarkByStory.empty(), kept as a flag
+IDataBase*        gMarkDB    = nil;		// an ADDRESS, only ever compared against the run's own database
+KESCMStoryMarkMap gMarkByStory;			// story UID -> its ranges, each list merged
+PMReal            gMarkOpacity(1.0);	// 1.0 for the jump; the panel's 25%/75% for a press
+bool16            gShutdown  = kFalse;
+
+// The whole marked span across every story, which is a free way to refuse most runs before
+// asking any of them which story they belong to (that question costs a Query). Meaningless
+// when gHasMark is kFalse.
+TextIndex  gMarkLowest  = 0;
+TextIndex  gMarkHighest = 0;
 
 // How far above and below the baseline the mark reaches, as a fraction of the type size. The same
 // split the product's spelling adornment uses for its own ink bounds
@@ -86,16 +91,22 @@ void KESCMStoryMarkerRepaint(IDataBase* db)
 		Utils<ILayoutUtils>()->InvalidateViews(doc);
 }
 
-/* KESCMStoryMarkerRunIsMarked
-   Does this wax run carry any of the marked characters?
+/* KESCMStoryMarkerFindRunRanges
+   Which parts of this wax run are marked, as offsets into the run.
 
-   ★TWO QUESTIONS, AND THE CHEAP ONE FIRST. Character ranges are integers and are compared first;
-   only a run that overlaps is worth asking which story it belongs to, which costs a Query.
+   ★THREE QUESTIONS, CHEAPEST FIRST, AND THE ORDER IS THE WHOLE PERFORMANCE STORY. A press marks
+   every edit in the document, so this is asked of every run on every page being drawn:
+     1. does the run fall within the marked span at all - two integer comparisons
+     2. which story does it belong to - a Query, and the reason 1 exists
+     3. which of that story's ranges it overlaps - a binary search (KESCMStoryMarkRanges.h)
+
+   ⚠STEP 2 CANNOT BE SKIPPED even when only one story is marked. A document can be open twice over
+   (target and source) and both are being drawn in their own windows, so "the right characters" is
+   never enough - it has to be the right story in the right database.
 */
-bool16 KESCMStoryMarkerRunIsMarked(const IWaxRun* waxRun, int32& outCharStart, int32& outCharCount)
+bool16 KESCMStoryMarkerFindRunRanges(const IWaxRun* waxRun, KESCMMarkRangeList& outRanges)
 {
-	outCharStart = 0;
-	outCharCount = 0;
+	outRanges.clear();
 
 	if (!gHasMark || waxRun == nil)
 		return kFalse;
@@ -106,12 +117,9 @@ bool16 KESCMStoryMarkerRunIsMarked(const IWaxRun* waxRun, int32& outCharStart, i
 		return kFalse;
 
 	const TextIndex runEnd = runStart + runCount;
-	if (runEnd <= gMarkFrom || runStart >= gMarkTo)
-		return kFalse;						// the run is entirely before or after the mark
+	if (runEnd <= gMarkLowest || runStart >= gMarkHighest)
+		return kFalse;						// before or after everything that is marked
 
-	// Which story. ⚠A document can be open twice over (target and source), and both are being drawn
-	//   in their own windows, so "the right characters" is not enough - it has to be the right
-	//   story in the right database.
 	const IWaxLine* waxLine = waxRun->GetWaxLine();
 	if (waxLine == nil)
 		return kFalse;
@@ -119,15 +127,123 @@ bool16 KESCMStoryMarkerRunIsMarked(const IWaxRun* waxRun, int32& outCharStart, i
 	if (model == nil)
 		return kFalse;
 	const UIDRef modelRef = ::GetUIDRef(model);
-	if (modelRef.GetDataBase() != gMarkDB || modelRef.GetUID() != gMarkStory)
+	if (modelRef.GetDataBase() != gMarkDB)
 		return kFalse;
 
-	// The overlap, expressed as an offset into this run.
-	const TextIndex from = (gMarkFrom > runStart) ? gMarkFrom : runStart;
-	const TextIndex to = (gMarkTo < runEnd) ? gMarkTo : runEnd;
-	outCharStart = static_cast<int32>(from - runStart);
-	outCharCount = static_cast<int32>(to - from);
-	return (outCharCount > 0);
+	KESCMStoryMarkMap::const_iterator story = gMarkByStory.find(modelRef.GetUID());
+	if (story == gMarkByStory.end())
+		return kFalse;
+
+	KESCMIntersectMarkRanges(story->second, runStart, runEnd, outRanges);
+	return outRanges.empty() ? kFalse : kTrue;
+}
+
+/* KESCMStoryMarkerRunIsMarked
+   The same question with no list built - what GetCouldDraw and GetIsActive want.
+*/
+bool16 KESCMStoryMarkerRunIsMarked(const IWaxRun* waxRun)
+{
+	if (!gHasMark || waxRun == nil)
+		return kFalse;
+
+	const TextIndex runStart = waxRun->TextOrigin();
+	const int32 runCount = waxRun->GetCharCount();
+	if (runCount <= 0)
+		return kFalse;
+
+	const TextIndex runEnd = runStart + runCount;
+	if (runEnd <= gMarkLowest || runStart >= gMarkHighest)
+		return kFalse;
+
+	const IWaxLine* waxLine = waxRun->GetWaxLine();
+	if (waxLine == nil)
+		return kFalse;
+	InterfacePtr<ITextModel> model(waxLine->QueryTextModel());
+	if (model == nil)
+		return kFalse;
+	const UIDRef modelRef = ::GetUIDRef(model);
+	if (modelRef.GetDataBase() != gMarkDB)
+		return kFalse;
+
+	KESCMStoryMarkMap::const_iterator story = gMarkByStory.find(modelRef.GetUID());
+	if (story == gMarkByStory.end())
+		return kFalse;
+
+	return KESCMMarkRangesTouchRun(story->second, runStart, runEnd);
+}
+
+/* KESCMStoryMarkerSetRanges
+   Install a set of ranges as THE mark, replacing whatever was there. Merging happens here so that
+   no caller can hand in overlaps (which would invert twice and leave a hole), and the span the
+   fast path tests is worked out in the same pass.
+*/
+void KESCMStoryMarkerSetRanges(IDataBase* db, const KESCMStoryMarkMap& byStory, const PMReal& opacity)
+{
+	gMarkByStory.clear();
+	gMarkDB = nil;
+	gHasMark = kFalse;
+	gMarkOpacity = opacity;
+	gMarkLowest = 0;
+	gMarkHighest = 0;
+
+	if (db == nil)
+		return;
+
+	bool16 first = kTrue;
+	for (KESCMStoryMarkMap::const_iterator it = byStory.begin(); it != byStory.end(); ++it)
+	{
+		if (it->first == kInvalidUID)
+			continue;
+
+		KESCMMarkRangeList ranges = it->second;
+		KESCMMergeMarkRanges(ranges);
+		if (ranges.empty())
+			continue;					// a story whose ranges were all empty is not a story to keep
+
+		if (first || ranges.front().fFrom < gMarkLowest)
+			gMarkLowest = ranges.front().fFrom;
+		if (first || ranges.back().fTo > gMarkHighest)
+			gMarkHighest = ranges.back().fTo;
+		first = kFalse;
+
+		gMarkByStory[it->first].swap(ranges);
+	}
+
+	if (!gMarkByStory.empty())
+	{
+		gMarkDB = db;
+		gHasMark = kTrue;
+	}
+}
+
+/* KESCMStoryMarkerInstall
+   Put a set up, take whatever was there down, and repaint both - the half of Show and ShowRanges
+   that is the same for either of them.
+
+   ⚠THE OLD SET'S DOCUMENT IS REPAINTED TOO when the new one is somewhere else, or the previous
+   mark would stay on screen in a window nobody is looking at any more. That is not hypothetical
+   here: a press in the source window replaces a jump's mark in the target one.
+
+   @param countdown kTrue for the jump's flash, kFalse for the tool's press (which the mouse
+      button takes down). Either way any countdown already running is dealt with, so a press
+      cannot inherit a jump's clock.
+*/
+void KESCMStoryMarkerInstall(IDataBase* db, const KESCMStoryMarkMap& byStory,
+							 const PMReal& opacity, bool16 countdown)
+{
+	IDataBase* const previousDB = gHasMark ? gMarkDB : nil;
+
+	KESCMStoryMarkerSetRanges(db, byStory, opacity);
+
+	if (previousDB != nil && previousDB != gMarkDB)
+		KESCMStoryMarkerRepaint(previousDB);
+	if (gMarkDB != nil)
+		KESCMStoryMarkerRepaint(gMarkDB);
+
+	if (countdown && gHasMark)
+		KESCMStoryMarkerExpiry::Start();
+	else
+		KESCMStoryMarkerExpiry::Stop();
 }
 
 }	// anonymous namespace
@@ -164,8 +280,7 @@ public:
 	virtual bool16 GetCheckCouldDraw() { return kTrue; }
 	virtual bool16 GetCouldDraw(const IWaxRun* waxRun, const IWaxRenderData*, const IWaxGlyphs*)
 	{
-		int32 charStart = 0, charCount = 0;
-		return KESCMStoryMarkerRunIsMarked(waxRun, charStart, charCount);
+		return KESCMStoryMarkerRunIsMarked(waxRun);
 	}
 
 	/** The mark is taller than the glyphs' own ink (it reaches from ascent to descent), so the
@@ -181,70 +296,87 @@ public:
 	virtual void EndOfParcelDraw(GraphicsData*, int32, const IParcelShape*) {}
 
 private:
-	/** The rectangle to invert, in the coordinates the run reports its own position in.
+	/** The rectangles to invert, in the coordinates the run reports its own position in - one per
+		marked range that falls in this run.
 		kFalse for a run that cannot be measured - an inline graphic has neither glyphs nor render
 		data, which all four of these methods are warned about in IGlobalTextAdornment.h. */
-	static bool16 GetMarkBox(const IWaxRun* waxRun, const IWaxRenderData* renderData,
-							 const IWaxGlyphs* waxGlyphs, PMRect* outBox);
+	static bool16 GetMarkBoxes(const IWaxRun* waxRun, const IWaxRenderData* renderData,
+							   const IWaxGlyphs* waxGlyphs, std::vector<PMRect>& outBoxes);
 };
 
 CREATE_PMINTERFACE(KESCMStoryMarkerAdornment, kKESCMStoryMarkerAdornmentImpl)
 
-bool16 KESCMStoryMarkerAdornment::GetMarkBox(const IWaxRun* waxRun, const IWaxRenderData* renderData,
-											 const IWaxGlyphs* waxGlyphs, PMRect* outBox)
+bool16 KESCMStoryMarkerAdornment::GetMarkBoxes(const IWaxRun* waxRun, const IWaxRenderData* renderData,
+											   const IWaxGlyphs* waxGlyphs, std::vector<PMRect>& outBoxes)
 {
-	if (waxRun == nil || renderData == nil || waxGlyphs == nil || outBox == nil)
+	outBoxes.clear();
+
+	if (waxRun == nil || renderData == nil || waxGlyphs == nil)
 		return kFalse;
 
-	int32 charStart = 0, charCount = 0;
-	if (!KESCMStoryMarkerRunIsMarked(waxRun, charStart, charCount))
-		return kFalse;
-
-	// ★CHARACTERS ARE NOT GLYPHS. One character can be drawn by several glyphs and several
-	//   characters by one, so the range has to be mapped before any width is added up - the same
-	//   call the product's spelling squiggle makes before underlining a word
-	//   (DynamicSpellCheckAdornment.cpp:793).
-	int32 glyphIndex = -1;
-	int32 glyphLength = 0;
-	waxGlyphs->MapCharsToGlyphs(charStart, charCount, &glyphIndex, &glyphLength);
-	if (glyphIndex < 0 || glyphLength <= 0)
+	KESCMMarkRangeList runRanges;
+	if (!KESCMStoryMarkerFindRunRanges(waxRun, runRanges))
 		return kFalse;
 
 	const int32 glyphCount = waxGlyphs->GetGlyphCount();
-	if (glyphIndex >= glyphCount)
+	if (glyphCount <= 0)
 		return kFalse;
-	if (glyphIndex + glyphLength > glyphCount)
-		glyphLength = glyphCount - glyphIndex;
 
-	// Where the range starts and how wide it is, by adding up the glyph widths the run itself
-	// reports. ⚠Added up rather than taken from GetGlyphDrawPosition because a draw position is a
-	//   MATRIX - it carries the glyph's own transform, and reading a translation out of it is only
-	//   the origin of that one glyph, not the end of the range.
-	PMReal offset(0.0);
-	for (int32 i = 0; i < glyphIndex; ++i)
-		offset += waxGlyphs->GetWidthAt(i);
+	// ★THE GLYPH WIDTHS ARE ADDED UP ONCE, not once per range. A press can mark several separate
+	//   edits inside a single wax run, and walking the glyphs again for each of them would make
+	//   the cost of a run grow with the number of edits in it.
+	std::vector<PMReal> cumulative(glyphCount + 1, PMReal(0.0));
+	for (int32 i = 0; i < glyphCount; ++i)
+		cumulative[i + 1] = cumulative[i] + waxGlyphs->GetWidthAt(i);
 
-	PMReal width(0.0);
-	for (int32 i = glyphIndex; i < glyphIndex + glyphLength; ++i)
-		width += waxGlyphs->GetWidthAt(i);
-
-	if (width <= 0.0)
-	{
-		// ★A ZERO-WIDTH RANGE STILL HAS A PLACE. It happens where the marked characters are drawn
-		//   by nothing at all - and the reader still asked "where is it". A thin bar at the start
-		//   of the range answers that; an empty rectangle would answer nothing.
-		width = renderData->GetFontMatrix().GetYScale() * PMReal(0.15);
-	}
-
-	const PMReal x = waxRun->GetXPosition() + offset;
 	const PMReal y = waxRun->GetYPosition();				// the baseline
 	const PMReal size = renderData->GetFontMatrix().GetYScale();
 
-	outBox->Left(x);
-	outBox->Right(x + width);
-	outBox->Top(y - size * PMReal(kAscentFraction));
-	outBox->Bottom(y + size * PMReal(kDescentFraction));
-	return kTrue;
+	for (KESCMMarkRangeList::const_iterator r = runRanges.begin(); r != runRanges.end(); ++r)
+	{
+		const int32 charStart = static_cast<int32>(r->fFrom);
+		const int32 charCount = static_cast<int32>(r->fTo - r->fFrom);
+
+		// ★CHARACTERS ARE NOT GLYPHS. One character can be drawn by several glyphs and several
+		//   characters by one, so the range has to be mapped before any width is added up - the same
+		//   call the product's spelling squiggle makes before underlining a word
+		//   (DynamicSpellCheckAdornment.cpp:793).
+		int32 glyphIndex = -1;
+		int32 glyphLength = 0;
+		waxGlyphs->MapCharsToGlyphs(charStart, charCount, &glyphIndex, &glyphLength);
+		if (glyphIndex < 0 || glyphLength <= 0)
+			continue;						// ⚠a range that maps to nothing skips this box, not the run
+		if (glyphIndex >= glyphCount)
+			continue;
+		if (glyphIndex + glyphLength > glyphCount)
+			glyphLength = glyphCount - glyphIndex;
+
+		// Where the range starts and how wide it is, read out of the running total above.
+		// ⚠Added up rather than taken from GetGlyphDrawPosition because a draw position is a
+		//   MATRIX - it carries the glyph's own transform, and reading a translation out of it is
+		//   only the origin of that one glyph, not the end of the range.
+		const PMReal offset = cumulative[glyphIndex];
+		PMReal width = cumulative[glyphIndex + glyphLength] - offset;
+
+		if (width <= 0.0)
+		{
+			// ★A ZERO-WIDTH RANGE STILL HAS A PLACE. It happens where the marked characters are
+			//   drawn by nothing at all - and the reader still asked "where is it". A thin bar at
+			//   the start of the range answers that; an empty rectangle would answer nothing.
+			width = size * PMReal(0.15);
+		}
+
+		const PMReal x = waxRun->GetXPosition() + offset;
+
+		PMRect box;
+		box.Left(x);
+		box.Right(x + width);
+		box.Top(y - size * PMReal(kAscentFraction));
+		box.Bottom(y + size * PMReal(kDescentFraction));
+		outBoxes.push_back(box);
+	}
+
+	return outBoxes.empty() ? kFalse : kTrue;
 }
 
 bool16 KESCMStoryMarkerAdornment::GetIsActive(const IParcelShape* /*parcelShape*/,
@@ -269,11 +401,18 @@ bool16 KESCMStoryMarkerAdornment::GetIsActive(const IParcelShape* /*parcelShape*
 void KESCMStoryMarkerAdornment::GetInkBounds(PMRect* inkBounds, const IWaxRun* waxRun,
 											 const IWaxRenderData* renderData, const IWaxGlyphs* waxGlyphs)
 {
-	PMRect box;
-	if (!GetMarkBox(waxRun, renderData, waxGlyphs, &box))
+	std::vector<PMRect> boxes;
+	if (!GetMarkBoxes(waxRun, renderData, waxGlyphs, boxes))
 		return;								// leave them empty, as the header instructs
 
-	*inkBounds = box;
+	// ★THE UNION OF THEM ALL, because ink bounds are declared once for the whole run. A press can
+	//   mark two separate edits inside one run, and a bound that covered only the first would clip
+	//   the second away.
+	PMRect all = boxes.front();
+	for (size_t i = 1; i < boxes.size(); ++i)
+		all.Union(boxes[i]);
+
+	*inkBounds = all;
 }
 
 void KESCMStoryMarkerAdornment::Draw(GraphicsData* gd, int32 iShapeFlags, const IWaxRun* waxRun,
@@ -287,8 +426,8 @@ void KESCMStoryMarkerAdornment::Draw(GraphicsData* gd, int32 iShapeFlags, const 
 	if (iShapeFlags & (IShape::kPrinting | IShape::kPreviewMode))
 		return;
 
-	PMRect box;
-	if (!GetMarkBox(waxRun, renderData, waxGlyphs, &box))
+	std::vector<PMRect> boxes;
+	if (!GetMarkBoxes(waxRun, renderData, waxGlyphs, boxes))
 		return;
 
 	IGraphicsPort* gPort = gd->GetGraphicsPort();
@@ -303,8 +442,28 @@ void KESCMStoryMarkerAdornment::Draw(GraphicsData* gd, int32 iShapeFlags, const 
 	//   than covered by a slab (KBSDrawEventHandler.cpp:533-546, which also records that a plain
 	//   red rectangle and IRasterPort::SetXORMode were both tried first and rejected).
 	gPort->setblendingmode(kPMBlendDifference);
+
+	// ★HOW MUCH OF THE INVERSION TO APPLY - the panel's "Marks opacity 25% / 75%", which the press
+	//   reads once and hands over (KESCMStoryPressMarks). The jump's own mark passes 1.0, so it
+	//   still lands at full strength.
+	// ⚠MEASURED, NOT ASSUMED, THAT THIS IS WORTH ASKING FOR: setopacity is silently ignored by a
+	//   global text adornment when the drawing is going to PDF (KT, 2026-08-19 - three ways of
+	//   asking came out pixel-identical). That measurement was of the EXPORT path; this mark is
+	//   screen-only by GetIsActive, and the screen was never measured. If it turns out to be
+	//   ignored here as well, the fallback is to grey the blend colour instead: with Difference,
+	//   painting (a,a,a) lands on 1-a over white and a over black, which is where an alpha of a
+	//   would have put it.
+	if (gMarkOpacity < PMReal(1.0))
+		gPort->setopacity(gMarkOpacity, kFalse);
+
 	gPort->setrgbcolor(PMReal(1.0), PMReal(1.0), PMReal(1.0));
-	gPort->rectfill(box.Left(), box.Top(), box.Width(), box.Height());
+
+	// ★ONE FILL PER RANGE, AND THEY CANNOT OVERLAP - the ranges were merged before they were ever
+	//   installed (KESCMStoryMarkRanges.h). Two Difference fills over the same pixels would invert
+	//   them twice and leave a hole exactly where both said "look here".
+	for (std::vector<PMRect>::const_iterator b = boxes.begin(); b != boxes.end(); ++b)
+		gPort->rectfill(b->Left(), b->Top(), b->Width(), b->Height());
+
 	gPort->newpath();
 }
 
@@ -317,10 +476,6 @@ void KESCMStoryMarker::Show(IDataBase* db, UID storyUID, TextIndex from, TextInd
 	if (gShutdown)
 		return;
 
-	// The old mark's document has to be repainted too when the jump crossed documents, or the
-	// previous mark would stay on screen in a window nobody is looking at any more.
-	IDataBase* const previousDB = gHasMark ? gMarkDB : nil;
-
 	if (db == nil || storyUID == kInvalidUID)
 	{
 		KESCMStoryMarker::Clear();
@@ -330,23 +485,36 @@ void KESCMStoryMarker::Show(IDataBase* db, UID storyUID, TextIndex from, TextInd
 	if (to < from)
 		to = from;
 
-	gMarkDB = db;
-	gMarkStory = storyUID;
-	gMarkFrom = from;
 	// ★A DELETION HAS NO WIDTH HERE - the words are gone from this side, and the row is pointing at
 	//   the place they used to be. One character is what makes that place visible; zero would mark
 	//   nothing at all. (The jump's selection has the same problem and answers it the same way, with
 	//   a leaning caret - see KESCMStoryJumpToChange.)
-	gMarkTo = (to > from) ? to : (from + 1);
-	gHasMark = kTrue;
+	//   ⚠It is widened HERE and not in the range list, which drops empty ranges: what a zero-width
+	//     range should become is a decision about what the reader is being shown, and the list is
+	//     numbers (KESCMStoryMarkRanges.h).
+	KESCMStoryMarkMap one;
+	one[storyUID].push_back(KESCMMarkRange(from, (to > from) ? to : (from + 1)));
 
-	if (previousDB != nil && previousDB != db)
-		KESCMStoryMarkerRepaint(previousDB);
-	KESCMStoryMarkerRepaint(db);
+	// A flash, not a highlight - so this one gets the countdown. Restarting an already-running one
+	// is that call's job, so each jump gets the mark for the full time.
+	KESCMStoryMarkerInstall(db, one, PMReal(1.0), kTrue /*countdown*/);
+}
 
-	// A flash, not a highlight. Restarting an already-running countdown is that call's job, so each
-	// jump gets the mark for the full time.
-	KESCMStoryMarkerExpiry::Start();
+void KESCMStoryMarker::ShowRanges(IDataBase* db, const KESCMStoryMarkMap& byStory, const PMReal& opacity)
+{
+	if (gShutdown)
+		return;
+
+	if (db == nil || byStory.empty())
+	{
+		KESCMStoryMarker::Clear();
+		return;
+	}
+
+	// ★NO COUNTDOWN. What takes this one down is the mouse button coming up, not the clock
+	//   (KESCMStoryPressMarks). Any countdown already running belongs to a jump that this press
+	//   has just replaced, and Install stops it.
+	KESCMStoryMarkerInstall(db, byStory, opacity, kFalse /*countdown*/);
 }
 
 void KESCMStoryMarker::Clear()
@@ -359,9 +527,10 @@ void KESCMStoryMarker::Clear()
 	IDataBase* const db = gMarkDB;
 	gHasMark = kFalse;
 	gMarkDB = nil;
-	gMarkStory = kInvalidUID;
-	gMarkFrom = 0;
-	gMarkTo = 0;
+	gMarkByStory.clear();
+	gMarkOpacity = PMReal(1.0);
+	gMarkLowest = 0;
+	gMarkHighest = 0;
 
 	// ⚠The flag is down BEFORE the repaint, so the redraw it asks for is the one that takes the
 	//   mark off. Repainting first would draw it again.
@@ -381,7 +550,7 @@ void KESCMStoryMarker::Shutdown()
 	gShutdown = kTrue;
 	gHasMark = kFalse;
 	gMarkDB = nil;
-	gMarkStory = kInvalidUID;
+	gMarkByStory.clear();
 	KESCMStoryMarkerExpiry::Shutdown();
 }
 

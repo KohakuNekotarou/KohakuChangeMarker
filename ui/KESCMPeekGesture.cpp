@@ -61,6 +61,8 @@
 #include "Utils.h"                   // Utils<IKESCMCompareFacade>()
 #include "IKESCMCompareFacade.h"     // peek の表示・arm 状態・基準不透明度(2026-08-13・分割 第1段 Task 11)
 #include "KESCMCmykCursor.h"         // KESCMCmykBeginPress / KESCMCmykEndPress(押下中の CMYK 状態はあちらが持つ)
+#include "KESCMBoundaryID.h"         // kKESCMModeStory(比較モードの列挙子)
+#include "KESCMStoryPressMarks.h"    // Story モードで押下中に出す反転マーク(2026-08-22)
 #include "KESCMViewLookup.h"         // KESCMQueryViewUnderMouse / KESCMQueryMouseContentPoint /
                                      // KESCMQueryPanorama(いずれも UI 側。2026-08-15・第2段 Task 4B)
 #include "KESCMPeekGesture.h"
@@ -134,6 +136,21 @@ static bool16 KESCMMouseIsOverSource()
 	IDataBase* const markedSrcDB = Utils<IKESCMMarkData>()->GetMarkedSourceDB();
 	return (markedSrcDB != nil &&
 	        KESCMQueryDocDbUnderMouse() == markedSrcDB) ? kTrue : kFalse;
+}
+
+// マウス下の窓が「比較の旧側の文書」かどうか。★上の KESCMMouseIsOverSource とは**違う問い**なので
+// 別に立ててある(2026-08-22):
+//   ・上 = 「Source 枠を載せている db の窓か」(枠を一時退避させるための問い)
+//   ・下 = 「旧版の文書を見ているか」(どちらの版の変更箇所を出すかの問い)
+// ⚠**Story 変更モードでは上は必ず kFalse になる**＝あのモードは枠を載せないので
+//   GetMarkedSourceDB() が nil のまま(KESCMDrawEventHandler の drawRings は Story で kFalse)。
+//   ⇒ 上を流用すると Source 窓で押しても何も出ない。同じ判定を2か所に置いたのではなく、
+//     「載せた db」と「arm した db」という**別の事実**を聞いている。
+static bool16 KESCMMouseIsOverArmedSource()
+{
+	IDataBase* const armedSource = Utils<IKESCMCompareFacade>()->GetArmedSourceDB();
+	return (armedSource != nil &&
+	        KESCMQueryDocDbUnderMouse() == armedSource) ? kTrue : kFalse;
 }
 
 //========================================================================================
@@ -266,6 +283,23 @@ void KESCMTrackerRevealBegin(bool16 shiftDown, bool16 altDown, bool16 cmdDown, b
 		return;
 	}
 
+	// ---- 修飾なし・Story 変更モード: 押下中だけ「変更した文字そのもの」を反転する ----
+	// ★★Pixel の reveal(下)とは別の道で、絵の作り方が根本的に違う。Pixel は「ページのどこが違って
+	//   見えるか」しか知らないので枠を描くが、Story は「どの文字が変わったか」を知っているので、
+	//   その文字を反転する(ユーザー指定 2026-08-22)。⇒ 拡大率で大きさが変わらず、ページの外枠も要らない。
+	// ⚠Hold to Hide の判定より**前**に置く: Story モードには「常時表示の枠」が無い(KESCMDrawEventHandler
+	//   の drawRings が Story では kFalse)ので、あのモードがここで隠すものは何も無い。
+	// ★出すのは**押した窓の側だけ**(ユーザー選択 2026-08-22)。削除された文字は旧版にしか無く、挿入された
+	//   文字は新版にしか無いので、どちらの文書を見ているかでマークできるものが変わる。
+	if (compare->GetCompareMode() == kKESCMModeStory)
+	{
+		if (KESCMMouseIsOverTarget())
+			KESCMStoryPressMarksBegin(kFalse /*target*/);
+		else if (KESCMMouseIsOverArmedSource())
+			KESCMStoryPressMarksBegin(kTrue /*source*/);
+		return;		// 枠の reveal(下)は Story には無い
+	}
+
 	// ---- 修飾なし: 通常モードのマーク一時表示(reveal) ----
 	// Hold to Hide モード中は上で temp-hide 済み=ここでは何もしない(reveal はしない)。
 	if (compare->GetHoldToHideMarks())
@@ -293,6 +327,10 @@ void KESCMTrackerRevealEnd()
 	// ★Alt+左(CMYK)の押下中キャッシュとモード保持の解除は KESCMCmykCursor.cpp が持つ(2026-08-13 の分割)。
 	//   中身は分割前と同一(フォント解放・hover/other の解除・ステータス行の空白1文字クリア)。
 	KESCMCmykEndPress();
+
+	// Story 変更モードで押下中に出していた反転マークを消す。⚠押下で出していなければ何もしない
+	//   (向こうが自分で覚えている)＝Pixel モードで押して離しても、ジャンプが出した一時マーカーは消えない。
+	KESCMStoryPressMarksEnd();
 
 	// 「Hold to Hide Marks」で押下中に隠していた常時表示の枠を戻す(離すと再表示)。押した窓に応じて
 	// Target/Source どちらか(または両方)が立っている。モード OFF なら両方 kFalse なので無影響

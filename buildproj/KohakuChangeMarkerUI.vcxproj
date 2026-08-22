@@ -248,6 +248,7 @@
       <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMStatusTextView.cpp"/>
       <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMStoryMarker.cpp"/>
       <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMStoryMarkerExpiry.cpp"/>
+      <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMStoryPressMarks.cpp"/>
       <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMStoryRowEH.cpp"/>
       <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMStorySectionObserver.cpp"/>
       <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMCursorProvider.cpp"/>
@@ -303,6 +304,8 @@
       <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\KESCMPanelTextDraw.h"/>
       <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\KESCMStoryMarker.h"/>
       <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\KESCMStoryMarkerExpiry.h"/>
+      <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\KESCMStoryMarkRanges.h"/>
+      <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\KESCMStoryPressMarks.h"/>
       <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\KESCMCheckGlyph.h"/>
       <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\KESCMBookTree.h"/>
       <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\KESCMPanelAlpha.h"/>

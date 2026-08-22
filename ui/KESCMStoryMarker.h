@@ -26,8 +26,15 @@
 //  同じように反転が嬉しい"). KBSDrawEventHandler.cpp:533-546 has the reasoning, including why a
 //  plain red rectangle and an XOR raster port were both rejected.
 //
-//  ★IT IS A POINTER, NOT A HIGHLIGHT: it takes itself off the screen after about a second
-//  (KESCMStoryMarkerExpiry).
+//  ★IT IS A POINTER, NOT A HIGHLIGHT, WHEN THE JUMP PUTS IT UP: it takes itself off the screen
+//  after about a second (KESCMStoryMarkerExpiry).
+//
+//  ★★AND IT IS THE WHOLE ANSWER WHEN THE TOOL PUTS IT UP (2026-08-22). Holding the left button
+//  over a window with the KESCM tool marks EVERY edit in it at once and keeps them up until the
+//  button comes back up - the Story mode's answer to the frames the Pixel mode reveals the same
+//  way (KESCMStoryPressMarks). Same adornment, same look, no countdown; and because the mark is
+//  drawn on the characters by the text engine, it neither grows with the zoom nor needs a frame
+//  drawn around the page (user's request: "拡大率で大きさは変わらない、ページへの外枠もいらない").
 //
 //========================================================================================
 
@@ -35,13 +42,35 @@
 #define __KESCMStoryMarker_h__
 
 #include "BaseType.h"		// bool16, int32
+#include "PMReal.h"			// the opacity a press is drawn at
 #include "TextID.h"			// TextIndex
 #include "UIDRef.h"			// UID
 
+#include <map>
+
+#include "KESCMStoryMarkRanges.h"	// KESCMMarkRangeList - what a press hands over
+
 class IDataBase;
 
-/** The jump marker. Only the jump should drive this; everything else asks through Show / Clear so
-    that the mark and its countdown stay in step. */
+/** Which characters of which stories a press wants lit up: story UID -> its ranges.
+
+	★ONE DOCUMENT PER SET, WHICH IS WHY THE DATABASE IS NOT IN THE KEY. A press marks the window
+	it was made in and no other (user's call, 2026-08-22), so the whole set belongs to one db and
+	that db is passed alongside it. */
+typedef std::map<UID, KESCMMarkRangeList> KESCMStoryMarkMap;
+
+/** The mark. Two callers drive it and they are EXCLUSIVE, not additive:
+
+	  Show()       - the jump's pointer: one range, and a countdown that takes it off again.
+	  ShowRanges() - the tool's press: every edit in the document at once, up until the button
+	                 comes back up.
+
+	★★WHY EXCLUSIVE. Difference blending inverts what is underneath, so two marks over the same
+	characters would cancel each other out and leave a hole (KESCMStoryMarkRanges.h). Keeping one
+	set at a time makes that impossible rather than making it something the drawing has to handle:
+	a press replaces the jump's mark, and Clear takes down whichever is up.
+
+	Everything goes through these calls so that the mark and its countdown cannot disagree. */
 namespace KESCMStoryMarker
 {
 	/** Light up a range of one story, and start its countdown.
@@ -57,6 +86,22 @@ namespace KESCMStoryMarker
 		@param to one past the last. from == to is the caret case described above.
 	*/
 	void Show(IDataBase* db, UID storyUID, TextIndex from, TextIndex to);
+
+	/** Light up every range in the set, and DO NOT start a countdown - it stays up until Clear.
+
+		★NO COUNTDOWN IS THE POINT. This is what the tool's left button shows while it is held
+		(user's request, 2026-08-22: "ボタンが押されていると表示されっぱなしにしたい"), so what
+		takes it down is the button coming up, not the clock.
+
+		Whatever was showing before is replaced, the jump's mark included - see the note above
+		this namespace for why the two cannot both be up.
+
+		@param db the document the stories live in. nil, or an empty set, clears the mark.
+		@param byStory the ranges, per story. Merged here, so the caller may hand over overlapping
+			ranges in any order.
+		@param opacity what to draw at, 0..1. The panel's "Marks opacity 25% / 75%" choice.
+	*/
+	void ShowRanges(IDataBase* db, const KESCMStoryMarkMap& byStory, const PMReal& opacity);
 
 	/** Take the mark down now. Safe when there is none. */
 	void Clear();
