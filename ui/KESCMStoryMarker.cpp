@@ -507,6 +507,25 @@ void KESCMStoryMarkerAdornment::Draw(GraphicsData* gd, int32 iShapeFlags, const 
 // The public face
 //----------------------------------------------------------------------------------------
 
+/* MarkOpacityNow
+   What the marks are drawn at, as the panel's 25% / 75% radio has it.
+
+   ★★ONE PLACE ASKS, AND IT IS THIS ONE (2026-08-22). Until now the jump's pointer passed a
+   hard-coded 1.0 while the standing marks were handed the selected value by their caller - so the
+   same setting reached one kind of mark and not the other, and a reader who chose 25% still got a
+   solid flash on every jump (user's report: "透明度の選択が反映されるようにしてほしい。今は不透明
+   かな？"). Asking here rather than at each caller is what stops the two from drifting again
+   ([[one-question-one-place]]).
+
+   ⚠It is read at the moment of drawing rather than remembered, for the same reason the press marks
+   re-read everything: the radio can move while a mark is already up.
+*/
+static PMReal MarkOpacityNow()
+{
+	InterfacePtr<IKESCMCompareFacade> compare(Utils<IKESCMCompareFacade>().QueryUtilInterface());
+	return (compare != nil) ? compare->GetSelectedMarkOpacity() : PMReal(1.0);
+}
+
 void KESCMStoryMarker::Show(IDataBase* db, UID storyUID, TextIndex from, TextIndex to)
 {
 	if (gShutdown)
@@ -544,10 +563,12 @@ void KESCMStoryMarker::Show(IDataBase* db, UID storyUID, TextIndex from, TextInd
 
 	// A flash, not a highlight - so this one gets the countdown. Restarting an already-running one
 	// is that call's job, so each jump gets the mark for the full time.
-	KESCMStoryMarkerInstall(one, PMReal(1.0), kTrue /*countdown*/, kFalse /*persistent*/);
+	// ★THE SELECTED OPACITY, NOT 1.0 (2026-08-22). A flash is still a mark, and the reader who
+	//   turned the marks down to 25% meant all of them.
+	KESCMStoryMarkerInstall(one, MarkOpacityNow(), kTrue /*countdown*/, kFalse /*persistent*/);
 }
 
-void KESCMStoryMarker::ShowDocs(const KESCMStoryMarkDocs& docs, const PMReal& opacity)
+void KESCMStoryMarker::ShowDocs(const KESCMStoryMarkDocs& docs)
 {
 	if (gShutdown)
 		return;
@@ -561,7 +582,7 @@ void KESCMStoryMarker::ShowDocs(const KESCMStoryMarkDocs& docs, const PMReal& op
 	// ★NO COUNTDOWN. What takes these down is a toggle going off or the mouse button coming up, not
 	//   the clock (KESCMStoryPressMarks). Any countdown already running belongs to a jump that this
 	//   has just replaced, and Install stops it.
-	KESCMStoryMarkerInstall(docs, opacity, kFalse /*countdown*/, kTrue /*persistent*/);
+	KESCMStoryMarkerInstall(docs, MarkOpacityNow(), kFalse /*countdown*/, kTrue /*persistent*/);
 }
 
 void KESCMStoryMarker::Clear()

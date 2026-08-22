@@ -103,11 +103,17 @@ namespace KESCMStoryMarker
 		Whatever was showing before is replaced, the jump's mark included - see the note above this
 		namespace for why the two cannot both be up.
 
+		★WHAT TO DRAW AT IS NOT A PARAMETER, AND WAS ONE UNTIL 2026-08-22. The panel's "Marks
+		opacity 25% / 75%" reached the standing marks through their caller and never reached the
+		jump's flash at all, which passed a hard-coded 1.0 - one setting, two answers (user's
+		report: "透明度の選択が反映されるようにしてほしい。今は不透明かな？"). Both now ask the
+		same private function at the moment of drawing, so the radio cannot reach one and miss the
+		other ([[one-question-one-place]]).
+
 		@param docs the ranges, per document, per story. Merged here, so the caller may hand over
 			overlapping ranges in any order. An empty set clears the mark.
-		@param opacity what to draw at, 0..1. The panel's "Marks opacity 25% / 75%" choice.
 	*/
-	void ShowDocs(const KESCMStoryMarkDocs& docs, const PMReal& opacity);
+	void ShowDocs(const KESCMStoryMarkDocs& docs);
 
 	/** Take the mark down now. Safe when there is none. */
 	void Clear();

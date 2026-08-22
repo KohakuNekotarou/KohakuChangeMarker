@@ -225,12 +225,13 @@ void KESCMStoryCollectRanges(IDataBase* db, bool16 useSourceDocument, KESCMStory
 void KESCMStoryMarksRefresh()
 {
 	KESCMStoryMarkDocs docs;
-	PMReal opacity(1.0);
 
 	InterfacePtr<IKESCMCompareFacade> compare(Utils<IKESCMCompareFacade>().QueryUtilInterface());
 	if (compare != nil && compare->IsArmed() && compare->GetCompareMode() == kKESCMModeStory)
 	{
-		opacity = compare->GetSelectedMarkOpacity();
+		// ⚠THE OPACITY IS NO LONGER READ HERE (2026-08-22). It used to be picked up in this line
+		//   and handed to ShowDocs, which meant the jump's flash - a different caller - never saw
+		//   it. KESCMStoryMarker asks for itself now, at the moment it draws.
 
 		// ★★★A PRESS TURNS ITS OWN WINDOW ROUND. IT DOES NOT ADD TO THE TOGGLE (2026-08-22, user's
 		//   call). One rule now covers the whole plug-in: **while the button is held, that window is
@@ -280,7 +281,7 @@ void KESCMStoryMarksRefresh()
 		return;
 	}
 
-	KESCMStoryMarker::ShowDocs(docs, opacity);
+	KESCMStoryMarker::ShowDocs(docs);
 }
 
 void KESCMStoryPressMarksBegin(bool16 useSourceDocument)
