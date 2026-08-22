@@ -54,8 +54,12 @@ void			KESCMSetStatus(const PMString& s, bool16 forceRedrawNow = kFalse);
 // ★★上の KESCMSetStatus はこれの特別な場合ではなく**同じ器の別の詰め方**＝(空, 空, s, 空)。
 //   ⇒ 普通のメッセージは1片＝1色で、stock の静的テキストと同じ絵になる。
 // ⚠溢れたら**文脈が外側から削られる**(変更された文字は必ず残る)。規則は変更行のセルと同じ。
+// ★2026-08-22: 5片目の `ruby`＝**mid の上に重ねて描く読み**(ルビの変更をクリックしたときだけ)。
+//   ⚠これは**旧版側の読み**＝行の一覧は新版側を見せるので、**外された読みはここにしか出ない**。
+//   ★ruby がある行は「2行分つかって1行に見せる」＝欄に入る行数がその分1つ減る(KESCMStatusTextView.cpp)。
 void			KESCMSetStatusSegments(const PMString& label, const PMString& pre,
-									   const PMString& mid, const PMString& post);
+									   const PMString& mid, const PMString& post,
+									   const PMString& ruby);
 
 // model からの通知を受ける UI 側 Observer の購読を開始/停止する(KESCMModelChangeObserver.cpp)。
 // Startup で attach し、Shutdown では **パネル周りを畳むより前**に detach する。

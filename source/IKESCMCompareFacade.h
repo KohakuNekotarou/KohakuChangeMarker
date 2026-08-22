@@ -241,13 +241,18 @@ public:
 
 		⚠Like StoreSessionStatus, it must not notify. */
 	virtual void		StoreSessionStatusSegments(const PMString& label, const PMString& pre,
-												   const PMString& mid, const PMString& post) = 0;
+												   const PMString& mid, const PMString& post,
+												   const PMString& ruby) = 0;
 
-	/** The stored message in its four pieces. The UI reads this back when the panel re-appears, so
+	/** The stored message in its five pieces. The UI reads this back when the panel re-appears, so
 		that a coloured message comes back coloured rather than flattening into one colour.
-		★A message stored as one string answers with that string in outMid and three empty pieces. */
+		★A message stored as one string answers with that string in outMid and the rest empty.
+		★outRuby is the READING drawn above the changed characters (2026-08-22), and it comes back
+		  here for the same reason the colours do: a re-shown panel that lost only the reading would
+		  be showing the older version WITHOUT the very thing the row could not show. */
 	virtual void		GetSessionStatusSegments(PMString& outLabel, PMString& outPre,
-												 PMString& outMid, PMString& outPost) = 0;
+												 PMString& outMid, PMString& outPost,
+												 PMString& outRuby) = 0;
 
 	/** Shutdown only: empty the stored string, so the model's static PMString has no live heap
 		buffer to free when the plug-ins unload (Mac unload order differs from Windows).

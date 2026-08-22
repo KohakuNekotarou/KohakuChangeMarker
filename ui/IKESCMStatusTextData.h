@@ -61,13 +61,25 @@ public:
 		@param mid for an ordinary message, the whole message; for the other side of an edit, the
 			characters that differ - drawn at the theme's full text colour.
 		@param post the words after them, on the same terms as pre. Empty for an ordinary message.
+		@param ruby the READING that belongs over mid, drawn on a line of its own above it
+			(2026-08-22). Empty for an ordinary message and for an edit that has no ruby in it.
+
+			★THIS IS THE OTHER SIDE'S READING, and that is what makes it worth drawing at all: the
+			row in the list shows the NEWER version, so a reading that was REMOVED appears nowhere
+			else. The decision that the row's own upper line stays empty for those (user, 2026-08-22)
+			only holds because this box shows what went.
+
+			★NO "twoLines" FLAG HERE, UNLIKE THE ROW'S CELL. The cell needs one because its row has
+			a fixed height that must match its neighbours' even when there is no reading to draw.
+			This box has no neighbours to line up with, so an empty reading simply costs no line.
 	*/
 	virtual void SetSegments(const PMString& label, const PMString& pre,
-							 const PMString& mid, const PMString& post) = 0;
+							 const PMString& mid, const PMString& post,
+							 const PMString& ruby) = 0;
 
 	/** Read back what was written. Answers empty strings before the first message. */
 	virtual void GetSegments(PMString& outLabel, PMString& outPre,
-							 PMString& outMid, PMString& outPost) const = 0;
+							 PMString& outMid, PMString& outPost, PMString& outRuby) const = 0;
 };
 
 #endif // __IKESCMStatusTextData_h__

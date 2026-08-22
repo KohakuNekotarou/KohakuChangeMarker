@@ -208,26 +208,35 @@ void	KESCMStoreSessionStatus(const PMString& s);
 // place that already answered it (memory one-question-one-place).
 //
 // ⚠It must not notify, for the same reason as above.
+// ★2026-08-22: a fifth piece, `ruby` -- the READING drawn above the changed characters when the
+// edit is a ruby. It is stored here for exactly the reason the other four are: the panel rebuilds
+// its widgets on every re-show, and a reading kept anywhere else would come back missing while the
+// words it belongs to came back intact.
+// ⚠It is NOT part of what KESCMGetSessionStatus assembles -- see there.
 void	KESCMStoreSessionStatusSegments(const PMString& label, const PMString& pre,
-										const PMString& mid, const PMString& post);
+										const PMString& mid, const PMString& post,
+										const PMString& ruby);
 
 // The last string given to KESCMNotifyStatus or KESCMStoreSessionStatus. This is what
 // app.kcmStatus returns.
 //
-// ★It is ASSEMBLED from the four pieces below: label, a line break, then the body. A message
-// stored as one string is the case where three of the four are empty, so the answer is that string
-// itself -- which is why app.kcmStatus reads exactly as it did before the split existed.
+// ★It is ASSEMBLED from the pieces below: label, a line break, then the body. A message stored as
+// one string is the case where the others are empty, so the answer is that string itself -- which
+// is why app.kcmStatus reads exactly as it did before the split existed.
+// ⚠★THE RUBY IS DELIBERATELY LEFT OUT of the assembly (2026-08-22). This answers "what does the
+//   message area SAY", and a reading is not part of the sentence -- it sits above it. Splicing it
+//   in would change what every existing script reads out of app.kcmStatus.
 void	KESCMGetSessionStatus(PMString& out);
 
-// The same message, in the four pieces it was stored in. The UI reads this back when the panel
+// The same message, in the five pieces it was stored in. The UI reads this back when the panel
 // re-appears, so that a coloured message comes back coloured.
 // ★A message stored as one string answers with that string in `outMid` and three empty pieces.
 void	KESCMGetSessionStatusSegments(PMString& outLabel, PMString& outPre,
-									  PMString& outMid, PMString& outPost);
+									  PMString& outMid, PMString& outPost, PMString& outRuby);
 
 // Shutdown only: empty the stored message, so the static PMStrings' destructors have no live
 // heap buffer to free when the plug-in unloads (Mac unload order differs from Windows).
-// ⚠★★ALL FOUR PIECES, not just the one that used to be here. A static PMString that is added
+// ⚠★★ALL FIVE PIECES, not just the one that used to be here. A static PMString that is added
 //   beside its fellows and left out of this list is the exact shape of the defects found on
 //   2026-08-18 (model B8: three statics, one listed) and again on B-U5 (four missed).
 void	KESCMClearSessionStatus();

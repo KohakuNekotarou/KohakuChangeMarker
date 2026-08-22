@@ -44,10 +44,17 @@
 //   ＝別々に持つと、パネルを開き直したときに文と色分けが食い違いうる。
 //   ★普通のメッセージは sStatusMid だけが埋まる＝**「1本の文字列」はこの形の特別な場合**。
 //   ⚠4本とも KESCMClearSessionStatus() の列挙に載っていること(下)。
+// ★★2026-08-22: **4本から5本へ**。ルビの変更をクリックしたとき、メッセージ欄は旧版の本文の上に
+//   **旧版の読み**を重ねて描く(KESCMStatusTextView.cpp)。★**ここに置く理由は上の4本と同じ**＝
+//   分け目(と、その上に載る読み)を持つ場所は、文字列を持つ場所と同じでなければならない。
+//   別に持つと、パネルを開き直したときに**本文だけ戻って読みが消える**。
+//   ⚠★**app.kcmStatus の連結には入れない**(下の KESCMGetSessionStatus)＝あれは「欄に見えている文」を
+//     答える約束で、読みは文ではなく本文の上に載る装飾。入れると既存のスクリプトの答えが変わる。
 static PMString sStatusLabel;
 static PMString sStatusPre;
 static PMString sStatusMid;
 static PMString sStatusPost;
+static PMString sStatusRuby;
 
 // アプリの subject を引く。終了処理中は session/app が引けないので、その場合は nil を返して
 // 呼び手が静かに諦める(KESCM 全体の共通規約=閉じた/消えた相手は触らない)。
@@ -157,6 +164,7 @@ void KESCMNotifyStatus(const PMString& s, bool16 forceRedrawNow)
 	sStatusPre.Clear();
 	sStatusMid = s;
 	sStatusPost.Clear();
+	sStatusRuby.Clear();
 
 	KESCMNotifyPayload payload;
 	payload.fStatusForceRedraw = forceRedrawNow;
@@ -175,17 +183,20 @@ void KESCMStoreSessionStatus(const PMString& s)
 	sStatusPre.Clear();
 	sStatusMid = s;
 	sStatusPost.Clear();
+	sStatusRuby.Clear();
 }
 
 // KESCMStoreSessionStatusSegments(KESCMModelNotify.h で宣言) — 分け目つきで覚えるだけ。
 // ★呼び手は UI 側の KESCMSetStatusSegments ただ1つ(変更行のジャンプが「もう一方の側」を出す経路)。
 void KESCMStoreSessionStatusSegments(const PMString& label, const PMString& pre,
-									 const PMString& mid, const PMString& post)
+									 const PMString& mid, const PMString& post,
+									 const PMString& ruby)
 {
 	sStatusLabel = label;
 	sStatusPre   = pre;
 	sStatusMid   = mid;
 	sStatusPost  = post;
+	sStatusRuby  = ruby;
 }
 
 // KESCMGetSessionStatus(KESCMModelNotify.h で宣言)
@@ -208,12 +219,13 @@ void KESCMGetSessionStatus(PMString& out)
 
 // KESCMGetSessionStatusSegments(KESCMModelNotify.h で宣言)
 void KESCMGetSessionStatusSegments(PMString& outLabel, PMString& outPre,
-								   PMString& outMid, PMString& outPost)
+								   PMString& outMid, PMString& outPost, PMString& outRuby)
 {
 	outLabel = sStatusLabel;	outLabel.SetTranslatable(kFalse);
 	outPre   = sStatusPre;		outPre.SetTranslatable(kFalse);
 	outMid   = sStatusMid;		outMid.SetTranslatable(kFalse);
 	outPost  = sStatusPost;		outPost.SetTranslatable(kFalse);
+	outRuby  = sStatusRuby;		outRuby.SetTranslatable(kFalse);
 }
 
 // KESCMClearSessionStatus(KESCMModelNotify.h で宣言)
@@ -225,6 +237,7 @@ void KESCMClearSessionStatus()
 	sStatusPre.Clear();
 	sStatusMid.Clear();
 	sStatusPost.Clear();
+	sStatusRuby.Clear();
 }
 
 // KESCMModelNotify.cpp 終わり。

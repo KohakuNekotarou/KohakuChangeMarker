@@ -332,6 +332,7 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMStoryRowKindWidgetID, kKCMUIPrefix + 49)	// �
 DECLARE_PMID(kWidgetIDSpace, kKESCMStorySectionLabelWidgetID, kKCMUIPrefix + 50)	// 上ペインの三角の隣=「Story Edits (3)」。件数は C++ が実行時に付ける
 DECLARE_PMID(kWidgetIDSpace, kKESCMStoryRowWidgetID, kKCMUIPrefix + 51)		// 行テンプレート自身。★GetWidgetTypeForNode が返すのはこれ
 DECLARE_PMID(kWidgetIDSpace, kKESCMStoryChangeRowWidgetID, kKCMUIPrefix + 63)	// ★**変更行**(第2階層)のテンプレート自身。2026-08-20 追加。★上の +51 と**別の値でなければならない**＝GetWidgetTypeForNode が返すこの ID で、フレームワークは「使い回せる widget か」を判定する(同じ値を返すと、スクロールで変更行にストーリー行の widget が渡る)。⚠**中のセル3つは +48/+49/+52 を使い回す**＝widget ID の一意性は「同じ親の子孫の中だけ」で足りる(ガイド vol2-12)。前例＝ブック行が同じ3つを共有している
+DECLARE_PMID(kWidgetIDSpace, kKESCMStoryRubyRowWidgetID, kKCMUIPrefix + 64)	// ★**ルビの変更行**のテンプレート自身(2026-08-22)。+63 と**別の値でなければならない**理由は +63 と同じ＝GetWidgetTypeForNode が返すこの ID で、フレームワークは使い回せる widget かを判定する。⚠ここで別にしないと、背の高いルビ行の widget が普通の変更行に渡って**行が重なる**(高さは widget が持っているので、ID が同じなら木は取り替えない)
 DECLARE_PMID(kWidgetIDSpace, kKESCMStoryRowUIDWidgetID, kKCMUIPrefix + 52)	// ★行の左端=ストーリーの UID(10進。2026-08-10 ユーザー要望「UID・テキスト・変更部分」)。行の同一性を目で追える識別子＝本文が同じ文言でも別のストーリーだと分かる
 // ★一覧の列見出し(2026-08-10 ユーザー要望「一番上の列に UID / Text / 変更のようなのを付けて欲しい」)。
 //   ツリーの中ではなく**下ペインの中でツリーの上**に置く固定の帯＝行をスクロールしても動かない。
@@ -637,6 +638,12 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMBookRowStateWidgetID, kKCMUIPrefix + 49)	// �
 //   書いてある(行 widget は使い回されるので「右へ N 動かす」は累積する)。
 #define kKESCMStoryChangeRowRsrcID	1014
 
+// ★Story Edits の**ルビの変更行**のテンプレート(2026-08-22)。1014 と同じ2セル構成で、違うのは
+// **背が2倍あること**だけ＝読みを親文字の上に置くための上段(KESCMStoryCellView.cpp が cell を上下に
+// 割る)。⚠セルの boss も WidgetID も 1014 と同じものを使い回す——変わるのは Frame の高さだけなので、
+// 実装を分ける理由が無い(セルには「2段で描け」が実行時に渡る)。
+#define kKESCMStoryRubyRowRsrcID	1015
+
 // 章一覧の行の高さ。★Story Edits の kKESCMStoryRowHeight と同じく .fr と C++ の両方がこの1つの定数を
 // 読む(行リソースの Frame・ツリーのスクロール増分・GetNodeWidgetHeight)。
 // ★下の 19 と違って、こちらは SDK 標準の kCC2016PanelTreeNodeHeight と同じ 22
@@ -650,6 +657,16 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMBookRowStateWidgetID, kKCMUIPrefix + 49)	// �
 // ＝行リソースの Frame・ツリーのスクロール増分・GetNodeWidgetHeight が同じ事実を語る。値は KBS の
 // kKBSResultRowHeight と同じ 19＝パレットフォントでの実測値で、SDK の kCC2016PanelTreeNodeHeight(=22)ではない。
 #define kKESCMStoryRowHeight	19
+
+// ★★ルビの変更行だけの高さ(2026-08-22)。読みを親文字の**上**に、しかも**同じ文字サイズで**置く
+// (ユーザー指定「ちいさくなくてもいいです、文字のサイズは同じで、位置を 漢字の文字の上に」)以上、
+// 行は2段ぶん要る。19 の2倍でなく 38 なのは、19 が「1段(18px)＋1px」だから＝2段なら 18×2＋2。
+// 行送り 18.0 は FontInfoGetDVAFontMetrics の実測値(ascent+descent+leading。PMMeasureString("Ag") の
+// 19.0 は 1px 過大＝memory kescm-status-text-selfdrawn の本命の実測)。
+// ⚠★**行ごとに高さが違うので ITreeViewMgr::ChangeRoot に kTrue を渡せなくなった**——あの引数は
+//   「どの行 widget も同じ高さ」という約束で、破ると木が自分の高さを測り違える(KESCMStoryTreeRebuild)。
+// ⚠この定数を読むのは C++ 側だけではない＝.fr の行リソース(kKESCMStoryRubyRowRsrcID)も同じ値を書く。
+#define kKESCMStoryRubyRowHeight	38
 
 // 一覧の列見出しの帯の高さ(ラベル 14px ＋ 罫線 1px ＋ 上下の余白 3px。2026-08-10)。
 // ★行高と同じく .fr と C++ の両方がこの1つの定数を読む＝帯を厚くすれば、ツリーの位置も

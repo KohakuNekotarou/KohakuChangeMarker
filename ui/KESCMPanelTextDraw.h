@@ -4,8 +4,9 @@
 //
 //  Kohaku Change Marker (KESCM)
 //
-//  The two things every hand-drawn text widget in this panel has to agree about: how far the
-//  CONTEXT around a change is faded toward the background, and how that faded colour is worked out.
+//  The three things every hand-drawn text widget in this panel has to agree about: how far the
+//  CONTEXT around a change is faded toward the background, how that faded colour is worked out, and
+//  (since 2026-08-22) where a RUBY READING sits over the characters it belongs to.
 //
 //  ★WHY THIS FILE EXISTS. Two widgets now draw "changed characters at full strength, the words
 //  around them faded": the change ROW's text cell (KESCMStoryCellView.cpp) and the panel's MESSAGE
@@ -48,6 +49,37 @@ inline RealAGMColor KESCMBlendColor(const RealAGMColor& bg, const RealAGMColor& 
 		ToDouble(bg.red   * u + fg.red   * t),
 		ToDouble(bg.green * u + fg.green * t),
 		ToDouble(bg.blue  * u + fg.blue  * t));
+}
+
+/** Where a READING starts, given where its base characters were actually drawn (2026-08-22).
+
+	★RUBY IS CENTRED ON WHAT IT BELONGS TO. A short reading sits in the middle of the word rather
+	than at its left edge, and a reading wider than its base characters overhangs on both sides -
+	both of which is what real ruby does, and what the user asked for ("位置が重要").
+
+	★★SHARED FOR THE SAME REASON kKESCMContextTextWeight IS. Two widgets now draw a reading over
+	base text: the change ROW's cell (KESCMStoryCellView.cpp) shows the newer version's reading, and
+	the panel's MESSAGE AREA (KESCMStatusTextView.cpp) shows the older one - which is the only place
+	a reading that was REMOVED can be seen at all. Two copies of this rule would drift apart the
+	first time one was adjusted ([[one-question-one-place]]), and adjusting it is exactly what is
+	expected: the position is the part the user will look at first.
+
+	⚠WHAT IS NOT SHARED is what happens when the reading is too wide for what remains: the row's
+	cell has one line and one right edge, while the message area has wrapped lines, so each ends it
+	in its own terms. Only the starting point is one question.
+
+	@param baseX where the base characters were drawn.
+	@param baseW how wide they came out. May be 0 - a change with nothing on this side - and then
+		the reading simply starts at baseX.
+	@param rubyW how wide the reading is.
+	@param leftLimit the left edge of the box. The reading may overhang its base characters but
+		never the COLUMN: past this it would paint over a neighbouring cell.
+	@return the x to draw the reading at. */
+inline PMReal KESCMRubyX(const PMReal& baseX, const PMReal& baseW, const PMReal& rubyW,
+						 const PMReal& leftLimit)
+{
+	const PMReal x = baseX + (baseW - rubyW) / PMReal(2.0);
+	return (x < leftLimit) ? leftLimit : x;
 }
 
 #endif // __KESCMPanelTextDraw_h__

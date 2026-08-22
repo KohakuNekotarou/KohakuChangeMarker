@@ -105,8 +105,9 @@ public:
 
 	virtual void		GetSessionStatus(PMString& out)	{ KESCMGetSessionStatus(out); }
 	virtual void		GetSessionStatusSegments(PMString& outLabel, PMString& outPre,
-												 PMString& outMid, PMString& outPost)
-							{ KESCMGetSessionStatusSegments(outLabel, outPre, outMid, outPost); }
+												 PMString& outMid, PMString& outPost,
+												 PMString& outRuby)
+							{ KESCMGetSessionStatusSegments(outLabel, outPre, outMid, outPost, outRuby); }
 
 	// ---- the status line (stage 2) --------------------------------------------------------
 	// ★Free functions from KESCMModelNotify.h. The panel's status writer and the UI shutdown
@@ -117,8 +118,9 @@ public:
 	//   at the spot they were removed from.
 	virtual void		StoreSessionStatus(const PMString& s)	{ KESCMStoreSessionStatus(s); }
 	virtual void		StoreSessionStatusSegments(const PMString& label, const PMString& pre,
-												   const PMString& mid, const PMString& post)
-							{ KESCMStoreSessionStatusSegments(label, pre, mid, post); }
+												   const PMString& mid, const PMString& post,
+												   const PMString& ruby)
+							{ KESCMStoreSessionStatusSegments(label, pre, mid, post, ruby); }
 	virtual void		ClearSessionStatus()	{ KESCMClearSessionStatus(); }
 
 	virtual bool16		ArmedDocsAlive()		{ return KESCMArmedDocsAlive(); }
@@ -406,6 +408,22 @@ public:
 		out.fRuby			= change.fRuby;			// only meaningful when fWhat is kAttr
 		out.fOtherRuby		= change.fOtherRuby;
 		return kTrue;
+	}
+
+	virtual int32	GetChangeWhat(int32 nth, int32 which)
+	{
+		// Out of range answers kText rather than failing: the caller is the tree asking how tall a
+		// row is, and a row it cannot identify gets the ordinary height - the same shape the list
+		// has had all along. (GetChange returns kFalse for this case because its caller is about
+		// to DRAW the change and must not draw a stale one.)
+		const KESCMStoryRow* row = KESCMStoryList::GetRow(nth);
+		if (row == nil || which < 0 || which >= static_cast<int32>(row->fChanges.size()))
+			return Change::kWhatText;
+
+		// ★The model's enum and the boundary's numbers are kept in step by these two lines and
+		//   nothing else - KESCMStoryChange::kText is 0 and kAttr is 1, in that order.
+		return (row->fChanges[which].fWhat == KESCMStoryChange::kAttr)
+			   ? Change::kWhatAttr : Change::kWhatText;
 	}
 
 	virtual int32	RefreshRow(int32 nth)

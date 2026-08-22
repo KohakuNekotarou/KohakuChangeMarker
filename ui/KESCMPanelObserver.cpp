@@ -222,8 +222,8 @@ void KESCMPanelObserver::AutoAttach()
 	//   パネルを閉じて開き直しただけで**色分けだけが静かに消える**——同じ文が、通った経路によって
 	//   別の見え方をすることになる。⇒ 覚える場所は今までどおり model 側の1か所で、そこが4片を持つ。
 	//   ★普通のメッセージは真ん中の1片だけが埋まっているので、この経路を通っても見え方は変わらない。
-	PMString savedLabel, savedPre, savedMid, savedPost;
-	Utils<IKESCMCompareFacade>()->GetSessionStatusSegments(savedLabel, savedPre, savedMid, savedPost);	// ★覚えているのは model 側(2026-08-13 Task 9 で移動・Task 11 で Facade 経由へ)
+	PMString savedLabel, savedPre, savedMid, savedPost, savedRuby;
+	Utils<IKESCMCompareFacade>()->GetSessionStatusSegments(savedLabel, savedPre, savedMid, savedPost, savedRuby);	// ★覚えているのは model 側(2026-08-13 Task 9 で移動・Task 11 で Facade 経由へ)
 	if (savedLabel.IsEmpty() && savedPre.IsEmpty() && savedMid.IsEmpty() && savedPost.IsEmpty())
 	{
 		PMString hint("Open the target and source documents (the active one becomes the Target), then choose Start from the panel menu.");
@@ -232,7 +232,7 @@ void KESCMPanelObserver::AutoAttach()
 	}
 	else
 	{
-		KESCMSetStatusSegments(savedLabel, savedPre, savedMid, savedPost);
+		KESCMSetStatusSegments(savedLabel, savedPre, savedMid, savedPost, savedRuby);
 	}
 
 	// Prev/Next の間の現在位置表示とボタン有効/無効は、上の UpdateInfoDisplay(→KESCMApplyPanelInfo
@@ -596,7 +596,8 @@ namespace
      画面が古くなったことを誰も知らない。「書いたのに変わらない」の原因はここになる。
 */
 void KESCMWriteStatusToPanel(const PMString& label, const PMString& pre,
-							 const PMString& mid, const PMString& post, bool16 forceRedrawNow)
+							 const PMString& mid, const PMString& post, const PMString& ruby,
+							 bool16 forceRedrawNow)
 {
 	IControlView* panel = KESCMGetVisibleOwnPanel();
 	if (panel == nil)
@@ -611,7 +612,7 @@ void KESCMWriteStatusToPanel(const PMString& label, const PMString& pre,
 	if (data == nil)
 		return;
 
-	data->SetSegments(label, pre, mid, post);
+	data->SetSegments(label, pre, mid, post, ruby);
 	cv->Invalidate();
 
 	// この直後にブロッキング処理(比較ループ等)が続く場合、Invalidate は次のイベントループまで
@@ -632,18 +633,18 @@ void KESCMSetStatus(const PMString& s, bool16 forceRedrawNow)
 	// ★普通のメッセージは**真ん中の1片**として渡す＝1色で描かれ、stock の静的テキストが
 	//   描いていた絵と同じになる。だから 72 か所ある呼び手は1つも変えていない。
 	const PMString kNothing;
-	KESCMWriteStatusToPanel(kNothing, kNothing, s, kNothing, forceRedrawNow);
+	KESCMWriteStatusToPanel(kNothing, kNothing, s, kNothing, kNothing, forceRedrawNow);
 }
 
 void KESCMSetStatusSegments(const PMString& label, const PMString& pre,
-							const PMString& mid, const PMString& post)
+							const PMString& mid, const PMString& post, const PMString& ruby)
 {
 	// ★覚える場所は上とまったく同じ1か所。連結して1本の文字列にするのは model 側なので、
 	//   app.kcmStatus の答えは「見出し + 改行 + 本文」＝この欄に見えているとおりになる。
-	Utils<IKESCMCompareFacade>()->StoreSessionStatusSegments(label, pre, mid, post);
+	Utils<IKESCMCompareFacade>()->StoreSessionStatusSegments(label, pre, mid, post, ruby);
 
 	// ★forceRedrawNow は渡さない＝この経路は行のクリックで、直後にブロッキング処理が続かない。
-	KESCMWriteStatusToPanel(label, pre, mid, post, kFalse);
+	KESCMWriteStatusToPanel(label, pre, mid, post, ruby, kFalse);
 }
 
 // (★KESCMGetSessionStatus と KESCMClearSessionStatus は 2026-08-13 Task 9 で

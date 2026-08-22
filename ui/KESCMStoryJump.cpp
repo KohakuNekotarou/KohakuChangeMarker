@@ -579,11 +579,27 @@ bool16 KESCMStoryJumpToChange(int32 rowIndex, int32 changeIndex)
 	//   ⇒ Ask what sort of change it is FIRST. (Found by an independent review of this range, after
 	//     I had read the same diff and called it clean - the fault was reading the new code without
 	//     counting who already reads the values it sets.)
-	const bool16 otherIsTarget = (change.fWhat == 0 && change.fKind == 2) ? kTrue : kFalse;
+	const bool16 otherIsTarget = (change.fWhat == IKESCMStoryEditsFacade::Change::kWhatText
+								  && change.fKind == 2) ? kTrue : kFalse;
 	PMString label;
 	label.SetTranslatable(kFalse);
 	label.Append(otherIsTarget ? "Target Text:" : "Source Text:");
-	KESCMSetStatusSegments(label, change.fOtherTextPre, change.fOtherText, change.fOtherTextPost);
+
+	// ★★THE OTHER SIDE'S READING GOES WITH IT (2026-08-22). The list shows the NEWER version, so a
+	//   reading that was REMOVED can be seen nowhere else - and the row's own upper line is left
+	//   empty for exactly those (user's call). This box is where it is answered.
+	// ⚠ASKED OF fWhat, NOT OF THE STRING. fOtherRuby is only meaningful for an attribute change
+	//   (IKESCMStoryEditsFacade.h says so at the field); a text change leaves it default-constructed
+	//   and reading it anyway would be relying on that rather than on the contract.
+	PMString otherRuby;
+	if (change.fWhat == IKESCMStoryEditsFacade::Change::kWhatAttr)
+	{
+		otherRuby = change.fOtherRuby;
+		otherRuby.SetTranslatable(kFalse);
+	}
+
+	KESCMSetStatusSegments(label, change.fOtherTextPre, change.fOtherText, change.fOtherTextPost,
+						   otherRuby);
 
 	return moved;
 }

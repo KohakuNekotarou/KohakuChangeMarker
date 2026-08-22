@@ -142,6 +142,16 @@ public:
 		is already an int with named bits and nothing has suffered for it. */
 	struct Change
 	{
+		/** What fWhat's numbers mean, named (2026-08-22).
+
+			★THE FIELD STAYS int32 - this is not the enum the note above declined to put on the
+			boundary. Nothing about the struct's layout changes; what changes is that a caller
+			COMPARING fWhat can say what it is comparing against. The second reason that note was
+			waiting for arrived with GetChangeWhat, whose whole return value is this one number:
+			the tree asks it of every row to decide the row's height, and `== 1` at that call site
+			would be a bare number three files away from the only place that explains it. */
+		enum { kWhatText = 0, kWhatAttr = 1 };
+
 		int32		fKind;			// 0 = replace, 1 = insert, 2 = delete
 		// 0 = text, 1 = attribute.
 		// ★★1 ARRIVED ON 2026-08-22 AND MEANS RUBY SO FAR (this header said "ALWAYS 0 today" until
@@ -209,6 +219,19 @@ public:
 	/** Fill out with difference which of row nth. kFalse when either index is out of range,
 		leaving out untouched. One at a time, for the same reason GetRow is. */
 	virtual bool16	GetChange(int32 nth, int32 which, Change& out) = 0;
+
+	/** What SORT of difference this one is - Change::fWhat, and nothing else (Change::kWhatText /
+		Change::kWhatAttr). kWhatText for an index that names no change.
+
+		★WHY THE ONE FIELD HAS A CALL OF ITS OWN (2026-08-22). The tree asks this of every row it
+		lays out, to decide how TALL the row is - a ruby change is drawn on two lines, the reading
+		above the characters it belongs to. GetChange would answer the same question, but it copies
+		eight PMStrings to do it, and the height is asked for again on every scroll and every
+		rebuild. This copies one int.
+		⚠It is deliberately fWhat rather than "is this ruby": kenten (圏点) is meant to join kAttr,
+		  and it will be drawn on two lines for the same reason ruby is. A call named for the
+		  attribute would have to be widened; this one already answers. */
+	virtual int32	GetChangeWhat(int32 nth, int32 which) = 0;
 
 	/** Compare row nth's story again against the older document, and replace its differences with
 		what stands there now - "Refresh Story Comparison" on the row's right-click menu.

@@ -8,6 +8,12 @@
 //  fades the words on either side of them toward the panel's background (user's request,
 //  2026-08-20: "変更されたところ以外は薄い色にして欲しい、KBSを参考に").
 //
+//  ★★AND, SINCE 2026-08-22, A RUBY CHANGE IS DRAWN ON TWO LINES - the reading above the characters
+//  it belongs to, at the same size, the way ruby is actually set (user: "文字のサイズは同じで、位置を
+//  漢字の文字の上に、実際のルビの様に" / "位置が重要"). The cell divides its own height in half for
+//  those rows; the row is built tall enough for that by KESCMStoryTreeWidgetMgr, which asks the same
+//  question this cell is told the answer to.
+//
 //  ★A STOCK STATIC TEXT CANNOT DO THIS: it holds one string and draws it in one colour. So the
 //  cell is a DVControlView that paints three runs left to right - context, change, context - the
 //  same recipe KBS's hit rows use (KBSColorTextView.cpp), and the one customdatalinkui proves for
@@ -98,10 +104,12 @@ bool16 KESCMViewOrParentIsHilited(IControlView* view, int32 stepsLeft)
 class KESCMStoryCellData : public CPMUnknown<IKESCMStoryCellData>
 {
 public:
-	KESCMStoryCellData(IPMUnknown* boss) : CPMUnknown<IKESCMStoryCellData>(boss) {}
+	KESCMStoryCellData(IPMUnknown* boss)
+		: CPMUnknown<IKESCMStoryCellData>(boss), fTwoLines(kFalse) {}
 	virtual ~KESCMStoryCellData() {}
 
-	virtual void SetSegments(const PMString& pre, const PMString& mid, const PMString& post)
+	virtual void SetSegments(const PMString& pre, const PMString& mid, const PMString& post,
+							 const PMString& ruby, bool16 twoLines)
 	{
 		// ★Not translation keys. This is text out of a document, and a short common word can
 		//   otherwise be looked up in the string tables and come back as something else entirely
@@ -110,19 +118,26 @@ public:
 		fPre = pre;   fPre.SetTranslatable(kFalse);
 		fMid = mid;   fMid.SetTranslatable(kFalse);
 		fPost = post; fPost.SetTranslatable(kFalse);
+		fRuby = ruby; fRuby.SetTranslatable(kFalse);
+		fTwoLines = twoLines;
 	}
 
-	virtual void GetSegments(PMString& outPre, PMString& outMid, PMString& outPost) const
+	virtual void GetSegments(PMString& outPre, PMString& outMid, PMString& outPost,
+							 PMString& outRuby, bool16& outTwoLines) const
 	{
 		outPre = fPre;
 		outMid = fMid;
 		outPost = fPost;
+		outRuby = fRuby;
+		outTwoLines = fTwoLines;
 	}
 
 private:
 	PMString fPre;
 	PMString fMid;
 	PMString fPost;
+	PMString fRuby;
+	bool16   fTwoLines;
 };
 
 CREATE_PMINTERFACE(KESCMStoryCellData, kKESCMStoryCellDataImpl)
@@ -156,14 +171,17 @@ void KESCMStoryCellView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 	if (data == nil)
 		return;
 
-	PMString pre, mid, post;
-	data->GetSegments(pre, mid, post);
+	PMString pre, mid, post, ruby;
+	bool16 twoLines = kFalse;
+	data->GetSegments(pre, mid, post, ruby, twoLines);
 
 	// ★NOTHING IS PAINTED BEHIND THE TEXT. The row widget draws the row's background and its
 	//   selection fill; this cell adds the words on top, exactly as the stock cell it replaced did.
 	//   An empty row is therefore a no-op rather than a blank rectangle - which is what a recycled
 	//   widget waiting for its next apply has to look like.
-	if (pre.IsEmpty() && mid.IsEmpty() && post.IsEmpty())
+	// ⚠The reading counts as something to draw: a recycled widget that kept only a ruby would
+	//   otherwise paint it over the row it has become.
+	if (pre.IsEmpty() && mid.IsEmpty() && post.IsEmpty() && ruby.IsEmpty())
 		return;
 
 	// The palette window's SYSTEM SCRIPT font - the one every other cell of these two rows declares
@@ -181,9 +199,28 @@ void KESCMStoryCellView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 	const InterfaceFontInfo& fontInfo = fonts->GetFont(kPaletteWindowSystemScriptFontId);
 
 	const PMRect frame = this->GetInnerContentFrame();
-	const PMReal y = Utils<IWidgetUtils>()->GetViewYPosition(&gc, fontInfo, frame.Height());
+
+	// ★★A RUBY CHANGE IS DRAWN ON TWO LINES, AND THEY ARE THE TWO HALVES OF THE CELL (2026-08-22,
+	//   user's request: "ルビ以外を薄くして、本当にルビが付いているような見た目に" / "ちいさくなくても
+	//   いいです、文字のサイズは同じで、位置を 漢字の文字の上に、実際のルビの様に" / "位置が重要").
+	//   The base text keeps the LOWER half and the reading stands in the upper one, over the
+	//   characters it belongs to - which is where a reader of Japanese expects to find it.
+	//
+	// ★HOW THE TWO BASELINES ARE WORKED OUT. GetViewYPosition answers "the baseline for a box this
+	//   tall", and the product's own drawing hands it a height that is NOT the widget's when it
+	//   wants a row inside a taller view (MSOStateDDLElementView.cpp:216,236 passes a constant row
+	//   height). So a half-height box is asked for once and used twice: as it stands for the upper
+	//   line, and pushed down by that same half for the lower one. Both lines are then centred in
+	//   their own half, which is what keeps the base text sitting where the eye expects it.
+	// ⚠frame.Top() is not added, here or below - the one-line case has always drawn at these
+	//   coordinates and draws correctly, so the inner content frame starts at 0.
+	const PMReal lineHeight = twoLines ? (frame.Height() / PMReal(2.0)) : frame.Height();
+	const PMReal upperY = Utils<IWidgetUtils>()->GetViewYPosition(&gc, fontInfo, lineHeight);
+	const PMReal y = twoLines ? (upperY + lineHeight) : upperY;
+
+	const PMReal leftEdge = frame.Left();
 	const PMReal rightEdge = frame.Right();
-	PMReal x = frame.Left();
+	PMReal x = leftEdge;
 
 	// Is this cell's row the selected one? A hand-drawn cell has to answer that itself: a stock
 	// static text is handed four colours in the .fr and lets the framework pick, but drawing by
@@ -231,6 +268,20 @@ void KESCMStoryCellView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 		x += StringUtils::PMMeasureString(&gc, s, fontInfo, kDontConvertAmpersand).X();
 	};
 
+	// ★WHERE THE CHANGED CHARACTERS ACTUALLY LANDED. The reading has to stand over THEM, and where
+	//   they land is not known until the line has been laid out: all three branches below place the
+	//   change at a different x, because how much leading context fitted decides it. So the change
+	//   is drawn through here, which records the span it occupied for the ruby pass at the end.
+	PMReal drawnMidX = leftEdge;
+	PMReal drawnMidW = PMReal(0.0);
+
+	auto drawChange = [&](const PMString& s)
+	{
+		drawnMidX = x;
+		drawRun(s, kChangeColor);
+		drawnMidW = x - drawnMidX;
+	};
+
 	const PMReal preW  = pre.IsEmpty()  ? PMReal(0.0) : StringUtils::PMMeasureString(&gc, pre,  fontInfo, kDontConvertAmpersand).X();
 	const PMReal midW  = mid.IsEmpty()  ? PMReal(0.0) : StringUtils::PMMeasureString(&gc, mid,  fontInfo, kDontConvertAmpersand).X();
 	const PMReal postW = post.IsEmpty() ? PMReal(0.0) : StringUtils::PMMeasureString(&gc, post, fontInfo, kDontConvertAmpersand).X();
@@ -243,7 +294,7 @@ void KESCMStoryCellView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 	if (preW + midW + postW <= availWidth)
 	{
 		drawRun(pre, kContextColor);
-		drawRun(mid, kChangeColor);
+		drawChange(mid);
 		drawRun(post, kContextColor);
 	}
 	else if (midW >= availWidth)
@@ -252,7 +303,7 @@ void KESCMStoryCellView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 		// context. Nothing is lost that the reader could have used - the context is only there to
 		// place a change that is too short to place itself.
 		const PMString m = StringUtils::PMEllipsizeString(&gc, availWidth, mid, fontInfo, kEllipsizeEnd, nil, kDontConvertAmpersand);
-		drawRun(m, kChangeColor);
+		drawChange(m);
 	}
 	else
 	{
@@ -271,8 +322,42 @@ void KESCMStoryCellView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 			postCut = StringUtils::PMEllipsizeString(&gc, postBudget, post, fontInfo, kEllipsizeEnd, nil, kDontConvertAmpersand);
 
 		drawRun(preCut, kContextColor);
-		drawRun(mid, kChangeColor);
+		drawChange(mid);
 		drawRun(postCut, kContextColor);
+	}
+
+	// ---- the upper line: the reading, over the characters it belongs to -------------------
+	//
+	// ★NOTHING IS DRAWN FOR A RUBY THAT WAS TAKEN AWAY, and that is the decision rather than an
+	//   oversight (user's call, 2026-08-22). The row shows the NEWER version, where there is no
+	//   reading any more, so an empty upper line is what that version actually looks like; the
+	//   reading that was removed is read in the panel's message area, which shows the other side.
+	//   The row is still laid out on two lines - see the widget manager - so the base text does not
+	//   jump half a row against the rows above and below it.
+	if (twoLines && !ruby.IsEmpty())
+	{
+		const PMReal rubyW = StringUtils::PMMeasureString(&gc, ruby, fontInfo, kDontConvertAmpersand).X();
+
+		// ★CENTRED ON THE BASE CHARACTERS, and worked out by the rule the message area uses too
+		//   (KESCMPanelTextDraw.h) - that box draws the OLDER version's reading over the same kind
+		//   of base text, and the position is the part the reader will judge first.
+		const PMReal rubyX = KESCMRubyX(drawnMidX, drawnMidW, rubyW, leftEdge);
+
+		PMString shown = ruby;
+		if (rubyX + rubyW > rightEdge)
+		{
+			const PMReal room = rightEdge - rubyX;
+			if (room <= PMReal(0.0))
+				return;
+			// Cut the TAIL: a reading is read from its head, and the head is what identifies it.
+			shown = StringUtils::PMEllipsizeString(&gc, room, ruby, fontInfo, kEllipsizeEnd, nil, kDontConvertAmpersand);
+		}
+
+		// ★FULL STRENGTH, like the changed characters below it - the reading IS the change on
+		//   these rows. What stays faded is the context on the lower line, which is what "ルビ以外
+		//   を薄く" asks for.
+		StringUtils::PMDrawStringRGB(&gc, PMPoint(rubyX, upperY), shown, fontInfo, kChangeColor,
+									 kDontConvertAmpersand, kNoUnderline);
 	}
 }
 
