@@ -40,16 +40,22 @@
 #include <string>
 #include <vector>
 
-/** One stretch of characters that carries ruby, inside one paragraph.
+/** One stretch of characters carrying ONE character attribute, inside one paragraph.
 
 	★POSITIONS ARE CODE POINTS, counted the way InDesign counts text positions, so a number worked
 	out here lines up with the paragraph offsets the diff already produces (a surrogate pair is one).
+
+	★★ONE TYPE FOR RUBY AND KENTEN (圏点), since 2026-08-22. They are different mechanisms in the
+	SDK - ruby is a STRAND (IRubyAttrStrand, run-based) and kenten is a set of CHARACTER ATTRIBUTES -
+	but what the panel needs of them is identical: a stretch of characters, and a value that says
+	what is sitting over it. Writing the comparison twice would mean fixing it twice.
+	⇒ fValue holds the READING for ruby and the KIND for kenten ("KentenBlackCircle").
 */
-struct KESCMRubySpan
+struct KESCMAttrSpan
 {
 	int32		fStart;		// first character of the base text, within its paragraph
-	int32		fLen;		// how many characters the ruby sits over
-	std::string	fRuby;		// the ruby itself, UTF-8. ⚠Never empty - see the file note
+	int32		fLen;		// how many characters the attribute covers
+	std::string	fValue;		// the reading (ruby) or the kind (kenten), UTF-8. ⚠Never empty
 
 	/** kTrue for GROUP ruby - one reading spread over several base characters (琥珀 -> こはく) -
 		against MONO ruby, where each character has its own (琥 -> こ, 珀 -> はく).
@@ -57,15 +63,33 @@ struct KESCMRubySpan
 		★It is carried because the two are different typesetting, so turning one into the other IS
 		a change even when every reading stays the same. InDesign writes it as RubyType="GroupRuby"
 		and omits the attribute for mono, so mono is the default here too. The pair is the SDK's
-		own: IRubyStyle.h:53-54, kRubyKind_Group / kRubyKind_Mono. */
+		own: IRubyStyle.h:53-54, kRubyKind_Group / kRubyKind_Mono.
+		⚠RUBY ONLY. Kenten has no such distinction - it is per character by nature - so its spans
+		  always leave this kFalse, and the comparison then never reports a difference in it. */
 	bool16		fGroup;
 
-	KESCMRubySpan() : fStart(0), fLen(0), fGroup(kFalse) {}
-	KESCMRubySpan(int32 start, int32 len, const std::string& ruby, bool16 group = kFalse)
-		: fStart(start), fLen(len), fRuby(ruby), fGroup(group) {}
+	KESCMAttrSpan() : fStart(0), fLen(0), fGroup(kFalse) {}
+	KESCMAttrSpan(int32 start, int32 len, const std::string& value, bool16 group = kFalse)
+		: fStart(start), fLen(len), fValue(value), fGroup(group) {}
 };
 
-typedef std::vector<KESCMRubySpan> KESCMRubySpanList;
+typedef std::vector<KESCMAttrSpan> KESCMAttrSpanList;
+
+/** Everything one paragraph carries OVER its characters - the attributes a change can hide in
+	while the words themselves stay identical (2026-08-22).
+
+	★WHY A STRUCT RATHER THAN ANOTHER OUT-PARAMETER. Ruby was the first, kenten is the second, and
+	the parser's signature would grow a parameter for each. This way the parser answers one thing
+	per paragraph and a third attribute costs a field, not a new argument at every call site.
+	⚠WHAT IS DELIBERATELY NOT IN HERE: applied styles. Finding those was considered and REJECTED
+	  (user's call, 2026-08-22: "スタイルの変更は、逆に無視することにしますね ... 見つけないで").
+	  A paragraph whose text is unchanged and whose style was swapped keeps reading "None".
+*/
+struct KESCMParaAttrs
+{
+	KESCMAttrSpanList	fRuby;
+	KESCMAttrSpanList	fKenten;
+};
 
 namespace KESCMSnippetText
 {
@@ -221,23 +245,23 @@ inline std::string AttrValue(const std::string& tag, const std::string& name)
 	have text of their own that must not be mistaken for the story's. (Measured in KohakuTest:
 	the dependencies are more than eight tenths of the file and contribute nothing to the diff.)
 
-	★★RUBY IS COLLECTED ON THE WAY THROUGH (2026-08-22). It lives on the <CharacterStyleRange>
-	that encloses the text it sits over, so it is read when that tag opens and forgotten when it
-	closes - which is also why a span never crosses one. Positions are counted in code points as
-	the text is appended, so they line up with the paragraph offsets the diff produces.
+	★★THE ATTRIBUTES ARE COLLECTED ON THE WAY THROUGH (ruby 2026-08-22, kenten the same day). Both
+	live on the <CharacterStyleRange> that encloses the text they sit over, so they are read when
+	that tag opens and forgotten when it closes. Positions are counted in code points as the text is
+	appended, so they line up with the paragraph offsets the diff produces.
 
 	@param xml the snippet.
 	@param paragraphs [out] cleared, then filled - one entry per paragraph.
-	@param rubyPerPara [out] when not nil: cleared, then filled to the SAME length as paragraphs,
-		each entry holding that paragraph's ruby spans in reading order.
+	@param attrsPerPara [out] when not nil: cleared, then filled to the SAME length as paragraphs,
+		each entry holding that paragraph's ruby and kenten spans in reading order.
 */
 inline void ExtractParagraphs(const std::string& xml,
 							  std::vector<std::string>& paragraphs,
-							  std::vector<KESCMRubySpanList>* rubyPerPara)
+							  std::vector<KESCMParaAttrs>* attrsPerPara)
 {
 	paragraphs.clear();
-	if (rubyPerPara != nil)
-		rubyPerPara->clear();
+	if (attrsPerPara != nil)
+		attrsPerPara->clear();
 
 	const size_t storyStart = xml.find("<Story ");
 	const size_t storyEnd = xml.rfind("</Story>");
@@ -245,11 +269,12 @@ inline void ExtractParagraphs(const std::string& xml,
 		return;
 
 	std::string current;
-	KESCMRubySpanList currentRuby;		// spans found so far in the paragraph being built
+	KESCMParaAttrs currentAttrs;		// spans found so far in the paragraph being built
 	std::string openRuby;				// the ruby of the CharacterStyleRange we are inside, "" for none
 	bool16 openGroup = kFalse;			// ...and whether that one is group ruby
 	bool16 openContinues = kFalse;		// ...and whether it CONTINUES the span before it (RubyFlag="2")
 	bool16 openStarted = kFalse;		// ...and whether a span was already opened inside THIS range
+	std::string openKenten;				// the KentenKind of that same range, "" for none
 	int32 paraPos = 0;					// code points appended to `current` so far
 	size_t pos = storyStart;
 
@@ -291,17 +316,41 @@ inline void ExtractParagraphs(const std::string& xml,
 				//     runs when the base text changes formatting part-way through, and that is one
 				//     ruby over one stretch, not two.
 				const bool16 continues = (openContinues || openStarted) ? kTrue : kFalse;
-				if (continues && !currentRuby.empty() &&
-					currentRuby.back().fRuby == openRuby &&
-					currentRuby.back().fStart + currentRuby.back().fLen == paraPos)
+				if (continues && !currentAttrs.fRuby.empty() &&
+					currentAttrs.fRuby.back().fValue == openRuby &&
+					currentAttrs.fRuby.back().fStart + currentAttrs.fRuby.back().fLen == paraPos)
 				{
-					currentRuby.back().fLen += pieceLen;
+					currentAttrs.fRuby.back().fLen += pieceLen;
 				}
 				else
 				{
-					currentRuby.push_back(KESCMRubySpan(paraPos, pieceLen, openRuby, openGroup));
+					currentAttrs.fRuby.push_back(KESCMAttrSpan(paraPos, pieceLen, openRuby, openGroup));
 				}
 				openStarted = kTrue;
+			}
+
+			// ★★★KENTEN JOINS ADJACENT RANGES, WHERE RUBY MUST NOT (2026-08-22, measured on
+			//   work\Snippet_3209A15EF.idms). Ruby needed RubyFlag to tell "the same reading
+			//   continues" from "a second reading that happens to read the same" - 各 and 画 both
+			//   かく sit side by side and are two rubies. Kenten has no such pair: it is one mark
+			//   PER CHARACTER, so two adjacent stretches of the same kind ARE one stretch, and the
+			//   range boundary between them says nothing about the document - it is wherever some
+			//   OTHER formatting happened to change.
+			//   ⇒ Joining is not an optimisation here, it is what makes the comparison stable:
+			//     without it, italicising one word inside a kenten run would split the span and be
+			//     reported as a kenten change.
+			if (!openKenten.empty() && pieceLen > 0)
+			{
+				if (!currentAttrs.fKenten.empty() &&
+					currentAttrs.fKenten.back().fValue == openKenten &&
+					currentAttrs.fKenten.back().fStart + currentAttrs.fKenten.back().fLen == paraPos)
+				{
+					currentAttrs.fKenten.back().fLen += pieceLen;
+				}
+				else
+				{
+					currentAttrs.fKenten.push_back(KESCMAttrSpan(paraPos, pieceLen, openKenten));
+				}
 			}
 
 			paraPos += pieceLen;
@@ -343,6 +392,18 @@ inline void ExtractParagraphs(const std::string& xml,
 				openContinues = kFalse;
 			}
 			openStarted = kFalse;		// a new range has contributed nothing yet
+
+			// ★KENTEN IS ONE ATTRIBUTE ON THE RANGE - no flag, no run to rebuild. Measured: five
+			//   characters marked with one kind come out as ONE range carrying KentenKind, where the
+			//   same five characters with ruby come out as five ranges.
+			// ⚠OFF IS A VALUE, NOT AN ABSENCE. The SDK turns kenten off by putting Kenten_None into
+			//   the attribute rather than removing it (codesnippets-cjk note, SnpPerformTextAttrKenten),
+			//   so a range can carry a kind that means "no mark". Both spellings are refused because
+			//   only the attribute name has been seen in a real file so far - the OFF value has not.
+			const std::string kenten = AttrValue(tag, "KentenKind");
+			openKenten = (kenten.empty() || kenten == "KentenNone" || kenten == "Kenten_None")
+						 ? std::string() : kenten;
+
 			pos = gt + 1;
 		}
 		else if (xml.compare(lt, 22, "</CharacterStyleRange>") == 0)
@@ -352,6 +413,7 @@ inline void ExtractParagraphs(const std::string& xml,
 			openRuby.clear();
 			openGroup = kFalse;
 			openContinues = kFalse;
+			openKenten.clear();
 			pos = lt + 22;
 		}
 		else if (xml.compare(lt, 4, "<Br ") == 0 || xml.compare(lt, 4, "<Br/") == 0)
@@ -359,9 +421,9 @@ inline void ExtractParagraphs(const std::string& xml,
 			DecodeEntities(current);
 			paragraphs.push_back(current);
 			current.clear();
-			if (rubyPerPara != nil)
-				rubyPerPara->push_back(currentRuby);
-			currentRuby.clear();
+			if (attrsPerPara != nil)
+				attrsPerPara->push_back(currentAttrs);
+			currentAttrs = KESCMParaAttrs();
 			paraPos = 0;
 
 			const size_t gt = xml.find('>', lt);
@@ -376,8 +438,8 @@ inline void ExtractParagraphs(const std::string& xml,
 	// The last paragraph has no <Br /> after it.
 	DecodeEntities(current);
 	paragraphs.push_back(current);
-	if (rubyPerPara != nil)
-		rubyPerPara->push_back(currentRuby);
+	if (attrsPerPara != nil)
+		attrsPerPara->push_back(currentAttrs);
 }
 
 /** True when two paragraphs' ruby differs - the question "did only the ruby change?" is this one
@@ -386,13 +448,13 @@ inline void ExtractParagraphs(const std::string& xml,
 	⚠Compared as an ordered list, not as a set: moving the same ruby onto different characters is a
 	change, and so is reordering two of them.
 */
-inline bool16 RubyDiffers(const KESCMRubySpanList& a, const KESCMRubySpanList& b)
+inline bool16 SpansDiffer(const KESCMAttrSpanList& a, const KESCMAttrSpanList& b)
 {
 	if (a.size() != b.size())
 		return kTrue;
 	for (size_t i = 0; i < a.size(); ++i)
 	{
-		if (a[i].fStart != b[i].fStart || a[i].fLen != b[i].fLen || a[i].fRuby != b[i].fRuby)
+		if (a[i].fStart != b[i].fStart || a[i].fLen != b[i].fLen || a[i].fValue != b[i].fValue)
 			return kTrue;
 		// ★Mono turned into group is a change even when every reading is the same: 琥珀 read as
 		//   こ+はく and 琥珀 read as こはく are different typesetting, and the reader asked to see it.

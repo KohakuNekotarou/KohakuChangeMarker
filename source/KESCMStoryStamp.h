@@ -137,8 +137,13 @@ enum KESCMStoryChangeKind
 enum KESCMStoryAttrKind
 {
 	kKESCMStoryAttrNone = 0,	// the children are text changes, or there are none
-	kKESCMStoryAttrRuby = 1		// a reading over characters that did not themselves change
-	// kKESCMStoryAttrKenten = 2 - planned; see the note above for what it will take
+	kKESCMStoryAttrRuby = 1,	// a reading over characters that did not themselves change
+	kKESCMStoryAttrKenten = 2	// ★emphasis marks (圏点) over characters that did not themselves
+								// change (2026-08-22). ⚠WHAT COUNTS AS A CHANGE IS THE KIND ALONE -
+								// black circle becoming white circle - and NOT the size or any of
+								// the other seventeen kenten attributes (user's call: "種類が変った
+								// 時に、変化が有ったかな、大きさとかは変わっても無視で"). Same line
+								// as ruby, which is compared by its reading and not by its font.
 };
 
 /** The two kinds that mean "this story has no partner in the other version".

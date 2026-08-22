@@ -351,15 +351,21 @@ void Add(std::vector<KESCMStoryChange>& out, int32 paraIndex,
 	out.push_back(change);
 }
 
-/* AddRubyChange
-   One ruby difference, turned into the child row that reports it.
+/* AddAttrChange
+   One ATTRIBUTE difference - a ruby or a kenten - turned into the child row that reports it.
 
    ★THE BASE TEXT IS SHOWN FROM THE NEWER SIDE, ALWAYS - unlike a text change, where a deletion has
-   to be shown from the older side because the newer one has nothing there. Ruby is different: the
-   characters are in BOTH versions and only the reading over them changed, so the newer side always
-   has something to show and there is no case to branch on.
+   to be shown from the older side because the newer one has nothing there. An attribute is
+   different: the characters are in BOTH versions and only what sits over them changed, so the newer
+   side always has something to show and there is no case to branch on.
+
+   ★ONE FUNCTION FOR BOTH ATTRIBUTES (2026-08-22). What differs between ruby and kenten is what the
+   VALUE means, and that is carried in attrKind rather than written twice: the reading of a ruby
+   goes into fRuby for the panel to draw above the characters, and the KIND of a kenten goes into
+   the same field for the panel to name - which is why the field is filled the same way for both and
+   read differently by whoever draws it.
 */
-void AddRubyChange(KESCMStoryChange::Kind kind,
+void AddAttrChange(KESCMStoryChange::Kind kind, KESCMStoryAttrKind attrKind,
 				   int32 tStart, int32 tCount, int32 sStart, int32 sCount,
 				   const std::string& targetPara, const std::string& sourcePara,
 				   const std::string& newRuby, const std::string& oldRuby,
@@ -369,6 +375,7 @@ void AddRubyChange(KESCMStoryChange::Kind kind,
 	KESCMStoryChange change;
 	change.fKind = kind;
 	change.fWhat = KESCMStoryChange::kAttr;		// ★the field that has waited for exactly this
+	change.fAttrKind = attrKind;
 	change.fParaIndex = paraIndex;
 
 	change.fTargetStart = tBase + tStart;
@@ -411,53 +418,54 @@ void AddRubyChange(KESCMStoryChange::Kind kind,
 	out.push_back(change);
 }
 
-/* CompareParagraphRuby
-   The ruby of two paragraphs whose TEXT came out identical.
+/* CompareParagraphAttr
+   One ATTRIBUTE's spans, on two paragraphs whose TEXT came out identical.
 
    ★SPANS ARE MATCHED BY WHERE THEY START. The text is the same on both sides, so a reading that
    stayed put keeps its position - which makes the start the one thing that reliably identifies
    "the same ruby" across the two versions. Length is NOT part of the matching: it is part of what
    changed (琥珀 read as こ+はく against こはく is a change of length, and the whole point).
 */
-void CompareParagraphRuby(const KESCMRubySpanList& sourceRuby, const KESCMRubySpanList& targetRuby,
+void CompareParagraphAttr(KESCMStoryAttrKind attrKind,
+						  const KESCMAttrSpanList& sourceSpans, const KESCMAttrSpanList& targetSpans,
 						  const std::string& sourcePara, const std::string& targetPara,
 						  int32 sBase, int32 tBase, int32 paraIndex,
 						  std::vector<KESCMStoryChange>& out)
 {
-	if (!KESCMSnippetText::RubyDiffers(sourceRuby, targetRuby))
+	if (!KESCMSnippetText::SpansDiffer(sourceSpans, targetSpans))
 		return;
 
 	size_t i = 0, j = 0;
-	while (i < sourceRuby.size() || j < targetRuby.size())
+	while (i < sourceSpans.size() || j < targetSpans.size())
 	{
-		const bool16 haveS = (i < sourceRuby.size()) ? kTrue : kFalse;
-		const bool16 haveT = (j < targetRuby.size()) ? kTrue : kFalse;
+		const bool16 haveS = (i < sourceSpans.size()) ? kTrue : kFalse;
+		const bool16 haveT = (j < targetSpans.size()) ? kTrue : kFalse;
 
-		if (haveS && haveT && sourceRuby[i].fStart == targetRuby[j].fStart)
+		if (haveS && haveT && sourceSpans[i].fStart == targetSpans[j].fStart)
 		{
-			const bool16 same = (sourceRuby[i].fRuby == targetRuby[j].fRuby &&
-								 sourceRuby[i].fLen == targetRuby[j].fLen &&
-								 (sourceRuby[i].fGroup != 0) == (targetRuby[j].fGroup != 0)) ? kTrue : kFalse;
+			const bool16 same = (sourceSpans[i].fValue == targetSpans[j].fValue &&
+								 sourceSpans[i].fLen == targetSpans[j].fLen &&
+								 (sourceSpans[i].fGroup != 0) == (targetSpans[j].fGroup != 0)) ? kTrue : kFalse;
 			if (!same)
 			{
-				AddRubyChange(KESCMStoryChange::kReplace,
-							  targetRuby[j].fStart, targetRuby[j].fLen,
-							  sourceRuby[i].fStart, sourceRuby[i].fLen,
+				AddAttrChange(KESCMStoryChange::kReplace, attrKind,
+							  targetSpans[j].fStart, targetSpans[j].fLen,
+							  sourceSpans[i].fStart, sourceSpans[i].fLen,
 							  targetPara, sourcePara,
-							  targetRuby[j].fRuby, sourceRuby[i].fRuby,
+							  targetSpans[j].fValue, sourceSpans[i].fValue,
 							  tBase, sBase, paraIndex, out);
 			}
 			++i;
 			++j;
 		}
-		else if (haveT && (!haveS || targetRuby[j].fStart < sourceRuby[i].fStart))
+		else if (haveT && (!haveS || targetSpans[j].fStart < sourceSpans[i].fStart))
 		{
 			// Ruby where there was none.
-			AddRubyChange(KESCMStoryChange::kInsert,
-						  targetRuby[j].fStart, targetRuby[j].fLen,
-						  targetRuby[j].fStart, targetRuby[j].fLen,
+			AddAttrChange(KESCMStoryChange::kInsert, attrKind,
+						  targetSpans[j].fStart, targetSpans[j].fLen,
+						  targetSpans[j].fStart, targetSpans[j].fLen,
 						  targetPara, sourcePara,
-						  targetRuby[j].fRuby, std::string(),
+						  targetSpans[j].fValue, std::string(),
 						  tBase, sBase, paraIndex, out);
 			++j;
 		}
@@ -465,11 +473,11 @@ void CompareParagraphRuby(const KESCMRubySpanList& sourceRuby, const KESCMRubySp
 		{
 			// Ruby taken off. ⚠The characters are still there - it is the reading that is gone -
 			//   so the range is a real one on both sides, unlike a text deletion.
-			AddRubyChange(KESCMStoryChange::kDelete,
-						  sourceRuby[i].fStart, sourceRuby[i].fLen,
-						  sourceRuby[i].fStart, sourceRuby[i].fLen,
+			AddAttrChange(KESCMStoryChange::kDelete, attrKind,
+						  sourceSpans[i].fStart, sourceSpans[i].fLen,
+						  sourceSpans[i].fStart, sourceSpans[i].fLen,
 						  targetPara, sourcePara,
-						  std::string(), sourceRuby[i].fRuby,
+						  std::string(), sourceSpans[i].fValue,
 						  tBase, sBase, paraIndex, out);
 			++i;
 		}
@@ -486,11 +494,11 @@ void CompareParagraphRuby(const KESCMRubySpanList& sourceRuby, const KESCMRubySp
      already have children saying so, and ruby that moved with rewritten words is not a separate
      edit the reader needs pointed out.
 */
-void AddRubyOnlyChanges(const std::vector<KESCMTextDiff::Change>& paragraphChanges,
+void AddAttrOnlyChanges(const std::vector<KESCMTextDiff::Change>& paragraphChanges,
 						const std::vector<std::string>& sourceParas,
 						const std::vector<std::string>& targetParas,
-						const std::vector<KESCMRubySpanList>& sourceRuby,
-						const std::vector<KESCMRubySpanList>& targetRuby,
+						const std::vector<KESCMParaAttrs>& sourceAttrs,
+						const std::vector<KESCMParaAttrs>& targetAttrs,
 						const std::vector<int32>& sourceStarts,
 						const std::vector<int32>& targetStarts,
 						std::vector<KESCMStoryChange>& out)
@@ -509,10 +517,18 @@ void AddRubyOnlyChanges(const std::vector<KESCMTextDiff::Change>& paragraphChang
 
 		while (a < aStop && b < bStop)
 		{
-			if (a < static_cast<int32>(sourceRuby.size()) && b < static_cast<int32>(targetRuby.size()) &&
+			if (a < static_cast<int32>(sourceAttrs.size()) && b < static_cast<int32>(targetAttrs.size()) &&
 				a < static_cast<int32>(sourceStarts.size()) && b < static_cast<int32>(targetStarts.size()))
 			{
-				CompareParagraphRuby(sourceRuby[a], targetRuby[b],
+				// ★EACH ATTRIBUTE IS COMPARED ON ITS OWN LIST, and they cannot be merged into one
+				//   pass: a paragraph can have ruby over one word and kenten over another, and the
+				//   two sets of spans are matched by position within their OWN kind.
+				CompareParagraphAttr(kKESCMStoryAttrRuby,
+									 sourceAttrs[a].fRuby, targetAttrs[b].fRuby,
+									 sourceParas[a], targetParas[b],
+									 sourceStarts[a], targetStarts[b], b, out);
+				CompareParagraphAttr(kKESCMStoryAttrKenten,
+									 sourceAttrs[a].fKenten, targetAttrs[b].fKenten,
 									 sourceParas[a], targetParas[b],
 									 sourceStarts[a], targetStarts[b], b, out);
 			}
@@ -556,10 +572,10 @@ bool16 CompareOneStory(const UIDRef& targetStory, const UIDRef& sourceStory,
 	//   would put two moments in one row.
 	std::vector<std::string> targetParas;
 	std::vector<std::string> sourceParas;
-	std::vector<KESCMRubySpanList> targetRuby;
-	std::vector<KESCMRubySpanList> sourceRuby;
-	KESCMSnippetText::ExtractParagraphs(targetXml, targetParas, &targetRuby);
-	KESCMSnippetText::ExtractParagraphs(sourceXml, sourceParas, &sourceRuby);
+	std::vector<KESCMParaAttrs> targetAttrs;
+	std::vector<KESCMParaAttrs> sourceAttrs;
+	KESCMSnippetText::ExtractParagraphs(targetXml, targetParas, &targetAttrs);
+	KESCMSnippetText::ExtractParagraphs(sourceXml, sourceParas, &sourceAttrs);
 
 	// ★ONE TABLE FOR BOTH SEQUENCES. Numbering them from separate tables would give equal
 	//   paragraphs different tokens, and every paragraph would look changed.
@@ -640,7 +656,7 @@ bool16 CompareOneStory(const UIDRef& targetStory, const UIDRef& sourceStory,
 	//   story whose ruby alone was edited came out of it with no children at all - the row said
 	//   "None", which is what the user reported. The paragraphs the diff did NOT mention are exactly
 	//   the ones to ask about.
-	AddRubyOnlyChanges(paragraphChanges, sourceParas, targetParas, sourceRuby, targetRuby,
+	AddAttrOnlyChanges(paragraphChanges, sourceParas, targetParas, sourceAttrs, targetAttrs,
 					   sourceStarts, targetStarts, out);
 
 	// ⚠Put back in reading order. The ruby children were found by a separate walk, so without this

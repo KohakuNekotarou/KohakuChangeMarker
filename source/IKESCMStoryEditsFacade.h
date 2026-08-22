@@ -204,9 +204,20 @@ public:
 		PMString	fRuby;
 		PMString	fOtherRuby;
 
+		// WHICH attribute this is (2026-08-22): 0 = none, 1 = ruby, 2 = kenten (圏点).
+		// ★★fWhat SAYS "not the words", THIS SAYS WHAT INSTEAD - and the panel needs both, because
+		//   it draws them differently. A ruby is drawn on TWO LINES with the reading above the
+		//   characters; a kenten is not, because its value is a NAME ("KentenBlackCircle") rather
+		//   than something a reader reads, and it is named in the Change column instead (user's
+		//   call, 2026-08-22).
+		// ⚠So "is this row drawn on two lines" is THIS field, never fWhat. Asking fWhat was right
+		//   while ruby was the only attribute, and would have given every kenten row a permanently
+		//   empty upper line the moment the second one arrived.
+		int32		fAttrKind;
+
 		Change()
 			: fKind(0), fWhat(0), fTargetStart(0), fTargetEnd(0),
-			  fSourceStart(0), fSourceEnd(0), fHasSource(kFalse) {}
+			  fSourceStart(0), fSourceEnd(0), fHasSource(kFalse), fAttrKind(0) {}
 	};
 
 	/** How many differences row nth holds.
@@ -220,18 +231,19 @@ public:
 		leaving out untouched. One at a time, for the same reason GetRow is. */
 	virtual bool16	GetChange(int32 nth, int32 which, Change& out) = 0;
 
-	/** What SORT of difference this one is - Change::fWhat, and nothing else (Change::kWhatText /
-		Change::kWhatAttr). kWhatText for an index that names no change.
+	/** WHICH ATTRIBUTE this difference is in - Change::fAttrKind, and nothing else (0 = none,
+		1 = ruby, 2 = kenten). 0 for a text change and for an index that names no change.
 
 		★WHY THE ONE FIELD HAS A CALL OF ITS OWN (2026-08-22). The tree asks this of every row it
 		lays out, to decide how TALL the row is - a ruby change is drawn on two lines, the reading
 		above the characters it belongs to. GetChange would answer the same question, but it copies
-		eight PMStrings to do it, and the height is asked for again on every scroll and every
+		nine PMStrings to do it, and the height is asked for again on every scroll and every
 		rebuild. This copies one int.
-		⚠It is deliberately fWhat rather than "is this ruby": kenten (圏点) is meant to join kAttr,
-		  and it will be drawn on two lines for the same reason ruby is. A call named for the
-		  attribute would have to be widened; this one already answers. */
-	virtual int32	GetChangeWhat(int32 nth, int32 which) = 0;
+		⚠★IT ANSWERED fWhat UNTIL KENTEN ARRIVED, later the same day. "Is this an attribute" was a
+		  correct stand-in for "is this drawn on two lines" only while ruby was the sole attribute;
+		  kenten is an attribute that is NOT drawn on two lines (its value is a name, not a
+		  reading), so the question had to become the one it was really asking. */
+	virtual int32	GetChangeAttrKind(int32 nth, int32 which) = 0;
 
 	/** Compare row nth's story again against the older document, and replace its differences with
 		what stands there now - "Refresh Story Comparison" on the row's right-click menu.

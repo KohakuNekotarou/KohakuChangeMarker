@@ -407,23 +407,21 @@ public:
 		out.fOtherTextPost	= change.fOtherTextPost;
 		out.fRuby			= change.fRuby;			// only meaningful when fWhat is kAttr
 		out.fOtherRuby		= change.fOtherRuby;
+		out.fAttrKind		= static_cast<int32>(change.fAttrKind);
 		return kTrue;
 	}
 
-	virtual int32	GetChangeWhat(int32 nth, int32 which)
+	virtual int32	GetChangeAttrKind(int32 nth, int32 which)
 	{
-		// Out of range answers kText rather than failing: the caller is the tree asking how tall a
-		// row is, and a row it cannot identify gets the ordinary height - the same shape the list
-		// has had all along. (GetChange returns kFalse for this case because its caller is about
-		// to DRAW the change and must not draw a stale one.)
+		// Out of range answers "no attribute" rather than failing: the caller is the tree asking how
+		// tall a row is, and a row it cannot identify gets the ordinary height - the same shape the
+		// list has had all along. (GetChange returns kFalse for this case because its caller is
+		// about to DRAW the change and must not draw a stale one.)
 		const KESCMStoryRow* row = KESCMStoryList::GetRow(nth);
 		if (row == nil || which < 0 || which >= static_cast<int32>(row->fChanges.size()))
-			return Change::kWhatText;
+			return static_cast<int32>(kKESCMStoryAttrNone);
 
-		// ★The model's enum and the boundary's numbers are kept in step by these two lines and
-		//   nothing else - KESCMStoryChange::kText is 0 and kAttr is 1, in that order.
-		return (row->fChanges[which].fWhat == KESCMStoryChange::kAttr)
-			   ? Change::kWhatAttr : Change::kWhatText;
+		return static_cast<int32>(row->fChanges[which].fAttrKind);
 	}
 
 	virtual int32	RefreshRow(int32 nth)

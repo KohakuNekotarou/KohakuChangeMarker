@@ -124,12 +124,24 @@ PMString KindLabel(uint32 kinds, bool16 sameKind, int32 attrKind)
 	// ★What the diff FOUND, ahead of what the counters merely reported. ⚠Only when the text itself
 	//   did not change: a story whose words were rewritten AND whose ruby moved is a text edit
 	//   first, and the "Text+" below already says there was more than one kind of change.
-	if (attrKind == kKESCMStoryAttrRuby && (kinds & kKESCMStoryKindText) == 0)
+	// ★★KENTEN (圏点) NAMES ITSELF THE SAME WAY (2026-08-22, user: "Change部分に"). The word is the
+	//   snippet's own spelling - InDesign writes the attribute as KentenKind - so the column says
+	//   what the file says.
+	if ((kinds & kKESCMStoryKindText) == 0)
 	{
-		PMString ruby(kKESCMStoryKindRubyKey);
-		ruby.Translate();
-		ruby.SetTranslatable(kFalse);
-		return ruby;
+		const char* key = nil;
+		if (attrKind == kKESCMStoryAttrRuby)
+			key = kKESCMStoryKindRubyKey;
+		else if (attrKind == kKESCMStoryAttrKenten)
+			key = kKESCMStoryKindKentenKey;
+
+		if (key != nil)
+		{
+			PMString named(key);
+			named.Translate();
+			named.SetTranslatable(kFalse);
+			return named;
+		}
 	}
 
 	PMString out;
@@ -405,8 +417,14 @@ private:
 		that differs, and both end here. */
 	bool16 IsTwoLineChange(int32 row, int32 change) const
 	{
-		return Utils<IKESCMStoryEditsFacade>()->GetChangeWhat(row, change)
-			   == IKESCMStoryEditsFacade::Change::kWhatAttr;
+		// ★★RUBY ONLY, AND NOT "any attribute" (corrected 2026-08-22, the same day the first version
+		//   was written). The upper line exists to carry a READING; kenten has no reading - what
+		//   changed is the mark, whose value is a name like "KentenBlackCircle" - so a kenten row is
+		//   an ordinary one-line row and says what it is in the Change column instead (user's call).
+		//   Asking "is this an attribute" was right while ruby was the only one, and would have
+		//   given every kenten row a permanently empty upper line.
+		return Utils<IKESCMStoryEditsFacade>()->GetChangeAttrKind(row, change)
+			   == static_cast<int32>(kKESCMStoryAttrRuby);
 	}
 
 	bool16 IsTwoLineNode(const NodeID& node) const

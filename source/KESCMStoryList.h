@@ -145,12 +145,29 @@ struct KESCMStoryChange
 	PMString	fRuby;
 	PMString	fOtherRuby;
 
+	/** WHICH attribute this is, when fWhat is kAttr (2026-08-22). kKESCMStoryAttrNone for a text
+		change.
+
+		★★fWhat SAYS "not the words", THIS SAYS WHAT INSTEAD - and the panel needs both because it
+		treats them differently. A ruby change is drawn on TWO LINES, the reading above the
+		characters; a KENTEN change is not, because there is nothing to write up there - the mark
+		itself is what changed, and its kind is a name ("KentenBlackCircle") rather than something
+		the reader reads (user's call, 2026-08-22: the kind goes in the Change column instead).
+		⚠So "is this drawn on two lines" is THIS field, never fWhat. Deciding it from fWhat was
+		  right while ruby was the only attribute, and would have given every kenten row an empty
+		  upper line the moment the second one arrived.
+
+		★The row has a field of the same name and the same values (KESCMStoryRow::fAttrKind), worked
+		out from these by SetRowChanges - the row names the attribute, the children carry it. */
+	KESCMStoryAttrKind fAttrKind;
+
 	int32		fParaIndex;		// which paragraph it fell in. Not drawn; kept for ordering and for
 								// anything later that wants to group changes by paragraph
 
 	KESCMStoryChange()
 		: fKind(kReplace), fWhat(kText), fTargetStart(0), fTargetEnd(0),
-		  fSourceStart(0), fSourceEnd(0), fHasSource(kFalse), fParaIndex(0) {}
+		  fSourceStart(0), fSourceEnd(0), fHasSource(kFalse),
+		  fAttrKind(kKESCMStoryAttrNone), fParaIndex(0) {}
 };
 
 /** One row of the Story Edits section. */

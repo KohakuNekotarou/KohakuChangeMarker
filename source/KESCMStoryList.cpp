@@ -673,22 +673,27 @@ void KESCMStoryList::SetRowChanges(int32 nth, const std::vector<KESCMStoryChange
 	gRows[nth].fTextCompared = textCompared;
 
 	// ★WHICH ATTRIBUTE THE ROW SHOULD NAME, worked out here rather than asked for later: the row
-	//   is drawn many times and the children are walked once. ⚠First one wins, which is enough
-	//   while there is one kind; when kenten joins it, a row holding both will have to say
-	//   something about that - and this is the line that will have to decide what.
+	//   is drawn many times and the children are walked once.
+	// ⚠★★FIRST ONE STILL WINS, AND NOW THAT MEANS SOMETHING (2026-08-22). Kenten has joined ruby,
+	//   so a story CAN hold both, and such a row is named after whichever comes first in reading
+	//   order. That is a decision left standing rather than one that was taken: the user asked for
+	//   the kinds to be found and named, and said nothing about a row holding two of them. What it
+	//   costs is that the Change column under-reports such a row - it says "Ruby" where "Ruby+"
+	//   would follow this panel's own convention for "and something else" (see KindLabel's Text+).
+	//   ⇒ If that turns out to matter, the fix belongs here and needs one more fact on the row
+	//     (how many kinds were seen), not a change to how the children are made.
+	// ★★2026-08-22 (kenten): THE CHILD NOW CARRIES THE ANSWER, so this no longer guesses it from
+	//   which string is filled. The old test - "fRuby is not empty, or fOtherRuby is" - was really
+	//   asking "is this a ruby", and it could only ever answer that one attribute. A kenten child
+	//   fills the very same fields (with a KIND rather than a reading), so the same test would have
+	//   called every kenten a ruby.
 	gRows[nth].fAttrKind = kKESCMStoryAttrNone;
 	for (size_t i = 0; i < changes.size(); ++i)
 	{
-		if (changes[i].fWhat == KESCMStoryChange::kAttr && !changes[i].fRuby.IsEmpty())
+		if (changes[i].fWhat == KESCMStoryChange::kAttr &&
+			changes[i].fAttrKind != kKESCMStoryAttrNone)
 		{
-			gRows[nth].fAttrKind = kKESCMStoryAttrRuby;
-			break;
-		}
-		// ⚠A ruby that was REMOVED has an empty fRuby and a filled fOtherRuby - it is still a ruby
-		//   change, and the row still has to say so.
-		if (changes[i].fWhat == KESCMStoryChange::kAttr && !changes[i].fOtherRuby.IsEmpty())
-		{
-			gRows[nth].fAttrKind = kKESCMStoryAttrRuby;
+			gRows[nth].fAttrKind = changes[i].fAttrKind;
 			break;
 		}
 	}

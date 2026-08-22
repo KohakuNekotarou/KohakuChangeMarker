@@ -109,6 +109,7 @@ resource StringTable (kSDKDefStringsResourceID + index_enUS)
                 kKESCMStoryKindRemovedKey,		"Deleted",
                 kKESCMStoryKindNoneKey,			"None",
                 kKESCMStoryKindRubyKey,			"Ruby",
+                kKESCMStoryKindKentenKey,		"Kenten",
 
                 // The list's column headings. ★"Story" and "Change" rather than "Text" and "Kind":
                 // the words in the rows already use "Text" for one of the kinds, so heading the
