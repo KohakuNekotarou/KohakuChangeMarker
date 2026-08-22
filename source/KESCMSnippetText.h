@@ -32,6 +32,10 @@
 #define __KESCMSnippetText_h__
 
 #include "BaseType.h"		// int32, bool16
+#include "OMTypes.h"		// nil. ⚠BaseType.h does NOT define it, and this header uses it - without
+							//  this line it only compiles when something else (VCPlugInHeaders.h)
+							//  has been included first, which is exactly the hidden ordering
+							//  dependency the file comment above claims it does not have.
 
 #include <string>
 #include <vector>

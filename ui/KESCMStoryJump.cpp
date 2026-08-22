@@ -569,9 +569,20 @@ bool16 KESCMStoryJumpToChange(int32 rowIndex, int32 changeIndex)
 	//   ★The label is its own argument rather than the head of the first piece: when the message
 	//     does not fit, the CONTEXT gives way from its outer ends, and a label living in the context
 	//     would be the first thing cut. It is the one piece that has to survive.
+	// ⚠★★★WHICH DOCUMENT fOtherText CAME FROM IS NOT ALWAYS INFERABLE FROM fKind (2026-08-22).
+	//   For a TEXT change it is: the row shows the side that changed, so a deletion (kind 2) shows
+	//   the older side and fOtherText is therefore the newer one.
+	//   For a RUBY change it is NOT: the characters exist in both versions, so KESCMStoryDiffRun's
+	//   AddRubyChange always puts the target in fText and the source in fOtherText, with no
+	//   rowShowsOldSide branch to make. Reading fKind alone labelled a removed ruby "Target Text:"
+	//   over text that had come from the SOURCE.
+	//   ⇒ Ask what sort of change it is FIRST. (Found by an independent review of this range, after
+	//     I had read the same diff and called it clean - the fault was reading the new code without
+	//     counting who already reads the values it sets.)
+	const bool16 otherIsTarget = (change.fWhat == 0 && change.fKind == 2) ? kTrue : kFalse;
 	PMString label;
 	label.SetTranslatable(kFalse);
-	label.Append((change.fKind == 2) ? "Target Text:" : "Source Text:");
+	label.Append(otherIsTarget ? "Target Text:" : "Source Text:");
 	KESCMSetStatusSegments(label, change.fOtherTextPre, change.fOtherText, change.fOtherTextPost);
 
 	return moved;

@@ -208,7 +208,16 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 			InterfacePtr<IKESCMCompareFacade> compare(Utils<IKESCMCompareFacade>().QueryUtilInterface());
 			const bool16 srcMarksOn = !compare->GetShowSourceMarks();
 			compare->SetShowSourceMarks(srcMarksOn);
-			compare->SetSrcMarksPressed(kFalse);	// Target 版と同じ後始末(撤去した Hold から引き継いだ)。★押下フラグの取りこぼし対策
+			// ⚠★★★**押下フラグはここで触らない**(2026-08-22・独立レビューの指摘で撤去)。
+			//   撤去した Hold から引き継いだときは sSrcMarksTempHidden＝「隠している」だったので、
+			//   トグルを切り替えるついでに解除するのが正しかった。**同じ日の改名でこれは
+			//   「ツールの左ボタンが物理的に押されている」に変わった**——メニュー操作がそれを
+			//   「押していない」と言い張ってよい道理は無い。
+			//   ★実害＝ショートカットを割り当てて**押下中に**叩くと、離したときに
+			//     KESCMTrackerRevealEnd が GetSrcMarksPressed()==kFalse を見て InvalidateDB を
+			//     飛ばし、Source の窓に押下中の枠が残る。
+			//   ★KESCMTrackerRevealBegin 側は「トグルを見ない」へ正しく直してあった＝これは
+			//     同じ変更の片割れの直し忘れ([[one-question-one-place]])。
 			KESCMStoryMarksRefresh();		// Story モードの反転マーク(Pixel モードでは何もしない)
 			IDataBase* const srcDB = Utils<IKESCMMarkData>()->GetMarkedSourceDB();
 			Utils<IKESCMCompareFacade>()->InvalidateDB(srcDB);

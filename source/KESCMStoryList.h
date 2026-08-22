@@ -53,10 +53,16 @@ struct KESCMStoryChange
 
 	/** What sort of thing changed.
 
-		★ALWAYS kText TODAY. The diff reads <Content> and nothing else, so a change of formatting
-		alone is not seen at all. The field exists so that attribute differences can arrive later
-		as another sort of child WITHOUT having to change the row drawing, the click handling and
-		the boundary struct at the same time. */
+		★★kAttr ARRIVED ON 2026-08-22 AND MEANS RUBY SO FAR. This said "ALWAYS kText TODAY" until
+		then, and the reason it was here came true exactly as written: attribute differences could
+		be added as another sort of child without changing the row drawing, the click handling or
+		the boundary struct at the same time.
+		⚠WHAT IT DOES CHANGE is how fText / fOtherText are to be read. A text change shows whichever
+		  side changed, so a deletion puts the newer words in fOtherText; a ruby change always puts
+		  the target in fText and the source in fOtherText, because the characters are in BOTH
+		  versions and there is no side to choose. ⇒ Anything asking "which document is this text
+		  from" has to test this field before fKind (KESCMStoryJump's message-area label did not,
+		  and labelled a removed ruby's source text "Target Text:"). */
 	enum What { kText, kAttr };
 
 	Kind		fKind;

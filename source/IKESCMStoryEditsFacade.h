@@ -143,7 +143,14 @@ public:
 	struct Change
 	{
 		int32		fKind;			// 0 = replace, 1 = insert, 2 = delete
-		int32		fWhat;			// 0 = text, 1 = attribute. ★ALWAYS 0 today (see KESCMStoryList.h)
+		// 0 = text, 1 = attribute.
+		// ★★1 ARRIVED ON 2026-08-22 AND MEANS RUBY SO FAR (this header said "ALWAYS 0 today" until
+		//   then). ⚠It changes how the three fText / fOtherText pieces are to be read: for a TEXT
+		//   change the row shows whichever side changed, so a deletion puts the NEWER text in
+		//   fOtherText - but a ruby change always puts the target in fText and the source in
+		//   fOtherText, because the characters exist in both versions and there is no side to
+		//   choose. Anything deciding "which document is this text from" must look here first.
+		int32		fWhat;
 		TextIndex	fTargetStart;	// in the NEWER document
 		TextIndex	fTargetEnd;		// ★an END, not a length (RangeData.h:69)
 		TextIndex	fSourceStart;	// in the OLDER document; meaningless unless fHasSource
