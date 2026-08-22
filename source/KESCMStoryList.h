@@ -236,6 +236,32 @@ UID KESCMStoryFirstFrameUID(IDataBase* db, UID storyUID);
 */
 bool16 KESCMStoryStartPoint(IDataBase* db, UID storyUID, UID& outFrame, PBPMPoint& outPb);
 
+/** Where ONE character of a story sits, in pasteboard coordinates - the point a jump to a CHANGE
+	should centre, as against the story's beginning above (user's request, 2026-08-22: the row
+	should land on the edit, not on the top of the story it is in).
+
+	★WHAT IS RETURNED IS THE CARET'S PLACE, not the middle of the character: the horizontal figure
+	is the escapement up to the glyph BEFORE index, which is where the blinking line stands when
+	you click just in front of that character (user's words: "一番最初の文字のその前の縦の
+	ピコピコした線が出る部分"). The vertical figure is the middle of that line's height, so the
+	line - not its baseline - is what ends up in the middle of the window.
+
+	★It follows vertical text and rotated frames with no branch of its own, because the position
+	comes out of the wax run's own to-pasteboard matrix.
+
+	⚠★★THE CALLER MUST HOLD A IDataBase::SaveRestoreModifiedState. This composes the story if the
+	  composition is out of date, and composing dirties the document - unavoidably, because where a
+	  character sits IS the composition (see the note on the implementation).
+
+	@param db which document to ask - either version; the caller picks.
+	@param storyUID the story.
+	@param index the character. An index past the end has no wax line and answers kFalse.
+	@param outPb [out] the point. Untouched when this answers kFalse.
+	@return kFalse when the story is not there, or that position is OVERSET or in no frame -
+		callers fall back to KESCMStoryStartPoint.
+*/
+bool16 KESCMStoryPointAt(IDataBase* db, UID storyUID, TextIndex index, PBPMPoint& outPb);
+
 namespace KESCMStoryList
 {
 	/** Replace the list with one row per entry in diffs, each read out of the document that holds it.

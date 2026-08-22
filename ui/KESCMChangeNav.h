@@ -74,6 +74,16 @@ void KESCMRefreshNavPosition();
 //     フレームなら Pages パネルは動かない)
 //   ・★Prev/Next の巡回位置「k/N」には影響しない(別の動線なので基準点を動かさない)
 // 戻り値: 1つでもビューをスクロールできたら kTrue。実体は KESCMChangeNav.cpp。
-bool16 KESCMGotoStoryFrame(IDataBase* db, UID frameUID, UID pageUID, UID storyUID);
+//
+// ★★focusIndex / sourceFocusIndex (2026-08-22 ユーザー要望)＝渡すと「ストーリーの書き出し」ではなく
+//   **その文字**(キャレットが立つ位置)を画面中央に置く。★**両側を別々に受ける**のは、同じ編集でも
+//   新旧で文字位置が違うから＝Change の fTargetStart / fSourceStart をそのまま渡す。
+//   ⚠kInvalidTextIndex(既定)なら従来どおりストーリーの書き出しへ＝**親のストーリー行はこれで呼ぶ**
+//     (行が指しているのがストーリーそのものなので)。
+//   ⚠**呼び手は db(新側)に IDataBase::SaveRestoreModifiedState を持つこと**＝点を出すのに組版が要り、
+//     組版は文書を dirty にする(IKESCMStoryEditsFacade::GetStoryPointAt)。
+//     ★**旧側のガードはこの関数が自分で持つ**＝旧文書に触るのはここだけなので。
+bool16 KESCMGotoStoryFrame(IDataBase* db, UID frameUID, UID pageUID, UID storyUID,
+	TextIndex focusIndex = kInvalidTextIndex, TextIndex sourceFocusIndex = kInvalidTextIndex);
 
 #endif // __KESCMChangeNav_h__

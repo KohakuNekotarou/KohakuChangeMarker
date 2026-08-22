@@ -217,6 +217,24 @@ public:
 		@return kFalse when there is no such story, or none of its parcels are placed -- callers
 			fall back to centring GetFirstFrameUID's frame. */
 	virtual bool16	GetStoryStartPoint(IDataBase* db, UID storyUID, UID& outFrame, PBPMPoint& outPb) = 0;
+
+	/** Where one CHARACTER of a story sits, in pasteboard coordinates - what a jump to a change
+		centres on, rather than the story's beginning above (user's request, 2026-08-22).
+
+		★The point is where the CARET would stand in front of that character, and vertically the
+		middle of its line. Ported from KBSJump.cpp, which carries the same recipe from KESCL - see
+		the implementation in KESCMStoryList.cpp for what the two earlier copies paid for.
+
+		⚠★★UNLIKE EVERY OTHER READ ON THIS BOUNDARY, THIS ONE CAN DIRTY THE DOCUMENT: where a
+		  character sits is a result of composition, so an out-of-date composition has to be brought
+		  up to date before the question means anything. **The caller holds a
+		  IDataBase::SaveRestoreModifiedState.**
+
+		@param index the character. Past the end, or overset, answers kFalse.
+		@param outPb [out] untouched when this answers kFalse.
+		@return kFalse when there is no such position to point at - callers fall back to
+			GetStoryStartPoint. */
+	virtual bool16	GetStoryPointAt(IDataBase* db, UID storyUID, TextIndex index, PBPMPoint& outPb) = 0;
 };
 
 #endif // __IKESCMStoryEditsFacade_h__

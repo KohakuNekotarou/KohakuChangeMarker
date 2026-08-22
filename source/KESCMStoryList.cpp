@@ -14,13 +14,20 @@
 #include "IDataBase.h"
 #include "IComposeScanner.h"
 #include "IFrameList.h"
+#include "IFrameListComposer.h"	// RecomposeThruLastFrame - the wax read below is a RESULT of composition
 #include "IGeometry.h"			// the frame's inner->pasteboard matrix, for where a story begins
 #include "IPageList.h"
 #include "IParcelList.h"		// GetFirstParcelKey / GetNextParcelKey / GetParcelToFrameMatrix
 #include "ITextModel.h"
 #include "ITextParcelList.h"	// QueryTextParcelList - the parcels a story flows through
+#include "IWaxGlyphs.h"			// GetEscapementAt - how far into the run one character sits
+#include "IWaxIterator.h"		// GetFirstWaxLine - the line a TextIndex was composed onto
+#include "IWaxLine.h"
+#include "IWaxRun.h"			// GetToPasteboardMatrix
+#include "IWaxStrand.h"
 
 // General includes:
+#include "K2SmartPtr.h"			// K2::scoped_ptr - what NewWaxIterator hands back has to be deleted
 #include "PMMatrix.h"
 #include "PMRect.h"				// GetParcelBounds - the leading corner comes off this
 #include "TextChar.h"			// kTextChar_Space - the boundary the readability test draws its line at
@@ -326,6 +333,103 @@ bool16 KESCMStoryStartPoint(IDataBase* db, UID storyUID, UID& outFrame, PBPMPoin
 		return kTrue;
 	}
 	return kFalse;
+}
+
+/* KESCMStoryPointAt (declared in KESCMStoryList.h)
+
+	Where ONE character of a story sits on the pasteboard - what a jump to a change needs, as
+	against KESCMStoryStartPoint above, which answers where the whole story begins.
+
+	★★★PORTED FROM KBSJump.cpp (user's pointer, 2026-08-22: "KBS には検索結果に飛ぶのがあるので
+	  それを参考にしてもらっていいかも"). KBS's own copy says "ported from KESCLFindInDoc", so this
+	  is the third plug-in in this family to carry the same recipe, and the two before it have
+	  already paid for the corrections written into it - the overset test, and the recompose.
+	  ⇒ The shape is theirs on purpose: GetFirstWaxLine -> QueryRunByTextOffset ->
+	    GetEscapementAt -> GetToPasteboardMatrix.
+
+	★★COMPOSITION IS BROUGHT UP TO DATE FIRST, AND THAT IS THE ONE DIFFERENCE FROM ITS NEIGHBOUR.
+	  KESCMStoryFirstFrameUID says, in as many words, that it deliberately does NOT compose - and it
+	  is right to, because it asks which parcels EXIST, which composition does not decide. This asks
+	  where a character was PUT, which is nothing but a result of composition: read without
+	  composing and the answer is wherever that character stood before the last edit.
+	  The recipe is the SDK's (IFrameList::GetFirstDamagedFrameIndex() != -1 ->
+	  IFrameListComposer::RecomposeThruLastFrame, SnpInspectTextModel.cpp:724-733); KESCM already
+	  spells it the same way where it asks about overset (KESCMOversetScan.cpp).
+	  ⚠**COMPOSING DIRTIES THE DOCUMENT**, so the caller must hold a
+	    IDataBase::SaveRestoreModifiedState. That is a change of contract for the jump path, which
+	    measured itself clean in 2026-08-18 precisely because nothing on it touched the model -
+	    and its own comment says to measure again if anything ever did. This is that thing.
+
+	@param index the character to find. Clamped by the caller; an index past the end simply has no
+		wax line and answers kFalse.
+	@param outPb [out] the middle of that character's line, in pasteboard coordinates. Untouched
+		when this answers kFalse.
+	@return kFalse when the story is not there, the position is OVERSET or in no frame, or the
+		text has not been composed and cannot be - callers fall back to the story's start.
+*/
+bool16 KESCMStoryPointAt(IDataBase* db, UID storyUID, TextIndex index, PBPMPoint& outPb)
+{
+	if (db == nil || storyUID == kInvalidUID || index < 0)
+		return kFalse;
+
+	InterfacePtr<ITextModel> textModel(db, storyUID, UseDefaultIID());
+	if (textModel == nil)
+		return kFalse;
+
+	InterfacePtr<IWaxStrand> waxStrand((IWaxStrand*)textModel->QueryStrand(kFrameListBoss, IID_IWAXSTRAND));
+	if (waxStrand == nil)
+		return kFalse;
+
+	InterfacePtr<IFrameList> frameList(waxStrand, UseDefaultIID());
+	if (frameList != nil && frameList->GetFirstDamagedFrameIndex() != -1)
+	{
+		InterfacePtr<IFrameListComposer> composer(frameList, UseDefaultIID());
+		if (composer != nil)
+			composer->RecomposeThruLastFrame();
+	}
+
+	K2::scoped_ptr<IWaxIterator> waxIter(waxStrand->NewWaxIterator());
+	if (waxIter == nil)
+		return kFalse;
+
+	int32 offsetInLine = 0;
+	IWaxLine* waxLine = waxIter->GetFirstWaxLine(index, &offsetInLine);
+	if (waxLine == nil)
+		return kFalse;			// overset, or not placed at all - there is no "where" to answer with
+
+	// Which run holds that character, and how far into the run it is. ★The escapement is measured
+	// up to the glyph BEFORE it, which is the start of the character rather than its far edge.
+	int32 glyphOffset = -1;
+	InterfacePtr<IWaxRun> waxRun(waxLine->QueryRunByTextOffset(offsetInLine, &glyphOffset));
+	if (waxRun == nil)
+		return kFalse;
+
+	PMReal x(0.0);
+	if (glyphOffset > 0)
+	{
+		InterfacePtr<IWaxGlyphs> waxGlyphs(waxRun, UseDefaultIID());
+		if (waxGlyphs != nil)
+			x = waxGlyphs->GetEscapementAt(glyphOffset - 1);
+	}
+
+	// ★THE RUN'S OWN MATRIX DOES THE WORK, and it is why this follows vertical text and rotated
+	//   frames without a single branch: the run reports its position in its own space, and the
+	//   matrix is what that space means on the pasteboard. (The same reason the Story marker draws
+	//   correctly in vertical text - KESCMStoryMarker.cpp.)
+	const PMMatrix toPasteboard = waxRun->GetToPasteboardMatrix();
+
+	// Up and down from the baseline, as fractions of the line height - the proportions KBS settled
+	// on. The midpoint of the two is what gets centred, so that the line, and not its baseline,
+	// lands in the middle of the window.
+	const PMReal lineHeight = waxLine->GetLineHeight();
+	PMPoint above(x, -lineHeight * PMReal(0.95));
+	PMPoint below(x,  lineHeight * PMReal(0.2));
+	toPasteboard.Transform(&above);
+	toPasteboard.Transform(&below);
+
+	outPb = PBPMPoint((above.X() + below.X()) / PMReal(2.0),
+					  (above.Y() + below.Y()) / PMReal(2.0));
+	return kTrue;
 }
 
 /* ReadRowFromDocument

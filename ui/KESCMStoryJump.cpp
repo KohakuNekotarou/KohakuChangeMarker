@@ -509,7 +509,21 @@ bool16 KESCMStoryJumpToChange(int32 rowIndex, int32 changeIndex)
 	const UID pageUID = (pageRef.GetDataBase() != nil) ? pageRef.GetUID() : row.fPageUID;
 
 	// Both windows move here - the target to this frame, the source to the same story.
-	const bool16 moved = KESCMGotoStoryFrame(db, frameUID, pageUID, row.fStoryUID);
+	//
+	// ★★★AND BOTH LAND ON THE EDIT ITSELF, NOT ON THE TOP OF THE STORY (user's request, 2026-08-22:
+	//   "変更された部分の一番最初の部分がレイアウトビューの真ん中に移動して欲しい" - what was arriving
+	//   in the middle of the window was the story's first character, which for a long story is
+	//   nowhere near what the row is pointing at). The point centred is where the CARET stands in
+	//   front of the first changed character (user's words: "その前の縦のピコピコした線が出る部分").
+	// ⚠★★THE TWO SIDES GET DIFFERENT NUMBERS. The same edit sits at a different character position
+	//   in each version, and the diff has already worked both out - so the older window is told
+	//   fSourceStart rather than being handed the target's index (which would name some unrelated
+	//   character over there). ⇒ This is also what finally settles the "第1段" caveat in KESCMID.h
+	//   ⑬: the source window now reaches the corresponding CHARACTER, not just the same story.
+	// ⚠fHasSource IS THE QUESTION for the older side - an insertion has nothing there to centre, so
+	//   that window keeps doing what it did before (the story's start).
+	const TextIndex sourceFocus = change.fHasSource ? change.fSourceStart : kInvalidTextIndex;
+	const bool16 moved = KESCMGotoStoryFrame(db, frameUID, pageUID, row.fStoryUID, from, sourceFocus);
 
 	// ***** AND LIGHT THE CHARACTERS UP FOR A MOMENT. *****
 	//
