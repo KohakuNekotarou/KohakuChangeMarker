@@ -20,9 +20,9 @@
 #include "ISelectionManager.h"		// DeselectAll / SelectionExists - clearing before selecting
 #include "ISelectionUtils.h"		// QueryActiveSelection (the front document's) /
 									//  QueryViewSelectionManager (any document's) / ActivateView
-#include "IFrameList.h"				// QueryFrameContaining - which frame an edit falls in (2026-08-20)
-#include "IHierarchy.h"				// GetParentUID - a text column's frame is its parent
-#include "ITextFrameColumn.h"
+// (IFrameList.h / IHierarchy.h / ITextFrameColumn.h stood here for the "which frame is this edit
+//  in" walk. That walk moved to the model side on 2026-08-22 so that it composes before it answers
+//  - see KESCMStoryJumpToChange - and nothing else in this file needed them.)
 #include "ITextModel.h"
 #include "ITextSelectionSuite.h"	// SetTextSelection - the double click's whole point
 #include "ITextUtils.h"				// GetPageUIDRef - which page that frame is on
@@ -478,27 +478,22 @@ bool16 KESCMStoryJumpToChange(int32 rowIndex, int32 changeIndex)
 
 	// ***** THE FRAME THE EDIT IS IN, not the story's first one. ***** A story threaded across
 	// several frames has its first frame nowhere near an edit late in it.
+	//
+	// ★★★2026-08-22 (bug recheck): THE WALK MOVED TO THE MODEL SIDE, WHICH COMPOSES BEFORE IT
+	//   ANSWERS. It was written out here, and it ran before anything had recomposed - so for a story
+	//   whose composition was out of date it named a frame from the OLD composition, while
+	//   GetStoryPointAt (further down, inside KESCMGotoStoryFrame) composed and answered from the
+	//   NEW one. The two then disagreed about which SPREAD, and a pasteboard point is
+	//   spread-relative: the window does not land slightly off, it lands on another page.
+	//   ⚠The sharper form of the same fault: text that was overset before the recompose made this
+	//     walk fall back to the story's first frame, while the point succeeded on a spread far away.
+	//   ⇒ Both readings now come from one composition, and THE SOURCE SIDE ASKS THE VERY SAME WAY
+	//     (KESCMChangeNav.cpp) - where it used to be handed the story's first frame and nothing else.
 	// ⚠The fallback is the story's first frame (what a story row uses), for a story whose frame list
 	//   cannot answer - an unplaced story has none at all.
-	UID frameUID = row.fFrameUID;
-	InterfacePtr<IFrameList> frameList(model->QueryFrameList());
-	if (frameList != nil)
-	{
-		int32 frameIndex = 0;
-		InterfacePtr<ITextFrameColumn> column(frameList->QueryFrameContaining(from, &frameIndex));
-		if (column != nil)
-		{
-			// ★The frame the reader sees is the column's PARENT: a text frame's geometry lives on
-			//   the item, and the column is what holds the text inside it.
-			InterfacePtr<IHierarchy> columnHierarchy(column, UseDefaultIID());
-			if (columnHierarchy != nil)
-			{
-				const UID parentUID = columnHierarchy->GetParentUID();
-				if (parentUID != kInvalidUID)
-					frameUID = parentUID;
-			}
-		}
-	}
+	UID frameUID = Utils<IKESCMStoryEditsFacade>()->GetStoryFrameAt(db, row.fStoryUID, from);
+	if (frameUID == kInvalidUID)
+		frameUID = row.fFrameUID;
 	if (frameUID == kInvalidUID)
 		return kFalse;		// nothing placed - nowhere to go, and the story row says so already
 

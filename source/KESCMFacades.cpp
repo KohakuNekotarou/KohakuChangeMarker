@@ -435,6 +435,8 @@ public:
 					{ return KESCMStoryStartPoint(db, storyUID, outFrame, outPb); }
 	virtual bool16	GetStoryPointAt(IDataBase* db, UID storyUID, TextIndex index, PBPMPoint& outPb)
 					{ return KESCMStoryPointAt(db, storyUID, index, outPb); }
+	virtual UID		GetStoryFrameAt(IDataBase* db, UID storyUID, TextIndex index)
+					{ return KESCMStoryFrameAt(db, storyUID, index); }
 };
 
 CREATE_PMINTERFACE(KESCMStoryEditsFacade, kKESCMStoryEditsFacadeImpl)

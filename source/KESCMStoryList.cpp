@@ -16,8 +16,10 @@
 #include "IFrameList.h"
 #include "IFrameListComposer.h"	// RecomposeThruLastFrame - the wax read below is a RESULT of composition
 #include "IGeometry.h"			// the frame's inner->pasteboard matrix, for where a story begins
+#include "IHierarchy.h"			// GetParentUID - a text column's frame is its parent (2026-08-22)
 #include "IPageList.h"
 #include "IParcelList.h"		// GetFirstParcelKey / GetNextParcelKey / GetParcelToFrameMatrix
+#include "ITextFrameColumn.h"	// what QueryFrameContaining hands back (2026-08-22)
 #include "ITextModel.h"
 #include "ITextParcelList.h"	// QueryTextParcelList - the parcels a story flows through
 #include "IWaxGlyphs.h"			// GetEscapementAt - how far into the run one character sits
@@ -360,33 +362,104 @@ bool16 KESCMStoryStartPoint(IDataBase* db, UID storyUID, UID& outFrame, PBPMPoin
 	    measured itself clean in 2026-08-18 precisely because nothing on it touched the model -
 	    and its own comment says to measure again if anything ever did. This is that thing.
 
-	@param index the character to find. Clamped by the caller; an index past the end simply has no
-		wax line and answers kFalse.
+	@param index the character to find. ★AN INDEX OUTSIDE THE STORY AS IT STANDS NOW IS REFUSED
+		HERE, not passed on to the text engine. It used to say "clamped by the caller", and one of
+		the two callers could not honour that: the source side is handed Change::fSourceStart, a
+		number the diff worked out against the OLDER document, which nobody had measured against
+		that document's present length (2026-08-22 bug recheck). ⇒ The check belongs where the
+		length is already in hand, and both callers are covered by one line.
 	@param outPb [out] the middle of that character's line, in pasteboard coordinates. Untouched
 		when this answers kFalse.
 	@return kFalse when the story is not there, the position is OVERSET or in no frame, or the
 		text has not been composed and cannot be - callers fall back to the story's start.
 */
+/* KESCMRecomposeIfDamaged
+   Bring a frame list's composition up to date, if it is not already.
+
+   ★★TWO QUESTIONS IN THIS FILE ARE READINGS OF THE COMPOSITION AND THEY MUST READ THE SAME ONE:
+   where a character sits (KESCMStoryPointAt) and which frame holds it (KESCMStoryFrameAt). A jump
+   uses both - one to choose the spread, the other to choose the point inside it - so if only one of
+   them composes, the two answers come from different compositions and the view is scrolled to a
+   point that belongs to a different spread (2026-08-22 bug recheck; the target path did exactly
+   this, resolving the frame BEFORE the point composed).
+   ⇒ Both go through here, and the caller of either composes before it asks anything else.
+   ★KBS says the same thing from the other end: GetFirstChunkPasteboardRect assumes its caller has
+   already recomposed, "and so is the overset test the caller made, so both have to be looking at
+   the same one".
+   ⚠**COMPOSING DIRTIES THE DOCUMENT** - every caller holds a IDataBase::SaveRestoreModifiedState.
+*/
+static void KESCMRecomposeIfDamaged(IFrameList* frameList)
+{
+	if (frameList == nil || frameList->GetFirstDamagedFrameIndex() == -1)
+		return;
+	InterfacePtr<IFrameListComposer> composer(frameList, UseDefaultIID());
+	if (composer != nil)
+		composer->RecomposeThruLastFrame();
+}
+
+/* KESCMStoryFrameAt (declared in KESCMStoryList.h)
+
+	★WHY THIS IS NOT KESCMStoryFirstFrameUID. That one answers where a story STARTS, which is the
+	right frame for a row that names a story. This answers where one CHARACTER is, which is the right
+	frame for a row that names an edit - and in a story threaded across several spreads the two are
+	nowhere near each other. The jump needs this one to choose which spread to bring into view, and
+	pasteboard coordinates are spread-relative, so choosing the wrong spread does not put the reader
+	slightly off: it puts them on another page entirely.
+
+	★IT RETURNS THE PAGE ITEM, NOT THE TEXT COLUMN. QueryFrameContaining hands back the column that
+	holds the text; the frame the reader sees, and the thing with the geometry, is the column's
+	parent (IHierarchy). ⚠This is a real difference from KESCMStoryFirstFrameUID, which returns
+	GetNthFrameUID(0) - a column UID.
+*/
+UID KESCMStoryFrameAt(IDataBase* db, UID storyUID, TextIndex index)
+{
+	if (db == nil || storyUID == kInvalidUID || index < 0)
+		return kInvalidUID;
+
+	InterfacePtr<ITextModel> textModel(db, storyUID, UseDefaultIID());
+	if (textModel == nil || index > textModel->TotalLength())
+		return kInvalidUID;		// no such story here, or no such position in it any more
+
+	// ⚠THE TEST IS `>` AND NOT `>=`, DELIBERATELY. TotalLength is a valid TextIndex - it is where the
+	//   caret stands after the last character, and a deletion at the very end of a story is reported
+	//   at exactly that position. Refusing it would send those rows to the story's beginning instead
+	//   of to the frame the edit is in. What is being kept out is an index from ANOTHER length: the
+	//   diff measured the older document as it was, and it may have been edited since.
+
+	InterfacePtr<IFrameList> frameList(textModel->QueryFrameList());
+	if (frameList == nil)
+		return kInvalidUID;
+
+	KESCMRecomposeIfDamaged(frameList);
+
+	int32 frameIndex = 0;
+	InterfacePtr<ITextFrameColumn> column(frameList->QueryFrameContaining(index, &frameIndex));
+	if (column == nil)
+		return kInvalidUID;		// overset, or placed nowhere - the caller keeps its own fallback
+
+	InterfacePtr<IHierarchy> columnHierarchy(column, UseDefaultIID());
+	if (columnHierarchy == nil)
+		return kInvalidUID;
+
+	return columnHierarchy->GetParentUID();		// kInvalidUID is already the "no answer" value
+}
+
 bool16 KESCMStoryPointAt(IDataBase* db, UID storyUID, TextIndex index, PBPMPoint& outPb)
 {
 	if (db == nil || storyUID == kInvalidUID || index < 0)
 		return kFalse;
 
 	InterfacePtr<ITextModel> textModel(db, storyUID, UseDefaultIID());
-	if (textModel == nil)
-		return kFalse;
+	if (textModel == nil || index > textModel->TotalLength())
+		return kFalse;		// see the @param note above: neither caller can clamp this for us.
+							// ⚠`>`, not `>=` - the reason is written out in KESCMStoryFrameAt.
 
 	InterfacePtr<IWaxStrand> waxStrand((IWaxStrand*)textModel->QueryStrand(kFrameListBoss, IID_IWAXSTRAND));
 	if (waxStrand == nil)
 		return kFalse;
 
 	InterfacePtr<IFrameList> frameList(waxStrand, UseDefaultIID());
-	if (frameList != nil && frameList->GetFirstDamagedFrameIndex() != -1)
-	{
-		InterfacePtr<IFrameListComposer> composer(frameList, UseDefaultIID());
-		if (composer != nil)
-			composer->RecomposeThruLastFrame();
-	}
+	KESCMRecomposeIfDamaged(frameList);
 
 	K2::scoped_ptr<IWaxIterator> waxIter(waxStrand->NewWaxIterator());
 	if (waxIter == nil)

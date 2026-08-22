@@ -53,10 +53,17 @@ bool16 KESCMStoryJumpToRow(int32 rowIndex);
 	actually falls in - which in a threaded story is often not the first frame at all.
 
 	★THE OLDER DOCUMENT'S WINDOW COMES TOO, aimed at the same story (KESCMGotoStoryFrame does that
-	part, exactly as it does for a story row). ⚠It is aimed at the STORY over there, not at the
-	matching character: the source-side TextIndex is known (the diff worked it out), but turning an
-	index into a frame on the source side needs the same walk again, and the value of doing it is
-	that the reader sees the old wording - which they do as soon as the story is on screen.
+	part, exactly as it does for a story row).
+	★★AND SINCE 2026-08-22 IT REACHES THE MATCHING CHARACTER, not just the story. The source-side
+	TextIndex is Change::fSourceStart - a DIFFERENT number from this side's, because the same edit
+	sits in a different place in each version. ⚠This note used to say the older side stopped at the
+	story because "turning an index into a frame on the source side needs the same walk again" - and
+	that walk is exactly what was missing when the point was added: the older window was given the
+	story's FIRST frame to choose a spread by, so an edit further down a threaded story scrolled it
+	to a point belonging to another spread (bug recheck 2026-08-22). Both sides now ask
+	IKESCMStoryEditsFacade::GetStoryFrameAt.
+	⚠An INSERTION has no older side (fHasSource is kFalse), and that window keeps doing what it did
+	before - the story's beginning.
 
 	★THE ACTIVE TOOL IS LEFT ALONE, and so is the reader's own selection. Both used to change here,
 	because both are the price of making a text selection; a mark costs neither. (The tool DOES go on

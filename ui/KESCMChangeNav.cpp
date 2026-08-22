@@ -774,9 +774,14 @@ static bool16 KESCMScrollDocToStoryStart(IDataBase* db, UID storyUID, UID fallba
 		PBPMPoint focusPb;
 		if (Utils<IKESCMStoryEditsFacade>()->GetStoryPointAt(db, storyUID, focusIndex, focusPb))
 		{
-			// ★スプレッドを出すのに使うフレームは**呼び手が渡したもの**＝変更箇所を含むフレーム
-			//   (KESCMStoryJumpToChange が QueryFrameContaining で解決済み)。ストーリーの先頭フレームでは
-			//   ないので、連結ストーリーが複数ページにまたがっていても正しいページが出る。
+			// ★★スプレッドを出すのに使うフレームは**呼び手が渡したもの**＝変更箇所を含むフレームで
+			//   なければならない。**ペーストボード座標はスプレッドごと**なので、別のスプレッドを出した
+			//   まま点へ寄せると「少しずれる」ではなく**別のページに着く**。
+			//   ⚠★★★2026-08-22(不具合再検査)＝**この但し書きは、書かれた時点で片方の呼び手でしか
+			//     成立していなかった**。新側(KESCMStoryJumpToChange)は解決済みのフレームを渡していたが、
+			//     旧側(下の Source 分岐)は `GetFirstFrameUID`＝**ストーリーの先頭フレーム**を渡していた
+			//     ⇒ 連結ストーリーの後ろの方が変わっていると、旧版の窓だけ無関係な場所へ飛んでいた。
+			//     **今は両方の呼び手が `GetStoryFrameAt` で同じ問いを出す**([[one-question-one-place]])。
 			outFrame = fallbackFrameUID;
 			KESCMEnsureSpreadInView(db, fallbackFrameUID);
 			return KESCMScrollDocToPBPoint(db, focusPb, applyZoom);
@@ -940,14 +945,31 @@ bool16 KESCMGotoStoryFrame(IDataBase* db, UID frameUID, UID pageUID, UID storyUI
 	IDataBase* sourceDB = marks->GetMarkedSourceDB();
 	if (sourceDB != nil && sourceDB != db && storyUID != kInvalidUID)
 	{
-		// ⚠★★旧側にも dirty ガードが要る(2026-08-22)。sourceFocusIndex を渡すと、その文字の位置を
-		//   出すために**旧文書の組版**が最新化されることがあり、組版は文書を汚す
-		//   (IKESCMStoryEditsFacade::GetStoryPointAt)。新側のガードは呼び手が持っているが、
-		//   **旧文書に触るのはこの関数だけなので、ここが持つ**。
+		// ⚠★★旧側にも dirty ガードが要る(2026-08-22)。sourceFocusIndex を渡すと、その文字の位置と
+		//   その文字を載せているフレームを出すために**旧文書の組版**が最新化されることがあり、
+		//   組版は文書を汚す(IKESCMStoryEditsFacade::GetStoryPointAt / GetStoryFrameAt)。
+		//   新側のガードは呼び手が持っているが、**旧文書に触るのはこの関数だけなので、ここが持つ**。
 		//   ★焦点を渡さない経路(親のストーリー行)では組版は起きないので、このガードは何もしない。
 		IDataBase::SaveRestoreModifiedState sourceDirtyGuard(sourceDB);
 
 		UID srcFrame = Utils<IKESCMStoryEditsFacade>()->GetFirstFrameUID(sourceDB, storyUID);
+
+		// ★★★**旧側も「変更箇所を含むフレーム」を引く**(2026-08-22 の不具合再検査)。
+		//   上の GetFirstFrameUID が返すのは**ストーリーの先頭フレーム**で、行が指しているのが
+		//   ストーリーそのもの(親の行)ならそれで正しい ---- が、**変更箇所へ寄せるときにそれで
+		//   スプレッドを決めると、連結ストーリーの後ろの方の変更で別のスプレッドを出してしまう**。
+		//   ペーストボード座標はスプレッドごとなので、着地は「少しずれる」ではなく別のページになる。
+		//   ⇒ 新側(KESCMStoryJumpToChange)とまったく同じ問いを、同じ口へ出す。
+		//   ⚠採れなければ先頭フレームのまま＝従来どおりの動きに落ちる(overset・未配置・比較後に
+		//     旧文書が短くなった場合はいずれもここへ来る)。
+		if (sourceFocusIndex != kInvalidTextIndex)
+		{
+			const UID srcFocusFrame =
+				Utils<IKESCMStoryEditsFacade>()->GetStoryFrameAt(sourceDB, storyUID, sourceFocusIndex);
+			if (srcFocusFrame != kInvalidUID)
+				srcFrame = srcFocusFrame;
+		}
+
 		if (srcFrame != kInvalidUID)
 		{
 			// ★Sync layout views が ON のときは Source を手動で動かさない ---- Sync のオブザーバ

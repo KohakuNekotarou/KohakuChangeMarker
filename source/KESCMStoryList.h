@@ -255,12 +255,42 @@ bool16 KESCMStoryStartPoint(IDataBase* db, UID storyUID, UID& outFrame, PBPMPoin
 
 	@param db which document to ask - either version; the caller picks.
 	@param storyUID the story.
-	@param index the character. An index past the end has no wax line and answers kFalse.
+	@param index the character. ★An index outside the story AS IT STANDS NOW answers kFalse here,
+		rather than relying on the caller to clamp it - see the implementation for which caller
+		could not (2026-08-22 bug recheck).
 	@param outPb [out] the point. Untouched when this answers kFalse.
 	@return kFalse when the story is not there, or that position is OVERSET or in no frame -
 		callers fall back to KESCMStoryStartPoint.
 */
 bool16 KESCMStoryPointAt(IDataBase* db, UID storyUID, TextIndex index, PBPMPoint& outPb);
+
+/** Which frame holds ONE character of a story - the frame a jump to a CHANGE has to bring into
+	view, as against KESCMStoryFirstFrameUID above, which answers where the story STARTS.
+
+	★★WHY A JUMP NEEDS THIS AND NOT THE FIRST FRAME. Pasteboard coordinates are spread-relative, so
+	the view has to be showing the right spread before a point means anything (KESCMChangeNav.cpp's
+	KESCMEnsureSpreadInView says so in as many words). In a story threaded across several spreads,
+	the first frame names the wrong spread for any edit that is not in it - and the scroll then lands
+	on another page entirely rather than slightly off (2026-08-22 bug recheck: the source window did
+	exactly this, because it had only ever been given the story's first frame).
+
+	★★IT COMPOSES FIRST, and so must anything else the same jump asks: the frame a character is in
+	and the point it sits at are both readings of the composition, and a jump that takes one from
+	each of two different compositions scrolls to a point that belongs somewhere else.
+
+	★RETURNS THE PAGE ITEM, not the text column - unlike KESCMStoryFirstFrameUID, which returns a
+	column UID. The column is what holds the text; its parent is the frame with the geometry.
+
+	⚠★★THE CALLER MUST HOLD A IDataBase::SaveRestoreModifiedState, for the same reason
+	  KESCMStoryPointAt's caller must: composing dirties the document.
+
+	@param db which document to ask - either version; the caller picks.
+	@param storyUID the story.
+	@param index the character. Outside the story as it stands now answers kInvalidUID.
+	@return kInvalidUID when there is no such story, no such character, or the character is OVERSET
+		or in no frame - callers keep whatever fallback frame they already had.
+*/
+UID KESCMStoryFrameAt(IDataBase* db, UID storyUID, TextIndex index);
 
 namespace KESCMStoryList
 {

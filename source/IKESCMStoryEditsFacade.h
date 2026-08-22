@@ -230,11 +230,36 @@ public:
 		  up to date before the question means anything. **The caller holds a
 		  IDataBase::SaveRestoreModifiedState.**
 
-		@param index the character. Past the end, or overset, answers kFalse.
+		@param index the character. Outside the story as it stands NOW, or overset, answers kFalse -
+			the check is made on this side, because the source-side caller is handed an index the
+			diff worked out and has no length to measure it against (2026-08-22 bug recheck).
 		@param outPb [out] untouched when this answers kFalse.
 		@return kFalse when there is no such position to point at - callers fall back to
 			GetStoryStartPoint. */
 	virtual bool16	GetStoryPointAt(IDataBase* db, UID storyUID, TextIndex index, PBPMPoint& outPb) = 0;
+
+	/** Which frame holds one CHARACTER of a story - the frame a jump to a change has to bring into
+		view, as against GetFirstFrameUID above, which answers where the story starts
+		(2026-08-22 bug recheck).
+
+		★★WHY BOTH THIS AND GetStoryPointAt ARE NEEDED FOR ONE JUMP, and why they are asked
+		  together: pasteboard coordinates are spread-relative, so a jump has to put the right
+		  SPREAD on screen (this) before centring the POINT (that one). Taking the frame from
+		  anywhere else - the story's first frame, or a frame resolved before the composition was
+		  brought up to date - scrolls the window to a point belonging to a different spread, which
+		  is not a small error but another page.
+
+		★Returns the page item, not the text column. ⚠GetFirstFrameUID returns a column UID; these
+		  two are NOT interchangeable.
+
+		⚠★★LIKE GetStoryPointAt, THIS CAN DIRTY THE DOCUMENT - it composes if the composition is
+		  out of date, and it must, for the reason above. **The caller holds a
+		  IDataBase::SaveRestoreModifiedState.**
+
+		@param index the character. Outside the story as it stands now answers kInvalidUID.
+		@return kInvalidUID when there is no such story or character, or it is overset or in no
+			frame - callers keep the fallback frame they already had. */
+	virtual UID		GetStoryFrameAt(IDataBase* db, UID storyUID, TextIndex index) = 0;
 };
 
 #endif // __IKESCMStoryEditsFacade_h__

@@ -340,9 +340,12 @@ void KESCMTrackerRevealEnd()
 	//   (向こうが自分で覚えている)＝Pixel モードで押して離しても、ジャンプが出した一時マーカーは消えない。
 	KESCMStoryPressMarksEnd();
 
-	// 「Hold to Hide Marks」で押下中に隠していた常時表示の枠を戻す(離すと再表示)。押した窓に応じて
-	// Target/Source どちらか(または両方)が立っている。モード OFF なら両方 kFalse なので無影響
-	// (旧・中ボタン解放時の temp-hide 復元と同一)。
+	// 押下中に隠していた常時表示の枠を戻す(離すと再表示)＝「押している間は反対になる」の戻り側。
+	// 押した窓に応じて Target/Source どちらか(または両方)が立っている。その窓のトグルが OFF なら
+	// そもそも立たないので無影響(旧・中ボタン解放時の temp-hide 復元と同一)。
+	// ⚠2026-08-22＝旧記述は「『Hold to Hide Marks』で隠していた」と書いていたが、**あのトグルは
+	//   同日に撤去された**。立てる条件は各「Show Marks on ...」トグル自身へ移っている
+	//   (KESCMTrackerRevealBegin)。
 	InterfacePtr<IKESCMCompareFacade> compare(Utils<IKESCMCompareFacade>().QueryUtilInterface());
 	if (compare->GetMarksTempHidden())
 	{
