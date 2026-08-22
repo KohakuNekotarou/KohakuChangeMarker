@@ -446,13 +446,17 @@ void KESCMStoryMarkerAdornment::Draw(GraphicsData* gd, int32 iShapeFlags, const 
 	// ★HOW MUCH OF THE INVERSION TO APPLY - the panel's "Marks opacity 25% / 75%", which the press
 	//   reads once and hands over (KESCMStoryPressMarks). The jump's own mark passes 1.0, so it
 	//   still lands at full strength.
-	// ⚠MEASURED, NOT ASSUMED, THAT THIS IS WORTH ASKING FOR: setopacity is silently ignored by a
-	//   global text adornment when the drawing is going to PDF (KT, 2026-08-19 - three ways of
-	//   asking came out pixel-identical). That measurement was of the EXPORT path; this mark is
-	//   screen-only by GetIsActive, and the screen was never measured. If it turns out to be
-	//   ignored here as well, the fallback is to grey the blend colour instead: with Difference,
-	//   painting (a,a,a) lands on 1-a over white and a over black, which is where an alpha of a
-	//   would have put it.
+	// ★★★AND IT WORKS ON SCREEN, WHERE THE EXPORT PATH DOES NOT (measured 2026-08-22). setopacity
+	//   is silently ignored by a global text adornment when the drawing is going to PDF - KT asked
+	//   three different ways on 2026-08-19 and all three came out pixel-identical - and that was
+	//   the only measurement anyone had. It was of the EXPORT path. This mark is screen-only by
+	//   GetIsActive, and switching the panel between 25% and 75% visibly changes how strong the
+	//   inversion is (confirmed on the running application).
+	//   ⇒ The line is not "opacity does nothing on a text adornment" but "it does not survive being
+	//     written out". ★The fallback written for the other outcome is recorded here rather than
+	//     deleted, because the same question returns the moment anything asks for this mark on
+	//     paper: with Difference, painting (a,a,a) lands on 1-a over white and a over black, which
+	//     is where an alpha of a would have put it.
 	if (gMarkOpacity < PMReal(1.0))
 		gPort->setopacity(gMarkOpacity, kFalse);
 
