@@ -230,10 +230,19 @@ public:
 	// 常に kFalse で無影響(そちらは「押下中だけ出す」reveal が動く)。
 	// ★これは Target 窓上でツール左ボタンを押したときだけ立てる(押した窓の枠だけ隠す=ウィンドウ別)。
 	static bool16 sMarksTempHidden;
-	// sMarksTempHidden の Source 版。「Show Marks on Source」ON のとき、
-	// Source のレイアウト窓上でツール左ボタンを押している間だけ kTrue(その間だけ Source 側の常時表示枠を画面で隠す)。
+	// ★★Source のレイアウト窓上でツール左ボタンを押している**間だけ** kTrue。
+	//
+	// ⚠★★★これは sMarksTempHidden の Source 版**ではない**(2026-08-22 に意味を変えた)。あちらは
+	//   「隠している」を覚えているが、こちらが覚えているのは「**押している**」だけで、それを見て
+	//   何を出すかは描画側が sSrcMarksOn と **XOR** して決める。⇒ **トグル OFF の Source 窓を押せば
+	//   枠が出て、ON の窓を押せば隠れる**＝規則「押している間は反対になる」が、Source では1本の式で済む。
+	//   （旧名 sSrcMarksTempHidden は「Show Marks on Source が ON のときだけ立てる」形で、
+	//    **トグル OFF のときに押しても何も起きなかった**＝規則が3か所で宣言していることと食い違っていた。
+	//    ユーザー決定 2026-08-22＝実装を規則に合わせる。）
+	// ★Target 側が2つのフラグ(出す sMarksVisible / 隠す sMarksTempHidden)のままなのは、あちらの
+	//   sMarksVisible が peek など他の経路からも立つため。**同じ形にできるのは Source だけ。**
 	// 印刷は Source 枠を常に出す仕様なので影響しない(描画側で !printing ゲート)。
-	static bool16 sSrcMarksTempHidden;
+	static bool16 sSrcMarksPressed;
 
 	// ★サムネイル実験トグル(2026-07-06)。kTrue の間、Pagesパネルのサムネイル生成(view無し・kPreviewMode)
 	// にも枠を描く(通常は sPrintMarks/sMarksVisible が OFF だと出ないが、サムネイルは isThumb で強制ON・

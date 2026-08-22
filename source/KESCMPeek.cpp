@@ -751,7 +751,7 @@ void KESCMDoArmMousePeek(IDataBase* targetDB, IDataBase* sourceDB)
 	sPeekSourceDB = sourceDB;
 	sPeekArmed = kTrue;
 	KESCMDrawEventHandler::sMarksTempHidden = kFalse;	// 常時表示の一時退避も初期化(押下中フラグの取りこぼし対策)
-	KESCMDrawEventHandler::sSrcMarksTempHidden = kFalse;	// Source 側の一時退避も初期化
+	KESCMDrawEventHandler::sSrcMarksPressed = kFalse;	// Source 側の押下フラグも初期化
 	KESCMDrawEventHandler::sMarksVisible = kFalse;	// 既定(非表示)へ。arm 中も枠は押下中だけ表示
 }
 
@@ -768,7 +768,7 @@ void KESCMDoDisarmMousePeek(IDataBase* db)
 	sPeekTargetDB = nil;
 	sPeekSourceDB = nil;
 	KESCMDrawEventHandler::sMarksTempHidden = kFalse;	// 常時表示の一時退避を解除
-	KESCMDrawEventHandler::sSrcMarksTempHidden = kFalse;	// Source 側の一時退避も解除
+	KESCMDrawEventHandler::sSrcMarksPressed = kFalse;	// Source 側の押下フラグも解除
 	KESCMDrawEventHandler::sMarksVisible = kFalse;	// 既定(非表示)のまま
 	KESCMDrawEventHandler::DropAllOrig();	// sShowOriginal も OFF にし、キャッシュを解放
 
@@ -909,7 +909,7 @@ void KESCMHandleDocsClosed()
 		sPeekSourceDB  = nil;
 		// (覗き状態の解除＝KESCMResetPeekGestureState は UI 側の状態なので、末尾の通知を受けた UI がやる)
 		KESCMDrawEventHandler::sMarksTempHidden = kFalse;	// 常時表示の一時退避も解除
-		KESCMDrawEventHandler::sSrcMarksTempHidden = kFalse;	// Source 側の一時退避も解除
+		KESCMDrawEventHandler::sSrcMarksPressed = kFalse;	// Source 側の押下フラグも解除
 		KESCMDrawEventHandler::sMarksVisible = kFalse;
 		// ★2026-07-11(ユーザー報告): Stop ボタンは登録(Add/Remove)を全解除するのに、比較文書(Source等)を
 		//   閉じて比較が終わった時は登録が残っていた。ここは「Stop 相当のフルクリーンアップ」なので、

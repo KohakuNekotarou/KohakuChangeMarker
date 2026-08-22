@@ -169,8 +169,8 @@ public:
 	virtual PMReal		GetSelectedMarkOpacity()	{ return KESCMDrawEventHandler::SelectedMarkOpacity(); }
 	virtual bool16		GetMarksTempHidden()	{ return KESCMDrawEventHandler::sMarksTempHidden; }
 	virtual void		SetMarksTempHidden(bool16 on)		{ KESCMDrawEventHandler::sMarksTempHidden = on; }
-	virtual bool16		GetSrcMarksTempHidden()	{ return KESCMDrawEventHandler::sSrcMarksTempHidden; }
-	virtual void		SetSrcMarksTempHidden(bool16 on)	{ KESCMDrawEventHandler::sSrcMarksTempHidden = on; }
+	virtual bool16		GetSrcMarksPressed()	{ return KESCMDrawEventHandler::sSrcMarksPressed; }
+	virtual void		SetSrcMarksPressed(bool16 on)		{ KESCMDrawEventHandler::sSrcMarksPressed = on; }
 	virtual void		SetPeekOpacity(const PMReal& opacity)
 														{ KESCMDrawEventHandler::sPeekOpacity = opacity; }
 	virtual bool16		GetShowOriginal()		{ return KESCMDrawEventHandler::sShowOriginal; }

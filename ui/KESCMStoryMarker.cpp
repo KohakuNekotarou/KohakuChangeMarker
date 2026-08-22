@@ -377,7 +377,20 @@ bool16 KESCMStoryMarkerAdornment::GetMarkBoxes(const IWaxRun* waxRun, const IWax
 		const PMReal offset = cumulative[glyphIndex];
 		PMReal width = cumulative[glyphIndex + glyphLength] - offset;
 
-		if (width <= 0.0)
+		if (r->fCaret)
+		{
+			// ★★★A DELETION IS A CARET, NOT AN INVERTED CHARACTER (2026-08-22, user's call:
+			//   "細いバーにするがいいです、キャレットの位置で"). The characters are gone from this
+			//   side, so there is nothing here that IS the edit - and inverting the character that
+			//   closed up over the gap says the wrong thing about it: deleting a whole paragraph lit
+			//   the first character of the NEXT one, and deleting the end of a story lit the final
+			//   carriage return, which draws nothing at all.
+			//   ⇒ The range still covers one character so that it sorts and merges like any other
+			//     (KESCMStoryMarkRanges.h), but what is DRAWN is a bar standing where the caret would
+			//     stand if you clicked in front of that character - the same place the jump centres.
+			width = size * PMReal(0.15);
+		}
+		else if (width <= 0.0)
 		{
 			// ★A ZERO-WIDTH RANGE STILL HAS A PLACE. It happens where the marked characters are
 			//   drawn by nothing at all - and the reader still asked "where is it". A thin bar at
@@ -516,15 +529,18 @@ void KESCMStoryMarker::Show(IDataBase* db, UID storyUID, TextIndex from, TextInd
 	if (to < from)
 		to = from;
 
-	// ★A DELETION HAS NO WIDTH HERE - the words are gone from this side, and the row is pointing at
-	//   the place they used to be. One character is what makes that place visible; zero would mark
-	//   nothing at all. (The jump's selection has the same problem and answers it the same way, with
-	//   a leaning caret - see KESCMStoryJumpToChange.)
-	//   ⚠It is widened HERE and not in the range list, which drops empty ranges: what a zero-width
-	//     range should become is a decision about what the reader is being shown, and the list is
-	//     numbers (KESCMStoryMarkRanges.h).
+	// ★★A DELETION HAS NO WIDTH HERE - the words are gone from this side, and the row is pointing
+	//   at the place they used to be. Since 2026-08-22 that place is shown as a CARET (user's call),
+	//   which is also what the standing marks do, so a jump and a press say the same thing about the
+	//   same deletion (KESCMStoryPressMarks).
+	//   ⚠It used to be widened to one character here, which inverted whatever had closed up over the
+	//     gap - a different character claiming to be the edit.
+	//   ★The decision is still made HERE and not inside the range list: what a zero-width range
+	//     should look like is about what the reader is being shown, and that list is numbers
+	//     (KESCMStoryMarkRanges.h).
 	KESCMStoryMarkDocs one;
-	one[db][storyUID].push_back(KESCMMarkRange(from, (to > from) ? to : (from + 1)));
+	one[db][storyUID].push_back((to > from) ? KESCMMarkRange(from, to)
+											: KESCMMarkRange::Caret(from));
 
 	// A flash, not a highlight - so this one gets the countdown. Restarting an already-running one
 	// is that call's job, so each jump gets the mark for the full time.

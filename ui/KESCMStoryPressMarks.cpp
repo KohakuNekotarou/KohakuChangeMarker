@@ -183,10 +183,19 @@ void KESCMStoryCollectRanges(IDataBase* db, bool16 useSourceDocument, KESCMStory
 				continue;
 			if (to == from)
 			{
-				// A DELETION HAS NO WIDTH on the side it was deleted from. One character makes the
-				// place it used to stand in front of visible - the same answer the jump's marker
-				// gives (KESCMStoryMarker::Show), so the two agree about what a deletion looks like.
-				to = from + 1;
+				// ★★★A DELETION HAS NO WIDTH on the side it was deleted from, and since 2026-08-22
+				//   it is shown as a CARET (user's call: "細いバーにするがいいです、キャレットの位置で").
+				//   ⚠It used to be widened to one character, which inverted whatever had closed up
+				//     over the gap - a DIFFERENT character claiming to be the edit. Two ordinary
+				//     cases showed how wrong that reads: deleting a whole paragraph lit the first
+				//     character of the next one, and deleting the end of a story lit the final
+				//     carriage return, which draws nothing at all.
+				//   ★The range still covers one character so that it sorts and merges like every
+				//     other one; the flag is all the drawing side needs (KESCMStoryMarkRanges.h).
+				//   ★The jump's one-shot marker answers the same way, so the two agree about what a
+				//     deletion looks like (KESCMStoryMarker::Show).
+				ranges.push_back(KESCMMarkRange::Caret(from));
+				continue;
 			}
 
 			ranges.push_back(KESCMMarkRange(from, to));

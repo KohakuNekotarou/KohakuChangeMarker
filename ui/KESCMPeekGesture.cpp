@@ -259,10 +259,17 @@ void KESCMTrackerRevealBegin(bool16 shiftDown, bool16 altDown, bool16 cmdDown, b
 			compare->SetMarksTempHidden(kTrue);
 			KESCMInvalidateMarksDoc();	// Target を再描画
 		}
-		if (compare->GetShowSourceMarks() && !compare->GetSrcMarksTempHidden() &&
-		    KESCMMouseIsOverSource())
+		// ★★★Source 側は**トグルを見ずに「押した」とだけ言う**(2026-08-22 ユーザー決定＝実装を規則へ)。
+		//   出すのか隠すのかは描画側が sSrcMarksOn と **XOR** して決めるので、ここで
+		//   GetShowSourceMarks() を見ると**同じ判断が2か所**になる([[one-question-one-place]])。
+		//   ⇒ これで**トグル OFF の Source 窓を押せば枠が出る**＝規則が3か所で宣言していた
+		//     「Pixel/Story・Target/Source すべてで同じ」に実装が追いついた。
+		//   ⚠Target 側(上)が今も GetShowTargetMarks() を見ているのは非対称に見えるが、あちらは
+		//     「出す」を別のフラグ(sMarksVisible・下の reveal)が持っていて、そちらが peek からも
+		//     立つため1本に畳めない。**畳めるのは Source だけ。**
+		if (!compare->GetSrcMarksPressed() && KESCMMouseIsOverSource())
 		{
-			compare->SetSrcMarksTempHidden(kTrue);
+			compare->SetSrcMarksPressed(kTrue);
 			compare->InvalidateDB(Utils<IKESCMMarkData>()->GetMarkedSourceDB());	// Source を再描画(compare は上で引いてある)
 		}
 	}
@@ -352,9 +359,9 @@ void KESCMTrackerRevealEnd()
 		compare->SetMarksTempHidden(kFalse);
 		KESCMInvalidateMarksDoc();	// Target を再描画
 	}
-	if (compare->GetSrcMarksTempHidden())
+	if (compare->GetSrcMarksPressed())
 	{
-		compare->SetSrcMarksTempHidden(kFalse);
+		compare->SetSrcMarksPressed(kFalse);
 		compare->InvalidateDB(Utils<IKESCMMarkData>()->GetMarkedSourceDB());	// Source を再描画(compare は上で引いてある)
 	}
 

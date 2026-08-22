@@ -208,7 +208,7 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 			InterfacePtr<IKESCMCompareFacade> compare(Utils<IKESCMCompareFacade>().QueryUtilInterface());
 			const bool16 srcMarksOn = !compare->GetShowSourceMarks();
 			compare->SetShowSourceMarks(srcMarksOn);
-			compare->SetSrcMarksTempHidden(kFalse);	// Target 版と同じ後始末(撤去した Hold から引き継いだ)
+			compare->SetSrcMarksPressed(kFalse);	// Target 版と同じ後始末(撤去した Hold から引き継いだ)。★押下フラグの取りこぼし対策
 			KESCMStoryMarksRefresh();		// Story モードの反転マーク(Pixel モードでは何もしない)
 			IDataBase* const srcDB = Utils<IKESCMMarkData>()->GetMarkedSourceDB();
 			Utils<IKESCMCompareFacade>()->InvalidateDB(srcDB);

@@ -82,7 +82,7 @@ bool16 KESCMDrawEventHandler::sShowOldNumbers = kFalse;	// 既定=OFF(フライ�
 // (★「Hold to Hide Marks」(sAlwaysShowMarks)は 2026-08-22 に撤去＝「Show Marks on ...」と重複。
 //  経緯と現在の規則はヘッダーの宣言部を見よ。)
 bool16 KESCMDrawEventHandler::sMarksTempHidden = kFalse;	// 「Show Marks on Target」ON のとき、Target 窓でツール左hold中だけ kTrue(Target 常時表示枠の一時退避)
-bool16 KESCMDrawEventHandler::sSrcMarksTempHidden = kFalse;	// 同上の Source 版。Source 窓でツール左hold中だけ kTrue(Source 常時表示枠の一時退避)
+bool16 KESCMDrawEventHandler::sSrcMarksPressed = kFalse;	// Source 窓でツール左hold中だけ kTrue。⚠「隠している」ではなく「押している」＝描画側が sSrcMarksOn と XOR する(宣言のコメント参照)
 bool16 KESCMDrawEventHandler::sSrcMarksOn = kFalse;	// 既定=OFF。フライアウト「Show Marks on Source」。⚠2026-08-22 に「Start のたびに kTrue へ」をやめた＝設定はパネル設定に保存され起動時に復元されるので、Start が上書きすると保存した選択が消える
 bool16 KESCMDrawEventHandler::sTgtMarksOn = kFalse;	// 同上の Target 版(フライアウト「Show Marks on Target」2026-08-22)。⚠画面のみ=印刷/PDF は sPrintMarks が決める。Start は触らない(上と同じ理由)
 IDataBase* KESCMDrawEventHandler::sSrcDB = nil;
@@ -1570,15 +1570,23 @@ bool16 KESCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 			(sSrcDB != nil && KESCMPageCheckHasAny(sSrcDB)) ||
 			(!sOverflowT.empty() || !sOverflowS.empty());
 	}
-	// Source のレイアウト窓でツール左ボタンを押している間(sSrcMarksTempHidden)は、Source 側の常時表示枠を
-	// 画面で隠す(押した窓の枠だけ隠す=Target と対称のウィンドウ別)。
-	// ★★2026-08-22＝**判定を「Hold to Hide Marks」から「Show Marks on Source」自身へ移した**。
-	//   規則が1本になったため＝**押している間は反対になる**(OFF なら押下中だけ出る/ON なら押下中だけ隠れる)。
-	//   ⇒ 「常時表示」と「押したら隠す」を2つのトグルに分けて持つ必要が無くなり、Hold は撤去した。
-	// 印刷は Source 枠を常に出す仕様なので !printing でゲート=印刷/PDF は不変。Source 窓以外で押した時は
-	// sSrcMarksTempHidden が立たない(KESCMPeekGesture.cpp の窓判定)ので従来どおり常時表示。
-	const bool16 srcTempHidden = sSrcMarksOn && sSrcMarksTempHidden && !printing;
-	const bool16 wantSrcMarks = sSrcMarksOn && sSrcDB != nil && anyMarkableContent && !srcTempHidden;
+	// ★★★**押している間は、その窓の枠が反対になる**(規則。ユーザー決定 2026-08-22)。
+	//   Source 側はこれが**1本の式**で書ける＝トグル(sSrcMarksOn)と押下(sSrcMarksPressed)の **XOR**。
+	//     ・トグル OFF … 枠は出ていない ⇒ Source 窓を押している間だけ出る
+	//     ・トグル ON  … 枠は出ている   ⇒ Source 窓を押している間だけ隠れる
+	//   ⚠**2026-08-22 に「出る」側を足した**(ユーザー決定＝実装を規則に合わせる)。それまでは
+	//     「ON のときだけ押下で隠す」で、**トグル OFF の Source 窓を押しても何も出なかった**
+	//     ＝規則が3か所で「Pixel/Story・Target/Source すべてで同じ」と宣言していたのと食い違っていた。
+	//   ⚠**Target 側は同じ形にできない**＝あちらの「出す」は sMarksVisible で、peek など他の経路も
+	//     立てるフラグだから(下の wantMarks と alwaysScreen の2つに分かれているのはそのため)。
+	// ⚠**印刷/PDF には効かせない**＝Source 枠を常に出すのが仕様なので、!printing でゲートして
+	//   印刷文脈では sSrcMarksOn だけを見る(押下は画面の話)。
+	// ⚠Source 窓以外で押した時は sSrcMarksPressed が立たない(KESCMPeekGesture.cpp の窓判定)。
+	const bool16 srcPressed = (sSrcMarksPressed && !printing) ? kTrue : kFalse;
+	// ⚠`(a != 0) != (b != 0)` と書く＝bool16 は整数型で、kTrue 以外の真値が来ると裸の != は逆を答える。
+	const bool16 srcWanted = printing ? sSrcMarksOn
+	                                  : ((((sSrcMarksOn != 0) != (srcPressed != 0))) ? kTrue : kFalse);
+	const bool16 wantSrcMarks = srcWanted && sSrcDB != nil && anyMarkableContent;
 	// 印刷で「枠の印刷」が OFF のときは、Target 側のオーバーレイ一式を描かない(枠は基本非印刷)。
 	// Source 側の枠だけは常に印刷に出す仕様なので、wantSrcMarks が生きていれば処理を続行し、
 	// 下の want フラグ側で Target 分だけ落とす。
