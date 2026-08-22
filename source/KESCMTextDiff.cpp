@@ -336,6 +336,131 @@ namespace
 
 		return kTrue;
 	}
+
+	// ---- boundary alignment (2026-08-22) --------------------------------------------------
+
+	/** Which script a character is written in.
+
+		★THIS IS THE ONE QUESTION THE ALIGNMENT ASKS: would a reader see a break here? English
+		answers it with spaces, and diff-match-patch - where the idea comes from - scores
+		boundaries that way. A Japanese sentence has no spaces at all. What it has instead is the
+		alternation of 漢字 / ひらがな / カタカナ / 記号, and a change of script marks the edge of
+		a word about as reliably as a space does.
+	*/
+	enum ScriptClass
+	{
+		kScriptOther = 0,
+		kScriptSpace,
+		kScriptPunct,
+		kScriptDigit,
+		kScriptLatin,
+		kScriptHiragana,
+		kScriptKatakana,
+		kScriptHan
+	};
+
+	ScriptClass ScriptOf(int32 cp)
+	{
+		if (cp == 0x0020 || cp == 0x0009 || cp == 0x000A || cp == 0x000D || cp == 0x3000)
+			return kScriptSpace;
+
+		// ⚠★THE KATAKANA MIDDLE DOT HAS TO BE TAKEN OUT BEFORE THE KATAKANA RANGE CLAIMS IT.
+		//   U+30FB sits inside U+30A1..U+30FF, so the obvious ordering would file 「・」 as a
+		//   katakana letter - and 「・」 is precisely the character the reported case turns on
+		//   (新版です・ここが違います). The bug would have survived with every test around it
+		//   passing. ⚠U+30FC (ー) stays katakana on purpose: it is a letter, not a mark.
+		if (cp == 0x30FB || cp == 0xFF65)
+			return kScriptPunct;
+
+		if ((cp >= '0' && cp <= '9') || (cp >= 0xFF10 && cp <= 0xFF19))
+			return kScriptDigit;
+
+		if ((cp >= 'A' && cp <= 'Z') || (cp >= 'a' && cp <= 'z') ||
+			(cp >= 0xFF21 && cp <= 0xFF3A) || (cp >= 0xFF41 && cp <= 0xFF5A))
+			return kScriptLatin;
+
+		if (cp >= 0x3041 && cp <= 0x309F)
+			return kScriptHiragana;
+
+		if ((cp >= 0x30A1 && cp <= 0x30FF) || (cp >= 0xFF66 && cp <= 0xFF9D))
+			return kScriptKatakana;
+
+		if ((cp >= 0x4E00 && cp <= 0x9FFF) || (cp >= 0x3400 && cp <= 0x4DBF) ||
+			(cp >= 0xF900 && cp <= 0xFAFF) || cp == 0x3005)
+			return kScriptHan;
+
+		if ((cp >= 0x3001 && cp <= 0x303F) ||					// 、。「」【】ほか
+			(cp >= 0x0021 && cp <= 0x002F) || (cp >= 0x003A && cp <= 0x0040) ||
+			(cp >= 0x005B && cp <= 0x0060) || (cp >= 0x007B && cp <= 0x007E) ||
+			(cp >= 0xFF01 && cp <= 0xFF0F) || (cp >= 0xFF1A && cp <= 0xFF20) ||
+			(cp >= 0xFF3B && cp <= 0xFF40) || (cp >= 0xFF5B && cp <= 0xFF64) ||
+			(cp >= 0x2010 && cp <= 0x201F) || (cp >= 0x2025 && cp <= 0x2027))
+			return kScriptPunct;
+
+		return kScriptOther;
+	}
+
+	/** How good a break the gap just before `pos` would make. Bigger is better; 0 is "no break
+		here at all". The numbers only ever get compared with each other.
+	*/
+	int32 BoundaryScore(const std::vector<int32>& seq, int32 pos)
+	{
+		if (pos <= 0 || pos >= static_cast<int32>(seq.size()))
+			return 6;				// the end of the text is the cleanest break there is
+
+		const ScriptClass before = ScriptOf(seq[pos - 1]);
+		const ScriptClass after = ScriptOf(seq[pos]);
+
+		if (before == after)
+			return 0;
+		if (before == kScriptSpace || after == kScriptSpace)
+			return 5;
+		if (before == kScriptPunct || after == kScriptPunct)
+			return 4;
+		return 2;					// some other change of script
+	}
+
+	/** A change has FOUR boundaries - where it starts and ends on each side - and all four are
+		worth scoring. A deletion has nothing to show on the b side, but its two b boundaries are
+		the same position, so it simply counts that one twice; every candidate for the same change
+		is counted the same way, which is all the comparison needs.
+	*/
+	int32 ChangeScore(const std::vector<int32>& a, const std::vector<int32>& b, const Change& c)
+	{
+		return BoundaryScore(a, c.aStart) + BoundaryScore(a, c.aStart + c.aCount)
+			 + BoundaryScore(b, c.bStart) + BoundaryScore(b, c.bStart + c.bCount);
+	}
+
+	/** Can this change be rotated one step to the right and still rebuild the same text?
+
+		Rotating right moves the character just AFTER the run to just BEFORE it. That is only
+		lossless when the run begins with the same character it is about to swallow - on both
+		sides that have a run at all.
+	*/
+	bool16 CanShiftRight(const std::vector<int32>& a, const std::vector<int32>& b,
+						 const Change& c, int32 hiA, int32 hiB)
+	{
+		if (c.aStart + c.aCount >= hiA || c.bStart + c.bCount >= hiB)
+			return kFalse;
+		if (c.aCount > 0 && a[c.aStart] != a[c.aStart + c.aCount])
+			return kFalse;
+		if (c.bCount > 0 && b[c.bStart] != b[c.bStart + c.bCount])
+			return kFalse;
+		return kTrue;
+	}
+
+	/** The mirror image: move the character just BEFORE the run to just after it. */
+	bool16 CanShiftLeft(const std::vector<int32>& a, const std::vector<int32>& b,
+						const Change& c, int32 loA, int32 loB)
+	{
+		if (c.aStart <= loA || c.bStart <= loB)
+			return kFalse;
+		if (c.aCount > 0 && a[c.aStart - 1] != a[c.aStart + c.aCount - 1])
+			return kFalse;
+		if (c.bCount > 0 && b[c.bStart - 1] != b[c.bStart + c.bCount - 1])
+			return kFalse;
+		return kTrue;
+	}
 }
 
 /* Diff
@@ -526,6 +651,64 @@ void KESCMTextDiff::ToCodePoints(const std::string& utf8, std::vector<int32>& co
 			value = (value << 6) | (static_cast<unsigned char>(utf8[i]) & 0x3F);
 
 		codePoints.push_back(value);
+	}
+}
+
+/* AlignChangeBoundaries
+   See the header for why a change can sit in more than one place and why the choice matters.
+*/
+void KESCMTextDiff::AlignChangeBoundaries(const std::vector<int32>& a, const std::vector<int32>& b,
+										  std::vector<Change>& changes)
+{
+	for (size_t i = 0; i < changes.size(); ++i)
+	{
+		// ★NEIGHBOURS ARE WALLS. A change may rotate through the unchanged run on either side of
+		//   it and no further. Both bounds are honest ones: the previous change is already in its
+		//   final place, and the next has not moved yet, so neither can be crossed by accident.
+		const int32 loA = (i > 0) ? changes[i - 1].aStart + changes[i - 1].aCount : 0;
+		const int32 loB = (i > 0) ? changes[i - 1].bStart + changes[i - 1].bCount : 0;
+		const int32 hiA = (i + 1 < changes.size()) ? changes[i + 1].aStart
+												   : static_cast<int32>(a.size());
+		const int32 hiB = (i + 1 < changes.size()) ? changes[i + 1].bStart
+												   : static_cast<int32>(b.size());
+
+		// ★THE INCUMBENT WINS A TIE. Scoring starts from where the change already is, and a
+		//   candidate has to be STRICTLY better to displace it. Without that, an edit already
+		//   sitting at a perfectly good boundary gets dragged to another one exactly as good, for
+		//   no reason the reader could see - and the panel would quote a different phrase every
+		//   time the surrounding text changed shape.
+		Change best = changes[i];
+		int32 bestScore = ChangeScore(a, b, best);
+
+		// Walk all the way left first, so that the sweep below visits every reachable position -
+		// including the ones to the LEFT of where Myers happened to stop.
+		Change probe = changes[i];
+		while (CanShiftLeft(a, b, probe, loA, loB))
+		{
+			--probe.aStart;
+			--probe.bStart;
+		}
+
+		for (;;)
+		{
+			const int32 score = ChangeScore(a, b, probe);
+			if (score > bestScore)
+			{
+				bestScore = score;
+				best = probe;
+			}
+
+			if (!CanShiftRight(a, b, probe, hiA, hiB))
+				break;
+
+			++probe.aStart;
+			++probe.bStart;
+		}
+
+		// ⚠COUNTS ARE NEVER TOUCHED - only the two starts move, and they move together. That is
+		//   what keeps the edit distance exactly as Myers computed it: every step of the walk
+		//   above hands one common character from one side of the run to the other.
+		changes[i] = best;
 	}
 }
 

@@ -637,9 +637,23 @@ bool16 CompareOneStory(const UIDRef& targetStory, const UIDRef& sourceStory,
 								&& !fineChanges.empty();
 
 		// ★ONLY ON CHARACTERS. Applied to the paragraph list this would report paragraphs nobody
-		//   touched as changed - see KESCMTextDiff.h.
+		//   touched as changed - see KESCMTextDiff.h. The same restriction covers the alignment
+		//   below, for a plainer reason: a paragraph token is a number, and asking which script it
+		//   is written in means nothing.
 		if (narrowed)
+		{
 			KESCMTextDiff::MergeNearbyChanges(fineChanges);
+
+			// ★★THEN SLIDE EACH RUN TO THE POSITION A READER WOULD PUT IT (2026-08-22). Myers
+			//   returns A shortest edit script, not THE one a person would describe, and when the
+			//   surrounding text repeats a character the two differ visibly. Reported from the
+			//   panel: 「旧版です」->「新版です・ここが違います」 came back quoting
+			//   「す・ここが違いま」 - starting and ending on す because the run had been rotated
+			//   one step left, which costs Myers nothing and costs the reader the whole sentence.
+			//   ⚠AFTER the merge, not before: merging changes the shape of a run, and aligning a
+			//     run that is about to be swallowed would be work thrown away.
+			KESCMTextDiff::AlignChangeBoundaries(sourceCodePoints, targetCodePoints, fineChanges);
+		}
 
 		if (!narrowed)
 		{

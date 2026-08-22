@@ -121,6 +121,46 @@ namespace KESCMTextDiff
 	*/
 	void MergeNearbyChanges(std::vector<Change>& changes);
 
+	/** Slides each change to whichever of its EQUIVALENT positions reads most naturally.
+
+		★★A CHANGE CAN USUALLY SIT IN MORE THAN ONE PLACE AND MEAN THE SAME THING, and Myers has
+		no reason to prefer one. When the character just after a change is the same as the
+		character it starts with, the whole run can be rotated one step to the right and rebuild
+		exactly the same text:
+
+		    新版で [す・ここが違いま] す        <- what Myers returned
+		    新版です [・ここが違います]          <- the same edit, one step right
+
+		Both are shortest edit scripts; only the second is the edit a person would describe.
+		⚠This is not a tie-break inside the search - the search is finished and correct. It is a
+		  cleanup afterwards, and it cannot change the edit distance: every rotation moves one
+		  common character from one side of the run to the other, so the counts never move.
+
+		★HOW THE POSITION IS CHOSEN. Every reachable rotation is tried and scored by what sits at
+		its two boundaries, on both sides. What scores well is a boundary a reader would put a
+		break at: the end of the text, a space, a mark of punctuation, or a change of script
+		(kana to kanji, kanji to latin, and so on).
+		⚠**Japanese is why the scoring is written in terms of SCRIPT rather than of word breaks.**
+		  diff-match-patch, where this idea comes from, leans on spaces and line ends - and a
+		  Japanese sentence has neither. What it does have is the boundary between 漢字 and かな
+		  and 記号, which marks a word just as reliably.
+
+		⚠FOR CHARACTERS, NOT FOR PARAGRAPHS - the same restriction MergeNearbyChanges carries, and
+		  for a plainer reason: the tokens of a paragraph diff are numbers standing for whole
+		  paragraphs, and asking what script a paragraph is written in is meaningless.
+
+		★NEIGHBOURS ARE NOT CROSSED. A change may only rotate into the unchanged run on either
+		side of it, never into or past the change next door - two changes that swapped places
+		would no longer be in reading order, and the row that quotes them walks them in order.
+
+		@param a IN the baseline sequence the changes were computed from.
+		@param b IN the target sequence.
+		@param changes IN OUT the runs to align, in order. Counts are never touched; only the
+			two start positions move, and they move together.
+	*/
+	void AlignChangeBoundaries(const std::vector<int32>& a, const std::vector<int32>& b,
+							   std::vector<Change>& changes);
+
 	/** Turns strings into tokens, giving equal strings equal numbers.
 		@param strings IN the strings to number.
 		@param table IN OUT the numbering so far. Pass the same table for both sequences - two
