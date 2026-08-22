@@ -157,6 +157,20 @@ public:
 		PMString	fOtherText;
 		PMString	fOtherTextPost;
 
+		// ---- the readings, and ONLY meaningful when fWhat is 1 (attribute) ----
+		//
+		// ★A RUBY ROW SHOWS TWO THINGS AT ONCE - the base text and the reading over it, set the way
+		//   ruby actually is - so they cannot be one string. The three fText pieces carry the base
+		//   text with its context, exactly as they do for a text change; these carry the readings.
+		// ★fRuby belongs to the side the row shows and fOtherRuby to the other, the same pairing as
+		//   fText / fOtherText. Either can be empty: ruby added has no old reading, ruby removed has
+		//   no new one.
+		// ⚠Mono and group ruby are both in here and the difference is NOT in the string - it is in
+		//   the span (fTargetStart/fTargetEnd): one reading over several characters, against one
+		//   reading each. See KESCMSnippetText.h for how the two are told apart in the snippet.
+		PMString	fRuby;
+		PMString	fOtherRuby;
+
 		Change()
 			: fKind(0), fWhat(0), fTargetStart(0), fTargetEnd(0),
 			  fSourceStart(0), fSourceEnd(0), fHasSource(kFalse) {}

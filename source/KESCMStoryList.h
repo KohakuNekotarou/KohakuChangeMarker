@@ -120,6 +120,25 @@ struct KESCMStoryChange
 	PMString	fOtherText;
 	PMString	fOtherTextPost;
 
+	/** ---- ruby, and ONLY meaningful when fWhat is kAttr (2026-08-22) ----
+
+		★WHY RUBY NEEDED FIELDS OF ITS OWN rather than being written into fText. The row has to show
+		the BASE TEXT and the READING at the same time, one above the other, the way ruby is actually
+		set - so the two cannot be one string. fText/fTextPre/fTextPost carry the base text with its
+		context exactly as they do for a text change; these two carry the readings.
+
+		★fRuby is the reading on the side the row shows, fOtherRuby the one on the other side - the
+		same pairing as fText / fOtherText, so a row never has to ask which document it is looking at.
+		Either can be empty: ruby added has no old reading, ruby removed has no new one.
+
+		⚠MONO AND GROUP ARE BOTH IN HERE AND THE DIFFERENCE IS NOT IN THE STRING. 琥珀 read as
+		  こ+はく (mono) and as こはく (group) can produce the same characters; what tells them apart
+		  is the SPAN - one reading over two characters, or two readings over one each. The spans are
+		  what the diff compared (KESCMSnippetText.h), and fTargetStart/fTargetEnd is the span this
+		  change is about. */
+	PMString	fRuby;
+	PMString	fOtherRuby;
+
 	int32		fParaIndex;		// which paragraph it fell in. Not drawn; kept for ordering and for
 								// anything later that wants to group changes by paragraph
 

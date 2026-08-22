@@ -6,8 +6,8 @@
 //
 //  See KESCMStoryDiffRun.h for what this is for and what it deliberately does not do.
 //
-//  The reading helpers below (AppendUtf8 / DecodeEntities / ExtractParagraphs / ParagraphStarts /
-//  Join / Slice) came from KohakuTest's KTStoryDiff on 2026-08-20 and work the same way. The
+//  The reading helpers (ParagraphStarts / Join / Slice, and the XML parsing that now lives in
+//  KESCMSnippetText.h) came from KohakuTest's KTStoryDiff on 2026-08-20 and work the same way. The
 //  comparison itself is NOT a straight port - it does two things KT had no need of:
 //
 //    1. IT WORKS OUT THE OLDER DOCUMENT'S POSITIONS TOO. KT selected in the front document only.
@@ -32,10 +32,12 @@
 #include "PMString.h"
 #include "UIDRef.h"
 
+#include <algorithm>	// std::stable_sort - the ruby children are found by a second walk
 #include <string>
 #include <vector>
 
 // Project includes:
+#include "KESCMSnippetText.h"	// the snippet's text AND its ruby - see the note at "reading the text"
 #include "KESCMStoryDiffRun.h"
 #include "KESCMStoryList.h"
 #include "KESCMStoryStamp.h"	// kKESCMStoryKindAdded - which rows have no partner to compare against
@@ -57,162 +59,13 @@ const int32 kExcerptCodePoints = 60;
 const int32 kContextCodePoints = 14;
 
 // ---- reading the text out of the snippet ----------------------------------------------
-
-void AppendUtf8(std::string& out, int32 codePoint)
-{
-	if (codePoint < 0x80)
-	{
-		out += static_cast<char>(codePoint);
-	}
-	else if (codePoint < 0x800)
-	{
-		out += static_cast<char>(0xC0 | (codePoint >> 6));
-		out += static_cast<char>(0x80 | (codePoint & 0x3F));
-	}
-	else if (codePoint < 0x10000)
-	{
-		out += static_cast<char>(0xE0 | (codePoint >> 12));
-		out += static_cast<char>(0x80 | ((codePoint >> 6) & 0x3F));
-		out += static_cast<char>(0x80 | (codePoint & 0x3F));
-	}
-	else
-	{
-		out += static_cast<char>(0xF0 | (codePoint >> 18));
-		out += static_cast<char>(0x80 | ((codePoint >> 12) & 0x3F));
-		out += static_cast<char>(0x80 | ((codePoint >> 6) & 0x3F));
-		out += static_cast<char>(0x80 | (codePoint & 0x3F));
-	}
-}
-
-/* DecodeEntities
-   Only the five XML built-ins and numeric references can appear here; anything else is left as it
-   stands rather than guessed at, because a wrong guess would shift every position after it by the
-   difference in length.
-*/
-void DecodeEntities(std::string& text)
-{
-	if (text.find('&') == std::string::npos)
-		return;
-
-	std::string out;
-	out.reserve(text.size());
-
-	size_t i = 0;
-	while (i < text.size())
-	{
-		if (text[i] != '&')
-		{
-			out += text[i];
-			++i;
-			continue;
-		}
-
-		const size_t semi = text.find(';', i);
-		if (semi == std::string::npos || semi - i > 12)
-		{
-			out += text[i];
-			++i;
-			continue;
-		}
-
-		const std::string name = text.substr(i + 1, semi - i - 1);
-		if (name == "amp")
-			out += '&';
-		else if (name == "lt")
-			out += '<';
-		else if (name == "gt")
-			out += '>';
-		else if (name == "quot")
-			out += '"';
-		else if (name == "apos")
-			out += '\'';
-		else if (name.size() > 1 && name[0] == '#')
-		{
-			const bool16 hex = (name[1] == 'x' || name[1] == 'X');
-			const std::string digits = name.substr(hex ? 2 : 1);
-			int32 value = 0;
-			bool16 ok = !digits.empty();
-			for (size_t d = 0; d < digits.size() && ok; ++d)
-			{
-				const char c = digits[d];
-				int32 digit = -1;
-				if (c >= '0' && c <= '9')				digit = c - '0';
-				else if (hex && c >= 'a' && c <= 'f')	digit = c - 'a' + 10;
-				else if (hex && c >= 'A' && c <= 'F')	digit = c - 'A' + 10;
-				if (digit < 0)
-					ok = kFalse;
-				else
-					value = value * (hex ? 16 : 10) + digit;
-			}
-			if (ok)
-				AppendUtf8(out, value);
-			else
-				out.append(text, i, semi - i + 1);
-		}
-		else
-		{
-			out.append(text, i, semi - i + 1);
-		}
-
-		i = semi + 1;
-	}
-
-	text.swap(out);
-}
-
-/* ExtractParagraphs
-   Reads the story's text out of the snippet: <Content> holds it, <Br /> ends a paragraph.
-
-   ★Only the region between <Story and </Story> is looked at. The snippet also carries every
-   object the story depends on - inks, fonts, styles, cross-reference formats - and some of those
-   have text of their own that must not be mistaken for the story's. (Measured in KohakuTest:
-   the dependencies are more than eight tenths of the file and contribute nothing to the diff.)
-*/
-void ExtractParagraphs(const std::string& xml, std::vector<std::string>& paragraphs)
-{
-	paragraphs.clear();
-
-	const size_t storyStart = xml.find("<Story ");
-	const size_t storyEnd = xml.rfind("</Story>");
-	if (storyStart == std::string::npos || storyEnd == std::string::npos || storyEnd < storyStart)
-		return;
-
-	std::string current;
-	size_t pos = storyStart;
-
-	while (pos < storyEnd)
-	{
-		const size_t lt = xml.find('<', pos);
-		if (lt == std::string::npos || lt >= storyEnd)
-			break;
-
-		if (xml.compare(lt, 9, "<Content>") == 0)
-		{
-			const size_t close = xml.find("</Content>", lt);
-			if (close == std::string::npos || close > storyEnd)
-				break;
-			current.append(xml, lt + 9, close - (lt + 9));
-			pos = close + 10;
-		}
-		else if (xml.compare(lt, 4, "<Br ") == 0 || xml.compare(lt, 4, "<Br/") == 0)
-		{
-			DecodeEntities(current);
-			paragraphs.push_back(current);
-			current.clear();
-
-			const size_t gt = xml.find('>', lt);
-			pos = (gt == std::string::npos) ? storyEnd : gt + 1;
-		}
-		else
-		{
-			pos = lt + 1;
-		}
-	}
-
-	// The last paragraph has no <Br /> after it.
-	DecodeEntities(current);
-	paragraphs.push_back(current);
-}
+//
+// ★★AppendUtf8 / DecodeEntities / ExtractParagraphs MOVED OUT on 2026-08-22, into
+// KESCMSnippetText.h. They turn one string into another and touch nothing else, so out there they
+// can be measured without starting InDesign - which is what RUBY made necessary: the parsing went
+// from "find <Content>" to a small XML reader carrying state, and a mistake in that is invisible
+// from here (a ruby missed reads as "nothing changed", which is the very bug this was written
+// for). Test = work\kescm-snippet-test, 28 checks including all three of the real snippets.
 
 /* ParagraphStarts
    Where each paragraph begins, counted in CODE POINTS - the unit InDesign counts text positions
@@ -498,6 +351,189 @@ void Add(std::vector<KESCMStoryChange>& out, int32 paraIndex,
 	out.push_back(change);
 }
 
+/* AddRubyChange
+   One ruby difference, turned into the child row that reports it.
+
+   ★THE BASE TEXT IS SHOWN FROM THE NEWER SIDE, ALWAYS - unlike a text change, where a deletion has
+   to be shown from the older side because the newer one has nothing there. Ruby is different: the
+   characters are in BOTH versions and only the reading over them changed, so the newer side always
+   has something to show and there is no case to branch on.
+*/
+void AddRubyChange(KESCMStoryChange::Kind kind,
+				   int32 tStart, int32 tCount, int32 sStart, int32 sCount,
+				   const std::string& targetPara, const std::string& sourcePara,
+				   const std::string& newRuby, const std::string& oldRuby,
+				   int32 tBase, int32 sBase, int32 paraIndex,
+				   std::vector<KESCMStoryChange>& out)
+{
+	KESCMStoryChange change;
+	change.fKind = kind;
+	change.fWhat = KESCMStoryChange::kAttr;		// ★the field that has waited for exactly this
+	change.fParaIndex = paraIndex;
+
+	change.fTargetStart = tBase + tStart;
+	change.fTargetEnd   = change.fTargetStart + tCount;
+
+	// ⚠fHasSource IS ALWAYS TRUE HERE, and that is not a shortcut: a ruby-only change is found by
+	//   comparing two paragraphs whose TEXT matched, so the same characters exist on both sides.
+	//   (An insertion of ruby is still "these characters, which are in both, now carry a reading".)
+	change.fHasSource   = kTrue;
+	change.fSourceStart = sBase + sStart;
+	change.fSourceEnd   = change.fSourceStart + sCount;
+
+	std::vector<int32> tCode, tBytes, sCode, sBytes;
+	KESCMTextDiff::ToCodePoints(targetPara, tCode, &tBytes);
+	KESCMTextDiff::ToCodePoints(sourcePara, sCode, &sBytes);
+
+	std::string newPre, newMid, newPost, oldPre, oldMid, oldPost;
+	Slice(targetPara, tBytes, tStart, tCount, kContextCodePoints, newPre, newMid, newPost);
+	Slice(sourcePara, sBytes, sStart, sCount, kContextCodePoints, oldPre, oldMid, oldPost);
+
+	change.fTextPre.SetUTF8String(newPre);
+	change.fText.SetUTF8String(newMid);
+	change.fTextPost.SetUTF8String(newPost);
+	change.fOtherTextPre.SetUTF8String(oldPre);
+	change.fOtherText.SetUTF8String(oldMid);
+	change.fOtherTextPost.SetUTF8String(oldPost);
+	change.fRuby.SetUTF8String(newRuby);
+	change.fOtherRuby.SetUTF8String(oldRuby);
+
+	// ★Same reason as the text pieces: document text is not a translation key.
+	change.fTextPre.SetTranslatable(kFalse);
+	change.fText.SetTranslatable(kFalse);
+	change.fTextPost.SetTranslatable(kFalse);
+	change.fOtherTextPre.SetTranslatable(kFalse);
+	change.fOtherText.SetTranslatable(kFalse);
+	change.fOtherTextPost.SetTranslatable(kFalse);
+	change.fRuby.SetTranslatable(kFalse);
+	change.fOtherRuby.SetTranslatable(kFalse);
+
+	out.push_back(change);
+}
+
+/* CompareParagraphRuby
+   The ruby of two paragraphs whose TEXT came out identical.
+
+   ★SPANS ARE MATCHED BY WHERE THEY START. The text is the same on both sides, so a reading that
+   stayed put keeps its position - which makes the start the one thing that reliably identifies
+   "the same ruby" across the two versions. Length is NOT part of the matching: it is part of what
+   changed (琥珀 read as こ+はく against こはく is a change of length, and the whole point).
+*/
+void CompareParagraphRuby(const KESCMRubySpanList& sourceRuby, const KESCMRubySpanList& targetRuby,
+						  const std::string& sourcePara, const std::string& targetPara,
+						  int32 sBase, int32 tBase, int32 paraIndex,
+						  std::vector<KESCMStoryChange>& out)
+{
+	if (!KESCMSnippetText::RubyDiffers(sourceRuby, targetRuby))
+		return;
+
+	size_t i = 0, j = 0;
+	while (i < sourceRuby.size() || j < targetRuby.size())
+	{
+		const bool16 haveS = (i < sourceRuby.size()) ? kTrue : kFalse;
+		const bool16 haveT = (j < targetRuby.size()) ? kTrue : kFalse;
+
+		if (haveS && haveT && sourceRuby[i].fStart == targetRuby[j].fStart)
+		{
+			const bool16 same = (sourceRuby[i].fRuby == targetRuby[j].fRuby &&
+								 sourceRuby[i].fLen == targetRuby[j].fLen &&
+								 (sourceRuby[i].fGroup != 0) == (targetRuby[j].fGroup != 0)) ? kTrue : kFalse;
+			if (!same)
+			{
+				AddRubyChange(KESCMStoryChange::kReplace,
+							  targetRuby[j].fStart, targetRuby[j].fLen,
+							  sourceRuby[i].fStart, sourceRuby[i].fLen,
+							  targetPara, sourcePara,
+							  targetRuby[j].fRuby, sourceRuby[i].fRuby,
+							  tBase, sBase, paraIndex, out);
+			}
+			++i;
+			++j;
+		}
+		else if (haveT && (!haveS || targetRuby[j].fStart < sourceRuby[i].fStart))
+		{
+			// Ruby where there was none.
+			AddRubyChange(KESCMStoryChange::kInsert,
+						  targetRuby[j].fStart, targetRuby[j].fLen,
+						  targetRuby[j].fStart, targetRuby[j].fLen,
+						  targetPara, sourcePara,
+						  targetRuby[j].fRuby, std::string(),
+						  tBase, sBase, paraIndex, out);
+			++j;
+		}
+		else
+		{
+			// Ruby taken off. ⚠The characters are still there - it is the reading that is gone -
+			//   so the range is a real one on both sides, unlike a text deletion.
+			AddRubyChange(KESCMStoryChange::kDelete,
+						  sourceRuby[i].fStart, sourceRuby[i].fLen,
+						  sourceRuby[i].fStart, sourceRuby[i].fLen,
+						  targetPara, sourcePara,
+						  std::string(), sourceRuby[i].fRuby,
+						  tBase, sBase, paraIndex, out);
+			++i;
+		}
+	}
+}
+
+/* AddRubyOnlyChanges
+   Ruby differences in the paragraphs the text diff said were UNCHANGED.
+
+   ★★THIS IS WHERE THE WHOLE FEATURE LIVES. A ruby-only edit leaves the text identical, so the
+   paragraph diff reports nothing at all and the row comes out "None" - which is what the user saw.
+   The paragraphs the diff did NOT mention are exactly the ones that need asking about.
+   ⚠Paragraphs that the diff DID report are left alone on purpose: their text changed, so they
+     already have children saying so, and ruby that moved with rewritten words is not a separate
+     edit the reader needs pointed out.
+*/
+void AddRubyOnlyChanges(const std::vector<KESCMTextDiff::Change>& paragraphChanges,
+						const std::vector<std::string>& sourceParas,
+						const std::vector<std::string>& targetParas,
+						const std::vector<KESCMRubySpanList>& sourceRuby,
+						const std::vector<KESCMRubySpanList>& targetRuby,
+						const std::vector<int32>& sourceStarts,
+						const std::vector<int32>& targetStarts,
+						std::vector<KESCMStoryChange>& out)
+{
+	int32 a = 0;
+	int32 b = 0;
+
+	// Walk the two paragraph lists side by side, stepping over each reported change. What is left
+	// between them lines up one to one - that is what "unchanged" means to the diff.
+	for (size_t c = 0; c <= paragraphChanges.size(); ++c)
+	{
+		const int32 aStop = (c < paragraphChanges.size())
+							? paragraphChanges[c].aStart : static_cast<int32>(sourceParas.size());
+		const int32 bStop = (c < paragraphChanges.size())
+							? paragraphChanges[c].bStart : static_cast<int32>(targetParas.size());
+
+		while (a < aStop && b < bStop)
+		{
+			if (a < static_cast<int32>(sourceRuby.size()) && b < static_cast<int32>(targetRuby.size()) &&
+				a < static_cast<int32>(sourceStarts.size()) && b < static_cast<int32>(targetStarts.size()))
+			{
+				CompareParagraphRuby(sourceRuby[a], targetRuby[b],
+									 sourceParas[a], targetParas[b],
+									 sourceStarts[a], targetStarts[b], b, out);
+			}
+			++a;
+			++b;
+		}
+
+		if (c < paragraphChanges.size())
+		{
+			a = paragraphChanges[c].aStart + paragraphChanges[c].aCount;
+			b = paragraphChanges[c].bStart + paragraphChanges[c].bCount;
+		}
+	}
+}
+
+/** Reading order, for putting the ruby children back among the text ones. */
+bool ChangeIsBefore(const KESCMStoryChange& x, const KESCMStoryChange& y)
+{
+	return x.fTargetStart < y.fTargetStart;
+}
+
 /* CompareOneStory
    Fills out with everything that differs between the two versions of one story. kFalse means the
    story could not be compared at all; an empty out with kTrue means it was compared and the text
@@ -515,10 +551,15 @@ bool16 CompareOneStory(const UIDRef& targetStory, const UIDRef& sourceStory,
 	if (!KESCMStoryXml::ExportStory(sourceStory, sourceXml))
 		return kFalse;
 
+	// ★Ruby comes out of the same read as the text, and for the reason spelt out in
+	//   KESCMSnippetText.h: a comparison is one moment, and asking the live model for ruby instead
+	//   would put two moments in one row.
 	std::vector<std::string> targetParas;
 	std::vector<std::string> sourceParas;
-	ExtractParagraphs(targetXml, targetParas);
-	ExtractParagraphs(sourceXml, sourceParas);
+	std::vector<KESCMRubySpanList> targetRuby;
+	std::vector<KESCMRubySpanList> sourceRuby;
+	KESCMSnippetText::ExtractParagraphs(targetXml, targetParas, &targetRuby);
+	KESCMSnippetText::ExtractParagraphs(sourceXml, sourceParas, &sourceRuby);
 
 	// ★ONE TABLE FOR BOTH SEQUENCES. Numbering them from separate tables would give equal
 	//   paragraphs different tokens, and every paragraph would look changed.
@@ -594,6 +635,18 @@ bool16 CompareOneStory(const UIDRef& targetStory, const UIDRef& sourceStory,
 				sourceText, sourceBytes, sBase, fine.aStart, fine.aCount);
 		}
 	}
+
+	// ★★★AND THEN THE RUBY (2026-08-22). Everything above compared <Content> and nothing else, so a
+	//   story whose ruby alone was edited came out of it with no children at all - the row said
+	//   "None", which is what the user reported. The paragraphs the diff did NOT mention are exactly
+	//   the ones to ask about.
+	AddRubyOnlyChanges(paragraphChanges, sourceParas, targetParas, sourceRuby, targetRuby,
+					   sourceStarts, targetStarts, out);
+
+	// ⚠Put back in reading order. The ruby children were found by a separate walk, so without this
+	//   they would all sit after the text ones and the tree would run down the story twice.
+	//   ★STABLE, so that two changes at the same position keep the order they were made in.
+	std::stable_sort(out.begin(), out.end(), ChangeIsBefore);
 
 	return kTrue;
 }

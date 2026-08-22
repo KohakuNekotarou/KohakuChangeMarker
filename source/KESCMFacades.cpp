@@ -402,6 +402,8 @@ public:
 		out.fOtherTextPre	= change.fOtherTextPre;
 		out.fOtherText		= change.fOtherText;
 		out.fOtherTextPost	= change.fOtherTextPost;
+		out.fRuby			= change.fRuby;			// only meaningful when fWhat is kAttr
+		out.fOtherRuby		= change.fOtherRuby;
 		return kTrue;
 	}
 
