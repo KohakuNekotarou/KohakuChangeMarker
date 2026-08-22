@@ -28,9 +28,12 @@
 #include "ITextUtils.h"				// GetPageUIDRef - which page that frame is on
 #include "ITool.h"					// IsTextTool - is a text tool already active?
 #include "IToolBoxUtils.h"			// QueryActiveTool / QueryTool / SetActiveTool
-#include "IDocumentPresentation.h"	// MakeActive / MakeFrontmostInTabGroup - what "the active
-									//  document" actually is (2026-08-22; IWindow was not it)
-#include "IWidgetParent.h"			// QueryParentFor - reaching that presentation from a view
+#include "DocumentPresFindCriteria.h"	// FindPresCriteria::accept_all - the SDK's own "any
+									//  presentation will do" predicate
+#include "IDocumentPresentation.h"	// MakeActive - what "the active document" actually is
+									//  (2026-08-22; IWindow was not it)
+#include "IDocumentUIUtils.h"		// FindPresentationForDocument - the route KESCMBookOpen, KBS
+									//  and KESCL already take to a document's presentation
 
 // General includes:
 #include "PMString.h"
@@ -195,33 +198,39 @@ ISelectionManager* QuerySelectionManagerFor(IDataBase* db)
 	     there is a reason to think that is not an accident for document windows.
 
 	⇒ `IDocumentPresentation` is the thing that is "active": `MakeActive()` is documented as "Make
-	  this the active/TARGET presentation" (IDocumentPresentation.h:111-112) and
-	  `MakeFrontmostInTabGroup()` as making it "frontmost in it's tab group ... so the document is
-	  visible" (:114-122). A window is the container; the presentation is what the application
-	  points at. ★It is reached the same way the sample reaches it -
-	  QueryParentFor(IID_IDOCUMENTPRESENTATION) from a view inside it
-	  (SnpManipulateStructureView.cpp:190).
-	★BOTH are called, in this order: coming forward in the tab group is what makes it VISIBLE, and
-	  being active is what makes it the one the application acts on. A document that is active but
-	  behind another tab would be worse than either.
+	  this the active/TARGET presentation" (IDocumentPresentation.h:111-112). A window is the
+	  container; the presentation is what the application points at.
+
+	★★AND THE ROUTE TO IT IS THE ONE THIS FAMILY OF PLUG-INS ALREADY USES, in five other places:
+	  Utils<IDocumentUIUtils>()->FindPresentationForDocument + MakeActive - KESCM's own
+	  BringChapterToFront (ui/KESCMBookOpen.cpp), KBSJump.cpp:503, KBSBookScope, and KESCL twice.
+	  ⚠The first build of this function asked a layout view for its parent instead
+	  (QueryParentFor(IID_IDOCUMENTPRESENTATION), as SnpManipulateStructureView.cpp:190 does). That
+	  works, but it makes ONE question - "which presentation shows this document" - answered two
+	  ways in one plug-in ([[one-question-one-place]]), and the established way is better: it does
+	  not need a view at all.
+	  ★NOT GetFrontmostPresentationForDocument: that one answers nil for a window sitting behind
+	    another tab, which is exactly the case this function exists for (KESCMBookOpen.cpp:145-148,
+	    where both sibling plug-ins are recorded as having learned the same thing).
+	★FindPresCriteria::accept_all is the SDK's own "any presentation will do" predicate
+	  (DocumentPresFindCriteria.h:82). The five callers above each wrote their own one-line
+	  predicate; new code should not add a sixth.
 	★ActivateView still runs afterwards, for the selection context itself.
 */
 void ActivateDocument(IDataBase* db)
 {
-	IControlView* view = FirstLayoutView(db);
-	if (view == nil)
+	if (db == nil)
 		return;
 
-	InterfacePtr<IWidgetParent> parent(view, UseDefaultIID());
-	InterfacePtr<IDocumentPresentation> presentation(
-		parent != nil ? (IDocumentPresentation*)parent->QueryParentFor(IID_IDOCUMENTPRESENTATION) : nil);
+	FindPresentation_PreferCriteria noPreference;	// the first presentation found is fine
+	IDocumentPresentation* presentation = Utils<IDocumentUIUtils>()->FindPresentationForDocument(
+		db, &FindPresCriteria::accept_all, noPreference);
 	if (presentation != nil)
-	{
-		presentation->MakeFrontmostInTabGroup();
 		presentation->MakeActive();
-	}
 
-	Utils<ISelectionUtils>()->ActivateView(view);	// return value is the context; nobody needs it
+	IControlView* view = FirstLayoutView(db);
+	if (view != nil)
+		Utils<ISelectionUtils>()->ActivateView(view);	// return value is the context; nobody needs it
 }
 
 /** Select from..to of one story in ONE document, with the Type tool on.
