@@ -1583,9 +1583,15 @@ bool16 KESCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 	//   印刷文脈では sSrcMarksOn だけを見る(押下は画面の話)。
 	// ⚠Source 窓以外で押した時は sSrcMarksPressed が立たない(KESCMPeekGesture.cpp の窓判定)。
 	const bool16 srcPressed = (sSrcMarksPressed && !printing) ? kTrue : kFalse;
+	// ★★2026-08-22＝**Pages パネルのサムネイルには常に出す**(ユーザー決定＝Target と対称に)。
+	//   Target 側は下の wantMarks が `|| isThumb` で強制していて、**Source だけがトグル待ち**だった
+	//   ---- ページパネルは「変更ページを一覧で見る」場所なので、新旧で振る舞いが違う理由が無い。
+	//   ★**押下の XOR もサムネイルには効かせない**＝押している最中にサムネイルが作り直されると
+	//     一覧の枠まで反転する、という粗が同時に消える(Target 側は isThumb のおかげで元から無縁だった)。
 	// ⚠`(a != 0) != (b != 0)` と書く＝bool16 は整数型で、kTrue 以外の真値が来ると裸の != は逆を答える。
 	const bool16 srcWanted = printing ? sSrcMarksOn
-	                                  : ((((sSrcMarksOn != 0) != (srcPressed != 0))) ? kTrue : kFalse);
+	                       : (isThumb ? kTrue
+	                                  : ((((sSrcMarksOn != 0) != (srcPressed != 0))) ? kTrue : kFalse));
 	const bool16 wantSrcMarks = srcWanted && sSrcDB != nil && anyMarkableContent;
 	// 印刷で「枠の印刷」が OFF のときは、Target 側のオーバーレイ一式を描かない(枠は基本非印刷)。
 	// Source 側の枠だけは常に印刷に出す仕様なので、wantSrcMarks が生きていれば処理を続行し、
@@ -2020,7 +2026,15 @@ bool16 KESCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 	//   バックグラウンド(PDF の非同期書き出し)には**クローンされた別 DB** が渡るので、`db == sSrcDB` は
 	//   必ず偽になり、Source 側の枠が書き出しに一切出なかった。同一性はファイル(GetSysFile)で聞く。
 	//   ⚠メインスレッドでは同一ポインタで即決するので、従来の判定と結果は1つも変わらない。
-	if (wantSrcMarks && KESCMIsSameDoc(db, sSrcDB) && !KESCMIsSameDoc(db, sDB))
+	// ⚠★★★**覗いているスプレッドには枠を描かない**(2026-08-22 ユーザー報告＝「ソースの方で Peek の
+	//   動作するとき、枠が表示されてますね、ターゲットの方は大丈夫」)。
+	//   ★**Target 側は元からこれを持っていた**＝下のリング描画が `peekingThisSpread` で先に return する。
+	//     Source 側だけ同じガードが無く、旧版べた載せの上に枠が重なっていた。
+	//   ⚠**なぜ今まで見えなかったか**＝それまで Source の枠は「トグル ON のときだけ」出て、その ON の
+	//     ときは押下で `sSrcMarksTempHidden` が立って隠れていた。**同じ日に「トグル OFF でも押下で出る」
+	//     ようにした(XOR)ことで、初めて peek 中に出る道ができた**——覗くのも押下だから。
+	//   ⇒ ★**機能を対称にすると、対称でなかった側のガードの欠落も一緒に表に出る。**
+	if (wantSrcMarks && !peekingThisSpread && KESCMIsSameDoc(db, sSrcDB) && !KESCMIsSameDoc(db, sDB))
 	{
 		// ★2026-08-15(第2段 Task 12B): Target 側ループと同じ理由でロックを取る(下の return まで保持)。
 		KESCMMarkStateLock srcMarkLock(KESCMMarkStateMutex());
