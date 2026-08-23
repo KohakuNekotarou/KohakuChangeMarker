@@ -57,12 +57,6 @@
       <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMStatusTextView.cpp">
          <Filter>Source Files</Filter>
       </ClCompile>
-      <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMStoryMarker.cpp">
-         <Filter>Source Files</Filter>
-      </ClCompile>
-      <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMStoryMarkerExpiry.cpp">
-         <Filter>Source Files</Filter>
-      </ClCompile>
       <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMStoryPressMarks.cpp">
          <Filter>Source Files</Filter>
       </ClCompile>
@@ -195,18 +189,6 @@
          <Filter>Header Files</Filter>
       </ClInclude>
       <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\KESCMPanelTextDraw.h">
-         <Filter>Header Files</Filter>
-      </ClInclude>
-      <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\KESCMStoryMarker.h">
-         <Filter>Header Files</Filter>
-      </ClInclude>
-      <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\KESCMStoryMarkerExpiry.h">
-         <Filter>Header Files</Filter>
-      </ClInclude>
-      <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\KESCMStoryMarkRanges.h">
-         <Filter>Header Files</Filter>
-      </ClInclude>
-      <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\KESCMStoryMarkDocs.h">
          <Filter>Header Files</Filter>
       </ClInclude>
       <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\KESCMStoryPressMarks.h">

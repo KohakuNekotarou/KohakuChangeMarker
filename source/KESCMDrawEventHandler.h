@@ -184,7 +184,7 @@ public:
 	// ★「Show Marks on Target」(2026-08-22 ユーザー要望「ツールでボタンを押さなくても常にマークが出る様に」)。
 	//   ON の間、Target 文書のマークを**画面に常時**表示する(ツール左hold と無関係)。上の Source 版と対で、
 	//   ★★Story 変更モードでは反転マークが同じトグルで常時表示になる
-	//   (ui/KESCMStoryPressMarks.cpp)＝「ピクセルの方もストーリーの方にも」。
+	//   (KESCMStoryMarkBuild.cpp。★2026-08-23 までは ui/KESCMStoryPressMarks.cpp)＝「ピクセルの方もストーリーの方にも」。
 	// ⚠**画面だけ**＝Source 版と違い印刷/PDF には出さない。Target 側の出力は「Print comparison marks」
 	//   (sPrintMarks)が決める仕様で、こちらが出力に効くとあのトグルの意味が消える。
 	static bool16 sTgtMarksOn;

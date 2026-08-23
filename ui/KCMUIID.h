@@ -153,12 +153,14 @@ DECLARE_PMID(kClassIDSpace, kKESCMStoryChangeCellBoss, kKCMUIPrefix + 29)	// kGe
 //   GetCharCount で判定でき、範囲の一部だけの座標も MapCharsToGlyphs で取れる＝**座標変換が要らない**。
 //   ⇒ KBS の Draw Event 方式(ペーストボード座標の矩形を自分で組む)と違い、縦組みや回転にそのまま乗る。
 // ★API 既製の provider(`kGlobalTextAdornmentServiceImpl`)と自作の実装の2枚だけ＝手本は本体 spellpanel と KT。
-DECLARE_PMID(kClassIDSpace, kKESCMStoryMarkerBoss, kKCMUIPrefix + 30)	// IK2ServiceProvider(kGlobalTextAdornmentServiceImpl)+IID_IGLOBALTEXTADORNMENT(kKESCMStoryMarkerAdornmentImpl): 飛んだ先の文字を反転して見せる一時マーカー(KESCMStoryMarker.cpp)
+// ★★★+ 30 は欠番＝**Story マークの boss は 2026-08-23 に model 側へ移した**（`KESCMID.h` の kKESCMPrefix + 32）。
+//   理由＝**UI の File>Export>PDF は BG で走り、kUIPlugIn には描画が1度も配られない**（2026-08-12 実測・無警告）ので、
+//   こちら側に居るかぎり書き出した PDF に出す道が無かった。⚠**番号は詰め直さない**＝[[id-prefix-256-slot-budget]]。
 // そのマーカーを1秒ほどで引っ込めるタイマー(2026-08-20)。★**IIdleTask にしたのは KBS と同じ判断**＝
 // `ICallbackTimer` のコールバックは参照カウントされない生の関数ポインタで、ヘッダー自身が "Danger!" と
 // 書いている。IdleTask は boss 上のインターフェイスなので終了処理で普通に Release できる。
 // ⚠[[avoid-timers-and-idle-tasks]] の例外＝**壁時計で消えねばならないものは他に無い**。
-DECLARE_PMID(kClassIDSpace, kKESCMStoryMarkerExpiryBoss, kKCMUIPrefix + 31)	// IIdleTask: 上のマーカーの期限切れ(KESCMStoryMarkerExpiry.cpp)
+// ★+ 31 も欠番＝上のマーカーの期限切れ timer も同じ回に model 側へ（`KESCMID.h` の kKESCMPrefix + 33）。
 // パネルのメッセージ欄(2026-08-20)。★**stock の StaticMultiLineTextWidget を差し替えたもの**＝
 // あちらは1本の文字列を1色で描くので、変更行をクリックしたときに出す「もう一方の側」の中で
 // **どの文字が違うのか**を言えない。⇒ 上の変更行のセルと同じ形(kGenericPanelWidgetBoss＋自前 view)。
@@ -221,8 +223,8 @@ DECLARE_PMID(kImplementationIDSpace, kKESCMUIStartupImpl, kKCMUIPrefix + 38)	// 
 DECLARE_PMID(kImplementationIDSpace, kKESCMModelChangeObserverImpl, kKCMUIPrefix + 37)	// IObserver 実装(model の通知を受けて画面を作り直す **UI 側**。KESCMModelChangeObserver.cpp)
 DECLARE_PMID(kImplementationIDSpace, kKESCMUIDrawEventSrvcImpl, kKCMUIPrefix + 35)	// CServiceProvider 実装(kDrawEventService。UI 専用の描画サービス。KESCMUIDrawEvent.cpp)。★GetThreadingPolicy は手書きしない＝CServiceProvider がプラグインの型から既定を返す
 DECLARE_PMID(kImplementationIDSpace, kKESCMUIDrawEventHandlerImpl, kKCMUIPrefix + 36)	// IDrwEvtHandler 実装(押下中 HUD の描画だけ。画面専用＝PDF 書き出しに出なくてよい。KESCMUIDrawEvent.cpp)
-DECLARE_PMID(kImplementationIDSpace, kKESCMStoryMarkerAdornmentImpl, kKCMUIPrefix + 41)	// IGlobalTextAdornment 実装(飛んだ先の文字を反転して少しのあいだ見せる。KESCMStoryMarker.cpp)
-DECLARE_PMID(kImplementationIDSpace, kKESCMStoryMarkerExpiryImpl, kKCMUIPrefix + 42)	// IIdleTask 実装(上のマーカーを1秒ほどで引っ込める。KESCMStoryMarkerExpiry.cpp)
+// ★★+ 41 と + 42 は欠番＝Story マークのアドーンメント実装と期限切れ timer 実装は 2026-08-23 に
+//   model 側へ移した（`KESCMID.h` の kKESCMPrefix + 50 / + 51）。理由は上の + 30 の注記と同じ。
 DECLARE_PMID(kImplementationIDSpace, kKESCMStoryCellViewImpl, kKCMUIPrefix + 39)	// IControlView 実装(DVControlView派生)。Story Edits の**変更行**のテキストセル＝変更された文字はテーマの文字色、前後の文脈は背景へ寄せた薄い色で描く(KESCMStoryCellView.cpp)。★手本は KBS の KBSColorTextView(あちらは検索ヒットの一致部分を強調する)
 DECLARE_PMID(kImplementationIDSpace, kKESCMStoryCellDataImpl, kKCMUIPrefix + 40)	// IKESCMStoryCellData 実装(非永続の3片の入れ物。上のセルと同じ boss に同居する。KESCMStoryCellView.cpp)
 DECLARE_PMID(kImplementationIDSpace, kKESCMStatusTextViewImpl, kKCMUIPrefix + 43)	// IControlView 実装(DVControlView派生)。パネルのメッセージ欄＝箱に入るだけ折り返し、変更された文字はテーマの文字色、見出しと前後の文脈は背景へ寄せた薄い色で描く(KESCMStatusTextView.cpp)。★**PERSIST 版**＝パネルの .fr から作られる widget なので、土台の kGenericPanelWidgetBoss が持つ IID_ICONTROLVIEW と同じく永続でなければならない

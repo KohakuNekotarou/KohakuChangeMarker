@@ -108,6 +108,15 @@
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryDiffRun.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryMarker.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryMarkerExpiry.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryMarkBuild.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMID.h">
@@ -147,6 +156,24 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryDiffRun.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\IKESCMStoryMarkFacade.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryMarker.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryMarkerExpiry.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryMarkRanges.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryMarkDocs.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryMarkBuild.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMDrawEventHandler.h">

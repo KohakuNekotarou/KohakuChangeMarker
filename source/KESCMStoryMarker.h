@@ -36,7 +36,7 @@
 //  ★★AND IT IS THE WHOLE ANSWER WHEN THE TOOL PUTS IT UP (2026-08-22). Holding the left button
 //  over a window with the KESCM tool marks EVERY edit in it at once and keeps them up until the
 //  button comes back up - the Story mode's answer to the frames the Pixel mode reveals the same
-//  way (KESCMStoryPressMarks). Same adornment, same look, no countdown; and because the mark is
+//  way (KESCMStoryMarkBuild). Same adornment, same look, no countdown; and because the mark is
 //  drawn on the characters by the text engine, it neither grows with the zoom nor needs a frame
 //  drawn around the page (user's request: "拡大率で大きさは変わらない、ページへの外枠もいらない").
 //
@@ -85,7 +85,7 @@ namespace KESCMStoryMarker
 		★IT IS HERE RATHER THAN AT THE CALLER SO THAT A DELETION LOOKS THE SAME EVERYWHERE. A range
 		that comes through empty is the place something was deleted from - there is nothing on this
 		side to invert - and it is shown as a caret, exactly as the standing marks show one
-		(KESCMStoryPressMarks). A caller that built its own ranges would be the second place that
+		(KESCMStoryMarkBuild). A caller that built its own ranges would be the second place that
 		decision is made ([[one-question-one-place]]).
 
 		@param docs the set being built up. Ranges may be added in any order and may overlap.
@@ -142,7 +142,8 @@ namespace KESCMStoryMarker
 
 	/** Take the standing marks down now, leaving a jump's pointer alone. Safe when there is none.
 
-		★★ASK THE MARK, DO NOT REMEMBER IT. KESCMStoryPressMarks used to keep "did I put the current
+		★★ASK THE MARK, DO NOT REMEMBER IT. KESCMStoryPressMarks (the file that became
+		KESCMStoryMarkBuild in 2026-08-23's migration) used to keep "did I put the current
 		mark up" in a static of its own and test it before clearing - the same fact written down
 		twice ([[one-question-one-place]]), and the two drifted the moment anything else cleared the
 		mark. There is nothing to test now: this takes down what it owns and nothing else. */

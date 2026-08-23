@@ -26,8 +26,16 @@
 //  the zoom (user's request: "拡大率で大きさは変わらない、ページへの外枠もいらない").
 //
 //  ★THE MARK ITSELF IS THE JUMP'S, UNCHANGED (user's call: "ジャンプと時につかってるのとおなじで
-//  いいです"). This file works out WHICH ranges; KESCMStoryMarker draws them, as the global text
-//  adornment it already was.
+//  いいです").
+//
+//  ⚠★★★2026-08-23: WORKING OUT WHICH RANGES IS NO LONGER DONE HERE. It moved to the model plug-in
+//  (source/KESCMStoryMarkBuild.cpp) along with the adornment that draws them
+//  (source/KESCMStoryMarker.cpp), because **the UI's File > Export > PDF runs in the background and
+//  a kUIPlugIn is never handed the drawing** - so marks living on this side could not appear on
+//  paper or in an exported PDF, whatever guard they carried.
+//  ⇒ The three functions below kept their names, their signatures and their meaning; each is now
+//    one call through IKESCMStoryMarkFacade. Everything the comments above describe still happens,
+//    just on the other side of the boundary.
 //
 //  ★WHICH DOCUMENT DECIDES WHAT IS MARKABLE AT ALL: a deletion only exists in the older document,
 //  an insertion only in the newer one, and a story that was added or removed outright exists in

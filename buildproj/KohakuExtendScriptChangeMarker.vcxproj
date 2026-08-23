@@ -233,6 +233,9 @@
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryXml.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryCellBases.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryDiffRun.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryMarker.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryMarkerExpiry.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryMarkBuild.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMPageNumberMarker.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMPeek.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMRingAdornment.cpp" />
@@ -294,6 +297,12 @@
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\IKESCMMarkData.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\IKESCMPageFlagsFacade.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\IKESCMStoryEditsFacade.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\IKESCMStoryMarkFacade.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryMarker.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryMarkerExpiry.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryMarkRanges.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryMarkDocs.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryMarkBuild.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\IKESCMBookFacade.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMScriptingDefs.h" />
   </ItemGroup>

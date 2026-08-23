@@ -377,7 +377,7 @@ void Add(std::vector<KESCMStoryChange>& out, int32 paraIndex,
 	//
 	//   ★AN EMPTY RANGE IS THE ANSWER TO BOTH. fSourceStart == fSourceEnd says "this place, no
 	//     characters" - which is exactly what the newer side already carries for a DELETION, and
-	//     what the marks already draw as a caret (KESCMStoryPressMarks turns a zero-width range
+	//     what the marks already draw as a caret (KESCMStoryMarkBuild turns a zero-width range
 	//     into KESCMMarkRange::Caret without being asked). ⇒ + and - are now mirror images.
 	change.fSourceStart = sRun.Index(sFrom);
 	change.fSourceEnd = sRun.Index(sFrom + sCount);

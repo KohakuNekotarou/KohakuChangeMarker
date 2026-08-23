@@ -209,7 +209,10 @@ DECLARE_PMID(kClassIDSpace, kKESCMRingAdornmentStartupBoss, kKESCMPrefix + 30)	/
 //   ⚠**保存の前後(kBeforeSaveDoc)には置かない**＝そこで落ちると文書を失う。書き出しなら失敗してもやり直せる
 //     (2026-08-20 ユーザー判断＝「どこで失敗しても許される場所に置く」)。
 DECLARE_PMID(kClassIDSpace, kKESCMPDFExportSetupBoss, kKESCMPrefix + 31)	// IK2ServiceProvider(Adobe 提供の kPDFExportSetupServiceImpl)+IPDFExportSetupProvider: PDF 書き出しの BeginExport で透明の一覧に載せ、EndExport で降ろす。★★★**非同期書き出しではここに「書き出し用のクローン db」が渡る**＝元の文書を一度も触らずに出力だけ変えられる(2026-08-20 実測)。⚠**旧 kKESCMExportXPResponderServiceBoss(同じ +31)の後継**＝あちらは kBeforeExport/kAfterExport/kFailedExport の3シグナルで**元の文書**に載せていたので、書き出し中に保存されると一覧が .indd に焼き付いた
-														// ⚠**印刷側の対(kPrintSetupService+IPrintSetupProvider)は無い**＝公式に倣って一度書いたが(旧 +32/+50)、**2026-08-20 のユーザー判断で外した**。⚠**効かないからではない**＝載せれば印刷でもマークは濃くなる(実測 16,076 ⇔ 8,407 画素。どちらもベタにはならない)が、**印刷にそこまでの厳密性は要らない・印刷会社へ出すのは PDF** という判断。★A/B と復活手順は KESCMRingAdornment.cpp の節5。**次の新規 boss は +32 から採ってよい**
+DECLARE_PMID(kClassIDSpace, kKESCMStoryMarkerBoss, kKESCMPrefix + 32)	// IK2ServiceProvider(API 既製の kGlobalTextAdornmentServiceImpl)+IID_IGLOBALTEXTADORNMENT: Story モードで変わった文字そのものを反転して見せるグローバルテキストアドーンメント(KESCMStoryMarker.cpp)。★★★**2026-08-23 に UI 側(kKCMUIPrefix + 30)から移設**＝**UI の File>Export>PDF は BG で走り kUIPlugIn には描画が1度も配られない**ので、紙・PDF に出すには model 側に居るしかなかった。⚠**ページアイテムアドーンメント(+29)と違って実行コンテキストごとの手動登録は要らない**＝サービスなのでレジストリが BG も含めて解決する(KESCM.fr の kKESCMRingAdornmentStartupBoss の説明が対比で書いている)
+DECLARE_PMID(kClassIDSpace, kKESCMStoryMarkerExpiryBoss, kKESCMPrefix + 33)	// IIdleTask: 上のマーカーのうち**ジャンプの点滅だけ**を約1秒で引っ込める(KESCMStoryMarkerExpiry.cpp)。★2026-08-23 に UI 側(kKCMUIPrefix + 31)から移設＝上のアドーンメントが Start/Stop を呼ぶので、UI に残すと model→UI の逆依存になる
+														// ⚠**印刷側の対(kPrintSetupService+IPrintSetupProvider)は無い**＝公式に倣って一度書いたが(旧 +32/+50)、**2026-08-20 のユーザー判断で外した**。⚠**効かないからではない**＝載せれば印刷でもマークは濃くなる(実測 16,076 ⇔ 8,407 画素。どちらもベタにはならない)が、**印刷にそこまでの厳密性は要らない・印刷会社へ出すのは PDF** という判断。★A/B と復活手順は KESCMRingAdornment.cpp の節5。
+														// ★**+32 / +33 は 2026-08-23 に Story マークの移設で埋まった**(上の2本)。**次の新規 boss は +34 から採ってよい**
 
 // InterfaceIDs:
 // ★★+0〜+3（Observer 3本のアタッチ識別 ID ＋ Story Edits セクション高さ）は 2026-08-15（第2段
@@ -259,8 +262,13 @@ DECLARE_PMID(kImplementationIDSpace, kKESCMRingFlattenerUsageImpl, kKESCMPrefix 
 DECLARE_PMID(kImplementationIDSpace, kKESCMRingAdornmentStartupImpl, kKESCMPrefix + 47)	// IStartupShutdownService 実装(KESCMRingAdornment.cpp の末尾)。中身は Register/Unregister を呼ぶだけ。★**実行コンテキストごとに**呼ばれる必要があるので kKESCMPeekStartupImpl とは別の boss に載せる
 // ★2026-08-20: 上の2 boss の実装(いずれも KESCMRingAdornment.cpp の末尾)。透明の申告と同じ関心事なので同居させる。
 DECLARE_PMID(kImplementationIDSpace, kKESCMPDFExportSetupImpl, kKESCMPrefix + 48)		// IPDFExportSetupProvider 実装(KESCMRingAdornment.cpp)。★ServiceProvider 側は Adobe 提供の kPDFExportSetupServiceImpl をそのまま .fr で名指しするので、自作はこの1本だけ。手本=sdksamples/pdfvt。⚠**旧 kKESCMExportXPResponderImpl(同じ +48)の後継**
+DECLARE_PMID(kImplementationIDSpace, kKESCMStoryMarkFacadeImpl, kKESCMPrefix + 50)	// IKESCMStoryMarkFacade 実装(KESCMFacades.cpp)。UI が「トグルが動いた/押した/ジャンプした」と伝える窓口。★境界の6本目(2026-08-23)。⚠**+49 から採り直した**＝下の欠番コメントが「スロットは予約のまま／次の新規 Impl は +50 から」と書いているのを、採番のときに読み落としていた(2026-08-23 の再検査で発見)
+DECLARE_PMID(kImplementationIDSpace, kKESCMStoryMarkerAdornmentImpl, kKESCMPrefix + 51)	// IGlobalTextAdornment 実装(KESCMStoryMarker.cpp)。変わった文字を Difference 合成で反転する。★2026-08-23 に UI 側(kKCMUIPrefix + 41)から移設
+DECLARE_PMID(kImplementationIDSpace, kKESCMStoryMarkerExpiryImpl, kKESCMPrefix + 52)	// IIdleTask 実装(KESCMStoryMarkerExpiry.cpp)。ジャンプの点滅を約1秒で引っ込める。★2026-08-23 に UI 側(kKCMUIPrefix + 42)から移設
 // kKESCMExportXPServiceProviderImpl (kKESCMPrefix + 49) は 2026-08-20 に廃止＝書き出しシグナル3本を1つの boss で受けるための自作 ServiceProvider だったが、PDF 書き出しサービスへ移して不要になった(あちらは ServiceProvider が Adobe 提供)。スロットは予約のまま。
-														// ⚠**印刷側の IPrintSetupProvider 実装は無い**(旧 +50。理由は上の Class 側の注記と KESCMRingAdornment.cpp の節5)。**次の新規 Impl は +50 から採ってよい**
+														// ⚠**印刷側の IPrintSetupProvider 実装は無い**(旧 +50。理由は上の Class 側の注記と KESCMRingAdornment.cpp の節5)。
+														// ★**+50 / +51 / +52 は 2026-08-23 に Story マークの移設で埋まった**(上の3本)。**次の新規 Impl は +53 から採ってよい**。
+														// ⚠★この行を読まずに +49 を採りかけた(同日の再検査で発見)＝**欠番の注記は DECLARE の並びの「下」にあるので、末尾だけ見て次番を決めると踏む。**
 
 // MessageIDs: model が UI へ「何が変わったか」を知らせる通知(2026-08-13・model/UI 分割 第1段 Task 9)。
 //   ★★2026-08-15（第2段 Task 6B）に **7本すべて KESCMBoundaryID.h へ移した**

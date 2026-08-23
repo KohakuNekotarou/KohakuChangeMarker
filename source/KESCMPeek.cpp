@@ -73,6 +73,7 @@
 //  遅延再生成・同期キャッシュ・覗き状態は全部 UI の持ち物で、通知(KESCMNotifyDocs)を受けた
 //  KESCMModelChangeObserver がやるようになった)
 #include "KESCMStoryList.h"          // KESCMStoryList::ShutdownCleanup(行が抱える PMString を終了時に手放す)
+#include "KESCMStoryMarker.h"        // ★KESCMStoryMarker::Shutdown(Story モードのマークを二度と描かせない。2026-08-23 の移設で入った)
 #include "KESCMBookCompare.h"        // KESCMClearBookResultText(ブック比較の結果テキスト。同上)
 #include "KESCMChangedPagesTSV.h"    // KESCMClearExportMessage(TSV 書き出しのメッセージ。同上)
 #include "KESCMHideUnchanged.h"      // KESCMResetHideUnchanged / 隠している文書の getter(2026-08-13 に移動)
@@ -698,6 +699,15 @@ void KESCMPeekStartup::Shutdown()
 	//   unload 時に静的な PMString がデストラクトされる ---- KBS が3度続けて忘れて記録した形
 	//   (KBSResultTree.h:76-77)。UI には触らない(行を捨てるだけ)ので終了処理中でも安全。
 	KESCMStoryList::ShutdownCleanup();
+	// ★★★2026-08-23＝Story モードのマーク。**移設するまで、この後片付けには呼び手が1人も居なかった**
+	//   (`KESCMStoryMarker::Shutdown` を grep すると定義1件・呼び出し0件)。マークが UI プラグインに
+	//   居たあいだは、UI 側にこれと対になるメインスレッド限定の口が無かったためで、model へ移して
+	//   初めて**正しい戸口**ができた。中身は「以後なにも描かない・なにも再描画しない」の旗を立てて
+	//   集合を空にするだけ＝終了処理中でも安全(閉じかけの文書を再描画しに行かないための旗そのもの)。
+	// ⚠**model 側の普通の startup/shutdown サービスに置いてはいけない**＝BG スレッドの終了ごとに
+	//   呼ばれて、PDF を書き出すたびにマークが消える(この関数の冒頭が記録している 2026-08-15 の罠)。
+	//   ここはその限定が既に効いている場所なので、足すならここ。
+	KESCMStoryMarker::Shutdown();
 	// ★★2026-08-18(不具合再検査 B8): **中身が PMString の static は、この時点で3本あった。**
 	//   上の Story Edits(1本)だけが列挙されており、残り2本が漏れていた ---- どちらも「最後に走った
 	//   1回ぶんの文字列」を unload まで抱える:

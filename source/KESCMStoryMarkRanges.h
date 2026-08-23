@@ -76,7 +76,7 @@ inline bool KESCMMarkRangeEndsAtOrBefore(const KESCMMarkRange& r, TextIndex v)
 
 	★EMPTY RANGES ARE DROPPED, NOT WIDENED. A deletion has no width on the side it was deleted
 	from, and widening it is a decision about what the reader should see - which belongs to the
-	caller that knows it is looking at a deletion (KESCMStoryPressMarks), not to a list of numbers.
+	caller that knows it is looking at a deletion (KESCMStoryMarkBuild), not to a list of numbers.
 	★That caller's answer since 2026-08-22 is KESCMMarkRange::Caret - see below for why a caret is
 	carried through here rather than being fused away.
 

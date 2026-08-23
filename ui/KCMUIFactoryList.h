@@ -82,8 +82,10 @@ REGISTER_PMINTERFACE(KESCMStoryTreeAdapter, kKESCMStoryTreeAdapterImpl)	// 一�
 REGISTER_PMINTERFACE(KESCMStoryTreeWidgetMgr, kKESCMStoryTreeWidgetMgrImpl)	// 行の生成と流し込み(CTreeViewWidgetMgr派生。KESCMStoryTreeWidgetMgr.cpp)
 REGISTER_PMINTERFACE(KESCMStoryRowEH, kKESCMStoryRowEHImpl)	// 行のクリック=ジャンプ/ダブルクリック=ストーリー全文を選択(KESCMStoryRowEH.cpp)
 REGISTER_PMINTERFACE(KESCMStoryTreeEH, kKESCMStoryTreeEHImpl)	// 一覧の↑↓=行を移動して着いた行を表示(KESCMStoryTreeEH.cpp)
-REGISTER_PMINTERFACE(KESCMStoryMarkerAdornment, kKESCMStoryMarkerAdornmentImpl)	// 飛んだ先の文字を反転して見せる一時マーカー(グローバルテキストアドーンメント。KESCMStoryMarker.cpp)
-REGISTER_PMINTERFACE(KESCMStoryMarkerExpiryTask, kKESCMStoryMarkerExpiryImpl)	// 上のマーカーを1秒ほどで引っ込める IIdleTask(KESCMStoryMarkerExpiry.cpp)
+// ★★★2026-08-23＝**マーカーとその timer は model 側へ移設した**(KESCMFactoryList.h に居る)。
+//   理由＝**UI の File>Export>PDF は BG で走り、kUIPlugIn には描画が1度も配られない**(2026-08-12 実測・無警告)
+//   ので、こちら側に居るかぎり書き出した PDF には絶対に出せなかった。
+//   ⚠**kKCMUIPrefix + 41 / + 42 は欠番のまま**にする(値さえ衝突しなければよい＝[[id-prefix-256-slot-budget]])。
 REGISTER_PMINTERFACE(KESCMStoryCellData, kKESCMStoryCellDataImpl)// 変更行のセルが描く3片(前の文脈/変更された文字/後の文脈)の入れ物(KESCMStoryCellView.cpp)
 REGISTER_PMINTERFACE(KESCMStoryCellView, kKESCMStoryCellViewImpl)	// ★PERSIST 版(変更行のテキストセル。変更された文字だけ通常色・前後は薄く。DVControlView派生。KESCMStoryCellView.cpp)
 REGISTER_PMINTERFACE(KESCMStatusTextData, kKESCMStatusTextDataImpl)	// パネルのメッセージ欄が描く4片(見出し/前の文脈/変更された文字/後の文脈)の入れ物(KESCMStatusTextView.cpp)

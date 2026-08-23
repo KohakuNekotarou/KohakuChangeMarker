@@ -51,7 +51,9 @@
 #include "IKESCMCompareFacade.h"	// arm 状態(2026-08-13・分割 第1段 Task 11 で Facade 経由へ)
 #include "KESCMUIShared.h"	// panel / status line / nav readout / tool button (split from KESCMCore.h on 2026-08-13)
 #include "KESCMStoryJump.h"
-#include "KESCMStoryMarker.h"	// the flash over the characters a change row goes to (2026-08-20)
+#include "IKESCMStoryMarkFacade.h"	// the flash over the characters a change row goes to (2026-08-20).
+									// ★2026-08-23: the marker itself moved to the model plug-in, so
+									// this side asks through the boundary rather than calling it.
 #include "IKESCMStoryEditsFacade.h"	// the row a click landed on (Facade since 2026-08-13, Task 14)
 #include "IKESCMMarkData.h"	// IsPageOnHiddenSpread - a row on a hidden page is labelled, not jumped to (2026-08-18)
 
@@ -549,23 +551,14 @@ bool16 KESCMStoryJumpToChange(int32 rowIndex, int32 changeIndex)
 	//   click, which the suite would refuse if they were stale, while a mark is only ever asked "is
 	//   any of this run marked" and a stale range simply never meets a run (KESCMStoryPressMarks
 	//   records the same reasoning for the standing marks).
-	KESCMStoryMarkDocs flash;
-	KESCMStoryMarker::AddFlashRange(flash, db, row.fStoryUID, from, to);
-
-	IDataBase* const flashSourceDB = Utils<IKESCMCompareFacade>()->GetArmedSourceDB();
-	if (flashSourceDB != nil && flashSourceDB != db
-		&& Utils<IKESCMCompareFacade>()->IsDocDBOpen(flashSourceDB))
-	{
-		// ★THE SAME STORY UID, IN THE OTHER DOCUMENT - which is what the whole Story mode is built
-		//   on: the diff pairs stories by uid, the double click below selects in both by uid, and
-		//   the standing marks light both by uid (KESCMStoryPressMarks). ⚠The general rule that a
-		//   uid names a different object in another document is TRUE and does not apply here, and
-		//   believing it did is what left the older window nearly bare until 2026-08-22 (bug A6).
-		KESCMStoryMarker::AddFlashRange(flash, flashSourceDB, row.fStoryUID,
-										change.fSourceStart, change.fSourceEnd);
-	}
-
-	KESCMStoryMarker::ShowFlash(flash);
+	// ★★ONE CALL SINCE 2026-08-23, WHERE THIS USED TO BUILD THE SET ITSELF. The marker moved to the
+	//   model plug-in (so that the marks can reach paper and PDF - the UI's export runs in the
+	//   background and never draws a kUIPlugIn), and its vocabulary is a nested std::map that must
+	//   not cross a DLL edge. ⇒ The two ranges travel as six plain numbers and the model builds the
+	//   set. ★What went with it: deciding whether the older window is open, and treating an empty
+	//   range as a caret. Both are facts about the comparison rather than about this row.
+	Utils<IKESCMStoryMarkFacade>()->ShowJumpFlash(db, row.fStoryUID, from, to,
+												  change.fSourceStart, change.fSourceEnd);
 
 	// ***** AND THE OTHER SIDE OF THE EDIT GOES TO THE PANEL'S MESSAGE AREA. *****
 	//
@@ -687,7 +680,7 @@ bool16 KESCMStorySelectChange(int32 rowIndex, int32 changeIndex)
 	//   had just wiped. ⚠The repair was itself a fix, added after the bug recheck of 2026-08-22
 	//   found the toggles going bare (A2) - a fix for damage this line was doing to itself. Naming
 	//   which of the two is coming down removes both (KESCMStoryMarker.h).
-	KESCMStoryMarker::ClearFlash();
+	Utils<IKESCMStoryMarkFacade>()->ClearJumpFlash();
 
 	// ***** AND THE SAME EDIT IS SELECTED ON THE OLDER SIDE TOO (user's call, 2026-08-21). *****
 	//

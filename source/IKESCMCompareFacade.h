@@ -142,7 +142,8 @@ public:
 		★IT MEANS THE SAME THING IN BOTH COMPARE MODES - the Pixel mode's rings and the Story
 		mode's inverted characters (user's request: "ピクセルの方もストーリーの方にも"). The two
 		are drawn by completely different machinery, so each reads this for itself: the rings in
-		KESCMDrawEventHandler, the characters in ui/KESCMStoryPressMarks.
+		KESCMDrawEventHandler, the characters in KESCMStoryMarkBuild (which was
+		ui/KESCMStoryPressMarks until the marker moved to this side on 2026-08-23).
 		⚠ON SCREEN ONLY, where the Source one also prints. What comes out of the Target document
 		is decided by "Print comparison marks" alone, and this must not quietly override it. */
 	virtual bool16		GetShowTargetMarks() = 0;
