@@ -54,7 +54,7 @@ struct TableAt
 /* EarlierBlock
    The order the document itself keeps its tables in.
 
-   ★★★WHY THE THREAD BLOCK AND NOT THE ANCHOR (2026-08-24). Sorting by the anchor is sorting by
+   ★★★WHY THE THREAD BLOCK AND NOT THE ANCHOR (2026-08-23). Sorting by the anchor is sorting by
    raw TextIndex, and that is the wrong order the moment a table stands inside another one: a
    nested table's anchor is inside its parent's CELLS, which are laid out after the whole of the
    body - so a second top-level table, anchored a few characters into the body, sorts BEFORE it,
@@ -105,7 +105,7 @@ bool16 KESCMResolveParagraphPositions(const UIDRef& storyRef,
 	std::vector<KESCMTableAnchor> anchors;
 	KESCMSnippetText::BodyParagraphStarts(paragraphs, attrs, outStarts, anchors);
 
-	// ★★EVERY TABLE, NESTED ONES INCLUDED (2026-08-24). A table inside a table used to be refused
+	// ★★EVERY TABLE, NESTED ONES INCLUDED (2026-08-23). A table inside a table used to be refused
 	//   here; now it is read like any other, because its own characters are charged to the CELL it
 	//   stands in and its cells are asked of the document the same way.
 	const int32 tableCount = KESCMSnippetText::TableCount(attrs);
@@ -243,7 +243,7 @@ bool16 KESCMResolveParagraphPositions(const UIDRef& storyRef,
 
 		// The thread's own start belongs to the first paragraph; each one after it begins past the
 		// one before and its break.
-		// ★★AND PAST ANY TABLE STANDING IN THE CELL (2026-08-24), which is charged to the paragraph
+		// ★★AND PAST ANY TABLE STANDING IN THE CELL (2026-08-23), which is charged to the paragraph
 		//   it stands in - in front of its text (the ordinary shape: a cell whose whole content is a
 		//   table) or behind it. This is the same walk BodyParagraphStarts does for the body; the
 		//   only difference is where it starts from.

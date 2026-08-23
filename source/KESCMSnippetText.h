@@ -87,7 +87,7 @@ typedef std::vector<KESCMAttrSpan> KESCMAttrSpanList;
 */
 /** One table of the story, and where its first character stands.
 
-	★★WHY THE PAIR AND NOT JUST THE POSITION (2026-08-24). Every table's position is checked
+	★★WHY THE PAIR AND NOT JUST THE POSITION (2026-08-23). Every table's position is checked
 	against the document's own answer before any cell of it is placed, and to check it you have to
 	know which table you are holding. Tables used to be met in one order only - the reader walked
 	the body from the top and so did the check - but a table inside a CELL is charged to a
@@ -181,7 +181,7 @@ struct KESCMParaAttrs
 
 	/** WHICH table begins at those two boundaries - its fTableOrdinal - or -1 for none.
 
-		★★WHY THE NUMBER AND NOT JUST THE COUNT (2026-08-24). Every table's anchor is checked
+		★★WHY THE NUMBER AND NOT JUST THE COUNT (2026-08-23). Every table's anchor is checked
 		against the document's own answer, and to check it you have to know which table you are
 		looking at. While tables were only ever in the body that could be left to ORDER: the body
 		walk met them from the top, and so did the reader. A NESTED table breaks that - the
@@ -224,7 +224,7 @@ struct KESCMParaAttrs
 		tell a cell from a paragraph after the fact: the text of the two is indistinguishable.
 
 		★fTableOrdinal counts EVERY table in the order it appears in the story, nested ones
-		  included (2026-08-24). ⚠It is therefore not a running counter: after an inner table
+		  included (2026-08-23). ⚠It is therefore not a running counter: after an inner table
 		  closes, the cells that follow belong to the OUTER table again - see the stack of open
 		  tables in ExtractParagraphs. */
 	enum { kNotACell = -1 };
@@ -240,7 +240,7 @@ struct KESCMParaAttrs
 
 	/** Whether this paragraph is a table cell whose position must be asked of the text model.
 
-		★A CELL OF A NESTED TABLE IS A CELL LIKE ANY OTHER (2026-08-24). It used to be marked
+		★A CELL OF A NESTED TABLE IS A CELL LIKE ANY OTHER (2026-08-23). It used to be marked
 		apart (kNestedCell) so that the resolver could refuse the story: the inner table's own
 		characters were not counted, so such a story never added up, and once cells were placed by
 		asking rather than by counting it could have added up and still been placed wrongly. Both
@@ -469,7 +469,7 @@ inline void ExtractParagraphs(const std::string& xml,
 	//                           + Σ(cell contents) + one per cell + (rows - 1)
 	//   ⚠The last row has no terminator, which is why it is rows-1 and not rows. All five agreed
 	//     exactly; the real document came to 52 against a measured 52.
-	// ★★★A TABLE INSIDE A TABLE (2026-08-24). MEASURED FIRST, on a 2x2 table whose cell holds a
+	// ★★★A TABLE INSIDE A TABLE (2026-08-23). MEASURED FIRST, on a 2x2 table whose cell holds a
 	//   2x1 one: ITextModel::TotalLength came to 42, and 42 is what the ordinary rule gives when it
 	//   is applied ONCE MORE - body 16 (its own text plus the OUTER table's two characters), outer
 	//   cells 18 (one of which is the INNER table's two characters and its break), inner cells 8.
@@ -572,7 +572,7 @@ inline void ExtractParagraphs(const std::string& xml,
 
 			// ★★★A TABLE CHARGES THE PARAGRAPH IT STANDS IN, AND THAT PARAGRAPH IS NOT OVER.
 			//   ⚠IT IS NOT "THE PARAGRAPH LAST FINISHED" EITHER, which is what this used to charge
-			//     (Charge::Table, removed 2026-08-24). For a table in the body those two are the
+			//     (Charge::Table, removed 2026-08-23). For a table in the body those two are the
 			//     same thing whenever a <Br /> stands in front of it - the ordinary shape - but
 			//     they part company twice:
 			//       - a table at the very START of a story or of a cell has no finished paragraph
@@ -723,7 +723,7 @@ inline void ExtractParagraphs(const std::string& xml,
 			//   (see the <Br /> branch): a cell may hold several paragraphs, and a flush resets the
 			//   attributes.
 			//   ★★★THE TABLE IS THE INNERMOST ONE OPEN, WHICH A RUNNING COUNTER CANNOT SAY
-			//     (2026-08-24). Tables are numbered in the order they appear, nested ones included,
+			//     (2026-08-23). Tables are numbered in the order they appear, nested ones included,
 			//     so a counter is right until an inner table closes - and every cell after that
 			//     </Table> belongs to the OUTER table again, whose number the counter has left
 			//     behind. ⇒ the open tables are kept on a stack and the cell takes the top of it.
@@ -971,7 +971,7 @@ inline void BodyParagraphStarts(const std::vector<std::string>& paragraphs,
 	{
 		const bool16 haveAttrs = (i < attrs.size());
 
-		// ★★★A CELL IS SKIPPED WHOLE - ITS TABLES INCLUDED (2026-08-24). Everything about a cell
+		// ★★★A CELL IS SKIPPED WHOLE - ITS TABLES INCLUDED (2026-08-23). Everything about a cell
 		//   is elsewhere: its text, its break, and any table standing inside it. That last one was
 		//   the addition: a nested table charges the cell it stands in, and counting those
 		//   characters here would push the body along by a table that is not in the body at all.
@@ -1201,7 +1201,7 @@ inline int32 TableCount(const std::vector<KESCMParaAttrs>& attrs)
 	★This is what a cell's own text story thread holds, which is why the resolver can check it
 	against ITextStoryThread::GetTextStart's span before trusting the cell it found.
 
-	★★AND THE INVISIBLE CHARACTERS THE CELL CARRIES (2026-08-24). A cell holding a TABLE is charged
+	★★AND THE INVISIBLE CHARACTERS THE CELL CARRIES (2026-08-23). A cell holding a TABLE is charged
 	that table's own run, the same way a body paragraph is charged a top-level table's - and the
 	thread the document reports for such a cell is that much longer. Leaving them out made the
 	check disagree (2 against the document's 3) and turned the story away after everything else

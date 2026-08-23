@@ -53,7 +53,7 @@ class UIDRef;
 	        caller must refuse the story rather than aim anything with these positions. Reasons:
 	        a different number of tables on the two sides, a table standing somewhere the model did
 	        not expect, a table the model never placed at all, or a cell whose length disagrees.
-	        ★A NESTED TABLE IS NO LONGER ONE OF THEM (2026-08-24): a table charges the thread it
+	        ★A NESTED TABLE IS NO LONGER ONE OF THEM (2026-08-23): a table charges the thread it
 	        stands in, and a cell is a thread, so the same reading does for both. What it costs is
 	        one thing - the tables have to be put in the order the DOCUMENT keeps them, which is not
 	        the order of their anchors once one of them is inside another. See EarlierBlock.
