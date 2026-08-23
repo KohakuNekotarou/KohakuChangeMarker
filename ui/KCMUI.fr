@@ -738,16 +738,12 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKESCMPrintMarksMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
-		// "Hold to Hide Marks" on the panel flyout (popup) menu. Check-mark toggle that inverts the
-		// polarity of the marks display: while ON, the comparison marks are kept visible on screen at
-		// all times, and holding the tool's left button (any reveal/peek gesture) temporarily HIDES
-		// them — releasing shows them again (the default is the opposite: marks are hidden and the
-		// left-hold reveals them while held). Screen-only: printing is still governed independently by
-		// "Print comparison marks". The check mark comes from UpdateActionStates (kCustomEnabling).
-		kKESCMPopupHoldToHideMarksActionID,
-		kKESCMPopupMenuPath,
-		kKESCMHoldToHideMarksMenuItemPosition,
-		kSDKDefIsNotDynamicMenuFlag,
+		// ("Hold to Hide Marks" stood here until 2026-08-22. It meant "keep the marks up, and hide
+		//  them while the button is held" — and once "Show Marks on Target" existed, the first half
+		//  of that was the same switch twice over. The second half is now what BOTH "Show Marks on"
+		//  toggles do while the button is held, so the rule is one line: **while the button is held,
+		//  that window is the other way round**. Menu position 9.20 is free; ActionID +19 is not to
+		//  be reused.)
 
 		// "Marks opacity" submenu containing "25%" and "75%". The two children act as a radio pair
 		// (mutually exclusive): UpdateActionStates (kCustomEnabling) puts the check mark on whichever
@@ -1146,14 +1142,7 @@ resource ActionDef (kSDKDefActionResourceID)
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 
-		kKESCMActionComponentBoss,
-		kKESCMPopupHoldToHideMarksActionID,
-		kKESCMHoldToHideMarksMenuKey,
-		kOtherActionArea,
-		kNormalAction,
-		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates supplies the check mark (kSelectedAction)
-		kInvalidInterfaceID,
-		kSDKDefInvisibleInKBSCEditorFlag,
+		// ("Hold to Hide Marks" (+19) was retired on 2026-08-22 — see the note in the MenuDef above.)
 
 		kKESCMActionComponentBoss,
 		kKESCMPopupOpacity25ActionID,
@@ -1958,6 +1947,79 @@ resource KESCMStoryRowWidget(kKESCMStoryChangeRowRsrcID + index_enUS)
 			kPMRsrcID_None,					// RsrcId
 			kBindRight,						// Frame binding: stay at the row's right edge
 			Frame(176, 1, 216, kKESCMStoryRowHeight - 2),	// Frame (154 -> 176: the text cell took it)
+			kTrue, kTrue,					// Visible, Enabled
+			kAlignRight,					// Alignment
+			kDontEllipsize, kFalse,			// Ellipsize style, Convert ampersands
+			"",								// Text Control Data
+			0,								// WidgetId for associated control for shortcut focus
+			kPaletteWindowSystemScriptFontId, kPaletteWindowSystemScriptFontId,
+		),
+	}
+};
+
+// ---------------------------------------------------------------------------------------
+// ★★A RUBY CHANGE ROW - the same row as above, on two lines (2026-08-22).
+//
+// Ruby is set ABOVE the characters it belongs to, and the user asked for it to look like that
+// rather than like a second column of text ("ちいさくなくてもいいです、文字のサイズは同じで、位置を
+// 漢字の文字の上に、実際のルビの様に" / "位置が重要"). At the palette font's own size that needs two
+// lines, so this row is twice as tall and KESCMStoryCellView splits its text cell in half.
+//
+// ★WHY A THIRD RESOURCE RATHER THAN A TALLER SECOND ONE. Only ruby rows are tall; an ordinary text
+// change is still one line, and so is every row of the pixel mode. The framework decides which
+// widget to build from GetWidgetTypeForNode, so the two kinds have to answer different WidgetIDs
+// or a tall widget gets recycled onto a short row (KCMUIID.h at kKESCMStoryRubyRowWidgetID).
+//
+// ★WHAT IS THE SAME AS 1014, DELIBERATELY: the cell boss, the cell WidgetIDs and the columns. The
+// only differences are heights - which is what keeps "how a change row is filled in" one piece of
+// code (KESCMStoryTreeWidgetMgr::ApplyChangeRow) rather than two that have to be kept in step.
+// ---------------------------------------------------------------------------------------
+resource LocaleIndex (kKESCMStoryRubyRowRsrcID)
+{
+	kViewRsrcType,
+	{
+		kWildFS, k_Wild, kKESCMStoryRubyRowRsrcID + index_enUS
+	}
+};
+
+resource KESCMStoryRowWidget(kKESCMStoryRubyRowRsrcID + index_enUS)
+{
+	__FILE__, __LINE__,
+	kKESCMStoryRubyRowWidgetID, kPMRsrcID_None,	// WidgetId (★NOT the plain change row's - see above)
+	kBindLeft | kBindRight,				// Frame binding: follow the list's width
+	Frame(0, 0, 224, kKESCMStoryRubyRowHeight),	// Frame (left, top, right, bottom)
+	kTrue, kTrue,						// Visible, Enabled
+	"",									// Panel name
+	{
+		// Left: the base characters on the LOWER line and the reading on the upper one. The cell
+		// takes the WHOLE height and divides it itself - it is the only thing here that knows the
+		// two lines exist, and it has to, because the reading is centred over the changed
+		// characters and where those land is not known until the line has been laid out.
+		KESCMStoryChangeCellWidget
+		(
+			kKESCMStoryRowTextWidgetID,		// WidgetId (reused - see 1014)
+			kPMRsrcID_None,					// RsrcId
+			kBindLeft | kBindRight,			// Frame binding: this is the cell that grows
+			Frame(68, 1, 176, kKESCMStoryRubyRowHeight - 2),	// Frame (the full two lines)
+			kTrue, kTrue,					// Visible, Enabled
+			"",								// Panel name (none)
+			{
+			}
+		),
+
+		// Right: the sign, ON THE LOWER LINE with the base text rather than centred in the row.
+		// ★A stock static text centres itself in its own frame, so the frame is the lower half.
+		//   Centred in the WHOLE row it would land exactly on the boundary between the two lines,
+		//   reading as if it belonged to neither.
+		// ⚠The upper half's height is written as half the row's, not as kKESCMStoryRowHeight: the
+		//   two happen to be the same number today, and only one of them means "one line of this
+		//   row" (see KCMUIID.h - 19 is "one line + 1px", 38 is "two lines + 2px").
+		KESCMStoryRowCellWidget
+		(
+			kKESCMStoryRowKindWidgetID,		// WidgetId (reused)
+			kPMRsrcID_None,					// RsrcId
+			kBindRight,						// Frame binding: stay at the row's right edge
+			Frame(176, kKESCMStoryRubyRowHeight / 2, 216, kKESCMStoryRubyRowHeight - 2),	// Frame (lower line)
 			kTrue, kTrue,					// Visible, Enabled
 			kAlignRight,					// Alignment
 			kDontEllipsize, kFalse,			// Ellipsize style, Convert ampersands

@@ -72,6 +72,13 @@
 static const PMReal kKESCMPeekSemiOpacity = 0.5;	// Shift+Alt+左時の旧版の不透明度(0..1)
 static bool16 sPeekActive        = kFalse;	// Shift/Shift+Alt+左を押し込み中(=覗き表示中)か
 static bool16 sSingleShowing     = kFalse;	// 修飾なしのツール左hold中(=全マークを選択不透明度25%/75%で一時表示中)か。離すと隠す＋基準opacityへ
+// ★★**どちらの窓を覗いているか**(2026-08-22＝Source からも覗けるようにしたときに要った)。
+//   離すときに再描画するのは**押した窓**で、それまでは Target 決め打ちだった ---- 旧版の窓から覗くと
+//   離しても絵が消えない(sShowOriginal は落ちるが、その文書に再描画が飛ばない)。
+//   ⚠**これは UI の状態**＝「どの窓でボタンを押したか」は窓の問いで、model は窓を持たない
+//     (model 側の sOrigDB は「どの文書のラスタを作ったか」という別の問いで、同じ答えになるのは結果)。
+//   ⚠寿命は sPeekActive と同じ。閉じた文書を指したまま使わないよう、離すときに必ず nil へ戻す。
+static IDataBase* sPeekUnderDB   = nil;
 
 // マーク(枠/変更数)の表示を切り替えた後、マークが属するドキュメントを再描画して即反映する。
 // arm の有無に依らず使えるよう、peek 用の arm 済み Target ではなく「マークが載っている文書」を使う。
@@ -178,8 +185,16 @@ static bool16 KESCMMouseIsOverArmedSource()
 //   (＝ボタンを離したときの KESCMTrackerRevealEnd が元に戻すので、状態は取り残されない)。
 static void KESCMTrackerBeginPeek(PMReal opacity)
 {
-	if (!Utils<IKESCMCompareFacade>()->ArmedDocsAlive() || !KESCMMouseIsOverTarget())
-		return;	// 未 Start / 比較文書が閉じ済み / Target 窓以外では反応しない(旧・中ボタン peek 分岐と同じ条件)
+	// ★★★2026-08-22＝**旧版の窓からも覗ける**(ユーザー要望「ソースの方でも、Shift＋の挙動を入れて
+	//   欲しい」「ソースからターゲットを覗く感じ」)。それまでは Target 窓の上でしか反応せず、
+	//   重ねられるのは常に旧版という一方通行だった。
+	//   ★**押した窓が「下」、相手の文書が「重ねる方」**＝どちらの窓からでも「向こうの版」が見える。
+	// ⚠Target を先に見る＝同じ文書を自分自身と比較しているとき(sSrcDB==sDB)、両方の判定が真になるので
+	//   順序が意味を持つ。Target 側に倒すのは、それが従来からの挙動だから。
+	const bool16 overTarget = KESCMMouseIsOverTarget();
+	const bool16 overSource = overTarget ? kFalse : KESCMMouseIsOverArmedSource();
+	if (!Utils<IKESCMCompareFacade>()->ArmedDocsAlive() || (!overTarget && !overSource))
+		return;	// 未 Start / 比較文書が閉じ済み / どちらの比較文書の窓でもない
 	sPeekActive = kTrue;
 	InterfacePtr<IKESCMCompareFacade> compare(Utils<IKESCMCompareFacade>().QueryUtilInterface());
 	compare->SetPeekOpacity(opacity);	// 旧版べた載せの不透明度(描画時に参照)
@@ -208,7 +223,19 @@ static void KESCMTrackerBeginPeek(PMReal opacity)
 	// ★★★2026-08-16: **そのビューが今表示しているスプレッド**も渡す。これが無いと、マスタースプレッドを
 	//   表示していても点が通常ページに当たり(両者はペーストボード座標で重なる)、**旧版が1枚も出ない**。
 	//   「どのスプレッドを見ているか」は窓の問い＝UI が観測して model へ渡す(Task 4B と同じ分業)。
-	compare->ShowPeekAt(compare->GetArmedTargetDB(), compare->GetArmedSourceDB(),
+	//
+	// ★★★**向きは引数の順序だけで決まる**(2026-08-22)。model 側(KESCMPeekShowAt)がやるのは
+	//   「**第1引数の文書でマウス下のページを特定し、第2引数の対応ページをその上にラスタ化する**」で、
+	//   どちらが新版かは一度も問わない ---- ページ対応表(KESCMBuildPairing / KESCMBuildMasterPairing)も
+	//   引数の順に作られ、描画側も sOrigDB を見るだけで文書の役割を見ない。
+	//   ⇒ **逆向き専用のコードは1行も要らず、押した窓を第1引数に渡すだけでよかった。**
+	// ⚠ただし model 側の「未更新スプレッドは重ねない」最適化は `sDB ==` 第1引数 で書かれているので、
+	//   Source から覗くときは成立せず、変化の無いスプレッドでもラスタ化する(＝**遅いだけで正しい**)。
+	//   対称にするなら sSrcPageToTarget で引き直すことになるが、まず実機で気になるかを見てから。
+	IDataBase* const under = overTarget ? compare->GetArmedTargetDB() : compare->GetArmedSourceDB();
+	IDataBase* const over  = overTarget ? compare->GetArmedSourceDB() : compare->GetArmedTargetDB();
+	sPeekUnderDB = under;		// 離すときに再描画するのはこの窓(宣言のコメント参照)
+	compare->ShowPeekAt(under, over,
 	                    mx, my, viewScale, uiZoom,
 	                    KESCMQuerySpreadUIDForView(view));
 }
@@ -241,23 +268,35 @@ void KESCMTrackerRevealBegin(bool16 shiftDown, bool16 altDown, bool16 cmdDown, b
 	if (gesture == kKESCMGestureNone)
 		return;	// 未割当(Ctrl/Command 系、Mac の Control)。トラッカーはキャプチャ済みだが描画状態は変えない。
 
-	// ---- 「Hold to Hide Marks」モード(常時表示の極性反転)の窓別 temp-hide ----
+	// ---- 常時表示中の窓別 temp-hide(押している間だけ枠をどけて素の紙面を見る) ----
 	// 隠すジェスチャ=reveal と peek(修飾なし/Shift/Shift+Alt)。
 	// ★CMYK(Alt 単独)は隠さない=枠を出したままサンプリング(旧・中ボタン Shift+Ctrl+Alt でも枠は
 	// 隠れない仕様に一致)。押した窓の枠だけを隠す(Target/Source 別)。
+	// ★★★2026-08-22＝**判定を「Hold to Hide Marks」から各トグル自身へ移した**(ユーザー決定)。
+	//   規則は「**押している間は反対になる**」の1本＝**その窓のマークが出ていれば隠し、出ていなければ出す**
+	//   (出す側は下の reveal と Story 分岐)。⇒ Hold トグルは撤去した。あれの「常時表示」は
+	//   「Show Marks on ...」と完全に重複しており、固有だったのはこの temp-hide だけなので、
+	//   それをトグル ON のときの標準の挙動として畳んである。
 	const bool16 tempHideGesture = (gesture != kKESCMGestureCmyk);
 	InterfacePtr<IKESCMCompareFacade> compare(Utils<IKESCMCompareFacade>().QueryUtilInterface());
-	if (compare->GetHoldToHideMarks() && tempHideGesture)
+	if (tempHideGesture)
 	{
-		if (!compare->GetMarksTempHidden() && KESCMMouseIsOverTarget())
+		if (compare->GetShowTargetMarks() && !compare->GetMarksTempHidden() && KESCMMouseIsOverTarget())
 		{
 			compare->SetMarksTempHidden(kTrue);
 			KESCMInvalidateMarksDoc();	// Target を再描画
 		}
-		if (compare->GetShowSourceMarks() && !compare->GetSrcMarksTempHidden() &&
-		    KESCMMouseIsOverSource())
+		// ★★★Source 側は**トグルを見ずに「押した」とだけ言う**(2026-08-22 ユーザー決定＝実装を規則へ)。
+		//   出すのか隠すのかは描画側が sSrcMarksOn と **XOR** して決めるので、ここで
+		//   GetShowSourceMarks() を見ると**同じ判断が2か所**になる([[one-question-one-place]])。
+		//   ⇒ これで**トグル OFF の Source 窓を押せば枠が出る**＝規則が3か所で宣言していた
+		//     「Pixel/Story・Target/Source すべてで同じ」に実装が追いついた。
+		//   ⚠Target 側(上)が今も GetShowTargetMarks() を見ているのは非対称に見えるが、あちらは
+		//     「出す」を別のフラグ(sMarksVisible・下の reveal)が持っていて、そちらが peek からも
+		//     立つため1本に畳めない。**畳めるのは Source だけ。**
+		if (!compare->GetSrcMarksPressed() && KESCMMouseIsOverSource())
 		{
-			compare->SetSrcMarksTempHidden(kTrue);
+			compare->SetSrcMarksPressed(kTrue);
 			compare->InvalidateDB(Utils<IKESCMMarkData>()->GetMarkedSourceDB());	// Source を再描画(compare は上で引いてある)
 		}
 	}
@@ -287,9 +326,11 @@ void KESCMTrackerRevealBegin(bool16 shiftDown, bool16 altDown, bool16 cmdDown, b
 	// ★★Pixel の reveal(下)とは別の道で、絵の作り方が根本的に違う。Pixel は「ページのどこが違って
 	//   見えるか」しか知らないので枠を描くが、Story は「どの文字が変わったか」を知っているので、
 	//   その文字を反転する(ユーザー指定 2026-08-22)。⇒ 拡大率で大きさが変わらず、ページの外枠も要らない。
-	// ⚠Hold to Hide の判定より**前**に置く: Story モードには「常時表示の枠」が無い(KESCMDrawEventHandler
-	//   の drawRings が Story では kFalse)ので、あのモードがここで隠すものは何も無い。
-	// ★出すのは**押した窓の側だけ**(ユーザー選択 2026-08-22)。削除された文字は旧版にしか無く、挿入された
+	// ⚠上の temp-hide が扱うのは**枠**だけ(Story モードには枠が無い＝KESCMDrawEventHandler の drawRings が
+	//   Story では kFalse)なので、Story の反転マークの「押している間は反対」はここではなく
+	//   KESCMStoryMarksRefresh が決める＝押した窓のトグルと押下を XOR する(KESCMStoryPressMarks.cpp)。
+	//   ⇒ **トグル OFF の窓を押せば出て、ON の窓を押せば隠れる**。この分岐は「押した」ことだけを伝える。
+	// ★対象は**押した窓の側だけ**(ユーザー選択 2026-08-22)。削除された文字は旧版にしか無く、挿入された
 	//   文字は新版にしか無いので、どちらの文書を見ているかでマークできるものが変わる。
 	if (compare->GetCompareMode() == kKESCMModeStory)
 	{
@@ -301,8 +342,9 @@ void KESCMTrackerRevealBegin(bool16 shiftDown, bool16 altDown, bool16 cmdDown, b
 	}
 
 	// ---- 修飾なし: 通常モードのマーク一時表示(reveal) ----
-	// Hold to Hide モード中は上で temp-hide 済み=ここでは何もしない(reveal はしない)。
-	if (compare->GetHoldToHideMarks())
+	// ★「押している間は反対」の**出す側**。Target のマークが既に出ているなら上で temp-hide 済みなので、
+	//   ここでは何もしない(2026-08-22＝判定を GetHoldToHideMarks から付け替えた。Hold は撤去)。
+	if (compare->GetShowTargetMarks())
 		return;
 
 	// 「マークがある」の判定は旧・中ボタンの修飾なし分岐と同一(anyMarkableContent 相当)。
@@ -332,18 +374,21 @@ void KESCMTrackerRevealEnd()
 	//   (向こうが自分で覚えている)＝Pixel モードで押して離しても、ジャンプが出した一時マーカーは消えない。
 	KESCMStoryPressMarksEnd();
 
-	// 「Hold to Hide Marks」で押下中に隠していた常時表示の枠を戻す(離すと再表示)。押した窓に応じて
-	// Target/Source どちらか(または両方)が立っている。モード OFF なら両方 kFalse なので無影響
-	// (旧・中ボタン解放時の temp-hide 復元と同一)。
+	// 押下中に隠していた常時表示の枠を戻す(離すと再表示)＝「押している間は反対になる」の戻り側。
+	// 押した窓に応じて Target/Source どちらか(または両方)が立っている。その窓のトグルが OFF なら
+	// そもそも立たないので無影響(旧・中ボタン解放時の temp-hide 復元と同一)。
+	// ⚠2026-08-22＝旧記述は「『Hold to Hide Marks』で隠していた」と書いていたが、**あのトグルは
+	//   同日に撤去された**。立てる条件は各「Show Marks on ...」トグル自身へ移っている
+	//   (KESCMTrackerRevealBegin)。
 	InterfacePtr<IKESCMCompareFacade> compare(Utils<IKESCMCompareFacade>().QueryUtilInterface());
 	if (compare->GetMarksTempHidden())
 	{
 		compare->SetMarksTempHidden(kFalse);
 		KESCMInvalidateMarksDoc();	// Target を再描画
 	}
-	if (compare->GetSrcMarksTempHidden())
+	if (compare->GetSrcMarksPressed())
 	{
-		compare->SetSrcMarksTempHidden(kFalse);
+		compare->SetSrcMarksPressed(kFalse);
 		compare->InvalidateDB(Utils<IKESCMMarkData>()->GetMarkedSourceDB());	// Source を再描画(compare は上で引いてある)
 	}
 
@@ -355,8 +400,14 @@ void KESCMTrackerRevealEnd()
 		if (compare->GetShowOriginal())
 		{
 			compare->SetShowOriginal(kFalse);
-			compare->InvalidateDB(compare->GetArmedTargetDB());
+			// ★**覗いていた窓**を再描画する(2026-08-22)。ここは GetArmedTargetDB() 決め打ちだったので、
+			//   Source から覗けるようにした時点で「離しても旧版の窓から絵が消えない」になっていた
+			//   ---- sShowOriginal は落ちるのに、その文書へ再描画が飛ばないため。
+			//   ⚠採れなかったときは従来どおり Target へ(押していないのにここへ来る道は無いが、
+			//     nil を渡して何も起きないより、以前と同じ振る舞いに落ちる方が読める)。
+			compare->InvalidateDB((sPeekUnderDB != nil) ? sPeekUnderDB : compare->GetArmedTargetDB());
 		}
+		sPeekUnderDB = nil;		// 閉じた文書を指したまま残さない
 	}
 	else if (sSingleShowing)
 	{
@@ -389,6 +440,11 @@ void KESCMResetPeekGestureState()
 {
 	sPeekActive    = kFalse;
 	sSingleShowing = kFalse;
+	// ⚠**ここに来る道の1つが「文書が閉じた」**(KESCMModelChangeObserver が通知を受けて呼ぶ)なので、
+	//   覗いていた窓のポインタは必ず捨てる ---- 閉じた IDataBase* を持ったまま次の解放で使うと、
+	//   その先で再描画を頼むことになる。★2026-08-22 に sPeekUnderDB を足したとき、この関数が
+	//   「押下中の状態を初期化する」と名乗っている以上ここも直す、と決めた(名前が契約)。
+	sPeekUnderDB   = nil;
 }
 
 //========================================================================================

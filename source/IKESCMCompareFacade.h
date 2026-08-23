@@ -153,10 +153,13 @@ public:
 	virtual bool16		GetShowOldPageNumbers() = 0;
 	virtual void		SetShowOldPageNumbers(bool16 on) = 0;
 
-	/** "Hold to Hide Marks": inverts the on-screen polarity. Marks are shown permanently and
-		the press hides them, instead of the default (hidden, shown while pressed). */
-	virtual bool16		GetHoldToHideMarks() = 0;
-	virtual void		SetHoldToHideMarks(bool16 on) = 0;
+	/* ★"Hold to Hide Marks" WAS HERE AND IS GONE (2026-08-22, user's call). It stood for "show the
+	   marks permanently, and hide them while the button is held" - and once "Show Marks on Target"
+	   existed, the first half of that was the same switch twice over ([[one-question-one-place]]:
+	   the drawing side literally read `sAlwaysShowMarks || sTgtMarksOn`).
+	   ⇒ The second half became the rule for BOTH toggles instead: **while the button is held,
+	     everything is the other way round** - off shows while held, on hides while held. Nothing
+	     was lost, and there is one switch fewer to explain. */
 
 	// ---- press-time display state ------------------------------------------------------
 	//
@@ -178,12 +181,25 @@ public:
 	virtual void		SetMarkScreenOpacity(const PMReal& opacity) = 0;
 	virtual PMReal		GetSelectedMarkOpacity() = 0;
 
-	/** Hold to Hide Marks: the permanent rings are parked while the button is down. Target and
-		Source are separate because only the window under the mouse hides its own. */
+	/** While the tool's button is down, the marks in the window under it are the other way round.
+		Target and Source are separate because only that one window turns round.
+
+		★TARGET: "parked" - the standing rings are put away while the button is down. What puts them
+		UP while it is down is a different flag (SetMarksVisible), because that one is also raised by
+		the peek gestures.
+
+		★★SOURCE: "pressed" - and that is a DIFFERENT QUESTION from the target's (2026-08-22, user's
+		call). This one says only that the button is down over the source window; the drawing side
+		XORs it with "Show Marks on Source" and so covers both halves of the rule with one flag:
+		toggle off + pressed = shown, toggle on + pressed = hidden.
+		⚠It used to be a "temp hidden" flag raised only while the toggle was ON, which meant
+		  **pressing over a source window whose toggle was off did nothing at all** - while three
+		  places in this plug-in stated the rule as holding for "Pixel/Story, Target/Source alike".
+		  The user's decision was to make the implementation match the rule, not the other way. */
 	virtual bool16		GetMarksTempHidden() = 0;
 	virtual void		SetMarksTempHidden(bool16 on) = 0;
-	virtual bool16		GetSrcMarksTempHidden() = 0;
-	virtual void		SetSrcMarksTempHidden(bool16 on) = 0;
+	virtual bool16		GetSrcMarksPressed() = 0;
+	virtual void		SetSrcMarksPressed(bool16 on) = 0;
 
 	/** The old-version overlay shown by Shift+left (1.0) and Shift+Alt+left (0.5). Set the
 		opacity before asking for the overlay; clear ShowOriginal when the button comes up. */
@@ -225,13 +241,18 @@ public:
 
 		⚠Like StoreSessionStatus, it must not notify. */
 	virtual void		StoreSessionStatusSegments(const PMString& label, const PMString& pre,
-												   const PMString& mid, const PMString& post) = 0;
+												   const PMString& mid, const PMString& post,
+												   const PMString& ruby) = 0;
 
-	/** The stored message in its four pieces. The UI reads this back when the panel re-appears, so
+	/** The stored message in its five pieces. The UI reads this back when the panel re-appears, so
 		that a coloured message comes back coloured rather than flattening into one colour.
-		★A message stored as one string answers with that string in outMid and three empty pieces. */
+		★A message stored as one string answers with that string in outMid and the rest empty.
+		★outRuby is the READING drawn above the changed characters (2026-08-22), and it comes back
+		  here for the same reason the colours do: a re-shown panel that lost only the reading would
+		  be showing the older version WITHOUT the very thing the row could not show. */
 	virtual void		GetSessionStatusSegments(PMString& outLabel, PMString& outPre,
-												 PMString& outMid, PMString& outPost) = 0;
+												 PMString& outMid, PMString& outPost,
+												 PMString& outRuby) = 0;
 
 	/** Shutdown only: empty the stored string, so the model's static PMString has no live heap
 		buffer to free when the plug-ins unload (Mac unload order differs from Windows).

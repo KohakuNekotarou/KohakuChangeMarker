@@ -758,10 +758,37 @@ static void KESCMSyncCompanionViews(IDataBase* navDB, UID pageUID)
 //   KESCMEnsureSpreadInView の説明)。
 // ★まだ1度も組まれていない等で点が採れなければ、フレームの中心へ落とす(2026-08-10 以前の動き)。
 //   outFrame には実際に着地したフレームを返す ---- Pages パネルの連動がページを引くのに使う。
+//
+// ★★★focusIndex を渡すと「ストーリーの書き出し」ではなく**その文字**へ寄せる(ユーザー要望 2026-08-22
+//   「変更された部分の一番最初の部分がレイアウトビューの真ん中に移動して欲しい」)。長いストーリーの
+//   後ろの方が変わっているとき、書き出しへ飛ぶのは**そのストーリーを指しているだけで変更を指していない**。
+//   点はキャレット(選択のときに立つ縦線)の位置＝`GetStoryPointAt`。
+//   ⚠**採れなかったときは黙って書き出しへ落ちる**＝overset・未配置・未組版はいずれも「その文字は今どこにも
+//     出ていない」であって、行そのものは正しい。⇒ 何も動かないより、ストーリーを見せる方がよい。
 //----------------------------------------------------------------------------------------
 static bool16 KESCMScrollDocToStoryStart(IDataBase* db, UID storyUID, UID fallbackFrameUID,
-	UID& outFrame, PMReal applyZoom = PMReal(-1.0))
+	UID& outFrame, PMReal applyZoom = PMReal(-1.0), TextIndex focusIndex = kInvalidTextIndex)
 {
+	if (focusIndex != kInvalidTextIndex)
+	{
+		PBPMPoint focusPb;
+		if (Utils<IKESCMStoryEditsFacade>()->GetStoryPointAt(db, storyUID, focusIndex, focusPb))
+		{
+			// ★★スプレッドを出すのに使うフレームは**呼び手が渡したもの**＝変更箇所を含むフレームで
+			//   なければならない。**ペーストボード座標はスプレッドごと**なので、別のスプレッドを出した
+			//   まま点へ寄せると「少しずれる」ではなく**別のページに着く**。
+			//   ⚠★★★2026-08-22(不具合再検査)＝**この但し書きは、書かれた時点で片方の呼び手でしか
+			//     成立していなかった**。新側(KESCMStoryJumpToChange)は解決済みのフレームを渡していたが、
+			//     旧側(下の Source 分岐)は `GetFirstFrameUID`＝**ストーリーの先頭フレーム**を渡していた
+			//     ⇒ 連結ストーリーの後ろの方が変わっていると、旧版の窓だけ無関係な場所へ飛んでいた。
+			//     **今は両方の呼び手が `GetStoryFrameAt` で同じ問いを出す**([[one-question-one-place]])。
+			outFrame = fallbackFrameUID;
+			KESCMEnsureSpreadInView(db, fallbackFrameUID);
+			return KESCMScrollDocToPBPoint(db, focusPb, applyZoom);
+		}
+		// 採れなければ下の「書き出しへ」に落ちる(フォールバックは1本にまとめてある)。
+	}
+
 	UID startFrame = kInvalidUID;
 	PBPMPoint startPb;
 	if (Utils<IKESCMStoryEditsFacade>()->GetStoryStartPoint(db, storyUID, startFrame, startPb))
@@ -870,7 +897,8 @@ void KESCMGotoPrevChange() { KESCMGoto(-1); }
 //========================================================================================
 // KESCMGotoStoryFrame(KESCMChangeNav.h で宣言)
 //========================================================================================
-bool16 KESCMGotoStoryFrame(IDataBase* db, UID frameUID, UID pageUID, UID storyUID)
+bool16 KESCMGotoStoryFrame(IDataBase* db, UID frameUID, UID pageUID, UID storyUID,
+	TextIndex focusIndex, TextIndex sourceFocusIndex)
 {
 	// ★この関数だけで4回聞くので InterfacePtr に1回受ける(Utils.h:74-80。2026-08-17 の API 監査 B-U8)。
 	// ★2026-08-18(B10 の2周目)に**関数の先頭へ移した**＝すぐ下の隠しページ判定がこれを使うため。
@@ -891,9 +919,10 @@ bool16 KESCMGotoStoryFrame(IDataBase* db, UID frameUID, UID pageUID, UID storyUI
 		return kTrue;
 	}
 
-	// ストーリーの書き出しへ(フレームの中心ではない。上の KESCMScrollDocToStoryStart 参照)。
+	// 変更箇所が指定されていればその文字へ、無ければストーリーの書き出しへ(フレームの中心ではない。
+	// 上の KESCMScrollDocToStoryStart 参照)。
 	UID landedFrame = kInvalidUID;
-	if (!KESCMScrollDocToStoryStart(db, storyUID, frameUID, landedFrame))
+	if (!KESCMScrollDocToStoryStart(db, storyUID, frameUID, landedFrame, PMReal(-1.0), focusIndex))
 		return kFalse;
 
 	// Pages パネルも、**実際に着地したフレーム**のページへ(ページに載っていないなら中で何もしない)。
@@ -916,7 +945,31 @@ bool16 KESCMGotoStoryFrame(IDataBase* db, UID frameUID, UID pageUID, UID storyUI
 	IDataBase* sourceDB = marks->GetMarkedSourceDB();
 	if (sourceDB != nil && sourceDB != db && storyUID != kInvalidUID)
 	{
+		// ⚠★★旧側にも dirty ガードが要る(2026-08-22)。sourceFocusIndex を渡すと、その文字の位置と
+		//   その文字を載せているフレームを出すために**旧文書の組版**が最新化されることがあり、
+		//   組版は文書を汚す(IKESCMStoryEditsFacade::GetStoryPointAt / GetStoryFrameAt)。
+		//   新側のガードは呼び手が持っているが、**旧文書に触るのはこの関数だけなので、ここが持つ**。
+		//   ★焦点を渡さない経路(親のストーリー行)では組版は起きないので、このガードは何もしない。
+		IDataBase::SaveRestoreModifiedState sourceDirtyGuard(sourceDB);
+
 		UID srcFrame = Utils<IKESCMStoryEditsFacade>()->GetFirstFrameUID(sourceDB, storyUID);
+
+		// ★★★**旧側も「変更箇所を含むフレーム」を引く**(2026-08-22 の不具合再検査)。
+		//   上の GetFirstFrameUID が返すのは**ストーリーの先頭フレーム**で、行が指しているのが
+		//   ストーリーそのもの(親の行)ならそれで正しい ---- が、**変更箇所へ寄せるときにそれで
+		//   スプレッドを決めると、連結ストーリーの後ろの方の変更で別のスプレッドを出してしまう**。
+		//   ペーストボード座標はスプレッドごとなので、着地は「少しずれる」ではなく別のページになる。
+		//   ⇒ 新側(KESCMStoryJumpToChange)とまったく同じ問いを、同じ口へ出す。
+		//   ⚠採れなければ先頭フレームのまま＝従来どおりの動きに落ちる(overset・未配置・比較後に
+		//     旧文書が短くなった場合はいずれもここへ来る)。
+		if (sourceFocusIndex != kInvalidTextIndex)
+		{
+			const UID srcFocusFrame =
+				Utils<IKESCMStoryEditsFacade>()->GetStoryFrameAt(sourceDB, storyUID, sourceFocusIndex);
+			if (srcFocusFrame != kInvalidUID)
+				srcFrame = srcFocusFrame;
+		}
+
 		if (srcFrame != kInvalidUID)
 		{
 			// ★Sync layout views が ON のときは Source を手動で動かさない ---- Sync のオブザーバ
@@ -928,9 +981,20 @@ bool16 KESCMGotoStoryFrame(IDataBase* db, UID frameUID, UID pageUID, UID storyUI
 			//   ユーザーの明示的な指定なので、そちらを優先する。KESCMSyncCompanionViews と同じ判断。
 			if (!KESCMGetLayoutSync())
 			{
-				// ★Target とまったく同じ寄せ方＝ストーリーの書き出しへ(ズームも Target に合わせる)。
+				// ★Target とまったく同じ寄せ方(ズームも Target に合わせる)。
+				// ★★★**旧側も「対応する文字」まで寄せる**(2026-08-22)＝sourceFocusIndex が
+				//   Change::fSourceStart。これで KESCMID.h の増分⑬にある「⚠まだ第1段＝旧側の窓は
+				//   『同じストーリー』までで、対応する文字までは寄せていない」が解消する。
+				//   ⚠**新旧で文字位置は違う**ので、Target の focusIndex を使い回してはいけない
+				//     (旧版で同じ番号の文字はまったく別の場所にある)。差分が両側の位置を出しているので、
+				//     使うのはそちら＝[[one-question-one-place]] の逆で、**別の問いには別の答え**。
+				//   ★★2026-08-22＝**挿入でも旧側の位置が来る**。以前は呼び手が kInvalidTextIndex を
+				//     渡していた（「旧側に指す場所が無い」という理由）が、それは**文字**の話で
+				//     **場所**の話ではなかった＝新しい語が入った隙間は旧版にちゃんとある。今は
+				//     fSourceStart（空範囲の開始＝キャレットの位置）が来るので、ここは何も分岐しない。
 				UID srcLanded = kInvalidUID;
-				KESCMScrollDocToStoryStart(sourceDB, storyUID, srcFrame, srcLanded, KESCMReadDocZoom(db));
+				KESCMScrollDocToStoryStart(sourceDB, storyUID, srcFrame, srcLanded, KESCMReadDocZoom(db),
+										   sourceFocusIndex);
 				if (srcLanded != kInvalidUID)
 					srcFrame = srcLanded;
 			}

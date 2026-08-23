@@ -6,8 +6,8 @@
 //
 //  See KESCMStoryDiffRun.h for what this is for and what it deliberately does not do.
 //
-//  The reading helpers below (AppendUtf8 / DecodeEntities / ExtractParagraphs / ParagraphStarts /
-//  Join / Slice) came from KohakuTest's KTStoryDiff on 2026-08-20 and work the same way. The
+//  The reading helpers (ParagraphStarts / Join / Slice, and the XML parsing that now lives in
+//  KESCMSnippetText.h) came from KohakuTest's KTStoryDiff on 2026-08-20 and work the same way. The
 //  comparison itself is NOT a straight port - it does two things KT had no need of:
 //
 //    1. IT WORKS OUT THE OLDER DOCUMENT'S POSITIONS TOO. KT selected in the front document only.
@@ -32,11 +32,14 @@
 #include "PMString.h"
 #include "UIDRef.h"
 
+#include <algorithm>	// std::stable_sort - the ruby children are found by a second walk
 #include <string>
 #include <vector>
 
 // Project includes:
+#include "KESCMSnippetText.h"	// the snippet's text AND its ruby - see the note at "reading the text"
 #include "KESCMStoryDiffRun.h"
+#include "KESCMStoryCellBases.h"	// ★where a table's cells REALLY are - see the note at LengthAgrees
 #include "KESCMStoryList.h"
 #include "KESCMStoryStamp.h"	// kKESCMStoryKindAdded - which rows have no partner to compare against
 #include "KESCMStoryXml.h"
@@ -57,162 +60,13 @@ const int32 kExcerptCodePoints = 60;
 const int32 kContextCodePoints = 14;
 
 // ---- reading the text out of the snippet ----------------------------------------------
-
-void AppendUtf8(std::string& out, int32 codePoint)
-{
-	if (codePoint < 0x80)
-	{
-		out += static_cast<char>(codePoint);
-	}
-	else if (codePoint < 0x800)
-	{
-		out += static_cast<char>(0xC0 | (codePoint >> 6));
-		out += static_cast<char>(0x80 | (codePoint & 0x3F));
-	}
-	else if (codePoint < 0x10000)
-	{
-		out += static_cast<char>(0xE0 | (codePoint >> 12));
-		out += static_cast<char>(0x80 | ((codePoint >> 6) & 0x3F));
-		out += static_cast<char>(0x80 | (codePoint & 0x3F));
-	}
-	else
-	{
-		out += static_cast<char>(0xF0 | (codePoint >> 18));
-		out += static_cast<char>(0x80 | ((codePoint >> 12) & 0x3F));
-		out += static_cast<char>(0x80 | ((codePoint >> 6) & 0x3F));
-		out += static_cast<char>(0x80 | (codePoint & 0x3F));
-	}
-}
-
-/* DecodeEntities
-   Only the five XML built-ins and numeric references can appear here; anything else is left as it
-   stands rather than guessed at, because a wrong guess would shift every position after it by the
-   difference in length.
-*/
-void DecodeEntities(std::string& text)
-{
-	if (text.find('&') == std::string::npos)
-		return;
-
-	std::string out;
-	out.reserve(text.size());
-
-	size_t i = 0;
-	while (i < text.size())
-	{
-		if (text[i] != '&')
-		{
-			out += text[i];
-			++i;
-			continue;
-		}
-
-		const size_t semi = text.find(';', i);
-		if (semi == std::string::npos || semi - i > 12)
-		{
-			out += text[i];
-			++i;
-			continue;
-		}
-
-		const std::string name = text.substr(i + 1, semi - i - 1);
-		if (name == "amp")
-			out += '&';
-		else if (name == "lt")
-			out += '<';
-		else if (name == "gt")
-			out += '>';
-		else if (name == "quot")
-			out += '"';
-		else if (name == "apos")
-			out += '\'';
-		else if (name.size() > 1 && name[0] == '#')
-		{
-			const bool16 hex = (name[1] == 'x' || name[1] == 'X');
-			const std::string digits = name.substr(hex ? 2 : 1);
-			int32 value = 0;
-			bool16 ok = !digits.empty();
-			for (size_t d = 0; d < digits.size() && ok; ++d)
-			{
-				const char c = digits[d];
-				int32 digit = -1;
-				if (c >= '0' && c <= '9')				digit = c - '0';
-				else if (hex && c >= 'a' && c <= 'f')	digit = c - 'a' + 10;
-				else if (hex && c >= 'A' && c <= 'F')	digit = c - 'A' + 10;
-				if (digit < 0)
-					ok = kFalse;
-				else
-					value = value * (hex ? 16 : 10) + digit;
-			}
-			if (ok)
-				AppendUtf8(out, value);
-			else
-				out.append(text, i, semi - i + 1);
-		}
-		else
-		{
-			out.append(text, i, semi - i + 1);
-		}
-
-		i = semi + 1;
-	}
-
-	text.swap(out);
-}
-
-/* ExtractParagraphs
-   Reads the story's text out of the snippet: <Content> holds it, <Br /> ends a paragraph.
-
-   ★Only the region between <Story and </Story> is looked at. The snippet also carries every
-   object the story depends on - inks, fonts, styles, cross-reference formats - and some of those
-   have text of their own that must not be mistaken for the story's. (Measured in KohakuTest:
-   the dependencies are more than eight tenths of the file and contribute nothing to the diff.)
-*/
-void ExtractParagraphs(const std::string& xml, std::vector<std::string>& paragraphs)
-{
-	paragraphs.clear();
-
-	const size_t storyStart = xml.find("<Story ");
-	const size_t storyEnd = xml.rfind("</Story>");
-	if (storyStart == std::string::npos || storyEnd == std::string::npos || storyEnd < storyStart)
-		return;
-
-	std::string current;
-	size_t pos = storyStart;
-
-	while (pos < storyEnd)
-	{
-		const size_t lt = xml.find('<', pos);
-		if (lt == std::string::npos || lt >= storyEnd)
-			break;
-
-		if (xml.compare(lt, 9, "<Content>") == 0)
-		{
-			const size_t close = xml.find("</Content>", lt);
-			if (close == std::string::npos || close > storyEnd)
-				break;
-			current.append(xml, lt + 9, close - (lt + 9));
-			pos = close + 10;
-		}
-		else if (xml.compare(lt, 4, "<Br ") == 0 || xml.compare(lt, 4, "<Br/") == 0)
-		{
-			DecodeEntities(current);
-			paragraphs.push_back(current);
-			current.clear();
-
-			const size_t gt = xml.find('>', lt);
-			pos = (gt == std::string::npos) ? storyEnd : gt + 1;
-		}
-		else
-		{
-			pos = lt + 1;
-		}
-	}
-
-	// The last paragraph has no <Br /> after it.
-	DecodeEntities(current);
-	paragraphs.push_back(current);
-}
+//
+// ★★AppendUtf8 / DecodeEntities / ExtractParagraphs MOVED OUT on 2026-08-22, into
+// KESCMSnippetText.h. They turn one string into another and touch nothing else, so out there they
+// can be measured without starting InDesign - which is what RUBY made necessary: the parsing went
+// from "find <Content>" to a small XML reader carrying state, and a mistake in that is invisible
+// from here (a ruby missed reads as "nothing changed", which is the very bug this was written
+// for). Test = work\kescm-snippet-test, 28 checks including all three of the real snippets.
 
 /* ParagraphStarts
    Where each paragraph begins, counted in CODE POINTS - the unit InDesign counts text positions
@@ -221,6 +75,7 @@ void ExtractParagraphs(const std::string& xml, std::vector<std::string>& paragra
    always ends with one.
 */
 void ParagraphStarts(const std::vector<std::string>& paragraphs,
+					 const std::vector<KESCMParaAttrs>& attrs,
 					 std::vector<int32>& starts, int32& total)
 {
 	starts.clear();
@@ -229,34 +84,38 @@ void ParagraphStarts(const std::vector<std::string>& paragraphs,
 	int32 index = 0;
 	for (size_t i = 0; i < paragraphs.size(); ++i)
 	{
+		// ★★AND THE ONES STANDING IN FRONT OF IT (2026-08-23). A story that BEGINS with a table -
+		//   a frame holding nothing but a table, which is the ordinary way to make one - has the
+		//   table's character before its first paragraph, where there is no earlier paragraph to
+		//   charge it to. It used to be dropped, the story counted one short, and LengthAgrees
+		//   below then refused the whole thing (no text differences, no ruby). Only the first
+		//   paragraph can carry this - see KESCMParaAttrs::fLeadingChars.
+		if (i < attrs.size())
+			index += attrs[i].fLeadingChars;
+
 		starts.push_back(index);
 
 		std::vector<int32> codePoints;
 		KESCMTextDiff::ToCodePoints(paragraphs[i], codePoints);
 		index += static_cast<int32>(codePoints.size()) + 1;
+
+		// ★★CHARACTERS THE TEXT MODEL COUNTS THAT THE TEXT DOES NOT SHOW (2026-08-22) - a table's
+		//   own character, and one at the end of every row but the last. Without them every position
+		//   after a table is short by that much, and LengthAgrees below refuses the whole story
+		//   rather than aim a jump at the wrong words. See KESCMParaAttrs::fExtraChars.
+		if (i < attrs.size())
+			index += attrs[i].fExtraChars;
 	}
 
 	total = index;
 }
 
-/* Join
-   The text of a run of paragraphs, with the break characters put back, so that offsets found
-   inside the joined text can be added straight onto the run's start position.
-*/
-std::string Join(const std::vector<std::string>& paragraphs, int32 start, int32 count)
-{
-	std::string out;
-	for (int32 i = 0; i < count; ++i)
-	{
-		const int32 index = start + i;
-		if (index < 0 || index >= static_cast<int32>(paragraphs.size()))
-			continue;
-		if (i > 0)
-			out += "\n";
-		out += paragraphs[index];
-	}
-	return out;
-}
+// ★★Join MOVED OUT on 2026-08-23, into KESCMSnippetText.h as JoinParagraphs. It is one half of a
+// convention - how far apart two paragraphs are once they have been strung together - and the other
+// half (IndexInStory, which turns an offset back into a document position) has to agree with it
+// EXACTLY. While they sat in different files only one of them knew that a table puts extra
+// characters at a paragraph boundary, and a change spanning such a boundary was placed one
+// character early. ⇒ Both are now in the one header the test harness can build without InDesign.
 
 /* MarkUpBreaks
    Turns the break characters into the marks InDesign itself draws with Show Hidden Characters on,
@@ -272,7 +131,12 @@ std::string Join(const std::vector<std::string>& paragraphs, int32 start, int32 
 */
 std::string MarkUpBreaks(const std::string& utf8)
 {
-	if (utf8.find('\n') == std::string::npos && utf8.find('\r') == std::string::npos)
+	// U+FFFC OBJECT REPLACEMENT CHARACTER - what the text model holds where an anchored page
+	// item stands (measured 2026-08-23; see AnchoredItemTagLen in KESCMSnippetText.h).
+	static const char kAnchorChar[] = "\xEF\xBF\xBC";
+
+	if (utf8.find('\n') == std::string::npos && utf8.find('\r') == std::string::npos
+		&& utf8.find(kAnchorChar) == std::string::npos)
 		return utf8;		// the common case pays one scan and no allocation
 
 	std::string out;
@@ -283,6 +147,20 @@ std::string MarkUpBreaks(const std::string& utf8)
 			out += "\xC2\xB6";			// U+00B6 PILCROW - a paragraph end (what Join puts between paragraphs)
 		else if (utf8[i] == '\r')
 			out += "\xE2\x86\xB5";		// U+21B5 DOWNWARDS ARROW WITH CORNER LEFTWARDS - a forced line break
+		else if (utf8.compare(i, 3, kAnchorChar) == 0)
+		{
+			// ★★AN ANCHORED OBJECT GETS A SIGN OF ITS OWN (2026-08-23, user's call: "⚓で、マークは").
+			//   Left as it is, U+FFFC draws nothing at all - the row would show a GAP where the
+			//   reader added a picture, which reads as "nothing happened".
+			// ★The kind column still says "+" or "-": this replaces the CHARACTER, not the
+			//   kind, so what the anchor did is still there to read.
+			// ★AND IT IS DECIDED HERE, ONCE. The excerpt reaches the reader in two places - the
+			//   Story Edits row and the panel's message area - and a sign chosen at each of
+			//   them would be two answers to one question ([[one-question-one-place]], the fault
+			//   behind seven of this plug-in's bugs). Everything shown goes through here.
+			out += "\xE2\x9A\x93";		// U+2693 ANCHOR
+			i += 2;					// the loop's ++i steps over the third byte
+		}
 		else
 			out += utf8[i];
 	}
@@ -428,6 +306,36 @@ bool16 LengthAgrees(const UIDRef& storyRef, int32 computed)
 
 // ---- one story --------------------------------------------------------------------------
 
+/* RunSide
+   One run of paragraphs on ONE of the two sides, and the one thing every change asks of it: where
+   an offset into the run's joined text lands in the document.
+
+   ★★IT REPLACED A BARE `base` ON 2026-08-23, AND THAT IS THE WHOLE OF THE FIX. `base + offset` is
+   right only while the joined text and the document agree about how far apart two paragraphs are,
+   and a table makes them disagree - its own character and its row terminators sit exactly at a
+   paragraph boundary (KESCMParaAttrs::fExtraChars). A change covering two adjacent paragraphs with
+   one of those between them came out short, silently, and no length check could see it.
+   ⇒ The run is asked instead of counted on, and the rule it answers with lives beside JoinParagraphs
+   in KESCMSnippetText.h, where the two ends of the convention can be measured against each other.
+*/
+struct RunSide
+{
+	const std::vector<std::string>*		fParagraphs;
+	const std::vector<int32>*			fStarts;	// ★one document position per paragraph
+	int32								fStart;		// first paragraph of the run
+	int32								fCount;		// how many it covers
+	int32								fBase;		// where the run begins, as a TextIndex
+
+	RunSide(const std::vector<std::string>& paragraphs, const std::vector<int32>& starts,
+			int32 start, int32 count, int32 base)
+		: fParagraphs(&paragraphs), fStarts(&starts), fStart(start), fCount(count), fBase(base) {}
+
+	int32 Index(int32 joinedOffset) const
+	{
+		return KESCMSnippetText::IndexInStory(*fParagraphs, *fStarts, fStart, fCount, fBase, joinedOffset);
+	}
+};
+
 /* Add
    Builds one change and appends it. Kept in one place so that the two callers below - a run that
    was narrowed down to characters, and one that was not - cannot describe the same thing in two
@@ -437,9 +345,9 @@ bool16 LengthAgrees(const UIDRef& storyRef, int32 computed)
 */
 void Add(std::vector<KESCMStoryChange>& out, int32 paraIndex,
 		 const std::string& targetText, const std::vector<int32>& targetBytes,
-		 int32 tBase, int32 tFrom, int32 tCount,
+		 const RunSide& tRun, int32 tFrom, int32 tCount,
 		 const std::string& sourceText, const std::vector<int32>& sourceBytes,
-		 int32 sBase, int32 sFrom, int32 sCount)
+		 const RunSide& sRun, int32 sFrom, int32 sCount)
 {
 	KESCMStoryChange change;
 	change.fParaIndex = paraIndex;
@@ -449,17 +357,30 @@ void Add(std::vector<KESCMStoryChange>& out, int32 paraIndex,
 				 : (tCount == 0) ? KESCMStoryChange::kDelete
 								 : KESCMStoryChange::kReplace;
 
-	change.fTargetStart = tBase + tFrom;
-	change.fTargetEnd = change.fTargetStart + tCount;
+	// ⚠BOTH ENDS ARE ASKED FOR, rather than the start plus the count (2026-08-23). A change may run
+	//   across a paragraph boundary, and a boundary can be worth more than the one character the
+	//   joined text spends on it - see RunSide above.
+	change.fTargetStart = tRun.Index(tFrom);
+	change.fTargetEnd = tRun.Index(tFrom + tCount);
 
-	// ★An insertion has nothing in the older document to point at. Saying "here is where it
-	//   would have been" would be pointing at text that is not the change.
-	change.fHasSource = (sCount > 0);
-	if (change.fHasSource)
-	{
-		change.fSourceStart = sBase + sFrom;
-		change.fSourceEnd = change.fSourceStart + sCount;
-	}
+	// ★★★AN INSERTION HAS A PLACE IN THE OLDER DOCUMENT EVEN THOUGH IT HAS NO CHARACTERS THERE
+	//   (2026-08-22, user's report: "＋になっているとき ソースの方のジャンプがおかしい様な、
+	//   ＋されている元の場所で - の時と同じ細いキャレットを表示して欲しい").
+	//
+	//   ⚠WHAT THIS USED TO SAY, AND WHY IT WAS WRONG: "an insertion has nothing in the older
+	//     document to point at". That is true of CHARACTERS and false of the PLACE - the reader
+	//     wants to see where the new words went in, and the older version has an exact spot for it:
+	//     between the two characters that used to be neighbours. The old wording folded two
+	//     different questions into one flag ([[one-question-one-place]]), and the answer to the
+	//     second one ("is there anything to select over there") dragged the first one down with it,
+	//     so the older window did not move at all.
+	//
+	//   ★AN EMPTY RANGE IS THE ANSWER TO BOTH. fSourceStart == fSourceEnd says "this place, no
+	//     characters" - which is exactly what the newer side already carries for a DELETION, and
+	//     what the marks already draw as a caret (KESCMStoryPressMarks turns a zero-width range
+	//     into KESCMMarkRange::Caret without being asked). ⇒ + and - are now mirror images.
+	change.fSourceStart = sRun.Index(sFrom);
+	change.fSourceEnd = sRun.Index(sFrom + sCount);
 
 	// ★BOTH SIDES ARE CUT, ALWAYS (2026-08-20). The row shows the side that changed; the panel's
 	//   message area shows the other one while that row is selected, so that the reader can see
@@ -498,6 +419,212 @@ void Add(std::vector<KESCMStoryChange>& out, int32 paraIndex,
 	out.push_back(change);
 }
 
+/* AddAttrChange
+   One ATTRIBUTE difference - a ruby today - turned into the child row that reports it.
+
+   ★THE BASE TEXT IS SHOWN FROM THE NEWER SIDE, ALWAYS - unlike a text change, where a deletion has
+   to be shown from the older side because the newer one has nothing there. An attribute is
+   different: the characters are in BOTH versions and only what sits over them changed, so the newer
+   side always has something to show and there is no case to branch on.
+
+   ★IT TAKES attrKind RATHER THAN ASSUMING RUBY (2026-08-22, and kept after kenten was withdrawn on
+   2026-08-23). What an attribute's VALUE means is not the same for all of them - a ruby's is a
+   READING and a kenten's was a KIND ("KentenBlackCircle") - and the field they travel in is the
+   same one, so whoever draws it has to be told which it is looking at. Filling that in here is what
+   let the mistake be a one-line one when it happened, in the single place that asked the wrong
+   question (KESCMStoryJump's message area).
+*/
+void AddAttrChange(KESCMStoryChange::Kind kind, KESCMStoryAttrKind attrKind,
+				   int32 tStart, int32 tCount, int32 sStart, int32 sCount,
+				   const std::string& targetPara, const std::string& sourcePara,
+				   const std::string& newRuby, const std::string& oldRuby,
+				   int32 tBase, int32 sBase, int32 paraIndex,
+				   std::vector<KESCMStoryChange>& out)
+{
+	KESCMStoryChange change;
+	change.fKind = kind;
+	change.fWhat = KESCMStoryChange::kAttr;		// ★the field that has waited for exactly this
+	change.fAttrKind = attrKind;
+	change.fParaIndex = paraIndex;
+
+	change.fTargetStart = tBase + tStart;
+	change.fTargetEnd   = change.fTargetStart + tCount;
+
+	// ⚠THE OLDER SIDE ALWAYS HAS CHARACTERS HERE, unlike a text change: a ruby-only difference is
+	//   found by comparing two paragraphs whose TEXT matched, so the same characters exist on both
+	//   sides. (Ruby being ADDED is still "these characters, which are in both, now carry a
+	//   reading".) ⇒ This range is never empty, where a text insertion's now is.
+	change.fSourceStart = sBase + sStart;
+	change.fSourceEnd   = change.fSourceStart + sCount;
+
+	std::vector<int32> tCode, tBytes, sCode, sBytes;
+	KESCMTextDiff::ToCodePoints(targetPara, tCode, &tBytes);
+	KESCMTextDiff::ToCodePoints(sourcePara, sCode, &sBytes);
+
+	std::string newPre, newMid, newPost, oldPre, oldMid, oldPost;
+	Slice(targetPara, tBytes, tStart, tCount, kContextCodePoints, newPre, newMid, newPost);
+	Slice(sourcePara, sBytes, sStart, sCount, kContextCodePoints, oldPre, oldMid, oldPost);
+
+	change.fTextPre.SetUTF8String(newPre);
+	change.fText.SetUTF8String(newMid);
+	change.fTextPost.SetUTF8String(newPost);
+	change.fOtherTextPre.SetUTF8String(oldPre);
+	change.fOtherText.SetUTF8String(oldMid);
+	change.fOtherTextPost.SetUTF8String(oldPost);
+	change.fRuby.SetUTF8String(newRuby);
+	change.fOtherRuby.SetUTF8String(oldRuby);
+
+	// ★Same reason as the text pieces: document text is not a translation key.
+	change.fTextPre.SetTranslatable(kFalse);
+	change.fText.SetTranslatable(kFalse);
+	change.fTextPost.SetTranslatable(kFalse);
+	change.fOtherTextPre.SetTranslatable(kFalse);
+	change.fOtherText.SetTranslatable(kFalse);
+	change.fOtherTextPost.SetTranslatable(kFalse);
+	change.fRuby.SetTranslatable(kFalse);
+	change.fOtherRuby.SetTranslatable(kFalse);
+
+	out.push_back(change);
+}
+
+/* CompareParagraphAttr
+   One ATTRIBUTE's spans, on two paragraphs whose TEXT came out identical.
+
+   ★SPANS ARE MATCHED BY WHERE THEY START. The text is the same on both sides, so a reading that
+   stayed put keeps its position - which makes the start the one thing that reliably identifies
+   "the same ruby" across the two versions. Length is NOT part of the matching: it is part of what
+   changed (琥珀 read as こ+はく against こはく is a change of length, and the whole point).
+*/
+void CompareParagraphAttr(KESCMStoryAttrKind attrKind,
+						  const KESCMAttrSpanList& sourceSpans, const KESCMAttrSpanList& targetSpans,
+						  const std::string& sourcePara, const std::string& targetPara,
+						  int32 sBase, int32 tBase, int32 paraIndex,
+						  std::vector<KESCMStoryChange>& out)
+{
+	if (!KESCMSnippetText::SpansDiffer(sourceSpans, targetSpans))
+		return;
+
+	size_t i = 0, j = 0;
+	while (i < sourceSpans.size() || j < targetSpans.size())
+	{
+		const bool16 haveS = (i < sourceSpans.size()) ? kTrue : kFalse;
+		const bool16 haveT = (j < targetSpans.size()) ? kTrue : kFalse;
+
+		if (haveS && haveT && sourceSpans[i].fStart == targetSpans[j].fStart)
+		{
+			const bool16 same = (sourceSpans[i].fValue == targetSpans[j].fValue &&
+								 sourceSpans[i].fLen == targetSpans[j].fLen &&
+								 (sourceSpans[i].fGroup != 0) == (targetSpans[j].fGroup != 0)) ? kTrue : kFalse;
+			if (!same)
+			{
+				AddAttrChange(KESCMStoryChange::kReplace, attrKind,
+							  targetSpans[j].fStart, targetSpans[j].fLen,
+							  sourceSpans[i].fStart, sourceSpans[i].fLen,
+							  targetPara, sourcePara,
+							  targetSpans[j].fValue, sourceSpans[i].fValue,
+							  tBase, sBase, paraIndex, out);
+			}
+			++i;
+			++j;
+		}
+		else if (haveT && (!haveS || targetSpans[j].fStart < sourceSpans[i].fStart))
+		{
+			// Ruby where there was none.
+			AddAttrChange(KESCMStoryChange::kInsert, attrKind,
+						  targetSpans[j].fStart, targetSpans[j].fLen,
+						  targetSpans[j].fStart, targetSpans[j].fLen,
+						  targetPara, sourcePara,
+						  targetSpans[j].fValue, std::string(),
+						  tBase, sBase, paraIndex, out);
+			++j;
+		}
+		else
+		{
+			// Ruby taken off. ⚠The characters are still there - it is the reading that is gone -
+			//   so the range is a real one on both sides, unlike a text deletion.
+			AddAttrChange(KESCMStoryChange::kDelete, attrKind,
+						  sourceSpans[i].fStart, sourceSpans[i].fLen,
+						  sourceSpans[i].fStart, sourceSpans[i].fLen,
+						  targetPara, sourcePara,
+						  std::string(), sourceSpans[i].fValue,
+						  tBase, sBase, paraIndex, out);
+			++i;
+		}
+	}
+}
+
+/* AddRubyOnlyChanges
+   Ruby differences in the paragraphs the text diff said were UNCHANGED.
+
+   ★★THIS IS WHERE THE WHOLE FEATURE LIVES. A ruby-only edit leaves the text identical, so the
+   paragraph diff reports nothing at all and the row comes out "None" - which is what the user saw.
+   The paragraphs the diff did NOT mention are exactly the ones that need asking about.
+   ⚠Paragraphs that the diff DID report are left alone on purpose: their text changed, so they
+     already have children saying so, and ruby that moved with rewritten words is not a separate
+     edit the reader needs pointed out.
+*/
+void AddAttrOnlyChanges(const std::vector<KESCMTextDiff::Change>& paragraphChanges,
+						const std::vector<std::string>& sourceParas,
+						const std::vector<std::string>& targetParas,
+						const std::vector<KESCMParaAttrs>& sourceAttrs,
+						const std::vector<KESCMParaAttrs>& targetAttrs,
+						const std::vector<int32>& sourceStarts,
+						const std::vector<int32>& targetStarts,
+						std::vector<KESCMStoryChange>& out)
+{
+	int32 a = 0;
+	int32 b = 0;
+
+	// Walk the two paragraph lists side by side, stepping over each reported change. What is left
+	// between them lines up one to one - that is what "unchanged" means to the diff.
+	for (size_t c = 0; c <= paragraphChanges.size(); ++c)
+	{
+		const int32 aStop = (c < paragraphChanges.size())
+							? paragraphChanges[c].aStart : static_cast<int32>(sourceParas.size());
+		const int32 bStop = (c < paragraphChanges.size())
+							? paragraphChanges[c].bStart : static_cast<int32>(targetParas.size());
+
+		while (a < aStop && b < bStop)
+		{
+			if (a < static_cast<int32>(sourceAttrs.size()) && b < static_cast<int32>(targetAttrs.size()) &&
+				a < static_cast<int32>(sourceStarts.size()) && b < static_cast<int32>(targetStarts.size()))
+			{
+				// ★EACH ATTRIBUTE IS COMPARED ON ITS OWN LIST, and they cannot be merged into one
+				//   pass: two sets of spans are matched by position within their OWN kind.
+				//
+				// ⚠★★★KENTEN (圏点) IS NOT COMPARED HERE, AND THAT IS A DECISION, NOT AN OMISSION
+				//   (user's call, 2026-08-23: "ストーリーモードの StoryEdit にでるのは、テキストの
+				//   変更と、ルビだけで" / "けんてんですが、違いをだすのをやめますね"). It WAS compared
+				//   for one day (2026-08-22) and the machinery all still stands - the snippet parser
+				//   still reads the spans and the test harness still checks that it reads them
+				//   rightly, because that reading cost a snippet from the user to get right and is
+				//   free to keep (it comes off the same pass as the ruby). What was removed is the
+				//   REPORTING: a kenten-only edit now produces no child row, and its story therefore
+				//   drops out of the list on the row filter, exactly as a font-only edit does.
+				//   ⇒ Turning it back on is this one call and its label. Nothing else was taken out.
+				CompareParagraphAttr(kKESCMStoryAttrRuby,
+									 sourceAttrs[a].fRuby, targetAttrs[b].fRuby,
+									 sourceParas[a], targetParas[b],
+									 sourceStarts[a], targetStarts[b], b, out);
+			}
+			++a;
+			++b;
+		}
+
+		if (c < paragraphChanges.size())
+		{
+			a = paragraphChanges[c].aStart + paragraphChanges[c].aCount;
+			b = paragraphChanges[c].bStart + paragraphChanges[c].bCount;
+		}
+	}
+}
+
+/** Reading order, for putting the ruby children back among the text ones. */
+bool ChangeIsBefore(const KESCMStoryChange& x, const KESCMStoryChange& y)
+{
+	return x.fTargetStart < y.fTargetStart;
+}
+
 /* CompareOneStory
    Fills out with everything that differs between the two versions of one story. kFalse means the
    story could not be compared at all; an empty out with kTrue means it was compared and the text
@@ -515,10 +642,15 @@ bool16 CompareOneStory(const UIDRef& targetStory, const UIDRef& sourceStory,
 	if (!KESCMStoryXml::ExportStory(sourceStory, sourceXml))
 		return kFalse;
 
+	// ★Ruby comes out of the same read as the text, and for the reason spelt out in
+	//   KESCMSnippetText.h: a comparison is one moment, and asking the live model for ruby instead
+	//   would put two moments in one row.
 	std::vector<std::string> targetParas;
 	std::vector<std::string> sourceParas;
-	ExtractParagraphs(targetXml, targetParas);
-	ExtractParagraphs(sourceXml, sourceParas);
+	std::vector<KESCMParaAttrs> targetAttrs;
+	std::vector<KESCMParaAttrs> sourceAttrs;
+	KESCMSnippetText::ExtractParagraphs(targetXml, targetParas, &targetAttrs);
+	KESCMSnippetText::ExtractParagraphs(sourceXml, sourceParas, &sourceAttrs);
 
 	// ★ONE TABLE FOR BOTH SEQUENCES. Numbering them from separate tables would give equal
 	//   paragraphs different tokens, and every paragraph would look changed.
@@ -532,24 +664,70 @@ bool16 CompareOneStory(const UIDRef& targetStory, const UIDRef& sourceStory,
 	if (!KESCMTextDiff::Diff(sourceTokens, targetTokens, paragraphChanges))
 		return kFalse;		// too different to place - the row stays, the detail does not
 
+	// ★★★ONE ROW PER PLACE, NOT ONE PER RUN (2026-08-23, user's call: 「変化している文字の
+	//   有るセルだけになるのが正しいかな」). A CELL IS A PARAGRAPH, so two edits that happened to land
+	//   in adjacent paragraphs come back as ONE run even when one of them is body text and the next
+	//   is inside the table. The row then spans everything between them - including text nobody
+	//   touched. MEASURED on the tablespan document, three one-character edits:
+	//
+	//       CHANGE t=[18,40) 「したよ。¶[表]表の後の段落です。¶あたらしい」   ← one row, 22 characters
+	//
+	//   ⚠ONLY WHERE A RUN LEAVES ONE PLACE FOR ANOTHER. Paragraphs of the same place still share a
+	//     row, which is what a cell holding several paragraphs - and ordinary body text - depends on.
+	//   ⚠And only when the two versions pass through the same places: SplitRunAtPlaces leaves a run
+	//     whole rather than pair its halves up wrongly (see the header).
+	{
+		std::vector<KESCMTextDiff::Change> byPlace;
+		std::vector<KESCMSnippetText::RegionPair> pieces;
+		for (size_t c = 0; c < paragraphChanges.size(); ++c)
+		{
+			const KESCMTextDiff::Change& run = paragraphChanges[c];
+			KESCMSnippetText::SplitRunAtPlaces(sourceAttrs, run.aStart, run.aCount,
+											   targetAttrs, run.bStart, run.bCount, pieces);
+			for (size_t k = 0; k < pieces.size(); ++k)
+			{
+				KESCMTextDiff::Change piece;
+				piece.aStart = pieces[k].fSourceStart;
+				piece.aCount = pieces[k].fSourceCount;
+				piece.bStart = pieces[k].fTargetStart;
+				piece.bCount = pieces[k].fTargetCount;
+				byPlace.push_back(piece);
+			}
+		}
+		paragraphChanges.swap(byPlace);
+	}
+
 	std::vector<int32> targetStarts;
 	std::vector<int32> sourceStarts;
 	int32 targetComputed = 0;
 	int32 sourceComputed = 0;
-	ParagraphStarts(targetParas, targetStarts, targetComputed);
-	ParagraphStarts(sourceParas, sourceStarts, sourceComputed);
+	ParagraphStarts(targetParas, targetAttrs, targetStarts, targetComputed);
+	ParagraphStarts(sourceParas, sourceAttrs, sourceStarts, sourceComputed);
 
 	// ★BOTH SIDES ARE CHECKED. KohakuTest checked only the side it selected in; here a click
 	//   moves both windows, so a mismatch on the older side would aim the older window wrongly.
 	if (!LengthAgrees(targetStory, targetComputed) || !LengthAgrees(sourceStory, sourceComputed))
 		return kFalse;
 
+	// ★★★AND THEN THE POSITIONS THEMSELVES ARE ASKED OF THE DOCUMENT (2026-08-23), which REPLACES
+	//   what ParagraphStarts just put in the two tables. The count above is still needed - it is
+	//   what LengthAgrees checks - but it is counted straight down the snippet, and a table's cells
+	//   are not where the snippet puts them: the text model keeps them after the whole of the
+	//   story's own text (ITableTextContent.h:41-44). Counting therefore places everything after a
+	//   table wrongly, and no total can show it. See KESCMStoryCellBases.h for the measurements.
+	//   ⚠It refuses stories it cannot match up (a shape the body walk does not understand, a table
+	//     whose position the two sides disagree about), and a refusal here means the same as one
+	//     above: no differences for this story, rather than differences aimed at the wrong words.
+	if (!KESCMResolveParagraphPositions(targetStory, targetParas, targetAttrs, targetStarts)
+		|| !KESCMResolveParagraphPositions(sourceStory, sourceParas, sourceAttrs, sourceStarts))
+		return kFalse;
+
 	for (size_t c = 0; c < paragraphChanges.size(); ++c)
 	{
 		const KESCMTextDiff::Change& change = paragraphChanges[c];
 
-		const std::string sourceText = Join(sourceParas, change.aStart, change.aCount);
-		const std::string targetText = Join(targetParas, change.bStart, change.bCount);
+		const std::string sourceText = KESCMSnippetText::JoinParagraphs(sourceParas, change.aStart, change.aCount);
+		const std::string targetText = KESCMSnippetText::JoinParagraphs(targetParas, change.bStart, change.bCount);
 
 		// Where this run starts on each side. A run with no paragraphs of its own sits where the
 		// next surviving paragraph begins.
@@ -557,6 +735,11 @@ bool16 CompareOneStory(const UIDRef& targetStory, const UIDRef& sourceStory,
 							? targetStarts[change.bStart] : targetComputed;
 		const int32 sBase = (change.aStart < static_cast<int32>(sourceStarts.size()))
 							? sourceStarts[change.aStart] : sourceComputed;
+
+		// ★The run itself, so that a position inside it can be asked for rather than added up - see
+		//   RunSide. Built once here because both callers of Add below need the same two.
+		const RunSide tRun(targetParas, targetStarts, change.bStart, change.bCount, tBase);
+		const RunSide sRun(sourceParas, sourceStarts, change.aStart, change.aCount, sBase);
 
 		std::vector<int32> sourceCodePoints;
 		std::vector<int32> targetCodePoints;
@@ -572,17 +755,31 @@ bool16 CompareOneStory(const UIDRef& targetStory, const UIDRef& sourceStory,
 								&& !fineChanges.empty();
 
 		// ★ONLY ON CHARACTERS. Applied to the paragraph list this would report paragraphs nobody
-		//   touched as changed - see KESCMTextDiff.h.
+		//   touched as changed - see KESCMTextDiff.h. The same restriction covers the alignment
+		//   below, for a plainer reason: a paragraph token is a number, and asking which script it
+		//   is written in means nothing.
 		if (narrowed)
+		{
 			KESCMTextDiff::MergeNearbyChanges(fineChanges);
+
+			// ★★THEN SLIDE EACH RUN TO THE POSITION A READER WOULD PUT IT (2026-08-22). Myers
+			//   returns A shortest edit script, not THE one a person would describe, and when the
+			//   surrounding text repeats a character the two differ visibly. Reported from the
+			//   panel: 「旧版です」->「新版です・ここが違います」 came back quoting
+			//   「す・ここが違いま」 - starting and ending on す because the run had been rotated
+			//   one step left, which costs Myers nothing and costs the reader the whole sentence.
+			//   ⚠AFTER the merge, not before: merging changes the shape of a run, and aligning a
+			//     run that is about to be swallowed would be work thrown away.
+			KESCMTextDiff::AlignChangeBoundaries(sourceCodePoints, targetCodePoints, fineChanges);
+		}
 
 		if (!narrowed)
 		{
 			// The whole run, as one change. This is where a run lands when the character pass
 			// cannot place it - not an error, just a coarser answer.
 			Add(out, change.bStart,
-				targetText, targetBytes, tBase, 0, static_cast<int32>(targetCodePoints.size()),
-				sourceText, sourceBytes, sBase, 0, static_cast<int32>(sourceCodePoints.size()));
+				targetText, targetBytes, tRun, 0, static_cast<int32>(targetCodePoints.size()),
+				sourceText, sourceBytes, sRun, 0, static_cast<int32>(sourceCodePoints.size()));
 			continue;
 		}
 
@@ -590,10 +787,22 @@ bool16 CompareOneStory(const UIDRef& targetStory, const UIDRef& sourceStory,
 		{
 			const KESCMTextDiff::Change& fine = fineChanges[k];
 			Add(out, change.bStart,
-				targetText, targetBytes, tBase, fine.bStart, fine.bCount,
-				sourceText, sourceBytes, sBase, fine.aStart, fine.aCount);
+				targetText, targetBytes, tRun, fine.bStart, fine.bCount,
+				sourceText, sourceBytes, sRun, fine.aStart, fine.aCount);
 		}
 	}
+
+	// ★★★AND THEN THE RUBY (2026-08-22). Everything above compared <Content> and nothing else, so a
+	//   story whose ruby alone was edited came out of it with no children at all - the row said
+	//   "None", which is what the user reported. The paragraphs the diff did NOT mention are exactly
+	//   the ones to ask about.
+	AddAttrOnlyChanges(paragraphChanges, sourceParas, targetParas, sourceAttrs, targetAttrs,
+					   sourceStarts, targetStarts, out);
+
+	// ⚠Put back in reading order. The ruby children were found by a separate walk, so without this
+	//   they would all sit after the text ones and the tree would run down the story twice.
+	//   ★STABLE, so that two changes at the same position keep the order they were made in.
+	std::stable_sort(out.begin(), out.end(), ChangeIsBefore);
 
 	return kTrue;
 }

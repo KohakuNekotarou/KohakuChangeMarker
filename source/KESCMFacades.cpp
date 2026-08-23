@@ -105,8 +105,9 @@ public:
 
 	virtual void		GetSessionStatus(PMString& out)	{ KESCMGetSessionStatus(out); }
 	virtual void		GetSessionStatusSegments(PMString& outLabel, PMString& outPre,
-												 PMString& outMid, PMString& outPost)
-							{ KESCMGetSessionStatusSegments(outLabel, outPre, outMid, outPost); }
+												 PMString& outMid, PMString& outPost,
+												 PMString& outRuby)
+							{ KESCMGetSessionStatusSegments(outLabel, outPre, outMid, outPost, outRuby); }
 
 	// ---- the status line (stage 2) --------------------------------------------------------
 	// ★Free functions from KESCMModelNotify.h. The panel's status writer and the UI shutdown
@@ -117,8 +118,9 @@ public:
 	//   at the spot they were removed from.
 	virtual void		StoreSessionStatus(const PMString& s)	{ KESCMStoreSessionStatus(s); }
 	virtual void		StoreSessionStatusSegments(const PMString& label, const PMString& pre,
-												   const PMString& mid, const PMString& post)
-							{ KESCMStoreSessionStatusSegments(label, pre, mid, post); }
+												   const PMString& mid, const PMString& post,
+												   const PMString& ruby)
+							{ KESCMStoreSessionStatusSegments(label, pre, mid, post, ruby); }
 	virtual void		ClearSessionStatus()	{ KESCMClearSessionStatus(); }
 
 	virtual bool16		ArmedDocsAlive()		{ return KESCMArmedDocsAlive(); }
@@ -161,8 +163,7 @@ public:
 	virtual void		SetShowTargetMarks(bool16 on)		{ KESCMDrawEventHandler::sTgtMarksOn = on; }
 	virtual bool16		GetShowOldPageNumbers()	{ return KESCMDrawEventHandler::sShowOldNumbers; }
 	virtual void		SetShowOldPageNumbers(bool16 on)	{ KESCMDrawEventHandler::sShowOldNumbers = on; }
-	virtual bool16		GetHoldToHideMarks()	{ return KESCMDrawEventHandler::sAlwaysShowMarks; }
-	virtual void		SetHoldToHideMarks(bool16 on)		{ KESCMDrawEventHandler::sAlwaysShowMarks = on; }
+	// (GetHoldToHideMarks / SetHoldToHideMarks は 2026-08-22 に撤去＝IKESCMCompareFacade.h の注記を見よ)
 
 	virtual void		SetMarksVisible(bool16 on)			{ KESCMDrawEventHandler::sMarksVisible = on; }
 	virtual void		SetMarkScreenOpacity(const PMReal& opacity)
@@ -170,8 +171,8 @@ public:
 	virtual PMReal		GetSelectedMarkOpacity()	{ return KESCMDrawEventHandler::SelectedMarkOpacity(); }
 	virtual bool16		GetMarksTempHidden()	{ return KESCMDrawEventHandler::sMarksTempHidden; }
 	virtual void		SetMarksTempHidden(bool16 on)		{ KESCMDrawEventHandler::sMarksTempHidden = on; }
-	virtual bool16		GetSrcMarksTempHidden()	{ return KESCMDrawEventHandler::sSrcMarksTempHidden; }
-	virtual void		SetSrcMarksTempHidden(bool16 on)	{ KESCMDrawEventHandler::sSrcMarksTempHidden = on; }
+	virtual bool16		GetSrcMarksPressed()	{ return KESCMDrawEventHandler::sSrcMarksPressed; }
+	virtual void		SetSrcMarksPressed(bool16 on)		{ KESCMDrawEventHandler::sSrcMarksPressed = on; }
 	virtual void		SetPeekOpacity(const PMReal& opacity)
 														{ KESCMDrawEventHandler::sPeekOpacity = opacity; }
 	virtual bool16		GetShowOriginal()		{ return KESCMDrawEventHandler::sShowOriginal; }
@@ -374,6 +375,7 @@ public:
 		out.fFrameUID	= row->fFrameUID;
 		out.fPageUID	= row->fPageUID;
 		out.fTextCompared = row->fTextCompared;
+		out.fAttrKind	= static_cast<int32>(row->fAttrKind);	// 0 = none, 1 = ruby
 		return kTrue;
 	}
 
@@ -396,14 +398,29 @@ public:
 		out.fTargetEnd	= change.fTargetEnd;
 		out.fSourceStart = change.fSourceStart;
 		out.fSourceEnd	= change.fSourceEnd;
-		out.fHasSource	= change.fHasSource;
 		out.fTextPre	= change.fTextPre;
 		out.fText		= change.fText;
 		out.fTextPost	= change.fTextPost;
 		out.fOtherTextPre	= change.fOtherTextPre;
 		out.fOtherText		= change.fOtherText;
 		out.fOtherTextPost	= change.fOtherTextPost;
+		out.fRuby			= change.fRuby;			// only meaningful when fWhat is kAttr
+		out.fOtherRuby		= change.fOtherRuby;
+		out.fAttrKind		= static_cast<int32>(change.fAttrKind);
 		return kTrue;
+	}
+
+	virtual int32	GetChangeAttrKind(int32 nth, int32 which)
+	{
+		// Out of range answers "no attribute" rather than failing: the caller is the tree asking how
+		// tall a row is, and a row it cannot identify gets the ordinary height - the same shape the
+		// list has had all along. (GetChange returns kFalse for this case because its caller is
+		// about to DRAW the change and must not draw a stale one.)
+		const KESCMStoryRow* row = KESCMStoryList::GetRow(nth);
+		if (row == nil || which < 0 || which >= static_cast<int32>(row->fChanges.size()))
+			return static_cast<int32>(kKESCMStoryAttrNone);
+
+		return static_cast<int32>(row->fChanges[which].fAttrKind);
 	}
 
 	virtual int32	RefreshRow(int32 nth)
@@ -434,6 +451,10 @@ public:
 
 	virtual bool16	GetStoryStartPoint(IDataBase* db, UID storyUID, UID& outFrame, PBPMPoint& outPb)
 					{ return KESCMStoryStartPoint(db, storyUID, outFrame, outPb); }
+	virtual bool16	GetStoryPointAt(IDataBase* db, UID storyUID, TextIndex index, PBPMPoint& outPb)
+					{ return KESCMStoryPointAt(db, storyUID, index, outPb); }
+	virtual UID		GetStoryFrameAt(IDataBase* db, UID storyUID, TextIndex index)
+					{ return KESCMStoryFrameAt(db, storyUID, index); }
 };
 
 CREATE_PMINTERFACE(KESCMStoryEditsFacade, kKESCMStoryEditsFacadeImpl)

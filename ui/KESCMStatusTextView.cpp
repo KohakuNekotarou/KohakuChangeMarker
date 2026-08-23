@@ -56,6 +56,7 @@
 #include "IWidgetUtils.h"		// GetViewYPosition - only for the fallback when the metrics are refused
 #include "ShuksanID.h"			// kPaletteWindowSystemScriptFontId
 #include "Utils.h"				// Utils<IWidgetUtils>()
+#include "WidgetDefs.h"			// EllipsizeStyle (kEllipsizeEnd) - only the reading is ever ellipsized here
 
 // Project includes:
 #include "IKESCMStatusTextData.h"
@@ -77,8 +78,17 @@ struct KESCMRun
 	PMString	fText;
 	bool16		fFaded;
 
-	KESCMRun() : fFaded(kTrue) {}
-	KESCMRun(const PMString& text, bool16 faded) : fText(text), fFaded(faded) {}
+	/* Is this run the CHANGED CHARACTERS - the ones a reading would go over (2026-08-22)?
+
+	   ★NOT THE SAME QUESTION AS "not faded", which is why it needs a field of its own. The HEADING
+	   is drawn unfaded too (user's call, 2026-08-21: it is not context, it is the box saying which
+	   document these words are from), so a search for the unfaded run would find the heading first
+	   and hang the reading over "Source Text:". */
+	bool16		fIsChange;
+
+	KESCMRun() : fFaded(kTrue), fIsChange(kFalse) {}
+	KESCMRun(const PMString& text, bool16 faded, bool16 isChange = kFalse)
+		: fText(text), fFaded(faded), fIsChange(isChange) {}
 };
 
 /* One piece of the message as it will be drawn: a run, or the part of a run that fell on one line.
@@ -88,12 +98,13 @@ struct KESCMFrag
 {
 	PMString	fText;
 	bool16		fFaded;
+	bool16		fIsChange;	// carried through from the run - see KESCMRun
 	int32		fLine;
 	PMReal		fX;
 
-	KESCMFrag() : fFaded(kTrue), fLine(0), fX(0.0) {}
-	KESCMFrag(const PMString& text, bool16 faded, int32 line, const PMReal& x)
-		: fText(text), fFaded(faded), fLine(line), fX(x) {}
+	KESCMFrag() : fFaded(kTrue), fIsChange(kFalse), fLine(0), fX(0.0) {}
+	KESCMFrag(const PMString& text, bool16 faded, bool16 isChange, int32 line, const PMReal& x)
+		: fText(text), fFaded(faded), fIsChange(isChange), fLine(line), fX(x) {}
 };
 
 // Spelled out rather than passed as bare kFalse, and spelled out on EVERY call: the defaults in
@@ -241,6 +252,7 @@ bool16 KESCMLayoutRuns(IGraphicsContext* gc, const InterfaceFontInfo& font,
 	{
 		PMString rest = runs[r].fText;
 		const bool16 faded = runs[r].fFaded;
+		const bool16 isChange = runs[r].fIsChange;
 
 		while (!rest.IsEmpty())
 		{
@@ -287,7 +299,7 @@ bool16 KESCMLayoutRuns(IGraphicsContext* gc, const InterfaceFontInfo& font,
 				// All of it goes on this line.
 				if (!chunk.IsEmpty())
 				{
-					out.push_back(KESCMFrag(chunk, faded, line, x));
+					out.push_back(KESCMFrag(chunk, faded, isChange, line, x));
 					x += KESCMWidth(gc, chunk, font);
 				}
 				rest = (breakAt < 0) ? PMString() : KESCMTail(rest, breakAt);	// leave the break itself
@@ -328,7 +340,7 @@ bool16 KESCMLayoutRuns(IGraphicsContext* gc, const InterfaceFontInfo& font,
 
 			const PMString head = KESCMHead(chunk, fit);
 			if (!head.IsEmpty())
-				out.push_back(KESCMFrag(head, faded, line, x));
+				out.push_back(KESCMFrag(head, faded, isChange, line, x));
 			rest = KESCMTail(rest, fit);
 			++line;
 			x = PMReal(0.0);
@@ -358,7 +370,7 @@ std::vector<KESCMRun> KESCMMakeRuns(const PMString& label, const PMString& pre,
 	if (!pre.IsEmpty())
 		runs.push_back(KESCMRun(pre, kTrue));
 	if (!mid.IsEmpty())
-		runs.push_back(KESCMRun(mid, kFalse));
+		runs.push_back(KESCMRun(mid, kFalse, kTrue /*these are the changed characters*/));
 	if (!post.IsEmpty())
 		runs.push_back(KESCMRun(post, kTrue));
 	return runs;
@@ -406,7 +418,8 @@ public:
 	virtual ~KESCMStatusTextData() {}
 
 	virtual void SetSegments(const PMString& label, const PMString& pre,
-							 const PMString& mid, const PMString& post)
+							 const PMString& mid, const PMString& post,
+							 const PMString& ruby)
 	{
 		// ★Not translation keys. Messages are assembled sentences and document text, and a short
 		//   common word left translatable can be looked up in the string tables and come back as
@@ -416,15 +429,17 @@ public:
 		fPre   = pre;   fPre.SetTranslatable(kFalse);
 		fMid   = mid;   fMid.SetTranslatable(kFalse);
 		fPost  = post;  fPost.SetTranslatable(kFalse);
+		fRuby  = ruby;  fRuby.SetTranslatable(kFalse);
 	}
 
 	virtual void GetSegments(PMString& outLabel, PMString& outPre,
-							 PMString& outMid, PMString& outPost) const
+							 PMString& outMid, PMString& outPost, PMString& outRuby) const
 	{
 		outLabel = fLabel;
 		outPre   = fPre;
 		outMid   = fMid;
 		outPost  = fPost;
+		outRuby  = fRuby;
 	}
 
 private:
@@ -432,6 +447,7 @@ private:
 	PMString fPre;
 	PMString fMid;
 	PMString fPost;
+	PMString fRuby;
 };
 
 CREATE_PMINTERFACE(KESCMStatusTextData, kKESCMStatusTextDataImpl)
@@ -465,14 +481,20 @@ void KESCMStatusTextView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 	if (data == nil)
 		return;
 
-	PMString label, pre, mid, post;
-	data->GetSegments(label, pre, mid, post);
+	PMString label, pre, mid, post, ruby;
+	data->GetSegments(label, pre, mid, post, ruby);
 
 	// ★NOTHING IS PAINTED BEHIND THE TEXT. The panel draws its own background; this box adds words
 	//   on top of it, exactly as the stock widget it replaced did. An empty message is therefore a
 	//   no-op rather than a blank rectangle.
 	if (label.IsEmpty() && pre.IsEmpty() && mid.IsEmpty() && post.IsEmpty())
 		return;
+
+	// ⚠A reading with nothing under it is not drawn. It belongs OVER the changed characters, and
+	//   without them there is no place for it to be - see the layout below, which finds its line by
+	//   looking for them.
+	if (mid.IsEmpty())
+		ruby = PMString();		// (assigned rather than Clear()d - see the kNothing below)
 
 	// The palette window's SYSTEM SCRIPT font - the one the resource this replaced named
 	// (kPaletteWindowFontId there; the system-script variant here for the same reason the change
@@ -520,7 +542,17 @@ void KESCMStatusTextView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 		ascent = Utils<IWidgetUtils>()->GetViewYPosition(&gc, fontInfo, lineHeight);
 	}
 
-	int32 maxLines = static_cast<int32>(ToDouble(frame.Height() / lineHeight));
+	// ★★A READING COSTS ONE LINE OF THE BOX, AND IT IS TAKEN OUT HERE (2026-08-22) - before the
+	//   wrapping, so that everything downstream (the two binary searches that give the context away,
+	//   the ellipsis rule) works against the room that is really left. The reading is drawn on a
+	//   line of its own above the changed characters, and there is only ever ONE such line however
+	//   the text wraps: the changed characters are one run, and the reading goes over the first
+	//   piece of it (see the drawing below). In a Japanese UI that is 4 lines becoming 3.
+	// ⚠Not "a line per fragment". A run split across a wrap becomes several fragments, and hanging a
+	//   reading over each would be claiming the word was read that way in the document.
+	const int32 rubyLines = ruby.IsEmpty() ? 0 : 1;
+
+	int32 maxLines = static_cast<int32>(ToDouble(frame.Height() / lineHeight)) - rubyLines;
 	if (maxLines < 1)
 		maxLines = 1;		// a box too short for even one line still shows the beginning of it
 
@@ -618,13 +650,69 @@ void KESCMStatusTextView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 	//   let the last line's descenders drift below the box. Putting the first baseline one ascent
 	//   below the top and stepping by the advance is what the advance is for.
 	const PMReal baseline0 = frame.Top() + ascent;
+
+	// ★★WHICH LINE THE READING GOES ON, and where on it (2026-08-22). The first fragment of the
+	//   changed characters is the answer to both: the reading stands over the characters it belongs
+	//   to, and the wrapping has already decided where those landed.
+	// ⚠THE FIRST fragment, not the widest or the last. A word broken across a wrap is still one
+	//   word, and the reading belongs to its beginning - which is also where the eye looks for it.
+	int32 rubyLine = -1;
+	PMReal rubyBaseX(0.0), rubyBaseW(0.0);
+	if (!ruby.IsEmpty())
+	{
+		for (size_t i = 0; i < frags.size(); ++i)
+		{
+			if (!frags[i].fIsChange)
+				continue;
+			rubyLine  = frags[i].fLine;
+			rubyBaseX = frags[i].fX;
+			rubyBaseW = KESCMWidth(&gc, frags[i].fText, fontInfo);
+			break;
+		}
+	}
+
+	// ★★"TWO LINES SHOWN AS ONE" IS EXPRESSED AS A SHIFT, NOT AS A TABLE OF LINE HEIGHTS (user's
+	//   words, 2026-08-22: "2行分つかって、1行に見せる"). Every line from the reading's own line
+	//   downwards moves one line further down, and the reading is drawn in the gap that opens up.
+	//   Lines ABOVE it - the heading, and any context that wrapped before the change - do not move.
+	//   ⇒ One integer decides the whole layout, and when there is no reading it is never consulted.
+	auto lineOf = [&](int32 line) -> PMReal
+	{
+		const int32 shifted = (rubyLine >= 0 && line >= rubyLine) ? (line + 1) : line;
+		return baseline0 + lineHeight * PMReal(shifted);
+	};
+
 	for (size_t i = 0; i < frags.size(); ++i)
 	{
 		const KESCMFrag& f = frags[i];
-		const PMPoint at(frame.Left() + f.fX, baseline0 + lineHeight * PMReal(f.fLine));
+		const PMPoint at(frame.Left() + f.fX, lineOf(f.fLine));
 		StringUtils::PMDrawStringRGB(&gc, at, f.fText, fontInfo,
 									 f.fFaded ? kContextColor : kChangeColor,
 									 kKESCMDontConvertAmpersand, kKESCMNoUnderline);
+	}
+
+	if (rubyLine >= 0)
+	{
+		// ★The same centring rule the change row's cell uses (KESCMPanelTextDraw.h).
+		const PMReal rubyW = KESCMWidth(&gc, ruby, fontInfo);
+		const PMReal rubyX = KESCMRubyX(frame.Left() + rubyBaseX, rubyBaseW, rubyW, frame.Left());
+
+		// ⚠The box's right edge is the one thing the reading may not overhang. It is cut at its
+		//   TAIL - a reading is identified by its head - and only when it really does not fit, so
+		//   an ordinary reading over an ordinary word is never touched.
+		PMString shown = ruby;
+		const PMReal room = frame.Right() - rubyX;
+		if (rubyW > room && room > PMReal(0.0))
+			shown = StringUtils::PMEllipsizeString(&gc, room, ruby, fontInfo, kEllipsizeEnd, nil,
+												   kKESCMDontConvertAmpersand);
+
+		if (room > PMReal(0.0))
+		{
+			// Full strength: on these messages the reading IS what changed. Only pre/post are faded.
+			StringUtils::PMDrawStringRGB(&gc, PMPoint(rubyX, baseline0 + lineHeight * PMReal(rubyLine)),
+										 shown, fontInfo, kChangeColor,
+										 kKESCMDontConvertAmpersand, kKESCMNoUnderline);
+		}
 	}
 }
 

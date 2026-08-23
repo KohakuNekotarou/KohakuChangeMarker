@@ -38,8 +38,24 @@ struct KESCMMarkRange
 	TextIndex	fFrom;		// first character
 	TextIndex	fTo;		// one PAST the last - an END, not a length (RangeData.h:69)
 
-	KESCMMarkRange() : fFrom(0), fTo(0) {}
-	KESCMMarkRange(TextIndex from, TextIndex to) : fFrom(from), fTo(to) {}
+	/** ★★A CARET, NOT A STRETCH (2026-08-22, user's call: "細いバーにするがいいです、キャレットの位置で").
+		A DELETION has no width on the side it was deleted from - there is nothing there to invert -
+		and until now it was shown by widening it to one character, which lit up whatever had closed
+		up over the gap. That is a different character saying "I am the edit", and in the two cases
+		the user hit first it was plainly wrong: deleting a whole paragraph lit the first character
+		of the NEXT one, and deleting the end of a story lit the story's final carriage return,
+		which draws nothing at all.
+		⇒ A caret occupies [fFrom, fFrom+1) so that it sorts, merges and intersects exactly like any
+		  other range - but the drawing side gives it a thin bar at the START of that character
+		  instead of inverting it (KESCMStoryMarker's GetMarkBoxes). Nothing else has to know. */
+	bool16		fCaret;
+
+	KESCMMarkRange() : fFrom(0), fTo(0), fCaret(kFalse) {}
+	KESCMMarkRange(TextIndex from, TextIndex to) : fFrom(from), fTo(to), fCaret(kFalse) {}
+	KESCMMarkRange(TextIndex from, TextIndex to, bool16 caret) : fFrom(from), fTo(to), fCaret(caret) {}
+
+	/** The caret standing in front of character `at`. */
+	static KESCMMarkRange Caret(TextIndex at) { return KESCMMarkRange(at, at + 1, kTrue); }
 };
 
 typedef std::vector<KESCMMarkRange> KESCMMarkRangeList;
@@ -61,23 +77,37 @@ inline bool KESCMMarkRangeEndsAtOrBefore(const KESCMMarkRange& r, TextIndex v)
 	★EMPTY RANGES ARE DROPPED, NOT WIDENED. A deletion has no width on the side it was deleted
 	from, and widening it is a decision about what the reader should see - which belongs to the
 	caller that knows it is looking at a deletion (KESCMStoryPressMarks), not to a list of numbers.
+	★That caller's answer since 2026-08-22 is KESCMMarkRange::Caret - see below for why a caret is
+	carried through here rather than being fused away.
+
+	★★CARETS ARE KEPT APART FROM THE FUSING, and there are two reasons, both about correctness:
+	  ① fusing would lose the flag - a caret swallowed into a neighbouring stretch would come out
+	    the other side as an ordinary inverted character, which is the very thing it replaced;
+	  ② a caret that sits INSIDE a stretch is dropped, because that place is already lit and
+	    Difference blending inverts twice = not at all (the hole this whole file exists to prevent).
+	  ⇒ What comes out is still sorted and still non-overlapping, so the binary searches below are
+	    unaffected and every existing test still holds.
 
 	@param ranges [in,out] rewritten in place: sorted, non-empty, non-overlapping.
 */
 inline void KESCMMergeMarkRanges(KESCMMarkRangeList& ranges)
 {
-	KESCMMarkRangeList kept;
+	KESCMMarkRangeList kept, carets;
 	kept.reserve(ranges.size());
 	for (KESCMMarkRangeList::const_iterator it = ranges.begin(); it != ranges.end(); ++it)
 	{
-		if (it->fFrom < it->fTo)
+		if (it->fFrom >= it->fTo)
+			continue;
+		if (it->fCaret)
+			carets.push_back(*it);
+		else
 			kept.push_back(*it);
 	}
 
 	std::sort(kept.begin(), kept.end(), KESCMMarkRangeIsBefore);
 
 	KESCMMarkRangeList merged;
-	merged.reserve(kept.size());
+	merged.reserve(kept.size() + carets.size());
 	for (KESCMMarkRangeList::const_iterator it = kept.begin(); it != kept.end(); ++it)
 	{
 		// ">" and not ">=": a range that STARTS where the last one ended touches it, and touching
@@ -86,6 +116,43 @@ inline void KESCMMergeMarkRanges(KESCMMarkRangeList& ranges)
 			merged.push_back(*it);
 		else if (it->fTo > merged.back().fTo)
 			merged.back().fTo = it->fTo;
+	}
+
+	if (!carets.empty())
+	{
+		const size_t stretchCount = merged.size();
+		std::sort(carets.begin(), carets.end(), KESCMMarkRangeIsBefore);
+
+		TextIndex lastCaret = -1;
+		for (KESCMMarkRangeList::const_iterator c = carets.begin(); c != carets.end(); ++c)
+		{
+			if (c->fFrom == lastCaret)
+				continue;					// the same place asked for twice
+
+			// Is this place already lit by a stretch? Only the fused stretches are searched (the
+			// carets added so far are past `stretchCount` and are not sorted against them yet).
+			bool inside = false;
+			for (size_t i = 0; i < stretchCount; ++i)
+			{
+				if (merged[i].fFrom <= c->fFrom && c->fFrom < merged[i].fTo) { inside = true; break; }
+				if (merged[i].fFrom > c->fFrom) break;		// sorted: no later stretch can hold it
+			}
+			if (inside)
+				continue;
+
+			merged.push_back(*c);
+			lastCaret = c->fFrom;
+		}
+
+		std::sort(merged.begin(), merged.end(), KESCMMarkRangeIsBefore);
+
+		// ★NOTHING IS CLIPPED AFTERWARDS, AND NOTHING NEEDS TO BE. A caret occupies exactly one
+		//   character, [i, i+1). For it to overlap a stretch, that stretch would have to contain i -
+		//   and every such caret was just dropped by the test above. A stretch beginning at i+1 only
+		//   TOUCHES it, which this list allows between a caret and its neighbour (they are not fused,
+		//   deliberately: fusing would lose the flag).
+		//   ⚠A clipping pass was written here first and removed: it could never fire, and the one
+		//     thing it could do was turn [i, i+1) into an empty range that the intersect below drops.
 	}
 
 	ranges.swap(merged);
@@ -120,8 +187,11 @@ inline void KESCMIntersectMarkRanges(const KESCMMarkRangeList& merged,
 	{
 		const TextIndex from = (it->fFrom > runStart) ? it->fFrom : runStart;
 		const TextIndex to   = (it->fTo   < runEnd)   ? it->fTo   : runEnd;
+		// ⚠The caret flag travels with the piece. A caret clipped by a run boundary keeps its flag,
+		//   which is right: the bar belongs at the START of its character, and that is the end the
+		//   run containing it sees.
 		if (from < to)
-			out.push_back(KESCMMarkRange(from - runStart, to - runStart));
+			out.push_back(KESCMMarkRange(from - runStart, to - runStart, it->fCaret));
 	}
 }
 

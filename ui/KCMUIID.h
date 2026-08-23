@@ -249,7 +249,10 @@ DECLARE_PMID(kActionIDSpace, kKESCMPopupOpacity25ActionID, kKCMUIPrefix + 15)	//
 DECLARE_PMID(kActionIDSpace, kKESCMPopupOpacity75ActionID, kKCMUIPrefix + 16)	// パネルのフライアウトの「Marks opacity 75%」(25% と相互排他)
 DECLARE_PMID(kActionIDSpace, kKESCMPopupSep1ActionID, kKCMUIPrefix + 17)	// フライアウト: Start の下の区切り線(MenuDef のパス末尾 ":-"。ActionDef 不要・DoAction 不要=一意なIDだけ要る)
 DECLARE_PMID(kActionIDSpace, kKESCMPopupSep2ActionID, kKCMUIPrefix + 18)	// フライアウト: How to Use の上の区切り線
-DECLARE_PMID(kActionIDSpace, kKESCMPopupHoldToHideMarksActionID, kKCMUIPrefix + 19)	// パネルのフライアウトの「Hold to Hide Marks」チェック式トグル(ON=枠を画面に常時表示し、ツール左hold中だけ隠す=極性反転。画面のみ・印刷は Print comparison marks が別管理。KESCMActionComponent.cpp)
+// kKESCMPopupHoldToHideMarksActionID (kKCMUIPrefix + 19) は「Hold to Hide Marks」トグルで、2026-08-22 に撤去(ユーザー決定)。
+//   ★理由＝**「枠を常時表示」が「Show Marks on Target」(+45)と完全に重複した**(描画側が `sAlwaysShowMarks || sTgtMarksOn` という OR になっていたのが証拠)。
+//   固有だった「押している間だけ隠す」は、**両「Show Marks on ...」トグルが ON のときの標準の挙動**へ畳んだ＝規則は「押している間は反対になる」の1本。
+//   ⇒ 機能は1つも失われていない。⚠**スロット +19 は再利用しない**(欠番)。
 // kKESCMPopupPanelShortcutActionID (kKCMUIPrefix + 20) は中ボタン撤去(2026-07-13)に伴い廃止。スロットを 2026-07-24 に再利用:
 DECLARE_PMID(kActionIDSpace, kKESCMPopupAlignViewsActionID, kKCMUIPrefix + 20)	// パネルのフライアウトの「Align Other Views to Active」(実行アクション)。アクティブ(最前面)文書のビューの位置+拡大率を他文書のビューへ1回そろえる。Start中はページのAdd/Remove補正あり。ショートカット割当可(kKESCMPanelMenuActionArea+VisibleInKBSC)。実体 ui/KESCMViewSync.cpp の KESCMAlignOtherViewsToActiveNow(⚠2026-08-19 訂正=分割で KESCMPeek.cpp から出た)
 DECLARE_PMID(kActionIDSpace, kKESCMPopupScrollMapActionID, kKCMUIPrefix + 21)	// パネルのフライアウトの「Show Scrollbar Map」チェック式トグル(ON=文書窓の縦スクロールバー脇に変更位置地図stripを表示。既定ON。実体 KESCMScrollMap.cpp の sScrollMapOn)
@@ -287,7 +290,9 @@ DECLARE_PMID(kActionIDSpace, kKESCMPopupModeStoryActionID, kKCMUIPrefix + 43)	//
 DECLARE_PMID(kActionIDSpace, kKESCMStoryRowRefreshActionID, kKCMUIPrefix + 44)	// ★Story Edits の行の右クリック「Refresh Story Comparison」(2026-08-21 ユーザー要望「そのストーリーだけ比較を更新したい」)。その行のストーリーだけ本文差分を取り直し、子の変更箇所を今の状態に置き換える(実体 IKESCMStoryEditsFacade::RefreshRow → KESCMStoryDiffRun::RunOne)。★直し終えて差分が0件になっても**行は残り子だけ消える**＝答えているのは「今どこが違うか」であって「この行がまだ要るか」ではない。★kCustomEnabling で **Story モードのときだけ**有効(Pixel モード・Stop 中・Added の行では灰色)。⚠項目が1つしかないメニューなので、灰色＝**メニュー自体が出ない**(章行メニューと同じ挙動)
 
 DECLARE_PMID(kActionIDSpace, kKESCMPopupShowTgtMarksActionID, kKCMUIPrefix + 45)	// ★パネルのフライアウトの「Show Marks on Target」チェック式トグル(2026-08-22 ユーザー要望「ツールでボタンを押さなくても常にマークが出る様に、それをピクセルの方もストーリーの方にも」)。Source 版(+10)と対で、ON の間は Target 文書のマークを画面に常時表示する。★Pixel では比較リング(sTgtMarksOn→alwaysScreen)、Story では変更箇所の反転(ui/KESCMStoryPressMarks.cpp)＝同じトグルが両モードで意味を持つ。⚠画面のみ＝印刷/PDF は「Print comparison marks」が単独で決める(Source 版が印刷にも出るのとは非対称・意図的)。★既定 OFF で Start は触らない(Source 版と同じ＝設定はパネル設定に保存され、起動時に復元される)
-// (+15..+23 are all declared above - stale placeholders for them removed 2026-08-05 audit. Next free: +45)
+// (+15..+23 are all declared above - stale placeholders for them removed 2026-08-05 audit.
+//  ★**Next free: +46**。⚠2026-08-22 に +45 を使ったのに「Next free: +45」のまま残っていたのを直した
+//  (不具合再検査 B2)＝**採番したら同じコミットでこの行を進めること**。+19 は欠番で再利用しない。)
 //DECLARE_PMID(kActionIDSpace, kKESCMActionID, kKCMUIPrefix + 41)
 // kKCMUIPrefix + 24/25/26/28 は使用中(KCM: Check / Save Check & Register / Load Check & Register / RtMenuPagesPanel の区切り線)。+27 は廃止・予約(上記)
 
@@ -327,6 +332,7 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMStoryRowKindWidgetID, kKCMUIPrefix + 49)	// �
 DECLARE_PMID(kWidgetIDSpace, kKESCMStorySectionLabelWidgetID, kKCMUIPrefix + 50)	// 上ペインの三角の隣=「Story Edits (3)」。件数は C++ が実行時に付ける
 DECLARE_PMID(kWidgetIDSpace, kKESCMStoryRowWidgetID, kKCMUIPrefix + 51)		// 行テンプレート自身。★GetWidgetTypeForNode が返すのはこれ
 DECLARE_PMID(kWidgetIDSpace, kKESCMStoryChangeRowWidgetID, kKCMUIPrefix + 63)	// ★**変更行**(第2階層)のテンプレート自身。2026-08-20 追加。★上の +51 と**別の値でなければならない**＝GetWidgetTypeForNode が返すこの ID で、フレームワークは「使い回せる widget か」を判定する(同じ値を返すと、スクロールで変更行にストーリー行の widget が渡る)。⚠**中のセル3つは +48/+49/+52 を使い回す**＝widget ID の一意性は「同じ親の子孫の中だけ」で足りる(ガイド vol2-12)。前例＝ブック行が同じ3つを共有している
+DECLARE_PMID(kWidgetIDSpace, kKESCMStoryRubyRowWidgetID, kKCMUIPrefix + 64)	// ★**ルビの変更行**のテンプレート自身(2026-08-22)。+63 と**別の値でなければならない**理由は +63 と同じ＝GetWidgetTypeForNode が返すこの ID で、フレームワークは使い回せる widget かを判定する。⚠ここで別にしないと、背の高いルビ行の widget が普通の変更行に渡って**行が重なる**(高さは widget が持っているので、ID が同じなら木は取り替えない)
 DECLARE_PMID(kWidgetIDSpace, kKESCMStoryRowUIDWidgetID, kKCMUIPrefix + 52)	// ★行の左端=ストーリーの UID(10進。2026-08-10 ユーザー要望「UID・テキスト・変更部分」)。行の同一性を目で追える識別子＝本文が同じ文言でも別のストーリーだと分かる
 // ★一覧の列見出し(2026-08-10 ユーザー要望「一番上の列に UID / Text / 変更のようなのを付けて欲しい」)。
 //   ツリーの中ではなく**下ペインの中でツリーの上**に置く固定の帯＝行をスクロールしても動かない。
@@ -483,7 +489,7 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMBookRowStateWidgetID, kKCMUIPrefix + 49)	// �
 #define kKESCMPageCheckMenuKey		kKESCMStringPrefix "kKESCMPageCheckMenuKey"	// ページパネル右クリックのトグル「KCM: Check」のメニュー名
 #define kKESCMPageRefreshCompareMenuKey	kKESCMStringPrefix "kKESCMPageRefreshCompareMenuKey"	// ページパネル右クリックの「KCM: Refresh Page Comparison」のメニュー名(選択ページの比較を再検出して更新)
 #define kKESCMIgnorePageNumMenuKey	kKESCMStringPrefix "kKESCMIgnorePageNumMenuKey"	// パネルのフライアウト「Ignore Page Number Marker」トグルのメニュー名
-#define kKESCMHoldToHideMarksMenuKey	kKESCMStringPrefix "kKESCMHoldToHideMarksMenuKey"	// パネルのフライアウト「Hold to Hide Marks」トグルのメニュー名
+// (kKESCMHoldToHideMarksMenuKey は 2026-08-22 のトグル撤去で不要になった＝ActionID +19 の注記を見よ)
 #define kKESCMScrollMapMenuKey		kKESCMStringPrefix "kKESCMScrollMapMenuKey"	// パネルのフライアウト「Show Scrollbar Map」トグルのメニュー名
 #define kKESCMSavePanelStateMenuKey	kKESCMStringPrefix "kKESCMSavePanelStateMenuKey"	// パネルのフライアウト「Save Panel Settings」項目のメニュー名
 #define kKESCMSaveChecksMenuKey		kKESCMStringPrefix "kKESCMSaveChecksMenuKey"	// パネルのフライアウト「Save Check & Register」項目のメニュー名
@@ -593,6 +599,11 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMBookRowStateWidgetID, kKCMUIPrefix + 49)	// �
 //   ＝カウンターは動いている(でなければ行が出ない)。言っているのは「語は同じ」。
 //   ⇒ 更新(Refresh Story Comparison)で直し終えた行と、そもそも比較できなかった行が見分けられる。
 #define kKESCMStoryKindNoneKey		kKESCMStringPrefix "kKESCMStoryKindNoneKey"		// 行の右=本文に差が無い
+#define kKESCMStoryKindRubyKey		kKESCMStringPrefix "kKESCMStoryKindRubyKey"		// 行の右=ルビが変わった(本文は同じ。★カウンター由来の "Attr" より具体的に名指しする＝2026-08-22 ユーザー指定)
+// ⚠★★**圏点(Kenten)のキーは 2026-08-23 に撤去した**＝Story Edits に出すのは「テキストの変更とルビだけ」
+//   (ユーザー決定)。1日だけ存在した kKESCMStoryKindKentenKey は、それを出す比較そのものを止めた時点で
+//   誰も引かない文字列になったので、両方まとめて落としてある(KCMUI_enUS.fr の対も同時)。
+//   ★スニペットから圏点を読む側は残してある(KESCMSnippetText.h)＝再開はその比較1本とこのキーで足りる。
 
 // 一覧の列見出し(2026-08-10)。★中の語をそのまま使わない: 2列目の見出しは "Text" ではなく "Story"、
 // 3列目は "Kind" ではなく "Change"(ユーザー指定)。理由は語の衝突——3列目に出る**値**が "Text" なので、
@@ -631,6 +642,12 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMBookRowStateWidgetID, kKCMUIPrefix + 49)	// �
 //   書いてある(行 widget は使い回されるので「右へ N 動かす」は累積する)。
 #define kKESCMStoryChangeRowRsrcID	1014
 
+// ★Story Edits の**ルビの変更行**のテンプレート(2026-08-22)。1014 と同じ2セル構成で、違うのは
+// **背が2倍あること**だけ＝読みを親文字の上に置くための上段(KESCMStoryCellView.cpp が cell を上下に
+// 割る)。⚠セルの boss も WidgetID も 1014 と同じものを使い回す——変わるのは Frame の高さだけなので、
+// 実装を分ける理由が無い(セルには「2段で描け」が実行時に渡る)。
+#define kKESCMStoryRubyRowRsrcID	1015
+
 // 章一覧の行の高さ。★Story Edits の kKESCMStoryRowHeight と同じく .fr と C++ の両方がこの1つの定数を
 // 読む(行リソースの Frame・ツリーのスクロール増分・GetNodeWidgetHeight)。
 // ★下の 19 と違って、こちらは SDK 標準の kCC2016PanelTreeNodeHeight と同じ 22
@@ -644,6 +661,16 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMBookRowStateWidgetID, kKCMUIPrefix + 49)	// �
 // ＝行リソースの Frame・ツリーのスクロール増分・GetNodeWidgetHeight が同じ事実を語る。値は KBS の
 // kKBSResultRowHeight と同じ 19＝パレットフォントでの実測値で、SDK の kCC2016PanelTreeNodeHeight(=22)ではない。
 #define kKESCMStoryRowHeight	19
+
+// ★★ルビの変更行だけの高さ(2026-08-22)。読みを親文字の**上**に、しかも**同じ文字サイズで**置く
+// (ユーザー指定「ちいさくなくてもいいです、文字のサイズは同じで、位置を 漢字の文字の上に」)以上、
+// 行は2段ぶん要る。19 の2倍でなく 38 なのは、19 が「1段(18px)＋1px」だから＝2段なら 18×2＋2。
+// 行送り 18.0 は FontInfoGetDVAFontMetrics の実測値(ascent+descent+leading。PMMeasureString("Ag") の
+// 19.0 は 1px 過大＝memory kescm-status-text-selfdrawn の本命の実測)。
+// ⚠★**行ごとに高さが違うので ITreeViewMgr::ChangeRoot に kTrue を渡せなくなった**——あの引数は
+//   「どの行 widget も同じ高さ」という約束で、破ると木が自分の高さを測り違える(KESCMStoryTreeRebuild)。
+// ⚠この定数を読むのは C++ 側だけではない＝.fr の行リソース(kKESCMStoryRubyRowRsrcID)も同じ値を書く。
+#define kKESCMStoryRubyRowHeight	38
 
 // 一覧の列見出しの帯の高さ(ラベル 14px ＋ 罫線 1px ＋ 上下の余白 3px。2026-08-10)。
 // ★行高と同じく .fr と C++ の両方がこの1つの定数を読む＝帯を厚くすれば、ツリーの位置も
@@ -711,7 +738,7 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMBookRowStateWidgetID, kKCMUIPrefix + 49)	// �
 #define kKESCMModePixelSubMenuItemPosition		1.0	// サブメニュー「Compare mode」内: Pixel Changes(選択中に✓)
 #define kKESCMModeStorySubMenuItemPosition		2.0	// サブメニュー「Compare mode」内: Story Changes(Pixel と相互排他)
 // ── 表示系トグル群 ──
-#define kKESCMHoldToHideMarksMenuItemPosition	9.20	// チェック式トグル「Hold to Hide Marks」(枠表示の極性反転)。Sep1 の直後(群の先頭)
+// (9.20 は「Hold to Hide Marks」が使っていた位置。2026-08-22 のトグル撤去で空き＝別項目に使ってよい)
 #define kKESCMIgnorePageNumMenuItemPosition	9.22	// チェック式トグル「Ignore Page Number Marker」
 #define kKESCMOpacitySubmenuMenuItemPosition	9.24	// 「Marks opacity」サブメニュー(中に 25% / 75%)。Print の上へ入れ替え(2026-07-24)
 #define kKESCMPrintMarksMenuItemPosition	9.26	// チェック式トグル「Print comparison marks」。Marks opacity の下へ入れ替え(2026-07-24)

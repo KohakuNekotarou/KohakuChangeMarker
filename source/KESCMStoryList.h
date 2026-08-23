@@ -53,10 +53,16 @@ struct KESCMStoryChange
 
 	/** What sort of thing changed.
 
-		★ALWAYS kText TODAY. The diff reads <Content> and nothing else, so a change of formatting
-		alone is not seen at all. The field exists so that attribute differences can arrive later
-		as another sort of child WITHOUT having to change the row drawing, the click handling and
-		the boundary struct at the same time. */
+		★★kAttr ARRIVED ON 2026-08-22 AND MEANS RUBY SO FAR. This said "ALWAYS kText TODAY" until
+		then, and the reason it was here came true exactly as written: attribute differences could
+		be added as another sort of child without changing the row drawing, the click handling or
+		the boundary struct at the same time.
+		⚠WHAT IT DOES CHANGE is how fText / fOtherText are to be read. A text change shows whichever
+		  side changed, so a deletion puts the newer words in fOtherText; a ruby change always puts
+		  the target in fText and the source in fOtherText, because the characters are in BOTH
+		  versions and there is no side to choose. ⇒ Anything asking "which document is this text
+		  from" has to test this field before fKind (KESCMStoryJump's message-area label did not,
+		  and labelled a removed ruby's source text "Target Text:"). */
 	enum What { kText, kAttr };
 
 	Kind		fKind;
@@ -67,12 +73,20 @@ struct KESCMStoryChange
 	TextIndex	fTargetEnd;		// ★AN END, NOT A LENGTH (RangeData.h:69)
 
 	// ---- the older document (Source) ----
-	// fHasSource is kFalse for an insertion: there is nothing in the older version to point at,
-	// and selecting "where it would have gone" would be selecting something that is not the
-	// change. The older window simply does not move for those.
+	/** ★★ALWAYS A REAL PLACE, AND EMPTY FOR AN INSERTION (2026-08-22). fSourceEnd == fSourceStart
+		means "this spot in the older version, and no characters" - the gap the new words were
+		typed into. That is the same shape the NEWER side already has for a deletion, so + and -
+		are mirror images of one another: each has a range on the side it exists and a caret on
+		the side it does not.
+
+		⚠A bool16 fHasSource stood here until then and was kFalse for an insertion, which folded
+		  two questions into one flag ([[one-question-one-place]]): "is there a place over there"
+		  (always yes) and "is there anything to SELECT over there" (no, for an insertion). The
+		  first dragged the second down with it and the older window stopped moving at all - which
+		  is what the user reported ("＋になっているとき ソースの方のジャンプがおかしい様な").
+		⇒ Anything that needs the second question asks fSourceEnd > fSourceStart. */
 	TextIndex	fSourceStart;
 	TextIndex	fSourceEnd;
-	bool16		fHasSource;
 
 	/** The words the row shows, in THREE PIECES: what stands before the change, the changed
 		characters themselves, and what stands after.
@@ -120,12 +134,48 @@ struct KESCMStoryChange
 	PMString	fOtherText;
 	PMString	fOtherTextPost;
 
+	/** ---- ruby, and ONLY meaningful when fWhat is kAttr (2026-08-22) ----
+
+		★WHY RUBY NEEDED FIELDS OF ITS OWN rather than being written into fText. The row has to show
+		the BASE TEXT and the READING at the same time, one above the other, the way ruby is actually
+		set - so the two cannot be one string. fText/fTextPre/fTextPost carry the base text with its
+		context exactly as they do for a text change; these two carry the readings.
+
+		★fRuby is the reading on the side the row shows, fOtherRuby the one on the other side - the
+		same pairing as fText / fOtherText, so a row never has to ask which document it is looking at.
+		Either can be empty: ruby added has no old reading, ruby removed has no new one.
+
+		⚠MONO AND GROUP ARE BOTH IN HERE AND THE DIFFERENCE IS NOT IN THE STRING. 琥珀 read as
+		  こ+はく (mono) and as こはく (group) can produce the same characters; what tells them apart
+		  is the SPAN - one reading over two characters, or two readings over one each. The spans are
+		  what the diff compared (KESCMSnippetText.h), and fTargetStart/fTargetEnd is the span this
+		  change is about. */
+	PMString	fRuby;
+	PMString	fOtherRuby;
+
+	/** WHICH attribute this is, when fWhat is kAttr (2026-08-22). kKESCMStoryAttrNone for a text
+		change.
+
+		★★fWhat SAYS "not the words", THIS SAYS WHAT INSTEAD - and the panel needs both because
+		fWhat does not promise the VALUE is something a reader reads. Kenten proved that in a day:
+		its change filled these very fields with a KIND ("KentenBlackCircle"), so anything asking
+		fWhat treated a name as a reading - which the message area did, drawing it over the older
+		text (found 2026-08-23).
+		⚠So "does this carry a reading", and "is this drawn on two lines", is THIS field, never
+		  fWhat. ★Kenten is no longer reported at all (2026-08-23, user's call), which makes the two
+		  agree again - and that is precisely when a stand-in stops being noticed.
+
+		★The row has a field of the same name and the same values (KESCMStoryRow::fAttrKind), worked
+		out from these by SetRowChanges - the row names the attribute, the children carry it. */
+	KESCMStoryAttrKind fAttrKind;
+
 	int32		fParaIndex;		// which paragraph it fell in. Not drawn; kept for ordering and for
 								// anything later that wants to group changes by paragraph
 
 	KESCMStoryChange()
 		: fKind(kReplace), fWhat(kText), fTargetStart(0), fTargetEnd(0),
-		  fSourceStart(0), fSourceEnd(0), fHasSource(kFalse), fParaIndex(0) {}
+		  fSourceStart(0), fSourceEnd(0),
+		  fAttrKind(kKESCMStoryAttrNone), fParaIndex(0) {}
 };
 
 /** One row of the Story Edits section. */
@@ -176,9 +226,28 @@ struct KESCMStoryRow
 		(KESCMStoryStamp.h); what this says is that the WORDS come out the same. */
 	bool16		fTextCompared;
 
+	/** WHICH KIND OF ATTRIBUTE the children found a difference in, when they found one - so that
+		the row can name it rather than falling back on "Attr" (2026-08-22, user's request:
+		"Changeは、Rubyで").
+
+		★A NUMBER, NOT A FLAG, so that a second attribute is one more value here and one more label
+		- not another field, and not another branch in every place that draws a row. KENTEN (圏点)
+		was that second value on 2026-08-22 and was withdrawn on 2026-08-23 (user's call: the list
+		shows text changes and ruby, nothing else), which is the shape working as intended: the
+		comparison stopped producing it and no drawing code had to change.
+		⚠RUBY IS THEREFORE THE ONLY VALUE ANY ROW CARRIES TODAY. Do not simplify this to a flag on
+		  the strength of that - the reason it is a number has not gone away.
+
+		⚠NOT PART OF fKinds. That one comes from the two documents' change COUNTERS, and a row
+		  refresh deliberately leaves it alone because reading the counters again gives the same
+		  answer. This is a finding of the DIFF - it does not exist until the two versions have
+		  been compared - so putting it there would break that promise. */
+	KESCMStoryAttrKind fAttrKind;
+
 	KESCMStoryRow()
 		: fStoryUID(kInvalidUID), fKinds(kKESCMStoryKindNone), fFrameUID(kInvalidUID),
-		  fPageUID(kInvalidUID), fPageIndex(kMaxInt32), fTextCompared(kFalse) {}
+		  fPageUID(kInvalidUID), fPageIndex(kMaxInt32), fTextCompared(kFalse),
+		  fAttrKind(kKESCMStoryAttrNone) {}
 };
 
 /** The first frame a story is placed in - where a jump to that story should go.
@@ -235,6 +304,62 @@ UID KESCMStoryFirstFrameUID(IDataBase* db, UID storyUID);
 		back to centring the first frame (KESCMStoryFirstFrameUID).
 */
 bool16 KESCMStoryStartPoint(IDataBase* db, UID storyUID, UID& outFrame, PBPMPoint& outPb);
+
+/** Where ONE character of a story sits, in pasteboard coordinates - the point a jump to a CHANGE
+	should centre, as against the story's beginning above (user's request, 2026-08-22: the row
+	should land on the edit, not on the top of the story it is in).
+
+	★WHAT IS RETURNED IS THE CARET'S PLACE, not the middle of the character: the horizontal figure
+	is the escapement up to the glyph BEFORE index, which is where the blinking line stands when
+	you click just in front of that character (user's words: "一番最初の文字のその前の縦の
+	ピコピコした線が出る部分"). The vertical figure is the middle of that line's height, so the
+	line - not its baseline - is what ends up in the middle of the window.
+
+	★It follows vertical text and rotated frames with no branch of its own, because the position
+	comes out of the wax run's own to-pasteboard matrix.
+
+	⚠★★THE CALLER MUST HOLD A IDataBase::SaveRestoreModifiedState. This composes the story if the
+	  composition is out of date, and composing dirties the document - unavoidably, because where a
+	  character sits IS the composition (see the note on the implementation).
+
+	@param db which document to ask - either version; the caller picks.
+	@param storyUID the story.
+	@param index the character. ★An index outside the story AS IT STANDS NOW answers kFalse here,
+		rather than relying on the caller to clamp it - see the implementation for which caller
+		could not (2026-08-22 bug recheck).
+	@param outPb [out] the point. Untouched when this answers kFalse.
+	@return kFalse when the story is not there, or that position is OVERSET or in no frame -
+		callers fall back to KESCMStoryStartPoint.
+*/
+bool16 KESCMStoryPointAt(IDataBase* db, UID storyUID, TextIndex index, PBPMPoint& outPb);
+
+/** Which frame holds ONE character of a story - the frame a jump to a CHANGE has to bring into
+	view, as against KESCMStoryFirstFrameUID above, which answers where the story STARTS.
+
+	★★WHY A JUMP NEEDS THIS AND NOT THE FIRST FRAME. Pasteboard coordinates are spread-relative, so
+	the view has to be showing the right spread before a point means anything (KESCMChangeNav.cpp's
+	KESCMEnsureSpreadInView says so in as many words). In a story threaded across several spreads,
+	the first frame names the wrong spread for any edit that is not in it - and the scroll then lands
+	on another page entirely rather than slightly off (2026-08-22 bug recheck: the source window did
+	exactly this, because it had only ever been given the story's first frame).
+
+	★★IT COMPOSES FIRST, and so must anything else the same jump asks: the frame a character is in
+	and the point it sits at are both readings of the composition, and a jump that takes one from
+	each of two different compositions scrolls to a point that belongs somewhere else.
+
+	★RETURNS THE PAGE ITEM, not the text column - unlike KESCMStoryFirstFrameUID, which returns a
+	column UID. The column is what holds the text; its parent is the frame with the geometry.
+
+	⚠★★THE CALLER MUST HOLD A IDataBase::SaveRestoreModifiedState, for the same reason
+	  KESCMStoryPointAt's caller must: composing dirties the document.
+
+	@param db which document to ask - either version; the caller picks.
+	@param storyUID the story.
+	@param index the character. Outside the story as it stands now answers kInvalidUID.
+	@return kInvalidUID when there is no such story, no such character, or the character is OVERSET
+		or in no frame - callers keep whatever fallback frame they already had.
+*/
+UID KESCMStoryFrameAt(IDataBase* db, UID storyUID, TextIndex index);
 
 namespace KESCMStoryList
 {
@@ -294,6 +419,35 @@ namespace KESCMStoryList
 			with kFalse it is "nobody could look".
 	*/
 	void SetRowChanges(int32 nth, const std::vector<KESCMStoryChange>& changes, bool16 textCompared);
+
+	/** Drop the rows whose story differs only in HOW IT IS SET - a font, a colour, a style, a
+		table stroke - and keep the ones whose CONTENT differs: the words, or the ruby written over
+		them (2026-08-22, user's call: "属性の変更は無視"; narrowed to text and ruby on 2026-08-23,
+		"ストーリーモードの StoryEdit にでるのは、テキストの変更と、ルビだけで").
+
+		★THE RULE IS KESCMStoryRowFilter.h AND IS NOT REPEATED HERE. It is a free function over
+		three plain numbers precisely so that it can be measured outside InDesign
+		(work/kescm-rowfilter-test), and so that the two comparison modes cannot drift apart -
+		the mode is never asked; the row's own fTextCompared says how much is known about it.
+
+		★★CALL IT LAST, AFTER Build AND AFTER THE DIFF - and there is no way to make that
+		optional. Before the diff, every row in the story mode looks exactly like a row nobody
+		diffed, so a story whose only edit was a ruby would be dropped on its Attr counter a
+		moment before the diff was about to find the ruby. ⇒ KESCMRebuildStoryEdits owns the
+		order, and it is the only caller.
+
+		★IT RENUMBERS THE LIST, which is safe for exactly one reason: nothing outside is holding
+		a row index yet. The changes were attached by position moments earlier (SetRowChanges),
+		and the tree is not told to rebuild until KESCMRebuildStoryEdits sends its notification
+		after this returns. ⚠Calling it at any later moment - from a refresh, say - would move
+		the rows under a tree that is already showing them.
+
+		⚠NOT called by RefreshRow. Repairing a story until it compares equal must leave its row
+		standing (2026-08-21, and see KESCMStoryDiffRun::RunOne): refreshing answers "what differs
+		now", not "does this row still belong here". This answers the second question, and only
+		while the list is being built.
+	*/
+	void DropRowsWithNoContentChange();
 
 	/** Read row nth's own fields out of the target document again: the words it shows, the frame a
 		click scrolls to, and the page that frame is on.

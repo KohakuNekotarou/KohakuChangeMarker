@@ -218,20 +218,31 @@ public:
 	// でも番号がズレていれば描く(隠しが無ければ現在番号と一致して何も描かない)。
 	static bool16 sShowOldNumbers;
 
-	// 「Hold to Hide Marks」トグル(フライアウトのチェック式。枠表示の極性反転)。★既定=kFalse。
-	// ON の間、画面では枠(リング)を「常時」表示し、ツール左hold中だけ sMarksTempHidden で
-	// 一時的に隠す(離すと戻る)=既定動作(非表示・押下中だけ表示)の逆。画面のみの挙動で、印刷/PDF への
-	// 出力は sPrintMarks が独立して決める(下の wantMarks では !printing のときだけ効かせる)。不透明度は
-	// パネル選択の 25%/75%(KESCMBaseScreenOpacity が sAlwaysShowMarks ON も選択不透明度を返す)。
-	static bool16 sAlwaysShowMarks;
-	// Hold to Hide Marks モード中、ツール左ボタンを押している間だけ kTrue(常時表示の枠を一時退避)。離すと kFalse。
-	// KESCMPeekGesture.cpp のトラッカー(KESCMTrackerRevealBegin/End)が上下させる。モード OFF の間は常に kFalse で無影響。
+	// (★2026-08-22 に「Hold to Hide Marks」トグル(sAlwaysShowMarks)を撤去した。あれは「枠を常時表示し、
+	//  ツール左hold中だけ隠す」で、**前半が「Show Marks on Target」と完全に重複**していた。固有だった
+	//  後半＝「押している間だけ隠す」は、**トグル ON のときの標準の挙動**として下の sMarksTempHidden に
+	//  畳んである。⇒ 規則は「**押している間は反対になる**」の1本＝OFF なら押下中だけ出る、ON なら
+	//  押下中だけ隠れる。ActionID +19 は欠番のまま再利用しない。)
+
+	// 「Show Marks on Target」ON のとき、Target 窓でツール左ボタンを押している間だけ kTrue
+	// (常時表示の枠を一時退避)。離すと kFalse。
+	// KESCMPeekGesture.cpp のトラッカー(KESCMTrackerRevealBegin/End)が上下させる。トグル OFF の間は
+	// 常に kFalse で無影響(そちらは「押下中だけ出す」reveal が動く)。
 	// ★これは Target 窓上でツール左ボタンを押したときだけ立てる(押した窓の枠だけ隠す=ウィンドウ別)。
 	static bool16 sMarksTempHidden;
-	// sMarksTempHidden の Source 版。「Show Marks on Source」ON かつ「Hold to Hide Marks」ON のとき、
-	// Source のレイアウト窓上でツール左ボタンを押している間だけ kTrue(その間だけ Source 側の常時表示枠を画面で隠す)。
+	// ★★Source のレイアウト窓上でツール左ボタンを押している**間だけ** kTrue。
+	//
+	// ⚠★★★これは sMarksTempHidden の Source 版**ではない**(2026-08-22 に意味を変えた)。あちらは
+	//   「隠している」を覚えているが、こちらが覚えているのは「**押している**」だけで、それを見て
+	//   何を出すかは描画側が sSrcMarksOn と **XOR** して決める。⇒ **トグル OFF の Source 窓を押せば
+	//   枠が出て、ON の窓を押せば隠れる**＝規則「押している間は反対になる」が、Source では1本の式で済む。
+	//   （旧名 sSrcMarksTempHidden は「Show Marks on Source が ON のときだけ立てる」形で、
+	//    **トグル OFF のときに押しても何も起きなかった**＝規則が3か所で宣言していることと食い違っていた。
+	//    ユーザー決定 2026-08-22＝実装を規則に合わせる。）
+	// ★Target 側が2つのフラグ(出す sMarksVisible / 隠す sMarksTempHidden)のままなのは、あちらの
+	//   sMarksVisible が peek など他の経路からも立つため。**同じ形にできるのは Source だけ。**
 	// 印刷は Source 枠を常に出す仕様なので影響しない(描画側で !printing ゲート)。
-	static bool16 sSrcMarksTempHidden;
+	static bool16 sSrcMarksPressed;
 
 	// ★サムネイル実験トグル(2026-07-06)。kTrue の間、Pagesパネルのサムネイル生成(view無し・kPreviewMode)
 	// にも枠を描く(通常は sPrintMarks/sMarksVisible が OFF だと出ないが、サムネイルは isThumb で強制ON・

@@ -20,9 +20,9 @@
 #include "ISelectionManager.h"		// DeselectAll / SelectionExists - clearing before selecting
 #include "ISelectionUtils.h"		// QueryActiveSelection (the front document's) /
 									//  QueryViewSelectionManager (any document's) / ActivateView
-#include "IFrameList.h"				// QueryFrameContaining - which frame an edit falls in (2026-08-20)
-#include "IHierarchy.h"				// GetParentUID - a text column's frame is its parent
-#include "ITextFrameColumn.h"
+// (IFrameList.h / IHierarchy.h / ITextFrameColumn.h stood here for the "which frame is this edit
+//  in" walk. That walk moved to the model side on 2026-08-22 so that it composes before it answers
+//  - see KESCMStoryJumpToChange - and nothing else in this file needed them.)
 #include "ITextModel.h"
 #include "ITextSelectionSuite.h"	// SetTextSelection - the double click's whole point
 #include "ITextUtils.h"				// GetPageUIDRef - which page that frame is on
@@ -476,27 +476,22 @@ bool16 KESCMStoryJumpToChange(int32 rowIndex, int32 changeIndex)
 
 	// ***** THE FRAME THE EDIT IS IN, not the story's first one. ***** A story threaded across
 	// several frames has its first frame nowhere near an edit late in it.
+	//
+	// ★★★2026-08-22 (bug recheck): THE WALK MOVED TO THE MODEL SIDE, WHICH COMPOSES BEFORE IT
+	//   ANSWERS. It was written out here, and it ran before anything had recomposed - so for a story
+	//   whose composition was out of date it named a frame from the OLD composition, while
+	//   GetStoryPointAt (further down, inside KESCMGotoStoryFrame) composed and answered from the
+	//   NEW one. The two then disagreed about which SPREAD, and a pasteboard point is
+	//   spread-relative: the window does not land slightly off, it lands on another page.
+	//   ⚠The sharper form of the same fault: text that was overset before the recompose made this
+	//     walk fall back to the story's first frame, while the point succeeded on a spread far away.
+	//   ⇒ Both readings now come from one composition, and THE SOURCE SIDE ASKS THE VERY SAME WAY
+	//     (KESCMChangeNav.cpp) - where it used to be handed the story's first frame and nothing else.
 	// ⚠The fallback is the story's first frame (what a story row uses), for a story whose frame list
 	//   cannot answer - an unplaced story has none at all.
-	UID frameUID = row.fFrameUID;
-	InterfacePtr<IFrameList> frameList(model->QueryFrameList());
-	if (frameList != nil)
-	{
-		int32 frameIndex = 0;
-		InterfacePtr<ITextFrameColumn> column(frameList->QueryFrameContaining(from, &frameIndex));
-		if (column != nil)
-		{
-			// ★The frame the reader sees is the column's PARENT: a text frame's geometry lives on
-			//   the item, and the column is what holds the text inside it.
-			InterfacePtr<IHierarchy> columnHierarchy(column, UseDefaultIID());
-			if (columnHierarchy != nil)
-			{
-				const UID parentUID = columnHierarchy->GetParentUID();
-				if (parentUID != kInvalidUID)
-					frameUID = parentUID;
-			}
-		}
-	}
+	UID frameUID = Utils<IKESCMStoryEditsFacade>()->GetStoryFrameAt(db, row.fStoryUID, from);
+	if (frameUID == kInvalidUID)
+		frameUID = row.fFrameUID;
 	if (frameUID == kInvalidUID)
 		return kFalse;		// nothing placed - nowhere to go, and the story row says so already
 
@@ -507,7 +502,25 @@ bool16 KESCMStoryJumpToChange(int32 rowIndex, int32 changeIndex)
 	const UID pageUID = (pageRef.GetDataBase() != nil) ? pageRef.GetUID() : row.fPageUID;
 
 	// Both windows move here - the target to this frame, the source to the same story.
-	const bool16 moved = KESCMGotoStoryFrame(db, frameUID, pageUID, row.fStoryUID);
+	//
+	// ★★★AND BOTH LAND ON THE EDIT ITSELF, NOT ON THE TOP OF THE STORY (user's request, 2026-08-22:
+	//   "変更された部分の一番最初の部分がレイアウトビューの真ん中に移動して欲しい" - what was arriving
+	//   in the middle of the window was the story's first character, which for a long story is
+	//   nowhere near what the row is pointing at). The point centred is where the CARET stands in
+	//   front of the first changed character (user's words: "その前の縦のピコピコした線が出る部分").
+	// ⚠★★THE TWO SIDES GET DIFFERENT NUMBERS. The same edit sits at a different character position
+	//   in each version, and the diff has already worked both out - so the older window is told
+	//   fSourceStart rather than being handed the target's index (which would name some unrelated
+	//   character over there). ⇒ This is also what finally settles the "第1段" caveat in KESCMID.h
+	//   ⑬: the source window now reaches the corresponding CHARACTER, not just the same story.
+	// ★★AN INSERTION AIMS AT ITS PLACE (2026-08-22, user's report: "＋になっているとき ソースの方の
+	//   ジャンプがおかしい様な"). It used to be excluded here, on the grounds that there is nothing
+	//   in the older version to centre - true of the CHARACTERS and false of the SPOT, which is
+	//   exactly where the reader wants to look: the gap the new words went into. The range is empty
+	//   for one (fSourceEnd == fSourceStart) and centring works off the start, so nothing else has
+	//   to change.
+	const TextIndex sourceFocus = change.fSourceStart;
+	const bool16 moved = KESCMGotoStoryFrame(db, frameUID, pageUID, row.fStoryUID, from, sourceFocus);
 
 	// ***** AND LIGHT THE CHARACTERS UP FOR A MOMENT. *****
 	//
@@ -519,7 +532,40 @@ bool16 KESCMStoryJumpToChange(int32 rowIndex, int32 changeIndex)
 	//   now (KESCMStorySelectChange below).
 	// ★It is drawn ON the characters by the text engine (KESCMStoryMarker.cpp), so it needs no
 	//   coordinates from here: the story and the character range are the whole of the request.
-	KESCMStoryMarker::Show(db, row.fStoryUID, from, to);
+	//
+	// ★★★AND IT POINTS IN BOTH WINDOWS (2026-08-23, user's request: "ジャンプしたときソースの方でも
+	//   マークを一瞬出して欲しい"). Both windows have just been moved to this edit, so a
+	//   pointer in only one of them leaves the reader to find it by eye in the other - which is the
+	//   very window where "what it used to say" lives.
+	// ⚠★★THE TWO SIDES GET DIFFERENT NUMBERS, for the same reason the centring above does: the
+	//   same edit sits at a different character position in each version, and the diff has already
+	//   worked both out. Handing the target's index to the older document would light some unrelated
+	//   characters over there rather than failing.
+	// ★AN INSERTION NEEDS NO SPECIAL CASE HERE: its source range is empty, and an empty range is
+	//   drawn as the caret standing where the new words went in (KESCMStoryMarker::AddFlashRange) -
+	//   the same thing the standing marks show for it.
+	// ⚠THE OLDER SIDE'S RANGE IS NOT CLAMPED to the story as it stands now, and the target's is
+	//   (above). The difference is real: the target's numbers also make a SELECTION on the double
+	//   click, which the suite would refuse if they were stale, while a mark is only ever asked "is
+	//   any of this run marked" and a stale range simply never meets a run (KESCMStoryPressMarks
+	//   records the same reasoning for the standing marks).
+	KESCMStoryMarkDocs flash;
+	KESCMStoryMarker::AddFlashRange(flash, db, row.fStoryUID, from, to);
+
+	IDataBase* const flashSourceDB = Utils<IKESCMCompareFacade>()->GetArmedSourceDB();
+	if (flashSourceDB != nil && flashSourceDB != db
+		&& Utils<IKESCMCompareFacade>()->IsDocDBOpen(flashSourceDB))
+	{
+		// ★THE SAME STORY UID, IN THE OTHER DOCUMENT - which is what the whole Story mode is built
+		//   on: the diff pairs stories by uid, the double click below selects in both by uid, and
+		//   the standing marks light both by uid (KESCMStoryPressMarks). ⚠The general rule that a
+		//   uid names a different object in another document is TRUE and does not apply here, and
+		//   believing it did is what left the older window nearly bare until 2026-08-22 (bug A6).
+		KESCMStoryMarker::AddFlashRange(flash, flashSourceDB, row.fStoryUID,
+										change.fSourceStart, change.fSourceEnd);
+	}
+
+	KESCMStoryMarker::ShowFlash(flash);
 
 	// ***** AND THE OTHER SIDE OF THE EDIT GOES TO THE PANEL'S MESSAGE AREA. *****
 	//
@@ -558,10 +604,46 @@ bool16 KESCMStoryJumpToChange(int32 rowIndex, int32 changeIndex)
 	//   ★The label is its own argument rather than the head of the first piece: when the message
 	//     does not fit, the CONTEXT gives way from its outer ends, and a label living in the context
 	//     would be the first thing cut. It is the one piece that has to survive.
+	// ⚠★★★WHICH DOCUMENT fOtherText CAME FROM IS NOT ALWAYS INFERABLE FROM fKind (2026-08-22).
+	//   For a TEXT change it is: the row shows the side that changed, so a deletion (kind 2) shows
+	//   the older side and fOtherText is therefore the newer one.
+	//   For a RUBY change it is NOT: the characters exist in both versions, so KESCMStoryDiffRun's
+	//   AddRubyChange always puts the target in fText and the source in fOtherText, with no
+	//   rowShowsOldSide branch to make. Reading fKind alone labelled a removed ruby "Target Text:"
+	//   over text that had come from the SOURCE.
+	//   ⇒ Ask what sort of change it is FIRST. (Found by an independent review of this range, after
+	//     I had read the same diff and called it clean - the fault was reading the new code without
+	//     counting who already reads the values it sets.)
+	const bool16 otherIsTarget = (change.fWhat == IKESCMStoryEditsFacade::Change::kWhatText
+								  && change.fKind == 2) ? kTrue : kFalse;
 	PMString label;
 	label.SetTranslatable(kFalse);
-	label.Append((change.fKind == 2) ? "Target Text:" : "Source Text:");
-	KESCMSetStatusSegments(label, change.fOtherTextPre, change.fOtherText, change.fOtherTextPost);
+	label.Append(otherIsTarget ? "Target Text:" : "Source Text:");
+
+	// ★★THE OTHER SIDE'S READING GOES WITH IT (2026-08-22). The list shows the NEWER version, so a
+	//   reading that was REMOVED can be seen nowhere else - and the row's own upper line is left
+	//   empty for exactly those (user's call). This box is where it is answered.
+	// ⚠ASKED OF THE STRING'S MEANING, NOT OF THE STRING. fOtherRuby is only filled for an attribute
+	//   change (IKESCMStoryEditsFacade.h says so at the field); a text change leaves it
+	//   default-constructed and reading it anyway would be relying on that rather than on the
+	//   contract.
+	// ⚠★★★AND THE QUESTION IS fAttrKind, NEVER fWhat (corrected 2026-08-23, bug recheck). fWhat says
+	//   "not the words"; it does NOT say the value is something a reader reads. Kenten filled these
+	//   very fields with a KIND - "KentenBlackCircle" - so asking fWhat drew that name over the
+	//   older text as though it were a reading. Kenten is no longer reported at all (user's call the
+	//   same day), which makes the two questions give the same answer again - and that is exactly
+	//   when a stand-in gets left in place until the next attribute arrives. The panel's own cell
+	//   and the row height have asked fAttrKind since the day kenten appeared; this is the third
+	//   place, and it now agrees with them.
+	PMString otherRuby;
+	if (change.fAttrKind == static_cast<int32>(kKESCMStoryAttrRuby))
+	{
+		otherRuby = change.fOtherRuby;
+		otherRuby.SetTranslatable(kFalse);
+	}
+
+	KESCMSetStatusSegments(label, change.fOtherTextPre, change.fOtherText, change.fOtherTextPost,
+						   otherRuby);
 
 	return moved;
 }
@@ -586,7 +668,26 @@ bool16 KESCMStorySelectChange(int32 rowIndex, int32 changeIndex)
 	// ★THE MARK COMES DOWN. The single click that opened this double click put one up; leaving it
 	//   there would put an inversion on top of the selection's own inversion, and the text under
 	//   both is unreadable (KBS records exactly this in KBSJump.cpp).
-	KESCMStoryMarker::Clear();
+	// ⚠★★AND THEN WHATEVER STANDS ON ITS OWN GOES BACK UP (2026-08-22 bug recheck A2). Clear() takes
+	//   down the ONE adornment both kinds of mark share, so before this it also wiped the marks the
+	//   "Show Marks on Target / Source" toggles were holding there - and nothing put them back:
+	//   the toggle stayed on, the screen stayed bare, and only a fresh comparison or a press of the
+	//   tool would bring them round again. A reader who turned a toggle on precisely so as not to
+	//   have to hold the tool would never see them return.
+	//   ★The refresh is idempotent and decides for itself, so this says "something changed", not
+	//     "put the marks back" - which is why it is right even when no toggle is on (it then leaves
+	//     the screen clear) and in the Pixel mode (it does nothing at all).
+	//   ★THE INVERSION-ON-INVERSION PROBLEM ABOVE IS NOT REINTRODUCED: a standing mark being hard to
+	//     read under a selection is the reader's own choice of two things at once, and it is a
+	//     choice they can undo from the flyout. The jump's flash is not - it appears unasked, one
+	//     click before this one.
+	// ★★★AND THE REFRESH THAT PUT THEM BACK IS GONE (2026-08-23), because there is nothing left to
+	//   put back: this now takes down the FLASH and says so, where it used to take down the one
+	//   adornment both kinds shared and then ask for a full refresh to repair the standing marks it
+	//   had just wiped. ⚠The repair was itself a fix, added after the bug recheck of 2026-08-22
+	//   found the toggles going bare (A2) - a fix for damage this line was doing to itself. Naming
+	//   which of the two is coming down removes both (KESCMStoryMarker.h).
+	KESCMStoryMarker::ClearFlash();
 
 	// ***** AND THE SAME EDIT IS SELECTED ON THE OLDER SIDE TOO (user's call, 2026-08-21). *****
 	//
@@ -595,20 +696,19 @@ bool16 KESCMStorySelectChange(int32 rowIndex, int32 changeIndex)
 	//   window that is already pointed at the right story.
 	// ★The older side's range is carried on the Change (fSourceStart / fSourceEnd) - the diff
 	//   worked it out and there is nothing to recompute here.
-	// ⚠fHasSource IS THE QUESTION, not "is there a source document": an INSERTION has nothing on
-	//   the older side to point at, and IKESCMStoryEditsFacade.h says the two indices are
-	//   meaningless without it. A caret at a made-up index would be worse than no selection.
+	// ★★AN INSERTION SELECTS ITS PLACE - AS A CARET (2026-08-22). This used to be skipped for one,
+	//   because fSourceStart/fSourceEnd were said to be meaningless there. They are not: the range
+	//   is EMPTY, which puts the insertion point exactly where the new words went in. That is the
+	//   same thing the target side already does for a DELETION, on the very next line - the two are
+	//   mirror images, and one of them was written years before the other was noticed.
 	// ★THE OLDER SIDE GOES FIRST, so that the target's selection is the last one made. Nothing
 	//   here moves the active context, so the order does not decide which window the reader is
 	//   in - but if one of the two ever fails, the one left standing should be the target's.
 	// ★A refusal on that side is SILENT. It is normal: the source may have no window open, and the
 	//   row has just been reported on by the single click. The return value is the target's.
-	if (change.fHasSource)
-	{
-		IDataBase* sourceDB = Utils<IKESCMCompareFacade>()->GetArmedSourceDB();
-		if (sourceDB != nil && Utils<IKESCMCompareFacade>()->IsDocDBOpen(sourceDB))
-			SelectRangeIn(sourceDB, row.fStoryUID, change.fSourceStart, change.fSourceEnd);
-	}
+	IDataBase* sourceDB = Utils<IKESCMCompareFacade>()->GetArmedSourceDB();
+	if (sourceDB != nil && Utils<IKESCMCompareFacade>()->IsDocDBOpen(sourceDB))
+		SelectRangeIn(sourceDB, row.fStoryUID, change.fSourceStart, change.fSourceEnd);
 
 	return SelectRangeIn(targetDB, row.fStoryUID, change.fTargetStart, change.fTargetEnd);
 }

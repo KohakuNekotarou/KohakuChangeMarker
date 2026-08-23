@@ -79,13 +79,12 @@ PMReal KESCMDrawEventHandler::sMarkScreenOpacity = 1.0;	// 既定=不透明。�
 bool16 KESCMDrawEventHandler::sPrintMarks = kFalse;	// 既定=画面のみ(印刷/PDF には出さない)
 bool16 KESCMDrawEventHandler::sMarkOpacity25 = kTrue;	// 既定=25%(パネルの既定ラジオと一致)。kFalse=75%
 bool16 KESCMDrawEventHandler::sShowOldNumbers = kFalse;	// 既定=OFF(フライアウト「Show Original Page Numbers」)
-bool16 KESCMDrawEventHandler::sAlwaysShowMarks = kFalse;	// 既定=OFF(フライアウト「Hold to Hide Marks」。ON=枠を画面に常時表示し押下中だけ隠す=極性反転)
-bool16 KESCMDrawEventHandler::sMarksTempHidden = kFalse;	// Hold to Hide Marks モード中、Target 窓でツール左hold中だけ kTrue(Target 常時表示枠の一時退避)
-bool16 KESCMDrawEventHandler::sSrcMarksTempHidden = kFalse;	// 同上の Source 版。Source 窓でツール左hold中だけ kTrue(Source 常時表示枠の一時退避)
+// (★「Hold to Hide Marks」(sAlwaysShowMarks)は 2026-08-22 に撤去＝「Show Marks on ...」と重複。
+//  経緯と現在の規則はヘッダーの宣言部を見よ。)
+bool16 KESCMDrawEventHandler::sMarksTempHidden = kFalse;	// 「Show Marks on Target」ON のとき、Target 窓でツール左hold中だけ kTrue(Target 常時表示枠の一時退避)
+bool16 KESCMDrawEventHandler::sSrcMarksPressed = kFalse;	// Source 窓でツール左hold中だけ kTrue。⚠「隠している」ではなく「押している」＝描画側が sSrcMarksOn と XOR する(宣言のコメント参照)
 bool16 KESCMDrawEventHandler::sSrcMarksOn = kFalse;	// 既定=OFF。フライアウト「Show Marks on Source」。⚠2026-08-22 に「Start のたびに kTrue へ」をやめた＝設定はパネル設定に保存され起動時に復元されるので、Start が上書きすると保存した選択が消える
 bool16 KESCMDrawEventHandler::sTgtMarksOn = kFalse;	// 同上の Target 版(フライアウト「Show Marks on Target」2026-08-22)。⚠画面のみ=印刷/PDF は sPrintMarks が決める。Start は触らない(上と同じ理由)
-													// ⚠立てているのは KESCMStartComparisonFor で、KESCMToggleStartStop はその呼び手の1つ。
-													//   ∴ブック比較の章行「Start Change Marker」も同じ道を通る(2026-08-19 不具合再検査 B-U5 3周目で訂正)
 IDataBase* KESCMDrawEventHandler::sSrcDB = nil;
 std::map<UID, UID> KESCMDrawEventHandler::sSrcPageToTarget;
 std::map<UID, UID> KESCMDrawEventHandler::sPrevPairTargetToSource;	// 前回比較のペアリング(登録トグルの差分再比較用)
@@ -1571,12 +1570,29 @@ bool16 KESCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 			(sSrcDB != nil && KESCMPageCheckHasAny(sSrcDB)) ||
 			(!sOverflowT.empty() || !sOverflowS.empty());
 	}
-	// 「Hold to Hide Marks」と併用時のみ: Source のレイアウト窓でツール左ボタンを押している間(sSrcMarksTempHidden)は
-	// Source 側の常時表示枠も画面で隠す(押した窓の枠だけ隠す=Target と対称のウィンドウ別の極性反転)。
-	// 印刷は Source 枠を常に出す仕様なので !printing でゲート=印刷/PDF は不変。sAlwaysShowMarks OFF や
-	// Source 窓以外で押した時は sSrcMarksTempHidden が立たない(KESCMPeek.cpp の窓判定)ので従来どおり常時表示。
-	const bool16 srcTempHidden = sAlwaysShowMarks && sSrcMarksTempHidden && !printing;
-	const bool16 wantSrcMarks = sSrcMarksOn && sSrcDB != nil && anyMarkableContent && !srcTempHidden;
+	// ★★★**押している間は、その窓の枠が反対になる**(規則。ユーザー決定 2026-08-22)。
+	//   Source 側はこれが**1本の式**で書ける＝トグル(sSrcMarksOn)と押下(sSrcMarksPressed)の **XOR**。
+	//     ・トグル OFF … 枠は出ていない ⇒ Source 窓を押している間だけ出る
+	//     ・トグル ON  … 枠は出ている   ⇒ Source 窓を押している間だけ隠れる
+	//   ⚠**2026-08-22 に「出る」側を足した**(ユーザー決定＝実装を規則に合わせる)。それまでは
+	//     「ON のときだけ押下で隠す」で、**トグル OFF の Source 窓を押しても何も出なかった**
+	//     ＝規則が3か所で「Pixel/Story・Target/Source すべてで同じ」と宣言していたのと食い違っていた。
+	//   ⚠**Target 側は同じ形にできない**＝あちらの「出す」は sMarksVisible で、peek など他の経路も
+	//     立てるフラグだから(下の wantMarks と alwaysScreen の2つに分かれているのはそのため)。
+	// ⚠**印刷/PDF には効かせない**＝Source 枠を常に出すのが仕様なので、!printing でゲートして
+	//   印刷文脈では sSrcMarksOn だけを見る(押下は画面の話)。
+	// ⚠Source 窓以外で押した時は sSrcMarksPressed が立たない(KESCMPeekGesture.cpp の窓判定)。
+	const bool16 srcPressed = (sSrcMarksPressed && !printing) ? kTrue : kFalse;
+	// ★★2026-08-22＝**Pages パネルのサムネイルには常に出す**(ユーザー決定＝Target と対称に)。
+	//   Target 側は下の wantMarks が `|| isThumb` で強制していて、**Source だけがトグル待ち**だった
+	//   ---- ページパネルは「変更ページを一覧で見る」場所なので、新旧で振る舞いが違う理由が無い。
+	//   ★**押下の XOR もサムネイルには効かせない**＝押している最中にサムネイルが作り直されると
+	//     一覧の枠まで反転する、という粗が同時に消える(Target 側は isThumb のおかげで元から無縁だった)。
+	// ⚠`(a != 0) != (b != 0)` と書く＝bool16 は整数型で、kTrue 以外の真値が来ると裸の != は逆を答える。
+	const bool16 srcWanted = printing ? sSrcMarksOn
+	                       : (isThumb ? kTrue
+	                                  : ((((sSrcMarksOn != 0) != (srcPressed != 0))) ? kTrue : kFalse));
+	const bool16 wantSrcMarks = srcWanted && sSrcDB != nil && anyMarkableContent;
 	// 印刷で「枠の印刷」が OFF のときは、Target 側のオーバーレイ一式を描かない(枠は基本非印刷)。
 	// Source 側の枠だけは常に印刷に出す仕様なので、wantSrcMarks が生きていれば処理を続行し、
 	// 下の want フラグ側で Target 分だけ落とす。
@@ -1591,15 +1607,19 @@ bool16 KESCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 	//   捨てていた。Start 済み・マーク非表示(既定=ツール左hold中だけ表示)の待機状態が最頻なので、
 	//   ここで落として通常の編集・スクロール中の描画コストをほぼゼロにする。生存スイープも「実際に
 	//   何か描く」時だけの保険になる(クローズ後始末の本線は KESCMDocResponder で変わらず)。
-	// 「Hold to Hide Marks」(極性反転): モード ON の間は画面(!printing)で枠を常時表示。ただしツール左hold中
+	// 「Show Marks on Target」(sTgtMarksOn): ON の間は画面(!printing)で枠を常時表示。ただしツール左hold中
 	// (sMarksTempHidden)は隠す。画面のみ=印刷/PDF は下の sPrintMarks が独立して決める(alwaysScreen は
 	// !printing ゲートで印刷文脈には一切効かせない=印刷は従来どおり Print comparison marks のみで制御)。
-	// ★「Show Marks on Target」(sTgtMarksOn)も同じ口から入れる(2026-08-22)。⇒ ツールを押さなくても
-	//   画面に出続ける。⚠**temp-hide は共有する**＝「Hold to Hide Marks」が ON のときだけ立つフラグなので、
-	//   あちらが OFF なら押しても隠れず、ON なら両方が押下中に隠れる(2つのトグルで挙動が割れない)。
+	// ★★★2026-08-22＝**規則は「押している間は反対になる」の1本**(ユーザー決定)。
+	//     ・トグル OFF … 枠は出ていない ⇒ 押している間だけ出る(下の sMarksVisible=reveal)
+	//     ・トグル ON  … 枠は出ている   ⇒ 押している間だけ隠れる(この行の !sMarksTempHidden)
+	//   ⚠**これに伴い「Hold to Hide Marks」トグルを撤去した**＝あれは「常時表示＋押下中は隠す」で、
+	//     前半が「Show Marks on Target」と完全に重複していた(この式が `sAlwaysShowMarks || sTgtMarksOn`
+	//     という OR だったことが、重複そのものの証拠)。固有だったのは後半だけなので、後半を規則として
+	//     こちらへ畳んだ。⇒ **機能は1つも失われず、トグルが1つ減った。**
 	// ⚠**印刷/PDF には効かせない**＝!printing ゲートの内側に置く。Target 側の出力は sPrintMarks が
 	//   単独で決める仕様(Source 側の sSrcMarksOn が印刷にも出るのとは非対称で、これは意図的)。
-	const bool16 alwaysScreen = (sAlwaysShowMarks || sTgtMarksOn) && !sMarksTempHidden && !printing;
+	const bool16 alwaysScreen = sTgtMarksOn && !sMarksTempHidden && !printing;
 	const bool16 wantMarks = !suppressForPrint && (sPrintMarks || sMarksVisible || alwaysScreen || isThumb) && anyMarkableContent;
 	// ★★Story モードでは比較リング(sEntries 由来)を描かない(2026-08-21・Task 8)。ストーリー差分は
 	//   entry を1つも作らないので実際には sEntries が空で、下の find() は必ず外れる ---- が、
@@ -2006,7 +2026,15 @@ bool16 KESCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 	//   バックグラウンド(PDF の非同期書き出し)には**クローンされた別 DB** が渡るので、`db == sSrcDB` は
 	//   必ず偽になり、Source 側の枠が書き出しに一切出なかった。同一性はファイル(GetSysFile)で聞く。
 	//   ⚠メインスレッドでは同一ポインタで即決するので、従来の判定と結果は1つも変わらない。
-	if (wantSrcMarks && KESCMIsSameDoc(db, sSrcDB) && !KESCMIsSameDoc(db, sDB))
+	// ⚠★★★**覗いているスプレッドには枠を描かない**(2026-08-22 ユーザー報告＝「ソースの方で Peek の
+	//   動作するとき、枠が表示されてますね、ターゲットの方は大丈夫」)。
+	//   ★**Target 側は元からこれを持っていた**＝下のリング描画が `peekingThisSpread` で先に return する。
+	//     Source 側だけ同じガードが無く、旧版べた載せの上に枠が重なっていた。
+	//   ⚠**なぜ今まで見えなかったか**＝それまで Source の枠は「トグル ON のときだけ」出て、その ON の
+	//     ときは押下で `sSrcMarksTempHidden` が立って隠れていた。**同じ日に「トグル OFF でも押下で出る」
+	//     ようにした(XOR)ことで、初めて peek 中に出る道ができた**——覗くのも押下だから。
+	//   ⇒ ★**機能を対称にすると、対称でなかった側のガードの欠落も一緒に表に出る。**
+	if (wantSrcMarks && !peekingThisSpread && KESCMIsSameDoc(db, sSrcDB) && !KESCMIsSameDoc(db, sDB))
 	{
 		// ★2026-08-15(第2段 Task 12B): Target 側ループと同じ理由でロックを取る(下の return まで保持)。
 		KESCMMarkStateLock srcMarkLock(KESCMMarkStateMutex());

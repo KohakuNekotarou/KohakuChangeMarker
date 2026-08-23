@@ -8,8 +8,14 @@
 //  UID, its opening words, and what kind of change moved (2026-08-10 - it was two cells before, and
 //  the kind column spelled every kind out; now it names the first and says "+" for the rest).
 //
-//  Five methods, and four of them are one line. The list is flat, so this file does none of the
-//  indent arithmetic that KBS's widget manager exists for.
+//  ★THREE ROW SHAPES SINCE 2026-08-22: a story row, a change row, and a change row twice as tall
+//  for a RUBY, whose reading is drawn above the characters it belongs to. The three overrides that
+//  build a row - which resource, which WidgetID, how tall - must agree about which shape a node is,
+//  so they all ask IsTwoLineNode and nothing works it out for itself.
+//
+//  The list is NOT flat (it has had two levels since 2026-08-20), but this file still does none of
+//  the indent arithmetic KBS's widget manager exists for: each level's layout lives in its own
+//  resource. See ApplyIndentToWidget below for why that was the right way round.
 //
 //  ★ApplyNodeIDToWidget is deliberately NOT overridden. KBS has to override it - and to call the
 //  base FIRST - because it rewrites its rows' frames itself and has to land on top of the
@@ -76,9 +82,21 @@ namespace
 	⚠It is not "unchanged": the counters moved, or there would be no row. It is "no difference in
 	the words", and the sameKind flag is only ever set when the diff really ran (fTextCompared).
 
+	★★AN ATTRIBUTE THE DIFF ACTUALLY IDENTIFIED IS NAMED, rather than falling back on the counters'
+	"Attr" (2026-08-22, user's request: "Changeは、Rubyで"). "Attr" is what the two documents'
+	CHANGE COUNTERS say - true but vague, and it is all that could be said before the text was
+	compared. When the comparison has gone further and found that a RUBY moved over characters
+	nobody touched, the row can say so.
+	⚠It is checked before the counters and after Added/Removed/None: those three describe the row
+	  itself, this describes what was found inside it.
+	★IT TAKES THE KIND RATHER THAN A "hasRuby" FLAG, so that a second attribute costs a key here and
+	  nothing else. Kenten (圏点) briefly was that second one and is no longer reported at all
+	  (user's call, 2026-08-23) - see the note at the test below.
+
 	@param sameKind kTrue when the text was compared and nothing differs - see above.
+	@param attrKind which attribute the children found, as KESCMStoryAttrKind; 0 for none.
 */
-PMString KindLabel(uint32 kinds, bool16 sameKind)
+PMString KindLabel(uint32 kinds, bool16 sameKind, int32 attrKind)
 {
 	if (sameKind)
 	{
@@ -102,6 +120,21 @@ PMString KindLabel(uint32 kinds, bool16 sameKind)
 		removed.Translate();
 		removed.SetTranslatable(kFalse);
 		return removed;
+	}
+
+	// ★What the diff FOUND, ahead of what the counters merely reported. ⚠Only when the text itself
+	//   did not change: a story whose words were rewritten AND whose ruby moved is a text edit
+	//   first, and the "Text+" below already says there was more than one kind of change.
+	// ⚠★★RUBY IS THE ONLY ONE THE LIST NAMES (2026-08-23, user's call: "ストーリーモードの StoryEdit
+	//   にでるのは、テキストの変更と、ルビだけで"). Kenten had a label here for one day and the
+	//   comparison that produced it has been switched off (KESCMStoryDiffRun's AddAttrOnlyChanges),
+	//   so no child ever arrives carrying that kind and a branch for it would be unreachable.
+	if ((kinds & kKESCMStoryKindText) == 0 && attrKind == kKESCMStoryAttrRuby)
+	{
+		PMString named(kKESCMStoryKindRubyKey);
+		named.Translate();
+		named.SetTranslatable(kFalse);
+		return named;
 	}
 
 	PMString out;
@@ -152,13 +185,16 @@ public:
 
 	virtual IControlView* CreateWidgetForNode(const NodeID& node) const
 	{
-		// ★Two row templates since 2026-08-20: a story row and a change row. They are the same
-		//   three-cell shape (see the .fr) so that the indent arithmetic below behaves the same on
-		//   both - what differs is what the cells hold and where they start.
+		// ★Three row templates since 2026-08-22: a story row, a change row, and a change row drawn
+		//   on TWO LINES for a ruby (the reading stands above the characters it belongs to). They
+		//   are the same shape (see the .fr) so that the indent arithmetic below behaves the same
+		//   on all of them - what differs is what the cells hold, where they start, and how tall
+		//   the row is.
 		TreeNodePtr<KESCMStoryNodeID> nodeID(node);
-		const RsrcID rsrcID = (nodeID != nil && nodeID->IsChangeRow())
-							  ? kKESCMStoryChangeRowRsrcID
-							  : kKESCMStoryRowRsrcID;
+		const bool16 isChange = (nodeID != nil && nodeID->IsChangeRow());
+		const RsrcID rsrcID = !isChange           ? kKESCMStoryRowRsrcID
+							  : IsTwoLineNode(node) ? kKESCMStoryRubyRowRsrcID
+												    : kKESCMStoryChangeRowRsrcID;
 
 		// ★THREE STEPS, NOT ONE CreateObject, AND THE ORDER IS THE POINT:
 		//   1. CreateObjectNoInit - make the row boss, but do not build the cells inside it yet.
@@ -190,22 +226,31 @@ public:
 
 	virtual WidgetID GetWidgetTypeForNode(const NodeID& node) const
 	{
-		// ★THE TWO KINDS MUST ANSWER DIFFERENT IDs. This is what the framework uses to decide
-		//   whether a recycled widget can be reused for a node - answer the same ID for both and a
-		//   change row would be handed a story row's widget (and vice versa) as the list scrolls.
+		// ★THE THREE KINDS MUST ANSWER DIFFERENT IDs. This is what the framework uses to decide
+		//   whether a recycled widget can be reused for a node - answer the same ID for two of them
+		//   and a change row would be handed a story row's widget (and vice versa) as the list
+		//   scrolls. ⚠Since 2026-08-22 that includes the ruby row, and there the consequence is
+		//   worse than wrong contents: the widget carries its own HEIGHT, so a recycled tall row
+		//   would overlap the row below it.
 		TreeNodePtr<KESCMStoryNodeID> nodeID(node);
-		return (nodeID != nil && nodeID->IsChangeRow())
-			   ? kKESCMStoryChangeRowWidgetID
-			   : kKESCMStoryRowWidgetID;
+		if (nodeID == nil || !nodeID->IsChangeRow())
+			return kKESCMStoryRowWidgetID;
+
+		return IsTwoLineNode(node) ? kKESCMStoryRubyRowWidgetID : kKESCMStoryChangeRowWidgetID;
 	}
 
 	// Answer both size questions rather than letting the base class build a widget and measure it.
-	// Every row is one fixed height - the same constant the row resource and the tree's scroll
-	// increments are written in - and every row is as wide as the list, which has no columns to add
-	// up and no horizontal scroll bar.
-	virtual PMReal GetNodeWidgetHeight(const NodeID& /*node*/) const
+	// A row is as wide as the list, which has no columns to add up and no horizontal scroll bar.
+	//
+	// ★★ROWS ARE NO LONGER ALL THE SAME HEIGHT (2026-08-22). A ruby change is drawn on two lines,
+	//   so it gets two lines' worth of room; everything else keeps the one height the row resources
+	//   and the tree's scroll increments are written in.
+	//   ⚠THE SCROLL INCREMENTS STAY AT ONE ORDINARY ROW. They say how far a click on the scroll
+	//     arrow moves the list, and "one ordinary row" is the right answer whatever else is in it.
+	//   ⚠AND ChangeRoot MUST NO LONGER BE PROMISED A CONSTANT HEIGHT - see KESCMStoryTreeRebuild.
+	virtual PMReal GetNodeWidgetHeight(const NodeID& node) const
 	{
-		return PMReal(kKESCMStoryRowHeight);
+		return PMReal(IsTwoLineNode(node) ? kKESCMStoryRubyRowHeight : kKESCMStoryRowHeight);
 	}
 
 	virtual PMReal GetNodeWidgetWidth(const NodeID& /*node*/) const
@@ -327,7 +372,7 @@ public:
 			//   draw a triangle, so the two can never disagree.
 			const bool16 sameKind = row.fTextCompared
 				&& (Utils<IKESCMStoryEditsFacade>()->GetChangeCount(nodeID->GetRow()) == 0);
-			kinds = KindLabel(row.fKinds, sameKind);
+			kinds = KindLabel(row.fKinds, sameKind, row.fAttrKind);
 		}
 		else if (Utils<IKESCMStoryEditsFacade>()->GetRowCount() == 0)
 		{
@@ -345,6 +390,46 @@ public:
 	}
 
 private:
+	/** Is this node a change that has to be drawn on TWO LINES - i.e. an attribute difference,
+		which today means a ruby (2026-08-22)?
+
+		★ONE QUESTION IN ONE PLACE. Three overrides above need the answer and they must agree
+		exactly: the resource decides how tall the widget is built, the WidgetID decides which
+		widgets may be recycled onto it, and GetNodeWidgetHeight decides how much room the tree
+		leaves for it. Two of the three agreeing is a row that overlaps its neighbour or a gap
+		under it ([[one-question-one-place]]).
+
+		★IT ASKS THE MODEL RATHER THAN REMEMBERING. Nodes hold indices, not data, and the list is
+		replaced whole by the next comparison (KESCMStoryNodeID.h) - anything cached here would
+		outlive what it describes. The call is the cheap one for exactly this reason: it copies
+		one int where GetChange copies eight strings (IKESCMStoryEditsFacade.h).
+
+		★TWO ENTRANCES, ONE ANSWER. The three overrides start from a NodeID; the apply below has
+		already unpacked one. Rather than let the apply ask the model in its own words - which is
+		how the drawing and the row height would drift apart - the unpacking is the only thing
+		that differs, and both end here. */
+	bool16 IsTwoLineChange(int32 row, int32 change) const
+	{
+		// ★★RUBY ONLY, AND NOT "any attribute" (corrected 2026-08-22, the same day the first version
+		//   was written). The upper line exists to carry a READING, and being an attribute does not
+		//   make a value one: kenten's was a name like "KentenBlackCircle", so "is this an attribute"
+		//   would have given every kenten row a permanently empty upper line.
+		//   ⚠Kenten is no longer reported at all (2026-08-23, user's call), so today the two
+		//     questions give the same answer - which is exactly why this one stays written as the
+		//     question it is really asking.
+		return Utils<IKESCMStoryEditsFacade>()->GetChangeAttrKind(row, change)
+			   == static_cast<int32>(kKESCMStoryAttrRuby);
+	}
+
+	bool16 IsTwoLineNode(const NodeID& node) const
+	{
+		TreeNodePtr<KESCMStoryNodeID> nodeID(node);
+		if (nodeID == nil || !nodeID->IsChangeRow())
+			return kFalse;
+
+		return this->IsTwoLineChange(nodeID->GetRow(), nodeID->GetChange());
+	}
+
 	/** Fills one CHANGE row: what sort of edit it was, and the words it concerns.
 
 		★TWO CELLS, WHERE A STORY ROW HAS THREE (2026-08-20): the words on the left, and the sign
@@ -370,11 +455,13 @@ private:
 								nodeID.GetRow(), nodeID.GetChange(), change);
 
 		PMString kind;
-		PMString textPre, textMid, textPost;
+		PMString textPre, textMid, textPost, ruby;
+		bool16 twoLines = kFalse;
 		kind.SetTranslatable(kFalse);
 		textPre.SetTranslatable(kFalse);
 		textMid.SetTranslatable(kFalse);
 		textPost.SetTranslatable(kFalse);
+		ruby.SetTranslatable(kFalse);
 
 		if (have)
 		{
@@ -418,6 +505,21 @@ private:
 			textPre.SetTranslatable(kFalse);
 			textMid.SetTranslatable(kFalse);
 			textPost.SetTranslatable(kFalse);
+
+			// ★THE READING, AND WHETHER THERE ARE TWO LINES AT ALL, ARE TWO DIFFERENT FACTS
+			//   (2026-08-22). A ruby that was REMOVED has no reading to show on the newer side -
+			//   fRuby is empty - and the row still has to be laid out on two lines, or its base
+			//   text would sit half a row higher than the rows around it. So the flag comes from
+			//   what SORT of change this is, never from whether the string is empty.
+			// ⚠It is asked of the same helper the three overrides above use, rather than read off
+			//   change.fWhat here: two ways of answering it is how the drawing and the row height
+			//   come to disagree.
+			twoLines = this->IsTwoLineChange(nodeID.GetRow(), nodeID.GetChange());
+			if (twoLines)
+			{
+				ruby = change.fRuby;
+				ruby.SetTranslatable(kFalse);
+			}
 		}
 
 		// ★The sign goes in the RIGHT-HAND cell, the one the story row uses to name its kinds
@@ -433,7 +535,7 @@ private:
 		InterfacePtr<IKESCMStoryCellData> cellData(textCell, UseDefaultIID());
 		if (cellData != nil)
 		{
-			cellData->SetSegments(textPre, textMid, textPost);
+			cellData->SetSegments(textPre, textMid, textPost, ruby, twoLines);
 			// ★Writing the strings does not ask for a redraw - SetNodeName does that for a stock
 			//   cell, and this one has no such courtesy. Without it a recycled row can keep the
 			//   picture the row it used to be left behind. (KBS's widget manager makes the same
@@ -467,11 +569,19 @@ void KESCMStoryTreeRebuild()
 	if (treeMgr == nil)
 		return;
 
-	// ClearTree(kTrue) drops what the tree was holding; ChangeRoot(kTrue) reloads it, the kTrue
-	// promising that every row widget is the same height - which GetNodeWidgetHeight guarantees,
-	// so the tree can size itself without measuring row by row.
+	// ClearTree(kTrue) drops the remembered expansion state; ChangeRoot reloads the tree.
+	//
+	// ★★★ChangeRoot's ARGUMENT IS NOT ABOUT CLEARING - IT IS A PROMISE THAT EVERY ROW WIDGET IS
+	//   THE SAME HEIGHT (ITreeViewMgr.h:66, `widgetHeightIsConstant`, default kFalse). It was kTrue
+	//   here from the day this list was written, and it was true: GetNodeWidgetHeight answered one
+	//   constant. ⚠SINCE 2026-08-22 IT IS NOT - a ruby change is drawn on two lines and its row is
+	//   twice as tall - so the promise is withdrawn and the tree measures row by row again, which
+	//   is the default and what the mixed heights require.
+	// ⚠The two arguments are different questions that happen to be spelled the same way: ClearTree
+	//   takes `clearExpandedNodeList` (ITreeViewMgr.h:180), and that one stays kTrue - a rebuild
+	//   means a new comparison, whose rows are not the ones the reader had opened or closed.
 	treeMgr->ClearTree(kTrue);
-	treeMgr->ChangeRoot(kTrue);
+	treeMgr->ChangeRoot(kFalse);
 
 	// ★★THE SECOND LEVEL IS OPEN FROM THE START (2026-08-20). A tree node is collapsed by default,
 	//   and a collapsed tree here would hide the very thing the Story Changes mode exists to show -

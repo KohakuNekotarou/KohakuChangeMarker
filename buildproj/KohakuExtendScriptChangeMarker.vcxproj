@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003" DefaultTargets="Build" ToolsVersion="15.0">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Debug|Win32">
@@ -231,6 +231,7 @@
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMTextDiff.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMMemXferBytes.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryXml.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryCellBases.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryDiffRun.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMPageNumberMarker.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMPeek.cpp" />
@@ -274,10 +275,13 @@
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMDocUidSet.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMThreadSafety.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryStamp.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMSnippetText.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryList.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryRowFilter.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMTextDiff.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMMemXferBytes.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryXml.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryCellBases.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryDiffRun.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMPageNumberMarker.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMPeek.h" />
