@@ -428,6 +428,100 @@ inline std::string AttrValue(const std::string& tag, const std::string& name)
 	@param attrsPerPara [out] when not nil: cleared, then filled to the SAME length as paragraphs,
 		each entry holding that paragraph's ruby and kenten spans in reading order.
 */
+/** How long the element name is, when this tag opens a PAGE ITEM that stands in the text as one
+	character - and 0 when it does not.
+
+	★★★ONE CHARACTER, MEASURED (2026-08-23, work\anchortest\probe3.jsx). Five kinds of object were
+	anchored into a ten-character story and the story came out fifteen: Rectangle, Oval, Polygon,
+	GraphicLine and TextFrame. A CUSTOM-positioned one cost the same as an inline one, and one
+	inside a table CELL cost that cell one character - the item stands under
+	Cell > ParagraphStyleRange > CharacterStyleRange exactly as it stands in the body.
+
+	★THE LIST IS DELIBERATE, NOT A CATCH-ALL. Anything not named here is skipped as before, and a
+	story whose length then fails to add up is REFUSED - which is the safe way round. A catch-all
+	("everything that is not Content or Br") would silently count things that are not one character:
+	<Footnote>, <Note>, <Change> and <HyperlinkTextSource> all stand in the same place and are
+	containers, not objects.
+
+	⚠Group is on the list and its CONTENTS are not: the whole element is skipped, so a group holding
+	  three rectangles is one character, which is what the text model says it is.
+*/
+inline size_t AnchoredItemTagLen(const std::string& xml, size_t lt)
+{
+	static const char* const kNames[] =
+	{
+		"TextFrame", "Rectangle", "Oval", "Polygon", "GraphicLine",
+		"Group", "Button", "MultiStateObject"
+	};
+
+	for (size_t i = 0; i < sizeof(kNames) / sizeof(kNames[0]); ++i)
+	{
+		const size_t n = std::char_traits<char>::length(kNames[i]);
+		if (xml.compare(lt + 1, n, kNames[i]) != 0)
+			continue;
+
+		// ⚠THE NAME HAS TO END HERE. Without this, "<Rectangle" also matches the opening of
+		//   <RectanglePreference> and the reader would put a character where there is none.
+		const char after = (lt + 1 + n < xml.size()) ? xml[lt + 1 + n] : '\0';
+		if (after == ' ' || after == '/' || after == '>' || after == '\t' || after == '\n' || after == '\r')
+			return n;
+	}
+	return 0;
+}
+
+/** One past the end of the element opening at `lt`, whose name is `nameLen` long.
+
+	★★SKIPPED WHOLE, NOT STEPPED INTO. A real page item carries its entire geometry - the anchored
+	TextFrame measured on 2026-08-23 was 3,781 characters of <Properties> and <PathGeometry> - and
+	the reader must not meet any of it. ⚠It matters for correctness and not only for speed: this
+	parser treats every <Content> it meets as body text, so a <Content> anywhere inside the element
+	would arrive in the story.
+
+	⚠Nesting is counted, because a <Group> holds other page items with the same names.
+*/
+inline size_t SkipItemElement(const std::string& xml, size_t lt, size_t nameLen, size_t storyEnd)
+{
+	const size_t gt = xml.find('>', lt);
+	if (gt == std::string::npos || gt > storyEnd)
+		return storyEnd;
+	if (gt > lt && xml[gt - 1] == '/')
+		return gt + 1;					// <Rectangle ... />
+
+	const std::string name(xml, lt + 1, nameLen);
+	const std::string closeTag = "</" + name + ">";
+
+	int32 depth = 1;
+	size_t at = gt + 1;
+	while (at < storyEnd && depth > 0)
+	{
+		const size_t next = xml.find('<', at);
+		if (next == std::string::npos || next >= storyEnd)
+			return storyEnd;
+
+		if (xml.compare(next, closeTag.size(), closeTag) == 0)
+		{
+			--depth;
+			at = next + closeTag.size();
+			continue;
+		}
+
+		// An opening tag of the SAME name goes one level deeper - unless it closes itself.
+		if (AnchoredItemTagLen(xml, next) == nameLen && xml.compare(next + 1, nameLen, name) == 0)
+		{
+			const size_t g2 = xml.find('>', next);
+			if (g2 == std::string::npos || g2 > storyEnd)
+				return storyEnd;
+			if (!(g2 > next && xml[g2 - 1] == '/'))
+				++depth;
+			at = g2 + 1;
+			continue;
+		}
+
+		at = next + 1;
+	}
+	return at;
+}
+
 inline void ExtractParagraphs(const std::string& xml,
 							  std::vector<std::string>& paragraphs,
 							  std::vector<KESCMParaAttrs>* attrsPerPara)
@@ -883,6 +977,26 @@ inline void ExtractParagraphs(const std::string& xml,
 			openContinues = kFalse;
 			openKenten.clear();
 			pos = lt + 22;
+		}
+		else if (const size_t itemNameLen = AnchoredItemTagLen(xml, lt))
+		{
+			// ★★AN ANCHORED PAGE ITEM IS ONE CHARACTER OF THE BODY (2026-08-23, user's request:
+			//   "アンカーの件"). What the text model holds there is U+FFFC, the object replacement
+			//   character, and that is what goes in - the reader is shown an anchor sign instead,
+			//   which is a decision made once where the row's text is built, not here
+			//   ([[one-question-one-place]]). ⇒ What this file records is what the document has.
+			// ★NOTHING ELSE HAS TO KNOW. The character sits in `current` like any other, so the
+			//   paragraph's length, the diff, the ruby offsets and the cell run all follow without
+			//   being told. An anchor being ADDED or REMOVED therefore comes out of the ordinary
+			//   text diff as "+" or "-" (user's call, 2026-08-23: 追加削除だけでいい) - there is no
+			//   separate test for it anywhere.
+			// ⚠A DIFFERENCE cannot be seen this way and is not meant to be: every anchor is the
+			//   same character, so swapping a rectangle for an oval leaves the text identical.
+			//   Reporting that would mean remembering WHICH item each character was - the same
+			//   shape as ruby, and deliberately not done in this first pass.
+			current.append("\xEF\xBF\xBC");		// U+FFFC in UTF-8 - one code point
+			paraPos += 1;
+			pos = SkipItemElement(xml, lt, itemNameLen, storyEnd);
 		}
 		else if (xml.compare(lt, 4, "<Br ") == 0 || xml.compare(lt, 4, "<Br/") == 0)
 		{

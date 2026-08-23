@@ -131,7 +131,12 @@ void ParagraphStarts(const std::vector<std::string>& paragraphs,
 */
 std::string MarkUpBreaks(const std::string& utf8)
 {
-	if (utf8.find('\n') == std::string::npos && utf8.find('\r') == std::string::npos)
+	// U+FFFC OBJECT REPLACEMENT CHARACTER - what the text model holds where an anchored page
+	// item stands (measured 2026-08-23; see AnchoredItemTagLen in KESCMSnippetText.h).
+	static const char kAnchorChar[] = "\xEF\xBF\xBC";
+
+	if (utf8.find('\n') == std::string::npos && utf8.find('\r') == std::string::npos
+		&& utf8.find(kAnchorChar) == std::string::npos)
 		return utf8;		// the common case pays one scan and no allocation
 
 	std::string out;
@@ -142,6 +147,20 @@ std::string MarkUpBreaks(const std::string& utf8)
 			out += "\xC2\xB6";			// U+00B6 PILCROW - a paragraph end (what Join puts between paragraphs)
 		else if (utf8[i] == '\r')
 			out += "\xE2\x86\xB5";		// U+21B5 DOWNWARDS ARROW WITH CORNER LEFTWARDS - a forced line break
+		else if (utf8.compare(i, 3, kAnchorChar) == 0)
+		{
+			// ★★AN ANCHORED OBJECT GETS A SIGN OF ITS OWN (2026-08-23, user's call: "⚓で、マークは").
+			//   Left as it is, U+FFFC draws nothing at all - the row would show a GAP where the
+			//   reader added a picture, which reads as "nothing happened".
+			// ★The kind column still says "+" or "-": this replaces the CHARACTER, not the
+			//   kind, so what the anchor did is still there to read.
+			// ★AND IT IS DECIDED HERE, ONCE. The excerpt reaches the reader in two places - the
+			//   Story Edits row and the panel's message area - and a sign chosen at each of
+			//   them would be two answers to one question ([[one-question-one-place]], the fault
+			//   behind seven of this plug-in's bugs). Everything shown goes through here.
+			out += "\xE2\x9A\x93";		// U+2693 ANCHOR
+			i += 2;					// the loop's ++i steps over the third byte
+		}
 		else
 			out += utf8[i];
 	}
