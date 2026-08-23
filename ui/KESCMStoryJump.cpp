@@ -52,8 +52,6 @@
 #include "KESCMUIShared.h"	// panel / status line / nav readout / tool button (split from KESCMCore.h on 2026-08-13)
 #include "KESCMStoryJump.h"
 #include "KESCMStoryMarker.h"	// the flash over the characters a change row goes to (2026-08-20)
-#include "KESCMStoryPressMarks.h"	// KESCMStoryMarksRefresh - what the "Show Marks on ..." toggles
-									//  want on screen, put back after this clears the flash (2026-08-22)
 #include "IKESCMStoryEditsFacade.h"	// the row a click landed on (Facade since 2026-08-13, Task 14)
 #include "IKESCMMarkData.h"	// IsPageOnHiddenSpread - a row on a hidden page is labelled, not jumped to (2026-08-18)
 
@@ -534,7 +532,40 @@ bool16 KESCMStoryJumpToChange(int32 rowIndex, int32 changeIndex)
 	//   now (KESCMStorySelectChange below).
 	// ★It is drawn ON the characters by the text engine (KESCMStoryMarker.cpp), so it needs no
 	//   coordinates from here: the story and the character range are the whole of the request.
-	KESCMStoryMarker::Show(db, row.fStoryUID, from, to);
+	//
+	// ★★★AND IT POINTS IN BOTH WINDOWS (2026-08-23, user's request: "ジャンプしたときソースの方でも
+	//   マークを一瞬出して欲しい"). Both windows have just been moved to this edit, so a
+	//   pointer in only one of them leaves the reader to find it by eye in the other - which is the
+	//   very window where "what it used to say" lives.
+	// ⚠★★THE TWO SIDES GET DIFFERENT NUMBERS, for the same reason the centring above does: the
+	//   same edit sits at a different character position in each version, and the diff has already
+	//   worked both out. Handing the target's index to the older document would light some unrelated
+	//   characters over there rather than failing.
+	// ★AN INSERTION NEEDS NO SPECIAL CASE HERE: its source range is empty, and an empty range is
+	//   drawn as the caret standing where the new words went in (KESCMStoryMarker::AddFlashRange) -
+	//   the same thing the standing marks show for it.
+	// ⚠THE OLDER SIDE'S RANGE IS NOT CLAMPED to the story as it stands now, and the target's is
+	//   (above). The difference is real: the target's numbers also make a SELECTION on the double
+	//   click, which the suite would refuse if they were stale, while a mark is only ever asked "is
+	//   any of this run marked" and a stale range simply never meets a run (KESCMStoryPressMarks
+	//   records the same reasoning for the standing marks).
+	KESCMStoryMarkDocs flash;
+	KESCMStoryMarker::AddFlashRange(flash, db, row.fStoryUID, from, to);
+
+	IDataBase* const flashSourceDB = Utils<IKESCMCompareFacade>()->GetArmedSourceDB();
+	if (flashSourceDB != nil && flashSourceDB != db
+		&& Utils<IKESCMCompareFacade>()->IsDocDBOpen(flashSourceDB))
+	{
+		// ★THE SAME STORY UID, IN THE OTHER DOCUMENT - which is what the whole Story mode is built
+		//   on: the diff pairs stories by uid, the double click below selects in both by uid, and
+		//   the standing marks light both by uid (KESCMStoryPressMarks). ⚠The general rule that a
+		//   uid names a different object in another document is TRUE and does not apply here, and
+		//   believing it did is what left the older window nearly bare until 2026-08-22 (bug A6).
+		KESCMStoryMarker::AddFlashRange(flash, flashSourceDB, row.fStoryUID,
+										change.fSourceStart, change.fSourceEnd);
+	}
+
+	KESCMStoryMarker::ShowFlash(flash);
 
 	// ***** AND THE OTHER SIDE OF THE EDIT GOES TO THE PANEL'S MESSAGE AREA. *****
 	//
@@ -650,8 +681,13 @@ bool16 KESCMStorySelectChange(int32 rowIndex, int32 changeIndex)
 	//     read under a selection is the reader's own choice of two things at once, and it is a
 	//     choice they can undo from the flyout. The jump's flash is not - it appears unasked, one
 	//     click before this one.
-	KESCMStoryMarker::Clear();
-	KESCMStoryMarksRefresh();
+	// ★★★AND THE REFRESH THAT PUT THEM BACK IS GONE (2026-08-23), because there is nothing left to
+	//   put back: this now takes down the FLASH and says so, where it used to take down the one
+	//   adornment both kinds shared and then ask for a full refresh to repair the standing marks it
+	//   had just wiped. ⚠The repair was itself a fix, added after the bug recheck of 2026-08-22
+	//   found the toggles going bare (A2) - a fix for damage this line was doing to itself. Naming
+	//   which of the two is coming down removes both (KESCMStoryMarker.h).
+	KESCMStoryMarker::ClearFlash();
 
 	// ***** AND THE SAME EDIT IS SELECTED ON THE OLDER SIDE TOO (user's call, 2026-08-21). *****
 	//

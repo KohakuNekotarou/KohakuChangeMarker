@@ -61,12 +61,15 @@ uint32 KESCMStoryMarkerExpiryTask::RunTask(uint32 /*flags*/, IdleTimer* /*idleTi
 	// return kEndOfTime from RunTask, instead you would call UninstallTask and return any value
 	// from RunTask as it will be ignored".
 	//
-	// ⚠Clear() calls back into Stop(), which uninstalls again. That second call is harmless by the
+	// ⚠Taking the flash down calls back into Stop(), which uninstalls again. That second call is harmless by the
 	//   contract quoted at the head of this file.
 	this->UninstallTask();
 
+	// ★THE FLASH, AND ONLY THE FLASH (2026-08-23). The standing marks a toggle is holding up have
+	//   no clock, and since the two can now be on screen together in different windows, a countdown
+	//   that took everything down would wipe a toggle's marks a second after any jump.
 	if (!sShutdown)
-		KESCMStoryMarker::Clear();
+		KESCMStoryMarker::ClearFlash();
 
 	return 0;	// one-shot: nothing more to do
 }

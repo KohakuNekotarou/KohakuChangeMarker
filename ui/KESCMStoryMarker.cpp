@@ -53,13 +53,20 @@ namespace
 //   task there, and a global text adornment is drawn there. Unlike the comparison marks, this one
 //   is deliberately NOT drawn for printing or export (see GetIsActive), which is what keeps the
 //   background threads out of it entirely.
+// ★★WHAT IS ASKED FOR, AND WHAT IS DRAWN, ARE DIFFERENT THINGS (2026-08-23). The two kinds of
+//   caller each own one set and never touch the other's; gMarkDocs is what comes out of putting
+//   them together under the per-document rule (KESCMStoryMarkDocs.h), and it is the only one the
+//   drawing side ever looks at.
+//   ⇒ Composing on the way IN rather than on the way out keeps the hot path exactly as it was: the
+//     adornment is asked about every run on every page being drawn, and it still reads one map.
+KESCMStoryMarkDocs gStandingDocs;			// the "Show Marks on ..." toggles and a held button
+KESCMStoryMarkDocs gFlashDocs;				// what the newest jump asked to point at
+
 bool16             gHasMark   = kFalse;		// the fast path: !gMarkDocs.empty(), kept as a flag
 KESCMStoryMarkDocs gMarkDocs;				// database -> story UID -> its ranges, each list merged.
 											// ⚠The database is an ADDRESS, only ever compared against
 											// the run's own - never dereferenced
-PMReal             gMarkOpacity(1.0);		// 1.0 for the jump; the panel's 25%/75% for the rest
-bool16             gPersistent = kFalse;	// kTrue while a toggle or a held button is holding it up,
-											// which is what makes the jump stand aside (see Show)
+PMReal             gMarkOpacity(1.0);		// what both kinds are drawn at - the panel's radio
 bool16             gShutdown  = kFalse;
 
 // The whole marked span across every story, which is a free way to refuse most runs before
@@ -183,14 +190,12 @@ bool16 KESCMStoryMarkerRunIsMarked(const IWaxRun* waxRun)
    no caller can hand in overlaps (which would invert twice and leave a hole), and the span the
    fast path tests is worked out in the same pass.
 
-   @param persistent kTrue when a toggle or a held button is holding this up - see Show for what
-      that changes.
+   ⚠What arrives is the COMPOSED set, not what a caller asked for - see the statics above.
 */
-void KESCMStoryMarkerSetDocs(const KESCMStoryMarkDocs& docs, const PMReal& opacity, bool16 persistent)
+void KESCMStoryMarkerSetDocs(const KESCMStoryMarkDocs& docs, const PMReal& opacity)
 {
 	gMarkDocs.clear();
 	gHasMark = kFalse;
-	gPersistent = kFalse;
 	gMarkOpacity = opacity;
 	gMarkLowest = 0;
 	gMarkHighest = 0;
@@ -227,42 +232,62 @@ void KESCMStoryMarkerSetDocs(const KESCMStoryMarkDocs& docs, const PMReal& opaci
 	}
 
 	if (!gMarkDocs.empty())
-	{
 		gHasMark = kTrue;
-		gPersistent = persistent;
-	}
+}
+
+/* MarkOpacityNow
+   What the marks are drawn at, as the panel's 25% / 75% radio has it.
+
+   ★★ONE PLACE ASKS, AND IT IS THIS ONE (2026-08-22). Until now the jump's pointer passed a
+   hard-coded 1.0 while the standing marks were handed the selected value by their caller - so the
+   same setting reached one kind of mark and not the other, and a reader who chose 25% still got a
+   solid flash on every jump (user's report: "透明度の選択が反映されるようにしてほしい。今は不透明
+   かな？"). Asking here rather than at each caller is what stops the two from drifting again
+   ([[one-question-one-place]]).
+
+   ⚠IT IS READ WHEN A MARK IS INSTALLED, NOT WHEN ONE IS DRAWN, and the comment here said the
+   opposite until 2026-08-23 (measured: the value goes into gMarkOpacity and the drawing reads that
+   static). Nothing is wrong with it - moving the radio makes the panel refresh the standing marks,
+   which comes straight back through here - but a reader who believed the old sentence would look
+   for a bug that is not there, or write one relying on a re-read that does not happen.
+*/
+PMReal MarkOpacityNow()
+{
+	InterfacePtr<IKESCMCompareFacade> compare(Utils<IKESCMCompareFacade>().QueryUtilInterface());
+	return (compare != nil) ? compare->GetSelectedMarkOpacity() : PMReal(1.0);
 }
 
 /* KESCMStoryMarkerInstall
-   Put a set up, take whatever was there down, and repaint everything involved - the half of Show
-   and ShowDocs that is the same for either of them.
+   Work out what is on screen from the two sets, put it up, and repaint everything involved.
+   Every public call ends here, so there is one place where the rule is applied and one place that
+   repaints.
 
    ⚠EVERY DOCUMENT THAT WAS MARKED IS REPAINTED TOO, not just the ones that still are, or a mark
    would stay on screen in a window nobody is looking at any more. That is not hypothetical here:
    turning "Show Marks on Source" off leaves the target's marks up and has to wipe the source's.
 
-   @param countdown kTrue for the jump's flash, kFalse for anything that stays up. Either way any
-      countdown already running is dealt with, so a standing mark cannot inherit a jump's clock.
+   ⚠THE CLOCK IS NOT TOUCHED HERE, AND THAT IS DELIBERATE (2026-08-23). It was a parameter of this
+   function until the two sets were separated, which meant every standing mark going up or coming
+   down had an opinion about the jump's clock. Both answers are wrong now that the two can be on
+   screen together in different windows: stopping it would leave a pointer up for good, and starting
+   it would hand the flash a fresh second every time a toggle moved. ⇒ The countdown belongs to the
+   two calls that own the flash (ShowFlash / ClearFlash) and to nothing else.
 */
-void KESCMStoryMarkerInstall(const KESCMStoryMarkDocs& docs, const PMReal& opacity,
-							 bool16 countdown, bool16 persistent)
+void KESCMStoryMarkerInstall()
 {
 	std::set<IDataBase*> toRepaint;
 	for (KESCMStoryMarkDocs::const_iterator it = gMarkDocs.begin(); it != gMarkDocs.end(); ++it)
 		toRepaint.insert(it->first);
 
-	KESCMStoryMarkerSetDocs(docs, opacity, persistent);
+	KESCMStoryMarkDocs composed;
+	KESCMComposeMarkDocs(gStandingDocs, gFlashDocs, composed);
+	KESCMStoryMarkerSetDocs(composed, MarkOpacityNow());
 
 	for (KESCMStoryMarkDocs::const_iterator it = gMarkDocs.begin(); it != gMarkDocs.end(); ++it)
 		toRepaint.insert(it->first);
 
 	for (std::set<IDataBase*>::const_iterator db = toRepaint.begin(); db != toRepaint.end(); ++db)
 		KESCMStoryMarkerRepaint(*db);
-
-	if (countdown && gHasMark)
-		KESCMStoryMarkerExpiry::Start();
-	else
-		KESCMStoryMarkerExpiry::Stop();
 }
 
 }	// anonymous namespace
@@ -507,106 +532,89 @@ void KESCMStoryMarkerAdornment::Draw(GraphicsData* gd, int32 iShapeFlags, const 
 // The public face
 //----------------------------------------------------------------------------------------
 
-/* MarkOpacityNow
-   What the marks are drawn at, as the panel's 25% / 75% radio has it.
-
-   ★★ONE PLACE ASKS, AND IT IS THIS ONE (2026-08-22). Until now the jump's pointer passed a
-   hard-coded 1.0 while the standing marks were handed the selected value by their caller - so the
-   same setting reached one kind of mark and not the other, and a reader who chose 25% still got a
-   solid flash on every jump (user's report: "透明度の選択が反映されるようにしてほしい。今は不透明
-   かな？"). Asking here rather than at each caller is what stops the two from drifting again
-   ([[one-question-one-place]]).
-
-   ⚠It is read at the moment of drawing rather than remembered, for the same reason the press marks
-   re-read everything: the radio can move while a mark is already up.
-*/
-static PMReal MarkOpacityNow()
+void KESCMStoryMarker::AddFlashRange(KESCMStoryMarkDocs& docs, IDataBase* db, UID storyUID,
+									TextIndex from, TextIndex to)
 {
-	InterfacePtr<IKESCMCompareFacade> compare(Utils<IKESCMCompareFacade>().QueryUtilInterface());
-	return (compare != nil) ? compare->GetSelectedMarkOpacity() : PMReal(1.0);
-}
-
-void KESCMStoryMarker::Show(IDataBase* db, UID storyUID, TextIndex from, TextIndex to)
-{
-	if (gShutdown)
-		return;
-
-	// ★★A STANDING MARK WINS, AND THE JUMP SAYS NOTHING (2026-08-22). While "Show Marks on ..." is
-	//   on, or the tool's button is down, every changed character in that document is already lit -
-	//   including the one this jump is aimed at. Putting a second mark up would replace the standing
-	//   one (they are exclusive - see the header), so the reader would watch the whole document go
-	//   dark to gain a pointer at something already visible.
-	if (gHasMark && gPersistent)
-		return;
-
 	if (db == nil || storyUID == kInvalidUID)
-	{
-		KESCMStoryMarker::Clear();
-		return;
-	}
+		return;			// a window that is not open, or a story there is none of - nothing to add
 
 	if (to < from)
 		to = from;
 
-	// ★★A DELETION HAS NO WIDTH HERE - the words are gone from this side, and the row is pointing
-	//   at the place they used to be. Since 2026-08-22 that place is shown as a CARET (user's call),
-	//   which is also what the standing marks do, so a jump and a press say the same thing about the
-	//   same deletion (KESCMStoryPressMarks).
+	// ★★A DELETION HAS NO WIDTH on the side it was deleted from - the words are gone from there, and
+	//   what the jump is pointing at is the PLACE they used to be. Since 2026-08-22 that place is
+	//   shown as a CARET (user's call), which is also what the standing marks do, so a jump and a
+	//   press say the same thing about the same deletion (KESCMStoryPressMarks).
 	//   ⚠It used to be widened to one character here, which inverted whatever had closed up over the
 	//     gap - a different character claiming to be the edit.
-	//   ★The decision is still made HERE and not inside the range list: what a zero-width range
-	//     should look like is about what the reader is being shown, and that list is numbers
+	//   ★The decision is made HERE and not inside the range list: what a zero-width range should
+	//     look like is about what the reader is being shown, and that list is numbers
 	//     (KESCMStoryMarkRanges.h).
-	KESCMStoryMarkDocs one;
-	one[db][storyUID].push_back((to > from) ? KESCMMarkRange(from, to)
-											: KESCMMarkRange::Caret(from));
-
-	// A flash, not a highlight - so this one gets the countdown. Restarting an already-running one
-	// is that call's job, so each jump gets the mark for the full time.
-	// ★THE SELECTED OPACITY, NOT 1.0 (2026-08-22). A flash is still a mark, and the reader who
-	//   turned the marks down to 25% meant all of them.
-	KESCMStoryMarkerInstall(one, MarkOpacityNow(), kTrue /*countdown*/, kFalse /*persistent*/);
+	// ★★AND AN INSERTION IS THE SAME THING SEEN FROM THE OLDER SIDE (2026-08-23). The characters
+	//   exist only in the newer document, so the range handed over for the older one is empty and
+	//   comes out as the caret standing where they went in - which is exactly where the reader is
+	//   looking. Nothing here has to know which of the two cases it is.
+	docs[db][storyUID].push_back((to > from) ? KESCMMarkRange(from, to)
+											 : KESCMMarkRange::Caret(from));
 }
 
-void KESCMStoryMarker::ShowDocs(const KESCMStoryMarkDocs& docs)
+void KESCMStoryMarker::ShowFlash(const KESCMStoryMarkDocs& docs)
 {
 	if (gShutdown)
 		return;
 
-	if (docs.empty())
-	{
-		KESCMStoryMarker::Clear();
-		return;
-	}
+	// ★★WHERE THE "A STANDING MARK WINS" TEST USED TO BE (2026-08-22 - 2026-08-23). It stood here
+	//   as a single early return: while any toggle was on, or the tool's button was down, the jump
+	//   said nothing at all. That was right about the document the toggle was for and wrong about
+	//   the other one, which had nothing standing in it and was where the reader had just asked to
+	//   be shown something (bug A3).
+	//   ⇒ The rule is now applied per document, once, in the composition - so there is nothing to
+	//     decide here and no second place for it to be decided differently
+	//     ([[one-question-one-place]]).
+	gFlashDocs = docs;
+	KESCMStoryMarkerInstall();
 
-	// ★NO COUNTDOWN. What takes these down is a toggle going off or the mouse button coming up, not
-	//   the clock (KESCMStoryPressMarks). Any countdown already running belongs to a jump that this
-	//   has just replaced, and Install stops it.
-	KESCMStoryMarkerInstall(docs, MarkOpacityNow(), kFalse /*countdown*/, kTrue /*persistent*/);
+	// A flash, not a highlight - so this one gets the countdown, and a jump that lands while an
+	// older one is still up restarts it, so the newest always gets the full time.
+	// ⚠ARMED EVEN WHEN THE COMPOSITION HID IT. A flash asked for in a document that has a standing
+	//   mark shows nothing, and the clock then takes down something invisible - which is right: if
+	//   the reader turns that toggle off a moment later, what is left is the pointer they asked for,
+	//   with the time it has left rather than for ever.
+	if (!gFlashDocs.empty())
+		KESCMStoryMarkerExpiry::Start();
+	else
+		KESCMStoryMarkerExpiry::Stop();
 }
 
-void KESCMStoryMarker::Clear()
+void KESCMStoryMarker::ShowStanding(const KESCMStoryMarkDocs& docs)
 {
-	KESCMStoryMarkerExpiry::Stop();
-
-	if (!gHasMark)
+	if (gShutdown)
 		return;
 
-	// ⚠The documents are collected BEFORE the flag comes down, and repainted after, so the redraw
-	//   that follows is the one that takes the mark off. Repainting first would draw it again.
-	std::set<IDataBase*> toRepaint;
-	for (KESCMStoryMarkDocs::const_iterator it = gMarkDocs.begin(); it != gMarkDocs.end(); ++it)
-		toRepaint.insert(it->first);
+	// ★NO COUNTDOWN. What takes these down is a toggle going off or the mouse button coming up, not
+	//   the clock - and a clock that a jump has running belongs to the jump, so this leaves it alone
+	//   (KESCMStoryMarkerInstall).
+	gStandingDocs = docs;
+	KESCMStoryMarkerInstall();
+}
 
-	gHasMark = kFalse;
-	gPersistent = kFalse;
-	gMarkDocs.clear();
-	gMarkOpacity = PMReal(1.0);
-	gMarkLowest = 0;
-	gMarkHighest = 0;
+void KESCMStoryMarker::ClearFlash()
+{
+	if (gFlashDocs.empty())
+		return;
 
-	for (std::set<IDataBase*>::const_iterator db = toRepaint.begin(); db != toRepaint.end(); ++db)
-		KESCMStoryMarkerRepaint(*db);
+	gFlashDocs.clear();
+	KESCMStoryMarkerExpiry::Stop();
+	KESCMStoryMarkerInstall();		// repaints whatever went dark
+}
+
+void KESCMStoryMarker::ClearStanding()
+{
+	if (gStandingDocs.empty())
+		return;
+
+	gStandingDocs.clear();
+	KESCMStoryMarkerInstall();
 }
 
 bool16 KESCMStoryMarker::IsShowing()
@@ -614,20 +622,16 @@ bool16 KESCMStoryMarker::IsShowing()
 	return gHasMark;
 }
 
-bool16 KESCMStoryMarker::IsShowingPersistent()
-{
-	return (gHasMark && gPersistent) ? kTrue : kFalse;
-}
-
 void KESCMStoryMarker::Shutdown()
 {
 	// ⚠The flag goes up FIRST: from here on nothing repaints, because the document the mark was in
-	//   may already be half torn down. Clear() would otherwise go looking for it.
+	//   may already be half torn down. Taking a mark down the ordinary way would go looking for it.
 	//   ★Same door, and the same reason, as KBS's marker shutdown.
 	gShutdown = kTrue;
 	gHasMark = kFalse;
-	gPersistent = kFalse;
 	gMarkDocs.clear();
+	gStandingDocs.clear();
+	gFlashDocs.clear();
 	KESCMStoryMarkerExpiry::Shutdown();
 }
 

@@ -39,12 +39,15 @@ namespace
 bool16 gPressActive = kFalse;
 bool16 gPressUseSource = kFalse;
 
-// ⚠★★"IS WHAT IS ON SCREEN MINE" IS NOT REMEMBERED HERE - IT IS ASKED
-//   (KESCMStoryMarker::IsShowingPersistent, 2026-08-22 bug recheck A2). This file used to keep its
-//   own flag for it, which was the same fact written down in two places
-//   ([[one-question-one-place]]) - and the copy here went stale the moment anything ELSE took the
-//   mark down: the double click does exactly that (KESCMStorySelectChange), after which this file
-//   still believed a standing mark was up.
+// ⚠★★"IS WHAT IS ON SCREEN MINE" IS NOT REMEMBERED HERE, AND SINCE 2026-08-23 IT IS NOT ASKED
+//   EITHER - IT IS OWNED. The marker keeps the standing set and the jump's flash apart, so this
+//   file takes down what it put up by name (ClearStanding) and cannot reach the other.
+//   ★The history is worth keeping because the same mistake is easy to make again: this file first
+//     kept its own flag for "did I put the current mark up", which was one fact written down in two
+//     places ([[one-question-one-place]]) and went stale the moment anything ELSE took the mark
+//     down - the double click does exactly that (KESCMStorySelectChange), after which this file
+//     still believed a standing mark was on screen (2026-08-22 bug recheck A2). Asking the marker
+//     fixed the staleness; separating the two sets removed the question.
 
 /* KESCMStoryWholeTextEnd
    One past the last character a reader can see in this story - what an Added or Removed story is
@@ -232,7 +235,7 @@ void KESCMStoryMarksRefresh()
 	if (compare != nil && compare->IsArmed() && compare->GetCompareMode() == kKESCMModeStory)
 	{
 		// ⚠THE OPACITY IS NO LONGER READ HERE (2026-08-22). It used to be picked up in this line
-		//   and handed to ShowDocs, which meant the jump's flash - a different caller - never saw
+		//   and handed to the standing-mark call, which meant the jump's flash - a different caller - never saw
 		//   it. KESCMStoryMarker asks for itself now, at the moment it draws.
 
 		// ★★★A PRESS TURNS ITS OWN WINDOW ROUND. IT DOES NOT ADD TO THE TOGGLE (2026-08-22, user's
@@ -275,15 +278,14 @@ void KESCMStoryMarksRefresh()
 
 	if (docs.empty())
 	{
-		// ★ONLY TAKE DOWN A STANDING MARK. A jump's pointer may be on screen, and it is not ours to
-		//   clear - the two share one adornment and are exclusive (KESCMStoryMarker.h).
-		//   ★The mark is asked rather than remembered; see the note on the statics above.
-		if (KESCMStoryMarker::IsShowingPersistent())
-			KESCMStoryMarker::Clear();
+		// ★ONLY TAKE DOWN A STANDING MARK. A jump's pointer may be on screen and it is not ours to
+		//   clear - and since 2026-08-23 saying so is the whole of it: there is no test to get right,
+		//   because the call names which of the two kinds is coming down (KESCMStoryMarker.h).
+		KESCMStoryMarker::ClearStanding();
 		return;
 	}
 
-	KESCMStoryMarker::ShowDocs(docs);
+	KESCMStoryMarker::ShowStanding(docs);
 }
 
 void KESCMStoryPressMarksBegin(bool16 useSourceDocument)
