@@ -171,6 +171,12 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 		// →2026-07-10 メニュー化)。実体は KESCMPanelObserver.cpp の自由関数。
 		case kKESCMPopupPrintMarksActionID:
 			Utils<IKESCMCompareFacade>()->TogglePrintMarks();
+			// ★★2026-08-23＝**Story モードのマークもこのトグルを入力に持つようになった**ので、
+			//   ここでも作り直しを頼む。Print が ON の間は画面にも常時出る（Pixel の枠と同じ
+			//   WYSIWYG）ので、頼まないと**トグルを切っても Story のマークが動かない**。
+			//   ⚠この case だけ長らく Refresh を呼んでいなかった＝呼んでいる下の4つ（opacity 2つ・
+			//     Show Src/Tgt）と揃った。
+			KESCMStoryMarksRefresh();
 			break;
 
 		// フライアウトの「Marks opacity 25% / 75%」(ラジオ風): 選んだ方の不透明度に設定する。

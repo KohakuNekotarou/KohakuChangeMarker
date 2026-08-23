@@ -38,6 +38,7 @@
 // Project includes:
 #include "IKESCMCompareFacade.h"	// IsDocDBOpen - never repaint a document that has gone
 #include "KESCMID.h"				// ★2026-08-23: moved here from the UI plug-in's KCMUIID.h
+#include "KESCMStoryMarkBuild.h"	// KESCMStoryMarkPrintAllowedFor - may THIS document go on paper
 #include "KESCMStoryMarker.h"
 #include "KESCMStoryMarkerExpiry.h"
 #include "KESCMThreadSafety.h"		// ★★KESCMIsSameDoc (the background's cloned DB) and the lock
@@ -157,8 +158,12 @@ void KESCMStoryMarkerRepaint(IDataBase* db)
    so the screen path is exactly as fast as the find() it replaces.
 
    ⚠THE CALLER MUST HOLD KESCMMarkStateMutex: the returned pointer points into gMarkDocs.
+
+   @param forPrint kTrue when the drawing is going to paper or an export. The document is then asked
+       whether its marks may go there at all - and the question is asked HERE because this is where
+       the database has just been worked out, so printing costs no extra lookup.
 */
-const KESCMMarkRangeList* KESCMStoryMarkerRangesFor(const IWaxRun* waxRun)
+const KESCMMarkRangeList* KESCMStoryMarkerRangesFor(const IWaxRun* waxRun, bool16 forPrint)
 {
 	const IWaxLine* waxLine = waxRun->GetWaxLine();
 	if (waxLine == nil)
@@ -168,6 +173,13 @@ const KESCMMarkRangeList* KESCMStoryMarkerRangesFor(const IWaxRun* waxRun)
 		return nil;
 
 	const UIDRef modelRef = ::GetUIDRef(model);
+
+	// ★★MAY THIS DOCUMENT GO ON PAPER (2026-08-23). Until this line the answer was a flat "no" for
+	//   every document - the mark was born as a jump's pointer, which has no business being printed.
+	//   Now it is per document and per toggle, exactly as the Pixel mode's frames already were
+	//   (KESCMStoryMarkBuild).
+	if (forPrint && !KESCMStoryMarkPrintAllowedFor(modelRef.GetDataBase()))
+		return nil;
 
 	for (KESCMStoryMarkDocs::const_iterator doc = gMarkDocs.begin(); doc != gMarkDocs.end(); ++doc)
 	{
@@ -183,7 +195,7 @@ const KESCMMarkRangeList* KESCMStoryMarkerRangesFor(const IWaxRun* waxRun)
 	return nil;
 }
 
-bool16 KESCMStoryMarkerFindRunRanges(const IWaxRun* waxRun, KESCMMarkRangeList& outRanges)
+bool16 KESCMStoryMarkerFindRunRanges(const IWaxRun* waxRun, bool16 forPrint, KESCMMarkRangeList& outRanges)
 {
 	outRanges.clear();
 
@@ -206,7 +218,7 @@ bool16 KESCMStoryMarkerFindRunRanges(const IWaxRun* waxRun, KESCMMarkRangeList& 
 	if (runEnd <= gMarkLowest || runStart >= gMarkHighest)
 		return kFalse;						// before or after everything that is marked
 
-	const KESCMMarkRangeList* ranges = KESCMStoryMarkerRangesFor(waxRun);
+	const KESCMMarkRangeList* ranges = KESCMStoryMarkerRangesFor(waxRun, forPrint);
 	if (ranges == nil)
 		return kFalse;
 
@@ -234,7 +246,11 @@ bool16 KESCMStoryMarkerRunIsMarked(const IWaxRun* waxRun)
 	if (runEnd <= gMarkLowest || runStart >= gMarkHighest)
 		return kFalse;
 
-	const KESCMMarkRangeList* ranges = KESCMStoryMarkerRangesFor(waxRun);
+	// ⚠kFalse = "not asked about printing". GetCouldDraw, which is what calls this, is handed no
+	//   iShapeFlags at all - so this can only answer the wider question "is this run marked
+	//   anywhere". A run that turns out not to be printable is refused later, in Draw. ⇒ The cost of
+	//   being generous here is one Draw call that draws nothing; being strict is not possible.
+	const KESCMMarkRangeList* ranges = KESCMStoryMarkerRangesFor(waxRun, kFalse);
 	if (ranges == nil)
 		return kFalse;
 
@@ -373,7 +389,9 @@ void KESCMStoryMarkerInstall()
 // The adornment
 //----------------------------------------------------------------------------------------
 
-/** Inverts the pixels over the marked characters. Screen only. */
+/** Inverts the pixels over the marked characters. On screen always; on paper and in an exported
+	PDF when the document's toggle says so (KESCMStoryMarkPrintAllowedFor). ★"Screen only" until
+	2026-08-23, which is why the notes below about opacity are worth reading before changing it. */
 class KESCMStoryMarkerAdornment : public CPMUnknown<IGlobalTextAdornment>
 {
 public:
@@ -422,13 +440,15 @@ private:
 		kFalse for a run that cannot be measured - an inline graphic has neither glyphs nor render
 		data, which all four of these methods are warned about in IGlobalTextAdornment.h. */
 	static bool16 GetMarkBoxes(const IWaxRun* waxRun, const IWaxRenderData* renderData,
-							   const IWaxGlyphs* waxGlyphs, std::vector<PMRect>& outBoxes);
+							   const IWaxGlyphs* waxGlyphs, bool16 forPrint,
+							   std::vector<PMRect>& outBoxes);
 };
 
 CREATE_PMINTERFACE(KESCMStoryMarkerAdornment, kKESCMStoryMarkerAdornmentImpl)
 
 bool16 KESCMStoryMarkerAdornment::GetMarkBoxes(const IWaxRun* waxRun, const IWaxRenderData* renderData,
-											   const IWaxGlyphs* waxGlyphs, std::vector<PMRect>& outBoxes)
+											   const IWaxGlyphs* waxGlyphs, bool16 forPrint,
+											   std::vector<PMRect>& outBoxes)
 {
 	outBoxes.clear();
 
@@ -436,7 +456,7 @@ bool16 KESCMStoryMarkerAdornment::GetMarkBoxes(const IWaxRun* waxRun, const IWax
 		return kFalse;
 
 	KESCMMarkRangeList runRanges;
-	if (!KESCMStoryMarkerFindRunRanges(waxRun, runRanges))
+	if (!KESCMStoryMarkerFindRunRanges(waxRun, forPrint, runRanges))
 		return kFalse;
 
 	const int32 glyphCount = waxGlyphs->GetGlyphCount();
@@ -520,14 +540,24 @@ bool16 KESCMStoryMarkerAdornment::GetIsActive(const IParcelShape* /*parcelShape*
 	if (!gHasMark)
 		return kFalse;
 
-	// ★★NEVER ON PAPER. This is a pointer at something the reader just asked to see, not part of
-	//   the document - and the header is explicit that an adornment which does not draw when
-	//   printing must not draw for print preview either (IGlobalTextAdornment.h:78-83), so both
-	//   flags are answered together.
-	//   ⚠This is the OPPOSITE of the comparison marks, which exist to come out on paper - see
-	//     KESCMDrawEventHandler. Two marks, two answers, for two different questions.
+	// ★★★ON PAPER SINCE 2026-08-23, WHERE THIS SAID "NEVER" (user's request: 印刷 ON で印刷できる
+	//   ように). The old answer came from what the mark was when it was written - a pointer at
+	//   something the reader had just asked to see, which has no business being printed. It has been
+	//   the Story mode's whole mark since the toggles and the tool's button started using it, and a
+	//   reader who turns "Print comparison marks" on means it.
+	//   ⇒ The answer is now per document, decided by the same two toggles that decide the Pixel
+	//     mode's frames (KESCMStoryMarkBuild).
+	// ⚠kPrinting AND kPreviewMode GET THE SAME ANSWER - the header is explicit that an adornment
+	//   which does not draw when printing must not draw for print preview either
+	//   (IGlobalTextAdornment.h:78-83). Asking one function keeps that true by construction.
+	// ⚠★★THE ANSWER HERE IS COARSER THAN THE ONE Draw GIVES, AND IT HAS TO BE (measured 2026-08-23):
+	//   **IParcelShape is not an IPMUnknown**, so there is no GetDataBase to call on it and this
+	//   pass cannot name the document it is about ("指示された型は関連がありません" - the first
+	//   draft tried it). ⇒ Refuse the whole pass only when NOTHING is printable; let Draw decide per
+	//   run, where the run's own database is at hand. The cost of being generous is a Draw call that
+	//   draws nothing; being strict here is not possible.
 	if (iShapeFlags & (IShape::kPrinting | IShape::kPreviewMode))
-		return kFalse;
+		return KESCMStoryMarkPrintPossibleAtAll();
 
 	return kTrue;
 }
@@ -535,8 +565,11 @@ bool16 KESCMStoryMarkerAdornment::GetIsActive(const IParcelShape* /*parcelShape*
 void KESCMStoryMarkerAdornment::GetInkBounds(PMRect* inkBounds, const IWaxRun* waxRun,
 											 const IWaxRenderData* renderData, const IWaxGlyphs* waxGlyphs)
 {
+	// ⚠kFalse: ink bounds are declared with no iShapeFlags to consult, so they are declared for the
+	//   wider case. Over-declaring costs nothing (it only widens the rectangle the text engine will
+	//   let us paint in); under-declaring would clip a mark that IS printable.
 	std::vector<PMRect> boxes;
-	if (!GetMarkBoxes(waxRun, renderData, waxGlyphs, boxes))
+	if (!GetMarkBoxes(waxRun, renderData, waxGlyphs, kFalse, boxes))
 		return;								// leave them empty, as the header instructs
 
 	// ★THE UNION OF THEM ALL, because ink bounds are declared once for the whole run. A press can
@@ -555,13 +588,16 @@ void KESCMStoryMarkerAdornment::Draw(GraphicsData* gd, int32 iShapeFlags, const 
 	if (gd == nil || !gHasMark)
 		return;
 
-	// GetIsActive answered this for the parcel, but Draw is reached by paths that do not consult
-	// it, so the flags are tested again here (KT measured the same and kept the same guard).
-	if (iShapeFlags & (IShape::kPrinting | IShape::kPreviewMode))
-		return;
+	// ★THE PRINT DECISION IS MADE PER RUN, INSIDE GetMarkBoxes, because that is where the run's own
+	//   database has just been worked out. GetIsActive answered the same question for the parcel,
+	//   but Draw is reached by paths that do not consult it, so the flags are read again here
+	//   (KT measured the same and kept the same guard).
+	// ⚠THE FLAGS ARE NO LONGER A FLAT REFUSAL (2026-08-23). They now select WHICH question is asked:
+	//   on screen every marked run draws; on paper only the documents whose toggle says so do.
+	const bool16 forPrint = ((iShapeFlags & (IShape::kPrinting | IShape::kPreviewMode)) != 0) ? kTrue : kFalse;
 
 	std::vector<PMRect> boxes;
-	if (!GetMarkBoxes(waxRun, renderData, waxGlyphs, boxes))
+	if (!GetMarkBoxes(waxRun, renderData, waxGlyphs, forPrint, boxes))
 		return;
 
 	// ★COPIED OUT UNDER THE LOCK, THEN USED WITHOUT IT. gMarkOpacity is a PMReal - a struct, not a
@@ -593,14 +629,21 @@ void KESCMStoryMarkerAdornment::Draw(GraphicsData* gd, int32 iShapeFlags, const 
 	// ★★★AND IT WORKS ON SCREEN, WHERE THE EXPORT PATH DOES NOT (measured 2026-08-22). setopacity
 	//   is silently ignored by a global text adornment when the drawing is going to PDF - KT asked
 	//   three different ways on 2026-08-19 and all three came out pixel-identical - and that was
-	//   the only measurement anyone had. It was of the EXPORT path. This mark is screen-only by
+	//   the only measurement anyone had. It was of the EXPORT path. This mark was screen-only by
 	//   GetIsActive, and switching the panel between 25% and 75% visibly changes how strong the
 	//   inversion is (confirmed on the running application).
 	//   ⇒ The line is not "opacity does nothing on a text adornment" but "it does not survive being
-	//     written out". ★The fallback written for the other outcome is recorded here rather than
-	//     deleted, because the same question returns the moment anything asks for this mark on
-	//     paper: with Difference, painting (a,a,a) lands on 1-a over white and a over black, which
-	//     is where an alpha of a would have put it.
+	//     written out".
+	// ★★★AND THAT MOMENT HAS ARRIVED (2026-08-23). The mark now goes on paper and into exported PDFs
+	//   when the toggles say so, so the export path's behaviour has stopped being academic:
+	//   **the 25% / 75% choice is expected to be ignored out there and to print at full strength.**
+	//   ⬜The PRINT path (as against export) has not been measured at all - that is the first thing
+	//     to look at on the running application.
+	//   ★THE FALLBACK IS WRITTEN AND WAITING, and it is why the note above was kept rather than
+	//     deleted: with Difference, painting (a,a,a) lands on 1-a over white and a over black, which
+	//     is where an alpha of a would have put it. ⇒ If the printed mark comes out too strong, paint
+	//     grey rather than white when forPrint is kTrue. ⚠It parts company with alpha in the
+	//     mid-tones, so it is a stand-in, not an equivalence.
 	if (opacity < PMReal(1.0))
 		gPort->setopacity(opacity, kFalse);
 

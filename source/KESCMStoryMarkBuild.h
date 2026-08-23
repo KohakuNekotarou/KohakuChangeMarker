@@ -55,6 +55,45 @@ void KESCMStoryMarkRefresh();
 */
 void KESCMStoryMarkSetPress(bool16 active, bool16 useSourceDocument);
 
+/** May this document's marks be drawn onto paper or into an exported PDF?
+
+	★★THE RULE IS THE PIXEL MODE'S, WORD FOR WORD (user's choice, 2026-08-23):
+	  * the NEWER document prints when "Print comparison marks" is on;
+	  * the OLDER one prints when "Show Marks on Source" is on, and does not consult the print
+	    toggle at all.
+	That asymmetry is not this file's invention - IKESCMCompareFacade.h:146-147 already states it as
+	the specification ("ON SCREEN ONLY, where the Source one also prints. What comes out of the
+	Target document is decided by Print comparison marks alone").
+
+	⚠★★★IT IS ASKED FROM THE DRAWING PATH, ON BACKGROUND THREADS, so it reads the state directly
+	rather than querying a facade off kUtilsBoss - a Query per parcel is not what this should cost.
+	The Pixel side answers the same question the same way (KESCMRingAdornment.cpp:253).
+	⚠**Which document is which is asked of the armed pair** (KESCMArmedTargetDB / ...SourceDB), the
+	same source the marks themselves were built from. ⚠Not KESCMDrawEventHandler::sDB - that is the
+	PIXEL marks' document and a different variable; using it here would be two answers to one
+	question ([[one-question-one-place]]).
+
+	@param db the document being drawn - possibly a background thread's CLONE of it, which is why
+		the comparison inside is KESCMIsSameDoc rather than ==.
+	@return kFalse for the screen-only case, and for any document that is not one of the two.
+*/
+bool16 KESCMStoryMarkPrintAllowedFor(IDataBase* db);
+
+/** Is ANY document allowed to print its marks right now?
+
+	★★A COARSER GATE FOR ONE CALLER THAT CANNOT ASK THE FINER QUESTION. GetIsActive is handed an
+	IParcelShape, and **IParcelShape is not an IPMUnknown** - there is no GetDataBase to call on it
+	(measured 2026-08-23: "指示された型は関連がありません"). So the per-parcel answer cannot name a
+	document, and the best it can do is refuse the whole pass when nothing is printable at all.
+	⇒ Draw still asks the per-document question, from the run's own database, so nothing prints that
+	  should not. This only saves the text engine from calling Draw for a document that will refuse.
+
+	⚠**IT MUST STAY THE OR OF THE SAME TWO FLAGS the finer question reads.** If it ever grew a
+	condition of its own, a mark could be refused here and allowed there, which reads as "printing
+	works for some documents and not others" with nothing to point at ([[one-question-one-place]]).
+*/
+bool16 KESCMStoryMarkPrintPossibleAtAll();
+
 #endif // __KESCMStoryMarkBuild_h__
 
 // End, KESCMStoryMarkBuild.h.

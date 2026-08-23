@@ -30,8 +30,11 @@
 #include "IKESCMCompareFacade.h"		// armed state, the two databases, the toggles, the opacity
 #include "IKESCMStoryEditsFacade.h"		// the rows and their changes - what is marked
 #include "KESCMBoundaryID.h"			// kKESCMModeStory
+#include "KESCMCore.h"					// KESCMArmedTargetDB / KESCMArmedSourceDB (⚠declared here, not in KESCMPeek.h)
+#include "KESCMDrawEventHandler.h"		// sPrintMarks / sSrcMarksOn - the two toggles that decide printing
 #include "KESCMStoryMarkBuild.h"
 #include "KESCMStoryMarker.h"			// the adornment that draws them
+#include "KESCMThreadSafety.h"			// KESCMIsSameDoc - the background draws a CLONE of the document
 
 namespace
 {
@@ -255,7 +258,19 @@ void KESCMStoryMarkRefresh()
 		//     non-zero truth other than kTrue would make a bare != answer the wrong way round.
 		const bool16 pressTarget = (gPressActive && !gPressUseSource) ? kTrue : kFalse;
 		const bool16 pressSource = (gPressActive && gPressUseSource) ? kTrue : kFalse;
-		const bool16 wantTarget = ((compare->GetShowTargetMarks() != 0) != (pressTarget != 0)) ? kTrue : kFalse;
+		// ★★★"Print comparison marks" ALSO PUTS THEM UP ON SCREEN (2026-08-23, and this is what makes
+		//   printing possible at all). The Pixel mode has always worked this way - its wantMarks is
+		//   `(sPrintMarks || sMarksVisible || ...)`, so turning the print toggle on shows the frames
+		//   permanently as well (KESCMDrawEventHandler.cpp:2093). ⇒ WYSIWYG: what will come out is
+		//   what you are looking at.
+		// ⚠★★IT IS ALSO A NECESSITY, NOT A CHOICE. What gets drawn onto paper is drawn from this
+		//   same set - so "on paper but not on screen" would mean keeping a second set of ranges,
+		//   which is one question answered in two places ([[one-question-one-place]]). The screen
+		//   and the page agree because there is only ever one answer to draw from.
+		// ⚠**The Source side does NOT read the print toggle** - "Show Marks on Source" decides both
+		//   its screen and its paper, which is the specification in IKESCMCompareFacade.h:146-147.
+		const bool16 tgtWanted = (compare->GetShowTargetMarks() || compare->GetPrintMarks()) ? kTrue : kFalse;
+		const bool16 wantTarget = ((tgtWanted != 0) != (pressTarget != 0)) ? kTrue : kFalse;
 		const bool16 wantSource = ((compare->GetShowSourceMarks() != 0) != (pressSource != 0)) ? kTrue : kFalse;
 
 		IDataBase* const targetDB = compare->GetArmedTargetDB();
@@ -306,6 +321,40 @@ void KESCMStoryMarkSetPress(bool16 active, bool16 useSourceDocument)
 		gPressUseSource = useSourceDocument;
 
 	KESCMStoryMarkRefresh();
+}
+
+bool16 KESCMStoryMarkPrintAllowedFor(IDataBase* db)
+{
+	if (db == nil)
+		return kFalse;
+
+	// ★ONE PLACE ANSWERS THIS, AND BOTH GetIsActive AND Draw ASK IT (KESCMStoryMarker.cpp). The
+	//   adornment is consulted per parcel and per run, so an answer that drifted between the two
+	//   would show as marks that half-print.
+	// ⚠READ DIRECTLY, NOT THROUGH THE FACADE: this runs on the export's background thread, where a
+	//   Query off kUtilsBoss per parcel is a cost with nothing to buy. The Pixel side reads the same
+	//   two flags the same way (KESCMRingAdornment.cpp:253).
+	// ⚠KESCMIsSameDoc, NOT ==: an asynchronous export hands the drawing a CLONE of the database, so
+	//   the pointer never matches the one we armed with (KESCMThreadSafety.h has the measurement).
+
+	if (KESCMDrawEventHandler::sPrintMarks && KESCMIsSameDoc(db, KESCMArmedTargetDB()))
+		return kTrue;
+
+	// ★THE OLDER DOCUMENT IGNORES THE PRINT TOGGLE - "Show Marks on Source" decides its screen and
+	//   its paper together. Asymmetric on purpose, and stated as the specification in
+	//   IKESCMCompareFacade.h:146-147 long before the Story mode could print at all.
+	if (KESCMDrawEventHandler::sSrcMarksOn && KESCMIsSameDoc(db, KESCMArmedSourceDB()))
+		return kTrue;
+
+	return kFalse;
+}
+
+bool16 KESCMStoryMarkPrintPossibleAtAll()
+{
+	// ⚠THE SAME TWO FLAGS AS ABOVE, WITH THE DOCUMENT TEST DROPPED - see the header for why the
+	//   coarse form exists at all (GetIsActive is handed an IParcelShape, which is not an IPMUnknown
+	//   and therefore has no database to ask about).
+	return (KESCMDrawEventHandler::sPrintMarks || KESCMDrawEventHandler::sSrcMarksOn) ? kTrue : kFalse;
 }
 
 // End, KESCMStoryMarkBuild.cpp.
