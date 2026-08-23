@@ -645,6 +645,39 @@ bool16 CompareOneStory(const UIDRef& targetStory, const UIDRef& sourceStory,
 	if (!KESCMTextDiff::Diff(sourceTokens, targetTokens, paragraphChanges))
 		return kFalse;		// too different to place - the row stays, the detail does not
 
+	// ★★★ONE ROW PER PLACE, NOT ONE PER RUN (2026-08-23, user's call: 「変化している文字の
+	//   有るセルだけになるのが正しいかな」). A CELL IS A PARAGRAPH, so two edits that happened to land
+	//   in adjacent paragraphs come back as ONE run even when one of them is body text and the next
+	//   is inside the table. The row then spans everything between them - including text nobody
+	//   touched. MEASURED on the tablespan document, three one-character edits:
+	//
+	//       CHANGE t=[18,40) 「したよ。¶[表]表の後の段落です。¶あたらしい」   ← one row, 22 characters
+	//
+	//   ⚠ONLY WHERE A RUN LEAVES ONE PLACE FOR ANOTHER. Paragraphs of the same place still share a
+	//     row, which is what a cell holding several paragraphs - and ordinary body text - depends on.
+	//   ⚠And only when the two versions pass through the same places: SplitRunAtPlaces leaves a run
+	//     whole rather than pair its halves up wrongly (see the header).
+	{
+		std::vector<KESCMTextDiff::Change> byPlace;
+		std::vector<KESCMSnippetText::RegionPair> pieces;
+		for (size_t c = 0; c < paragraphChanges.size(); ++c)
+		{
+			const KESCMTextDiff::Change& run = paragraphChanges[c];
+			KESCMSnippetText::SplitRunAtPlaces(sourceAttrs, run.aStart, run.aCount,
+											   targetAttrs, run.bStart, run.bCount, pieces);
+			for (size_t k = 0; k < pieces.size(); ++k)
+			{
+				KESCMTextDiff::Change piece;
+				piece.aStart = pieces[k].fSourceStart;
+				piece.aCount = pieces[k].fSourceCount;
+				piece.bStart = pieces[k].fTargetStart;
+				piece.bCount = pieces[k].fTargetCount;
+				byPlace.push_back(piece);
+			}
+		}
+		paragraphChanges.swap(byPlace);
+	}
+
 	std::vector<int32> targetStarts;
 	std::vector<int32> sourceStarts;
 	int32 targetComputed = 0;

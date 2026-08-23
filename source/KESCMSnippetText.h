@@ -883,6 +883,153 @@ inline void BodyParagraphStarts(const std::vector<std::string>& paragraphs,
 	}
 }
 
+/** A run of consecutive paragraphs that all sit in the same PLACE: the story's body, or one cell.
+
+	★★★WHY A ROW IS CUT HERE (2026-08-23, user's call: 「変化している文字の有るセルだけに
+	  なるのが正しいかな」). A cell IS a paragraph, so two paragraphs that both changed and
+	  happen to be next to each other in the snippet go into ONE run of the paragraph diff - even
+	  when one of them is body text and the other is inside the table. The row then reads as one
+	  edit spanning the words before the table, the cell, and whatever follows, and its mark covers
+	  all the unchanged text in between (measured: a row covering 22 characters for two edits of one
+	  character each).
+	⚠ADJACENT PARAGRAPHS IN THE SAME PLACE STILL SHARE A ROW - that part is right, and a cell
+	  holding several paragraphs depends on it.
+	★The body appears more than once when a table stands in the middle of it; those are separate
+	  runs, because they are not next to each other.
+*/
+struct ParaRegion
+{
+	int32	fStart;		///< first paragraph of the run
+	int32	fCount;		///< how many paragraphs
+	int32	fTable;		///< KESCMParaAttrs::kNotACell for body text, else which table
+	int32	fRow;		///< grid row when it is a cell, -1 otherwise
+	int32	fCol;		///< grid column when it is a cell, -1 otherwise
+
+	ParaRegion() : fStart(0), fCount(0), fTable(KESCMParaAttrs::kNotACell), fRow(-1), fCol(-1) {}
+
+	/** The same place - not the same paragraphs. */
+	bool16 SamePlaceAs(const ParaRegion& other) const
+	{
+		return fTable == other.fTable && fRow == other.fRow && fCol == other.fCol;
+	}
+};
+
+/** The places a run of paragraphs passes through, in order. */
+inline void ParagraphRegions(const std::vector<KESCMParaAttrs>& attrs, int32 start, int32 count,
+							 std::vector<ParaRegion>& out)
+{
+	out.clear();
+	for (int32 i = start; i < start + count; ++i)
+	{
+		ParaRegion here;
+		here.fStart = i;
+		here.fCount = 1;
+		if (i >= 0 && static_cast<size_t>(i) < attrs.size() && attrs[i].IsCell())
+		{
+			here.fTable = attrs[i].fTableOrdinal;
+			here.fRow = attrs[i].fCellRow;
+			here.fCol = attrs[i].fCellCol;
+		}
+
+		if (!out.empty() && out.back().SamePlaceAs(here))
+			++out.back().fCount;
+		else
+			out.push_back(here);
+	}
+}
+
+/** One piece of a split run: the paragraphs it covers on each side. */
+struct RegionPair
+{
+	int32	fSourceStart;
+	int32	fSourceCount;
+	int32	fTargetStart;
+	int32	fTargetCount;
+
+	RegionPair() : fSourceStart(0), fSourceCount(0), fTargetStart(0), fTargetCount(0) {}
+};
+
+/** Cut one run of the paragraph diff into one piece per PLACE (see ParaRegion).
+
+	★★WHEN IT DOES NOT CUT, IT SAYS SO BY ANSWERING WITH ONE PIECE. Three shapes are cut:
+	  - a pure insertion: every piece goes in at the same spot in the older version;
+	  - a pure deletion: the mirror of it;
+	  - a replacement whose two sides pass through the SAME places in the same order.
+	⚠Anything else - the table itself gained or lost cells between the versions, say - is left
+	  whole. There is no honest way to pair the halves up, and one row that is too wide is better
+	  than several that point at the wrong cells.
+*/
+inline void SplitRunAtPlaces(const std::vector<KESCMParaAttrs>& sourceAttrs,
+							 int32 aStart, int32 aCount,
+							 const std::vector<KESCMParaAttrs>& targetAttrs,
+							 int32 bStart, int32 bCount,
+							 std::vector<RegionPair>& out)
+{
+	out.clear();
+
+	std::vector<ParaRegion> aRegions;
+	std::vector<ParaRegion> bRegions;
+	ParagraphRegions(sourceAttrs, aStart, aCount, aRegions);
+	ParagraphRegions(targetAttrs, bStart, bCount, bRegions);
+
+	RegionPair whole;
+	whole.fSourceStart = aStart;
+	whole.fSourceCount = aCount;
+	whole.fTargetStart = bStart;
+	whole.fTargetCount = bCount;
+
+	if (aCount == 0 && bRegions.size() > 1)
+	{
+		for (size_t i = 0; i < bRegions.size(); ++i)
+		{
+			RegionPair piece;
+			piece.fSourceStart = aStart;			// nothing of the older version is involved
+			piece.fSourceCount = 0;
+			piece.fTargetStart = bRegions[i].fStart;
+			piece.fTargetCount = bRegions[i].fCount;
+			out.push_back(piece);
+		}
+		return;
+	}
+
+	if (bCount == 0 && aRegions.size() > 1)
+	{
+		for (size_t i = 0; i < aRegions.size(); ++i)
+		{
+			RegionPair piece;
+			piece.fSourceStart = aRegions[i].fStart;
+			piece.fSourceCount = aRegions[i].fCount;
+			piece.fTargetStart = bStart;
+			piece.fTargetCount = 0;
+			out.push_back(piece);
+		}
+		return;
+	}
+
+	if (aRegions.size() > 1 && aRegions.size() == bRegions.size())
+	{
+		for (size_t i = 0; i < aRegions.size(); ++i)
+		{
+			if (!aRegions[i].SamePlaceAs(bRegions[i]))
+			{
+				out.clear();
+				out.push_back(whole);		// the versions do not pass through the same places
+				return;
+			}
+
+			RegionPair piece;
+			piece.fSourceStart = aRegions[i].fStart;
+			piece.fSourceCount = aRegions[i].fCount;
+			piece.fTargetStart = bRegions[i].fStart;
+			piece.fTargetCount = bRegions[i].fCount;
+			out.push_back(piece);
+		}
+		return;
+	}
+
+	out.push_back(whole);
+}
+
 /** Where the run of paragraphs belonging to ONE cell ends - the index one past its last.
 
 	★★A CELL IS NOT ALWAYS ONE PARAGRAPH (2026-08-23). It holds one for every Return pressed in it,
