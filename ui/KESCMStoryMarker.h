@@ -46,7 +46,11 @@
 #define __KESCMStoryMarker_h__
 
 #include "BaseType.h"		// bool16, int32
-#include "PMReal.h"			// the opacity a press is drawn at
+#include "PMReal.h"			// ⚠NOT needed BY THIS HEADER any more (2026-08-23): the opacity
+							//  stopped being a parameter when the two kinds of mark were separated, and
+							//  nothing here names a PMReal. It stays because KESCMStoryMarker.cpp reaches
+							//  PMReal THROUGH this file (it holds the opacity in a static); moving it to
+							//  the .cpp that uses it is a tidy-up, not something to do in passing.
 #include "TextID.h"			// TextIndex
 #include "UIDRef.h"			// UID
 
@@ -143,10 +147,6 @@ namespace KESCMStoryMarker
 		twice ([[one-question-one-place]]), and the two drifted the moment anything else cleared the
 		mark. There is nothing to test now: this takes down what it owns and nothing else. */
 	void ClearStanding();
-
-	/** True while anything at all is up - the adornment's own fast path, and what the expiry timer
-	    asks before doing anything. */
-	bool16 IsShowing();
 
 	/** Take everything down for good (application shutdown). After this, nothing shows again.
 

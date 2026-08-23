@@ -617,11 +617,6 @@ void KESCMStoryMarker::ClearStanding()
 	KESCMStoryMarkerInstall();
 }
 
-bool16 KESCMStoryMarker::IsShowing()
-{
-	return gHasMark;
-}
-
 void KESCMStoryMarker::Shutdown()
 {
 	// ⚠The flag goes up FIRST: from here on nothing repaints, because the document the mark was in
