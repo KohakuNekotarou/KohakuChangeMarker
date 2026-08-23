@@ -153,7 +153,12 @@ bool16 KESCMResolveParagraphPositions(const UIDRef& storyRef,
 		//   one for every Return pressed in it, and a merged cell holds the paragraphs of
 		//   everything merged into it. One THREAD holds them all, so they are checked and placed
 		//   together rather than one by one.
-		const size_t runEnd = KESCMSnippetText::CellRunEnd(attrs, i);
+		//   ⚠CLAMPED TO WHAT BOTH LISTS HOLD. CellRunEnd walks the ATTRIBUTES, and `count` above
+		//     exists because this function does not assume the two lists are the same length - so
+		//     an unclamped end would write past `outStarts` (which is as long as `paragraphs`).
+		size_t runEnd = KESCMSnippetText::CellRunEnd(attrs, i);
+		if (runEnd > count)
+			runEnd = count;
 
 		const size_t which = static_cast<size_t>(attrs[i].fTableOrdinal);
 		if (which >= tables.size())
