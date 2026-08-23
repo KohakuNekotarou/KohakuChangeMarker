@@ -101,18 +101,33 @@ struct KESCMParaAttrs
 
 	/** Characters the text model counts after this paragraph that are not in its text (2026-08-22).
 
-		★★WHY IT EXISTS: TABLES. A table is not made of text, but ITextModel counts it - one
-		character for the table itself, one at the end of every row but the last - and every position
-		worked out from the XML is off by that much until they are added back. The comparison checks
-		exactly this (KESCMStoryDiffRun's LengthAgrees) and refuses the whole story when it does not
-		add up, which is why a document with ONE table used to produce no differences at all.
+		★★WHY IT EXISTS: TABLES. A table is not made of text, but ITextModel counts it, and every
+		position worked out from the XML is off by that much until it is added back. The comparison
+		checks exactly this (KESCMStoryDiffRun's LengthAgrees) and refuses the whole story when it
+		does not add up, which is why a document with ONE table used to produce no differences.
 
-		★MEASURED, NOT ASSUMED (2026-08-22, five documents of 0/4/6/6/8 cells plus a merged one):
-		    TotalLength = text + 1 per table + Σ(cell text) + 1 per cell + (rows - 1) per table
+		★★★WHAT A TABLE COSTS, MEASURED CHARACTER BY CHARACTER (2026-08-23; seven shapes read out
+		  of the running document with TextIterator, printed as [index]=hex):
+
+		      [0016] then [0017] x (BodyRowCount - 1), CONTIGUOUS, where the table stands
+
+		  = kTextChar_Table and kTextChar_TableContinued (TextChar.h:58-59).
+		  ⚠HEADER AND FOOTER ROWS COST NOTHING - two body rows plus a header is TWO characters, not
+		    three - a table split across two frames costs no more than one in a single frame, and
+		    the cells (which live after the whole of the body) are text+break each, with no row
+		    terminator among them.
+		⇒ TotalLength = text + BodyRowCount per table + Σ(cell text) + 1 per cell.
 		The "+1 per cell" needs nothing here - a cell IS a paragraph, and ParagraphStarts already
-		adds one break character per paragraph. What is left over is the table's own character and
-		the row terminators, and those are what this carries.
-		⚠A merged cell is simply one cell fewer; nothing about the formula changes (measured). */
+		adds one break character per paragraph. What this field carries is the table's own run.
+
+		⚠★★THE READING THIS REPLACED (2026-08-22) said "one for the table, one at the end of every
+		  row but the last, charged to the CELLS". For a table with no header row that is the same
+		  TOTAL, so it passed LengthAgrees for every table ever tested - while placing every body
+		  position after a table (BodyRowCount - 1) characters too EARLY (measured in InDesign: the
+		  jump lit '後章' where the change was '章節'). And with a header row the total was wrong
+		  outright, so those stories silently produced no differences at all (model=32 computed=33).
+		  ⇒ ★★★A TOTAL THAT AGREES SAYS NOTHING ABOUT WHERE THE CHARACTERS ARE.
+		⚠A merged cell is simply one cell fewer; nothing else changes (measured). */
 	int32				fExtraChars;
 
 	/** The same invisible characters, but standing BEFORE this paragraph rather than after it
@@ -131,6 +146,20 @@ struct KESCMParaAttrs
 		  been finished yet. Anything walking a RUN of paragraphs may therefore leave it alone -
 		  the run's own base position has it already (see IndexInStory below). */
 	int32				fLeadingChars;
+
+	/** How many TABLES begin at those two boundaries (2026-08-23).
+
+		★★WHY A COUNT IS NEEDED AS WELL AS A LENGTH. The two fields above are a SUM, and a table
+		now contributes a RUN of characters rather than one - so the sum alone no longer says where
+		each table's FIRST character stands. That first character is the table's anchor, and
+		BodyParagraphStarts reports one of them per table so that the resolver can check them
+		against the document's own answer (ITextStoryThreadDict::GetAnchorTextRange) - which is what
+		catches a story shape this reader does not understand.
+		⚠TWO TABLES SHARING ONE BOUNDARY cannot be placed from a sum (nothing says how the
+		  characters divide between them), so no anchor is reported for that shape at all and the
+		  story is refused rather than aimed wrongly. */
+	int32				fExtraTables;
+	int32				fLeadingTables;
 
 	/** Which table cell this paragraph IS, if it is one at all (2026-08-23).
 
@@ -164,7 +193,8 @@ struct KESCMParaAttrs
 	int32				fCellCol;		// grid column of that cell, -1 when not a cell
 
 	KESCMParaAttrs()
-		: fExtraChars(0), fLeadingChars(0), fTableOrdinal(kNotACell), fCellRow(-1), fCellCol(-1) {}
+		: fExtraChars(0), fLeadingChars(0), fExtraTables(0), fLeadingTables(0),
+		  fTableOrdinal(kNotACell), fCellRow(-1), fCellCol(-1) {}
 
 	/** Whether this paragraph is a table cell whose position must be asked of the text model. */
 	bool16 IsCell() const { return fTableOrdinal >= 0; }
@@ -311,6 +341,21 @@ inline int32 CountCodePoints(const std::string& utf8)
 	⚠Matched as ` name="`, with the leading space, so that RubyString is not found inside a longer
 	  attribute name that happens to end with it.
 */
+/** A whole non-negative number out of an attribute value, or -1 when it is not one. */
+inline int32 ParseCount(const std::string& text)
+{
+	if (text.empty())
+		return -1;
+	int32 value = 0;
+	for (size_t i = 0; i < text.size(); ++i)
+	{
+		if (text[i] < '0' || text[i] > '9')
+			return -1;
+		value = value * 10 + (text[i] - '0');
+	}
+	return value;
+}
+
 inline std::string AttrValue(const std::string& tag, const std::string& name)
 {
 	const std::string needle = " " + name + "=\"";
@@ -387,7 +432,6 @@ inline void ExtractParagraphs(const std::string& xml,
 	//   ⚠The last row has no terminator, which is why it is rows-1 and not rows. All five agreed
 	//     exactly; the real document came to 52 against a measured 52.
 	int32 tableDepth = 0;				// >0 while inside a table (⚠tables can nest)
-	int32 lastCellRow = -1;				// the row the previous cell was in, to spot a row change
 	int32 tableOrdinal = -1;			// which TOP-LEVEL table, counted in the order they appear
 
 	// Finish the paragraph being built and start a new one. ★ONE PLACE, because a paragraph is now
@@ -424,14 +468,21 @@ inline void ExtractParagraphs(const std::string& xml,
 	//     when it is, so this cannot land in front of text that has already been read.
 	struct Charge
 	{
-		static void One(KESCMParaAttrs& building, std::vector<KESCMParaAttrs>* attrsPerPara, int32 n)
+		static void Table(KESCMParaAttrs& building, std::vector<KESCMParaAttrs>* attrsPerPara,
+						  int32 characters)
 		{
 			if (attrsPerPara == nil)
 				return;
 			if (attrsPerPara->empty())
-				building.fLeadingChars += n;
+			{
+				building.fLeadingChars += characters;
+				++building.fLeadingTables;
+			}
 			else
-				attrsPerPara->back().fExtraChars += n;
+			{
+				attrsPerPara->back().fExtraChars += characters;
+				++attrsPerPara->back().fExtraTables;
+			}
 		}
 	};
 
@@ -457,8 +508,21 @@ inline void ExtractParagraphs(const std::string& xml,
 				if (!current.empty())
 					Flush::Do(current, currentAttrs, paraPos, paragraphs, attrsPerPara);
 
-				Charge::One(currentAttrs, attrsPerPara, 1);	// the table itself, one character
-				lastCellRow = -1;
+				// ★★THE WHOLE RUN AT ONCE, AND OUT OF THE TABLE'S OWN TAG. A table costs one
+				//   character per BODY row (KESCMParaAttrs::fExtraChars has the measurements), and
+				//   BodyRowCount is an attribute of <Table> in every snippet InDesign writes - so
+				//   the cost is known HERE, where the run belongs, instead of being pieced together
+				//   from the cells as they go by.
+				//   ⚠★Header and footer rows are not in that number and must not be: they cost
+				//     nothing (measured). Counting row BOUNDARIES instead counted them, which made
+				//     the total wrong and refused every story holding a table with a header row.
+				const std::string tableTag(xml, lt, gt - lt);
+				const int32 declaredRows = ParseCount(AttrValue(tableTag, "BodyRowCount"));
+				// ⚠A table always occupies at least its own character. If the attribute were ever
+				//   missing this keeps the reading honest for the ordinary one-row case and lets
+				//   LengthAgrees refuse anything larger, rather than guessing a number.
+				const int32 tableChars = (declaredRows >= 1) ? declaredRows : 1;
+				Charge::Table(currentAttrs, attrsPerPara, tableChars);
 				++tableOrdinal;		// ★only top-level tables are numbered - see fTableOrdinal
 			}
 			++tableDepth;
@@ -468,8 +532,6 @@ inline void ExtractParagraphs(const std::string& xml,
 		{
 			if (tableDepth > 0)
 				--tableDepth;
-			if (tableDepth == 0)
-				lastCellRow = -1;
 			pos = lt + 8;
 		}
 		else if (tableDepth > 0 && xml.compare(lt, 6, "<Cell ") == 0)
@@ -511,11 +573,10 @@ inline void ExtractParagraphs(const std::string& xml,
 				}
 			}
 
-			// ⚠The FIRST cell of the table charges nothing: the terminator belongs to the end of a
-			//   row, and the last row has none (measured - that is why the formula says rows-1).
-			if (row >= 0 && lastCellRow >= 0 && row != lastCellRow)
-				Charge::One(currentAttrs, attrsPerPara, 1);
-			lastCellRow = row;
+			// ⚠★★NOTHING IS CHARGED HERE ANY MORE (2026-08-23). A row boundary used to add one
+			//   character at this point, which put the table's characters among its CELLS - the
+			//   right total in the wrong place. The whole run is charged where the table stands,
+			//   out of BodyRowCount; see the <Table> branch above.
 
 			// ★WHICH CELL THIS PARAGRAPH IS. Set on the paragraph being built; </Cell> flushes it.
 			//   ⚠Only for a top-level table: a nested one's lengths do not add up, so the story is
@@ -728,15 +789,17 @@ inline std::string JoinParagraphs(const std::vector<std::string>& paragraphs, in
 	TextIndex than the Text Story Thread that the Table Model is anchored in"
 	(ITableTextContent.h:41-44). So this walks the BODY only:
 
-	  - a cell contributes nothing - neither its text, nor its break, nor the row terminator
-	    charged to it. Its entry is left at -1 for KESCMStoryCellBases to fill in from the document;
-	  - the table's OWN character does count, because it stands in the body where the table is.
+	  - a cell contributes nothing - neither its text nor its break. Its entry is left at -1 for
+	    KESCMStoryCellBases to fill in from the document;
+	  - the table's OWN RUN of characters does count - one per body row - because it stands in the
+	    body where the table is (KESCMParaAttrs::fExtraChars has the measurements).
 
 	⚠THIS IS NOT THE TOTAL. ParagraphStarts still adds up everything, because that total is what
 	  LengthAgrees checks against ITextModel::TotalLength. The two answer different questions and
 	  both are needed.
 
-	@param outTableAnchors where each table's own character sits, in the order the tables appear.
+	@param outTableAnchors where each table's FIRST character sits, in the order the tables appear
+	       (one entry per table, not per character).
 	       ★The caller checks these against the document's own answer
 	       (ITextStoryThreadDict::GetAnchorTextRange). That is what catches a story shape this walk
 	       does not understand - two tables in a row, say, where the second table's character is
@@ -760,8 +823,11 @@ inline void BodyParagraphStarts(const std::vector<std::string>& paragraphs,
 		// character is in the body wherever its cells end up.
 		if (haveAttrs)
 		{
-			for (int32 n = 0; n < attrs[i].fLeadingChars; ++n)
-				outTableAnchors.push_back(index + n);
+			// ★ONE ANCHOR PER TABLE, at the first of the characters it stands on. ⚠Two tables
+			//   sharing a boundary cannot be told apart from a sum, so neither is reported and the
+			//   resolver refuses the story on the count.
+			if (attrs[i].fLeadingTables == 1)
+				outTableAnchors.push_back(index);
 			index += attrs[i].fLeadingChars;
 		}
 
@@ -773,8 +839,8 @@ inline void BodyParagraphStarts(const std::vector<std::string>& paragraphs,
 
 		if (haveAttrs)
 		{
-			for (int32 n = 0; n < attrs[i].fExtraChars; ++n)
-				outTableAnchors.push_back(index + n);
+			if (attrs[i].fExtraTables == 1)
+				outTableAnchors.push_back(index);
 			index += attrs[i].fExtraChars;
 		}
 	}
