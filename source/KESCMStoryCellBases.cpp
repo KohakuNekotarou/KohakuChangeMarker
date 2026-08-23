@@ -141,10 +141,19 @@ bool16 KESCMResolveParagraphPositions(const UIDRef& storyRef,
 
 	// Now ask the document where each cell's text sits.
 	const size_t count = (paragraphs.size() < attrs.size()) ? paragraphs.size() : attrs.size();
-	for (size_t i = 0; i < count; ++i)
+	for (size_t i = 0; i < count; )
 	{
 		if (!attrs[i].IsCell())
+		{
+			++i;
 			continue;
+		}
+
+		// ★★ONE CELL AT A TIME, AND A CELL CAN BE SEVERAL PARAGRAPHS (2026-08-23). A cell holds
+		//   one for every Return pressed in it, and a merged cell holds the paragraphs of
+		//   everything merged into it. One THREAD holds them all, so they are checked and placed
+		//   together rather than one by one.
+		const size_t runEnd = KESCMSnippetText::CellRunEnd(attrs, i);
 
 		const size_t which = static_cast<size_t>(attrs[i].fTableOrdinal);
 		if (which >= tables.size())
@@ -170,14 +179,25 @@ bool16 KESCMResolveParagraphPositions(const UIDRef& storyRef,
 		const TextIndex threadStart = thread->GetTextStart(&threadSpan);
 
 		// ★★REFUSE (2): THE LENGTH IS CHECKED, NOT TAKEN ON TRUST. A thread's boundary is always a
-		//   carriage return, so a cell's thread is its text plus one (and ITextStoryThread.h says a
-		//   span is always greater than 0, which is that one character for an empty cell). If this
-		//   disagrees, the cell found is not the cell the snippet meant - a different table, a
-		//   different address - and every position taken from here would be wrong silently.
-		if (threadSpan != KESCMSnippetText::CountCodePoints(paragraphs[i]) + 1)
+		//   carriage return, so a cell's thread is its paragraphs plus one character each (and
+		//   ITextStoryThread.h says a span is always greater than 0, which is that one character
+		//   for an empty cell). If this disagrees, the cell found is not the cell the snippet meant
+		//   - a different table, a different address - and every position taken from here would be
+		//   wrong silently.
+		//   ★THE WHOLE RUN IS MEASURED, not its first paragraph: that is what the thread holds.
+		if (threadSpan != KESCMSnippetText::CellRunLength(paragraphs, i, runEnd))
 			return kFalse;
 
-		outStarts[i] = threadStart;
+		// The thread's own start belongs to the first paragraph; each one after it begins past the
+		// one before and its break.
+		int32 at = threadStart;
+		for (size_t k = i; k < runEnd; ++k)
+		{
+			outStarts[k] = at;
+			at += KESCMSnippetText::CountCodePoints(paragraphs[k]) + 1;
+		}
+
+		i = runEnd;
 	}
 
 	return kTrue;

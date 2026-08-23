@@ -178,6 +178,14 @@ struct KESCMParaAttrs
 		character inside a cell instead; a change inside a cell selected the last character of the
 		story; a third one fell outside the story altogether and selected nothing.
 
+		★★THEY ARE ON EVERY PARAGRAPH OF THE CELL, not just its first (2026-08-23). A cell can
+		hold several: anyone who presses Return inside one, and ★EVERY MERGED CELL, because merging
+		moves the other cells' paragraphs into the survivor (measured - four cells came back as one
+		holding 'c0/c1/c2/c3'). The reader used to lose the identity at the <Br />, because a flush
+		resets these fields, so the halves after the first looked like BODY text sitting inside a
+		table: the story was refused on the cell length (7 against 3) and produced no differences at
+		all - with the TOTAL agreeing (27 against 27), so no length check could have found it.
+
 		★These three fields say WHICH cell, so the position can be asked of the document instead of
 		counted (ITextStoryThreadDict::QueryThread(GetGridID(GridAddress)) -> GetTextStart), which is
 		the road SnpIterTableUseDictHier calls the recommended one. Reading them is the only way to
@@ -433,6 +441,9 @@ inline void ExtractParagraphs(const std::string& xml,
 	//     exactly; the real document came to 52 against a measured 52.
 	int32 tableDepth = 0;				// >0 while inside a table (⚠tables can nest)
 	int32 tableOrdinal = -1;			// which TOP-LEVEL table, counted in the order they appear
+	int32 cellOrdinal = KESCMParaAttrs::kNotACell;	// the cell being read, kept across its breaks
+	int32 cellRow = -1;
+	int32 cellCol = -1;
 
 	// Finish the paragraph being built and start a new one. ★ONE PLACE, because a paragraph is now
 	// ended by three different things - a <Br />, a cell closing, and the end of the story - and the
@@ -466,6 +477,19 @@ inline void ExtractParagraphs(const std::string& xml,
 	//   one character short, LengthAgrees refused it, and it produced no differences at all.
 	//   ⚠The paragraph being built is empty at that moment: the table branch only skips the flush
 	//     when it is, so this cannot land in front of text that has already been read.
+	// The cell a paragraph belongs to. ★Put on the paragraph AFTER EVERY FLUSH rather than once
+	// when the cell opens, because a cell may hold more than one paragraph and a flush resets the
+	// attributes - see KESCMParaAttrs::fTableOrdinal.
+	struct Stamp
+	{
+		static void Cell(KESCMParaAttrs& attrs, int32 ordinal, int32 row, int32 col)
+		{
+			attrs.fTableOrdinal = ordinal;
+			attrs.fCellRow = row;
+			attrs.fCellCol = col;
+		}
+	};
+
 	struct Charge
 	{
 		static void Table(KESCMParaAttrs& building, std::vector<KESCMParaAttrs>* attrsPerPara,
@@ -578,21 +602,28 @@ inline void ExtractParagraphs(const std::string& xml,
 			//   right total in the wrong place. The whole run is charged where the table stands,
 			//   out of BodyRowCount; see the <Table> branch above.
 
-			// ★WHICH CELL THIS PARAGRAPH IS. Set on the paragraph being built; </Cell> flushes it.
-			//   ⚠Only for a top-level table: a nested one's lengths do not add up, so the story is
-			//     refused before any position is asked for (see fTableOrdinal).
+			// ★WHICH CELL THIS PARAGRAPH IS - AND EVERY OTHER PARAGRAPH OF THE SAME CELL. The
+			//   identity is REMEMBERED here and stamped again after each break inside the cell
+			//   (see the <Br /> branch): a cell may hold several paragraphs, and a flush resets the
+			//   attributes.
+			//   ⚠Only a top-level table's cells are named: a nested one's lengths do not add up, so
+			//     the story is refused before any position is asked for (see fTableOrdinal).
+			cellOrdinal = KESCMParaAttrs::kNotACell;
+			cellRow = -1;
+			cellCol = -1;
 			if (tableDepth == 1 && row >= 0 && col >= 0)
 			{
-				currentAttrs.fTableOrdinal = tableOrdinal;
-				currentAttrs.fCellRow = row;
-				currentAttrs.fCellCol = col;
+				cellOrdinal = tableOrdinal;
+				cellRow = row;
+				cellCol = col;
 			}
 			else if (tableDepth > 1)
 			{
 				// ⚠A table inside a table - marked so the resolver refuses the story outright
 				//   rather than placing it from a count that happens to add up. See IsNestedCell.
-				currentAttrs.fTableOrdinal = KESCMParaAttrs::kNestedCell;
+				cellOrdinal = KESCMParaAttrs::kNestedCell;
 			}
+			Stamp::Cell(currentAttrs, cellOrdinal, cellRow, cellCol);
 
 			pos = gt + 1;
 		}
@@ -601,6 +632,9 @@ inline void ExtractParagraphs(const std::string& xml,
 			// The cell's text ends here. Its own break character is what ParagraphStarts adds to
 			// every paragraph, which is exactly the "+1 per cell" the measurement asked for.
 			Flush::Do(current, currentAttrs, paraPos, paragraphs, attrsPerPara);
+			cellOrdinal = KESCMParaAttrs::kNotACell;	// what follows is not this cell's
+			cellRow = -1;
+			cellCol = -1;
 			pos = lt + 7;
 		}
 		else if (xml.compare(lt, 9, "<Content>") == 0)
@@ -740,6 +774,9 @@ inline void ExtractParagraphs(const std::string& xml,
 		else if (xml.compare(lt, 4, "<Br ") == 0 || xml.compare(lt, 4, "<Br/") == 0)
 		{
 			Flush::Do(current, currentAttrs, paraPos, paragraphs, attrsPerPara);
+			// ★★AND THE PARAGRAPH THAT FOLLOWS IS STILL IN THE SAME CELL, if the break was inside
+			//   one. Outside a cell this puts back what the flush already left there.
+			Stamp::Cell(currentAttrs, cellOrdinal, cellRow, cellCol);
 
 			const size_t gt = xml.find('>', lt);
 			pos = (gt == std::string::npos) ? storyEnd : gt + 1;
@@ -844,6 +881,43 @@ inline void BodyParagraphStarts(const std::vector<std::string>& paragraphs,
 			index += attrs[i].fExtraChars;
 		}
 	}
+}
+
+/** Where the run of paragraphs belonging to ONE cell ends - the index one past its last.
+
+	★★A CELL IS NOT ALWAYS ONE PARAGRAPH (2026-08-23). It holds one for every Return pressed in it,
+	and a MERGED cell holds the paragraphs of everything merged into it. They arrive together, in
+	order, all naming the same (table, row, column) - which is what this walks.
+
+	⚠Asked about a paragraph that is not a cell, this answers with the paragraph itself, so the
+	  caller gets an EMPTY run rather than a guess.
+*/
+inline size_t CellRunEnd(const std::vector<KESCMParaAttrs>& attrs, size_t at)
+{
+	if (at >= attrs.size() || !attrs[at].IsCell())
+		return at;
+
+	size_t end = at + 1;
+	while (end < attrs.size() && attrs[end].IsCell()
+		   && attrs[end].fTableOrdinal == attrs[at].fTableOrdinal
+		   && attrs[end].fCellRow == attrs[at].fCellRow
+		   && attrs[end].fCellCol == attrs[at].fCellCol)
+		++end;
+
+	return end;
+}
+
+/** How many characters such a run occupies in the text model: every paragraph AND its break.
+
+	★This is what a cell's own text story thread holds, which is why the resolver can check it
+	against ITextStoryThread::GetTextStart's span before trusting the cell it found.
+*/
+inline int32 CellRunLength(const std::vector<std::string>& paragraphs, size_t from, size_t to)
+{
+	int32 length = 0;
+	for (size_t i = from; i < to && i < paragraphs.size(); ++i)
+		length += CountCodePoints(paragraphs[i]) + 1;
+	return length;
 }
 
 /** Where an offset into that joined string lands in the document, as a TextIndex.
