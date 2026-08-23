@@ -51,8 +51,12 @@ class UIDRef;
 	@param outStarts one position per paragraph. ⚠Only meaningful when this returns kTrue.
 	@return kFalse when the model and the document could not be matched up, in which case the
 	        caller must refuse the story rather than aim anything with these positions. Reasons:
-	        a nested table (not supported yet), a different number of tables on the two sides, a
-	        table standing somewhere the model did not expect, or a cell whose length disagrees.
+	        a different number of tables on the two sides, a table standing somewhere the model did
+	        not expect, a table the model never placed at all, or a cell whose length disagrees.
+	        ★A NESTED TABLE IS NO LONGER ONE OF THEM (2026-08-24): a table charges the thread it
+	        stands in, and a cell is a thread, so the same reading does for both. What it costs is
+	        one thing - the tables have to be put in the order the DOCUMENT keeps them, which is not
+	        the order of their anchors once one of them is inside another. See EarlierBlock.
 */
 bool16 KESCMResolveParagraphPositions(const UIDRef& storyRef,
 									  const std::vector<std::string>& paragraphs,

@@ -696,9 +696,9 @@ bool16 CompareOneStory(const UIDRef& targetStory, const UIDRef& sourceStory,
 	//   are not where the snippet puts them: the text model keeps them after the whole of the
 	//   story's own text (ITableTextContent.h:41-44). Counting therefore places everything after a
 	//   table wrongly, and no total can show it. See KESCMStoryCellBases.h for the measurements.
-	//   ⚠It refuses stories it cannot match up (a nested table, a shape the body walk does not
-	//     understand), and a refusal here means the same as one above: no differences for this
-	//     story, rather than differences aimed at the wrong words.
+	//   ⚠It refuses stories it cannot match up (a shape the body walk does not understand, a table
+	//     whose position the two sides disagree about), and a refusal here means the same as one
+	//     above: no differences for this story, rather than differences aimed at the wrong words.
 	if (!KESCMResolveParagraphPositions(targetStory, targetParas, targetAttrs, targetStarts)
 		|| !KESCMResolveParagraphPositions(sourceStory, sourceParas, sourceAttrs, sourceStarts))
 		return kFalse;
