@@ -132,7 +132,53 @@ struct KESCMParaAttrs
 		  the run's own base position has it already (see IndexInStory below). */
 	int32				fLeadingChars;
 
-	KESCMParaAttrs() : fExtraChars(0), fLeadingChars(0) {}
+	/** Which table cell this paragraph IS, if it is one at all (2026-08-23).
+
+		★★★WHY IT EXISTS: THE XML AND THE TEXT MODEL DO NOT AGREE ABOUT ORDER. In the snippet a
+		table's cells sit between the story's own <Content>, exactly where the table stands. The text
+		model puts them somewhere else, and says so plainly:
+
+		    "The Text content of the Table ... consists of zero or more contiguous TextStoryThreads
+		     that are ALWAYS at greater TextIndex than the Text Story Thread that the Table Model is
+		     anchored in."                          -- ITableTextContent.h:41-44
+
+		⇒ Counting straight down the XML puts every position after a table wrong: text that follows
+		the table comes out too far along (by the cells), and the cells themselves come out too early
+		(by the text that follows). ⚠LengthAgrees cannot see it - it compares TOTALS, and the totals
+		are right either way. MEASURED 2026-08-23: a change to the paragraph AFTER a table selected a
+		character inside a cell instead; a change inside a cell selected the last character of the
+		story; a third one fell outside the story altogether and selected nothing.
+
+		★These three fields say WHICH cell, so the position can be asked of the document instead of
+		counted (ITextStoryThreadDict::QueryThread(GetGridID(GridAddress)) -> GetTextStart), which is
+		the road SnpIterTableUseDictHier calls the recommended one. Reading them is the only way to
+		tell a cell from a paragraph after the fact: the text of the two is indistinguishable.
+
+		⚠fTableOrdinal counts TOP-LEVEL tables in the order they appear in the story. A nested
+		  table's cells are left at -1: their length does not add up yet (the inner table's own
+		  characters are not counted), so the story is refused before any position is asked for. */
+	enum { kNotACell = -1, kNestedCell = -2 };
+
+	int32				fTableOrdinal;	// kNotACell / kNestedCell, or 0.. = which table's cell
+	int32				fCellRow;		// grid row of that cell, -1 when not a cell
+	int32				fCellCol;		// grid column of that cell, -1 when not a cell
+
+	KESCMParaAttrs()
+		: fExtraChars(0), fLeadingChars(0), fTableOrdinal(kNotACell), fCellRow(-1), fCellCol(-1) {}
+
+	/** Whether this paragraph is a table cell whose position must be asked of the text model. */
+	bool16 IsCell() const { return fTableOrdinal >= 0; }
+
+	/** A cell of a table INSIDE another table (2026-08-23).
+
+		★★SAID OUT LOUD RATHER THAN LEFT TO ARITHMETIC. A nested table's own character and row
+		terminators are not counted by this reader, so its story has always been refused by
+		LengthAgrees - by accident, from a total that did not add up. Now that cells are placed by
+		asking the document rather than by counting, a story could add up and still be placed
+		wrongly, so the refusal is made deliberate: the resolver sees this and gives up.
+		⚠The user does use nested tables ("たまに使いますね", 2026-08-23), so this is a marker for
+		  work still to do, not a decision that they do not matter. */
+	bool16 IsNestedCell() const { return fTableOrdinal == kNestedCell; }
 };
 
 namespace KESCMSnippetText
@@ -342,6 +388,7 @@ inline void ExtractParagraphs(const std::string& xml,
 	//     exactly; the real document came to 52 against a measured 52.
 	int32 tableDepth = 0;				// >0 while inside a table (⚠tables can nest)
 	int32 lastCellRow = -1;				// the row the previous cell was in, to spot a row change
+	int32 tableOrdinal = -1;			// which TOP-LEVEL table, counted in the order they appear
 
 	// Finish the paragraph being built and start a new one. ★ONE PLACE, because a paragraph is now
 	// ended by three different things - a <Br />, a cell closing, and the end of the story - and the
@@ -412,6 +459,7 @@ inline void ExtractParagraphs(const std::string& xml,
 
 				Charge::One(currentAttrs, attrsPerPara, 1);	// the table itself, one character
 				lastCellRow = -1;
+				++tableOrdinal;		// ★only top-level tables are numbered - see fTableOrdinal
 			}
 			++tableDepth;
 			pos = gt + 1;
@@ -438,8 +486,22 @@ inline void ExtractParagraphs(const std::string& xml,
 			const std::string name = AttrValue(tag, "Name");
 			const size_t colon = name.find(':');
 			int32 row = -1;
+			int32 col = -1;
 			if (colon != std::string::npos)
 			{
+				// "column:row" - both halves are wanted now: the row for the terminator below, and
+				// the pair as a GridAddress, which is how the document is asked where this cell's
+				// text actually sits (KESCMParaAttrs::fTableOrdinal).
+				col = 0;
+				for (size_t i = 0; i < colon; ++i)
+				{
+					if (name[i] < '0' || name[i] > '9')
+					{
+						col = -1;
+						break;
+					}
+					col = col * 10 + (name[i] - '0');
+				}
 				row = 0;
 				for (size_t i = colon + 1; i < name.size(); ++i)
 				{
@@ -454,6 +516,22 @@ inline void ExtractParagraphs(const std::string& xml,
 			if (row >= 0 && lastCellRow >= 0 && row != lastCellRow)
 				Charge::One(currentAttrs, attrsPerPara, 1);
 			lastCellRow = row;
+
+			// ★WHICH CELL THIS PARAGRAPH IS. Set on the paragraph being built; </Cell> flushes it.
+			//   ⚠Only for a top-level table: a nested one's lengths do not add up, so the story is
+			//     refused before any position is asked for (see fTableOrdinal).
+			if (tableDepth == 1 && row >= 0 && col >= 0)
+			{
+				currentAttrs.fTableOrdinal = tableOrdinal;
+				currentAttrs.fCellRow = row;
+				currentAttrs.fCellCol = col;
+			}
+			else if (tableDepth > 1)
+			{
+				// ⚠A table inside a table - marked so the resolver refuses the story outright
+				//   rather than placing it from a count that happens to add up. See IsNestedCell.
+				currentAttrs.fTableOrdinal = KESCMParaAttrs::kNestedCell;
+			}
 
 			pos = gt + 1;
 		}
@@ -642,55 +720,137 @@ inline std::string JoinParagraphs(const std::vector<std::string>& paragraphs, in
 	return out;
 }
 
+/** Where each ORDINARY paragraph begins, counted the way the text model counts (2026-08-23).
+
+	★★★A TABLE'S CELLS ARE NOT WHERE THE SNIPPET PUTS THEM. In the XML a table's cells sit between
+	the story's own <Content>, exactly where the table stands; the text model keeps them after the
+	whole of the story's own text and says so: "TextStoryThreads that are ALWAYS at greater
+	TextIndex than the Text Story Thread that the Table Model is anchored in"
+	(ITableTextContent.h:41-44). So this walks the BODY only:
+
+	  - a cell contributes nothing - neither its text, nor its break, nor the row terminator
+	    charged to it. Its entry is left at -1 for KESCMStoryCellBases to fill in from the document;
+	  - the table's OWN character does count, because it stands in the body where the table is.
+
+	⚠THIS IS NOT THE TOTAL. ParagraphStarts still adds up everything, because that total is what
+	  LengthAgrees checks against ITextModel::TotalLength. The two answer different questions and
+	  both are needed.
+
+	@param outTableAnchors where each table's own character sits, in the order the tables appear.
+	       ★The caller checks these against the document's own answer
+	       (ITextStoryThreadDict::GetAnchorTextRange). That is what catches a story shape this walk
+	       does not understand - two tables in a row, say, where the second table's character is
+	       charged to a CELL of the first and so never reaches the body count. Such a story is
+	       refused rather than aimed wrongly.
+*/
+inline void BodyParagraphStarts(const std::vector<std::string>& paragraphs,
+								const std::vector<KESCMParaAttrs>& attrs,
+								std::vector<int32>& starts,
+								std::vector<int32>& outTableAnchors)
+{
+	starts.assign(paragraphs.size(), -1);
+	outTableAnchors.clear();
+
+	int32 index = 0;
+	for (size_t i = 0; i < paragraphs.size(); ++i)
+	{
+		const bool16 haveAttrs = (i < attrs.size());
+
+		// Characters standing IN FRONT of this paragraph are a table's own, and a table's own
+		// character is in the body wherever its cells end up.
+		if (haveAttrs)
+		{
+			for (int32 n = 0; n < attrs[i].fLeadingChars; ++n)
+				outTableAnchors.push_back(index + n);
+			index += attrs[i].fLeadingChars;
+		}
+
+		if (haveAttrs && attrs[i].IsCell())
+			continue;					// its text, its break and its row terminator are elsewhere
+
+		starts[i] = index;
+		index += CountCodePoints(paragraphs[i]) + 1;
+
+		if (haveAttrs)
+		{
+			for (int32 n = 0; n < attrs[i].fExtraChars; ++n)
+				outTableAnchors.push_back(index + n);
+			index += attrs[i].fExtraChars;
+		}
+	}
+}
+
 /** Where an offset into that joined string lands in the document, as a TextIndex.
 
 	★★WHY THIS IS NOT `base + offset` (2026-08-23). JoinParagraphs puts ONE character between two
-	paragraphs; the text model may count more, because a table's own character and a row's
-	terminator sit at exactly such a boundary (fExtraChars). While a change stayed inside one
-	paragraph the two agreed, and a change covering two ADJACENT paragraphs with a table between
-	them did not - the second paragraph's positions came out short by the hidden characters, and
-	the jump, the selection and the press mark all landed on the wrong characters.
-	★MEASURED on the real table snippet (work/kescm-snippet-test): a run over paragraphs 1 and 2
-	put the second at 21 where the document has it at 22, and again at 31 against 32.
-	⚠SILENT, and no length check can catch it: LengthAgrees compares TOTALS, which were right.
-
-	★A BOUNDARY'S HIDDEN CHARACTERS COUNT ONLY ONCE THE BREAK ITSELF HAS BEEN PASSED. They stand
-	AFTER the paragraph's own break character (that is what fExtraChars means), so an offset landing
-	ON the break is still in front of them.
-	⚠fLeadingChars is deliberately NOT added here: only the story's first paragraph can carry it,
-	  and `base` - which the caller took from the paragraph-start table - already includes it.
+	paragraphs; the document may not have them that close together at all. Two faults found on the
+	same day, both of this shape:
+	  (1) a table's own character and a row's terminator sit at exactly such a boundary, so a change
+	      covering two ADJACENT paragraphs put the second one short by them - MEASURED on the real
+	      table snippet: at 21 where the document has 22, and at 31 against 32;
+	  (2) ★★★and a table's CELLS are not between the paragraphs at all (see BodyParagraphStarts
+	      above), so the distance across a table is nothing like the sum of what the snippet lists
+	      there - MEASURED: a change to the paragraph after a table selected a character inside a
+	      cell instead.
+	⚠SILENT, and no length check can catch either: LengthAgrees compares TOTALS, which were right.
+	⇒ Both are answered the same way: every paragraph's position is LOOKED UP, never added up.
 
 	@param paragraphs every paragraph of the story.
-	@param attrs the same list ExtractParagraphs filled, one entry per paragraph.
+	@param starts one document position per paragraph - BodyParagraphStarts for the ordinary ones,
+	       KESCMStoryCellBases for the cells. ⚠An unresolved cell (-1) would answer nonsense, so the
+	       caller refuses the story before asking anything of this.
 	@param start the first paragraph of the run.
 	@param count how many paragraphs the run covers.
-	@param base the document position the run starts at (the paragraph-start table's entry for it).
+	@param base where to answer from when the run covers no paragraph of its own (an insertion
+	       between two paragraphs): the caller's position for the next surviving paragraph.
 	@param joinedOffset a position in JoinParagraphs' answer, in CODE POINTS, 0 .. its length.
 	@return the same position as a TextIndex into the story.
 */
 inline int32 IndexInStory(const std::vector<std::string>& paragraphs,
-						  const std::vector<KESCMParaAttrs>& attrs,
+						  const std::vector<int32>& starts,
 						  int32 start, int32 count, int32 base, int32 joinedOffset)
 {
-	int32 index = base + joinedOffset;
-
+	// ★★★REWRITTEN 2026-08-23: IT LOOKS EVERY PARAGRAPH UP INSTEAD OF ADDING UP THE HIDDEN
+	//   CHARACTERS BETWEEN THEM. The old form walked from the run's base and, at each paragraph
+	//   break, added that paragraph's fExtraChars. That is right only while the document lays
+	//   paragraphs out in the order the snippet lists them, and A TABLE BREAKS EXACTLY THAT: the
+	//   text model keeps a table's cells AFTER the whole of the story's own text
+	//   (ITableTextContent.h:41-44), so no amount of adding gets from the paragraph before a table
+	//   to the one after it. MEASURED 2026-08-23: a change to the paragraph following a table
+	//   selected a character inside a cell instead.
+	//   ⇒ Positions come from the table `starts`, which is built once - the body by
+	//     BodyParagraphStarts, the cells by asking the document (KESCMStoryCellBases). This walk
+	//     only has to decide WHICH paragraph the offset falls in.
 	int32 joined = 0;		// where the paragraph being looked at begins, inside the joined string
-	for (int32 i = 0; i + 1 < count; ++i)
+	for (int32 i = 0; i < count; ++i)
 	{
 		const int32 which = start + i;
-		if (which < 0 || which >= static_cast<int32>(paragraphs.size()))
+		if (which < 0 || which >= static_cast<int32>(paragraphs.size())
+			|| which >= static_cast<int32>(starts.size()))
 			break;
 
-		joined += CountCodePoints(paragraphs[which]);	// ...now standing on the break character
-		if (joinedOffset <= joined)
-			break;										// the offset is at or before it - nothing to add
+		const int32 len = CountCodePoints(paragraphs[which]);
 
-		if (which < static_cast<int32>(attrs.size()))
-			index += attrs[which].fExtraChars;
-		++joined;										// step over the break itself
+		// ⚠AT the break belongs to the paragraph BEFORE it, which is the rule the old form kept
+		//   ("the offset is at or before it - nothing to add") and the paragraph-start table agrees
+		//   with: the next paragraph's start is where the character AFTER the break sits.
+		if (joinedOffset <= joined + len)
+			return starts[which] + (joinedOffset - joined);
+
+		joined += len + 1;		// the paragraph, and the one character JoinParagraphs puts after it
 	}
 
-	return index;
+	// Past the end of the run - or a run with no paragraphs of its own, which is how an insertion
+	// between two paragraphs arrives. The caller's base is where the next surviving paragraph
+	// begins, and that is the right answer for the empty case.
+	if (count > 0)
+	{
+		const int32 last = start + count - 1;
+		if (last >= 0 && last < static_cast<int32>(paragraphs.size())
+			&& last < static_cast<int32>(starts.size()))
+			return starts[last] + CountCodePoints(paragraphs[last]);
+	}
+	return base;
 }
 
 /** True when two paragraphs' ruby differs - the question "did only the ruby change?" is this one

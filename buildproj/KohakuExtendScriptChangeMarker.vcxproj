@@ -231,6 +231,7 @@
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMTextDiff.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMMemXferBytes.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryXml.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryCellBases.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryDiffRun.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMPageNumberMarker.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMPeek.cpp" />
@@ -280,6 +281,7 @@
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMTextDiff.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMMemXferBytes.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryXml.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryCellBases.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryDiffRun.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMPageNumberMarker.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMPeek.h" />

@@ -39,6 +39,7 @@
 // Project includes:
 #include "KESCMSnippetText.h"	// the snippet's text AND its ruby - see the note at "reading the text"
 #include "KESCMStoryDiffRun.h"
+#include "KESCMStoryCellBases.h"	// ★where a table's cells REALLY are - see the note at LengthAgrees
 #include "KESCMStoryList.h"
 #include "KESCMStoryStamp.h"	// kKESCMStoryKindAdded - which rows have no partner to compare against
 #include "KESCMStoryXml.h"
@@ -301,18 +302,18 @@ bool16 LengthAgrees(const UIDRef& storyRef, int32 computed)
 struct RunSide
 {
 	const std::vector<std::string>*		fParagraphs;
-	const std::vector<KESCMParaAttrs>*	fAttrs;
+	const std::vector<int32>*			fStarts;	// ★one document position per paragraph
 	int32								fStart;		// first paragraph of the run
 	int32								fCount;		// how many it covers
 	int32								fBase;		// where the run begins, as a TextIndex
 
-	RunSide(const std::vector<std::string>& paragraphs, const std::vector<KESCMParaAttrs>& attrs,
+	RunSide(const std::vector<std::string>& paragraphs, const std::vector<int32>& starts,
 			int32 start, int32 count, int32 base)
-		: fParagraphs(&paragraphs), fAttrs(&attrs), fStart(start), fCount(count), fBase(base) {}
+		: fParagraphs(&paragraphs), fStarts(&starts), fStart(start), fCount(count), fBase(base) {}
 
 	int32 Index(int32 joinedOffset) const
 	{
-		return KESCMSnippetText::IndexInStory(*fParagraphs, *fAttrs, fStart, fCount, fBase, joinedOffset);
+		return KESCMSnippetText::IndexInStory(*fParagraphs, *fStarts, fStart, fCount, fBase, joinedOffset);
 	}
 };
 
@@ -656,6 +657,19 @@ bool16 CompareOneStory(const UIDRef& targetStory, const UIDRef& sourceStory,
 	if (!LengthAgrees(targetStory, targetComputed) || !LengthAgrees(sourceStory, sourceComputed))
 		return kFalse;
 
+	// ★★★AND THEN THE POSITIONS THEMSELVES ARE ASKED OF THE DOCUMENT (2026-08-23), which REPLACES
+	//   what ParagraphStarts just put in the two tables. The count above is still needed - it is
+	//   what LengthAgrees checks - but it is counted straight down the snippet, and a table's cells
+	//   are not where the snippet puts them: the text model keeps them after the whole of the
+	//   story's own text (ITableTextContent.h:41-44). Counting therefore places everything after a
+	//   table wrongly, and no total can show it. See KESCMStoryCellBases.h for the measurements.
+	//   ⚠It refuses stories it cannot match up (a nested table, a shape the body walk does not
+	//     understand), and a refusal here means the same as one above: no differences for this
+	//     story, rather than differences aimed at the wrong words.
+	if (!KESCMResolveParagraphPositions(targetStory, targetParas, targetAttrs, targetStarts)
+		|| !KESCMResolveParagraphPositions(sourceStory, sourceParas, sourceAttrs, sourceStarts))
+		return kFalse;
+
 	for (size_t c = 0; c < paragraphChanges.size(); ++c)
 	{
 		const KESCMTextDiff::Change& change = paragraphChanges[c];
@@ -672,8 +686,8 @@ bool16 CompareOneStory(const UIDRef& targetStory, const UIDRef& sourceStory,
 
 		// ★The run itself, so that a position inside it can be asked for rather than added up - see
 		//   RunSide. Built once here because both callers of Add below need the same two.
-		const RunSide tRun(targetParas, targetAttrs, change.bStart, change.bCount, tBase);
-		const RunSide sRun(sourceParas, sourceAttrs, change.aStart, change.aCount, sBase);
+		const RunSide tRun(targetParas, targetStarts, change.bStart, change.bCount, tBase);
+		const RunSide sRun(sourceParas, sourceStarts, change.aStart, change.aCount, sBase);
 
 		std::vector<int32> sourceCodePoints;
 		std::vector<int32> targetCodePoints;
