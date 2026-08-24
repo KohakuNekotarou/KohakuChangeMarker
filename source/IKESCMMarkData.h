@@ -17,7 +17,7 @@
 //  one .pln: a static lives in the plug-in that defines it, so once the UI is its own .pln the
 //  linker has nothing to bind to.
 //
-//  ★WHAT IS DELIBERATELY NOT HERE: the display toggles (Show Marks on Source, Show Original
+//  ★WHAT IS DELIBERATELY NOT HERE: the display toggles (Always Show Marks on Source, Show Original
 //  Page Numbers, Hold to Hide Marks) and the press-time display state. The UI writes those, so
 //  they sit on IKESCMCompareFacade beside GetPrintMarks() rather than breaking the read-only
 //  rule here.

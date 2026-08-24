@@ -135,7 +135,7 @@ static bool16 KESCMMouseIsOverTarget()
 }
 
 // マウス下のドキュメントウィンドウが Source(比較の旧側=常時表示枠を載せている sSrcDB)かどうか。
-// 「Hold to Hide Marks」＋「Show Marks on Source」併用時、Source 窓でツール左ボタンを押したときだけ Source 枠を
+// 「Hold to Hide Marks」＋「Always Show Marks on Source」併用時、Source 窓でツール左ボタンを押したときだけ Source 枠を
 // 一時退避させるための窓判定(Target 版 KESCMMouseIsOverTarget と対称)。Source マークの所属は sSrcDB を
 // 正とする(arm の sPeekSourceDB と同一文書だが、判定はマークの実 db に紐づける)。
 static bool16 KESCMMouseIsOverSource()

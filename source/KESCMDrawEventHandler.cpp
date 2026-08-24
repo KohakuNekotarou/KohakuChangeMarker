@@ -82,10 +82,10 @@ bool16 KESCMDrawEventHandler::sMarkColorCyan = kFalse;	// 既定=赤(従来の�
 bool16 KESCMDrawEventHandler::sShowOldNumbers = kFalse;	// 既定=OFF(フライアウト「Show Original Page Numbers」)
 // (★「Hold to Hide Marks」(sAlwaysShowMarks)は 2026-08-22 に撤去＝「Show Marks on ...」と重複。
 //  経緯と現在の規則はヘッダーの宣言部を見よ。)
-bool16 KESCMDrawEventHandler::sMarksTempHidden = kFalse;	// 「Show Marks on Target」ON のとき、Target 窓でツール左hold中だけ kTrue(Target 常時表示枠の一時退避)
+bool16 KESCMDrawEventHandler::sMarksTempHidden = kFalse;	// 「Always Show Marks on Target」ON のとき、Target 窓でツール左hold中だけ kTrue(Target 常時表示枠の一時退避)
 bool16 KESCMDrawEventHandler::sSrcMarksPressed = kFalse;	// Source 窓でツール左hold中だけ kTrue。⚠「隠している」ではなく「押している」＝描画側が sSrcMarksOn と XOR する(宣言のコメント参照)
-bool16 KESCMDrawEventHandler::sSrcMarksOn = kFalse;	// 既定=OFF。フライアウト「Show Marks on Source」。⚠2026-08-22 に「Start のたびに kTrue へ」をやめた＝設定はパネル設定に保存され起動時に復元されるので、Start が上書きすると保存した選択が消える
-bool16 KESCMDrawEventHandler::sTgtMarksOn = kFalse;	// 同上の Target 版(フライアウト「Show Marks on Target」2026-08-22)。⚠画面のみ=印刷/PDF は sPrintMarks が決める。Start は触らない(上と同じ理由)
+bool16 KESCMDrawEventHandler::sSrcMarksOn = kFalse;	// 既定=OFF。フライアウト「Always Show Marks on Source」。⚠2026-08-22 に「Start のたびに kTrue へ」をやめた＝設定はパネル設定に保存され起動時に復元されるので、Start が上書きすると保存した選択が消える
+bool16 KESCMDrawEventHandler::sTgtMarksOn = kFalse;	// 同上の Target 版(フライアウト「Always Show Marks on Target」2026-08-22)。⚠画面のみ=印刷/PDF は sPrintMarks が決める。Start は触らない(上と同じ理由)
 IDataBase* KESCMDrawEventHandler::sSrcDB = nil;
 std::map<UID, UID> KESCMDrawEventHandler::sSrcPageToTarget;
 std::map<UID, UID> KESCMDrawEventHandler::sPrevPairTargetToSource;	// 前回比較のペアリング(登録トグルの差分再比較用)
@@ -617,7 +617,7 @@ ErrorCode KESCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef
 						if (old != sEntries.end()) { delete old->second; sEntries.erase(old); }
 						sEntries[key] = e;
 
-						// Source 側描画(Show Marks on Source)用の対応表もここで記録する。エントリ登録と同じ場所に
+						// Source 側描画(Always Show Marks on Source)用の対応表もここで記録する。エントリ登録と同じ場所に
 						// 置くことで、旧 Ctrl+ミドルのスプレッド再比較(MakeEntry 直呼び)でも対応が自動で維持される。
 						// 対応表の掃除は DropAll(エントリと運命共同体)。
 						// ★★2026-08-16(API 監査 B3 §5)= **この2行も同じロックの中に入れた。**
@@ -1037,7 +1037,7 @@ enum { kKESCMDrawModeScreen = 0, kKESCMDrawModePrint = 1 };
 //========================================================================================
 // ページ1枚分のリング描画(HandleDrawEvent の Target ループから括り出した共通部)。
 //   db/pageUID のページ矩形へ e のリング画像をフィットさせて描く。リング太さの再計算
-//   (BuildRing)もここ。Target 側と Source 側(Show Marks on Source)の両方から呼ばれる:
+//   (BuildRing)もここ。Target 側と Source 側(Always Show Marks on Source)の両方から呼ばれる:
 //   Source 側は Target のリング画像をそのまま Source ページ矩形に重ねる(比較は平坦ページ番号
 //   対応なので位置・形は同一。ページサイズが違えば矩形フィットで引き伸ばされる)。
 //   screenOpacity は Screen モードの blit にだけ使う(Print は KESCMDrawRingForPrint が
@@ -1553,7 +1553,7 @@ bool16 KESCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 	// 読んで「OPP=印刷シミュレーション」として印刷と同じ抑制を掛けていたが、OPP はあくまで画面の作業モード
 	// なので、ツール左hold の枠・Shift/Shift+Alt の旧版 peek(と押下中の旧番号バッジ)は OPP 中も表示する。
 	// 抑制は本物の印刷(kPrinting)だけ=「枠の印刷」OFF なら印刷物に出ない、は従来どおり。
-	// Source 側の枠(Show Marks on Source)。トグル ON の間は「常時」表示で、OPP でも隠さず印刷にも常に
+	// Source 側の枠(Always Show Marks on Source)。トグル ON の間は「常時」表示で、OPP でも隠さず印刷にも常に
 	// 出す(Target 側の sPrintMarks とは独立の仕様)。この描画が実際に Source 文書のスプレッドかどうかは
 	// db 取得後に判定する(ここでは「描き得るか」だけ)。
 	// ★sEntries が空でも、登録済み(比較相手なし="Added"/"Removed")ページや、文書間のページ数差で
@@ -1618,14 +1618,14 @@ bool16 KESCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 	//   捨てていた。Start 済み・マーク非表示(既定=ツール左hold中だけ表示)の待機状態が最頻なので、
 	//   ここで落として通常の編集・スクロール中の描画コストをほぼゼロにする。生存スイープも「実際に
 	//   何か描く」時だけの保険になる(クローズ後始末の本線は KESCMDocResponder で変わらず)。
-	// 「Show Marks on Target」(sTgtMarksOn): ON の間は画面(!printing)で枠を常時表示。ただしツール左hold中
+	// 「Always Show Marks on Target」(sTgtMarksOn): ON の間は画面(!printing)で枠を常時表示。ただしツール左hold中
 	// (sMarksTempHidden)は隠す。画面のみ=印刷/PDF は下の sPrintMarks が独立して決める(alwaysScreen は
 	// !printing ゲートで印刷文脈には一切効かせない=印刷は従来どおり Print comparison marks のみで制御)。
 	// ★★★2026-08-22＝**規則は「押している間は反対になる」の1本**(ユーザー決定)。
 	//     ・トグル OFF … 枠は出ていない ⇒ 押している間だけ出る(下の sMarksVisible=reveal)
 	//     ・トグル ON  … 枠は出ている   ⇒ 押している間だけ隠れる(この行の !sMarksTempHidden)
 	//   ⚠**これに伴い「Hold to Hide Marks」トグルを撤去した**＝あれは「常時表示＋押下中は隠す」で、
-	//     前半が「Show Marks on Target」と完全に重複していた(この式が `sAlwaysShowMarks || sTgtMarksOn`
+	//     前半が「Always Show Marks on Target」と完全に重複していた(この式が `sAlwaysShowMarks || sTgtMarksOn`
 	//     という OR だったことが、重複そのものの証拠)。固有だったのは後半だけなので、後半を規則として
 	//     こちらへ畳んだ。⇒ **機能は1つも失われず、トグルが1つ減った。**
 	// ⚠**印刷/PDF には効かせない**＝!printing ゲートの内側に置く。Target 側の出力は sPrintMarks が
@@ -1646,7 +1646,7 @@ bool16 KESCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 	const bool16 drawRings = (KESCMGetCompareMode() != kKESCMModeStory);
 	const bool16 wantOrig  = !suppressForPrint && !printing && sShowOriginal && !sOrigImages.empty();
 	// ★「KCM: Check」の ✓ のレイアウトビュー版(2026-07-12)。画面では「常に」表示(ツール左hold・
-	// Hold to Hide Marks・Show Marks on Source 等の枠トグルとは完全に独立)。印刷/PDF は sPrintMarks
+	// Hold to Hide Marks・Always Show Marks on Source 等の枠トグルとは完全に独立)。印刷/PDF は sPrintMarks
 	// (Print comparison marks)ON のときだけ(Target/Source とも同条件)。✓ 集合は Start 中の
 	// Target/Source(sDB/sSrcDB)にしか無い(Stop で全消去)ので、存在チェックも両 db だけ見れば足りる。
 	// サムネイル(isThumb)は下の専用ブロックが従来どおり描くのでここでは対象外。
@@ -1788,7 +1788,7 @@ bool16 KESCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 		sxr = 1.0;
 
 	// ★「KCM: Check」の ✓(サムネイル版): チェック済みページの Pages パネルサムネイル中央に青い ✓ を描く。
-	//   他のマーク(リング/斜線/Show Marks on Source トグル)とは完全に独立=このスプレッドの db が
+	//   他のマーク(リング/斜線/Always Show Marks on Source トグル)とは完全に独立=このスプレッドの db が
 	//   Target でも Source でも、その db にチェックがあれば描く(下の Target/Source メインループより前・
 	//   それらのゲートに依らない)。レイアウトビュー/印刷版は下の wantChecks ブロック(2026-07-12 追加)。
 	//   Start 中限定(チェック集合は Stop で全消去されるので非 arm 時は空だが、保険で arm ゲート)。
@@ -2026,7 +2026,7 @@ bool16 KESCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 	// overflow("/"の未比較ページ)集合は EnsureOverflowCache() が保持済み(sOverflowT=Target/
 	// sOverflowS=Source)。このスプレッドの各ページが overflow 側に入っているかを count で見るだけ。
 
-	// Source 文書側のリング(Show Marks on Source) — 現スプレッドが Source 文書のものなら、対応表
+	// Source 文書側のリング(Always Show Marks on Source) — 現スプレッドが Source 文書のものなら、対応表
 	// (SourceページUID→TargetページUID)経由で同じリング画像を Source ページに重ねる。
 	// トグル ON の間は常時表示(ツール左hold と無関係)。不透明度はパネルの 25%/75% 選択
 	// (SelectedMarkOpacity)固定で、印刷文脈でも冒頭の suppressForPrint(印刷のみの抑制)を通り抜けて

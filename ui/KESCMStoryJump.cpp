@@ -686,7 +686,7 @@ bool16 KESCMStorySelectChange(int32 rowIndex, int32 changeIndex)
 	//   both is unreadable (KBS records exactly this in KBSJump.cpp).
 	// ⚠★★AND THEN WHATEVER STANDS ON ITS OWN GOES BACK UP (2026-08-22 bug recheck A2). Clear() takes
 	//   down the ONE adornment both kinds of mark share, so before this it also wiped the marks the
-	//   "Show Marks on Target / Source" toggles were holding there - and nothing put them back:
+	//   "Always Show Marks on Target / Source" toggles were holding there - and nothing put them back:
 	//   the toggle stayed on, the screen stayed bare, and only a fresh comparison or a press of the
 	//   tool would bring them round again. A reader who turned a toggle on precisely so as not to
 	//   have to hold the tool would never see them return.

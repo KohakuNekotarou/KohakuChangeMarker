@@ -76,7 +76,7 @@ void KESCMUIStartup::Startup()
 	// ON を保存したユーザーは起動〜パネルを開くまでの間だけ同期が止まってしまう。起動時に読み込めば
 	// その窓が無くなる(保存が無ければ既定 OFF のまま)。
 	// 各トグルの復元先は全部エンジン側のフラグ/購読で、パネルにも文書にも依存しない=起動時に安全
-	// (KESCMDoSetPrintMarks は db=nil のフラグのみ、ScrollMap/IgnoreMarker/Show Marks on Target・Source
+	// (KESCMDoSetPrintMarks は db=nil のフラグのみ、ScrollMap/IgnoreMarker/Always Show Marks on Target・Source
 	//  等は平の代入。⚠2026-08-22 訂正＝ここに挙げていた HoldToHide は同日にトグルごと撤去された)。
 	// 内部の「セッション一度きり」ガードにより、パネル AutoAttach からの既存呼び出しは no-op のまま残る
 	// (起動サービスの順序が万一変わっても取りこぼさない保険)。

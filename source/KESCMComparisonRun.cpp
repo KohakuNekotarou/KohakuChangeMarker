@@ -147,7 +147,7 @@ void KESCMStartComparisonFor(IDocument* target, IDocument* source)
 	IDataBase* sourceDB = ::GetUIDRef(source).GetDataBase();
 
 	PMString report;
-	// ★★2026-08-22 ユーザー判断＝**Start は「Show Marks on Target / Source」をどちらも触らない。**
+	// ★★2026-08-22 ユーザー判断＝**Start は「Always Show Marks on Target / Source」をどちらも触らない。**
 	//   以前はここで両方 kTrue にしていた(Source は 2026-07-25 から)。やめた理由は、**設定がパネル設定に
 	//   保存され、起動時に自動で復元される**(KESCMLoadPanelStateIfPresent ← KESCMUIStartup::Startup)から
 	//   ＝Start が上書きすると「保存した選択が比較のたびに消える」ことになり、保存できる意味が無くなる。

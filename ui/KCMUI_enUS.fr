@@ -36,8 +36,16 @@ resource StringTable (kSDKDefStringsResourceID + index_enUS)
 
                 kSDKDefAboutThisPlugInMenuKey,			kSDKDefAboutThisPlugInMenuValue_enUS,
                 kKESCMUsageMenuKey,				"How to Use...",
-                kKESCMShowTgtMarksMenuKey,			"Show Marks on Target",
-                kKESCMShowSrcMarksMenuKey,			"Show Marks on Source",
+                // ★2026-08-25 改名(ユーザー要望「常に表示、という意味合いのすぐ判る英語に」)。
+                //   旧: "Show Marks on Target" / "Show Marks on Source" ---- 何をするトグルなのかが
+                //   名前から読めなかった(既定の挙動が「ツールの左ボタンを押している間だけ出る」なので、
+                //   旧名だと「押したら出る」との違いが言えていなかった)。
+                // ⚠**"Hold" は名前に入れない**(2026-08-25 に検討して見送り)＝押下の身振りは**このトグルと
+                //   無関係に常に効き、しかもトグルの状態を反転する**(KESCMID.h の増分⑮)ので、名前に
+                //   入れると「このトグルの機能＝Hold」と読めてしまう。加えて "Hold to Hide Marks" は
+                //   **2026-08-22 に撤去した旧トグルそのものの名前**なので、復活したと誤解される。
+                kKESCMShowTgtMarksMenuKey,			"Always Show Marks on Target",
+                kKESCMShowSrcMarksMenuKey,			"Always Show Marks on Source",
                 kKESCMPageMapToggleMenuKey,			"KCM: Register as Added/Removed Pages",
                 kKESCMPageCheckMenuKey,				"KCM: Check",
                 kKESCMPageRefreshCompareMenuKey,	"KCM: Refresh Page Comparison",

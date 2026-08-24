@@ -149,11 +149,11 @@ public:
 	// only reads it, and clears the whole feature through ClearOverset() below -- while it does
 	// write "Hold to Hide Marks". The three here are the three the UI actually writes.
 
-	/** "Show Marks on Source": the Source document carries the same rings at all times. */
+	/** "Always Show Marks on Source": the Source document carries the same rings at all times. */
 	virtual bool16		GetShowSourceMarks() = 0;
 	virtual void		SetShowSourceMarks(bool16 on) = 0;
 
-	/** "Show Marks on Target": the Target document carries its marks at all times, rather than
+	/** "Always Show Marks on Target": the Target document carries its marks at all times, rather than
 		only while the tool's button is held (2026-08-22).
 
 		★IT MEANS THE SAME THING IN BOTH COMPARE MODES - the Pixel mode's rings and the Story
@@ -172,7 +172,7 @@ public:
 	virtual void		SetShowOldPageNumbers(bool16 on) = 0;
 
 	/* ★"Hold to Hide Marks" WAS HERE AND IS GONE (2026-08-22, user's call). It stood for "show the
-	   marks permanently, and hide them while the button is held" - and once "Show Marks on Target"
+	   marks permanently, and hide them while the button is held" - and once "Always Show Marks on Target"
 	   existed, the first half of that was the same switch twice over ([[one-question-one-place]]:
 	   the drawing side literally read `sAlwaysShowMarks || sTgtMarksOn`).
 	   ⇒ The second half became the rule for BOTH toggles instead: **while the button is held,
@@ -208,7 +208,7 @@ public:
 
 		★★SOURCE: "pressed" - and that is a DIFFERENT QUESTION from the target's (2026-08-22, user's
 		call). This one says only that the button is down over the source window; the drawing side
-		XORs it with "Show Marks on Source" and so covers both halves of the rule with one flag:
+		XORs it with "Always Show Marks on Source" and so covers both halves of the rule with one flag:
 		toggle off + pressed = shown, toggle on + pressed = hidden.
 		⚠It used to be a "temp hidden" flag raised only while the toggle was ON, which meant
 		  **pressing over a source window whose toggle was off did nothing at all** - while three

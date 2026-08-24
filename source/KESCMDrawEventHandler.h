@@ -175,7 +175,7 @@ public:
 	//     決まり方が食い違う ②自動で変わると「なぜ今この色なのか」が読み手に説明できない。
 	//   ⇒ 選ぶのは人。赤い下地に赤いマークが埋もれるなら、シアンを選べばよい。
 	static bool16 sMarkColorCyan;
-	// Source(旧文書)側にも枠を出すトグル(フライアウト「Show Marks on Source」のチェック式)。★既定=kFalse
+	// Source(旧文書)側にも枠を出すトグル(フライアウト「Always Show Marks on Source」のチェック式)。★既定=kFalse
 	// だが Start 経路だけが kTrue へ戻す(=Start で既定 ON、OFF にしたければメニューで外す。
 	// ★KESCMDoMarkChangesDoc では戻さない=登録トグル/Ignore 切替の再比較でも通る関数のため。2026-07-25 に移動)。
 	// ⚠★「Start 経路」＝**KESCMStartComparisonFor**(KESCMComparisonRun.cpp)であって
@@ -187,7 +187,7 @@ public:
 	// パネルの 25%/75% 選択(SelectedMarkOpacity)に連動し、OPP(オーバープリントプレビュー)でも隠さず、
 	// 印刷/PDF にも常に出す(Target 側の sPrintMarks とは独立)。
 	static bool16 sSrcMarksOn;
-	// ★「Show Marks on Target」(2026-08-22 ユーザー要望「ツールでボタンを押さなくても常にマークが出る様に」)。
+	// ★「Always Show Marks on Target」(2026-08-22 ユーザー要望「ツールでボタンを押さなくても常にマークが出る様に」)。
 	//   ON の間、Target 文書のマークを**画面に常時**表示する(ツール左hold と無関係)。上の Source 版と対で、
 	//   ★★Story 変更モードでは反転マークが同じトグルで常時表示になる
 	//   (KESCMStoryMarkBuild.cpp。★2026-08-23 までは ui/KESCMStoryPressMarks.cpp)＝「ピクセルの方もストーリーの方にも」。
@@ -225,12 +225,12 @@ public:
 	static bool16 sShowOldNumbers;
 
 	// (★2026-08-22 に「Hold to Hide Marks」トグル(sAlwaysShowMarks)を撤去した。あれは「枠を常時表示し、
-	//  ツール左hold中だけ隠す」で、**前半が「Show Marks on Target」と完全に重複**していた。固有だった
+	//  ツール左hold中だけ隠す」で、**前半が「Always Show Marks on Target」と完全に重複**していた。固有だった
 	//  後半＝「押している間だけ隠す」は、**トグル ON のときの標準の挙動**として下の sMarksTempHidden に
 	//  畳んである。⇒ 規則は「**押している間は反対になる**」の1本＝OFF なら押下中だけ出る、ON なら
 	//  押下中だけ隠れる。ActionID +19 は欠番のまま再利用しない。)
 
-	// 「Show Marks on Target」ON のとき、Target 窓でツール左ボタンを押している間だけ kTrue
+	// 「Always Show Marks on Target」ON のとき、Target 窓でツール左ボタンを押している間だけ kTrue
 	// (常時表示の枠を一時退避)。離すと kFalse。
 	// KESCMPeekGesture.cpp のトラッカー(KESCMTrackerRevealBegin/End)が上下させる。トグル OFF の間は
 	// 常に kFalse で無影響(そちらは「押下中だけ出す」reveal が動く)。
@@ -242,7 +242,7 @@ public:
 	//   「隠している」を覚えているが、こちらが覚えているのは「**押している**」だけで、それを見て
 	//   何を出すかは描画側が sSrcMarksOn と **XOR** して決める。⇒ **トグル OFF の Source 窓を押せば
 	//   枠が出て、ON の窓を押せば隠れる**＝規則「押している間は反対になる」が、Source では1本の式で済む。
-	//   （旧名 sSrcMarksTempHidden は「Show Marks on Source が ON のときだけ立てる」形で、
+	//   （旧名 sSrcMarksTempHidden は「Always Show Marks on Source が ON のときだけ立てる」形で、
 	//    **トグル OFF のときに押しても何も起きなかった**＝規則が3か所で宣言していることと食い違っていた。
 	//    ユーザー決定 2026-08-22＝実装を規則に合わせる。）
 	// ★Target 側が2つのフラグ(出す sMarksVisible / 隠す sMarksTempHidden)のままなのは、あちらの

@@ -7,7 +7,7 @@
 //  What is lit up, per document, and the one rule for putting two sets of it together.
 //
 //  ★★★TWO KINDS OF MARK EXIST AND THEY MEET HERE (2026-08-23). A STANDING mark is what the
-//  "Show Marks on Target / Source" toggles and the tool's held button put up; a FLASH is the
+//  "Always Show Marks on Target / Source" toggles and the tool's held button put up; a FLASH is the
 //  pointer a jump puts up for about a second (KESCMStoryMarker). They are drawn by one adornment,
 //  which is why they have to be reconciled before anything is drawn rather than while it is.
 //  ⚠The rule below was written when that adornment INVERTED what was underneath (Difference
@@ -24,7 +24,7 @@
 //      inversion is no longer "no hole" but "no ambiguity": a document showing every edit is not
 //      also pointing at one of them.
 //    * And the jump reaches the OTHER window. Until 2026-08-23 one flag answered for both
-//      documents ("is a standing mark showing?"), so turning "Show Marks on Target" on silenced
+//      documents ("is a standing mark showing?"), so turning "Always Show Marks on Target" on silenced
 //      the jump's flash in the SOURCE window too, where nothing was standing and the reader had
 //      just asked to be shown something (the bug logged as A3).
 //
@@ -50,7 +50,7 @@ typedef std::map<UID, KESCMMarkRangeList> KESCMStoryMarkMap;
 
 /** The same thing for both compared documents at once: database -> what is lit up in it.
 
-	★★BOTH AT ONCE IS NOT A LUXURY - "Show Marks on Target" and "Show Marks on Source" can be on
+	★★BOTH AT ONCE IS NOT A LUXURY - "Always Show Marks on Target" and "Always Show Marks on Source" can be on
 	together, and then the newer document's edits and the older one's have to be up at the same
 	time (user's request, 2026-08-22). ⚠A press, by contrast, only ever marks the window it was
 	made in; it is the same structure holding one entry. */
