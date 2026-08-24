@@ -801,7 +801,7 @@ resource MenuDef (kSDKDefMenuResourceID)
 
 		// "Show Marks on Target" on the panel flyout (popup) menu. Check-mark toggle:
 		// while ON, the Target document keeps its marks WITHOUT the tool's button being held —
-		// the Pixel mode's comparison rings and the Story mode's inverted characters alike.
+		// the Pixel mode's comparison rings and the Story mode's washed characters alike.
 		// Opacity follows the panel's 25%/75% radio.
 		// On screen only: what the Target document PRINTS is decided by "Print comparison marks"
 		// on its own, which is the one asymmetry with the Source toggle above (that one prints).

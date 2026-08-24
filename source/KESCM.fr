@@ -334,7 +334,7 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 		}
 	},
 
-	// The Story mode's marks: the changed characters themselves, inverted where they stand.
+	// The Story mode's marks: a coloured wash under the changed characters themselves.
 	// ★★A GLOBAL TEXT ADORNMENT - it is drawn ON the characters by the text engine, which hands it
 	//   the wax run, so it follows vertical text and rotated frames for free and touches no document
 	//   data at all (nothing is attached, nothing is saved, no recomposition). Implementation:

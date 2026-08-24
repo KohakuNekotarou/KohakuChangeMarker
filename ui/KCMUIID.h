@@ -224,7 +224,10 @@ DECLARE_PMID(kImplementationIDSpace, kKESCMModelChangeObserverImpl, kKCMUIPrefix
 DECLARE_PMID(kImplementationIDSpace, kKESCMUIDrawEventSrvcImpl, kKCMUIPrefix + 35)	// CServiceProvider 実装(kDrawEventService。UI 専用の描画サービス。KESCMUIDrawEvent.cpp)。★GetThreadingPolicy は手書きしない＝CServiceProvider がプラグインの型から既定を返す
 DECLARE_PMID(kImplementationIDSpace, kKESCMUIDrawEventHandlerImpl, kKCMUIPrefix + 36)	// IDrwEvtHandler 実装(押下中 HUD の描画だけ。画面専用＝PDF 書き出しに出なくてよい。KESCMUIDrawEvent.cpp)
 // ★★+ 41 と + 42 は欠番＝Story マークのアドーンメント実装と期限切れ timer 実装は 2026-08-23 に
-//   model 側へ移した（`KESCMID.h` の kKESCMPrefix + 50 / + 51）。理由は上の + 30 の注記と同じ。
+//   model 側へ移した（`KESCMID.h` の kKESCMPrefix + **51** / + **52**）。理由は上の + 30 の注記と同じ。
+//   ⚠**移設先の番号を + 50 / + 51 と書いていたのを 2026-08-24 の再検査で直した**＝+ 50 は同じ回に
+//     採った kKESCMStoryMarkFacadeImpl で、こちらは1つずつ後ろ。**移設は「番号を書き写す」作業を
+//     必ず伴うので、書き写した先を開いて数えること。**
 DECLARE_PMID(kImplementationIDSpace, kKESCMStoryCellViewImpl, kKCMUIPrefix + 39)	// IControlView 実装(DVControlView派生)。Story Edits の**変更行**のテキストセル＝変更された文字はテーマの文字色、前後の文脈は背景へ寄せた薄い色で描く(KESCMStoryCellView.cpp)。★手本は KBS の KBSColorTextView(あちらは検索ヒットの一致部分を強調する)
 DECLARE_PMID(kImplementationIDSpace, kKESCMStoryCellDataImpl, kKCMUIPrefix + 40)	// IKESCMStoryCellData 実装(非永続の3片の入れ物。上のセルと同じ boss に同居する。KESCMStoryCellView.cpp)
 DECLARE_PMID(kImplementationIDSpace, kKESCMStatusTextViewImpl, kKCMUIPrefix + 43)	// IControlView 実装(DVControlView派生)。パネルのメッセージ欄＝箱に入るだけ折り返し、変更された文字はテーマの文字色、見出しと前後の文脈は背景へ寄せた薄い色で描く(KESCMStatusTextView.cpp)。★**PERSIST 版**＝パネルの .fr から作られる widget なので、土台の kGenericPanelWidgetBoss が持つ IID_ICONTROLVIEW と同じく永続でなければならない
@@ -291,7 +294,7 @@ DECLARE_PMID(kActionIDSpace, kKESCMPopupModePixelActionID, kKCMUIPrefix + 42)	//
 DECLARE_PMID(kActionIDSpace, kKESCMPopupModeStoryActionID, kKCMUIPrefix + 43)	// ★フライアウトの「Compare mode > Story Changes」(2026-08-20)。ストーリーの本文を段落→文字の二段で比べ、Story Edits を「親=ストーリー / 子=変更箇所」のツリーで出す。★このモードでは比較リング(枠)を描かず、Hide Unchanged Spreads だけが灰色になる。⚠2026-08-21 訂正＝旧記述は「スクロール地図・Export Changed Pages・Prev/Next も灰色」と書いていたが**実装と食い違っていた**＝それらの根拠(ページ対応表・登録ページ・overflow「/」)は Story モードでも作られるので機能は生きている(Prev/Next は overset の巡回が独立して動く)。灰色にするのは「押しても何も起きない」ではなく「押すと壊れる」もの＝Hide Unchanged は sEntries が空だと「登録や overflow のあるスプレッド以外を全部隠す」
 DECLARE_PMID(kActionIDSpace, kKESCMStoryRowRefreshActionID, kKCMUIPrefix + 44)	// ★Story Edits の行の右クリック「Refresh Story Comparison」(2026-08-21 ユーザー要望「そのストーリーだけ比較を更新したい」)。その行のストーリーだけ本文差分を取り直し、子の変更箇所を今の状態に置き換える(実体 IKESCMStoryEditsFacade::RefreshRow → KESCMStoryDiffRun::RunOne)。★直し終えて差分が0件になっても**行は残り子だけ消える**＝答えているのは「今どこが違うか」であって「この行がまだ要るか」ではない。★kCustomEnabling で **Story モードのときだけ**有効(Pixel モード・Stop 中・Added の行では灰色)。⚠項目が1つしかないメニューなので、灰色＝**メニュー自体が出ない**(章行メニューと同じ挙動)
 
-DECLARE_PMID(kActionIDSpace, kKESCMPopupShowTgtMarksActionID, kKCMUIPrefix + 45)	// ★パネルのフライアウトの「Show Marks on Target」チェック式トグル(2026-08-22 ユーザー要望「ツールでボタンを押さなくても常にマークが出る様に、それをピクセルの方もストーリーの方にも」)。Source 版(+10)と対で、ON の間は Target 文書のマークを画面に常時表示する。★Pixel では比較リング(sTgtMarksOn→alwaysScreen)、Story では変更箇所の反転(ui/KESCMStoryPressMarks.cpp)＝同じトグルが両モードで意味を持つ。⚠画面のみ＝印刷/PDF は「Print comparison marks」が単独で決める(Source 版が印刷にも出るのとは非対称・意図的)。★既定 OFF で Start は触らない(Source 版と同じ＝設定はパネル設定に保存され、起動時に復元される)
+DECLARE_PMID(kActionIDSpace, kKESCMPopupShowTgtMarksActionID, kKCMUIPrefix + 45)	// ★パネルのフライアウトの「Show Marks on Target」チェック式トグル(2026-08-22 ユーザー要望「ツールでボタンを押さなくても常にマークが出る様に、それをピクセルの方もストーリーの方にも」)。Source 版(+10)と対で、ON の間は Target 文書のマークを画面に常時表示する。★Pixel では比較リング(sTgtMarksOn→alwaysScreen)、Story では変更箇所に敷く色地(ui/KESCMStoryPressMarks.cpp → model の KESCMStoryMarkBuild)＝同じトグルが両モードで意味を持つ。⚠画面のみ＝印刷/PDF は「Print comparison marks」が単独で決める(Source 版が印刷にも出るのとは非対称・意図的)。★既定 OFF で Start は触らない(Source 版と同じ＝設定はパネル設定に保存され、起動時に復元される)
 // (+15..+23 are all declared above - stale placeholders for them removed 2026-08-05 audit.
 //  ★**Next free: +46**。⚠2026-08-22 に +45 を使ったのに「Next free: +45」のまま残っていたのを直した
 //  (不具合再検査 B2)＝**採番したら同じコミットでこの行を進めること**。+19 は欠番で再利用しない。)

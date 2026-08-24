@@ -205,8 +205,10 @@ void KESCMDrawEventHandler::BuildRing(uint8* buf, int32 rb, int32 bpp, int32 wt,
 	const int32 colorOff = bpp - 3;
 	const uint8 rad = (radius > 255) ? 255 : (uint8)radius;	// dist は uint8 clamp255。半径上限は200<255。
 
-	// ★★2026-08-24: マークの色はパネルの選択。**1回だけ読んでループの外に置く**(画素ごとに聞く
-		uint8 markR = 0, markG = 0, markB = 0;
+	// ★★2026-08-24: マークの色はパネルの選択。**1回だけ読んでループの外に置く**(画素ごとに聞くもの
+	//   ではない)。⚠この2行は同日の掃除コミットで**コメントの後半とインデントを削り落としていた**
+	//   (文が「(画素ごとに聞く」で切れ、宣言だけタブ2つになっていた)＝2026-08-24 の再検査で復元。
+	uint8 markR = 0, markG = 0, markB = 0;
 	KESCMDrawEventHandler::SelectedMarkColor(markR, markG, markB);
 	// ★端の欠け対策は下の frame(ページ内縁の枠帯)が兼ねる: 端から radius 以内を無条件に塗るので、
 	//   変化がページ端に接していてもその帯が必ず埋まり、辺の枠が痩せて欠けることはない。
@@ -892,7 +894,11 @@ static void KESCMDrawRingForPrint(IGraphicsPort* gPort, IViewPortAttributes* vpA
 	const int32 w = e->w, h = e->h, rb = e->rowBytes, bpp = e->bpp;
 	const size_t N = (size_t)w * h;
 
-	// e->buf(ARGB)から、赤リング画素=255 / 青リング画素=255 の2枚のグレーマスクを作る。
+	// e->buf(ARGB)から、赤リング画素=255 / シアンリング画素=255 の2枚のグレーマスクを作る。
+	// ★★2026-08-24 に前提が変わった: **リング画像は今や単色**(パネルの「Mark colour」で赤かシアンの
+	//   どちらか)。それまでは1枚の画像に赤とシアンが混在しえた(下地が赤っぽい画素の上だけシアンという
+	//   背景適応)。⇒ **2枚に分ける仕組みはそのまま正しく働く**＝選んだ色の側だけにマスクが立ち、
+	//   もう一方は下の `if (!passes[p].any) continue;` が飛ばす。**印刷側を1行も変えずに済んだのはこの形のおかげ**。
 	uint8* maskR = new (std::nothrow) uint8[N];	// nothrow: 直下の nil チェックを実効化(失敗時は枠を描かないだけ)
 	uint8* maskB = new (std::nothrow) uint8[N];
 	if (maskR == nil || maskB == nil) { if (maskR) delete[] maskR; if (maskB) delete[] maskB; return; }
@@ -907,7 +913,7 @@ static void KESCMDrawRingForPrint(IGraphicsPort* gPort, IViewPortAttributes* vpA
 			const size_t idx = (size_t)y * w + x;
 			if (px[0] != 0)								// リング画素(alpha!=0)
 			{
-				const bool16 blue = (px[3] > px[1]);	// B>R = 青(背景適応で青に切り替わった画素)
+				const bool16 blue = (px[3] > px[1]);	// B>R = シアン(パネルでシアンを選んでいる)
 				maskR[idx] = blue ? 0 : 255;
 				maskB[idx] = blue ? 255 : 0;
 				if (blue) anyB = kTrue; else anyR = kTrue;
@@ -922,8 +928,10 @@ static void KESCMDrawRingForPrint(IGraphicsPort* gPort, IViewPortAttributes* vpA
 	// 色がやや沈む(透明画像のあるページだけ枠が濃く見える)。色を CMYK 指定にしても解消せず(=色値ではなく
 	// 透明機能で描いていることが原因)、不透明ベクター化は25%の「透け」を失うため見送り。現状は元の RGB 指定のまま。
 	// ★★2026-08-16: **2パス目の色を「青」から「シアン」へ直した（ユーザー指示）。**
-	//   画面のリング画像(BuildRing)は赤背景の上で **kKESCMRingAlt* = シアン(0,255,255)** に切り替えるのに、
+	//   画面のリング画像(BuildRing)が **kKESCMRingAlt* = シアン(0,255,255)** で塗るのに、
 	//   ここだけ**純青(0,0,255)を塗っていた**＝画面と印刷で色が違うという食い違い。
+	//   (⚠当時のシアンは「赤い下地の上だけ自動で切り替わる色」だった。2026-08-24 に背景適応は廃止され、
+	//    **パネルで選ぶ色**になった＝色の出どころは変わったが、この2パスの形は変えなくてよかった。)
 	//   判定（`B>R`）は青でもシアンでも一致するので**動作では表面化せず**、ずっと残っていた。
 	//   ⇒ 画面と同じ定数を使う。これで「画面・印刷・PDF の3つで見た目が一致」が色でも成立する。
 	struct PassDef { uint8* buf; uint8 r, g, b; bool16 any; };
@@ -935,9 +943,11 @@ static void KESCMDrawRingForPrint(IGraphicsPort* gPort, IViewPortAttributes* vpA
 	for (int p = 0; p < 2; ++p)
 	{
 		// ★★★2026-08-16: **中身が空のマスクは飛ばす（これが「ページが青くベタ塗りになる」の原因だった）。**
-		//   青(シアン)のリングは「下地が赤っぽい画素の上」でしか現れないので、**普通のページでは青マスクが
+		//   当時のシアンは「下地が赤っぽい画素の上」でしか現れなかったので、**普通のページでは青マスクが
 		//   全画素 0**。その全 0 のマスクをアルファサーバに渡すと**マスクが効かず、下の rectpath がそのまま
 		//   塗られて「純青の全面ベタ」になる**（ユーザー報告 2026-08-16「2ページ目が青くなる」）。
+		//   ★★**2026-08-24 以降はこのガードがもっと効く**＝リング画像は選んだ色の単色なので、
+		//     **2枚のうち片方は必ず全画素 0**。つまり「たまに空」ではなく「毎回どちらかが空」。
 		//   ⚠2026-08-15 の記録「①の全面ベタが**純青**で出ていた」も、いま思えば同じ現象を見ていた。
 		//   ★旧のベクター版には `if (anyRun) fill();` という同じ趣旨のガードがあったのに、
 		//     **アルファサーバ版にだけ無かった**＝2つの実装で片方だけが守っていた形
@@ -2039,7 +2049,17 @@ bool16 KESCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 				if (drawRings && it != sEntries.end())	// ★Story モードではリングを描かない(上の drawRings)
 				{
 					if (isThumb)
-						KESCMDrawPageBorder(gPort, db, srcPageUID, kKESCMRingR, kKESCMRingG, kKESCMRingB);
+					{
+						// ★★2026-08-24: **サムネイルの枠もパネルの「Mark colour」に従う**。
+						//   ⚠ここは**リング画像を使わない唯一の変更ページ表示**(極小表示なので画像を
+						//     縮めず単色の枠を引く)ため、色を選べるようにした回に取り残されて赤固定の
+						//     ままだった＝**カンバスはシアン・Pages パネルは赤**という食い違い。
+						//   ★「赤い下地に埋もれるからシアンを選ぶ」という導入理由は、サムネイルでこそ
+						//     効く(小さいので余計に見分けにくい)。
+						uint8 mr = 0, mg = 0, mb = 0;
+						SelectedMarkColor(mr, mg, mb);
+						KESCMDrawPageBorder(gPort, db, srcPageUID, mr, mg, mb);
+					}
 					else
 						KESCMDrawEntryOnPage(gPort, vpAttr, it->second, db, srcPageUID, sxr, drawMode, SelectedMarkOpacity());
 				}
@@ -2052,6 +2072,10 @@ bool16 KESCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 			else if (isOverflow)
 			{
 				// 登録もされていない、ページ数差であふれたページ。未比較であることを赤斜線で明示する。
+				// ⚠★★2026-08-24 に明記: **この赤は「Mark colour」の選択に追随しない。意図的**＝
+				//   言っていることが違う(「変更があった」ではなく「比較していない」)。登録済みページの
+				//   緑「/」と同じ立場で、**マークの色を変えても意味が変わらない印**。
+				//   ★むしろシアンを選んだときは、変更(シアン)と未比較(赤)が色で見分けられる。
 				KESCMDrawPageDiagonal(gPort, db, srcPageUID, sxr, drawMode, SelectedMarkOpacity(), kKESCMRingR, kKESCMRingG, kKESCMRingB);
 			}
 			// 除外トグルON時、実際に比較しているページ(=登録済みRemovedでも overflow でもない=対応表に
@@ -2112,7 +2136,14 @@ bool16 KESCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 		if (drawRings && it != sEntries.end())	// ★Story モードではリングを描かない(上の drawRings)
 		{
 			if (isThumb)
-				KESCMDrawPageBorder(gPort, db, pageUID, kKESCMRingR, kKESCMRingG, kKESCMRingB);
+			{
+				// ★★2026-08-24: **サムネイルの枠もパネルの「Mark colour」に従う**(理由は上の Source 側
+				//   と同じ＝ここはリング画像を使わない唯一の変更ページ表示なので、色を選べるようにした
+				//   回に取り残されていた)。
+				uint8 mr = 0, mg = 0, mb = 0;
+				SelectedMarkColor(mr, mg, mb);
+				KESCMDrawPageBorder(gPort, db, pageUID, mr, mg, mb);
+			}
 			else
 				KESCMDrawEntryOnPage(gPort, vpAttr, it->second, db, pageUID, sxr, drawMode, screenMarkOp);
 		}
@@ -2124,6 +2155,7 @@ bool16 KESCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 		else if (isOverflow)
 		{
 			// 登録もされていない、ページ数差であふれたページ。未比較であることを赤斜線で明示する。
+			// ⚠★★この赤は「Mark colour」の選択に追随しない(意図的。理由は上の Source 側に全文)。
 			KESCMDrawPageDiagonal(gPort, db, pageUID, sxr, drawMode, screenMarkOp, kKESCMRingR, kKESCMRingG, kKESCMRingB);
 		}
 		// 除外トグルON時、実際に比較しているページ(=登録済みAddedでも overflow でもない=対応表に

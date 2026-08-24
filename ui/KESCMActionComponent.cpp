@@ -181,7 +181,7 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 
 		// フライアウトの「Marks opacity 25% / 75%」(ラジオ風): 選んだ方の不透明度に設定する。
 		// 実体は KESCMPanelObserver.cpp の自由関数(印刷フラグは維持し不透明度だけ変更)。
-		// ⚠★★**Story の反転マークは「出したときの不透明度」を焼き込んで持っている**(2026-08-22 の
+		// ⚠★★**Story の色地マークは「出したときの不透明度」を焼き込んで持っている**(2026-08-22 の
 		//   不具合再検査 A4)。model 側の SetMarkOpacity25 が再描画するのは Pixel の枠だけで、あちらは
 		//   描画のたびに現在値を読み直すが、こちらはアドーンメントに載せた値がそのまま残る。
 		//   ⇒ **設定を変えたら作り直しを頼む**。★model からは頼めない＝あちらは UI プラグインの
@@ -219,7 +219,7 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 		// 出る。不透明度はパネルの 25%/75% 選択に連動)。★既定 OFF で Start は触らない(2026-08-22 変更＝
 		// 設定はパネル設定に保存され起動時に復元されるので、Start が上書きすると保存した選択が消える)。
 		// ⚠★★**Target 版と同じく2つの機構に効く**(2026-08-22 の不具合再検査 A1)＝Pixel の枠は描画側が
-		//   sSrcMarksOn を直接見るが、Story の反転マークは別機構(グローバルテキストアドーンメント)なので
+		//   sSrcMarksOn を直接見るが、Story の色地マークは別機構(グローバルテキストアドーンメント)なので
 		//   こちらから作り直しを頼む。⇒ **これが無いと Story モードでは ON にしても出ず、OFF にしても
 		//   消えない**(内部状態が変わらないので、下の InvalidateDB で描き直しても同じ絵が出るだけ)。
 		case kKESCMPopupShowSrcMarksActionID:
@@ -237,7 +237,7 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 			//     飛ばし、Source の窓に押下中の枠が残る。
 			//   ★KESCMTrackerRevealBegin 側は「トグルを見ない」へ正しく直してあった＝これは
 			//     同じ変更の片割れの直し忘れ([[one-question-one-place]])。
-			KESCMStoryMarksRefresh();		// Story モードの反転マーク(Pixel モードでは何もしない)
+			KESCMStoryMarksRefresh();		// Story モードの色地マーク(Pixel モードでは何もしない)
 			IDataBase* const srcDB = Utils<IKESCMMarkData>()->GetMarkedSourceDB();
 			Utils<IKESCMCompareFacade>()->InvalidateDB(srcDB);
 			// ★レイアウトビューだけでなく Pages パネルの Source サムネイルも即時更新する。Source 側の枠は
@@ -256,7 +256,7 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 		// 「ツールでボタンを押さなくても常にマークが出る様に」)。★既定 OFF で Start は触らない
 		// (Source 版と同じ理由＝設定はパネル設定に保存され、起動時に復元される)。
 		// ⚠★★**2つの機構に効く**＝Pixel の比較リングは描画側が sTgtMarksOn を直接見る
-		//   (KESCMDrawEventHandler の alwaysScreen)が、Story の反転マークは別機構(グローバルテキスト
+		//   (KESCMDrawEventHandler の alwaysScreen)が、Story の色地マークは別機構(グローバルテキスト
 		//   アドーンメント)なので、こちらから作り直しを頼む。同じトグルで両モードが動くのはそのため。
 		// ⚠Pages パネルのサムネイルは触らない＝サムネイルは isThumb で常にマークを描くので、このトグルで
 		//   見た目は変わらない(Source 版が作り直すのは、あちらの枠が wantSrcMarks に依存するため)。
@@ -273,7 +273,7 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 			//     ON にした直後の枠が 1.0(不透明)のまま描かれる。
 			compare->SetMarksTempHidden(kFalse);
 			compare->SetMarkScreenOpacity(compare->GetBaseScreenOpacity());
-			KESCMStoryMarksRefresh();		// Story モードの反転マーク(Pixel モードでは何もしない)
+			KESCMStoryMarksRefresh();		// Story モードの色地マーク(Pixel モードでは何もしない)
 			compare->InvalidateDB(compare->GetArmedTargetDB());
 			PMString msg(tgtMarksOn ? "Target marks: on." : "Target marks: off.");
 			msg.SetTranslatable(kFalse);

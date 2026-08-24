@@ -557,6 +557,12 @@ bool16 KESCMStoryJumpToChange(int32 rowIndex, int32 changeIndex)
 	//   not cross a DLL edge. ⇒ The two ranges travel as six plain numbers and the model builds the
 	//   set. ★What went with it: deciding whether the older window is open, and treating an empty
 	//   range as a caret. Both are facts about the comparison rather than about this row.
+	// ⚠NO nil TEST HERE, AND ITS ABSENCE IS DELIBERATE - unlike KESCMStoryPressMarks.cpp, which
+	//   tests every one of its three calls. The difference is who is calling: **this runs from a
+	//   click on a row**, so the panel is up, the comparison is armed and kUtilsBoss is certainly
+	//   there; that file's Refresh hangs off a model NOTIFICATION, which can arrive while the
+	//   application is tearing down. Every other facade call in this file (IKESCMCompareFacade,
+	//   IKESCMStoryEditsFacade) is written the same way for the same reason.
 	Utils<IKESCMStoryMarkFacade>()->ShowJumpFlash(db, row.fStoryUID, from, to,
 												  change.fSourceStart, change.fSourceEnd);
 

@@ -53,5 +53,5 @@ REGISTER_PMINTERFACE(KESCMPageFlagsFacade, kKESCMPageFlagsFacadeImpl)	// UI が 
 REGISTER_PMINTERFACE(KESCMStoryEditsFacade, kKESCMStoryEditsFacadeImpl)	// UI が Story Edits の一覧を読む窓口(同上。★読み取り専用)
 REGISTER_PMINTERFACE(KESCMBookFacade, kKESCMBookFacadeImpl)	// UI がブック比較を頼む窓口(同上。★第1段の5本目)
 REGISTER_PMINTERFACE(KESCMStoryMarkFacade, kKESCMStoryMarkFacadeImpl)	// ★境界の6本目(2026-08-23)＝UI が Story モードのマークを出す/消す窓口(同上。KESCMFacades.cpp)
-REGISTER_PMINTERFACE(KESCMStoryMarkerAdornment, kKESCMStoryMarkerAdornmentImpl)	// ★★変わった文字そのものを Difference 合成で反転するグローバルテキストアドーンメント(KESCMStoryMarker.cpp)。**2026-08-23 に UI 側から移設**＝UI の File>Export>PDF は BG で走り kUIPlugIn には配られないので、紙・PDF に出すには model 側に居るしかない
+REGISTER_PMINTERFACE(KESCMStoryMarkerAdornment, kKESCMStoryMarkerAdornmentImpl)	// ★★変わった文字の下に色地を敷くグローバルテキストアドーンメント(KESCMStoryMarker.cpp。⚠2026-08-24 までは Difference 合成の反転だった)。**2026-08-23 に UI 側から移設**＝UI の File>Export>PDF は BG で走り kUIPlugIn には配られないので、紙・PDF に出すには model 側に居るしかない
 REGISTER_PMINTERFACE(KESCMStoryMarkerExpiryTask, kKESCMStoryMarkerExpiryImpl)	// 上のうち**ジャンプの点滅だけ**を1秒ほどで引っ込める IIdleTask(KESCMStoryMarkerExpiry.cpp)。★同じ回に移設(マーカーが Start/Stop を呼ぶので UI に残すと逆依存になる)

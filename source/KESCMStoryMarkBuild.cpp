@@ -60,7 +60,7 @@ bool16 gPressUseSource = kFalse;
 
    ⚠THE STORY'S OWN LENGTH IS ONE MORE THAN THAT. ITextModel.h:55-56 is explicit that TotalLength
    counts "the non-editable, must-have carriage return at the end", and a paragraph mark has no
-   glyph to invert. Including it would stretch the range past the last real character for nothing.
+   glyph to mark. Including it would stretch the range past the last real character for nothing.
    ★The rest of what TotalLength counts IS wanted: it includes the text of embedded tables
    (ITextModel.h:138), and in a story that is entirely new the table's words are new as well.
 
@@ -94,6 +94,11 @@ void KESCMStoryCollectRanges(IDataBase* db, bool16 useSourceDocument, KESCMStory
 	if (db == nil)
 		return;
 
+	// ⚠ASKED WITHOUT A nil TEST, WHERE KESCMStoryMarkRefresh BELOW TESTS ITS OWN FACADE - and the
+	//   two are not in disagreement. That one is the entry point and can be reached from a model
+	//   notification during teardown; **this is only ever reached after it has already got
+	//   IKESCMCompareFacade off kUtilsBoss**, which answers the same question for the whole boss.
+	//   Testing again here would be the second place one fact is written down.
 	const int32 rowCount = Utils<IKESCMStoryEditsFacade>()->GetRowCount();
 	for (int32 n = 0; n < rowCount; ++n)
 	{

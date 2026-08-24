@@ -37,8 +37,10 @@
 
 // Project includes:
 #include "IKESCMCompareFacade.h"	// IsDocDBOpen - never repaint a document that has gone
-#include "KESCMConstants.h"			// kKESCMRingR/G/B - the mark colour, shared with the Pixel mode's frames
-#include "KESCMDrawEventHandler.h"	// KESCMSetOutputColor - screen in RGB, paper in CMYK (2026-08-24)
+#include "KESCMDrawEventHandler.h"	// SelectedMarkColor (the panel's red/cyan) and KESCMSetOutputColor
+									// (screen in RGB, paper in CMYK) - both shared with the Pixel mode's
+									// frames. ⚠KESCMConstants.h was included here for kKESCMRingR/G/B
+									// until 2026-08-24; asking SelectedMarkColor instead left it unused.
 #include "KESCMID.h"				// ★2026-08-23: moved here from the UI plug-in's KCMUIID.h
 #include "KESCMStoryMarkBuild.h"	// KESCMStoryMarkPrintAllowedFor - may THIS document go on paper
 #include "KESCMStoryMarker.h"
@@ -64,7 +66,7 @@ namespace
 //   registry resolves in every execution context including background threads** (KESCM.fr spells
 //   this out). ⇒ The asynchronous PDF export draws these on its own thread.
 //   ★The lock is the same one the comparison marks use (KESCMThreadSafety.h), because the two are
-//     never drawn at once - Pixel mode has no inverted characters and Story mode has no rings.
+//     never drawn at once - Pixel mode has no washed characters and Story mode has no rings.
 //   ⚠The drawing side must not take it on every wax run for nothing: gHasMark is tested FIRST and
 //     the lock is only taken when there is something to look up. That is the order the Pixel side
 //     already uses (KESCMDrawEventHandler.cpp:2039-2040).
@@ -261,8 +263,10 @@ bool16 KESCMStoryMarkerRunIsMarked(const IWaxRun* waxRun)
 
 /* KESCMStoryMarkerSetDocs
    Install a set of ranges as THE mark, replacing whatever was there. Merging happens here so that
-   no caller can hand in overlaps (which would invert twice and leave a hole), and the span the
-   fast path tests is worked out in the same pass.
+   no caller can hand in overlaps, and the span the fast path tests is worked out in the same pass.
+   ⚠Merging was once a matter of correctness (two Difference inversions over the same characters
+   punched a hole); since 2026-08-24 the wash is opaque and an overlap would merely paint twice, so
+   what the merge buys now is the cost of drawing - one fill per stretch instead of one per edit.
 
    ⚠What arrives is the COMPOSED set, not what a caller asked for - see the statics above.
    ⚠THE CALLER HOLDS KESCMMarkStateMutex. There is exactly one caller (KESCMStoryMarkerInstall) and
@@ -391,9 +395,10 @@ void KESCMStoryMarkerInstall()
 // The adornment
 //----------------------------------------------------------------------------------------
 
-/** Inverts the pixels over the marked characters. On screen always; on paper and in an exported
+/** Lays a coloured wash under the marked characters. On screen always; on paper and in an exported
 	PDF when the document's toggle says so (KESCMStoryMarkPrintAllowedFor). ★"Screen only" until
-	2026-08-23, which is why the notes below about opacity are worth reading before changing it. */
+	2026-08-23, and an INVERSION until 2026-08-24 - both changes are recorded where they matter
+	(GetDrawPriority and Draw), and both are worth reading before changing the look again. */
 class KESCMStoryMarkerAdornment : public CPMUnknown<IGlobalTextAdornment>
 {
 public:
@@ -417,9 +422,28 @@ public:
 
 		The named constants for Adobe's own global adornments are in IGlobalTextAdornment.h:170-181;
 		the non-global ones (underline, strikethrough, paragraph shade, ruby, kenten - and the text
-		itself) are at the foot of ITextAdornment.h. */
+		itself) are at the foot of ITextAdornment.h.
+
+		★★★AND THE NUMBER HAS TO BE NEGATIVE, WHICH COST A BUG (found 2026-08-24 in the recheck of
+		this very migration). The move above was written as `kTAPassPriBackground + 0.50` - the right
+		pass by name and the wrong one by arithmetic:
+		  * a priority is split in two, **the whole part being the PASS and the fraction the RUN**
+		    within it (TextDrawPriority.h:33-40), and the wax runs are walked once per distinct pass;
+		  * kPassBackground is **-16384** (DrawPassInfo.h:92), so a POSITIVE fraction carries the
+		    whole part up to -16384 while **every one of Adobe's own background adornments, without
+		    exception, is written as kTAPassPriBackground + a NEGATIVE fraction** and therefore sits
+		    in pass -16385.
+		⇒ `+0.50` did not join them; it drew a whole pass AFTER all of them. Since the wash is opaque
+		  (no transparency, by design - see Draw), it painted over paragraph shading, paragraph
+		  borders and rules, underlines, and the product's own missing-font / missing-glyph /
+		  kinsoku / H&J highlights, in exactly the passage the reader was told to look at.
+		★-0.585 puts it between kTAPriParagraphRuleBelow (-0.59) and kTAPriUnderline (-0.58): after
+		  the paragraph-level grounds, so the wash covers a paragraph shade the way a highlighter
+		  does, and before everything drawn ON the characters, so nothing the product draws is hidden.
+		★The purpose of the move is untouched: any negative pass is still below the glyphs, which
+		  are drawn at kTAPassPriText + 0.50 (pass 0). */
 	virtual Text::DrawPriority GetDrawPriority()
-		{ return Text::DrawPriority(Text::kTAPassPriBackground + 0.50); }
+		{ return Text::DrawPriority(Text::kTAPassPriBackground + -0.585); }
 
 	virtual bool16 GetCheckIsActive() { return kTrue; }
 	virtual bool16 GetIsActive(const IParcelShape* parcelShape,
@@ -449,7 +473,7 @@ public:
 	virtual void EndOfParcelDraw(GraphicsData*, int32, const IParcelShape*) {}
 
 private:
-	/** The rectangles to invert, in the coordinates the run reports its own position in - one per
+	/** The rectangles to wash, in the coordinates the run reports its own position in - one per
 		marked range that falls in this run.
 		kFalse for a run that cannot be measured - an inline graphic has neither glyphs nor render
 		data, which all four of these methods are warned about in IGlobalTextAdornment.h. */
@@ -660,7 +684,11 @@ void KESCMStoryMarkerAdornment::Draw(GraphicsData* gd, int32 iShapeFlags, const 
 	//   frame no longer has to declare transparency for the mark to survive, and PDF 1.3 behaves
 	//   exactly like 1.4.
 	// ★HOW STRONG - the panel's "Marks opacity 25% / 75%", mixed from paper white towards the mark
-	//   colour. The jump's own mark passes 1.0, so it lands at the full colour.
+	//   colour. ⚠**BOTH KINDS OF MARK GET THE SAME STRENGTH**, the jump's flash included: the value
+	//   is read once by KESCMStoryMarkerInstall (MarkOpacityNow) and every caller ends there. The
+	//   sentence that stood here said the jump "passes 1.0 and lands at the full colour", which was
+	//   true until 2026-08-22 and has been wrong ever since - it described the very bug that was
+	//   fixed by moving the question to one place (see MarkOpacityNow above, which says so).
 	const int32 pct = ::ToInt32(opacity * PMReal(100.0));
 	const int32 mix = (pct < 0) ? 0 : ((pct > 100) ? 100 : pct);
 

@@ -62,7 +62,7 @@
 #include "IKESCMCompareFacade.h"     // peek の表示・arm 状態・基準不透明度(2026-08-13・分割 第1段 Task 11)
 #include "KESCMCmykCursor.h"         // KESCMCmykBeginPress / KESCMCmykEndPress(押下中の CMYK 状態はあちらが持つ)
 #include "KESCMBoundaryID.h"         // kKESCMModeStory(比較モードの列挙子)
-#include "KESCMStoryPressMarks.h"    // Story モードで押下中に出す反転マーク(2026-08-22)
+#include "KESCMStoryPressMarks.h"    // Story モードで押下中に出す色地マーク(2026-08-22)
 #include "KESCMViewLookup.h"         // KESCMQueryViewUnderMouse / KESCMQueryMouseContentPoint /
                                      // KESCMQueryPanorama(いずれも UI 側。2026-08-15・第2段 Task 4B)
 #include "KESCMPeekGesture.h"
@@ -322,12 +322,13 @@ void KESCMTrackerRevealBegin(bool16 shiftDown, bool16 altDown, bool16 cmdDown, b
 		return;
 	}
 
-	// ---- 修飾なし・Story 変更モード: 押下中だけ「変更した文字そのもの」を反転する ----
+	// ---- 修飾なし・Story 変更モード: 押下中だけ「変更した文字そのもの」に色地を敷く ----
 	// ★★Pixel の reveal(下)とは別の道で、絵の作り方が根本的に違う。Pixel は「ページのどこが違って
 	//   見えるか」しか知らないので枠を描くが、Story は「どの文字が変わったか」を知っているので、
-	//   その文字を反転する(ユーザー指定 2026-08-22)。⇒ 拡大率で大きさが変わらず、ページの外枠も要らない。
+	//   その文字の下に色地を敷く(ユーザー指定 2026-08-22。★2026-08-24 までは反転だった＝紙に出せず変更)。
+	//   ⇒ 拡大率で大きさが変わらず、ページの外枠も要らない。
 	// ⚠上の temp-hide が扱うのは**枠**だけ(Story モードには枠が無い＝KESCMDrawEventHandler の drawRings が
-	//   Story では kFalse)なので、Story の反転マークの「押している間は反対」はここではなく
+	//   Story では kFalse)なので、Story の色地マークの「押している間は反対」はここではなく
 	//   KESCMStoryMarksRefresh が決める＝押した窓のトグルと押下を XOR する(KESCMStoryPressMarks.cpp)。
 	//   ⇒ **トグル OFF の窓を押せば出て、ON の窓を押せば隠れる**。この分岐は「押した」ことだけを伝える。
 	// ★対象は**押した窓の側だけ**(ユーザー選択 2026-08-22)。削除された文字は旧版にしか無く、挿入された
@@ -370,7 +371,7 @@ void KESCMTrackerRevealEnd()
 	//   中身は分割前と同一(フォント解放・hover/other の解除・ステータス行の空白1文字クリア)。
 	KESCMCmykEndPress();
 
-	// Story 変更モードで押下中に出していた反転マークを消す。⚠押下で出していなければ何もしない
+	// Story 変更モードで押下中に出していた色地マークを消す。⚠押下で出していなければ何もしない
 	//   (向こうが自分で覚えている)＝Pixel モードで押して離しても、ジャンプが出した一時マーカーは消えない。
 	KESCMStoryPressMarksEnd();
 

@@ -4,7 +4,7 @@
 //
 //  Kohaku Change Marker (KESCM)
 //
-//  The flash of inverted pixels over the characters a Story Edits row just jumped to.
+//  The coloured wash laid under the characters a Story Edits row just jumped to.
 //
 //  ★★★A GLOBAL TEXT ADORNMENT, NOT A DRAW EVENT (2026-08-20, user's call: "マーカーはグローバル
 //  テキストアドーンメントで出して見て欲しい"). The mark is drawn ON THE CHARACTERS, by the text
@@ -21,10 +21,19 @@
 //  the document is not touched, nothing is saved into the .indd, and no recomposition is asked for
 //  (IGlobalTextAdornment.h:42-51). Its on/off state is this file's statics and nothing else.
 //
-//  ★THE LOOK IS KBS's: Difference blending with white, which inverts whatever is underneath, so
-//  the mark shows up on any background and the glyphs stay readable (user's call: "見え方はKBSと
-//  同じように反転が嬉しい"). KBSDrawEventHandler.cpp:533-546 has the reasoning, including why a
-//  plain red rectangle and an XOR raster port were both rejected.
+//  ★★★THE LOOK IS A HIGHLIGHTER: an opaque wash in the mark colour, laid UNDER the glyphs, at the
+//  strength the panel's "Marks opacity" asks for (2026-08-24). ⚠**IT WAS AN INVERSION UNTIL THEN**
+//  - Difference blending with white, KBS's look (user's call: "見え方はKBSと同じように反転が嬉しい")
+//  - and that is worth knowing before anyone proposes it again, because it was tried the whole way
+//  down and cannot be printed:
+//    * Difference is a TRANSPARENCY effect, and a text adornment has no way to declare itself to the
+//      flattener (there is no IAdornmentFlattenerUsage on a service boss) - so outputs that keep
+//      transparency dropped the drawing and outputs that flatten kept the paint and dropped the blend;
+//    * and even after that was solved, **an exported or printed page draws the text LAST**, so the
+//      ground inverted and the glyphs did not (measured: ground 255 -> 6, glyph core 0 -> 0) - black
+//      on black, with the changed words as the only unreadable ones.
+//  ⇒ A wash needs no transparency at all: nothing to flatten, nothing to declare, PDF 1.3 behaves
+//    like 1.4, and the screen and the page show the same picture. See KESCMStoryMarker.cpp's Draw.
 //
 //  ★IT IS A POINTER, NOT A HIGHLIGHT, WHEN THE JUMP PUTS IT UP: it takes itself off the screen
 //  after about a second (KESCMStoryMarkerExpiry).
@@ -66,10 +75,13 @@ class IDataBase;
 	  ShowStanding() - everything that stays up: the "Show Marks on ..." toggles, and the tool's
 	                   press while the button is held.
 
-	★★WHY EXCLUSIVE AT ALL. Difference blending inverts what is underneath, so two marks over the
-	same characters would cancel each other out and leave a hole (KESCMStoryMarkRanges.h). Keeping
-	one kind per document makes that impossible rather than making it something the drawing has to
-	handle.
+	★★WHY EXCLUSIVE AT ALL. The rule was written when the mark was an INVERSION: two marks over the
+	same characters cancelled out and left a hole, so keeping one kind per document made that
+	impossible rather than something the drawing had to handle (KESCMStoryMarkRanges.h).
+	⚠**THE WASH OF 2026-08-24 CANNOT PUNCH A HOLE** - painting the same rectangle twice gives the
+	same colour - so the rule is no longer load-bearing for correctness. It is kept because it is
+	still what the reader wants: a document showing every edit does not also want one of them
+	pointed at, and the flash going up in the OTHER window is the whole of what a jump adds there.
 	⇒ ★In a document with a standing mark, the standing mark is all there is: the jump adds no
 	  pointer there, because every character it would point at is already lit.
 	⚠★★AND THE OTHER DOCUMENT IS A SEPARATE ANSWER. Until 2026-08-23 one flag stood for both, so
@@ -83,8 +95,8 @@ namespace KESCMStoryMarker
 	/** Add one story's range to a set a jump is about to show.
 
 		★IT IS HERE RATHER THAN AT THE CALLER SO THAT A DELETION LOOKS THE SAME EVERYWHERE. A range
-		that comes through empty is the place something was deleted from - there is nothing on this
-		side to invert - and it is shown as a caret, exactly as the standing marks show one
+		that comes through empty is the place something was deleted from - there is no character on
+		this side to wash - and it is shown as a caret, exactly as the standing marks show one
 		(KESCMStoryMarkBuild). A caller that built its own ranges would be the second place that
 		decision is made ([[one-question-one-place]]).
 
