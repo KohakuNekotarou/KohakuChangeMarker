@@ -75,7 +75,8 @@ bool16		KESCMCollectChangedPageUIDs(IDataBase* db, std::set<UID>& outPages);
 struct KESCMCheckablePages
 {
 	bool16			fAllPages;	// Story モード = この文書のどのページに付けてもよい(fPages は空のまま)
-	std::set<UID>	fPages;		// Pixel モード = マーク(枠/「/」)の付いているページだけ
+	std::set<UID>	fPages;		// Pixel モード = マーク(枠/「/」)の付いているページ＋**マスターページ全部**
+								// (マスターは差が無くても付けられる＝2026-08-24 ユーザー要望。理由は実体側)
 
 	KESCMCheckablePages() : fAllPages(kFalse) {}
 	bool16 Includes(UID page) const { return (fAllPages || fPages.count(page) > 0) ? kTrue : kFalse; }

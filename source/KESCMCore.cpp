@@ -170,7 +170,20 @@ bool16 KESCMCollectCheckablePageUIDs(IDataBase* db, KESCMCheckablePages& out)
 	out.fPages.clear();
 
 	if (KESCMGetCompareMode() != kKESCMModeStory)
-		return KESCMCollectChangedPageUIDs(db, out.fPages);	// Pixel = マークの付いたページだけ
+	{
+		// Pixel = マークの付いたページだけ。★対象文書かの判定も向こうが持つ(比較対象でなければ kFalse)。
+		if (!KESCMCollectChangedPageUIDs(db, out.fPages))
+			return kFalse;
+		// ★★2026-08-24(ユーザー要望): **マスターページは、差が無くても常に ✓ を付けられる。**
+		//   Pixel の規則「枠/「/」の付いたページだけ」(2026-07-11 のユーザー指定)はそのままで、
+		//   マスターだけを例外にする。理由＝Story モードでは全ページに付けられるので**マスターにも
+		//   付けられるのに、Pixel に切り替えた瞬間に付けられなくなる**という食い違いが出ていた。
+		//   ⚠通常ページの規則は変えない(「変更が無いページに ✓ は要らない」は今も有効)。
+		std::vector<UID> masters;
+		KESCMCollectMasterPageUIDs(db, masters);
+		out.fPages.insert(masters.begin(), masters.end());
+		return kTrue;
+	}
 
 	// Story モード = 比較中の2文書なら全ページ。★対象文書の判定は上の関数と同じ2つのポインタで行う。
 	if (db == nil || (db != KESCMDrawEventHandler::sDB && db != KESCMDrawEventHandler::sSrcDB))
