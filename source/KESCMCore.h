@@ -187,6 +187,11 @@ IDataBase*	KESCMArmedSourceDB();
 bool16		KESCMGetPrintMarks();		// 印刷マーク ON/OFF
 bool16		KESCMGetMarkOpacity25();	// 枠不透明度の選択: kTrue=25% / kFalse=75%
 
+// マークの色の選択。★★2026-08-24: 背景による自動切り替え(赤い下地の上だけシアン)を廃止して
+// これに置き換えた。Pixel の枠と Story の色地の両方に効く(どちらも SelectedMarkColor を通る)。
+void		KESCMDoSetMarkColor(bool16 cyan, IDataBase* db);
+bool16		KESCMGetMarkColorCyan();	// kFalse=赤(既定) / kTrue=シアン
+
 // ★比較モード（2026-08-20）。定義は KESCMBoundaryID.h（境界に出る型なので両側が読む場所に置いた）。
 //   ⚠**設定を変えるだけで、比較そのものはやり直さない**＝arm 中に変えたときの再比較は呼び手の仕事
 //   （UI 側の KESCMSetCompareMode。ここに再比較まで書くと「モードを変える」と「比較する」が1つの

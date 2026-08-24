@@ -195,6 +195,19 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 			KESCMStoryMarksRefresh();
 			break;
 
+		// ★「Mark colour」(2026-08-24)。⚠**上の opacity と違い、ここでは作り直しを頼まない。**
+		//   不透明度は**マークを install したときの値がそのまま載る**ので設定を変えたら作り直しが
+		//   要るが、色は Story 側の Draw が**描くたびに SelectedMarkColor() を読み直す**ので、
+		//   model 側の再描画(KESCMDoSetMarkColor)だけで新しい色になる。
+		//   ★同じ「設定を変えた」でも、値がどこに載っているかで必要な後始末が違う ---- Pixel の
+		//     リング画像はキャッシュなので model 側でキャッシュを畳んでいる(KESCMCore.cpp)。
+		case kKESCMPopupColorRedActionID:
+			Utils<IKESCMCompareFacade>()->SetMarkColor(kFalse);
+			break;
+		case kKESCMPopupColorCyanActionID:
+			Utils<IKESCMCompareFacade>()->SetMarkColor(kTrue);
+			break;
+
 		// (kKESCMPopupAboutScriptActionID / DoAboutScript は 2026-07-25 撤去=About Scripting 項目削除。)
 
 		case kKESCMPopupUsageActionID:
@@ -715,6 +728,22 @@ void KESCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionSta
 			// ラジオ風: 現在 75%(=!25%)ならこの項目に✓。
 			int16 actionState = kEnabledAction;
 			if (!Utils<IKESCMCompareFacade>()->GetMarkOpacity25())
+				actionState |= kSelectedAction;
+			listToUpdate->SetNthActionState(i, actionState);
+		}
+		// ★「Mark colour」の2項目(2026-08-24)。上の Marks opacity と同じラジオ風＝いま効いている方に✓。
+		//   **どちらも常に有効**＝比較していないときでも選べる(次の Start にも効く)。
+		else if (action == kKESCMPopupColorRedActionID)
+		{
+			int16 actionState = kEnabledAction;
+			if (!Utils<IKESCMCompareFacade>()->GetMarkColorCyan())
+				actionState |= kSelectedAction;		// 赤(既定)ならこちらに✓
+			listToUpdate->SetNthActionState(i, actionState);
+		}
+		else if (action == kKESCMPopupColorCyanActionID)
+		{
+			int16 actionState = kEnabledAction;
+			if (Utils<IKESCMCompareFacade>()->GetMarkColorCyan())
 				actionState |= kSelectedAction;
 			listToUpdate->SetNthActionState(i, actionState);
 		}

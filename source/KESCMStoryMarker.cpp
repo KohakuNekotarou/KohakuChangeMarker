@@ -663,9 +663,15 @@ void KESCMStoryMarkerAdornment::Draw(GraphicsData* gd, int32 iShapeFlags, const 
 	//   colour. The jump's own mark passes 1.0, so it lands at the full colour.
 	const int32 pct = ::ToInt32(opacity * PMReal(100.0));
 	const int32 mix = (pct < 0) ? 0 : ((pct > 100) ? 100 : pct);
-	const uint8 wr = (uint8)(255 - (255 - kKESCMRingR) * mix / 100);
-	const uint8 wg = (uint8)(255 - (255 - kKESCMRingG) * mix / 100);
-	const uint8 wb = (uint8)(255 - (255 - kKESCMRingB) * mix / 100);
+
+	// ★WHICH COLOUR - the panel's "Mark colour: Red / Cyan", read through the same accessor the
+	//   Pixel mode's rings use, so the two modes can never disagree about it.
+	uint8 baseR = 0, baseG = 0, baseB = 0;
+	KESCMDrawEventHandler::SelectedMarkColor(baseR, baseG, baseB);
+
+	const uint8 wr = (uint8)(255 - (255 - baseR) * mix / 100);
+	const uint8 wg = (uint8)(255 - (255 - baseG) * mix / 100);
+	const uint8 wb = (uint8)(255 - (255 - baseB) * mix / 100);
 
 	// ★SCREEN IN RGB, PAPER IN CMYK - the same helper the Pixel mode's frames call, for the same
 	//   reason: KESCM compares in CMYK, so a mark specified in RGB does not match its own frames on

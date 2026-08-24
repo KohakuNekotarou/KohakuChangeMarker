@@ -749,6 +749,26 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKESCMOpacity75SubMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
+		// "Mark colour" (2026-08-24). Two children, exclusive, check on whichever is in force -
+		// exactly the shape of "Marks opacity" above. ★It replaces an AUTOMATIC choice: the rings
+		// used to switch to cyan by themselves over reddish grounds, decided per pixel off the
+		// comparison raster. The Story mode's wash cannot read the ground at all, so leaving the
+		// automatic rule in place would have made the two modes disagree about colour.
+		0,
+		kKESCMColorSubmenuPath kSDKDefDelimitMenuPath,
+		kKESCMColorSubmenuMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
+		kKESCMPopupColorRedActionID,
+		kKESCMColorSubmenuPath,
+		kKESCMColorRedSubMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
+		kKESCMPopupColorCyanActionID,
+		kKESCMColorSubmenuPath,
+		kKESCMColorCyanSubMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
 		// "Compare mode" on the panel flyout (popup) menu (2026-08-20). Two children, exclusive,
 		// with a check on whichever one is in force - the same shape as "Marks opacity" above.
 		// Pixel Changes rasterises pages and compares them; Story Changes compares the text of the
@@ -1141,6 +1161,24 @@ resource ActionDef (kSDKDefActionResourceID)
 		kOtherActionArea,
 		kNormalAction,
 		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates checks whichever opacity is selected (radio-style)
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		kKESCMActionComponentBoss,
+		kKESCMPopupColorRedActionID,
+		kKESCMColorRedKey,					// "Red" (the default)
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates checks whichever colour is selected (radio-style)
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		kKESCMActionComponentBoss,
+		kKESCMPopupColorCyanActionID,
+		kKESCMColorCyanKey,					// "Cyan"
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates checks whichever colour is selected (radio-style)
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 

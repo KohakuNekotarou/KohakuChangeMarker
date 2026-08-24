@@ -102,6 +102,8 @@ public:
 	virtual void		SetMarkOpacity25(bool16 op25)	{ KESCMSetMarkOpacity25(op25); }
 	virtual bool16		GetPrintMarks()			{ return KESCMGetPrintMarks(); }
 	virtual bool16		GetMarkOpacity25()		{ return KESCMGetMarkOpacity25(); }
+	virtual void		SetMarkColor(bool16 cyan)	{ KESCMSetMarkColor(cyan); }
+	virtual bool16		GetMarkColorCyan()		{ return KESCMGetMarkColorCyan(); }
 
 	virtual KESCMCompareMode	GetCompareMode()					{ return KESCMGetCompareMode(); }
 	virtual void				SetCompareMode(KESCMCompareMode m)	{ KESCMSetCompareMode(m); }

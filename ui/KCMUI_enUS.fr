@@ -85,6 +85,8 @@ resource StringTable (kSDKDefStringsResourceID + index_enUS)
                 kKESCMPrintCheckKey,			"Print comparison marks",
                 kKESCMOpacity25Key,				"25%",
                 kKESCMOpacity75Key,				"75%",
+                kKESCMColorRedKey,				"Red",
+                kKESCMColorCyanKey,				"Cyan",
                 kKESCMModePixelKey,				"Pixel Changes",
                 kKESCMModeStoryKey,				"Story Changes",
                 kKESCMPrevChangeKey,			"< Prev",

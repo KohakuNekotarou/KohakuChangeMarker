@@ -44,6 +44,7 @@
 #include <map>						// KESCMDoMarkChangesDoc のペアリング map(間接includeに頼らず明示 2026-07-25)
 
 #include "KESCMDrawEventHandler.h"   // 描画エンジン＋共有 static
+#include "KESCMThreadSafety.h"       // ★マーク色を変えたときリング画像のキャッシュを畳むのに entry を走査する
 #include "KESCMPeek.h"               // KESCMBaseScreenOpacity
 #include "KESCMPageMap.h"            // KESCMBuildPairing(除外対応表) / KESCMPageMapCollectRegistered
 #include "KESCMPageCheck.h"          // KESCMPageCheckClearAllDocs(Stop で✓を全消去)
@@ -1069,6 +1070,43 @@ bool16 KESCMGetPrintMarks()
 bool16 KESCMGetMarkOpacity25()
 {
 	return KESCMDrawEventHandler::sMarkOpacity25;
+}
+
+// マークの色(赤/シアン)を設定する。
+// ★★2026-08-24: **背景による自動切り替えを廃止し、フライアウトで選ぶようにした**(ユーザー判断
+//   「ユーザーが選べばいいので」)。Pixel の枠も Story の色地も、描くときに
+//   KESCMDrawEventHandler::SelectedMarkColor() を通るので、この旗1つで両方に効く。
+void KESCMDoSetMarkColor(bool16 cyan, IDataBase* db)
+{
+	if (KESCMDrawEventHandler::sMarkColorCyan == cyan)
+		return;						// 同じ色を選び直しただけ。作り直しも再描画も要らない
+
+	KESCMDrawEventHandler::sMarkColorCyan = cyan;
+
+	// ⚠★★★リング画像はキャッシュで、**半径が変わったときだけ**作り直される(BuildRing の呼び口が
+	//   `R != e->lastRadius` で守られている)。⇒ 色を変えただけでは作り直されず、**古い色のまま
+	//   残る**。ここで「未描画」に戻して、次の描画で作り直させる。
+	//   ★Story の色地はこの手当てが要らない ---- あちらは Draw のたびに色を読むので、再描画するだけで
+	//     新しい色になる。**同じ設定でも、キャッシュを持つ側と持たない側で必要な後始末が違う。**
+	{
+		KESCMMarkStateLock lock(KESCMMarkStateMutex());
+		for (std::map<UID, KESCMOverlayEntry*>::iterator it = KESCMDrawEventHandler::sEntries.begin();
+		     it != KESCMDrawEventHandler::sEntries.end(); ++it)
+			if (it->second != nil)
+				it->second->lastRadius = -1;	// -1 = 未描画(KESCMOverlayEntry の既定値と同じ)
+	}
+
+	// 再描画は KESCMDoSetPrintMarks と同じ範囲(対象・アクティブ・Source の3つ)。
+	KESCMInvalidateDB(KESCMDrawEventHandler::sDB);
+	if (db != KESCMDrawEventHandler::sDB)
+		KESCMInvalidateDB(db);
+	if (KESCMDrawEventHandler::sSrcDB != KESCMDrawEventHandler::sDB && KESCMDrawEventHandler::sSrcDB != db)
+		KESCMInvalidateDB(KESCMDrawEventHandler::sSrcDB);
+}
+
+bool16 KESCMGetMarkColorCyan()
+{
+	return KESCMDrawEventHandler::sMarkColorCyan;
 }
 
 //----------------------------------------------------------------------------------------

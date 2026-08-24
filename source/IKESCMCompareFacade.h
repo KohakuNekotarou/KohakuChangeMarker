@@ -109,6 +109,17 @@ public:
 	virtual bool16		GetPrintMarks() = 0;
 	virtual bool16		GetMarkOpacity25() = 0;
 
+	/** The mark colour: kFalse = red (the default), kTrue = cyan.
+
+		★★2026-08-24: THIS REPLACED AN AUTOMATIC CHOICE. The rings used to switch to cyan by
+		themselves over grounds that looked reddish, decided per pixel off the comparison raster.
+		Two things ended that: the reader could not tell why a mark was the colour it was, and the
+		Story mode's wash **cannot read the ground at all** (a text adornment is handed no pixels),
+		so the two modes would have disagreed about how colour is chosen. ⇒ The reader picks.
+		★One flag serves both modes - they both draw through SelectedMarkColor(). */
+	virtual void		SetMarkColor(bool16 cyan) = 0;
+	virtual bool16		GetMarkColorCyan() = 0;
+
 	/** Which comparison the Start runs: pixels (the original) or story text (2026-08-20).
 
 		★A SETTING OF THE COMPARISON, which is why it sits here next to GetPrintMarks() rather

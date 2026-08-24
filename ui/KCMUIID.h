@@ -295,6 +295,9 @@ DECLARE_PMID(kActionIDSpace, kKESCMPopupShowTgtMarksActionID, kKCMUIPrefix + 45)
 // (+15..+23 are all declared above - stale placeholders for them removed 2026-08-05 audit.
 //  ★**Next free: +46**。⚠2026-08-22 に +45 を使ったのに「Next free: +45」のまま残っていたのを直した
 //  (不具合再検査 B2)＝**採番したら同じコミットでこの行を進めること**。+19 は欠番で再利用しない。)
+DECLARE_PMID(kActionIDSpace, kKESCMPopupColorRedActionID,  kKCMUIPrefix + 46)	// ★パネルのフライアウトの「Mark colour > Red」(2026-08-24 ユーザー要望「メニューで赤と青を選べるように」)。Cyan と相互排他=選択中の方に✓(kCustomEnabling+kSelectedAction。Marks opacity 25%/75% と同じ形)。★既定。実体 KESCMActionComponent.cpp → IKESCMCompareFacade::SetMarkColor
+DECLARE_PMID(kActionIDSpace, kKESCMPopupColorCyanActionID, kKCMUIPrefix + 47)	// ★フライアウトの「Mark colour > Cyan」(同上)。⚠★★これは**背景による自動切り替えの置き換え**＝それまでリングは「下地が赤っぽい画素の上だけシアン」に自動で変わっていた(kKESCMRedBgDom)。廃止の理由はユーザー判断(「ユーザーが選べばいいので」)＋**Story モードの色地は下地の画素を読めない**ので同じ自動判定ができず、2モードで色の決まり方が食い違うこと。★色は Pixel の枠と Story の色地の両方に効く(どちらも KESCMDrawEventHandler::SelectedMarkColor を通る)
+
 //DECLARE_PMID(kActionIDSpace, kKESCMActionID, kKCMUIPrefix + 41)
 // kKCMUIPrefix + 24/25/26/28 は使用中(KCM: Check / Save Check & Register / Load Check & Register / RtMenuPagesPanel の区切り線)。+27 は廃止・予約(上記)
 
@@ -547,6 +550,11 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMBookRowStateWidgetID, kKCMUIPrefix + 49)	// �
 #define kKESCMOpacitySubmenuName		"Marks opacity"
 #define kKESCMOpacitySubmenuPath		kKESCMPopupMenuPath kSDKDefDelimitMenuPath kKESCMOpacitySubmenuName
 
+// 「Mark colour」サブメニュー(2026-08-24)。子項目(Red/Cyan)がこのパスを親として指す。
+// ★上の Marks opacity とまったく同じ作り＝2つの子が相互排他で、選択中の方に✓が付く。
+#define kKESCMColorSubmenuName			"Mark colour"
+#define kKESCMColorSubmenuPath			kKESCMPopupMenuPath kSDKDefDelimitMenuPath kKESCMColorSubmenuName
+
 // フライアウトの「Compare mode」サブメニュー(中に Pixel Changes / Story Changes)。2026-08-20 追加。
 // ★上の「Marks opacity」と同じ形(親は actionID 0・子は相互排他で選択中に✓)。
 // ★★**サブメニューにした理由**＝フライアウトの項目はもう十数個あり、比較の設定と表示の設定が
@@ -564,6 +572,8 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMBookRowStateWidgetID, kKCMUIPrefix + 49)	// �
 #define kKESCMPrintCheckKey		kKESCMStringPrefix "kKESCMPrintCheckKey"	// フライアウト「Print comparison marks」トグルのメニュー名(旧パネルチェックボックスのキャプションキーを流用)
 #define kKESCMOpacity25Key		kKESCMStringPrefix "kKESCMOpacity25Key"	// サブメニュー「Marks opacity」内の子項目名(="25%")
 #define kKESCMOpacity75Key		kKESCMStringPrefix "kKESCMOpacity75Key"	// サブメニュー「Marks opacity」内の子項目名(="75%")
+#define kKESCMColorRedKey		kKESCMStringPrefix "kKESCMColorRedKey"	// サブメニュー「Mark colour」内の子項目名(="Red")
+#define kKESCMColorCyanKey		kKESCMStringPrefix "kKESCMColorCyanKey"	// サブメニュー「Mark colour」内の子項目名(="Cyan")
 #define kKESCMModePixelKey		kKESCMStringPrefix "kKESCMModePixelKey"	// サブメニュー「Compare mode」内の子項目名(="Pixel Changes")
 #define kKESCMModeStoryKey		kKESCMStringPrefix "kKESCMModeStoryKey"	// サブメニュー「Compare mode」内の子項目名(="Story Changes")
 #define kKESCMPrevChangeKey		kKESCMStringPrefix "kKESCMPrevChangeKey"	// パネルの「◀ Prev」ボタンのキャプション(英語固定)
@@ -746,6 +756,10 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMBookRowStateWidgetID, kKCMUIPrefix + 49)	// �
 #define kKESCMPrintMarksMenuItemPosition	9.26	// チェック式トグル「Print comparison marks」。Marks opacity の下へ入れ替え(2026-07-24)
 #define kKESCMOpacity25SubMenuItemPosition	1.0	// サブメニュー「Marks opacity」内: 25%(選択中に✓)
 #define kKESCMOpacity75SubMenuItemPosition	2.0	// サブメニュー「Marks opacity」内: 75%(25% と相互排他)
+
+#define kKESCMColorSubmenuMenuItemPosition	9.25	// 「Mark colour」サブメニュー(中に Red / Cyan)。★9.24 Marks opacity の直下・9.26 Print の直上＝**色と濃さが隣り合う**(どちらもマークの見た目の設定)
+#define kKESCMColorRedSubMenuItemPosition	1.0	// サブメニュー「Mark colour」内: Red(既定・選択中に✓)
+#define kKESCMColorCyanSubMenuItemPosition	2.0	// サブメニュー「Mark colour」内: Cyan(Red と相互排他)
 // (9.27 = 「Show HUD」は 2026-08-06 に機能ごと撤去。位置番号は空き=別項目に使ってよい)
 #define kKESCMShowOldNumsMenuItemPosition	9.28	// チェック式トグル「Show Original Page Numbers」
 #define kKESCMShowTgtMarksMenuItemPosition	9.29	// チェック式トグル「Show Marks on Target」(★Source 版 9.30 の直上＝新旧の並びと同じ順序で読める)

@@ -229,6 +229,25 @@ void KESCMSetMarkOpacity25(bool16 op25)
 	KESCMNotifyStatus(report);
 }
 
+// KESCMSetMarkColor(KESCMComparisonRun.h で宣言) — マークの色を 赤/シアン に設定。フライアウト項目
+// kKESCMPopupColorRedActionID / kKESCMPopupColorCyanActionID の DoAction から呼ぶ。ラジオ相当の見た目
+// (選択中の項目に✓)は UpdateActionStates が KESCMGetMarkColorCyan を読んで反映する(不透明度と同じ流儀)。
+// ★★2026-08-24: それまでは色を選べず、比較ラスタの下地が赤っぽい画素の上だけ自動でシアンに
+//   切り替えていた。廃止の理由はユーザー判断(「ユーザーが選べばいいので」)＋
+//   **Story モードの色地は下地の画素を読めないので同じ自動判定ができない**こと。
+void KESCMSetMarkColor(bool16 cyan)
+{
+	IDocument* active = KESCMActiveDoc();
+	IDataBase* db = (active != nil) ? ::GetUIDRef(active).GetDataBase() : nil;
+
+	KESCMDoSetMarkColor(cyan, db);
+
+	PMString report;
+	report.SetTranslatable(kFalse);
+	report.Append(cyan ? "kescm: mark colour cyan" : "kescm: mark colour red");
+	KESCMNotifyStatus(report);
+}
+
 // KESCMTogglePrintMarks(KESCMComparisonRun.h で宣言) — 印刷マーク ON/OFF トグル。旧パネルのチェックボックスの
 // 代わりに、フライアウト項目 kKESCMPopupPrintMarksActionID の DoAction から呼ぶ。現在の印刷フラグを反転し、
 // 不透明度は現在の選択(KESCMGetMarkOpacity25)を維持して反映する。表示更新はステータス行のみ

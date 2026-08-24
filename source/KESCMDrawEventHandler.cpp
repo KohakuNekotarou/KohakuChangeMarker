@@ -78,6 +78,7 @@ bool16 KESCMDrawEventHandler::sMarksVisible = kFalse;	// 既定=非表示。枠�
 PMReal KESCMDrawEventHandler::sMarkScreenOpacity = 1.0;	// 既定=不透明。ツール左hold中=選択不透明度(25%/75%)/印刷ON中の常時表示=選択不透明度
 bool16 KESCMDrawEventHandler::sPrintMarks = kFalse;	// 既定=画面のみ(印刷/PDF には出さない)
 bool16 KESCMDrawEventHandler::sMarkOpacity25 = kTrue;	// 既定=25%(パネルの既定ラジオと一致)。kFalse=75%
+bool16 KESCMDrawEventHandler::sMarkColorCyan = kFalse;	// 既定=赤(従来の通常色と一致)。kTrue=シアン
 bool16 KESCMDrawEventHandler::sShowOldNumbers = kFalse;	// 既定=OFF(フライアウト「Show Original Page Numbers」)
 // (★「Hold to Hide Marks」(sAlwaysShowMarks)は 2026-08-22 に撤去＝「Show Marks on ...」と重複。
 //  経緯と現在の規則はヘッダーの宣言部を見よ。)
@@ -203,6 +204,12 @@ void KESCMDrawEventHandler::BuildRing(uint8* buf, int32 rb, int32 bpp, int32 wt,
 	if (radius < 1) radius = 1;
 	const int32 colorOff = bpp - 3;
 	const uint8 rad = (radius > 255) ? 255 : (uint8)radius;	// dist は uint8 clamp255。半径上限は200<255。
+
+	// ★★2026-08-24: マークの色はパネルの選択。**1回だけ読んでループの外に置く**(画素ごとに聞く
+	//   ものではない)。⚠引数 bgRed は**もう読まれていない**＝背景適応の廃止で孤児になった。
+	//   生成側(比較時に作る BG マスク)ごと外すのはこの直後の掃除で行う。
+	uint8 markR = 0, markG = 0, markB = 0;
+	KESCMDrawEventHandler::SelectedMarkColor(markR, markG, markB);
 	// ★端の欠け対策は下の frame(ページ内縁の枠帯)が兼ねる: 端から radius 以内を無条件に塗るので、
 	//   変化がページ端に接していてもその帯が必ず埋まり、辺の枠が痩せて欠けることはない。
 
@@ -213,7 +220,6 @@ void KESCMDrawEventHandler::BuildRing(uint8* buf, int32 rb, int32 bpp, int32 wt,
 	{
 		uint8* rowB = buf + (size_t)y * rb;
 		const uint8* drow = dist + (size_t)y * wt;
-		const uint8* brow = (bgRed != nil) ? (bgRed + (size_t)y * wt) : nil;
 		for (int32 x = 0; x < wt; ++x)
 		{
 			uint8* pixT = rowB + (size_t)x * bpp;	// ARGB 先頭=alpha
@@ -229,11 +235,15 @@ void KESCMDrawEventHandler::BuildRing(uint8* buf, int32 rb, int32 bpp, int32 wt,
 			                      y < radius || (ht - 1 - y) < radius);
 			if (ring || frame)
 			{
-				// リング/枠画素。下の実ページが赤っぽければシアン、そうでなければ赤(画素単位)。
-				const bool useAlt = (brow != nil && brow[x]);
-				px[0] = useAlt ? kKESCMRingAltR : kKESCMRingR;
-				px[1] = useAlt ? kKESCMRingAltG : kKESCMRingG;
-				px[2] = useAlt ? kKESCMRingAltB : kKESCMRingB;
+				// リング/枠画素。★★2026-08-24: **色はパネルの選択(SelectedMarkColor)。**
+				//   それまでは「下の実ページが赤っぽい画素の上だけシアン」という背景適応を画素単位で
+				//   やっていた(bgRed マスク)。ユーザー判断で廃止 ----「ユーザーが選べばいいので」。
+				//   ⇒ 理由は SelectedMarkColor の宣言(KESCMDrawEventHandler.h)に書いた。要点は、
+				//     Story モードの色地は**下地の画素を読めない**ので同じ芸当ができず、放っておくと
+				//     2つのモードで色の決まり方が食い違うこと。
+				// ★印刷側は1行も変えなくてよい: あちらは**この画像の色を読んで**赤マスク/シアンマスクに
+				//   振り分けているので(下の PassDef)、ここが単色になれば刷りも自動的に単色になる。
+				px[0] = markR; px[1] = markG; px[2] = markB;
 				if (bpp >= 4) pixT[0] = kKESCMRingAlpha;	// リング画素の基本アルファ(=255 不透明)。薄表示は setopacity 側
 			}
 			else { px[0] = 255; px[1] = 255; px[2] = 255; if (bpp >= 4) pixT[0] = 0; }	// 透明

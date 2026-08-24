@@ -169,6 +169,14 @@ public:
 	// ツール左hold中の画面表示・印刷ON中の常時表示(KESCMBaseScreenOpacity)・印刷/PDF出力(KESCMDrawRingForPrint)の
 	// すべてが SelectedMarkOpacity() 経由でこの選択を使う(画面と印刷の見た目を一致)。
 	static bool16 sMarkOpacity25;
+	// マークの色の選択(フライアウト「Mark colour: Red / Cyan」)。kFalse=赤(既定) / kTrue=シアン。
+	// ★★2026-08-24: **背景による自動切り替えを廃止してこれに置き換えた**(ユーザー判断
+	//   「ユーザーが選べばいいので」)。それまでは比較ラスタの画素を見て「赤っぽい下地の上だけ
+	//   シアンに変える」という判定(kKESCMRedBgDom)を画素単位でやっていたが、
+	//   ①Story モードの色地は**下地の画素を読めない**ので同じ芸当ができず、2つのモードで色の
+	//     決まり方が食い違う ②自動で変わると「なぜ今この色なのか」が読み手に説明できない。
+	//   ⇒ 選ぶのは人。赤い下地に赤いマークが埋もれるなら、シアンを選べばよい。
+	static bool16 sMarkColorCyan;
 	// Source(旧文書)側にも枠を出すトグル(フライアウト「Show Marks on Source」のチェック式)。★既定=kFalse
 	// だが Start 経路だけが kTrue へ戻す(=Start で既定 ON、OFF にしたければメニューで外す。
 	// ★KESCMDoMarkChangesDoc では戻さない=登録トグル/Ignore 切替の再比較でも通る関数のため。2026-07-25 に移動)。
@@ -253,6 +261,16 @@ public:
 
 	// 選択中の枠不透明度(0.25 / 0.75)。枠を描く全経路の単一の供給元。
 	static PMReal SelectedMarkOpacity() { return sMarkOpacity25 ? kKESCMMarkOpacity25 : kKESCMMarkOpacity75; }
+
+	// 選択中のマーク色。★SelectedMarkOpacity と同じ形で、**画面・印刷・Pixel の枠・Story の色地の
+	//   すべてがここを通る**(1つの問いに1つの答え)。RGB で持ち、印刷時の CMYK 変換は
+	//   KESCMSetOutputColor が引き受ける(赤 → C0 M100 Y100 K0 / シアン → C100 M0 Y0 K0)。
+	static void SelectedMarkColor(uint8& r, uint8& g, uint8& b)
+	{
+		r = sMarkColorCyan ? kKESCMRingAltR : kKESCMRingR;
+		g = sMarkColorCyan ? kKESCMRingAltG : kKESCMRingG;
+		b = sMarkColorCyan ? kKESCMRingAltB : kKESCMRingB;
+	}
 	// 自前のラスタ化(MakeEntry/MakeOrigImage の SnapshotUtilsEx::Draw)中だけ kTrue。HandleDrawEvent が
 	// 再入したらマークを描かない(自己参照防止)。kPreviewMode ビットに頼ると PDF 書き出し(同ビット)を巻き込むため。
 	// ★★★2026-08-15(第2段 Task 12B)= **スレッドローカルにした**(旧: 素の static bool16)。
