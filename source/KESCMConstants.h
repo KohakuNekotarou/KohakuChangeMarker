@@ -79,7 +79,6 @@ static const int32  kKESCMChapterProgressSpan = 1000;
 // 明るさも高い(輝度≒0.79)ため赤上で明暗・色相とも最大コントラスト。純青は暗く細線で沈むため不採用。
 static const uint8 kKESCMRingR = 255, kKESCMRingG = 0,   kKESCMRingB = 0;		// 通常(赤)
 static const uint8 kKESCMRingAltR = 0,   kKESCMRingAltG = 255, kKESCMRingAltB = 255;	// 赤背景の上(シアン=赤の補色)
-static const int   kKESCMRedBgDom = 25;	// 背景を「赤っぽい」と判定する R 優位の閾値(R が G,B の双方より これ以上大きい)。小さいほどピンク/薄い赤も拾う
 
 // 登録済み(比較相手なし="Added"/"Removed")ページの縁枠色。通常の変更マーク(赤/シアン)と区別する
 // ため緑固定(背景色による切り替えは無し。ラスタ差分が無く背景判定の材料も無いため)。

@@ -197,7 +197,7 @@ void KESCMDrawEventHandler::EnsureOverflowCache()
 }
 
 void KESCMDrawEventHandler::BuildRing(uint8* buf, int32 rb, int32 bpp, int32 wt, int32 ht,
-	const uint8* dist, const uint8* bgRed, int32 radius)
+	const uint8* dist, int32 radius)
 {
 	if (buf == nil || dist == nil || wt <= 0 || ht <= 0 || bpp < 3)
 		return;
@@ -206,9 +206,7 @@ void KESCMDrawEventHandler::BuildRing(uint8* buf, int32 rb, int32 bpp, int32 wt,
 	const uint8 rad = (radius > 255) ? 255 : (uint8)radius;	// dist は uint8 clamp255。半径上限は200<255。
 
 	// ★★2026-08-24: マークの色はパネルの選択。**1回だけ読んでループの外に置く**(画素ごとに聞く
-	//   ものではない)。⚠引数 bgRed は**もう読まれていない**＝背景適応の廃止で孤児になった。
-	//   生成側(比較時に作る BG マスク)ごと外すのはこの直後の掃除で行う。
-	uint8 markR = 0, markG = 0, markB = 0;
+		uint8 markR = 0, markG = 0, markB = 0;
 	KESCMDrawEventHandler::SelectedMarkColor(markR, markG, markB);
 	// ★端の欠け対策は下の frame(ページ内縁の枠帯)が兼ねる: 端から radius 以内を無条件に塗るので、
 	//   変化がページ端に接していてもその帯が必ず埋まり、辺の枠が痩せて欠けることはない。
@@ -323,7 +321,7 @@ ErrorCode KESCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef
 
 	// ラスタ化は3回から2回へ削減。旧版は別途 72dpi の target(snapL)もラスタ化していたが、その画素は
 	//   BuildRing が buf を全上書きするため一切使われていなかった。低解像度の寸法は高解像度から割り戻し、
-	//   背景の「赤っぽい」判定(bgRed)も高解像度 target をプーリングして作るので、snapL は不要=削除。
+	//   (背景の「赤っぽい」判定もここで作っていたが、2026-08-24 に色を選択式にして廃止した。)
 	// 【高解像度】差分検出用。target / source を高dpi(kKESCMResolution×kKESCMHiResMul)でラスタ化。
 	// 低解像度では平均化で消える細線/微小ズレを満額の差分画素として拾い、取りこぼしを防ぐ。
 	const PMReal hiRes = kKESCMResolution * kKESCMHiResMul;
@@ -539,33 +537,6 @@ ErrorCode KESCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef
 				}
 				else
 				{
-					// 背景(対象ページ)の「赤っぽい」画素マップを、高解像度 target をプーリングして作る
-					// (低解像度 snapL を廃止。低解像度セル中心の高解像度画素1点を代表サンプルに)。
-					// CMYK 経路は RGB が無いので、サンプル CMYK を近似 RGB に変換してから同じ R 優位判定を使う。
-					const int32 colorOffT = 0;
-					uint8* BG = new (std::nothrow) uint8[N];	// nil 可(BuildRing が nil bgRed を許容)
-					if (BG != nil)
-					{
-						for (int32 y = 0; y < hl; ++y)
-						{
-							int32 yh = (int32)(((int64)y * hth + hth / 2) / hl);
-							if (yh >= hth) yh = hth - 1;
-							const uint8* rowT = ptH + (size_t)yh * rbTH;
-							for (int32 x = 0; x < wl; ++x)
-							{
-								int32 xh = (int32)(((int64)x * wth + wth / 2) / wl);
-								if (xh >= wth) xh = wth - 1;
-								const uint8* px = rowT + (size_t)xh * bppH + colorOffT;
-								// CMYK(0..255) → 近似 RGB: ch=(255-ink)*(255-K)/255 の簡易式
-								const int C = px[0], Mk = px[1], Yk = px[2], K = px[3];
-								const int r = (255 - C)  * (255 - K) / 255;
-								const int g = (255 - Mk) * (255 - K) / 255;
-								const int b = (255 - Yk) * (255 - K) / 255;
-								BG[(size_t)y * wl + x] = (r - g > kKESCMRedBgDom && r - b > kKESCMRedBgDom) ? 1 : 0;
-							}
-						}
-					}
-
 					// ★buf を指す自前 AGMImageRecord を組んで切り離す(buf は下で BuildRing が全画素を書くので
 					//   ラスタ画素のコピーは不要)。SnapshotUtilsEx / accessor は保持しない(下で即破棄)。
 					//   GetAGMImageRecord も呼ばない=破棄時クラッシュ(保持 accessor の delete)を根本回避。
@@ -574,7 +545,6 @@ ErrorCode KESCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef
 					{
 						// OOM 保険(nothrow 化に伴う): ここまでの部分確保を解放し、スナップショットも
 						// 破棄してこのページは諦める(MakeOrigImage の確保失敗時と同じ early-return 流儀)。
-						if (BG != nil) delete[] BG;
 						delete[] M;
 						if (accSH)  delete accSH;
 						if (snapSH) delete snapSH;
@@ -583,7 +553,7 @@ ErrorCode KESCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef
 						return kFailure;
 					}
 					e->w = wl;  e->h = hl;  e->rowBytes = rbL;  e->bpp = bppL;
-					e->bgRed = BG;  e->lastRadius = kKESCMBaseRadius;
+					e->lastRadius = kKESCMBaseRadius;
 					// 変更の割合表示(Prev/Next)用。分母は w * h なので分子だけ覚える。ここは diffCount != 0 が
 					// 確定した枝なので必ず 1 以上になる(0 のときは上でエントリを作らずに戻っている)。
 					e->changedCells = (int32)diffCount;
@@ -603,7 +573,6 @@ ErrorCode KESCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef
 					//   エントリが載るのに画面には何も出ない** 状態を作る。changedCells は非 0 なので
 					//   Prev/Next は「変更あり」としてそのページへ飛び、しかし枠が見えない=壊れて見える。
 					//   OOM でこのページを諦めるのは、上の e==nil / MakeOrigImage の確保失敗と同じ流儀。
-					//   ★BG は既に e->bgRed が所有しているので、delete e が dist/buf/bgRed をまとめて解放する。
 					if (e->buf == nil)
 					{
 						delete e;
@@ -613,7 +582,7 @@ ErrorCode KESCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef
 						if (snapTH) delete snapTH;
 						return kFailure;
 					}
-					BuildRing(e->buf, rbL, bppL, wl, hl, e->dist, BG, kKESCMBaseRadius);
+					BuildRing(e->buf, rbL, bppL, wl, hl, e->dist, kKESCMBaseRadius);
 					// ★★2026-08-17(不具合再検査 B3 の2周目)＝**ここの int16 キャストは溢れない。**
 					//   AGMImageRecord.bounds は int16(上限 32,767)で、wl/hl は**保存解像度**
 					//   kKESCMResolution=36dpi の画素数。実機で測った最大ページは
@@ -671,7 +640,7 @@ ErrorCode KESCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef
 						sSrcPageToTarget[sourceRef.GetUID()] = key;
 					}
 
-					// dist / bgRed / buf は entry が所有(mask M は dist 生成後に解放済み)。スナップショットは下の後始末で即破棄。
+					// dist / buf は entry が所有(mask M は dist 生成後に解放済み)。スナップショットは下の後始末で即破棄。
 					changed = kTrue;
 					status = kSuccess;
 				}
@@ -1122,7 +1091,7 @@ static void KESCMDrawEntryOnPage(IGraphicsPort* gPort, IViewPortAttributes* vpAt
 		}
 		if (R > 0 && R != e->lastRadius)
 		{
-			KESCMDrawEventHandler::BuildRing(e->buf, e->rowBytes, e->bpp, e->w, e->h, e->dist, e->bgRed, R);
+			KESCMDrawEventHandler::BuildRing(e->buf, e->rowBytes, e->bpp, e->w, e->h, e->dist, R);
 			e->lastRadius = R;
 		}
 	}

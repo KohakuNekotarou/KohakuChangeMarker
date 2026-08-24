@@ -35,7 +35,6 @@ struct KESCMOverlayEntry
 	AGMImageRecord rec;			// buf を指す自前の画像レコード(blit 用)
 	uint8*         dist;		// 差分マスクのチェスボード距離変換(w*h, uint8, 0=変化画素, clamp255)。所有。
 								//   リング = 0<dist<=radius。BuildRing が膨張なしの1パスで塗れる(mask は dist 生成後は破棄)。
-	uint8*         bgRed;		// 対象ページが「赤っぽい」画素=1 のマップ(w*h)。リングの青切替に使う。所有(nil可)
 	int32          w, h;
 	int32          rowBytes;	// buf の行バイト数(= rec.byteWidth)
 	int32          bpp;			// バイト/ピクセル
@@ -44,7 +43,7 @@ struct KESCMOverlayEntry
 									//   「変更の割合」表示に使う。★割合の分母(ページ全体のセル数)は持たない
 									//   = w * h がそのまま分母なので、同じ値を二重に持たせない。
 
-	KESCMOverlayEntry() : buf(nil), dist(nil), bgRed(nil), w(0), h(0), rowBytes(0), bpp(0), lastRadius(-1),
+	KESCMOverlayEntry() : buf(nil), dist(nil), w(0), h(0), rowBytes(0), bpp(0), lastRadius(-1),
 		changedCells(0)
 	{
 		rec.baseAddr = nil; rec.decodeArray = nil;
@@ -54,7 +53,6 @@ struct KESCMOverlayEntry
 	{
 		if (buf)   delete[] buf;
 		if (dist)  delete[] dist;
-		if (bgRed) delete[] bgRed;
 	}
 };
 
@@ -317,10 +315,10 @@ public:
 	//  仕組み自体は他プラグインへの転用候補: docs/ai-notes/kescm-toast-mechanism.md と git 履歴 509e830 を参照)
 
 	// 距離変換 dist を使い、buf(ARGB)へリング(0<dist<=radius)を1パスで描く(膨張不要)。
-	// 各リング画素の色は、その位置の背景が赤っぽい(bgRed[idx])なら青、そうでなければ赤。
+	// 各リング画素の色はパネルの選択(SelectedMarkColor)。★2026-08-24 に背景適応(bgRed)を廃止した。
 	// リング以外の画素は透明(alpha=0)。dist は KESCMDistTransform で事前生成(0=変化画素)。
 	static void BuildRing(uint8* buf, int32 rb, int32 bpp, int32 wt, int32 ht,
-		const uint8* dist, const uint8* bgRed, int32 radius);
+		const uint8* dist, int32 radius);
 
 	// target/source を高解像度(kKESCMResolution×kKESCMHiResMul)で CMYK ラスタ化し、4ch を比較
 	// (しきい値 kKESCMCmykThr)。変化px数>0 のときだけ sEntries[target.UID] にエントリ登録(既存は置換)。
