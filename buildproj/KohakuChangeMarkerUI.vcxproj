@@ -263,6 +263,7 @@
       <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMScrollMap.cpp"/>
       <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMStorySection.cpp"/>
       <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMStoryJump.cpp"/>
+      <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMStoryNav.cpp"/>
       <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMStoryRefresh.cpp"/>
       <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMChangeNav.cpp"/>
       <ClCompile Include="..\..\..\source\sdksamples\KESCM\ui\KESCMViewSync.cpp"/>
@@ -310,6 +311,7 @@
       <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\KESCMScrollMap.h"/>
       <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\KESCMStorySection.h"/>
       <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\KESCMStoryJump.h"/>
+      <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\KESCMStoryNav.h"/>
       <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\KESCMStoryRefresh.h"/>
       <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\KESCMChangeNav.h"/>
       <ClInclude Include="..\..\..\source\sdksamples\KESCM\ui\KESCMViewSync.h"/>

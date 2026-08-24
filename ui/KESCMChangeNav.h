@@ -3,11 +3,17 @@
 //  KESCMChangeNav.h
 //
 //  「見るべき箇所」を順に巡回するナビゲーション(パネルの ◀ Prev / Next ▶ ボタンの実体)。
-//  巡回対象(2026-07-25 コメント現行化。実装は KESCMChangeNav.cpp の KESCMBuildStops が正):
-//    ① 変更あり(赤/青リング)のページ = sEntries にキーがある(比較 Start 中)
+//  巡回対象(2026-08-24 現行化。実装は KESCMChangeNav.cpp の KESCMBuildStops が正):
+//    ① 変更あり(赤/青リング)のページ = sEntries にキーがある(**Pixel モードで**比較 Start 中)
 //    ② overset「+」箇所 = Find Overset の sOversetLocs(未 Start でも単独巡回可。1箇所=1ストップ)
+//    ③ ★**Story Edits 一覧の葉**(2026-08-24 追加。**Story モードで**比較 Start 中)＝1つの編集、
+//       または子を持たない行そのもの。**子のある行は含めない**(規則と理由＝KESCMStoryNav.h)。
 //  ※Added/Removed(登録・緑「/」)と Overflow(赤「/」)は巡回対象に含めない(2026-07-10 ユーザー指定)。
+//  ※①と③は**排他**＝モードで決まる(Story モードは1枚もラスタ化しないので①は元から0件)。②はどちらの
+//    モードでも Find Overset が ON なら**末尾に続く**。
 //  変更ページはズームを変えずページ中心へ、overset は「+」点へスクロールするだけ(選択はしない)。
+//  ③だけは飛び方が違い、**一覧の行をクリックしたときと同じ実装**を呼ぶ(ジャンプ＋一瞬のマーク＋
+//  メッセージ欄。KESCMStoryNav.cpp → KESCMStoryJump.cpp)。
 //
 //========================================================================================
 
@@ -49,7 +55,8 @@ void KESCMResetNav();
 // ⚠2026-08-19(不具合再検査 B-U8)訂正＝ここには呼び手を4つ名指ししてあったが、**3つは分割で失効していた**
 //   (KESCMDoMarkChangesDoc / KESCMRefreshComparisonForSelectedPages / KESCMDoClearMarks は
 //   いずれも model 側＝別 .pln のこの UI 関数を呼べない)。今の呼び手は全数 Grep で次のとおり:
-//     ・KESCMModelChangeObserver … 比較の再構築/消去の通知と、あふれ走査の通知を受けて(2か所)
+//     ・KESCMModelChangeObserver … 比較の再構築/消去の通知、あふれ走査の通知、**Story Edits 一覧の
+//       作り直しの通知**(2026-08-24 追加＝Refresh Story Comparison で子の数が変わると N が変わる)
 //     ・KESCMActionComponent     … Find Overset を OFF にしたとき(巡回対象からあふれを外す)
 //     ・KESCMPanelObserver       … パネルの表示内容を作り直すとき(KESCMApplyPanelInfo。4つ目だけ生きていた)
 //     ・KESCMChangeNav.cpp 自身  … 巡回の各出口(3か所)
@@ -62,6 +69,29 @@ void KESCMResetNav();
 //   ON なら "1/N" が出る**(巡回対象はあふれ箇所)。.cpp 側(KESCMRefreshNavPosition の末尾)は
 //   「未 Start かつ overset 無し」と正しく書いており、ここでも .h だけが古かった。
 void KESCMRefreshNavPosition();
+
+// ★★★Story Edits の行へ「今立った」ことを巡回位置(k/N)に反映する(2026-08-24 ユーザー要望
+//   「StoryEdit の行を選択した時も Prev のほうに連動しないと違和感」)。
+//
+// ★**呼び手は2本のジャンプ関数だけ**＝`KESCMStoryJumpToRow` と `KESCMStoryJumpToChange`
+//   (KESCMStoryJump.cpp。2026-08-25 の再検査で全数 Grep して確認＝この2つ以外に呼び手は無い)。
+//   行のクリックも、矢印キーの歩きも、Prev/Next の巡回も、**行きたい先が決まったら必ずその2本のどちらかを
+//   通る** ∴「今どのストップに立っているか」を決める場所は1つで済む([[one-question-one-place]])。
+//   ⚠Prev/Next 側でも別に覚えさせると、同じ行について2つの答えが出る。
+//
+// 引数の意味は3通りで、**3つ目がこの関数の要**:
+//   ・changeIndex >= 0            … その変更に立つ(そのままストップ)
+//   ・changeIndex < 0 で子が無い行 … その行に立つ(行そのものがストップ)
+//   ・changeIndex < 0 で子が有る行 … ★**その最初の子の「入口」に立つ**＝表示はその子の番号だが、
+//     **まだそこへは行っていない**。次に Next を押すとその子へ行く(飛ばさない)／Prev を押すと
+//     1つ前のストップへ行く。⇒ **比較を Start した直後に「1/N」と出るのとまったく同じ規則**
+//     （表示＝次に Next で行く先。ユーザー決定 2026-08-24）。子のある親行は巡回対象では無い
+//     （KESCMStoryNav.h）ので、立てる場所がここしか無い。
+//
+// ⚠**Pixel モードでは何もしない。** あちらの巡回対象はページで、一覧の行はその列に居ない
+//   ---- 触ると「行をクリックしたらページの巡回位置が飛ぶ」ことになる。
+// ⚠rowIndex が今の一覧の外なら何もしない(一覧が作り直された直後のクリック)。
+void KESCMNoteStoryStop(int32 rowIndex, int32 changeIndex);
 
 // Story Edits の行から呼ぶジャンプ: そのストーリーの先頭フレームを画面中央に出す。
 //   ・frameUID のスプレッドを先に出すので、別スプレッドでもマスターでもペーストボードでも届く

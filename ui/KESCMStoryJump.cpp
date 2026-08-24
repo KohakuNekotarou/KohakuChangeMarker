@@ -369,6 +369,19 @@ bool16 KESCMStoryJumpToRow(int32 rowIndex)
 	if (!Utils<IKESCMStoryEditsFacade>()->GetRow(rowIndex, row))
 		return kFalse;	// out of range, or the "No edits" placeholder - nowhere to go, silently
 
+	// ***** THE WALK'S POSITION MOVES HERE TOO (2026-08-24, user's request: "StoryEdit の行を選択した
+	// 時も Prev のほうに連動しないと違和感"). *****
+	//
+	// ★A ROW WITH CHILDREN IS NOT A STOP, so what this leaves the walk standing on is the ENTRANCE to
+	//   its first child: the readout shows that child's number and the next press of Next goes TO it
+	//   rather than past it (KESCMChangeNav.h explains the rule, which is the one already used for
+	//   "1/N" straight after a comparison starts).
+	// ★IT IS DONE HERE, BEFORE THE REFUSALS BELOW, on purpose: a story that is not placed in a frame
+	//   still exists as a row, and the walk has to be able to step off it. Putting this after the
+	//   early returns would leave such a row stuck - Next would keep landing on it.
+	// ⚠Pixel モードでは何もしない - that is decided inside, where the mode is asked once.
+	KESCMNoteStoryStop(rowIndex, -1);
+
 	// ★The list belongs to the comparison that built it, so the document to move is one of the two
 	//   ARMED ones - not whatever happens to be in front. Checked for life rather than trusted: the
 	//   list is dropped when a compared document closes, but a click already on its way when that
@@ -452,6 +465,10 @@ bool16 KESCMStoryJumpToChange(int32 rowIndex, int32 changeIndex)
 		return kFalse;
 	if (!Utils<IKESCMStoryEditsFacade>()->GetChange(rowIndex, changeIndex, change))
 		return kFalse;
+
+	// The walk stands on this change from now on - see the note in KESCMStoryJumpToRow for why this
+	// is done before the refusals below, and KESCMChangeNav.h for what it means on a parent row.
+	KESCMNoteStoryStop(rowIndex, changeIndex);
 
 	IDataBase* db = Utils<IKESCMCompareFacade>()->GetArmedTargetDB();
 	if (db == nil || !Utils<IKESCMCompareFacade>()->IsDocDBOpen(db))
