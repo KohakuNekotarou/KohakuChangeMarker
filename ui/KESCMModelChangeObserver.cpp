@@ -224,6 +224,13 @@ void KESCMModelChangeObserver::Update(const ClassID& theChange, ISubject* /*theS
 		//   ⚠ここが無いと「Refresh Story Comparison で直した行のマークが古いまま」になる＝
 		//     直した本人には最も気づきにくい壊れ方。冪等なので、出していないときは何もしない。
 		KESCMStoryMarksRefresh();
+
+		// ★★Prev/Next の「k/N」も作り直す(2026-08-24)。**Story モードの巡回対象はこの一覧の葉**なので、
+		//   一覧が変われば分母が変わる ---- 「Refresh Story Comparison」で1行の子が増減したときがまさに
+		//   それで、直した本人の画面に数だけが古いまま残る。
+		//   ⚠比較の Start/Stop でも一覧は作り直されるが、そちらは直後に marks 側の通知(上の分岐)が同じ
+		//     関数を呼ぶ＝二重に呼んでも同じ値になる(今の状態から作り直すだけの冪等な関数)。
+		KESCMRefreshNavPosition();
 		return;
 	}
 

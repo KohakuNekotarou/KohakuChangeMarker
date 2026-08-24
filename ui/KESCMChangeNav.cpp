@@ -71,6 +71,7 @@
 #include "KESCMThumbnailRefresh.h"	// KESCMGetVisiblePagesPanel(表示中 Pages パネル取得の共有ヘルパ)
 #include "IKESCMStoryEditsFacade.h"	// GetFirstFrameUID(Source 側で「同じストーリー」の先頭フレームを引く)／
 									// GetStoryStartPoint(本文の書き出し位置)。2026-08-13 Task 14 で Facade 経由へ
+#include "KESCMStoryNav.h"			// Story Changes モードのストップ列(=一覧の葉)と、その飛び方。2026-08-24
 #include "KESCMChangeNav.h"
 
 // 巡回の1ストップ。change=そのページの変更(枠)= ページ中心へスクロール / overset=あふれ「+」箇所=
@@ -82,7 +83,21 @@ struct KESCMNavStop
 	PBPMPoint	pb;					// overset の「+」点(isOverset のときのみ有効)
 	int32		oversetOrd;			// 同じページ内の overset ストップ通し番号(0始まり。リスト再構築後の同定用)
 	int32		oversetCountOnPage;	// そのページの overset 件数(ラベルで (n) を出すか判定。1件なら番号なし)
-	KESCMNavStop() : pageUID(kInvalidUID), isOverset(kFalse), oversetOrd(0), oversetCountOnPage(0) {}
+
+	// ★★★Story Changes モードのストップ(2026-08-24)。上の2種が指すのは**ページ**だが、こちらが
+	//   指すのは **Story Edits 一覧の葉**＝1つの編集(または子を持たない行そのもの)。
+	//   ⚠**pageUID は使わない**(kInvalidUID のまま)＝どのページに着くかは飛んでみるまで決まらない
+	//     (連結ストーリーの後ろの編集は、そのストーリーの先頭フレームのページではない
+	//     ＝KESCMStoryJumpToChange が GetStoryFrameAt で解決する)。∴ Story ストップは
+	//     ページを前提にした処理 ---- 隠しページ判定・KESCMStopLabel・KESCMSyncCompanionViews ----
+	//     を**1つも通さない**(下の KESCMGoto の分岐)。
+	bool16		isStory;
+	int32		storyRow;			// KESCMStoryList の行番号(Facade に渡す語彙)
+	int32		storyChange;		// その行の何番目の変更か。**-1 = 子を持たない行そのもの**
+	UID			storyUID;			// 同定用＝「どのストーリーか」(下の sNavStoryUID 参照)
+
+	KESCMNavStop() : pageUID(kInvalidUID), isOverset(kFalse), oversetOrd(0), oversetCountOnPage(0),
+					 isStory(kFalse), storyRow(-1), storyChange(-1), storyUID(kInvalidUID) {}
 };
 
 // 直近に巡回したストップの同定情報。index ではなく内容(ページ+種別+ページ内序数)で持つことで、リストが
@@ -90,6 +105,21 @@ struct KESCMNavStop
 static UID    sNavPageUID    = kInvalidUID;
 static bool16 sNavIsOverset  = kFalse;
 static int32  sNavOversetOrd = 0;
+
+// Story ストップの基準点(2026-08-24)。**行番号ではなくストーリーで覚える**のは上とまったく同じ理由＝
+// 「Refresh Story Comparison」はその行の子を作り直し、次の比較は一覧ごと作り直す。ストーリーで覚えて
+// おけば、子が増減しても同じ編集を指し続け、その編集が消えていれば見つからず先頭/末尾から始まる。
+static bool16 sNavIsStory     = kFalse;
+static UID    sNavStoryUID    = kInvalidUID;
+static int32  sNavStoryRow    = -1;
+static int32  sNavStoryChange = -1;
+
+// ★★「入口に立っている」＝上の基準点が指すストップへ**まだ行っていない**(2026-08-24)。
+//   子のある親行を選んだときだけ立つ ---- あの行は巡回対象では無い(KESCMStoryNav.h)ので、
+//   代わりに**その最初の子の入口**に立たせる。次の Next はそのストップ「へ」行き(進めない)、
+//   Prev は1つ前へ行く。⇒ **Start 直後に「1/N」と出て、Next で1番目へ行く**のと同じ規則で、
+//   実際そちらも「基準点がまだ無い(cur<0)」という同じ形で表現されている。
+static bool16 sNavStoryAtEntry = kFalse;
 
 //----------------------------------------------------------------------------------------
 // 巡回する文書。比較 Start 中は Target(sDB)。未 Start でも Find Overset ON ならその走査文書(sOversetDB)。
@@ -144,13 +174,43 @@ static void KESCMBuildStops(std::vector<KESCMNavStop>& out)
 	if (navDB == nil)
 		return;
 	InterfacePtr<IKESCMMarkData> marks(Utils<IKESCMMarkData>().QueryUtilInterface());
-	const bool16 changeHere  = (marks->GetMarkedTargetDB() == navDB);	// 変更(枠)を混ぜるのは比較 Target のときだけ
+
+	// ★★★Story Changes モードには「変更(枠)」のストップが1つも無い ---- ページを1枚もラスタ化しない
+	//   ので sEntries が空のまま(KESCMCore.cpp の `toRaster.clear()`)。代わりに巡るのは
+	//   **Story Edits 一覧の葉**(2026-08-24。規則は KESCMStoryNav.h)。
+	//   ⚠`== kKESCMModeStory` と書くのは意図＝`!= kKESCMModePixel` と書くと、将来「枠を作らない3つ目の
+	//     モード」が増えたときに**黙ってこちらへ流れ込む**(KESCMPeek.cpp:175 が同じ用心を書いている)。
+	const bool16 storyMode   = (Utils<IKESCMCompareFacade>()->GetCompareMode() == kKESCMModeStory);
+	const bool16 changeHere  = (!storyMode && marks->GetMarkedTargetDB() == navDB);	// 変更(枠)を混ぜるのは比較 Target のときだけ
 	const bool16 oversetHere = (marks->GetOversetOn() && marks->GetOversetDB() == navDB);
 
 	// overset 箇所は3か所から引くので、ここで1回だけ写しを取る(下の3つのブロックが使い回す)。
 	std::vector<KESCMOversetLoc> locs;
 	if (oversetHere)
 		marks->GetOversetLocations(locs);
+
+	// 0) ★Story の葉を**先に**並べる(2026-08-24)。
+	//    ⚠**ページ順に混ぜない。** 一覧は「ページ順 → 削除された行だけ後ろへ」という独自の並びを持って
+	//      いる(KESCMStoryList::Build)ので、ページ単位で割り込ませると**画面に見えている順と Prev/Next の
+	//      順が食い違う**。押す人は一覧を見ながら押すのだから、そちらに合わせる。
+	//    ★あふれ「+」は従来どおりこの後ろに続く＝**Story モードでも Find Overset は使えるまま**。
+	//      OFF なら「k/N」の N は一覧の編集の数そのものになる。
+	//    ★条件が `marks->GetMarkedTargetDB() == navDB` なのは changeHere と同じ問い＝一覧は比較が作った
+	//      ものなので、巡回文書が比較の Target のときだけ意味を持つ(あふれ単独走査の文書では出さない)。
+	if (storyMode && marks->GetMarkedTargetDB() == navDB)
+	{
+		std::vector<KESCMStoryNavStop> storyStops;
+		KESCMBuildStoryNavStops(storyStops);
+		for (size_t i = 0; i < storyStops.size(); ++i)
+		{
+			KESCMNavStop s;
+			s.isStory     = kTrue;
+			s.storyRow    = storyStops[i].fRow;
+			s.storyChange = storyStops[i].fChange;
+			s.storyUID    = storyStops[i].fStoryUID;
+			out.push_back(s);
+		}
+	}
 
 	// ★marks は上で InterfacePtr に引いてあるので、そのまま使う(Utils.h:74-80。2026-08-17 の
 	//   API 監査 B-U8＝同じ関数の中で InterfacePtr と直呼びが混在していた)。
@@ -235,6 +295,33 @@ static int32 KESCMFindCurrentStop(const std::vector<KESCMNavStop>& stops)
 {
 	for (size_t i = 0; i < stops.size(); ++i)
 	{
+		// ★★種別が違えば見るまでもなく別物。⚠**ここで分けないとページ側の条件が Story ストップにも
+		//   当たる**＝Story ストップの pageUID は kInvalidUID のままなので、「ページの取れないストップ」
+		//   どうしが取り違う(基準点が初期値のときはどちらも kInvalidUID)。
+		if (stops[i].isStory != sNavIsStory)
+			continue;
+
+		if (stops[i].isStory)
+		{
+			// ★**ストーリー・行・編集の3つが揃って初めて同じストップ**(2026-08-25 の再検査で
+			//   storyRow を足した)。
+			// ⚠★★★**足した理由は誤っていた。同日中に裏を取って撤回した。** 「版どうしでない2文書では
+			//   Target 側の行と Source 側の削除行の UID が衝突しうる」と書いたが、**衝突は起きない** ----
+			//   `KESCMStoryStamp.h:110-111` が Added を「**Source 側にこの UID のストーリーが無い**」、
+			//   Removed を「**Target 側に無い**」と定義しており、**同じ UID が両側にあれば必ずペアになる**
+			//   ＝どちらの行にもならない。⇒ **一覧の中で同じ UID が2行に現れることは無い。**
+			// ★**それでも3つ見るままにしてある**＝(a)UID の一意性は上のペアリングの実装に依存しており、
+			//   ここはその契約を知らずに済むほうがよい (b)行番号は Facade に渡す語彙そのもので、
+			//   どのみち持っている (c)**どれかがずれたら「見つからない」＝先頭から始まる**＝安全側に倒れる。
+			// ★**行番号を混ぜても壊れない**＝行の並びが変わるのは**新しい比較のとき**だけで、そのときは
+			//   KESCMResetNav が基準点ごと捨てる。「Refresh Story Comparison」は1行の子を作り直すだけで
+			//   並びを変えない(IKESCMStoryEditsFacade::RefreshRow が明記)。
+			if (stops[i].storyUID == sNavStoryUID && stops[i].storyRow == sNavStoryRow &&
+				stops[i].storyChange == sNavStoryChange)
+				return (int32)i;
+			continue;
+		}
+
 		if (stops[i].pageUID == sNavPageUID && stops[i].isOverset == sNavIsOverset &&
 			(!stops[i].isOverset || stops[i].oversetOrd == sNavOversetOrd))
 			return (int32)i;
@@ -831,7 +918,26 @@ static void KESCMGoto(int32 dir)
 	int32 cur = KESCMFindCurrentStop(stops);
 	int32 next;
 	if (cur < 0)
+	{
 		next = (dir > 0) ? 0 : (int32)stops.size() - 1;
+		// ⚠**入口フラグも落とす**(2026-08-25 の再検査)＝基準点そのものが消えた(その行を Refresh して
+		//   子が無くなった等)のに、「どのストップの入口か」だけが残るのは意味を成さない。
+		//   今は下の分岐が cur>=0 のときしか読まないので実害は出ないが、**読まれないから正しい状態**を
+		//   置いておくと、次に条件が1つ変わった日に壊れる。
+		sNavStoryAtEntry = kFalse;
+	}
+	else if (sNavStoryAtEntry && stops[cur].isStory)
+	{
+		// ★★★「入口に立っている」＝**子のある親行を選んだ**状態(2026-08-24 ユーザー決定)。基準点は
+		//   その行の最初の子を指しているが、**まだそこへは行っていない** ---- 行のクリックが飛んだ先は
+		//   ストーリーの書き出しで、中の最初の変更ではないから。
+		//   ⇒ **Next はそのストップ「へ」行く**(進めない)＝親を選んで Next を押した人が、中の最初の
+		//     1件を飛ばされない。**Prev は1つ前のストップへ**(入口の手前へ出る)。
+		//   ★これは上の `cur < 0`(まだ一度も巡っていない＝Start 直後の「1/N」)とまったく同じ考え方で、
+		//     違いは「行を選んだので、どのストップの入口かが分かっている」ことだけ。
+		next = (dir > 0) ? cur : cur - 1;
+		if (next < 0) next = (int32)stops.size() - 1;	// 先頭の入口で「前」→末尾へ折り返し
+	}
 	else
 	{
 		next = cur + dir;
@@ -839,6 +945,40 @@ static void KESCMGoto(int32 dir)
 		else if (next >= (int32)stops.size()) next = 0;						// 末尾で「次」→先頭へ折り返し
 	}
 	const KESCMNavStop& stop = stops[next];
+
+	// ★★★Story Changes モードのストップ(2026-08-24)＝**この先のページ処理を1つも通さない。**
+	//   飛び方も、マークも、メッセージ欄の中身も、**一覧の行をクリックしたときとまったく同じ実装**を
+	//   呼ぶ(KESCMStoryNav.cpp → KESCMStoryJump.cpp)。⇒ ユーザー指定「StoryEdit の行を選択したのと
+	//   同じ挙動」は、**ここで作り直さないこと**によってしか保てない([[one-question-one-place]])。
+	//   ⚠**下の KESCMStopLabel と KESCMSyncCompanionViews は呼ばない**:
+	//     ①ラベル(`Page: 3, Change 12%`)は画素比較の変化セル数の割合で、Story には分母が無い。しかも
+	//       メッセージ欄はジャンプ側が既に埋めている(変更なら旧側の本文、行なら `Page: 3`)ので、
+	//       ここで書くと**それを上書きして消す**。
+	//     ②Source 窓と Pages パネルの追随は KESCMGotoStoryFrame が中でやっており、しかも
+	//       **ページではなく「同じストーリー」に**合わせる(2026-08-10 のユーザー指摘)。ページで
+	//       合わせるあちらを重ねると、まさに見せたい「動いたストーリー」を見失う。
+	//   ★隠しスプレッドの扱いも持ち込まない ---- KESCMGotoStoryFrame が「レイアウトは動かさず Pages
+	//     パネルだけ合わせて kTrue を返す」と既に決めている(2026-08-18・同じ判断を2か所に書かない)。
+	//   ★★**基準ストップはジャンプの成否に関わらず進める。** 未配置のストーリーの行は「行けない」と
+	//     自分で言うが、それでもストップではある ---- 進めないと**そこで詰まって次へ行けない**。
+	//     ページ側が「スクロールできなければ進めない」のは、あちらの失敗が「そのページが今は無い」＝
+	//     リストの作り直しで消える類だから。
+	if (stop.isStory)
+	{
+		KESCMStoryNavStop storyStop;
+		storyStop.fRow      = stop.storyRow;
+		storyStop.fChange   = stop.storyChange;
+		storyStop.fStoryUID = stop.storyUID;
+		KESCMGotoStoryNavStop(storyStop);
+
+		// ★★**基準点はここで置かない。** 置くのはジャンプ側(KESCMStoryJump.cpp → KESCMNoteStoryStop)
+		//   で、**行のクリックも矢印キーの歩きもそこを通る** ---- ここでも置くと、同じ「今どこに
+		//   立っているか」を2か所が別々に決めることになる([[one-question-one-place]])。
+		//   ⚠あちらは**行が実在すると分かった時点**で置くので、飛べなかった行(未配置のストーリー・
+		//     隠しページ)でも基準は進む＝**そこで詰まらない**。
+		KESCMRefreshNavPosition();		// 「k/N」とボタンの有効/無効(ページ側の出口と同じ締め方)
+		return;
+	}
 
 	// overset は「+」点へ(KBS 流)、変更はページ中心へスクロール。
 	// ★基準ストップ(sNav*)の更新はスクロール成功後(2026-07-25 監査で移動): 失敗時に基準だけ先へ進むと、
@@ -874,6 +1014,12 @@ static void KESCMGoto(int32 dir)
 	sNavPageUID    = stop.pageUID;
 	sNavIsOverset  = stop.isOverset;
 	sNavOversetOrd = stop.oversetOrd;
+	// ページ側へ戻ってきた＝Story の基準点は種別ごと無効になる(上の分岐と対)。
+	// ⚠**入口フラグも一緒に落とす**(2026-08-25 の再検査)＝これを残すと、Story ストップの入口に立った
+	//   まま Prev であふれ箇所へ抜けたときに kTrue が居座る。今は `sNavIsStory` が偽なので読まれずに
+	//   済んでいるが、**「読まれないから正しい」は次に条件が1つ変わった日に崩れる**。
+	sNavIsStory      = kFalse;
+	sNavStoryAtEntry = kFalse;
 
 	// 飛んだ先をメッセージ欄へ(例 "Page: 1, Change 12%" / "Page: 1 Overset" / "Page: 1 (2) Overset"
 	// =KESCMStopLabel 参照。2026-08-06 現行化: 旧 "P1" 表記は 2026-07-27 に廃止済み)。
@@ -1011,11 +1157,72 @@ bool16 KESCMGotoStoryFrame(IDataBase* db, UID frameUID, UID pageUID, UID storyUI
 	return kTrue;
 }
 
+//========================================================================================
+// KESCMNoteStoryStop(KESCMChangeNav.h で宣言)
+//   ★一覧の行へ「今立った」ことを巡回位置へ反映する。呼び手はジャンプ関数の中ただ1つで、
+//     クリック・矢印キー・Prev/Next の**全部がそこを通る**(規則と理由はヘッダー)。
+//========================================================================================
+void KESCMNoteStoryStop(int32 rowIndex, int32 changeIndex)
+{
+	if (rowIndex < 0)
+		return;
+
+	// ⚠Pixel モードの巡回対象はページで、一覧の行はその列に居ない ---- 触ると「行をクリックしたら
+	//   ページの巡回位置が飛ぶ」ことになる。あちらの「行ジャンプは基準点を動かさない」は据え置き。
+	if (Utils<IKESCMCompareFacade>()->GetCompareMode() != kKESCMModeStory)
+		return;
+
+	// 行の実在と storyUID、そして子の数を聞く(3つとも同じ facade なので1回引く)。
+	InterfacePtr<IKESCMStoryEditsFacade> edits(Utils<IKESCMStoryEditsFacade>().QueryUtilInterface());
+	if (edits == nil)
+		return;
+
+	IKESCMStoryEditsFacade::Row row;
+	if (!edits->GetRow(rowIndex, row))
+		return;		// 一覧が作り直された直後にクリックが届いた: その行はもう無い
+
+	sNavIsStory    = kTrue;
+	sNavStoryUID   = row.fStoryUID;
+	sNavStoryRow   = rowIndex;		// ★UID と対で同定する(理由は KESCMFindCurrentStop の説明。
+									//   ⚠そこに書いた「UID が衝突しうる」は誤りで、同日中に撤回した)
+	sNavPageUID    = kInvalidUID;	// ページ側の基準は持ち越さない(種別で分かれるので値も残さない)
+	sNavIsOverset  = kFalse;
+	sNavOversetOrd = 0;
+
+	if (changeIndex >= 0)
+	{
+		sNavStoryChange   = changeIndex;
+		sNavStoryAtEntry  = kFalse;		// その変更そのものに立っている
+	}
+	else
+	{
+		// 行そのものを選んだ。★子があるならこの行はストップでは無い(KESCMStoryNav.h)ので、
+		//   **その最初の子の入口**に立つ ---- 表示はその子の番号、Next を押すとそこへ行く。
+		//   子が無ければ行そのものがストップなので、普通に立つ。
+		const int32 changeCount = edits->GetChangeCount(rowIndex);
+		sNavStoryChange  = (changeCount > 0) ? 0 : -1;
+		sNavStoryAtEntry = (changeCount > 0) ? kTrue : kFalse;
+	}
+
+	// ★★表示も作り直す。**行のクリックと矢印キーは、これ以外に「k/N」を書き換える経路を持たない**
+	//   ---- 基準点だけ動かして表示を置き去りにすると、パネルが自分と食い違う。
+	//   ⚠Prev/Next は自分の出口でも呼ぶので二重になるが、**今の状態から作り直すだけ**なので同じ値。
+	KESCMRefreshNavPosition();
+}
+
 // 巡回の基準点を忘れる(KESCMChangeNav.h)。次回の Next/Prev はリストの先頭/末尾から始まる。
 // ★表示更新はしない(基準点を落とすだけ): これは比較の総入れ替え(Start)の途中でも呼ばれるため、
 //   位置表示は呼び出し側(KESCMDoMarkChangesDoc 末尾 / KESCMDoClearMarks)が確定後に
 //   KESCMRefreshNavPosition で一括更新する。
-void KESCMResetNav() { sNavPageUID = kInvalidUID; sNavIsOverset = kFalse; sNavOversetOrd = 0; }
+void KESCMResetNav()
+{
+	sNavPageUID = kInvalidUID; sNavIsOverset = kFalse; sNavOversetOrd = 0;
+	// ★Story 側も同じ理由で捨てる(2026-08-24)＝一覧は比較のたびに丸ごと作り直されるので、前の比較の
+	//   ストーリーも編集の番号も意味を持たない。⚠ここを足し忘れると、別の文書対で再 Start したときに
+	//   **偶然 UID が一致した行から巡回が始まる**(ページ UID について上の説明が言っているのと同じ形)。
+	sNavIsStory = kFalse; sNavStoryUID = kInvalidUID; sNavStoryRow = -1; sNavStoryChange = -1;
+	sNavStoryAtEntry = kFalse;
+}
 
 // KESCMChangeNav.h 参照。今のストップ列(変更+overset 箇所)＋基準ストップから Prev/Next 間の位置表示を
 // 作り直し、Prev/Next ボタンの有効/無効もあわせて更新する(値組み立てとボタン状態を1箇所に集約=KESCL の
