@@ -87,7 +87,13 @@ public:
 	virtual bool16		RefreshSelectedPages(int32* outPages, int32* outChanged,
 								bool16* outCancelled = nil, int32* outFailed = nil) = 0;
 
-	/** Whether "Refresh Page Comparison" may be offered right now. */
+	/** Whether "Refresh Page Comparison" may be offered right now.
+
+		★NEVER IN THE STORY MODE (2026-08-24, user's call). What it refreshes is the PIXEL
+		comparison, and the story mode rasterises no page at all - pressing it would spend time
+		redrawing the selected pages and change nothing on screen. The story mode's own refresh is
+		the one on a row's right-click menu ("Refresh Story Comparison", 2026-08-21), so each mode
+		has exactly one, and they do not overlap. */
 	virtual bool16		RefreshComparisonAvailable() = 0;
 
 	// ★★NOT HERE ANY MORE (2026-08-17, bug recheck B2). ClearMarks(IDataBase*) stood at this spot

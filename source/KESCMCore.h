@@ -58,6 +58,36 @@ bool16		KESCMIsPageOnHiddenSpread(IDataBase* db, UID pageUID);
 //   ⚠ UI 側(KESCMThumbnailRefresh.cpp)は今後もこれを**呼ぶ**。UI→model は許される向き。
 bool16		KESCMCollectChangedPageUIDs(IDataBase* db, std::set<UID>& outPages);
 
+// 「このページに ✓(KCM: Check)を付けてよいか」の答え。
+//
+// ★★★**上の「マークが出得るページか」とは別の問い**(2026-08-24 に分けた)。長らく同じ答えでよかった
+//   ---- Pixel モードでは「✓ を付けられるのは枠/「/」の付いたページだけ」(ユーザー指定 2026-07-11)で、
+//   これは「マークが出得るページ」と一字一句同じ集合だったため、KESCMCollectChangedPageUIDs 1本で
+//   両方を答えていた。**Story モードで初めて食い違った**: あちらはページを1枚もラスタ化しないので
+//   sEntries が空になり、✓ の候補が登録ページとあふれページだけに縮んで、**メニューから「KCM: Check」
+//   が消えた**(無効項目はコンテキストメニューに出ない)。
+// ⇒ **Story モードでは Target/Source の全ページに ✓ を付けられる**(ユーザー決定 2026-08-24)。
+//   ⚠**「マークが出得るページ」の方を広げてはいけない**: あちらはサムネイルの Purge と再比較前の
+//     退避を駆動するので、全ページを名乗らせると比較のたびに全ページのサムネイルを作り直す。
+//
+// ★Story モードの答えは集合ではなく「全部」なので、**ページを1枚も数えずに答える**(fAllPages)。
+//   1000 ページの文書でも、右クリックのたびにスプレッドを全走査することにはならない。
+struct KESCMCheckablePages
+{
+	bool16			fAllPages;	// Story モード = この文書のどのページに付けてもよい(fPages は空のまま)
+	std::set<UID>	fPages;		// Pixel モード = マーク(枠/「/」)の付いているページだけ
+
+	KESCMCheckablePages() : fAllPages(kFalse) {}
+	bool16 Includes(UID page) const { return (fAllPages || fPages.count(page) > 0) ? kTrue : kFalse; }
+};
+
+// db が現在の比較対象(sDB/sSrcDB)なら out を埋めて kTrue。比較対象でなければ out は空のまま kFalse
+// ＝**その文書のページには1枚も ✓ を付けられない**(第3の文書・閉じた文書・未 Start)。
+// ⚠比較対象かの判定は上の KESCMCollectChangedPageUIDs と**同じ2つのポインタ**(sDB/sSrcDB)で行う
+//   ---- モードによって「どの文書が対象か」まで変わってしまうと、モードを切り替えた瞬間に
+//   ✓ の付く文書が変わることになる。変わるのは「その文書のどのページか」だけ。
+bool16		KESCMCollectCheckablePageUIDs(IDataBase* db, KESCMCheckablePages& out);
+
 // ページアイテムの UID → そのアイテムが載っているページ UID(どのページにも載らないなら kInvalidUID)。
 // あふれ位置の報告(KESCMOversetScan)と Story Edits の一覧が同じ問いを持つので1本を共有する。
 // ★答えは必ず実ページ(kPageBoss)で、spread の UID は返らない。理由は実体側のコメント(KESCMCore.cpp)。

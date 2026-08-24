@@ -75,8 +75,9 @@ void KESCMPeekShowAt(IDataBase* targetDB, IDataBase* sourceDB,
 bool16 KESCMArmedDocsAlive();
 
 // ページパネルのページ右クリック「KCM: Refresh Page Comparison」の実体。選択ページの比較を再検出して
-// 枠/サムネイルを更新する(旧 Ctrl+ミドルのスプレッド再比較を移設。2026-07-13)。arm 済み(Start 後)かつ
-// 前面文書が Target のときだけ動く(★2026-07-15 Target 限定=ユーザー指定)。outPages=実際に再比較した
+// 枠/サムネイルを更新する(旧 Ctrl+ミドルのスプレッド再比較を移設。2026-07-13)。arm 済み(Start 後)・
+// **Pixel モード**・前面文書が Target のときだけ動く(★2026-07-15 Target 限定=ユーザー指定 /
+// ★2026-08-24 Pixel 限定=ユーザー判断。下の KESCMRefreshComparisonAvailable の注記を参照)。outPages=実際に再比較した
 // ページ数 / outChanged=うち変化ページ数 / outCancelled=進捗バーのキャンセルで中断したか(いずれも nil 可)。
 // 戻り=1ページ以上処理したか。★ページ数が多いときは進捗バー＋キャンセルが出る(2026-07-27)。中断しても
 // そこまで更新した分は残る(残りのページが古いまま=選択を狭めて実行したのと同じ状態)。キャンセルを押した
@@ -85,8 +86,11 @@ bool16 KESCMArmedDocsAlive();
 // 実体は KESCMPeek.cpp。KESCMActionComponent.cpp から呼ぶ。
 bool16 KESCMRefreshComparisonForSelectedPages(int32* outPages, int32* outChanged, bool16* outCancelled = nil, int32* outFailed = nil);
 
-// 上記メニューの有効/無効判定(KESCMActionComponent.cpp の UpdateActionStates 用)。arm 済みかつ前面文書が
-// Target なら kTrue(Source では無効=コンテキストメニューでは項目ごと非表示になる想定)。実体は KESCMPeek.cpp。
+// 上記メニューの有効/無効判定(KESCMActionComponent.cpp の UpdateActionStates 用)。arm 済み・**Pixel
+// モード**・前面文書が Target なら kTrue(Source では無効=コンテキストメニューでは項目ごと非表示になる想定)。
+// ★★**Story モードでは常に kFalse**(2026-08-24 ユーザー判断)＝あちらはページを1枚もラスタ化しないので
+//   押しても画面が変わらない。Story の「更新」は行の右クリック「Refresh Story Comparison」が持つ。
+//   理由の全文は実体側(KESCMPeek.cpp)のコメント。実体は KESCMPeek.cpp。
 bool16 KESCMRefreshComparisonAvailable();
 
 #endif // __KESCMPeek_h__
