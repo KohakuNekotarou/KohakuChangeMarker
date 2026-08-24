@@ -233,7 +233,7 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 			this->DoUsage();
 			break;
 
-		// 「Show Marks on Source」トグル: フラグを反転して Source 文書を再描画する(Pixel の表示判定と描画は
+		// 「Always Show Marks on Source」トグル: フラグを反転して Source 文書を再描画する(Pixel の表示判定と描画は
 		// KESCMDrawEventHandler::HandleDrawEvent の Source 分岐。ON の間は常時表示・OPPでも表示・印刷にも
 		// 出る。不透明度はパネルの 25%/75% 選択に連動)。★既定 OFF で Start は触らない(2026-08-22 変更＝
 		// 設定はパネル設定に保存され起動時に復元されるので、Start が上書きすると保存した選択が消える)。
@@ -270,7 +270,7 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 			break;
 		}
 
-		// 「Show Marks on Target」トグル: フラグを反転して Target 文書を再描画する。★Source 版と対で、
+		// 「Always Show Marks on Target」トグル: フラグを反転して Target 文書を再描画する。★Source 版と対で、
 		// ON の間はツールを押さなくてもマークが出たままになる(2026-08-22 ユーザー要望
 		// 「ツールでボタンを押さなくても常にマークが出る様に」)。★既定 OFF で Start は触らない
 		// (Source 版と同じ理由＝設定はパネル設定に保存され、起動時に復元される)。
@@ -506,7 +506,7 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 		}
 
 		// (★「Hold to Hide Marks」(+19)は 2026-08-22 に撤去＝ユーザー決定。「常時表示」が
-		//  「Show Marks on Target」と完全に重複したため。固有だった「押している間だけ隠す」は
+		//  「Always Show Marks on Target」と完全に重複したため。固有だった「押している間だけ隠す」は
 		//  **両トグル ON のときの標準の挙動**になった＝規則は「押している間は反対になる」の1本。
 		//  ⚠**この case が持っていた後始末2つは上の2つのトグルへ移してある**＝一時退避の解除と、
 		//    常時表示の基準不透明度の即反映(落とすと「ON にしたのに枠が不透明のまま出る」)。

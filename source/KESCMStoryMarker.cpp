@@ -345,7 +345,7 @@ PMReal MarkOpacityNow()
 
    ⚠EVERY DOCUMENT THAT WAS MARKED IS REPAINTED TOO, not just the ones that still are, or a mark
    would stay on screen in a window nobody is looking at any more. That is not hypothetical here:
-   turning "Show Marks on Source" off leaves the target's marks up and has to wipe the source's.
+   turning "Always Show Marks on Source" off leaves the target's marks up and has to wipe the source's.
 
    ⚠THE CLOCK IS NOT TOUCHED HERE, AND THAT IS DELIBERATE (2026-08-23). It was a parameter of this
    function until the two sets were separated, which meant every standing mark going up or coming

@@ -95,7 +95,7 @@ static bool16     sPeekArmed    = kFalse;
 //   ツール左ボタンを離したら sMarkScreenOpacity をこの値へ戻す。
 PMReal KESCMBaseScreenOpacity()
 {
-	// 印刷マーク ON、または「Show Marks on Target」(枠を画面に常時表示)ON のときは、常時表示の枠を
+	// 印刷マーク ON、または「Always Show Marks on Target」(枠を画面に常時表示)ON のときは、常時表示の枠を
 	// パネル選択の 25%/75% で描く(押下中の一時表示と見た目を揃える)。どちらも OFF なら 1.0(不透明)。
 	// ★2026-08-22＝2つ目の条件は「Hold to Hide Marks」(sAlwaysShowMarks)だった。**あれを撤去したので、
 	//   「枠が常時出ている」を今なお答えるトグルへ付け替えた**＝sTgtMarksOn(Hold の常時表示は、これと
@@ -455,7 +455,7 @@ static bool16 KESCMRefreshComparisonCore(IDataBase* targetDB, IDataBase* sourceD
 	}
 
 	KESCMInvalidateDB(targetDB);
-	// Source 側のレイアウトビューも再描画する。エントリの増減は Source の常時枠(Show Marks on Source)や
+	// Source 側のレイアウトビューも再描画する。エントリの増減は Source の常時枠(Always Show Marks on Source)や
 	// ✓(prune)の見た目も変えるため。
 	if (sourceDB != targetDB)
 		KESCMInvalidateDB(sourceDB);
@@ -907,7 +907,7 @@ void KESCMHandleDocsClosed()
 	//   ---- 通知の受け手はこれを deref する(閉じた IDataBase* はアドレスが再利用される)。
 	IDataBase* survivorTargetDB = nil;
 	IDataBase* survivorOrigDB   = nil;
-	IDataBase* survivorSrcDB    = nil;	// Source側枠(Show Marks on Source)が出ている文書
+	IDataBase* survivorSrcDB    = nil;	// Source側枠(Always Show Marks on Source)が出ている文書
 
 	if (comparisonDocClosed)
 	{

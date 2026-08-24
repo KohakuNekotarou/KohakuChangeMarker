@@ -135,8 +135,21 @@ void KESCMSavePanelState()
 	std::string json;
 	json += "{\n";
 	json += "  \"version\": 1,\n";
-	json += "  \"printMarks\": ";             json += KESCMBoolLiteral(compare->GetPrintMarks());                   json += ",\n";
+	// ⚠★★**「Print comparison marks」(printMarks)はここに書かない**(2026-08-25・ユーザー指定)。
+	//   ★これは**保存し忘れではなく仕様**＝あのトグルは**画面だけでなく紙と PDF に何が出るかを変える**
+	//     ので、起動のたびに既定の OFF から始まり、出したい回に明示的に ON にする形にした。
+	//     (前は保存していた＝公開版 1.3.0 の挙動。増分の説明は `source/KESCMID.h` の⑱。)
+	//   ⚠**古い設定ファイルには "printMarks" が残っている**が、読み手(下の復元)が名指しで探す方式なので
+	//     単に無視される。次にこの関数が走った時点でキーごと消える。
+	//   ⚠**不透明度(opacity25)は従来どおり保存する**＝あちらは「出るときにどう見えるか」の設定で、
+	//     出力に何かが増えるわけではない。
 	json += "  \"opacity25\": ";              json += KESCMBoolLiteral(compare->GetMarkOpacity25());                json += ",\n";
+	// ★「Mark colour」(Red/Cyan)。⚠**2026-08-24 に足したとき、ここへ入れ忘れていた**(2026-08-25 の
+	//   点検で発見・修正)＝選んで保存しても**起動し直すと赤へ戻っていた**。しかも Save 自体は成功の
+	//   メッセージを出すので、「保存したのに効かない」という見え方になる。
+	//   ★bool でよい理由＝取り得る値が2つしかない(Red/Cyan)。3つ目が増える形の設定ではないので、
+	//     compareMode を文字列にした理由(下の KESCMJsonReadString の頭)はこちらには当てはまらない。
+	json += "  \"markColorCyan\": ";          json += KESCMBoolLiteral(compare->GetMarkColorCyan());                json += ",\n";
 	// (\"holdToHideMarks\" は 2026-08-22 にトグルごと撤去。古い設定ファイルに残っていても読まれない)
 	json += "  \"showTgtMarks\": ";           json += KESCMBoolLiteral(compare->GetShowTargetMarks());              json += ",\n";
 	json += "  \"showSrcMarks\": ";           json += KESCMBoolLiteral(compare->GetShowSourceMarks());              json += ",\n";
@@ -226,7 +239,7 @@ void KESCMLoadPanelStateIfPresent()
 	// ★順序: 不透明度に影響する表示トグルを先に反映してから SetPrintMarks を呼ぶ。SetPrintMarks は
 	//   常時表示の画面不透明度を現在の選択から再計算する(KESCMBaseScreenOpacity)ので、その入力が
 	//   先に入っていなければならない。
-	//   ⚠★2026-08-22＝**その入力は「Hold to Hide Marks」から「Show Marks on Target」へ移った**
+	//   ⚠★2026-08-22＝**その入力は「Hold to Hide Marks」から「Always Show Marks on Target」へ移った**
 	//     (Hold は撤去)。順序の要件は変わっていない＝下の SetShowTargetMarks が SetPrintMarks より
 	//     前にあること。**行を並べ替えるときはこの依存を先に見ること。**
 	InterfacePtr<IKESCMCompareFacade> compare(Utils<IKESCMCompareFacade>().QueryUtilInterface());
@@ -234,9 +247,23 @@ void KESCMLoadPanelStateIfPresent()
 	compare->SetShowSourceMarks   (KESCMJsonReadBool(text, "showSrcMarks",    compare->GetShowSourceMarks()));
 	compare->SetShowOldPageNumbers(KESCMJsonReadBool(text, "showOldNumbers",  compare->GetShowOldPageNumbers()));
 
-	const bool16 printMarks = KESCMJsonReadBool(text, "printMarks", compare->GetPrintMarks());
+	// ⚠★★**印刷マーク(printMarks)は復元しない**(2026-08-25・ユーザー指定。保存側も書いていない)。
+	//   ∴ 毎回の起動で既定の OFF から始まる＝出力にマークを出すのは、その回に明示的に ON にしたときだけ。
+	// ★**それでも SetPrintMarks を通す**理由＝復元したいのは不透明度で、その反映口がこれしかないため
+	//   (`SetMarkOpacity25` は中で `KESCMActiveDoc()` を引き、ステータス行に文字を出す
+	//    ＝`KESCMComparisonRun.cpp` のフライアウト用の実装で、起動時に通す経路ではない)。
+	//   ⇒ 第1引数は**今の印刷フラグをそのまま**渡す(起動直後なので既定 kFalse)。
 	const bool16 opacity25  = KESCMJsonReadBool(text, "opacity25",  compare->GetMarkOpacity25());
-	compare->SetPrintMarks(printMarks, opacity25, nil);	// db=nil: フラグ設定のみ(未 Start なので再描画対象は無い)
+	compare->SetPrintMarks(compare->GetPrintMarks(), opacity25, nil);	// db=nil: フラグ設定のみ(未 Start なので再描画対象は無い)
+
+	// ★マークの色(2026-08-25 に補った。⑰で足したときの入れ忘れ)。
+	// ★**起動時に通してよい**＝`KESCMDoSetMarkColor`(KESCMCore.cpp)は**値が変わらなければ即 return** し、
+	//   変わった回も `KESCMActiveDoc()` から取った db を再描画するだけ。文書が1つも無ければ
+	//   `KESCMInvalidateDB(nil)` になるだけで害は無い。
+	// ★**後始末は要らない**＝不透明度と違い、色は**描くたびに `SelectedMarkColor()` を読み直す**ので
+	//   `KESCMStoryMarksRefresh()` を頼む必要が無い(理由の全文は KESCMActionComponent.cpp の
+	//   kKESCMPopupColorRedActionID の頭)。∴ 上の opacity と違ってここは1行で済む。
+	compare->SetMarkColor(KESCMJsonReadBool(text, "markColorCyan", compare->GetMarkColorCyan()));
 
 	KESCMSetLayoutSync            (KESCMJsonReadBool(text, "syncLayoutViews",         KESCMGetLayoutSync()));
 	KESCMSetScrollMapEnabled      (KESCMJsonReadBool(text, "scrollbarMap",           KESCMGetScrollMapEnabled()));

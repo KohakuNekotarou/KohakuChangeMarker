@@ -85,7 +85,7 @@ class IDataBase;
 	⇒ ★In a document with a standing mark, the standing mark is all there is: the jump adds no
 	  pointer there, because every character it would point at is already lit.
 	⚠★★AND THE OTHER DOCUMENT IS A SEPARATE ANSWER. Until 2026-08-23 one flag stood for both, so
-	  turning "Show Marks on Target" on silenced the flash in the SOURCE window as well - where
+	  turning "Always Show Marks on Target" on silenced the flash in the SOURCE window as well - where
 	  nothing was standing and the reader had just asked to be shown something (bug A3). The rule
 	  now lives in one place and is asked per document (KESCMStoryMarkDocs.h).
 

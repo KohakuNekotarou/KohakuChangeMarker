@@ -59,7 +59,7 @@ void KESCMStoryMarkSetPress(bool16 active, bool16 useSourceDocument);
 
 	★★THE RULE IS THE PIXEL MODE'S, WORD FOR WORD (user's choice, 2026-08-23):
 	  * the NEWER document prints when "Print comparison marks" is on;
-	  * the OLDER one prints when "Show Marks on Source" is on, and does not consult the print
+	  * the OLDER one prints when "Always Show Marks on Source" is on, and does not consult the print
 	    toggle at all.
 	That asymmetry is not this file's invention - IKESCMCompareFacade.h:146-147 already states it as
 	the specification ("ON SCREEN ONLY, where the Source one also prints. What comes out of the

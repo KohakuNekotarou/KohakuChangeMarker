@@ -721,7 +721,7 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kSDKDefIsNotDynamicMenuFlag,
 
 		// ("Hold to Hide Marks" stood here until 2026-08-22. It meant "keep the marks up, and hide
-		//  them while the button is held" — and once "Show Marks on Target" existed, the first half
+		//  them while the button is held" — and once "Always Show Marks on Target" existed, the first half
 		//  of that was the same switch twice over. The second half is now what BOTH "Show Marks on"
 		//  toggles do while the button is held, so the rule is one line: **while the button is held,
 		//  that window is the other way round**. Menu position 9.20 is free; ActionID +19 is not to
@@ -789,7 +789,7 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKESCMModeStorySubMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
-		// "Show Marks on Source" on the panel flyout (popup) menu. Check-mark toggle:
+		// "Always Show Marks on Source" on the panel flyout (popup) menu. Check-mark toggle:
 		// while ON, the same comparison rings are also drawn on the corresponding pages of the
 		// Source document — always visible (independent of the middle button), shown in
 		// overprint preview, and always printed. Opacity follows the panel's 25%/75% radio.
@@ -799,7 +799,7 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKESCMShowSrcMarksMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
-		// "Show Marks on Target" on the panel flyout (popup) menu. Check-mark toggle:
+		// "Always Show Marks on Target" on the panel flyout (popup) menu. Check-mark toggle:
 		// while ON, the Target document keeps its marks WITHOUT the tool's button being held —
 		// the Pixel mode's comparison rings and the Story mode's washed characters alike.
 		// Opacity follows the panel's 25%/75% radio.

@@ -232,7 +232,7 @@ void KESCMPageMapToggleSelectedPages()
 	// ★既に比較実行済み(Start後)なら、除外対応表が変わった分をその場で反映するため、Start と同じ
 	// 全体再比較を自動で走らせる(実機確認: 比較後に登録を変えてもリアルタイムには反映されなかった
 	// ため、2026-07-05 にこの自動再比較を追加)。Start 未実行なら何もしない(次の Start で自然に反映)。
-	// (旧記述の「Show Marks on Source を既定 ON に戻す副作用」は 2026-07-25 に Start 経路へ移動済み=
+	// (旧記述の「Always Show Marks on Source を既定 ON に戻す副作用」は 2026-07-25 に Start 経路へ移動済み=
 	// この再比較ではユーザーの OFF 選択は保たれる)。報告文字列(report)は使わず短い
 	// サフィックスだけ足す(ステータス欄が小さく、report をそのまま足すと溢れるため)。
 	bool16 recompared = kFalse;

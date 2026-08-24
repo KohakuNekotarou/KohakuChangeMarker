@@ -253,7 +253,7 @@ void KESCMStoryMarkRefresh()
 		//   the other way round** - marks that were off come on, and marks that were on go off, which
 		//   is what lets the reader look at the plain page underneath the ones they asked to keep.
 		//   ⇒ XOR, where this was OR until "Hold to Hide Marks" was retired (that toggle used to own
-		//     the "hide while held" half, and its other half duplicated Show Marks on Target).
+		//     the "hide while held" half, and its other half duplicated Always Show Marks on Target).
 		//   ★The Pixel mode's frames follow the same rule, but spelt out in two places rather than
 		//     one, because they are drawn by the draw event: the toggle puts them up (alwaysScreen in
 		//     KESCMDrawEventHandler) and the press takes them down (sMarksTempHidden, set in
@@ -272,7 +272,7 @@ void KESCMStoryMarkRefresh()
 		//   same set - so "on paper but not on screen" would mean keeping a second set of ranges,
 		//   which is one question answered in two places ([[one-question-one-place]]). The screen
 		//   and the page agree because there is only ever one answer to draw from.
-		// ⚠**The Source side does NOT read the print toggle** - "Show Marks on Source" decides both
+		// ⚠**The Source side does NOT read the print toggle** - "Always Show Marks on Source" decides both
 		//   its screen and its paper, which is the specification in IKESCMCompareFacade.h:146-147.
 		const bool16 tgtWanted = (compare->GetShowTargetMarks() || compare->GetPrintMarks()) ? kTrue : kFalse;
 		const bool16 wantTarget = ((tgtWanted != 0) != (pressTarget != 0)) ? kTrue : kFalse;
@@ -345,7 +345,7 @@ bool16 KESCMStoryMarkPrintAllowedFor(IDataBase* db)
 	if (KESCMDrawEventHandler::sPrintMarks && KESCMIsSameDoc(db, KESCMArmedTargetDB()))
 		return kTrue;
 
-	// ★THE OLDER DOCUMENT IGNORES THE PRINT TOGGLE - "Show Marks on Source" decides its screen and
+	// ★THE OLDER DOCUMENT IGNORES THE PRINT TOGGLE - "Always Show Marks on Source" decides its screen and
 	//   its paper together. Asymmetric on purpose, and stated as the specification in
 	//   IKESCMCompareFacade.h:146-147 long before the Story mode could print at all.
 	if (KESCMDrawEventHandler::sSrcMarksOn && KESCMIsSameDoc(db, KESCMArmedSourceDB()))
