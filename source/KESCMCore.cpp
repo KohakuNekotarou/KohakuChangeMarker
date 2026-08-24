@@ -115,8 +115,9 @@ void KESCMCollectPageUIDs(IDataBase* db, std::vector<UID>& out)
 //   API 監査 B4 で明文化)。KESCMThreadSafety.h:86-93 の契約は「main が書き、**BG(PDF の非同期
 //   書き出し)が描画で読む**から守る」であって、**この関数はその BG 側ではない**——呼び手を
 //   全数数えると4つとも**メインスレッド**しかない:
-//     ・KESCMPageCheck.cpp の KESCMCollectMarked(トグル/メニュー状態/Load の復元)
-//     ・KESCMPageCheck.cpp の KESCMPageCheckPruneToMarked(★呼び手が既にロック済み)
+//     ・このファイルの KESCMCollectCheckablePageUIDs(すぐ下)＝Pixel モードのときだけ素通しする。
+//       その先の呼び手は KESCMPageCheck.cpp の3か所(トグル/メニュー状態/剪定)と Load の復元で、
+//       ★**剪定だけは呼び手が既にロック済み**(KESCMPageCheckPruneToMarked)
 //     ・このファイルの再比較前の旧集合の退避(KESCMDoMarkChangesDoc)
 //     ・KESCMFacades.cpp の IKESCMMarkData 経由(＝UI から)
 //   書き手も main だけなので、同一スレッド内では走査中に書き換わらない。⇒ ロックは要らない。
@@ -154,6 +155,29 @@ bool16 KESCMCollectChangedPageUIDs(IDataBase* db, std::set<UID>& outPages)
 		return kTrue;
 	}
 	return kFalse;
+}
+
+//========================================================================================
+// KESCMCollectCheckablePageUIDs(KESCMCore.h で宣言。理由と経緯は宣言側のコメント)
+//   ★上の KESCMCollectChangedPageUIDs のすぐ下に置いてあるのは、**2つが紛らわしいほど近い問いだから**。
+//     片方を直すときにもう片方が目に入る位置に居させる。
+//   ⚠**ロックを取らないのは上と同じ理由**(呼び手が全部メインスレッド。上の長い注記を参照)。
+//     Story 分岐が読むのはポインタ2つとモードの enum 1つだけなので、そもそも走査すらしない。
+//========================================================================================
+bool16 KESCMCollectCheckablePageUIDs(IDataBase* db, KESCMCheckablePages& out)
+{
+	out.fAllPages = kFalse;
+	out.fPages.clear();
+
+	if (KESCMGetCompareMode() != kKESCMModeStory)
+		return KESCMCollectChangedPageUIDs(db, out.fPages);	// Pixel = マークの付いたページだけ
+
+	// Story モード = 比較中の2文書なら全ページ。★対象文書の判定は上の関数と同じ2つのポインタで行う。
+	if (db == nil || (db != KESCMDrawEventHandler::sDB && db != KESCMDrawEventHandler::sSrcDB))
+		return kFalse;
+
+	out.fAllPages = kTrue;
+	return kTrue;
 }
 
 //========================================================================================

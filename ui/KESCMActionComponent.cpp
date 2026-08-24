@@ -926,7 +926,7 @@ void KESCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionSta
 			{
 				int16 actionState = kEnabledAction;
 				if (st.fTick == kKESCMPageTickAll)
-					actionState |= kSelectedAction;			// マーク付き選択が全部チェック済み=✓
+					actionState |= kSelectedAction;			// 対象の選択ページが全部チェック済み=✓(★対象はモードで違う。model 側の KESCMCollectCheckablePageUIDs)
 				else if (st.fTick == kKESCMPageTickSome)
 					actionState |= kMultiSelectedAction;	// 一部だけチェック済み=中間チェック
 				listToUpdate->SetNthActionState(i, actionState);

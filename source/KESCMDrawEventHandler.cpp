@@ -1451,6 +1451,26 @@ static void KESCMDrawPageCheck(IGraphicsPort* gPort, IDataBase* db, UID pageUID,
 	const PMReal rx = cx + s * PMReal(0.48), ry = cy - s * PMReal(0.40);	// 右上(最上点)
 
 	AutoGSave ag(gPort);
+	// ★★★2026-08-24（不具合修正・実測で確定）: **Pages パネルのサムネイルに描くときは rectclip が要る。**
+	//
+	//   症状＝「KCM: Check」の✓を付けても外しても、**ページアイコンの絵が変わらない**(古いまま残る)。
+	//   ただし**他のマーク(枠・登録の「/」)が出ているページでは正しく変わる**、という分かれ方をした。
+	//   ⇒ ユーザーの指摘「/ と全く同じ方法で書き込めばよいのでは？」が正解だった ---- 両者は
+	//     不透明度も線幅の式も同じ定数を使っていて、**違いは rectclip の有無だけ**。足したら直った。
+	//
+	//   ★**クリップは「描く範囲の制限」であると同時に「この矩形を触る」という申告でもある。**
+	//     申告が無いと Pages パネルはそのページアイコンを描き直す理由を持たない。マークのあるページで
+	//     たまたま正しく見えていたのは、**同じスプレッドで「/」や枠が rectclip 付きで描かれていた**ため。
+	//   ⚠**機序そのものは未確定**(本体側の無効領域の扱いは非公開)。確かなのは実測の対応関係
+	//     ＝rectclip 無し⇒描き直されない／有り⇒描き直される。**推測でこの行を消さないこと。**
+	//   ★遠回りの記録: 先に「Purge の後にもう一度 ForceRedraw」「ForceRedraw の前に Invalidate」を
+	//     試したが**どちらも効かず、両方削除した**。効いたのはこの1行だけ。
+	//
+	//   ⚠レイアウトビュー版(layoutStyle)はページ短辺の大半を使う大きな✓なので、クリップすると
+	//     端が欠ける。従来どおりクリップしない ---- あちらは元から正しく出ている。
+	if (!layoutStyle)
+		gPort->rectclip(pr.Left()   + kKESCMClipInset, pr.Top()    + kKESCMClipInset,
+		                pr.Width()  - kKESCMClipInset * 2.0, pr.Height() - kKESCMClipInset * 2.0);
 	gPort->setopacity(opacity, kFalse);
 	// ★2026-08-16: 印刷/PDF は CMYK で塗る(PDF/X-1a は RGB を許さない＝KESCMSetOutputColor 参照)。
 	KESCMSetOutputColor(gPort, cr, cg, cb, (drawMode == kKESCMDrawModePrint) ? kTrue : kFalse);

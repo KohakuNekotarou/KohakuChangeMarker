@@ -500,6 +500,11 @@ bool16 KESCMRefreshComparisonForSelectedPages(int32* outPages, int32* outChanged
 
 	if (!KESCMIsArmed())
 		return kFalse;
+	// ★Story モードでは走らせない。メニューは上の KESCMRefreshComparisonAvailable が既に消しているので
+	//   通常は到達しないが、ActionID にキーボードショートカットを割り当てられる以上、**実行側でも断る**
+	//   (この関数は「押されたら何をするか」の側で、メニューの見た目とは別の入口を持ちうる)。
+	if (KESCMGetCompareMode() == kKESCMModeStory)
+		return kFalse;
 	IDataBase* targetDB = KESCMArmedTargetDB();
 	IDataBase* sourceDB = KESCMArmedSourceDB();
 	if (targetDB == nil || sourceDB == nil)
@@ -543,8 +548,9 @@ bool16 KESCMRefreshComparisonForSelectedPages(int32* outPages, int32* outChanged
 }
 
 // 「KCM: Refresh Page Comparison」メニューを有効化してよいか(UpdateActionStates 用)。
-// arm 済み(Start 後)かつ前面文書が Target のとき kTrue(★2026-07-15 Target 限定化=ユーザー指定。
-// コンテキストメニューは無効項目を出さないため、Source 側の右クリックでは項目自体が消える想定)。
+// arm 済み(Start 後)・**Pixel モード**・前面文書が Target のとき kTrue(★2026-07-15 Target 限定化=
+// ユーザー指定 / ★2026-08-24 Pixel 限定=ユーザー判断。理由は下の分岐のコメント。
+// コンテキストメニューは無効項目を出さないため、Source 側や Story モードでは項目自体が消える)。
 // 選択の有無までは見ない(ページ右クリックは通常そのページを選択済みで、未選択でも DoAction 側が
 // 安全に no-op しステータス行へ "no comparable pages" を出す)。
 // ★実行側(KESCMRefreshComparisonForSelectedPages)は KESCMPageMapReadSelection の db で判定するが、
@@ -556,6 +562,16 @@ bool16 KESCMRefreshComparisonForSelectedPages(int32* outPages, int32* outChanged
 bool16 KESCMRefreshComparisonAvailable()
 {
 	if (!KESCMIsArmed())
+		return kFalse;
+	// ★★★**Story モードでは出さない**(ユーザー判断 2026-08-24)。この項目が作り直すのは**画素比較の
+	//   結果**で、Story モードはページを1枚もラスタ化しない(KESCMDoMarkChangesDoc の `toRaster.clear()`)
+	//   ---- 押しても選択ページを一枚ずつ描き直して時間を使うだけで、**画面は1ドットも変わらない**
+	//   (描画側が `drawRings = (モード != Story)` でリングを止めている)。
+	// ★**Story モードの「更新」は別の口が持っている**＝Story Edits の行の右クリック
+	//   「Refresh Story Comparison」(2026-08-21・Story モード限定)。⇒ どちらのモードにも更新の口が
+	//   ちょうど1つずつ在り、重ならない。
+	// ⚠無効にすると**項目ごと消える**(コンテキストメニューは無効項目を出さない)。それが狙い。
+	if (KESCMGetCompareMode() == kKESCMModeStory)
 		return kFalse;
 	IDataBase* targetDB = KESCMArmedTargetDB();
 	IDataBase* sourceDB = KESCMArmedSourceDB();

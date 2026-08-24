@@ -49,31 +49,32 @@
 // 空になった文書のエントリは即座に消える(KESCMDocUidSet の規約)。
 static KESCMDocUidSet sChecked;
 
-// db の「マーク付きページ」集合を1回だけ作る。マーク付き = KESCM の変更リング(sEntries)/登録「/」/
-// overflow「/」のいずれか。実体は KESCMCollectChangedPageUIDs(★**KESCMCore.h**。db が sDB/sSrcDB の
-// ときだけ true+集合を返す)。⚠2026-08-17 訂正: ここは所在を「KESCMThumbnailRefresh.h」と書いていたが、
-// それは UI 側のヘッダーで、2026-08-13(Task 10)に KESCMCore.h へ移っている(上の :46 が正しく書いている)。★複数ページを判定するときは、これを1回呼んでから outMarked.count() で引くこと
-// (KESCMCollectChangedPageUIDs は毎回 sEntries を全走査するため、ページごとに呼ぶと O(ページ数×変更数)になる)。
-static bool16 KESCMCollectMarked(IDataBase* db, std::set<UID>& outMarked)
+// ★★チェック(✓)を付けてよいページは**モードで違う**。答えを作るのは KESCMCore.cpp の
+//   KESCMCollectCheckablePageUIDs 1本で、このファイルはそれを引くだけ(理由と経緯は KESCMCore.h の
+//   宣言のコメント)。要点だけ:
+//     ・Pixel モード … マーク付き(枠/登録「/」/overflow「/」)のページだけ(ユーザー指定 2026-07-11)
+//     ・Story モード … Target/Source の**全ページ**(ユーザー決定 2026-08-24)
+//   ⚠**この判定を持つのはこのファイルの3か所**(トグル実行・トグル状態・剪定)＋ Load の復元で、
+//     どれも下の KESCMCollectCheckable / KESCMFilterToCheckable を通す。素で
+//     KESCMCollectChangedPageUIDs を呼ぶと Pixel の答えしか返らない([[one-question-one-place]])。
+//
+// ★複数ページを判定するときは、これを1回呼んでから Includes() で引くこと(Pixel 分岐は毎回 sEntries を
+//   全走査するため、ページごとに呼ぶと O(ページ数×変更数)になる)。
+static bool16 KESCMCollectCheckable(IDataBase* db, KESCMCheckablePages& outCheckable)
 {
-	outMarked.clear();
-	return KESCMCollectChangedPageUIDs(db, outMarked);
+	return KESCMCollectCheckablePageUIDs(db, outCheckable);
 }
 
-// ★チェック(✓)は「マーク付きページ限定」にする(ユーザー指定 2026-07-11): マークの無いページは
-//   サムネイルが作り直されず✓が乗らないため、そもそもチェックさせない/覚えない。判定は上の
-//   KESCMCollectMarked で集合を作り count() で引く(ページごとに引き直さない)。
-
-// 選択ページのうち「マーク付き」のものだけを outMarked に残す。マーク集合は1回だけ作る(上記参照)。
-static void KESCMFilterToMarked(IDataBase* db, const std::vector<UID>& pages, std::vector<UID>& outMarked)
+// 選択ページのうち「✓ を付けてよい」ものだけを out に残す。候補は1回だけ作る(上記参照)。
+static void KESCMFilterToCheckable(IDataBase* db, const std::vector<UID>& pages, std::vector<UID>& out)
 {
-	outMarked.clear();
-	std::set<UID> marked;
-	if (!KESCMCollectMarked(db, marked))
-		return;		// db が比較対象でない=マーク無し
+	out.clear();
+	KESCMCheckablePages checkable;
+	if (!KESCMCollectCheckable(db, checkable))
+		return;		// db が比較対象でない=1枚も付けられない
 	for (size_t i = 0; i < pages.size(); ++i)
-		if (marked.count(pages[i]) > 0)
-			outMarked.push_back(pages[i]);
+		if (checkable.Includes(pages[i]))
+			out.push_back(pages[i]);
 }
 
 //========================================================================================
@@ -90,11 +91,11 @@ void KESCMPageCheckToggleSelectedPages()
 	if (!KESCMIsArmed() || (db != KESCMArmedTargetDB() && db != KESCMArmedSourceDB()))
 		return;
 
-	// ★マーク付きページだけを対象にする(マークの無いページは✓が乗らないので無視)。
+	// ★✓ を付けてよいページだけを対象にする(モードで違う。上の KESCMFilterToCheckable を参照)。
 	std::vector<UID> pages;
-	KESCMFilterToMarked(db, selPages, pages);
+	KESCMFilterToCheckable(db, selPages, pages);
 	if (pages.empty())
-		return;		// 選択にマーク付きページが無い=何もしない(メニューも無効のはず)
+		return;		// 選択に対象ページが無い=何もしない(メニューも無効のはず)
 
 	const bool16 anyUnchecked = sChecked.AnyNotIn(db, pages);
 
@@ -155,18 +156,19 @@ KESCMPageToggleState KESCMPageCheckGetToggleState()
 	if (!KESCMIsArmed() || (db != KESCMArmedTargetDB() && db != KESCMArmedSourceDB()))
 		return st;
 
-	// ★選択にマーク付き(枠/「/」の付く=サムネイルが作り直される)ページが無ければ無効化する
-	//   (枠の無いページでは「チェック」を出さない=ユーザー指定 2026-07-11)。
-	std::vector<UID> marked;
-	KESCMFilterToMarked(db, pages, marked);
-	if (marked.empty())
+	// ★選択に「✓ を付けてよいページ」が1枚も無ければ無効化する。Pixel モードでは枠/「/」の無い
+	//   ページで「チェック」を出さない(ユーザー指定 2026-07-11)、Story モードでは全ページが対象
+	//   (ユーザー決定 2026-08-24)＝この違いは KESCMFilterToCheckable の中だけに在る。
+	std::vector<UID> eligible;
+	KESCMFilterToCheckable(db, pages, eligible);
+	if (eligible.empty())
 		return st;
 
-	const int32 chkCount = sChecked.CountIn(db, marked);
+	const int32 chkCount = sChecked.CountIn(db, eligible);
 
 	st.fEnabled = kTrue;
-	if (chkCount == (int32)marked.size())
-		st.fTick = kKESCMPageTickAll;		// マーク付き選択が全部チェック済み=✓
+	if (chkCount == (int32)eligible.size())
+		st.fTick = kKESCMPageTickAll;		// 対象の選択ページが全部チェック済み=✓
 	else if (chkCount > 0)
 		st.fTick = kKESCMPageTickSome;		// 一部だけチェック済み=中間チェック
 
@@ -192,9 +194,12 @@ void KESCMPageCheckClearAllDocs()
 
 //========================================================================================
 // KESCMPageCheckPruneToMarked(KESCMPageCheck.h で宣言)
-//   再比較後、各文書のチェックを「今もマーク付き」のページだけに絞る(マークが消えたページの
-//   チェックは忘れる)。KESCMCollectChangedPageUIDs は db が sDB/sSrcDB のときだけ現在のマーク集合を
-//   返す(それ以外は空=その db の全チェックが外れる)。ポインタは deref しない。
+//   再比較後、各文書のチェックを「今も ✓ を付けてよい」ページだけに絞る(付けられなくなったページの
+//   チェックは忘れる)。KESCMCollectCheckablePageUIDs は db が sDB/sSrcDB のときだけ答えを返す
+//   (それ以外は空=その db の全チェックが外れる)。ポインタは deref しない。
+//   ⚠**名前は "ToMarked" のまま**(2026-08-24)＝呼び手2か所とヘッダーの宣言を同時に触る改名で、
+//     この回の変更点が読みにくくなる。⇒ 中身が「マーク付き」から「✓ を付けてよい」へ広がったことは
+//     この注記と下の分岐のコメントが持つ。★改名するなら独立したコミットで。
 //========================================================================================
 void KESCMPageCheckPruneToMarked(std::map<IDataBase*, std::set<UID> >* outUnchecked)
 {
@@ -210,12 +215,17 @@ void KESCMPageCheckPruneToMarked(std::map<IDataBase*, std::set<UID> >* outUnchec
 	KESCMDocUidSet::Map& m = sChecked.GetMap();
 	for (KESCMDocUidSet::Map::iterator it = m.begin(); it != m.end(); ++it)
 	{
-		std::set<UID> marked;
-		KESCMCollectChangedPageUIDs(it->first, marked);		// db が比較対象でなければ空
+		// ★★**剪定の基準は「今も ✓ を付けてよいか」であって「今もマークがあるか」ではない**
+		//   (2026-08-24)。同じことに見えるのは Pixel モードだけで、Story モードでは全ページが
+		//   対象なので**1つも外れない**のが正しい ---- ここを KESCMCollectChangedPageUIDs のまま
+		//   にすると、Story モードで付けた ✓ が次の再比較で残らず消える(付けた側と外す側で
+		//   別の問いを聞いていることになる)。
+		KESCMCheckablePages checkable;
+		KESCMCollectCheckable(it->first, checkable);		// db が比較対象でなければ空=全部外れる
 		std::set<UID>& chk = it->second;
 		for (std::set<UID>::iterator c = chk.begin(); c != chk.end(); )
 		{
-			if (marked.count(*c) == 0)
+			if (!checkable.Includes(*c))
 			{
 				// ★2026-08-16(API 監査 B5): 外したページを呼び手へ知らせる(要求されたときだけ)。
 				//   ✓ が消えればサムネイルの絵は変わるが、外れた後の集合には残らないので
@@ -797,8 +807,8 @@ void KESCMPageCheckLoadFromFile()
 	//--- フェーズ2: 一度だけ再比較する。--------------------------------------------------------------
 	// Register が変わったので除外対応表(ペアリング)を Start と同様に張り直す。差分再比較でペア不変ページは
 	// 前回結果を再利用。これにより Added/Removed の緑「/」サムネイルも更新される(登録ページ込みで Purge)。
-	// 副作用として現在の Check も KESCMPageCheckPruneToMarked でマーク付きに剪定されるが、フェーズ3で
-	// 保存 Check に置き換えるので問題ない。
+	// 副作用として現在の Check も KESCMPageCheckPruneToMarked で「✓ を付けてよいページ」に剪定されるが、
+	// フェーズ3で保存 Check に置き換えるので問題ない。
 	// ★再比較をキャンセルされたら(登録の変更が多いと進捗バーに Cancel が出る)、マークは
 	//   KESCMDoMarkChangesDoc 側で全部破棄されている。そのままフェーズ3へ進むと「今もマーク付き」が
 	//   空集合になり、保存してあった ✓ を1つも復元しないまま「load chk0」と報告してしまう。
@@ -817,7 +827,7 @@ void KESCMPageCheckLoadFromFile()
 		}
 	}
 
-	//--- フェーズ3: Check(✓)を復元する(再比較後に「今もマーク付き」のページだけ)。-----------------
+	//--- フェーズ3: Check(✓)を復元する(再比較後に「今も ✓ を付けてよい」ページだけ)。--------------
 	int32 checksRestored = 0;
 	for (int i = 0; i < 2; ++i)
 	{
@@ -827,9 +837,11 @@ void KESCMPageCheckLoadFromFile()
 
 		const std::set<uint32>& savedChecks = saveIt[i]->second.checks;
 
-		// 再比較後の「今マーク付き」集合を1文書1回だけ作る(ページごとに引くと O(ページ数×変更数)になる)。
-		std::set<UID> marked;
-		KESCMCollectMarked(db, marked);
+		// 再比較後の「今 ✓ を付けてよいか」の答えを1文書1回だけ作る(ページごとに引くと
+		// O(ページ数×変更数)になる)。★Story モードでは全ページが対象なので、保存してあった ✓ は
+		// マークの有無に関わらず戻る(2026-08-24)。
+		KESCMCheckablePages checkable;
+		KESCMCollectCheckable(db, checkable);
 
 		// ★通常ページとマスターページの両方から復元する(2026-08-13)。マスターも比較対象=枠が付く
 		//   ので ✓ も付く。⚠**Save 側は元からマスターの ✓ も書いていた**(sChecked の UID をそのまま
@@ -843,7 +855,7 @@ void KESCMPageCheckLoadFromFile()
 			for (size_t k = 0; k < flat.size(); ++k)
 			{
 				const UID u = flat[k];
-				if (savedChecks.count((uint32)u.Get()) > 0 && marked.count(u) > 0)
+				if (savedChecks.count((uint32)u.Get()) > 0 && checkable.Includes(u))
 					newSet.insert(u);
 			}
 		}
