@@ -171,11 +171,36 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 		// →2026-07-10 メニュー化)。実体は KESCMPanelObserver.cpp の自由関数。
 		case kKESCMPopupPrintMarksActionID:
 			Utils<IKESCMCompareFacade>()->TogglePrintMarks();
+			// ★★2026-08-23＝**Story モードのマークもこのトグルを入力に持つようになった**ので、
+			//   ここでも作り直しを頼む。Print が ON の間は画面にも常時出る（Pixel の枠と同じ
+			//   WYSIWYG）ので、頼まないと**トグルを切っても Story のマークが動かない**。
+			//   ⚠この case だけ長らく Refresh を呼んでいなかった＝呼んでいる下の4つ（opacity 2つ・
+			//     Show Src/Tgt）と揃った。
+			KESCMStoryMarksRefresh();
+			// ★2026-08-24 ユーザー指示＝**ON にしたときだけ**「印刷と PDF に出る」と知らせる。
+			//   OFF は告知しない（元に戻すだけで、出力に何かが増えることは無いため）。
+			//   ⚠**Refresh の後に出す**＝ModalAlert は画面を止めるので、先に描き直しを頼んでおけば
+			//     アラートの後ろで既にマークが正しい姿になっている。
+			//   ⚠**トグル後の実際の値を読む**（`!GetPrintMarks()` を自分で計算しない）＝同じ判断を
+			//     2か所に置かない。model 側が何かの事情で反転しなければアラートも出ない、が正しい。
+			if (Utils<IKESCMCompareFacade>()->GetPrintMarks())
+			{
+				CAlert::ModalAlert
+				(
+					// 文字列キーを渡す(CAlert が翻訳する)＝About と同じ形。全ロケール英語。
+					PMString(kKESCMPrintMarksOnKey),
+					kOKString,					// OK button
+					kNullString,				// No second button
+					kNullString,				// No third button
+					1,							// Set OK button to default
+					CAlert::eInformationIcon	// Information icon
+				);
+			}
 			break;
 
 		// フライアウトの「Marks opacity 25% / 75%」(ラジオ風): 選んだ方の不透明度に設定する。
 		// 実体は KESCMPanelObserver.cpp の自由関数(印刷フラグは維持し不透明度だけ変更)。
-		// ⚠★★**Story の反転マークは「出したときの不透明度」を焼き込んで持っている**(2026-08-22 の
+		// ⚠★★**Story の色地マークは「出したときの不透明度」を焼き込んで持っている**(2026-08-22 の
 		//   不具合再検査 A4)。model 側の SetMarkOpacity25 が再描画するのは Pixel の枠だけで、あちらは
 		//   描画のたびに現在値を読み直すが、こちらはアドーンメントに載せた値がそのまま残る。
 		//   ⇒ **設定を変えたら作り直しを頼む**。★model からは頼めない＝あちらは UI プラグインの
@@ -189,6 +214,19 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 			KESCMStoryMarksRefresh();
 			break;
 
+		// ★「Mark colour」(2026-08-24)。⚠**上の opacity と違い、ここでは作り直しを頼まない。**
+		//   不透明度は**マークを install したときの値がそのまま載る**ので設定を変えたら作り直しが
+		//   要るが、色は Story 側の Draw が**描くたびに SelectedMarkColor() を読み直す**ので、
+		//   model 側の再描画(KESCMDoSetMarkColor)だけで新しい色になる。
+		//   ★同じ「設定を変えた」でも、値がどこに載っているかで必要な後始末が違う ---- Pixel の
+		//     リング画像はキャッシュなので model 側でキャッシュを畳んでいる(KESCMCore.cpp)。
+		case kKESCMPopupColorRedActionID:
+			Utils<IKESCMCompareFacade>()->SetMarkColor(kFalse);
+			break;
+		case kKESCMPopupColorCyanActionID:
+			Utils<IKESCMCompareFacade>()->SetMarkColor(kTrue);
+			break;
+
 		// (kKESCMPopupAboutScriptActionID / DoAboutScript は 2026-07-25 撤去=About Scripting 項目削除。)
 
 		case kKESCMPopupUsageActionID:
@@ -200,7 +238,7 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 		// 出る。不透明度はパネルの 25%/75% 選択に連動)。★既定 OFF で Start は触らない(2026-08-22 変更＝
 		// 設定はパネル設定に保存され起動時に復元されるので、Start が上書きすると保存した選択が消える)。
 		// ⚠★★**Target 版と同じく2つの機構に効く**(2026-08-22 の不具合再検査 A1)＝Pixel の枠は描画側が
-		//   sSrcMarksOn を直接見るが、Story の反転マークは別機構(グローバルテキストアドーンメント)なので
+		//   sSrcMarksOn を直接見るが、Story の色地マークは別機構(グローバルテキストアドーンメント)なので
 		//   こちらから作り直しを頼む。⇒ **これが無いと Story モードでは ON にしても出ず、OFF にしても
 		//   消えない**(内部状態が変わらないので、下の InvalidateDB で描き直しても同じ絵が出るだけ)。
 		case kKESCMPopupShowSrcMarksActionID:
@@ -218,7 +256,7 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 			//     飛ばし、Source の窓に押下中の枠が残る。
 			//   ★KESCMTrackerRevealBegin 側は「トグルを見ない」へ正しく直してあった＝これは
 			//     同じ変更の片割れの直し忘れ([[one-question-one-place]])。
-			KESCMStoryMarksRefresh();		// Story モードの反転マーク(Pixel モードでは何もしない)
+			KESCMStoryMarksRefresh();		// Story モードの色地マーク(Pixel モードでは何もしない)
 			IDataBase* const srcDB = Utils<IKESCMMarkData>()->GetMarkedSourceDB();
 			Utils<IKESCMCompareFacade>()->InvalidateDB(srcDB);
 			// ★レイアウトビューだけでなく Pages パネルの Source サムネイルも即時更新する。Source 側の枠は
@@ -237,7 +275,7 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 		// 「ツールでボタンを押さなくても常にマークが出る様に」)。★既定 OFF で Start は触らない
 		// (Source 版と同じ理由＝設定はパネル設定に保存され、起動時に復元される)。
 		// ⚠★★**2つの機構に効く**＝Pixel の比較リングは描画側が sTgtMarksOn を直接見る
-		//   (KESCMDrawEventHandler の alwaysScreen)が、Story の反転マークは別機構(グローバルテキスト
+		//   (KESCMDrawEventHandler の alwaysScreen)が、Story の色地マークは別機構(グローバルテキスト
 		//   アドーンメント)なので、こちらから作り直しを頼む。同じトグルで両モードが動くのはそのため。
 		// ⚠Pages パネルのサムネイルは触らない＝サムネイルは isThumb で常にマークを描くので、このトグルで
 		//   見た目は変わらない(Source 版が作り直すのは、あちらの枠が wantSrcMarks に依存するため)。
@@ -254,7 +292,7 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 			//     ON にした直後の枠が 1.0(不透明)のまま描かれる。
 			compare->SetMarksTempHidden(kFalse);
 			compare->SetMarkScreenOpacity(compare->GetBaseScreenOpacity());
-			KESCMStoryMarksRefresh();		// Story モードの反転マーク(Pixel モードでは何もしない)
+			KESCMStoryMarksRefresh();		// Story モードの色地マーク(Pixel モードでは何もしない)
 			compare->InvalidateDB(compare->GetArmedTargetDB());
 			PMString msg(tgtMarksOn ? "Target marks: on." : "Target marks: off.");
 			msg.SetTranslatable(kFalse);
@@ -709,6 +747,22 @@ void KESCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionSta
 			// ラジオ風: 現在 75%(=!25%)ならこの項目に✓。
 			int16 actionState = kEnabledAction;
 			if (!Utils<IKESCMCompareFacade>()->GetMarkOpacity25())
+				actionState |= kSelectedAction;
+			listToUpdate->SetNthActionState(i, actionState);
+		}
+		// ★「Mark colour」の2項目(2026-08-24)。上の Marks opacity と同じラジオ風＝いま効いている方に✓。
+		//   **どちらも常に有効**＝比較していないときでも選べる(次の Start にも効く)。
+		else if (action == kKESCMPopupColorRedActionID)
+		{
+			int16 actionState = kEnabledAction;
+			if (!Utils<IKESCMCompareFacade>()->GetMarkColorCyan())
+				actionState |= kSelectedAction;		// 赤(既定)ならこちらに✓
+			listToUpdate->SetNthActionState(i, actionState);
+		}
+		else if (action == kKESCMPopupColorCyanActionID)
+		{
+			int16 actionState = kEnabledAction;
+			if (Utils<IKESCMCompareFacade>()->GetMarkColorCyan())
 				actionState |= kSelectedAction;
 			listToUpdate->SetNthActionState(i, actionState);
 		}

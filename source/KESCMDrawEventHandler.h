@@ -35,7 +35,6 @@ struct KESCMOverlayEntry
 	AGMImageRecord rec;			// buf を指す自前の画像レコード(blit 用)
 	uint8*         dist;		// 差分マスクのチェスボード距離変換(w*h, uint8, 0=変化画素, clamp255)。所有。
 								//   リング = 0<dist<=radius。BuildRing が膨張なしの1パスで塗れる(mask は dist 生成後は破棄)。
-	uint8*         bgRed;		// 対象ページが「赤っぽい」画素=1 のマップ(w*h)。リングの青切替に使う。所有(nil可)
 	int32          w, h;
 	int32          rowBytes;	// buf の行バイト数(= rec.byteWidth)
 	int32          bpp;			// バイト/ピクセル
@@ -44,7 +43,7 @@ struct KESCMOverlayEntry
 									//   「変更の割合」表示に使う。★割合の分母(ページ全体のセル数)は持たない
 									//   = w * h がそのまま分母なので、同じ値を二重に持たせない。
 
-	KESCMOverlayEntry() : buf(nil), dist(nil), bgRed(nil), w(0), h(0), rowBytes(0), bpp(0), lastRadius(-1),
+	KESCMOverlayEntry() : buf(nil), dist(nil), w(0), h(0), rowBytes(0), bpp(0), lastRadius(-1),
 		changedCells(0)
 	{
 		rec.baseAddr = nil; rec.decodeArray = nil;
@@ -54,7 +53,6 @@ struct KESCMOverlayEntry
 	{
 		if (buf)   delete[] buf;
 		if (dist)  delete[] dist;
-		if (bgRed) delete[] bgRed;
 	}
 };
 
@@ -169,6 +167,14 @@ public:
 	// ツール左hold中の画面表示・印刷ON中の常時表示(KESCMBaseScreenOpacity)・印刷/PDF出力(KESCMDrawRingForPrint)の
 	// すべてが SelectedMarkOpacity() 経由でこの選択を使う(画面と印刷の見た目を一致)。
 	static bool16 sMarkOpacity25;
+	// マークの色の選択(フライアウト「Mark colour: Red / Cyan」)。kFalse=赤(既定) / kTrue=シアン。
+	// ★★2026-08-24: **背景による自動切り替えを廃止してこれに置き換えた**(ユーザー判断
+	//   「ユーザーが選べばいいので」)。それまでは比較ラスタの画素を見て「赤っぽい下地の上だけ
+	//   シアンに変える」という判定(kKESCMRedBgDom)を画素単位でやっていたが、
+	//   ①Story モードの色地は**下地の画素を読めない**ので同じ芸当ができず、2つのモードで色の
+	//     決まり方が食い違う ②自動で変わると「なぜ今この色なのか」が読み手に説明できない。
+	//   ⇒ 選ぶのは人。赤い下地に赤いマークが埋もれるなら、シアンを選べばよい。
+	static bool16 sMarkColorCyan;
 	// Source(旧文書)側にも枠を出すトグル(フライアウト「Show Marks on Source」のチェック式)。★既定=kFalse
 	// だが Start 経路だけが kTrue へ戻す(=Start で既定 ON、OFF にしたければメニューで外す。
 	// ★KESCMDoMarkChangesDoc では戻さない=登録トグル/Ignore 切替の再比較でも通る関数のため。2026-07-25 に移動)。
@@ -184,7 +190,7 @@ public:
 	// ★「Show Marks on Target」(2026-08-22 ユーザー要望「ツールでボタンを押さなくても常にマークが出る様に」)。
 	//   ON の間、Target 文書のマークを**画面に常時**表示する(ツール左hold と無関係)。上の Source 版と対で、
 	//   ★★Story 変更モードでは反転マークが同じトグルで常時表示になる
-	//   (ui/KESCMStoryPressMarks.cpp)＝「ピクセルの方もストーリーの方にも」。
+	//   (KESCMStoryMarkBuild.cpp。★2026-08-23 までは ui/KESCMStoryPressMarks.cpp)＝「ピクセルの方もストーリーの方にも」。
 	// ⚠**画面だけ**＝Source 版と違い印刷/PDF には出さない。Target 側の出力は「Print comparison marks」
 	//   (sPrintMarks)が決める仕様で、こちらが出力に効くとあのトグルの意味が消える。
 	static bool16 sTgtMarksOn;
@@ -253,6 +259,16 @@ public:
 
 	// 選択中の枠不透明度(0.25 / 0.75)。枠を描く全経路の単一の供給元。
 	static PMReal SelectedMarkOpacity() { return sMarkOpacity25 ? kKESCMMarkOpacity25 : kKESCMMarkOpacity75; }
+
+	// 選択中のマーク色。★SelectedMarkOpacity と同じ形で、**画面・印刷・Pixel の枠・Story の色地の
+	//   すべてがここを通る**(1つの問いに1つの答え)。RGB で持ち、印刷時の CMYK 変換は
+	//   KESCMSetOutputColor が引き受ける(赤 → C0 M100 Y100 K0 / シアン → C100 M0 Y0 K0)。
+	static void SelectedMarkColor(uint8& r, uint8& g, uint8& b)
+	{
+		r = sMarkColorCyan ? kKESCMRingAltR : kKESCMRingR;
+		g = sMarkColorCyan ? kKESCMRingAltG : kKESCMRingG;
+		b = sMarkColorCyan ? kKESCMRingAltB : kKESCMRingB;
+	}
 	// 自前のラスタ化(MakeEntry/MakeOrigImage の SnapshotUtilsEx::Draw)中だけ kTrue。HandleDrawEvent が
 	// 再入したらマークを描かない(自己参照防止)。kPreviewMode ビットに頼ると PDF 書き出し(同ビット)を巻き込むため。
 	// ★★★2026-08-15(第2段 Task 12B)= **スレッドローカルにした**(旧: 素の static bool16)。
@@ -299,10 +315,10 @@ public:
 	//  仕組み自体は他プラグインへの転用候補: docs/ai-notes/kescm-toast-mechanism.md と git 履歴 509e830 を参照)
 
 	// 距離変換 dist を使い、buf(ARGB)へリング(0<dist<=radius)を1パスで描く(膨張不要)。
-	// 各リング画素の色は、その位置の背景が赤っぽい(bgRed[idx])なら青、そうでなければ赤。
+	// 各リング画素の色はパネルの選択(SelectedMarkColor)。★2026-08-24 に背景適応(bgRed)を廃止した。
 	// リング以外の画素は透明(alpha=0)。dist は KESCMDistTransform で事前生成(0=変化画素)。
 	static void BuildRing(uint8* buf, int32 rb, int32 bpp, int32 wt, int32 ht,
-		const uint8* dist, const uint8* bgRed, int32 radius);
+		const uint8* dist, int32 radius);
 
 	// target/source を高解像度(kKESCMResolution×kKESCMHiResMul)で CMYK ラスタ化し、4ch を比較
 	// (しきい値 kKESCMCmykThr)。変化px数>0 のときだけ sEntries[target.UID] にエントリ登録(既存は置換)。
@@ -435,5 +451,14 @@ inline bool16 KESCMXInRowRects(int32 x, const std::vector<const Int32Rect*>& row
 			return kTrue;
 	return kFalse;
 }
+
+class IGraphicsPort;
+
+// マークの色を gPort に設定する。★**画面は RGB・印刷/書き出しは CMYK**。
+// ★理由は実装側(KESCMDrawEventHandler.cpp)のコメントに全文がある: KESCM は**比較ラスタを CMYK で
+//   やっている**のに、マークだけ RGB という不整合だったのを揃えたもの。換算は標準式。
+// ★★2026-08-24 に static を外して公開した。Story モードのマーカー(KESCMStoryMarker.cpp)も紙に出る
+//   ようになり、同じ「画面 RGB / 印刷 CMYK」の判断が要るため。2か所に書き分けると必ずずれる。
+void KESCMSetOutputColor(IGraphicsPort* gPort, uint8 r, uint8 g, uint8 b, bool16 useCMYK);
 
 #endif // __KESCMDrawEventHandler_h__

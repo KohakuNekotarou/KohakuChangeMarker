@@ -434,35 +434,17 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 		}
 	},
 
-	// The jump marker (2026-08-20): the flash of inverted pixels over the characters a change row
-	// just went to. ★★A GLOBAL TEXT ADORNMENT - it is drawn ON the characters by the text engine,
-	// which hands it the wax run, so it follows vertical text and rotated frames for free and
-	// touches no document data at all (nothing is attached, nothing is saved, no recomposition).
-	// ★Two interfaces, and only one of them is ours: the API already ships the provider for this
-	//   service (kGlobalTextAdornmentServiceImpl, TextID.h, service kGlobalTextAdornmentService).
-	//   The same pair as the product's dynamic spelling squiggle (SpellPanelClass.fr:768-776).
-	// ⚠kInvalidClass as the parent: this boss is not a widget or a page item, it exists only to be
-	//   found in the service registry - same as the draw-event service boss above.
-	Class
-	{
-		kKESCMStoryMarkerBoss,
-		kInvalidClass,
-		{
-			IID_IK2SERVICEPROVIDER, kGlobalTextAdornmentServiceImpl,
-			IID_IGLOBALTEXTADORNMENT, kKESCMStoryMarkerAdornmentImpl,
-		}
-	},
-
-	// The one-shot timer that takes that marker away again about a second later.
-	// ★An idle task rather than a callback timer - the reason is in KESCMStoryMarkerExpiry.h.
-	Class
-	{
-		kKESCMStoryMarkerExpiryBoss,
-		kInvalidClass,
-		{
-			IID_IIDLETASK, kKESCMStoryMarkerExpiryImpl,
-		}
-	},
+	// ★★★2026-08-23: THE JUMP MARKER AND ITS TIMER MOVED TO THE MODEL PLUG-IN (see KESCM.fr).
+	//   They were kKESCMStoryMarkerBoss (kKCMUIPrefix + 30) and kKESCMStoryMarkerExpiryBoss (+ 31),
+	//   with implementations at + 41 and + 42.
+	//   The reason is one measured fact: **the UI's File > Export > PDF runs in the background, and
+	//   a kUIPlugIn is never handed the drawing there** (2026-08-12, no warning - the plug-in simply
+	//   "behaves as if it were not there"). ⇒ Marks drawn from this side could never appear in an
+	//   exported PDF, whatever their print guard said. A global text adornment is declared as a
+	//   SERVICE and the registry resolves services in every execution context, background threads
+	//   included, so moving it was the whole fix.
+	//   ⚠THE FOUR IDS STAY VACANT. They are not reused and the numbering is not closed up - only
+	//     the values have to be unique ([[id-prefix-256-slot-budget]]).
 
 	// The text cell of a CHANGE row (2026-08-20): a generic panel widget whose IControlView is our
 	// own, plus the three text pieces it paints. ★It exists because a stock static text draws its
@@ -767,6 +749,26 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKESCMOpacity75SubMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
+		// "Mark colour" (2026-08-24). Two children, exclusive, check on whichever is in force -
+		// exactly the shape of "Marks opacity" above. ★It replaces an AUTOMATIC choice: the rings
+		// used to switch to cyan by themselves over reddish grounds, decided per pixel off the
+		// comparison raster. The Story mode's wash cannot read the ground at all, so leaving the
+		// automatic rule in place would have made the two modes disagree about colour.
+		0,
+		kKESCMColorSubmenuPath kSDKDefDelimitMenuPath,
+		kKESCMColorSubmenuMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
+		kKESCMPopupColorRedActionID,
+		kKESCMColorSubmenuPath,
+		kKESCMColorRedSubMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
+		kKESCMPopupColorCyanActionID,
+		kKESCMColorSubmenuPath,
+		kKESCMColorCyanSubMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
 		// "Compare mode" on the panel flyout (popup) menu (2026-08-20). Two children, exclusive,
 		// with a check on whichever one is in force - the same shape as "Marks opacity" above.
 		// Pixel Changes rasterises pages and compares them; Story Changes compares the text of the
@@ -799,7 +801,7 @@ resource MenuDef (kSDKDefMenuResourceID)
 
 		// "Show Marks on Target" on the panel flyout (popup) menu. Check-mark toggle:
 		// while ON, the Target document keeps its marks WITHOUT the tool's button being held —
-		// the Pixel mode's comparison rings and the Story mode's inverted characters alike.
+		// the Pixel mode's comparison rings and the Story mode's washed characters alike.
 		// Opacity follows the panel's 25%/75% radio.
 		// On screen only: what the Target document PRINTS is decided by "Print comparison marks"
 		// on its own, which is the one asymmetry with the Source toggle above (that one prints).
@@ -1159,6 +1161,24 @@ resource ActionDef (kSDKDefActionResourceID)
 		kOtherActionArea,
 		kNormalAction,
 		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates checks whichever opacity is selected (radio-style)
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		kKESCMActionComponentBoss,
+		kKESCMPopupColorRedActionID,
+		kKESCMColorRedKey,					// "Red" (the default)
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates checks whichever colour is selected (radio-style)
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		kKESCMActionComponentBoss,
+		kKESCMPopupColorCyanActionID,
+		kKESCMColorCyanKey,					// "Cyan"
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates checks whichever colour is selected (radio-style)
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 

@@ -37,9 +37,18 @@
 
 // Project includes:
 #include "IKESCMCompareFacade.h"	// IsDocDBOpen - never repaint a document that has gone
-#include "KCMUIID.h"
+#include "KESCMDrawEventHandler.h"	// SelectedMarkColor (the panel's red/cyan) and KESCMSetOutputColor
+									// (screen in RGB, paper in CMYK) - both shared with the Pixel mode's
+									// frames. ⚠KESCMConstants.h was included here for kKESCMRingR/G/B
+									// until 2026-08-24; asking SelectedMarkColor instead left it unused.
+#include "KESCMID.h"				// ★2026-08-23: moved here from the UI plug-in's KCMUIID.h
+#include "KESCMStoryMarkBuild.h"	// KESCMStoryMarkPrintAllowedFor - may THIS document go on paper
 #include "KESCMStoryMarker.h"
 #include "KESCMStoryMarkerExpiry.h"
+#include "KESCMThreadSafety.h"		// ★★KESCMIsSameDoc (the background's cloned DB) and the lock
+									//   that guards every static below. Both became necessary the
+									//   moment this file moved to the model plug-in - see the note
+									//   on the statics.
 
 namespace
 {
@@ -49,10 +58,18 @@ namespace
 // ★STATIC, LIKE EVERY OTHER PIECE OF THIS PLUG-IN'S TRANSIENT STATE. The mark belongs to no
 //   document (it is not saved anywhere), to no panel (it shows with the panel closed) and to no
 //   boss (the adornment is created by the service registry, not by us).
-// ⚠These are touched from the main thread only: the jump runs there, the expiry timer is an idle
-//   task there, and a global text adornment is drawn there. Unlike the comparison marks, this one
-//   is deliberately NOT drawn for printing or export (see GetIsActive), which is what keeps the
-//   background threads out of it entirely.
+// ⚠★★★THEY ARE WRITTEN ON THE MAIN THREAD AND READ ON BACKGROUND ONES, WHICH IS NEW AS OF
+//   2026-08-23 and is the reason every access below takes KESCMMarkStateMutex(). This file used to
+//   live in the UI plug-in and this comment used to say "main thread only" - true then, because a
+//   kUIPlugIn is never handed the drawing during an export. It moved to the model plug-in so that
+//   the marks could reach paper and PDF, and **a global text adornment is a SERVICE, which the
+//   registry resolves in every execution context including background threads** (KESCM.fr spells
+//   this out). ⇒ The asynchronous PDF export draws these on its own thread.
+//   ★The lock is the same one the comparison marks use (KESCMThreadSafety.h), because the two are
+//     never drawn at once - Pixel mode has no washed characters and Story mode has no rings.
+//   ⚠The drawing side must not take it on every wax run for nothing: gHasMark is tested FIRST and
+//     the lock is only taken when there is something to look up. That is the order the Pixel side
+//     already uses (KESCMDrawEventHandler.cpp:2039-2040).
 // ★★WHAT IS ASKED FOR, AND WHAT IS DRAWN, ARE DIFFERENT THINGS (2026-08-23). The two kinds of
 //   caller each own one set and never touch the other's; gMarkDocs is what comes out of putting
 //   them together under the per-document rule (KESCMStoryMarkDocs.h), and it is the only one the
@@ -64,8 +81,13 @@ KESCMStoryMarkDocs gFlashDocs;				// what the newest jump asked to point at
 
 bool16             gHasMark   = kFalse;		// the fast path: !gMarkDocs.empty(), kept as a flag
 KESCMStoryMarkDocs gMarkDocs;				// database -> story UID -> its ranges, each list merged.
-											// ⚠The database is an ADDRESS, only ever compared against
-											// the run's own - never dereferenced
+											// ⚠★★★THE KEY CANNOT BE COMPARED WITH == ANY MORE
+											// (2026-08-23). A background thread is handed a CLONED
+											// copy of the database, so its pointer never equals the
+											// one stored here and std::map::find always misses -
+											// which is why the lookups below walk the map and ask
+											// KESCMIsSameDoc() instead. Walking is free: there are
+											// at most two entries, the armed target and source.
 PMReal             gMarkOpacity(1.0);		// what both kinds are drawn at - the panel's radio
 bool16             gShutdown  = kFalse;
 
@@ -80,6 +102,15 @@ TextIndex  gMarkHighest = 0;
 // (DynamicSpellCheckAdornment.cpp:1080-1081) - roughly ascent and descent.
 const double kAscentFraction  = 0.85;
 const double kDescentFraction = 0.10;
+
+// How wide the caret's bar is, as a fraction of the type size.
+// ★★WIDENED FROM 0.15 ON 2026-08-23 (user's request: "もう少し幅を広く"). At 10pt type that is
+//   1.5pt -> 2.5pt. A deletion and an insertion seen from the older side are both drawn as this
+//   bar, and at 15% it read as a hairline rather than as a mark.
+// ★TWO PLACES USED TO WRITE THE SAME NUMBER. The caret and the stand-in for a zero-width range are
+//   answering one question - "how thick does a bar have to be before it reads as *here*" - so
+//   keeping two copies of the answer guarantees they eventually disagree ([[one-question-one-place]]).
+const double kCaretWidthFraction = 0.25;
 
 /* KESCMStoryMarkerRepaint
    Put the mark on screen, or take it off, now. Nothing else asks the views to redraw: a global
@@ -115,7 +146,60 @@ void KESCMStoryMarkerRepaint(IDataBase* db)
    (target and source) and both are being drawn in their own windows, so "the right characters" is
    never enough - it has to be the right story in the right database.
 */
-bool16 KESCMStoryMarkerFindRunRanges(const IWaxRun* waxRun, KESCMMarkRangeList& outRanges)
+/* KESCMStoryMarkerRangesFor
+   The ranges lit up in the story this run belongs to, or nil if none are.
+
+   ★★★THE DATABASE IS MATCHED BY FILE, NOT BY POINTER (2026-08-23, when this file moved to the
+   model plug-in). A background thread - the asynchronous PDF export - is handed a CLONED copy of
+   the database, so its pointer never equals the one that was stored when the marks went up, and
+   `gMarkDocs.find(db)` (what stood here) would miss every single time. The symptom would have been
+   the worst kind: correct on screen, blank in the exported file. KESCMIsSameDoc() asks the file
+   instead, and it is the same call the comparison marks were converted to in 2026-08-15
+   (KESCMThreadSafety.h records the measurement).
+
+   ★WALKING THE MAP COSTS NOTHING HERE. It holds at most two entries - the armed target and the
+   armed source - and on the main thread KESCMIsSameDoc decides on its first line (same pointer),
+   so the screen path is exactly as fast as the find() it replaces.
+
+   ⚠THE CALLER MUST HOLD KESCMMarkStateMutex: the returned pointer points into gMarkDocs.
+
+   @param forPrint kTrue when the drawing is going to paper or an export. The document is then asked
+       whether its marks may go there at all - and the question is asked HERE because this is where
+       the database has just been worked out, so printing costs no extra lookup.
+*/
+const KESCMMarkRangeList* KESCMStoryMarkerRangesFor(const IWaxRun* waxRun, bool16 forPrint)
+{
+	const IWaxLine* waxLine = waxRun->GetWaxLine();
+	if (waxLine == nil)
+		return nil;
+	InterfacePtr<ITextModel> model(waxLine->QueryTextModel());
+	if (model == nil)
+		return nil;
+
+	const UIDRef modelRef = ::GetUIDRef(model);
+
+	// ★★MAY THIS DOCUMENT GO ON PAPER (2026-08-23). Until this line the answer was a flat "no" for
+	//   every document - the mark was born as a jump's pointer, which has no business being printed.
+	//   Now it is per document and per toggle, exactly as the Pixel mode's frames already were
+	//   (KESCMStoryMarkBuild).
+	if (forPrint && !KESCMStoryMarkPrintAllowedFor(modelRef.GetDataBase()))
+		return nil;
+
+	for (KESCMStoryMarkDocs::const_iterator doc = gMarkDocs.begin(); doc != gMarkDocs.end(); ++doc)
+	{
+		if (!KESCMIsSameDoc(modelRef.GetDataBase(), doc->first))
+			continue;
+
+		// ⚠One entry per document, so a miss here is final - do not keep walking looking for the
+		//   same document again.
+		KESCMStoryMarkMap::const_iterator story = doc->second.find(modelRef.GetUID());
+		return (story != doc->second.end()) ? &story->second : nil;
+	}
+
+	return nil;
+}
+
+bool16 KESCMStoryMarkerFindRunRanges(const IWaxRun* waxRun, bool16 forPrint, KESCMMarkRangeList& outRanges)
 {
 	outRanges.clear();
 
@@ -128,25 +212,21 @@ bool16 KESCMStoryMarkerFindRunRanges(const IWaxRun* waxRun, KESCMMarkRangeList& 
 		return kFalse;
 
 	const TextIndex runEnd = runStart + runCount;
+
+	// ★THE LOCK GOES HERE AND NOT ABOVE. gHasMark is a bool16 that the main thread only ever sets
+	//   to kTrue after the map is complete and to kFalse before emptying it, so testing it unlocked
+	//   costs a run nothing and refuses almost all of them outright. Everything below reads state
+	//   the main thread rewrites (KESCMStoryMarkerSetDocs), so it is all inside.
+	KESCMMarkStateLock lock(KESCMMarkStateMutex());
+
 	if (runEnd <= gMarkLowest || runStart >= gMarkHighest)
 		return kFalse;						// before or after everything that is marked
 
-	const IWaxLine* waxLine = waxRun->GetWaxLine();
-	if (waxLine == nil)
-		return kFalse;
-	InterfacePtr<ITextModel> model(waxLine->QueryTextModel());
-	if (model == nil)
-		return kFalse;
-	const UIDRef modelRef = ::GetUIDRef(model);
-	KESCMStoryMarkDocs::const_iterator doc = gMarkDocs.find(modelRef.GetDataBase());
-	if (doc == gMarkDocs.end())
+	const KESCMMarkRangeList* ranges = KESCMStoryMarkerRangesFor(waxRun, forPrint);
+	if (ranges == nil)
 		return kFalse;
 
-	KESCMStoryMarkMap::const_iterator story = doc->second.find(modelRef.GetUID());
-	if (story == doc->second.end())
-		return kFalse;
-
-	KESCMIntersectMarkRanges(story->second, runStart, runEnd, outRanges);
+	KESCMIntersectMarkRanges(*ranges, runStart, runEnd, outRanges);
 	return outRanges.empty() ? kFalse : kTrue;
 }
 
@@ -164,33 +244,34 @@ bool16 KESCMStoryMarkerRunIsMarked(const IWaxRun* waxRun)
 		return kFalse;
 
 	const TextIndex runEnd = runStart + runCount;
+
+	KESCMMarkStateLock lock(KESCMMarkStateMutex());		// same order as above: gHasMark first, lock second
+
 	if (runEnd <= gMarkLowest || runStart >= gMarkHighest)
 		return kFalse;
 
-	const IWaxLine* waxLine = waxRun->GetWaxLine();
-	if (waxLine == nil)
-		return kFalse;
-	InterfacePtr<ITextModel> model(waxLine->QueryTextModel());
-	if (model == nil)
-		return kFalse;
-	const UIDRef modelRef = ::GetUIDRef(model);
-	KESCMStoryMarkDocs::const_iterator doc = gMarkDocs.find(modelRef.GetDataBase());
-	if (doc == gMarkDocs.end())
+	// ⚠kFalse = "not asked about printing". GetCouldDraw, which is what calls this, is handed no
+	//   iShapeFlags at all - so this can only answer the wider question "is this run marked
+	//   anywhere". A run that turns out not to be printable is refused later, in Draw. ⇒ The cost of
+	//   being generous here is one Draw call that draws nothing; being strict is not possible.
+	const KESCMMarkRangeList* ranges = KESCMStoryMarkerRangesFor(waxRun, kFalse);
+	if (ranges == nil)
 		return kFalse;
 
-	KESCMStoryMarkMap::const_iterator story = doc->second.find(modelRef.GetUID());
-	if (story == doc->second.end())
-		return kFalse;
-
-	return KESCMMarkRangesTouchRun(story->second, runStart, runEnd);
+	return KESCMMarkRangesTouchRun(*ranges, runStart, runEnd);
 }
 
 /* KESCMStoryMarkerSetDocs
    Install a set of ranges as THE mark, replacing whatever was there. Merging happens here so that
-   no caller can hand in overlaps (which would invert twice and leave a hole), and the span the
-   fast path tests is worked out in the same pass.
+   no caller can hand in overlaps, and the span the fast path tests is worked out in the same pass.
+   ⚠Merging was once a matter of correctness (two Difference inversions over the same characters
+   punched a hole); since 2026-08-24 the wash is opaque and an overlap would merely paint twice, so
+   what the merge buys now is the cost of drawing - one fill per stretch instead of one per edit.
 
    ⚠What arrives is the COMPOSED set, not what a caller asked for - see the statics above.
+   ⚠THE CALLER HOLDS KESCMMarkStateMutex. There is exactly one caller (KESCMStoryMarkerInstall) and
+     it takes the lock around a wider stretch than this, so taking it again here would only make the
+     recursion deeper for nothing.
 */
 void KESCMStoryMarkerSetDocs(const KESCMStoryMarkDocs& docs, const PMReal& opacity)
 {
@@ -276,16 +357,34 @@ PMReal MarkOpacityNow()
 void KESCMStoryMarkerInstall()
 {
 	std::set<IDataBase*> toRepaint;
-	for (KESCMStoryMarkDocs::const_iterator it = gMarkDocs.begin(); it != gMarkDocs.end(); ++it)
-		toRepaint.insert(it->first);
 
-	KESCMStoryMarkDocs composed;
-	KESCMComposeMarkDocs(gStandingDocs, gFlashDocs, composed);
-	KESCMStoryMarkerSetDocs(composed, MarkOpacityNow());
+	// ★ASKED BEFORE THE LOCK IS TAKEN. MarkOpacityNow() queries a facade off the Utils boss, and
+	//   holding a lock across a Query is how a short lock turns into a long one.
+	const PMReal opacity = MarkOpacityNow();
 
-	for (KESCMStoryMarkDocs::const_iterator it = gMarkDocs.begin(); it != gMarkDocs.end(); ++it)
-		toRepaint.insert(it->first);
+	{
+		// ⚠THE LOCK COVERS THE REWRITE AND NOTHING ELSE. gMarkDocs is read by the drawing side on
+		//   background threads (the asynchronous PDF export), so it may not be seen half-written.
+		//   ★gStandingDocs and gFlashDocs are inside only because they are read here; nothing else
+		//     touches them off the main thread.
+		KESCMMarkStateLock lock(KESCMMarkStateMutex());
 
+		for (KESCMStoryMarkDocs::const_iterator it = gMarkDocs.begin(); it != gMarkDocs.end(); ++it)
+			toRepaint.insert(it->first);
+
+		KESCMStoryMarkDocs composed;
+		KESCMComposeMarkDocs(gStandingDocs, gFlashDocs, composed);
+		KESCMStoryMarkerSetDocs(composed, opacity);
+
+		for (KESCMStoryMarkDocs::const_iterator it = gMarkDocs.begin(); it != gMarkDocs.end(); ++it)
+			toRepaint.insert(it->first);
+	}
+
+	// ⚠★REPAINTING HAPPENS OUTSIDE THE LOCK. InvalidateViews walks the document's windows and is
+	//   free to take locks of its own; doing that while holding this one is the shape a deadlock
+	//   comes in. The set of documents was collected above precisely so that this loop needs
+	//   nothing shared ([[avoid-timers-and-idle-tasks]] is a different rule, but the discipline
+	//   "hold the lock only for the memory you are changing" is the one KESCMThreadSafety.h states).
 	for (std::set<IDataBase*>::const_iterator db = toRepaint.begin(); db != toRepaint.end(); ++db)
 		KESCMStoryMarkerRepaint(*db);
 }
@@ -296,21 +395,55 @@ void KESCMStoryMarkerInstall()
 // The adornment
 //----------------------------------------------------------------------------------------
 
-/** Inverts the pixels over the marked characters. Screen only. */
+/** Lays a coloured wash under the marked characters. On screen always; on paper and in an exported
+	PDF when the document's toggle says so (KESCMStoryMarkPrintAllowedFor). ★"Screen only" until
+	2026-08-23, and an INVERSION until 2026-08-24 - both changes are recorded where they matter
+	(GetDrawPriority and Draw), and both are worth reading before changing the look again. */
 class KESCMStoryMarkerAdornment : public CPMUnknown<IGlobalTextAdornment>
 {
 public:
 	KESCMStoryMarkerAdornment(IPMUnknown* boss) : CPMUnknown<IGlobalTextAdornment>(boss) {}
 	~KESCMStoryMarkerAdornment() {}
 
-	/** FOREGROUND, unlike a highlight. The mark inverts what is under it, and what the reader has
-		to keep seeing is the glyphs - so it has to be applied AFTER they are painted. (A slab of
-		colour would go in the background pass instead, which is where the product puts its H&J and
-		missing-glyph highlights, and where this would go if the inversion turns out not to work -
-		see the note in KESCMStoryMarker.h.) The named constants for Adobe's own global adornments
-		are in IGlobalTextAdornment.h:170-181. */
+	/** BACKGROUND, like a highlight - ★and the comment that used to stand here called this exactly
+		right before it happened. It said the mark was in the FOREGROUND because it inverted what was
+		under it and the glyphs had to stay visible, and added: "a slab of colour would go in the
+		background pass instead, which is where the product puts its H&J and missing-glyph
+		highlights, and where this would go if the inversion turns out not to work".
+
+		★★2026-08-24: the inversion turned out not to work on paper, and the reason had nothing to
+		do with which pass it was in. **In an exported or printed page the text is drawn last**, so a
+		foreground adornment lands under the glyphs out there anyway: the ground inverted and the
+		glyphs did not (measured: ground 255 -> 6, glyph core 0 -> 0 - black on black). Being in the
+		foreground bought nothing on paper and cost the wash its natural place.
+		⇒ Moved to the background pass, where the product's own highlights live, and the drawing
+		  became a coloured wash that the glyphs sit on top of - the one thing that reads the same on
+		  screen and on paper. See Draw() for the whole measurement.
+
+		The named constants for Adobe's own global adornments are in IGlobalTextAdornment.h:170-181;
+		the non-global ones (underline, strikethrough, paragraph shade, ruby, kenten - and the text
+		itself) are at the foot of ITextAdornment.h.
+
+		★★★AND THE NUMBER HAS TO BE NEGATIVE, WHICH COST A BUG (found 2026-08-24 in the recheck of
+		this very migration). The move above was written as `kTAPassPriBackground + 0.50` - the right
+		pass by name and the wrong one by arithmetic:
+		  * a priority is split in two, **the whole part being the PASS and the fraction the RUN**
+		    within it (TextDrawPriority.h:33-40), and the wax runs are walked once per distinct pass;
+		  * kPassBackground is **-16384** (DrawPassInfo.h:92), so a POSITIVE fraction carries the
+		    whole part up to -16384 while **every one of Adobe's own background adornments, without
+		    exception, is written as kTAPassPriBackground + a NEGATIVE fraction** and therefore sits
+		    in pass -16385.
+		⇒ `+0.50` did not join them; it drew a whole pass AFTER all of them. Since the wash is opaque
+		  (no transparency, by design - see Draw), it painted over paragraph shading, paragraph
+		  borders and rules, underlines, and the product's own missing-font / missing-glyph /
+		  kinsoku / H&J highlights, in exactly the passage the reader was told to look at.
+		★-0.585 puts it between kTAPriParagraphRuleBelow (-0.59) and kTAPriUnderline (-0.58): after
+		  the paragraph-level grounds, so the wash covers a paragraph shade the way a highlighter
+		  does, and before everything drawn ON the characters, so nothing the product draws is hidden.
+		★The purpose of the move is untouched: any negative pass is still below the glyphs, which
+		  are drawn at kTAPassPriText + 0.50 (pass 0). */
 	virtual Text::DrawPriority GetDrawPriority()
-		{ return Text::DrawPriority(Text::kTAPassPriForeground + 0.50); }
+		{ return Text::DrawPriority(Text::kTAPassPriBackground + -0.585); }
 
 	virtual bool16 GetCheckIsActive() { return kTrue; }
 	virtual bool16 GetIsActive(const IParcelShape* parcelShape,
@@ -340,18 +473,20 @@ public:
 	virtual void EndOfParcelDraw(GraphicsData*, int32, const IParcelShape*) {}
 
 private:
-	/** The rectangles to invert, in the coordinates the run reports its own position in - one per
+	/** The rectangles to wash, in the coordinates the run reports its own position in - one per
 		marked range that falls in this run.
 		kFalse for a run that cannot be measured - an inline graphic has neither glyphs nor render
 		data, which all four of these methods are warned about in IGlobalTextAdornment.h. */
 	static bool16 GetMarkBoxes(const IWaxRun* waxRun, const IWaxRenderData* renderData,
-							   const IWaxGlyphs* waxGlyphs, std::vector<PMRect>& outBoxes);
+							   const IWaxGlyphs* waxGlyphs, bool16 forPrint,
+							   std::vector<PMRect>& outBoxes);
 };
 
 CREATE_PMINTERFACE(KESCMStoryMarkerAdornment, kKESCMStoryMarkerAdornmentImpl)
 
 bool16 KESCMStoryMarkerAdornment::GetMarkBoxes(const IWaxRun* waxRun, const IWaxRenderData* renderData,
-											   const IWaxGlyphs* waxGlyphs, std::vector<PMRect>& outBoxes)
+											   const IWaxGlyphs* waxGlyphs, bool16 forPrint,
+											   std::vector<PMRect>& outBoxes)
 {
 	outBoxes.clear();
 
@@ -359,7 +494,7 @@ bool16 KESCMStoryMarkerAdornment::GetMarkBoxes(const IWaxRun* waxRun, const IWax
 		return kFalse;
 
 	KESCMMarkRangeList runRanges;
-	if (!KESCMStoryMarkerFindRunRanges(waxRun, runRanges))
+	if (!KESCMStoryMarkerFindRunRanges(waxRun, forPrint, runRanges))
 		return kFalse;
 
 	const int32 glyphCount = waxGlyphs->GetGlyphCount();
@@ -413,14 +548,14 @@ bool16 KESCMStoryMarkerAdornment::GetMarkBoxes(const IWaxRun* waxRun, const IWax
 			//   ⇒ The range still covers one character so that it sorts and merges like any other
 			//     (KESCMStoryMarkRanges.h), but what is DRAWN is a bar standing where the caret would
 			//     stand if you clicked in front of that character - the same place the jump centres.
-			width = size * PMReal(0.15);
+			width = size * PMReal(kCaretWidthFraction);
 		}
 		else if (width <= 0.0)
 		{
 			// ★A ZERO-WIDTH RANGE STILL HAS A PLACE. It happens where the marked characters are
 			//   drawn by nothing at all - and the reader still asked "where is it". A thin bar at
 			//   the start of the range answers that; an empty rectangle would answer nothing.
-			width = size * PMReal(0.15);
+			width = size * PMReal(kCaretWidthFraction);
 		}
 
 		const PMReal x = waxRun->GetXPosition() + offset;
@@ -443,14 +578,24 @@ bool16 KESCMStoryMarkerAdornment::GetIsActive(const IParcelShape* /*parcelShape*
 	if (!gHasMark)
 		return kFalse;
 
-	// ★★NEVER ON PAPER. This is a pointer at something the reader just asked to see, not part of
-	//   the document - and the header is explicit that an adornment which does not draw when
-	//   printing must not draw for print preview either (IGlobalTextAdornment.h:78-83), so both
-	//   flags are answered together.
-	//   ⚠This is the OPPOSITE of the comparison marks, which exist to come out on paper - see
-	//     KESCMDrawEventHandler. Two marks, two answers, for two different questions.
+	// ★★★ON PAPER SINCE 2026-08-23, WHERE THIS SAID "NEVER" (user's request: 印刷 ON で印刷できる
+	//   ように). The old answer came from what the mark was when it was written - a pointer at
+	//   something the reader had just asked to see, which has no business being printed. It has been
+	//   the Story mode's whole mark since the toggles and the tool's button started using it, and a
+	//   reader who turns "Print comparison marks" on means it.
+	//   ⇒ The answer is now per document, decided by the same two toggles that decide the Pixel
+	//     mode's frames (KESCMStoryMarkBuild).
+	// ⚠kPrinting AND kPreviewMode GET THE SAME ANSWER - the header is explicit that an adornment
+	//   which does not draw when printing must not draw for print preview either
+	//   (IGlobalTextAdornment.h:78-83). Asking one function keeps that true by construction.
+	// ⚠★★THE ANSWER HERE IS COARSER THAN THE ONE Draw GIVES, AND IT HAS TO BE (measured 2026-08-23):
+	//   **IParcelShape is not an IPMUnknown**, so there is no GetDataBase to call on it and this
+	//   pass cannot name the document it is about ("指示された型は関連がありません" - the first
+	//   draft tried it). ⇒ Refuse the whole pass only when NOTHING is printable; let Draw decide per
+	//   run, where the run's own database is at hand. The cost of being generous is a Draw call that
+	//   draws nothing; being strict here is not possible.
 	if (iShapeFlags & (IShape::kPrinting | IShape::kPreviewMode))
-		return kFalse;
+		return KESCMStoryMarkPrintPossibleAtAll();
 
 	return kTrue;
 }
@@ -458,8 +603,11 @@ bool16 KESCMStoryMarkerAdornment::GetIsActive(const IParcelShape* /*parcelShape*
 void KESCMStoryMarkerAdornment::GetInkBounds(PMRect* inkBounds, const IWaxRun* waxRun,
 											 const IWaxRenderData* renderData, const IWaxGlyphs* waxGlyphs)
 {
+	// ⚠kFalse: ink bounds are declared with no iShapeFlags to consult, so they are declared for the
+	//   wider case. Over-declaring costs nothing (it only widens the rectangle the text engine will
+	//   let us paint in); under-declaring would clip a mark that IS printable.
 	std::vector<PMRect> boxes;
-	if (!GetMarkBoxes(waxRun, renderData, waxGlyphs, boxes))
+	if (!GetMarkBoxes(waxRun, renderData, waxGlyphs, kFalse, boxes))
 		return;								// leave them empty, as the header instructs
 
 	// ★THE UNION OF THEM ALL, because ink bounds are declared once for the whole run. A press can
@@ -478,14 +626,37 @@ void KESCMStoryMarkerAdornment::Draw(GraphicsData* gd, int32 iShapeFlags, const 
 	if (gd == nil || !gHasMark)
 		return;
 
-	// GetIsActive answered this for the parcel, but Draw is reached by paths that do not consult
-	// it, so the flags are tested again here (KT measured the same and kept the same guard).
-	if (iShapeFlags & (IShape::kPrinting | IShape::kPreviewMode))
-		return;
+	// ★THE PRINT DECISION IS MADE PER RUN, INSIDE GetMarkBoxes, because that is where the run's own
+	//   database has just been worked out. GetIsActive answered the same question for the parcel,
+	//   but Draw is reached by paths that do not consult it, so the flags are read again here
+	//   (KT measured the same and kept the same guard).
+	// ⚠THE FLAGS ARE NO LONGER A FLAT REFUSAL (2026-08-23). They now select WHICH question is asked:
+	//   on screen every marked run draws; on paper only the documents whose toggle says so do.
+	const bool16 forPrint = ((iShapeFlags & (IShape::kPrinting | IShape::kPreviewMode)) != 0) ? kTrue : kFalse;
 
 	std::vector<PMRect> boxes;
-	if (!GetMarkBoxes(waxRun, renderData, waxGlyphs, boxes))
+	if (!GetMarkBoxes(waxRun, renderData, waxGlyphs, forPrint, boxes))
 		return;
+
+	// ★COPIED OUT UNDER THE LOCK, THEN USED WITHOUT IT. gMarkOpacity is a PMReal - a struct, not a
+	//   word - so a background thread reading it while the main thread writes a new one could see
+	//   neither value. The copy is taken here rather than at the top so that runs which draw
+	//   nothing (the overwhelming majority) never take the lock twice.
+	// ⚠★★"FULL STRENGTH ON PAPER" WAS TRIED AND REMOVED THE SAME DAY (2026-08-24). It made sense
+	//   while the mark was an inversion, where 25% only nudged the ground and the printed page needed
+	//   the whole flip to be legible at all. A wash is the opposite: the strength IS the colour, and
+	//   at 1.0 it prints as solid red over every changed word - readable, but shouting.
+	//   ⇒ The panel's choice is honoured everywhere. What the reader picked for the screen is what
+	//     comes out of the printer, which is the same promise the Pixel mode's frames make
+	//     (KESCMDrawEventHandler::SelectedMarkOpacity is used by screen and output alike).
+	//   ⚠AND IT WAS MEASURED WRONG AT FIRST: a PNG export counts as PRINTING (kPrinting is set), so
+	//     the "screen" shots taken with exportFile came out at 1.0 too and both radio settings looked
+	//     identical. A PNG is not the screen.
+	PMReal opacity(1.0);
+	{
+		KESCMMarkStateLock lock(KESCMMarkStateMutex());
+		opacity = gMarkOpacity;
+	}
 
 	IGraphicsPort* gPort = gd->GetGraphicsPort();
 	if (gPort == nil)
@@ -493,35 +664,52 @@ void KESCMStoryMarkerAdornment::Draw(GraphicsData* gd, int32 iShapeFlags, const 
 
 	AutoGSave autoGSave(gPort);
 
-	// ★★INVERT, THE WAY KBS DOES IT. Difference blending against white flips whatever is
-	//   underneath, so the mark is visible on any background - white paper, a coloured box, an
-	//   image - and the glyphs stay readable because they are inverted along with the paper rather
-	//   than covered by a slab (KBSDrawEventHandler.cpp:533-546, which also records that a plain
-	//   red rectangle and IRasterPort::SetXORMode were both tried first and rejected).
-	gPort->setblendingmode(kPMBlendDifference);
+	// ★★★A COLOURED WASH BEHIND THE TEXT, NOT AN INVERSION (2026-08-24, after measuring the whole
+	//   road). Difference blending was the original design and it is right for the screen: it shows
+	//   through any ground and leaves the glyphs readable, because they invert along with the paper
+	//   instead of being covered by it. It cannot survive being printed, and the reason is neither
+	//   the blend nor the colour space:
+	//   ⇒ **In an exported or printed page the TEXT IS DRAWN LAST.** A text adornment painting in the
+	//     foreground pass lands UNDER the glyphs out there, so the ground inverts and the glyphs do
+	//     not - measured 2026-08-24: ground 255 -> 6, glyph core 0 -> 0. Black on black. The words
+	//     that changed become the only words that cannot be read, which is the opposite of the point.
+	//   ⚠Moving the paint to the background pass does not help: the glyphs were always on top of it.
+	//   ⚠Nor does painting in CMYK's maximum (0,0,0,1) instead of RGB's white - that corrects WHICH
+	//     grounds invert, and never touches the glyphs. Both were built and measured before this.
+	//   ⇒ So paint a wash BEHIND the text and let the glyphs keep their own colour. That is what the
+	//     product's own H&J highlight does, and it is the one drawing that reads the same on screen
+	//     and on paper.
+	// ★NO TRANSPARENCY IS USED ANY MORE - the strength is mixed into the colour rather than asked for
+	//   with setopacity. Three problems leave together: the flattener has nothing to flatten, the
+	//   frame no longer has to declare transparency for the mark to survive, and PDF 1.3 behaves
+	//   exactly like 1.4.
+	// ★HOW STRONG - the panel's "Marks opacity 25% / 75%", mixed from paper white towards the mark
+	//   colour. ⚠**BOTH KINDS OF MARK GET THE SAME STRENGTH**, the jump's flash included: the value
+	//   is read once by KESCMStoryMarkerInstall (MarkOpacityNow) and every caller ends there. The
+	//   sentence that stood here said the jump "passes 1.0 and lands at the full colour", which was
+	//   true until 2026-08-22 and has been wrong ever since - it described the very bug that was
+	//   fixed by moving the question to one place (see MarkOpacityNow above, which says so).
+	const int32 pct = ::ToInt32(opacity * PMReal(100.0));
+	const int32 mix = (pct < 0) ? 0 : ((pct > 100) ? 100 : pct);
 
-	// ★HOW MUCH OF THE INVERSION TO APPLY - the panel's "Marks opacity 25% / 75%", which the press
-	//   reads once and hands over (KESCMStoryPressMarks). The jump's own mark passes 1.0, so it
-	//   still lands at full strength.
-	// ★★★AND IT WORKS ON SCREEN, WHERE THE EXPORT PATH DOES NOT (measured 2026-08-22). setopacity
-	//   is silently ignored by a global text adornment when the drawing is going to PDF - KT asked
-	//   three different ways on 2026-08-19 and all three came out pixel-identical - and that was
-	//   the only measurement anyone had. It was of the EXPORT path. This mark is screen-only by
-	//   GetIsActive, and switching the panel between 25% and 75% visibly changes how strong the
-	//   inversion is (confirmed on the running application).
-	//   ⇒ The line is not "opacity does nothing on a text adornment" but "it does not survive being
-	//     written out". ★The fallback written for the other outcome is recorded here rather than
-	//     deleted, because the same question returns the moment anything asks for this mark on
-	//     paper: with Difference, painting (a,a,a) lands on 1-a over white and a over black, which
-	//     is where an alpha of a would have put it.
-	if (gMarkOpacity < PMReal(1.0))
-		gPort->setopacity(gMarkOpacity, kFalse);
+	// ★WHICH COLOUR - the panel's "Mark colour: Red / Cyan", read through the same accessor the
+	//   Pixel mode's rings use, so the two modes can never disagree about it.
+	uint8 baseR = 0, baseG = 0, baseB = 0;
+	KESCMDrawEventHandler::SelectedMarkColor(baseR, baseG, baseB);
 
-	gPort->setrgbcolor(PMReal(1.0), PMReal(1.0), PMReal(1.0));
+	const uint8 wr = (uint8)(255 - (255 - baseR) * mix / 100);
+	const uint8 wg = (uint8)(255 - (255 - baseG) * mix / 100);
+	const uint8 wb = (uint8)(255 - (255 - baseB) * mix / 100);
+
+	// ★SCREEN IN RGB, PAPER IN CMYK - the same helper the Pixel mode's frames call, for the same
+	//   reason: KESCM compares in CMYK, so a mark specified in RGB does not match its own frames on
+	//   output. The helper lives in KESCMDrawEventHandler.cpp and was made non-static for this.
+	KESCMSetOutputColor(gPort, wr, wg, wb, forPrint);
 
 	// ★ONE FILL PER RANGE, AND THEY CANNOT OVERLAP - the ranges were merged before they were ever
-	//   installed (KESCMStoryMarkRanges.h). Two Difference fills over the same pixels would invert
-	//   them twice and leave a hole exactly where both said "look here".
+	//   installed (KESCMStoryMarkRanges.h). ⚠With Difference an overlap punched a hole (two
+	//   inversions cancel); a flat wash would merely paint twice, but the merge is still what keeps
+	//   the drawing cheap.
 	for (std::vector<PMRect>::const_iterator b = boxes.begin(); b != boxes.end(); ++b)
 		gPort->rectfill(b->Left(), b->Top(), b->Width(), b->Height());
 
@@ -544,7 +732,7 @@ void KESCMStoryMarker::AddFlashRange(KESCMStoryMarkDocs& docs, IDataBase* db, UI
 	// ★★A DELETION HAS NO WIDTH on the side it was deleted from - the words are gone from there, and
 	//   what the jump is pointing at is the PLACE they used to be. Since 2026-08-22 that place is
 	//   shown as a CARET (user's call), which is also what the standing marks do, so a jump and a
-	//   press say the same thing about the same deletion (KESCMStoryPressMarks).
+	//   press say the same thing about the same deletion (KESCMStoryMarkBuild).
 	//   ⚠It used to be widened to one character here, which inverted whatever had closed up over the
 	//     gap - a different character claiming to be the edit.
 	//   ★The decision is made HERE and not inside the range list: what a zero-width range should
@@ -622,12 +810,18 @@ void KESCMStoryMarker::Shutdown()
 	// ⚠The flag goes up FIRST: from here on nothing repaints, because the document the mark was in
 	//   may already be half torn down. Taking a mark down the ordinary way would go looking for it.
 	//   ★Same door, and the same reason, as KBS's marker shutdown.
-	gShutdown = kTrue;
-	gHasMark = kFalse;
-	gMarkDocs.clear();
-	gStandingDocs.clear();
-	gFlashDocs.clear();
-	KESCMStoryMarkerExpiry::Shutdown();
+	{
+		// ⚠★LOCKED LIKE EVERY OTHER WRITE. Teardown is exactly when a background export may still
+		//   be walking gMarkDocs, and clearing a map out from under a reader is the crash this lock
+		//   exists to prevent (KESCMThreadSafety.h).
+		KESCMMarkStateLock lock(KESCMMarkStateMutex());
+		gShutdown = kTrue;
+		gHasMark = kFalse;
+		gMarkDocs.clear();
+		gStandingDocs.clear();
+		gFlashDocs.clear();
+	}
+	KESCMStoryMarkerExpiry::Shutdown();		// releases an idle task - outside the lock
 }
 
 // End, KESCMStoryMarker.cpp.

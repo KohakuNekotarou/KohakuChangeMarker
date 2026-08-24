@@ -29,7 +29,7 @@
 #include "CreateObject.h"
 
 // Project includes:
-#include "KCMUIID.h"
+#include "KESCMID.h"			// ★2026-08-23: moved from the UI plug-in's KCMUIID.h with the marker
 #include "KESCMStoryMarker.h"
 #include "KESCMStoryMarkerExpiry.h"
 

@@ -37,6 +37,7 @@
 #include "IKESCMPageFlagsFacade.h"
 #include "IKESCMStoryEditsFacade.h"
 #include "IKESCMBookFacade.h"
+#include "IKESCMStoryMarkFacade.h"
 #include "KESCMComparisonRun.h"		// ToggleStartStop / Stop / StartFor / CanStart / print marks
 #include "KESCMCore.h"				// MarkChanges / ClearMarks / DoSetPrintMarks / getters
 #include "KESCMPeek.h"				// armed docs alive / peek / RefreshSelectedPages / base opacity
@@ -53,6 +54,8 @@
 #include "KESCMBookCompare.h"		// the book comparison itself
 #include "KESCMPageNumberMarker.h"	// the folio exclusion toggle
 #include "KESCMChangedPagesTSV.h"	// the TSV export
+#include "KESCMStoryMarkBuild.h"	// what the Story mode should be lighting up (Refresh / SetPress)
+#include "KESCMStoryMarker.h"		// the adornment that draws it - the flash and the shutdown
 
 //========================================================================================
 // KESCMCompareFacade -- IKESCMCompareFacade
@@ -99,6 +102,8 @@ public:
 	virtual void		SetMarkOpacity25(bool16 op25)	{ KESCMSetMarkOpacity25(op25); }
 	virtual bool16		GetPrintMarks()			{ return KESCMGetPrintMarks(); }
 	virtual bool16		GetMarkOpacity25()		{ return KESCMGetMarkOpacity25(); }
+	virtual void		SetMarkColor(bool16 cyan)	{ KESCMSetMarkColor(cyan); }
+	virtual bool16		GetMarkColorCyan()		{ return KESCMGetMarkColorCyan(); }
 
 	virtual KESCMCompareMode	GetCompareMode()					{ return KESCMGetCompareMode(); }
 	virtual void				SetCompareMode(KESCMCompareMode m)	{ KESCMSetCompareMode(m); }
@@ -487,5 +492,64 @@ public:
 };
 
 CREATE_PMINTERFACE(KESCMBookFacade, kKESCMBookFacadeImpl)
+
+//========================================================================================
+//  IKESCMStoryMarkFacade -- putting the Story mode's marks up and taking them down.
+//
+//  ★★THE SIXTH BOUNDARY, AND THE FIRST ADDED AFTER THE SPLIT ITSELF (2026-08-23). The other five
+//  were drawn when model and UI were separated; this one appeared when a thing that had been on
+//  the UI side moved over - the global text adornment that draws the Story mode's marks. It had to
+//  move because **the UI's File > Export > PDF runs in the background and never hands a kUIPlugIn
+//  any drawing**, so marks living there could not reach an exported PDF at all.
+//
+//  ★EVERY METHOD IS ONE LINE, WHICH IS THE POINT. The facade is a door, not a place where things
+//  are decided: what should be lit is worked out in KESCMStoryMarkBuild and drawn in
+//  KESCMStoryMarker, both of which the UI has no business knowing about.
+//========================================================================================
+
+class KESCMStoryMarkFacade : public CPMUnknown<IKESCMStoryMarkFacade>
+{
+public:
+	KESCMStoryMarkFacade(IPMUnknown* boss) : CPMUnknown<IKESCMStoryMarkFacade>(boss) {}
+
+	virtual void	Refresh()					{ KESCMStoryMarkRefresh(); }
+
+	virtual void	SetPress(bool16 active, bool16 useSourceDocument)
+					{ KESCMStoryMarkSetPress(active, useSourceDocument); }
+
+	virtual void	ShowJumpFlash(IDataBase* db, UID storyUID,
+								  TextIndex from, TextIndex to,
+								  TextIndex sourceFrom, TextIndex sourceTo);
+
+	virtual void	ClearJumpFlash()			{ KESCMStoryMarker::ClearFlash(); }
+	// ⚠No ShutdownMarks: teardown is model-side only and KESCMPeek.cpp calls the marker directly
+	//   (IKESCMStoryMarkFacade.h says why a boundary method with no caller is worse than none).
+};
+
+CREATE_PMINTERFACE(KESCMStoryMarkFacade, kKESCMStoryMarkFacadeImpl)
+
+void KESCMStoryMarkFacade::ShowJumpFlash(IDataBase* db, UID storyUID,
+										 TextIndex from, TextIndex to,
+										 TextIndex sourceFrom, TextIndex sourceTo)
+{
+	KESCMStoryMarkDocs flash;
+	KESCMStoryMarker::AddFlashRange(flash, db, storyUID, from, to);
+
+	// ★THE SAME STORY UID, IN THE OTHER DOCUMENT - which is what the whole Story mode is built on:
+	//   the diff pairs stories by uid, the double click selects in both by uid, and the standing
+	//   marks light both by uid (KESCMStoryMarkBuild). ⚠The general rule that a uid names a
+	//   different object in another document is TRUE and does not apply here, and believing it did
+	//   is what left the older window nearly bare until 2026-08-22 (bug A6).
+	// ⚠`db` IS NOT ALWAYS THE TARGET: a Removed story is read out of the older document, and then
+	//   this test is what stops the same document being marked twice (which would invert twice and
+	//   leave a hole - KESCMStoryMarkRanges.h).
+	// ★THE TEST LIVES HERE RATHER THAN AT THE CALLER because "is the older window open" is a fact
+	//   about the comparison, and the comparison is this side's ([[one-question-one-place]]).
+	IDataBase* const flashSourceDB = KESCMArmedSourceDB();
+	if (flashSourceDB != nil && flashSourceDB != db && KESCMIsDocDBOpen(flashSourceDB))
+		KESCMStoryMarker::AddFlashRange(flash, flashSourceDB, storyUID, sourceFrom, sourceTo);
+
+	KESCMStoryMarker::ShowFlash(flash);
+}
 
 // End of KESCMFacades.cpp.

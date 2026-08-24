@@ -78,6 +78,7 @@ bool16 KESCMDrawEventHandler::sMarksVisible = kFalse;	// 既定=非表示。枠�
 PMReal KESCMDrawEventHandler::sMarkScreenOpacity = 1.0;	// 既定=不透明。ツール左hold中=選択不透明度(25%/75%)/印刷ON中の常時表示=選択不透明度
 bool16 KESCMDrawEventHandler::sPrintMarks = kFalse;	// 既定=画面のみ(印刷/PDF には出さない)
 bool16 KESCMDrawEventHandler::sMarkOpacity25 = kTrue;	// 既定=25%(パネルの既定ラジオと一致)。kFalse=75%
+bool16 KESCMDrawEventHandler::sMarkColorCyan = kFalse;	// 既定=赤(従来の通常色と一致)。kTrue=シアン
 bool16 KESCMDrawEventHandler::sShowOldNumbers = kFalse;	// 既定=OFF(フライアウト「Show Original Page Numbers」)
 // (★「Hold to Hide Marks」(sAlwaysShowMarks)は 2026-08-22 に撤去＝「Show Marks on ...」と重複。
 //  経緯と現在の規則はヘッダーの宣言部を見よ。)
@@ -196,13 +197,19 @@ void KESCMDrawEventHandler::EnsureOverflowCache()
 }
 
 void KESCMDrawEventHandler::BuildRing(uint8* buf, int32 rb, int32 bpp, int32 wt, int32 ht,
-	const uint8* dist, const uint8* bgRed, int32 radius)
+	const uint8* dist, int32 radius)
 {
 	if (buf == nil || dist == nil || wt <= 0 || ht <= 0 || bpp < 3)
 		return;
 	if (radius < 1) radius = 1;
 	const int32 colorOff = bpp - 3;
 	const uint8 rad = (radius > 255) ? 255 : (uint8)radius;	// dist は uint8 clamp255。半径上限は200<255。
+
+	// ★★2026-08-24: マークの色はパネルの選択。**1回だけ読んでループの外に置く**(画素ごとに聞くもの
+	//   ではない)。⚠この2行は同日の掃除コミットで**コメントの後半とインデントを削り落としていた**
+	//   (文が「(画素ごとに聞く」で切れ、宣言だけタブ2つになっていた)＝2026-08-24 の再検査で復元。
+	uint8 markR = 0, markG = 0, markB = 0;
+	KESCMDrawEventHandler::SelectedMarkColor(markR, markG, markB);
 	// ★端の欠け対策は下の frame(ページ内縁の枠帯)が兼ねる: 端から radius 以内を無条件に塗るので、
 	//   変化がページ端に接していてもその帯が必ず埋まり、辺の枠が痩せて欠けることはない。
 
@@ -213,7 +220,6 @@ void KESCMDrawEventHandler::BuildRing(uint8* buf, int32 rb, int32 bpp, int32 wt,
 	{
 		uint8* rowB = buf + (size_t)y * rb;
 		const uint8* drow = dist + (size_t)y * wt;
-		const uint8* brow = (bgRed != nil) ? (bgRed + (size_t)y * wt) : nil;
 		for (int32 x = 0; x < wt; ++x)
 		{
 			uint8* pixT = rowB + (size_t)x * bpp;	// ARGB 先頭=alpha
@@ -229,11 +235,15 @@ void KESCMDrawEventHandler::BuildRing(uint8* buf, int32 rb, int32 bpp, int32 wt,
 			                      y < radius || (ht - 1 - y) < radius);
 			if (ring || frame)
 			{
-				// リング/枠画素。下の実ページが赤っぽければシアン、そうでなければ赤(画素単位)。
-				const bool useAlt = (brow != nil && brow[x]);
-				px[0] = useAlt ? kKESCMRingAltR : kKESCMRingR;
-				px[1] = useAlt ? kKESCMRingAltG : kKESCMRingG;
-				px[2] = useAlt ? kKESCMRingAltB : kKESCMRingB;
+				// リング/枠画素。★★2026-08-24: **色はパネルの選択(SelectedMarkColor)。**
+				//   それまでは「下の実ページが赤っぽい画素の上だけシアン」という背景適応を画素単位で
+				//   やっていた(bgRed マスク)。ユーザー判断で廃止 ----「ユーザーが選べばいいので」。
+				//   ⇒ 理由は SelectedMarkColor の宣言(KESCMDrawEventHandler.h)に書いた。要点は、
+				//     Story モードの色地は**下地の画素を読めない**ので同じ芸当ができず、放っておくと
+				//     2つのモードで色の決まり方が食い違うこと。
+				// ★印刷側は1行も変えなくてよい: あちらは**この画像の色を読んで**赤マスク/シアンマスクに
+				//   振り分けているので(下の PassDef)、ここが単色になれば刷りも自動的に単色になる。
+				px[0] = markR; px[1] = markG; px[2] = markB;
 				if (bpp >= 4) pixT[0] = kKESCMRingAlpha;	// リング画素の基本アルファ(=255 不透明)。薄表示は setopacity 側
 			}
 			else { px[0] = 255; px[1] = 255; px[2] = 255; if (bpp >= 4) pixT[0] = 0; }	// 透明
@@ -313,7 +323,7 @@ ErrorCode KESCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef
 
 	// ラスタ化は3回から2回へ削減。旧版は別途 72dpi の target(snapL)もラスタ化していたが、その画素は
 	//   BuildRing が buf を全上書きするため一切使われていなかった。低解像度の寸法は高解像度から割り戻し、
-	//   背景の「赤っぽい」判定(bgRed)も高解像度 target をプーリングして作るので、snapL は不要=削除。
+	//   (背景の「赤っぽい」判定もここで作っていたが、2026-08-24 に色を選択式にして廃止した。)
 	// 【高解像度】差分検出用。target / source を高dpi(kKESCMResolution×kKESCMHiResMul)でラスタ化。
 	// 低解像度では平均化で消える細線/微小ズレを満額の差分画素として拾い、取りこぼしを防ぐ。
 	const PMReal hiRes = kKESCMResolution * kKESCMHiResMul;
@@ -529,33 +539,6 @@ ErrorCode KESCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef
 				}
 				else
 				{
-					// 背景(対象ページ)の「赤っぽい」画素マップを、高解像度 target をプーリングして作る
-					// (低解像度 snapL を廃止。低解像度セル中心の高解像度画素1点を代表サンプルに)。
-					// CMYK 経路は RGB が無いので、サンプル CMYK を近似 RGB に変換してから同じ R 優位判定を使う。
-					const int32 colorOffT = 0;
-					uint8* BG = new (std::nothrow) uint8[N];	// nil 可(BuildRing が nil bgRed を許容)
-					if (BG != nil)
-					{
-						for (int32 y = 0; y < hl; ++y)
-						{
-							int32 yh = (int32)(((int64)y * hth + hth / 2) / hl);
-							if (yh >= hth) yh = hth - 1;
-							const uint8* rowT = ptH + (size_t)yh * rbTH;
-							for (int32 x = 0; x < wl; ++x)
-							{
-								int32 xh = (int32)(((int64)x * wth + wth / 2) / wl);
-								if (xh >= wth) xh = wth - 1;
-								const uint8* px = rowT + (size_t)xh * bppH + colorOffT;
-								// CMYK(0..255) → 近似 RGB: ch=(255-ink)*(255-K)/255 の簡易式
-								const int C = px[0], Mk = px[1], Yk = px[2], K = px[3];
-								const int r = (255 - C)  * (255 - K) / 255;
-								const int g = (255 - Mk) * (255 - K) / 255;
-								const int b = (255 - Yk) * (255 - K) / 255;
-								BG[(size_t)y * wl + x] = (r - g > kKESCMRedBgDom && r - b > kKESCMRedBgDom) ? 1 : 0;
-							}
-						}
-					}
-
 					// ★buf を指す自前 AGMImageRecord を組んで切り離す(buf は下で BuildRing が全画素を書くので
 					//   ラスタ画素のコピーは不要)。SnapshotUtilsEx / accessor は保持しない(下で即破棄)。
 					//   GetAGMImageRecord も呼ばない=破棄時クラッシュ(保持 accessor の delete)を根本回避。
@@ -564,7 +547,6 @@ ErrorCode KESCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef
 					{
 						// OOM 保険(nothrow 化に伴う): ここまでの部分確保を解放し、スナップショットも
 						// 破棄してこのページは諦める(MakeOrigImage の確保失敗時と同じ early-return 流儀)。
-						if (BG != nil) delete[] BG;
 						delete[] M;
 						if (accSH)  delete accSH;
 						if (snapSH) delete snapSH;
@@ -573,7 +555,7 @@ ErrorCode KESCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef
 						return kFailure;
 					}
 					e->w = wl;  e->h = hl;  e->rowBytes = rbL;  e->bpp = bppL;
-					e->bgRed = BG;  e->lastRadius = kKESCMBaseRadius;
+					e->lastRadius = kKESCMBaseRadius;
 					// 変更の割合表示(Prev/Next)用。分母は w * h なので分子だけ覚える。ここは diffCount != 0 が
 					// 確定した枝なので必ず 1 以上になる(0 のときは上でエントリを作らずに戻っている)。
 					e->changedCells = (int32)diffCount;
@@ -593,7 +575,6 @@ ErrorCode KESCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef
 					//   エントリが載るのに画面には何も出ない** 状態を作る。changedCells は非 0 なので
 					//   Prev/Next は「変更あり」としてそのページへ飛び、しかし枠が見えない=壊れて見える。
 					//   OOM でこのページを諦めるのは、上の e==nil / MakeOrigImage の確保失敗と同じ流儀。
-					//   ★BG は既に e->bgRed が所有しているので、delete e が dist/buf/bgRed をまとめて解放する。
 					if (e->buf == nil)
 					{
 						delete e;
@@ -603,7 +584,7 @@ ErrorCode KESCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef
 						if (snapTH) delete snapTH;
 						return kFailure;
 					}
-					BuildRing(e->buf, rbL, bppL, wl, hl, e->dist, BG, kKESCMBaseRadius);
+					BuildRing(e->buf, rbL, bppL, wl, hl, e->dist, kKESCMBaseRadius);
 					// ★★2026-08-17(不具合再検査 B3 の2周目)＝**ここの int16 キャストは溢れない。**
 					//   AGMImageRecord.bounds は int16(上限 32,767)で、wl/hl は**保存解像度**
 					//   kKESCMResolution=36dpi の画素数。実機で測った最大ページは
@@ -661,7 +642,7 @@ ErrorCode KESCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef
 						sSrcPageToTarget[sourceRef.GetUID()] = key;
 					}
 
-					// dist / bgRed / buf は entry が所有(mask M は dist 生成後に解放済み)。スナップショットは下の後始末で即破棄。
+					// dist / buf は entry が所有(mask M は dist 生成後に解放済み)。スナップショットは下の後始末で即破棄。
 					changed = kTrue;
 					status = kSuccess;
 				}
@@ -824,7 +805,9 @@ ErrorCode KESCMDrawEventHandler::MakeOrigImage(const UIDRef& targetRef, const UI
 //     素直に対応する: 赤(255,0,0)→C0 M100 Y100 K0 ／ シアン(0,255,255)→C100 M0 Y0 K0 ／
 //     緑(0,200,0)→C100 M0 Y100 K22 ／ 白→すべて0 ／ 黒→K100。
 //========================================================================================
-static void KESCMSetOutputColor(IGraphicsPort* gPort, uint8 r, uint8 g, uint8 b, bool16 useCMYK)
+// ★2026-08-24: static を外して Story のマーカーと共有する(宣言=KESCMDrawEventHandler.h)。
+//   「画面は RGB・印刷は CMYK」という上の判断を2か所に書き分けると必ずずれるため([[one-question-one-place]])。
+void KESCMSetOutputColor(IGraphicsPort* gPort, uint8 r, uint8 g, uint8 b, bool16 useCMYK)
 {
 	if (!useCMYK)
 	{
@@ -911,7 +894,11 @@ static void KESCMDrawRingForPrint(IGraphicsPort* gPort, IViewPortAttributes* vpA
 	const int32 w = e->w, h = e->h, rb = e->rowBytes, bpp = e->bpp;
 	const size_t N = (size_t)w * h;
 
-	// e->buf(ARGB)から、赤リング画素=255 / 青リング画素=255 の2枚のグレーマスクを作る。
+	// e->buf(ARGB)から、赤リング画素=255 / シアンリング画素=255 の2枚のグレーマスクを作る。
+	// ★★2026-08-24 に前提が変わった: **リング画像は今や単色**(パネルの「Mark colour」で赤かシアンの
+	//   どちらか)。それまでは1枚の画像に赤とシアンが混在しえた(下地が赤っぽい画素の上だけシアンという
+	//   背景適応)。⇒ **2枚に分ける仕組みはそのまま正しく働く**＝選んだ色の側だけにマスクが立ち、
+	//   もう一方は下の `if (!passes[p].any) continue;` が飛ばす。**印刷側を1行も変えずに済んだのはこの形のおかげ**。
 	uint8* maskR = new (std::nothrow) uint8[N];	// nothrow: 直下の nil チェックを実効化(失敗時は枠を描かないだけ)
 	uint8* maskB = new (std::nothrow) uint8[N];
 	if (maskR == nil || maskB == nil) { if (maskR) delete[] maskR; if (maskB) delete[] maskB; return; }
@@ -926,7 +913,7 @@ static void KESCMDrawRingForPrint(IGraphicsPort* gPort, IViewPortAttributes* vpA
 			const size_t idx = (size_t)y * w + x;
 			if (px[0] != 0)								// リング画素(alpha!=0)
 			{
-				const bool16 blue = (px[3] > px[1]);	// B>R = 青(背景適応で青に切り替わった画素)
+				const bool16 blue = (px[3] > px[1]);	// B>R = シアン(パネルでシアンを選んでいる)
 				maskR[idx] = blue ? 0 : 255;
 				maskB[idx] = blue ? 255 : 0;
 				if (blue) anyB = kTrue; else anyR = kTrue;
@@ -941,8 +928,10 @@ static void KESCMDrawRingForPrint(IGraphicsPort* gPort, IViewPortAttributes* vpA
 	// 色がやや沈む(透明画像のあるページだけ枠が濃く見える)。色を CMYK 指定にしても解消せず(=色値ではなく
 	// 透明機能で描いていることが原因)、不透明ベクター化は25%の「透け」を失うため見送り。現状は元の RGB 指定のまま。
 	// ★★2026-08-16: **2パス目の色を「青」から「シアン」へ直した（ユーザー指示）。**
-	//   画面のリング画像(BuildRing)は赤背景の上で **kKESCMRingAlt* = シアン(0,255,255)** に切り替えるのに、
+	//   画面のリング画像(BuildRing)が **kKESCMRingAlt* = シアン(0,255,255)** で塗るのに、
 	//   ここだけ**純青(0,0,255)を塗っていた**＝画面と印刷で色が違うという食い違い。
+	//   (⚠当時のシアンは「赤い下地の上だけ自動で切り替わる色」だった。2026-08-24 に背景適応は廃止され、
+	//    **パネルで選ぶ色**になった＝色の出どころは変わったが、この2パスの形は変えなくてよかった。)
 	//   判定（`B>R`）は青でもシアンでも一致するので**動作では表面化せず**、ずっと残っていた。
 	//   ⇒ 画面と同じ定数を使う。これで「画面・印刷・PDF の3つで見た目が一致」が色でも成立する。
 	struct PassDef { uint8* buf; uint8 r, g, b; bool16 any; };
@@ -954,9 +943,11 @@ static void KESCMDrawRingForPrint(IGraphicsPort* gPort, IViewPortAttributes* vpA
 	for (int p = 0; p < 2; ++p)
 	{
 		// ★★★2026-08-16: **中身が空のマスクは飛ばす（これが「ページが青くベタ塗りになる」の原因だった）。**
-		//   青(シアン)のリングは「下地が赤っぽい画素の上」でしか現れないので、**普通のページでは青マスクが
+		//   当時のシアンは「下地が赤っぽい画素の上」でしか現れなかったので、**普通のページでは青マスクが
 		//   全画素 0**。その全 0 のマスクをアルファサーバに渡すと**マスクが効かず、下の rectpath がそのまま
 		//   塗られて「純青の全面ベタ」になる**（ユーザー報告 2026-08-16「2ページ目が青くなる」）。
+		//   ★★**2026-08-24 以降はこのガードがもっと効く**＝リング画像は選んだ色の単色なので、
+		//     **2枚のうち片方は必ず全画素 0**。つまり「たまに空」ではなく「毎回どちらかが空」。
 		//   ⚠2026-08-15 の記録「①の全面ベタが**純青**で出ていた」も、いま思えば同じ現象を見ていた。
 		//   ★旧のベクター版には `if (anyRun) fill();` という同じ趣旨のガードがあったのに、
 		//     **アルファサーバ版にだけ無かった**＝2つの実装で片方だけが守っていた形
@@ -1110,7 +1101,7 @@ static void KESCMDrawEntryOnPage(IGraphicsPort* gPort, IViewPortAttributes* vpAt
 		}
 		if (R > 0 && R != e->lastRadius)
 		{
-			KESCMDrawEventHandler::BuildRing(e->buf, e->rowBytes, e->bpp, e->w, e->h, e->dist, e->bgRed, R);
+			KESCMDrawEventHandler::BuildRing(e->buf, e->rowBytes, e->bpp, e->w, e->h, e->dist, R);
 			e->lastRadius = R;
 		}
 	}
@@ -2058,7 +2049,17 @@ bool16 KESCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 				if (drawRings && it != sEntries.end())	// ★Story モードではリングを描かない(上の drawRings)
 				{
 					if (isThumb)
-						KESCMDrawPageBorder(gPort, db, srcPageUID, kKESCMRingR, kKESCMRingG, kKESCMRingB);
+					{
+						// ★★2026-08-24: **サムネイルの枠もパネルの「Mark colour」に従う**。
+						//   ⚠ここは**リング画像を使わない唯一の変更ページ表示**(極小表示なので画像を
+						//     縮めず単色の枠を引く)ため、色を選べるようにした回に取り残されて赤固定の
+						//     ままだった＝**カンバスはシアン・Pages パネルは赤**という食い違い。
+						//   ★「赤い下地に埋もれるからシアンを選ぶ」という導入理由は、サムネイルでこそ
+						//     効く(小さいので余計に見分けにくい)。
+						uint8 mr = 0, mg = 0, mb = 0;
+						SelectedMarkColor(mr, mg, mb);
+						KESCMDrawPageBorder(gPort, db, srcPageUID, mr, mg, mb);
+					}
 					else
 						KESCMDrawEntryOnPage(gPort, vpAttr, it->second, db, srcPageUID, sxr, drawMode, SelectedMarkOpacity());
 				}
@@ -2071,6 +2072,10 @@ bool16 KESCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 			else if (isOverflow)
 			{
 				// 登録もされていない、ページ数差であふれたページ。未比較であることを赤斜線で明示する。
+				// ⚠★★2026-08-24 に明記: **この赤は「Mark colour」の選択に追随しない。意図的**＝
+				//   言っていることが違う(「変更があった」ではなく「比較していない」)。登録済みページの
+				//   緑「/」と同じ立場で、**マークの色を変えても意味が変わらない印**。
+				//   ★むしろシアンを選んだときは、変更(シアン)と未比較(赤)が色で見分けられる。
 				KESCMDrawPageDiagonal(gPort, db, srcPageUID, sxr, drawMode, SelectedMarkOpacity(), kKESCMRingR, kKESCMRingG, kKESCMRingB);
 			}
 			// 除外トグルON時、実際に比較しているページ(=登録済みRemovedでも overflow でもない=対応表に
@@ -2131,7 +2136,14 @@ bool16 KESCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 		if (drawRings && it != sEntries.end())	// ★Story モードではリングを描かない(上の drawRings)
 		{
 			if (isThumb)
-				KESCMDrawPageBorder(gPort, db, pageUID, kKESCMRingR, kKESCMRingG, kKESCMRingB);
+			{
+				// ★★2026-08-24: **サムネイルの枠もパネルの「Mark colour」に従う**(理由は上の Source 側
+				//   と同じ＝ここはリング画像を使わない唯一の変更ページ表示なので、色を選べるようにした
+				//   回に取り残されていた)。
+				uint8 mr = 0, mg = 0, mb = 0;
+				SelectedMarkColor(mr, mg, mb);
+				KESCMDrawPageBorder(gPort, db, pageUID, mr, mg, mb);
+			}
 			else
 				KESCMDrawEntryOnPage(gPort, vpAttr, it->second, db, pageUID, sxr, drawMode, screenMarkOp);
 		}
@@ -2143,6 +2155,7 @@ bool16 KESCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 		else if (isOverflow)
 		{
 			// 登録もされていない、ページ数差であふれたページ。未比較であることを赤斜線で明示する。
+			// ⚠★★この赤は「Mark colour」の選択に追随しない(意図的。理由は上の Source 側に全文)。
 			KESCMDrawPageDiagonal(gPort, db, pageUID, sxr, drawMode, screenMarkOp, kKESCMRingR, kKESCMRingG, kKESCMRingB);
 		}
 		// 除外トグルON時、実際に比較しているページ(=登録済みAddedでも overflow でもない=対応表に

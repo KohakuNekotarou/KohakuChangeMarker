@@ -42,5 +42,7 @@ void	KESCMTogglePrintMarks();
 
 // Set the mark frame opacity to 25% (op25=kTrue) or 75% (kFalse), keeping the print flag.
 void	KESCMSetMarkOpacity25(bool16 op25);
+// マークの色を 赤/シアン に設定(フライアウトの2項目から。★2026-08-24 に背景適応を置き換えたもの)。
+void	KESCMSetMarkColor(bool16 cyan);
 
 #endif // __KESCMComparisonRun_h__

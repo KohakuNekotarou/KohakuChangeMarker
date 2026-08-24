@@ -116,7 +116,8 @@ DECLARE_PMID(kInterfaceIDSpace, IID_IKESCMCOMPAREFACADE, kKESCMPrefix + 4)	// �
 DECLARE_PMID(kInterfaceIDSpace, IID_IKESCMMARKDATA, kKESCMPrefix + 5)	// 比較結果を**読む**（第1段 Task 12。★読み取り専用＝マークを作るのは上の1か所だけ）
 DECLARE_PMID(kInterfaceIDSpace, IID_IKESCMPAGEFLAGSFACADE, kKESCMPrefix + 6)	// Register(Added/Removed)と Check(✓)を書き換える（第1段 Task 13）
 DECLARE_PMID(kInterfaceIDSpace, IID_IKESCMSTORYEDITSFACADE, kKESCMPrefix + 7)	// Story Edits の一覧を**読む**（第1段 Task 14。★読み取り専用）
-DECLARE_PMID(kInterfaceIDSpace, IID_IKESCMBOOKFACADE, kKESCMPrefix + 8)	// ブック比較を頼む（第1段 Task 15。境界の5本目＝最後）
+DECLARE_PMID(kInterfaceIDSpace, IID_IKESCMBOOKFACADE, kKESCMPrefix + 8)	// ブック比較を頼む（第1段 Task 15。★第1段はここまでの5本）
+DECLARE_PMID(kInterfaceIDSpace, IID_IKESCMSTORYMARKFACADE, kKESCMPrefix + 10)	// ★Story モードのマークを出す/消す（2026-08-23＝グローバルテキストアドーンメントを UI から model へ移した回。**UI の File>Export>PDF は BG で走り kUIPlugIn には配られない**ので、印刷・書き出しに出すには model 側に居るしかない）。⚠**+9 は下の通知 protocol が先に取っている**ので飛ばす＝番号は連続しない
 
 //----------------------------------------------------------------------------------------
 // 通知の protocol IID

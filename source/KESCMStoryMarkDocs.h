@@ -8,17 +8,21 @@
 //
 //  ★★★TWO KINDS OF MARK EXIST AND THEY MEET HERE (2026-08-23). A STANDING mark is what the
 //  "Show Marks on Target / Source" toggles and the tool's held button put up; a FLASH is the
-//  pointer a jump puts up for about a second (KESCMStoryMarker). They are drawn by one adornment
-//  with Difference blending, which INVERTS what is underneath - so two marks over the same
-//  characters cancel out and leave a hole exactly where both of them said "look here"
-//  (KESCMStoryMarkRanges.h says the same thing about two ranges).
+//  pointer a jump puts up for about a second (KESCMStoryMarker). They are drawn by one adornment,
+//  which is why they have to be reconciled before anything is drawn rather than while it is.
+//  ⚠The rule below was written when that adornment INVERTED what was underneath (Difference
+//  blending), where two marks over the same characters cancelled out and left a hole exactly where
+//  both said "look here". **2026-08-24 the drawing became an opaque wash and that failure mode is
+//  gone** - see the note on the rule itself for what still keeps it.
 //
 //  ★★THE RULE IS PER DOCUMENT, AND THAT IS THE WHOLE POINT OF THIS FILE: in a document that has
 //  a standing mark, the standing mark is all there is; in a document that has none, the flash
 //  shows. Nothing is ever merged between the two.
-//    * It cannot invert twice, because within one document only one of them is ever used - the
-//      guarantee comes from the shape of the answer rather than from a check somebody has to
-//      remember to write.
+//    * The two can never fight over the same characters, because within one document only one of
+//      them is ever used - the guarantee comes from the shape of the answer rather than from a
+//      check somebody has to remember to write. ★What that buys since the wash replaced the
+//      inversion is no longer "no hole" but "no ambiguity": a document showing every edit is not
+//      also pointing at one of them.
 //    * And the jump reaches the OTHER window. Until 2026-08-23 one flag answered for both
 //      documents ("is a standing mark showing?"), so turning "Show Marks on Target" on silenced
 //      the jump's flash in the SOURCE window too, where nothing was standing and the reader had

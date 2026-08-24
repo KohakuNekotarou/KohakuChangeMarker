@@ -7,11 +7,14 @@
 //  Character ranges to light up, kept in the one shape the marker can draw straight from:
 //  sorted, and with nothing overlapping anything else.
 //
-//  ★★★WHY MERGING IS NOT AN OPTIMISATION HERE - IT IS CORRECTNESS. The mark is painted with
-//  Difference blending against white, which INVERTS what is underneath (KESCMStoryMarker.cpp).
-//  Painting the same pixels twice inverts them twice, which is the same as not painting them at
-//  all: two overlapping ranges would leave a hole exactly where BOTH of them said "look here".
-//  So overlaps are merged before anything is drawn, and the drawing side never has to know.
+//  ★★★WHY MERGING WAS CORRECTNESS, AND WHAT IT IS NOW. The mark used to be painted with Difference
+//  blending, which INVERTS what is underneath: painting the same pixels twice inverted them twice,
+//  which is the same as not painting them at all, so two overlapping ranges left a hole exactly
+//  where BOTH of them said "look here". ⚠**2026-08-24 the mark became an opaque coloured wash**
+//  (KESCMStoryMarker.cpp records why - an inversion cannot be printed), and an overlap would now
+//  merely paint the same colour twice. ⇒ Merging is no longer load-bearing for what the reader
+//  sees; it is what keeps the drawing cheap (one fill per stretch, not one per edit) and what lets
+//  the binary searches below assume a sorted, non-overlapping list. **Do not stop doing it.**
 //
 //  ⚠Touching ranges are merged too ([0,5) + [5,9) -> [0,9)). They do not overlap, so nothing
 //  would be lost by leaving them apart - but two adjacent rectangles are two rectfill calls and
@@ -39,7 +42,7 @@ struct KESCMMarkRange
 	TextIndex	fTo;		// one PAST the last - an END, not a length (RangeData.h:69)
 
 	/** ★★A CARET, NOT A STRETCH (2026-08-22, user's call: "細いバーにするがいいです、キャレットの位置で").
-		A DELETION has no width on the side it was deleted from - there is nothing there to invert -
+		A DELETION has no width on the side it was deleted from - there is no character there to mark -
 		and until now it was shown by widening it to one character, which lit up whatever had closed
 		up over the gap. That is a different character saying "I am the edit", and in the two cases
 		the user hit first it was plainly wrong: deleting a whole paragraph lit the first character
@@ -47,7 +50,7 @@ struct KESCMMarkRange
 		which draws nothing at all.
 		⇒ A caret occupies [fFrom, fFrom+1) so that it sorts, merges and intersects exactly like any
 		  other range - but the drawing side gives it a thin bar at the START of that character
-		  instead of inverting it (KESCMStoryMarker's GetMarkBoxes). Nothing else has to know. */
+		  instead of washing the whole of it (KESCMStoryMarker's GetMarkBoxes). Nothing else has to know. */
 	bool16		fCaret;
 
 	KESCMMarkRange() : fFrom(0), fTo(0), fCaret(kFalse) {}
@@ -76,15 +79,17 @@ inline bool KESCMMarkRangeEndsAtOrBefore(const KESCMMarkRange& r, TextIndex v)
 
 	★EMPTY RANGES ARE DROPPED, NOT WIDENED. A deletion has no width on the side it was deleted
 	from, and widening it is a decision about what the reader should see - which belongs to the
-	caller that knows it is looking at a deletion (KESCMStoryPressMarks), not to a list of numbers.
+	caller that knows it is looking at a deletion (KESCMStoryMarkBuild), not to a list of numbers.
 	★That caller's answer since 2026-08-22 is KESCMMarkRange::Caret - see below for why a caret is
 	carried through here rather than being fused away.
 
-	★★CARETS ARE KEPT APART FROM THE FUSING, and there are two reasons, both about correctness:
+	★★CARETS ARE KEPT APART FROM THE FUSING, and there are two reasons:
 	  ① fusing would lose the flag - a caret swallowed into a neighbouring stretch would come out
-	    the other side as an ordinary inverted character, which is the very thing it replaced;
-	  ② a caret that sits INSIDE a stretch is dropped, because that place is already lit and
-	    Difference blending inverts twice = not at all (the hole this whole file exists to prevent).
+	    the other side as an ordinary marked character, which is the very thing it replaced;
+	  ② a caret that sits INSIDE a stretch is dropped, because that place is already lit. ⚠This
+	    was correctness while the mark inverted (a second pass over the same pixels cancelled the
+	    first and left a hole); with the wash of 2026-08-24 it is a bar drawn over ground that is
+	    already the same colour - invisible rather than wrong. Dropping it stays right either way.
 	  ⇒ What comes out is still sorted and still non-overlapping, so the binary searches below are
 	    unaffected and every existing test still holds.
 

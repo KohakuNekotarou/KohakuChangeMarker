@@ -58,6 +58,9 @@
 #include "GraphicsID.h"	// IID_IDRWEVTHANDLER (the comparison marks' draw service - the whole point of the model half)
 #include "GenericID.h"	// IID_IADORNMENTSHAPE (GenericID.h:279) - the adornment route for the same marks
 #include "XPID.h"	// IID_IADORNMENTFLATTENERUSAGE (XPID.h:513) - how the adornment declares its transparency
+#include "TextID.h"	// kGlobalTextAdornmentServiceImpl / IID_IGLOBALTEXTADORNMENT - the Story mode's marks
+					// (★moved here from the UI half on 2026-08-23; IID_IIDLETASK for their timer is
+					//  already in ShuksanID.h above)
 					// to the flattener. This is the whole reason the adornment route exists: without it,
 					// a translucent ring goes solid in PDF 1.3. Declaring is necessary but NOT sufficient -
 					// nobody asks unless the document is on IXPManager's item-has-transparency list, which
@@ -331,6 +334,48 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 		}
 	},
 
+	// The Story mode's marks: a coloured wash under the changed characters themselves.
+	// ★★A GLOBAL TEXT ADORNMENT - it is drawn ON the characters by the text engine, which hands it
+	//   the wax run, so it follows vertical text and rotated frames for free and touches no document
+	//   data at all (nothing is attached, nothing is saved, no recomposition). Implementation:
+	//   KESCMStoryMarker.cpp; what it should be lighting up: KESCMStoryMarkBuild.cpp.
+	// ★Two interfaces, and only one of them is ours: the API already ships the provider for this
+	//   service (kGlobalTextAdornmentServiceImpl, TextID.h, service kGlobalTextAdornmentService).
+	//   The same pair as the product's dynamic spelling squiggle (SpellPanelClass.fr:768-776).
+	// ⚠kInvalidClass as the parent: this boss is not a widget or a page item, it exists only to be
+	//   found in the service registry - same as the draw-event service boss above.
+	//
+	// ★★★MOVED HERE FROM THE UI PLUG-IN ON 2026-08-23 (it was kKCMUIPrefix + 30), so that the marks
+	//   can be printed and exported. **The UI's File > Export > PDF runs in the background and a
+	//   kUIPlugIn is never handed the drawing** (2026-08-12, measured, no warning), so no guard on
+	//   the UI side could have got them into an exported PDF.
+	// ★★AND IT NEEDS NO STARTUP SERVICE OF ITS OWN, unlike the page item adornment above: a service
+	//   is resolved by the registry separately in every execution context, background threads
+	//   included. That is exactly the contrast kKESCMRingAdornmentStartupBoss is documented against.
+	Class
+	{
+		kKESCMStoryMarkerBoss,
+		kInvalidClass,
+		{
+			IID_IK2SERVICEPROVIDER, kGlobalTextAdornmentServiceImpl,
+			IID_IGLOBALTEXTADORNMENT, kKESCMStoryMarkerAdornmentImpl,
+		}
+	},
+
+	// The one-shot timer that takes the JUMP's flash away again about a second later (the standing
+	// marks have no clock - a toggle or the button takes those down).
+	// ★An idle task rather than a callback timer - the reason is in KESCMStoryMarkerExpiry.h.
+	// ★Moved here with the marker above (it was kKCMUIPrefix + 31): the marker starts and stops this
+	//   timer, so leaving it on the UI side would have made the model depend on the UI.
+	Class
+	{
+		kKESCMStoryMarkerExpiryBoss,
+		kInvalidClass,
+		{
+			IID_IIDLETASK, kKESCMStoryMarkerExpiryImpl,
+		}
+	},
+
 	// The boundary the UI goes through to reach the comparison engine (2026-08-13, Stage 1 Task 11).
 	//
 	// Once the model and the UI are separate plug-ins, a free function declared in a shared header
@@ -356,6 +401,8 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 			IID_IKESCMPAGEFLAGSFACADE, kKESCMPageFlagsFacadeImpl,
 			IID_IKESCMSTORYEDITSFACADE, kKESCMStoryEditsFacadeImpl,
 			IID_IKESCMBOOKFACADE, kKESCMBookFacadeImpl,
+			// ★The sixth, added 2026-08-23 when the Story mode's marks moved to this side.
+			IID_IKESCMSTORYMARKFACADE, kKESCMStoryMarkFacadeImpl,
 		}
 	},
 
