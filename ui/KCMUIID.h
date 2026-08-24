@@ -573,6 +573,11 @@ DECLARE_PMID(kWidgetIDSpace, kKESCMBookRowStateWidgetID, kKCMUIPrefix + 49)	// �
 #define kKESCMSourceLabelKey	kKESCMStringPrefix "kKESCMSourceLabelKey"	// パネルの "Source:" ラベル。リテラル "Source:" は日本語ロケールで「スタイルソース :」に化けるため自前キーで持つ
 #define kKESCMStartButtonKey	kKESCMStringPrefix "kKESCMStartButtonKey"	// フライアウト「Start / Stop」項目の既定メニュー名(未開始=Start)。表示時は UpdateActionStates が arm 状態で Start↔Stop に動的差し替え(旧トグルボタンのキャプションキーを流用)
 #define kKESCMPrintCheckKey		kKESCMStringPrefix "kKESCMPrintCheckKey"	// フライアウト「Print comparison marks」トグルのメニュー名(旧パネルチェックボックスのキャプションキーを流用)
+// ★「Print comparison marks」を **ON にしたときだけ**出す告知アラートの本文(2026-08-24 ユーザー指示)。
+//   ⚠**全ロケール英語**＝KESCMLoc の実行時切替には載せない(指示が「英語で」)。∴日本語側の対は無い。
+//   ⚠**出す場所は UI 側の DoAction だけ**＝トグルの実体 KESCMTogglePrintMarks() は model 側にあり、
+//     パネル設定の起動時復元(KESCMPanelState)も同じ設定関数を通る。そちらに置くと**起動のたびに出る**。
+#define kKESCMPrintMarksOnKey	kKESCMStringPrefix "kKESCMPrintMarksOnKey"
 #define kKESCMOpacity25Key		kKESCMStringPrefix "kKESCMOpacity25Key"	// サブメニュー「Marks opacity」内の子項目名(="25%")
 #define kKESCMOpacity75Key		kKESCMStringPrefix "kKESCMOpacity75Key"	// サブメニュー「Marks opacity」内の子項目名(="75%")
 #define kKESCMColorRedKey		kKESCMStringPrefix "kKESCMColorRedKey"	// サブメニュー「Mark colour」内の子項目名(="Red")

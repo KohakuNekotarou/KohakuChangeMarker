@@ -83,6 +83,9 @@ resource StringTable (kSDKDefStringsResourceID + index_enUS)
                 kKESCMSourceLabelKey,			"Source:",
                 kKESCMStartButtonKey,			"Start",
                 kKESCMPrintCheckKey,			"Print comparison marks",
+                // An alert, shown every time the toggle above is switched ON (never when it is
+                // switched OFF). English in every locale - see the note on the key in KCMUIID.h.
+                kKESCMPrintMarksOnKey,			"Comparison marks will now appear in print and in exported PDF files.",
                 kKESCMOpacity25Key,				"25%",
                 kKESCMOpacity75Key,				"75%",
                 kKESCMColorRedKey,				"Red",

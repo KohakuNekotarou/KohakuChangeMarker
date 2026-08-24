@@ -177,6 +177,25 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 			//   ⚠この case だけ長らく Refresh を呼んでいなかった＝呼んでいる下の4つ（opacity 2つ・
 			//     Show Src/Tgt）と揃った。
 			KESCMStoryMarksRefresh();
+			// ★2026-08-24 ユーザー指示＝**ON にしたときだけ**「印刷と PDF に出る」と知らせる。
+			//   OFF は告知しない（元に戻すだけで、出力に何かが増えることは無いため）。
+			//   ⚠**Refresh の後に出す**＝ModalAlert は画面を止めるので、先に描き直しを頼んでおけば
+			//     アラートの後ろで既にマークが正しい姿になっている。
+			//   ⚠**トグル後の実際の値を読む**（`!GetPrintMarks()` を自分で計算しない）＝同じ判断を
+			//     2か所に置かない。model 側が何かの事情で反転しなければアラートも出ない、が正しい。
+			if (Utils<IKESCMCompareFacade>()->GetPrintMarks())
+			{
+				CAlert::ModalAlert
+				(
+					// 文字列キーを渡す(CAlert が翻訳する)＝About と同じ形。全ロケール英語。
+					PMString(kKESCMPrintMarksOnKey),
+					kOKString,					// OK button
+					kNullString,				// No second button
+					kNullString,				// No third button
+					1,							// Set OK button to default
+					CAlert::eInformationIcon	// Information icon
+				);
+			}
 			break;
 
 		// フライアウトの「Marks opacity 25% / 75%」(ラジオ風): 選んだ方の不透明度に設定する。
