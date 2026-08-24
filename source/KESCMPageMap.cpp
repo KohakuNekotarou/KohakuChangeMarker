@@ -129,6 +129,15 @@ bool16 KESCMPageMapReadSelection(IDataBase*& outDB, std::vector<UID>& outPages, 
 	//  ★見直すときの形は決まっている＝**Task 4B / 9B と同じ「観測は UI・方針は model」**
 	//    ＝UI が選択を取り、model は UIDList を引数で受け取る。
 	UIDList sel(db);
+	// ⚠★★2026-08-24 実測: **`[なし]`（マスターなしの行）を選ぶと、選択は空になり
+	//   `GetSelectedPages` が「現在のページ」へフォールバックする**。その結果 KESCM は
+	//   「そのページが選ばれた」と解釈し、**選んでいないページに✓が付く**
+	//   （`[なし]` 選択のまま Check を実行したらページ1に✓が付いた＝実機で確認）。
+	//   ★**第3引数を kFalse にしても直らない。むしろ広がる**（試して撤回した）＝
+	//     kFalse は「現在の**スプレッドの全ページ**を使う」で、Register まで有効になった。
+	//   ⚠ヘッダーの契約は「kTrue = パネルが**表示されていない**ときだけ現在ページを使う」だが、
+	//     実装は「**選択が空のときのフォールバック**」としても働いている＝契約から読めない。
+	//   ⇒ **`[なし]` を見分けるには、この API 以外の口が要る**（未解決）。
 	Utils<ILayoutUIUtils>()->GetSelectedPages(sel, includeMasters, kTrue /*currentPageOnly*/, kTrue /*pagesOnly*/);
 
 	// 突合相手は「文書の全ページ」なので set で引く(上の KESCMVecContains のコメント参照)。

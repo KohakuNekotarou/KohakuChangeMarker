@@ -32,6 +32,24 @@ class IControlView;
 // KESCMChangeNav の Pages パネル連動スクロールが共用)。実体は KESCMThumbnailRefresh.cpp。
 IControlView* KESCMGetVisiblePagesPanel();
 
+// ★★★2026-08-24 新設: **Pages パネルの選択に「実ページ」が1枚も無いか**(＝`[なし]` の行だけを
+//   選んでいるか)。真のときページ向けの項目(KCM: Check / Register / Refresh)は出さない。
+//
+// なぜ要るか(実機で確定): `[なし]`(マスターなし)の行には実ページが無いため、
+// **`ILayoutUIUtils::GetSelectedPages` は「現在のページ」へフォールバックする**。KESCM からは
+// 「そのページが選ばれた」としか見えず、**`[なし]` を選んでいるのにページ1に✓が付く**という
+// 挙動になっていた（2026-08-24 にユーザー指摘 → 実機で再現・確認）。
+// ⚠**`GetSelectedPages` の第3引数(bCurrentPageOnly)では防げない**。kFalse にするとフォールバックが
+//   「現在スプレッドの全ページ」へ広がって悪化する(試して撤回済み)。
+//
+// ★どうやって見分けるか＝**Pages パネル自身が持つ UID リスト**(`IUIDListControlData`。
+//   `kPagesPanelWidgetBoss` の一部＝実装は `kPagesPanelUIDListControlDataImpl`)を読む。
+//   **`[なし]` を選ぶと len=1・UID=`kInvalidUID`(0) が入る**（実測。対照＝ページ1:240 /
+//   ページ3:262 / マスター:252）。⇒ 本体は `[なし]` を「無効な UID」として保持している。
+// ⚠`IUIDListControlData` のメソッドは名前に `___` が付く(Adobe の内部用マーク)。**読み取りだけ**に使う。
+// ★`[なし]` と実ページを同時に選んだ場合は kFalse＝実ページ側に効く(巻き添えにしない)。
+bool16 KESCMPagesPanelSelectionHasNoRealPage();
+
 // db(比較対象文書)の Pages パネルサムネイルの再生成を試みる。パネルが隠れていても画像キャッシュの
 // Purge だけは試す。安全に何度でも呼べる。
 //   redrawNow(既定 kTrue): kFalse なら Purge だけ行い ForceRedraw をスキップする。Target/Source の

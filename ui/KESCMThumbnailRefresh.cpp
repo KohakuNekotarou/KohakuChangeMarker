@@ -49,6 +49,7 @@
 #include "IDataBase.h"
 #include "IWorkspace.h"
 #include "IImageCacheMgr.h"
+#include "IUIDListControlData.h"	// ★Pages パネル自身が持つ選択 UID リスト(`[なし]` の判別。2026-08-24)
 
 #include "PagesPanelID.h"		// kPagesPanelWidgetID / kLayoutPagesSubPanelWidgetID / kMasterPagesSubPanelWidgetID
 #include "ImageID.h"			// IID_IIMAGECACHEMGR
@@ -121,6 +122,28 @@ IControlView* KESCMGetVisiblePagesPanel()
 	if (panelMgr == nil)
 		return nil;
 	return panelMgr->GetVisiblePanel(kPagesPanelWidgetID);
+}
+
+// ★2026-08-24 新設: Pages パネルの選択に実ページが1枚も無いか(＝`[なし]` の行だけ)。理由と実測は宣言側。
+bool16 KESCMPagesPanelSelectionHasNoRealPage()
+{
+	IControlView* panel = KESCMGetVisiblePagesPanel();
+	if (panel == nil)
+		return kFalse;		// パネルが無い＝この判定は使えない。従来どおりに任せる
+	InterfacePtr<IUIDListControlData> uidList(static_cast<IPMUnknown*>(panel), IID_IUIDLISTCONTROLDATA);
+	if (uidList == nil)
+		return kFalse;		// 取れない＝判定できないので邪魔をしない
+
+	const int32 n = uidList->Length___();
+	if (n <= 0)
+		return kFalse;		// 空は「選択なし」＝従来の判定に任せる(ここで無効化はしない)
+
+	for (int32 i = 0; i < n; ++i)
+	{
+		if (uidList->GetUID___(i) != kInvalidUID)
+			return kFalse;	// 実ページが1枚でもあれば、そちらに効かせる
+	}
+	return kTrue;			// 全部 kInvalidUID ＝ `[なし]` の行だけを選んでいる
 }
 
 // ③ Pages パネルが表示されていれば、その場で再描画させて(Purge 済みの)サムネイルを作り直させる。

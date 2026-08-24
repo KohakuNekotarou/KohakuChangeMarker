@@ -571,13 +571,19 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 		// ページパネルのページ右クリック「KCM: Register as Added/Removed Pages」トグル。
 		// 選択ページを「比較相手なし」として登録/解除する(実体は KESCMPageMap.cpp。このステップでは
 		// 登録の保持とチェック表示まで。比較の除外対応表への反映は次ステップ)。
+		// ⚠★★2026-08-24: `[なし]` の行だけを選んでいるときは何もしない(理由は UpdateActionStates 側の
+		//   ガードと同じ＝**メニューからは出さないが、ショートカット割り当ての口が別に在る**ので実行側にも要る)。
 		case kKESCMPageMapToggleActionID:
+			if (KESCMPagesPanelSelectionHasNoRealPage())
+				break;
 			Utils<IKESCMPageFlagsFacade>()->ToggleRegisterForSelection();
 			break;
 
 		// ページパネルのページ右クリック「KCM: Check」トグル。選択ページに✓印を付け外しする
 		// (実体は KESCMPageCheck.cpp。✓の描画は KESCMDrawEventHandler の isThumb 分岐)。
 		case kKESCMPageCheckToggleActionID:
+			if (KESCMPagesPanelSelectionHasNoRealPage())
+				break;		// ⚠上と同じ理由
 			Utils<IKESCMPageFlagsFacade>()->ToggleCheckForSelection();
 			break;
 
@@ -586,6 +592,8 @@ void KESCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, G
 		// 実体は KESCMPeek.cpp。結果をステータス行に短く出す。
 		case kKESCMPageRefreshCompareActionID:
 		{
+			if (KESCMPagesPanelSelectionHasNoRealPage())
+				break;		// ⚠`[なし]` の行だけの選択では走らせない(上の2つと同じ理由)
 			int32 nPages = 0, nChanged = 0, nFailed = 0;
 			bool16 wasCancelled = kFalse;
 			if (Utils<IKESCMCompareFacade>()->RefreshSelectedPages(&nPages, &nChanged, &wasCancelled, &nFailed))
@@ -708,6 +716,23 @@ void KESCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionSta
 	for (int32 i = 0; i < listToUpdate->Length(); i++)
 	{
 		const ActionID action = listToUpdate->GetNthAction(i);
+
+		// ★★★2026-08-24: **`[なし]`(マスターなし)の行だけを選んでいるときは、ページ向けの3項目を出さない。**
+		//   `[なし]` には実ページが無いので `GetSelectedPages` が「現在のページ」へフォールバックし、
+		//   そのままだと**選んでいないページに✓が付く**(実機で再現・ユーザー指摘)。
+		//   ★判定は1本に集約している＝`KESCMPagesPanelSelectionHasNoRealPage()`(理由と実測は宣言側)。
+		//   ⚠**実行側(DoAction)にも同じガードが要る**＝ActionID にはショートカットを割り当てられるので、
+		//     メニューを通らない入口が在る([[one-question-one-place]] の「同じ判断を2か所で聞かない」は
+		//     **判定関数を1本にする**ことで守り、呼ぶ場所が2つあるのは入口が2つあるから)。
+		if ((action == kKESCMPageMapToggleActionID ||
+		     action == kKESCMPageCheckToggleActionID ||
+		     action == kKESCMPageRefreshCompareActionID) &&
+		    KESCMPagesPanelSelectionHasNoRealPage())
+		{
+			listToUpdate->SetNthActionState(i, kDisabled_Unselected);
+			continue;
+		}
+
 		if (action == kKESCMPopupStartStopActionID)
 		{
 			// arm 状態でメニュー名を出し分け(arm 中=Stop / 未 arm=Start)。
