@@ -37,6 +37,8 @@
 
 // Project includes:
 #include "IKESCMCompareFacade.h"	// IsDocDBOpen - never repaint a document that has gone
+#include "KESCMConstants.h"			// kKESCMRingR/G/B - the mark colour, shared with the Pixel mode's frames
+#include "KESCMDrawEventHandler.h"	// KESCMSetOutputColor - screen in RGB, paper in CMYK (2026-08-24)
 #include "KESCMID.h"				// ★2026-08-23: moved here from the UI plug-in's KCMUIID.h
 #include "KESCMStoryMarkBuild.h"	// KESCMStoryMarkPrintAllowedFor - may THIS document go on paper
 #include "KESCMStoryMarker.h"
@@ -398,14 +400,26 @@ public:
 	KESCMStoryMarkerAdornment(IPMUnknown* boss) : CPMUnknown<IGlobalTextAdornment>(boss) {}
 	~KESCMStoryMarkerAdornment() {}
 
-	/** FOREGROUND, unlike a highlight. The mark inverts what is under it, and what the reader has
-		to keep seeing is the glyphs - so it has to be applied AFTER they are painted. (A slab of
-		colour would go in the background pass instead, which is where the product puts its H&J and
-		missing-glyph highlights, and where this would go if the inversion turns out not to work -
-		see the note in KESCMStoryMarker.h.) The named constants for Adobe's own global adornments
-		are in IGlobalTextAdornment.h:170-181. */
+	/** BACKGROUND, like a highlight - ★and the comment that used to stand here called this exactly
+		right before it happened. It said the mark was in the FOREGROUND because it inverted what was
+		under it and the glyphs had to stay visible, and added: "a slab of colour would go in the
+		background pass instead, which is where the product puts its H&J and missing-glyph
+		highlights, and where this would go if the inversion turns out not to work".
+
+		★★2026-08-24: the inversion turned out not to work on paper, and the reason had nothing to
+		do with which pass it was in. **In an exported or printed page the text is drawn last**, so a
+		foreground adornment lands under the glyphs out there anyway: the ground inverted and the
+		glyphs did not (measured: ground 255 -> 6, glyph core 0 -> 0 - black on black). Being in the
+		foreground bought nothing on paper and cost the wash its natural place.
+		⇒ Moved to the background pass, where the product's own highlights live, and the drawing
+		  became a coloured wash that the glyphs sit on top of - the one thing that reads the same on
+		  screen and on paper. See Draw() for the whole measurement.
+
+		The named constants for Adobe's own global adornments are in IGlobalTextAdornment.h:170-181;
+		the non-global ones (underline, strikethrough, paragraph shade, ruby, kenten - and the text
+		itself) are at the foot of ITextAdornment.h. */
 	virtual Text::DrawPriority GetDrawPriority()
-		{ return Text::DrawPriority(Text::kTAPassPriForeground + 0.50); }
+		{ return Text::DrawPriority(Text::kTAPassPriBackground + 0.50); }
 
 	virtual bool16 GetCheckIsActive() { return kTrue; }
 	virtual bool16 GetIsActive(const IParcelShape* parcelShape,
@@ -604,6 +618,16 @@ void KESCMStoryMarkerAdornment::Draw(GraphicsData* gd, int32 iShapeFlags, const 
 	//   word - so a background thread reading it while the main thread writes a new one could see
 	//   neither value. The copy is taken here rather than at the top so that runs which draw
 	//   nothing (the overwhelming majority) never take the lock twice.
+	// ⚠★★"FULL STRENGTH ON PAPER" WAS TRIED AND REMOVED THE SAME DAY (2026-08-24). It made sense
+	//   while the mark was an inversion, where 25% only nudged the ground and the printed page needed
+	//   the whole flip to be legible at all. A wash is the opposite: the strength IS the colour, and
+	//   at 1.0 it prints as solid red over every changed word - readable, but shouting.
+	//   ⇒ The panel's choice is honoured everywhere. What the reader picked for the screen is what
+	//     comes out of the printer, which is the same promise the Pixel mode's frames make
+	//     (KESCMDrawEventHandler::SelectedMarkOpacity is used by screen and output alike).
+	//   ⚠AND IT WAS MEASURED WRONG AT FIRST: a PNG export counts as PRINTING (kPrinting is set), so
+	//     the "screen" shots taken with exportFile came out at 1.0 too and both radio settings looked
+	//     identical. A PNG is not the screen.
 	PMReal opacity(1.0);
 	{
 		KESCMMarkStateLock lock(KESCMMarkStateMutex());
@@ -616,42 +640,42 @@ void KESCMStoryMarkerAdornment::Draw(GraphicsData* gd, int32 iShapeFlags, const 
 
 	AutoGSave autoGSave(gPort);
 
-	// ★★INVERT, THE WAY KBS DOES IT. Difference blending against white flips whatever is
-	//   underneath, so the mark is visible on any background - white paper, a coloured box, an
-	//   image - and the glyphs stay readable because they are inverted along with the paper rather
-	//   than covered by a slab (KBSDrawEventHandler.cpp:533-546, which also records that a plain
-	//   red rectangle and IRasterPort::SetXORMode were both tried first and rejected).
-	gPort->setblendingmode(kPMBlendDifference);
+	// ★★★A COLOURED WASH BEHIND THE TEXT, NOT AN INVERSION (2026-08-24, after measuring the whole
+	//   road). Difference blending was the original design and it is right for the screen: it shows
+	//   through any ground and leaves the glyphs readable, because they invert along with the paper
+	//   instead of being covered by it. It cannot survive being printed, and the reason is neither
+	//   the blend nor the colour space:
+	//   ⇒ **In an exported or printed page the TEXT IS DRAWN LAST.** A text adornment painting in the
+	//     foreground pass lands UNDER the glyphs out there, so the ground inverts and the glyphs do
+	//     not - measured 2026-08-24: ground 255 -> 6, glyph core 0 -> 0. Black on black. The words
+	//     that changed become the only words that cannot be read, which is the opposite of the point.
+	//   ⚠Moving the paint to the background pass does not help: the glyphs were always on top of it.
+	//   ⚠Nor does painting in CMYK's maximum (0,0,0,1) instead of RGB's white - that corrects WHICH
+	//     grounds invert, and never touches the glyphs. Both were built and measured before this.
+	//   ⇒ So paint a wash BEHIND the text and let the glyphs keep their own colour. That is what the
+	//     product's own H&J highlight does, and it is the one drawing that reads the same on screen
+	//     and on paper.
+	// ★NO TRANSPARENCY IS USED ANY MORE - the strength is mixed into the colour rather than asked for
+	//   with setopacity. Three problems leave together: the flattener has nothing to flatten, the
+	//   frame no longer has to declare transparency for the mark to survive, and PDF 1.3 behaves
+	//   exactly like 1.4.
+	// ★HOW STRONG - the panel's "Marks opacity 25% / 75%", mixed from paper white towards the mark
+	//   colour. The jump's own mark passes 1.0, so it lands at the full colour.
+	const int32 pct = ::ToInt32(opacity * PMReal(100.0));
+	const int32 mix = (pct < 0) ? 0 : ((pct > 100) ? 100 : pct);
+	const uint8 wr = (uint8)(255 - (255 - kKESCMRingR) * mix / 100);
+	const uint8 wg = (uint8)(255 - (255 - kKESCMRingG) * mix / 100);
+	const uint8 wb = (uint8)(255 - (255 - kKESCMRingB) * mix / 100);
 
-	// ★HOW MUCH OF THE INVERSION TO APPLY - the panel's "Marks opacity 25% / 75%", which the press
-	//   reads once and hands over (KESCMStoryMarkBuild). The jump's own mark passes 1.0, so it
-	//   still lands at full strength.
-	// ★★★AND IT WORKS ON SCREEN, WHERE THE EXPORT PATH DOES NOT (measured 2026-08-22). setopacity
-	//   is silently ignored by a global text adornment when the drawing is going to PDF - KT asked
-	//   three different ways on 2026-08-19 and all three came out pixel-identical - and that was
-	//   the only measurement anyone had. It was of the EXPORT path. This mark was screen-only by
-	//   GetIsActive, and switching the panel between 25% and 75% visibly changes how strong the
-	//   inversion is (confirmed on the running application).
-	//   ⇒ The line is not "opacity does nothing on a text adornment" but "it does not survive being
-	//     written out".
-	// ★★★AND THAT MOMENT HAS ARRIVED (2026-08-23). The mark now goes on paper and into exported PDFs
-	//   when the toggles say so, so the export path's behaviour has stopped being academic:
-	//   **the 25% / 75% choice is expected to be ignored out there and to print at full strength.**
-	//   ⬜The PRINT path (as against export) has not been measured at all - that is the first thing
-	//     to look at on the running application.
-	//   ★THE FALLBACK IS WRITTEN AND WAITING, and it is why the note above was kept rather than
-	//     deleted: with Difference, painting (a,a,a) lands on 1-a over white and a over black, which
-	//     is where an alpha of a would have put it. ⇒ If the printed mark comes out too strong, paint
-	//     grey rather than white when forPrint is kTrue. ⚠It parts company with alpha in the
-	//     mid-tones, so it is a stand-in, not an equivalence.
-	if (opacity < PMReal(1.0))
-		gPort->setopacity(opacity, kFalse);
-
-	gPort->setrgbcolor(PMReal(1.0), PMReal(1.0), PMReal(1.0));
+	// ★SCREEN IN RGB, PAPER IN CMYK - the same helper the Pixel mode's frames call, for the same
+	//   reason: KESCM compares in CMYK, so a mark specified in RGB does not match its own frames on
+	//   output. The helper lives in KESCMDrawEventHandler.cpp and was made non-static for this.
+	KESCMSetOutputColor(gPort, wr, wg, wb, forPrint);
 
 	// ★ONE FILL PER RANGE, AND THEY CANNOT OVERLAP - the ranges were merged before they were ever
-	//   installed (KESCMStoryMarkRanges.h). Two Difference fills over the same pixels would invert
-	//   them twice and leave a hole exactly where both said "look here".
+	//   installed (KESCMStoryMarkRanges.h). ⚠With Difference an overlap punched a hole (two
+	//   inversions cancel); a flat wash would merely paint twice, but the merge is still what keeps
+	//   the drawing cheap.
 	for (std::vector<PMRect>::const_iterator b = boxes.begin(); b != boxes.end(); ++b)
 		gPort->rectfill(b->Left(), b->Top(), b->Width(), b->Height());
 

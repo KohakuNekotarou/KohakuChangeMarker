@@ -824,7 +824,9 @@ ErrorCode KESCMDrawEventHandler::MakeOrigImage(const UIDRef& targetRef, const UI
 //     素直に対応する: 赤(255,0,0)→C0 M100 Y100 K0 ／ シアン(0,255,255)→C100 M0 Y0 K0 ／
 //     緑(0,200,0)→C100 M0 Y100 K22 ／ 白→すべて0 ／ 黒→K100。
 //========================================================================================
-static void KESCMSetOutputColor(IGraphicsPort* gPort, uint8 r, uint8 g, uint8 b, bool16 useCMYK)
+// ★2026-08-24: static を外して Story のマーカーと共有する(宣言=KESCMDrawEventHandler.h)。
+//   「画面は RGB・印刷は CMYK」という上の判断を2か所に書き分けると必ずずれるため([[one-question-one-place]])。
+void KESCMSetOutputColor(IGraphicsPort* gPort, uint8 r, uint8 g, uint8 b, bool16 useCMYK)
 {
 	if (!useCMYK)
 	{

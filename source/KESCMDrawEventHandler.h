@@ -436,4 +436,13 @@ inline bool16 KESCMXInRowRects(int32 x, const std::vector<const Int32Rect*>& row
 	return kFalse;
 }
 
+class IGraphicsPort;
+
+// マークの色を gPort に設定する。★**画面は RGB・印刷/書き出しは CMYK**。
+// ★理由は実装側(KESCMDrawEventHandler.cpp)のコメントに全文がある: KESCM は**比較ラスタを CMYK で
+//   やっている**のに、マークだけ RGB という不整合だったのを揃えたもの。換算は標準式。
+// ★★2026-08-24 に static を外して公開した。Story モードのマーカー(KESCMStoryMarker.cpp)も紙に出る
+//   ようになり、同じ「画面 RGB / 印刷 CMYK」の判断が要るため。2か所に書き分けると必ずずれる。
+void KESCMSetOutputColor(IGraphicsPort* gPort, uint8 r, uint8 g, uint8 b, bool16 useCMYK);
+
 #endif // __KESCMDrawEventHandler_h__
