@@ -1,0 +1,80 @@
+﻿//========================================================================================
+//
+//  Owner: KohakuNekotarou
+//
+//  KohakuChangeMarker (KCM)
+//
+//  Book comparison: what a row of the chapter list DOES.
+//
+//  The list itself only reports. These two actions are what turn a verdict into something the user
+//  can look at:
+//    * double click  -> open that chapter (both sides)
+//    * right click   -> "Start Change Marker" - open both sides AND compare them
+//
+//  Both live here rather than in the event handler, because the handler's job is deciding WHICH
+//  click this is (that part is delicate enough on its own - see KCMBookRowEH.cpp) and this one's
+//  is deciding what a chapter row means. Keeping them apart is what lets the context menu's action
+//  and the double click share the same answer about a row.
+//
+//========================================================================================
+#ifndef __KCMBookOpen_h__
+#define __KCMBookOpen_h__
+
+#include "BaseType.h"
+
+/** Remember / read which row the context menu was popped over.
+
+    ***** A pop-up menu's action has no idea what was under the pointer. ***** The action fires
+    later, from the menu, with nothing but its ActionID - so the row has to be recorded when the
+    menu is raised and read back when the item is chosen. KBS's result rows work the same way
+    (Check All / Uncheck All act on "the row the menu was popped over").
+
+    -1 means "no row", which is what both the enabling test and the action treat as nothing to do.
+
+    ***** AND IT IS PUT BACK TO -1 WHENEVER THE ROWS CHANGE. ***** KCMBookDialogSetResult calls
+    this with -1 before it replaces the list, because the index describes the list AS IT STOOD when
+    the menu was raised. ⚠ RowAt's range check is not enough on its own: after a second comparison
+    row 0 still exists, it is simply a DIFFERENT CHAPTER - which is what made this a real bug until
+    2026-08-18 (bug recheck B-U5, second pass; the measurement and KBS's wording are at the call).
+    ★It matters because the action can be reached WITHOUT a right click, by a script firing it by
+    ActionID - the case KBS names in the same breath ("a caller that never went through the menu -
+    a script firing the action - reaches them with whatever is stored"). Both readers below still
+    range-check, as KBS's do; the reset is what stops a stale index from landing on a valid row.
+
+    ⚠ONE EXEMPTION, AND IT IS NOT AN OVERSIGHT: KCMBookDialogShutdown empties the rows and does
+    NOT call this. It runs from KCMUIStartup::Shutdown, where no menu is built and no action can
+    be dispatched, so the index has no reader left to mislead - the reason is written at that call.
+    Closing the DIALOG is not on this list at all, because closing it does not drop the rows: they
+    outlive the window on purpose, and a right-clicked row still means the chapter it named. */
+void	KCMBookSetMenuRow(int32 rowIndex);
+int32	KCMBookMenuRow();
+
+/** Can a comparison be started from this row? ★kTrue for a CHANGED chapter only
+    (user's call, 2026-08-12) - and, being changed, one that names both of its files.
+
+    The item answers "where did it change?", so it is offered only where that question has an answer:
+    a one-sided chapter has nothing to compare, NoChange would draw no marks, and Failed /
+    NotCompared were never judged. ⚠ InDesign shows no menu at all when every item in it is
+    disabled (measured), so on those rows a right click produces nothing - which is what was asked
+    for. */
+bool16	KCMBookRowCanStart(int32 rowIndex);
+
+/** Open the chapter this row is about - BOTH sides - in windows.
+
+    ★A row of this list is a statement about a PAIR ("this chapter changed"), so both halves are
+    opened (user's call, 2026-08-12). A chapter that exists on one side only has one side to open,
+    and that is not a failure. The TARGET is opened last, so it is the one left in front. */
+void	KCMBookOpenChapterForRow(int32 rowIndex);
+
+/** Open both sides of this chapter and run the document comparison on them.
+
+    Target = the target book's chapter, Source = the source book's chapter, stated explicitly rather
+    than resolved from what happens to be in front (KCMStartComparisonFor takes them as arguments
+    for this reason). ⚠ A comparison already running is STOPPED first - its marks belong to a
+    different pair of documents, and leaving them up while arming a new pair is the one state this
+    plug-in must never be in. */
+void	KCMBookStartComparisonForRow(int32 rowIndex);
+
+#endif // __KCMBookOpen_h__
+
+// End, KCMBookOpen.h.

@@ -44,19 +44,19 @@
   <ImportGroup Label="ExtensionSettings" />
   <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="PropertySheets">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
-    <Import Project="KESCMReleaseWin32.sdk.props" />
+    <Import Project="KCMReleaseWin32.sdk.props" />
   </ImportGroup>
   <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="PropertySheets">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
-    <Import Project="KESCMDebugWin32.sdk.props" />
+    <Import Project="KCMDebugWin32.sdk.props" />
   </ImportGroup>
   <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="PropertySheets">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
-    <Import Project="KESCMReleaseX64.sdk.props" />
+    <Import Project="KCMReleaseX64.sdk.props" />
   </ImportGroup>
   <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="PropertySheets">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
-    <Import Project="KESCMDebugX64.sdk.props" />
+    <Import Project="KCMDebugX64.sdk.props" />
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup>
@@ -99,7 +99,7 @@
       <Culture>0x0409</Culture>
     </ResourceCompile>
     <PreLinkEvent>
-      <Command>merge_res.cmd "$(IntDir)"  KESCM &amp; echo Deleting old resources... &amp; del /f /s "$(TargetDir)($(TargetName) Resources)\"*.idrc &gt; $(IntDir)prevDeletedResources.txt &amp;  xcopy /Q /E "$(IntDir)"*.idrc "$(TargetDir)($(TargetName) Resources)\" /Y</Command>
+      <Command>merge_res.cmd "$(IntDir)"  KCM &amp; echo Deleting old resources... &amp; del /f /s "$(TargetDir)($(TargetName) Resources)\"*.idrc &gt; $(IntDir)prevDeletedResources.txt &amp;  xcopy /Q /E "$(IntDir)"*.idrc "$(TargetDir)($(TargetName) Resources)\" /Y</Command>
     </PreLinkEvent>
     <Link>
       <AdditionalDependencies>$(MODEL_PLUGIN_LINKLIST);$(BoostThreadLib);%(AdditionalDependencies)</AdditionalDependencies>
@@ -108,7 +108,7 @@
       <ImportLibrary>$(LIB_DIR)\KohakuChangeMarker/KohakuChangeMarker.lib</ImportLibrary>
     </Link>
     <PostBuildEvent>
-      <Command>restore_res.cmd "$(IntDir)"  KESCM</Command>
+      <Command>restore_res.cmd "$(IntDir)"  KCM</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
@@ -132,7 +132,7 @@
       <Culture>0x0409</Culture>
     </ResourceCompile>
     <PreLinkEvent>
-      <Command>merge_res.cmd "$(IntDir)"  KESCM &amp; echo Deleting old resources... &amp; del /f /s "$(TargetDir)($(TargetName) Resources)\"*.idrc &gt; $(IntDir)prevDeletedResources.txt &amp;  xcopy /Q /E "$(IntDir)"*.idrc "$(TargetDir)($(TargetName) Resources)\" /Y</Command>
+      <Command>merge_res.cmd "$(IntDir)"  KCM &amp; echo Deleting old resources... &amp; del /f /s "$(TargetDir)($(TargetName) Resources)\"*.idrc &gt; $(IntDir)prevDeletedResources.txt &amp;  xcopy /Q /E "$(IntDir)"*.idrc "$(TargetDir)($(TargetName) Resources)\" /Y</Command>
     </PreLinkEvent>
     <Link>
       <AdditionalDependencies>$(MODEL_PLUGIN_LINKLIST);$(BoostThreadLib);%(AdditionalDependencies)</AdditionalDependencies>
@@ -141,7 +141,7 @@
       <ImportLibrary>$(LIB_DIR)\KohakuChangeMarker/KohakuChangeMarker.lib</ImportLibrary>
     </Link>
     <PostBuildEvent>
-      <Command>restore_res.cmd "$(IntDir)"  KESCM</Command>
+      <Command>restore_res.cmd "$(IntDir)"  KCM</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
@@ -166,7 +166,7 @@
       <Culture>0x0409</Culture>
     </ResourceCompile>
     <PreLinkEvent>
-      <Command>merge_res.cmd "$(IntDir)"  KESCM &amp; echo Deleting old resources... &amp; del /f /s "$(TargetDir)($(TargetName) Resources)\"*.idrc &gt; $(IntDir)prevDeletedResources.txt &amp;  xcopy /Q /E "$(IntDir)"*.idrc "$(TargetDir)($(TargetName) Resources)\" /Y</Command>
+      <Command>merge_res.cmd "$(IntDir)"  KCM &amp; echo Deleting old resources... &amp; del /f /s "$(TargetDir)($(TargetName) Resources)\"*.idrc &gt; $(IntDir)prevDeletedResources.txt &amp;  xcopy /Q /E "$(IntDir)"*.idrc "$(TargetDir)($(TargetName) Resources)\" /Y</Command>
     </PreLinkEvent>
     <Link>
       <AdditionalOptions>/IGNORE:4089 %(AdditionalOptions)</AdditionalOptions>
@@ -176,7 +176,7 @@
       <ImportLibrary>$(LIB_DIR)\KohakuChangeMarker/KohakuChangeMarker.lib</ImportLibrary>
     </Link>
     <PostBuildEvent>
-      <Command>restore_res.cmd "$(IntDir)"  KESCM</Command>
+      <Command>restore_res.cmd "$(IntDir)"  KCM</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -201,7 +201,7 @@
       <Culture>0x0409</Culture>
     </ResourceCompile>
     <PreLinkEvent>
-      <Command>merge_res.cmd "$(IntDir)"  KESCM &amp; echo Deleting old resources... &amp; del /f /s "$(TargetDir)($(TargetName) Resources)\"*.idrc &gt; $(IntDir)prevDeletedResources.txt &amp;  xcopy /Q /E "$(IntDir)"*.idrc "$(TargetDir)($(TargetName) Resources)\" /Y</Command>
+      <Command>merge_res.cmd "$(IntDir)"  KCM &amp; echo Deleting old resources... &amp; del /f /s "$(TargetDir)($(TargetName) Resources)\"*.idrc &gt; $(IntDir)prevDeletedResources.txt &amp;  xcopy /Q /E "$(IntDir)"*.idrc "$(TargetDir)($(TargetName) Resources)\" /Y</Command>
     </PreLinkEvent>
     <Link>
       <AdditionalOptions>/IGNORE:4089 %(AdditionalOptions)</AdditionalOptions>
@@ -211,47 +211,47 @@
       <ImportLibrary>$(LIB_DIR)\KohakuChangeMarker/KohakuChangeMarker.lib</ImportLibrary>
     </Link>
     <PostBuildEvent>
-      <Command>restore_res.cmd "$(IntDir)"  KESCM</Command>
+      <Command>restore_res.cmd "$(IntDir)"  KCM</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMBookCompare.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMBookPair.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMChangedPagesTSV.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMColorSampler.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMCore.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMDrawEventHandler.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMOversetScan.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMPageMap.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMPageCheck.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMDocUidSet.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMThreadSafety.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryStamp.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryList.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMTextDiff.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMMemXferBytes.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryXml.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryCellBases.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryDiffRun.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryMarker.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryMarkerExpiry.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryMarkBuild.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMPageNumberMarker.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMPeek.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMRingAdornment.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMHideUnchanged.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMOversetApply.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMComparisonRun.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMModelNotify.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMFacades.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMDocResponder.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMScriptProvider.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMBookCompare.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMBookPair.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMChangedPagesTSV.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMColorSampler.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMCore.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMDrawEventHandler.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMOversetScan.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMPageMap.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMPageCheck.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMDocUidSet.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMThreadSafety.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMStoryStamp.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMStoryList.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMTextDiff.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMMemXferBytes.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMStoryXml.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMStoryCellBases.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMStoryDiffRun.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMStoryMarker.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMStoryMarkerExpiry.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMStoryMarkBuild.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMPageNumberMarker.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMPeek.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMRingAdornment.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMHideUnchanged.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMOversetApply.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMComparisonRun.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMModelNotify.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMFacades.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMDocResponder.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMScriptProvider.cpp" />
     <ClCompile Include="$(id_sdk_dir)\source\public\libs\publiclib\statics\PlugInStatics.cpp" />
     <ClCompile Include="$(ID_SDK_DIR)\source\sdksamples\common\SDKPlugInEntrypoint.cpp" />
     <ClCompile Include="$(ID_SDK_DIR)\source\sdksamples\common\SDKFileHelper.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMID.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMNoStrip.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\TriggerResourceDeps.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMID.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMNoStrip.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\TriggerResourceDeps.cpp" />
     <ClCompile Include="$(id_sdk_dir)\source\precomp\msvc\VCPlugInHeaders.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Create</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Create</PrecompiledHeader>
@@ -260,98 +260,98 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMBookCompare.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMBookPair.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMBookResult.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMChangedPagesTSV.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMColorSampler.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMConstants.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMCore.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMDrawEventHandler.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMOversetScan.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMID.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMBoundaryID.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMLoc.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMFactoryList.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMPageMap.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMPageCheck.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMDocUidSet.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMThreadSafety.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryStamp.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMSnippetText.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryList.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryRowFilter.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMTextDiff.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMMemXferBytes.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryXml.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryCellBases.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryDiffRun.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMPageNumberMarker.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMPeek.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMRingAdornment.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMHideUnchanged.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMOversetApply.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMComparisonRun.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMModelNotify.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\IKESCMCompareFacade.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\IKESCMMarkData.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\IKESCMPageFlagsFacade.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\IKESCMStoryEditsFacade.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\IKESCMStoryMarkFacade.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryMarker.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryMarkerExpiry.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryMarkRanges.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryMarkDocs.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryMarkBuild.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\IKESCMBookFacade.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMScriptingDefs.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMBookCompare.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMBookPair.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMBookResult.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMChangedPagesTSV.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMColorSampler.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMConstants.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMCore.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMDrawEventHandler.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMOversetScan.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMID.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMBoundaryID.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMLoc.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMFactoryList.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPageMap.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPageCheck.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMDocUidSet.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMThreadSafety.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMStoryStamp.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMSnippetText.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMStoryList.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMStoryRowFilter.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMTextDiff.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMMemXferBytes.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMStoryXml.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMStoryCellBases.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMStoryDiffRun.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPageNumberMarker.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPeek.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMRingAdornment.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMHideUnchanged.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMOversetApply.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMComparisonRun.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMModelNotify.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\IKCMCompareFacade.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\IKCMMarkData.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\IKCMPageFlagsFacade.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\IKCMStoryEditsFacade.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\IKCMStoryMarkFacade.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMStoryMarker.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMStoryMarkerExpiry.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMStoryMarkRanges.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMStoryMarkDocs.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMStoryMarkBuild.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\IKCMBookFacade.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMScriptingDefs.h" />
   </ItemGroup>
   <ItemGroup>
-    <CustomBuild Include="..\..\..\source\sdksamples\KESCM\source\KESCM.fr">
+    <CustomBuild Include="..\..\..\source\sdksamples\KCM\source\KCM.fr">
       <Command Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
-        odfrc $(ODFRC_ADDITIONAL_FLAGS) "%(FullPath)" -o "$(IntDir)%(Filename).fres" -d DEBUG  -i "..\..\..\source\sdksamples\KESCM\source" @"KohakuChangeMarkerodfrc.rsp"
+        odfrc $(ODFRC_ADDITIONAL_FLAGS) "%(FullPath)" -o "$(IntDir)%(Filename).fres" -d DEBUG  -i "..\..\..\source\sdksamples\KCM\source" @"KohakuChangeMarkerodfrc.rsp"
       </Command>
       <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">$(IntDir)TriggerResourceDeps.obj;%(AdditionalInputs)</AdditionalInputs>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">$(IntDir)%(Filename).fres;%(Outputs)</Outputs>
       <Command Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-        odfrc $(ODFRC_ADDITIONAL_FLAGS) "%(FullPath)" -o "$(IntDir)%(Filename).fres" -d DEBUG  -i "..\..\..\source\sdksamples\KESCM\source" @"KohakuChangeMarkerodfrc.rsp"
+        odfrc $(ODFRC_ADDITIONAL_FLAGS) "%(FullPath)" -o "$(IntDir)%(Filename).fres" -d DEBUG  -i "..\..\..\source\sdksamples\KCM\source" @"KohakuChangeMarkerodfrc.rsp"
       </Command>
       <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(IntDir)TriggerResourceDeps.obj;%(AdditionalInputs)</AdditionalInputs>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(IntDir)%(Filename).fres;%(Outputs)</Outputs>
       <Command Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
-        odfrc $(ODFRC_ADDITIONAL_FLAGS) "%(FullPath)" -o "$(IntDir)%(Filename).fres" -i "..\..\..\source\sdksamples\KESCM\source" @"KohakuChangeMarkerodfrc.rsp"
+        odfrc $(ODFRC_ADDITIONAL_FLAGS) "%(FullPath)" -o "$(IntDir)%(Filename).fres" -i "..\..\..\source\sdksamples\KCM\source" @"KohakuChangeMarkerodfrc.rsp"
       </Command>
       <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">$(IntDir)TriggerResourceDeps.obj;%(AdditionalInputs)</AdditionalInputs>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">$(IntDir)%(Filename).fres;%(Outputs)</Outputs>
       <Command Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
-        odfrc $(ODFRC_ADDITIONAL_FLAGS) "%(FullPath)" -o "$(IntDir)%(Filename).fres" -i "..\..\..\source\sdksamples\KESCM\source" @"KohakuChangeMarkerodfrc.rsp"
+        odfrc $(ODFRC_ADDITIONAL_FLAGS) "%(FullPath)" -o "$(IntDir)%(Filename).fres" -i "..\..\..\source\sdksamples\KCM\source" @"KohakuChangeMarkerodfrc.rsp"
       </Command>
       <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(IntDir)TriggerResourceDeps.obj;%(AdditionalInputs)</AdditionalInputs>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(IntDir)%(Filename).fres;%(Outputs)</Outputs>
     </CustomBuild>
   </ItemGroup>
   <ItemGroup>
-    <ResourceCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCM.rc">
+    <ResourceCompile Include="..\..\..\source\sdksamples\KCM\source\KCM.rc">
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">_CRT_SECURE_NO_DEPRECATE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <Culture Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">0x0809</Culture>
-      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">..\..\..\source\sdksamples\KESCM\source;..\..\..\source\sdksamples\KESCM\source;$(ID_SDK_DIR)\source\precomp\msvc;$(ID_SDK_DIR)\source\public\includes;$(ID_SDK_DIR)\source\sdksamples\common;%(AdditionalIncludeDirectories)
+      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">..\..\..\source\sdksamples\KCM\source;..\..\..\source\sdksamples\KCM\source;$(ID_SDK_DIR)\source\precomp\msvc;$(ID_SDK_DIR)\source\public\includes;$(ID_SDK_DIR)\source\sdksamples\common;%(AdditionalIncludeDirectories)
       </AdditionalIncludeDirectories>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">_CRT_SECURE_NO_DEPRECATE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <Culture Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">0x0809</Culture>
-      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">..\..\..\source\sdksamples\KESCM\source;..\..\..\source\sdksamples\KESCM\source;$(ID_SDK_DIR)\source\precomp\msvc;$(ID_SDK_DIR)\source\public\includes;$(ID_SDK_DIR)\source\sdksamples\common;%(AdditionalIncludeDirectories)
+      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">..\..\..\source\sdksamples\KCM\source;..\..\..\source\sdksamples\KCM\source;$(ID_SDK_DIR)\source\precomp\msvc;$(ID_SDK_DIR)\source\public\includes;$(ID_SDK_DIR)\source\sdksamples\common;%(AdditionalIncludeDirectories)
       </AdditionalIncludeDirectories>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">_CRT_SECURE_NO_DEPRECATE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <Culture Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">0x0809</Culture>
-      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">..\..\..\source\sdksamples\KESCM\source;..\..\..\source\sdksamples\KESCM\source;$(ID_SDK_DIR)\source\precomp\msvc;$(ID_SDK_DIR)\source\public\includes;$(ID_SDK_DIR)\source\sdksamples\common;%(AdditionalIncludeDirectories)
+      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">..\..\..\source\sdksamples\KCM\source;..\..\..\source\sdksamples\KCM\source;$(ID_SDK_DIR)\source\precomp\msvc;$(ID_SDK_DIR)\source\public\includes;$(ID_SDK_DIR)\source\sdksamples\common;%(AdditionalIncludeDirectories)
       </AdditionalIncludeDirectories>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Release|x64'">_CRT_SECURE_NO_DEPRECATE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <Culture Condition="'$(Configuration)|$(Platform)'=='Release|x64'">0x0809</Culture>
-      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release|x64'">..\..\..\source\sdksamples\KESCM\source;..\..\..\source\sdksamples\KESCM\source;$(ID_SDK_DIR)\source\precomp\msvc;$(ID_SDK_DIR)\source\public\includes;$(ID_SDK_DIR)\source\sdksamples\common;%(AdditionalIncludeDirectories)
+      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release|x64'">..\..\..\source\sdksamples\KCM\source;..\..\..\source\sdksamples\KCM\source;$(ID_SDK_DIR)\source\precomp\msvc;$(ID_SDK_DIR)\source\public\includes;$(ID_SDK_DIR)\source\sdksamples\common;%(AdditionalIncludeDirectories)
       </AdditionalIncludeDirectories>
     </ResourceCompile>
   </ItemGroup>
   <ItemGroup>
-    <None Include="..\..\..\source\sdksamples\KESCM\source\KESCM_enUS.fr" />
+    <None Include="..\..\..\source\sdksamples\KCM\source\KCM_enUS.fr" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets" />

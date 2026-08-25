@@ -1,0 +1,86 @@
+//========================================================================================
+//  
+//  $File: $
+//  
+//  Owner: 
+//  
+//  $Author: $
+//  
+//  $DateTime: $
+//  
+//  $Revision: $
+//  
+//  $Change: $
+//  
+//  Copyright 1997-2012 Adobe Systems Incorporated. All rights reserved.
+//  
+//  NOTICE:  Adobe permits you to use, modify, and distribute this file in accordance 
+//  with the terms of the Adobe license agreement accompanying it.  If you have received
+//  this file from a source other than Adobe, then your use, modification, or 
+//  distribution of it requires the prior written permission of Adobe.
+//  
+//========================================================================================
+
+// ***** READ THIS FILE AS CP1252, NOT AS THE MACHINE'S ANSI CODE PAGE. ***** (2026-08-15.)
+//
+// Without this line the copyright sign comes out as a halfwidth katakana on a Japanese Windows.
+// The SDK writes the sign as a raw byte - CC21BuildNumber.h:107 is
+//     #define kCC21ShortCopyRightStr "\xa9 1999-2025 Adobe. All rights reserved."
+// - and 0xA9 is the copyright sign only in CP1252. rc.exe defaults to the SYSTEM's ANSI code page,
+// which on this machine is CP932, where 0xA9 is U+FF69 (halfwidth katakana small U). So this
+// .pln's LegalCopyright showed that katakana where InDesign's own binaries, built on an English
+// system, show the copyright sign - measured on both, 2026-08-11 (on KBS, which shares this file's
+// template and was fixed first).
+//
+// *It affects nothing but the string Windows shows under file Properties > Details. It is here
+//  because this plug-in is submitted to Adobe Exchange, and because the SDK's own text was never
+//  meant to say that.
+// *Do not put non-ASCII characters in this file, comments included: this pragma tells rc.exe how to
+//  read the WHOLE file.
+// *The SDK's own sample .rc template does NOT carry this line - over twenty of them are identical
+//  down to the line numbers and none has it. The ones that do are on the product side:
+//  Public.rc:47, spellpanel/SpellPanel.rc:54, buttonui .../AppearancePanelDialogs.rc:45, plus the
+//  candlechartui sample (CdlChtUI.rc:45). Judging by the samples alone would say "no official
+//  route" and be wrong (audit B1, 2026-08-15).
+// *KCMUI.rc (the UI half) still carries the same fault, as do KESCL and KT.
+#pragma code_page(1252)
+
+#include "WinRezFlags.h"
+#include "BuildNumber.h"
+#include "KCMID.h"
+
+1 VERSIONINFO
+ FILEVERSION kMajorVersionNumberForResource, kMinorVersionNumberForResource, 0, kBuildNumber
+ PRODUCTVERSION kMajorVersionNumberForResource, kMinorVersionNumberForResource, 0, 0
+ FILEFLAGSMASK 0x3fL
+#ifdef _DEBUG
+ FILEFLAGS 0x1L
+#else
+ FILEFLAGS 0x0L
+#endif
+ FILEOS 0x40004L
+ FILETYPE 0x2L
+ FILESUBTYPE 0x0L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904b0"
+        BEGIN
+            VALUE "CompanyName", "Kohaku Plug-Ins\0"
+            VALUE "FileDescription", kKCMDisplayName " - Adobe InDesign SDK Plug-in\0"
+            VALUE "FileVersion", kKCMVersion, "\0"
+            VALUE "InternalName", kKCMPluginName, "\0"
+            VALUE "LegalCopyright", kShortCopyRightStr, "\0"
+
+            VALUE "OriginalFilename", kKCMFileName ".pln\0"
+            VALUE "ProductName", "Adobe InDesign\0"
+            VALUE "ProductVersion", kVersionNumberStr, "\0"
+            VALUE "Copyright", kVersionCopyRightStr, "\0"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x0409, 1200
+    END
+END
+

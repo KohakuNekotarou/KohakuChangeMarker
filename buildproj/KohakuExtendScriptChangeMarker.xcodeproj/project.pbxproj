@@ -7,34 +7,34 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		A00000000000000000000201 /* KESCM.fr in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000101 /* KESCM.fr */; };
+		A00000000000000000000201 /* KCM.fr in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000101 /* KCM.fr */; };
 		A00000000000000000000202 /* SDKPlugInEntrypoint.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000102 /* SDKPlugInEntrypoint.cpp */; };
 		A00000000000000000000203 /* SDKFileHelper.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000103 /* SDKFileHelper.cpp */; };
-		A00000000000000000000204 /* KESCMNoStrip.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000104 /* KESCMNoStrip.cpp */; };
-		A00000000000000000000205 /* KESCMID.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000105 /* KESCMID.cpp */; };
-		A00000000000000000000206 /* KESCMActionComponent.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000106 /* KESCMActionComponent.cpp */; };
-		A00000000000000000000207 /* KESCMChangeNav.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000107 /* KESCMChangeNav.cpp */; };
-		A00000000000000000000208 /* KESCMChangedPagesTSV.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000108 /* KESCMChangedPagesTSV.cpp */; };
-		A00000000000000000000209 /* KESCMColorSampler.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000109 /* KESCMColorSampler.cpp */; };
-		A0000000000000000000020A /* KESCMCore.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000010A /* KESCMCore.cpp */; };
-		A0000000000000000000020B /* KESCMCursorProvider.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000010B /* KESCMCursorProvider.cpp */; };
-		A0000000000000000000020C /* KESCMDocResponder.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000010C /* KESCMDocResponder.cpp */; };
-		A0000000000000000000020D /* KESCMDocServiceProvider.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000010D /* KESCMDocServiceProvider.cpp */; };
-		A0000000000000000000020E /* KESCMDrawEventHandler.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000010E /* KESCMDrawEventHandler.cpp */; };
-		A0000000000000000000020F /* KESCMIconTip.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000010F /* KESCMIconTip.cpp */; };
-		A00000000000000000000210 /* KESCMOversetScan.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000110 /* KESCMOversetScan.cpp */; };
-		A00000000000000000000211 /* KESCMPageCheck.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000111 /* KESCMPageCheck.cpp */; };
-		A00000000000000000000212 /* KESCMPageMap.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000112 /* KESCMPageMap.cpp */; };
-		A00000000000000000000213 /* KESCMPageNumberMarker.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000113 /* KESCMPageNumberMarker.cpp */; };
-		A00000000000000000000214 /* KESCMPanelObserver.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000114 /* KESCMPanelObserver.cpp */; };
-		A00000000000000000000215 /* KESCMPanelState.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000115 /* KESCMPanelState.cpp */; };
-		A00000000000000000000216 /* KESCMPeek.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000116 /* KESCMPeek.cpp */; };
-		A00000000000000000000217 /* KESCMScrollMap.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000117 /* KESCMScrollMap.cpp */; };
-		A00000000000000000000218 /* KESCMThumbIdleTask.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000118 /* KESCMThumbIdleTask.cpp */; };
-		A00000000000000000000219 /* KESCMThumbnailRefresh.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000119 /* KESCMThumbnailRefresh.cpp */; };
-		A0000000000000000000021A /* KESCMTool.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000011A /* KESCMTool.cpp */; };
-		A0000000000000000000021B /* KESCMTracker.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000011B /* KESCMTracker.cpp */; };
-		A0000000000000000000021C /* KESCMTrackerRegister.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000011C /* KESCMTrackerRegister.cpp */; };
+		A00000000000000000000204 /* KCMNoStrip.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000104 /* KCMNoStrip.cpp */; };
+		A00000000000000000000205 /* KCMID.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000105 /* KCMID.cpp */; };
+		A00000000000000000000206 /* KCMActionComponent.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000106 /* KCMActionComponent.cpp */; };
+		A00000000000000000000207 /* KCMChangeNav.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000107 /* KCMChangeNav.cpp */; };
+		A00000000000000000000208 /* KCMChangedPagesTSV.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000108 /* KCMChangedPagesTSV.cpp */; };
+		A00000000000000000000209 /* KCMColorSampler.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000109 /* KCMColorSampler.cpp */; };
+		A0000000000000000000020A /* KCMCore.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000010A /* KCMCore.cpp */; };
+		A0000000000000000000020B /* KCMCursorProvider.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000010B /* KCMCursorProvider.cpp */; };
+		A0000000000000000000020C /* KCMDocResponder.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000010C /* KCMDocResponder.cpp */; };
+		A0000000000000000000020D /* KCMDocServiceProvider.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000010D /* KCMDocServiceProvider.cpp */; };
+		A0000000000000000000020E /* KCMDrawEventHandler.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000010E /* KCMDrawEventHandler.cpp */; };
+		A0000000000000000000020F /* KCMIconTip.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000010F /* KCMIconTip.cpp */; };
+		A00000000000000000000210 /* KCMOversetScan.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000110 /* KCMOversetScan.cpp */; };
+		A00000000000000000000211 /* KCMPageCheck.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000111 /* KCMPageCheck.cpp */; };
+		A00000000000000000000212 /* KCMPageMap.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000112 /* KCMPageMap.cpp */; };
+		A00000000000000000000213 /* KCMPageNumberMarker.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000113 /* KCMPageNumberMarker.cpp */; };
+		A00000000000000000000214 /* KCMPanelObserver.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000114 /* KCMPanelObserver.cpp */; };
+		A00000000000000000000215 /* KCMPanelState.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000115 /* KCMPanelState.cpp */; };
+		A00000000000000000000216 /* KCMPeek.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000116 /* KCMPeek.cpp */; };
+		A00000000000000000000217 /* KCMScrollMap.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000117 /* KCMScrollMap.cpp */; };
+		A00000000000000000000218 /* KCMThumbIdleTask.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000118 /* KCMThumbIdleTask.cpp */; };
+		A00000000000000000000219 /* KCMThumbnailRefresh.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000119 /* KCMThumbnailRefresh.cpp */; };
+		A0000000000000000000021A /* KCMTool.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000011A /* KCMTool.cpp */; };
+		A0000000000000000000021B /* KCMTracker.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000011B /* KCMTracker.cpp */; };
+		A0000000000000000000021C /* KCMTrackerRegister.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000011C /* KCMTrackerRegister.cpp */; };
 		A00000000000000000000017 /* InDesignModelAndUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A00000000000000000000015 /* InDesignModelAndUI.framework */; };
 		A00000000000000000000018 /* libPublicPlugIn.a in Frameworks */ = {isa = PBXBuildFile; fileRef = A00000000000000000000016 /* libPublicPlugIn.a */; };
 /* End PBXBuildFile section */
@@ -50,7 +50,7 @@
 			outputFiles = (
 				"$(REZ_COLLECTOR_DIR)/$(INPUT_FILE_NAME).rsrc",
 			);
-			script = "$ID_SDK_ROOT/devtools/bin/odfrc-cmd -d RELEASE $ODFRC_ADDITIONAL_FLAGS -i \"$ID_SDK_ROOT/source/sdksamples/KESCM\" -o \"$REZ_COLLECTOR_DIR/$INPUT_FILE_NAME.rsrc\" \"$INPUT_FILE_PATH\"";
+			script = "$ID_SDK_ROOT/devtools/bin/odfrc-cmd -d RELEASE $ODFRC_ADDITIONAL_FLAGS -i \"$ID_SDK_ROOT/source/sdksamples/KCM\" -o \"$REZ_COLLECTOR_DIR/$INPUT_FILE_NAME.rsrc\" \"$INPUT_FILE_PATH\"";
 		};
 /* End PBXBuildRule section */
 
@@ -62,35 +62,35 @@
 		A0000000000000000000001B /* _shared_build_settings/common_release.xcconfig */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = text.xcconfig; path = _shared_build_settings/common_release.xcconfig; sourceTree = SOURCE_ROOT; };
 		A0000000000000000000001C /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = Info.plist; path = ../../../source/sdksamples/common/Info.plist; sourceTree = SOURCE_ROOT; };
 		A00000000000000000000014 /* KohakuChangeMarker.InDesignPlugin */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = KohakuChangeMarker.InDesignPlugin; sourceTree = BUILT_PRODUCTS_DIR; };
-		A00000000000000000000101 /* KESCM.fr */ = {isa = PBXFileReference; lastKnownFileType = text; name = KESCM.fr; path = ../../../source/sdksamples/KESCM/KESCM.fr; sourceTree = SOURCE_ROOT; };
+		A00000000000000000000101 /* KCM.fr */ = {isa = PBXFileReference; lastKnownFileType = text; name = KCM.fr; path = ../../../source/sdksamples/KCM/KCM.fr; sourceTree = SOURCE_ROOT; };
 		A00000000000000000000102 /* SDKPlugInEntrypoint.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = SDKPlugInEntrypoint.cpp; path = ../../../source/sdksamples/common/SDKPlugInEntrypoint.cpp; sourceTree = SOURCE_ROOT; };
 		A00000000000000000000103 /* SDKFileHelper.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = SDKFileHelper.cpp; path = ../../../source/sdksamples/common/SDKFileHelper.cpp; sourceTree = SOURCE_ROOT; };
-		A00000000000000000000104 /* KESCMNoStrip.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = KESCMNoStrip.cpp; path = ../../../source/sdksamples/KESCM/KESCMNoStrip.cpp; sourceTree = SOURCE_ROOT; };
-		A00000000000000000000105 /* KESCMID.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = KESCMID.cpp; path = ../../../source/sdksamples/KESCM/KESCMID.cpp; sourceTree = SOURCE_ROOT; };
-		A00000000000000000000106 /* KESCMActionComponent.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = KESCMActionComponent.cpp; path = ../../../source/sdksamples/KESCM/KESCMActionComponent.cpp; sourceTree = SOURCE_ROOT; };
-		A00000000000000000000107 /* KESCMChangeNav.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = KESCMChangeNav.cpp; path = ../../../source/sdksamples/KESCM/KESCMChangeNav.cpp; sourceTree = SOURCE_ROOT; };
-		A00000000000000000000108 /* KESCMChangedPagesTSV.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = KESCMChangedPagesTSV.cpp; path = ../../../source/sdksamples/KESCM/KESCMChangedPagesTSV.cpp; sourceTree = SOURCE_ROOT; };
-		A00000000000000000000109 /* KESCMColorSampler.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = KESCMColorSampler.cpp; path = ../../../source/sdksamples/KESCM/KESCMColorSampler.cpp; sourceTree = SOURCE_ROOT; };
-		A0000000000000000000010A /* KESCMCore.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = KESCMCore.cpp; path = ../../../source/sdksamples/KESCM/KESCMCore.cpp; sourceTree = SOURCE_ROOT; };
-		A0000000000000000000010B /* KESCMCursorProvider.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = KESCMCursorProvider.cpp; path = ../../../source/sdksamples/KESCM/KESCMCursorProvider.cpp; sourceTree = SOURCE_ROOT; };
-		A0000000000000000000010C /* KESCMDocResponder.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = KESCMDocResponder.cpp; path = ../../../source/sdksamples/KESCM/KESCMDocResponder.cpp; sourceTree = SOURCE_ROOT; };
-		A0000000000000000000010D /* KESCMDocServiceProvider.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = KESCMDocServiceProvider.cpp; path = ../../../source/sdksamples/KESCM/KESCMDocServiceProvider.cpp; sourceTree = SOURCE_ROOT; };
-		A0000000000000000000010E /* KESCMDrawEventHandler.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = KESCMDrawEventHandler.cpp; path = ../../../source/sdksamples/KESCM/KESCMDrawEventHandler.cpp; sourceTree = SOURCE_ROOT; };
-		A0000000000000000000010F /* KESCMIconTip.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = KESCMIconTip.cpp; path = ../../../source/sdksamples/KESCM/KESCMIconTip.cpp; sourceTree = SOURCE_ROOT; };
-		A00000000000000000000110 /* KESCMOversetScan.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = KESCMOversetScan.cpp; path = ../../../source/sdksamples/KESCM/KESCMOversetScan.cpp; sourceTree = SOURCE_ROOT; };
-		A00000000000000000000111 /* KESCMPageCheck.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = KESCMPageCheck.cpp; path = ../../../source/sdksamples/KESCM/KESCMPageCheck.cpp; sourceTree = SOURCE_ROOT; };
-		A00000000000000000000112 /* KESCMPageMap.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = KESCMPageMap.cpp; path = ../../../source/sdksamples/KESCM/KESCMPageMap.cpp; sourceTree = SOURCE_ROOT; };
-		A00000000000000000000113 /* KESCMPageNumberMarker.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = KESCMPageNumberMarker.cpp; path = ../../../source/sdksamples/KESCM/KESCMPageNumberMarker.cpp; sourceTree = SOURCE_ROOT; };
-		A00000000000000000000114 /* KESCMPanelObserver.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = KESCMPanelObserver.cpp; path = ../../../source/sdksamples/KESCM/KESCMPanelObserver.cpp; sourceTree = SOURCE_ROOT; };
-		A00000000000000000000115 /* KESCMPanelState.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = KESCMPanelState.cpp; path = ../../../source/sdksamples/KESCM/KESCMPanelState.cpp; sourceTree = SOURCE_ROOT; };
-		A00000000000000000000116 /* KESCMPeek.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = KESCMPeek.cpp; path = ../../../source/sdksamples/KESCM/KESCMPeek.cpp; sourceTree = SOURCE_ROOT; };
-		A00000000000000000000117 /* KESCMScrollMap.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = KESCMScrollMap.cpp; path = ../../../source/sdksamples/KESCM/KESCMScrollMap.cpp; sourceTree = SOURCE_ROOT; };
-		A00000000000000000000118 /* KESCMThumbIdleTask.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = KESCMThumbIdleTask.cpp; path = ../../../source/sdksamples/KESCM/KESCMThumbIdleTask.cpp; sourceTree = SOURCE_ROOT; };
-		A00000000000000000000119 /* KESCMThumbnailRefresh.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = KESCMThumbnailRefresh.cpp; path = ../../../source/sdksamples/KESCM/KESCMThumbnailRefresh.cpp; sourceTree = SOURCE_ROOT; };
-		A0000000000000000000011A /* KESCMTool.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = KESCMTool.cpp; path = ../../../source/sdksamples/KESCM/KESCMTool.cpp; sourceTree = SOURCE_ROOT; };
-		A0000000000000000000011B /* KESCMTracker.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = KESCMTracker.cpp; path = ../../../source/sdksamples/KESCM/KESCMTracker.cpp; sourceTree = SOURCE_ROOT; };
-		A0000000000000000000011C /* KESCMTrackerRegister.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = KESCMTrackerRegister.cpp; path = ../../../source/sdksamples/KESCM/KESCMTrackerRegister.cpp; sourceTree = SOURCE_ROOT; };
-		A00000000000000000000301 /* KESCMID.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = KESCMID.h; path = ../../../source/sdksamples/KESCM/KESCMID.h; sourceTree = SOURCE_ROOT; };
+		A00000000000000000000104 /* KCMNoStrip.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = KCMNoStrip.cpp; path = ../../../source/sdksamples/KCM/KCMNoStrip.cpp; sourceTree = SOURCE_ROOT; };
+		A00000000000000000000105 /* KCMID.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = KCMID.cpp; path = ../../../source/sdksamples/KCM/KCMID.cpp; sourceTree = SOURCE_ROOT; };
+		A00000000000000000000106 /* KCMActionComponent.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = KCMActionComponent.cpp; path = ../../../source/sdksamples/KCM/KCMActionComponent.cpp; sourceTree = SOURCE_ROOT; };
+		A00000000000000000000107 /* KCMChangeNav.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = KCMChangeNav.cpp; path = ../../../source/sdksamples/KCM/KCMChangeNav.cpp; sourceTree = SOURCE_ROOT; };
+		A00000000000000000000108 /* KCMChangedPagesTSV.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = KCMChangedPagesTSV.cpp; path = ../../../source/sdksamples/KCM/KCMChangedPagesTSV.cpp; sourceTree = SOURCE_ROOT; };
+		A00000000000000000000109 /* KCMColorSampler.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = KCMColorSampler.cpp; path = ../../../source/sdksamples/KCM/KCMColorSampler.cpp; sourceTree = SOURCE_ROOT; };
+		A0000000000000000000010A /* KCMCore.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = KCMCore.cpp; path = ../../../source/sdksamples/KCM/KCMCore.cpp; sourceTree = SOURCE_ROOT; };
+		A0000000000000000000010B /* KCMCursorProvider.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = KCMCursorProvider.cpp; path = ../../../source/sdksamples/KCM/KCMCursorProvider.cpp; sourceTree = SOURCE_ROOT; };
+		A0000000000000000000010C /* KCMDocResponder.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = KCMDocResponder.cpp; path = ../../../source/sdksamples/KCM/KCMDocResponder.cpp; sourceTree = SOURCE_ROOT; };
+		A0000000000000000000010D /* KCMDocServiceProvider.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = KCMDocServiceProvider.cpp; path = ../../../source/sdksamples/KCM/KCMDocServiceProvider.cpp; sourceTree = SOURCE_ROOT; };
+		A0000000000000000000010E /* KCMDrawEventHandler.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = KCMDrawEventHandler.cpp; path = ../../../source/sdksamples/KCM/KCMDrawEventHandler.cpp; sourceTree = SOURCE_ROOT; };
+		A0000000000000000000010F /* KCMIconTip.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = KCMIconTip.cpp; path = ../../../source/sdksamples/KCM/KCMIconTip.cpp; sourceTree = SOURCE_ROOT; };
+		A00000000000000000000110 /* KCMOversetScan.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = KCMOversetScan.cpp; path = ../../../source/sdksamples/KCM/KCMOversetScan.cpp; sourceTree = SOURCE_ROOT; };
+		A00000000000000000000111 /* KCMPageCheck.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = KCMPageCheck.cpp; path = ../../../source/sdksamples/KCM/KCMPageCheck.cpp; sourceTree = SOURCE_ROOT; };
+		A00000000000000000000112 /* KCMPageMap.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = KCMPageMap.cpp; path = ../../../source/sdksamples/KCM/KCMPageMap.cpp; sourceTree = SOURCE_ROOT; };
+		A00000000000000000000113 /* KCMPageNumberMarker.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = KCMPageNumberMarker.cpp; path = ../../../source/sdksamples/KCM/KCMPageNumberMarker.cpp; sourceTree = SOURCE_ROOT; };
+		A00000000000000000000114 /* KCMPanelObserver.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = KCMPanelObserver.cpp; path = ../../../source/sdksamples/KCM/KCMPanelObserver.cpp; sourceTree = SOURCE_ROOT; };
+		A00000000000000000000115 /* KCMPanelState.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = KCMPanelState.cpp; path = ../../../source/sdksamples/KCM/KCMPanelState.cpp; sourceTree = SOURCE_ROOT; };
+		A00000000000000000000116 /* KCMPeek.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = KCMPeek.cpp; path = ../../../source/sdksamples/KCM/KCMPeek.cpp; sourceTree = SOURCE_ROOT; };
+		A00000000000000000000117 /* KCMScrollMap.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = KCMScrollMap.cpp; path = ../../../source/sdksamples/KCM/KCMScrollMap.cpp; sourceTree = SOURCE_ROOT; };
+		A00000000000000000000118 /* KCMThumbIdleTask.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = KCMThumbIdleTask.cpp; path = ../../../source/sdksamples/KCM/KCMThumbIdleTask.cpp; sourceTree = SOURCE_ROOT; };
+		A00000000000000000000119 /* KCMThumbnailRefresh.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = KCMThumbnailRefresh.cpp; path = ../../../source/sdksamples/KCM/KCMThumbnailRefresh.cpp; sourceTree = SOURCE_ROOT; };
+		A0000000000000000000011A /* KCMTool.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = KCMTool.cpp; path = ../../../source/sdksamples/KCM/KCMTool.cpp; sourceTree = SOURCE_ROOT; };
+		A0000000000000000000011B /* KCMTracker.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = KCMTracker.cpp; path = ../../../source/sdksamples/KCM/KCMTracker.cpp; sourceTree = SOURCE_ROOT; };
+		A0000000000000000000011C /* KCMTrackerRegister.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = KCMTrackerRegister.cpp; path = ../../../source/sdksamples/KCM/KCMTrackerRegister.cpp; sourceTree = SOURCE_ROOT; };
+		A00000000000000000000301 /* KCMID.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = KCMID.h; path = ../../../source/sdksamples/KCM/KCMID.h; sourceTree = SOURCE_ROOT; };
 		A00000000000000000000302 /* SDKFileHelper.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = SDKFileHelper.h; path = ../../../source/sdksamples/common/SDKFileHelper.h; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
@@ -131,29 +131,29 @@
 			isa = PBXGroup;
 			children = (
 				A00000000000000000000005 /* Plugin */,
-				A00000000000000000000106 /* KESCMActionComponent.cpp */,
-				A00000000000000000000107 /* KESCMChangeNav.cpp */,
-				A00000000000000000000108 /* KESCMChangedPagesTSV.cpp */,
-				A00000000000000000000109 /* KESCMColorSampler.cpp */,
-				A0000000000000000000010A /* KESCMCore.cpp */,
-				A0000000000000000000010B /* KESCMCursorProvider.cpp */,
-				A0000000000000000000010C /* KESCMDocResponder.cpp */,
-				A0000000000000000000010D /* KESCMDocServiceProvider.cpp */,
-				A0000000000000000000010E /* KESCMDrawEventHandler.cpp */,
-				A0000000000000000000010F /* KESCMIconTip.cpp */,
-				A00000000000000000000110 /* KESCMOversetScan.cpp */,
-				A00000000000000000000111 /* KESCMPageCheck.cpp */,
-				A00000000000000000000112 /* KESCMPageMap.cpp */,
-				A00000000000000000000113 /* KESCMPageNumberMarker.cpp */,
-				A00000000000000000000114 /* KESCMPanelObserver.cpp */,
-				A00000000000000000000115 /* KESCMPanelState.cpp */,
-				A00000000000000000000116 /* KESCMPeek.cpp */,
-				A00000000000000000000117 /* KESCMScrollMap.cpp */,
-				A00000000000000000000118 /* KESCMThumbIdleTask.cpp */,
-				A00000000000000000000119 /* KESCMThumbnailRefresh.cpp */,
-				A0000000000000000000011A /* KESCMTool.cpp */,
-				A0000000000000000000011B /* KESCMTracker.cpp */,
-				A0000000000000000000011C /* KESCMTrackerRegister.cpp */,
+				A00000000000000000000106 /* KCMActionComponent.cpp */,
+				A00000000000000000000107 /* KCMChangeNav.cpp */,
+				A00000000000000000000108 /* KCMChangedPagesTSV.cpp */,
+				A00000000000000000000109 /* KCMColorSampler.cpp */,
+				A0000000000000000000010A /* KCMCore.cpp */,
+				A0000000000000000000010B /* KCMCursorProvider.cpp */,
+				A0000000000000000000010C /* KCMDocResponder.cpp */,
+				A0000000000000000000010D /* KCMDocServiceProvider.cpp */,
+				A0000000000000000000010E /* KCMDrawEventHandler.cpp */,
+				A0000000000000000000010F /* KCMIconTip.cpp */,
+				A00000000000000000000110 /* KCMOversetScan.cpp */,
+				A00000000000000000000111 /* KCMPageCheck.cpp */,
+				A00000000000000000000112 /* KCMPageMap.cpp */,
+				A00000000000000000000113 /* KCMPageNumberMarker.cpp */,
+				A00000000000000000000114 /* KCMPanelObserver.cpp */,
+				A00000000000000000000115 /* KCMPanelState.cpp */,
+				A00000000000000000000116 /* KCMPeek.cpp */,
+				A00000000000000000000117 /* KCMScrollMap.cpp */,
+				A00000000000000000000118 /* KCMThumbIdleTask.cpp */,
+				A00000000000000000000119 /* KCMThumbnailRefresh.cpp */,
+				A0000000000000000000011A /* KCMTool.cpp */,
+				A0000000000000000000011B /* KCMTracker.cpp */,
+				A0000000000000000000011C /* KCMTrackerRegister.cpp */,
 			);
 			name = Source;
 			sourceTree = "<group>";
@@ -164,9 +164,9 @@
 				A00000000000000000000102 /* SDKPlugInEntrypoint.cpp */,
 				A00000000000000000000302 /* SDKFileHelper.h */,
 				A00000000000000000000103 /* SDKFileHelper.cpp */,
-				A00000000000000000000104 /* KESCMNoStrip.cpp */,
-				A00000000000000000000301 /* KESCMID.h */,
-				A00000000000000000000105 /* KESCMID.cpp */,
+				A00000000000000000000104 /* KCMNoStrip.cpp */,
+				A00000000000000000000301 /* KCMID.h */,
+				A00000000000000000000105 /* KCMID.cpp */,
 			);
 			name = Plugin;
 			sourceTree = "<group>";
@@ -174,7 +174,7 @@
 		A00000000000000000000006 /* Resources */ = {
 			isa = PBXGroup;
 			children = (
-				A00000000000000000000101 /* KESCM.fr */,
+				A00000000000000000000101 /* KCM.fr */,
 			);
 			name = Resources;
 			sourceTree = "<group>";
@@ -286,34 +286,34 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				A00000000000000000000201 /* KESCM.fr in Sources */,
+				A00000000000000000000201 /* KCM.fr in Sources */,
 				A00000000000000000000202 /* SDKPlugInEntrypoint.cpp in Sources */,
 				A00000000000000000000203 /* SDKFileHelper.cpp in Sources */,
-				A00000000000000000000204 /* KESCMNoStrip.cpp in Sources */,
-				A00000000000000000000205 /* KESCMID.cpp in Sources */,
-				A00000000000000000000206 /* KESCMActionComponent.cpp in Sources */,
-				A00000000000000000000207 /* KESCMChangeNav.cpp in Sources */,
-				A00000000000000000000208 /* KESCMChangedPagesTSV.cpp in Sources */,
-				A00000000000000000000209 /* KESCMColorSampler.cpp in Sources */,
-				A0000000000000000000020A /* KESCMCore.cpp in Sources */,
-				A0000000000000000000020B /* KESCMCursorProvider.cpp in Sources */,
-				A0000000000000000000020C /* KESCMDocResponder.cpp in Sources */,
-				A0000000000000000000020D /* KESCMDocServiceProvider.cpp in Sources */,
-				A0000000000000000000020E /* KESCMDrawEventHandler.cpp in Sources */,
-				A0000000000000000000020F /* KESCMIconTip.cpp in Sources */,
-				A00000000000000000000210 /* KESCMOversetScan.cpp in Sources */,
-				A00000000000000000000211 /* KESCMPageCheck.cpp in Sources */,
-				A00000000000000000000212 /* KESCMPageMap.cpp in Sources */,
-				A00000000000000000000213 /* KESCMPageNumberMarker.cpp in Sources */,
-				A00000000000000000000214 /* KESCMPanelObserver.cpp in Sources */,
-				A00000000000000000000215 /* KESCMPanelState.cpp in Sources */,
-				A00000000000000000000216 /* KESCMPeek.cpp in Sources */,
-				A00000000000000000000217 /* KESCMScrollMap.cpp in Sources */,
-				A00000000000000000000218 /* KESCMThumbIdleTask.cpp in Sources */,
-				A00000000000000000000219 /* KESCMThumbnailRefresh.cpp in Sources */,
-				A0000000000000000000021A /* KESCMTool.cpp in Sources */,
-				A0000000000000000000021B /* KESCMTracker.cpp in Sources */,
-				A0000000000000000000021C /* KESCMTrackerRegister.cpp in Sources */,
+				A00000000000000000000204 /* KCMNoStrip.cpp in Sources */,
+				A00000000000000000000205 /* KCMID.cpp in Sources */,
+				A00000000000000000000206 /* KCMActionComponent.cpp in Sources */,
+				A00000000000000000000207 /* KCMChangeNav.cpp in Sources */,
+				A00000000000000000000208 /* KCMChangedPagesTSV.cpp in Sources */,
+				A00000000000000000000209 /* KCMColorSampler.cpp in Sources */,
+				A0000000000000000000020A /* KCMCore.cpp in Sources */,
+				A0000000000000000000020B /* KCMCursorProvider.cpp in Sources */,
+				A0000000000000000000020C /* KCMDocResponder.cpp in Sources */,
+				A0000000000000000000020D /* KCMDocServiceProvider.cpp in Sources */,
+				A0000000000000000000020E /* KCMDrawEventHandler.cpp in Sources */,
+				A0000000000000000000020F /* KCMIconTip.cpp in Sources */,
+				A00000000000000000000210 /* KCMOversetScan.cpp in Sources */,
+				A00000000000000000000211 /* KCMPageCheck.cpp in Sources */,
+				A00000000000000000000212 /* KCMPageMap.cpp in Sources */,
+				A00000000000000000000213 /* KCMPageNumberMarker.cpp in Sources */,
+				A00000000000000000000214 /* KCMPanelObserver.cpp in Sources */,
+				A00000000000000000000215 /* KCMPanelState.cpp in Sources */,
+				A00000000000000000000216 /* KCMPeek.cpp in Sources */,
+				A00000000000000000000217 /* KCMScrollMap.cpp in Sources */,
+				A00000000000000000000218 /* KCMThumbIdleTask.cpp in Sources */,
+				A00000000000000000000219 /* KCMThumbnailRefresh.cpp in Sources */,
+				A0000000000000000000021A /* KCMTool.cpp in Sources */,
+				A0000000000000000000021B /* KCMTracker.cpp in Sources */,
+				A0000000000000000000021C /* KCMTrackerRegister.cpp in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -346,7 +346,7 @@
 					$ID_SDK_ROOT/source/sdksamples/common,
 					$ID_SDK_ROOT/external/afl/includes,
 					$ID_SDK_ROOT/external/dva/third_party/boost_libraries,
-					../../../source/sdksamples/KESCM,
+					../../../source/sdksamples/KCM,
 				);
 				INFOPLIST_FILE = $ID_SDK_ROOT/source/sdksamples/common/Info.plist;
 				INFOPLIST_PREPROCESS = YES;

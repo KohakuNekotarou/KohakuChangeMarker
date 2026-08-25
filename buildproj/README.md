@@ -5,32 +5,32 @@
 
 | | プロジェクトファイル | ソースの場所 | 種別 |
 |---|---|---|---|
-| **KESCM**(model 側) | `KohakuExtendScriptChangeMarker.vcxproj` / `.filters` | `source/` | 現在は `kUIPlugIn`。第2段 Task 11 で `kModelPlugIn` にする |
+| **KCM**(model 側) | `KohakuExtendScriptChangeMarker.vcxproj` / `.filters` | `source/` | 現在は `kUIPlugIn`。第2段 Task 11 で `kModelPlugIn` にする |
 | **KCMUI**(UI 側) | `KohakuChangeMarkerUI.vcxproj` / `.filters` | ★`ui/` | `kUIPlugIn` |
 
 ## なぜここに置くか
-KESCM の git リポジトリは `source/sdksamples/KESCM/`(このフォルダーの親)です。
+KCM の git リポジトリは `source/sdksamples/KCM/`(このフォルダーの親)です。
 一方、実際にビルドで使う `.vcxproj` は SDK のビルドツリー
 `build/win/prj/` にあり、**git リポジトリの外**です。
 そのため、プロジェクトファイルに加えたカスタム(下記)が git だけでは保全されません。
 クリーンな環境に展開し直したときにビルドを再現できるよう、ここにコピーを置いて版管理します。
 
 ★**KCMUI のソースも 2026-08-15 にこのリポジトリへ入れた**——元は SDK 側の
-`source/sdksamples/KCMUI/`(git 管理外)にあったが、`source/sdksamples/KESCM/ui/` へ移した。
+`source/sdksamples/KCMUI/`(git 管理外)にあったが、`source/sdksamples/KCM/ui/` へ移した。
 理由＝分割の途中でファイルが model 側と UI 側を何度も行き来するので、**1コミットで両側を直せる**ほうが安全
 (移動が「削除＋追加」に割れて履歴が切れるのを避ける)。**雛形10本のうちに移したので移動コストは最小だった。**
 
-⚠**`.sdk.props` 4本(`KCMUI*.sdk.props` / `KESCM*.sdk.props`)は控えていません。** DollyXs が生成する定型で、
+⚠**`.sdk.props` 4本(`KCMUI*.sdk.props` / `KCM*.sdk.props`)は控えていません。** DollyXs が生成する定型で、
 復元するなら DollyXs を回すのが早いためです(`devtools/dolly/win-input.xml` は**新 prefix `0x1EA580` と
-新パス `KESCM\ui` に更新済み**＝次に回しても旧値に戻りません)。
+新パス `KCM\ui` に更新済み**＝次に回しても旧値に戻りません)。
 
 ## このプロジェクトファイルに入っているカスタム(復元時に必要な要点)
-- KESCM の全ソース(`KESCM*.cpp` / `.h`)の登録。特に近年追加分:
-  `KESCMChangeNav.*`(変更ページへの Next/Prev ナビ)、`KESCMThumbnailRefresh.*`
-  (Pages パネルのサムネイル更新)、`KESCMPageMap.*`、`KESCMPageNumberMarker.*`、
-  `KESCMScrollMap.*`(スクロールバー地図 strip)、`KESCMStory*.*`(Story Edits)、
-  `KESCMBook*.*`(ブック比較)ほか。
-- **リンクライブラリに `DV_WidgetBin.lib` を追加**(2026-07-11、全4構成)。`KESCMScrollMap.cpp` の
+- KCM の全ソース(`KCM*.cpp` / `.h`)の登録。特に近年追加分:
+  `KCMChangeNav.*`(変更ページへの Next/Prev ナビ)、`KCMThumbnailRefresh.*`
+  (Pages パネルのサムネイル更新)、`KCMPageMap.*`、`KCMPageNumberMarker.*`、
+  `KCMScrollMap.*`(スクロールバー地図 strip)、`KCMStory*.*`(Story Edits)、
+  `KCMBook*.*`(ブック比較)ほか。
+- **リンクライブラリに `DV_WidgetBin.lib` を追加**(2026-07-11、全4構成)。`KCMScrollMap.cpp` の
   自前描画ビュー基底 `DVControlView`(`AbstractControlView`/`DVHostedWidgetView`)の実体は
   `WidgetBin.lib` ではなく `DV_WidgetBin.lib` にあるため(dumpbin で確認)。
 - ★★**ビルド生成物の名前を `KohakuChangeMarker` に統一**(2026-08-19)。`TargetName`(`.pln`)だけが
@@ -41,8 +41,8 @@ KESCM の git リポジトリは `source/sdksamples/KESCM/`(このフォルダ�
   `KohakuExtendScriptChangeMarker{CPP,ODFRC}.rsp` → `KohakuChangeMarker{CPP,ODFRC}.rsp`
   (中身は `/I`・`-i` のパス列だけで、名前は入っていない)。
   ⚠**変えていないもの**: `.vcxproj` のファイル名・`SDKSamples.sln` の登録名(`ProjectName` は元から
-  `KohakuChangeMarker` に上書き済み)、`KESCM*.sdk.props` 4本(元から短い `KESCM` 名)、そして
-  **内部名 `kKESCMPluginName`**(`KESCMBoundaryID.h:78`。`.rc` の `InternalName` と KCMUI の
+  `KohakuChangeMarker` に上書き済み)、`KCM*.sdk.props` 4本(元から短い `KCM` 名)、そして
+  **内部名 `kKCMPluginName`**(`KCMBoundaryID.h:78`。`.rc` の `InternalName` と KCMUI の
   `PluginDependency` が名乗る名前で、**互換のため据え置き**)。
   ⚠`IntDir` が変わるので**中間フォルダーが `objRx64\KohakuChangeMarker` に移り、初回はフルビルド**になる。
   旧 `objRx64\KohakuExtendScriptChangeMarker` / `objDx64\…` は残骸なので消してよい。
@@ -70,13 +70,13 @@ DollyXs が生成した雛形は**そのままではビルドもロードもで�
   ⚠**雛形は `WidgetBin` しか持っておらず `DV_WidgetBin` が無い。** KCMUI はツリー(`NodeID`)と
   スクロールバー地図(`DVControlView`)を引き取るので、**マクロにしないとその段階で `LNK2019`/`LNK2001` の山**になる。
   `user32.lib` は半透明・Win32 フック用に KCMUI 固有で足している。
-- **`TargetName` を `$(ProjectName).sdk` から `KohakuChangeMarkerUI` へ**(KESCM 側と揃えた)。
+- **`TargetName` を `$(ProjectName).sdk` から `KohakuChangeMarkerUI` へ**(KCM 側と揃えた)。
   ⚠ 変えたときは**古い `KohakuChangeMarkerUI.sdk.pln` と `(… .sdk Resources)` を消すこと**——
   残すと InDesign が2本ロードしようとして ID が衝突する。
 
 - ★★**応答ファイル `KohakuChangeMarkerUICPP.rsp` にインクルードパスを1本足した**(2026-08-20):
   `/I "..\..\..\source\open\includes\widgets"`。Story Edits の**変更行のテキストセル**
-  (`KESCMStoryCellView.cpp`)が `DrawStringUtils.h`＝**パレットの文字を任意の色で描く公式ヘルパー**を
+  (`KCMStoryCellView.cpp`)が `DrawStringUtils.h`＝**パレットの文字を任意の色で描く公式ヘルパー**を
   使うため。
   ⚠**呼ぶ側で相対パス include しても解決しない**——`DrawStringUtils.h` **自身**が
   `DVPublicUtilities.h` を include しており、**プリプロセッサは include 文を見た時点でファイルを
@@ -84,7 +84,7 @@ DollyXs が生成した雛形は**そのままではビルドもロードもで�
   ★**KBS が同じ理由で同じ1行を持っている**(`KohakuFindChangeCPP.rsp`)＝社内で同じ問いの答えは1つ。
   ⚠★**`.rsp` はこのリポジトリに控えが無い**(実体は `build/win/prj/` だけ)。
   **クリーン環境へ復元したらこの1行を手で足すこと**——足さないと
-  `error C1083: 'DVPublicUtilities.h'` で `KESCMStoryCellView.cpp` だけが落ちる。
+  `error C1083: 'DVPublicUtilities.h'` で `KCMStoryCellView.cpp` だけが落ちる。
 
 ## ⚠★★KCMUI で実際に踏んだ罠 — `KCMUIID.h` は **UTF-8 BOM 必須**
 
@@ -113,18 +113,18 @@ cp buildproj/KohakuChangeMarkerUI.vcxproj.filters            <SDK>/build/win/prj
 `/I "..\..\..\source\open\includes\widgets"` を手で足すこと(理由は上の KCMUI の節)。
 
 2. プラグインのソース(このリポジトリの `source/` フォルダー — `.cpp` / `.h` / `.fr` / `.rc` / `.png`)を
-   `source/sdksamples/KESCM/source/` へ置く。**SDK 側のフォルダー名は短い `KESCM` のまま**で、
+   `source/sdksamples/KCM/source/` へ置く。**SDK 側のフォルダー名は短い `KCM` のまま**で、
    プロジェクト名に合わせて改名はしない。`.vcxproj` の参照も ODFRC の `-i` フラグも
-   `KESCM\source` を指している(**ソースは 2026-08-12 に一段下へ移した**。KBS と同じ構成に
+   `KCM\source` を指している(**ソースは 2026-08-12 に一段下へ移した**。KBS と同じ構成に
    揃えたもの。`.fr` や `.h` の include は自分のフォルダー基準で解決されるので、
    **全部まとめて同じ場所に置くこと**)。
 
-3. ★**KCMUI のソース(このリポジトリの `ui/` フォルダー)は `source/sdksamples/KESCM/ui/` に置く。**
+3. ★**KCMUI のソース(このリポジトリの `ui/` フォルダー)は `source/sdksamples/KCM/ui/` に置く。**
    `KohakuChangeMarkerUI.vcxproj` の参照も ODFRC の `-i` フラグも
-   `..\..\..\source\sdksamples\KESCM\ui` を指している(2026-08-15 に `sdksamples\KCMUI` から移した)。
+   `..\..\..\source\sdksamples\KCM\ui` を指している(2026-08-15 に `sdksamples\KCMUI` から移した)。
 
-（`.vcxproj` の相対パスはビルドツリー基準 `..\..\..\source\sdksamples\KESCM\source\...`
-(KCMUI は `...\KESCM\ui\...`) なので、`build/win/prj/` に置いて初めて正しく解決される。
+（`.vcxproj` の相対パスはビルドツリー基準 `..\..\..\source\sdksamples\KCM\source\...`
+(KCMUI は `...\KCM\ui\...`) なので、`build/win/prj/` に置いて初めて正しく解決される。
 ここに置いたままではビルドに使えない=あくまで控え。）
 
 ## 更新のしかた
