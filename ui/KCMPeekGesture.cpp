@@ -2,29 +2,30 @@
 //
 //  KCMPeekGesture.cpp
 //
-//  ツール(左ボタン)のジェスチャ判定と押下中の表示切替(KCMPeek.cpp から分離。2026-08-13 の
-//  model/UI 分割 第1段 Task 1)。修飾キー→ジェスチャの分類、reveal/peek の開始と終了、マウス直下の
-//  文書ウィンドウ判定、そして一括クローズ後の UI 後片付けを持つ。
+//  What a mouse gesture under the tool means and what it starts: classifying the modifiers,
+//  beginning and ending the reveal and the peeks, working out which document window the mouse is
+//  over, and the UI clean-up that follows a batch document close.
 //
-//  ★分離では関数の中身を1行も変えていない。変えたのは「どのファイルに座るか」と「誰から見えるか」だけ。
-//    arm 状態(sPeekArmed / sPeekTargetDB / sPeekSourceDB)は model 側の KCMPeek.cpp に残るので、
-//    ここからは **IKCMCompareFacade** 越しに読む(IsArmed / GetArmedTargetDB / GetArmedSourceDB)。
-//    ⚠2026-08-17 訂正: 分離当初の「KCMCore.h のアクセサ(KCMIsArmed 等)で読む」は第1段 Task 11 で
-//    Facade 経由に変わっている。**同名の関数は model 側に今も実在する**ため、古い記述を残すと
-//    「UI が model を直に呼んでいる」と誤読させる(KCMViewSync.cpp の冒頭にも同じ誤りがあった)。
-//    CMYK(Alt+左)の押下中状態は KCMCmykCursor.cpp が持つので、押下の開始/終了はそちらの入口を呼ぶ。
+//  ★The armed state (sPeekArmed / sPeekTargetDB / sPeekSourceDB) stays on the model side in
+//    KCMPeek.cpp, so it is read from here **through IKCMCompareFacade** (IsArmed /
+//    GetArmedTargetDB / GetArmedSourceDB).
+//    ⚠**Free functions of the same name still exist on the model side** (KCMCore.h declares
+//    KCMIsArmed, KCMPeek.cpp defines it), so never write that this file calls them: that would
+//    read as the UI reaching into the model, the one direction the split forbids.
+//    The held state of the CMYK gesture (Alt + left) belongs to KCMCmykCursor.cpp, so the press
+//    begins and ends through that file's entry points.
 //
-//  UI 側: ツールが押されているかという、model からは見えない状態を読む。
+//  UI side: it reads whether the tool is being held, which the model cannot see.
 //
-//  NOTE: ここのクローズ処理は UI 側の半分だけ。model 側の対は KCMPeek.cpp の
-//  KCMHandleDocsClosed() で、そちらは閉じた文書の追跡状態を捨てる。同じクローズ通知を別の目的で
-//  聞いている——ひとつにまとめないこと。
+//  NOTE: the close handling here is the UI half only. Its model twin is KCMHandleDocsClosed() in
+//  KCMPeek.cpp, which drops the tracking state of documents that are gone. Both listen to the same
+//  close notification for different purposes -- do not merge them.
 //
 //========================================================================================
 
 #include "VCPlugInHeaders.h"
 
-// オブジェクトモデル:
+// The object model:
 #include "PersistUtils.h"
 #include "IDataBase.h"
 #include "IDocument.h"
@@ -36,83 +37,83 @@
 #include "IWindowUtils.h"
 #include "IDocumentPresentation.h"
 
-// ビューとその倍率(2026-08-15・第2段 Task 4B で model 側から引き取った peek の観測):
+// The view and its magnification ＝ what the peek observes, on the side that has a window:
 #include "IControlView.h"
 #include "IPanorama.h"
-#include "PMMatrix.h"				// GetContentToWindowMatrix の戻り値(ズーム倍率の読み取り)
+#include "PMMatrix.h"				// what GetContentToWindowMatrix answers with -- the zoom is read off it
 
-// 一括クローズ(複数文書を続けて閉じる)の集約用:
-#include "CObserver.h"				// 完了通知オブザーバの基底
-#include "ISubject.h"				// AttachObserver/IsAttached
-#include "IActiveContext.h"			// オブザーバの同居先(kActiveContextBoss)
-#include "IBoolData.h"				// セッション上の IID_IKFILESCLOSING(「今どれかの文書が閉じている最中か」)
-#include "LinksUIID.h"				// ★公開ヘッダー: IID_IKFILESCLOSING / kPendingDocumentsClosedMsg(本体 Links UI が提供)
+// For folding a batch close (several documents closed in a row) into one:
+#include "CObserver.h"				// the base of the completion observer
+#include "ISubject.h"				// AttachObserver / IsAttached
+#include "IActiveContext.h"			// where the observer lodges (kActiveContextBoss)
+#include "IBoolData.h"				// IID_IKFILESCLOSING on the session -- "is a document closing right now"
+#include "LinksUIID.h"				// ★a public header: IID_IKFILESCLOSING / kPendingDocumentsClosedMsg, both provided by the application's Links UI
 
 #include "PMReal.h"
 #include "PMString.h"
 
-// プロジェクト内インクルード:
+// The plug-in's own headers:
 #include "KCMUIID.h"
-#include "IKCMMarkData.h"          // マーク/overset の読み取り(2026-08-13 Task 12。押下中の表示状態の
-                                     // 読み書きは IKCMCompareFacade 側＝あちらは書ける)
+#include "IKCMMarkData.h"          // reading the marks and the overset state (the held display state is
+                                     // read AND written through IKCMCompareFacade instead)
 #include "KCMUIShared.h"	// panel / status line / nav readout / tool button (split from KCMCore.h on 2026-08-13)
-#include "KCMScrollMap.h"          // 一括クローズ後の地図 strip の撤去/再描画
-#include "KCMThumbIdleTask.h"      // クローズ後の再生成を次のidleに遅延(前面切替の過渡を避ける)
+#include "KCMScrollMap.h"          // removing / repainting the map strip after a batch close
+#include "KCMThumbIdleTask.h"      // defer the post-close rebuild to the next idle (past the front-window change)
 #include "Utils.h"                   // Utils<IKCMCompareFacade>()
-#include "IKCMCompareFacade.h"     // peek の表示・arm 状態・基準不透明度(2026-08-13・分割 第1段 Task 11)
-#include "KCMCmykCursor.h"         // KCMCmykBeginPress / KCMCmykEndPress(押下中の CMYK 状態はあちらが持つ)
-#include "KCMBoundaryID.h"         // kKCMModeStory(比較モードの列挙子)
-#include "KCMStoryPressMarks.h"    // Story モードで押下中に出す色地マーク(2026-08-22)
+#include "IKCMCompareFacade.h"     // the peek display, the armed state, the base opacity
+#include "KCMCmykCursor.h"         // KCMCmykBeginPress / KCMCmykEndPress -- the held CMYK state belongs there
+#include "KCMBoundaryID.h"         // kKCMModeStory (the compare-mode enumerator)
+#include "KCMStoryPressMarks.h"    // the coloured ground put under changed text while held, in the Story mode
 #include "KCMViewLookup.h"         // KCMQueryViewUnderMouse / KCMQueryMouseContentPoint /
-                                     // KCMQueryPanorama(いずれも UI 側。2026-08-15・第2段 Task 4B)
+                                     // KCMQueryPanorama / KCMQuerySpreadUIDForView (all UI side)
 #include "KCMPeekGesture.h"
 
-// Shift+左=旧版を不透明(100%)で / Shift+Alt+左=旧版を 50% で重ねて peek。
-// 押下中だけ表示し、ツール左ボタンを離すと消す(修飾キーは離してもよい)。判定はツール左ボタン押下時に1回見るだけ。
-static const PMReal kKCMPeekSemiOpacity = 0.5;	// Shift+Alt+左時の旧版の不透明度(0..1)
-static bool16 sPeekActive        = kFalse;	// Shift/Shift+Alt+左を押し込み中(=覗き表示中)か
-static bool16 sSingleShowing     = kFalse;	// 修飾なしのツール左hold中(=全マークを選択不透明度25%/75%で一時表示中)か。離すと隠す＋基準opacityへ
-// ★★**どちらの窓を覗いているか**(2026-08-22＝Source からも覗けるようにしたときに要った)。
-//   離すときに再描画するのは**押した窓**で、それまでは Target 決め打ちだった ---- 旧版の窓から覗くと
-//   離しても絵が消えない(sShowOriginal は落ちるが、その文書に再描画が飛ばない)。
-//   ⚠**これは UI の状態**＝「どの窓でボタンを押したか」は窓の問いで、model は窓を持たない
-//     (model 側の sOrigDB は「どの文書のラスタを作ったか」という別の問いで、同じ答えになるのは結果)。
-//   ⚠寿命は sPeekActive と同じ。閉じた文書を指したまま使わないよう、離すときに必ず nil へ戻す。
+// Shift + left lays the other version over the pressed window at 100%, Shift+Alt + left at 50%.
+// It shows only while the button is held and goes when it is released (the modifiers themselves may
+// be let go of first): they are read **once**, at press time.
+static const PMReal kKCMPeekSemiOpacity = 0.5;	// the overlay's opacity (0..1) under Shift+Alt + left
+static bool16 sPeekActive        = kFalse;	// is Shift / Shift+Alt + left being held ＝ is an overlay up
+static bool16 sSingleShowing     = kFalse;	// is the bare left button being held ＝ are the marks temporarily up at the panel's 25%/75%. The release hides them again and puts the base opacity back
+// ★★**Which window is being peeked from.** What has to be repainted on release is **the window
+//   that was pressed**; while the peek only ever ran over the Target that was a constant, and the
+//   moment it could run from the Source window too, releasing there left the picture on screen
+//   (sShowOriginal drops, but no repaint reaches that document).
+//   ⚠**This is UI state**: "which window was the button pressed in" is a question about a window,
+//     and the model has none (its sOrigDB answers a different question -- which document was
+//     rasterised -- and the two agreeing is a consequence, not the same fact).
+//   ⚠Its lifetime is sPeekActive's. It is put back to nil on release so a closed document is never
+//     pointed at.
 static IDataBase* sPeekUnderDB   = nil;
 
-// マーク(枠/変更数)の表示を切り替えた後、マークが属するドキュメントを再描画して即反映する。
-// arm の有無に依らず使えるよう、peek 用の arm 済み Target ではなく「マークが載っている文書」を使う。
+// After the marks (the frames and the change counts) are switched on or off, repaint the document
+// they belong to so it takes effect at once. ★It uses **the document the marks are on** rather than
+// the armed Target, so that it works whether or not a comparison is armed.
 static void KCMInvalidateMarksDoc()
 {
 	Utils<IKCMCompareFacade>()->InvalidateDB(Utils<IKCMMarkData>()->GetMarkedTargetDB());
 }
 
-// マウス下のドキュメントが、arm 済みの対象(Target)文書と一致するか。CMYK サンプリング
-// (旧 Shift＋Ctrl＋Alt＋ミドル)とスプレッド枠の部分更新(旧 Ctrl＋ミドル)はヒットテストを sPeekTargetDB の
-// ページ座標に対して行うため、マウス下が Source 側や無関係な第3文書のウィンドウだと、そちらの
-// ローカル座標を対象文書のページ座標として誤って解釈してしまう。対象文書のウィンドウ上で操作した時
-// だけ反応させる。
-// ★以前は Utils<ILayoutUIUtils>()->GetFrontDocument()(「front(アクティブ)なドキュメント」)で
-// 判定していたが、Split Window の新しい側(kLayoutSecondaryPanelWidgetID)を操作しても OWL 内部の
-// アクティブ状態追跡が元側のままになるらしく、判定に失敗していた(ユーザー実測で確認)。
-// ⇒ QueryWindowUnderPoint ベースに切り替え、マウス位置そのものからドキュメントを特定する
-// (アクティブ状態を一切参照しない)。
-// ⚠2026-08-17 訂正(API 監査 B-U7): ここは「KCMSyncScrollOtherWindowsUnderMouse と同じ判定に統一」と
-//   書いていたが、**その名前の関数は KCM に存在しない**(全数 Grep でこの行だけ)。旧・中ボタン時代の
-//   名残で、今この道を共有しているのは KCMViewLookup.cpp の KCMQueryViewUnderMouse。
-// ★★その2つは前半3手(GetGlobalMouseLocation → QueryWindowUnderPoint → IDocumentPresentation)が同じで、
-//   **同じ問いを2か所で持っている形**。それでも畳まないのは、聞いていることが違うため:
-//     ・こちら … 「マウス下の**文書**は Target/Source か」＝文書の問い。3手で答えが出る
-//     ・あちら … 「マウス下の**ビュー**はどれか」＝Split Window のペイン特定まで要る(FindWidget + ヒットテスト)
-//   あちらを流用すると、ペイン特定という要らない仕事が付いた上に、**レイアウト widget を持たない窓
-//   (ストーリーエディター等)で nil になり答えが変わる**。⇒ 片方の窓解決を直すときは、必ずもう片方も見ること。
-// 共通部: マウス直下のドキュメントウィンドウの db を返す(無ければ nil)。Target/Source 判定の
-// 差分は比較先 db だけなので、窓解決を1本に畳んだ(2026-07-25 監査で重複解消)。
-// ★名前は 2026-08-17 に KCMFrontViewIsOverTarget/Source から改めた＝**この判定は front view を
-//   一切見ない**のに、名前だけが GetFrontDocument 時代のまま残っていた(このファイルの7箇所＝定義2・
-//   コメント1・**呼び出し4**と、他ファイルのコメント2箇所を同時に追随させた)。
-//   ⚠2026-08-19(不具合再検査 B-U7)に数え直した＝旧記述の「呼び手7箇所」は誤りで、**呼び手は4つ**
-//     (KCMTrackerBeginPeek / temp-hide の Target・Source / reveal の窓判定)。7は「触った箇所」の数。
+// The db of the document window directly under the mouse, or nil. The three tests below differ only
+// in which db they compare it against, so the window resolution is written once, here.
+//
+// ★Why the mouse and not the front document: the CMYK sampling and the partial spread refresh hit
+//   test against the **Target's** page coordinates, so with the mouse over the Source, or over an
+//   unrelated third document, that window's local coordinates would be read as the Target's page
+//   coordinates. Only a press over the right window may act.
+//   ⚠It used to ask Utils<ILayoutUIUtils>()->GetFrontDocument(). Operating the **new pane** of a
+//   split window (kLayoutSecondaryPanelWidgetID) leaves OWL's own idea of which view is active on
+//   the original pane, and the test failed (measured by the user). ⇒ QueryWindowUnderPoint settles
+//   the document from the mouse position alone, and **no active state is consulted at all** ---- so
+//   do not put a "front view" back into the name or the body of this test.
+// ★★Its first three steps (GetGlobalMouseLocation -> QueryWindowUnderPoint -> IDocumentPresentation)
+//   are KCMQueryViewUnderMouse's first three as well, and the two are deliberately NOT folded:
+//     - here  ... "is the **document** under the mouse the Target or the Source" ＝ a question about
+//                 a document, and three steps answer it
+//     - there ... "which **view** is under the mouse" ＝ it has to go on and pick the pane of a split
+//                 window (FindWidget plus a hit test)
+//   Borrowing that one would add the pane work for nothing **and change the answer for a window with
+//   no layout widget (the story editor, say), where it returns nil**. ⇒ when the window resolution
+//   on one side is touched, read the other.
 static IDataBase* KCMQueryDocDbUnderMouse()
 {
 	GSysPoint globalPt = Utils<IEventUtils>()->GetGlobalMouseLocation();
@@ -134,10 +135,11 @@ static bool16 KCMMouseIsOverTarget()
 	return (armedTarget != nil && KCMQueryDocDbUnderMouse() == armedTarget) ? kTrue : kFalse;
 }
 
-// マウス下のドキュメントウィンドウが Source(比較の旧側=常時表示枠を載せている sSrcDB)かどうか。
-// 「Hold to Hide Marks」＋「Always Show Marks on Source」併用時、Source 窓でツール左ボタンを押したときだけ Source 枠を
-// 一時退避させるための窓判定(Target 版 KCMMouseIsOverTarget と対称)。Source マークの所属は sSrcDB を
-// 正とする(arm の sPeekSourceDB と同一文書だが、判定はマークの実 db に紐づける)。
+// Is the window under the mouse the Source ＝ the db the always-on Source frames are drawn on
+// (sSrcDB)? It is what lets a press in the Source window put those frames away for as long as it is
+// held (the mirror of KCMMouseIsOverTarget above).
+// ★The Source marks are tied to **sSrcDB, not to the armed sPeekSourceDB**: the two are the same
+//   document, but this test belongs to the db the marks are actually on.
 static bool16 KCMMouseIsOverSource()
 {
 	IDataBase* const markedSrcDB = Utils<IKCMMarkData>()->GetMarkedSourceDB();
@@ -145,14 +147,17 @@ static bool16 KCMMouseIsOverSource()
 	        KCMQueryDocDbUnderMouse() == markedSrcDB) ? kTrue : kFalse;
 }
 
-// マウス下の窓が「比較の旧側の文書」かどうか。★上の KCMMouseIsOverSource とは**違う問い**なので
-// 別に立ててある(2026-08-22):
-//   ・上 = 「Source 枠を載せている db の窓か」(枠を一時退避させるための問い)
-//   ・下 = 「旧版の文書を見ているか」(どちらの版の変更箇所を出すかの問い)
-// ⚠**Story 変更モードでは上は必ず kFalse になる**＝あのモードは枠を載せないので
-//   GetMarkedSourceDB() が nil のまま(KCMDrawEventHandler の drawRings は Story で kFalse)。
-//   ⇒ 上を流用すると Source 窓で押しても何も出ない。同じ判定を2か所に置いたのではなく、
-//     「載せた db」と「arm した db」という**別の事実**を聞いている。
+// Is the window under the mouse the older version's document? ★It is a **different question** from
+// KCMMouseIsOverSource above, which is why both exist:
+//   - above ... "is this the window of the db the Source frames are drawn on" (asked to put those
+//               frames away)
+//   - here  ... "is the older version being looked at" (asked to decide which version's changes to
+//               show)
+// ⚠**In the Story mode the one above is always kFalse**: that mode draws no frames, so
+//   GetMarkedSourceDB() stays nil (drawRings is (mode != Story) in KCMDrawEventHandler).
+//   ⇒ borrowing it would mean a press in the Source window did nothing there. These are not the same
+//     test written twice; they ask about **two different facts** -- the db the marks went on, and the
+//     db that was armed.
 static bool16 KCMMouseIsOverArmedSource()
 {
 	IDataBase* const armedSource = Utils<IKCMCompareFacade>()->GetArmedSourceDB();
@@ -161,47 +166,49 @@ static bool16 KCMMouseIsOverArmedSource()
 }
 
 //========================================================================================
-// トラッカー(左ボタン)用の共有入口。KCM ツール選択中の左ボタン押下/解放から呼ばれる
-// (KCMTracker.cpp)。修飾なし押下=マーク reveal を基本に、修飾キーで peek/CMYK を切り替える。
-// ここはファイル内の peek 状態(sSingleShowing)を持ち、描画状態(押下中の表示)は
-// IKCMCompareFacade 越しに上下する。
+// The shared entry points for the tracker (the left button), called from the press and from the
+// release while the KCM tool is active (KCMTracker.cpp). A bare press inverts the marks; the
+// modifiers switch that for a peek or for CMYK.
+// The press state (sPeekActive / sSingleShowing / sPeekUnderDB) is this file's; what is actually
+// drawn is raised and lowered through IKCMCompareFacade.
 //
-// ★由来(2026-07-12〜13): もとは中ボタン＋修飾キーのジェスチャだったものをツールの左ボタンへ移植した。
-//   修飾なし=マーク一時表示 / Hold to Hide Marks の窓別 temp-hide(Target/Source) /
-//   Shift+左=旧版べた載せ peek 100% / Shift+Alt+左=peek 50% / Alt+左(単独)=CMYK 生値サンプリング。
-//   中ボタン経路(および Ctrl 系のパネル/再比較ジェスチャ)は撤去済み(2026-07-13)。再比較はページ
-//   右クリックメニュー「Refresh Page Comparison」へ移設。
+// ★Where it came from: all of these were middle-button-plus-modifier gestures before they were
+//   moved onto the tool's left button. The middle-button route is gone, and so are the Ctrl
+//   gestures for the panel and for re-comparing -- re-comparing lives on the page context menu as
+//   "Refresh Page Comparison".
 //========================================================================================
 
-// トラッカー(左ボタン)用の peek 開始。arm 済み(Start 後)かつ Target 窓上のときだけ、マウス下スプレッドの
-// 旧版を opacity(1.0=不透明 / 0.5=半透明)で重ねる。ハンドツールへの一時切替はしない(トラッカーが既に
-// マウスをキャプチャ済みで、ドラッグは ContinueTracking へ行くため不要)。
+// Start a peek from the tracker (the left button). While a comparison is armed and the mouse is
+// over **either** of the two compared windows, the OTHER version of the spread under the mouse is
+// laid over it at opacity (1.0 = opaque / 0.5 = half). There is no temporary switch to the hand
+// tool: the tracker already has the mouse captured and a drag goes to ContinueTracking.
 //
-// ★★2026-08-15(第2段 Task 4B): **ビュー解決3本をここへ引き取った**。以前は model 側の
-//   KCMPeekShowUnderMouse がこの3本を自分で呼んでいたが、「どの窓か・そのズームは・マウスはどこか」は
-//   窓が無ければ答えの無い問いなので、UI 側で観測して値を渡す形にした。
-//   ⚠**2つの早期 return は旧実装の同じ位置**(ビューが取れない / 座標が取れない)。そこで戻ると
-//   sPeekActive と SetMarksVisible(kFalse) は立ったままになるが、これも旧実装と同じ
-//   (＝ボタンを離したときの KCMTrackerRevealEnd が元に戻すので、状態は取り残されない)。
+// ★★**Resolving the view is done here**, on the UI side: "which window, at what magnification,
+//   with the mouse where" are questions with no answer where there is no window, so they are
+//   observed here and the values are handed down to the model.
+//   ⚠**The two early returns leave sPeekActive up and the marks switched off.** That is not a leak:
+//   every way the press can end goes through KCMTrackerRevealEnd, which puts both back.
 static void KCMTrackerBeginPeek(PMReal opacity)
 {
-	// ★★★2026-08-22＝**旧版の窓からも覗ける**(ユーザー要望「ソースの方でも、Shift＋の挙動を入れて
-	//   欲しい」「ソースからターゲットを覗く感じ」)。それまでは Target 窓の上でしか反応せず、
-	//   重ねられるのは常に旧版という一方通行だった。
-	//   ★**押した窓が「下」、相手の文書が「重ねる方」**＝どちらの窓からでも「向こうの版」が見える。
-	// ⚠Target を先に見る＝同じ文書を自分自身と比較しているとき(sSrcDB==sDB)、両方の判定が真になるので
-	//   順序が意味を持つ。Target 側に倒すのは、それが従来からの挙動だから。
+	// ★★★**The peek works from either window** (asked for by the user: put the Shift behaviour on the
+	//   Source side as well, "peeking at the Target from the Source"). It used to answer over the
+	//   Target window only, and what was laid over was always the older version ＝ one way.
+	//   ★**The window that was pressed stays underneath; the partner document is what is laid over
+	//   it** ＝ from either window, what you see is the other version.
+	// ⚠Target is tested first and **the order carries meaning**: where a document is being compared
+	//   against itself (sSrcDB == sDB) both tests are true. Falling to the Target side is what it has
+	//   always done.
 	const bool16 overTarget = KCMMouseIsOverTarget();
 	const bool16 overSource = overTarget ? kFalse : KCMMouseIsOverArmedSource();
 	if (!Utils<IKCMCompareFacade>()->ArmedDocsAlive() || (!overTarget && !overSource))
-		return;	// 未 Start / 比較文書が閉じ済み / どちらの比較文書の窓でもない
+		return;	// not started / a compared document has closed / not over either compared window
 	sPeekActive = kTrue;
 	InterfacePtr<IKCMCompareFacade> compare(Utils<IKCMCompareFacade>().QueryUtilInterface());
-	compare->SetPeekOpacity(opacity);	// 旧版べた載せの不透明度(描画時に参照)
+	compare->SetPeekOpacity(opacity);	// the overlay's opacity, read at draw time
 	sSingleShowing = kFalse;
-	compare->SetMarksVisible(kFalse);	// 覗き中は枠等を出さない(旧版だけ)
+	compare->SetMarksVisible(kFalse);	// no frames while peeking ＝ the other version alone
 
-	// マウスが乗っているレイアウトビュー(Split Window対応、KCMQueryViewUnderMouse参照)。
+	// The layout view the mouse is over (split windows included -- see KCMQueryViewUnderMouse).
 	InterfacePtr<IControlView> view(KCMQueryViewUnderMouse());
 	if (view == nil)
 		return;
@@ -210,73 +217,80 @@ static void KCMTrackerBeginPeek(PMReal opacity)
 	if (!KCMQueryMouseContentPoint(view, mx, my))
 		return;
 
-	// 観測値2つ。content→window スケール(ズーム×デバイス倍率)と、UI ズーム(ユーザーに見える拡大率)。
-	// ★これを何 dpi のラスタにするか(下限 50% の頭打ち・16〜300dpi のクランプ)は model 側の判断なので
-	//   ここでは触らない。パノラマが引けなければ uiZoom=0 を渡す＝model 側が「頭打ちなし」で扱う
-	//   (分離前に peekPano == nil だったときと同じ)。
+	// Two observations: the content -> window scale (zoom x device scale), and the UI zoom (the
+	// magnification the reader sees).
+	// ★What dpi they turn into -- the floor at 50%, the clamp to 16..300dpi -- is the model's
+	//   decision and is not touched here. Where the panorama cannot be read, uiZoom = 0 is handed
+	//   down and the model reads that as "no floor".
 	const PMReal viewScale = view->GetContentToWindowMatrix().GetXScale();
 	PMReal uiZoom = 0.0;
 	InterfacePtr<IPanorama> peekPano(KCMQueryPanorama(view));
 	if (peekPano != nil)
 		uiZoom = peekPano->GetXScaleFactor(kFalse);
 
-	// ★★★2026-08-16: **そのビューが今表示しているスプレッド**も渡す。これが無いと、マスタースプレッドを
-	//   表示していても点が通常ページに当たり(両者はペーストボード座標で重なる)、**旧版が1枚も出ない**。
-	//   「どのスプレッドを見ているか」は窓の問い＝UI が観測して model へ渡す(Task 4B と同じ分業)。
+	// ★★★**Which spread that view is showing** is handed down too. Without it, a point over a master
+	//   spread lands on an ordinary page instead -- the two OVERLAP in pasteboard coordinates -- and
+	//   **not one page of the other version appears**. "Which spread is on screen" is a question about
+	//   a window ＝ the UI observes it and tells the model.
 	//
-	// ★★★**向きは引数の順序だけで決まる**(2026-08-22)。model 側(KCMPeekShowAt)がやるのは
-	//   「**第1引数の文書でマウス下のページを特定し、第2引数の対応ページをその上にラスタ化する**」で、
-	//   どちらが新版かは一度も問わない ---- ページ対応表(KCMBuildPairing / KCMBuildMasterPairing)も
-	//   引数の順に作られ、描画側も sOrigDB を見るだけで文書の役割を見ない。
-	//   ⇒ **逆向き専用のコードは1行も要らず、押した窓を第1引数に渡すだけでよかった。**
-	// ⚠ただし model 側の「未更新スプレッドは重ねない」最適化は `sDB ==` 第1引数 で書かれているので、
-	//   Source から覗くときは成立せず、変化の無いスプレッドでもラスタ化する(＝**遅いだけで正しい**)。
-	//   対称にするなら sSrcPageToTarget で引き直すことになるが、まず実機で気になるかを見てから。
+	// ★★★**The direction is settled by the argument order alone.** What the model does
+	//   (KCMPeekShowAt) is "**find the page under the mouse in the FIRST argument's document, and
+	//   rasterise the SECOND argument's matching page over it**" ---- it never asks which of the two
+	//   is the newer version. The page pairing (KCMBuildPairing / KCMBuildMasterPairing) is built in
+	//   argument order as well, and the drawing side only reads sOrigDB, never either document's
+	//   role. ⇒ **not one line of reverse-direction code was needed**; handing the pressed window in
+	//   as the first argument was all of it.
+	// ⚠One asymmetry is left. The model's "do not lay anything over an unchanged spread" optimisation
+	//   is written as `sDB ==` **the first argument**, so peeking from the Source it never holds and
+	//   even an unchanged spread is rasterised (＝ **slower, but not wrong**). Making it symmetric
+	//   would mean looking the page up through sSrcPageToTarget; see first whether it is noticeable.
 	IDataBase* const under = overTarget ? compare->GetArmedTargetDB() : compare->GetArmedSourceDB();
 	IDataBase* const over  = overTarget ? compare->GetArmedSourceDB() : compare->GetArmedTargetDB();
-	sPeekUnderDB = under;		// 離すときに再描画するのはこの窓(宣言のコメント参照)
+	sPeekUnderDB = under;		// the window the release repaints (see the declaration)
 	compare->ShowPeekAt(under, over,
 	                    mx, my, viewScale, uiZoom,
 	                    KCMQuerySpreadUIDForView(view));
 }
 
-// 修飾キー→ジェスチャの分類(KCMPeekGesture.h 参照)。★割当の定義はここ1本だけ: トラッカーの押下時分岐
-// (KCMTracker.cpp)・下の RevealBegin の分岐・temp-hide 判定がすべてこれを使う(2026-07-15 統合)。
+// Classify the modifiers (see KCMPeekGesture.h). ★**The assignment is defined here and nowhere
+// else**: the tracker's press branch (KCMTracker.cpp) and KCMTrackerRevealBegin below are the only
+// two that ask, and everything after them branches on the value those calls returned.
 KCMGesture KCMClassifyGesture(bool16 shiftDown, bool16 altDown, bool16 cmdDown, bool16 macCtrlDown)
 {
-	// Ctrl(cmd)を伴う左ボタンは未割当。再比較はページ右クリックメニューへ移設済み、パネル操作は
-	// フライアウトへ移行済みで、いずれもトラッカーは扱わない。
-	// ★Mac の Control も未割当(2026-07-25 追補): macOS では Control+クリックが副ボタン(コンテキスト
-	//   メニュー)の標準ジェスチャなので、左ボタン押下として届いても reveal を横取りしない。
-	//   MacCtrlDown() は Windows では常に kFalse なので Windows の挙動は不変。
+	// A left button with Ctrl (cmd) is unassigned: re-comparing moved to the page context menu and
+	// the panel operations to the flyout, and the tracker handles neither.
+	// ★Mac's Control is unassigned as well: on macOS Control-click is the standard secondary-button
+	//   (context menu) gesture, so even arriving as a left press it must not have the reveal taken
+	//   from it. MacCtrlDown() is always kFalse on Windows, so nothing changes there.
 	if (cmdDown || macCtrlDown)
 		return kKCMGestureNone;
 	if (altDown && !shiftDown)
-		return kKCMGestureCmyk;		// Alt 単独: CMYK 色サンプリング
+		return kKCMGestureCmyk;		// Alt alone: sample the CMYK colour
 	if (shiftDown && altDown)
-		return kKCMGesturePeek50;		// Shift+Alt: 旧版べた載せ 50%
+		return kKCMGesturePeek50;		// Shift+Alt: the other version laid over at 50%
 	if (shiftDown)
-		return kKCMGesturePeek100;	// Shift: 旧版べた載せ 100%
-	return kKCMGestureReveal;			// 修飾なし: reveal / temp-hide
+		return kKCMGesturePeek100;	// Shift: the other version laid over at 100%
+	return kKCMGestureReveal;			// no modifier: invert the pressed window's marks
 }
 
 void KCMTrackerRevealBegin(bool16 shiftDown, bool16 altDown, bool16 cmdDown, bool16 macCtrlDown)
 {
-	KCMCmykClearPending();	// このプレスで CMYK カーソルを出すかは下の Cmyk 分岐で決める(既定=出さない)
+	KCMCmykClearPending();	// whether this press shows a CMYK cursor is settled in the Cmyk branch below (default: it does not)
 
 	const KCMGesture gesture = KCMClassifyGesture(shiftDown, altDown, cmdDown, macCtrlDown);
 	if (gesture == kKCMGestureNone)
-		return;	// 未割当(Ctrl/Command 系、Mac の Control)。トラッカーはキャプチャ済みだが描画状態は変えない。
+		return;	// unassigned (Ctrl / Command, Mac's Control). The tracker has the mouse, but nothing drawn changes.
 
-	// ---- 常時表示中の窓別 temp-hide(押している間だけ枠をどけて素の紙面を見る) ----
-	// 隠すジェスチャ=reveal と peek(修飾なし/Shift/Shift+Alt)。
-	// ★CMYK(Alt 単独)は隠さない=枠を出したままサンプリング(旧・中ボタン Shift+Ctrl+Alt でも枠は
-	// 隠れない仕様に一致)。押した窓の枠だけを隠す(Target/Source 別)。
-	// ★★★2026-08-22＝**判定を「Hold to Hide Marks」から各トグル自身へ移した**(ユーザー決定)。
-	//   規則は「**押している間は反対になる**」の1本＝**その窓のマークが出ていれば隠し、出ていなければ出す**
-	//   (出す側は下の reveal と Story 分岐)。⇒ Hold トグルは撤去した。あれの「常時表示」は
-	//   「Show Marks on ...」と完全に重複しており、固有だったのはこの temp-hide だけなので、
-	//   それをトグル ON のときの標準の挙動として畳んである。
+	// ---- Put the pressed window's always-on marks away for as long as the button is held ----
+	// The gestures that hide are the reveal and the peeks (no modifier / Shift / Shift+Alt).
+	// ★CMYK (Alt alone) does not hide: it samples with the frames left standing. Only the pressed
+	// window's frames go (Target and Source are decided separately).
+	// ★★★The rule is a single one -- **while the button is held, that window's marks are the opposite
+	//   of what they were**: shown ones go away, hidden ones come up (the coming-up side is the reveal
+	//   and the Story branch further down). The toggle that used to own this ("Hold to Hide Marks")
+	//   was retired: its "keep them up" half duplicated "Show Marks on ..." exactly, and this
+	//   temp-hide was the only thing it had of its own, so that is now simply what a press does while
+	//   a "Show Marks on ..." toggle is on.
 	const bool16 tempHideGesture = (gesture != kKCMGestureCmyk);
 	InterfacePtr<IKCMCompareFacade> compare(Utils<IKCMCompareFacade>().QueryUtilInterface());
 	if (tempHideGesture)
@@ -284,136 +298,143 @@ void KCMTrackerRevealBegin(bool16 shiftDown, bool16 altDown, bool16 cmdDown, boo
 		if (compare->GetShowTargetMarks() && !compare->GetMarksTempHidden() && KCMMouseIsOverTarget())
 		{
 			compare->SetMarksTempHidden(kTrue);
-			KCMInvalidateMarksDoc();	// Target を再描画
+			KCMInvalidateMarksDoc();	// repaint the Target
 		}
-		// ★★★Source 側は**トグルを見ずに「押した」とだけ言う**(2026-08-22 ユーザー決定＝実装を規則へ)。
-		//   出すのか隠すのかは描画側が sSrcMarksOn と **XOR** して決めるので、ここで
-		//   GetShowSourceMarks() を見ると**同じ判断が2か所**になる([[one-question-one-place]])。
-		//   ⇒ これで**トグル OFF の Source 窓を押せば枠が出る**＝規則が3か所で宣言していた
-		//     「Pixel/Story・Target/Source すべてで同じ」に実装が追いついた。
-		//   ⚠Target 側(上)が今も GetShowTargetMarks() を見ているのは非対称に見えるが、あちらは
-		//     「出す」を別のフラグ(sMarksVisible・下の reveal)が持っていて、そちらが peek からも
-		//     立つため1本に畳めない。**畳めるのは Source だけ。**
+		// ★★★The Source side **says only "pressed" and does not look at the toggle**. Whether that means
+		//   show or hide is the drawing side's decision -- it **XORs** this with sSrcMarksOn -- so
+		//   reading GetShowSourceMarks() here would put **the same decision in two places**
+		//   ([[one-question-one-place]]).
+		//   ⇒ this is what makes **a press in a Source window whose toggle is OFF bring the frames up**,
+		//     which is what the rule had been claiming in three places: the same in Pixel and Story,
+		//     the same for Target and Source.
+		//   ⚠The Target side above still reads GetShowTargetMarks(), which looks asymmetric. It cannot
+		//     be folded the same way: over there "show" is owned by a second flag (sMarksVisible, the
+		//     reveal below) which the peeks raise as well. **Only the Source side folds into one.**
 		if (!compare->GetSrcMarksPressed() && KCMMouseIsOverSource())
 		{
 			compare->SetSrcMarksPressed(kTrue);
-			compare->InvalidateDB(Utils<IKCMMarkData>()->GetMarkedSourceDB());	// Source を再描画(compare は上で引いてある)
+			compare->InvalidateDB(Utils<IKCMMarkData>()->GetMarkedSourceDB());	// repaint the Source (compare was queried above)
 		}
 	}
 
-	// ---- ジェスチャ分岐 ----
+	// ---- The gesture branches ----
 	if (gesture == kKCMGestureCmyk)
 	{
-		// ★押下中の CMYK 状態は KCMCmykCursor.cpp が持つ(2026-08-13 の分割)。中身は分割前と同一。
-		//   sCmykCursorPending の初期化(このプレスで CMYK カーソルを出すかの既定=出さない)も向こうが行う。
+		// ★The held CMYK state belongs to KCMCmykCursor.cpp, sCmykCursorPending included -- whether this
+		//   press shows a CMYK cursor at all (by default it does not) is initialised over there.
 		KCMCmykBeginPress();
 		return;
 	}
 	if (gesture == kKCMGesturePeek50)
 	{
-		// Shift+Alt+左: 旧版べた載せ peek を 50% で(旧・中ボタン Shift+Alt+ミドル)。
+		// Shift+Alt + left: lay the other version over at 50%.
 		KCMTrackerBeginPeek(kKCMPeekSemiOpacity);
 		return;
 	}
 	if (gesture == kKCMGesturePeek100)
 	{
-		// Shift+左: 旧版べた載せ peek を 100% 不透明で(旧・中ボタン Shift+ミドル)。
+		// Shift + left: lay the other version over, fully opaque.
 		KCMTrackerBeginPeek(PMReal(1.0));
 		return;
 	}
 
-	// ---- 修飾なし・Story 変更モード: 押下中だけ「変更した文字そのもの」に色地を敷く ----
-	// ★★Pixel の reveal(下)とは別の道で、絵の作り方が根本的に違う。Pixel は「ページのどこが違って
-	//   見えるか」しか知らないので枠を描くが、Story は「どの文字が変わったか」を知っているので、
-	//   その文字の下に色地を敷く(ユーザー指定 2026-08-22。★2026-08-24 までは反転だった＝紙に出せず変更)。
-	//   ⇒ 拡大率で大きさが変わらず、ページの外枠も要らない。
-	// ⚠上の temp-hide が扱うのは**枠**だけ(Story モードには枠が無い＝KCMDrawEventHandler の drawRings が
-	//   Story では kFalse)なので、Story の色地マークの「押している間は反対」はここではなく
-	//   KCMStoryMarksRefresh が決める＝押した窓のトグルと押下を XOR する(KCMStoryPressMarks.cpp)。
-	//   ⇒ **トグル OFF の窓を押せば出て、ON の窓を押せば隠れる**。この分岐は「押した」ことだけを伝える。
-	// ★対象は**押した窓の側だけ**(ユーザー選択 2026-08-22)。削除された文字は旧版にしか無く、挿入された
-	//   文字は新版にしか無いので、どちらの文書を見ているかでマークできるものが変わる。
+	// ---- No modifier, Story mode: while held, put a coloured ground under the changed text ----
+	// ★★A different road from the Pixel reveal below, because the picture is made differently. Pixel
+	//   knows only **where the page looks different**, so it draws frames; Story knows **which
+	//   characters changed**, so it lays a coloured ground under exactly those (the user's choice; it
+	//   inverted them until it turned out that could not be printed). ⇒ it does not change size with
+	//   the magnification, and it needs no frame around the page.
+	// ⚠The temp-hide above deals with **frames only**, and the Story mode has none (drawRings is
+	//   (mode != Story) in KCMDrawEventHandler). So "the opposite while held" for the Story ground is
+	//   NOT decided here but in KCMStoryMarksRefresh, which XORs the pressed window's toggle with the
+	//   press (KCMStoryPressMarks.cpp).
+	//   ⇒ **press a window whose toggle is OFF and they appear; press one that is ON and they go.**
+	//     This branch only reports that the button went down.
+	// ★Only the pressed window's side is marked (the user's choice): deleted characters exist in the
+	//   older version alone and inserted ones in the newer, so which document is being looked at
+	//   decides what there is to mark.
 	if (compare->GetCompareMode() == kKCMModeStory)
 	{
 		if (KCMMouseIsOverTarget())
 			KCMStoryPressMarksBegin(kFalse /*target*/);
 		else if (KCMMouseIsOverArmedSource())
 			KCMStoryPressMarksBegin(kTrue /*source*/);
-		return;		// 枠の reveal(下)は Story には無い
+		return;		// the frame reveal below does not exist in the Story mode
 	}
 
-	// ---- 修飾なし: 通常モードのマーク一時表示(reveal) ----
-	// ★「押している間は反対」の**出す側**。Target のマークが既に出ているなら上で temp-hide 済みなので、
-	//   ここでは何もしない(2026-08-22＝判定を GetHoldToHideMarks から付け替えた。Hold は撤去)。
+	// ---- No modifier, Pixel mode: bring the marks up for as long as the button is held ----
+	// ★This is the **coming-up side** of "the opposite while held". Where the Target's marks are
+	//   already up, the temp-hide above has just put them away, so there is nothing to do here.
 	if (compare->GetShowTargetMarks())
 		return;
 
-	// 「マークがある」の判定は旧・中ボタンの修飾なし分岐と同一(anyMarkableContent 相当)。
-	// ★中身は分割前と同じ5つの OR(変更・overflow 両側・登録 両側)で、overflow 集合を現在の文書対へ
-	//   合わせるのも向こうがやる(2026-08-13 Task 12 で IKCMMarkData へ移した)。
+	// "Is there anything to mark at all": five things OR-ed together (the changes, the overflow on
+	// both sides, the registered pages on both sides). ★Matching the overflow set to the current pair
+	// of documents is part of that answer and is done on the other side of IKCMMarkData, not here.
 	if (!Utils<IKCMMarkData>()->HasAnyMarkableContent())
 		return;
 
-	// 通常モード(マーク非表示→押下中だけ表示)。Target 窓の上でだけ reveal する(Source や無関係な窓では
-	// 出さない。旧・中ボタンと同じ方針)。
+	// Bring them up over the Target window only. Over the Source window the same press is carried by
+	// SetSrcMarksPressed above (the drawing side XORs it), and over an unrelated window nothing
+	// happens at all.
 	if (!KCMMouseIsOverTarget())
 		return;
 
 	sSingleShowing = kTrue;
-	compare->SetMarkScreenOpacity(compare->GetSelectedMarkOpacity());	// パネルの 25%/75%
-	compare->SetMarksVisible(kTrue);	// 押下中だけ枠等を表示
+	compare->SetMarkScreenOpacity(compare->GetSelectedMarkOpacity());	// the panel's 25% / 75%
+	compare->SetMarksVisible(kTrue);	// up for as long as the button is held
 	KCMInvalidateMarksDoc();
 }
 
 void KCMTrackerRevealEnd()
 {
-	// ★Alt+左(CMYK)の押下中キャッシュとモード保持の解除は KCMCmykCursor.cpp が持つ(2026-08-13 の分割)。
-	//   中身は分割前と同一(フォント解放・hover/other の解除・ステータス行の空白1文字クリア)。
+	// ★Releasing what the CMYK gesture (Alt + left) held -- the press-time font, the hover/other
+	//   caches, the status line cleared to a single space -- belongs to KCMCmykCursor.cpp.
 	KCMCmykEndPress();
 
-	// Story 変更モードで押下中に出していた色地マークを消す。⚠押下で出していなければ何もしない
-	//   (向こうが自分で覚えている)＝Pixel モードで押して離しても、ジャンプが出した一時マーカーは消えない。
+	// Take away the coloured ground the Story mode put up while held. ⚠It does nothing where the
+	//   press did not put any up (it remembers that itself), so pressing and releasing in the Pixel
+	//   mode does **not** clear the temporary marker a jump left behind.
 	KCMStoryPressMarksEnd();
 
-	// 押下中に隠していた常時表示の枠を戻す(離すと再表示)＝「押している間は反対になる」の戻り側。
-	// 押した窓に応じて Target/Source どちらか(または両方)が立っている。その窓のトグルが OFF なら
-	// そもそも立たないので無影響(旧・中ボタン解放時の temp-hide 復元と同一)。
-	// ⚠2026-08-22＝旧記述は「『Hold to Hide Marks』で隠していた」と書いていたが、**あのトグルは
-	//   同日に撤去された**。立てる条件は各「Show Marks on ...」トグル自身へ移っている
-	//   (KCMTrackerRevealBegin)。
+	// Put back the always-on frames that were hidden while the button was held ＝ the returning side
+	// of "the opposite while held". Depending on which window was pressed, the Target flag or the
+	// Source one (or both) is up; where that window's toggle is off, neither was raised in the first
+	// place and this does nothing. What raises them is each "Show Marks on ..." toggle, in
+	// KCMTrackerRevealBegin.
 	InterfacePtr<IKCMCompareFacade> compare(Utils<IKCMCompareFacade>().QueryUtilInterface());
 	if (compare->GetMarksTempHidden())
 	{
 		compare->SetMarksTempHidden(kFalse);
-		KCMInvalidateMarksDoc();	// Target を再描画
+		KCMInvalidateMarksDoc();	// repaint the Target
 	}
 	if (compare->GetSrcMarksPressed())
 	{
 		compare->SetSrcMarksPressed(kFalse);
-		compare->InvalidateDB(Utils<IKCMMarkData>()->GetMarkedSourceDB());	// Source を再描画(compare は上で引いてある)
+		compare->InvalidateDB(Utils<IKCMMarkData>()->GetMarkedSourceDB());	// repaint the Source (compare was queried above)
 	}
 
 	if (sPeekActive)
 	{
-		// Shift／Shift+Alt+左を離した → 旧版べた載せを隠す(マークは触らない)。キャッシュは保持
-		// (再 peek は即時)。旧・中ボタン解放時の sPeekActive 復元と同一。
+		// Shift / Shift+Alt + left was released -> take the overlay away, leaving the marks alone. The
+		// raster cache is kept, so peeking again is immediate.
 		sPeekActive = kFalse;
 		if (compare->GetShowOriginal())
 		{
 			compare->SetShowOriginal(kFalse);
-			// ★**覗いていた窓**を再描画する(2026-08-22)。ここは GetArmedTargetDB() 決め打ちだったので、
-			//   Source から覗けるようにした時点で「離しても旧版の窓から絵が消えない」になっていた
-			//   ---- sShowOriginal は落ちるのに、その文書へ再描画が飛ばないため。
-			//   ⚠採れなかったときは従来どおり Target へ(押していないのにここへ来る道は無いが、
-			//     nil を渡して何も起きないより、以前と同じ振る舞いに落ちる方が読める)。
+			// ★Repaint **the window that was being peeked from**. This was GetArmedTargetDB() outright,
+			//   so the moment the peek could run from the Source window as well, releasing there left
+			//   the picture on screen ---- sShowOriginal drops, but no repaint reaches that document.
+			//   ⚠Where it could not be recorded it falls back to the Target: there is no way to reach
+			//     this without a press, but falling back to what it used to do reads better than
+			//     handing nil down and having nothing happen.
 			compare->InvalidateDB((sPeekUnderDB != nil) ? sPeekUnderDB : compare->GetArmedTargetDB());
 		}
-		sPeekUnderDB = nil;		// 閉じた文書を指したまま残さない
+		sPeekUnderDB = nil;		// never left pointing at a document that may close
 	}
 	else if (sSingleShowing)
 	{
-		// 通常モードの reveal 解除 → 枠表示を解除し、不透明度を基準値へ戻す＋非表示へ(旧・中ボタン解放時の
-		// sSingleShowing 復元と同じ)。
+		// The Pixel reveal was released -> switch the frames off again and put the base opacity back.
 		sSingleShowing = kFalse;
 		compare->SetMarksVisible(kFalse);
 		compare->SetMarkScreenOpacity(compare->GetBaseScreenOpacity());
@@ -421,103 +442,111 @@ void KCMTrackerRevealEnd()
 	}
 }
 
-// KCMResetPeekGestureState(KCMPeekGesture.h 参照) — 押下中の表示状態を初期化する。
-// ★2026-08-13 の分割で新設。分割前は model 側の3か所(KCMDoArmMousePeek / KCMDoDisarmMousePeek /
-//   KCMHandleDocsClosed)がいずれも同じ2行を直接書いていた。
+// KCMResetPeekGestureState (declared in KCMPeekGesture.h) -- forget that a press is showing
+// anything.
 //
-// ⚠★★2026-08-19(不具合再検査 B-U7)に数え直した＝**呼び手は1つだけ**。旧記述の「呼び手は model 側の
-//   3か所」は分割後に成り立っていない ---- model 側は3か所とも「これは UI の状態なので UI がやる」に
-//   書き換わり(KCMPeek.cpp の arm/disarm/クローズ掃除)、UI 側で実際に呼んでいるのは
-//   **KCMModelChangeObserver の kKCMComparisonDocsClosedMessage 分岐(比較が終わったときだけ)**
-//   の1か所。arm(Start)と disarm(Stop)の通知分岐からは呼んでいない。
-// ★★**それでも不具合ではない**(2026-08-19 に全経路を確認した):
-//   この2つのフラグが立つのは押下中だけで、押下の終わり方は3つしかなく、**3つとも
-//   KCMTrackerRevealEnd を通る** ---- KCMTracker.cpp の EndTracking(通常の解放)・AbortTracking
-//   (メニュー等で中断)・BeginTracking で基底がトラッキングを断った経路。∴ Start/Stop の時点で
-//   フラグが残っていることは無く、万一残っても次の解放で必ず落ちる。
-//   ⇒ **足すべきは呼び出しではなく、この説明**(消えかけの「保険」を復活させると、なぜ在るのか
-//     分からない行がもう1つ増える)。
+// ⚠**There is exactly one caller**, and it is the UI's close handling: the
+//   kKCMComparisonDocsClosedMessage branch of KCMModelChangeObserver, and only where the comparison
+//   itself ended. **Arming (Start) and disarming (Stop) do not call it.**
+// ★★**That is not an oversight** (every route was walked): these flags are only up while the button
+//   is held, a press can end in exactly three ways, and **all three go through KCMTrackerRevealEnd**
+//   ---- KCMTracker.cpp's EndTracking (the ordinary release), AbortTracking (interrupted by a menu,
+//   say), and the path in BeginTracking where the base refused to track. ∴ they cannot still be up
+//   when Start or Stop runs, and if one somehow were, the next release would drop it.
+//   ⇒ **what was missing was this explanation, not a call.** Reviving the "just in case" call would
+//     add one more line nobody can say why they need.
 void KCMResetPeekGestureState()
 {
 	sPeekActive    = kFalse;
 	sSingleShowing = kFalse;
-	// ⚠**ここに来る道の1つが「文書が閉じた」**(KCMModelChangeObserver が通知を受けて呼ぶ)なので、
-	//   覗いていた窓のポインタは必ず捨てる ---- 閉じた IDataBase* を持ったまま次の解放で使うと、
-	//   その先で再描画を頼むことになる。★2026-08-22 に sPeekUnderDB を足したとき、この関数が
-	//   「押下中の状態を初期化する」と名乗っている以上ここも直す、と決めた(名前が契約)。
+	// ⚠**The road here is "a document closed"** (KCMModelChangeObserver calls it on that
+	//   notification), so the peeked-from window pointer has to go as well: carry a closed
+	//   IDataBase* forward and the next release would ask for a repaint of it. ★The name is the
+	//   contract -- a function that says it forgets the press state must forget all of it.
 	sPeekUnderDB   = nil;
 }
 
 //========================================================================================
-// 一括クローズ(複数文書を続けて閉じる / アプリ終了の close-all)の後片付けを1回に畳む
+// Fold the clean-up after a batch close (several documents in a row, or the close-all at quit)
+// into one
 //
-//   kAfterCloseDoc は「閉じた文書ごと」に飛ぶ。そのたびに KCMHandleDocsClosed が UI の後片付け
-//   (スクロール地図 strip の撤去・InvalidateViews・サムネイル再生成の予約・パネル/ステータス更新)
-//   まで行うと、N 文書を一度に閉じたときに N 回走る。状態(メモリ)の破棄はその場で行い、UI 側だけ
-//   保留して、全部閉じ終わったところで1回だけ流す(=「集めてから1回」)。解体が進む場面で widget に
-//   触る回数が減るので、終了時の堅牢性(特に Mac)にも効く。
+//   kAfterCloseDoc arrives **once per closed document**, so the model sweeps once per document and
+//   notifies once per document. If the UI clean-up (removing the scroll-map strip, invalidating the
+//   views, booking the thumbnail rebuild, refreshing the panel and the status line) ran on each of
+//   those, closing N documents would run it N times. Dropping the state is done immediately; only
+//   the UI half is held back and flushed once, when they have all closed. It also touches widgets
+//   fewer times while things are coming apart, which helps at quit (on the Mac especially).
 //
-//   ★「今どれかの文書が閉じている最中か」と「全部閉じ終わった」は本体(Links UI プラグイン)が
-//     公開しており、こちらは読むだけでよい(公開ヘッダー LinksUIID.h):
-//       ・IID_IKFILESCLOSING        = セッション boss 上の IBoolData(閉じ始めに kTrue、全部閉じたら kFalse)
-//       ・kPendingDocumentsClosedMsg = 全部閉じ終わった瞬間にアプリの subject へ飛ぶ通知
-//   ★Links UI が無い/無効な環境ではフラグを引けない。その場合は保留せず、従来どおり毎回その場で
-//     片付ける(フォールバック=挙動は元のまま)。
+//   ★"Is a document closing right now" and "they have all closed" are both published by the
+//     application's own Links UI plug-in, and only have to be read (public header LinksUIID.h):
+//       - IID_IKFILESCLOSING        = an IBoolData on the session boss (kTrue from the first close,
+//                                     kFalse once they are all done)
+//       - kPendingDocumentsClosedMsg = sent to the application's subject the moment the last one closes
+//   ★Where the Links UI is absent or disabled the flag cannot be read. Nothing is held back then and
+//     each document is cleaned up as it closes ＝ the behaviour from before this existed.
 //========================================================================================
 
-static bool16 sDeferredCloseUiPending = kFalse;	// UI の後片付けを保留中か(完了通知で1回だけ流す)
+static bool16 sDeferredCloseUiPending = kFalse;	// is the UI clean-up being held back (the completion notification flushes it once)
 
-// いま一括クローズの最中か(本体が管理するセッションフラグを読むだけ。引けなければ kFalse)。
-// ★2026-08-13: 呼び手(KCMHandleDocsClosed)が KCMPeek.cpp に残ったので static を外した。
-//   保留するかどうかの判断と、保留の受け皿(KCMDeferCloseUi)を同じファイルに置いておくため。
+// Is a batch close running right now? It only reads the session flag the application keeps; kFalse
+// where that cannot be read.
+// ★It is not static because **the UI's close branch (KCMModelChangeObserver) asks it**, and the
+//   deferral it feeds (KCMDeferCloseUi) lives here with it -- the question and its answer in one
+//   place. ⚠The model does not ask: KCMPeek.cpp records that the model asking for UI state was the
+//   flow going the wrong way.
 bool16 KCMBatchCloseInProgress()
 {
-	ISession* session = GetExecutionContextSession();	// 終了処理中は nil になり得る
+	ISession* session = GetExecutionContextSession();	// can be nil while the application is quitting
 	if (session == nil)
 		return kFalse;
 	InterfacePtr<IBoolData> filesClosing(session, IID_IKFILESCLOSING);
 	return (filesClosing != nil && filesClosing->GetBool()) ? kTrue : kFalse;
 }
 
-// 保留していた UI の後片付けを1回だけ流す(一括クローズ完了時)。
+// Flush the UI clean-up that was held back, once, when the batch close completes.
 static void KCMFlushDeferredCloseUi()
 {
 	if (!sDeferredCloseUiPending)
 		return;
 	sDeferredCloseUiPending = kFalse;
 
-	// ★この関数だけで3回聞く(下の2つの入口ガードと、末尾のループの中の InvalidateDB)ので、
-	//   1回引いて使い回す(Utils.h:74-80。2026-08-17 の API 監査 B-U7)。
+	// ★This function asks three times (the two guards below, and the InvalidateDB in the loop at the
+	//   end), so the interface is queried once and kept (Utils.h:74-80).
 	InterfacePtr<IKCMCompareFacade> compare(Utils<IKCMCompareFacade>().QueryUtilInterface());
 
 	if (compare->IsAppQuitting())
-		return;		// 終了中は UI に触らない(状態は Shutdown が破棄する)
+		return;		// touch no widget while quitting (Shutdown drops the state)
 
-	// ★★保留している間に新しい比較が始まっていたら、この後片付けは走らせない(2026-07-30 の再確認で追加)。
-	//   この関数は「閉じた文書の分を片付ける」ためのものだが、中身(strip 撤去・"marks cleared" 表示)は
-	//   対象を選ばず全部に効く。完了通知 kPendingDocumentsClosedMsg が来ないまま保留が残り(監査 B-2 の
-	//   穴)、その後ユーザーが Start して、さらに後の一括クローズ完了でまとめて流れると、**動いている
-	//   比較の strip を撤去してステータスを "marks cleared" に上書きしてしまう**。
-	//   ★arm 中なら片付けるものは無い: 保留が立つのは KCMHandleDocsClosed が比較状態を破棄した
-	//     (=disarm した)ときだけで、その後の Start が strip 注入もステータスもパネル更新も済ませている。
-	//     閉じた文書の窓は窓ごと消えているので strip も残らない。∴ 旗を下ろすだけでよい。
+	// ★★Do not run the clean-up if a new comparison has been started while it was held back. This
+	//   function exists to clean up after a document that closed, but what it does -- remove the
+	//   strip, put "marks cleared" in the status line -- is not aimed at any particular document.
+	//   Should the completion notification never arrive, the deferral stays up; if the reader then
+	//   presses Start and a later batch close finally flushes it, it would **remove the running
+	//   comparison's strip and overwrite its status line with "marks cleared"**.
+	//   ★While armed there is nothing left to clean up anyway: the deferral is only ever raised when
+	//     the comparison had ended (the model dropped its state ＝ disarmed), and the Start that
+	//     followed has re-injected the strip and refreshed the status line and the panel. The closed
+	//     document's window went with the document, so no strip is left behind either. ∴ lowering the
+	//     flag is the whole of it.
 	if (compare->IsArmed())
 		return;
 
-	// Find Overset が(走査文書が生存したまま)単独 ON なら地図は残す。それ以外は撤去する
-	// (KCMHandleDocsClosed 側で即時に行っていた処理と同じ判断)。
+	// If Find Overset is on by itself (and its scanned document is still alive), keep the map and
+	// only repaint it; otherwise remove it. The same decision the close branch makes when it cleans
+	// up immediately.
 	if (Utils<IKCMMarkData>()->GetOversetOn())
 		KCMScrollMapInvalidateAll();
 	else
 		KCMScrollMapDetachAll();
 
-	PMString s("marks cleared");	// Stop ボタン(DoClear)と同じメッセージ
+	PMString s("marks cleared");	// the same wording the Stop button (DoClear) uses
 	s.SetTranslatable(kFalse);
 	KCMSetStatus(s);
 
-	// ★生き残っている文書は、保留した時点のものと同じとは限らない(一括クローズなので、その後さらに
-	//   閉じられている)。閉じた db を持ち越さないよう、控えたポインタは使わず「今開いている文書」を
-	//   その場で列挙する。マークは既に破棄済みなので、無関係な文書を再描画しても枠は描かれない。
+	// ★What survives is not necessarily what survived when the deferral was raised -- it is a batch
+	//   close, so more have been shut since. No recorded pointer is used: the documents open **now**
+	//   are enumerated here and then. The marks are already gone, so repainting an unrelated document
+	//   draws no frames.
 	ISession* session = GetExecutionContextSession();
 	InterfacePtr<IApplication> app(session != nil ? session->QueryApplication() : nil);
 	InterfacePtr<IDocumentList> docList(app ? app->QueryDocumentList() : nil);
@@ -531,16 +560,17 @@ static void KCMFlushDeferredCloseUi()
 				continue;
 			IDataBase* db = ::GetUIDRef(doc).GetDataBase();
 			compare->InvalidateDB(db);
-			KCMScheduleThumbRefresh(db);	// 遅延サムネイル再生成(同じ db は集約される)
+			KCMScheduleThumbRefresh(db);	// deferred thumbnail rebuild (repeats of the same db are folded)
 		}
 	}
 
 	KCMRefreshPanel();
 }
 
-/** 一括クローズ完了(kPendingDocumentsClosedMsg)を受けるだけのオブザーバ。.fr の AddIn で
-    kActiveContextBoss に IID_IKCMDOCSCLOSEDOBSERVER として同居させている(同居先の理由は
-    レイアウト同期オブザーバと同じ=実証済みの構成)。購読先はアプリの subject。 */
+/** An observer whose only job is to receive the batch-close completion
+    (kPendingDocumentsClosedMsg). The .fr AddIn lodges it on kActiveContextBoss under
+    IID_IKCMDOCSCLOSEDOBSERVER, for the same reason the layout-sync observer lodges there: it is the
+    arrangement that has been shown to work. What it subscribes to is the application's subject. */
 class KCMDocsClosedObserver : public CObserver
 {
 public:
@@ -558,31 +588,32 @@ void KCMDocsClosedObserver::Update(const ClassID& theChange, ISubject* /*theSubj
 		KCMFlushDeferredCloseUi();
 }
 
-// アプリ subject への購読を付ける(Startup から1回)。
+// Subscribe to the application's subject (once, from Startup).
 //
-// ★★**この1本だけ終了時に detach しない。** 同じ構成(kActiveContextBoss に同居・アプリ subject を
-//   購読)の兄弟2本 ---- KCMModelChangeObserver と KCMPanelVisibilityObserver ---- は
-//   どちらも detach する。**差は Update が終了中に何をするかで決まる**:
-//     ・あちらの2本 … 分岐の大半が無防備(ModelChange は6分岐のうち IsAppQuitting ガードを持つのが
-//                      1つだけ)なので、消えかけのコードで UI を触りうる ⇒ **detach が要る**
-//     ・こちら       … Update の中身は KCMFlushDeferredCloseUi ただ1つで、その**入口が二重に
-//                      守られている** ⇒ 走っても何もしない(下の2点)
-//       ① KCMPeekGestureShutdown() が sDeferredCloseUiPending を落とすので、
-//          KCMFlushDeferredCloseUi の**入口の 1つ目のガード**(!sDeferredCloseUiPending)で即 return
-//       ② その先も同関数の **IsAppQuitting() ガード**で UI に触らずに返る
-//       ⚠2026-08-18(不具合再検査 B-U2)に行番号(":360" / ":364")をやめて名前で引く形にした。
-//         **書いた 2026-08-16 の時点では4件とも正しく、翌日の B-U7(40d231b)の1回の編集で同時に外れた**
-//         ---- B7 で拾った「行番号参照は1回の挿入で全部同時に腐る」の再現。
-//   ⇒ **この非対称は意図であって書き忘れではない。**⚠ただし**根拠は上の2点だけ**なので、
-//     どちらかを外すならここに detach を足すこと(足しても害は無い ---- 実際 ModelChange 側が
-//     終了時に同じ GetActiveContext() を触って detach しており、Task 13 の終了安全性で PASS している)。
+// ★★**This is the one observer that is NOT detached at shutdown.** Its two siblings in the same
+//   arrangement -- lodged on kActiveContextBoss, subscribed to the application's subject --
+//   KCMModelChangeObserver and KCMPanelVisibilityObserver, both are. **What settles it is what
+//   Update does while the application is quitting**:
+//     - those two ... most of their branches are unguarded (KCMModelChangeObserver::Update has six
+//                     branches and exactly one carries an IsAppQuitting guard), so they could touch
+//                     a widget from code that is coming apart ⇒ **they must be detached**
+//     - this one  ... Update calls KCMFlushDeferredCloseUi and nothing else, and **its entrance is
+//                     guarded twice** ⇒ letting it run does nothing:
+//       (1) KCMPeekGestureShutdown() lowers sDeferredCloseUiPending, so KCMFlushDeferredCloseUi
+//           returns at **its first guard** (!sDeferredCloseUiPending)
+//       (2) and past that, its **IsAppQuitting() guard** returns without touching a widget
+//   ⇒ **the asymmetry is deliberate, not something left undone.** ⚠But those two points are the
+//     whole of the reason, so if either goes, add the detach here. It would do no harm: the
+//     KCMModelChangeObserver side touches the same GetActiveContext() at shutdown and detaches, and
+//     that passes the teardown-safety checks.
 //
-// ⚠★★2026-08-16(監査 B-U2)に**理由を書き直した**。旧記述は「**detach 自体がクラッシュ要因になる**
-//   (レイアウト同期オブザーバの Shutdown 方針と同じ)」だったが、これは**一般化しすぎ**だった:
-//   あちらで落ちたのは KCMSetLayoutSync(kFalse) の経路＝**GetAllLayoutViews で解体中の全ビューを
-//   走査する**からで(KCMViewSync.cpp)、**detach という操作そのものではない**。
-//   ★反証は同じプラグインの中にあった＝KCMDetachModelChangeObserver は終了時に GetActiveContext()
-//     を触って detach しているのに落ちていない。**「危ないのは何か」を1段細かく見れば済んだ。**
+// ⚠**"Detaching is itself what crashes" would be too wide a rule, and it was believed here for
+//   three days.** What crashed on the layout-sync side was the KCMSetLayoutSync(kFalse) route ＝
+//   **walking every open view with GetAllLayoutViews** while they are being torn down
+//   (KCMViewSync.cpp) -- not the detach. The counter-example was inside this same plug-in all along:
+//   KCMDetachModelChangeObserver touches GetActiveContext() at shutdown and does not crash.
+//   ⇒ ★**listing two dangerous things together turns an operation that uses only one of them into a
+//     prohibition as well.**
 void KCMAttachDocsClosedObserver()
 {
 	ISession* session = GetExecutionContextSession();
@@ -600,23 +631,22 @@ void KCMAttachDocsClosedObserver()
 		subject->AttachObserver(ISubject::kRegularAttachment, obs, IID_IAPPLICATION, IID_IKCMDOCSCLOSEDOBSERVER);
 }
 
-// KCMDeferCloseUi(KCMPeekGesture.h 参照) — UI の後片付けを保留する。
-// ★2026-08-13 の分割で新設。呼び手は model 側の KCMHandleDocsClosed ただ1つ。
+// KCMDeferCloseUi (declared in KCMPeekGesture.h) -- hold the UI clean-up back.
+// ★Its one caller is the UI's own close branch (KCMModelChangeObserver), which has already asked
+//   KCMBatchCloseInProgress above. The model never calls it: deciding **when** to touch the UI is
+//   the UI's business, and the model only reports that a document closed.
 void KCMDeferCloseUi()
 {
 	sDeferredCloseUiPending = kTrue;
 }
 
-// KCMPeekGestureShutdown(KCMPeekGesture.h 参照) — 終了時の後始末。
+// KCMPeekGestureShutdown (declared in KCMPeekGesture.h) -- the teardown clean-up.
 void KCMPeekGestureShutdown()
 {
-	// ★★★**この1行が守りである。**「念のため状態を残さない」ではない ---- KCMDocsClosedObserver は
-	//   終了時に detach しない(理由は KCMAttachDocsClosedObserver の上のコメント)ので、Shutdown の
-	//   あとでも kPendingDocumentsClosedMsg が届けば Update は走る。そのとき
-	//   KCMFlushDeferredCloseUi を**その入口の 1つ目のガード**(!sDeferredCloseUiPending)で
-	//   即 return させているのが、この代入。
-	// ⚠2026-08-16(監査 B-U2)に書き直した。旧記述は「**終了後に流れることは無いが**、状態を残さない」で、
-	//   **流れないことを前提に、自分が守りであることを認識していなかった**。
-	//   ⇒ この行を「無駄だから」と外すと、守りが同関数の IsAppQuitting() 一枚だけになる。
+	// ★★★**This one line is a guard**, not tidiness. KCMDocsClosedObserver is not detached at
+	//   shutdown (the reason is above KCMAttachDocsClosedObserver), so if kPendingDocumentsClosedMsg
+	//   arrives after Shutdown, Update still runs -- and this assignment is what makes
+	//   KCMFlushDeferredCloseUi return at **its first guard** (!sDeferredCloseUiPending).
+	//   ⚠Remove it as "pointless" and the only guard left is that function's IsAppQuitting().
 	sDeferredCloseUiPending = kFalse;
 }

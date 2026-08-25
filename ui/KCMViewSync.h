@@ -6,9 +6,8 @@
 //  layout view onto every other document's layout views, with the page Add/Remove
 //  correction applied while a comparison is armed.
 //
-//  Split out of KCMPeek.cpp on 2026-08-13. The functions and their behaviour are
-//  unchanged; only their home moved. This is UI-side code: it works on IControlView and
-//  IPanorama, which a model plug-in must not depend on.
+//  UI-side code: it works on IControlView and IPanorama, which a model plug-in must not
+//  depend on.
 //
 //========================================================================================
 
@@ -21,11 +20,11 @@
 // close, sync toggle on/off, "Align Other Views" and shutdown -- i.e. wherever the set of tracked
 // documents changes.
 //
-// ⚠2026-08-19 (bug recheck B-U7): this used to say "page add/remove" too, and nothing calls it from
-// there -- by design. Page geometry that moves while the sync is running is caught by the cache's
-// 250ms TTL instead (see the second half of the invalidation comment in the .cpp), because adding a
-// page raises no notification this plug-in listens to. Saying "call this on page add/remove" made
-// the absence of such a call read like an oversight.
+// ⚠**Adding or removing a page does NOT call this, and that is deliberate.** No notification this
+// plug-in listens to is raised when a page is added, so page geometry that moves while the sync is
+// running is caught by the cache's 250ms TTL instead (the second half of the invalidation comment
+// in the .cpp). Do not list "page add/remove" here: it makes the absence of such a call read like
+// an oversight.
 void	KCMInvalidateSyncCaches();
 
 // The "Sync Layout Views" flyout toggle. While ON, scrolling or zooming any layout view
@@ -38,9 +37,8 @@ void	KCMSetLayoutSync(bool16 on);
 // view's position and zoom onto the other documents' layout views once. Works whether or
 // not the Sync toggle is ON.
 //
-// ★Returns kTrue only when views were actually aligned. kFalse has three causes and the caller
-// must not report success for any of them (2026-08-19, bug recheck B-U7 -- the third one used to
-// report success):
+// ★Returns kTrue only where views were actually aligned. kFalse has three causes and the caller
+// must not report success for any of them (the third one used to be reported as success):
 //   (a) no frontmost layout view / it has no panorama or document
 //   (b) armed and the front document is a third document (the engine syncs Target<->Source only)
 //   (c) ★there was nothing to align TO -- only one document open, the partner was closed, or

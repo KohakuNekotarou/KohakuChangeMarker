@@ -3,13 +3,12 @@
 //  KCMViewLookup.h
 //
 //  Questions asked of layout views: where the mouse is in a view's content coordinates,
-//  which view the mouse is actually over (split windows included), and which document a
-//  view belongs to.
+//  which view the mouse is actually over (split windows included), which document and which
+//  spread a view belongs to, and the panorama behind it.
 //
-//  Split out of KCMCore.cpp on 2026-08-13. Behaviour unchanged.
-//
-//  UI side: every function here takes or returns an IControlView, which a model plug-in
-//  must not depend on.
+//  UI side: every function here takes or returns an IControlView, which a model plug-in must
+//  not depend on. ★Nothing on the model side calls in here -- what is left over there are
+//  comments saying "this used to be called from here" (measured across every file).
 //
 //========================================================================================
 
@@ -37,10 +36,10 @@ bool16			KCMQueryMouseContentPoint(IControlView* view, PMReal& outX, PMReal& out
 // wins. Same contract as QueryFrontView(): +1 ref, the caller releases (use InterfacePtr).
 // nil when nothing is found.
 //
-// ★Measured 2026-08-17 (audit B-U7): in a split window BOTH panes' layout views carry the
-// same widget id, kLayoutWidgetID. Landing on the secondary PANEL instead (its margin) is
-// handled the way the product does it -- ask that panel for its kLayoutWidgetID child --
-// so a widget without a panorama is never returned.
+// ★Measured: in a split window BOTH panes' layout views carry the same widget id,
+// kLayoutWidgetID. Landing on the secondary PANEL instead (its margin) is handled the way the
+// product does it -- ask that panel for its kLayoutWidgetID child -- so a widget without a
+// panorama is never returned.
 IControlView*	KCMQueryViewUnderMouse();
 
 // Which document's layout view this is, or nil.
@@ -49,20 +48,19 @@ IControlView*	KCMQueryViewUnderMouse();
 // the model is CPathCreationTracker.cpp:277-285). nil when the view has no layout control
 // data, or when the document it names is no longer open.
 //
-// ★Until 2026-08-17 this also carried a fallback (match the view pointer against every
-// document's GetAllLayoutViews, with a "last hit" hint to skip the scan). It was kept only
-// because it was unknown whether a split window's second pane answers ILayoutControlData.
-// It does -- measured -- so the fallback was removed; see the .cpp for the measurement.
+// ★There is no fallback, and that is not an oversight: a split window's second pane answers
+// ILayoutControlData exactly as the first does (measured -- the .cpp carries it), so asking
+// the view itself is always enough.
 IDataBase*		KCMFindDocDbForView(IControlView* view);
 
-// ★★★Which spread this view is CURRENTLY SHOWING, or kInvalidUID (2026-08-16).
+// ★★Which spread this view is CURRENTLY SHOWING, or kInvalidUID.
 //
 // ILayoutControlData::GetSpreadRef() -- "current spread UIDRef, the spread this view is
 // currently viewing" (ILayoutControlData.h:252-256). Same interface, same view boss, as
 // KCMFindDocDbForView above; only the question differs.
 //
 // ⚠ WHY THIS IS NEEDED AT ALL: a master spread and the ordinary spreads OVERLAP in pasteboard
-// coordinates (measured 2026-08-16). So "which page is under the mouse" cannot be answered from
+// coordinates (measured). So "which page is under the mouse" cannot be answered from
 // the point alone -- the same point belongs to a page of the master AND to a page of an ordinary
 // spread, and only the window knows which of them is on screen. The model therefore cannot
 // answer it; the UI observes the spread and passes it down. The full story is on the model side,
@@ -74,8 +72,8 @@ UID				KCMQuerySpreadUIDForView(IControlView* view);
 // the way CTracker::QueryPanorama does. +1 ref, the caller releases (use InterfacePtr). nil for
 // a nil view or a widget with no layout widget above it.
 //
-// Moved here from KCMDrawEventHandler.h on 2026-08-13 (Stage 1 Task 12): it returns an
-// IPanorama, which is a question about a window, and the drawing engine is model side.
+// ★It sits on the UI side rather than in the drawing engine because an IPanorama answers
+// "which part of the window is on screen" -- a question with no answer when there is no window.
 IPanorama*		KCMQueryPanorama(IControlView* view);
 
 #endif // __KCMViewLookup_h__

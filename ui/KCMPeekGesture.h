@@ -21,41 +21,43 @@
 
 #include "BaseType.h"
 
-// 修飾キー→ジェスチャの分類の結果。
-// ★2026-08-14(第1段 Task 16)に KCMPeek.h(model 側)から移した。定義はあちらに在ったが、
-//   **参照していたのはこのファイルと KCMPeekGesture.cpp と KCMTracker.cpp の3つだけ**で、
-//   KCMPeek.cpp は一度も使っていなかった＝置き場所が model 側である理由が無かった。
-//   これで UI 側から KCMPeek.h を include する必要が消える(第1段の完了条件1)。
+// What a modifier combination under the tool means.
+// ★It belongs on the UI side although it was declared in KCMPeek.h first: the only files that
+//   name it are this one, KCMPeekGesture.cpp and KCMTracker.cpp -- all three UI side. Keeping it
+//   there would have the UI include a model header for nothing.
 enum KCMGesture
 {
-	kKCMGestureNone = 0,	// Ctrl(cmd)または Mac の Control を含む=未割当(何もしない)
-	kKCMGestureReveal,	// 修飾なし: マーク一時表示(reveal) / Hold to Hide の temp-hide
-	kKCMGesturePeek100,	// Shift: 旧版べた載せ peek 100%
-	kKCMGesturePeek50,	// Shift+Alt(Mac: Shift+Option): 旧版べた載せ peek 50%
-	kKCMGestureCmyk		// Alt 単独(Mac: Option 単独): CMYK 色サンプリング(カーソル表示)
+	kKCMGestureNone = 0,	// anything with Ctrl (cmd), or Mac's Control ＝ unassigned, do nothing
+	kKCMGestureReveal,	// no modifier: **invert the pressed window's marks while held**
+	kKCMGesturePeek100,	// Shift: lay the OTHER version over the pressed window at 100%
+	kKCMGesturePeek50,	// Shift+Alt (Mac: Shift+Option): the same at 50%
+	kKCMGestureCmyk		// Alt alone (Mac: Option alone): sample the CMYK under the cursor
 };
 
-// 修飾キー→ジェスチャの分類。★割当の定義はこの1本だけ(2026-07-15 に3箇所の独立判定を統合):
-// KCMTracker.cpp の BeginTracking(CMYK を先に発動させるかの判定)・RevealBegin の分岐・
-// Hold to Hide の temp-hide 判定がすべてこれを使う。ジェスチャ割当を変えるときは
-// KCMClassifyGesture(KCMPeekGesture.cpp)だけを直す。
-// ★macCtrlDown(= IEvent::MacCtrlDown。Windows では常に kFalse)は「未割当」に倒す(2026-07-25 追補 Mac 対応):
-//   macOS の Control+クリックは OS/アプリが副ボタン(コンテキストメニュー)として扱う標準ジェスチャなので、
-//   もし左ボタン押下として届いても KCM が reveal を横取りしないようにする。cmdDown(Mac の Command)を
-//   未割当にしているのと同じ趣旨。既定引数 kFalse なので Windows 側の呼び出しは影響を受けない。
+// Classify the modifiers. ★**The assignment is defined here and nowhere else**
+// ([[one-question-one-place]]). Two places ask: KCMTracker.cpp's BeginTracking, to decide whether
+// to fire CMYK before the base, and KCMTrackerRevealBegin. Everything downstream -- the temp-hide,
+// the peeks, the Story press marks -- branches on the value that one call returned, so to change
+// what a modifier does, change KCMClassifyGesture in KCMPeekGesture.cpp and nothing else.
+// ★macCtrlDown (= IEvent::MacCtrlDown, always kFalse on Windows) falls to "unassigned": on macOS
+//   Control-click is the standard secondary-button (context menu) gesture, so even if it were to
+//   arrive as a left press, KCM must not take it away. Same reasoning as cmdDown (Mac's Command).
+//   The parameter defaults to kFalse, so the Windows calls are unaffected.
 KCMGesture	KCMClassifyGesture(bool16 shiftDown, bool16 altDown, bool16 cmdDown, bool16 macCtrlDown = kFalse);
 
-// トラッカー(左ボタン)用の共有入口。KCM ツール選択中に左ボタンを押している間だけ、押下時の修飾キーで
-// 選んだ動作を行う。Begin=押下(押下時の修飾キー状態を渡す)、End=解放。KCMTracker.cpp から呼ぶ。
-// (由来: いずれも旧・中ボタン＋修飾キーのジェスチャをツールの左ボタンへ移植したもの。)
-//   ・修飾なし        = マーク一時表示(reveal) / Hold to Hide 反転(常時表示の枠を押下中だけ隠す)
-//   ・Shift           = 旧版べた載せ peek 100%(旧・中ボタン Shift+ミドル)
-//   ・Shift+Alt       = 旧版べた載せ peek 50%(旧・中ボタン Shift+Alt+ミドル)
-//   ・Alt(単独)       = クリック点の CMYK 生値を新/旧サンプリングしステータス行へ(旧・中ボタン Shift+Ctrl+Alt+ミドル)
-//   ・Ctrl(cmd)含む  = 未対応。何もしない(再比較はページ右クリックメニュー/パネル操作はフライアウトへ移行済み)。
-//   ・Mac の Control  = 未対応(上の macCtrlDown 参照)。
-// ★キー名の対応(SDK の IEvent が吸収する): OptionAltKeyDown = Win の Alt / Mac の Option、
-//   CmdKeyDown = Win の Ctrl / Mac の Command。よって上表の "Alt" は Mac では Option になる。
+// The shared entry points for the tracker (the left button). While the KCM tool is active and the
+// left button is held, the modifiers **as they stood at press time** pick what happens. Begin = the
+// press (it is handed that modifier state), End = the release. Both are called from KCMTracker.cpp.
+//   - no modifier  = **the pressed window's marks are inverted while held**: hidden ones come up,
+//                    shown ones go away (so the bare page underneath can be checked)
+//   - Shift        = lay the other version over the pressed window at 100%
+//   - Shift+Alt    = the same at 50%
+//   - Alt alone    = sample the raw CMYK at the click point in both versions, into the status line
+//   - with Ctrl (cmd) = unassigned, nothing happens (re-comparing moved to the page context menu,
+//                    and the panel operations to the flyout)
+//   - Mac's Control   = unassigned (see macCtrlDown above)
+// ★What the key names mean (IEvent absorbs the difference): OptionAltKeyDown = Alt on Windows /
+//   Option on Mac, CmdKeyDown = Ctrl on Windows / Command on Mac. So "Alt" above is Option on Mac.
 void			KCMTrackerRevealBegin(bool16 shiftDown, bool16 altDown, bool16 cmdDown, bool16 macCtrlDown = kFalse);
 void			KCMTrackerRevealEnd();
 

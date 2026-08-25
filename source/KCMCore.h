@@ -257,7 +257,8 @@ void		KCMHandleDocsClosed();
 // flow** -- the model must not reach into the UI. (UI -> model is fine.)
 //
 //   asking a view          -> KCMViewLookup.h    (KCMQueryMouseContentPoint / KCMQueryViewUnderMouse /
-//                                                 KCMFindDocDbForView / KCMForgetViewDbHint)
+//                                                 KCMFindDocDbForView / KCMQuerySpreadUIDForView /
+//                                                 KCMQueryPanorama)
 //   touching a widget      -> KCMUIShared.h      (KCMGetVisibleOwnPanel / KCMRefreshPanel /
 //                                                 KCMSetStatus / KCMSetNavPosition /
 //                                                 KCMSetToolButtonSelected / KCMActivateOwnTool /
