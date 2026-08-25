@@ -2,9 +2,9 @@
 //
 //  KCMDocUidSet.cpp
 //
-//  「文書DB → ページUIDの集合」の共通実装(KCMDocUidSet.h 参照)。登録(Added/Removed)と
-//  チェック(✓)が同じ形の入れ物と定型操作を持っていたので、そこだけを集約したもの
-//  (2026-08-06 ブロック9 監査 C-1)。集合そのものは呼び出し側が2つ別々に持つ。
+//  The shared implementation of "document database -> set of page UIDs" (see KCMDocUidSet.h).
+//  Registered (Added/Removed) and checked (the tick) had the same container and the same routine
+//  operations, so only those live here; the two sets themselves stay with their callers.
 //
 //========================================================================================
 
@@ -13,38 +13,38 @@
 #include "ISession.h"
 #include "IApplication.h"
 #include "IDataBase.h"
-#include "IDocumentList.h"		// 生存スイープ(FindDocByDataBase へのポインタ比較のみ)
+#include "IDocumentList.h"		// the liveness sweep (pointer comparison against FindDocByDataBase)
 
 #include "KCMDocUidSet.h"
-#include "KCMThreadSafety.h"	// ★KCMIsSameDoc(BG のクローン DB)/共有状態のロック
+#include "KCMThreadSafety.h"	// KCMIsSameDoc (a background thread's clone) / the shared-state lock
 
 //========================================================================================
-// ★★2026-08-15(第2段 Task 12B)= この入れ物は **main が書き、BG(PDF の非同期書き出し)の
-//   描画パスが読む**ようになった。よって参照系・更新系の**このファイルにある全メソッド**で共有ロックを
-//   取る(再帰ロックなので、既にロックしている描画ループから呼ばれても安全)。理由の全文は KCMThreadSafety.h。
-//   ⚠**例外が2つあり、どちらもヘッダー側にある**(2026-08-17 の不具合再検査 B4 で明文化):
-//     ・IsEmpty()  … ヘッダー内 inline でロックを取らない。呼び手は KCMPageCheckPruneToMarked
-//                    (メインスレッド)1つだけなので実害は無いが、**BG から呼べる口ではない**。
-//     ・GetMap()   … 素の map を渡す口なので、そもそも呼び手がロックする契約(ヘッダーに記載)。
-//   ⇒ 「全メソッドが守っている」と読んで新しい呼び手を BG から足さないこと。
+// This container is **written by the main thread and read by the background thread's drawing
+//   pass** (the asynchronous PDF export), so **every method in this file**, reader and writer
+//   alike, takes the shared lock. The lock is recursive, so being called from a drawing loop
+//   that already holds it is safe. The reasoning in full is in KCMThreadSafety.h.
+//   @warning **two methods are exceptions, and both of them are in the header**: IsEmpty() is
+//     inline and takes no lock, and GetMap() hands out the raw map so its caller locks instead.
+//     Do not read "every method guards itself" here and then add a background-thread caller of
+//     those two.
 //========================================================================================
 
-// db に対応するエントリ(ポインタで外したらファイル同一性で引き直す)。宣言側のコメントが理由。
+// The entry for db (falling back on file identity when the pointer misses). The declaration says why.
 KCMDocUidSet::Map::const_iterator KCMDocUidSet::FindDoc(IDataBase* db) const
 {
 	Map::const_iterator it = fMap.find(db);
 	if (it != fMap.end())
-		return it;						// メインスレッドの通常経路はここで即決(従来と同じコスト)
+		return it;						// the main thread's ordinary route settles here, as it always did
 	for (it = fMap.begin(); it != fMap.end(); ++it)
 	{
 		if (KCMIsSameDoc(it->first, db))
-			return it;					// ★BG のクローン DB はここで拾う
+			return it;					// a background thread's clone is caught here
 	}
 	return fMap.end();
 }
 
 //========================================================================================
-// 参照系
+// Readers
 //========================================================================================
 bool16 KCMDocUidSet::Contains(IDataBase* db, UID uid) const
 {
@@ -93,13 +93,13 @@ int32 KCMDocUidSet::CountIn(IDataBase* db, const std::vector<UID>& uids) const
 bool16 KCMDocUidSet::AnyNotIn(IDataBase* db, const std::vector<UID>& uids) const
 {
 	if (uids.empty())
-		return kFalse;					// 問う対象が無い = 「入っていないもの」も無い
+		return kFalse;					// nothing was asked about, so nothing is missing
 	if (db == nil)
-		return kTrue;					// 集合が引けない = どれも入っていない(Contains が全部 kFalse を返す形)
+		return kTrue;					// no set to look in = none of them are in it (what Contains says)
 	KCMMarkStateLock lock(KCMMarkStateMutex());
 	Map::const_iterator it = FindDoc(db);
 	if (it == fMap.end())
-		return kTrue;					// 同上(この文書には1件も登録が無い)
+		return kTrue;					// likewise (this document has no entry at all)
 	for (size_t i = 0; i < uids.size(); ++i)
 	{
 		if (it->second.count(uids[i]) == 0)
@@ -120,7 +120,7 @@ void KCMDocUidSet::CollectInto(IDataBase* db, std::set<UID>& out) const
 }
 
 //========================================================================================
-// 更新系(★空になったエントリは即座に捨てる = KCMDocUidSet.h の規約)
+// Writers (an entry that became empty is dropped at once -- the rule in KCMDocUidSet.h)
 //========================================================================================
 void KCMDocUidSet::Insert(IDataBase* db, UID uid)
 {
@@ -143,8 +143,8 @@ void KCMDocUidSet::Erase(IDataBase* db, UID uid)
 		fMap.erase(it);
 }
 
-// (ClearDoc は 2026-08-17 の不具合再検査 B4 で削除: 唯一の呼び手 KCMPageMapClearAll が呼び手ゼロだった。
-//  1文書分の消去が要るときは Replace(db, 空) が同じ働きをする=エントリごと捨てる。)
+// (ClearDoc was removed: its only caller KCMPageMapClearAll had no caller of its own. When one
+//  document's set has to be dropped, Replace(db, empty) does exactly that -- entry and all.)
 
 void KCMDocUidSet::ClearAllDocs()
 {
@@ -195,23 +195,24 @@ void KCMDocUidSet::PruneEmptyDocs()
 }
 
 //========================================================================================
-// 生存スイープ
-//   ドキュメントクローズ直後に呼ぶ(呼び所 = KCMHandleDocsClosed)。閉じた文書のエントリを
-//   状態だけ捨てる。★閉じた db は FindDocByDataBase へのポインタ比較のみで、絶対に deref しない
-//   (KCM の他のクローズ後片付けと同じ流儀)。こまめに捨てることで、閉じた文書とアドレス再利用の
-//   新文書を取り違える余地も最小化する([[uidref-reuse-after-close]])。
+// The liveness sweep
+//   Run right after documents close (from KCMHandleDocsClosed). Drops the entries of closed
+//   documents, state only. **A closed database is never dereferenced** -- pointer comparison
+//   against FindDocByDataBase and nothing else, the same way as KCM's other close-up work.
+//   Dropping them promptly also leaves the least room to confuse a closed document with a new
+//   one that reused its address ([[uidref-reuse-after-close]]).
 //========================================================================================
 void KCMDocUidSet::SweepClosedDocs()
 {
-	// ⚠この関数は「文書リストに居なければ閉じた」という推論なので、**BG では成り立たない**
-	//   (BG は別 DB を見る)。呼び所の KCMHandleDocsClosed が入口で
-	//   IDThreading::IsMainThreadDomain() を見て弾いているので、ここへ BG から来ることはない
-	//   (2026-08-15 第2段 Task 11C の修正)。★ここで二重に判定しない＝[[one-question-one-place]]。
+	// @warning this reasons "not in the document list, therefore closed", which **does not hold
+	//   on a background thread** (it looks at a different database). The caller,
+	//   KCMHandleDocsClosed, tests IDThreading::IsMainThreadDomain() at its single entry, so a
+	//   background thread never reaches here. The test is not repeated ([[one-question-one-place]]).
 	KCMMarkStateLock lock(KCMMarkStateMutex());
 	if (fMap.empty())
 		return;
 
-	// クローズ掃除は終了シーケンス中にも来得るので session を nil ガード(2026-07-25 に KCM 全体で統一)。
+	// The close-up can arrive during the shutdown sequence too, hence the nil guards on session.
 	ISession* session = GetExecutionContextSession();
 	InterfacePtr<IApplication> app(session != nil ? session->QueryApplication() : nil);
 	InterfacePtr<IDocumentList> docList(app != nil ? app->QueryDocumentList() : nil);
@@ -222,10 +223,10 @@ void KCMDocUidSet::SweepClosedDocs()
 	while (it != fMap.end())
 	{
 		if (docList->FindDocByDataBase(it->first) == nil)
-			fMap.erase(it++);	// 閉じた文書: 状態だけ捨てる(deref なし)
+			fMap.erase(it++);	// a closed document: drop the state, dereference nothing
 		else
 			++it;
 	}
 }
 
-// KCMDocUidSet.cpp 終わり。
+// End of KCMDocUidSet.cpp

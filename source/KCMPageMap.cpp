@@ -2,42 +2,41 @@
 //
 //  KCMPageMap.cpp
 //
-//  ページ対応(追加/削除ページ)モジュール。ページパネルでページを選択→右クリックのトグル
-//  「Register as Added/Removed Pages」で「比較相手なしページ」として登録/解除する。
-//  アクティブ文書が Target なら「追加ページ」/Source なら「削除ページ」だが、概念はどちらも
-//  同じ「比較相手なし」(対応表からの除外)なので、入れ物は文書DBごとの UID セット1種類。
+//  Page pairing (added / removed pages). Select pages in the Pages panel, then the context-menu
+//  toggle "Register as Added/Removed Pages" registers or unregisters them as pages with no
+//  counterpart. On the Target they read as "added" and on the Source as "removed", but the two
+//  mean the same thing -- excluded from the pairing -- so a single UID set per document holds them.
 //
-//  - 選択の取得: ★Utils<ILayoutUIUtils>()->GetSelectedPages()(公式API、ILayoutUIUtils.h:183)。
-//    bPagesOnly=kTrue でスプレッド選択も所属ページUIDへ展開、bIncludeMasters は呼び出し側が決める
-//    (この Register は kFalse=マスター除外。理由は KCMPageMap.h の includeMasters のコメント)。
-//    ★実使用例は3つあるが目的で引数が分かれる: 製品 PageTransitionsPanelObserver.cpp:672 は
-//    bPagesOnly=kFalse(スプレッド単位のトランジションが目的でページ/スプレッド混在を欲しがる)、
-//    codesnippets/SnpModifyLayoutGrid.cpp:959 と SnpInspectLayoutGrid.cpp:690 は既定(=kTrue)。
-//    KCM はページ単位で対応表を作るので kTrue が正しい(2026-08-06 ブロック9 監査で確認)。
-//    ★旧実装の自前 IUIDListControlData 読み(kPagesPanelWidgetBoss 直上)は「ページアイコン選択」
-//    しか拾えず、見開き(スプレッド)として選択されると空になり項目が出なかった(2026-07-05 実機)。
-//    パネルには文書ページ用/マスター用のサブパネルが2つあり、選択の置き場は1本ではない。
-//  - メニュー: ★**ui/KCMUI.fr**(:891-926)がページパネルのページ右クリックメニュー(内部名
-//    RtMenuPagesPanel、2026-07-05 実機確定)へトグル項目を追加している。内部名は非翻訳キーなので
-//    全ロケール共通。⚠2026-08-17 訂正: ここは分割前の「KCM.fr」のままだった ---- メニューは
-//    第2段(Task 6B-2)で UI 側へ出ており、model 側 KCM.fr に RtMenuPagesPanel は1件も無い。
-//    チェック/有効無効/動的ラベルは kCustomEnabling → KCMPageMapGetToggleState。
-//  - 登録の保持: セッション内のみ(文書ファイルには保存しない=dirty にもならない)。文書クローズ時は
-//    KCMHandleDocsClosed からの KCMPageMapSweepClosedDocs で状態だけ捨てる(deref なし)。
-//  - ステップ2(2026-07-05): 除外対応表(KCMBuildPairing/KCMMapTargetToSource/
-//    KCMMapSourceToTarget)。登録済みページを平坦列から除いて残り同士を順番に対応させ、
-//    比較(KCMDoMarkChangesDoc)・peek旧版取得・スプレッド再比較・CMYK色サンプラ・
-//    Hide UnchangedのSource側分類の5箇所が、素の平坦列 zip からこの対応表経由に置き換わった。
+//  - Reading the selection: Utils<ILayoutUIUtils>()->GetSelectedPages (the official API,
+//    ILayoutUIUtils.h:183). bPagesOnly=kTrue expands a selected spread into its page UIDs; the
+//    caller decides bIncludeMasters (Register passes kFalse to leave masters out -- the reason is
+//    with includeMasters in KCMPageMap.h).
+//    The three uses in the SDK split by purpose: the product's PageTransitionsPanelObserver.cpp:672
+//    passes bPagesOnly=kFalse because it is after spread-level transitions and wants the mixture,
+//    while codesnippets/SnpModifyLayoutGrid.cpp:959 and SnpInspectLayoutGrid.cpp:690 take the
+//    default (kTrue). KCM pairs page by page, so kTrue is the right one here.
+//    @warning do not go back to reading IUIDListControlData off kPagesPanelWidgetBoss directly:
+//    that only sees a page-icon selection and comes back empty when the user selected the spread,
+//    which made the menu item vanish. The panel also has two sub-panels (document pages and
+//    masters), so there is no single place where "the selection" lives.
+//  - The menu: **ui/KCMUI.fr** adds the toggle to the Pages panel's page context menu, whose
+//    untranslated internal name is "RtMenuPagesPanel" (measured) and therefore the same in every
+//    locale. The menu lives in the UI plug-in; the model's KCM.fr has no RtMenuPagesPanel in it.
+//    The tick, the enabling and the dynamic label all come from kCustomEnabling ->
+//    KCMPageMapGetToggleState.
+//  - Lifetime: session only. Nothing is written to the document file, so nothing is dirtied.
+//    When documents close, KCMHandleDocsClosed calls KCMPageMapSweepClosedDocs, which drops the
+//    state without dereferencing anything.
 //
 //========================================================================================
 
 #include "VCPlugInHeaders.h"
 
 #include "IDataBase.h"
-#include "ILayoutUIUtils.h"		// GetSelectedPages(ページパネル選択の公式取得)
+#include "ILayoutUIUtils.h"		// GetSelectedPages (the official way to read the Pages panel selection)
 #include "IMasterSpreadList.h"	// GetMasterSpreadCount / GetNthMasterSpreadUID / FindMasterByName
-#include "IMasterSpread.h"		// GetPrefix / GetBasename(マスタースプレッドの名前対応)
-#include "ISpread.h"			// GetNumPages / GetNthPageUID(マスタースプレッド内のページ)
+#include "IMasterSpread.h"		// GetPrefix / GetBasename (pairing master spreads by name)
+#include "ISpread.h"			// GetNumPages / GetNthPageUID (the pages inside a master spread)
 #include "Utils.h"
 #include "UIDList.h"
 #include "PMString.h"
@@ -46,23 +45,23 @@
 #include <vector>
 
 #include "KCMCore.h"			// KCMCollectPageUIDs / KCMCollectMasterPageUIDs / KCMArmedTargetDB / KCMArmedSourceDB
-								// (ステータス行は 2026-08-13 Task 9 で KCMNotifyStatus＝通知へ移った)
-#include "KCMModelNotify.h"	// KCMNotifyStatus - the model tells the UI, it never calls it (Task 9)
-#include "KCMComparisonRun.h"	// KCMToggleStartStop(2026-08-13 に KCMCore.h から移動)
+#include "KCMModelNotify.h"	// KCMNotifyStatus - the model tells the UI, it never calls it
+#include "KCMComparisonRun.h"	// KCMToggleStartStop
 #include "KCMPageMap.h"
-#include "KCMDocUidSet.h"		// 「文書DB→ページUID集合」の共通の入れ物(✓側と共有。2026-08-06 監査 C-1)
-#include "KCMID.h"				// kKCMPageFlagsChangedMessage(通知の ID)
-// ★2026-08-13(Task 10): UI 側ヘッダー KCMThumbnailRefresh.h の include を落とした。サムネイルを
-//   作り直すのは通知を受けた UI の仕事。
+#include "KCMDocUidSet.h"		// the shared "document -> page UID set" container (the tick uses it too)
+#include "KCMID.h"				// kKCMPageFlagsChangedMessage (the notification's ID)
+// This file deliberately does not include the UI's KCMThumbnailRefresh.h: rebuilding a thumbnail
+// is the job of whoever receives the notification, which is the UI.
 
-// 登録済み「比較相手なしページ」: 文書DB → ページUIDの集合。セッション内のみ。
-// 空になった文書のエントリは即座に消える(KCMDocUidSet の規約)。
+// The registered "no counterpart" pages: document database -> set of page UIDs, session only.
+// An entry whose set became empty disappears at once (KCMDocUidSet's rule).
 static KCMDocUidSet sRegistered;
 
-// ヘルパ: vector<UID> の線形 contains。★用途は「これまでに積んだ選択(outPages)との重複除去」だけで、
-// 相手は高々選択数なので線形でよい。★文書の全ページ列(flat)との突合はこれを使わない(set で引く=
-// 下の KCMPageMapReadSelection。2026-08-06 ブロック9 監査 C-6: 旧実装は選択数だけを見て線形にして
-// いたが、探索対象はページ数側なので 1,000ページ×100選択で 10 万回になっていた)。
+// Helper: a linear contains over vector<UID>. **Its only job is to keep outPages free of
+// duplicates**, and outPages is at most as long as the selection, so linear is fine here.
+// @warning it is not what the document's whole page list is tested with -- that goes through a
+// set (see KCMPageMapReadSelection below). Scanning the page list linearly instead means
+// 1,000 pages x 100 selected pages = 100,000 comparisons, which is what this used to do.
 static bool16 KCMVecContains(const std::vector<UID>& v, UID u)
 {
 	for (size_t k = 0; k < v.size(); ++k)
@@ -74,77 +73,93 @@ static bool16 KCMVecContains(const std::vector<UID>& v, UID u)
 }
 
 //========================================================================================
-// KCMPageMapReadSelection(KCMPageMap.h で宣言) — ページパネルの選択を読む共通リーダー。
-// outDB=選択が属する文書(=アクティブ文書)、outPages=文書のページ列に実在する選択ページUID。
-// 有効なページが1つ以上あれば kTrue。
-// 取得は公式 API Utils<ILayoutUIUtils>()->GetSelectedPages():
-//   ・bIncludeMasters=引数 includeMasters … マスターページ/マスタースプレッドを読むか(下記)
-//   ・bPagesOnly=kTrue …… 見開き全体の選択(パネル内部ではスプレッド扱い)も所属ページUIDへ展開
-//   ・bCurrentPageOnly=kTrue はパネル非表示時のフォールバック規定(このメニューはパネルからしか
-//     開けないため実質使われない)
-// 返ったUIDは念のため文書の平坦ページ列と突合し、重複も除去する。
-// ★Register(ここ)/Check(KCMPageCheck.cpp)/Refresh(KCMPeek.cpp)の3機能共通(2026-07-15 統合)。
+// KCMPageMapReadSelection (declared in KCMPageMap.h) -- the shared reader of the Pages panel's
+// selection. outDB is the document the selection belongs to (the active one) and outPages the
+// selected page UIDs that really exist in that document's page list. kTrue when at least one
+// page is valid.
+// The selection comes from Utils<ILayoutUIUtils>()->GetSelectedPages:
+//   - bIncludeMasters = the includeMasters parameter ... are masters read (see below)
+//   - bPagesOnly = kTrue ...... a whole-spread selection (which is what the panel makes of a
+//     selected pair of pages) is expanded into its page UIDs
+//   - bCurrentPageOnly = kTrue is the documented fallback for the panel not being visible, which
+//     hardly applies here since these menu items can only be opened from the panel itself
+// The returned UIDs are checked against the document's flat page list, and duplicates dropped.
+// **All three context-menu features share this**: Register (this file), Check (KCMPageCheck.cpp)
+// and Refresh (KCMPeek.cpp).
 //
-// ★★includeMasters(2026-08-13。既定 kFalse=従来どおり通常ページのみ)。意味と、どちらを渡すかの
-//   判断基準はヘッダー KCMPageMap.h のコメントに書いてある(3機能で答えが割れるので引数にした)。
-//   ⚠**除外は2段構えだった**: GetSelectedPages の bIncludeMasters だけでなく、突合相手の
-//   KCMCollectPageUIDs にもマスターが入らない(2026-08-16 以降は `IPageList.h:81` の契約
-//   "does not include master pages" が根拠。それ以前は ISpreadList を回していたから)。片方だけ
-//   直してもマスターは flatSet に無く落ちるので、**必ず両方を同じ includeMasters で揃える**。
-//   マスターページの列は KCMCollectMasterPageUIDs が後ろへ連結する(out をクリアしない契約)。
+// includeMasters (default kFalse = ordinary pages only). What it means, and how to decide which
+//   to pass, is with the declaration in KCMPageMap.h -- the three features disagree, which is
+//   why it is a parameter.
+//   @warning **the exclusion has two stages**: besides GetSelectedPages' bIncludeMasters, the
+//   list it is checked against, KCMCollectPageUIDs, holds no master either (IPageList.h:81 says
+//   in as many words that the page count "does not include master pages"). Changing only one of
+//   the two still drops every master, because it will not be in flatSet, so **both have to move
+//   together with includeMasters**. The master pages are appended by KCMCollectMasterPageUIDs,
+//   whose contract is that it does not clear its out parameter.
 //========================================================================================
 bool16 KCMPageMapReadSelection(IDataBase*& outDB, std::vector<UID>& outPages, bool16 includeMasters)
 {
 	outDB = nil;
 	outPages.clear();
 
-	// ページパネルの表示対象=アクティブ文書。その db を UIDList に仕込んで渡す契約
-	// (ILayoutUIUtils.h:178 "UIDList must be set up with proper database")。
-	// ★db は KCMActiveDocDB()(=IActiveContext::GetContextDocument)で引く(2026-08-06 ブロック9 監査 A-1)。
-	//   公式の GetSelectedPages 実例も ActiveContext 経由 = codesnippets/SnpModifyLayoutGrid.cpp:951-958
-	//   (製品 dynamicdocumentsui/PageTransitionsPanelObserver.cpp:665-671 は ILayoutControlData 経由の別流儀)。
-	//   ⚠旧実装の Utils<ILayoutUIUtils>()->GetFrontDocument() は契約が「frontmost *layout* presentation の
-	//   文書」(ILayoutUIUtils.h:95-98)で、ストーリーエディタ窓が最前面のときアクティブ文書と食い違い得る
-	//   (=ページパネルが見せている文書とは別の db で選択 UID を解釈してしまう)。
+	// What the Pages panel shows is the active document, and the contract is that its database is
+	// handed over inside the UIDList (ILayoutUIUtils.h:178, "UIDList must be set up with proper
+	// database").
+	// The database comes from KCMActiveDocDB() (= IActiveContext::GetContextDocument), which is
+	//   also how the official GetSelectedPages example reaches it
+	//   (codesnippets/SnpModifyLayoutGrid.cpp; the product's
+	//   dynamicdocumentsui/PageTransitionsPanelObserver.cpp goes through ILayoutControlData instead).
+	//   @warning do not go back to Utils<ILayoutUIUtils>()->GetFrontDocument(): its contract is
+	//   the document of the frontmost *layout* presentation (ILayoutUIUtils.h, GetFrontDocument),
+	//   which can differ from the active document while a story editor window is in front -- the
+	//   selected UIDs would then be read against a different document than the panel is showing.
 	IDataBase* db = KCMActiveDocDB();
 	if (db == nil)
 		return kFalse;
 
-	// ★★★2026-08-15（第2段 Task 10）＝**なぜ UI 由来の Utils が model 側に残っているのか**
+	// **WHY A UI-SIDE Utils IS STILL CALLED FROM THE MODEL PLUG-IN**
 	//
-	//  `ILayoutUIUtils` は名前のとおり **UI プラグイン由来**で、ガイド vol1-07 L101 の
-	//  「UI プラグインの boss はバックグラウンドスレッドから実体化できず nil が返る」に当たる。
-	//  にもかかわらずここに残しているのは、**この関数が BG から到達しないことを実測したから**:
+	//  `ILayoutUIUtils` comes, as its name says, **from the UI plug-in**, and the guide
+	//  (vol1-07) states that a UI plug-in's boss cannot be instantiated on a background thread --
+	//  it comes back nil. It is called here anyway because **this function was measured never to
+	//  be reached from a background thread**:
 	//
-	//    ・呼び手は KCMPageMapToggleSelectedPages と KCMPageMapGetToggleState の2つだけ。
-	//      どちらも Facade（IKCMPageFlagsFacade）越しに **UI のメニュー操作**から入る。
-	//    ・BG で走るのは描画パス（KCMDrawEventHandler::HandleDrawEvent）だけで、そこが呼ぶ
-	//      ページマップ系は **KCMPageMapIsRegistered / KCMPageMapHasAnyRegistered の読み取り2本**
-	//      のみ（2026-08-15 に呼び出し全数を Grep して確認）。この関数へは辿り着かない。
+	//    - Every caller enters through the Facade (IKCMPageFlagsFacade) from **a Pages panel
+	//      context-menu action in the UI**: the Register toggle and its state, the Check toggle
+	//      and its state (KCMPageCheck.cpp), and Refresh (KCMPeek.cpp).
+	//    - What runs on a background thread is the drawing pass
+	//      (KCMDrawEventHandler::DrawSpreadMarks), and the only page-map entry points it calls
+	//      are the two readers **KCMPageMapIsRegistered and KCMPageMapHasAnyRegistered**
+	//      (KCMBuildPairing is reached only through RebuildOverflowCache, which refuses to run
+	//      off the main thread). None of them arrives here.
 	//
-	//  ⚠**「今は届かない」であって「構造的に届かない」ではない。** 次のどれかをやるなら、
-	//    ここは真っ先に見直す対象になる:
-	//      ①描画パスから選択を読む ②この関数を新しい経路から呼ぶ ③InDesign Server 対応
-	//    （現在の `.fr` は `{ kInDesignProduct }` のみ＝Server では読み込まれない）。
-	//  ★見直すときの形は決まっている＝**Task 4B / 9B と同じ「観測は UI・方針は model」**
-	//    ＝UI が選択を取り、model は UIDList を引数で受け取る。
+	//  @warning **that is "does not reach it today", not "cannot reach it".** Any of the
+	//    following makes this the first thing to revisit:
+	//      (1) reading the selection from the drawing pass  (2) calling this from a new route
+	//      (3) supporting InDesign Server (the .fr says `{ kInDesignProduct }` only, so the
+	//          plug-in is not even loaded there).
+	//  The shape to move to is already settled: **the UI observes, the model decides** -- the UI
+	//    reads the selection and the model receives a UIDList as a parameter.
 	UIDList sel(db);
-	// ⚠★★2026-08-24 実測: **`[なし]`（マスターなしの行）を選ぶと、選択は空になり
-	//   `GetSelectedPages` が「現在のページ」へフォールバックする**。その結果 KCM は
-	//   「そのページが選ばれた」と解釈し、**選んでいないページに✓が付く**
-	//   （`[なし]` 選択のまま Check を実行したらページ1に✓が付いた＝実機で確認）。
-	//   ★**第3引数を kFalse にしても直らない。むしろ広がる**（試して撤回した）＝
-	//     kFalse は「現在の**スプレッドの全ページ**を使う」で、Register まで有効になった。
-	//   ⚠ヘッダーの契約は「kTrue = パネルが**表示されていない**ときだけ現在ページを使う」だが、
-	//     実装は「**選択が空のときのフォールバック**」としても働いている＝契約から読めない。
-	//   ⇒ **`[なし]` を見分けるには、この API 以外の口が要る**（未解決）。
+	// @warning **selecting the `[None]` row (the "no master" entry) leaves the selection empty and
+	//   makes `GetSelectedPages` fall back on "the current page"** (measured). KCM then reads that
+	//   as "this page was selected" and **ticks a page the user never chose** -- running Check
+	//   with `[None]` selected put a tick on page 1 on the real thing.
+	//   **Passing kFalse for the third parameter does not fix it, it widens the hole** (tried and
+	//     reverted): kFalse means "use every page of the current spread", which made Register
+	//     misfire the same way.
+	//   The header's contract is "kTrue = use the current page only when the panel is not
+	//     visible", but the implementation also treats it as **a fallback for an empty
+	//     selection**, which the contract does not say.
+	//   Telling `[None]` apart therefore needs some entry point other than this API (unsolved).
 	Utils<ILayoutUIUtils>()->GetSelectedPages(sel, includeMasters, kTrue /*currentPageOnly*/, kTrue /*pagesOnly*/);
 
-	// 突合相手は「文書の全ページ」なので set で引く(上の KCMVecContains のコメント参照)。
+	// What is being searched is the document's whole page list, so it goes into a set (see the
+	// comment on KCMVecContains above).
 	std::vector<UID> flat;
 	KCMCollectPageUIDs(db, flat);
 	if (includeMasters)
-		KCMCollectMasterPageUIDs(db, flat);	// ★マスターは後ろへ連結される(out をクリアしない)
+		KCMCollectMasterPageUIDs(db, flat);	// masters are appended; the out list is not cleared
 	const std::set<UID> flatSet(flat.begin(), flat.end());
 	const int32 n = sel.Length();
 	for (int32 i = 0; i < n; ++i)
@@ -160,8 +175,9 @@ bool16 KCMPageMapReadSelection(IDataBase*& outDB, std::vector<UID>& outPages, bo
 	return kTrue;
 }
 
-// 文書の役割に応じた呼び名(ステータス行の文言用): Target=added/Source=removed/
-// 未 arm・無関係な文書=総称 "added/removed"。
+// What to call the pages of this document in the status line: "added" on the Target, "removed"
+// on the Source, and the generic "added/removed" when no comparison is running or the document
+// is an unrelated one.
 static const char* KCMPageMapRoleWord(IDataBase* db)
 {
 	if (db != nil && db == KCMArmedTargetDB())
@@ -172,38 +188,37 @@ static const char* KCMPageMapRoleWord(IDataBase* db)
 }
 
 //========================================================================================
-// KCMPageMapToggleSelectedPages(KCMPageMap.h で宣言)
-//   右クリックトグルの実行。選択ページに1つでも未登録があれば「全登録」、全部登録済みなら
-//   「全解除」(チェック表示と対になる標準的なトグル動作)。結果と、その文書の登録合計を
-//   パネルのステータス行に出す(パネルが隠れていてもセッションに残り、再表示時に見える)。
+// KCMPageMapToggleSelectedPages (declared in KCMPageMap.h)
+//   Runs the context-menu toggle. Any unregistered page among the selection registers them all;
+//   all registered unregisters them all -- the standard toggle behaviour that goes with the tick.
+//   The outcome, and this document's registration total, go to the panel's status line (which
+//   survives in the session even while the panel is hidden, and shows on the next reveal).
 //========================================================================================
 void KCMPageMapToggleSelectedPages()
 {
 	IDataBase* db = nil;
 	std::vector<UID> pages;
 	if (!KCMPageMapReadSelection(db, pages))
-		return;		// メニューは kCustomEnabling で無効化済みのはずだが保険
+		return;		// kCustomEnabling should already have greyed the menu out; belt and braces
 
-	// ★2026-07-11(ユーザー指定): 登録は「比較を Start 中(arm 済み)」かつ「選択文書が Target/Source」の
-	//   ときだけ可能。メニューは KCMPageMapGetToggleState の答えで無効化済みのはずだが、保険としてここでも弾く。
+	// Registering is only possible while a comparison is running (armed) and the selected
+	//   document is the Target or the Source. KCMPageMapGetToggleState's answer will have greyed
+	//   the menu out already, but the rule is enforced here too.
 	if (!KCMIsArmed() || (db != KCMArmedTargetDB() && db != KCMArmedSourceDB()))
 		return;
 
 	const bool16 anyUnregistered = sRegistered.AnyNotIn(db, pages);
 
-	// ★パネルのステータス欄は幅・行数とも小さいため(ui/KCMUI.fr の kKCMStatusTextWidgetID は
-	// Frame(8,76,216,150)＝**208×74px の4行**で、kDontEllipsize＝自動省略もされない)、
-	// メッセージは短く1行に収める。⚠2026-08-17 訂正: ここは「176×52px 程度」と書いていた(2026-08-06
-	// 世代の値)。同じ欄を KCMPageCheck.cpp が「約152px×4行」(2026-07-15 世代)と書いており、
-	// **同じ問いに2つの古い答えがあった**＝[[one-question-one-place]]。寸法は .fr で実測すること。
-	// ⚠★★同日さらに訂正(不具合再検査 B5)＝**古い答えは2つではなく5つだった。** 残り3つは
-	//   `IKCMCompareFacade.h` / `KCMColorSampler.h` / `ui/KCMPanelState.cpp` にあり、どれも「152px」。
-	//   B4 は**自分のブロックの2ファイルしか grep しなかった**ので数えられていない＝
-	//   ★**「同じ問いに2つの答え」を見つけたら、その数字をリポジトリ全体で引いて全部閉じる**
-	//   (命題はブロックに属さない)。今は5か所とも「.fr が正本」と書いて数字を持たせていない。
-	// ⚠ この欄は UI 側にあり、ここ(model)からは通知経由でしか届かない。**それでも文面の長さは
-	//   ここで決まる**＝送り手が短くするしかない(受け手には切る以外の逃げ道が無く、
-	//   数字の途中で切れると別の数に見える＝[[ellipsis-in-status-line-breaks-numbers]])。
+	// The panel's status area is small in both width and lines, and it is kDontEllipsize, so
+	// nothing is shortened for you: keep the message to one short line.
+	// @warning **do not copy its size into this comment.** The one source of truth is the Frame
+	//   of kKCMStatusTextWidgetID in ui/KCMUI.fr -- measure it there. The size was written out in
+	//   several files at once and went stale in all of them, each holding a different old number
+	//   ([[one-question-one-place]]).
+	// @warning the area belongs to the UI, and the model can only reach it through a
+	//   notification. **The length is still decided here**: the sender is the only one who can
+	//   shorten it, since the receiver has nothing to do but cut, and a number cut in half reads
+	//   as a different number ([[ellipsis-in-status-line-breaks-numbers]]).
 	PMString msg;
 	msg.SetTranslatable(kFalse);
 	if (anyUnregistered)
@@ -225,32 +240,37 @@ void KCMPageMapToggleSelectedPages()
 		msg.Append(KCMPageMapRoleWord(db));
 	}
 
-	// 合計は付け外しの後に数える(解除で空になった文書のエントリは Erase が捨てているので 0 が返る)。
+	// The total is counted after the change (Erase has already dropped the document's entry when
+	// unregistering emptied it, so 0 comes back).
 	msg.Append(", total ");
 	msg.AppendNumber(sRegistered.CountIn(db));
 
-	// ★既に比較実行済み(Start後)なら、除外対応表が変わった分をその場で反映するため、Start と同じ
-	// 全体再比較を自動で走らせる(実機確認: 比較後に登録を変えてもリアルタイムには反映されなかった
-	// ため、2026-07-05 にこの自動再比較を追加)。Start 未実行なら何もしない(次の Start で自然に反映)。
-	// (旧記述の「Always Show Marks on Source を既定 ON に戻す副作用」は 2026-07-25 に Start 経路へ移動済み=
-	// この再比較ではユーザーの OFF 選択は保たれる)。報告文字列(report)は使わず短い
-	// サフィックスだけ足す(ステータス欄が小さく、report をそのまま足すと溢れるため)。
+	// While a comparison is already running, re-compare straight away so the changed pairing is
+	// reflected at once -- without this, changing a registration after a comparison showed
+	// nothing until the next one. Nothing happens when no comparison is running; the next Start
+	// picks the registrations up by itself.
+	// The report string is deliberately dropped in favour of a short suffix: the status area is
+	// small and appending the report overflows it.
 	bool16 recompared = kFalse;
 	if (KCMIsArmed() && KCMArmedTargetDB() != nil && KCMArmedSourceDB() != nil)
 	{
-		// ★差分再比較(allowIncremental=kTrue)。登録の追加/解除では文書内容は変わらず除外対応表の
-		// ペアリングだけが動くので、ペアが不変のページは前回結果を再利用し(=ラスタ化しない)、ペアが
-		// 新規/相手変化/消滅したページだけを再計算する。大規模文書ほど効く。全体の総入れ替えではない。
-		// ★戻り値を必ず見る(2026-08-05 監査で発見した「枠ゼロの Start 中」穴の5個目): 登録の変更は
-		//   後続全ページのペアをずらすので差分でもラスタ化枚数が嵩み、進捗バーの Cancel が出得る。
-		//   キャンセルされるとマークは KCMDoMarkChangesDoc 側で全破棄済み(kFailure)なのに、無視して
-		//   進むと「枠が1つも無い Start 中」のまま "(recompared)" と嘘の報告をしてしまう。
-		//   Load Check & Register のキャンセル(KCMPageCheck.cpp)と同じく Stop まで戻す
-		//   (今回の登録変更も Stop の全消去で捨てられる=Stop の仕様どおり)。
+		// An incremental re-comparison (allowIncremental=kTrue). Registering and unregistering
+		// changes no page's content, only the pairing, so pages whose partner is unchanged reuse
+		// the previous result and are not rasterised again; only pages that gained, lost or
+		// changed a partner are recomputed. The larger the document, the more this saves.
+		// **Always look at the return value.** A registration change shifts the partner of every
+		//   page after it, so even an incremental run can rasterise enough pages for the progress
+		//   bar to offer Cancel. On cancellation KCMDoMarkChangesDoc has already thrown every
+		//   mark away (kFailure); carrying on regardless would leave a running comparison with
+		//   no frames at all while reporting "(recompared)", which is a lie.
+		//   The answer is the same as for a cancelled Load Check & Register (KCMPageCheck.cpp):
+		//   go all the way back to Stop. The registration change made here is thrown away with
+		//   it, which is exactly what Stop is specified to do.
 		PMString report;
 		if (KCMDoMarkChangesDoc(KCMArmedTargetDB(), KCMArmedSourceDB(), report, kTrue /*allowIncremental*/) != kSuccess)
 		{
-			KCMToggleStartStop();		// arm 中なので Stop 分岐(マーク/登録/Check 破棄・disarm・パネル更新)
+			KCMToggleStartStop();		// armed, so this takes the Stop branch: marks, registrations
+										// and ticks dropped, disarmed, panel updated
 			PMString cmsg("Recompare cancelled");
 			cmsg.SetTranslatable(kFalse);
 			KCMNotifyStatus(cmsg, kTrue /*forceRedrawNow*/);
@@ -260,33 +280,28 @@ void KCMPageMapToggleSelectedPages()
 		recompared = kTrue;
 	}
 
-	// ★トグルしたページのサムネイル明示 per-UID Purge。必要なのは次の2ケースだけ:
-	//   ・再比較が走らなかった(未 arm 等) … 他に refresh 経路が無い
-	//   ・登録解除 … 解除ページは sRegistered からも sEntries/overflow(※)からも消えるため、
-	//     **現在の状態から作れるどの集合にも入らない**=ここで拾うしかない
-	//     (※登録中はペアリングから除外されていたので、旧 overflow にも入っていない)
-	//   登録追加で再比較済みの場合はスキップ: トグル済みページは sRegistered に入っており、再比較側の
-	//   KCMCollectChangedPageUIDs(登録ページ込み)が既に Purge+ForceRedraw している。ここでも呼ぶと
-	//   同じページを二重ラスタ化+パネル二重再描画(点滅)するだけで無意味(2026-07-10 レビューで判明)。
-	// ⚠★★2026-08-17(不具合再検査 B4)訂正＝上の「再比較の Purge 集合(現在の集合∪**再比較前の
-	//   sEntries/overflow 退避**)」という根拠は**もう存在しない**。その退避は 2026-08-13(Task 10)に
-	//   廃止され(KCMCore.cpp の KCMDoMarkChangesDoc 冒頭が「この退避は今は取っていない」と明記)、
-	//   **全再比較の通知はページ集合を載せない**⇒受け手の UI は db の**全ページ**を Purge している
-	//   (ui/KCMModelChangeObserver.cpp の fPagesA/fPagesB が nil の分岐)。
-	//   ∴ 今の解除経路は「全ページ Purge のあとに触ったページをもう一度 Purge」＝**二重**になっている
-	//   (上の段落が避けよと書いているものと同じ形。害は点滅と再ラスタ化だけで、絵は正しい)。
-	//   ★**それでもこの通知は残す**: KCMDoMarkChangesDoc の宿題「Task 12 で IKCMMarkData が入ったら
-	//     退避を取り直して per-UID Purge へ戻す」が生きており、戻した瞬間に**解除ページを拾えるのは
-	//     この経路だけ**になる(戻すときに一緒に消すこと)。
-	// ★2026-08-13(Task 10): 直接呼びから通知へ。
-	// ★★2026-08-16(API 監査 B4): **トグルしたページ集合を通知に載せる**ので、UI は per-UID Purge に
-	//   戻った。⚠旧記述「**どのページかは通知では運べない**ので UI は db の全ページを作り直す」は
-	//   **誤り**だった——ISubject::Change の第3引数 changedBy で運べる(2026-08-15 の監査 B2 で
-	//   判明していたのに、その訂正がこの行まで配られていなかった)。
-	//   ⚠**渡す集合が「絵が変わり得るページ」を漏らしていないか**は、上の2ケース分析がそのまま答える:
-	//     解除ページは sRegistered からも sEntries/overflow からも消えるのでどの**現在**集合にも
-	//     入らない=「トグルしたページ」を運ぶ以外に拾う道が無い。
-	//   ⇒ 上の「二重ラスタ化を避ける」条件も**残す意味がある**: 通知を出さなければ UI は動かない。
+	// Tell the UI which pages were toggled, so their thumbnails are purged per UID. Only two
+	// cases need it:
+	//   - no re-comparison ran (nothing is armed, say) ... there is no other refresh route
+	//   - unregistering ... an unregistered page leaves sRegistered, and it is in neither
+	//     sEntries nor the overflow sets (while it was registered the pairing left it out
+	//     altogether), so **it is in none of the sets the current state can produce**. This is
+	//     the only place it can be caught.
+	//   Registering with a re-comparison behind it is skipped on purpose: the toggled pages are
+	//   in sRegistered by then, and the re-comparison's own KCMCollectChangedPageUIDs (which
+	//   includes the registered pages) has already purged and redrawn them. Sending it again
+	//   only rasterises the same pages twice and makes the panel flicker.
+	// @warning today the unregister route IS that double: a full re-comparison sends **no page
+	//   set at all**, so the UI purges **every page** of the document (the branch in
+	//   ui/KCMModelChangeObserver.cpp taken when fPagesA is nil). The picture is right; the cost
+	//   is a second rasterisation and a flicker.
+	//   **The notification stays anyway**: KCMDoMarkChangesDoc still has "take the snapshot again
+	//   and send it with the notification" outstanding, and the moment that lands, per-UID purging
+	//   comes back and **this is the only route that can catch an unregistered page**. (Delete
+	//   this block only together with that change, never on its own.)
+	// The page set travels on the notification itself -- ISubject::Change's third parameter,
+	//   changedBy, carries it (see KCMModelNotify.h). Whether the set can miss a page whose
+	//   picture changed is answered by the two cases above.
 	if (!recompared || !anyUnregistered)
 	{
 		const std::set<UID> touched(pages.begin(), pages.end());
@@ -297,28 +312,30 @@ void KCMPageMapToggleSelectedPages()
 }
 
 //========================================================================================
-// KCMPageMapGetToggleState(KCMPageMap.h で宣言)
-//   kCustomEnabling のトグルが今どう見えるべきかを**答えるだけ**。
-//   ・選択に文書ページが無い(選択なし/マスターのみ)→無効
-//   ・選択が全部登録済み→All / 一部だけ登録済み→Some(中間チェック)
-//   ・fRole は「アクティブ文書が Target か Source か」(呼び手がラベルを選ぶ材料)
+// KCMPageMapGetToggleState (declared in KCMPageMap.h)
+//   **Only answers** how the kCustomEnabling toggle should look right now.
+//   - no document page in the selection (nothing selected, or masters only) -> disabled
+//   - every selected page registered -> All; only some of them -> Some (the mixed tick)
+//   - fRole says whether the active document is the Target or the Source, which is what the
+//     caller picks the label from
 //
-//   ★★2026-08-15(API 監査 B2 の A-2): **IActionStateList を受け取るのをやめた。**
-//   メニューへの書き込み(SetNthActionState / SetNthActionName)と**ラベルの文字列**は
-//   ui/KCMActionComponent.cpp へ移した ---- メニューは UI の仕事だから(理由の全文は
-//   KCMPageMap.h の KCMPageToggleState)。ここに残るのは「数える」ことだけ。
+//   **This no longer takes an IActionStateList.** Writing to the menu (SetNthActionState /
+//   SetNthActionName) and the label strings belong to ui/KCMActionComponent.cpp, because the
+//   menu is the UI's job (the reasoning is with KCMPageToggleState in KCMPageMap.h). What is
+//   left here is the counting.
 //========================================================================================
 KCMPageToggleState KCMPageMapGetToggleState()
 {
-	KCMPageToggleState st;	// 既定は「無効」
+	KCMPageToggleState st;	// disabled by default
 
 	IDataBase* db = nil;
 	std::vector<UID> pages;
 	if (!KCMPageMapReadSelection(db, pages))
 		return st;
 
-	// ★2026-07-11(ユーザー指定): 登録は「比較を Start 中(arm 済み)」かつ「選択文書が Target/Source」の
-	//   ときだけ可能=それ以外はグレーアウト。未 Start / 第3文書のページパネルではメニューを無効表示にする。
+	// Registering is only possible while a comparison is running (armed) and the selected
+	//   document is the Target or the Source; anything else is greyed out. That covers a Pages
+	//   panel showing no comparison at all, and one showing some third document.
 	if (!KCMIsArmed() || (db != KCMArmedTargetDB() && db != KCMArmedSourceDB()))
 		return st;
 
@@ -326,36 +343,39 @@ KCMPageToggleState KCMPageMapGetToggleState()
 
 	st.fEnabled = kTrue;
 	if (regCount == (int32)pages.size())
-		st.fTick = kKCMPageTickAll;		// 全部登録済み=チェック
+		st.fTick = kKCMPageTickAll;		// all registered = a tick
 	else if (regCount > 0)
-		st.fTick = kKCMPageTickSome;		// 一部だけ登録済み=中間チェック
+		st.fTick = kKCMPageTickSome;		// only some = the mixed tick
 
-	// ラベルを選ぶ材料。⚠上のガードを抜けている以上、db は Target か Source のどちらかしかない
-	//   ---- 旧実装の3つ目のラベル("Added/Removed" の総称)は**到達しない分岐だった**ので
-	//   持ち越していない(kKCMPageRoleNone は fEnabled=kFalse の場合の既定値としてのみ残る)。
+	// What the label is picked from. Past the guard above, db can only be the Target or the
+	//   Source, so there is no third, generic ("Added/Removed") label here -- that branch was
+	//   unreachable. kKCMPageRoleNone survives only as the default while fEnabled is kFalse.
 	st.fRole = (db == KCMArmedTargetDB()) ? kKCMPageRoleTarget : kKCMPageRoleSource;
 	return st;
 }
 
 //========================================================================================
-// KCMPageMapSweepClosedDocs(KCMPageMap.h で宣言)
-//   ドキュメントクローズ直後の生存スイープ(呼び所=KCMHandleDocsClosed)。閉じた文書の登録を
-//   状態だけ捨てる。★閉じた db は FindDocByDataBase へのポインタ比較のみで、絶対に deref しない
-//   (KCM の他のクローズ後片付けと同じ流儀)。こまめに捨てることで、閉じた文書とアドレス再利用の
-//   新文書を取り違える余地も最小化する。
+// KCMPageMapSweepClosedDocs (declared in KCMPageMap.h)
+//   The liveness sweep run right after documents close (from KCMHandleDocsClosed). Drops the
+//   registrations of closed documents, state only. **A closed database is never dereferenced**
+//   -- pointer comparison against FindDocByDataBase and nothing more, the same way as KCM's
+//   other close-up work. Dropping them promptly also leaves the least room to confuse a closed
+//   document with a new one that reused its address.
 //========================================================================================
 void KCMPageMapSweepClosedDocs()
 {
-	sRegistered.SweepClosedDocs();	// 終了中の nil ガードも deref 回避も入れ物側の責務(KCMDocUidSet.cpp)
+	sRegistered.SweepClosedDocs();	// the container owns both the shutdown nil guards and the
+									// no-dereference rule (KCMDocUidSet.cpp)
 }
 
-// (KCMPageMapClearAll は 2026-08-17 の不具合再検査 B4 で削除: 呼び手ゼロで、しかもヘッダーが
-//  「Stop から呼ぶ」と実在しない呼び手を宣言していた。Stop が呼ぶのは下の KCMPageMapClearAllDocs。)
+// (KCMPageMapClearAll was removed: it had no caller, and this file declared one that did not
+//  exist -- "called from Stop". What Stop calls is KCMPageMapClearAllDocs below.)
 
 //========================================================================================
-// KCMPageMapClearAllDocs(KCMPageMap.h で宣言)
-//   全文書の登録を丸ごと忘れる。Stop(KCMDoClearMarks)で呼び、比較を解除したら Add/Remove の
-//   登録も残さない(ユーザー指定 2026-07-11)。ポインタは触らず map を空にするだけ(deref なし=安全)。
+// KCMPageMapClearAllDocs (declared in KCMPageMap.h)
+//   Forget every document's registrations. Stop (KCMDoClearMarks) calls it so that clearing a
+//   comparison leaves no Added/Removed registrations behind either. Only empties the map; no
+//   pointer is touched, so nothing can be dereferenced.
 //========================================================================================
 void KCMPageMapClearAllDocs()
 {
@@ -363,7 +383,7 @@ void KCMPageMapClearAllDocs()
 }
 
 //========================================================================================
-// KCMPageMapIsRegistered(KCMPageMap.h で宣言)
+// KCMPageMapIsRegistered (declared in KCMPageMap.h)
 //========================================================================================
 bool16 KCMPageMapIsRegistered(IDataBase* db, UID pageUID)
 {
@@ -371,7 +391,7 @@ bool16 KCMPageMapIsRegistered(IDataBase* db, UID pageUID)
 }
 
 //========================================================================================
-// KCMPageMapHasAnyRegistered(KCMPageMap.h で宣言)
+// KCMPageMapHasAnyRegistered (declared in KCMPageMap.h)
 //========================================================================================
 bool16 KCMPageMapHasAnyRegistered(IDataBase* db)
 {
@@ -379,34 +399,37 @@ bool16 KCMPageMapHasAnyRegistered(IDataBase* db)
 }
 
 //========================================================================================
-// KCMPageMapCollectRegistered(KCMPageMap.h で宣言)
-//   db の登録済み(Added/Removed=緑「/」)ページ UID をすべて out に追加する(out はクリアしない=
-//   既存の変更/overflow 集合に足し込む使い方)。登録ページは sEntries/overflow とは別管理なので、
-//   サムネイル per-UID Purge の対象集合にこれを含めないと緑「/」が即時反映されない。
+// KCMPageMapCollectRegistered (declared in KCMPageMap.h)
+//   Add every registered (Added/Removed = green "/") page UID of db into out; out is not
+//   cleared, so this merges into an existing changed/overflow set. The registered pages are held
+//   apart from sEntries and the overflow sets, so leaving them out of the set the thumbnails are
+//   purged for means the green "/" does not appear until something else redraws it.
 //========================================================================================
 void KCMPageMapCollectRegistered(IDataBase* db, std::set<UID>& out)
 {
-	sRegistered.CollectInto(db, out);	// out はクリアしない(入れ物側の契約)
+	sRegistered.CollectInto(db, out);	// out is not cleared (the container's contract)
 }
 
 //========================================================================================
-// KCMPageMapReplaceRegistered(KCMPageMap.h で宣言)
-//   db の登録集合を pages で丸ごと置き換える(LOAD 用の setter。「Load Check & Register」から呼ぶ)。
-//   ここでは sRegistered を書き換えるだけで、再比較やサムネイル更新は行わない(呼び出し側が両文書を
-//   set し終えてから一度だけ再比較する)。pages が空ならエントリごと消す。
+// KCMPageMapReplaceRegistered (declared in KCMPageMap.h)
+//   Replace db's registrations wholesale with pages (the setter "Load Check & Register" uses).
+//   It only rewrites sRegistered: no re-comparison and no thumbnail refresh, because the caller
+//   sets both documents first and then re-compares once. An empty pages drops the entry.
 //========================================================================================
 void KCMPageMapReplaceRegistered(IDataBase* db, const std::vector<UID>& pages)
 {
-	sRegistered.Replace(db, pages);		// 空ならエントリごと消える(入れ物側の契約)
+	sRegistered.Replace(db, pages);		// empty drops the entry itself (the container's contract)
 }
 
 //========================================================================================
-// KCMBuildPairing(KCMPageMap.h で宣言)
-//   targetDB/sourceDB の平坦ページ列(KCMCollectPageUIDs)から、それぞれ登録済み(比較相手なし)
-//   ページを除き、残り同士を順番に対応させる。従来(ステップ1以前)は素の平坦列を直接 zip していたが、
-//   追加/削除ページが登録されていれば、そのページを飛ばして残りを詰めて対応させる。
-//   ★文書間のページ数差で対応表からあふれたページ(登録されていないのに対応相手が無いページ)は
-//   outOverflowTargetPages/outOverflowSourcePages(任意)に入れる。
+// KCMBuildPairing (declared in KCMPageMap.h)
+//   Take each document's flat page list (KCMCollectPageUIDs), drop the registered pages -- the
+//   ones with no counterpart -- and pair what is left in order. Registered pages are skipped and
+//   everything after them closes up, which is the whole point: without it the two documents are
+//   simply zipped together and every page after an insertion is compared against the wrong one.
+//   Pages that fall off the end because the documents hold different numbers of pages (not
+//   registered, but with no partner left) go into outOverflowTargetPages /
+//   outOverflowSourcePages when those are supplied.
 //========================================================================================
 void KCMBuildPairing(IDataBase* targetDB, IDataBase* sourceDB,
 	std::vector<UID>& outTargetPages, std::vector<UID>& outSourcePages,
@@ -443,22 +466,27 @@ void KCMBuildPairing(IDataBase* targetDB, IDataBase* sourceDB,
 }
 
 //========================================================================================
-// KCMBuildMasterPairing(KCMPageMap.h で宣言)
-//   マスタースプレッドどうしを名前で対応付け、一致した組のページを順に並べる(2026-08-11)。
-//   ★上の KCMBuildPairing とは対応の規則が違う(あちらは順番、こちらは名前)ので別関数。理由は
-//   ヘッダーのコメント参照。★登録済み(比較相手なし)ページの除外はしない: 登録はページパネルの
-//   選択から作られ、その読み口(KCMPageMapReadSelection)を Register だけは includeMasters=kFalse で
-//   呼ぶので、マスターページが登録集合に入ることはない。
-//   ⚠**この前提はこの関数の正しさの土台**: ここは登録集合を一度も見ないので、もし Register が
-//   マスターを受け付けるようになったら「登録したのに比較から外れない」という嘘になる
-//   (2026-08-13 に Check/Refresh だけマスターを通す形にしたときも、Register は kFalse のまま据え置いた)。
+// KCMBuildMasterPairing (declared in KCMPageMap.h)
+//   Pairs master spreads by name and lays out the pages of the pairs that matched, in order.
+//   **The rule differs from KCMBuildPairing above** (position there, name here), which is why
+//   this is a separate function; the reasoning is with the declaration in the header.
+//   Registered pages are deliberately not excluded here: registrations are made from the Pages
+//   panel selection, and Register is the one feature that calls the reader
+//   (KCMPageMapReadSelection) with includeMasters=kFalse, so no master page can be in the
+//   registered set to begin with.
+//   @warning **that assumption is what makes this function correct.** It never looks at the
+//   registrations, so the day Register starts accepting masters, registering one would silently
+//   fail to exclude it from the comparison. (When Check and Refresh were opened up to masters,
+//   Register was left at kFalse for exactly this reason.)
 //
-//   ★Source 側の名前引きは公式 API IMasterSpreadList::FindMasterByName(prefix, basename)
-//   (IMasterSpreadList.h:138)。自前で全マスターを回して名前を突き合わせる形も書けるが、
-//   「名前で master を引く」ものが公式にある以上そちらが正道。
-//   ⚠この API は SDK にも source/open にも呼び手がゼロで、ヘッダーは「見つからなかったとき何を
-//   返すか」を書いていない。ここでは kInvalidUID を想定しつつ、返った UID は必ず ISpread として
-//   開いて nil を弾く(壊れた値が来ても落ちない形)。相手のいないマスターでの実挙動は実機で確認する。
+//   The Source side is looked up with the official IMasterSpreadList::FindMasterByName(prefix,
+//   basename). Walking every master and comparing names by hand would work too, but an official
+//   "find a master by name" exists, so that is the road.
+//   @warning **the SDK has no other caller of this API** (nothing in the samples, nothing in
+//   source/open), and the header does not say what it returns when nothing matches. kInvalidUID
+//   is assumed here, and whatever UID comes back is opened as an ISpread and nil-checked anyway,
+//   so a bad value cannot crash this. What a master with no counterpart really does is worth
+//   confirming on the real thing.
 //========================================================================================
 void KCMBuildMasterPairing(IDataBase* targetDB, IDataBase* sourceDB,
 	std::vector<UID>& outTargetPages, std::vector<UID>& outSourcePages)
@@ -473,7 +501,8 @@ void KCMBuildMasterPairing(IDataBase* targetDB, IDataBase* sourceDB,
 	if (tList == nil || sList == nil)
 		return;
 
-	// Target 側をマスタースプレッド順に回し、同名の Source があれば組む。
+	// Walk the Target's master spreads in order and pair each with the Source's master of the
+	// same name, when there is one.
 	const int32 tn = tList->GetMasterSpreadCount();
 	for (int32 i = 0; i < tn; ++i)
 	{
@@ -482,15 +511,16 @@ void KCMBuildMasterPairing(IDataBase* targetDB, IDataBase* sourceDB,
 		if (tms == nil)
 			continue;
 
-		// ★名前は prefix("A")と basename("親ページ"/"Master")に分けて聞く。GetName() が返す
-		//   "A-親ページ" を自分で割る必要はない(公式 API がこの2つを受け取る形になっている)。
+		// The name is asked for in two parts, the prefix ("A") and the basename ("Master" or its
+		//   localised equivalent). There is no need to split what GetName() returns ("A-Master"):
+		//   the official lookup takes exactly these two.
 		PMString prefix, basename;
 		tms->GetPrefix(&prefix);
 		tms->GetBasename(&basename);
 
 		const UID su = sList->FindMasterByName(prefix, basename);
 		if (su == kInvalidUID)
-			continue;			// 相手なし: このマスターは比較しない
+			continue;			// no counterpart: this master is not compared
 
 		InterfacePtr<ISpread> tsp(targetDB, tu, UseDefaultIID());
 		InterfacePtr<ISpread> ssp(sourceDB, su, UseDefaultIID());
@@ -498,7 +528,7 @@ void KCMBuildMasterPairing(IDataBase* targetDB, IDataBase* sourceDB,
 			continue;
 		const int32 tp = tsp->GetNumPages();
 		const int32 sp = ssp->GetNumPages();
-		const int32 np = (tp < sp) ? tp : sp;	// ページ数が違う組は短い方に切り詰める
+		const int32 np = (tp < sp) ? tp : sp;	// a pair with different page counts is truncated
 		for (int32 p = 0; p < np; ++p)
 		{
 			outTargetPages.push_back(tsp->GetNthPageUID(p));
@@ -507,22 +537,24 @@ void KCMBuildMasterPairing(IDataBase* targetDB, IDataBase* sourceDB,
 	}
 }
 
-// (KCMPageMapHasOverflow は 2026-07-25 監査で削除: 描画側が sOverflowT/sOverflowS キャッシュ方式へ
-//  移行して以来どこからも呼ばれておらず、中身が全ページ走査なので誤ってホットパスから呼ばれる前に撤去)
+// (KCMPageMapHasOverflow was removed: nothing had called it since the drawing side moved to the
+//  sOverflowT / sOverflowS caches, and its body walked every page -- worth removing before
+//  someone called it from a hot path by mistake.)
 
 //========================================================================================
-// KCMMapTargetToSource / KCMMapSourceToTarget(KCMPageMap.h で宣言)
-//   1ページ単位の対応変換。内部で KCMBuildPairing を呼んで対応表を作り、探しているページを
-//   線形探索で引く(ページ数は高々数百なので毎回作り直しても軽い。呼び出し側は既に1スプレッド分
-//   =数ページの粒度でしか呼ばないため実測コストも小さい)。
+// KCMMapTargetToSource / KCMMapSourceToTarget (declared in KCMPageMap.h)
+//   Translate one page to its counterpart. The pairing is built by KCMBuildPairing and then
+//   searched linearly. Rebuilding it every time is cheap enough: a document holds a few hundred
+//   pages at most, and the callers only ask at the granularity of one spread, a handful of pages.
 //
-// ★★2026-08-16: **マスタースプレッドのページも引けるようにした**(ユーザー報告＝マスターページで
-//   CMYK が出ない)。通常ページの対応表で見つからなかったときだけ、マスターの対応表
-//   (KCMBuildMasterPairing＝名前対応)も引く。
-//   ⚠**2つの表を1つに混ぜてよい**理由＝ページ UID は文書内で一意なので、同じ UID が両方の表に
-//     現れることはない。**比較の対応表(KCMCore.cpp)と部分再比較(KCMPeek.cpp)が先に同じ形を
-//     取っている**(1つの std::map に通常とマスターを同居させる)ので、流儀も揃う。
-//   ⚠**順番は通常が先**＝通常ページで引けるならマスターの表を作らずに済む(こちらが常用経路)。
+// **Master spread pages resolve too** (they used to not, which showed up as the CMYK readout
+//   going blank on a master page). The master pairing (KCMBuildMasterPairing, by name) is
+//   consulted only when the ordinary pairing did not find the page.
+//   Mixing the two tables is safe because **page UIDs are unique within a document**, so the same
+//     UID cannot appear in both. The comparison's own table (KCMCore.cpp) and the partial
+//     re-comparison (KCMPeek.cpp) already do the same thing, holding ordinary pages and masters
+//     in one std::map.
+//   **The ordinary table is searched first**, so the common route never builds the master one.
 //========================================================================================
 bool16 KCMMapTargetToSource(IDataBase* targetDB, IDataBase* sourceDB,
 	UID targetPageUID, UID& outSourcePageUID)
@@ -538,7 +570,7 @@ bool16 KCMMapTargetToSource(IDataBase* targetDB, IDataBase* sourceDB,
 			return kTrue;
 		}
 	}
-	// ★マスタースプレッドのページ(名前対応)。通常で引けなかったときだけ作る。
+	// Master spread pages (paired by name), built only because the ordinary table missed.
 	std::vector<UID> mT, mS;
 	KCMBuildMasterPairing(targetDB, sourceDB, mT, mS);
 	for (size_t k = 0; k < mT.size(); ++k)
@@ -566,7 +598,7 @@ bool16 KCMMapSourceToTarget(IDataBase* targetDB, IDataBase* sourceDB,
 			return kTrue;
 		}
 	}
-	// ★マスタースプレッドのページ(上と対称)。
+	// Master spread pages (the mirror of the above).
 	std::vector<UID> mT, mS;
 	KCMBuildMasterPairing(targetDB, sourceDB, mT, mS);
 	for (size_t k = 0; k < mS.size(); ++k)
@@ -580,4 +612,4 @@ bool16 KCMMapSourceToTarget(IDataBase* targetDB, IDataBase* sourceDB,
 	return kFalse;
 }
 
-// KCMPageMap.cpp 終わり。
+// End of KCMPageMap.cpp

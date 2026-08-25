@@ -2,27 +2,31 @@
 //
 //  KCMPageCheck.cpp
 //
-//  「Check」機能(KCMPageCheck.h 参照)。ページパネルでページを選択→右クリックの
-//  トグル「Check」で、そのページに「チェック済み」印を付け外しする。チェックしたページには
-//  Pages パネルのサムネイル中央に青い ✓(ベクター線)を描く(描画は KCMDrawEventHandler の
-//  isThumb 分岐)。登録(KCMPageMap)とは独立した別集合。セッション内のみ・Stop で全消去。
+//  The "Check" feature (see KCMPageCheck.h). Select pages in the Pages panel, then the
+//  context-menu toggle "Check" puts a "seen" mark on them and takes it off again. A checked page
+//  gets a blue tick, drawn as vector strokes, in the middle of its Pages panel thumbnail (by
+//  KCMDrawEventHandler's isThumb branch). The set is independent of the registrations
+//  (KCMPageMap), lives for the session only, and Stop clears it.
 //
-//  構造は KCMPageMap.cpp を踏襲(選択取得=共通リーダー KCMPageMapReadSelection、状態=
-//  文書DBごとの UID セット、クローズスイープは deref なしのポインタ比較のみ)。
+//  The structure follows KCMPageMap.cpp: the same shared reader for the selection
+//  (KCMPageMapReadSelection), the same per-document UID set, and a close sweep that compares
+//  pointers without ever dereferencing one.
 //
-//  ★★マスターページも対象にする(2026-08-13)。共通リーダーを includeMasters=kTrue で呼ぶ点だけが
-//  Register(kFalse)との違い。理由=マスタースプレッドは 2026-08-11 から比較され枠が出るので、
-//  「枠の付いたページに読んだ印を付ける」という Check の意味がそのまま成立する。⚠それまでは
-//  リーダーがマスターを1つも返さず、トグル状態(現 KCMPageCheckGetToggleState)が必ず「無効」を返していた
-//  =コンテキストメニューは無効項目を出さないので「マスターだけ Check が消える」に見えた。
-//  ★描画側は元からマスターで動く(サムネイル ✓ もレイアウト ✓ も「今描いているスプレッドのページ」を
-//  回すだけ・Purge はページ UID 単位・KCMForceRedrawPagesPanelNow は Master サブパネルも再描画)。
+//  **Master pages count too.** The only difference from Register is that the shared reader is
+//  called with includeMasters=kTrue here (Register passes kFalse): master spreads are compared
+//  and do get frames, so "mark the page with a frame as seen" means exactly what it does
+//  elsewhere. While the reader returned no master, the toggle state (now
+//  KCMPageCheckGetToggleState) always answered "disabled", and since a context menu does not show
+//  disabled items, it looked as though Check had vanished on masters alone.
+//  The drawing side worked on masters from the start: both the thumbnail tick and the layout tick
+//  simply walk the pages of the spread being drawn, the purge is per page UID, and
+//  KCMForceRedrawPagesPanelNow redraws the Master sub-panel as well.
 //
 //========================================================================================
 
 #include "VCPlugInHeaders.h"
 
-#include "IDataBase.h"			// GetSysFile(保存キー=文書ファイルパス)
+#include "IDataBase.h"			// GetSysFile (the save key is the document's file path)
 #include "PMString.h"
 #include "FileUtils.h"			// GetAppRoamingDataFolder / AppendPath / OpenFile / DoesFileExist / SysFileToPMString
 #include "IDFile.h"
@@ -34,68 +38,70 @@
 #include <cstdio>				// FILE / fread / fwrite / fclose
 
 #include "KCMCore.h"			// KCMCollectPageUIDs / KCMCollectMasterPageUIDs / KCMIsArmed / KCMArmedTargetDB / KCMArmedSourceDB / KCMDoMarkChangesDoc
-								// (ステータス行は 2026-08-13 Task 9 で KCMNotifyStatus＝通知へ移った)
-#include "KCMModelNotify.h"	// KCMNotifyStatus - the model tells the UI, it never calls it (Task 9)
-#include "KCMComparisonRun.h"	// KCMToggleStartStop(2026-08-13 に KCMCore.h から移動)
+#include "KCMModelNotify.h"	// KCMNotifyStatus - the model tells the UI, it never calls it
+#include "KCMComparisonRun.h"	// KCMToggleStartStop
 #include "KCMPageCheck.h"
-#include "KCMPageMap.h"		// KCMPageMapCollectRegistered(保存) / KCMPageMapReplaceRegistered(読込)
-#include "KCMDocUidSet.h"		// 「文書DB→ページUID集合」の共通の入れ物(登録側と共有。2026-08-06 監査 C-1)
-#include "KCMThreadSafety.h"	// ★共有状態のロック(GetMap で入れ物の内側を直接いじるとき)
-#include "KCMID.h"				// kKCMPageFlagsChangedMessage(通知の ID)
-// ★2026-08-13(Task 10): UI 側ヘッダー KCMThumbnailRefresh.h の include を落とした。サムネイルを
-//   作り直すのは通知を受けた UI の仕事。★KCMCollectChangedPageUIDs も同日 KCMCore.h へ移った。
+#include "KCMPageMap.h"		// KCMPageMapCollectRegistered (save) / KCMPageMapReplaceRegistered (load)
+#include "KCMDocUidSet.h"		// the shared "document -> page UID set" container (Register uses it too)
+#include "KCMThreadSafety.h"	// the shared-state lock, for reaching inside the container through GetMap
+#include "KCMID.h"				// kKCMPageFlagsChangedMessage (the notification's ID)
+// This file deliberately does not include the UI's KCMThumbnailRefresh.h: rebuilding a thumbnail
+// is the job of whoever receives the notification, which is the UI.
 
-// チェック済みページ: 文書DB → ページUIDの集合。セッション内のみ。
-// 空になった文書のエントリは即座に消える(KCMDocUidSet の規約)。
+// The ticked pages: document database -> set of page UIDs, session only.
+// An entry whose set became empty disappears at once (KCMDocUidSet's rule).
 static KCMDocUidSet sChecked;
 
-// ★★チェック(✓)を付けてよいページは**モードで違う**。答えを作るのは KCMCore.cpp の
-//   KCMCollectCheckablePageUIDs 1本で、このファイルはそれを引くだけ(理由と経緯は KCMCore.h の
-//   宣言のコメント)。要点だけ:
-//     ・Pixel モード … マーク付き(枠/登録「/」/overflow「/」)のページだけ(ユーザー指定 2026-07-11)
-//     ・Story モード … Target/Source の**全ページ**(ユーザー決定 2026-08-24)
-//   ⚠**この判定を持つのはこのファイルの3か所**(トグル実行・トグル状態・剪定)＋ Load の復元で、
-//     どれも下の KCMCollectCheckable / KCMFilterToCheckable を通す。素で
-//     KCMCollectChangedPageUIDs を呼ぶと Pixel の答えしか返らない([[one-question-one-place]])。
+// **Which pages may be ticked depends on the mode.** The answer is built in one place,
+//   KCMCollectCheckablePageUIDs in KCMCore.cpp, and this file only asks it (the reasoning is with
+//   the declaration in KCMCore.h). In short:
+//     - Pixel mode ... only pages carrying a mark (a frame, a registered "/", an overflow "/")
+//     - Story mode ... **every page** of the Target and the Source
+//   @warning **four routes ask this question** -- the toggle, the toggle's state, the prune, and
+//     Load's restore -- and every one of them goes through KCMCollectCheckable /
+//     KCMFilterToCheckable below. Calling KCMCollectChangedPageUIDs directly instead only ever
+//     gives the Pixel answer ([[one-question-one-place]]).
 //
-// ★複数ページを判定するときは、これを1回呼んでから Includes() で引くこと(Pixel 分岐は毎回 sEntries を
-//   全走査するため、ページごとに呼ぶと O(ページ数×変更数)になる)。
+// **Ask once and then use Includes() when judging several pages.** The Pixel branch walks the
+//   whole of sEntries each time, so asking per page costs O(pages x changes).
 static bool16 KCMCollectCheckable(IDataBase* db, KCMCheckablePages& outCheckable)
 {
 	return KCMCollectCheckablePageUIDs(db, outCheckable);
 }
 
-// 選択ページのうち「✓ を付けてよい」ものだけを out に残す。候補は1回だけ作る(上記参照)。
+// Keep only the selected pages that may be ticked. The candidate set is built once (see above).
 static void KCMFilterToCheckable(IDataBase* db, const std::vector<UID>& pages, std::vector<UID>& out)
 {
 	out.clear();
 	KCMCheckablePages checkable;
 	if (!KCMCollectCheckable(db, checkable))
-		return;		// db が比較対象でない=1枚も付けられない
+		return;		// db is not one of the compared documents = nothing may be ticked
 	for (size_t i = 0; i < pages.size(); ++i)
 		if (checkable.Includes(pages[i]))
 			out.push_back(pages[i]);
 }
 
 //========================================================================================
-// KCMPageCheckToggleSelectedPages(KCMPageCheck.h で宣言)
+// KCMPageCheckToggleSelectedPages (declared in KCMPageCheck.h)
 //========================================================================================
 void KCMPageCheckToggleSelectedPages()
 {
 	IDataBase* db = nil;
 	std::vector<UID> selPages;
 	if (!KCMPageMapReadSelection(db, selPages, kTrue /*includeMasters*/))
-		return;		// メニューは kCustomEnabling で無効化済みのはずだが保険
+		return;		// kCustomEnabling should already have greyed the menu out; belt and braces
 
-	// チェックは「比較を Start 中(arm 済み)」かつ「選択文書が Target/Source」のときだけ可能。
+	// Ticking is only possible while a comparison is running (armed) and the selected document is
+	// the Target or the Source.
 	if (!KCMIsArmed() || (db != KCMArmedTargetDB() && db != KCMArmedSourceDB()))
 		return;
 
-	// ★✓ を付けてよいページだけを対象にする(モードで違う。上の KCMFilterToCheckable を参照)。
+	// Narrow the selection to the pages that may be ticked (which depends on the mode -- see
+	// KCMFilterToCheckable above).
 	std::vector<UID> pages;
 	KCMFilterToCheckable(db, selPages, pages);
 	if (pages.empty())
-		return;		// 選択に対象ページが無い=何もしない(メニューも無効のはず)
+		return;		// nothing eligible in the selection; the menu should be disabled anyway
 
 	const bool16 anyUnchecked = sChecked.AnyNotIn(db, pages);
 
@@ -116,49 +122,52 @@ void KCMPageCheckToggleSelectedPages()
 		msg.AppendNumber((int32)pages.size());
 	}
 
-	// 合計は付け外しの後に数える(解除で空になった文書のエントリは Erase が捨てているので 0 が返る)。
+	// The total is counted after the change (Erase has already dropped the document's entry when
+	// unticking emptied it, so 0 comes back).
 	msg.Append(", total ");
 	msg.AppendNumber(sChecked.CountIn(db));
 
-	// トグルしたページのサムネイルを即更新して ✓ を反映する(比較には影響しないので再比較は不要)。
-	// ★2026-08-13(Task 10): 直接呼びから通知へ。
-	// ★★2026-08-16(API 監査 B4): **トグルしたページ集合を載せる**ので UI は per-UID Purge に戻った
-	//   (旧記述「どのページかは通知では運べない」は誤り＝changedBy で運べる。理由は KCMModelNotify.h)。
-	//   ✓ の付け外しで絵が変わるのは触ったページだけなので、この集合で漏れは無い。
+	// Refresh the toggled pages' thumbnails so the tick shows at once. No re-comparison is needed;
+	// a tick changes nothing about the comparison itself.
+	// The page set travels on the notification (ISubject::Change's changedBy parameter, see
+	//   KCMModelNotify.h), so the UI purges per UID. Ticking and unticking change the picture of
+	//   the touched pages and of nothing else, so this set cannot miss one.
 	{
 		const std::set<UID> touched(pages.begin(), pages.end());
 		KCMNotifyPages(kKCMPageFlagsChangedMessage, db, touched);
 	}
 
-	// ★レイアウトビュー版の ✓(2026-07-12 追加)も即反映する。✓ は常時表示なので、トグルした文書の
-	// レイアウトビューを InvalidateViews で再描画しないと、次の再描画機会(スクロール等)まで
-	// 付け外しが画面に出ない(ユーザー報告: OFF にしても ✓ が残る)。サムネイル更新とは別経路。
+	// The layout view's tick has to be refreshed as well, and by a different route. It is drawn
+	// whenever marks are visible, so without invalidating the toggled document's layout views the
+	// change does not reach the screen until something else redraws them -- which showed up as
+	// "the tick is still there after I switched it off", until the user scrolled.
 	KCMInvalidateDB(db);
 
 	KCMNotifyStatus(msg);
 }
 
 //========================================================================================
-// KCMPageCheckGetToggleState(KCMPageCheck.h で宣言)
-//   ★★2026-08-15(API 監査 B2 の A-2): IActionStateList を受け取るのをやめ、**答えるだけ**に
-//   した(Register 側と対。理由は KCMPageMap.h の KCMPageToggleState)。
+// KCMPageCheckGetToggleState (declared in KCMPageCheck.h)
+//   Like the Register side, this **only answers** and no longer takes an IActionStateList (the
+//   reasoning is with KCMPageToggleState in KCMPageMap.h).
 //========================================================================================
 KCMPageToggleState KCMPageCheckGetToggleState()
 {
-	KCMPageToggleState st;	// 既定は「無効」
+	KCMPageToggleState st;	// disabled by default
 
 	IDataBase* db = nil;
 	std::vector<UID> pages;
 	if (!KCMPageMapReadSelection(db, pages, kTrue /*includeMasters*/))
 		return st;
 
-	// Start 中かつ選択文書が Target/Source のときだけ有効。それ以外はグレーアウト。
+	// Enabled only while a comparison is running and the selected document is the Target or the
+	// Source; grey otherwise.
 	if (!KCMIsArmed() || (db != KCMArmedTargetDB() && db != KCMArmedSourceDB()))
 		return st;
 
-	// ★選択に「✓ を付けてよいページ」が1枚も無ければ無効化する。Pixel モードでは枠/「/」の無い
-	//   ページで「チェック」を出さない(ユーザー指定 2026-07-11)、Story モードでは全ページが対象
-	//   (ユーザー決定 2026-08-24)＝この違いは KCMFilterToCheckable の中だけに在る。
+	// Disabled when the selection holds no page that may be ticked. In the Pixel mode Check does
+	//   not appear on pages without a frame or a "/", while in the Story mode every page counts;
+	//   that difference lives inside KCMFilterToCheckable and nowhere else.
 	std::vector<UID> eligible;
 	KCMFilterToCheckable(db, pages, eligible);
 	if (eligible.empty())
@@ -168,24 +177,25 @@ KCMPageToggleState KCMPageCheckGetToggleState()
 
 	st.fEnabled = kTrue;
 	if (chkCount == (int32)eligible.size())
-		st.fTick = kKCMPageTickAll;		// 対象の選択ページが全部チェック済み=✓
+		st.fTick = kKCMPageTickAll;		// every eligible selected page is ticked
 	else if (chkCount > 0)
-		st.fTick = kKCMPageTickSome;		// 一部だけチェック済み=中間チェック
+		st.fTick = kKCMPageTickSome;		// only some of them = the mixed tick
 
-	// ⚠fRole は設定しない ---- Check のメニュー名は固定で、出し分ける材料が要らない。
+	// fRole is deliberately left alone: Check's menu name is fixed, so there is nothing to pick.
 	return st;
 }
 
 //========================================================================================
-// KCMPageCheckSweepClosedDocs(KCMPageCheck.h で宣言)
+// KCMPageCheckSweepClosedDocs (declared in KCMPageCheck.h)
 //========================================================================================
 void KCMPageCheckSweepClosedDocs()
 {
-	sChecked.SweepClosedDocs();	// 終了中の nil ガードも deref 回避も入れ物側の責務(KCMDocUidSet.cpp)
+	sChecked.SweepClosedDocs();	// the container owns both the shutdown nil guards and the
+								// no-dereference rule (KCMDocUidSet.cpp)
 }
 
 //========================================================================================
-// KCMPageCheckClearAllDocs(KCMPageCheck.h で宣言)
+// KCMPageCheckClearAllDocs (declared in KCMPageCheck.h)
 //========================================================================================
 void KCMPageCheckClearAllDocs()
 {
@@ -193,46 +203,49 @@ void KCMPageCheckClearAllDocs()
 }
 
 //========================================================================================
-// KCMPageCheckPruneToMarked(KCMPageCheck.h で宣言)
-//   再比較後、各文書のチェックを「今も ✓ を付けてよい」ページだけに絞る(付けられなくなったページの
-//   チェックは忘れる)。KCMCollectCheckablePageUIDs は db が sDB/sSrcDB のときだけ答えを返す
-//   (それ以外は空=その db の全チェックが外れる)。ポインタは deref しない。
-//   ⚠**名前は "ToMarked" のまま**(2026-08-24)＝呼び手2か所とヘッダーの宣言を同時に触る改名で、
-//     この回の変更点が読みにくくなる。⇒ 中身が「マーク付き」から「✓ を付けてよい」へ広がったことは
-//     この注記と下の分岐のコメントが持つ。★改名するなら独立したコミットで。
+// KCMPageCheckPruneToMarked (declared in KCMPageCheck.h)
+//   After a re-comparison, narrow each document's ticks to the pages that may still be ticked,
+//   forgetting the rest. KCMCollectCheckablePageUIDs only answers for the two documents being
+//   compared; for any other one it comes back empty, which unticks that document entirely.
+//   No pointer is dereferenced.
+//   @warning **the name still says "ToMarked"** while the meaning has widened to "keep only what
+//     may still be ticked" -- see the header. Renaming belongs in a commit of its own.
 //========================================================================================
 void KCMPageCheckPruneToMarked(std::map<IDataBase*, std::set<UID> >* outUnchecked)
 {
 	if (sChecked.IsEmpty())
 		return;
-	// ★文書ごとにマーク集合を1回だけ作って絞るので、入れ物の集合を直接いじる口(GetMap)を使う。
-	//   空になった文書のエントリは最後に PruneEmptyDocs() で捨てる(KCMDocUidSet.h の規約)。
-	// ★★2026-08-15(第2段 Task 12B): **GetMap() は入れ物の内側を素で渡す口なので、
-	//   入れ物のメソッドが自前で取っているロックが効かない。** ここで明示的に取る
-	//   (BG の描画が同じ集合を読んでいる最中に erase すると壊れる)。再帰ロックなので
-	//   下の PruneEmptyDocs() が同じロックを取り直しても問題ない。
+	// The eligibility set is built once per document and then filtered against, which needs the
+	//   entry point that hands out the sets themselves (GetMap). The entries emptied by that are
+	//   dropped by PruneEmptyDocs() at the end (KCMDocUidSet.h's rule).
+	// **GetMap() hands out the raw map, so the lock the container's own methods take does not
+	//   apply**; it is taken explicitly here. Erasing while a background thread's drawing pass
+	//   reads the same set corrupts it. The lock is recursive, so PruneEmptyDocs() taking it
+	//   again below is fine.
 	KCMMarkStateLock lock(KCMMarkStateMutex());
 	KCMDocUidSet::Map& m = sChecked.GetMap();
 	for (KCMDocUidSet::Map::iterator it = m.begin(); it != m.end(); ++it)
 	{
-		// ★★**剪定の基準は「今も ✓ を付けてよいか」であって「今もマークがあるか」ではない**
-		//   (2026-08-24)。同じことに見えるのは Pixel モードだけで、Story モードでは全ページが
-		//   対象なので**1つも外れない**のが正しい ---- ここを KCMCollectChangedPageUIDs のまま
-		//   にすると、Story モードで付けた ✓ が次の再比較で残らず消える(付けた側と外す側で
-		//   別の問いを聞いていることになる)。
+		// **What is asked here is "may this page still be ticked", not "does it still carry a
+		//   mark".** The two look alike only in the Pixel mode: in the Story mode every page is
+		//   eligible, so **nothing comes off**, which is correct. Asking
+		//   KCMCollectChangedPageUIDs here instead would wipe out every tick made in the Story
+		//   mode at the next re-comparison -- the side that puts ticks on and the side that takes
+		//   them off would be asking two different questions.
 		KCMCheckablePages checkable;
-		KCMCollectCheckable(it->first, checkable);		// db が比較対象でなければ空=全部外れる
+		KCMCollectCheckable(it->first, checkable);		// empty unless db is compared = all come off
 		std::set<UID>& chk = it->second;
 		for (std::set<UID>::iterator c = chk.begin(); c != chk.end(); )
 		{
 			if (!checkable.Includes(*c))
 			{
-				// ★2026-08-16(API 監査 B5): 外したページを呼び手へ知らせる(要求されたときだけ)。
-				//   ✓ が消えればサムネイルの絵は変わるが、外れた後の集合には残らないので
-				//   **ここで拾わないと per-UID の Purge から永久に漏れる**(KCMPageCheck.h)。
+				// Tell the caller which page was unticked, when it asked to be told. Losing a
+				//   tick changes the thumbnail, but the page is in no set once the tick is gone,
+				//   so **not catching it here means it never gets purged at all**
+				//   (see KCMPageCheck.h).
 				if (outUnchecked != nil)
 					(*outUnchecked)[it->first].insert(*c);
-				chk.erase(c++);		// もうマークが無いページ=チェックを忘れる
+				chk.erase(c++);		// no longer eligible: forget the tick
 			}
 			else
 				++c;
@@ -242,7 +255,7 @@ void KCMPageCheckPruneToMarked(std::map<IDataBase*, std::set<UID> >* outUnchecke
 }
 
 //========================================================================================
-// KCMPageCheckIsChecked(KCMPageCheck.h で宣言)
+// KCMPageCheckIsChecked (declared in KCMPageCheck.h)
 //========================================================================================
 bool16 KCMPageCheckIsChecked(IDataBase* db, UID pageUID)
 {
@@ -250,7 +263,7 @@ bool16 KCMPageCheckIsChecked(IDataBase* db, UID pageUID)
 }
 
 //========================================================================================
-// KCMPageCheckHasAny(KCMPageCheck.h で宣言)
+// KCMPageCheckHasAny (declared in KCMPageCheck.h)
 //========================================================================================
 bool16 KCMPageCheckHasAny(IDataBase* db)
 {
@@ -258,70 +271,78 @@ bool16 KCMPageCheckHasAny(IDataBase* db)
 }
 
 //========================================================================================
-// チェック/登録状態の保存/読み込み(フライアウト「Save Check & Register」「Load Check & Register」)
+// Saving and loading the ticks and registrations (the flyout items "Save Check & Register" and
+// "Load Check & Register")
 //
-//   パネル設定(KCMPanelState.cpp)と同じローミング環境設定フォルダー直下に、独自 JSON ファイル
-//   KCMPageChecks.json として保存する(サブフォルダーは作らない)。InDesign 本体のデータには一切書かない。
-//   キー = 文書ファイルのフルパス(GetSysFile→SysFileToPMString。★ファイル名のみ案を検討したが、Target と
-//     Source が同名だとキー衝突するためフルパスへ戻した=2026-07-12。保存済み文書内でページ UID は永続なので
-//     再オープンしても一致する。トレードオフ: 文書を移動/別名保存してパスが変わると一致しない)。
-//   値 = チェック済み(✓)ページUID + 登録済み(Added/Removed=緑「/」)ページUID の2集合。パスは UTF-8 で
-//   格納(日本語パス/Shift-JIS の 0x5C 問題を回避)。
-//   ★"checks" には**マスターページの UID も入りうる**(2026-08-13)。"registered" は通常ページのみ
-//     (マスターに登録は無い)。UID は文書内で一意なのでファイル形式も旧ファイルとの互換も変わらない
-//     (読み込み側が「その文書に実在するページか」を必ず突合するため)。
+//   The file, KCMPageChecks.json, is KCM's own JSON and sits directly in the roaming preferences
+//   folder, the same one the panel settings use (KCMPanelState.cpp); no sub-folder is created.
+//   Nothing is ever written into InDesign's own data.
+//   The key is the document's full file path (GetSysFile -> SysFileToPMString). **Not the file
+//     name alone**: a Target and a Source of the same name in different folders -- which is what
+//     an older and a newer version of one document usually are -- would collide on it. Page UIDs
+//     are persistent inside a saved document, so they still match after it is reopened. The
+//     trade-off is that moving the document, or saving it under a new name, breaks the match.
+//   The value is two sets: the ticked page UIDs and the registered (Added/Removed = green "/")
+//   page UIDs. Paths are stored as UTF-8, which keeps Shift-JIS's 0x5C out of Japanese paths.
+//   "checks" **can hold master page UIDs**; "registered" holds ordinary pages only, since a
+//     master is never registered. UIDs are unique within a document, so this changes neither the
+//     file format nor compatibility with older files -- the loading side always checks that a
+//     page really exists in the document it is restoring into.
 //
-//   形式(version 2):
+//   The format (version 2):
 //     {
 //       "version": 2,
 //       "docs": [
 //         { "path": "<utf8 path>", "checks": [12, 45], "registered": [3, 7] }
 //       ]
 //     }
-//   ★読み込みは寛容: version は見ない。旧 v1 の "pages" 配列は "checks" として受理する
-//     (registered が無い旧ファイルは登録なしとして扱う)。
+//   Reading is lenient: the version is not looked at, and an old v1 file's "pages" array is
+//     accepted as checks (an old file without "registered" simply has no registrations).
 //
-//  ─────────────────────────────────────────────────────────────────────────────
-//  ★★**なぜ SDK 公式の JSON クラスを使わず自前で書き読みするのか**(2026-08-16・API 監査 B4 で
-//    決着。⚠**ここを読まずに再検討しないこと**)。
+//  --------------------------------------------------------------------------------------
+//  **WHY THIS READS AND WRITES ITS OWN JSON INSTEAD OF USING THE SDK'S CLASS.**
+//    (Settled; do not re-open the question without reading this.)
 //
-//    公式のものは在る＝`public/interfaces/utils/IJsonUtils.h` の `class PUBLIC_DECL JSON`
-//    (boost property_tree のラッパ)。実例も製品側にある＝`publiclib/links/
-//    HTTPAssetLinkResourceStateUpdater.cpp:176-182`(addValue → write_json)／
-//    `open/components/linksui/aem/ChromiumImportHelperAEMLinks.cpp:141-193`
-//    (read_json を try/catch → GetListAt → checkKey/GetString)／サンプル `CustomHttpLink/
-//    CusHttpLnkResourceServerAPIWrapper.cpp:524-580`。
-//    ★★**使えることは 2026-08-16 に実測した**＝このプラグインの1ファイルに `#include "IJsonUtils.h"` と
-//      `JSON j; j.addValue(...); j.write_json(s); j.GetListAt(...)` を仮に置いてビルド＝
-//      **追加設定ゼロでコンパイルもリンクも通った**(include は `build/win/prj/Base.props:20` の
-//      $(BOOST_HEADER_SEARCH_PATH) が vcxproj → …ReleaseX64.sdk.props → ReleaseX64.props →
-//      Release.props → Base.props と継承される)。**使えないのではない。**
-//      ⚠台帳 `api-official-examples.md` の旧記述「include パスが標準のコンパイルオプションに無いので
-//        vcxproj 全構成に足す必要がある」は**誤り**だった(`SDKCPPOptions.rsp` だけを見ていた)。
+//    The official one exists: `class PUBLIC_DECL JSON` in
+//    `public/interfaces/utils/IJsonUtils.h`, a wrapper around boost property_tree. So do users of
+//    it in the product -- `publiclib/links/HTTPAssetLinkResourceStateUpdater.cpp` (addValue ->
+//    write_json), `open/components/linksui/aem/ChromiumImportHelperAEMLinks.cpp` (read_json in a
+//    try/catch -> GetListAt -> checkKey/GetString) -- and in the sample
+//    `CustomHttpLink/CusHttpLnkResourceServerAPIWrapper.cpp`.
+//    **It was measured to work here**: dropping `#include "IJsonUtils.h"` and a few
+//      `JSON j; j.addValue(...); j.write_json(s); j.GetListAt(...)` calls into one file of this
+//      plug-in **compiled and linked with no build changes at all** (the include path comes from
+//      $(BOOST_HEADER_SEARCH_PATH) in `build/win/prj/Base.props`, which every configuration
+//      inherits). **It is not that the class cannot be used.**
 //
-//    それでも使わない理由は4つ(⚠**どれも「依存が重い」ではない**——上のとおり依存は無料だった):
-//      1. ★**書き出し側に公式の実例が1つも無い。** ここが書くのは
-//         `docs:[{path, checks:[数値…], registered:[数値…]}]` ＝**オブジェクト配列＋数値配列**。
-//         公式の使用例は全部が `addValue(key, 文字列)` の**平坦なオブジェクト**で、配列を書いて
-//         いるものは製品にもサンプルにもゼロ(`AddValue(key, JSONArray)`/`PushValue` は API には
-//         在るが呼び手ゼロ)。⇒「stock の型でも実例ゼロなら道ではない」。
-//      2. 読みだけ寄せると、**この形式の知識が公式パーサと自前ライタの2か所に割れる**。
-//      3. ★**寛容パースを失う。** boost の read_json は壊れていたら**全体が例外**。下の実装は
-//         「壊れた doc エントリ1件だけ飛ばして残りは活かす」——これは 2026-07-25 の監査で
-//         「1エントリの破損で全部放棄すると、その状態の Save マージで**他文書の保存分が消える**」
-//         として意図的に入れた性質で、寄せると黙って失われる。
-//      4. std::stringstream 経由になるので、今 UTF-8 で明示的に握っている文字コードが1枚遠くなる。
+//    There are four reasons not to, and **none of them is "the dependency is heavy"** -- as
+//    above, the dependency costs nothing:
+//      1. **Nothing official writes with it.** What is written here is
+//         `docs:[{path, checks:[numbers], registered:[numbers]}]` -- an array of objects holding
+//         arrays of numbers. Every official use is `addValue(key, string)` into a flat object,
+//         and neither the product nor the samples write an array at all (`AddValue(key,
+//         JSONArray)` and `PushValue` exist in the API with no caller anywhere). A stock type
+//         with no worked example is not a road.
+//      2. Moving only the reading over would **split the knowledge of this format between an
+//         official parser and a hand-written writer**.
+//      3. **The lenient parsing would be lost.** boost's read_json throws on the whole document
+//         when anything in it is broken. The code below skips one broken doc entry and keeps the
+//         rest, which is deliberate: giving up on everything means the next Save merges from
+//         nothing and **silently deletes what was saved for every other document**.
+//      4. It would go through std::stringstream, putting one more layer between this code and the
+//         UTF-8 it currently handles explicitly.
 //
-//  ★★**なぜ IPMStream ではなく stdio(FileUtils::OpenFile)なのか**(2026-08-10 に KBS 側で決着済み。
-//    全文＝`KBS/source/KBSPanelState.cpp:13-27`)。要点だけ: SDK の主流は
-//    `StreamUtil::CreateFileStreamRead/Write` だが、**`IPMStream::Close()` も `Flush()` も戻り値が
-//    void**(`IPMStream.h:321,368`)なので、**フラッシュ中に失敗する書き込み(ディスクフル)を検出する
-//    documented な道が無い**。`fclose` は返す。⇒ 主流 API へ寄せると、下の「書けていないのに
-//    『保存した』と言わない」チェック(2026-07-25 監査)が黙って弱くなる。
-//    ⚠この理由は移植先の KBS にしか書かれていなかった(2026-08-16 の監査 B4 でこちらにも置いた)。
+//  **WHY stdio (FileUtils::OpenFile) AND NOT IPMStream.** (Settled on the KBS side; the full
+//    reasoning is under "WHY stdio AND NOT IPMStream" at the top of KBS's KBSPanelState.cpp.)
+//    In short: the SDK's usual road is `StreamUtil::CreateFileStreamRead/Write`, but
+//    **`IPMStream::Close()` and `Flush()` both return void** (`IPMStream.h:321, 368`), so **a
+//    write that fails while being flushed -- a full disk -- has no documented way of being
+//    noticed**. `fclose` reports it. Moving to the mainstream API would quietly weaken the check
+//    below that keeps this from saying "saved" when nothing was.
 //========================================================================================
 
-// 1文書ぶんの保存単位: チェック済み(✓)と登録済み(Added/Removed)の生 UID(uint32)集合。
+// What is saved for one document: the ticked and the registered (Added/Removed) pages, as raw
+// UID values (uint32).
 struct KCMDocSets
 {
 	std::set<uint32> checks;
@@ -330,18 +351,19 @@ struct KCMDocSets
 
 static const char* const kKCMPageChecksFileName = "KCMPageChecks.json";
 
-// ローミング環境設定フォルダー(locale 付き)直下の KCMPageChecks.json への IDFile を返す。
-// ★サブフォルダーは作らない(ユーザー指定 2026-07-12)。GetAppRoamingDataFolder の subFolderName に
-//   ファイル名をそのまま渡すと、そのフォルダー直下の「ファイルの」IDFile が返る(SDK 実例:
-//   SnpShareAppResources.cpp / SuppUISysFileData.cpp)。親フォルダーは InDesign が環境設定用に既に
-//   作っているので CreateFolderIfNeeded は不要。取得できなければ kFalse。
+// The IDFile of KCMPageChecks.json, directly in the (locale-specific) roaming preferences folder.
+// **No sub-folder is created.** Passing a FILE name as GetAppRoamingDataFolder's subFolderName
+//   returns the IDFile of a file in that folder, which is what the SDK's own uses do
+//   (SnpShareAppResources.cpp, SuppUISysFileData.cpp). InDesign has already created the parent
+//   folder for its preferences, so no CreateFolderIfNeeded is needed. kFalse when it cannot be
+//   worked out.
 static bool16 KCMPageChecksFile(IDFile& outFile)
 {
 	return FileUtils::GetAppRoamingDataFolder(&outFile, PMString(kKCMPageChecksFileName));
 }
 
-// UTF-8 文字列を JSON 文字列リテラル用にエスケープ(\\ と \" と制御文字)。UTF-8 なので継続バイトに
-// 0x5C/0x22 は現れず、バイト単位の走査で安全。
+// Escape a UTF-8 string for a JSON string literal (backslash, quote, control characters). A UTF-8
+// continuation byte is never 0x5C or 0x22, so walking it byte by byte is safe.
 static void KCMJsonEscape(const std::string& in, std::string& out)
 {
 	out.clear();
@@ -361,19 +383,19 @@ static void KCMJsonEscape(const std::string& in, std::string& out)
 	}
 }
 
-// text[pos] が開き '"' を指している前提で、閉じ '"' までを非エスケープして out へ返す。pos は閉じ '"' の
-// 次へ進める。開始が '"' でなければ kFalse。
+// With text[pos] on an opening quote, unescape up to the closing quote into out and leave pos
+// just past it. kFalse when it does not start on a quote.
 static bool16 KCMJsonReadString(const std::string& text, size_t& pos, std::string& out)
 {
 	out.clear();
 	if (pos >= text.size() || text[pos] != '\"')
 		return kFalse;
-	++pos;	// 開き " をスキップ
+	++pos;	// step over the opening quote
 	while (pos < text.size())
 	{
 		const char c = text[pos++];
 		if (c == '\"')
-			return kTrue;	// 閉じ "
+			return kTrue;	// the closing quote
 		if (c == '\\' && pos < text.size())
 		{
 			const char e = text[pos++];
@@ -385,7 +407,7 @@ static bool16 KCMJsonReadString(const std::string& text, size_t& pos, std::strin
 				case '\\': out += '\\'; break;
 				case '\"': out += '\"'; break;
 				case '/':  out += '/';  break;
-				default:   out += e;    break;	// 未知エスケープはそのまま
+				default:   out += e;    break;	// an escape we do not know is kept as it is
 			}
 		}
 		else
@@ -393,10 +415,10 @@ static bool16 KCMJsonReadString(const std::string& text, size_t& pos, std::strin
 			out += c;
 		}
 	}
-	return kFalse;	// 閉じ " が無い=壊れ
+	return kFalse;	// no closing quote = broken
 }
 
-// ファイル全体を std::string に読む。無ければ/開けなければ空で kFalse。
+// Read the whole file into a std::string. Missing or unopenable gives kFalse and an empty string.
 static bool16 KCMReadWholeFile(const IDFile& file, std::string& outText)
 {
 	outText.clear();
@@ -409,8 +431,8 @@ static bool16 KCMReadWholeFile(const IDFile& file, std::string& outText)
 	size_t n;
 	while ((n = fread(buf, 1, sizeof(buf), fp)) > 0)
 		outText.append(buf, n);
-	// ★途中で読込エラーなら失敗扱い(2026-07-25 監査で追加): 部分読みのまま Save のマージ元になると、
-	//   読めなかった他文書分が上書きで黙って消えるため。
+	// A read error partway through counts as failure: a partial read used as the merge source of
+	//   the next Save would silently overwrite -- and so delete -- everything it failed to read.
 	const bool16 ok = ferror(fp) ? kFalse : kTrue;
 	fclose(fp);
 	if (!ok)
@@ -418,11 +440,13 @@ static bool16 KCMReadWholeFile(const IDFile& file, std::string& outText)
 	return ok;
 }
 
-// pos 以降で「JSON のキーとしての key」(例 "\"checks\"")の位置を探す。無ければ npos。
-// ★素の find だと、値の文字列(=文書のフルパス)の中にエスケープされた \"checks\" が入っている場合に
-//   その内側へ一致してしまう(エスケープ後のバイト列に "checks" がそのまま現れるため)。JSON 文法上、
-//   キーの直前の非空白文字は必ず '{' か ',' なので、そこまで確かめて誤一致を捨てる。
-//   ⚠Windows はファイル名に '"' を使えないので現状は無害だが、Mac では使える(2026-08-06 ブロック9 監査 C-3)。
+// Find key (say "\"checks\"") from pos on, but only where it is **a JSON key**. npos when there
+// is none.
+// A plain find would also match inside a value -- a document path containing an escaped
+//   \"checks\" has the bytes "checks" in it verbatim. In JSON the last non-space character before
+//   a key is always '{' or ',', so that is checked and anything else discarded.
+//   @warning Windows will not put a quote in a file name, so this cannot bite there today. macOS
+//   will.
 static size_t KCMFindJsonKey(const std::string& text, size_t pos, const std::string& key)
 {
 	while (pos < text.size())
@@ -434,15 +458,16 @@ static size_t KCMFindJsonKey(const std::string& text, size_t pos, const std::str
 		while (b > 0 && (text[b - 1] == ' ' || text[b - 1] == '\t' || text[b - 1] == '\n' || text[b - 1] == '\r'))
 			--b;
 		if (b > 0 && (text[b - 1] == '{' || text[b - 1] == ','))
-			return hit;		// 直前が '{' か ',' = 本物のキー
-		pos = hit + 1;		// 値の文字列に紛れ込んだ一致 = 次を探す
+			return hit;		// preceded by '{' or ',' = a real key
+		pos = hit + 1;		// a match inside a value; keep looking
 	}
 	return std::string::npos;
 }
 
-// [regionBegin, regionEnd) の範囲内で key(例 "\"checks\"")の直後の [ ... ] を探し、中の符号なし整数を
-// out に拾う。key が region 内に見つかれば(配列が空でも)kTrue、無ければ kFalse。region 境界を跨がないよう
-// 見つけた '[' / ']' が regionEnd を越えるものは無効扱い。
+// Within [regionBegin, regionEnd), find the [ ... ] that follows key (say "\"checks\"") and
+// collect the unsigned integers inside it into out. kTrue when the key was found in the region,
+// even if the array was empty; kFalse when it was not. A '[' or ']' past regionEnd is rejected so
+// that the search cannot cross into the next document's entry.
 static bool16 KCMParseUintArray(const std::string& text, size_t regionBegin, size_t regionEnd,
 	const char* key, std::set<uint32>& out)
 {
@@ -476,12 +501,14 @@ static bool16 KCMParseUintArray(const std::string& text, size_t regionBegin, siz
 		if (any)
 			out.insert(val);
 	}
-	return kTrue;	// key は在った(配列が空でも成功)
+	return kTrue;	// the key was there, empty array or not
 }
 
-// KCMPageChecks.json を読み、パス(UTF-8)→(checks/registered)集合に展開する。無ければ空 map で kFalse。
-// 寛容パース: "path" を順に探し、その doc の領域([この "path" 位置, 次の "path" 位置))内で "registered" と
-// "checks" を読む。"checks" が無い旧 v1 ファイルは "pages" を checks として受理する。
+// Read KCMPageChecks.json into path (UTF-8) -> (checks / registered). A missing file gives kFalse
+// and an empty map.
+// The parsing is lenient: each "path" is found in turn, and "registered" and "checks" are read
+// inside that document's region -- from this "path" to the next one. An old v1 file with no
+// "checks" has its "pages" accepted as checks.
 static bool16 KCMReadSetsMap(std::map<std::string, KCMDocSets>& out, bool16* outReadError = nil)
 {
 	out.clear();
@@ -492,18 +519,19 @@ static bool16 KCMReadSetsMap(std::map<std::string, KCMDocSets>& out, bool16* out
 	if (!KCMPageChecksFile(file))
 		return kFalse;
 	if (!FileUtils::DoesFileExist(file))
-		return kFalse;	// ファイル無し=正常な「保存なし」(読込エラーではない)
+		return kFalse;	// no file = nothing has been saved, which is normal and not an error
 	std::string text;
 	if (!KCMReadWholeFile(file, text))
 	{
-		// ★在るのに読めない(open/fread 失敗)。Save のマージ元にすると既存の保存分が全て消えるため、
-		//   呼び出し側(Save)が中止できるよう区別して返す(2026-07-25 監査で追加)。
+		// The file is there but cannot be read (open or fread failed). Merging from that into a
+		//   Save would wipe out everything already saved, so it is reported separately and Save
+		//   gives up.
 		if (outReadError)
 			*outReadError = kTrue;
 		return kFalse;
 	}
 	if (text.empty())
-		return kFalse;	// 空ファイル=温存すべきデータ無し(上書きしても失うものが無い)
+		return kFalse;	// an empty file holds nothing to preserve, so overwriting loses nothing
 
 	const std::string kPathKey = "\"path\"";
 	size_t p = 0;
@@ -513,13 +541,15 @@ static bool16 KCMReadSetsMap(std::map<std::string, KCMDocSets>& out, bool16* out
 		if (kpath == std::string::npos)
 			break;
 
-		// この doc の領域末尾 = 次の "path"(無ければ末尾)。配列探索がこの境界を跨がないようにする。
+		// This document's region ends at the next "path", or at the end of the text. The array
+		// search is kept inside it.
 		const size_t next = KCMFindJsonKey(text, kpath + kPathKey.size(), kPathKey);
 		const size_t regionEnd = (next == std::string::npos) ? text.size() : next;
 
-		// "path" の後の ':' → 開き '"' → 文字列本体。
-		// ★読解失敗は break ではなく「この doc だけスキップ」(2026-07-25 監査で変更): 1エントリの破損で
-		//   残りの全 doc を放棄すると、その状態の Save マージで後続の保存分が消えるため。
+		// After "path" comes ':', then the opening quote, then the string itself.
+		// **A failure here skips this document rather than breaking out of the loop**: giving up
+		//   on the remaining documents means the next Save merges from what was read so far and
+		//   deletes everything after the one broken entry.
 		size_t q = text.find(':', kpath + kPathKey.size());
 		if (q == std::string::npos || q >= regionEnd)
 		{
@@ -538,25 +568,26 @@ static bool16 KCMReadSetsMap(std::map<std::string, KCMDocSets>& out, bool16* out
 
 		KCMDocSets sets;
 		KCMParseUintArray(text, q, regionEnd, "\"registered\"", sets.registered);
-		// v2 の "checks"。無ければ旧 v1 の "pages" を checks とみなす。
+		// v2's "checks"; failing that, an old v1 file's "pages" is taken as checks.
 		if (!KCMParseUintArray(text, q, regionEnd, "\"checks\"", sets.checks))
 			KCMParseUintArray(text, q, regionEnd, "\"pages\"", sets.checks);
 
 		if (!sets.checks.empty() || !sets.registered.empty())
 			out[pathStr] = sets;
 
-		p = regionEnd;	// 次の doc を探す
+		p = regionEnd;	// on to the next document
 	}
 
-	// ★本文があるのに構造の目印("docs" キー)すら無く1件も読めなかった=壊れたファイル。マージ元にすると
-	//   全消えするため読込エラー扱いにする(正規の「空の docs 配列」ファイルはエラーにしない)(2026-07-25)。
+	// Text, but not one entry read and not even the structural marker ("docs") in it = a broken
+	//   file. Merging from that would delete everything, so it counts as a read error. A proper
+	//   file holding an empty docs array does not.
 	if (out.empty() && text.find("\"docs\"") == std::string::npos && outReadError)
 		*outReadError = kTrue;
 
 	return !out.empty();
 }
 
-// uint32 集合を "1, 2, 3" 形式で json に追記する(角括弧は呼び出し側)。
+// Append a set of uint32 to json as "1, 2, 3" (the brackets are the caller's).
 static void KCMAppendUintList(std::string& json, const std::set<uint32>& s)
 {
 	bool16 first = kTrue;
@@ -566,12 +597,13 @@ static void KCMAppendUintList(std::string& json, const std::set<uint32>& s)
 			json += ", ";
 		first = kFalse;
 		char num[16];
-		std::snprintf(num, sizeof(num), "%lu", (unsigned long)(*u));	// 境界チェック付き(sprintf を避け静的解析の指摘を回避)
+		std::snprintf(num, sizeof(num), "%lu", (unsigned long)(*u));
 		json += num;
 	}
 }
 
-// パス(UTF-8)→(checks/registered)集合を KCMPageChecks.json(version 2)へ書く。書けた IDFile を outFile に返す。
+// Write path (UTF-8) -> (checks / registered) out to KCMPageChecks.json (version 2). The file
+// written to comes back in outFile.
 static bool16 KCMWriteSetsMap(const std::map<std::string, KCMDocSets>& in, IDFile& outFile)
 {
 	if (!KCMPageChecksFile(outFile))
@@ -585,7 +617,7 @@ static bool16 KCMWriteSetsMap(const std::map<std::string, KCMDocSets>& in, IDFil
 	for (std::map<std::string, KCMDocSets>::const_iterator d = in.begin(); d != in.end(); ++d)
 	{
 		if (d->second.checks.empty() && d->second.registered.empty())
-			continue;	// 空エントリは書かない
+			continue;	// an empty entry is not written out
 		if (!firstDoc)
 			json += ",\n";
 		firstDoc = kFalse;
@@ -605,17 +637,19 @@ static bool16 KCMWriteSetsMap(const std::map<std::string, KCMDocSets>& in, IDFil
 	FILE* fp = FileUtils::OpenFile(outFile, "wb");
 	if (fp == nil)
 		return kFalse;
-	// ★書込バイト数と fclose の成否を確認(2026-07-25 監査で追加): ディスクフル等の部分書込を
-	//   「保存できた」と誤報告しない(TSV 側の Flush 後 GetStreamState 確認と同じ流儀)。
+	// Both the byte count and fclose are checked, so that a partial write -- a full disk -- is
+	//   never reported as "saved". (The TSV export checks GetStreamState after its Flush for the
+	//   same reason.)
 	const size_t wrote = fwrite(json.data(), 1, json.size(), fp);
 	const int closed = fclose(fp);
 	return (wrote == json.size() && closed == 0) ? kTrue : kFalse;
 }
 
-// db の文書ファイルパス(フルパス)を UTF-8 で返す(保存/読込の判別キー)。未保存(パス無し)なら kFalse。
-// ★フルパスを使う: Target と Source が同じファイル名でも(別フォルダーにある新旧版など)キーが衝突しない
-//   ようにするため(2026-07-12: ファイル名のみ案を検討したが同名衝突を避けフルパスへ戻した)。
-//   トレードオフ: 文書を移動/別名保存してパスが変わると一致しない。
+// db's full file path as UTF-8 -- the key saving and loading tell documents apart by. kFalse for
+// an unsaved document, which has no path.
+// **The full path, not the file name**: a Target and a Source of the same name in different
+//   folders would otherwise collide. The trade-off is that moving the document, or saving it
+//   under a new name, breaks the match.
 static bool16 KCMDocUtf8Path(IDataBase* db, std::string& outUtf8)
 {
 	outUtf8.clear();
@@ -632,27 +666,28 @@ static bool16 KCMDocUtf8Path(IDataBase* db, std::string& outUtf8)
 }
 
 //----------------------------------------------------------------------------------------
-// KCMPageCheckSaveToFile(KCMPageCheck.h で宣言)
+// KCMPageCheckSaveToFile (declared in KCMPageCheck.h)
 //----------------------------------------------------------------------------------------
 void KCMPageCheckSaveToFile()
 {
 	if (!KCMIsArmed())
 	{
-		PMString msg("Save: start first");	// ステータス行は狭い(208×74px の4行＝ui/KCMUI.fr の kKCMStatusTextWidgetID)ので短く
+		PMString msg("Save: start first");	// the status line is small (its Frame is in ui/KCMUI.fr), so keep it short
 		msg.SetTranslatable(kFalse);
 		KCMNotifyStatus(msg, kTrue /*forceRedrawNow*/);
 		return;
 	}
 
-	// 既存ファイルを読み(他文書の保存済み分を温存するため)、今 Start 中の Target/Source ぶんだけ
-	// 現在の Check(✓)+ Register(Added/Removed)で上書き/削除する。
+	// Read the existing file first, so that what was saved for other documents survives, then
+	// overwrite (or delete) the entries of the two documents being compared with their current
+	// ticks and registrations.
 	std::map<std::string, KCMDocSets> merged;
 	bool16 readError = kFalse;
-	KCMReadSetsMap(merged, &readError);	// 無ければ空
+	KCMReadSetsMap(merged, &readError);	// empty when there is no file
 	if (readError)
 	{
-		// ★既存ファイルが在るのに読めない/壊れている。このまま上書きすると他文書の保存分が消えるため中止
-		//   (2026-07-25 監査で追加)。
+		// The file exists but cannot be read, or is broken. Overwriting it now would delete what
+		//   was saved for every other document, so give up instead.
 		PMString err("Save failed (read old)");
 		err.SetTranslatable(kFalse);
 		KCMNotifyStatus(err, kTrue /*forceRedrawNow*/);
@@ -670,17 +705,17 @@ void KCMPageCheckSaveToFile()
 		std::string path;
 		if (!KCMDocUtf8Path(db, path))
 		{
-			++skippedUnsaved;	// 未保存文書=キーに出来ない
+			++skippedUnsaved;	// an unsaved document has no path to key on
 			continue;
 		}
 
 		KCMDocSets sets;
-		// Check(✓)
+		// The ticks
 		std::set<UID> chk;
 		sChecked.CollectInto(db, chk);
 		for (std::set<UID>::const_iterator u = chk.begin(); u != chk.end(); ++u)
 			sets.checks.insert((uint32)u->Get());
-		// Register(Added/Removed=緑「/」)。別モジュール管理なので facade 経由で集める。
+		// The registrations (Added/Removed = green "/"), which another module owns.
 		std::set<UID> reg;
 		KCMPageMapCollectRegistered(db, reg);
 		for (std::set<UID>::const_iterator u = reg.begin(); u != reg.end(); ++u)
@@ -693,15 +728,16 @@ void KCMPageCheckSaveToFile()
 		}
 		else
 		{
-			merged.erase(path);	// この文書は今 Check も Register も無し=保存からも消す
+			merged.erase(path);	// neither ticks nor registrations now: drop it from the file too
 		}
 	}
 
-	// ★保存する内容が 1 文書も無いときはファイルに触らない(2026-08-06 再点検)。以前はここでも書き込んで
-	//   いたため、「今どの文書も空」(例: 再 Start 直後=Stop で ✓ 全消去済み)のときに Save を押すと、
-	//   上の merged.erase で過去の保存分が消えたファイルが書かれたのに表示は "Nothing to save" =
-	//   何も起きなかったように見えて Load でも戻せなかった。保存からの削除(erase)は「保存する内容がある
-	//   保存」に同乗するときだけにする。
+	// **With nothing to save, the file is not touched at all.** It used to be written even then,
+	//   so pressing Save while both documents were empty -- right after a restart, say, Stop
+	//   having cleared every tick -- wrote out a file from which merged.erase above had already
+	//   removed what was saved before, while the status line said "Nothing to save". It looked
+	//   as though nothing had happened, and Load could not bring it back. **Deleting from the
+	//   file only ever rides along with a save that has something to write.**
 	if (savedDocs == 0)
 	{
 		PMString msg(skippedUnsaved > 0 ? "Save doc first" : "Nothing to save");
@@ -713,7 +749,7 @@ void KCMPageCheckSaveToFile()
 	IDFile outFile;
 	if (!KCMWriteSetsMap(merged, outFile))
 	{
-		PMString err("Save failed (write)");	// 短い状態表示(ステータス行)。open/書込/close いずれの失敗も含む
+		PMString err("Save failed (write)");	// covers a failed open, write or close alike
 		err.SetTranslatable(kFalse);
 		KCMNotifyStatus(err, kTrue /*forceRedrawNow*/);
 		return;
@@ -721,18 +757,18 @@ void KCMPageCheckSaveToFile()
 
 	PMString msg;
 	msg.SetTranslatable(kFalse);
-	msg.Append(FileUtils::SysFileToPMString(outFile));	// パスのみ(ラベル/件数を付けるとステータス行から溢れるため)
+	msg.Append(FileUtils::SysFileToPMString(outFile));	// the path alone: a label or a count overflows the status line
 	KCMNotifyStatus(msg, kTrue /*forceRedrawNow*/);
 }
 
 //----------------------------------------------------------------------------------------
-// KCMPageCheckLoadFromFile(KCMPageCheck.h で宣言)
+// KCMPageCheckLoadFromFile (declared in KCMPageCheck.h)
 //----------------------------------------------------------------------------------------
 void KCMPageCheckLoadFromFile()
 {
 	if (!KCMIsArmed())
 	{
-		PMString msg("Load: start first");	// ステータス行は狭いので短く
+		PMString msg("Load: start first");	// the status line is small, so keep it short
 		msg.SetTranslatable(kFalse);
 		KCMNotifyStatus(msg, kTrue /*forceRedrawNow*/);
 		return;
@@ -751,22 +787,25 @@ void KCMPageCheckLoadFromFile()
 	IDataBase* src = KCMArmedSourceDB();
 	IDataBase* dbs[2] = { tgt, src };
 
-	// この Start 中の2文書のうち、保存データを持つものを覚えておく(そのペアのパス s も保持)。
+	// Which of the two compared documents have saved data, and where that data is.
 	std::map<std::string, KCMDocSets>::const_iterator saveIt[2] = { saved.end(), saved.end() };
 	bool16 anyDocFound = kFalse;
 
-	// 各文書の平坦ページ列は Phase1 で集めて Phase3 でも使い回す(再比較でページ構造は増減しない前提。
-	// 保存データを持つ文書=saveIt[i]!=end のときだけ埋まる。二重収集を避けるためのキャッシュ)。
-	// ★マスターページ列は別のキャッシュに分けて持つ(2026-08-13)。Phase3(Check の復元)は両方を見るが、
-	//   Phase1(Register の復元)は**通常ページだけ**を見る——マスターに登録は存在しない(Register は
-	//   共通リーダーを includeMasters=kFalse で呼ぶ)ので、連結した1本を両方に流用すると
-	//   「マスターにも登録があり得る」という誤った前提をコードに書き込むことになる。
+	// Each document's flat page list is collected in phase 1 and used again in phase 3 -- a
+	// re-comparison adds and removes no pages -- and only for the documents that have saved data.
+	// **The master pages are cached separately.** Phase 3 (restoring the ticks) looks at both,
+	//   while phase 1 (restoring the registrations) looks at **ordinary pages only**: a master is
+	//   never registered, since Register calls the shared reader with includeMasters=kFalse.
+	//   Using one concatenated list for both would write the assumption "a master could be
+	//   registered too" into the code.
 	std::vector<UID> flatCache[2];
 	std::vector<UID> masterCache[2];
 
-	//--- フェーズ1: Register を両文書へ適用する(再比較の前=除外対応表に効かせるため)。--------------
-	// 保存 registered UID のうち、この文書に実在するページだけを登録集合に置き換える(setter)。
-	// 保存データを持つ文書は、たとえ registered が空でも空集合で置き換える(=保存時の状態に合わせる)。
+	//--- Phase 1: apply the registrations to both documents, before the re-comparison so that ---
+	//--- they reach the pairing. ---------------------------------------------------------------
+	// Of the saved registered UIDs, only the pages that really exist in this document go into the
+	// set. A document that has saved data is set even when its saved registrations are empty,
+	// which is what restores the state as it was saved.
 	int32 regApplied = 0;
 	for (int i = 0; i < 2; ++i)
 	{
@@ -778,21 +817,21 @@ void KCMPageCheckLoadFromFile()
 			continue;
 		std::map<std::string, KCMDocSets>::const_iterator s = saved.find(path);
 		if (s == saved.end())
-			continue;	// この文書は保存データ無し=現在の Check/Register はそのまま
+			continue;	// nothing saved for this document: its ticks and registrations stay as they are
 		saveIt[i] = s;
 		anyDocFound = kTrue;
 
 		std::vector<UID> regPages;
 		std::vector<UID>& flat = flatCache[i];
-		KCMCollectPageUIDs(db, flat);		// Phase3 でも同じ flat を使い回す
-		KCMCollectMasterPageUIDs(db, masterCache[i]);	// ★Phase3(Check の復元)専用。ここでは使わない
+		KCMCollectPageUIDs(db, flat);		// phase 3 reuses this very list
+		KCMCollectMasterPageUIDs(db, masterCache[i]);	// for phase 3 only; not used here
 		for (size_t k = 0; k < flat.size(); ++k)
 		{
 			const UID u = flat[k];
 			if (s->second.registered.count((uint32)u.Get()) > 0)
 				regPages.push_back(u);
 		}
-		KCMPageMapReplaceRegistered(db, regPages);	// 空なら登録を消す
+		KCMPageMapReplaceRegistered(db, regPages);	// empty clears the document's registrations
 		regApplied += (int32)regPages.size();
 	}
 
@@ -804,22 +843,26 @@ void KCMPageCheckLoadFromFile()
 		return;
 	}
 
-	//--- フェーズ2: 一度だけ再比較する。--------------------------------------------------------------
-	// Register が変わったので除外対応表(ペアリング)を Start と同様に張り直す。差分再比較でペア不変ページは
-	// 前回結果を再利用。これにより Added/Removed の緑「/」サムネイルも更新される(登録ページ込みで Purge)。
-	// 副作用として現在の Check も KCMPageCheckPruneToMarked で「✓ を付けてよいページ」に剪定されるが、
-	// フェーズ3で保存 Check に置き換えるので問題ない。
-	// ★再比較をキャンセルされたら(登録の変更が多いと進捗バーに Cancel が出る)、マークは
-	//   KCMDoMarkChangesDoc 側で全部破棄されている。そのままフェーズ3へ進むと「今もマーク付き」が
-	//   空集合になり、保存してあった ✓ を1つも復元しないまま「load chk0」と報告してしまう。
-	//   → 復元は行わず、Start 経路と同じ考え方で Stop まで戻す(枠が1つも無い Start 中を残さない)。
-	//   保存ファイル自体は無傷なので、Start し直して Load を実行すればやり直せる。2026-07-29 の自己レビューで発見。
+	//--- Phase 2: re-compare, once. -------------------------------------------------------------
+	// The registrations changed, so the pairing is rebuilt exactly as Start would. The
+	// re-comparison is incremental, reusing the previous result for pages whose partner is
+	// unchanged, and it refreshes the Added/Removed "/" thumbnails on the way (the purge includes
+	// the registered pages). It also prunes the current ticks down to what may still be ticked,
+	// which does not matter here: phase 3 replaces them with the saved ones anyway.
+	// **If the re-comparison is cancelled** -- enough registration changes and the progress bar
+	//   offers Cancel -- KCMDoMarkChangesDoc has already thrown every mark away. Walking on into
+	//   phase 3 would find nothing eligible, restore not a single saved tick, and report
+	//   "load chk0" as though that were the answer.
+	//   So nothing is restored and, as on the Start route, everything goes back to Stop, leaving
+	//   no running comparison without frames. The saved file is untouched, so starting again and
+	//   loading again works.
 	if (tgt != nil && src != nil)
 	{
 		PMString report;
 		if (KCMDoMarkChangesDoc(tgt, src, report, kTrue /*allowIncremental*/) != kSuccess)
 		{
-			KCMToggleStartStop();		// arm 中なので Stop 分岐(strip 撤去・disarm・Check/Register 破棄)
+			KCMToggleStartStop();		// armed, so this takes the Stop branch: strip removed,
+										// disarmed, ticks and registrations dropped
 			PMString msg("Load cancelled");
 			msg.SetTranslatable(kFalse);
 			KCMNotifyStatus(msg, kTrue /*forceRedrawNow*/);
@@ -827,7 +870,8 @@ void KCMPageCheckLoadFromFile()
 		}
 	}
 
-	//--- フェーズ3: Check(✓)を復元する(再比較後に「今も ✓ を付けてよい」ページだけ)。--------------
+	//--- Phase 3: restore the ticks, keeping only the pages that may still be ticked after the ---
+	//--- re-comparison. -------------------------------------------------------------------------
 	int32 checksRestored = 0;
 	for (int i = 0; i < 2; ++i)
 	{
@@ -837,18 +881,20 @@ void KCMPageCheckLoadFromFile()
 
 		const std::set<uint32>& savedChecks = saveIt[i]->second.checks;
 
-		// 再比較後の「今 ✓ を付けてよいか」の答えを1文書1回だけ作る(ページごとに引くと
-		// O(ページ数×変更数)になる)。★Story モードでは全ページが対象なので、保存してあった ✓ は
-		// マークの有無に関わらず戻る(2026-08-24)。
+		// Build the "may this be ticked" answer once per document; asking per page costs
+		// O(pages x changes). In the Story mode every page is eligible, so a saved tick comes
+		// back whether the page carries a mark or not.
 		KCMCheckablePages checkable;
 		KCMCollectCheckable(db, checkable);
 
-		// ★通常ページとマスターページの両方から復元する(2026-08-13)。マスターも比較対象=枠が付く
-		//   ので ✓ も付く。⚠**Save 側は元からマスターの ✓ も書いていた**(sChecked の UID をそのまま
-		//   書き出すだけなので通常/マスターの区別が無い)。ここが通常ページ列としか突合していなかった
-		//   ため、保存はできるのに Load で黙って消える非対称になっていた。
+		// Restore from both the ordinary pages and the master pages: masters are compared, get
+		//   frames, and therefore get ticks.
+		//   @warning **the saving side always wrote master ticks out** -- it simply writes the
+		//   UIDs in sChecked, which tell ordinary pages and masters apart not at all. While this
+		//   loop only checked the ordinary page list, a master's tick could be saved but vanished
+		//   silently on load.
 		std::set<UID> newSet;
-		const std::vector<UID>* lists[2] = { &flatCache[i], &masterCache[i] };	// Phase1 で収集済み(再収集しない)
+		const std::vector<UID>* lists[2] = { &flatCache[i], &masterCache[i] };	// collected in phase 1; not collected again
 		for (int L = 0; L < 2; ++L)
 		{
 			const std::vector<UID>& flat = *lists[L];
@@ -860,31 +906,31 @@ void KCMPageCheckLoadFromFile()
 			}
 		}
 
-		// 影響ページ(旧チェック ∪ 新チェック)のサムネイルを更新する(✓の付与/消去を反映)。
-		// ★CollectInto は out をクリアしないので、newSet に旧チェックを足し込む形で和集合になる。
+		// Refresh the thumbnails of the affected pages -- the old ticks together with the new ones
+		// -- so that both the ticks gained and the ticks lost show. CollectInto does not clear
+		// its out parameter, so adding the old ticks to newSet gives exactly that union.
 		std::set<UID> affected = newSet;
 		sChecked.CollectInto(db, affected);
 
-		// この文書のチェックを復元セットで置き換える(空ならエントリごと消える)。
+		// Replace this document's ticks with the restored set (an empty one drops the entry).
 		sChecked.Replace(db, newSet);
 		checksRestored += (int32)newSet.size();
 
 		if (!affected.empty())
 		{
-			// ★2026-08-13(Task 10): 通知へ(上のトグルと同じ)。
-			// ★★2026-08-16(API 監査 B4): 「通知にページ集合を載せるまで戻せない」と書いていた
-			//   対象ページの絞り込みを**実際に載せて戻した**。★渡すのは affected(旧チェック∪新チェック)
-			//   ——**外れた ✓ は新しい集合のどこにも居ない**ので、現在状態から復元できない
-			//   (これが「集合を運ぶ」以外に道が無い理由そのもの)。
+			// What travels is the union, not just the new ticks: **a tick that came off is in
+			//   none of the new sets**, so it cannot be worked out from the current state
+			//   afterwards. That is the whole reason the page set is carried on the notification.
 			KCMNotifyPages(kKCMPageFlagsChangedMessage, db, affected);
-			// ★レイアウトビュー版の ✓(2026-07-12 追加)も即反映する。フェーズ2の再比較(KCMDoMarkChangesDoc)
-			// が両文書を Invalidate するのは「復元前の ✓ 状態」に対してなので、ここで復元後の状態で
-			// もう一度 Invalidate しないと、復元/消去された ✓ がレイアウト画面に出ない(トグルと同じ理屈)。
+			// The layout view's tick needs invalidating again. Phase 2's re-comparison
+			// (KCMDoMarkChangesDoc) invalidated both documents, but against the ticks as they
+			// were **before** the restore; without a second invalidation here the restored and
+			// removed ticks do not reach the layout view -- the same reasoning as in the toggle.
 			KCMInvalidateDB(db);
 		}
 	}
 
-	// 結果をステータス行に短く出す(幅が狭いので略記)。
+	// The outcome, abbreviated to fit the narrow status line.
 	PMString msg;
 	msg.SetTranslatable(kFalse);
 	msg.Append("load chk");
@@ -894,4 +940,4 @@ void KCMPageCheckLoadFromFile()
 	KCMNotifyStatus(msg, kTrue /*forceRedrawNow*/);
 }
 
-// KCMPageCheck.cpp 終わり。
+// End of KCMPageCheck.cpp
