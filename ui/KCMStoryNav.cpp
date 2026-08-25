@@ -123,7 +123,7 @@ void KCMBuildStoryNavStops(std::vector<KCMStoryNavStop>& out)
 		stop.fStoryUID = row.fStoryUID;
 
 		// ***** THE RULE: THE LEAVES, AND ONLY THE LEAVES. *****
-		// "子供の有るのは親は除外する / 親だけのは含める" (user, 2026-08-24). A row with children is
+		// "where there are children, leave the parent out; where a parent stands alone, include it". A row with children is
 		// a heading for them - stopping on it first would show the reader the top of the story and
 		// then, one press later, the first edit inside it: the same place twice, and the count in
 		// the readout inflated by the number of stories.
@@ -161,7 +161,7 @@ void KCMGotoStoryNavStop(const KCMStoryNavStop& stop)
 	SelectInTree(stop);
 
 	// ***** AND THEN EXACTLY WHAT CLICKING THAT ROW DOES. *****
-	// ★These two calls are the whole of "StoryEdit の行を選択したのと同じ挙動" (user, 2026-08-24).
+	// ★These two calls are the whole of "the same behaviour as selecting a Story Edits row".
 	//   Neither the jump, nor the flash mark, nor the wording that goes to the message area is
 	//   decided here - all three are inside them, which is what keeps the button and the click from
 	//   drifting apart as either is changed ([[one-question-one-place]]).

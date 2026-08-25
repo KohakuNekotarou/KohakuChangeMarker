@@ -9,8 +9,8 @@
 //
 //    * the "Always Show Marks on Target" / "Always Show Marks on Source" toggles - marks that STAY UP, the
 //      Story mode's half of what those two toggles already do for the Pixel mode's frames
-//      (user's request, 2026-08-22: "ツールでボタンを押さなくても常にマークが出る様に、
-//      それをピクセルの方もストーリーの方にも");
+//      (user's request: "have the marks show at all times without pressing the tool button, in
+//      the pixel mode and the story mode both");
 //    * the KCM tool's left button while it is held - which turns the window under the cursor
 //      ROUND for as long as the button is down: marks that were off come on, marks that were on
 //      go off. ★★That is the plug-in's one rule for the button, and it is why the separate
@@ -23,10 +23,10 @@
 //  SHAPE. The Pixel mode has no idea what changed - only which rectangles of the page came out
 //  different - so it draws frames around them. The Story mode knows exactly which CHARACTERS
 //  changed, so it lights those up instead and needs no frame around the page and no scaling with
-//  the zoom (user's request: "拡大率で大きさは変わらない、ページへの外枠もいらない").
+//  the zoom (user's request: "the size does not change with the zoom, and no outer frame around the page").
 //
-//  ★THE MARK ITSELF IS THE JUMP'S, UNCHANGED (user's call: "ジャンプと時につかってるのとおなじで
-//  いいです").
+//  ★THE MARK ITSELF IS THE JUMP'S, UNCHANGED (user's call: "the same one the jump uses is
+//  fine").
 //
 //  ⚠★★★2026-08-23: WORKING OUT WHICH RANGES IS NO LONGER DONE HERE. It moved to the model plug-in
 //  (source/KCMStoryMarkBuild.cpp) along with the adornment that draws them

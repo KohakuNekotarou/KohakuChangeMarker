@@ -126,8 +126,8 @@ bool16 KCMStoryTreeEH::HandleUpDownKey(IEvent* e, const VirtualKey& key)
 	//   document.
 	//   ⇒ ★THAT REASON IS GONE: a single click no longer selects anything either - it moves the
 	//     view and flashes a mark that takes itself away (KCMStoryJumpToChange). Walking is now
-	//     the same gesture as clicking, which is what the user asked for ("矢印の上下で移動を、
-	//     これもKBSの様な感じに"), and the limitation this comment described was a consequence of
+	//     the same gesture as clicking, which is what the user asked for ("move with the up and down
+	//     arrows, in the same way as KBS"), and the limitation this comment described was a consequence of
 	//     the selection, not of the walk.
 	//   ⚠A LIMITATION THAT OUTLIVES ITS CAUSE READS AS A DESIGN DECISION. This one was written down
 	//     properly, which is the only reason it could be found and removed when the cause went.

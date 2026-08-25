@@ -10,8 +10,8 @@
 //  into the newer document and starts repairing what it found, with the panel open beside them -
 //  and every row goes on showing the state of things before they began. This is how one row is
 //  brought up to date without re-running the comparison over the whole document (user's request,
-//  2026-08-21: "親の部分の右クリックに比較を更新を作る、それを使うとそのストーリーだけ比較を更新
-//  したい").
+//  "put a refresh-the-comparison item on the parent row's context menu, and let it update the
+//  comparison for that story alone").
 //
 //  ★THE WORK ITSELF IS THE MODEL'S (IKCMStoryEditsFacade::RefreshRow). What lives here is
 //  everything the MENU needs and the model has no business knowing: which row the cursor was over
@@ -51,7 +51,7 @@ int32 KCMStoryMenuRow();
 	  - no comparison is armed (there is nothing to compare against);
 	  - the panel is in the PIXEL mode - the whole point of the item is the text diff, which that
 	    mode does not run, so refreshing there would report "no differences" about a story that has
-	    never been looked at that way (user's call, 2026-08-21: "ストーリーモードでのみで");
+	    //  never been looked at that way (user's call: "only in the story mode");
 	  - the row is an ADDED story, which has no partner in the older document at all.
 
 	⚠Being the only item in its menu, greyed means the MENU DOES NOT APPEAR - which is what makes

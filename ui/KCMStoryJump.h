@@ -36,8 +36,8 @@ bool16 KCMStoryJumpToRow(int32 rowIndex);
 
 /** Single click on a CHANGE row: go to that edit and light it up for a moment (2026-08-20).
 
-	★★★A MARK, NOT A SELECTION (user's call, 2026-08-20: "その文字のところに移動＋マーカーを少しの
-	時間出す感じに、マーカーはグローバルテキストアドーンメントで"). It selected the words until then,
+	★★★A MARK, NOT A SELECTION (user's call: "move to those characters and show a marker for a short
+	while; make the marker a global text adornment"). It selected the words until then,
 	which cost three things a pointer does not: whatever the reader had selected was thrown away, the
 	Type tool was forced on, and the words stayed selected long after they had been looked at.
 	⇒ The selection is still there for those who want it - it is what a DOUBLE click does now
@@ -78,7 +78,7 @@ bool16 KCMStoryJumpToRow(int32 rowIndex);
 bool16 KCMStoryJumpToChange(int32 rowIndex, int32 changeIndex);
 
 /** Double click on a CHANGE row: select the words that edit names, with the Type tool on
-	(2026-08-20, user's call: "子供のところをダブルクリックで選択に").
+	(user's call: "make a double-click on a child select it").
 
 	★THIS IS WHAT THE SINGLE CLICK USED TO DO. Moving it onto the double click is what let the
 	single click become a pointer rather than an intervention - the reader who wants the text can
@@ -128,8 +128,8 @@ bool16 KCMStorySelectChange(int32 rowIndex, int32 changeIndex);
 	wording, copy it, or paste over it without hunting for it by eye.
 	★★A DELETED ROW ALSO CHANGES WHICH DOCUMENT IS ACTIVE, and it is the only row that does. Its
 	story is in the source alone, and a selection made in a document that is not the active one is
-	not the selection the reader is holding - which is exactly what was reported: "ソースが active
-	でないときにダブルクリックすると、選択されない". Every other row leaves the front document
+	not the selection the reader is holding - which is exactly what was reported: "double-clicking
+	does not select when the source is not active". Every other row leaves the front document
 	alone, because it has something to show on both sides.
 	⚠The source's refusals are silent, and normal - it may have no window open.
 

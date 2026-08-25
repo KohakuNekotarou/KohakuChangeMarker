@@ -5,9 +5,10 @@
 //  Kohaku Change Marker (KCM)
 //
 //  What the panel's Prev / Next buttons walk in the STORY CHANGES mode: the LEAVES of the Story
-//  Edits list. Added 2026-08-24 at the user's request ("StoryEdit の行を選択したのと同じ挙動").
+//  Edits list. Added at the user's request ("the same behaviour as selecting a Story Edits row").
 //
-//  ***** THE RULE, IN THE USER'S OWN WORDS. ***** "子供の有るのは親は除外する / 親だけのは含める":
+//  ***** THE RULE, IN THE USER'S OWN WORDS. ***** "where there are children, leave the parent out;
+//  where a parent stands alone, include it":
 //  a story row that has changes under it is NOT a stop - its children are, one each. A story row
 //  with no children IS a stop, because there is nothing more precise to point at.
 //  ⇒ every stop is a place a reader can actually be taken to, and no place is offered twice. That
@@ -20,7 +21,7 @@
 //
 //  ★WHAT A STOP DOES IS NOT DECIDED HERE. It is the row click's own behaviour, called through
 //  KCMStoryJump - the jump, the flash mark, and the panel's message area all come from there.
-//  That is the only way "同じ挙動" can stay true as either side changes: one implementation,
+//  That is the only way "the same behaviour" can stay true as either side changes: one implementation,
 //  reached by two gestures ([[one-question-one-place]]).
 //
 //  ⚠THE PIXEL MODE NEVER COMES HERE. Its stops are the pages a comparison ringed, and they are

@@ -48,7 +48,7 @@
 // Project includes:
 #include "KCMUIID.h"
 #include "KCMChangeNav.h"	// KCMGotoStoryFrame
-#include "IKCMCompareFacade.h"	// arm 状態(2026-08-13・分割 第1段 Task 11 で Facade 経由へ)
+#include "IKCMCompareFacade.h"	// the armed state, reached across the boundary
 #include "KCMUIShared.h"	// panel / status line / nav readout / tool button (split from KCMCore.h on 2026-08-13)
 #include "KCMStoryJump.h"
 #include "IKCMStoryMarkFacade.h"	// the flash over the characters a change row goes to (2026-08-20).
@@ -96,13 +96,13 @@ PMString PageLabel(IDataBase* db, UID pageUID)
 	if (numStr.NumUTF16TextChars() > 0)
 		label.Append(numStr);
 	else
-		label.Append("?");	// 番号が取れないページ(通常は起きない。KCMStopLabel と同じ受け皿)
+		label.Append("?");	// a page whose number cannot be had (does not normally happen; the same catch-all as KCMStopLabel)
 
-	// ★★2026-08-18(不具合再検査 B10 の2周目): 隠れているスプレッドのページなら "(Hide)" を添える
-	//   ---- Prev/Next のラベル(KCMStopLabel)・書き出しの Page 列(KCMChangedPagesTSV の PageDisplay)と
-	//   同じ綴り。**同じ状態を3か所で3通りに綴らない**([[one-question-one-place]])。
-	//   ⚠この印は KCMGotoStoryFrame が「レイアウトを動かさない」と決めた理由そのものなので、
-	//     片方だけ入れると「動かないのに理由が出ない」行ができる。
+	// ★★A page on a hidden spread gets "(Hide)" after it ---- the same spelling as the Prev/Next
+	//   label (KCMStopLabel) and the Page column of the export (PageDisplay in KCMChangedPagesTSV).
+	//   **Do not spell one state three ways in three places** ([[one-question-one-place]]).
+	//   ⚠This mark IS the reason KCMGotoStoryFrame decided not to move the layout, so putting in one
+	//     without the other makes a row that does not move and does not say why.
 	if (db != nil && Utils<IKCMMarkData>()->IsPageOnHiddenSpread(db, pageUID))
 		label.Append(" (Hide)");
 	return label;
@@ -138,8 +138,8 @@ IControlView* FirstLayoutView(IDataBase* db)
 
 	QueryActiveSelection answers "out of the active context" (ISelectionUtils.h:65-76) - the FRONT
 	document's. Asking it to select in the other document is what made a Deleted row's double click
-	do nothing at all while the target was in front (user's report: "ソースが active でないときに
-	ダブルクリックすると、選択されない").
+	do nothing at all while the target was in front (user's report: "double-clicking does not select
+	when the source is not active").
 
 	⇒ The front document keeps the road it had, because THAT is where the story editor and the
 	galley live: their selection does not answer to ITextSelectionSuite's default IID and has to be
@@ -176,8 +176,8 @@ ISelectionManager* QuerySelectionManagerFor(IDataBase* db)
 	is looking at.
 
 	★ONLY THE DELETED ROW DOES THIS (user's call, 2026-08-21 - and it is a REVERSAL of the same
-	day's earlier "windows do not move": "でりーとされているのは、ソースの方選択したときに、ソースの
-	ドキュメントを active に"). Its story exists in the source alone, so leaving the target in front
+	day's earlier "windows do not move": "for a deletion, selecting on the source side should make
+	the source document active"). Its story exists in the source alone, so leaving the target in front
 	would put the reader's attention on the one document that has nothing to show.
 	⚠Every other row leaves the front document alone: it has something to show on both sides, and
 	moving the front document under a reader who did not ask for it is a bigger intervention than
@@ -361,7 +361,7 @@ bool16 SelectRangeIn(IDataBase* db, UID storyUID, TextIndex from, TextIndex to)
 }	// anonymous namespace
 
 //----------------------------------------------------------------------------------------
-// KCMStoryJumpToRow(KCMStoryJump.h で宣言)
+// KCMStoryJumpToRow (declared in KCMStoryJump.h)
 //----------------------------------------------------------------------------------------
 bool16 KCMStoryJumpToRow(int32 rowIndex)
 {
@@ -369,8 +369,8 @@ bool16 KCMStoryJumpToRow(int32 rowIndex)
 	if (!Utils<IKCMStoryEditsFacade>()->GetRow(rowIndex, row))
 		return kFalse;	// out of range, or the "No edits" placeholder - nowhere to go, silently
 
-	// ***** THE WALK'S POSITION MOVES HERE TOO (2026-08-24, user's request: "StoryEdit の行を選択した
-	// 時も Prev のほうに連動しないと違和感"). *****
+	// ***** THE WALK'S POSITION MOVES HERE TOO (user's request: "selecting a Story Edits row should
+	// carry Prev/Next along with it, or it feels wrong"). *****
 	//
 	// ★A ROW WITH CHILDREN IS NOT A STOP, so what this leaves the walk standing on is the ENTRANCE to
 	//   its first child: the readout shows that child's number and the next press of Next goes TO it
@@ -379,7 +379,7 @@ bool16 KCMStoryJumpToRow(int32 rowIndex)
 	// ★IT IS DONE HERE, BEFORE THE REFUSALS BELOW, on purpose: a story that is not placed in a frame
 	//   still exists as a row, and the walk has to be able to step off it. Putting this after the
 	//   early returns would leave such a row stuck - Next would keep landing on it.
-	// ⚠Pixel モードでは何もしない - that is decided inside, where the mode is asked once.
+	// ⚠It does nothing in the Pixel mode - that is decided inside, where the mode is asked once.
 	KCMNoteStoryStop(rowIndex, -1);
 
 	// ★The list belongs to the comparison that built it, so the document to move is one of the two
@@ -389,7 +389,7 @@ bool16 KCMStoryJumpToRow(int32 rowIndex)
 	//
 	// ★★WHICH OF THE TWO IS THE ROW'S OWN (2026-08-21). A REMOVED row's story is not in the target
 	//   at all - it is in the older document - and the user's call is that clicking it moves the
-	//   SOURCE window alone ("それを、選択したらソースの方だけジャンプ"). Every other row is a
+	//   SOURCE window alone ("selecting one of those should jump the source alone"). Every other row is a
 	//   target row and behaves exactly as before.
 	//   ★★★AND "ALONE" NEEDS NO EXTRA FLAG: KCMGotoStoryFrame only brings the companion window
 	//     along when the source it finds is NOT the database it was asked to move
@@ -441,7 +441,7 @@ bool16 KCMStoryJumpToRow(int32 rowIndex)
 	//   the view. Then measure again rather than reasoning from here.
 	if (!KCMGotoStoryFrame(db, row.fFrameUID, row.fPageUID, row.fStoryUID))
 	{
-		PMString s("Could not scroll.");	// 文言は Prev/Next の失敗時と同じ(同じ出来事なので)
+		PMString s("Could not scroll.");	// the same wording as a failed Prev/Next (it is the same event)
 		s.SetTranslatable(kFalse);
 		KCMSetStatus(s);
 		return kFalse;
@@ -452,7 +452,7 @@ bool16 KCMStoryJumpToRow(int32 rowIndex)
 }
 
 //----------------------------------------------------------------------------------------
-// KCMStorySelectWholeStory(KCMStoryJump.h で宣言)
+// KCMStorySelectWholeStory (declared in KCMStoryJump.h)
 //----------------------------------------------------------------------------------------
 /* KCMStoryJumpToChange
    See the header for what this aims at and why it switches the tool.
@@ -523,17 +523,17 @@ bool16 KCMStoryJumpToChange(int32 rowIndex, int32 changeIndex)
 	// Both windows move here - the target to this frame, the source to the same story.
 	//
 	// ★★★AND BOTH LAND ON THE EDIT ITSELF, NOT ON THE TOP OF THE STORY (user's request, 2026-08-22:
-	//   "変更された部分の一番最初の部分がレイアウトビューの真ん中に移動して欲しい" - what was arriving
+	//   "the very start of the changed part should move to the centre of the layout view" - what was arriving
 	//   in the middle of the window was the story's first character, which for a long story is
 	//   nowhere near what the row is pointing at). The point centred is where the CARET stands in
-	//   front of the first changed character (user's words: "その前の縦のピコピコした線が出る部分").
+	//   front of the first changed character (user's words: "where that blinking vertical line appears").
 	// ⚠★★THE TWO SIDES GET DIFFERENT NUMBERS. The same edit sits at a different character position
 	//   in each version, and the diff has already worked both out - so the older window is told
 	//   fSourceStart rather than being handed the target's index (which would name some unrelated
-	//   character over there). ⇒ This is also what finally settles the "第1段" caveat in KCMID.h
+	//   character over there). ⇒ This is also what finally settles the "stage one" caveat in KCMID.h
 	//   ⑬: the source window now reaches the corresponding CHARACTER, not just the same story.
-	// ★★AN INSERTION AIMS AT ITS PLACE (2026-08-22, user's report: "＋になっているとき ソースの方の
-	//   ジャンプがおかしい様な"). It used to be excluded here, on the grounds that there is nothing
+	//   ★★AN INSERTION AIMS AT ITS PLACE (user's report: "when it shows +, the jump on the source
+	//   side looks wrong"). It used to be excluded here, on the grounds that there is nothing
 	//   in the older version to centre - true of the CHARACTERS and false of the SPOT, which is
 	//   exactly where the reader wants to look: the gap the new words went into. The range is empty
 	//   for one (fSourceEnd == fSourceStart) and centring works off the start, so nothing else has
@@ -543,8 +543,8 @@ bool16 KCMStoryJumpToChange(int32 rowIndex, int32 changeIndex)
 
 	// ***** AND LIGHT THE CHARACTERS UP FOR A MOMENT. *****
 	//
-	// ★★★A MARK, NOT A SELECTION (2026-08-20, user's call: "その文字のところに移動＋マーカーを少しの
-	//   時間出す感じに"). Until then this made a text selection, which had three costs a pointer does
+	//   ★★★A MARK, NOT A SELECTION (user's call: "move to those characters and show a marker for a
+	//   short while"). Until then this made a text selection, which had three costs a pointer does
 	//   not: it threw away whatever the reader had selected, it forced the Type tool on, and it left
 	//   the words sitting selected long after the reader had looked at them. The mark says "here" and
 	//   then gets out of the way. ⇒ The selection is still available - it is what a DOUBLE click does
@@ -552,8 +552,8 @@ bool16 KCMStoryJumpToChange(int32 rowIndex, int32 changeIndex)
 	// ★It is drawn ON the characters by the text engine (KCMStoryMarker.cpp), so it needs no
 	//   coordinates from here: the story and the character range are the whole of the request.
 	//
-	// ★★★AND IT POINTS IN BOTH WINDOWS (2026-08-23, user's request: "ジャンプしたときソースの方でも
-	//   マークを一瞬出して欲しい"). Both windows have just been moved to this edit, so a
+	//   ★★★AND IT POINTS IN BOTH WINDOWS (user's request: "when it jumps, flash the mark on the
+	//   source side too"). Both windows have just been moved to this edit, so a
 	//   pointer in only one of them leaves the reader to find it by eye in the other - which is the
 	//   very window where "what it used to say" lives.
 	// ⚠★★THE TWO SIDES GET DIFFERENT NUMBERS, for the same reason the centring above does: the
@@ -586,13 +586,13 @@ bool16 KCMStoryJumpToChange(int32 rowIndex, int32 changeIndex)
 	// ***** AND THE OTHER SIDE OF THE EDIT GOES TO THE PANEL'S MESSAGE AREA. *****
 	//
 	// ★The row shows the side that CHANGED; this shows the other one, so that "what it used to say"
-	//   is readable without leaving the panel (user's request, 2026-08-20: "パネルのメッセージ部分の
-	//   有効活用"). For a deletion the row is showing what was removed, so what lands here is the
+	//   is readable without leaving the panel (user's request: "make use of the panel's message
+	//   area"). For a deletion the row is showing what was removed, so what lands here is the
 	//   text that closed up over it - see KCMStoryList.h for why the field is called "other" and
 	//   not "old".
 	//
 	// ★A LABEL ON THE FIRST LINE, THE TEXT FROM THE SECOND (user's call, 2026-08-20, after seeing
-	//   the plain version: "一行目をOld 2行目から旧テキストかな"). The message area holds four lines
+	//   the plain version: "first line Old, the old text from the second line"). The message area holds four lines
 	//   in a Japanese UI and six in an English one, so the label costs one line and buys the reader
 	//   the one thing a bare sentence in this box does not say - which version they are looking at.
 	//
@@ -601,8 +601,8 @@ bool16 KCMStoryJumpToChange(int32 rowIndex, int32 changeIndex)
 	//   reader has been told which is which before ever reaching this box. A second pair of names
 	//   for one pair of documents would be the panel disagreeing with itself
 	//   ([[one-question-one-place]] applied to words rather than to code).
-	//   ★★AND "TEXT" AFTER IT (user's call, 2026-08-21: "ソースとなっているところを、ソーステキスト
-	//     にしましょうか"). Those two lines at the top name FILES; this names the WORDS inside one of
+	//   ★★AND "TEXT" AFTER IT (user's call: "where it says Source, let us make it Source Text").
+	//     Those two lines at the top name FILES; this names the WORDS inside one of
 	//     them. Borrowing their word without saying which of the two things is meant made one label
 	//     answer for both - "Source Text:" says it is the same document and a different thing.
 	//   ⚠"Target:" FOR A DELETION, and that is not a special case bolted on: the row shows the side
@@ -746,7 +746,7 @@ bool16 KCMStorySelectWholeStory(int32 rowIndex)
 	//   | Added   (target only)          | the target                                  |
 	//   | Deleted (source only)          | the source, and the source is brought to front |
 	//
-	// ★The first line is the new one ("両方選択"). The row is a report about ONE story that exists
+	// ★The first line is the new one ("select both"). The row is a report about ONE story that exists
 	//   in two versions, and the reader who double clicks it is asking for that story - not for the
 	//   half of it that happens to be in the newer file. Both windows are already pointed at it by
 	//   the single click; this makes both of them usable.

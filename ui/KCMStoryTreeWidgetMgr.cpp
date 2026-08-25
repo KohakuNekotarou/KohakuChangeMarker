@@ -75,22 +75,22 @@ namespace
 	(Removed arrived 2026-08-21 - the story is in the older version and gone from the newer one.)
 
 	★"None" STANDS ALONE TOO, AND IT OUTRANKS THE COUNTERS (2026-08-21, user's request after
-	watching a refreshed row lose its children: "何も変更が亡くなった場合 Change のところに表示して
-	欲しい、いまのままだと子供がなくなっただけでわかりずらい"). When the text has actually been put
+	watching a refreshed row lose its children: "when nothing has changed any more, say so in the
+	Change column; as it is, the children just disappear and it is hard to tell"). When the text has actually been put
 	side by side and comes out the same, saying "Text+" would be repeating what the counters said
 	BEFORE anybody looked at the words - which is exactly the reading the refresh just disproved.
 	⚠It is not "unchanged": the counters moved, or there would be no row. It is "no difference in
 	the words", and the sameKind flag is only ever set when the diff really ran (fTextCompared).
 
 	★★AN ATTRIBUTE THE DIFF ACTUALLY IDENTIFIED IS NAMED, rather than falling back on the counters'
-	"Attr" (2026-08-22, user's request: "Changeは、Rubyで"). "Attr" is what the two documents'
+	"Attr" (user's request: "for Change, say Ruby"). "Attr" is what the two documents'
 	CHANGE COUNTERS say - true but vague, and it is all that could be said before the text was
 	compared. When the comparison has gone further and found that a RUBY moved over characters
 	nobody touched, the row can say so.
 	⚠It is checked before the counters and after Added/Removed/None: those three describe the row
 	  itself, this describes what was found inside it.
 	★IT TAKES THE KIND RATHER THAN A "hasRuby" FLAG, so that a second attribute costs a key here and
-	  nothing else. Kenten (圏点) briefly was that second one and is no longer reported at all
+	  nothing else. Kenten (emphasis dots) briefly was that second one and is no longer reported at all
 	  (user's call, 2026-08-23) - see the note at the test below.
 
 	@param sameKind kTrue when the text was compared and nothing differs - see above.
@@ -125,8 +125,8 @@ PMString KindLabel(uint32 kinds, bool16 sameKind, int32 attrKind)
 	// ★What the diff FOUND, ahead of what the counters merely reported. ⚠Only when the text itself
 	//   did not change: a story whose words were rewritten AND whose ruby moved is a text edit
 	//   first, and the "Text+" below already says there was more than one kind of change.
-	// ⚠★★RUBY IS THE ONLY ONE THE LIST NAMES (2026-08-23, user's call: "ストーリーモードの StoryEdit
-	//   にでるのは、テキストの変更と、ルビだけで"). Kenten had a label here for one day and the
+	// ⚠★★RUBY IS THE ONLY ONE THE LIST NAMES (user's call: "what Story Edits shows in the story
+	//   mode is text changes and ruby, and nothing else"). Kenten had a label here for one day and the
 	//   comparison that produced it has been switched off (KCMStoryDiffRun's AddAttrOnlyChanges),
 	//   so no child ever arrives carrying that kind and a branch for it would be unreachable.
 	if ((kinds & kKCMStoryKindText) == 0 && attrKind == kKCMStoryAttrRuby)

@@ -41,8 +41,8 @@
 // ----- Project -----
 #include "KCMUIID.h"
 #include "Utils.h"					// Utils<IKCMCompareFacade>()
-#include "IKCMCompareFacade.h"	// IsArmed(2026-08-13・分割 第1段 Task 11 で Facade 経由へ。
-									//  KCMGetVisibleOwnPanel は Task 5 で KCMUIShared.h へ移っている)
+#include "IKCMCompareFacade.h"	// IsArmed, asked across the boundary
+//  (KCMGetVisibleOwnPanel lives in KCMUIShared.h)
 #include "KCMUIShared.h"	// panel / status line / nav readout / tool button (split from KCMCore.h on 2026-08-13)
 #include "IKCMStoryEditsFacade.h"	// GetRowCount - the number in the heading (Facade since 2026-08-13, Task 14)
 #include "KCMStorySection.h"
@@ -362,9 +362,10 @@ void KCMUpdateStorySectionLabel()
 	PMString text(kKCMStorySectionLabelKey);
 	text.Translate();
 
-	// ★件数を出すのは比較中だけ。Stop 中は一覧そのものが空なので "(0)" は「変更が無かった」ではなく
-	//   「まだ何も比べていない」を意味してしまう ---- 数字を出さないことでその取り違えを断つ
-	//   (行の側でも同じ区別をしていて、Stop 中は空、比較中の0件は "No edits" の1行)。
+	// ★The count is shown only while comparing. Stopped, the list itself is empty, so "(0)" would
+	//   mean "nothing has been compared yet" rather than "nothing changed" ---- showing no number at
+	//   all cuts that mistake off. (The rows draw the same distinction: nothing while stopped, and a
+	//   single "No edits" line for zero edits while comparing.)
 	if (Utils<IKCMCompareFacade>()->IsArmed())
 	{
 		text.Append(" (");
@@ -372,12 +373,13 @@ void KCMUpdateStorySectionLabel()
 		text.Append(")");
 	}
 
-	// ★組み立て終わった文はもう文字列キーではない。翻訳可のままだと、内蔵テーブルにたまたま一致した
-	//   瞬間に別の文字列へ化ける(KCM は "Source:" が「スタイルソース :」になる事故を踏んでいる)。
+	// ★A finished sentence is no longer a string key. Left translatable, it turns into something
+	//   else the moment it happens to match an entry of the built-in table (KCM has been bitten:
+	//   "Source:" came out as a style-source phrase in a Japanese locale).
 	text.SetTranslatable(kFalse);
 
-	// 第2引数 invalidate = kTrue。第3引数は notifyOfChange で、ここは表示を書くだけなので kFalse
-	//   ---- 誰かに知らせる変更ではない。
+	// The second argument, invalidate, is kTrue. The third is notifyOfChange and is kFalse here:
+	//   this only writes what is displayed ---- it is not a change anyone has to be told about.
 	label->SetString(text, kTrue, kFalse);
 }
 

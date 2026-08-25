@@ -11,8 +11,8 @@
 //    (row, change)   a CHANGE row   -> index into that row's fChanges
 //
 //  ★★THE TREE IS ALWAYS A HIERARCHY; THE PIXEL MODE JUST DOES NOT USE THE SECOND LEVEL.
-//  Nothing switches trees between the modes (user's call, 2026-08-20: "Story の階層ありを主として
-//  使って、Pixel Change の方は階層があっても深い階層まで使わない"). In the pixel mode no row has
+//  Nothing switches trees between the modes (user's call: "take the story mode, with its levels,
+//  as the main one; the pixel mode need not go deep even though the levels are there"). In the pixel mode no row has
 //  children - IKCMStoryEditsFacade::GetChangeCount answers 0 because nothing filled fChanges in -
 //  so the adapter grows no branches and the list looks exactly as it always has. One set of row
 //  drawing, one click handler, one rebuild.

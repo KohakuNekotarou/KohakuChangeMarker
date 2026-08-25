@@ -290,7 +290,7 @@ bool16 KCMStoryRowEH::LButtonUp(IEvent* e)
 // story the menu was about. Both the action and its enabling test read it back.
 //
 // ***** STORY ROWS ONLY. ***** A right click on a CHANGE row raises nothing (user's call,
-// 2026-08-21: "子供の行では、右クリックは出ないようにで"). The first build did offer the menu there,
+// "do not bring the context menu up on a child row"). The first build did offer the menu there,
 // aimed at the change's parent story - which is a defensible answer to "what would it even mean"
 // and the wrong one to give: the reader is pointing at ONE difference and would be handed an action
 // over the whole story, so the menu would be doing something other than what it appears to. A row
