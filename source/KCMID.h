@@ -27,53 +27,31 @@
 
 #include "SDKDef.h"
 
-// ★★2026-08-15（第2段 Task 6B-2）: **会社名・表示名・版数・Alt キー表記は KCMBoundaryID.h へ移した**
-//   ＝model と UI の2つの .pln が同じ値を名乗らなければならないため（[[one-question-one-place]]）。
-//   ここに残るのは **model 側だけの名前** 2つ。UI 側の名前は KCMUIID.h が持つ。
+// Company name, display name, version and the Alt-key label are in KCMBoundaryID.h, because both
+// .pln files have to report the same values. What is left here are the names only this half owns;
+// the UI half keeps its own in KCMUIID.h.
 
 // Plug-in:
-// ★2026-08-15（第2段 Task 11）: `kKCMPluginName` は KCMBoundaryID.h へ移した
-//   ＝UI 側が `PluginDependency` で依存先として名乗るため（両側が同じ値を知る必要がある）。
-#define kKCMFileName		"KohakuChangeMarker"			// 出力ファイル名の基底(.rc の OriginalFilename)。vcxproj の TargetName と一致させること。表示名と違いスペースは入れない。
-// ★★★**Adobe から受け取った原文（2026-08-13。忘れないようにここへ残す＝ユーザー指示）**:
+#define kKCMFileName		"KohakuChangeMarker"			// Base name of the built file (OriginalFilename in the .rc). Must match TargetName in the vcxproj. Unlike the display name it carries no spaces.
+
+// ID PREFIX. Adobe registered a range, not a single value, and quoted the request back verbatim:
 //
 //     "Following Prefix ID has been registered as per your request below : 0x1EA500 - 0x1EA5FF ."
 //
-//   ⇒ **登録されたのは 1 個の値ではなく `0x1EA500`〜`0x1EA5FF` の 256 枠**。この帯の中でどう割るかは
-//     こちらの自由で、**model と UI で分け合ってよい**:
-//         `0x1EA500` … このプラグイン（model / KohakuExtendScriptChangeMarker）
-//         `0x1EA580` … KohakuChangeMarkerUI（KCMUI・model/UI 分割 第2段で使う）
-//   ★1本の帯を model と UI で分けるのは **Adobe 自身のやり方**。SDK 実測: `customdatalink`(0xb3300) と
-//     `customdatalinkui`(0xb3380) はオフセット +0..37 と +0..17 ＝ **両方とも 0xb33xx に収まっている**。
-//     ほかに xdocbookworkflow 対は 16 刻み、0x572xx は4本のサンプルが共有している。
-//   ★**この 1 帯で自作5本ぜんぶ賄える**（最大オフセットの合計は ActionID で 122/256。widget ID は
-//     グローバルに一意である必要が無いので予算に数えない）。割り当て案は
-//     docs/superpowers/specs/2026-08-13-kescm-model-ui-split-stage1-design.md §1.3-2。
-// ★★2026-08-15（第2段 Task 6B）: **prefix の定義そのものは KCMBoundaryID.h へ移した**
-//   ＝UI 側（KCMUI）のコピーと値を1つにするため。下に続くコメントは経緯の記録としてここに残す。
-													// ★★2026-08-13: Adobe が発行した正規の prefix に差し替えた。wwds@adobe.com へメールで依頼し
-													// 「0x1EA500 - 0x1EA5FF」を受領＝**各 ID 空間 256 枠が予約された**(自作プラグインで唯一)。
-													// ⚠旧値 0x205515 は Adobe Developer Console のプラグイン ID(10進 205515)に 0x を付けて
-													// 16進として読み替えただけの数値で、**Adobe の採番体系とは無関係＝1枠も予約されていなかった**。
-													// 実害として KESCL(0x205554) と 0x3F=63 しか離れておらず、widget 枠が残り6個まで逼迫していた。
-													// ★引っ越しても既存の .indd は壊れない(実測): KCM は文書に永続データを一切書いていない
-													// ——KCM.fr の AddIn は 1 か所だけで相手は kActiveContextBoss(セッション常駐=実行時のみ)、
-													// Class は全て UI か実行時オブジェクト、唯一の永続 IID_IKCMSAVEDSECTIONHEIGHT は
-													// パネル下ペインの高さ(ワークスペース側)。失うのはショートカット割り当てとパネル配置だけ。
-													// ★★2026-08-15 更新: UI 側 KCMUI の prefix は**確定済み＝0x1EA580**(この帯の後半)。
-													// 旧記述「2 本目を発行依頼中(暫定 0x205792)」は**失効**——2 本目は発行されず、
-													// **同じ帯 0x1EA500-0x1EA5FF を model と UI で前半・後半に割る**形に決まった:
-													//   model(KCM) = 0x1EA500 (+0..127) / UI(KCMUI) = 0x1EA580 (+128..255)
-													// 1 本の帯を 2 プラグインで分けるのは Adobe 自身のやり方
-													// (customdatalink 0xb3300 / customdatalinkui 0xb3380 が両方 0xb33xx に収まっている)
-													// ＝**ID の一意性はプラグイン単位ではなく「値」で決まる**。
-													// ⚠**ID スペースごとに 128 枠**(widget と action は別勘定)。現状の最大オフセットは +43 で余裕がある。
-													// ★実機確認済み(2026-08-15): `app.menuActions.itemByID(2008320)` = KCM の About /
-													//   `itemByID(2008448=0x1EA580)` = KCMUI の About ＝**両方ロードされ衝突なし**。
-													// なお model/UI で prefix を分けること自体はガイド vol1-07:113 の指示。
-// ★★2026-08-15（第2段 Task 6B-2）: **値の定義は KCMBoundaryID.h へ移した**（model と UI の
-//   2つの .pln が同じ版数を名乗るため）。⚠**版数の履歴と「次に提出する分」の増分は、引き続き
-//   下のコメントがこのプロジェクトの正本**。動いたのは値の置き場所だけ。
+// So there are 256 slots, and how they are divided is up to us. They are split between the two
+// halves of this product:
+//     0x1EA500   model (KohakuExtendScriptChangeMarker)   offsets +0..127
+//     0x1EA580   KohakuChangeMarkerUI (KCMUI)             offsets +128..255
+// Splitting one range across a model and a UI plug-in is Adobe's own practice: customdatalink
+// (0xb3300) and customdatalinkui (0xb3380) both sit inside 0xb33xx. Uniqueness is decided per
+// value, not per plug-in.
+// The 256 slots are counted PER ID SPACE - widgets and actions have separate budgets.
+// The macros themselves (kKCMPrefixNumber / kKCMPrefix / kKCMStringPrefix) are in
+// KCMBoundaryID.h, so the UI half's copy cannot drift away from this one.
+// The version number is defined in KCMBoundaryID.h so that both .pln files report the same one.
+// What stays here is the block below: the version history and the increment list for the next
+// submission. It is the master copy of the Adobe Exchange submission notes and is kept in
+// Japanese, because that is the language they are submitted in.
 //#define kKCMVersion		"1.5.0"						// Version of this plug-in。About ボックス本文・.rc の FileVersion・PluginVersion リソースの3か所に出る。1.0.1 → 1.1.0(2026-07-25) → 1.1.1(2026-07-26) → 1.2.0(2026-07-30) → 1.2.1(2026-08-06) → 1.3.0(2026-08-07) → 1.3.1(2026-08-07) → 1.4.0(2026-08-09) → 1.5.0(2026-08-15) → 1.6.0(2026-08-19) → **2.0.0(2026-08-21)**。
 														// ★1.4.0 で minor を上げた理由 = **新機能 Story Edits**(パネル下部に開閉セクションを設け、変更のあったストーリーを一覧する)。1.2.1→1.3.0 のときと同じ基準＝機能追加が入るなら patch では足りない。★**2026-08-10 に段階4(ジャンプ)まで完成**(下記③)。
 														// ★★**1.5.0 で minor を上げた理由(2026-08-15 ユーザー決定)** = **model/UI 分割の完了**で **PDF 書き出しに比較マークが出るようになった**(下記⑧)＋**Story の変更カウンターをスクリプトに公開**(下記⑨)。
@@ -162,188 +140,144 @@
 														// ■表示・操作の整理: About を「名前 版数」1行に(英語のみ)／日本語で出すのは How to Use と Hide Unchanged の確認アラートの2箇所だけに整理(メニュー・パネル・ステータス行は全ロケール英語)／パネル幅 +10px／Hide Unchanged と Start(文書2つ未満)と Find Overset(走査対象なし)を条件付きで灰色化／ページパネル右クリックのメニュー接頭辞を短縮／Prev/Next のラベル整理。
 														// ■不具合修正・内部改善: ジャンプ前にスプレッド切替(マスターページへ飛べるように)＋マスターページのあふれを巡回一覧に載せる／Find Overset で押し出された表のセルを報告しない／あふれを聞く前にリコンポーズ／表の列挙を ITextStoryThreadDictHier へ(入れ子の表が入る)／描画エンジンの見直し(greek 無効・除外領域の緑は画面限定・除外矩形のキャッシュ化)／LocaleIndex に k_Wild 追補(列挙外 UI 言語での生キー表示を防ぐ)／比較失敗ページの可視化(failed=N・Refresh で既存枠を消さない)／半透明の細部(はみ出しメニュー・AutoAttach の OFF ガード・Shutdown 後の再武装禁止)。
 														// ■全14ブロックの API 監査(2026-08-05〜08-07)とバグ特化の全コード再点検(08-06)を実施済み。全文=docs/ai-notes/kescm-file-map.md の各ブロックノート／kescm-bug-recheck-2026-08-06.md。
-// (kKCMAuthor はテンプレート残骸(どこからも未参照)のため削除 2026-07-25)
-
-// Plug-in Prefix ＋ 境界の ID:
-//
-// ★★2026-08-15（第2段 Task 6B）: `kKCMPrefixNumber` / `kKCMPrefix` / `kKCMStringPrefix` と、
-//   **model と UI の両方が同じ値で知っていなければならない ID**（Facade 5本の IID・通知の
-//   protocol IID・MessageID 7本）は **KCMBoundaryID.h** へ移した。
-//   ⚠**あちらは KCMUI 側にも同じ内容のコピーがある。片方だけ直すと黙ってずれる。**
-//   このファイルに残るのは **model 専用の ID** だけ。
+// Plug-in prefix and the IDs that sit on the boundary:
+// kKCMPrefixNumber / kKCMPrefix / kKCMStringPrefix, together with every ID both halves must know
+// by the same value (the Facade IIDs, the notification protocol IID, the seven MessageIDs), are in
+// KCMBoundaryID.h. KCMUI carries a copy of that file with identical content: edit one and the
+// other drifts in silence. What remains here are the model-only IDs.
 #include "KCMBoundaryID.h"
 
 // Missing plug-in: (see ExtraPluginInfo resource)
 #define kKCMMissingPluginURLValue		kSDKDefPartnersStandardValue_enUS // URL displayed in Missing Plug-in dialog
 #define kKCMMissingPluginAlertValue	kSDKDefMissingPluginAlertValue // Message displayed in Missing Plug-in dialog - provide a string that instructs user how to solve their missing plug-in problem
 
-// PluginID: ★2026-08-15（第2段 Task 11）に KCMBoundaryID.h へ移した
-//   ＝UI 側が `PluginDependency` で依存先として名指しするので、両側が同じ値を知る必要がある。
+// PluginID is in KCMBoundaryID.h as well: the UI half names this plug-in as its PluginDependency,
+// so both sides need the same value.
 
 // ClassIDs:
-// ★★2026-08-15（第2段 Task 6B-2）: **UI 側の boss 20 個は ui/KCMUIID.h へ移した**（+7 +8 +9 +11〜+27）。
-//   オフセットは動かしていない＝あちらで `kKCMUIPrefix + 同じ数字` になっているだけ。
-// ★★2026-08-17（不具合再検査 B1・D-2）に全数を実測して訂正: **UI 側の ClassID は今 21 個で +28 まで伸びている**
-//   （+7 +8 +9 +11〜+28）。増えた1つは **+28 `kKCMBookPathTextWidgetBoss`**（ui/KCMUIID.h:141＝ブック比較
-//   ダイアログの Target:/Source: 行）で、**移動ではなく同じ 2026-08-15 の新設**。⇒ 上の「移した 20 個」は
-//   その時点として正しく、**その後に増えた分がこの台帳へ来ていなかった**だけ。
-//   ⚠ よって **この帯の +7 +8 +9 +11〜+28 は「空き」ではない**（UI 側の同じ数字と対応が付いている）。
-//   ★これは「値が衝突する」という意味ではない（model は 0x1EA5 0x〜 / UI は 0x1EA5 8x〜で別物）。
-//     **番号を読み替えるための手がかり**として空けてある、という意味。
-//   ★ここに残るのが「窓が無くても成り立つ仕事」＝比較マークの描画・起動終了・文書クローズ・ScriptProvider。
-DECLARE_PMID(kClassIDSpace, kKCMScriptProviderBoss, kKCMPrefix + 3)	// ★このプラグインが公開する ScriptProvider は**これ1つだけ**＝app の2プロパティ(kcmStatus/kcmBookResult)と story の4カウンターを両方この boss が serve する(2026-08-15 に集約)。.fr は**同じ boss に Provider ブロックを2つ**書いて Object ごとに Property を分けている(KCM.fr の末尾2ブロック)。旧スクリプトAPI(kescmToast 等)は撤去済みで、公開するのは読み取り専用プロパティだけ
-// kKCMDrawEventServiceBoss (kKCMPrefix + 4) は 2026-08-20 に廃止＝マークの描画を kKCMRingAdornmentBoss(グローバルページアイテムアドーンメント)へ**一本化**し、Draw Event の受け口を撤去した。スロットは予約のまま。
-// kKCMPeekWatcherBoss (kKCMPrefix + 5) は中ボタンウォッチャ撤去(2026-07-13)により廃止。スロットは予約のまま。
-DECLARE_PMID(kClassIDSpace, kKCMPeekStartupBoss, kKCMPrefix + 6)	// IStartupShutdown: アプリ起動時に peek ウォッチャを開始
-DECLARE_PMID(kClassIDSpace, kKCMDocResponderServiceBoss, kKCMPrefix + 10)	// IK2ServiceProvider+IResponder: ドキュメントクローズ監視(閉じた文書の追跡状態を確定クリーンアップ)
-DECLARE_PMID(kClassIDSpace, kKCMBeforeSaveResponderServiceBoss, kKCMPrefix + 11)	// IK2ServiceProvider+IResponder: ★**保存の「前」**の監視。Hide Unchanged で隠したスプレッドを、ファイルへ書かれる前に戻す(2026-08-19＝致命性再検査 軸①)。⚠**「閉じる前(kBeforeCloseDoc)」では遅い**＝実測で保存のほうが先だった(理由は KCMDocResponder.cpp)
-// kKCMStoryScriptProviderBoss (kKCMPrefix + 11) は 2026-08-15 に廃止。スロットは予約のまま(再利用しない)。
-//   ★経緯＝story の4カウンターを公開したとき「1つの boss では app と story を分けられない」と考えて2つ目の
-//   boss を作ったが、**それが誤り**だった。ガイドの Provider element の定義が答え＝Property は「**直前の**
-//   Object が指すオブジェクトに載る」(vol1-11:1302。Object 側は「**後続の**フィールドが載る」:1300)、かつ
-//   provider は「**複数の場所で定義できる**」(vol1-11:1237)。⇒ **分けるのは boss ではなく Object/ブロック**。
-//   公式の証拠＝basicshape が Adobe 自身の kPageItemScriptProviderBoss に**3ブロック**を与えている
-//   (BscShp.fr:370-404。Contexts は :317 の1件だけ)。⇒ ブロックを2つに保ったまま boss を一本化した。
-//   ★実機で確認済み(2026-08-15)＝`'kcmChangeCount' in app` も `'kcmStatus' in story` も **false**（混ざらない）。
-DECLARE_PMID(kClassIDSpace, kKCMRingAdornmentBoss, kKCMPrefix + 29)	// IAdornmentShape + IAdornmentFlattenerUsage: 比較マークをアドーンメントとして描く boss(KCMRingAdornment.cpp)。★セッションの**グローバル**ページアイテムアドーンメントリスト(IID_IGLOBALPAGEITEMADORNMENTLIST)へ登録するので、文書には一切付けない=.indd を1バイトも変えない。★★番号を +7〜+28 から採らないのは上のとおり(あの帯は UI 側の同じ数字と対応が付いている)＝**新規は +29 以降から採る**
-DECLARE_PMID(kClassIDSpace, kKCMRingAdornmentStartupBoss, kKCMPrefix + 30)	// IStartupShutdown: 上のアドーンメントを**実行コンテキストごとに**登録/解除するだけの boss。★★**kKCMPeekStartupBoss とは別にする必要がある**＝あちらは Shutdown で比較状態を捨てるのでメインスレッド限定(kCMainThreadStartupShutdownProviderImpl)だが、こちらは**BG スレッドでも呼ばれなければ意味が無い**(セッションへの登録はスレッドをまたがない)
-// ★★★2026-08-20: 透明の申告を「書き出し／印刷のあいだだけ」立てるための2 boss。
-//   ⚠**なぜ要るか**＝`IXPManager` の「透明を持つページアイテムの一覧」は**文書側のデータで、`.indd` に永続する**
-//     (2026-08-20 実測＝開き直しても再検証されない)。比較中ずっと載せておくと、ユーザーが保存した瞬間に
-//     **根拠のない記録が文書へ焼き付く**(KCM を持たない人が開いても残る)。⇒ **要る瞬間だけ載せて、すぐ降ろす。**
-//   ★フラットナが要るのは**書き出しと印刷のときだけ**で、画面描画にもサムネイルにも一覧は要らない。
-//   ★手本＝`customconditionaltext`(PDF と印刷の両方で「前に変えて後で戻す」を実装している唯一のサンプル)。
-//   ⚠**保存の前後(kBeforeSaveDoc)には置かない**＝そこで落ちると文書を失う。書き出しなら失敗してもやり直せる
-//     (2026-08-20 ユーザー判断＝「どこで失敗しても許される場所に置く」)。
-DECLARE_PMID(kClassIDSpace, kKCMPDFExportSetupBoss, kKCMPrefix + 31)	// IK2ServiceProvider(Adobe 提供の kPDFExportSetupServiceImpl)+IPDFExportSetupProvider: PDF 書き出しの BeginExport で透明の一覧に載せ、EndExport で降ろす。★★★**非同期書き出しではここに「書き出し用のクローン db」が渡る**＝元の文書を一度も触らずに出力だけ変えられる(2026-08-20 実測)。⚠**旧 kKCMExportXPResponderServiceBoss(同じ +31)の後継**＝あちらは kBeforeExport/kAfterExport/kFailedExport の3シグナルで**元の文書**に載せていたので、書き出し中に保存されると一覧が .indd に焼き付いた
-DECLARE_PMID(kClassIDSpace, kKCMStoryMarkerBoss, kKCMPrefix + 32)	// IK2ServiceProvider(API 既製の kGlobalTextAdornmentServiceImpl)+IID_IGLOBALTEXTADORNMENT: Story モードで変わった文字の下に色地を敷くグローバルテキストアドーンメント(KCMStoryMarker.cpp。⚠2026-08-24 までは Difference 合成による反転だった＝紙に出せず作り直した)。★★★**2026-08-23 に UI 側(kKCMUIPrefix + 30)から移設**＝**UI の File>Export>PDF は BG で走り kUIPlugIn には描画が1度も配られない**ので、紙・PDF に出すには model 側に居るしかなかった。⚠**ページアイテムアドーンメント(+29)と違って実行コンテキストごとの手動登録は要らない**＝サービスなのでレジストリが BG も含めて解決する(KCM.fr の kKCMRingAdornmentStartupBoss の説明が対比で書いている)
-DECLARE_PMID(kClassIDSpace, kKCMStoryMarkerExpiryBoss, kKCMPrefix + 33)	// IIdleTask: 上のマーカーのうち**ジャンプの点滅だけ**を約1秒で引っ込める(KCMStoryMarkerExpiry.cpp)。★2026-08-23 に UI 側(kKCMUIPrefix + 31)から移設＝上のアドーンメントが Start/Stop を呼ぶので、UI に残すと model→UI の逆依存になる
-														// ⚠**印刷側の対(kPrintSetupService+IPrintSetupProvider)は無い**＝公式に倣って一度書いたが(旧 +32/+50)、**2026-08-20 のユーザー判断で外した**。⚠**効かないからではない**＝載せれば印刷でもマークは濃くなる(実測 16,076 ⇔ 8,407 画素。どちらもベタにはならない)が、**印刷にそこまでの厳密性は要らない・印刷会社へ出すのは PDF** という判断。★A/B と復活手順は KCMRingAdornment.cpp の節5。
-														// ★**+32 / +33 は 2026-08-23 に Story マークの移設で埋まった**(上の2本)。**次の新規 boss は +34 から採ってよい**
+// Offsets +7, +8, +9 and +11..+28 are NOT free. They belong to the UI half's bosses, which kept
+// their numbers when they moved to ui/KCMUIID.h - the same offset, read against kKCMUIPrefix. The
+// values cannot collide (model is 0x1EA50x, UI is 0x1EA58x); keeping the numbers aligned is what
+// makes an offset readable across the two files. New model bosses start at +34.
+// Reusing a retired ClassID slot is safe here - this half writes no persistent data into a
+// document - and +11 was in fact taken over below. The space where reuse is NOT safe is the
+// ActionID space, because an .indk stores action IDs as plain numbers.
+// What lives on this side is the work that stands up without a window: drawing the comparison
+// marks, startup and shutdown, document close, and the ScriptProvider.
+DECLARE_PMID(kClassIDSpace, kKCMScriptProviderBoss, kKCMPrefix + 3)	// The only ScriptProvider this plug-in has. It serves both application properties (kcmStatus, kcmBookResult) AND the four story counters: the .fr gives this same boss two Provider blocks and separates them by Object (the last blocks of KCM.fr). Everything published is a read-only property - there are no methods.
+// +4 retired: kKCMDrawEventServiceBoss, when mark drawing was unified on kKCMRingAdornmentBoss.
+// +5 retired: kKCMPeekWatcherBoss, when the middle-button watcher was dropped.
+DECLARE_PMID(kClassIDSpace, kKCMPeekStartupBoss, kKCMPrefix + 6)	// IStartupShutdown: starts the peek watcher when the application starts.
+DECLARE_PMID(kClassIDSpace, kKCMDocResponderServiceBoss, kKCMPrefix + 10)	// IK2ServiceProvider + IResponder: watches for a document actually closing, to clean up the tracking state that referred to it.
+DECLARE_PMID(kClassIDSpace, kKCMBeforeSaveResponderServiceBoss, kKCMPrefix + 11)	// IK2ServiceProvider + IResponder: watches BEFORE a save and puts back the spreads Hide Unchanged hid, so they never reach the file. kBeforeCloseDoc is too late - measured, the save happens first (KCMDocResponder.cpp says why). This offset previously held kKCMStoryScriptProviderBoss.
+// kKCMStoryScriptProviderBoss also stood at +11 until the story counters were folded into the one
+// ScriptProvider above. It existed on the belief that a single boss could not keep app and story
+// properties apart, which was wrong: a Property attaches to the PRECEDING Object (vol1-11:1302)
+// and a provider "can be defined (used) in multiple places" (vol1-11:1237). basicshape does
+// exactly that with Adobe's own kPageItemScriptProviderBoss (BscShp.fr:370-404, one Contexts entry
+// at :317). Verified on device: 'kcmChangeCount' in app and 'kcmStatus' in story are both false.
+DECLARE_PMID(kClassIDSpace, kKCMRingAdornmentBoss, kKCMPrefix + 29)	// IAdornmentShape + IAdornmentFlattenerUsage: draws the comparison marks as an adornment (KCMRingAdornment.cpp). It is registered on the session's GLOBAL page item adornment list (IID_IGLOBALPAGEITEMADORNMENTLIST), so it is attached to nothing in the document and the .indd is never touched.
+DECLARE_PMID(kClassIDSpace, kKCMRingAdornmentStartupBoss, kKCMPrefix + 30)	// IStartupShutdown: registers and unregisters the adornment above, once per execution context. It has to be separate from kKCMPeekStartupBoss: that one drops comparison state on shutdown and is therefore main-thread only (kCMainThreadStartupShutdownProviderImpl), while this one is pointless unless it also runs on background threads.
+// The next two bosses declare the adornment's transparency, but only while an export runs.
+// Why it has to be temporary: IXPManager's list of page items that have transparency is document
+// data and persists into the .indd (measured - reopening does not revalidate it). Left on for the
+// whole comparison, it is baked into the file the moment the user saves, and stays there for
+// people who do not have KCM. So it goes on only when it is needed and comes straight back off.
+// The flattener is only needed for export and print; screen drawing and thumbnails never ask.
+// Modelled on customconditionaltext, the one sample that changes something before an operation and
+// restores it afterwards, for both PDF and print.
+// Deliberately not hooked to saving (kBeforeSaveDoc): failing there costs the document, whereas
+// failing an export only costs the export.
+DECLARE_PMID(kClassIDSpace, kKCMPDFExportSetupBoss, kKCMPrefix + 31)	// IK2ServiceProvider (Adobe's kPDFExportSetupServiceImpl) + IPDFExportSetupProvider: joins the transparency list in BeginExport and leaves it in EndExport. An asynchronous export hands this the CLONE db it exports from, which is what makes it possible to change the output without touching the original document. It replaces kKCMExportXPResponderServiceBoss, which used the kBeforeExport / kAfterExport / kFailedExport signals against the ORIGINAL db and therefore baked the list into the .indd if the user saved mid-export.
+DECLARE_PMID(kClassIDSpace, kKCMStoryMarkerBoss, kKCMPrefix + 32)	// IK2ServiceProvider (the API's own kGlobalTextAdornmentServiceImpl) + IID_IGLOBALTEXTADORNMENT: the global text adornment that lays a colored ground under changed characters in Story mode (KCMStoryMarker.cpp). It lives on the model side because File > Export > PDF runs on a background thread and a kUIPlugIn is never handed a single draw there. Unlike the page item adornment at +29 it needs no manual per-context registration: it is a service, so the registry resolves it for background threads too.
+DECLARE_PMID(kClassIDSpace, kKCMStoryMarkerExpiryBoss, kKCMPrefix + 33)	// IIdleTask: withdraws just the jump flash of the marker above after about a second (KCMStoryMarkerExpiry.cpp). It is on this side because the adornment starts and stops it; leaving it in the UI would invert the dependency.
+										// There is no print-side counterpart (kPrintSetupService + IPrintSetupProvider). Not because it would not work: with it the marks come out denser in print too (measured 16,076 against 8,407 colored pixels, and neither case turns solid). It was left out because print does not need that precision - what goes to the printer is the PDF. The A/B and the way back are in section 5 of KCMRingAdornment.cpp.
+										// Next new boss: +34.
 
 // InterfaceIDs:
-// ★★+0〜+3（Observer 3本のアタッチ識別 ID ＋ Story Edits セクション高さ）は 2026-08-15（第2段
-//   Task 6B-2）に **ui/KCMUIID.h へ移した**＝どれも UI 側の boss だけが使う。オフセットは据え置き。
-// ★★+4〜+9（Facade 5本の IID ＋ 通知の protocol IID）は 2026-08-15（第2段 Task 6B）に
-//   **KCMBoundaryID.h へ移した**＝UI 側と同じ値でなければ意味を成さない ID だから。
-//   ⚠ 番号は動いていない（+4..+9 のまま）。スロットとしては使用中なので再利用しないこと。
-//DECLARE_PMID(kInterfaceIDSpace, IID_IKCMINTERFACE, kKCMPrefix + 10)
-//DECLARE_PMID(kInterfaceIDSpace, IID_IKCMINTERFACE, kKCMPrefix + 11)
-//DECLARE_PMID(kInterfaceIDSpace, IID_IKCMINTERFACE, kKCMPrefix + 12)
-//DECLARE_PMID(kInterfaceIDSpace, IID_IKCMINTERFACE, kKCMPrefix + 13)
-//DECLARE_PMID(kInterfaceIDSpace, IID_IKCMINTERFACE, kKCMPrefix + 14)
-//DECLARE_PMID(kInterfaceIDSpace, IID_IKCMINTERFACE, kKCMPrefix + 15)
-//DECLARE_PMID(kInterfaceIDSpace, IID_IKCMINTERFACE, kKCMPrefix + 16)
-//DECLARE_PMID(kInterfaceIDSpace, IID_IKCMINTERFACE, kKCMPrefix + 17)
-//DECLARE_PMID(kInterfaceIDSpace, IID_IKCMINTERFACE, kKCMPrefix + 18)
-//DECLARE_PMID(kInterfaceIDSpace, IID_IKCMINTERFACE, kKCMPrefix + 19)
-//DECLARE_PMID(kInterfaceIDSpace, IID_IKCMINTERFACE, kKCMPrefix + 20)
-//DECLARE_PMID(kInterfaceIDSpace, IID_IKCMINTERFACE, kKCMPrefix + 21)
-//DECLARE_PMID(kInterfaceIDSpace, IID_IKCMINTERFACE, kKCMPrefix + 22)
-//DECLARE_PMID(kInterfaceIDSpace, IID_IKCMINTERFACE, kKCMPrefix + 23)
-//DECLARE_PMID(kInterfaceIDSpace, IID_IKCMINTERFACE, kKCMPrefix + 24)
-//DECLARE_PMID(kInterfaceIDSpace, IID_IKCMINTERFACE, kKCMPrefix + 25)
-
+// +0..+3 (three observer attachment IDs and the Story Edits section height) moved to
+//   ui/KCMUIID.h - all of them are used only by UI bosses. The offsets did not change.
+// +4..+9 (the Facade IIDs and the notification protocol IID) moved to KCMBoundaryID.h, because
+//   they mean nothing unless the UI half sees the same value. The offsets did not change either,
+//   so all of +0..+9 are in use and none of them may be reused here.
+// +10..+25 are free.
 
 // ImplementationIDs:
-// ★★2026-08-15（第2段 Task 6B-2）: **UI 側の実装 26 本は ui/KCMUIID.h へ移した**（+5 +6 +7 +10〜+38 の UI 分）。
-//   オフセットは据え置き。⚠ここに残る 10 本は ui/KCMUIFactoryList.h ではなく source/KCMFactoryList.h に載る。
-DECLARE_PMID(kImplementationIDSpace, kKCMScriptProviderImpl, kKCMPrefix + 0)	// CScriptProvider 実装(KCMScriptProvider.cpp)。★★2026-08-17 訂正＝旧「app.kcmStatus を返す」は 2026-08-15 の統合前の姿。**この1本が公開6プロパティ全部を serve する**(app の2本＋story の4本)＝上の kKCMScriptProviderBoss の説明が正
-// kKCMDrawEventSrvcImpl (kKCMPrefix + 1) / kKCMDrawEventHandlerImpl (kKCMPrefix + 2) は 2026-08-20 に廃止(上の kKCMDrawEventServiceBoss と同じ理由＝アドーンメントへの一本化)。スロットは予約のまま。
-// kKCMPeekWatcherImpl (kKCMPrefix + 3) は中ボタンウォッチャ撤去(2026-07-13)により廃止。スロットは予約のまま。
-DECLARE_PMID(kImplementationIDSpace, kKCMPeekStartupImpl, kKCMPrefix + 4)	// IStartupShutdown 実装(peek ウォッチャを開始)
-// kKCMDocServiceProviderImpl (kKCMPrefix + 8) は自前 ServiceProvider の撤去(2026-08-06)により廃止。
-// 1シグナルだけの responder は API 提供の kAfterCloseDocSignalRespServiceImpl(DocumentID.h)を .fr で
-// 名指しすれば登録される(KCM.fr の kKCMDocResponderServiceBoss 参照)。スロットは予約のまま。
-DECLARE_PMID(kImplementationIDSpace, kKCMDocResponderImpl, kKCMPrefix + 9)	// IResponder 実装(クローズ確定時の追跡状態クリーンアップ)
-DECLARE_PMID(kImplementationIDSpace, kKCMCompareFacadeImpl, kKCMPrefix + 39)	// IKCMCompareFacade 実装(KCMFacades.cpp)。★kUtilsBoss へ AddIn する＝**必ず自作の実装**(SDK 提供の実装を既存 boss に足すと他社と衝突して起動に失敗する。衝突の単位は IID ではなく ImplementationID)
-DECLARE_PMID(kImplementationIDSpace, kKCMMarkDataImpl, kKCMPrefix + 40)	// IKCMMarkData 実装(KCMFacades.cpp)。上と同じ kUtilsBoss への AddIn で、こちらは**読み取り専用**
-DECLARE_PMID(kImplementationIDSpace, kKCMPageFlagsFacadeImpl, kKCMPrefix + 41)	// IKCMPageFlagsFacade 実装(KCMFacades.cpp)。同じく kUtilsBoss へ AddIn
-DECLARE_PMID(kImplementationIDSpace, kKCMStoryEditsFacadeImpl, kKCMPrefix + 42)	// IKCMStoryEditsFacade 実装(KCMFacades.cpp)。同じく kUtilsBoss へ AddIn。★読み取り専用
-DECLARE_PMID(kImplementationIDSpace, kKCMBookFacadeImpl, kKCMPrefix + 43)	// IKCMBookFacade 実装(KCMFacades.cpp)。同じく kUtilsBoss へ AddIn
-DECLARE_PMID(kImplementationIDSpace, kKCMBeforeSaveResponderImpl, kKCMPrefix + 44)	// IResponder 実装(保存の前に Hide Unchanged の隠しスプレッドを戻す。KCMDocResponder.cpp)
-// kKCMStoryScriptProviderImpl (kKCMPrefix + 44) は 2026-08-15 に廃止(実装ごと kKCMScriptProviderImpl へ
-//   統合)。スロットは予約のまま(再利用しない)。理由は上の kKCMStoryScriptProviderBoss の欠番コメント。
-DECLARE_PMID(kImplementationIDSpace, kKCMRingAdornmentImpl, kKCMPrefix + 45)	// IAdornmentShape 実装(KCMRingAdornment.cpp)。描画本体は持たず、スプレッドに対して KCMDrawEventHandler::DrawSpreadMarks() をそのまま呼ぶ=描画ロジックは Draw Event 経路と1本のまま
-DECLARE_PMID(kImplementationIDSpace, kKCMRingFlattenerUsageImpl, kKCMPrefix + 46)	// IAdornmentFlattenerUsage 実装(同上)。★★これが本命＝**透明マネージャに「このアドーンメントは透明を使う」と申告する唯一の口**。PDF 1.3(透明を含まないページ)でリングが全面ベタになる既知の制限を解くために足した。手本=transparencyeffect/TranFxFlattenerUsage.cpp
-DECLARE_PMID(kImplementationIDSpace, kKCMRingAdornmentStartupImpl, kKCMPrefix + 47)	// IStartupShutdownService 実装(KCMRingAdornment.cpp の末尾)。中身は Register/Unregister を呼ぶだけ。★**実行コンテキストごとに**呼ばれる必要があるので kKCMPeekStartupImpl とは別の boss に載せる
-// ★2026-08-20: 上の2 boss の実装(いずれも KCMRingAdornment.cpp の末尾)。透明の申告と同じ関心事なので同居させる。
-DECLARE_PMID(kImplementationIDSpace, kKCMPDFExportSetupImpl, kKCMPrefix + 48)		// IPDFExportSetupProvider 実装(KCMRingAdornment.cpp)。★ServiceProvider 側は Adobe 提供の kPDFExportSetupServiceImpl をそのまま .fr で名指しするので、自作はこの1本だけ。手本=sdksamples/pdfvt。⚠**旧 kKCMExportXPResponderImpl(同じ +48)の後継**
-DECLARE_PMID(kImplementationIDSpace, kKCMStoryMarkFacadeImpl, kKCMPrefix + 50)	// IKCMStoryMarkFacade 実装(KCMFacades.cpp)。UI が「トグルが動いた/押した/ジャンプした」と伝える窓口。★境界の6本目(2026-08-23)。⚠**+49 から採り直した**＝下の欠番コメントが「スロットは予約のまま／次の新規 Impl は +50 から」と書いているのを、採番のときに読み落としていた(2026-08-23 の再検査で発見)
-DECLARE_PMID(kImplementationIDSpace, kKCMStoryMarkerAdornmentImpl, kKCMPrefix + 51)	// IGlobalTextAdornment 実装(KCMStoryMarker.cpp)。変わった文字の下に色地を敷く(★2026-08-24 に反転から変更)。★2026-08-23 に UI 側(kKCMUIPrefix + 41)から移設
-DECLARE_PMID(kImplementationIDSpace, kKCMStoryMarkerExpiryImpl, kKCMPrefix + 52)	// IIdleTask 実装(KCMStoryMarkerExpiry.cpp)。ジャンプの点滅を約1秒で引っ込める。★2026-08-23 に UI 側(kKCMUIPrefix + 42)から移設
-// kKCMExportXPServiceProviderImpl (kKCMPrefix + 49) は 2026-08-20 に廃止＝書き出しシグナル3本を1つの boss で受けるための自作 ServiceProvider だったが、PDF 書き出しサービスへ移して不要になった(あちらは ServiceProvider が Adobe 提供)。スロットは予約のまま。
-														// ⚠**印刷側の IPrintSetupProvider 実装は無い**(旧 +50。理由は上の Class 側の注記と KCMRingAdornment.cpp の節5)。
-														// ★**+50 / +51 / +52 は 2026-08-23 に Story マークの移設で埋まった**(上の3本)。**次の新規 Impl は +53 から採ってよい**。
-														// ⚠★この行を読まずに +49 を採りかけた(同日の再検査で発見)＝**欠番の注記は DECLARE の並びの「下」にあるので、末尾だけ見て次番を決めると踏む。**
+// The UI half's implementations are in ui/KCMUIID.h, keeping their original offsets. Whatever is
+// declared here belongs in source/KCMFactoryList.h, not in ui/KCMUIFactoryList.h.
+DECLARE_PMID(kImplementationIDSpace, kKCMScriptProviderImpl, kKCMPrefix + 0)	// CScriptProvider implementation (KCMScriptProvider.cpp). This one implementation serves all six published properties - the two on app and the four on story.
+// +1 / +2 retired: kKCMDrawEventSrvcImpl / kKCMDrawEventHandlerImpl, with the draw event route.
+// +3 retired: kKCMPeekWatcherImpl, with the middle-button watcher.
+DECLARE_PMID(kImplementationIDSpace, kKCMPeekStartupImpl, kKCMPrefix + 4)	// IStartupShutdown implementation (starts the peek watcher).
+// +8 retired: kKCMDocServiceProviderImpl, a hand-written ServiceProvider. A responder that handles
+//   a single signal does not need one - naming the API's kAfterCloseDocSignalRespServiceImpl
+//   (DocumentID.h) in the .fr registers it (see kKCMDocResponderServiceBoss in KCM.fr).
+DECLARE_PMID(kImplementationIDSpace, kKCMDocResponderImpl, kKCMPrefix + 9)	// IResponder implementation (clears tracking state once a close is final).
+DECLARE_PMID(kImplementationIDSpace, kKCMCompareFacadeImpl, kKCMPrefix + 39)	// IKCMCompareFacade implementation (KCMFacades.cpp). AddIn on kUtilsBoss, which is why it MUST be our own implementation: adding an SDK-supplied implementation to an existing boss collides with other vendors and the collision is per ImplementationID, not per IID.
+DECLARE_PMID(kImplementationIDSpace, kKCMMarkDataImpl, kKCMPrefix + 40)	// IKCMMarkData implementation (KCMFacades.cpp). Same AddIn on kUtilsBoss; this one is read-only.
+DECLARE_PMID(kImplementationIDSpace, kKCMPageFlagsFacadeImpl, kKCMPrefix + 41)	// IKCMPageFlagsFacade implementation (KCMFacades.cpp). Same AddIn.
+DECLARE_PMID(kImplementationIDSpace, kKCMStoryEditsFacadeImpl, kKCMPrefix + 42)	// IKCMStoryEditsFacade implementation (KCMFacades.cpp). Same AddIn; read-only apart from RefreshRow.
+DECLARE_PMID(kImplementationIDSpace, kKCMBookFacadeImpl, kKCMPrefix + 43)	// IKCMBookFacade implementation (KCMFacades.cpp). Same AddIn.
+DECLARE_PMID(kImplementationIDSpace, kKCMBeforeSaveResponderImpl, kKCMPrefix + 44)	// IResponder implementation (puts back the spreads Hide Unchanged hid, before the save. KCMDocResponder.cpp). This offset previously held kKCMStoryScriptProviderImpl, which was folded into kKCMScriptProviderImpl.
+DECLARE_PMID(kImplementationIDSpace, kKCMRingAdornmentImpl, kKCMPrefix + 45)	// IAdornmentShape implementation (KCMRingAdornment.cpp). It holds no drawing code: for a spread it calls KCMDrawEventHandler::DrawSpreadMarks(), so there is exactly one place that paints the marks.
+DECLARE_PMID(kImplementationIDSpace, kKCMRingFlattenerUsageImpl, kKCMPrefix + 46)	// IAdornmentFlattenerUsage implementation (same file). This is the one that matters: it is the ONLY way to tell the transparency manager that this adornment uses transparency, which is what stops the ring coming out solid in PDF 1.3. Modelled on transparencyeffect/TranFxFlattenerUsage.cpp.
+DECLARE_PMID(kImplementationIDSpace, kKCMRingAdornmentStartupImpl, kKCMPrefix + 47)	// IStartupShutdownService implementation (end of KCMRingAdornment.cpp). It only calls Register/Unregister. It needs to run once per execution context, which is why it is on a different boss from kKCMPeekStartupImpl.
+DECLARE_PMID(kImplementationIDSpace, kKCMPDFExportSetupImpl, kKCMPrefix + 48)		// IPDFExportSetupProvider implementation (KCMRingAdornment.cpp - same concern as the transparency declaration, so they live together). The ServiceProvider side names Adobe's kPDFExportSetupServiceImpl in the .fr, so this is the only custom implementation. Modelled on sdksamples/pdfvt. Successor to kKCMExportXPResponderImpl, which held the same offset.
+// +49 retired: kKCMExportXPServiceProviderImpl, a hand-written ServiceProvider that caught the
+//   three export signals on one boss. The PDF export service replaced it and supplies its own.
+DECLARE_PMID(kImplementationIDSpace, kKCMStoryMarkFacadeImpl, kKCMPrefix + 50)	// IKCMStoryMarkFacade implementation (KCMFacades.cpp). How the UI reports that a toggle moved, a press started, or a jump happened.
+DECLARE_PMID(kImplementationIDSpace, kKCMStoryMarkerAdornmentImpl, kKCMPrefix + 51)	// IGlobalTextAdornment implementation (KCMStoryMarker.cpp). Lays a colored ground under changed characters.
+DECLARE_PMID(kImplementationIDSpace, kKCMStoryMarkerExpiryImpl, kKCMPrefix + 52)	// IIdleTask implementation (KCMStoryMarkerExpiry.cpp). Withdraws the jump flash after about a second.
+										// There is no IPrintSetupProvider implementation (the old +50); see the note on the Class side.
+										// Next new implementation: +53. Read this line before picking a number - the retirement notes are BELOW the DECLAREs, so deciding from the last line alone picks a slot that is already spoken for.
 
-// MessageIDs: model が UI へ「何が変わったか」を知らせる通知(2026-08-13・model/UI 分割 第1段 Task 9)。
-//   ★★2026-08-15（第2段 Task 6B）に **7本すべて KCMBoundaryID.h へ移した**
-//     ＝送り手（model）と受け手（UI）が同じ値を見ていなければ、ビルドは通るのに**黙って何も起きない**。
-//   ⚠ 番号は動いていない（+0..+6）。以下は跡地の記録:
+// MessageIDs: how the model tells the UI what changed. All seven moved to KCMBoundaryID.h - sender
+//   and receiver must see the same value, or the build succeeds and nothing happens at run time.
+//   The offsets are unchanged (+0..+6) and must not be reused here:
 //     +0 kKCMMarksRebuiltMessage / +1 kKCMMarksClearedMessage / +2 kKCMPageFlagsChangedMessage /
 //     +3 kKCMStoryEditsRebuiltMessage / +4 kKCMStatusTextMessage / +5 kKCMOversetRescannedMessage /
 //     +6 kKCMComparisonDocsClosedMessage
-//   （下に残しているのは +6 を Stop と別建てにした理由の説明。移動先のヘッダーにも同じ説明がある。）
-//   ★比較していた文書が閉じられ、Stop 相当の後片付けが済んだ(2026-08-13・Task 10)。
-																					// ⚠**Stop(kKCMMarksClearedMessage)とは別**にした理由＝UI 側の後始末が3点違う:
-																					//   ①サムネイルの作り直しは**次の idle へ遅延**させる(前面切替の過渡で ForceRedraw が
-																					//     効かず枠が残る＝2026-07-08 実機で確認)②**一括クローズ中は保留**して全部閉じ終えて
-																					//     から1回だけ流す ③Find Overset が単独 ON 中なら strip は**残す**(赤帯だけ描き直す)。
-																					//   ★付随データ＝**生存している側**の db を最大3つ(Target/旧版/Source側枠)。閉じた db は
-																					//     決して渡さない(通知の受け手が deref するため)。
+//   Why +6 is separate from Stop, and what it carries, is documented where it now lives.
 
-
-// スクリプト要素 ID。★**現役は +13〜+18 の6本**(下記。app の2本 + story の4本＝すべて読み取り専用プロパティ)。
-// 旧スクリプトAPI(メソッド)は全撤去済みで **+1〜+12 がその跡地**＝再利用時は旧用途との衝突に注意
-//   ⚠2026-08-17 訂正: 旧見出しは「スクリプトAPIは全撤去済み=+1〜+12 はすべて空き」だけで、**見出しだけ読むと
-//     このスペース全体が空きに見えた**(実際は +13〜+18 が現役)。2026-08-15 に story の4本が加わった分。
-// kScriptInfoIDSpace +1 は現在空き(ページ単位 kescmMarkChanges は廃止; kescmMarkChangesDoc を使う)
-// kScriptInfoIDSpace +2 は現在空き(旧 kKCMClearMarksMethodScriptElement; スクリプトAPI撤去)
-// kScriptInfoIDSpace +3 は現在空き(旧 kKCMMarkChangesDocMethodScriptElement; 同上)
-// kScriptInfoIDSpace +4 は現在空き(kescmShowPageX 廃止; 対角線のページ × は撤去)
-// kScriptInfoIDSpace +5 は現在空き(kescmShowOverset 廃止); 再利用時は衝突に注意
-// kScriptInfoIDSpace +6 は現在空き(kescmShowOriginal 廃止; peek に統合)
-// kScriptInfoIDSpace +7 は現在空き(kescmHideOriginal 廃止; kescmShowOriginal と対)
-// kScriptInfoIDSpace +8 は現在空き(kescmShowOriginalUnderMouse 廃止; peek を使う)
-// kScriptInfoIDSpace +9 は現在空き(旧 kKCMArmMousePeekMethodScriptElement; スクリプトAPI撤去)
-// kScriptInfoIDSpace +10 は現在空き(旧 kKCMDisarmMousePeekMethodScriptElement; 同上)
-// kScriptInfoIDSpace +11 は現在空き(旧 kKCMToastMethodScriptElement; kescmToast はスクリプトAPIごと撤去)
-// kScriptInfoIDSpace +12 は現在空き(旧 kKCMSetPrintMarksMethodScriptElement; スクリプトAPI撤去)
-// ★+1〜+12 は「メソッド」の跡地なので再利用せず、新しいプロパティは +13 から採る(旧用途と混同しないため)。
-DECLARE_PMID(kScriptInfoIDSpace, kKCMStatusPropertyScriptElement, kKCMPrefix + 13)	// app.kcmStatus(読み取り専用。パネルのステータス行の最後の1行)
-DECLARE_PMID(kScriptInfoIDSpace, kKCMBookResultPropertyScriptElement, kKCMPrefix + 14)	// app.kcmBookResult(読み取り専用。直近のブック比較の結果を章ごと1行の TSV「章名<TAB>状態」で返す)。★ステータス行は1行しか出せないので、章ごとの一覧を人手ゼロで検証するにはこの口が要る(狙いは kcmStatus と同じ)
-// ★2026-08-15: story の変更カウンター4本(読み取り専用)。app.documents[0].stories[2].kcmChangeCount のように**ストーリーそのもの**から読む。
-//   ⚠これは application ではなく **story オブジェクト**に載る＝.fr では**同じ kKCMScriptProviderBoss の2つ目の
-//     Provider ブロック**に置く(2026-08-15 に別 boss から集約。分けるのは boss ではなくブロック＝BscShp.fr:370-404)。
-//   ★狙い＝**Story Edits が行を出すかどうかを決めている当の数値**(集約カウンター)を外から読めるようにすること。
-//     これが読めないと「一覧が空」のとき、不具合なのか2文書が本当に同じ読みなのかを**ソースを読む以外に確かめる術がない**(2026-08-15 に実際に困った)。
-//   ★★★2026-08-18(再検査 B11): **この4本は IDML/INX の DOM から明示的に外してある**＝`KCM.fr` の
-//     2つ目の `VersionedScriptElementInfo`(Contexts が `kINXScriptManagerBoss`／`Provider{kNotSupported}`)。
-//     **プロパティは既定で IDML の属性になる**(実測＝全 `<Story>` と `<XmlStory>` に `KcmChangeCount` 等が
-//     書き出されていた)。⇒ **要素 ID をこの4つと同じにして INX 側で打ち消す**形なので、
-//     **この4行の ID を変えたら、あちらの4行も一緒に変える**(片方だけ直すと黙って IDML に出る)。
-DECLARE_PMID(kScriptInfoIDSpace, kKCMChangeCountPropertyScriptElement, kKCMPrefix + 15)	// stories[n].kcmChangeCount(集約。ITextModel::GetChangeCount)
-DECLARE_PMID(kScriptInfoIDSpace, kKCMTextChangeCountPropertyScriptElement, kKCMPrefix + 16)	// stories[n].kcmTextChangeCount(本文。GetTextChangeCount)
-DECLARE_PMID(kScriptInfoIDSpace, kKCMAttrChangeCountPropertyScriptElement, kKCMPrefix + 17)	// stories[n].kcmAttrChangeCount(書式。GetAttrChangeCount)
-DECLARE_PMID(kScriptInfoIDSpace, kKCMOtherChangeCountPropertyScriptElement, kKCMPrefix + 18)	// stories[n].kcmOtherChangeCount(その他。GetOtherChangeCount)
-// ★★2026-08-20 追加。⚠**上の4本と同じく、KCM.fr の「2つ目の VersionedScriptElementInfo」にも同じ ID を書く**(片方だけ直すと黙って IDML に出る)。
-DECLARE_PMID(kScriptInfoIDSpace, kKCMTransparencyItemCountPropertyScriptElement, kKCMPrefix + 19)	// document.kcmTransparencyItemCount(読み取り専用。IXPManager の「透明を持つページアイテムの一覧」の件数＝**載せたまま保存していないかを外から確かめる口**。一覧は .indd に永続するので、保存→閉じる→開き直して読めば「書き込まれたか」が判る)
-// (ツールの列挙子は本体の kToolBoxEnumScriptElement に載せるので、こちら側の ID は要らない。)
+// Script element IDs. Six are live - the two application properties and the four story counters,
+// all read-only. +1..+12 are the graves of the old scripting METHODS, which were removed
+// wholesale; new properties are taken from +13 so that nothing is confused with a retired method.
+DECLARE_PMID(kScriptInfoIDSpace, kKCMStatusPropertyScriptElement, kKCMPrefix + 13)	// app.kcmStatus (read-only; the last line shown in the panel's status area)
+DECLARE_PMID(kScriptInfoIDSpace, kKCMBookResultPropertyScriptElement, kKCMPrefix + 14)	// app.kcmBookResult (read-only; the last book comparison as one TSV line per chapter, "name<TAB>state"). The status line can only show one line, so this is what makes a chapter-by-chapter result checkable without a human reading it.
+// The four story change counters, read straight off the story - app.documents[0].stories[2].kcmChangeCount.
+// They hang off the STORY object, not the application, which in the .fr means the SECOND Provider
+// block on the same kKCMScriptProviderBoss (what separates them is the block, not the boss).
+// What they are for: the aggregate counter is the number that decides whether Story Edits shows a
+// row at all, so being able to read it from outside is the difference between diagnosing "the list
+// is empty" and having to read the source to find out whether that is a bug or two genuinely
+// identical documents.
+// These four are deliberately kept out of the IDML/INX DOM by the SECOND VersionedScriptElementInfo
+// in KCM.fr (Contexts kINXScriptManagerBoss, Provider{kNotSupported}). Properties become IDML
+// ATTRIBUTES by default - measured, every <Story> and <XmlStory> carried KcmChangeCount and the
+// rest. That resource cancels them by naming the SAME element IDs, so changing an ID here means
+// changing it there in the same edit: fix one side only and they silently reappear in the IDML.
+DECLARE_PMID(kScriptInfoIDSpace, kKCMChangeCountPropertyScriptElement, kKCMPrefix + 15)	// stories[n].kcmChangeCount (aggregate; ITextModel::GetChangeCount)
+DECLARE_PMID(kScriptInfoIDSpace, kKCMTextChangeCountPropertyScriptElement, kKCMPrefix + 16)	// stories[n].kcmTextChangeCount (body text; GetTextChangeCount)
+DECLARE_PMID(kScriptInfoIDSpace, kKCMAttrChangeCountPropertyScriptElement, kKCMPrefix + 17)	// stories[n].kcmAttrChangeCount (formatting; GetAttrChangeCount)
+DECLARE_PMID(kScriptInfoIDSpace, kKCMOtherChangeCountPropertyScriptElement, kKCMPrefix + 18)	// stories[n].kcmOtherChangeCount (everything else; GetOtherChangeCount)
+// Same rule as the four above: this ID is repeated in KCM.fr's second VersionedScriptElementInfo.
+DECLARE_PMID(kScriptInfoIDSpace, kKCMTransparencyItemCountPropertyScriptElement, kKCMPrefix + 19)	// document.kcmTransparencyItemCount (read-only; the size of IXPManager's list of page items that have transparency). It is how we check from outside that nothing was left on the list and saved: the list persists into the .indd, so save, close, reopen and read.
+// (The tool's enumerator goes on the application's own kToolBoxEnumScriptElement, so this side
+//  needs no ID for it.)
 
 // StringKeys:
-// ★★2026-08-15（第2段 Task 6B-2）: **model 側に残る文字列キーはこの1本だけ**。他は全部 ui/KCMUIID.h。
-//   ⚠ キーの**値**は `kKCMStringPrefix`（＝model の prefix "2008320"）のまま両側で使う
-//     ＝文字列キーはグローバルに一意でなければならず、widget ID のように借用できないため
-//     （ガイド vol2-12:71）。UI 側へ移したキーも値は1文字も変わっていない。
-// ⚠ この1本のためだけに **model 側 .fr にも StringTable が要る**（KCM_enUS.fr）。
-#define kKCMHideConfirmKey		kKCMStringPrefix "kKCMHideConfirmKey"	// その確認ダイアログ本文(enUS=英語。日本語UIは KCMLoc.h の実行時切替 2026-08-05)
+// This is the only string key left on the model side; the rest are in ui/KCMUIID.h. The VALUE of
+// every key keeps the model prefix (kKCMStringPrefix = "2008320") on both sides, because string
+// keys have to be globally unique and cannot be borrowed the way widget IDs can (vol2-12:71) - the
+// keys that moved to the UI half did not change value.
+// This single key is the reason the model half needs a StringTable of its own (KCM_enUS.fr).
+#define kKCMHideConfirmKey		kKCMStringPrefix "kKCMHideConfirmKey"	// Body of that confirmation dialog (enUS; a Japanese UI gets the runtime swap in KCMLoc.h)
 
 // Initial data format version numbers
 #define kKCMFirstMajorFormatNumber  RezLong(1)
 #define kKCMFirstMinorFormatNumber  RezLong(0)
 
-// Data format version numbers for the PluginVersion resource 
+// Data format version numbers for the PluginVersion resource
 #define kKCMCurrentMajorFormatNumber kKCMFirstMajorFormatNumber
 #define kKCMCurrentMinorFormatNumber kKCMFirstMinorFormatNumber
 

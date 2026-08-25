@@ -4,26 +4,22 @@
 //
 //  KohakuExtendScriptChangeMarker (KCM)
 //
-//  実行時の日本語切替。jaJP 文字列テーブルは 2026-08-05 に撤去(ユーザー方針・KBS と同時):
-//  全ロケールが enUS テーブルを読み、日本語を話す箇所だけをここで UI 言語判定して差し替える。
-//  判定は featureset ではなく UI 言語(PMLocaleId は2軸を別々に持つ)なので、Roman エンジン+日本語 UI の
-//  環境でも日本語が出る。
+//  Runtime Japanese switching. There is no jaJP string table: every locale reads the enUS
+//  table, and only the few places that have to speak Japanese are swapped here. The test is
+//  the UI language, not the feature set - PMLocaleId carries the two independently - so
+//  Japanese also appears on a Roman engine running a Japanese UI.
 //
-//  ★★製品全体で日本語を話すのは **3箇所**(2026-08-06 に2箇所へ絞り、08-12 に4箇所、08-13 に3箇所)。
-//    ⚠★★**そのうち"この側"が持つのは1つだけ** ＝ 下の kHideConfirm(Hide Unchanged の確認)。
-//      残る2つ(How to Use... ／ 2ブックが揃わないとき)は **ui/KCMLoc.h** にある
-//      ＝2026-08-15(第2段 Task 6B-2)に、文字列を**使う側**へ分けたため
-//      (Hide Unchanged は文書を変えるので model 側に残った)。
-//    ・Hide Unchanged の確認 … 文書を変更する前の確認アラート。意味を取り違えると実害が出る
-//  ⚠★★**ファイルは分けたのに、この説明文は分けなかった**。2026-08-16 の監査 B-U1 まで、両側が
-//    「自分は3箇所を持つ」と書き、それぞれ**自分が持っていない文字列**まで説明していた。
-//    ⇒ **相方を読むこと。ここで数え直さないこと**(同じ判断を2か所に置かない)。
-//  ★**線引きの規則**は「ユーザーが明示的に日本語だと言ったもの」であって、内容の性質ではない
-//    (Compare Books の**確認**は 2026-08-12 に日本語になり、08-13 に英語へ戻った＝「英語で良いです」)。
-//  ⚠**About は英語のみ**(2026-08-06 に「名前＋版数」の1行だけになったので、訳し分ける中身が無い)。
+//  This side owns exactly one Japanese string: kHideConfirm below, the confirmation for Hide
+//  Unchanged, which stayed here because that command modifies the document. The rest live in
+//  ui/KCMLoc.h, next to the code that uses them. Read that file instead of counting them
+//  again here.
 //
-//  ***** このファイルは UTF-8 (BOM 付き) ***** — u"..." リテラルを日本語のまま読めるようにするため。
-//  (BOM 無しだと MSVC が CP932 として誤読する。)
+//  Which strings get a Japanese version is decided by the user asking for it, not by the
+//  nature of the text: the Compare Books confirmation is deliberately English even though it
+//  is a confirmation too.
+//
+//  ***** This file is UTF-8 with BOM ***** so that the u"..." literals stay readable as
+//  Japanese. (Without the BOM, MSVC reads them as CP932.)
 //
 //========================================================================================
 
@@ -40,14 +36,14 @@
 
 namespace KCMLoc
 {
-	/** UI 言語は日本語か。 */
+	/** Is the UI language Japanese? */
 	inline bool JapaneseUI()
 	{
 		return LocaleSetting::GetLocale().GetUserInterfaceId() == k_jaJP;
 	}
 
-	/** 日本語 UI なら日本語テキスト、それ以外は enUS テーブルのキー翻訳。戻り値は完成済み
-	    テキスト(untranslatable)。 */
+	/** Japanese text on a Japanese UI, the key translated through the enUS table otherwise.
+	    The result is finished text, marked untranslatable. */
 	inline PMString Text(const char* englishKey, const char16_t* japanese)
 	{
 		PMString s;
@@ -67,11 +63,11 @@ namespace KCMLoc
 	}
 }
 
-// 旧 KCM_jaJP.fr が持っていた日本語のうち、**この側に残った1つ**。対のキー
-// (kKCMHideConfirmKey)は KCMID.h と KCM_enUS.fr に健在＝英語 UI はそちらを引く。
+// The one Japanese string that stayed on this side. Its English counterpart key
+// (kKCMHideConfirmKey) is in KCMID.h and KCM_enUS.fr, which is what an English UI reads.
 namespace KCMJa
 {
-	// ----- Hide Unchanged Spreads の確認(文書に変更を加えるため) -----
+	// ----- Confirmation for Hide Unchanged Spreads (it modifies the document) -----
 	const char16_t kHideConfirm[] = u"この機能はファイルに変更を加えます。構いませんか?";
 
 }
@@ -79,4 +75,3 @@ namespace KCMJa
 #endif // __KCMLoc_h__
 
 // End, KCMLoc.h.
-

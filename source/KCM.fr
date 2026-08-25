@@ -32,58 +32,41 @@
 #include "BuildNumber.h"
 #include "PlugInModel_UIAttributes.h"
 
-// (SpreadID.h / DocFrameworkID.h were only here for the old scripting API, which is gone -
-//  removed 2026-08-05. Everything below resolves from ShuksanID.h / widgetid.h / GraphicsID.h
-//  and the tool headers.)
-// AppFrameworkID.h came back on 2026-08-06 with app.kcmStatus: it defines
-// kApplicationObjectScriptElement, the object the property is put on. The official scripting
-// sample credits this header with exactly that (BPI.fr:55).
+// AppFrameworkID.h defines kApplicationObjectScriptElement, the object app.kcmStatus is put on.
+// The official scripting sample credits this header with exactly that (BPI.fr:55).
 #include "AppFrameworkID.h"
-// ScriptInfoTypes.fh came back on 2026-08-06. This single header is enough for the resource at
-// the end of this file: it also pulls in ScriptingID.h (kCoreScriptManagerBoss) and defines
-// kCS5ScriptVersion.
-// ★2026-08-15 (Task 6B-2): the reason it was added has MOVED. It came in for the toolbox tool's
-//   ScriptID registration (kToolBoxEnumScriptElement, ITool.h:192-223) - and the tool is a UI boss,
-//   so that Enumerator now lives in KCMUI.fr. What keeps this header here is the OTHER half of the
-//   same resource: app.kcmStatus and app.kcmBookResult, served by kKCMScriptProviderBoss.
+// ScriptInfoTypes.fh is enough on its own for the resource at the end of this file: it also pulls
+// in ScriptingID.h (kCoreScriptManagerBoss) and defines kCS5ScriptVersion. What keeps it here are
+// app.kcmStatus and app.kcmBookResult, served by kKCMScriptProviderBoss; the toolbox tool's
+// ScriptID registration, which is what first needed it, now lives in KCMUI.fr with the tool.
 #include "ScriptInfoTypes.fh"	// VersionedScriptElementInfo / Property / Provider
-// DocumentID.h came back on 2026-08-06 for a different reason than the old scripting API: the
-// close-document responder boss names the API's OWN service provider implementation instead of
-// carrying a hand-written one (see that Class below).
+// DocumentID.h: the close-document responder boss names the API's OWN service provider
+// implementation instead of carrying a hand-written one (see that Class below).
 #include "DocumentID.h"	// kAfterCloseDocSignalRespServiceImpl
-#include "DocFrameworkID.h"	// kDocumentObjectScriptElement (document.kcmTransparencyItemCount の対象オブジェクト)
-#include "PDFID.h"	// kPDFExportSetupServiceImpl / IID_IPDFEXPORTSETUPPROVIDER (PDF 書き出しのあいだだけ
-					// 透明を申告する - 下の boss)。⚠これが無いと ODFRC が
-					// "R32725: Identifier 'kPDFExportSetupServiceImpl' does not name a numeric value." で落ちる
+#include "DocFrameworkID.h"	// kDocumentObjectScriptElement (the object document.kcmTransparencyItemCount hangs off)
+#include "PDFID.h"	// kPDFExportSetupServiceImpl / IID_IPDFEXPORTSETUPPROVIDER (declares the transparency
+					// only while an export runs - see the boss below). Without this include ODFRC fails with
+					// "R32725: Identifier 'kPDFExportSetupServiceImpl' does not name a numeric value."
 #include "GraphicsID.h"	// IID_IDRWEVTHANDLER (the comparison marks' draw service - the whole point of the model half)
 #include "GenericID.h"	// IID_IADORNMENTSHAPE (GenericID.h:279) - the adornment route for the same marks
-#include "XPID.h"	// IID_IADORNMENTFLATTENERUSAGE (XPID.h:513) - how the adornment declares its transparency
-#include "TextID.h"	// kGlobalTextAdornmentServiceImpl / IID_IGLOBALTEXTADORNMENT - the Story mode's marks
-					// (★moved here from the UI half on 2026-08-23; IID_IIDLETASK for their timer is
-					//  already in ShuksanID.h above)
-					// to the flattener. This is the whole reason the adornment route exists: without it,
-					// a translucent ring goes solid in PDF 1.3. Declaring is necessary but NOT sufficient -
-					// nobody asks unless the document is on IXPManager's item-has-transparency list, which
-					// is what KCMRingAdornmentRefreshItemXPState() pokes (found and fixed 2026-08-20).
-						// ★2026-08-15 (Task 10): IID_ISPRITE / IID_IPATHGEOMETRY / kPathGeometryImpl left with the
-						//   tracker in Task 6B-2. ★2026-08-19 (bug recheck B-U6): the tracker does not declare
-						//   them either any more - CTracker never queries ISprite, so only CPathCreationTracker /
-						//   CLayoutTracker descendants need them (see KCMUI.fr's kKCMTrackerBoss Class).
-						//   Only the draw-event handler is still declared on this side.
+#include "XPID.h"	// IID_IADORNMENTFLATTENERUSAGE (XPID.h:513) - how the adornment declares its
+					// transparency to the flattener. This is the whole reason the adornment route exists:
+					// without it a translucent ring goes solid in PDF 1.3. Declaring is necessary but NOT
+					// sufficient - nobody asks unless the document is on IXPManager's item-has-transparency
+					// list, which is what KCMRingAdornmentRefreshItemXPState() pokes.
+#include "TextID.h"	// kGlobalTextAdornmentServiceImpl / IID_IGLOBALTEXTADORNMENT - the Story mode's
+					// marks (IID_IIDLETASK for their timer is already in ShuksanID.h above)
 
 #include "INXCoreID.h"	// kINXScriptManagerBoss (INXCoreID.h:58) - the Contexts of the INX-only
 						// resource at the end of this file, which keeps the story counters out of IDML
 #include "TextScriptID.h"	// kStoryObjectScriptElement (TextScriptID.h:49) - the story object the
-							// four change-counter properties are added to (2026-08-15)
+							// four change-counter properties are added to
 
 // Project includes:
 #include "KCMID.h"
 #include "KCMScriptingDefs.h"	// p_KCMStatus / p_KCMBookResult (this half's two read-only properties)
-								// + the four story counters: p_KCMChangeCount and friends (2026-08-15)
-								// ★2026-08-15 (Task 6B-2): en_KCMTool (the toolbox tool's ScriptID) moved to
-								//   the UI half's copy of this header, with the tool.
-// (GenericID.h / TextID.h and a duplicate ShuksanID.h were scripting-era leftovers with no
-//  remaining reference in this file - removed 2026-08-05.)
+								// plus the four story counters, p_KCMChangeCount and friends. The tool's own
+								// ScriptID (en_KCMTool) is in the UI half's copy of this header.
 
 
 #ifdef __ODFRC__
@@ -100,15 +83,13 @@ resource PluginVersion (kSDKDefPluginVersionResourceID)
 	kKCMCurrentMajorFormatNumber, kKCMCurrentMinorFormatNumber,
 	{ kInDesignProduct },
 	{ kWildFS },
-	// ★★★2026-08-15 (Stage 2, Task 11): kUIPlugIn -> kModelPlugIn. THIS IS THE LINE THE WHOLE
-	//   SPLIT WAS FOR. PlugInModel_UIAttributes.h:31-32 - a plug-in declares one or the other,
-	//   never both, and this field is what decides whether the plug-in is available to work that
-	//   runs on BACKGROUND THREADS (gs-03:50 "Only model plug-ins are available for operations
-	//   that occur on background threads").
-	//   ⇒ From here on, the comparison marks' draw handler can be reached by the PDF export.
-	//   ⚠What this also means: every boss declared in THIS file must be reachable without the UI.
-	//     The three object-model rules are checked at startup (guide vol1-07); breaking rule 3 is
-	//     the dangerous one because it only warns and then IGNORES the override.
+	// kModelPlugIn is the reason this half exists. PlugInModel_UIAttributes.h:31-32 - a plug-in
+	// declares one or the other, never both, and this field decides whether it is available to work
+	// that runs on BACKGROUND THREADS (gs-03:50, "Only model plug-ins are available for operations
+	// that occur on background threads"). That is what lets a PDF export reach the comparison marks.
+	// It also means every boss declared in THIS file has to be reachable without the UI. The three
+	// object-model rules are checked at startup (guide vol1-07); rule 3 is the dangerous one,
+	// because breaking it only warns and then IGNORES the override.
 	kModelPlugIn,
 	kKCMVersion
 };
@@ -132,17 +113,10 @@ resource ExtraPluginInfo(1)
  */
 resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 {{{
-	// (★2026-08-20: kKCMDrawEventServiceBoss（kDrawEventService + IID_IDRWEVTHANDLER）はここにあったが
-	//  撤去した。マークの描画は下のグローバルページアイテムアドーンメントに**一本化**した
-	//  ＝ユーザー判断「登録に失敗していたら枠が出なくてよい」。残していたのはフォールバックのためだけで、
-	//  削除した HandleDrawEvent の中身は「アドーンメントが生きていれば return / さもなくば
-	//  DrawSpreadMarks を呼ぶ」の2行しかなかった＝**絵は1つも失われていない**。)
-
 	/** The comparison marks, painted as a GLOBAL page item adornment. Registered once on the
 		session's global adornment list at startup
 		(KCMRingAdornment.cpp), so it is never attached to anything in the document - the
-		.indd is not touched at all. Only one of the two routes paints; the draw event handler
-		stands down while this one is registered.
+		.indd is not touched at all. This is the only route that paints them.
 
 		WHY IT EXISTS: the translucent ring is drawn with an alpha server, and in PDF 1.3 the
 		mask only gets resolved if the flattener runs - otherwise the ring comes out solid.
@@ -298,32 +272,37 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 		}
 	},
 
-	// ★★★2026-08-20: 透明の申告を「書き出しのあいだだけ」立てる boss。
+	// Declares the adornment's transparency, but only while an export is running.
 	//
-	// ⚠**なぜ要るか**＝IXPManager の「透明を持つページアイテムの一覧」は**文書側のデータで .indd に永続する**
-	//   (実測＝比較して保存した文書を開き直すと1件残っており、開くだけでは再検証されない)。比較中ずっと
-	//   載せておくと、ユーザーが保存した瞬間に**根拠のない記録が焼き付く**。⇒ **要る瞬間だけ載せる。**
-	//   ★フラットナが要るのは書き出しのときだけで、画面描画にもサムネイルにも一覧は要らない。
-	// ★手本＝customconditionaltext (PDF と印刷の両方で「前に変えて後で戻す」を実装している唯一のサンプル)。
-	// ⚠**保存の前後(kBeforeSaveDoc)には置かない** ---- そこで落ちると文書を失う。書き出しならやり直せる。
-	// 実装は KCMRingAdornment.cpp の末尾(透明の申告と同じ関心事なので同居させている)。
+	// Why it has to be temporary: IXPManager's list of page items that have transparency is
+	// document data and persists into the .indd (measured - a compared, saved document still had
+	// one entry when reopened, and merely opening it does not revalidate the list). Leaving the
+	// adornment on that list for the whole comparison means that the moment the user saves, a
+	// record with nothing behind it is baked into their file. So it goes on only when it is
+	// needed, and that is during export: the flattener never runs for screen drawing or for
+	// thumbnails. Modelled on customconditionaltext, the one sample that changes something before
+	// an operation and puts it back afterwards, for both PDF and print.
+	// Not hooked to saving (kBeforeSaveDoc): failing there costs the document, whereas failing an
+	// export only costs the export. Implemented at the end of KCMRingAdornment.cpp, next to the
+	// transparency declaration it belongs with.
 	//
-	// ★★★**印刷側の対(kPrintSetupService + IPrintSetupProvider)は置かない。**
-	//   ⚠**効かないからではない。効く** ---- 印刷でも載せればフラットナが走り、マークが濃くなる
-	//   (実測＝載せると色付き画素 16,076/13,635 / 載せないと 8,407/7,379＝**1.5.0 と同じ薄さ**。
-	//    ★ただし**どちらもベタにはならない**＝差は濃度だけで、PDF 1.3 の全面ベタとは別の壊れ方)。
-	//   ★**外した理由は「印刷にそこまでの厳密性は要らない・印刷会社へ出すのは PDF」というユーザー判断**
-	//   (2026-08-20・実機で確認済み)。⇒ 濃度を揃えたくなったら bd44eec の実装ごと戻す。
-	//   詳細と A/B の条件は KCMRingAdornment.cpp の節5 のコメント。
-
-	// ★★★PDF 書き出し: BeginExport で載せ、EndExport で降ろす。
-	//   **非同期書き出しではここに「書き出し用のクローン db」が渡る**ので、
-	//   **元の文書を一度も触らずに出力だけを変えられる**(2026-08-20 実測)。
-	//   ⚠**旧実装(kBeforeExport/kAfterExport/kFailedExport の3シグナル)には穴があった** ----
-	//     シグナルはメインスレッドで**元の db** を持って飛ぶので、書き出し中にユーザーが保存すると
-	//     一覧が .indd に焼き付いた(実測＝開き直すと kcmTransparencyItemCount が 4)。
-	//   ★**ServiceProvider は Adobe 提供の kPDFExportSetupServiceImpl をそのまま名指しする**ので、
-	//     自作は IPDFExportSetupProvider の1本だけ＝pdfvt/PDFVT.fr:113-121 と同じ形。
+	// There is deliberately no print-side counterpart (kPrintSetupService + IPrintSetupProvider).
+	// Not because it would not work - it does: with it the flattener runs for print as well and
+	// the marks come out denser (measured 16,076/13,635 colored pixels with it against
+	// 8,407/7,379 without). Neither case turns solid, so the difference is density only, which is
+	// a different failure from the solid block PDF 1.3 produces. It was left out because print
+	// does not need that precision - what goes to the printer is the PDF. To match the density
+	// again, restore the implementation from bd44eec; the A/B conditions are in section 5 of
+	// KCMRingAdornment.cpp.
+	//
+	// PDF export: added in BeginExport, removed in EndExport. An asynchronous export hands this
+	// the CLONE db it exports from, which is what makes it possible to change the output without
+	// touching the original document at all.
+	// The earlier implementation - the kBeforeExport / kAfterExport / kFailedExport signals - had
+	// a hole: signals fire on the main thread carrying the ORIGINAL db, so a save during an export
+	// baked the list into the .indd (reopening read kcmTransparencyItemCount = 4).
+	// The ServiceProvider side names Adobe's own kPDFExportSetupServiceImpl, so the only custom
+	// implementation here is IPDFExportSetupProvider - the same shape as pdfvt/PDFVT.fr:113-121.
 	Class
 	{
 		kKCMPDFExportSetupBoss,
@@ -414,7 +393,7 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 	 * in the VersionedScriptElementInfo resource at the end of this file. Same shape as KBS
 	 * (KBS.fr:406-413), which follows the official scripting sample BPI.fr.
 	 *
-	 * ★★★ONE boss for both objects (2026-08-15). There used to be a SECOND boss here for the story
+	 * ONE boss for both objects. There used to be a SECOND boss here for the story
 	 * counters, on the belief that one boss could not keep two objects apart. That was wrong, and
 	 * the guide says why: a Property is "added to the script object referenced by the PRECEDING
 	 * Object field" (vol1-11:1302), and a provider element "can be defined (used) in multiple
@@ -423,8 +402,8 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 	 * kPageItemScriptProviderBoss - three blocks inside one VersionedScriptElementInfo whose
 	 * Contexts list has a single entry (BscShp.fr:370-404, :317).
 	 *
-	 * ★実機で確認済み(2026-08-15)＝`'kcmChangeCount' in app` と `'kcmStatus' in story` が**どちらも
-	 * false**（互いのメンバーが生えていない）／それぞれの側では読めて値も動く。
+	 * Verified on device: `'kcmChangeCount' in app` and `'kcmStatus' in story` are both false -
+	 * neither object grows the other's members - while each reads and updates on its own side.
 	 * See the two Provider blocks at the end of this file and the header of KCMScriptProvider.cpp.
 	 */
 	Class
@@ -496,46 +475,25 @@ resource VersionedScriptElementInfo(10)
 {
 	//Contexts
 	{
-		// ★★★2026-08-17(不具合再検査 B1・D-1): **下の2つを選ばせた根拠は、もうこのリソースに無い。**
-		//   2026-08-15(Task 6B-2)に**ツールの列挙子が KCMUI.fr へ出て行った**(上の :282-285)ので、
-		//   ここに残るのは **Property だけ**(app 2本 + story 4本)。ところが選択の理由は3つとも
-		//   「ツールがある前提」のままだった——旧記述はこう言っていた:
-		//     ①feature set が kInDesignAllLanguagesFS なのは、手本 Snap.fr:2089 が**ツールの ScriptID を
-		//       kToolBoxEnumScriptElement へ登録するリソース**で、**ツールボックスは InDesign にしか無い**から
-		//     ②KBS が kWildFS なのは「KBS は Property だけでツールを含まない＝**内容が違うので正しく違う**」から
-		//     ③script version が kCS5 なのは Snap.fr:2089 のツール登録も kCS5 だから
-		//   ⇒ ①③の手本は**当たらなくなり**、②の区別は**内容が同じになったので成立しない**。
+		// The three values on the next line are inherited, not chosen for what this resource now
+		// holds: the tool enumerator moved out to KCMUI.fr and only Properties are left here (2 on
+		// app, 4 on story). They are kept anyway, and each has its own measured reason.
 		//
-		// ★**それでも値は据え置く。根拠が入れ替わっただけで、動作は1ビットも変わらないから**:
-		//   このプラグインの PluginVersion は対象製品が **{ kInDesignProduct } 単独**(:83)で、InCopy にも
-		//   InDesign Server にもロードされない。∴ kInDesignAllLanguagesFS と kWildFS で
-		//   **引ける場面が1つも違わない**。★寄せるなら feature set だけを見ないこと＝この resource ID の
-		//   「10」も、ツールの手本(ITool.h:202)が選ばせた番号で**同じ日に根拠を失っている**
-		//   (Property だけのリソースは 1 が主流＝KBS.fr:1326 / BPI.fr:526 / CusCondTxt.fr:271)。
+		// script version (kCS5) is the one that really narrows who can see these properties.
+		// Measured by varying app.scriptPreferences.version:
+		//     7.0 (= kCS5) -> visible / 6.0 -> invisible / 5.0 -> invisible / 21.0 -> visible
+		// It stays at kCS5 because nothing needs to read them from a script that pins an older DOM -
+		// every verification harness runs on the current one. Lowering it would be a decision to
+		// match KBS (kCS2), not a fix.
+		// feature set (kInDesignAllLanguagesFS) changes nothing here: this plug-in's PluginVersion
+		// targets { kInDesignProduct } alone, so it never loads into InCopy or InDesign Server and
+		// kWildFS would select exactly the same cases.
+		// The resource ID (10) likewise came from the tool example; resources that hold Properties
+		// only conventionally use 1 (KBS.fr:1326, BPI.fr:526, CusCondTxt.fr:271).
 		//
-		// ★★★**script version(kCS5)は 2026-08-18(再検査 B11)に実測した＝これは本当に見える範囲を絞る。**
-		//   `app.scriptPreferences.version` を変えながら聞いた結果:
-		//       7.0(=kCS5) → 見える ／ **6.0 → 見えない** ／ **5.0 → 見えない** ／ 21.0 → 見える
-		//   (`'kcmStatus' in app` も `'kcmChangeCount' in story` も 6.0/5.0 では false)
-		//   ⇒ **B1 が「測ってから決める」と残した宿題への答え**＝feature set と違い、この値は動作を変える。
-		//   ⚠それでも**据え置く**: 古い DOM を明示するスクリプトから読める必要が今は無く(検証ハーネスは
-		//     すべて現行 DOM で走る)、下げるなら**兄弟の KBS(kCS2)と揃える**という別の判断になる。
-		//     ★**据え置きの理由は「同じだから」ではなく「要らないから」に変わった**(測った結果)。
-		//   ⚠**この resource(10) と、末尾の INX 専用 resource(2) は版数が違ってよい**＝後者は
-		//     「IDML に出さない」という指示で、**出しうる全ての版**を覆う必要があるので kCS2 から宣言する。
-		//
-		// ★引用の裏取り(2026-08-17 実測): Snap.fr:2089 は実在し、記述も正確
-		//   (kCS5ScriptVersion, kCoreScriptManagerBoss, kInDesignAllLanguagesFS, k_Wild)。
-		//   同じ snapshot が **Snap.fr:1795 では kWildFS**(ツールを含まないリソース)＝
-		//   **公式は1つのプラグイン内で内容によって使い分けている**——この観察自体は今も生きており、
-		//   むしろ「内容が変わったら選び直す」という上の判断の裏付けになっている。
-		//   ⚠**KBS の参照は KBS.fr:1282 ではなく KBS.fr:1326**(:1282 は widget 定義)＝旧記述の行番号は
-		//     壊れていた。★**同じ 2026-08-15 の API 監査 A-2 の表は :1326 を正しく引いている**
-		//     ＝正しい行番号を手元に持ちながら、こちらを直さなかった。
-		// ⚠2026-08-07 に一度 kWildFS へ変えたが**同日中に撤回した**。「kInDesignAllLanguagesFS 単独の
-		//   公式実例はゼロ」と判定したのが誤りで、走査結果の件数上限で Snap.fr:2089 を見落としていた
-		//   (経緯 = docs/ai-notes/kescm-api-audit-block14-2026-08-07.md の A-1)。
-		//   ★**その撤回は今も有効**(実例は在る)。今回変わったのは「その実例が KCM の手本として当たるか」。
+		// The INX-only resource at the end of this file deliberately declares a different version:
+		// "keep these out of IDML" has to cover every version the properties could appear in, so it
+		// starts at kCS2.
 		kCS5ScriptVersion, kCoreScriptManagerBoss, kInDesignAllLanguagesFS, k_Wild,
 	}
 	//Elements
@@ -680,15 +638,17 @@ resource VersionedScriptElementInfo(10)
 			}
 		},
 
-		// ★★2026-08-20: document に1本。app / story と同じく Object ごとに Provider ブロックを分ける
-		//   (上のコメントの理由そのまま＝Object を持たない Property は直前の Object に付いてしまう)。
+		// One property on document, in a Provider block of its own for the same reason as app and
+		// story: a Property with no Object of its own attaches to the preceding Object.
 		//
-		// document.kcmTransparencyItemCount ＝ IXPManager の「透明を持つページアイテムの一覧」の件数。
-		// ★これは KCM の内部状態ではなく**本体が文書ごとに持っている一覧**の件数で、
-		//   KCM が書き出しのあいだだけ載せる分も、本物の透明(影・不透明度<100 等)も同じく数える。
-		// ★★用途＝**載せたまま保存していないかを外から確かめる**こと。一覧は .indd に永続するので、
-		//   保存 → 閉じる → 開き直して読めば「書き込まれたか」がそのまま判る。
-		// ⚠この Property は下の2つ目のリソースで IDML から除外している(story の4本と同じ理由)。
+		// document.kcmTransparencyItemCount is the size of IXPManager's list of page items that have
+		// transparency. It is not KCM state - it is the list the application keeps per document, and
+		// it counts real transparency (drop shadows, opacity < 100) alongside whatever KCM puts on it
+		// for the duration of an export.
+		// What it is for: checking from outside that nothing was left on the list and saved. The list
+		// persists into the .indd, so save -> close -> reopen -> read answers "was it written?"
+		// directly.
+		// This property is kept out of IDML by the second resource below, like the four story ones.
 		Provider
 		{
 			kKCMScriptProviderBoss,
@@ -761,10 +721,11 @@ resource VersionedScriptElementInfo(2)
 			}
 		},
 
-		// ★★2026-08-20: document のプロパティも同じ理由で IDML から外す。
-		//   ⚠**こちらは story の4本より外す理由が強い** ---- 件数は「いまこの瞬間の本体の状態」で、
-		//   書き出しのあいだだけ増える**揮発するセッション状態**そのものだから。文書の交換フォーマットに
-		//   書けば、開いた側は「この文書には透明が n 個ある」という**古くて根拠のない数**を受け取る。
+		// The document property is kept out for the same reason, and with a stronger case than the
+		// four story counters: the count is the application's state at this instant, and it goes up
+		// only while an export runs - volatile session state in the purest form. Written into a
+		// document interchange format, it hands whoever opens the file a stale, unfounded "this
+		// document contains n transparent items".
 		Provider
 		{
 			kNotSupported,
@@ -779,4 +740,4 @@ resource VersionedScriptElementInfo(2)
 #endif // __ODFRC__
 
 #include "KCM_enUS.fr"
-// KCM_jaJP.fr は撤去(2026-08-05): 日本語は KCMLoc.h の実行時切替へ。
+// There is no KCM_jaJP.fr: Japanese is switched at runtime in KCMLoc.h.
