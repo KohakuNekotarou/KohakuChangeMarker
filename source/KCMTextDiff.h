@@ -6,29 +6,29 @@
 //
 //  The difference between two sequences, by Myers' algorithm.
 //
-//  *** PORTED FROM KohakuTest's KTTextDiff ON 2026-08-20, UNCHANGED EXCEPT FOR THE NAMES. ***
-//  It was measured there against real documents before it was brought here - a two-character
-//  Japanese edit selected exactly those two characters, and "sleeping" -> "awake" came back as
-//  one change rather than two. The record of that is
-//  docs/ai-notes/kt-story-diff-experiment-2026-08-17.md.
-//  ⚠TWO COPIES NOW EXIST. If a fault is found in either, fix BOTH or delete the KT one: two
-//  copies that quietly disagree are worse than either of them alone.
+//  **PORTED FROM KohakuTest's KTTextDiff, UNCHANGED EXCEPT FOR THE NAMES.** It was measured
+//  there against real documents before it was brought here -- a two-character Japanese edit
+//  selected exactly those two characters, and "sleeping" -> "awake" came back as one change
+//  rather than two. The record of that is docs/ai-notes/kt-story-diff-experiment-2026-08-17.md.
+//  @warning **TWO COPIES EXIST.** If a fault is found in either, fix BOTH or delete the KT one
+//   (source/sdksamples/KT/KTTextDiff.cpp): two copies that quietly disagree are worse than
+//   either of them alone.
 //
-//  Written from the published method - Eugene W. Myers, "An O(ND) Difference Algorithm and Its
-//  Variations", Algorithmica 1(2), 1986 - and not from anybody's source. An algorithm is not
+//  Written from the published method -- Eugene W. Myers, "An O(ND) Difference Algorithm and Its
+//  Variations", Algorithmica 1(2), 1986 -- and not from anybody's source. An algorithm is not
 //  copyrightable; a particular implementation of it is, and git's (xdiff/, from LibXDiff) is
 //  GPL, so none of it is here.
 //
 //  Everything is reduced to a sequence of int32 tokens before it gets here, which is the same
 //  move git makes when it hashes each line to an integer: it means one implementation serves
-//  both jobs this plug-in needs - comparing a list of paragraphs, and comparing the characters
-//  inside one paragraph - because the two problems are the same problem at different grain.
+//  both jobs this plug-in needs -- comparing a list of paragraphs, and comparing the characters
+//  inside one paragraph -- because the two problems are the same problem at different grain.
 //  Unlike a hash, the tokens are allocated from a table, so two different paragraphs can never
 //  collide into looking equal.
 //
 //  The common head and tail are stripped before the search starts. That is not a detail: the
-//  cost is O((N+M)*D) in the edit distance D, so for the case this exists for - a long document
-//  with a few edits in the middle - stripping is what keeps D small enough to matter.
+//  cost is O((N+M)*D) in the edit distance D, so for the case this exists for -- a long document
+//  with a few edits in the middle -- stripping is what keeps D small enough to matter.
 //
 //========================================================================================
 
@@ -64,27 +64,26 @@ namespace KCMTextDiff
 		@param a IN the baseline sequence.
 		@param b IN the target sequence.
 		@param changes OUT the runs of difference, in order. Emptied first.
-		@param maxEdits IN an optional ceiling on the edit distance. ★★**0 - the default - means
-		no ceiling, and that is what every caller uses** (user's call 2026-08-21: "slower is fine,
-		but it must not be wrong").
+		@param maxEdits IN an optional ceiling on the edit distance. **0 -- the default -- means no
+		ceiling, and that is what every caller uses**: slower is acceptable here, wrong is not.
 
-		★★★**Why there used to be one, and why there need not be now.** Until 2026-08-21 the
-		search kept one row per step so that the path could be walked back, which costs O(D^2)
-		MEMORY - about 31 MB at the old ceiling of 2000, and four times that for every doubling.
-		The ceiling was the only thing holding that number down, and the price was that any story
-		needing more edits than the ceiling got no detail at all. The search now runs in LINEAR
-		SPACE (Myers' own divide-and-conquer refinement), so distance costs time and not memory:
-		**50,000 tokens against 50,000 unrelated ones needs 1.6 MB.**
+		**Why there used to be one, and why there need not be now.** The search once kept one row
+		per step so that the path could be walked back, which costs O(D^2) MEMORY -- about 31 MB at
+		the old ceiling of 2000, and four times that for every doubling. The ceiling was the only
+		thing holding that number down, and the price was that any story needing more edits than
+		the ceiling got no detail at all. The search now runs in LINEAR SPACE (Myers' own
+		divide-and-conquer refinement), so distance costs time and not memory: **50,000 tokens
+		against 50,000 unrelated ones needs 1.6 MB.**
 
-		⚠What a ceiling would still buy is a bound on TIME, which is O((N+M)*D). Measured
-		2026-08-21 (work/textdiff-test): 8,000 vs 8,000 with one percent changed = **1 ms**;
-		3,000 vs 3,000 sharing nothing = **90 ms**; 50,000 vs 50,000 sharing nothing = **24 s**.
-		Only the last is uncomfortable, and it is a shape real text does not take - two versions
-		of a document share most of their characters even when every sentence was rewritten.
+		@warning what a ceiling would still buy is a bound on TIME, which is O((N+M)*D). Measured
+		 in work/textdiff-test: 8,000 vs 8,000 with one percent changed = **1 ms**; 3,000 vs 3,000
+		 sharing nothing = **84 ms**; 50,000 vs 50,000 sharing nothing = **24 s**. Only the last is
+		 uncomfortable, and it is a shape real text does not take -- two versions of a document
+		 share most of their characters even when every sentence was rewritten.
 
-		@return kTrue if the comparison completed, kFalse if it hit maxEdits - in which case
+		@return kTrue if the comparison completed, kFalse if it hit maxEdits -- in which case
 		changes is left empty and the caller should treat the whole sequence as changed.
-		★With the default there is no ceiling to hit, so kFalse cannot happen; the callers still
+		With the default there is no ceiling to hit, so kFalse cannot happen; the callers still
 		check, because that is the contract and not an accident of today's default.
 	*/
 	bool16 Diff(const std::vector<int32>& a, const std::vector<int32>& b,
@@ -102,20 +101,20 @@ namespace KCMTextDiff
 		and make them one. Requiring it to be shorter than both, rather than than the larger of
 		them, is what stops a long edit from dragging unrelated neighbours into itself.
 
-		⚠"Strictly" is the whole of a bug fixed on 2026-08-20. This sentence used to say "no
-		longer than", the next one said "shorter than both", and the code followed the first -
-		so a gap the SAME size as its neighbours was swallowed. In English that is rare; in
-		Japanese it is the ordinary sentence, because one character is one word's worth of
-		meaning: 琥珀猫太郎 -> 琥あ珀犬太郎 arrived as a single change reading "珀猫" -> "あ珀犬"
-		instead of "あ was inserted" and "猫 became 犬". Nothing that this rule exists for is
-		lost by the strictness - those gaps are genuinely smaller than the edits around them.
+		@warning **"strictly" is the whole of a bug.** This sentence once said "no longer than",
+		 the next one said "shorter than both", and the code followed the first -- so a gap the
+		 SAME size as its neighbours was swallowed. In English that is rare; in Japanese it is the
+		 ordinary sentence, because one character is one word's worth of meaning:
+		 琥珀猫太郎 -> 琥あ珀犬太郎 arrived as a single change reading "珀猫" -> "あ珀犬" instead
+		 of "あ was inserted" and "猫 became 犬". Nothing that this rule exists for is lost by the
+		 strictness -- those gaps are genuinely smaller than the edits around them.
 
-		The idea is taken from that library's behaviour, not its code - the algorithm is written
+		The idea is taken from that library's behaviour, not its code -- the algorithm is written
 		here from the description above.
 
-		⚠ For characters, not for paragraphs. Applied to a list of paragraphs it would mark
-		paragraphs that nobody touched as changed, because "the gap between two changed
-		paragraphs is short" says nothing about the paragraph sitting in that gap.
+		@warning for characters, not for paragraphs. Applied to a list of paragraphs it would mark
+		 paragraphs that nobody touched as changed, because "the gap between two changed paragraphs
+		 is short" says nothing about the paragraph sitting in that gap.
 
 		@param changes IN OUT the runs to merge, in order. Repeats until nothing more merges.
 	*/
@@ -123,7 +122,7 @@ namespace KCMTextDiff
 
 	/** Slides each change to whichever of its EQUIVALENT positions reads most naturally.
 
-		★★A CHANGE CAN USUALLY SIT IN MORE THAN ONE PLACE AND MEAN THE SAME THING, and Myers has
+		**A CHANGE CAN USUALLY SIT IN MORE THAN ONE PLACE AND MEAN THE SAME THING**, and Myers has
 		no reason to prefer one. When the character just after a change is the same as the
 		character it starts with, the whole run can be rotated one step to the right and rebuild
 		exactly the same text:
@@ -132,25 +131,25 @@ namespace KCMTextDiff
 		    新版です [・ここが違います]          <- the same edit, one step right
 
 		Both are shortest edit scripts; only the second is the edit a person would describe.
-		⚠This is not a tie-break inside the search - the search is finished and correct. It is a
-		  cleanup afterwards, and it cannot change the edit distance: every rotation moves one
-		  common character from one side of the run to the other, so the counts never move.
+		@warning this is not a tie-break inside the search -- the search is finished and correct. It
+		 is a cleanup afterwards, and it cannot change the edit distance: every rotation moves one
+		 common character from one side of the run to the other, so the counts never move.
 
-		★HOW THE POSITION IS CHOSEN. Every reachable rotation is tried and scored by what sits at
-		its two boundaries, on both sides. What scores well is a boundary a reader would put a
+		**HOW THE POSITION IS CHOSEN.** Every reachable rotation is tried and scored by what sits
+		at its two boundaries, on both sides. What scores well is a boundary a reader would put a
 		break at: the end of the text, a space, a mark of punctuation, or a change of script
 		(kana to kanji, kanji to latin, and so on).
-		⚠**Japanese is why the scoring is written in terms of SCRIPT rather than of word breaks.**
-		  diff-match-patch, where this idea comes from, leans on spaces and line ends - and a
-		  Japanese sentence has neither. What it does have is the boundary between 漢字 and かな
-		  and 記号, which marks a word just as reliably.
+		@warning **Japanese is why the scoring is written in terms of SCRIPT rather than of word
+		 breaks.** diff-match-patch, where this idea comes from, leans on spaces and line ends --
+		 and a Japanese sentence has neither. What it does have is the boundary between 漢字 and
+		 かな and 記号, which marks a word just as reliably.
 
-		⚠FOR CHARACTERS, NOT FOR PARAGRAPHS - the same restriction MergeNearbyChanges carries, and
-		  for a plainer reason: the tokens of a paragraph diff are numbers standing for whole
-		  paragraphs, and asking what script a paragraph is written in is meaningless.
+		@warning FOR CHARACTERS, NOT FOR PARAGRAPHS -- the same restriction MergeNearbyChanges
+		 carries, and for a plainer reason: the tokens of a paragraph diff are numbers standing for
+		 whole paragraphs, and asking what script a paragraph is written in is meaningless.
 
-		★NEIGHBOURS ARE NOT CROSSED. A change may only rotate into the unchanged run on either
-		side of it, never into or past the change next door - two changes that swapped places
+		**NEIGHBOURS ARE NOT CROSSED.** A change may only rotate into the unchanged run on either
+		side of it, never into or past the change next door -- two changes that swapped places
 		would no longer be in reading order, and the row that quotes them walks them in order.
 
 		@param a IN the baseline sequence the changes were computed from.

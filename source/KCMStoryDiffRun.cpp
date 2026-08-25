@@ -7,19 +7,18 @@
 //  See KCMStoryDiffRun.h for what this is for and what it deliberately does not do.
 //
 //  The reading helpers (ParagraphStarts / Join / Slice, and the XML parsing that now lives in
-//  KCMSnippetText.h) came from KohakuTest's KTStoryDiff on 2026-08-20 and work the same way. The
-//  comparison itself is NOT a straight port - it does two things KT had no need of:
+//  KCMSnippetText.h) came from KohakuTest's KTStoryDiff and work the same way. The comparison
+//  itself is NOT a straight port -- it does two things KT had no need of:
 //
-//    1. IT WORKS OUT THE OLDER DOCUMENT'S POSITIONS TOO. KT selected in the front document only.
-//       Here a click moves both windows, so the source-side TextIndex has to exist. Nothing extra
-//       is diffed for it: KCMTextDiff::Change already carries the a-side range, and the same
-//       paragraph-start arithmetic runs over the older side's paragraphs.
+//    1. IT WORKS OUT THE OLDER DOCUMENT'S POSITIONS TOO. KT selected in the front document
+//       only. Here a click moves both windows, so the source-side TextIndex has to exist.
+//       Nothing extra is diffed for it: KCMTextDiff::Change already carries the a-side range,
+//       and the same paragraph-start arithmetic runs over the older side's paragraphs.
 //
 //    2. IT CHOOSES WHICH SIDE'S WORDS TO SHOW. KT reported the newer text and left a deletion
 //       blank, which is right for a report ("what is gone is precisely what is not there") and
-//       useless in a panel, where it is a row with nothing in it. A deletion here shows the text
-//       that was REMOVED, taken from the older side.
-//
+//       useless in a panel, where it is a row with nothing in it. A deletion here shows the
+//       text that was REMOVED, taken from the older side.
 //========================================================================================
 
 #include "VCPlugInHeaders.h"
@@ -39,7 +38,7 @@
 // Project includes:
 #include "KCMSnippetText.h"	// the snippet's text AND its ruby - see the note at "reading the text"
 #include "KCMStoryDiffRun.h"
-#include "KCMStoryCellBases.h"	// ★where a table's cells REALLY are - see the note at LengthAgrees
+#include "KCMStoryCellBases.h"	// where a table's cells REALLY are -- see the note at LengthAgrees
 #include "KCMStoryList.h"
 #include "KCMStoryStamp.h"	// kKCMStoryKindAdded - which rows have no partner to compare against
 #include "KCMStoryXml.h"
@@ -53,20 +52,20 @@ namespace
 	around in memory per change. */
 const int32 kExcerptCodePoints = 60;
 
-/** How many code points to keep on EACH SIDE of a change (user's request, 2026-08-20 - the same
-	context a KBS hit row shows). ★Narrow on purpose: two of these plus the change itself has to
-	stay under kExcerptCodePoints, or the context would push the change out of the cell - which is
-	the opposite of what it is for. */
+/** How many code points to keep on EACH SIDE of a change -- the same context a KBS hit row
+	shows. Narrow on purpose: two of these plus the change itself has to stay under
+	kExcerptCodePoints, or the context would push the change out of the cell, which is the
+	opposite of what it is for. */
 const int32 kContextCodePoints = 14;
 
 // ---- reading the text out of the snippet ----------------------------------------------
 //
-// ★★AppendUtf8 / DecodeEntities / ExtractParagraphs MOVED OUT on 2026-08-22, into
-// KCMSnippetText.h. They turn one string into another and touch nothing else, so out there they
-// can be measured without starting InDesign - which is what RUBY made necessary: the parsing went
-// from "find <Content>" to a small XML reader carrying state, and a mistake in that is invisible
-// from here (a ruby missed reads as "nothing changed", which is the very bug this was written
-// for). Test = work\kescm-snippet-test, 28 checks including all three of the real snippets.
+// AppendUtf8 / DecodeEntities / ExtractParagraphs live in KCMSnippetText.h. They turn one
+// string into another and touch nothing else, so out there they can be measured without
+// starting InDesign -- which is what RUBY made necessary: the parsing went from "find
+// <Content>" to a small XML reader carrying state, and a mistake in that is invisible from
+// here (a ruby missed reads as "nothing changed", which is the very bug this was written for).
+// Test = work\kescm-snippet-test, which builds those headers as they stand.
 
 /* ParagraphStarts
    Where each paragraph begins, counted in CODE POINTS - the unit InDesign counts text positions
@@ -84,12 +83,12 @@ void ParagraphStarts(const std::vector<std::string>& paragraphs,
 	int32 index = 0;
 	for (size_t i = 0; i < paragraphs.size(); ++i)
 	{
-		// ★★AND THE ONES STANDING IN FRONT OF IT (2026-08-23). A story that BEGINS with a table -
-		//   a frame holding nothing but a table, which is the ordinary way to make one - has the
-		//   table's character before its first paragraph, where there is no earlier paragraph to
-		//   charge it to. It used to be dropped, the story counted one short, and LengthAgrees
-		//   below then refused the whole thing (no text differences, no ruby). Only the first
-		//   paragraph can carry this - see KCMParaAttrs::fLeadingChars.
+		// **AND THE ONES STANDING IN FRONT OF IT.** A story that BEGINS with a table -- a frame
+		//   holding nothing but a table, which is the ordinary way to make one -- has the table's
+		//   character before its first paragraph, where there is no earlier paragraph to charge it
+		//   to. It used to be dropped, the story counted one short, and LengthAgrees below then
+		//   refused the whole thing (no text differences, no ruby). Only the first paragraph can
+		//   carry this -- see KCMParaAttrs::fLeadingChars.
 		if (i < attrs.size())
 			index += attrs[i].fLeadingChars;
 
@@ -99,8 +98,8 @@ void ParagraphStarts(const std::vector<std::string>& paragraphs,
 		KCMTextDiff::ToCodePoints(paragraphs[i], codePoints);
 		index += static_cast<int32>(codePoints.size()) + 1;
 
-		// ★★CHARACTERS THE TEXT MODEL COUNTS THAT THE TEXT DOES NOT SHOW (2026-08-22) - a table's
-		//   own character, and one at the end of every row but the last. Without them every position
+		// **CHARACTERS THE TEXT MODEL COUNTS THAT THE TEXT DOES NOT SHOW** -- a table's own
+		//   character, and one at the end of every row but the last. Without them every position
 		//   after a table is short by that much, and LengthAgrees below refuses the whole story
 		//   rather than aim a jump at the wrong words. See KCMParaAttrs::fExtraChars.
 		if (i < attrs.size())
@@ -110,18 +109,18 @@ void ParagraphStarts(const std::vector<std::string>& paragraphs,
 	total = index;
 }
 
-// ★★Join MOVED OUT on 2026-08-23, into KCMSnippetText.h as JoinParagraphs. It is one half of a
-// convention - how far apart two paragraphs are once they have been strung together - and the other
-// half (IndexInStory, which turns an offset back into a document position) has to agree with it
+// Join lives in KCMSnippetText.h as JoinParagraphs. It is one half of a convention -- how far
+// apart two paragraphs are once they have been strung together -- and the other half
+// (IndexInStory, which turns an offset back into a document position) has to agree with it
 // EXACTLY. While they sat in different files only one of them knew that a table puts extra
 // characters at a paragraph boundary, and a change spanning such a boundary was placed one
-// character early. ⇒ Both are now in the one header the test harness can build without InDesign.
+// character early. Both are now in the one header the test harness can build without InDesign.
 
 /* MarkUpBreaks
    Turns the break characters into the marks InDesign itself draws with Show Hidden Characters on,
    so that a row showing text which crosses a paragraph end does not show a gap where the break was.
 
-   ★DISPLAY ONLY - nothing measured or selected ever goes through here. The marks are wider than
+   DISPLAY ONLY -- nothing measured or selected ever goes through here. The marks are wider
    nothing, so a string that has been through this no longer matches the text it came from.
 
    Same two marks and the same reasoning as KBS's KBSResultModel::MarkUpBreaksForDisplay: a pilcrow
@@ -149,15 +148,15 @@ std::string MarkUpBreaks(const std::string& utf8)
 			out += "\xE2\x86\xB5";		// U+21B5 DOWNWARDS ARROW WITH CORNER LEFTWARDS - a forced line break
 		else if (utf8.compare(i, 3, kAnchorChar) == 0)
 		{
-			// ★★AN ANCHORED OBJECT GETS A SIGN OF ITS OWN (2026-08-23, user's call: "⚓で、マークは").
-			//   Left as it is, U+FFFC draws nothing at all - the row would show a GAP where the
-			//   reader added a picture, which reads as "nothing happened".
-			// ★The kind column still says "+" or "-": this replaces the CHARACTER, not the
-			//   kind, so what the anchor did is still there to read.
-			// ★AND IT IS DECIDED HERE, ONCE. The excerpt reaches the reader in two places - the
-			//   Story Edits row and the panel's message area - and a sign chosen at each of
-			//   them would be two answers to one question ([[one-question-one-place]], the fault
-			//   behind seven of this plug-in's bugs). Everything shown goes through here.
+			// **AN ANCHORED OBJECT GETS A SIGN OF ITS OWN.** Left as it is, U+FFFC draws nothing at
+			//   all -- the row would show a GAP where the reader added a picture, which reads as
+			//   "nothing happened".
+			// The kind column still says "+" or "-": this replaces the CHARACTER, not the kind, so
+			//   what the anchor did is still there to read.
+			// AND IT IS DECIDED HERE, ONCE. The excerpt reaches the reader in two places -- the Story
+			//   Edits row and the panel's message area -- and a sign chosen at each of them would be
+			//   two answers to one question ([[one-question-one-place]], the fault behind seven of
+			//   this plug-in's bugs). Everything shown goes through here.
 			out += "\xE2\x9A\x93";		// U+2693 ANCHOR
 			i += 2;					// the loop's ++i steps over the third byte
 		}
@@ -171,25 +170,25 @@ std::string MarkUpBreaks(const std::string& utf8)
    A piece of UTF-8 text named in CODE POINTS, cut on code point boundaries so what comes out is
    still valid UTF-8. byteOffsets is what ToCodePoints filled in for this same string.
 
-   ★IT TAKES THE SURROUNDING WORDS TOO (user's request, 2026-08-20: "KBS のように前後の文字が欲しい").
-   A change on its own reads as a fragment - "awake" says nothing about where it is - so the row
-   shows what stands on either side of it, the way a KBS hit row shows its context. An ellipsis marks
-   each end that was cut, so a fragment is never mistaken for the whole of something.
+   **IT TAKES THE SURROUNDING WORDS TOO.** A change on its own reads as a fragment --
+   "awake" says nothing about where it is -- so the row shows what stands on either side of it,
+   the way a KBS hit row shows its context. An ellipsis marks each end that was cut, so a
+   fragment is never mistaken for the whole of something.
 
-   ★★IT HANDS BACK THREE PIECES, NOT ONE (user's request, 2026-08-20: the row is to draw the
-   changed characters at full strength and fade the context around them, the way a KBS hit row
-   draws its match). The split has to be made HERE: by the time the row is drawn, the only thing
-   that knows which characters were the change is this function - the boundary between the context
-   and the change is a code point index into a string that has already been cut at both ends and
-   had its break characters replaced. Handing over one string plus an offset would ask the panel to
-   count code points in a PMString, whose own index is UTF-16.
+   **IT HANDS BACK THREE PIECES, NOT ONE**, so that the row can draw the changed characters at
+   full strength and fade the context around them, the way a KBS hit row draws its match. The
+   split has to be made HERE: by the time the row is drawn, the only thing that knows which
+   characters were the change is this function -- the boundary between the context and the
+   change is a code point index into a string that has already been cut at both ends and had its
+   break characters replaced. Handing over one string plus an offset would ask the panel to count
+   code points in a PMString, whose own index is UTF-16.
 
    @param from/count name the CHANGE, in code points, within text.
    @param context how many code points to keep on each side. 0 = the change alone.
-   @param outPre [out] what stands before the change, with a leading ellipsis when the text was cut
-	  there. Empty when the change begins the text.
-   @param outMid [out] the changed characters themselves - what the row draws at full strength.
-	  Empty for the side of a change that has nothing there (a deletion seen from the newer side).
+   @param outPre [out] what stands before the change, with a leading ellipsis when the text was
+      cut there. Empty when the change begins the text.
+   @param outMid [out] the changed characters themselves -- what the row draws at full strength.
+      Empty for the side of a change that has nothing there (a deletion seen from the newer side).
    @param outPost [out] what stands after it, with a trailing ellipsis on the same terms as outPre.
 */
 void Slice(const std::string& text, const std::vector<int32>& byteOffsets,
@@ -204,8 +203,8 @@ void Slice(const std::string& text, const std::vector<int32>& byteOffsets,
 	if (total <= 0 || from < 0)
 		return;
 
-	// ★A DELETION HAS count == 0 ON THE SIDE THAT LOST IT, and it still has a place - the words that
-	//   closed up over it. So an empty range is not refused here; only an empty RESULT is.
+	// A DELETION HAS count == 0 ON THE SIDE THAT LOST IT, and it still has a place -- the words
+	//   that closed up over it. So an empty range is not refused here; only an empty RESULT is.
 	int32 first = from - context;
 	if (first < 0)
 		first = 0;
@@ -225,16 +224,16 @@ void Slice(const std::string& text, const std::vector<int32>& byteOffsets,
 
 	// Long enough to fill the cell and no longer. The cell ellipsizes for itself.
 	//
-	// ★Counted on the WHOLE excerpt, exactly as it was when this returned one string: the cut lands
-	//   at the same code point it always did. It can fall inside the change itself when a single
-	//   change is longer than the whole allowance - which is the honest outcome, since the change is
-	//   what the excerpt is for. Both boundaries are pulled back with it so that no piece can end up
-	//   naming a range outside the one being kept.
-	//   ⚠THE TRAILING ELLIPSIS THIS FORCES WAS NEVER DRAWN UNTIL 2026-08-20. The old code said
+	// Counted on the WHOLE excerpt, exactly as it was when this returned one string: the cut
+	//   lands at the same code point it always did. It can fall inside the change itself when a
+	//   single change is longer than the whole allowance -- which is the honest outcome, since
+	//   the change is what the excerpt is for. Both boundaries are pulled back with it so that
+	//   no piece can end up naming a range outside the one being kept.
+	//   @warning **the trailing ellipsis this forces was once never drawn.** The old code said
 	//     "last = total; // force the trailing ellipsis", and the test just below it is
-	//     "if (last < total)" - so setting last TO total turned the ellipsis OFF, and turned it off
-	//     even for an excerpt that would have carried one anyway. A flag says it instead, because a
-	//     flag cannot be read as its own opposite.
+	//     "if (last < total)" -- so setting last TO total turned the ellipsis OFF, and turned it
+	//     off even for an excerpt that would have carried one anyway. A flag says it instead,
+	//     because a flag cannot be read as its own opposite.
 	bool16 truncated = kFalse;
 	if (last - first > kExcerptCodePoints)
 	{
@@ -267,14 +266,14 @@ void Slice(const std::string& text, const std::vector<int32>& byteOffsets,
 	if (endByte <= beginByte)
 		return;
 
-	// ★Each piece goes through MarkUpBreaks on its own. The marks replace one break character each,
-	//   so nothing straddles a boundary and the three marked-up pieces read exactly as the one
-	//   marked-up string used to.
+	// Each piece goes through MarkUpBreaks on its own. The marks replace one break character
+	//   each, so nothing straddles a boundary and the three marked-up pieces read exactly as
+	//   the one marked-up string used to.
 	outPre = MarkUpBreaks(text.substr(beginByte, midFromByte - beginByte));
 	outMid = MarkUpBreaks(text.substr(midFromByte, midToByte - midFromByte));
 	outPost = MarkUpBreaks(text.substr(midToByte, endByte - midToByte));
 
-	// ★The ellipses say "this is a window onto something longer". Without them the reader cannot
+	// The ellipses say "this is a window onto something longer". Without them the reader cannot
 	//   tell a change that begins a paragraph from one that merely appears to.
 	//   They belong to the CONTEXT pieces, which is also where they belong visually: an ellipsis
 	//   stands for words that were cut away, and those words are context, never the change.
@@ -285,15 +284,16 @@ void Slice(const std::string& text, const std::vector<int32>& byteOffsets,
 }
 
 /* LengthAgrees
-   ★THE CHECK THAT KEEPS A WRONG SELECTION FROM LOOKING LIKE A RIGHT ONE.
+   **THE CHECK THAT KEEPS A WRONG SELECTION FROM LOOKING LIKE A RIGHT ONE.**
 
-   Every position handed out below is counted from the XML. If the XML and the text model disagree
-   about how long the story is, every one of them is off by the difference - and a selection that
-   lands on the wrong words looks exactly like one that landed on the right words. There is no
-   symptom to notice later, so it is caught here instead.
+   Every position handed out below is counted from the XML. If the XML and the text model
+   disagree about how long the story is, every one of them is off by the difference -- and a
+   selection that lands on the wrong words looks exactly like one that landed on the right
+   words. There is no symptom to notice later, so it is caught here instead.
 
-   Measured in KohakuTest at 12,987 against 12,987 on a 60-paragraph story; this is the guard for
-   the case where that stops being true (a construct the paragraph reader does not know about).
+   Measured in KohakuTest at 12,987 against 12,987 on a 60-paragraph story; this is the guard
+   for the case where that stops being true (a construct the paragraph reader does not know
+   about).
 */
 bool16 LengthAgrees(const UIDRef& storyRef, int32 computed)
 {
@@ -307,21 +307,22 @@ bool16 LengthAgrees(const UIDRef& storyRef, int32 computed)
 // ---- one story --------------------------------------------------------------------------
 
 /* RunSide
-   One run of paragraphs on ONE of the two sides, and the one thing every change asks of it: where
-   an offset into the run's joined text lands in the document.
+   One run of paragraphs on ONE of the two sides, and the one thing every change asks of it:
+   where an offset into the run's joined text lands in the document.
 
-   ★★IT REPLACED A BARE `base` ON 2026-08-23, AND THAT IS THE WHOLE OF THE FIX. `base + offset` is
-   right only while the joined text and the document agree about how far apart two paragraphs are,
-   and a table makes them disagree - its own character and its row terminators sit exactly at a
-   paragraph boundary (KCMParaAttrs::fExtraChars). A change covering two adjacent paragraphs with
-   one of those between them came out short, silently, and no length check could see it.
-   ⇒ The run is asked instead of counted on, and the rule it answers with lives beside JoinParagraphs
-   in KCMSnippetText.h, where the two ends of the convention can be measured against each other.
+   **IT REPLACED A BARE `base`, AND THAT IS THE WHOLE OF THE FIX.** `base + offset` is right
+   only while the joined text and the document agree about how far apart two paragraphs are,
+   and a table makes them disagree -- its own character and its row terminators sit exactly at
+   a paragraph boundary (KCMParaAttrs::fExtraChars). A change covering two adjacent paragraphs
+   with one of those between them came out short, silently, and no length check could see it.
+   The run is asked instead of counted on, and the rule it answers with lives beside
+   JoinParagraphs in KCMSnippetText.h, where the two ends of the convention can be measured
+   against each other.
 */
 struct RunSide
 {
 	const std::vector<std::string>*		fParagraphs;
-	const std::vector<int32>*			fStarts;	// ★one document position per paragraph
+	const std::vector<int32>*			fStarts;	// one document position per paragraph
 	int32								fStart;		// first paragraph of the run
 	int32								fCount;		// how many it covers
 	int32								fBase;		// where the run begins, as a TextIndex
@@ -357,43 +358,43 @@ void Add(std::vector<KCMStoryChange>& out, int32 paraIndex,
 				 : (tCount == 0) ? KCMStoryChange::kDelete
 								 : KCMStoryChange::kReplace;
 
-	// ⚠BOTH ENDS ARE ASKED FOR, rather than the start plus the count (2026-08-23). A change may run
-	//   across a paragraph boundary, and a boundary can be worth more than the one character the
-	//   joined text spends on it - see RunSide above.
+	// @warning **BOTH ENDS ARE ASKED FOR**, rather than the start plus the count. A change may
+	//   run across a paragraph boundary, and a boundary can be worth more than the one character
+	//   the joined text spends on it -- see RunSide above.
 	change.fTargetStart = tRun.Index(tFrom);
 	change.fTargetEnd = tRun.Index(tFrom + tCount);
 
-	// ★★★AN INSERTION HAS A PLACE IN THE OLDER DOCUMENT EVEN THOUGH IT HAS NO CHARACTERS THERE
-	//   (2026-08-22, user's report: "＋になっているとき ソースの方のジャンプがおかしい様な、
-	//   ＋されている元の場所で - の時と同じ細いキャレットを表示して欲しい").
+	// **AN INSERTION HAS A PLACE IN THE OLDER DOCUMENT EVEN THOUGH IT HAS NO CHARACTERS THERE.**
+	//   The reader wants to see where the new words went in, and the older version has an exact
+	//   spot for it: between the two characters that used to be neighbours -- drawn as the same
+	//   thin caret a deletion gets on the newer side.
 	//
-	//   ⚠WHAT THIS USED TO SAY, AND WHY IT WAS WRONG: "an insertion has nothing in the older
-	//     document to point at". That is true of CHARACTERS and false of the PLACE - the reader
-	//     wants to see where the new words went in, and the older version has an exact spot for it:
-	//     between the two characters that used to be neighbours. The old wording folded two
-	//     different questions into one flag ([[one-question-one-place]]), and the answer to the
-	//     second one ("is there anything to select over there") dragged the first one down with it,
-	//     so the older window did not move at all.
+	//   @warning **what this used to say, and why it was wrong:** "an insertion has nothing in
+	//     the older document to point at". That is true of CHARACTERS and false of the PLACE.
+	//     The old wording folded two different questions into one flag
+	//     ([[one-question-one-place]]), and the answer to the second one ("is there anything to
+	//     select over there") dragged the first one down with it, so the older window did not
+	//     move at all.
 	//
-	//   ★AN EMPTY RANGE IS THE ANSWER TO BOTH. fSourceStart == fSourceEnd says "this place, no
-	//     characters" - which is exactly what the newer side already carries for a DELETION, and
-	//     what the marks already draw as a caret (KCMStoryMarkBuild turns a zero-width range
-	//     into KCMMarkRange::Caret without being asked). ⇒ + and - are now mirror images.
+	//   **AN EMPTY RANGE IS THE ANSWER TO BOTH.** fSourceStart == fSourceEnd says "this place,
+	//     no characters" -- which is exactly what the newer side already carries for a DELETION,
+	//     and what the marks already draw as a caret (KCMStoryMarkBuild turns a zero-width range
+	//     into KCMMarkRange::Caret without being asked). So + and - are mirror images.
 	change.fSourceStart = sRun.Index(sFrom);
 	change.fSourceEnd = sRun.Index(sFrom + sCount);
 
-	// ★BOTH SIDES ARE CUT, ALWAYS (2026-08-20). The row shows the side that changed; the panel's
-	//   message area shows the other one while that row is selected, so that the reader can see
-	//   what the words used to be (or, for a deletion, what stands there now).
+	// **BOTH SIDES ARE CUT, ALWAYS.** The row shows the side that changed; the panel's message
+	//   area shows the other one while that row is selected, so that the reader can see what the
+	//   words used to be (or, for a deletion, what stands there now).
 	std::string newPre, newMid, newPost;
 	Slice(targetText, targetBytes, tFrom, tCount, kContextCodePoints, newPre, newMid, newPost);
 
 	std::string oldPre, oldMid, oldPost;
 	Slice(sourceText, sourceBytes, sFrom, sCount, kContextCodePoints, oldPre, oldMid, oldPost);
 
-	// ★A deletion shows the OLDER side on the row: what was taken out is what the reader has to
+	// A deletion shows the OLDER side on the row: what was taken out is what the reader has to
 	//   see, and the newer side has nothing there to show. Everything else shows the newer side.
-	//   ⇒ Whichever of the two that is, the OTHER one goes to fOtherText - see KCMStoryList.h for
+	//   Whichever of the two that is, the OTHER one goes to fOtherText -- see KCMStoryList.h for
 	//     why it is named that rather than "old".
 	const bool16 rowShowsOldSide = (change.fKind == KCMStoryChange::kDelete);
 
@@ -405,10 +406,11 @@ void Add(std::vector<KCMStoryChange>& out, int32 paraIndex,
 	change.fOtherText.SetUTF8String(rowShowsOldSide ? newMid : oldMid);
 	change.fOtherTextPost.SetUTF8String(rowShowsOldSide ? newPost : oldPost);
 
-	// ★Text out of a document is not a translation key. Without this it can be looked up in the
-	//   string tables and come back as something else entirely (memory menu-string-translation-traps).
-	//   All six pieces, not just the middles: they are all document text, and the context pieces are
-	//   the ones most likely to be a short common word that a table has an entry for.
+	// Text out of a document is not a translation key. Without this it can be looked up in the
+	//   string tables and come back as something else entirely (memory
+	//   menu-string-translation-traps). All six pieces, not just the middles: they are all
+	//   document text, and the context pieces are the ones most likely to be a short common word
+	//   that a table has an entry for.
 	change.fTextPre.SetTranslatable(kFalse);
 	change.fText.SetTranslatable(kFalse);
 	change.fTextPost.SetTranslatable(kFalse);
@@ -420,19 +422,19 @@ void Add(std::vector<KCMStoryChange>& out, int32 paraIndex,
 }
 
 /* AddAttrChange
-   One ATTRIBUTE difference - a ruby today - turned into the child row that reports it.
+   One ATTRIBUTE difference -- a ruby today -- turned into the child row that reports it.
 
-   ★THE BASE TEXT IS SHOWN FROM THE NEWER SIDE, ALWAYS - unlike a text change, where a deletion has
-   to be shown from the older side because the newer one has nothing there. An attribute is
-   different: the characters are in BOTH versions and only what sits over them changed, so the newer
-   side always has something to show and there is no case to branch on.
+   **THE BASE TEXT IS SHOWN FROM THE NEWER SIDE, ALWAYS** -- unlike a text change, where a
+   deletion has to be shown from the older side because the newer one has nothing there. An
+   attribute is different: the characters are in BOTH versions and only what sits over them
+   changed, so the newer side always has something to show and there is no case to branch on.
 
-   ★IT TAKES attrKind RATHER THAN ASSUMING RUBY (2026-08-22, and kept after kenten was withdrawn on
-   2026-08-23). What an attribute's VALUE means is not the same for all of them - a ruby's is a
-   READING and a kenten's was a KIND ("KentenBlackCircle") - and the field they travel in is the
-   same one, so whoever draws it has to be told which it is looking at. Filling that in here is what
-   let the mistake be a one-line one when it happened, in the single place that asked the wrong
-   question (KCMStoryJump's message area).
+   **IT TAKES attrKind RATHER THAN ASSUMING RUBY**, and that was kept after kenten was
+   withdrawn. What an attribute's VALUE means is not the same for all of them -- a ruby's is a
+   READING and a kenten's was a KIND ("KentenBlackCircle") -- and the field they travel in is
+   the same one, so whoever draws it has to be told which it is looking at. Filling that in
+   here is what let the mistake be a one-line one when it happened, in the single place that
+   asked the wrong question (KCMStoryJump's message area).
 */
 void AddAttrChange(KCMStoryChange::Kind kind, KCMStoryAttrKind attrKind,
 				   int32 tStart, int32 tCount, int32 sStart, int32 sCount,
@@ -443,17 +445,17 @@ void AddAttrChange(KCMStoryChange::Kind kind, KCMStoryAttrKind attrKind,
 {
 	KCMStoryChange change;
 	change.fKind = kind;
-	change.fWhat = KCMStoryChange::kAttr;		// ★the field that has waited for exactly this
+	change.fWhat = KCMStoryChange::kAttr;		// the field that has waited for exactly this
 	change.fAttrKind = attrKind;
 	change.fParaIndex = paraIndex;
 
 	change.fTargetStart = tBase + tStart;
 	change.fTargetEnd   = change.fTargetStart + tCount;
 
-	// ⚠THE OLDER SIDE ALWAYS HAS CHARACTERS HERE, unlike a text change: a ruby-only difference is
-	//   found by comparing two paragraphs whose TEXT matched, so the same characters exist on both
-	//   sides. (Ruby being ADDED is still "these characters, which are in both, now carry a
-	//   reading".) ⇒ This range is never empty, where a text insertion's now is.
+	// @warning **THE OLDER SIDE ALWAYS HAS CHARACTERS HERE**, unlike a text change: a ruby-only
+	//   difference is found by comparing two paragraphs whose TEXT matched, so the same
+	//   characters exist on both sides. (Ruby being ADDED is still "these characters, which are
+	//   in both, now carry a reading".) This range is never empty, where a text insertion's is.
 	change.fSourceStart = sBase + sStart;
 	change.fSourceEnd   = change.fSourceStart + sCount;
 
@@ -474,7 +476,7 @@ void AddAttrChange(KCMStoryChange::Kind kind, KCMStoryAttrKind attrKind,
 	change.fRuby.SetUTF8String(newRuby);
 	change.fOtherRuby.SetUTF8String(oldRuby);
 
-	// ★Same reason as the text pieces: document text is not a translation key.
+	// Same reason as the text pieces: document text is not a translation key.
 	change.fTextPre.SetTranslatable(kFalse);
 	change.fText.SetTranslatable(kFalse);
 	change.fTextPost.SetTranslatable(kFalse);
@@ -490,10 +492,11 @@ void AddAttrChange(KCMStoryChange::Kind kind, KCMStoryAttrKind attrKind,
 /* CompareParagraphAttr
    One ATTRIBUTE's spans, on two paragraphs whose TEXT came out identical.
 
-   ★SPANS ARE MATCHED BY WHERE THEY START. The text is the same on both sides, so a reading that
-   stayed put keeps its position - which makes the start the one thing that reliably identifies
-   "the same ruby" across the two versions. Length is NOT part of the matching: it is part of what
-   changed (琥珀 read as こ+はく against こはく is a change of length, and the whole point).
+   **SPANS ARE MATCHED BY WHERE THEY START.** The text is the same on both sides, so a reading
+   that stayed put keeps its position -- which makes the start the one thing that reliably
+   identifies "the same ruby" across the two versions. Length is NOT part of the matching: it
+   is part of what changed (琥珀 read as こ+はく against こはく is a change of length, and
+   the whole point).
 */
 void CompareParagraphAttr(KCMStoryAttrKind attrKind,
 						  const KCMAttrSpanList& sourceSpans, const KCMAttrSpanList& targetSpans,
@@ -540,8 +543,8 @@ void CompareParagraphAttr(KCMStoryAttrKind attrKind,
 		}
 		else
 		{
-			// Ruby taken off. ⚠The characters are still there - it is the reading that is gone -
-			//   so the range is a real one on both sides, unlike a text deletion.
+			// Ruby taken off. @warning the characters are still there -- it is the reading that is
+			//   gone -- so the range is a real one on both sides, unlike a text deletion.
 			AddAttrChange(KCMStoryChange::kDelete, attrKind,
 						  sourceSpans[i].fStart, sourceSpans[i].fLen,
 						  sourceSpans[i].fStart, sourceSpans[i].fLen,
@@ -553,15 +556,16 @@ void CompareParagraphAttr(KCMStoryAttrKind attrKind,
 	}
 }
 
-/* AddRubyOnlyChanges
+/* AddAttrOnlyChanges
    Ruby differences in the paragraphs the text diff said were UNCHANGED.
 
-   ★★THIS IS WHERE THE WHOLE FEATURE LIVES. A ruby-only edit leaves the text identical, so the
-   paragraph diff reports nothing at all and the row comes out "None" - which is what the user saw.
-   The paragraphs the diff did NOT mention are exactly the ones that need asking about.
-   ⚠Paragraphs that the diff DID report are left alone on purpose: their text changed, so they
-     already have children saying so, and ruby that moved with rewritten words is not a separate
-     edit the reader needs pointed out.
+   **THIS IS WHERE THE WHOLE FEATURE LIVES.** A ruby-only edit leaves the text identical, so
+   the paragraph diff reports nothing at all and the row comes out "None" -- which is what the
+   reader saw. The paragraphs the diff did NOT mention are exactly the ones that need asking
+   about.
+   @warning paragraphs that the diff DID report are left alone on purpose: their text changed,
+     so they already have children saying so, and ruby that moved with rewritten words is not
+     a separate edit the reader needs pointed out.
 */
 void AddAttrOnlyChanges(const std::vector<KCMTextDiff::Change>& paragraphChanges,
 						const std::vector<std::string>& sourceParas,
@@ -589,19 +593,17 @@ void AddAttrOnlyChanges(const std::vector<KCMTextDiff::Change>& paragraphChanges
 			if (a < static_cast<int32>(sourceAttrs.size()) && b < static_cast<int32>(targetAttrs.size()) &&
 				a < static_cast<int32>(sourceStarts.size()) && b < static_cast<int32>(targetStarts.size()))
 			{
-				// ★EACH ATTRIBUTE IS COMPARED ON ITS OWN LIST, and they cannot be merged into one
+				// **EACH ATTRIBUTE IS COMPARED ON ITS OWN LIST**, and they cannot be merged into one
 				//   pass: two sets of spans are matched by position within their OWN kind.
 				//
-				// ⚠★★★KENTEN (圏点) IS NOT COMPARED HERE, AND THAT IS A DECISION, NOT AN OMISSION
-				//   (user's call, 2026-08-23: "ストーリーモードの StoryEdit にでるのは、テキストの
-				//   変更と、ルビだけで" / "けんてんですが、違いをだすのをやめますね"). It WAS compared
-				//   for one day (2026-08-22) and the machinery all still stands - the snippet parser
-				//   still reads the spans and the test harness still checks that it reads them
-				//   rightly, because that reading cost a snippet from the user to get right and is
-				//   free to keep (it comes off the same pass as the ruby). What was removed is the
-				//   REPORTING: a kenten-only edit now produces no child row, and its story therefore
-				//   drops out of the list on the row filter, exactly as a font-only edit does.
-				//   ⇒ Turning it back on is this one call and its label. Nothing else was taken out.
+				// @warning **KENTEN IS NOT COMPARED HERE, AND THAT IS A DECISION, NOT AN OMISSION.** It
+				//   WAS compared for one day and the machinery all still stands -- the snippet parser
+				//   still reads the spans and the test harness still checks that it reads them rightly,
+				//   because that reading cost a snippet from the user to get right and is free to keep
+				//   (it comes off the same pass as the ruby). What was removed is the REPORTING: a
+				//   kenten-only edit now produces no child row, and its story therefore drops out of the
+				//   list on the row filter, exactly as a font-only edit does.
+				//   Turning it back on is this one call and its label. Nothing else was taken out.
 				CompareParagraphAttr(kKCMStoryAttrRuby,
 									 sourceAttrs[a].fRuby, targetAttrs[b].fRuby,
 									 sourceParas[a], targetParas[b],
@@ -642,7 +644,7 @@ bool16 CompareOneStory(const UIDRef& targetStory, const UIDRef& sourceStory,
 	if (!KCMStoryXml::ExportStory(sourceStory, sourceXml))
 		return kFalse;
 
-	// ★Ruby comes out of the same read as the text, and for the reason spelt out in
+	// Ruby comes out of the same read as the text, and for the reason spelt out in
 	//   KCMSnippetText.h: a comparison is one moment, and asking the live model for ruby instead
 	//   would put two moments in one row.
 	std::vector<std::string> targetParas;
@@ -652,7 +654,7 @@ bool16 CompareOneStory(const UIDRef& targetStory, const UIDRef& sourceStory,
 	KCMSnippetText::ExtractParagraphs(targetXml, targetParas, &targetAttrs);
 	KCMSnippetText::ExtractParagraphs(sourceXml, sourceParas, &sourceAttrs);
 
-	// ★ONE TABLE FOR BOTH SEQUENCES. Numbering them from separate tables would give equal
+	// **ONE TABLE FOR BOTH SEQUENCES.** Numbering them from separate tables would give equal
 	//   paragraphs different tokens, and every paragraph would look changed.
 	std::vector<std::string> table;
 	std::vector<int32> sourceTokens;
@@ -664,18 +666,19 @@ bool16 CompareOneStory(const UIDRef& targetStory, const UIDRef& sourceStory,
 	if (!KCMTextDiff::Diff(sourceTokens, targetTokens, paragraphChanges))
 		return kFalse;		// too different to place - the row stays, the detail does not
 
-	// ★★★ONE ROW PER PLACE, NOT ONE PER RUN (2026-08-23, user's call: 「変化している文字の
-	//   有るセルだけになるのが正しいかな」). A CELL IS A PARAGRAPH, so two edits that happened to land
-	//   in adjacent paragraphs come back as ONE run even when one of them is body text and the next
-	//   is inside the table. The row then spans everything between them - including text nobody
-	//   touched. MEASURED on the tablespan document, three one-character edits:
+	// **ONE ROW PER PLACE, NOT ONE PER RUN.** A CELL IS A PARAGRAPH, so two edits that happened
+	//   to land in adjacent paragraphs come back as ONE run even when one of them is body text
+	//   and the next is inside the table. The row then spans everything between them --
+	//   including text nobody touched. MEASURED on the tablespan document, three one-character
+	//   edits:
 	//
-	//       CHANGE t=[18,40) 「したよ。¶[表]表の後の段落です。¶あたらしい」   ← one row, 22 characters
+	//       CHANGE t=[18,40) 「したよ。¶[表]表の後の段落です。¶あたらしい」   <- one row,
+	//       22 characters
 	//
-	//   ⚠ONLY WHERE A RUN LEAVES ONE PLACE FOR ANOTHER. Paragraphs of the same place still share a
-	//     row, which is what a cell holding several paragraphs - and ordinary body text - depends on.
-	//   ⚠And only when the two versions pass through the same places: SplitRunAtPlaces leaves a run
-	//     whole rather than pair its halves up wrongly (see the header).
+	//   @warning ONLY WHERE A RUN LEAVES ONE PLACE FOR ANOTHER. Paragraphs of the same place
+	//     still share a row, which is what a cell holding several paragraphs -- and ordinary body
+	//     text -- depends on. And only when the two versions pass through the same places:
+	//     SplitRunAtPlaces leaves a run whole rather than pair its halves up wrongly.
 	{
 		std::vector<KCMTextDiff::Change> byPlace;
 		std::vector<KCMSnippetText::RegionPair> pieces;
@@ -704,20 +707,21 @@ bool16 CompareOneStory(const UIDRef& targetStory, const UIDRef& sourceStory,
 	ParagraphStarts(targetParas, targetAttrs, targetStarts, targetComputed);
 	ParagraphStarts(sourceParas, sourceAttrs, sourceStarts, sourceComputed);
 
-	// ★BOTH SIDES ARE CHECKED. KohakuTest checked only the side it selected in; here a click
+	// **BOTH SIDES ARE CHECKED.** KohakuTest checked only the side it selected in; here a click
 	//   moves both windows, so a mismatch on the older side would aim the older window wrongly.
 	if (!LengthAgrees(targetStory, targetComputed) || !LengthAgrees(sourceStory, sourceComputed))
 		return kFalse;
 
-	// ★★★AND THEN THE POSITIONS THEMSELVES ARE ASKED OF THE DOCUMENT (2026-08-23), which REPLACES
-	//   what ParagraphStarts just put in the two tables. The count above is still needed - it is
-	//   what LengthAgrees checks - but it is counted straight down the snippet, and a table's cells
+	// **AND THEN THE POSITIONS THEMSELVES ARE ASKED OF THE DOCUMENT**, which REPLACES what
+	//   ParagraphStarts just put in the two tables. The count above is still needed -- it is what
+	//   LengthAgrees checks -- but it is counted straight down the snippet, and a table's cells
 	//   are not where the snippet puts them: the text model keeps them after the whole of the
-	//   story's own text (ITableTextContent.h:41-44). Counting therefore places everything after a
+	//   story's own text (ITableTextContent.h). Counting therefore places everything after a
 	//   table wrongly, and no total can show it. See KCMStoryCellBases.h for the measurements.
-	//   ⚠It refuses stories it cannot match up (a shape the body walk does not understand, a table
-	//     whose position the two sides disagree about), and a refusal here means the same as one
-	//     above: no differences for this story, rather than differences aimed at the wrong words.
+	//   @warning it refuses stories it cannot match up (a shape the body walk does not
+	//     understand, a table whose position the two sides disagree about), and a refusal here
+	//     means the same as one above: no differences for this story, rather than differences
+	//     aimed at the wrong words.
 	if (!KCMResolveParagraphPositions(targetStory, targetParas, targetAttrs, targetStarts)
 		|| !KCMResolveParagraphPositions(sourceStory, sourceParas, sourceAttrs, sourceStarts))
 		return kFalse;
@@ -736,7 +740,7 @@ bool16 CompareOneStory(const UIDRef& targetStory, const UIDRef& sourceStory,
 		const int32 sBase = (change.aStart < static_cast<int32>(sourceStarts.size()))
 							? sourceStarts[change.aStart] : sourceComputed;
 
-		// ★The run itself, so that a position inside it can be asked for rather than added up - see
+		// The run itself, so that a position inside it can be asked for rather than added up -- see
 		//   RunSide. Built once here because both callers of Add below need the same two.
 		const RunSide tRun(targetParas, targetStarts, change.bStart, change.bCount, tBase);
 		const RunSide sRun(sourceParas, sourceStarts, change.aStart, change.aCount, sBase);
@@ -754,22 +758,22 @@ bool16 CompareOneStory(const UIDRef& targetStory, const UIDRef& sourceStory,
 		const bool16 narrowed = KCMTextDiff::Diff(sourceCodePoints, targetCodePoints, fineChanges)
 								&& !fineChanges.empty();
 
-		// ★ONLY ON CHARACTERS. Applied to the paragraph list this would report paragraphs nobody
-		//   touched as changed - see KCMTextDiff.h. The same restriction covers the alignment
+		// **ONLY ON CHARACTERS.** Applied to the paragraph list this would report paragraphs nobody
+		//   touched as changed -- see KCMTextDiff.h. The same restriction covers the alignment
 		//   below, for a plainer reason: a paragraph token is a number, and asking which script it
 		//   is written in means nothing.
 		if (narrowed)
 		{
 			KCMTextDiff::MergeNearbyChanges(fineChanges);
 
-			// ★★THEN SLIDE EACH RUN TO THE POSITION A READER WOULD PUT IT (2026-08-22). Myers
-			//   returns A shortest edit script, not THE one a person would describe, and when the
-			//   surrounding text repeats a character the two differ visibly. Reported from the
-			//   panel: 「旧版です」->「新版です・ここが違います」 came back quoting
-			//   「す・ここが違いま」 - starting and ending on す because the run had been rotated
-			//   one step left, which costs Myers nothing and costs the reader the whole sentence.
-			//   ⚠AFTER the merge, not before: merging changes the shape of a run, and aligning a
-			//     run that is about to be swallowed would be work thrown away.
+			// **THEN SLIDE EACH RUN TO THE POSITION A READER WOULD PUT IT.** Myers returns A
+			//   shortest edit script, not THE one a person would describe, and when the surrounding
+			//   text repeats a character the two differ visibly. Reported from the panel:
+			//   「旧版です」->「新版です・ここが違います」 came back quoting「す・ここが違いま」
+			//   -- starting and ending on す because the run had been rotated one step left, which
+			//   costs Myers nothing and costs the reader the whole sentence.
+			//   @warning AFTER the merge, not before: merging changes the shape of a run, and
+			//     aligning a run that is about to be swallowed would be work thrown away.
 			KCMTextDiff::AlignChangeBoundaries(sourceCodePoints, targetCodePoints, fineChanges);
 		}
 
@@ -792,16 +796,17 @@ bool16 CompareOneStory(const UIDRef& targetStory, const UIDRef& sourceStory,
 		}
 	}
 
-	// ★★★AND THEN THE RUBY (2026-08-22). Everything above compared <Content> and nothing else, so a
-	//   story whose ruby alone was edited came out of it with no children at all - the row said
-	//   "None", which is what the user reported. The paragraphs the diff did NOT mention are exactly
-	//   the ones to ask about.
+	// **AND THEN THE RUBY.** Everything above compared <Content> and nothing else, so a story
+	//   whose ruby alone was edited came out of it with no children at all -- the row said
+	//   "None", which is what the reader reported. The paragraphs the diff did NOT mention are
+	//   exactly the ones to ask about.
 	AddAttrOnlyChanges(paragraphChanges, sourceParas, targetParas, sourceAttrs, targetAttrs,
 					   sourceStarts, targetStarts, out);
 
-	// ⚠Put back in reading order. The ruby children were found by a separate walk, so without this
-	//   they would all sit after the text ones and the tree would run down the story twice.
-	//   ★STABLE, so that two changes at the same position keep the order they were made in.
+	// @warning put back in reading order. The ruby children were found by a separate walk, so
+	//   without this they would all sit after the text ones and the tree would run down the
+	//   story twice. STABLE, so that two changes at the same position keep the order they were
+	//   made in.
 	std::stable_sort(out.begin(), out.end(), ChangeIsBefore);
 
 	return kTrue;
@@ -818,10 +823,10 @@ int32 KCMStoryDiffRun::Run(IDataBase* targetDB, IDataBase* sourceDB)
 	if (targetDB == nil || sourceDB == nil)
 		return 0;
 
-	// ★THE GUARD BELONGS HERE, NOT AT THE CALLER - see the header for the two callers and which
-	//   one of them lacks it. Exporting a snippet can compose (asking for text that has never been
-	//   laid out lays it out), and composing sets the modified flag on a document this feature only
-	//   ever reads. KCM's whole premise is that comparing changes nothing.
+	// **THE GUARD BELONGS HERE, NOT AT THE CALLER** -- see the header for the two callers and
+	//   which one of them lacks it. Exporting a snippet can compose (asking for text that has
+	//   never been laid out lays it out), and composing sets the modified flag on a document this
+	//   feature only ever reads. KCM's whole premise is that comparing changes nothing.
 	IDataBase::SaveRestoreModifiedState targetDirtyGuard(targetDB);
 	IDataBase::SaveRestoreModifiedState sourceDirtyGuard(sourceDB);
 
@@ -834,13 +839,13 @@ int32 KCMStoryDiffRun::Run(IDataBase* targetDB, IDataBase* sourceDB)
 		if (row == nil || row->fStoryUID == kInvalidUID)
 			continue;
 
-		// ★A story with no partner cannot be compared against anything, and the list already knows
-		//   that - this is the same judgement KCMStoryStamp made when it built the row, read
+		// A story with no partner cannot be compared against anything, and the list already knows
+		//   that -- this is the same judgement KCMStoryStamp made when it built the row, read
 		//   rather than made again. Asking the older document for the UID ourselves would be a
 		//   second place where "does this story exist over there" gets answered.
-		//   ★★kKCMStoryKindUnpaired COVERS BOTH added AND removed (2026-08-21). ⚠For a removed
-		//     row this is not merely wasted work: its fStoryUID is a SOURCE uid, so the two UIDRefs
-		//     below would ask the TARGET for it - and a uid that means one story over there can
+		//   **kKCMStoryKindUnpaired COVERS BOTH added AND removed.** @warning for a removed row
+		//     this is not merely wasted work: its fStoryUID is a SOURCE uid, so the two UIDRefs
+		//     below would ask the TARGET for it -- and a uid that means one story over there can
 		//     name a different object over here. The row must never reach that line.
 		if ((row->fKinds & kKCMStoryKindUnpaired) != 0)
 			continue;
@@ -850,11 +855,10 @@ int32 KCMStoryDiffRun::Run(IDataBase* targetDB, IDataBase* sourceDB)
 							 UIDRef(sourceDB, row->fStoryUID), changes))
 			continue;		// the row keeps its place and loses its detail
 
-		// ★WRITTEN EVEN WHEN NOTHING DIFFERS (2026-08-21). It used to `continue` here, on the
-		//   grounds that writing an empty list changes nothing - which was true of the CHANGES and
-		//   false of the fact that somebody looked. That fact is what lets the row say "None"
-		//   instead of standing there mute beside the rows that could not be compared at all
-		//   (user's request: "何も変更が亡くなった場合 Change のところに表示して欲しい").
+		// **WRITTEN EVEN WHEN NOTHING DIFFERS.** It used to `continue` here, on the grounds that
+		//   writing an empty list changes nothing -- which was true of the CHANGES and false of the
+		//   fact that somebody looked. That fact is what lets the row say "None" instead of standing
+		//   there mute beside the rows that could not be compared at all.
 		KCMStoryList::SetRowChanges(i, changes, kTrue);
 		total += static_cast<int32>(changes.size());
 	}
@@ -871,9 +875,9 @@ int32 KCMStoryDiffRun::RunOne(IDataBase* targetDB, IDataBase* sourceDB, int32 ro
 	if (targetDB == nil || sourceDB == nil)
 		return -1;
 
-	// ★THE UID IS COPIED OUT BEFORE ANYTHING ELSE HAPPENS. GetRow hands back a pointer into the
-	//   list, and the work below writes to that same list - so the answer to "which story is this
-	//   row about" is taken while the question is still safe to ask.
+	// **THE UID IS COPIED OUT BEFORE ANYTHING ELSE HAPPENS.** GetRow hands back a pointer into
+	//   the list, and the work below writes to that same list -- so the answer to "which story is
+	//   this row about" is taken while the question is still safe to ask.
 	const KCMStoryRow* row = KCMStoryList::GetRow(rowIndex);
 	if (row == nil || row->fStoryUID == kInvalidUID)
 		return -1;
@@ -883,8 +887,8 @@ int32 KCMStoryDiffRun::RunOne(IDataBase* targetDB, IDataBase* sourceDB, int32 ro
 
 	// A story with no partner has nothing to be compared against - the same judgement Run reads
 	// rather than makes again. The menu greys the item for these rows, so this is the second line
-	// of defence. ★Both kinds (added AND removed) since 2026-08-21; for a removed row the uid
-	// above belongs to the SOURCE and must not be handed to the target (see Run's note).
+	// of defence. Both kinds (added AND removed); for a removed row the uid above belongs to the
+	// SOURCE and must not be handed to the target (see Run's note).
 	if (unpaired)
 		return -1;
 
@@ -892,24 +896,23 @@ int32 KCMStoryDiffRun::RunOne(IDataBase* targetDB, IDataBase* sourceDB, int32 ro
 	IDataBase::SaveRestoreModifiedState targetDirtyGuard(targetDB);
 	IDataBase::SaveRestoreModifiedState sourceDirtyGuard(sourceDB);
 
-	// ★THE ROW ITSELF IS RE-READ FIRST (2026-08-21, user's report: "親の行のテキストの内容が変更
-	//   されたのに変わっていない"). The row quotes the story's opening words, and points at the frame
-	//   a click scrolls to - both read from the document when the comparison ran. Refreshing only the
-	//   CHILDREN left the row quoting a sentence the reader had just rewritten, which is the panel
-	//   showing two different moments on one line.
-	//   ⚠It runs inside the guard for the same reason everything else here does. A story that has
-	//     been deleted since simply leaves the row as it was - the read refuses rather than
-	//     half-writing it, and the diff below is what reports the failure.
+	// **THE ROW ITSELF IS RE-READ FIRST.** The row quotes the story's opening words, and points
+	//   at the frame a click scrolls to -- both read from the document when the comparison ran.
+	//   Refreshing only the CHILDREN left the row quoting a sentence the reader had just
+	//   rewritten, which is the panel showing two different moments on one line.
+	//   @warning it runs inside the guard for the same reason everything else here does. A story
+	//     that has been deleted since simply leaves the row as it was -- the read refuses rather
+	//     than half-writing it, and the diff below is what reports the failure.
 	KCMStoryList::RefreshRowFromDocument(rowIndex, targetDB);
 
 	std::vector<KCMStoryChange> changes;
 	const bool16 compared = CompareOneStory(UIDRef(targetDB, storyUID),
 										    UIDRef(sourceDB, storyUID), changes);
 
-	// ★WRITTEN EITHER WAY, INCLUDING EMPTY. What stands under the row after a refresh is what the
-	//   documents say now, and "nothing" is a perfectly good thing for them to say - the row shows
-	//   it as "None" (KCMStoryRow::fTextCompared), which is how the reader tells "I have just
-	//   repaired this" apart from "this was never looked at".
+	// **WRITTEN EITHER WAY, INCLUDING EMPTY.** What stands under the row after a refresh is what
+	//   the documents say now, and "nothing" is a perfectly good thing for them to say -- the row
+	//   shows it as "None" (KCMStoryRow::fTextCompared), which is how the reader tells "I have
+	//   just repaired this" apart from "this was never looked at".
 	if (!compared)
 		changes.clear();
 	KCMStoryList::SetRowChanges(rowIndex, changes, compared);

@@ -39,10 +39,11 @@ namespace
 {
 
 /* TableAt
-   One table of the story: the dictionary that holds its cells, and where its own character stands.
+   One table of the story: the dictionary that holds its cells, and where its own character
+   stands.
 
-   ⚠A UID is kept rather than the interface. InterfacePtr has no copy semantics worth putting in a
-   vector, and the interface is cheap to ask for again at the one place it is used.
+   @warning a UID is kept rather than the interface. InterfacePtr has no copy semantics worth
+    putting in a vector, and the interface is cheap to ask for again at the one place it is used.
 */
 struct TableAt
 {
@@ -54,19 +55,20 @@ struct TableAt
 /* EarlierBlock
    The order the document itself keeps its tables in.
 
-   ★★★WHY THE THREAD BLOCK AND NOT THE ANCHOR (2026-08-23). Sorting by the anchor is sorting by
-   raw TextIndex, and that is the wrong order the moment a table stands inside another one: a
+   **WHY THE THREAD BLOCK AND NOT THE ANCHOR.** Sorting by the anchor is sorting by raw
+   TextIndex, and that is the wrong order the moment a table stands inside another one: a
    nested table's anchor is inside its parent's CELLS, which are laid out after the whole of the
-   body - so a second top-level table, anchored a few characters into the body, sorts BEFORE it,
+   body -- so a second top-level table, anchored a few characters into the body, sorts BEFORE it,
    while the reader numbered them the other way round (a table is numbered where it is written,
    and a nested one is written inside its parent).
-   ⇒ The thread blocks are the order wanted, and the SDK says so: "The location of the
-     dictionary's thread block is determined by the location of the dictionary's anchor relative to
-     other dictionaries in the same and other thread blocks. Determining this relative location is
-     the job of the ITextStoryThreadDictHier." (ITextStoryThreadDict.h:64-67). That relative order
-     is depth-first, which is the order the XML is written in.
-   ⚠It is CHECKED and not trusted: every table's anchor is compared with the position the reader
-     worked out for it below, so a wrong order cannot pass silently.
+   The thread blocks are the order wanted, and the SDK says so: "The location of the
+     dictionary's thread block is determined by the location of the dictionary's anchor relative
+     to other dictionaries in the same and other thread blocks. Determining this relative
+     location is the job of the ITextStoryThreadDictHier." (ITextStoryThreadDict.h, at
+     GetThreadBlockTextRange). That relative order is depth-first, which is the order the XML is
+     written in.
+   @warning it is CHECKED and not trusted: every table's anchor is compared with the position the
+    reader worked out for it below, so a wrong order cannot pass silently.
 */
 bool16 EarlierBlock(const TableAt& a, const TableAt& b)
 {
@@ -76,10 +78,10 @@ bool16 EarlierBlock(const TableAt& a, const TableAt& b)
 /* CheckNestedAnchor
    One table's first character, as the reader worked it out, against the document's own answer.
 
-   ⚠It also MARKS the table as accounted for. The two go together: a table whose position nobody
-   ever worked out is exactly as dangerous as one whose position disagrees - its cells would be
-   placed from an ordering that nothing had checked - and keeping the two facts in one place is
-   what stops the second from being forgotten.
+   @warning it also MARKS the table as accounted for. The two go together: a table whose position
+    nobody ever worked out is exactly as dangerous as one whose position disagrees -- its cells
+    would be placed from an ordering that nothing had checked -- and keeping the two facts in one
+    place is what stops the second from being forgotten.
 */
 bool16 CheckNestedAnchor(const std::vector<TableAt>& tables, std::vector<bool16>& checked,
 						 int32 ordinal, TextIndex expected)
@@ -105,9 +107,9 @@ bool16 KCMResolveParagraphPositions(const UIDRef& storyRef,
 	std::vector<KCMTableAnchor> anchors;
 	KCMSnippetText::BodyParagraphStarts(paragraphs, attrs, outStarts, anchors);
 
-	// ★★EVERY TABLE, NESTED ONES INCLUDED (2026-08-23). A table inside a table used to be refused
-	//   here; now it is read like any other, because its own characters are charged to the CELL it
-	//   stands in and its cells are asked of the document the same way.
+	// **EVERY TABLE, NESTED ONES INCLUDED.** A table inside a table used to be refused here; now
+	//   it is read like any other, because its own characters are charged to the CELL it stands
+	//   in and its cells are asked of the document the same way.
 	const int32 tableCount = KCMSnippetText::TableCount(attrs);
 
 	bool16 anyCell = kFalse;
@@ -120,8 +122,8 @@ bool16 KCMResolveParagraphPositions(const UIDRef& storyRef,
 		}
 	}
 
-	// No cells: nothing to ask the document. ⚠But a story with a table character and no cell
-	// paragraph means the reader missed something, and its positions cannot be trusted either.
+	// No cells: nothing to ask the document. @warning but a story with a table character and no
+	// cell paragraph means the reader missed something, and its positions cannot be trusted either.
 	if (!anyCell)
 		return (tableCount == 0);
 
@@ -162,20 +164,20 @@ bool16 KCMResolveParagraphPositions(const UIDRef& storyRef,
 		tables.push_back(at);
 	}
 
-	// ★In the order the document lays their cells out, which is the order the reader numbers them
-	//   in - see EarlierBlock for why the anchor will not do.
+	// In the order the document lays their cells out, which is the order the reader numbers them
+	//   in -- see EarlierBlock for why the anchor will not do.
 	std::sort(tables.begin(), tables.end(), EarlierBlock);
 
-	// ★★REFUSE (1a): the two do not even agree about how many tables there are. Nothing below could
-	//   be trusted, and a wrong position is indistinguishable from a right one afterwards.
+	// **REFUSE (1a):** the two do not even agree about how many tables there are. Nothing below
+	//   could be trusted, and a wrong position is indistinguishable from a right one afterwards.
 	if (tables.size() != static_cast<size_t>(tableCount))
 		return kFalse;
 
-	// ★★REFUSE (1b): ...or about where the BODY's tables stand. ⇒ This is also what catches the
-	//   story shapes the body walk does not understand - two tables sharing one boundary, where
+	// **REFUSE (1b):** ...or about where the BODY's tables stand. This is also what catches the
+	//   story shapes the body walk does not understand -- two tables sharing one boundary, where
 	//   nothing says how the characters divide between them, so no anchor is reported at all.
-	//   ⚠A NESTED table is not checked here - where its cell's text sits is not known until the
-	//     document has been asked. It is checked below, on the same terms, once it is.
+	//   @warning a NESTED table is not checked here -- where its cell's text sits is not known
+	//     until the document has been asked. It is checked below, on the same terms, once it is.
 	std::vector<bool16> anchorChecked(tables.size(), kFalse);
 	for (size_t a = 0; a < anchors.size(); ++a)
 	{
@@ -197,13 +199,13 @@ bool16 KCMResolveParagraphPositions(const UIDRef& storyRef,
 			continue;
 		}
 
-		// ★★ONE CELL AT A TIME, AND A CELL CAN BE SEVERAL PARAGRAPHS (2026-08-23). A cell holds
-		//   one for every Return pressed in it, and a merged cell holds the paragraphs of
-		//   everything merged into it. One THREAD holds them all, so they are checked and placed
-		//   together rather than one by one.
-		//   ⚠CLAMPED TO WHAT BOTH LISTS HOLD. CellRunEnd walks the ATTRIBUTES, and `count` above
-		//     exists because this function does not assume the two lists are the same length - so
-		//     an unclamped end would write past `outStarts` (which is as long as `paragraphs`).
+		// **ONE CELL AT A TIME, AND A CELL CAN BE SEVERAL PARAGRAPHS.** A cell holds one for every
+		//   Return pressed in it, and a merged cell holds the paragraphs of everything merged into
+		//   it. One THREAD holds them all, so they are checked and placed together rather than one
+		//   by one.
+		//   @warning CLAMPED TO WHAT BOTH LISTS HOLD. CellRunEnd walks the ATTRIBUTES, and `count`
+		//     above exists because this function does not assume the two lists are the same length
+		//     -- so an unclamped end would write past `outStarts` (which is as long as `paragraphs`).
 		size_t runEnd = KCMSnippetText::CellRunEnd(attrs, i);
 		if (runEnd > count)
 			runEnd = count;
@@ -219,10 +221,10 @@ bool16 KCMResolveParagraphPositions(const UIDRef& storyRef,
 		if (table == nil)
 			return kFalse;
 
-		// ⚠GridAddress is (row, column); the snippet's Name attribute is "column:row". The two
-		//   halves were read apart in ExtractParagraphs precisely so they could be put back in this
-		//   order here. ★A merged cell is named by its anchor (top-left) in both, so it needs
-		//   nothing special (TableTypes.h:146-153).
+		// @warning GridAddress is (row, column); the snippet's Name attribute is "column:row". The
+		//   two halves were read apart in ExtractParagraphs precisely so they could be put back in
+		//   this order here. A merged cell is named by its anchor (top-left) in both, so it needs
+		//   nothing special (TableTypes.h, at GridAddress).
 		const GridID gridID = table->GetGridID(GridAddress(attrs[i].fCellRow, attrs[i].fCellCol));
 		InterfacePtr<ITextStoryThread> thread(dict->QueryThread(gridID));
 		if (thread == nil)
@@ -231,30 +233,30 @@ bool16 KCMResolveParagraphPositions(const UIDRef& storyRef,
 		int32 threadSpan = -1;
 		const TextIndex threadStart = thread->GetTextStart(&threadSpan);
 
-		// ★★REFUSE (2): THE LENGTH IS CHECKED, NOT TAKEN ON TRUST. A thread's boundary is always a
-		//   carriage return, so a cell's thread is its paragraphs plus one character each (and
-		//   ITextStoryThread.h says a span is always greater than 0, which is that one character
-		//   for an empty cell). If this disagrees, the cell found is not the cell the snippet meant
-		//   - a different table, a different address - and every position taken from here would be
-		//   wrong silently.
-		//   ★THE WHOLE RUN IS MEASURED, not its first paragraph: that is what the thread holds.
+		// **REFUSE (2): THE LENGTH IS CHECKED, NOT TAKEN ON TRUST.** A thread's boundary is always
+		//   a carriage return, so a cell's thread is its paragraphs plus one character each (and
+		//   ITextStoryThread::GetTextStart says a span is always greater than 0, which is that one
+		//   character for an empty cell). If this disagrees, the cell found is not the cell the
+		//   snippet meant -- a different table, a different address -- and every position taken from
+		//   here would be wrong silently.
+		//   THE WHOLE RUN IS MEASURED, not its first paragraph: that is what the thread holds.
 		if (threadSpan != KCMSnippetText::CellRunLength(paragraphs, attrs, i, runEnd))
 			return kFalse;
 
 		// The thread's own start belongs to the first paragraph; each one after it begins past the
 		// one before and its break.
-		// ★★AND PAST ANY TABLE STANDING IN THE CELL (2026-08-23), which is charged to the paragraph
-		//   it stands in - in front of its text (the ordinary shape: a cell whose whole content is a
-		//   table) or behind it. This is the same walk BodyParagraphStarts does for the body; the
-		//   only difference is where it starts from.
+		// **AND PAST ANY TABLE STANDING IN THE CELL**, which is charged to the paragraph it stands
+		//   in -- in front of its text (the ordinary shape: a cell whose whole content is a table)
+		//   or behind it. This is the same walk BodyParagraphStarts does for the body; the only
+		//   difference is where it starts from.
 		int32 at = threadStart;
 		for (size_t k = i; k < runEnd; ++k)
 		{
-			// ★★REFUSE (3): A NESTED TABLE'S POSITION IS CHECKED TOO. The body's tables were
-			//   checked above against the anchors the reader worked out; this is the same check for
-			//   the ones the reader could not place until now. ⇒ every table in the story has had
-			//   its position agreed by both sides before any cell of it is placed, which is what
-			//   makes the ORDER the tables were sorted into safe to rely on.
+			// **REFUSE (3): A NESTED TABLE'S POSITION IS CHECKED TOO.** The body's tables were checked
+			//   above against the anchors the reader worked out; this is the same check for the ones
+			//   the reader could not place until now. So every table in the story has had its position
+			//   agreed by both sides before any cell of it is placed, which is what makes the ORDER the
+			//   tables were sorted into safe to rely on.
 			if (attrs[k].fLeadingTables == 1
 				&& !CheckNestedAnchor(tables, anchorChecked, attrs[k].fLeadingTable, at))
 				return kFalse;
@@ -272,10 +274,11 @@ bool16 KCMResolveParagraphPositions(const UIDRef& storyRef,
 		i = runEnd;
 	}
 
-	// ★★REFUSE (4): A TABLE NOBODY CLAIMED. Every table the document holds must have been placed by
-	//   one side or the other above - a body anchor, or a cell's. One that was not means the reader
-	//   and the document disagree about the SHAPE of the story even though the counts matched, and
-	//   the cells of that table would have been aimed from an order nothing checked.
+	// **REFUSE (4): A TABLE NOBODY CLAIMED.** Every table the document holds must have been
+	//   placed by one side or the other above -- a body anchor, or a cell's. One that was not
+	//   means the reader and the document disagree about the SHAPE of the story even though the
+	//   counts matched, and the cells of that table would have been aimed from an order nothing
+	//   checked.
 	for (size_t t = 0; t < anchorChecked.size(); ++t)
 	{
 		if (!anchorChecked[t])

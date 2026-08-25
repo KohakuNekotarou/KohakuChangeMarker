@@ -13,11 +13,12 @@
 //  each edit distance D in turn, record how far each diagonal k = x - y has reached; the first
 //  D that reaches (n,m) is the answer.
 //
-//  ⚠**2026-08-21: how the answer is turned back into a list of edits changed.** It used to keep
-//  every step's row and walk the path back, which is simple and costs O(D^2) memory - and that
-//  memory was the reason the search had to give up past 2000 edits. It now searches from both
-//  ends until the frontiers meet and recurses on the two halves (Myers' §4b refinement), which
-//  keeps only two rows: **O(N+M) memory, no ceiling**. See the block above FrontierRows.
+//  @warning **the answer is turned back into a list of edits WITHOUT keeping the path.** It
+//  used to keep every step's row and walk back, which is simple and costs O(D^2) memory -- and
+//  that memory was the reason the search had to give up past 2000 edits. It now searches from
+//  both ends until the frontiers meet and recurses on the two halves (Myers' section 4b'),
+//  refinement), which keeps only two rows: **O(N+M) memory, no ceiling**. See the block above
+//  FrontierRows.
 //
 //========================================================================================
 
@@ -63,30 +64,29 @@ namespace
 	}
 
 	//------------------------------------------------------------------------------------
-	// The search, in linear space (2026-08-21).
+	// The search, in linear space.
 	//------------------------------------------------------------------------------------
 	//
-	// ★★★**WHY THIS REPLACED THE STRAIGHTFORWARD VERSION.** The obvious way to turn "the
-	//   distance is D" into "here are the D edits" is to keep every step's row and walk the path
-	//   back afterwards - which is what this file did until 2026-08-21. It is correct, but it
-	//   costs **O(D²) memory**: D+1 rows of 2D+3 integers. At the old ceiling of D=2000 that is
-	//   about 31 MB, and raising the ceiling squares it (D=10,000 → ~800 MB). ⇒ **the ceiling
-	//   was not a policy, it was the only thing standing between the plug-in and that number**,
-	//   and every story that needed more edits than the ceiling got NO detail at all (the
-	//   paragraph pass returned kFalse) or a coarse one (the character pass fell back to "this
-	//   whole run changed").
+	// **WHY THIS REPLACED THE STRAIGHTFORWARD VERSION.** The obvious way to turn "the distance
+	//   is D" into "here are the D edits" is to keep every step's row and walk the path back
+	//   afterwards. It is correct, but it costs **O(D^2) memory**: D+1 rows of 2D+3 integers.
+	//   At the old ceiling of D=2000 that is about 31 MB, and raising the ceiling squares it
+	//   (D=10,000 -> ~800 MB). **The ceiling was not a policy, it was the only thing standing
+	//   between the plug-in and that number**, and every story that needed more edits than the
+	//   ceiling got NO detail at all (the paragraph pass returned kFalse) or a coarse one (the
+	//   character pass fell back to "this whole run changed").
 	//
-	// ★**The fix is Myers' own refinement (§4b of the 1986 paper): divide and conquer.**
-	//   Search from both ends at once until the two frontiers meet; the place they meet - the
-	//   "middle snake" - splits the problem into two smaller ones that are solved the same way.
+	// **The fix is Myers' own refinement (section 4b of the 1986 paper): divide and conquer.**
+	//   Search from both ends at once until the two frontiers meet; the place they meet -- the
+	//   "middle snake" -- splits the problem into two smaller ones that are solved the same way.
 	//   Nothing but the two frontier rows is ever kept, so the memory is **O(N+M)** no matter how
 	//   different the two texts are: 50,000 characters against 50,000 costs under a megabyte.
-	//   The time stays O((N+M)·D) with a constant factor of roughly two ---- the user's call was
-	//   "slower is fine, but it must not be wrong and it should not eat memory" (2026-08-21).
+	//   The time stays O((N+M)*D) with a constant factor of roughly two, which is the trade that
+	//   was wanted: slower is acceptable, wrong is not, and neither is eating memory.
 	//
-	// ⚠**The ceiling still exists, but it now guards TIME, not memory.** It is raised to a value
-	//   no real document reaches (see KCMTextDiff.h); it is kept only so that a pathological
-	//   pair cannot spin forever.
+	// @warning **the ceiling still exists, but it now guards TIME, not memory.** It is raised to
+	//   a value no real document reaches (see KCMTextDiff.h); it is kept only so that a
+	//   pathological pair cannot spin forever.
 
 	/* FrontierRows
 	   The two rows the divide-and-conquer search works on, allocated ONCE for the whole run and
@@ -111,14 +111,14 @@ namespace
 	   (outX,outY) is where it starts and (outU,outV) is where it ends, both in this section's own
 	   coordinates. outD is the edit distance of the whole section.
 
-	   ★**It cannot fail to find one** - the frontiers must meet by d = (n+m+1)/2 - so there is no
-	     "not found" path. What it can do is cost more than the caller allowed, which is the
+	   **It cannot fail to find one** -- the frontiers must meet by d = (n+m+1)/2 -- so there is
+	     no "not found" path. What it can do is cost more than the caller allowed, which is the
 	     budget check at the top of each step.
 
-	   ⚠**The reverse search runs in its own coordinates** (x' counted from the far end), and its
-	     diagonal k' corresponds to the forward diagonal delta-k'. Every conversion between the
-	     two is written out below rather than folded into an index, because getting one of them
-	     backwards produces a plausible-looking diff that is subtly wrong.
+	   @warning **the reverse search runs in its own coordinates** (x' counted from the far end),
+	     and its diagonal k' corresponds to the forward diagonal delta-k'. Every conversion
+	     between the two is written out below rather than folded into an index, because getting
+	     one of them backwards produces a plausible-looking diff that is subtly wrong.
 	*/
 	void FindMiddleSnake(const int32* a, int32 n, const int32* b, int32 m, FrontierRows& rows,
 						 int32& outX, int32& outY, int32& outU, int32& outV, int32& outD)
@@ -134,9 +134,9 @@ namespace
 		// Clear what this call can touch. Both searches read one diagonal either side of the one
 		// they are writing, and the overlap test reads the OTHER row at delta-k, so the span has
 		// to cover |delta| as well as maxD.
-		// ⚠**n+m is NOT enough.** With one side much longer than the other, |delta-k| reaches
-		//   |delta| + maxD ≈ (n+m) + (n+m)/2 (e.g. n=10, m=2: delta=8, maxD=7, so 15 > 12). The
-		//   rows are sized to the same 2*(n+m)+3 at the top level, so this stays inside them.
+		// @warning **n+m is NOT enough.** With one side much longer than the other, |delta-k|
+		//   reaches |delta| + maxD ~ (n+m) + (n+m)/2 (e.g. n=10, m=2: delta=8, maxD=7, so 15 > 12).
+		//   The rows are sized to the same 2*(n+m)+3 at the top level, so this stays inside them.
 		const int32 span = 2 * (n + m) + 3;
 		for (int32 i = -span; i <= span; ++i)
 		{
@@ -233,14 +233,14 @@ namespace
 	   One level of the divide and conquer. aOfs/bOfs are where this section sits in the sequences
 	   the caller handed in, so that the edits are reported in those coordinates.
 
-	   ★**The common head and tail are stripped again at every level.** That is what makes the
+	   **The common head and tail are stripped again at every level.** That is what makes the
 	     d<=1 cases disappear: once both ends differ and neither side is empty, the distance is at
 	     least 2, so the middle snake always splits the problem into strictly smaller pieces and
 	     the recursion cannot stand still.
 
-	   ★**Left half first.** Append() merges an edit into the previous one when they touch, which
+	   **Left half first.** Append() merges an edit into the previous one when they touch, which
 	     is how a replacement (a deletion and an insertion at the same spot) arrives as one entry
-	     ---- and that only works if the edits arrive in order.
+	     -- and that only works if the edits arrive in order.
 	*/
 	void SearchSection(const int32* a, int32 aOfs, int32 n, const int32* b, int32 bOfs, int32 m,
 					   FrontierRows& rows, std::vector<Change>& changes)
@@ -311,10 +311,10 @@ namespace
 		// The search itself is SearchSection / FindMiddleSnake above; all this does is hand them
 		// the rows to work in and decide what "gave up" means to the caller.
 		//
-		// ★**Allocated once for the whole run.** The width has to cover more than the diagonals
+		// **Allocated once for the whole run.** The width has to cover more than the diagonals
 		//   the search writes: the overlap test reads the OTHER row at delta-k, and |delta-k| can
 		//   reach (n+m) + (n+m)/2 when one side is much longer than the other. 2*(n+m)+3 covers
-		//   that with room to spare and is still O(N+M) ---- 50,000 against 50,000 is 1.6 MB for
+		//   that with room to spare and is still O(N+M) -- 50,000 against 50,000 is 1.6 MB for
 		//   both rows together, against the 31 MB the old row-per-step search needed at D=2000.
 		FrontierRows rows;
 		rows.offset = 2 * (n + m) + 3;
@@ -327,8 +327,8 @@ namespace
 
 		if (rows.gaveUp)
 		{
-			// ⚠**A half-built list is worse than none**: the contract with the caller is that an
-			//   empty list plus kFalse means "treat the whole section as changed", and a partial
+			// @warning **a half-built list is worse than none**: the contract with the caller is that
+			//   an empty list plus kFalse means "treat the whole section as changed", and a partial
 			//   list would instead claim that the parts it did not reach are unchanged.
 			changes.clear();
 			return kFalse;
@@ -337,12 +337,12 @@ namespace
 		return kTrue;
 	}
 
-	// ---- boundary alignment (2026-08-22) --------------------------------------------------
+	// ---- boundary alignment ---------------------------------------------------------------
 
 	/** Which script a character is written in.
 
-		★THIS IS THE ONE QUESTION THE ALIGNMENT ASKS: would a reader see a break here? English
-		answers it with spaces, and diff-match-patch - where the idea comes from - scores
+		**THIS IS THE ONE QUESTION THE ALIGNMENT ASKS:** would a reader see a break here? English
+		answers it with spaces, and diff-match-patch -- where the idea comes from -- scores
 		boundaries that way. A Japanese sentence has no spaces at all. What it has instead is the
 		alternation of 漢字 / ひらがな / カタカナ / 記号, and a change of script marks the edge of
 		a word about as reliably as a space does.
@@ -364,11 +364,11 @@ namespace
 		if (cp == 0x0020 || cp == 0x0009 || cp == 0x000A || cp == 0x000D || cp == 0x3000)
 			return kScriptSpace;
 
-		// ⚠★THE KATAKANA MIDDLE DOT HAS TO BE TAKEN OUT BEFORE THE KATAKANA RANGE CLAIMS IT.
-		//   U+30FB sits inside U+30A1..U+30FF, so the obvious ordering would file 「・」 as a
-		//   katakana letter - and 「・」 is precisely the character the reported case turns on
+		// @warning **THE KATAKANA MIDDLE DOT HAS TO BE TAKEN OUT BEFORE THE KATAKANA RANGE CLAIMS
+		//   IT.** U+30FB sits inside U+30A1..U+30FF, so the obvious ordering would file 「・」 as
+		//   a katakana letter -- and 「・」 is precisely the character the reported case turns on
 		//   (新版です・ここが違います). The bug would have survived with every test around it
-		//   passing. ⚠U+30FC (ー) stays katakana on purpose: it is a letter, not a mark.
+		//   passing. @warning U+30FC (ー) stays katakana on purpose: it is a letter, not a mark.
 		if (cp == 0x30FB || cp == 0xFF65)
 			return kScriptPunct;
 
@@ -551,23 +551,22 @@ void KCMTextDiff::MergeNearbyChanges(std::vector<Change>& changes)
 			const int32 previousSize = (previous.aCount > previous.bCount) ? previous.aCount : previous.bCount;
 			const int32 currentSize = (current.aCount > current.bCount) ? current.aCount : current.bCount;
 
-			// ★★★STRICTLY SHORTER, NOT "no longer than" (2026-08-20). The gap has to be SMALLER
-			//   than both neighbours to be swallowed. ⚠With <= , two ONE-character edits a single
-			//   character apart always merged (1 <= 1 on both sides) - which in Japanese is not an
+			// **STRICTLY SHORTER, NOT "no longer than".** The gap has to be SMALLER than both
+			//   neighbours to be swallowed. @warning with <= , two ONE-character edits a single
+			//   character apart always merged (1 <= 1 on both sides) -- which in Japanese is not an
 			//   edge case but the ordinary sentence: 琥珀猫太郎 -> 琥あ珀犬太郎 came out as one
 			//   change reading "珀猫" -> "あ珀犬", when what happened is that あ was inserted and 猫
-			//   became 犬 (user's report, 2026-08-20; Myers had said exactly that and this rule
-			//   undid it).
-			//   ★Measured against 10 cases outside InDesign before changing it: the ONLY one that
+			//   became 犬. Myers had said exactly that, and this rule undid it.
+			//   Measured against 10 cases outside InDesign before changing it: the ONLY one that
 			//     moves is that one. Everything this rule exists for still merges, because those
-			//     gaps are strictly smaller than their neighbours - "sleeping"->"awake" (1 < 4 and
+			//     gaps are strictly smaller than their neighbours -- "sleeping"->"awake" (1 < 4 and
 			//     1 < 5), "postponed"->"cancelled", and two 2-character edits one character apart
 			//     (1 < 2). A one-character gap between two one-character edits is the only shape
 			//     that <= caught and < does not, and it is precisely the shape that should not be
 			//     caught: there is nothing to say those two edits are one.
-			//   ⚠The header said BOTH things at once - "no longer than EACH" in one sentence and
-			//     "shorter than both" in the next. The implementation followed the first. Fixed
-			//     there too.
+			//   @warning the header said BOTH things at once -- "no longer than EACH" in one sentence
+			//     and "shorter than both" in the next, and the implementation followed the first. Two
+			//     spellings of one rule in one place is how it survived being read.
 			if (gap >= 0 && gap < previousSize && gap < currentSize)
 			{
 				previous.aCount = (current.aStart + current.aCount) - previous.aStart;
@@ -662,9 +661,9 @@ void KCMTextDiff::AlignChangeBoundaries(const std::vector<int32>& a, const std::
 {
 	for (size_t i = 0; i < changes.size(); ++i)
 	{
-		// ★NEIGHBOURS ARE WALLS. A change may rotate through the unchanged run on either side of
-		//   it and no further. Both bounds are honest ones: the previous change is already in its
-		//   final place, and the next has not moved yet, so neither can be crossed by accident.
+		// **NEIGHBOURS ARE WALLS.** A change may rotate through the unchanged run on either side
+		//   of it and no further. Both bounds are honest ones: the previous change is already in
+		//   its final place, and the next has not moved yet, so neither can be crossed by accident.
 		const int32 loA = (i > 0) ? changes[i - 1].aStart + changes[i - 1].aCount : 0;
 		const int32 loB = (i > 0) ? changes[i - 1].bStart + changes[i - 1].bCount : 0;
 		const int32 hiA = (i + 1 < changes.size()) ? changes[i + 1].aStart
@@ -672,10 +671,10 @@ void KCMTextDiff::AlignChangeBoundaries(const std::vector<int32>& a, const std::
 		const int32 hiB = (i + 1 < changes.size()) ? changes[i + 1].bStart
 												   : static_cast<int32>(b.size());
 
-		// ★THE INCUMBENT WINS A TIE. Scoring starts from where the change already is, and a
+		// **THE INCUMBENT WINS A TIE.** Scoring starts from where the change already is, and a
 		//   candidate has to be STRICTLY better to displace it. Without that, an edit already
 		//   sitting at a perfectly good boundary gets dragged to another one exactly as good, for
-		//   no reason the reader could see - and the panel would quote a different phrase every
+		//   no reason the reader could see -- and the panel would quote a different phrase every
 		//   time the surrounding text changed shape.
 		Change best = changes[i];
 		int32 bestScore = ChangeScore(a, b, best);
@@ -705,9 +704,9 @@ void KCMTextDiff::AlignChangeBoundaries(const std::vector<int32>& a, const std::
 			++probe.bStart;
 		}
 
-		// ⚠COUNTS ARE NEVER TOUCHED - only the two starts move, and they move together. That is
-		//   what keeps the edit distance exactly as Myers computed it: every step of the walk
-		//   above hands one common character from one side of the run to the other.
+		// @warning **COUNTS ARE NEVER TOUCHED** -- only the two starts move, and they move
+		//   together. That is what keeps the edit distance exactly as Myers computed it: every
+		//   step of the walk above hands one common character from one side of the run to the other.
 		changes[i] = best;
 	}
 }

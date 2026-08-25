@@ -6,25 +6,25 @@
 //
 //  Reading a story's TEXT and its RUBY out of the snippet XML. Nothing here touches the SDK.
 //
-//  ★★WHY THIS IS A HEADER OF ITS OWN. It was written inside KCMStoryDiffRun.cpp, where it could
-//  only ever be exercised by running a comparison inside InDesign. What it actually does is turn one
-//  string into another, so it can be measured outside - and the moment ruby arrived (2026-08-22) the
-//  parsing stopped being "find <Content>" and started being a small XML reader with state, which is
-//  exactly the kind of code that earns a test.
-//  ⇒ The test is work\kescm-snippet-test, and it includes THIS FILE as it stands - not a copy that
-//    can drift, the way KTTextDiff drifted from KCMTextDiff.
+//  **WHY THIS IS A HEADER OF ITS OWN.** It was written inside KCMStoryDiffRun.cpp, where it
+//  could only ever be exercised by running a comparison inside InDesign. What it actually does
+//  is turn one string into another, so it can be measured outside -- and the moment ruby
+//  arrived the parsing stopped being "find <Content>" and started being a small XML reader with
+//  state, which is exactly the kind of code that earns a test.
+//  The test is work\kescm-snippet-test, and it includes THIS FILE as it stands -- not a copy
+//  that can drift, the way KTTextDiff drifted from KCMTextDiff.
 //
-//  ★★★WHY RUBY IS READ HERE AND NOT FROM THE TEXT MODEL. The SDK has a direct route
+//  **WHY RUBY IS READ HERE AND NOT FROM THE TEXT MODEL.** The SDK has a direct route
 //  (SnpPerformTextAttrRuby::GetRubyStrandInfo: IRubyAttrStrand::GetRubyRun for the run,
-//  kTARubyStringBoss for the string), and this file's RubyFlag / RubyString are that same pair seen
-//  through the snippet - the flag IS the strand's run, the string IS the attribute's value.
-//  The reason to read them HERE is TIME: a comparison is a photograph of one moment, and the text
-//  already comes from this snippet. Reading ruby from the live model instead would put two moments
-//  in one row - the same fault the 2026-08-21 row refresh was written to prevent ("行は文書を引用して
-//  いるので、文書を読み直すものは同じものを読み直さないと1行の中に2つの時点が並ぶ").
+//  kTARubyStringBoss for the string), and this file's RubyFlag / RubyString are that same pair
+//  seen through the snippet -- the flag IS the strand's run, the string IS the attribute's
+//  value. The reason to read them HERE is TIME: a comparison is a photograph of one moment, and
+//  the text already comes from this snippet. Reading ruby from the live model instead would put
+//  two moments in one row -- the same fault the row refresh was written to prevent.
 //
-//  ⚠AN EMPTY RUBY STRING IS NO RUBY, which is the official rule and not an invention here:
-//  GetRubyStrandInfo turns the attribute off when the string it read has length 0.
+//  @warning **AN EMPTY RUBY STRING IS NO RUBY**, which is the official rule and not an
+//   invention here: GetRubyStrandInfo turns its attribute flag off when the string it read has
+//   length 0 ("if the ruby string is empty in the ruby strand, consider ruby to be off").
 //
 //========================================================================================
 
@@ -32,40 +32,42 @@
 #define __KCMSnippetText_h__
 
 #include "BaseType.h"		// int32, bool16
-#include "OMTypes.h"		// nil. ⚠BaseType.h does NOT define it, and this header uses it - without
-							//  this line it only compiles when something else (VCPlugInHeaders.h)
-							//  has been included first, which is exactly the hidden ordering
-							//  dependency the file comment above claims it does not have.
+#include "OMTypes.h"		// nil. @warning BaseType.h does NOT define it, and this header uses it -- without
+							//  this line it only compiles when something else (VCPlugInHeaders.h) has been
+							//  included first, which is exactly the hidden ordering dependency the file comment
+							//  above claims it does not have.
 
 #include <string>
 #include <vector>
 
 /** One stretch of characters carrying ONE character attribute, inside one paragraph.
 
-	★POSITIONS ARE CODE POINTS, counted the way InDesign counts text positions, so a number worked
-	out here lines up with the paragraph offsets the diff already produces (a surrogate pair is one).
+	**POSITIONS ARE CODE POINTS**, counted the way InDesign counts text positions, so a number
+	worked out here lines up with the paragraph offsets the diff already produces (a surrogate
+	pair is one).
 
-	★★ONE TYPE FOR RUBY AND KENTEN (圏点), since 2026-08-22. They are different mechanisms in the
-	SDK - ruby is a STRAND (IRubyAttrStrand, run-based) and kenten is a set of CHARACTER ATTRIBUTES -
-	but what the panel needs of them is identical: a stretch of characters, and a value that says
-	what is sitting over it. Writing the comparison twice would mean fixing it twice.
-	⇒ fValue holds the READING for ruby and the KIND for kenten ("KentenBlackCircle").
+	**ONE TYPE FOR RUBY AND KENTEN.** They are different mechanisms in the SDK -- ruby is a
+	STRAND (IRubyAttrStrand, run-based) and kenten is a set of CHARACTER ATTRIBUTES -- but what
+	the panel needs of them is identical: a stretch of characters, and a value that says what is
+	sitting over it. Writing the comparison twice would mean fixing it twice.
+	So fValue holds the READING for ruby and the KIND for kenten ("KentenBlackCircle").
 */
 struct KCMAttrSpan
 {
 	int32		fStart;		// first character of the base text, within its paragraph
 	int32		fLen;		// how many characters the attribute covers
-	std::string	fValue;		// the reading (ruby) or the kind (kenten), UTF-8. ⚠Never empty
+	std::string	fValue;		// the reading (ruby) or the kind (kenten), UTF-8. @warning never empty
 
-	/** kTrue for GROUP ruby - one reading spread over several base characters (琥珀 -> こはく) -
-		against MONO ruby, where each character has its own (琥 -> こ, 珀 -> はく).
+	/** kTrue for GROUP ruby -- one reading spread over several base characters (琥珀 -> こはく)
+		-- against MONO ruby, where each character has its own (琥 -> こ, 珀 -> はく).
 
-		★It is carried because the two are different typesetting, so turning one into the other IS
+		It is carried because the two are different typesetting, so turning one into the other IS
 		a change even when every reading stays the same. InDesign writes it as RubyType="GroupRuby"
 		and omits the attribute for mono, so mono is the default here too. The pair is the SDK's
-		own: IRubyStyle.h:53-54, kRubyKind_Group / kRubyKind_Mono.
-		⚠RUBY ONLY. Kenten has no such distinction - it is per character by nature - so its spans
-		  always leave this kFalse, and the comparison then never reports a difference in it. */
+		own: IRubyStyle::RubyKind, kRubyKind_Group / kRubyKind_Mono.
+		@warning RUBY ONLY. Kenten has no such distinction -- it is per character by nature -- so
+		  its spans always leave this kFalse, and the comparison then never reports a difference
+		  in it. */
 	bool16		fGroup;
 
 	KCMAttrSpan() : fStart(0), fLen(0), fGroup(kFalse) {}
@@ -75,24 +77,14 @@ struct KCMAttrSpan
 
 typedef std::vector<KCMAttrSpan> KCMAttrSpanList;
 
-/** Everything one paragraph carries OVER its characters - the attributes a change can hide in
-	while the words themselves stay identical (2026-08-22).
-
-	★WHY A STRUCT RATHER THAN ANOTHER OUT-PARAMETER. Ruby was the first, kenten is the second, and
-	the parser's signature would grow a parameter for each. This way the parser answers one thing
-	per paragraph and a third attribute costs a field, not a new argument at every call site.
-	⚠WHAT IS DELIBERATELY NOT IN HERE: applied styles. Finding those was considered and REJECTED
-	  (user's call, 2026-08-22: "スタイルの変更は、逆に無視することにしますね ... 見つけないで").
-	  A paragraph whose text is unchanged and whose style was swapped keeps reading "None".
-*/
 /** One table of the story, and where its first character stands.
 
-	★★WHY THE PAIR AND NOT JUST THE POSITION (2026-08-23). Every table's position is checked
-	against the document's own answer before any cell of it is placed, and to check it you have to
-	know which table you are holding. Tables used to be met in one order only - the reader walked
-	the body from the top and so did the check - but a table inside a CELL is charged to a
-	paragraph that is not finished until that table's own cells have gone by, so the order the
-	anchors come out in is no longer the order the tables are numbered in.
+	**WHY THE PAIR AND NOT JUST THE POSITION.** Every table's position is checked against the
+	document's own answer before any cell of it is placed, and to check it you have to know which
+	table you are holding. Tables used to be met in one order only -- the reader walked the body
+	from the top and so did the check -- but a table inside a CELL is charged to a paragraph that
+	is not finished until that table's own cells have gone by, so the order the anchors come out
+	in is no longer the order the tables are numbered in.
 */
 struct KCMTableAnchor
 {
@@ -103,130 +95,139 @@ struct KCMTableAnchor
 	KCMTableAnchor(int32 ordinal, int32 index) : fOrdinal(ordinal), fIndex(index) {}
 };
 
+/** Everything one paragraph carries OVER its characters -- the attributes a change can hide in
+	while the words themselves stay identical.
+
+	**WHY A STRUCT RATHER THAN ANOTHER OUT-PARAMETER.** Ruby was the first, kenten is the second,
+	and the parser's signature would grow a parameter for each. This way the parser answers one
+	thing per paragraph and a third attribute costs a field, not a new argument at every call
+	site.
+	@warning **what is deliberately NOT in here: applied styles.** Finding those was considered
+	  and rejected. A paragraph whose text is unchanged and whose style was swapped keeps reading
+	  "None".
+*/
 struct KCMParaAttrs
 {
 	KCMAttrSpanList	fRuby;
 
-	/** ⚠★★READ, BUT NOT REPORTED (2026-08-23, user's call: "ストーリーモードの StoryEdit にでるのは、
-		テキストの変更と、ルビだけで"). Kenten spans were compared for one day and are not any more -
-		KCMStoryDiffRun's AddAttrOnlyChanges is where that was switched off, and it is the only
-		place that has to change to switch it back on.
-		★THE READING IS KEPT because it costs nothing (it comes off the same pass as the ruby) and
+	/** @warning **READ, BUT NOT REPORTED.** Kenten spans were compared for one day and are not
+		any more -- KCMStoryDiffRun's AddAttrOnlyChanges is where that was switched off, and it is
+		the only place that has to change to switch it back on.
+		THE READING IS KEPT because it costs nothing (it comes off the same pass as the ruby) and
 		because getting it right cost a snippet from the user: five characters marked with one kind
-		come out as ONE range, where the same five with ruby come out as five. The test harness still
-		proves that, so the knowledge cannot rot while it waits. */
+		come out as ONE range, where the same five with ruby come out as five. The test harness
+		still proves that, so the knowledge cannot rot while it waits. */
 	KCMAttrSpanList	fKenten;
 
-	/** Characters the text model counts after this paragraph that are not in its text (2026-08-22).
+	/** Characters the text model counts after this paragraph that are not in its text.
 
-		★★WHY IT EXISTS: TABLES. A table is not made of text, but ITextModel counts it, and every
+		**WHY IT EXISTS: TABLES.** A table is not made of text, but ITextModel counts it, and every
 		position worked out from the XML is off by that much until it is added back. The comparison
 		checks exactly this (KCMStoryDiffRun's LengthAgrees) and refuses the whole story when it
 		does not add up, which is why a document with ONE table used to produce no differences.
 
-		★★★WHAT A TABLE COSTS, MEASURED CHARACTER BY CHARACTER (2026-08-23; seven shapes read out
-		  of the running document with TextIterator, printed as [index]=hex):
+		**WHAT A TABLE COSTS, MEASURED CHARACTER BY CHARACTER** (seven shapes read out of the
+		  running document with TextIterator, printed as [index]=hex):
 
 		      [0016] then [0017] x (BodyRowCount - 1), CONTIGUOUS, where the table stands
 
-		  = kTextChar_Table and kTextChar_TableContinued (TextChar.h:58-59).
-		  ⚠HEADER AND FOOTER ROWS COST NOTHING - two body rows plus a header is TWO characters, not
-		    three - a table split across two frames costs no more than one in a single frame, and
-		    the cells (which live after the whole of the body) are text+break each, with no row
-		    terminator among them.
-		⇒ TotalLength = text + BodyRowCount per table + Σ(cell text) + 1 per cell.
-		The "+1 per cell" needs nothing here - a cell IS a paragraph, and ParagraphStarts already
+		  = kTextChar_Table and kTextChar_TableContinued (TextChar.h).
+		  @warning **HEADER AND FOOTER ROWS COST NOTHING** -- two body rows plus a header is TWO
+		    characters, not three -- a table split across two frames costs no more than one in a
+		    single frame, and the cells (which live after the whole of the body) are text+break
+		    each, with no row terminator among them.
+		So TotalLength = text + BodyRowCount per table + sum(cell text) + 1 per cell.
+		The "+1 per cell" needs nothing here -- a cell IS a paragraph, and ParagraphStarts already
 		adds one break character per paragraph. What this field carries is the table's own run.
 
-		⚠★★THE READING THIS REPLACED (2026-08-22) said "one for the table, one at the end of every
-		  row but the last, charged to the CELLS". For a table with no header row that is the same
-		  TOTAL, so it passed LengthAgrees for every table ever tested - while placing every body
+		@warning **the reading this replaced** said "one for the table, one at the end of every row
+		  but the last, charged to the CELLS". For a table with no header row that is the same
+		  TOTAL, so it passed LengthAgrees for every table ever tested -- while placing every body
 		  position after a table (BodyRowCount - 1) characters too EARLY (measured in InDesign: the
 		  jump lit '後章' where the change was '章節'). And with a header row the total was wrong
 		  outright, so those stories silently produced no differences at all (model=32 computed=33).
-		  ⇒ ★★★A TOTAL THAT AGREES SAYS NOTHING ABOUT WHERE THE CHARACTERS ARE.
-		⚠A merged cell is simply one cell fewer; nothing else changes (measured). */
+		  **A TOTAL THAT AGREES SAYS NOTHING ABOUT WHERE THE CHARACTERS ARE.**
+		@warning a merged cell is simply one cell fewer; nothing else changes (measured). */
 	int32				fExtraChars;
 
-	/** The same invisible characters, but standing BEFORE this paragraph rather than after it
-		(2026-08-23).
+	/** The same invisible characters, but standing BEFORE this paragraph rather than after it.
 
-		★★WHY BOTH ENDS ARE NEEDED. fExtraChars above is charged to the paragraph that has just been
-		finished, which is the right place for every table but one: a story that BEGINS with a table
-		has no finished paragraph to charge, and the character was silently dropped. A text frame
-		holding nothing but a table is the ordinary way to make a table, so this was not an edge:
-		the count came out one short, LengthAgrees refused the story, and it produced no differences
-		at all - the very fault the table support was written to cure.
-		★MEASURED, not reasoned about (2026-08-23, work/kescm-snippet-test): the same table with and
-		without a leading paragraph must differ by exactly that paragraph's characters plus its
-		break. It differed by one more.
-		⚠ONLY THE STORY'S FIRST PARAGRAPH CAN CARRY THIS, because it is only set when nothing has
-		  been finished yet. Anything walking a RUN of paragraphs may therefore leave it alone -
-		  the run's own base position has it already (see IndexInStory below). */
+		**WHY BOTH ENDS ARE NEEDED.** fExtraChars above is charged to the paragraph that has just
+		been finished, which is the right place for every table but one: a story that BEGINS with a
+		table has no finished paragraph to charge, and the character was silently dropped. A text
+		frame holding nothing but a table is the ordinary way to make a table, so this was not an
+		edge: the count came out one short, LengthAgrees refused the story, and it produced no
+		differences at all -- the very fault the table support was written to cure.
+		MEASURED, not reasoned about (work/kescm-snippet-test): the same table with and without a
+		leading paragraph must differ by exactly that paragraph's characters plus its break. It
+		differed by one more.
+		@warning **only the story's first paragraph can carry this**, because it is only set when
+		  nothing has been finished yet. Anything walking a RUN of paragraphs may therefore leave it
+		  alone -- the run's own base position has it already (see IndexInStory below). */
 	int32				fLeadingChars;
 
-	/** How many TABLES begin at those two boundaries (2026-08-23).
+	/** How many TABLES begin at those two boundaries.
 
-		★★WHY A COUNT IS NEEDED AS WELL AS A LENGTH. The two fields above are a SUM, and a table
-		now contributes a RUN of characters rather than one - so the sum alone no longer says where
+		**WHY A COUNT IS NEEDED AS WELL AS A LENGTH.** The two fields above are a SUM, and a table
+		now contributes a RUN of characters rather than one -- so the sum alone no longer says where
 		each table's FIRST character stands. That first character is the table's anchor, and
 		BodyParagraphStarts reports one of them per table so that the resolver can check them
-		against the document's own answer (ITextStoryThreadDict::GetAnchorTextRange) - which is what
-		catches a story shape this reader does not understand.
-		⚠TWO TABLES SHARING ONE BOUNDARY cannot be placed from a sum (nothing says how the
-		  characters divide between them), so no anchor is reported for that shape at all and the
-		  story is refused rather than aimed wrongly. */
+		against the document's own answer (ITextStoryThreadDict::GetAnchorTextRange) -- which is
+		what catches a story shape this reader does not understand.
+		@warning **two tables sharing one boundary** cannot be placed from a sum (nothing says how
+		  the characters divide between them), so no anchor is reported for that shape at all and
+		  the story is refused rather than aimed wrongly. */
 	int32				fExtraTables;
 	int32				fLeadingTables;
 
-	/** WHICH table begins at those two boundaries - its fTableOrdinal - or -1 for none.
+	/** WHICH table begins at those two boundaries -- its fTableOrdinal -- or -1 for none.
 
-		★★WHY THE NUMBER AND NOT JUST THE COUNT (2026-08-23). Every table's anchor is checked
-		against the document's own answer, and to check it you have to know which table you are
-		looking at. While tables were only ever in the body that could be left to ORDER: the body
-		walk met them from the top, and so did the reader. A NESTED table breaks that - the
-		paragraph carrying its charge is a cell's, finished only after the inner table's own cells
-		have been pushed, so the order the anchors come out in is no longer the order the tables
-		are numbered in.
-		⚠Only the FIRST at each boundary is kept, because a boundary carrying two is refused
+		**WHY THE NUMBER AND NOT JUST THE COUNT.** Every table's anchor is checked against the
+		document's own answer, and to check it you have to know which table you are looking at.
+		While tables were only ever in the body that could be left to ORDER: the body walk met them
+		from the top, and so did the reader. A NESTED table breaks that -- the paragraph carrying
+		its charge is a cell's, finished only after the inner table's own cells have been pushed, so
+		the order the anchors come out in is no longer the order the tables are numbered in.
+		@warning only the FIRST at each boundary is kept, because a boundary carrying two is refused
 		  anyway (see the counts above). */
 	int32				fExtraTable;
 	int32				fLeadingTable;
 
-	/** Which table cell this paragraph IS, if it is one at all (2026-08-23).
+	/** Which table cell this paragraph IS, if it is one at all.
 
-		★★★WHY IT EXISTS: THE XML AND THE TEXT MODEL DO NOT AGREE ABOUT ORDER. In the snippet a
-		table's cells sit between the story's own <Content>, exactly where the table stands. The text
-		model puts them somewhere else, and says so plainly:
+		**WHY IT EXISTS: THE XML AND THE TEXT MODEL DO NOT AGREE ABOUT ORDER.** In the snippet a
+		table's cells sit between the story's own <Content>, exactly where the table stands. The
+		text model puts them somewhere else, and says so plainly:
 
 		    "The Text content of the Table ... consists of zero or more contiguous TextStoryThreads
 		     that are ALWAYS at greater TextIndex than the Text Story Thread that the Table Model is
-		     anchored in."                          -- ITableTextContent.h:41-44
+		     anchored in."                                       -- ITableTextContent.h, at the top
 
-		⇒ Counting straight down the XML puts every position after a table wrong: text that follows
-		the table comes out too far along (by the cells), and the cells themselves come out too early
-		(by the text that follows). ⚠LengthAgrees cannot see it - it compares TOTALS, and the totals
-		are right either way. MEASURED 2026-08-23: a change to the paragraph AFTER a table selected a
-		character inside a cell instead; a change inside a cell selected the last character of the
-		story; a third one fell outside the story altogether and selected nothing.
+		So counting straight down the XML puts every position after a table wrong: text that follows
+		the table comes out too far along (by the cells), and the cells themselves come out too
+		early (by the text that follows).
+		@warning LengthAgrees cannot see it -- it compares TOTALS, and the totals are right either
+		 way. MEASURED: a change to the paragraph AFTER a table selected a character inside a cell
+		 instead; a change inside a cell selected the last character of the story; a third one fell
+		 outside the story altogether and selected nothing.
 
-		★★THEY ARE ON EVERY PARAGRAPH OF THE CELL, not just its first (2026-08-23). A cell can
-		hold several: anyone who presses Return inside one, and ★EVERY MERGED CELL, because merging
-		moves the other cells' paragraphs into the survivor (measured - four cells came back as one
-		holding 'c0/c1/c2/c3'). The reader used to lose the identity at the <Br />, because a flush
-		resets these fields, so the halves after the first looked like BODY text sitting inside a
-		table: the story was refused on the cell length (7 against 3) and produced no differences at
-		all - with the TOTAL agreeing (27 against 27), so no length check could have found it.
+		**THEY ARE ON EVERY PARAGRAPH OF THE CELL, not just its first.** A cell can hold several:
+		anyone who presses Return inside one, and EVERY MERGED CELL, because merging moves the other
+		cells' paragraphs into the survivor (measured -- four cells came back as one holding
+		'c0/c1/c2/c3'). The reader used to lose the identity at the <Br />, because a flush resets
+		these fields, so the halves after the first looked like BODY text sitting inside a table:
+		the story was refused on the cell length (7 against 3) and produced no differences at all --
+		with the TOTAL agreeing (27 against 27), so no length check could have found it.
 
-		★These three fields say WHICH cell, so the position can be asked of the document instead of
-		counted (ITextStoryThreadDict::QueryThread(GetGridID(GridAddress)) -> GetTextStart), which is
-		the road SnpIterTableUseDictHier calls the recommended one. Reading them is the only way to
-		tell a cell from a paragraph after the fact: the text of the two is indistinguishable.
+		These three fields say WHICH cell, so the position can be asked of the document instead of
+		counted (ITextStoryThreadDict::QueryThread(GetGridID(GridAddress)) -> GetTextStart), which
+		is the road SnpIterTableUseDictHier calls the recommended one. Reading them is the only way
+		to tell a cell from a paragraph after the fact: the text of the two is indistinguishable.
 
-		★fTableOrdinal counts EVERY table in the order it appears in the story, nested ones
-		  included (2026-08-23). ⚠It is therefore not a running counter: after an inner table
-		  closes, the cells that follow belong to the OUTER table again - see the stack of open
-		  tables in ExtractParagraphs. */
+		fTableOrdinal counts EVERY table in the order it appears in the story, nested ones included.
+		  @warning it is therefore not a running counter: after an inner table closes, the cells that
+		    follow belong to the OUTER table again -- see the stack of open tables in
+		    ExtractParagraphs. */
 	enum { kNotACell = -1 };
 
 	int32				fTableOrdinal;	// kNotACell, or 0.. = which table this cell belongs to
@@ -240,12 +241,12 @@ struct KCMParaAttrs
 
 	/** Whether this paragraph is a table cell whose position must be asked of the text model.
 
-		★A CELL OF A NESTED TABLE IS A CELL LIKE ANY OTHER (2026-08-23). It used to be marked
-		apart (kNestedCell) so that the resolver could refuse the story: the inner table's own
-		characters were not counted, so such a story never added up, and once cells were placed by
-		asking rather than by counting it could have added up and still been placed wrongly. Both
-		reasons are gone - the inner table is charged to the cell it stands in, and the document is
-		asked about its cells the same way it is asked about any others. */
+		**A CELL OF A NESTED TABLE IS A CELL LIKE ANY OTHER.** It used to be marked apart
+		(kNestedCell) so that the resolver could refuse the story: the inner table's own characters
+		were not counted, so such a story never added up, and once cells were placed by asking rather
+		than by counting it could have added up and still been placed wrongly. Both reasons are gone
+		-- the inner table is charged to the cell it stands in, and the document is asked about its
+		cells the same way it is asked about any others. */
 	bool16 IsCell() const { return fTableOrdinal >= 0; }
 };
 
@@ -356,9 +357,9 @@ inline void DecodeEntities(std::string& text)
 	text.swap(out);
 }
 
-/** How many CODE POINTS a UTF-8 string holds - continuation bytes (10xxxxxx) are not counted.
+/** How many CODE POINTS a UTF-8 string holds -- continuation bytes (10xxxxxx) are not counted.
 
-	★This is the unit the whole comparison works in, so a four-byte character counts once here
+	This is the unit the whole comparison works in, so a four-byte character counts once here
 	exactly as it counts once as a TextIndex.
 */
 inline int32 CountCodePoints(const std::string& utf8)
@@ -372,13 +373,6 @@ inline int32 CountCodePoints(const std::string& utf8)
 	return n;
 }
 
-/** The value of one attribute of a start tag, or "" when the tag does not carry it.
-
-	@param tag the tag WITHOUT its angle brackets, e.g. `CharacterStyleRange RubyFlag="1"`.
-	@param name the attribute to look for.
-	⚠Matched as ` name="`, with the leading space, so that RubyString is not found inside a longer
-	  attribute name that happens to end with it.
-*/
 /** A whole non-negative number out of an attribute value, or -1 when it is not one. */
 inline int32 ParseCount(const std::string& text)
 {
@@ -394,6 +388,13 @@ inline int32 ParseCount(const std::string& text)
 	return value;
 }
 
+/** The value of one attribute of a start tag, or "" when the tag does not carry it.
+
+	@param tag the tag WITHOUT its angle brackets, e.g. `CharacterStyleRange RubyFlag="1"`.
+	@param name the attribute to look for.
+	@warning matched as ` name="`, with the leading space, so that RubyString is not found inside
+	  a longer attribute name that happens to end with it.
+*/
 inline std::string AttrValue(const std::string& tag, const std::string& name)
 {
 	const std::string needle = " " + name + "=\"";
@@ -411,40 +412,23 @@ inline std::string AttrValue(const std::string& tag, const std::string& name)
 	return value;
 }
 
-/** Read the story's text out of the snippet: <Content> holds it, <Br /> ends a paragraph.
+/** How long the element name is, when this tag opens a PAGE ITEM that stands in the text as
+	one character -- and 0 when it does not.
 
-	★Only the region between <Story and </Story> is looked at. The snippet also carries every
-	object the story depends on - inks, fonts, styles, cross-reference formats - and some of those
-	have text of their own that must not be mistaken for the story's. (Measured in KohakuTest:
-	the dependencies are more than eight tenths of the file and contribute nothing to the diff.)
-
-	★★THE ATTRIBUTES ARE COLLECTED ON THE WAY THROUGH (ruby 2026-08-22, kenten the same day). Both
-	live on the <CharacterStyleRange> that encloses the text they sit over, so they are read when
-	that tag opens and forgotten when it closes. Positions are counted in code points as the text is
-	appended, so they line up with the paragraph offsets the diff produces.
-
-	@param xml the snippet.
-	@param paragraphs [out] cleared, then filled - one entry per paragraph.
-	@param attrsPerPara [out] when not nil: cleared, then filled to the SAME length as paragraphs,
-		each entry holding that paragraph's ruby and kenten spans in reading order.
-*/
-/** How long the element name is, when this tag opens a PAGE ITEM that stands in the text as one
-	character - and 0 when it does not.
-
-	★★★ONE CHARACTER, MEASURED (2026-08-23, work\anchortest\probe3.jsx). Five kinds of object were
-	anchored into a ten-character story and the story came out fifteen: Rectangle, Oval, Polygon,
+	**ONE CHARACTER, MEASURED** (work\anchortest\probe3.jsx). Five kinds of object were anchored
+	into a ten-character story and the story came out fifteen: Rectangle, Oval, Polygon,
 	GraphicLine and TextFrame. A CUSTOM-positioned one cost the same as an inline one, and one
-	inside a table CELL cost that cell one character - the item stands under
+	inside a table CELL cost that cell one character -- the item stands under
 	Cell > ParagraphStyleRange > CharacterStyleRange exactly as it stands in the body.
 
-	★THE LIST IS DELIBERATE, NOT A CATCH-ALL. Anything not named here is skipped as before, and a
-	story whose length then fails to add up is REFUSED - which is the safe way round. A catch-all
-	("everything that is not Content or Br") would silently count things that are not one character:
-	<Footnote>, <Note>, <Change> and <HyperlinkTextSource> all stand in the same place and are
-	containers, not objects.
+	**THE LIST IS DELIBERATE, NOT A CATCH-ALL.** Anything not named here is skipped as before,
+	and a story whose length then fails to add up is REFUSED -- which is the safe way round. A
+	catch-all ("everything that is not Content or Br") would silently count things that are not
+	one character: <Footnote>, <Note>, <Change> and <HyperlinkTextSource> all stand in the same
+	place and are containers, not objects.
 
-	⚠Group is on the list and its CONTENTS are not: the whole element is skipped, so a group holding
-	  three rectangles is one character, which is what the text model says it is.
+	@warning Group is on the list and its CONTENTS are not: the whole element is skipped, so a
+	  group holding three rectangles is one character, which is what the text model says it is.
 */
 inline size_t AnchoredItemTagLen(const std::string& xml, size_t lt)
 {
@@ -460,8 +444,8 @@ inline size_t AnchoredItemTagLen(const std::string& xml, size_t lt)
 		if (xml.compare(lt + 1, n, kNames[i]) != 0)
 			continue;
 
-		// ⚠THE NAME HAS TO END HERE. Without this, "<Rectangle" also matches the opening of
-		//   <RectanglePreference> and the reader would put a character where there is none.
+		// @warning **THE NAME HAS TO END HERE.** Without this, "<Rectangle" also matches the
+		//   opening of <RectanglePreference> and the reader would put a character where there is none.
 		const char after = (lt + 1 + n < xml.size()) ? xml[lt + 1 + n] : '\0';
 		if (after == ' ' || after == '/' || after == '>' || after == '\t' || after == '\n' || after == '\r')
 			return n;
@@ -471,13 +455,14 @@ inline size_t AnchoredItemTagLen(const std::string& xml, size_t lt)
 
 /** One past the end of the element opening at `lt`, whose name is `nameLen` long.
 
-	★★SKIPPED WHOLE, NOT STEPPED INTO. A real page item carries its entire geometry - the anchored
-	TextFrame measured on 2026-08-23 was 3,781 characters of <Properties> and <PathGeometry> - and
-	the reader must not meet any of it. ⚠It matters for correctness and not only for speed: this
-	parser treats every <Content> it meets as body text, so a <Content> anywhere inside the element
-	would arrive in the story.
+	**SKIPPED WHOLE, NOT STEPPED INTO.** A real page item carries its entire geometry -- the
+	anchored TextFrame measured here was 3,781 characters of <Properties> and <PathGeometry> --
+	and the reader must not meet any of it.
+	@warning it matters for correctness and not only for speed: this parser treats every
+	 <Content> it meets as body text, so a <Content> anywhere inside the element would arrive in
+	 the story.
 
-	⚠Nesting is counted, because a <Group> holds other page items with the same names.
+	@warning nesting is counted, because a <Group> holds other page items with the same names.
 */
 inline size_t SkipItemElement(const std::string& xml, size_t lt, size_t nameLen, size_t storyEnd)
 {
@@ -522,6 +507,23 @@ inline size_t SkipItemElement(const std::string& xml, size_t lt, size_t nameLen,
 	return at;
 }
 
+/** Read the story's text out of the snippet: <Content> holds it, <Br /> ends a paragraph.
+
+	Only the region between <Story and </Story> is looked at. The snippet also carries every
+	object the story depends on -- inks, fonts, styles, cross-reference formats -- and some of
+	those have text of their own that must not be mistaken for the story's. (Measured: the
+	dependencies are more than eight tenths of the file and contribute nothing to the diff.)
+
+	**THE ATTRIBUTES ARE COLLECTED ON THE WAY THROUGH.** Both ruby and kenten live on the
+	<CharacterStyleRange> that encloses the text they sit over, so they are read when that tag
+	opens and forgotten when it closes. Positions are counted in code points as the text is
+	appended, so they line up with the paragraph offsets the diff produces.
+
+	@param xml the snippet.
+	@param paragraphs [out] cleared, then filled -- one entry per paragraph.
+	@param attrsPerPara [out] when not nil: cleared, then filled to the SAME length as
+		paragraphs, each entry holding that paragraph's ruby and kenten spans in reading order.
+*/
 inline void ExtractParagraphs(const std::string& xml,
 							  std::vector<std::string>& paragraphs,
 							  std::vector<KCMParaAttrs>* attrsPerPara)
@@ -545,32 +547,33 @@ inline void ExtractParagraphs(const std::string& xml,
 	int32 paraPos = 0;					// code points appended to `current` so far
 	size_t pos = storyStart;
 
-	// ★★★TABLES (2026-08-22). A table lives INSIDE the story - its cells' <Content> sits between the
-	//   story's own - so reading every <Content> the way this used to did two things at once: it
+	// **TABLES.** A table lives INSIDE the story -- its cells' <Content> sits between the
+	//   story's own -- so reading every <Content> the way this used to did two things at once: it
 	//   glued the cells onto whatever paragraph the table interrupted, and it made the character
 	//   count disagree with ITextModel::TotalLength. The second one is what the reader saw: the
-	//   comparison's LengthAgrees guard refused the whole story, so a document with a table got NO
-	//   text differences at all - and no ruby or kenten either, since those are found after it.
+	//   comparison's LengthAgrees guard refused the whole story, so a document with a table got
+	//   NO text differences at all -- and no ruby or kenten either, since those are found after
+	//   it.
 	//
-	// ★A CELL IS A PARAGRAPH (user's call, 2026-08-22: "1つのセルを1つの段落様に考えないとかな、
-	//   1つのセルのなかで変化しているか、追加か、削除かですよね"). That is all the diff needs: cells
-	//   become elements of the same sequence the paragraphs are in, so a rewritten cell comes out as
-	//   a change, an added row as insertions and a deleted one as deletions - with no new machinery.
+	// **A CELL IS A PARAGRAPH.** That is all the diff needs: cells become elements of the same
+	//   sequence the paragraphs are in, so a rewritten cell comes out as a change, an added row
+	//   as insertions and a deleted one as deletions -- with no new machinery.
 	//
-	// ★★HOW MANY CHARACTERS A TABLE IS, measured 2026-08-22 on five documents (0/4/6/6/8 cells) and
+	// **HOW MANY CHARACTERS A TABLE IS**, measured on five documents (0/4/6/6/8 cells) and
 	//   checked against a sixth:
 	//        TotalLength = text + 1 (the table's own anchor character)
-	//                           + Σ(cell contents) + one per cell + (rows - 1)
-	//   ⚠The last row has no terminator, which is why it is rows-1 and not rows. All five agreed
-	//     exactly; the real document came to 52 against a measured 52.
-	// ★★★A TABLE INSIDE A TABLE (2026-08-23). MEASURED FIRST, on a 2x2 table whose cell holds a
-	//   2x1 one: ITextModel::TotalLength came to 42, and 42 is what the ordinary rule gives when it
-	//   is applied ONCE MORE - body 16 (its own text plus the OUTER table's two characters), outer
+	//                           + sum(cell contents) + one per cell + (rows - 1)
+	//   @warning the last row has no terminator, which is why it is rows-1 and not rows. All
+	//     five agreed exactly; the real document came to 52 against a measured 52.
+	// **A TABLE INSIDE A TABLE.** MEASURED FIRST, on a 2x2 table whose cell holds a 2x1 one:
+	//   ITextModel::TotalLength came to 42, and 42 is what the ordinary rule gives when it is
+	//   applied ONCE MORE -- body 16 (its own text plus the OUTER table's two characters), outer
 	//   cells 18 (one of which is the INNER table's two characters and its break), inner cells 8.
-	//   ⇒ The rule is not "tables in the body"; it is "a table charges the thread it stands in",
-	//     and a cell IS a thread. So the same three counters do for both, and what has to be kept
+	//   So the rule is not "tables in the body"; it is "a table charges the thread it stands in",
+	//     and a cell IS a thread. The same three counters do for both, and what has to be kept is
+	//     the PLACE: which table a cell belongs to, and whose paragraph a nested table charges.
 	//     is the PLACE: which table a cell belongs to, and whose paragraph a nested table charges.
-	int32 tableDepth = 0;				// >0 while inside a table (⚠tables can nest)
+	int32 tableDepth = 0;				// >0 while inside a table (tables can nest)
 	int32 nextTableOrdinal = 0;			// every table, nested ones included, in the order they appear
 	std::vector<int32> openTables;		// the ordinal of each table now open, innermost last
 	int32 cellOrdinal = KCMParaAttrs::kNotACell;	// the cell being read, kept across its breaks
@@ -580,12 +583,12 @@ inline void ExtractParagraphs(const std::string& xml,
 	/* Suspended
 	   The paragraph of the cell a nested table stands in, put aside while that table is read.
 
-	   ★★WHY IT IS PUT ASIDE RATHER THAN FINISHED. The parent cell's paragraph is not over: the
-	   table stands inside it, and the cell may hold text after it. Finishing it here would give the
-	   cell one paragraph too many, and its run would then be one break longer than the thread the
-	   document reports - which KCMStoryCellBases refuses. ⇒ Everything the reader is holding for
-	   that paragraph is saved, the inner table is read from a clean slate, and the paragraph is
-	   picked up again at </Table>, still charged with the characters the inner table costs.
+	   **WHY IT IS PUT ASIDE RATHER THAN FINISHED.** The parent cell's paragraph is not over: the
+	   table stands inside it, and the cell may hold text after it. Finishing it here would give
+	   the cell one paragraph too many, and its run would then be one break longer than the thread
+	   the document reports -- which KCMStoryCellBases refuses. So everything the reader is holding
+	   for that paragraph is saved, the inner table is read from a clean slate, and the paragraph
+	   is picked up again at </Table>, still charged with the characters the inner table costs.
 	*/
 	struct Suspended
 	{
@@ -595,8 +598,8 @@ inline void ExtractParagraphs(const std::string& xml,
 		int32				fCellOrdinal;
 		int32				fCellRow;
 		int32				fCellCol;
-		// ⚠The character range state as well: the inner table's cells open and close ranges of
-		//   their own, which would otherwise leave the parent's looking closed.
+		// @warning the character range state as well: the inner table's cells open and close ranges
+		//   of their own, which would otherwise leave the parent's looking closed.
 		std::string			fOpenRuby;
 		bool16				fOpenGroup;
 		bool16				fOpenContinues;
@@ -605,9 +608,9 @@ inline void ExtractParagraphs(const std::string& xml,
 	};
 	std::vector<Suspended> suspended;
 
-	// Finish the paragraph being built and start a new one. ★ONE PLACE, because a paragraph is now
-	// ended by three different things - a <Br />, a cell closing, and the end of the story - and the
-	// three must agree about what "finish" means (decode, push, push the attributes, reset).
+	// Finish the paragraph being built and start a new one. **ONE PLACE**, because a paragraph is
+	// now ended by three different things -- a <Br />, a cell closing, and the end of the story --
+	// and the three must agree about what "finish" means (decode, push, push the attributes, reset).
 	struct Flush
 	{
 		static void Do(std::string& current, KCMParaAttrs& attrs, int32& paraPos,
@@ -624,9 +627,9 @@ inline void ExtractParagraphs(const std::string& xml,
 		}
 	};
 
-	// The cell a paragraph belongs to. ★Put on the paragraph AFTER EVERY FLUSH rather than once
+	// The cell a paragraph belongs to. Put on the paragraph AFTER EVERY FLUSH rather than once
 	// when the cell opens, because a cell may hold more than one paragraph and a flush resets the
-	// attributes - see KCMParaAttrs::fTableOrdinal.
+	// attributes -- see KCMParaAttrs::fTableOrdinal.
 	struct Stamp
 	{
 		static void Cell(KCMParaAttrs& attrs, int32 ordinal, int32 row, int32 col)
@@ -649,47 +652,45 @@ inline void ExtractParagraphs(const std::string& xml,
 			if (gt == std::string::npos || gt > storyEnd)
 				break;
 
-			// ★★THE WHOLE RUN AT ONCE, AND OUT OF THE TABLE'S OWN TAG. A table costs one
-			//   character per BODY row (KCMParaAttrs::fExtraChars has the measurements), and
-			//   BodyRowCount is an attribute of <Table> in every snippet InDesign writes - so
-			//   the cost is known HERE, where the run belongs, instead of being pieced together
-			//   from the cells as they go by.
-			//   ⚠★Header and footer rows are not in that number and must not be: they cost
-			//     nothing (measured). Counting row BOUNDARIES instead counted them, which made
-			//     the total wrong and refused every story holding a table with a header row.
+			// **THE WHOLE RUN AT ONCE, AND OUT OF THE TABLE'S OWN TAG.** A table costs one character
+			//   per BODY row (KCMParaAttrs::fExtraChars has the measurements), and BodyRowCount is an
+			//   attribute of <Table> in every snippet InDesign writes -- so the cost is known HERE,
+			//   where the run belongs, instead of being pieced together from the cells as they go by.
+			//   @warning header and footer rows are not in that number and must not be: they cost
+			//     nothing (measured). Counting row BOUNDARIES instead counted them, which made the
+			//     total wrong and refused every story holding a table with a header row.
 			const std::string tableTag(xml, lt, gt - lt);
 			const int32 declaredRows = ParseCount(AttrValue(tableTag, "BodyRowCount"));
-			// ⚠A table always occupies at least its own character. If the attribute were ever
+			// @warning a table always occupies at least its own character. If the attribute were ever
 			//   missing this keeps the reading honest for the ordinary one-row case and lets
 			//   LengthAgrees refuse anything larger, rather than guessing a number.
 			const int32 tableChars = (declaredRows >= 1) ? declaredRows : 1;
 
-			// ★★★A TABLE CHARGES THE PARAGRAPH IT STANDS IN, AND THAT PARAGRAPH IS NOT OVER.
-			//   ⚠IT IS NOT "THE PARAGRAPH LAST FINISHED" EITHER, which is what this used to charge
-			//     (Charge::Table, removed 2026-08-23). For a table in the body those two are the
-			//     same thing whenever a <Br /> stands in front of it - the ordinary shape - but
-			//     they part company twice:
-			//       - a table at the very START of a story or of a cell has no finished paragraph
-			//         to charge, and the charge went onto the paragraph being built, which the
-			//         table's own FIRST CELL then became: the body walk had to read a cell's
-			//         counters to find the anchor, and could no longer skip cells whole;
-			//       - a table inside a cell finished last the PREVIOUS cell's paragraph, which is
-			//         a different thread altogether - the right total in the wrong place.
-			//   ⇒ The paragraph the table stands in is put aside here, charged, and picked up again
-			//     at </Table>. The cells read in between cannot inherit anything from it.
-			//   ⚠In front of its text when there is none yet (the ordinary shape - a <Br /> or a
-			//     <Cell> has just ended the previous paragraph), behind it when there is. Both land
-			//     on the SAME paragraph, so its length is right either way; which end it is decides
-			//     where the paragraph's text is taken to start.
+			// **A TABLE CHARGES THE PARAGRAPH IT STANDS IN, AND THAT PARAGRAPH IS NOT OVER.**
+			//   @warning **it is not "the paragraph last finished" either**, which is what this used to
+			//     charge. For a table in the body those two are the same thing whenever a <Br /> stands
+			//     in front of it -- the ordinary shape -- but they part company twice:
+			//       - a table at the very START of a story or of a cell has no finished paragraph to
+			//         charge, and the charge went onto the paragraph being built, which the table's own
+			//         FIRST CELL then became: the body walk had to read a cell's counters to find the
+			//         anchor, and could no longer skip cells whole;
+			//       - a table inside a cell finished last the PREVIOUS cell's paragraph, which is a
+			//         different thread altogether -- the right total in the wrong place.
+			//   So the paragraph the table stands in is put aside here, charged, and picked up again at
+			//     </Table>. The cells read in between cannot inherit anything from it.
+			//   @warning in front of its text when there is none yet (the ordinary shape -- a <Br /> or
+			//     a <Cell> has just ended the previous paragraph), behind it when there is. Both land on
+			//     the SAME paragraph, so its length is right either way; which end it is decides where
+			//     the paragraph's text is taken to start.
 			//
-			// ★★AND ONE THING THE BODY DOES THAT A CELL MUST NOT: END THE PARAGRAPH FIRST. In the
+			// **AND ONE THING THE BODY DOES THAT A CELL MUST NOT: END THE PARAGRAPH FIRST.** In the
 			//   body, text before a table and text after it have always been read as two paragraphs
-			//   (measured that way: 53 against the model's 52, and 21 against 20, when an EMPTY one
-			//   was invented as well - hence the "not empty" test). A CELL cannot do that: a cell's
+			//   (measured that way: 53 against the model's 52, and 21 against 20, when an EMPTY one was
+			//   invented as well -- hence the "not empty" test). A CELL cannot do that: a cell's
 			//   paragraphs are found by ADJACENCY (CellRunEnd), and the inner table's own cells are
-			//   about to be pushed between them - so the two halves would no longer be a run, the
-			//   run's length would come out short, and KCMStoryCellBases would refuse the story.
-			//   ⇒ inside a cell the paragraph is kept whole and simply put aside.
+			//   about to be pushed between them -- so the two halves would no longer be a run, the run's
+			//   length would come out short, and KCMStoryCellBases would refuse the story.
+			//   So inside a cell the paragraph is kept whole and simply put aside.
 			if (tableDepth == 0 && !current.empty())
 				Flush::Do(current, currentAttrs, paraPos, paragraphs, attrsPerPara);
 
@@ -747,8 +748,8 @@ inline void ExtractParagraphs(const std::string& xml,
 				if (!openTables.empty())
 					openTables.pop_back();
 
-				// ★Back to the paragraph this table stood in, exactly as it was left - the body's
-				//   when the table was a top-level one, a cell's when it was nested.
+				// Back to the paragraph this table stood in, exactly as it was left -- the body's when
+				//   the table was a top-level one, a cell's when it was nested.
 				if (!suspended.empty())
 				{
 					const Suspended& held = suspended.back();
@@ -770,10 +771,10 @@ inline void ExtractParagraphs(const std::string& xml,
 		}
 		else if (tableDepth > 0 && xml.compare(lt, 6, "<Cell ") == 0)
 		{
-			// ★A CELL IS A PARAGRAPH. Nothing is pushed here - the cell's text is collected the same
-			//   way any paragraph's is, and </Cell> ends it. What this tag is read for is the ROW:
-			//   Name is "column:row", and a change of row means the previous cell was the last one
-			//   in its row, which is where the row's terminator character belongs.
+			// **A CELL IS A PARAGRAPH.** Nothing is pushed here -- the cell's text is collected the
+			//   same way any paragraph's is, and </Cell> ends it. What this tag is read for is the ROW:
+			//   Name is "column:row", and a change of row means the previous cell was the last one in
+			//   its row, which is where the row's terminator character belongs.
 			const size_t gt = xml.find('>', lt);
 			if (gt == std::string::npos || gt > storyEnd)
 				break;
@@ -807,20 +808,20 @@ inline void ExtractParagraphs(const std::string& xml,
 				}
 			}
 
-			// ⚠★★NOTHING IS CHARGED HERE ANY MORE (2026-08-23). A row boundary used to add one
-			//   character at this point, which put the table's characters among its CELLS - the
-			//   right total in the wrong place. The whole run is charged where the table stands,
-			//   out of BodyRowCount; see the <Table> branch above.
+			// @warning **nothing is charged here any more.** A row boundary used to add one character
+			//   at this point, which put the table's characters among its CELLS -- the right total in
+			//   the wrong place. The whole run is charged where the table stands, out of BodyRowCount;
+			//   see the <Table> branch above.
 
-			// ★WHICH CELL THIS PARAGRAPH IS - AND EVERY OTHER PARAGRAPH OF THE SAME CELL. The
-			//   identity is REMEMBERED here and stamped again after each break inside the cell
-			//   (see the <Br /> branch): a cell may hold several paragraphs, and a flush resets the
+			// **WHICH CELL THIS PARAGRAPH IS -- AND EVERY OTHER PARAGRAPH OF THE SAME CELL.** The
+			//   identity is REMEMBERED here and stamped again after each break inside the cell (see
+			//   the <Br /> branch): a cell may hold several paragraphs, and a flush resets the
 			//   attributes.
-			//   ★★★THE TABLE IS THE INNERMOST ONE OPEN, WHICH A RUNNING COUNTER CANNOT SAY
-			//     (2026-08-23). Tables are numbered in the order they appear, nested ones included,
-			//     so a counter is right until an inner table closes - and every cell after that
-			//     </Table> belongs to the OUTER table again, whose number the counter has left
-			//     behind. ⇒ the open tables are kept on a stack and the cell takes the top of it.
+			//   **THE TABLE IS THE INNERMOST ONE OPEN, WHICH A RUNNING COUNTER CANNOT SAY.** Tables
+			//     are numbered in the order they appear, nested ones included, so a counter is right
+			//     until an inner table closes -- and every cell after that </Table> belongs to the
+			//     OUTER table again, whose number the counter has left behind. So the open tables are
+			//     kept on a stack and the cell takes the top of it.
 			cellOrdinal = KCMParaAttrs::kNotACell;
 			cellRow = -1;
 			cellCol = -1;
@@ -853,27 +854,27 @@ inline void ExtractParagraphs(const std::string& xml,
 			const std::string piece(xml, lt + 9, close - (lt + 9));
 			current.append(piece);
 
-			// ⚠Measured on the DECODED text: an entity is several bytes and one character, and a
-			//   ruby span put at the undecoded offset would drift by the difference.
+			// @warning measured on the DECODED text: an entity is several bytes and one character, and
+			//   a ruby span put at the undecoded offset would drift by the difference.
 			std::string decoded = piece;
 			DecodeEntities(decoded);
 			const int32 pieceLen = CountCodePoints(decoded);
 
 			if (!openRuby.empty() && pieceLen > 0)
 			{
-				// ★★★WHETHER THIS CONTINUES THE SPAN BEFORE IT IS INDESIGN'S ANSWER, NOT A GUESS
-				//   MADE HERE. RubyFlag says it: "1" opens a run, "2" carries the same run onto the
-				//   next base character (measured on two real snippets, 2026-08-22 - group ruby
-				//   こはく over 琥珀 comes out as flag 1 then flag 2, each range holding one
-				//   character and the same RubyString).
-				//   ⚠A first attempt fused "adjacent spans with the same reading" instead, which
-				//     LOOKS equivalent and is not: two mono rubies that happen to read the same
-				//     (各 and 々 both かく) sit next to each other with the same string, and fusing
-				//     them would report one ruby where the document has two.
-				// ★TWO WAYS TO BE A CONTINUATION, and both are needed:
-				//   ① the flag says so (group ruby, whose run crosses ranges);
-				//   ② this range has already contributed - one range can hold several <Content>
-				//     runs when the base text changes formatting part-way through, and that is one
+				// **WHETHER THIS CONTINUES THE SPAN BEFORE IT IS INDESIGN'S ANSWER, NOT A GUESS MADE
+				//   HERE.** RubyFlag says it: "1" opens a run, "2" carries the same run onto the next
+				//   base character (measured on two real snippets -- group ruby こはく over 琥珀 comes
+				//   out as flag 1 then flag 2, each range holding one character and the same RubyString).
+				//   @warning a first attempt fused "adjacent spans with the same reading" instead, which
+				//     LOOKS equivalent and is not: two mono rubies that happen to read the same (各 and
+				//     々 both かく) sit next to each other with the same string, and fusing them would
+				//     report one ruby where the document has two.
+				// **TWO WAYS TO BE A CONTINUATION**, and both are needed:
+				//   (1) the flag says so (group ruby, whose run crosses ranges);
+				//   (2) this range has already contributed -- one range can hold several <Content> runs
+				//     when the base text changes formatting part-way through, and that is one ruby over
+				//     one stretch, not two.
 				//     ruby over one stretch, not two.
 				const bool16 continues = (openContinues || openStarted) ? kTrue : kFalse;
 				if (continues && !currentAttrs.fRuby.empty() &&
@@ -889,18 +890,18 @@ inline void ExtractParagraphs(const std::string& xml,
 				openStarted = kTrue;
 			}
 
-			// ★★★KENTEN JOINS ADJACENT RANGES, WHERE RUBY MUST NOT (2026-08-22, measured on
+			// **KENTEN JOINS ADJACENT RANGES, WHERE RUBY MUST NOT** (measured on
 			//   work\Snippet_3209A15EF.idms). Ruby needed RubyFlag to tell "the same reading
-			//   continues" from "a second reading that happens to read the same" - 各 and 画 both
-			//   かく sit side by side and are two rubies. Kenten has no such pair: it is one mark
-			//   PER CHARACTER, so two adjacent stretches of the same kind ARE one stretch, and the
-			//   range boundary between them says nothing about the document - it is wherever some
-			//   OTHER formatting happened to change.
-			//   ⇒ Joining is not an optimisation here, it is what makes the reading stable: without
+			//   continues" from "a second reading that happens to read the same" -- 各 and 画 both
+			//   かく sit side by side and are two rubies. Kenten has no such pair: it is one mark PER
+			//   CHARACTER, so two adjacent stretches of the same kind ARE one stretch, and the range
+			//   boundary between them says nothing about the document -- it is wherever some OTHER
+			//   formatting happened to change.
+			//   So joining is not an optimisation here, it is what makes the reading stable: without
 			//     it, italicising one word inside a kenten run would split the span, which any
 			//     comparison of these spans would read as a change to the marks themselves.
-			//     (⚠Nothing compares them today - see fKenten - so this is what keeps the answer
-			//      right for whoever turns that back on, not something the panel depends on now.)
+			//     (@warning nothing compares them today -- see fKenten -- so this is what keeps the
+			//      answer right for whoever turns that back on, not something the panel depends on now.)
 			if (!openKenten.empty() && pieceLen > 0)
 			{
 				if (!currentAttrs.fKenten.empty() &&
@@ -928,19 +929,18 @@ inline void ExtractParagraphs(const std::string& xml,
 			const std::string flag = AttrValue(tag, "RubyFlag");
 			const std::string str  = AttrValue(tag, "RubyString");
 
-			// ⚠★★★RubyFlag IS NOT A BOOLEAN. GROUP ruby is written as one range per base character,
-			//   every one carrying the same RubyString, with the flag going "1" on the first and
-			//   "2" on the second (measured 2026-08-22 on こはく over 琥珀). Reading it as "on = 1"
-			//   drops every character of a group ruby except the first - and the mono snippet, which
+			// @warning **RubyFlag IS NOT A BOOLEAN.** GROUP ruby is written as one range per base
+			//   character, every one carrying the same RubyString, with the flag going "1" on the
+			//   first and "2" on the second (measured on こはく over 琥珀). Reading it as "on = 1"
+			//   drops every character of a group ruby except the first -- and the mono snippet, which
 			//   has nothing but "1" in it, could never have shown that.
-			// ★★SETTLED BY MEASUREMENT (2026-08-22). On two base characters, "the run continues" and
-			//   "this is character number 2" predict the same file, so the first sample could not
-			//   tell them apart. A FIVE-character group ruby did: こはくねこたろう over 琥珀猫太郎
-			//   came out **1, 2, 2, 2, 2** - so the flag says OPEN or CONTINUE, and is neither a
-			//   count nor a running number.
-			//   ⇒ Anything that is not "1" is a continuation, which is what this reads.
-			// ⚠An empty ruby string is no ruby, whatever the flag says: that is the official rule
-			//   (GetRubyStrandInfo turns the attribute off when the string it read has length 0).
+			// **SETTLED BY MEASUREMENT.** On two base characters, "the run continues" and "this is
+			//   character number 2" predict the same file, so the first sample could not tell them
+			//   apart. A FIVE-character group ruby did: こはくねこたろう over 琥珀猫太郎 came out
+			//   **1, 2, 2, 2, 2** -- so the flag says OPEN or CONTINUE, and is neither a count nor a
+			//   running number. Anything that is not "1" is a continuation, which is what this reads.
+			// @warning an empty ruby string is no ruby, whatever the flag says: that is the official
+			//   rule (GetRubyStrandInfo turns the attribute off when the string it read has length 0).
 			if (!flag.empty() && flag != "0" && !str.empty())
 			{
 				openRuby = str;
@@ -955,12 +955,13 @@ inline void ExtractParagraphs(const std::string& xml,
 			}
 			openStarted = kFalse;		// a new range has contributed nothing yet
 
-			// ★KENTEN IS ONE ATTRIBUTE ON THE RANGE - no flag, no run to rebuild. Measured: five
+			// **KENTEN IS ONE ATTRIBUTE ON THE RANGE** -- no flag, no run to rebuild. Measured: five
 			//   characters marked with one kind come out as ONE range carrying KentenKind, where the
 			//   same five characters with ruby come out as five ranges.
-			// ⚠OFF IS A VALUE, NOT AN ABSENCE. The SDK turns kenten off by putting Kenten_None into
-			//   the attribute rather than removing it (codesnippets-cjk note, SnpPerformTextAttrKenten),
-			//   so a range can carry a kind that means "no mark". Both spellings are refused because
+			// @warning **OFF IS A VALUE, NOT AN ABSENCE.** The SDK turns kenten off by putting
+			//   Kenten_None into the attribute rather than removing it (SnpPerformTextAttrKenten), so a
+			//   range can carry a kind that means "no mark". Both spellings are refused because only
+			//   the attribute name has been seen in a real file so far -- the OFF value has not.
 			//   only the attribute name has been seen in a real file so far - the OFF value has not.
 			const std::string kenten = AttrValue(tag, "KentenKind");
 			openKenten = (kenten.empty() || kenten == "KentenNone" || kenten == "Kenten_None")
@@ -970,7 +971,7 @@ inline void ExtractParagraphs(const std::string& xml,
 		}
 		else if (xml.compare(lt, 22, "</CharacterStyleRange>") == 0)
 		{
-			// ★Safe even for group ruby, which spans several ranges: each range carries its own
+			// Safe even for group ruby, which spans several ranges: each range carries its own
 			//   RubyString and its own flag, so the next one re-opens what it needs.
 			openRuby.clear();
 			openGroup = kFalse;
@@ -980,19 +981,19 @@ inline void ExtractParagraphs(const std::string& xml,
 		}
 		else if (const size_t itemNameLen = AnchoredItemTagLen(xml, lt))
 		{
-			// ★★AN ANCHORED PAGE ITEM IS ONE CHARACTER OF THE BODY (2026-08-23, user's request:
-			//   "アンカーの件"). What the text model holds there is U+FFFC, the object replacement
-			//   character, and that is what goes in - the reader is shown an anchor sign instead,
-			//   which is a decision made once where the row's text is built, not here
-			//   ([[one-question-one-place]]). ⇒ What this file records is what the document has.
-			// ★NOTHING ELSE HAS TO KNOW. The character sits in `current` like any other, so the
+			// **AN ANCHORED PAGE ITEM IS ONE CHARACTER OF THE BODY.** What the text model holds there
+			//   is U+FFFC, the object replacement character, and that is what goes in -- the reader is
+			//   shown an anchor sign instead, which is a decision made once where the row's text is
+			//   built, not here ([[one-question-one-place]]). What this file records is what the
+			//   document has.
+			// **NOTHING ELSE HAS TO KNOW.** The character sits in `current` like any other, so the
 			//   paragraph's length, the diff, the ruby offsets and the cell run all follow without
-			//   being told. An anchor being ADDED or REMOVED therefore comes out of the ordinary
-			//   text diff as "+" or "-" (user's call, 2026-08-23: 追加削除だけでいい) - there is no
-			//   separate test for it anywhere.
-			// ⚠A DIFFERENCE cannot be seen this way and is not meant to be: every anchor is the
-			//   same character, so swapping a rectangle for an oval leaves the text identical.
-			//   Reporting that would mean remembering WHICH item each character was - the same
+			//   being told. An anchor being ADDED or REMOVED therefore comes out of the ordinary text
+			//   diff as "+" or "-" -- there is no separate test for it anywhere.
+			// @warning **a DIFFERENCE cannot be seen this way and is not meant to be:** every anchor
+			//   is the same character, so swapping a rectangle for an oval leaves the text identical.
+			//   Reporting that would mean remembering WHICH item each character was -- the same shape
+			//   as ruby, and deliberately not done in this first pass.
 			//   shape as ruby, and deliberately not done in this first pass.
 			current.append("\xEF\xBF\xBC");		// U+FFFC in UTF-8 - one code point
 			paraPos += 1;
@@ -1001,7 +1002,7 @@ inline void ExtractParagraphs(const std::string& xml,
 		else if (xml.compare(lt, 4, "<Br ") == 0 || xml.compare(lt, 4, "<Br/") == 0)
 		{
 			Flush::Do(current, currentAttrs, paraPos, paragraphs, attrsPerPara);
-			// ★★AND THE PARAGRAPH THAT FOLLOWS IS STILL IN THE SAME CELL, if the break was inside
+			// **AND THE PARAGRAPH THAT FOLLOWS IS STILL IN THE SAME CELL**, if the break was inside
 			//   one. Outside a cell this puts back what the flush already left there.
 			Stamp::Cell(currentAttrs, cellOrdinal, cellRow, cellCol);
 
@@ -1020,11 +1021,11 @@ inline void ExtractParagraphs(const std::string& xml,
 
 /** The text of a RUN of paragraphs, with the break characters put back.
 
-	★MOVED HERE FROM KCMStoryDiffRun.cpp ON 2026-08-23, TO STAND BESIDE IndexInStory. The two are
-	one convention seen from both ends - this one says how a run's paragraphs are strung together,
-	that one says where a position in the resulting string lands in the document - and they were in
-	different files while only one of them knew about the invisible characters a table adds. What
-	came of that is below, at IndexInStory.
+	**IT STANDS BESIDE IndexInStory ON PURPOSE.** The two are one convention seen from both ends
+	-- this one says how a run's paragraphs are strung together, that one says where a position
+	in the resulting string lands in the document -- and they were in different files while only
+	one of them knew about the invisible characters a table adds. What came of that is below, at
+	IndexInStory.
 
 	@param paragraphs every paragraph of the story.
 	@param start the first paragraph of the run.
@@ -1045,32 +1046,32 @@ inline std::string JoinParagraphs(const std::vector<std::string>& paragraphs, in
 	return out;
 }
 
-/** Where each ORDINARY paragraph begins, counted the way the text model counts (2026-08-23).
+/** Where each ORDINARY paragraph begins, counted the way the text model counts.
 
-	★★★A TABLE'S CELLS ARE NOT WHERE THE SNIPPET PUTS THEM. In the XML a table's cells sit between
-	the story's own <Content>, exactly where the table stands; the text model keeps them after the
-	whole of the story's own text and says so: "TextStoryThreads that are ALWAYS at greater
-	TextIndex than the Text Story Thread that the Table Model is anchored in"
-	(ITableTextContent.h:41-44). So this walks the BODY only:
+	**A TABLE'S CELLS ARE NOT WHERE THE SNIPPET PUTS THEM.** In the XML a table's cells sit
+	between the story's own <Content>, exactly where the table stands; the text model keeps them
+	after the whole of the story's own text and says so: "TextStoryThreads that are ALWAYS at
+	greater TextIndex than the Text Story Thread that the Table Model is anchored in"
+	(ITableTextContent.h). So this walks the BODY only:
 
-	  - a cell contributes nothing - neither its text nor its break. Its entry is left at -1 for
+	  - a cell contributes nothing -- neither its text nor its break. Its entry is left at -1 for
 	    KCMStoryCellBases to fill in from the document;
-	  - the table's OWN RUN of characters does count - one per body row - because it stands in the
-	    body where the table is (KCMParaAttrs::fExtraChars has the measurements).
+	  - the table's OWN RUN of characters does count -- one per body row -- because it stands in
+	    the body where the table is (KCMParaAttrs::fExtraChars has the measurements).
 
-	⚠THIS IS NOT THE TOTAL. ParagraphStarts still adds up everything, because that total is what
-	  LengthAgrees checks against ITextModel::TotalLength. The two answer different questions and
-	  both are needed.
+	@warning **this is not the total.** ParagraphStarts still adds up everything, because that
+	  total is what LengthAgrees checks against ITextModel::TotalLength. The two answer different
+	  questions and both are needed.
 
 	@param outTableAnchors where each BODY table's first character sits, and which table it is.
-	       ★The caller checks these against the document's own answer
-	       (ITextStoryThreadDict::GetAnchorTextRange). That is what catches a story shape this walk
-	       does not understand - two tables in a row, say, where the second table's character is
-	       charged to a CELL of the first and so never reaches the body count. Such a story is
-	       refused rather than aimed wrongly.
-	       ⚠A NESTED table is not in here: it stands in a cell, and where that cell's text sits
-	         is not known until the document has been asked. KCMStoryCellBases checks those the
-	         same way, once it has the answer.
+		The caller checks these against the document's own answer
+		(ITextStoryThreadDict::GetAnchorTextRange). That is what catches a story shape this walk
+		does not understand -- two tables in a row, say, where the second table's character is
+		charged to a CELL of the first and so never reaches the body count. Such a story is
+		refused rather than aimed wrongly.
+		@warning a NESTED table is not in here: it stands in a cell, and where that cell's text
+		  sits is not known until the document has been asked. KCMStoryCellBases checks those
+		  the same way, once it has the answer.
 */
 inline void BodyParagraphStarts(const std::vector<std::string>& paragraphs,
 								const std::vector<KCMParaAttrs>& attrs,
@@ -1085,8 +1086,8 @@ inline void BodyParagraphStarts(const std::vector<std::string>& paragraphs,
 	{
 		const bool16 haveAttrs = (i < attrs.size());
 
-		// ★★★A CELL IS SKIPPED WHOLE - ITS TABLES INCLUDED (2026-08-23). Everything about a cell
-		//   is elsewhere: its text, its break, and any table standing inside it. That last one was
+		// **A CELL IS SKIPPED WHOLE -- ITS TABLES INCLUDED.** Everything about a cell is
+		//   elsewhere: its text, its break, and any table standing inside it. That last one was
 		//   the addition: a nested table charges the cell it stands in, and counting those
 		//   characters here would push the body along by a table that is not in the body at all.
 		if (haveAttrs && attrs[i].IsCell())
@@ -1096,7 +1097,7 @@ inline void BodyParagraphStarts(const std::vector<std::string>& paragraphs,
 		// character is in the body wherever its cells end up.
 		if (haveAttrs)
 		{
-			// ★ONE ANCHOR PER TABLE, at the first of the characters it stands on. ⚠Two tables
+			// ONE ANCHOR PER TABLE, at the first of the characters it stands on. @warning two tables
 			//   sharing a boundary cannot be told apart from a sum, so neither is reported and the
 			//   resolver refuses the story on the count.
 			if (attrs[i].fLeadingTables == 1)
@@ -1116,19 +1117,19 @@ inline void BodyParagraphStarts(const std::vector<std::string>& paragraphs,
 	}
 }
 
-/** A run of consecutive paragraphs that all sit in the same PLACE: the story's body, or one cell.
+/** A run of consecutive paragraphs that all sit in the same PLACE: the story's body, or one
+	cell.
 
-	★★★WHY A ROW IS CUT HERE (2026-08-23, user's call: 「変化している文字の有るセルだけに
-	  なるのが正しいかな」). A cell IS a paragraph, so two paragraphs that both changed and
-	  happen to be next to each other in the snippet go into ONE run of the paragraph diff - even
-	  when one of them is body text and the other is inside the table. The row then reads as one
-	  edit spanning the words before the table, the cell, and whatever follows, and its mark covers
-	  all the unchanged text in between (measured: a row covering 22 characters for two edits of one
-	  character each).
-	⚠ADJACENT PARAGRAPHS IN THE SAME PLACE STILL SHARE A ROW - that part is right, and a cell
-	  holding several paragraphs depends on it.
-	★The body appears more than once when a table stands in the middle of it; those are separate
-	  runs, because they are not next to each other.
+	**WHY A ROW IS CUT HERE.** A cell IS a paragraph, so two paragraphs that both changed and
+	  happen to be next to each other in the snippet go into ONE run of the paragraph diff --
+	  even when one of them is body text and the other is inside the table. The row then reads as
+	  one edit spanning the words before the table, the cell, and whatever follows, and its mark
+	  covers all the unchanged text in between (measured: a row covering 22 characters for two
+	  edits of one character each).
+	@warning adjacent paragraphs in the same place STILL share a row -- that part is right, and a
+	  cell holding several paragraphs depends on it.
+	The body appears more than once when a table stands in the middle of it; those are separate
+	runs, because they are not next to each other.
 */
 struct ParaRegion
 {
@@ -1184,13 +1185,13 @@ struct RegionPair
 
 /** Cut one run of the paragraph diff into one piece per PLACE (see ParaRegion).
 
-	★★WHEN IT DOES NOT CUT, IT SAYS SO BY ANSWERING WITH ONE PIECE. Three shapes are cut:
+	**WHEN IT DOES NOT CUT, IT SAYS SO BY ANSWERING WITH ONE PIECE.** Three shapes are cut:
 	  - a pure insertion: every piece goes in at the same spot in the older version;
 	  - a pure deletion: the mirror of it;
 	  - a replacement whose two sides pass through the SAME places in the same order.
-	⚠Anything else - the table itself gained or lost cells between the versions, say - is left
-	  whole. There is no honest way to pair the halves up, and one row that is too wide is better
-	  than several that point at the wrong cells.
+	@warning anything else -- the table itself gained or lost cells between the versions, say --
+	  is left whole. There is no honest way to pair the halves up, and one row that is too wide is
+	  better than several that point at the wrong cells.
 */
 inline void SplitRunAtPlaces(const std::vector<KCMParaAttrs>& sourceAttrs,
 							 int32 aStart, int32 aCount,
@@ -1263,14 +1264,14 @@ inline void SplitRunAtPlaces(const std::vector<KCMParaAttrs>& sourceAttrs,
 	out.push_back(whole);
 }
 
-/** Where the run of paragraphs belonging to ONE cell ends - the index one past its last.
+/** Where the run of paragraphs belonging to ONE cell ends -- the index one past its last.
 
-	★★A CELL IS NOT ALWAYS ONE PARAGRAPH (2026-08-23). It holds one for every Return pressed in it,
-	and a MERGED cell holds the paragraphs of everything merged into it. They arrive together, in
-	order, all naming the same (table, row, column) - which is what this walks.
+	**A CELL IS NOT ALWAYS ONE PARAGRAPH.** It holds one for every Return pressed in it, and a
+	MERGED cell holds the paragraphs of everything merged into it. They arrive together, in
+	order, all naming the same (table, row, column) -- which is what this walks.
 
-	⚠Asked about a paragraph that is not a cell, this answers with the paragraph itself, so the
-	  caller gets an EMPTY run rather than a guess.
+	@warning asked about a paragraph that is not a cell, this answers with the paragraph itself,
+	  so the caller gets an EMPTY run rather than a guess.
 */
 inline size_t CellRunEnd(const std::vector<KCMParaAttrs>& attrs, size_t at)
 {
@@ -1287,13 +1288,14 @@ inline size_t CellRunEnd(const std::vector<KCMParaAttrs>& attrs, size_t at)
 	return end;
 }
 
-/** How many tables the story holds, nested ones included - one more than the highest number used.
+/** How many tables the story holds, nested ones included -- one more than the highest number
+	used.
 
-	★It is worked out from the paragraphs rather than reported by the reader because it has to
+	It is worked out from the paragraphs rather than reported by the reader because it has to
 	agree with fTableOrdinal, and the surest way to make two numbers agree is to have only one of
-	them. ⚠All three places a table can leave its number are read: the cells that belong to it, and
-	the two ends of the paragraph it stands in (a table with no cells at all is not a shape InDesign
-	writes, but reading only the cells would make this quietly depend on that).
+	them. @warning all three places a table can leave its number are read: the cells that belong
+	  to it, and the two ends of the paragraph it stands in (a table with no cells at all is not
+	  a shape InDesign writes, but reading only the cells would make this quietly depend on that).
 */
 inline int32 TableCount(const std::vector<KCMParaAttrs>& attrs)
 {
@@ -1312,11 +1314,11 @@ inline int32 TableCount(const std::vector<KCMParaAttrs>& attrs)
 
 /** How many characters such a run occupies in the text model: every paragraph AND its break.
 
-	★This is what a cell's own text story thread holds, which is why the resolver can check it
+	This is what a cell's own text story thread holds, which is why the resolver can check it
 	against ITextStoryThread::GetTextStart's span before trusting the cell it found.
 
-	★★AND THE INVISIBLE CHARACTERS THE CELL CARRIES (2026-08-23). A cell holding a TABLE is charged
-	that table's own run, the same way a body paragraph is charged a top-level table's - and the
+	**AND THE INVISIBLE CHARACTERS THE CELL CARRIES.** A cell holding a TABLE is charged that
+	table's own run, the same way a body paragraph is charged a top-level table's -- and the
 	thread the document reports for such a cell is that much longer. Leaving them out made the
 	check disagree (2 against the document's 3) and turned the story away after everything else
 	about it was right.
@@ -1336,27 +1338,28 @@ inline int32 CellRunLength(const std::vector<std::string>& paragraphs,
 
 /** Where an offset into that joined string lands in the document, as a TextIndex.
 
-	★★WHY THIS IS NOT `base + offset` (2026-08-23). JoinParagraphs puts ONE character between two
-	paragraphs; the document may not have them that close together at all. Two faults found on the
-	same day, both of this shape:
-	  (1) a table's own character and a row's terminator sit at exactly such a boundary, so a change
-	      covering two ADJACENT paragraphs put the second one short by them - MEASURED on the real
-	      table snippet: at 21 where the document has 22, and at 31 against 32;
-	  (2) ★★★and a table's CELLS are not between the paragraphs at all (see BodyParagraphStarts
+	**WHY THIS IS NOT `base + offset`.** JoinParagraphs puts ONE character between two
+	paragraphs; the document may not have them that close together at all. Two faults of this
+	shape were found on one day:
+	  (1) a table's own character and a row's terminator sit at exactly such a boundary, so a
+	      change covering two ADJACENT paragraphs put the second one short by them -- MEASURED on
+	      the real table snippet: at 21 where the document has 22, and at 31 against 32;
+	  (2) and a table's CELLS are not between the paragraphs at all (see BodyParagraphStarts
 	      above), so the distance across a table is nothing like the sum of what the snippet lists
-	      there - MEASURED: a change to the paragraph after a table selected a character inside a
+	      there -- MEASURED: a change to the paragraph after a table selected a character inside a
 	      cell instead.
-	⚠SILENT, and no length check can catch either: LengthAgrees compares TOTALS, which were right.
-	⇒ Both are answered the same way: every paragraph's position is LOOKED UP, never added up.
+	@warning SILENT, and no length check can catch either: LengthAgrees compares TOTALS, which
+	  were right. Both are answered the same way: every paragraph's position is LOOKED UP, never
+	  added up.
 
 	@param paragraphs every paragraph of the story.
-	@param starts one document position per paragraph - BodyParagraphStarts for the ordinary ones,
-	       KCMStoryCellBases for the cells. ⚠An unresolved cell (-1) would answer nonsense, so the
-	       caller refuses the story before asking anything of this.
+	@param starts one document position per paragraph -- BodyParagraphStarts for the ordinary
+		ones, KCMStoryCellBases for the cells. @warning an unresolved cell (-1) would answer
+		nonsense, so the caller refuses the story before asking anything of this.
 	@param start the first paragraph of the run.
 	@param count how many paragraphs the run covers.
 	@param base where to answer from when the run covers no paragraph of its own (an insertion
-	       between two paragraphs): the caller's position for the next surviving paragraph.
+		between two paragraphs): the caller's position for the next surviving paragraph.
 	@param joinedOffset a position in JoinParagraphs' answer, in CODE POINTS, 0 .. its length.
 	@return the same position as a TextIndex into the story.
 */
@@ -1364,15 +1367,14 @@ inline int32 IndexInStory(const std::vector<std::string>& paragraphs,
 						  const std::vector<int32>& starts,
 						  int32 start, int32 count, int32 base, int32 joinedOffset)
 {
-	// ★★★REWRITTEN 2026-08-23: IT LOOKS EVERY PARAGRAPH UP INSTEAD OF ADDING UP THE HIDDEN
-	//   CHARACTERS BETWEEN THEM. The old form walked from the run's base and, at each paragraph
-	//   break, added that paragraph's fExtraChars. That is right only while the document lays
-	//   paragraphs out in the order the snippet lists them, and A TABLE BREAKS EXACTLY THAT: the
-	//   text model keeps a table's cells AFTER the whole of the story's own text
-	//   (ITableTextContent.h:41-44), so no amount of adding gets from the paragraph before a table
-	//   to the one after it. MEASURED 2026-08-23: a change to the paragraph following a table
-	//   selected a character inside a cell instead.
-	//   ⇒ Positions come from the table `starts`, which is built once - the body by
+	// **IT LOOKS EVERY PARAGRAPH UP INSTEAD OF ADDING UP THE HIDDEN CHARACTERS BETWEEN THEM.**
+	//   The old form walked from the run's base and, at each paragraph break, added that
+	//   paragraph's fExtraChars. That is right only while the document lays paragraphs out in
+	//   the order the snippet lists them, and A TABLE BREAKS EXACTLY THAT: the text model keeps
+	//   a table's cells AFTER the whole of the story's own text (ITableTextContent.h), so no
+	//   amount of adding gets from the paragraph before a table to the one after it. MEASURED:
+	//   a change to the paragraph following a table selected a character inside a cell instead.
+	//   Positions come from the table `starts`, which is built once -- the body by
 	//     BodyParagraphStarts, the cells by asking the document (KCMStoryCellBases). This walk
 	//     only has to decide WHICH paragraph the offset falls in.
 	int32 joined = 0;		// where the paragraph being looked at begins, inside the joined string
@@ -1385,9 +1387,9 @@ inline int32 IndexInStory(const std::vector<std::string>& paragraphs,
 
 		const int32 len = CountCodePoints(paragraphs[which]);
 
-		// ⚠AT the break belongs to the paragraph BEFORE it, which is the rule the old form kept
-		//   ("the offset is at or before it - nothing to add") and the paragraph-start table agrees
-		//   with: the next paragraph's start is where the character AFTER the break sits.
+		// @warning AT the break belongs to the paragraph BEFORE it, which is the rule the old form
+		//   kept ("the offset is at or before it -- nothing to add") and the paragraph-start table
+		//   agrees with: the next paragraph's start is where the character AFTER the break sits.
 		if (joinedOffset <= joined + len)
 			return starts[which] + (joinedOffset - joined);
 
@@ -1407,11 +1409,11 @@ inline int32 IndexInStory(const std::vector<std::string>& paragraphs,
 	return base;
 }
 
-/** True when two paragraphs' ruby differs - the question "did only the ruby change?" is this one
+/** True when two spans lists differ -- the question "did only the ruby change?" is this one
 	asked about a paragraph whose text came out identical.
 
-	⚠Compared as an ordered list, not as a set: moving the same ruby onto different characters is a
-	change, and so is reordering two of them.
+	@warning compared as an ordered list, not as a set: moving the same ruby onto different
+	  characters is a change, and so is reordering two of them.
 */
 inline bool16 SpansDiffer(const KCMAttrSpanList& a, const KCMAttrSpanList& b)
 {
@@ -1421,7 +1423,7 @@ inline bool16 SpansDiffer(const KCMAttrSpanList& a, const KCMAttrSpanList& b)
 	{
 		if (a[i].fStart != b[i].fStart || a[i].fLen != b[i].fLen || a[i].fValue != b[i].fValue)
 			return kTrue;
-		// ★Mono turned into group is a change even when every reading is the same: 琥珀 read as
+		// Mono turned into group is a change even when every reading is the same: 琥珀 read as
 		//   こ+はく and 琥珀 read as こはく are different typesetting, and the reader asked to see it.
 		if ((a[i].fGroup != 0) != (b[i].fGroup != 0))
 			return kTrue;
