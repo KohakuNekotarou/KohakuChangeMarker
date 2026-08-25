@@ -2,45 +2,46 @@
 //
 //  KCMThreadSafety.h
 //
-//  model プラグイン(kModelPlugIn)としてバックグラウンドスレッドから呼ばれても壊れないための道具。
-//  ★KCM が kModelPlugIn になった(第2段 Task 11)時点から、**描画イベントは BG にも配られる**
-//    (Task 11C で実測)。ここに置くのは、その世界で必要になった3つだけ:
+//  What a kModelPlugIn needs in order to survive being called on a background thread. KCM
+//  became one in stage 2, and from that moment **draw events are delivered to BG threads too**
+//  (measured). Only three things live here:
 //
-//    1. KCMIsMainThread()  … 「今メインスレッドか」
-//    2. KCMIsSameDoc()     … ★**2つの IDataBase* が同じ文書を指すか**
-//    3. KCMMarkStateMutex()… マーク集合(sEntries ほか)を守るロック
+//    1. KCMIsMainThread()   -- "are we on the main thread right now"
+//    2. KCMIsSameDoc()      -- **do two IDataBase* point at the same document**
+//    3. KCMMarkStateMutex() -- the lock over the shared mark state
 //
-//  ─────────────────────────────────────────────────────────────────────────────
-//  ★★★なぜ生ポインタ比較ではいけないのか(第2段 Task 11C の実測)
+//  --------------------------------------------------------------------------------------
+//  WHY RAW POINTER COMPARISON IS NOT ENOUGH
 //
-//    ガイド vol1-07 L93 = "InDesign's multithreading environment provides a separate
-//    execution context (**a cloned copy of the database**) for each thread."
+//    Guide vol1-07, "Rules for thread safety": "InDesign's multithreading environment
+//    provides a separate execution context (**a cloned copy of the database**) for each
+//    thread."
 //
-//    実測(2026-08-15):
-//      MAIN  db=…23FB4A80  sDB=…23FB4A80  entries=2 firstUID=258 class=1295
-//      *BG*  db=…295BE390  sDB=…23FB4A80  entries=2 firstUID=258 class=1295
+//    Measured:
+//      MAIN  db=...23FB4A80  sDB=...23FB4A80  entries=2 firstUID=258 class=1295
+//      *BG*  db=...295BE390  sDB=...23FB4A80  entries=2 firstUID=258 class=1295
 //
-//    ⇒ ①BG の db は**クローンの別ポインタ**で sDB とは必ず食い違う
-//       ②しかし**UID はクローンをまたいで保たれる**(BG の db で引いても同じページが返る)
-//       ③static はスレッド間で**共有される**(entries=2 が両方から見えている)
+//    =>  (1) the BG db is a **clone with a different pointer** and can never equal sDB
+//        (2) but **UIDs survive the cloning** -- the same page comes back from the BG db
+//        (3) statics **are shared** across threads (entries=2 is visible from both)
 //
-//    ∴ 「同じ文書か」は**ファイル(IDataBase::GetSysFile)で聞く**のが正しい。
-//      ★これは [[uidref-reuse-after-close]](閉じた文書のポインタはアドレス再利用で別文書と
-//        一致してしまう)と**同じ結論**＝1つ直すと2つ直る。
+//    So "is this the same document" has to be asked of the FILE (IDataBase::GetSysFile).
+//    **That is the same conclusion as [[uidref-reuse-after-close]]** (a closed document's
+//    pointer gets reused and can match a different document) -- one fix answers both.
 //
-//  ─────────────────────────────────────────────────────────────────────────────
-//  ★公式の手本(2026-08-15 に SDK を実測して確認したもの。真似ないと後で流儀が割れる)
+//  --------------------------------------------------------------------------------------
+//  THE OFFICIAL SHAPES THIS FOLLOWS (read off the SDK; not following them splits the idiom)
 //
-//    ・boost::mutex を static メンバで持ち scoped_lock で守る
-//        = sdksamples/hyphenator/HypPerformanceData.h:29,64 と .cpp:39,53,61
-//          (vcxproj も `$(MODEL_PLUGIN_LINKLIST);$(BoostThreadLib)` = KCM と同じ形)
-//    ・スレッドごとの値(再入防止など)は IDThreading::ThreadLocal / ThreadLocalManagedObject
-//        = open/components/incopyfileactions/InCopyDocFileHandler.cpp:261
-//          (★**IDataBase* のリストを再入防止のためスレッドローカルで持つ**＝KCM の
-//            ラスタ化中フラグと同じ用途。命名も tl_ プレフィックス)
-//    ・UI 側は同期を一切書かない
-//        = open/components/linksui と layerpanel に IsMainThreadDomain も mutex も **0件**
-//          ⇒ **直すのは model 側だけ**でよい、という切り分けの裏づけ。
+//    - a boost::mutex held in a static member and taken with scoped_lock
+//        = sdksamples/hyphenator's HypPerformanceData (non-recursive there), whose vcxproj
+//          links `$(MODEL_PLUGIN_LINKLIST);$(BoostThreadLib)` -- the same line as KCM's
+//    - per-thread values (re-entrancy guards and the like) through IDThreading::ThreadLocal
+//      / ThreadLocalManagedObject
+//        = InCopyDocFileHandler's tl_DBList (**a list of IDataBase* held thread-locally to
+//          prevent re-entry** -- the same use as KCM's rasterising flag, down to the tl_ prefix)
+//    - the UI half writes no synchronisation at all
+//        = linksui and layerpanel contain **no IsMainThreadDomain and no mutex whatsoever**
+//          => the evidence behind fixing **the model side only**.
 //
 //========================================================================================
 #ifndef __KCMThreadSafety_h__
@@ -48,96 +49,112 @@
 
 #include "BaseType.h"		// bool16, kTrue/kFalse
 
-#include <boost/thread/recursive_mutex.hpp>	// 公式の手本 = hyphenator/HypPerformanceData.h:29(あちらは非再帰)
+#include <boost/thread/recursive_mutex.hpp>	// the official shape = hyphenator's HypPerformanceData (non-recursive there)
 
 class IDataBase;
 
 //----------------------------------------------------------------------------------------
-// 今メインスレッドか。IDThreading::IsMainThreadDomain() の薄いラッパ(bool → bool16)。
-// ★「BG では何もしない」で正しいのは**後始末(状態を捨てる側)だけ**。描く側を BG で止めたら
-//   第2段の目的そのもの(PDF 書き出しにマークを出す)を止めることになる。
+// Are we on the main thread? A thin wrapper over IDThreading::IsMainThreadDomain()
+// (bool -> bool16).
+// @warning **"do nothing on BG" is right only for the code that TEARS STATE DOWN.** Stopping
+//   the DRAWING side on a background thread would defeat the point of stage 2 itself: marks
+//   in the PDF export.
 //----------------------------------------------------------------------------------------
 bool16 KCMIsMainThread();
 
 //----------------------------------------------------------------------------------------
-// 2つの IDataBase* が「同じ文書」を指すか。
-//   ・同一ポインタなら真(メインスレッドの通常経路はここで即決 = コスト増ゼロ)
-//   ・違うポインタでも、GetSysFile() が同じファイルを指していれば真
-//     ⇒ ★**バックグラウンドのクローン DB でも真になる**(これが本題)
-//   ・**ファイルが片方でも無いときは `IDataBase::GetDocumentID()` で聞き直す**(下の★)
-//   ・どちらかが nil のとき、または ID が空のときだけ偽
+// Do two IDataBase* mean "the same document"?
+//   - same pointer -> true (main's ordinary path decides here, at no added cost)
+//   - different pointers are still true when GetSysFile() names the same file
+//     => **true for the background's clone DB as well**, which is the whole point
+//   - **when either side has no file, ask IDataBase::GetDocumentID() instead** (below)
+//   - false only when either side is nil, or an ID is empty
 //
-//     ★★★**未保存文書の道は 2026-08-18(不具合再検査 B9)に実装した。** それまでは
-//       「ファイルが無い＝偽」で終わっていたので、**一度も保存していない2文書を比較すると
-//       BG(PDF の非同期書き出し)でマークが1つも出なかった**——画面には出るので
-//       **「画面と書き出しが食い違う」**形で、第2段が塞いだはずの穴が未保存文書にだけ残っていた。
-//       (⚠旧コメントは「分割前から出ていなかったので劣化ではない」と書いていたが、それは
-//        **直さない理由にはならない**。実際 B9 の再検査でそのまま不具合として拾い直した。)
+//     **THE UNSAVED-DOCUMENT PATH.** Before it existed this returned false as soon as a file
+//       was missing, so **comparing two documents that had never been saved produced no marks
+//       at all on the background thread (the asynchronous PDF export)** -- they appeared on
+//       screen, so the defect took the shape **"the screen and the export disagree"**: the
+//       hole stage 2 was meant to close stayed open for unsaved documents only.
 //
-//     ★根拠は 2026-08-16・API 監査 B9 の実測4点(未保存文書2つを比較して非同期 PDF 書き出し):
-//         ①**未保存文書にも値が付く**——`GetSysFile()` が nil でも `xmp.did:…` が返る
-//         ②**Target と Source は別の値**を持つ(a3097be8… ⇔ 6322d72a…)＝**同一性の判定に使える**
-//         ③★**BG のクローン DB でも main と完全に一致**(db ポインタは違うのに ID は同じ)
-//         ④`sDB` は BG でも main が入れたポインタのまま(static 共有の再確認)
+//     Measured (two unsaved documents compared, asynchronous PDF export):
+//       (1) **an unsaved document still has a value** -- GetSysFile() is nil, xmp.did:... is not
+//       (2) **Target and Source hold different values** (a3097be8... vs 6322d72a...)
+//           => usable as an identity
+//       (3) **the BG clone DB matches main exactly** (different db pointer, same ID)
+//       (4) sDB on the BG thread is still the pointer main put there (statics are shared)
 //
-//     ⚠**寄せ先が2つあり、内部用の `IDataBase::GetDocumentID()` を選んだ**(2026-08-18・ユーザー判断)。
-//       同メソッドは自ら "FOR INTERNAL USE ONLY / FOR EXTERNAL USE : Recommended to use
-//       IAdobeMediaMgmtMetaData::GetDocumentID" と書いている(`IDataBase.h:715-717`)。それでも選ぶ理由:
-//         ・★**Adobe 製 linksui が同じ内部用の口を使っている**(`ClosingDocumentsResponder.cpp:118`)
-//           ——しかも**用途まで同じ**(閉じる文書の同一性キー。あちらは path と ID を連結する)
-//         ・`IDataBase*` から直接引ける＝**描画イベントの中から呼べる**(外部用は XMP 経由で
-//           Query が要り、nil 経路が増える)。ここは毎描画・毎ページから来る道。
-//       ⇒ 外部用へ寄せるなら `IAdobeMediaMgmtMetaData.h` / `SnpPerformXMPCommands.cpp` が入口。
-//       全文＝`docs/ai-notes/kescm-api-audit-b9-2026-08-16.md` と `kescm-bug-recheck-b9-2026-08-18.md`
+//     @warning **there were two doors, and the internal one was chosen** (the user's call).
+//       IDataBase::GetDocumentID says of itself "FOR INTERNAL USE ONLY / FOR EXTERNAL USE :
+//       Recommended to use IAdobeMediaMgmtMetaData::GetDocumentID". Reasons to take it anyway:
+//         - **Adobe's own linksui uses the same internal door** (ClosingDocumentsResponder),
+//           and **for the same purpose** -- an identity key for documents being closed; it
+//           joins the path and the ID
+//         - it is reachable straight from an IDataBase*, so **it can be called from inside a
+//           draw event**. The external one needs a Query through XMP, which adds nil paths,
+//           and this is a per-draw, per-page road.
+//       => to move to the external one, IAdobeMediaMgmtMetaData.h and SnpPerformXMPCommands.cpp
+//       are the entrances. Full record: docs/ai-notes/kescm-api-audit-b9-2026-08-16.md and
+//       kescm-bug-recheck-b9-2026-08-18.md
 //
-//     ⚠**コストは未保存のときだけ増える**: 保存済み文書は従来どおりファイル比較で終わり、
-//       main の通常経路はそもそも同一ポインタで即決する(この関数の1行目)。
+//     @warning **the cost only rises for unsaved documents**: a saved one still ends at the
+//       file comparison, and main's ordinary path decides on this function's first line.
 //----------------------------------------------------------------------------------------
 bool16 KCMIsSameDoc(IDataBase* a, IDataBase* b);
 
 //----------------------------------------------------------------------------------------
-// KCM の共有状態(マーク集合 sEntries／登録ページ集合／✓集合)を守るロック。
+// The lock over KCM's shared state. What it covers:
+//   - the mark entries (sEntries) and the overflow sets, in KCMDrawEventHandler
+//   - the registered-page set and the check-tick set (KCMDocUidSet takes this lock inside
+//     its own readers and writers)
+//   - the Story mode's marks (KCMStoryMarker takes this same lock)
 //
-// ★守る理由 = どれも **main が書き、BG(PDF の非同期書き出し)が描画で読む** から:
-//   ・sEntries は**生ポインタの map** で DropAll() が delete する
-//     ⇒ BG が読んでいる最中に main が Stop すると**解放済みメモリの読み取り**
-//   ・登録ページ/✓ の集合(KCMDocUidSet)は std::map/std::set
-//     ⇒ main が insert して木を回転している最中に BG が find すると壊れる
-//   (ガイド vol1-07 L95: "InDesign will behave inconsistently and **may randomly crash**")
+// **Why they need it**: main writes them and **BG -- the asynchronous PDF export -- reads
+// them while drawing**:
+//   - sEntries is a map of **raw pointers** that DropAll() deletes
+//     => a Stop on main while BG is reading it is a **read of freed memory**
+//   - the page sets (KCMDocUidSet) are std::map/std::set
+//     => a find() on BG while main is rotating the tree inside insert corrupts it
+//   (Guide vol1-07: "InDesign will behave inconsistently and **may randomly crash**")
 //
-// ★★**守っていない共有状態が2つある。安全なのは「BG が読まないから」で、それを担保しているのは
-//   && の項の順番だけ**(2026-08-17 の不具合再検査 B6 で数えた):
-//     ・`sOversetPages`(std::set) / `sOversetLocs`(std::vector) …… main の KCMApplyOversetForDoc が
-//       **swap() で丸ごと入れ替える**。形は上の2つと同じで、BG が読んでいる最中に入れ替われば壊れる。
-//   ⇒ **読む側が Pages パネルのサムネイルしかない**ので今は届かない:
-//       KCMDrawEventHandler.cpp の `wantOversetThumb = isThumb && sOversetOn && sOversetDB != nil
-//       && !sOversetPages.empty()` ---- ★**`isThumb` が第1項**なので、BG(PDF の非同期書き出し＝
-//       isThumb 偽)では**短絡評価で set に一度も触れない**。`count()` を引く描画ブロックも同じ枝の中。
-//   ⚠∴ **これは設計された防御ではなく、条件式の並び順が結果的に守っている状態。** 「＋」をサムネイル
-//     以外(カンバス・印刷・書き出し)へ出す日が来たら、その瞬間にこの2つをロックの対象へ載せること。
-//     判定の順番を入れ替えるだけでも同じ。
+// **TWO SHARED CONTAINERS ARE NOT COVERED**, and what keeps them safe is where their readers
+// live -- not the lock:
+//   - `sOversetPages` (std::set) / `sOversetLocs` (std::vector), which main's
+//     KCMApplyOversetForDoc **swaps wholesale**. Same shape as the sets above: a swap while
+//     something is reading corrupts it.
+//   Their readers are:
+//     (a) **model side, inside the drawing**: `wantOversetThumb = isThumb && sOversetOn &&
+//         sOversetDB != nil && !sOversetPages.empty()` ---- **`isThumb` is the FIRST term**, so
+//         on BG (the asynchronous export, where isThumb is false) short-circuit evaluation
+//         never touches the set. The block that calls count() sits in that same branch.
+//     (b) **UI side, through the Facade**: IsOversetPage, GetOversetPageCount,
+//         GetOversetPageUIDs and GetOversetLocations -- the scrollbar map, Prev/Next and the
+//         flyout's counts. **A kUIPlugIn boss is invisible from a background thread**, so none
+//         of these can be reached from one.
+//   @warning **neither of those is a designed defence**: (a) is the order of the terms in one
+//     condition, (b) is which plug-in the caller happens to live in. The day the "+" is drawn
+//     anywhere other than a thumbnail -- canvas, print, export -- **these two go under the
+//     lock**. So does reordering that condition.
 //
-// ★★★**上の「2つ」は"守っていない集合"の数であって、"守られていない読み"の数ではなかった**
-//   (2026-08-18・不具合再検査 B9)。**守っている集合を、守っていない場所で読んでいた**のが別に1つある:
-//     ・`HandleDrawEvent` 冒頭の `anyMarkableContent` …… `sEntries.empty()` と
-//       `sOverflowT/sOverflowS.empty()` を**ロックの外**で読んでいた。**BG も必ず通る行**で、
-//       同じ集合を main は `DropAll()`(delete+clear) / `MakeEntry`(insert) / `swap()` と
-//       **全部ロック下で書いている**。つまり**書き手だけが守り、読み手の1つが外に居た**
-//       ＝ B3 §5 が踏んだ「捨てる側だけ守るのは無意味」の裏返しの形。
-//   ⇒ 2026-08-18 にその計算をロックで囲んだ。**追加コストは実質ゼロ**(同じ関数の下で
-//     どのみちロックを取る・recursive なので入れ子でも詰まらない)。
-//   ★**教訓＝「守っている/いない」は集合ではなく"触る場所"で数える。** 集合の名前で数えると、
-//     同じ集合の3か所目の読みが視界に入らない。
+// **"Covered" and "not covered" are counted per PLACE THAT TOUCHES, not per container.** A
+//   covered container was once read in an uncovered place: the `anyMarkableContent` gate at
+//   the top of DrawSpreadMarks read sEntries and the overflow sets **outside the lock**, on a
+//   line **every BG draw passes**, while main wrote those same containers under it in
+//   DropAll() (delete+clear), MakeEntry (insert) and swap(). **Only the writers were guarded,
+//   and one reader stood outside** -- the mirror image of "guarding only the side that throws
+//   away is worthless". That gate takes the lock now, and has grown to six terms: the
+//   page-map and check-tick readers are in it too, and each of those takes the lock itself.
+//   **Count the places that touch, not the names of the containers** -- counting by container
+//   is exactly how the third read of the same one stays out of sight.
 //
-// ★★**recursive_mutex にしてある理由**(2026-08-15 に実際に踏みかけた):
-//   描画ループは自分でロックを取ったうえで、その中から KCMPageMapIsRegistered() /
-//   KCMPageCheckIsChecked() を**ページごとに**呼ぶ。呼ばれる側もロックを取るので、
-//   非再帰の boost::mutex(公式 hyphenator と同型)だと**同じスレッドで二重ロック＝即デッドロック**になる。
-//   ⇒ 「呼び手がロック済みかどうかを気にしなくてよい」ことを優先して再帰ロックにした。
-//   ⚠代償: ロックの入れ子が深くなっても気づけない。**ロックしたまま長い処理をしない**という
-//     規律は変わらない(描画1スプレッド分＝数ms が上限の目安)。
+// **Why it is a recursive_mutex** (nearly paid for once): the drawing loop takes the lock and
+//   then calls KCMPageMapIsRegistered() / KCMPageCheckIsChecked() **per page**, and those take
+//   the lock themselves, inside KCMDocUidSet. With a non-recursive boost::mutex -- the
+//   hyphenator's shape -- that is **a double lock on one thread, an immediate deadlock**.
+//   Being able to call without knowing whether the caller already holds the lock won.
+//   @warning the price is that deep nesting goes unnoticed. **Do not hold the lock through a
+//     long operation** still applies -- one spread's drawing, a few ms, is the target.
 //
-// 使い方:  KCMMarkStateLock lock(KCMMarkStateMutex());
+// Use:  KCMMarkStateLock lock(KCMMarkStateMutex());
 //----------------------------------------------------------------------------------------
 boost::recursive_mutex& KCMMarkStateMutex();
 typedef boost::recursive_mutex::scoped_lock KCMMarkStateLock;

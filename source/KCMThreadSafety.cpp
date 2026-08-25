@@ -2,7 +2,8 @@
 //
 //  KCMThreadSafety.cpp
 //
-//  スレッド安全のための道具の実装。設計の根拠と公式の手本はヘッダー冒頭に書いてある。
+//  The thread-safety helpers. The reasoning behind them, and the official shapes they follow,
+//  are at the top of the header.
 //
 //========================================================================================
 
@@ -15,7 +16,7 @@
 #include "IDThreadingPrimitives.h"	// IDThreading::IsMainThreadDomain
 #include "FileUtils.h"				// FileUtils::IsEqual(IDFile,IDFile)
 #include "IDFile.h"
-#include "PMString.h"				// IDataBase::GetDocumentID() の戻り(未保存文書の同一性)
+#include "PMString.h"				// what IDataBase::GetDocumentID() returns (identity of an unsaved document)
 
 // Project includes:
 #include "KCMThreadSafety.h"
@@ -29,41 +30,43 @@ bool16 KCMIsMainThread()
 //----------------------------------------------------------------------------------------
 bool16 KCMIsSameDoc(IDataBase* a, IDataBase* b)
 {
-	// 同一ポインタ = 同じ文書(メインスレッドの通常経路。両方 nil は「同じ」とは言わない)。
+	// Same pointer = same document (main's ordinary path). Two nils are not "the same".
 	if (a == b)
 		return (a != nil) ? kTrue : kFalse;
 	if (a == nil || b == nil)
 		return kFalse;
 
-	// ★ここから先がバックグラウンド用の道。BG のクローン DB は別ポインタだが、
-	//   元の文書と同じファイルを指す。⚠GetSysFile() は未保存文書では nil を返す
-	//   (IDataBase.h:270-274 "Returns nil if there is no file associated yet")。
+	// From here on is the background's path: its clone DB is a different pointer but names the
+	// same file as the original. @warning GetSysFile() returns nil for an unsaved document -- it
+	// is documented as "Returns nil if there is no file associated yet".
 	const IDFile* fa = a->GetSysFile();
 	const IDFile* fb = b->GetSysFile();
 	if (fa != nil && fb != nil)
 		return FileUtils::IsEqual(*fa, *fb);
 
-	// ★★2026-08-18(不具合再検査 B9): **未保存文書のための第2の口**。ここは以前 kFalse を返して
-	//   いたので、**一度も保存していない2文書を比較すると BG(PDF の非同期書き出し)でマークが
-	//   1つも出なかった**(画面には出る＝「画面と書き出しが食い違う」形)。
-	//   GetDocumentID() は未保存でも値を持ち、BG のクローン DB でも main と一致することを
-	//   2026-08-16 の API 監査 B9 で実測済み。理由と選択の根拠はヘッダーに書いてある。
-	//   ⚠**片方だけファイルがある場合もここへ来る**(保存済み ⇔ 未保存)。その2つは ID が違うので
-	//     正しく偽になる ---- ファイルの有無で先に切り捨てると、BG のクローンが
-	//     GetSysFile を返さない事態(未確認)で静かに壊れるため、判定は ID に委ねる。
+	// **The second door, for unsaved documents.** This used to return kFalse here, so
+	// **comparing two documents that had never been saved produced no marks at all on the
+	// background thread** (the asynchronous PDF export) while they appeared on screen -- the
+	// "screen and export disagree" shape. GetDocumentID() has a value even when unsaved, and
+	// measurement showed the BG clone DB returning the same one as main; the header says why
+	// this door was chosen over the external one.
+	// @warning **a pair where only one side has a file arrives here too** (saved vs unsaved).
+	//   Those two have different IDs, so the answer is correctly false. Cutting them off by
+	//   "one side has no file" instead would break silently if a BG clone ever failed to return
+	//   a GetSysFile (not observed), so the judgement is left to the ID.
 	const PMString ida = a->GetDocumentID();
 	const PMString idb = b->GetDocumentID();
 	if (ida.IsEmpty() || idb.IsEmpty())
-		return kFalse;	// 空どうしを「同じ」と答えない(名前が無いことは同一性の証拠にならない)
+		return kFalse;	// two empties are not "the same" (having no name is no evidence of identity)
 
 	return (ida.Compare(kTrue /*caseSensitive*/, idb) == 0) ? kTrue : kFalse;
 }
 
 //----------------------------------------------------------------------------------------
-// ★ファイルスコープの static にしてある(関数内 static ではない)。ガイド vol1-07 L126-128 は
-//   "Remove any **function-local static** variables" と名指しするので、公式の hyphenator と
-//   同じく「クラス/ファイルスコープの static な mutex」の形に揃えた。
-//   mutex 自体は構築後に代入されないので、静的初期化のままで安全。
+// **File-scope static, not a function-local one.** Guide vol1-07 names them: "Remove any
+// **function-local static** variables", so this follows the hyphenator and keeps the mutex at
+// class/file scope. The mutex is never assigned to after construction, so static
+// initialisation is safe for it.
 //----------------------------------------------------------------------------------------
 static boost::recursive_mutex sKCMMarkStateMutex;
 

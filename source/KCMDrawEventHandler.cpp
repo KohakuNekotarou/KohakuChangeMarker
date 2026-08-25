@@ -145,7 +145,8 @@ void KCMDrawEventHandler::RebuildOverflowCache()
 	// **The walk happens outside the lock; only the swap is inside.**
 	//   1. sOverflowT/S are **written by the main thread and counted by the background thread
 	//      while it draws** (both loops in DrawSpreadMarks) -- exactly the condition
-	//      KCMThreadSafety.h:76-81 says to guard. A bare clear() + insert() leaves a window where
+	//      KCMMarkStateMutex is declared to guard ("Why they need it", in KCMThreadSafety.h).
+	//      A bare clear() + insert() leaves a window where
 	//      **the background thread counts while the main thread is walking the tree** (the same
 	//      reason, and the same opponent, as sEntries).
 	//   2. But KCMBuildPairing walks **every page of both documents**, and must not run with the
@@ -643,8 +644,8 @@ ErrorCode KCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef& 
 						// MakeEntry keeps the two in step. It is cleaned up by DropAll, together
 						// with the entries.
 						// sSrcPageToTarget is **inserted into by the main thread and searched by the
-						// background thread while it draws** -- the condition KCMThreadSafety.h:76-81
-						// says to guard, and the same one sEntries has.
+						// background thread while it draws** -- the condition KCMMarkStateMutex is
+						// declared to guard, and the same one sEntries has.
 						//
 						// @warning **the lock is protecting sSrcPageToTarget (a std::map), not
 						//   sSrcDB.** Assigning one pointer needs no lock: the reader sees the old
