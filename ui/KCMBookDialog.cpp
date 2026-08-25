@@ -161,7 +161,7 @@ void KCMBookDialogSetResult(const PMString& targetPath, const PMString& sourcePa
 	//   (the reason the status line states the chapter count at all - see KCMUI.fr).
 	// ★EVERY OTHER STATE STAYS, including NotCompared and Failed: they are chapters with no answer
 	//   yet, which is the opposite of "no change" and must not disappear with it
-	//   (KCMBookResult.h:42-49 is the same distinction, written out).
+	//   (KCMBookResult.h writes the same distinction out, under "WHY kKCMChapterNotCompared").
 	// ★app.kcmBookResult IS NOT AFFECTED - it is built from gBookResultText in KCMBookCompare.cpp
 	//   over the full set, so scripts and tests still see every chapter.
 	//
