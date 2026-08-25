@@ -15,7 +15,7 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMDocResponder.cpp">
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMDocResponder.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="$(id_sdk_dir)\source\public\libs\publiclib\statics\PlugInStatics.cpp">
@@ -27,213 +27,213 @@
     <ClCompile Include="$(ID_SDK_DIR)\source\sdksamples\common\SDKFileHelper.cpp">
       <Filter>Source Files\Plugin</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMID.cpp">
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMID.cpp">
       <Filter>Source Files\Plugin</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMNoStrip.cpp">
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMNoStrip.cpp">
       <Filter>Source Files\Plugin</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\TriggerResourceDeps.cpp">
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\TriggerResourceDeps.cpp">
       <Filter>Source Files\Plugin</Filter>
     </ClCompile>
     <ClCompile Include="$(id_sdk_dir)\source\precomp\msvc\VCPlugInHeaders.cpp">
       <Filter>Source Files\Plugin</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMBookCompare.cpp">
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMBookCompare.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMBookDialogObserver.cpp">
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMBookDialogObserver.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMBookPair.cpp">
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMBookPair.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMChangedPagesTSV.cpp">
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMChangedPagesTSV.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMColorSampler.cpp">
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMColorSampler.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMCore.cpp">
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMCore.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMDrawEventHandler.cpp">
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMDrawEventHandler.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMOversetScan.cpp">
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMOversetScan.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMPeek.cpp">
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMPeek.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMRingAdornment.cpp">
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMRingAdornment.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMHideUnchanged.cpp">
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMHideUnchanged.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMOversetApply.cpp">
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMOversetApply.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMComparisonRun.cpp">
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMComparisonRun.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMModelNotify.cpp">
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMModelNotify.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMFacades.cpp">
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMFacades.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMPageMap.cpp">
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMPageMap.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMPageCheck.cpp">
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMPageCheck.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMPageNumberMarker.cpp">
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMPageNumberMarker.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMScriptProvider.cpp">
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMScriptProvider.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMTextDiff.cpp">
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMTextDiff.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMMemXferBytes.cpp">
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMMemXferBytes.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryXml.cpp">
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMStoryXml.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryDiffRun.cpp">
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMStoryDiffRun.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryMarker.cpp">
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMStoryMarker.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryMarkerExpiry.cpp">
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMStoryMarkerExpiry.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryMarkBuild.cpp">
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMStoryMarkBuild.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMID.h">
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMID.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMFactoryList.h">
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMFactoryList.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMBookCompare.h">
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMBookCompare.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMBookPair.h">
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMBookPair.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMBookResult.h">
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMBookResult.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMChangedPagesTSV.h">
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMChangedPagesTSV.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMColorSampler.h">
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMColorSampler.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMConstants.h">
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMConstants.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMCore.h">
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMCore.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMTextDiff.h">
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMTextDiff.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMMemXferBytes.h">
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMMemXferBytes.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryXml.h">
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMStoryXml.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryDiffRun.h">
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMStoryDiffRun.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\IKESCMStoryMarkFacade.h">
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\IKCMStoryMarkFacade.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryMarker.h">
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMStoryMarker.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryMarkerExpiry.h">
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMStoryMarkerExpiry.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryMarkRanges.h">
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMStoryMarkRanges.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryMarkDocs.h">
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMStoryMarkDocs.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMStoryMarkBuild.h">
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMStoryMarkBuild.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMDrawEventHandler.h">
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMDrawEventHandler.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMOversetScan.h">
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMOversetScan.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMPeek.h">
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPeek.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMRingAdornment.h">
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMRingAdornment.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMHideUnchanged.h">
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMHideUnchanged.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMOversetApply.h">
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMOversetApply.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMComparisonRun.h">
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMComparisonRun.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMModelNotify.h">
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMModelNotify.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\IKESCMCompareFacade.h">
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\IKCMCompareFacade.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\IKESCMMarkData.h">
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\IKCMMarkData.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\IKESCMPageFlagsFacade.h">
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\IKCMPageFlagsFacade.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMPageMap.h">
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPageMap.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMPageCheck.h">
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPageCheck.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\..\source\sdksamples\KESCM\source\KESCMPageNumberMarker.h">
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPageNumberMarker.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <ResourceCompile Include="..\..\..\source\sdksamples\KESCM\source\KESCM.rc">
+    <ResourceCompile Include="..\..\..\source\sdksamples\KCM\source\KCM.rc">
       <Filter>Resource Files</Filter>
     </ResourceCompile>
   </ItemGroup>
   <ItemGroup>
-    <CustomBuild Include="..\..\..\source\sdksamples\KESCM\source\KESCM.fr">
+    <CustomBuild Include="..\..\..\source\sdksamples\KCM\source\KCM.fr">
       <Filter>Resource Files</Filter>
     </CustomBuild>
   </ItemGroup>
   <ItemGroup>
-    <None Include="..\..\..\source\sdksamples\KESCM\source\KESCM_jaJP.fr">
+    <None Include="..\..\..\source\sdksamples\KCM\source\KCM_jaJP.fr">
       <Filter>Resource Files</Filter>
     </None>
-    <None Include="..\..\..\source\sdksamples\KESCM\source\KESCM_enUS.fr">
+    <None Include="..\..\..\source\sdksamples\KCM\source\KCM_enUS.fr">
       <Filter>Resource Files</Filter>
     </None>
   </ItemGroup>

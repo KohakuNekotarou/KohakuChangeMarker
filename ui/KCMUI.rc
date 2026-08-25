@@ -23,7 +23,7 @@
 
 // ***** READ THIS FILE AS CP1252, NOT AS THE MACHINE'S ANSI CODE PAGE. ***** (2026-08-15.)
 //
-// Same line, same reason, as source/KESCM.rc -- see there for the full account. In short:
+// Same line, same reason, as source/KCM.rc -- see there for the full account. In short:
 // kShortCopyRightStr holds the sign as the raw byte 0xA9, which is the copyright sign only in
 // CP1252, and rc.exe defaults to the SYSTEM's ANSI code page (CP932 here), where it decodes as
 // U+FF69, a halfwidth katakana. Measured on the built .pln both ways.
@@ -61,13 +61,13 @@ BEGIN
         BEGIN
             // ★★2026-08-15（第2段 Task 6B-2）: ここは DollyXs 雛形のまま（Adobe / 1.0）だった。
             //   ⇒ エクスプローラーのプロパティにもタスクマネージャーにも「Adobe 製の別プラグイン、
-            //     版数 1.0」として出ていた。model 側（KESCM.rc）と同じ値を名乗らせる。
-            //   ★値の出どころは KESCMBoundaryID.h（両側コピー）＝版数は1か所（[[one-question-one-place]]）。
+            //     版数 1.0」として出ていた。model 側（KCM.rc）と同じ値を名乗らせる。
+            //   ★値の出どころは KCMBoundaryID.h（両側コピー）＝版数は1か所（[[one-question-one-place]]）。
             //   ⚠**成果物の VersionInfo は「ロードされるか」を測る口では絶対に見えない。**
             //     `(Get-Item x.pln).VersionInfo` を測って初めて分かった。
             VALUE "CompanyName", "Kohaku Plug-Ins\0"
-            VALUE "FileDescription", kKESCMDisplayName " (UI) - Adobe InDesign SDK Plug-in\0"
-            VALUE "FileVersion", kKESCMVersion, "\0"
+            VALUE "FileDescription", kKCMDisplayName " (UI) - Adobe InDesign SDK Plug-in\0"
+            VALUE "FileVersion", kKCMVersion, "\0"
             VALUE "InternalName", kKCMUIPluginName, "\0"
             VALUE "LegalCopyright", kShortCopyRightStr, "\0"
 

@@ -23,4 +23,4 @@
 
 #include "VCPlugInHeaders.h"
 
-#include "KESCM.fr"
+#include "KCM.fr"

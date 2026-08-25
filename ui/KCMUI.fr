@@ -61,14 +61,14 @@
 #include "EveInfo.fh"				// EVE widget types + layout flags - the book comparison dialog (2026-08-11)
 
 // ★★2026-08-16(監査 B-U1): **AppFrameworkID.h と DocumentID.h をここから外した。**
-//   このファイルは 2026-08-15(第2段 Task 6B-2)に KESCM.fr から作られたので、include の並びと
+//   このファイルは 2026-08-15(第2段 Task 6B-2)に KCM.fr から作られたので、include の並びと
 //   **その理由を説明する文章**が丸ごとコピーされていた。ところが2本の理由は model 側にしか無い:
 //     ・AppFrameworkID.h … kApplicationObjectScriptElement(AppFrameworkID.h:427)を定義する
 //                          ＝app.kcmStatus / app.kcmBookResult を**載せる先**。その2つ(と story の
-//                          4カウンター)を serve するのは model 側の kKESCMScriptProviderBoss。
+//                          4カウンター)を serve するのは model 側の kKCMScriptProviderBoss。
 //     ・DocumentID.h     … kAfterCloseDocSignalRespServiceImpl ＝ close-document responder の
 //                          サービス実装。旧コメントの "see that Class below" が指す Class は
-//                          **このファイルに無い**(KESCM.fr の kKESCMDocResponderServiceBoss の
+//                          **このファイルに無い**(KCM.fr の kKCMDocResponderServiceBoss の
 //                          Class にある)。
 //   ⇒ 2つとも KCMUI.fr での使用はゼロ(2026-08-16 に Grep で実測＝コメントの中にしか現れなかった)。
 //     外して UI をビルドし、0警告0エラーで通ることを確認した。
@@ -82,7 +82,7 @@
 #include "ScriptInfoTypes.fh"	// VersionedScriptElementInfo / Enumerator
 #include "GraphicsID.h"	// for IID_IDRWEVTHANDLER (the UI half's draw-event handler boss).
 						// ★IID_ISPRITE / IID_IPATHGEOMETRY / kPathGeometryImpl は 2026-08-19 に
-						//   トラッカー boss ごと外した(理由は kKESCMTrackerBoss の Class コメント)。
+						//   トラッカー boss ごと外した(理由は kKCMTrackerBoss の Class コメント)。
 #include "TipsID.h"		// for IID_ITIP
 
 // Toolbox tool:
@@ -97,7 +97,7 @@
 
 // Project includes:
 #include "KCMUIID.h"
-#include "KESCMScriptingDefs.h"	// en_KESCMTool (the toolbox tool's ScriptID) - the UI half's copy
+#include "KCMScriptingDefs.h"	// en_KCMTool (the toolbox tool's ScriptID) - the UI half's copy
 
 
 #ifdef __ODFRC__
@@ -149,8 +149,8 @@ resource PluginDependency(kSDKDefPluginDependencyResourceID)
 {
 	kWildFS
 	{
-		kKESCMPluginID,			// the model half's PluginID (KESCMBoundaryID.h)
-		kKESCMPluginName,		// "KohakuExtendScriptChangeMarker"
+		kKCMPluginID,			// the model half's PluginID (KCMBoundaryID.h)
+		kKCMPluginName,		// "KohakuExtendScriptChangeMarker"
 		kSDKDefPlugInMajorVersionNumber,
 		kSDKDefPlugInMinorVersionNumber,
 	}
@@ -163,32 +163,32 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 {{{
 
 	// UI 専用の描画サービス(2026-08-13・model/UI 分割 第1段 Task 6)。押下中 HUD だけを持つ。
-	// ★model 側の kKESCMDrawEventServiceBoss(比較マーク)と役割が違う: あちらは印刷と PDF 書き出しに
-	//   出なければならないので model 側(KESCM.fr)、こちらは画面専用。kDrawEventService は複数プロバイダ
+	// ★model 側の kKCMDrawEventServiceBoss(比較マーク)と役割が違う: あちらは印刷と PDF 書き出しに
+	//   出なければならないので model 側(KCM.fr)、こちらは画面専用。kDrawEventService は複数プロバイダ
 	//   登録が前提。
 	// ⚠「**上の**」と書いてあったのを 2026-08-18(不具合再検査 B-U1)に直した＝あちらは分割で model 側に
-	//   残ったので、このファイルには無い。★13行下の kKESCMUIStartupBoss は**同じ誤りを 2026-08-17 に
+	//   残ったので、このファイルには無い。★13行下の kKCMUIStartupBoss は**同じ誤りを 2026-08-17 に
 	//   直している**——**1本直したときに、同じ形の兄弟を探さなかった**。
 	Class
 	{
-		kKESCMUIDrawEventServiceBoss,
+		kKCMUIDrawEventServiceBoss,
 		kInvalidClass,
 		{
-			IID_IK2SERVICEPROVIDER, kKESCMUIDrawEventSrvcImpl,
-			IID_IDRWEVTHANDLER,     kKESCMUIDrawEventHandlerImpl,
+			IID_IK2SERVICEPROVIDER, kKCMUIDrawEventSrvcImpl,
+			IID_IDRWEVTHANDLER,     kKCMUIDrawEventHandlerImpl,
 		}
 	},
 
-	// UI 側の起動/終了サービス(2026-08-13・model/UI 分割 第1段 Task 8)。model 側の KESCM.fr が持つ
-	// kKESCMPeekStartupBoss と対(★「上の」と書いてあったのは分割前の名残＝この .fr には無い。2026-08-17 訂正)。
-	// ★終了時の順序が意味を持つ: 購読を外してからパネル周りを畳む(KESCMUIStartup.cpp の冒頭コメント参照)。
+	// UI 側の起動/終了サービス(2026-08-13・model/UI 分割 第1段 Task 8)。model 側の KCM.fr が持つ
+	// kKCMPeekStartupBoss と対(★「上の」と書いてあったのは分割前の名残＝この .fr には無い。2026-08-17 訂正)。
+	// ★終了時の順序が意味を持つ: 購読を外してからパネル周りを畳む(KCMUIStartup.cpp の冒頭コメント参照)。
 	// ⚠2つのサービスの**相対順序は保証されない**。分割時に1行ずつ確認して前後関係が無いことを確かめてある。
 	Class
 	{
-		kKESCMUIStartupBoss,
+		kKCMUIStartupBoss,
 		kInvalidClass,
 		{
-			IID_ISTARTUPSHUTDOWN,   kKESCMUIStartupImpl,
+			IID_ISTARTUPSHUTDOWN,   kKCMUIStartupImpl,
 			IID_IK2SERVICEPROVIDER, kLazyStartupShutdownProviderImpl,
 		}
 	},
@@ -196,10 +196,10 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 	// Action component: handles the About menu items (main menu + panel flyout).
 	Class
 	{
-		kKESCMActionComponentBoss,
+		kKCMActionComponentBoss,
 		kBaseActionComponentBoss,
 		{
-			IID_IACTIONCOMPONENT, kKESCMActionComponentImpl,
+			IID_IACTIONCOMPONENT, kKCMActionComponentImpl,
 		}
 	},
 
@@ -208,22 +208,22 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 	// the popup (flyout) menu data hosts the flyout menu itself.
 	Class
 	{
-		kKESCMPanelWidgetBoss,
+		kKCMPanelWidgetBoss,
 		kPalettePanelWidgetBoss,
 		{
 			IID_IPANELMENUDATA, kCPanelMenuDataImpl,
-			IID_IOBSERVER, kKESCMPanelObserverImpl,
+			IID_IOBSERVER, kKCMPanelObserverImpl,
 			// Roll-over: undim the panel while the pointer is over it (verified on the whole
 			// panel area, 2026-07-29). Note that IMouseRollOver has no usage example anywhere
 			// in the SDK; besides this AddIn it needs CREATE_PMINTERFACE *and* an entry in
 			// KCMUIFactoryList.h - a missing factory entry fails completely silently.
-			// Implementation: KESCMPanelAlpha.cpp.
-			IID_IMOUSEROLLOVER, kKESCMPanelRollOverImpl,
+			// Implementation: KCMPanelAlpha.cpp.
+			IID_IMOUSEROLLOVER, kKCMPanelRollOverImpl,
 			// The panel's view replaced (2026-08-10): PalettePanelView plus a floor under how small
 			// the panel can be dragged, now that PanelList below says kIsResizable. See
-			// KESCMPanelView.cpp - the same shape KBS and KESCL use, which they took from
+			// KCMPanelView.cpp - the same shape KBS and KESCL use, which they took from
 			// customconditionaltextui.
-			IID_ICONTROLVIEW, kKESCMPanelViewImpl,
+			IID_ICONTROLVIEW, kKCMPanelViewImpl,
 		}
 	},
 
@@ -237,10 +237,10 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 	// making every later InstallTask a silent no-op.
 	Class
 	{
-		kKESCMThumbIdleTaskBoss,
+		kKCMThumbIdleTaskBoss,
 		kInvalidClass,
 		{
-			IID_IIDLETASK, kKESCMThumbIdleTaskImpl,
+			IID_IIDLETASK, kKCMThumbIdleTaskImpl,
 		}
 	},
 
@@ -263,20 +263,20 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 		kActiveContextBoss,
 		kInvalidClass,
 		{
-			IID_IKESCMLAYOUTSYNCOBSERVER, kKESCMLayoutSyncObserverImpl,
+			IID_IKCMLAYOUTSYNCOBSERVER, kKCMLayoutSyncObserverImpl,
 			// Batch-close observer (2026-07-27). Subscribes to the application subject and waits for
 			// kPendingDocumentsClosedMsg, which the built-in Links UI plug-in broadcasts once every
 			// document of a multi-document close has finished closing. Closing N documents used to run
-			// KESCM's full close cleanup (strip detach, InvalidateViews, thumbnail refresh, panel
+			// KCM's full close cleanup (strip detach, InvalidateViews, thumbnail refresh, panel
 			// refresh) N times; now the UI half is deferred and flushed once. Lives on the same
 			// active-context boss for the same proven reason as the sync observer above.
-			IID_IKESCMDOCSCLOSEDOBSERVER, kKESCMDocsClosedObserverImpl,
+			IID_IKCMDOCSCLOSEDOBSERVER, kKCMDocsClosedObserverImpl,
 			// Model-change observer (2026-08-13, Stage 1 Task 9). The model no longer calls the UI:
 			// it raises a notification on the application subject under our own protocol IID, and
 			// this observer turns it back into UI work. Same shape as the two above -- nothing new
 			// is introduced, and with nobody listening the model simply does nothing (Server-safe).
-			IID_IKESCMMODELCHANGEOBSERVER, kKESCMModelChangeObserverImpl,
-			// Panel visibility observer (2026-07-29). Implementation: KESCMPanelAlpha.cpp.
+			IID_IKCMMODELCHANGEOBSERVER, kKCMModelChangeObserverImpl,
+			// Panel visibility observer (2026-07-29). Implementation: KCMPanelAlpha.cpp.
 			// ★It subscribes to TWO subjects and acts on THREE messages (widened 2026-08-19, bug
 			//   recheck B-U9 - this comment named one of each, which was true only on the day it
 			//   was written):
@@ -288,7 +288,7 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 			// ⚠kPaletteVisibilityChangedMessage is about VISIBILITY, exactly as its name says: it
 			//   fires when a panel is opened, closed, iconised or pulled out as a drawer, and it does
 			//   NOT fire when the panel merely changes PLACE (docked <-> floating). That gap is the
-			//   whole reason the Win32 event hook in KESCMPanelAlpha.cpp exists - so this AddIn must
+			//   whole reason the Win32 event hook in KCMPanelAlpha.cpp exists - so this AddIn must
 			//   not be read as covering the docking transitions.
 			// The toggles write their alpha to the target's current top-level window (an OWL.Dock, or
 			// an OWL.FrameDrawer while it is a drawer), and that window is thrown away and rebuilt by
@@ -297,24 +297,24 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 			// (2026-08-06) and this plug-in's book comparison dialog (2026-08-13).
 			// Lives on the same active-context boss for the same proven reason as the two observers
 			// above.
-			IID_IKESCMPANELVISIBILITYOBSERVER, kKESCMPanelVisibilityObserverImpl,
+			IID_IKCMPANELVISIBILITYOBSERVER, kKCMPanelVisibilityObserverImpl,
 		}
 	},
 
 	// Subclass of the system rollover icon button, adding IID_ITIP so hovering it shows a tooltip
 	// (same pattern as kLinksUIButtonBoss in open/components/linksui).
 	// ★THREE widgets share this boss, and the tip is NOT the same on all three: the two halves of
-	// the panel illustration (kKESCMIconOnWidgetID/kKESCMIconOffWidgetID) show the repo URL, while
-	// the tool button (kKESCMToolButtonWidgetID) shows the tool's name. KESCMIconTip.cpp tells them
+	// the panel illustration (kKCMIconOnWidgetID/kKCMIconOffWidgetID) show the repo URL, while
+	// the tool button (kKCMToolButtonWidgetID) shows the tool's name. KCMIconTip.cpp tells them
 	// apart by WidgetID - see the head of that file.
 	// (⚠this comment named only the illustration until 2026-08-18, bug recheck B-U3: the tool
 	//  button was given the same boss on 2026-08-07 and nobody came back to widen the sentence.)
 	Class
 	{
-		kKESCMIconWidgetBoss,
+		kKCMIconWidgetBoss,
 		kRollOverIconButtonBoss,
 		{
-			IID_ITIP, kKESCMIconTipImpl,
+			IID_ITIP, kKCMIconTipImpl,
 		}
 	},
 
@@ -324,10 +324,10 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 	// watches IID_ITRISTATECONTROLDATA and opens or closes the lower pane.
 	Class
 	{
-		kKESCMStorySectionToggleBoss,
+		kKCMStorySectionToggleBoss,
 		kRollOverIconButtonBoss,
 		{
-			IID_IOBSERVER, kKESCMStorySectionToggleObserverImpl,
+			IID_IOBSERVER, kKCMStorySectionToggleObserverImpl,
 		}
 	},
 
@@ -338,13 +338,13 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 	//
 	// ★Why "make it not move" needs an implementation at all: there is no way to REMOVE an interface
 	//   from an inherited boss, so the way to switch a behaviour off is to name a different
-	//   implementation for it. KESCMNoTip.cpp silences a tooltip the same way, for the same reason.
+	//   implementation for it. KCMNoTip.cpp silences a tooltip the same way, for the same reason.
 	//
 	// ★What was actually lost: dragging UP was already stopped by the top snap (this file gives it the
 	//   designed height of the upper pane, and Widgets.fh:418 says the slider does not move beyond a
 	//   snap position). Only dragging DOWN was left, and that grew the upper pane past the block of
 	//   fixed-coordinate controls it holds - leaving a dead strip with nothing in it. The section is
-	//   sized by dragging the edge of the PANEL instead, which is what KESCMPanelView already assumes.
+	//   sized by dragging the edge of the PANEL instead, which is what KCMPanelView already assumes.
 	//
 	// ★The drag would very likely have stopped anyway, without the event handler: the splitter drag is
 	//   run by a tracker, and trackers are looked up by the widget's CLASS ID (ITrackerFactory.h:44-50),
@@ -353,10 +353,10 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 	//   in at all. Both work in the same direction; neither is relied on alone.
 	Class
 	{
-		kKESCMSplitterPanelBoss,
+		kKCMSplitterPanelBoss,
 		kSplitterPanelWidgetBoss,
 		{
-			IID_IEVENTHANDLER, kKESCMSplitterEHImpl,
+			IID_IEVENTHANDLER, kKCMSplitterEHImpl,
 		}
 	},
 
@@ -369,10 +369,10 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 	//   time it is re-shown, and state kept outside them is state that goes stale.
 	Class
 	{
-		kKESCMStorySectionPanelBoss,
+		kKCMStorySectionPanelBoss,
 		kGenericPanelWidgetBoss,
 		{
-			IID_IKESCMSAVEDSECTIONHEIGHT, kPersistIntDataImpl,	// treat as IIntData
+			IID_IKCMSAVEDSECTIONHEIGHT, kPersistIntDataImpl,	// treat as IIntData
 		}
 	},
 
@@ -381,38 +381,38 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 	// and how they are DRAWN (the widget manager) - that pair is the whole shape of the samples that
 	// use a plain list (linkwatcher's kLnkWtchTreeViewWidgetBoss, basicselectabledialog's).
 	// ★The third, IID_IEVENTHANDLER, is this panel's own (2026-08-11): the stock up / down arrows
-	//   move the selection, and KESCMStoryTreeEH makes the row they land on SHOW ITSELF, so the list
-	//   can be walked with the keyboard. ⚠It is only ever constructed because KESCMStoryRowEH asks
+	//   move the selection, and KCMStoryTreeEH makes the row they land on SHOW ITSELF, so the list
+	//   can be walked with the keyboard. ⚠It is only ever constructed because KCMStoryRowEH asks
 	//   the tree for it - naming it here is not enough (implementations are lazy).
 	Class
 	{
-		kKESCMStoryTreeWidgetBoss,
+		kKCMStoryTreeWidgetBoss,
 		kTreeViewWidgetBoss,
 		{
-			IID_ITREEVIEWHIERARCHYADAPTER, kKESCMStoryTreeAdapterImpl,
-			IID_ITREEVIEWWIDGETMGR, kKESCMStoryTreeWidgetMgrImpl,
-			IID_IEVENTHANDLER, kKESCMStoryTreeEHImpl,
+			IID_ITREEVIEWHIERARCHYADAPTER, kKCMStoryTreeAdapterImpl,
+			IID_ITREEVIEWWIDGETMGR, kKCMStoryTreeWidgetMgrImpl,
+			IID_IEVENTHANDLER, kKCMStoryTreeEHImpl,
 		}
 	},
 
 	// One row of that list. The stock tree node already handles what a row IS (selection, keyboard);
 	// the one interface added says where a click on it GOES - single click scrolls the story into
-	// view, double click selects the whole story (KESCMStoryRowEH.cpp).
+	// view, double click selects the whole story (KCMStoryRowEH.cpp).
 	// ★The three cells inside the row are static text and do not consume clicks, so a press anywhere
 	//   along the row reaches this handler.
 	// ★★THE LINE BETWEEN ROWS IS THE FRAMEWORK'S, AND IT STAYS. DVTreeNodeControlView draws a
 	//   separator under every row taller than 14px on its own (DVTreeNodeControlView.h:55), which is
-	//   every row here. ⚠2026-08-11: it was turned off for a few minutes - a KESCMStoryRowView
+	//   every row here. ⚠2026-08-11: it was turned off for a few minutes - a KCMStoryRowView
 	//   (TreeNodeControlView subclass calling the protected SetDrawNodeSeparatorOnOff(kFalse), the
 	//   way the product's TimingPanelTreeNodeView.cpp does it) was written, built and then removed,
 	//   because seeing it without the lines settled the question: **the user finds the list easier to
 	//   read WITH them**. Kept here so that nobody re-derives the same removal from the same premise.
 	Class
 	{
-		kKESCMStoryRowWidgetBoss,
+		kKCMStoryRowWidgetBoss,
 		kTreeNodeWidgetBoss,
 		{
-			IID_IEVENTHANDLER, kKESCMStoryRowEHImpl,
+			IID_IEVENTHANDLER, kKCMStoryRowEHImpl,
 		}
 	},
 
@@ -424,18 +424,18 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 	// boss dump), which is a kindness on a dialog label and a nuisance on a list the pointer only
 	// crosses on its way somewhere (user's call, 2026-08-10). An inherited interface cannot be
 	// removed, so it is answered differently instead: ITip.h:37-41 defines an empty string as
-	// "no tip". Implementation: KESCMNoTip.cpp.
+	// "no tip". Implementation: KCMNoTip.cpp.
 	Class
 	{
-		kKESCMStoryRowCellBoss,
+		kKCMStoryRowCellBoss,
 		kInfoStaticTextWidgetBoss,
 		{
-			IID_ITIP, kKESCMNoTipImpl,
+			IID_ITIP, kKCMNoTipImpl,
 		}
 	},
 
-	// ★★★2026-08-23: THE JUMP MARKER AND ITS TIMER MOVED TO THE MODEL PLUG-IN (see KESCM.fr).
-	//   They were kKESCMStoryMarkerBoss (kKCMUIPrefix + 30) and kKESCMStoryMarkerExpiryBoss (+ 31),
+	// ★★★2026-08-23: THE JUMP MARKER AND ITS TIMER MOVED TO THE MODEL PLUG-IN (see KCM.fr).
+	//   They were kKCMStoryMarkerBoss (kKCMUIPrefix + 30) and kKCMStoryMarkerExpiryBoss (+ 31),
 	//   with implementations at + 41 and + 42.
 	//   The reason is one measured fact: **the UI's File > Export > PDF runs in the background, and
 	//   a kUIPlugIn is never handed the drawing there** (2026-08-12, no warning - the plug-in simply
@@ -456,66 +456,66 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 	//   silence these rows were given in 2026-08-10 comes free.
 	Class
 	{
-		kKESCMStoryChangeCellBoss,
+		kKCMStoryChangeCellBoss,
 		kGenericPanelWidgetBoss,
 		{
-			IID_ICONTROLVIEW, kKESCMStoryCellViewImpl,
-			IID_IKESCMSTORYCELLDATA, kKESCMStoryCellDataImpl,
+			IID_ICONTROLVIEW, kKCMStoryCellViewImpl,
+			IID_IKCMSTORYCELLDATA, kKCMStoryCellDataImpl,
 		}
 	},
 
 	// The panel's MESSAGE AREA (2026-08-20), built the same way as the cell above and for the same
 	// reason: it shows the OTHER side of the edit whose row was clicked, and "which characters
 	// differ" is a question one colour cannot answer. ★It replaces a StaticMultiLineTextWidget, and
-	// what that gave for free was the WRAPPING - which is written out in KESCMStatusTextView.cpp
+	// what that gave for free was the WRAPPING - which is written out in KCMStatusTextView.cpp
 	// rather than lost, because several messages in this box are full save paths.
 	// ★★It keeps the same WidgetID and the same Frame, so nothing around it moves.
 	Class
 	{
-		kKESCMStatusTextWidgetBoss,
+		kKCMStatusTextWidgetBoss,
 		kGenericPanelWidgetBoss,
 		{
-			IID_ICONTROLVIEW, kKESCMStatusTextViewImpl,
-			IID_IKESCMSTATUSTEXTDATA, kKESCMStatusTextDataImpl,
+			IID_ICONTROLVIEW, kKCMStatusTextViewImpl,
+			IID_IKCMSTATUSTEXTDATA, kKCMStatusTextDataImpl,
 		}
 	},
 
 	// Scroll-map strip: a thin custom-drawn widget injected at runtime next to the document
-	// window's vertical scrollbar (KESCMScrollMap.cpp). Same pattern as customdatalinkui's
+	// window's vertical scrollbar (KCMScrollMap.cpp). Same pattern as customdatalinkui's
 	// kCusDtLnkUITreeCViewPanelWidgetBoss: kGenericPanelWidgetBoss + own IControlView.
 	Class
 	{
-		kKESCMScrollMapWidgetBoss,
+		kKCMScrollMapWidgetBoss,
 		kGenericPanelWidgetBoss,
 		{
-			IID_ICONTROLVIEW, kKESCMScrollMapViewImpl,
+			IID_ICONTROLVIEW, kKCMScrollMapViewImpl,
 		}
 	},
 
-	// Toolbox tool for ALL KESCM pointer gestures (2026-07-13: the middle-button watcher and every
+	// Toolbox tool for ALL KCM pointer gestures (2026-07-13: the middle-button watcher and every
 	// middle-button gesture were removed; this tool is now the only pointer input). Left-hold with
 	// the tool active dispatches by the modifier keys held at press time: no modifier = reveal
 	// marks while held / Shift = peek the old version 100% / Shift+Alt = peek 50% / Alt = CMYK
 	// readout cursor. All input goes through the capturing tracker registered below
-	// (kKESCMTrackerBoss, installed by kKESCMTrackerRegisterBoss) - BeginTracking dispatches the
-	// gesture and mouse-up ends it (KESCMTracker.cpp / KESCMPeek.cpp). Note: an earlier design
+	// (kKCMTrackerBoss, installed by kKCMTrackerRegisterBoss) - BeginTracking dispatches the
+	// gesture and mouse-up ends it (KCMTracker.cpp / KCMPeek.cpp). Note: an earlier design
 	// note here claimed a capturing tracker froze InDesign; the real culprit was the
 	// kMouseTrackerBoss timer's continuous redraws, which this tracker avoids with
 	// WantTimer=kFalse. Inherits kGenericToolBoss (the standard tool base that provides the
 	// toolbox button view); IID_IPMPERSIST persists the selected state.
 	Class
 	{
-		kKESCMToolBoss,
+		kKCMToolBoss,
 		kGenericToolBoss,
 		{
-			IID_ITOOL,      kKESCMToolImpl,
+			IID_ITOOL,      kKCMToolImpl,
 			IID_IPMPERSIST, kPMPersistImpl,
-			// ツール選択中は常時✓カーソル(CToolCursorProvider 派生)。KESCMCursorProvider.cpp。
-			IID_ICURSORPROVIDER, kKESCMCursorProviderImpl,
+			// ツール選択中は常時✓カーソル(CToolCursorProvider 派生)。KCMCursorProvider.cpp。
+			IID_ICURSORPROVIDER, kKCMCursorProviderImpl,
 		}
 	},
 
-	// The KESCM tool's capturing tracker. IID_ITRACKER is the tracker (reveals marks while the
+	// The KCM tool's capturing tracker. IID_ITRACKER is the tracker (reveals marks while the
 	// left button is held); IID_IEVENTHANDLER (a CTrackerEventHandler subclass) forwards the
 	// button-up during capture to EndTracking. Same shape as the SDK's real capturing tracker
 	// (dynamicdocumentsui AnimationUIButtonTriggerTrackerBoss) - and "same shape" now means
@@ -533,30 +533,30 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 	//     トラッカー boss 4つのうち sprite を持つのは wavetool の2つ(kSawWave/kSineWave)だけで、
 	//     **どちらも CPathCreationTracker 派生**。CTracker 直接派生の2つ
 	//     ---- snapshot kSnapTrackerBoss / 上記 dynamicdocumentsui ---- は**どちらも持たない**。
-	//   KESCMTracker も **CTracker 直接派生**なので、**持たない側が「公式と同じ形」**。
+	//   KCMTracker も **CTracker 直接派生**なので、**持たない側が「公式と同じ形」**。
 	//   旧コメントは「公式の boss 構成から外れないよう残す」と書いていたが、実際は
 	//   **残すことで外れていた**(4本中ここだけが CTracker 派生で sprite を持っていた)。
 	//   ⇒ 図形を作るトラッカー(CPathCreationTracker 派生)へ作り替える日が来たら、そのとき
 	//     **基底のヘッダーが要求する組**を入れ直すこと。「トラッカーだから」では入れない。
 	Class
 	{
-		kKESCMTrackerBoss,
+		kKCMTrackerBoss,
 		kInvalidClass,
 		{
-			IID_ITRACKER,      kKESCMTrackerImpl,
-			IID_IEVENTHANDLER, kKESCMTrackerEHImpl,
+			IID_ITRACKER,      kKCMTrackerImpl,
+			IID_IEVENTHANDLER, kKCMTrackerEHImpl,
 		}
 	},
 
-	// Registers the tracker with the app: (layout widget, KESCM tool) -> KESCM tracker.
+	// Registers the tracker with the app: (layout widget, KCM tool) -> KCM tracker.
 	// IID_IK2SERVICEPROVIDER (kCTrackerRegisterProviderImpl, provided by the API) lets the
 	// application discover this registrar at startup.
 	Class
 	{
-		kKESCMTrackerRegisterBoss,
+		kKCMTrackerRegisterBoss,
 		kInvalidClass,
 		{
-			IID_ITRACKERREGISTER,   kKESCMTrackerRegisterImpl,
+			IID_ITRACKERREGISTER,   kKCMTrackerRegisterImpl,
 			IID_IK2SERVICEPROVIDER, kCTrackerRegisterProviderImpl,
 		}
 	},
@@ -568,18 +568,18 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 	 * ***** It is opened MODELESS. ***** That is what lets the user keep working with the
 	 * document while the results are on screen, and it is what keeps the door open for "click a
 	 * row to open that chapter" (a modal dialog could never offer that). The dialog type is not
-	 * declared here - it is an argument to CreateNewDialog (KESCMBookDialog.cpp).
+	 * declared here - it is an argument to CreateNewDialog (KCMBookDialog.cpp).
 	 */
 	Class
 	{
-		kKESCMBookDialogBoss,
+		kKCMBookDialogBoss,
 		kDialogBoss,
 		{
-			IID_IDIALOGCONTROLLER, kKESCMBookDialogControllerImpl,
+			IID_IDIALOGCONTROLLER, kKCMBookDialogControllerImpl,
 			// ★★2026-08-12: IID_IOBSERVER IS GONE, AND THAT IS THE FIX RATHER THAN A LOSS. It named
-			//   kKESCMBookDialogObserverImpl, whose whole job was the Compare button - and that
+			//   kKCMBookDialogObserverImpl, whose whole job was the Compare button - and that
 			//   button no longer exists (the comparison is confirmed in an alert and run from the
-			//   menu now, KESCMBookRun.cpp). What is left is a dialog with no controls at all.
+			//   menu now, KCMBookRun.cpp). What is left is a dialog with no controls at all.
 			//   ⚠Naming an observer here REPLACES the stock one, and the stock one is what makes the
 			//     close box work (CDialogObserver attaches to the dialog window). Removing the line
 			//     hands that back to kDialogBoss, which carries IID_IOBSERVER =
@@ -597,11 +597,11 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 	//   click, not before.
 	Class
 	{
-		kKESCMBookTreeWidgetBoss,
+		kKCMBookTreeWidgetBoss,
 		kTreeViewWidgetBoss,
 		{
-			IID_ITREEVIEWHIERARCHYADAPTER, kKESCMBookTreeAdapterImpl,
-			IID_ITREEVIEWWIDGETMGR, kKESCMBookTreeWidgetMgrImpl,
+			IID_ITREEVIEWHIERARCHYADAPTER, kKCMBookTreeAdapterImpl,
+			IID_ITREEVIEWWIDGETMGR, kKCMBookTreeWidgetMgrImpl,
 		}
 	},
 
@@ -611,13 +611,13 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 	// in on 2026-08-12 exactly as planned - no change of type in the resource, which is the part
 	// that is easy to get wrong. The Story Edits row went through the same two steps.
 	//   double click -> open that chapter        right click -> the row menu ("Start Change Marker")
-	// Implementation: KESCMBookRowEH.cpp (which click is which) / KESCMBookOpen.cpp (what it does).
+	// Implementation: KCMBookRowEH.cpp (which click is which) / KCMBookOpen.cpp (what it does).
 	Class
 	{
-		kKESCMBookRowWidgetBoss,
+		kKCMBookRowWidgetBoss,
 		kTreeNodeWidgetBoss,
 		{
-			IID_IEVENTHANDLER, kKESCMBookRowEHImpl,
+			IID_IEVENTHANDLER, kKCMBookRowEHImpl,
 		}
 	},
 
@@ -626,13 +626,13 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 	// whenever the cell had to shorten it, which is a kindness on a dialog label and a nuisance on
 	// a list the pointer only crosses on its way somewhere (user's call, 2026-08-10, about the
 	// panel's list - the same list, in a different window). ITip.h:37-41 defines an empty string as
-	// "no tip"; implementation KESCMNoTip.cpp, shared with the panel.
+	// "no tip"; implementation KCMNoTip.cpp, shared with the panel.
 	Class
 	{
-		kKESCMBookRowCellBoss,
+		kKCMBookRowCellBoss,
 		kInfoStaticTextWidgetBoss,
 		{
-			IID_ITIP, kKESCMNoTipImpl,
+			IID_ITIP, kKCMNoTipImpl,
 		}
 	},
 
@@ -659,7 +659,7 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 	//   point of the change (user, 2026-08-15: "make the paths match the way the panel puts them out").
 	Class
 	{
-		kKESCMBookPathTextWidgetBoss,
+		kKCMBookPathTextWidgetBoss,
 		kStaticTextWidgetBoss,
 		{
 			IID_IEVEINFO, kFixedSizeEVEInfoImpl,
@@ -688,8 +688,8 @@ resource MenuDef (kSDKDefMenuResourceID)
 {
 	{
 		// About Plug-ins sub-menu item.
-		kKESCMAboutActionID,
-		kKESCMAboutMenuPath,
+		kKCMAboutActionID,
+		kKCMAboutMenuPath,
 		kSDKDefAlphabeticPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
@@ -700,24 +700,24 @@ resource MenuDef (kSDKDefMenuResourceID)
 		// (idle) or stops/clears it (armed). This replaces the former Start/Stop panel button
 		// (2026-07-10). The label switches between "Start" and "Stop" via UpdateActionStates
 		// (kCustomEnabling + SetNthActionName) based on the shared armed state.
-		kKESCMPopupStartStopActionID,
-		kKESCMPopupMenuPath,
-		kKESCMStartStopMenuItemPosition,
+		kKCMPopupStartStopActionID,
+		kKCMPopupMenuPath,
+		kKCMStartStopMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
 		// Separator below Start (path ending in ":-" renders a menu separator; no ActionDef needed).
-		kKESCMPopupSep1ActionID,
-		kKESCMPopupMenuPath kSDKDefDelimiterAndSeparatorPath,
-		kKESCMSep1MenuItemPosition,
+		kKCMPopupSep1ActionID,
+		kKCMPopupMenuPath kSDKDefDelimiterAndSeparatorPath,
+		kKCMSep1MenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
 		// "Print comparison marks" on the panel flyout (popup) menu. Check-mark toggle:
 		// while ON, the comparison marks are printed (and stay visible on screen); OFF is
 		// screen-only. This replaces the former panel checkbox (2026-07-10). The check mark
 		// comes from UpdateActionStates (kCustomEnabling). Opacity still follows the 25%/75% radios.
-		kKESCMPopupPrintMarksActionID,
-		kKESCMPopupMenuPath,
-		kKESCMPrintMarksMenuItemPosition,
+		kKCMPopupPrintMarksActionID,
+		kKCMPopupMenuPath,
+		kKCMPrintMarksMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
 		// ("Hold to Hide Marks" stood here until 2026-08-22. It meant "keep the marks up, and hide
@@ -735,18 +735,18 @@ resource MenuDef (kSDKDefMenuResourceID)
 		// Submenu parent node: actionID 0 + path ending in a delimiter creates the "Marks opacity"
 		// submenu at this position in the flyout (Adobe idiom, see buttonui/incopyexportui .fr).
 		0,
-		kKESCMOpacitySubmenuPath kSDKDefDelimitMenuPath,
-		kKESCMOpacitySubmenuMenuItemPosition,
+		kKCMOpacitySubmenuPath kSDKDefDelimitMenuPath,
+		kKCMOpacitySubmenuMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
-		kKESCMPopupOpacity25ActionID,
-		kKESCMOpacitySubmenuPath,
-		kKESCMOpacity25SubMenuItemPosition,
+		kKCMPopupOpacity25ActionID,
+		kKCMOpacitySubmenuPath,
+		kKCMOpacity25SubMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
-		kKESCMPopupOpacity75ActionID,
-		kKESCMOpacitySubmenuPath,
-		kKESCMOpacity75SubMenuItemPosition,
+		kKCMPopupOpacity75ActionID,
+		kKCMOpacitySubmenuPath,
+		kKCMOpacity75SubMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
 		// "Mark colour" (2026-08-24). Two children, exclusive, check on whichever is in force -
@@ -755,18 +755,18 @@ resource MenuDef (kSDKDefMenuResourceID)
 		// comparison raster. The Story mode's wash cannot read the ground at all, so leaving the
 		// automatic rule in place would have made the two modes disagree about colour.
 		0,
-		kKESCMColorSubmenuPath kSDKDefDelimitMenuPath,
-		kKESCMColorSubmenuMenuItemPosition,
+		kKCMColorSubmenuPath kSDKDefDelimitMenuPath,
+		kKCMColorSubmenuMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
-		kKESCMPopupColorRedActionID,
-		kKESCMColorSubmenuPath,
-		kKESCMColorRedSubMenuItemPosition,
+		kKCMPopupColorRedActionID,
+		kKCMColorSubmenuPath,
+		kKCMColorRedSubMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
-		kKESCMPopupColorCyanActionID,
-		kKESCMColorSubmenuPath,
-		kKESCMColorCyanSubMenuItemPosition,
+		kKCMPopupColorCyanActionID,
+		kKCMColorSubmenuPath,
+		kKCMColorCyanSubMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
 		// "Compare mode" on the panel flyout (popup) menu (2026-08-20). Two children, exclusive,
@@ -775,18 +775,18 @@ resource MenuDef (kSDKDefMenuResourceID)
 		// stories and lists what differs, and draws no rings at all.
 		// Submenu parent node: actionID 0 + path ending in a delimiter, as above.
 		0,
-		kKESCMCompareModeSubmenuPath kSDKDefDelimitMenuPath,
-		kKESCMCompareModeSubmenuMenuItemPosition,
+		kKCMCompareModeSubmenuPath kSDKDefDelimitMenuPath,
+		kKCMCompareModeSubmenuMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
-		kKESCMPopupModePixelActionID,
-		kKESCMCompareModeSubmenuPath,
-		kKESCMModePixelSubMenuItemPosition,
+		kKCMPopupModePixelActionID,
+		kKCMCompareModeSubmenuPath,
+		kKCMModePixelSubMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
-		kKESCMPopupModeStoryActionID,
-		kKESCMCompareModeSubmenuPath,
-		kKESCMModeStorySubMenuItemPosition,
+		kKCMPopupModeStoryActionID,
+		kKCMCompareModeSubmenuPath,
+		kKCMModeStorySubMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
 		// "Always Show Marks on Source" on the panel flyout (popup) menu. Check-mark toggle:
@@ -794,9 +794,9 @@ resource MenuDef (kSDKDefMenuResourceID)
 		// Source document — always visible (independent of the middle button), shown in
 		// overprint preview, and always printed. Opacity follows the panel's 25%/75% radio.
 		// Remembered in Save Panel Settings and restored at startup; Start does not touch it.
-		kKESCMPopupShowSrcMarksActionID,
-		kKESCMPopupMenuPath,
-		kKESCMShowSrcMarksMenuItemPosition,
+		kKCMPopupShowSrcMarksActionID,
+		kKCMPopupMenuPath,
+		kKCMShowSrcMarksMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
 		// "Always Show Marks on Target" on the panel flyout (popup) menu. Check-mark toggle:
@@ -806,9 +806,9 @@ resource MenuDef (kSDKDefMenuResourceID)
 		// On screen only: what the Target document PRINTS is decided by "Print comparison marks"
 		// on its own, which is the one asymmetry with the Source toggle above (that one prints).
 		// Remembered in Save Panel Settings and restored at startup; Start does not touch it.
-		kKESCMPopupShowTgtMarksActionID,
-		kKESCMPopupMenuPath,
-		kKESCMShowTgtMarksMenuItemPosition,
+		kKCMPopupShowTgtMarksActionID,
+		kKCMPopupMenuPath,
+		kKCMShowTgtMarksMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
 		// "Hide Unchanged Spreads" on the panel flyout (popup) menu. Check-mark toggle:
@@ -816,9 +816,9 @@ resource MenuDef (kSDKDefMenuResourceID)
 		// every spread that has no comparison marks via kHideSpreadCmdBoss — in the Target and,
 		// by flat-page-index mapping, in the Source document too. Turning it OFF re-shows only
 		// the spreads this plug-in hid (in both documents).
-		kKESCMPopupHideUnchangedActionID,
-		kKESCMPopupMenuPath,
-		kKESCMHideUnchangedMenuItemPosition,
+		kKCMPopupHideUnchangedActionID,
+		kKCMPopupMenuPath,
+		kKCMHideUnchangedMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
 		// "Show Original Page Numbers" on the panel flyout (popup) menu. Check-mark toggle:
@@ -826,31 +826,31 @@ resource MenuDef (kSDKDefMenuResourceID)
 		// badge with the original (pre-hide) page number at the bottom center, whenever the
 		// comparison marks are visible (middle button held, or "Print comparison marks" ON —
 		// the latter also prints the badge).
-		kKESCMPopupShowOldNumsActionID,
-		kKESCMPopupMenuPath,
-		kKESCMShowOldNumsMenuItemPosition,
+		kKCMPopupShowOldNumsActionID,
+		kKCMPopupMenuPath,
+		kKCMShowOldNumsMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
 		// "Sync Layout Views" on the panel flyout (popup) menu. Check-mark toggle: while ON,
 		// scrolling/zooming any layout view mirrors its viewport (position + zoom) to all layout
 		// views of the other documents, live. Works without Start.
-		kKESCMPopupSyncViewsActionID,
-		kKESCMPopupMenuPath,
-		kKESCMSyncViewsMenuItemPosition,
+		kKCMPopupSyncViewsActionID,
+		kKCMPopupMenuPath,
+		kKCMSyncViewsMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
 		// "Translucent Panel" on the panel flyout (popup) menu. Check-mark toggle (default OFF):
-		// while ON, this panel itself is drawn translucent (alpha = kKESCMPanelAlphaValue, 77 out of 255;
+		// while ON, this panel itself is drawn translucent (alpha = kKCMPanelAlphaValue, 77 out of 255;
 		// it was 128 until 2026-07-29) whenever it is FLOATING or pulled out as an icon DRAWER - those
 		// are the two states that get their own top-level window. Moving the pointer over the panel
 		// (including its tab strip and title bar) turns it opaque again.
 		// Windows only. Choosing it while the panel is docked is allowed but has no visible effect
 		// (only the flag is stored; it takes hold as soon as the panel floats again), because a
 		// docked panel is a child of the main frame and cannot be made transparent on its own.
-		// Implementation: KESCMPanelAlpha.cpp.
-		kKESCMPopupTranslucentPanelActionID,
-		kKESCMPopupMenuPath,
-		kKESCMTranslucentPanelMenuItemPosition,
+		// Implementation: KCMPanelAlpha.cpp.
+		kKCMPopupTranslucentPanelActionID,
+		kKCMPopupMenuPath,
+		kKCMTranslucentPanelMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
 		// "Translucent Pages Panel" on the panel flyout (popup) menu. Check-mark toggle (default OFF).
@@ -862,10 +862,10 @@ resource MenuDef (kSDKDefMenuResourceID)
 		// matching the window title. Titles are translated - the Pages panel reads "Pages" on an English
 		// UI and "ページ" on a Japanese one (both measured on this machine, 2026-08-06) - so the old
 		// title-matching lookup could never have worked for a built-in panel.
-		// Implementation: KESCMPanelAlpha.cpp (shared with the toggle above; only the target differs).
-		kKESCMPopupTranslucentPagesActionID,
-		kKESCMPopupMenuPath,
-		kKESCMTranslucentPagesPanelMenuItemPosition,
+		// Implementation: KCMPanelAlpha.cpp (shared with the toggle above; only the target differs).
+		kKCMPopupTranslucentPagesActionID,
+		kKCMPopupMenuPath,
+		kKCMTranslucentPagesPanelMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
 		// "Translucent Dialog" on the flyout - the same toggle again, pointed at THIS plug-in's book
@@ -877,15 +877,15 @@ resource MenuDef (kSDKDefMenuResourceID)
 		//   the delayed re-apply and the Win32 hook. All of it, unchanged.
 		// ★What is different, and it is only this: WHERE THE WINDOW COMES FROM. The two toggles above
 		//   ask the panel manager by WidgetID; a dialog is not a panel and is not in there, so the
-		//   dialog hands its window over as it opens (KESCMBookDialog.cpp -> KESCMSetBookDialogWindow).
+		//   dialog hands its window over as it opens (KCMBookDialog.cpp -> KCMSetBookDialogWindow).
 		// ★A consequence worth knowing: a dialog is always floating, so unlike the two above this one
 		//   has no "you can tick it but it does nothing while docked" state.
-		kKESCMPopupTranslucentBookDialogActionID,
-		kKESCMPopupMenuPath,
-		kKESCMTranslucentBookDialogMenuItemPosition,
+		kKCMPopupTranslucentBookDialogActionID,
+		kKCMPopupMenuPath,
+		kKCMTranslucentBookDialogMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
-		// ("Translucent Toolbox" was added on 2026-08-07 and taken out again the same day: a KESCM
+		// ("Translucent Toolbox" was added on 2026-08-07 and taken out again the same day: a KCM
 		// toggle is not the place to change how InDesign's OWN toolbox looks. It needed only one more
 		// target to work, which is itself evidence that this mechanism does not care WHICH palette it
 		// is pointed at; the measured window structure is kept in memory/translucent-toolbox-idea.md.
@@ -895,75 +895,75 @@ resource MenuDef (kSDKDefMenuResourceID)
 		// sets every OTHER document's layout views to the active (frontmost) view's position + zoom, once.
 		// Independent of the Sync Layout Views toggle (works even when it is OFF). While Started, the page
 		// Add/Remove correction is applied so the compared pages line up. Shortcut-assignable (its ActionDef
-		// uses kKESCMPanelMenuActionArea + kSDKDefVisibleInKBSCEditorFlag).
-		kKESCMPopupAlignViewsActionID,
-		kKESCMPopupMenuPath,
-		kKESCMAlignViewsMenuItemPosition,
+		// uses kKCMPanelMenuActionArea + kSDKDefVisibleInKBSCEditorFlag).
+		kKCMPopupAlignViewsActionID,
+		kKCMPopupMenuPath,
+		kKCMAlignViewsMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
 		// "Show Scrollbar Map" on the panel flyout (popup) menu. Check-mark toggle (default ON):
 		// while ON, a thin strip beside each document window's vertical scrollbar maps the positions
 		// of changed / registered pages. Turn it OFF to remove the strip from all windows.
-		kKESCMPopupScrollMapActionID,
-		kKESCMPopupMenuPath,
-		kKESCMScrollMapMenuItemPosition,
+		kKCMPopupScrollMapActionID,
+		kKCMPopupMenuPath,
+		kKCMScrollMapMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
 		// ("Show HUD" was removed together with the on-press HUD itself on 2026-08-06.)
 
 		// "Ignore Page Number Marker" on the panel flyout (popup) menu. Check-mark toggle (default OFF,
-		// see sIgnorePageNumberMarker in KESCMPageNumberMarker.cpp): while ON, frames containing an
+		// see sIgnorePageNumberMarker in KCMPageNumberMarker.cpp): while ON, frames containing an
 		// automatic "Current Page Number" marker are excluded from the pixel comparison, so pages whose
 		// only difference is a shifted running folio (caused by registered added/removed pages
 		// elsewhere) aren't falsely flagged as changed.
-		kKESCMPopupIgnorePageNumActionID,
-		kKESCMPopupMenuPath,
-		kKESCMIgnorePageNumMenuItemPosition,
+		kKCMPopupIgnorePageNumActionID,
+		kKCMPopupMenuPath,
+		kKCMIgnorePageNumMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
 		// Separator below "Refresh Overset" (path ending in ":-" renders a menu separator; no ActionDef
 		// needed). Position table: KCMUIID.h の ActionID 位置一覧(9.50)。(2026-07-25 コメント現行化。
 		// 旧記述の "Invoke Panel Shortcut" は 2026-07-13 廃止済み)
-		kKESCMPopupSep3ActionID,
-		kKESCMPopupMenuPath kSDKDefDelimiterAndSeparatorPath,
-		kKESCMSep3MenuItemPosition,
+		kKCMPopupSep3ActionID,
+		kKCMPopupMenuPath kSDKDefDelimiterAndSeparatorPath,
+		kKCMSep3MenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
 		// "Save Panel Settings" on the panel flyout (popup) menu. Not a check toggle: a plain command
 		// that writes the current "settings" toggles to a private JSON file in the user's roaming
-		// preferences folder (KESCM\KESCMPanelState.json) and shows the saved path. The file is read
-		// back the first time the panel is opened (KESCMPanelState.cpp). Nothing is written into
+		// preferences folder (KCM\KCMPanelState.json) and shows the saved path. The file is read
+		// back the first time the panel is opened (KCMPanelState.cpp). Nothing is written into
 		// InDesign's own data (workspace SavedData / documents).
-		kKESCMPopupSavePanelStateActionID,
-		kKESCMPopupMenuPath,
-		kKESCMSavePanelStateMenuItemPosition,
+		kKCMPopupSavePanelStateActionID,
+		kKCMPopupMenuPath,
+		kKCMSavePanelStateMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
 		// "Save Check & Register" on the panel flyout (popup) menu. Plain command that writes the current
-		// per-page checks (KCM: Check) and registered Added/Removed pages of the started Target/Source
-		// documents to a private JSON file (KESCM\KESCMPageChecks.json, v2), merged with any previously saved
+		// per-page checks (Check) and registered Added/Removed pages of the started Target/Source
+		// documents to a private JSON file (KCM\KCMPageChecks.json, v2), merged with any previously saved
 		// documents. Shows the saved path.
-		kKESCMPopupSaveChecksActionID,
-		kKESCMPopupMenuPath,
-		kKESCMSaveChecksMenuItemPosition,
+		kKCMPopupSaveChecksActionID,
+		kKCMPopupMenuPath,
+		kKCMSaveChecksMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
 		// "Load Check & Register" on the panel flyout (popup) menu. Plain command; only meaningful while started.
 		// Applies the saved registered pages to both documents, recompares once, then restores the saved checks
 		// whose pages are still marked (frame/"/").
-		kKESCMPopupLoadChecksActionID,
-		kKESCMPopupMenuPath,
-		kKESCMLoadChecksMenuItemPosition,
+		kKCMPopupLoadChecksActionID,
+		kKCMPopupMenuPath,
+		kKCMLoadChecksMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
 		// "Export Changed Pages..." on the panel flyout (popup) menu. Plain command (not a toggle):
 		// writes the current comparison's changed-page list to a tab-separated UTF-8 text file
 		// (2 columns: Page / Type, where Type = Changed / Inserted / Deleted) for pasting into
 		// Excel. Overset is never included. Enabled only while a comparison is active (sDB != nil);
-		// UpdateActionStates supplies the enable state (kCustomEnabling). Work in KESCMChangedPagesTSV.cpp.
-		kKESCMPopupExportChangedPagesActionID,
-		kKESCMPopupMenuPath,
-		kKESCMExportChangedPagesMenuItemPosition,
+		// UpdateActionStates supplies the enable state (kCustomEnabling). Work in KCMChangedPagesTSV.cpp.
+		kKCMPopupExportChangedPagesActionID,
+		kKCMPopupMenuPath,
+		kKCMExportChangedPagesMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
 		// "Compare Books" on the panel flyout. Plain command. Compares TWO OPEN BOOKS chapter by
@@ -971,107 +971,107 @@ resource MenuDef (kSDKDefMenuResourceID)
 		// does not arm anything, so it can be run while a document comparison is active.
 		// Target is the book whose tab is in FRONT in the Book panel; source is the first other
 		// open book. Enabled only when both can be resolved (kCustomEnabling; UpdateActionStates
-		// runs the same resolver the action itself uses). Work in KESCMBookCompare.cpp.
-		kKESCMPopupCompareBooksActionID,
-		kKESCMPopupMenuPath,
-		kKESCMCompareBooksMenuItemPosition,
+		// runs the same resolver the action itself uses). Work in KCMBookCompare.cpp.
+		kKCMPopupCompareBooksActionID,
+		kKCMPopupMenuPath,
+		kKCMCompareBooksMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
 		// Separator above the Find Overset group (independent single-doc overset check).
-		kKESCMPopupOversetSepActionID,
-		kKESCMPopupMenuPath kSDKDefDelimiterAndSeparatorPath,
-		kKESCMOversetSepMenuItemPosition,
+		kKCMPopupOversetSepActionID,
+		kKCMPopupMenuPath kSDKDefDelimiterAndSeparatorPath,
+		kKCMOversetSepMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
 		// "Find Overset" on the panel flyout (popup) menu. Check-mark toggle (independent of the
 		// new/old comparison): while ON, the ACTIVE document is scanned and a large red cross ("+")
 		// is drawn on every page that contains overset (overflowing) text. The check mark comes from
-		// UpdateActionStates (kCustomEnabling). Screen-only. The work is in KESCMOversetScan.cpp.
-		kKESCMPopupFindOversetActionID,
-		kKESCMPopupMenuPath,
-		kKESCMFindOversetMenuItemPosition,
+		// UpdateActionStates (kCustomEnabling). Screen-only. The work is in KCMOversetScan.cpp.
+		kKCMPopupFindOversetActionID,
+		kKCMPopupMenuPath,
+		kKCMFindOversetMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
 		// "Refresh Overset" on the panel flyout (popup) menu. Plain command that re-scans the active
 		// document and refreshes the crosses. Enabled only while "Find Overset" is ON (greyed out
 		// otherwise) - UpdateActionStates supplies the enable state (kCustomEnabling).
-		kKESCMPopupRefreshOversetActionID,
-		kKESCMPopupMenuPath,
-		kKESCMRefreshOversetMenuItemPosition,
+		kKCMPopupRefreshOversetActionID,
+		kKCMPopupMenuPath,
+		kKCMRefreshOversetMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
 		// Separator above How to Use (path ending in ":-" renders a menu separator; no ActionDef needed).
-		kKESCMPopupSep2ActionID,
-		kKESCMPopupMenuPath kSDKDefDelimiterAndSeparatorPath,
-		kKESCMSep2MenuItemPosition,
+		kKCMPopupSep2ActionID,
+		kKCMPopupMenuPath kSDKDefDelimiterAndSeparatorPath,
+		kKCMSep2MenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
 		// "How to Use" on the panel flyout (popup) menu.
-		kKESCMPopupUsageActionID,
-		kKESCMPopupMenuPath,
-		kKESCMUsageMenuItemPosition,
+		kKCMPopupUsageActionID,
+		kKCMPopupMenuPath,
+		kKCMUsageMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
 		// ("About scripting" フライアウト項目は 2026-07-25 に撤去(ユーザー指定)。スクリプトAPIは
 		//  既に無く、"No scripts are currently available." を出すだけの項目だったため。ActionID
-		//  kKESCMPopupAboutScriptActionID(kKESCMPrefix+3)は予約のまま。)
+		//  kKCMPopupAboutScriptActionID(kKCMPrefix+3)は予約のまま。)
 
 		// "About this plug-in" on the panel flyout (popup) menu (shown last).
-		kKESCMPopupAboutThisActionID,
-		kKESCMPopupMenuPath,
-		kKESCMAboutThisMenuItemPosition,
+		kKCMPopupAboutThisActionID,
+		kKCMPopupMenuPath,
+		kKCMAboutThisMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
-		// Separator above the KESCM-added items on the Pages panel page context menu (path ending
-		// in ":-" renders a menu separator; no ActionDef needed). It groups KESCM's own items
+		// Separator above the KCM-added items on the Pages panel page context menu (path ending
+		// in ":-" renders a menu separator; no ActionDef needed). It groups KCM's own items
 		// (Register / Check) apart from the built-in Pages panel menu items so they read clearly as
-		// "KESCM's". Positioned just above Register (2999.0 < 3000.0), i.e. between the native items
-		// and the KESCM block.
-		kKESCMPageMapSepActionID,
+		// "KCM's". Positioned just above Register (2999.0 < 3000.0), i.e. between the native items
+		// and the KCM block.
+		kKCMPageMapSepActionID,
 		"RtMenuPagesPanel" kSDKDefDelimiterAndSeparatorPath,
-		kKESCMPageMapSepMenuItemPosition,
+		kKCMPageMapSepMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
-		// "KCM: Register as Added/Removed Pages" on the Pages panel page context menu.
+		// "Register as Added/Removed Pages" on the Pages panel page context menu.
 		// Check-mark toggle: registers/unregisters the selected pages as "pages with no
 		// comparison counterpart" (added pages in the Target, removed pages in the Source —
 		// same concept either way). The check mark, enable state and the dynamic label
 		// (Added vs Removed, per the document's role) come from UpdateActionStates
-		// (kCustomEnabling); the actual work is in KESCMPageMap.cpp.
+		// (kCustomEnabling); the actual work is in KCMPageMap.cpp.
 		// "RtMenuPagesPanel" is the untranslated internal menu name of the right-click menu on
 		// page icons in the Pages panel (verified live 2026-07-05 via app.menus + FindKeyStrings;
 		// same style as the csxsdemo sample's "RtMouseLayout"). Untranslated keys are
 		// locale-independent, so this works on English/Japanese/any-language InDesign.
-		kKESCMPageMapToggleActionID,
+		kKCMPageMapToggleActionID,
 		"RtMenuPagesPanel",
-		kKESCMPageMapToggleMenuItemPosition,
+		kKCMPageMapToggleMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
-		// "KCM: Check" on the Pages panel page context menu. Check-mark toggle: marks/unmarks the
+		// "Check" on the Pages panel page context menu. Check-mark toggle: marks/unmarks the
 		// selected pages with a blue check (✓) drawn on their Pages-panel thumbnails. Independent of
 		// the Added/Removed registration. Only available while Started (armed) with the selected doc
 		// being Target/Source; cleared on Stop. Check state / enabling come from UpdateActionStates
-		// (kCustomEnabling); the work is in KESCMPageCheck.cpp and the ✓ drawing in KESCMDrawEventHandler.
-		kKESCMPageCheckToggleActionID,
+		// (kCustomEnabling); the work is in KCMPageCheck.cpp and the ✓ drawing in KCMDrawEventHandler.
+		kKCMPageCheckToggleActionID,
 		"RtMenuPagesPanel",
-		kKESCMPageCheckMenuItemPosition,
+		kKCMPageCheckMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
-		// "KCM: Refresh Page Comparison" on the Pages panel page context menu. Plain command
+		// "Refresh Page Comparison" on the Pages panel page context menu. Plain command
 		// (not a toggle): re-runs the comparison for the selected page(s) and updates the marks /
 		// thumbnails (formerly the Ctrl+middle spread recompare, moved to this menu 2026-07-13).
 		// Only available while Started (armed) with the front document being Target/Source; enabling
-		// comes from UpdateActionStates (kCustomEnabling). The work is in KESCMPeek.cpp.
-		kKESCMPageRefreshCompareActionID,
+		// comes from UpdateActionStates (kCustomEnabling). The work is in KCMPeek.cpp.
+		kKCMPageRefreshCompareActionID,
 		"RtMenuPagesPanel",
-		kKESCMPageRefreshCompareMenuItemPosition,
+		kKCMPageRefreshCompareMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
 		// ----- The book comparison dialog's chapter rows: right-click menu (2026-08-12) -----
 		// A menu of its own - neither the panel flyout nor a built-in InDesign menu - so its path is
 		// a name nobody else uses and it is written last, after the menus above have been laid out.
 		// It is popped at the cursor by the row's event handler
-		// (KESCMBookRowEH::RButtonDn -> IMenuManager::HandlePopupMenu with this subtree's name),
+		// (KCMBookRowEH::RButtonDn -> IMenuManager::HandlePopupMenu with this subtree's name),
 		// which is the machinery the real Links / Layers panel row menus use, and the one KBS's
 		// result rows and KESCL's report rows are built on.
 		//
@@ -1080,17 +1080,17 @@ resource MenuDef (kSDKDefMenuResourceID)
 		// in this list ("ch05 Changed") into the marks that say WHERE - and it belongs on the row
 		// rather than on the flyout for the same reason KBS moved Check All here: a flyout has no
 		// row to ask about. ★Enabled ONLY on a row whose verdict is Changed and which names both of
-		// its files (kCustomEnabling -> KESCMBookRowCanStart) - so NoChange, Failed, NotCompared and
+		// its files (kCustomEnabling -> KCMBookRowCanStart) - so NoChange, Failed, NotCompared and
 		// the one-sided chapters are all greyed too. ⚠Being the only item in this menu, greyed means
 		// the menu does not appear at all, which is the intended behaviour.
-		kKESCMBookRowStartActionID,
-		kKESCMBookRowMenuName,
-		kKESCMBookRowStartMenuItemPosition,
+		kKCMBookRowStartActionID,
+		kKCMBookRowMenuName,
+		kKCMBookRowStartMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
 		// ----- The Story Edits rows: right-click menu (2026-08-21) -----
 		// A second menu of its own, on the same machinery as the chapter rows above
-		// (KESCMStoryRowEH::RButtonDn -> IMenuManager::HandlePopupMenu with this subtree's name).
+		// (KCMStoryRowEH::RButtonDn -> IMenuManager::HandlePopupMenu with this subtree's name).
 		//
 		// "Refresh Story Comparison": compare THAT ROW'S story against the older document again and
 		// replace what hangs under it. The reader edits the newer document with the panel open, and
@@ -1098,15 +1098,15 @@ resource MenuDef (kSDKDefMenuResourceID)
 		// date without re-running the comparison over the whole document.
 		// ★A row whose text has been brought back into agreement keeps its row and loses its
 		// children: the question is "what differs now", not "does this row still belong here"
-		// (user's call, 2026-08-21 - and see KESCMStoryDiffRun.h for why the change counters could
+		// (user's call, 2026-08-21 - and see KCMStoryDiffRun.h for why the change counters could
 		// not answer the second question anyway).
 		// ★Enabled ONLY in the Story mode, while armed, on a row that has a partner to compare
-		// against (kCustomEnabling -> KESCMStoryRowCanRefresh). ⚠Being the only item in this menu,
+		// against (kCustomEnabling -> KCMStoryRowCanRefresh). ⚠Being the only item in this menu,
 		// greyed means the menu does not appear at all - which is exactly what "Story モードでのみ"
 		// asks for.
-		kKESCMStoryRowRefreshActionID,
-		kKESCMStoryRowMenuName,
-		kKESCMStoryRowRefreshMenuItemPosition,
+		kKCMStoryRowRefreshActionID,
+		kKCMStoryRowMenuName,
+		kKCMStoryRowRefreshMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 	}
 };
@@ -1117,27 +1117,27 @@ resource MenuDef (kSDKDefMenuResourceID)
 resource ActionDef (kSDKDefActionResourceID)
 {
 	{
-		kKESCMActionComponentBoss,			// boss that implements the action
-		kKESCMAboutActionID,				// ActionID
-		kKESCMAboutMenuKey,					// sub-menu string
+		kKCMActionComponentBoss,			// boss that implements the action
+		kKCMAboutActionID,				// ActionID
+		kKCMAboutMenuKey,					// sub-menu string
 		kHelpMenuActionArea,				// area name
 		kNormalAction,						// action type
 		kDisableIfLowMem,					// enabling type
 		kInvalidInterfaceID,				// selection interface this action cares about
 		kSDKDefInvisibleInKBSCEditorFlag,	// KBSC editor visibility
 
-		kKESCMActionComponentBoss,
-		kKESCMPopupStartStopActionID,
-		kKESCMStartButtonKey,				// default menu name ("Start"); UpdateActionStates swaps to "Stop" when armed
+		kKCMActionComponentBoss,
+		kKCMPopupStartStopActionID,
+		kKCMStartButtonKey,				// default menu name ("Start"); UpdateActionStates swaps to "Stop" when armed
 		kOtherActionArea,
 		kNormalAction,
 		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates supplies the dynamic Start/Stop label
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 
-		kKESCMActionComponentBoss,
-		kKESCMPopupPrintMarksActionID,
-		kKESCMPrintCheckKey,				// "Print comparison marks" (same label as the former panel checkbox)
+		kKCMActionComponentBoss,
+		kKCMPopupPrintMarksActionID,
+		kKCMPrintCheckKey,				// "Print comparison marks" (same label as the former panel checkbox)
 		kOtherActionArea,
 		kNormalAction,
 		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates supplies the check mark (kSelectedAction)
@@ -1146,203 +1146,203 @@ resource ActionDef (kSDKDefActionResourceID)
 
 		// ("Hold to Hide Marks" (+19) was retired on 2026-08-22 — see the note in the MenuDef above.)
 
-		kKESCMActionComponentBoss,
-		kKESCMPopupOpacity25ActionID,
-		kKESCMOpacity25Key,					// "Marks opacity 25%" (same label as the former panel radio)
+		kKCMActionComponentBoss,
+		kKCMPopupOpacity25ActionID,
+		kKCMOpacity25Key,					// "Marks opacity 25%" (same label as the former panel radio)
 		kOtherActionArea,
 		kNormalAction,
 		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates checks whichever opacity is selected (radio-style)
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 
-		kKESCMActionComponentBoss,
-		kKESCMPopupOpacity75ActionID,
-		kKESCMOpacity75Key,					// "Marks opacity 75%"
+		kKCMActionComponentBoss,
+		kKCMPopupOpacity75ActionID,
+		kKCMOpacity75Key,					// "Marks opacity 75%"
 		kOtherActionArea,
 		kNormalAction,
 		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates checks whichever opacity is selected (radio-style)
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 
-		kKESCMActionComponentBoss,
-		kKESCMPopupColorRedActionID,
-		kKESCMColorRedKey,					// "Red" (the default)
+		kKCMActionComponentBoss,
+		kKCMPopupColorRedActionID,
+		kKCMColorRedKey,					// "Red" (the default)
 		kOtherActionArea,
 		kNormalAction,
 		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates checks whichever colour is selected (radio-style)
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 
-		kKESCMActionComponentBoss,
-		kKESCMPopupColorCyanActionID,
-		kKESCMColorCyanKey,					// "Cyan"
+		kKCMActionComponentBoss,
+		kKCMPopupColorCyanActionID,
+		kKCMColorCyanKey,					// "Cyan"
 		kOtherActionArea,
 		kNormalAction,
 		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates checks whichever colour is selected (radio-style)
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 
-		kKESCMActionComponentBoss,
-		kKESCMPopupModePixelActionID,
-		kKESCMModePixelKey,					// "Pixel Changes"
+		kKCMActionComponentBoss,
+		kKCMPopupModePixelActionID,
+		kKCMModePixelKey,					// "Pixel Changes"
 		kOtherActionArea,
 		kNormalAction,
 		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates checks whichever mode is in force (radio-style)
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 
-		kKESCMActionComponentBoss,
-		kKESCMPopupModeStoryActionID,
-		kKESCMModeStoryKey,					// "Story Changes"
+		kKCMActionComponentBoss,
+		kKCMPopupModeStoryActionID,
+		kKCMModeStoryKey,					// "Story Changes"
 		kOtherActionArea,
 		kNormalAction,
 		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates checks whichever mode is in force (radio-style)
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 
-		kKESCMActionComponentBoss,
-		kKESCMPopupShowSrcMarksActionID,
-		kKESCMShowSrcMarksMenuKey,
+		kKCMActionComponentBoss,
+		kKCMPopupShowSrcMarksActionID,
+		kKCMShowSrcMarksMenuKey,
 		kOtherActionArea,
 		kNormalAction,
 		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates supplies the check mark (kSelectedAction)
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 
-		kKESCMActionComponentBoss,
-		kKESCMPopupShowTgtMarksActionID,
-		kKESCMShowTgtMarksMenuKey,
+		kKCMActionComponentBoss,
+		kKCMPopupShowTgtMarksActionID,
+		kKCMShowTgtMarksMenuKey,
 		kOtherActionArea,
 		kNormalAction,
 		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates supplies the check mark (kSelectedAction)
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 
-		kKESCMActionComponentBoss,
-		kKESCMPopupHideUnchangedActionID,
-		kKESCMHideUnchangedMenuKey,
+		kKCMActionComponentBoss,
+		kKCMPopupHideUnchangedActionID,
+		kKCMHideUnchangedMenuKey,
 		kOtherActionArea,
 		kNormalAction,
 		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates supplies the check mark (kSelectedAction)
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 
-		kKESCMActionComponentBoss,
-		kKESCMPopupShowOldNumsActionID,
-		kKESCMShowOldNumsMenuKey,
+		kKCMActionComponentBoss,
+		kKCMPopupShowOldNumsActionID,
+		kKCMShowOldNumsMenuKey,
 		kOtherActionArea,
 		kNormalAction,
 		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates supplies the check mark (kSelectedAction)
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 
-		kKESCMActionComponentBoss,
-		kKESCMPopupSyncViewsActionID,
-		kKESCMSyncViewsMenuKey,
+		kKCMActionComponentBoss,
+		kKCMPopupSyncViewsActionID,
+		kKCMSyncViewsMenuKey,
 		kOtherActionArea,
 		kNormalAction,
 		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates supplies the check mark (kSelectedAction)
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 
-		// "Align Other Views to Active": shortcut-assignable one-shot. kKESCMPanelMenuActionArea +
+		// "Align Other Views to Active": shortcut-assignable one-shot. kKCMPanelMenuActionArea +
 		// kSDKDefVisibleInKBSCEditorFlag file it in the Keyboard Shortcuts editor under Product Area
 		// "Palette Menus" as "Kohaku Change Marker: Align Other Views to Active" (same treatment as KESCL's
 		// searches). No default shortcut ships; the user assigns one. Plain kDisableIfLowMem = always
 		// available (no UpdateActionStates entry needed).
-		kKESCMActionComponentBoss,
-		kKESCMPopupAlignViewsActionID,
-		kKESCMAlignViewsMenuKey,
-		kKESCMPanelMenuActionArea,
+		kKCMActionComponentBoss,
+		kKCMPopupAlignViewsActionID,
+		kKCMAlignViewsMenuKey,
+		kKCMPanelMenuActionArea,
 		kNormalAction,
 		kDisableIfLowMem,
 		kInvalidInterfaceID,
 		kSDKDefVisibleInKBSCEditorFlag,
 
-		kKESCMActionComponentBoss,
-		kKESCMPopupScrollMapActionID,
-		kKESCMScrollMapMenuKey,
+		kKCMActionComponentBoss,
+		kKCMPopupScrollMapActionID,
+		kKCMScrollMapMenuKey,
 		kOtherActionArea,
 		kNormalAction,
 		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates supplies the check mark (kSelectedAction)
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 
-		kKESCMActionComponentBoss,
-		kKESCMPopupTranslucentPanelActionID,
-		kKESCMTranslucentPanelMenuKey,
+		kKCMActionComponentBoss,
+		kKCMPopupTranslucentPanelActionID,
+		kKCMTranslucentPanelMenuKey,
 		kOtherActionArea,
 		kNormalAction,
 		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates supplies the check mark (kSelectedAction)
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 
-		kKESCMActionComponentBoss,
-		kKESCMPopupTranslucentPagesActionID,
-		kKESCMTranslucentPagesPanelMenuKey,
+		kKCMActionComponentBoss,
+		kKCMPopupTranslucentPagesActionID,
+		kKCMTranslucentPagesPanelMenuKey,
 		kOtherActionArea,
 		kNormalAction,
 		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates supplies the check mark (kSelectedAction)
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 
-		kKESCMActionComponentBoss,
-		kKESCMPopupTranslucentBookDialogActionID,
-		kKESCMTranslucentBookDialogMenuKey,
+		kKCMActionComponentBoss,
+		kKCMPopupTranslucentBookDialogActionID,
+		kKCMTranslucentBookDialogMenuKey,
 		kOtherActionArea,
 		kNormalAction,
 		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates supplies the check mark (kSelectedAction)
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 
-		kKESCMActionComponentBoss,
-		kKESCMPopupIgnorePageNumActionID,
-		kKESCMIgnorePageNumMenuKey,
+		kKCMActionComponentBoss,
+		kKCMPopupIgnorePageNumActionID,
+		kKCMIgnorePageNumMenuKey,
 		kOtherActionArea,
 		kNormalAction,
 		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates supplies the check mark (kSelectedAction)
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 
-		kKESCMActionComponentBoss,
-		kKESCMPopupSavePanelStateActionID,
-		kKESCMSavePanelStateMenuKey,
+		kKCMActionComponentBoss,
+		kKCMPopupSavePanelStateActionID,
+		kKCMSavePanelStateMenuKey,
 		kOtherActionArea,
 		kNormalAction,
 		kDisableIfLowMem,					// plain command; always enabled (no UpdateActionStates needed)
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 
-		kKESCMActionComponentBoss,
-		kKESCMPopupSaveChecksActionID,
-		kKESCMSaveChecksMenuKey,
+		kKCMActionComponentBoss,
+		kKCMPopupSaveChecksActionID,
+		kKCMSaveChecksMenuKey,
 		kOtherActionArea,
 		kNormalAction,
 		kDisableIfLowMem,					// plain command; guards inside (needs Start + checks)
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 
-		kKESCMActionComponentBoss,
-		kKESCMPopupLoadChecksActionID,
-		kKESCMLoadChecksMenuKey,
+		kKCMActionComponentBoss,
+		kKCMPopupLoadChecksActionID,
+		kKCMLoadChecksMenuKey,
 		kOtherActionArea,
 		kNormalAction,
 		kDisableIfLowMem,					// plain command; guards inside (needs Start)
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 
-		kKESCMActionComponentBoss,
-		kKESCMPopupExportChangedPagesActionID,
-		kKESCMExportChangedPagesMenuKey,
+		kKCMActionComponentBoss,
+		kKCMPopupExportChangedPagesActionID,
+		kKCMExportChangedPagesMenuKey,
 		kOtherActionArea,
 		kNormalAction,
 		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates enables only while a comparison is active (sDB != nil)
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 
-		kKESCMActionComponentBoss,
-		kKESCMPopupCompareBooksActionID,
-		kKESCMCompareBooksMenuKey,
+		kKCMActionComponentBoss,
+		kKCMPopupCompareBooksActionID,
+		kKCMCompareBooksMenuKey,
 		kOtherActionArea,
 		kNormalAction,
 		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates enables only when both books resolve (front tab + one other)
@@ -1351,59 +1351,59 @@ resource ActionDef (kSDKDefActionResourceID)
 
 		// "Start Change Marker" on the chapter rows' right-click menu in the book comparison dialog.
 		// ⚠ Not on the flyout: it acts on the ROW the menu was popped over, which a flyout has no way
-		// of naming (KESCMBookRowEH stashes it, KESCMBookOpen reads it back).
-		kKESCMActionComponentBoss,
-		kKESCMBookRowStartActionID,
-		kKESCMBookRowStartMenuKey,
+		// of naming (KCMBookRowEH stashes it, KCMBookOpen reads it back).
+		kKCMActionComponentBoss,
+		kKCMBookRowStartActionID,
+		kKCMBookRowStartMenuKey,
 		kOtherActionArea,
 		kNormalAction,
-		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates greys it for a row with only one side (KESCMBookRowCanStart)
+		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates greys it for a row with only one side (KCMBookRowCanStart)
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 
 		// "Refresh Story Comparison" on the Story Edits rows' right-click menu (2026-08-21).
 		// ⚠ Not on the flyout, for the same reason the chapter item is not: it acts on the ROW the
-		// menu was popped over, which a flyout has no way of naming (KESCMStoryRowEH stashes it).
-		kKESCMActionComponentBoss,
-		kKESCMStoryRowRefreshActionID,
-		kKESCMStoryRowRefreshMenuKey,
+		// menu was popped over, which a flyout has no way of naming (KCMStoryRowEH stashes it).
+		kKCMActionComponentBoss,
+		kKCMStoryRowRefreshActionID,
+		kKCMStoryRowRefreshMenuKey,
 		kOtherActionArea,
 		kNormalAction,
-		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates greys it outside the Story mode (KESCMStoryRowCanRefresh)
+		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates greys it outside the Story mode (KCMStoryRowCanRefresh)
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 
-		kKESCMActionComponentBoss,
-		kKESCMPopupFindOversetActionID,
-		kKESCMFindOversetMenuKey,
+		kKCMActionComponentBoss,
+		kKCMPopupFindOversetActionID,
+		kKCMFindOversetMenuKey,
 		kOtherActionArea,
 		kNormalAction,
 		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates supplies the check mark (kSelectedAction)
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 
-		kKESCMActionComponentBoss,
-		kKESCMPopupRefreshOversetActionID,
-		kKESCMRefreshOversetMenuKey,
+		kKCMActionComponentBoss,
+		kKCMPopupRefreshOversetActionID,
+		kKCMRefreshOversetMenuKey,
 		kOtherActionArea,
 		kNormalAction,
 		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates enables only while Find Overset is ON (greyed out otherwise)
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 
-		kKESCMActionComponentBoss,
-		kKESCMPopupUsageActionID,
-		kKESCMUsageMenuKey,
+		kKCMActionComponentBoss,
+		kKCMPopupUsageActionID,
+		kKCMUsageMenuKey,
 		kOtherActionArea,
 		kNormalAction,
 		kDisableIfLowMem,
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 
-		// (kKESCMPopupAboutScriptActionID の ActionDef は 2026-07-25 に撤去=About Scripting 項目削除に伴い。)
+		// (kKCMPopupAboutScriptActionID の ActionDef は 2026-07-25 に撤去=About Scripting 項目削除に伴い。)
 
-		kKESCMActionComponentBoss,
-		kKESCMPopupAboutThisActionID,
+		kKCMActionComponentBoss,
+		kKCMPopupAboutThisActionID,
 		kSDKDefAboutThisPlugInMenuKey,
 		kOtherActionArea,
 		kNormalAction,
@@ -1411,27 +1411,27 @@ resource ActionDef (kSDKDefActionResourceID)
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 
-		kKESCMActionComponentBoss,
-		kKESCMPageMapToggleActionID,
-		kKESCMPageMapToggleMenuKey,
+		kKCMActionComponentBoss,
+		kKCMPageMapToggleActionID,
+		kKCMPageMapToggleMenuKey,
 		kOtherActionArea,
 		kNormalAction,
 		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates supplies check mark, enabling and the dynamic Added/Removed label
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 
-		kKESCMActionComponentBoss,
-		kKESCMPageCheckToggleActionID,
-		kKESCMPageCheckMenuKey,
+		kKCMActionComponentBoss,
+		kKCMPageCheckToggleActionID,
+		kKCMPageCheckMenuKey,
 		kOtherActionArea,
 		kNormalAction,
 		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates supplies check mark and enabling
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 
-		kKESCMActionComponentBoss,
-		kKESCMPageRefreshCompareActionID,
-		kKESCMPageRefreshCompareMenuKey,
+		kKCMActionComponentBoss,
+		kKCMPageRefreshCompareActionID,
+		kKCMPageRefreshCompareMenuKey,
 		kOtherActionArea,
 		kNormalAction,
 		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates supplies enabling (armed + front doc is Target/Source)
@@ -1442,24 +1442,24 @@ resource ActionDef (kSDKDefActionResourceID)
 
 
 /*
- * Toolbox tool definition. Places the KESCM tool in the toolbox. While it is the active tool,
+ * Toolbox tool definition. Places the KCM tool in the toolbox. While it is the active tool,
  * holding the left mouse button reveals the comparison marks (modifier keys switch to the
  * peek / CMYK gestures - see the tool boss above). Group kSixthAdobeToolsGroup is a good slot
- * for third-party / SDK tools. The icon uses a dedicated tool icon (kKESCMToolIconResID;
- * KESCM_Tool_32.png/_64.png, ユーザー提供 2026-07-14) instead of the panel PNG suite.
- * kKESCMToolActionID is the tool-select shortcut action (no ActionDef needed; the
+ * for third-party / SDK tools. The icon uses a dedicated tool icon (kKCMToolIconResID;
+ * KCM_Tool_32.png/_64.png, ユーザー提供 2026-07-14) instead of the panel PNG suite.
+ * kKCMToolActionID is the tool-select shortcut action (no ActionDef needed; the
  * toolbox framework provides the selection action for a tool).
  */
-resource ToolDef (kKESCMToolIconResID)
+resource ToolDef (kKCMToolIconResID)
 {
-	kKESCMToolBoss,				// classID for the tool boss
+	kKCMToolBoss,				// classID for the tool boss
 	kPointerToolBoss,			// tool type (boss of the default tool for this type)
 	kDoesNotApply,				// parent tool boss
 	kSixthAdobeToolsGroup,		// group number (good slot for third-party / SDK tools)
 	kFirstAdobeTool,			// tool number within the group
 	kDoesNotApply,				// subtool number
-	kKESCMToolActionID,			// action ID associated with the tool-select shortcut
-	kKESCMToolIconResID,		// icon resource ID (dedicated tool icon)
+	kKCMToolActionID,			// action ID associated with the tool-select shortcut
+	kKCMToolIconResID,		// icon resource ID (dedicated tool icon)
 	kKCMUIPluginID,				// plug-in ID
 	kADBEIconSuiteButtonType
 };
@@ -1491,7 +1491,7 @@ resource LocaleIndex ( kSDKDefStringsResourceID)
 		kWildFS, k_nbNO, kSDKDefStringsResourceID + index_enUS
 		kWildFS, k_fiFI, kSDKDefStringsResourceID + index_enUS
 		// kWildFS と enUS テーブル: jaJP 文字列テーブルは撤去(2026-08-05・KBS と同時)。日本語を
-		// 話す3箇所は KESCMLoc.h の実行時切替へ。旧形(kInDesignJapaneseFS+jaJP テーブル)は
+		// 話す3箇所は KCMLoc.h の実行時切替へ。旧形(kInDesignJapaneseFS+jaJP テーブル)は
 		// 「Roman エンジン+日本語 UI」でどの行にも当たらず全キーが生表示になる(同日実測)。
 		kWildFS, k_jaJP, kSDKDefStringsResourceID + index_enUS
 		// ★catch-all(2026-08-06 再点検): 上に列挙の無い UI 言語(中国語・韓国語・ロシア語等)の受け皿。
@@ -1517,11 +1517,11 @@ resource StringTable (kSDKDefStringsNoTransResourceID + index_enUS)
 	kEuropeanMacToWinEncodingConverter,		// Character encoding converter
 	{
 		// Internal popup (flyout) menu name - not translated.
-		kKESCMInternalPopupMenuNameKey,	kKESCMInternalPopupMenuNameKey,
+		kKCMInternalPopupMenuNameKey,	kKCMInternalPopupMenuNameKey,
 	}
 };
 //========================================================================================
-// (Scripting API removed: KESCM no longer exposes any script methods. The flyout item
+// (Scripting API removed: KCM no longer exposes any script methods. The flyout item
 // "About Scripting" that used to say so was also removed on 2026-07-25.)
 //========================================================================================
 
@@ -1532,82 +1532,82 @@ resource StringTable (kSDKDefStringsNoTransResourceID + index_enUS)
 
 // PNG icons (compiled into the plug-in; ON = armed/comparing, OFF = idle). Same art is used for
 // the normal and rollover states since this is a non-interactive status icon.
-resource PNGA(kKESCMIconOnResID)  "KESCM_On32.png"
-resource PNGR(kKESCMIconOnResID)  "KESCM_On32.png"
-resource PNGA(kKESCMIconOffResID) "KESCM_Off32.png"
-resource PNGR(kKESCMIconOffResID) "KESCM_Off32.png"
+resource PNGA(kKCMIconOnResID)  "KCM_On32.png"
+resource PNGR(kKCMIconOnResID)  "KCM_On32.png"
+resource PNGA(kKCMIconOffResID) "KCM_Off32.png"
+resource PNGR(kKCMIconOffResID) "KCM_Off32.png"
 
 // Small dock-tab icon shown when the panel is collapsed to its smallest. Replace
 // KohakuChangeMarkerTab.png with your own artwork (a small, e.g. ~20x20, transparent PNG).
-resource PNGA(kKESCMPaletteIconResID) "KohakuChangeMarkerTab.png"
+resource PNGA(kKCMPaletteIconResID) "KohakuChangeMarkerTab.png"
 
-// KESCM ツールボックスアイコン(ユーザー提供 2026-07-14)。通常=32x32、HiDPI(2x)=64x64。ダーク版は
+// KCM ツールボックスアイコン(ユーザー提供 2026-07-14)。通常=32x32、HiDPI(2x)=64x64。ダーク版は
 // 用意していないため PNGAD にも同じライト版画像を指定して流用する(ユーザー指定)。Windows の 1.5x は
 // 別画像を作らず通常(32x32)を再利用する(wavetool サンプルと同じ作法)。
-resource PNGA(kKESCMToolIconResID)  "KESCM_Tool_32.png"
-resource PNGAD(kKESCMToolIconResID) "KESCM_Tool_32.png"	// ダーク版なし=ライトを流用
-resource PNGA(kKESCMToolIconResID + kHIDPIIconOffset)  "KESCM_Tool_64.png"
-resource PNGAD(kKESCMToolIconResID + kHIDPIIconOffset) "KESCM_Tool_64.png"	// ダーク版なし=ライトを流用
+resource PNGA(kKCMToolIconResID)  "KCM_Tool_32.png"
+resource PNGAD(kKCMToolIconResID) "KCM_Tool_32.png"	// ダーク版なし=ライトを流用
+resource PNGA(kKCMToolIconResID + kHIDPIIconOffset)  "KCM_Tool_64.png"
+resource PNGAD(kKCMToolIconResID + kHIDPIIconOffset) "KCM_Tool_64.png"	// ダーク版なし=ライトを流用
 #ifdef WINDOWS
-resource PNGA(kKESCMToolIconResID + kHIDPIIconOffset150)  "KESCM_Tool_32.png"
-resource PNGAD(kKESCMToolIconResID + kHIDPIIconOffset150) "KESCM_Tool_32.png"
+resource PNGA(kKCMToolIconResID + kHIDPIIconOffset150)  "KCM_Tool_32.png"
+resource PNGAD(kKCMToolIconResID + kHIDPIIconOffset150) "KCM_Tool_32.png"
 #endif
 // ★ロールオーバー版(2026-08-07 追加)。同じ絵を**パネル内のツール切替ボタン**でも使うため
-//   (kKESCMToolButtonWidgetID)。RollOverIconButtonWidget 系はマウスが乗ったときに PNGR を引くので、
-//   PNGA だけだとホバーで絵が消える。猫イラスト(上の kKESCMIconOnResID)と同じく、状態で絵を変える
+//   (kKCMToolButtonWidgetID)。RollOverIconButtonWidget 系はマウスが乗ったときに PNGR を引くので、
+//   PNGA だけだとホバーで絵が消える。猫イラスト(上の kKCMIconOnResID)と同じく、状態で絵を変える
 //   必要は無いので通常版をそのまま流用する。ツールボックス側のツール枠は PNGA/PNGAD しか見ないので、
 //   ここを足してもあちらの見た目は変わらない。
-resource PNGR(kKESCMToolIconResID)  "KESCM_Tool_32.png"
-resource PNGRD(kKESCMToolIconResID) "KESCM_Tool_32.png"	// ダーク版なし=ライトを流用
-resource PNGR(kKESCMToolIconResID + kHIDPIIconOffset)  "KESCM_Tool_64.png"
-resource PNGRD(kKESCMToolIconResID + kHIDPIIconOffset) "KESCM_Tool_64.png"
+resource PNGR(kKCMToolIconResID)  "KCM_Tool_32.png"
+resource PNGRD(kKCMToolIconResID) "KCM_Tool_32.png"	// ダーク版なし=ライトを流用
+resource PNGR(kKCMToolIconResID + kHIDPIIconOffset)  "KCM_Tool_64.png"
+resource PNGRD(kKCMToolIconResID + kHIDPIIconOffset) "KCM_Tool_64.png"
 #ifdef WINDOWS
-resource PNGR(kKESCMToolIconResID + kHIDPIIconOffset150)  "KESCM_Tool_32.png"
-resource PNGRD(kKESCMToolIconResID + kHIDPIIconOffset150) "KESCM_Tool_32.png"
+resource PNGR(kKCMToolIconResID + kHIDPIIconOffset150)  "KCM_Tool_32.png"
+resource PNGRD(kKCMToolIconResID + kHIDPIIconOffset150) "KCM_Tool_32.png"
 #endif
 
 // ✓ tool cursor. {X, Y} = the checkmark's vertex (folding point) in 1x logical pixels, which must
-// match the vertex (10,18) drawn by KESCMDrawCheckGlyph so the click point sits on the vertex.
-// ★2026-07-25: コールバック描画(KESCMCheckCursorBitmapProc)から **PNG リソース**へ変更した。理由=押下時に
+// match the vertex (10,18) drawn by KCMDrawCheckGlyph so the click point sits on the vertex.
+// ★2026-07-25: コールバック描画(KCMCheckCursorBitmapProc)から **PNG リソース**へ変更した。理由=押下時に
 //   間欠的に出る「ゴミ」の発生源が、基底 CTracker::BeginTracking の中の✓再設置(モーダルカーソル取得)で
 //   コールバックが呼び直されることだったため(切り分け 2026-07-25)。リソースなら再設置でバッファ描画が
-//   起きない=発生源そのものが消える。画像は KESCMCheckGlyph.h と同じ幾何で生成(work/ のスクリプト参照)。
+//   起きない=発生源そのものが消える。画像は KCMCheckGlyph.h と同じ幾何で生成(work/ のスクリプト参照)。
 //   1x=32x32 / 2x=+kHIDPICrsrOffset(3000) / Win 1.5x=+kHIDPI150CrsrOffset(4000)。手本=sdksamples/snapshot。
-resource PNGC(kKESCMCheckCursorResID) "KESCM_Check_10_18.png"
-resource PNGC(kKESCMCheckCursorResID + kHIDPICrsrOffset) "KESCM_Check_10_18@2x.png"
+resource PNGC(kKCMCheckCursorResID) "KCM_Check_10_18.png"
+resource PNGC(kKCMCheckCursorResID + kHIDPICrsrOffset) "KCM_Check_10_18@2x.png"
 #ifdef WINDOWS
-resource PNGC(kKESCMCheckCursorResID + kHIDPI150CrsrOffset) "KESCM_Check_10_18@3to2x.png"
+resource PNGC(kKCMCheckCursorResID + kHIDPI150CrsrOffset) "KCM_Check_10_18@3to2x.png"
 #endif
-resource HOTC(kKESCMCheckCursorResID) {10, 18};
+resource HOTC(kKCMCheckCursorResID) {10, 18};
 
 // Alt+左「色比較」の CMYK 情報カーソルのホットスポット。✓と同じ折れ点(10,18)=クリック点に一致させる。
 // CursorID は ✓ と分けてある(キャッシュ取り違えによる初回フレームのゴミ対策。KCMUIID.h 参照)。
-resource HOTC(kKESCMCmykCursorResID) {10, 18};
+resource HOTC(kKCMCmykCursorResID) {10, 18};
 
 // 同・交互切替用の第2ID。ドラッグ中の数値更新は kFalse カーソルの入れ直しで行い、同一スペック再設定の
-// no-op を避けるため 1021/1022 を交互に使う(KESCMTracker.cpp の InstallCmykCursor)。ホットスポットは同じ。
-resource HOTC(kKESCMCmykCursor2ResID) {10, 18};
+// no-op を避けるため 1021/1022 を交互に使う(KCMTracker.cpp の InstallCmykCursor)。ホットスポットは同じ。
+resource HOTC(kKCMCmykCursor2ResID) {10, 18};
 
 // ✓カーソルの非アクティブ版(白抜き=黒フチ+白本体)。ホットスポットは黒✓と同じ折れ点 (10,18)=切替で
 // カーソル位置は動かない。出す条件は **Stop 中(比較していない)、またはレイアウトビューの上に居ないとき**
-// (KESCMCursorProvider.cpp → KESCMToolCursorShouldBeBlack)。
+// (KCMCursorProvider.cpp → KCMToolCursorShouldBeBlack)。
 // ⚠ここは 2026-08-19(不具合再検査 B-U6)まで「**Start 中かつマウス下が Target 文書**」以外、と
 //   書いてあった。それは 2026-07-26 の**ユーザー指定で撤回された旧仕様**で、以後は
 //   **Start 中ならマウス下がどの文書でも黒**(第3の文書でも黒＝「比較は動いている」を示す)。
-//   実装側(KESCMCmykCursor.cpp の KESCMToolCursorShouldBeBlack)は同日に直っており、
+//   実装側(KCMCmykCursor.cpp の KCMToolCursorShouldBeBlack)は同日に直っており、
 //   **リソース側の説明文だけが旧仕様のまま残っていた**。
 // こちらも PNG リソース(上の黒✓と同じ理由。2026-07-25)。
-resource PNGC(kKESCMCheckCursorInactiveResID) "KESCM_CheckOff_10_18.png"
-resource PNGC(kKESCMCheckCursorInactiveResID + kHIDPICrsrOffset) "KESCM_CheckOff_10_18@2x.png"
+resource PNGC(kKCMCheckCursorInactiveResID) "KCM_CheckOff_10_18.png"
+resource PNGC(kKCMCheckCursorInactiveResID + kHIDPICrsrOffset) "KCM_CheckOff_10_18@2x.png"
 #ifdef WINDOWS
-resource PNGC(kKESCMCheckCursorInactiveResID + kHIDPI150CrsrOffset) "KESCM_CheckOff_10_18@3to2x.png"
+resource PNGC(kKCMCheckCursorInactiveResID + kHIDPI150CrsrOffset) "KCM_CheckOff_10_18@3to2x.png"
 #endif
-resource HOTC(kKESCMCheckCursorInactiveResID) {10, 18};
+resource HOTC(kKCMCheckCursorInactiveResID) {10, 18};
 
 // Panel LocaleIndex - a single (string-key driven) view is used for every locale; the labels
 // themselves come from the enUS string table (KCMUI_enUS.fr - the table moved here whole with the
-// split on 2026-08-15; this line still said "KESCM_enUS.fr" until 2026-08-18, bug recheck B-U1).
-// Japanese is switched in at run time by KESCMLoc.h - the jaJP string table was retired on 2026-08-05.
+// split on 2026-08-15; this line still said "KCM_enUS.fr" until 2026-08-18, bug recheck B-U1).
+// Japanese is switched in at run time by KCMLoc.h - the jaJP string table was retired on 2026-08-05.
 resource LocaleIndex (kSDKDefPanelResourceID)
 {
 	kViewRsrcType,
@@ -1617,66 +1617,66 @@ resource LocaleIndex (kSDKDefPanelResourceID)
 };
 
 // Type definition for the panel widget boss.
-type KESCMPanelWidget(kViewRsrcType) : PalettePanelWidget(ClassID = kKESCMPanelWidgetBoss)
+type KCMPanelWidget(kViewRsrcType) : PalettePanelWidget(ClassID = kKCMPanelWidgetBoss)
 {
 	CPanelMenuData;
 };
 
 // Panel illustration (ON/OFF icon) widget type: same as RollOverIconButtonWidget, but backed by
-// kKESCMIconWidgetBoss so it carries IID_ITIP (tooltip showing the repo URL on hover).
-type KESCMIconWidget(kViewRsrcType) : RollOverIconButtonWidget(ClassID = kKESCMIconWidgetBoss) { };
+// kKCMIconWidgetBoss so it carries IID_ITIP (tooltip showing the repo URL on hover).
+type KCMIconWidget(kViewRsrcType) : RollOverIconButtonWidget(ClassID = kKCMIconWidgetBoss) { };
 
-// Scroll-map strip widget type (custom-drawn; injected at runtime by KESCMScrollMap.cpp).
-type KESCMScrollMapWidget(kViewRsrcType) : GenericPanelWidget(ClassID = kKESCMScrollMapWidgetBoss) { };
+// Scroll-map strip widget type (custom-drawn; injected at runtime by KCMScrollMap.cpp).
+type KCMScrollMapWidget(kViewRsrcType) : GenericPanelWidget(ClassID = kKCMScrollMapWidgetBoss) { };
 
-// "Story Edits" section toggle: a rollover icon button backed by kKESCMStorySectionToggleBoss so it
+// "Story Edits" section toggle: a rollover icon button backed by kKCMStorySectionToggleBoss so it
 // carries IID_IOBSERVER. It draws no artwork of its own - the resource it points at is the stock
 // disclosure triangle owned by the application (kTreeBranchCollapsedRsrcID / ...ExpandedRsrcID),
 // the same pair the Links panel uses for its Link Info toggle.
-type KESCMStorySectionToggleWidget(kViewRsrcType) : RollOverIconButtonWidget(ClassID = kKESCMStorySectionToggleBoss) { };
+type KCMStorySectionToggleWidget(kViewRsrcType) : RollOverIconButtonWidget(ClassID = kKCMStorySectionToggleBoss) { };
 
 // "Story Edits" section body (the splitter's lower pane): a generic panel that additionally carries
 // one persistent integer, the height it had when it was last closed. Same construction as the Links
 // panel's kLinkInfoPanelWidgetBoss, which holds its IID_ISAVEDINFOPANESIZE the same way
 // (LinksUIViews.fr:45 for the type, LinksUIClass.fr:91 for the interface).
-type KESCMStorySectionPanelWidget(kViewRsrcType) : GenericPanelWidget(ClassID = kKESCMStorySectionPanelBoss) { };
+type KCMStorySectionPanelWidget(kViewRsrcType) : GenericPanelWidget(ClassID = kKCMStorySectionPanelBoss) { };
 
-// The splitter itself, backed by kKESCMSplitterPanelBoss so that its divider cannot be dragged (see
+// The splitter itself, backed by kKCMSplitterPanelBoss so that its divider cannot be dragged (see
 // that Class above). ★The field list is SplitterPanelWidget's, unchanged - the resource below is
 // byte for byte what it was, and the layout with it.
-type KESCMSplitterPanelWidget(kViewRsrcType) : SplitterPanelWidget(ClassID = kKESCMSplitterPanelBoss) { };
+type KCMSplitterPanelWidget(kViewRsrcType) : SplitterPanelWidget(ClassID = kKCMSplitterPanelBoss) { };
 
 // The "Story Edits" list itself.
-type KESCMStoryTreeWidget(kViewRsrcType) : TreeViewWidget(ClassID = kKESCMStoryTreeWidgetBoss) { };
+type KCMStoryTreeWidget(kViewRsrcType) : TreeViewWidget(ClassID = kKCMStoryTreeWidgetBoss) { };
 
 // One row of that list. ★PrimaryResourcePanelWidget is the point: the widget manager creates each
 // row with CreateObjectNoInit (boss only) and calls DoPostCreate() afterwards to build the three
 // cells inside it, which is the sequence that lets the palette theme be set in between.
-type KESCMStoryRowWidget(kViewRsrcType) : PrimaryResourcePanelWidget(ClassID = kKESCMStoryRowWidgetBoss) { };
+type KCMStoryRowWidget(kViewRsrcType) : PrimaryResourcePanelWidget(ClassID = kKCMStoryRowWidgetBoss) { };
 
 // One cell of that row: an InfoStaticText whose only difference is that it stays silent on hover
-// (see kKESCMStoryRowCellBoss above). The field list is InfoStaticTextWidget's, unchanged.
-type KESCMStoryRowCellWidget(kViewRsrcType) : InfoStaticTextWidget(ClassID = kKESCMStoryRowCellBoss) { };
+// (see kKCMStoryRowCellBoss above). The field list is InfoStaticTextWidget's, unchanged.
+type KCMStoryRowCellWidget(kViewRsrcType) : InfoStaticTextWidget(ClassID = kKCMStoryRowCellBoss) { };
 
 // The text cell of a CHANGE row: drawn by hand so that the changed characters can keep the theme's
-// text colour while the context around them fades (see kKESCMStoryChangeCellBoss above).
+// text colour while the context around them fades (see kKCMStoryChangeCellBoss above).
 // ⚠The field list is GenericPanelWidget's, NOT the cell type above it: no alignment, no ellipsize
-//  style, no font IDs - a hand-drawn cell decides all three itself (KESCMStoryCellView.cpp), and
+//  style, no font IDs - a hand-drawn cell decides all three itself (KCMStoryCellView.cpp), and
 //  it ends with a child list rather than a text string.
-type KESCMStoryChangeCellWidget(kViewRsrcType) : GenericPanelWidget(ClassID = kKESCMStoryChangeCellBoss) { };
+type KCMStoryChangeCellWidget(kViewRsrcType) : GenericPanelWidget(ClassID = kKCMStoryChangeCellBoss) { };
 
-// The panel's message area: drawn by hand for the same reason (see kKESCMStatusTextWidgetBoss).
+// The panel's message area: drawn by hand for the same reason (see kKCMStatusTextWidgetBoss).
 // ⚠The field list is GenericPanelWidget's, NOT StaticMultiLineTextWidget's - gone from the line
 //  that uses it are the alignment, the ellipsize style, the ampersand flag, the font ID, the LINE
 //  COUNT and the initial string. The drawing code decides all of them, and the line count is now
-//  the box's own height rather than a number that can disagree with it (KESCMStatusTextView.cpp).
-type KESCMStatusTextWidget(kViewRsrcType) : GenericPanelWidget(ClassID = kKESCMStatusTextWidgetBoss) { };
+//  the box's own height rather than a number that can disagree with it (KCMStatusTextView.cpp).
+type KCMStatusTextWidget(kViewRsrcType) : GenericPanelWidget(ClassID = kKCMStatusTextWidgetBoss) { };
 
 // The book comparison dialog (2026-08-11). "DialogBoss" is the exotic name of what is really a
 // widget type - the basicdialog shape, WidgetEveInfo and all. Same form as KESCL's Jump Offset
 // dialog (KESCL.fr:953), which is the closest working example: a fixed-size dialog by the same
 // author. ⚠ The WidgetEveInfo line is required; without it the resource below will not parse.
-type KESCMBookDialogWidget(kViewRsrcType) : DialogBoss(ClassID = kKESCMBookDialogBoss)
+type KCMBookDialogWidget(kViewRsrcType) : DialogBoss(ClassID = kKCMBookDialogBoss)
 {
 	WidgetEveInfo;
 };
@@ -1686,56 +1686,56 @@ type KESCMBookDialogWidget(kViewRsrcType) : DialogBoss(ClassID = kKESCMBookDialo
 // examples of a tree in an EVE dialog declare their tree type exactly this way - the product's
 // linksui (LinksUIViews.fr:95, "EVETreeViewWidget") and the SDK's basicselectabledialog
 // (BscSlDlg.fr:373).
-type KESCMBookTreeWidget(kViewRsrcType) : TreeViewWidget(ClassID = kKESCMBookTreeWidgetBoss)
+type KCMBookTreeWidget(kViewRsrcType) : TreeViewWidget(ClassID = kKCMBookTreeWidgetBoss)
 {
 	WidgetEveInfo;
 };
 
 // One row of that list - same construction as the panel's row (PrimaryResourcePanelWidget so that
 // the manager can create the boss first, set the theme, and only then build the cells).
-type KESCMBookRowWidget(kViewRsrcType) : PrimaryResourcePanelWidget(ClassID = kKESCMBookRowWidgetBoss) { };
+type KCMBookRowWidget(kViewRsrcType) : PrimaryResourcePanelWidget(ClassID = kKCMBookRowWidgetBoss) { };
 
-// One cell of that row: an InfoStaticText that stays silent on hover (see kKESCMBookRowCellBoss).
+// One cell of that row: an InfoStaticText that stays silent on hover (see kKCMBookRowCellBoss).
 // The field list is InfoStaticTextWidget's, unchanged. ⚠ No WidgetEveInfo: the cells are children
 // of the row, not of the dialog, and the row is built outside EVE.
-type KESCMBookRowCellWidget(kViewRsrcType) : InfoStaticTextWidget(ClassID = kKESCMBookRowCellBoss) { };
+type KCMBookRowCellWidget(kViewRsrcType) : InfoStaticTextWidget(ClassID = kKCMBookRowCellBoss) { };
 
 // The dialog's Target:/Source: lines. Field for field an EVEStaticTextWidget - only the boss differs,
 // and with it the answer EVE gets when it asks how wide this widget wants to be (see
-// kKESCMBookPathTextWidgetBoss: the frame becomes the size instead of the minimum).
-type KESCMBookPathTextWidget(kViewRsrcType) : EVEStaticTextWidget(ClassID = kKESCMBookPathTextWidgetBoss) { };
+// kKCMBookPathTextWidgetBoss: the frame becomes the size instead of the minimum).
+type KCMBookPathTextWidget(kViewRsrcType) : EVEStaticTextWidget(ClassID = kKCMBookPathTextWidgetBoss) { };
 
 // Scroll-map strip view resource: instantiated with ::CreateObject2<IControlView>(db, RsrcSpec(...,
-// kViewRsrcType, kKESCMScrollMapRsrcID)) — same runtime-creation pattern as linksui's dynamic info
+// kViewRsrcType, kKCMScrollMapRsrcID)) — same runtime-creation pattern as linksui's dynamic info
 // widgets, in the typed form the widget bin itself uses (CTreeViewWidgetMgr::CreateWidgetForNode).
 // The Frame here is a placeholder; the real frame/binding are assigned right after AddWidget from
 // the live scrollbar geometry.
 // Corrected on 2026-08-19 (bug re-check B-U8): the C++ moved to the typed CreateObject2 -- which
 // takes no IID -- on 2026-08-17, yet this description of that very call still spelled the old
 // ::CreateObject(..., IID_ICONTROLVIEW). The same stale wording sat in KCMUIID.h beside
-// kKESCMScrollMapRsrcID: when an implementation changes, the resource and the ID header that
+// kKCMScrollMapRsrcID: when an implementation changes, the resource and the ID header that
 // describe it are siblings, and a grep for the old call spelling finds both at once.
-resource LocaleIndex (kKESCMScrollMapRsrcID)
+resource LocaleIndex (kKCMScrollMapRsrcID)
 {
 	kViewRsrcType,
 	{
-		kWildFS, k_Wild, kKESCMScrollMapRsrcID + index_enUS
+		kWildFS, k_Wild, kKCMScrollMapRsrcID + index_enUS
 	}
 };
 
 // The book comparison dialog's view (2026-08-11). Not localised as a view: the strings it shows
-// come from the string table, like every other KESCM label.
-resource LocaleIndex (kKESCMBookDialogRsrcID)
+// come from the string table, like every other KCM label.
+resource LocaleIndex (kKCMBookDialogRsrcID)
 {
 	kViewRsrcType,
 	{
-		kWildFS, k_Wild, kKESCMBookDialogRsrcID + index_enUS
+		kWildFS, k_Wild, kKCMBookDialogRsrcID + index_enUS
 	}
 };
 
-resource KESCMScrollMapWidget(kKESCMScrollMapRsrcID + index_enUS)
+resource KCMScrollMapWidget(kKCMScrollMapRsrcID + index_enUS)
 {
-	kKESCMScrollMapWidgetID,		// WidgetId
+	kKCMScrollMapWidgetID,		// WidgetId
 	kPMRsrcID_None,					// RsrcId
 	kBindNone,						// Frame binding (placeholder; set at runtime)
 	Frame(0, 0, 5, 100)				// Frame (placeholder; set at runtime)
@@ -1745,25 +1745,25 @@ resource KESCMScrollMapWidget(kKESCMScrollMapRsrcID + index_enUS)
 	}
 };
 
-// One row of the "Story Edits" list, created at runtime by KESCMStoryTreeWidgetMgr. ★The
+// One row of the "Story Edits" list, created at runtime by KCMStoryTreeWidgetMgr. ★The
 // LocaleIndex wrapper is required, not decoration: the widget manager asks for the row with
 // RsrcSpec(LocaleSetting::GetLocale(), ...), so the base ID has to resolve through a locale table
 // before it finds a body. The row carries no localized strings of its own - both cells are stamped
 // at runtime - so one wild locale row is the whole table.
-resource LocaleIndex (kKESCMStoryRowRsrcID)
+resource LocaleIndex (kKCMStoryRowRsrcID)
 {
 	kViewRsrcType,
 	{
-		kWildFS, k_Wild, kKESCMStoryRowRsrcID + index_enUS
+		kWildFS, k_Wild, kKCMStoryRowRsrcID + index_enUS
 	}
 };
 
-resource KESCMStoryRowWidget(kKESCMStoryRowRsrcID + index_enUS)
+resource KCMStoryRowWidget(kKCMStoryRowRsrcID + index_enUS)
 {
 	__FILE__, __LINE__,
-	kKESCMStoryRowWidgetID, kPMRsrcID_None,	// WidgetId, RsrcId
+	kKCMStoryRowWidgetID, kPMRsrcID_None,	// WidgetId, RsrcId
 	kBindLeft | kBindRight,				// Frame binding: follow the list's width
-	Frame(0, 0, 224, kKESCMStoryRowHeight),	// Frame (left, top, right, bottom)
+	Frame(0, 0, 224, kKCMStoryRowHeight),	// Frame (left, top, right, bottom)
 	kTrue, kTrue,						// Visible, Enabled
 	"",									// Panel name
 	{
@@ -1783,7 +1783,7 @@ resource KESCMStoryRowWidget(kKESCMStoryRowRsrcID + index_enUS)
 			kTreeBranchCollapsedRsrcID,		// RsrcId for collapsed node icon
 			kApplicationRsrcPluginID,		// RsrcPlugin for collapsed node icon
 			kBindNone,						// Frame binding
-			Frame(4, 1, 20, kKESCMStoryRowHeight - 2),	// Frame
+			Frame(4, 1, 20, kKCMStoryRowHeight - 2),	// Frame
 			kTrue, kTrue,					// Visible, Enabled
 			kTreeBranchExpandedRsrcID,		// RsrcId for expanded node icon
 			kApplicationRsrcPluginID,		// RsrcPlugin for expanded node icon
@@ -1799,13 +1799,13 @@ resource KESCMStoryRowWidget(kKESCMStoryRowRsrcID + index_enUS)
 		//   same words, and the kind column repeats by design. ★kBindLeft only: a fixed column at the
 		//   left edge, so widening the panel gives the space to the text cell rather than to a number
 		//   that is never more than a few digits wide.
-		KESCMStoryRowCellWidget
+		KCMStoryRowCellWidget
 		(
-			kKESCMStoryRowUIDWidgetID,		// WidgetId
+			kKCMStoryRowUIDWidgetID,		// WidgetId
 			kPMRsrcID_None,					// RsrcId
 			kBindLeft,						// Frame binding: stay at the row's left edge
 			// ★8 -> 24 on 2026-08-20: the expander above now holds the row's left edge.
-			Frame(24, 1, 64, kKESCMStoryRowHeight - 2),	// Frame (40px = room for 5-6 digits at the palette font)
+			Frame(24, 1, 64, kKCMStoryRowHeight - 2),	// Frame (40px = room for 5-6 digits at the palette font)
 			kTrue, kTrue,					// Visible, Enabled
 			kAlignLeft,						// Alignment
 			kDontEllipsize, kFalse,			// Ellipsize style, Convert ampersands
@@ -1819,13 +1819,13 @@ resource KESCMStoryRowWidget(kKESCMStoryRowRsrcID + index_enUS)
 		// ★Convert ampersands = kFalse. This cell shows text taken out of the document, and a lone
 		//   '&' in it is not an accelerator: "Q&A" has to read as "Q&A" (memory
 		//   ampersand-eaten-in-ui-strings). KBS's rows set kTrue instead, because on that side C++
-		//   doubles the ampersands up first (InsertAmpersandForDisplay); KESCM does not, so the
+		//   doubles the ampersands up first (InsertAmpersandForDisplay); KCM does not, so the
 		//   conversion is turned off here rather than compensated for there.
-		// ★KESCMStoryRowCellWidget, not the plain InfoStaticTextWidget: the only difference is that
-		//   it does not pop the full text up on hover (see kKESCMStoryRowCellBoss).
-		KESCMStoryRowCellWidget
+		// ★KCMStoryRowCellWidget, not the plain InfoStaticTextWidget: the only difference is that
+		//   it does not pop the full text up on hover (see kKCMStoryRowCellBoss).
+		KCMStoryRowCellWidget
 		(
-			kKESCMStoryRowTextWidgetID,		// WidgetId
+			kKCMStoryRowTextWidgetID,		// WidgetId
 			kPMRsrcID_None,					// RsrcId
 			kBindLeft | kBindRight,			// Frame binding: take the space the kind cell leaves
 			// ★Left inset 8, the same margin the rest of the panel uses (user's call, 2026-08-10:
@@ -1838,7 +1838,7 @@ resource KESCMStoryRowWidget(kKESCMStoryRowRsrcID + index_enUS)
 			//     margin, and this cell starts 4px after it. This is the cell that gives way - it is
 			//     the only one that grows when the panel is widened.
 			// ★52 -> 68 on 2026-08-20, the same 16px the UID cell moved: the expander took the left edge.
-			Frame(68, 1, 154, kKESCMStoryRowHeight - 2),	// Frame
+			Frame(68, 1, 154, kKCMStoryRowHeight - 2),	// Frame
 			kTrue, kTrue,					// Visible, Enabled
 			kAlignLeft,						// Alignment
 			kEllipsizeMiddle, kFalse,		// Ellipsize style, Convert ampersands
@@ -1849,16 +1849,16 @@ resource KESCMStoryRowWidget(kKESCMStoryRowRsrcID + index_enUS)
 
 		// Right: which kinds of change moved. A fixed column, so the words line up down the list
 		// and it is the story text that gives way when the panel is narrow.
-		KESCMStoryRowCellWidget
+		KCMStoryRowCellWidget
 		(
-			kKESCMStoryRowKindWidgetID,		// WidgetId
+			kKCMStoryRowKindWidgetID,		// WidgetId
 			kPMRsrcID_None,					// RsrcId
 			kBindRight,						// Frame binding: stay at the row's right edge
 			// ★Right inset 8 (220 -> 216), matching the panel's other right edges: Target / Source
 			//   end at 216, so do Next and both cat illustrations. ★The left edge moves with it
 			//   (158 -> 154) so this column stays 62px wide - two words ("Text Attr") have to fit,
 			//   and kDontEllipsize means anything wider is simply clipped.
-			Frame(154, 1, 216, kKESCMStoryRowHeight - 2),	// Frame
+			Frame(154, 1, 216, kKCMStoryRowHeight - 2),	// Frame
 			kTrue, kTrue,					// Visible, Enabled
 			kAlignRight,					// Alignment
 			kDontEllipsize, kFalse,			// Ellipsize style, Convert ampersands
@@ -1875,7 +1875,7 @@ resource KESCMStoryRowWidget(kKESCMStoryRowRsrcID + index_enUS)
 //
 // ★★★THIS RESOURCE *IS* THE INDENT. The cells start further right than the story row's, and that
 // is the whole of the hierarchy's visual offset - nothing moves them at runtime. The reason is in
-// KESCMStoryTreeWidgetMgr::ApplyIndentToWidget: row widgets are recycled, so an indent applied as
+// KCMStoryTreeWidgetMgr::ApplyIndentToWidget: row widgets are recycled, so an indent applied as
 // "move right by N" accumulates every time the row is scrolled back into view, and the absolute
 // form the base class uses needs fBaseIndentOffset, which is 0 in this manager.
 // ⇒ Two levels, two resources. ⚠A THIRD level cannot be done this way.
@@ -1886,20 +1886,20 @@ resource KESCMStoryRowWidget(kKESCMStoryRowRsrcID + index_enUS)
 // among one parent's descendants, and these rows are never each other's descendants - the book
 // dialog's row already shares the same three.
 // ---------------------------------------------------------------------------------------
-resource LocaleIndex (kKESCMStoryChangeRowRsrcID)
+resource LocaleIndex (kKCMStoryChangeRowRsrcID)
 {
 	kViewRsrcType,
 	{
-		kWildFS, k_Wild, kKESCMStoryChangeRowRsrcID + index_enUS
+		kWildFS, k_Wild, kKCMStoryChangeRowRsrcID + index_enUS
 	}
 };
 
-resource KESCMStoryRowWidget(kKESCMStoryChangeRowRsrcID + index_enUS)
+resource KCMStoryRowWidget(kKCMStoryChangeRowRsrcID + index_enUS)
 {
 	__FILE__, __LINE__,
-	kKESCMStoryChangeRowWidgetID, kPMRsrcID_None,	// WidgetId (★NOT the story row's - see KCMUIID.h)
+	kKCMStoryChangeRowWidgetID, kPMRsrcID_None,	// WidgetId (★NOT the story row's - see KCMUIID.h)
 	kBindLeft | kBindRight,				// Frame binding: follow the list's width
-	Frame(0, 0, 224, kKESCMStoryRowHeight),	// Frame (left, top, right, bottom)
+	Frame(0, 0, 224, kKCMStoryRowHeight),	// Frame (left, top, right, bottom)
 	kTrue, kTrue,						// Visible, Enabled
 	"",									// Panel name
 	{
@@ -1914,7 +1914,7 @@ resource KESCMStoryRowWidget(kKESCMStoryChangeRowRsrcID + index_enUS)
 		//     do, and nothing needed them to - the framework walks each row's own cell list.
 		//
 		// Left: the words the edit concerns. ★For a deletion this is what was REMOVED (the model
-		// chose which side - KESCMStoryList.h); for everything else it is the new text.
+		// chose which side - KCMStoryList.h); for everything else it is the new text.
 		//
 		// ★★★IT STARTS WHERE THE STORY ROW'S TEXT STARTS - 68, THE SAME NUMBER (user's call,
 		//   2026-08-20: "子供の文字の始まりは、親の文字の始まりと同じにして欲しい"). It went 84 ->
@@ -1932,16 +1932,16 @@ resource KESCMStoryRowWidget(kKESCMStoryChangeRowRsrcID + index_enUS)
 		//   its whole string (user's request: "変更されたところ以外は薄い色にして欲しい、KBSを参考に").
 		//   ⚠The three cells are therefore NO LONGER the same widget type on the two rows. Everything
 		//     that matters stays the same: the same WidgetID, the same frame, the same font (named in
-		//     KESCMStoryCellView.cpp, since a generic panel carries no font field). What is gone from
+		//     KCMStoryCellView.cpp, since a generic panel carries no font field). What is gone from
 		//     this line is what the drawing code now decides: alignment (always left), the ellipsize
 		//     style (kEllipsizeMiddle would cut away the change itself - the middle is exactly where
 		//     it is) and the ampersand conversion (kFalse either way; this is document text).
-		KESCMStoryChangeCellWidget
+		KCMStoryChangeCellWidget
 		(
-			kKESCMStoryRowTextWidgetID,		// WidgetId (reused)
+			kKCMStoryRowTextWidgetID,		// WidgetId (reused)
 			kPMRsrcID_None,					// RsrcId
 			kBindLeft | kBindRight,			// Frame binding: this is the cell that grows
-			Frame(68, 1, 176, kKESCMStoryRowHeight - 2),	// Frame (84 -> 68 = the story row's text cell;
+			Frame(68, 1, 176, kKCMStoryRowHeight - 2),	// Frame (84 -> 68 = the story row's text cell;
 															// right edge 154 -> 176, see the sign's cell below)
 			kTrue, kTrue,					// Visible, Enabled
 			"",								// Panel name (none)
@@ -1960,13 +1960,13 @@ resource KESCMStoryRowWidget(kKESCMStoryChangeRowRsrcID + index_enUS)
 		//     still END at the same place (216), so the signs line up under "Text+" rather than
 		//     starting under it.
 		// ★This is also where an attribute difference will name what changed when that arrives
-		//   (KESCMStoryList.h's fWhat) - it will be a word there, beside these signs.
-		KESCMStoryRowCellWidget
+		//   (KCMStoryList.h's fWhat) - it will be a word there, beside these signs.
+		KCMStoryRowCellWidget
 		(
-			kKESCMStoryRowKindWidgetID,		// WidgetId (reused)
+			kKCMStoryRowKindWidgetID,		// WidgetId (reused)
 			kPMRsrcID_None,					// RsrcId
 			kBindRight,						// Frame binding: stay at the row's right edge
-			Frame(176, 1, 216, kKESCMStoryRowHeight - 2),	// Frame (154 -> 176: the text cell took it)
+			Frame(176, 1, 216, kKCMStoryRowHeight - 2),	// Frame (154 -> 176: the text cell took it)
 			kTrue, kTrue,					// Visible, Enabled
 			kAlignRight,					// Alignment
 			kDontEllipsize, kFalse,			// Ellipsize style, Convert ampersands
@@ -1983,31 +1983,31 @@ resource KESCMStoryRowWidget(kKESCMStoryChangeRowRsrcID + index_enUS)
 // Ruby is set ABOVE the characters it belongs to, and the user asked for it to look like that
 // rather than like a second column of text ("ちいさくなくてもいいです、文字のサイズは同じで、位置を
 // 漢字の文字の上に、実際のルビの様に" / "位置が重要"). At the palette font's own size that needs two
-// lines, so this row is twice as tall and KESCMStoryCellView splits its text cell in half.
+// lines, so this row is twice as tall and KCMStoryCellView splits its text cell in half.
 //
 // ★WHY A THIRD RESOURCE RATHER THAN A TALLER SECOND ONE. Only ruby rows are tall; an ordinary text
 // change is still one line, and so is every row of the pixel mode. The framework decides which
 // widget to build from GetWidgetTypeForNode, so the two kinds have to answer different WidgetIDs
-// or a tall widget gets recycled onto a short row (KCMUIID.h at kKESCMStoryRubyRowWidgetID).
+// or a tall widget gets recycled onto a short row (KCMUIID.h at kKCMStoryRubyRowWidgetID).
 //
 // ★WHAT IS THE SAME AS 1014, DELIBERATELY: the cell boss, the cell WidgetIDs and the columns. The
 // only differences are heights - which is what keeps "how a change row is filled in" one piece of
-// code (KESCMStoryTreeWidgetMgr::ApplyChangeRow) rather than two that have to be kept in step.
+// code (KCMStoryTreeWidgetMgr::ApplyChangeRow) rather than two that have to be kept in step.
 // ---------------------------------------------------------------------------------------
-resource LocaleIndex (kKESCMStoryRubyRowRsrcID)
+resource LocaleIndex (kKCMStoryRubyRowRsrcID)
 {
 	kViewRsrcType,
 	{
-		kWildFS, k_Wild, kKESCMStoryRubyRowRsrcID + index_enUS
+		kWildFS, k_Wild, kKCMStoryRubyRowRsrcID + index_enUS
 	}
 };
 
-resource KESCMStoryRowWidget(kKESCMStoryRubyRowRsrcID + index_enUS)
+resource KCMStoryRowWidget(kKCMStoryRubyRowRsrcID + index_enUS)
 {
 	__FILE__, __LINE__,
-	kKESCMStoryRubyRowWidgetID, kPMRsrcID_None,	// WidgetId (★NOT the plain change row's - see above)
+	kKCMStoryRubyRowWidgetID, kPMRsrcID_None,	// WidgetId (★NOT the plain change row's - see above)
 	kBindLeft | kBindRight,				// Frame binding: follow the list's width
-	Frame(0, 0, 224, kKESCMStoryRubyRowHeight),	// Frame (left, top, right, bottom)
+	Frame(0, 0, 224, kKCMStoryRubyRowHeight),	// Frame (left, top, right, bottom)
 	kTrue, kTrue,						// Visible, Enabled
 	"",									// Panel name
 	{
@@ -2015,12 +2015,12 @@ resource KESCMStoryRowWidget(kKESCMStoryRubyRowRsrcID + index_enUS)
 		// takes the WHOLE height and divides it itself - it is the only thing here that knows the
 		// two lines exist, and it has to, because the reading is centred over the changed
 		// characters and where those land is not known until the line has been laid out.
-		KESCMStoryChangeCellWidget
+		KCMStoryChangeCellWidget
 		(
-			kKESCMStoryRowTextWidgetID,		// WidgetId (reused - see 1014)
+			kKCMStoryRowTextWidgetID,		// WidgetId (reused - see 1014)
 			kPMRsrcID_None,					// RsrcId
 			kBindLeft | kBindRight,			// Frame binding: this is the cell that grows
-			Frame(68, 1, 176, kKESCMStoryRubyRowHeight - 2),	// Frame (the full two lines)
+			Frame(68, 1, 176, kKCMStoryRubyRowHeight - 2),	// Frame (the full two lines)
 			kTrue, kTrue,					// Visible, Enabled
 			"",								// Panel name (none)
 			{
@@ -2031,15 +2031,15 @@ resource KESCMStoryRowWidget(kKESCMStoryRubyRowRsrcID + index_enUS)
 		// ★A stock static text centres itself in its own frame, so the frame is the lower half.
 		//   Centred in the WHOLE row it would land exactly on the boundary between the two lines,
 		//   reading as if it belonged to neither.
-		// ⚠The upper half's height is written as half the row's, not as kKESCMStoryRowHeight: the
+		// ⚠The upper half's height is written as half the row's, not as kKCMStoryRowHeight: the
 		//   two happen to be the same number today, and only one of them means "one line of this
 		//   row" (see KCMUIID.h - 19 is "one line + 1px", 38 is "two lines + 2px").
-		KESCMStoryRowCellWidget
+		KCMStoryRowCellWidget
 		(
-			kKESCMStoryRowKindWidgetID,		// WidgetId (reused)
+			kKCMStoryRowKindWidgetID,		// WidgetId (reused)
 			kPMRsrcID_None,					// RsrcId
 			kBindRight,						// Frame binding: stay at the row's right edge
-			Frame(176, kKESCMStoryRubyRowHeight / 2, 216, kKESCMStoryRubyRowHeight - 2),	// Frame (lower line)
+			Frame(176, kKCMStoryRubyRowHeight / 2, 216, kKCMStoryRubyRowHeight - 2),	// Frame (lower line)
 			kTrue, kTrue,					// Visible, Enabled
 			kAlignRight,					// Alignment
 			kDontEllipsize, kFalse,			// Ellipsize style, Convert ampersands
@@ -2051,29 +2051,29 @@ resource KESCMStoryRowWidget(kKESCMStoryRubyRowRsrcID + index_enUS)
 };
 
 // One row of the book comparison dialog's chapter list, created at runtime by
-// KESCMBookTreeWidgetMgr. Same construction as the Story Edits row above - including the
+// KCMBookTreeWidgetMgr. Same construction as the Story Edits row above - including the
 // LocaleIndex wrapper, which is required rather than decorative: the widget manager asks for the
 // row with RsrcSpec(LocaleSetting::GetLocale(), ...), so the base ID has to resolve through a
 // locale table before it finds a body. Both cells are stamped at runtime, so one wild locale row
 // is the whole table.
-resource LocaleIndex (kKESCMBookRowRsrcID)
+resource LocaleIndex (kKCMBookRowRsrcID)
 {
 	kViewRsrcType,
 	{
-		kWildFS, k_Wild, kKESCMBookRowRsrcID + index_enUS
+		kWildFS, k_Wild, kKCMBookRowRsrcID + index_enUS
 	}
 };
 
-resource KESCMBookRowWidget(kKESCMBookRowRsrcID + index_enUS)
+resource KCMBookRowWidget(kKCMBookRowRsrcID + index_enUS)
 {
 	__FILE__, __LINE__,
-	kKESCMBookRowWidgetID, kPMRsrcID_None,	// WidgetId, RsrcId
+	kKCMBookRowWidgetID, kPMRsrcID_None,	// WidgetId, RsrcId
 	kBindLeft | kBindRight,				// Frame binding: follow the list's width
 	// 364 to match the list it sits in (2026-08-13). ★The binding above means this is only a starting
 	// size - the row is stretched to the list's real width - but a template whose numbers disagree
 	// with the list's is a trap for whoever reads the cell frames below and works out the insets
 	// from them.
-	Frame(0, 0, 364, kKESCMBookRowHeight),	// Frame (left, top, right, bottom)
+	Frame(0, 0, 364, kKCMBookRowHeight),	// Frame (left, top, right, bottom)
 	kTrue, kTrue,						// Visible, Enabled
 	"",									// Panel name
 	{
@@ -2090,7 +2090,7 @@ resource KESCMBookRowWidget(kKESCMBookRowRsrcID + index_enUS)
 		//   ⇒ the row named "ch3.ind", an extension that does not exist, and the reason was cut at
 		//   both ends. ★THE FIX WENT IN THE REASONS, NOT HERE: they no longer repeat the verdict
 		//   that the state column beside them already carries ("missing", not "could not be opened
-		//   (missing)") - see KESCMBookResult.h's fWhy. The ellipsis stays in the middle because for
+		//   (missing)") - see KCMBookResult.h's fWhy. The ellipsis stays in the middle because for
 		//   a file name it is still the right choice; what changed is that the strings now fit.
 		//   ⚠So the width here is a BUDGET, not just a layout number: 230px is about 38 characters,
 		//   and a file name plus a reason has to live inside it.
@@ -2098,17 +2098,17 @@ resource KESCMBookRowWidget(kKESCMBookRowRsrcID + index_enUS)
 		//   "AB.indd" (memory ampersand-eaten-in-ui-strings).
 		// ***** 11px IN FROM THE ROW'S EDGE, NOT 8. ***** (User, 2026-08-13: "the list part, another
 		// 3px wider still".) ★This works only because ApplyIndentToWidget is overridden empty in
-		// KESCMBookTreeWidgetMgr.cpp (the override itself, named rather than numbered - ":129" was
+		// KCMBookTreeWidgetMgr.cpp (the override itself, named rather than numbered - ":129" was
 		// nine lines short by 2026-08-18, having been pushed down by that file's OWN bug-recheck
 		// corrections the same day) - a cell bound on BOTH sides has its .fr left edge thrown
 		// away by the framework's version, which is what memory treeview-indent-overwrites-cell-frames
 		// is about. Change that override and this number silently becomes 0.
-		KESCMBookRowCellWidget
+		KCMBookRowCellWidget
 		(
-			kKESCMBookRowNameWidgetID,		// WidgetId
+			kKCMBookRowNameWidgetID,		// WidgetId
 			kPMRsrcID_None,					// RsrcId
 			kBindLeft | kBindRight,			// Frame binding: this is the cell that gives way
-			Frame(11, 1, 241, kKESCMBookRowHeight - 2),	// Frame
+			Frame(11, 1, 241, kKCMBookRowHeight - 2),	// Frame
 			kTrue, kTrue,					// Visible, Enabled
 			kAlignLeft,						// Alignment
 			kEllipsizeMiddle, kFalse,		// Ellipsize style, Convert ampersands
@@ -2121,9 +2121,9 @@ resource KESCMBookRowWidget(kKESCMBookRowRsrcID + index_enUS)
 		// the longest of them ("ChapterDeleted") because kDontEllipsize means anything wider is
 		// clipped without a sign that something is missing - the mistake the panel's kind column
 		// made before it was narrowed to one word.
-		KESCMBookRowCellWidget
+		KCMBookRowCellWidget
 		(
-			kKESCMBookRowStateWidgetID,		// WidgetId
+			kKCMBookRowStateWidgetID,		// WidgetId
 			kPMRsrcID_None,					// RsrcId
 			kBindRight,						// Frame binding: stay at the row's right edge
 			// ★Moved as a WHOLE rather than narrowed, every time the row changed width: 380→377 for
@@ -2131,7 +2131,7 @@ resource KESCMBookRowWidget(kKESCMBookRowRsrcID + index_enUS)
 			//   stays 11px, matching the left (364 - 11 = 353), and the column KEEPS ITS 112px
 			//   throughout. Narrowing it instead would have clipped "ChapterDeleted" without a sign -
 			//   see the note above.
-			Frame(241, 1, 353, kKESCMBookRowHeight - 2),	// Frame (112px)
+			Frame(241, 1, 353, kKCMBookRowHeight - 2),	// Frame (112px)
 			kTrue, kTrue,					// Visible, Enabled
 			kAlignRight,					// Alignment
 			kDontEllipsize, kFalse,			// Ellipsize style, Convert ampersands
@@ -2149,23 +2149,23 @@ resource PanelList (kSDKDefPanelResourceID)
 		kSDKDefPanelResourceID,		// Resource ID for this panel
 		kKCMUIPluginID,				// owning plug-in
 		kIsResizable,				// ★2026-08-10 ユーザー指定で可変に(それまでは kNotResizable)。
-									//   下限を守るのは KESCMPanelView::ConstrainDimensions ＝
+									//   下限を守るのは KCMPanelView::ConstrainDimensions ＝
 									//   幅は今までの固定幅が最小、高さは Story Edits を閉じている間
 									//   だけ上ペインの高さに固定される
-		kKESCMPanelWidgetActionID,	// Action ID to show/hide the panel
+		kKCMPanelWidgetActionID,	// Action ID to show/hide the panel
 		"",							// panelName empty: place via altMenu below for explicit menu placement
-		kKESCMPanelPluginsMenuPath,	// Plug-Ins > Kohaku Plug-Ins > Kohaku Change Marker(束ね名は kKESCMCompanyKey の解決値)
-		kKESCMPanelPluginsMenuPosition,	// lower part of the menu
-		kKESCMPaletteIconResID, kKCMUIPluginID,	// PNG icon for the collapsed dock tab
+		kKCMPanelPluginsMenuPath,	// Plug-Ins > Kohaku Plug-Ins > Kohaku Change Marker(束ね名は kKCMCompanyKey の解決値)
+		kKCMPanelPluginsMenuPosition,	// lower part of the menu
+		kKCMPaletteIconResID, kKCMUIPluginID,	// PNG icon for the collapsed dock tab
 		c_Panel
 	}
 };
 
 // PanelView - widget layout. Labels reference string keys so they localize automatically.
-resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
+resource KCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 {
 	__FILE__, __LINE__,
-	kKESCMPanelWidgetID,			// WidgetID
+	kKCMPanelWidgetID,			// WidgetID
 	kPMRsrcID_None,					// RsrcID
 	kBindNone,						// Binding
 	0, 0, 224, 185,					// Frame: left, top, right, bottom (ステータス欄を3→4行に拡張した分、下端を +17px。イラストも下端145へ下寄せ。ステータス欄を+12px広げた分、右端 192→204。2026-07-15 にメッセージ欄を+10px広げ 204→214。2026-08-06 にさらに+10px広げ 214→224=中の widget も全部 +10px 追随させてある。★2026-08-09 に下端 153→173=Story Edits セクションの開閉ボタンを置く 20px の帯を新設した分。★2026-08-10 に 173→185=その帯へ猫イラストを下ろした分(20px の帯には 32×32 の絵が収まらない)。猫が空けた場所はステータス欄が右へ 180→216 で引き取った)
@@ -2173,7 +2173,7 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 	kFalse,							// Erase background
 	kInterfacePaletteFill,			// Erase to color
 	kFalse,							// Draw dropshadow
-	kKESCMPanelTitleKey,			// Panel name
+	kKCMPanelTitleKey,			// Panel name
 	{
 	// ★2026-08-09: everything the panel used to hold now sits inside a SplitterPanelWidget, so that a
 	//   "Story Edits" section can open below it. This is the structure the product's Links panel uses
@@ -2186,11 +2186,11 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 	//   Field order is CSplitterPanelControlData (Widgets.fh:403-431) - fourteen of them. The trailing
 	//   IsSplitBarRecessed field is NOT written: it carries a default, and default-bearing fields fail
 	//   to parse when spelled out. linksui leaves it out for the same reason.
-	// ★2026-08-12: KESCMSplitterPanelWidget, not the stock SplitterPanelWidget - same fields, same
-	//   numbers, but a boss whose divider cannot be dragged (see kKESCMSplitterPanelBoss above).
-	KESCMSplitterPanelWidget
+	// ★2026-08-12: KCMSplitterPanelWidget, not the stock SplitterPanelWidget - same fields, same
+	//   numbers, but a boss whose divider cannot be dragged (see kKCMSplitterPanelBoss above).
+	KCMSplitterPanelWidget
 	(
-		kKESCMSplitterWidgetID, kPMRsrcID_None,
+		kKCMSplitterWidgetID, kPMRsrcID_None,
 		kBindAll,
 		Frame(0, 0, 224, 185)
 		kTrue, kTrue,
@@ -2202,11 +2202,11 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 		100,							// Splitter init percentage
 		185,							// Top snap = the top pane is never squeezed below its designed height
 		kDontSnapSlider,
-		60 + kKESCMStoryHeaderHeight,	// Bottom snap = smallest useful height for the section. ★+18 (2026-08-10): the heading band is always there, so the floor has to rise with it or the smallest section shows two rows where it used to show three
+		60 + kKCMStoryHeaderHeight,	// Bottom snap = smallest useful height for the section. ★+18 (2026-08-10): the heading band is always there, so the floor has to rise with it or the smallest section shows two rows where it used to show three
 		kDontSnapSlider,
 		kHorizontalSplitter,
 		5,								// Splitter radius
-		kKESCMTopPaneWidgetID,			// ★the widget NOT to resize (SplitterPanelDefs.h:40) = only the section grows
+		kKCMTopPaneWidgetID,			// ★the widget NOT to resize (SplitterPanelDefs.h:40) = only the section grows
 		kSingleClickDoNothing,
 	#ifdef MACINTOSH
 		kDrawPallets,
@@ -2217,7 +2217,7 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 		{
 			GenericPanelWidget
 			(
-				kKESCMTopPaneWidgetID, kPMRsrcID_None,
+				kKCMTopPaneWidgetID, kPMRsrcID_None,
 				kBindAll,
 				Frame(0, 0, 224, 185)
 				kTrue, kTrue,
@@ -2226,13 +2226,13 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 		// Target / Source status (label stays English; the document name is filled in by the observer).
 		StaticTextWidget
 		(
-			kKESCMTargetTextWidgetID,
+			kKCMTargetTextWidgetID,
 			kSysStaticTextPMRsrcId,
 			kBindLeft | kBindRight | kBindTop,
 			Frame(8, 8, 216, 24)		// 右端 206→216(パネル+10px 拡張, 2026-08-06)
 			kTrue, kTrue,
 			// ★★kEllipsizeBeginning(2026-08-12。旧 kEllipsizeMiddle)。この行が出すのは 2026-08-12 から
-			//   文書名ではなく**フルパス**で(KESCMDocPathFromDB)、比べる2つは同じ仕事の版違い＝
+			//   文書名ではなく**フルパス**で(KCMDocPathFromDB)、比べる2つは同じ仕事の版違い＝
 			//   ファイル名まで同じことが多いため、見分けの決め手はパスの末尾側(親フォルダー)になる。
 			//   ⇒ 溢れたら**前を削る**＝決め手とファイル名を残す(`…\new\ch01.indd`)。中央省略だと
 			//     その親フォルダーがちょうど消えて2行が同じ文字列に見える。ブック比較ダイアログも同じ。
@@ -2243,55 +2243,55 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 			//     監査ブロック8 A-2 で撤去済み)。
 			// ★末尾の kFalse = Convert ampersands を切る。kTrue だと単独の '&' がキーボード
 			//   アクセラレータとして食われ、"A&B.indd" が "AB.indd"(B に下線)になる。
-			//   KESCM の StaticText は4つとも associated widget が kInvalidWidgetID =
+			//   KCM の StaticText は4つとも associated widget が kInvalidWidgetID =
 			//   アクセラレータの飛び先が1つも無いので、kTrue にしておく利益がゼロ。
 			//   製品 linksui もリンクファイル名の widget は kFalse(LinksUIViews_enUS.fr:412)。
 			//   ⚠公式には2流儀あり、layerpanel のツリー行は kTrue のまま C++ 側で
 			//     InsertAmpersandForDisplay('&'→'&&')を通す(LayerPanelViewsPageItemTreeNode.fr:86)。
 			//     KBS はツリー行と CAlert(=.fr が届かない層)を持つのでそちらを採っている。
-			//     KESCM は CAlert に可変文字列を載せずツリーも無いので、widget 側で切る方が
+			//     KCM は CAlert に可変文字列を載せずツリーも無いので、widget 側で切る方が
 			//     「新しいメッセージで二重化を通し忘れる」経路ごと消える(2026-08-06 ユーザー判断)。
 			kAlignLeft, kEllipsizeBeginning, kFalse,
-			kKESCMTargetLabelKey,
+			kKCMTargetLabelKey,
 			kInvalidWidgetID,
 		),
 		StaticTextWidget
 		(
-			kKESCMSourceTextWidgetID,
+			kKCMSourceTextWidgetID,
 			kSysStaticTextPMRsrcId,
 			kBindLeft | kBindRight | kBindTop,
 			Frame(8, 26, 216, 42)		// 右端 206→216(パネル+10px 拡張, 2026-08-06)
 			kTrue, kTrue,
 			kAlignLeft, kEllipsizeBeginning, kFalse,	// ★ellipsize も ampersand も Target 側と同じ理由(上のコメント参照)
-			kKESCMSourceLabelKey,
+			kKCMSourceLabelKey,
 			kInvalidWidgetID,
 		),
 
 		// (Target/Source 下の区切り線は 2026-07-10 に撤去。以下を 8px 上へ詰めた。)
 
 		// (Start / Stop・Print comparison marks・Marks opacity 25%/75% は 2026-07-10 にパネルから
-		//  フライアウトメニュー項目へ移行(kKESCMPopupStartStopActionID / kKESCMPopupPrintMarksActionID /
-		//  kKESCMPopupOpacity25ActionID / kKESCMPopupOpacity75ActionID)。ボタン/チェック/ラジオは撤去し、
+		//  フライアウトメニュー項目へ移行(kKCMPopupStartStopActionID / kKCMPopupPrintMarksActionID /
+		//  kKCMPopupOpacity25ActionID / kKCMPopupOpacity75ActionID)。ボタン/チェック/ラジオは撤去し、
 		//  以下を上へ詰めた。パネルに残るのは Target/Source・セパレータ・Prev/Next・ステータス+アイコン。)
 
 		// Change navigation: jump the Target layout view to the previous / next page that carries a
-		// KESCM mark (changed ring, Added border, or overflow "/"). Handled by KESCMChangeNav.cpp.
+		// KCM mark (changed ring, Added border, or overflow "/"). Handled by KCMChangeNav.cpp.
 		// レイアウトは KESCL パネルにならい「[Prev]  3/12  [Next]」。ボタンは文字幅相当(幅48)まで詰め、
-		// 中央に現在位置(kKESCMNavPosTextWidgetID)を置く(2026-07-15 ユーザー指定)。左右マージンは12pxで対称。
+		// 中央に現在位置(kKCMNavPosTextWidgetID)を置く(2026-07-15 ユーザー指定)。左右マージンは12pxで対称。
 		ButtonWidget
 		(
-			kKESCMPrevChangeButtonWidgetID,
+			kKCMPrevChangeButtonWidgetID,
 			kSysButtonPMRsrcId,
 			kBindLeft | kBindTop,
 			Frame(48, 48, 106, 70)		// 幅58維持。★2026-08-07 にツール切替ボタンと左右入れ替え=クラスタは右側へ(ツールの右端40から8px)
 			kTrue, kTrue,
-			kKESCMPrevChangeKey,
+			kKCMPrevChangeKey,
 		),
-		// Prev/Next の間の現在位置表示「3/12」(中央揃え)。値は KESCMChangeNav.cpp が KESCMSetNavPosition で
+		// Prev/Next の間の現在位置表示「3/12」(中央揃え)。値は KCMChangeNav.cpp が KCMSetNavPosition で
 		// 実行時に埋める(初期は空)。旧来はステータス行に出していたが、KESCL 風にボタン間へ移設(2026-07-15)。
 		StaticTextWidget
 		(
-			kKESCMNavPosTextWidgetID,
+			kKCMNavPosTextWidgetID,
 			kSysStaticTextPMRsrcId,
 			// ★★2026-08-10: **可変幅でも動かさない**(ユーザー指定「Prev と Next が離れてしまう。
 			//   これの間のサイズは固定で、左側につねに寄せる感じで」)。一度 kBindRight を足して
@@ -2307,19 +2307,19 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 		),
 		ButtonWidget
 		(
-			kKESCMNextChangeButtonWidgetID,
+			kKCMNextChangeButtonWidgetID,
 			kSysButtonPMRsrcId,
 			kBindLeft | kBindTop,		// ★Prev と一体で左に留まる(理由は位置表示のコメント。2026-08-10)
 			Frame(158, 48, 216, 70)		// 幅58維持。★右端 216 は下の猫イラスト(184〜216)と揃う。パネル右端 224 まで 8px
 			kTrue, kTrue,
-			kKESCMNextChangeKey,
+			kKCMNextChangeKey,
 		),
 
 		// ★ツール切替ボタン(2026-08-07 ユーザー要望)。押すと **ツールボックスの琥珀のツール**
-		//   (kKESCMToolBoss)がアクティブツールになる。絵はツールボックスに出ているものと同じ
-		//   リソース(kKESCMToolIconResID)をそのまま参照している＝別画像を用意していない。
-		//   KESCMIconWidget を使うのは IID_ITIP(ツールチップ)を載せるため。出す文字列は猫イラストと
-		//   別で、ツールボックスと同じツール名 —— 出し分けは KESCMIconTip.cpp が WidgetID で行う。
+		//   (kKCMToolBoss)がアクティブツールになる。絵はツールボックスに出ているものと同じ
+		//   リソース(kKCMToolIconResID)をそのまま参照している＝別画像を用意していない。
+		//   KCMIconWidget を使うのは IID_ITIP(ツールチップ)を載せるため。出す文字列は猫イラストと
+		//   別で、ツールボックスと同じツール名 —— 出し分けは KCMIconTip.cpp が WidgetID で行う。
 		//
 		// ★位置 = Prev ボタン(48〜)の左隣。パネル左端から 8px で、Target ラベル/ステータス欄と縦に揃う。
 		//   上下は Prev/Next(48〜70)と揃えて横一列に見せる。
@@ -2330,10 +2330,10 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 		//   周囲の余白が切り取られ、ツールボックスのツール枠と同じ見え方になる。
 		//   ⚠**絵は欠けない**: このツールアイコンは 32px の中に横69%(≒22px)・縦56%(≒18px)で
 		//     描く規格に従って作ってあり([[toolbox-icon-spec]])、切り落とされるのは余白のほう。
-		KESCMIconWidget
+		KCMIconWidget
 		(
-			kKESCMToolButtonWidgetID,
-			kKESCMToolIconResID, kKCMUIPluginID,
+			kKCMToolButtonWidgetID,
+			kKCMToolIconResID, kKCMUIPluginID,
 			kBindLeft | kBindTop,		// Next と同じ束縛(横一列で動く)
 			Frame(8, 48, 40, 70)		// 32×22。★2026-08-07 に Prev/Next と**左右を入れ替えた**(ユーザー指定)。
 										//   左端 8px は Target ラベル/ステータス欄と揃う
@@ -2343,16 +2343,16 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 			//   IconStyleDefs.h:46 の中身は kIconCentering, (kIconRaisedLook | kIconWellLook), kTrue で、
 			//   3つ目が Widgets.fh:84 の「bool, draw Well」。素の kADBEIconSuiteButtonType は
 			//   (…, kIconRaisedLook, kFalse) ＝ well を描かないので、選択状態が見た目に出ない。
-			//   状態そのものは KESCMTool::Select / Deselect が ITriStateControlData へ書く。
+			//   状態そのものは KCMTool::Select / Deselect が ITriStateControlData へ書く。
 			kADBEIconSuiteButtonDrawWellType,
 		),
 
 		// Status icon (OFF visible by default; the observer swaps ON/OFF based on the armed state).
-		// KESCMIconWidget (not the plain RollOverIconButtonWidget) so it carries IID_ITIP (tooltip).
-		KESCMIconWidget
+		// KCMIconWidget (not the plain RollOverIconButtonWidget) so it carries IID_ITIP (tooltip).
+		KCMIconWidget
 		(
-			kKESCMIconOffWidgetID,
-			kKESCMIconOffResID, kKCMUIPluginID,
+			kKCMIconOffWidgetID,
+			kKCMIconOffResID, kKCMUIPluginID,
 			// ★2026-08-10: kBindRight を足した。可変幅になったので、右寄せの意図を binding に持たせないと
 			//   イラストだけ元の位置に取り残され、右へ伸びたステータス欄と重なる。
 			kBindRight | kBindTop,
@@ -2360,15 +2360,15 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 			//   置いて欲しい。猫が下に降りたぶんパネルのメッセージを横に広げられたら広げて欲しい」)。
 			//   ⚠帯は元々 20px で、この絵は 32×32 のうち猫が縦いっぱいに描かれている(ツールアイコンと
 			//     違って切り落としてよい余白が無い)ため、帯の方を 32px に広げた＝パネル下端 173→185。
-			//   ★空いた 180〜216 はステータス欄が引き取る(下の kKESCMStatusTextWidgetID)。
+			//   ★空いた 180〜216 はステータス欄が引き取る(下の kKCMStatusTextWidgetID)。
 			Frame(178, 149, 210, 181)	// 32×32。★2026-08-10 に「もう少し左上へ」(ユーザー指定)＝帯ぴったりの (184,153,216,185) から上へ4px・左へ6px(4px 戻した後、さらに 2px)。⚠帯(32px)と絵(32px)が同じ高さなので**帯の中では上下に余白を作れない**——上へ出た 4px は、ステータス欄(下端145)との 8px マージンを分け合っている。ON側と同座標
 			kTrue, kTrue,
 			kADBEIconSuiteButtonType,
 		),
-		KESCMIconWidget
+		KCMIconWidget
 		(
-			kKESCMIconOnWidgetID,
-			kKESCMIconOnResID, kKCMUIPluginID,
+			kKCMIconOnWidgetID,
+			kKCMIconOnResID, kKCMUIPluginID,
 			kBindRight | kBindTop,		// ★OFF 側と同じ理由(2026-08-10)
 			Frame(178, 149, 210, 181)	// ★OFF 側と同座標(移設と位置の理由はあちらのコメント。2026-08-10 に Story Edits の帯へ)
 			kFalse, kTrue,
@@ -2377,9 +2377,9 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 
 		// Status text (filled in by the observer with the result of each action).
 		// ★★2026-08-20: これは StaticMultiLineTextWidget だった。**変わったのは描き方だけ**＝
-		//   WidgetID も Frame も binding も、KESCMSetStatus で届くメッセージも同じ。stock に出来なかった
+		//   WidgetID も Frame も binding も、KCMSetStatus で届くメッセージも同じ。stock に出来なかった
 		//   のは**1つの箱に2色**で、変更行をクリックしたときこの箱は**その編集のもう一方の側**を出す
-		//   ＝読み手の問いは「どの文字が違うのか」(KESCMStatusTextView.cpp / IKESCMStatusTextData.h)。
+		//   ＝読み手の問いは「どの文字が違うのか」(KCMStatusTextView.cpp / IKCMStatusTextData.h)。
 		// ⚠以下は GenericPanelWidget のフィールド。**5つ消えた**のは描画側が決めるようになったから＝
 		//   alignment(常に左)/ellipsize style(折り返す箱に「1行」は無い)/ampersand(kFalse のまま。理由は下)/
 		//   font ID/**行数**。
@@ -2387,11 +2387,11 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 		//     ＝日本語UIでは 4行(74px の箱に 17.9px の行)、英語UIでは 6行。stock はその余りを空けていた。
 		// ★ampersand 変換は切る(理由は Target のコメント)。ここは Save Panel Settings /
 		//   Save Check & Register / Export Changed Pages が**保存先フルパス**を出す行なので
-		//   (KESCMPanelState.cpp:144-150 ほか)、"Q&A資料" のようなフォルダ名が消えていた。
-		//   ⇒ 描画側も同じ kFalse を明示している(KESCMStatusTextView.cpp)。
-		KESCMStatusTextWidget
+		//   (KCMPanelState.cpp:144-150 ほか)、"Q&A資料" のようなフォルダ名が消えていた。
+		//   ⇒ 描画側も同じ kFalse を明示している(KCMStatusTextView.cpp)。
+		KCMStatusTextWidget
 		(
-			kKESCMStatusTextWidgetID,
+			kKCMStatusTextWidgetID,
 			kPMRsrcID_None,
 			kBindLeft | kBindRight | kBindTop,
 			Frame(8, 76, 216, 150)		// ★★2026-08-11: 下端 145→150(+5px)。**日本語UIでは4行が入っていなかった**——パレットフォントの1行の実高は 17.9px(実測: ascent 12.7 + descent 5.2 / leading 0。測り方は memory palette-font-line-height-by-ui-language)で、4行に 74px 要るのに枠は 69px しかなく、4行目が約5px 切れていた。★英語UIは1行12px=48pxなので、広げた分は余るだけで無害。★下の Story Edits の帯(153〜)との隙間は 8→3px に詰まるが、上の Prev/Next(〜70)との 6px は触っていない。⚠「4行のまま余裕ができた」という下の旧記述は**文字数の話**で、高さは足りていなかった。★2026-08-10: 右 180→216。猫イラストが Story Edits の帯へ下りて、その 36px が空いた(ユーザー指定「猫が下に降りたぶん横に広げて」)。右端 216 は Target/Source 行・Next ボタンと揃う。★4行のまま行あたりの文字数が増えるので、`failed=N` が付いても折り返しに余裕ができる。以下は旧記述: 右180まで=イラスト(184-216)と横並び(4px間隔)。下端を 128→145 に拡張(3→4行)。メッセージ部分を+12px広げるためパネル全体も192→204に拡張(2026-07-14)。+10px拡張で右 160→170・パネル204→214(2026-07-15)。さらに+10pxで右 170→180・パネル214→224(2026-08-06)
@@ -2406,12 +2406,12 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 		//   開けなくなる。製品 linksui も同じ理由で上ペイン側に置いている
 		//   (LinksUIViews_enUS.fr:135-142 は splitter の下ペインではなく上ペインの内側)。
 		// ★絵は自前の PNG を持たず、本体の開閉三角(kTreeBranchCollapsed/ExpandedRsrcID)を借りる。
-		//   向きの差し替えは KESCMUpdateStorySectionButtonState が実状態から行う。
+		//   向きの差し替えは KCMUpdateStorySectionButtonState が実状態から行う。
 		// ★この帯のためにパネルの下端を 153→173 にした(2026-08-09。既存 widget は1つも動いていない)。
 		//   ★さらに 173→185 へ(2026-08-10)＝猫イラスト(32×32)を右端に下ろすため、帯自体を 20→32px に。
-		KESCMStorySectionToggleWidget
+		KCMStorySectionToggleWidget
 		(
-			kKESCMStorySectionToggleWidgetID,
+			kKCMStorySectionToggleWidgetID,
 			kTreeBranchCollapsedRsrcID, kApplicationRsrcPluginID,
 			// ★★kBindTop であって kBindBottom ではない(2026-08-09 ユーザー報告で修正)。
 			//   上ペインは kBindAll なのでパネルの高さが変わると一緒に伸び縮みする。既存 widget は
@@ -2427,19 +2427,19 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 		// ★セクション見出し。三角の右隣、同じ帯(153〜185=32px)の中。件数は C++ が実行時に足す
 		//   (⚠「20px の帯」と書いてあったのを 2026-08-18・不具合再検査 B-U1 に直した＝帯は 2026-08-10 に
 		//    20→32px になっており、**隣の三角のコメントだけがその時に直っていた**)。
-		//   (KESCMUpdateStorySectionLabel が "Story Edits (3)" に書き換える)。
+		//   (KCMUpdateStorySectionLabel が "Story Edits (3)" に書き換える)。
 		// ★★ここに件数を置くのはステータス欄に余白が無いから＝4行枠は既に埋まっており、
 		//   もう1行増えると `failed=N` がはみ出す。閉じたままでも件数が読めるという利点もある。
 		// ★binding は隣の三角と揃えて kBindLeft | kBindTop(理由は上のコメント)。
 		StaticTextWidget
 		(
-			kKESCMStorySectionLabelWidgetID,
+			kKCMStorySectionLabelWidgetID,
 			kSysStaticTextPMRsrcId,
 			kBindLeft | kBindRight | kBindTop,	// 可変幅で見出しの帯も一緒に伸びる(2026-08-10)
 			Frame(24, 162, 174, 176)	// 三角(4〜20)の右。上下は帯(153〜185)の中で縦センタリング。★右端 216→174 は猫イラスト(178〜210)の 4px 手前。両方とも kBindRight なので、パネルを広げても間隔は保たれる(2026-08-10)
 			kTrue, kTrue,
 			kAlignLeft, kDontEllipsize, kFalse,
-			kKESCMStorySectionLabelKey,
+			kKCMStorySectionLabelKey,
 			kInvalidWidgetID,
 		),
 				}
@@ -2447,14 +2447,14 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 			// ★Lower pane = the "Story Edits" section itself. Visible = kFalse to match the
 			//   splitter's "Bottom pane hidden" above - the two have to agree or the section
 			//   starts half-open.
-			// ★KESCMStorySectionPanelWidget rather than a plain GenericPanelWidget: the only
+			// ★KCMStorySectionPanelWidget rather than a plain GenericPanelWidget: the only
 			//   difference is the persistent integer it carries, which is the height this section
-			//   had when it was last closed (see kKESCMStorySectionPanelBoss above).
-			KESCMStorySectionPanelWidget
+			//   had when it was last closed (see kKCMStorySectionPanelBoss above).
+			KCMStorySectionPanelWidget
 			(
-				kKESCMStorySectionWidgetID, kPMRsrcID_None,
+				kKCMStorySectionWidgetID, kPMRsrcID_None,
 				kBindAll,
-				Frame(0, 185, 224, 285 + kKESCMStoryHeaderHeight)	// ★下端 +18px(2026-08-10): 列見出しの帯を足しても、見える行数が減らないようにした
+				Frame(0, 185, 224, 285 + kKCMStoryHeaderHeight)	// ★下端 +18px(2026-08-10): 列見出しの帯を足しても、見える行数が減らないようにした
 				kFalse, kTrue,			// ★Visible = kFalse: starts closed
 				"",
 				{
@@ -2481,45 +2481,45 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 					//       enforces" moves, the comment saying so is not a warning to the future -
 					//       it is a task for the same commit.
 					//
-					//   ★The heading cells are KESCMStoryRowCellWidget for the same reason the row's
-					//     are: that boss stays silent on hover (kKESCMStoryRowCellBoss). They also take
+					//   ★The heading cells are KCMStoryRowCellWidget for the same reason the row's
+					//     are: that boss stays silent on hover (kKCMStoryRowCellBoss). They also take
 					//     the same font, so heading and value are drawn identically.
-					KESCMStoryRowCellWidget
+					KCMStoryRowCellWidget
 					(
 						kInvalidWidgetID,	// WidgetId
 						kPMRsrcID_None,					// RsrcId
 						kBindLeft,						// Frame binding: as the UID cell (a fixed left column)
-						Frame(24, 2, 64, kKESCMStoryHeaderHeight - 2),	// Frame (8..48 -> 24..64: the row's UID cell)
+						Frame(24, 2, 64, kKCMStoryHeaderHeight - 2),	// Frame (8..48 -> 24..64: the row's UID cell)
 						kTrue, kTrue,					// Visible, Enabled
 						kAlignLeft,						// Alignment
 						kDontEllipsize, kFalse,			// Ellipsize style, Convert ampersands
-						kKESCMStoryColUIDKey,			// Text Control Data
+						kKCMStoryColUIDKey,			// Text Control Data
 						0,								// WidgetId for associated control for shortcut focus
 						kPaletteWindowSystemScriptFontId, kPaletteWindowSystemScriptFontId,
 					),
-					KESCMStoryRowCellWidget
+					KCMStoryRowCellWidget
 					(
 						kInvalidWidgetID,	// WidgetId
 						kPMRsrcID_None,					// RsrcId
 						kBindLeft | kBindRight,			// Frame binding: as the text cell (the one that grows)
-						Frame(68, 2, 154, kKESCMStoryHeaderHeight - 2),	// Frame (52..154 -> 68..154: the row's text cell)
+						Frame(68, 2, 154, kKCMStoryHeaderHeight - 2),	// Frame (52..154 -> 68..154: the row's text cell)
 						kTrue, kTrue,					// Visible, Enabled
 						kAlignLeft,						// Alignment
 						kDontEllipsize, kFalse,			// Ellipsize style, Convert ampersands
-						kKESCMStoryColTextKey,			// Text Control Data
+						kKCMStoryColTextKey,			// Text Control Data
 						0,								// WidgetId for associated control for shortcut focus
 						kPaletteWindowSystemScriptFontId, kPaletteWindowSystemScriptFontId,
 					),
-					KESCMStoryRowCellWidget
+					KCMStoryRowCellWidget
 					(
 						kInvalidWidgetID,	// WidgetId
 						kPMRsrcID_None,					// RsrcId
 						kBindRight,						// Frame binding: as the kind cell (a fixed right column)
-						Frame(154, 2, 216, kKESCMStoryHeaderHeight - 2),	// Frame
+						Frame(154, 2, 216, kKCMStoryHeaderHeight - 2),	// Frame
 						kTrue, kTrue,					// Visible, Enabled
 						kAlignRight,					// Alignment: right, as the values under it
 						kDontEllipsize, kFalse,			// Ellipsize style, Convert ampersands
-						kKESCMStoryColKindKey,			// Text Control Data
+						kKCMStoryColKindKey,			// Text Control Data
 						0,								// WidgetId for associated control for shortcut focus
 						kPaletteWindowSystemScriptFontId, kPaletteWindowSystemScriptFontId,
 					),
@@ -2543,7 +2543,7 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 						kInvalidWidgetID,	// WidgetId
 						kPMRsrcID_None,					// RsrcId
 						kBindLeft | kBindRight | kBindTop,	// Frame binding: full width, stays at the top
-						Frame(0, kKESCMStoryHeaderHeight - 1, 224, kKESCMStoryHeaderHeight)	// Frame: 1px tall, at the bottom of the band
+						Frame(0, kKCMStoryHeaderHeight - 1, 224, kKCMStoryHeaderHeight)	// Frame: 1px tall, at the bottom of the band
 						kTrue, kTrue,					// Visible, Enabled
 						kTrue,							// Erase before draw - this is what paints the line
 						kInterfaceSeparatorColor,		// Erase to color
@@ -2556,11 +2556,11 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 					// the LOWER PANE's own coordinates - (0,0) is the top left of the section, not
 					// of the panel - so the heading band's height is where the list now starts.
 					// Field order is TreeViewWidget's, copied from KBS.fr:1142-1165.
-					KESCMStoryTreeWidget
+					KCMStoryTreeWidget
 					(
-						kKESCMStoryTreeWidgetID, kPMRsrcID_None,	// WidgetId, RsrcId
+						kKCMStoryTreeWidgetID, kPMRsrcID_None,	// WidgetId, RsrcId
 						kBindAll,						// Frame binding: grow with the section
-						Frame(0, kKESCMStoryHeaderHeight, 224, 100 + kKESCMStoryHeaderHeight)	// Frame (the lower pane below the headings)
+						Frame(0, kKCMStoryHeaderHeight, 224, 100 + kKCMStoryHeaderHeight)	// Frame (the lower pane below the headings)
 						kTrue, kTrue,					// Visible, Enabled
 						kTrue,							// EraseBeforeDraw
 						kInterfacePaletteFill,			// InterfaceColor
@@ -2568,10 +2568,10 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 						kHideRootNode,					// Options: the root is not a row
 						kFalse,							// Use H scroll bar
 						kTrue,							// Use V scroll bar
-						kKESCMStoryRowHeight,			// fVScrollButtonIncrement (one row)
-						kKESCMStoryRowHeight,			// fVThumbScrollIncrement
-						kKESCMStoryRowHeight,			// fHScrollButtonIncrement (unused, no H bar)
-						kKESCMStoryRowHeight,			// fHThumbScrollIncrement
+						kKCMStoryRowHeight,			// fVScrollButtonIncrement (one row)
+						kKCMStoryRowHeight,			// fVThumbScrollIncrement
+						kKCMStoryRowHeight,			// fHScrollButtonIncrement (unused, no H bar)
+						kKCMStoryRowHeight,			// fHThumbScrollIncrement
 						1,								// Items selectable: 1 = single selection
 						kFalse,							// Allow children from multiple parents to be selected
 						kFalse,							// Allow discontiguous selection
@@ -2584,22 +2584,22 @@ resource KESCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 	),
 	}
 
-	kKESCMInternalPopupMenuNameKey		// Popup (flyout) menu name (internal)
+	kKCMInternalPopupMenuNameKey		// Popup (flyout) menu name (internal)
 };
 
 /*
  * What the UI half adds to the object model: the toolbox tool's identity.
  *
- * ⚠2026-08-15 (split stage 2 task 6B-2): this resource used to sit in KESCM.fr and carried
+ * ⚠2026-08-15 (split stage 2 task 6B-2): this resource used to sit in KCM.fr and carried
  * app.kcmStatus and app.kcmBookResult as well. Those two are the MODEL's answers - served by
- * kKESCMScriptProviderBoss, which stayed model-side - so they stayed with it. Only the tool's
+ * kKCMScriptProviderBoss, which stayed model-side - so they stayed with it. Only the tool's
  * enumerator came here, because the tool is a UI boss (kGenericToolBoss cannot live in a
  * kModelPlugIn). ★Both halves publishing their own VersionedScriptElementInfo is normal: the
  * object model is assembled from every plug-in that contributes to it.
  *
  * The tool entry is what ITool.h:192-223 spells out (its worked example is "the pumpkin tool"):
- * define a ScriptID (KESCMScriptingDefs.h), add it to kToolBoxEnumScriptElement here, and return
- * it from ITool::GetScriptID (KESCMTool.cpp). The second string is the name scripts see:
+ * define a ScriptID (KCMScriptingDefs.h), add it to kToolBoxEnumScriptElement here, and return
+ * it from ITool::GetScriptID (KCMTool.cpp). The second string is the name scripts see:
  * "kohaku change marker tool" surfaces as UITools.KOHAKU_CHANGE_MARKER_TOOL, so a script can both
  * read app.toolBoxTools.currentTool and assign to it to select this tool - neither was possible
  * while GetScriptID returned en_None (measured 2026-08-06, audit block 7).
@@ -2620,7 +2620,7 @@ resource VersionedScriptElementInfo(10)
 		//   ⚠**KBS(KBS.fr:1326)が kWildFS なのは割れではない**。KBS のリソースは Property だけで
 		//     ツールを含まないため。**内容が違うので正しく違う** ---- そして**この側は今もツールを持つ**
 		//     ので、上の「ツールボックスは InDesign にしかない」という根拠はここでは生きている
-		//     (⚠model 側の KESCM.fr で同じ文が失効したのは、ツールがこちらへ出て行ったから＝
+		//     (⚠model 側の KCM.fr で同じ文が失効したのは、ツールがこちらへ出て行ったから＝
 		//      不具合再検査 B1 の D-1)。
 		//   ⚠**参照は KBS.fr:1282 と書いてあった。実体は :1326**(resource VersionedScriptElementInfo(1)。
 		//     1282 行目は widget 定義の途中)。B1 が model 側の同じ参照を壊れていると測ったのが 2026-08-17、
@@ -2638,7 +2638,7 @@ resource VersionedScriptElementInfo(10)
 		{
 			kToolBoxEnumScriptElement,
 			{
-				en_KESCMTool, "kohaku change marker tool", "The Kohaku Change Marker tool.",
+				en_KCMTool, "kohaku change marker tool", "The Kohaku Change Marker tool.",
 			}
 		}
 	}
@@ -2658,10 +2658,10 @@ resource VersionedScriptElementInfo(10)
  * example: a fixed-size dialog by the same author, built on the same stock kDialogBoss.
  * ⚠ The trailing arrange flag after the children is REQUIRED - without it ODFRC fails with R32697.
  */
-resource KESCMBookDialogWidget (kKESCMBookDialogRsrcID + index_enUS)
+resource KCMBookDialogWidget (kKCMBookDialogRsrcID + index_enUS)
 {
 	__FILE__, __LINE__,
-	kKESCMBookDialogWidgetID,		// WidgetID
+	kKCMBookDialogWidgetID,		// WidgetID
 	kPMRsrcID_None,					// RsrcID
 	kBindNone,						// Binding
 	// ⚠★★THIS FRAME DOES NOT SET THE DIALOG'S SIZE - NEITHER NUMBER. Measured 2026-08-13 over eight
@@ -2682,7 +2682,7 @@ resource KESCMBookDialogWidget (kKESCMBookDialogRsrcID + index_enUS)
 	//   MINIMUM and resizes static text to fit its label ("we treat the width in the .fr file as a
 	//   minimum width" - Using EVE, Example 2). The path was therefore shortened in C++ before it
 	//   reached the widget, which hid the problem rather than fixing it.
-	//   ⇒ The two path lines are now KESCMBookPathTextWidget, whose boss answers EVE's size question
+	//   ⇒ The two path lines are now KCMBookPathTextWidget, whose boss answers EVE's size question
 	//     with "what the resource wrote" (kFixedSizeEVEInfoImpl). Measured after the change: 400px
 	//     with a 66-character path in it, and the widget's own kEllipsizeBeginning shortening it -
 	//     the same way the panel's Target:/Source: lines do.
@@ -2690,20 +2690,20 @@ resource KESCMBookDialogWidget (kKESCMBookDialogRsrcID + index_enUS)
 	//   presumably how the old comment came to be believed.
 	Frame(0, 0, 390, 420),			// Frame (l,t,r,b) - ★NOT the dialog's size; see above
 	kTrue, kTrue,					// Visible, Enabled
-	kKESCMBookDialogTitleKey,		// Dialog name
+	kKCMBookDialogTitleKey,		// Dialog name
 
 	{
 		// ----- which two books this report is about -----
 		// ***** These two lines are the whole safety net. ***** Target is whichever book had the
 		// front tab in the Book panel, and that is NOT the same thing as InDesign's "active book" -
 		// the two drift apart silently. ★Since 2026-08-12 the same two strings are shown in the
-		// confirmation alert BEFORE anything is read (KESCMBookRun.cpp), and what is printed here is
+		// confirmation alert BEFORE anything is read (KCMBookRun.cpp), and what is printed here is
 		// what that run was given - not a fresh look at the Book panel, which by now may have moved.
 		// ⚠ Convert ampersands = kFalse: a path through a folder called "Q&A" would otherwise display
 		// as "QA" (the ampersand is eaten as an accelerator marker).
-		KESCMBookPathTextWidget
+		KCMBookPathTextWidget
 		(
-			kKESCMBookTargetTextWidgetID,	// WidgetId
+			kKCMBookTargetTextWidgetID,	// WidgetId
 			kSysStaticTextPMRsrcId,			// RsrcId
 			kBindNone,						// Frame binding
 			// ***** 364 HERE IS WHAT MAKES THE WINDOW 400px WIDE. ***** This number, not the root
@@ -2745,17 +2745,17 @@ resource KESCMBookDialogWidget (kKESCMBookDialogRsrcID + index_enUS)
 			// this dialog measured 593px, Fill and all. Fill means "take the PARENT's width", and
 			// the parent is itself grown by whichever child asks for more - so Fill decides how the
 			// space is shared, never how much of it there is to share.
-			// ★What holds the width is the BOSS of these two lines (KESCMBookPathTextWidget →
-			//   kKESCMBookPathTextWidgetBoss), which answers EVE's size question with the frame
+			// ★What holds the width is the BOSS of these two lines (KCMBookPathTextWidget →
+			//   kKCMBookPathTextWidgetBoss), which answers EVE's size question with the frame
 			//   rather than with the text. Fill still earns its keep: it makes this widget span the
 			//   parent, so the frame above is the width actually used - and that is what leaves
 			//   kEllipsizeBeginning something to elide (a widget grown to fit its text never elides).
 			kEVEAlignFill | kEVEVerySmallSpaceAfter,
 		),
 
-		KESCMBookPathTextWidget
+		KCMBookPathTextWidget
 		(
-			kKESCMBookSourceTextWidgetID,	// WidgetId
+			kKCMBookSourceTextWidgetID,	// WidgetId
 			kSysStaticTextPMRsrcId,			// RsrcId
 			kBindNone,						// Frame binding
 			Frame(0, 0, 364, 20)			// Frame (l,t,r,b) - same width as Target above
@@ -2769,7 +2769,7 @@ resource KESCMBookDialogWidget (kKESCMBookDialogRsrcID + index_enUS)
 
 		// (The Compare button stood here until 2026-08-12. The comparison is now confirmed in an
 		//  alert and run from the flyout, so the dialog opens with the answer already in it and has
-		//  nothing left to press - see KESCMBookRun.h. Its WidgetID and its label string are kept
+		//  nothing left to press - see KCMBookRun.h. Its WidgetID and its label string are kept
 		//  declared, unused, so the pair can be put back together if the flow is ever reverted.)
 
 		// ----- the status line -----
@@ -2782,13 +2782,13 @@ resource KESCMBookDialogWidget (kKESCMBookDialogRsrcID + index_enUS)
 		// count survive there.
 		EVEStaticTextWidget
 		(
-			kKESCMBookStatusTextWidgetID,	// WidgetId
+			kKCMBookStatusTextWidgetID,	// WidgetId
 			kSysStaticTextPMRsrcId,			// RsrcId
 			kBindNone,						// Frame binding
 			Frame(0, 0, 364, 20)			// Frame (l,t,r,b) - same width as the lines above
 			kTrue, kTrue, kAlignLeft,		// Visible, Enabled, Alignment
 			kEllipsizeMiddle, kFalse,		// Ellipsize style, Convert ampersands
-			kKESCMBookReadyKey,				// Text (replaced after each comparison)
+			kKCMBookReadyKey,				// Text (replaced after each comparison)
 			kInvalidWidgetID				// Associated control (none)
 
 			// Close up to the hint below it: the two lines are ONE message (see the next widget).
@@ -2807,7 +2807,7 @@ resource KESCMBookDialogWidget (kKESCMBookDialogRsrcID + index_enUS)
 		// where a long report would eat it.
 		//
 		// ★"a CHANGED chapter", not "a row": the item is only enabled where the question "where did
-		//   it change?" has an answer (KESCMBookOpen.cpp's KESCMBookRowCanStart), and InDesign does
+		//   it change?" has an answer (KCMBookOpen.cpp's KCMBookRowCanStart), and InDesign does
 		//   not show a popup whose every item is disabled - so on the other rows a right click
 		//   produces nothing at all. Naming the row type is what keeps that from reading as a fault.
 		// ★Ellipsized at the END, unlike the two path lines above: this is a sentence, and a sentence
@@ -2820,7 +2820,7 @@ resource KESCMBookDialogWidget (kKESCMBookDialogRsrcID + index_enUS)
 			Frame(0, 0, 364, 20)			// Frame (l,t,r,b) - same width as the lines above
 			kTrue, kTrue, kAlignLeft,		// Visible, Enabled, Alignment
 			kEllipsizeEnd, kFalse,			// Ellipsize style, Convert ampersands
-			kKESCMBookHintKey,				// Text (fixed - nothing rewrites this)
+			kKCMBookHintKey,				// Text (fixed - nothing rewrites this)
 			kInvalidWidgetID				// Associated control (none)
 
 			kEVEAlignFill | kEVELargeSpaceAfter,	// Fill, as the lines above
@@ -2833,11 +2833,11 @@ resource KESCMBookDialogWidget (kKESCMBookDialogRsrcID + index_enUS)
 		// so nothing here can grow later. Ten rows at a glance, and the scroll bar for the rest.
 		// ★kDrawBorder is what makes it read as a list box rather than as text on the dialog's
 		//   background - the same option basicselectabledialog gives its tree (BscSlDlg.fr:414).
-		KESCMBookTreeWidget
+		KCMBookTreeWidget
 		(
-			kKESCMBookTreeWidgetID, kPMRsrcID_None,	// WidgetId, RsrcId
+			kKCMBookTreeWidgetID, kPMRsrcID_None,	// WidgetId, RsrcId
 			kBindNone,						// Frame binding (EVE places it)
-			Frame(0, 0, 364, kKESCMBookRowHeight * 10)	// Frame - same width as the lines above
+			Frame(0, 0, 364, kKCMBookRowHeight * 10)	// Frame - same width as the lines above
 			kTrue, kTrue,					// Visible, Enabled
 			kTrue,							// EraseBeforeDraw
 			kInterfacePaletteFill,			// InterfaceColor
@@ -2845,10 +2845,10 @@ resource KESCMBookDialogWidget (kKESCMBookDialogRsrcID + index_enUS)
 			kHideRootNode | kDrawBorder,	// Options: the root is not a row
 			kFalse,							// Use H scroll bar
 			kTrue,							// Use V scroll bar
-			kKESCMBookRowHeight,			// fVScrollButtonIncrement (one row)
-			kKESCMBookRowHeight,			// fVThumbScrollIncrement
-			kKESCMBookRowHeight,			// fHScrollButtonIncrement (unused, no H bar)
-			kKESCMBookRowHeight,			// fHThumbScrollIncrement
+			kKCMBookRowHeight,			// fVScrollButtonIncrement (one row)
+			kKCMBookRowHeight,			// fVThumbScrollIncrement
+			kKCMBookRowHeight,			// fHScrollButtonIncrement (unused, no H bar)
+			kKCMBookRowHeight,			// fHThumbScrollIncrement
 			1,								// Items selectable: 1 = single selection
 			kFalse,							// Allow children from multiple parents to be selected
 			kFalse,							// Allow discontiguous selection
@@ -2861,7 +2861,7 @@ resource KESCMBookDialogWidget (kKESCMBookDialogRsrcID + index_enUS)
 		// (The button row - an OK button in a right-aligned panel - stood here until 2026-08-12.
 		//  ***** REMOVED AT THE USER'S REQUEST, and it costs nothing. ***** A modeless dialog is
 		//  closed with its close box, and this one also has a minimize box put on by hand
-		//  (KESCMPrepareBookDialogWindow); OK was a third way to do what the close box already does.
+		//  (KCMPrepareBookDialogWindow); OK was a third way to do what the close box already does.
 		//  ⚠What DOES change is the keyboard: a default button is what Enter presses, so Enter no
 		//    longer closes this dialog. Whether Esc still closes it is NOT claimed here - the Escape
 		//    key reaches a dialog through its Cancel button, and this one never had one. The close
@@ -2893,7 +2893,7 @@ resource KESCMBookDialogWidget (kKESCMBookDialogRsrcID + index_enUS)
 	//     the warning further up ("a stale 500 in any of them would set the width on its own") was
 	//     written about exactly that number - the file kept the stale value in the line that explains
 	//     the mechanism while warning about it in the line that lists the frames.
-	// ★For the record, KESCM's own panel sits at +8 (root x1=119 → labels at x1=127) - but that is
+	// ★For the record, KCM's own panel sits at +8 (root x1=119 → labels at x1=127) - but that is
 	//   drawn from absolute coordinates in its .fr, not by EVE, which is why it can hold a value the
 	//   ladder does not have.
 	kEVEArrangeChildrenInColumn | kEVERegularMargin,

@@ -1,0 +1,96 @@
+﻿//========================================================================================
+//
+//  KCMPeek.h
+//
+//  ツール(左ボタン)の「peek(覗き)」。修飾キー＋ツール左ボタンを押している間だけ、カーソル下スプレッドの旧版を
+//  表示する(または CMYK をサンプリングする)。離すと元に戻す。peek 状態(arm 済みの target/source DB、
+//  押下中フラグ)と起動/終了サービスを所有する(旧・中ボタンのイベントウォッチャは撤去済み 2026-07-13)。
+//  arm/disarm/状態アクセサは KCMCore.h にある。
+//
+//  ★2026-08-13 の model/UI 分割 第1段 Task 1 で、UI 側の3領域がここから出ていった:
+//    ・ビューポート同期(Sync Layout Views / Align Other Views) → KCMViewSync.h
+//    ・Alt+左の CMYK カーソル                                   → KCMCmykCursor.h
+//    ・ジェスチャ判定と押下中の表示切替(RevealBegin/End)        → KCMPeekGesture.h
+//    このファイルに残っているのは model 側(比較・arm 状態・クローズスイープ)と、
+//    それを起動/終了する KCMPeekStartup。
+//
+//========================================================================================
+#ifndef __KCMPeek_h__
+#define __KCMPeek_h__
+
+#include "BaseType.h"
+#include "PMReal.h"
+#include "OMTypes.h"		// UID(表示中スプレッドの指定。2026-08-16)
+
+class IDataBase;
+
+// 常時表示マークの画面上の「基準」不透明度。印刷設定から決まる(印刷ON => 選択不透明度25%/75%、印刷OFF => 1.0)。
+// 実体は KCMPeek.cpp。
+// ★★呼び手は3つ(2026-08-17 の不具合再検査 B5 で全数を数え直した。**旧記述「peek を離したときの経路と
+//   KCMDoSetPrintMarks」は誤り**＝peek を離す分岐はこれを呼ばない):
+//     ・KCMDoSetPrintMarks(KCMCore.cpp) …… 印刷マーク/不透明度トグルの即時反映
+//     ・KCMTrackerRevealEnd(ui/KCMPeekGesture.cpp) …… **reveal(修飾なし押下)を離したとき**。
+//       Shift 系の peek を離す分岐は sShowOriginal を落とすだけで、不透明度には触らない
+//       (押下中の値は SetPeekOpacity が別に持つ)
+//     ・KCMActionComponent.cpp の不透明度トグル …… 常時表示中の見た目を即反映
+//   ⚠どちらの UI 側も Facade の GetBaseScreenOpacity() 越しに呼ぶので、**grep するときは両方の綴りで引く**。
+PMReal KCMBaseScreenOpacity();
+
+// (★enum KCMGesture は 2026-08-14 に **KCMPeekGesture.h**(UI 側)へ移した＝第1段 Task 16。
+//  定義はここに在ったが、**使っていたのは UI 側の3ファイルだけ**で KCMPeek.cpp は1度も参照して
+//  いなかった。修飾キーの読み取りは窓の話なので、置き場所も UI が正しい。これで UI 側から
+//  KCMPeek.h を include する理由が無くなった＝第1段の完了条件1が満たせる。)
+
+// **指定された点**のスプレッドの旧版べた載せを表示する(実体は KCMPeek.cpp)。
+// targetDB=表示中(新)ドキュメント, sourceDB=重ねる旧ドキュメント。そのスプレッドが既にキャッシュ済みなら
+// 再利用(即時)、未キャッシュならその場でラスタ化する(保持は常に1スプレッド)。
+//   mx, my    = 覗く点。targetDB の**ペーストボード(content)座標**
+//   viewScale = その窓の content→window スケール(= ズーム × デバイス倍率)。ラスタ化解像度の基準
+//   uiZoom    = その窓の UI ズーム(ユーザーに見える拡大率。デバイス倍率を含まない)。
+//               ★**0 以下 = 「パノラマが引けなかった」**＝下限 50% の頭打ちを掛けずに viewScale をそのまま使う
+//               (分離前に peekPano == nil だったときと同じ振る舞い)
+//
+// ★★2026-08-15(第2段 Task 4B)に「マウス下」から「この点」へ変えた(旧 KCMPeekShowUnderMouse)。
+//   ここに在ったビュー解決3本(KCMQueryViewUnderMouse / KCMQueryPanorama /
+//   KCMQueryMouseContentPoint)は呼び手(UI)へ出した。
+//   ⇒ ★**観測値は UI が採り、その値からどの dpi でラスタ化するかは model が決める。**
+//     下限 50% の頭打ちと 16〜300dpi のクランプは「解像度の方針」なので model 側に残っている
+//     ＝分離で計算式は1文字も動いていない。
+// ★呼び手は KCMPeekGesture.cpp の KCMTrackerBeginPeek ただ1つ(Facade 経由)。
+//
+// ★★★viewSpreadUID(2026-08-16) = **そのビューが今表示しているスプレッド**。
+//   ⚠**必須の観測値**——マスタースプレッドと通常スプレッドはペーストボード座標で重なるので、
+//     これが無いと「マスターを表示しているのに通常ページを覗く」ことになり、**旧版が1枚も出ない**
+//     (作った画像は通常ページのもので、描いているスプレッドはマスターだから)。理由の全文は KCMCore.h。
+void KCMPeekShowAt(IDataBase* targetDB, IDataBase* sourceDB,
+                     const PMReal& mx, const PMReal& my,
+                     const PMReal& viewScale, const PMReal& uiZoom,
+                     UID viewSpreadUID);
+
+// armed 中の Target/Source が IDocumentList に現存するかの最終ライン防御(実体は KCMPeek.cpp)。
+// 失格なら KCMHandleDocsClosed() で Stop 相当のフルクリーンアップ(arm 解除を含む)をして kFalse を返す。
+// ★呼び手は KCMPeekGesture.cpp(peek 開始・CMYK 押下)と KCMCmykCursor.cpp(カーソル色・ドラッグ中の
+//   生存検査)。解放済み IDataBase をサンプリング/peek へ渡さないための保険。
+//   (2026-08-13 の分割まではこのファイル内の static だった)
+bool16 KCMArmedDocsAlive();
+
+// ページパネルのページ右クリック「Refresh Page Comparison」の実体。選択ページの比較を再検出して
+// 枠/サムネイルを更新する(旧 Ctrl+ミドルのスプレッド再比較を移設。2026-07-13)。arm 済み(Start 後)・
+// **Pixel モード**・前面文書が Target のときだけ動く(★2026-07-15 Target 限定=ユーザー指定 /
+// ★2026-08-24 Pixel 限定=ユーザー判断。下の KCMRefreshComparisonAvailable の注記を参照)。outPages=実際に再比較した
+// ページ数 / outChanged=うち変化ページ数 / outCancelled=進捗バーのキャンセルで中断したか(いずれも nil 可)。
+// 戻り=1ページ以上処理したか。★ページ数が多いときは進捗バー＋キャンセルが出る(2026-07-27)。中断しても
+// そこまで更新した分は残る(残りのページが古いまま=選択を狭めて実行したのと同じ状態)。キャンセルを押した
+// 時点のページは処理済みなので、中断時は「戻り kTrue + outCancelled=kTrue」になる(戻り kFalse は
+// 「対象0件で何も処理しなかった」ときだけ)。
+// 実体は KCMPeek.cpp。KCMActionComponent.cpp から呼ぶ。
+bool16 KCMRefreshComparisonForSelectedPages(int32* outPages, int32* outChanged, bool16* outCancelled = nil, int32* outFailed = nil);
+
+// 上記メニューの有効/無効判定(KCMActionComponent.cpp の UpdateActionStates 用)。arm 済み・**Pixel
+// モード**・前面文書が Target なら kTrue(Source では無効=コンテキストメニューでは項目ごと非表示になる想定)。
+// ★★**Story モードでは常に kFalse**(2026-08-24 ユーザー判断)＝あちらはページを1枚もラスタ化しないので
+//   押しても画面が変わらない。Story の「更新」は行の右クリック「Refresh Story Comparison」が持つ。
+//   理由の全文は実体側(KCMPeek.cpp)のコメント。実体は KCMPeek.cpp。
+bool16 KCMRefreshComparisonAvailable();
+
+#endif // __KCMPeek_h__
