@@ -234,7 +234,9 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 			break;
 
 		// 「Always Show Marks on Source」トグル: フラグを反転して Source 文書を再描画する(Pixel の表示判定と描画は
-		// KCMDrawEventHandler::HandleDrawEvent の Source 分岐。ON の間は常時表示・OPPでも表示・印刷にも
+		// The Source branch of KCMDrawEventHandler::DrawSpreadMarks (⚠**not HandleDrawEvent** -- that
+		// entry point went with the move to the adornment). While ON the marks show at all times, in
+		// OPP as well, and in print;
 		// 出る。不透明度はパネルの 25%/75% 選択に連動)。★既定 OFF で Start は触らない(2026-08-22 変更＝
 		// 設定はパネル設定に保存され起動時に復元されるので、Start が上書きすると保存した選択が消える)。
 		// ⚠★★**Target 版と同じく2つの機構に効く**(2026-08-22 の不具合再検査 A1)＝Pixel の枠は描画側が
@@ -318,7 +320,9 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 			break;
 
 		// 「Show Original Page Numbers」トグル: フラグを反転して再描画するだけ(バッジの表示判定と描画は
-		// KCMDrawEventHandler::HandleDrawEvent。表示は枠と同じ可視条件=印刷マークONの常時表示、または
+		// KCMDrawEventHandler::DrawSpreadMarks (⚠**not HandleDrawEvent** -- that entry point went with
+		// the move to the adornment). It is shown under the same conditions as the ring: always with
+		// print marks ON, or
 		// ツール左hold中)。再描画は隠しの当事者になりやすい Target(sDB)と Source を対象にする(他の文書は
 		// 次の自然な再描画で反映される)。
 		case kKCMPopupShowOldNumsActionID:

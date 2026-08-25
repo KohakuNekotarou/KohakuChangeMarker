@@ -2,23 +2,28 @@
 //
 //  KCMUIStartup.cpp
 //
-//  UI 側の起動/終了サービス(2026-08-13・model/UI 分割 第1段 Task 8 で新設)。
-//  model 側の対は KCMPeek.cpp の KCMPeekStartup で、**2つで元の1本を覆う**。
+//  The UI half's startup / shutdown service. Its counterpart is KCMPeekStartup in KCMPeek.cpp,
+//  and **the two together cover what used to be one**.
 //
-//  ここに在るものは全部 widget・窓・カーソル・購読に触るので、model プラグインには置けない。
-//  ★★逆に言うと、**元の起動処理は丸ごと UI だった**——分けてみたら model 側の Startup は空になった。
+//  Everything here touches a widget, a window, a cursor or a subscription, so none of it could
+//  live in the model plug-in.
+//  ★★Put the other way round: **the original startup work was UI work in its entirety** --
+//    separating the two left the model's Startup empty.
 //
-//  ⚠★★**終了時の順序が意味を持つ**: 購読を外してから、購読先の道具を畳む。購読している間セッションが
-//    握っているのは**この .pln の中へのポインタ**で、終了処理中のパネル破棄は実際に通知を飛ばす
-//    ---- つまり**消えかけのコードで Update が走る**。だから
-//    KCMDetachPanelVisibilityObserver() は KCMShutdownPanelAlpha() より必ず先。
-//    (2026-08-12 に KBS から移植した対策。順序を入れ替えてはいけない。)
+//  ⚠★★**THE ORDER MATTERS ON THE WAY OUT**: stop the subscriptions first, then take down what
+//    they subscribe to. While an observer is attached, what the session holds is **a pointer
+//    into this .pln**, and destroying the panel during teardown really does raise a
+//    notification ---- that is, **Update runs inside code that is going away**. So
+//    KCMDetachPanelVisibilityObserver() always comes before KCMShutdownPanelAlpha().
+//    (Ported from KBS. Do not reorder.)
 //
-//  ⚠★**サービスが2本になったことの帰結**: model 側 Shutdown と UI 側 Shutdown の**相対順序は
-//    保証されない**(別々の IStartupShutdown サービスなので、アプリがどちらを先に呼ぶかは未定義)。
-//    分割時に1行ずつ確認した限り、UI 側の仕事(購読の停止・フォント返却・キャッシュ破棄)と
-//    model 側の仕事(コンテナを空にする)の間に前後関係は無い。★もし将来どちらかが相手の状態を
-//    読むようになったら、この前提が壊れる ---- そのときは同じサービスに戻すか、明示的な順序を作ること。
+//  ⚠★**A consequence of there being two services**: **the relative order of the model half’s
+//    Shutdown and this one is not guaranteed** (they are separate IStartupShutdownService
+//    providers, and which the application calls first is undefined). Checked line by line at
+//    the split: the UI's work (stopping subscriptions, returning fonts, dropping caches) and the
+//    model's (emptying its containers) have no ordering between them. ★If either ever starts
+//    reading the other’s state that premise breaks -- put them back into one service, or make
+//    the order explicit.
 //
 //========================================================================================
 
@@ -28,34 +33,35 @@
 #include "IStartupShutdownService.h"
 
 #include "KCMUIID.h"
-#include "KCMPanelState.h"		// KCMLoadPanelStateIfPresent(保存済みパネル設定の復元)
-#include "KCMPanelTitle.h"		// KCMPanelTitle::Restore(終了時にタブを素の名前へ戻す)
-#include "KCMPanelAlpha.h"		// 半透明トグルの購読/解除と後片付け
-#include "KCMTrackerHud.h"		// KCMTrackerHudShutdown(押下中 HUD のフォント返却)
+#include "KCMPanelState.h"		// KCMLoadPanelStateIfPresent (restore the saved panel settings)
+#include "KCMPanelTitle.h"		// KCMPanelTitle::Restore (put the tab name back on the way out)
+#include "KCMPanelAlpha.h"		// subscribe / unsubscribe the translucency toggle, and its clean-up
+#include "KCMTrackerHud.h"		// KCMTrackerHudShutdown (return the on-press HUD’s font)
 #include "KCMPeekGesture.h"		// KCMAttachDocsClosedObserver / KCMPeekGestureShutdown
-#include "KCMThumbIdleTask.h"		// KCMShutdownThumbIdleTask(遅延サムネイル idle task の解放)
+#include "KCMThumbIdleTask.h"		// KCMShutdownThumbIdleTask (release the deferred thumbnail idle task)
 #include "KCMViewSync.h"			// KCMInvalidateSyncCaches / KCMViewSyncShutdown
-#include "KCMCmykCursor.h"		// KCMCmykShutdown(カーソル文字列とフォント参照)
-#include "KCMBookDialog.h"		// KCMBookDialogShutdown(ブック比較の結果＝行と2つのパスと要約)
-#include "KCMUIShared.h"			// KCMAttachModelChangeObserver / KCMDetachModelChangeObserver(Task 9)
+#include "KCMCmykCursor.h"		// KCMCmykShutdown (the cursor strings and a font reference)
+#include "KCMBookDialog.h"		// KCMBookDialogShutdown (the book comparison result: rows, two paths, summary)
+#include "KCMUIShared.h"			// KCMAttachModelChangeObserver / KCMDetachModelChangeObserver
 #include "Utils.h"					// Utils<IKCMCompareFacade>()
-#include "IKCMCompareFacade.h"	// ClearSessionStatus(ステータス記憶の破棄)
-									// ★保持は model 側(設計書 §3.3)＝app.kcmStatus はパネルを閉じていても答えるため。
-									//   2026-08-13 Task 9 で KCMPanelObserver.cpp から移し、2026-08-15(第2段)で
-									//   Facade 経由にした ---- model の自由関数は別 .pln からリンクできない。
-									// ⚠★★2026-08-18(不具合再検査 B-U2)訂正＝**捨てる責任は model 側にある**。
-									//   旧記述は「捨てるのが**UI 側の shutdown**なのは意図的。model 側の
-									//   startup/shutdown サービスは**BG スレッドの終了ごとにも呼ばれる**
-									//   (ガイド vol1-07 L245-253)ので、あちらで捨てると PDF を書き出すたびに
-									//   ステータス行が消える」だったが、**その根拠は 2026-08-15(第2段 Task 11B)に
-									//   KCM.fr の宣言側で塞がれている** ---- kKCMPeekStartupBoss は
-									//   kCMainThreadStartupShutdownProviderImpl なので、model 側 Shutdown は
-									//   メインスレッドでしか呼ばれない。
-									//   ⇒ **2026-08-18(不具合再検査 B8)が「model の static は model の Shutdown が
-									//     閉じる」と決め、KCMPeekStartup::Shutdown に KCMClearSessionStatus() を
-									//     足した。**こちらの呼びは**残す**(Clear するだけで冪等)が、**主でも唯一でもない**。
-									//   ⚠nil 検査が要るのはまさにそのため＝終了処理中は kUtilsBoss が先に落ちている
-									//     ことがあり、**この呼びは飛ぶことがある**(飛んでも model 側が閉じる)。
+#include "IKCMCompareFacade.h"	// ClearSessionStatus (drop the remembered status line)
+									// ★**The model side is what keeps it** so that app.kcmStatus can answer
+									//   with the panel closed. A model-side free function cannot be linked
+									//   from another .pln, which is why this goes through the facade.
+									// ⚠★★**Dropping it is the MODEL half’s responsibility.** The older note
+									//   here argued that the UI had to do it, because a model plug-in’s
+									//   startup/shutdown service is called on **every background thread’s**
+									//   startup and shutdown too (guide vol1-07 L245-253), so clearing it
+									//   over there would wipe the status line on every PDF export.
+									//   **That ground was closed off in the .fr**: kKCMPeekStartupBoss is
+									//   declared kCMainThreadStartupShutdownProviderImpl, so the model’s
+									//   Shutdown only ever runs on the main thread, and it now calls
+									//   KCMClearSessionStatus() itself.
+									//   ⇒ This call **stays** (Clear is idempotent) but it is neither the
+									//     main one nor the only one.
+									//   ⚠That is exactly why the nil check matters: during teardown kUtilsBoss
+									//     can already be gone, so **this call may be skipped** -- and the
+									//     model side closes it anyway.
 
 class KCMUIStartup : public CPMUnknown<IStartupShutdownService>
 {
@@ -71,78 +77,88 @@ CREATE_PMINTERFACE(KCMUIStartup, kKCMUIStartupImpl)
 
 void KCMUIStartup::Startup()
 {
-	// ★続けて保存済みパネル設定(独自 JSON)をここで読み込む(ユーザー指定 2026-07-15)。
-	// 同期は Stop 中でもトグル ON なら動くため、「パネル初回オープン時に復元」の従来タイミングだと、
-	// ON を保存したユーザーは起動〜パネルを開くまでの間だけ同期が止まってしまう。起動時に読み込めば
-	// その窓が無くなる(保存が無ければ既定 OFF のまま)。
-	// 各トグルの復元先は全部エンジン側のフラグ/購読で、パネルにも文書にも依存しない=起動時に安全
-	// (KCMDoSetPrintMarks は db=nil のフラグのみ、ScrollMap/IgnoreMarker/Always Show Marks on Target・Source
-	//  等は平の代入。⚠2026-08-22 訂正＝ここに挙げていた HoldToHide は同日にトグルごと撤去された)。
-	// 内部の「セッション一度きり」ガードにより、パネル AutoAttach からの既存呼び出しは no-op のまま残る
-	// (起動サービスの順序が万一変わっても取りこぼさない保険)。
+	// ★Read the saved panel settings (a private JSON) here, at startup, rather than when the panel
+	// is first opened. Syncing runs even while stopped if its toggle is ON, so with the older
+	// timing a user who had saved it ON lost the syncing between launch and opening the panel.
+	// Reading at startup closes that window (with nothing saved, the defaults stand).
+	// Every toggle restores into an engine-side flag or subscription and depends on neither the
+	// panel nor a document, which is what makes startup a safe moment (KCMDoSetPrintMarks only
+	// sets a flag with db=nil; ScrollMap / IgnoreMarker / Always Show Marks on Target and Source
+	// are plain assignments).
+	// An internal once-per-session guard keeps the existing call from the panel’s AutoAttach a
+	// no-op -- insurance in case the order of the startup services ever changes.
 	KCMLoadPanelStateIfPresent();
 
-	// 一括クローズ完了(kPendingDocumentsClosedMsg)の購読を開始する。以後、複数文書を続けて閉じても
-	// UI の後片付けは「全部閉じ終わってから1回」に畳まれる(実体は KCMPeekGesture.cpp)。
+	// Subscribe to "a batch close has finished" (kPendingDocumentsClosedMsg). From here on, closing
+	// several documents in a row folds the UI clean-up into one pass after the last of them
+	// (KCMPeekGesture.cpp).
 	KCMAttachDocsClosedObserver();
 
-	// パネルの表示状態変化(kPaletteVisibilityChangedMessage)の購読を開始する。「Translucent Panel」が
-	// ON のとき、パネルを開き直したりドッキング⇄フローティングを切り替えたりしても半透明が残る
-	// (半透明の付け先である OWL.Dock 窓がそのたびに作り直されるため)。実体は KCMPanelAlpha.cpp。
+	// Subscribe to panel visibility changes (kPaletteVisibilityChangedMessage). With "Translucent
+	// Panel" ON, the translucency survives reopening the panel and switching between docked and
+	// floating -- the OWL.Dock window it is applied to is rebuilt each time. KCMPanelAlpha.cpp.
 	KCMAttachPanelVisibilityObserver();
 
-	// ★model からの通知(kKCM*Message)の購読を開始する(2026-08-13 Task 9)。これが繋がっていないと
-	//   model 側の仕事が画面に出ない ---- ただし**エラーも警告も出ず「何も起きない」形**で現れるので、
-	//   実機で必ず確かめること。実体は KCMModelChangeObserver.cpp。
+	// ★Subscribe to the model’s notifications (kKCM*Message). With this not connected, the model’s
+	//   work never reaches the screen -- and it fails **with no error and no warning, as "nothing
+	//   happens"**, so check it in the running application. KCMModelChangeObserver.cpp.
 	KCMAttachModelChangeObserver();
 }
 
 void KCMUIStartup::Shutdown()
 {
-	// ★★タブの名前を素へ戻す（2026-08-21）。**いちばん先に**＝UI がまだ立っているうちに書く
-	//   （KBS の KBSStartupShutdown::Shutdown も同じ理由で先頭に置いている）。
-	//   ⚠戻さないと、パレットのラベルはワークスペースに残るので、**次にこのプラグインを外した後も
-	//     「- Pixel」の付いた名前が居座る**。
+	// ★★Put the tab name back. **First of all**, while the UI is still standing (KBS puts
+	//   KBSPanelTitle::Restore() at the head of its own Shutdown for the same reason).
+	//   ⚠Without it the palette label persists in the workspace, so **a name with "- Pixel" on it
+	//     stays there even after this plug-in is removed**.
 	KCMPanelTitle::Restore();
 
-	// 遅延サムネイル更新の idle task を解放(予約中なら RemoveTask してから)。
+	// release the deferred thumbnail idle task (RemoveTask first if one is queued)
 	KCMShutdownThumbIdleTask();
-	// 一括クローズの保留も捨てる(終了後に流れることは無いが、状態を残さない)。
+	// drop the pending batch close as well: nothing can flush after this, but no state is left behind
 	KCMPeekGestureShutdown();
-	// ★model からの通知の購読も止める(2026-08-13 Task 9)。**パネル周りを畳むより前**＝下の
-	//   KCMDetachPanelVisibilityObserver と同じ理由(消えかけのコードで Update が走るのを避ける)。
+	// ★Stop listening to the model as well. **Before the panel is taken down** -- the same reason
+	//   as KCMDetachPanelVisibilityObserver below (Update must not run inside code that is going
+	//   away).
 	KCMDetachModelChangeObserver();
-	// ★先に購読を止める(2026-08-12)。購読している間セッションが握っているのは**この .pln の中への
-	//   ポインタ**で、終了処理中のパネル破棄は実際に通知を飛ばす ---- 消えかけのコードで Update が走る。
-	//   通知を止めてから、下の行で道具(タイマーと Win32 フック)を畳む順序。
-	//   ★KBS が 2026-08-08 に新設した対を移植した分(KCM 側にだけ無かった)。
+	// ★Stop the subscription first. While it is attached, what the session holds is **a pointer
+	//   into this .pln**, and destroying the panel during teardown really does raise a
+	//   notification ---- Update would run inside code that is going away. Only then take down the
+	//   tools it uses (a timer and a Win32 hook) on the line below.
+	//   ★Ported from the pair KBS introduced; KCM was the side that lacked it.
 	KCMDetachPanelVisibilityObserver();
-	// パネル半透明の遅延再適用タイマーも同様に止める(同じく生関数ポインタを残さないため)。
+	// the delayed re-apply timer of the panel translucency goes the same way (again, leave no raw
+	// function pointer behind)
 	KCMShutdownPanelAlpha();
-	// 押下中 HUD が抱えるフォント参照を返す。押下中に quit した経路でも確実に片付ける。
+	// return the font reference the on-press HUD holds; the path where the application quits
+	// mid-press is cleaned up too
 	KCMTrackerHudShutdown();
 
-	// 同期のページ矩形表・対応表・前回状態(2026-07-25 追補)。
+	// the sync page-rectangle table, the correspondence table and the last state
 	KCMInvalidateSyncCaches();
-	// レイアウトビュー同期の後始末(状態フラグを落とすだけ。理由は KCMViewSync.cpp の実体側)。
+	// the rest of the layout view syncing (it only lowers a state flag; the reason is on the
+	// implementation side, KCMViewSync.cpp)
 	KCMViewSyncShutdown();
 
-	// ★file-static PMString を空にして、プラグイン unload 時の静的デストラクタを実質 no-op にする
-	// (Windows では実害なしの実績だが、Mac は unload 順が異なるため heap バッファを持ち越さない方が
-	// 安全。2026-07-15 終了堅牢化)。CMYK 側(カーソル文字列・押下中のフォント/文書ポインタ)。
+	// ★Empty the file-static PMStrings so that the static destructors at plug-in unload find
+	// nothing to do. Windows has never shown a fault from leaving them, but the Mac unloads in a
+	// different order, so no heap buffer is carried that far. This one is the CMYK side (the
+	// cursor strings and the font / document pointer held during a press).
 	KCMCmykShutdown();
-	// ★★2026-08-18(不具合再検査 B-U5): ブック比較ダイアログの控え4つ(章の行・Target/Source の
-	//   パス・要約)。**この列挙から漏れていた UI 側の static** ---- 行(`std::vector<KCMChapterResult>`)
-	//   は中身が PMString なので、比較を一度でも走らせたセッションは unload まで抱えていた。
-	//   ⚠**model 側 B8 が同じ形の漏れを2本見つけた翌日に、こちら側で3本目〜6本目が出た**形
-	//   ＝「1本直して兄弟を探さない」。widget にも文書にも触らないので終了処理中のどの順でも安全。
+	// ★★The four things the book comparison dialog keeps (the chapter rows, the Target and Source
+	//   paths, the summary). **These were the UI-side statics missing from this list** -- the rows
+	//   (`std::vector<KCMChapterResult>`) hold PMStrings, so a session that ran one comparison
+	//   carried them to unload.
+	//   ⚠They came to light **the day after the model half found two of the same shape missing from
+	//     its own list** ＝ "fix one and do not look for its siblings".
+	//   It touches no widget and no document, so it is safe wherever in the teardown it is reached.
 	KCMBookDialogShutdown();
-	// パネルのステータス記憶(model 側の sSessionStatus)も同様に空へ。⚠**nil 検査つき**＝終了処理中は
-	// kUtilsBoss 側が先に落ちている可能性がある(2026-08-15・Task 4B で KCMCmykShutdown の
-	// EndColorDrag に付けたのと同じ理由。同じ shutdown の隣の行なので同じ扱いにする)。
+	// The remembered status line (kept on the model side) goes the same way. ⚠**With a nil check**:
+	// during teardown kUtilsBoss can already be gone (the same reason as the nil check on
+	// KCMCmykShutdown's EndColorDrag -- neighbouring lines of one shutdown, treated alike).
 	InterfacePtr<IKCMCompareFacade> compare(Utils<IKCMCompareFacade>().QueryUtilInterface());
 	if (compare != nil)
 		compare->ClearSessionStatus();
 }
 
-// KCMUIStartup.cpp 終わり。
+// End, KCMUIStartup.cpp.

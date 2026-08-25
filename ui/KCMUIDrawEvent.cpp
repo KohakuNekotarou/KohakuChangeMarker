@@ -2,31 +2,33 @@
 //
 //  KCMUIDrawEvent.cpp
 //
-//  UI 側の描画サービス(2026-08-13・model/UI 分割 第1段 Task 6 で新設)。
-//  **画面にしか出さない描画**——model 側からは原理的にできないもの——だけをここで担う。
+//  The UI half's draw service. It carries **only what is drawn on screen alone** -- the things
+//  the model side cannot do by construction.
 //
-//  持っているのは2つ:
-//    ①押下中 HUD ＝ ツールの左ボタンを押している間、押した窓の左上に「その窓が比較の何なのか」
-//      (Target / Source / …)を出す表示。★**押下中かどうかはツール(UI)の状態**で、model からは見えない。
-//    ②手動 Hide/Show Spread の検出（2026-08-13 Task 7 で model 側ハンドラから移した）。
-//      スクロールバー地図は**文書窓へ strip を注入する widget** ＝ UI なので、その更新のきっかけを
-//      拾うのもこちら側の仕事。
+//  It holds two:
+//    (1) the on-press HUD ＝ while the tool's left button is held, the top-left of the pressed
+//        window says what that window is to the comparison (Target / Source / ...).
+//        ★**Whether the button is held is the tool's state, which is UI**; the model cannot see
+//        it.
+//    (2) noticing a manual Hide/Show Spread (moved here from the model-side handler). The
+//        scrollbar map is **a strip injected into a document window** ＝ UI, so noticing what
+//        should update it belongs on this side too.
 //
-//  ★kDrawEventService は**複数プロバイダ登録が前提**(本体だけで20以上ある)ので、ここへもう1つ足しても
-//    何も壊れない。★このサービスを画面専用にしているのは意図的で、`kUIPlugIn` の boss は
-//    バックグラウンドスレッドから作れず、UI の PDF 書き出しはバックグラウンドで走る
-//    ＝ここの描画は書き出しファイルに届かない([[model-ui-plugin-separation]])。HUD にとってはそれが正しい。
-//    ⚠**書き出しに出なければならない比較マークは model 側のハンドラ(KCMDrawEventHandler.cpp)に残る。**
+//  ★kDrawEventService **expects several providers** (InDesign itself registers over twenty), so
+//    one more here breaks nothing. ★Keeping this service screen-only is deliberate: a
+//    `kUIPlugIn` boss cannot be created from a background thread, and the UI’s PDF export runs on
+//    one, so nothing drawn here reaches an exported file ([[model-ui-plugin-separation]]). For a
+//    HUD that is the right answer.
+//    ⚠★★**The comparison marks, which DO have to reach an export, are on the model side -- and
+//      they are not drawn from a draw event at all.** They were consolidated into the **global
+//      page item adornment** (KCMRingAdornment.cpp), which builds a DrawEventData and calls
+//      KCMDrawEventHandler::DrawSpreadMarks. ★**The model half registers no draw-event handler
+//      of any kind**; KCMDrawEventHandler is no longer an IDrwEvtHandler implementation and says
+//      so at the top of its own header (the class name and the file name are historical).
 //
-//  ★GetThreadingPolicy は**手書きしない**。CServiceProvider がプラグインの型から既定を返すので、
-//    UI プラグイン(KCMUI)であるこちらには自動で kMainThreadOnly が入る(ガイド vol1-07 L245-253)。
-//    ⚠2026-08-18(不具合再検査 B-U2)訂正: 旧記述は「手書きすると第2段で消し忘れる元になる(既存の
-//    KCMDrawEventSrvc がまさにそれで、**第2段で消す対象**)」だったが、**その手書き override は
-//    2026-08-14 に撤去済み**＝model 側 KCMDrawEventHandler.cpp の KCMDrawEventSrvc が
-//    「第2段を待たず先に消してある」と自分で書いている。**このファイルが書かれた翌日**に片付いた
-//    予告を、第2段の完了(2026-08-15)後も持ち続けていた。
-//    ⇒ ★**段階実装の「まだ」は、その段階が終わった日に消す**(同じ B-U2 の回に
-//      KCMModelChangeObserver.cpp で拾った教訓の、同じブロック内での再発)。
+//  ★GetThreadingPolicy is **not written by hand**. CServiceProvider derives the default from the
+//    plug-in type, so this side -- a UI plug-in -- gets kMainThreadOnly automatically (guide
+//    vol1-07 L245-253).
 //
 //========================================================================================
 
@@ -36,34 +38,33 @@
 #include "CPMUnknown.h"
 #include "IDrwEvtHandler.h"
 #include "IDrwEvtDispatcher.h"
-#include "GraphicsData.h"			// GraphicsData(GetGraphicsPort / GetView)＋ DrawEventData
+#include "GraphicsData.h"			// GraphicsData (GetGraphicsPort / GetView) and DrawEventData
 #include "IGraphicsPort.h"
-#include "IShape.h"					// IShape::kPrinting(印刷/PDF 書き出しの文脈フラグ)
+#include "IShape.h"					// IShape::kPrinting (the print / PDF-export context flag)
 #include "GraphicsID.h"				// kDrawEventService
 #include "DocumentContextID.h"		// kEndSpreadMessage / kAfterLastSpreadDrawMessage
 #include "ISpread.h"
 #include "IGeometry.h"
 #include "IDataBase.h"
-#include "PersistUtils.h"			// ::GetDataBase(描いているスプレッドの db)
+#include "PersistUtils.h"			// ::GetDataBase (the db of the spread being drawn)
 #include "TransformUtils.h"			// ::InnerToSpreadMatrix / ::InnerToPasteboardMatrix
 #include "PMMatrix.h"
 #include "PMPoint.h"
 
 #include "KCMUIID.h"
-#include "KCMTrackerHud.h"		// 押下中 HUD(2026-08-13 に model 側ハンドラからこちらへ移した)
-#include "KCMScrollMap.h"			// KCMScrollMapNoticeDrawEvent(手動 Hide/Show Spread の検出。同上)
+#include "KCMTrackerHud.h"		// the on-press HUD (moved here from the model-side handler)
+#include "KCMScrollMap.h"			// KCMScrollMapNoticeDrawEvent (detects a manual Hide/Show Spread)
 
 //========================================================================================
-// pasteboard 座標 → このスプレッドの spread 座標 への変換オフセット(= pasteboard - spread)。
-//   pasteboard 座標はドキュメント全体で1つ。スプレッドは pasteboard 上で(主に縦に)積まれ、各々が
-//   オフセットを持つ(spread[0] だけ偶然 0)。同一の inner 原点(0,0)を InnerToSpreadMatrix と
-//   InnerToPasteboardMatrix の両方で写し、その差を取ればこのスプレッドのオフセットになる。
-//   pasteboard 座標の点からこれを引けば、そのスプレッドの spread 座標における点が得られる。
-//   ★2026-07-04 のトースト撤去で消えたが、2026-08-07 に押下中 HUD のために戻した(元コード
-//     = git 068d8fb^ の KCMDrawEventHandler.cpp:534-548)。
-//   ★2026-08-13: **唯一の呼び手である HUD と一緒に**ここへ移した(model 側では未参照になるため)。
-//     中身は1行も変えていない。ページの幾何を読むだけでビューには触らないが、使うのは描画の座標合わせ
-//     だけなので、置き場は「描く側」でよい。
+// The offset from pasteboard coordinates to this spread’s coordinates (= pasteboard - spread).
+//   Pasteboard coordinates are one system for the whole document, while spreads are stacked on
+//   the pasteboard (mostly vertically) and each carries an offset (spread[0] happens to be 0).
+//   Mapping the same inner origin (0,0) through both InnerToSpreadMatrix and
+//   InnerToPasteboardMatrix and taking the difference gives this spread’s offset; subtracting it
+//   from a point in pasteboard coordinates gives that point in the spread’s.
+//   ★It lives here because **its only caller, the HUD, does** -- the model side no longer
+//     references it. Not a line of it changed in the move. It reads page geometry and touches no
+//     view, but it exists only to line drawing up, so the drawing side is where it belongs.
 //========================================================================================
 static PMPoint KCMSpreadOffsetFromPasteboard(IDataBase* db, ISpread* spread)
 {
@@ -97,15 +98,15 @@ public:
 
 CREATE_PMINTERFACE(KCMUIDrawEventHandler, kKCMUIDrawEventHandlerImpl)
 
-// ★HUD は2系統の描画イベントを**両方**使う。片方だけでは窓全域を覆えない(理由は下の HandleDrawEvent)。
-//   この2つは元は model 側ハンドラが登録していたもので、kAfterLastSpreadDrawMessage のほうは
-//   **HUD のためだけに登録されていた**(2026-08-07 に戻した経緯がコメントに残っていた)ので、
-//   model 側からは登録ごと外した(2026-08-13)。
+// ★The HUD uses **both** draw-event routes: one alone cannot cover the whole window (the reason
+//   is at HandleDrawEvent below). The model-side handler registered both once, and
+//   kAfterLastSpreadDrawMessage **was registered for the HUD alone**, so the registrations left
+//   the model side together with the HUD.
 void KCMUIDrawEventHandler::Register(IDrwEvtDispatcher* d)
 {
-	// スプレッド単位で配られる描画イベント。ポートは spread 座標。
+	// The per-spread draw event; the port is in spread coordinates.
 	d->RegisterHandler(ClassID(kEndSpreadMessage), this, kDEHLowestPriority);
-	// ウィンドウ単位(全スプレッド描画後に1回)。ポートは pasteboard 座標。
+	// Per-window (once, after every spread has been drawn); the port is in pasteboard coordinates.
 	d->RegisterHandler(ClassID(kAfterLastSpreadDrawMessage), this, kDEHLowestPriority);
 }
 
@@ -115,14 +116,19 @@ void KCMUIDrawEventHandler::UnRegister(IDrwEvtDispatcher* d)
 	d->UnRegisterHandler(ClassID(kAfterLastSpreadDrawMessage), this);
 }
 
-/* HandleDrawEvent — 押下中 HUD だけを描く。
+/* HandleDrawEvent - draws the on-press HUD, and nothing else.
 
-   ★★2系統を併用する理由(model 側ハンドラの Register に残っていた実測の知見をそのまま引き継ぐ):
-     kEndSpreadMessage           … 帯(スプレッド/ペーストボード)に clip されるが**前面**
-     kAfterLastSpreadDrawMessage … clip されないが**背面**(= 何も被さらないカンバス部分にだけ見える)
-   ∴ 併用すると各画素はどちらか一方だけが担当し、**二重描きなしでビュー全域**を覆える。
+   ★★Why both routes are used (the measurement is inherited from the model-side handler’s
+     Register, where it was first written down):
+     kEndSpreadMessage           ... clipped to the band (spread / pasteboard) but **in front**
+     kAfterLastSpreadDrawMessage ... not clipped but **behind** (= visible only on the canvas
+                                    where nothing covers it)
+   ∴ together, each pixel is served by exactly one of them, and **the whole view is covered with
+     no double drawing**.
 
-   ★戻り値は常に kFalse ＝ 他のハンドラへ流す(既存の作法。model 側のマーク描画がこの後に走る)。
+   ★The return value is always kFalse ＝ pass it on (the established practice).
+     ⚠**Nothing of KCM’s runs after this.** The comparison marks are an adornment, not a
+       draw-event handler, so what follows are InDesign’s own handlers.
 */
 bool16 KCMUIDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 {
@@ -130,31 +136,35 @@ bool16 KCMUIDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	if (ded == nil || ded->gd == nil)
 		return kFalse;
 
-	// 画面だけ。印刷/PDF 書き出しの文脈では何もしない。
-	// ★このサービスは UI プラグイン側なので書き出しには元から配られないが、印刷プレビュー等の
-	//   画面上の印刷文脈でも出さないという意味でここは要る(model 側の判定と同じ形)。
+	// Screen only: do nothing in a print or PDF-export context.
+	// ★This service is on the UI side, so an export is never handed to it anyway; the test is here
+	//   for the print contexts that DO appear on screen (print preview and the like). Same shape as
+	//   the model side’s test.
 	if ((ded->flags & IShape::kPrinting) != 0)
 		return kFalse;
 
-	// スクロールバー地図: ページパネルからの手動 Hide/Show Spread を検出する軽量チェック(250ms
-	// スロットル付きの指紋比較)。手動の隠し/再表示は KCM のフックを通らないが必ず再描画は起こす
-	// ので、スプレッド描画イベントに便乗して拾う(Undo/Redo による変化も同経路)。KCMScrollMap.cpp。
-	// ★★**HUD の判定より前**に置くこと。これは押下中かどうかと無関係に、非印刷の描画のたびに
-	//   走らなければならない(下の HUD 判定は「押していなければ即 return」なので、後ろに置くと
-	//   **押している間しか地図が更新されなくなる**)。2026-08-13 に model 側ハンドラから移した際、
-	//   元も HandleDrawEvent の先頭付近(マークの判定より前)に在った。
-	// ⚠★**移動で1つだけ挙動が変わった**: 元は同じ関数の冒頭にある再入ガード
-	//   (自前ラスタ化中は描かない。model 側の `tl_Rasterizing`。★当時は素の static だったが 2026-08-15 に
-	//   `IDThreading::ThreadLocal<bool16>` へ移した＝第2段 Task 12B)より**後ろ**に在ったので、
-	//   比較のラスタ化中はこの検出が走らなかった。
-	//   こちらのハンドラは model 側のその再入フラグを見ないので、**ラスタ化中にも走る**。
-	//   ★害が無いと判断した根拠: この検出は「隠し状態の指紋を比べて、変わっていたら strip を
-	//     invalidate する」だけで、ラスタ化中に隠し状態は変わらない ⇒ 実質 no-op(しかも 250ms
-	//     スロットル付き)。⚠それでも**挙動差であることは事実**なので、実機の確認項目に入れてある。
+	// Scrollbar map: a light check that detects a manual Hide/Show Spread from the Pages panel (a
+	// fingerprint comparison, throttled to 250ms). Hiding or showing by hand does not pass through
+	// any hook of KCM’s, but it always causes a redraw, so the check rides on the spread draw event
+	// (an Undo/Redo of the same change arrives the same way). KCMScrollMap.cpp.
+	// ★★**It has to stand BEFORE the HUD test.** It must run on every non-print draw, whether or
+	//   not a button is held -- the HUD test below returns immediately when nothing is pressed, so
+	//   putting this after it would mean **the map only updated while the button was down**. In the
+	//   model-side handler it likewise stood near the top, before the mark test.
+	// ⚠★**One behaviour did change in the move**: over there it sat **after** the re-entrancy guard
+	//   at the top of that function (do not draw while we are rasterising ourselves -- the model
+	//   side’s `tl_Rasterizing`, an `IDThreading::ThreadLocal<bool16>`), so the detection did not
+	//   run during a comparison’s rasterisation.
+	//   This handler does not consult that flag, so **it runs during rasterisation too**.
+	//   ★Why that was judged harmless: the check only compares a fingerprint of the hidden state and
+	//     invalidates the strip when it differs, and the hidden state does not change while
+	//     rasterising ⇒ effectively a no-op (and throttled to 250ms besides). ⚠It is a behavioural
+	//     difference all the same, so it is on the list of things to confirm in the application.
 	KCMScrollMapNoticeDrawEvent();
 
-	// 「押下中」かつ「押した窓のビュー」でなければ何もしない。★view が nil の描画
-	// (ページパネルのサムネイル生成など)は KCMTrackerHudWantsDraw が弾く。
+	// Do nothing unless a button is held AND this is the view of the window it was pressed in.
+	// ★Draws with a nil view (a Pages panel thumbnail being generated, for instance) are rejected by
+	// KCMTrackerHudWantsDraw.
 	if (!KCMTrackerHudWantsDraw(ded->gd->GetView()))
 		return kFalse;
 
@@ -162,15 +172,15 @@ bool16 KCMUIDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	if (gPort == nil)
 		return kFalse;
 
-	// ウィンドウ単位イベント: ポートは pasteboard 座標なのでオフセット無し。
+	// The per-window event: the port is already in pasteboard coordinates, so no offset.
 	if (eventID == ClassID(kAfterLastSpreadDrawMessage))
 	{
 		KCMTrackerHudDraw(gPort, ded->gd->GetView(), PMPoint(0.0, 0.0));
 		return kFalse;
 	}
 
-	// スプレッド単位イベント: changedBy = 今描いているスプレッド。ポートは spread 座標なので、
-	// pasteboard→spread のオフセットを渡す。
+	// The per-spread event: changedBy is the spread being drawn. The port is in spread coordinates,
+	// so the pasteboard-to-spread offset is passed along.
 	InterfacePtr<ISpread> spread(ded->changedBy, UseDefaultIID());
 	if (spread == nil)
 		return kFalse;
@@ -184,8 +194,9 @@ bool16 KCMUIDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 
 //========================================================================================
 // KCMUIDrawEventSrvc
-//   kDrawEventService サービスとして自身を登録する。アプリ起動時にこのサービスが見つかり、
-//   同じ boss 上の IDrwEvtHandler が描画イベントディスパッチャに登録される。
+//   Registers itself as a kDrawEventService provider. The service is found at application
+//   startup, and the IDrwEvtHandler on the same boss is registered with the draw event
+//   dispatcher.
 //========================================================================================
 class KCMUIDrawEventSrvc : public CServiceProvider
 {
@@ -196,11 +207,12 @@ public:
 	virtual ServiceID GetServiceID() { return kDrawEventService; }
 	virtual bool16 IsDefaultServiceProvider() { return kFalse; }
 	virtual InstancePerX GetInstantiationPolicy() { return IK2ServiceProvider::kInstancePerSession; }
-	// 内部名(翻訳対象ではない)なので SetCString。model 側の KCMDrawEventSrvc と同じ流儀。
+	// An internal name, not translated, so SetCString. Same practice as the model side’s
+	// KCMDrawEventSrvc.
 	virtual void GetName(PMString* pName) { pName->SetCString("KCMUIDrawEventSrvc"); }
-	// ★GetThreadingPolicy は**書かない**(ファイル冒頭の理由)。
+	// ★GetThreadingPolicy is **not written** (the reason is at the top of this file).
 };
 
 CREATE_PMINTERFACE(KCMUIDrawEventSrvc, kKCMUIDrawEventSrvcImpl)
 
-// KCMUIDrawEvent.cpp 終わり。
+// End, KCMUIDrawEvent.cpp.
