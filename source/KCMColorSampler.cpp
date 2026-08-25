@@ -2,7 +2,7 @@
 //
 //  KCMColorSampler.cpp
 //
-//  クリック点 CMYK サンプリングの実装(旧 KCMScriptProvider.cpp から分離)。
+//  The implementation of the click-point CMYK sampling (see KCMColorSampler.h).
 //
 //========================================================================================
 
@@ -22,28 +22,32 @@
 #include "KCMConstants.h"
 #include "KCMDrawEventHandler.h"   // KCMRasterizingGuard / KCMDrawEventHandler::tl_Rasterizing
 #include "KCMCore.h"               // KCMFindPageUnderMouse
-// ★★2026-08-15(第2段 Task 4B): **KCMViewLookup.h の include を落とした**。ここが最後まで残っていた
-//   model→UI の逆流2件のうちの1本で、KCMQueryViewUnderMouse / KCMFindDocDbForView /
-//   KCMQueryMouseContentPoint の3本を呼んでいた。⇒ ビュー解決は呼び手(UI)へ出し、この .cpp は
-//   「渡された点の色は何か」だけを答える。⚠**3本目(KCMFindDocDbForView)を落とさないこと**
-//   ---- 押した窓から外れたときのガードで、呼び手側にそのまま移してある(KCMColorSampler.h の注記)。
-#include "KCMPageMap.h"            // KCMMapTargetToSource / KCMBuildPairing(除外対応表)
+// This file deliberately does not include the UI's KCMViewLookup.h. Resolving which view the
+//   mouse is over belongs to the caller (the UI); all this .cpp answers is "what colour is the
+//   point I was given".
+//   @warning **the third of those lookups must not be dropped along the way**: comparing
+//   KCMFindDocDbForView(view) against hoverDB is what stops a different window's coordinates
+//   being read as hoverDB's page coordinates, and it now lives in the callers (see the note in
+//   KCMColorSampler.h).
+#include "KCMPageMap.h"            // KCMMapTargetToSource / KCMBuildPairing (the exclusion pairing)
 #include "KCMColorSampler.h"
 
 #include <map>
-#include <new>						// std::nothrow(SnapshotUtilsEx 確保)
+#include <new>						// std::nothrow (allocating the SnapshotUtilsEx)
 
 //----------------------------------------------------------------------------------------
-// Alt+左ホールド(ドラッグ)中の hover→other ページ対応表キャッシュ(KCMColorSampler.h 参照)。
-// 押下中はページ構成が変わらないので、毎サンプル(≦20回/秒)の KCMBuildPairing 全ページ再構築を
-// 1回に減らす(2026-07-15)。押下の外では常に非アクティブ=単発サンプルは従来どおり毎回構築。
-// ★向きは押下時に固定する(2026-07-26): Target 窓で押せば target→source、Source 窓で押せば
-//   source→target。押下中に基準の窓は変わらない(KCMPeek.cpp が hover 文書を押下時に固定する)。
+// The hover -> other page mapping cached while Alt + left is held down (see KCMColorSampler.h).
+// The page structure cannot change under a held button, so the whole-document KCMBuildPairing
+// runs once instead of on every sample (up to 20 a second). Outside a press this is inactive and
+// a one-off sample builds the mapping as before.
+// **The direction is fixed when the button goes down**: press in the Target window and it maps
+//   target -> source, press in the Source window and it maps source -> target. The reference
+//   window cannot change mid-press, because the hovered document is pinned at press time.
 //----------------------------------------------------------------------------------------
 static bool16              sDragCacheActive  = kFalse;
-static IDataBase*          sDragCacheHoverDB = nil;	// キー照合用(deref しない)
+static IDataBase*          sDragCacheHoverDB = nil;	// compared against, never dereferenced
 static IDataBase*          sDragCacheOtherDB = nil;
-static std::map<UID, UID>  sDragCacheH2O;			// hover ページ → other ページ
+static std::map<UID, UID>  sDragCacheH2O;			// hover page -> other page
 
 void KCMSampleCmykBeginDrag(IDataBase* hoverDB, IDataBase* otherDB, bool16 hoverIsTarget)
 {
@@ -54,8 +58,8 @@ void KCMSampleCmykBeginDrag(IDataBase* hoverDB, IDataBase* otherDB, bool16 hover
 	if (hoverDB == nil || otherDB == nil)
 		return;
 
-	// KCMBuildPairing は target/source の順で受け取るので、hover がどちら側かで並べ替えて渡し、
-	// 得られたペアを hover→other の向きで持つ。
+	// KCMBuildPairing takes its arguments in target/source order, so the two are sorted by which
+	// side is hovered and the resulting pairs stored the hover -> other way round.
 	IDataBase* const targetDB = hoverIsTarget ? hoverDB : otherDB;
 	IDataBase* const sourceDB = hoverIsTarget ? otherDB : hoverDB;
 	std::vector<UID> pairT, pairS;
@@ -65,9 +69,10 @@ void KCMSampleCmykBeginDrag(IDataBase* hoverDB, IDataBase* otherDB, bool16 hover
 		if (hoverIsTarget) sDragCacheH2O[pairT[k]] = pairS[k];
 		else               sDragCacheH2O[pairS[k]] = pairT[k];
 	}
-	// ★★2026-08-16: **マスタースプレッドの対応も同じキャッシュに入れる**。⚠これを忘れると
-	//   「単発クリックではマスターの CMYK が出るのに、押したままドラッグすると出なくなる」という
-	//   **押下中だけ挙動が変わる**形になる(キャッシュが有効な間は KCMMapTargetToSource を通らない)。
+	// **The master spread pairs go into the same cache.** @warning leave them out and the master
+	//   pages report their CMYK on a single click but stop reporting it as soon as the button is
+	//   held -- **behaviour that changes only while dragging**, because a live cache never reaches
+	//   KCMMapTargetToSource.
 	{
 		std::vector<UID> mT, mS;
 		KCMBuildMasterPairing(targetDB, sourceDB, mT, mS);
@@ -88,54 +93,62 @@ void KCMSampleCmykEndDrag()
 	sDragCacheH2O.clear();
 }
 
-// pageRef のページを、spreadPt(そのページの spread 座標)まわりの極小領域だけ CMYK・高dpi でラスタ化し、
-// 中心1画素の C,M,Y,K 生値(0..255)を out[4] に読む。アクセサ/スナップショットは即破棄(保持ゼロで
-// 破棄時クラッシュを回避)。成功で kTrue。
+// Rasterise a tiny area of pageRef's page around spreadPt (that page's spread coordinates) in
+// CMYK at high dpi, and read the raw C, M, Y, K of the centre pixel (0..255) into out[4]. The
+// accessor and the snapshot are destroyed immediately: holding neither across a draw is what
+// keeps their destruction from crashing. kTrue on success.
 static bool16 KCMReadCmykPixel(const UIDRef& pageRef, const PMPoint& spreadPt, uint8 out[4])
 {
 	out[0] = out[1] = out[2] = out[3] = 0;
 	if (pageRef.GetDataBase() == nil || pageRef.GetUID() == kInvalidUID)
 		return kFalse;
 
-	// ★★2026-08-17(不具合再検査 B5): **ラスタ化は未組版ストーリーの lazy recompose を誘発し得る
-	//   =組めば dirty になる。** 入る前が clean なら出るとき clean へ戻す(hover/other それぞれの db に
-	//   対して1回ずつ掛かる＝この関数は各文書につき1回呼ばれる)。
-	//   ⚠**旧記述「プロキシ描画(fullRes=kFalse)なので dirty にせず guard は不要」は、別の問いに
-	//     答えていた**——fullRes が防ぐのは「配置画像のフル解像度生成」で、組版とは別の話。
-	//     KCM で dirty を作るのは組版のほうで、だからこそ Start・部分再比較・ブック比較・あふれ走査の
-	//     4か所が同じ guard を持っている(2026-08-06 に入れた再点検)。ここと peek だけが例外だった。
-	//   ★コストはフラグの控えと復元だけ＝Alt+左ドラッグ中(≦20回/秒)に置いても問題にならない。
+	// **Rasterising can trigger the lazy recomposition of an uncomposed story, and composing
+	//   dirties the document.** If it was clean on the way in, it is clean on the way out. (One
+	//   guard per database: this function is called once for the hovered document and once for
+	//   its counterpart.)
+	//   @warning **proxy drawing (fullRes=kFalse) does not make this unnecessary** -- that is a
+	//     different question. What fullRes suppresses is generating placed images at full
+	//     resolution; what dirties a document here is composition. Start, the partial
+	//     re-comparison, the book comparison and the overset scan all carry the same guard for
+	//     the same reason.
+	//   The cost is saving and restoring a flag, which is nothing even at 20 samples a second.
 	IDataBase::SaveRestoreModifiedState dirtyGuard(pageRef.GetDataBase());
 
-	// クリック点まわりの極小矩形(spread 座標)。boundsToSpreadMatrix=identity(=既に spread 座標)。
+	// The tiny rectangle around the point, in spread coordinates. boundsToSpreadMatrix is the
+	// identity because these already are spread coordinates.
 	const PMReal hp = kKCMSampleHalfPt;
 	PMRect clip(spreadPt.X() - hp, spreadPt.Y() - hp, spreadPt.X() + hp, spreadPt.Y() + hp);
 
 	SnapshotUtilsEx* snap = new (std::nothrow) SnapshotUtilsEx(clip, PMMatrix(), pageRef, 1.0, 1.0,
 		kKCMSampleDpi, 72.0, 0.0, SnapshotUtilsEx::kCsCMYK, kFalse);
 	if (snap == nil)
-		return kFalse;	// nothrow: OOM でもサンプル1回を諦めるだけ(KCMDrawEventHandler と同方針、2026-07-25)
-	// 枠の比較(KCMDrawEventHandler)と同じプロキシ描画(fullRes=kFalse)＝配置画像のフル解像度生成を
-	// 誘発しない(dirty の防御は上の SaveRestoreModifiedState が別に持つ。理由もそこに書いた)。
-	// ★greek は 0.0=無効(2026-08-06 ブロック7 監査 A-1)。既定の 7.0 だと「そのポイント数未満の文字」が
-	//   字形を持たない灰色の帯として描かれる(SnapshotUtilsEx.h:224-225)ので、小さい文字の上をクリックすると
-	//   文字の色ではなく帯の色を CMYK として読んでしまう。しかも hover/other とも同じ帯になるため値が
-	//   揃って見え、誤りだと気づけない。★画素を読む用途では greek 無効が正しい=比較ラスタ化(MakeEntry)と
-	//   同じ判断。代償はラスタ化がわずかに遅くなることだけ(対象は kKCMSampleHalfPt の 2pt 四方)。
-	//   ⚠★2026-08-17(不具合再検査 B5)の但し書き＝**greek の閾値には解像度のスケールが掛かる**
-	//     (SnapshotUtilsEx.h:224-225「its point size multiplied by the scaling is less than the greek
-	//     below value」)。∴ここは 300dpi=4.17倍なので、既定 7.0 のままでも実際に greek されるのは
-	//     **約 1.68pt 未満**の文字だけ＝上の危険は「書いてあるほど広くはない」。
-	//     ★**その代わり比較ラスタ(MakeEntry)では決定的**——あちらは 36dpi=0.5倍なので、既定のままだと
-	//     **14pt 未満が greek される**(＝本文がまるごと灰色の帯)。同じ 0.0 でも効き目の大きさが違う。
-	// ★非印刷オブジェクト(第8引数 bDrawNonPrintingObjects)は**既定 kTrue のまま=描かせる**。ここだけ
-	//   比較ラスタ(2026-08-12 に kFalse へ変更。KCMDrawEventHandler.cpp / KCMBookCompare.cpp)と
-	//   **わざと違える**: あちらは「刷り上がりが変わったか」を問うが、こちらは**ユーザーが画面で見て
-	//   クリックした点の色**を答える機能なので、画面に出ているものは印刷されなくても拾うのが正しい。
+		return kFalse;	// nothrow: out of memory costs one sample, nothing more (as in KCMDrawEventHandler)
+	// Proxy drawing (fullRes=kFalse), the same as the frame comparison uses, so no placed image is
+	// generated at full resolution. Dirtying is guarded separately, by the SaveRestoreModifiedState
+	// above.
+	// **greek is 0.0, disabled.** At the default 7.0, text below that point size is drawn as a
+	//   grey bar with no glyph shapes in it (SnapshotUtilsEx.h:224-225), so clicking on small text
+	//   would read the colour of the bar rather than the colour of the text -- and since the same
+	//   bar appears on both sides, the two values agree and the mistake is invisible. Reading
+	//   pixels therefore wants greeking off, the same judgement the comparison rasterisation
+	//   (MakeEntry) makes. It costs only a slightly slower rasterisation of a 2pt square.
+	//   @warning **the greek threshold is multiplied by the scale** ("its point size multiplied by
+	//     the scaling is less than the greek below value"). At the 300dpi used here that is 4.17x,
+	//     so even the default would only have greeked text below about 1.68pt: the danger above is
+	//     narrower than it reads.
+	//     **It is decisive in the comparison rasterisation instead**, which runs at 36dpi (0.5x):
+	//     the default greeks everything below 14pt, which is the body text of most documents. The
+	//     same 0.0 matters far more there.
+	// **Non-printing objects are left switched on** (the eighth argument, bDrawNonPrintingObjects,
+	//   defaults to kTrue). This deliberately differs from the comparison rasterisation, which
+	//   passes kFalse: that one asks "did the printed result change", while this one answers "what
+	//   colour is the point the user clicked on", so anything visible on screen should be picked
+	//   up whether it prints or not.
 	ErrorCode drew;
 	{
-		KCMRasterizingGuard rg;	// この Draw 中の再入でマークを描かせない(RAII、2026-07-25)
-		drew = snap->Draw(IShape::kPreviewMode, kFalse /*fullRes*/, 0.0 /*greek 無効*/, kFalse /*AA off*/);
+		KCMRasterizingGuard rg;	// RAII: no marks are drawn into this Draw by re-entry
+		drew = snap->Draw(IShape::kPreviewMode, kFalse /*fullRes*/, 0.0 /*greek off*/, kFalse /*AA off*/);
 	}
 	AGMImageAccessor* acc = (drew == kSuccess) ? snap->CreateAGMImageAccessor() : nil;
 
@@ -149,9 +162,9 @@ static bool16 KCMReadCmykPixel(const UIDRef& pageRef, const PMPoint& spreadPt, u
 		const uint8* base = acc->GetBaseAddr();
 		if (base != nil && w > 0 && h > 0 && rb > 0 && bpp >= 4)
 		{
-			const int32 cx = w / 2, cy = h / 2;	// 中心画素=クリック点
+			const int32 cx = w / 2, cy = h / 2;	// the centre pixel is the clicked point
 			const uint8* px = base + (size_t)cy * rb + (size_t)cx * bpp;
-			out[0] = px[0]; out[1] = px[1]; out[2] = px[2]; out[3] = px[3];	// C,M,Y,K(offset 0)
+			out[0] = px[0]; out[1] = px[1]; out[2] = px[2]; out[3] = px[3];	// C, M, Y, K from offset 0
 			ok = kTrue;
 		}
 		delete acc;
@@ -160,8 +173,9 @@ static bool16 KCMReadCmykPixel(const UIDRef& pageRef, const PMPoint& spreadPt, u
 	return ok;
 }
 
-// 値を必ず3桁(ゼロ埋め)で追記する(現在の呼び出しは CMYK% の 0..100)。Target/Source の C/M/Y/K の桁を
-// 縦に揃えて見やすくするため(AppendNumber はゼロ埋めしないので桁ごとに分けて出す。範囲外は 0..999 にクランプ)。
+// Append a value as exactly three digits, zero-padded (the callers pass CMYK percentages, 0..100).
+// This is what lines the Target's and the Source's C/M/Y/K up vertically. AppendNumber does not
+// zero-pad, hence the digit-by-digit output; anything out of range is clamped to 0..999.
 static void KCMAppend3(PMString& s, int32 v)
 {
 	if (v < 0)   v = 0;
@@ -171,15 +185,16 @@ static void KCMAppend3(PMString& s, int32 v)
 	s.AppendNumber(v % 10);
 }
 
-// CMYK ラスタの 8bit 値(0..255) を、本来の CMYK 数値である 0..100% に四捨五入で換算する。
-// 例: 255→100 / 0→0 / 128→50。(v*100+127)/255 で round。
+// Convert a CMYK raster's 8-bit value (0..255) to the percentage CMYK is really expressed in
+// (0..100), rounded: 255 -> 100, 0 -> 0, 128 -> 50. (v*100+127)/255 does the rounding.
 static int32 KCMByteToPct(uint8 v)
 {
 	return ((int32)v * 100 + 127) / 255;
 }
 
-// "C000 M000 Y000 K000"(各値3桁ゼロ埋め、0..100%)を追記する。カーソル用(見出し行はカーソル側で
-// グラフィック描画として別途足す=値ごとに文字を付けないぶん幅が詰まる。ユーザー提案 2026-07-13)。
+// Append "C000 M000 Y000 K000" (three zero-padded digits each, 0..100%). For the cursor, where the
+// heading row is drawn separately as graphics, so leaving the letters off each value keeps the
+// text narrow.
 static void KCMAppendCmyk(PMString& s, const uint8 c[4])
 {
 	KCMAppend3(s, KCMByteToPct(c[0]));
@@ -188,11 +203,11 @@ static void KCMAppendCmyk(PMString& s, const uint8 c[4])
 	s.Append(" "); KCMAppend3(s, KCMByteToPct(c[3]));
 }
 
-// "C 000 M 000 Y 000 K 000"(値ごとに見出し文字を直接付ける)を追記する。パネル用。
-// ★パネルのステータス行はプロポーショナルフォント(kPaletteWindowFontId、モノスペース選択肢がSDKに無い)
-// なので、見出し行と数値行を別々に描いて縦揃えすることは原理的にできない(文字と数字で字幅が違う)。
-// カーソル側(KCMDrawColumns)のような座標揃えの代わりに、各値へ見出し文字を直接添えて「縦の整列」自体を
-// 不要にする(ユーザー指定 2026-07-14)。
+// Append "C 000 M 000 Y 000 K 000", with the heading letter attached to each value. For the panel.
+// **The panel's status line is a proportional font** (kPaletteWindowFontId; the SDK offers no
+// monospaced alternative), so a separate heading row could never line up with a row of numbers --
+// letters and digits are different widths. Instead of aligning by coordinates the way the cursor
+// does (KCMDrawColumns), each value carries its own letter, which removes the need to align at all.
 static void KCMAppendCmykLabeled(PMString& s, const uint8 c[4])
 {
 	s.Append("C"); KCMAppend3(s, KCMByteToPct(c[0]));
@@ -201,19 +216,21 @@ static void KCMAppendCmykLabeled(PMString& s, const uint8 c[4])
 	s.Append(" K"); KCMAppend3(s, KCMByteToPct(c[3]));
 }
 
-// ツール Alt+左クリック(旧・中ボタン Shift＋Ctrl＋Alt＋ミドル): **渡された点**の CMYK 生値を
-// hover(マウスが乗っている窓の文書)・other(比較相手)でサンプリングし、"…000 t(改行)…000 s"
-// (各値3桁ゼロ埋め、1行目が必ず hover 側)を outCursor/outPanel に組む。成功で kTrue。
-//   hover→other のページは平坦通し番号で対応。渡された点を inner(ページ内)座標へ戻し、hover/other
-//   それぞれの spread 座標へ写してから各ページを極小ラスタ化する(新旧の幾何一致が前提)。
+// Alt + left click with the tool: sample the raw CMYK at **the given point** on the hovered
+// document and on its counterpart, and build "...000 t\n...000 s" into outCursor and outPanel
+// (three zero-padded digits per value, the hovered side always first). kTrue on success.
+//   The hovered page's counterpart is resolved through the pairing. The point is transformed back
+//   into inner (page) coordinates, then forward into each document's spread coordinates, and a
+//   tiny area of each page is rasterised -- which assumes the two versions share their geometry.
 //
-// ★★2026-08-15(第2段 Task 4B)に「マウス下」から「この点」へ変えた(旧 KCMSampleCmykUnderMouse)。
-//   ここに在った3行 ---- ①マウス下のビューを引く ②その文書が hoverDB か確かめる ③マウスの content
-//   座標を読む ---- は **呼び手(UI)へ出した**。窓への問いは窓が無ければ答えが無く、model プラグインからは
-//   引けないため(UI プラグインの boss は BG スレッドから見えず nil が返る)。
-// ⚠**②の窓の同一性ガードは消えたのではなく移った**。落とすと「押した窓から別の窓へドラッグしたとき、
-//   その窓の座標を hoverDB のページ座標として誤読する」が戻る(2026-07-25 監査で入れたもの)。
-//   呼び手2つ(KCMCmykCursor.cpp)がどちらも同じ判定を先に通してからここへ来る。
+// **This samples the point it is given, not "wherever the mouse is".** Three steps that used to
+//   live here -- find the view under the mouse, check that its document is hoverDB, read the
+//   mouse's content coordinates -- **belong to the caller (the UI)**: a question about windows has
+//   no answer without windows, and a UI plug-in's boss is invisible (nil) on a background thread.
+// @warning **the second of those, the window identity check, moved rather than disappeared.**
+//   Without it, dragging from the window that was pressed into another one reads that window's
+//   coordinates as hoverDB's page coordinates. Both callers in KCMCmykCursor.cpp apply it before
+//   arriving here.
 bool16 KCMSampleCmykAt(IDataBase* hoverDB, IDataBase* otherDB, bool16 hoverIsTarget,
                          const PMReal& mx, const PMReal& my,
                          UID viewSpreadUID,
@@ -221,18 +238,20 @@ bool16 KCMSampleCmykAt(IDataBase* hoverDB, IDataBase* otherDB, bool16 hoverIsTar
 {
 	if (hoverDB == nil)
 		return kFalse;
-	// otherDB==nil = 単独色ピック(比較相手なし)。hover 側だけ読み、CMYK を1行(ラベルなし)で返す。
-	// = Stop 中、および Start 中でも比較に無関係な第3の文書の上のとき(2026-07-26)。
+	// otherDB == nil is a solo pick with no counterpart: read the hovered side only and report one
+	// unlabelled line of CMYK. That is the case when no comparison is running, and also when one
+	// is but the mouse is over some third document that has nothing to do with it.
 	const bool16 solo = (otherDB == nil);
 
-	// 渡された点のページを特定(平坦通し番号も取得)。共有ヘルパ KCMFindPageUnderMouse に集約。
+	// Which page the point is on (and its flat index), through the shared KCMFindPageUnderMouse.
 	KCMPageHit hit;
 	if (!KCMFindPageUnderMouse(hoverDB, mx, my, hit, viewSpreadUID))
 		return kFalse;
 
 	const UID hPageUID = hit.hitPageUID;
 
-	// クリック点(pasteboard) → ページ内(inner)座標 → hover の spread 座標(solo/比較 共通)。
+	// Clicked point (pasteboard) -> inner (page) coordinates -> the hovered document's spread
+	// coordinates. The same path in solo mode and in comparison mode.
 	InterfacePtr<IGeometry> hGeo(hoverDB, hPageUID, UseDefaultIID());
 	if (hGeo == nil)
 		return kFalse;
@@ -248,20 +267,22 @@ bool16 KCMSampleCmykAt(IDataBase* hoverDB, IDataBase* otherDB, bool16 hoverIsTar
 	if (!KCMReadCmykPixel(UIDRef(hoverDB, hPageUID), hSpreadPt, cH))
 		return kFalse;
 
-	// ---- 単独モード: hover の CMYK を1行だけ返す。カーソルは KCMSplitTwoLines が
-	//      2行目(空)を自動スキップするので、1行渡すだけでヘッダー「C M Y K」+1行に収まる。 ----
+	// ---- Solo mode: one line, the hovered side's CMYK. The cursor's KCMSplitTwoLines skips an
+	//      empty second line by itself, so handing it one line gives the "C M Y K" heading plus
+	//      that line. ----
 	if (solo)
 	{
 		outCursor.SetTranslatable(kFalse);
-		KCMAppendCmyk(outCursor, cH);			// "C.. M.. Y.. K.."(ラベルなし=1文書のみ)
+		KCMAppendCmyk(outCursor, cH);			// "C.. M.. Y.. K.." with no t/s: one document only
 		outPanel.SetTranslatable(kFalse);
-		KCMAppendCmykLabeled(outPanel, cH);	// "C .. M .. Y .. K .."(ラベルなし)
+		KCMAppendCmykLabeled(outPanel, cH);	// "C .. M .. Y .. K .." with no t/s
 		return kTrue;
 	}
 
-	// ---- 比較モード(Start 中の Target 窓/Source 窓): hover→other のページ対応(除外対応表=登録済み
-	//      ページを除いた順番対応)を解決し other も読む。ドラッグ中はキャッシュを引く(BeginDrag で
-	//      押下時の向きのまま構築済み。対応表に無い=登録済み/あふれページは値なし)。 ----
+	// ---- Comparison mode (over either window while a comparison runs): resolve the hovered page's
+	//      counterpart through the pairing and read that too. While dragging, the cache built at
+	//      press time answers instead. A page that is not in the pairing -- registered, or past the
+	//      end -- has no counterpart and no value. ----
 	UID oPageUID;
 	if (sDragCacheActive && hoverDB == sDragCacheHoverDB && otherDB == sDragCacheOtherDB)
 	{
@@ -272,7 +293,8 @@ bool16 KCMSampleCmykAt(IDataBase* hoverDB, IDataBase* otherDB, bool16 hoverIsTar
 	}
 	else
 	{
-		// キャッシュ無し(押下外の単発サンプル)。対応表の引数は常に (targetDB, sourceDB) の順。
+		// No cache: a one-off sample outside a press. The pairing always takes its arguments in
+		// (targetDB, sourceDB) order.
 		const bool16 mapped = hoverIsTarget
 			? KCMMapTargetToSource(hoverDB, otherDB, hPageUID, oPageUID)
 			: KCMMapSourceToTarget(otherDB, hoverDB, hPageUID, oPageUID);
@@ -289,21 +311,24 @@ bool16 KCMSampleCmykAt(IDataBase* hoverDB, IDataBase* otherDB, bool16 hoverIsTar
 	if (!KCMReadCmykPixel(UIDRef(otherDB, oPageUID), oSpreadPt, cX))
 		return kFalse;
 
-	// 行末ラベル: 1行目=hover 側、2行目=other 側。Target 窓で押せば "t"/"s"、Source 窓なら "s"/"t"
-	// (ユーザー指定 2026-07-26「マウスが乗っている窓の側を上」)。
+	// The suffixes: first line the hovered side, second line its counterpart. Pressing in the
+	// Target window gives "t" then "s", pressing in the Source window "s" then "t" -- the hovered
+	// window's side goes on top.
 	const char* const hoverLabel = hoverIsTarget ? " t" : " s";
 	const char* const otherLabel = hoverIsTarget ? " s" : " t";
 
-	// 各値はラスタ8bit(0..255)を本来の CMYK 数値 0..100% に換算し、3桁ゼロ埋めで桁を揃える。
-	// outCursor = 数値2行(ビットマップカーソルは「C M Y K」見出しを別途描くので数値行のみ)。
+	// Every value is converted from the raster's 8 bits (0..255) to the percentage CMYK is really
+	// expressed in, and zero-padded to three digits so the columns line up.
+	// outCursor = the two rows of numbers only; the bitmap cursor draws the "C M Y K" heading itself.
 	outCursor.SetTranslatable(kFalse);
 	KCMAppendCmyk(outCursor, cH); outCursor.Append(hoverLabel);
-	outCursor.AppendW(UTF32TextChar(0x0A));	// 改行 → 2行目へ
+	outCursor.AppendW(UTF32TextChar(0x0A));	// newline: on to the second line
 	KCMAppendCmyk(outCursor, cX); outCursor.Append(otherLabel);
 
-	// outPanel = 値ごとに見出し文字を直接添える(KCMAppendCmykLabeled)+ t/s。
-	// ★見出し行を別途置いて縦揃えする案は撤回済み: パネルのステータス欄はプロポーショナルフォント
-	// (kPaletteWindowFontId)で字幅が揃わないため、値ごとにラベルを直接添える(フォント幅に依らず崩れない)。
+	// outPanel = each value with its own heading letter (KCMAppendCmykLabeled), plus the t/s.
+	// **A separate heading row was tried and abandoned**: the panel's status area uses a
+	// proportional font (kPaletteWindowFontId), so columns cannot be made to line up. Attaching the
+	// letter to each value cannot come apart, whatever the font's widths are.
 	outPanel.SetTranslatable(kFalse);
 	KCMAppendCmykLabeled(outPanel, cH); outPanel.Append(hoverLabel);
 	outPanel.AppendW(UTF32TextChar(0x0A));

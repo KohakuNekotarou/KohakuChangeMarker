@@ -2,64 +2,68 @@
 //
 //  KCMColorSampler.h
 //
-//  ツール Alt+左クリック(旧・中ボタン Shift＋Ctrl＋Alt＋ミドル)で、クリック点の CMYK 生値を
-//  「マウスが乗っている側(hover)」と「比較相手(other)」でサンプリングして2行の文字列に組む。
-//  クリック点まわりの極小領域だけを高dpi・CMYK でラスタ化して中心1画素を読む。
+//  Alt + left click with the tool samples the raw CMYK at the clicked point, on the side the
+//  mouse is over (hover) and on its counterpart (other), and builds the two lines of text that
+//  report it. Only a tiny area around the point is rasterised, at high dpi and in CMYK, and the
+//  centre pixel of that is read.
 //
-//  ★2026-07-26: 入口を target/source 固定から hover/other へ一般化した(ユーザー指定)。
-//  Start 中は Target 窓だけでなく **Source 窓の上でも** 比較2行を出すため、「どちらの文書を
-//  マウスが指しているか」で向きが変わる。1行目は必ず hover 側=マウスが乗っている窓の値。
+//  The two sides are hover/other rather than a fixed target/source, because while a comparison is
+//  running the two lines have to appear over the **Source window** as well as the Target one. Which
+//  way round they go therefore follows the mouse, and **the first line is always the hovered side**.
 //
 //========================================================================================
 #ifndef __KCMColorSampler_h__
 #define __KCMColorSampler_h__
 
 #include "BaseType.h"
-#include "PMReal.h"		// サンプリング点(ペーストボード座標)
+#include "PMReal.h"		// the sampled point (pasteboard coordinates)
 #include "PMString.h"
-#include "OMTypes.h"	// UID(表示中スプレッドの指定。2026-08-16)
+#include "OMTypes.h"	// UID (which spread the view is showing)
 
 class IDataBase;
 
-// hoverDB       = マウスが乗っている窓の文書。ここのページを実際にヒットテストする=**1行目**に出る側。
-// otherDB       = 比較相手の文書(ページ対応で解決して2行目に出す)。nil なら単独モード=1行だけ返す
-//                 (Stop 中、および Start 中でも比較に無関係な第3の文書の上のとき)。
-// hoverIsTarget = hover が比較の Target(新)側なら kTrue、Source(旧)側なら kFalse。ページ対応の向き
-//                 (KCMMapTargetToSource / KCMMapSourceToTarget)と行末ラベル(t/s)の割り当てに効く。
-//                 単独モードでは使わない。
-// mx, my        = ★サンプリングする点。hoverDB の**ペーストボード(content)座標**。
-// outPanel  = パネルのステータス行用(欄が狭いので略語 t/s の compact 表記)。⚠**寸法をここに書き写さない**
-//             ＝正本は `ui/KCMUI.fr` の `kKCMStatusTextWidgetID` の `Frame(8,76,216,150)`
-//             (2026-08-17 実測＝208×74px・4行)。⚠2026-08-19(B-U5 3周目): `:1921` と書いてあったが
-//             実体は 1935 で**-14 ずれていた**。★同じ `:1921` が**4ファイルに写っていた**
-//             (ここ / KCMPageMap.cpp / IKCMCompareFacade.h / KCMPageCheck.cpp)＝
-//             **1つの誤りが4本に増えていた**ので4本とも widget 名へ直した。
-//             旧「幅152px」は 2026-07-15 世代の値で、同じ古い数字が3ファイルに残っていた(不具合再検査 B5)。
-// outCursor = カーソル自身に描く用(ラベルは t/s の1文字。C/M/Y/K見出しはKCMCmykCursor.cpp のビットマップ
-//             カーソル側で別途描画するため、渡す文字列は数値行のみでよい)。
+// hoverDB       = the document of the window the mouse is over. Its page is what actually gets
+//                 hit-tested, and it is the side that appears on the **first line**.
+// otherDB       = the counterpart document, resolved through the page pairing and reported on the
+//                 second line. nil means solo mode and one line only: no comparison is running,
+//                 or the mouse is over some third document that has nothing to do with one.
+// hoverIsTarget = kTrue when the hovered side is the comparison's Target (newer), kFalse when it
+//                 is the Source (older). It decides which way the pairing is resolved
+//                 (KCMMapTargetToSource / KCMMapSourceToTarget) and which line gets the t/s
+//                 suffix. Unused in solo mode.
+// mx, my        = the point to sample, in hoverDB's **pasteboard (content) coordinates**.
+// outPanel  = for the panel's status line (compact, with the t/s abbreviations, because the area
+//             is narrow). @warning **do not copy its size into this comment**: the one source of
+//             truth is the Frame of kKCMStatusTextWidgetID in ui/KCMUI.fr. The size was written
+//             out in several files at once and went stale in all of them.
+// outCursor = for drawing on the cursor itself (the label is the single letter t or s). The
+//             C/M/Y/K headings are drawn separately by the bitmap cursor in KCMCmykCursor.cpp, so
+//             only the rows of numbers belong in this string.
 //
-// ★★2026-08-15(第2段 Task 4B)に **「マウス下」から「この点」へ変えた**(旧 KCMSampleCmykUnderMouse)。
-//   以前はこの関数の中で KCMQueryViewUnderMouse / KCMQueryMouseContentPoint を呼んでいたが、
-//   **どの窓のどこか**は窓が無ければ答えの無い問いで、model プラグインからは引けない
-//   (UI プラグインの boss はバックグラウンドスレッドから見えず nil が返る)。
-// ⚠**押した窓から外れていないかの判定も呼び手(UI)へ移った**。以前はここで
-//   KCMFindDocDbForView(view) != hoverDB を見て kFalse を返していた ---- **その判定を落とすと、
-//   別の窓の座標を hoverDB のページ座標として誤って読む**(2026-07-25 監査で入れたガード)。
-//   呼び手は KCMCmykCursor.cpp の2か所で、どちらも同じ判定を先に通してからここへ来る。
-// ★★★viewSpreadUID(2026-08-16) = **そのビューが今表示しているスプレッド**。
-//   ⚠**必須の観測値**——マスタースプレッドと通常スプレッドはペーストボード座標で重なるので、
-//     これが無いと**マスターを表示しているのに通常ページの色を読んで「マスターの色」として出す**
-//     (値が出るので誤りに気づけない＝2026-08-16 に実際に起きていた)。理由の全文は KCMCore.h。
+// **This samples the point it is given, not "wherever the mouse is".** Working out which window
+//   the mouse is over and where inside it belongs to the caller (the UI): a question about windows
+//   has no answer without windows, and the model plug-in cannot ask it -- a UI plug-in's boss is
+//   invisible (nil) on a background thread.
+// @warning **the test for having left the window that was pressed moved to the caller with it.**
+//   This function used to compare KCMFindDocDbForView(view) against hoverDB and refuse. **Drop
+//   that test and a different window's coordinates get read as hoverDB's page coordinates.** Both
+//   callers in KCMCmykCursor.cpp apply it before arriving here.
+// viewSpreadUID = **the spread that view is currently showing**.
+//   @warning **it has to be observed, not guessed** -- a master spread and an ordinary spread
+//     occupy the same pasteboard coordinates, so without it a master being displayed has the
+//     colour of an **ordinary** page read and reported as the master's. A value does come back,
+//     which is why the mistake cannot be seen. The full reasoning is in KCMCore.h.
 bool16 KCMSampleCmykAt(IDataBase* hoverDB, IDataBase* otherDB, bool16 hoverIsTarget,
                          const PMReal& mx, const PMReal& my,
                          UID viewSpreadUID,
                          PMString& outPanel, PMString& outCursor);
 
-// Alt+左ホールド(ドラッグ)中の hover→other ページ対応表キャッシュ。Begin=押下時(RevealBegin の
-// Cmyk 分岐)に対応表を1回だけ構築、End=解放時(RevealEnd)に破棄。Begin〜End の間、
-// KCMSampleCmykAt は毎サンプル(≦20回/秒)の KCMBuildPairing 全ページ再構築を省いて
-// キャッシュを引く(ページ構成はトラッキング中に変わらない。2026-07-15)。Begin なしの単発サンプルは
-// 従来どおり毎回構築(挙動不変)。単独モード(otherDB==nil)では呼ばない=ページ対応が要らない。
+// The hover -> other page mapping cached while Alt + left is held down. Begin builds the mapping
+// once, when the button goes down; End throws it away when it is released. In between,
+// KCMSampleCmykAt reads the cache instead of rebuilding the whole pairing on every sample (up to
+// 20 a second) -- the page structure cannot change while tracking. A one-off sample with no Begin
+// builds it each time, as before. Solo mode (otherDB == nil) does not call these: it needs no
+// pairing at all.
 void KCMSampleCmykBeginDrag(IDataBase* hoverDB, IDataBase* otherDB, bool16 hoverIsTarget);
 void KCMSampleCmykEndDrag();
 

@@ -2,22 +2,23 @@
 //
 //  KCMPeek.cpp
 //
-//  ツール(左ボタン)peek の実装(KCMScriptProvider.cpp から分離)。peek 状態、旧版べた載せの表示、
-//  選択ページの部分再比較、起動/終了サービス、KCMCore.h で宣言した arm/disarm/状態アクセサの入口を
-//  持つ。旧・中ボタンの IEventWatcher は撤去済み(2026-07-13)。
+//  The implementation of the tool's peek (see KCMPeek.h): the peek state, laying the older version
+//  over the current one, the partial re-comparison of selected pages, the startup/shutdown
+//  service, and the arm/disarm/state accessors declared in KCMCore.h.
 //
-//  ★2026-08-13 の model/UI 分割 第1段 Task 1 で、UI 側の3領域がここから出ていった:
-//    ・ビューポート同期(Sync Layout Views / Align Other Views) → KCMViewSync.cpp
-//    ・Alt+左の CMYK カーソル                                   → KCMCmykCursor.cpp
-//    ・ジェスチャ判定と押下中の表示切替(RevealBegin/End)        → KCMPeekGesture.cpp
-//    出ていった側が持つ状態(押下中の表示・CMYK・同期キャッシュ)は、それぞれのファイルの中で閉じている。
-//    ここから触るときは各ヘッダーが公開している入口を呼ぶ(下の Shutdown / arm / disarm が実例)。
+//  Three areas that belong to the UI live elsewhere:
+//    - viewport synchronisation (Sync Layout Views / Align Other Views) -> KCMViewSync.cpp
+//    - the Alt + left CMYK cursor                                       -> KCMCmykCursor.cpp
+//    - gesture recognition and what is shown while held (RevealBegin/End) -> KCMPeekGesture.cpp
+//  The state they own -- what is displayed while held, the CMYK, the sync caches -- is closed
+//  inside those files. Reaching it from here means calling the entry points their headers publish;
+//  the Shutdown, arm and disarm below are the worked examples.
 //
 //========================================================================================
 
 #include "VCPlugInHeaders.h"
 
-// オブジェクトモデル:
+// The object model:
 #include "PersistUtils.h"
 #include "IDataBase.h"
 #include "IDocument.h"
@@ -26,96 +27,82 @@
 #include "ISpread.h"
 #include "ISession.h"
 
-// ツール / 起動:
+// The tool and the startup service:
 #include "IStartupShutdownService.h"
 #include "CPMUnknown.h"
 #include "LayoutUIID.h"
 #include "DocumentContextID.h"
 
-// ジオメトリ:
-// ★2026-08-15(第2段 Task 4B): IControlView.h / IPanorama.h / PMMatrix.h を落とした。
-//   ビューとパノラマを引いてズームを読む3行が呼び手(UI)へ出たので、このファイルには使い手が居なくなった。
+// Geometry. IControlView.h, IPanorama.h and PMMatrix.h are deliberately absent: reading the view,
+// its panorama and its zoom belongs to the caller (the UI), so nothing here uses them.
 #include "PMPoint.h"
 #include "PMReal.h"
 
-// 選択ページ再比較の進捗バー:
-#include "ProgressBar.h"			// TaskProgressBar(多ページの Refresh に進捗＋キャンセル)
-#include "ErrorUtils.h"				// PMSetGlobalErrorCode(キャンセル後にエラーを持ち越さない)
+// The progress bar of the partial re-comparison:
+#include "ProgressBar.h"			// TaskProgressBar (progress and Cancel for a large Refresh)
+#include "ErrorUtils.h"				// PMSetGlobalErrorCode (no error is carried past a cancellation)
 
 #include <map>
-#include <set>			// 触れたページ集合(通知に載せて per-UID でサムネイルを作り直させる。B5)
+#include <set>			// the touched pages, sent with the notification so thumbnails purge per UID
 #include <vector>
 
-// プロジェクト内インクルード:
+// KCM's own headers:
 #include "KCMID.h"
 #include "KCMConstants.h"
-#include "KCMDrawEventHandler.h"   // エンジンの共有 static
-                                     // (★「＋ KCMQueryPanorama」と書いてあったが、それは 2026-08-13 に
-                                     //  KCMViewLookup.h へ移った後の陳腐化コメント。2026-08-15 に訂正)
-#include "KCMCore.h"               // arm/disarm/状態 宣言
-#include "KCMModelNotify.h"	// KCMNotifyStatus - the model tells the UI, it never calls it (Task 9)
-// ★★2026-08-15(第2段 Task 4B): **KCMViewLookup.h の include を落とした**。ここが最後まで残っていた
-//   model→UI の逆流2件のうちの1本(もう1本は KCMColorSampler.cpp)。KCMQueryViewUnderMouse /
-//   KCMQueryMouseContentPoint / KCMQueryPanorama の3本を呼んでいた。
-//   ⇒ ビュー解決は呼び手(UI)へ出し、この .cpp は「渡された点のスプレッドを覗く」だけを担う。
-#include "KCMPageMap.h"            // KCMBuildPairing(比較の除外対応表)/KCMPageMapReadSelection/KCMPageMapSweepClosedDocs
-#include "KCMPageCheck.h"          // KCMPageCheckClearAllDocs / KCMPageCheckSweepClosedDocs(✓の後片付け)
-#include "KCMColorSampler.h"       // KCMSampleCmykEndDrag(Alt+左ホールド中のページ対応表キャッシュ。Shutdown で空にする)
-#include "KCMThreadSafety.h"       // KCMIsMainThread(BG では文書の生存を判定できない。第2段 Task 11C)
-                                     // ★2026-08-16(API 監査 B5): IDThreadingPrimitives.h の直 include から
-                                     //   共有の道具へ。ここだけが素の IDThreading::IsMainThreadDomain() を
-                                     //   呼んでいた＝同じ問いの2つ目の綴り。
-#include "KCMPageNumberMarker.h"   // KCMInvalidatePageNumberMarkerRects(ノンブル除外矩形キャッシュの破棄)
-// (★KCMPanelState.h / KCMPanelAlpha.h / KCMTrackerHud.h / KCMCmykCursor.h は 2026-08-13
-//  Task 8 で外した＝起動/終了の UI の仕事ごと KCMUIStartup.cpp へ移したため)
-// (★★KCMThumbnailRefresh.h / KCMScrollMap.h / KCMChangeNav.h / KCMThumbIdleTask.h /
-//  KCMViewSync.h / KCMPeekGesture.h は 2026-08-13 Task 10 で外した＝サムネイル・地図・Prev/Next・
-//  遅延再生成・同期キャッシュ・覗き状態は全部 UI の持ち物で、通知(KCMNotifyDocs)を受けた
-//  KCMModelChangeObserver がやるようになった)
-#include "KCMStoryList.h"          // KCMStoryList::ShutdownCleanup(行が抱える PMString を終了時に手放す)
-#include "KCMStoryMarker.h"        // ★KCMStoryMarker::Shutdown(Story モードのマークを二度と描かせない。2026-08-23 の移設で入った)
-#include "KCMBookCompare.h"        // KCMClearBookResultText(ブック比較の結果テキスト。同上)
-#include "KCMChangedPagesTSV.h"    // KCMClearExportMessage(TSV 書き出しのメッセージ。同上)
-#include "KCMHideUnchanged.h"      // KCMResetHideUnchanged / 隠している文書の getter(2026-08-13 に移動)
+#include "KCMDrawEventHandler.h"   // the engine's shared statics
+#include "KCMCore.h"               // the arm/disarm/state declarations
+#include "KCMModelNotify.h"	// KCMNotifyStatus - the model tells the UI, it never calls it
+// The UI's KCMViewLookup.h is deliberately absent. Resolving which view the mouse is over belongs
+//   to the caller (the UI); this .cpp only peeks at the spread of the point it is given.
+#include "KCMPageMap.h"            // KCMBuildPairing (the exclusion pairing) / KCMPageMapReadSelection / KCMPageMapSweepClosedDocs
+#include "KCMPageCheck.h"          // KCMPageCheckClearAllDocs / KCMPageCheckSweepClosedDocs (clearing the ticks)
+#include "KCMColorSampler.h"       // KCMSampleCmykEndDrag (the pairing cached while Alt + left is held; emptied at shutdown)
+#include "KCMThreadSafety.h"       // KCMIsMainThread -- a background thread cannot tell whether a document is still open
+#include "KCMPageNumberMarker.h"   // KCMInvalidatePageNumberMarkerRects (dropping the page-number exclusion rectangles)
+// The UI's own headers are deliberately absent: the panel state, the translucency, the HUD, the
+// CMYK cursor, the thumbnails, the scrollbar map, Prev/Next, the deferred rebuild, the sync caches
+// and the peek's held-down state are all the UI's property. What used to be called directly from
+// here now happens in KCMModelChangeObserver, which receives the notifications this file sends.
+#include "KCMStoryList.h"          // KCMStoryList::ShutdownCleanup (letting go of the rows' PMStrings)
+#include "KCMStoryMarker.h"        // KCMStoryMarker::Shutdown (the Story mode's marks are never drawn again)
+#include "KCMBookCompare.h"        // KCMClearBookResultText (the book comparison's result text)
+#include "KCMChangedPagesTSV.h"    // KCMClearExportMessage (the TSV export's message)
+#include "KCMHideUnchanged.h"      // KCMResetHideUnchanged and the getters for the hidden documents
 #include "KCMPeek.h"
 
 //========================================================================================
-// ツール(左ボタン)peek — 共有状態とヘルパ。
-//   ツール左ボタンを押している間だけ、マウス下スプレッドの旧版を不透明べた載せし、離すと隠す。
-//   比較相手の旧ドキュメントは先に KCMDoArmMousePeek(KCMCore.h)で登録しておく(パネルの Start
-//   ボタンが呼ぶ)。トラッカー入口(KCMTrackerRevealBegin/End。KCMPeekGesture.cpp)がこの arm 状態を
-//   見る。
+// The tool's peek -- shared state and helpers.
+//   While the tool's left button is held, the older version of the spread under the mouse is laid
+//   opaquely over it, and releasing hides it again. The older document has to be armed first
+//   through KCMDoArmMousePeek (KCMCore.h), which the panel's Start button calls. The tracker
+//   entry points (KCMTrackerRevealBegin/End in KCMPeekGesture.cpp) read that armed state.
 //========================================================================================
-static IDataBase* sPeekTargetDB = nil;	// 表示中(新)ドキュメント。使用前に「まだ開いているか」を検証する。
-static IDataBase* sPeekSourceDB = nil;	// peek 中に重ねる旧ドキュメント。
+static IDataBase* sPeekTargetDB = nil;	// the document on display (newer). Checked for still being open before use.
+static IDataBase* sPeekSourceDB = nil;	// the older document laid over it while peeking.
 static bool16     sPeekArmed    = kFalse;
 
-// 画面マークの「基準」不透明度(=ツール左ボタンを押していない常時表示時の値)。
-//   印刷マークON中はパネルで選択中の不透明度(25%/75%。画面と印刷の見た目を一致)、印刷OFFは 1.0。
-//   ツール左ボタンを離したら sMarkScreenOpacity をこの値へ戻す。
+// The "base" on-screen opacity of the marks -- the value used while the tool's left button is not
+//   held and the marks are simply visible. With printing marks on it is the opacity chosen in the
+//   panel (25%/75%, so that screen and print look alike); with printing off it is 1.0.
+//   Releasing the button puts sMarkScreenOpacity back to this.
 PMReal KCMBaseScreenOpacity()
 {
-	// 印刷マーク ON、または「Always Show Marks on Target」(枠を画面に常時表示)ON のときは、常時表示の枠を
-	// パネル選択の 25%/75% で描く(押下中の一時表示と見た目を揃える)。どちらも OFF なら 1.0(不透明)。
-	// ★2026-08-22＝2つ目の条件は「Hold to Hide Marks」(sAlwaysShowMarks)だった。**あれを撤去したので、
-	//   「枠が常時出ている」を今なお答えるトグルへ付け替えた**＝sTgtMarksOn(Hold の常時表示は、これと
-	//   完全に重複していた側)。⇒ 常時表示中の濃さは従来どおり 25%/75% に従う。
+	// While printing marks is on, or while "Always Show Marks on Target" keeps the frames on
+	// screen, the permanently visible frames are drawn at the panel's 25%/75% so that they match
+	// what a press shows temporarily. With both off they are opaque.
 	return (KCMDrawEventHandler::sPrintMarks || KCMDrawEventHandler::sTgtMarksOn)
 	       ? KCMDrawEventHandler::SelectedMarkOpacity() : PMReal(1.0);
 }
 
-// **渡された点**のスプレッドの旧版べた載せを表示する。
-//   targetDB=表示中(新)ドキュメント, sourceDB=重ねる旧ドキュメント。
-//   そのスプレッドが既にキャッシュ済みなら再利用(即時)。未キャッシュなら旧キャッシュを捨てて、その
-//   スプレッドだけをその場でラスタ化(保持は常に1スプレッド)。成功時に sShowOriginal を立てて再描画。
-//   (2026-07-25 監査: 旧・中ボタン watcher/スクリプト報告用の戻り値 KCMPeekResult と
-//    outSpread/outPages は、唯一の呼び出し側が全て捨てていたため撤去して void 化)
-//   ★2026-08-13: 呼び手(KCMTrackerBeginPeek)が KCMPeekGesture.cpp へ移ったので static を外した。
-//     宣言は KCMPeek.h。
-//   ★★2026-08-15(第2段 Task 4B): **ビュー解決3本を呼び手(UI)へ出して座標と倍率を引数で受け取る形にした**
-//     (旧 KCMPeekShowUnderMouse)。落としたのは「どのビューか・その倍率は・マウスはどこか」の**観測**だけで、
-//     「その倍率をどの dpi に翻訳するか」の**方針**(下限 50% の頭打ち・16〜300dpi クランプ)はここに残した
-//     ＝計算式は1文字も動いていない。引数の意味は KCMPeek.h を参照。
+// Lay the older version of the spread at **the given point** over the current one.
+//   targetDB is the document on display (newer), sourceDB the older one laid over it.
+//   A spread already in the cache is reused immediately; otherwise the old cache is thrown away
+//   and that one spread is rasterised there and then (only ever one spread is held). On success
+//   sShowOriginal goes up and the views are redrawn.
+//   **The observations belong to the caller (the UI) and the policy stays here**: which view, at
+//     what scale, and where the mouse is are all passed in, while translating that scale into a
+//     dpi -- the 50% floor and the 16..300 dpi clamp below -- is decided here. The formula itself
+//     did not change when the two were separated. The parameters are documented in KCMPeek.h.
 void KCMPeekShowAt(IDataBase* targetDB, IDataBase* sourceDB,
                      const PMReal& mx, const PMReal& my,
                      const PMReal& viewScale, const PMReal& uiZoom,
@@ -124,29 +111,32 @@ void KCMPeekShowAt(IDataBase* targetDB, IDataBase* sourceDB,
 	if (targetDB == nil || sourceDB == nil)
 		return;
 
-	// 呼び手が測ったズーム(content→window スケール=ズーム×デバイス倍率)から、画面と 1:1 になる解像度を決める。
-	// dpi = 72 × スケール。1:1 のとき最も綺麗(画像px=画面px)。
+	// Turn the scale the caller measured (content -> window = zoom x device scale) into the
+	// resolution that matches the screen one for one: dpi = 72 x scale. At 1:1 the result is as
+	// sharp as it can be, one image pixel per screen pixel.
 	PMReal curScale = abs(viewScale);
 	if (curScale <= 0) curScale = 1.0;
 
-	// 【低ズームの下限=UI 50%】UIズーム(ユーザーに見える拡大率, デバイス倍率を含まない)が 50% を下回る時は
-	// 「50% 相当の解像度」で頭打ちにする。50%以上は画面と 1:1 のままくっきり。50%未満は画像が画面より高精細に
-	// なり、縮小blit(点サンプリング)で多少粗くなる(=10% などは汚くてよい、という方針)。下限を UI% で決めるので
-	// デバイス倍率に依らず、画面に見える 50% がそのまま境界になる。パノラマ不明時は 1:1(従来=全ズーム綺麗)
-	// ＝呼び手はその場合 uiZoom に 0 を渡す(下の if を素通りして effScale = curScale のまま)。
+	// **The floor at 50% UI zoom.** Below a UI zoom of 50% -- the magnification the user sees,
+	// without the device scale -- the resolution stops falling and stays at what 50% would give.
+	// At and above 50% the image stays 1:1 with the screen and crisp; below it the image is finer
+	// than the screen and the downscaling blit (point sampling) coarsens it, which is the accepted
+	// trade at 10% and the like. Putting the floor on the UI percentage keeps the boundary at the
+	// 50% the user actually sees, whatever the device scale is. When the panorama could not be
+	// read the caller passes uiZoom = 0, which skips this and leaves the scale at 1:1.
 	PMReal effScale = curScale;
 	if (uiZoom > 0)
 	{
-		const PMReal deviceScale = curScale / uiZoom;			// 画面デバイス倍率(=curScale/uiZoom)
-		const PMReal flooredZoom = (uiZoom < PMReal(0.5)) ? PMReal(0.5) : uiZoom;	// UI 50% で頭打ち
+		const PMReal deviceScale = curScale / uiZoom;			// the display's device scale
+		const PMReal flooredZoom = (uiZoom < PMReal(0.5)) ? PMReal(0.5) : uiZoom;	// floored at 50%
 		effScale = flooredZoom * deviceScale;
 	}
 
 	PMReal peekDpi = PMReal(72.0) * effScale;
-	if (peekDpi < 16.0)  peekDpi = 16.0;	// 安全下限(degenerate 回避。通常は効かない)
-	if (peekDpi > 300.0) peekDpi = 300.0;	// 過大メモリ防止(300dpi A4 ≒ 35MB/頁)
+	if (peekDpi < 16.0)  peekDpi = 16.0;	// a safety floor against degenerate values; normally unreached
+	if (peekDpi > 300.0) peekDpi = 300.0;	// a memory ceiling (300dpi A4 is about 35MB a page)
 
-	// マウス下のスプレッド/ページを特定(平坦通し番号も取得)。共有ヘルパ KCMFindPageUnderMouse に集約。
+	// Which spread and page the point is on (and its flat index), through KCMFindPageUnderMouse.
 	KCMPageHit hit;
 	if (!KCMFindPageUnderMouse(targetDB, mx, my, hit, viewSpreadUID))
 		return;
@@ -156,25 +146,28 @@ void KCMPeekShowAt(IDataBase* targetDB, IDataBase* sourceDB,
 	if (spread == nil)
 		return;
 
-	// 【未更新スプレッドの早期スキップ】**Pixel モードのときだけ**。このドキュメントで比較が実行済み
-	// (sDB==targetDB)で、かつこのスプレッドのどのページも変化エントリ(sEntries)に無いなら、旧版は
-	// 現行と同一=重ねる意味が無い。重いラスタ化を丸ごと省いて即 return する(旧版を出さない)。比較が
-	// 未実行(sDB!=targetDB)なら変化の有無を判定できないので、従来どおりラスタ化する(全スキップしない)。
+	// **Skipping an unchanged spread**, and only in the Pixel mode. If this document has already
+	// been compared (sDB == targetDB) and none of this spread's pages is in the changed entries
+	// (sEntries), the older version is identical to the current one and there is nothing to lay
+	// over it: the expensive rasterisation is skipped entirely. When no comparison has run
+	// (sDB != targetDB) there is no way to tell, so the spread is rasterised as before.
 	//
-	// ★★★2026-08-21: **モードの判定を足した**(ユーザー報告=「Story モードでツールを使っているとき
-	//   Shift＋の peek が効かない」)。**効いていないのではなく、ここで必ず return していた**:
-	//     ・Story モードでも sDB は targetDB に差し替わる(KCMDoMarkChangesDoc の全再比較の分岐。
-	//       Start は allowIncremental=kFalse なので必ずそちらを通る)
-	//     ・そのすぐ後で toRaster を空にする＝**MakeEntry を1回も呼ばない**ので sEntries は必ず空
-	//   ⇒ 条件が全スプレッドで成立し、旧版のラスタ化も sShowOriginal も起きなかった。
-	//     描画側(KCMDrawEventHandler の wantOrig)は両モードで生きているので、**絵が無いだけ**だった。
-	// ★**直し方の理屈**＝この早期スキップは最適化であって仕様ではなく、根拠は「sEntries が
-	//   *画素を比べた結果* であること」1つ。Story モードは画素を一度も比べていないので
-	//   「このスプレッドは変化なし」と言える根拠を持たない ＝ **比較が未実行(sDB!=targetDB)のときと
-	//   同じ扱い**にして、素直にラスタ化する。
-	// ⚠**3つ目のモードを足すときはここを見ること。** `== kKCMModePixel` と書いてあるのは意図で、
-	//   「sEntries を作らないモード」が増えても peek は生き続ける(`!= kKCMModeStory` と書くと
-	//   その新モードで黙って同じ不具合が再発する)。
+	// **The mode test is what makes this correct.** Without it, a Shift-peek in the Story mode did
+	//   nothing at all -- not because the peek was broken, but because this always returned:
+	//     - the Story mode also puts targetDB into sDB (Start goes through
+	//       KCMDoMarkChangesDoc's full-comparison branch, allowIncremental being kFalse)
+	//     - and that branch then empties toRaster, so **MakeEntry never runs** and sEntries is
+	//       always empty
+	//   The condition therefore held for every spread, and neither the rasterisation nor
+	//   sShowOriginal ever happened. The drawing side (wantOrig in KCMDrawEventHandler) works in
+	//   both modes, so **all that was missing was the picture**.
+	// The reasoning behind the fix: this skip is an optimisation, not a specification, and it
+	//   rests on one thing -- that sEntries is *the result of comparing pixels*. The Story mode has
+	//   compared no pixels, so it has no grounds to say "this spread is unchanged", and it is
+	//   therefore treated **exactly like a document that has not been compared**: rasterise.
+	// @warning **read this before adding a third mode.** `== kKCMModePixel` is deliberate: it keeps
+	//   the peek alive in any future mode that builds no sEntries, whereas `!= kKCMModeStory`
+	//   would silently reintroduce the same bug there.
 	if (KCMGetCompareMode() == kKCMModePixel && KCMDrawEventHandler::sDB == targetDB)
 	{
 		bool16 anyChanged = kFalse;
@@ -186,13 +179,15 @@ void KCMPeekShowAt(IDataBase* targetDB, IDataBase* sourceDB,
 			return;
 	}
 
-	// このスプレッドは既に丸ごとキャッシュ済みか?(同じ db かつ 全ページが sOrigImages にある) → 再利用(即時)。
+	// Is the whole spread already cached (same database, every page present in sOrigImages)? Then
+	// it is reused as it stands.
 	bool16 cached = (KCMDrawEventHandler::sOrigDB == targetDB);
 	for (int32 p = 0; p < np && cached; ++p)
 		if (KCMDrawEventHandler::sOrigImages.find(spread->GetNthPageUID(p)) ==
 		    KCMDrawEventHandler::sOrigImages.end())
 			cached = kFalse;
-	// ズームが変わっていたら(キャッシュ時と解像度が合わない)作り直す。差が2%以内なら再利用。
+	// A changed zoom means the cached resolution no longer matches, so it is rebuilt. Within 2% it
+	// is close enough to reuse.
 	if (cached && KCMDrawEventHandler::sOrigScale > 0)
 	{
 		const PMReal d = abs(effScale - KCMDrawEventHandler::sOrigScale);
@@ -202,33 +197,37 @@ void KCMPeekShowAt(IDataBase* targetDB, IDataBase* sourceDB,
 
 	if (!cached)
 	{
-		// ★★2026-08-17(不具合再検査 B5): **ラスタ化は未組版ストーリーの lazy recompose を誘発し得る
-		//   =組めば dirty になる。** 入る前が clean なら出るとき clean へ戻す。
-		//   ⚠**この防御は KCM の中に4か所あった**(Start=KCMCore.cpp / 部分再比較=この下の
-		//     KCMRefreshComparisonCore / ブック比較=KCMBookCompare.cpp / あふれ走査=KCMOversetScan.cpp)
-		//     のに、**ページを丸ごと最大 300dpi でラスタ化するこの経路にだけ無かった**
-		//     ---- 同じファイルの中で非対称だった。「モデルを書き換えない・dirty にしない」は KCM の
-		//     設計の核なので、覗いただけで旧ドキュメントに保存を促すことがあってはならない。
-		//   ★キャッシュヒット(=同一スプレッドの再 peek。最頻ケース)では作らない＝この分岐の中に置く。
+		// **Rasterising can trigger the lazy recomposition of an uncomposed story, and composing
+		//   dirties the document.** If it was clean on the way in, it is clean on the way out.
+		//   Every other rasterising route in KCM carries this guard -- Start (KCMCore.cpp), the
+		//     partial re-comparison below, the book comparison, the overset scan -- and this one,
+		//     which rasterises whole pages at up to 300dpi, was the exception. Never dirtying the
+		//     model is central to KCM's design: merely peeking at a document must not end up
+		//     asking the user to save it.
+		//   The guards live inside this branch, so a cache hit -- the same spread peeked at again,
+		//     which is the common case -- does not construct them.
 		IDataBase::SaveRestoreModifiedState targetDirtyGuard(targetDB);
 		IDataBase::SaveRestoreModifiedState sourceDirtyGuard(sourceDB);
 
-		// 新→旧のページ対応は除外対応表(登録済み=比較相手なしページを除いた順番対応)で引く。
-		// 実際にラスタ化するこの分岐でだけ必要(キャッシュヒット=同一スプレッドの再 peek が最頻ケースで、
-		// その度に対応表を作り直すのは無駄だった)。
-		KCMDrawEventHandler::DropAllOrig();		// 覗くのは1スプレッドだけ=他は破棄
+		// New page -> old page comes from the exclusion pairing (registered pages, which have no
+		// counterpart, left out and the rest matched in order). It is only needed in this branch,
+		// the one that actually rasterises: rebuilding the pairing on every cache hit would be
+		// wasted work, and cache hits are the common case.
+		KCMDrawEventHandler::DropAllOrig();		// only one spread is peeked at; the rest goes
 		KCMDrawEventHandler::sOrigDB = targetDB;
-		KCMDrawEventHandler::sOrigScale = effScale;	// このラスタ化解像度を記録(再 peek の作り直し判定用)
-		// 対応表はスプレッド内で同一なのでループ前に1回だけ作る(ページごとの KCMBuildPairing 再構築を回避)。
+		KCMDrawEventHandler::sOrigScale = effScale;	// remembered so a later peek can tell whether to rebuild
+		// The pairing is the same for every page of the spread, so it is built once before the loop.
 		std::vector<UID> pairT, pairS;
 		KCMBuildPairing(targetDB, sourceDB, pairT, pairS);
 		std::map<UID, UID> targetToSource;
 		for (size_t k = 0; k < pairT.size(); ++k)
 			targetToSource[pairT[k]] = pairS[k];
-		// ★★2026-08-16: **マスタースプレッドの対応も同じ表に入れる**(ユーザー報告＝マスターページで
-		//   peek が出ない)。ページ UID は文書内で一意なので1つの map に同居できる
-		//   ——部分再比較(KCMRefreshComparisonCore)と Sync(KCMEnsureSyncPairing)が先に取っている形。
-		//   ⚠**規則そのものは違う**(通常＝順番対応 / マスター＝名前対応)ので、表を作る側は別関数のまま。
+		// **The master spread pairs go into the same table** -- without them a master page showed
+		//   no peek at all. Page UIDs are unique within a document, so both kinds can live in one
+		//   map, which is what the partial re-comparison (KCMRefreshComparisonCore) and the view
+		//   sync (KCMEnsureSyncPairing) already do.
+		//   @warning **the rules themselves differ** (ordinary pages pair by position, masters by
+		//   name), so the two are built by two separate functions.
 		{
 			std::vector<UID> mT, mS;
 			KCMBuildMasterPairing(targetDB, sourceDB, mT, mS);
@@ -243,7 +242,7 @@ void KCMPeekShowAt(IDataBase* targetDB, IDataBase* sourceDB,
 				continue;
 			UIDRef tRef(targetDB, tPageUID);
 			UIDRef sRef(sourceDB, mi->second);
-			KCMDrawEventHandler::MakeOrigImage(tRef, sRef, peekDpi);	// 失敗ページは重ねずスキップ(従来同挙動)
+			KCMDrawEventHandler::MakeOrigImage(tRef, sRef, peekDpi);	// a page that fails is simply not laid over
 		}
 	}
 
@@ -253,18 +252,22 @@ void KCMPeekShowAt(IDataBase* targetDB, IDataBase* sourceDB,
 }
 
 
-// ページ比較の部分更新(共通コア): targetPages(= targetDB 上のページUID列)を再比較して枠(リング)を
-// 更新する。source 対応は除外対応表(通常ページ=登録済みを除いた順番対応 / マスター=名前対応。
-// 2026-08-13 にマスターぶんを合流させた)で引く。
-//   ・各ページを MakeEntry で取り直し(編集後の差分に更新)。変化が無くなったページは古い枠を消す。
-//   ・旧版画像キャッシュ(sOrigImages)は古いので破棄(次の peek で作り直し)。
-//   ・✓ の剪定/レイアウト・スクロールバー地図・Pages パネルサムネイルの更新まで行う。
-//   実際に再比較したページ数(対応表に無い登録済みページ等の skip を除く)を outProcessed に、
-//   うち変化ページ数を outChanged に返す。戻り=1ページ以上処理したか。
-//   ★ページ数が多いときは進捗バー＋キャンセルを出す(2026-07-27)。キャンセルされたら outCancelled に
-//     kTrue を返し、「そこまで更新した分は残して」止める(Start の比較と違い全部は捨てない。理由は
-//     下のループ内コメント)。更新済みページの反映(✓剪定・再描画・サムネイル)は中断時も行う。
-//   ★旧 Ctrl+ミドル(マウス下スプレッド再比較)の中核をページ指定へ一般化したもの(2026-07-13 移設)。
+// The shared core of the partial re-comparison: re-compare targetPages (page UIDs in targetDB) and
+// update their rings. Each page's counterpart comes from the pairing -- ordinary pages by position
+// with the registered ones left out, masters by name.
+//   - every page is taken again with MakeEntry, so the difference reflects the current edit; a
+//     page that is no longer different has its old ring removed
+//   - the older-version image cache (sOrigImages) is stale and thrown away, to be rebuilt by the
+//     next peek
+//   - the ticks are pruned, and the layout, the scrollbar map and the Pages panel thumbnails are
+//     brought up to date
+//   outProcessed comes back with how many pages were really re-compared (pages skipped for having
+//   no counterpart are not counted) and outChanged with how many of those differed. The return
+//   says whether at least one page was processed.
+//   A large enough selection brings up a progress bar with Cancel. On cancellation outCancelled is
+//     set and **what has been updated so far is kept** -- unlike Start's comparison, nothing is
+//     thrown away; the reasoning is in the loop below. The follow-up work (pruning the ticks,
+//     redrawing, the thumbnails) happens even then.
 static bool16 KCMRefreshComparisonCore(IDataBase* targetDB, IDataBase* sourceDB,
                                          const std::vector<UID>& targetPages,
                                          int32* outProcessed, int32* outChanged, bool16* outCancelled,
@@ -277,29 +280,32 @@ static bool16 KCMRefreshComparisonCore(IDataBase* targetDB, IDataBase* sourceDB,
 	if (targetDB == nil || sourceDB == nil || targetPages.empty())
 		return kFalse;
 
-	// ★ラスタ化は未組版ストーリーの lazy recompose を誘発し得る=組めば dirty になる。Start 経路
-	//   (KCMDoMarkChangesDoc)と同じく、入る前が clean なら出るとき clean へ戻す(2026-08-06 再点検)。
+	// Rasterising can trigger the lazy recomposition of an uncomposed story, and composing dirties
+	//   the document. As on the Start route (KCMDoMarkChangesDoc): clean on the way in, clean on
+	//   the way out.
 	IDataBase::SaveRestoreModifiedState targetDirtyGuard(targetDB);
 	IDataBase::SaveRestoreModifiedState sourceDirtyGuard(sourceDB);
 
-	// マークの所属ドキュメントを合わせる(別 doc にマークがあった場合のみ総入れ替え=通常は一致で何もしない)。
+	// Make sure the marks belong to this document. Only a wholesale swap when they were on another
+	// one; normally the two already agree and nothing happens.
 	if (KCMDrawEventHandler::sDB != nil && KCMDrawEventHandler::sDB != targetDB)
 		KCMDrawEventHandler::DropAll();
 	KCMDrawEventHandler::sDB = targetDB;
 
-	// 除外対応表(登録済みページを除いた順番対応)を1回だけ作り、target→source を引けるようにする。
+	// Build the exclusion pairing once, so that target -> source can be looked up.
 	std::vector<UID> pairT, pairS;
 	KCMBuildPairing(targetDB, sourceDB, pairT, pairS);
 	std::map<UID, UID> targetToSource;
 	for (size_t k = 0; k < pairT.size(); ++k)
 		targetToSource[pairT[k]] = pairS[k];
 
-	// ★マスタースプレッドの対応も同じ表に入れる(2026-08-13)。ページ UID は文書内で一意なので通常
-	//   ページの対応と1つの map に同居できる(Sync 側の KCMEnsureSyncPairing と同じ形)。
-	//   これを入れるまで、マスターページを選んで Refresh すると対応表に無く「対象0件」で黙って
-	//   何も起きなかった——2026-08-11 に比較(KCMDoMarkChangesDoc)がマスターを扱うようになり、
-	//   **枠は出るのに部分再比較だけ届かない**という食い違いになっていた。
-	//   ★比較の対応表(KCMCore.cpp)と同じ2本立て(通常=順番対応 / マスター=名前対応)を通す。
+	// **The master spread pairs go into the same table.** Page UIDs are unique within a document,
+	//   so both kinds live in one map (the same shape as the view sync's KCMEnsureSyncPairing).
+	//   Until they did, selecting a master page and choosing Refresh found nothing in the pairing
+	//   and silently reported "no pages": the comparison had learned to handle masters while the
+	//   partial re-comparison had not, so **the frames appeared but could not be refreshed**.
+	//   The two rules are the same pair the comparison itself uses (ordinary pages by position,
+	//   masters by name).
 	{
 		std::vector<UID> mT, mS;
 		KCMBuildMasterPairing(targetDB, sourceDB, mT, mS);
@@ -307,11 +313,13 @@ static bool16 KCMRefreshComparisonCore(IDataBase* targetDB, IDataBase* sourceDB,
 			targetToSource[mT[k]] = mS[k];
 	}
 
-	// 指定ページを再比較して枠を更新。触れたページ(target とその source 対応)を集めておき、後で Pages
-	// パネルのサムネイルを per-UID Purge する。変化あり/なしの両方を入れる=変化なしに戻って sEntries から
-	// 外れたページも古いリングを確実に消せるようにするため。
-	// ★実際に比較するページを先に確定する(進捗バーの総数に使う。対応表に無い=登録済み(比較相手なし)
-	//   ページはここで落ちる)。Start 経路(KCMCore.cpp の toRaster)と同じ「先に対象を確定してから回す」形。
+	// Re-compare the given pages and update their rings. The pages touched -- each target page and
+	// its counterpart -- are collected so the Pages panel thumbnails can be purged per UID
+	// afterwards. Both the changed and the unchanged go in: a page that is no longer different has
+	// left sEntries, and its old ring has to be cleared just as surely.
+	// **The pages to compare are settled first** (the progress bar needs the total, and pages with
+	//   no counterpart drop out here) -- the same "decide the work, then do it" shape as Start's
+	//   toRaster in KCMCore.cpp.
 	std::vector<UID> toCompareT, toCompareS;
 	toCompareT.reserve(targetPages.size());
 	toCompareS.reserve(targetPages.size());
@@ -319,33 +327,35 @@ static bool16 KCMRefreshComparisonCore(IDataBase* targetDB, IDataBase* sourceDB,
 	{
 		std::map<UID, UID>::const_iterator mi = targetToSource.find(targetPages[i]);
 		if (mi == targetToSource.end())
-			continue;	// 登録済み(比較相手なし)ページ等は再比較対象外
+			continue;	// registered pages and the like have no counterpart to compare against
 		toCompareT.push_back(targetPages[i]);
 		toCompareS.push_back(mi->second);
 	}
 
-	// 対象0件(選択が登録済み=比較相手なしページばかり)ならここで戻る。総数0の進捗バーを作らずに済み、
-	// 下の後処理(✓剪定・再描画・サムネイル)も走らせない=以前と同じ「何もしない」振る舞いになる。
+	// Nothing eligible -- every selected page is registered, say -- returns here. That avoids a
+	// progress bar with a total of zero, and skips the follow-up work below (pruning the ticks,
+	// redrawing, the thumbnails), which is the "nothing happens" this used to do.
 	if (toCompareT.empty())
 		return kFalse;
 
-	// ★ページ数が多いときだけ進捗バー＋キャンセルを出す(2026-07-27)。しきい値と、自前でしきい値を
-	//   持つ理由は kKCMProgressBarMinPages(KCMConstants.h)を参照。
+	// The progress bar with its Cancel only appears for a large enough job. The threshold, and why
+	//   KCM sets one of its own, are with kKCMProgressBarMinPages in KCMConstants.h.
 	const int32 compareCount = (int32)toCompareT.size();
 	const bool8 showBar = (compareCount >= kKCMProgressBarMinPages) ? kTrue : kFalse;
 	PMString barTitle(compareCount == 1 ? "Refreshing 1 page..." : "Refreshing pages...");
 	barTitle.SetTranslatable(kFalse);
 	TaskProgressBar progress(barTitle, compareCount, showBar);
-	progress.DisableChildProgressBars(kTrue);	// ラスタ化の内部処理が自分のバーを出すのを抑える
+	progress.DisableChildProgressBars(kTrue);	// stop the rasterisation putting up bars of its own
 
 	int32 changedCount = 0;
 	int32 failedCount = 0;
 	bool16 cancelled = kFalse;
-	// ★2026-08-16(API 監査 B5): 触れたページ＝**この操作で絵が変わりうるページ**。末尾の通知に
-	//   載せて、UI に per-UID でサムネイルを作り直させる(全ページ Purge をやめる)。
-	//   入れ物を vector から set にしたのは、下で prune が外した ✓ のページを合流させるため
-	//   (重複を持たない)。⚠**報告用の件数を size() から取らない**——集合は後から増えるので、
-	//   「実際に再比較したページ数」は専用のカウンタで数える。
+	// The touched pages are **the pages whose picture this operation can change**. They travel on
+	//   the notification at the end so the UI rebuilds those thumbnails and no others. They are
+	//   sets rather than vectors because the ticks the prune removes are merged in below and must
+	//   not appear twice.
+	//   @warning **do not report the count from size()**: the set grows afterwards, so "how many
+	//   pages were re-compared" is counted separately.
 	int32 processedCount = 0;
 	std::set<UID> touchedTargetPages, touchedSourcePages;
 	for (size_t i = 0; i < toCompareT.size(); ++i)
@@ -354,8 +364,8 @@ static bool16 KCMRefreshComparisonCore(IDataBase* targetDB, IDataBase* sourceDB,
 		item.AppendNumber((int32)(i + 1));
 		item.Append(" / ");
 		item.AppendNumber(compareCount);
-		item.SetTranslatable(kFalse);	// 数値入りなので翻訳対象にしない
-		progress.DoTask(item);			// ★1件進める(前の1件の完了もここで反映される)
+		item.SetTranslatable(kFalse);	// it holds numbers, so it is not a translatable string
+		progress.DoTask(item);			// one step on; this is also where the previous one is marked done
 
 		const UID tUID = toCompareT[i];
 		const UID sUID = toCompareS[i];
@@ -366,80 +376,83 @@ static bool16 KCMRefreshComparisonCore(IDataBase* targetDB, IDataBase* sourceDB,
 		const ErrorCode mkErr = KCMDrawEventHandler::MakeEntry(UIDRef(targetDB, tUID), UIDRef(sourceDB, sUID), changed);
 		if (mkErr != kSuccess)
 		{
-			// ★比較できなかった(ページサイズ不一致・ラスタ化失敗・OOM)ときは既存エントリに触らない
-			//   (2026-08-06 再点検): changed==kFalse を「変化が無くなった」と読んで DropOneEntry すると、
-			//   一時的な失敗で前回の正しい枠が黙って消える。古い枠は残し、件数を failed としてステータスへ。
+			// **A page that could not be compared leaves its existing entry alone** (the causes are
+			//   mismatched page sizes, a failed rasterisation, or being out of memory). Reading
+			//   changed == kFalse as "no longer different" and calling DropOneEntry would let a
+			//   temporary failure silently erase a correct ring. The old ring stays and the page is
+			//   counted as failed for the status line.
 			++failedCount;
-			// ★★2026-08-17(不具合再検査 B5): **差分再比較の前回ペアリングからも外す。**
-			//   Start 経路(KCMCore.cpp の newMap.erase)が同じ位置で同じことをしており、その理由も
-			//   書いてある ---- 載せたままだと、次の登録トグルの差分再比較が「ペア不変=前回結果を再利用」と
-			//   判定して MakeEntry を呼ばず、**このページを更新できなかったこと自体が「比較済み・差なし」の
-			//   見た目で固定化される**。Refresh は「選んだページを最新にする」機能なので、更新に失敗した
-			//   ページこそ次の機会に必ず比較し直させる。
-			//   ⚠**外すのは前回ペアリングだけ**(エントリは上のとおり残す)。この2つは役割が違う
-			//     ---- エントリ=今の枠 / 前回ペアリング=次に再利用してよいかの判断材料。
+			// **It is removed from the previous pairing, though.** The Start route does the same
+			//   thing in the same place, and for the same reason: left in, the next incremental
+			//   re-comparison decides "the pair is unchanged, reuse the previous result", never
+			//   calls MakeEntry, and **the failure to update this page becomes permanent, wearing
+			//   the appearance of "compared, no difference"**. Refresh exists to bring the selected
+			//   pages up to date, so a page that failed is exactly the one that must be compared
+			//   again at the next opportunity.
+			//   @warning **only the previous pairing is touched**, never the entry. The two mean
+			//     different things: the entry is the ring shown now, the previous pairing is what
+			//     decides whether that ring may be reused.
 			KCMDrawEventHandler::sPrevPairTargetToSource.erase(tUID);
 		}
 		else if (changed)
 			++changedCount;
 		else
 		{
-			// 変化が無くなったページ → 古い枠が残っていれば消す(更新で消えるべき)。エントリと同時に
-			// Source 側対応表(sSrcPageToTarget[sUID])も掃除する共通ヘルパへ統一(ドロップ処理を1本化)。
+			// No longer different, so any ring left over from before has to go. The shared helper
+			// clears the Source-side mapping (sSrcPageToTarget[sUID]) along with the entry, which
+			// is why dropping goes through one function.
 			KCMDrawEventHandler::DropOneEntry(tUID, sUID);
 		}
 
-		// ★キャンセル判定は「1ページを比較し終えた安全な場所」で行う(WasCancelled はイベントを回すので
-		//   ラスタ化の途中では見ない)。引数 kFalse = グローバルエラー状態を立てない(立てると後続の
-		//   コマンドが巻き添えで失敗する)。
-		// ★Start の比較と違い、ここは「そこまで更新した分を残して止める」。この機能はもともと
-		//   「選んだページだけを最新にする」部分更新なので、途中でやめても残るのは「更新した数ページ＋
-		//   まだ古い数ページ」= 選択範囲を狭めて実行したのと同じ状態にしかならない(Start のように
-		//   「比較済みと未比較が混在した文書全体」を作ってしまうことはない)。
+		// Cancellation is tested at a safe point, with a page fully compared: WasCancelled pumps
+		//   events, so it must not be called in the middle of a rasterisation. The kFalse argument
+		//   means "do not set the global error state", which would otherwise make the commands that
+		//   follow fail with it.
+		// **Unlike Start's comparison, this stops and keeps what it has done.** The command updates
+		//   only the selected pages to begin with, so stopping halfway leaves some pages updated
+		//   and some still old -- the same state as running it on a narrower selection. It cannot
+		//   produce what Start could: a whole document half compared and half not.
 		if (progress.WasCancelled(kFalse))
 		{
 			cancelled = kTrue;
-			ErrorUtils::PMSetGlobalErrorCode(kSuccess);	// 中断で立った可能性のあるエラーを持ち越さない
+			ErrorUtils::PMSetGlobalErrorCode(kSuccess);	// carry no error out of the cancellation
 			break;
 		}
 	}
 	if (outCancelled) *outCancelled = cancelled;
 
-	// ★★2026-08-17(不具合再検査 B5): **ラスタ化に失敗したページがあったときも、そこで立った可能性の
-	//   あるエラーを持ち越さない。** 上のキャンセル分岐と同じ扱いに揃える。
-	//   ⚠**これは Start 経路(KCMCore.cpp の同名の措置)の2本目**で、あちらを直した 2026-08-17 の
-	//     B3(2周目)は「キャンセルのときだけ落としている」関数を1本しか数えていなかった。
-	//     ★**命題はブロックに属さない**(B5→B4 の指摘の3例目)。
-	//   失敗の中身は2種類で、エラーを立て得るのは後者だけ ---- ①ページサイズ不一致(ラスタ化自体は成功)
-	//   ②SnapshotUtilsEx::Draw の失敗・OOM(SDK 内部なので確かめる術が無い) ⇒ 測れない側へ安全側で倒す。
-	//   落としてよい根拠＝失敗は outFailed で呼び手へ返し、ステータス行に failed=N として報告し切っている
-	//   ＝**エラー状態で伝える必要が無い**。立てたまま返すと、この後の後片付け(✓ の剪定・通知を受けた UI の
-	//   仕事)や呼び手が次に投げるコマンドが巻き添えで失敗する
-	//   (CmdUtils.h:72-77 の protective shutdown / シーケンスなら丸ごと巻き戻る)。
+	// **A page that failed to rasterise must not leave an error behind either**, the same as the
+	//   cancellation above.
+	//   Of the two kinds of failure only the second can set one -- a page-size mismatch rasterises
+	//   fine, while a failed SnapshotUtilsEx::Draw or an allocation failure happens inside the SDK
+	//   where there is no way to find out -- so this errs towards the side that cannot be measured.
+	//   Clearing it is safe because the failures are reported in full: they come back in outFailed
+	//   and reach the status line as "failed=N", so nothing depends on the error state carrying
+	//   them. Left set, it would take down the clean-up that follows (pruning the ticks, the work
+	//   the UI does on the notification) and whatever command the caller issues next -- see
+	//   ProcessCommand in CmdUtils.h on protective shutdown, and a command sequence would roll back
+	//   entirely.
 	if (failedCount > 0)
 		ErrorUtils::PMSetGlobalErrorCode(kSuccess);
 
-	// 報告用の処理数=実際に MakeEntry/DropOneEntry まで到達したページ数(対応表に無くて対象から外れた
-	// 選択ページは数えない。キャンセル時はそこまでに処理した数。ステータス行の「refreshed N」が実態と
-	// 一致するように。2026-07-15)。
+	// The reported count is how many pages actually reached MakeEntry or DropOneEntry: selected
+	// pages that dropped out for having no counterpart are not counted, and a cancelled run reports
+	// what it got through. That is what keeps "refreshed N" in the status line honest.
 	if (outProcessed) *outProcessed = processedCount;
 	if (processedCount == 0)
 		return kFalse;
 
-	// 旧版画像キャッシュは古いので破棄(次の peek で現ズームで作り直し)。
+	// The older-version images are stale now; the next peek rebuilds them at the current zoom.
 	KCMDrawEventHandler::DropAllOrig();
 
-	// ★「Check」の✓: この部分再比較でマーク(枠)が消えたページのチェックも忘れる(ユーザー指定
-	//   2026-07-11「枠が無くなったらチェックの記憶も外れる」)。★必ず下の KCMInvalidateDB より前に呼ぶ
-	//   (Invalidate 後に外すと古い ✓ でレイアウトが描き直される)。
-	// ★★2026-08-16(API 監査 B5): **prune が外したページを受け取って、触れたページへ合流させる。**
-	//   ⚠これを取らないと per-UID の Purge から必ず漏れる ---- ✓ が消えればサムネイルの絵は変わるのに、
-	//     外れた後は「今チェックが付いている集合」のどこにも居ないので**現在状態から復元できない**
-	//     (B4 が Register/✓ のトグルで踏んだのと同じ形＝KCMPageCheck.h の outUnchecked)。
-	//   ⚠**旧実装の `srcHadChecks`(prune の前に Source 側の ✓ の有無を控える)はここで役目を終えた**
-	//     ---- あれは「Source 側のサムネイルを作り直すか」を条件で決めていた頃の名残で、
-	//     2026-08-13 に全ページ Purge へ変わったとき条件だけが落ち、**読み手のいない const 変数が
-	//     残っていた**。今は「外れた ✓ のページ」そのものが集合で手に入るので、有無を控える必要が無い。
+	// The ticks: a page that lost its ring in this partial re-comparison loses its tick with it --
+	//   "the frame is gone, and the memory of having checked it goes with it".
+	//   **This must run before the KCMInvalidateDB below**: untick after invalidating and the
+	//   layout is redrawn with the old ticks still on it.
+	// **The pages the prune unticked are collected and merged into the touched set.** Without them
+	//   the per-UID purge misses those pages every time: losing a tick changes the thumbnail, but
+	//   once the tick is gone the page is in none of the sets the current state can produce, so it
+	//   **cannot be recovered afterwards** (see outUnchecked in KCMPageCheck.h).
 	std::map<IDataBase*, std::set<UID> > uncheckedByDoc;
 	KCMPageCheckPruneToMarked(&uncheckedByDoc);
 	{
@@ -449,33 +462,36 @@ static bool16 KCMRefreshComparisonCore(IDataBase* targetDB, IDataBase* sourceDB,
 		u = uncheckedByDoc.find(sourceDB);
 		if (u != uncheckedByDoc.end())
 			touchedSourcePages.insert(u->second.begin(), u->second.end());
-		// ⚠**target/source 以外の文書の分は拾わない**(通知が運べるのは2文書まで)。そこに入るページは
-		//   そもそも無い ---- ✓ は Start 中の Target/Source にしか付かず、Stop で全消去される
-		//   (KCMPageCheck.h)。★もし第3の文書に ✓ が付く仕様になったら、ここが取りこぼしになる。
+		// @warning **documents other than the target and the source are not collected** -- the
+		//   notification carries at most two. Nothing can be in them today: ticks only go on the
+		//   Target and the Source of a running comparison, and Stop clears them all
+		//   (KCMPageCheck.h). Should a third document ever become tickable, this is where the
+		//   pages would go missing.
 	}
 
 	KCMInvalidateDB(targetDB);
-	// Source 側のレイアウトビューも再描画する。エントリの増減は Source の常時枠(Always Show Marks on Source)や
-	// ✓(prune)の見た目も変えるため。
+	// The Source's layout views are redrawn too: gaining or losing entries changes how its
+	// permanently visible frames (Always Show Marks on Source) and its ticks look as well.
 	if (sourceDB != targetDB)
 		KCMInvalidateDB(sourceDB);
 
-	// ★★2026-08-13(Task 10): スクロールバー地図・Pages パネルのサムネイル・Prev/Next の位置は
-	//   すべて UI の持ち物なので、この独立再比較路(KCMDoMarkChangesDoc を通らない)でも通知1本にする。
-	//   ⚠**navReset は kFalse** ---- 選択ページだけの部分再比較で巡回の基準点を捨てると、1ページ直す
-	//     たびに Prev/Next が先頭へ戻る。文書は変わっていないので基準点は有効なまま。
-	//   ★★2026-08-16(API 監査 B5): **触れたページ集合を通知に載せて per-UID Purge へ戻した。**
-	//     ここには「touched…は**通知では運べない**」と書いてあった ---- その命題は 2026-08-15 の監査 B2
-	//     (ISubject::Change の第3引数 changedBy)で既に覆っており、B4 が同じ誤りを4箇所訂正して
-	//     Register/✓ の経路を per-UID へ戻していた。**この行はその数え上げから漏れていた**
-	//     (B4 は自分のブロックの6ファイルしか grep しなかった＝ブロックの境界が grep の境界になった)。
-	//   ★**全再比較(KCMDoMarkChangesDoc)と違ってここは載せられる**: あちらが要るのは「再比較の“前”に
-	//     枠が付いていた旧集合」で、通知の時点では既に捨てている。こちらは**どのページを触るかを
-	//     先に決めてから回る**(toCompareT/S)ので、集合が最初から手元にある。
-	//   ⚠**漏れたら古いサムネイルが残る**(全ページ Purge は原理的に漏れなかった)。数え上げ＝
-	//     ①再比較したページ(target とその source 対応。変化なしに戻ってリングが消えた分も込み)
-	//     ②上の prune で ✓ が外れたページ。★③旧版べた載せ(DropAllOrig)は**サムネイルに描かないので対象外**
-	//     (描画側が `wantOrig && !isThumb` で弾く)。④登録(緑「/」)と overflow はこの経路では変わらない。
+	// The scrollbar map, the Pages panel thumbnails and Prev/Next's position all belong to the UI,
+	//   so this route -- which does not go through KCMDoMarkChangesDoc -- reports them in one
+	//   notification too.
+	//   **navReset is kFalse**: throwing away the traversal's anchor after re-comparing a few
+	//     selected pages would send Prev/Next back to the start every time one page is refreshed.
+	//     The document has not changed, so the anchor is still valid.
+	//   **The touched pages travel with it**, which is what lets the UI purge per UID.
+	//   **A full re-comparison cannot do this and this route can**: the full one would need the set
+	//     of pages that carried a ring *before* it ran, and by notification time that is gone. Here
+	//     the pages are decided before the loop (toCompareT/S), so the set is in hand from the start.
+	//   @warning **anything missing from the set keeps a stale thumbnail** (purging every page
+	//     could not miss, which is what it was doing before). The set is: (1) the pages
+	//     re-compared, target and counterpart, including those whose ring disappeared for being
+	//     unchanged again, and (2) the pages the prune unticked above. The older-version overlay
+	//     (DropAllOrig) is deliberately not in it -- it is never drawn into a thumbnail, the
+	//     drawing side rejecting it with `wantOrig && !isThumb` -- and neither the registrations
+	//     (green "/") nor the overflow can change on this route.
 	KCMNotifyDocsPages(kKCMMarksRebuiltMessage,
 	                     targetDB, touchedTargetPages,
 	                     sourceDB, touchedSourcePages,
@@ -486,11 +502,11 @@ static bool16 KCMRefreshComparisonCore(IDataBase* targetDB, IDataBase* sourceDB,
 	return kTrue;
 }
 
-// ページパネルの選択ページの「ページ比較」を再検出して更新する(ページ右クリック「Refresh Page
-// Comparison」の実体。旧 Ctrl+ミドルの移設先)。arm 済み(Start 後)かつ前面文書が Target のときだけ動く
-// (★2026-07-15 Target 限定化=ユーザー指定。旧仕様の Source→Target 写像経路は撤去)。
-// outPages=実際に再比較したページ数(対応表に無い登録済みページ等は数えない)、
-// outChanged=うち変化したページ数。戻り=1ページ以上処理したか。
+// Re-detect and update the comparison of the pages selected in the Pages panel -- the body behind
+// the context-menu item "Refresh Page Comparison". It runs only while a comparison is armed and
+// with the Target as the frontmost document.
+// outPages is how many pages were really re-compared (pages with no counterpart are not counted)
+// and outChanged how many of those differed. The return says whether at least one was processed.
 bool16 KCMRefreshComparisonForSelectedPages(int32* outPages, int32* outChanged, bool16* outCancelled, int32* outFailed)
 {
 	if (outPages)     *outPages = 0;
@@ -500,9 +516,10 @@ bool16 KCMRefreshComparisonForSelectedPages(int32* outPages, int32* outChanged, 
 
 	if (!KCMIsArmed())
 		return kFalse;
-	// ★Story モードでは走らせない。メニューは上の KCMRefreshComparisonAvailable が既に消しているので
-	//   通常は到達しないが、ActionID にキーボードショートカットを割り当てられる以上、**実行側でも断る**
-	//   (この関数は「押されたら何をするか」の側で、メニューの見た目とは別の入口を持ちうる)。
+	// Never in the Story mode. KCMRefreshComparisonAvailable has already removed the menu item, so
+	//   this is not normally reached -- but an ActionID can be given a keyboard shortcut, so **the
+	//   command refuses on its own account too**: this is the "what happens when it is invoked"
+	//   side, and it has entry points the menu's appearance does not govern.
 	if (KCMGetCompareMode() == kKCMModeStory)
 		return kFalse;
 	IDataBase* targetDB = KCMArmedTargetDB();
@@ -510,35 +527,40 @@ bool16 KCMRefreshComparisonForSelectedPages(int32* outPages, int32* outChanged, 
 	if (targetDB == nil || sourceDB == nil)
 		return kFalse;
 
-	// ページパネルの選択ページを読む(Register/Check と共通のリーダー。KCMPageMap.cpp)。選択が属する
-	// 前面文書が Target でなければ何もしない(Source では項目自体を出さない/無効にする。
-	// KCMRefreshComparisonAvailable と対)。
+	// Read the Pages panel's selection through the reader Register and Check share
+	// (KCMPageMap.cpp). Nothing happens unless the document that selection belongs to is the
+	// Target; over the Source the menu item is not offered at all, which is what
+	// KCMRefreshComparisonAvailable arranges.
 	IDataBase* db = nil;
 	std::vector<UID> selPages;
-	// ★includeMasters=kTrue(2026-08-13): マスタースプレッドも比較対象なので部分再比較の対象にする。
-	//   対応表側(KCMRefreshComparisonCore)にマスターのペアを入れるのと対で意味を持つ。
+	// includeMasters=kTrue: master spreads are compared, so they can be re-compared too. It only
+	//   means anything together with the master pairs KCMRefreshComparisonCore puts in its table.
 	if (!KCMPageMapReadSelection(db, selPages, kTrue /*includeMasters*/) || db != targetDB)
 		return kFalse;
 
-	// 再比較コアは Target ページで駆動する(前面=Target のみなので選択ページがそのまま対象)。
+	// The core is driven by Target pages, and the Target is the frontmost document here, so the
+	// selection can be handed straight over.
 	std::vector<UID> targetPages = selPages;
 
 	int32 processed = 0, changed = 0, failed = 0;
 	bool16 cancelled = kFalse;
 	const bool16 ok = KCMRefreshComparisonCore(targetDB, sourceDB, targetPages, &processed, &changed, &cancelled, &failed);
-	// キャンセルの有無は Core の成否に関わらず返す。※Core が kFalse を返すのは「対象0件」= cancelled が
-	//   kFalse の経路だけなので実際には両立しないが、戻り値の意味に依存せず伝えておく(防御)。
+	// The cancellation is reported whether the core succeeded or not. The two cannot actually
+	//   coincide -- the core only returns kFalse for "nothing eligible", where cancelled is kFalse
+	//   as well -- but reporting it without relying on that keeps the two independent.
 	if (outCancelled) *outCancelled = cancelled;
 	if (!ok)
 		return kFalse;
 
-	// (Prev/Next 間の位置表示とボタン有効/無効の更新は、上の KCMRefreshComparisonCore が投げる
-	//  kKCMMarksRebuiltMessage に含まれる ---- 2026-08-13・Task 10 でここの直接呼びを畳んだ。)
+	// (Prev/Next's position readout and the enabling of its buttons ride on the
+	//  kKCMMarksRebuiltMessage that KCMRefreshComparisonCore above sends.)
 
-	// ★Story Edits の一覧も同じ理由でここから作り直す(2026-08-10)。**選択ページぶんだけ**の更新には
-	//   できない——1つのストーリーが、再比較したページとしなかったページにまたがって流れうるので、
-	//   ページ単位に割れない。丸ごと作り直すのは共有関数 KCMRebuildStoryEdits の仕事。
-	// ⚠これを入れるまで、Refresh の後だけ一覧が編集前の状態のまま残っていた(実測して判明)。
+	// The Story Edits list is rebuilt from here as well, and **it cannot be rebuilt for the
+	//   selected pages alone**: one story can flow across pages that were re-compared and pages
+	//   that were not, so there is no way to split it per page. Rebuilding the whole list is
+	//   KCMRebuildStoryEdits' job.
+	// @warning without this, the list kept showing its pre-edit state after a Refresh and only
+	//   after a Refresh.
 	KCMRebuildStoryEdits(targetDB, sourceDB);
 
 	if (outPages)   *outPages = processed;
@@ -547,30 +569,30 @@ bool16 KCMRefreshComparisonForSelectedPages(int32* outPages, int32* outChanged, 
 	return kTrue;
 }
 
-// 「Refresh Page Comparison」メニューを有効化してよいか(UpdateActionStates 用)。
-// arm 済み(Start 後)・**Pixel モード**・前面文書が Target のとき kTrue(★2026-07-15 Target 限定化=
-// ユーザー指定 / ★2026-08-24 Pixel 限定=ユーザー判断。理由は下の分岐のコメント。
-// コンテキストメニューは無効項目を出さないため、Source 側や Story モードでは項目自体が消える)。
-// 選択の有無までは見ない(ページ右クリックは通常そのページを選択済みで、未選択でも DoAction 側が
-// 安全に no-op しステータス行へ "no comparable pages" を出す)。
-// ★実行側(KCMRefreshComparisonForSelectedPages)は KCMPageMapReadSelection の db で判定するが、
-//   そちらも同じ KCMActiveDocDB() を使う(KCMPageMap.cpp)ので、両者の「対象文書」は必ず一致する。
-//   違いは「選択の有無を見るか」だけ(2026-08-06 の監査で確認)。
-//   ★2026-08-06 ブロック9 監査 A-1: 両者とも旧実装は Utils<ILayoutUIUtils>()->GetFrontDocument() で、
-//   ここのコメントは「向こうも同じものを使っている」ことを一致の根拠にしていた。向こうを公式ルート
-//   (ActiveContext 経由)へ寄せたので、こちらも同時に合わせる=一致の根拠を保つ([[one-question-one-place]])。
+// Whether the "Refresh Page Comparison" menu item should be enabled (for UpdateActionStates):
+// kTrue while a comparison is armed, in the **Pixel mode**, with the Target frontmost. A context
+// menu does not show disabled items, so over the Source or in the Story mode the item disappears
+// altogether; the reasoning is in the branch below.
+// It does not look at the selection: right-clicking a page normally selects it, and even with
+// nothing selected the command safely does nothing and reports "no comparable pages".
+// **The command itself decides from KCMPageMapReadSelection's database**, which comes from the
+//   same KCMActiveDocDB(), so the two can never disagree about which document is meant. The only
+//   difference between them is that one looks at the selection and the other does not. Keep them
+//   on the same source ([[one-question-one-place]]).
 bool16 KCMRefreshComparisonAvailable()
 {
 	if (!KCMIsArmed())
 		return kFalse;
-	// ★★★**Story モードでは出さない**(ユーザー判断 2026-08-24)。この項目が作り直すのは**画素比較の
-	//   結果**で、Story モードはページを1枚もラスタ化しない(KCMDoMarkChangesDoc の `toRaster.clear()`)
-	//   ---- 押しても選択ページを一枚ずつ描き直して時間を使うだけで、**画面は1ドットも変わらない**
-	//   (描画側が `drawRings = (モード != Story)` でリングを止めている)。
-	// ★**Story モードの「更新」は別の口が持っている**＝Story Edits の行の右クリック
-	//   「Refresh Story Comparison」(2026-08-21・Story モード限定)。⇒ どちらのモードにも更新の口が
-	//   ちょうど1つずつ在り、重ならない。
-	// ⚠無効にすると**項目ごと消える**(コンテキストメニューは無効項目を出さない)。それが狙い。
+	// **Not offered in the Story mode.** What this item rebuilds is the result of comparing
+	//   pixels, and the Story mode rasterises no page at all (KCMDoMarkChangesDoc empties
+	//   toRaster). Pressing it would spend time redrawing the selected pages one by one and
+	//   **change nothing on screen**, the drawing side holding the rings back with
+	//   `drawRings = (mode != Story)`.
+	// **The Story mode has a refresh of its own**: "Refresh Story Comparison" on the context menu
+	//   of a Story Edits row. Each mode therefore has exactly one way to refresh, and they do not
+	//   overlap.
+	// Disabling it **removes the item entirely**, a context menu showing no disabled items. That
+	//   is the intent.
 	if (KCMGetCompareMode() == kKCMModeStory)
 		return kFalse;
 	IDataBase* targetDB = KCMArmedTargetDB();
@@ -581,17 +603,17 @@ bool16 KCMRefreshComparisonAvailable()
 	return (db != nil && db == targetDB) ? kTrue : kFalse;
 }
 
-// ★armed 中の Target/Source が IDocumentList に現存するかの最終ライン防御(2026-07-15 復活)。
-//   旧・中ボタン watcher はジェスチャ毎にこの検査を行っていたが、ツール移行で失われていた。
-//   通常はクローズ responder(KCMHandleDocsClosed)が先回りして disarm するため失格には到達しないが、
-//   responder が漏れた場合に解放済み IDataBase をサンプリング/peek へ渡さないための保険。
-//   失格なら KCMHandleDocsClosed() で Stop 相当のフルクリーンアップ(sPeek* 解除を含む)をして kFalse。
-//   ★2026-08-13: 呼び手(ジェスチャ/CMYK カーソル)が別ファイルへ移ったので static を外した。宣言は KCMPeek.h。
+// The last line of defence: are the armed Target and Source still in the IDocumentList?
+//   Normally the close responder (KCMHandleDocsClosed) has disarmed things long before, so this
+//   never fails; it exists so that a responder that did not fire cannot let a released IDataBase
+//   reach the sampler or the peek.
+//   When one of them is gone, KCMHandleDocsClosed() performs the full clean-up that Stop would --
+//   sPeek* cleared included -- and kFalse comes back.
 bool16 KCMArmedDocsAlive()
 {
 	if (!sPeekArmed || sPeekTargetDB == nil || sPeekSourceDB == nil)
 		return kFalse;
-	ISession* session = GetExecutionContextSession();	// 終了処理中は nil になり得る(2026-07-25 追補 統一)
+	ISession* session = GetExecutionContextSession();	// nil is possible during the shutdown sequence
 	InterfacePtr<IApplication> app(session != nil ? session->QueryApplication() : nil);
 	InterfacePtr<IDocumentList> docList(app ? app->QueryDocumentList() : nil);
 	if (docList == nil ||
@@ -606,31 +628,28 @@ bool16 KCMArmedDocsAlive()
 
 //========================================================================================
 // KCMPeekStartup
-//   アプリ起動/終了サービス。中ボタンウォッチャは撤去した(2026-07-13)ので起動時の処理は無く、
-//   終了時に保持リソース(遅延サムネイル idle task・マーク/旧版画像バッファ・peek arm 状態・
-//   レイアウト同期フラグ)を片付けるためだけに残している。
-//   ★2026-08-13 の分割後も**このサービスは1本のまま**(第1段では新しい ClassID を使わない)。
-//     出ていった3ファイルの後片付けは、それぞれが公開する Shutdown 入口を下から呼ぶ。
+//   The application's startup/shutdown service. There is nothing to do at startup; it exists to
+//   release what is held at shutdown -- the mark and older-version image buffers, the peek's armed
+//   state, and the rest. The three files that own UI state clean themselves up through the
+//   Shutdown entry points they publish, which this one calls.
 //
-// ★★★このサービスは**メインスレッドでしか呼ばれない**(2026-08-15・第2段 Task 11B で決着済み)。
-//   KCM は kModelPlugIn なので、放っておけばガイド vol1-07「Threading and startup/shutdown services」
-//   のとおり **BG スレッドの起動・終了ごとにも呼ばれる**:
+// **This service only ever runs on the main thread.** KCM is a kModelPlugIn, and left alone the
+//   guide's "Threading and startup/shutdown services" (vol1-07) applies:
 //     "kCStartupShutdownProviderImpl derives its implementation of GetThreadingPolicy from
-//      CServiceProvider. **If the startup/shutdown service boss resides in a model plug-in, the service
-//      will be called on both main and background thread startup and shutdown.**"
-//   ⇒ 下の Shutdown() は **DropAll() ほかで比較状態を丸ごと消す**ので、そうなると
-//     **PDF を1本書き出すたびにマークが全部消える**。
-//   ★塞いだのは **`.fr` の宣言側**＝**`KCM.fr` の `kKCMPeekStartupBoss` の Class が
-//     `kCMainThreadStartupShutdownProviderImpl`** を指定している(理由は同ファイルの見出し
-//     "THE FIX IS HERE, IN THE RESOURCE, NOT IN Shutdown()." の段落)。★手本＝Adobe 製 DiagnosticLog(`DiagLogClass.fr:93-100`)
-//     が **model プラグインのまま startup/shutdown だけをメインスレッド限定にし、理由をコメントで
-//     書いている** ⇒ **前例が見つかった時点で、threading の問いは実測を要さなくなった**。
-//   ⚠**この Shutdown() の側に「BG なら何もしない」ガードを入れて塞いではいけない**
-//     ---- 本当の終了時にも取りこぼしうる。**スレッド方針はサービスの宣言側で表すのが筋。**
-//   ⚠**替えたことで変わったのはタイミング軸のほう**(ガイドは触れていない)＝旧 `kLazyStartupShutdownProviderImpl`
-//     は kAppLazyStartupShutdownService＝**起動完了後の idle task**(gs-06)で呼ばれたが、こちらはそうではなく
-//     **Startup() がより早く走る**。ここでは安全＝★**Startup() は空**(第1段 Task 8 で3つとも UI 側へ移した)。
-//     ★Startup() に仕事を戻すときは、この前提を確かめ直すこと。
+//      CServiceProvider. **If the startup/shutdown service boss resides in a model plug-in, the
+//      service will be called on both main and background thread startup and shutdown.**"
+//   Since Shutdown() below throws away the entire comparison state, that would mean **every PDF
+//     export wiping out every mark**.
+//   **The fix is in the resource, not here**: KCM.fr gives kKCMPeekStartupBoss the class
+//     kCMainThreadStartupShutdownProviderImpl, with the reasoning next to it. Adobe's own
+//     DiagnosticLog (DiagLogClass.fr) does exactly this -- a model plug-in whose startup/shutdown
+//     service alone is pinned to the main thread, with a comment saying why.
+//   @warning **do not instead guard Shutdown() with "do nothing on a background thread"** -- that
+//     can also skip the real shutdown. A threading policy belongs in the service's declaration.
+//   @warning **what the change did alter is the timing.** The old kLazyStartupShutdownProviderImpl
+//     ran as an idle task after startup completed; this one does not, so **Startup() runs
+//     earlier**. That is safe here because **Startup() is empty**. Check this assumption again
+//     before giving Startup() work to do.
 //========================================================================================
 class KCMPeekStartup : public CPMUnknown<IStartupShutdownService>
 {
@@ -646,244 +665,244 @@ CREATE_PMINTERFACE(KCMPeekStartup, kKCMPeekStartupImpl)
 
 void KCMPeekStartup::Startup()
 {
-	// ★レイアウトビュー同期は既定 OFF(ユーザー指定 2026-07-24。旧・既定 ON を撤回)。sLayoutSyncOn は
-	// 初期値 kFalse なので、ここで明示的に ON にしなければ OFF のまま。保存済み設定の復元で
-	// syncLayoutViews=true を復元したユーザーだけ ON になる(その復元は下記のとおり UI 側へ移った)。
-
-	// ★★2026-08-13(Task 8): **起動時の仕事は3つとも UI 側へ移した** ---- パネル設定の復元
-	//   (KCMLoadPanelStateIfPresent)・一括クローズの購読(KCMAttachDocsClosedObserver)・
-	//   半透明の追随購読(KCMAttachPanelVisibilityObserver)。行き先は KCMUIStartup.cpp。
-	//   ⇒ **model 側の起動処理は空になった。** 分けてみて初めて「元の起動処理は丸ごと UI だった」と
-	//     分かった形で、これは分割が正しい線で入っている証拠でもある。
-	//   ⚠**空でもこのメソッドは残す**(IStartupShutdownService の契約)。第2段で model 側に起動時の
-	//     仕事ができたらここへ足す。
-
-	// (★2026-08-19: グローバルページアイテムアドーンメントの登録を一度ここへ置いたが、**外した**。
-	//  ⚠**この Startup はメインスレッド限定**(.fr の kCMainThreadStartupShutdownProviderImpl)で、
-	//    それは下の Shutdown() が比較状態を丸ごと捨てるから必要な限定 ---- ところが**セッションへの
-	//    アドーンメント登録はスレッドをまたがない**ので、メインスレッドだけで登録すると
-	//    **バックグラウンドスレッド(＝UI の PDF 書き出し)では誰も描かなくなる**(2026-08-19 実測)。
-	//  ⇒ 登録は**実行コンテキストごとに呼ばれる専用サービス**へ移した
-	//    ＝`kKCMRingAdornmentStartupBoss`(実装は KCMRingAdornment.cpp の末尾)。
-	//  ★**同じ boss に相乗りできなかった**理由がそのまま設計の要点＝
-	//    「Shutdown() で何を捨てるか」がスレッド方針を決めてしまうので、**捨てるものが違う仕事は
-	//    別の boss にする**。)
+	// **The model's startup does nothing.** Everything that used to happen here belongs to the UI
+	//   -- restoring the panel state, subscribing to batch closes, following the panel's
+	//   visibility -- and lives in KCMUIStartup.cpp. Splitting the plug-in in two is what revealed
+	//   that the original startup work had been UI work all along.
+	//   @warning **the method stays even while it is empty** (IStartupShutdownService's contract).
+	//
+	// (Registering the global page-item adornment was tried here and **taken out again**.
+	//  @warning **this Startup is pinned to the main thread** (kCMainThreadStartupShutdownProviderImpl
+	//    in the .fr), which it has to be because Shutdown() below throws the comparison state
+	//    away -- but **an adornment registration does not cross threads**, so registering on the
+	//    main thread alone means **nobody draws on a background thread**, which is where the UI's
+	//    PDF export runs (measured).
+	//  The registration therefore lives in a service that runs once per execution context,
+	//    kKCMRingAdornmentStartupBoss, implemented at the end of KCMRingAdornment.cpp.
+	//  **Why it could not share this boss is the design point**: what Shutdown() throws away
+	//    decides the threading policy, so **work that throws away different things needs a boss of
+	//    its own**.)
 }
 
 void KCMPeekStartup::Shutdown()
 {
-	// ★★★2026-08-15（第2段 Task 11B）＝**この関数はメインスレッドでしか呼ばれない**。
-	//   KCM は `kModelPlugIn` になったので、放っておくとガイド vol1-07 のとおり
-	//   **バックグラウンドスレッドの起動・終了ごとにも呼ばれる**＝下の DropAll 以下が走り、
-	//   **PDF を書き出すたびにマークが全部消える**。
-	//   ⇒ 塞いだのは **`.fr` の宣言側**（`kCMainThreadStartupShutdownProviderImpl`）。
-	//   ⚠**ここに「BG なら何もしない」ガードを入れてはいけない**——本当の終了時にも取りこぼしうる。
-	//     スレッド方針はサービスの宣言で表すのが筋で、ガイドが threading policy を用意しているのはそのため。
-	//   ★手本＝Adobe 製 DiagnosticLog（`DiagLogClass.fr:93-100`）が **model プラグインのまま
-	//     startup/shutdown だけをメインスレッド限定にし、その理由をコメントに書いている**。
+	// **This function only ever runs on the main thread.** KCM is a kModelPlugIn, so left alone the
+	//   guide (vol1-07) has it called on every background thread's startup and shutdown too -- the
+	//   DropAll below and everything after it would run, and **every PDF export would wipe out
+	//   every mark**. The fix is in the .fr's declaration
+	//   (kCMainThreadStartupShutdownProviderImpl); the reasoning is above the class.
+	//   @warning **do not add a "do nothing on a background thread" guard here** -- that can also
+	//     skip the real shutdown. A threading policy belongs in the service's declaration, which
+	//     is what the guide provides one for.
+	//
+	// The UI's own clean-up -- the deferred thumbnail idle task, the pending batch close, the
+	//   translucency subscription and its timer, the held-down HUD's font -- lives in
+	//   KCMUIStartup.cpp, **in an order that matters and is kept over there**: unsubscribe first,
+	//   then dismantle, so that no Update runs against code that is going away.
+	// (Removing the adornment moved to kKCMRingAdornmentStartupBoss along with its registration.
+	//  @warning **this Shutdown only runs on the main thread**, so removing it here would leave
+	//    whatever was registered on a background execution context behind. Registering and
+	//    removing belong to **one service with one threading policy**.)
 
-	// ★★2026-08-13(Task 8): **UI の後片付け5件はここから UI 側へ移した** ---- 遅延サムネイル
-	//   idle task の解放 / 一括クローズの保留の破棄 / 半透明の購読解除 / 半透明タイマーの停止 /
-	//   押下中 HUD のフォント返却。行き先は KCMUIStartup.cpp で、**順序も向こうで保っている**
-	//   (購読を外してから道具を畳む ---- 消えかけのコードで Update が走るのを避けるため)。
-	// (★アドーンメントの解除も上の Startup と対で kKCMRingAdornmentStartupBoss へ移した。
-	//  ⚠**この Shutdown はメインスレッドでしか呼ばれない**ので、ここで外すと BG の実行コンテキストに
-	//    登録したぶんが残る ---- 登録と解除は**同じスレッド方針のサービス**が持つのが筋。)
-
-	// 保持していたマーク/旧版画像バッファを解放(終了時もきれいに片付ける)。
+	// Release the mark and older-version image buffers.
 	KCMDrawEventHandler::DropAll();
 	KCMDrawEventHandler::DropAllOrig();
-	// ★残りの静的コンテナも同じ方針で空にする(2026-07-25 監査の積み残しを同日の追補で対応)。
-	//   DropAll/DropAllOrig は比較系(sEntries/sOrigImages/対応表/overflow)しか触らないため、
-	//   Find Overset の集合・登録(Add/Remove)・チェック(✓)・Hide Unchanged の控えは
-	//   プラグイン unload 時の静的デストラクタまで heap を持ち越していた。Windows では実害なしの
-	//   実績だが、Mac は unload 順が異なるので「生きたバッファを静的破棄まで残さない」方針
-	//   (file-static PMString を Clear するのと同じ理由)へ揃える。
-	//   いずれもポインタは deref せず、コンテナを空にするだけ=終了処理中でも安全。
+	// **Every other static container is emptied on the same principle.** DropAll and DropAllOrig
+	//   only touch the comparison's own state (sEntries, sOrigImages, the pairings, the overflow),
+	//   which left the Find Overset sets, the registrations, the ticks and the Hide Unchanged
+	//   record holding heap until the static destructors ran at plug-in unload. That has never
+	//   caused trouble on Windows, but macOS unloads in a different order, so KCM's rule is that
+	//   **no live buffer survives to static destruction** -- the same reason its file-static
+	//   PMStrings are cleared.
+	//   None of these dereferences a pointer; each only empties a container, which is safe at any
+	//   point in the shutdown sequence.
 	KCMDrawEventHandler::DropOverset();	// sOversetPages / sOversetLocs
-	KCMPageMapClearAllDocs();				// 登録(Added/Removed)
-	KCMPageCheckClearAllDocs();			// 「Check」の✓
-	KCMResetHideUnchanged(kFalse);		// Hide Unchanged の控え(kFalse=文書には一切触らない)
-	KCMInvalidatePageNumberMarkerRects();	// ノンブル除外矩形のキャッシュ(2026-08-06 の監査 E-3)
-	// ★★2026-08-17(不具合再検査 B5): Alt+左ホールド中の hover→other ページ対応表キャッシュ
-	//   (KCMColorSampler.cpp の sDragCacheH2O)。**上の列挙から漏れていた model 側の static コンテナ。**
-	//   ⚠実際に空にしていたのは UI 側の KCMCmykShutdown()→EndColorDrag で、しかも**nil 検査つき**
-	//     (終了処理中は kUtilsBoss が先に落ちている可能性があるため)＝**呼べないことがある**。
-	//     model の static は model の Shutdown が閉じるのが筋で、二重に呼んでも冪等(clear するだけ)。
+	KCMPageMapClearAllDocs();				// the registrations (Added/Removed)
+	KCMPageCheckClearAllDocs();			// the ticks
+	KCMResetHideUnchanged(kFalse);		// the Hide Unchanged record (kFalse: the documents are not touched at all)
+	KCMInvalidatePageNumberMarkerRects();	// the page-number exclusion rectangles
+	// The hover -> other pairing cached while Alt + left is held (sDragCacheH2O in
+	//   KCMColorSampler.cpp).
+	//   @warning what used to empty it was the UI's KCMCmykShutdown -> EndColorDrag, **behind a nil
+	//     check** (kUtilsBoss may already be gone during shutdown), so **it could simply not
+	//     happen**. A model-side static is closed by the model's Shutdown; calling it twice is
+	//     idempotent, since all it does is clear.
 	KCMSampleCmykEndDrag();
-	// ★Story Edits の一覧(2026-08-10)。★★他と違い**中身が PMString** なので、これを忘れると
-	//   unload 時に静的な PMString がデストラクトされる ---- KBS が3度続けて忘れて記録した形
-	//   (KBSResultTree.h:76-77)。UI には触らない(行を捨てるだけ)ので終了処理中でも安全。
+	// The Story Edits list. **Unlike the others its rows hold PMStrings**, so forgetting it means
+	//   static PMStrings being destructed at unload -- the very thing KBS recorded after forgetting
+	//   it three times (see ShutdownCleanup in KBSResultTree.h). It touches no UI, only drops the
+	//   rows, so it is safe during shutdown.
 	KCMStoryList::ShutdownCleanup();
-	// ★★★2026-08-23＝Story モードのマーク。**移設するまで、この後片付けには呼び手が1人も居なかった**
-	//   (`KCMStoryMarker::Shutdown` を grep すると定義1件・呼び出し0件)。マークが UI プラグインに
-	//   居たあいだは、UI 側にこれと対になるメインスレッド限定の口が無かったためで、model へ移して
-	//   初めて**正しい戸口**ができた。中身は「以後なにも描かない・なにも再描画しない」の旗を立てて
-	//   集合を空にするだけ＝終了処理中でも安全(閉じかけの文書を再描画しに行かないための旗そのもの)。
-	// ⚠**model 側の普通の startup/shutdown サービスに置いてはいけない**＝BG スレッドの終了ごとに
-	//   呼ばれて、PDF を書き出すたびにマークが消える(この関数の冒頭が記録している 2026-08-15 の罠)。
-	//   ここはその限定が既に効いている場所なので、足すならここ。
+	// The Story mode's marks. **Until they moved into the model plug-in this clean-up had no
+	//   caller at all**: while the marks lived in the UI there was no main-thread-only entry point
+	//   to pair it with, and moving them here is what created the right doorway. All it does is
+	//   raise the flag that says "draw nothing and redraw nothing from now on" and empty the sets
+	//   -- safe during shutdown, that flag being exactly what keeps it from redrawing a closing
+	//   document.
+	// @warning **this must not go in an ordinary model-side startup/shutdown service**: it would be
+	//   called on every background thread teardown, and the marks would vanish on every PDF export
+	//   (the trap recorded at the top of this function). Here that restriction is already in force,
+	//   so here is where such work belongs.
 	KCMStoryMarker::Shutdown();
-	// ★★2026-08-18(不具合再検査 B8): **中身が PMString の static は、この時点で3本あった。**
-	//   上の Story Edits(1本)だけが列挙されており、残り2本が漏れていた ---- どちらも「最後に走った
-	//   1回ぶんの文字列」を unload まで抱える:
-	//     ・KCMClearBookResultText …… ブック比較の結果(章ごと1行。app.kcmBookResult が返すもの)
-	//     ・KCMClearExportMessage  …… TSV 書き出しの結果メッセージ(保存先フルパスを含む)
-	//   ⚠B5 で CMYK ドラッグキャッシュを足したときと**同じ形の見落とし**＝「1本直して兄弟を探さない」。
-	//   どちらも Clear するだけ・deref しない・冪等なので、終了処理中のどの順で来ても安全。
+	// Two more statics holding PMStrings, each keeping the text of the last run until unload:
+	//     - KCMClearBookResultText ... the book comparison's result (one line per chapter, which
+	//       app.kcmBookResult returns)
+	//     - KCMClearExportMessage  ... the TSV export's message, which contains a full path
+	//   Both only clear, dereference nothing, and are idempotent, so they are safe in any order.
 	KCMClearBookResultText();
 	KCMClearExportMessage();
-	// ★パネルのステータス記憶(sSessionStatus)も同じ形の3本目。⚠**実際に空にしていたのは UI 側の
-	//   KCMUIStartup(Facade 越し・nil 検査つき)**で、kUtilsBoss が先に落ちていれば**呼ばれない**。
-	//   B5 の CMYK と全く同じ構図なので同じ結論にする＝**model の static は model の Shutdown が
-	//   閉じる**(UI 側は残す。二重に呼んでも Clear するだけで冪等)。
+	// The panel's remembered status line (sSessionStatus) is the third of that shape.
+	//   @warning what used to empty it was the UI's KCMUIStartup, through the Facade and behind a
+	//     nil check, so **it did not happen once kUtilsBoss had gone**. Same conclusion as the CMYK
+	//     cache above: **a model-side static is closed by the model's Shutdown**. The UI's call
+	//     stays; calling it twice only clears twice.
 	KCMClearSessionStatus();
-	// ★peek の arm 状態もここで落とす。残したままだと、終了処理後に kAfterCloseDoc responder が
-	// 発火した場合、KCMHandleDocsClosed が stale な sPeek* から comparisonDocClosed=true を
-	// 再計算し得る(通常の終了順=文書クローズ→Shutdown では起きないはずだが防御的にリセット。
-	// ポインタは nil 代入のみ=deref しない)。
+	// The peek's armed state goes too. Left standing, a kAfterCloseDoc responder firing after
+	// shutdown could have KCMHandleDocsClosed recompute comparisonDocClosed from a stale sPeek*.
+	// The normal order -- documents close, then Shutdown -- should never allow that, so this is
+	// defensive; the pointers are only assigned nil, never dereferenced.
 	sPeekArmed = kFalse;
 	sPeekTargetDB = nil;
 	sPeekSourceDB = nil;
 
-	// (★同期キャッシュの破棄・同期フラグの後始末・CMYK の後片付けは 2026-08-13 Task 8 で
-	//  UI 側 KCMUIStartup.cpp へ移した。どれも UI のファイルが持つ状態。
-	//  ⚠2026-08-18(不具合再検査 B-U2)訂正＝**ステータス記憶はここへ戻ってきている**。旧記述は
-	//    「ステータス記憶(gSessionStatus)の消去も UI 側へ移した／**第2段の予定が違い** Task 9 で
-	//    model へ移る」という**予定のまま**だったが、①文字列の保持は Task 9 で model 側
-	//    (KCMModelNotify.cpp の sSessionStatus。旧名 gSessionStatus)へ移り、②その消去も
-	//    2026-08-18(B8)に上の KCMClearSessionStatus() で model 側の仕事になった。
-	//    ★UI 側にも同じ呼びが残っているが、あちらは nil 検査つきの冪等な二重呼びで、主ではない。)
+	// (Dropping the sync caches, clearing the sync flags and the CMYK clean-up all live in the UI's
+	//  KCMUIStartup.cpp, that state belonging to UI files.)
 
-	// 旧ページ番号バッジのフォントキャッシュも同じ理由(静的破棄前の明示解放)でここで捨てる(2026-07-25)。
+	// The old page-number badge's font cache goes for the same reason as everything above: nothing
+	// live may reach static destruction.
 	KCMReleaseOldNumFontCache();
 }
 
 //========================================================================================
-// arm / disarm / 状態アクセサ(KCMCore.h で宣言)。上の file-local な peek 状態を共有させるため、
-// ここに置いている。
+// The arm, disarm and state accessors declared in KCMCore.h. They live here so that they can share
+// the file-local peek state above.
 //========================================================================================
 
 void KCMDoArmMousePeek(IDataBase* targetDB, IDataBase* sourceDB)
 {
-	// arm 対象が変わったら古い peek キャッシュは捨てる。
+	// A different pair means the cached older-version images are of the wrong document.
 	if (sPeekSourceDB != sourceDB || sPeekTargetDB != targetDB)
 		KCMDrawEventHandler::DropAllOrig();
 
-	// ★2026-08-13(Task 10): 同期キャッシュの破棄(KCMViewSync)と覗き状態の初期化(KCMPeekGesture)は
-	//   どちらも UI 側の状態なので、ここでは呼ばない。arm の直後に KCMStartComparisonFor が
-	//   kKCMMarksRebuiltMessage を投げ、それを受けた UI が自分の状態を初期化する。
+	// Dropping the sync caches (KCMViewSync) and resetting the peek's gesture state
+	//   (KCMPeekGesture) are not done here: both are UI state. Arming is immediately followed by
+	//   KCMStartComparisonFor sending kKCMMarksRebuiltMessage, and the UI resets its own state on
+	//   receiving that.
 	sPeekTargetDB = targetDB;
 	sPeekSourceDB = sourceDB;
 	sPeekArmed = kTrue;
-	KCMDrawEventHandler::sMarksTempHidden = kFalse;	// 常時表示の一時退避も初期化(押下中フラグの取りこぼし対策)
-	KCMDrawEventHandler::sSrcMarksPressed = kFalse;	// Source 側の押下フラグも初期化
-	KCMDrawEventHandler::sMarksVisible = kFalse;	// 既定(非表示)へ。arm 中も枠は押下中だけ表示
+	KCMDrawEventHandler::sMarksTempHidden = kFalse;	// in case a held-down flag was left standing
+	KCMDrawEventHandler::sSrcMarksPressed = kFalse;
+	KCMDrawEventHandler::sMarksVisible = kFalse;	// back to hidden: while armed the frames still only show under a press
 }
 
 void KCMDoDisarmMousePeek(IDataBase* db)
 {
-	// nil化する前に、実際に arm されていた対象文書を控えておく。呼び出し側の db(=操作時のアクティブ
-	// 文書)が前面で Source や無関係な第3文書に切り替わっていても、対象文書の枠が即座に消えるように
-	// するため(タイル表示等で対象文書が同時に見えている場合に効く)。
+	// Remember which document was armed before clearing it. The caller's db is whatever was active
+	// when the command ran, which may be the Source or an unrelated third document, and the armed
+	// target's frames still have to disappear at once -- it can be on screen at the same time in a
+	// tiled layout.
 	IDataBase* armedTargetDB = sPeekTargetDB;
 
-	// ★2026-08-13(Task 10): arm 側と対称に、同期キャッシュの破棄と覗き状態の解除は UI に任せる
-	//   ---- disarm の直後に KCMStopComparison が kKCMMarksClearedMessage を投げる。
+	// As on the arming side, dropping the sync caches and clearing the gesture state are left to
+	//   the UI: disarming is immediately followed by KCMStopComparison sending
+	//   kKCMMarksClearedMessage.
 	sPeekArmed = kFalse;
 	sPeekTargetDB = nil;
 	sPeekSourceDB = nil;
-	KCMDrawEventHandler::sMarksTempHidden = kFalse;	// 常時表示の一時退避を解除
-	KCMDrawEventHandler::sSrcMarksPressed = kFalse;	// Source 側の押下フラグも解除
-	KCMDrawEventHandler::sMarksVisible = kFalse;	// 既定(非表示)のまま
-	KCMDrawEventHandler::DropAllOrig();	// sShowOriginal も OFF にし、キャッシュを解放
+	KCMDrawEventHandler::sMarksTempHidden = kFalse;
+	KCMDrawEventHandler::sSrcMarksPressed = kFalse;
+	KCMDrawEventHandler::sMarksVisible = kFalse;
+	KCMDrawEventHandler::DropAllOrig();	// clears sShowOriginal as well as freeing the images
 
 	KCMInvalidateDB(armedTargetDB);
 	if (db != armedTargetDB)
 		KCMInvalidateDB(db);
 }
 
-// パネルの状態アクセサ(arm 済み peek =「開始済み」状態を反映する)。
+// The state accessors the panel reads: an armed peek is what "a comparison is running" means.
 bool16     KCMIsArmed()        { return sPeekArmed; }
 IDataBase* KCMArmedTargetDB()  { return sPeekTargetDB; }
 IDataBase* KCMArmedSourceDB()  { return sPeekSourceDB; }
 
 //========================================================================================
-// KCMHandleDocsClosed(KCMCore.h で宣言)
-//   ドキュメントがクローズされた直後(kAfterCloseDoc レスポンダ)に呼ばれる。追跡中の全DB
-//   (マーク sDB / 旧版 sOrigDB / peek arm の target・source)を IDocumentList で
-//   生存確認する。どの db が閉じたかは信号から取れないため、この生存スイープで判定する
-//   (HandleDrawEvent と同じ手法を、描画を待たずクローズ確定時に能動実行)。
+// KCMHandleDocsClosed (declared in KCMCore.h)
+//   Called right after documents close (from the kAfterCloseDoc responder). Every database KCM is
+//   tracking -- the marks' sDB, the older version's sOrigDB, the armed target and source -- is
+//   checked against the IDocumentList. The signal does not say which document closed, so this
+//   liveness sweep works it out, the same way the drawing side does but without waiting for a draw.
 //
-//   ★比較(対象/元のどちらか)に関わる db が1つでも閉じていたら、個別の static だけを直すのではなく
-//   Stop ボタン(DoClear 相当)のフルクリーンアップを行う。以前は sDB 自体が閉じた場合しかマークを
-//   消さなかったため、「元」だけを閉じると peek arm は disarm されてボタン表示は Start に戻るのに、
-//   対象文書はまだ開いているのでマーク(枠)が消えずに残る、という見た目の不整合があった。
+//   **If any database involved in the comparison has closed, everything is cleared**, exactly as
+//   the Stop button would, rather than patching up individual statics. Before that, only sDB
+//   closing cleared the marks: closing the older document alone disarmed the peek and put the
+//   button back to Start while the target stayed open with its frames still on it.
 //
-//   ★重要: 閉じた db ポインタは「FindDocByDataBase への比較」だけに使い、絶対に deref しない。
-//   閉じた文書の IDataBase は既に解放されている可能性があるため、その db 自体への後片付け
-//   (KCMDoDisarmMousePeek 等の InvalidateViews で deref する処理)は呼ばない。
-//   ただし比較相手がまだ開いている場合(タイル表示等)、そちら側は生存確認済みなので
-//   KCMDoClearMarks と同様に InvalidateViews して枠を即座に消す(生き残り側の再描画漏れ対策)。
+//   **A closed database pointer is only ever compared against FindDocByDataBase, never
+//   dereferenced.** A closed document's IDataBase may already be freed, so nothing that would
+//   dereference it (KCMDoDisarmMousePeek and its InvalidateViews, say) is called for it. The
+//   counterpart may still be open -- in a tiled layout, for instance -- and that one has been
+//   checked, so its views are invalidated to clear the frames at once.
 //========================================================================================
 void KCMHandleDocsClosed()
 {
-	// ★★★2026-08-15（第2段 Task 11C）＝**バックグラウンドスレッドからは何もしない。**
+	// **A background thread does nothing here.**
 	//
-	//   この関数は「**追跡中の db が文書リストに居なければ閉じた**」という推論で全状態を捨てる。
-	//   ⚠**その推論は BG では必ず誤る**——BG は**クローンされた別の DB** を見る（ガイド vol1-07 L93）ので、
-	//     main で控えた `sDB` は**開いているのに文書リストから引けない**。
-	//   ⇒ 実害を再現済み: `Document.asynchronousExportFile()` で PDF を書き出すと、書き出しの
-	//     クローン DB が閉じる時に `kAfterCloseDoc` が BG で発火し、ここが走って
-	//     **マークが全部消えていた**（`marks cleared` / メニューが無効化。2026-08-15 実測）。
+	//   This function throws away all of KCM's state on the reasoning that **a tracked database
+	//   not in the document list has closed**.
+	//   @warning **that reasoning is always wrong on a background thread**, which sees **a clone
+	//     with a different pointer** (guide vol1-07), so the sDB the main thread recorded is **open
+	//     and yet not in the list**.
+	//   The damage was reproduced: exporting a PDF with Document.asynchronousExportFile() fires
+	//     kAfterCloseDoc on the background thread when the export's clone is closed, this ran, and
+	//     **every mark disappeared** ("marks cleared", with the menu items going grey).
 	//
-	//   ★**呼び手ごとではなく、この入口1か所で塞ぐ**（[[one-question-one-place]]）。呼び手は3つある
-	//     ---- `KCMDocResponder`（kAfterCloseDoc）・描画イベントの保険・peek の生存確認 ---- が、
-	//     「BG では文書の生存を判定できない」という事実は**関数の性質**であって呼び手の事情ではない。
-	//   ★**取りこぼしは起きない**: 文書のクローズは main thread で起きるので、`kAfterCloseDoc` は
-	//     main でも必ず飛ぶ。BG の分は「クローン DB が用済みになった」という別の出来事にすぎない。
-	// ★2026-08-16(API 監査 B5): 直呼びをやめて共有の道具へ。KCMThreadSafety.h が「今メインスレッドか」
-	//   を KCMIsMainThread() として持っており、KCMDrawEventHandler.cpp の2箇所はそちらを呼んでいる。
-	//   **同じ問いを2つの綴りで書いていた**のは、この道具を作った Task 11 と同じ日にここを書いたため。
+	//   **The guard is at this one entry point, not in each caller** ([[one-question-one-place]]).
+	//     There are three callers -- KCMDocResponder for kAfterCloseDoc, the drawing event's
+	//     safety net, and the peek's liveness check -- but "a background thread cannot tell whether
+	//     a document is still open" is a property of this function, not of who calls it.
+	//   **Nothing is missed**: documents close on the main thread, so kAfterCloseDoc always arrives
+	//     there too. The background one is a different event entirely -- a clone being finished with.
 	if (!KCMIsMainThread())
 		return;
 
-	// session は終了処理中に nil になり得る(2026-07-25 追補 に KCM 全体で統一)。引けなければ
-	// 生存判定そのものができないので、何も片付けずに戻る(状態は Shutdown が破棄する)。
+	// The session can be nil during the shutdown sequence. Without it there is no way to judge
+	// liveness at all, so nothing is cleaned up here and Shutdown disposes of the state instead.
 	ISession* session = GetExecutionContextSession();
 	InterfacePtr<IApplication> app(session != nil ? session->QueryApplication() : nil);
 	InterfacePtr<IDocumentList> docList(app ? app->QueryDocumentList() : nil);
 	if (docList == nil)
 		return;
 
-	// 文書が閉じた=ページ構成も db ポインタも当てにならないので、同期キャッシュは無条件に捨てる
-	// (2026-07-25 追補。コンテナを空にするだけ=deref しないので終了処理中でも安全)。
-	// ★2026-08-13(Task 10): キャッシュの持ち主は UI(KCMViewSync)なので、捨てるのは末尾の通知を
-	//   受けた UI。**「無条件」という性質**は、その通知を changed で絞らないことで保っている。
-	// ノンブル除外矩形のキャッシュも同じ理由で捨てる(キーに db ポインタを含むので、閉じた文書の
-	// エントリを残さない。2026-08-06 の監査 E-3)。生存側の分は次の描画で1回測り直すだけ。
+	// A document has closed, so neither the page structure nor any database pointer can be relied
+	// on: the sync caches are dropped unconditionally. They belong to the UI (KCMViewSync), so what
+	// actually drops them is the UI on receiving the notification at the end of this function --
+	// and **the unconditional part is preserved by not filtering that notification on `changed`**.
+	// The page-number exclusion rectangles go for the same reason: their keys contain database
+	// pointers, so no entry of a closed document may remain. The surviving documents' entries are
+	// simply measured once more on the next draw.
 	KCMInvalidatePageNumberMarkerRects();
 
-	// ★終了堅牢化(2026-07-15): アプリが終了処理中(kQuitting/kShuttingDown)にこのレスポンダへ来たら、
-	// UI 仕事(strip の widget 除去・InvalidateViews・サムネイル idle 予約・パネル/ステータス更新)を
-	// 全てスキップし、状態(メモリ)の破棄だけにする。終了中のウィンドウ/パネル解体順はプラットフォーム
-	// 依存で、特に Mac(Cocoa)は Windows と異なるため、解体中の widget へ触るのが Mac 限定
-	// crash-on-quit の典型形。通常の quit は close-all(まだ kRunning)→Terminate の順なので、対話的な
-	// クローズと quit の close-all フェーズでは従来どおりフルクリーンアップが走る(挙動変更なし)。
+	// **While the application is quitting, no UI work is done at all** -- no widgets removed from
+	// the strip, no InvalidateViews, no thumbnail idle task, no panel or status update -- and only
+	// the state in memory is disposed of. The order in which windows and panels are torn down
+	// during a quit is platform-dependent, and touching a widget mid-teardown is the classic shape
+	// of a macOS-only crash on quit. A normal quit closes all documents first, while still running,
+	// so the interactive close and the quit's close-all phase both still get the full clean-up.
 	const bool16 quitting = KCMAppIsQuitting();
 
-	// ★一括クローズ(複数文書を続けて閉じる)の最中は、UI の後片付けを保留して全部閉じ終わってから
-	//   1回だけ流す(2026-07-27)。状態(メモリ)の破棄は保留せずその場で行うので、閉じた db を持ち越さない
-	//   従来どおりの安全性は保たれる。
-	//   ★★2026-08-13(Task 10): **この判定は UI 側へ移した**。KCMBatchCloseInProgress() は UI 側が
-	//     持つ状態で、model がそれを聞くこと自体が逆流だった。今は末尾の通知を受けた observer が
-	//     「保留するか、今やるか」を決める。model に残っているのは quitting の判定だけ
-	//     ---- こちらは KCMAppIsQuitting()＝model 側の問いで、コマンドを打つかどうかにも効く。
+	// (Whether a batch close is in progress -- several documents closing in a row, where the UI
+	//  clean-up is held back and run once at the end -- **is decided by the UI**.
+	//  KCMBatchCloseInProgress() is UI state, and the model asking for it was the flow going the
+	//  wrong way. The observer that receives the notification at the end decides whether to defer.
+	//  What stays in the model is the quitting test above, which is a model question and also
+	//  decides whether commands may be issued at all.)
 
-	// ★Find Overset(比較とは独立): 走査した文書が閉じていたら十字状態を捨てる。sOversetDB は描画時に
-	//   ポインタ一致だけを見る(deref しない)が、閉じたまま残すと別文書へアドレスが再利用された時に
-	//   誤って十字を描き得るので、ここで能動的に掃除する。メモリ破棄のみ=終了中(quitting)でも安全。
-	//   他文書には元々出していないので再描画も不要(閉じた文書の十字は窓ごと消える)。
+	// Find Overset is independent of the comparison: if the document it scanned has closed, its
+	//   state goes. The drawing side only ever compares sOversetDB by pointer and never
+	//   dereferences it, but leaving a closed one in place means drawing crosses on the wrong
+	//   document once its address is reused, so it is cleared here deliberately. Memory only, so it
+	//   is safe while quitting, and no redraw is needed -- the crosses were never on any other
+	//   document, and the closed one's window is gone.
 	if (KCMDrawEventHandler::sOversetOn && KCMDrawEventHandler::sOversetDB != nil &&
 	    docList->FindDocByDataBase(KCMDrawEventHandler::sOversetDB) == nil)
 	{
@@ -892,8 +911,10 @@ void KCMHandleDocsClosed()
 
 	bool16 changed = kFalse;
 
-	// 比較に関わる db(マーク sDB / 旧版 sOrigDB / Source側枠 sSrcDB / peek arm の target・source)の
-	// いずれかが閉じたか(sSrcDB は実質 sPeekSourceDB と同じ文書だが、arm 状態に依存しない保険として見る)。
+	// Has any database the comparison depends on closed -- the marks' sDB, the older version's
+	// sOrigDB, the Source frames' sSrcDB, or the armed target and source? sSrcDB is in practice the
+	// same document as sPeekSourceDB, but it is checked separately so that the answer does not
+	// depend on anything still being armed.
 	const bool16 comparisonDocClosed =
 		(KCMDrawEventHandler::sDB     != nil && docList->FindDocByDataBase(KCMDrawEventHandler::sDB)     == nil) ||
 		(KCMDrawEventHandler::sOrigDB != nil && docList->FindDocByDataBase(KCMDrawEventHandler::sOrigDB) == nil) ||
@@ -902,17 +923,19 @@ void KCMHandleDocsClosed()
 		 ((sPeekTargetDB != nil && docList->FindDocByDataBase(sPeekTargetDB) == nil) ||
 		  (sPeekSourceDB != nil && docList->FindDocByDataBase(sPeekSourceDB) == nil)));
 
-	// ★2026-08-13(Task 10): 生存側の db は関数末尾の通知にも載せるので、宣言をブロックの外へ出した。
-	//   ⚠ここに入るのは**生存確認(FindDocByDataBase)を通ったポインタだけ**。閉じた db は決して拾わない
-	//   ---- 通知の受け手はこれを deref する(閉じた IDataBase* はアドレスが再利用される)。
+	// The surviving databases are declared outside the block below because the notification at the
+	//   end of the function carries them too.
+	//   @warning **only pointers that passed FindDocByDataBase go in here**; a closed one never
+	//   does. Whoever receives the notification dereferences them, and a closed IDataBase* has an
+	//   address that gets reused.
 	IDataBase* survivorTargetDB = nil;
 	IDataBase* survivorOrigDB   = nil;
-	IDataBase* survivorSrcDB    = nil;	// Source側枠(Always Show Marks on Source)が出ている文書
+	IDataBase* survivorSrcDB    = nil;	// the document showing Source-side frames (Always Show Marks on Source)
 
 	if (comparisonDocClosed)
 	{
-		// DropAll/DropAllOrig で nil にする前に、まだ開いている側の db を控えておく(生存確認済みなので
-		// 後で安全に InvalidateViews できる)。
+		// Record the databases that are still open before DropAll and DropAllOrig clear them. They
+		// have passed the liveness check, so invalidating their views later is safe.
 		if (KCMDrawEventHandler::sDB != nil && docList->FindDocByDataBase(KCMDrawEventHandler::sDB) != nil)
 			survivorTargetDB = KCMDrawEventHandler::sDB;
 		if (KCMDrawEventHandler::sOrigDB != nil && docList->FindDocByDataBase(KCMDrawEventHandler::sOrigDB) != nil)
@@ -927,48 +950,53 @@ void KCMHandleDocsClosed()
 				survivorOrigDB = sPeekSourceDB;
 		}
 
-		// Stop ボタン(DoClear)相当のフルクリーンアップ。
-		KCMDrawEventHandler::DropAll();		// sDB=nil、マークエントリ破棄
-		KCMDrawEventHandler::DropAllOrig();	// sOrigDB=nil、旧版べた載せ破棄
+		// The full clean-up, exactly as the Stop button performs it.
+		KCMDrawEventHandler::DropAll();		// sDB = nil, the mark entries destroyed
+		KCMDrawEventHandler::DropAllOrig();	// sOrigDB = nil, the older-version overlay destroyed
 		sPeekArmed     = kFalse;
 		sPeekTargetDB  = nil;
 		sPeekSourceDB  = nil;
-		// (覗き状態の解除＝KCMResetPeekGestureState は UI 側の状態なので、末尾の通知を受けた UI がやる)
-		KCMDrawEventHandler::sMarksTempHidden = kFalse;	// 常時表示の一時退避も解除
-		KCMDrawEventHandler::sSrcMarksPressed = kFalse;	// Source 側の押下フラグも解除
+		// (Clearing the peek's gesture state is UI state, so the UI does it on the notification.)
+		KCMDrawEventHandler::sMarksTempHidden = kFalse;
+		KCMDrawEventHandler::sSrcMarksPressed = kFalse;
 		KCMDrawEventHandler::sMarksVisible = kFalse;
-		// ★2026-07-11(ユーザー報告): Stop ボタンは登録(Add/Remove)を全解除するのに、比較文書(Source等)を
-		//   閉じて比較が終わった時は登録が残っていた。ここは「Stop 相当のフルクリーンアップ」なので、
-		//   Stop(KCMDoClearMarks)と同じく登録も丸ごと忘れる。これを怠ると、生存側 Target/Source に
-		//   古い登録が残り、次の Start でペアリングに紛れ込む(map 空にするだけ=deref なし)。
+		// Stop clears the registrations, and closing one of the compared documents used to leave
+		//   them standing. This is the same full clean-up, so they go here too: left behind, they
+		//   stay on whichever of the two survived and creep into the pairing at the next Start.
+		//   (Emptying a map, so nothing is dereferenced.)
 		KCMPageMapClearAllDocs();
-		KCMPageCheckClearAllDocs();	// 「Check」の✓も同様に全消去(Start 中限定)
-		// ★Story Edits の一覧も捨てる(2026-08-10)。行は Target 側の story UID とページ UID を持って
-		//   いるので、その文書が閉じた後は指す先が無い。★画面側(ツリーと見出し)は下の
-		//   KCMRefreshPanel が実状態から作り直すので、ここは状態を捨てるだけでよい
-		//   ＝終了処理中(quitting)に来ても安全(vector を空にするだけ・deref しない)。
-		// ⚠**「閉じたのが比較対象か」をここで判定し直さない**。閉じた文書の UIDRef や IDataBase* は
-		//   アドレスが再利用されるので同一性判定に使えない([[uidref-reuse-after-close]])。上の
-		//   comparisonDocClosed が既に生存確認(FindDocByDataBase)で答えを出しているので相乗りする。
+		KCMPageCheckClearAllDocs();	// the ticks, which only exist while a comparison runs
+		// The Story Edits list goes as well: its rows hold story and page UIDs of the Target, which
+		//   point at nothing once that document has closed. The panel's tree and heading are
+		//   rebuilt from the real state by the UI, so throwing the state away is all that is needed
+		//   here -- safe while quitting, being an empty of a vector with no dereference.
+		// @warning **do not re-decide here whether what closed was one of the compared documents.**
+		//   A closed document's UIDRef and IDataBase* cannot establish identity, their addresses
+		//   being reused ([[uidref-reuse-after-close]]). comparisonDocClosed above already answered
+		//   that through FindDocByDataBase, so this rides on its answer.
 		KCMStoryList::Clear();
-		// ★巡回の基準点も忘れる(2026-08-06 再点検)。Stop(KCMDoClearMarks)は KCMResetNav を呼ぶのに、
-		//   この「Stop 相当のフルクリーンアップ」だけ抜けていた。閉じた文書のページ UID を基準点に残すと、
-		//   次の対象文書で UID が偶然一致して途中から巡回が始まり得る。
-		//   ★2026-08-13(Task 10): 基準点は UI 側の状態なので、末尾の通知に navReset として乗せる。
+		// The traversal's anchor is forgotten too. Stop does that, and this "clean-up as Stop
+		//   would" was the one route that did not: a closed document's page UID left as the anchor
+		//   can happen to match a UID in the next document and start the traversal partway through.
+		//   The anchor is UI state, so it travels as navReset on the notification at the end.
 		changed = kTrue;
 
-		// ★2026-08-13(Task 10): ここにあった画面側の後片付け ---- strip の撤去(または Find Overset が
-		//   単独 ON 中なら赤帯の描き直し)・生存側の再描画・**次の idle へ遅延させる**サムネイル作り直し
-		//   ---- は、すべて末尾の kKCMComparisonDocsClosedMessage を受けた UI がやる。
-		//   ⚠遅延させる理由(2026-07-08 実機): 閉じたのが Target で生存側がこれからアクティブ化する場合、
-		//     その場で ForceRedraw しても前面切替の過渡で再生成が起こりきらず枠が残る。
-		//   ⚠「終了中は触らない」「一括クローズ中は保留する」の判断も UI へ移した(どちらも UI の都合)。
+		// (The screen-side clean-up that used to be here -- removing the strip, or redrawing the red
+		//  band when Find Overset is on by itself; redrawing the survivor; **deferring the thumbnail
+		//  rebuild to the next idle** -- is all done by the UI on the
+		//  kKCMComparisonDocsClosedMessage below.
+		//  @warning the deferral is not an optimisation: when the Target is what closed and the
+		//    survivor is about to become active, a ForceRedraw issued now happens mid-switch and
+		//    the frames survive it.
+		//  Whether to skip the work while quitting, and whether to defer during a batch close, are
+		//  the UI's decisions too.)
 
-		// 生存している側のレイアウトビューを再描画して枠を即座に消すのは model の仕事(描画データを
-		// 持っているのはこちら)。★終了中は窓ごと消えるので触らない。
+		// Redrawing the surviving document's layout views, so its frames go at once, is the model's
+		// job: this is the side that holds the drawing data. While quitting the windows are going
+		// anyway, so nothing is touched.
 		if (!quitting)
 		{
-			PMString s("marks cleared");	// Stop ボタン(DoClear)と同じメッセージ
+			PMString s("marks cleared");	// the same message the Stop button reports
 			s.SetTranslatable(kFalse);
 			KCMNotifyStatus(s);
 
@@ -980,11 +1008,12 @@ void KCMHandleDocsClosed()
 		}
 	}
 
-	// 「Hide Unchanged Spreads」トグルの後片付け(Target/Source 両側)。隠し先のどちらかが閉じた、
-	// または比較関連の db が閉じてマークを全消しした(comparisonDocClosed=「変更なし」判定の根拠が
-	// 消えた)場合は、リセットしてトグルを OFF に戻す。KCMResetHideUnchanged(kTrue) は内部で文書の
-	// 生存確認を行い、生存側のみ再表示・閉じた側は deref せず状態破棄するので、ここでは kTrue 一択で
-	// よい。無関係な第3文書が閉じただけなら何もしない。
+	// Clearing up after the "Hide Unchanged Spreads" toggle, on both sides. It is reset, and the
+	// toggle goes off, when either document it hid spreads in has closed, or when the marks were
+	// all cleared above -- comparisonDocClosed means the grounds for calling a spread "unchanged"
+	// are gone. KCMResetHideUnchanged(kTrue) checks liveness itself, showing the surviving
+	// document's spreads again and merely discarding the state of a closed one, so kTrue is always
+	// the right argument here. An unrelated third document closing changes nothing.
 	IDataBase* hideDB    = KCMGetHideUnchangedDB();
 	IDataBase* hideSrcDB = KCMGetHideUnchangedSrcDB();
 	if (hideDB != nil || hideSrcDB != nil)
@@ -993,34 +1022,37 @@ void KCMHandleDocsClosed()
 		const bool16 hideSourceClosed = (hideSrcDB != nil && docList->FindDocByDataBase(hideSrcDB) == nil);
 		if (hideTargetClosed || hideSourceClosed || comparisonDocClosed)
 		{
-			// ★終了中は kFalse=スプレッド再表示コマンド(kHideSpreadCmdBoss)を打たず状態だけ捨てる。
-			// 終了のティアダウン中にモデル変更コマンドを流すのは危険(通常 quit では close-all が
-			// kRunning 中に済むので、この kFalse 経路に来るのは異常系のみ=挙動変更なし)。
+			// While quitting, kFalse discards the state without issuing the command that shows the
+			// spreads again (kHideSpreadCmdBoss): pushing a model change through during teardown is
+			// dangerous. A normal quit closes all documents while still running, so this branch is
+			// only reached in abnormal cases.
 			KCMResetHideUnchanged(quitting ? kFalse : kTrue);
 			changed = kTrue;
 		}
 	}
 
-	// 「比較相手なしページ」登録(KCMPageMap)の後片付け: 閉じた文書の分を状態だけ捨てる
-	// (deref なし。パネル表示には関与しないので changed は立てない)。
+	// The registrations of closed documents are dropped, state only and with no dereference. They
+	// do not affect what the panel shows, so `changed` is deliberately not set.
 	KCMPageMapSweepClosedDocs();
-	KCMPageCheckSweepClosedDocs();	// 「Check」の✓も、閉じた文書の分を状態だけ捨てる(deref なし)
+	KCMPageCheckSweepClosedDocs();	// and the ticks, the same way
 
-	// ★★2026-08-13(Task 10): 画面側の後片付けは**ここ1本の通知**にまとめた。
+	// All of the screen-side clean-up travels on **this one notification**.
 	//
-	// ⚠**changed を見ずに無条件で投げる。** ビュー同期のページ矩形/除外対応キャッシュ
-	//   (KCMViewSync)は「どの文書が閉じても捨てる」ものだったため ---- 以前はこの関数の頭で
-	//   KCMInvalidateSyncCaches() を無条件に呼んでいた。パネルの表示合わせも冪等なので、
-	//   比較と無関係な文書が閉じたときに通っても害は無い。
+	// @warning **it is sent unconditionally, without consulting `changed`.** The view sync's page
+	//   rectangles and pairing caches (KCMViewSync) are dropped whichever document closed -- this
+	//   function used to call KCMInvalidateSyncCaches() unconditionally at its head. Matching the
+	//   panel to the state is idempotent, so arriving here because an unrelated document closed
+	//   does no harm.
 	//
-	// ⚠**終了中(quitting)でも投げる。** 「終了中は widget に触らない」「一括クローズ中は保留して
-	//   全部閉じ終わってから1回だけ流す」は**どちらも UI の都合**なので、UI 側の observer が
-	//   KCMAppIsQuitting() と KCMBatchCloseInProgress() を見て決める。
-	//   ★これが逆流を断つ肝: KCMBatchCloseInProgress() は UI 側の状態で、**model がそれを聞いて
-	//     いたこと自体が逆流だった**。
+	// @warning **it is sent while quitting too.** "Touch no widget while quitting" and "hold the
+	//   clean-up back during a batch close and run it once at the end" **are both UI concerns**,
+	//   so the UI's observer decides them from KCMAppIsQuitting() and KCMBatchCloseInProgress().
+	//   That is what keeps the flow one-way: KCMBatchCloseInProgress() is UI state, and **the model
+	//   asking for it was the flow going backwards**.
 	//
-	// 付随データ＝比較が終わったときだけ、**生存している側**の db を最大3つ(Target / 旧版べた載せ /
-	// Source 側枠)。閉じた db は決して載せない。navReset も「比較が終わった」ときだけ立てる。
+	// The payload, only when the comparison has ended: up to three **surviving** databases (the
+	// Target, the older-version overlay, the Source frames). A closed one is never included, and
+	// navReset is likewise only raised when the comparison has ended.
 	KCMNotifyDocs(kKCMComparisonDocsClosedMessage,
 	                survivorTargetDB, survivorOrigDB, survivorSrcDB,
 	                comparisonDocClosed /*navReset*/);
