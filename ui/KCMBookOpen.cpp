@@ -52,8 +52,7 @@
 #include "KCMBookOpen.h"
 #include "KCMBookResult.h"
 #include "KCMUIShared.h"	// panel / status line / nav readout / tool button (split from KCMCore.h on 2026-08-13)
-#include "IKCMCompareFacade.h"	// Stop / StartComparisonFor / arm 状態(2026-08-13・分割 第1段 Task 11)
-								// (2026-08-13 に KCMCore.h から移動)
+#include "IKCMCompareFacade.h"	// Stop / StartComparisonFor / the armed state
 
 namespace
 {
@@ -330,8 +329,8 @@ bool16 OpenChapterWindowed(const IDFile& file, UIDRef& outDocRef, bool16& outWas
     panel is where a row's outcome is reported.
 
     ⚠WHAT THAT COSTS, MEASURED 2026-08-19 (bug recheck B-U5, third pass): KCMSetStatus returns
-    silently when the panel is not visible (KCMPanelObserver.cpp - "パネルは隠れている… 触る先が
-    無い"), so with the panel closed or behind another tab a double click on a chapter that cannot
+    silently when the panel is not visible (KCMPanelObserver.cpp - "the panel is hidden: there is
+    nothing to touch"), so with the panel closed or behind another tab a double click on a chapter that cannot
     be opened reports NOTHING ANYWHERE ON SCREEN. The measurement with the panel open: the row was
     double-clicked, one side opened, and the panel read
         ch3.indd: 1 document open, 1 could not be opened

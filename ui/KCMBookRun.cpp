@@ -31,8 +31,7 @@
 
 // Project includes:
 #include "IKCMBookFacade.h"	// ResolveBookPair / GetBookDisplayPath / CompareBooks
-#include "KCMBookPanelLookup.h"	// KCMGetPanelBookFile(前面タブの観測。2026-08-15 Task 9B で UI 側へ)
-								// (2026-08-14・分割 第1段 Task 15 で Facade 経由へ)
+#include "KCMBookPanelLookup.h"	// KCMGetPanelBookFile (observing the front tab; a UI-side job)
 #include "KCMBookDialog.h"	// KCMBookDialogSetResult / KCMOpenBookDialog
 #include "KCMBookResult.h"	// KCMChapterResult
 #include "KCMBookRun.h"
@@ -94,10 +93,10 @@ void KCMRunBookComparison()
 	// ***** The same resolver the greying uses. ***** UpdateActionStates calls this too, so the
 	// menu's appearance and the result of choosing it cannot disagree. Reaching here with no pair
 	// therefore means the front tab changed between the menu being built and the item being chosen.
-	// ★★2026-08-15(第2段 Task 9B): 前面タブの観測は **こちら側(UI)の仕事**になった
-	//   (ui/KCMBookPanelLookup.h)。⚠**分岐の意味は変わっていない**＝観測に失敗しても、対の
-	//   解決に失敗しても、同じ「2ブックが揃わない」警告に落ちる。以前は両方とも model 側の
-	//   ResolveBookPair が kFalse で答えていた。
+	// ★★Observing the front tab is **this side's (the UI's) job** (ui/KCMBookPanelLookup.h).
+	//   ⚠**The meaning of the branch did not change**: failing to observe and failing to resolve the
+	//   pair both fall into the same "two books are not there" warning. Both used to be answered by
+	//   the model side's ResolveBookPair returning kFalse.
 	IDFile panelBookFile;
 	if (!KCMGetPanelBookFile(panelBookFile)
 		|| !books->ResolveBookPair(panelBookFile, target, source))
@@ -117,8 +116,8 @@ void KCMRunBookComparison()
 
 	// ⚠kLineSeparatorString rather than "\n": it is "\r" on the Mac (CoreResTypes.h:150/159), and
 	//   CAlert's own documentation names this define as the way to break a line (CAlert.h:119-121).
-	// ***** ENGLISH IN EVERY UI LANGUAGE. ***** (User, 2026-08-13: "the alert part that says
-	// 'ブックを比較します。' - English is fine".) It went through KCMLoc::Text until then, which is
+	// ***** ENGLISH IN EVERY UI LANGUAGE. ***** (User: "the alert that says the books are about to
+	// be compared - English is fine".) It went through KCMLoc::Text until then, which is
 	// the plug-in's "say this one in Japanese on a Japanese UI" helper; taking it out of there puts
 	// this alert back with the rest of KCM's UI, which has been English-only in every locale since
 	// 2026-08-06. What is left in KCMLoc is the case it was built for: text that ASKS THE USER TO
