@@ -1142,9 +1142,9 @@ static void KCMDrawEntryOnPage(IGraphicsPort* gPort, IViewPortAttributes* vpAttr
 			//     resolved, and only the rectangle underneath remains.
 			//   **The fix was not here.** Whether the flattener runs is decided solely by
 			//     `IXPManager`'s list of page items that carry transparency, and an adornment is not
-			//     an item, so it was never in that list. Having
-			//     `KCMRingAdornmentRefreshItemXPState()` declare it fixed the whole thing (the
-			//     record is at that function's declaration in KCMRingAdornment.h).
+			//     an item, so it was never in that list. Putting a representative item on the list
+			//     for the duration of the export fixed the whole thing (the record is in
+			//     KCMRingAdornment.h; the code is section 5 of KCMRingAdornment.cpp).
 			//   @warning **do not reintroduce a "fall back to a vector fill when there is no
 			//     transparency" branch.** `kPDFIsFlattenerTargetVPAttr` answers "is this port a
 			//     flattener target", which is **0 at PDF 1.4 and later too** (1.4 carries

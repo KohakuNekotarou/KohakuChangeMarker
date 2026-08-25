@@ -2,61 +2,73 @@
 //
 //  KCMRingAdornment.h
 //
-//  比較マーク(リング・斜線・✓・旧番号バッジ)を **グローバルページアイテムアドーンメント** として
-//  描く経路。描画の中身は一切持たず、スプレッドに対して KCMDrawEventHandler::DrawSpreadMarks() を
-//  そのまま呼ぶ ---- つまり **絵は Draw Event 経路とまったく同じ1本**で、変わるのは「誰に呼ばれるか」だけ。
+//  Draws the comparison marks (rings, slashes, ticks, old-folio badges) as a **global page
+//  item adornment**. It carries no drawing code of its own: given a spread it calls
+//  KCMDrawEventHandler::DrawSpreadMarks(), so **the picture is the single implementation**
+//  that the removed draw-event route also called. What this route adds is who does the
+//  calling, and the transparency declaration.
 //
-//  ★★★なぜ作ったか ---- **PDF 1.3 の「全面ベタ」を解くため**
+//  WHY IT EXISTS -- THE SOLID BLOCK AT PDF 1.3
 //  --------------------------------------------------------------------------------------
-//  半透明のリングは「グレーのアルファサーバ＋純色のベクター fill」で描いている
-//  (KCMDrawRingForPrint)。これは PDF 1.4 では素直に半透明になるが、**PDF 1.3 では
-//  「そのページに透明が1つでもある」ときしか半透明にならない** ---- 1.3 に透明は無いので、
-//  フラットナ(透明の平坦化)が働くページだけ、その経路に相乗りできるという形だった。
-//  透明を1つも含まないページでは、アルファサーバのマスクが解決されず**リングが全面ベタ**になる。
-//  ⚠日本の入稿プリセットはほぼ 1.3(PDF/X-1a・X-3・雑誌広告送稿用＝すべて Acrobat 4)。
+//  A translucent ring is drawn as a grey alpha server plus a solid vector fill
+//  (KCMDrawRingForPrint). At PDF 1.4 that comes out translucent. At **PDF 1.3 it comes out
+//  translucent only on pages that already contain transparency**: 1.3 has no transparency of
+//  its own, so the only thing that can produce it is the flattener, and the flattener touches
+//  a page only when something on that page needs flattening. Where it does not run, the alpha
+//  server's mask is never resolved and **the ring becomes a solid block**.
+//  @warning the print-submission presets used in Japan are nearly all 1.3 (PDF/X-1a, X-3, the
+//  magazine ad delivery preset -- all Acrobat 4), so this is the ordinary case, not the rare one.
 //
-//  ⇒ 直すには「このページには透明がある」と**本体の透明マネージャに気づかせる**しかない。
-//    その申告口が **IAdornmentFlattenerUsage**(`IsFlattenerRequired_`)で、
-//    **これはアドーンメント boss にしか載せられない** ---- 実機ダンプで
-//    `IID_IADORNMENTFLATTENERUSAGE` を持つ boss は6件、全部アドーンメント側だった。
-//    **Draw Event ハンドラの boss はサービス boss なので、そもそも聞かれる相手ではない。**
-//    フラットナは「アートワークを集めてからラスタライズする」ので、聞く相手は集めた「モノ」だけ。
-//    描画イベントは集め終わった後の描画中に呼ばれる ---- これが機構上の理由。
-//    (経緯の全文＝memory `print-drawing-alpha-flattener` / `docs/ai-notes/kescm-pdf-transparency-2026-08-16.md`)
+//  Fixing it means making the transparency manager see that the page has transparency. The
+//  interface that declares that is **IAdornmentFlattenerUsage** (`IsFlattenerRequired_`), and
+//  **it is only ever asked on an adornment boss**: of the six bosses in the running
+//  application that carry IID_IADORNMENTFLATTENERUSAGE, all six are adornments. A draw event
+//  handler sits on a service boss, so it is not one of the parties that gets asked. The reason
+//  is mechanical -- the flattener gathers artwork and then rasterises it, so the only things it
+//  can ask are the gathered objects, while a draw event happens during the drawing that follows.
+//  (Record: memory print-drawing-alpha-flattener,
+//  docs/ai-notes/kescm-pdf-transparency-2026-08-16.md.)
 //
-//  ★★★条件は2つある(2026-08-20 に2つ目が見つかった)
+//  TWO CONDITIONS, NOT ONE
 //  --------------------------------------------------------------------------------------
-//   ① **申告口を持つ**(上の IAdornmentFlattenerUsage) …… アドーンメント化した唯一の理由
-//   ② **聞きに来てもらう** …… フラットナはそもそも「文書に透明がある」ときしか動かず、その判定は
-//      `IXPManager` の**透明を持つページアイテムの一覧**だけで決まる。**グローバル登録は
-//      どのアイテムにも属さないので、その一覧に自力では入れない。**
-//      ⇒ 答えが変わった瞬間に自分で通知する＝KCMRingAdornmentRefreshItemXPState()(下の宣言)。
-//   ⚠**①だけでは効かない文書がある**＝透明を1つも持たない文書。日本の入稿はまさにそれが普通なので、
-//     「①を入れたから直った」で止めると、いちばん効いてほしい相手に効かないまま出荷することになる。
+//   (1) **Have something to declare with** -- IAdornmentFlattenerUsage above. That is the
+//       whole reason the marks are drawn from an adornment at all.
+//   (2) **Be asked** -- the flattener runs only when the document has transparency, and that
+//       is decided solely by `IXPManager`'s list of page items that carry transparency.
+//       **A session-global adornment belongs to no item, so it can never join that list by
+//       itself.** The .cpp puts a representative item on the list while an export runs.
+//  @warning **(1) on its own leaves a whole class of documents broken** -- the ones with no
+//  transparency anywhere, which is exactly what a print submission here normally is. Stopping
+//  at "(1) went in and the test file was fixed" ships the bug to the readers who need it most.
 //
-//  ★文書は1バイトも汚れない
+//  THE DOCUMENT IS NOT CHANGED BY A SINGLE BYTE
 //  --------------------------------------------------------------------------------------
-//  アドーンメントを**文書のページアイテムには付けない**。セッションの
-//  **IID_IGLOBALPAGEITEMADORNMENTLIST** へ1回登録するだけで、CShape が全ページアイテムについて
-//  自分の分とグローバル分の両方を回すので描かれる(CShape.cpp:641/650/659/672 の4経路とも)。
-//  ⚠`AddAdornment` を文書のアイテムに対して行うと **.indd に永続化される**(第2引数は「dirty にするか」
-//    であって永続制御ではない)。グローバル登録はそれを完全に回避する道。
-//  ★ページもスプレッドもページアイテムなので描かれる(kSpreadBoss/kPageBoss とも IID_ISHAPE と
-//    IID_IPAGEITEMADORNMENTLIST を持つ)。**テキストも図形も無い空ページにも描ける**(KT で実測)。
+//  The adornment is **not attached to any page item of the document**. It is added once to the
+//  session's IID_IGLOBALPAGEITEMADORNMENTLIST, and CShape walks its own list and the global
+//  list together on all four routes (CShape::DrawPageItemAdornments,
+//  UnionPageItemAdornmentPaintedBBox, UnionPrintingPageItemAdornmentPaintedBBox and
+//  InvalPageItemAdornments -- each makes the same call twice, the second time with the global list).
+//  @warning `AddAdornment` on an item of the document **persists into the .indd** (its second
+//  argument is "dirty the document", not "keep it out of the file"). Registering globally
+//  avoids that entirely.
+//  Pages and spreads are page items too (kSpreadBoss and kPageBoss both carry IID_ISHAPE and
+//  IID_IPAGEITEMADORNMENTLIST), so **a page holding no text and no artwork is still drawn on**.
 //
-//  ⚠ 前提と制約(KT の実機実験 2026-08-19 で確定した分)
+//  CONSTRAINTS
 //  --------------------------------------------------------------------------------------
-//   1. **model プラグイン側に置くこと。** UI の PDF 書き出しはバックグラウンドスレッドで走り、
-//      `kUIPlugIn` の boss は見えない(無警告で nil)。KCM は第2段で `kModelPlugIn` になっている。
-//      ⚠★★★**それは必要条件であって十分条件ではない**(2026-08-19 実測)。`kModelPlugIn` でも、
-//        **セッションへの登録そのものがスレッドをまたがない** ---- メインスレッドで AddAdornment した
-//        アドーンメントは、BG スレッドの実行コンテキストのセッションには載っていない。
-//        ∴ **登録は「実行コンテキストごとの startup サービス」から行う**
-//        (kKCMRingAdornmentStartupBoss。これで UI の PDF 書き出し＝BG でも載る)。
-//   2. **セッションに載る＝全文書に描かれる。** 対象文書の判定は描画本体(DrawSpreadMarks)が
-//      従来どおり `KCMIsSameDoc` で行うので、ここでは何もしない。
-//   3. **文書を閉じても登録は残る**⇒ Shutdown で必ず外す(KCMPeekStartup::Shutdown)。
-//   4. **ペーストボードの外へは描けない**(本物のクリップ)。マークはページ内なので影響しない。
+//   1. **This has to live in the model plug-in.** The UI's PDF export runs on a background
+//      thread, where a `kUIPlugIn` boss is invisible (nil, with no warning).
+//      @warning that is necessary and not sufficient: **the registration itself does not cross
+//      threads**. An adornment added on the main thread is not on the session of a background
+//      thread's execution context. Hence the registration is driven by a **startup service that
+//      runs once per execution context** (kKCMRingAdornmentStartupBoss), which is what puts the
+//      marks into the UI's (background) PDF export.
+//   2. **On the session means on every document.** Which document the marks belong to is
+//      decided where it always was, in DrawSpreadMarks (KCMIsSameDoc); nothing here filters.
+//   3. **Closing a document does not remove the registration** -- Shutdown has to
+//      (KCMRingAdornmentStartup::Shutdown, at the end of the .cpp).
+//   4. **Nothing can be drawn outside the pasteboard** (a real clip). The marks are inside the
+//      page, so it does not bite.
 //
 //========================================================================================
 #ifndef __KCMRingAdornment_h__
@@ -66,54 +78,57 @@
 
 class IDataBase;
 
-// セッションのグローバルページアイテムアドーンメントリストへ登録する
-// (★**実行コンテキストごとに1回** ---- BG スレッドを含む。理由は実装のコメント)。
-// ⚠★★★**2026-08-20 以降、これが失敗するとマークは1つも描かれない。**
-//   それまでは Draw Event 経路がフォールバックとして描いていたが、**その経路を撤去して
-//   このアドーンメントに一本化した**(ユーザー判断＝「登録に失敗していたら枠が出なくてよい」)。
+// Adds the adornment to the session's global page item adornment list.
+// **Call it once per execution context**, background threads included; the reasoning is at the
+// definition.
+// @warning **if this fails, not one mark is drawn.** The draw-event route that used to draw
+// them when registration failed was removed and this is the only route left (the decision was
+// "if the registration fails it is acceptable for no marks to appear").
 void KCMRingAdornmentRegister();
 
-// 登録を外す(アプリ終了時)。⚠**セッションに載っているので外さないと残る。**
+// Takes it off again (application shutdown). @warning it lives on the session, so it stays
+// there until something removes it.
 void KCMRingAdornmentUnregister();
 
-// (★KCMRingAdornmentIsActive() は 2026-08-20 に撤去した ---- 「今この実行コンテキストでアドーンメントが
-//  載っているか」を返す関数で、**唯一の呼び手が Draw Event 側の「描画を譲るか」の判定**だったため、
-//  経路の一本化と同時に呼び手ごと無くなった。
-//  ★そこに書いてあった教訓＝**「どちらか一方が担当する」という取り決めを static に持たせると、
-//    スレッドをまたいだ瞬間に「どちらも担当しない」に化ける**は、
-//    KCMRingAdornmentRegister() の実装コメントへ移してある。)
-
-// ★★★「透明を持つページアイテムの一覧」への載せ外しは、**このヘッダーからは公開していない**。
+// **Joining and leaving IXPManager's item-has-transparency list is deliberately not exposed
+// here.** It is done inside the .cpp, driven by the PDF export events, and by nothing else.
 //
-//   ⚠**これが無いと PDF 1.3 で全面ベタになる文書がある**(2026-08-20 実測で原因確定):
-//     `IXPManager` は「透明を持つ**ページアイテム**の一覧」で文書の透明の有無を答えており
-//     (`IXPManager.h:80-84`＝"mainly for determining whether there's XP in the document")、
-//     **アドーンメントはアイテムではないのでその一覧に入れない**。一覧が空の文書では書き出しが
-//     フラットナを動かさず、`IsFlattenerRequired_` の申告が使われる場面が来ない ⇒
-//     アルファサーバのマスクが解決されず、リングの外接矩形(＝ページ枠なのでページ全体)がベタになる。
-//     ★実測＝透明を1つも持たない文書に 50% の四角を1つ足すだけで直り、**消すとまた壊れた**
-//       (400,404 画素のベタ ⇔ 半透明)。∴ キャッシュの陳腐化ではなく一覧そのものの問題。
+//   @warning **without it some documents still come out solid at PDF 1.3.** `IXPManager` keeps
+//     a list of **page items** that have transparency and answers "does this document have
+//     transparency" from it (IXPManager.h, "mainly for determining whether there's XP in the
+//     document"), and **an adornment is not an item, so it never enters that list**. With an
+//     empty list the export never starts the flattener, `IsFlattenerRequired_` is never asked,
+//     the alpha server's mask is never resolved, and the ring's bounding box -- the page frame,
+//     hence the whole page -- comes out solid.
+//     Measured: adding one 50% rectangle to a document with no transparency fixed it, and
+//     removing it broke it again (400,404 solid pixels against a translucent picture). So the
+//     list itself is the problem, not a stale cache.
 //
-//   ★★★**載せるのは「書き出しのあいだだけ」**＝呼ぶのは .cpp 末尾の書き出しサービスだけで、
-//     比較の開始・停止・トグルからは呼ばない。**理由は一覧が `.indd` に永続すること**(2026-08-20 実測＝
-//     開き直しても再検証されない) ---- 比較中ずっと載せておくと、ユーザーが保存した瞬間に
-//     **根拠のない記録が文書へ焼き付く**。⇒ 詳細と ID は `KCMID.h` の
-//     `kKCMExportXPResponderServiceBoss` の注記。
-//   ★★**印刷では載せない**(2026-08-20 ユーザー判断)。⚠**効かないからではなく、要らないから** ----
-//     載せれば印刷でもマークは濃くなるが(実測 16,076 ⇔ 8,407 画素。**どちらもベタにはならない**)、
-//     **印刷にそこまでの厳密性は要らない・印刷会社へ出すのは PDF** という判断で公式に倣って一度書いた
-//     `IPrintSetupProvider` を外した。A/B の条件と復活手順は `KCMRingAdornment.cpp` の節5。
-//   ⚠**フラットナに「動け」と命令する API は無い**(`IFlattenerSettings::SetFlattenerEnabled` は
-//     "Defeats flattener altogether"＝**止める**側のスイッチ)。載せる以外の道が無い。
+//   **The list is held only for the duration of an export.** The only caller is the PDF export
+//     service at the end of the .cpp; starting, stopping and toggling a comparison never touch
+//     it. The reason is that **the list persists into the .indd** (measured: it survives a save
+//     and is not re-validated on reopen), so holding it for the length of a comparison means
+//     that the moment the reader saves, **a record with nothing behind it is baked into their
+//     document**. Details and IDs are with kKCMPDFExportSetupBoss in KCMID.h.
+//   **Printing deliberately does not do it.** @warning not because it has no effect, but
+//     because it is not wanted: it does make the printed marks denser (measured 16,076 against
+//     8,407 coloured pixels, **and neither of them is solid**), and the judgement was that print
+//     does not need that precision, since what goes to the printing company is the PDF. The A/B
+//     conditions and how to bring it back are in KCMRingAdornment.cpp, section 5.
+//   @warning **there is no API that tells the flattener to run** -- `IFlattenerSettings::
+//     SetFlattenerEnabled` is the switch that "defeats flattener altogether". Joining the list
+//     is the only way in.
 
 
-// ★★2026-08-20: `document.kcmTransparencyItemCount` の実体。
-//   「透明を持つページアイテムの一覧」に今この文書が何件載せているかを返す
-//   (`IXPManager::GetNumItemsWithXP`＝`IXPManager.h:86`)。db が nil / XPManager が取れなければ -1。
-//   ⚠**KCM が載せた分だけではない** ---- 本物の透明(影・不透明度<100 等)を持つページアイテムも
-//     同じ一覧に入る。⇒ 判定に使うなら「KCM を通していない同じ内容の文書」との対照を取ること。
-//   ★用途＝**書き出しのあいだだけ載せる**この仕組みが、**載せたまま保存していないか**を外から測る口。
-//     一覧は `.indd` に永続するので、保存 → 閉じる → 開き直して読めば「書き込まれたか」がそのまま判る。
+// The value behind `document.kcmTransparencyItemCount`: how many items this document currently
+// has on the item-has-transparency list (`IXPManager::GetNumItemsWithXP`). -1 if db is nil or
+// the XPManager cannot be had.
+// @warning **it is not "how many KCM put there"** -- real transparency (a drop shadow, an
+// opacity below 100) puts items on the same list. To judge by it, compare against the same
+// document that KCM has not been run on.
+// Its purpose is to measure from outside whether the "only during an export" rule above is
+// holding. The list persists into the .indd, so save -> close -> reopen -> read says directly
+// whether anything was written.
 int32 KCMGetNumItemsWithXP(IDataBase* db);
 
 #endif // __KCMRingAdornment_h__

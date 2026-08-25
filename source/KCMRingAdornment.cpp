@@ -2,18 +2,20 @@
 //
 //  KCMRingAdornment.cpp
 //
-//  比較マークをグローバルページアイテムアドーンメントとして描く経路。何のためか・どういう仕組みかは
-//  KCMRingAdornment.h に全部書いてある。ここは中身:
+//  Draws the comparison marks as a global page item adornment. What it is for and how it works
+//  is in KCMRingAdornment.h; this is the substance:
 //
-//    1) KCMRingAdornmentShape       … IAdornmentShape。**スプレッドに対してだけ**描画本体を呼ぶ
-//    2) KCMRingFlattenerUsage       … IAdornmentFlattenerUsage。★本命＝透明マネージャへの申告口
-//    3) 登録/解除の2関数              … セッションのグローバルリストへの出し入れ
+//    1) KCMRingAdornmentShape  ... IAdornmentShape. Calls the drawing, and only for a spread
+//    2) KCMRingFlattenerUsage  ... IAdornmentFlattenerUsage. The point of the exercise: the
+//                                  declaration to the transparency manager
+//    3) register / unregister  ... putting it on and off the session's global list
 //
-//  ★★★2026-08-20: **マークを描く経路はこれ1つになった**(Draw Event の受け口＝
-//    kKCMDrawEventServiceBoss / KCMDrawEventSrvc / HandleDrawEvent を撤去した)。
-//  ★描画の中身は1行も持たない。KCMDrawEventHandler::DrawSpreadMarks() をそのまま呼ぶ
-//    (リング・斜線・✓・旧番号バッジ・除外塗り・Find Overset の「＋」、印刷/PDF のアルファサーバ
-//    経路まで全部)。この経路が足すのは「誰に呼ばれるか」と「透明の申告」だけ。
+//  **This is the only route that draws the marks** - the draw-event receiver
+//  (kKCMDrawEventServiceBoss / KCMDrawEventSrvc / HandleDrawEvent) was removed.
+//  It holds not one line of the drawing itself: it calls KCMDrawEventHandler::DrawSpreadMarks()
+//  as it stands, which covers everything (rings, slashes, ticks, old-folio badges, the excluded
+//  wash, Find Overset's "+", and the alpha-server path used for print and PDF). All this route
+//  adds is who does the calling, and the transparency declaration.
 //
 //========================================================================================
 
@@ -22,20 +24,21 @@
 // Interface includes:
 #include "IAdornmentShape.h"
 #include "IAdornmentFlattenerUsage.h"
-#include "IPageItemAdornmentList.h"		// GenericID.h を巻き込むので IID_IGLOBALPAGEITEMADORNMENTLIST もこれで足りる
+#include "IPageItemAdornmentList.h"		// GenericID.h comes along with it, so IID_IGLOBALPAGEITEMADORNMENTLIST needs no other include
 #include "ISession.h"					// GetExecutionContextSession()
-#include "ISpread.h"					// 「今描いているのはスプレッドか」の判定
+#include "ISpread.h"					// "is the thing being drawn a spread"
 #include "IShape.h"
-#include "IDrwEvtHandler.h"				// DrawEventData(描画本体へ渡す形)
+#include "IDrwEvtHandler.h"				// DrawEventData, the shape the drawing takes its input in
 #include "IGraphicsContext.h"			// GraphicsData
-#include "IStartupShutdownService.h"	// スレッドごとの登録(このファイルの末尾)
+#include "IStartupShutdownService.h"	// per-execution-context registration (end of this file)
 #include "IXPUtils.h"					// QueryXPManager(db)
-#include "IXPManager.h"					// ItemXPChanged(＝「透明を持つアイテムの一覧」を作り直させる)
-#include "ISpreadList.h"				// 文書のスプレッドを辿る
+#include "IXPManager.h"					// ItemXPChanged - makes the item-has-transparency list be rebuilt
+#include "ISpreadList.h"				// walking the document's spreads
 #include "IDataBase.h"					// GetRootUID
-// ★2026-08-20: PDF 書き出しのあいだだけ「**クローンの**」一覧に載せるためのサービス(このファイルの末尾)。
-#include "IPDFExportSetupProvider.h"	// PDFProcessEvent(IPDFExportController.h を巻き込む＝PDFExportEvent)
-#include "IDThreading.h"				// IDThreading::ThreadLocal(いま書き出している db を持つ)
+// The service that joins the transparency list for the duration of a PDF export - and joins the
+// CLONE rather than the document itself (end of this file).
+#include "IPDFExportSetupProvider.h"	// PDFProcessEvent (pulls in IPDFExportController.h = PDFExportEvent)
+#include "IDThreading.h"				// IDThreading::ThreadLocal, holding the db being exported
 
 // General includes:
 #include "CPMUnknown.h"
@@ -45,119 +48,115 @@
 // Project includes:
 #include "KCMID.h"
 #include "KCMRingAdornment.h"
-#include "KCMDrawEventHandler.h"		// DrawSpreadMarks(描画本体) / マーク状態の static
-#include "KCMThreadSafety.h"			// KCMMarkStateMutex/Lock(sEntries を読むため)
+#include "KCMDrawEventHandler.h"		// DrawSpreadMarks (the drawing) / the mark-state statics
+#include "KCMThreadSafety.h"			// KCMMarkStateMutex/Lock, taken to read sEntries
 
 //========================================================================================
-// 登録状態
+// Registration state
 //========================================================================================
 
-// (★★2026-08-20: ここにあった**実験用スイッチ3つを全部撤去した**。3つとも「倒しても意味が無い /
-//  倒すと必ず壊れる」ことが実測で確定しており、**選択肢ではなかった**ため。結論は使う場所へ移してある:
-//    ・kUseRingAdornment             … アドーンメント経路を使うか
-//                                      → 切り戻し先だった Draw Event 経路を同日に撤去したので、
-//                                        倒すと「何も描かない」になるだけになった
-//    ・kDeclareFlattenerUsage        … 透明の申告を出すか  → KCMRingFlattenerUsage のコメント
-//    ・kTestInkBoundsInsteadOfNotify … ink bounds で代用   → AddToContentInkBounds のコメント
-//  ★「登録できているか」を憶える static bool も 2026-08-19 に削除済み ---- **状態はセッションに聞く。
-//    憶えない。**(理由は KCMRingAdornmentRegister() のコメントへ移した))
-
-/** 「マークが半透明を**使いうる**か」＝設定とマークの有無だけを見る。出力中かは見ない。
-	★**一覧へ載せるかどうかはこちらで決める**(載せる瞬間はまだ出力が始まっていないため)。 */
+/** Whether the marks **could** be translucent: the settings, and whether there are any marks.
+	It does not look at whether an output is being made.
+	**This is what decides whether to join the transparency list**, because at the moment of
+	joining the output has not started yet. */
 static bool16 KCMMarksCouldBeTranslucent();
 
-/** ★★★「**いまこの出力に**マークの半透明が乗るか」＝`IsFlattenerRequired_` の答えそのもの。
-	上の判定に加えて「**いま書き出しの最中か**」を見る。
+/** **Whether the translucency of the marks lands in the output being made right now** - the
+	answer `IsFlattenerRequired_` gives. That is the test above plus "is an export running".
 
-	⚠★★★**「出力中か」を含めるのが要**(2026-08-20 実測で判明)。含めないと**一覧から降ろせない** ----
-	  `kXPC_RemovedSomeXP` は「消せ」ではなく「**聞き直せ**」なので、降ろす通知を出しても
-	  この関数が「マークはまだある」と kTrue を返す限り、XPManager は一覧に残したままにする
-	  (実測＝載せ外しは正しく呼ばれているのに `xp 0->4` のまま戻らなかった)。
-	⇒ **出力が終わったら「もう透明は無い」と答える**ことで、初めて降りる。
-	★画面描画やサムネイルで kFalse になるのは正しい ---- フラットナはそこでは走らないので、
-	  申告を聞きに来る相手がいない。
-
-	⚠**匿名 namespace の外に置くこと** ---- 中に宣言して外で定義すると別物になり、
-	  「オーバーロード解決できない」で落ちる(2026-08-20 に踏んだ)。 */
+	@warning **including "is an export running" is the essential part**: without it the document
+	  can never be taken off the list again. `kXPC_RemovedSomeXP` does not mean "remove it", it
+	  means "**ask again**", so for as long as this function answers kTrue the XPManager leaves
+	  the entry where it is (measured: joining and leaving were both being called correctly, yet
+	  the count stayed at `xp 0->4`).
+	  **Answering "there is no transparency" once the output is over** is what lets it leave.
+	Answering kFalse for screen drawing and for thumbnails is correct: the flattener does not run
+	there, so there is nobody to ask. */
 static bool16 KCMMarksDeclareTransparency();
 
 //========================================================================================
-// 1) アドーンメント本体
+// 1) The adornment itself
 //========================================================================================
 
-/** スプレッドに対してだけ、比較マークの描画本体を呼ぶ。 */
+/** Calls the drawing of the comparison marks, and only for a spread. */
 class KCMRingAdornmentShape : public CPMUnknown<IAdornmentShape>
 {
 public:
 	KCMRingAdornmentShape(IPMUnknown* boss) : CPMUnknown<IAdornmentShape>(boss) {}
 	~KCMRingAdornmentShape() {}
 
-	/** ⚠★★★**単一のビットでなければ1回も呼ばれない**(2026-08-19 KT で実測)。
-		`kBeforeShape | kAfterShape` を返すと呼び出しゼロになる ---- 配布は
-		IAdornmentIterator(paintOrderMask) が行い(CShape.cpp:127)、複合値はどのパスにも一致しないため。
-		★症状が「画面に何も出ない」なので描画コードの不備と見分けが付かない。ここは触らないこと。
-		マークは中身の上に重ねるので kAfterShape(シェイプを描いた後)。 */
+	/** @warning **it is never called at all unless this is a single bit** (measured). Returning
+		`kBeforeShape | kAfterShape` gives zero calls: the distribution is done by
+		IAdornmentIterator(paintOrderMask) (CShape.cpp:127) and a combined value matches no pass.
+		The symptom is "nothing appears on screen", which is indistinguishable from a fault in the
+		drawing code. Leave this alone.
+		The marks go on top of the content, hence kAfterShape (after the shape is drawn). */
 	virtual AdornmentDrawOrder GetDrawOrderBits() { return kAfterShape; }
 
 	virtual void DrawAdornment(IShape* iShape, AdornmentDrawOrder drawOrder,
 							   GraphicsData* gd, int32 flags);
 
-	/** ★`itemBounds` は**呼び出し元が変換し終えた矩形のコピー**で、戻り値はそこへ Union される
-		(CShape.cpp:648-660)。∴ **はみ出さないなら素で返すのが正しい**。マークはページ/スプレッドの
-		内側にしか描かないので、広げる必要は無い。
-		⚠ここで `innertoview` を掛け直すのは二重変換になる ---- KT が 2026-08-19 まで、
-		  `framelabel/FrmLblAdornment.cpp:412-430` は今も(逆向きに)そうしている。
-		  **正は呼び出し元のコード(Union の相手)だけ**。 */
+	/** `itemBounds` is **a copy of the rectangle the caller has already transformed**, and the
+		return value is Union'd into it (CShape::UnionPageItemAdornmentPaintedBBox). So **returning
+		it untouched is the right answer** where nothing sticks out, and the marks are drawn inside
+		the page or the spread.
+		@warning applying `innertoview` here transforms it a second time. framelabel's
+		  GetPaintedAdornmentBounds does exactly that (the other way round, with the inverse).
+		  **The authority is the calling code** - the side that does the Union. */
 	virtual PMRect GetPaintedAdornmentBounds(IShape* /*iShape*/, AdornmentDrawOrder /*drawOrder*/,
 											 const PMRect& itemBounds, const PMMatrix& /*innertoview*/)
 		{ return itemBounds; }
 
-	/** 上と同じ契約。★こちらは WillPrint() が kTrue のときしか到達しない(CShape.cpp:93)。 */
+	/** The same contract. This one is only reached when WillPrint() is kTrue (CShape.cpp:93). */
 	virtual PMRect GetPrintedAdornmentBounds(IShape* /*iShape*/, AdornmentDrawOrder /*drawOrder*/,
 											 const PMRect& itemBounds, const PMMatrix& /*innertoview*/)
 		{ return itemBounds; }
 
-	/** ★空実装が正。**契約が明示的にこちらを免除している** ----
-		`IAdornmentShape.h:138-140`＝"This is only used by adornments for which the inking bounds
-		are based on **the content**. Adornments for which inking bboxes are based **solely on the
+	/** An empty implementation is the correct one. **The contract exempts it explicitly** -
+		IAdornmentShape.h:138-140: "This is only used by adornments for which the inking bounds are
+		based on **the content**. Adornments for which inking bboxes are based **solely on the
 		frame** do not need to implement this routine."
-		マークはページ/スプレッドの箱を基準に描く(GetPaintedAdornmentBounds が itemBounds を素で返す)
-		＝枠基準なので免除側。公式も**枠の外へ滲む transparencyeffect だけが実装**しており、
-		`framelabel/FrmLblAdornment.cpp:160` は**空 `{}`**。★用途もフラットナではない ----
-		`TranFxAdornment.cpp:483` のコメントが **"used for resizing textframe etc."** と書いている。
-		⚠★★**2026-08-20 に実測でも確かめた** ---- 「ink bounds を申告すれば `ItemXPChanged` の通知の
-		代わりになるのでは」を A/B した(spellpanel が持っていて KCM が持っていなかった唯一の口が
-		これだったため)。同一文書・同一プリセット(`[雑誌広告送稿用]`＝PDF 1.3)・同一スクリプト
-		(`work/kescm-adorn/isolate-doc.ps1`)で:
+		The marks are drawn against the box of a page or a spread (GetPaintedAdornmentBounds returns
+		itemBounds untouched), so they are frame-based, the exempt side. The SDK agrees: only
+		transparencyeffect, which bleeds outside the frame, implements it, while
+		framelabel/FrmLblAdornment.cpp:160 is an empty `{}`. It is not a flattener interface either -
+		TranFxAdornment.cpp:483 comments it as **"used for resizing textframe etc."**
 
-		| | 変更ページの画素 |
+		@warning it was **settled by measurement as well**. "Could declaring ink bounds stand in for
+		  the `ItemXPChanged` notification?" was A/B'd, this being the one interface spellpanel had
+		  and KCM did not. Same document, same preset (the magazine ad delivery one = PDF 1.3), same
+		  script (work/kescm-adorn/isolate-doc.ps1):
+
+		| | pixels on the changed page |
 		|---|---|
-		| 通知あり(＝現行) | **`red 0` / 淡赤 40,847**(半透明) |
-		| 通知を止めて ink bounds を申告 | ⚠**`red 862,283`**(全面ベタ) |
+		| notification (= what is here) | **`red 0` / pale red 40,847** (translucent) |
+		| notification off, ink bounds declared | **`red 862,283`** (solid) |
 
-		⇒ ★**ink bounds はフラットナの判定に一切関与しない。`ItemXPChanged` は代替不能。**
-		  (実験用スイッチ `kTestInkBoundsInsteadOfNotify` はこの結論を得て 2026-08-20 に撤去) */
+		**Ink bounds play no part in the flattener's decision. `ItemXPChanged` cannot be replaced.** */
 	virtual void AddToContentInkBounds(IShape* /*iShape*/, PMRect* /*inOutBounds*/) {}
 
 	virtual PMReal GetPriority() { return 0; }
 
-	/** 無効化は従来どおりマーク側(KCMInvalidate…)が文書ビューごと行うので、ここでは何もしない。 */
+	/** Invalidation is done where it always was, by the mark side (KCMInvalidate...) across the
+		document's views, so there is nothing to do here. */
 	virtual void Inval(IShape* /*iShape*/, AdornmentDrawOrder /*drawOrder*/, GraphicsData* /*gd*/,
 					   ClassID /*reasonForInval*/, int32 /*flags*/) {}
 
-	/** ★★kTrue でなければならない。⚠**「描かせるため」ではなく「印刷 bbox に算入させるため」**
-		---- DrawPageItemAdornments はこの値を見ない(CShape.cpp:117-141)が、
-		UnionPrintingPageItemAdornmentPaintedBBox は見る(:93)。kFalse だと印刷/書き出しの
-		描画範囲の計算から丸ごと外れる。
-		★「印刷に出すか」自体は従来どおり描画本体が sPrintMarks で決める(ここでは決めない)。 */
+	/** It has to be kTrue. @warning **not so that it gets drawn, but so that it counts towards the
+		printed bbox**: DrawPageItemAdornments does not gate the drawing on this value (in a DEBUG
+		build an assert reads it, and nothing else - CShape.cpp:117-143), while
+		UnionPrintingPageItemAdornmentPaintedBBox does (CShape.cpp:93). kFalse drops the adornment
+		out of the drawing area computed for print and export.
+		Whether the marks go into print at all is still decided by the drawing itself, from
+		sPrintMarks. Not here. */
 	virtual bool16 WillPrint() { return kTrue; }
 
-	/** テキストのオフスクリーン描画を中断させるかどうか(背景へ描くアドーンメント用)。
-		マークは前面に重ねるので kFalse。 */
+	/** Whether to interrupt offscreen text drawing (for adornments that draw behind the text).
+		The marks go on top, so kFalse. */
 	virtual bool16 WillDraw(IShape* /*iShape*/, AdornmentDrawOrder /*drawOrder*/,
 							GraphicsData* /*gd*/, int32 /*flags*/) { return kFalse; }
 
-	/** マークはクリックを拾わない(見えるだけ)。 */
+	/** The marks take no clicks; they are there to be looked at. */
 	virtual bool16 HitTest(IShape* /*iShape*/, AdornmentDrawOrder /*adornmentDrawOrder*/,
 						   IControlView* /*layoutView*/, const PMRect& /*mouseRect*/) { return kFalse; }
 };
@@ -170,54 +169,56 @@ void KCMRingAdornmentShape::DrawAdornment(IShape* iShape, AdornmentDrawOrder dra
 	if (drawOrder != kAfterShape || iShape == nil || gd == nil)
 		return;
 
-	// ★★グローバルリストに載っているので、**このスプレッド上の全ページアイテム1つ1つについて**
-	//   ここへ来る。マークはスプレッド単位で1回描けばよいので、スプレッド以外は全部捨てる。
-	//   ⚠**ページ(kPageBoss)でもなくスプレッド(kSpreadBoss)を選ぶ理由は座標系**:
-	//     描画本体は「ページの箱を spread 座標で取って描く」形で書かれており、
-	//     スプレッドの内部座標＝spread 座標なので**そのまま渡せる**。ページを選ぶと
-	//     ページのオフセットぶんずれる。
+	// **Being on the global list, this is reached once for every single page item on the spread.**
+	//   The marks are drawn once per spread, so everything that is not a spread is dropped here.
+	// @warning **the reason for taking the spread (kSpreadBoss) rather than the page (kPageBoss) is
+	//   the coordinate system**: the drawing is written to take a page's box in spread coordinates
+	//   and draw it, and a spread's inner coordinates are spread coordinates, so it can be handed
+	//   over as it is. Take the page and everything is out by the page's offset.
 	InterfacePtr<ISpread> spread(iShape, UseDefaultIID());
 	if (spread == nil)
 		return;
 
-	// 描画本体へ渡す形を組む。changedBy には iShape をそのまま渡す ---- 本体は changedBy から
-	// ISpread と IDataBase を引くだけで、どちらも同じ boss から取れる(iShape と spread は同一 boss)。
+	// Build the shape the drawing takes its input in. changedBy is the iShape as it stands: the
+	// drawing reads an ISpread and an IDataBase off changedBy and nothing else, and both come off
+	// the same boss (iShape and spread are one boss).
 	DrawEventData ded(iShape, gd, flags);
 	KCMDrawEventHandler::DrawSpreadMarks(&ded);
 }
 
 //========================================================================================
-// 2) ★本命 ---- 透明マネージャへの申告
+// 2) The point of it all -- the declaration to the transparency manager
 //========================================================================================
 
-/** 「このアドーンメントは透明を使っている」と本体へ答える。手本＝
-	`sdksamples/transparencyeffect/TranFxFlattenerUsage.cpp`(中身は `return kTrue` の1行)。
+/** Answers "this adornment is using transparency". Modelled on
+	`sdksamples/transparencyeffect/TranFxFlattenerUsage.cpp`, whose body is a bare kTrue.
 
-	★★★これが PDF 1.3 の全面ベタを解く鍵。1.3 に透明は無いので、半透明を出すにはフラットナ
-	(平坦化)を通るしかない。フラットナは**アートワークを集めてからラスタライズする**ので、
-	集める段階で「透明がある」と申告した相手だけが対象になる。Draw Event はアートワークを
-	集め終わった後の描画中に呼ばれるため、そもそも申告する機会が無かった ---- それがこの
-	クラスを足した理由そのもの。
+	**This is the key to the solid block at PDF 1.3.** 1.3 has no transparency, so the only way
+	to anything translucent is through the flattener, and the flattener **gathers artwork and
+	then rasterises it** - so the only candidates are the ones that declared transparency while
+	being gathered. A draw event is called during the drawing that follows the gathering and so
+	never had a chance to declare anything, which is the whole reason this class was added.
 
-	⚠**申告の相手は2種類あって別物**(IID も別):
-	  ・`IFlattenerUsage`(`IsFlattenerRequired`)          … **ページアイテム**用。SDK に実装例ゼロ
-	  ・`IAdornmentFlattenerUsage`(`IsFlattenerRequired_`)… **アドーンメント**用 ← こちら
-	末尾のアンダースコアが目印。間違えると誰も Query しないので黙って効かない。
+	@warning **there are two declarations and they are different interfaces** (different IIDs):
+	  - `IFlattenerUsage` (`IsFlattenerRequired`)           ... for **page items**. Not one
+	                                                            implementation exists in the SDK
+	  - `IAdornmentFlattenerUsage` (`IsFlattenerRequired_`) ... for **adornments** <- this one
+	The trailing underscore is the tell. Pick the wrong one and nobody Queries it, silently.
 
-	★★★**A/B で確定している**(2026-08-19 実測。同一文書・同一プリセット `[雑誌広告送稿用]`＝Acrobat 4・
-	  **透明を1つも含まないページ**で計測):
+	**A/B measured**, same document, same preset (the magazine ad delivery one = Acrobat 4), on
+	**a page containing no transparency at all**:
 
-	| 申告を出すか | そのページの絵 | 主要色 |
+	| declaration | what the page looks like | dominant colour |
 	|---|---|---|
-	| **出す(＝現行)** | **リングが半透明** (74,503 画素) | `240,192,176` ＝白地に25%の赤 |
-	| 出さない          | ⚠**ページ全面が赤いベタ** (850,175 画素) | `224,0,16` ＝ほぼ純赤 |
+	| **made (= what is here)** | **the ring is translucent** (74,503 px) | `240,192,176` = 25% red on white |
+	| not made | **the whole page is a solid red block** (850,175 px) | `224,0,16` = nearly pure red |
 
-	★同期(メインスレッド)・非同期(BG＝UI の書き出し)とも同じ値になった＝**申告は両方のスレッドで
-	  Query されている**(グローバル登録した boss にもちゃんと聞きに来る)。
-	⇒ ★**「アドーンメントにする」だけでは足りない。効いているのは申告のほう。**
-	  アドーンメント化が要るのは、**申告する口(`IID_IADORNMENTFLATTENERUSAGE`)がアドーンメント boss に
-	  しか載らないから**であって、描き方が変わるからではない。
-	  (この A/B 用の実験スイッチ `kDeclareFlattenerUsage` は、結論を得て 2026-08-20 に撤去した) */
+	Synchronous (main thread) and asynchronous (background, the UI's export) gave the same
+	numbers, so **the declaration is Queried on both threads**: a boss registered globally is
+	asked as well.
+	**Making the marks an adornment is not what fixes this; the declaration is.** The adornment
+	is needed because **the interface to declare through (`IID_IADORNMENTFLATTENERUSAGE`) goes on
+	no other kind of boss**, not because it changes the drawing. */
 class KCMRingFlattenerUsage : public CPMUnknown<IAdornmentFlattenerUsage>
 {
 public:
@@ -234,61 +235,68 @@ bool32 KCMRingFlattenerUsage::IsFlattenerRequired_(IPMUnknown* /*iThing*/,
 													 const PMMatrix* /*masterSpread2LayoutSpreadMatrix*/,
 													 int32 /*nFlags*/)
 {
-	// ★★**常に kTrue を返してはいけない。** 透明を申告したページはフラットナでラスタ化され、
-	//   CMYK/ブレンド空間の変換を通って**色が沈む**(実測 RGB(255,0,0) → (230,0,20))。
-	//   マークを出さない場面まで巻き込むと、何も描いていないのに文書の見え方だけが変わる。
-	//   ⇒ **実際に半透明のマークが乗るときだけ申告する。**
-	//   ★手本の TranFxFlattenerUsage.cpp:79-83 が、まさにこの設計判断を書いている ----
-	//     「付け外しで透明の有無が決まるなら kTrue 固定でよい／設定次第で消えるならそこを見て返せ」。
-	//     こちらは後者(トグルで消える)。
+	// **Never return kTrue unconditionally.** A page that declares transparency is rasterised by
+	//   the flattener and passes through a CMYK/blend space conversion, which **dulls its colours**
+	//   (measured: RGB(255,0,0) -> (230,0,20)). Dragging in the cases where no mark is drawn changes
+	//   how the document looks while nothing has been drawn on it.
+	//   **Declare only when a translucent mark is really going into the output.**
+	//   TranFxFlattenerUsage.cpp:79-83 writes down this very design decision: if adding and removing
+	//   the adornment is what adds and removes the transparency, a constant kTrue is fine; if a
+	//   setting can make the effect disappear, read that setting and answer from it. This is the
+	//   second case - a toggle makes it disappear.
 
 	return KCMMarksDeclareTransparency();
 }
 
 static bool16 KCMMarksCouldBeTranslucent()
 {
-	// 印刷/書き出しにマークを出さない設定なら、出力に透明は生じない。
-	//   ・sPrintMarks   … Target 側の「Print comparison marks」
-	//   ・sSrcMarksOn   … Source 側の枠(こちらは仕様上、印刷に常に出す)
+	// If the marks are set not to go into print or export, no transparency arises in the output.
+	//   - sPrintMarks  ... the Target side's "Print comparison marks"
+	//   - sSrcMarksOn  ... the Source side's frames, which by design always go into print
 	if (!KCMDrawEventHandler::sPrintMarks && !KCMDrawEventHandler::sSrcMarksOn)
 		return kFalse;
 
-	// 描くマークが1つも無ければ同じく透明は生じない。
-	// ⚠sEntries は main が書き BG が読む集合なので、読むだけでもロックを取る
-	//   (KCMThreadSafety.h の規律。recursive_mutex なので入れ子でも詰まらない)。
+	// No mark to draw means no transparency either.
+	// @warning sEntries is written by the main thread and read by a background thread, so the lock
+	//   is taken even to read it (the discipline is in KCMThreadSafety.h; the mutex is recursive,
+	//   so nesting does not deadlock).
 	KCMMarkStateLock lock(KCMMarkStateMutex());
 	return !KCMDrawEventHandler::sEntries.empty();
 }
 
 //========================================================================================
-// 3) セッションのグローバルリストへの出し入れ
+// 3) On and off the session's global list
 //========================================================================================
 
 void KCMRingAdornmentRegister()
 {
-	// ⚠★★「もう登録した」を static で憶えて早期 return してはいけない ---- **この関数は
-	//   実行コンテキストごとに1回ずつ呼ばれる必要がある**(メインスレッド＋バックグラウンドスレッド)。
-	//   static で弾くと、最初の1回(メインスレッド)しか登録されず BG が素通りする。
-	//   二重登録は下の HasAdornment が防ぐので、ガードはそちらだけでよい。
+	// @warning **do not remember "already registered" in a static and return early.** **This
+	//   function has to be called once per execution context** - the main thread and the background
+	//   threads. A static gate means only the first call, on the main thread, registers anything and
+	//   the background threads walk straight past. Registering twice is prevented by HasAdornment
+	//   below, so that is the only guard needed.
 	//
-	// ★★★**なぜ static で憶えてはいけないか**(2026-08-19 に実際に踏んだ)。ガイド vol1-07 の一文が
-	//   両方を説明する ---- "Threads do not share object-model instances. **They do share globals and statics**":
-	//     (1) **前半**: 登録先は「**セッションのインターフェイス・インスタンス**」なので、
-	//         メインスレッドで AddAdornment した内容は **BG スレッドの実行コンテキストからは見えない**
-	//         ⇒ そこで登録し直さないと、BG では誰も DrawAdornment を呼ばない。
-	//     (2) **後半**: ところが「登録できたか」を static に持つと **BG でも kTrue に見える**
-	//         ⇒ 当時あった Draw Event 側が「アドーンメントが描くから」と譲って降りた。
-	//   ⇒ **両方が描かない。** 症状は「UI の File > 書き出しの PDF にだけ枠が1つも出ない」
-	//     (実測 2026-08-19・PDF 1.4：同期=77,240 画素 / **非同期=0**)。
-	//   ★一般化＝**「どちらか一方が担当する」という取り決めを static に持たせると、スレッドを
-	//     またいだ瞬間に「どちらも担当しない」に化ける。** 担当の判定は、その担当が成立している場所
-	//     (ここではセッション)に**実地で聞く**のが正しい。
-	//   ⚠2026-08-20 に Draw Event 経路を撤去して**描く経路はこれ1つになった**ので、(2) の
-	//     「譲り合い」はもう存在しない。それでも (1) は変わらない＝**登録はスレッドをまたがない**。
+	// **Why a static is the wrong place for it.** One line of guide vol1-07 explains both halves -
+	//   "Threads do not share object-model instances. **They do share globals and statics**":
+	//     (1) **the first half**: what is registered is **an interface instance on the session**, so
+	//         what AddAdornment did on the main thread **is not visible from a background thread's
+	//         execution context**. Without registering again there, nothing calls DrawAdornment.
+	//     (2) **the second half**: remembering "it is registered" in a static makes it **read kTrue
+	//         on the background thread too**, and the draw-event route that existed then stood down,
+	//         believing the adornment would draw.
+	//   **So neither of them drew.** The symptom was "the PDF from the UI's File > Export, and only
+	//     that one, has no frames at all" (measured at PDF 1.4: synchronous 77,240 px,
+	//     **asynchronous 0**).
+	//   Generally: **an arrangement of "one of us takes this" held in a static turns into "neither of
+	//     us takes it" the moment it crosses a thread.** Ask the place where the arrangement actually
+	//     lives - here, the session.
+	//   The draw-event route has since been removed and **this is the only route that draws**, so the
+	//     standing down in (2) no longer exists. (1) is unchanged: **registration does not cross
+	//     threads.**
 
-	// ⚠**専用ヘッダー `IGlobalPageItemAdornmentList.h` は存在しない。** インターフェイスは普通の
-	//   IPageItemAdornmentList で、**セッションから別の IID で取る**のが全て
-	//   (実機ダンプ＝kSessionBoss / IID_IGLOBALPAGEITEMADORNMENTLIST / kGlobalPageItemAdornmentListImpl)。
+	// @warning **there is no `IGlobalPageItemAdornmentList.h`.** The interface is the ordinary
+	//   IPageItemAdornmentList, and **taking it off the session under a different IID** is the whole
+	//   of it (kSessionBoss / IID_IGLOBALPAGEITEMADORNMENTLIST / kGlobalPageItemAdornmentListImpl).
 	ISession* session = GetExecutionContextSession();
 	if (session == nil)
 		return;
@@ -296,15 +304,15 @@ void KCMRingAdornmentRegister()
 	if (globalList == nil)
 		return;
 
-	// 第2引数 kFalse ＝「文書を dirty にしない」。★グローバルリストはセッションに載るので、
-	//   そもそも文書のデータには触れない(＝.indd への永続化も起きない)。
+	// The second argument kFalse means "do not dirty the document". The global list lives on the
+	//   session, so the document's data is not touched at all and nothing persists into the .indd.
 	if (!globalList->HasAdornment(kKCMRingAdornmentBoss))
 		globalList->AddAdornment(kKCMRingAdornmentBoss, kFalse);
 }
 
 void KCMRingAdornmentUnregister()
 {
-	ISession* session = GetExecutionContextSession();	// 終了処理中は nil になり得る
+	ISession* session = GetExecutionContextSession();	// can be nil while the application is shutting down
 	if (session == nil)
 		return;
 	InterfacePtr<IPageItemAdornmentList> globalList(session, IID_IGLOBALPAGEITEMADORNMENTLIST);
@@ -316,20 +324,21 @@ void KCMRingAdornmentUnregister()
 }
 
 //========================================================================================
-// 3.5) ★★★透明マネージャに「聞き直せ」と言う ---- PDF 1.3 の全面ベタの残り半分
+// 3.5) Telling the transparency manager to ask again -- the other half of the PDF 1.3 fix
 //========================================================================================
 
-/** 一覧へ載せるのか、降ろすのか。**方向を引数で受け取る。**
-	⚠★★★**2026-08-20 に引数を足した。** それまでは1本の関数が上げ下げ両方に使われ、**どちらにも
-	`kXPC_MayHaveAddedSomeXP` を送っていた** ---- 名前のとおりこの種別は**増える方向にしか効かない**ので、
-	呼び手は「対称に呼ぶこと」と書いて実際に対称に呼んでいたのに、**降ろす側が一度も効いていなかった**
-	(A/B 実測＝同じ文書に `MayHaveAdded` で `1->1` / `RemovedSomeXP` で `1->0`)。
-	★**教訓＝同じ関数が両方向に使われるなら、方向を引数で受け取る。** 呼び出しの対称性は、
-	意味の対称性を保証しない。 */
+/** Join the list, or leave it. **The direction is a parameter.**
+	@warning it used to be one function serving both directions and **sending
+	  `kXPC_MayHaveAddedSomeXP` for both** - and as the name says, that kind only works in the
+	  direction of adding. So although the callers were told to "call these symmetrically" and did,
+	  **the leaving side never once took effect** (A/B on the same document: `MayHaveAdded` gives
+	  `1->1`, `RemovedSomeXP` gives `1->0`).
+	**If one function serves both directions, take the direction as a parameter.** Symmetry in the
+	calls does not guarantee symmetry in the meaning. */
 enum KCMXPListAction
 {
-	kKCMXPListAdd,		///< 出力に透明が生じる ---- 一覧へ載せる(kXPC_AddedSomeXP)
-	kKCMXPListRemove		///< 生じない ---- 一覧から降ろす(kXPC_RemovedSomeXP)
+	kKCMXPListAdd,		///< transparency arises in the output - join the list (kXPC_AddedSomeXP)
+	kKCMXPListRemove		///< it does not - leave the list (kXPC_RemovedSomeXP)
 };
 
 static void KCMSetItemXPState(IDataBase* db, KCMXPListAction action)
@@ -348,11 +357,13 @@ static void KCMSetItemXPState(IDataBase* db, KCMXPListAction action)
 	if (spreadList == nil)
 		return;
 
-	// ★**スプレッドごとに1つで足りる。** 一覧は「そのスプレッドに透明を持つアイテムが在るか」を
-	//   答えるための材料で、位置は見ていない(`IXPManager.h:114-116`＝"Info is maintained solely on
-	//   the presence of transparent items on spread, **not based on location**")。
-	// ⚠**アイテムが1つも無いスプレッドは載せようがない**＝空ページだけの文書では、この手は効かない
-	//   (アドーンメントは空ページにも枠を描けるが、透明の有無を答える口がアイテムしか無いため)。
+	// **One item per spread is enough.** The list is the material for answering "are there items with
+	//   transparency on this spread", and location plays no part in it (IXPManager.h:114-116: "Info
+	//   is maintained solely on the presence of transparent items on spread, **not based on
+	//   location**").
+	// @warning **a spread holding no items at all cannot be put on the list**, so this does nothing
+	//   for a document of empty pages: the adornment draws frames on an empty page, but the only
+	//   thing that can answer for transparency is an item.
 	UIDList items(db);
 	const int32 spreadCount = spreadList->GetSpreadCount();
 	for (int32 i = 0; i < spreadCount; ++i)
@@ -364,45 +375,47 @@ static void KCMSetItemXPState(IDataBase* db, KCMXPListAction action)
 		for (int32 p = 0; p < pageCount; ++p)
 		{
 			UIDList onPage(db);
-			spread->GetItemsOnPage(p, &onPage, kFalse /*bIncludePage=ページ自身は要らない*/);
+			spread->GetItemsOnPage(p, &onPage, kFalse /*bIncludePage - the page itself is not wanted*/);
 			if (onPage.Length() > 0)
 			{
 				items.Append(onPage[0]);
-				break;			// このスプレッドはもう代表が取れた
+				break;			// this spread has its representative
 			}
 		}
 	}
 	if (items.Length() == 0)
 		return;
 
-	// ★★★**種別は方向で選ぶ**(`IXPManager.h:95-101`)。
-	//   ・載せる＝`kXPC_AddedSomeXP`     …「透明が足された」。手本の transparencyeffect も同じ
-	//                                      (`TranFxUtils.cpp:451-457`＝"update the item-has-xp list")。
-	//   ・降ろす＝`kXPC_RemovedSomeXP`   …「透明が外れた」。
-	//   ⚠★★★**`kXPC_MayHaveAddedSomeXP` を「どちらでもよい種別」として使ってはいけない。**
-	//     2026-08-20 に A/B で実測＝同じ文書へ `MayHaveAdded` を送ると **1->1(降りない)**、
-	//     `RemovedSomeXP` なら **1->0(降りる)**。ヘッダーの "will ask the item(s) for their new XP
-	//     state, and if it changes, will update" をそのまま読むと外す ---- **名前のとおり
-	//     `MayHave**Added**` は増える方向にしか効かない。**
-	//   ★どちらの向きでも、載る/降りるを最終的に決めるのは `IsFlattenerRequired_`(＝
-	//     `KCMMarksDeclareTransparency`)＝XPManager がアイテムに聞き直し、アイテムが
-	//     自分のアドーンメントに聞く。∴ **透明を偽って申告することにはならない。**
-	// ⚠**Command 版(`ProcessItemXPChangedCmd` / `kXPItemXPPrePostCmdBoss`)は使わない。**
-	//   公式サンプルがそちらなのは**アドーンメントの付け外し自体が文書データの変更で Undo に
-	//   乗せる必要がある**から。KCM の登録はセッション側で文書を1バイトも変えないので、
-	//   Undo スタックに項目を積む理由が無い(積めば Ctrl+Z の意味が壊れる)。
+	// **The kind is chosen by the direction** (IXPManager.h:95-105).
+	//   - joining = `kXPC_AddedSomeXP`    ... "some transparency was added". transparencyeffect does
+	//                                         the same (TranFxUtils.cpp:451-457, "update the
+	//                                         item-has-xp list").
+	//   - leaving = `kXPC_RemovedSomeXP`  ... "some transparency was removed".
+	//   @warning **`kXPC_MayHaveAddedSomeXP` is not an "either direction" kind.** Measured on one
+	//     document: `MayHaveAdded` gives **1->1, it does not leave**; `RemovedSomeXP` gives **1->0,
+	//     it leaves**. Reading the header's "will ask the item(s) for their new XP state, and if it
+	//     changes, will update" on its own misleads - **as the name says, `MayHave**Added**` only
+	//     works in the direction of adding.**
+	//   Either way, what finally decides whether it joins or leaves is `IsFlattenerRequired_` (=
+	//     `KCMMarksDeclareTransparency`): the XPManager asks the items again and an item asks its
+	//     adornments. **So this does not amount to declaring a transparency that is not there.**
+	// @warning **the command form (`ProcessItemXPChangedCmd` / `kXPItemXPPrePostCmdBoss`) is not
+	//   used.** The SDK sample uses it because **adding and removing its adornment is itself a change
+	//   to the document's data and has to be undoable**. KCM registers on the session side and changes
+	//   not one byte of the document, so there is nothing to put on the undo stack - putting something
+	//   there would break what Ctrl+Z means.
 	//
-	// ⚠★★★**この呼び出しは文書を dirty にする** ---- 2026-08-20 に A/B で実測した
-	//   (ガードを外したビルドでは、フライアウトを1回押しただけで `modified=true` になった)。
-	//   **一覧は文書側のデータ**なので、公式が Command 経由なのもそのためで、あちらは
-	//   「アドーンメントを付けた」という本物の文書変更に伴う dirty だから正しい。
-	//   **KCM は文書を変えていないので戻す。**
-	//   ★KCM の作法＝`IDataBase::SaveRestoreModifiedState`(入る前が clean なら出るときに戻す)。
-	//     同じ守りが KCMCore.cpp / KCMPeek.cpp / KCMOversetScan.cpp ほかにもある。
-	//   ⚠★★**ただしガードは「保存を促さない」だけで「保存されるのを防がない」** ---- 一覧の更新自体は
-	//     データベースに残るので、ユーザーが別の理由で保存すれば一緒に `.indd` へ書かれる
-	//     (2026-08-20 実測＝**開き直しても残り、再検証もされない**)。
-	//     ⇒ **だからこの関数は「書き出し／印刷のあいだだけ」呼ぶ**(下の 3.6 節)。
+	// @warning **this call dirties the document** (measured with the guard removed: one press of the
+	//   flyout was enough for `modified=true`). **The list is data on the document side**, which is
+	//   also why the official route is a command: there the dirtying goes with a real change to the
+	//   document and is correct. **KCM has changed nothing, so it puts it back.**
+	//   KCM does that with `IDataBase::SaveRestoreModifiedState` - clean going in, clean coming out.
+	//   The same guard is in KCMCore.cpp, KCMPeek.cpp, KCMOversetScan.cpp and others.
+	//   @warning **the guard only stops the document asking to be saved; it does not stop it being
+	//     saved.** The update to the list is in the database, so a save made for any other reason
+	//     writes it into the .indd along with everything else (measured: **it is still there after a
+	//     reopen, and is not re-validated**).
+	//     **Which is why this function is called only for the duration of an export** (section 5).
 	{
 		IDataBase::SaveRestoreModifiedState dirtyGuard(db);
 		xpManager->ItemXPChanged(items,
@@ -412,31 +425,30 @@ static void KCMSetItemXPState(IDataBase* db, KCMXPListAction action)
 }
 
 //========================================================================================
-// 4) ★★★スレッドごとの登録 ---- startup/shutdown サービス
+// 4) Per-execution-context registration -- the startup/shutdown service
 //========================================================================================
 
-/** 各実行コンテキストの起動時に登録し、終了時に外す。
+/** Registers on the startup of each execution context, and unregisters on its shutdown.
 
-	★★★**なぜ専用のサービスが要るのか**（2026-08-19・実測を経て）:
-	  グローバル**テキスト**アドーンメントは `.fr` の AddIn に
-	  `IID_IK2SERVICEPROVIDER, kGlobalTextAdornmentServiceImpl` と書くだけで済む
-	  （spellpanel の動的スペルチェックがその形＝`SpellPanelClass.fr:773-774`）。
-	  実行時の登録コードは1行も無く、**サービスは実行コンテキストごとに解決されるので
-	  バックグラウンドスレッドでも自動で有効になる。**
+	**Why a service of its own is needed.**
+	  A global **text** adornment needs none of this. It is declared in the .fr AddIn as
+	  `IID_IK2SERVICEPROVIDER, kGlobalTextAdornmentServiceImpl` - spellpanel's dynamic spelling
+	  squiggle is exactly that (SpellPanelClass.fr:773-774) - and there is not one line of
+	  registration code, because **a service is resolved separately in every execution context and
+	  so comes up on a background thread by itself.**
 
-	  ⚠**ページアイテム版には、その口が無い**（2026-08-19 に全数確認）＝
-	  `kServiceIDSpace` で adornment を名乗るサービスは `kGlobalTextAdornmentService` と
-	  InCopy のゲラ用2つだけで、**全部テキスト系**。ページアイテム側にあるのは
-	  `kGlobalPageItemAdornmentListImpl`（セッションに載る**リストの実装**）だけで、
-	  サービスプロバイダではない。
-	  ⇒ **サービスが自動でやっていることを、手で再現するのがこのクラス。**
+	  @warning **the page item side has no such door.** Of the services naming an adornment in
+	  `kServiceIDSpace` there are only `kGlobalTextAdornmentService` and InCopy's two galley ones,
+	  **all of them text**. What the page item side ships is `kGlobalPageItemAdornmentListImpl`,
+	  the implementation of the list that sits on the session, and that is not a service provider.
+	  **So this class does by hand what a service would have done for free.**
 
-	⚠★★**既存の KCMPeekStartup と一緒にしてはいけない。** あちらは `.fr` で
-	  `kCMainThreadStartupShutdownProviderImpl` を指定して**メインスレッド限定**にしてある ----
-	  Shutdown() が比較状態を丸ごと捨てるので、BG スレッドが終わるたびに呼ばれると
-	  **PDF を書き出すたびにマークが消える**（2026-08-15 に実際に踏んで直した箇所）。
-	  こちらは**登録と解除しかしない**ので、全スレッドで呼ばれてよい ---- というより
-	  **呼ばれなければ意味が無い**。∴ boss を分ける。 */
+	@warning **it must not be folded into KCMPeekStartup.** That one is deliberately pinned to the
+	  main thread in the .fr (kCMainThreadStartupShutdownProviderImpl), because its Shutdown()
+	  throws away the whole comparison state: called on every background thread teardown, **the
+	  marks vanish on every PDF export** (a bug that was hit and fixed). This one only registers
+	  and unregisters, so it is safe on every thread - and **useless unless it runs on them**.
+	  Hence a boss of its own. */
 class KCMRingAdornmentStartup : public CPMUnknown<IStartupShutdownService>
 {
 public:
@@ -450,118 +462,128 @@ public:
 CREATE_PMINTERFACE(KCMRingAdornmentStartup, kKCMRingAdornmentStartupImpl)
 
 //========================================================================================
-// 5) ★★★書き出しのあいだだけ、透明の一覧に載せる
+// 5) Joining the transparency list, for the duration of an export only
 //
-//  ■ なぜ「あいだだけ」なのか
-//    `IXPManager` の一覧は**文書側のデータで、`.indd` に永続する**(2026-08-20 実測＝比較して保存した
-//    文書を開き直すと1件残っており、**開くだけでは再検証されない**)。比較中ずっと載せておくと、
-//    ユーザーが何かの拍子に保存した瞬間に**根拠のない記録が焼き付く** ---- KCM を持たない人が
-//    その `.indd` を開いても残る。⇒ **要る瞬間だけ載せて、終わったら降ろす。**
-//    ★フラットナが要るのは**書き出しのときだけ**で、画面描画にもサムネイルにも一覧は要らない
-//    (印刷が要らないことは下記のとおり実測で確定した)。
+//  WHY ONLY FOR THE DURATION
+//    `IXPManager`'s list is **data on the document, and it persists into the .indd** (measured: a
+//    document that was compared and then saved still holds one entry when reopened, and **opening
+//    it re-validates nothing**). Held for the length of a comparison, the moment the reader saves
+//    for any reason at all **a record with nothing behind it is baked in** - and it stays there
+//    for whoever opens that .indd without KCM. **So join when it is needed and leave afterwards.**
+//    The flattener is only wanted **during an export**; screen drawing and thumbnails have no use
+//    for the list, and that print has none either was settled by measurement (below).
 //
-//  ■ 手本＝`customconditionaltext`(PDF と印刷の両方で「前に変えて後で戻す」を実装している唯一のサンプル)
-//    ・PDF   … `CusCondTxtResponder.cpp:118-152`  (Before で変え、After と **Failed** で戻す)
-//    ・印刷  … `CusCondTxtPrintSetupProvider.cpp:93-116` (BeforePrintGatherCmd → EndPrint)
+//  MODELLED ON `customconditionaltext`, the one sample implementing "change it before, put it back
+//  after" for both PDF and print
+//    - PDF   ... CusCondTxtResponder::RespondExport (changes on Before, restores on After and on
+//                **Failed**)
+//    - print ... CusCondTxtPrintSetupProvider (BeforePrintGatherCmd -> EndPrint)
 //
-//  ■ ★★★なぜ印刷側は**実装しない**のか(2026-08-20 ユーザー判断)
-//    ⚠**「効かないから」ではない。効く。** 印刷でも一覧に載せればフラットナが走り、マークが濃くなる:
+//  WHY THE PRINT SIDE IS **NOT** IMPLEMENTED
+//    @warning **not because it has no effect. It has.** Join the list while printing and the
+//    flattener runs there too, and the marks come out denser:
 //
-//      | 印刷時に一覧へ載せるか | 変更ページの色付き画素(p2/p3) | 見え方 |
+//      | joins the list when printing | coloured pixels on the changed pages (p2/p3) | how it looks |
 //      |---|--:|---|
-//      | 載せる(公式と同じ形。実装は `bd44eec` にある) | **16,076 / 13,635** | 画面と同じはっきりした薄赤 |
-//      | 載せない(＝現行)                              | **8,407 / 7,379**   | ずっと薄い＝**1.5.0(Draw Event 経路)と同じ見え方** |
+//      | yes (the shape the sample has; the implementation is in `bd44eec`) | **16,076 / 13,635** | the clear pale red seen on screen |
+//      | no (= what is here) | **8,407 / 7,379** | much fainter, the way 1.5.0 looked with the draw-event route |
 //
-//      (A/B の条件＝同一文書 `work/kescm-selftest/kescm-target.indd`(**透明を1つも持たない**)・
-//       Microsoft Print to PDF・`work/kescm-adorn/verify16-print.ps1`。PDF は 92,702 ⇔ 153,221 バイト。
-//       ★**どちらも `red=0`＝ベタにはならない**。差は濃度だけで、PDF 1.3 の「全面ベタ」とは別の壊れ方)
+//      (A/B: the same document work/kescm-selftest/kescm-target.indd, which **holds no
+//       transparency**; Microsoft Print to PDF; work/kescm-adorn/verify16-print.ps1. The PDFs are
+//       92,702 against 153,221 bytes. **Neither of them is `red=0` solid** - the difference is
+//       density, which is a different breakage from the solid block at PDF 1.3.)
 //
-//    ★**外した理由＝「印刷にそこまでの厳密性は要らない」**(2026-08-20 ユーザー判断・実機で確認済み)。
-//      印刷は最終出力ではなく、**印刷会社へ出すのは PDF**。⇒ **厳密さが要るのは書き出しの側だけ**。
-//      ⇒ 印刷の濃度も揃えたくなったら `bd44eec` の `KCMPrintXPSetupProvider` を戻せばよい
-//        (`kKCMPrintXPSetupProviderBoss` / `kKCMPrintXPSetupProviderImpl` ごと)。
+//    **It was left out because print does not need that precision.** Print is not the final
+//      output; **what goes to the printing company is the PDF**, so the strictness is wanted on
+//      the export side only. To match the density in print as well, bring
+//      `KCMPrintXPSetupProvider` back from `bd44eec` (together with `kKCMPrintXPSetupProviderBoss`
+//      and `kKCMPrintXPSetupProviderImpl`).
 //
-//    ⚠★★★**この節は一度「印刷では一覧を経由しないので効かない」と書いていた ---- 誤りだった。**
-//      根拠にしたのは「印刷 PDF 3本が 92,702 バイトで一致」だが、そのうち 00:07 採取の1本を
-//      **「通知を足したコミット(01:00)より前だから通知なしの版だ」と推定した**もので、
-//      実際に外して測ったら結果が変わった(＝3本とも通知ありの版だった)。
-//      ⇒ ★**「この成果物はこのコミットのビルドだ」は、測って確かめるまで仮定にすぎない。**
-//        **コミット時刻はビルド内容を語らない**(書いて測ってからコミットすれば前後が逆になる)。
+//  WHY NOT AROUND THE SAVE
+//    `kBeforeSaveDocSignalResponderService` would serve the same purpose, but **failing there costs
+//    the reader their document** - InDesign goes down and they get a recovery. Failing an export
+//    only costs them the export. **Put it where failing is allowed.**
 //
-//  ■ ⚠ なぜ「保存の前後」ではないのか(2026-08-20 ユーザー判断)
-//    同じ目的は `kBeforeSaveDocSignalResponderService` でも果たせるが、**そこで落ちると文書を失う**
-//    (InDesign が落ちて復帰になる)。書き出しなら失敗してもやり直せるだけ。
-//    ⇒ **どこで失敗しても許される場所に置く。**
-//
-//  ■ ★★★2026-08-20: **書き出しシグナル(kBeforeExport)ではなく、クローンに載せる形へ移した**
-//    旧実装は `kBeforeExport`/`kAfterExport`/`kFailedExport` の3シグナルで**元の文書**に載せ外ししていた。
-//    ⚠**それには穴があった** ---- シグナルは**メインスレッドで元の db** を持って飛ぶので、
-//      「元の文書に載っている時間」が生じ、**非同期書き出し(BG)の最中にユーザーが保存すると
-//      一覧が `.indd` に焼き付く**。★実測＝書き出し中に `save()` したら、開き直した文書の
-//      `document.kcmTransparencyItemCount` が **4**(通常の経路では 0)。
-//    ⇒ ★**`kPDFExportSetupService` の `BeginExport` へ移した**。非同期ではそこに
-//      **書き出し用のクローン db** が渡るので、**元の文書を一度も触らずに出力だけ変えられる**。
-//      詳細と実測は下の実装のコメント／`docs/ai-notes/pdf-export-setup-service-and-clone-db-2026-08-20.md`。
-//    ★**旧実装で分かったこと自体は正しく、記録として残す価値がある**:
-//      ・書き出しシグナルは**同期・非同期とも飛ぶ**が、**どちらもメインスレッドで元の `IDataBase`**
-//      ・⚠**フォーマット名が経路で違う**＝同期 `Adobe PDF` / 非同期 `Adobe PDF (Print)`
-//        (公式が3つ列挙している理由。1つだけ見ると片方で外す)
+//  WHY THE CLONE, AND NOT THE EXPORT SIGNALS
+//    The earlier implementation used `kBeforeExport`/`kAfterExport`/`kFailedExport` and joined the
+//    list on **the original document**. @warning **that had a hole**: the signals arrive **on the
+//    main thread carrying the original db**, so there is a stretch of time in which the original is
+//    on the list, and **a save made during an asynchronous (background) export bakes the list into
+//    the .indd** (measured: save() during an export, and the reopened document reports
+//    `document.kcmTransparencyItemCount` = **4**, where the normal path gives 0).
+//    `kPDFExportSetupService`'s `BeginExport` is handed **the clone db the export draws from**, so
+//    **the output can be changed without the original being touched once**. The details and the
+//    measurements are in the implementation below and in
+//    docs/ai-notes/pdf-export-setup-service-and-clone-db-2026-08-20.md.
+//    What the earlier implementation established is still true and worth keeping:
+//      - the export signals fire on **both** the synchronous and the asynchronous route, but
+//        **both of them on the main thread, with the original `IDataBase`**
+//      - @warning **the format name differs between the routes**: synchronous `Adobe PDF`,
+//        asynchronous `Adobe PDF (Print)`. (That is why the sample lists three of them; look at
+//        one and you miss the other route.)
 //========================================================================================
 
-// この実行コンテキストが「いま書き出している db」。書き出していなければ nil。
+// The db this execution context is exporting; nil when it is not exporting.
 //
-// ★★★**スレッドローカルであることが設計の要**(2026-08-20)。載せる(`BeginExport`)・聞かれる
-//   (`IsFlattenerRequired_`)・降ろす(`EndExport`)の3つが、**非同期なら全部 BG・同期なら全部 main** と
-//   1本のスレッドで完結するので、**mutex が要らない**。
-//   ⚠**static にしてはいけない** ---- ガイド vol1-07 の "Threads do not share object-model instances.
-//     **They do share globals and statics**" にそのまま当たる(BG の書き出し中に main 側の描画が
-//     「出力中だ」と誤答する)。同じ罠で 2026-08-19 に一度やられている(Register のコメント)。
-// ⚠1つのスレッドが同時に2つの文書を書き出すことはない ---- イベントの構成が
-//   `BeginExport → 描画 → EndExport` の直列だから。∴ 1つ持てば足りる。
+// **Being thread-local is the essence of the design.** Joining (`BeginExport`), being asked
+//   (`IsFlattenerRequired_`) and leaving (`EndExport`) all happen on one thread - all on the
+//   background thread when the export is asynchronous, all on the main thread when it is
+//   synchronous - **so no mutex is needed**.
+//   @warning **it must not be a static.** Guide vol1-07's "Threads do not share object-model
+//     instances. **They do share globals and statics**" applies to it directly: a background
+//     export would make the drawing on the main thread answer "an output is being made". The same
+//     trap caught this code once already (the comment in Register).
+// One thread never exports two documents at once, the events being the straight line
+//   `BeginExport -> drawing -> EndExport`, so one of these is enough.
 static IDThreading::ThreadLocal<IDataBase*> tl_ExportingDB(nil);
 
 
-/** いま書き出している db から降りる。`EndExport` と、ブック書き出しの文書切り替えで呼ぶ。 */
+/** Leave the db being exported. Called from `EndExport`, and when a book export moves on to the
+	next document. */
 static void KCMEndExportOnThisThread()
 {
 	IDataBase* const db = tl_ExportingDB.Get();
 	if (db == nil)
 		return;
 
-	// ★★**先に倒してから通知する。** `kXPC_RemovedSomeXP` は「消せ」ではなく「**聞き直せ**」なので、
-	//   この時点で `IsFlattenerRequired_` が「まだ透明がある」と答えると**一覧から降りない**
-	//   (2026-08-20 実測＝`xp 0->4` のまま戻らなかった)。
+	// **Clear the flag before notifying.** `kXPC_RemovedSomeXP` does not mean "remove it", it means
+	//   "**ask again**", so if `IsFlattenerRequired_` still answers "there is transparency" at this
+	//   point **the entry does not leave the list** (measured: it stayed at `xp 0->4`).
 	tl_ExportingDB.Set(nil);
 	KCMSetItemXPState(db, kKCMXPListRemove);
 }
 
-/** 書き出しが始まった／ブック書き出しで文書が切り替わった ---- 透明が生じるときだけ一覧へ載せる。 */
+/** An export has begun, or a book export has moved to another document. Join the list, but only
+	where transparency is going to arise. */
 static void KCMBeginExportOn(IDataBase* db)
 {
-	// ブックの `NewDocument` はここへ来る＝前の章の db から先に降りる。
-	// ⚠これを忘れると、2章目以降で**前の章の db を載せっぱなし**にする。
+	// A book's `NewDocument` comes here, so leave the previous chapter's db first.
+	// @warning forget this and every chapter from the second on **leaves the previous chapter's db on
+	//   the list**.
 	KCMEndExportOnThisThread();
 
 	if (db == nil)
 		return;
-	// ★載せるかどうかは「マークが半透明を使いうるか」で決める。
-	//   ⚠**`KCMMarksDeclareTransparency()` ではない** ---- あちらは「いま書き出し中か」を含むので、
-	//     まだ tl_ExportingDB を立てていないこの時点では必ず kFalse になり、**一度も載らなくなる**。
+	// Whether to join is decided by "could the marks be translucent".
+	// @warning **not by `KCMMarksDeclareTransparency()`**: that one includes "is an export running",
+	//   and since tl_ExportingDB is not set yet at this point it is always kFalse there, so **nothing
+	//   would ever join**.
 	if (!KCMMarksCouldBeTranslucent())
 		return;
 
-	// ★★**先に立ててから通知する。** 下の KCMSetItemXPState() が出す通知を受けて XPManager が
-	//   `IsFlattenerRequired_` を聞きに来るので、その時点で「書き出し中」になっていないと
-	//   kFalse と答えてしまい、載らない。
+	// **Set the flag before notifying.** The notification KCMSetItemXPState() sends below makes the
+	//   XPManager come back and ask `IsFlattenerRequired_`, and unless "an export is running" is true
+	//   by then the answer is kFalse and nothing joins.
 	tl_ExportingDB.Set(db);
 	KCMSetItemXPState(db, kKCMXPListAdd);
 }
 
-// ★★★`IsFlattenerRequired_` の答え(前方宣言はファイル冒頭。理由もそこに書いてある)。
+// The answer `IsFlattenerRequired_` gives. Forward-declared at the head of this file, with the
+// reasoning.
 static bool16 KCMMarksDeclareTransparency()
 {
-	// ⚠**書き出しの最中でなければ「透明は無い」と答える。** 理由は上の
-	//   KCMEndExportOnThisThread() のコメント。
+	// **Outside an export, answer "there is no transparency".** The reason is at
+	//   KCMEndExportOnThisThread() above.
 	if (tl_ExportingDB.Get() == nil)
 		return kFalse;
 
@@ -569,24 +591,27 @@ static bool16 KCMMarksDeclareTransparency()
 }
 
 //----------------------------------------------------------------------------------------
-// ★★★PDF 書き出しに割り込んで「**クローンにだけ**」載せる (kPDFExportSetupService)
+// Joining **the clone only**, through kPDFExportSetupService
 //
-//  ■ なぜ書き出しシグナル(kBeforeExport)ではなく、こちらなのか(2026-08-20 ユーザー判断)
-//    `kBeforeExport` は**メインスレッドで、元の文書の db** を持って飛ぶ。そこで載せると
-//    「元の文書に載っている時間」が生じ、**その隙にユーザーが保存すると一覧が .indd に焼き付く**。
-//    ★実測＝非同期書き出しの最中に `save()` すると、開き直した文書の
-//      `kcmTransparencyItemCount` が **4** になった(通常の経路では 0)。
-//    ⇒ 一方 `kPDFExportSetupService` の `BeginExport` は、**非同期では書き出し用のクローン db** を
-//      渡してくる(2026-08-20 実測＝元の Target/Source どちらとも違うポインタ)。
-//      **そこへ載せれば元の文書は一度も触られない。**
-//    ★**クローンに載せても出力にはちゃんと効く**(PDF 1.3 の半透明が、元に載せていたときと
-//      1ドット違わない絵で出た)。全文＝`docs/ai-notes/pdf-export-setup-service-and-clone-db-2026-08-20.md`。
-//    ⚠**同期書き出しではクローンが作られない**(db が元そのもの)。そこは載せて降ろすしかないが、
-//      同期は呼び出しが返るまでブロックするので**保存の隙自体が無い**。
+//  WHY THIS AND NOT THE EXPORT SIGNAL (kBeforeExport)
+//    `kBeforeExport` arrives **on the main thread, with the original document's db**. Join there
+//    and the original is on the list for a stretch of time, and **a save made in that window bakes
+//    the list into the .indd** (measured: save() during an asynchronous export, and the reopened
+//    document reports `kcmTransparencyItemCount` = **4**, where the normal path gives 0).
+//    `kPDFExportSetupService`'s `BeginExport`, by contrast, is handed **the clone db of the
+//    export** when the export is asynchronous (measured: a pointer different from both the
+//    original Target and the original Source). **Join that and the original is never touched.**
+//    **Joining the clone still reaches the output**: the translucency at PDF 1.3 came out not one
+//    dot different from when the original was used. Full record in
+//    docs/ai-notes/pdf-export-setup-service-and-clone-db-2026-08-20.md.
+//    @warning **a synchronous export makes no clone** - the db is the original. There is nothing to
+//    do there but join and leave, but a synchronous export blocks until it returns, so **the window
+//    for a save does not exist**.
 //
-//  ■ 手本＝`sdksamples/pdfvt/PDFVTExportProvider.cpp:165-230`(SDK 唯一の実装例)／`pdfvt/PDFVT.fr:113-121`
-//  ⚠**ServiceProvider は Adobe 提供の `kPDFExportSetupServiceImpl` を `.fr` でそのまま名指しする**ので、
-//    自作するのはこの1本だけ(サービス ID は実装側が返す＝`.fr` に ServiceID を書く必要も無い)。
+//  MODELLED ON `sdksamples/pdfvt` - PDFVTExportProvider::PDFProcessEvent and PDFVT.fr:113-121
+//  @warning **the ServiceProvider side names Adobe's own `kPDFExportSetupServiceImpl` in the .fr**,
+//    so this is the only implementation to write. (The service ID comes from that implementation,
+//    so the .fr needs no ServiceID either.)
 //----------------------------------------------------------------------------------------
 
 class KCMPDFExportSetup : public CPMUnknown<IPDFExportSetupProvider>
@@ -610,13 +635,15 @@ bool16 KCMPDFExportSetup::PDFProcessEvent(PDFExportEvent* ev, int32 /*pageNum*/)
 				KCMBeginExportOn(ev->db);
 				break;
 
-			// ★ブック書き出しで文書が切り替わったとき(2章のブックで実測)。
-			//   ⚠受けずに BeginExport の db だけを使い回すと、**2章目以降で違う文書を相手にする**。
+			// A book export moving on to another document (measured with a two-chapter book).
+			// @warning without this, using only the db from BeginExport, **every chapter from the
+			//   second on works against the wrong document**.
 			case kPDFExportEventNewDocument:
 				KCMBeginExportOn(ev->db);
 				break;
 
-			// ⚠**このイベントの db は必ず nil**(同期・非同期とも実測)。⇒ 降りる相手は控えたものを使う。
+			// @warning **the db on this event is always nil** (measured on both routes), so what
+			//   leaves the list is the one that was kept.
 			case kPDFExportEventEndExport:
 				KCMEndExportOnThisThread();
 				break;
@@ -626,22 +653,24 @@ bool16 KCMPDFExportSetup::PDFProcessEvent(PDFExportEvent* ev, int32 /*pageNum*/)
 		}
 	}
 
-	// ⚠**必ず kTrue を返す。** kFalse は「**そのイベントの既定処理をスキップ**」という意味
-	//   (`IPDFExportSetupProvider.h:52-53`)＝書き出しそのものを壊す。
+	// @warning **always return kTrue.** kFalse means "**skip the default processing for this event**"
+	//   (IPDFExportSetupProvider.h:52-53), which breaks the export itself.
 	return kTrue;
 }
 
 //----------------------------------------------------------------------------------------
-// 5-2) 外から件数を読む口 ---- document.kcmTransparencyItemCount
+// 5-2) Reading the count from outside -- document.kcmTransparencyItemCount
 //----------------------------------------------------------------------------------------
 
-/** 「透明を持つページアイテムの一覧」の件数。宣言のコメント(KCMRingAdornment.h)に用途がある。
+/** How many items are on the item-has-transparency list. What it is for is at the declaration in
+	KCMRingAdornment.h.
 
-	★**この1本があるだけで、上の載せ外しが正しいかを画素を数えずに検算できる。**
-	  一覧は `.indd` に永続するので ---- 書き出しの前後で `0 → n → 0` に戻ることを読めば
-	  「降ろせている」が判り、**保存 → 閉じる → 開き直して 0 なら「書き込まれていない」**が判る。
-	⚠**dirty フラグでは代用できない** ---- `SaveRestoreModifiedState` のガードは「保存を促さない」
-	  だけで「保存されるのを防がない」。⇒ 測るべきは dirty ではなく**一覧そのもの**。 */
+	**This one function is what makes the joining and leaving above checkable without counting
+	pixels.** The list persists into the .indd, so reading `0 -> n -> 0` across an export says the
+	leaving works, and **save -> close -> reopen -> 0 says nothing was written**.
+	@warning **the dirty flag cannot stand in for it**: the `SaveRestoreModifiedState` guard only
+	  stops the document asking to be saved, it does not stop it being saved. **What has to be
+	  measured is the list itself.** */
 int32 KCMGetNumItemsWithXP(IDataBase* db)
 {
 	if (db == nil)
