@@ -5,7 +5,9 @@
 //  The "Hide Unchanged Spreads" implementation: hiding the spreads that carry no marks and
 //  restoring the ones we hid.
 //
-//  Split out of KCMActionComponent.cpp on 2026-08-13. Behaviour unchanged.
+//  It lives here, not in the UI half, because the five statics it writes (the toggle, and the
+//  database + spread list for each side) are the same ones KCMResetHideUnchanged clears --
+//  leaving the writer on the UI side would have split that state across the boundary.
 //
 //  This is MODEL side: it issues kHideSpreadCmdBoss, i.e. it changes the document. The menu
 //  item that turns the feature on and off stays on the UI side in KCMActionComponent.cpp.
@@ -27,43 +29,44 @@ class IDataBase;
 // the same way through the pairing table and hidden too. ON -> OFF: show back exactly what
 // we hid, on both sides, without asking.
 //
-// ★Both commands (Target and Source) run inside ONE CmdUtils::SequenceContext, in both
-// directions -- a hide/restore that spans two documents must be one undo step. Splitting it
+// **Both commands (Target and Source) run inside ONE CmdUtils::SequenceContext, in both
+// directions** -- a hide/restore that spans two documents must be one undo step. Splitting it
 // per document is the shape that leaves one document stranded when the user hits Ctrl+Z
-// (measured 2026-08-16: kHideSpreadCmdBoss pushes one undo step per call). API audit B10.
+// (measured: kHideSpreadCmdBoss pushes one undo step per call).
 //
-// ★Split out of KCMActionComponent::DoHideUnchangedToggle on 2026-08-13, body unchanged.
-//  It moved as a whole because the five statics it writes (the toggle, and the database +
-//  spread list for each side) are the same ones KCMResetHideUnchanged clears -- leaving
-//  the writer on the UI side would have split that state across the boundary.
-// ***** 保存されるときは隠しを解除する。***** (ユーザー決定 2026-08-19)
-//   このトグルは永続変更(`kHideSpreadCmdBoss`)なので、隠したまま保存すると `.indd` に残り、
-//   **隠れたスプレッドは印刷にも書き出しにも出ない**＝気づかず入稿するとページが丸ごと落ちる。
-//   ⇒ `KCMBeforeSaveDocResponder`(KCMDocResponder.cpp) が **保存の直前に両側とも戻す**。
-//   ★**別名保存(Save As)だけは対象外にしてあり、それが使い分けになる**＝
-//     **上書き保存/閉じるときの保存＝解除して保存 ／ Save As＝隠したまま保存**（実測で確認済み）。
-//   ⚠**「閉じる前(`kBeforeCloseDoc`)」では間に合わない**＝その時点で保存は既に終わっている
-//     （診断ビルドで `IDataBase::IsModified()==0` を実測。詳細は KCMDocResponder.cpp 冒頭）。
+// **THE SPREADS ARE PUT BACK WHEN THE DOCUMENT IS SAVED.** (The user's call.) This toggle is a
+//   persistent edit, so spreads left hidden stay hidden in the .indd -- and **a hidden spread
+//   neither prints nor exports**, which is a page silently missing from whatever gets sent out.
+//   KCMBeforeSaveDocResponder (KCMDocResponder.cpp) **restores both sides just before the save**.
+//   **Save As is deliberately not covered, and that is the division** (measured): Save, and the
+//     save a close performs, restore first; Save As writes the document with the spreads still
+//     hidden.
+//   @warning **kBeforeCloseDoc would be too late** -- by then the save has already happened
+//     (IDataBase::IsModified() == 0, measured in a diagnostic build; KCMDocResponder.cpp has it).
 //
-// ★**これは Target と Source の食い違いも同時に消す**（ユーザー指摘 2026-08-19）。
-//   従来は「先に閉じた側は隠れたまま保存され、あとに残った側は `KCMHandleDocsClosed` が
-//   `KCMResetHideUnchanged(kTrue)` を呼ぶので隠れずに保存される」＝**保存が Stop より
-//   先か後かで結果が割れていた**。保存の直前に必ず両側を戻すので、どちらの順で閉じても揃う。
+// **It also removes a Target/Source disagreement.** Before it existed, the side closed FIRST was
+//   saved while still hidden, while the side left open was restored by the close sweep's
+//   KCMResetHideUnchanged(kTrue) -- so **the result depended on whether the save came before or
+//   after the Stop**. Restoring both sides before every save makes the order irrelevant.
 //
-// ***** 控えは Undo/Redo に追随しない。これは既知で、現状維持と決まっている。*****
-//   (ユーザー決定 2026-08-19。**再提案しないこと。**)
-//   `kHideSpreadCmdBoss` は **undo 可能な永続コマンド**だが、下の5つの static はそうではないので、
-//   Undo を挟むと文書と控えが食い違う。2026-08-19 に両経路を実測した:
-//     ・Hide ON → Undo …… 文書は戻る(`[-,-,-,-]`)のにトグルは ON のまま
-//       ⇒ 実害小(トグルを押すと、既に表示されているものを再表示するだけ)
-//     ・Hide ON → 保存 → Undo → Redo …… **文書は隠れる**のにトグルは OFF
-//       ⇒ 控えが空なので**このトグルでは戻せない**(Pages パネルで手動、または再 Start)
-//   ★**保存の解除コマンドが undo スタックに積まれない**ことが後者の機序(実測)。保存が undo 履歴を
-//     汚さないのは良い性質だが、その分スタックとモデルが食い違い、Redo で表に出る。
-//   ⚠**`undoName` は hide も unhide も同じ `スプレッドを隠す`** なので、名前を見ても何が積まれて
-//     いるか分からない ---- 実際に Undo/Redo を走らせて初めて判明した。
-//   ★公式には解がある(Snapshot interface = 非永続データを Undo/Redo に追随させる)が、
-//     **起こる操作が稀なので採らない**と決めた。作り直すときだけ再検討する。
+// **THE RECORD DOES NOT FOLLOW UNDO/REDO. THIS IS KNOWN, AND IT IS STAYING.** (The user's call
+//   -- **do not propose it again.**) kHideSpreadCmdBoss is an undoable persistent command, but
+//   the five statics below are not, so an Undo leaves the document and the record out of step.
+//   Both paths were measured:
+//     - Hide ON -> Undo ...... the document comes back ([-,-,-,-]) while the toggle stays ON
+//       => little harm: pressing the toggle re-shows what is already shown
+//     - Hide ON -> save -> Undo -> Redo ...... **the document hides** while the toggle is OFF
+//       => the record is empty, so **this toggle cannot put it back** (the Pages panel by hand,
+//          or a fresh Start)
+//   **The restore the save issues is not pushed onto the undo stack**, which is the mechanism
+//     behind the second one (measured). A save that does not dirty the undo history is a good
+//     property, and it is also what lets the stack and the model disagree; Redo is where that
+//     shows.
+//   @warning **undoName is the same for hide and for unhide**, so the Edit menu says nothing
+//     about which of the two is on the stack -- this only came out by running Undo/Redo.
+//   There is an official answer (the Snapshot interface, which makes non-persistent data follow
+//     Undo/Redo); **not taken, because the sequence of steps that reaches this is rare.**
+//     Reconsider only in a rewrite.
 void		KCMHideUnchangedToggle();
 
 // Reset the toggle on both sides. With restoreSpreads=kTrue the spreads we remember hiding
@@ -73,19 +76,22 @@ void		KCMHideUnchangedToggle();
 // been closed -- only the surviving side is restored. With kFalse the databases are not
 // touched at all and only the state is dropped.
 //
-// Callers -- all FOUR of them (counted 2026-08-18, bug recheck B10):
-//   1. re-comparison  KCMDoMarkChangesDoc  (KCMCore.cpp)  -- kTrue
-//   2. Stop           KCMDoClearMarks      (KCMCore.cpp)  -- kTrue
-//   3. the close sweep KCMHandleDocsClosed (KCMPeek.cpp)  -- kTrue, or kFalse while quitting
-//   4. ★the model's Shutdown                (KCMPeek.cpp)  -- kFalse
-// ⚠Number 4 was missing from this list, and it is the one the kFalse sentence above is written
-// for: it is the only caller that ALWAYS passes kFalse. A header that explains an argument
-// nobody in its own caller list ever passes is a header that has not been re-counted.
+// Callers -- all FIVE of them:
+//   1. re-comparison    KCMDoMarkChangesDoc        (KCMCore.cpp)         -- kTrue
+//   2. Stop             KCMDoClearMarks            (KCMCore.cpp)         -- kTrue
+//   3. before a save    KCMBeforeSaveDocResponder  (KCMDocResponder.cpp) -- kTrue
+//   4. the close sweep  KCMHandleDocsClosed        (KCMPeek.cpp)         -- kTrue, or kFalse
+//                                                                           while quitting
+//   5. the model's Shutdown KCMPeekStartup::Shutdown (KCMPeek.cpp)       -- kFalse
+// @warning number 5 is the one the kFalse sentence above is written for: it is the only caller
+//   that ALWAYS passes kFalse. **This list has been wrong once already** -- it said four, and
+//   the save responder (3) arrived after it was written. A header that explains an argument
+//   nobody in its own caller list ever passes is a header that has not been re-counted.
 void		KCMResetHideUnchanged(bool16 restoreSpreads);
 
 // kTrue while the toggle is ON, i.e. while spreads hidden by this feature are being held.
-// UpdateActionStates asks for the check mark next to the menu item. (Split out on
-// 2026-08-13: the flag itself lives in KCMHideUnchanged.cpp with the rest of the state.)
+// UpdateActionStates asks for the check mark next to the menu item. The flag itself lives in
+// KCMHideUnchanged.cpp with the rest of the state.
 bool16		KCMGetHideUnchangedOn();
 
 // The documents currently hiding spreads for this feature, or nil. The close sweep uses
