@@ -65,7 +65,8 @@
 
 // Project includes:
 #include "KCMID.h"
-#include "KCMScriptingDefs.h"	// p_KCMStatus / p_KCMBookResult (this half's two read-only properties)
+#include "KCMScriptingDefs.h"	// the ScriptIDs this half publishes (that header lists them; it does
+								// not count them, and neither does this line)
 								// plus the four story counters, p_KCMChangeCount and friends. The tool's own
 								// ScriptID (en_KCMTool) is in the UI half's copy of this header.
 
