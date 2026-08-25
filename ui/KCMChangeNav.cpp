@@ -307,7 +307,7 @@ static int32 KCMFindCurrentStop(const std::vector<KCMNavStop>& stops)
 			//   storyRow を足した)。
 			// ⚠★★★**足した理由は誤っていた。同日中に裏を取って撤回した。** 「版どうしでない2文書では
 			//   Target 側の行と Source 側の削除行の UID が衝突しうる」と書いたが、**衝突は起きない** ----
-			//   `KCMStoryStamp.h:110-111` が Added を「**Source 側にこの UID のストーリーが無い**」、
+			//   `KCMStoryStamp.h` の kKCMStoryKindAdded / kKCMStoryKindRemoved が Added を「**Source 側にこの UID のストーリーが無い**」、
 			//   Removed を「**Target 側に無い**」と定義しており、**同じ UID が両側にあれば必ずペアになる**
 			//   ＝どちらの行にもならない。⇒ **一覧の中で同じ UID が2行に現れることは無い。**
 			// ★**それでも3つ見るままにしてある**＝(a)UID の一意性は上のペアリングの実装に依存しており、

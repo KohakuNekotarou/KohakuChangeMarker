@@ -255,7 +255,7 @@ bool16 SelectRangeIn(IDataBase* db, UID storyUID, TextIndex from, TextIndex to)
 	if (model == nil)
 		return kFalse;	// no such story here. Normal on the source side: an added story never
 						//  existed over there, and the two versions have to be versions of each
-						//  other for a uid to mean the same story at all (KCMStoryStamp.h:46-51)
+						//  other for a uid to mean the same story at all (KCMStoryStamp.h, "WHY TWO VERSIONS CAN BE MATCHED AT ALL")
 
 	// ★The range is clamped to the story as it stands NOW. The diff ran against the story as it was
 	//   when the comparison did, and the reader may have edited it since - a stale end would be

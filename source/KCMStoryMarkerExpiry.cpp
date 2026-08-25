@@ -6,15 +6,16 @@
 //
 //  See KCMStoryMarkerExpiry.h for why this is an idle task and not a callback timer.
 //
-//  ***** THERE IS NO "IS IT RUNNING" FLAG HERE, AND THERE MUST NOT BE. ***** Whether the task is
+//  **THERE IS NO "IS IT RUNNING" FLAG HERE, AND THERE MUST NOT BE.** Whether the task is
 //  sitting in the idle queue is the BASE CLASS's business: CIdleTask keeps it in
-//  fCurrentlyInstalled (CIdleTask.h:64) and InstallTask / UninstallTask maintain it. A second copy
-//  here could only ever disagree with it - and disagreeing in one direction is illegal, not merely
-//  untidy: IIdleTaskMgr.h:84 says "it is illegal to add the same task twice", which is what a stale
-//  "not running" would lead to. Calling UninstallTask when nothing is installed is free
-//  (IIdleTaskMgr.h:95-98). So every entry point below simply uninstalls first and asks no
-//  questions - the shape Adobe's own re-arming code uses (spellpanel/DynSpellCheckEventWatcher.cpp
-//  does it on every keystroke). KBS learned this the hard way in its 2026-08-08 audit; the flag it
+//  fCurrentlyInstalled and InstallTask / UninstallTask maintain it. A second copy here could
+//  only ever disagree with it -- and disagreeing in one direction is illegal, not merely untidy:
+//  IIdleTaskMgr::AddTask says "it is illegal to add the same task twice", which is what a stale
+//  "not running" would lead to. Calling UninstallTask when nothing is installed is free (it
+//  answers kEndOfTime for a task that was not there). So every entry point below simply
+//  uninstalls first and asks no questions -- the shape Adobe's own re-arming code uses
+//  (spellpanel/DynSpellCheckEventWatcher.cpp does it on every keystroke). KBS learned this the
+//  hard way in its own audit; the flag it
 //  removed then is not being reintroduced here.
 //
 //========================================================================================
@@ -29,7 +30,7 @@
 #include "CreateObject.h"
 
 // Project includes:
-#include "KCMID.h"			// ★2026-08-23: moved from the UI plug-in's KCMUIID.h with the marker
+#include "KCMID.h"			// moved here from the UI plug-in with the marker
 #include "KCMStoryMarker.h"
 #include "KCMStoryMarkerExpiry.h"
 
@@ -57,17 +58,17 @@ CREATE_PMINTERFACE(KCMStoryMarkerExpiryTask, kKCMStoryMarkerExpiryImpl)
 
 uint32 KCMStoryMarkerExpiryTask::RunTask(uint32 /*flags*/, IdleTimer* /*idleTimer*/)
 {
-	// Take ourselves off the queue, then clear. CIdleTask.h:36-38 asks for exactly this - "Don't
-	// return kEndOfTime from RunTask, instead you would call UninstallTask and return any value
-	// from RunTask as it will be ignored".
+	// Take ourselves off the queue, then clear. CIdleTask asks for exactly this -- "Don't return
+	// kEndOfTime from RunTask, instead you would call UninstallTask and return any value from
+	// RunTask as it will be ignored".
 	//
-	// ⚠Taking the flash down calls back into Stop(), which uninstalls again. That second call is harmless by the
-	//   contract quoted at the head of this file.
+	// @warning taking the flash down calls back into Stop(), which uninstalls again. That second
+	//   call is harmless by the contract quoted at the head of this file.
 	this->UninstallTask();
 
-	// ★THE FLASH, AND ONLY THE FLASH (2026-08-23). The standing marks a toggle is holding up have
-	//   no clock, and since the two can now be on screen together in different windows, a countdown
-	//   that took everything down would wipe a toggle's marks a second after any jump.
+	// **THE FLASH, AND ONLY THE FLASH.** The standing marks a toggle is holding up have no clock,
+	//   and since the two can be on screen together in different windows, a countdown that took
+	//   everything down would wipe a toggle's marks a second after any jump.
 	if (!sShutdown)
 		KCMStoryMarker::ClearFlash();
 

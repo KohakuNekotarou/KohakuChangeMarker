@@ -6,32 +6,32 @@
 //
 //  What is lit up, per document, and the one rule for putting two sets of it together.
 //
-//  ★★★TWO KINDS OF MARK EXIST AND THEY MEET HERE (2026-08-23). A STANDING mark is what the
-//  "Always Show Marks on Target / Source" toggles and the tool's held button put up; a FLASH is the
-//  pointer a jump puts up for about a second (KCMStoryMarker). They are drawn by one adornment,
-//  which is why they have to be reconciled before anything is drawn rather than while it is.
-//  ⚠The rule below was written when that adornment INVERTED what was underneath (Difference
-//  blending), where two marks over the same characters cancelled out and left a hole exactly where
-//  both said "look here". **2026-08-24 the drawing became an opaque wash and that failure mode is
-//  gone** - see the note on the rule itself for what still keeps it.
+//  **TWO KINDS OF MARK EXIST AND THEY MEET HERE.** A STANDING mark is what the "Always Show
+//  Marks on Target / Source" toggles and the tool's held button put up; a FLASH is the pointer
+//  a jump puts up for about a second (KCMStoryMarker). They are drawn by one adornment, which is
+//  why they have to be reconciled before anything is drawn rather than while it is.
+//  @warning the rule below was written when that adornment INVERTED what was underneath
+//   (Difference blending), where two marks over the same characters cancelled out and left a
+//   hole exactly where both said "look here". **The drawing is now an opaque wash and that
+//   failure mode is gone** -- see the note on the rule itself for what still keeps it.
 //
-//  ★★THE RULE IS PER DOCUMENT, AND THAT IS THE WHOLE POINT OF THIS FILE: in a document that has
-//  a standing mark, the standing mark is all there is; in a document that has none, the flash
-//  shows. Nothing is ever merged between the two.
-//    * The two can never fight over the same characters, because within one document only one of
-//      them is ever used - the guarantee comes from the shape of the answer rather than from a
-//      check somebody has to remember to write. ★What that buys since the wash replaced the
+//  **THE RULE IS PER DOCUMENT, AND THAT IS THE WHOLE POINT OF THIS FILE:** in a document that
+//  has a standing mark, the standing mark is all there is; in a document that has none, the
+//  flash shows. Nothing is ever merged between the two.
+//    * The two can never fight over the same characters, because within one document only one
+//      of them is ever used -- the guarantee comes from the shape of the answer rather than from
+//      a check somebody has to remember to write. What that buys since the wash replaced the
 //      inversion is no longer "no hole" but "no ambiguity": a document showing every edit is not
 //      also pointing at one of them.
-//    * And the jump reaches the OTHER window. Until 2026-08-23 one flag answered for both
-//      documents ("is a standing mark showing?"), so turning "Always Show Marks on Target" on silenced
-//      the jump's flash in the SOURCE window too, where nothing was standing and the reader had
-//      just asked to be shown something (the bug logged as A3).
+//    * And the jump reaches the OTHER window. One flag used to answer for both documents ("is a
+//      standing mark showing?"), so turning "Always Show Marks on Target" on silenced the
+//      jump's flash in the SOURCE window too, where nothing was standing and the reader had just
+//      asked to be shown something (the bug logged as A3).
 //
-//  ★HEADER-ONLY AND FREE OF THE SDK EXCEPT FOR TWO TYPE NAMES, WHICH IS WHAT MAKES IT TESTABLE.
-//  IDataBase is never dereferenced here - it is an address used as a key - and UID only has to
-//  sort. The test outside InDesign is work\kescm-markranges-test, which includes this file as it
-//  stands rather than a copy that could drift.
+//  **HEADER-ONLY AND FREE OF THE SDK EXCEPT FOR TWO TYPE NAMES, WHICH IS WHAT MAKES IT
+//  TESTABLE.** IDataBase is never dereferenced here -- it is an address used as a key -- and UID
+//  only has to sort. The test outside InDesign is work\kescm-markranges-test, which includes
+//  this file as it stands rather than a copy that could drift.
 //
 //========================================================================================
 
@@ -50,10 +50,10 @@ typedef std::map<UID, KCMMarkRangeList> KCMStoryMarkMap;
 
 /** The same thing for both compared documents at once: database -> what is lit up in it.
 
-	★★BOTH AT ONCE IS NOT A LUXURY - "Always Show Marks on Target" and "Always Show Marks on Source" can be on
-	together, and then the newer document's edits and the older one's have to be up at the same
-	time (user's request, 2026-08-22). ⚠A press, by contrast, only ever marks the window it was
-	made in; it is the same structure holding one entry. */
+	**BOTH AT ONCE IS NOT A LUXURY** -- "Always Show Marks on Target" and "Always Show Marks on
+	Source" can be on together, and then the newer document's edits and the older one's have to be
+	up at the same time. @warning a press, by contrast, only ever marks the window it was made in;
+	it is the same structure holding one entry. */
 typedef std::map<IDataBase*, KCMStoryMarkMap> KCMStoryMarkDocs;
 
 /** Put the standing marks and the flash together into the one set that gets drawn.
@@ -95,9 +95,9 @@ inline void KCMComposeMarkDocs(const KCMStoryMarkDocs& standing, const KCMStoryM
 
 	for (KCMStoryMarkDocs::const_iterator doc = flash.begin(); doc != flash.end(); ++doc)
 	{
-		// ⚠ASKED OF WHAT SURVIVED, NOT OF THE STANDING SET. A document that was consulted and found
-		//   to have nothing standing in it is absent from `out`, so its flash still shows - which is
-		//   the difference between "the toggle is on here" and "the toggle was looked at".
+		// @warning **ASKED OF WHAT SURVIVED, NOT OF THE STANDING SET.** A document that was consulted
+		//   and found to have nothing standing in it is absent from `out`, so its flash still shows --
+		//   which is the difference between "the toggle is on here" and "the toggle was looked at".
 		if (out.find(doc->first) != out.end())
 			continue;			// a standing mark is up in this document, and it wins whole
 
