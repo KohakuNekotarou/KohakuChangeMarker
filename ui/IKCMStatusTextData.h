@@ -14,9 +14,10 @@
 //  answer. So the box is drawn by hand, and a hand-drawn box has to be told where the colour
 //  changes: fLabel / fPre / fMid / fPost is that channel (2026-08-20).
 //
-//  ★AN ORDINARY MESSAGE IS THE SAME SHAPE, NOT A SPECIAL CASE: the other three pieces are empty and
-//  fMid carries the whole sentence, which comes out as one run at the theme's text colour - exactly
-//  what the stock widget drew. That is why the 72 places that call KCMSetStatus needed no change.
+//  ★AN ORDINARY MESSAGE IS THE SAME SHAPE, NOT A SPECIAL CASE: the other pieces are empty and
+//  fMid carries the whole sentence, which comes out as one run at the theme’s text colour --
+//  exactly what the stock widget drew. **That is why not one of the many places that call
+//  KCMSetStatus had to change.**
 //
 //  ★THE HEADING IS ITS OWN FIELD RATHER THAN THE HEAD OF fPre, and the reason is the overflow rule:
 //  when the text does not fit, the CONTEXT gives way from its outer ends - so a heading living at
@@ -27,7 +28,11 @@
 //  which is also where app.kcmStatus answers from.
 //
 //  ★Same shape and the same reasoning as IKCMStoryCellData, which feeds the change row's cell.
-//  Four strings rather than three: a row has no room for a heading and no need of one.
+//  **This one also carries a HEADING**, which a row has no room for and no need of; the row
+//  carries a "two lines" flag, which this box does not need (see the parameter below).
+//  ⚠**Do not write how many strings each of them has.** That count said "four rather than three"
+//    until ruby was added -- the same addition left the same kind of stale number in
+//    IKCMStoryCellData.h and in KCMStatusTextView.cpp.
 //
 //========================================================================================
 
@@ -49,10 +54,11 @@ class IKCMStatusTextData : public IPMUnknown
 public:
 	enum { kDefaultIID = IID_IKCMSTATUSTEXTDATA };
 
-	/** Replace all four pieces.
+		/** Replace every piece.
 
-		★ALL FOUR, ALWAYS. There is one message area and one message in it; writing only the pieces
-		a caller happens to have would leave the rest of the previous message standing beside it.
+		    ★ALL OF THEM, ALWAYS. There is one message area and one message in it; writing only the
+		    pieces a caller happens to have would leave the rest of the previous message standing
+		    beside it.
 
 		@param label a heading on a line of its own - "Source Text:" / "Target Text:" when the box is
 			showing the other side of an edit. Empty for an ordinary message, and then it costs no

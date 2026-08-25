@@ -37,7 +37,7 @@
 
 	★The same 0.65 KBS settled on - half and half made the surrounding words harder to read than
 	they needed to be, and the change still stands out at this weight (user's call there,
-	2026-08-02; "KBS を参考に" here, 2026-08-20). */
+	there; "follow KBS" here). */
 const double kKCMContextTextWeight = 0.65;
 
 /** Linear blend of two RGB colours (t = 0 -> bg, t = 1 -> fg).
@@ -55,7 +55,8 @@ inline RealAGMColor KCMBlendColor(const RealAGMColor& bg, const RealAGMColor& fg
 
 	★RUBY IS CENTRED ON WHAT IT BELONGS TO. A short reading sits in the middle of the word rather
 	than at its left edge, and a reading wider than its base characters overhangs on both sides -
-	both of which is what real ruby does, and what the user asked for ("位置が重要").
+		both of which is what real ruby does, and what the user asked for ("the position is what
+		matters").
 
 	★★SHARED FOR THE SAME REASON kKCMContextTextWeight IS. Two widgets now draw a reading over
 	base text: the change ROW's cell (KCMStoryCellView.cpp) shows the newer version's reading, and

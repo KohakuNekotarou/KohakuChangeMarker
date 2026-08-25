@@ -19,9 +19,14 @@
 //  outlive the panel - which is also why every apply writes all three pieces rather than only the
 //  ones it has (see the widget manager).
 //
-//  ★The same shape as KBS's IKBSRowData, which feeds the same kind of hand-drawn cell (its hit
-//  rows draw the matched text at full strength and fade the line around it). Three strings rather
-//  than five: KBS's row also carries a page locator and a flag word, and this row has neither.
+//  ★The same shape as KBS's IKBSRowData (declared in KBSColorTextView.h), which feeds the same
+//  kind of hand-drawn cell: its hit rows draw the matched text at full strength and fade the line
+//  around it. **The two do not carry the same pieces** -- KBS's row also has a page locator and
+//  an accent-coloured flag word, and this one has a reading instead.
+//  ⚠**Do not write how many strings either of them has here.** It said "three rather than five"
+//    until ruby was added and made it four, and the same one addition put the same kind of stale
+//    count into IKCMStatusTextData.h and KCMStatusTextView.cpp. **The parameter list below is the
+//    answer.**
 //
 //========================================================================================
 

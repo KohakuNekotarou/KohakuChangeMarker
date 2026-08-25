@@ -5,14 +5,14 @@
 //  Kohaku Change Marker (KCM)
 //
 //  The text cell of a CHANGE row: it draws the changed characters at the theme's text colour and
-//  fades the words on either side of them toward the panel's background (user's request,
-//  2026-08-20: "変更されたところ以外は薄い色にして欲しい、KBSを参考に").
+//  fades the words on either side of them toward the panel's background (user's request:
+//  "everything but the changed part in a lighter colour, follow KBS").
 //
-//  ★★AND, SINCE 2026-08-22, A RUBY CHANGE IS DRAWN ON TWO LINES - the reading above the characters
-//  it belongs to, at the same size, the way ruby is actually set (user: "文字のサイズは同じで、位置を
-//  漢字の文字の上に、実際のルビの様に" / "位置が重要"). The cell divides its own height in half for
-//  those rows; the row is built tall enough for that by KCMStoryTreeWidgetMgr, which asks the same
-//  question this cell is told the answer to.
+//  ★★AND A RUBY CHANGE IS DRAWN ON TWO LINES - the reading above the characters it belongs to, at
+//  the same size, the way ruby is actually set (user: "the same character size, placed above the
+//  kanji, the way real ruby is" / "the position is what matters"). The cell divides its own height
+//  in half for those rows; the row is built tall enough for that by KCMStoryTreeWidgetMgr, which
+//  asks the same question this cell is told the answer to.
 //
 //  ★A STOCK STATIC TEXT CANNOT DO THIS: it holds one string and draws it in one colour. So the
 //  cell is a DVControlView that paints three runs left to right - context, change, context - the
@@ -200,9 +200,10 @@ void KCMStoryCellView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 
 	const PMRect frame = this->GetInnerContentFrame();
 
-	// ★★A RUBY CHANGE IS DRAWN ON TWO LINES, AND THEY ARE THE TWO HALVES OF THE CELL (2026-08-22,
-	//   user's request: "ルビ以外を薄くして、本当にルビが付いているような見た目に" / "ちいさくなくても
-	//   いいです、文字のサイズは同じで、位置を 漢字の文字の上に、実際のルビの様に" / "位置が重要").
+	// ★★A RUBY CHANGE IS DRAWN ON TWO LINES, AND THEY ARE THE TWO HALVES OF THE CELL (user’s
+	//   request: "fade everything but the ruby, so it really looks as though ruby were set" / "it
+	//   need not be small - the same character size, placed above the kanji, the way real ruby is" /
+	//   "the position is what matters").
 	//   The base text keeps the LOWER half and the reading stands in the upper one, over the
 	//   characters it belongs to - which is where a reader of Japanese expects to find it.
 	//
@@ -354,8 +355,8 @@ void KCMStoryCellView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 		}
 
 		// ★FULL STRENGTH, like the changed characters below it - the reading IS the change on
-		//   these rows. What stays faded is the context on the lower line, which is what "ルビ以外
-		//   を薄く" asks for.
+		//   these rows. What stays faded is the context on the lower line, which is what "fade
+		//   everything but the ruby" asks for.
 		StringUtils::PMDrawStringRGB(&gc, PMPoint(rubyX, upperY), shown, fontInfo, kChangeColor,
 									 kDontConvertAmpersand, kNoUnderline);
 	}

@@ -2432,10 +2432,13 @@ resource KCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 			kPMRsrcID_None,
 			kBindLeft | kBindRight | kBindTop,
 			Frame(8, 76, 216, 150)		// ★★The bottom edge is 150 because **a Japanese UI did not fit
-									//   four lines**: a palette-font line really occupies 17.9px
-									//   (measured -- ascent 12.7 + descent 5.2, leading 0; the method is
-									//   in memory palette-font-line-height-by-ui-language), so four need
-									//   74px where the box had 69 and the fourth was clipped by about 5px.
+									//   four lines**: a palette-font line is taller than a measured string
+									//   suggests, so four of them needed more than the box had and the
+									//   fourth was clipped.
+									//   ⚠**The measurement is in KCMStatusTextView.cpp**, taken there with a
+									//   diagnostic build (ascent + descent + leading from the font, not
+									//   PMMeasureString). It is not restated here: two copies of that one
+									//   measurement already disagreed in the first decimal.
 									//   ⚠The older note claiming "four lines with room to spare" was
 									//   counting CHARACTERS; the height was short.
 									//   ★An English UI draws 12px lines, so the extra height is simply

@@ -9,14 +9,16 @@
 //  the theme's text colour and the words around them faded (user's request, 2026-08-20 - the same
 //  treatment the change ROW already had).
 //
-//  ★WHAT A STOCK MULTI-LINE STATIC TEXT GAVE US, AND WHAT IT COST. It held one string, wrapped it,
-//  and drew the lot in ONE colour. The wrapping was the part worth keeping - 72 places raise
-//  messages through KCMSetStatus and several of them put a full save path in here - so it is
-//  written out below rather than lost. The one colour was the part that had to go.
+//  ★WHAT A STOCK MULTI-LINE STATIC TEXT GAVE US, AND WHAT IT COST. It held one string, wrapped
+//  it, and drew the lot in ONE colour. The wrapping was the part worth keeping -- messages are
+//  raised from many places through KCMSetStatus and several of them put a full save path in here
+//  -- so it is written out below rather than lost. The one colour was the part that had to go.
 //
-//  ★AN ORDINARY MESSAGE IS NOT A SPECIAL CASE HERE: it arrives as the middle piece alone and comes
-//  out as one run at the theme's text colour, which is what the stock widget drew. That is why the
-//  72 callers needed no change (IKCMStatusTextData.h).
+//  ★AN ORDINARY MESSAGE IS NOT A SPECIAL CASE HERE: it arrives as the middle piece alone and
+//  comes out as one run at the theme’s text colour, which is what the stock widget drew. That is
+//  why **not one of those callers needed changing** (IKCMStatusTextData.h).
+//  ⚠**Do not write how many callers there are.** "72" stood in these two paragraphs while there
+//    were 42, and the same number had been copied into IKCMStatusTextData.h as well.
 //
 //  ★★HOW MANY LINES: as many as the box holds, worked out at draw time. The resource this replaced
 //  declared 4, and in a Japanese UI 4 is still what fits - measured 2026-08-21 with a diagnostic
@@ -672,7 +674,7 @@ void KCMStatusTextView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 	}
 
 	// ★★"TWO LINES SHOWN AS ONE" IS EXPRESSED AS A SHIFT, NOT AS A TABLE OF LINE HEIGHTS (user's
-	//   words, 2026-08-22: "2行分つかって、1行に見せる"). Every line from the reading's own line
+	//   words: "use two lines and make them look like one"). Every line from the reading's own line
 	//   downwards moves one line further down, and the reading is drawn in the gap that opens up.
 	//   Lines ABOVE it - the heading, and any context that wrapped before the change - do not move.
 	//   ⇒ One integer decides the whole layout, and when there is no reading it is never consulted.
