@@ -19,7 +19,7 @@
 #define __KCMCmykCursor_h__
 
 #include "BaseType.h"
-#include "CursorSpec.h"		// CreateCursorBitmapProc(Alt+左 CMYK のカスタムカーソル)
+#include "CursorSpec.h"		// CreateCursorBitmapProc (the custom cursor of Alt + left, the CMYK readout)
 
 class IControlView;
 

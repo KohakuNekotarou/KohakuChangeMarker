@@ -2,35 +2,43 @@
 //
 //  KCMTrackerHud.h
 //
-//  KCM ツールで**左ボタンを押している間だけ**、押したレイアウトビューの**左上**に
-//    「その窓が比較の何なのか」を1行で出す(押下中 HUD。2026-08-07 ユーザー指示)。
+//  **While the left button is held** with the KCM tool active, one line in the **top-left** of the
+//    layout view that was pressed says **what that window is to the comparison** (the on-press HUD;
+//    user's instruction).
 //
-//  出す文言は4通り(判定の本体は KCMTrackerHud.cpp の KCMTrackerHudLabel):
-//      比較中 + Target の窓  → "Target"
-//      比較中 + Source の窓  → "Source"
-//      比較中 + それ以外     → "Not in comparison"
-//      Stop 中               → "Not comparing"
-//    ★相手の文書名は出さない(2026-07-27 ユーザー指示)。理由は上記関数のコメント。
+//  There are four wordings (the test itself is KCMTrackerHudLabel in KCMTrackerHud.cpp):
+//      comparing + the Target window  -> "Target"
+//      comparing + the Source window  -> "Source"
+//      comparing + anything else      -> "Not in comparison"
+//      stopped                        -> "Not comparing"
+//    ★The other document's name is NOT shown (user's instruction). The reason is in that function.
 //
-//  表示条件はこれだけ = 「KCM ツールが選ばれていて、左ボタンが押されている」。
-//    ・印刷/PDF には出ない(描画側で printing を弾く)。Print comparison marks が ON でも出ない。
-//    ・Hold to Hide Marks の状態も見ない(あちらは比較マークの極性トグル。この HUD とは無関係)。
-//    ・押した窓にだけ出る(他の文書窓・他のビューには出ない)。
+//  The condition is exactly this: "the KCM tool is active and the left button is down".
+//    - It never reaches print or PDF (the drawing side rejects a printing context). "Print
+//      comparison marks" being ON changes nothing.
+//    - It appears only in the window that was pressed (no other document window, no other view).
+//    ⚠An older line here also said "it does not look at Hold to Hide Marks either". **That toggle no
+//      longer exists** - it was removed and folded into the two "Always Show Marks on ..." toggles.
+//      What the HUD does not look at is the mark toggles in general: it says what the window IS, not
+//      what is drawn in it.
 //
-//  ★★描画は **Draw Event 経路**。比較マークの枠とまったく同じ描画パスなので、**枠と同時に出る**
-//    (旧 HUD は sprite 層で、押下を抜けた後に one-shot タイマーで描いていたため枠より遅れていた
-//     ＝ユーザー報告「押して表示されるまで時間がかかる/枠とずれる/目につく」で 2026-08-06 に全廃)。
+//  ★★It is drawn on the **Draw Event route**, the very path the comparison frames use, so **it
+//    appears together with them** (the old HUD lived in the sprite layer and was drawn by a one-shot
+//    timer after the press had been handled, which put it behind the frames - the user reported "it
+//    takes a while to appear / it is out of step with the frames / it catches the eye", and it was
+//    removed entirely).
 //
-//  ★★★「Draw Event ではビューの隅に描けない」は誤りだった(2026-08-07 に判明)。
-//    memory/layout-screen-overlay.md は「描画はペーストボードに clip される」と書いていたが、
-//    ①それは **kEndSpreadMessage(スプレッド単位)** の話で、②本当の制約は clip ではなく **Z 順**。
-//    正しくはこう:
-//      kEndSpreadMessage           … spread 座標。帯(スプレッド/ペーストボード)に clip されるが**前面**
-//      kAfterLastSpreadDrawMessage … pasteboard 座標。ウィンドウに1回だが**背面**なので、
-//                                    何も被さらないカンバス部分にだけ見える
-//    ∴ **2つを併用すると各画素はどちらか一方だけが担当**し、二重描きなしでビュー全域を覆える。
-//    これは KCM 自身が 2026-07-04 まで「トースト」で実際にやっていた(git 068d8fb^ の
-//    KCMDrawEventHandler.cpp:551-563, :900-909, :951-963)。撤去したときに知見ごと失われていた。
+//  ★★★"A draw event cannot paint in the corner of a view" was WRONG.
+//    memory/layout-screen-overlay.md said "the drawing is clipped to the pasteboard", but (1) that is
+//    about **kEndSpreadMessage (per spread)**, and (2) the real constraint is not clipping but **Z
+//    ORDER**. Correctly:
+//      kEndSpreadMessage           ... spread coordinates. Clipped to the band (spread / pasteboard)
+//                                      but **in front**
+//      kAfterLastSpreadDrawMessage ... pasteboard coordinates. Once per window but **behind**, so it
+//                                      shows only where nothing covers the canvas
+//    therefore **using both, each pixel is served by exactly one of them** and the whole view is
+//    covered with no double drawing. KCM itself did this until its "toast" was removed (git 068d8fb^,
+//    KCMDrawEventHandler.cpp:551-563, :900-909, :951-963) - and the knowledge went with it.
 //
 //========================================================================================
 
@@ -43,27 +51,30 @@
 class IControlView;
 class IGraphicsPort;
 
-// 押下開始(トラッカーの BeginTracking から)。view = 押されたレイアウトビュー。
-// ★押した窓の再描画も**ここが自分で要求する**(Draw Event で描くので再描画が無いと1度も描かれない。
-//   reveal 側の再描画は Target 窓でしか走らない = KCMTrackerHud.cpp の Invalidate のコメント)。
+// The press begins (from the tracker's BeginTracking). view = the layout view that was pressed.
+// ★**It asks for the repaint of that window itself**: the drawing happens on a draw event, so with
+//   no repaint it would never be drawn at all (the reveal side repaints the Target window only - see
+//   the Invalidate comment in KCMTrackerHud.cpp).
 void KCMTrackerHudBegin(IControlView* view);
 
-// 押下解除/中断(EndTracking / AbortTracking から)。二重に呼んでも安全。
-// ★消すための再描画もここが要求する(旗を落としてから。順序は上と対称)。
+// The press ends or is abandoned (from EndTracking / AbortTracking). Safe to call twice.
+// ★It asks for the repaint that clears it, after lowering the flag (symmetric with the above).
 void KCMTrackerHudEnd();
 
-// この描画で HUD を描くか = 「押下中」かつ「押した窓のビュー」。描画ハンドラの早期 return 判定にも使う。
+// Should this draw paint the HUD? = "the button is down" and "this is the view of the window that
+// was pressed". The draw handler uses it as its early-return test as well.
 bool16 KCMTrackerHudWantsDraw(IControlView* view);
 
-// HUD を1回描く。
-//   gPort         … 描画ポート
-//   view          … gd->GetView()(ズーム倍率と可視範囲を取る)
-//   spreadOffset  … このポートの座標系が pasteboard からどれだけずれているか
-//                   ・kAfterLastSpreadDrawMessage(pasteboard 座標) → (0,0)
-//                   ・kEndSpreadMessage(spread 座標)               → そのスプレッドのオフセット
+// Draw the HUD once.
+//   gPort         ... the drawing port
+//   view          ... gd->GetView() (for the zoom and the visible area)
+//   spreadOffset  ... how far this port's coordinates are from the pasteboard's
+//                   - kAfterLastSpreadDrawMessage (pasteboard coordinates) -> (0,0)
+//                   - kEndSpreadMessage (spread coordinates)               -> that spread's offset
 void KCMTrackerHudDraw(IGraphicsPort* gPort, IControlView* view, const PMPoint& spreadOffset);
 
-// プラグイン終了時。持っているフォント参照を返す(状態は静的変数だけなのでこれで足りる)。
+// At plug-in shutdown: return the font reference it holds (the state is statics alone, so that is
+// all it takes).
 void KCMTrackerHudShutdown();
 
 #endif // __KCMTrackerHud_h__

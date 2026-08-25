@@ -40,8 +40,7 @@ public:
 		The doc comment on ITool::GetScriptID requires every toolbox tool to define one and register
 		it in kToolBoxEnumScriptElement (done in KCMUI.fr); CTool's default GetScriptID calls
 		ASSERT_UNIMPLEMENTED() and returns en_None, so not overriding it asserts.
-		(This was quoted as "ITool.h:192-223" until the 2026-08-19 bug recheck; the range ran one
-		line past the declaration, so both ends are named instead.) Scripts read it as app.toolBoxTools.currentTool and select this tool with
+		Scripts read it as app.toolBoxTools.currentTool and select this tool with
 		app.toolBoxTools.currentTool = UITools.KOHAKU_CHANGE_MARKER_TOOL.
 		This is the tool's identity, not a scripting API - KCM still exposes no methods and no
 		properties. Until 2026-08-06 this returned en_None ('none' = "no tool at all"), which left
@@ -53,8 +52,8 @@ public:
 	/** Called when this tool becomes the active one - whichever way it was picked: the toolbox, the
 		panel's tool button, a keyboard shortcut or a script. Overridden so the panel's button can
 		show the same pressed state the toolbox does.
-		!CTool.h:70-76 is explicit that an override must call the base version FIRST ("it notifies
-		 the selection that the tool is changing"), so that is what happens below. */
+		!CTool.h is explicit at Select/Deselect that an override must call the base version FIRST
+		 ("it notifies the selection that the tool is changing"), so that is what happens below. */
 	virtual void Select();
 
 	/** The other half - called when some other tool takes over. */
@@ -93,9 +92,11 @@ void KCMTool::Init(RsrcID iconID, const PluginID& pluginID)
 //    it is left at the default here too. (Not to be confused with kViewModificationTool, which is
 //    what this class passes to CTool above; that one describes what the tool DOES.)
 //
-//  !This file is plain ASCII with NO BOM, and the build turns C4819 into an error - so nothing
-//   non-ASCII may go in here (not Japanese, not the star marks used elsewhere). The plug-in's
-//   Japanese-commented files all carry a UTF-8 BOM; this one never has.
+//  !Every source file of this plug-in is UTF-8 with a BOM, this one included, which is what lets
+//   non-ASCII text compile at all (without the BOM, MSVC reads the bytes in the machine's code page
+//   and C4819 follows). What is true of THIS file is only that its text happens to be ASCII
+//   throughout. An older note here claimed it had no BOM and that nothing non-ASCII could go in;
+//   the file has carried one for as long as the history goes back.
 //========================================================================================
 
 bool16 KCMActivateOwnTool()
@@ -127,7 +128,7 @@ bool16 KCMActivateOwnTool()
 //      needed. That message is DECLARED in the public header but has no use site anywhere in the
 //      SDK, so which subject carries it would have had to be measured on the real application.
 //
-//  *The base class runs first, as CTool.h:70-76 instructs.
+//  *The base class runs first, as CTool.h instructs at Select / Deselect.
 //========================================================================================
 
 void KCMTool::Select()

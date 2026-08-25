@@ -496,7 +496,7 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 	// marks while held / Shift = peek the old version 100% / Shift+Alt = peek 50% / Alt = CMYK
 	// readout cursor. All input goes through the capturing tracker registered below
 	// (kKCMTrackerBoss, installed by kKCMTrackerRegisterBoss) - BeginTracking dispatches the
-	// gesture and mouse-up ends it (KCMTracker.cpp / KCMPeek.cpp). Note: an earlier design
+	// gesture and mouse-up ends it (KCMTracker.cpp / KCMPeekGesture.cpp). Note: an earlier design
 	// note here claimed a capturing tracker froze InDesign; the real culprit was the
 	// kMouseTrackerBoss timer's continuous redraws, which this tracker avoids with
 	// WantTimer=kFalse. Inherits kGenericToolBoss (the standard tool base that provides the

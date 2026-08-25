@@ -2,67 +2,69 @@
 //
 //  KCMTrackerHud.cpp
 //
-//  左ボタンを押している間だけ、押したビューの**左上**に「その窓が比較の何なのか」を出す
-//    (Target / Source / Not in comparison / Not comparing)。仕様・経緯・「なぜ Draw Event で
-//    隅に描けるのか」は KCMTrackerHud.h の冒頭。
-//  ⚠ここは 2026-08-19(不具合再検査 B-U6)まで「右上」と書いてあった。実装は下の
-//    kKCMTrackerHudLeftPx が boundsPb.Left() 基準＝左上で、KCMTrackerHud.h も KCMTracker.cpp も
-//    「左上」と書いており、**このファイルの1行だけが逆**だった。旧 sprite 版も左上
-//    (git 19015e3^:KCMTracker.cpp:908「ビュー左上からの位置(画面 px)」)。
+//  While the left button is held, the **top-left** of the view that was pressed says what that
+//    window is to the comparison (Target / Source / Not in comparison / Not comparing). What it is
+//    for, how it came about, and why a draw event CAN paint in a corner, are at the top of
+//    KCMTrackerHud.h.
+//  ⚠This line said "top-right" for a while. The implementation puts it top-LEFT
+//    (kKCMTrackerHudLeftPx below is measured from boundsPb.Left()), and KCMTrackerHud.h and
+//    KCMTracker.cpp both said left ---- **one line of this file was the only one that disagreed**.
+//    The old sprite version was top-left as well.
 //
-//  ここが持つのは「押下中か」「どのビューか」の2つだけ(比較状態は KCMCore/KCMPeek 側に
-//  聞く = 状態を二重に持たない)。描画の呼び出しは
-//  **KCMUIDrawEventHandler::HandleDrawEvent(KCMUIDrawEvent.cpp)** が2系統(帯の前面 / カンバス背景)
-//  から行う。
-//  ⚠2026-08-18(不具合再検査 B-U2)訂正＝「KCMDrawEventHandler::HandleDrawEvent が」と書いてあったが、
-//    あれは**model 側**のマーク描画ハンドラで、HUD は 2026-08-13(Task 6)にこちらへ移っている
-//    (model 側は KCMDrawEventHandler.cpp が「このファイルは KCMTrackerHud.h を include しない」と
-//     自分で書いており、両側の記述が食い違っていた)。
+//  What this file holds is two things: "is the button down" and "which view". The comparison state
+//  is asked of the model side, so no state is kept twice. The drawing is called by
+//  **KCMUIDrawEventHandler::HandleDrawEvent (KCMUIDrawEvent.cpp)** on two routes (in front of the
+//  band, and behind on the canvas).
+//  ⚠It used to say "KCMDrawEventHandler::HandleDrawEvent". That is the **model side's** mark
+//    drawing, and the HUD moved here with the model/UI split ---- the model side said so itself
+//    ("this file does not include KCMTrackerHud.h") while this side still claimed otherwise.
 //
 //========================================================================================
 
 #include "VCPlugInHeaders.h"
 
-#include "IControlView.h"		// GetContentToWindowMatrix(ズーム) / GetBBox / WindowToContentTransform
-#include "IGraphicsPort.h"		// rectfill / selectfont / show / 透明グループ
+#include "IControlView.h"		// GetContentToWindowMatrix (the zoom) / GetBBox / WindowToContentTransform
+#include "IGraphicsPort.h"		// rectfill / selectfont / show / the transparency group
 #include "IFontMgr.h"			// QueryFont / QueryFontInstance
 #include "IPMFont.h"
-#include "IFontInstance.h"		// MeasureWText / GetAscent / GetDescent(下地の寸法)
+#include "IFontInstance.h"		// MeasureWText / GetAscent / GetDescent (the size of the plate behind the text)
 #include "ISession.h"			// GetExecutionContextSession
 #include "AutoGSave.h"
-#include "WideString.h"			// show に渡す UTF16
+#include "WideString.h"			// the UTF16 handed to show
 #include "PMMatrix.h"
 #include "PMRect.h"
 
 #include "Utils.h"				// Utils<IKCMCompareFacade>()
-#include "IKCMCompareFacade.h"	// arm 状態(2026-08-13・分割 第1段 Task 11 で Facade 経由へ)
-#include "KCMViewLookup.h"	// KCMFindDocDbForView(2026-08-13 に KCMCore.h から移動)
+#include "IKCMCompareFacade.h"	// the armed state, asked across the boundary
+#include "KCMViewLookup.h"	// KCMFindDocDbForView
 #include "KCMTrackerHud.h"
 
 //----------------------------------------------------------------------------------------
-// 見た目(すべて画面ピクセル指定。ズームを変えても見た目は変わらない = 実ズームで割って content 単位へ)
+// The appearance. Every value is in SCREEN pixels: dividing by the real zoom converts them to
+// content units, so the HUD looks the same at any zoom.
 //----------------------------------------------------------------------------------------
-// ★値はすべて 2026-08-06 に全廃した旧 sprite 版 HUD と同じ(2026-08-07 ユーザー指示「位置などは、
-//   以前の HUD と同じに左上の方に」)。原本 = git 19015e3^:KCMTracker.cpp の kKCMHud*Px(:128-132)
-//   と ShowHud() の kHudLeftPx/kHudBaselinePx(:909-910)。下地=白ベタ・文字=黒 も同じ。
-static const PMReal kKCMTrackerHudTextPx     = 20.0;		// 文字の大きさ
-static const PMReal kKCMTrackerHudPadXPx     = 8.0;		// 下地の左右余白
-static const PMReal kKCMTrackerHudPadTopPx   = 4.0;		// 下地の上余白
-static const PMReal kKCMTrackerHudPadBotPx   = 4.0;		// 下地の下余白
-static const PMReal kKCMTrackerHudOpacity    = 0.6;		// 下地＋文字をまとめて薄くする度合い(1.0=不透明)
-static const PMReal kKCMTrackerHudLeftPx     = 20.0;		// ビュー左端からの余白(★左上に置くので左基準)
-static const PMReal kKCMTrackerHudBaselinePx = 40.0;		// ビュー上端から文字ベースラインまで
+// ★All of them are the values of the old sprite HUD that was removed (user's instruction: "the
+//   position and so on the same as the previous HUD, up in the top-left"). The original is in the
+//   git history. The white plate and the black text are the same too.
+static const PMReal kKCMTrackerHudTextPx     = 20.0;		// the size of the text
+static const PMReal kKCMTrackerHudPadXPx     = 8.0;		// the plate's padding, left and right
+static const PMReal kKCMTrackerHudPadTopPx   = 4.0;		// the plate's padding above
+static const PMReal kKCMTrackerHudPadBotPx   = 4.0;		// the plate's padding below
+static const PMReal kKCMTrackerHudOpacity    = 0.6;		// how far the plate AND the text together are faded (1.0 = opaque)
+static const PMReal kKCMTrackerHudLeftPx     = 20.0;		// the inset from the view's left edge (★it sits top-left, so the left is the reference)
+static const PMReal kKCMTrackerHudBaselinePx = 40.0;		// from the view's top edge to the text baseline
 
 //----------------------------------------------------------------------------------------
-// 押下中だけ持つ状態
+// The state held only while the button is down
 //----------------------------------------------------------------------------------------
-static bool16        sActive = kFalse;	// 左ボタンを押している間だけ kTrue
-static IControlView* sView   = nil;		// 押されたレイアウトビュー(借り物。比較にしか使わない)
+static bool16        sActive = kFalse;	// kTrue only while the left button is held
+static IControlView* sView   = nil;		// the layout view that was pressed (borrowed; only ever compared)
 
-// フォント(所有する)。出す4通りはどれも ASCII の英字なので既定フォントで足りる —— 旧 HUD は文書名を
-// 出していたので「その字を持つフォントを選ぶ」3段の選定が要ったが(gPort の show は単一フォントの
-// グリフしか使わず、OS のようなフォールバックが無いため和文が化けた)、固定の欧文ならその問題は起きない。
-// ★「相手の文書名は出さない」というユーザー判断(2026-07-27)が、ここでもそのまま効いている。
+// The font (owned here). All four wordings are ASCII, so the default font is enough ---- the old HUD
+// showed a document name and therefore needed a three-step "pick a font that has these characters"
+// (gPort's show uses the glyphs of one font and has no fallback of the kind the OS does, so Japanese
+// came out as boxes). Fixed Latin text cannot hit that.
+// ★The user's decision that **the other document's name is not shown** is what keeps it that way.
 static IPMFont*       sFont         = nil;
 static IFontInstance* sFontInst     = nil;
 static PMReal         sFontInstSize = 0.0;
@@ -82,7 +84,7 @@ static void KCMTrackerHudReleaseFont()
 	}
 }
 
-/** 既定フォント(キャッシュ付き)。所有はここ側 = 呼び出し側は Release しない。 */
+/** The default font, cached. It is owned here ＝ the caller does not Release it. */
 static IPMFont* KCMTrackerHudQueryFont()
 {
 	if (sFont != nil)
@@ -95,9 +97,10 @@ static IPMFont* KCMTrackerHudQueryFont()
 	return sFont;
 }
 
-/** そのサイズで測る/描くためのインスタンス(キャッシュ付き)。所有はここ側。
-	作り方は KCMDrawEventHandler.cpp の旧ページ番号バッジと同じ(サイズを対角に入れた行列を渡す)。
-	★サイズはズームで変わるので、変わったら作り直す。 */
+/** The instance used to measure and draw at that size, cached. Owned here.
+	Built the way the old page-number badge in KCMDrawEventHandler.cpp built its own: a matrix with the
+	size on the diagonal.
+	★The size changes with the zoom, so it is rebuilt when it changes. */
 static IFontInstance* KCMTrackerHudQueryFontInstance(IPMFont* font, const PMReal& size)
 {
 	if (font == nil || size <= 0)
@@ -119,18 +122,20 @@ static IFontInstance* KCMTrackerHudQueryFontInstance(IPMFont* font, const PMReal
 	return sFontInst;
 }
 
-/** HUD に出す1行を組む。押した窓(view)と比較状態で4通り:
-	  比較中 + Target の窓  → "Target"              … この窓が比較の Target(新版)
-	  比較中 + Source の窓  → "Source"              … この窓が比較の Source(旧版)
-	  比較中 + それ以外     → "Not in comparison"   … この文書は比較の対象ではない
-	  Stop 中               → "Not comparing"       … そもそも比較していない
-	★出すのは「押した窓が何か」だけ。相手の文書名は出さない(2026-07-27 ユーザー指示。
-	  長い文書名で HUD が伸びるより、いま触っている窓の役割が一目で分かる方を採る)。
-	★「出ない」を状態表示に使わない(壊れているのか仕様なのか分からなくなるため)。4通りのどれかが必ず出る。
-	★文字は英語固定。翻訳キー扱いで化けないよう SetTranslatable(kFalse) を必ず通す
-	  (UI 文字列のリテラルが内蔵訳に化ける事故が KCM で実際に起きている)。
-	★この文言と判定は 2026-08-06 に全廃した旧 sprite 版 HUD の KCMBuildHudText
-	  (git 19015e3^:KCMTracker.cpp:189-208)をそのまま引き継いだもの。 */
+/** Build the one line the HUD shows. Four wordings, by the pressed window and the comparison state:
+	  comparing + the Target window  -> "Target"              ... this window is the Target (the newer)
+	  comparing + the Source window  -> "Source"              ... this window is the Source (the older)
+	  comparing + anything else      -> "Not in comparison"   ... this document is not being compared
+	  stopped                        -> "Not comparing"       ... nothing is being compared at all
+	★It says only what the pressed window IS. The other document's name is not shown (user's
+	  instruction): the role of the window under the hand, at a glance, is worth more than a HUD that
+	  stretches with a long file name.
+	★"Nothing appears" is never used to mean something (it cannot be told from being broken). One of
+	  the four always appears.
+	★The text is English, fixed, and always passed through SetTranslatable(kFalse) so that it cannot
+	  be taken for a translation key (a UI literal really has turned into a built-in translation in
+	  this plug-in).
+	★The wordings and the test are inherited unchanged from KCMBuildHudText of the old sprite HUD. */
 static PMString KCMTrackerHudLabel(IControlView* view)
 {
 	PMString out;
@@ -139,7 +144,7 @@ static PMString KCMTrackerHudLabel(IControlView* view)
 		out = PMString("Not comparing");
 	else
 	{
-		IDataBase* const db = KCMFindDocDbForView(view);	// 押した窓の文書(ポインタ比較のみ)
+		IDataBase* const db = KCMFindDocDbForView(view);	// the pressed window's document (only ever compared as a pointer)
 		if (db != nil && db == Utils<IKCMCompareFacade>()->GetArmedTargetDB())
 			out = PMString("Target");
 		else if (db != nil && db == Utils<IKCMCompareFacade>()->GetArmedSourceDB())
@@ -152,21 +157,21 @@ static PMString KCMTrackerHudLabel(IControlView* view)
 	return out;
 }
 
-/** 押した窓の文書を描き直させる。
-	★★これが要る理由(2026-08-07 実機報告「ソースの方で Source と出ない」「Stop 中でも Not と出ない」):
-	  HUD は Draw Event で描く = **誰かが再描画を起こしてくれること**が前提になる。押下で再描画を
-	  起こしているのは reveal / temp-hide だが、あれは **Target 窓の上でしか走らない**
-	  (KCMPeekGesture.cpp の KCMTrackerRevealBegin が `KCMMouseIsOverTarget()` で早期 return
-	   する。★2026-08-17 に参照先を訂正＝旧記述の `KCMPeek.cpp:1841-1844` は 2026-08-13 の分割前の
-	   行番号で、ジェスチャはあのファイルから出ており、残った本体は今 907 行しかない)。
-	  ∴ Source 窓・Stop 中・第3の文書では
-	  描く機会そのものが来ず、HUD が1度も描かれなかった。表示も消去も**自分で**要求する
-	  (他機能の再描画に相乗りしない)。
-	★文書単位(KCMInvalidateDB = Utils<ILayoutUtils>()->InvalidateViews)にしたのは、KCM が枠の
-	  表示/非表示で使っている道と同じにするため。HUD が描かれるのは押した窓だけ
-	  (KCMTrackerHudWantsDraw の view 一致判定)なので、同じ文書の他のビューが描き直されても
-	  見た目は変わらない。押下開始と解除の2回だけなので負荷も問題にならない。
-	★Target 窓では reveal 側の再描画と重なるが、InDesign は無効領域をまとめるので描画は1回。 */
+/** Ask for a repaint of the pressed window's document.
+	★★Why it is needed (reported from the running application: "it does not say Source over the
+	  source", "it does not say Not while stopped"): the HUD is drawn on a draw event ＝ it depends on
+	  **somebody causing a repaint**. What causes one on a press is the reveal, and that **only runs
+	  over the Target window** (KCMTrackerRevealBegin in KCMPeekGesture.cpp returns early on
+	  `KCMMouseIsOverTarget()`).
+	  ∴ over the Source window, while stopped, and over a third document, the occasion to draw never
+	  came and the HUD was never drawn at all. It asks for the repaint that shows it and the one that
+	  clears it **itself**, riding on no other feature's.
+	★It is done per DOCUMENT (KCMInvalidateDB = Utils<ILayoutUtils>()->InvalidateViews) so that it
+	  takes the same road KCM uses to show and hide the frames. The HUD is drawn only in the pressed
+	  window (the view test in KCMTrackerHudWantsDraw), so repainting the document's other views
+	  changes nothing on screen. It happens twice - press and release - so the cost does not matter.
+	★Over the Target window it coincides with the reveal's repaint, but InDesign coalesces invalid
+	  regions and draws once. */
 static void KCMTrackerHudInvalidate(IControlView* view)
 {
 	if (view != nil)
@@ -177,22 +182,24 @@ void KCMTrackerHudBegin(IControlView* view)
 {
 	sActive = (view != nil);
 	sView   = view;
-	KCMTrackerHudInvalidate(view);	// 出すための再描画を自分で要求する(上のコメント)
+	KCMTrackerHudInvalidate(view);	// ask for the repaint that shows it (see the comment above)
 }
 
 void KCMTrackerHudEnd()
 {
-	IControlView* const view = sView;	// 消すための再描画に使うので、nil にする前に控える
+	IControlView* const view = sView;	// kept before it is cleared: the repaint that erases the HUD needs it
 	sActive = kFalse;
 	sView   = nil;
-	// ★順序が肝: 先に旗を落としてから要求する(逆にすると、この再描画で HUD がもう一度描かれる)。
+	// ★The order matters: lower the flag first, then ask (the other way round, this very repaint
+	//   draws the HUD once more).
 	KCMTrackerHudInvalidate(view);
-	// フォントは持ち越してよい(次の押下でそのまま使う)。返すのは Shutdown だけ。
+	// The font may be kept (the next press uses it as it is). Only Shutdown returns it.
 }
 
 bool16 KCMTrackerHudWantsDraw(IControlView* view)
 {
-	// ★押した窓にだけ出す。view が nil の描画(ページパネルのサムネイル生成など)も当然対象外。
+	// ★Only in the window that was pressed. A draw with a nil view (a Pages panel thumbnail being
+	// generated, for instance) is out of scope as well.
 	return (sActive && view != nil && view == sView) ? kTrue : kFalse;
 }
 
@@ -201,7 +208,8 @@ void KCMTrackerHudDraw(IGraphicsPort* gPort, IControlView* view, const PMPoint& 
 	if (gPort == nil || view == nil)
 		return;
 
-	// 実ズーム(画面 px 指定を content 単位へ逆算するのに使う)。負スケールもあり得るので絶対値で。
+	// The real zoom, used to convert the screen-pixel values into content units. A negative scale is
+	// possible, hence the absolute value.
 	PMReal sx = 1.0, sy = 1.0;
 	{
 		const PMMatrix toWindow = view->GetContentToWindowMatrix();
@@ -211,8 +219,10 @@ void KCMTrackerHudDraw(IGraphicsPort* gPort, IControlView* view, const PMPoint& 
 	if (sx == 0 || sy == 0)
 		return;
 
-	// ビューの可視範囲を pasteboard 座標で得る(トーストと同じ手順 = 窓座標の bbox を content へ変換)。
-	// ★ここが「ビューの隅」の正体。スクロールしてもズームしても、この矩形が常に「今見えている範囲」。
+	// The view's visible area in pasteboard coordinates (the same steps the old toast took: take the
+	// bbox in window coordinates and transform it to content).
+	// ★This is what "the corner of the view" really is. Scroll or zoom as you like, this rectangle is
+	//   always "what can be seen right now".
 	PMRect boundsPb = view->GetBBox();
 	view->WindowToContentTransform(&boundsPb);
 
@@ -224,7 +234,8 @@ void KCMTrackerHudDraw(IGraphicsPort* gPort, IControlView* view, const PMPoint& 
 
 	const PMReal fontSize = PMReal(kKCMTrackerHudTextPx) / sy;
 
-	// 下地の大きさは実測で決める(文字数×固定幅の概算は外れる)。取れなければ概算へ落とす。
+	// The plate is sized by measuring (character count times a fixed width is wrong often enough).
+	// Where the measurement cannot be had, it falls back to that estimate.
 	PMReal textW   = 0.0;
 	PMReal ascent  = fontSize * PMReal(0.8);
 	PMReal descent = fontSize * PMReal(0.2);
@@ -238,30 +249,35 @@ void KCMTrackerHudDraw(IGraphicsPort* gPort, IControlView* view, const PMPoint& 
 	if (textW <= 0)
 		textW = fontSize * PMReal(0.6) * PMReal(label.CharCount());
 
-	// 左上に置く(旧 HUD と同じ位置)。show はベースライン左端を (x,y) に置くので、左端の余白がそのまま tx。
-	// ★このポートの座標系へ落とす = pasteboard の値から spreadOffset を引く(平行移動のみ)。
+	// Top-left (where the old HUD sat). show puts the left end of the baseline at (x,y), so the left
+	// inset IS tx.
+	// ★Brought into this port's coordinates by subtracting spreadOffset from the pasteboard value (a
+	//   translation and nothing more).
 	const PMReal tx = boundsPb.Left() + PMReal(kKCMTrackerHudLeftPx) / sx - spreadOffset.X();
 	const PMReal ty = boundsPb.Top()  + PMReal(kKCMTrackerHudBaselinePx) / sy - spreadOffset.Y();
 
-	// 下地の矩形(= 透明グループの範囲でもある)。PMRect は (左, 上, 右, 下)。
+	// The plate's rectangle, which is also the extent of the transparency group. A PMRect is (left,
+	// top, right, bottom).
 	const PMRect hudRect(tx - PMReal(kKCMTrackerHudPadXPx) / sx,
 	                     ty - ascent - PMReal(kKCMTrackerHudPadTopPx) / sy,
 	                     tx + textW + PMReal(kKCMTrackerHudPadXPx) / sx,
 	                     ty + descent + PMReal(kKCMTrackerHudPadBotPx) / sy);
 
-	// ★下地と文字を透明グループで束ね、不透明度は**グループに1回だけ**掛ける。個別に setopacity すると
-	//   文字と下地が重なる画素だけ濃くなる(旧ページ番号バッジ・旧 HUD と同じ作法)。
+	// ★The plate and the text are bound into a transparency group and the opacity is applied **once,
+	//   to the group**. Applying setopacity to each of them separately makes the pixels where the text
+	//   overlaps the plate darker than the rest (the same practice as the old page-number badge and the
+	//   old HUD).
 	AutoGSave ag(gPort);
 	gPort->setopacity(PMReal(kKCMTrackerHudOpacity), kFalse);
 	gPort->starttransparencygroup(hudRect, nil, kFalse /*non-isolated*/, kFalse /*no knockout*/);
 
-	// (1) 下地: 白ベタ。rectfill は (左, 上, 幅, 高さ)。
+	// (1) The plate: solid white. rectfill takes (left, top, width, height).
 	gPort->newpath();
 	gPort->setrgbcolor(PMReal(1.0), PMReal(1.0), PMReal(1.0));
 	gPort->rectfill(hudRect.Left(), hudRect.Top(), hudRect.Width(), hudRect.Height());
 	gPort->newpath();
 
-	// (2) 文字: 黒。読みやすさは下地が担保するので、フチもブレンドも要らない。
+	// (2) The text: black. The plate is what makes it readable, so it needs no rim and no blending.
 	gPort->setrgbcolor(PMReal(0.0), PMReal(0.0), PMReal(0.0));
 	gPort->selectfont(font, fontSize);
 	gPort->show(tx, ty, label.NumUTF16TextChars(), label.GrabUTF16Buffer(nil), IGraphicsPort::kFillText);
@@ -274,7 +290,7 @@ void KCMTrackerHudShutdown()
 {
 	sActive = kFalse;
 	sView   = nil;
-	KCMTrackerHudReleaseFont();	// フォント参照を .pln が降りる前に必ず返す
+	KCMTrackerHudReleaseFont();	// always return the font reference before the .pln goes down
 }
 
 // End, KCMTrackerHud.cpp.

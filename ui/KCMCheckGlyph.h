@@ -9,20 +9,22 @@
 //  2026-08-17, audit B-U6). The caller owns the buffer clear and setopacity; this only strokes
 //  the glyph.
 //
-//  ★★形を変えるときは PNG も作り直すこと(2026-07-25)。ツール選択中の常時✓カーソルは、押下時のゴミ対策で
-//  コールバック描画をやめて PNG リソース(KCM_Check_10_18.png / KCM_CheckOff_10_18.png ＋ @2x/@3to2x)に
-//  なったため、✓の絵の出どころが「この関数」と「PNG」の2つある。PNG はこの関数と同じ幾何(頂点・線幅・
-//  丸端)で生成したもので、再生成スクリプト = work/kescm-make-check-cursor.ps1(引数=出力フォルダー)。
-//  生成後は source/sdksamples/KCM/ui/ へ置き、**KCMUI.fr を touch してから**ビルドすること
-//  (PNG だけ差し替えても ODFRC が走らず古い画像がリンクされ続ける既知の罠)。
+//  ★★**Change the shape here and the PNGs have to be regenerated.** The always-on check cursor of
+//  the tool stopped using a drawing callback (to cure the rubbish seen on press) and became PNG
+//  resources (KCM_Check_10_18.png / KCM_CheckOff_10_18.png, with @2x and @3to2x), so **the artwork
+//  now has two sources: this function and those files**. The PNGs are generated with the same
+//  geometry as this function (vertices, stroke widths, round caps) by
+//  work/kescm-make-check-cursor.ps1 (its argument is the output folder).
+//  Put the results in source/sdksamples/KCM/ui/ and **touch KCMUI.fr before building** ---- replacing
+//  a PNG alone does not make ODFRC run, and the old image stays linked in (a known trap).
 //
 //  Header-only inline (no .cpp / no build-system change): the caller already includes
 //  IGraphicsPort.h, and inlining keeps that true if a second translation unit ever picks it up again.
-//  ⚠2026-08-19(不具合再検査 B-U6)訂正: ここは「**both callers** … across the **two** translation
-//    units」と書いてあったが、**呼び手は 2026-07-25 以降ずっと1つ**(KCMCmykCursor.cpp)＝✓カーソルが
-//    PNG リソース方式へ変わってコールバックを持たなくなった日から。**同じファイルの14行下**が
-//    「現在の呼び手は…ただ1つ(2026-08-17・監査 B-U6 で Grep 全数を数え直した)」と書いているのに、
-//    **数え直した当人がこの段落を直していなかった**(近い兄弟ほど残る)。
+//  ⚠This paragraph used to say "**both callers** ... across the **two** translation units". **There
+//    has been exactly one caller** (KCMCmykCursor.cpp) since the day the check cursor became a PNG
+//    resource and stopped having a callback. **Fourteen lines further down the same file** said "the
+//    caller today is ... exactly one (counted by grepping)", and **the person who counted did not fix
+//    this paragraph** ---- the nearer the sibling, the more likely it is to be left.
 //
 //========================================================================================
 #ifndef __KCMCheckGlyph_h__
@@ -32,23 +34,28 @@
 #include "PMReal.h"
 #include "ICursorUtils.h"	// QueryGraphicsPortForBitmap(KCMCursorBitmapFinish)
 #include "Utils.h"
-#include <cstring>			// std::memset(KCMCursorBitmapBegin の透明クリア)
+#include <cstring>			// std::memset (the transparent clear in KCMCursorBitmapBegin)
 
 //----------------------------------------------------------------------------------------
-// カーソルビットマップ・コールバック共通の前処理(2026-07-15 に2つのコールバックの重複約16行を集約)。
-// ★**現在の呼び手は KCMCmykCursor.cpp ただ1つ**(2026-08-17・監査 B-U6 で Grep 全数を数え直した)。
-//   集約した当時の2つのうち片方=✓カーソル(KCMCursorProvider.cpp)は **2026-07-25 に PNG リソース方式へ
-//   変わってコールバック自体を持たなくなり**、もう片方は 2026-08-13 の分割で KCMPeek.cpp から
-//   KCMCmykCursor.cpp へ移った ---- つまり**書いてあった2つとも今は違う**。
-//   ⚠それでも共通化は解かない: この2段(Begin/Finish)は「透明クリア→サイズ確定→AGM ポート」という
-//     カーソルビットマップの手順そのもので、次に動的カーソルを足すときの入口になる。
-// 手順: Begin(確保全域を透明クリア+論理最大サイズ取得) → 呼び出し側が論理サイズを決める →
-//       Finish(クランプ+出力サイズ設定+AGM ポート取得)。
+// The preamble shared by cursor-bitmap callbacks (about sixteen duplicated lines from two callbacks,
+// gathered here).
+// ★**There is exactly one caller today, KCMCmykCursor.cpp** (counted by grepping in full).
+//   Of the two that existed when this was gathered, one - the check cursor
+//   (KCMCursorProvider.cpp) - **became a PNG resource and stopped having a callback at all**, and
+//   the other moved from KCMPeek.cpp to KCMCmykCursor.cpp with the model/UI split ---- that is,
+//   **neither of the two named here is what it was**.
+//   ⚠It is not un-gathered even so: these two steps (Begin / Finish) ARE the procedure for a cursor
+//     bitmap - clear to transparent, settle the size, obtain the AGM port - and they are the way in
+//     for the next dynamic cursor.
+// The order: Begin (clear the whole allocation to transparent and answer the logical maximum size)
+//       -> the caller decides the logical size -> Finish (clamp it, set the output size, hand back
+//       the AGM port).
 //----------------------------------------------------------------------------------------
 
-/** 1) 確保バッファ全域を透明(ARGB=0)にクリアし、論理最大サイズ(1x px)を返す。
-	QueryGraphicsPortForBitmap は既存内容を消さないため、描かない画素にゴミが残るのを防ぐ。
-	allocW/allocH = 呼び出し側が確保した実サイズ(hiRes 時は論理の2倍)。 */
+/** 1) Clear the whole allocated buffer to transparent (ARGB = 0) and answer the logical maximum
+	size (in 1x px). QueryGraphicsPortForBitmap does not erase what is already there, so this is what
+	keeps rubbish out of the pixels nothing draws into.
+	allocW/allocH = the real size the caller allocated (twice the logical one when hiRes). */
 inline void KCMCursorBitmapBegin(uchar* buffer, uint32 allocW, uint32 allocH, bool16 hiRes,
                                    uint32& outMaxLogW, uint32& outMaxLogH)
 {
@@ -58,9 +65,9 @@ inline void KCMCursorBitmapBegin(uchar* buffer, uint32 allocW, uint32 allocH, bo
 	std::memset(buffer, 0, (size_t)allocW * (size_t)allocH * 4u);
 }
 
-/** 2) 論理サイズを最大にクランプして *width/*height/*hasAlpha を確定し、AGM ポートを返す
-	(AddRef 済み=呼び出し側が InterfacePtr で受ける。失敗時 nil)。描画は論理座標(1x px)で行い、
-	port が hiRes スケールを吸収する。 */
+/** 2) Clamp the logical size to the maximum, settle *width / *height / *hasAlpha, and hand back the
+	AGM port (already AddRef'd - the caller receives it into an InterfacePtr; nil on failure). Drawing
+	is done in logical coordinates (1x px) and the port absorbs the hiRes scale. */
 inline IGraphicsPort* KCMCursorBitmapFinish(uchar* buffer, uint32* width, uint32* height, bool16* hasAlpha,
                                               bool16 hiRes, uint32 logW, uint32 logH,
                                               uint32 maxLogW, uint32 maxLogH)
@@ -80,13 +87,14 @@ inline IGraphicsPort* KCMCursorBitmapFinish(uchar* buffer, uint32* width, uint32
 	.fr HOTC for kKCMCheckCursorResID so the bend sits on the cursor hotspot / click point.
 	Two color schemes (2026-07-15, user-specified):
 	  - active   (default): white halo + black body — over the armed Target where the tool works.
-	  - inactive (inverted): black halo + white body ("白の塗りに黒の縁") — everywhere else,
+	  - inactive (inverted): black halo + white body (a white fill with a black rim) - everywhere else,
 	    meaning "the tool does nothing here". A gray body was tried first but was hard to tell apart.
 	@param bodyGray body stroke gray level (0.0 = black default, 1.0 = white for inactive)
 	@param haloGray halo stroke gray level (1.0 = white default, 0.0 = black for inactive)
 	@param haloWidth halo (rim) stroke width. Default 4.2 gives a ~0.9px visible rim over the
-	       2.4px body (★2026-07-25 にユーザー要望で 3.5=0.55px から太くした。PNG 側 work/
-	       kescm-make-check-cursor.ps1 の active 幅と必ず同じ値にすること)。The inactive
+	       2.4px body (★thickened from 3.5, which showed as 0.55px, at the user's request. It must
+	       stay equal to the active width in work/kescm-make-check-cursor.ps1, which generates the
+	       PNGs). The inactive
 	       (black-rimmed) cursor passes a slightly larger value because a dark rim reads thinner
 	       than a light one at the same width (irradiation illusion), so it needs to be a touch
 	       wider to look the same thickness (user report 2026-07-15). */

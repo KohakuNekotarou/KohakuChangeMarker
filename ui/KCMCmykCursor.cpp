@@ -2,92 +2,106 @@
 //
 //  KCMCmykCursor.cpp
 //
-//  Alt+左「色比較」の実装(KCMPeek.cpp から分離。2026-08-13 の model/UI 分割 第1段 Task 1)。
-//  押下中に固定するモード(どの文書を見ているか)、カーソル自身への CMYK 描画、ドラッグ中のライブ更新、
-//  「値なし」表示の組み立てを持つ。
+//  Alt + left, the colour compare. It holds the mode fixed for the length of a press (which document
+//  is being looked at), the drawing of the CMYK onto the cursor itself, the live update during a
+//  drag, and the building of the "no value" display.
 //
-//  ★分離では関数の中身を1行も変えていない。変えたのは「どのファイルに座るか」と「誰から見えるか」だけ。
-//    ★★押下中の状態(sCmyk*)はこのファイルだけが持つ。分離前は3つのファイル(カーソル描画・ジェスチャ・
-//      Shutdown)から直接触られており、それがこの分割で最初に割れなかった相手だった。外から使う3つの
-//      塊は KCMCmykBeginPress / KCMCmykEndPress / KCMCmykShutdown として入口を1本ずつ用意した。
+//  ★The split out of KCMPeek.cpp changed not one line inside these functions. What changed is which
+//    file they sit in and who can see them.
+//    ★★The press-time state (sCmyk*) belongs to this file alone. Before the split three files
+//      (cursor drawing, the gesture, Shutdown) reached into it directly, and it was the first thing
+//      that would not come apart. The three lumps the outside needs were each given one way in:
+//      KCMCmykBeginPress / KCMCmykEndPress / KCMCmykShutdown.
 //
-//  UI 側: カーソルビットマップを作り、gPort へ描く。
+//  This is the UI side: it builds the cursor bitmap and draws into a gPort.
 //
 //========================================================================================
 
 #include "VCPlugInHeaders.h"
 
-// オブジェクトモデル:
+// Object model:
 #include "IDataBase.h"
 #include "IApplication.h"
 #include "IDocumentList.h"
 #include "ISession.h"
 
-// ジオメトリ / ビュー:
+// Geometry / view:
 #include "IControlView.h"
 #include "PMReal.h"
 #include "PMString.h"
 
-// カスタムビットマップカーソル(Alt+左 CMYK 情報をカーソルにも描く):
-// (ICursorUtils.h は KCMCheckGlyph.h 経由で入る=直接シンボルを使わないため直 include は撤去 2026-07-25)
-#include "IGraphicsPort.h"			// setrgbcolor/rectfill/selectfont/show
-#include "IFontMgr.h"				// 既定フォント取得
+// The custom bitmap cursor (Alt + left draws the CMYK on the cursor itself):
+// (ICursorUtils.h arrives through KCMCheckGlyph.h ---- no symbol of it is used directly here, so the
+//  direct include was dropped.)
+#include "IGraphicsPort.h"			// setrgbcolor / rectfill / selectfont / show
+#include "IFontMgr.h"				// obtaining the default font
 #include "IPMFont.h"
 
-#include <chrono>				// steady_clock(ドラッグ中ライブ再サンプルのスロットル)
+#include <chrono>				// steady_clock, for the throttle on live re-sampling during a drag
 
-// プロジェクト内インクルード:
-// ★★2026-08-15(第2段 Task 4B): **KCMColorSampler.h(model 側)の include を落とした**。
-//   このファイルは UI 側なので向き自体は合法だったが、呼んでいた3本(KCMSampleCmykUnderMouse /
-//   KCMSampleCmykBeginDrag / KCMSampleCmykEndDrag)は**自由関数**で、別 .pln になった途端に
-//   リンクできない。⇒ IKCMCompareFacade の SampleColorAt / BeginColorDrag / EndColorDrag へ通した。
-#include "KCMCheckGlyph.h"         // KCMDrawCheckGlyph(✓描画を CMYK カーソルと共有)
+// Project includes:
+// ★★**The include of KCMColorSampler.h (the model side) was dropped.** The direction was legal in
+//   itself - this is the UI side - but the three things being called through it were **free
+//   functions**, and a free function stops linking the moment the two sides become separate .plns.
+//   ⇒ They go through IKCMCompareFacade's SampleColorAt / BeginColorDrag / EndColorDrag now.
+#include "KCMCheckGlyph.h"         // KCMDrawCheckGlyph (the checkmark, shared with the CMYK cursor)
 #include "KCMUIShared.h"	// panel / status line / nav readout / tool button (split from KCMCore.h on 2026-08-13)
 #include "KCMViewLookup.h"         // KCMQueryViewUnderMouse / KCMFindDocDbForView / KCMQueryMouseContentPoint
-                                     // (2026-08-13 に KCMCore.h から移動。★3本目は 2026-08-15 に増えた＝
-                                     //  サンプリング点の解決がサンプラーからこちらへ来たため)
+                                     // (★the third one joined when resolving the sampling point moved
+                                     //  out of the sampler and over to this side)
 #include "Utils.h"                   // Utils<IKCMCompareFacade>()
-#include "IKCMCompareFacade.h"     // arm 状態 / ArmedDocsAlive(2026-08-13・分割 第1段 Task 11)
-                                     // ＋ CMYK サンプリング3本(2026-08-15・第2段 Task 4B)
+#include "IKCMCompareFacade.h"     // the armed state / ArmedDocsAlive, and the three CMYK sampling
+                                     // calls ---- everything that crosses to the model side
 #include "KCMCmykCursor.h"
 
-// Alt+左(CMYK 色ピック)の押下中モード。押下時に「マウス下の文書」で決めて固定し、RevealEnd で捨てる
-// (押下の外では常に nil/既定)。★2026-07-26 にユーザー指定で3通りへ拡張(旧 sSoloCmykDB 1本を置換):
-//   Start 中・Target 窓 … hover=Target / other=Source(比較2行、1行目 "t")
-//   Start 中・Source 窓 … hover=Source / other=Target(比較2行、1行目 "s")
-//   Start 中・第3の文書 / Stop 中 … hover=その文書 / other=nil(単独1行)
-// 押下中に別の窓へドラッグしても基準は切り替えない(行の上下が入れ替わらないように。外れている間は
-// サンプラが窓の同一性ガードで弾き「値なし ---」になる)。ポインタは照合専用で deref しない。
-static IDataBase* sCmykHoverDB       = nil;		// マウスが乗っている側=1行目に出す文書
-static IDataBase* sCmykOtherDB       = nil;		// 比較相手(nil=単独モード)
-static bool16     sCmykHoverIsTarget = kFalse;	// hover が Target(新)側か=ページ対応の向きとラベル t/s
+// The mode Alt + left (the colour pick) fixes for the length of a press. It is decided at press time
+// from "the document under the mouse", held, and dropped at RevealEnd ---- outside a press these are
+// always nil / the default. ★The user asked for three cases (replacing a single sSoloCmykDB):
+//   comparing, over the Target window … hover = Target / other = Source (two lines, "t" first)
+//   comparing, over the Source window … hover = Source / other = Target (two lines, "s" first)
+//   comparing, over a third document, or stopped … hover = that document / other = nil (one line)
+// Dragging into another window mid-press does NOT switch the reference, so the two lines never trade
+// places; while the pointer is off the pressed window the sampler's own identity guard rejects it and
+// "no value ---" is shown. The pointers are for comparison only and are never dereferenced.
+static IDataBase* sCmykHoverDB       = nil;		// the side under the mouse = the document on the first line
+static IDataBase* sCmykOtherDB       = nil;		// the one it is compared with (nil = the lone-pick mode)
+static bool16     sCmykHoverIsTarget = kFalse;	// whether hover is the Target (the newer): the direction of
+												// the page pairing, and the t/s labels
 
 //========================================================================================
-// Alt+左「色比較」の CMYK 情報を、パネル状態行に加えて**カーソル自身**にも描く。
-//   カーソルは OS 描画=ドキュメント窓枠を超えマウス追従(仕組み: CursorSpec のコールバックで
-//   自前バッファに AGM 描画する「カスタムビットマップカーソル」。ChangeModalCursor はトラッカー
-//   =独自ツールを持つ KCM だから使える特典)。CreateCursorBitmapProc は引数でデータを渡せない
-//   ので、描く文字列は file-static sCmykCursorText に置きコールバックから読む。
-//   ★これはまず「出るか」を見る実装スパイク(2026-07-13)。座標系(y方向)・alpha・サイズは実機で調整。
+// The CMYK of Alt + left is drawn on **the cursor itself**, on top of going to the panel's status
+//   line.
+//   A cursor is drawn by the OS, so it crosses the document window's edge and follows the mouse. How:
+//   a "custom bitmap cursor" ---- a CursorSpec callback that draws into a buffer of our own through
+//   AGM. ChangeModalCursor is available to KCM because it has a tracker, which is to say a tool of
+//   its own. CreateCursorBitmapProc cannot be handed data through an argument, so the string to draw
+//   sits in the file-static sCmykCursorText and the callback reads it from there.
+//   ★It began as a spike to see whether anything appeared at all; the coordinate system (the y
+//     direction), the alpha and the sizes were then tuned against the running application.
 //========================================================================================
-static PMString sCmykCursorText;			// "… t\n… s"(LF区切り2行、末尾ラベル t/s。1行目=マウスが乗っている窓の側)。色サンプル成功時に格納。
-static bool16   sCmykCursorPending = kFalse;	// 直近の BeginTracking で CMYK カーソルを出すべきか
+static PMString sCmykCursorText;			// "... t\n... s": two lines separated by LF, each labelled t/s at the
+											// end, the first being the window under the mouse. Stored where a
+											// colour sample succeeded.
+static bool16   sCmykCursorPending = kFalse;	// whether the last BeginTracking should put a CMYK cursor up
 
-// ドラッグ中ライブ再サンプルのスロットル(既定 50ms ≒ 20回/秒)。★押下ごとに必ず初回を通すため、
-// RevealEnd と Shutdown で sCmykDragThrottleStarted を戻す(2026-08-06 の監査 C-1)。以前は
-// KCMTrackerUpdateCmykDrag の関数内 static だったので一度立つと戻らず、2回目以降の押下では
-// ドラッグ最初のサンプルが前回の押下から数えたスロットルに引っかかり得た(押下時の値は RevealBegin が
-// 出しているので画面が空になることはないが、このファイルの「押下の外では状態を持たない」方針から外れる)。
+// The throttle on live re-sampling during a drag (50ms ≒ twenty times a second). ★So that the first
+// sample of every press always gets through, sCmykDragThrottleStarted is put back at RevealEnd and at
+// Shutdown. It used to be a function-local static inside KCMTrackerUpdateCmykDrag, so once raised it
+// stayed raised, and from the second press onwards the first sample of a drag could be caught by a
+// throttle counted from the PREVIOUS press. (Nothing went blank - the value at press time comes from
+// RevealBegin - but it broke this file's rule that no state is held outside a press.)
 static std::chrono::steady_clock::time_point sCmykDragLastSample;
 static bool16                                sCmykDragThrottleStarted = kFalse;
 
-// Alt+左ドラッグ中だけ保持する既定フォント(取得=RevealBegin の Alt 分岐、解放=RevealEnd)。
-// ドラッグ中のカーソル再描画(≦20回/秒)が毎回 IFontMgr の名前引きをしないためのキャッシュ(2026-07-15)。
-// ★file-static の InterfacePtr にはしない: 静的破棄タイミングの Release はオブジェクトモデル消滅後で
-//   危険なため、生ポインタ+RevealEnd での明示解放(押下の外では常に nil)にする。
+// The default font, held only for the length of an Alt + left drag (taken in RevealBegin's Alt
+// branch, released at RevealEnd). It is a cache so that redrawing the cursor during a drag (twenty
+// times a second at most) does not look the font up by name through IFontMgr every time.
+// ★It is deliberately NOT a file-static InterfacePtr: a Release at static-destruction time happens
+//   after the object model is gone, which is dangerous. A raw pointer with an explicit release at
+//   RevealEnd (always nil outside a press) is used instead.
 static IPMFont* sCmykCursorFont = nil;
 
-// LF(0x0A)で最大2行に分割する。
+// Split at LF (0x0A) into at most two lines.
 static void KCMSplitTwoLines(const PMString& src, PMString& line1, PMString& line2)
 {
 	line1.Clear(); line1.SetTranslatable(kFalse);
@@ -103,20 +117,21 @@ static void KCMSplitTwoLines(const PMString& src, PMString& line1, PMString& lin
 	}
 }
 
-// スペース区切りの行を「表」状に描く。先頭4トークン(見出し C/M/Y/K、または3桁値)を x0+col*pitch の
-// 固定列に、5トークン目以降(ラベル tgt/src)は4列目の右(x0+4*pitch)に置く。ヘッダー行とデータ行を同じ
-// x0/pitch で描けば CMYK 見出しと数字の桁が必ず縦にそろう(フォント計測不要=ユーザー要望の縦位置合わせ
-// 2026-07-13)。描画は KCMShowHalo(白フチ＋黒本体)。
-static void KCMShowHalo(IGraphicsPort* gPort, const PMReal& x, const PMReal& y, const PMString& s);	// 前方宣言
+// Draw a space-separated line as a "table". The first four tokens (the C/M/Y/K heading, or three-digit
+// values) go into fixed columns at x0 + col * pitch, and the fifth onwards (the t/s label) to the right
+// of the fourth column, at x0 + 4 * pitch. Draw the heading row and the data rows with the same x0 and
+// pitch and the CMYK letters stand above their digits **without measuring the font** ---- which is what
+// the user asked for. The drawing goes through KCMShowHalo (a white rim with a black body).
+static void KCMShowHalo(IGraphicsPort* gPort, const PMReal& x, const PMReal& y, const PMString& s);	// forward
 
 static void KCMDrawColumns(IGraphicsPort* gPort, IPMFont* font, const PMReal& fs,
                              const PMReal& x0, const PMReal& pitch, const PMReal& y, const PMString& row)
 {
 	if (font == nil)
 		return;
-	// ★フォントの選択はこの行で1回だけ(2026-08-06 の監査 C-5)。以前は KCMShowHalo の中で
-	//   トークンごとに selectfont していたため、1フレームで最大15回・毎秒20フレームぶん繰り返していた。
-	//   同じフォント・同じサイズなので1回で足りる。
+	// ★The font is selected here and once only. It used to be selected inside KCMShowHalo, per token,
+	//   which came to as many as fifteen times a frame at twenty frames a second. It is the same font
+	//   at the same size every time, so once is enough.
 	gPort->selectfont(font, fs);
 
 	PMString tok; tok.SetTranslatable(kFalse);
@@ -125,14 +140,14 @@ static void KCMDrawColumns(IGraphicsPort* gPort, IPMFont* font, const PMReal& fs
 	const UTF16TextChar* b = row.GrabUTF16Buffer(nil);
 	for (int32 i = 0; i <= n; ++i)
 	{
-		if (i < n && b[i] != 0x0020)	// スペース以外は現在のトークンに積む
+		if (i < n && b[i] != 0x0020)	// anything but a space builds up the current token
 		{
 			tok.AppendW(UTF32TextChar(b[i]));
 			continue;
 		}
-		if (tok.NumUTF16TextChars() > 0)	// 区切り(スペース or 行末)でトークン確定
+		if (tok.NumUTF16TextChars() > 0)	// a separator (a space, or the end of the line) settles it
 		{
-			const int32 c = (col < 4) ? col : 4;	// 5番目以降(ラベル)は4列目の右へ
+			const int32 c = (col < 4) ? col : 4;	// the fifth onwards (the label) goes right of column four
 			KCMShowHalo(gPort, x0 + pitch * PMReal(c), y, tok);
 			++col;
 			tok.Clear();
@@ -141,8 +156,8 @@ static void KCMDrawColumns(IGraphicsPort* gPort, IPMFont* font, const PMReal& fs
 	}
 }
 
-// (x,y) に文字列を描く(空なら何もしない)。
-// ★前提: フォントは呼び出し側(KCMDrawColumns)が selectfont 済み。ここでは選び直さない(監査 C-5)。
+// Draw a string at (x,y); an empty one draws nothing.
+// ★It assumes the caller (KCMDrawColumns) has already selectfont'd. It does not choose again.
 static void KCMShowHalo(IGraphicsPort* gPort, const PMReal& x, const PMReal& y, const PMString& s)
 {
 	const int32 n = s.NumUTF16TextChars();
@@ -150,7 +165,8 @@ static void KCMShowHalo(IGraphicsPort* gPort, const PMReal& x, const PMReal& y, 
 		return;
 	const UTF16TextChar* b = s.GrabUTF16Buffer(nil);
 
-	// 白フチ(8方向に1pxずらして白で描く)→ 黒本体。透明背景でも明暗どちらの下地でも読める。
+	// The white rim first (drawn white, offset one pixel in each of eight directions), then the black
+	// body. Readable over a transparent background whether what is behind it is light or dark.
 	static const int kDX[8] = { -1, 0, 1, -1, 1, -1, 0, 1 };
 	static const int kDY[8] = { -1, -1, -1, 0, 0, 1, 1, 1 };
 	const PMReal o(1.0);
@@ -161,40 +177,48 @@ static void KCMShowHalo(IGraphicsPort* gPort, const PMReal& x, const PMReal& y, 
 	gPort->show(x, y, (uint32)n, b);
 }
 
-// CMYK カーソルの上部に載せる✓。色は arm 状態だけで出し分ける(常時ツールカーソル KCMCursorProvider.cpp と
-// 同じ規則。ユーザー要望 2026-07-24 / 2026-07-26 に「Start 中はどの文書の上でも黒」で確定): Start(arm 済み)は
-// 黒✓、Stop(未 arm)は白抜き✓(黒フチ+白本体=KCMCheckCursorInactiveBitmapProc と同一パラメータ)。
-// ★Start 中の第3の文書は表示こそ単独1行(Stop と同じ)だが、✓は黒のまま=「比較は動いている」を示す。
+// The checkmark that sits at the top of the CMYK cursor. Its colour is decided by the armed state and
+// nothing else - the same rule the always-on tool cursor follows (KCMCursorProvider.cpp), settled by
+// the user as "while Start is in force it is black over any document": armed = a black checkmark,
+// stopped = an inverted one (a black rim with a white body ---- the same values KCMCheckGlyph.h gives
+// the inactive cursor, and the same ones its PNGs are generated with).
+// ★Over a third document while Start is in force the display is a lone line, as when stopped, but the
+//   checkmark stays black ＝ "the comparison is running".
 static void KCMDrawCmykCursorCheck(IGraphicsPort* gPort)
 {
 	if (Utils<IKCMCompareFacade>()->IsArmed())
-		KCMDrawCheckGlyph(gPort);											// 黒✓(Start)
+		KCMDrawCheckGlyph(gPort);											// black (armed)
 	else
-		KCMDrawCheckGlyph(gPort, PMReal(1.0), PMReal(0.0), PMReal(5.0));	// 白抜き✓(Stop)
+		KCMDrawCheckGlyph(gPort, PMReal(1.0), PMReal(0.0), PMReal(5.0));	// inverted (stopped)
 }
 
-// CursorSpec のコールバック。カーソル描画系が呼ぶ(UIスレッド)。bitmapBuffer は呼び出し側が
-// (最大カーソルサイズ)²×4 で確保済み。*width/*height は入力=最大サイズ(hiRes 時は 2 倍)、出力=実使用サイズ。
+// The CursorSpec callback, called by the cursor machinery on the UI thread. bitmapBuffer has already
+// been allocated by the caller at (the maximum cursor size)² × 4. *width / *height are the maximum
+// size on the way in (twice that when hiRes) and the size actually used on the way out.
 static void KCMCmykCursorBitmapProc(uchar* bitmapBuffer, uint32* width, uint32* height, bool16* hasAlpha, bool16 hiRes)
 {
-	// 前処理(確保全域の透明クリア+論理最大サイズ取得)は ✓カーソルと共有(KCMCheckGlyph.h)。
-	// 背景は透明のまま=黒い箱を出さない(ユーザー指定 2026-07-13)。
+	// The preamble - clear the whole allocation to transparent, and answer the logical maximum size -
+	// is shared with the checkmark cursor (KCMCheckGlyph.h).
+	// The background is left transparent ＝ no black box, as the user asked.
 	uint32 maxLogW = 0, maxLogH = 0;
 	KCMCursorBitmapBegin(bitmapBuffer, *width, *height, hiRes, maxLogW, maxLogH);
 
-	// 表示文字列(数値2行、各行末尾にラベル t/s)を分解し、最長行から「幅いっぱいに収まる大きめフォント」を
-	// 決める(ユーザー要望 2026-07-13: カーソル最大サイズまで使って cmyk＋数値を大きく)。
+	// Break the display string (two rows of numbers, each labelled t/s at the end) apart and settle on
+	// "the largest font that still fits the width" from the longer of the two ---- the user asked for the
+	// letters and numbers to be as large as the maximum cursor size allows.
 	PMString line1, line2;
 	KCMSplitTwoLines(sCmykCursorText, line1, line2);
 	const int32 chars1 = line1.NumUTF16TextChars();
 	const int32 chars2 = line2.NumUTF16TextChars();
 
-	// ★空文字ガード(2026-07-25 追加)。文字列が空のまま呼ばれると下の maxChars が 1 になり、fs が
-	//   (maxLogW-8)*100/58 = 100〜200pt まで跳ね上がって、巨大な "C M Y K" がカーソル全面に描かれる
-	//   =見た目はまさに「ゴミ」。通常経路(InstallCmykCursor は値が採れた時だけ)では起きないが、
-	//   カーソルキャッシュの再生成や DPI 変更で proc が呼ばれると露出しうるので保険を入れる。
-	//   ★*width/*height/*hasAlpha を設定せずに return してはいけない(未設定だと最大サイズ・24bit RGB
-	//     扱い等で本物のゴミになる)。ツール常時カーソルと同じ「✓だけの 24x24」に倒す。
+	// ★The empty-string guard. Called with an empty string, maxChars below becomes 1 and fs leaps to
+	//   (maxLogW - 8) * 100 / 58 = 100 to 200pt, painting a giant "C M Y K" across the whole cursor ----
+	//   which looks exactly like rubbish. The ordinary route cannot do it (InstallCmykCursor runs only
+	//   where a value was sampled), but the proc can be called again when the cursor cache is rebuilt or
+	//   the DPI changes, so the guard is there.
+	//   ★It must NOT return without setting *width / *height / *hasAlpha: unset, they are taken as the
+	//     maximum size in 24-bit RGB and produce real rubbish. It falls back to the 24x24 checkmark-only
+	//     cursor, the same one the tool wears all the time.
 	if (chars1 <= 0 && chars2 <= 0)
 	{
 		InterfacePtr<IGraphicsPort> gPortCheckOnly(KCMCursorBitmapFinish(
@@ -209,56 +233,66 @@ static void KCMCmykCursorBitmapProc(uchar* bitmapBuffer, uint32* width, uint32* 
 	int32 maxChars = (chars2 > chars1) ? chars2 : chars1;
 	if (maxChars < 1) maxChars = 1;
 
-	// フォントは使える最大幅から大きめに決める(1文字≒0.58em、下限7pt)。
-	// ★上限キャップは撤廃で確定(2026-07-14 検証→2026-07-25 採用を明文化): 18→26→48pt と上げても実機で
-	// 変化が無かった=maxLogW(カーソル最大論理サイズ=OS/カーソルマネージャ依存)からの逆算値が実質の
-	// 上限として機能しており、人工的なキャップは不要。
+	// The font is sized generously from the width available (a character ≒ 0.58em; never below 7pt).
+	// ★There is deliberately NO upper cap: raising one from 18 to 26 to 48pt changed nothing in the
+	// running application, because the value derived from maxLogW (the maximum logical cursor size,
+	// which the OS and the cursor manager decide) is already the real ceiling.
 	int32 fs = ((int32)maxLogW - 8) * 100 / (maxChars * 58);
 	if (fs < 7)  fs = 7;
 
-	// ★ビットマップ幅は「実際の内容幅」にタイトに合わせる。最大幅いっぱいに取ると右側に広い透明余白が
-	// でき、その初回フレームがちらついて見える(ゴミ)ため。内容幅 = 左6 + 4列×ピッチ(2.1em) +
-	// ラベル(t/s=1文字≒0.58em) + 右4 ≒ 10 + 8.98em(下の描画の pitch=2.1×fs と一致させること。
-	// 2026-07-15: ラベルを tgt/src→t/s へ短縮したのに合わせ 10.14em→8.98em に更新=右端の透明余白を除去)。
-	const int32 contentW = 10 + (fs * 898) / 100;	// fs>=7 保証(上のクランプ)により常に正
-	uint32 logW = (uint32)contentW;					// クランプは KCMCursorBitmapFinish が行う
+	// ★The bitmap's width is fitted tightly to the real width of the content. Taking the full maximum
+	// width leaves a broad transparent margin on the right, and the first frame of it can be seen to
+	// flicker (rubbish again). The content width = 6 on the left + four columns of pitch (2.1em) + the
+	// label (t/s, one character ≒ 0.58em) + 4 on the right ≒ 10 + 8.98em. ★Keep it equal to the
+	// pitch = 2.1 × fs used in the drawing below. (It went from 10.14em to 8.98em when the labels were
+	// shortened from tgt/src to t/s ＝ the transparent margin on the right went with them.)
+	const int32 contentW = 10 + (fs * 898) / 100;	// always positive: fs >= 7 is guaranteed above
+	uint32 logW = (uint32)contentW;					// KCMCursorBitmapFinish does the clamping
 
-	// ✓(上部 y≈18 まで)の下に「ヘッダー C M Y K + データ2行(Target/Source)」を積む。位置・高さは fs から。
-	const int32 gap    = (fs * 130) / 100;	// 行間 ≒1.3em
-	const int32 yHdr   = 22 + fs;			// ヘッダー行ベースライン(✓の下。全体を少し下げた=ユーザー要望 2026-07-13)
-	const int32 yData1 = yHdr + gap;		// Target 行
-	const int32 yData2 = yData1 + gap;		// Source 行
-	// 最下段(Source 行 "src")はディセンダ(下に伸びる字)が無いので、ベースラインのすぐ下でビットマップを
-	// 終える。下端の透明余白を残すと、そこに初回フレームのちらつき(ゴミ)が出る(ユーザー報告: 文字より
-	// 約3px下に一瞬。2026-07-13)。ハロー(y+1)とAA ぶんだけ +2 で足りる。
-	// ★solo(Stop 単独ピック=line2 空)は Target 行までで終える(2026-07-25 監査で修正): 常に yData2 基準だと
-	//   使わない Source 行ぶんの透明帯が下に残り、上の「余白タイト化」方針と矛盾していた。
+	// Under the checkmark (which reaches to about y = 18) go the "C M Y K" heading and two rows of data.
+	// Their positions and the height all come from fs.
+	const int32 gap    = (fs * 130) / 100;	// the line spacing ≒ 1.3em
+	const int32 yHdr   = 22 + fs;			// the heading's baseline, below the checkmark (the whole block sits
+											// a little lower than it first did, at the user's request)
+	const int32 yData1 = yHdr + gap;		// the Target row
+	const int32 yData2 = yData1 + gap;		// the Source row
+	// The bottom row has no descenders, so the bitmap ends just below its baseline. Leave a transparent
+	// margin down there and the first frame flickers in it (reported as a flash about three pixels below
+	// the text). +2 covers the halo (y+1) and the antialiasing.
+	// ★A lone pick (line2 empty) ends after the Target row: always measuring from yData2 left a
+	//   transparent band the width of an unused Source row, which contradicted the tight-margin rule
+	//   above.
 	int32 needH = ((chars2 > 0) ? yData2 : yData1) + 2;
 	uint32 logH = (needH > 0) ? (uint32)needH : 60u;
 
-	// サイズ確定(クランプ込み)+AGM ポート取得(✓カーソルと共有の後処理。KCMCheckGlyph.h)。
+	// Settle the size (clamping included) and obtain the AGM port - the closing half shared with the
+	// checkmark cursor (KCMCheckGlyph.h).
 	InterfacePtr<IGraphicsPort> gPort(KCMCursorBitmapFinish(
 		bitmapBuffer, width, height, hasAlpha, hiRes, logW, logH, maxLogW, maxLogH));
 	if (gPort == nil)
 		return;
 
-	// 背景は透明(上で全域 ARGB=0 にクリア済み)。setopacity は以降のストローク/文字を不透明にするため。
+	// The background is transparent (cleared to ARGB = 0 in full above). The setopacity is what makes
+	// the strokes and text that follow opaque.
 	gPort->setopacity(PMReal(1.0), kFalse);
-	/* 背景塗りは廃止=透明のまま。黒い箱を出さない(ユーザー指定 2026-07-13) */
+	/* There is deliberately no background fill: it stays transparent, so no black box. */
 
-	// ツール選択中と同じ✓を、共有ヘルパ KCMDrawCheckGlyph でホットスポット(10,18)=✓の折れ点=
-	// クリック点に描く(KCMCursorProvider.cpp と同一形状/座標)。数値表示中もカーソル形状を残す
-	// (ユーザー要望 2026-07-14)。★以前は「✓ を stroke で描くと初回フレームのちらつき(ゴミ)が出る」と
-	// 考えて rectfill のドットに退避していたが(2026-07-13)、その後の調査でゴミの真因は stroke 描画では
-	// なく BeginTracking の多段カーソル切替が OS のハードウェアカーソル合成にそのまま見えていたことだと
-	// 判明した(対策は KCMTracker.cpp の BeginTracking = サンプリングを切替の前へ出す)。stroke 自体は
-	// 無罪なので✓に戻して問題ない。色の出し分けは KCMDrawCmykCursorCheck に集約(空文字ガードと共有)。
+	// The same checkmark the tool wears, drawn through the shared KCMDrawCheckGlyph so that its bend -
+	// the hotspot (10,18) - is the click point (the same shape and coordinates as KCMCursorProvider.cpp).
+	// The cursor keeps its shape while the numbers are up, which is what the user asked for.
+	// ★It was once believed that "drawing the checkmark with stroke causes the flicker on the first
+	// frame", and it had been backed off to rectfill dots. The real cause turned out to be **the
+	// multi-stage cursor switching in BeginTracking**, plainly visible to the OS's hardware cursor
+	// compositing (the cure is in KCMTracker.cpp's BeginTracking: the sampling was moved ahead of the
+	// switch). stroke was innocent, so the checkmark came back. Which colour it takes is decided in one
+	// place, KCMDrawCmykCursorCheck, shared with the empty-string guard above.
 	KCMDrawCmykCursorCheck(gPort);
 
-	// 上から: ヘッダー "C M Y K"(各列先頭にそろえる) / Target 数値 / Source 数値。数値は各値3桁で行頭
-	// そろえ、末尾に t/s。フォント fs・行位置は上で計算済み。描画は KCMShowHalo(白フチ＋黒本体)。
-	// フォントは押下中キャッシュ(sCmykCursorFont。ドラッグ再描画≦20回/秒の名前引き回避)を使い、
-	// 万一 nil ならローカルに引き直すフォールバック(2026-07-15)。
+	// From the top: the "C M Y K" heading (aligned to the head of each column), the Target numbers, the
+	// Source numbers. Every value is three digits so the columns line up, with t/s at the end. The font
+	// size and the row positions were computed above; the drawing goes through KCMShowHalo.
+	// The font is the press-time cache (sCmykCursorFont, which is what keeps the redraws of a drag from
+	// looking it up by name), with a local fallback should it somehow be nil.
 	IPMFont* font = sCmykCursorFont;
 	InterfacePtr<IPMFont> fallbackFont;
 	if (font == nil)
@@ -270,29 +304,35 @@ static void KCMCmykCursorBitmapProc(uchar* bitmapBuffer, uint32* width, uint32* 
 	}
 	if (font != nil)
 	{
-		// 見出し行とデータ2行を同じ固定列(x0, pitch)で描いて桁を縦にそろえる(pitch=3桁+ギャップ)。
-		// ヘッダーの C/M/Y/K が各3桁列の真上に来る(ユーザー要望の縦位置合わせ 2026-07-13)。
+		// The heading and the two data rows are drawn on the same fixed columns (x0, pitch) so the digits
+		// line up vertically (pitch = three digits plus a gap) and each of C/M/Y/K stands directly above
+		// its own column ---- the alignment the user asked for.
 		const PMReal x0(6.0);
 		const PMReal pitch = PMReal(fs) * PMReal(2.1);
 		PMString hdr; hdr.SetTranslatable(kFalse); hdr.Append("C M Y K");
-		KCMDrawColumns(gPort, font, PMReal(fs), x0, pitch, PMReal(yHdr),   hdr);	// 見出し C M Y K
-		KCMDrawColumns(gPort, font, PMReal(fs), x0, pitch, PMReal(yData1), line1);	// 1行目=マウスが乗っている窓の側(t or s)
-		KCMDrawColumns(gPort, font, PMReal(fs), x0, pitch, PMReal(yData2), line2);	// 2行目=比較相手(単独モードでは空=自動スキップ)
+		KCMDrawColumns(gPort, font, PMReal(fs), x0, pitch, PMReal(yHdr),   hdr);	// the heading
+		KCMDrawColumns(gPort, font, PMReal(fs), x0, pitch, PMReal(yData1), line1);	// row 1 = the window under the mouse (t or s)
+		KCMDrawColumns(gPort, font, PMReal(fs), x0, pitch, PMReal(yData2), line2);	// row 2 = the one compared with (empty in the lone
+																						// mode, and skipped by itself)
 	}
 }
 
-// KCMTracker.cpp から使う入口。BeginTracking の CMYK 分岐が成功したら Pending が立ち、トラッカーが
-// ChangeModalCursor(CursorSpec(KCMTrackerCmykCursorProc(), …)) を呼ぶ。
+// The way in from KCMTracker.cpp. Where BeginTracking's CMYK branch succeeded, Pending is raised and
+// the tracker calls ChangeModalCursor(CursorSpec(KCMTrackerCmykCursorProc(), ...)).
 bool16 KCMTrackerHasPendingCmykCursor()          { return sCmykCursorPending; }
 CreateCursorBitmapProc KCMTrackerCmykCursorProc() { return &KCMCmykCursorBitmapProc; }
 
-// ツール常時✓カーソルの黒/白抜き判定(KCMCmykCursor.h 参照)。
-// ★2026-07-26(ユーザー指定): 黒=「Start 中(比較文書が生存)」だけで決める。マウス下がどの文書かは見ない。
-//   Alt+左の CMYK は Start 中ならどの窓でも値を出す(Target/Source 窓=比較2行、第3の文書=単独1行)ので、
-//   以前の「Target 窓だけ黒」は実態と合わなくなった。Stop 中は従来どおり白抜き✓(黒フチ+白本体)。
-//   viewUnderMouse が nil(レイアウトビュー上に居ない)なら白抜きのまま=カーソル形状の既定側に倒す。
-// ★引数 viewUnderMouse は「レイアウトビューの上に居るか」の判定にだけ使う(どの文書のビューかは見ない)。
-//   2026-07-26 の仕様変更で「文書を問わず黒」になったため、ビューの中身は色に関与しない(監査 C-2)。
+// Black or inverted, for the tool's always-on checkmark cursor (see KCMCmykCursor.h).
+// ★By the user's decision, black is decided by "Start is in force (the compared documents are alive)"
+//   and nothing else. Which document is under the mouse is not looked at: while Start is in force,
+//   Alt + left produces a value over any window (two lines over the Target or Source, one over a third
+//   document), so the older rule of "black over the Target window only" had stopped matching what the
+//   feature does. While stopped it is the inverted checkmark as before (a black rim, a white body).
+//   With viewUnderMouse nil ---- not over a layout view at all ---- it stays inverted, which is the
+//   cursor's default side.
+// ★The viewUnderMouse argument is used ONLY to decide "are we over a layout view"; whose view it is
+//   is never asked. Since the colour became document-independent, what the view holds cannot affect
+//   it.
 bool16 KCMToolCursorShouldBeBlack(IControlView* viewUnderMouse)
 {
 	if (viewUnderMouse == nil)
@@ -300,29 +340,33 @@ bool16 KCMToolCursorShouldBeBlack(IControlView* viewUnderMouse)
 	return Utils<IKCMCompareFacade>()->ArmedDocsAlive();
 }
 
-// KCMTrackerUpdateCmykDrag(KCMCmykCursor.h 参照) — ドラッグ中の CMYK ライブ更新。
-// トラッカーの ContinueTracking(マウス移動)から呼ばれる。現在のマウス位置で CMYK を再サンプルし、
-// 値が変わったら sCmykCursorText を更新して kTrue を返す(呼び出し側がカーソルを描き直す)。
-// 連続ラスタ化で重くならないよう時間スロットル(既定 50ms ≒ 20回/秒)を掛ける。
-// 前方宣言。定義は KCMCmykBeginPress の直前(ページ外の「値なし c---」表示を作る)。
-// hoverIsTarget= 1行目(=マウスが乗っている窓)のラベルが t か s か。
-static void KCMBuildCmykNoValue(PMString& out, bool16 hoverIsTarget);			// 比較: カーソル用(t/s)
-static void KCMBuildCmykNoValuePanel(PMString& out, bool16 hoverIsTarget);	// 比較: パネル用(見出し文字+t/s)
-static void KCMBuildCmykNoValueSolo(PMString& out);							// 単独: カーソル1行(ラベルなし)
-static void KCMBuildCmykNoValuePanelSolo(PMString& out);						// 単独: パネル1行(ラベルなし)
+// KCMTrackerUpdateCmykDrag (see KCMCmykCursor.h) - the live CMYK update during a drag.
+// Called from the tracker's ContinueTracking (the mouse moved). It samples the CMYK again at the
+// current mouse position and, where the value changed, updates sCmykCursorText and answers kTrue so
+// that the caller redraws the cursor. A time throttle (50ms ≒ twenty times a second) keeps continuous
+// rasterization from becoming expensive.
+// Forward declarations; the definitions are just before KCMCmykBeginPress. They build the "no value"
+// display for points off the page.
+// hoverIsTarget = whether the first line (the window under the mouse) is labelled t or s.
+static void KCMBuildCmykNoValue(PMString& out, bool16 hoverIsTarget);			// comparing: for the cursor (t/s)
+static void KCMBuildCmykNoValuePanel(PMString& out, bool16 hoverIsTarget);	// comparing: for the panel (letters + t/s)
+static void KCMBuildCmykNoValueSolo(PMString& out);							// lone pick: one cursor line, unlabelled
+static void KCMBuildCmykNoValuePanelSolo(PMString& out);						// lone pick: one panel line, unlabelled
 
-// 押下中に固定した CMYK 対象文書(sCmykHoverDB / sCmykOtherDB)がまだ開いているか。ドラッグ中に稀な経路で
-// 文書が閉じても、解放済み IDataBase をサンプリングへ渡さないための最終ライン防御。
-//   比較モード … hover/other は arm 済みの Target/Source なので arm 版の検査に委ねる
-//                (KCMArmedDocsAlive は失格時に Stop 相当のクリーンアップまでやる)。
-//   単独モード … マウス下の1文書をドキュメントリストに照合するだけ(第3の文書や Stop 中なので arm と無関係)。
+// Are the CMYK documents fixed at press time (sCmykHoverDB / sCmykOtherDB) still open? The last line
+// of defence against handing a released IDataBase to the sampler, should a document be closed mid-drag
+// by one of the rare routes that can do it.
+//   comparing … hover/other ARE the armed Target/Source, so the armed check is what answers
+//               (KCMArmedDocsAlive goes as far as a Stop-equivalent clean-up when it fails).
+//   lone pick … the one document under the mouse is looked for in the document list, nothing more (a
+//               third document, or nothing armed at all, so the armed state has no bearing).
 static bool16 KCMCmykDocsAlive()
 {
 	if (sCmykHoverDB == nil)
 		return kFalse;
 	if (sCmykOtherDB != nil)
 		return Utils<IKCMCompareFacade>()->ArmedDocsAlive();
-	ISession* session = GetExecutionContextSession();	// 終了処理中は nil になり得る
+	ISession* session = GetExecutionContextSession();	// can be nil during shutdown
 	InterfacePtr<IApplication> app(session != nil ? session->QueryApplication() : nil);
 	InterfacePtr<IDocumentList> docList(app ? app->QueryDocumentList() : nil);
 	return (docList != nil && docList->FindDocByDataBase(sCmykHoverDB) != nil) ? kTrue : kFalse;
@@ -330,16 +374,18 @@ static bool16 KCMCmykDocsAlive()
 
 bool16 KCMTrackerUpdateCmykDrag()
 {
-	if (!sCmykCursorPending)	// Alt+左 CMYK モードでなければ何もしない
+	if (!sCmykCursorPending)	// nothing to do outside the Alt + left CMYK mode
 		return kFalse;
 
-	// 押下時に固定したモード(hover/other)をそのまま使う。押下中に基準の窓は切り替えない。
+	// The mode fixed at press time (hover/other) is used as it is: the reference window never switches
+	// mid-press.
 	if (sCmykHoverDB == nil)
 		return kFalse;
 	const bool16 solo = (sCmykOtherDB == nil);
 
-	// スロットル(50ms)。steady_clock は単調増加なのでラップの心配なし。★押下ごとの初回は必ず通す
-	// (旗は RevealEnd/Shutdown で戻る＝押下を跨がない。監査 C-1)。
+	// The 50ms throttle. steady_clock only moves forward, so there is no wrap to worry about. ★The
+	// first sample of every press always gets through: the flag is put back at RevealEnd and Shutdown,
+	// so it never carries from one press into the next.
 	const std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
 	if (sCmykDragThrottleStarted)
 	{
@@ -351,26 +397,30 @@ bool16 KCMTrackerUpdateCmykDrag()
 	sCmykDragThrottleStarted = kTrue;
 	sCmykDragLastSample = now;
 
-	// スロットル通過後(≦20回/秒)に文書の生存を検査してからサンプリングへ渡す
-	// (ドラッグ中の文書クローズはスクリプト経由等の稀な経路。検査は KCMCmykDocsAlive に集約)。
+	// Past the throttle (twenty times a second at most), check the documents are alive before handing
+	// anything to the sampler. Closing a document mid-drag takes a rare route such as a script; the
+	// check lives in KCMCmykDocsAlive and nowhere else.
 	if (!KCMCmykDocsAlive())
 		return kFalse;
 
-	// 現在のマウス位置でサンプリング。単独モードは other=nil で hover だけ(1行)。ページ外・押した窓から
-	// 外れた・取得失敗なら「値なし(--- …)」表示にして拾えていないことを示す(ユーザー要望 2026-07-13。
-	// 直前値を残さない=誤読防止)。
+	// Sample at the current mouse position. In the lone mode other is nil, so only hover is sampled (one
+	// line). Off the page, off the window that was pressed, or a failure to read: show "no value (--- …)"
+	// so that it is plain nothing was picked up. ★The previous value is deliberately NOT left standing,
+	// because it would be read as the value here.
 	//
-	// ★★2026-08-15(第2段 Task 4B): **マウス位置の読み直しと「押した窓から外れていないか」の判定は、
-	//   以前はサンプラー(model 側)の中に在った**。窓に向かって聞く問いなので UI 側へ引き取っている。
-	//   ⚠**この2行を落とすと、別の窓の座標を sCmykHoverDB のページ座標として誤って読む**
-	//   (2026-07-25 監査で入れたガード)。3つの条件は && の短絡で、旧実装の3連続 return と同じ順序・
-	//   同じ結果(どれか1つでも駄目なら「値なし」表示)。
+	// ★★Re-reading the mouse position, and testing "have we left the window that was pressed", **used
+	//   to sit inside the sampler on the model side**. They are questions put to a window, so this side
+	//   took them back.
+	//   ⚠**Drop those two and the coordinates of a DIFFERENT window are read as page coordinates of
+	//   sCmykHoverDB.** The three conditions short-circuit through &&, in the same order and to the same
+	//   effect as the three consecutive returns they replaced: any one of them failing means "no value".
 	PMString panelMsg, cursorMsg;
 	InterfacePtr<IControlView> viewUnderMouse(KCMQueryViewUnderMouse());
 	PMReal mx = 0.0, my = 0.0;
 	if (KCMFindDocDbForView(viewUnderMouse) != sCmykHoverDB ||
 	    !KCMQueryMouseContentPoint(viewUnderMouse, mx, my) ||
-	    // ★2026-08-16: 表示中スプレッドも渡す(無いとマスター表示中に通常ページの色を読む＝KCMCore.h)。
+	    // ★The spread on display is passed as well ---- without it, the colour of an ordinary page is
+	    //   read while a master is being shown (their coordinates coincide).
 	    !Utils<IKCMCompareFacade>()->SampleColorAt(sCmykHoverDB, sCmykOtherDB, sCmykHoverIsTarget,
 	                                                 mx, my, KCMQuerySpreadUIDForView(viewUnderMouse),
 	                                                 panelMsg, cursorMsg))
@@ -379,29 +429,31 @@ bool16 KCMTrackerUpdateCmykDrag()
 		else      { KCMBuildCmykNoValue(cursorMsg, sCmykHoverIsTarget);
 		            KCMBuildCmykNoValuePanel(panelMsg, sCmykHoverIsTarget); }
 	}
-	if (cursorMsg == sCmykCursorText)	// 値が同じなら描き直し不要(パネルも同じ値なので更新不要)
+	if (cursorMsg == sCmykCursorText)	// the same value: nothing to redraw, and the panel says it already
 		return kFalse;
 
-	// パネルのステータス行もドラッグに追従させる(強制表示はしない。KCMCmykBeginPress と同じ方針)。
+	// The panel's status line follows the drag too. It is never forced into view - the same rule
+	// KCMCmykBeginPress follows.
 	KCMSetStatus(panelMsg);
 	sCmykCursorText = cursorMsg;
 	return kTrue;
 }
 
-// ページ外など CMYK を拾えないときに出す「値なし」表示("--- --- --- --- t/s")。ダッシュで
-// 「ここでは色を拾えていない」ことが分かるようにする(ユーザー要望 2026-07-13)。ラベルは通常と同じ t/s で、
-// 1行目は成功時と同じく hover 側(Target 窓なら t、Source 窓なら s。2026-07-26)。
+// The "no value" display shown where no CMYK could be picked up, off the page for instance
+// ("--- --- --- --- t/s"). The dashes are there so that "no colour was picked up here" can be seen at a
+// glance. The labels are the usual t/s, and the first line is the hover side just as it is on success
+// (t over the Target window, s over the Source).
 static void KCMBuildCmykNoValue(PMString& out, bool16 hoverIsTarget)
 {
 	out.Clear();
 	out.SetTranslatable(kFalse);
-	out.Append(hoverIsTarget ? "--- --- --- --- t" : "--- --- --- --- s");	// ラベルは t/s(KCMColorSampler.cpp と同じ短縮。2026-07-14)
-	out.AppendW(UTF32TextChar(0x0A));	// 改行 → 2行目へ
+	out.Append(hoverIsTarget ? "--- --- --- --- t" : "--- --- --- --- s");	// t/s, the same short labels KCMColorSampler.cpp uses
+	out.AppendW(UTF32TextChar(0x0A));	// the newline that starts the second line
 	out.Append(hoverIsTarget ? "--- --- --- --- s" : "--- --- --- --- t");
 }
 
-// パネル版の「値なし」表示。値ごとに見出し文字を添え t/s にする。KCMSampleCmykAt
-// 成功時のパネル表記(KCMColorSampler.cpp の KCMAppendCmykLabeled)と揃える(2026-07-14)。
+// The panel's "no value" display: each value carries its own heading letter, then t/s. It matches what
+// the panel shows when KCMSampleCmykAt succeeds (KCMAppendCmykLabeled in KCMColorSampler.cpp).
 static void KCMBuildCmykNoValuePanel(PMString& out, bool16 hoverIsTarget)
 {
 	out.Clear();
@@ -411,8 +463,9 @@ static void KCMBuildCmykNoValuePanel(PMString& out, bool16 hoverIsTarget)
 	out.Append(hoverIsTarget ? "C--- M--- Y--- K--- s" : "C--- M--- Y--- K--- t");
 }
 
-// 単独ピック(Stop 中、または Start 中の第3の文書)用の「値なし」1行版。ラベル(t/s)なし=1文書のみ。カーソル側は
-// KCMSplitTwoLines が空の2行目を自動スキップするので、1行渡すだけで崩れない。
+// The one-line "no value" for a lone pick (stopped, or a third document while Start is in force). No
+// t/s label, because there is only one document. On the cursor side KCMSplitTwoLines skips an empty
+// second line by itself, so handing it one line breaks nothing.
 static void KCMBuildCmykNoValueSolo(PMString& out)
 {
 	out.Clear();
@@ -426,52 +479,60 @@ static void KCMBuildCmykNoValuePanelSolo(PMString& out)
 	out.Append("C--- M--- Y--- K---");
 }
 
-// KCMCmykClearPending(KCMCmykCursor.h 参照) — このプレスで CMYK カーソルを出すかの既定(=出さない)。
-// ★2026-08-13 の分割で KCMTrackerRevealBegin の冒頭1行から切り出した。**ジェスチャを判定する前に
-//   無条件で通る**行なので、下の KCMCmykBeginPress(Alt 分岐でだけ呼ばれる)とは別の入口が要る。
+// KCMCmykClearPending (see KCMCmykCursor.h) - the default for "does this press put a CMYK cursor up"
+// (it does not).
+// ★It was cut out of the first line of KCMTrackerRevealBegin. That line runs **unconditionally, before
+//   the gesture is classified**, which is why it needs a way in of its own, separate from
+//   KCMCmykBeginPress below (which runs only in the Alt branch).
 void KCMCmykClearPending()
 {
-	sCmykCursorPending = kFalse;	// このプレスで CMYK カーソルを出すかは Cmyk 分岐で決める(既定=出さない)
+	sCmykCursorPending = kFalse;	// only the CMYK branch decides otherwise
 }
 
-// KCMCmykBeginPress(KCMCmykCursor.h 参照) — Alt+左(CMYK)押下の本体。
-// ★2026-08-13 の分割で KCMTrackerRevealBegin の Cmyk 分岐から切り出した(中身は元の行そのまま)。
-//   切り出した理由は「押下中の状態をこのファイルの外から触らせない」ため。呼び手は
-//   KCMPeekGesture.cpp の KCMTrackerRevealBegin ただ1つ。
+// KCMCmykBeginPress (see KCMCmykCursor.h) - the body of an Alt + left (CMYK) press.
+// ★Cut out of KCMTrackerRevealBegin's CMYK branch, line for line. The reason for cutting it out was to
+//   stop anything outside this file touching the press-time state. There is exactly one caller,
+//   KCMTrackerRevealBegin in KCMPeekGesture.cpp.
 void KCMCmykBeginPress()
 {
-	// Alt+左(単独、Shift/Ctrl なし): クリック点の CMYK 生値(0..255)をサンプリングしカーソル自身に描画する。
-	// ★発火条件=「マウス下にレイアウトビュー+文書がある」だけ(2026-07-26 にユーザー指定で拡張。以前は
-	//   Start 中は Target 窓に限っていた)。押した窓で3通りに分岐する:
-	//   Start 中・Target 窓  … 新・旧を比較(2行。1行目=Target "t" / 2行目=Source "s")
-	//   Start 中・Source 窓  … 同じく比較だが向きが逆(1行目=Source "s" / 2行目=Target "t")
-	//   Start 中・第3の文書 / Stop 中 … その1文書を単独ピック(1行、ラベルなし)
-	// ★このブロックは基底 CTracker::BeginTracking より前に呼ばれる(KCMTracker.cpp)。重いサンプリングを
-	//   カーソル切替の前で終わらせ、切替を一瞬にするため(押下時のゴミ対策 2026-07-25)。
+	// Alt + left alone (no Shift, no Ctrl): sample the raw CMYK (0..255) at the click point and draw it
+	// on the cursor itself.
+	// ★What it takes to fire is only "there is a layout view, and a document, under the mouse" (widened
+	//   at the user's request; it used to be the Target window alone while Start was in force). The
+	//   window that was pressed decides between three cases:
+	//   comparing, the Target window  … new against old (two lines: Target "t", then Source "s")
+	//   comparing, the Source window  … the same comparison the other way up (Source "s", then Target "t")
+	//   comparing, a third document, or stopped … a lone pick of that one document (one line, no label)
+	// ★This block runs BEFORE the base CTracker::BeginTracking (see KCMTracker.cpp): the expensive
+	//   sampling is finished ahead of the cursor switching so that the switch itself is instantaneous.
 	InterfacePtr<IControlView> viewUnderMouse(KCMQueryViewUnderMouse());
 	IDataBase* const hoverDB = KCMFindDocDbForView(viewUnderMouse);
 	if (hoverDB != nil)
 	{
-		// カーソル再描画毎(≦20回/秒)の IFontMgr 名前引きを回避する押下中フォントキャッシュ(解放は RevealEnd)。
+		// The press-time font cache that keeps every cursor redraw (twenty a second at most) from looking
+		// the font up by name through IFontMgr. It is released at RevealEnd.
 		if (sCmykCursorFont == nil)
 		{
 			InterfacePtr<IFontMgr> fontMgr(GetExecutionContextSession(), UseDefaultIID());
 			sCmykCursorFont = (fontMgr != nil) ? fontMgr->QueryFont(fontMgr->GetDefaultFontName()) : nil;
 		}
 
-		// 押した窓の文書を Target / Source / それ以外 に分類してモードを固定する(解除は RevealEnd)。
-		// 比較モードのときだけページ対応表キャッシュを用意する(サンプル毎の全ページ pairing 再構築を
-		// 回避。向きも押下時のまま固定。破棄は RevealEnd)。単独モードはページ対応が無いので不要。
+		// Classify the pressed window's document as the Target, the Source, or neither, and fix the mode
+		// (released at RevealEnd).
+		// The page-pairing cache is prepared only in the comparing mode, so that the whole pairing is not
+		// rebuilt on every sample; its direction is fixed at press time too, and it is dropped at
+		// RevealEnd. The lone mode has no page pairing and needs none.
 		IDataBase* otherDB      = nil;
 		bool16     hoverIsTarget = kFalse;
-		// ★この分岐は**実行時に最大6回**聞く(押した窓が Source のとき＝ArmedDocsAlive 1 +
-		//   GetArmedTargetDB / GetArmedSourceDB / GetArmedTargetDB 3 + BeginColorDrag 1 + SampleColorAt 1)。
-		//   根拠は Utils.h:74-80(何度も使うなら InterfacePtr に控えろ)。2026-08-15 に
-		//   BeginColorDrag / SampleColorAt が増えて 4→6。
-		//   ⚠**ソース上の `compare->` の出現は7つ**で、if/else if の片側しか走らないので数が合わない。
-		//     2026-08-19 の不具合再検査 B-U6 で「7つでは」と数え違えかけたため、何を数えた数字かを明記する。
+		// ★At run time this asks the facade **as many as six times** (when the pressed window is the
+		//   Source: ArmedDocsAlive, then GetArmedTargetDB / GetArmedSourceDB / GetArmedTargetDB, then
+		//   BeginColorDrag, then SampleColorAt) ---- which is why it is held in an InterfacePtr. Utils.h
+		//   says as much: get the interface once and keep it where you call it repeatedly.
+		//   ⚠**`compare->` appears SEVEN times in the source**, and the two numbers differ because only
+		//     one side of the if / else if ever runs. It is spelt out because the seven was once about to
+		//     be written down as the count.
 		InterfacePtr<IKCMCompareFacade> compare(Utils<IKCMCompareFacade>().QueryUtilInterface());
-		if (compare->ArmedDocsAlive())	// 比較中か(解放済み db との照合を避けるため生存検査を先に通す)
+		if (compare->ArmedDocsAlive())	// comparing? The liveness check comes first so that no released db is compared against
 		{
 			if (hoverDB == compare->GetArmedTargetDB())      { otherDB = compare->GetArmedSourceDB(); hoverIsTarget = kTrue;  }
 			else if (hoverDB == compare->GetArmedSourceDB()) { otherDB = compare->GetArmedTargetDB(); hoverIsTarget = kFalse; }
@@ -484,56 +545,59 @@ void KCMCmykBeginPress()
 		if (!solo)
 			compare->BeginColorDrag(hoverDB, otherDB, hoverIsTarget);
 
-		// ★2026-08-15(第2段 Task 4B): サンプリング点はここで読む(以前はサンプラーの中で読んでいた)。
-		//   ここでは「押した窓から外れていないか」の判定は要らない ---- hoverDB は今まさに
-		//   viewUnderMouse から引いた db なので、定義上一致している(ドラッグ中の
-		//   KCMTrackerUpdateCmykDrag ではマウスが動くので、あちらには判定が要る)。
+		// ★The sampling point is read here (it used to be read inside the sampler).
+		//   No "have we left the pressed window" test is needed at this point ---- hoverDB was just now
+		//   derived from viewUnderMouse, so by definition they agree. Mid-drag the mouse moves, which is
+		//   why KCMTrackerUpdateCmykDrag does need one.
 		PMString panelMsg, cursorMsg;
 		PMReal mx = 0.0, my = 0.0;
-		// ★2026-08-16: 表示中スプレッドも渡す(理由は KCMCore.h＝マスターと通常は座標が重なる)。
+		// ★The spread on display is passed as well: a master page and an ordinary one share coordinates.
 		if (!KCMQueryMouseContentPoint(viewUnderMouse, mx, my) ||
 		    !compare->SampleColorAt(hoverDB, otherDB, hoverIsTarget, mx, my,
 		                            KCMQuerySpreadUIDForView(viewUnderMouse), panelMsg, cursorMsg))
 		{
-			// ページ外など: 拾えないことを示す(値なし --- 表示)。
+			// Off the page and the like: show that nothing was picked up (the "---" display).
 			if (solo) { KCMBuildCmykNoValueSolo(cursorMsg); KCMBuildCmykNoValuePanelSolo(panelMsg); }
 			else      { KCMBuildCmykNoValue(cursorMsg, hoverIsTarget);
 			            KCMBuildCmykNoValuePanel(panelMsg, hoverIsTarget); }
 		}
-		// カーソル自身に CMYK を描く(トラッカーが ChangeModalCursor する)のに加えて、パネルのステータス行にも
-		// 同じ値を出す。★KCMSetStatus はパネルが非表示でも「強制的に表示」はしない(ON→表示中なら見える、
-		// OFF→隠れたまま状態だけ覚える)。パネルを強制的に開かせることはしない(ユーザー指定)。
+		// Besides drawing the CMYK on the cursor itself (the tracker's ChangeModalCursor), the same value
+		// goes to the panel's status line. ★KCMSetStatus never forces a hidden panel into view: shown, it
+		// is seen; hidden, the state is remembered and nothing else happens. The panel is never made to
+		// open, by the user's instruction.
 		KCMSetStatus(panelMsg);
 		sCmykCursorText    = cursorMsg;
 		sCmykCursorPending = kTrue;
 	}
 }
 
-// KCMCmykEndPress(KCMCmykCursor.h 参照) — 押下解放時の後始末。
-// ★2026-08-13 の分割で KCMTrackerRevealEnd の CMYK 部分から切り出した(中身は元の行そのまま)。
+// KCMCmykEndPress (see KCMCmykCursor.h) - the clean-up when the button is released.
+// ★Cut out of KCMTrackerRevealEnd's CMYK part, line for line.
 void KCMCmykEndPress()
 {
-	// Alt+左(CMYK)の押下中キャッシュを返す/捨てる(取得は KCMCmykBeginPress。押下の外では持たない)。
+	// Return and drop what the press was holding (taken in KCMCmykBeginPress; nothing is held outside a
+	// press).
 	if (sCmykCursorFont != nil)
 	{
 		sCmykCursorFont->Release();
 		sCmykCursorFont = nil;
 	}
 	Utils<IKCMCompareFacade>()->EndColorDrag();
-	// 押下中に固定していた CMYK モード(hover/other)の保持を解除(押下の外では持たない)。
+	// Let go of the CMYK mode (hover/other) that was fixed for this press.
 	sCmykHoverDB       = nil;
 	sCmykOtherDB       = nil;
 	sCmykHoverIsTarget = kFalse;
-	sCmykDragThrottleStarted = kFalse;	// 次の押下でドラッグ初回サンプルを必ず通す(監査 C-1)
+	sCmykDragThrottleStarted = kFalse;	// so the next press lets its first drag sample through
 
-	// Alt+左(CMYK 色比較)を離したら、押下中にパネルのステータス行へ出していた CMYK 値を消す
-	// (ユーザー要望 2026-07-15: ホールド終了でメッセージは消す)。sCmykCursorPending は押下中に
-	// CMYK 値を出したときだけ立つので、色比較のときだけクリアし、reveal/peek や Check/Register 等
-	// 他機能のステータスには触らない。
-	// ★クリアは空文字ではなく「空白1文字」で行う(ユーザー指定 2026-07-15): 完全な空だと
-	//   gSessionStatus が「未操作」と区別できず、次回パネルを開いたときに AutoAttach の
-	//   CharCount()==0 判定で初回ヒントが再表示されてしまう。空白1文字なら見た目は空のまま
-	//   「操作済み」を保てる(再表示でも空白が復元されるだけでヒントは出ない)。
+	// On release, clear the CMYK value the press had put on the panel's status line ---- the user asked
+	// for the message to go when the hold ends. sCmykCursorPending is raised only where a press really
+	// showed a CMYK value, so the clearing touches the colour compare alone and leaves the status of
+	// reveal / peek / Check / Register and everything else where it is.
+	// ★It is cleared with **a single space, not an empty string** (the user's instruction). Truly empty
+	//   cannot be told from "never touched": the remembered status line lives on the model side, and the
+	//   panel's AutoAttach shows the first-run hint whenever every saved piece of it is empty. One space
+	//   looks the same as empty while still counting as touched ---- reopening the panel restores a
+	//   space, and no hint appears.
 	if (sCmykCursorPending)
 	{
 		PMString blank(" ");
@@ -544,36 +608,38 @@ void KCMCmykEndPress()
 	}
 }
 
-// KCMCmykShutdown(KCMCmykCursor.h 参照) — 終了時の後始末。
-// ★2026-08-13 の分割で KCMPeekStartup::Shutdown の CMYK 部分から切り出した(中身は元の行そのまま)。
+// KCMCmykShutdown (see KCMCmykCursor.h) - the clean-up at shutdown.
+// ★Cut out of the CMYK part of KCMPeekStartup::Shutdown, line for line.
 void KCMCmykShutdown()
 {
-	// ★file-static PMString を空にして、プラグイン unload 時の静的デストラクタを実質 no-op にする
-	// (Windows では実害なしの実績だが、Mac は unload 順が異なるため heap バッファを持ち越さない方が
-	// 安全。2026-07-15 終了堅牢化)。
+	// ★Emptying the file-static PMString makes its static destructor a no-op when the plug-in is
+	// unloaded. Nothing has ever come of it on Windows, but the unload order differs on Mac and not
+	// carrying a heap buffer that far is the safer thing.
 	sCmykCursorText.Clear();
-	sCmykCursorPending = kFalse;	// ★押下中に quit した経路で立ったまま残さない(2026-08-06 再点検。
-									//   下の sCmykCursorFont/sCmykHoverDB と同じ「押下の外では持たない」の徹底)
+	sCmykCursorPending = kFalse;	// ★do not leave it raised where the application quit mid-press ---- the
+									//   same "nothing is held outside a press" as sCmykCursorFont and
+									//   sCmykHoverDB below
 
-	// ★Alt+左ホールド中にアプリが終了する経路(スクリプト quit 等)では RevealEnd を通らず
-	//   sCmykCursorFont が生きたまま残るので、ここで解放する(2026-07-25 監査で追加。通常経路では
-	//   押下の外は常に nil なので no-op)。
+	// ★Where the application ends during an Alt + left hold (a scripted quit, say) RevealEnd is never
+	//   reached and sCmykCursorFont is left alive, so it is released here. On the ordinary route it is
+	//   always nil outside a press and this does nothing.
 	if (sCmykCursorFont != nil)
 	{
 		sCmykCursorFont->Release();
 		sCmykCursorFont = nil;
 	}
-	// 同じ経路で残りうる押下中モードの文書ポインタも捨てる(deref しない照合専用だが、
-	// 終了後に解放済みポインタを持ち越さない。2026-07-26)。
+	// The same route can leave the press-time document pointers behind. They are only ever compared,
+	// never dereferenced, but a released pointer is not carried past shutdown either.
 	sCmykHoverDB       = nil;
 	sCmykOtherDB       = nil;
 	sCmykHoverIsTarget = kFalse;
-	sCmykDragThrottleStarted = kFalse;	// ドラッグ用スロットルの旗も残さない(監査 C-1)
+	sCmykDragThrottleStarted = kFalse;	// nor is the drag throttle's flag left standing
 
-	// 押下中のページ対応表キャッシュ(hover→other)も同様に破棄。
-	// ★2026-08-15(第2段 Task 4B)に自由関数 KCMSampleCmykEndDrag() から Facade 経由へ変えた。
-	// ⚠**ここだけは nil 検査を付ける**: 終了処理中は kUtilsBoss 側が先に落ちている可能性があり、
-	//   Utils<>()->M() の形だと nil 参照になる。上の KCMCmykEndPress は押下解放=通常時なので素で呼ぶ。
+	// The press-time page-pairing cache (hover -> other) is dropped the same way. It goes through the
+	// facade rather than the free function it used to call.
+	// ⚠**This is the one place that checks for nil**: during shutdown the utils boss may already be
+	//   gone, and the Utils<>()->M() form would dereference nil. KCMCmykEndPress above is a button
+	//   release ＝ ordinary running time, so it calls plainly.
 	InterfacePtr<IKCMCompareFacade> compare(Utils<IKCMCompareFacade>().QueryUtilInterface());
 	if (compare != nil)
 		compare->EndColorDrag();
