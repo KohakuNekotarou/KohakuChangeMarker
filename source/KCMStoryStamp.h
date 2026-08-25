@@ -5,7 +5,7 @@
 //  Kohaku Change Marker (KCM)
 //
 //  Reads every user story's change counters out of a document, and matches two documents'
-//  readings by story UID, so the panel can say which stories changed - and in what way.
+//  readings by story UID, so the panel can say which stories changed -- and in what way.
 //
 //  KCM compares PIXELS, so on its own it can only say "this page looks different". What this
 //  file adds is what kind of change it was: the words, their formatting, or something attached to
@@ -13,71 +13,70 @@
 //
 //  ALL FOUR COUNTERS ARE READ, and they answer two different questions:
 //
-//    - GetChangeCount() - the "all changes" counter (ITextModel.h:185-192) - decides whether the
-//      story is reported at all. It has to be this one rather than any single sub-counter, because
-//      which sub-counter an edit lands on cannot be predicted from the headers. Measured
-//      2026-08-10: a table stroke moved Attr, not Other, even though ITextModel.h:173-183 gives
-//      exactly that edit as its example of what Other is for ("a change to a Table stroke does
-//      represent an effective change to the TextModel ... the TableModel will use this counter").
-//      Adding a table row and inserting an inline both moved Text and Attr, and Other stayed put
-//      in every case measured. The aggregate is the only reading that cannot be wrong-footed.
+//    - GetChangeCount() -- the "all changes" counter -- decides whether the story is reported at
+//      all. It has to be this one rather than any single sub-counter, because which sub-counter
+//      an edit lands on cannot be predicted from the headers. Measured: a table stroke moved
+//      Attr, not Other, even though ITextModel gives exactly that edit as its example of what
+//      Other is for ("a change to a Table stroke does represent an effective change to the
+//      TextModel ... the TableModel will use this counter"). Adding a table row and inserting an
+//      inline both moved Text and Attr, and Other stayed put in every case measured. The
+//      aggregate is the only reading that cannot be wrong-footed.
 //
-//      *** OTHER HAS NEVER ONCE MOVED, AND IT HAS NOW BEEN LOOKED FOR PROPERLY. *** 2026-08-11, nine
-//      more edits in one comparison (work/kescm-storytest/make-kinds-docs.jsx): a table cell's fill,
-//      merging cells, column width, applying a table style, an inline's fill, an inline's size, a
-//      footnote, a condition, a hyperlink. SEVEN of them reported "Attr" alone - and since the label
-//      names the FIRST kind that moved in the order Text, Attr, Other, "Attr" alone proves Other did
-//      not move. (The two that read "Text+" - merging cells, adding a footnote - keep their second
-//      kind hidden behind the "+", and the user chose to leave it at that.) All nine WERE listed,
-//      which is the point: the aggregate caught every one of them.
+//      **OTHER HAS NEVER ONCE MOVED, AND IT HAS BEEN LOOKED FOR PROPERLY.** Nine more edits in
+//      one comparison (work/kescm-storytest/make-kinds-docs.jsx): a table cell's fill, merging
+//      cells, column width, applying a table style, an inline's fill, an inline's size, a
+//      footnote, a condition, a hyperlink. SEVEN of them reported "Attr" alone -- and since the
+//      label names the FIRST kind that moved in the order Text, Attr, Other, "Attr" alone proves
+//      Other did not move. (The two that read "Text+" -- merging cells, adding a footnote -- keep
+//      their second kind hidden behind the "+".) All nine WERE listed, which is the point: the
+//      aggregate caught every one of them.
 //      Full record: docs/ai-notes/kescm-story-counters-2026-08-09.md.
 //
-//    - The three sub-counters name what moved, and nothing more. They are not the test: the header
-//      promises the aggregate moves for any change to them, but never promises it is their sum.
-//
-//  (Reading the sub-counters was added 2026-08-09 at the user's request - "show changes other than
-//  text ones too". Note that such stories were ALREADY being listed, since the test was always the
-//  aggregate; what was missing was saying which kind of change it had been.)
+//    - The three sub-counters name what moved, and nothing more. They are not the test: the
+//      header promises the aggregate moves for any change to them, but never promises it is
+//      their sum. Such stories were listed by the aggregate all along; naming the kind of change
+//      is the whole of what reading the sub-counters added.
 //
 //  A table is NOT a story of its own. Table cells and footnotes are further story threads inside
 //  the same ITextModel, so an edit in a cell moves the counter of the story the table sits in.
-//  There is no way to list a table as its own row, and no need to. (⚠The headers say this of table
-//  cells only - ITextModel.h:137-145, TotalLength against GetPrimaryStoryThreadSpan. Footnotes are
-//  measured rather than documented; see the same note in KCMStoryList.cpp's FirstReadableText.)
+//  There is no way to list a table as its own row, and no need to.
+//  @warning the headers say this of table cells only -- ITextModel's TotalLength against
+//   GetPrimaryStoryThreadSpan. That FOOTNOTES sit there too is measured rather than documented;
+//   see the same note in KCMStoryList.cpp's FirstReadableText.
 //
-//  *** WHY TWO VERSIONS CAN BE MATCHED AT ALL. *** Two properties measured on 2026-08-08:
+//  **WHY TWO VERSIONS CAN BE MATCHED AT ALL.** Two measured properties:
 //    - saving under a new name carries both the story UIDs and the counters across, so the old
 //      and the new version of a document can be matched story by story;
-//    - the counters are persisted in the file and wind back on Undo, so they are a version number
-//      for the story's state rather than a count of edits. "Edited and then undone" reads as
-//      unchanged, so no false row appears.
-//  *** THE TWO HEADINGS ABOVE AND BELOW ARE HOW THIS IS QUOTED, NOT LINE NUMBERS. *** Three other
-//  places lean on this paragraph (KCMStoryList.h, IKCMStoryEditsFacade.h, KCMChangeNav.cpp)
-//  and two on the one below (KCMStoryList.h and .cpp). Every one of them cited a line range until
-//  2026-08-17, and all five had rotted by 9-11 lines - one insertion into this comment moved the
+//    - the counters are persisted in the file and wind back on Undo, so they are a version
+//      number for the story's state rather than a count of edits. "Edited and then undone" reads
+//      as unchanged, so no false row appears.
+//  **THE TWO HEADINGS, ABOVE AND BELOW, ARE HOW THIS IS QUOTED -- NOT LINE NUMBERS.** Several
+//  files lean on these two paragraphs. Every one of them cited a line range once, and every one
+//  of those had rotted by nine to eleven lines: a single insertion into this comment moved the
 //  lot at once, and only the reference written on the day of the split had ever been re-counted.
-//  Quote the heading; it survives an edit above it.
+//  Quote the heading; it survives an edit above it. To find who is leaning on a heading, grep
+//  for its words -- and note that a quotation wrapped across two lines only answers to part of
+//  it, so grep for a fragment rather than the whole heading.
 //
-//  *** READING COUNTERS COMPOSES NOTHING. *** So no SaveRestoreModifiedState guard is needed here
-//  - the same note KESCL's CaptureDocStamp carries (KESCLFindInDoc.cpp:375-397).
+//  **READING COUNTERS COMPOSES NOTHING.** So no SaveRestoreModifiedState guard is needed here --
+//  the same note KESCL's CaptureDocStamp carries (KESCLFindInDoc.cpp).
 //
-//  *** WHY NOT TRACK CHANGES? *** InCopy's track-changes feature answers a question that LOOKS like
-//  this one: ITrackChangeUtils::StoryHasChanges(UIDRef) is literally "did this story change?"
-//  (incopy/ITrackChangeUtils.h:154), with RangeHasChanges, GetDeletedText and the redline's kind and
-//  colour beside it. It is not the road for this feature, and any ONE of these three would be enough
-//  on its own (audit B7, 2026-08-16):
+//  **WHY NOT TRACK CHANGES?** InCopy's track-changes feature answers a question that LOOKS like
+//  this one: ITrackChangeUtils::StoryHasChanges(UIDRef) is literally "did this story change?",
+//  with RangeHasChanges, GetDeletedText and the redline's kind and colour beside it. It is not
+//  the road for this feature, and any ONE of these three would be enough on its own:
 //    - it records nothing unless the user switched it on BEFORE the edits were made, whereas KCM
 //      is a tool for comparing two versions after the fact;
-//    - it lives inside ONE story's own history and does not span two documents, which is the entire
-//      problem here;
+//    - it lives inside ONE story's own history and does not span two documents, which is the
+//      entire problem here;
 //    - it tracks insertions, deletions and moves (MarkInsertChanges / MarkDeleteChanges /
-//      MarkMoveChanges) and NOT formatting - so it cannot answer the one thing this file exists to
-//      answer beyond the pixels: were it the words, or their attributes?
-//  Recorded here so the question is not re-opened from scratch the next time somebody notices that
-//  InDesign already has a "what changed" feature.
+//      MarkMoveChanges) and NOT formatting -- so it cannot answer the one thing this file exists
+//      to answer beyond the pixels: were it the words, or their attributes?
+//  Recorded here so the question is not re-opened from scratch the next time somebody notices
+//  that InDesign already has a "what changed" feature.
 //
-//  *** THIS FILE KEEPS NO STATE. *** Both functions fill a vector the caller owns. Nothing has to
-//  be cleared at shutdown, and nothing survives between comparisons.
+//  **THIS FILE KEEPS NO STATE.** Both functions fill a vector the caller owns. Nothing has to be
+//  cleared at shutdown, and nothing survives between comparisons.
 //
 //========================================================================================
 
@@ -92,15 +91,15 @@ class IDataBase;
 
 /** Which kind of change moved. Values are OR'd together: one edit can move more than one of them.
 
-	The first three map one-to-one onto ITextModel's three sub-counters (ITextModel.h:158-183).
-	The last two are not counters - they mean one side has no story with this UID at all, so there
-	is nothing to have compared.
+	The first three map one-to-one onto ITextModel's three sub-counters. The last two are not
+	counters -- they mean one side has no story with this UID at all, so there is nothing to have
+	compared.
 */
 enum KCMStoryChangeKind
 {
 	kKCMStoryKindNone		= 0,
 	kKCMStoryKindText		= 1,	// characters inserted, removed or replaced
-	kKCMStoryKindAttr		= 2,	// effective attributes - INCLUDING applied styles and overrides,
+	kKCMStoryKindAttr		= 2,	// effective attributes -- INCLUDING applied styles and overrides,
 									// and, measured, table strokes and cells as well
 	kKCMStoryKindOther	= 4,	// the Other counter. Nothing has been found that moves it: the
 									// table and inline edits its documentation names all landed on
@@ -109,56 +108,58 @@ enum KCMStoryChangeKind
 									// whose aggregate moved while no sub-counter did
 	kKCMStoryKindAdded	= 8,	// no story with this UID on the source side
 	kKCMStoryKindRemoved	= 16	// no story with this UID on the TARGET side: the story was in the
-									// older version and is gone from the newer one (2026-08-21).
-									// ★THE ROW THEN LIVES IN THE SOURCE DOCUMENT, and it is the only
-									// kind for which that is true - see KCMStoryDiff::fStoryUID
+									// older version and is gone from the newer one.
+									// **THE ROW THEN LIVES IN THE SOURCE DOCUMENT**, and it is the only
+									// kind for which that is true -- see KCMStoryDiff::fStoryUID
 };
 
-/** Which kind of attribute a row's CHILDREN found a difference in (2026-08-22).
+/** Which kind of attribute a row's CHILDREN found a difference in.
 
-	★★NOT THE SAME SORT OF THING AS KCMStoryChangeKind ABOVE, which is why it is a separate enum
-	rather than more bits in that one. Those come from the two documents' CHANGE COUNTERS - read
+	**NOT THE SAME SORT OF THING AS KCMStoryChangeKind ABOVE**, which is why it is a separate enum
+	rather than more bits in that one. Those come from the two documents' CHANGE COUNTERS -- read
 	them again and they say the same, which is why a row refresh leaves them alone. This comes from
 	the DIFF: it does not exist until the two versions have actually been compared.
 
-	★THE ORDER MEANS NOTHING - these are names, not ranks. Ruby came first because a Japanese
-	document uses it constantly and it is what the reader asked about ("ルビだけ変えると…Changeは
-	Noneになる"). ⚠★★AND RUBY IS ALL THAT IS REPORTED (2026-08-23, user's call: "ストーリーモードの
-	StoryEdit にでるのは、テキストの変更と、ルビだけで"). KENTEN (圏点) was added on 2026-08-22 and
-	withdrawn the next day - it is a different mechanism again: ruby is a STRAND (IRubyAttrStrand,
-	run-based, written in the snippet as RubyFlag 1/2 over one CharacterStyleRange per character)
-	while kenten is a set of CHARACTER ATTRIBUTES (the twenty kTAKenten*Boss on kCharAttrStrandBoss,
-	its kind in kTAKentenKindBoss with Kenten_None for off). What the panel cared about is the one
-	thing they share: the text did not move and something over it did.
+	**THE ORDER MEANS NOTHING** -- these are names, not ranks. Ruby came first because a Japanese
+	document uses it constantly, and because a ruby-only edit is precisely the case the reader
+	found being reported as "None". **RUBY IS ALL THAT IS REPORTED:** the Story Edits list shows
+	text changes and ruby, nothing else. Kenten was added and withdrawn the next day -- and it is a
+	different mechanism again: ruby is a STRAND (IRubyAttrStrand, run-based, written in the snippet
+	as RubyFlag 1/2 over one CharacterStyleRange per character) while kenten is a set of CHARACTER
+	ATTRIBUTES (the twenty kTAKenten*Boss on kCharAttrStrandBoss, its kind in kTAKentenKindBoss
+	with Kenten_None for off). What the panel cared about is the one thing they share: the text did
+	not move and something over it did.
 
-	⚠Carried across the model/UI boundary as a plain int32 (IKCMStoryEditsFacade's
-	  Row::fAttrKind), the same way KCMStoryChange::What is. ⇒ ADDING A VALUE MEANS TOUCHING BOTH
-	  SIDES, and a value must never be renumbered once it has shipped.
+	@warning carried across the model/UI boundary as a plain int32 (IKCMStoryEditsFacade's
+	  Row::fAttrKind), the same way KCMStoryChange::What is. **ADDING A VALUE MEANS TOUCHING BOTH
+	  SIDES**, and a value must never be renumbered once it has shipped. The boundary header lists
+	  the values it carries, and kenten's 2 is not among them -- which is that contract working.
 */
 enum KCMStoryAttrKind
 {
 	kKCMStoryAttrNone = 0,	// the children are text changes, or there are none
 	kKCMStoryAttrRuby = 1,	// a reading over characters that did not themselves change
-	kKCMStoryAttrKenten = 2	// ★emphasis marks (圏点). ⚠★★NO CHILD EVER CARRIES THIS TODAY
-								// (2026-08-23, user's call: "ストーリーモードの StoryEdit にでるのは、
-								// テキストの変更と、ルビだけで"). It was reported for one day
-								// (2026-08-22) and the comparison that produced it is switched off in
-								// KCMStoryDiffRun's AddAttrOnlyChanges; the value is kept because
-								// the snippet parser still READS kenten spans and its test still
-								// proves it reads them rightly. ⇒ Re-enabling is that one call plus a
-								// label, and the number must not be given to anything else meanwhile.
+	kKCMStoryAttrKenten = 2	// emphasis marks (kenten). **NO CHILD EVER CARRIES THIS TODAY:** the
+								// Story Edits list reports text changes and ruby, nothing else. It
+								// was reported for one day, and the comparison that produced it is
+								// switched off in KCMStoryDiffRun's AddAttrOnlyChanges. The value is
+								// kept because the snippet parser still READS kenten spans and its
+								// test still proves it reads them rightly, so re-enabling is that one
+								// call plus a label -- and the number must not be given to anything
+								// else meanwhile.
 };
 
 /** The two kinds that mean "this story has no partner in the other version".
 
-	★ONE PLACE TO ASK IT (2026-08-21). Added and Removed differ in WHICH document holds the story,
-	but they agree on everything that follows from having nobody to compare against: no text diff is
-	run for them, they cannot be refreshed, and their label stands alone with no '+' after it. Three
-	of the four places that used to test kKCMStoryKindAdded on its own want this instead
+	**ONE PLACE TO ASK IT.** Added and Removed differ in WHICH document holds the story, but they
+	agree on everything that follows from having nobody to compare against: no text diff is run for
+	them, they cannot be refreshed, and their label stands alone with no '+' after it. Everything
+	that wants that answer asks this rather than testing kKCMStoryKindAdded on its own
 	([[one-question-one-place]]).
 
-	⚠THE FOURTH IS THE JUMP, and it must NOT use this: which window moves is exactly the thing the
-	two kinds disagree about. It tests kKCMStoryKindRemoved by itself (ui/KCMStoryJump.cpp).
+	@warning **the jump is the exception, and it must NOT use this:** which window moves is exactly
+	 the thing the two kinds disagree about. It tests kKCMStoryKindRemoved by itself
+	 (ui/KCMStoryJump.cpp).
 */
 const uint32 kKCMStoryKindUnpaired = kKCMStoryKindAdded | kKCMStoryKindRemoved;
 
@@ -178,19 +179,19 @@ struct KCMStoryStamp
 /** One row of the comparison: a story that differs between the two versions, and how.
 
 	No counter values are carried. They are version numbers for the story's state rather than counts
-	of edits (measured 2026-08-08), so the size of the difference means nothing to a reader and the
-	panel does not show it - only which kinds moved.
+	of edits, so the size of the difference means nothing to a reader and the panel does not show
+	it -- only which kinds moved.
 */
 struct KCMStoryDiff
 {
 	/** The story's UID IN THE DOCUMENT THAT HOLDS IT, and which document that is depends on fKinds:
 		the target for every row except a Removed one, which exists only in the source.
 
-		⚠THIS USED TO READ "the TARGET side's UID (every row exists in the target)" and that was the
-		whole feature's premise until 2026-08-21. Removed rows broke it deliberately - see the
-		Compare contract below and docs/superpowers/specs/2026-08-21-kescm-removed-story-rows-design.md.
-		★NO SECOND FIELD NAMING THE DOCUMENT: fKinds already carries the answer, and a second field
-		could disagree with it. */
+		@warning **every row used to exist in the target, and that was the whole feature's premise.**
+		  Removed rows broke it deliberately -- see the Compare contract below and
+		  docs/superpowers/specs/2026-08-21-kescm-removed-story-rows-design.md.
+		**NO SECOND FIELD NAMING THE DOCUMENT:** fKinds already carries the answer, and a second
+		field could disagree with it. */
 	UID		fStoryUID;
 	uint32	fKinds;		// OR of KCMStoryChangeKind - what the row names
 
@@ -201,9 +202,9 @@ namespace KCMStoryEdits
 {
 	/** Read ONE story's change counters.
 
-		Added 2026-08-15 for the script properties (stories[n].kcmChangeCount and the three
-		sub-counters). CollectStamps below is written in terms of this, so the panel and a script
-		can never read the story differently.
+		The script properties (stories[n].kcmChangeCount and the three sub-counters) go through here,
+		and CollectStamps below is written in terms of it, so the panel and a script can never read
+		the story differently.
 
 		@param storyRef the story to read.
 		@param out filled only when kTrue is returned; untouched otherwise.
@@ -214,9 +215,9 @@ namespace KCMStoryEdits
 
 	/** Read every user-accessible story's change counter in this document.
 
-		User-accessible only, not every story: IStoryList.h:38-42 states that internal stories are
-		"not subject to search through find change, spell checking", and a row the user cannot reach
-		is a row they cannot act on.
+		User-accessible only, not every story: IStoryList states that internal stories are "not
+		subject to search through find change, spell checking", and a row the user cannot reach is a
+		row they cannot act on.
 
 		@param db the document to read. nil is tolerated and yields an empty list.
 		@param out filled with one entry per readable story, cleared first.
@@ -229,19 +230,18 @@ namespace KCMStoryEdits
 		target holds a UID the source does not (added), and the SOURCE holds a UID the target does
 		not (removed). Only stories that read the same produce nothing.
 
-		★REMOVED ROWS WERE ADDED 2026-08-21, and until then this said "a removed story cannot be
-		jumped to" - which was true, and was the only reason they were dropped. The panel now aims
-		the SOURCE window at them instead of the target (user's call: "それを、選択したらソースの方
-		だけジャンプ"), so the reason is gone. ⚠A removed row's fStoryUID is a SOURCE uid; every
-		other row's is a target uid. Callers tell them apart by kKCMStoryKindRemoved.
+		@warning **a removed row's fStoryUID is a SOURCE uid**; every other row's is a target uid.
+		  Callers tell them apart by kKCMStoryKindRemoved. Removed rows were dropped altogether while
+		  a row could only aim the target window; the panel now aims the SOURCE window at these, so
+		  that reason is gone.
 
 		Each row's fKinds says which of the three sub-counters moved. A row whose aggregate moved
 		while no sub-counter did is reported as Other rather than dropped: nothing in the header
 		rules that combination out, and having already decided the story changed, saying "something"
 		beats saying nothing.
 
-		Note that when the two versions are NOT related by a save-as - a version built by copying
-		into a new document, say - none of the UIDs will line up and every target story is reported
+		Note that when the two versions are NOT related by a save-as -- a version built by copying
+		into a new document, say -- none of the UIDs will line up and every target story is reported
 		as added. That is deliberate and needs no special case: the caller shows what it is given.
 
 		@param source the older version's reading.

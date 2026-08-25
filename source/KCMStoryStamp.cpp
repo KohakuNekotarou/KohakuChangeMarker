@@ -108,18 +108,18 @@ void KCMStoryEdits::Compare(const std::vector<KCMStoryStamp>& source,
 		out.push_back(row);
 	}
 
-	// ---- Removed: a story the SOURCE holds and the target does not (2026-08-21) ----
+	// ---- Removed: a story the SOURCE holds and the target does not ----
 	//
-	// ★THESE ROWS CARRY A SOURCE UID. Every row above names a story in the target; these name one
-	//   that is no longer there, so the uid can only be the older document's. Callers tell the two
-	//   apart by kKCMStoryKindRemoved (KCMStoryStamp.h's fStoryUID).
+	// **THESE ROWS CARRY A SOURCE UID.** Every row above names a story in the target; these name
+	//   one that is no longer there, so the uid can only be the older document's. Callers tell the
+	//   two apart by kKCMStoryKindRemoved (KCMStoryStamp.h's fStoryUID).
 	//
-	// ★A SECOND SET RATHER THAN MARKING sourceByUID AS IT IS MATCHED. Ticking off source entries
+	// **A SECOND SET RATHER THAN MARKING sourceByUID AS IT IS MATCHED.** Ticking off source entries
 	//   during the walk above would give the same answer only because that walk happens to finish
-	//   first - an order dependency that would break silently if anything were ever moved between
+	//   first -- an order dependency that would break silently if anything were ever moved between
 	//   the two loops. A plain membership test of the target reads correctly whatever the order.
 	//
-	// ★NO KIND CAN BE NAMED, exactly as for Added: there are no two counters to compare, so
+	// **NO KIND CAN BE NAMED**, exactly as for Added: there are no two counters to compare, so
 	//   "removed" is the whole answer. (Reading the source's own sub-counters would say what has
 	//   been edited during the older version's OWN history, which is not what this list reports.)
 	std::set<UID> targetUIDs;
@@ -132,7 +132,7 @@ void KCMStoryEdits::Compare(const std::vector<KCMStoryStamp>& source,
 			continue;	// still there - it was reported above, or it read the same
 
 		KCMStoryDiff row;
-		row.fStoryUID = it->fStoryUID;	// ★the SOURCE document's uid
+		row.fStoryUID = it->fStoryUID;	// the SOURCE document's uid
 		row.fKinds = kKCMStoryKindRemoved;
 		out.push_back(row);
 	}
