@@ -5,22 +5,20 @@
 //  Reading the comparison result: which pages carry marks, how much of each page changed,
 //  which pages overflow the pairing, and where the overset is.
 //
-//  Created 2026-08-13 for the model/UI split (Stage 1), Task 12.
+//  READ ONLY, on purpose. Marks are produced in exactly one place -- IKCMCompareFacade -- and if
+//  writing were possible here there would be two answers to "who builds the marks". The scrollbar
+//  map, Prev/Next, the Pages panel thumbnails, the TSV export and the press gesture are all
+//  readers; none of them may write.
 //
-//  ★READ ONLY, on purpose. Marks are produced in exactly one place -- IKCMCompareFacade --
-//  and if writing were possible here there would be two answers to "who builds the marks".
-//  The scrollbar map, Prev/Next, the Pages panel thumbnails, the TSV export and the press
-//  gesture are all readers; none of them may write.
+//  This interface replaces the UI reaching directly into KCMDrawEventHandler::sEntries and its
+//  siblings. Those are public static members, which worked only because everything shared one
+//  .pln: a static lives in the plug-in that defines it, so once the UI is its own .pln the linker
+//  has nothing to bind to.
 //
-//  This interface replaces the UI reaching directly into KCMDrawEventHandler::sEntries and
-//  its siblings. Those are public static members, which worked only because everything shared
-//  one .pln: a static lives in the plug-in that defines it, so once the UI is its own .pln the
-//  linker has nothing to bind to.
-//
-//  ★WHAT IS DELIBERATELY NOT HERE: the display toggles (Always Show Marks on Source, Show Original
-//  Page Numbers, Hold to Hide Marks) and the press-time display state. The UI writes those, so
-//  they sit on IKCMCompareFacade beside GetPrintMarks() rather than breaking the read-only
-//  rule here.
+//  WHAT IS DELIBERATELY NOT HERE: the display toggles (Always Show Marks on Source, Always Show
+//  Marks on Target, Show Original Page Numbers) and the press-time display state. The UI writes
+//  those, so they sit on IKCMCompareFacade beside GetPrintMarks() rather than breaking the
+//  read-only rule here.
 //
 //========================================================================================
 
@@ -36,11 +34,11 @@
 #include <set>
 
 // Project includes:
-#include "KCMBoundaryID.h"	// IID_IKCMMARKDATA。★2026-08-17 に KCMID.h から絞った(理由は
-								// IKCMCompareFacade.h の同じ位置。境界が要るのは自分の IID だけ)
-#include "KCMOversetScan.h"	// KCMOversetLoc を借りるため。⚠2026-08-17 訂正＝旧「a type only」は
-								// 不正確で、このヘッダーは free function の宣言も 1 本連れてくる(実測)。
-								// 型が目的なのは本当だが、UI 側にはその 1 本も見えている(呼べばリンクエラー)
+#include "KCMBoundaryID.h"	// IID_IKCMMARKDATA. The boundary header rather than KCMID.h, which
+							// would drag the model's whole ID set through a header the UI includes.
+#include "KCMOversetScan.h"	// KCMOversetLoc. Borrowed for the type -- but this header also
+							// declares one model-side free function, which the UI can see and
+							// cannot link to.
 
 class IDataBase;
 
@@ -71,10 +69,10 @@ public:
 		differed, outTotal = cells on the page (the entry's image is the denominator). kFalse
 		when the page has no entry, in which case both are 0.
 
-		★The counts, not a percentage. The one place that turns them into text builds the
-		digits itself with integer arithmetic, because PMString's real formatting would print a
-		comma for the decimal point in some locales. Computing a ratio here as well would put
-		the same decision in two places. */
+		The counts, not a percentage. The one place that turns them into text builds the digits
+		itself with integer arithmetic, because PMString's real formatting would print a comma
+		for the decimal point in some locales. Computing a ratio here as well would put the same
+		decision in two places. */
 	virtual bool16		GetChangeCells(UID pageUID, int32& outChanged, int32& outTotal) = 0;
 
 	/** kTrue when this page is "overflow": the two documents have a different number of pages
@@ -87,9 +85,9 @@ public:
 	/** kTrue when the spread this page sits on is hidden -- by the Pages panel's Hide Spread or
 		by our own Hide Unchanged Spreads, it does not distinguish. Master pages always answer
 		kFalse (InDesign has no way to hide a master spread).
-		★2026-08-18 (bug recheck B10, second pass): the navigation needs this because a stop on a
-		hidden page CANNOT BE SCROLLED TO -- pressing Prev/Next reports the page but the view does
-		not move (measured). The stop stays in the walk; the label says why nothing happened. */
+		The navigation needs this because a stop on a hidden page CANNOT BE SCROLLED TO --
+		pressing Prev/Next reports the page but the view does not move (measured). The stop stays
+		in the walk; the label says why nothing happened. */
 	virtual bool16		IsPageOnHiddenSpread(IDataBase* db, UID pageUID) = 0;
 
 	// ---- cheap "is there anything at all" ------------------------------------------------
@@ -121,7 +119,7 @@ public:
 		page, because Prev/Next stops at each of them. out is cleared first. */
 	virtual void		GetOversetLocations(std::vector<KCMOversetLoc>& out) = 0;
 
-	// ---- the page flags, read side (2026-08-13, Task 13) ---------------------------------
+	// ---- the page flags, read side --------------------------------------------------------
 	//
 	// Writing them is IKCMPageFlagsFacade. Reading them is here, with the rest of the
 	// read-only questions, so that "what is registered" has one answer and one place.
@@ -136,7 +134,7 @@ public:
 	// pages are taken out first, then what is left is matched in order, so inserting or
 	// deleting a page shifts the rest without breaking the correspondence.
 	//
-	// ★The whole table, not one page at a time. Both callers build their own map out of it and
+	// The whole table, not one page at a time. Both callers build their own map out of it and
 	// keep it (the view sync caches it for a 250 ms generation, because it is asked dozens of
 	// times a second while scrolling). Asking page by page across the boundary would turn one
 	// call into hundreds.
@@ -151,23 +149,23 @@ public:
 	virtual void		GetMasterPagePairing(IDataBase* targetDB, IDataBase* sourceDB,
 								std::vector<UID>& outTargetPages, std::vector<UID>& outSourcePages) = 0;
 
-	// ---- walking a document's pages (2026-08-14, Task 16) --------------------------------
+	// ---- walking a document's pages --------------------------------------------------------
 	//
-	// Not comparison results, but reads all the same, and every UI-side caller was reaching
-	// KCMCore.h's free functions for them. A free function cannot be linked from the other
-	// .pln, so they come through here with the rest of the reading.
+	// Not comparison results, but reads all the same, and every UI-side caller used to reach
+	// KCMCore.h's free functions for them. A free function cannot be linked from the other .pln,
+	// so they come through here with the rest of the reading.
 
 	/** Every page of the document, flattened in spread order and then page order. out is
 		cleared first.
 
-		★NORMAL SPREADS ONLY (ISpreadList). Masters are collected separately and on purpose:
-		this same walk is what the comparison pairs pages by, so folding masters in would change
-		what gets compared rather than just what gets listed. */
+		NORMAL SPREADS ONLY (ISpreadList). Masters are collected separately and on purpose: this
+		same walk is what the comparison pairs pages by, so folding masters in would change what
+		gets compared rather than just what gets listed. */
 	virtual void		GetAllPageUIDs(IDataBase* db, std::vector<UID>& out) = 0;
 
 	/** The master spreads' pages, in master-spread order and then page order.
 
-		★ADDS to out -- it does NOT clear it -- because the callers append masters after the
+		ADDS to out -- it does NOT clear it -- because the callers append masters after the
 		normal pages and remember the count in between as the boundary. */
 	virtual void		GetMasterPageUIDs(IDataBase* db, std::vector<UID>& out) = 0;
 
@@ -176,8 +174,8 @@ public:
 		the two documents currently being compared -- otherwise it touches nothing and answers
 		kFalse.
 
-		★"What counts as marked" is defined in this one place, so adding a kind of mark keeps
-		the pre-comparison save and the thumbnail purge in step without either being edited. */
+		"What counts as marked" is defined in this one place, so adding a kind of mark keeps the
+		pre-comparison save and the thumbnail purge in step without either being edited. */
 	virtual bool16		GetMarkablePageUIDs(IDataBase* db, std::set<UID>& outPages) = 0;
 
 	/** The page a page item sits on, or kInvalidUID when it sits on none. Always a real page

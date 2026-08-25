@@ -5,18 +5,15 @@
 //  The boundary interfaces the UI is allowed to use, implemented as thin forwarders to the
 //  model's internal functions.
 //
-//  Created 2026-08-13 for the model/UI split (Stage 1). Stage 1 Task 11 puts the first one
-//  here (IKCMCompareFacade); Tasks 12-15 add the other four to this same file.
-//
 //  These bodies deliberately contain no logic. Every one of them forwards to a function that
 //  already existed and already worked; the point of this file is to give those functions an
 //  address the other plug-in can reach. Putting logic here would mean the same decision lived
 //  in two places.
 //
-//  ★ONE BODY IS NOT A PURE FORWARD: IKCMStoryEditsFacade::GetRow copies five fields out of
-//  the model's row. That is a change of ownership rather than a decision -- the model hands out
-//  a pointer into a list it can rebuild, which is safe only while caller and list are in the
-//  same plug-in (see the interface header).
+//  ONE BODY IS NOT A PURE FORWARD: IKCMStoryEditsFacade::GetRow copies the row's fields out one
+//  by one. That is a change of ownership rather than a decision -- the model hands out a pointer
+//  into a list it can rebuild, which is safe only while caller and list are in the same plug-in
+//  (see the interface header).
 //
 //  All of them are AddIn'd to kUtilsBoss (see KCM.fr), so the UI reaches them with
 //  Utils<IKCMxxx>(). The implementations are our own -- adding somebody else's stock
@@ -60,17 +57,15 @@
 //========================================================================================
 // KCMCompareFacade -- IKCMCompareFacade
 //
-// ★The interface carries six methods the plan's draft did not have. They were found by
-// grepping for the actual callers before writing this file (Global Constraints: "check the
-// move table against the real code"): HideUnchangedToggle / GetHideUnchangedOn /
-// GetOversetScanTargetDB are all called from KCMActionComponent.cpp, and ArmedDocsAlive /
-// ShowPeekAt / GetBaseScreenOpacity from KCMPeekGesture.cpp, KCMCmykCursor.cpp
-// and KCMActionComponent.cpp -- every one of them a UI-side file. Left out, six calls would
-// have kept crossing the boundary as free functions.
-// ★★2026-08-15 (stage 2, task 4B) made it nine: SampleColorAt / BeginColorDrag / EndColorDrag
-// were found the same way -- KCMCmykCursor.cpp (UI) was including KCMColorSampler.h (model)
-// and calling its three free functions. Same reason as the six above, found one pass later
-// because the grep that produced them looked for facade callers, not for cross-side includes.
+// WHAT BELONGS ON THIS INTERFACE WAS DECIDED BY GREPPING FOR CALLERS, not by a design list.
+// HideUnchangedToggle / GetHideUnchangedOn / GetOversetScanTargetDB are called from
+// KCMActionComponent.cpp; ArmedDocsAlive / ShowPeekAt / GetBaseScreenOpacity from
+// KCMPeekGesture.cpp, KCMCmykCursor.cpp and KCMActionComponent.cpp; SampleColorAt /
+// BeginColorDrag / EndColorDrag from KCMCmykCursor.cpp, which was including KCMColorSampler.h
+// (model) and calling its free functions directly. Every one of those files is UI-side, and every
+// one of those calls would fail to link without a method here.
+// Two greps are needed to find them all: one for facade callers, one for cross-side INCLUDES.
+// The second kind hides from the first.
 //========================================================================================
 class KCMCompareFacade : public CPMUnknown<IKCMCompareFacade>
 {
@@ -94,7 +89,6 @@ public:
 								bool16* outCancelled, int32* outFailed)
 								{ return KCMRefreshComparisonForSelectedPages(outPages, outChanged, outCancelled, outFailed); }
 	virtual bool16		RefreshComparisonAvailable()	{ return KCMRefreshComparisonAvailable(); }
-	// (ClearMarks was here until 2026-08-17 -- removed with its declaration; see the interface.)
 
 	virtual void		SetPrintMarks(bool16 printFlag, bool16 opacity25Flag, IDataBase* db)
 													{ KCMDoSetPrintMarks(printFlag, opacity25Flag, db); }
@@ -114,13 +108,12 @@ public:
 												 PMString& outRuby)
 							{ KCMGetSessionStatusSegments(outLabel, outPre, outMid, outPost, outRuby); }
 
-	// ---- the status line (stage 2) --------------------------------------------------------
-	// ★Free functions from KCMModelNotify.h. The panel's status writer and the UI shutdown
-	// were calling them directly -- a legal direction (UI -> model) but not one that links
-	// across two .pln. Same shape as the CMYK three below.
-	// ⚠2026-08-15 (API audit B2): the five that used to stand here with them -- the notification
-	//   payload -- are GONE. They travel on Change()'s changedBy now; see IKCMCompareFacade.h
-	//   at the spot they were removed from.
+	// ---- the status line ------------------------------------------------------------------
+	// Free functions from KCMModelNotify.h. The panel's status writer and the UI shutdown reach
+	// them -- a legal direction (UI -> model) but not one that links across two .pln. Same shape
+	// as the CMYK three below.
+	// The notification's payload does NOT come through here: it rides on Change()'s changedBy
+	// (KCMNotifyPayload), so nothing has to come back and ask what a notification was about.
 	virtual void		StoreSessionStatus(const PMString& s)	{ KCMStoreSessionStatus(s); }
 	virtual void		StoreSessionStatusSegments(const PMString& label, const PMString& pre,
 												   const PMString& mid, const PMString& post,
@@ -136,11 +129,10 @@ public:
 													{ KCMPeekShowAt(targetDB, sourceDB, mx, my, viewScale, uiZoom, viewSpreadUID); }
 	virtual PMReal		GetBaseScreenOpacity()	{ return KCMBaseScreenOpacity(); }
 
-	// ---- the CMYK sampler (stage 2, task 4B) --------------------------------------------
-	// ★These three are new to the facade. KCMCmykCursor.cpp (UI) was calling the free
-	// functions in KCMColorSampler.h (model) directly -- a legal direction while both sit in
-	// one .pln, but a free function cannot be linked across two. Task 4B is the pass that
-	// touches those very files, so they go through the boundary here rather than in task 9.
+	// ---- the CMYK sampler -------------------------------------------------------------------
+	// KCMCmykCursor.cpp (UI) used to call the free functions in KCMColorSampler.h (model)
+	// directly -- legal while both sit in one .pln, but a free function cannot be linked across
+	// two, so the three come through the boundary here.
 	virtual bool16		SampleColorAt(IDataBase* hoverDB, IDataBase* otherDB, bool16 hoverIsTarget,
 									  const PMReal& mx, const PMReal& my,
 									  UID viewSpreadUID,
@@ -154,13 +146,13 @@ public:
 	virtual IDataBase*	GetOversetScanTargetDB()	{ return KCMOversetScanTargetDB(); }
 	virtual void		ClearOverset()			{ KCMDrawEventHandler::DropOverset(); }
 
-	// ---- display toggles and press-time display state (Task 12) --------------------------
-	// These reach the engine's static members rather than a free function, because there was
-	// never a function: the UI assigned to the statics directly. The bodies are the assignments
-	// that used to sit in KCMActionComponent.cpp, KCMPanelState.cpp and
-	// KCMPeekGesture.cpp, moved behind the boundary and nothing else. No caller lost or
-	// gained a redraw -- invalidation stayed with the callers, where the choice of which
-	// document to repaint is made.
+	// ---- display toggles and press-time display state ---------------------------------------
+	// These reach the engine's static members rather than a free function, because there is no
+	// function: the UI used to assign to the statics itself, and the bodies here are those very
+	// assignments, moved behind the boundary and nothing else.
+	// @warning none of them redraws. Invalidation stays with the callers, where the choice of
+	// which document to repaint is made -- Target only, Source only, or both, depending on the
+	// gesture.
 
 	virtual bool16		GetShowSourceMarks()	{ return KCMDrawEventHandler::sSrcMarksOn; }
 	virtual void		SetShowSourceMarks(bool16 on)		{ KCMDrawEventHandler::sSrcMarksOn = on; }
@@ -168,7 +160,6 @@ public:
 	virtual void		SetShowTargetMarks(bool16 on)		{ KCMDrawEventHandler::sTgtMarksOn = on; }
 	virtual bool16		GetShowOldPageNumbers()	{ return KCMDrawEventHandler::sShowOldNumbers; }
 	virtual void		SetShowOldPageNumbers(bool16 on)	{ KCMDrawEventHandler::sShowOldNumbers = on; }
-	// (GetHoldToHideMarks / SetHoldToHideMarks は 2026-08-22 に撤去＝IKCMCompareFacade.h の注記を見よ)
 
 	virtual void		SetMarksVisible(bool16 on)			{ KCMDrawEventHandler::sMarksVisible = on; }
 	virtual void		SetMarkScreenOpacity(const PMReal& opacity)
@@ -183,8 +174,8 @@ public:
 	virtual bool16		GetShowOriginal()		{ return KCMDrawEventHandler::sShowOriginal; }
 	virtual void		SetShowOriginal(bool16 on)			{ KCMDrawEventHandler::sShowOriginal = on; }
 
-	// (ResetHideUnchanged / GetHideUnchangedDB / GetHideUnchangedSrcDB were here until 2026-08-17.
-	//  The model-side functions they forwarded to are still in use -- from the model. See the interface.)
+	// Only the toggle and its state cross the boundary. Resetting Hide Unchanged is model-side
+	// work with model-side callers, so it has no method here (see the interface).
 	virtual void		HideUnchangedToggle()	{ KCMHideUnchangedToggle(); }
 	virtual bool16		GetHideUnchangedOn()	{ return KCMGetHideUnchangedOn(); }
 
@@ -210,10 +201,10 @@ CREATE_PMINTERFACE(KCMCompareFacade, kKCMCompareFacadeImpl)
 // The read-only half. Every method answers a question about the state the drawing engine
 // holds; not one of them changes it.
 //
-// ★These bodies are the very expressions the UI used to write inline. Deliberately so: the
-// point of Task 12 is to move WHERE the question is asked, not WHAT the answer is. The two
-// places that do a little more than a lookup (IsOverflowPage and HasAnyMarkableContent) call
-// EnsureOverflowCache first because the callers did, in the same position.
+// These bodies are the very expressions the UI used to write inline, deliberately so: what moved
+// is WHERE the question is asked, not WHAT the answer is. The two places that do a little more
+// than a lookup (IsOverflowPage and HasAnyMarkableContent) call EnsureOverflowCache first because
+// the callers did, in the same position.
 //========================================================================================
 class KCMMarkData : public CPMUnknown<IKCMMarkData>
 {
@@ -356,9 +347,9 @@ CREATE_PMINTERFACE(KCMPageFlagsFacade, kKCMPageFlagsFacadeImpl)
 // The read side of the Story Edits list, plus the two "where does this story begin" questions
 // the navigation asks of whichever document it is about to scroll.
 //
-// ★NO Build/Clear/ShutdownCleanup. The callers were grepped before this class was written and
-// all of them are model-side (KCMCore.cpp builds and clears, KCMPeek.cpp clears and empties
-// at shutdown), so the plan's draft Rebuild() would have been a method nobody calls.
+// NO Build/Clear/ShutdownCleanup. Every caller of those is model-side (KCMCore.cpp builds and
+// clears, KCMPeek.cpp clears and empties at shutdown), so a Rebuild() here would be a method
+// nobody calls.
 //========================================================================================
 class KCMStoryEditsFacade : public CPMUnknown<IKCMStoryEditsFacade>
 {
@@ -373,7 +364,8 @@ public:
 		if (row == nil)
 			return kFalse;	// out of range, or the placeholder row -- out is left as the caller had it
 
-		// Six of the row's seven fields. fPageIndex is the list's sort key and no caller reads it.
+		// Seven of the row's nine fields. fPageIndex is the list's sort key and no caller reads
+		// it; fChanges is the child list, handed over one at a time by GetChange.
 		out.fStoryUID	= row->fStoryUID;
 		out.fText		= row->fText;
 		out.fKinds		= row->fKinds;
@@ -430,7 +422,7 @@ public:
 
 	virtual int32	RefreshRow(int32 nth)
 	{
-		// The two documents the comparison is holding. ★ASKED FOR AGAIN RATHER THAN REMEMBERED:
+		// The two documents the comparison is holding. ASKED FOR AGAIN RATHER THAN REMEMBERED:
 		// the panel can only reach this while a comparison is armed, but "armed" and "still open"
 		// are different questions and the second one is the one that matters here.
 		IDataBase* const targetDB = KCMArmedTargetDB();
@@ -442,9 +434,9 @@ public:
 
 		const int32 count = KCMStoryDiffRun::RunOne(targetDB, sourceDB, nth);
 
-		// ★NOTHING IS SAID WHEN NOTHING CHANGED. The notification makes the panel rebuild the
-		//   whole tree, which costs the reader their selection - so a refresh that could not be
-		//   done leaves the list alone rather than shaking it for no result.
+		// NOTHING IS SAID WHEN NOTHING CHANGED. The notification makes the panel rebuild the
+		// whole tree, which costs the reader their selection - so a refresh that could not be
+		// done leaves the list alone rather than shaking it for no result.
 		if (count >= 0)
 			KCMNotify(kKCMStoryEditsRebuiltMessage);
 
@@ -468,11 +460,11 @@ CREATE_PMINTERFACE(KCMStoryEditsFacade, kKCMStoryEditsFacadeImpl)
 //========================================================================================
 // KCMBookFacade -- IKCMBookFacade
 //
-// Book comparison: the fifth and last boundary of Stage 1. Three forwarders.
+// Book comparison. Three forwarders.
 //
-// ★What is NOT here was decided by grepping callers, not by the plan: KCMGetBookResultText
-// is read only by KCMScriptProvider (model-side), KCMBuildChapterPairing only by
-// KCMCompareBooks, and KCMElidePathFront moved to the UI in this same task.
+// What is NOT here was decided by grepping callers: KCMGetBookResultText is read only by
+// KCMScriptProvider (model-side), KCMBuildChapterPairing only by KCMCompareBooks, and
+// KCMElidePathFront moved to the UI and was then deleted there.
 //========================================================================================
 class KCMBookFacade : public CPMUnknown<IKCMBookFacade>
 {
@@ -496,13 +488,13 @@ CREATE_PMINTERFACE(KCMBookFacade, kKCMBookFacadeImpl)
 //========================================================================================
 //  IKCMStoryMarkFacade -- putting the Story mode's marks up and taking them down.
 //
-//  ★★THE SIXTH BOUNDARY, AND THE FIRST ADDED AFTER THE SPLIT ITSELF (2026-08-23). The other five
-//  were drawn when model and UI were separated; this one appeared when a thing that had been on
-//  the UI side moved over - the global text adornment that draws the Story mode's marks. It had to
-//  move because **the UI's File > Export > PDF runs in the background and never hands a kUIPlugIn
-//  any drawing**, so marks living there could not reach an exported PDF at all.
+//  THE SIXTH BOUNDARY, AND THE ONLY ONE NOT DRAWN BY THE MODEL/UI SPLIT ITSELF. It appeared when
+//  something that had been on the UI side moved over - the global text adornment that draws the
+//  Story mode's marks. It had to move because **the UI's File > Export > PDF runs in the
+//  background and never hands a kUIPlugIn any drawing**, so marks living there could not reach an
+//  exported PDF at all.
 //
-//  ★EVERY METHOD IS ONE LINE, WHICH IS THE POINT. The facade is a door, not a place where things
+//  EVERY METHOD IS ONE LINE, WHICH IS THE POINT. The facade is a door, not a place where things
 //  are decided: what should be lit is worked out in KCMStoryMarkBuild and drawn in
 //  KCMStoryMarker, both of which the UI has no business knowing about.
 //========================================================================================
@@ -522,8 +514,8 @@ public:
 								  TextIndex sourceFrom, TextIndex sourceTo);
 
 	virtual void	ClearJumpFlash()			{ KCMStoryMarker::ClearFlash(); }
-	// ⚠No ShutdownMarks: teardown is model-side only and KCMPeek.cpp calls the marker directly
-	//   (IKCMStoryMarkFacade.h says why a boundary method with no caller is worse than none).
+	// No ShutdownMarks: teardown is model-side only and KCMPeek.cpp calls the marker directly
+	// (IKCMStoryMarkFacade.h says why a boundary method with no caller is worse than none).
 };
 
 CREATE_PMINTERFACE(KCMStoryMarkFacade, kKCMStoryMarkFacadeImpl)
@@ -535,16 +527,16 @@ void KCMStoryMarkFacade::ShowJumpFlash(IDataBase* db, UID storyUID,
 	KCMStoryMarkDocs flash;
 	KCMStoryMarker::AddFlashRange(flash, db, storyUID, from, to);
 
-	// ★THE SAME STORY UID, IN THE OTHER DOCUMENT - which is what the whole Story mode is built on:
-	//   the diff pairs stories by uid, the double click selects in both by uid, and the standing
-	//   marks light both by uid (KCMStoryMarkBuild). ⚠The general rule that a uid names a
-	//   different object in another document is TRUE and does not apply here, and believing it did
-	//   is what left the older window nearly bare until 2026-08-22 (bug A6).
-	// ⚠`db` IS NOT ALWAYS THE TARGET: a Removed story is read out of the older document, and then
-	//   this test is what stops the same document being marked twice (which would invert twice and
-	//   leave a hole - KCMStoryMarkRanges.h).
-	// ★THE TEST LIVES HERE RATHER THAN AT THE CALLER because "is the older window open" is a fact
-	//   about the comparison, and the comparison is this side's ([[one-question-one-place]]).
+	// THE SAME STORY UID, IN THE OTHER DOCUMENT - which is what the whole Story mode is built on:
+	// the diff pairs stories by uid, the double click selects in both by uid, and the standing
+	// marks light both by uid (KCMStoryMarkBuild).
+	// @warning the general rule that a uid names a DIFFERENT object in another document is true
+	// and does not apply here. Believing that it did is what once left the older window bare.
+	// @warning `db` is NOT always the target: a Removed story is read out of the older document,
+	// and then this test is what stops the same document being marked twice (which would invert
+	// twice and leave a hole - KCMStoryMarkRanges.h).
+	// The test lives here rather than at the caller because "is the older window open" is a fact
+	// about the comparison, and the comparison is this side's ([[one-question-one-place]]).
 	IDataBase* const flashSourceDB = KCMArmedSourceDB();
 	if (flashSourceDB != nil && flashSourceDB != db && KCMIsDocDBOpen(flashSourceDB))
 		KCMStoryMarker::AddFlashRange(flash, flashSourceDB, storyUID, sourceFrom, sourceTo);

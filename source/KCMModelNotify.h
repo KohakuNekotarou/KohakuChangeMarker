@@ -4,10 +4,8 @@
 //
 //  How the model tells the UI that something changed -- the only direction that is allowed.
 //
-//  Created 2026-08-13 for the model/UI split (Stage 1).
-//
 //  The model does not call into the UI. Two reasons, both real:
-//    - after Stage 2 the UI lives in a different .pln, so a free function call would not link;
+//    - the UI lives in a different .pln, so a free function call would not link;
 //    - the UI's PDF export runs on a background thread, where a UI plug-in's bosses are not
 //      visible at all (measured; see [[model-ui-plugin-separation]]).
 //  So the model does not know the UI exists. It emits a notification on the application's
@@ -29,32 +27,31 @@
 #include "PMString.h"
 #include "OMTypes.h"		// ClassID / UID
 
-#include <set>			// KCMNotifyPayload::fPagesA(どのページの絵が変わったか)
+#include <set>			// KCMNotifyPayload::fPagesA -- which pages had their picture change
 
 class IDataBase;
 
 // What a notification carries besides its ClassID.
 //
-// ★★2026-08-15 (API audit B2): THIS USED TO BE FOUR STATICS IN THE .cpp, on a belief that was
-// written down in this very header -- "a notification can only carry a ClassID". It can carry
-// more. ISubject::Change takes a third argument, `void* changedBy` (ISubject.h:150), and it
-// reaches the listener as IObserver::Update's fourth. Adobe's own product code uses it for plain
-// data rather than for the "object that caused the change" its wording suggests:
+// A NOTIFICATION CAN CARRY MORE THAN A ClassID, whatever this header used to claim.
+// ISubject::Change takes a third argument, `void* changedBy` (ISubject.h:150), and it reaches the
+// listener as IObserver::Update's fourth. Adobe's own product code uses it for plain data rather
+// than for the "object that caused the change" its wording suggests:
 // open/components/linksui/EditOriginalResumeObserver.cpp:127 reads it back as
 // `const PMIID& what = *((const PMIID*)changedBy);`
 //
-// ★WHY IT MATTERS HERE, beyond being the documented route. Change() is synchronous, so a struct
-// on the emitting stack outlives the whole delivery -- which makes the payload per-call and
-// per-thread. Statics in a MODEL plug-in are neither: background threads get their own databases
-// but SHARE the statics ([[model-plugin-thread-safety]]). Nothing emitted a notification off the
-// main thread (all 67 call sites were counted; none is in KCMDrawEventHandler.cpp, the only
-// path that runs on one) and no listener wrote back into the model from inside Update(), so the
-// statics were in fact safe -- but safe as a property of TODAY'S CALLERS, not of the structure.
-// That is the same shape as the bug stage 2 actually hit: KCMHandleDocsClosed was correct for
-// as long as this was a UI plug-in and became wrong the moment it was not.
+// WHY A PAYLOAD AND NOT STATICS, beyond this being the documented route. Change() is synchronous,
+// so a struct on the emitting stack outlives the whole delivery -- which makes the payload
+// per-call and per-thread. Statics in a MODEL plug-in are neither: background threads get their
+// own databases but SHARE the statics ([[model-plugin-thread-safety]]). Today every emitter is
+// model-side and none of them sits in KCMDrawEventHandler.cpp, the one path that runs on a
+// background thread, and no listener writes back into the model from inside Update() -- so
+// statics would in fact be safe. **Safe as a property of today's callers, not of the structure**,
+// which is the same shape as the bug the model/UI split actually hit: KCMHandleDocsClosed was
+// correct for exactly as long as this was a UI plug-in.
 //
-// ⚠ Valid only while the notification is being delivered. A listener must not keep the pointers:
-// a closed IDataBase* is a dangling pointer whose address gets reused.
+// @warning valid only while the notification is being delivered. A listener must not keep the
+// pointers: a closed IDataBase* is a dangling pointer whose address gets reused.
 struct KCMNotifyPayload
 {
 	IDataBase*	fDocA;				// the documents the change is about (see KCMNotifyDocs)
@@ -63,26 +60,19 @@ struct KCMNotifyPayload
 	bool16		fNavReset;			// kTrue when the change invalidates the Prev/Next cursor
 	bool16		fStatusForceRedraw;	// kTrue when a status change asks for an immediate repaint
 
-	// ★★2026-08-16 (API audit B4): WHICH PAGES of fDocA had their picture change, when the
-	// emitter knows. nil means "not known" and the listener must fall back to redoing the whole
-	// document -- which is what EVERY page-flag notification used to do, on the same wrong belief
-	// the four statics above were built on ("a notification can only carry a ClassID").
-	// KCMThumbnailRefresh.h called that fallback "a temporary regression" when it introduced it
-	// (Task 10); this field is what ends it.
+	// WHICH PAGES of fDocA had their picture change, when the emitter knows. nil means "not known"
+	// and the listener must fall back to redoing the whole document.
 	//
-	// ⚠ Same lifetime rule as the pointers above: valid only while the notification is being
-	// delivered. Point it at a set on the emitting stack; Change() is synchronous, so it outlives
-	// the delivery and nothing has to be cleaned up.
+	// @warning same lifetime rule as the pointers above: valid only while the notification is
+	// being delivered. Point it at a set on the emitting stack; Change() is synchronous, so it
+	// outlives the delivery and nothing has to be cleaned up.
 	const std::set<UID>*	fPagesA;
 
-	// ★★2026-08-16 (API audit B5): fDocB's set. B4 wrote here "add fPagesB the day a two-document
-	// emitter appears" -- and that day had already come and gone: KCMRefreshComparisonCore
-	// (Refresh Page Comparison) touches pages in BOTH documents and had been collecting both sets
-	// all along, right next to a comment claiming a notification could not carry them. It was not
-	// found in B4 because B4 grepped its own six files; this one lives in block B5.
+	// fDocB's set. Filled by emitters that touch pages in BOTH documents -- the partial recompare
+	// (Refresh Page Comparison) is the one that does.
 	//
-	// ⚠ Set it only together with fDocB, and only when the set is COMPLETE for that document (see
-	// KCMNotifyDocsPages). A listener told "these pages" will not look at any other page.
+	// @warning set it only together with fDocB, and only when the set is COMPLETE for that
+	// document (see KCMNotifyDocsPages). A listener told "these pages" will not look at any other.
 	const std::set<UID>*	fPagesB;
 
 	KCMNotifyPayload()
@@ -100,71 +90,62 @@ struct KCMNotifyPayload
 // the session and the application are still there and returns quietly if not).
 void	KCMNotify(ClassID theChange, const KCMNotifyPayload* payload = nil);
 
-// Emit a notification that carries WHICH DOCUMENTS it is about (2026-08-13, Task 10).
+// Emit a notification that carries WHICH DOCUMENTS it is about.
 //
-// The documents travel in the payload above, on Change()'s changedBy. (Until 2026-08-15 they
-// travelled in statics; see the struct's comment for why that was the wrong route even though it
-// worked.)
-//
-//   docA / docB  the target and source databases the change is about. ★They have to travel
-//                with the notification rather than be asked for: by the time Stop notifies,
-//                the model has already dropped its own pointers (KCMArmedTargetDB is nil),
-//                and the UI still has to purge those two documents' thumbnails.
-//   navReset     kTrue when the change invalidates the Prev/Next cursor. ⚠ A FULL rebuild and
-//                a Stop do; an INCREMENTAL recompare does NOT -- resetting there would send the
-//                cursor back to the first change every time a page is registered, which is a
+//   docA / docB  the target and source databases the change is about. They have to TRAVEL with
+//                the notification rather than be asked for: by the time Stop notifies, the model
+//                has already dropped its own pointers (KCMArmedTargetDB is nil), and the UI still
+//                has to purge those two documents' thumbnails.
+//   navReset     kTrue when the change invalidates the Prev/Next cursor. @warning a FULL rebuild
+//                and a Stop do; an INCREMENTAL recompare does NOT -- resetting there would send
+//                the cursor back to the first change every time a page is registered, which is a
 //                behaviour change a user would notice.
 //
-// ★2026-08-13 (Task 12) correction: this does NOT get replaced by IKCMMarkData. Asking works
-// for the CURRENT state, but the thumbnail refresh needs the pages that CHANGED -- the marks a
-// recompare has just thrown away, the page whose flag was just cleared -- and no amount of asking
-// recovers those. What is missing here is a page set travelling alongside the documents, in
-// exactly the way the documents themselves travel. See KCMPurgeAllPageThumbs.
+// THIS FORM CANNOT BE REPLACED BY ASKING IKCMMarkData. Asking works for the CURRENT state, but the
+// thumbnail refresh needs the pages that CHANGED -- the marks a recompare has just thrown away,
+// the page whose flag was just cleared -- and no amount of asking recovers those.
 //
-// ★★2026-08-16 (API audit B4): that page set now exists -- for the page-flag route, below.
-// ⚠ NOT for this form of the marks route. A FULL recompare (KCMDoMarkChangesDoc) needs the set of
-// pages that carried a mark BEFORE it ran, and by the time it notifies it has already dropped it;
-// supplying it means saving it on the model side first (not done). So this form keeps redoing the
-// whole document -- and now for a reason that is actually true.
-// ★2026-08-16 (API audit B5): the PARTIAL recompare does not have that problem, because it decides
-// up front which pages it is going to touch. It uses KCMNotifyDocsPages below.
+// @warning it carries no page set on purpose. A FULL recompare (KCMDoMarkChangesDoc) would need
+// the set of pages that carried a mark BEFORE it ran, and by the time it notifies it has already
+// dropped it; supplying it means saving it on the model side first, which is not done. So this
+// form redoes the whole document. The PARTIAL recompare does not have that problem -- it decides
+// up front which pages it will touch -- and uses KCMNotifyDocsPages below.
 void	KCMNotifyDocs(ClassID theChange, IDataBase* docA, IDataBase* docB, bool16 navReset = kFalse);
 
 // Emit a two-document notification that also carries WHICH PAGES of each document had their
-// picture change (2026-08-16, API audit B5). Used by the partial recompare (Refresh Page
-// Comparison), which knows its page set exactly: it picks the pages to compare before it starts.
+// picture change. Used by the partial recompare (Refresh Page Comparison), which knows its page
+// set exactly: it picks the pages to compare before it starts.
 //
 //   pagesA / pagesB  the caller's own sets, by reference -- they travel on the payload as pointers
 //                    and are read during delivery only.
 //
-// ⚠ Each set must hold EVERY page of that document whose picture can change, including pages that
-// LOST something: a page whose ring disappeared, or whose ✓ was pruned away because its ring went,
-// is in no current-state set at all, so asking cannot recover it. That is the whole reason the sets
-// travel rather than being asked for. Miss one and its stale thumbnail stays on screen -- which is
-// exactly what the whole-document purge this replaces could not get wrong.
+// @warning each set must hold EVERY page of that document whose picture can change, including
+// pages that LOST something: a page whose ring disappeared, or whose tick was pruned away because
+// its ring went, is in no current-state set at all, so asking cannot recover it. That is the whole
+// reason the sets travel. Miss one and its stale thumbnail stays on screen -- which is exactly
+// what the whole-document purge this replaces could not get wrong.
 void	KCMNotifyDocsPages(ClassID theChange,
 	                         IDataBase* docA, const std::set<UID>& pagesA,
 	                         IDataBase* docB, const std::set<UID>& pagesB,
 	                         bool16 navReset = kFalse);
 
-// Emit a notification that carries WHICH PAGES of one document changed their picture
-// (2026-08-16, API audit B4). Used for kKCMPageFlagsChangedMessage: a Register or Check toggle
-// changes the drawing of exactly the pages it touched, and the listener can purge just those
-// instead of rebuilding every thumbnail in the document.
+// Emit a notification that carries WHICH PAGES of one document changed their picture. Used for
+// kKCMPageFlagsChangedMessage: a Register or Check toggle changes the drawing of exactly the pages
+// it touched, and the listener can purge just those instead of every thumbnail in the document.
 //
-//   pages  ★the caller's own set, by reference -- it travels on the payload as a pointer and is
+//   pages  the caller's own set, by reference -- it travels on the payload as a pointer and is
 //          read during delivery only. It must hold EVERY page whose picture can change, including
 //          the ones the flag was taken OFF: a page that just lost its green "/" is not in any
 //          current-state set, so asking cannot recover it (that is the whole reason this travels).
 //
-// ⚠ The single-document shape is deliberate; see KCMNotifyPayload::fPagesA.
+// @warning the single-document shape is deliberate; see KCMNotifyPayload::fPagesA.
 void	KCMNotifyPages(ClassID theChange, IDataBase* doc, const std::set<UID>& pages);
 
 // Three-document form. Closing a document can leave THREE survivors that all need their
 // thumbnails rebuilt -- the compare target, the document the "original" overlay came from, and
 // the one carrying the source-side frames -- and they are not always the same document.
-// ⚠ Only ever pass documents that have been checked to be still open: the receiver dereferences
-// them (a closed IDataBase* is a dangling pointer whose address gets reused).
+// @warning only ever pass documents that have been checked to be still open: the receiver
+// dereferences them (a closed IDataBase* is a dangling pointer whose address gets reused).
 void	KCMNotifyDocs(ClassID theChange, IDataBase* docA, IDataBase* docB, IDataBase* docC, bool16 navReset);
 
 // Set the status text and emit kKCMStatusTextMessage.
@@ -176,43 +157,42 @@ void	KCMNotifyDocs(ClassID theChange, IDataBase* docA, IDataBase* docB, IDataBas
 // when it receives the notification, and again from AutoAttach when the panel re-appears.
 //
 // forceRedrawNow travels in the payload's fStatusForceRedraw: kTrue means "paint before you
-// return", which the comparison loop needs because it is about to block. ★It is part of the
+// return", which the comparison loop needs because it is about to block. It is part of the
 // NOTIFICATION, not of the text -- which is exactly why it belongs on the payload and the text
 // does not (the text is session state that app.kcmStatus answers from at any time).
 void	KCMNotifyStatus(const PMString& s, bool16 forceRedrawNow = kFalse);
 
 // Store the status text WITHOUT emitting a notification.
 //
-// ★This is what the UI's own KCMSetStatus calls. A message raised by a UI action (a menu
-// item, a button, a row click) is painted by the UI directly -- it does not need to travel
-// through the notification -- but it still has to be REMEMBERED here, because app.kcmStatus
-// answers from this string and because the panel is rebuilt on every re-show.
+// This is what the UI's own KCMSetStatus calls. A message raised by a UI action (a menu item, a
+// button, a row click) is painted by the UI directly -- it does not need to travel through the
+// notification -- but it still has to be REMEMBERED here, because app.kcmStatus answers from this
+// string and because the panel is rebuilt on every re-show.
 //
-// ⚠It must not notify: KCMSetStatus is what the observer calls when a notification
+// @warning it must not notify: KCMSetStatus is what the observer calls when a notification
 // arrives, so notifying from here would loop.
 void	KCMStoreSessionStatus(const PMString& s);
 
 // Store the status text SPLIT WHERE ITS COLOUR CHANGES, without emitting a notification.
 //
-// ★★2026-08-20: the panel's message area is drawn by hand and can show two colours, so that the
-// other side of a clicked edit can have its differing characters at full strength and the words
-// around them faded (KCMStatusTextView.cpp). This is the same store as above, told where the
-// pieces begin: label = a heading on its own line, mid = the characters that differ, pre/post =
-// the context on either side.
+// The panel's message area is drawn by hand and can show two colours, so that the other side of a
+// clicked edit can have its differing characters at full strength and the words around them faded
+// (KCMStatusTextView.cpp). This is the same store as above, told where the pieces begin: label = a
+// heading on its own line, mid = the characters that differ, pre/post = the context on either side.
 //
-// ★WHY THE MODEL HOLDS THE SPLIT AND NOT THE PANEL. The panel's widgets are rebuilt on every
+// WHY THE MODEL HOLDS THE SPLIT AND NOT THE PANEL. The panel's widgets are rebuilt on every
 // re-show, so a split kept there would be lost and the message would come back in one colour --
 // the same sentence looking different depending on the route it took. And the split cannot be
 // re-derived by the panel: the boundary is a code point index into text already cut at both ends,
-// and PMString counts UTF-16. ⇒ One place answers "what does the message area say", and it is the
-// place that already answered it (memory one-question-one-place).
+// and PMString counts UTF-16. One place answers "what does the message area say", and it is the
+// place that already answered it ([[one-question-one-place]]).
 //
-// ⚠It must not notify, for the same reason as above.
-// ★2026-08-22: a fifth piece, `ruby` -- the READING drawn above the changed characters when the
-// edit is a ruby. It is stored here for exactly the reason the other four are: the panel rebuilds
-// its widgets on every re-show, and a reading kept anywhere else would come back missing while the
-// words it belongs to came back intact.
-// ⚠It is NOT part of what KCMGetSessionStatus assembles -- see there.
+// The fifth piece, `ruby`, is the READING drawn above the changed characters when the edit is a
+// ruby one. It is stored here for exactly the reason the other four are: a reading kept anywhere
+// else would come back missing while the words it belongs to came back intact.
+//
+// @warning it must not notify, for the same reason as above.
+// @warning the ruby is NOT part of what KCMGetSessionStatus assembles -- see there.
 void	KCMStoreSessionStatusSegments(const PMString& label, const PMString& pre,
 										const PMString& mid, const PMString& post,
 										const PMString& ruby);
@@ -220,25 +200,24 @@ void	KCMStoreSessionStatusSegments(const PMString& label, const PMString& pre,
 // The last string given to KCMNotifyStatus or KCMStoreSessionStatus. This is what
 // app.kcmStatus returns.
 //
-// ★It is ASSEMBLED from the pieces below: label, a line break, then the body. A message stored as
-// one string is the case where the others are empty, so the answer is that string itself -- which
-// is why app.kcmStatus reads exactly as it did before the split existed.
-// ⚠★THE RUBY IS DELIBERATELY LEFT OUT of the assembly (2026-08-22). This answers "what does the
-//   message area SAY", and a reading is not part of the sentence -- it sits above it. Splicing it
-//   in would change what every existing script reads out of app.kcmStatus.
+// It is ASSEMBLED from the pieces: label, a line break, then the body. A message stored as one
+// string is the case where the others are empty, so the answer is that string itself -- which is
+// why app.kcmStatus reads exactly as it did before the split existed.
+// @warning THE RUBY IS DELIBERATELY LEFT OUT of the assembly. This answers "what does the message
+// area SAY", and a reading is not part of the sentence -- it sits above it. Splicing it in would
+// change what every existing script reads out of app.kcmStatus.
 void	KCMGetSessionStatus(PMString& out);
 
 // The same message, in the five pieces it was stored in. The UI reads this back when the panel
 // re-appears, so that a coloured message comes back coloured.
-// ★A message stored as one string answers with that string in `outMid` and three empty pieces.
+// A message stored as one string answers with that string in `outMid` and four empty pieces.
 void	KCMGetSessionStatusSegments(PMString& outLabel, PMString& outPre,
 									  PMString& outMid, PMString& outPost, PMString& outRuby);
 
 // Shutdown only: empty the stored message, so the static PMStrings' destructors have no live
 // heap buffer to free when the plug-in unloads (Mac unload order differs from Windows).
-// ⚠★★ALL FIVE PIECES, not just the one that used to be here. A static PMString that is added
-//   beside its fellows and left out of this list is the exact shape of the defects found on
-//   2026-08-18 (model B8: three statics, one listed) and again on B-U5 (four missed).
+// @warning ALL FIVE PIECES. A static PMString added beside its fellows and left out of this list
+// is the exact shape of two defects already found in this plug-in.
 void	KCMClearSessionStatus();
 
 #endif // __KCMModelNotify_h__

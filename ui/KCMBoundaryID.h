@@ -2,33 +2,30 @@
 //
 //  KCMBoundaryID.h
 //
-//  model（KohakuExtendScriptChangeMarker）と UI（KohakuChangeMarkerUI）の
-//  **両方が同じ値で知っていなければならない ID** だけを集めたヘッダー。
+//  The IDs that model (KohakuExtendScriptChangeMarker) and UI (KohakuChangeMarkerUI) must both
+//  know **by the same value** -- and nothing else.
 //
-//  ★★★このファイルは両側のフォルダに同じ内容で置いてある。
-//       相方 = source/sdksamples/KCM/{source|ui}/KCMBoundaryID.h
-//       ⚠ **どちらかだけ直すと黙ってずれる。必ず両方直すこと。**
-//       （Adobe も同じ形: customconditionaltext/CusCondTxtRezDefs.h ⇄ customconditionaltextui/ の同名）
+//  **THIS FILE EXISTS TWICE, WITH IDENTICAL CONTENT**, at
+//  source/sdksamples/KCM/{source|ui}/KCMBoundaryID.h.
+//  **Editing only one of them breaks the product silently. Always edit both.**
+//  (Adobe ships the same shape: customconditionaltext/CusCondTxtRezDefs.h and the file of the
+//  same name in customconditionaltextui, byte for byte identical.)
 //
-//  ★★なぜ「両側にコピー」で「同じ値」なのか
+//  WHY A COPY EACH SIDE, AND WHY THE SAME VALUE. An ID is unique by its VALUE, not per plug-in.
+//  What lives here is the three kinds of thing one side writes and the other reads, and each of
+//  them **stops working silently the moment the two values disagree** (the build still passes):
 //
-//    ID の一意性はプラグイン単位ではなく **値** で決まる。ここにあるのは「片方が書いて片方が読む」
-//    3種類だけで、どれも値が食い違った瞬間に **黙って何も起きなくなる**（ビルドは通る）:
+//    - a facade's IID   ... the model AddIns it to kUtilsBoss, the UI asks for Utils<IKCMxxx>()
+//    - a protocol IID   ... the model passes it to ISubject::Change, the UI to AttachObserver
+//    - a notification's MessageID ... the model sends it, the UI switches on it in Update()
 //
-//      ・Facade の IID    … model が kUtilsBoss へ AddIn し、UI が Utils<IKCMxxx>() で引く
-//      ・protocol IID     … model が ISubject::Change の引数に使い、UI が AttachObserver に使う
-//      ・通知の MessageID … model が送り、UI が Update() で振り分ける
+//  So **both copies keep the model's prefix, 0x1EA500**. If the UI copy renamed them into its own
+//  0x1EA580 the UI would stop receiving what the model sends.
 //
-//    ⇒ **prefix はどちらのコピーでも model 側の 0x1EA500 のまま**。UI 側が自分の 0x1EA580 で
-//      名乗り直すと、model が送ったものを UI が受け取れなくなる。
-//
-//  ⚠ ここに置いてよいのは境界の ID と、**両側が同じ定義で知っていなければならない型**だけ。
-//    **model 専用は KCMID.h、UI 専用は KCMUIID.h。**
-//    ★2026-08-20 に **KCMCompareMode（enum）** を追加した。ID ではないが、置く理由は ID と同じ
-//      ＝**UI が書き、model が読んで動きを変える値**で、定義が片側にしか無いと、もう片方が
-//      「相手のフォルダのヘッダー」を読むことになる。
-//
-//  Created 2026-08-15 for the model/UI split (Stage 2, Task 6B).
+//  What may live here: boundary IDs, and **types both sides must know by the same definition**
+//  (KCMCompareMode below is one: not an ID, but a value the UI writes and the model reads and acts
+//  on, so a definition on one side only would make the other side include its partner's header).
+//  **Model-only IDs belong in KCMID.h, UI-only IDs in KCMUIID.h.**
 //
 //========================================================================================
 
@@ -38,132 +35,131 @@
 #include "SDKDef.h"
 
 //----------------------------------------------------------------------------------------
-// 両側が同じ値で名乗る**表示文字列**（ID ではないが、食い違うと製品が2つに見える）
+// The DISPLAY STRINGS both sides must spell the same way. Not IDs, but if they disagree the
+// product looks like two products ([[one-question-one-place]]: a version number and a display
+// name are one fact about one product, and holding them separately guarantees they drift).
 //
-// ★★2026-08-15（第2段 Task 6B-2）にここへ集約した。理由は [[one-question-one-place]]:
-//   版数と表示名は **1 つの製品の事実**で、model と UI が別々に持つと必ずずれる。
-//   実際、KCMUI は雛形の kSDKDefPluginVersionString を名乗ったまま Task 2〜6 を通ってきた
-//   ＝プラグイン一覧に **別の版数の別プラグイン**として並んでいた。
+// Users: both .rc files (FileDescription / FileVersion), both .fr files (PluginVersion,
+// ExtraPluginInfo, the About string, the menu bundle name) and both KCMLoc.h (kKCMAltKeyName).
 //
-//   使い手: 両側の .rc（FileDescription / FileVersion）／両側の .fr（PluginVersion・
-//   ExtraPluginInfo・About 文字列・メニュー束ね名）／両側の KCMLoc.h（kKCMAltKeyName）。
+// kKCMFileName (the output .pln name) is NOT here: it differs per side, so each side keeps its
+// own -- the model in KCMID.h, the UI in KCMUIID.h.
 //
-// ⚠ kKCMFileName（出力 .pln 名）は**側ごとに違う**のでここには置かない
-//   ---- model は KCMID.h、UI は KCMUIID.h が自分のファイル名を持つ。
-//
-// ★★2026-08-15（第2段 Task 11）に **kKCMPluginName もここへ来た**。UI 側が
-//   `PluginDependency` リソースで「自分は model プラグインが無ければ意味を成さない」と宣言する
-//   のに、**依存先の内部名と PluginID が要る**ため（ガイド gs-03:55）。
-//   ⇒ 相方の名前を名乗る以上、これは境界の情報になった。
+// kKCMPluginName is here because the UI declares a `PluginDependency` on the model ("this UI is
+// meaningless without it"), and that declaration needs the model's internal name and PluginID
+// (guide gs-03:55). Naming your partner makes the name boundary information.
 //----------------------------------------------------------------------------------------
 #define kKCMCompanyKey	"KohakuNekotarou"	// Company name used internally for menu paths and the like. Must be globally unique, only A-Z, 0-9, space and "_".
 #define kKCMCompanyValue	"KohakuNekotarou"	// Company name displayed externally.
-#define kKCMDisplayName	"Kohaku Change Marker"	// 表示名(About メニュー項目・About ボックス本文・パネル/ツール名)。KBS の "Kohaku Search Panel" に合わせ、単語間をスペースで区切る(2026-07-25)。
-#define kKCMVersion		"2.0.0"				// ★製品の版数（model と UI で必ず同じ）。About ボックス本文・両側の .rc の FileVersion・両側の PluginVersion リソースに出る。履歴と「次に提出する分」の増分は **KCMID.h の長いコメント**が正本。
+#define kKCMDisplayName	"Kohaku Change Marker"	// Shown in the About menu item, the About box, and as the panel and tool name. Words separated by spaces, matching KBS's "Kohaku Search Panel".
+#define kKCMVersion		"2.0.0"				// The product version, and it MUST be the same on both sides. It appears in the About box, in both .rc files as FileVersion, and in both PluginVersion resources. The history and the increments still to be submitted are kept in KCMID.h's long comment, which is the master copy.
 
-// ★プラットフォーム別の修飾キー表記（2026-07-25 追補 Mac 対応）。
-//   実装側は SDK の IEvent が差を吸収する（OptionAltKeyDown = Win の Alt / Mac の Option、
-//   CmdKeyDown = Win の Ctrl / Mac の Command）ので、切り替えるのは「ユーザーに見せる名前」だけ。
-//   この定数は文字列リテラルなので、.fr の StringTable でも C++ でも隣接連結でそのまま埋め込める
-//   （例: "Hold Left + " kKCMAltKeyName "="）。MACINTOSH は Mac ビルドの xcconfig
-//   （GCC_PREPROCESSOR_DEFINITIONS）と odfrc の双方で定義される。
-// ★**両側に要る**: UI 側の How to Use 本文（**KCMUI_enUS.fr** の kKCMHintKey と ui/KCMLoc.h の
-//   日本語版）と、model 側の KCMLoc.h が同じ表記を使う。
-//   ⚠2026-08-16（監査 B-U1）に "KCM_enUS.fr" を訂正した＝文字列テーブルは 2026-08-15 の分割で
-//     UI 側へ丸ごと移っており、**この行だけが移る前の名前を指したまま**だった。
+// The modifier key as the USER sees it named. The implementation does not branch: the SDK's
+// IEvent already absorbs the difference (OptionAltKeyDown = Alt on Windows, Option on the Mac;
+// CmdKeyDown = Ctrl / Command), so only the wording changes.
+// A string literal, so it concatenates in place both in .fr StringTables and in C++
+// (e.g. "Hold Left + " kKCMAltKeyName "="). MACINTOSH is defined by the Mac build's xcconfig
+// (GCC_PREPROCESSOR_DEFINITIONS) and by odfrc alike.
+// **Both sides need it**: the UI's How to Use text (KCMUI_enUS.fr's kKCMHintKey and the Japanese
+// in ui/KCMLoc.h) and the model's own KCMLoc.h must use the same spelling.
 #ifdef MACINTOSH
 #define kKCMAltKeyName	"Option"
 #else
 #define kKCMAltKeyName	"Alt"
 #endif
 
-// model プラグインの内部名（ID 系・.rc の InternalName）。互換のため据え置き。
-// ★UI 側は `PluginDependency` でこの名前を名乗る（下の kKCMPluginID と対）。
+// The model plug-in's internal name (used by the ID system and by the .rc InternalName). Left as
+// it is for compatibility. The UI names it in its `PluginDependency`, paired with kKCMPluginID.
 #define kKCMPluginName	"KohakuExtendScriptChangeMarker"
 
 //----------------------------------------------------------------------------------------
-// model 側の prefix。
+// The model side's prefix.
 //
-// ★**両側のコピーともこの値**（UI 側の KCMUIID.h は自分用に kKCMUIPrefix を別に持つ）。
-//   Adobe が発行した帯は 0x1EA500 - 0x1EA5FF の 256 枠で、model 0x1EA500 / UI 0x1EA580 と
-//   前半・後半に割ってある。発行の経緯と帯の割り方の全文は **KCMID.h の長いコメント**にある。
+// **Both copies carry this value** (the UI keeps its own kKCMUIPrefix in KCMUIID.h). Adobe issued
+// the 256-slot range 0x1EA500 - 0x1EA5FF, split in half: model 0x1EA500, UI 0x1EA580. How the
+// range was obtained and how it is divided is written out in full in **KCMID.h**.
 //
-// ★kKCMStringPrefix もここに置く。**文字列キーはグローバルに一意でなければならない**
-//   （ガイド vol2-12:71。widget ID と違って借用できない）ので、UI へ移る文字列キーも
-//   `kKCMStringPrefix "..."` の形のまま動かす ＝ キーの値が1つも変わらず、
-//   文字列テーブルは丸ごと移すだけで済む。
+// kKCMStringPrefix lives here too, because **string keys have to be globally unique** (guide
+// vol2-12:71 -- unlike widget IDs, they cannot be borrowed). Keys that move to the UI therefore
+// keep the `kKCMStringPrefix "..."` form: not one key value changes and the string table can be
+// moved across whole.
 //----------------------------------------------------------------------------------------
 #define kKCMPrefixNumber	0x1EA500
 #define kKCMPrefix		RezLong(kKCMPrefixNumber)				// The unique numeric prefix for all object model IDs for this plug-in.
 #define kKCMStringPrefix	SDK_DEF_STRINGIZE(kKCMPrefixNumber)	// The string equivalent of the unique prefix number for this plug-in.
 
-// model プラグインの PluginID。
-// ★★2026-08-15（第2段 Task 11）に KCMID.h からここへ移した＝**UI 側が `PluginDependency` で
-//   依存先として名指しする**（ガイド gs-03:55「UI プラグインは model が無ければ意味を成さない」／
-//   手本＝`transparencyeffectui/TranFxUI.fr:77-86`）。⇒ 両側が同じ値で知る必要がある。
-// ⚠ UI 自身の PluginID は `kKCMUIPluginID`（KCMUIID.h）で別物。**依存の向きは UI → model の一方向**
-//   なので、model 側が KCMUI の PluginID を知る必要は無い（知ったらそれ自体が逆流）。
+// The model plug-in's PluginID. It is boundary information because **the UI names it as the
+// dependency it declares** (guide gs-03:55, "a UI plug-in is meaningless without its model";
+// worked example = transparencyeffectui/TranFxUI.fr:77-86).
+// The UI's own PluginID is kKCMUIPluginID (KCMUIID.h) and is a different value. **The dependency
+// runs one way, UI -> model**, so the model has no business knowing the UI's -- knowing it would
+// itself be the dependency running backwards.
 DECLARE_PMID(kPlugInIDSpace, kKCMPluginID, kKCMPrefix + 0)
 
 //----------------------------------------------------------------------------------------
-// Facade の InterfaceID — UI が model に頼む窓口（kUtilsBoss へ AddIn。model/UI 分割 第1段）
+// Facade InterfaceIDs -- the counters at which the UI asks the model for something. The model
+// AddIns each implementation to kUtilsBoss.
 //
-// ★手本 = sdksamples/customconditionaltext の IID_ICUSCONDTXTFACADE。
-// ⚠ AddIn する実装は必ず自作（SDK 提供の実装を既存 boss に足すと他社と衝突して起動に失敗する。
-//   衝突の単位は IID ではなく ImplementationID）。
+// Worked example = sdksamples/customconditionaltext's IID_ICUSCONDTXTFACADE.
+// @warning the implementation AddIn'd must always be our own. Adding an SDK-supplied
+// implementation to an existing boss collides with other vendors and the plug-in fails to load,
+// and the unit of collision is the ImplementationID, not the IID.
 //----------------------------------------------------------------------------------------
-DECLARE_PMID(kInterfaceIDSpace, IID_IKCMCOMPAREFACADE, kKCMPrefix + 4)	// 比較エンジンに頼む（第1段 Task 11）
-DECLARE_PMID(kInterfaceIDSpace, IID_IKCMMARKDATA, kKCMPrefix + 5)	// 比較結果を**読む**（第1段 Task 12。★読み取り専用＝マークを作るのは上の1か所だけ）
-DECLARE_PMID(kInterfaceIDSpace, IID_IKCMPAGEFLAGSFACADE, kKCMPrefix + 6)	// Register(Added/Removed)と Check(✓)を書き換える（第1段 Task 13）
-DECLARE_PMID(kInterfaceIDSpace, IID_IKCMSTORYEDITSFACADE, kKCMPrefix + 7)	// Story Edits の一覧を**読む**（第1段 Task 14。★読み取り専用）
-DECLARE_PMID(kInterfaceIDSpace, IID_IKCMBOOKFACADE, kKCMPrefix + 8)	// ブック比較を頼む（第1段 Task 15。★第1段はここまでの5本）
-DECLARE_PMID(kInterfaceIDSpace, IID_IKCMSTORYMARKFACADE, kKCMPrefix + 10)	// ★Story モードのマークを出す/消す（2026-08-23＝グローバルテキストアドーンメントを UI から model へ移した回。**UI の File>Export>PDF は BG で走り kUIPlugIn には配られない**ので、印刷・書き出しに出すには model 側に居るしかない）。⚠**+9 は下の通知 protocol が先に取っている**ので飛ばす＝番号は連続しない
+DECLARE_PMID(kInterfaceIDSpace, IID_IKCMCOMPAREFACADE, kKCMPrefix + 4)	// ask the comparison engine
+DECLARE_PMID(kInterfaceIDSpace, IID_IKCMMARKDATA, kKCMPrefix + 5)	// READ the comparison result (read-only: marks are built in one place only, the facade above)
+DECLARE_PMID(kInterfaceIDSpace, IID_IKCMPAGEFLAGSFACADE, kKCMPrefix + 6)	// write Register (Added/Removed) and Check
+DECLARE_PMID(kInterfaceIDSpace, IID_IKCMSTORYEDITSFACADE, kKCMPrefix + 7)	// READ the Story Edits list (read-only but for RefreshRow)
+DECLARE_PMID(kInterfaceIDSpace, IID_IKCMBOOKFACADE, kKCMPrefix + 8)	// ask for a book comparison
+DECLARE_PMID(kInterfaceIDSpace, IID_IKCMSTORYMARKFACADE, kKCMPrefix + 10)	// put the Story mode's marks up and take them down. The numbering skips +9, which the notification protocol below had already taken.
 
 //----------------------------------------------------------------------------------------
-// 通知の protocol IID
+// The notification protocol IID.
 //
-// model が UI へ知らせる唯一の向き。★model は UI に何があるか知らない ---- アプリの subject に
-// 自作 protocol IID で Change を投げるだけで、誰も聞いていなければ何も起きない
-// （＝InDesign Server でも安全）。UI 側はこの IID で AttachObserver する。
+// The only direction the model talks in. The model knows nothing about the UI: it throws a Change
+// at the application's subject under a protocol IID of our own, and if nobody is listening
+// nothing happens (which is what makes it safe under InDesign Server). The UI AttachObservers
+// with this IID.
 //----------------------------------------------------------------------------------------
-DECLARE_PMID(kInterfaceIDSpace, IID_IKCMMODELCHANGEOBSERVER, kKCMPrefix + 9)	// 第1段 Task 9
+DECLARE_PMID(kInterfaceIDSpace, IID_IKCMMODELCHANGEOBSERVER, kKCMPrefix + 9)
 
 //----------------------------------------------------------------------------------------
-// 通知の MessageID — model が UI へ「何が変わったか」を知らせる（第1段 Task 9）
+// Notification MessageIDs -- how the model tells the UI what changed.
 //
-// ★kMessageIDSpace は KCM がこれまで1つも使っていなかったので +0 から採る。
-//   受け手は UI 側の1本の Observer（KCMModelChangeObserver）だけで、changeID で振り分ける。
+// kMessageIDSpace was untouched by KCM, so these start at +0. There is one listener, the UI's
+// KCMModelChangeObserver, which switches on the changeID.
 //----------------------------------------------------------------------------------------
-DECLARE_PMID(kMessageIDSpace, kKCMMarksRebuiltMessage,      kKCMPrefix + 0)	// 比較が走ってマークが作り直された（Prev/Next の位置・スクロール地図・Pages サムネイル・Story Edits の一覧が対象）
-DECLARE_PMID(kMessageIDSpace, kKCMMarksClearedMessage,      kKCMPrefix + 1)	// Stop でマークが消えた
-DECLARE_PMID(kMessageIDSpace, kKCMPageFlagsChangedMessage,  kKCMPrefix + 2)	// Register(Added/Removed)または Check(✓)が変わった
-DECLARE_PMID(kMessageIDSpace, kKCMStoryEditsRebuiltMessage, kKCMPrefix + 3)	// Story Edits のモデルが作り直された
-DECLARE_PMID(kMessageIDSpace, kKCMStatusTextMessage,        kKCMPrefix + 4)	// ステータス行の文字列が変わった（文字列自体は Facade の GetSessionStatus で取る）
-DECLARE_PMID(kMessageIDSpace, kKCMOversetRescannedMessage,  kKCMPrefix + 5)	// overset の走査結果が更新された
-DECLARE_PMID(kMessageIDSpace, kKCMComparisonDocsClosedMessage, kKCMPrefix + 6)	// ★比較していた文書が閉じられ、Stop 相当の後片付けが済んだ（第1段 Task 10）。
-																					// ⚠**Stop（kKCMMarksClearedMessage）とは別**にした理由＝UI 側の後始末が3点違う:
-																					//   ①サムネイルの作り直しは**次の idle へ遅延**させる（前面切替の過渡で ForceRedraw が
-																					//     効かず枠が残る＝2026-07-08 実機で確認）②**一括クローズ中は保留**して全部閉じ終えて
-																					//     から1回だけ流す ③Find Overset が単独 ON 中なら strip は**残す**（赤帯だけ描き直す）。
-																					//   ★付随データ＝**生存している側**の db を最大3つ（Target/旧版/Source側枠）。閉じた db は
-																					//     決して渡さない（通知の受け手が deref するため）。
+DECLARE_PMID(kMessageIDSpace, kKCMMarksRebuiltMessage,      kKCMPrefix + 0)	// a comparison ran and the marks were rebuilt (affects the Prev/Next cursor, the scrollbar map, the Pages panel thumbnails and the Story Edits list)
+DECLARE_PMID(kMessageIDSpace, kKCMMarksClearedMessage,      kKCMPrefix + 1)	// Stop removed the marks
+DECLARE_PMID(kMessageIDSpace, kKCMPageFlagsChangedMessage,  kKCMPrefix + 2)	// Register (Added/Removed) or Check changed
+DECLARE_PMID(kMessageIDSpace, kKCMStoryEditsRebuiltMessage, kKCMPrefix + 3)	// the Story Edits model was rebuilt
+DECLARE_PMID(kMessageIDSpace, kKCMStatusTextMessage,        kKCMPrefix + 4)	// the status line changed (the string itself is read back through the facade's GetSessionStatus)
+DECLARE_PMID(kMessageIDSpace, kKCMOversetRescannedMessage,  kKCMPrefix + 5)	// the overset scan produced a new result
+DECLARE_PMID(kMessageIDSpace, kKCMComparisonDocsClosedMessage, kKCMPrefix + 6)	// a document being compared was closed and the Stop-equivalent clean-up has finished.
+																					// Kept SEPARATE from Stop (kKCMMarksClearedMessage) because the UI's clean-up differs in three ways:
+																					//   1. rebuilding the thumbnails is deferred to the next idle (during the switch of the front
+																					//      document ForceRedraw does not take, and the frames stay on screen -- measured);
+																					//   2. during a close-all it is HELD until every document is gone, then run once;
+																					//   3. if Find Overset is on by itself the strip STAYS -- only the red band is redrawn.
+																					// The payload carries up to three databases of documents that are STILL ALIVE (target, older
+																					// version, source-side frames). Never pass a closed one: the listener dereferences it.
 
 //----------------------------------------------------------------------------------------
-// 比較モード（2026-08-20）
+// The comparison mode
 //----------------------------------------------------------------------------------------
-// ★**比較で何をするか**を決める値。パネルのフライアウトで選び、model が持つ（値を読んで実際に
-//   走らせるのが model なので、置き場所も model 側＝IKCMCompareFacade の Get/Set）。
+// What a comparison actually does. Chosen in the panel's flyout, held by the model (the model is
+// what reads the value and runs on it, so the getter and setter live on IKCMCompareFacade).
 //
-// ⚠**ID ではなく型なのでここに置いた。** このヘッダーは model と UI の**両方**が include する
-//   唯一の場所（IID を配るために両側が読む）で、境界に出る型はここに在るのがいちばん安全＝
-//   どちらか片側のヘッダーに置くと、もう片方が「相手のヘッダー」を読むことになる。
+// **A type rather than an ID, and here on purpose.** This header is the one place BOTH plug-ins
+// include (they have to, to agree on the IIDs), which makes it the safest home for a type that
+// appears on the boundary: put it in either side's own header and the other side ends up
+// including its partner's.
 //
-// ★★**2つの結果を同時に持たない。** モードを変えたら比較はやり直す。両方の結果を保持すると
-//   「いま画面は何を見せているのか」の答えが2か所に生まれる（[[one-question-one-place]]）。
+// **THE TWO RESULTS ARE NEVER HELD AT ONCE.** Changing the mode re-runs the comparison. Keeping
+// both would create two answers to "what is on screen right now" ([[one-question-one-place]]).
 enum KCMCompareMode
 {
-	kKCMModePixel = 0,	// 既定。ページをラスタ化して画素を比べる（KCM 本来の比較）
-	kKCMModeStory = 1		// ストーリーの本文を段落→文字の二段で比べる（2026-08-20 追加）
+	kKCMModePixel = 0,	// the default: rasterize the pages and compare pixels (KCM's original comparison)
+	kKCMModeStory = 1		// compare the stories' text, paragraph by paragraph and then character by character
 };
 
 #endif // __KCMBoundaryID_h__

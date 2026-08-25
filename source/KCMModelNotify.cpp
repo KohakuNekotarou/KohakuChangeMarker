@@ -2,16 +2,16 @@
 //
 //  KCMModelNotify.cpp
 //
-//  model→UI の唯一の通り道(2026-08-13・model/UI 分割 第1段 Task 9 で新設)。
-//  詳しい理由は KCMModelNotify.h の冒頭。
+//  The only route from the model to the UI. The reasoning is at the head of KCMModelNotify.h.
 //
-//  ★ここは **model 側**。UI のヘッダーを1本も include しない ---- それがこのファイルの存在理由。
+//  This is the **model side**, and it includes not one UI header -- which is the whole reason the
+//  file exists.
 //
 //========================================================================================
 
 #include "VCPlugInHeaders.h"
 
-#include "ISession.h"			// GetExecutionContextSession(終了処理中は nil になり得る)
+#include "ISession.h"			// GetExecutionContextSession -- can be nil during shutdown
 #include "IApplication.h"
 #include "ISubject.h"
 
@@ -19,45 +19,38 @@
 #include "KCMModelNotify.h"
 
 //----------------------------------------------------------------------------------------
-// 今セッションで最後に出したステータス文字列。
+// The last status string raised this session.
 //
-// ★★**保持は model 側**(設計書 §3.3 の決定)。理由は2つ:
-//   ①`app.kcmStatus`(KCMScriptProvider.cpp ＝ model 側)が**パネルを閉じていても答える**という
-//     既存の仕様。widget から読む作りだと、閉じている間は空になる。
-//   ②パネルは再表示のたびに widget を作り直すので、widget に持たせた値は生き残らない
-//     (欄の内容はワークスペースに永続化されるため、逆に**前回セッションの文字列が残る**という
-//     別の困りごともある。AutoAttach がここの値で必ず上書きする。⚠2026-08-20 に欄が自前描画へ
-//     替わり、持ち物は永続の ITextControlData でなく**非永続の IKCMStatusTextData** になった
-//     ＝残るのは「widget の文字列」ではなく「ワークスペースに残った widget そのもの」だが、
-//     いずれにせよ上書きするこの経路が答えなので、作法は変わらない)。
+// **HELD ON THE MODEL SIDE**, for two reasons:
+//   1. `app.kcmStatus` (KCMScriptProvider.cpp, model side) must answer **while the panel is
+//      closed**, which is existing behaviour. Read out of a widget it would be empty then.
+//   2. The panel rebuilds its widgets on every re-show, so a value kept in a widget would not
+//      survive. (The widget's own contents do persist, in the workspace, which is the opposite
+//      problem -- last session's string coming back. AutoAttach overwrites it from here, so the
+//      rule holds either way.)
 //
-// ⚠2026-08-13 に KCMPanelObserver.cpp(UI 側)からここへ移した。表示だけが UI に残る。
-//----------------------------------------------------------------------------------------
-// ⚠**ここに残る static は「セッションの状態」だけ**(2026-08-20 に 1本→4本 へ分かれたが、
-//   答えているのは同じ1つの値＝メッセージ欄に出ている文)。通知の付随物(どの文書か・巡回を捨てるか・
-//   即時再描画か)は 2026-08-15 の API 監査 B2 で **static をやめ、Change の changedBy へ移した**
-//   (理由は KCMModelNotify.h の KCMNotifyPayload)。この文字列だけが残る理由は上の①②＝
-//   **通知の付随物ではなく、通知と無関係にいつでも答える値**だから。
-// ★★2026-08-20: **1本から4本へ**。パネルのメッセージ欄が自前描画になり、変更行をクリックした
-//   ときのメッセージは「見出し／前の文脈／変更された文字／後の文脈」に分かれて届く
-//   (KCMStatusTextView.cpp)。**分け目を持つ場所は、文字列を持つ場所と同じでなければならない**
-//   ＝別々に持つと、パネルを開き直したときに文と色分けが食い違いうる。
-//   ★普通のメッセージは sStatusMid だけが埋まる＝**「1本の文字列」はこの形の特別な場合**。
-//   ⚠4本とも KCMClearSessionStatus() の列挙に載っていること(下)。
-// ★★2026-08-22: **4本から5本へ**。ルビの変更をクリックしたとき、メッセージ欄は旧版の本文の上に
-//   **旧版の読み**を重ねて描く(KCMStatusTextView.cpp)。★**ここに置く理由は上の4本と同じ**＝
-//   分け目(と、その上に載る読み)を持つ場所は、文字列を持つ場所と同じでなければならない。
-//   別に持つと、パネルを開き直したときに**本文だけ戻って読みが消える**。
-//   ⚠★**app.kcmStatus の連結には入れない**(下の KCMGetSessionStatus)＝あれは「欄に見えている文」を
-//     答える約束で、読みは文ではなく本文の上に載る装飾。入れると既存のスクリプトの答えが変わる。
+// **THE ONLY STATICS THAT BELONG HERE ARE SESSION STATE.** These five are one value in five
+// pieces: the sentence standing in the message area. Everything that belongs to a single
+// NOTIFICATION -- which documents, whether to drop the Prev/Next cursor, whether to repaint at
+// once -- travels on Change()'s changedBy instead (KCMNotifyPayload). What keeps this string here
+// is that it is **not part of a notification: it is answered at any time, notification or not.**
+//
+// The five pieces exist because the panel's message area is drawn by hand: clicking a change row
+// produces a message split into heading / leading context / the changed characters / trailing
+// context (KCMStatusTextView.cpp), plus the ruby READING drawn above the changed characters.
+// **Whatever holds the split must be whatever holds the string** -- held apart, re-opening the
+// panel can bring back the sentence with the colouring or the reading missing.
+// An ordinary message fills sStatusMid only: **one string is the special case of this shape.**
+// @warning every one of the five must appear in KCMClearSessionStatus() at the bottom.
 static PMString sStatusLabel;
 static PMString sStatusPre;
 static PMString sStatusMid;
 static PMString sStatusPost;
 static PMString sStatusRuby;
 
-// アプリの subject を引く。終了処理中は session/app が引けないので、その場合は nil を返して
-// 呼び手が静かに諦める(KCM 全体の共通規約=閉じた/消えた相手は触らない)。
+// Get at the application's subject. During shutdown the session and the application cannot be
+// resolved, so nil comes back and the caller gives up quietly (KCM's rule everywhere: do not touch
+// what has closed or gone).
 static ISubject* KCMQueryAppSubject()
 {
 	ISession* session = GetExecutionContextSession();
@@ -69,34 +62,36 @@ static ISubject* KCMQueryAppSubject()
 	return (ISubject*)app->QueryInterface(IID_ISUBJECT);
 }
 
-// KCMNotify(KCMModelNotify.h で宣言)
+// KCMNotify (declared in KCMModelNotify.h)
 void KCMNotify(ClassID theChange, const KCMNotifyPayload* payload)
 {
 	InterfacePtr<ISubject> subject(KCMQueryAppSubject());
 	if (subject == nil)
-		return;		// 終了処理中など。誰も聞いていないのと同じ＝何もしないのが正しい
+		return;		// shutting down, say. The same as nobody listening: doing nothing is correct.
 
-	// ★protocol は自作の IID_IKCMMODELCHANGEOBSERVER。これで「この通知は KCM の UI 宛」と分かる。
-	//   ⚠既存3本の Observer が **IID_IAPPLICATION の通知**を受けているのと違い、こちらは
-	//     自作 protocol で送る＝本体の通知と混ざらない。
-	// ★★第3引数 changedBy に付随データの**アドレス**を載せる(ISubject.h:150)。受け手には
-	//   IObserver::Update の第4引数としてそのまま届く。Change は同期なので、呼び手のスタックに
-	//   置いた構造体が配り終わるまで生きている＝寿命管理が要らない。
-	//   ⚠payload が nil のこともある(付随物を持たない通知)。受け手は必ず nil を見ること。
+	// The protocol is our own IID_IKCMMODELCHANGEOBSERVER, which is what marks this notification as
+	// addressed to KCM's UI. The three older observers in this plug-in listen for IID_IAPPLICATION
+	// notifications; sending under our own protocol keeps ours out of that traffic.
+	//
+	// The third argument carries the ADDRESS of the payload (ISubject.h:150) and reaches the
+	// listener as IObserver::Update's fourth. Change is synchronous, so a struct on the caller's
+	// stack stays alive until delivery is finished -- there is no lifetime to manage.
+	// @warning payload can be nil (a notification with nothing attached). Listeners must test it.
 	subject->Change(theChange, IID_IKCMMODELCHANGEOBSERVER, (void*)payload);
 }
 
 //----------------------------------------------------------------------------------------
-// 通知の付随データ(2026-08-13・Task 10 / ★2026-08-15 の API 監査 B2 で static から payload へ)。
+// What a notification carries.
 //
-// ★★**static はもう無い。** 「どの文書か」「Prev/Next の基準点を捨てるか」は呼び手のスタックに
-//   構造体を1つ置き、そのアドレスを Change の changedBy に載せて配る。Change は同期なので、
-//   配り終わるまで構造体は生きている ---- ∴ **後始末そのものが要らない**(旧実装が配布後に
-//   4本を nil へ戻していたのは、static だったからやらねばならなかった仕事)。
-// ⚠受け手は payload を**持ち越さない**。閉じた文書の db を後から触ると落ちる(KCM 全体の共通規約)。
+// **NO STATICS.** "Which documents" and "drop the Prev/Next cursor" go into one struct on the
+// caller's stack, whose address rides on Change's changedBy. Change is synchronous, so the struct
+// outlives the delivery -- which means **there is no clean-up at all** (an implementation using
+// statics has to nil them afterwards precisely because they are statics).
+// @warning a listener must not keep the payload. Touching a closed document's database later
+// crashes (KCM's rule everywhere).
 //----------------------------------------------------------------------------------------
 
-// KCMNotifyDocs(KCMModelNotify.h で宣言) — 2文書版。
+// KCMNotifyDocs (declared in KCMModelNotify.h) -- two-document form.
 void KCMNotifyDocs(ClassID theChange, IDataBase* docA, IDataBase* docB, bool16 navReset)
 {
 	KCMNotifyPayload payload;
@@ -107,9 +102,9 @@ void KCMNotifyDocs(ClassID theChange, IDataBase* docA, IDataBase* docB, bool16 n
 	KCMNotify(theChange, &payload);
 }
 
-// KCMNotifyDocs(KCMModelNotify.h で宣言) — 3文書版。
-// ⚠**2文書版へは合流しない**(合流すると docC を渡す口が無い)。旧実装は static だったので
-//   「docC を先に置いてから2文書版を呼ぶ」ことができたが、payload は呼び手が丸ごと組む。
+// KCMNotifyDocs (declared in KCMModelNotify.h) -- three-document form.
+// @warning it does NOT chain to the two-document form: there would be no way to pass docC. The
+// caller builds the whole payload, which is what having a payload instead of statics means.
 void KCMNotifyDocs(ClassID theChange, IDataBase* docA, IDataBase* docB, IDataBase* docC, bool16 navReset)
 {
 	KCMNotifyPayload payload;
@@ -121,10 +116,10 @@ void KCMNotifyDocs(ClassID theChange, IDataBase* docA, IDataBase* docB, IDataBas
 	KCMNotify(theChange, &payload);
 }
 
-// KCMNotifyPages(KCMModelNotify.h で宣言) — 1文書＋「絵が変わったページ集合」版。
-// ★2026-08-16(API 監査 B4)。**集合はコピーせずアドレスだけを載せる**——Change は同期なので、
-//   呼び手のスタック(あるいは呼び手が持っている変数)がそのまま配り終わるまで生きている。
-//   文書ポインタ2本を運ぶのと**まったく同じ仕組み**で、新しい機構は1つも要らなかった。
+// KCMNotifyPages (declared in KCMModelNotify.h) -- one document plus the pages whose picture
+// changed. **The set is not copied; only its address travels** -- Change is synchronous, so the
+// caller's own variable stays alive until delivery is over. It is exactly the mechanism that
+// carries the two document pointers, and needed nothing new.
 void KCMNotifyPages(ClassID theChange, IDataBase* doc, const std::set<UID>& pages)
 {
 	KCMNotifyPayload payload;
@@ -134,10 +129,12 @@ void KCMNotifyPages(ClassID theChange, IDataBase* doc, const std::set<UID>& page
 	KCMNotify(theChange, &payload);
 }
 
-// KCMNotifyDocsPages(KCMModelNotify.h で宣言) — 2文書＋各文書の「絵が変わったページ集合」版。
-// ★2026-08-16(API 監査 B5)。B4 の1文書版(上)と**まったく同じ仕組み**で、違いは集合が2つ載ることだけ。
-//   ⚠2文書版を別関数にしてあるのは、片方だけ集合を持つ呼び手を作らせないため——受け手は
-//     「集合がある＝そのページだけ見ればよい」と読むので、**半分だけ正しい集合は取りこぼしになる**。
+// KCMNotifyDocsPages (declared in KCMModelNotify.h) -- two documents plus each one's set of pages
+// whose picture changed. The same mechanism as the one-document form above; the only difference is
+// that two sets ride along.
+// @warning it is a separate function so that no caller can supply half the sets. A listener reads
+// "there is a set" as "these are the only pages to look at", so **a set that is only half right is
+// a missed page**.
 void KCMNotifyDocsPages(ClassID theChange,
                           IDataBase* docA, const std::set<UID>& pagesA,
                           IDataBase* docB, const std::set<UID>& pagesB,
@@ -153,13 +150,14 @@ void KCMNotifyDocsPages(ClassID theChange,
 	KCMNotify(theChange, &payload);
 }
 
-// KCMNotifyStatus(KCMModelNotify.h で宣言)
-// ★文字列は static のまま(セッションの状態＝app.kcmStatus がいつでも答える値)、
-//   「今すぐ描き直せ」だけが payload に乗る(その通知に限った付随物)。
+// KCMNotifyStatus (declared in KCMModelNotify.h)
+// The text stays in the statics (session state, which app.kcmStatus answers from at any time);
+// only "repaint right now" rides on the payload, being particular to this one notification.
 void KCMNotifyStatus(const PMString& s, bool16 forceRedrawNow)
 {
-	// ★model が出すメッセージに分け目は無い＝本文1片。前のメッセージの見出しや文脈が残ると、
-	//   新しい文の周りに古い言葉が並ぶので、書かない3本は**空にする**(消し忘れは残留になる)。
+	// A message raised by the model has no split -- it is one body. The other four pieces are
+	// CLEARED rather than left: a heading or a context left over from the previous message would
+	// stand around the new sentence.
 	sStatusLabel.Clear();
 	sStatusPre.Clear();
 	sStatusMid = s;
@@ -172,13 +170,14 @@ void KCMNotifyStatus(const PMString& s, bool16 forceRedrawNow)
 	KCMNotify(kKCMStatusTextMessage, &payload);
 }
 
-// KCMStoreSessionStatus(KCMModelNotify.h で宣言) — 通知を出さずに覚えるだけ。
-// ★呼び手は UI 側の KCMSetStatus ただ1つ。UI の操作で出したメッセージは UI が自分で描くので
-//   通知を通す必要が無いが、**覚える場所は1つ**でなければならない(app.kcmStatus が答える値・
-//   パネル再表示時に復元する値)。⚠ここで通知を出すと observer→KCMSetStatus→ここ、と輪になる。
+// KCMStoreSessionStatus (declared in KCMModelNotify.h) -- remember, do not notify.
+// The one caller is the UI's KCMSetStatus. A message raised by a UI action is painted by the UI
+// itself and needs no notification, but **there must still be exactly one place that remembers
+// it** (app.kcmStatus answers from it, and the panel restores from it on re-show).
+// @warning notifying from here would loop: observer -> KCMSetStatus -> here.
 void KCMStoreSessionStatus(const PMString& s)
 {
-	// ★分け目の無いメッセージ＝本文1片(上の KCMNotifyStatus と同じ理由で他の3本を空にする)。
+	// An unsplit message is one body; the other four are cleared for the same reason as above.
 	sStatusLabel.Clear();
 	sStatusPre.Clear();
 	sStatusMid = s;
@@ -186,8 +185,9 @@ void KCMStoreSessionStatus(const PMString& s)
 	sStatusRuby.Clear();
 }
 
-// KCMStoreSessionStatusSegments(KCMModelNotify.h で宣言) — 分け目つきで覚えるだけ。
-// ★呼び手は UI 側の KCMSetStatusSegments ただ1つ(変更行のジャンプが「もう一方の側」を出す経路)。
+// KCMStoreSessionStatusSegments (declared in KCMModelNotify.h) -- remember the split, do not notify.
+// The one caller is the UI's KCMSetStatusSegments, on the route where a change row's jump shows
+// the other side of the edit.
 void KCMStoreSessionStatusSegments(const PMString& label, const PMString& pre,
 									 const PMString& mid, const PMString& post,
 									 const PMString& ruby)
@@ -199,12 +199,13 @@ void KCMStoreSessionStatusSegments(const PMString& label, const PMString& pre,
 	sStatusRuby  = ruby;
 }
 
-// KCMGetSessionStatus(KCMModelNotify.h で宣言)
+// KCMGetSessionStatus (declared in KCMModelNotify.h)
 void KCMGetSessionStatus(PMString& out)
 {
-	// ★4片を**画面に見えているとおりに**繋ぐ＝見出しの後ろで改行し、本文は前の文脈・変更された
-	//   文字・後の文脈の順。分け目の無いメッセージでは3本が空なので、答えはその文字列そのもの
-	//   ＝app.kcmStatus の答えは分割の前と1文字も変わらない。
+	// Join the four pieces **as they appear on screen**: a line break after the heading, then the
+	// leading context, the changed characters and the trailing context. For an unsplit message
+	// three of them are empty, so the answer is that string itself -- app.kcmStatus reads exactly
+	// as it did before the split existed. The ruby is left out on purpose (see the header).
 	out.Clear();
 	if (!sStatusLabel.IsEmpty())
 	{
@@ -214,10 +215,10 @@ void KCMGetSessionStatus(PMString& out)
 	out.Append(sStatusPre);
 	out.Append(sStatusMid);
 	out.Append(sStatusPost);
-	out.SetTranslatable(kFalse);	// 状態表示は組み立て済みの文で翻訳キーではない
+	out.SetTranslatable(kFalse);	// an assembled status line, not a translation key
 }
 
-// KCMGetSessionStatusSegments(KCMModelNotify.h で宣言)
+// KCMGetSessionStatusSegments (declared in KCMModelNotify.h)
 void KCMGetSessionStatusSegments(PMString& outLabel, PMString& outPre,
 								   PMString& outMid, PMString& outPost, PMString& outRuby)
 {
@@ -228,11 +229,12 @@ void KCMGetSessionStatusSegments(PMString& outLabel, PMString& outPre,
 	outRuby  = sStatusRuby;		outRuby.SetTranslatable(kFalse);
 }
 
-// KCMClearSessionStatus(KCMModelNotify.h で宣言)
+// KCMClearSessionStatus (declared in KCMModelNotify.h)
 void KCMClearSessionStatus()
 {
-	// ⚠★★**4本とも**。1本でも落とすと、そのぶんのヒープが終了時に残る
-	//   (2026-08-18 の model B8 / UI B-U5 で実際に見つかった形)。
+	// @warning **all five**. Leave one out and its heap stays allocated at shutdown -- a defect
+	// already found twice in this plug-in, both times a static added beside its fellows and not
+	// added here.
 	sStatusLabel.Clear();
 	sStatusPre.Clear();
 	sStatusMid.Clear();
@@ -240,4 +242,4 @@ void KCMClearSessionStatus()
 	sStatusRuby.Clear();
 }
 
-// KCMModelNotify.cpp 終わり。
+// End of KCMModelNotify.cpp.
