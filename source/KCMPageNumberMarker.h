@@ -2,18 +2,20 @@
 //
 //  KCMPageNumberMarker.h
 //
-//  自動ページ番号(ノンブル、Type > Insert Special Character > Markers > Current Page Number)を
-//  含むテキストフレームの領域を検出し、比較(差分ラスタ)から除外するための入口。
+//  Finding the text frames that carry an automatic page number (Type > Insert Special Character
+//  > Markers > Current Page Number) so their area can be left out of the pixel comparison.
 //
-//  背景(2026-07-05 ユーザー指摘): ページ数の差分(追加/削除ページ)を登録して正しく再整列しても、
-//  自動採番のノンブルは新旧文書で連番が違う(削除で全体がずれる等)ため、実デザインが同一でも
-//  印字される数字が違い、CMYKピクセル比較では「変更あり」と誤検知され続ける。ノンブルは通常
-//  マスターページ側に配置され、各ページでは上書きされていないのが普通なので、判別には
-//  ローカルアイテムだけでなく、適用マスタースプレッド側のアイテムも見る必要がある。
+//  WHY IT EXISTS. Even when added and removed pages are registered and the rest re-pairs
+//  correctly, an automatic folio numbers differently in the two versions (a deletion shifts
+//  everything after it), so a page whose design is identical still prints a different number and
+//  a CMYK pixel comparison goes on reporting it as changed.
+//  A folio normally sits on the MASTER page and is not overridden on the page itself, so finding
+//  it means looking at the applied master spread's items as well as the local ones.
 //
-//  実装方針: KCMDrawEventHandler::MakeEntry のCMYK比較ループの直前に、対象ページ・比較元ページ
-//  それぞれのノンブルフレームの矩形(ページinner座標)を求め、比較解像度(hiRes)のピクセル座標へ
-//  変換して、その領域内の画素は差分判定から除外する。
+//  How it is used: just before the CMYK comparison loop in KCMDrawEventHandler::MakeEntry, the
+//  folio frames' rectangles are collected for the target page and for its partner (in page inner
+//  coordinates), converted to the comparison resolution's pixel coordinates, and the pixels
+//  inside them are left out of the difference test.
 //
 //========================================================================================
 #ifndef __KCMPageNumberMarker_h__
@@ -27,37 +29,40 @@
 
 class IDataBase;
 
-// フライアウト「Ignore Page Number Marker」の状態(セッション内のみ・既定=kFalse。実装の
-// sIgnorePageNumberMarker が正。2026-07-25 監査でヘッダー側の「既定=kTrue」誤記を訂正)。
+// The flyout's "Ignore Page Number Marker" toggle. Session-only, and off by default
+// (sIgnorePageNumberMarker in the implementation is where the default actually lives).
 bool16	KCMGetIgnorePageNumberMarker();
 void	KCMSetIgnorePageNumberMarker(bool16 on);
 
-// pageRef のページに実際に描画される「Current Page Number」マーカーを含むテキストフレームの
-// 矩形を、そのページの左上を原点とする pt 座標(ページinner bboxのLeft/Topを0とする)で
-// outRects へ追加する(既存の内容はクリアしない=target/source 両方をまとめて1本のリストへ積める
-// 呼び方を想定)。ローカルアイテム・マスター由来(未上書き)アイテムの両方を対象にする。
-// トグルが OFF の間は呼び出し不要(KCMGetIgnorePageNumberMarker で判定してから呼ぶこと)。
-// ★ピクセル座標への変換(比較解像度 hiRes 換算)は呼び出し側(KCMDrawEventHandler.cpp、
-// Int32Rect が既に使える文脈)で行う。実体は KCMPageNumberMarker.cpp。
+// Append the rectangles of the text frames that actually draw a "Current Page Number" marker on
+// pageRef's page, in points with that page's inner bbox Left/Top as the origin. It does NOT clear
+// outRects -- the intended use is to pile the target's and the source's frames into one list.
+// Both local items and (un-overridden) master-derived items are examined.
+// There is no need to call it while the toggle is off; ask KCMGetIgnorePageNumberMarker first.
+// The conversion to pixel coordinates (at the comparison resolution) is the caller's, in
+// KCMDrawEventHandler.cpp, where Int32Rect is already in scope.
 void	KCMAppendPageNumberMarkerRects(const UIDRef& pageRef, std::vector<PMRect>& outRects);
 
-// ★上記のキャッシュ版(2026-08-06 の監査 E-3)。除外領域の緑ベタ塗り(可視化)は描画イベントのたびに
-// 全ページぶん呼ばれるため、そのたびの実測(ページ上の全アイテム列挙＋各フレームの全文字走査＋
-// マスターページアイテム収集＋wax 走査＋グリフ bbox)を避けて結果を覚えておく。
-//   refresh=kTrue  … 必ず実測してキャッシュを更新する(比較を実行する MakeEntry 用)
-//   refresh=kFalse … キャッシュがあればそれを返し、無ければ1回だけ実測して覚える(描画用)
-// ★速さのためだけの寄せではない: 緑ベタ塗りが見せているのは「この比較で除外した領域」なので、
-//   比較時に確定した矩形をそのまま描く方が意味としても正しい(毎回実測する旧実装では、比較の後に
-//   ノンブルフレームを動かすと、枠は前回の比較のままなのに緑だけ今の位置へ動いていた)。
-// 戻りはキャッシュ内のベクタへの参照。std::map はノードベースなので、他ページを足しても既存要素への
-// 参照は無効化されない。同じページを refresh=kTrue で取り直すか、下の Invalidate を呼ぶまで有効。
+// The cached form of the above. The green wash that shows the excluded area is drawn for every
+// page on every draw event, and measuring it each time means walking every item on the page,
+// every character in each frame, the master page's items, the wax and the glyph bboxes.
+//   refresh=kTrue  ... always measure and update the cache (for MakeEntry, which is comparing)
+//   refresh=kFalse ... return the cache if there is one, otherwise measure once and remember
+// **Not only for speed.** What the green wash shows is "the area this COMPARISON excluded", so
+// drawing the rectangles the comparison settled on is also the correct meaning: measuring afresh
+// on every draw meant that moving a folio frame after a comparison moved the green while the
+// marks stayed where the comparison had put them.
+// The return is a reference into the cache. std::map is node-based, so adding other pages does
+// not invalidate it; it stays valid until the same page is re-fetched with refresh=kTrue or the
+// Invalidate below is called.
 const std::vector<PMRect>&	KCMGetPageNumberMarkerRects(const UIDRef& pageRef, bool16 refresh);
 
-// 上記キャッシュを丸ごと捨てる。呼ぶのは「覚えている値が当てにならなくなる」場面:
-//   ・トグル(Ignore Page Number Marker)の切り替え … 切り直せば必ず測り直せる逃げ道になる
-//   ・文書クローズ(KCMHandleDocsClosed) … 閉じた db のエントリを残さない
-//   ・Shutdown … 静的コンテナに heap を持ち越さない(KCM 共通方針)
-// ★キーの IDataBase* は照合専用で deref しない(KCM 共通規約)。
+// Throw the whole cache away. Call it when what is remembered can no longer be trusted:
+//   - the Ignore Page Number Marker toggle changes ... which also gives the reader a way to force
+//     a re-measure by switching it off and on;
+//   - a document closes (KCMHandleDocsClosed) ... so no entry outlives its database;
+//   - Shutdown ... so a static container hands no heap over at unload (KCM's rule everywhere).
+// The IDataBase* in the key is for comparison only and is never dereferenced (KCM's rule).
 void	KCMInvalidatePageNumberMarkerRects();
 
 #endif // __KCMPageNumberMarker_h__

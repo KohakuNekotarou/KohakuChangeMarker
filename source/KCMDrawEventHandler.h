@@ -2,10 +2,14 @@
 //
 //  KCMDrawEventHandler.h
 //
-//  差分オーバーレイの描画エンジン。ページUID→オーバーレイ(KCMOverlayEntry)を保持し、
-//  スプレッド描画イベント時にリング(比較枠)・登録/あふれの斜線・旧ページ番号バッジ・旧版べた載せを
-//  描く。共有状態は public static メンバとして公開し、他モジュール(peek/コア処理)から参照させる。
-//  (変更数の数字は描かない。changedCells は Prev/Next の割合表示(KCMChangeNav)だけが使う。)
+//  The drawing engine for the difference overlay. It holds page UID -> overlay
+//  (KCMOverlayEntry) and, when a spread is drawn, paints the rings (change frames), the
+//  registered/overflow slashes, the original-page-number badges and the peek at the older
+//  version.
+//  The shared state is exposed as public static members for the other modules (peek, core) to
+//  read.
+//  (The number of changes is never drawn. changedCells is read only by Prev/Next, for the
+//  percentage it reports -- KCMChangeNav.)
 //
 //========================================================================================
 #ifndef __KCMDrawEventHandler_h__
@@ -15,14 +19,14 @@
 #include <set>
 #include <vector>
 #include "KCMConstants.h"
-#include "KCMOversetScan.h"	// KCMOversetLoc(sOversetLocs の要素型)
+#include "KCMOversetScan.h"	// KCMOversetLoc (the element type of sOversetLocs)
 #include "CPMUnknown.h"
 #include "IDrwEvtHandler.h"
-#include "GraphicsExternal.h"   // AGMImageRecord (構造体メンバ)
+#include "GraphicsExternal.h"   // AGMImageRecord (a struct member below)
 #include "UIDRef.h"             // UID / UIDRef
 #include "PMReal.h"
-#include "IDThreading.h"        // IDThreading::ThreadLocal(下の tl_Rasterizing)
-#include "KCMThreadSafety.h"  // ★KCMMarkStateMutex/KCMMarkStateLock(sEntries を delete する側で使う)
+#include "IDThreading.h"        // IDThreading::ThreadLocal (tl_Rasterizing below)
+#include "KCMThreadSafety.h"  // KCMMarkStateMutex / KCMMarkStateLock, taken wherever sEntries is deleted
 
 class IDataBase;
 class IDrwEvtDispatcher;
@@ -31,17 +35,20 @@ class IPanorama;
 
 struct KCMOverlayEntry
 {
-	uint8*         buf;			// 自前の ARGB バッファ(リング画像)。所有
-	AGMImageRecord rec;			// buf を指す自前の画像レコード(blit 用)
-	uint8*         dist;		// 差分マスクのチェスボード距離変換(w*h, uint8, 0=変化画素, clamp255)。所有。
-								//   リング = 0<dist<=radius。BuildRing が膨張なしの1パスで塗れる(mask は dist 生成後は破棄)。
+	uint8*         buf;			// our own ARGB buffer (the ring image). Owned.
+	AGMImageRecord rec;			// our own image record pointing at buf (for the blit)
+	uint8*         dist;		// chessboard distance transform of the difference mask (w*h, uint8,
+								//   0 = a changed pixel, clamped at 255). Owned.
+								//   The ring is 0 < dist <= radius, which lets BuildRing paint it in
+								//   one pass with no dilation (the mask is discarded once dist exists).
 	int32          w, h;
-	int32          rowBytes;	// buf の行バイト数(= rec.byteWidth)
-	int32          bpp;			// バイト/ピクセル
-	int32          lastRadius;	// 最後に描いたリング半径(px)。-1=未描画
-	int32          changedCells;	// 変化した低解像度セル数(MakeEntry の diffCount)。Prev/Next で飛んだ先の
-									//   「変更の割合」表示に使う。★割合の分母(ページ全体のセル数)は持たない
-									//   = w * h がそのまま分母なので、同じ値を二重に持たせない。
+	int32          rowBytes;	// bytes per row of buf (= rec.byteWidth)
+	int32          bpp;			// bytes per pixel
+	int32          lastRadius;	// the ring radius last drawn, in px. -1 = not drawn yet
+	int32          changedCells;	// low-resolution cells that changed (MakeEntry's diffCount), used by
+									//   Prev/Next to report how much of the page it jumped to changed.
+									//   The denominator is NOT stored: w * h IS the denominator, and
+									//   holding the same number twice is how the two drift apart.
 
 	KCMOverlayEntry() : buf(nil), dist(nil), w(0), h(0), rowBytes(0), bpp(0), lastRadius(-1),
 		changedCells(0)
@@ -59,14 +66,16 @@ struct KCMOverlayEntry
 
 //========================================================================================
 // KCMOrigImage
-//   1ページ分の「旧版(比較相手)」の不透明画像。kescmShowOriginal 実行時にその場で生成して保持し、
-//   トグルが ON の間、対応するページの矩形いっぱいに不透明 blit する(べた載せ)。
-//   SnapshotUtilsEx/accessor は保持せず、画素を buf へコピーして自前 rec を組む(切り離し=破棄時クラッシュ回避)。
+//   One page's opaque picture of the OLDER version. Built on the spot when the peek asks for
+//   it and kept; while the toggle is on it is blitted opaquely over the whole of the matching
+//   page's rectangle.
+//   The SnapshotUtilsEx accessor is NOT kept: the pixels are copied into buf and our own record
+//   is built around it. Holding the accessor across draws crashes when it is destroyed.
 //========================================================================================
 struct KCMOrigImage
 {
-	uint8*         buf;			// 自前の画像バッファ(不透明)。所有
-	AGMImageRecord rec;			// buf を指す自前の画像レコード(blit 用)
+	uint8*         buf;			// our own image buffer (opaque). Owned.
+	AGMImageRecord rec;			// our own image record pointing at buf (for the blit)
 	int32          w, h;
 	int32          rowBytes;
 	int32          bpp;
@@ -85,224 +94,261 @@ struct KCMOrigImage
 
 //========================================================================================
 // KCMDrawEventHandler
-//   ページUID→オーバーレイの集合を保持し、スプレッド描画時に、そのスプレッドに属する
-//   各ページのリングを blit する。リング太さは描画時のズームに追従。非永続=.indd に残らない。
+//   Holds the set of page UID -> overlay and, when a spread is drawn, blits the ring of each of
+//   that spread's pages. Ring thickness follows the zoom. Nothing here is persistent: none of it
+//   is written into the .indd.
 //
-// ★★★バックグラウンドスレッド(PDF の非同期書き出し)からも、このハンドラは呼ばれる。
-//   2026-08-14 にここへ「第2段(kModelPlugIn 化)の**前に**必ず読め・測る前に本番を回すな」と書いた警告は、
-//   **第2段の完了(2026-08-15)で2つとも片付いた**。⚠その後も「これから直す」形のまま残っていたので、
-//   2026-08-17 の不具合再検査 B3 で**現状**へ書き換えた。根拠はどちらもガイド vol1-07 Multithreading:
+// **THIS CODE ALSO RUNS ON A BACKGROUND THREAD** (the asynchronous PDF export). Both consequences
+// come straight out of guide vol1-07 Multithreading:
 //
-//   (1) **BG スレッドが見る DB は「クローンされた別の DB」**
-//       ("provides a separate execution context (a cloned copy of the database) for each thread")。
-//       ⇒ 描画に渡ってくる db は sDB とは**必ず別ポインタ**になる。
-//       ✅**解決済み** = 描画側の同一性判定は **`KCMIsSameDoc()`**(ファイルで聞く。KCMThreadSafety.h)。
-//         ★同時に [[uidref-reuse-after-close]](閉じた文書のポインタがアドレス再利用で別文書と一致する)も消えた。
-//       ⚠**`sOverflowCacheDB` / `sOverflowCacheSrcDB` だけは今も生ポインタ比較で、それが正しい**——
-//         あれが比べるのは **static どうし**(sOverflowCacheDB と sDB)なので、どのスレッドから見ても
-//         同じ答えになる(理由は .cpp の EnsureOverflowCache)。**「全部 GetSysFile へ寄せる」ではない。**
+//   (1) **A background thread sees a CLONED database**
+//       ("provides a separate execution context (a cloned copy of the database) for each thread").
+//       So the db handed to the drawing is ALWAYS a different pointer from sDB.
+//       Handled by asking KCMIsSameDoc() (KCMThreadSafety.h), which asks the FILE rather than the
+//       pointer. That also disposed of [[uidref-reuse-after-close]] -- a closed document's pointer
+//       matching a different document because the address was reused.
+//       @warning **sOverflowCacheDB / sOverflowCacheSrcDB are still compared as raw pointers, and
+//       that is correct** -- what they compare is one static against another (sOverflowCacheDB
+//       against sDB), which gives the same answer on every thread (the reasoning is at
+//       EnsureOverflowCache in the .cpp). This is NOT a case of "move everything to GetSysFile".
 //
-//   (2) **スレッドは object model のインスタンスは共有しないが、static は共有する**
-//       ("Threads do not share object-model instances. They do share globals and statics")。
-//       ⇒ 下の可変 static は main と BG から同時に触られる。とくに **sEntries は生ポインタの map で
-//         DropAll() が delete する**ので、**BG が読んでいる最中に main が Stop すると解放済みメモリを読む**
-//         ("InDesign will behave inconsistently and **may randomly crash**" =ガイドの原文)。
-//       ✅**解決済み** = マーク集合を触る所は **KCMMarkStateLock** で守る(DropAll / DropOneEntry /
-//         MakeEntry の置換 / HandleDrawEvent の描画2ループ / RebuildOverflowCache の差し替え)。
-//         ラスタ化中フラグは**スレッドローカル**(tl_Rasterizing)。
-//       ⚠**守る条件は「main が書き、BG が描画で読む」**＝新しい共有状態を足したら、その条件に当てはまるかを
-//         必ず数えること。過去に **sSrcPageToTarget と overflow キャッシュの「書き手」が2つとも漏れていた**
-//         (捨てる側だけ守られていた。2026-08-16 の API 監査 B3 §5 で是正)。
+//   (2) **Threads do not share object-model instances. They DO share globals and statics.**
+//       So the mutable statics below are touched by the main thread and a background thread at
+//       once. sEntries above all: it is a map of raw pointers and DropAll() deletes them, so a
+//       Stop on the main thread while a background export is reading one is a read of freed
+//       memory ("InDesign will behave inconsistently and **may randomly crash**", the guide's own
+//       words).
+//       Handled by taking **KCMMarkStateLock** everywhere the mark state is touched: DropAll,
+//       DropOneEntry, MakeEntry's replacement, both drawing loops in DrawSpreadMarks, and
+//       RebuildOverflowCache's swap. The "am I rasterising" flag is THREAD-LOCAL (tl_Rasterizing).
+//       @warning the condition to protect is **"the main thread writes it and the background
+//       thread reads it while drawing"**. Count that condition for every new piece of shared
+//       state: the writers of sSrcPageToTarget and of the overflow cache were both missed once,
+//       leaving only the discarding side protected.
 //
-//   ★実測の中身は KCMThreadSafety.h、経緯は docs/ai-notes/kescm-task12-pdf-export-marks-2026-08-15.md
-//     と kescm-bg-clone-db-probe-2026-08-15.md。
+//   The measurements are in KCMThreadSafety.h; the full record is in
+//   docs/ai-notes/kescm-task12-pdf-export-marks-2026-08-15.md and
+//   kescm-bg-clone-db-probe-2026-08-15.md.
 //========================================================================================
-/** ★★★2026-08-20: **このクラスはもう `IDrwEvtHandler` の実装ではない。**
+/** **THIS CLASS IS NO LONGER AN IDrwEvtHandler IMPLEMENTATION.**
 
-	マークの描画を**グローバルページアイテムアドーンメント**(KCMRingAdornment.cpp)に**一本化**し、
-	Draw Event の受け口(`HandleDrawEvent` / `Register` / `UnRegister`)と `kKCMDrawEventServiceBoss`・
-	`KCMDrawEventSrvc` を撤去した(2026-08-20 ユーザー判断＝「登録に失敗していたら枠が出なくてよい」)。
+	Drawing the marks was consolidated into the **global page item adornment**
+	(KCMRingAdornment.cpp), and the draw-event entry points (`HandleDrawEvent` / `Register` /
+	`UnRegister`) together with `kKCMDrawEventServiceBoss` and `KCMDrawEventSrvc` were removed.
 
-	⚠**それまで残していたのは「アドーンメントの登録に失敗したときのフォールバック」としてで、
-	  機能上の役割はゼロだった** ---- 削除した `HandleDrawEvent` の中身は
-	  「アドーンメントが生きていれば return / さもなくば `DrawSpreadMarks` を呼ぶ」の2行だけ。
-	  ∴ **絵は1つも失われない**(✓チェック・斜線・×・ノンブル塗り・Find Overset の「＋」まで、
-	  描くものは全部 `DrawSpreadMarks` の中にある)。
+	They had been kept only as a fallback for the adornment failing to register, and carried no
+	function of their own -- the deleted `HandleDrawEvent` was two lines: return if the adornment
+	is alive, otherwise call `DrawSpreadMarks`. **Not one drawn thing was lost**: the ticks, the
+	slashes, the crosses, the folio wash and Find Overset's "+" are all inside `DrawSpreadMarks`.
 
-	⇒ ここに残っているのは**描画本体 `DrawSpreadMarks` と、マークの状態を持つ static 群**だけで、
-	  **インスタンスは1つも作られない**(可変状態はすべて static だったので、そのまま成り立つ)。
-	⚠**クラス名とファイル名は歴史的なもの**。`IDrwEvtHandler` を継承していないので boss には載らない。
-	★`DrawEventData` 型だけは今も使う ---- 「今描いているスプレッド + GraphicsData + flags」を
-	  1つにまとめて渡す器として都合がよいため(`IDrwEvtHandler.h` が定義している構造体)。 */
+	What is left here is the drawing itself (`DrawSpreadMarks`) and the statics that hold the mark
+	state. **No instance of this class is ever created** -- all the mutable state was static
+	already, so that works unchanged.
+	@warning the class name and the file name are historical. It does not inherit IDrwEvtHandler
+	and it goes on no boss.
+	`DrawEventData` is still used, as a convenient carrier for "the spread being drawn +
+	GraphicsData + flags" (the struct is defined by `IDrwEvtHandler.h`). */
 class KCMDrawEventHandler
 {
 public:
-	// ★描画本体。呼び手は**グローバルページアイテムアドーンメント(KCMRingAdornment.cpp)ただ1つ**で、
-	//   スプレッドに対して DrawEventData を組んで呼ばれる。
-	//   ⚠渡される changedBy は「今描いているスプレッド」(この関数は changedBy をスプレッドとしか読まない)。
-	//   ★static なのはインスタンスの状態を1つも使わないから（この class の可変状態はすべて static メンバ）。
+	// The drawing itself. **The only caller is the global page item adornment**
+	// (KCMRingAdornment.cpp), which builds a DrawEventData for the spread and calls this.
+	// @warning the changedBy it is handed is "the spread being drawn" -- this function reads
+	// changedBy as a spread and as nothing else.
+	// It is static because it uses no instance state (every mutable member of this class is).
 	static bool16 DrawSpreadMarks(DrawEventData* ded);
 
-	// ページUID → オーバーレイ。変化のあったページだけ登録される。
-	// ⚠★中身は生ポインタで DropAll() が delete する = BG と main で同時に触ると解放済み読みになる
-	//   ⇒ **触る所は KCMMarkStateLock で守ってある**(冒頭の(2))。新しい呼び手を足すときも同じ。
+	// Page UID -> overlay. Only pages that changed are in here.
+	// @warning raw pointers, deleted by DropAll(): touched from the background thread and the
+	// main thread at once, this is a read of freed memory. **Every place that touches it takes
+	// KCMMarkStateLock** (see (2) at the head of this file), and so must any new caller.
 	static std::map<UID, KCMOverlayEntry*> sEntries;
-	// 全エントリが属する単一ドキュメント。別dbをmarkしたら作り直す(UIDはdb内のみ一意なため)。
-	// ⚠★BG には**クローンの別ポインタ**が渡るので、**この値と生ポインタで比べてはいけない**
-	//   ⇒ 描画側は `KCMIsSameDoc(db, sDB)` で聞く(冒頭の(1))。
+	// The single document all the entries belong to. Marking a different db rebuilds them, UIDs
+	// being unique only within one database.
+	// @warning a background thread is handed a **clone with a different pointer**, so this must
+	// never be compared as a raw pointer there: the drawing side asks
+	// `KCMIsSameDoc(db, sDB)` (see (1) at the head of this file).
 	static IDataBase* sDB;
-	// 上書き表示(変更リング)の master 表示トグル。データ(sEntries)は消さず
-	// 表示だけ切り替える。★既定=kFalse(非表示)。シングルツール左ボタンを押している間だけ kTrue にして枠等を
-	// 表示し、離すと kFalse に戻す。kFalse の間はこれら全部を描かない。旧版べた載せ(sShowOriginal)は
-	// このトグルの影響を受けない(ダブルクリックで別管理)。
+	// The master switch for showing the marks (the rings and everything drawn with them). The data
+	// (sEntries) is not touched; only the display is. Default kFalse (hidden): it goes kTrue while
+	// the tool's left button is held and back to kFalse on release, and nothing is drawn while it
+	// is kFalse. The peek at the older version (sShowOriginal) is not affected by it -- that is
+	// driven separately, by a double click.
 	static bool16 sMarksVisible;
-	// 画面マーク(リング)に掛ける「実効」不透明度。★既定=1.0。リング blit に掛ける。
-	//   ・ツール左hold中 = SelectedMarkOpacity()(パネルで選択中の 25%/75%)
-	//   ・押していない常時表示時 = 基準値 KCMBaseScreenOpacity()(印刷ONなら選択不透明度 / 印刷OFFは1.0)
+	// The EFFECTIVE opacity applied to the on-screen marks (the rings). Default 1.0.
+	//   - while the tool's left button is held = SelectedMarkOpacity() (the panel's 25%/75%)
+	//   - while shown permanently             = KCMBaseScreenOpacity() (the selected opacity when
+	//                                            printing is on, 1.0 when it is off)
 	static PMReal sMarkScreenOpacity;
-	// 変更マーク(リング)を印刷/PDF にも出すか(KCMDoSetPrintMarks)。★既定=kFalse(画面のみ)。
-	// ON の間は、ツール左hold に関係なく画面でも常時表示(WYSIWYG)＋印刷/PDF にも描く。マークデータとは独立に保持。
+	// Whether the change marks (rings) also go into print and PDF (KCMDoSetPrintMarks).
+	// Default kFalse (screen only). While it is on they are also shown on screen at all times,
+	// regardless of the tool's left button (WYSIWYG). Held independently of the mark data.
 	static bool16 sPrintMarks;
-	// 枠の不透明度の選択(パネルのラジオ「Marks opacity 25% / 75%」)。kTrue=25% / kFalse=75%。★既定=kTrue(25%)。
-	// ツール左hold中の画面表示・印刷ON中の常時表示(KCMBaseScreenOpacity)・印刷/PDF出力(KCMDrawRingForPrint)の
-	// すべてが SelectedMarkOpacity() 経由でこの選択を使う(画面と印刷の見た目を一致)。
+	// The frame opacity chosen by the panel radio "Marks opacity 25% / 75%". kTrue = 25%,
+	// kFalse = 75%. Default kTrue (25%).
+	// The tool's left-hold display, the always-on display while printing is on
+	// (KCMBaseScreenOpacity) and the print/PDF output (KCMDrawRingForPrint) all read this choice
+	// through SelectedMarkOpacity(), so screen and print agree.
 	static bool16 sMarkOpacity25;
-	// マークの色の選択(フライアウト「Mark colour: Red / Cyan」)。kFalse=赤(既定) / kTrue=シアン。
-	// ★★2026-08-24: **背景による自動切り替えを廃止してこれに置き換えた**(ユーザー判断
-	//   「ユーザーが選べばいいので」)。それまでは比較ラスタの画素を見て「赤っぽい下地の上だけ
-	//   シアンに変える」という判定(kKCMRedBgDom)を画素単位でやっていたが、
-	//   ①Story モードの色地は**下地の画素を読めない**ので同じ芸当ができず、2つのモードで色の
-	//     決まり方が食い違う ②自動で変わると「なぜ今この色なのか」が読み手に説明できない。
-	//   ⇒ 選ぶのは人。赤い下地に赤いマークが埋もれるなら、シアンを選べばよい。
+	// The mark colour chosen by the flyout ("Mark colour: Red / Cyan"). kFalse = red (the
+	// default), kTrue = cyan.
+	// This replaced an automatic choice that read the comparison raster per pixel and turned the
+	// mark cyan over reddish ground (kKCMRedBgDom). It went for two reasons: **the Story mode's
+	// wash cannot read the ground at all**, so the two modes would have decided colour
+	// differently; and an automatic change cannot be explained to the reader looking at it.
+	// The reader picks instead -- if a red mark is lost against red ground, choose cyan.
 	static bool16 sMarkColorCyan;
-	// Source(旧文書)側にも枠を出すトグル(フライアウト「Always Show Marks on Source」のチェック式)。★既定=kFalse
-	// だが Start 経路だけが kTrue へ戻す(=Start で既定 ON、OFF にしたければメニューで外す。
-	// ★KCMDoMarkChangesDoc では戻さない=登録トグル/Ignore 切替の再比較でも通る関数のため。2026-07-25 に移動)。
-	// ⚠★「Start 経路」＝**KCMStartComparisonFor**(KCMComparisonRun.cpp)であって
-	//   KCMToggleStartStop ではない。後者は前者の呼び手2つのうちの1つで、もう1つは**ブック比較の
-	//   章行の右クリック「Start Change Marker」**。∴ブック行から始めた比較でも Source 枠は ON に戻る。
-	//   (「KCMToggleStartStop だけ」と書いてあった。2026-08-19 不具合再検査 B-U5 3周目で訂正。
-	//    ★手順が1か所に集めてあるからこう書ける＝KCMComparisonRun.cpp の [[one-question-one-place]])
-	// ON の間、Source 文書の対応ページに同じリング画像を「常時」表示する(ツール左hold と無関係)。★既定 OFF で、Start は触らない(2026-08-22 変更。設定はパネル設定に保存され起動時に復元される)。不透明度は
-	// パネルの 25%/75% 選択(SelectedMarkOpacity)に連動し、OPP(オーバープリントプレビュー)でも隠さず、
-	// 印刷/PDF にも常に出す(Target 側の sPrintMarks とは独立)。
+	// "Always Show Marks on Source": the Source (older) document carries the same rings at all
+	// times, regardless of the tool's left button. Default kFalse.
+	// **Start does not touch it.** The setting is saved in the panel state and restored at
+	// start-up, so a Start that overwrote it would wipe the reader's saved choice on every
+	// comparison. (KCMStartComparisonFor used to set it kTrue.)
+	// The opacity follows the panel's 25%/75% choice (SelectedMarkOpacity), it is not hidden by
+	// overprint preview, and it always goes into print and PDF -- independently of the Target
+	// side's sPrintMarks.
 	static bool16 sSrcMarksOn;
-	// ★「Always Show Marks on Target」(2026-08-22 ユーザー要望「ツールでボタンを押さなくても常にマークが出る様に」)。
-	//   ON の間、Target 文書のマークを**画面に常時**表示する(ツール左hold と無関係)。上の Source 版と対で、
-	//   ★★Story 変更モードでは反転マークが同じトグルで常時表示になる
-	//   (KCMStoryMarkBuild.cpp。★2026-08-23 までは ui/KCMStoryPressMarks.cpp)＝「ピクセルの方もストーリーの方にも」。
-	// ⚠**画面だけ**＝Source 版と違い印刷/PDF には出さない。Target 側の出力は「Print comparison marks」
-	//   (sPrintMarks)が決める仕様で、こちらが出力に効くとあのトグルの意味が消える。
+	// "Always Show Marks on Target": the Target document's marks are shown **on screen** at all
+	// times, regardless of the tool's left button. The pair of the Source one above.
+	// In the Story compare mode the same toggle governs the inverted characters
+	// (KCMStoryMarkBuild.cpp) -- one toggle, both modes.
+	// @warning **screen only**, unlike the Source one: what comes out of the Target document is
+	// decided by "Print comparison marks" (sPrintMarks). If this affected the output too, that
+	// toggle would stop meaning anything.
 	static bool16 sTgtMarksOn;
-	// Source 文書の db。比較実行(KCMDoMarkChangesDoc/MakeEntry)時に設定し、DropAll で nil に戻す。
+	// The Source document's db. Set when a comparison runs (KCMDoMarkChangesDoc / MakeEntry) and
+	// put back to nil by DropAll.
 	static IDataBase* sSrcDB;
-	// SourceページUID → TargetページUID の対応表。比較は平坦ページ番号どうしの対応なので、Source の
-	// スプレッド描画時にこの表→sEntries の順で引けば、同じリング画像を Source ページに重ねられる。
-	// MakeEntry がエントリ登録と同時に記録する(=旧 Ctrl+ミドルのスプレッド再比較でも対応が維持される)。
+	// Source page UID -> Target page UID. The comparison pairs flattened page numbers, so when a
+	// Source spread is drawn, going through this table and then sEntries puts the same ring image
+	// over the Source page. MakeEntry records it as it registers the entry.
 	static std::map<UID, UID> sSrcPageToTarget;
-	// 前回の比較で使った TargetページUID → SourceページUID のペアリング(除外対応表の zip 結果)。
-	// 登録トグル(比較相手なしページの追加/解除)による再比較を差分化するために保持する:
-	// 新旧ペアリングを突き合わせ、ペアが不変のページは MakeEntry を呼ばず前回結果を再利用する
-	// (KCMDoMarkChangesDoc の allowIncremental 経路)。全再比較(Start 等)のたびに丸ごと更新し、
-	// DropAll で破棄する。sEntries と違い、変化ゼロのページも含めた「前回比較した全ペア」を持つ点が肝
-	// (エントリの有無だけでは不変ページを再利用判定できないため)。
+	// The Target -> Source pairing the LAST comparison used (the zip of the exclusion table).
+	// Kept so that a re-comparison caused by the register toggle (adding or clearing a page with
+	// no partner) can be differential: the old and new pairings are matched, and a page whose pair
+	// is unchanged reuses its previous result instead of calling MakeEntry (KCMDoMarkChangesDoc's
+	// allowIncremental path). Rebuilt whole on every full comparison and discarded by DropAll.
+	// Unlike sEntries it holds **every pair the last comparison looked at**, pages with no change
+	// included -- the presence of an entry alone cannot tell you a page's pair is unchanged.
 	static std::map<UID, UID> sPrevPairTargetToSource;
-	// overflow(登録されていないのに文書間のページ数差で比較相手が無い="/"のページ)集合のキャッシュ。
-	// Target側=sOverflowT / Source側=sOverflowS。以前は描画のたびに KCMBuildPairing(両文書の全ページ
-	// 走査)を走らせていたが、比較実行(KCMDoMarkChangesDoc)時に1回だけ作って保持する。どの (sDB,sSrcDB)
-	// 用に作ったかを sOverflowCacheDB/sOverflowCacheSrcDB に控え、描画時に食い違えば(文書切替・スプレッド
-	// 再比較で別文書に移った等)EnsureOverflowCache が作り直す。DropAll で破棄。
-	// ★生のページ挿入/削除(Start無し)には追従しない=次の Start/再比較まで固定(枠=リングと同じ挙動)。
+	// The overflow sets: pages that are not registered but have no partner because the two
+	// documents hold different numbers of pages (drawn as "/"). Target side = sOverflowT, Source
+	// side = sOverflowS.
+	// They are built once, when the comparison runs, rather than by walking both documents'
+	// pages (KCMBuildPairing) on every draw. Which (sDB, sSrcDB) they were built for is kept in
+	// sOverflowCacheDB / sOverflowCacheSrcDB, and EnsureOverflowCache rebuilds them when the
+	// drawing finds a mismatch (the documents were switched, a re-comparison moved to another
+	// document). Discarded by DropAll.
+	// They do NOT follow raw page insertions and deletions made without a Start: they stay as they
+	// are until the next Start or re-comparison -- the same behaviour the rings have.
 	static std::set<UID> sOverflowT;
 	static std::set<UID> sOverflowS;
 	static IDataBase* sOverflowCacheDB;
 	static IDataBase* sOverflowCacheSrcDB;
-	// 旧ページ番号バッジ(フライアウト「Show Original Page Numbers」のチェック式トグル)。★既定=kFalse。
-	// ON の間、枠と同じ可視条件(sPrintMarks ON の常時表示、またはツール左hold中 sMarksVisible)で、番号が
-	// ズレているページ(=それより前に隠しスプレッドがある)の下端中央に「隠す前の元の番号」を描く
-	// (sPrintMarks ON なら印刷/PDF にも出る)。マークデータ(sEntries)とは独立で、どの文書のスプレッド描画
-	// でも番号がズレていれば描く(隠しが無ければ現在番号と一致して何も描かない)。
+	// The original-page-number badge (the flyout's "Show Original Page Numbers"). Default kFalse.
+	// While it is on, and under the same visibility rule as the rings (always-on while sPrintMarks
+	// is on, or during the tool's left hold with sMarksVisible), the number a page had BEFORE the
+	// hiding is drawn at the bottom centre of every page whose number has shifted (i.e. that has a
+	// hidden spread before it). With sPrintMarks on it goes into print and PDF too.
+	// Independent of the mark data (sEntries): it is drawn on any document's spread whose numbers
+	// have shifted (with nothing hidden the old number equals the current one and nothing is drawn).
 	static bool16 sShowOldNumbers;
 
-	// (★2026-08-22 に「Hold to Hide Marks」トグル(sAlwaysShowMarks)を撤去した。あれは「枠を常時表示し、
-	//  ツール左hold中だけ隠す」で、**前半が「Always Show Marks on Target」と完全に重複**していた。固有だった
-	//  後半＝「押している間だけ隠す」は、**トグル ON のときの標準の挙動**として下の sMarksTempHidden に
-	//  畳んである。⇒ 規則は「**押している間は反対になる**」の1本＝OFF なら押下中だけ出る、ON なら
-	//  押下中だけ隠れる。ActionID +19 は欠番のまま再利用しない。)
+	// The "Hold to Hide Marks" toggle (sAlwaysShowMarks) was removed: its first half -- show the
+	// frames permanently -- was exactly "Always Show Marks on Target", and its own half -- hide
+	// them while the button is held -- became the standard behaviour of a toggle that is ON, in
+	// sMarksTempHidden below. The rule is now one sentence: **while the button is held, everything
+	// is the other way round** -- off shows while held, on hides while held.
+	// @warning ActionID +19 stays vacant and must not be reused.
 
-	// 「Always Show Marks on Target」ON のとき、Target 窓でツール左ボタンを押している間だけ kTrue
-	// (常時表示の枠を一時退避)。離すと kFalse。
-	// KCMPeekGesture.cpp のトラッカー(KCMTrackerRevealBegin/End)が上下させる。トグル OFF の間は
-	// 常に kFalse で無影響(そちらは「押下中だけ出す」reveal が動く)。
-	// ★これは Target 窓上でツール左ボタンを押したときだけ立てる(押した窓の枠だけ隠す=ウィンドウ別)。
+	// While "Always Show Marks on Target" is on, kTrue only while the tool's left button is held
+	// down over the Target window (the permanent frames step aside); kFalse on release.
+	// Raised and lowered by the tracker in KCMPeekGesture.cpp (KCMTrackerRevealBegin/End). While
+	// the toggle is off it stays kFalse and has no effect (that case is the reveal, which shows
+	// the marks only while held).
+	// It is raised only for a press over the Target window, so only the pressed window's frames
+	// are hidden -- the state is per window.
 	static bool16 sMarksTempHidden;
-	// ★★Source のレイアウト窓上でツール左ボタンを押している**間だけ** kTrue。
-	//
-	// ⚠★★★これは sMarksTempHidden の Source 版**ではない**(2026-08-22 に意味を変えた)。あちらは
-	//   「隠している」を覚えているが、こちらが覚えているのは「**押している**」だけで、それを見て
-	//   何を出すかは描画側が sSrcMarksOn と **XOR** して決める。⇒ **トグル OFF の Source 窓を押せば
-	//   枠が出て、ON の窓を押せば隠れる**＝規則「押している間は反対になる」が、Source では1本の式で済む。
-	//   （旧名 sSrcMarksTempHidden は「Always Show Marks on Source が ON のときだけ立てる」形で、
-	//    **トグル OFF のときに押しても何も起きなかった**＝規則が3か所で宣言していることと食い違っていた。
-	//    ユーザー決定 2026-08-22＝実装を規則に合わせる。）
-	// ★Target 側が2つのフラグ(出す sMarksVisible / 隠す sMarksTempHidden)のままなのは、あちらの
-	//   sMarksVisible が peek など他の経路からも立つため。**同じ形にできるのは Source だけ。**
-	// 印刷は Source 枠を常に出す仕様なので影響しない(描画側で !printing ゲート)。
+	// kTrue only **while** the tool's left button is held over the Source layout window.
+	// @warning **this is not the Source counterpart of sMarksTempHidden.** That one remembers
+	//   "hidden"; this one remembers only "pressed", and what to show is decided by the drawing
+	//   side, which **XORs** it with sSrcMarksOn. So **pressing in a Source window whose toggle is
+	//   off shows the frames, and pressing in one whose toggle is on hides them** -- the rule
+	//   "while the button is held, everything is the other way round" costs one expression here.
+	//   (A flag that is only raised while the toggle is ON means **pressing with the toggle off
+	//   does nothing at all**, which contradicts the rule as three other places in this plug-in
+	//   state it.)
+	// The Target side keeps two flags (sMarksVisible to show, sMarksTempHidden to hide) because
+	//   its sMarksVisible is also raised by other routes, the peek among them. **Only the Source
+	//   side can be one flag.**
+	// Printing always shows the Source frames, so this does not affect it (the drawing side gates
+	// on !printing).
 	static bool16 sSrcMarksPressed;
 
-	// ★サムネイル実験トグル(2026-07-06)。kTrue の間、Pagesパネルのサムネイル生成(view無し・kPreviewMode)
-	// にも枠を描く(通常は sPrintMarks/sMarksVisible が OFF だと出ないが、サムネイルは isThumb で強制ON・
-	// 太めの固定比率半径・不透明100%)。加えて比較後に KCMTryRefreshPagesPanelThumbnails で既表示分の
-	// 再生成を試みる。うまく更新できない/不整合が目立つ場合は、この1フラグを kFalse に戻すだけで従来動作
-	// (サムネイルには一切描かない)へ即復帰する。関連: docs memory kescm-pages-panel-thumbnails。
+	// While kTrue, the frames are drawn into the Pages panel's thumbnails as well (which are
+	// generated with no view, in kPreviewMode: normally nothing is drawn there when sPrintMarks
+	// and sMarksVisible are off, but a thumbnail forces it on through isThumb, with a thicker
+	// fixed-ratio radius at full opacity). It also makes a comparison try to regenerate the
+	// thumbnails already on screen, through KCMTryRefreshPagesPanelThumbnails.
+	// Setting this one flag back to kFalse restores the earlier behaviour completely (nothing
+	// drawn into thumbnails at all), which is the escape route if the refresh misbehaves.
+	// Related: memory kescm-pages-panel-thumbnails.
 	static bool16 sThumbExperiment;
 
-	// 選択中の枠不透明度(0.25 / 0.75)。枠を描く全経路の単一の供給元。
+	// The chosen frame opacity (0.25 / 0.75). The single supplier for every route that draws a
+	// frame.
 	static PMReal SelectedMarkOpacity() { return sMarkOpacity25 ? kKCMMarkOpacity25 : kKCMMarkOpacity75; }
 
-	// 選択中のマーク色。★SelectedMarkOpacity と同じ形で、**画面・印刷・Pixel の枠・Story の色地の
-	//   すべてがここを通る**(1つの問いに1つの答え)。RGB で持ち、印刷時の CMYK 変換は
-	//   KCMSetOutputColor が引き受ける(赤 → C0 M100 Y100 K0 / シアン → C100 M0 Y0 K0)。
+	// The chosen mark colour. Shaped like SelectedMarkOpacity, and for the same reason: **screen,
+	// print, the Pixel mode's frames and the Story mode's wash all come through here** (one
+	// question, one answer). It is held as RGB; converting to CMYK for print is KCMSetOutputColor's
+	// job (red -> C0 M100 Y100 K0, cyan -> C100 M0 Y0 K0).
 	static void SelectedMarkColor(uint8& r, uint8& g, uint8& b)
 	{
 		r = sMarkColorCyan ? kKCMRingAltR : kKCMRingR;
 		g = sMarkColorCyan ? kKCMRingAltG : kKCMRingG;
 		b = sMarkColorCyan ? kKCMRingAltB : kKCMRingB;
 	}
-	// 自前のラスタ化(MakeEntry/MakeOrigImage の SnapshotUtilsEx::Draw)中だけ kTrue。HandleDrawEvent が
-	// 再入したらマークを描かない(自己参照防止)。kPreviewMode ビットに頼ると PDF 書き出し(同ビット)を巻き込むため。
-	// ★★★2026-08-15(第2段 Task 12B)= **スレッドローカルにした**(旧: 素の static bool16)。
-	//   理由 = これは「**このスレッドが今ラスタ化の最中か**」という問いで、スレッドをまたぐと意味が壊れる。
-	//   素の static のままだと、メインスレッドが比較でラスタ化している間に**バックグラウンドの
-	//   PDF 書き出しがこれを見て「再入だ」と判断し、マークを黙って描かない**(＝出たり出なかったりする)。
-	//   ⚠この壊れ方は「たまたま同時に走ったときだけ」出るので、1回の書き出しでは絶対に再現しない。
-	//   ★公式の手本 = open/components/incopyfileactions/InCopyDocFileHandler.cpp:261 が
-	//     **同じ用途(再入防止)** で `IDThreading::ThreadLocalManagedObject< K2Vector<IDataBase*> >` を使う。
-	//     `ThreadLocal<bool16>` 自体も open/includes/architecture/bossrecycler.h:159 に前例がある。
-	//     命名の `tl_` プレフィックスも公式に合わせた。
+	// kTrue only while WE are rasterising (SnapshotUtilsEx::Draw inside MakeEntry / MakeOrigImage),
+	// so that a re-entrant draw paints no marks into our own raster. Relying on the kPreviewMode
+	// bit instead would catch PDF export, which sets the same bit.
+	// **THREAD-LOCAL, and it has to be**: the question is "is THIS THREAD in the middle of
+	// rasterising", and it stops meaning anything across threads. A plain static means that while
+	// the main thread rasterises for a comparison, **a background PDF export reads it, concludes
+	// it is re-entrant, and silently draws no marks** -- so the marks appear in some exports and
+	// not others. That failure only shows when the two happen to run at once, so a single export
+	// never reproduces it.
+	// Precedent: open/components/incopyfileactions/InCopyDocFileHandler.cpp:261 uses
+	// `IDThreading::ThreadLocalManagedObject< K2Vector<IDataBase*> >` for the same purpose
+	// (re-entrancy), and `ThreadLocal<bool16>` itself appears in
+	// open/includes/architecture/bossrecycler.h:159. The `tl_` prefix follows those.
 	static IDThreading::ThreadLocal<bool16> tl_Rasterizing;
 
-	// 旧版べた載せ(kescmShowOriginal / kescmHideOriginal)。マーク(sEntries)とは完全に独立。
-	// 実行時に覗いたページの旧版画像を sOrigImages に保持し、sShowOriginal が ON の間その db のページに不透明 blit する。
-	static std::map<UID, KCMOrigImage*> sOrigImages;	// ページUID(新) → 旧版画像
-	static IDataBase* sOrigDB;							// 旧版画像が属する単一ドキュメント(別dbに切替えたら作り直す)
-	static bool16 sShowOriginal;						// べた載せ表示 ON/OFF(既定 OFF)
-	static PMReal sOrigScale;							// 旧版画像をラスタ化した時の content→window スケール(ズーム×デバイス倍率)。
-														// 再 peek 時にズームが変わっていたら作り直す基準。0=未設定
-	static PMReal sPeekOpacity;							// 覗き中(peek)の旧版べた載せの不透明度。Shift+左=1.0(不透明)/
-														// Shift+Alt+左=0.5(半透明)。描画ブロックが参照する
+	// The peek at the older version. Completely independent of the marks (sEntries).
+	// The pages peeked at have their older picture kept in sOrigImages, and while sShowOriginal is
+	// on they are blitted opaquely over that db's pages.
+	static std::map<UID, KCMOrigImage*> sOrigImages;	// page UID (new) -> the older picture
+	static IDataBase* sOrigDB;							// the single document those pictures belong to (switching db rebuilds them)
+	static bool16 sShowOriginal;						// whether the peek is shown (default off)
+	static PMReal sOrigScale;							// the content->window scale (zoom x device scale) the pictures were
+														// rasterised at, so a later peek can tell the zoom has changed and
+														// rebuild them. 0 = not set
+	static PMReal sPeekOpacity;							// the peek's opacity: Shift+left = 1.0 (opaque),
+														// Shift+Alt+left = 0.5. Read by the drawing block
 
-	// ★オーバーセットページの十字マーク(フライアウト「Find Overset」)。比較(sEntries)とは完全に独立。
-	// アクティブ1文書を走査して overset(あふれ)のあるページ UID を sOversetPages に保持し、sOversetOn の
-	// 間その文書(sOversetDB)のスプレッド描画で、該当ページにページいっぱいの赤い「＋」を画面のみ描く
-	// (色/太さ/不透明度は変更リング枠と同じ)。sOversetDB は「どの文書を走査したか」の識別用で、描画時は
-	// db とのポインタ一致だけを見る(deref しない)=閉じても安全。トグルOFF/クローズ時は sOversetPages を空に。
-	static bool16 sOversetOn;			// Find Overset トグル(既定 OFF)
-	static IDataBase* sOversetDB;		// 走査した文書(pointer 識別のみ。deref しない)
-	static std::set<UID> sOversetPages;	// overset を含むページ UID 集合(Pages パネルの枠/＋・スクロール地図の帯用)
-	static std::vector<KCMOversetLoc> sOversetLocs;	// overset「+」箇所ごとの位置(ページ＋pb点)。Prev/Next の巡回先
+	// The overset cross (the flyout's "Find Overset"). Completely independent of the comparison.
+	// One active document is scanned and the pages holding overset are kept in sOversetPages;
+	// while sOversetOn, drawing a spread of that document (sOversetDB) paints a page-sized red "+"
+	// on those pages, on screen only (colour, weight and opacity follow the change frames).
+	// sOversetDB only identifies which document was scanned: the drawing compares pointers and
+	// never dereferences it, which is what makes it safe after a close. Switching the toggle off,
+	// or closing the document, empties sOversetPages.
+	static bool16 sOversetOn;			// the Find Overset toggle (default off)
+	static IDataBase* sOversetDB;		// the document scanned (identity only, never dereferenced)
+	static std::set<UID> sOversetPages;	// page UIDs holding overset (for the Pages panel's frame and "+", and the scrollbar map's band)
+	static std::vector<KCMOversetLoc> sOversetLocs;	// where each overset "+" goes (page + pasteboard point). Prev/Next's stops
 
-	// Find Overset のクリア(トグルOFF / 走査文書クローズ / 別文書切替)。集合を空にしトグルも OFF へ。
+	// Clear Find Overset (the toggle going off, the scanned document closing, switching document).
+	// Empties the sets and puts the toggle off.
 	static void DropOverset()
 	{
 		sOversetOn = kFalse;
@@ -311,39 +357,48 @@ public:
 		sOversetLocs.clear();
 	}
 
-	// (一時トースト機構は 2026-07-04 に撤去。メッセージはパネルのステータス行(KCMSetStatus)へ。
-	//  仕組み自体は他プラグインへの転用候補: docs/ai-notes/kescm-toast-mechanism.md と git 履歴 509e830 を参照)
+	// (The transient toast mechanism was removed; messages go to the panel's status line
+	//  (KCMSetStatus). The mechanism itself may be worth reusing in another plug-in:
+	//  docs/ai-notes/kescm-toast-mechanism.md and git 509e830.)
 
-	// 距離変換 dist を使い、buf(ARGB)へリング(0<dist<=radius)を1パスで描く(膨張不要)。
-	// 各リング画素の色はパネルの選択(SelectedMarkColor)。★2026-08-24 に背景適応(bgRed)を廃止した。
-	// リング以外の画素は透明(alpha=0)。dist は KCMDistTransform で事前生成(0=変化画素)。
+	// Paint the ring (0 < dist <= radius) into buf (ARGB) in one pass, using the distance
+	// transform -- no dilation needed. Every ring pixel takes the panel's chosen colour
+	// (SelectedMarkColor). Everything else is left transparent (alpha = 0).
+	// dist is produced beforehand by KCMDistTransform (0 = a changed pixel).
 	static void BuildRing(uint8* buf, int32 rb, int32 bpp, int32 wt, int32 ht,
 		const uint8* dist, int32 radius);
 
-	// target/source を高解像度(kKCMResolution×kKCMHiResMul)で CMYK ラスタ化し、4ch を比較
-	// (しきい値 kKCMCmykThr)。変化px数>0 のときだけ sEntries[target.UID] にエントリ登録(既存は置換)。
-	// changed に「変化したか」を返す。
+	// Rasterise target and source as CMYK at high resolution (kKCMResolution x kKCMHiResMul) and
+	// compare the four channels (threshold kKCMCmykThr). An entry is registered in
+	// sEntries[target.UID] only when the count of changed pixels is above zero (an existing entry
+	// is replaced). `changed` reports whether anything differed.
 	static ErrorCode MakeEntry(const UIDRef& targetRef, const UIDRef& sourceRef, bool16& changed);
 
-	// sourceRef(旧)を resolution(dpi)で1枚だけラスタ化し、不透明画像を sOrigImages[target.UID] に
-	// 保持(既存は置換)。オフスクリーンは即破棄=同時に1枚しか生存しない(安全)。
-	// resolution 既定=kKCMOrigResolution。peek 経路では現在のズームから dpi=72×スケールを渡して常にくっきり。
+	// Rasterise sourceRef (the older side) once at `resolution` dpi and keep the opaque picture in
+	// sOrigImages[target.UID] (replacing any existing one). The offscreen is destroyed immediately,
+	// so only one is ever alive at a time.
+	// resolution defaults to kKCMOrigResolution; the peek route passes a dpi derived from the
+	// current zoom, so the picture is always crisp.
 	static ErrorCode MakeOrigImage(const UIDRef& targetRef, const UIDRef& sourceRef, const PMReal& resolution = kKCMOrigResolution);
 
-	// overflow キャッシュ(sOverflowT/sOverflowS)を現在の sDB/sSrcDB から作り直す(KCMBuildPairing を
-	// 1回呼ぶ)。比較実行(KCMDoMarkChangesDoc)から呼び、Start/登録Add/Ignore切替のたびに最新化する。
+	// Rebuild the overflow cache (sOverflowT / sOverflowS) from the current sDB / sSrcDB, with one
+	// call to KCMBuildPairing. Called from the comparison (KCMDoMarkChangesDoc), so it is up to
+	// date after a Start, a register Add and an Ignore toggle.
 	static void RebuildOverflowCache();
-	// 控えた (sDB,sSrcDB) が現在と食い違う時だけ RebuildOverflowCache する(文書切替・スプレッド再比較で
-	// 別文書へ移った場合の保険)。一致していれば何もしない=描画のたびの全文書走査を避ける。
+	// Rebuild only when the (sDB, sSrcDB) the cache was built for differs from the current pair --
+	// the guard for a document switch, or a re-comparison having moved to another document. When
+	// they match it does nothing, which is what keeps a full walk of both documents out of every
+	// draw.
 	static void EnsureOverflowCache();
 
-	// 単一ページのオーバーレイ破棄(インクリメンタル再比較の差分適用で使う)。targetUID のエントリを
-	// 消し、その target を指していた Source 側対応表(sSrcPageToTarget[oldSourceUID])も掃除する。
-	// エントリ/対応表が無ければ何もしない(不変・変化ゼロページに対しても安全に呼べる)。
+	// Discard one page's overlay (used when a differential re-comparison applies its diff).
+	// Removes targetUID's entry and cleans up the Source-side mapping that pointed at it
+	// (sSrcPageToTarget[oldSourceUID]). With no entry and no mapping it does nothing, so it is
+	// safe to call for an unchanged page.
 	static void DropOneEntry(UID targetUID, UID oldSourceUID)
 	{
-		// ★2026-08-15(第2段 Task 12B): 描画中のバックグラウンドスレッドが同じエントリを読んでいる
-		//   可能性があるので、delete する側はロックを取る(理由は KCMThreadSafety.h)。
+		// A background thread may be reading the same entry while it draws, so the side that
+		// deletes takes the lock (the reasoning is in KCMThreadSafety.h).
 		KCMMarkStateLock lock(KCMMarkStateMutex());
 		std::map<UID, KCMOverlayEntry*>::iterator it = sEntries.find(targetUID);
 		if (it != sEntries.end()) { delete it->second; sEntries.erase(it); }
@@ -352,15 +407,16 @@ public:
 			sSrcPageToTarget.erase(sp);
 	}
 
-	// 全エントリ破棄(kescmClearMarks / 別ドキュメント切替時)。Source 側の対応表と db も一緒に破棄する
-	// (トグル sSrcMarksOn 自体は「ユーザーの好み」として保持。エントリが無ければ何も描かないので無害)。
+	// Discard every entry (Clear, or switching to another document). The Source-side mapping and
+	// its db go with them. The sSrcMarksOn toggle itself is KEPT, being the reader's preference --
+	// with no entries nothing is drawn, so it does no harm.
 	static void DropAll()
 	{
-		// ★★★2026-08-15(第2段 Task 12B): **ここが最も危ない場所だった。**
-		//   sEntries は生ポインタの map で、ここが delete する。バックグラウンドの PDF 書き出しが
-		//   同じエントリを描いている最中に main が Stop すると**解放済みメモリの読み取り**になる
-		//   (ガイド vol1-07 L95 "may randomly crash")。描画側(HandleDrawEvent の2つのループ)も
-		//   同じロックを取るので、待ち合わせが成立する。
+		// **THE MOST DANGEROUS PLACE IN THIS FILE.** sEntries is a map of raw pointers and this is
+		// what deletes them. A background PDF export drawing one of those entries while the main
+		// thread Stops is a **read of freed memory** (guide vol1-07 L95, "may randomly crash").
+		// Both drawing loops in DrawSpreadMarks take the same lock, which is what makes them wait
+		// for each other.
 		KCMMarkStateLock lock(KCMMarkStateMutex());
 		for (std::map<UID, KCMOverlayEntry*>::iterator it = sEntries.begin(); it != sEntries.end(); ++it)
 			delete it->second;
@@ -368,22 +424,24 @@ public:
 		sDB = nil;
 		sSrcPageToTarget.clear();
 		sSrcDB = nil;
-		sPrevPairTargetToSource.clear();	// 差分用の前回ペアリングも破棄(次の比較で作り直す)
-		sOverflowT.clear();  sOverflowS.clear();		// overflow キャッシュも破棄
+		sPrevPairTargetToSource.clear();	// the previous pairing goes too; the next comparison rebuilds it
+		sOverflowT.clear();  sOverflowS.clear();		// and so does the overflow cache
 		sOverflowCacheDB = nil;  sOverflowCacheSrcDB = nil;
 	}
 
-	// 旧版画像を全破棄(kescmClearMarks / 別ドキュメント切替時)。表示トグルもOFFへ。
+	// Discard every picture of the older version (Clear, or switching document). The display
+	// toggle goes off with them.
 	//
-	// ⚠★★**ここは DropAll と違ってロックを取らない。理由**(2026-08-16・API 監査 B5 で明文化):
-	//   sOrigImages も生ポインタの map で、ここが delete する ---- 形は DropAll とまったく同じなのに
-	//   ロックが無い、という非対称が説明なしで置かれていた。**読み手がメインスレッドにしか居ないから**
-	//   で正しい: 描画側の入口が `wantOrig = !suppressForPrint && !printing && sShowOriginal &&
-	//   !sOrigImages.empty()` (HandleDrawEvent)で、**`!printing` が先に立つので BG(PDF 書き出し)は
-	//   短絡評価で map に一切触れない**。さらに実際に読む所は `wantOrig && !isThumb` の下にある。
-	//   ⇒ 旧版べた載せ(peek)は**画面だけの機能**なので、BG と競合しようがない。
-	//   ★**この前提が崩れる変更**＝「peek の絵を印刷/PDF にも出す」「サムネイルにも出す」。
-	//     そのときは DropAll と同じく KCMMarkStateLock をここと MakeOrigImage に入れること。
+	// @warning **unlike DropAll, this takes no lock, and that is correct.** sOrigImages is a map
+	//   of raw pointers deleted here -- the same shape as DropAll -- so the asymmetry needs its
+	//   reason stated: **the readers are all on the main thread.** The drawing side's entry test is
+	//   `wantOrig = !suppressForPrint && !printing && sShowOriginal && !sOrigImages.empty()`, and
+	//   **`!printing` comes first, so a background PDF export short-circuits and never touches the
+	//   map**; the place that actually reads it sits further in, under `wantOrig && !isThumb`.
+	//   The peek is a screen-only feature, so it cannot race the background thread at all.
+	//   **What breaks that assumption**: putting the peek's picture into print/PDF, or into the
+	//   thumbnails. Do either and this function and MakeOrigImage both need KCMMarkStateLock, the
+	//   way DropAll has it.
 	static void DropAllOrig()
 	{
 		for (std::map<UID, KCMOrigImage*>::iterator it = sOrigImages.begin(); it != sOrigImages.end(); ++it)
@@ -395,26 +453,25 @@ public:
 	}
 };
 
-// tl_Rasterizing を例外安全に立てる/戻す RAII(2026-07-25 監査で追加)。SnapshotUtilsEx::Draw が万一
-// throw(AGM 内部の bad_alloc 等)してもフラグが立ちっぱなし(=以後マーク描画が全抑止)にならない。
-// ★2026-08-15: 中身がスレッドローカルになったが、**呼び手は1行も変わらない**
-//   ——RAII に包んであったおかげで、スレッド対応の変更がこのクラスの中だけで済んだ。
-//   ⚠2026-08-18(不具合再検査 B9)訂正: ここは「呼び手(6か所)」と書いていたが**実測5か所**
-//     (KCMDrawEventHandler.cpp:354/369/707・KCMColorSampler.cpp:137・KCMBookCompare.cpp)。
-//     ⚠2026-08-19(B-U5 3周目): 最後の1件は `:409` と書いてあったが実体は 398 で**+11 ずれていた**
-//       ので行番号を外した(この5件は `KCMRasterizingGuard` を grep すれば全部出る＝**数は数え直せる
-//       が、行番号は黙って嘘になる**)。残る3件+1件は同一ファイル内/未編集ファイルなので当たり。
+// Raises tl_Rasterizing and puts it back, exception-safe: if SnapshotUtilsEx::Draw throws (a
+// bad_alloc from inside AGM, say) the flag must not stay raised, which would suppress every mark
+// from then on.
+// Making the flag thread-local changed not one caller -- the RAII wrapper is what kept that change
+// inside this class.
+// The callers are found by grepping for `KCMRasterizingGuard` (five today: three in
+// KCMDrawEventHandler.cpp, one in KCMColorSampler.cpp, one in KCMBookCompare.cpp). **The count can
+// be re-derived; line numbers cannot -- they go quietly wrong.**
 //
-// ★★2026-08-18(不具合再検査 B9): **入れ子にしても壊れない形にした**(直前の値を控えて戻す)。
-//   旧実装はデストラクタが**無条件に kFalse** を書いていたので、ガードの中でガードを作ると
-//   **内側が終わった時点で外側の保護も消える** ---- そこから先のラスタ化には
-//   **自分のマークが写り込む**(＝比較結果が静かに嘘になる。落ちも警告も出ない)。
-//   ⚠現状5か所とも Draw だけを包む最小スコープで**入れ子は1つも無い**(B9 で全数確認)。
-//     ただし**ブック比較が 2026-08-18 にこのガードを使い始めたばかり**で、あの経路から
-//     MakeEntry を呼ぶ日が来ると即座に入れ子になる ---- そのとき何も起きないようにしておく。
-//   ★2行で済むのは ThreadLocal::Get() が**未設定なら初期値(kFalse)を返す**と保証されているから
-//     (IDThreading.h:107 = PublicThreadLocalStorageGet(fKey, fInitialVal))。
-//     ∴ BG スレッドの1回目でも fPrev はゴミにならない。
+// **It nests safely** (the previous value is saved and restored). A destructor that wrote kFalse
+// unconditionally would mean a guard inside a guard **ends the outer protection when the inner one
+// finishes** -- and rasterising after that point paints **our own marks into the comparison
+// raster**, which makes the result quietly wrong with no crash and no warning.
+// @warning today all five wrap a single Draw in the smallest possible scope and none of them
+//   nests, but the book comparison has only recently started using this guard, and the day that
+//   route calls MakeEntry it nests immediately.
+// Two lines suffice because ThreadLocal::Get() is guaranteed to return the initial value (kFalse)
+// when nothing has been set (IDThreading.h:107 = PublicThreadLocalStorageGet(fKey, fInitialVal)),
+// so fPrev is not garbage on a background thread's first pass.
 class KCMRasterizingGuard
 {
 public:
@@ -428,22 +485,23 @@ private:
 	bool16 fPrev;
 };
 
-// (KCMQueryPanorama は 2026-08-13 に KCMViewLookup.h へ移した＝model/UI 分割 第1段 Task 12。
-//  戻り値が IPanorama = 窓の問いなので UI 側が持つ。呼び手は #include "KCMViewLookup.h" へ。)
+// (KCMQueryPanorama moved to KCMViewLookup.h: it returns an IPanorama, which is a question about a
+//  window, so the UI half owns it. Callers include "KCMViewLookup.h".)
 
-// 旧ページ番号バッジのフォントキャッシュを解放する(KCMPeekStartup::Shutdown から呼ぶ。2026-07-25)。
-// 実体は KCMDrawEventHandler.cpp(キャッシュ本体と同居)。
+// Release the font cache used by the original-page-number badge (called from
+// KCMPeekStartup::Shutdown). The implementation is in KCMDrawEventHandler.cpp, beside the cache.
 void KCMReleaseOldNumFontCache();
 
-// ノンブル除外領域の行内判定。x が「この行に掛かる矩形」のどれかに入っているか。
-// 文書比較(KCMDrawEventHandler.cpp の MakeEntry)とブック比較(KCMBookCompare.cpp の
-// CompareRasters)が同じ判定を使う。★2026-08-18 に一本化: それまでは各 .cpp に同じ4行が複製され、
-// 「片方を直したら他方も直す」という約束をコメントで守っていた(=守り忘れれば黙って割れる形)。
-// ★ヘッダーに inline で置く理由: 呼ばれるのは比較ループの**最内(画素ごと)**なので、
-//   呼び出し側の TU でインライン展開できないと遅くなる。extern の1定義に寄せると、
-//   複製は消えてもブック比較側だけが実関数呼び出しになる。
-// ★引数は「その行に掛かる矩形だけ」に絞り込んだ列(2段ふるいの②)。呼び出し側の絞り込みは
-//   KCMDrawEventHandler.cpp の MakeEntry のコメントを参照。
+// The folio-exclusion test, per row: is x inside any of the rectangles that reach this row?
+// The document comparison (MakeEntry in KCMDrawEventHandler.cpp) and the book comparison
+// (CompareRasters in KCMBookCompare.cpp) use the same test. It is one function because the same
+// four lines used to be copied into both .cpp files, with a comment asking whoever edited one to
+// edit the other -- a promise that splits silently the first time it is forgotten.
+// It is inline in the header because it is called from the **innermost (per pixel)** loop of the
+// comparison: an extern definition would remove the duplication but leave the book comparison
+// paying for a real function call.
+// The argument is the list already narrowed to the rectangles that reach this row (stage 2 of the
+// two-stage sieve); the narrowing is described at MakeEntry in KCMDrawEventHandler.cpp.
 inline bool16 KCMXInRowRects(int32 x, const std::vector<const Int32Rect*>& rowRects)
 {
 	for (size_t i = 0; i < rowRects.size(); ++i)
@@ -454,11 +512,13 @@ inline bool16 KCMXInRowRects(int32 x, const std::vector<const Int32Rect*>& rowRe
 
 class IGraphicsPort;
 
-// マークの色を gPort に設定する。★**画面は RGB・印刷/書き出しは CMYK**。
-// ★理由は実装側(KCMDrawEventHandler.cpp)のコメントに全文がある: KCM は**比較ラスタを CMYK で
-//   やっている**のに、マークだけ RGB という不整合だったのを揃えたもの。換算は標準式。
-// ★★2026-08-24 に static を外して公開した。Story モードのマーカー(KCMStoryMarker.cpp)も紙に出る
-//   ようになり、同じ「画面 RGB / 印刷 CMYK」の判断が要るため。2か所に書き分けると必ずずれる。
+// Set the mark colour on a gPort. **Screen is RGB, print and export are CMYK.**
+// The full reasoning is in the implementation (KCMDrawEventHandler.cpp): KCM does its **comparison
+// in CMYK**, so drawing the marks in RGB was the inconsistency this removed. The conversion is the
+// standard formula.
+// It is not static, and is declared here, because the Story mode's marker (KCMStoryMarker.cpp)
+// reaches paper too and needs the same screen-RGB / print-CMYK decision. Written in two places it
+// would drift.
 void KCMSetOutputColor(IGraphicsPort* gPort, uint8 r, uint8 g, uint8 b, bool16 useCMYK);
 
 #endif // __KCMDrawEventHandler_h__

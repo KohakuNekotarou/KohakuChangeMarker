@@ -4,11 +4,9 @@
 //
 //  Starting and stopping a comparison, and the two mark-display settings that go with it.
 //
-//  Split out of KCMPanelObserver.cpp on 2026-08-13. Behaviour unchanged.
-//
 //  MODEL side: these run the comparison itself. The flyout items that call them stay on the
-//  UI side. The panel refresh each of them currently performs is reverse flow (model
-//  reaching into UI) and is inverted into a notification in Task 9.
+//  UI side, and what these do to the screen is emit a notification -- they never reach into
+//  the UI.
 //
 //========================================================================================
 
@@ -42,7 +40,7 @@ void	KCMTogglePrintMarks();
 
 // Set the mark frame opacity to 25% (op25=kTrue) or 75% (kFalse), keeping the print flag.
 void	KCMSetMarkOpacity25(bool16 op25);
-// マークの色を 赤/シアン に設定(フライアウトの2項目から。★2026-08-24 に背景適応を置き換えたもの)。
+// Set the mark colour to red (kFalse) or cyan (kTrue), from the flyout's two items.
 void	KCMSetMarkColor(bool16 cyan);
 
 #endif // __KCMComparisonRun_h__

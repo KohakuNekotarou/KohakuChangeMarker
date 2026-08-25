@@ -2,15 +2,15 @@
 //
 //  KCMDrawEventHandler.cpp
 //
-//  差分オーバーレイ描画エンジンの実装(旧 KCMScriptProvider.cpp から分離)。リング/変更数/
-//  旧版べた載せの描画、比較ラスタ化(MakeEntry/MakeOrigImage)、各種画像ヘルパを持つ。
-//  共有状態(static メンバ)と KCMQueryPanorama は KCMDrawEventHandler.h で公開している。
+//  The difference overlay's drawing engine: the rings, the peek at the older version, the
+//  rasterisation used for comparing (MakeEntry / MakeOrigImage) and the image helpers.
+//  The shared state (the static members) is published in KCMDrawEventHandler.h.
 //
 //========================================================================================
 
 #include "VCPlugInHeaders.h"
 
-// オブジェクトモデル / 描画 / ラスタ化(エンジンが使う SDK ヘッダ):
+// Object model / drawing / rasterisation (the SDK headers the engine uses):
 #include "PersistUtils.h"
 #include "IDataBase.h"
 #include "IGeometry.h"
@@ -32,108 +32,102 @@
 #include "ISession.h"
 #include "PMMatrix.h"
 #include "PMReal.h"
-#include "PMString.h"			// GetPageString の受け(旧: KCMDrawEventHandler.h 経由の間接include に依存していた)
-// (★TransformUtils.h の include は 2026-08-16 の API 監査 B3・A-1 で外した＝このファイルが使っていた
-//  ::InnerToSpreadMatrix が 8箇所とも IGeometryFacade::GetItemBounds へ移り、参照がゼロになったため。)
-#include "IGeometryFacade.h"	// ★GetItemBounds(ページの箱を spread 座標で。手本=snapshot/SnapTracker.cpp:621)
+#include "PMString.h"			// what GetPageString writes into
+// TransformUtils.h is deliberately NOT included: the eight uses of ::InnerToSpreadMatrix all moved
+// to IGeometryFacade::GetItemBounds, so nothing here references it any more.
+#include "IGeometryFacade.h"	// GetItemBounds -- a page's box in spread coordinates (worked example: snapshot/SnapTracker.cpp:621)
 #include "SnapshotUtilsEx.h"
 #include "AGMImageAccessor.h"
 #include "GraphicsExternal.h"
 #include "IXPUtils.h"
-#include "IXPManager.h"				// ★GetDocumentBlendingSpace / ReleaseBlendingSpace(PDF 書き出しの透明グループ)
-#include "IViewPortAttributes.h"		// ★kPDFExportVPAttr / kPDFIsFlattenerTargetVPAttr を GetAttr で聞く
-#include "PDFID.h"					// ★同上の ViewPortAttr ID(PDFID.h:1543-1544)
-// (★IPDFLibraryUtilsPublic.h の include は 2026-08-17 の不具合再検査 B3 で外した＝それを使う
-//  KCMIsPDFExportPort が呼び手ゼロだったため。跡地の記録は KCMDrawRingForPrint の直前。)
+#include "IXPManager.h"				// GetDocumentBlendingSpace / ReleaseBlendingSpace (the PDF export's transparency group)
+#include "IViewPortAttributes.h"		// asking the port for kPDFExportVPAttr / kPDFIsFlattenerTargetVPAttr
+#include "PDFID.h"					// those two ViewPortAttr IDs (PDFID.h:1543-1544)
 
 
-// 旧ページ番号バッジ(Show Original Page Numbers)用:
-#include "IPageList.h"			// GetPageString(..., bIncludePagesOfHiddenSpread) — kTrue=元の番号 / kFalse=隠し反映後の現在番号
-#include "IFontMgr.h"			// 既定フォント取得(framelabel の FrmLblAdornment.cpp と同じ流儀)
+// For the original-page-number badge (Show Original Page Numbers):
+#include "IPageList.h"			// GetPageString(..., bIncludePagesOfHiddenSpread) -- kTrue = the original number, kFalse = the number as it stands with spreads hidden
+#include "IFontMgr.h"			// the default font (the same way framelabel's FrmLblAdornment.cpp does it)
 #include "IPMFont.h"
-#include "IFontInstance.h"		// MeasureWText(中央揃えの幅測定) / GetDescent
+#include "IFontInstance.h"		// MeasureWText (centring) / GetDescent
 
-#include <algorithm>	// std::min(ページ矩形の短辺。同じ三項演算子が4か所にあったのを揃えた)
+#include <algorithm>	// std::min -- the page's short side (four places used to spell out the same ternary)
 #include <map>
 #include <set>
-#include <new>			// std::nothrow(画像バッファ確保。MSVC の通常 new は失敗時 nil でなく throw のため)
+#include <new>			// std::nothrow for the image buffers: MSVC's ordinary new throws rather than returning nil
 #include <string.h>
 
-// プロジェクト内インクルード:
+// Project includes:
 #include "KCMID.h"
-#include "KCMCore.h"               // KCMHandleDocsClosed(クローズ検知の後始末を一本化)
-#include "KCMPageMap.h"            // KCMPageMapIsRegistered/KCMPageMapHasAnyRegistered(追加/削除ページ縁枠)
-#include "KCMPageCheck.h"          // KCMPageCheckIsChecked/KCMPageCheckHasAny(「Check」の✓)
-#include "KCMPageNumberMarker.h"   // KCMGetIgnorePageNumberMarker/KCMAppendPageNumberMarkerRects(ノンブル除外)
-#include "KCMThreadSafety.h"       // ★KCMIsSameDoc(BG のクローン DB)/KCMIsMainThread/マーク集合のロック
-// (★KCMScrollMap.h の include は 2026-08-13 Task 7 で外した＝下の理由と同じ)
-// (★押下中 HUD は 2026-08-13 に **UI 側の描画サービス** KCMUIDrawEvent.cpp へ移した
-//  ＝model/UI 分割 第1段 Task 6。押下中かどうかはツール(UI)の状態で、model からは見えないため。
-//  ⇒ このファイルは KCMTrackerHud.h を include しない。)
+#include "KCMCore.h"               // KCMHandleDocsClosed -- one place for the after-a-close clean-up
+#include "KCMPageMap.h"            // KCMPageMapIsRegistered / KCMPageMapHasAnyRegistered (the added/removed pages)
+#include "KCMPageCheck.h"          // KCMPageCheckIsChecked / KCMPageCheckHasAny (the "Check" ticks)
+#include "KCMPageNumberMarker.h"   // KCMGetIgnorePageNumberMarker / KCMAppendPageNumberMarkerRects (the folio exclusion)
+#include "KCMThreadSafety.h"       // KCMIsSameDoc (the background thread's cloned db) / KCMIsMainThread / the mark-state lock
+// The press-time HUD moved to the UI's own drawing service (KCMUIDrawEvent.cpp): whether a button
+// is held is the tool's state, which is the UI's and not visible from the model. **This file
+// includes no UI header.**
 #include "KCMDrawEventHandler.h"
 
 std::map<UID, KCMOverlayEntry*> KCMDrawEventHandler::sEntries;
 IDataBase* KCMDrawEventHandler::sDB = nil;
-bool16 KCMDrawEventHandler::sMarksVisible = kFalse;	// 既定=非表示。枠等はシングルツール左hold中だけ表示(master トグル)
-PMReal KCMDrawEventHandler::sMarkScreenOpacity = 1.0;	// 既定=不透明。ツール左hold中=選択不透明度(25%/75%)/印刷ON中の常時表示=選択不透明度
-bool16 KCMDrawEventHandler::sPrintMarks = kFalse;	// 既定=画面のみ(印刷/PDF には出さない)
-bool16 KCMDrawEventHandler::sMarkOpacity25 = kTrue;	// 既定=25%(パネルの既定ラジオと一致)。kFalse=75%
-bool16 KCMDrawEventHandler::sMarkColorCyan = kFalse;	// 既定=赤(従来の通常色と一致)。kTrue=シアン
-bool16 KCMDrawEventHandler::sShowOldNumbers = kFalse;	// 既定=OFF(フライアウト「Show Original Page Numbers」)
-// (★「Hold to Hide Marks」(sAlwaysShowMarks)は 2026-08-22 に撤去＝「Show Marks on ...」と重複。
-//  経緯と現在の規則はヘッダーの宣言部を見よ。)
-bool16 KCMDrawEventHandler::sMarksTempHidden = kFalse;	// 「Always Show Marks on Target」ON のとき、Target 窓でツール左hold中だけ kTrue(Target 常時表示枠の一時退避)
-bool16 KCMDrawEventHandler::sSrcMarksPressed = kFalse;	// Source 窓でツール左hold中だけ kTrue。⚠「隠している」ではなく「押している」＝描画側が sSrcMarksOn と XOR する(宣言のコメント参照)
-bool16 KCMDrawEventHandler::sSrcMarksOn = kFalse;	// 既定=OFF。フライアウト「Always Show Marks on Source」。⚠2026-08-22 に「Start のたびに kTrue へ」をやめた＝設定はパネル設定に保存され起動時に復元されるので、Start が上書きすると保存した選択が消える
-bool16 KCMDrawEventHandler::sTgtMarksOn = kFalse;	// 同上の Target 版(フライアウト「Always Show Marks on Target」2026-08-22)。⚠画面のみ=印刷/PDF は sPrintMarks が決める。Start は触らない(上と同じ理由)
+bool16 KCMDrawEventHandler::sMarksVisible = kFalse;	// default hidden; the marks appear while the tool's left button is held (the master toggle)
+PMReal KCMDrawEventHandler::sMarkScreenOpacity = 1.0;	// default opaque. While the button is held, or while printing is on, this is the chosen 25%/75%
+bool16 KCMDrawEventHandler::sPrintMarks = kFalse;	// default screen only (nothing goes into print or PDF)
+bool16 KCMDrawEventHandler::sMarkOpacity25 = kTrue;	// default 25%, matching the panel's default radio. kFalse = 75%
+bool16 KCMDrawEventHandler::sMarkColorCyan = kFalse;	// default red. kTrue = cyan
+bool16 KCMDrawEventHandler::sShowOldNumbers = kFalse;	// default off (the flyout's "Show Original Page Numbers")
+bool16 KCMDrawEventHandler::sMarksTempHidden = kFalse;	// with "Always Show Marks on Target" on, kTrue only while the tool's left button is held over the Target window
+bool16 KCMDrawEventHandler::sSrcMarksPressed = kFalse;	// kTrue only while the button is held over the Source window. It records "pressed", not "hidden" -- the drawing XORs it with sSrcMarksOn (see the declaration)
+bool16 KCMDrawEventHandler::sSrcMarksOn = kFalse;	// default off (the flyout's "Always Show Marks on Source"). Start does not touch it: the setting is saved in the panel state and restored at start-up, so a Start that overwrote it would wipe the reader's choice
+bool16 KCMDrawEventHandler::sTgtMarksOn = kFalse;	// the Target counterpart. Screen only -- print and PDF are decided by sPrintMarks. Start does not touch it either
 IDataBase* KCMDrawEventHandler::sSrcDB = nil;
 std::map<UID, UID> KCMDrawEventHandler::sSrcPageToTarget;
-std::map<UID, UID> KCMDrawEventHandler::sPrevPairTargetToSource;	// 前回比較のペアリング(登録トグルの差分再比較用)
-std::set<UID> KCMDrawEventHandler::sOverflowT;					// overflow("/")ページ集合キャッシュ(Target側)
-std::set<UID> KCMDrawEventHandler::sOverflowS;					// 同(Source側)
-IDataBase* KCMDrawEventHandler::sOverflowCacheDB = nil;			// 上記キャッシュを作った時の sDB
-IDataBase* KCMDrawEventHandler::sOverflowCacheSrcDB = nil;			// 同 sSrcDB
-// ★スレッドローカル(第2段 Task 12B)。初期値 kFalse は「どのスレッドから最初に読んでも kFalse」の意味。
-//   宣言側のコメント(KCMDrawEventHandler.h)に、素の static だと何が壊れるかを書いてある。
-IDThreading::ThreadLocal<bool16> KCMDrawEventHandler::tl_Rasterizing(kFalse);	// 自前ラスタ化中だけ kTrue(自己参照防止)
-bool16 KCMDrawEventHandler::sThumbExperiment = kTrue;	// ★サムネイル実験(2026-07-06)。kFalseで従来動作へ即復帰
+std::map<UID, UID> KCMDrawEventHandler::sPrevPairTargetToSource;	// the last comparison's pairing, for the register toggle's differential re-comparison
+std::set<UID> KCMDrawEventHandler::sOverflowT;					// the overflow ("/") pages, Target side
+std::set<UID> KCMDrawEventHandler::sOverflowS;					// and Source side
+IDataBase* KCMDrawEventHandler::sOverflowCacheDB = nil;			// the sDB those two were built for
+IDataBase* KCMDrawEventHandler::sOverflowCacheSrcDB = nil;			// and the sSrcDB
+// Thread-local. The initial value kFalse means "kFalse the first time any thread reads it".
+// What breaks if this is a plain static is written at the declaration (KCMDrawEventHandler.h).
+IDThreading::ThreadLocal<bool16> KCMDrawEventHandler::tl_Rasterizing(kFalse);	// kTrue only while WE are rasterising (re-entrancy guard)
+bool16 KCMDrawEventHandler::sThumbExperiment = kTrue;	// kFalse restores the earlier behaviour (nothing drawn into thumbnails)
 std::map<UID, KCMOrigImage*> KCMDrawEventHandler::sOrigImages;
 IDataBase* KCMDrawEventHandler::sOrigDB = nil;
-bool16 KCMDrawEventHandler::sShowOriginal = kFalse;	// 既定=非表示(kescmShowOriginal で ON)
-PMReal KCMDrawEventHandler::sOrigScale = 0.0;	// ラスタ化時のズームスケール(0=未設定)
-PMReal KCMDrawEventHandler::sPeekOpacity = 1.0;	// 既定=不透明(Shift peek)。Shift+Alt peek で 0.5 にする
-bool16 KCMDrawEventHandler::sOversetOn = kFalse;	// Find Overset トグル(既定 OFF)
-IDataBase* KCMDrawEventHandler::sOversetDB = nil;	// 走査した文書(pointer 識別のみ)
-std::set<UID> KCMDrawEventHandler::sOversetPages;	// overset を含むページ UID 集合
-std::vector<KCMOversetLoc> KCMDrawEventHandler::sOversetLocs;	// overset「+」箇所ごとの位置(Prev/Next 巡回先)
+bool16 KCMDrawEventHandler::sShowOriginal = kFalse;	// default hidden
+PMReal KCMDrawEventHandler::sOrigScale = 0.0;	// the zoom scale the pictures were rasterised at (0 = not set)
+PMReal KCMDrawEventHandler::sPeekOpacity = 1.0;	// default opaque (Shift peek). Shift+Alt peek sets 0.5
+bool16 KCMDrawEventHandler::sOversetOn = kFalse;	// the Find Overset toggle (default off)
+IDataBase* KCMDrawEventHandler::sOversetDB = nil;	// the document scanned (identity only)
+std::set<UID> KCMDrawEventHandler::sOversetPages;	// the page UIDs holding overset
+std::vector<KCMOversetLoc> KCMDrawEventHandler::sOversetLocs;	// where each overset "+" goes (Prev/Next's stops)
 
-// ページ矩形クリップの内側縮め量(pt)。見開きはノドで隙間なく隣接するため、ページ矩形ぴったりで
-// クリップすると枠/斜線の最外周が共有線に乗り、隣(変化なし)ページ側に 1px 線が出る。約1pt 内側に
-// 縮めて防ぐ(2026-07-25: 4関数のローカル重複定義をファイルスコープへ集約)。
+// How far inside the page rectangle to clip, in points. Facing pages meet at the spine with no
+// gap, so clipping exactly at the page rectangle puts the outermost pixel of a frame or slash on
+// the shared line and draws a 1px line into the neighbouring (unchanged) page. Coming in about
+// 1pt prevents that.
 //
-// ★★2026-08-17(不具合再検査 B3 の2周目)＝**「ページが細すぎて rectclip の幅が負になる」は起きない。**
-//   この値を使う4関数(KCMDrawEntryOnPage / KCMDrawPageBorder / KCMDrawPageDiagonal /
-//   KCMDrawPageCrossOutlined)は `pr.Width() - kKCMClipInset * 2.0` をそのまま rectclip へ渡すので、
-//   **ページ幅が 2.0pt を下回ると負の幅を渡す**ことになる。実際に作れるかを実機で測った(2026-08-17):
-//     ・**最小ページ幅 = 114.38〜114.39pt**(≒1.5888 inch ≒ 40.4mm)。これより小さい値を
-//       `documentPreferences.pageWidth` へ代入すると「データが範囲外です」(30481)で拒否される。
-//       ⚠マージンや段組をすべて 0 にしても下限は動かない＝**本体側の固定の下限**。
-//     ・最大は 15,551.996pt(216.000 inch = 5486.4mm)。
-//   ⇒ **最小ページでも inset の 57 倍の幅がある**ので、負の幅は原理的に渡らない。
-//   ∴ **4関数にガードを足す必要は無い**(足しても到達しないコードが増えるだけ)。
-//   ⚠**測る前に一度「4関数中1つしかガードを持っていない＝非対称だ」と読んだ**が、
-//     これは非対称ではなく**どれにも要らない**が正しかった(下の KCMDrawPageBorder も参照)。
+// **The width passed to rectclip can never go negative.** The four functions that use this
+// (KCMDrawEntryOnPage / KCMDrawPageBorder / KCMDrawPageDiagonal / KCMDrawPageCrossOutlined) hand
+// `pr.Width() - kKCMClipInset * 2.0` straight to rectclip, so a page narrower than 2.0pt would
+// pass a negative width. Measured: **the minimum page width InDesign allows is 114.38-114.39pt**
+// (about 1.5888 inch, 40.4mm) -- anything smaller assigned to documentPreferences.pageWidth is
+// rejected with "the value is out of range" (30481), and zeroing the margins and columns does not
+// move that floor. (The maximum is 15,551.996pt = 216.000 inch = 5486.4mm.)
+// So even the smallest page is 57 times the inset, and **no guard is needed in those four
+// functions** -- adding one only adds unreachable code.
 static const PMReal kKCMClipInset = 1.0;
 
 //========================================================================================
-// 旧ページ番号バッジのフォントキャッシュ(2026-07-25 監査): 既定フォント+固定サイズで不変なので、
-// DrawEvent 毎の QueryFont/QueryFontInstance 再取得をやめて初回だけ引いて使い回す。
-// ★file-static InterfacePtr にはしない(静的破棄タイミングの Release はオブジェクトモデル消滅後で
-//   危険=sCmykCursorFont と同じ理由)。生ポインタ+KCMReleaseOldNumFontCache(Shutdown)で明示解放。
+// The font cache for the original-page-number badge. The default font at a fixed size never
+// changes, so it is fetched once instead of on every draw.
+// It is NOT a file-static InterfacePtr: releasing at static destruction time happens after the
+// object model is gone, which is unsafe. Raw pointers plus an explicit
+// KCMReleaseOldNumFontCache at Shutdown instead.
 //========================================================================================
 static IPMFont*       sOldNumFont      = nil;
 static IFontInstance* sOldNumFontInst  = nil;
-static bool16         sOldNumFontTried = kFalse;	// 取得失敗を毎描画リトライしない(セッション内1回だけ試す)
+static bool16         sOldNumFontTried = kFalse;	// so a failed fetch is not retried on every draw (once per session)
 
 void KCMReleaseOldNumFontCache()
 {
@@ -143,20 +137,22 @@ void KCMReleaseOldNumFontCache()
 }
 
 //========================================================================================
-// overflow キャッシュ("/"の未比較ページ集合)。以前は HandleDrawEvent が描画のたびに
-// KCMBuildPairing(両文書の全ページ走査)を呼んでいたのを、比較実行時に1回作って保持する形へ。
+// The overflow cache (the "/" pages that were never compared). Built once when a comparison runs,
+// rather than by calling KCMBuildPairing -- a walk of both documents' pages -- on every draw.
 //========================================================================================
 void KCMDrawEventHandler::RebuildOverflowCache()
 {
-	// ★★2026-08-16(API 監査 B3 §5)= **走査はロックの外・集合の差し替えだけロックの中。**
-	//   ①sOverflowT/S は **main が書き、BG(PDF の非同期書き出し)が描画で count する**
-	//     (HandleDrawEvent の2つのループ)＝KCMThreadSafety.h:76-81 が守れと書いている条件そのもの。
-	//     以前は clear() + insert() を素でやっていたので、**main が木を回している最中に BG が count する**
-	//     窓が開いていた(sEntries を守っているのと同じ理由・同じ相手)。
-	//   ②とはいえ KCMBuildPairing は**両文書の全ページ走査**なので、ロックしたまま回してはいけない
-	//     (同ヘッダー :88-89「ロックしたまま長い処理をしない」)。∴ 先に手元の集合へ作り、swap で差し替える。
-	//   ★副産物: 作り直しの最中に描画が来ても**空集合ではなく前回の集合が見える**(以前は clear 直後に
-	//     描かれると "/" が一瞬消えた)。swap は O(1) で例外も投げない。
+	// **The walk happens outside the lock; only the swap is inside.**
+	//   1. sOverflowT/S are **written by the main thread and counted by the background thread
+	//      while it draws** (both loops in DrawSpreadMarks) -- exactly the condition
+	//      KCMThreadSafety.h:76-81 says to guard. A bare clear() + insert() leaves a window where
+	//      **the background thread counts while the main thread is walking the tree** (the same
+	//      reason, and the same opponent, as sEntries).
+	//   2. But KCMBuildPairing walks **every page of both documents**, and must not run with the
+	//      lock held (same header, :88-89: do not hold the lock through a long operation). So the
+	//      new sets are built locally and swapped in.
+	// A useful side effect: a draw that arrives mid-rebuild sees **the previous sets rather than
+	// empty ones** (with a bare clear the "/" marks flickered out). swap is O(1) and cannot throw.
 	sOverflowCacheDB    = sDB;
 	sOverflowCacheSrcDB = sSrcDB;
 	std::set<UID> newT, newS;
@@ -176,20 +172,24 @@ void KCMDrawEventHandler::RebuildOverflowCache()
 
 void KCMDrawEventHandler::EnsureOverflowCache()
 {
-	// 控えた (sDB,sSrcDB) が現在と食い違う時だけ作り直す(文書切替・別文書へのスプレッド再比較の保険)。
-	// 登録Add/Start/Ignore切替は KCMDoMarkChangesDoc が RebuildOverflowCache を直接呼ぶので、ここは
-	// 「同じ文書対のまま」の通常描画では何もしない=毎描画の全文書走査を避ける。
-	// ★比較しているのは**static どうし**(sOverflowCacheDB と sDB)なので、判定結果はスレッドによらず同じ。
+	// Rebuild only when the (sDB, sSrcDB) the cache was built for differs from the current pair --
+	// the guard for a document switch or a re-comparison that moved to another document. Start,
+	// register-add and the Ignore toggle all call RebuildOverflowCache directly from
+	// KCMDoMarkChangesDoc, so an ordinary draw of the same pair does nothing here and no full walk
+	// happens per draw.
+	// What is compared is **one static against another** (sOverflowCacheDB against sDB), so the
+	// answer is the same on every thread.
 	if (sOverflowCacheDB == sDB && sOverflowCacheSrcDB == sSrcDB)
 		return;
 
-	// ★★2026-08-15(第2段 Task 12B)= **バックグラウンドでは作り直さない。**
-	//   RebuildOverflowCache() は sOverflowT/sOverflowS/sOverflowCacheDB/sOverflowCacheSrcDB という
-	//   **共有 static を書き換える**うえ、中で両文書の全ページを走査する。BG(PDF の非同期書き出し)から
-	//   これを走らせると、メインスレッドが同じ集合を読んでいる最中に作り替えることになる
-	//   (ガイド vol1-07 L104 "They do share globals and statics")。
-	//   ⚠ここへ BG で来るのは「main がまだ一度も作っていない/文書対が変わった直後」だけで、
-	//     そのときは overflow の "/" が出ないだけ(マーク本体は sEntries から出る)。**描かないほうが安全。**
+	// **Never rebuild on a background thread.** RebuildOverflowCache writes four shared statics
+	// (sOverflowT / sOverflowS / sOverflowCacheDB / sOverflowCacheSrcDB) and walks both documents
+	// to do it. Running that from the background (the asynchronous PDF export) rebuilds the sets
+	// while the main thread is reading them (guide vol1-07 L104, "They do share globals and
+	// statics").
+	// Reaching here on a background thread only happens when the main thread has not built them
+	// yet, or right after the document pair changed; the cost is that the overflow "/" does not
+	// appear (the marks themselves come from sEntries). **Not drawing is the safe side.**
 	if (!KCMIsMainThread())
 		return;
 
@@ -203,60 +203,59 @@ void KCMDrawEventHandler::BuildRing(uint8* buf, int32 rb, int32 bpp, int32 wt, i
 		return;
 	if (radius < 1) radius = 1;
 	const int32 colorOff = bpp - 3;
-	const uint8 rad = (radius > 255) ? 255 : (uint8)radius;	// dist は uint8 clamp255。半径上限は200<255。
+	const uint8 rad = (radius > 255) ? 255 : (uint8)radius;	// dist is uint8 clamped at 255; the radius ceiling is 200
 
-	// ★★2026-08-24: マークの色はパネルの選択。**1回だけ読んでループの外に置く**(画素ごとに聞くもの
-	//   ではない)。⚠この2行は同日の掃除コミットで**コメントの後半とインデントを削り落としていた**
-	//   (文が「(画素ごとに聞く」で切れ、宣言だけタブ2つになっていた)＝2026-08-24 の再検査で復元。
+	// The mark colour is the panel's choice, read **once, outside the loop** -- it is not a
+	// per-pixel question.
 	uint8 markR = 0, markG = 0, markB = 0;
 	KCMDrawEventHandler::SelectedMarkColor(markR, markG, markB);
-	// ★端の欠け対策は下の frame(ページ内縁の枠帯)が兼ねる: 端から radius 以内を無条件に塗るので、
-	//   変化がページ端に接していてもその帯が必ず埋まり、辺の枠が痩せて欠けることはない。
+	// Nothing special is needed where a change touches the page edge: the frame band below paints
+	// everything within radius of the edge unconditionally, so the edge is always filled and the
+	// border never thins out.
 
-	// 距離変換の1パス塗り。リング = 0<dist<=radius(=「半径内に変化画素があり、かつ自身は変化画素でない」)。
-	// 旧版の横膨張+縦膨張(各 O(W*H) のスライディングウィンドウ)が消え、ズーム段ごとの仕事が約1/3。
-	// チェスボード距離ゆえ角型リングで形状は従来と同一。
+	// One pass over the distance transform. The ring is 0 < dist <= radius, i.e. "a changed pixel
+	// is within radius, and this pixel is not itself a changed one". This replaced a horizontal
+	// dilation followed by a vertical one (two O(W*H) sliding windows), so a zoom step costs about
+	// a third of what it did. The distance is chessboard, so the ring is square-cornered exactly
+	// as before.
 	for (int32 y = 0; y < ht; ++y)
 	{
 		uint8* rowB = buf + (size_t)y * rb;
 		const uint8* drow = dist + (size_t)y * wt;
 		for (int32 x = 0; x < wt; ++x)
 		{
-			uint8* pixT = rowB + (size_t)x * bpp;	// ARGB 先頭=alpha
+			uint8* pixT = rowB + (size_t)x * bpp;	// ARGB, alpha first
 			uint8* px = pixT + colorOff;
 			const uint8 d = drow[x];
-			// 変化画素まわりの外側の帯(距離 <= radius)。ページ端に接する部分の欠け補填は不要:
-			// 下の frame(ページ内縁の枠帯)が端から radius 以内を無条件に塗るので、同じ端の画素が必ず埋まる。
+			// The band around a changed pixel (distance <= radius).
 			const bool16 ring = (d != 0 && d <= rad);
-			// ★ページ内縁の枠帯: 変化の有無に関わらず、ページ端(=バッファ端)から radius 画素以内を
-			//   「外枠」として塗る。太さは変化部リングと同じ radius(=毎ズーム再算出ゆえ一定px=ズーム不変)。
-			//   色・不透明度もリング画素と同一(赤/赤背景でシアン、alpha=255。薄さは blit 側 opacity が担当)。
+			// The border band inside the page edge: everything within radius pixels of the edge of
+			// the buffer is painted as an outer frame, change or no change. Its thickness is the
+			// same radius as the ring, which is recomputed at every zoom -- so it stays a constant
+			// number of screen pixels. Colour and alpha are the ring's (the density is applied by
+			// the blit's opacity).
 			const bool16 frame = (x < radius || (wt - 1 - x) < radius ||
 			                      y < radius || (ht - 1 - y) < radius);
 			if (ring || frame)
 			{
-				// リング/枠画素。★★2026-08-24: **色はパネルの選択(SelectedMarkColor)。**
-				//   それまでは「下の実ページが赤っぽい画素の上だけシアン」という背景適応を画素単位で
-				//   やっていた(bgRed マスク)。ユーザー判断で廃止 ----「ユーザーが選べばいいので」。
-				//   ⇒ 理由は SelectedMarkColor の宣言(KCMDrawEventHandler.h)に書いた。要点は、
-				//     Story モードの色地は**下地の画素を読めない**ので同じ芸当ができず、放っておくと
-				//     2つのモードで色の決まり方が食い違うこと。
-				// ★印刷側は1行も変えなくてよい: あちらは**この画像の色を読んで**赤マスク/シアンマスクに
-				//   振り分けているので(下の PassDef)、ここが単色になれば刷りも自動的に単色になる。
+				// A ring or frame pixel, in the colour the reader chose (SelectedMarkColor).
+				// The print side needs no change for this: it **reads this image's colour** and
+				// sorts pixels into a red mask and a cyan one (see PassDef below), so a
+				// single-coloured image prints in that single colour automatically.
 				px[0] = markR; px[1] = markG; px[2] = markB;
-				if (bpp >= 4) pixT[0] = kKCMRingAlpha;	// リング画素の基本アルファ(=255 不透明)。薄表示は setopacity 側
+				if (bpp >= 4) pixT[0] = kKCMRingAlpha;	// the ring pixels' own alpha (opaque); the visible density is applied with setopacity
 			}
-			else { px[0] = 255; px[1] = 255; px[2] = 255; if (bpp >= 4) pixT[0] = 0; }	// 透明
+			else { px[0] = 255; px[1] = 255; px[2] = 255; if (bpp >= 4) pixT[0] = 0; }	// transparent
 		}
 	}
 }
 
 
 //========================================================================================
-// ヘルパ: 差分マスク(0/1)のチェスボード距離変換 → out(uint8, 0=変化画素, clamp255)。
-//   各画素に「最も近い変化画素までのチェスボード距離(=max(|dx|,|dy|))」を入れる。リング描画は
-//   out の閾値処理(0<out<=radius)だけで済む。8近傍・全コスト1の二パス chamfer(前進+後退)。
-//   out は呼び出し側が確保(w*h)。
+// Helper: the chessboard distance transform of the 0/1 difference mask into out (uint8, 0 = a
+//   changed pixel, clamped at 255). Each pixel gets the distance to the nearest changed pixel
+//   (max(|dx|, |dy|)), which reduces drawing the ring to a threshold test (0 < out <= radius).
+//   Two-pass chamfer (forward and backward), 8-neighbour, all costs 1. out is the caller's (w*h).
 //========================================================================================
 static void KCMDistTransform(const uint8* mask, int32 wt, int32 ht, uint8* out)
 {
@@ -266,7 +265,7 @@ static void KCMDistTransform(const uint8* mask, int32 wt, int32 ht, uint8* out)
 	for (size_t i = 0; i < N; ++i)
 		out[i] = mask[i] ? 0 : (uint8)255;
 
-	// 前進パス(左上→右下): 既処理の (左, 上, 左上, 右上) から +1。
+	// Forward pass (top left to bottom right): +1 from the already-processed left, up, up-left and up-right.
 	for (int32 y = 0; y < ht; ++y)
 	{
 		for (int32 x = 0; x < wt; ++x)
@@ -282,7 +281,7 @@ static void KCMDistTransform(const uint8* mask, int32 wt, int32 ht, uint8* out)
 			out[idx] = (uint8)best;
 		}
 	}
-	// 後退パス(右下→左上): 既処理の (右, 下, 右下, 左下) から +1。
+	// Backward pass (bottom right to top left): +1 from the right, down, down-right and down-left.
 	for (int32 y = ht - 1; y >= 0; --y)
 	{
 		for (int32 x = wt - 1; x >= 0; --x)
@@ -301,17 +300,17 @@ static void KCMDistTransform(const uint8* mask, int32 wt, int32 ht, uint8* out)
 }
 
 
-// ノンブル除外領域の判定(比較ループの最内で使う)。
-// ★2026-07-25 追補 に per-pixel の全矩形走査から2段ふるいへ変更。旧実装は画素ごとに全矩形の4辺を
-//   比較しており、比較解像度 144dpi の A4 = 約200万画素 × 矩形数ぶんの判定が全ページで走っていた。
-//   ノンブル矩形はページ下端(または上端)の薄い帯に限られるので、
-//     ①ページ全体の union bbox で行/列を粗くふるう
-//     ②行ループの先頭で「その y に掛かる矩形」だけを集めておく
-//   の2段にすると、除外帯の外(=大半の行)は「集合が空か」の1回で抜けられる。
-//   ②で絞り込んだ行内の矩形について x 方向だけを見るのが KCMXInRowRects。
-//   ★2026-08-18: その判定はブック比較(KCMBookCompare.cpp)も同じものを使うので、
-//     ここの file-static 定義をやめて KCMDrawEventHandler.h の inline 関数へ一本化した
-//     (それまでは向こうに同じ4行のコピーがあり、コメントで対応を約束していた)。
+// Testing a pixel against the folio exclusion, in the innermost loop of the comparison.
+// It is a two-stage sieve rather than a walk of every rectangle per pixel: the old form compared
+// all four edges of every rectangle for each pixel, and at the 144dpi comparison resolution an A4
+// page is about two million pixels, times the number of rectangles, on every page.
+// Folio rectangles only ever occupy a thin band at the bottom (or top) of the page, so:
+//   1. the union bbox of the page's rectangles rejects whole rows and columns cheaply;
+//   2. at the top of each row, the rectangles that reach that y are collected once.
+// Outside the band -- which is most rows -- the test is one "is the set empty".
+// Looking at x within a collected row is KCMXInRowRects, which lives inline in
+// KCMDrawEventHandler.h because the book comparison (KCMBookCompare.cpp) needs the identical test
+// and used to hold a copy of the same four lines.
 
 ErrorCode KCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef& sourceRef, bool16& changed)
 {
@@ -321,44 +320,49 @@ ErrorCode KCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef& 
 	if (sourceRef.GetDataBase() == nil || sourceRef.GetUID() == kInvalidUID)
 		return kFailure;
 
-	// ラスタ化は3回から2回へ削減。旧版は別途 72dpi の target(snapL)もラスタ化していたが、その画素は
-	//   BuildRing が buf を全上書きするため一切使われていなかった。低解像度の寸法は高解像度から割り戻し、
-	//   (背景の「赤っぽい」判定もここで作っていたが、2026-08-24 に色を選択式にして廃止した。)
-	// 【高解像度】差分検出用。target / source を高dpi(kKCMResolution×kKCMHiResMul)でラスタ化。
-	// 低解像度では平均化で消える細線/微小ズレを満額の差分画素として拾い、取りこぼしを防ぐ。
+	// Two rasterisations, not three: an earlier version also rasterised the target at 72dpi, and
+	// not one of those pixels was ever used, because BuildRing overwrites the whole buffer. The
+	// low-resolution dimensions are derived from the high-resolution ones instead.
+	// HIGH RESOLUTION, for detecting the difference: target and source at
+	// kKCMResolution x kKCMHiResMul. Thin lines and sub-pixel shifts that averaging would erase
+	// are counted at full weight, so nothing is missed.
 	const PMReal hiRes = kKCMResolution * kKCMHiResMul;
-	// 比較は常に CMYK 4ch を不透明ラスタ化して行う(CMYK の微差が RGB 変換で消えるのを回避)。
-	// 表示リングは別途 ARGB で合成するので、比較ラスタは不透明(addTransparencyAlpha=kFalse)でよい。
-	// nothrow: 本関数の確保方針(下の★コメント)に合わせる(2026-07-25 監査で3箇所とも統一)。
+	// The comparison is always four-channel CMYK, rasterised opaque (small CMYK differences are
+	// rounded away by a conversion to RGB). The displayed ring is composited separately as ARGB,
+	// so the comparison raster does not need an alpha channel (addTransparencyAlpha = kFalse).
 	SnapshotUtilsEx* snapTH = new (std::nothrow) SnapshotUtilsEx(targetRef, 1.0, 1.0, hiRes, hiRes, 0.0, SnapshotUtilsEx::kCsCMYK, kFalse);
 	if (snapTH == nil)
 		return kFailure;
-	// アンチエイリアスを OFF にしてラスタ化する(第4引数 enableAntiAliasing=kFalse)。エッジの中間調(灰にじみ)を
-	//   無くし、画素内で収まる微小ズレ由来の帯状ノイズが差分として拾われるのを抑える。
-	//   ※ target / source は必ず同じ AA 設定でラスタ化すること(片方だけだと全エッジが差分になる)。
-	// ★第2引数 fullResolutionGraphics=kFalse(既定)は**意図的**: kTrue にすると配置画像のフル解像度生成を
-	//   誘発し、それが文書を dirty にする(KCMColorSampler.cpp:92-93 に同じ理由を記載)。KCM は
-	//   「モデルを一切書き換えない」のが設計の核なので、プロキシ描画のまま比較する。
-	// ★第3引数 greekBelowPtSize=0.0(=greek 無効)は**意図的**(2026-08-06 の監査 E-1 で既定 7.0 から変更)。
-	//   既定のままだと小さい文字が「灰色の帯」として描かれて字形を持たず、target/source とも同条件に
-	//   なるため「小さい文字は変わっても差分が出ない」取りこぼしが起きうる(SnapshotUtilsEx.h:224-225。
-	//   しきい値は "point size multiplied by the scaling" だが、その scaling が何を指すかはヘッダーに
-	//   書かれておらず、7pt 未満が全滅するのか 3.5pt 未満だけなのかは決着しない)。KCM の目的は
-	//   画素比較なので、字形を必ず描かせる 0.0 を渡す(代償=小さい文字が多いページのラスタ化がやや遅くなる)。
-	//   ⚠公式サンプル(snapshot/SnapTracker.cpp:318)は既定のままだが、あちらの目的は「見た目のスナップ
-	//   ショット」で前提が違う。★target/source は必ず同じ値で(片方だけ greek すると全文字が差分になる)。
-	// ★第8引数 bDrawNonPrintingObjects=kFalse は**意図的**(2026-08-12。既定は kTrue)。既定のままだと
-	//   「非印刷」に設定したページアイテム(作業用の指示書き・注釈・トンボ脇のメモなど)を動かしただけで
-	//   変更ページになり、**刷り上がりは同じなのにマークが出る**。KCM のマークは「刷り上がりの変更」を
-	//   指すものと決めたので描かせない(ガイド vol1-09 通読で発見。根拠=SnapshotUtilsEx.h:241-242)。
-	//   ⚠ヘッダーが明記するとおり**レイヤーの非印刷設定には効かない**(非印刷レイヤーの扱いは別の話)。
-	//   ⚠第5〜7引数は**既定値をそのまま書いているだけ**(第8引数を指定するために省略できない):
-	//     transparencyQuality=kXPHigh(落とすと影・ぼかし・ブレンドの変更を拾えなくなるので下げない) /
-	//     abortCheck=nil(中断はページ境界で見る=KCMCore.cpp) / pVPAttrMap=nil。
-	//   ★target/source は必ず同じ値で(片方だけ描かせると全差分になる)。
+	// Rasterise with ANTI-ALIASING OFF (4th argument enableAntiAliasing = kFalse). It removes the
+	//   grey halo at edges, and with it the banding that a sub-pixel shift would otherwise register
+	//   as a difference. **Target and source must always use the same AA setting** -- with one of
+	//   them anti-aliased, every edge in the document is a difference.
+	// 2nd argument fullResolutionGraphics = kFalse (the default) is **deliberate**: kTrue triggers
+	//   generation of placed images at full resolution, and that DIRTIES THE DOCUMENT. KCM's design
+	//   rests on never modifying the model, so the comparison uses the proxies.
+	// 3rd argument greekBelowPtSize = 0.0 (greeking disabled) is **deliberate**. Left at the
+	//   default, small text is drawn as a grey band with no letterforms; target and source are
+	//   greeked alike, so **a change in small text produces no difference at all**
+	//   (SnapshotUtilsEx.h:224-225 -- the threshold is "point size multiplied by the scaling", and
+	//   the header does not say what that scaling is, so whether it kills everything under 7pt or
+	//   only under 3.5pt cannot be settled). KCM compares pixels, so it passes 0.0 and always gets
+	//   letterforms; the price is a slightly slower rasterisation on pages full of small text.
+	//   The official sample (snapshot/SnapTracker.cpp:318) leaves the default, but its purpose is
+	//   a visual snapshot. **Target and source must use the same value.**
+	// 8th argument bDrawNonPrintingObjects = kFalse is **deliberate** (the default is kTrue). Left
+	//   at the default, moving a page item marked non-printing -- a working note, an annotation, a
+	//   memo beside the crop marks -- makes the page count as changed, so **a mark appears although
+	//   the printed result is identical**. KCM's marks mean "the printed result changed"
+	//   (SnapshotUtilsEx.h:241-242).
+	//   @warning as that header states, it does NOT affect a LAYER's non-printing setting.
+	//   @warning arguments 5-7 are the defaults spelled out, only because the 8th cannot be reached
+	//     otherwise: transparencyQuality = kXPHigh (do not lower it, or changes to shadows, feathers
+	//     and blends stop being detected), abortCheck = nil (cancelling is checked at page
+	//     boundaries, in KCMCore.cpp), pVPAttrMap = nil.
+	//   **Target and source must use the same value.**
 	ErrorCode drewTH;
 	{
-		KCMRasterizingGuard rg;	// この Draw 中に再入する HandleDrawEvent はマークを描かない(自己参照防止)
+		KCMRasterizingGuard rg;	// a re-entrant draw during this Draw must not paint marks into our own raster
 		drewTH = snapTH->Draw(IShape::kPreviewMode, kFalse, 0.0, kFalse,
 		                      SnapshotUtils::kXPHigh, nil, nil, kFalse);
 	}
@@ -374,7 +378,7 @@ ErrorCode KCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef& 
 	ErrorCode drewSH;
 	{
 		KCMRasterizingGuard rg;
-		// 同上: greek 無効・AA OFF・非印刷オブジェクトを描かない(両者必ず同条件)
+		// As above: greeking off, AA off, non-printing objects not drawn -- both sides identical.
 		drewSH = snapSH->Draw(IShape::kPreviewMode, kFalse, 0.0, kFalse,
 		                      SnapshotUtils::kXPHigh, nil, nil, kFalse);
 	}
@@ -383,7 +387,7 @@ ErrorCode KCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef& 
 	ErrorCode status = kFailure;
 	if (accTH != nil && accSH != nil)
 	{
-		// 高解像度(比較)の寸法・バッファ
+		// The high-resolution (comparison) dimensions and buffers.
 		Int32Rect bth = accTH->GetBounds();
 		Int32Rect bsh = accSH->GetBounds();
 		const int32 wth = bth.right - bth.left, hth = bth.bottom - bth.top;
@@ -394,52 +398,55 @@ ErrorCode KCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef& 
 		const uint8* ptH = accTH->GetBaseAddr();
 		const uint8* psH = accSH->GetBaseAddr();
 
-		// 低解像度(保存・表示)の寸法は高解像度から割り戻す。buf は ARGB の自前バッファ(行パディング無し)。
+		// The low-resolution (stored, displayed) dimensions are derived from the high-resolution
+		// ones. buf is our own ARGB buffer, with no row padding.
 		int32 wl = ::ToInt32(::Round(PMReal(wth) / kKCMHiResMul));
 		int32 hl = ::ToInt32(::Round(PMReal(hth) / kKCMHiResMul));
 		if (wl < 1) wl = 1;
 		if (hl < 1) hl = 1;
-		const int32 bppL = 4;				// 表示リングは常に自前 ARGB(=4)合成。比較ラスタの ch 数(RGB=4/CMYK=4)とは独立
-		const int32 rbL = wl * bppL;		// 自前バッファ=行パディング無し
+		const int32 bppL = 4;				// the displayed ring is always our own ARGB (4), independent of the comparison raster's channel count
+		const int32 rbL = wl * bppL;		// our own buffer: no row padding
 
 		if (ptH != nil && psH != nil &&
 			wth == wsh && hth == hsh && rbTH == rbSH && rbTH > 0 &&
 			bppH >= 4 && wl > 0 && hl > 0)
 		{
-			// ★この関数の確保は全て new (std::nothrow): MSVC の通常 new は失敗時に nil を返さず throw するため、
-			//   nothrow にしないと下の nil チェックが機能しない(OOM 時は例外がイベント境界を突き抜けてクラッシュ)。
-			//   nothrow なら OOM でも「このページのマークを作らない」だけで安全に続行できる。
+			// **Every allocation in this function is new (std::nothrow)**: MSVC's ordinary new
+			//   throws instead of returning nil, so without nothrow the nil tests below would do
+			//   nothing and an out-of-memory would send an exception through an event boundary.
+			//   With nothrow, running out of memory only means this page gets no mark.
 			const size_t N = (size_t)wl * hl;
-			uint8*  M     = new (std::nothrow) uint8[N];	// 低解像度マスク(保存): プーリング結果
-			uint16* cntHi = new (std::nothrow) uint16[N];	// 低解像度セルごとの「高解像度の変化画素数」(プーリング用一時)
+			uint8*  M     = new (std::nothrow) uint8[N];	// the stored low-resolution mask: the pooling result
+			uint16* cntHi = new (std::nothrow) uint16[N];	// per low-resolution cell, how many high-resolution pixels changed (pooling scratch)
 			if (M != nil && cntHi != nil)
 			{
 				memset(cntHi, 0, N * sizeof(uint16));
 
-				// ★ノンブル(自動ページ番号)除外領域。トグルON時のみ、target/source 両ページの
-				// 「Current Page Number」マーカーを含むフレームの矩形(ページ左上原点のpt座標)を集め、
-				// 比較解像度(hiRes)のピクセル座標に変換してから、その範囲内の画素は下の差分走査で
-				// スキップする(実デザインが同一でも新旧で連番が違うことによる誤検知を防ぐ)。
-				// target/source は同じページサイズが前提なので、どちらの矩形も同じ (x,y) 座標系に
-				// そのまま使える。Int32Rect への変換はここ(KCMPageNumberMarker.h は PMRect のみを
-				// 扱い、Int32Rect には依存しない)。
+				// The folio exclusion. While the toggle is on, the rectangles of the frames holding
+				// a "Current Page Number" marker are collected for BOTH pages (in points with the
+				// page's top left as the origin), converted to the comparison resolution's pixels,
+				// and the pixels inside them are skipped by the difference scan below -- otherwise
+				// an identical design still differs because the two versions number differently.
+				// Target and source are assumed to be the same page size, so both sets of
+				// rectangles apply to the same (x, y) space.
+				// The conversion to Int32Rect happens here: KCMPageNumberMarker.h deals in PMRect
+				// only and does not depend on Int32Rect.
 				std::vector<Int32Rect> excludeRects;
 				if (KCMGetIgnorePageNumberMarker())
 				{
-					// ★比較のときは必ず実測し直す(refresh=kTrue)。同時にキャッシュも更新されるので、
-					//   除外領域の緑ベタ塗り(可視化)はこの比較で使ったのと同じ矩形を描くことになる
-					//   (2026-08-06 の監査 E-3。以前は描画側が毎回別に実測していた)。
-					// ⚠★2つの参照を同時に持つので、キャッシュは「挿入で既存要素の参照を無効化しない」
-					//   コンテナでなければならない。実体は std::map(KCMPageNumberMarker.cpp の
-					//   `typedef std::map<KCMMarkerRectKey, std::vector<PMRect> > KCMMarkerRectMap`)で
-					//   その保証がある。⚠2026-08-18(B10 の2周目)に行番号(:414-416)から型名へ差し替えた
-					//   ---- 指していたのは関数の閉じ括弧3行で、既に外れていた。★unordered_map / vector に替えると 2 本目の取得で 1 本目
-					//   (tRects)が宙を指す。替えるなら、ここは値でコピーするか 1 本ずつ使い切る形へ
-					//   直すこと(2026-08-06 の再確認で明文化)。
+					// A comparison always measures afresh (refresh=kTrue), which also updates the
+					// cache -- so the green wash showing the excluded area draws exactly the
+					// rectangles THIS comparison used.
+					// @warning two references are held at once, so the cache must be a container
+					//   whose existing elements are not invalidated by an insertion. It is a
+					//   std::map (KCMPageNumberMarker.cpp's KCMMarkerRectMap), which guarantees
+					//   that. **Switching it to unordered_map or vector would leave the first
+					//   reference (tRects) dangling after the second fetch** -- change it and this
+					//   has to copy by value or use one at a time.
 					const std::vector<PMRect>& tRects = KCMGetPageNumberMarkerRects(targetRef, kTrue);
 					const std::vector<PMRect>& sRects = KCMGetPageNumberMarkerRects(sourceRef, kTrue);
-					const PMReal pxScale = hiRes / PMReal(72.0);	// pt → 比較解像度のpx
-					for (int pass = 0; pass < 2; ++pass)		// 0=target / 1=source(同じ (x,y) 座標系へ積む)
+					const PMReal pxScale = hiRes / PMReal(72.0);	// points -> comparison-resolution pixels
+					for (int pass = 0; pass < 2; ++pass)		// 0 = target, 1 = source (both into the same (x, y) space)
 					{
 						const std::vector<PMRect>& mrs = (pass == 0) ? tRects : sRects;
 						for (size_t mi = 0; mi < mrs.size(); ++mi)
@@ -455,16 +462,19 @@ ErrorCode KCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef& 
 					}
 				}
 
-				// 【高解像度で比較 → 低解像度セルへ散らす(scatter)】
-				// 高解像度の各画素を差分判定(生の各チャンネル最大差>しきい値)し、変化していたら
-				// 対応する低解像度セルのカウンタを増やす。セル写像は寸法比(高/低が整数倍でなくてもよい)。
-				// CMYK 比較: 先頭から4ch(offset=0)。各chの最大差がしきい値(kKCMCmykThr)を超えたら変化画素。
+				// COMPARE AT HIGH RESOLUTION, SCATTER INTO LOW-RESOLUTION CELLS.
+				// Each high-resolution pixel is tested (the largest raw per-channel difference) and,
+				// if it changed, the counter of its low-resolution cell is incremented. The cell
+				// mapping is by dimension ratio, so the two resolutions need not be integer multiples.
+				// CMYK: four channels from offset 0. A pixel changed when the largest channel
+				// difference exceeds the threshold (kKCMCmykThr).
 				const int  nch       = 4;
 				const int32 colorOffH = 0;
 				const int  thr        = kKCMCmykThr;
 
-				// 【ノンブル除外の前処理(2026-07-25 追補)】除外矩形の union bbox を先に取る。以降は
-				// 「行が bbox の縦範囲外なら判定ゼロ」「x が bbox の横範囲外なら 2 比較」で抜けられる。
+				// Stage 1 of the exclusion sieve: the union bbox of the rectangles. After this, a
+				// row outside its vertical range costs zero tests, and an x outside its horizontal
+				// range costs two comparisons.
 				int32 exTop = 0, exBottom = 0, exLeft = 0, exRight = 0;
 				if (!excludeRects.empty())
 				{
@@ -479,7 +489,7 @@ ErrorCode KCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef& 
 						if (r.right  > exRight)  exRight  = r.right;
 					}
 				}
-				std::vector<const Int32Rect*> rowRects;	// その行に掛かる矩形だけ(ループ外で確保して再利用)
+				std::vector<const Int32Rect*> rowRects;	// only the rectangles reaching this row (allocated outside the loop and reused)
 				rowRects.reserve(excludeRects.size());
 				for (int32 y = 0; y < hth; ++y)
 				{
@@ -489,7 +499,8 @@ ErrorCode KCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef& 
 					if (yl >= hl) yl = hl - 1;
 					uint16* cntRow = cntHi + (size_t)yl * wl;
 
-					// この行に掛かる除外矩形だけを集める(bbox の縦範囲外なら空のまま=以降は判定ゼロ)。
+					// Stage 2: collect the rectangles reaching this row (outside the bbox's
+					// vertical range it stays empty, and every test below is skipped).
 					rowRects.clear();
 					if (!excludeRects.empty() && y >= exTop && y < exBottom)
 					{
@@ -502,7 +513,7 @@ ErrorCode KCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef& 
 					for (int32 x = 0; x < wth; ++x)
 					{
 						if (rowHasExclude && x >= exLeft && x < exRight && KCMXInRowRects(x, rowRects))
-							continue;	// ノンブル除外領域: 差分扱いしない
+							continue;	// inside the folio exclusion: not a difference
 						const uint8* px = rowT + (size_t)x * bppH + colorOffH;
 						const uint8* sx = rowS + (size_t)x * bppH + colorOffH;
 						int cm = 0;
@@ -520,8 +531,9 @@ ErrorCode KCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef& 
 					}
 				}
 
-				// 【マックスプーリング】セル内の高解像度変化画素が min-count 以上なら低解像度マスク=1。
-				// 1個でも(min=1)立てれば取りこぼしゼロ。min を上げると縁ノイズ耐性が増す。
+				// MAX POOLING: a stored cell is 1 when at least min-count high-resolution pixels
+				// inside it changed. At min = 1 nothing is missed; raising it survives edge noise
+				// better.
 				size_t diffCount = 0;
 				for (size_t i = 0; i < N; ++i)
 				{
@@ -533,20 +545,22 @@ ErrorCode KCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef& 
 
 				if (diffCount == 0)
 				{
-					// 変化なし: エントリを作らない。
+					// Nothing changed: no entry is created.
 					delete[] M;
-					status = kSuccess;	// 成功・ただし changed=false
+					status = kSuccess;	// success, with changed = false
 				}
 				else
 				{
-					// ★buf を指す自前 AGMImageRecord を組んで切り離す(buf は下で BuildRing が全画素を書くので
-					//   ラスタ画素のコピーは不要)。SnapshotUtilsEx / accessor は保持しない(下で即破棄)。
-					//   GetAGMImageRecord も呼ばない=破棄時クラッシュ(保持 accessor の delete)を根本回避。
+					// Build our own AGMImageRecord pointing at buf and detach from the snapshot.
+					// The raster's pixels are not copied, because BuildRing writes every pixel of
+					// buf below. Neither the SnapshotUtilsEx nor the accessor is kept, and
+					// GetAGMImageRecord is not called -- which removes the crash-on-destroy that
+					// holding an accessor causes.
 					KCMOverlayEntry* e = new (std::nothrow) KCMOverlayEntry();
 					if (e == nil)
 					{
-						// OOM 保険(nothrow 化に伴う): ここまでの部分確保を解放し、スナップショットも
-						// 破棄してこのページは諦める(MakeOrigImage の確保失敗時と同じ early-return 流儀)。
+						// Out of memory: release what was allocated, destroy the snapshots, and give
+						// up on this page (the same shape as MakeOrigImage's allocation failure).
 						delete[] M;
 						if (accSH)  delete accSH;
 						if (snapSH) delete snapSH;
@@ -556,25 +570,28 @@ ErrorCode KCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef& 
 					}
 					e->w = wl;  e->h = hl;  e->rowBytes = rbL;  e->bpp = bppL;
 					e->lastRadius = kKCMBaseRadius;
-					// 変更の割合表示(Prev/Next)用。分母は w * h なので分子だけ覚える。ここは diffCount != 0 が
-					// 確定した枝なので必ず 1 以上になる(0 のときは上でエントリを作らずに戻っている)。
+					// For Prev/Next's "how much of this page changed". The denominator is w * h, so
+					// only the numerator is stored. This branch is only reached with diffCount != 0,
+					// so it is always at least 1.
 					e->changedCells = (int32)diffCount;
-					// mask M から距離変換 dist を1回だけ作って保持(以後の BuildRing はこれ1つで描ける)。
-					//   dist 生成後、mask M はもう不要なので解放(常駐メモリは dist が mask を置換=純増ゼロ)。
+					// Build the distance transform from the mask once and keep it; every later
+					// BuildRing works from it alone. The mask is freed as soon as dist exists, so
+					// the resident memory does not grow (dist replaces mask).
 					e->dist = new (std::nothrow) uint8[N];
 					if (e->dist != nil)
 						KCMDistTransform(M, wl, hl, e->dist);
 					delete[] M;
 
-					// 初回リング(基準半径)を buf へ直接描く。
+					// Draw the first ring (at the base radius) straight into buf.
 					e->buf = (e->dist != nil) ? new (std::nothrow) uint8[(size_t)rbL * hl] : nil;
 
-					// ★★dist / buf のどちらかが確保できなかったら、このページのマークは作らない
-					//   (2026-07-30 の監査で修正)。以前は「dist が無ければ buf を透明クリア」「buf が
-					//   無ければ描画側が skip」というフォールバックだったが、どちらも **sEntries には
-					//   エントリが載るのに画面には何も出ない** 状態を作る。changedCells は非 0 なので
-					//   Prev/Next は「変更あり」としてそのページへ飛び、しかし枠が見えない=壊れて見える。
-					//   OOM でこのページを諦めるのは、上の e==nil / MakeOrigImage の確保失敗と同じ流儀。
+					// **If either dist or buf could not be allocated, this page gets no mark at all.**
+					//   Falling back ("clear buf to transparent when dist is missing", "let the
+					//   drawing skip it when buf is missing") produces a state where **the entry is
+					//   in sEntries but nothing is on screen**: changedCells is non-zero, so
+					//   Prev/Next jumps to the page as changed and no frame is there -- it looks
+					//   broken. Giving the page up on out-of-memory matches e == nil above and
+					//   MakeOrigImage.
 					if (e->buf == nil)
 					{
 						delete e;
@@ -585,31 +602,35 @@ ErrorCode KCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef& 
 						return kFailure;
 					}
 					BuildRing(e->buf, rbL, bppL, wl, hl, e->dist, kKCMBaseRadius);
-					// ★★2026-08-17(不具合再検査 B3 の2周目)＝**ここの int16 キャストは溢れない。**
-					//   AGMImageRecord.bounds は int16(上限 32,767)で、wl/hl は**保存解像度**
-					//   kKCMResolution=36dpi の画素数。実機で測った最大ページは
-					//   **15,551.996pt = 216.000 inch(5486.4mm)**なので、最大でも **216 × 36 = 7,776 px**
-					//   ＝上限の 24% にしかならない(2026-08-17 実測)。
-					//   ⚠**下の MakeOrigImage には明示ガード(`b.right <= 32767`)がある**が、あちらは
-					//     kKCMOrigResolution=**72dpi**、しかも peek は現在のズームから dpi を渡すので
-					//     **216 inch × 300dpi = 64,800 で本当に溢れる**——**非対称は正しい**。
-					//   ★比較解像度(144dpi)側の wth/hth は 31,104 px になるが、あちらは int32 のまま
-					//     扱っていて int16 に落とさないので無関係。
+					// **The int16 casts here cannot overflow.** AGMImageRecord.bounds is int16
+					//   (up to 32,767) and wl/hl are pixel counts at the STORED resolution,
+					//   kKCMResolution = 36dpi. The largest page InDesign allows is
+					//   **216.000 inch (15,551.996pt, 5486.4mm)**, so at most **216 x 36 = 7,776 px**
+					//   -- 24% of the ceiling.
+					//   @warning MakeOrigImage below DOES have an explicit `b.right <= 32767` guard,
+					//     and the asymmetry is correct: that one works at kKCMOrigResolution = 72dpi
+					//     and the peek passes a dpi derived from the current zoom, so
+					//     **216 inch x 300dpi = 64,800 really does overflow**.
+					//   The comparison resolution (144dpi) reaches 31,104 px in wth/hth, but those
+					//     stay int32 and are never narrowed to int16.
 					e->rec.bounds.xMin = 0;             e->rec.bounds.yMin = 0;
 					e->rec.bounds.xMax = (int16)wl;     e->rec.bounds.yMax = (int16)hl;
 					e->rec.baseAddr     = e->buf;
 					e->rec.byteWidth    = rbL;
-					// ARGB(alpha 先頭)。HasAlpha フラグを立てないと透明画素が不透明白で描かれる。
-					// 既定が ARGB 順なので SwapAlpha は不要(RGBA なら | kColorSpaceSwapAlpha)。
+					// ARGB (alpha first). Without the HasAlpha flag the transparent pixels are drawn
+					// as opaque white. ARGB is the default order, so no SwapAlpha is needed (RGBA
+					// would need | kColorSpaceSwapAlpha).
 					e->rec.colorSpace   = (int16)(kRGBColorSpace | kColorSpaceHasAlpha);
 					e->rec.bitsPerPixel = (int16)(bppL * 8);
 					e->rec.decodeArray  = nil;
 					e->rec.colorTab.numColors = 0;  e->rec.colorTab.theColors = nil;
 
-					// 既存エントリがあれば置換。
-					// ★2026-08-15(第2段 Task 12B): **置換は古いエントリを delete する**ので、
-					//   描画中の BG が同じポインタを読んでいないようロックを取る(DropAll と同じ理由)。
-					//   ⚠ロックは「集合をいじる区間」だけ。上のラスタ化・リング生成は外に置いてある。
+					// Replace any existing entry.
+					// **The replacement deletes the old entry**, so the lock is taken to keep a
+					//   drawing background thread from reading that pointer (the same reason DropAll
+					//   takes it).
+					//   @warning the lock covers only the interval that touches the collections.
+					//     The rasterisation and the ring generation above are outside it.
 					UID key = targetRef.GetUID();
 					{
 						KCMMarkStateLock lock(KCMMarkStateMutex());
@@ -617,32 +638,27 @@ ErrorCode KCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef& 
 						if (old != sEntries.end()) { delete old->second; sEntries.erase(old); }
 						sEntries[key] = e;
 
-						// Source 側描画(Always Show Marks on Source)用の対応表もここで記録する。エントリ登録と同じ場所に
-						// 置くことで、旧 Ctrl+ミドルのスプレッド再比較(MakeEntry 直呼び)でも対応が自動で維持される。
-						// 対応表の掃除は DropAll(エントリと運命共同体)。
-						// ★★2026-08-16(API 監査 B3 §5)= **この2行も同じロックの中に入れた。**
-						//   sSrcPageToTarget は **main が insert し、BG(PDF の非同期書き出し)が描画で find する**
-						//   (HandleDrawEvent の Source ループ)＝KCMThreadSafety.h:76-81 が守れと書いている条件
-						//   そのもの。以前はロックのスコープを閉じた直後に素で書いていたので、
-						//   **main が木を回している最中に BG が find する**窓が開いていた。
-						//   ⚠**捨てる側(DropAll)は最初から clear() をロック内でやっていた**＝作る側だけが漏れていた。
+						// The Source-side mapping ("Always Show Marks on Source") is recorded here,
+						// in the same place the entry is registered, so any route that reaches
+						// MakeEntry keeps the two in step. It is cleaned up by DropAll, together
+						// with the entries.
+						// sSrcPageToTarget is **inserted into by the main thread and searched by the
+						// background thread while it draws** -- the condition KCMThreadSafety.h:76-81
+						// says to guard, and the same one sEntries has.
 						//
-						// ⚠★★2026-08-17(不具合再検査 B3 の2周目)= **ロックが守っているのは
-						//   sSrcPageToTarget(std::map)だけで、sSrcDB はそうではない。**
-						//   上の説明が「この2行」とまとめて書いてあるため、次に読む人(＝私)が
-						//   **「sSrcDB はロックが要る変数だ」と読み、KCMCore.cpp の
-						//   `sSrcDB = sourceDB;`(比較の成功枝。ロック外)を不具合だと誤診した。**
-						//   ★正しくは: **ロックは複合状態の一貫性を守る道具**で、木を回す map には要るが、
-						//     ポインタ1個の代入には要らない(読み手が見るのは新旧どちらかの値で、
-						//     どちらでも描画は壊れない ---- 古ければ Source 枠が出ない、新しければ出る)。
-						//   ⇒ **KCMCore.cpp のあの1行にロックを足す必要は無い。**
-						//     ここが囲まれているのは「同じ場所で書いているから」であって、
-						//     sSrcDB のために取ったロックではない。
+						// @warning **the lock is protecting sSrcPageToTarget (a std::map), not
+						//   sSrcDB.** Assigning one pointer needs no lock: the reader sees the old
+						//   value or the new one, and neither breaks the drawing (old = the Source
+						//   frames do not appear, new = they do). sSrcDB is inside this scope only
+						//   because it is written in the same place. Reading this as "sSrcDB is a
+						//   variable that needs the lock" has already led to KCMCore.cpp's
+						//   `sSrcDB = sourceDB;` being misdiagnosed as a missing lock once.
 						sSrcDB = sourceRef.GetDataBase();
 						sSrcPageToTarget[sourceRef.GetUID()] = key;
 					}
 
-					// dist / buf は entry が所有(mask M は dist 生成後に解放済み)。スナップショットは下の後始末で即破棄。
+					// dist and buf belong to the entry now (the mask was freed once dist existed).
+					// The snapshots are destroyed by the clean-up below.
 					changed = kTrue;
 					status = kSuccess;
 				}
@@ -655,7 +671,7 @@ ErrorCode KCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef& 
 		}
 	}
 
-	// 後始末: 2つのスナップショット/アクセサを破棄(ラスタ化は2回=低解像度 snapL は廃止)。
+	// Clean-up: destroy both snapshots and accessors.
 	if (accSH)  delete accSH;
 	if (snapSH) delete snapSH;
 	if (accTH)  delete accTH;
@@ -671,20 +687,23 @@ ErrorCode KCMDrawEventHandler::MakeOrigImage(const UIDRef& targetRef, const UIDR
 	if (sourceRef.GetDataBase() == nil || sourceRef.GetUID() == kInvalidUID)
 		return kFailure;
 
-	// source(旧)を resolution(dpi)で不透明ラスタ化。addTransparencyAlpha=kFalse=ページを不透明に描く(べた載せ用)。
-	// オフスクリーンは1枚だけ。画素を自前 buf へコピーしたら即破棄(下)＝同時に複数生存しない=安全。
-	// ★引数は既定のまま(greek 7.0・AA on・非印刷オブジェクトも描く)。**比較ラスタとはわざと違える**:
-	//   比較(MakeEntry)は「刷り上がりが変わったか」を問うので 2026-08-12 に非印刷オブジェクトを
-	//   描かないようにしたが、この画像は**旧版の見た目をそのまま重ねて見せる**ためのもので、
-	//   画面で見えていたものが消えると「前はこうだった」の再現にならない。
-	//   ⚠∴「旧版画像には見えるのにマークは出ない」差分がありうる(非印刷オブジェクトを動かした場合)。
-	//   これは意図した非対称。揃えるなら両方を kFalse にする。
+	// Rasterise the source (the older side) opaquely at `resolution` dpi
+	// (addTransparencyAlpha = kFalse draws the page opaque, which is what an overlay wants).
+	// Only one offscreen exists at a time: the pixels are copied into our own buffer and it is
+	// destroyed immediately below.
+	// **The arguments are left at their defaults (greeking 7.0, AA on, non-printing objects drawn),
+	//   deliberately UNLIKE the comparison raster.** The comparison asks "did the printed result
+	//   change" and therefore does not draw non-printing objects; this image is meant to **show the
+	//   older version as it looked**, and something that was visible on screen going missing is not
+	//   a reproduction of "how it was".
+	//   @warning so a non-printing object that moved can differ in the peek image while no mark
+	//     appears. The asymmetry is intended; matching them means setting both to kFalse.
 	SnapshotUtilsEx* snap = new (std::nothrow) SnapshotUtilsEx(sourceRef, 1.0, 1.0, resolution, resolution, 0.0, SnapshotUtilsEx::kCsRGB, kFalse);
 	if (snap == nil)
-		return kFailure;	// nothrow: OOM でもこのページの旧版画像を作らないだけで安全に続行(MakeEntry と同方針)
+		return kFailure;	// nothrow: out of memory only costs this page its picture (as in MakeEntry)
 	ErrorCode drew;
 	{
-		KCMRasterizingGuard rg;	// この Draw 中に再入する HandleDrawEvent はマークを描かない(自己参照防止)
+		KCMRasterizingGuard rg;	// a re-entrant draw during this Draw must not paint marks into our own raster
 		drew = snap->Draw(IShape::kPreviewMode);
 	}
 	AGMImageAccessor* acc = (drew == kSuccess) ? snap->CreateAGMImageAccessor() : nil;
@@ -697,15 +716,16 @@ ErrorCode KCMDrawEventHandler::MakeOrigImage(const UIDRef& targetRef, const UIDR
 		const int32 rb = (int32)acc->GetRowBytes();
 		const int32 bpp = (int32)acc->GetBitsPerPixel() / 8;
 		const uint8* p = acc->GetBaseAddr();
-		// AGMImageRecord.bounds は int16。300dpi で超大型ページ(幅/高さ>32767px≒109inch)だと破綻するので弾く。
-		// ★★2026-08-17(不具合再検査 B3 の2周目)＝**このガードは本当に到達する。** 実機で測った
-		//   最大ページは **216.000 inch(15,551.996pt = 5486.4mm)**なので、300dpi なら 64,800 px＝
-		//   上限の2倍近い。⇒ **MakeEntry 側に同じガードが無いのは手抜きではない**(あちらは 36dpi で
-		//   最大 7,776 px＝溢れない。理由はあちらの e->rec.bounds のコメント)。
+		// AGMImageRecord.bounds is int16, so an enormous page at 300dpi (over 32,767px, about
+		// 109 inch) is rejected rather than wrapping.
+		// **This guard really is reachable**: the largest page InDesign allows is
+		//   **216.000 inch (15,551.996pt, 5486.4mm)**, which at 300dpi is 64,800 px -- nearly twice
+		//   the ceiling. MakeEntry has no such guard and does not need one (36dpi, 7,776 px at most;
+		//   see the comment at its e->rec.bounds).
 		if (p != nil && w > 0 && h > 0 && rb > 0 && bpp >= 3 && b.right <= 32767 && b.bottom <= 32767)
 		{
-			// nothrow: 300dpi の大判ページ(A2 で buf 約140MB)は OOM が現実に起こり得る筆頭。
-			// 失敗時は下の early-return が部分確保を解放して安全に抜ける(nil チェックを実効化)。
+			// nothrow: a 300dpi large-format page (about 140MB of buffer for A2) is the likeliest
+			// place to actually run out of memory. The early return below frees the partial state.
 			KCMOrigImage* o = new (std::nothrow) KCMOrigImage();
 			uint8* obuf = (o != nil) ? new (std::nothrow) uint8[(size_t)rb * h] : nil;
 			if (o == nil || obuf == nil)
@@ -720,10 +740,12 @@ ErrorCode KCMDrawEventHandler::MakeOrigImage(const UIDRef& targetRef, const UIDR
 			o->buf = obuf;
 			o->w = w;  o->h = h;  o->rowBytes = rb;  o->bpp = bpp;
 			memcpy(o->buf, p, (size_t)rb * h);
-			// 不透明保証: ARGB(alpha 先頭)なら alpha を 255 に揃える(べた載せ=下が透けない)。
-			// まず格子状(約8×8点)にサンプリングし、全サンプルが既に 255(不透明)なら O(W*H) の
-			//   全画素ループを丸ごと省く。ラスタが既に不透明(addTransparencyAlpha=kFalse)なら書き込みを回避。
-			//   サンプルに非255が1つでもあれば従来どおり全画素を 255 に揃える(自己補正=どちらでも正しい)。
+			// Guarantee opacity: with ARGB (alpha first), set every alpha to 255 so nothing shows
+			// through the overlay.
+			// A grid of about 8x8 samples is checked first, and if they are all already 255 the
+			//   O(W*H) pass is skipped entirely -- which it is whenever the raster came back opaque
+			//   (addTransparencyAlpha = kFalse). One non-255 sample and every pixel is set, as before
+			//   (self-correcting: either path is right).
 			if (bpp >= 4)
 			{
 				bool16 alreadyOpaque = kTrue;
@@ -754,7 +776,7 @@ ErrorCode KCMDrawEventHandler::MakeOrigImage(const UIDRef& targetRef, const UIDR
 			o->rec.decodeArray  = nil;
 			o->rec.colorTab.numColors = 0;  o->rec.colorTab.theColors = nil;
 
-			// 既存があれば置換。
+			// Replace any existing picture.
 			UID key = targetRef.GetUID();
 			std::map<UID, KCMOrigImage*>::iterator old = sOrigImages.find(key);
 			if (old != sOrigImages.end()) { delete old->second; sOrigImages.erase(old); }
@@ -769,44 +791,36 @@ ErrorCode KCMDrawEventHandler::MakeOrigImage(const UIDRef& targetRef, const UIDR
 }
 
 
-// (KCMQueryPanorama は 2026-08-13 に KCMViewLookup.cpp へ移した＝model/UI 分割 第1段 Task 12。
-//  IPanorama を返す＝窓が無ければ答えの無い問いなので、描画エンジンの持ち場ではない。)
-
 //========================================================================================
-// 印刷/PDF 用のリング描画。画面は image() blit でよいが(画素 alpha を honor する)、印刷のフラットナ
-// 経路は blit 画像の部分 alpha を honor せず枠が不透明になる。そこで transparencyeffect サンプルと
-// 同じ作法=リング形状を「グレーのアルファサーバ」にして純色のベクター fill を setopacity で半透明に
-// 描く(透明合成エンジンが honor する)。赤と青(背景適応)を保つため、赤画素・青画素それぞれのグレー
-// マスクで2回 fill する。呼び出し側で translate/scale 済み(user 空間 = 画像px)であること。
-//   e->buf は ARGB(先頭=alpha, 続いて R,G,B)。
+// Drawing the ring for print and PDF. On screen an image() blit is enough (it honours the pixels'
+// alpha), but the print flattener does NOT honour a blitted image's partial alpha and the frame
+// comes out opaque. So, in the same way the transparencyeffect sample does it, the ring's SHAPE
+// becomes a grey ALPHA SERVER and a solid vector fill is drawn through it with setopacity, which
+// the transparency engine does honour.
+// The red and the cyan pixels are filled in two passes, each through its own grey mask.
+// The caller has already applied the translate and scale, so user space is image pixels.
+//   e->buf is ARGB (alpha first, then R, G, B).
 //========================================================================================
-// (★`KCMIsPDFExportPort()` は 2026-08-17 の不具合再検査 B3 で**削除した＝呼び手ゼロ**。
-//  印刷と PDF 書き出しを**別々に描いていた時期**の判定で、2026-08-16 に両方を下の
-//  KCMDrawRingForPrint 1本へ統一したときに呼び手が消えていた。PDF 固有の初期化(透明グループ)が
-//  要るかどうかは、あちらが `vpAttr->GetAttr(kPDFExportVPAttr)` で**直接ポートに聞いている**ので、
-//  この関数を経由する道はもう無い。⚠一緒に `IPDFLibraryUtilsPublic.h` の include も外した。
-//  ★公式の書き方(製品2本 FormFieldLabelDrawer.cpp:139-140 / AnimationAdormentDrawer.cpp:112-113 と
-//    同形)は docs/ai-notes/kescm-task12-pdf-export-marks-2026-08-15.md に残してある。)
 
 
 //========================================================================================
-// ★★★2026-08-16: **出力先に応じた色の指定（印刷/PDF は CMYK で塗る）。**
+// **The colour a mark is drawn in depends on the output: print and PDF are painted in CMYK.**
 //
-//   ■ なぜ要るか＝**PDF/X-1a は RGB を許さない。** マークを RGB で塗ったまま
-//     [PDF/X-1a:2001 (日本)] へ書き出すと、バックグラウンドタスクに次の警告が出て
-//     **「有効な PDF だが PDF/X-1a 準拠ではない」ファイルになる**（2026-08-16 ユーザー報告）:
-//       「配置された画像の 1 つは、カラーを CMYK カラーとして表示できません。非 CMYK カラーは、
-//         PDF/X-1a の基準に準拠していません。」
-//     ⇒ **入稿用途では実害**（X-1a のつもりが準拠しない）。
-//   ■ ★KCM は**比較ラスタを CMYK でやっている**（設計の核）のに、**マークだけ RGB** という
-//     不整合でもあった。ここで揃える。
-//   ■ 画面は従来どおり RGB（★リング本体は ARGB 画像の blit なのでそもそもここを通らない）。
-//   ■ 変換は標準式（`k = 1-max(r,g,b)` / `c = (max-r)/max` …）。KCM が使う色は純色に近いので
-//     素直に対応する: 赤(255,0,0)→C0 M100 Y100 K0 ／ シアン(0,255,255)→C100 M0 Y0 K0 ／
-//     緑(0,200,0)→C100 M0 Y100 K22 ／ 白→すべて0 ／ 黒→K100。
+//   WHY: **PDF/X-1a does not allow RGB.** Left in RGB, exporting to [PDF/X-1a:2001 (Japan)]
+//     produces this warning in the background task and **a valid PDF that is NOT PDF/X-1a
+//     compliant**: "One of the placed images cannot display colours as CMYK colours. Non-CMYK
+//     colours do not comply with the PDF/X-1a standard."
+//     For print submission that is a real defect: a file believed to be X-1a is not.
+//   It also removed an inconsistency: **KCM compares in CMYK** (the core of its design) while the
+//     marks alone were RGB.
+//   The screen stays RGB. (The ring itself is a blit of an ARGB image and never comes through here
+//     at all.)
+//   The conversion is the standard formula (k = 1-max(r,g,b), c = (max-r)/max ...). KCM's colours
+//     are near-primary, so they map cleanly: red (255,0,0) -> C0 M100 Y100 K0, cyan (0,255,255) ->
+//     C100 M0 Y0 K0, green (0,200,0) -> C100 M0 Y100 K22, white -> all zero, black -> K100.
 //========================================================================================
-// ★2026-08-24: static を外して Story のマーカーと共有する(宣言=KCMDrawEventHandler.h)。
-//   「画面は RGB・印刷は CMYK」という上の判断を2か所に書き分けると必ずずれるため([[one-question-one-place]])。
+// Not static, because the Story mode's marker shares it (declared in KCMDrawEventHandler.h).
+// "Screen is RGB, print is CMYK" written in two places would drift ([[one-question-one-place]]).
 void KCMSetOutputColor(IGraphicsPort* gPort, uint8 r, uint8 g, uint8 b, bool16 useCMYK)
 {
 	if (!useCMYK)
@@ -818,7 +832,7 @@ void KCMSetOutputColor(IGraphicsPort* gPort, uint8 r, uint8 g, uint8 b, bool16 u
 	PMReal mx = rf;  if (gf > mx) mx = gf;  if (bf > mx) mx = bf;
 	if (mx <= PMReal(0.0001))
 	{
-		gPort->setcmykcolor(PMReal(0.0), PMReal(0.0), PMReal(0.0), PMReal(1.0));	// 黒
+		gPort->setcmykcolor(PMReal(0.0), PMReal(0.0), PMReal(0.0), PMReal(1.0));	// black
 		return;
 	}
 	gPort->setcmykcolor((mx - rf) / mx, (mx - gf) / mx, (mx - bf) / mx, PMReal(1.0) - mx);
@@ -830,53 +844,50 @@ static void KCMDrawRingForPrint(IGraphicsPort* gPort, IViewPortAttributes* vpAtt
 {
 	if (gPort == nil || e == nil || e->buf == nil || e->w <= 0 || e->h <= 0 || e->bpp < 4)
 		return;
-	// 透明合成ユーティリティ(アルファサーバ生成/解放に使う)。実行中アプリでは常在するが、
-	// transparencyeffect サンプル流に、取得できなければ何もしない(クラッシュ回避)。以後この1個を使い回す。
+	// The transparency utilities (used to create and release the alpha server). They are always
+	// present in a running application, but as the transparencyeffect sample does, do nothing if
+	// they cannot be obtained. This one instance is reused below.
 	Utils<IXPUtils> xpUtils;
 	if (!xpUtils)
 		return;
 
 	//========================================================================================
-	// ★★★2026-08-16: **PDF 書き出しのときだけ要る「追加初期化」**（ユーザー指摘を起点に判明）。
+	// **The extra initialisation that only a PDF export needs.**
 	//
-	//   ■ 印刷と PDF 書き出しでは透明の扱いが違う:
-	//     ・**印刷** … 必ず**透明フラットナ**を通る（プリンタは透明を理解しないので、InDesign が
-	//       重なりを計算して不透明な図形とラスタに分解してから送る）⇒ 呼ぶ側は何もしなくてよい。
-	//     ・**PDF 書き出し** … PDF がネイティブに持つ透明機能（/Group・/SMask・/ca）へ写す ⇒
-	//       **書き出す先の構造（透明グループ）を自分で開いていないと、半透明を書き込む場所が無い。**
+	//   Print and PDF export treat transparency differently:
+	//     - **print** ... always goes through the transparency FLATTENER (a printer does not
+	//       understand transparency, so InDesign resolves the overlaps into opaque shapes and
+	//       rasters first) -- the caller has nothing to do;
+	//     - **PDF export** ... maps onto the transparency PDF itself provides (/Group, /SMask, /ca)
+	//       -- so **without opening that structure (a transparency group) there is nowhere for
+	//       something semi-transparent to be written.**
 	//
-	//   ■ 公式の手本 = `transparencyeffect/TranFxAdornment.cpp:392-407`。
-	//     Adobe 自身が "**Extra initialisation is required when drawing to a PDF port.**" と書き、
-	//     `isPDFExport && !isPDFFlattenerExport` のときだけ
-	//     `starttransparencygroup(bounds, xpManager->GetDocumentBlendingSpace(), …)` で囲んでいる。
+	//   The worked example is `transparencyeffect/TranFxAdornment.cpp:392-407`, where Adobe writes
+	//     "**Extra initialisation is required when drawing to a PDF port.**" and wraps the fill in
+	//     `starttransparencygroup(bounds, xpManager->GetDocumentBlendingSpace(), ...)` only when
+	//     `isPDFExport && !isPDFFlattenerExport`.
 	//
-	//   ■ ★**実測（2026-08-16）**＝[高品質印刷]（PDF 1.4）で書き出した PDF に
-	//     **`/Group`=14・`/SMask`=6・`/ca`=6、サイズ +8,623B** が入り、**目視でも枠が半透明で正しく出た**。
-	//     ⚠**PDF 1.3 のプリセットでも半透明が効くことをユーザーが実機で確認**（2026-08-16）。
-	//       ★私のバイト分析（マーク無しとの差が 221B だから全面ベタだろう）は**目視していない推論**で、
-	//         実機の見え方と食い違った。**サイズだけで絵を判定しないこと。**
+	//   Measured: exported at [High Quality Print] (PDF 1.4), the PDF gained **/Group=14, /SMask=6,
+	//     /ca=6 and 8,623 bytes**, and the frames were visibly semi-transparent. **The same works
+	//     at PDF 1.3**, confirmed on screen.
+	//     @warning a byte-size analysis is not evidence about a picture: reasoning from "only 221
+	//       bytes more than without marks, so it must be a solid fill" contradicted what was
+	//       actually on screen. **Do not judge the image from the file size.**
 	//
-	//   ⚠★**2026-08-15 の「PDF 書き出しポートは透明を一切通さない」は誤りだった。**
-	//     4通り試して全部不透明になったのは事実だが、**書き出しプリセットが Acrobat 4 ＝ PDF 1.3**
-	//     だったことと、**この追加初期化を欠いていた**ことが重なっていた。
-	//     ⇒ ★**「実測した」が示せるのは「その条件では出なかった」まで**（条件＝プリセットの互換性レベル）。
-	//     ★手がかりは台帳（api-official-examples.md「印刷/PDF でも半透明のまま図形を描く」）に最初から
-	//       注記してあったのに、引かずに独自の結論へ進んでいた。
-	//     全文＝docs/ai-notes/kescm-pdf-transparency-2026-08-16.md
-	//
-	//   ★★★**透明グループが要るのは「アルファサーバで塗る」この関数だけ**
-	//     (2026-08-17・不具合再検査 B3 で実測。**次に同じ疑いを持った人は測り直さなくてよい**)。
-	//     同じ描画イベントで印刷/PDF に出る他のマーク —— 登録/あふれの「/」(KCMDrawPageDiagonal)・
-	//     ✓(KCMDrawPageCheck)・ページ枠(KCMDrawPageBorder) —— は `setopacity` ＋ ベクター塗りだけで
-	//     透明グループを開いていない。**それで正しい**:
-	//       ・PDF **1.4** … あふれ「/」しか出ないページ(ページ数差で余った1枚)を 25% と 75% で
-	//         書き出して比べたところ、**`/ca 0.25` `/CA 0.25`**(と 0.75)が**そのまま PDF に載っていた**
-	//         ＝ 透明グループ無しでも半透明で出る。
-	//       ・PDF **1.3** … 同じページが **`/ca 1.0`** ＝ 不透明になる(1.3 に透明の表現が無いため)。
-	//         ⚠ただし**全面ベタにはならない**(「/」の形は保たれる) ＝ **全面ベタはアルファサーバ固有の
-	//         症状**で、マスクを使わない「/」「✓」「枠」には起きない。
-	//     ⇒ ★**「透明グループが無いから PDF で不透明になる」ではない。** 分かれ目は
-	//       **マスク(アルファサーバ)を使うかどうか**。資材＝work/kescm-selftest/b3/ov{25,75,13,off}.pdf
+	//   **Only THIS function needs the transparency group** -- the one that paints through an alpha
+	//     server. The other marks that reach print and PDF from the same draw -- the registered and
+	//     overflow "/" (KCMDrawPageDiagonal), the tick (KCMDrawPageCheck) and the page border
+	//     (KCMDrawPageBorder) -- use `setopacity` plus a vector fill and open no group, **and that
+	//     is correct**:
+	//       - at PDF **1.4**, a page carrying only an overflow "/" exported at 25% and at 75%
+	//         carries **`/ca 0.25` `/CA 0.25`** (and 0.75) straight through -- semi-transparent with
+	//         no group at all;
+	//       - at PDF **1.3** the same page comes out **`/ca 1.0`**, i.e. opaque (1.3 cannot express
+	//         it). @warning it does NOT turn into a solid block -- the "/" keeps its shape.
+	//         **A solid block is a symptom peculiar to the alpha server** and never happens to the
+	//         "/", the tick or the border.
+	//     So the dividing line is **whether a mask (an alpha server) is used**, not whether a
+	//       transparency group was opened.
 	//========================================================================================
 	bool16 needTransparencyGroup = kFalse;
 	if (vpAttr != nil)
@@ -885,24 +896,25 @@ static void KCMDrawRingForPrint(IGraphicsPort* gPort, IViewPortAttributes* vpAtt
 		const bool32 isPDFExport          = vpAttr->GetAttr(kPDFExportVPAttr, kFalse);
 		needTransparencyGroup = (isPDFExport && !isPDFFlattenerExport) ? kTrue : kFalse;
 	}
-	// ★透明マネージャは「文書の」ブレンディング色空間を答えるので db が要る(nil だと引けない契約
-	//   ＝IXPUtils.h:72-73)。PDF 書き出しでなければ引かない(無駄な Query をしない)。
+	// The transparency manager answers for **the document's** blending space, so it needs the db
+	// (nil cannot be resolved -- IXPUtils.h:72-73). It is not queried unless this is a PDF export.
 	InterfacePtr<IXPManager> xpManager(needTransparencyGroup && db != nil
 		? xpUtils->QueryXPManager(db) : nil);
 	if (xpManager == nil)
-		needTransparencyGroup = kFalse;	// 引けなければ従来どおり(印刷経路と同じ)描く
+		needTransparencyGroup = kFalse;	// cannot be resolved: draw as the print route does
 	const int32 w = e->w, h = e->h, rb = e->rowBytes, bpp = e->bpp;
 	const size_t N = (size_t)w * h;
 
-	// e->buf(ARGB)から、赤リング画素=255 / シアンリング画素=255 の2枚のグレーマスクを作る。
-	// ★★2026-08-24 に前提が変わった: **リング画像は今や単色**(パネルの「Mark colour」で赤かシアンの
-	//   どちらか)。それまでは1枚の画像に赤とシアンが混在しえた(下地が赤っぽい画素の上だけシアンという
-	//   背景適応)。⇒ **2枚に分ける仕組みはそのまま正しく働く**＝選んだ色の側だけにマスクが立ち、
-	//   もう一方は下の `if (!passes[p].any) continue;` が飛ばす。**印刷側を1行も変えずに済んだのはこの形のおかげ**。
-	uint8* maskR = new (std::nothrow) uint8[N];	// nothrow: 直下の nil チェックを実効化(失敗時は枠を描かないだけ)
+	// Build two grey masks out of e->buf (ARGB): red ring pixels = 255, cyan ring pixels = 255.
+	// **The ring image is single-coloured now** (the panel's "Mark colour" chooses red or cyan);
+	// it once mixed both, when the colour adapted to reddish ground per pixel. **Splitting into two
+	// masks still works exactly right**: only the chosen colour's mask has anything in it, and the
+	// other is skipped by the `if (!passes[p].any) continue;` below. That is why the print side
+	// needed no change when the colour became a choice.
+	uint8* maskR = new (std::nothrow) uint8[N];	// nothrow, so the nil test right below means something (failure just means no frame)
 	uint8* maskB = new (std::nothrow) uint8[N];
 	if (maskR == nil || maskB == nil) { if (maskR) delete[] maskR; if (maskB) delete[] maskB; return; }
-	// ★★★2026-08-16: **そのマスクに1画素でも中身があるか**を数える。理由は下の continue のコメント。
+	// Count whether each mask has **any** pixel at all; the reason is at the continue below.
 	bool16 anyR = kFalse, anyB = kFalse;
 	for (int32 y = 0; y < h; ++y)
 	{
@@ -911,9 +923,9 @@ static void KCMDrawRingForPrint(IGraphicsPort* gPort, IViewPortAttributes* vpAtt
 		{
 			const uint8* px  = row + (size_t)x * bpp;	// [alpha, R, G, B]
 			const size_t idx = (size_t)y * w + x;
-			if (px[0] != 0)								// リング画素(alpha!=0)
+			if (px[0] != 0)								// a ring pixel (alpha != 0)
 			{
-				const bool16 blue = (px[3] > px[1]);	// B>R = シアン(パネルでシアンを選んでいる)
+				const bool16 blue = (px[3] > px[1]);	// B > R = cyan (the panel's cyan is selected)
 				maskR[idx] = blue ? 0 : 255;
 				maskB[idx] = blue ? 255 : 0;
 				if (blue) anyB = kTrue; else anyR = kTrue;
@@ -922,64 +934,62 @@ static void KCMDrawRingForPrint(IGraphicsPort* gPort, IViewPortAttributes* vpAtt
 		}
 	}
 
-	// リングの不透明度=パネルで選択中の 25%/75%(画面表示と共通の SelectedMarkOpacity)。
+	// The ring's opacity is the panel's 25%/75% choice -- the same SelectedMarkOpacity the screen uses.
 	const PMReal op = KCMDrawEventHandler::SelectedMarkOpacity();
-	// 既知の制限: 透明効果のあるページでは、ここで描く枠/リングがフラットナにラスタ化され、CMYK 変換で
-	// 色がやや沈む(透明画像のあるページだけ枠が濃く見える)。色を CMYK 指定にしても解消せず(=色値ではなく
-	// 透明機能で描いていることが原因)、不透明ベクター化は25%の「透け」を失うため見送り。現状は元の RGB 指定のまま。
-	// ★★2026-08-16: **2パス目の色を「青」から「シアン」へ直した（ユーザー指示）。**
-	//   画面のリング画像(BuildRing)が **kKCMRingAlt* = シアン(0,255,255)** で塗るのに、
-	//   ここだけ**純青(0,0,255)を塗っていた**＝画面と印刷で色が違うという食い違い。
-	//   (⚠当時のシアンは「赤い下地の上だけ自動で切り替わる色」だった。2026-08-24 に背景適応は廃止され、
-	//    **パネルで選ぶ色**になった＝色の出どころは変わったが、この2パスの形は変えなくてよかった。)
-	//   判定（`B>R`）は青でもシアンでも一致するので**動作では表面化せず**、ずっと残っていた。
-	//   ⇒ 画面と同じ定数を使う。これで「画面・印刷・PDF の3つで見た目が一致」が色でも成立する。
+	// A known limitation: on a page that contains transparency, the frames drawn here are
+	// rasterised by the flattener and the CMYK conversion sinks the colour slightly (the frames look
+	// denser on pages with transparent images). Specifying the colour in CMYK does not fix it (the
+	// cause is drawing through the transparency machinery, not the colour values), and making it an
+	// opaque vector would lose the 25% see-through, so it stands as it is.
+	// The second pass paints **cyan**, matching the screen: BuildRing paints kKCMRingAlt* =
+	// cyan (0,255,255), and this used to paint pure blue (0,0,255) -- screen and print disagreed.
+	// The test (`B > R`) is true for both, so it never showed up in behaviour.
 	struct PassDef { uint8* buf; uint8 r, g, b; bool16 any; };
 	PassDef passes[2] = {
-		{ maskR, kKCMRingR,    kKCMRingG,    kKCMRingB,    anyR },	// 赤
-		{ maskB, kKCMRingAltR, kKCMRingAltG, kKCMRingAltB, anyB }		// シアン(旧: 純青)
+		{ maskR, kKCMRingR,    kKCMRingG,    kKCMRingB,    anyR },	// red
+		{ maskB, kKCMRingAltR, kKCMRingAltG, kKCMRingAltB, anyB }		// cyan
 	};
 
 	for (int p = 0; p < 2; ++p)
 	{
-		// ★★★2026-08-16: **中身が空のマスクは飛ばす（これが「ページが青くベタ塗りになる」の原因だった）。**
-		//   当時のシアンは「下地が赤っぽい画素の上」でしか現れなかったので、**普通のページでは青マスクが
-		//   全画素 0**。その全 0 のマスクをアルファサーバに渡すと**マスクが効かず、下の rectpath がそのまま
-		//   塗られて「純青の全面ベタ」になる**（ユーザー報告 2026-08-16「2ページ目が青くなる」）。
-		//   ★★**2026-08-24 以降はこのガードがもっと効く**＝リング画像は選んだ色の単色なので、
-		//     **2枚のうち片方は必ず全画素 0**。つまり「たまに空」ではなく「毎回どちらかが空」。
-		//   ⚠2026-08-15 の記録「①の全面ベタが**純青**で出ていた」も、いま思えば同じ現象を見ていた。
-		//   ★旧のベクター版には `if (anyRun) fill();` という同じ趣旨のガードがあったのに、
-		//     **アルファサーバ版にだけ無かった**＝2つの実装で片方だけが守っていた形
-		//     （[[verify-claims-in-comments]]「N か所が守っている、は N か所とも開く」）。
-		//   ★これは印刷経路でも同じコードを通るので、印刷側の無駄な塗りも同時に消える。
+		// **Skip an empty mask -- this is what caused "the page comes out solid blue".**
+		//   Handing an all-zero mask to the alpha server means **the mask does not take, and the
+		//   rectpath below is filled as it stands** -- a solid block in that pass's colour.
+		//   Since the ring image became single-coloured, **one of the two masks is empty every
+		//   time**, so this guard is not an edge case but the normal path.
+		//   The vector implementation that preceded the alpha server had the same guard
+		//   (`if (anyRun) fill();`) and **only the alpha server version lacked it** -- one of two
+		//   implementations guarding something ([[verify-claims-in-comments]]: "N places guard it"
+		//   means opening all N).
+		//   It also removes a pointless fill on the print route, which comes through the same code.
 		if (!passes[p].any)
 			continue;
 
-		// マスクを指すグレー(8bpp, alpha無し)の AGMImageRecord。アルファサーバは gray colorspace 必須。
+		// A grey (8bpp, no alpha) AGMImageRecord pointing at the mask. An alpha server requires a
+		// grey colour space.
 		AGMImageRecord mrec;
 		mrec.bounds.xMin = 0;            mrec.bounds.yMin = 0;
 		mrec.bounds.xMax = (int16)w;     mrec.bounds.yMax = (int16)h;
 		mrec.baseAddr     = passes[p].buf;
-		mrec.byteWidth    = w;								// 1byte/px, 行パディング無し
+		mrec.byteWidth    = w;								// 1 byte per pixel, no row padding
 		mrec.colorSpace   = (int16)kGrayColorSpace;
 		mrec.bitsPerPixel = 8;
 		mrec.decodeArray  = nil;
 		mrec.colorTab.numColors = 0;     mrec.colorTab.theColors = nil;
 
-		PMMatrix idm;										// 恒等。user 空間=画像px なので画素(x,y)→user(x,y)
+		PMMatrix idm;										// identity: user space is image pixels, so pixel (x,y) -> user (x,y)
 		AGMPaint* alphaPaint = xpUtils->CreateImagePaintServer(&mrec, &idm, 0, nil);
 		if (alphaPaint != nil)
 		{
 			AutoGSave ag(gPort);
-			gPort->SetAlphaServer(alphaPaint, kTrue, PMMatrix());	// 形状=リング画素(per-pixel)
+			gPort->SetAlphaServer(alphaPaint, kTrue, PMMatrix());	// the shape is the ring pixels, per pixel
 
-			// ★★PDF 書き出しのときだけ、文書のブレンディング色空間で透明グループを開く。
-			//   順序は公式どおり **SetAlphaServer → starttransparencygroup → fill → endtransparencygroup**
-			//   (TranFxAdornment.cpp:390-425)。
-			//   ★`GetDocumentBlendingSpace` は**ポートを取れる**——`IXPManager.h:51-55` が
-			//     「in general **the port is needed** so we can inspect the proofing configuration」と
-			//     書いているので gPort を渡す(公式サンプルは引数を省いているが、ヘッダー側に寄せる)。
+			// For a PDF export only, open a transparency group in the document's blending space.
+			//   The order is the official one: **SetAlphaServer -> starttransparencygroup -> fill ->
+			//   endtransparencygroup** (TranFxAdornment.cpp:390-425).
+			//   `GetDocumentBlendingSpace` **takes the port**: IXPManager.h:51-55 says "in general
+			//   **the port is needed** so we can inspect the proofing configuration", so gPort is
+			//   passed (the sample omits it; follow the header).
 			bool16 startedGroup = kFalse;
 			if (needTransparencyGroup)
 			{
@@ -991,15 +1001,15 @@ static void KCMDrawRingForPrint(IGraphicsPort* gPort, IViewPortAttributes* vpAtt
 				xpManager->ReleaseBlendingSpace(blendingSpace);
 			}
 
-			gPort->setopacity(op, kFalse);							// 半透明(透明合成が honor)
-			// ★★2026-08-16: **CMYK で塗る**(この関数は印刷/PDF 専用)。PDF/X-1a は RGB を許さない
-			//   ＝理由は KCMSetOutputColor の冒頭。
-			//   ⚠**この関数へ来てよいのは「フラットナが働く」場合だけ**（呼び出し側 KCMDrawEntryOnPage
-			//     が振り分ける）。透明を1つも含まないページでは、アルファサーバのマスクが解決されず
-			//     **全面ベタ**になる（2026-08-16 実測）。
+			gPort->setopacity(op, kFalse);							// semi-transparent (the transparency engine honours it)
+			// Painted in CMYK, this function being for print and PDF only (PDF/X-1a does not allow
+			//   RGB -- see the head of KCMSetOutputColor).
+			//   @warning **this function may only be reached where the flattener will run** (the
+			//     caller, KCMDrawEntryOnPage, decides). On a page with no transparency at all the
+			//     alpha server's mask is never resolved and the result is **a solid block**.
 			KCMSetOutputColor(gPort, passes[p].r, passes[p].g, passes[p].b, kTrue /*CMYK*/);
 			gPort->newpath();
-			gPort->rectpath(PMReal(0.0), PMReal(0.0), PMReal(w), PMReal(h));	// user 空間=画像px(呼び出し側で translate/scale 済)
+			gPort->rectpath(PMReal(0.0), PMReal(0.0), PMReal(w), PMReal(h));	// user space is image pixels (the caller translated and scaled)
 			gPort->fill();
 			if (startedGroup)
 				gPort->endtransparencygroup();
@@ -1012,38 +1022,28 @@ static void KCMDrawRingForPrint(IGraphicsPort* gPort, IViewPortAttributes* vpAtt
 }
 
 
-// KCMDrawEntryOnPage の描画モード。文脈ごとに「太さの決め方」と「描き方」が違う:
-//   Screen: 半径=ズーム適応(画面 kKCMRingTargetPx 相当)、image() blit+選択不透明度(25%/75%)
-//   Print:  半径=100%表示相当(sxr=1.0)、アルファサーバ+ベクター fill(フラットナが image() の
-//           部分 alpha を honor しないため。不透明度は KCMDrawRingForPrint 内で選択値を使用)
-//   (ページパネルのサムネイル生成(view 無し・kPreviewMode のオフスクリーン)向けの専用モードは
-//   2026-07-05 に撤去。★背景=既に一度描画済み・パネルに表示中のサムネイルは、公開APIでは
-//   ピンポイントで無効化・再生成する手段が無いため([[kescm-pages-panel-thumbnails]]参照)、
-//   一部のページだけ枠が古いまま/新しいまま食い違う不整合な見た目になる。ユーザー判断で
-//   パネルには枠を一切出さない方針に変更=HandleDrawEvent 側でこの描画コンテキストを早期 return)
+// KCMDrawEntryOnPage's drawing mode. The thickness rule and the drawing method differ by context:
+//   Screen: the radius adapts to the zoom (to about kKCMRingTargetPx on screen), drawn with an
+//           image() blit at the chosen opacity (25%/75%)
+//   Print:  the radius is the one 100% display would give (sxr = 1.0), drawn through an alpha
+//           server with a vector fill (the flattener does not honour a blit's partial alpha).
+//           The opacity is taken inside KCMDrawRingForPrint.
+//   (There is no separate mode for the Pages panel's thumbnails: those are generated with no view,
+//   in kPreviewMode, and the thumbnail branches of the loops below draw a border and a "/" instead
+//   of the ring image.)
 enum { kKCMDrawModeScreen = 0, kKCMDrawModePrint = 1 };
 
-// (★`KCMDrawRingVectorForPDF()` は 2026-08-17 の不具合再検査 B3 で**削除した＝呼び手ゼロ**。
-//  中身は「PDF 書き出しポートは透明を一切通さないので、リング画素をランレングス矩形で塗り、
-//  不透明度は**白と混ぜた色に溶かす**」という近似(2026-08-15)だった。
-//  ⚠★★**その前提は 2026-08-16 に誤りだと判明している**——欠けていたのは公式が要求する追加初期化
-//    (PDF ポートでの `starttransparencygroup`)だけで、足したら 1.4 でも 1.3 でも半透明で出た。
-//    同日 KCMDrawEntryOnPage の印刷/PDF 分岐を1本へ畳んだ時点で呼び手が消えたが、**関数と
-//    「この関数が全プリセットで安全な唯一の実装・動かすな」という 70 行の解説だけが残っていた**
-//    ＝いま動いている実装(アルファサーバ1本)を「落ちる道」と読ませる状態。⚠その「落ちる」も
-//    撤回済み(PID の変化を証拠にした誤り)。
-//  ★近似そのものが要らなくなった理由と実験の全文＝docs/ai-notes/kescm-pdf-transparency-2026-08-16.md)
-
 //========================================================================================
-// ページ1枚分のリング描画(HandleDrawEvent の Target ループから括り出した共通部)。
-//   db/pageUID のページ矩形へ e のリング画像をフィットさせて描く。リング太さの再計算
-//   (BuildRing)もここ。Target 側と Source 側(Always Show Marks on Source)の両方から呼ばれる:
-//   Source 側は Target のリング画像をそのまま Source ページ矩形に重ねる(比較は平坦ページ番号
-//   対応なので位置・形は同一。ページサイズが違えば矩形フィットで引き伸ばされる)。
-//   screenOpacity は Screen モードの blit にだけ使う(Print は KCMDrawRingForPrint が
-//   SelectedMarkOpacity を直接使う)。
-//   ★Target と Source を別ズームで表示中は e->lastRadius が行き来して BuildRing が走り直すが、
-//   リング画像は 36dpi 化済みでバッファが小さく実害はない。
+// Drawing one page's ring. It fits e's ring image to db/pageUID's page rectangle, recomputing the
+//   ring thickness (BuildRing) as needed. Called for the Target side and for the Source side
+//   ("Always Show Marks on Source"): the Source side lays the Target's ring image over the Source
+//   page, which is correct because the comparison pairs flattened page numbers, so the position
+//   and shape are the same (a different page size is stretched to fit).
+//   screenOpacity is used by the Screen mode's blit only; Print takes SelectedMarkOpacity inside
+//   KCMDrawRingForPrint.
+//   With Target and Source shown at different zooms, e->lastRadius ping-pongs and BuildRing runs
+//   again each way; the ring image is stored at 36dpi and the buffer is small, so it does not
+//   matter in practice.
 //========================================================================================
 static void KCMDrawEntryOnPage(IGraphicsPort* gPort, IViewPortAttributes* vpAttr,
 	KCMOverlayEntry* e, IDataBase* db, UID pageUID,
@@ -1057,47 +1057,53 @@ static void KCMDrawEntryOnPage(IGraphicsPort* gPort, IViewPortAttributes* vpAttr
 	if (iw <= 0 || ih <= 0 || pageGeo == nil)
 		return;
 
-	// 【座標の肝】kEndSpreadMessage の描画ポートは spread 座標。ページの箱を spread 座標で取ってフィットさせる。
-	// ★★2026-08-16(API 監査 B3・A-1)= 手組み(GetPathBoundingBox + ::InnerToSpreadMatrix + Transform)から
-	//   **公式の Facade へ寄せた**。手本 = snapshot/SnapTracker.cpp:621
-	//   (★同じ関数の :616 は同じページを PasteboardCoordinates で取っている＝**座標系を変えて2回呼ぶ**のが
-	//     公式の形。⚠ヘッダー IGeometryFacade.h:209 は Pasteboard/Parent/Inner の3つしか挙げないが書き落としで、
-	//     製品 CPageItemAdaptiveTransform.cpp:197,362 と public lib CPathCreationTracker.cpp:300 も
-	//     SpreadCoordinates で呼んでいる)。
-	//   ⚠**IGeometry の Query と nil 判定は残す**——「この UID が本当に幾何を持つか」は Facade が担保しない
-	//     (手本 :610-615 も同じ順序)。★渡すのは UIDRef(db,pageUID)＝Facade のために Query を増やさない。
-	//   ⚠**Geometry::PathBounds() を渡すこと**(手本は OuterStrokeBounds だが、GetPathBoundingBox と
-	//     同義なのはこちら)。この関数の下流はページ矩形しか使わないので、行列そのものはもう要らない。
+	// COORDINATES: the drawing port is in spread coordinates, so the page's box is taken in spread
+	// coordinates and the image is fitted to it.
+	// The official Facade replaced a hand-built GetPathBoundingBox + ::InnerToSpreadMatrix +
+	//   Transform. Worked example: snapshot/SnapTracker.cpp:621. (Line :616 of the same function
+	//   takes the same page in PasteboardCoordinates -- **calling it twice with different coordinate
+	//   systems is the official shape**. IGeometryFacade.h:209 lists only Pasteboard, Parent and
+	//   Inner, which is an omission: the product's CPageItemAdaptiveTransform.cpp:197,362 and the
+	//   public lib's CPathCreationTracker.cpp:300 call it with SpreadCoordinates.)
+	//   @warning keep the IGeometry Query and its nil test -- whether this UID has geometry at all
+	//     is not the Facade's guarantee (the worked example does the same in the same order).
+	//     Pass UIDRef(db, pageUID) so the Facade does not cost an extra Query.
+	//   @warning pass Geometry::PathBounds(). The worked example uses OuterStrokeBounds, but
+	//     PathBounds is what matches GetPathBoundingBox.
 	PMRect pr = Utils<Facade::IGeometryFacade>()->GetItemBounds(
 		UIDRef(db, pageUID), Transform::SpreadCoordinates(), Geometry::PathBounds());
 
-	// 【リング太さ】モードごとに膨張半径(画像px)を決め、前回と違えば描き直す。
+	// RING THICKNESS: work out the dilation radius (in image pixels) for this mode and redraw if it
+	// differs from last time.
 	if (e->dist != nil)
 	{
-		int32 R = -1;	// -1=このモードでは半径を決められない(既存バッファのまま描く)
+		int32 R = -1;	// -1 = this mode cannot decide a radius; draw with the buffer as it is
 		if (sxr > 0)
 		{
-			// 画面/印刷: このページの実寸と現ズーム(印刷は sxr=1.0 固定)から
-			// 「画面 kKCMRingTargetPx 相当」の半径を逆算。拡大時は下限(2)に張り付くので再計算が止まる。
-			PMReal denom = (pr.Width() / PMReal(iw)) * sxr;		// 画面px / 画像px
+			// Screen and print: derive the radius that gives about kKCMRingTargetPx on screen, from
+			// this page's real size and the current zoom (print fixes sxr at 1.0). Zoomed in, it
+			// sticks at the floor (2) and stops being recomputed.
+			PMReal denom = (pr.Width() / PMReal(iw)) * sxr;		// screen px per image px
 			if (denom > PMReal(0.0001))
 			{
 				R = ::ToInt32(::Round(kKCMRingTargetPx / denom));
-				if (R < 2) R = 2;								// 最小2px(量子化後は最小4px)
-				if (R > 200) R = 200;							// 過大膨張の上限
-				// 量子化を 2px→4px 刻みに。ズーム中に R が変わる回数(=BuildRing 再計算)がほぼ半減。
-				// 代償=太さの段階がやや粗い。最小は 4、200 は 200 に丸まる。
-				R = ((R + 2) / 4) * 4;							// 4px 量子化
+				if (R < 2) R = 2;								// at least 2px (4px after quantisation)
+				if (R > 200) R = 200;							// and a ceiling on the dilation
+				// Quantised in steps of 4px rather than 2, which roughly halves how often R changes
+				// while zooming (and so how often BuildRing runs). The cost is slightly coarser
+				// steps in thickness. The minimum becomes 4; 200 stays 200.
+				R = ((R + 2) / 4) * 4;							// 4px quantisation
 			}
 		}
 		else if (drawMode != kKCMDrawModePrint)
 		{
-			// ★サムネイル(view無し=sxr が取れない)。ズーム逆算が使えないので、画像幅に対する固定比率で
-			// 太い枠を作る(極小表示ゆえ視認性優先)。半径 = 画像幅 / kKCMThumbRingDivisor。
+			// A thumbnail (no view, so no sxr). The zoom formula cannot be used, so the frame is a
+			// fixed fraction of the image width, and thick, because a thumbnail is tiny:
+			// radius = image width / kKCMThumbRingDivisor.
 			R = iw / kKCMThumbRingDivisor;
 			if (R < 4) R = 4;
 			if (R > 200) R = 200;
-			R = ((R + 2) / 4) * 4;								// 4px 量子化(画面と同じ流儀)
+			R = ((R + 2) / 4) * 4;								// 4px quantisation, as on screen
 		}
 		if (R > 0 && R != e->lastRadius)
 		{
@@ -1106,104 +1112,82 @@ static void KCMDrawEntryOnPage(IGraphicsPort* gPort, IViewPortAttributes* vpAttr
 		}
 	}
 
-	// 枠の画像(リング)を blit する。translate/scale はこの gsave 内だけ。
+	// Blit the ring image. The translate and scale live inside this gsave only.
 	{
 		AutoGSave ag(gPort);
-		// ★この描画を「このページの矩形よりわずかに内側」に限定する(spread 座標でクリップ)。見開きの
-		// 2ページはノドで隙間なく隣接し、ページ矩形の端=隣ページの端=共有線になる。単に pr でクリップ
-		// すると枠の最外周がその共有線に乗り、隣(変化なし)ページのノドに 1px 線が出る。そこで pr を
-		// 約1pt 内側に縮めてクリップし、枠が共有線に届かないようにする(枠はページ端の1px内側=見た目ほぼ不変)。
+		// Confine the drawing to just inside this page's rectangle (clipping in spread
+		// coordinates). Facing pages meet at the spine with no gap, so the page rectangle's edge IS
+		// the neighbour's edge; clipping at pr exactly puts the frame's outermost pixel on that
+		// shared line and draws a 1px line into the neighbouring (unchanged) page. Coming in about
+		// 1pt keeps the frame off it (the frame then sits 1px inside the page edge, which looks the
+		// same).
 		gPort->rectclip(pr.Left()   + kKCMClipInset, pr.Top()    + kKCMClipInset,
 		                pr.Width()  - kKCMClipInset * 2.0, pr.Height() - kKCMClipInset * 2.0);
-		gPort->translate(pr.Left(), pr.Top());				// ページ左上へ
-		gPort->scale(pr.Width() / iw, pr.Height() / ih);	// 画像px → ページ矩形にフィット
-		// ★印刷時は image() blit だと枠が不透明になる(フラットナが画像の部分 alpha を honor しない)。
-		// アルファサーバ＋純色ベクター fill＋setopacity で半透明に描く(透明合成エンジンが honor)。
-		// 画面は image() blit(画素 alpha を honor=実測確認済み)+選択不透明度(25%/75%)。
-		//
-		// ★★★2026-08-16: **印刷と PDF 書き出しを同じ処理に統一した**（ユーザー指示）。
-		//   どちらも KCMDrawRingForPrint（アルファサーバ＋純色のベクター fill）1本で描き、
-		//   **PDF 書き出しのときだけ要る追加初期化（透明グループ）はあちらの中で完結させる**
-		//   （公式の手本 = transparencyeffect/TranFxAdornment.cpp:392-407）。
-		//   ★**実機で半透明が効くことを確認済み**（PDF 1.4 は /Group=14・/SMask=6 で目視も良好。
-		//     PDF 1.3 のプリセットでもユーザーが実機で半透明を確認＝2026-08-16）。
-		//   ⇒ 旧実装の「PDF だけランレングスのベクター塗り＋不透明度を白と混ぜた色に溶かす」という
-		//     **白背景前提の近似は要らなくなった**（下地が白でない場所でマークが浮く問題も消える）。
-		//   ⚠ 旧実装の前提「PDF 書き出しポートは透明を一切通さない」は**誤りだった**
-		//     （詳細は KCMDrawRingForPrint 冒頭と docs/ai-notes/kescm-pdf-transparency-2026-08-16.md）。
+		gPort->translate(pr.Left(), pr.Top());				// to the page's top left
+		gPort->scale(pr.Width() / iw, pr.Height() / ih);	// image pixels -> fitted to the page rectangle
+		// **Print and PDF export go through the same path** (KCMDrawRingForPrint: an alpha server
+		//   with a solid vector fill), and the extra initialisation only PDF needs -- the
+		//   transparency group -- is handled inside it.
+		//   Screen is an image() blit, which honours the pixels' alpha (measured), at the chosen
+		//   opacity (25%/75%).
 		if (drawMode == kKCMDrawModePrint)
 		{
-			//========================================================================================
-			// ★★★2026-08-16: **PDF 書き出しでは「そのページに透明があるか」で描き方を変える。**
-			//
-			//   ■ 実測（ユーザーが実機で切り分け。★これが決定打だった）:
-			//     ・**透明を含むイラストのあるページ** … アルファサーバのマスクが正しく効き、
-			//       **枠が半透明で出る**（PDF/X-1a でも CMYK 指定なら警告も出ない）
-			//     ・**透明が1つも無いページ** … **枠のあるページが真っ赤なベタ塗り**になる
-			//   ■ ★理由＝**フラットナが働くかどうか**。透明があるページは PDF 書き出しの前に
-			//     透明フラットナを通るので、アルファサーバの塗りもその経路で解決される。
-			//     透明が無いページはフラットナのオフスクリーンが作られないため、マスクが解決されず
-			//     下の矩形だけが残る（＝全面ベタ）。
-			//   ■ ⇒ **判定は `kPDFIsFlattenerTargetVPAttr`**（このポートがフラットナ対象か）。
-			//     ⚠**この属性は「使えない」と何度も誤解した**——PDF 1.3 でも 0 を返すのを見て
-			//     「互換性レベルを区別しない＝役に立たない」と判断していたが、**そもそも問いが違った**。
-			//     これは「互換性レベル」ではなく「**このページに平坦化する透明があるか**」を答える属性で、
-			//     まさにここで要る判定そのものだった。
-			//========================================================================================
-			//   ■ ⚠★★**「透明が無いページだけベクター塗りに落とす」分岐は、入れないことにした**
-			//     （ユーザー判断 2026-08-16）。理由＝**判定材料が足りない**:
-			//     ・`kPDFIsFlattenerTargetVPAttr` は「このポートがフラットナ対象か」を答えるが、
-			//       **PDF 1.4 以降でも 0 になる**（1.4 は透明をそのまま持てるのでフラットナを使わない）。
-			//     ・つまり「0 だから落とす」と書くと、**本物の半透明が出せる PDF 1.4 まで近似に落ちる**。
-			//       ★ユーザー実測「1.4 では（透明の無いページでも）問題なく半透明になっている」。
-			//     ⇒ **全面ベタになるのは「PDF 1.3 かつ透明が無い文書」だけ**だった。
-			//   ★★★**2026-08-20 に解消。分岐は要らなかった。** 当時ここは「描画中に互換性レベルを
-			//     知る手段（`kXPFlattenerOffVPAttr` 等）を測って分岐を戻す」と書いていたが、
-			//     **直す場所が描画側ではなかった**＝フラットナが動くかどうかは
-			//     `IXPManager` の「透明を持つページアイテムの一覧」だけで決まっており、
-			//     アドーンメントはアイテムでないのでその一覧に入れていなかった。
-			//     ⇒ `KCMRingAdornmentRefreshItemXPState()` で一覧を聞き直させたら直った
-			//       （経緯と実測は KCMRingAdornment.h の同関数の宣言）。
-			//     ⇒ **この分岐案は追わないこと。** 近似で描き分ける必要は無くなった。
-			//   ⇒ 現状は**アルファサーバ1本**。残る制限は「ページアイテムが1つも無いスプレッド」だけ。
+			// **How a page with NO transparency used to fail, and why there is no branch for it.**
+			//   Measured: on a page containing a transparent illustration, the alpha server's mask
+			//     resolves and the frame is semi-transparent; on a page with no transparency at all,
+			//     **the framed page came out as a solid red block**.
+			//   The cause is **whether the flattener runs**: a page with transparency is flattened
+			//     before the PDF is written, and the alpha server's fill is resolved along that
+			//     path. With no transparency there is no flattener offscreen, the mask is never
+			//     resolved, and only the rectangle underneath remains.
+			//   **The fix was not here.** Whether the flattener runs is decided solely by
+			//     `IXPManager`'s list of page items that carry transparency, and an adornment is not
+			//     an item, so it was never in that list. Having
+			//     `KCMRingAdornmentRefreshItemXPState()` declare it fixed the whole thing (the
+			//     record is at that function's declaration in KCMRingAdornment.h).
+			//   @warning **do not reintroduce a "fall back to a vector fill when there is no
+			//     transparency" branch.** `kPDFIsFlattenerTargetVPAttr` answers "is this port a
+			//     flattener target", which is **0 at PDF 1.4 and later too** (1.4 carries
+			//     transparency natively and needs no flattener), so branching on it would drop
+			//     genuine semi-transparency at 1.4 down to an approximation. There is no
+			//     approximation left to fall back to, and none is needed.
+			//   What remains unsolved is only "a spread with no page items at all" (nothing to
+			//     declare the transparency on).
 			KCMDrawRingForPrint(gPort, vpAttr, db, e);
 		}
 		else
 		{
-			// 画面(とサムネイル)は image() blit。画素 alpha を honor する(実測確認済み)。
-			// サムネイル(sxr<=0)は不透明100%で描く(極小表示で 25%/75% だと沈んで見えないため)。
+			// Screen (and thumbnails): an image() blit, which honours the pixels' alpha (measured).
+			// A thumbnail (sxr <= 0) is drawn fully opaque -- at that size 25%/75% sinks out of sight.
 			const PMReal blitOpacity = (sxr <= 0) ? PMReal(1.0) : screenOpacity;
 			gPort->setopacity(blitOpacity, kFalse);
-			gPort->image(&e->rec, PMMatrix(), 0);		// 自前レコード(buf を指す)を blit
+			gPort->image(&e->rec, PMMatrix(), 0);		// blit our own record (which points at buf)
 		}
 	}
 }
 
 
 //========================================================================================
-// ページ全体を囲む縁枠(色指定)。用途: Pages パネルのサムネイルで「変更ページ」を赤枠で示す
-// (極小サムネイルでは差分リングが潰れて見えないため、ページ枠に置き換える。KCMDrawEventHandler の
-// isThumb 分岐から呼ぶ)。ベクター矩形塗り+setopacity なので正しく半透明合成される。
-// 太さ: ページ短辺 / kKCMThumbBorderDivisor(ズーム式が使えないので潰れない固定比率)。
-// 不透明度: kKCMThumbMarkOpacity(0.75=少し透ける)。
+// A coloured border around the whole page. Used to mark a changed page in the Pages panel's
+// thumbnails, where the difference ring is too small to read and is replaced by a page border.
+// A vector fill with setopacity, so it composites correctly.
+// Thickness: the page's short side / kKCMThumbBorderDivisor (a fixed ratio, the zoom formula being
+// unavailable). Opacity: kKCMThumbMarkOpacity (0.75, slightly see-through).
 //
-// ★★★2026-08-17(不具合再検査 B3 の2周目)＝**この関数は Pages パネルのサムネイル専用**であることを
-//   引数の形にも反映した。以前は sxr / drawMode / screenOpacity を受け取り、
-//   「画面/印刷はズーム適応」「印刷は CMYK」「画面は screenOpacity」と3通りに分岐していたが、
-//   **呼び手を全数(3つ)開いたら、3つとも `isThumb` の枝からしか呼んでいなかった**:
-//     ・Find Overset のサムネイル(wantOversetThumb ＝ isThumb が前提)
-//     ・Source ループの `if (isThumb)`
-//     ・Target ループの `if (isThumb)`
-//   `isThumb` は定義からして **!printing かつ GetView()==nil**(＝sxr は 0 のまま)なので、
-//   **sxr>0 の枝にも drawMode==Print の枝にも一度も入らない**＝到達しないコードだった。
-//   ★**それが実害の形で表に出ていた**＝呼び手が渡す不透明度が **`SelectedMarkOpacity()` と
-//     `screenMarkOp` に割れており、しかもどちらも使われていなかった**(サムネイル枝が
-//     kKCMThumbMarkOpacity を選ぶため)。**同じ問いに2つの答えがあるのに、動作では絶対に
-//     表面化しない**形で、次にここを触る人は「不透明度が効かない」と悩むことになる。
-//   ⇒ 引数を落として**呼び手の食い違いごと消した**。B2 の A-1「誰も呼ばない約束」と同型で、
-//     こちらは「**誰も渡さない値を受け取る約束**」。[[verify-claims-in-comments]]
-//   ⚠**レイアウトビューにも枠を出したくなったら、引数を戻すのではなく
-//     KCMDrawPageDiagonal(あちらは sxr>0 も printing も本当に来る)の形を写すこと。**
+// **THIS IS FOR THE PAGES PANEL'S THUMBNAILS ONLY**, and the argument list says so. It once took
+//   sxr, drawMode and screenOpacity and branched three ways ("screen and print adapt to the zoom",
+//   "print is CMYK", "screen uses screenOpacity") -- but **all three callers call it from an
+//   `isThumb` branch**: the Find Overset thumbnail (wantOversetThumb implies isThumb), the Source
+//   loop's `if (isThumb)`, and the Target loop's. `isThumb` is by definition **!printing and
+//   GetView() == nil** (so sxr stays 0), which means **the sxr > 0 branch and the Print branch were
+//   both unreachable**.
+//   That showed up as a real defect in the arguments: the callers passed **two different
+//     opacities** (`SelectedMarkOpacity()` and `screenMarkOp`) and **neither was ever used** (the
+//     thumbnail branch picks kKCMThumbMarkOpacity). One question with two answers, in a form that
+//     could never show up in behaviour -- the next person to touch it would be left wondering why
+//     the opacity does nothing.
+//   @warning if a border is ever wanted in the layout view, do NOT put the arguments back: copy the
+//     shape of KCMDrawPageDiagonal, which really does get sxr > 0 and printing.
 //========================================================================================
 static void KCMDrawPageBorder(IGraphicsPort* gPort, IDataBase* db, UID pageUID,
 	uint8 cr, uint8 cg, uint8 cb)
@@ -1212,67 +1196,72 @@ static void KCMDrawPageBorder(IGraphicsPort* gPort, IDataBase* db, UID pageUID,
 	if (pageGeo == nil)
 		return;
 
-	// 【座標】KCMDrawEntryOnPage と同じく、ページの箱を Facade で spread 座標のまま取る
-	// (★2026-08-16 の API 監査 B3・A-1。理由と手本はあちらのコメント)。
+	// COORDINATES: as in KCMDrawEntryOnPage, the page's box comes from the Facade already in spread
+	// coordinates (the reasoning is there).
 	PMRect pr = Utils<Facade::IGeometryFacade>()->GetItemBounds(
 		UIDRef(db, pageUID), Transform::SpreadCoordinates(), Geometry::PathBounds());
 
-	// 【太さ】ページ短辺の固定比率(枠専用の除数)。サムネイルは view が無くズーム式が使えない。
+	// THICKNESS: a fixed fraction of the page's short side (the border's own divisor). A thumbnail
+	// has no view, so the zoom formula is unavailable.
 	const PMReal minDim = std::min(pr.Width(), pr.Height());
 	PMReal w = minDim / PMReal(kKCMThumbBorderDivisor);
-	// ⚠下の2つは**現在のページサイズの下限では到達しない**(2026-08-17 実測＝最小ページ幅 114.39pt。
-	//   w = minDim/6 なので w<0.5 は minDim<3pt、maxW を超えるのは minDim<1.5pt)。
-	//   **本体がページサイズの下限を変えたときのための保険として残す**——引数の値域(上のコメント)と違い、
-	//   こちらは外から与えられる数値に対する防御なので、到達しないことを理由に外さない。
+	// @warning the next two are **unreachable at the current minimum page size** (measured: the
+	//   smallest page is 114.39pt; with w = minDim/6, w < 0.5 needs minDim < 3pt and exceeding maxW
+	//   needs minDim < 1.5pt). **They stay as insurance against InDesign changing that floor** --
+	//   unlike the argument list above, this is a defence against a value arriving from outside, so
+	//   being unreachable today is not a reason to remove it.
 	const PMReal maxW = minDim / PMReal(2.0) - PMReal(0.5);
 	if (w > maxW) w = maxW;
 	if (w < PMReal(0.5))
-		return;	// ページが小さすぎて太さが潰れる場合は描かない
+		return;	// the page is too small for the border to be anything but a smear
 
-	// 【クリップ相当】通常マークと同じく、ノドの共有線に届かないよう約1pt内側から描く。
+	// The equivalent of the clip: start about 1pt in, so nothing reaches the spine's shared line.
 	const PMReal L = pr.Left()   + kKCMClipInset, R = pr.Right()  - kKCMClipInset;
 	const PMReal T = pr.Top()    + kKCMClipInset, B = pr.Bottom() - kKCMClipInset;
 	if (R <= L || B <= T)
-		return;	// 同上(最小ページ幅の実測は kKCMClipInset の定義を見よ)
+		return;	// as above (the measured minimum page size is at kKCMClipInset's definition)
 
 	const PMReal opacity = kKCMThumbMarkOpacity;
 
 	AutoGSave ag(gPort);
-	// ★サムネイル生成ポートでは、描画前に有効なクリップ矩形を設定しないと fill が出ない(KCMDrawEntryOnPage の
-	// image blit / KCMDrawPageDiagonal の stroke も同様に rectclip 後に描いている=これが無いと枠が全く出ない)。
-	// ノドの共有線に届かないよう約1pt内側でクリップ(L/R/T/B と同じ inset)。fill 各バーはこの内側なので削れない。
+	// **A thumbnail port draws no fill unless a valid clip rectangle is set first** (the image blit
+	// in KCMDrawEntryOnPage and the stroke in KCMDrawPageDiagonal likewise draw after a rectclip;
+	// without it no border appears at all).
+	// Clipped about 1pt in, so nothing reaches the spine's shared line (the same inset as L/R/T/B).
+	// The filled bars are inside that, so nothing is cut off.
 	gPort->rectclip(pr.Left()   + kKCMClipInset, pr.Top()    + kKCMClipInset,
 	                pr.Width()  - kKCMClipInset * 2.0, pr.Height() - kKCMClipInset * 2.0);
 	gPort->setopacity(opacity, kFalse);
-	// ★色は RGB 固定。**サムネイル生成は印刷でも PDF 書き出しでもない**ので CMYK 指定は要らない
-	//   (CMYK が要る理由＝PDF/X-1a は RGB を許さない、は KCMSetOutputColor の冒頭。
-	//    2026-08-17 に引数 drawMode を落とした＝上の説明を参照)。
+	// RGB always: **generating a thumbnail is neither printing nor exporting**, so CMYK is not
+	//   needed here (why CMYK is needed at all is at the head of KCMSetOutputColor).
 	KCMSetOutputColor(gPort, cr, cg, cb, kFalse /*RGB*/);
-	gPort->rectfill(L,     T,     R - L, w);					// 上
-	gPort->rectfill(L,     B - w, R - L, w);					// 下
-	gPort->rectfill(L,     T + w, w,     (B - T) - w * PMReal(2.0));	// 左
-	gPort->rectfill(R - w, T + w, w,     (B - T) - w * PMReal(2.0));	// 右
+	gPort->rectfill(L,     T,     R - L, w);					// top
+	gPort->rectfill(L,     B - w, R - L, w);					// bottom
+	gPort->rectfill(L,     T + w, w,     (B - T) - w * PMReal(2.0));	// left
+	gPort->rectfill(R - w, T + w, w,     (B - T) - w * PMReal(2.0));	// right
 }
 
 
 //========================================================================================
-// ノンブル(自動ページ番号)除外領域のベタ塗り(可視化)。
-//   除外トグル(KCMGetIgnorePageNumberMarker)がONの間、pageUID のノンブルフレーム矩形を
-//   半透明の緑で塗り、比較から外している領域を目視できるようにする。矩形は
-//   KCMAppendPageNumberMarkerRects がページ左上原点のpt座標で返すので、通常マークと同じく
-//   ページ inner bbox を spread(=描画ポート)座標へ変換し、その左上を原点に平行移動して塗る
-//   (ページは軸整列前提=比較の除外処理やリング描画と同じ座標の扱い)。ベクター矩形+setopacity
-//   ゆえ screen/print とも正しく半透明合成される(KCMDrawPageBorder と同じ理由)。
+// The wash over the folio exclusion area (a diagnostic).
+//   While the exclusion toggle (KCMGetIgnorePageNumberMarker) is on, the folio frames of pageUID
+//   are painted a semi-transparent green so the area being left out of the comparison is visible.
+//   The rectangles come from KCMAppendPageNumberMarkerRects in points with the page's top left as
+//   the origin, so -- like the other marks -- the page's inner bbox is taken into spread (drawing
+//   port) coordinates and the rectangles are offset from its top left. Pages are assumed
+//   axis-aligned, as everywhere else in the comparison and the ring drawing.
+//   A vector fill with setopacity, so it composites correctly on screen and in print
+//   (KCMDrawPageBorder's reasoning).
 //========================================================================================
 static void KCMDrawPageNumberMarkerFill(IGraphicsPort* gPort, IDataBase* db, UID pageUID)
 {
 	if (db == nil || pageUID == kInvalidUID)
 		return;
 
-	// ★キャッシュ経由(refresh=kFalse。2026-08-06 の監査 E-3)。この関数は描画イベントのたびに
-	//   全ページぶん呼ばれる(スクロール中は連続)ので、実測は繰り返さない。比較時(MakeEntry)に入った
-	//   値があればそれを描く=「この比較で除外した領域」。比較より後にトグルを ON にした場合だけ、
-	//   ここで1回だけ実測して覚える。
+	// Through the cache (refresh=kFalse). This runs for every page on every draw event -- continuously
+	//   while scrolling -- so it must not measure again. If a comparison (MakeEntry) put a value in,
+	//   that is what gets drawn, i.e. "the area THIS comparison excluded". Only when the toggle is
+	//   switched on after a comparison does this measure once and remember.
 	const std::vector<PMRect>& markerRects = KCMGetPageNumberMarkerRects(UIDRef(db, pageUID), kFalse);
 	if (markerRects.empty())
 		return;
@@ -1281,7 +1270,7 @@ static void KCMDrawPageNumberMarkerFill(IGraphicsPort* gPort, IDataBase* db, UID
 	if (pageGeo == nil)
 		return;
 
-	// ★2026-08-16(B3・A-1): ページの箱は Facade で spread 座標のまま取る(理由は KCMDrawEntryOnPage)。
+	// The page's box from the Facade, in spread coordinates (the reasoning is in KCMDrawEntryOnPage).
 	const PMRect pr = Utils<Facade::IGeometryFacade>()->GetItemBounds(
 		UIDRef(db, pageUID), Transform::SpreadCoordinates(), Geometry::PathBounds());
 
@@ -1290,7 +1279,7 @@ static void KCMDrawPageNumberMarkerFill(IGraphicsPort* gPort, IDataBase* db, UID
 	gPort->setrgbcolor(kKCMExcludeFillR / PMReal(255.0), kKCMExcludeFillG / PMReal(255.0), kKCMExcludeFillB / PMReal(255.0));
 	for (size_t i = 0; i < markerRects.size(); ++i)
 	{
-		const PMRect& mr = markerRects[i];			// ページ左上原点の pt 座標
+		const PMRect& mr = markerRects[i];			// in points, from the page's top left
 		if (mr.Width() > 0 && mr.Height() > 0)
 			gPort->rectfill(pr.Left() + mr.Left(), pr.Top() + mr.Top(), mr.Width(), mr.Height());
 	}
@@ -1298,12 +1287,15 @@ static void KCMDrawPageNumberMarkerFill(IGraphicsPort* gPort, IDataBase* db, UID
 
 
 //========================================================================================
-// ページに左下→右上の斜線("/")を引く(色指定)。用途2種:
-//   ・登録済み(比較相手なし="Added"/"Removed")ページ → 緑「/」(2026-07-06: 従来の緑「枠」から変更。
-//     溢れの赤「/」と同じ斜線様式にして「相手なしページ」を一目で対応づける)。
-//   ・文書間のページ数差であふれた(登録もされていない)未比較ページ → 赤「/」(通常マークと同色)。
-// ラスタ不要のベクター線なので screen/print/サムネイル とも setopacity で正しく合成される。
-// 太さ/不透明度は KCMDrawPageBorder と同じ規則(サムネイルは固定比率・kKCMThumbMarkOpacity で少し透ける)。
+// A bottom-left to top-right diagonal ("/") across the page, in a given colour. Two uses:
+//   - a registered page (one with no partner, "Added"/"Removed") -> a green "/" (it used to be a
+//     green BORDER; the slash matches the red overflow one, so "this page has no partner" reads the
+//     same either way);
+//   - a page that overflowed the page-count difference and was never compared, and is not
+//     registered either -> a red "/" (the same red as the change marks).
+// A vector line needing no raster, so setopacity composites it correctly on screen, in print and in
+// thumbnails alike. Thickness and opacity follow KCMDrawPageBorder's rules (a thumbnail uses the
+// fixed ratio and kKCMThumbMarkOpacity, slightly see-through).
 //========================================================================================
 static void KCMDrawPageDiagonal(IGraphicsPort* gPort, IDataBase* db, UID pageUID,
 	const PMReal& sxr, int32 drawMode, const PMReal& screenOpacity,
@@ -1313,11 +1305,12 @@ static void KCMDrawPageDiagonal(IGraphicsPort* gPort, IDataBase* db, UID pageUID
 	if (pageGeo == nil)
 		return;
 
-	// ★2026-08-16(B3・A-1): ページの箱は Facade で spread 座標のまま取る(理由は KCMDrawEntryOnPage)。
+	// The page's box from the Facade, in spread coordinates (the reasoning is in KCMDrawEntryOnPage).
 	const PMRect pr = Utils<Facade::IGeometryFacade>()->GetItemBounds(
 		UIDRef(db, pageUID), Transform::SpreadCoordinates(), Geometry::PathBounds());
 
-	// 太さ: 画面/印刷=ズーム適応、サムネイル(sxr<=0)=ページ短辺の固定比率(「/」専用の除数)。
+	// Thickness: screen and print adapt to the zoom; a thumbnail (sxr <= 0) uses a fixed fraction of
+	// the page's short side (the slash's own divisor).
 	const PMReal minDim = std::min(pr.Width(), pr.Height());
 	PMReal w = (sxr > 0) ? (kKCMRingTargetPx / sxr) : (minDim / PMReal(kKCMThumbDiagDivisor));
 	const PMReal maxW = minDim / PMReal(2.0);
@@ -1329,28 +1322,29 @@ static void KCMDrawPageDiagonal(IGraphicsPort* gPort, IDataBase* db, UID pageUID
 		: ((drawMode == kKCMDrawModePrint) ? KCMDrawEventHandler::SelectedMarkOpacity() : screenOpacity);
 
 	AutoGSave ag(gPort);
-	// ノドの共有線に届かないよう、通常マークと同じく約1pt内側でクリップしてから対角線を引く。
+	// Clipped about 1pt in, like the other marks, so nothing reaches the spine's shared line.
 	gPort->rectclip(pr.Left()   + kKCMClipInset, pr.Top()    + kKCMClipInset,
 	                pr.Width()  - kKCMClipInset * 2.0, pr.Height() - kKCMClipInset * 2.0);
 	gPort->setopacity(opacity, kFalse);
-	// ★2026-08-16: 印刷/PDF は CMYK で塗る(PDF/X-1a は RGB を許さない＝KCMSetOutputColor 参照)。
+	// Print and PDF are painted in CMYK (PDF/X-1a does not allow RGB -- see KCMSetOutputColor).
 	KCMSetOutputColor(gPort, cr, cg, cb, (drawMode == kKCMDrawModePrint) ? kTrue : kFalse);
 	gPort->setlinewidth(w);
 	gPort->newpath();
-	gPort->moveto(pr.Left(),  pr.Bottom());	// 左下
-	gPort->lineto(pr.Right(), pr.Top());		// 右上 → "/" の対角線
+	gPort->moveto(pr.Left(),  pr.Bottom());	// bottom left
+	gPort->lineto(pr.Right(), pr.Top());		// to top right, making the "/"
 	gPort->stroke();
 }
 
 
 //========================================================================================
-// ページ全体に大きな「＋」を「赤の線＋白い縁取り」で描く(Pages パネルのサムネイル専用)。用途:
-// フライアウト「Find Overset」でアクティブ文書を走査し、overset(あふれ)のあるページを、ページ
-// パネルのサムネイル上で目立たせる。★2026-07-24 ユーザー指定でカンバス(レイアウトビュー)には
-// 一切描かず、ページパネルのサムネイルにだけ出す(旧: カンバスに赤い十字を描いていた)。
-//   白い太線(縁取り)を先に引き、その上に少し細い赤線を重ねて「赤＋白縁」を作る。フォント非依存の
-//   ベクター線なので極小サムネイルでも潰れない(太さはページ短辺の固定比率=「/」と同じ流儀)。
-//   サムネイル生成は view 無し(sxr=0)なので、太さはズーム式ではなく短辺比率で決める。
+// A large "+" across the page, drawn as a red line with a white halo (Pages panel thumbnails
+// only). Used by the flyout's "Find Overset" to make the pages holding overset stand out in the
+// Pages panel. **It is never drawn on the canvas** (the reader's decision).
+//   The thick white line is stroked first and the slightly thinner red one over it, giving red with
+//   a white edge. Vector lines, so they survive a tiny thumbnail (the thickness is a fixed fraction
+//   of the page's short side, as the "/" is).
+//   Thumbnails are generated with no view (sxr = 0), which is why the thickness cannot come from
+//   the zoom.
 //========================================================================================
 static void KCMDrawPageCrossOutlined(IGraphicsPort* gPort, IDataBase* db, UID pageUID)
 {
@@ -1358,59 +1352,61 @@ static void KCMDrawPageCrossOutlined(IGraphicsPort* gPort, IDataBase* db, UID pa
 	if (pageGeo == nil)
 		return;
 
-	// ★2026-08-16(B3・A-1): ページの箱は Facade で spread 座標のまま取る(理由は KCMDrawEntryOnPage)。
+	// The page's box from the Facade, in spread coordinates (the reasoning is in KCMDrawEntryOnPage).
 	const PMRect pr = Utils<Facade::IGeometryFacade>()->GetItemBounds(
 		UIDRef(db, pageUID), Transform::SpreadCoordinates(), Geometry::PathBounds());
 
-	// 赤線の太さ = ページ短辺 ÷ 専用除数(「/」より太い)。白縁はこれより太く引いて左右にはみ出させる。
+	// The red line's thickness is the page's short side over its own divisor (thicker than the "/").
+	// The white halo is stroked wider so it shows on both sides.
 	const PMReal minDim = std::min(pr.Width(), pr.Height());
 	PMReal redW = minDim / PMReal(kKCMOversetCrossWidthDivisor);
 	const PMReal maxW = minDim / PMReal(3.0);
 	if (redW > maxW) redW = maxW;
 	if (redW < PMReal(0.5))
 		return;
-	const PMReal whiteW = redW * PMReal(2.2);	// 白縁(赤線の左右に約 redW*0.6 ずつはみ出す)
+	const PMReal whiteW = redW * PMReal(2.2);	// the halo, about 0.6 * redW proud on each side
 
-	const PMReal cx = (pr.Left() + pr.Right()) / PMReal(2.0);	// ページ中央 X
-	const PMReal cy = (pr.Top()  + pr.Bottom()) / PMReal(2.0);	// ページ中央 Y
-	// ★縦横とも同じ長さの「＋」にする(2026-07-24 ユーザー指定)。中央から片側 half の長さで上下左右へ伸ばす。
-	//   half=短辺×kKCMOversetCrossHalfRatio(0.40=横は幅の約80%とやや短め・縦も同じ長さ)。
+	const PMReal cx = (pr.Left() + pr.Right()) / PMReal(2.0);	// the page's centre X
+	const PMReal cy = (pr.Top()  + pr.Bottom()) / PMReal(2.0);	// and centre Y
+	// Both arms are the same length: half is the short side times kKCMOversetCrossHalfRatio, so the
+	// horizontal arm spans twice that -- 40% of the short side each way.
 	const PMReal half = minDim * PMReal(kKCMOversetCrossHalfRatio);
 
 	AutoGSave ag(gPort);
-	// ノドの共有線に届かないよう、通常マークと同じく約1pt内側でクリップしてから引く。
+	// Clipped about 1pt in, like the other marks, so nothing reaches the spine's shared line.
 	gPort->rectclip(pr.Left()   + kKCMClipInset, pr.Top()    + kKCMClipInset,
 	                pr.Width()  - kKCMClipInset * 2.0, pr.Height() - kKCMClipInset * 2.0);
-	gPort->setopacity(kKCMOversetCrossOpacity, kFalse);	// くっきり(不透明)
+	gPort->setopacity(kKCMOversetCrossOpacity, kFalse);	// opaque, so it stays crisp
 
-	// 1) 白い縁取り(太線)を先に引く。
+	// 1) the white halo (the thick line) first.
 	gPort->setrgbcolor(PMReal(1.0), PMReal(1.0), PMReal(1.0));
 	gPort->setlinewidth(whiteW);
 	gPort->newpath();
-	gPort->moveto(cx - half, cy);   gPort->lineto(cx + half, cy);	// 横線(中央・長さ 2*half)
-	gPort->moveto(cx, cy - half);   gPort->lineto(cx, cy + half);	// 縦線(中央・横と同じ長さ)
+	gPort->moveto(cx - half, cy);   gPort->lineto(cx + half, cy);	// horizontal, centred, 2*half long
+	gPort->moveto(cx, cy - half);   gPort->lineto(cx, cy + half);	// vertical, the same length
 	gPort->stroke();
 
-	// 2) 赤い本体(細線)を白縁の上に重ねる=「赤＋白縁」。
+	// 2) the red body (the thinner line) over it.
 	gPort->setrgbcolor(kKCMRingR / PMReal(255.0), kKCMRingG / PMReal(255.0), kKCMRingB / PMReal(255.0));
 	gPort->setlinewidth(redW);
 	gPort->newpath();
-	gPort->moveto(cx - half, cy);   gPort->lineto(cx + half, cy);	// 横線(中央・長さ 2*half)
-	gPort->moveto(cx, cy - half);   gPort->lineto(cx, cy + half);	// 縦線(中央・横と同じ長さ)
+	gPort->moveto(cx - half, cy);   gPort->lineto(cx + half, cy);	// horizontal, centred, 2*half long
+	gPort->moveto(cx, cy - half);   gPort->lineto(cx, cy + half);	// vertical, the same length
 	gPort->stroke();
 }
 
 
 //========================================================================================
-// ページ中央に ✓(チェックマーク)をベクター線で描く(色指定)。「Check」でチェックした
-// ページに描く。描き先は2通り(layoutStyle で切替):
-//   ・kFalse = Pages パネルのサムネイル(従来。呼び出し側で isThumb を判定): サイズ=短辺 0.52、
-//     太さ=「/」と同じ固定比率、不透明度=kKCMThumbMarkOpacity。
-//   ・kTrue  = レイアウトビュー/印刷(2026-07-12 追加): サイズ=短辺×kKCMCheckLayoutSizeRatio
-//     (かなり大きい)、太さ=✓サイズ×kKCMCheckLayoutStrokeRatio(ページ比例=ズーム/印刷とも相似形)、
-//     不透明度=渡された screenOpacity(呼び出し側が SelectedMarkOpacity=25%/75% 選択を渡す。印刷も同値)。
-// ★フォントの ✓ 文字(U+2713 等)は環境/フォント依存で出ないことがあるため使わず、線2本
-//   (左端→下の谷→右上=「レ」を左右反転した ✓ 型)を moveto/lineto/stroke で引く。
+// A tick drawn with vector lines at the centre of a page, in a given colour, for pages marked with
+// "Check". Two destinations, selected by layoutStyle:
+//   kFalse = the Pages panel's thumbnail: size = short side * 0.52, thickness = the same fixed
+//     ratio the "/" uses, opacity = kKCMThumbMarkOpacity.
+//   kTrue  = the layout view and print: size = short side * kKCMCheckLayoutSizeRatio (much larger),
+//     thickness = the tick's size * kKCMCheckLayoutStrokeRatio (proportional to the page, so zoom
+//     and print stay similar), opacity = the screenOpacity handed in (the caller passes
+//     SelectedMarkOpacity, the 25%/75% choice; print is the same value).
+// A tick CHARACTER (U+2713 and the like) is not used, because whether it appears depends on the
+//   font: two strokes are drawn instead (left, down to the valley, up to the right).
 //========================================================================================
 static void KCMDrawPageCheck(IGraphicsPort* gPort, IDataBase* db, UID pageUID,
 	const PMReal& sxr, int32 drawMode, const PMReal& screenOpacity,
@@ -1420,15 +1416,17 @@ static void KCMDrawPageCheck(IGraphicsPort* gPort, IDataBase* db, UID pageUID,
 	if (pageGeo == nil)
 		return;
 
-	// ★2026-08-16(B3・A-1): ページの箱は Facade で spread 座標のまま取る(理由は KCMDrawEntryOnPage)。
+	// The page's box from the Facade, in spread coordinates (the reasoning is in KCMDrawEntryOnPage).
 	const PMRect pr = Utils<Facade::IGeometryFacade>()->GetItemBounds(
 		UIDRef(db, pageUID), Transform::SpreadCoordinates(), Geometry::PathBounds());
 
 	const PMReal minDim = std::min(pr.Width(), pr.Height());
-	// ✓ 全体サイズ(短辺比): レイアウト版はかなり大きく、サムネイルは従来値(2026-07-11 に 0.42→0.52)。
+	// The tick's overall size, as a fraction of the short side: much larger for the layout view.
 	const PMReal s = minDim * (layoutStyle ? kKCMCheckLayoutSizeRatio : PMReal(0.52));
-	// 太さ: レイアウト版=✓サイズ比例(ズーム/印刷とも相似形)。サムネイル=「/」と同じ固定比率。
-	// (サムネイル経路の sxr>0 は来ない=isThumb は view 無しの生成で sxr=0 だが、従来式のまま残す)
+	// Thickness: the layout version scales with the tick (similar at any zoom and in print); the
+	// thumbnail uses the same fixed ratio as the "/".
+	// (The thumbnail route never has sxr > 0 -- isThumb means a viewless generation, so sxr is 0 --
+	//  but the formula is left as it is.)
 	PMReal w = layoutStyle ? (s * kKCMCheckLayoutStrokeRatio)
 		: ((sxr > 0) ? (kKCMRingTargetPx / sxr) : (minDim / PMReal(kKCMThumbDiagDivisor)));
 	const PMReal maxW = minDim / PMReal(3.0);
@@ -1436,43 +1434,48 @@ static void KCMDrawPageCheck(IGraphicsPort* gPort, IDataBase* db, UID pageUID,
 	if (w < PMReal(0.5))
 		return;
 
-	// 不透明度: レイアウト版は画面=screenOpacity(SelectedMarkOpacity が渡る)/印刷=SelectedMarkOpacity
-	// (=同値。画面と印刷の見た目一致)。サムネイルは kKCMThumbMarkOpacity 固定(従来)。
+	// Opacity: the layout version uses screenOpacity on screen (SelectedMarkOpacity is what gets
+	// passed) and SelectedMarkOpacity in print -- the same value, so screen and print match. The
+	// thumbnail is fixed at kKCMThumbMarkOpacity.
 	const PMReal opacity = layoutStyle
 		? ((drawMode == kKCMDrawModePrint) ? KCMDrawEventHandler::SelectedMarkOpacity() : screenOpacity)
 		: ((sxr <= 0) ? kKCMThumbMarkOpacity
 			: ((drawMode == kKCMDrawModePrint) ? KCMDrawEventHandler::SelectedMarkOpacity() : screenOpacity));
 
-	// ページ中央基準・短辺の一定比率で ✓ を組む。ページ座標は Top<Bottom(Y 下向き)。
+	// Built around the page's centre, at fixed fractions of the short side. Page coordinates have
+	// Top < Bottom (Y downwards).
 	const PMReal cx = (pr.Left() + pr.Right()) / PMReal(2.0);
 	const PMReal cy = (pr.Top()  + pr.Bottom()) / PMReal(2.0);
-	const PMReal lx = cx - s * PMReal(0.40), ly = cy - s * PMReal(0.02);	// 左端(やや上)
-	const PMReal vx = cx - s * PMReal(0.10), vy = cy + s * PMReal(0.32);	// 下の谷(最下点)
-	const PMReal rx = cx + s * PMReal(0.48), ry = cy - s * PMReal(0.40);	// 右上(最上点)
+	const PMReal lx = cx - s * PMReal(0.40), ly = cy - s * PMReal(0.02);	// the left end (slightly high)
+	const PMReal vx = cx - s * PMReal(0.10), vy = cy + s * PMReal(0.32);	// the valley (lowest point)
+	const PMReal rx = cx + s * PMReal(0.48), ry = cy - s * PMReal(0.40);	// the top right (highest point)
 
 	AutoGSave ag(gPort);
-	// ★★★2026-08-24（不具合修正・実測で確定）: **Pages パネルのサムネイルに描くときは rectclip が要る。**
+	// **Drawing into a Pages panel thumbnail requires the rectclip** (found by measurement).
 	//
-	//   症状＝「Check」の✓を付けても外しても、**ページアイコンの絵が変わらない**(古いまま残る)。
-	//   ただし**他のマーク(枠・登録の「/」)が出ているページでは正しく変わる**、という分かれ方をした。
-	//   ⇒ ユーザーの指摘「/ と全く同じ方法で書き込めばよいのでは？」が正解だった ---- 両者は
-	//     不透明度も線幅の式も同じ定数を使っていて、**違いは rectclip の有無だけ**。足したら直った。
+	//   The symptom: ticking or unticking a page with "Check" **left the page icon unchanged**,
+	//   while pages that also carried another mark (a frame, a registered "/") updated correctly.
+	//   The two draw with the same opacity and the same line-width formula, and **the only
+	//   difference was the rectclip**. Adding it fixed the icon.
 	//
-	//   ★**クリップは「描く範囲の制限」であると同時に「この矩形を触る」という申告でもある。**
-	//     申告が無いと Pages パネルはそのページアイコンを描き直す理由を持たない。マークのあるページで
-	//     たまたま正しく見えていたのは、**同じスプレッドで「/」や枠が rectclip 付きで描かれていた**ため。
-	//   ⚠**機序そのものは未確定**(本体側の無効領域の扱いは非公開)。確かなのは実測の対応関係
-	//     ＝rectclip 無し⇒描き直されない／有り⇒描き直される。**推測でこの行を消さないこと。**
-	//   ★遠回りの記録: 先に「Purge の後にもう一度 ForceRedraw」「ForceRedraw の前に Invalidate」を
-	//     試したが**どちらも効かず、両方削除した**。効いたのはこの1行だけ。
+	//   **A clip is both a restriction on where you draw and a declaration that you are touching
+	//     this rectangle.** Without the declaration the Pages panel has no reason to redraw that
+	//     page icon. Pages that happened to look right were pages where a "/" or a frame had been
+	//     drawn WITH a rectclip on the same spread.
+	//   @warning the mechanism itself is unconfirmed (how the application tracks its invalid
+	//     regions is not public). What is certain is the measured correspondence: no rectclip means
+	//     no redraw, a rectclip means a redraw. **Do not remove this line on reasoning alone.**
+	//   Things that did NOT work, and were removed again: a second ForceRedraw after the Purge, and
+	//     an Invalidate before the ForceRedraw. This one line was what worked.
 	//
-	//   ⚠レイアウトビュー版(layoutStyle)はページ短辺の大半を使う大きな✓なので、クリップすると
-	//     端が欠ける。従来どおりクリップしない ---- あちらは元から正しく出ている。
+	//   @warning the layout-view version (layoutStyle) draws a tick across most of the page's short
+	//     side, so clipping would cut its ends off. It is not clipped, and it has always appeared
+	//     correctly.
 	if (!layoutStyle)
 		gPort->rectclip(pr.Left()   + kKCMClipInset, pr.Top()    + kKCMClipInset,
 		                pr.Width()  - kKCMClipInset * 2.0, pr.Height() - kKCMClipInset * 2.0);
 	gPort->setopacity(opacity, kFalse);
-	// ★2026-08-16: 印刷/PDF は CMYK で塗る(PDF/X-1a は RGB を許さない＝KCMSetOutputColor 参照)。
+	// Print and PDF are painted in CMYK (PDF/X-1a does not allow RGB -- see KCMSetOutputColor).
 	KCMSetOutputColor(gPort, cr, cg, cb, (drawMode == kKCMDrawModePrint) ? kTrue : kFalse);
 	gPort->setlinewidth(w);
 	gPort->newpath();
@@ -1483,191 +1486,186 @@ static void KCMDrawPageCheck(IGraphicsPort* gPort, IDataBase* db, UID pageUID,
 }
 
 
-// (★pasteboard→spread のオフセットを求める KCMSpreadOffsetFromPasteboard は、唯一の呼び手だった
-//  押下中 HUD と一緒に 2026-08-13 に KCMUIDrawEvent.cpp へ移した(model/UI 分割 第1段 Task 6)。
-//  中身は1行も変えていない。)
-
 bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 {
 	if (ded == nil || ded->gd == nil)
 		return kFalse;
-	// 自前のラスタ化(MakeEntry の比較スナップショット / MakeOrigImage の旧版スナップショット)中の再入は
-	// 描かない(自己参照=マークがスナップショットに写り込む feedback を防ぐ)。以前は kPreviewMode ビットで
-	// 弾いていたが、それは PDF 書き出しの kPDFExportMode と同一ビット(4096)で export を巻き込んでいたため、
-	// 明示的な再入フラグ(現在の **tl_Rasterizing**)に置き換えた。
-	// ★2026-08-15 裏取り＝この「同一ビット」は**偶然の衝突ではなく Adobe の意図的な設計**なので、
-	//   将来 値がずれることは期待できない＝この置き換えは恒久的に正しい(kPreviewMode に戻さないこと)。
-	//   kPreviewMode は draw flags(IShape.h:89)、kPDFExportMode は iterate flags(IShape.h:159)で**別の enum**
-	//   なのにどちらも 4096。理由は IShape.h:144 が明言している——
+	// Do not draw during OUR OWN rasterisation (MakeEntry's comparison snapshot, MakeOrigImage's
+	// picture of the older version): that would be self-reference, with the marks appearing in the
+	// snapshot. This used to be rejected by the kPreviewMode bit, which also caught PDF export --
+	// **the same bit, 4096** -- so an explicit re-entrancy flag (tl_Rasterizing) replaced it.
+	// **That collision is Adobe's deliberate design, not an accident**, so the values will not
+	//   diverge later and this replacement is permanently correct (do not go back to kPreviewMode).
+	//   kPreviewMode is a draw flag (IShape.h:89) and kPDFExportMode an iterate flag (IShape.h:159)
+	//   -- **different enums**, both 4096. IShape.h:144 says why:
 	//     "Due to lack up type checking for IShape enums, this must match kPrinting above
 	//      since they are unfortunately used interchangeably in the codebase."
-	//   (同じ理由で kIteratePrinting=512 も kPrinting=512 に揃えてある)
-	//   ⇒ IShape の flags は enum をまたいで同じ値が渡される前提なので、別 enum の定数とも衝突を検討すること。
-	// ★2026-08-15: スレッドローカルになった(第2段 Task 12B)。**このスレッドが**ラスタ化中のときだけ弾く。
-	//   以前は素の static だったので、メインスレッドの比較ラスタ化が BG の PDF 書き出しまで巻き添えにしていた。
+	//   (kIteratePrinting = 512 matches kPrinting = 512 for the same reason.)
+	//   So IShape's flags are passed across enums by design: check constants in OTHER enums for
+	//   collisions too.
+	// The flag is thread-local, so only THIS thread being mid-rasterisation rejects the draw. As a
+	//   plain static, the main thread's comparison rasterisation also suppressed the background
+	//   thread's PDF export.
 	if (KCMDrawEventHandler::tl_Rasterizing.Get())
 		return kFalse;
-	// 印刷文脈か(kPrinting=512)。印刷時はマークの ON/OFF を sPrintMarks で決める。通常の画面描画では立たない。
-	// ★2026-08-12 訂正: 旧コメント「PDF 書き出し(File>Export)はこのスプレッド描画イベントを発火しないため
-	//   対象外(print-to-PDF を使う)」は**誤り**。kPrinting は「印刷 **または** PDF 書き出し」で立つ
-	//   (公式サンプル basicdrwevthandler/BscDEHDrwEvtHandler.cpp:278-282 が " Printing or PDF Output" と明記)。
-	//   draw event の描画が File>Export>PDF に焼き込まれることは実機で確認済み(本体内蔵の透かしをプローブに
-	//   実測。docs/ai-notes/draw-event-pdf-export-experiment-2026-08-12.md)。
-	//   ∴ここは「印刷にも PDF 書き出しにも効く」判定として読むこと。
-	//   ★★★2026-08-15 に解決済み＝**マークは書き出し PDF に出る**(第2段の目的そのもの・実機 PASS)。
-	//     旧記述「KCM は `kUIPlugIn` なので BG から見えず、draw event がそもそもこのハンドラへ配られない」
-	//     は**もう当たらない**——KCM は第2段 Task 11 で **`kModelPlugIn`** になり、**BG にも描画イベントが
-	//     配られることを実測した**(Task 11C)。⇒ **このハンドラは BG でも呼ばれる前提で読むこと。**
-	//     ⚠**残る注意は「同じ static を共有するが db は別」という点**＝BG が見る `db` は**クローンの別
-	//       ポインタ**なので、文書の同一性をポインタで聞いてはいけない(`KCMIsSameDoc`＝KCMThreadSafety.h)。
-	//     ⚠★★**旧記述「PDF 書き出しポートは透明を一切通さない(Task 12B の実測)＝ベクターで塗り、
-	//       不透明度は色に溶かす」は 2026-08-16 に撤回した**(2026-08-17 の不具合再検査 B3 でここに反映)。
-	//       欠けていたのは**公式が要求する追加初期化**(PDF ポートでの `starttransparencygroup`)だけで、
-	//       足したら **PDF 1.4 でも 1.3 でも半透明で出た**。⇒ 今は**印刷と PDF が同じ処理**
-	//       (アルファサーバ1本＝KCMDrawRingForPrint)で、ベクター近似の関数は削除済み。
-	//       ⚠**旧記述「残る既知の制限＝PDF 1.3 かつ透明を1つも含まないページでは全面ベタ」も
-	//         2026-08-20 に解消した。** 原因はアルファサーバではなく**フラットナがそもそも
-	//         動いていなかったこと**で、動かす条件は `IXPManager` の「透明を持つページアイテムの
-	//         一覧」に載ること1つだけだった(アドーンメントはアイテムでないので載れずにいた)。
-	//         ⇒ `KCMRingAdornmentRefreshItemXPState()` で一覧を聞き直させる。
-	//         残るのは「ページアイテムが1つも無いスプレッド」だけ(載せる代表が取れない)。
-	//     ★出力先を測る道具は今も有効＝app.ktDrawProbe(KT/KTDrawProbe.cpp)で「その描画はどの出力先か」を実測する。
-	// 自己参照(自前スナップショット)は上の tl_Rasterizing で防ぐので、ここで kPreviewMode は見ない。
+	// Is this a printing context (kPrinting = 512)? While printing, whether the marks appear is
+	// decided by sPrintMarks. It is never set for ordinary screen drawing.
+	// **kPrinting is set for printing OR PDF export** (the official sample
+	//   basicdrwevthandler/BscDEHDrwEvtHandler.cpp:278-282 says " Printing or PDF Output"), and a
+	//   draw event's output really does reach a File > Export > PDF (measured, using the
+	//   application's built-in watermark as a probe:
+	//   docs/ai-notes/draw-event-pdf-export-experiment-2026-08-12.md).
+	//   So read this as "printing and PDF export alike".
+	// **This handler is called on background threads too.** KCM's model half is a `kModelPlugIn`
+	//   and draw events are delivered to background threads (measured), which is what makes the
+	//   marks reach an exported PDF at all.
+	//   @warning what remains is that **the statics are shared but the db is not**: a background
+	//     thread is handed **a clone with a different pointer**, so a document's identity must never
+	//     be tested by pointer (KCMIsSameDoc, KCMThreadSafety.h).
+	//   To measure where a given draw is going, the probe is app.ktDrawProbe (KT/KTDrawProbe.cpp).
+	// Self-reference is handled by tl_Rasterizing above, so kPreviewMode is not consulted here.
 	const bool16 printing = (ded->flags & IShape::kPrinting) != 0;
 
-	// (★手動 Hide/Show Spread の検出(KCMScrollMapNoticeDrawEvent)は 2026-08-13 に UI 側の描画サービス
-	//  KCMUIDrawEvent.cpp へ移した＝model/UI 分割 第1段 Task 7。スクロールバー地図は文書窓へ strip を
-	//  注入する widget ＝ UI なので、その更新のきっかけを拾うのも UI 側の仕事。
-	//  ⇒ **このファイルから UI ヘッダーの include が1つも無くなった。**)
-
-	// ★サムネイル実験(2026-07-06): Pagesパネルのサムネイル生成(view無し・kPreviewMode・非印刷。診断ログ
-	// flags=0x1800=kPreviewMode|kDrawFrameEdge)を検出。sThumbExperiment ON の間は、サムネイルにも枠を
-	// 描くため下で wantMarks を強制 ON にする(通常は sPrintMarks/sMarksVisible が OFF だと枠が出ない)。
-	// サムネイルでは差分リング画像(KCMDrawEntryOnPage)ではなく、下の Target/Source ループが
-	// isThumb 分岐で KCMDrawPageBorder(枠)/KCMDrawPageDiagonal(「/」)を呼ぶ(極小表示で潰れない
-	// 固定比率の太さ)。不透明度は kKCMThumbMarkOpacity(0.75=少し透ける)。
+	// Detect the Pages panel's thumbnail generation: no view, kPreviewMode, not printing
+	// (the diagnostic log shows flags = 0x1800 = kPreviewMode | kDrawFrameEdge). While
+	// sThumbExperiment is on, wantMarks below is forced on so that frames reach thumbnails as well
+	// (normally nothing is drawn with sPrintMarks and sMarksVisible off).
+	// In a thumbnail the loops below take their isThumb branch and call KCMDrawPageBorder (a frame)
+	// and KCMDrawPageDiagonal (a "/") instead of the difference ring image, at a fixed ratio
+	// thickness that survives the size. The opacity is kKCMThumbMarkOpacity (0.75).
 	const bool16 isThumb = sThumbExperiment && !printing &&
-		ded->gd->GetView() == nil && (ded->flags & IShape::kPreviewMode) != 0;	// gd の nil は関数冒頭で検査済み
+		ded->gd->GetView() == nil && (ded->flags & IShape::kPreviewMode) != 0;	// gd was nil-checked at the top of the function
 
-	// ★オーバープリントプレビュー(OPP)は抑制しない(2026-07-05 仕様変更)。以前は kSepPrvOPPEnabledVPAttr を
-	// 読んで「OPP=印刷シミュレーション」として印刷と同じ抑制を掛けていたが、OPP はあくまで画面の作業モード
-	// なので、ツール左hold の枠・Shift/Shift+Alt の旧版 peek(と押下中の旧番号バッジ)は OPP 中も表示する。
-	// 抑制は本物の印刷(kPrinting)だけ=「枠の印刷」OFF なら印刷物に出ない、は従来どおり。
-	// Source 側の枠(Always Show Marks on Source)。トグル ON の間は「常時」表示で、OPP でも隠さず印刷にも常に
-	// 出す(Target 側の sPrintMarks とは独立の仕様)。この描画が実際に Source 文書のスプレッドかどうかは
-	// db 取得後に判定する(ここでは「描き得るか」だけ)。
-	// ★sEntries が空でも、登録済み(比較相手なし="Added"/"Removed")ページや、文書間のページ数差で
-	// 対応表からあふれた("/"の)ページがあれば、緑枠/赤斜線を描くために続行する。overflow 判定は
-	// キャッシュ(sOverflowT/sOverflowS)を使う。EnsureOverflowCache は (sDB,sSrcDB) が前回作成時と
-	// 変わった時だけ作り直す(通常の描画では全文書走査は走らない)。
+	// **Overprint preview (OPP) is NOT suppressed.** It used to be treated as "a print simulation"
+	// (by reading kSepPrvOPPEnabledVPAttr) and suppressed like printing, but OPP is a working mode
+	// on screen: the frames held under the tool's left button, the Shift / Shift+Alt peek and the
+	// badge all stay visible in it. Only real printing (kPrinting) suppresses, so "print the frames"
+	// being off still keeps them out of the printed result.
+	// The Source-side frames ("Always Show Marks on Source") are shown at ALL times while the
+	// toggle is on -- not hidden by OPP, and always printed (independently of the Target side's
+	// sPrintMarks). Whether this draw really is a Source document's spread is decided once the db
+	// is known; here it is only "could it be drawn".
+	// Even with sEntries empty there may be registered ("Added"/"Removed") pages, or pages that
+	// overflowed the pairing because of a page-count difference, so the walk continues in order to
+	// draw their green and red slashes. The overflow sets come from the cache
+	// (sOverflowT/sOverflowS); EnsureOverflowCache rebuilds them only when the pair changed, so an
+	// ordinary draw walks no documents.
 	EnsureOverflowCache();
-	// ★★2026-08-18(不具合再検査 B9): **この計算はロックの中で行う。**
-	//   ここは `sEntries` と `sOverflowT/sOverflowS` を読む ---- どれも**この関数の下の描画ループが
-	//   ロックを取って読み、main は DropAll()(delete+clear) / MakeEntry()(insert) / swap() と
-	//   すべてロック下で書いている**集合で、**この行だけが外に居た**。BG(PDF の非同期書き出し)も
-	//   必ず通る行なので、KCMThreadSafety.h が「main が書き BG が読むから守る」と書いた条件そのもの。
-	//   ⚠**読むのは empty() だけでも守る**: 「軽い読みだから」は理由にならない(B3 §5 で踏んだ
-	//     「片側だけ守るのは無意味」の裏返し＝**書き手だけが守っている**状態だった)。
-	//   ★コストは実質ゼロ ---- 中で呼ぶ KCMPageMapHasAnyRegistered / KCMPageCheckHasAny は
-	//     自分でも同じ mutex を取るが、**recursive_mutex なので入れ子で詰まらない**(むしろ
-	//     取り直しが減る)。スコープは6行で閉じ、「ロックしたまま長い処理をしない」規律も守っている。
+	// **This calculation is inside the lock.** It reads `sEntries` and `sOverflowT/sOverflowS`, all
+	//   of which the drawing loops below read under the lock and the main thread writes under it
+	//   (DropAll's delete + clear, MakeEntry's insert, the swap). The background thread (the
+	//   asynchronous PDF export) always comes through this line, which is the very condition
+	//   KCMThreadSafety.h describes.
+	//   @warning **reading only empty() is still reading**: "it is a cheap read" is not a reason
+	//     (guarding one side only is worthless, and here it was the WRITERS that were guarded).
+	//   The cost is effectively zero: KCMPageMapHasAnyRegistered and KCMPageCheckHasAny take the
+	//     same mutex themselves, and it is **recursive, so the nesting does not deadlock** (it
+	//     saves re-acquisitions, if anything). The scope is six lines, so "do not hold the lock
+	//     through a long operation" holds too.
 	bool16 anyMarkableContent = kFalse;
 	{
 		KCMMarkStateLock gateLock(KCMMarkStateMutex());
 		anyMarkableContent = !sEntries.empty() ||
 			(sDB    != nil && KCMPageMapHasAnyRegistered(sDB)) ||
 			(sSrcDB != nil && KCMPageMapHasAnyRegistered(sSrcDB)) ||
-			(sDB    != nil && KCMPageCheckHasAny(sDB)) ||		// 「Check」の✓(サムネイル描画を起こすため)
+			(sDB    != nil && KCMPageCheckHasAny(sDB)) ||		// the "Check" ticks (so a thumbnail redraw is triggered)
 			(sSrcDB != nil && KCMPageCheckHasAny(sSrcDB)) ||
 			(!sOverflowT.empty() || !sOverflowS.empty());
 	}
-	// ★★★**押している間は、その窓の枠が反対になる**(規則。ユーザー決定 2026-08-22)。
-	//   Source 側はこれが**1本の式**で書ける＝トグル(sSrcMarksOn)と押下(sSrcMarksPressed)の **XOR**。
-	//     ・トグル OFF … 枠は出ていない ⇒ Source 窓を押している間だけ出る
-	//     ・トグル ON  … 枠は出ている   ⇒ Source 窓を押している間だけ隠れる
-	//   ⚠**2026-08-22 に「出る」側を足した**(ユーザー決定＝実装を規則に合わせる)。それまでは
-	//     「ON のときだけ押下で隠す」で、**トグル OFF の Source 窓を押しても何も出なかった**
-	//     ＝規則が3か所で「Pixel/Story・Target/Source すべてで同じ」と宣言していたのと食い違っていた。
-	//   ⚠**Target 側は同じ形にできない**＝あちらの「出す」は sMarksVisible で、peek など他の経路も
-	//     立てるフラグだから(下の wantMarks と alwaysScreen の2つに分かれているのはそのため)。
-	// ⚠**印刷/PDF には効かせない**＝Source 枠を常に出すのが仕様なので、!printing でゲートして
-	//   印刷文脈では sSrcMarksOn だけを見る(押下は画面の話)。
-	// ⚠Source 窓以外で押した時は sSrcMarksPressed が立たない(KCMPeekGesture.cpp の窓判定)。
+	// **While the button is held, the marks in that window are the other way round.**
+	//   On the Source side that is **one expression**: the toggle (sSrcMarksOn) XOR the press
+	//   (sSrcMarksPressed).
+	//     - toggle off ... no frames, so pressing over the Source window shows them
+	//     - toggle on  ... frames, so pressing over the Source window hides them
+	//   @warning a flag raised only while the toggle is ON gives "pressing with the toggle off does
+	//     nothing at all", which contradicts the rule as three places in this plug-in state it
+	//     ("Pixel/Story, Target/Source alike").
+	//   @warning **the Target side cannot take this shape**: its "show" is sMarksVisible, which
+	//     other routes (the peek) also raise, which is why it needs the two separate flags
+	//     (wantMarks and alwaysScreen) below.
+	// @warning it must not affect print or PDF: the Source frames are always printed, so the press
+	//   is gated on !printing and a printing context reads sSrcMarksOn alone.
+	// A press over any other window does not raise sSrcMarksPressed (KCMPeekGesture.cpp decides).
 	const bool16 srcPressed = (sSrcMarksPressed && !printing) ? kTrue : kFalse;
-	// ★★2026-08-22＝**Pages パネルのサムネイルには常に出す**(ユーザー決定＝Target と対称に)。
-	//   Target 側は下の wantMarks が `|| isThumb` で強制していて、**Source だけがトグル待ち**だった
-	//   ---- ページパネルは「変更ページを一覧で見る」場所なので、新旧で振る舞いが違う理由が無い。
-	//   ★**押下の XOR もサムネイルには効かせない**＝押している最中にサムネイルが作り直されると
-	//     一覧の枠まで反転する、という粗が同時に消える(Target 側は isThumb のおかげで元から無縁だった)。
-	// ⚠`(a != 0) != (b != 0)` と書く＝bool16 は整数型で、kTrue 以外の真値が来ると裸の != は逆を答える。
+	// **In the Pages panel's thumbnails the Source frames are always shown**, symmetrically with
+	//   the Target side (whose wantMarks below forces them with `|| isThumb`). The Pages panel is
+	//   where changed pages are surveyed, so there is no reason for the two documents to behave
+	//   differently there.
+	//   The press XOR does not apply to thumbnails either, which also removes the oddity of the
+	//     survey's frames inverting when a thumbnail is regenerated mid-press (the Target side was
+	//     never exposed to it, thanks to isThumb).
+	// @warning it is written `(a != 0) != (b != 0)`: bool16 is an integer type, and a bare != gives
+	//   the wrong answer for a true value that is not kTrue.
 	const bool16 srcWanted = printing ? sSrcMarksOn
 	                       : (isThumb ? kTrue
 	                                  : ((((sSrcMarksOn != 0) != (srcPressed != 0))) ? kTrue : kFalse));
 	const bool16 wantSrcMarks = srcWanted && sSrcDB != nil && anyMarkableContent;
-	// 印刷で「枠の印刷」が OFF のときは、Target 側のオーバーレイ一式を描かない(枠は基本非印刷)。
-	// Source 側の枠だけは常に印刷に出す仕様なので、wantSrcMarks が生きていれば処理を続行し、
-	// 下の want フラグ側で Target 分だけ落とす。
+	// When printing with "print the frames" off, none of the Target-side overlay is drawn.
+	// The Source-side frames are always printed, so if wantSrcMarks is alive the walk continues and
+	// only the Target part is dropped by the want flags below.
 	const bool16 suppressForPrint = printing && !sPrintMarks;
 	if (suppressForPrint && !wantSrcMarks)
 		return kFalse;
-	// この描画で何を描き得るかを状態フラグだけで先に確定し、全部 No なら即 return する。
-	//   ・マーク(リング＋枠): 印刷ON か ツール左hold中の表示ON で、かつエントリがある時だけ
-	//   ・旧版べた載せ: 画面描画のみ(印刷には出さない)
-	// ★以前は「sEntries が非空」なだけで下の前処理(スプレッド取得・生存スイープ・ズーム行列・
-	//   パノラマ探索・マウス位置・可視域変換)を全部実行し、最後の分岐で「マーク非表示」と判定して
-	//   捨てていた。Start 済み・マーク非表示(既定=ツール左hold中だけ表示)の待機状態が最頻なので、
-	//   ここで落として通常の編集・スクロール中の描画コストをほぼゼロにする。生存スイープも「実際に
-	//   何か描く」時だけの保険になる(クローズ後始末の本線は KCMDocResponder で変わらず)。
-	// 「Always Show Marks on Target」(sTgtMarksOn): ON の間は画面(!printing)で枠を常時表示。ただしツール左hold中
-	// (sMarksTempHidden)は隠す。画面のみ=印刷/PDF は下の sPrintMarks が独立して決める(alwaysScreen は
-	// !printing ゲートで印刷文脈には一切効かせない=印刷は従来どおり Print comparison marks のみで制御)。
-	// ★★★2026-08-22＝**規則は「押している間は反対になる」の1本**(ユーザー決定)。
-	//     ・トグル OFF … 枠は出ていない ⇒ 押している間だけ出る(下の sMarksVisible=reveal)
-	//     ・トグル ON  … 枠は出ている   ⇒ 押している間だけ隠れる(この行の !sMarksTempHidden)
-	//   ⚠**これに伴い「Hold to Hide Marks」トグルを撤去した**＝あれは「常時表示＋押下中は隠す」で、
-	//     前半が「Always Show Marks on Target」と完全に重複していた(この式が `sAlwaysShowMarks || sTgtMarksOn`
-	//     という OR だったことが、重複そのものの証拠)。固有だったのは後半だけなので、後半を規則として
-	//     こちらへ畳んだ。⇒ **機能は1つも失われず、トグルが1つ減った。**
-	// ⚠**印刷/PDF には効かせない**＝!printing ゲートの内側に置く。Target 側の出力は sPrintMarks が
-	//   単独で決める仕様(Source 側の sSrcMarksOn が印刷にも出るのとは非対称で、これは意図的)。
+	// Settle what this draw could possibly paint from the state flags alone, and return at once if
+	// the answer is nothing.
+	//   - the marks (rings and frames): only with printing on, or the display on while the tool's
+	//     left button is held, and only when there are entries
+	//   - the peek at the older version: screen only (never printed)
+	// Otherwise the whole preamble (resolving the spread, the liveness sweep, the zoom matrix, the
+	//   panorama lookup, the mouse position, the visible-area transform) ran before the final branch
+	//   decided "marks are hidden" and threw it away. The commonest state by far is "started, marks
+	//   hidden" (the default being to show them only while the button is held), so rejecting here
+	//   makes ordinary editing and scrolling cost almost nothing. The liveness sweep also becomes
+	//   insurance taken only when something is actually going to be drawn (the main route for
+	//   handling a close is still KCMDocResponder).
+	// "Always Show Marks on Target" (sTgtMarksOn): while on, the frames are shown at all times on
+	//   SCREEN, except while the tool's left button is held (sMarksTempHidden), which hides them.
+	//   Screen only: print and PDF are decided independently by sPrintMarks, so alwaysScreen is
+	//   inside a !printing gate and never affects a printing context.
+	// **The rule is one sentence: while the button is held, everything is the other way round.**
+	//     - toggle off ... no frames, so they appear while held (sMarksVisible, the reveal)
+	//     - toggle on  ... frames, so they hide while held (the !sMarksTempHidden in this line)
+	// @warning it must not affect print or PDF -- hence the !printing gate. The Target side's output
+	//   is decided by sPrintMarks alone, asymmetrically with the Source side's sSrcMarksOn, and that
+	//   asymmetry is deliberate.
 	const bool16 alwaysScreen = sTgtMarksOn && !sMarksTempHidden && !printing;
 	const bool16 wantMarks = !suppressForPrint && (sPrintMarks || sMarksVisible || alwaysScreen || isThumb) && anyMarkableContent;
-	// ★★Story モードでは比較リング(sEntries 由来)を描かない(2026-08-21・Task 8)。ストーリー差分は
-	//   entry を1つも作らないので実際には sEntries が空で、下の find() は必ず外れる ---- が、
-	//   「無いから描かれない」に頼らず、モードを見て明示的に止める。
-	//   (この読みは KCMCore.cpp の sCompareMode が「⚠BG スレッドからも読まれる(Story モードでは
-	//    枠を描かないので、描画イベントがこれを見る)」と宣言している、まさにその読み。enum 1つの
-	//    読みで、書くのはメニュー操作＝メインスレッドだけ。)
-	// ⚠★★**止めるのはリングだけ。** 登録ページの緑「/」・overflow の赤「/」・ページの✓・
-	//   旧版べた載せ(peek)・元ノンブルのバッジは**ページ対応表**から出ており、Story モードでも根拠を
-	//   持つ ---- KCMDoMarkChangesDoc が「ここまでは両モードで同じ道を通る。飛ばしてよいものは
-	//   1つも無い」と書いて対応表・overflow キャッシュを両モードで作っているのがその宣言。
-	//   ∴ **この関数の入口で return してはいけない**(peek と ✓ とノンブルまで消える)。
+	// **The Story mode draws no comparison ring** (nothing from sEntries). A story diff creates no
+	//   entries, so sEntries is empty and the find() below would always miss -- but rather than rely
+	//   on "there is nothing, so nothing is drawn", the mode is consulted and it stops explicitly.
+	//   (This is the read KCMCore.cpp's sCompareMode declares itself subject to: one enum, read on
+	//    any thread, written only by a menu action on the main thread.)
+	// @warning **only the RING stops.** The registered pages' green "/", the overflow red "/", the
+	//   ticks, the peek and the original-folio badge all come from **the page pairing**, which the
+	//   Story mode has too -- KCMDoMarkChangesDoc builds the pairing and the overflow cache in both
+	//   modes and says so. **So this function must not return at its entry** (that would take the
+	//   peek, the ticks and the badge with it).
 	const bool16 drawRings = (KCMGetCompareMode() != kKCMModeStory);
 	const bool16 wantOrig  = !suppressForPrint && !printing && sShowOriginal && !sOrigImages.empty();
-	// ★「Check」の ✓ のレイアウトビュー版(2026-07-12)。画面では「常に」表示(ツール左hold・
-	// Hold to Hide Marks・Always Show Marks on Source 等の枠トグルとは完全に独立)。印刷/PDF は sPrintMarks
-	// (Print comparison marks)ON のときだけ(Target/Source とも同条件)。✓ 集合は Start 中の
-	// Target/Source(sDB/sSrcDB)にしか無い(Stop で全消去)ので、存在チェックも両 db だけ見れば足りる。
-	// サムネイル(isThumb)は下の専用ブロックが従来どおり描くのでここでは対象外。
+	// The layout-view version of the "Check" tick. On screen it is shown **at all times**,
+	// completely independently of the frame toggles and the tool's left button. It reaches print and
+	// PDF only with sPrintMarks (Print comparison marks) on, for the Target and Source alike. The
+	// tick sets only exist on the armed Target/Source (sDB/sSrcDB) and are cleared by Stop, so
+	// testing those two databases is enough.
+	// Thumbnails (isThumb) are drawn by their own block below and are not included here.
 	const bool16 wantChecks = !isThumb && (!printing || sPrintMarks) &&
 		((sDB != nil && KCMPageCheckHasAny(sDB)) || (sSrcDB != nil && KCMPageCheckHasAny(sSrcDB)));
-	// ★Find Overset の「＋」: 比較(sEntries)・チェック(✓)等とは完全に独立。★2026-07-24 ユーザー指定で
-	// カンバス(レイアウトビュー)には一切描かず、Pages パネルのサムネイル(isThumb)にだけ「赤＋白縁」の
-	// 「＋」を描く(旧: カンバスに赤い十字を描いていた)。走査済み(sOversetOn)で集合が非空なら描画対象。
-	// 実際に描くのは db==sOversetDB のスプレッドのサムネイルだけ(下の描画ブロックで判定)。
+	// Find Overset's "+": completely independent of the comparison and the ticks. **It is never
+	// drawn on the canvas** -- only into the Pages panel's thumbnails (isThumb), as red with a white
+	// halo. A scan having run (sOversetOn) with a non-empty set makes it a candidate; whether this
+	// particular spread gets it is decided in the drawing block (db == sOversetDB).
 	const bool16 wantOversetThumb = isThumb && sOversetOn && sOversetDB != nil && !sOversetPages.empty();
-	// 旧ページ番号バッジ: トグルON かつ「枠が見えている」間(=印刷マークON の常時表示、またはツール左hold中)。
-	// 枠の可視条件(wantMarks の sPrintMarks || sMarksVisible)と同じ揃え。印刷文脈は suppressForPrint で
-	// sPrintMarks ON のときだけ生き残る=印刷に出るのは印刷マークON時のみ(従来どおり)。
-	// 番号がズレているかはページごとに後で判定する(ズレていなければ何も描かない)。
+	// The original-page-number badge: the toggle on, and the frames visible (printing on, or the
+	// tool's left button held) -- the same visibility rule wantMarks uses. In a printing context
+	// suppressForPrint leaves it alive only with sPrintMarks on, so it prints only when the marks
+	// do. Whether a page's number has actually shifted is decided per page later (unshifted pages
+	// draw nothing).
 	const bool16 wantOldNums = !suppressForPrint && sShowOldNumbers && (sPrintMarks || sMarksVisible || alwaysScreen);
-	// ★2026-07-11(ユーザー指定): 登録ページ(Added/Removed=緑「/」)は「比較を Start 中」だけ描く。以前は
-	// Start と無関係に描く「登録専用パス」があり、未 Start でも右クリック登録すると緑「/」が出ていたが、
-	// これを撤去した(登録自体も arm 済みのときだけ可能に変更)。よって登録「/」は下の Target/Source メイン
-	// ループ(db==sDB / db==sSrcDB。=Start 中のみ成立)だけが描く。ここでの Anywhere 判定・専用パスは不要。
-	// (★押下中 HUD の判定と描画は 2026-08-13 に UI 側の描画サービス KCMUIDrawEvent.cpp へ移した。
-	//  このハンドラは HUD のことを一切知らない＝押下状態(UI の状態)への依存が無くなった。)
+	// Registered pages (Added/Removed, the green "/") are drawn **only while a comparison is
+	// running**. There used to be a separate route that drew them without one, so registering from
+	// the right-click menu produced a green "/" with nothing started; it was removed (and
+	// registering itself now requires an armed comparison). So the green "/" is drawn only by the
+	// Target and Source loops below, both of which imply an armed comparison.
 
 	if (!wantMarks && !wantOrig && !wantOldNums && !wantSrcMarks && !wantChecks && !wantOversetThumb)
 		return kFalse;
@@ -1676,30 +1674,26 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 	IGraphicsPort* gPort = gd->GetGraphicsPort();
 	if (gPort == nil)
 		return kFalse;
-	// ★2026-08-16: この描画がどんな出力先かをポート自身に聞くための属性。PDF 書き出しのときだけ要る
-	//   追加初期化（透明グループ）の判定に使う(KCMDrawRingForPrint の冒頭参照)。
-	//   ⚠**nil のことがある**——公式サンプルも ASSERT の後に nil チェックして抜けている
-	//     (TranFxAdornment.cpp:267-270)。受け取る側が nil を「従来どおり印刷として描く」と解釈するので、
-	//     そのまま渡してよい。
+	// The attributes to ask the port what kind of output this is, used to decide whether the extra
+	//   initialisation a PDF export needs (the transparency group) applies -- see the head of
+	//   KCMDrawRingForPrint.
+	//   @warning **it can be nil**; the official sample tests for nil and bails after its ASSERT
+	//     (TranFxAdornment.cpp:267-270). The receiving side reads nil as "draw as for print", so it
+	//     can be passed straight through.
 	IViewPortAttributes* vpAttr = gd->GetViewPortAttributes();
 
-	// ★ページパネルのサムネイル生成(view 無し・kPreviewMode のオフスクリーン描画。2026-07-05 診断ログ:
-	// flags=0x1800=kPreviewMode|kDrawFrameEdge)。従来は「既表示サムネイルを再生成できず一部だけ枠が
-	// 古い/新しいと不整合になる」ため一切描かなかった。2026-07-06 の実験では sThumbExperiment ON の間だけ
-	// 描いてみる(比較後に KCMTryRefreshPagesPanelThumbnails で既表示分の再生成を試みる)。実験を切れば
-	// (sThumbExperiment=kFalse → isThumb=kFalse)この分岐で従来どおり早期 return し、完全に元の動作に戻る。
+	// The Pages panel's thumbnail generation (an offscreen draw with no view, in kPreviewMode).
+	// Nothing was drawn there originally, because a thumbnail already on screen could not be
+	// regenerated and some would be left showing an old frame while others showed a new one.
+	// With sThumbExperiment off (so isThumb is false) this branch restores that behaviour exactly.
 	if (!printing && gd->GetView() == nil && (ded->flags & IShape::kPreviewMode) != 0)
 	{
 		if (!isThumb)
-			return kFalse;	// 実験OFF: サムネイルには一切描かない(従来動作)
-		// 実験ON: このまま続行してサムネイルにも枠を描く。
+			return kFalse;	// experiment off: draw nothing into thumbnails
+		// Experiment on: carry on and draw the frames into the thumbnail.
 	}
 
-	// (★ウィンドウ単位イベント kAfterLastSpreadDrawMessage の分岐は 2026-08-13 に撤去した。
-	//  この登録は押下中 HUD のためだけのもので、HUD ごと KCMUIDrawEvent.cpp へ移ったため
-	//  Register からも外してある＝このハンドラへは二度と配られない。)
-
-	// changedBy = 今描いているスプレッド。
+	// changedBy is the spread being drawn.
 	InterfacePtr<ISpread> spread(ded->changedBy, UseDefaultIID());
 	if (spread == nil)
 		return kFalse;
@@ -1708,49 +1702,48 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 		return kFalse;
 
 
-	// ★★★2026-08-15（第2段 Task 11C）に、ここで実測した3つの答え。**次に読む人は測り直さなくてよい。**
+	// **Three answers measured here. Nobody needs to measure them again.**
 	//
 	//   MAIN  db=…23FB4A80  sDB=…23FB4A80  entries=2 firstUID=258 class=1295
 	//   *BG*  db=…295BE390  sDB=…23FB4A80  entries=2 firstUID=258 class=1295
 	//
-	//   ①**バックグラウンドスレッドにも描画イベントが配られる**（`kModelPlugIn` 化が効いている）
-	//   ②**渡される db はクローンの別ポインタ**＝`sDB` とは必ず食い違う（ガイド vol1-07 L93 のとおり）
-	//   ③★★★**UID はクローンをまたいで保たれる**——`sEntries` のキー(258)を BG の db で引くと
-	//      **同じ ClassID(1295) のページが返る**。
+	//   1. **draw events are delivered to background threads too** (being a kModelPlugIn works);
+	//   2. **the db handed over is a clone with a different pointer**, so it never equals sDB
+	//      (guide vol1-07 L93);
+	//   3. **UIDs survive the cloning** -- looking up sEntries' key (258) in the background
+	//      thread's db returns a page of the same ClassID (1295).
 	//
-	// ⇒ ★**同一性は「db ポインタ」ではなく「UID＋ファイル」で聞ける**。これは
-	//   [[uidref-reuse-after-close]]（閉じた文書のポインタはアドレス再利用で別文書と一致する）と
-	//   **同じ結論**＝1つ直すと2つ直る。⚠**ポインタ比較を `IDataBase::GetSysFile` へ移す作業は Task 12B。**
+	// So **identity can be asked by UID and file rather than by db pointer**, which is the same
+	//   conclusion [[uidref-reuse-after-close]] reaches (a closed document's pointer matching a
+	//   different document because the address was reused): one fix answers both.
 
-	// (★押下中 HUD の「帯の前面」ぶんの描画も 2026-08-13 に KCMUIDrawEvent.cpp へ移した。
-	//  ⚠あちらでは**この位置に置く必要がある**という制約は無い＝HUD だけを見るハンドラなので、
-	//    「描くものが無い」経路の return に巻き込まれる心配がそもそも無い。)
-
-	// ★保持マークのドキュメントが閉じられていたら破棄する(クローズ監視の代わり)。draw は開いている
-	//   ドキュメントについてのみ発火するので、ここで sDB/sOrigDB の生存を確認できる。
-	//   マークが無い通常時(sDB==nil かつ sOrigDB==nil)は何も問い合わせない=コストゼロ。
-	//   ★以前はここで DropAll/DropAllOrig だけを個別に呼び、マークだけを消して peek arm やパネル表示は
-	//   そのままにしていた(枠は消えるのにボタンは Stop のまま、という食い違いの原因)。通常はドキュメント
-	//   クローズ responder(KCMHandleDocsClosed)がクローズ直後に先回りして片付けるためこの分岐へは実質
-	//   到達しないが、保険として残す以上は KCMHandleDocsClosed に一本化し、Stop 相当のフルクリーンアップ
-	//   (peek arm 解除・パネル更新も)を確実に行う。
-	//   ★sOversetDB も対象(2026-07-25 監査で追加): Find Overset を未 arm で単独使用中にその文書を閉じ、
-	//   responder が漏れた場合でも、stale な sOversetPages がアドレス再利用された新文書のサムネイルへ
-	//   誤マークされないようにする。
-	//   ★★★2026-08-15（第2段 Task 11C）＝**メインスレッド限定にした。実害を再現して直した箇所。**
-	//     この保険は「draw は開いている文書についてしか来ない」＝**文書リストに居なければ閉じた**、という
-	//     推論で書かれている。⚠**その推論はバックグラウンドスレッドでは成り立たない**——BG は
-	//     **クローンされた別の DB** を見る（ガイド vol1-07 L93）ので、`FindDocByDataBase(sDB)` は
-	//     **開いているのに nil を返す**。結果、PDF を非同期で書き出すたびに
-	//     `KCMHandleDocsClosed()`（Stop 相当のフルクリーンアップ）が走り、**マークが全部消えていた**
-	//     （2026-08-15 に `Document.asynchronousExportFile()` で再現。`marks cleared` が出る）。
-	//   ⇒ **塞いだのは `KCMHandleDocsClosed()` の入口**（呼び手はここを含めて3つあり、「BG では文書の
-	//     生存を判定できない」のは**関数の性質**だから＝[[one-question-one-place]]）。ここは素のまま。
-	//   ⚠**「BG では何もしない」で正しいのは、あれが後始末（状態を捨てる側）だから。**
-	//     描く側を BG で止めたら、それは第2段の目的そのものを止めることになる。
+	// If a document whose marks are being held has been closed, discard them. A draw only fires for
+	//   open documents, so sDB/sOrigDB can be checked for liveness here.
+	//   With no marks (sDB == nil and sOrigDB == nil) nothing is asked at all, so it costs nothing.
+	//   This used to call DropAll/DropAllOrig on their own, removing the marks while leaving the
+	//   peek armed and the panel showing "started" -- the frames went and the button still said
+	//   Stop. Normally the close responder (KCMHandleDocsClosed) gets there first and this branch is
+	//   never reached, but insurance that is kept has to do the full Stop-equivalent clean-up, so it
+	//   goes through the same function.
+	//   sOversetDB is included: with Find Overset used on its own (nothing armed) and its document
+	//   closed, a missed responder would leave a stale sOversetPages that could mark the thumbnails
+	//   of a NEW document whose address was reused.
+	//   **The guard is main-thread only, and that fixed a reproduced defect.** The insurance rests
+	//     on "a draw only comes for open documents", i.e. **not in the document list means closed**
+	//     -- and **that reasoning does not hold on a background thread**, which sees **a cloned
+	//     database** (guide vol1-07 L93), so `FindDocByDataBase(sDB)` **returns nil for a document
+	//     that is open**. The result was that every asynchronous PDF export ran
+	//     `KCMHandleDocsClosed()` (a full Stop-equivalent clean-up) and **the marks all disappeared**
+	//     (reproduced with `Document.asynchronousExportFile()`; "marks cleared" appears).
+	//   The block was put at **KCMHandleDocsClosed's own entrance** (it has three callers, and "a
+	//     background thread cannot judge whether a document is alive" is a property of the function
+	//     -- [[one-question-one-place]]), so this site is left plain.
+	//   @warning "do nothing on a background thread" is right **because that function discards
+	//     state**. Stopping the DRAWING side on a background thread would defeat the whole point of
+	//     making the marks reach an exported PDF.
 	if (sDB != nil || sOrigDB != nil || sSrcDB != nil || sOversetDB != nil)
 	{
-		ISession* session = GetExecutionContextSession();	// 終了処理中は nil になり得る(2026-07-25 追補 統一)
+		ISession* session = GetExecutionContextSession();	// can be nil during shutdown
 		InterfacePtr<IApplication> app(session != nil ? session->QueryApplication() : nil);
 		InterfacePtr<IDocumentList> docList(app ? app->QueryDocumentList() : nil);
 		if (docList != nil &&
@@ -1761,37 +1754,39 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 			KCMHandleDocsClosed();
 	}
 
-	// 画面スケール(ズーム)を一度だけ取得。画面描画時のみ非nil。
-	// ★★2026-08-15（第2段 Task 10）＝**この nil チェックはマルチスレッド適合そのもの**。
-	//   `IControlView*` を**描画の署名からフレームワークに手渡されている**形は model 側で正規
-	//   （SDK の `FrmLblAdornment.cpp` / `TranFxAdornment.cpp` も同じで、両方 `kModelPlugIn`）。
-	//   ⚠ただしガイド vol1-07 L101 が "It is critical that you write model code that expects to be
-	//     able to receive nil pointers" と書いている当の場所でもある＝**印刷・PDF 書き出しでは
-	//     窓が無いので nil で来る**。ここは元から nil を想定して書かれており（sxr=0 のまま進む）、
-	//     直す必要は無い。**この形を新しく書くときも必ずこのガードを付ける。**
+	// The screen scale (the zoom), fetched once. Non-nil only for screen drawing.
+	// **This nil check IS the multithreading conformance.** Being handed an `IControlView*` by the
+	//   framework in a drawing signature is normal for model-side code (the SDK's
+	//   `FrmLblAdornment.cpp` and `TranFxAdornment.cpp` do the same, and both are kModelPlugIn).
+	//   @warning it is also the exact place guide vol1-07 L101 means when it says "It is critical
+	//     that you write model code that expects to be able to receive nil pointers" -- **printing
+	//     and PDF export have no window, so it arrives nil**. This code was written expecting that
+	//     (sxr simply stays 0). **Write the same guard whenever this shape is written again.**
 	PMReal sxr = 0.0;
 	IControlView* zview = gd->GetView();
 	if (zview != nil)
 	{
-		PMMatrix toWin = zview->GetContentToWindowMatrix();	// content→window(画面px), 現ズーム
-		sxr = abs(toWin.GetXScale());	// 負スケールもあり得る(PMReal 版 abs = PMReal.h)
+		PMMatrix toWin = zview->GetContentToWindowMatrix();	// content -> window (screen px) at the current zoom
+		sxr = abs(toWin.GetXScale());	// the scale can be negative (PMReal's abs, from PMReal.h)
 	}
 
-	// ★描画モードの決定(サムネイル生成は関数冒頭で早期 return 済みなのでここには来ない)。
+	// The drawing mode (thumbnail generation returned earlier, so it cannot arrive here).
 	int32 drawMode = printing ? kKCMDrawModePrint : kKCMDrawModeScreen;
 
-	// ★印刷/PDF 時は「100% 表示の見た目」に固定する(ズーム連動を切る)。印刷ポートには view が無く
-	// sxr=0 / pano=nil になるので、実効 sxr=1.0(=100%・deviceScale 1 相当)を与える。これでリング太さの
-	// 式が、画面 100% 表示時とちょうど同じ値になる(下流のズーム適応式をそのまま使い回せる)。
-	// 画面描画は従来どおりズーム連動。
+	// For print and PDF, fix the appearance at "100% display" (no zoom tracking). A printing port
+	// has no view, so sxr is 0; giving it an effective 1.0 (100%, device scale 1) makes the ring
+	// thickness formula produce exactly what 100% on screen produces, and the downstream
+	// zoom-adaptive formula can be reused unchanged.
 	if (printing)
 		sxr = 1.0;
 
-	// ★「Check」の ✓(サムネイル版): チェック済みページの Pages パネルサムネイル中央に青い ✓ を描く。
-	//   他のマーク(リング/斜線/Always Show Marks on Source トグル)とは完全に独立=このスプレッドの db が
-	//   Target でも Source でも、その db にチェックがあれば描く(下の Target/Source メインループより前・
-	//   それらのゲートに依らない)。レイアウトビュー/印刷版は下の wantChecks ブロック(2026-07-12 追加)。
-	//   Start 中限定(チェック集合は Stop で全消去されるので非 arm 時は空だが、保険で arm ゲート)。
+	// The "Check" tick, thumbnail version: a blue tick at the centre of a ticked page's thumbnail.
+	//   Completely independent of the other marks (the rings, the slashes, the Source toggle): this
+	//   spread's db may be the Target or the Source, and if that db has ticks they are drawn. It
+	//   comes before the Target/Source loops below and is not subject to their gates. The layout
+	//   view and print version is the wantChecks block further down.
+	//   Armed only (the tick sets are cleared by Stop, so they are empty when nothing is armed --
+	//   the arm test is insurance).
 	if (isThumb && KCMIsArmed() && KCMPageCheckHasAny(db))
 	{
 		const int32 npChk = spread->GetNumPages();
@@ -1804,13 +1799,15 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 		}
 	}
 
-	// ★Find Overset の目印(サムネイル版・2026-07-24)。走査した文書(sOversetDB)の Pages パネル
-	//   サムネイル生成時だけ、overset を含むページ(sOversetPages)に (a) 変更ページと同じ赤枠
-	//   (KCMDrawPageBorder)＋ (b) その中央に「赤＋白縁」の「＋」を描く。
-	//   ★2026-07-24: 一度は赤枠を撤去し「＋」だけにしたが、十字だけでは視認しにくいとのユーザー指定で
-	//   赤枠を復活(変更ページと同じ赤枠。区別より視認性を優先)。カンバス(レイアウトビュー)には一切描かない
-	//   (ユーザー指定)。比較(sEntries)・✓ とは完全に独立= sOversetOn の間、非 arm でも描く
-	//   (比較していなくてもオーバーセット検査の結果を出す)。
+	// Find Overset's marks, thumbnail version. Only while generating the Pages panel thumbnails of
+	//   the document that was scanned (sOversetDB), the pages holding overset (sOversetPages) get
+	//   (a) the same red border a changed page gets (KCMDrawPageBorder) and (b) a red "+" with a
+	//   white halo at the centre.
+	//   The border was once removed in favour of the "+" alone and then brought back: the cross by
+	//   itself is hard to spot, and visibility beat distinguishability. **Nothing is drawn on the
+	//   canvas.** It is independent of the comparison and the ticks, so it appears while sOversetOn
+	//   even with nothing armed (an overset check has a result whether or not documents are being
+	//   compared).
 	if (wantOversetThumb && db == sOversetDB)
 	{
 		const int32 npx = spread->GetNumPages();
@@ -1820,17 +1817,17 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 			if (sOversetPages.count(puid) > 0)
 			{
 				KCMDrawPageBorder(gPort, db, puid,
-					kKCMRingR, kKCMRingG, kKCMRingB);	// 変更と同じ赤枠(視認性のため復活)
-				KCMDrawPageCrossOutlined(gPort, db, puid);	// 中央に赤＋白縁の＋
+					kKCMRingR, kKCMRingG, kKCMRingB);	// the same red border a change gets, for visibility
+				KCMDrawPageCrossOutlined(gPort, db, puid);	// and the red-with-white-halo "+" at the centre
 			}
 		}
 	}
 
-	// 今描いている「このスプレッド」を覗いている(旧版べた載せ中)か。覗きで旧版が乗るのはマウス下の1スプレッド
-	// だけ(そのページが sOrigImages にある)。覗き中のスプレッドだけ旧版をきれいに見せたいので、マーク
-	// (枠)を描かない。それ以外のスプレッドは通常どおりマークを描く。
-	// ★サムネイル生成(isThumb)では旧版べた載せをしない: peek 押下中にそのスプレッドのサムネイルが
-	// 再生成されると、旧版画像が blit されたサムネイルがキャッシュに残り、離した後も古い絵のままになる。
+	// Is the spread being drawn the one currently being peeked at? The peek covers only the single
+	// spread under the mouse (whose pages are in sOrigImages). That spread should show the older
+	// version cleanly, so its marks are not drawn; every other spread keeps its marks as usual.
+	// The peek is not applied to thumbnail generation: a thumbnail regenerated while the button is
+	// held would cache the older version's image and go on showing it after the button came up.
 	bool16 peekingThisSpread = kFalse;
 	if (wantOrig && !isThumb && sOrigDB != nil && db == sOrigDB)
 	{
@@ -1840,8 +1837,8 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 			{ peekingThisSpread = kTrue; break; }
 	}
 
-	// 旧版べた載せ — マーク(sEntries)とは独立。覗き中のスプレッドの各ページに旧版画像を不透明で
-	// ページ矩形いっぱいに blit する。
+	// The peek itself, independent of the marks (sEntries): each page of the peeked spread gets the
+	// older version's picture blitted opaquely across its whole rectangle.
 	if (peekingThisSpread)
 	{
 		const int32 npo = spread->GetNumPages();
@@ -1857,24 +1854,25 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 			InterfacePtr<IGeometry> pageGeo(db, pageUID, UseDefaultIID());
 			if (pageGeo == nil)
 				continue;
-			// ★2026-08-16(B3・A-1): Facade で spread 座標のまま取る(理由は KCMDrawEntryOnPage)。
+			// The page's box from the Facade, in spread coordinates (see KCMDrawEntryOnPage).
 			const PMRect pr = Utils<Facade::IGeometryFacade>()->GetItemBounds(
 				UIDRef(db, pageUID), Transform::SpreadCoordinates(), Geometry::PathBounds());
 			AutoGSave ag(gPort);
-			gPort->setopacity(sPeekOpacity, kFalse);		// Shift peek=1.0(不透明) / Shift+Alt peek=0.5(半透明)
+			gPort->setopacity(sPeekOpacity, kFalse);		// Shift peek = 1.0 (opaque), Shift+Alt peek = 0.5
 			gPort->translate(pr.Left(), pr.Top());
-			gPort->scale(pr.Width() / o->w, pr.Height() / o->h);	// 旧版画像をページ矩形にフィット
-			gPort->image(&o->rec, PMMatrix(), 0);			// 旧版を sPeekOpacity で重ねる
+			gPort->scale(pr.Width() / o->w, pr.Height() / o->h);	// fit the older picture to the page rectangle
+			gPort->image(&o->rec, PMMatrix(), 0);			// and lay it over at sPeekOpacity
 		}
 	}
 
-	// ★「Check」の ✓(レイアウトビュー/印刷版・2026-07-12)。チェック済みページのページ中央に
-	//   青い ✓ を「かなり大きく」(短辺×kKCMCheckLayoutSizeRatio)描く。Target/Source を問わず、この
-	//   スプレッドの db にチェックがあれば描く(枠トグル・ツール左hold とは完全に独立=画面では常時表示)。
-	//   印刷/PDF は wantChecks が sPrintMarks でゲート済み。不透明度はパネルの 25%/75% 選択
-	//   (SelectedMarkOpacity)を画面・印刷共通で使う。旧版べた載せ(peek)の直後に描く=peek の不透明画像
-	//   の上にも ✓ が乗る(常に見える)。この後の Source/Target マークループより前に置くのは、Source
-	//   ループが return kFalse で抜けるため(リング等が ✓ の上に重なるのは許容=どちらも半透明マーク)。
+	// The "Check" tick, layout view and print version: a blue tick drawn **large** (the short side
+	//   times kKCMCheckLayoutSizeRatio) at the centre of a ticked page. Target or Source alike -- if
+	//   this spread's db has ticks, they are drawn, independently of the frame toggles and the
+	//   tool's left button (so on screen they are always visible). Print and PDF are already gated
+	//   by wantChecks on sPrintMarks. The opacity is the panel's 25%/75% choice
+	//   (SelectedMarkOpacity), the same on screen and in print.
+	//   It comes right after the peek so that the tick sits on top of the peek's opaque picture and
+	//   stays visible, and before the Source/Target loops because the Source loop ends in a return.
 	if (wantChecks && KCMIsArmed() && KCMPageCheckHasAny(db))
 	{
 		const int32 npc = spread->GetNumPages();
@@ -1887,42 +1885,46 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 		}
 	}
 
-	// ★Find Overset の「＋」はカンバス(レイアウトビュー)には描かない(2026-07-24 ユーザー指定)。
-	//   Pages パネルのサムネイル(isThumb)にだけ描く=上の isThumb 専用ブロック(wantOversetThumb)を参照。
-
-	// 旧ページ番号バッジ(Show Original Page Numbers)。スプレッドが隠されて「現在のページ番号」マーカーが
-	// ズレているページにだけ、「隠す前の元の番号」をページ下端中央へ描く(画面=WYSIWYG、印刷/PDF にも出る)。
-	// マーク(sEntries)とは独立=この db がマーク対象かは問わない(隠しが無ければ元番号と現在番号が一致して
-	// 何も描かない)。GetPageString の最終引数 bIncludePagesOfHiddenSpread が kTrue=隠しページも数える(元の番号)/
-	// kFalse=隠しページを飛ばす(現在マーカーが表示している番号)。書式は★番号のみ(bIncludeSectionName=kFalse
-	// =セクションプレフィックス "A:" を付けない。ユーザー指定 2026-07-15)・セクションの番号スタイル
-	// (bUseIntegerStyle=kFalse)=実際のノンブルと同じ見た目。文字は framelabel 流(selectfont+show)。
-	// サイズはズーム非依存(fontSize=目標px/sxr。印刷時は sxr=1.0 固定=実寸 pt)。
-	// 見た目: 白フチ+黒文字(背景の白塗りは 2026-07-15 に廃止)。バッジ全体の不透明度は 25%/75% 選択に連動。
+	// The original-page-number badge (Show Original Page Numbers). On a page whose "current page
+	// number" marker has SHIFTED because spreads are hidden, the number it had before the hiding is
+	// drawn at the bottom centre (on screen, and in print and PDF too).
+	// Independent of the marks (sEntries): this db need not be one being compared (with nothing
+	// hidden the original and current numbers agree and nothing is drawn). GetPageString's last
+	// argument bIncludePagesOfHiddenSpread selects between them -- kTrue counts hidden pages (the
+	// original number), kFalse skips them (the number the marker shows now).
+	// The format is the NUMBER ALONE (bIncludeSectionName = kFalse, no "A:" prefix) in the section's
+	// own numbering style (bUseIntegerStyle = kFalse), so it matches the real folio. The characters
+	// are drawn framelabel-style (selectfont + show), at a size independent of the zoom
+	// (fontSize = the target px / sxr; printing fixes sxr at 1.0, giving real points).
+	// It is drawn as black text with a white halo, and the badge's overall opacity follows the
+	// 25%/75% choice.
 	if (wantOldNums && sxr > 0)
 	{
 		InterfacePtr<IPageList> pageList(db, db->GetRootUID(), UseDefaultIID());
-		// フォント/インスタンスはファイル先頭のキャッシュ(sOldNumFont/sOldNumFontInst)から。初回だけ取得。
-		// ★★2026-08-15(第2段 Task 12B)= **初回取得はメインスレッドだけが行う。**
-		//   ここは3つの共有 static(sOldNumFontTried/sOldNumFont/sOldNumFontInst)を書き換える唯一の場所で、
-		//   BG と main が同時に通ると **QueryFont を二重に発行し、片方のポインタを取りこぼす**(=解放漏れ)。
-		//   ⚠BG で未取得のときは numFont==nil になり、下の `numFont != nil` でバッジだけ描かれない。
-		//     旧番号バッジは既定 OFF のトグルで、ON なら画面描画(main)が先に必ずキャッシュを埋めるので、
-		//     実際に「PDF だけバッジが無い」状態になるのは "画面に一度も出していない" ときだけ。
+		// The font and instance come from the cache at the top of this file, fetched once.
+		// **Only the main thread performs that first fetch.** This is the one place that writes the
+		//   three shared statics (sOldNumFontTried / sOldNumFont / sOldNumFontInst), and a
+		//   background thread arriving at the same time would **issue QueryFont twice and lose one
+		//   of the pointers** (a leak).
+		//   @warning on a background thread with nothing fetched yet, numFont stays nil and the
+		//     `numFont != nil` below simply skips the badge. The badge is an off-by-default toggle,
+		//     and with it on the screen drawing (main thread) fills the cache first, so "the badge
+		//     is missing from the PDF only" needs it never to have been shown on screen.
 		if (!sOldNumFontTried && KCMIsMainThread())
 		{
 			sOldNumFontTried = kTrue;
-			// ★InterfacePtr(p, iid) は p==nil を許す(InterfacePtr.h:459 QueryInterface_ が nil チェック済み)
-			//   ので、session が終了処理中に nil でもここは安全に fontMgr==nil になるだけ。明示ガードが
-			//   要るのは session->QueryApplication() のような「直接のメソッド呼び出し」だけ(2026-07-25 追補 整理)。
+			// InterfacePtr(p, iid) accepts p == nil (InterfacePtr.h:459 -- QueryInterface_ tests for
+			//   it), so a session that is nil during shutdown just leaves fontMgr nil here. An
+			//   explicit guard is only needed for a **direct method call** such as
+			//   session->QueryApplication().
 			InterfacePtr<IFontMgr> fontMgr(GetExecutionContextSession(), UseDefaultIID());
 			if (fontMgr != nil)
 			{
 				sOldNumFont = fontMgr->QueryFont(fontMgr->GetDefaultFontName());
 				if (sOldNumFont != nil)
 				{
-					// ★サイズはドキュメント拡大率50%相当で固定(ユーザー指定 2026-07-15)なので、
-					//   インスタンス(フォント×行列)も不変=キャッシュ可。
+					// The size is fixed at the equivalent of 50% document zoom, so the instance
+					//   (font x matrix) never changes and can be cached.
 					const PMReal cacheSize = kKCMOldNumFontPx / kKCMOldNumFixedZoom;
 					PMMatrix fontMatrix(cacheSize, 0.0, 0.0, cacheSize, 0.0, 0.0);
 					sOldNumFontInst = fontMgr->QueryFontInstance(sOldNumFont, fontMatrix);
@@ -1930,24 +1932,28 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 			}
 		}
 		IPMFont*       numFont  = sOldNumFont;
-		IFontInstance* fontInst = sOldNumFontInst;	// nil でも下の分岐がフォールバック値を使う
+		IFontInstance* fontInst = sOldNumFontInst;	// nil is fine: the branches below fall back
 		if (pageList != nil && numFont != nil)
 		{
-			// ★サイズはドキュメント拡大率50%相当で固定(ユーザー指定 2026-07-15)。sxr(画面/印刷の実効
-			//   スケール)ではなく固定値で割る=ズームでも印刷でもページに対して一定の大きさになる。
+			// The size is fixed at the equivalent of 50% document zoom: dividing by that constant
+			//   rather than by sxr (the effective screen/print scale) is what keeps the badge the
+			//   same size relative to the page at any zoom and in print.
 			const PMReal fontSize = kKCMOldNumFontPx / kKCMOldNumFixedZoom;
 			const PMReal margin   = kKCMOldNumMarginPx / kKCMOldNumFixedZoom;
 
 			const int32 npn = spread->GetNumPages();
 
-			// ★このスプレッドに「番号がズレているページ」が有り得るかを、先頭ページで1回だけ先に判定する
-			//   (2026-07-27 の無駄取り)。ズレは「このスプレッドより前に隠しスプレッドがあるか」で決まるので、
-			//   同じスプレッドのページはすべて同じ条件下にある: 先頭が一致＝隠しの影響が及んでいないか、
-			//   番号を固定するセクション内にあるかのどちらかで、後続ページはその連番なのでやはり一致する。
-			//   隠しスプレッドが1つも無い通常の文書ではこれが常に成立し、以前は毎描画・全ページで
-			//   GetPageString を2回ずつ呼んで必ず「一致」で捨てていた(バッジ ON の間ずっと空振り)。
-			//   ズレていた場合だけ従来どおり全ページを回す(ループ内の per-page 判定はそのまま残すので、
-			//   スプレッドの途中でセクションが始まってズレが解消するページも正しく飛ばせる)。
+			// Decide ONCE, from the first page, whether this spread can contain a shifted number.
+			//   A shift depends on there being a hidden spread BEFORE this one, so every page of the
+			//   spread is under the same condition: if the first page agrees, either the hiding does
+			//   not reach it or it is inside a section that fixes the numbering, and the following
+			//   pages continue from it and agree too.
+			//   In an ordinary document with nothing hidden this always holds, and without it every
+			//   draw called GetPageString twice for every page and threw both away -- the whole time
+			//   the badge was on.
+			//   When it HAS shifted, every page is walked as before (the per-page test inside the
+			//   loop stays, so a page where a section starts mid-spread and removes the shift is
+			//   still skipped correctly).
 			bool16 spreadMayShift = kFalse;
 			if (npn > 0)
 			{
@@ -1962,17 +1968,18 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 			{
 				const UID pageUID = spread->GetNthPageUID(i);
 				PMString orig, cur;
-				// 第3引数 bIncludeSectionName=kFalse=セクションプレフィックス("A:"等)を付けない=番号のみ
-				// (ユーザー指定 2026-07-15)。元/現在の両方を同じ設定で取り、ズレ判定を狂わせない。
-				pageList->GetPageString(pageUID, &orig, kFalse, kFalse, kDefaultPageType, kTrue, kTrue);	// 元(隠し込みで数えた番号)
-				pageList->GetPageString(pageUID, &cur,  kFalse, kFalse, kDefaultPageType, kTrue, kFalse);	// 現在(隠しを飛ばした番号)
+				// 3rd argument bIncludeSectionName = kFalse: the number alone, with no section
+				// prefix ("A:" and the like). Both numbers are fetched with the same settings, so
+				// the comparison is not thrown off.
+				pageList->GetPageString(pageUID, &orig, kFalse, kFalse, kDefaultPageType, kTrue, kTrue);	// the original (counting hidden pages)
+				pageList->GetPageString(pageUID, &cur,  kFalse, kFalse, kDefaultPageType, kTrue, kFalse);	// the current (skipping them)
 				if (orig == cur)
-					continue;	// ズレていない(このページより前に隠しスプレッドが無い)
+					continue;	// not shifted: no hidden spread before this page
 
 				InterfacePtr<IGeometry> pageGeo(db, pageUID, UseDefaultIID());
 				if (pageGeo == nil)
 					continue;
-				// ★2026-08-16(B3・A-1): Facade で spread 座標のまま取る(理由は KCMDrawEntryOnPage)。
+				// The page's box from the Facade, in spread coordinates (see KCMDrawEntryOnPage).
 				const PMRect pr = Utils<Facade::IGeometryFacade>()->GetItemBounds(
 					UIDRef(db, pageUID), Transform::SpreadCoordinates(), Geometry::PathBounds());
 
@@ -1981,37 +1988,42 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 					fontInst->MeasureWText(orig, textW);
 				const PMReal ascent  = (fontInst != nil) ? fontInst->GetAscent()  : (fontSize * PMReal(0.8));
 				const PMReal descent = (fontInst != nil) ? fontInst->GetDescent() : (fontSize * PMReal(0.2));
-				const PMReal tx = (pr.Left() + pr.Right()) / 2 - textW / 2;	// 下端中央(横センター)
-				const PMReal ty = pr.Bottom() - margin - descent;			// ベースライン(下端から余白+descent 上)
+				const PMReal tx = (pr.Left() + pr.Right()) / 2 - textW / 2;	// centred at the bottom
+				const PMReal ty = pr.Bottom() - margin - descent;			// the baseline (margin + descent up from the bottom)
 
 				const int32 nch = orig.NumUTF16TextChars();
 				const UTF16TextChar* buf16 = orig.GrabUTF16Buffer(nil);
 
 				AutoGSave ag(gPort);
-				// バッジ(白フチ+黒文字、背景なし)を透明グループで1つに束ね、グループの合成に
-				// SelectedMarkOpacity(枠と同じ25%/75%連動、画面と印刷で同値)を1回だけ適用する。
-				// starttransparencygroup は開始時点の GState(=直前の setopacity)をグループ合成に引き継ぎ、
-				// グループ内の alpha は 1.0 にリセットされる(IGraphicsPort.h の仕様)。つまり中は全部不透明で
-				// 描けるので、白フチと青本体が重なる縁でも濃度が変わらない(setopacity のまま重ねると
-				// 重なった画素だけ濃くなる)。cs=nil は非隔離グループ=親のカラースペースを使うので問題ない。
-				const PMReal pad = fontSize * kKCMOldNumPadEm;	// 透明グループ bbox の余白(白フチのはみ出しを含む)
+				// The badge (a white halo and black text, no background) is bundled into one
+				// transparency group, and SelectedMarkOpacity (the frames' 25%/75%, the same on
+				// screen and in print) is applied once, to the group's compositing.
+				// starttransparencygroup inherits the GState as it stands (i.e. the setopacity just
+				// made) for the group's compositing and resets alpha to 1.0 INSIDE the group
+				// (IGraphicsPort.h), so everything within can be drawn opaque and the density does
+				// not change where the halo overlaps the body (with a bare setopacity the
+				// overlapping pixels come out denser). cs = nil is a non-isolated group, which uses
+				// the parent's colour space.
+				const PMReal pad = fontSize * kKCMOldNumPadEm;	// padding of the group's bbox (wide enough for the halo)
 				const PMRect badgeRect(tx - pad, ty - ascent - pad, tx + textW + pad, ty + descent + pad);
-				gPort->setopacity(SelectedMarkOpacity(), kFalse);	// グループ全体の合成不透明度
+				gPort->setopacity(SelectedMarkOpacity(), kFalse);	// the group's overall opacity
 				gPort->starttransparencygroup(badgeRect, nil, kFalse /*non-isolated*/, kFalse /*no knockout*/);
 
 				gPort->selectfont(numFont, fontSize);
-				// 白フチ(中心±で8方向にずらして白 show)→ 本体(既定=黒)。背景の白塗りは廃止(ユーザー指定 2026-07-15)。
-				// 透明背景でも明暗どちらの下地でも読める(カーソルの✓ハローと同方式)。
+				// The white halo (shown eight times, offset around the centre), then the body.
+				// It reads on light and dark ground alike (the same method the cursor's tick halo uses).
 				const PMReal halo = fontSize * kKCMOldNumHaloEm;
-				// ★2026-08-16: 印刷/PDF は CMYK(白 = 全版 0)。PDF/X-1a は RGB を許さない。
-				KCMSetOutputColor(gPort, 255, 255, 255, printing);	// 白フチ
+				// Print and PDF are CMYK (white = zero in every channel); PDF/X-1a does not allow RGB.
+				KCMSetOutputColor(gPort, 255, 255, 255, printing);	// the halo
 				for (int32 dy = -1; dy <= 1; ++dy)
 					for (int32 dx = -1; dx <= 1; ++dx)
 						if (dx != 0 || dy != 0)
 							gPort->show(tx + halo * dx, ty + halo * dy, nch, buf16);
-				// 本体(定数どおり=既定は黒。2026-07-15 に青→黒)。
-				// ★2026-08-16: 印刷/PDF は CMYK。⚠定数は PMReal(0.0〜1.0) なので 0..255 へ直してから渡す
-				//   (定数を変えても追随するように、直値を書かない)。既定の黒なら K100 になる。
+				// The body, in whatever the constants say (black by default).
+				// Print and PDF are CMYK here too.
+				//   @warning the constants are PMReal (0.0-1.0), so they are converted to 0..255
+				//     before being passed -- written this way so that changing a constant is
+				//     followed automatically rather than by editing a literal. Black gives K100.
 				KCMSetOutputColor(gPort,
 					(uint8)::ToInt32(::Round(kKCMOldNumR * PMReal(255.0))),
 					(uint8)::ToInt32(::Round(kKCMOldNumG * PMReal(255.0))),
@@ -2023,59 +2035,63 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 		}
 	}
 
-	// overflow("/"の未比較ページ)集合は EnsureOverflowCache() が保持済み(sOverflowT=Target/
-	// sOverflowS=Source)。このスプレッドの各ページが overflow 側に入っているかを count で見るだけ。
-
-	// Source 文書側のリング(Always Show Marks on Source) — 現スプレッドが Source 文書のものなら、対応表
-	// (SourceページUID→TargetページUID)経由で同じリング画像を Source ページに重ねる。
-	// トグル ON の間は常時表示(ツール左hold と無関係)。不透明度はパネルの 25%/75% 選択
-	// (SelectedMarkOpacity)固定で、印刷文脈でも冒頭の suppressForPrint(印刷のみの抑制)を通り抜けて
-	// ここへ来る(印刷経路は KCMDrawRingForPrint が同じ SelectedMarkOpacity を使う=画面と印刷の
-	// 見た目一致。OPP は 2026-07-05 からそもそも抑制対象外)。
-	// Target と同一 db(想定外の自己比較)は下の Target 側描画に任せ、二重描画を避ける。
-	// ★★★2026-08-15(第2段 Task 12B)= **生ポインタ比較を KCMIsSameDoc へ置き換えた。**
-	//   バックグラウンド(PDF の非同期書き出し)には**クローンされた別 DB** が渡るので、`db == sSrcDB` は
-	//   必ず偽になり、Source 側の枠が書き出しに一切出なかった。同一性はファイル(GetSysFile)で聞く。
-	//   ⚠メインスレッドでは同一ポインタで即決するので、従来の判定と結果は1つも変わらない。
-	// ⚠★★★**覗いているスプレッドには枠を描かない**(2026-08-22 ユーザー報告＝「ソースの方で Peek の
-	//   動作するとき、枠が表示されてますね、ターゲットの方は大丈夫」)。
-	//   ★**Target 側は元からこれを持っていた**＝下のリング描画が `peekingThisSpread` で先に return する。
-	//     Source 側だけ同じガードが無く、旧版べた載せの上に枠が重なっていた。
-	//   ⚠**なぜ今まで見えなかったか**＝それまで Source の枠は「トグル ON のときだけ」出て、その ON の
-	//     ときは押下で `sSrcMarksTempHidden` が立って隠れていた。**同じ日に「トグル OFF でも押下で出る」
-	//     ようにした(XOR)ことで、初めて peek 中に出る道ができた**——覗くのも押下だから。
-	//   ⇒ ★**機能を対称にすると、対称でなかった側のガードの欠落も一緒に表に出る。**
+	// The Source document's rings ("Always Show Marks on Source"): when the current spread belongs
+	// to the Source document, the same ring image is laid over the Source page through the mapping
+	// (Source page UID -> Target page UID).
+	// While the toggle is on they are shown at all times, regardless of the tool's left button. The
+	// opacity is fixed at the panel's 25%/75% choice (SelectedMarkOpacity), and a printing context
+	// reaches here through suppressForPrint (the print route uses the same SelectedMarkOpacity, so
+	// screen and print match; OPP is not suppressed at all).
+	// The same db as the Target (an unexpected self-comparison) is left to the Target drawing below,
+	// so nothing is drawn twice.
+	// **Identity is asked with KCMIsSameDoc, not a pointer comparison**: the background thread (the
+	//   asynchronous PDF export) is handed **a cloned db**, so `db == sSrcDB` is always false there
+	//   and the Source frames never reached an export. On the main thread an identical pointer
+	//   settles it immediately, so nothing about the old behaviour changes.
+	// @warning **the peeked spread gets no frames.** The Target side always had this (its ring
+	//   drawing returns early on peekingThisSpread); the Source side lacked the same guard and the
+	//   frames sat on top of the older version's picture.
+	//   Why it was invisible until now: the Source frames used to appear only with the toggle ON,
+	//   and with it on a press raised the "temp hidden" flag and they were hidden anyway. **Making
+	//   the press show them with the toggle OFF (the XOR) is what first created a route for them to
+	//   appear during a peek** -- because peeking is a press too.
+	//   **Making a feature symmetric exposes the guard the asymmetric side never had.**
 	if (wantSrcMarks && !peekingThisSpread && KCMIsSameDoc(db, sSrcDB) && !KCMIsSameDoc(db, sDB))
 	{
-		// ★2026-08-15(第2段 Task 12B): Target 側ループと同じ理由でロックを取る(下の return まで保持)。
+		// The lock is taken for the same reason as the Target loop below, and held until the return.
 		KCMMarkStateLock srcMarkLock(KCMMarkStateMutex());
 		const int32 nps = spread->GetNumPages();
-		// ★緑ベタ塗りは「どこを比較から外しているか」を見せる**画面用の診断表示**なので、印刷/PDF には出さない
-		//   (!printing。2026-08-06 の監査 E-4)。リングのような校正マークと違い下のデザインを覆うため。
-		//   ⚠以前は Source 側だけが sPrintMarks を見ない経路(Source 枠は常に印刷に出す仕様)に乗っていたので、
-		//   「Print comparison marks」OFF でも Source の印刷に緑が乗っていた。Target/Source とも画面限定に揃える。
-		const bool16 fillExcluded = !printing && KCMGetIgnorePageNumberMarker();	// ノンブル除外領域の緑ベタ塗り(除外トグルON・画面のみ)
+		// The green wash is a **screen-only diagnostic** showing what the comparison excluded, so it
+		//   never goes into print or PDF (!printing) -- unlike the rings, it covers the design
+		//   underneath.
+		//   The Source side alone used to be on the route that ignores sPrintMarks (its frames are
+		//   always printed), so the green appeared in a Source print even with "Print comparison
+		//   marks" off. Target and Source are both screen-only now.
+		const bool16 fillExcluded = !printing && KCMGetIgnorePageNumberMarker();	// the folio wash: toggle on, screen only
 		for (int32 i = 0; i < nps; ++i)
 		{
 			const UID srcPageUID = spread->GetNthPageUID(i);
-			// 登録済み/overflow の判定は下の if/else 連鎖と除外塗りの両方で要るので、1ページにつき
-			// 1回ずつ引いて使い回す(以前は同じ問い合わせをページごとに2回ずつ行っていた)。
+			// Registered and overflow are both needed by the if/else chain and by the wash, so each
+			// is asked once per page and reused.
 			const bool16 isRegistered = KCMPageMapIsRegistered(db, srcPageUID);
 			const bool16 isOverflow   = (sOverflowS.count(srcPageUID) > 0);
 			std::map<UID, UID>::iterator mp = sSrcPageToTarget.find(srcPageUID);
 			if (mp != sSrcPageToTarget.end())
 			{
 				std::map<UID, KCMOverlayEntry*>::iterator it = sEntries.find(mp->second);
-				if (drawRings && it != sEntries.end())	// ★Story モードではリングを描かない(上の drawRings)
+				if (drawRings && it != sEntries.end())	// no rings in the Story mode (drawRings above)
 				{
 					if (isThumb)
 					{
-						// ★★2026-08-24: **サムネイルの枠もパネルの「Mark colour」に従う**。
-						//   ⚠ここは**リング画像を使わない唯一の変更ページ表示**(極小表示なので画像を
-						//     縮めず単色の枠を引く)ため、色を選べるようにした回に取り残されて赤固定の
-						//     ままだった＝**カンバスはシアン・Pages パネルは赤**という食い違い。
-						//   ★「赤い下地に埋もれるからシアンを選ぶ」という導入理由は、サムネイルでこそ
-						//     効く(小さいので余計に見分けにくい)。
+						// **A thumbnail's border follows the panel's "Mark colour" too.**
+						//   @warning this is the **only changed-page display that does not use the
+						//     ring image** (at thumbnail size a solid border is drawn instead of
+						//     shrinking the image), which is how it was left behind at red when the
+						//     colour became a choice -- **cyan on the canvas, red in the Pages
+						//     panel**.
+						//   The reason for offering cyan at all ("red marks are lost against red
+						//     ground") applies most at thumbnail size, where everything is harder to
+						//     tell apart.
 						uint8 mr = 0, mg = 0, mb = 0;
 						SelectedMarkColor(mr, mg, mb);
 						KCMDrawPageBorder(gPort, db, srcPageUID, mr, mg, mb);
@@ -2086,80 +2102,83 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 			}
 			else if (isRegistered)
 			{
-				// 対応表に無い(=比較対象外)Source ページ。登録済み("Removed")なら緑「/」を描く。
+				// A Source page that is not in the mapping (so not being compared). Registered
+				// ("Removed") pages get the green "/".
 				KCMDrawPageDiagonal(gPort, db, srcPageUID, sxr, drawMode, SelectedMarkOpacity(), kKCMAddedBorderR, kKCMAddedBorderG, kKCMAddedBorderB);
 			}
 			else if (isOverflow)
 			{
-				// 登録もされていない、ページ数差であふれたページ。未比較であることを赤斜線で明示する。
-				// ⚠★★2026-08-24 に明記: **この赤は「Mark colour」の選択に追随しない。意図的**＝
-				//   言っていることが違う(「変更があった」ではなく「比較していない」)。登録済みページの
-				//   緑「/」と同じ立場で、**マークの色を変えても意味が変わらない印**。
-				//   ★むしろシアンを選んだときは、変更(シアン)と未比較(赤)が色で見分けられる。
+				// Not registered either: a page that overflowed the page-count difference. The red
+				// slash says it was never compared.
+				// @warning **this red does NOT follow the "Mark colour" choice, deliberately** -- it
+				//   says something different ("not compared", not "changed"). It stands with the
+				//   registered pages' green "/" as **a mark whose meaning does not change with the
+				//   mark colour**. With cyan chosen, changed (cyan) and uncompared (red) are even
+				//   easier to tell apart.
 				KCMDrawPageDiagonal(gPort, db, srcPageUID, sxr, drawMode, SelectedMarkOpacity(), kKCMRingR, kKCMRingG, kKCMRingB);
 			}
-			// 除外トグルON時、実際に比較しているページ(=登録済みRemovedでも overflow でもない=対応表に
-			// 入るページ)にだけ除外領域の緑ベタ塗りを重ねる。変更なしで entry が無いページにも出すので
-			// 上の if/else とは独立に判定する。Removed/overflow ページは画素比較自体を行わない
-			// (ノンブル除外という概念が無い)ので塗らない。
+			// With the toggle on, the green wash goes only over the pages actually being compared
+			// (in the mapping -- neither registered-Removed nor overflow). It is drawn independently
+			// of the if/else above, because a page with no entry (nothing changed) needs it too.
+			// Removed and overflow pages are never pixel-compared at all, so "folio exclusion" means
+			// nothing for them.
 			if (!isThumb && fillExcluded && !isRegistered && !isOverflow)
 				KCMDrawPageNumberMarkerFill(gPort, db, srcPageUID);
 		}
-		return kFalse;	// Source 文書に Target 側オーバーレイは無い=ここで終わり
+		return kFalse;	// a Source document carries no Target-side overlay: done
 	}
 
-	// ★2026-07-11: 「登録専用パス」(比較対象でない文書=未 Start 時に登録「/」を描く経路)は撤去した
-	//   (ユーザー指定: 未 Start では Add/Remove の「/」をドキュメント・Pages パネルとも出さない)。登録「/」は
-	//   Start 中の Target/Source メインループ(下の Target ループ・上の Source ループ)だけが描く。
-
-	// 変更オーバーレイ(リング) — マーク済みドキュメントが現スプレッドの db と一致する時だけ。
-	// master 表示トグル(sMarksVisible)が OFF の間、またはこのスプレッドを覗き中(旧版べた載せ中)は描かない
-	// (データは保持=再表示で即復帰)。覗いていない他のスプレッドのマークは通常どおり残る。
-	// ★印刷マーク(sPrintMarks)が ON の間は、ツール左hold に関係なく常に描く(画面=WYSIWYG / 印刷・PDF にも出る)。
-	// ★★★2026-08-15(第2段 Task 12B)= **ここが「PDF 書き出しにマークが出ない」の本体だった。**
-	//   `db != sDB` は BG では必ず真(クローンの別ポインタ)になるので、Target 側のマークが1つも描かれず、
-	//   非同期書き出しの PDF は「Print comparison marks を OFF にしたもの」と**バイト単位で同一**だった
-	//   (2026-08-15 実測 = docs/ai-notes/kescm-task12-pdf-export-marks-2026-08-15.md)。
-	//   ⇒ ファイル同一性で聞き直す。★下のループは**ページ UID で sEntries を引く**ので、
-	//     ここさえ通れば中身は1行も変えずに BG でも正しく動く(UID がクローンをまたいで保たれることは
-	//     Task 11C で実測済み)。
+	// The change overlay (the rings), only when the marked document is this spread's db.
+	// Nothing is drawn while the master toggle (sMarksVisible) is off, or while this spread is being
+	// peeked at -- the data is kept, so it comes straight back. Other spreads keep their marks.
+	// With print marks (sPrintMarks) on they are always drawn, regardless of the tool's left button
+	// (WYSIWYG on screen, and into print and PDF).
+	// **`db != sDB` was the whole of "the marks do not appear in an exported PDF".** On a background
+	//   thread it is always true (a cloned pointer), so not one Target-side mark was drawn and an
+	//   asynchronously exported PDF was **byte-for-byte identical** to one exported with Print
+	//   comparison marks off. Identity is asked by file instead.
+	//   The loop below looks entries up **by page UID**, so once this line passes, the rest works on
+	//   a background thread unchanged (UIDs surviving the cloning was measured -- see above).
 	if (peekingThisSpread || !wantMarks || sDB == nil || !KCMIsSameDoc(db, sDB))
 		return kFalse;
 
-	// 画面マークの実効不透明度。sMarkScreenOpacity は常に実効値を保持する(下の各ソースが設定):
-	//   ・ツール左hold中 = 選択不透明度(パネルの 25%/75%)
-	//   ・押していない時 = 基準値 KCMBaseScreenOpacity()(印刷ONなら選択不透明度 / 印刷OFFは1.0)
-	// 離すと基準値へ戻る。printing 経路はここを使わず、KCMDrawRingForPrint が SelectedMarkOpacity を直接使う。
+	// The effective opacity of the on-screen marks. sMarkScreenOpacity always holds the effective
+	// value, set by:
+	//   - while the tool's left button is held = the chosen opacity (the panel's 25%/75%)
+	//   - otherwise = the base value, KCMBaseScreenOpacity() (the chosen opacity with printing on,
+	//     1.0 with it off)
+	// Releasing restores the base value. The printing route does not use this: KCMDrawRingForPrint
+	// takes SelectedMarkOpacity directly.
 	const PMReal screenMarkOp = sMarkScreenOpacity;
 
-	// このスプレッドの各ページについて、エントリがあれば描く(描画本体は KCMDrawEntryOnPage に共通化)。
-	// ★★2026-08-15(第2段 Task 12B): **ここから先はマーク集合を読むのでロックを取る。**
-	//   守っているのは2つ: ①sEntries の要素が読んでいる最中に DropAll/MakeEntry で delete されること
-	//   ②KCMDrawEntryOnPage が e->buf を BuildRing で書き替えるので、main(画面ズーム基準の半径)と
-	//     BG(印刷用に sxr=1.0 固定の半径)が**同じバッファを取り合う**こと。
-	//   ⚠ロックはこの関数の残り(＝描画ループ)を丸ごと覆う。描画自体は数msなので待ちは実用上問題ない。
+	// For each page of this spread, draw its entry if it has one (the drawing itself is shared with
+	// KCMDrawEntryOnPage).
+	// **From here on the mark state is read, so the lock is taken.** It protects two things:
+	//   1. an element of sEntries being deleted by DropAll or MakeEntry while it is being read;
+	//   2. KCMDrawEntryOnPage rewriting e->buf through BuildRing, so that the main thread (a radius
+	//      from the screen zoom) and a background thread (a radius from the fixed sxr = 1.0 of
+	//      print) **fight over the same buffer**.
+	// @warning the lock covers the rest of the function, i.e. the whole drawing loop. Drawing takes
+	//   a few milliseconds, so the wait is not a practical problem.
 	KCMMarkStateLock markLock(KCMMarkStateMutex());
 	const int32 np = spread->GetNumPages();
-	// ★緑ベタ塗りは「どこを比較から外しているか」を見せる**画面用の診断表示**なので、印刷/PDF には出さない
-	//   (!printing。2026-08-06 の監査 E-4)。リングのような校正マークと違い下のデザインを覆うため。
-	//   ⚠以前は Source 側だけが sPrintMarks を見ない経路(Source 枠は常に印刷に出す仕様)に乗っていたので、
-	//   「Print comparison marks」OFF でも Source の印刷に緑が乗っていた。Target/Source とも画面限定に揃える。
-	const bool16 fillExcluded = !printing && KCMGetIgnorePageNumberMarker();	// ノンブル除外領域の緑ベタ塗り(除外トグルON・画面のみ)
+	// The green wash is a **screen-only diagnostic** (see the Source loop above for the full reason).
+	const bool16 fillExcluded = !printing && KCMGetIgnorePageNumberMarker();	// the folio wash: toggle on, screen only
 	for (int32 i = 0; i < np; ++i)
 	{
 		const UID pageUID = spread->GetNthPageUID(i);
-		// 登録済み/overflow の判定は下の if/else 連鎖と除外塗りの両方で要るので、1ページにつき
-		// 1回ずつ引いて使い回す(以前は同じ問い合わせをページごとに2回ずつ行っていた)。
+		// Registered and overflow are both needed by the if/else chain and by the wash, so each is
+		// asked once per page and reused.
 		const bool16 isRegistered = KCMPageMapIsRegistered(db, pageUID);
 		const bool16 isOverflow   = (sOverflowT.count(pageUID) > 0);
 		std::map<UID, KCMOverlayEntry*>::iterator it = sEntries.find(pageUID);
-		if (drawRings && it != sEntries.end())	// ★Story モードではリングを描かない(上の drawRings)
+		if (drawRings && it != sEntries.end())	// no rings in the Story mode (drawRings above)
 		{
 			if (isThumb)
 			{
-				// ★★2026-08-24: **サムネイルの枠もパネルの「Mark colour」に従う**(理由は上の Source 側
-				//   と同じ＝ここはリング画像を使わない唯一の変更ページ表示なので、色を選べるようにした
-				//   回に取り残されていた)。
+				// A thumbnail's border follows the panel's "Mark colour" as well (the reason is at
+				// the Source side above: this is the only changed-page display that does not use
+				// the ring image, so it was left behind when the colour became a choice).
 				uint8 mr = 0, mg = 0, mb = 0;
 				SelectedMarkColor(mr, mg, mb);
 				KCMDrawPageBorder(gPort, db, pageUID, mr, mg, mb);
@@ -2169,23 +2188,25 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 		}
 		else if (isRegistered)
 		{
-			// 比較エントリが無い(=対象外)Target ページ。登録済み("Added")なら緑「/」を描く。
+			// A Target page with no comparison entry (so not being compared). Registered ("Added")
+			// pages get the green "/".
 			KCMDrawPageDiagonal(gPort, db, pageUID, sxr, drawMode, screenMarkOp, kKCMAddedBorderR, kKCMAddedBorderG, kKCMAddedBorderB);
 		}
 		else if (isOverflow)
 		{
-			// 登録もされていない、ページ数差であふれたページ。未比較であることを赤斜線で明示する。
-			// ⚠★★この赤は「Mark colour」の選択に追随しない(意図的。理由は上の Source 側に全文)。
+			// Not registered either: a page that overflowed the page-count difference. The red slash
+			// says it was never compared.
+			// @warning this red does not follow the "Mark colour" choice, deliberately (the full
+			//   reason is at the Source side above).
 			KCMDrawPageDiagonal(gPort, db, pageUID, sxr, drawMode, screenMarkOp, kKCMRingR, kKCMRingG, kKCMRingB);
 		}
-		// 除外トグルON時、実際に比較しているページ(=登録済みAddedでも overflow でもない=対応表に
-		// 入るページ)にだけ除外領域の緑ベタ塗りを重ねる。変更なしで entry が無いページにも出すので
-		// 上の if/else とは独立に判定する。Added/overflow ページは画素比較自体を行わない
-		// (ノンブル除外という概念が無い)ので塗らない。
+		// With the toggle on, the green wash goes only over the pages actually being compared
+		// (neither registered-Added nor overflow). Drawn independently of the if/else, because a
+		// page with no entry needs it too. Added and overflow pages are never pixel-compared, so
+		// folio exclusion means nothing for them.
 		if (!isThumb && fillExcluded && !isRegistered && !isOverflow)
 			KCMDrawPageNumberMarkerFill(gPort, db, pageUID);
 	}
 
-	return kFalse;	// 他のハンドラ・描画を続行させる
+	return kFalse;	// let other handlers and the rest of the drawing continue
 }
-
