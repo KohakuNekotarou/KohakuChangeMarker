@@ -31,19 +31,20 @@ resource StringTable (kSDKDefStringsResourceID + index_enUS)
         kEuropeanWinToMacEncodingConverter,		// Character encoding converter (irp) I made this WinToMac as we have a bias to generate on Win...
         {
         	 // ----- Menu strings
-                kKCMCompanyKey,					"Kohaku Plug-Ins",	// メニュー束ね名(表示)。会社名 kKCMCompanyValue とは別概念で固定
-                kKCMAboutMenuKey,					kKCMDisplayName "...",	// "[US]" テンプレートサフィックスは撤去(2026-07-25)
+                kKCMCompanyKey,					"Kohaku Plug-Ins",	// the menu grouping name as shown; a different thing from the company value kKCMCompanyValue
+                kKCMAboutMenuKey,					kKCMDisplayName "...",
 
                 kSDKDefAboutThisPlugInMenuKey,			kSDKDefAboutThisPlugInMenuValue_enUS,
                 kKCMUsageMenuKey,				"How to Use...",
-                // ★2026-08-25 改名(ユーザー要望「常に表示、という意味合いのすぐ判る英語に」)。
-                //   旧: "Show Marks on Target" / "Show Marks on Source" ---- 何をするトグルなのかが
-                //   名前から読めなかった(既定の挙動が「ツールの左ボタンを押している間だけ出る」なので、
-                //   旧名だと「押したら出る」との違いが言えていなかった)。
-                // ⚠**"Hold" は名前に入れない**(2026-08-25 に検討して見送り)＝押下の身振りは**このトグルと
-                //   無関係に常に効き、しかもトグルの状態を反転する**(KCMID.h の増分⑮)ので、名前に
-                //   入れると「このトグルの機能＝Hold」と読めてしまう。加えて "Hold to Hide Marks" は
-                //   **2026-08-22 に撤去した旧トグルそのものの名前**なので、復活したと誤解される。
+                // ★Renamed from "Show Marks on Target" / "Show Marks on Source" (user's request:
+                //   an English name that says "always visible" at a glance). The old names did not
+                //   say what the toggle does: marks appear anyway while the tool's left button is
+                //   held, so "Show Marks on ..." could not be told from that gesture.
+                // ⚠**"Hold" is deliberately NOT in the name** (considered and rejected). The press
+                //   gesture works **independently of this toggle and inverts whatever state it is
+                //   in**, so putting "Hold" here would read as "this toggle IS the hold". On top of
+                //   that, "Hold to Hide Marks" was a real toggle that has since been removed, and
+                //   the name would be read as its return.
                 kKCMShowTgtMarksMenuKey,			"Always Show Marks on Target",
                 kKCMShowSrcMarksMenuKey,			"Always Show Marks on Source",
                 kKCMPageMapToggleMenuKey,			"Register as Added/Removed Pages",
@@ -86,7 +87,7 @@ resource StringTable (kSDKDefStringsResourceID + index_enUS)
 
                 // ----- Panel/dialog strings
                 kKCMPanelTitleKey,			"Kohaku Change Marker",
-                kKCMToolStringKey,			"Kohaku Change Marker Tool",	// ツールボックスのツール名(ツールチップ)
+                kKCMToolStringKey,			"Kohaku Change Marker Tool",	// the tool name in the toolbox tooltip; English in every locale
                 kKCMTargetLabelKey,			"Target:",
                 kKCMSourceLabelKey,			"Source:",
                 kKCMStartButtonKey,			"Start",
@@ -135,8 +136,8 @@ resource StringTable (kSDKDefStringsResourceID + index_enUS)
                 kKCMHint2Key,				"[Comparing books (Compare Books)]\nCompares two books (.indb) chapter by chapter and lists which chapters changed.\n- How to: in the Book panel, bring the tab of the book you want to compare to the front, open the second book as well, then choose \"Compare Books\" from the panel's flyout menu\n- The book on the front tab is the Target (the newer one); the first other open book is the Source (the older one)\n- Each chapter gets its own result: Changed / NoChange / ChapterAdded (only in the Target) / ChapterDeleted (only in the Source) / Failed (could not be opened - the reason is shown next to it) / NotCompared (the run was cancelled before reaching it)\n- Double-click a row to open that chapter's two documents\n- Right-click a row and choose \"Start Change Marker\" to open the two documents and start comparing them (only rows where both files exist can be chosen)\n\nStory Edits (open with the triangle): the stories that differ, and what changed (Text / Attr / Other / Added). Click a row to show that story in both documents, then walk the list with the up and down arrow keys. Double-click selects the whole of that story (switches to the Type tool, and hands the keyboard back to the document).\n\nWith comparison-mark printing ON, the marks appear both when printing and in File > Export to PDF (including Acrobat 4 / PDF 1.3 submission presets such as PDF/X-1a).\n\n[Finding overset (Find Overset)]\nSeparately from the comparison, you can find pages that contain overset (overflowing) text on their own.\n- Turn \"Find Overset\" ON/OFF from the flyout menu\n- Overset pages are shown with a red frame + red \"+\" on their Pages-panel thumbnails and a red band on the scrollbar map\n- Detects overflowing text frames as well as individual overset table cells (the red dot)\n- Use Prev/Next to step through the overset locations (while comparing, each page goes changed then overset)\n- After editing, use \"Refresh Overset\" to re-scan (only while Find Overset is ON)\n\nDISCLAIMER: Provided as-is. We cannot take responsibility for any problems that may arise. Use at your own risk.",
 
 		// ----- Misc strings
-                // ★2026-08-06 ユーザー指定: About は「名前 + バージョン」の1行だけにする(説明文・
-                //   クレジット・リポジトリ URL は削除)。
+                // About is one line, name + version (user's call): no description, no credits and
+                // no repository URL. That is why nothing here needs translating.
                 kKCMAboutBoxStringKey,			kKCMDisplayName " version " kKCMVersion,
 
 

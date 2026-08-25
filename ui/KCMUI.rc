@@ -28,14 +28,16 @@
 // CP1252, and rc.exe defaults to the SYSTEM's ANSI code page (CP932 here), where it decodes as
 // U+FF69, a halfwidth katakana. Measured on the built .pln both ways.
 //
-// ⚠This half was left out when the model half was fixed earlier the same day, which put the two
-//  .pln of ONE product in disagreement: KohakuChangeMarker.pln said U+00A9 while
-//  KohakuChangeMarkerUI.pln still said U+FF69. Fixing only the half you happen to be auditing is
-//  how that happens -- the audit blocks are a reading order, not a boundary for a one-line fix.
+// WARNING: this half was left out when the model half was fixed, which put the two .pln of ONE
+//  product in disagreement: KohakuChangeMarker.pln said U+00A9 while KohakuChangeMarkerUI.pln
+//  still said U+FF69. Fixing only the half you happen to be auditing is how that happens -- the
+//  audit blocks are a reading order, not a boundary for a one-line fix.
 //
 // *Do not put non-ASCII characters in this file, comments included: the pragma tells rc.exe how
-//  to read the WHOLE file.
-// *KESCL and KT still carry the same fault -- they share this template.
+//  to read the WHOLE file. (This comment block held a Japanese one and two decorative signs
+//  until 2026-08-25 -- the rule and the file that states it were out of step.)
+// *KESCL and KT still carry the same fault -- they share this template. Measured, not assumed:
+//  neither .rc has a code_page pragma, while KBS.rc does.
 #pragma code_page(1252)
 
 #include "WinRezFlags.h"
@@ -59,12 +61,13 @@ BEGIN
     BEGIN
         BLOCK "040904b0"
         BEGIN
-            // ★★2026-08-15（第2段 Task 6B-2）: ここは DollyXs 雛形のまま（Adobe / 1.0）だった。
-            //   ⇒ エクスプローラーのプロパティにもタスクマネージャーにも「Adobe 製の別プラグイン、
-            //     版数 1.0」として出ていた。model 側（KCM.rc）と同じ値を名乗らせる。
-            //   ★値の出どころは KCMBoundaryID.h（両側コピー）＝版数は1か所（[[one-question-one-place]]）。
-            //   ⚠**成果物の VersionInfo は「ロードされるか」を測る口では絶対に見えない。**
-            //     `(Get-Item x.pln).VersionInfo` を測って初めて分かった。
+            // These values were left at the DollyXs template's (Adobe / 1.0), so Explorer's
+            // properties and Task Manager both listed this file as someone else's plug-in at
+            // version 1.0. They now name what the model half (KCM.rc) names.
+            // The values themselves come from KCMBoundaryID.h, copied on both sides, so the
+            // version is stated in one place ([[one-question-one-place]]).
+            // WARNING: a built VersionInfo is invisible to every check that only asks whether
+            // the plug-in loads. (Get-Item x.pln).VersionInfo is what shows it.
             VALUE "CompanyName", "Kohaku Plug-Ins\0"
             VALUE "FileDescription", kKCMDisplayName " (UI) - Adobe InDesign SDK Plug-in\0"
             VALUE "FileVersion", kKCMVersion, "\0"

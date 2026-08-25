@@ -12,10 +12,10 @@
 //  plug-in cannot instantiate UI bosses -- the query returns nil with no error and no
 //  warning -- so this rule is what keeps the split working after Stage 2.
 //
-//  ⚠ The invariant does not hold yet. Task 5 created this header precisely so that the
-//  violations become countable: every model-side file that includes it is one item of
-//  reverse flow. The full list is docs/ai-notes/kescm-reverse-flow-ledger-2026-08-13.md,
-//  and Tasks 6-10 empty it.
+//  ★It holds. No file under source/ includes this header -- the three model-side files that
+//  mention it by name say in so many words that they deliberately do not. The header was
+//  created so the violations would be countable while they were being removed; what is left
+//  of it now is the rule above.
 //
 //========================================================================================
 
@@ -40,29 +40,37 @@ void			KCMRefreshPanel();
 // Write the panel's status line. forceRedrawNow=kTrue paints immediately instead of waiting
 // for the next event loop (used before a blocking comparison loop).
 //
-// ★UI 内部専用。model 側からは呼ばない -- model は KCMNotifyStatus() を使う
-//   (KCMModelNotify.h)。この関数の呼び手は、通知を受けた KCMModelChangeObserver と、
-//   UI 側の直接の操作(メニュー・ボタン・行クリック)だけ。
-// ★どちらの経路でも文字列は model 側に覚えられる(この関数が KCMStoreSessionStatus を呼ぶ)。
-//   app.kcmStatus はそこから答えるので、**パネルを閉じていても正しい値が返る**。
+// ★UI-internal. **The model side never calls this** -- it uses KCMNotifyStatus()
+//   (KCMModelNotify.h). The callers here are KCMModelChangeObserver, which receives that
+//   notification, and the UI’s own direct actions (menu, buttons, a row click).
+// ★Either route also **stores the string on the model side** (this function calls
+//   KCMStoreSessionStatus), which is where app.kcmStatus answers from -- so the property
+//   still returns the right value with the panel closed.
 void			KCMSetStatus(const PMString& s, bool16 forceRedrawNow = kFalse);
 
-// 同じメッセージ欄に、**色の変わり目つき**で出す(2026-08-20)。
-// ★呼び手は変更行のジャンプ(KCMStoryJump.cpp)ただ1つ＝「その編集のもう一方の側」を出す経路。
-//   label は見出し(必ず1行を占め、溢れても削られない)、mid が**変更された文字**＝テーマの文字色、
-//   pre/post はその前後の文脈＝背景へ寄せた薄い色。
-// ★★上の KCMSetStatus はこれの特別な場合ではなく**同じ器の別の詰め方**＝(空, 空, s, 空)。
-//   ⇒ 普通のメッセージは1片＝1色で、stock の静的テキストと同じ絵になる。
-// ⚠溢れたら**文脈が外側から削られる**(変更された文字は必ず残る)。規則は変更行のセルと同じ。
-// ★2026-08-22: 5片目の `ruby`＝**mid の上に重ねて描く読み**(ルビの変更をクリックしたときだけ)。
-//   ⚠これは**旧版側の読み**＝行の一覧は新版側を見せるので、**外された読みはここにしか出ない**。
-//   ★ruby がある行は「2行分つかって1行に見せる」＝欄に入る行数がその分1つ減る(KCMStatusTextView.cpp)。
+// The same message area, written **with the colour boundaries marked**.
+// ★`label` is the heading (it always takes a line of its own and is never trimmed away),
+//   `mid` is **the changed characters** = the theme’s text colour, and `pre`/`post` are the
+//   context on either side = faded toward the background.
+// ★★KCMSetStatus above is not a special case of this one but **the same container filled
+//   differently** = (empty, empty, s, empty, empty). An ordinary message is therefore one
+//   piece in one colour, which draws exactly like the stock static text it replaced.
+// ★Callers: the jump from a change row (KCMStoryJump.cpp), which shows the other side of that
+//   edit, and the panel’s own restore when it is re-shown (KCMPanelObserver.cpp) -- the
+//   pieces are kept on the model side, so a re-shown panel gets the colours back too.
+// ⚠When it overflows, **the context is trimmed from the outside in** (the changed characters
+//   always survive). Same rule as a change row’s cell.
+// ★`ruby` is the reading **drawn over `mid`** (only when a ruby change was clicked).
+//   ⚠It is the reading on the **old** side -- the list shows the new one, so a reading that
+//     was taken away appears nowhere else.
+//   ★A row with ruby "uses two lines to look like one", so the box holds one line fewer
+//     (KCMStatusTextView.cpp).
 void			KCMSetStatusSegments(const PMString& label, const PMString& pre,
 									   const PMString& mid, const PMString& post,
 									   const PMString& ruby);
 
-// model からの通知を受ける UI 側 Observer の購読を開始/停止する(KCMModelChangeObserver.cpp)。
-// Startup で attach し、Shutdown では **パネル周りを畳むより前**に detach する。
+// Start / stop the UI-side observer of the model's notifications (KCMModelChangeObserver.cpp).
+// Attached in Startup; detached in Shutdown **before** the panel is taken down.
 void			KCMAttachModelChangeObserver();
 void			KCMDetachModelChangeObserver();
 

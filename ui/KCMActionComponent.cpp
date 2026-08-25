@@ -1177,8 +1177,10 @@ void KCMActionComponent::DoRefreshOverset()
 	KCMSetStatus(msg);
 }
 
-// KCMOpenAboutURL(KCMUIShared.h で宣言) — パネルのイラストクリックから呼ばれる。「このプラグインに
-// ついて」本文と同じ配布元URL(kKCMRepoURL)を既定のブラウザで開く。ドキュメントモデルには一切
+// KCMOpenAboutURL (declared in KCMUIShared.h) - called when the panel illustration is clicked.
+// It opens the distribution URL (kKCMRepoURL) in the default browser. ⚠**About does not carry
+// that URL**: DoAbout shows one line of name and version. The other user of the URL is the
+// illustration's tooltip (KCMIconTip.cpp). Nothing here touches the document model
 // 触れない(=OSへの外部起動要求のみ)ため、Command 化は不要。
 // GoToURLUtils::GoToURL は IURLAccess(hyperlink 用の内部インターフェイス)経由で Win/Mac 双方の既定
 // ブラウザを起動する InDesign 純正のユーティリティ関数(PUBLIC_DECL、boss/IID 取得不要)。

@@ -27,46 +27,54 @@
 
 #include "SDKDef.h"
 
-// ★★2026-08-15（第2段 Task 6B）: **model と UI の両方が同じ値で知っていなければならない ID**
-//   （Facade 5本の IID・通知の protocol IID・MessageID 7本、および model 側の prefix）は
-//   KCMBoundaryID.h にある。**このファイルは ui/ 側のコピーを読む**（相方 = source/KCMBoundaryID.h）。
-//   ⚠ 片方だけ直すと黙ってずれる。必ず両方直すこと。
-//   ★あちらが定義する kKCMPrefix（0x1EA500）は **model 側の番号**で、下の kKCMUIPrefix（0x1EA580）
-//     とは別物。UI 専用の ID はこのファイルで kKCMUIPrefix から採る。
+// ★★**The IDs both halves have to know by the same value** -- the five facade IIDs, the
+//   notification protocol IID, the seven MessageIDs and the model half's prefix -- are in
+//   KCMBoundaryID.h. **This file reads the ui/ copy** (its counterpart is
+//   source/KCMBoundaryID.h).
+//   ⚠**Change one copy without the other and the two halves drift apart in silence.**
+//   ★The kKCMPrefix (0x1EA500) defined over there is **the model half's number**, a different
+//     thing from kKCMUIPrefix (0x1EA580) below. UI-only IDs are taken from kKCMUIPrefix here.
 #include "KCMBoundaryID.h"
 
-// Company: ★KCMBoundaryID.h の値をそのまま名乗る。model と UI は**同じ製品の2つの .pln** なので、
-//   会社名・表示名・版数が食い違ってはいけない（[[one-question-one-place]]）。
-//   ⚠ 雛形は kSDKDefPlugInCompanyKey（＝SDK サンプル用の名前）を名乗っていた＝About メニューで
-//     Adobe のサンプル群と同じ束ね名の下に並んでいた。2026-08-15（第2段 Task 6B-2）に揃えた。
+// Company: ★the values come straight from KCMBoundaryID.h. The model and the UI are **two .pln
+//   of one product**, so the company name, the display name and the version must not disagree
+//   ([[one-question-one-place]]).
+//   ⚠The template named kSDKDefPlugInCompanyKey -- the SDK samples' own name -- which filed
+//     this plug-in in the About menu under the same grouping as Adobe's samples.
 #define kKCMUICompanyKey	kKCMCompanyKey
 #define kKCMUICompanyValue	kKCMCompanyValue
 
 // Plug-in:
 #define kKCMUIPluginName	"KohakuChangeMarkerUI"			// Name of this plug-in.
-// ★★★**Adobe から受け取った原文（2026-08-13）**:
+// ★★★**Adobe's own words (2026-08-13)**:
 //
 //     "Following Prefix ID has been registered as per your request below : 0x1EA500 - 0x1EA5FF ."
 //
-// ★★Adobe が 2026-08-13 に登録した帯 **0x1EA500 - 0x1EA5FF**(256枠)の **後半**。前半 0x1EA500 は
-//   model 側(KohakuExtendScriptChangeMarker)が使う。1本の帯を model と UI で分け合うのは Adobe 自身の
-//   やり方で、customdatalink(0xb3300) / customdatalinkui(0xb3380) がまさにこの形(実測: それぞれ +0..37 と
-//   +0..17 ＝ 両方とも 0xb33xx に収まっている)。ほかに xdocbookworkflow 対は 16 刻み、0x572xx は4本が共有。
-//   ⇒ ID の一意性はプラグイン単位ではなく**値**で決まるので、重ならなければ分け方は自由。
-// ⚠ 旧値 0x205792(Adobe Developer Console のプラグイン ID を prefix に流用した暫定値)は**破棄**。
+// ★★The **upper half** of that registered 256-slot band. The lower half, 0x1EA500, belongs to
+//   the model half (KohakuExtendScriptChangeMarker). Splitting one band between a model and a
+//   UI plug-in is Adobe's own practice: customdatalink (0xb3300) and customdatalinkui
+//   (0xb3380) are exactly this shape (measured: +0..37 and +0..17, both inside 0xb33xx). The
+//   xdocbookworkflow pair steps by 16, and four plug-ins share 0x572xx.
+//   ⇒ **Uniqueness is a property of the value, not of the plug-in**, so any split that does
+//     not overlap is allowed.
+// ⚠The old value 0x205792 -- a stand-in borrowed from the Adobe Developer Console plug-in ID --
+//   is **discarded**.
 #define kKCMUIPrefixNumber	0x1EA580 		// Unique prefix number for this plug-in(registered with Adobe: 0x1EA500-0x1EA5FF).
-// ★★2026-08-15（第2段 Task 6B-2）: 雛形の kSDKDefPluginVersionString をやめ、**製品の版数**を名乗る。
-//   この値は PluginVersion リソース（＝プラグイン一覧の表示）と .rc の FileVersion に出るので、
-//   放っておくと model(1.4.0) と UI(SDK 既定) が**別々の版数の別プラグイン**として並ぶ。
-//   値の正本＝KCMBoundaryID.h ／ 履歴と「次に提出する分」の増分＝source/KCMID.h。
+// ★★**This names the product's version**, not the template's kSDKDefPluginVersionString. The
+//   value shows up in the PluginVersion resource (the plug-ins list) and in the .rc
+//   FileVersion, so leaving the template value here lists the model half and the UI half as
+//   **two plug-ins at different versions**.
+//   The value itself belongs to KCMBoundaryID.h; the history, and what goes into the next
+//   submission, are in source/KCMID.h.
 #define kKCMUIVersion		kKCMVersion					// Version of this plug-in (for the About Box).
-// (kKCMUIAuthor は雛形の残骸(どこからも未参照)のため **削除**した ---- 2026-08-16・監査 B-U1。
-//  ★model 側の kKCMAuthor は**同じ理由で 2026-07-25 に消えている**(KCMID.h:121)。このファイルは
-//    2026-08-15 に DollyXs 雛形から作られたので、相方が1年近く前に落とした残骸が復活していた
-//    ＝**雛形から作り直した側には、相方がすでに済ませた掃除が来ない。**
-//  ⚠公式サンプルはこれを About ボックス本文で使う(BscPnl_enUS.fr:58 = "…version X by <Author>")。
-//    KCM が使わないのは、About が 2026-08-06 に「名前＋版数」の1行だけになったから(ユーザー指定)
-//    ＝**公式が持つものを持たない側の判断**であって、書き忘れではない。)
+// (kKCMUIAuthor was **deleted**: template residue that nothing referenced.
+//  ★The model half's kKCMAuthor had gone for the same reason long before. This file was made
+//    from the DollyXs template afterwards, so residue the counterpart had already swept out
+//    came back with it ＝ **a half rebuilt from a template does not inherit the cleaning the
+//    other half has done.**
+//  ⚠The official samples do use it, in the About box body ("...version X by <Author>",
+//    BscPnl_enUS.fr:58). KCM does not, because About is one line of name and version -- **a
+//    deliberate absence, not an oversight**.)
 
 // Plug-in Prefix: (please change kKCMUIPrefixNumber above to modify the prefix.)
 #define kKCMUIPrefix		RezLong(kKCMUIPrefixNumber)				// The unique numeric prefix for all object model IDs for this plug-in.
@@ -80,368 +88,413 @@
 DECLARE_PMID(kPlugInIDSpace, kKCMUIPluginID, kKCMUIPrefix + 0)
 
 //========================================================================================
-// ★★★以下は 2026-08-15（第2段 Task 6B-2）に source/KCMID.h から移してきた **UI 専用の ID**。
+// ★★★Below are the **UI-only IDs**, moved here from source/KCMID.h.
 //
-//  ★★機械的に安全にするために採った方針が2つある。どちらも「判断をゼロにする」ためのもの:
+//  ★★Two decisions kept the move mechanical, both of them chosen to leave no judgement to make:
 //
-//   ① **オフセットを保存した** — `kKCMPrefix + 8` → `kKCMUIPrefix + 8`。番号は採り直していない。
-//      ⇒ 採番の判断が1つも要らず、衝突も原理的に起きない（同じ ID 空間の中で番号が重複していない）。
-//      ⚠ 逆に言うと、**model 側 KCMID.h のこれらの番号は「空き」ではない**。あちらの帯と
-//        こちらの帯は別物なので実害は無いが、対応が読めなくなるので再利用しないこと。
-//      ★最大オフセットは WidgetID の +62 ＝ kKCMUIPrefix(0x1EA580) に許された 128 枠に収まっている。
+//   ① **The offsets were preserved** -- `kKCMPrefix + 8` became `kKCMUIPrefix + 8`. Not one
+//      number was re-allocated, so there was no allocation to get wrong and a collision is
+//      impossible (no number appears twice inside one ID space).
+//      ⚠Read the other way round: **these numbers are NOT free in the model half's KCMID.h.**
+//        The two bands are separate, so reusing them breaks nothing -- it only makes the
+//        correspondence between the halves unreadable.
 //
-//   ② **ID の名前は `kKCM*` のまま変えていない** — `kKCMUI*` へ改名していない。
-//      ⇒ C++ 側は `#include "KCMID.h"` を `"KCMUIID.h"` に差し替えるだけで済み、コードは
-//        1行も動かなかった。**コードとコメントの中の ID 名がすべてそのまま有効**。
-//      ⚠2026-08-16(監査 B-U1)にこの2行を直した。旧文は **差し替えの前と後を同じ文字列で書き**
-//        (「`#include "KCMUIID.h"` を `"KCMUIID.h"` に」)、件数も「53 ファイル」で実態と違った
-//        ＝計画書の 53 は間接 include を数えた値、実測の差し替えは 31 ファイル、
-//        **現在このヘッダーを include している ui/ のファイルは 35**(2026-08-16 実測)。
-//        ★手順を書いた文が壊れていても**ビルドは何も言わない**ので、こういう行は読んだ人が
-//          気づくまで残る。
+//   ② **The ID names kept their `kKCM*` spelling** -- they were not renamed to `kKCMUI*`.
+//      ⇒ The C++ side only had to swap `#include "KCMID.h"` for `"KCMUIID.h"`; no code moved,
+//        and every ID name inside the code and inside the comments stayed valid.
 //
-//  ⚠ 文字列キーだけは別扱い＝値は `kKCMStringPrefix`（model の prefix）のまま。
-//    **文字列キーはグローバルに一意でなければならず、widget ID のように借用できない**
-//    （ガイド vol2-12:71）ので、prefix を変えるとキーの値が変わってしまう。
-//    ⇒ 文字列テーブルは値を1文字も変えずに丸ごと移せた。
+//  ⚠**String keys are the exception**: their value stays `kKCMStringPrefix`, the model's prefix.
+//    **A string key has to be unique across the whole application and cannot be borrowed the way
+//    a widget ID can** (guide vol2-12:71), so changing the prefix would change the key values.
+//    ⇒ The string table moved across without a single character changing.
 //========================================================================================
 
 // ClassIDs:
-DECLARE_PMID(kClassIDSpace, kKCMThumbIdleTaskBoss, kKCMUIPrefix + 7)	// IIdleTask: クローズ後の Pages サムネイル再生成を次のidleに遅延(旧 kKCMToastIdleTaskBoss のスロット転用)
-DECLARE_PMID(kClassIDSpace, kKCMPanelWidgetBoss, kKCMUIPrefix + 8)	// ChangeMarker 操作パネル(パレット)
-DECLARE_PMID(kClassIDSpace, kKCMActionComponentBoss, kKCMUIPrefix + 9)	// About メニューのアクションコンポーネント
-DECLARE_PMID(kClassIDSpace, kKCMIconWidgetBoss, kKCMUIPrefix + 11)	// kRollOverIconButtonBoss を継承し IID_ITIP を追加(パネルイラストのツールチップ)
-DECLARE_PMID(kClassIDSpace, kKCMScrollMapWidgetBoss, kKCMUIPrefix + 12)	// kGenericPanelWidgetBoss+自前IControlView: 縦スクロールバー脇の枠ページ地図strip(旧 kKCMLayoutSyncObserverBoss のスロット転用)
-DECLARE_PMID(kClassIDSpace, kKCMToolBoss, kKCMUIPrefix + 13)	// kGenericToolBoss継承: ツールボックスの peek 専用ツール(KCMTool.cpp)
-DECLARE_PMID(kClassIDSpace, kKCMTrackerBoss, kKCMUIPrefix + 14)	// ツールのキャプチャ型トラッカー(IID_ITRACKER+IID_IEVENTHANDLER)。左ボタン hold 中だけ reveal。KCMTracker.cpp
-DECLARE_PMID(kClassIDSpace, kKCMTrackerRegisterBoss, kKCMUIPrefix + 15)	// トラッカー登録(kLayoutWidgetBoss×ツール→トラッカー)。KCMTrackerRegister.cpp
-// (unused-slot placeholders below start at +16; +6..+15 are declared above. 2026-08-05 audit)
-DECLARE_PMID(kClassIDSpace, kKCMStorySectionToggleBoss, kKCMUIPrefix + 16)	// kRollOverIconButtonBoss継承+IID_IOBSERVER: パネル下部「Story Edits」セクションの開閉ボタン(三角)。絵は本体の kTreeBranchCollapsed/Expanded を借りる
-DECLARE_PMID(kClassIDSpace, kKCMStorySectionPanelBoss, kKCMUIPrefix + 17)	// kGenericPanelWidgetBoss継承+IID_IKCMSAVEDSECTIONHEIGHT(kPersistIntDataImpl): 下ペイン本体。閉じる直前の高さをここに覚える(手本=製品 linksui の kLinkInfoPanelWidgetBoss)
-DECLARE_PMID(kClassIDSpace, kKCMStoryTreeWidgetBoss, kKCMUIPrefix + 18)	// kTreeViewWidgetBoss継承: Story Edits の一覧(平坦1階層)。載せるのは adapter と widget mgr の2つだけ＝コントローラーは kTreeViewWidgetBoss が既に持っている
-DECLARE_PMID(kClassIDSpace, kKCMStoryRowWidgetBoss, kKCMUIPrefix + 19)	// kTreeNodeWidgetBoss継承: 一覧の1行。載せるのは IID_IEVENTHANDLER(kKCMStoryRowEHImpl)の1つだけ＝単クリックでジャンプ・ダブルクリックで全文選択。⚠2026-08-11 まで空の Class だった(段階4 で足した)
-DECLARE_PMID(kClassIDSpace, kKCMStoryRowCellBoss, kKCMUIPrefix + 20)	// kInfoStaticTextWidgetBoss継承+IID_ITIP(kKCMNoTipImpl): 一覧の行のセル。★狙いはツールチップを**消す**こと＝素の静的テキストは省略表示すると全文をポップアップで出す(実機ダンプ: kStaticTextWidgetBoss が IID_ITIP=kTextWidgetTipImpl を持つ)。行に出るのは邪魔なので空の tip を返す実装で上書きする(2026-08-10 ユーザー指定)
-// ブック比較のダイアログ(2026-08-11)。★モードレス＝開いたまま文書を触れる。だから未決の
-// 「行クリックでその章を開く」を後から足せる(モーダルだとその道が閉じる)。stock の kDialogBoss に
-// 自前の IDialogController を載せるだけ＝KESCL の Jump Offset ダイアログと同じ形。
+DECLARE_PMID(kClassIDSpace, kKCMThumbIdleTaskBoss, kKCMUIPrefix + 7)	// IIdleTask: rebuilds the Pages panel thumbnails after a close, deferred to the next idle (slot reused from the retired kKCMToastIdleTaskBoss)
+DECLARE_PMID(kClassIDSpace, kKCMPanelWidgetBoss, kKCMUIPrefix + 8)	// the ChangeMarker control panel (palette)
+DECLARE_PMID(kClassIDSpace, kKCMActionComponentBoss, kKCMUIPrefix + 9)	// the action component behind the About menu items
+DECLARE_PMID(kClassIDSpace, kKCMIconWidgetBoss, kKCMUIPrefix + 11)	// kRollOverIconButtonBoss plus IID_ITIP (the tooltip on the panel illustration)
+DECLARE_PMID(kClassIDSpace, kKCMScrollMapWidgetBoss, kKCMUIPrefix + 12)	// kGenericPanelWidgetBoss + an IControlView of our own: the page map strip beside the vertical scrollbar (slot reused from the retired kKCMLayoutSyncObserverBoss)
+DECLARE_PMID(kClassIDSpace, kKCMToolBoss, kKCMUIPrefix + 13)	// kGenericToolBoss subclass: the peek tool in the toolbox (KCMTool.cpp)
+DECLARE_PMID(kClassIDSpace, kKCMTrackerBoss, kKCMUIPrefix + 14)	// the tool's capturing tracker (IID_ITRACKER + IID_IEVENTHANDLER). It reveals only while the left button is held. KCMTracker.cpp
+DECLARE_PMID(kClassIDSpace, kKCMTrackerRegisterBoss, kKCMUIPrefix + 15)	// registers the tracker (kLayoutWidgetBoss x tool -> tracker). KCMTrackerRegister.cpp
+DECLARE_PMID(kClassIDSpace, kKCMStorySectionToggleBoss, kKCMUIPrefix + 16)	// kRollOverIconButtonBoss + IID_IOBSERVER: the open/close triangle of the "Story Edits" section at the bottom of the panel. Its artwork is borrowed from InDesign (kTreeBranchCollapsed/Expanded)
+DECLARE_PMID(kClassIDSpace, kKCMStorySectionPanelBoss, kKCMUIPrefix + 17)	// kGenericPanelWidgetBoss + IID_IKCMSAVEDSECTIONHEIGHT (kPersistIntDataImpl): the lower pane itself. It remembers the height the section had when it was last closed (modelled on the product's linksui kLinkInfoPanelWidgetBoss)
+DECLARE_PMID(kClassIDSpace, kKCMStoryTreeWidgetBoss, kKCMUIPrefix + 18)	// kTreeViewWidgetBoss subclass: the Story Edits list (flat, one level). It carries only the adapter and the widget manager - kTreeViewWidgetBoss already provides the controller
+DECLARE_PMID(kClassIDSpace, kKCMStoryRowWidgetBoss, kKCMUIPrefix + 19)	// kTreeNodeWidgetBoss subclass: one row of the list. It carries only IID_IEVENTHANDLER (kKCMStoryRowEHImpl) = single click jumps, double click selects the whole story
+DECLARE_PMID(kClassIDSpace, kKCMStoryRowCellBoss, kKCMUIPrefix + 20)	// kInfoStaticTextWidgetBoss + IID_ITIP (kKCMNoTipImpl): a cell of a row. ★The point is to TAKE the tooltip AWAY: a plain static text pops its full string up whenever it is ellipsized (measured - kStaticTextWidgetBoss carries IID_ITIP = kTextWidgetTipImpl), which is in the way on a list row, so an implementation that answers empty is put over it (user's call)
+// The book comparison dialog. ★It is MODELESS = the documents stay reachable while it is open,
+// which is what leaves room for "click a row to open that chapter" to be added later (a modal
+// dialog closes that road). It is the stock kDialogBoss with an IDialogController of ours on
+// it -- the same shape as KESCL's Jump Offset dialog.
 DECLARE_PMID(kClassIDSpace, kKCMBookDialogBoss, kKCMUIPrefix + 21)
-// ブック比較ダイアログの中の章一覧(2026-08-11)。★Story Edits の一覧と**同じ3点セット**＝
-// ツリー本体(adapter+widget mgr)／行／行のセル。あちらとの違いは住む場所だけで、
-// パレットではなくダイアログに載る＝テーマが kIDDialogTheme・フォントがダイアログ用になる。
-DECLARE_PMID(kClassIDSpace, kKCMBookTreeWidgetBoss, kKCMUIPrefix + 22)	// kTreeViewWidgetBoss継承: 章の一覧(平坦1階層)。載せるのは adapter と widget mgr の2つだけ
-DECLARE_PMID(kClassIDSpace, kKCMBookRowWidgetBoss, kKCMUIPrefix + 23)	// kTreeNodeWidgetBoss継承: 一覧の1行。★今は何も足していない空の Class＝行クリック(段階4「その章を開く」)で IID_IEVENTHANDLER を載せる場所として先に採ってある。Story Edits の行 boss がたどったのと同じ順序
-DECLARE_PMID(kClassIDSpace, kKCMBookRowCellBoss, kKCMUIPrefix + 24)	// kInfoStaticTextWidgetBoss継承+IID_ITIP(kKCMNoTipImpl): 行のセル。素の静的テキストは省略表示すると全文をポップアップで出すので、一覧の行では黙らせる(Story Edits と同じ判断=2026-08-10 ユーザー指定)
-// パネルを上下に割る分割バー(2026-08-12)。★中身は素の kSplitterPanelWidgetBoss と同じで、
-// IID_IEVENTHANDLER だけを「何もしない」実装に差し替えてある＝**バーをドラッグして動かせなくする**
-// (ユーザー指定 2026-08-12)。継承した boss からインターフェイスを**取り除く道は無い**ので、消し方は
-// 「別の答えを返す実装で上書きする」になる ---- kKCMStoryRowCellBoss(+20)がツールチップを黙らせたのと同じ形。
-DECLARE_PMID(kClassIDSpace, kKCMSplitterPanelBoss, kKCMUIPrefix + 25)	// kSplitterPanelWidgetBoss継承+IID_IEVENTHANDLER(kKCMSplitterEHImpl): 分割バーを掴めない SplitterPanelWidget
-DECLARE_PMID(kClassIDSpace, kKCMUIStartupBoss, kKCMUIPrefix + 27)	// IStartupShutdown: **UI 側**の起動/終了処理(2026-08-13・model/UI 分割 第1段 Task 8)。パネル設定の復元・半透明の購読/解除・HUD のフォント返却・一括クローズの購読・遅延サムネイル idle task の解放。★model 側の kKCMPeekStartupBoss と**対**(あちらは KCMID.h)。★第2段(2026-08-15)で**この Class ごと KCMUI へ移り終わっている**＝この宣言が KCMUIID.h に在ること自体がその結果(2026-08-17・監査 B-U6 で予告の残骸を現状へ)
-DECLARE_PMID(kClassIDSpace, kKCMUIDrawEventServiceBoss, kKCMUIPrefix + 26)	// IK2ServiceProvider+IDrwEvtHandler: **UI 専用**の描画サービス(2026-08-13・model/UI 分割 第1段 Task 6)。押下中 HUD だけを持つ。★**model 側の** kKCMDrawEventServiceBoss(比較マーク・KCM.fr)と役割が違う＝あちらは印刷と PDF 書き出しに出なければならないので model 側、こちらは画面専用。kDrawEventService は複数プロバイダ登録が前提(本体だけで20以上)。★第2段(2026-08-15)で**この Class ごと KCMUI へ移り終わっている**(2026-08-18・不具合再検査 B-U1 で「上の」と予告形の2つを現状へ。⚠**すぐ上の kKCMUIStartupBoss は同じ2つを 2026-08-17 に直していた**＝1本直したときに同じ形の兄弟を探さなかった)
-DECLARE_PMID(kClassIDSpace, kKCMBookPathTextWidgetBoss, kKCMUIPrefix + 28)	// kStaticTextWidgetBoss継承+IID_IEVEINFO(kFixedSizeEVEInfoImpl): ブック比較ダイアログの Target:/Source: 行(2026-08-15)。★★EVE は **.fr の幅を「最小幅」として扱う**(公式ガイド Using EVE の Example 2「We treat the width in the .fr file as a minimum width」)ので、フルパスを入れると widget が伸び、親ごと広がる(実測 593px)。⚠kEVEAlignFill では止まらない＝Fill は「親の幅を取る」で、その親が子に押し広げられる。⇒ **EVE は widget の寸法を IID_IEVEINFO に聞く**ので、「サイズはリソースが書いたとおり」と答える実装を名乗らせて幅を確定させ、省略は widget 自身の kEllipsizeBeginning に返す＝パネルの Target:/Source: と同じ出方になる。手本=KBS.fr:289-293(グリフ枠。SDK 全体で使用例ゼロだが実機で動作確認済み)
-// Story Edits の**変更行**のテキストセル(2026-08-20)。★狙いは「変更された文字だけを通常の色で描き、
-// 前後の文脈を薄くする」こと(ユーザー指定＝「KBS を参考に」)。素の StaticText は**1行=1色**なので、
-// 色を分けるには自前描画のセルに差し替えるしかない ---- KBS の kKBSColorTextViewBoss と同じ形。
-// ★土台が kGenericPanelWidgetBoss なのは、そこに描く場所だけがあって文字も色も持っていないから。
-//   ⇒ ツールチップも持たないので、行のセルを黙らせる kKCMNoTipImpl(+20 の boss がやっている)は
-//     こちらには要らない＝**沈黙は自動的に手に入る**。
-DECLARE_PMID(kClassIDSpace, kKCMStoryChangeCellBoss, kKCMUIPrefix + 29)	// kGenericPanelWidgetBoss継承+IID_ICONTROLVIEW(kKCMStoryCellViewImpl)+IID_IKCMSTORYCELLDATA(kKCMStoryCellDataImpl): 変更行のテキストセル。3片(前の文脈/変更された文字/後の文脈)を受け取り、真ん中だけテーマの文字色で、前後は背景へ寄せた薄い色で描く(KCMStoryCellView.cpp)
-// Story Edits の変更行から飛んだ先を、少しのあいだ光らせる印(2026-08-20)。★★**グローバルテキスト
-// アドーンメント**＝**文字そのものに重ねて描く公式機構**で、**文書を1バイトも変えない**(保存されず
-// Undo にも乗らない)。本体の禁則違反/欠落グリフ/スペル波線と同じ仕組み([[global-text-adornment]])。
-// ★**Draw に waxRun/waxGlyphs が渡ってくる**ので「その run はマーク範囲に重なるか」を TextOrigin と
-//   GetCharCount で判定でき、範囲の一部だけの座標も MapCharsToGlyphs で取れる＝**座標変換が要らない**。
-//   ⇒ KBS の Draw Event 方式(ペーストボード座標の矩形を自分で組む)と違い、縦組みや回転にそのまま乗る。
-// ★API 既製の provider(`kGlobalTextAdornmentServiceImpl`)と自作の実装の2枚だけ＝手本は本体 spellpanel と KT。
-// ★★★+ 30 は欠番＝**Story マークの boss は 2026-08-23 に model 側へ移した**（`KCMID.h` の kKCMPrefix + 32）。
-//   理由＝**UI の File>Export>PDF は BG で走り、kUIPlugIn には描画が1度も配られない**（2026-08-12 実測・無警告）ので、
-//   こちら側に居るかぎり書き出した PDF に出す道が無かった。⚠**番号は詰め直さない**＝[[id-prefix-256-slot-budget]]。
-// そのマーカーを1秒ほどで引っ込めるタイマー(2026-08-20)。★**IIdleTask にしたのは KBS と同じ判断**＝
-// `ICallbackTimer` のコールバックは参照カウントされない生の関数ポインタで、ヘッダー自身が "Danger!" と
-// 書いている。IdleTask は boss 上のインターフェイスなので終了処理で普通に Release できる。
-// ⚠[[avoid-timers-and-idle-tasks]] の例外＝**壁時計で消えねばならないものは他に無い**。
-// ★+ 31 も欠番＝上のマーカーの期限切れ timer も同じ回に model 側へ（`KCMID.h` の kKCMPrefix + 33）。
-// パネルのメッセージ欄(2026-08-20)。★**stock の StaticMultiLineTextWidget を差し替えたもの**＝
-// あちらは1本の文字列を1色で描くので、変更行をクリックしたときに出す「もう一方の側」の中で
-// **どの文字が違うのか**を言えない。⇒ 上の変更行のセルと同じ形(kGenericPanelWidgetBoss＋自前 view)。
-// ⚠**違いは行数**＝あちらは1行で `PMEllipsizeString` に任せられるが、こちらは箱に入るだけ折り返す
-//   ＝**折り返しは stock から失われる唯一の機能なので自分で書いた**(KCMStatusTextView.cpp)。
-// ★WidgetID と Frame は据え置き(`kKCMStatusTextWidgetID` / `Frame(8,76,216,150)`)＝位置も大きさも動かない。
-DECLARE_PMID(kClassIDSpace, kKCMStatusTextWidgetBoss, kKCMUIPrefix + 32)	// kGenericPanelWidgetBoss継承+IID_ICONTROLVIEW(kKCMStatusTextViewImpl)+IID_IKCMSTATUSTEXTDATA(kKCMStatusTextDataImpl): パネルのメッセージ欄。見出し＋3片(前の文脈/変更された文字/後の文脈)を受け取り、折り返して最大2色で描く(KCMStatusTextView.cpp)
+// The chapter list inside that dialog. ★**The same three pieces as the Story Edits list**: the
+// tree itself (adapter + widget manager), the row, and the row's cell. The only difference is
+// where it lives -- a dialog rather than a palette, so the theme is kIDDialogTheme and the font
+// is the dialog one.
+DECLARE_PMID(kClassIDSpace, kKCMBookTreeWidgetBoss, kKCMUIPrefix + 22)	// kTreeViewWidgetBoss subclass: the chapter list (flat, one level). It carries only the adapter and the widget manager
+DECLARE_PMID(kClassIDSpace, kKCMBookRowWidgetBoss, kKCMUIPrefix + 23)	// kTreeNodeWidgetBoss subclass: one row of that list. ★Nothing is added to it yet - the slot is taken in advance for the IID_IEVENTHANDLER that a row click ("open that chapter") will need, the same order the Story Edits row boss went through
+DECLARE_PMID(kClassIDSpace, kKCMBookRowCellBoss, kKCMUIPrefix + 24)	// kInfoStaticTextWidgetBoss + IID_ITIP (kKCMNoTipImpl): a cell of that row. A plain static text pops its full string up when ellipsized, which is silenced on list rows (the same call as for Story Edits)
+// The bar that divides the panel. ★Its contents are the stock kSplitterPanelWidgetBoss's, with
+// IID_IEVENTHANDLER alone replaced by an implementation that does nothing = **the bar cannot be
+// dragged** (user's call). There is **no way to REMOVE an interface from an inherited boss**, so
+// removing behaviour means "override it with an implementation that answers differently" ----
+// the same shape as kKCMStoryRowCellBoss (+20) silencing a tooltip.
+DECLARE_PMID(kClassIDSpace, kKCMSplitterPanelBoss, kKCMUIPrefix + 25)	// kSplitterPanelWidgetBoss + IID_IEVENTHANDLER (kKCMSplitterEHImpl): a SplitterPanelWidget whose divider cannot be grabbed
+DECLARE_PMID(kClassIDSpace, kKCMUIStartupBoss, kKCMUIPrefix + 27)	// IStartupShutdown: **the UI half's** startup / shutdown. It restores the panel settings, subscribes and unsubscribes the translucency, returns the HUD's font, watches for a batch close and releases the deferred thumbnail idle task. ★Its counterpart is kKCMPeekStartupBoss on the model side (KCMID.h)
+DECLARE_PMID(kClassIDSpace, kKCMUIDrawEventServiceBoss, kKCMUIPrefix + 26)	// IK2ServiceProvider + IDrwEvtHandler: the **UI-only** draw service. It carries the on-press HUD and nothing else. ★The model side has a different one, kKCMDrawEventServiceBoss (the comparison marks, KCM.fr): those have to reach print and PDF export, while this one is screen-only. kDrawEventService expects several providers (InDesign itself registers over 20)
+DECLARE_PMID(kClassIDSpace, kKCMBookPathTextWidgetBoss, kKCMUIPrefix + 28)	// kStaticTextWidgetBoss + IID_IEVEINFO (kFixedSizeEVEInfoImpl): the Target:/Source: lines of the book comparison dialog. ★★EVE treats **the width in the .fr as a MINIMUM** ("We treat the width in the .fr file as a minimum width", guide Using EVE), so a full path makes the widget grow and the parent with it (measured: 593px). ⚠kEVEAlignFill does not stop it - Fill means "take the parent's width", and that parent is pushed wider by its child. ⇒ **EVE asks IID_IEVEINFO for a widget's size**, so naming an implementation that answers "the size the resource states" fixes the width and hands the shortening back to the widget's own kEllipsizeBeginning = the same behaviour as the panel's Target:/Source:. Modelled on KBS.fr's glyph box (no other use in the whole SDK, but verified in the running application)
+// The text cell of a **change row** in Story Edits. ★The point is to draw only the changed
+// characters in the normal colour and fade the context around them (user's request: "follow
+// KBS"). A plain static text is **one colour per line**, so telling them apart means a
+// self-drawn cell instead ---- the same shape as KBS's kKBSColorTextViewBoss.
+// ★It is built on kGenericPanelWidgetBoss because that provides somewhere to draw and neither
+//   text nor colour of its own.
+//   ⇒ It has no tooltip either, so the kKCMNoTipImpl that the row cell at +20 needs is not
+//     needed here ＝ **the silence comes for free**.
+DECLARE_PMID(kClassIDSpace, kKCMStoryChangeCellBoss, kKCMUIPrefix + 29)	// kGenericPanelWidgetBoss + IID_ICONTROLVIEW (kKCMStoryCellViewImpl) + IID_IKCMSTORYCELLDATA (kKCMStoryCellDataImpl): the text cell of a change row. It takes three pieces (context, the changed characters, context) and draws the middle one in the theme text colour with the outer two faded toward the background (KCMStoryCellView.cpp)
+// The mark that briefly lights up wherever a change row jumps to. ★★It is a **GLOBAL TEXT
+// ADORNMENT** = the official mechanism for drawing **over the characters themselves**, and it
+// **changes not one byte of the document** (nothing is saved and nothing lands on the undo
+// stack). InDesign draws its own kinsoku violations, missing glyphs and spelling squiggles the
+// same way ([[global-text-adornment]]).
+// ★**Draw is handed the waxRun and its waxGlyphs**, so "does this run overlap the marked range"
+//   is answered from TextOrigin and GetCharCount, and the coordinates of a part of a range come
+//   from MapCharsToGlyphs ＝ **no coordinate conversion of our own**.
+//   ⇒ Unlike the Draw Event route KBS uses (building a pasteboard-space rectangle by hand),
+//     this rides vertical text and rotation as it is.
+// ★Two pieces only: the provider the API already ships (`kGlobalTextAdornmentServiceImpl`) and
+//   our own implementation. Modelled on the product's spellpanel and on KT.
+// ★★★+ 30 is vacant ＝ **the Story mark boss moved to the model side** (`KCMID.h`, kKCMPrefix
+//   + 32). Reason ＝ **the UI's File > Export > PDF runs on a background thread and a
+//   kUIPlugIn is handed no drawing there at all** (measured, no warning), so while it lived on
+//   this side there was no way to put it into an exported PDF.
+//   ⚠**The numbering is not closed up** ＝ [[id-prefix-256-slot-budget]].
+// The timer that withdraws that marker after about a second. ★**An IIdleTask, the same call KBS
+//   made**: an `ICallbackTimer` callback is a raw function pointer that is not reference
+//   counted, and the header itself says "Danger!". An IdleTask is an interface on a boss, so
+//   shutdown can Release it in the ordinary way.
+//   ⚠An exception to [[avoid-timers-and-idle-tasks]] ＝ **nothing else here has to disappear by
+//     the wall clock.**
+// ★+ 31 is vacant too ＝ that expiry timer went to the model side in the same move
+//   (`KCMID.h`, kKCMPrefix + 33).
+// The panel's message area. ★**It replaces the stock StaticMultiLineTextWidget**, which draws
+// one string in one colour and therefore cannot say **which characters differ** inside "the
+// other side" that a click on a change row brings up. ⇒ Same construction as the change row
+// cell above (kGenericPanelWidgetBoss + a view of our own).
+// ⚠**The difference is the number of lines** ＝ that cell is one line and can leave the
+//   shortening to `PMEllipsizeString`, while this box wraps to fill its height ＝ **wrapping is
+//   the one thing lost with the stock widget, so it is written out** (KCMStatusTextView.cpp).
+// ★The WidgetID and the Frame are unchanged (`kKCMStatusTextWidgetID`), so nothing around it
+//   moves.
+DECLARE_PMID(kClassIDSpace, kKCMStatusTextWidgetBoss, kKCMUIPrefix + 32)	// kGenericPanelWidgetBoss + IID_ICONTROLVIEW (kKCMStatusTextViewImpl) + IID_IKCMSTATUSTEXTDATA (kKCMStatusTextDataImpl): the panel's message area. It takes a heading and three pieces (context, the changed characters, context), wraps them and draws them in at most two colours (KCMStatusTextView.cpp)
 // InterfaceIDs:
-// ⚠★ここにあるのは **UI 側の boss にだけ載る IID**。境界を跨ぐ IID（Facade 5本＋通知の protocol）は
-//   **KCMBoundaryID.h** にあり、あちらは model 側の `kKCMPrefix` のまま名乗る
-//   ＝値が食い違うと**ビルドは通るのに黙って何も起きない**。
-DECLARE_PMID(kInterfaceIDSpace, IID_IKCMLAYOUTSYNCOBSERVER, kKCMUIPrefix + 0)	// レイアウトビュー同期オブザーバのアタッチ識別ID(AttachObserver の observerIID)
-DECLARE_PMID(kInterfaceIDSpace, IID_IKCMDOCSCLOSEDOBSERVER, kKCMUIPrefix + 1)	// 一括クローズ完了(kPendingDocumentsClosedMsg)を受けるオブザーバのアタッチ識別ID
-DECLARE_PMID(kInterfaceIDSpace, IID_IKCMPANELVISIBILITYOBSERVER, kKCMUIPrefix + 2)	// パネルの表示状態変化(kPaletteVisibilityChangedMessage)を受けるオブザーバのアタッチ識別ID。半透明トグルをドッキング切り替え/開き直しに追随させるために使う
-DECLARE_PMID(kInterfaceIDSpace, IID_IKCMSTORYCELLDATA, kKCMUIPrefix + 4)	// IKCMStoryCellData: 変更行のテキストセルが描く3片(前の文脈/変更された文字/後の文脈)の入れ物。★行 widget は使い回されるので、毎回の流し込みで3片とも書き直す(ui/IKCMStoryCellData.h)
-DECLARE_PMID(kInterfaceIDSpace, IID_IKCMSTATUSTEXTDATA, kKCMUIPrefix + 5)	// IKCMStatusTextData: パネルのメッセージ欄が描く4片(見出し/前の文脈/変更された文字/後の文脈)の入れ物。★普通のメッセージは真ん中1片だけ＝1色で描かれる(ui/IKCMStatusTextData.h)
-DECLARE_PMID(kInterfaceIDSpace, IID_IKCMSAVEDSECTIONHEIGHT, kKCMUIPrefix + 3)	// IIntData として扱う: Story Edits セクションを閉じた瞬間の高さ(px)。次に開くときこの高さで開く。実装は SDK 標準の kPersistIntDataImpl(手本=linksui の IID_ISAVEDINFOPANESIZE)
+// ⚠★What is here are **the IIDs that appear only on UI-side bosses**. The ones that cross the
+//   boundary (the five facades plus the notification protocol) are in **KCMBoundaryID.h**,
+//   where they are named from the model's `kKCMPrefix`
+//   ＝ **let those values disagree and the build still succeeds while nothing happens.**
+DECLARE_PMID(kInterfaceIDSpace, IID_IKCMLAYOUTSYNCOBSERVER, kKCMUIPrefix + 0)	// the observerIID used to attach the layout view sync observer
+DECLARE_PMID(kInterfaceIDSpace, IID_IKCMDOCSCLOSEDOBSERVER, kKCMUIPrefix + 1)	// the observerIID for "a batch close has finished" (kPendingDocumentsClosedMsg)
+DECLARE_PMID(kInterfaceIDSpace, IID_IKCMPANELVISIBILITYOBSERVER, kKCMUIPrefix + 2)	// the observerIID for panel visibility changes (kPaletteVisibilityChangedMessage). It is what makes the translucency follow docking and re-opening
+DECLARE_PMID(kInterfaceIDSpace, IID_IKCMSTORYCELLDATA, kKCMUIPrefix + 4)	// IKCMStoryCellData: the container for the three pieces a change row's cell paints (context / changed characters / context). ★Row widgets are recycled, so every fill rewrites all three (ui/IKCMStoryCellData.h)
+DECLARE_PMID(kInterfaceIDSpace, IID_IKCMSTATUSTEXTDATA, kKCMUIPrefix + 5)	// IKCMStatusTextData: the container for the four pieces the panel's message area paints (heading / context / changed characters / context). ★An ordinary message fills the middle one only, and is drawn in one colour (ui/IKCMStatusTextData.h)
+DECLARE_PMID(kInterfaceIDSpace, IID_IKCMSAVEDSECTIONHEIGHT, kKCMUIPrefix + 3)	// used as an IIntData: the height in px the Story Edits section had the moment it was closed, which is the height it opens at next time. The implementation is the SDK's own kPersistIntDataImpl (modelled on linksui's IID_ISAVEDINFOPANESIZE)
 // ImplementationIDs:
-// ⚠ ここに載せた実装は **ui/KCMUIFactoryList.h** にも 1 対 1 で登録されていること
-//   （登録漏れは完全に無言で失敗する）。
-DECLARE_PMID(kImplementationIDSpace, kKCMThumbIdleTaskImpl, kKCMUIPrefix + 5)	// IIdleTask 実装(クローズ後の Pages サムネイル再生成を遅延実行)
-DECLARE_PMID(kImplementationIDSpace, kKCMPanelObserverImpl, kKCMUIPrefix + 6)	// IObserver 実装(パネルのウィジェットオブザーバ)
-DECLARE_PMID(kImplementationIDSpace, kKCMActionComponentImpl, kKCMUIPrefix + 7)	// IActionComponent 実装(About)
-DECLARE_PMID(kImplementationIDSpace, kKCMIconTipImpl, kKCMUIPrefix + 10)	// ITip 実装(パネルイラストにURLをツールチップ表示)
-DECLARE_PMID(kImplementationIDSpace, kKCMLayoutSyncObserverImpl, kKCMUIPrefix + 11)	// IObserver 実装(レイアウトビュー同期)
-DECLARE_PMID(kImplementationIDSpace, kKCMScrollMapViewImpl, kKCMUIPrefix + 12)	// IControlView 実装(スクロールバー地図stripの自前描画; KCMScrollMap.cpp)
-DECLARE_PMID(kImplementationIDSpace, kKCMToolImpl, kKCMUIPrefix + 13)	// ITool 実装(KCMTool.cpp)
-DECLARE_PMID(kImplementationIDSpace, kKCMTrackerImpl, kKCMUIPrefix + 14)	// ITracker 実装(CTracker派生; KCMTracker.cpp)
-DECLARE_PMID(kImplementationIDSpace, kKCMTrackerRegisterImpl, kKCMUIPrefix + 15)	// ITrackerRegister 実装(KCMTrackerRegister.cpp)
-DECLARE_PMID(kImplementationIDSpace, kKCMTrackerEHImpl, kKCMUIPrefix + 16)	// IEventHandler 実装(CTrackerEventHandler派生; 押下中のボタン解放を EndTracking へ転送。KCMTracker.cpp)
-DECLARE_PMID(kImplementationIDSpace, kKCMCursorProviderImpl, kKCMUIPrefix + 17)	// ICursorProvider 実装(CToolCursorProvider派生; ツール選択中は常時✓カーソル。KCMCursorProvider.cpp)
-// (+6..+17 are all declared above - stale placeholders for them removed 2026-08-05 audit)
-// (+18 = kKCMSpriteImpl は 2026-08-06 に**旧 sprite 版**の押下中 HUD ごと撤去。★**この番号は再利用しない**。
-//  ⚠**押下中 HUD 自体は現役**＝翌 2026-08-07 に Draw Event 方式で作り直した(KCMTrackerHud.cpp)。
-//  ★★2026-08-19(不具合再検査 B-U6): トラッカー boss の **IID_ISPRITE / IID_IPATHGEOMETRY も外した**。
-//   旧記述の「SDK 標準実装に戻してある＝公式サンプル wavetool の boss 構成と同じ形」は
-//   **母集合の取り違え**で、sprite が要るのは **CPathCreationTracker / CLayoutTracker 派生**だけ
-//   (wavetool の2本はその派生)。CTracker 直接派生の KCM は持たない側が公式と同じ形。
-//   理由の全文は KCMUI.fr の kKCMTrackerBoss の Class コメント)
-DECLARE_PMID(kImplementationIDSpace, kKCMDocsClosedObserverImpl, kKCMUIPrefix + 19)	// IObserver 実装(一括クローズ完了で、保留した後片付けを1回だけ流す。ui/KCMPeekGesture.cpp。⚠2026-08-19 訂正=分割で KCMPeek.cpp から出た。KCMUIFactoryList.h:68 は正しく直っていた=兄弟の取りこぼし)
-DECLARE_PMID(kImplementationIDSpace, kKCMPanelVisibilityObserverImpl, kKCMUIPrefix + 20)	// IObserver 実装(パネルの表示状態が変わったら半透明を貼り直す。KCMPanelAlpha.cpp)
-DECLARE_PMID(kImplementationIDSpace, kKCMPanelRollOverImpl, kKCMUIPrefix + 21)	// IMouseRollOver 実装(パネルにカーソルが乗っている間だけ半透明を解除。KCMPanelAlpha.cpp)
-DECLARE_PMID(kImplementationIDSpace, kKCMStorySectionToggleObserverImpl, kKCMUIPrefix + 22)	// IObserver 実装(開閉ボタンの押下を受けて Story Edits セクションを開閉。KCMStorySectionObserver.cpp)
-DECLARE_PMID(kImplementationIDSpace, kKCMStoryTreeAdapterImpl, kKCMUIPrefix + 23)	// ITreeViewHierarchyAdapter 実装(ListTreeViewAdapter派生。KCMStoryTreeAdapter.cpp)
-DECLARE_PMID(kImplementationIDSpace, kKCMStoryTreeWidgetMgrImpl, kKCMUIPrefix + 24)	// ITreeViewWidgetMgr 実装(CTreeViewWidgetMgr派生。KCMStoryTreeWidgetMgr.cpp)
-DECLARE_PMID(kImplementationIDSpace, kKCMNoTipImpl, kKCMUIPrefix + 25)	// ITip 実装(常に空を返す＝ツールチップを出さない。KCMNoTip.cpp)
-DECLARE_PMID(kImplementationIDSpace, kKCMPanelViewImpl, kKCMUIPrefix + 26)	// IControlView 実装(PalettePanelView派生。ConstrainDimensions でパネルの最小サイズを守る。KCMPanelView.cpp)
-DECLARE_PMID(kImplementationIDSpace, kKCMStoryRowEHImpl, kKCMUIPrefix + 27)	// IEventHandler 実装(TreeNodeEventHandler派生。Story Edits の行=単クリックでジャンプ・ダブルクリックでストーリー全文を選択。KCMStoryRowEH.cpp)
-// (kKCMUIPrefix + 28 は一度 kKCMStoryRowViewImpl=行の間の区切り線を消す IControlView に使い、同日
-//  撤去した跡地。線を残すユーザー判断なので実装ごと消えている＝経緯は KCMUI.fr の行 boss のコメント。
-//  ActionID と違い Impl 番号は外部保存が参照しないので、下記のとおり再利用した。)
-DECLARE_PMID(kImplementationIDSpace, kKCMStoryTreeEHImpl, kKCMUIPrefix + 28)	// IEventHandler 実装(TreeViewEventHandler派生)。★一覧**そのもの**のキー操作＝↑↓で行を移動し、着いた行へジャンプする(KCMStoryTreeEH.cpp)。行側の kKCMStoryRowEHImpl とは別物＝あちらはクリック
-DECLARE_PMID(kImplementationIDSpace, kKCMBookDialogControllerImpl, kKCMUIPrefix + 29)	// IDialogController 実装(CDialogController派生)。ブック比較のモードレスダイアログ＝開いたとき対象の2ブック名を埋める(KCMBookDialog.cpp)
-// (退役 2026-08-12)kKCMBookDialogObserverImpl(kKCMUIPrefix + 30)＝ブック比較ダイアログの Compare ボタンの押下を受けていた IObserver。
-//   ★ボタンごと撤去した(確認アラート→OK で比較する流れへ変更)ので実装ファイルごと削除し、IID_IOBSERVER は kDialogBoss の stock(kCDialogObserverImpl)へ戻した。スロットは予約のまま再利用しない。
-DECLARE_PMID(kImplementationIDSpace, kKCMBookTreeAdapterImpl, kKCMUIPrefix + 31)	// ITreeViewHierarchyAdapter 実装(ListTreeViewAdapter派生。KCMBookTreeAdapter.cpp)。ブック比較ダイアログの章一覧＝行数を答えるだけ
-DECLARE_PMID(kImplementationIDSpace, kKCMBookTreeWidgetMgrImpl, kKCMUIPrefix + 32)	// ITreeViewWidgetMgr 実装(CTreeViewWidgetMgr派生。KCMBookTreeWidgetMgr.cpp)。章一覧の行の生成と流し込み(章名 / 状態の2列)
-DECLARE_PMID(kImplementationIDSpace, kKCMBookRowEHImpl, kKCMUIPrefix + 33)	// IEventHandler 実装(TreeNodeEventHandler派生。KCMBookRowEH.cpp)。ブック比較の章行＝**ダブルクリックでその章を開く**・**右クリックで行メニュー**(Start Change Marker)。★単クリックは何もしない(Story Edits の行と違う＝あちらは開いている文書の中を移動するだけだが、こちらは文書を開いてしまうため)。実際の動作は KCMBookOpen.cpp
-DECLARE_PMID(kImplementationIDSpace, kKCMUIStartupImpl, kKCMUIPrefix + 38)	// IStartupShutdown 実装(UI 側の起動/終了。KCMUIStartup.cpp)
-DECLARE_PMID(kImplementationIDSpace, kKCMModelChangeObserverImpl, kKCMUIPrefix + 37)	// IObserver 実装(model の通知を受けて画面を作り直す **UI 側**。KCMModelChangeObserver.cpp)
-DECLARE_PMID(kImplementationIDSpace, kKCMUIDrawEventSrvcImpl, kKCMUIPrefix + 35)	// CServiceProvider 実装(kDrawEventService。UI 専用の描画サービス。KCMUIDrawEvent.cpp)。★GetThreadingPolicy は手書きしない＝CServiceProvider がプラグインの型から既定を返す
-DECLARE_PMID(kImplementationIDSpace, kKCMUIDrawEventHandlerImpl, kKCMUIPrefix + 36)	// IDrwEvtHandler 実装(押下中 HUD の描画だけ。画面専用＝PDF 書き出しに出なくてよい。KCMUIDrawEvent.cpp)
-// ★★+ 41 と + 42 は欠番＝Story マークのアドーンメント実装と期限切れ timer 実装は 2026-08-23 に
-//   model 側へ移した（`KCMID.h` の kKCMPrefix + **51** / + **52**）。理由は上の + 30 の注記と同じ。
-//   ⚠**移設先の番号を + 50 / + 51 と書いていたのを 2026-08-24 の再検査で直した**＝+ 50 は同じ回に
-//     採った kKCMStoryMarkFacadeImpl で、こちらは1つずつ後ろ。**移設は「番号を書き写す」作業を
-//     必ず伴うので、書き写した先を開いて数えること。**
-DECLARE_PMID(kImplementationIDSpace, kKCMStoryCellViewImpl, kKCMUIPrefix + 39)	// IControlView 実装(DVControlView派生)。Story Edits の**変更行**のテキストセル＝変更された文字はテーマの文字色、前後の文脈は背景へ寄せた薄い色で描く(KCMStoryCellView.cpp)。★手本は KBS の KBSColorTextView(あちらは検索ヒットの一致部分を強調する)
-DECLARE_PMID(kImplementationIDSpace, kKCMStoryCellDataImpl, kKCMUIPrefix + 40)	// IKCMStoryCellData 実装(非永続の3片の入れ物。上のセルと同じ boss に同居する。KCMStoryCellView.cpp)
-DECLARE_PMID(kImplementationIDSpace, kKCMStatusTextViewImpl, kKCMUIPrefix + 43)	// IControlView 実装(DVControlView派生)。パネルのメッセージ欄＝箱に入るだけ折り返し、変更された文字はテーマの文字色、見出しと前後の文脈は背景へ寄せた薄い色で描く(KCMStatusTextView.cpp)。★**PERSIST 版**＝パネルの .fr から作られる widget なので、土台の kGenericPanelWidgetBoss が持つ IID_ICONTROLVIEW と同じく永続でなければならない
-DECLARE_PMID(kImplementationIDSpace, kKCMStatusTextDataImpl, kKCMUIPrefix + 44)	// IKCMStatusTextData 実装(非永続の4片の入れ物。上の欄と同じ boss に同居する。KCMStatusTextView.cpp)
-DECLARE_PMID(kImplementationIDSpace, kKCMSplitterEHImpl, kKCMUIPrefix + 34)	// IEventHandler 実装(CEventHandler派生＝全メソッドが kFalse を返すだけの基底をそのまま使う)。パネルの分割バーが押下を受け取らなくなる＝ドラッグで動かせない(KCMSplitterEH.cpp)
+// ⚠Every implementation listed here has to be registered **one for one in
+//   ui/KCMUIFactoryList.h** -- a missing registration fails in complete silence.
+DECLARE_PMID(kImplementationIDSpace, kKCMThumbIdleTaskImpl, kKCMUIPrefix + 5)	// IIdleTask (defers the Pages panel thumbnail rebuild after a close)
+DECLARE_PMID(kImplementationIDSpace, kKCMPanelObserverImpl, kKCMUIPrefix + 6)	// IObserver (the panel's widget observer)
+DECLARE_PMID(kImplementationIDSpace, kKCMActionComponentImpl, kKCMUIPrefix + 7)	// IActionComponent (About)
+DECLARE_PMID(kImplementationIDSpace, kKCMIconTipImpl, kKCMUIPrefix + 10)	// ITip (shows the distribution URL on the panel illustration)
+DECLARE_PMID(kImplementationIDSpace, kKCMLayoutSyncObserverImpl, kKCMUIPrefix + 11)	// IObserver (layout view syncing)
+DECLARE_PMID(kImplementationIDSpace, kKCMScrollMapViewImpl, kKCMUIPrefix + 12)	// IControlView (draws the scrollbar map strip; KCMScrollMap.cpp)
+DECLARE_PMID(kImplementationIDSpace, kKCMToolImpl, kKCMUIPrefix + 13)	// ITool (KCMTool.cpp)
+DECLARE_PMID(kImplementationIDSpace, kKCMTrackerImpl, kKCMUIPrefix + 14)	// ITracker (CTracker subclass; KCMTracker.cpp)
+DECLARE_PMID(kImplementationIDSpace, kKCMTrackerRegisterImpl, kKCMUIPrefix + 15)	// ITrackerRegister (KCMTrackerRegister.cpp)
+DECLARE_PMID(kImplementationIDSpace, kKCMTrackerEHImpl, kKCMUIPrefix + 16)	// IEventHandler (CTrackerEventHandler subclass; forwards the button release during capture to EndTracking. KCMTracker.cpp)
+DECLARE_PMID(kImplementationIDSpace, kKCMCursorProviderImpl, kKCMUIPrefix + 17)	// ICursorProvider (CToolCursorProvider subclass; the check-mark cursor for as long as the tool is active. KCMCursorProvider.cpp)
+// (+18 = kKCMSpriteImpl went out together with the **old sprite-based** on-press HUD.
+//  ★**That number is not reused.**
+//  ⚠**The on-press HUD itself is alive** -- it was rebuilt the next day on the Draw Event
+//  route (KCMTrackerHud.cpp).
+//  ★★The tracker boss's **IID_ISPRITE / IID_IPATHGEOMETRY are gone as well**. The old claim
+//   that this "matched wavetool's boss shape" counted the wrong set: a sprite is needed by
+//   **CPathCreationTracker / CLayoutTracker** subclasses, and KCM derives from CTracker
+//   directly, so **not having one is the shape that matches**. The full reason is in the
+//   kKCMTrackerBoss Class comment in KCMUI.fr.)
+DECLARE_PMID(kImplementationIDSpace, kKCMDocsClosedObserverImpl, kKCMUIPrefix + 19)	// IObserver (runs the postponed cleanup once, when a batch close finishes. ui/KCMPeekGesture.cpp)
+DECLARE_PMID(kImplementationIDSpace, kKCMPanelVisibilityObserverImpl, kKCMUIPrefix + 20)	// IObserver (re-applies the translucency when the panel visibility changes. KCMPanelAlpha.cpp)
+DECLARE_PMID(kImplementationIDSpace, kKCMPanelRollOverImpl, kKCMUIPrefix + 21)	// IMouseRollOver (drops the translucency while the pointer is over the panel. KCMPanelAlpha.cpp)
+DECLARE_PMID(kImplementationIDSpace, kKCMStorySectionToggleObserverImpl, kKCMUIPrefix + 22)	// IObserver (opens and closes the Story Edits section on a press of the triangle. KCMStorySectionObserver.cpp)
+DECLARE_PMID(kImplementationIDSpace, kKCMStoryTreeAdapterImpl, kKCMUIPrefix + 23)	// ITreeViewHierarchyAdapter (ListTreeViewAdapter subclass. KCMStoryTreeAdapter.cpp)
+DECLARE_PMID(kImplementationIDSpace, kKCMStoryTreeWidgetMgrImpl, kKCMUIPrefix + 24)	// ITreeViewWidgetMgr (CTreeViewWidgetMgr subclass. KCMStoryTreeWidgetMgr.cpp)
+DECLARE_PMID(kImplementationIDSpace, kKCMNoTipImpl, kKCMUIPrefix + 25)	// ITip (always answers empty = no tooltip. KCMNoTip.cpp)
+DECLARE_PMID(kImplementationIDSpace, kKCMPanelViewImpl, kKCMUIPrefix + 26)	// IControlView (PalettePanelView subclass; ConstrainDimensions keeps the panel's minimum size. KCMPanelView.cpp)
+DECLARE_PMID(kImplementationIDSpace, kKCMStoryRowEHImpl, kKCMUIPrefix + 27)	// IEventHandler (TreeNodeEventHandler subclass. A Story Edits row: single click jumps, double click selects the whole story. KCMStoryRowEH.cpp)
+// (kKCMUIPrefix + 28 was briefly kKCMStoryRowViewImpl, an IControlView that removed the rule
+//  between rows, and was withdrawn the same day -- the rules stay, by the user's call, so the
+//  implementation went with it (the account is in the row boss comment in KCMUI.fr).
+//  Unlike an ActionID, an implementation number is referenced by nothing that is stored
+//  outside the plug-in, so it was reused below.)
+DECLARE_PMID(kImplementationIDSpace, kKCMStoryTreeEHImpl, kKCMUIPrefix + 28)	// IEventHandler (TreeViewEventHandler subclass). ★Key handling for the list **itself**: up/down move between rows and jump to the row they land on (KCMStoryTreeEH.cpp). A different thing from the row-side kKCMStoryRowEHImpl, which handles clicks
+DECLARE_PMID(kImplementationIDSpace, kKCMBookDialogControllerImpl, kKCMUIPrefix + 29)	// IDialogController (CDialogController subclass). The modeless book comparison dialog: on open it fills in the names of the two books being compared (KCMBookDialog.cpp)
+// (Retired: kKCMBookDialogObserverImpl (kKCMUIPrefix + 30) was the IObserver behind the Compare
+//  button of the book comparison dialog. ★The button itself was removed -- the flow became
+//  "confirmation alert, then OK compares" -- so the implementation file went with it and
+//  IID_IOBSERVER went back to kDialogBoss's stock kCDialogObserverImpl. The slot stays
+//  reserved and is not reused.)
+DECLARE_PMID(kImplementationIDSpace, kKCMBookTreeAdapterImpl, kKCMUIPrefix + 31)	// ITreeViewHierarchyAdapter (ListTreeViewAdapter subclass. KCMBookTreeAdapter.cpp). The chapter list of the book comparison dialog: it answers how many rows there are
+DECLARE_PMID(kImplementationIDSpace, kKCMBookTreeWidgetMgrImpl, kKCMUIPrefix + 32)	// ITreeViewWidgetMgr (CTreeViewWidgetMgr subclass. KCMBookTreeWidgetMgr.cpp). Builds and fills the chapter rows (chapter name / state)
+DECLARE_PMID(kImplementationIDSpace, kKCMBookRowEHImpl, kKCMUIPrefix + 33)	// IEventHandler (TreeNodeEventHandler subclass. KCMBookRowEH.cpp). A chapter row: **double click opens that chapter**, **right click opens the row menu** (Start Change Marker). ★A single click does nothing, unlike a Story Edits row -- that one only moves around inside an open document, while this one would open documents. The work itself is in KCMBookOpen.cpp
+DECLARE_PMID(kImplementationIDSpace, kKCMUIStartupImpl, kKCMUIPrefix + 38)	// IStartupShutdown (startup / shutdown of the UI half. KCMUIStartup.cpp)
+DECLARE_PMID(kImplementationIDSpace, kKCMModelChangeObserverImpl, kKCMUIPrefix + 37)	// IObserver (**the UI side** of "the model notified, rebuild the display". KCMModelChangeObserver.cpp)
+DECLARE_PMID(kImplementationIDSpace, kKCMUIDrawEventSrvcImpl, kKCMUIPrefix + 35)	// CServiceProvider (kDrawEventService; the UI-only draw service. KCMUIDrawEvent.cpp). ★GetThreadingPolicy is not written by hand -- CServiceProvider derives the default from the plug-in type
+DECLARE_PMID(kImplementationIDSpace, kKCMUIDrawEventHandlerImpl, kKCMUIPrefix + 36)	// IDrwEvtHandler (the on-press HUD and nothing else; screen-only, it need not reach a PDF export. KCMUIDrawEvent.cpp)
+// ★★+ 41 and + 42 are vacant ＝ the Story mark adornment implementation and its expiry timer
+//   implementation moved to the model side (`KCMID.h`, kKCMPrefix + **51** / + **52**). The
+//   reason is the one given at + 30 above.
+//   ⚠These two numbers were written here as + 50 / + 51 and had to be corrected: + 50 is
+//     kKCMStoryMarkFacadeImpl, taken in the same move, and these are one further along.
+//     **A move always involves copying numbers across, so open what you copied them into and
+//     count.**
+DECLARE_PMID(kImplementationIDSpace, kKCMStoryCellViewImpl, kKCMUIPrefix + 39)	// IControlView (DVControlView subclass). The text cell of a **change row** in Story Edits: the changed characters in the theme text colour, the context on either side faded toward the background (KCMStoryCellView.cpp). ★Modelled on KBS's KBSColorTextView, which highlights the matched part of a search hit
+DECLARE_PMID(kImplementationIDSpace, kKCMStoryCellDataImpl, kKCMUIPrefix + 40)	// IKCMStoryCellData (a non-persistent container for the three pieces; it lives on the same boss as the cell above. KCMStoryCellView.cpp)
+DECLARE_PMID(kImplementationIDSpace, kKCMStatusTextViewImpl, kKCMUIPrefix + 43)	// IControlView (DVControlView subclass). The panel's message area: it wraps to fill the box, draws the changed characters in the theme text colour and fades the heading and the context (KCMStatusTextView.cpp). ★**The PERSIST form** -- this widget is built from the panel's .fr, so it has to be persistent like the IID_ICONTROLVIEW of the kGenericPanelWidgetBoss it is built on
+DECLARE_PMID(kImplementationIDSpace, kKCMStatusTextDataImpl, kKCMUIPrefix + 44)	// IKCMStatusTextData (a non-persistent container for the four pieces; it lives on the same boss as the area above. KCMStatusTextView.cpp)
+DECLARE_PMID(kImplementationIDSpace, kKCMSplitterEHImpl, kKCMUIPrefix + 34)	// IEventHandler (CEventHandler subclass ＝ the base whose every method just answers kFalse). It makes the panel's divider take no presses, so it cannot be dragged (KCMSplitterEH.cpp)
 // ActionIDs:
 DECLARE_PMID(kActionIDSpace, kKCMAboutActionID, kKCMUIPrefix + 0)
-DECLARE_PMID(kActionIDSpace, kKCMPanelWidgetActionID, kKCMUIPrefix + 1)	// パネルの表示/非表示(ウィンドウメニュー)
-DECLARE_PMID(kActionIDSpace, kKCMPopupAboutThisActionID, kKCMUIPrefix + 2)	// パネルのフライアウトの「このプラグインについて」
-DECLARE_PMID(kActionIDSpace, kKCMPopupAboutScriptActionID, kKCMUIPrefix + 3)	// (撤去・予約)旧「About Scripting」フライアウト項目。2026-07-25 削除(ユーザー指定)。ID スロットは予約のまま
-DECLARE_PMID(kActionIDSpace, kKCMPopupUsageActionID, kKCMUIPrefix + 4)	// パネルのフライアウトの「使い方」
-// kActionIDSpace +5 は現在空き(旧 kKCMPopupTestSplitActionID; Split Test 検証メニューは撤去済み)
-// kActionIDSpace +6 は現在空き(旧 kKCMPopupSplitTargetActionID; Split Target on Start は 2026-07-04 撤去。
-//   仕組みは docs/ai-notes/kescm-split-target-mechanism.md に保存)
-DECLARE_PMID(kActionIDSpace, kKCMPopupHideUnchangedActionID, kKCMUIPrefix + 7)	// パネルのフライアウトの「Hide Unchanged Spreads」チェック式トグル(ON=変更なしスプレッドを隠す)
-DECLARE_PMID(kActionIDSpace, kKCMPopupShowOldNumsActionID, kKCMUIPrefix + 8)	// パネルのフライアウトの「Show Original Page Numbers」チェック式トグル(枠表示中/印刷ON時に隠す前の元番号バッジ)
-DECLARE_PMID(kActionIDSpace, kKCMPopupSyncViewsActionID, kKCMUIPrefix + 9)	// パネルのフライアウトの「Sync Layout Views」チェック式トグル(他文書のビューへ座標+拡大率を自動同期)
-DECLARE_PMID(kActionIDSpace, kKCMPopupShowSrcMarksActionID, kKCMUIPrefix + 10)	// パネルのフライアウトの「Always Show Marks on Source」チェック式トグル(Source側にも枠を常時表示。OPPでも表示・印刷にも出す)。★既定 OFF で Start は触らない(2026-08-22 変更＝設定はパネル設定に保存され起動時に復元されるので、Start が上書きすると保存した選択が消える)
-DECLARE_PMID(kActionIDSpace, kKCMPageMapToggleActionID, kKCMUIPrefix + 11)	// ページパネルのページ右クリック(RtMenuPagesPanel)のトグル「Register as Added/Removed Pages」(選択ページを「比較相手なし」として登録/解除。チェック/動的ラベルは kCustomEnabling。KCMPageMap.cpp)
-DECLARE_PMID(kActionIDSpace, kKCMPopupIgnorePageNumActionID, kKCMUIPrefix + 12)	// パネルのフライアウトの「Ignore Page Number Marker」チェック式トグル(ON=ノンブル(自動ページ番号)マーカーを含むフレームを比較から除外。★既定OFF=sIgnorePageNumberMarker の初期値。KCMPageNumberMarker.cpp)
-DECLARE_PMID(kActionIDSpace, kKCMPopupStartStopActionID, kKCMUIPrefix + 13)	// パネルのフライアウト先頭の「Start / Stop」(比較の開始/解除。旧トグルボタンをメニュー化。arm 状態で名前が Start↔Stop に動的変化=kCustomEnabling+SetNthActionName。KCMPanelObserver.cpp の KCMToggleStartStop)
-DECLARE_PMID(kActionIDSpace, kKCMPopupPrintMarksActionID, kKCMUIPrefix + 14)	// パネルのフライアウトの「Print comparison marks」チェック式トグル(旧パネルのチェックボックスをメニュー化。ON=マークを印刷し画面にも常時表示。KCMPanelObserver.cpp の KCMTogglePrintMarks)
-DECLARE_PMID(kActionIDSpace, kKCMPopupOpacity25ActionID, kKCMUIPrefix + 15)	// パネルのフライアウトの「Marks opacity 25%」(旧パネルの opacity ラジオをメニュー化。75% と相互排他=選択中の方に✓。KCMPanelObserver.cpp の KCMSetMarkOpacity25)
-DECLARE_PMID(kActionIDSpace, kKCMPopupOpacity75ActionID, kKCMUIPrefix + 16)	// パネルのフライアウトの「Marks opacity 75%」(25% と相互排他)
-DECLARE_PMID(kActionIDSpace, kKCMPopupSep1ActionID, kKCMUIPrefix + 17)	// フライアウト: Start の下の区切り線(MenuDef のパス末尾 ":-"。ActionDef 不要・DoAction 不要=一意なIDだけ要る)
-DECLARE_PMID(kActionIDSpace, kKCMPopupSep2ActionID, kKCMUIPrefix + 18)	// フライアウト: How to Use の上の区切り線
-// kKCMPopupHoldToHideMarksActionID (kKCMUIPrefix + 19) は「Hold to Hide Marks」トグルで、2026-08-22 に撤去(ユーザー決定)。
-//   ★理由＝**「枠を常時表示」が「Always Show Marks on Target」(+45)と完全に重複した**(描画側が `sAlwaysShowMarks || sTgtMarksOn` という OR になっていたのが証拠)。
-//   固有だった「押している間だけ隠す」は、**両「Show Marks on ...」トグルが ON のときの標準の挙動**へ畳んだ＝規則は「押している間は反対になる」の1本。
-//   ⇒ 機能は1つも失われていない。⚠**スロット +19 は再利用しない**(欠番)。
-// kKCMPopupPanelShortcutActionID (kKCMUIPrefix + 20) は中ボタン撤去(2026-07-13)に伴い廃止。スロットを 2026-07-24 に再利用:
-DECLARE_PMID(kActionIDSpace, kKCMPopupAlignViewsActionID, kKCMUIPrefix + 20)	// パネルのフライアウトの「Align Other Views to Active」(実行アクション)。アクティブ(最前面)文書のビューの位置+拡大率を他文書のビューへ1回そろえる。Start中はページのAdd/Remove補正あり。ショートカット割当可(kKCMPanelMenuActionArea+VisibleInKBSC)。実体 ui/KCMViewSync.cpp の KCMAlignOtherViewsToActiveNow(⚠2026-08-19 訂正=分割で KCMPeek.cpp から出た)
-DECLARE_PMID(kActionIDSpace, kKCMPopupScrollMapActionID, kKCMUIPrefix + 21)	// パネルのフライアウトの「Show Scrollbar Map」チェック式トグル(ON=文書窓の縦スクロールバー脇に変更位置地図stripを表示。既定ON。実体 KCMScrollMap.cpp の sScrollMapOn)
-DECLARE_PMID(kActionIDSpace, kKCMPopupSavePanelStateActionID, kKCMUIPrefix + 22)	// パネルのフライアウトの「Save Panel Settings」(チェックではなく実行アクション)。現在の設定系トグルを独自JSONでローカルへ保存し保存先パスを表示。読込は起動時(KCMUIStartup::Startup。2026-07-15 前倒し)。実体 KCMPanelState.cpp
-DECLARE_PMID(kActionIDSpace, kKCMPopupSep3ActionID, kKCMUIPrefix + 23)	// フライアウト: Refresh Overset の下(9.50)の区切り線(MenuDef のパス末尾 ":-"。ActionDef 不要)。現配置は下の位置一覧(9.50)が正(2026-07-25 コメント現行化)
-DECLARE_PMID(kActionIDSpace, kKCMPageCheckToggleActionID, kKCMUIPrefix + 24)	// ページパネルのページ右クリック(RtMenuPagesPanel)のトグル「Check」(選択ページに✓印を付け外し。Start中限定・Stopで消去。チェック/有効無効は kCustomEnabling。★**付けられるページはモードで違う**=Pixel はマーク付きのみ/Story は全ページ、2026-08-24。答えは model の KCMCollectCheckablePageUIDs 1本。実体 KCMPageCheck.cpp、✓描画は KCMDrawEventHandler の isThumb 分岐)
-DECLARE_PMID(kActionIDSpace, kKCMPopupSaveChecksActionID, kKCMUIPrefix + 25)	// パネルのフライアウトの「Save Check & Register」(実行アクション)。Start中の Target/Source の現在の Check(✓)+ Register(Added/Removed)を独自JSON(KCM\KCMPageChecks.json, v2)へマージ保存し保存先パスを表示。実体 KCMPageCheck.cpp
-DECLARE_PMID(kActionIDSpace, kKCMPopupLoadChecksActionID, kKCMUIPrefix + 26)	// パネルのフライアウトの「Load Check & Register」(実行アクション)。Start中だけ有効。上記JSONから Register を両文書へ適用→再比較→Check(今もマーク付きのみ)を復元。実体 KCMPageCheck.cpp
-// kKCMPopupPagesPanelShortcutActionID (kKCMUIPrefix + 27) は中ボタン撤去(2026-07-13)に伴い「Invoke Pages Panel Shortcut」トグルごと廃止。スロットは予約のまま。
-DECLARE_PMID(kActionIDSpace, kKCMPageMapSepActionID, kKCMUIPrefix + 28)	// ページパネルのページ右クリック(RtMenuPagesPanel): KCM 追加項目(Register / Check)の上の区切り線(MenuDef のパス末尾 ":-"。ActionDef 不要・DoAction 不要=一意なIDだけ要る)。本家メニューと視覚的に分けるため
-DECLARE_PMID(kActionIDSpace, kKCMToolActionID, kKCMUIPrefix + 29)	// ツールボックスのツール選択ショートカット用の ActionID(ToolDef が参照。ActionDef 不要=ツール枠が自動生成)
-DECLARE_PMID(kActionIDSpace, kKCMPageRefreshCompareActionID, kKCMUIPrefix + 30)	// ページパネルのページ右クリック(RtMenuPagesPanel)の実行アクション「Refresh Page Comparison」(選択ページの比較を再検出して枠/サムネイルを更新。旧 Ctrl+ミドルのスプレッド再比較を移設。Start中・★**Pixel モード**・前面文書が Target のときだけ有効=それ以外は項目ごと消える。kCustomEnabling。★Story モードで出さない理由=あちらはページを1枚もラスタ化しないので押しても画面が変わらない/Story の更新は行の右クリック kKCMStoryRowRefreshActionID が持つ、2026-08-24。実体 KCMPeek.cpp の KCMRefreshComparisonForSelectedPages)
-DECLARE_PMID(kActionIDSpace, kKCMPopupFindOversetActionID, kKCMUIPrefix + 31)	// パネルのフライアウトの「Find Overset」チェック式トグル(ON=アクティブ文書を走査し overset のあるページに大きな十字を表示。比較と独立・単独点検。kCustomEnabling。実体 KCMActionComponent.cpp/KCMOversetScan.cpp)
-DECLARE_PMID(kActionIDSpace, kKCMPopupRefreshOversetActionID, kKCMUIPrefix + 32)	// パネルのフライアウトの「Refresh Overset」(実行アクション)。Find Overset が ON のときだけ有効(OFF時は灰色)=アクティブ文書を再走査して十字を貼り直す。kCustomEnabling
-DECLARE_PMID(kActionIDSpace, kKCMPopupOversetSepActionID, kKCMUIPrefix + 33)	// フライアウト: Find Overset 群の上の区切り線(MenuDef のパス末尾 ":-"。ActionDef 不要・DoAction 不要=一意なIDだけ要る)
-DECLARE_PMID(kActionIDSpace, kKCMPopupExportChangedPagesActionID, kKCMUIPrefix + 34)	// パネルのフライアウトの「Export Changed Pages...」(実行アクション)。比較中(sDB≠nil)のみ有効=現在の比較の変更ページ一覧をTSV(新/旧/種別)で保存。実体 KCMChangedPagesTSV.cpp
-// (+35 = kKCMPopupHudActionID「Show HUD」は 2026-08-06 に機能ごと撤去。★**この番号は再利用しない**
-//  ＝ショートカット割当は .indk に ActionID の数値で保存されるので、別機能に振り直すと古い割当が
-//  その機能を叩いてしまう)
-DECLARE_PMID(kActionIDSpace, kKCMPopupTranslucentPanelActionID, kKCMUIPrefix + 36)	// パネルのフライアウトの「Translucent Panel」チェック式トグル(ON=フローティング中のこのパネルを半透明にする。★Windows 専用・★ドッキング中は選べるが効かない(フラグだけ立ちフローティングに戻すと効く)。既定 OFF。実体 KCMPanelAlpha.cpp)
-DECLARE_PMID(kActionIDSpace, kKCMPopupTranslucentPagesActionID, kKCMUIPrefix + 37)	// パネルのフライアウトの「Translucent Pages Panel」チェック式トグル(ON=フローティング中の**本体のページパネル**を半透明にする。上の +36 と同じ仕組みで対象だけが違う=WidgetID(kPagesPanelWidgetID)で狙い撃ちする。★Windows 専用・★ドッキング中は選べるが効かない。既定 OFF。実体 KCMPanelAlpha.cpp)
-// ★kKCMUIPrefix + 38 は「Translucent Toolbox」トグルの跡地(2026-08-07 に追加し、同日ユーザー判断で撤去)。
-//   **番号は再利用しない** = ショートカット設定(.indk)はアクションを数値の ActionID で保存するので、
-//   割り当て済みの番号を別機能へ回すと、そのショートカットが無関係な機能を叩く。押下中 HUD を撤去した
-//   ときの +35 とまったく同じ扱い。
-DECLARE_PMID(kActionIDSpace, kKCMPopupCompareBooksActionID, kKCMUIPrefix + 39)	// パネルのフライアウトの「Compare Books」(実行アクション)。★ブックパネルで前面タブのブック=Target / それ以外で最初に開いているブック=Source として、章(ドキュメント)単位で「変更あり/なし」を判定する。★既存の文書比較(Start)とは完全に独立=arm しない・枠(マークエントリ)を作らない・sDB/sSrcDB を触らない(⚠2026-08-18 訂正: 「KCMDrawEventHandler の static を触らない」と書いていたが、ラスタ化中は tl_Rasterizing を立てる=MakeEntry と同じ作法。理由は KCMBookCompare.h の同じ段落)。kCustomEnabling(2ブックそろい、かつ前面タブが特定できるときだけ有効)。実体 KCMBookCompare.cpp / 対象の解決 KCMBookPair.cpp
-// ブック比較ダイアログの章行の右クリックメニュー(2026-08-12)。★パネルのフライアウトではなく
-// **行の上に出るポップアップ**なので、置き場所は MenuDef のサブツリー kKCMBookRowMenuName。
-// 押されたときに「どの行か」を知る手段はこのアクション自身には無い(ActionID しか渡らない)ので、
-// 行は右クリックの時点で KCMBookSetMenuRow が控える＝KBS の結果行と同じ作り。
-DECLARE_PMID(kActionIDSpace, kKCMBookRowStartActionID, kKCMUIPrefix + 40)	// 章行の右クリック「Start Change Marker」= その章の Target/Source 2文書を窓付きで開き、比較中なら一度 Stop してから比較を開始する(KCMBookOpen.cpp)。★両側のファイルが揃っていない行(ChapterAdded/ChapterDeleted・ファイル無し)では灰色(kCustomEnabling → KCMBookRowCanStart)
-DECLARE_PMID(kActionIDSpace, kKCMPopupTranslucentBookDialogActionID, kKCMUIPrefix + 41)	// ★パネルのフライアウトの「Translucent Dialog」チェック式トグル(2026-08-13 ユーザー要望「ダイアログも半透明に出来る様に」)。上の +36/+37 と**同じ実体**(KCMPanelAlpha.cpp)で対象だけが違う。⚠ただし対象がパネルではないので**窓の出所だけが別**＝ダイアログ自身が KCMSetBookDialogWindow で教える(パネルマネージャは WidgetID で引けるが、ダイアログはそこに載っていない)。★パネル側と違い**ドッキングの概念が無いので「押しても効かない状態」が無い**。既定 OFF
-DECLARE_PMID(kActionIDSpace, kKCMPopupModePixelActionID, kKCMUIPrefix + 42)	// ★フライアウトの「Compare mode > Pixel Changes」(2026-08-20)。既定。ページをラスタ化して画素を比べる本来の比較。Story Changes と相互排他=選択中の方に✓(kCustomEnabling+kSelectedAction。Marks opacity 25%/75% と同じ形)。実体 KCMActionComponent.cpp
-DECLARE_PMID(kActionIDSpace, kKCMPopupModeStoryActionID, kKCMUIPrefix + 43)	// ★フライアウトの「Compare mode > Story Changes」(2026-08-20)。ストーリーの本文を段落→文字の二段で比べ、Story Edits を「親=ストーリー / 子=変更箇所」のツリーで出す。★このモードでは比較リング(枠)を描かず、Hide Unchanged Spreads だけが灰色になる。⚠2026-08-21 訂正＝旧記述は「スクロール地図・Export Changed Pages・Prev/Next も灰色」と書いていたが**実装と食い違っていた**＝それらの根拠(ページ対応表・登録ページ・overflow「/」)は Story モードでも作られるので機能は生きている(Prev/Next は overset の巡回が独立して動く)。灰色にするのは「押しても何も起きない」ではなく「押すと壊れる」もの＝Hide Unchanged は sEntries が空だと「登録や overflow のあるスプレッド以外を全部隠す」
-DECLARE_PMID(kActionIDSpace, kKCMStoryRowRefreshActionID, kKCMUIPrefix + 44)	// ★Story Edits の行の右クリック「Refresh Story Comparison」(2026-08-21 ユーザー要望「そのストーリーだけ比較を更新したい」)。その行のストーリーだけ本文差分を取り直し、子の変更箇所を今の状態に置き換える(実体 IKCMStoryEditsFacade::RefreshRow → KCMStoryDiffRun::RunOne)。★直し終えて差分が0件になっても**行は残り子だけ消える**＝答えているのは「今どこが違うか」であって「この行がまだ要るか」ではない。★kCustomEnabling で **Story モードのときだけ**有効(Pixel モード・Stop 中・Added の行では灰色)。⚠項目が1つしかないメニューなので、灰色＝**メニュー自体が出ない**(章行メニューと同じ挙動)
+DECLARE_PMID(kActionIDSpace, kKCMPanelWidgetActionID, kKCMUIPrefix + 1)	// show / hide the panel (Window menu)
+DECLARE_PMID(kActionIDSpace, kKCMPopupAboutThisActionID, kKCMUIPrefix + 2)	// "About this plug-in" on the panel flyout
+DECLARE_PMID(kActionIDSpace, kKCMPopupAboutScriptActionID, kKCMUIPrefix + 3)	// (retired, reserved) the old "About Scripting" flyout item. The slot stays reserved
+DECLARE_PMID(kActionIDSpace, kKCMPopupUsageActionID, kKCMUIPrefix + 4)	// "How to Use" on the panel flyout
+// +5 is free (it was kKCMPopupTestSplitActionID; the Split Test menu is gone)
+// +6 is free (it was kKCMPopupSplitTargetActionID; "Split Target on Start" is gone -- how it
+//   worked is kept in docs/ai-notes/kescm-split-target-mechanism.md)
+DECLARE_PMID(kActionIDSpace, kKCMPopupHideUnchangedActionID, kKCMUIPrefix + 7)	// "Hide Unchanged Spreads" check toggle on the panel flyout (ON = hide the spreads with no change)
+DECLARE_PMID(kActionIDSpace, kKCMPopupShowOldNumsActionID, kKCMUIPrefix + 8)	// "Show Original Page Numbers" check toggle on the panel flyout (the badge with the number a page had before hiding, while marks show or printing is on)
+DECLARE_PMID(kActionIDSpace, kKCMPopupSyncViewsActionID, kKCMUIPrefix + 9)	// "Sync Layout Views" check toggle on the panel flyout (keeps the other documents' views at the same position and zoom)
+DECLARE_PMID(kActionIDSpace, kKCMPopupShowSrcMarksActionID, kKCMUIPrefix + 10)	// "Always Show Marks on Source" check toggle on the panel flyout (marks stay visible on the Source document, in OPP too, and print). ★Default OFF, and **Start does not touch it** -- the setting is saved with the panel settings and restored at startup, so a Start that overwrote it would erase the saved choice
+DECLARE_PMID(kActionIDSpace, kKCMPageMapToggleActionID, kKCMUIPrefix + 11)	// "Register as Added/Removed Pages" toggle on the Pages panel page context menu (RtMenuPagesPanel): registers the selected pages as having no counterpart, or clears that. The check mark and the dynamic label come from kCustomEnabling. KCMPageMap.cpp
+DECLARE_PMID(kActionIDSpace, kKCMPopupIgnorePageNumActionID, kKCMUIPrefix + 12)	// "Ignore Page Number Marker" check toggle on the panel flyout (ON = frames holding an automatic page number marker are left out of the comparison. ★Default OFF = the initial value of sIgnorePageNumberMarker. KCMPageNumberMarker.cpp)
+DECLARE_PMID(kActionIDSpace, kKCMPopupStartStopActionID, kKCMUIPrefix + 13)	// "Start / Stop" at the head of the panel flyout (begins and clears the comparison; it used to be a toggle button). The name changes between Start and Stop with the armed state, through kCustomEnabling + SetNthActionName (KCMToggleStartStop in KCMPanelObserver.cpp)
+DECLARE_PMID(kActionIDSpace, kKCMPopupPrintMarksActionID, kKCMUIPrefix + 14)	// "Print comparison marks" check toggle on the panel flyout (it used to be a checkbox on the panel). ON = the marks print, and show on screen at all times. KCMTogglePrintMarks in KCMPanelObserver.cpp
+DECLARE_PMID(kActionIDSpace, kKCMPopupOpacity25ActionID, kKCMUIPrefix + 15)	// "Marks opacity 25%" on the panel flyout (it used to be an opacity radio on the panel). Mutually exclusive with 75%, the selected one carrying the check. KCMSetMarkOpacity25 in KCMPanelObserver.cpp
+DECLARE_PMID(kActionIDSpace, kKCMPopupOpacity75ActionID, kKCMUIPrefix + 16)	// "Marks opacity 75%" on the panel flyout (mutually exclusive with 25%)
+DECLARE_PMID(kActionIDSpace, kKCMPopupSep1ActionID, kKCMUIPrefix + 17)	// flyout: the separator below Start (a MenuDef path ending in ":-". No ActionDef and no DoAction are needed - only a unique ID)
+DECLARE_PMID(kActionIDSpace, kKCMPopupSep2ActionID, kKCMUIPrefix + 18)	// flyout: the separator above How to Use
+// kKCMPopupHoldToHideMarksActionID (kKCMUIPrefix + 19) was the "Hold to Hide Marks" toggle, and
+//   it was removed (user's decision).
+//   ★The reason ＝ **"keep the marks visible" had become an exact duplicate of "Always Show
+//     Marks on Target" (+45)** -- the drawing side had turned into `sAlwaysShowMarks ||
+//     sTgtMarksOn`, which is the proof.
+//   What was peculiar to it, "hide them while the button is held", was folded into **the
+//   standard behaviour whenever either "Show Marks on ..." toggle is ON** ＝ one rule: while
+//   the button is held, the state is inverted.
+//   ⇒ No feature was lost. ⚠**Slot +19 is not reused.**
+// kKCMPopupPanelShortcutActionID (kKCMUIPrefix + 20) went with the middle-button gestures. The
+// slot was reused:
+DECLARE_PMID(kActionIDSpace, kKCMPopupAlignViewsActionID, kKCMUIPrefix + 20)	// "Align Other Views to Active" on the panel flyout (a plain command). It sets the other documents' layout views to the active (frontmost) view's position and zoom, once. While Started, the page Add/Remove correction is applied. Shortcut-assignable (kKCMPanelMenuActionArea + VisibleInKBSC). The work is KCMAlignOtherViewsToActiveNow in ui/KCMViewSync.cpp
+DECLARE_PMID(kActionIDSpace, kKCMPopupScrollMapActionID, kKCMUIPrefix + 21)	// "Show Scrollbar Map" check toggle on the panel flyout (ON = a strip beside each document window's vertical scrollbar maps where the changes are. Default ON; the state is sScrollMapOn in KCMScrollMap.cpp)
+DECLARE_PMID(kActionIDSpace, kKCMPopupSavePanelStateActionID, kKCMUIPrefix + 22)	// "Save Panel Settings" on the panel flyout (a plain command, not a check). It writes the current settings toggles to a private JSON file and shows the saved path. They are read back at startup (KCMUIStartup::Startup). KCMPanelState.cpp
+DECLARE_PMID(kActionIDSpace, kKCMPopupSep3ActionID, kKCMUIPrefix + 23)	// flyout: the separator below Refresh Overset (a MenuDef path ending in ":-"; no ActionDef needed). Its position is kKCMSep3MenuItemPosition below
+DECLARE_PMID(kActionIDSpace, kKCMPageCheckToggleActionID, kKCMUIPrefix + 24)	// "Check" toggle on the Pages panel page context menu (RtMenuPagesPanel): puts a check mark on the selected pages, or takes it off. Only while Started; cleared on Stop. The check mark and the enabling come from kCustomEnabling. ★**Which pages can be checked depends on the mode**: in Pixel only pages that carry a mark, in Story any page. The answer lives in one place, the model's KCMCollectCheckablePageUIDs. KCMPageCheck.cpp, and the check itself is drawn by the isThumb branch of KCMDrawEventHandler
+DECLARE_PMID(kActionIDSpace, kKCMPopupSaveChecksActionID, kKCMUIPrefix + 25)	// "Save Check & Register" on the panel flyout (a plain command). It merges the current checks and Added/Removed registrations of Target and Source into a private JSON file (KCM\KCMPageChecks.json, v2) and shows the saved path. KCMPageCheck.cpp
+DECLARE_PMID(kActionIDSpace, kKCMPopupLoadChecksActionID, kKCMUIPrefix + 26)	// "Load Check & Register" on the panel flyout (a plain command). Enabled only while Started: it applies the registrations from that file to both documents, recompares, then restores the checks (still only where a mark is). KCMPageCheck.cpp
+// kKCMPopupPagesPanelShortcutActionID (kKCMUIPrefix + 27) went with the middle-button gestures,
+//   together with its "Invoke Pages Panel Shortcut" toggle. The slot stays reserved.
+DECLARE_PMID(kActionIDSpace, kKCMPageMapSepActionID, kKCMUIPrefix + 28)	// Pages panel page context menu (RtMenuPagesPanel): the separator above the KCM items (Register / Check). A MenuDef path ending in ":-" - no ActionDef and no DoAction, only a unique ID. It sets the KCM items apart from InDesign's own
+DECLARE_PMID(kActionIDSpace, kKCMToolActionID, kKCMUIPrefix + 29)	// the ActionID for the toolbox tool-select shortcut (referenced by the ToolDef; no ActionDef needed - the toolbox framework provides the action)
+DECLARE_PMID(kActionIDSpace, kKCMPageRefreshCompareActionID, kKCMUIPrefix + 30)	// "Refresh Page Comparison" on the Pages panel page context menu (RtMenuPagesPanel): recompares the selected pages and updates their marks and thumbnails. Enabled only while Started, ★**in the Pixel mode**, and with the Target document in front - otherwise the item disappears (kCustomEnabling). ★It is absent in the Story mode because that mode rasterises no page, so pressing it would change nothing on screen; a Story refresh is on the row context menu instead (kKCMStoryRowRefreshActionID). KCMRefreshComparisonForSelectedPages in KCMPeek.cpp
+DECLARE_PMID(kActionIDSpace, kKCMPopupFindOversetActionID, kKCMUIPrefix + 31)	// "Find Overset" check toggle on the panel flyout (ON = scan the active document and put a large cross on every page with overset text. Independent of the comparison. kCustomEnabling. KCMActionComponent.cpp / KCMOversetScan.cpp)
+DECLARE_PMID(kActionIDSpace, kKCMPopupRefreshOversetActionID, kKCMUIPrefix + 32)	// "Refresh Overset" on the panel flyout (a plain command). Enabled only while Find Overset is ON (greyed otherwise) = rescan the active document and redo the crosses. kCustomEnabling
+DECLARE_PMID(kActionIDSpace, kKCMPopupOversetSepActionID, kKCMUIPrefix + 33)	// flyout: the separator above the Find Overset group (a MenuDef path ending in ":-"; no ActionDef and no DoAction, only a unique ID)
+DECLARE_PMID(kActionIDSpace, kKCMPopupExportChangedPagesActionID, kKCMUIPrefix + 34)	// "Export Changed Pages..." on the panel flyout (a plain command). Enabled only during a comparison (sDB != nil) = write the list of changed pages as TSV (new / old / kind). KCMChangedPagesTSV.cpp
+// (+35 = kKCMPopupHudActionID, "Show HUD", went out with the feature itself.
+//  ★**That number is not reused** ＝ a shortcut assignment is stored in .indk by the NUMERIC
+//  ActionID, so handing the number to another feature makes an existing assignment fire that
+//  other feature.)
+DECLARE_PMID(kActionIDSpace, kKCMPopupTranslucentPanelActionID, kKCMUIPrefix + 36)	// "Translucent Panel" check toggle on the panel flyout (ON = this panel is translucent while floating. ★Windows only. ★While docked it can be ticked but does nothing - the flag is set and takes effect once the panel floats again. Default OFF. KCMPanelAlpha.cpp)
+DECLARE_PMID(kActionIDSpace, kKCMPopupTranslucentPagesActionID, kKCMUIPrefix + 37)	// "Translucent Pages Panel" check toggle on the panel flyout (ON = **InDesign's own Pages panel** is translucent while floating. The same machinery as +36 with a different target, found by WidgetID (kPagesPanelWidgetID). ★Windows only, ★no effect while docked. Default OFF. KCMPanelAlpha.cpp)
+// ★kKCMUIPrefix + 38 is where a "Translucent Toolbox" toggle stood; it was added and withdrawn
+//   the same day on the user's call.
+//   **The number is not reused** ＝ shortcut settings (.indk) store an action by its numeric
+//   ActionID, so handing an assigned number to another feature makes that shortcut fire
+//   something unrelated. Exactly as with +35 above.
+DECLARE_PMID(kActionIDSpace, kKCMPopupCompareBooksActionID, kKCMUIPrefix + 39)	// "Compare Books" on the panel flyout (a plain command). ★The book whose tab is in front in the Book panel is the Target, the first other open book is the Source, and every chapter (document) is judged changed or unchanged. ★It is completely independent of the document comparison (Start): it does not arm, creates no mark entries and does not touch sDB / sSrcDB (⚠it does raise tl_Rasterizing while rasterising, the same discipline as MakeEntry; the reason is in the matching paragraph of KCMBookCompare.h). kCustomEnabling (only when two books are there and the front tab can be identified). KCMBookCompare.cpp, with the pair resolved in KCMBookPair.cpp
+// The context menu of a chapter row in the book comparison dialog. ★It is not part of the panel
+// flyout but **a popup over the row**, so it lives in the MenuDef subtree kKCMBookRowMenuName.
+// The action itself cannot tell **which row** was pressed (only an ActionID reaches it), so the
+// row is noted by KCMBookSetMenuRow at the moment of the right click ＝ the same construction as
+// KBS's result rows.
+DECLARE_PMID(kActionIDSpace, kKCMBookRowStartActionID, kKCMUIPrefix + 40)	// chapter row context menu, "Start Change Marker" = open that chapter's Target and Source documents in windows and start the comparison, stopping a running one first (KCMBookOpen.cpp). ★Greyed on a row whose two files are not both there (ChapterAdded / ChapterDeleted / a missing file) through kCustomEnabling -> KCMBookRowCanStart
+DECLARE_PMID(kActionIDSpace, kKCMPopupTranslucentBookDialogActionID, kKCMUIPrefix + 41)	// ★"Translucent Dialog" check toggle on the panel flyout (user's request: "let the dialog be translucent too"). **The same implementation** as +36/+37 (KCMPanelAlpha.cpp) with a different target. ⚠The target is not a panel, so **only the source of the window differs**: the dialog hands its own window over through KCMSetBookDialogWindow (the panel manager can be asked by WidgetID; a dialog is not in there). ★Unlike the panel toggles there is no docking, so it has no "ticked but ineffective" state. Default OFF
+DECLARE_PMID(kActionIDSpace, kKCMPopupModePixelActionID, kKCMUIPrefix + 42)	// ★"Compare mode > Pixel Changes" on the flyout. The default: rasterise the pages and compare the pixels, which is what this plug-in originally did. Mutually exclusive with Story Changes, the selected one carrying the check (kCustomEnabling + kSelectedAction, the shape of Marks opacity 25%/75%). KCMActionComponent.cpp
+DECLARE_PMID(kActionIDSpace, kKCMPopupModeStoryActionID, kKCMUIPrefix + 43)	// ★"Compare mode > Story Changes" on the flyout. Compare the text of the stories, paragraph then character, and list them in Story Edits as a tree (parent = story, children = the changes). ★This mode draws no comparison rings, and **only Hide Unchanged Spreads is greyed**. ⚠What is greyed is not "pressing it does nothing" but "pressing it breaks something": the scroll map, Export Changed Pages and Prev/Next all keep working here, because what they rest on (the page correspondence, the registered pages, the overflow "/") is built in this mode too. Hide Unchanged is the exception - with sEntries empty it would hide every spread except those with a registration or an overflow
+DECLARE_PMID(kActionIDSpace, kKCMStoryRowRefreshActionID, kKCMUIPrefix + 44)	// ★"Refresh Story Comparison" on a Story Edits row context menu (user's request: "update the comparison of just that story"). It re-runs the text diff for that story alone and replaces its children with the current state (IKCMStoryEditsFacade::RefreshRow -> KCMStoryDiffRun::RunOne). ★Once the differences are gone **the row stays and only the children go**: what it answers is "what differs now", not "does this row still belong here". ★kCustomEnabling makes it live **only in the Story mode** (greyed in Pixel, while stopped, and on an Added row). ⚠It is the only item in its menu, so greyed means **the menu does not appear at all** (the same as the chapter row menu)
 
-DECLARE_PMID(kActionIDSpace, kKCMPopupShowTgtMarksActionID, kKCMUIPrefix + 45)	// ★パネルのフライアウトの「Always Show Marks on Target」チェック式トグル(2026-08-22 ユーザー要望「ツールでボタンを押さなくても常にマークが出る様に、それをピクセルの方もストーリーの方にも」)。Source 版(+10)と対で、ON の間は Target 文書のマークを画面に常時表示する。★Pixel では比較リング(sTgtMarksOn→alwaysScreen)、Story では変更箇所に敷く色地(ui/KCMStoryPressMarks.cpp → model の KCMStoryMarkBuild)＝同じトグルが両モードで意味を持つ。⚠画面のみ＝印刷/PDF は「Print comparison marks」が単独で決める(Source 版が印刷にも出るのとは非対称・意図的)。★既定 OFF で Start は触らない(Source 版と同じ＝設定はパネル設定に保存され、起動時に復元される)
-// (+15..+23 are all declared above - stale placeholders for them removed 2026-08-05 audit.
-//  ★**Next free: +46**。⚠2026-08-22 に +45 を使ったのに「Next free: +45」のまま残っていたのを直した
-//  (不具合再検査 B2)＝**採番したら同じコミットでこの行を進めること**。+19 は欠番で再利用しない。)
-DECLARE_PMID(kActionIDSpace, kKCMPopupColorRedActionID,  kKCMUIPrefix + 46)	// ★パネルのフライアウトの「Mark colour > Red」(2026-08-24 ユーザー要望「メニューで赤と青を選べるように」)。Cyan と相互排他=選択中の方に✓(kCustomEnabling+kSelectedAction。Marks opacity 25%/75% と同じ形)。★既定。実体 KCMActionComponent.cpp → IKCMCompareFacade::SetMarkColor
-DECLARE_PMID(kActionIDSpace, kKCMPopupColorCyanActionID, kKCMUIPrefix + 47)	// ★フライアウトの「Mark colour > Cyan」(同上)。⚠★★これは**背景による自動切り替えの置き換え**＝それまでリングは「下地が赤っぽい画素の上だけシアン」に自動で変わっていた(kKCMRedBgDom)。廃止の理由はユーザー判断(「ユーザーが選べばいいので」)＋**Story モードの色地は下地の画素を読めない**ので同じ自動判定ができず、2モードで色の決まり方が食い違うこと。★色は Pixel の枠と Story の色地の両方に効く(どちらも KCMDrawEventHandler::SelectedMarkColor を通る)
+DECLARE_PMID(kActionIDSpace, kKCMPopupShowTgtMarksActionID, kKCMUIPrefix + 45)	// ★"Always Show Marks on Target" check toggle on the panel flyout (user's request: "have the marks show without pressing the tool button, in the pixel mode and the story mode both"). It pairs with the Source version (+10): while ON, the Target document's marks stay on screen. ★In Pixel that is the comparison ring (sTgtMarksOn -> alwaysScreen), in Story the coloured ground under the changed characters (ui/KCMStoryPressMarks.cpp -> the model's KCMStoryMarkBuild) ＝ one toggle with a meaning in both modes. ⚠Screen only: print and PDF are decided by "Print comparison marks" alone (deliberately asymmetric with the Source version, which does print). ★Default OFF, and Start does not touch it (as with the Source version, the setting is saved and restored at startup)
+// ★★**Taking a new ActionID: use the next number after the highest one declared above, and
+//   check it against this list of slots that must NOT be reused.**
+//     +19  Hold to Hide Marks  ) removed features whose shortcut assignments may still exist
+//     +35  Show HUD            ) in a user's .indk, which stores an action by its NUMBER
+//     +38  Translucent Toolbox )
+//     +27  Invoke Pages Panel Shortcut (reserved)
+//   ⚠**A "next free: +N" line used to stand here and rotted twice**, the second time while
+//     itself carrying the instruction to keep it up to date. A list that is appended to is
+//     safe; a number that has to be re-counted is not.)
+DECLARE_PMID(kActionIDSpace, kKCMPopupColorRedActionID,  kKCMUIPrefix + 46)	// ★"Mark colour > Red" on the panel flyout (user's request: "let the menu choose red or blue"). Mutually exclusive with Cyan, the selected one carrying the check (kCustomEnabling + kSelectedAction, the shape of Marks opacity 25%/75%). ★The default. KCMActionComponent.cpp -> IKCMCompareFacade::SetMarkColor
+DECLARE_PMID(kActionIDSpace, kKCMPopupColorCyanActionID, kKCMUIPrefix + 47)	// ★"Mark colour > Cyan" on the flyout. ⚠★★This **replaces an automatic switch by background**: the ring used to turn cyan by itself wherever the pixels underneath were reddish (kKCMRedBgDom). It went for two reasons -- the user's call ("the user can just choose"), and **the Story mode cannot read the pixels underneath**, so the same automatic test was impossible there and the colour would have been decided differently in the two modes. ★The choice applies to both the Pixel ring and the Story ground (both pass through KCMDrawEventHandler::SelectedMarkColor)
 
 //DECLARE_PMID(kActionIDSpace, kKCMActionID, kKCMUIPrefix + 41)
-// kKCMUIPrefix + 24/25/26/28 は使用中(Check / Save Check & Register / Load Check & Register / RtMenuPagesPanel の区切り線)。+27 は廃止・予約(上記)
+
 
 
 // WidgetIDs:
 DECLARE_PMID(kWidgetIDSpace, kKCMPanelWidgetID, kKCMUIPrefix + 0)
 DECLARE_PMID(kWidgetIDSpace, kKCMTargetTextWidgetID, kKCMUIPrefix + 1)
 DECLARE_PMID(kWidgetIDSpace, kKCMSourceTextWidgetID, kKCMUIPrefix + 26)
-// kWidgetIDSpace +27 は現在空き(旧 kKCMStartButtonWidgetID; 開始/解除を kKCMToggleButtonWidgetID に統合)
-// kWidgetIDSpace +28 は現在空き(旧 kKCMClearButtonWidgetID; 同上)
-// kWidgetIDSpace +29 は現在未使用(旧 kKCMPrintCheckWidgetID; 印刷ON/OFF チェックボックスは 2026-07-10 に
-//   フライアウト「Print comparison marks」メニュー項目=kKCMPopupPrintMarksActionID へ移行しパネルから撤去)
-// kWidgetIDSpace +30〜+32 は現在未使用(旧 kKCMOpacityClusterWidgetID / kKCMOpacity25RadioWidgetID /
-//   kKCMOpacity75RadioWidgetID; 不透明度 25%/75% ラジオは 2026-07-10 にフライアウト
-//   kKCMPopupOpacity25ActionID / kKCMPopupOpacity75ActionID へ移行しパネルから撤去)
-// kWidgetIDSpace +33 は現在空き(旧 kKCMHintTextWidgetID; 説明文はパネルから撤去しフライアウト「使い方」へ移動)
+// +27 and +28 are free (they were kKCMStartButtonWidgetID and kKCMClearButtonWidgetID; start
+//   and clear were merged into one toggle button, which has since gone as well)
+// +29 is free (it was kKCMPrintCheckWidgetID; the print on/off checkbox became the flyout item
+//   kKCMPopupPrintMarksActionID and left the panel)
+// +30..+32 are free (they were kKCMOpacityClusterWidgetID / kKCMOpacity25RadioWidgetID /
+//   kKCMOpacity75RadioWidgetID; the 25%/75% radios became the flyout items
+//   kKCMPopupOpacity25ActionID / kKCMPopupOpacity75ActionID and left the panel)
+// +33 is free (it was kKCMHintTextWidgetID; the description left the panel for the flyout item
+//   "How to Use")
 DECLARE_PMID(kWidgetIDSpace, kKCMIconOnWidgetID, kKCMUIPrefix + 34)
 DECLARE_PMID(kWidgetIDSpace, kKCMIconOffWidgetID, kKCMUIPrefix + 35)
 DECLARE_PMID(kWidgetIDSpace, kKCMStatusTextWidgetID, kKCMUIPrefix + 36)
-// kWidgetIDSpace +37 は 2026-07-15 に kKCMNavPosTextWidgetID として再利用(旧 kKCMToggleButtonWidgetID;
-//   開始/解除ボタンは 2026-07-10 にフライアウト「Start / Stop」項目=kKCMPopupStartStopActionID へ移行済み)
-DECLARE_PMID(kWidgetIDSpace, kKCMNavPosTextWidgetID, kKCMUIPrefix + 37)	// Prev/Next の間に出す現在位置「3/12」(中央揃え StaticText。KCMChangeNav.cpp が KCMSetNavPosition で更新)
-DECLARE_PMID(kWidgetIDSpace, kKCMPrevChangeButtonWidgetID, kKCMUIPrefix + 38)	// 「◀ Prev」= 前の見るべきページへスクロール(KCMChangeNav.cpp)
-DECLARE_PMID(kWidgetIDSpace, kKCMNextChangeButtonWidgetID, kKCMUIPrefix + 39)	// 「Next ▶」= 次の見るべきページへスクロール(KCMChangeNav.cpp)
-DECLARE_PMID(kWidgetIDSpace, kKCMScrollMapWidgetID, kKCMUIPrefix + 40)	// スクロールバー地図strip(文書窓の縦スクロールバー左隣に実行時注入; KCMScrollMap.cpp)
-DECLARE_PMID(kWidgetIDSpace, kKCMToolWidgetID, kKCMUIPrefix + 41)	// ツールボックスのツールボタンのウィジェットID(KCMTool::InitWidget)
-DECLARE_PMID(kWidgetIDSpace, kKCMToolButtonWidgetID, kKCMUIPrefix + 42)	// ★パネル内のツール切替ボタン(2026-08-07 追加。Prev の左・32x22)。押すと kKCMToolBoss をアクティブツールにする(KCMActivateOwnTool)。上の +41 とは別物＝あちらはツールボックス側のツール枠
-// ★「Story Edits」セクション(2026-08-09 追加)。パネルを SplitterPanelWidget で上下に割り、下ペインに
-//   「テキストが編集されたストーリー」の一覧を出す(段階3)。手本は製品 linksui の「リンク情報」セクション。
-DECLARE_PMID(kWidgetIDSpace, kKCMSplitterWidgetID, kKCMUIPrefix + 43)			// パネルを上下に割る SplitterPanelWidget(Widgets.fh:462 / kSplitterPanelWidgetBoss)
-DECLARE_PMID(kWidgetIDSpace, kKCMTopPaneWidgetID, kKCMUIPrefix + 44)			// 上ペイン=従来のパネル内容一式を丸ごと収めた GenericPanelWidget。★splitter の「伸縮させない方」に指定する
-DECLARE_PMID(kWidgetIDSpace, kKCMStorySectionWidgetID, kKCMUIPrefix + 45)		// 下ペイン=Story Edits 本体(初期は非表示。中身＝列見出しの帯＋罫線＋一覧ツリー)
-DECLARE_PMID(kWidgetIDSpace, kKCMStorySectionToggleWidgetID, kKCMUIPrefix + 46)	// 開閉ボタン(三角)。★上ペインの中に置く=下ペインに置くと閉じたときボタンごと消えて開けなくなる
-DECLARE_PMID(kWidgetIDSpace, kKCMStoryTreeWidgetID, kKCMUIPrefix + 47)		// Story Edits の一覧ツリー本体(下ペインいっぱい)
-DECLARE_PMID(kWidgetIDSpace, kKCMStoryRowTextWidgetID, kKCMUIPrefix + 48)	// 行の左=本文の先頭テキスト
-DECLARE_PMID(kWidgetIDSpace, kKCMStoryRowKindWidgetID, kKCMUIPrefix + 49)	// 行の右=変わった種類(Text / Attr / Other / Added)
-DECLARE_PMID(kWidgetIDSpace, kKCMStorySectionLabelWidgetID, kKCMUIPrefix + 50)	// 上ペインの三角の隣=「Story Edits (3)」。件数は C++ が実行時に付ける
-DECLARE_PMID(kWidgetIDSpace, kKCMStoryRowWidgetID, kKCMUIPrefix + 51)		// 行テンプレート自身。★GetWidgetTypeForNode が返すのはこれ
-DECLARE_PMID(kWidgetIDSpace, kKCMStoryChangeRowWidgetID, kKCMUIPrefix + 63)	// ★**変更行**(第2階層)のテンプレート自身。2026-08-20 追加。★上の +51 と**別の値でなければならない**＝GetWidgetTypeForNode が返すこの ID で、フレームワークは「使い回せる widget か」を判定する(同じ値を返すと、スクロールで変更行にストーリー行の widget が渡る)。⚠**中のセル3つは +48/+49/+52 を使い回す**＝widget ID の一意性は「同じ親の子孫の中だけ」で足りる(ガイド vol2-12)。前例＝ブック行が同じ3つを共有している
-DECLARE_PMID(kWidgetIDSpace, kKCMStoryRubyRowWidgetID, kKCMUIPrefix + 64)	// ★**ルビの変更行**のテンプレート自身(2026-08-22)。+63 と**別の値でなければならない**理由は +63 と同じ＝GetWidgetTypeForNode が返すこの ID で、フレームワークは使い回せる widget かを判定する。⚠ここで別にしないと、背の高いルビ行の widget が普通の変更行に渡って**行が重なる**(高さは widget が持っているので、ID が同じなら木は取り替えない)
-DECLARE_PMID(kWidgetIDSpace, kKCMStoryRowUIDWidgetID, kKCMUIPrefix + 52)	// ★行の左端=ストーリーの UID(10進。2026-08-10 ユーザー要望「UID・テキスト・変更部分」)。行の同一性を目で追える識別子＝本文が同じ文言でも別のストーリーだと分かる
-// ★一覧の列見出し(2026-08-10 ユーザー要望「一番上の列に UID / Text / 変更のようなのを付けて欲しい」)。
-//   ツリーの中ではなく**下ペインの中でツリーの上**に置く固定の帯＝行をスクロールしても動かない。
-//   ★3つとも行のセルと**同じ x 座標・同じ binding**を与えてある(KCMUI.fr)。それが列が揃い続ける唯一の
-//   保証で、片方だけ動かすと可変幅パネルでずれる。
-// ★★★2026-08-19: **見出しの4つは ID を宣言しない**＝`.fr` で `kInvalidWidgetID`(0) を名乗らせた。
-//   **参照しない widget に ID を振らないのが公式の作法**で、SDK の `.fr` には WidgetId 欄に
-//   `kInvalidWidgetID` を書く例が 10 ファイル以上ある(basicdialog / customconditionaltextui /
-//   framelabelui ほか)。★**0 は一意性の対象外なので同じ親の中に何個あってもよい**
-//   ---- 実測の裏付け＝`framelabelui/FrmLblUI.fr` は**1ファイルに 10 個**あり、
-//   :301/:322/:336/:356 は**同じ親の中**に並んでいる。
-//   ⇒ 見出しの4つは C++ からも `.fr` の他の場所からも一度も参照していない(全数 Grep 済み)ので、
-//     番号を持つ理由が無かった。**空いた番号 +53〜+56 は再利用してよい**(widget ID は `.indk` に
-//     保存されないので、ActionID のような「欠番を再利用しない」制約は掛からない)。
-//   ⚠**参照したくなったらここに宣言を戻し、`.fr` の `kInvalidWidgetID` をその名前へ戻すこと。**
-//     ★対照＝`kKCMTopPaneWidgetID` は「resize しない widget」として `.fr` 自身が名指しするので
-//     0 にできない。**「C++ から参照が無い」だけでは足りず、`.fr` 内の参照も数えること。**
-//   ⚠**この4つが何だったかは残す**(`.fr` を読む人が「0 の widget は何か」を辿れるように):
-//     +53 見出しの左「UID」   (行の kKCMStoryRowUIDWidgetID と同じ 8〜48・kBindLeft)
-//     +54 見出しの中「Story」 (行の kKCMStoryRowTextWidgetID と同じ 52〜154・kBindLeft|kBindRight＝広げるとここだけ伸びる)
-//     +55 見出しの右「Change」(行の kKCMStoryRowKindWidgetID と同じ 154〜216・kBindRight・右寄せ)
-//     +56 見出しと一覧を分ける 1px の罫線＝**ErasablePrimaryResourcePanelWidget を高さ1pxで置き
-//         kInterfaceSeparatorColor で erase**(その塗りが線)。⚠stock の RuleWidget(Widgets.fh:887 /
-//         kRuleWidgetBoss)を先に試したが**パースもビルドも通って何も描かなかった**ので差し替えた(.fr 側に全文)
+// +37 was kKCMToggleButtonWidgetID (the start/clear button, which became the flyout item
+//   kKCMPopupStartStopActionID) and has been reused for:
+DECLARE_PMID(kWidgetIDSpace, kKCMNavPosTextWidgetID, kKCMUIPrefix + 37)	// the "3/12" position readout between Prev and Next (a centred static text; KCMChangeNav.cpp writes it through KCMSetNavPosition)
+DECLARE_PMID(kWidgetIDSpace, kKCMPrevChangeButtonWidgetID, kKCMUIPrefix + 38)	// "< Prev" = scroll to the previous page worth looking at (KCMChangeNav.cpp)
+DECLARE_PMID(kWidgetIDSpace, kKCMNextChangeButtonWidgetID, kKCMUIPrefix + 39)	// "Next >" = scroll to the next page worth looking at (KCMChangeNav.cpp)
+DECLARE_PMID(kWidgetIDSpace, kKCMScrollMapWidgetID, kKCMUIPrefix + 40)	// the scrollbar map strip, injected at run time beside a document window's vertical scrollbar (KCMScrollMap.cpp)
+DECLARE_PMID(kWidgetIDSpace, kKCMToolWidgetID, kKCMUIPrefix + 41)	// the WidgetID of the tool button in the toolbox (KCMTool::InitWidget)
+DECLARE_PMID(kWidgetIDSpace, kKCMToolButtonWidgetID, kKCMUIPrefix + 42)	// ★the tool switch button inside the panel (left of Prev, 32x22). Pressing it makes kKCMToolBoss the active tool (KCMActivateOwnTool). A different thing from +41 above, which is the toolbox slot
+// ★The "Story Edits" section. The panel is divided by a SplitterPanelWidget and the lower pane
+//   lists the stories whose text was edited. Modelled on the "Link Info" section of the
+//   product's linksui.
+DECLARE_PMID(kWidgetIDSpace, kKCMSplitterWidgetID, kKCMUIPrefix + 43)			// the SplitterPanelWidget that divides the panel (Widgets.fh:462 / kSplitterPanelWidgetBoss)
+DECLARE_PMID(kWidgetIDSpace, kKCMTopPaneWidgetID, kKCMUIPrefix + 44)			// upper pane = a GenericPanelWidget holding everything the panel used to hold. ★It is the one named as "the widget not to resize"
+DECLARE_PMID(kWidgetIDSpace, kKCMStorySectionWidgetID, kKCMUIPrefix + 45)		// lower pane = the Story Edits section itself (hidden to start with; inside it are the heading band, a rule and the list)
+DECLARE_PMID(kWidgetIDSpace, kKCMStorySectionToggleWidgetID, kKCMUIPrefix + 46)	// the open/close triangle. ★It sits **in the upper pane**: in the lower one it would disappear with the section and there would be no way to open it again
+DECLARE_PMID(kWidgetIDSpace, kKCMStoryTreeWidgetID, kKCMUIPrefix + 47)		// the Story Edits list itself (filling the lower pane)
+DECLARE_PMID(kWidgetIDSpace, kKCMStoryRowTextWidgetID, kKCMUIPrefix + 48)	// row, left: the beginning of the text
+DECLARE_PMID(kWidgetIDSpace, kKCMStoryRowKindWidgetID, kKCMUIPrefix + 49)	// row, right: what kind of change it is (Text / Attr / Other / Added)
+DECLARE_PMID(kWidgetIDSpace, kKCMStorySectionLabelWidgetID, kKCMUIPrefix + 50)	// next to the triangle in the upper pane: "Story Edits (3)". The count is appended at run time
+DECLARE_PMID(kWidgetIDSpace, kKCMStoryRowWidgetID, kKCMUIPrefix + 51)		// the row template itself. ★This is what GetWidgetTypeForNode answers
+DECLARE_PMID(kWidgetIDSpace, kKCMStoryChangeRowWidgetID, kKCMUIPrefix + 63)	// ★the template of a **change row** (the second level). ★It **has to differ from +51 above**: the framework decides from the ID GetWidgetTypeForNode answers whether a widget can be recycled, and answering the same one hands a story row's widget to a change row while scrolling. ⚠**Its two cells reuse +48 and +49** -- widget IDs need be unique only among the descendants of one widget (guide vol2-12). The book rows share the same two
+DECLARE_PMID(kWidgetIDSpace, kKCMStoryRubyRowWidgetID, kKCMUIPrefix + 64)	// ★the template of a **ruby change row**. It has to differ from +63 for the same reason: the ID GetWidgetTypeForNode answers is what decides whether a widget can be recycled. ⚠Without a separate one, the taller ruby widget is handed to an ordinary change row and **the rows overlap** (the height belongs to the widget, so an unchanged ID means the tree does not replace it)
+DECLARE_PMID(kWidgetIDSpace, kKCMStoryRowUIDWidgetID, kKCMUIPrefix + 52)	// ★row, far left: the story's UID in decimal (user's request: "UID, text, and the changed part"). It is what lets a row be followed by eye: two stories with the same opening words are still told apart
+// ★The column headings of the list (user's request: "put something like UID / Text / change
+//   along the top"). They sit **inside the lower pane, above the tree**, not inside the tree
+//   itself, so they stay put while the rows scroll.
+//   ★All three are given **the same x coordinates and the same binding as the cells of a row**
+//     (KCMUI.fr). That is the only thing keeping the columns aligned; move one side alone and a
+//     resizable panel shows it.
+// ★★★**The four of them declare no ID** ＝ the `.fr` names `kInvalidWidgetID` (0) for each.
+//   **Not giving an ID to a widget nothing refers to is the official practice**: the SDK has
+//   over ten `.fr` files with `kInvalidWidgetID` in the WidgetId field (basicdialog,
+//   customconditionaltextui, framelabelui and others). ★**0 is exempt from uniqueness, so any
+//   number of them may sit under one parent** ---- measured: `framelabelui/FrmLblUI.fr` has ten
+//   in one file, four of them (:301/:322/:336/:356) **under the same parent**.
+//   ⇒ Nothing refers to these four, from C++ or from anywhere else in the `.fr` (grepped in
+//     full), so they had no reason to carry a number. **The freed +53..+56 may be reused**
+//     (widget IDs are not written into `.indk`, so the "never reuse a vacated slot" rule that
+//     binds ActionIDs does not apply).
+//   ⚠**If one of them ever has to be referred to, declare it here again and put the name back
+//     into the `.fr` in place of `kInvalidWidgetID`.**
+//     ★The contrast is `kKCMTopPaneWidgetID`: the `.fr` itself names it as "the widget not to
+//     resize", so it cannot be 0. **"No reference from C++" is not enough -- count the
+//     references inside the `.fr` as well.**
+//   ⚠**What the four were is kept here**, so that someone reading the `.fr` can find out what a
+//     widget with ID 0 is:
+//     +53  heading, left: "UID"    (the same 8..48 and kBindLeft as the row's
+//          kKCMStoryRowUIDWidgetID)
+//     +54  heading, middle: "Story" (the same 52..154 and kBindLeft|kBindRight as the row's
+//          kKCMStoryRowTextWidgetID ＝ this is the column that grows)
+//     +55  heading, right: "Change" (the same 154..216 and kBindRight, right-aligned, as the
+//          row's kKCMStoryRowKindWidgetID)
+//     +56  the 1px rule between the headings and the list ＝ **an
+//          ErasablePrimaryResourcePanelWidget one pixel high, erased with
+//          kInterfaceSeparatorColor** (the erase IS the line). ⚠The stock RuleWidget
+//          (Widgets.fh:887 / kRuleWidgetBoss) was tried first and **parsed, built and drew
+//          nothing** (the account is in the `.fr`)
 
-// ブック比較ダイアログ(2026-08-11)。★OK/Cancel は stock の WidgetID(kOKButtonWidgetID /
-// kCancelButton_WidgetID)を使うので、ここに要るのはダイアログ本体だけ。
+// The book comparison dialog. ★OK and Cancel use the stock WidgetIDs (kOKButtonWidgetID /
+// kCancelButton_WidgetID), so what has to be declared here is the dialog itself.
 DECLARE_PMID(kWidgetIDSpace, kKCMBookDialogWidgetID, kKCMUIPrefix + 57)
-DECLARE_PMID(kWidgetIDSpace, kKCMBookTargetTextWidgetID, kKCMUIPrefix + 58)	// 「Target: new.indb」(前面タブのブック)
-DECLARE_PMID(kWidgetIDSpace, kKCMBookSourceTextWidgetID, kKCMUIPrefix + 59)	// 「Source: old.indb」(それ以外で最初に開いているブック)
-DECLARE_PMID(kWidgetIDSpace, kKCMBookCompareButtonWidgetID, kKCMUIPrefix + 60)	// (退役 2026-08-12)旧「Compare」ボタン。★ボタンごと撤去した(確認アラート→OK で比較する流れへ変更)ので**この ID はどこからも参照されていない**が、対のラベルキー kKCMBookCompareKey・enUS テーブルの行・KCMUI.fr の跡地コメントとともに宣言だけ残してある＝復活させるとき対で戻せる。★番号は再利用しない。⚠2026-08-18(不具合再検査 B-U1)にこの但し書きを足した＝**ラベルキー側には最初から「(退役)」と書いてあったのに、こちらは「押す前に上の2行が目に入るのが要点」と現役のままだった**(宣言だけで未使用の ID は、この1本が全 ID 空間で唯一＝機械で数えて分かった)
-DECLARE_PMID(kWidgetIDSpace, kKCMBookStatusTextWidgetID, kKCMUIPrefix + 61)	// ステータス行(比較の要約。章数を必ず含む)
-DECLARE_PMID(kWidgetIDSpace, kKCMBookTreeWidgetID, kKCMUIPrefix + 62)		// 章一覧のツリー本体(ダイアログの中で一番大きい部品)
-// ★★**番号が +2 なのは書き間違いではない**(2026-08-13)。ダイアログのメッセージを2行にする(2行目＝行の
-//   右クリックの案内)ために widget を1つ足したが、**+63 から先は KESCL の prefix 領域**(0x205554)なので
-//   後ろへは伸ばせない。一方 **+2〜+25 は宣言ごと空いていた**(下のプレースホルダ群。+1 の次は +26)＝
-//   予約済み 256 枠の内側の未使用番号なので、**ID 空間の消費はゼロで衝突も無い**。
-//   ⇒ 逃げ道は「借用(同じ親の子孫でだけ一意)」だけではなく、**前方の穴**もある＝[[id-prefix-256-slot-budget]]
-// ★2026-08-19: ステータスの2行目(「Right-click a changed chapter to start Change Marker.」)も
-//   ID を宣言しない＝`.fr` で `kInvalidWidgetID`。**固定文で `.fr` が初期テキストとして持ち、
-//   C++ は一度も触らない**ので番号を持つ理由が無かった(理由と根拠は上の見出し4つと同じ)。
-//   ⇒ **`+2` は再び空き番号**。下の「+2 is IN USE」の行も同時に取り消してある。
-// ★★★下の3つは「Story Edits」の行と **WidgetID を共有する**(2026-08-12。新しい番号を1つも使わない)。
-//   根拠 = **widget ID がアプリ全体で一意である必要は無い**。公式ガイド vol2-12:71 が、
-//   グローバルに一意でなければならない文字列キーと**対比して**こう書いている:
+DECLARE_PMID(kWidgetIDSpace, kKCMBookTargetTextWidgetID, kKCMUIPrefix + 58)	// "Target: new.indb" (the book whose tab is in front)
+DECLARE_PMID(kWidgetIDSpace, kKCMBookSourceTextWidgetID, kKCMUIPrefix + 59)	// "Source: old.indb" (the first other open book)
+DECLARE_PMID(kWidgetIDSpace, kKCMBookCompareButtonWidgetID, kKCMUIPrefix + 60)	// (retired) the old "Compare" button. ★The button itself was removed -- the flow became "confirmation alert, then OK compares" -- so **nothing refers to this ID**, but it is kept declared together with its label key kKCMBookCompareKey, the enUS table row and the note in KCMUI.fr, so that the set can be restored together. ★The number is not reused. ⚠This is the only declared-but-unreferenced ID in any of the ID spaces (measured mechanically), and the label key had said "retired" from the start while this one still read as live
+DECLARE_PMID(kWidgetIDSpace, kKCMBookStatusTextWidgetID, kKCMUIPrefix + 61)	// the status line (a summary of the comparison; it always includes the number of chapters)
+DECLARE_PMID(kWidgetIDSpace, kKCMBookTreeWidgetID, kKCMUIPrefix + 62)		// the chapter list itself (the largest part of the dialog)
+// ★A second status line (the hint that a right click on a changed chapter starts Change Marker)
+//   **declares no ID** ＝ the `.fr` names `kInvalidWidgetID`. It is a fixed sentence that the
+//   `.fr` carries as its initial text and C++ never touches, so it had no reason to carry a
+//   number (the same reasoning as the four column headings above).
+// ★★★**The three below SHARE their WidgetIDs with the Story Edits rows** -- not one new number
+//   is spent.
+//   The grounds ＝ **a widget ID does not have to be unique across the application.** Guide
+//   vol2-12:71 says so, in contrast with string keys, which do:
 //     "widget identifiers need be unique only within the list of descendants of a given widget,
 //      so ... you can reuse a widget identifier (for example, across different dialog boxes or
 //      panels you own)"
-//   機構の裏づけ = IPanelControlData::FindWidget(WidgetID, searchLevels) は**自分の部分木を再帰探索
-//   するだけ**で、グローバルな「widget ID → widget」レジストリではない(IPanelControlData.h:89)。
-//   実例 = stock の kOKButtonWidgetID / kCancelButton_WidgetID を source/sdksamples の **39 ファイル**が
-//   共有している(上の +57 のブロックで既にそれを使っている)。
-//   ここでは「パネルの Story Edits 一覧」と「このダイアログの章一覧」が**別の部分木**に属するので衝突しない。
-//   ⇒ これで **+63〜+65 の KESCL 領域(0x205554/55/56)への食い込みが消えた**(下の採番メモ参照)。
-//   ⚠ 共有してよいのは**子 widget だけ**。パネル/ダイアログの**ルート**の WidgetID は
-//     IPanelMgr::GetPanelFromWidgetID がアプリ全体から引くので一意でなければならない。
-//   ⚠ 対応関係は役割まで一致させてある(行テンプレ↔行テンプレ / 左セル↔左セル / 右セル↔右セル)。
-//     ずらすと読む側が混乱するだけで、得は何も無い。
-DECLARE_PMID(kWidgetIDSpace, kKCMBookRowWidgetID, kKCMUIPrefix + 51)		// ＝kKCMStoryRowWidgetID と同値。行テンプレート自身。★GetWidgetTypeForNode が返すのはこれ
-DECLARE_PMID(kWidgetIDSpace, kKCMBookRowNameWidgetID, kKCMUIPrefix + 48)	// ＝kKCMStoryRowTextWidgetID と同値。行の左=章のファイル名(Failed のときだけ「 - 理由」が後ろに付く)
-DECLARE_PMID(kWidgetIDSpace, kKCMBookRowStateWidgetID, kKCMUIPrefix + 49)	// ＝kKCMStoryRowKindWidgetID と同値。行の右=判定(Changed / NoChange / ChapterAdded / ChapterDeleted / Failed)。固定幅・右寄せ
+//   The mechanism backs it up: IPanelControlData::FindWidget(WidgetID, searchLevels) **only
+//   walks its own subtree** and is not a global "widget ID -> widget" registry
+//   (IPanelControlData.h:89).
+//   In practice: the stock kOKButtonWidgetID / kCancelButton_WidgetID are shared by files all
+//   over source/sdksamples (the block above uses them already).
+//   Here, "the panel's Story Edits list" and "this dialog's chapter list" are in **different
+//   subtrees**, so they cannot collide.
+//   ⚠**Only child widgets may be shared.** The WidgetID of the **root** of a panel or a dialog
+//     has to be unique, because IPanelMgr::GetPanelFromWidgetID looks it up application-wide.
+//   ⚠The correspondence is kept role for role (row template to row template, left cell to left
+//     cell, right cell to right cell). Shifting it would only confuse the reader.
+DECLARE_PMID(kWidgetIDSpace, kKCMBookRowWidgetID, kKCMUIPrefix + 51)		// = the same value as kKCMStoryRowWidgetID. The row template itself. ★This is what GetWidgetTypeForNode answers
+DECLARE_PMID(kWidgetIDSpace, kKCMBookRowNameWidgetID, kKCMUIPrefix + 48)	// = the same value as kKCMStoryRowTextWidgetID. Row, left: the chapter file name (with " - reason" appended only when it failed)
+DECLARE_PMID(kWidgetIDSpace, kKCMBookRowStateWidgetID, kKCMUIPrefix + 49)	// = the same value as kKCMStoryRowKindWidgetID. Row, right: the verdict (Changed / NoChange / ChapterAdded / ChapterDeleted / Failed). Fixed width, right-aligned
 //====================================================================================
-// ★★採番の上限に注意 — この prefix で使えるのは「+0 〜 +127」(★ID 空間ごとに 128 枠)
+// ★★MIND THE CEILING -- this prefix owns "+0 .. +127" (★128 slots **per ID space**)
 //
-//  ⚠★★2026-08-15(第2段 Task 6B-2)に**書き換えた**。この節は 2026-08-13 まで
-//    「KCM(0x205515) と KESCL(0x205554) の間隔が 0x3F=63 しかないので **+63 以降は KESCL の領域**」
-//    と書いていたが、**その制約はもう存在しない** ---- 2026-08-13 に Adobe が正規の帯を発行し、
-//    prefix ごと引っ越したため。旧文面のまま運ぶと、無い制約に縛られて (a)〜(c) を無駄に検討することになる。
+//  The band Adobe issued is **0x1EA500 - 0x1EA5FF, 256 slots**, split in half:
+//      model (KCM) = 0x1EA500 / **UI (KCMUI) = 0x1EA580 ＝ this file**
+//  ∴ what can be taken from kKCMUIPrefix runs to **+127**.
+//  ⚠**+128 is 0x1EA600 ＝ the band KBS uses.** Reach it and two plug-ins claim the same ID; the
+//    object model construction at startup ("Completing object model") then **rejects it** ＝ not
+//    a quiet misbehaviour but a plug-in that does not load.
 //
-//  Adobe が発行した帯は **0x1EA500 - 0x1EA5FF の 256 枠**で、それを前半・後半に割ってある:
-//      model(KCM) = 0x1EA500 ／ **UI(KCMUI) = 0x1EA580 ＝このファイル**
-//  ∴ kKCMUIPrefix から採れるのは **+127 まで**。
-//  ⚠ **+128 は 0x1EA600 ＝ KBS が使っている帯**(2026-08-15 に KBS もこの正規帯へ移った)。そこへ
-//    届いた瞬間に「2つのプラグインが同じ ID を主張」する状態になり、起動時のオブジェクトモデル構築
-//    ("Completing object model" 段)で **弾かれる**(＝静かな誤動作ではなく、読み込まれない)。
+//  ⚠**Do not trust a "highest offset in use" written here** -- one stood in this block and was
+//    two behind by the time it was read. Count the declarations above; the widget space is the
+//    fullest of them and still has well over half its slots free.
 //
-//  ★2026-08-15 現在の最大オフセットは **WidgetID の +62**(kKCMBookTreeWidgetID)＝**半分以上空いている**。
-//    ただし下の (a) は今でも最初に検討する価値がある(ID 空間を1つも消費しないため)。
+//  When a widget is added, work through these in order:
 //
-//  widget を足すときは、この順に検討する:
+//    (a) ★★★**Do not take a new number at all** -- **a widget ID does not have to be unique
+//        across the application.** "Unique **among the descendants of one widget**" is enough,
+//        and **it may be reused in a different dialog or panel** (guide vol2-12:71 says so in
+//        contrast with string keys, which must be globally unique).
+//        Mechanism = IPanelControlData::FindWidget only walks its own subtree (:89).
+//        In practice = the stock kOKButtonWidgetID is shared by files all over source/sdksamples.
+//        ⇒ **It spends no ID space at all**, so try this first.
+//        ⚠But the WidgetID of a **root** has to be unique: IPanelMgr::GetPanelFromWidgetID looks
+//          it up application-wide (a panel body or a dialog body cannot be reused).
+//        ⚠A widget persists state into saved data, so **the first time a shared form goes in,
+//          check it in the running application.**
 //
-//    (a) ★★★**そもそも新しい番号を採らない** — **widget ID がアプリ全体で一意である必要は無い**。
-//        「**同じ親の子孫の中でだけ**一意」ならよく、**別のダイアログ/パネルでは再利用してよい**
-//        (公式ガイド vol2-12:71 が、グローバル一意が必須の文字列キーと**対比して**明言)。
-//        機構 = IPanelControlData::FindWidget は**自分の部分木を再帰探索するだけ**(:89)。
-//        実例 = stock の kOKButtonWidgetID を source/sdksamples の **39 ファイル**が共有。
-//        ⇒ **ID 空間を1つも消費しない**ので、まずこれを検討する。
-//        ⚠ ただし**ルート**の WidgetID は IPanelMgr::GetPanelFromWidgetID がアプリ全体から引くので
-//          一意でなければならない(パネル本体・ダイアログ本体は再利用不可)。
-//        ⚠ widget は状態を saved data に永続するので、**初めて再利用する形を入れたら実機で確認する**。
+//    (b) **The holes at +27..+33, and +53..+56** -- nothing uses them now.
+//        ⚠They were used and dropped, so look at the git history before reusing one (a widget ID
+//        can appear in the workspace, i.e. the panel layout, that a user has saved).
 //
-//    (b) **+27 〜 +33 の穴(7個)** — 現在どこからも使われていない。
-//        ⚠ 過去に使って消した番号なので、再利用の前に git 履歴を見ること
-//        (widget ID はワークスペース＝パネル配置の永続データに現れうる)
+//    (c) If that is still not enough, **obtain a second prefix** (no existing ID moves, and 256
+//        fresh slots arrive with compatibility to released versions intact). The proper way is
+//        to ask wwds@adobe.com to issue a prefix ID.
 //
-//    (c) それでも足りなくなったら **セカンダリ prefix を1本用意する**(既存 ID は1つも動かさない。
-//        公開済みバージョンとの互換を保ったまま 256 枠を新規に確保できる)。正攻法は
-//        wwds@adobe.com に prefix ID の発行を依頼すること。
-//
-//  調査の全記録 = docs/ai-notes/guide-gs-04-object-model-read-2026-08-12.md §1
-//                 docs/ai-notes/guide-vol2-12-ui-fundamentals-read-2026-08-12.md §0 ((a) の根拠)
+//  The full record = docs/ai-notes/guide-gs-04-object-model-read-2026-08-12.md §1
+//                    docs/ai-notes/guide-vol2-12-ui-fundamentals-read-2026-08-12.md §0 (for (a))
 //====================================================================================
 // (+2 was in use 2026-08-13..2026-08-19 for kKCMBookHintTextWidgetID; that widget now names
 //  kInvalidWidgetID in the .fr, so +2 is FREE again. See the note where it was declared.)
@@ -473,347 +526,397 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowStateWidgetID, kKCMUIPrefix + 49)	// ＝
 #define kKCMAboutMenuKey			kKCMStringPrefix "kKCMAboutMenuKey"
 #define kKCMAboutMenuPath		kSDKDefStandardAboutMenuPath kKCMCompanyKey
 
-// (旧 "Plug-ins" sub-menu 用の kKCMPluginsMenuKey/Path は未使用のため撤去。パネルのメニュー配置は
-//  下の kKCMPanelPluginsMenuPath が担う)
+// (kKCMPluginsMenuKey / Path, for the old "Plug-ins" sub-menu, were removed as unused. Where the
+//  panel appears in the menus is kKCMPanelPluginsMenuPath below.)
 
-// パネルを Plug-Ins メニューへ出すためのパスと位置。
-// Plug-Ins ▸ KohakuNekotarou ▸ Kohaku Change Marker（リーフはパネル名キー）。
+// The path and position that put the panel on the Plug-Ins menu:
+// Plug-Ins > KohakuNekotarou > Kohaku Change Marker (the leaf is the panel name key).
 #define kKCMPanelPluginsMenuPath		kSDKDefPlugInsStandardMenuPath kKCMCompanyKey kSDKDefDelimitMenuPath kKCMPanelTitleKey
-#define kKCMPanelPluginsMenuPosition	100.0	// 大きいほど下に並ぶ。
+#define kKCMPanelPluginsMenuPosition	100.0	// the larger, the further down
 
 // Menu item keys:
 // Other StringKeys:
 #define kKCMAboutBoxStringKey	kKCMStringPrefix "kKCMAboutBoxStringKey"
-#define kKCMRepoURL			"https://github.com/KohakuNekotarou/KohakuChangeMarker"// 配布元URL。「このプラグインについて」本文とパネルのイラストクリックの飛び先で共通
-// (kKCMAboutScriptMenuKey / kKCMScriptHelpStringKey は「About Scripting」撤去(2026-07-25)に伴い削除)
-#define kKCMUsageMenuKey		kKCMStringPrefix "kKCMUsageMenuKey"	// パネルのフライアウト「使い方」のメニュー名(本文は kKCMHintKey を再利用)
-#define kKCMHideUnchangedMenuKey	kKCMStringPrefix "kKCMHideUnchangedMenuKey"	// パネルのフライアウト「Hide Unchanged Spreads」トグルのメニュー名
-#define kKCMShowOldNumsMenuKey	kKCMStringPrefix "kKCMShowOldNumsMenuKey"	// パネルのフライアウト「Show Original Page Numbers」トグルのメニュー名
-#define kKCMSyncViewsMenuKey		kKCMStringPrefix "kKCMSyncViewsMenuKey"	// パネルのフライアウト「Sync Layout Views」トグルのメニュー名
-#define kKCMAlignViewsMenuKey		kKCMStringPrefix "kKCMAlignViewsMenuKey"	// パネルのフライアウト「Align Other Views to Active」(実行アクション)のメニュー名
-// ★★2026-08-25 に**表示名だけ改名**した2件(ユーザー要望「常に表示、という意味合いのすぐ判る英語に」)。
-//   旧: "Show Marks on Target" / "Show Marks on Source" → 新: "Always Show Marks on ..."。
-//   ⚠**変えたのは KCMUI_enUS.fr の文字列だけ**＝ActionID・文字列キー・保存キー("showTgtMarks"/
-//   "showSrcMarks")・メニュー位置は**どれも変えていない**ので、割り当て済みのショートカットも
-//   保存済みのパネル設定もそのまま生きる。⚠**"Hold" を名前に入れなかった理由**は KCMUI_enUS.fr の頭。
-#define kKCMShowSrcMarksMenuKey	kKCMStringPrefix "kKCMShowSrcMarksMenuKey"	// パネルのフライアウト「Always Show Marks on Source」トグルのメニュー名
-#define kKCMShowTgtMarksMenuKey	kKCMStringPrefix "kKCMShowTgtMarksMenuKey"	// パネルのフライアウト「Always Show Marks on Target」トグルのメニュー名
-#define kKCMPageMapToggleMenuKey	kKCMStringPrefix "kKCMPageMapToggleMenuKey"	// ページパネル右クリックのトグル「Register as Added/Removed Pages」の既定メニュー名(表示時は UpdateActionStates が Target=Added/Source=Removed に動的差し替え)
-#define kKCMPageCheckMenuKey		kKCMStringPrefix "kKCMPageCheckMenuKey"	// ページパネル右クリックのトグル「Check」のメニュー名
-#define kKCMPageRefreshCompareMenuKey	kKCMStringPrefix "kKCMPageRefreshCompareMenuKey"	// ページパネル右クリックの「Refresh Page Comparison」のメニュー名(選択ページの比較を再検出して更新)
-#define kKCMIgnorePageNumMenuKey	kKCMStringPrefix "kKCMIgnorePageNumMenuKey"	// パネルのフライアウト「Ignore Page Number Marker」トグルのメニュー名
-// (kKCMHoldToHideMarksMenuKey は 2026-08-22 のトグル撤去で不要になった＝ActionID +19 の注記を見よ)
-#define kKCMScrollMapMenuKey		kKCMStringPrefix "kKCMScrollMapMenuKey"	// パネルのフライアウト「Show Scrollbar Map」トグルのメニュー名
-#define kKCMSavePanelStateMenuKey	kKCMStringPrefix "kKCMSavePanelStateMenuKey"	// パネルのフライアウト「Save Panel Settings」項目のメニュー名
-#define kKCMSaveChecksMenuKey		kKCMStringPrefix "kKCMSaveChecksMenuKey"	// パネルのフライアウト「Save Check & Register」項目のメニュー名
-#define kKCMLoadChecksMenuKey		kKCMStringPrefix "kKCMLoadChecksMenuKey"	// パネルのフライアウト「Load Check & Register」項目のメニュー名
-#define kKCMFindOversetMenuKey	kKCMStringPrefix "kKCMFindOversetMenuKey"	// パネルのフライアウト「Find Overset」トグルのメニュー名
-#define kKCMRefreshOversetMenuKey	kKCMStringPrefix "kKCMRefreshOversetMenuKey"	// パネルのフライアウト「Refresh Overset」項目のメニュー名
-#define kKCMExportChangedPagesMenuKey	kKCMStringPrefix "kKCMExportChangedPagesMenuKey"	// パネルのフライアウト「Export Changed Pages...」項目のメニュー名
-#define kKCMCompareBooksMenuKey	kKCMStringPrefix "kKCMCompareBooksMenuKey"	// パネルのフライアウト「Compare Books」項目のメニュー名(ブック同士を章単位で比較)
-#define kKCMBookDialogTitleKey	kKCMStringPrefix "kKCMBookDialogTitleKey"	// ブック比較ダイアログのタイトル
-#define kKCMBookCompareKey		kKCMStringPrefix "kKCMBookCompareKey"		// (退役 2026-08-12)旧「Compare」ボタンのラベル。ボタンごと撤去したので参照は無いが、enUS テーブルの行とともに残してある＝復活させるとき対で戻せる
-#define kKCMBookReadyKey			kKCMStringPrefix "kKCMBookReadyKey"			// 比較前のステータス文。★2026-08-12 以降ここに来るのは「比較を1度もしていないのにダイアログが開いた」場合だけ(通常は結果の要約で上書きされる)
-#define kKCMBookHintKey			kKCMStringPrefix "kKCMBookHintKey"			// ★ステータスの2行目(2026-08-13 ユーザー指示)=行の右クリックで比較を始められることの案内。**固定文**なので .fr が初期テキストとして持ち、C++ は一度も書き換えない(要約と違い run ごとに変わらないため)
-// ★ブック比較の確認アラート(2026-08-12 ユーザー指示「Compare... をするとアラートを出し、OK が押されると比較する」)。
-//   ⚠★**2026-08-13 訂正**＝旧記述「ここは日本語 UI では日本語で出す＝KCMLoc の対象が4箇所へ増えた」は
-//     **下の確認キーについては失効**。ユーザー指示「英語で良いです」で確認アラートは全ロケール英語に戻り、
-//     KCMLoc の対象は3箇所になった。**日本語のままなのは次の kKCMBookNoPairKey だけ**。
-#define kKCMBookCompareConfirmKey	kKCMStringPrefix "kKCMBookCompareConfirmKey"	// 「これから比較する」確認アラートの1行目(この下に target: / source: のフルパスが続く)
-#define kKCMBookNoPairKey			kKCMStringPrefix "kKCMBookNoPairKey"			// 2ブックを解決できなかったときの警告アラート(通常はメニューが灰色なので到達しない)
-#define kKCMBookRowStartMenuKey	kKCMStringPrefix "kKCMBookRowStartMenuKey"	// 章行の右クリックメニューの「Start Change Marker」項目名
-// 章行の右クリックメニュー(2026-08-12)。この名前の MenuDef サブツリーを KCMBookRowEH::RButtonDn が
-// IMenuManager::HandlePopupMenu でカーソル位置に出す＝製品の Links / Layers パネルの行メニューと
-// 同じ機構で、KBS の結果行(kKBSResultRowMenuName)・KESCL のレポート行と同じ作り。
-// ★この根の名前は画面に出ないので、翻訳キーではなく素のリテラルでよい。
+#define kKCMRepoURL			"https://github.com/KohakuNekotarou/KohakuChangeMarker"// the distribution URL. ★Two users, and About is not one of them: the panel illustration opens it when clicked (KCMOpenAboutURL) and its tooltip shows it (KCMIconTip.cpp). About itself is one line of name and version
+// (kKCMAboutScriptMenuKey / kKCMScriptHelpStringKey went with the "About Scripting" item.)
+#define kKCMUsageMenuKey		kKCMStringPrefix "kKCMUsageMenuKey"	// the menu name of "How to Use" on the panel flyout (the body reuses kKCMHintKey)
+#define kKCMHideUnchangedMenuKey	kKCMStringPrefix "kKCMHideUnchangedMenuKey"	// the menu name of the "Hide Unchanged Spreads" toggle on the panel flyout
+#define kKCMShowOldNumsMenuKey	kKCMStringPrefix "kKCMShowOldNumsMenuKey"	// the menu name of the "Show Original Page Numbers" toggle on the panel flyout
+#define kKCMSyncViewsMenuKey		kKCMStringPrefix "kKCMSyncViewsMenuKey"	// the menu name of the "Sync Layout Views" toggle on the panel flyout
+#define kKCMAlignViewsMenuKey		kKCMStringPrefix "kKCMAlignViewsMenuKey"	// the menu name of "Align Other Views to Active" (a plain command) on the panel flyout
+// ★★**Two display names were changed and nothing else** (user's request: an English name that
+//   says "always visible" at a glance). "Show Marks on Target" / "Show Marks on Source" became
+//   "Always Show Marks on ...".
+//   ⚠**Only the strings in KCMUI_enUS.fr changed** -- the ActionIDs, the string keys, the saved
+//   keys ("showTgtMarks" / "showSrcMarks") and the menu positions were all left alone, so an
+//   assigned shortcut and a saved panel setting both keep working.
+//   ⚠**Why "Hold" is not in the name** is at the top of KCMUI_enUS.fr.
+#define kKCMShowSrcMarksMenuKey	kKCMStringPrefix "kKCMShowSrcMarksMenuKey"	// the menu name of the "Always Show Marks on Source" toggle on the panel flyout
+#define kKCMShowTgtMarksMenuKey	kKCMStringPrefix "kKCMShowTgtMarksMenuKey"	// the menu name of the "Always Show Marks on Target" toggle on the panel flyout
+#define kKCMPageMapToggleMenuKey	kKCMStringPrefix "kKCMPageMapToggleMenuKey"	// the default menu name of the "Register as Added/Removed Pages" toggle on the Pages panel context menu (while it is shown, UpdateActionStates swaps it for Added on the Target and Removed on the Source)
+#define kKCMPageCheckMenuKey		kKCMStringPrefix "kKCMPageCheckMenuKey"	// the menu name of the "Check" toggle on the Pages panel context menu
+#define kKCMPageRefreshCompareMenuKey	kKCMStringPrefix "kKCMPageRefreshCompareMenuKey"	// the menu name of "Refresh Page Comparison" on the Pages panel context menu
+#define kKCMIgnorePageNumMenuKey	kKCMStringPrefix "kKCMIgnorePageNumMenuKey"	// the menu name of the "Ignore Page Number Marker" toggle on the panel flyout
+// (kKCMHoldToHideMarksMenuKey went with that toggle - see the note at ActionID +19.)
+#define kKCMScrollMapMenuKey		kKCMStringPrefix "kKCMScrollMapMenuKey"	// the menu name of the "Show Scrollbar Map" toggle on the panel flyout
+#define kKCMSavePanelStateMenuKey	kKCMStringPrefix "kKCMSavePanelStateMenuKey"	// the menu name of "Save Panel Settings" on the panel flyout
+#define kKCMSaveChecksMenuKey		kKCMStringPrefix "kKCMSaveChecksMenuKey"	// the menu name of "Save Check & Register" on the panel flyout
+#define kKCMLoadChecksMenuKey		kKCMStringPrefix "kKCMLoadChecksMenuKey"	// the menu name of "Load Check & Register" on the panel flyout
+#define kKCMFindOversetMenuKey	kKCMStringPrefix "kKCMFindOversetMenuKey"	// the menu name of the "Find Overset" toggle on the panel flyout
+#define kKCMRefreshOversetMenuKey	kKCMStringPrefix "kKCMRefreshOversetMenuKey"	// the menu name of "Refresh Overset" on the panel flyout
+#define kKCMExportChangedPagesMenuKey	kKCMStringPrefix "kKCMExportChangedPagesMenuKey"	// the menu name of "Export Changed Pages..." on the panel flyout
+#define kKCMCompareBooksMenuKey	kKCMStringPrefix "kKCMCompareBooksMenuKey"	// the menu name of "Compare Books" on the panel flyout (compare two books chapter by chapter)
+#define kKCMBookDialogTitleKey	kKCMStringPrefix "kKCMBookDialogTitleKey"	// the title of the book comparison dialog
+#define kKCMBookCompareKey		kKCMStringPrefix "kKCMBookCompareKey"		// (retired) the label of the old "Compare" button. The button was removed, so nothing refers to it, but it is kept together with its enUS table row so that the set can be restored together
+#define kKCMBookReadyKey			kKCMStringPrefix "kKCMBookReadyKey"			// the status line before a comparison. ★What reaches it now is only "the dialog was opened without a comparison ever having been run" - otherwise the summary overwrites it
+#define kKCMBookHintKey			kKCMStringPrefix "kKCMBookHintKey"			// ★the second status line: the hint that a right click on a row starts the comparison. **It is a fixed sentence**, carried by the .fr as initial text and never written by C++ (unlike the summary, it does not change from run to run)
+// ★The confirmation alert of the book comparison (user's instruction: "put up an alert on
+//   Compare..., and compare when OK is pressed").
+//   ⚠**It is English in every locale** -- the user asked for that, so it is not among the
+//     strings KCMLoc.h switches at run time. **Of the pair below, only kKCMBookNoPairKey is
+//     Japanese** (ui/KCMLoc.h lists what this half holds).
+#define kKCMBookCompareConfirmKey	kKCMStringPrefix "kKCMBookCompareConfirmKey"	// the first line of the "these two will be compared" alert (the full paths of target: / source: follow it)
+#define kKCMBookNoPairKey			kKCMStringPrefix "kKCMBookNoPairKey"			// the warning when two books could not be resolved (normally unreachable, since the menu item is greyed)
+#define kKCMBookRowStartMenuKey	kKCMStringPrefix "kKCMBookRowStartMenuKey"	// the "Start Change Marker" item on a chapter row context menu
+// The chapter row context menu. KCMBookRowEH::RButtonDn puts the MenuDef subtree of this name up
+// at the cursor through IMenuManager::HandlePopupMenu -- the same mechanism as the row menus of
+// the product's Links and Layers panels, and the same construction as KBS's result rows
+// (kKBSResultRowMenuName) and KESCL's report rows.
+// ★The name of the root never reaches the screen, so a plain literal will do; it needs no
+// translation key.
 #define kKCMBookRowMenuName		"KCMRtMenuBookRow"
-#define kKCMStoryRowRefreshMenuKey	kKCMStringPrefix "kKCMStoryRowRefreshMenuKey"	// Story Edits の行の右クリックメニューの「Refresh Story Comparison」項目名
-// Story Edits の行の右クリックメニュー(2026-08-21)。上の章行メニューと同じ機構＝この名前の MenuDef
-// サブツリーを KCMStoryRowEH::RButtonDn が HandlePopupMenu でカーソル位置に出す。
-// ★根の名前は画面に出ないので、章行と同じく翻訳キーではなく素のリテラルでよい。
+#define kKCMStoryRowRefreshMenuKey	kKCMStringPrefix "kKCMStoryRowRefreshMenuKey"	// the "Refresh Story Comparison" item on a Story Edits row context menu
+// The Story Edits row context menu. The same mechanism as the chapter menu above:
+// KCMStoryRowEH::RButtonDn puts the MenuDef subtree of this name up at the cursor through
+// HandlePopupMenu.
+// ★Its root name never reaches the screen either, so a plain literal will do.
 #define kKCMStoryRowMenuName		"KCMRtMenuStoryRow"
-#define kKCMTranslucentPanelMenuKey	kKCMStringPrefix "kKCMTranslucentPanelMenuKey"	// パネルのフライアウト「Translucent Panel」トグルのメニュー名
-#define kKCMTranslucentPagesPanelMenuKey	kKCMStringPrefix "kKCMTranslucentPagesPanelMenuKey"	// パネルのフライアウト「Translucent Pages Panel」トグルのメニュー名(対象は本体のページパネル)
-#define kKCMTranslucentBookDialogMenuKey	kKCMStringPrefix "kKCMTranslucentBookDialogMenuKey"	// パネルのフライアウト「Translucent Dialog」トグルのメニュー名(対象はブック比較ダイアログ。2026-08-13 追加)
-// (kKCMTranslucentToolboxMenuKey は 2026-08-07 に機能ごと撤去。文字列キーは ActionID と違って
-//  外部に保存されないので、跡地を残す必要は無い＝行ごと削除してある。)
+#define kKCMTranslucentPanelMenuKey	kKCMStringPrefix "kKCMTranslucentPanelMenuKey"	// the menu name of the "Translucent Panel" toggle on the panel flyout
+#define kKCMTranslucentPagesPanelMenuKey	kKCMStringPrefix "kKCMTranslucentPagesPanelMenuKey"	// the menu name of the "Translucent Pages Panel" toggle on the panel flyout (its target is InDesign's own Pages panel)
+#define kKCMTranslucentBookDialogMenuKey	kKCMStringPrefix "kKCMTranslucentBookDialogMenuKey"	// the menu name of the "Translucent Dialog" toggle on the panel flyout (its target is the book comparison dialog)
+// (kKCMTranslucentToolboxMenuKey went with its feature. Unlike an ActionID a string key is not
+//  stored outside the plug-in, so there is nothing to reserve and the line was simply deleted.)
 
-// ショートカット割当可アクション用のアクションエリア(KESCL と同型。2026-07-24)。ActionDef の area 欄に
-// kKCMPanelMenuActionArea を渡し、StringTable でその値 kKCMPanelMenuActionAreaValue に解決させると、
-// Edit > キーボードショートカット の Product Area「Palette Menus」に「Kohaku Change Marker: <名前>」として並ぶ。
-// 先頭の "KBSCE " は KBSC エディタ用エリアキーの規約プレフィックス。既定ショートカットは同梱しない(ユーザーが割当)。
-// ※この表記は表示ラベルにすぎない。ショートカット自体は IShortcutManager が ActionID + コンテキスト文字列で
-//   保持する(IShortcutManager.h の AddShortcut/GetActionIDOfShortcut)ので、ここを改名しても既存の割当は外れない。
+// The action area for shortcut-assignable actions (the same shape as KESCL). Pass
+// kKCMPanelMenuActionArea in the area field of an ActionDef and let the StringTable resolve it
+// to kKCMPanelMenuActionAreaValue, and those actions appear under Product Area "Palette Menus"
+// in Edit > Keyboard Shortcuts as "Kohaku Change Marker: <name>".
+// The leading "KBSCE " is the prefix convention for a KBSC editor area key. No default shortcut
+// is shipped; the user assigns them.
+// ※This is a display label and nothing more. A shortcut itself is held by IShortcutManager
+//   against the ActionID plus a context string (IShortcutManager.h, AddShortcut /
+//   GetActionIDOfShortcut), so renaming this does not detach an existing assignment.
 #define kKCMPanelMenuActionArea		"KBSCE Palette Menus: Kohaku Change Marker: "
 #define kKCMPanelMenuActionAreaValue	"Palette Menus:Kohaku Change Marker"
 
-// パネル: 内部フライアウト(ポップアップ)メニュー名＋そのメニューパス。
+// Panel: the name of the internal flyout (popup) menu, and its menu path.
 #define kKCMInternalPopupMenuNameKey	kKCMStringPrefix "kKCMInternalPopupMenuNameKey"
 #define kKCMPopupMenuPath				kKCMInternalPopupMenuNameKey
 
-// フライアウトの「Marks opacity」サブメニュー(中に 25% / 75%)。名前は英語リテラル(KCM のメニュー名は
-// 全ロケール英語で統一)。子項目(25%/75%)はこの kKCMOpacitySubmenuPath を親メニューパスとして指す。
-// 親ノードは MenuDef で actionID 0・パス末尾に区切り(kSDKDefDelimitMenuPath)を付けて宣言する
-// (Adobe 実例 open/components/buttonui FormFieldUIMenu.fr / incopyexportui と同じ流儀)。
+// The "Marks opacity" submenu on the flyout (25% / 75% inside it). The name is an English
+// literal (KCM menu names are English in every locale); the children point at
+// kKCMOpacitySubmenuPath as their parent menu path.
+// The parent node is declared in the MenuDef with actionID 0 and a path ending in the delimiter
+// (kSDKDefDelimitMenuPath) -- the same practice as Adobe's own
+// open/components/buttonui FormFieldUIMenu.fr and incopyexportui.
 #define kKCMOpacitySubmenuName		"Marks opacity"
 #define kKCMOpacitySubmenuPath		kKCMPopupMenuPath kSDKDefDelimitMenuPath kKCMOpacitySubmenuName
 
-// 「Mark colour」サブメニュー(2026-08-24)。子項目(Red/Cyan)がこのパスを親として指す。
-// ★上の Marks opacity とまったく同じ作り＝2つの子が相互排他で、選択中の方に✓が付く。
+// The "Mark colour" submenu; its children (Red / Cyan) point at this path as their parent.
+// ★Built exactly like Marks opacity above: two mutually exclusive children, the selected one
+// carrying the check.
 #define kKCMColorSubmenuName			"Mark colour"
 #define kKCMColorSubmenuPath			kKCMPopupMenuPath kSDKDefDelimitMenuPath kKCMColorSubmenuName
 
-// フライアウトの「Compare mode」サブメニュー(中に Pixel Changes / Story Changes)。2026-08-20 追加。
-// ★上の「Marks opacity」と同じ形(親は actionID 0・子は相互排他で選択中に✓)。
-// ★★**サブメニューにした理由**＝フライアウトの項目はもう十数個あり、比較の設定と表示の設定が
-//   同じ高さに並ぶと、どれが「何を比べるか」でどれが「どう見せるか」なのか読み取れなくなる。
+// The "Compare mode" submenu on the flyout (Pixel Changes / Story Changes inside it).
+// ★Same shape as "Marks opacity" above (parent with actionID 0; mutually exclusive children,
+//   the selected one checked).
+// ★★**Why a submenu**: the flyout already holds more than a dozen items, and with the
+//   comparison settings and the display settings at the same level it stops being readable
+//   which of them says **what is compared** and which says **how it is shown**.
 #define kKCMCompareModeSubmenuName	"Compare mode"
 #define kKCMCompareModeSubmenuPath	kKCMPopupMenuPath kSDKDefDelimitMenuPath kKCMCompareModeSubmenuName
 
-// パネルの文字列キー(値は **KCMUI_enUS.fr** の StringTable。全ロケールがこの1枚を引く=
-// LocaleIndex の全行が index_enUS を指す。KCM_jaJP.fr は 2026-08-05 に撤去し、日本語で出す
-// 2箇所だけ KCMLoc.h の実行時切替に移した)。
+// The panel's string keys. The values are in the StringTable of **KCMUI_enUS.fr**, and every
+// locale reads that one table (every row of the LocaleIndex points at index_enUS). The jaJP
+// table was retired and the strings that speak Japanese moved to the run-time switch in
+// KCMLoc.h, which lists them.
 #define kKCMPanelTitleKey		kKCMStringPrefix "kKCMPanelTitleKey"
-#define kKCMTargetLabelKey	kKCMStringPrefix "kKCMTargetLabelKey"	// パネルの "Target:" ラベル。リテラルだとシステム訳と衝突するため自前キーで持つ
-#define kKCMSourceLabelKey	kKCMStringPrefix "kKCMSourceLabelKey"	// パネルの "Source:" ラベル。リテラル "Source:" は日本語ロケールで「スタイルソース :」に化けるため自前キーで持つ
-#define kKCMStartButtonKey	kKCMStringPrefix "kKCMStartButtonKey"	// フライアウト「Start / Stop」項目の既定メニュー名(未開始=Start)。表示時は UpdateActionStates が arm 状態で Start↔Stop に動的差し替え(旧トグルボタンのキャプションキーを流用)
-#define kKCMPrintCheckKey		kKCMStringPrefix "kKCMPrintCheckKey"	// フライアウト「Print comparison marks」トグルのメニュー名(旧パネルチェックボックスのキャプションキーを流用)
-// ★「Print comparison marks」を **ON にしたときだけ**出す告知アラートの本文(2026-08-24 ユーザー指示)。
-//   ⚠**全ロケール英語**＝KCMLoc の実行時切替には載せない(指示が「英語で」)。∴日本語側の対は無い。
-//   ⚠**出す場所は UI 側の DoAction だけ**＝トグルの実体 KCMTogglePrintMarks() は model 側にあり、
-//     パネル設定の起動時復元(KCMPanelState)も同じ設定関数を通る。そちらに置くと**起動のたびに出る**。
+#define kKCMTargetLabelKey	kKCMStringPrefix "kKCMTargetLabelKey"	// the panel's "Target:" label. A literal would collide with the system translation, so it has a key of its own
+#define kKCMSourceLabelKey	kKCMStringPrefix "kKCMSourceLabelKey"	// the panel's "Source:" label. The literal "Source:" turns into a style-source phrase in a Japanese locale, so this one needs a key of its own too
+#define kKCMStartButtonKey	kKCMStringPrefix "kKCMStartButtonKey"	// the default menu name of the "Start / Stop" flyout item (Start when not running). While it is shown, UpdateActionStates swaps Start and Stop by the armed state (the key is inherited from the old toggle button caption)
+#define kKCMPrintCheckKey		kKCMStringPrefix "kKCMPrintCheckKey"	// the menu name of the "Print comparison marks" toggle on the flyout (inherited from the old panel checkbox caption)
+// ★The body of the alert shown **only when "Print comparison marks" is switched ON**
+//   (user's instruction).
+//   ⚠**English in every locale** -- it is not among the strings KCMLoc.h switches (the
+//     instruction said English), so there is no Japanese counterpart.
+//   ⚠**It is raised in the UI-side DoAction and nowhere else.** The toggle itself,
+//     KCMTogglePrintMarks(), is on the model side, and the startup restore of the panel
+//     settings (KCMPanelState) goes through that same function -- put the alert there and
+//     **it appears on every launch**.
 #define kKCMPrintMarksOnKey	kKCMStringPrefix "kKCMPrintMarksOnKey"
-#define kKCMOpacity25Key		kKCMStringPrefix "kKCMOpacity25Key"	// サブメニュー「Marks opacity」内の子項目名(="25%")
-#define kKCMOpacity75Key		kKCMStringPrefix "kKCMOpacity75Key"	// サブメニュー「Marks opacity」内の子項目名(="75%")
-#define kKCMColorRedKey		kKCMStringPrefix "kKCMColorRedKey"	// サブメニュー「Mark colour」内の子項目名(="Red")
-#define kKCMColorCyanKey		kKCMStringPrefix "kKCMColorCyanKey"	// サブメニュー「Mark colour」内の子項目名(="Cyan")
-#define kKCMModePixelKey		kKCMStringPrefix "kKCMModePixelKey"	// サブメニュー「Compare mode」内の子項目名(="Pixel Changes")
-#define kKCMModeStoryKey		kKCMStringPrefix "kKCMModeStoryKey"	// サブメニュー「Compare mode」内の子項目名(="Story Changes")
-#define kKCMPrevChangeKey		kKCMStringPrefix "kKCMPrevChangeKey"	// パネルの「◀ Prev」ボタンのキャプション(英語固定)
-#define kKCMNextChangeKey		kKCMStringPrefix "kKCMNextChangeKey"	// パネルの「Next ▶」ボタンのキャプション(英語固定)
+#define kKCMOpacity25Key		kKCMStringPrefix "kKCMOpacity25Key"	// the child item name inside "Marks opacity" (= "25%")
+#define kKCMOpacity75Key		kKCMStringPrefix "kKCMOpacity75Key"	// the child item name inside "Marks opacity" (= "75%")
+#define kKCMColorRedKey		kKCMStringPrefix "kKCMColorRedKey"	// the child item name inside "Mark colour" (= "Red")
+#define kKCMColorCyanKey		kKCMStringPrefix "kKCMColorCyanKey"	// the child item name inside "Mark colour" (= "Cyan")
+#define kKCMModePixelKey		kKCMStringPrefix "kKCMModePixelKey"	// the child item name inside "Compare mode" (= "Pixel Changes")
+#define kKCMModeStoryKey		kKCMStringPrefix "kKCMModeStoryKey"	// the child item name inside "Compare mode" (= "Story Changes")
+#define kKCMPrevChangeKey		kKCMStringPrefix "kKCMPrevChangeKey"	// the caption of the "< Prev" button on the panel (English everywhere)
+#define kKCMNextChangeKey		kKCMStringPrefix "kKCMNextChangeKey"	// the caption of the "Next >" button on the panel (English everywhere)
 #define kKCMHintKey			kKCMStringPrefix "kKCMHintKey"
-// ★How to Use 本文の**2本目**(2026-08-19)。DoUsage が kKCMHintKey の後ろへ連結して1つの
-//   アラートに出す＝**読み手からは1本の文章**。中身は「ブックの比較」以降の後半すべて
-//   （ブック比較 → オーバーセットの検出 → 変更されたストーリーの一覧 → 印刷/PDF → 免責）。
-//   ⚠**なぜ分けたか＝odfrc は StringTable の1文字列に長さ上限がある**([[odfrc-long-string-limit]])。
-//     分ける前の1本は実測 3,904B で、単一行なら 4,004B が通った実績に対し残り約100B しかなく、
-//     ブックの節が入らなかった。**上限は文字列ごとに掛かる**ので、2本に割れば回避できる。
-//   ★★**分割点は「ブックの節を置きたい位置」で決めた**（ユーザー指定＝オーバーセットの検出の前）。
-//     ⇒ 1本目＝冒頭〜ページ比較の更新(2,708B) / 2本目＝ここから後半すべて(2,113B)。
-//     **どちらも上限に対して十分な余裕がある。次に本文を足すときは短いほうへ。**
-//   ⚠**日本語側(ui/KCMLoc.h の kHint / kHint2)も同じ位置で割ってある。** 片方だけ動かさないこと。
+// ★**The second part of the How to Use text.** DoUsage concatenates it after kKCMHintKey into
+//   one alert, so **the reader sees one piece of writing**. It holds everything from "comparing
+//   books" on (books -> overset -> the list of changed stories -> print/PDF -> the disclaimer).
+//   ⚠**Why it is split ＝ odfrc caps the length of one string in a StringTable**
+//     ([[odfrc-long-string-limit]]). The single text measured 3,904B against a single-line
+//     figure of 4,004B that had gone through, leaving about 100B -- not enough for the book
+//     section. **The cap is per string**, so splitting in two clears it.
+//   ★★**The seam was chosen as the place to put the book section** (user's instruction: before
+//     "finding overset").
+//     ⇒ Part one = the opening through refreshing a page comparison (2,708B); part two = from
+//     there to the end (2,113B). **Both have room; add to the shorter one.**
+//   ⚠**The Japanese side (kHint / kHint2 in ui/KCMLoc.h) is split at the same point. Do not
+//     move one without the other.**
 #define kKCMHint2Key			kKCMStringPrefix "kKCMHint2Key"
-#define kKCMToolStringKey		kKCMStringPrefix "kKCMToolStringKey"	// ツールボックスのツール名(ツールチップ)。全ロケール英語で統一
+#define kKCMToolStringKey		kKCMStringPrefix "kKCMToolStringKey"	// the tool name in the toolbox (its tooltip). English in every locale
 
-// Story Edits セクションの文字列。⚠文言に "text" を使わない——この一覧はテキスト以外の変更も載せる
-// ので "No text edits" のような言い方は事実と食い違う(設計書 §3-5)。
-#define kKCMStorySectionLabelKey	kKCMStringPrefix "kKCMStorySectionLabelKey"	// セクション見出し(件数は C++ が付ける)
-#define kKCMStoryNoEditsKey		kKCMStringPrefix "kKCMStoryNoEditsKey"		// 変更0件のときに出す1行
-#define kKCMStoryKindTextKey		kKCMStringPrefix "kKCMStoryKindTextKey"		// 行の右=文字が変わった
-#define kKCMStoryKindAttrKey		kKCMStringPrefix "kKCMStoryKindAttrKey"		// 行の右=属性が変わった(適用スタイル・オーバーライド・表の罫線を含む)
-#define kKCMStoryKindOtherKey		kKCMStringPrefix "kKCMStoryKindOtherKey"	// 行の右=上記以外(実測では出にくい。KCMStoryStamp.h 参照)
-#define kKCMStoryKindAddedKey		kKCMStringPrefix "kKCMStoryKindAddedKey"	// 行の右=Source 側に相手が無い
-// ★行の右=Target 側に相手が無い＝**旧文書にあって新文書から消えたストーリー**(2026-08-21 ユーザー要望)。
-//   ⚠この行だけは **Source 文書の行**で、クリックすると Source 窓だけが動く(KCMStoryJump.cpp)。
-// ⚠★**画面に出る語は "Deleted" で、キー名と enum は Removed のまま**(2026-08-21 ユーザー選択)。
-//   "Delete" 単独は動詞の原形＝命令形に読めて、隣の "Added"(過去分詞)と品詞が揃わない。
-//   キーを改名しなかったのは、**文字列キーは表示文字列ではない**から＝改名すると enum・model・UI の
-//   3か所を触ることになり、動くのは画面に一度も出ない4文字だけ。
-#define kKCMStoryKindRemovedKey	kKCMStringPrefix "kKCMStoryKindRemovedKey"	// 行の右=Target 側に相手が無い("Deleted")
-// ★行の右="本文を突き合わせた結果、差が無い"(2026-08-21 ユーザー要望)。⚠「変更なし」ではない
-//   ＝カウンターは動いている(でなければ行が出ない)。言っているのは「語は同じ」。
-//   ⇒ 更新(Refresh Story Comparison)で直し終えた行と、そもそも比較できなかった行が見分けられる。
-#define kKCMStoryKindNoneKey		kKCMStringPrefix "kKCMStoryKindNoneKey"		// 行の右=本文に差が無い
-#define kKCMStoryKindRubyKey		kKCMStringPrefix "kKCMStoryKindRubyKey"		// 行の右=ルビが変わった(本文は同じ。★カウンター由来の "Attr" より具体的に名指しする＝2026-08-22 ユーザー指定)
-// ⚠★★**圏点(Kenten)のキーは 2026-08-23 に撤去した**＝Story Edits に出すのは「テキストの変更とルビだけ」
-//   (ユーザー決定)。1日だけ存在した kKCMStoryKindKentenKey は、それを出す比較そのものを止めた時点で
-//   誰も引かない文字列になったので、両方まとめて落としてある(KCMUI_enUS.fr の対も同時)。
-//   ★スニペットから圏点を読む側は残してある(KCMSnippetText.h)＝再開はその比較1本とこのキーで足りる。
+// The strings of the Story Edits section. ⚠**Do not use the word "text" in them** -- the list
+// carries changes that are not text, so a phrase like "No text edits" would not be true.
+#define kKCMStorySectionLabelKey	kKCMStringPrefix "kKCMStorySectionLabelKey"	// the section heading (the count is appended by C++)
+#define kKCMStoryNoEditsKey		kKCMStringPrefix "kKCMStoryNoEditsKey"		// the single line shown when there is no change
+#define kKCMStoryKindTextKey		kKCMStringPrefix "kKCMStoryKindTextKey"		// row, right: characters changed
+#define kKCMStoryKindAttrKey		kKCMStringPrefix "kKCMStoryKindAttrKey"		// row, right: an attribute changed (an applied style, an override or a table rule among them)
+#define kKCMStoryKindOtherKey		kKCMStringPrefix "kKCMStoryKindOtherKey"	// row, right: none of the above (rare in practice; see KCMStoryStamp.h)
+#define kKCMStoryKindAddedKey		kKCMStringPrefix "kKCMStoryKindAddedKey"	// row, right: nothing on the Source side to compare against
+// ★Row, right: nothing on the Target side ＝ **a story that was in the old document and is gone
+//   from the new one**.
+//   ⚠This row alone is **a row of the Source document**, and clicking it moves the Source
+//     window only (KCMStoryJump.cpp).
+// ⚠★**The word on screen is "Deleted" while the key and the enum say Removed** (the user's
+//   choice). "Delete" on its own is the bare verb and reads as an instruction, which does not
+//   match "Added" beside it. The key was not renamed with it because **a string key is not a
+//   display string**: renaming would touch the enum, the model and the UI to change four
+//   letters that never reach the screen.
+#define kKCMStoryKindRemovedKey	kKCMStringPrefix "kKCMStoryKindRemovedKey"	// row, right: nothing on the Target side ("Deleted")
+// ★Row, right: "the texts were compared and there is no difference". ⚠**Not "unchanged"** -- the
+//   counters did move, or there would be no row at all. What it says is that the words are the
+//   same.
+//   ⇒ It tells a row that has been brought back into agreement (Refresh Story Comparison) apart
+//     from one that could not be compared in the first place.
+#define kKCMStoryKindNoneKey		kKCMStringPrefix "kKCMStoryKindNoneKey"		// row, right: no difference in the text
+#define kKCMStoryKindRubyKey		kKCMStringPrefix "kKCMStoryKindRubyKey"		// row, right: the ruby changed while the text did not. ★It names the case rather than reporting the counter-derived "Attr"
+// ⚠★★**The kenten (emphasis dot) key was removed** ＝ what Story Edits reports is text changes
+//   and ruby, and nothing else (user's decision). The key that existed for one day became a
+//   string nobody asked for the moment the comparison behind it was stopped, so the two went
+//   together (with the matching row in KCMUI_enUS.fr).
+//   ★The side that reads kenten out of a snippet is still there (KCMSnippetText.h), so bringing
+//     it back needs that one comparison and this key.
 
-// 一覧の列見出し(2026-08-10)。★中の語をそのまま使わない: 2列目の見出しは "Text" ではなく "Story"、
-// 3列目は "Kind" ではなく "Change"(ユーザー指定)。理由は語の衝突——3列目に出る**値**が "Text" なので、
-// 2列目の見出しを "Text" にすると同じ語が1行の中で別の意味で2回出る。
-#define kKCMStoryColUIDKey		kKCMStringPrefix "kKCMStoryColUIDKey"		// 見出し左=ストーリーの UID
-#define kKCMStoryColTextKey		kKCMStringPrefix "kKCMStoryColTextKey"		// 見出し中=本文の書き出し
-#define kKCMStoryColKindKey		kKCMStringPrefix "kKCMStoryColKindKey"		// 見出し右=変わった種類
+// The column headings of the list. ★**Do not reuse the words from inside it**: the second
+// heading is "Story" rather than "Text" and the third is "Change" rather than "Kind" (the
+// user's call). The reason is collision -- "Text" is one of the VALUES in the third column, so
+// heading the second one "Text" would put the same word twice in one row meaning two different
+// things.
+#define kKCMStoryColUIDKey		kKCMStringPrefix "kKCMStoryColUIDKey"		// heading, left: the story's UID
+#define kKCMStoryColTextKey		kKCMStringPrefix "kKCMStoryColTextKey"		// heading, middle: the opening of the text
+#define kKCMStoryColKindKey		kKCMStringPrefix "kKCMStoryColKindKey"		// heading, right: what kind of change it is
 
-// PNG アイコンリソース(プラグインに埋め込み; .pln とは別ファイルでは出荷しない)。
+// PNG icon resources (compiled into the plug-in; nothing ships beside the .pln).
 #define kKCMIconOnResID	1001
 #define kKCMIconOffResID	1002
-#define kKCMPaletteIconResID	1003	// パネルが折りたたまれた時に出る小さいドックタブアイコン
+#define kKCMPaletteIconResID	1003	// the small dock tab icon shown when the panel is collapsed
 
-// スクロールバー地図stripのビューリソースID(kViewRsrcType; ::CreateObject2<IControlView> で実行時生成する。
-// KCMScrollMap.cpp。⚠2026-08-19 訂正＝2026-08-17 に型つきの CreateObject2 へ替えたのに、ここと KCMUI.fr の
-// 同リソースの説明だけが旧綴り「::CreateObject」のまま残っていた＝実装を直したら、それを説明している
-// リソースと ID ヘッダーも兄弟として grep する)
+// The view resource ID of the scrollbar map strip (kViewRsrcType; built at run time with
+// ::CreateObject2<IControlView>. KCMScrollMap.cpp).
 #define kKCMScrollMapRsrcID	1010
 
-// Story Edits の行テンプレートのビューリソースID(kViewRsrcType; CreateObjectNoInit で1行ずつ生成する。
-// KCMStoryTreeWidgetMgr.cpp)。
+// The view resource ID of the Story Edits row template (kViewRsrcType; built one row at a time
+// with CreateObjectNoInit. KCMStoryTreeWidgetMgr.cpp).
 #define kKCMStoryRowRsrcID	1011
 
-// ブック比較ダイアログのビューリソースID(kViewRsrcType)。KCMBookDialog.cpp が RsrcSpec で指す。
-// ★1010/1011 と同じ採番の続き。手本=KESCL の Jump Offset ダイアログ(あちらは kSDKDefDialogResourceID)。
+// The view resource ID of the book comparison dialog (kViewRsrcType); KCMBookDialog.cpp names it
+// in a RsrcSpec. ★It continues the numbering of the two above. Modelled on KESCL's Jump Offset
+// dialog (which uses kSDKDefDialogResourceID).
 #define kKCMBookDialogRsrcID	1012
 
-// ブック比較ダイアログの章一覧の、行テンプレートのビューリソースID(kViewRsrcType;
-// CreateObjectNoInit で1行ずつ生成する。KCMBookTreeWidgetMgr.cpp)。★1011(Story Edits の行)と
-// 同じ作りで、違うのは中身が2列であることとダイアログ用のフォントを使うことだけ。
+// The view resource ID of the row template in that dialog's chapter list (kViewRsrcType; built
+// one row at a time with CreateObjectNoInit. KCMBookTreeWidgetMgr.cpp). ★Built like the Story
+// Edits row, differing only in having two columns and using the dialog font.
 #define kKCMBookRowRsrcID	1013
 
-// ★Story Edits の**変更行**(第2階層)のテンプレート。2026-08-20 追加。1011(ストーリー行)を写した
-// 3セル構成で、違うのは**セルの開始位置が右にずれていること**だけ＝これが階層のインデントの実体。
-// ⚠**インデントをコードで足さない**理由は KCMStoryTreeWidgetMgr.cpp の ApplyIndentToWidget に
-//   書いてある(行 widget は使い回されるので「右へ N 動かす」は累積する)。
+// ★The template of a **change row** (the second level) in Story Edits. Copied from the story row
+// and cut down to the **two** cells it needs -- the text and the sign; the UID cell belongs to a
+// story row alone. ⚠Its cells **start further right, and that offset IS the indent of the
+// level**.
+// ⚠**Do not add the indent in code**: the reason is at ApplyIndentToWidget in
+//   KCMStoryTreeWidgetMgr.cpp (row widgets are recycled, so "move it N to the right"
+//   accumulates).
 #define kKCMStoryChangeRowRsrcID	1014
 
-// ★Story Edits の**ルビの変更行**のテンプレート(2026-08-22)。1014 と同じ2セル構成で、違うのは
-// **背が2倍あること**だけ＝読みを親文字の上に置くための上段(KCMStoryCellView.cpp が cell を上下に
-// 割る)。⚠セルの boss も WidgetID も 1014 と同じものを使い回す——変わるのは Frame の高さだけなので、
-// 実装を分ける理由が無い(セルには「2段で描け」が実行時に渡る)。
+// ★The template of a **ruby change row** in Story Edits. The same two cells as the change row,
+// differing only in being **twice as tall** -- the upper line is where the reading goes, above
+// the characters it belongs to (KCMStoryCellView.cpp divides the cell in half).
+// ⚠The cell boss and the WidgetIDs are the change row's, reused: only the Frame heights differ,
+// so there is no reason for a second implementation ("draw it on two lines" reaches the cell at
+// run time).
 #define kKCMStoryRubyRowRsrcID	1015
 
-// 章一覧の行の高さ。★Story Edits の kKCMStoryRowHeight と同じく .fr と C++ の両方がこの1つの定数を
-// 読む(行リソースの Frame・ツリーのスクロール増分・GetNodeWidgetHeight)。
-// ★下の 19 と違って、こちらは SDK 標準の kCC2016PanelTreeNodeHeight と同じ 22
-// (StdHeightWidthConstants.h:50)。パレットの一覧が 19 なのは**パレットフォントを実測して決めた値**
-// (2026-08-11)で、ダイアログのフォントは測っていない＝測っていない側では標準に従う。製品の
-// AutoCorrect 環境設定のリストも、ダイアログの中の一覧をこの定数で組んでいる
-// (AutoCorrectPrefsPanel_enUS.fr:288)。
+// The row height of the chapter list. ★As with kKCMStoryRowHeight below, **both the .fr and the
+// C++ read this one constant** (the row resource's Frame, the tree's scroll increment,
+// GetNodeWidgetHeight).
+// ★Unlike the 19 below, this is 22, the SDK's own kCC2016PanelTreeNodeHeight
+// (StdHeightWidthConstants.h:50). The palette list is 19 because **the palette font was
+// measured**; the dialog font was not ＝ **where nothing was measured, follow the standard.**
+// The product's AutoCorrect preferences list builds its in-dialog list from the same constant
+// (AutoCorrectPrefsPanel_enUS.fr:288).
 #define kKCMBookRowHeight	22
 
-// 一覧の行の高さ。★.fr と C++ の両方がこの1つの定数を読む(Adobe の StdHeightWidthConstants.h と同じ形)
-// ＝行リソースの Frame・ツリーのスクロール増分・GetNodeWidgetHeight が同じ事実を語る。値は KBS の
-// kKBSResultRowHeight と同じ 19＝パレットフォントでの実測値で、SDK の kCC2016PanelTreeNodeHeight(=22)ではない。
+// The row height of the list. ★**Both the .fr and the C++ read this one constant** (Adobe's
+// StdHeightWidthConstants.h has the same shape) ＝ the row resource's Frame, the tree's scroll
+// increment and GetNodeWidgetHeight all state one fact. The value is 19, the same as KBS's
+// kKBSResultRowHeight ＝ **measured with the palette font**, not the SDK's
+// kCC2016PanelTreeNodeHeight (22).
 #define kKCMStoryRowHeight	19
 
-// ★★ルビの変更行だけの高さ(2026-08-22)。読みを親文字の**上**に、しかも**同じ文字サイズで**置く
-// (ユーザー指定「ちいさくなくてもいいです、文字のサイズは同じで、位置を 漢字の文字の上に」)以上、
-// 行は2段ぶん要る。19 の2倍でなく 38 なのは、19 が「1段(18px)＋1px」だから＝2段なら 18×2＋2。
-// 行送り 18.0 は FontInfoGetDVAFontMetrics の実測値(ascent+descent+leading。PMMeasureString("Ag") の
-// 19.0 は 1px 過大＝memory kescm-status-text-selfdrawn の本命の実測)。
-// ⚠★**行ごとに高さが違うので ITreeViewMgr::ChangeRoot に kTrue を渡せなくなった**——あの引数は
-//   「どの行 widget も同じ高さ」という約束で、破ると木が自分の高さを測り違える(KCMStoryTreeRebuild)。
-// ⚠この定数を読むのは C++ 側だけではない＝.fr の行リソース(kKCMStoryRubyRowRsrcID)も同じ値を書く。
+// ★★The height of a ruby change row alone. Putting the reading **above** its base characters
+// **and at the same character size** (user's instruction) takes two lines.
+// It is 38 rather than twice 19 because 19 is "one line (18px) + 1px": two lines are 18x2 + 2.
+// The 18.0 line advance is measured with FontInfoGetDVAFontMetrics (ascent + descent +
+// leading); PMMeasureString("Ag") answers 19.0, which is 1px too much (memory
+// kescm-status-text-selfdrawn holds that measurement).
+// ⚠★**Rows now differ in height, so ITreeViewMgr::ChangeRoot can no longer be passed kTrue** --
+//   that argument is a promise that every row widget is the same height, and breaking it makes
+//   the tree mis-measure itself (KCMStoryTreeRebuild).
+// ⚠The C++ is not the only reader: the row resource in the .fr (kKCMStoryRubyRowRsrcID) writes
+//   the same value.
 #define kKCMStoryRubyRowHeight	38
 
-// 一覧の列見出しの帯の高さ(ラベル 14px ＋ 罫線 1px ＋ 上下の余白 3px。2026-08-10)。
-// ★行高と同じく .fr と C++ の両方がこの1つの定数を読む＝帯を厚くすれば、ツリーの位置も
-//   セクションの最小・既定の高さも同時に動く(KCMUI.fr / KCMStorySection.cpp)。
+// The height of the heading band of the list (a 14px label + a 1px rule + 3px of padding).
+// ★As with the row heights, **both the .fr and the C++ read this one constant** ＝ thicken the
+//   band and the tree's position and the section's minimum and default heights all move with it
+//   (KCMUI.fr / KCMStorySection.cpp).
 #define kKCMStoryHeaderHeight	18
 
-// ★★パネルの最小サイズ(2026-08-10 ユーザー指定「今のを最小の設定で、パネルの大きさは固定ではなく」)。
-//   PanelList を kIsResizable にしたので、下限を守るのは KCMPanelView::ConstrainDimensions。
-// ・幅 = これまでの固定幅そのまま。中の widget はすべて縁に束縛してあるので広げる方向は自由に伸びるが、
-//   これより狭めるとステータス欄が読めなくなり、一覧の行は省略記号だけになる。
-// ・高さ = 上ペインの設計高。★Story Edits を**閉じている間はこれが上限でもある**——閉じているときの
-//   パネルは固定座標のコントロール群だけなので、伸ばしても下に空白の帯ができるだけになる。
-//   開いている間の下限は「上ペイン + セクションの最小(= .fr の Bottom snap)」で、C++ 側は
-//   分割バーに実際の snap 値を聞く(数字を2か所に書かない)。
-// ★2026-08-10: 173 → 185。Story Edits の帯に猫イラストを下ろした分(20px の帯では 32×32 の絵が
-//   収まらない)。帯が 12px 高くなり、代わりにステータス欄が右端まで(180→216)伸びた。
+// ★★**The panel's minimum size** (user's instruction: "make what we have now the minimum, and
+//   let the panel be resizable"). PanelList is kIsResizable, so the floor is kept by
+//   KCMPanelView::ConstrainDimensions.
+// - Width = what used to be the fixed width. Everything inside is bound to the edges, so growing
+//   is free; narrower than this and the status area is unreadable while the list rows are
+//   nothing but ellipses.
+// - Height = the designed height of the top pane. ★**While Story Edits is closed this is the
+//   ceiling as well** -- closed, the panel is a block of fixed-coordinate controls, so
+//   stretching it only adds an empty band at the bottom.
+//   While it is open, the floor is "the top pane + the section's minimum (the Bottom snap in the
+//   .fr)", and the C++ asks the splitter for the actual snap value rather than writing that
+//   number in a second place.
 #define kKCMPanelMinWidth		224
 #define kKCMPanelTopPaneHeight	185
 
-// ✓チェックマークカーソルのリソースID。CursorSpec の CursorID として使い、HOTC(このID)でホットスポット
-// (✓の折れ点=座標取得点)を指定する。★2026-07-25: 画像はコールバック描画から PNGC リソースへ変更
-// (KCM_Check_10_18.png ＋ @2x=+kHIDPICrsrOffset / @3to2x=+kHIDPI150CrsrOffset)。押下時のゴミの発生源
-// =基底のモーダルカーソル取得によるコールバック再実行 を断つため。KCMCursorProvider.cpp / KCMUI.fr。
+// The resource ID of the check-mark cursor. It is the CursorID of a CursorSpec, and HOTC(this ID)
+// gives the hotspot (the check mark's vertex, which is the point the click is taken at).
+// ★The image is a PNGC resource rather than a drawing callback (KCM_Check_10_18.png, with
+//   @2x = +kHIDPICrsrOffset and @3to2x = +kHIDPI150CrsrOffset). That cut off the source of the
+//   rubbish seen on press: the base class re-fetches the modal cursor, which ran the callback
+//   again. KCMCursorProvider.cpp / KCMUI.fr.
 #define kKCMCheckCursorResID	1020
 
-// Alt+左「色比較」の CMYK 情報カーソルのリソースID。✓カーソルと HOTC は同じ(10,18)だが CursorID は
-// 分ける。同一 CursorID を使い回すとカーソルキャッシュが ✓(24×24)と CMYK情報(150×60)を取り違え、
-// 色比較の初回フレームに「ゴミ」が一瞬見えた(ユーザー報告 2026-07-13)。別IDにして解消。KCMPeek.cpp。
+// The resource ID of the CMYK readout cursor used by Alt + left ("compare colour"). Its HOTC is
+// the check cursor's (10,18), but **the CursorID is deliberately separate**: sharing one made
+// the cursor cache confuse the 24x24 check with the 150x60 readout, and rubbish showed for one
+// frame at the start of a colour comparison (reported by the user). KCMPeek.cpp.
 #define kKCMCmykCursorResID	1021
 
-// CMYK 情報カーソルの交互切替用の第2リソースID。ドラッグ中の数値更新は kFalse スペックの「入れ直し」で
-// 行うが(動的 kTrue スペックは設定の瞬間に未初期化バッファが見える=初回ゴミの真因のため全廃。2026-07-14)、
-// 同一スペックの再設定が no-op 扱いされても確実に描き直しが起きるよう 1021 と 1022 を交互に使う
-// (KCMTracker.cpp の InstallCmykCursor)。HOTC は 1021 と同じ (10,18)=切替でカーソル位置は動かない。
+// The second resource ID of the CMYK readout cursor, alternated with the one above. While
+// dragging, the numbers are updated by **re-installing a kFalse spec** -- a dynamic kTrue spec
+// showed an uninitialised buffer at the instant it was set, which was the real source of the
+// rubbish in the first frame, so those are gone entirely -- and the two IDs are used in turn so
+// that re-installing the same spec is never taken as a no-op (InstallCmykCursor in
+// KCMTracker.cpp). The HOTC is the same (10,18), so switching does not move the pointer.
 #define kKCMCmykCursor2ResID	1022
 
-// ✓カーソルの非アクティブ版(白抜き=黒フチ+白本体)のリソースID。ツール選択中、「Start 中かつマウス下が
-// Target 文書」のときだけ黒✓、それ以外(Source・第3の文書・未 Start)は白抜き✓=「ここではツールは
-// 効かない」の明示(ユーザー指定 2026-07-15。灰色本体は判別しづらく反転式に変更)。CursorID を分けるのは
-// キャッシュの取り違え防止(1021/1022 と同じ理由)+ClearCache 不要で切り替えるため。
-// HOTC は ✓ と同じ (10,18)。画像は黒✓と同様 PNGC リソース(KCM_CheckOff_10_18.png ＋ @2x / @3to2x。
-// 2026-07-25)。KCMCursorProvider.cpp / KCMUI.fr。
+// The resource ID of the inactive check cursor (outlined: black edge, white body). While the
+// tool is active it is shown wherever the black one is not, saying **"the tool does nothing
+// here"** (the rule itself is KCMToolCursorShouldBeBlack in KCMCmykCursor.cpp).
+// ★A white outline rather than grey: grey was hard to tell apart, so the two were made
+//   inverses of each other (user's instruction).
+// The CursorID is separate for the same cache reason as the two above, and because switching
+// then needs no ClearCache. The HOTC is (10,18), as for the black one, and the image is a PNGC
+// resource (KCM_CheckOff_10_18.png, with @2x / @3to2x). KCMCursorProvider.cpp / KCMUI.fr.
 #define kKCMCheckCursorInactiveResID	1023
 
-// ツールボックスの KCM ツール専用アイコン(32×32 通常 / 64×64 = +kHIDPIIconOffset)。従来はパネル用
-// アイコン(kKCMIconOnResID)を流用していたが、専用画像(KCM_Tool_32.png/_64.png)を用意したため差し替え
-// (ユーザー提供 2026-07-14)。ダーク版は用意していないため PNGAD もライト版と同じ画像を指す(=流用)。
+// The dedicated toolbox icon of the KCM tool (32x32 normal / 64x64 = +kHIDPIIconOffset). It used
+// to borrow the panel icon (kKCMIconOnResID) until artwork of its own arrived
+// (KCM_Tool_32.png/_64.png, supplied by the user). There is no dark version, so PNGAD points at
+// the light artwork as well.
 #define kKCMToolIconResID	1030
 
-// Menu item positions (flyout order, 2026-07-24 に大幅入れ替え):
-//   Start/Stop(9.0) → Compare Books(9.05) → ─線Sep1(9.1) →
-//   [表示系トグル群] Hold to Hide Marks(9.20) → Ignore Page Number Marker(9.22) → Marks opacity ▸(9.24) →
-//     Print comparison marks(9.26) → Show Original Page Numbers(9.28) →
-//     Always Show Marks on Source(9.30) → Show Scrollbar Map(9.32) → Sync Layout Views(9.34) →
-//     Translucent Panel(9.36) →
-//   ─線OversetSep(9.40) → Find Overset(9.42) → Refresh Overset(9.44) →
-//   ─線Sep3(9.50) → [実行アクション群] Align Other Views to Active(9.52) → Export Changed Pages...(9.53) →	★Compare Books はここに居たが 2026-08-12 に Start の直下へ移した
-//     Hide Unchanged Spreads(9.54) → Save Panel Settings(9.56) → Save Check & Register(9.58) →
-//     Load Check & Register(9.60) →
-//   ─線Sep2(9.95) → How to Use(10) → About this plug-in(12)。 ※About Scripting(11)は 2026-07-25 撤去
-// ※メニュー名は日本語ロケールでも英語で統一(2026-07-04)。区切り線は Sep1/OversetSep/Sep3/Sep2 の4本を再利用。
-#define kKCMStartStopMenuItemPosition		9.0	// 「Start / Stop」(比較開始/解除)をフライアウト先頭に。名前は arm 状態で動的に Start↔Stop
-#define kKCMSep1MenuItemPosition			9.1	// Start の下の区切り線(パス末尾 ":-")
-#define kKCMCompareModeSubmenuMenuItemPosition	9.15	// ★「Compare mode」サブメニュー(中に Pixel Changes / Story Changes)。2026-08-20 追加。**Sep1 の直後＝表示系トグル群(9.20〜)の上**に置く: 「何を比べるか」は「どう見せるか」より先に決めるもので、順序がそのまま意味になる
-#define kKCMModePixelSubMenuItemPosition		1.0	// サブメニュー「Compare mode」内: Pixel Changes(選択中に✓)
-#define kKCMModeStorySubMenuItemPosition		2.0	// サブメニュー「Compare mode」内: Story Changes(Pixel と相互排他)
-// ── 表示系トグル群 ──
-// (9.20 は「Hold to Hide Marks」が使っていた位置。2026-08-22 のトグル撤去で空き＝別項目に使ってよい)
-#define kKCMIgnorePageNumMenuItemPosition	9.22	// チェック式トグル「Ignore Page Number Marker」
-#define kKCMOpacitySubmenuMenuItemPosition	9.24	// 「Marks opacity」サブメニュー(中に 25% / 75%)。Print の上へ入れ替え(2026-07-24)
-#define kKCMPrintMarksMenuItemPosition	9.26	// チェック式トグル「Print comparison marks」。Marks opacity の下へ入れ替え(2026-07-24)
-#define kKCMOpacity25SubMenuItemPosition	1.0	// サブメニュー「Marks opacity」内: 25%(選択中に✓)
-#define kKCMOpacity75SubMenuItemPosition	2.0	// サブメニュー「Marks opacity」内: 75%(25% と相互排他)
+// Menu item positions.
+// ⚠**There is no written running order of the flyout here any more.** One stood in this place
+//   and rotted: it listed a toggle that had been removed, missed five items that had been
+//   added, and gave one position to the wrong item. A second copy of an order that only the
+//   #defines below decide cannot be kept true ([[one-question-one-place]]).
+//   ⇒ **Read the values below in ascending order: that IS the flyout.**
+// ※Menu names are English in every locale. The separators are Sep1 / OversetSep / Sep3 / Sep2.
+#define kKCMStartStopMenuItemPosition		9.0	// "Start / Stop" at the head of the flyout. Its name follows the armed state between Start and Stop
+#define kKCMSep1MenuItemPosition			9.1	// the separator below Start (a path ending in ":-")
+#define kKCMCompareModeSubmenuMenuItemPosition	9.15	// ★the "Compare mode" submenu (Pixel Changes / Story Changes). **Right after Sep1, above the display toggles**: what is compared is settled before how it is shown, and the order carries that
+#define kKCMModePixelSubMenuItemPosition		1.0	// inside "Compare mode": Pixel Changes (checked when selected)
+#define kKCMModeStorySubMenuItemPosition		2.0	// inside "Compare mode": Story Changes (exclusive with Pixel)
+// -- the display toggles --
+// (9.20 is free: it belonged to "Hold to Hide Marks", which was removed.)
+#define kKCMIgnorePageNumMenuItemPosition	9.22	// check toggle "Ignore Page Number Marker"
+#define kKCMOpacitySubmenuMenuItemPosition	9.24	// the "Marks opacity" submenu (25% / 75% inside it)
+#define kKCMPrintMarksMenuItemPosition	9.26	// check toggle "Print comparison marks"
+#define kKCMOpacity25SubMenuItemPosition	1.0	// inside "Marks opacity": 25% (checked when selected)
+#define kKCMOpacity75SubMenuItemPosition	2.0	// inside "Marks opacity": 75% (exclusive with 25%)
 
-#define kKCMColorSubmenuMenuItemPosition	9.25	// 「Mark colour」サブメニュー(中に Red / Cyan)。★9.24 Marks opacity の直下・9.26 Print の直上＝**色と濃さが隣り合う**(どちらもマークの見た目の設定)
-#define kKCMColorRedSubMenuItemPosition	1.0	// サブメニュー「Mark colour」内: Red(既定・選択中に✓)
-#define kKCMColorCyanSubMenuItemPosition	2.0	// サブメニュー「Mark colour」内: Cyan(Red と相互排他)
-// (9.27 = 「Show HUD」は 2026-08-06 に機能ごと撤去。位置番号は空き=別項目に使ってよい)
-#define kKCMShowOldNumsMenuItemPosition	9.28	// チェック式トグル「Show Original Page Numbers」
-#define kKCMShowTgtMarksMenuItemPosition	9.29	// チェック式トグル「Always Show Marks on Target」(★Source 版 9.30 の直上＝新旧の並びと同じ順序で読める)
-#define kKCMShowSrcMarksMenuItemPosition	9.30	// チェック式トグル「Always Show Marks on Source」
-#define kKCMScrollMapMenuItemPosition		9.32	// チェック式トグル「Show Scrollbar Map」
-#define kKCMSyncViewsMenuItemPosition		9.34	// チェック式トグル「Sync Layout Views」
-#define kKCMTranslucentPagesPanelMenuItemPosition	9.36	// チェック式トグル「Translucent Pages Panel」(★Windows 専用=フローティング中の**本体のページパネル**を半透明に。2026-08-06 追加。★同日ユーザー指定で Translucent Panel より上へ)
-// (9.37 は「Translucent Toolbox」の跡地。2026-08-07 に機能ごと撤去したので空き番。)
-#define kKCMTranslucentPanelMenuItemPosition	9.38	// チェック式トグル「Translucent Panel」(表示系トグル群の末尾。★Windows 専用=フローティング中のパネル自身を半透明に。2026-08-06 に Pages 側と上下を入れ替え)
-#define kKCMTranslucentBookDialogMenuItemPosition	9.39	// チェック式トグル「Translucent Dialog」(★Windows 専用=ブック比較ダイアログを半透明に。2026-08-13 追加。Translucent 3兄弟の末尾＝9.36 Pages / 9.38 Panel / 9.39 ここ)
-// ── Overset 群 ──
-#define kKCMOversetSepMenuItemPosition	9.40	// Find Overset 群の上の区切り線(パス末尾 ":-")
-#define kKCMFindOversetMenuItemPosition	9.42	// チェック式トグル「Find Overset」(アクティブ文書の overset ページに十字)
-#define kKCMRefreshOversetMenuItemPosition	9.44	// 実行アクション「Refresh Overset」(ON時のみ有効=再走査)
-// ── 実行アクション群 ──
-#define kKCMSep3MenuItemPosition			9.50	// Refresh Overset の下の区切り線(パス末尾 ":-")。この下に実行アクション群を置く
-#define kKCMAlignViewsMenuItemPosition	9.52	// 実行アクション「Align Other Views to Active」を実行アクション群の先頭に(2026-07-24)
-#define kKCMHideUnchangedMenuItemPosition	9.54	// チェック式トグル「Hide Unchanged Spreads」。⚠2026-08-12 まで下の Compare Books と**同じ 9.54 で重複していた**(同値だと並びを決めるのは MenuDef の登録順だけになる)。Compare Books が Start の直下へ抜けたので重複は解消済み
-#define kKCMSavePanelStateMenuItemPosition	9.56	// 実行アクション「Save Panel Settings」
-#define kKCMSaveChecksMenuItemPosition	9.58	// 実行アクション「Save Check & Register」
-#define kKCMLoadChecksMenuItemPosition	9.60	// 実行アクション「Load Check & Register」
-#define kKCMExportChangedPagesMenuItemPosition	9.53	// 実行アクション「Export Changed Pages...」(変更ページ一覧をTSVで保存)。Align の直下(2026-07-25 ユーザー指定)
-// ★★Compare Books の位置は 9.54(実行アクション群) → 9.53 → **9.05** と 2026-08-12 に二度動いた(ユーザー指定
-//   「一つ上へ」→「Start のすぐ下に」)。9.05 は **Start(9.0) と 区切り線 Sep1(9.1) の間**＝Start との間に線が
-//   入らない位置で、比較を**始める**2つの項目が1つの群になる。⚠**旧コメントの「文書比較(Start)とは独立した
-//   経路なので Start 群ではなく実行アクション群に置く」は撤回**(2026-08-12 ユーザー判断)。
-#define kKCMCompareBooksMenuItemPosition	9.05	// 実行アクション「Compare Books」(ブック同士を章単位で比較)。Start の直下
-// ブック比較ダイアログの章行の右クリックメニュー内の位置。★このメニューは項目が1つしかないので
-// 値そのものに意味は無い(パネルのフライアウトとは別の木＝kKCMBookRowMenuName の下)。
-#define kKCMBookRowStartMenuItemPosition	1.0		// 章行の右クリック「Start Change Marker」
-#define kKCMStoryRowRefreshMenuItemPosition	1.0	// Story Edits 行の右クリック「Refresh Story Comparison」(別のサブツリーなので章行と同じ 1.0 でよい)
-// ── 情報系(末尾) ──
-#define kKCMSep2MenuItemPosition			9.95	// How to Use の上の区切り線(パス末尾 ":-")
-#define kKCMUsageMenuItemPosition			10.0	// 「使い方」
-// ページパネルのページ右クリックメニュー(内部名 RtMenuPagesPanel、2026-07-05 実機確定)内の位置。
-// 本家項目の後ろ(末尾)に付ける。内部名は非翻訳キーなので全ロケール共通で効く。
-#define kKCMPageMapSepMenuItemPosition	2999.0	// KCM 追加項目(Register 3000.0 / Check 3001.0)の直上の区切り線。本家メニュー項目と KCM 項目を視覚的に分ける
+#define kKCMColorSubmenuMenuItemPosition	9.25	// the "Mark colour" submenu (Red / Cyan). ★Directly below Marks opacity and above Print ＝ **colour and strength sit together** (both are how a mark looks)
+#define kKCMColorRedSubMenuItemPosition	1.0	// inside "Mark colour": Red (the default; checked when selected)
+#define kKCMColorCyanSubMenuItemPosition	2.0	// inside "Mark colour": Cyan (exclusive with Red)
+// (9.27 is free: it belonged to "Show HUD", which went with its feature.)
+#define kKCMShowOldNumsMenuItemPosition	9.28	// check toggle "Show Original Page Numbers"
+#define kKCMShowTgtMarksMenuItemPosition	9.29	// check toggle "Always Show Marks on Target" (★directly above the Source one, so the pair reads new-then-old)
+#define kKCMShowSrcMarksMenuItemPosition	9.30	// check toggle "Always Show Marks on Source"
+#define kKCMScrollMapMenuItemPosition		9.32	// check toggle "Show Scrollbar Map"
+#define kKCMSyncViewsMenuItemPosition		9.34	// check toggle "Sync Layout Views"
+#define kKCMTranslucentPagesPanelMenuItemPosition	9.36	// check toggle "Translucent Pages Panel" (★Windows only; it makes InDesign's OWN Pages panel translucent while floating)
+// (9.37 is free: it belonged to "Translucent Toolbox", which went with its feature.)
+#define kKCMTranslucentPanelMenuItemPosition	9.38	// check toggle "Translucent Panel", the last of the display toggles (★Windows only; the panel itself while floating)
+#define kKCMTranslucentBookDialogMenuItemPosition	9.39	// check toggle "Translucent Dialog" (★Windows only; the book comparison dialog). The last of the three Translucent items
+// -- the Overset group --
+#define kKCMOversetSepMenuItemPosition	9.40	// the separator above the Find Overset group (a path ending in ":-")
+#define kKCMFindOversetMenuItemPosition	9.42	// check toggle "Find Overset" (crosses on the overset pages of the active document)
+#define kKCMRefreshOversetMenuItemPosition	9.44	// plain command "Refresh Overset" (live only while the toggle is ON = rescan)
+// -- the plain commands --
+#define kKCMSep3MenuItemPosition			9.50	// the separator below Refresh Overset (a path ending in ":-"); the plain commands go below it
+#define kKCMAlignViewsMenuItemPosition	9.52	// plain command "Align Other Views to Active", first of the group
+#define kKCMHideUnchangedMenuItemPosition	9.54	// check toggle "Hide Unchanged Spreads". ⚠It once shared 9.54 with Compare Books, and **two items at one value leave the order to the MenuDef registration order alone**; Compare Books has since moved up under Start
+#define kKCMSavePanelStateMenuItemPosition	9.56	// plain command "Save Panel Settings"
+#define kKCMSaveChecksMenuItemPosition	9.58	// plain command "Save Check & Register"
+#define kKCMLoadChecksMenuItemPosition	9.60	// plain command "Load Check & Register"
+#define kKCMExportChangedPagesMenuItemPosition	9.53	// plain command "Export Changed Pages..." (the list of changed pages as TSV), directly below Align
+// ★★Compare Books sits at 9.05, **between Start (9.0) and the separator Sep1 (9.1)** ＝ no rule
+//   falls between it and Start, so the two items that **begin** a comparison read as one group
+//   (user's instruction: "one higher" and then "just below Start").
+//   ⚠The older reasoning -- "it is a route independent of the document comparison, so it belongs
+//     with the plain commands rather than with Start" -- **was withdrawn** by that call.
+#define kKCMCompareBooksMenuItemPosition	9.05	// plain command "Compare Books" (compare two books chapter by chapter), directly below Start
+// Positions inside the chapter row context menu of the book comparison dialog. ★That menu holds
+// one item, so the value itself carries no meaning (it is a different tree from the panel
+// flyout, under kKCMBookRowMenuName).
+#define kKCMBookRowStartMenuItemPosition	1.0		// chapter row context menu: "Start Change Marker"
+#define kKCMStoryRowRefreshMenuItemPosition	1.0	// Story Edits row context menu: "Refresh Story Comparison" (a different subtree, so it may share 1.0 with the chapter row)
+// -- the informational items, at the end --
+#define kKCMSep2MenuItemPosition			9.95	// the separator above How to Use (a path ending in ":-")
+#define kKCMUsageMenuItemPosition			10.0	// "How to Use"
+// Positions inside the Pages panel page context menu (internal name RtMenuPagesPanel, confirmed
+// in the running application). The KCM items go after InDesign's own. The internal name is an
+// untranslated key, so it works in every locale.
+#define kKCMPageMapSepMenuItemPosition	2999.0	// the separator directly above the KCM items (Register 3000.0 / Check 3001.0), setting them apart from InDesign's own
 #define kKCMPageMapToggleMenuItemPosition	3000.0
-#define kKCMPageCheckMenuItemPosition		3001.0	// 「Check」を Register の直後(ページパネル右クリック末尾)に
-#define kKCMPageRefreshCompareMenuItemPosition	3002.0	// 「Refresh Page Comparison」を Check の直後(ページパネル右クリック末尾)に
-#define kKCMAboutThisMenuItemPosition		12.0	// 末尾に「このプラグインについて」(11.0=旧 About Scripting は撤去済み 2026-07-25)
+#define kKCMPageCheckMenuItemPosition		3001.0	// "Check", directly after Register
+#define kKCMPageRefreshCompareMenuItemPosition	3002.0	// "Refresh Page Comparison", directly after Check
+#define kKCMAboutThisMenuItemPosition		12.0	// "About this plug-in", at the end (11.0 was About Scripting, which has been removed)
 
 
 // Initial data format version numbers

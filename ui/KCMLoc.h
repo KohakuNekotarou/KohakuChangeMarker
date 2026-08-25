@@ -4,36 +4,38 @@
 //
 //  KohakuExtendScriptChangeMarker (KCM)
 //
-//  実行時の日本語切替。jaJP 文字列テーブルは 2026-08-05 に撤去(ユーザー方針・KBS と同時):
-//  全ロケールが enUS テーブルを読み、日本語を話す箇所だけをここで UI 言語判定して差し替える。
-//  判定は featureset ではなく UI 言語(PMLocaleId は2軸を別々に持つ)なので、Roman エンジン+日本語 UI の
-//  環境でも日本語が出る。
+//  Run-time Japanese. The jaJP string table was retired (same decision as KBS): every locale
+//  reads the enUS table, and the few strings that speak Japanese are switched in here by UI
+//  language. The test is the UI LANGUAGE, not the feature set -- PMLocaleId carries the two
+//  separately -- so a Roman engine with a Japanese UI gets Japanese as well.
 //
-//  ★★製品全体で日本語を話すのは **3箇所**(2026-08-06 に2箇所へ絞り、08-12 に4箇所、08-13 に3箇所)。
-//    ⚠★★**そのうち"この側"が持つのは2つ** ＝ 下の kHint(How to Use...)と kBookNoPair(2ブックが
-//      揃わないとき)。残る1つ(Hide Unchanged の確認)は **source/KCMLoc.h** にある
-//      ＝2026-08-15(第2段 Task 6B-2)に、文字列を**使う側**へ分けたため
-//      (Hide Unchanged は文書を変えるので model 側)。
-//    ・How to Use...        … 初めて使う人への操作説明。KBS も「使い方の案内だけは日本語」という
-//                             同じ線引きにしている(パネル/メニュー/ステータス行は英語のまま)
-//    ・2ブックが揃わないとき … Compare Books が出す警告
-//  ⚠★★**ファイルは分けたのに、この説明文は分けなかった**。2026-08-16 の監査 B-U1 まで、両側が
-//    「自分は3箇所を持つ」と書き、それぞれ**自分が持っていない文字列**まで説明していた。
-//    ⇒ **相方を読むこと。ここで数え直さないこと**(同じ判断を2か所に置かない)。
-//  ★**線引きの規則**は「ユーザーが明示的に日本語だと言ったもの」であって、内容の性質ではない。
-//    ⚠**同じ機能の2つのアラートが別の言語で答える**: Compare Books の**確認**は 2026-08-13 に
-//      英語へ戻った(ユーザー指示「英語で良いです」)が、下の kBookNoPair は日本語のまま
-//      ＝その指示が名指ししたのは確認アラートだけだったため。揃えるかは未判断。
-//  ⚠**About は英語のみ**(2026-08-06 に「名前＋版数」の1行だけになったので、訳し分ける中身が無い)。
+//  ★**What THIS half holds is what is below**: the How to Use text (kHint / kHint2) and
+//    kBookNoPair, the warning when two books cannot be resolved.
+//    ⚠**Do not count the product's Japanese here.** The model half has its own KCMLoc.h with
+//      its own string (the Hide Unchanged confirmation, which changes the document, so it
+//      belongs to that side). While both files described the whole product, each of them
+//      explained strings it did not hold. **Read the counterpart; do not re-count it here**
+//      ([[one-question-one-place]]).
+//  ★**The line is drawn by what the user asked for in Japanese**, not by the nature of the
+//    text. KBS draws the same line: the how-to-use text is Japanese, the panel, the menus and
+//    the status line stay English.
+//    ⚠**Two alerts of ONE feature answer in different languages**: the Compare Books
+//      confirmation went back to English everywhere, while kBookNoPair below stayed Japanese,
+//      because the instruction that moved the first one named only the confirmation. Whether
+//      to align them has not been decided.
+//  ⚠**About is English only** -- it is one line, "<name> version x.y.z", with nothing to
+//    translate.
 //
-//  ***** このファイルは UTF-8 (BOM 付き) ***** — u"..." リテラルを日本語のまま読めるようにするため。
-//  (BOM 無しだと MSVC が CP932 として誤読する。)
+//  ***** This file is UTF-8 with BOM ***** so that the u"..." literals stay readable as
+//  Japanese. (Without the BOM, MSVC reads them as CP932.)
 //
-//  ★**インクルードガードは相方(source/KCMLoc.h)とわざと別にしてある**（こちらは `__KCMUILoc_h__`。
-//  2026-08-18 の不具合再検査 B11 で分離）。**UI のプロジェクトは model 側のフォルダを include パスに
-//  持っている**ので同じ翻訳単位から両方が見え、**中身の違う2ファイルがガードを共有していると、先に
-//  include された方が後の方を黙って消す**（消えたファイルの名前はどこにも出ない）。
-//  ⚠`KCMBoundaryID.h` は逆で、**同一内容のコピー**（同日実測＝1行も違わない）なのでガード共有が正しい。
+//  ★**The include guard is deliberately DIFFERENT from the counterpart's** (this one is
+//  `__KCMUILoc_h__`). **The UI project has the model half's folder on its include path**, so
+//  both files are visible from one translation unit, and **two files with different contents
+//  sharing a guard means the one included first silently erases the other** -- and the name of
+//  the erased file appears nowhere.
+//  ⚠`KCMBoundaryID.h` is the opposite case: the two copies are **identical**, so sharing a
+//  guard is correct there.
 //
 //========================================================================================
 
@@ -50,14 +52,14 @@
 
 namespace KCMLoc
 {
-	/** UI 言語は日本語か。 */
+	/** Is the UI language Japanese? */
 	inline bool JapaneseUI()
 	{
 		return LocaleSetting::GetLocale().GetUserInterfaceId() == k_jaJP;
 	}
 
-	/** 日本語 UI なら日本語テキスト、それ以外は enUS テーブルのキー翻訳。戻り値は完成済み
-	    テキスト(untranslatable)。 */
+	/** The Japanese text on a Japanese UI, the enUS table's translation of the key otherwise.
+	    The result is finished text (marked untranslatable). */
 	inline PMString Text(const char* englishKey, const char16_t* japanese)
 	{
 		PMString s;
@@ -77,11 +79,12 @@ namespace KCMLoc
 	}
 }
 
-// 旧 KCM_jaJP.fr が持っていた日本語のうち、**この側に来た2つ**。対のキー(kKCMHintKey /
-// kKCMBookNoPairKey)は KCMUIID.h と KCMUI_enUS.fr に健在＝英語 UI はそちらを引く。
+// The Japanese that used to live in KCM_jaJP.fr, the part of it this half holds. The matching
+// keys (kKCMHintKey / kKCMHint2Key / kKCMBookNoPairKey) are alive in KCMUIID.h and
+// KCMUI_enUS.fr -- an English UI reads those.
 namespace KCMJa
 {
-	// ----- How to Use... (操作リファレンス。旧パネル説明文) -----
+	// ----- How to Use... (the operating reference; it used to be the panel's description) -----
 	const char16_t kHint[] =
 		u"Kohaku Change Marker ツール(ツールボックス、またはパネルのツールボタン)を選び、レイアウト上で:\n"
 		u"左ボタン長押し=\n　比較枠を表示(押している間/透明度はパネルの25%・75%)\n"
@@ -103,8 +106,9 @@ namespace KCMJa
 		u"・使い方: ページパネルでページを選択して右クリックし、「Check」を選びます(もう一度で解除)\n"
 		u"・Pixel比較モードでは、チェック印を付けられるのは比較枠や斜線などのマークが付いているページだけです。Story比較モードでは、どのページにも付けられます\n"
 		u"・チェック印と登録(Add / Remove)は保存・読込できます。パネルのフライアウトメニューから:\n"
-		// ★メニュー名の「&」は「&&」に二重化(2026-08-06 再点検)。この本文は CAlert::ModalAlert に渡り、
-		//   CAlert は単独の「&」をニーモニック扱いで食う([[ampersand-eaten-in-ui-strings]]。KBS と同じ対処)。
+		// ★A "&" inside a menu name is doubled to "&&" here: this text goes to CAlert::ModalAlert,
+		//   and CAlert eats a lone "&" as a mnemonic ([[ampersand-eaten-in-ui-strings]]; KBS does
+		//   the same).
 		u"　「Save Check && Register」= 現在のチェック印と登録を専用ファイルに保存(保存先のパスを表示)\n"
 		u"　「Load Check && Register」= 保存内容を読み込み、登録を適用して比較し直し、チェック印を復元(Start中のみ)\n"
 		u"・保存はこのプラグイン専用のファイル(環境設定フォルダー)に書くだけで、InDesignの文書やワークスペースには一切書き込みません\n"
@@ -117,15 +121,19 @@ namespace KCMJa
 		u"・右クリックするのはTarget(新しい方)です。選んだページと、対応するSource側のページの両方について、"
 		u"比較枠とサムネイルを最新の状態に更新します\n\n";
 
-	// ★How to Use 本文の**2本目**(2026-08-19)。上の kHint の後ろへ
-	//   KCMActionComponent::DoUsage が連結して1つのアラートに出す＝**読み手からは1本の文章**。
-	//   中身は「ブックの比較」以降の後半すべて(ブック比較 → オーバーセット → ストーリー一覧 → 印刷/PDF → 注意)。
-	//   ⚠**分けた理由は英語側の都合**＝odfrc は StringTable の1文字列に長さ上限があり、
-	//     enUS 側は分ける前に残り約100B しか無かった([[odfrc-long-string-limit]])。
-	//     **こちら(日本語)は u"" リテラルなので上限は無い**が、**両言語で同じ位置に割ってある**
-	//     ---- 対になるキーが片方だけ存在したり、割れ目がずれていたりすると、次に足す人が迷う。
-	//   ★★**割れ目は「ブックの節を置きたい位置」で決めた**(ユーザー指定＝オーバーセットの検出の前)。
-	//     ⚠**enUS 側(KCMUI_enUS.fr の kKCMHintKey / kKCMHint2Key)も同じ位置。片方だけ動かさないこと。**
+	// ★**The SECOND part of the How to Use text.** KCMActionComponent::DoUsage concatenates it
+	//   after kHint above into one alert, so **the reader sees one piece of writing**. It holds
+	//   everything from "comparing books" on (books -> overset -> the story list -> print/PDF ->
+	//   the disclaimer).
+	//   ⚠**The reason for the split is on the English side**: odfrc caps the length of a single
+	//     string in a StringTable, and the enUS text had about 100 bytes of headroom left
+	//     ([[odfrc-long-string-limit]]). **This side has no such limit** -- it is a u"" literal --
+	//     **but both languages are split at the same point**: a key that exists on one side only,
+	//     or a seam in a different place, is what the next person has to work out.
+	//   ★★**The seam was chosen as the place to put the book section** (user's instruction:
+	//     before "finding overset").
+	//     ⚠**The English side (kKCMHintKey / kKCMHint2Key in KCMUI_enUS.fr) is split at the same
+	//       point. Do not move one without the other.**
 	const char16_t kHint2[] =
 		u"【ブックの比較(Compare Books)】\n"
 		u"ブック(.indb)どうしを章(ドキュメント)単位で比べ、どの章が変わったかを一覧します。\n"
@@ -155,15 +163,16 @@ namespace KCMJa
 		u"・編集後は「Refresh Overset」で走査し直し(Find OversetがONのときのみ)\n\n"
 		u"【注意】どのような問題が起こっても責任を取れません。ご利用は自己責任でお願いします。";
 
-	// (About の日本語は 2026-08-06 に廃止＝英語の1行「<名前> version x.y.z」だけになったので、
-	//  訳し分ける中身が無い。呼び出し側 DoAbout も文字列キーを直接 CAlert へ渡す形に戻してある。)
+	// (About has no Japanese: it is one English line, "<name> version x.y.z", with nothing to
+	//  translate, and DoAbout passes the string key straight to CAlert.)
 
-	// (Compare Books の確認は 2026-08-12 にここへ来て 2026-08-13 に**出ていった**＝ユーザー指示
-	//  「英語で良いです」。文面は enUS テーブルの kKCMBookCompareConfirmKey だけになった。)
+	// (The Compare Books confirmation passed through here and left again -- the user asked for it
+	//  in English -- so its only wording is kKCMBookCompareConfirmKey in the enUS table.)
 
-	// 2ブックを解決できなかったとき(通常はメニューが灰色なので到達しない)。
-	// ⚠**上の相方が英語になったのに、こちらは日本語のまま**(2026-08-13 の指示は確認アラートだけを
-	//   名指ししていた)。同じ機能の2つのアラートが別の言語で答える状態＝揃えるかは未判断。
+	// Shown when two books could not be resolved (normally unreachable: the menu item is greyed).
+	// ⚠**Its counterpart went English while this one stayed Japanese** -- the instruction named
+	//   the confirmation alert only. Two alerts of one feature answer in different languages;
+	//   whether to align them has not been decided.
 	const char16_t kBookNoPair[] =
 		u"ブックパネルで比較したいブックのタブを前面にして、もう1冊のブックも開いてください。";
 }

@@ -60,29 +60,28 @@
 									// here or the Class below cannot name it.
 #include "EveInfo.fh"				// EVE widget types + layout flags - the book comparison dialog (2026-08-11)
 
-// ★★2026-08-16(監査 B-U1): **AppFrameworkID.h と DocumentID.h をここから外した。**
-//   このファイルは 2026-08-15(第2段 Task 6B-2)に KCM.fr から作られたので、include の並びと
-//   **その理由を説明する文章**が丸ごとコピーされていた。ところが2本の理由は model 側にしか無い:
-//     ・AppFrameworkID.h … kApplicationObjectScriptElement(AppFrameworkID.h:427)を定義する
-//                          ＝app.kcmStatus / app.kcmBookResult を**載せる先**。その2つ(と story の
-//                          4カウンター)を serve するのは model 側の kKCMScriptProviderBoss。
-//     ・DocumentID.h     … kAfterCloseDocSignalRespServiceImpl ＝ close-document responder の
-//                          サービス実装。旧コメントの "see that Class below" が指す Class は
-//                          **このファイルに無い**(KCM.fr の kKCMDocResponderServiceBoss の
-//                          Class にある)。
-//   ⇒ 2つとも KCMUI.fr での使用はゼロ(2026-08-16 に Grep で実測＝コメントの中にしか現れなかった)。
-//     外して UI をビルドし、0警告0エラーで通ることを確認した。
-//   ⚠**下の AddIn が使う kActiveContextBoss は AppFrameworkID.h ではなく ShuksanID.h:99**
-//     (kUtilsBoss も同 :241)。だからこの削除は AddIn に影響しない ---- 「Boss だから
-//     AppFrameworkID.h だろう」と当てずに、定義元を引いてから外すこと。
+// ⚠**AppFrameworkID.h and DocumentID.h are deliberately NOT included, and must not come back.**
+//   This file was made from KCM.fr, so the include list arrived complete with the paragraphs
+//   that justify it -- but both of those headers exist for reasons that stayed on the model side:
+//     * AppFrameworkID.h  defines kApplicationObjectScriptElement, the element app.kcmStatus and
+//                         app.kcmBookResult hang on; the model half's kKCMScriptProviderBoss
+//                         serves them.
+//     * DocumentID.h      defines kAfterCloseDocSignalRespServiceImpl, the close-document
+//                         responder's service impl -- and the Class that names it is in KCM.fr,
+//                         not here (the old text's "see that Class below" pointed at nothing).
+//   Neither is used anywhere in this file (grepped: both occurred inside comments only), and the
+//   UI half builds with no warnings and no errors without them.
+//   ⚠**kActiveContextBoss, which the AddIn below uses, comes from ShuksanID.h:99, not from
+//     AppFrameworkID.h** (kUtilsBoss likewise, :241). Look a boss up before dropping a header --
+//     "it is a boss, so it must be in AppFrameworkID.h" is how this goes wrong.
 // ScriptInfoTypes.fh: a toolbox tool has to register its ScriptID in kToolBoxEnumScriptElement
 // (ITool.h:192-223) - that is the tool's identity, not a scripting API. This single header is
 // enough for the resource at the end of this file: it also pulls in ScriptingID.h
 // (kCoreScriptManagerBoss) and defines kCS5ScriptVersion.
 #include "ScriptInfoTypes.fh"	// VersionedScriptElementInfo / Enumerator
 #include "GraphicsID.h"	// for IID_IDRWEVTHANDLER (the UI half's draw-event handler boss).
-						// ★IID_ISPRITE / IID_IPATHGEOMETRY / kPathGeometryImpl は 2026-08-19 に
-						//   トラッカー boss ごと外した(理由は kKCMTrackerBoss の Class コメント)。
+// ★IID_ISPRITE / IID_IPATHGEOMETRY / kPathGeometryImpl went out together with the sprite on the
+//   tracker boss (the reason is in the kKCMTrackerBoss Class comment below).
 #include "TipsID.h"		// for IID_ITIP
 
 // Toolbox tool:
@@ -92,8 +91,8 @@
 #include "LayoutUIID.h"		// kPointerToolBoss (ToolDef tool type)
 #include "CursorID.h"		// IID_ICURSORPROVIDER (tool cursor provider)
 #include "Cursor.fh"		// PNGC / SVGC / HOTC resource types (cursor image and hotspot)
-#include "CursorDefs.h"	// kHIDPICrsrOffset / kHIDPI150CrsrOffset(2x / Win 1.5x のカーソルID)
-#include "IconPNGDefs.h"	// kHIDPIIconOffset/kHIDPIIconOffset150(ツール専用アイコンの2x/Win1.5x)
+#include "CursorDefs.h"	// kHIDPICrsrOffset / kHIDPI150CrsrOffset (the 2x and Windows-1.5x cursor IDs)
+#include "IconPNGDefs.h"	// kHIDPIIconOffset / kHIDPIIconOffset150 (2x and Windows 1.5x of the dedicated tool icon)
 
 // Project includes:
 #include "KCMUIID.h"
@@ -162,13 +161,10 @@ resource PluginDependency(kSDKDefPluginDependencyResourceID)
 resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 {{{
 
-	// UI 専用の描画サービス(2026-08-13・model/UI 分割 第1段 Task 6)。押下中 HUD だけを持つ。
-	// ★model 側の kKCMDrawEventServiceBoss(比較マーク)と役割が違う: あちらは印刷と PDF 書き出しに
-	//   出なければならないので model 側(KCM.fr)、こちらは画面専用。kDrawEventService は複数プロバイダ
-	//   登録が前提。
-	// ⚠「**上の**」と書いてあったのを 2026-08-18(不具合再検査 B-U1)に直した＝あちらは分割で model 側に
-	//   残ったので、このファイルには無い。★13行下の kKCMUIStartupBoss は**同じ誤りを 2026-08-17 に
-	//   直している**——**1本直したときに、同じ形の兄弟を探さなかった**。
+// The UI-only draw service. It carries the on-press HUD and nothing else.
+// ★The model half's kKCMDrawEventServiceBoss (the comparison marks) has a different job: those
+//   have to reach print and PDF export, so they are declared in KCM.fr, while this one is
+//   screen-only. kDrawEventService expects several providers (InDesign itself registers over 20).
 	Class
 	{
 		kKCMUIDrawEventServiceBoss,
@@ -179,10 +175,12 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 		}
 	},
 
-	// UI 側の起動/終了サービス(2026-08-13・model/UI 分割 第1段 Task 8)。model 側の KCM.fr が持つ
-	// kKCMPeekStartupBoss と対(★「上の」と書いてあったのは分割前の名残＝この .fr には無い。2026-08-17 訂正)。
-	// ★終了時の順序が意味を持つ: 購読を外してからパネル周りを畳む(KCMUIStartup.cpp の冒頭コメント参照)。
-	// ⚠2つのサービスの**相対順序は保証されない**。分割時に1行ずつ確認して前後関係が無いことを確かめてある。
+// The UI half's startup / shutdown service. Its counterpart is kKCMPeekStartupBoss, in the model
+// half's KCM.fr.
+// ★Order matters on the way out: the subscriptions come off before the panel is taken down (see
+//   the comment at the top of KCMUIStartup.cpp).
+// ⚠**The relative order of the two services is not guaranteed.** It was checked line by line at
+//   the split that neither depends on the other having run.
 	Class
 	{
 		kKCMUIStartupBoss,
@@ -449,8 +447,8 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 	// The text cell of a CHANGE row (2026-08-20): a generic panel widget whose IControlView is our
 	// own, plus the three text pieces it paints. ★It exists because a stock static text draws its
 	// whole string in ONE colour, and this cell has to draw the changed characters at the theme's
-	// text colour with the words around them faded toward the background (user's request, "KBS を
-	// 参考に"). Same construction as KBS's kKBSColorTextWidgetBoss, which highlights a search hit
+	// text colour with the words around them faded toward the background (user's request: "follow
+	// KBS"). Same construction as KBS's kKBSColorTextWidgetBoss, which highlights a search hit
 	// the same way, and as the scroll-map strip below - kGenericPanelWidgetBoss plus one view.
 	// ★No IID_ITIP here, unlike the cell above: a generic panel has no tooltip to silence, so the
 	//   silence these rows were given in 2026-08-10 comes free.
@@ -510,7 +508,8 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 		{
 			IID_ITOOL,      kKCMToolImpl,
 			IID_IPMPERSIST, kPMPersistImpl,
-			// ツール選択中は常時✓カーソル(CToolCursorProvider 派生)。KCMCursorProvider.cpp。
+			// The check-mark cursor, shown for as long as the tool is active (CToolCursorProvider
+			// subclass; KCMCursorProvider.cpp).
 			IID_ICURSORPROVIDER, kKCMCursorProviderImpl,
 		}
 	},
@@ -521,23 +520,23 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 	// (dynamicdocumentsui AnimationUIButtonTriggerTrackerBoss) - and "same shape" now means
 	// exactly these two interfaces, nothing else. Why, and what used to be here:
 	//
-	// ★★★sprite を持たせない(2026-08-19・不具合再検査 B-U6 で全数を数え直した)。
-	//   2026-08-06〜2026-08-19 はここに IID_ISPRITE(kNoHandleSpriteImpl) と
-	//   IID_IPATHGEOMETRY(kPathGeometryImpl) が在り、理由を「手本は wavetool の kSawWaveTrackerBoss
-	//   ＝**SDK のトラッカー boss はこの2つを必ず持つ**」と書いていた。**この全称は誤り**だった:
-	//     ・ISprite を Query するのは **CLayoutTracker**(AbortTracking ほか)と
-	//       **CPathCreationTracker**(4箇所)だけで、**CTracker は一度も触らない**。
-	//     ・CPathCreationTracker.h 自身が「この基底でグリッド作成を使うなら boss に
-	//       IID_ISPRITE, kNoHandleSpriteImpl を入れよ」と**基底の側の条件**として書いている。
-	//   ∴ 数えるべき母集合は「トラッカー boss」ではなく「その基底クラス」だった。SDK 全数=
-	//     トラッカー boss 4つのうち sprite を持つのは wavetool の2つ(kSawWave/kSineWave)だけで、
-	//     **どちらも CPathCreationTracker 派生**。CTracker 直接派生の2つ
-	//     ---- snapshot kSnapTrackerBoss / 上記 dynamicdocumentsui ---- は**どちらも持たない**。
-	//   KCMTracker も **CTracker 直接派生**なので、**持たない側が「公式と同じ形」**。
-	//   旧コメントは「公式の boss 構成から外れないよう残す」と書いていたが、実際は
-	//   **残すことで外れていた**(4本中ここだけが CTracker 派生で sprite を持っていた)。
-	//   ⇒ 図形を作るトラッカー(CPathCreationTracker 派生)へ作り替える日が来たら、そのとき
-	//     **基底のヘッダーが要求する組**を入れ直すこと。「トラッカーだから」では入れない。
+	// ★★★NO SPRITE ON THIS BOSS -- established by re-counting the whole SDK.
+	//   IID_ISPRITE (kNoHandleSpriteImpl) and IID_IPATHGEOMETRY (kPathGeometryImpl) used to sit
+	//   here, justified as "wavetool's kSawWaveTrackerBoss has them, so **an SDK tracker boss
+	//   always has them**". **That universal was false:**
+	//     * ISprite is queried by **CLayoutTracker** (AbortTracking and others) and by
+	//       **CPathCreationTracker** (four places). **CTracker never touches it.**
+	//     * CPathCreationTracker.h states it from the other end: if you use grid creation with that
+	//       base, put IID_ISPRITE, kNoHandleSpriteImpl on the boss -- a condition **of the base**.
+	//   ∴ the set to count was never "tracker bosses" but "the base class each one derives from".
+	//   Of the SDK's four tracker bosses, the two that carry a sprite are wavetool's (kSawWave /
+	//   kSineWave) and **both derive from CPathCreationTracker**; the two that derive from CTracker
+	//   directly -- snapshot's kSnapTrackerBoss and dynamicdocumentsui's named above -- carry none.
+	//   KCMTracker derives from CTracker directly, so **not having one is the shape that matches**.
+	//   The old comment said keeping them stayed inside the official shape; keeping them was what
+	//   departed from it -- of the four, this was the only CTracker-derived boss with a sprite.
+	//   ⇒ If this is ever rebuilt as a shape-creating tracker (CPathCreationTracker), put back the
+	//     set **that base's header asks for**. Never "because it is a tracker".
 	Class
 	{
 		kKCMTrackerBoss,
@@ -922,8 +921,7 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kSDKDefIsNotDynamicMenuFlag,
 
 		// Separator below "Refresh Overset" (path ending in ":-" renders a menu separator; no ActionDef
-		// needed). Position table: KCMUIID.h の ActionID 位置一覧(9.50)。(2026-07-25 コメント現行化。
-		// 旧記述の "Invoke Panel Shortcut" は 2026-07-13 廃止済み)
+		// needed). Its place in the flyout is kKCMSep3MenuItemPosition in KCMUIID.h.
 		kKCMPopupSep3ActionID,
 		kKCMPopupMenuPath kSDKDefDelimiterAndSeparatorPath,
 		kKCMSep3MenuItemPosition,
@@ -1012,9 +1010,10 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKCMUsageMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
-		// ("About scripting" フライアウト項目は 2026-07-25 に撤去(ユーザー指定)。スクリプトAPIは
-		//  既に無く、"No scripts are currently available." を出すだけの項目だったため。ActionID
-		//  kKCMPopupAboutScriptActionID(kKCMPrefix+3)は予約のまま。)
+		// (The "About scripting" flyout item was removed: the scripting API it announced was already
+		//  gone, so the item did nothing but say "No scripts are currently available."
+		//  Its kKCMPopupAboutScriptActionID (**kKCMUIPrefix + 3** -- this is the UI half) stays
+		//  reserved.)
 
 		// "About this plug-in" on the panel flyout (popup) menu (shown last).
 		kKCMPopupAboutThisActionID,
@@ -1102,8 +1101,8 @@ resource MenuDef (kSDKDefMenuResourceID)
 		// not answer the second question anyway).
 		// ★Enabled ONLY in the Story mode, while armed, on a row that has a partner to compare
 		// against (kCustomEnabling -> KCMStoryRowCanRefresh). ⚠Being the only item in this menu,
-		// greyed means the menu does not appear at all - which is exactly what "Story モードでのみ"
-		// asks for.
+		// greyed means the menu does not appear at all - which is exactly what "only in the Story
+		// mode" asks for.
 		kKCMStoryRowRefreshActionID,
 		kKCMStoryRowMenuName,
 		kKCMStoryRowRefreshMenuItemPosition,
@@ -1400,7 +1399,7 @@ resource ActionDef (kSDKDefActionResourceID)
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 
-		// (kKCMPopupAboutScriptActionID の ActionDef は 2026-07-25 に撤去=About Scripting 項目削除に伴い。)
+		// (The ActionDef for kKCMPopupAboutScriptActionID went out with the "About scripting" item.)
 
 		kKCMActionComponentBoss,
 		kKCMPopupAboutThisActionID,
@@ -1446,7 +1445,7 @@ resource ActionDef (kSDKDefActionResourceID)
  * holding the left mouse button reveals the comparison marks (modifier keys switch to the
  * peek / CMYK gestures - see the tool boss above). Group kSixthAdobeToolsGroup is a good slot
  * for third-party / SDK tools. The icon uses a dedicated tool icon (kKCMToolIconResID;
- * KCM_Tool_32.png/_64.png, ユーザー提供 2026-07-14) instead of the panel PNG suite.
+ * KCM_Tool_32.png/_64.png, supplied by the user) instead of the panel PNG suite.
  * kKCMToolActionID is the tool-select shortcut action (no ActionDef needed; the
  * toolbox framework provides the selection action for a tool).
  */
@@ -1490,14 +1489,17 @@ resource LocaleIndex ( kSDKDefStringsResourceID)
 		kWildFS, k_itIT, kSDKDefStringsResourceID + index_enUS
 		kWildFS, k_nbNO, kSDKDefStringsResourceID + index_enUS
 		kWildFS, k_fiFI, kSDKDefStringsResourceID + index_enUS
-		// kWildFS と enUS テーブル: jaJP 文字列テーブルは撤去(2026-08-05・KBS と同時)。日本語を
-		// 話す3箇所は KCMLoc.h の実行時切替へ。旧形(kInDesignJapaneseFS+jaJP テーブル)は
-		// 「Roman エンジン+日本語 UI」でどの行にも当たらず全キーが生表示になる(同日実測)。
+		// kWildFS with the enUS table: the jaJP string table was retired (the same decision as KBS).
+		// The strings that speak Japanese are switched in at run time by KCMLoc.h -- which is where
+		// they are listed; do not re-count them here.
+		// The old form (kInDesignJapaneseFS plus a jaJP table) matched **no row at all** on a Roman
+		// engine with a Japanese UI, and every key then shows raw (measured).
 		kWildFS, k_jaJP, kSDKDefStringsResourceID + index_enUS
-		// ★catch-all(2026-08-06 再点検): 上に列挙の無い UI 言語(中国語・韓国語・ロシア語等)の受け皿。
-		//   この行が無いとそれらの言語ではテーブルが引けず、全キーが生表示になる(「どの行にも当たらないと
-		//   生表示」は jaJP テーブル撤去作業(2026-08-05)の実測どおり)。公式サンプル(basicpanel ほか)と
-		//   KBS は全てこの行を持つ。必ず言語列挙の末尾に置くこと(前に置くと個別行に到達しない)。
+		// ★The catch-all, for UI languages not listed above (Chinese, Korean, Russian and so on).
+		//   Without this row they find no table and every key shows raw -- "no matching row means raw
+		//   keys" is exactly what retiring the jaJP table measured. The official samples (basicpanel
+		//   among them) and KBS all carry it.
+		//   ⚠**It has to stay last**: put it before the individual rows and none of them is reached.
 		kWildFS, k_Wild, kSDKDefStringsResourceID + index_enUS
 	}
 };
@@ -1541,24 +1543,25 @@ resource PNGR(kKCMIconOffResID) "KCM_Off32.png"
 // KohakuChangeMarkerTab.png with your own artwork (a small, e.g. ~20x20, transparent PNG).
 resource PNGA(kKCMPaletteIconResID) "KohakuChangeMarkerTab.png"
 
-// KCM ツールボックスアイコン(ユーザー提供 2026-07-14)。通常=32x32、HiDPI(2x)=64x64。ダーク版は
-// 用意していないため PNGAD にも同じライト版画像を指定して流用する(ユーザー指定)。Windows の 1.5x は
-// 別画像を作らず通常(32x32)を再利用する(wavetool サンプルと同じ作法)。
+// The KCM toolbox icon (artwork supplied by the user). Normal = 32x32, HiDPI (2x) = 64x64.
+// There is no dark version, so PNGAD points at the same light artwork. Windows 1.5x reuses the
+// normal 32x32 rather than a third image (the wavetool sample does the same).
 resource PNGA(kKCMToolIconResID)  "KCM_Tool_32.png"
-resource PNGAD(kKCMToolIconResID) "KCM_Tool_32.png"	// ダーク版なし=ライトを流用
+resource PNGAD(kKCMToolIconResID) "KCM_Tool_32.png"	// no dark version: the light artwork is reused
 resource PNGA(kKCMToolIconResID + kHIDPIIconOffset)  "KCM_Tool_64.png"
-resource PNGAD(kKCMToolIconResID + kHIDPIIconOffset) "KCM_Tool_64.png"	// ダーク版なし=ライトを流用
+resource PNGAD(kKCMToolIconResID + kHIDPIIconOffset) "KCM_Tool_64.png"	// no dark version: the light artwork is reused
 #ifdef WINDOWS
 resource PNGA(kKCMToolIconResID + kHIDPIIconOffset150)  "KCM_Tool_32.png"
 resource PNGAD(kKCMToolIconResID + kHIDPIIconOffset150) "KCM_Tool_32.png"
 #endif
-// ★ロールオーバー版(2026-08-07 追加)。同じ絵を**パネル内のツール切替ボタン**でも使うため
-//   (kKCMToolButtonWidgetID)。RollOverIconButtonWidget 系はマウスが乗ったときに PNGR を引くので、
-//   PNGA だけだとホバーで絵が消える。猫イラスト(上の kKCMIconOnResID)と同じく、状態で絵を変える
-//   必要は無いので通常版をそのまま流用する。ツールボックス側のツール枠は PNGA/PNGAD しか見ないので、
-//   ここを足してもあちらの見た目は変わらない。
+// ★The rollover forms exist because **the tool switch button inside the panel**
+//   (kKCMToolButtonWidgetID) shows the same artwork. A RollOverIconButtonWidget asks for PNGR
+//   while the pointer is over it, so with PNGA alone the picture vanishes on hover. As with the
+//   cat illustration above there is no reason for the two states to differ, so the normal
+//   artwork is reused. The toolbox's own tool slot reads PNGA / PNGAD only, so adding these
+//   changes nothing there.
 resource PNGR(kKCMToolIconResID)  "KCM_Tool_32.png"
-resource PNGRD(kKCMToolIconResID) "KCM_Tool_32.png"	// ダーク版なし=ライトを流用
+resource PNGRD(kKCMToolIconResID) "KCM_Tool_32.png"	// no dark version: the light artwork is reused
 resource PNGR(kKCMToolIconResID + kHIDPIIconOffset)  "KCM_Tool_64.png"
 resource PNGRD(kKCMToolIconResID + kHIDPIIconOffset) "KCM_Tool_64.png"
 #ifdef WINDOWS
@@ -1568,11 +1571,14 @@ resource PNGRD(kKCMToolIconResID + kHIDPIIconOffset150) "KCM_Tool_32.png"
 
 // ✓ tool cursor. {X, Y} = the checkmark's vertex (folding point) in 1x logical pixels, which must
 // match the vertex (10,18) drawn by KCMDrawCheckGlyph so the click point sits on the vertex.
-// ★2026-07-25: コールバック描画(KCMCheckCursorBitmapProc)から **PNG リソース**へ変更した。理由=押下時に
-//   間欠的に出る「ゴミ」の発生源が、基底 CTracker::BeginTracking の中の✓再設置(モーダルカーソル取得)で
-//   コールバックが呼び直されることだったため(切り分け 2026-07-25)。リソースなら再設置でバッファ描画が
-//   起きない=発生源そのものが消える。画像は KCMCheckGlyph.h と同じ幾何で生成(work/ のスクリプト参照)。
-//   1x=32x32 / 2x=+kHIDPICrsrOffset(3000) / Win 1.5x=+kHIDPI150CrsrOffset(4000)。手本=sdksamples/snapshot。
+// ★The image is a **PNG resource**, not a callback-drawn bitmap (KCMCheckCursorBitmapProc).
+//   The intermittent "rubbish" that showed on press came from the base
+//   CTracker::BeginTracking re-installing the check cursor (its modal cursor fetch), which ran
+//   the drawing callback again. A resource draws into no buffer when it is re-installed, so
+//   the source of it is gone. The artwork is generated with the same geometry as
+//   KCMCheckGlyph.h (see the script under work/).
+//   1x = 32x32 / 2x = +kHIDPICrsrOffset (3000) / Windows 1.5x = +kHIDPI150CrsrOffset (4000).
+//   Modelled on sdksamples/snapshot.
 resource PNGC(kKCMCheckCursorResID) "KCM_Check_10_18.png"
 resource PNGC(kKCMCheckCursorResID + kHIDPICrsrOffset) "KCM_Check_10_18@2x.png"
 #ifdef WINDOWS
@@ -1580,23 +1586,27 @@ resource PNGC(kKCMCheckCursorResID + kHIDPI150CrsrOffset) "KCM_Check_10_18@3to2x
 #endif
 resource HOTC(kKCMCheckCursorResID) {10, 18};
 
-// Alt+左「色比較」の CMYK 情報カーソルのホットスポット。✓と同じ折れ点(10,18)=クリック点に一致させる。
-// CursorID は ✓ と分けてある(キャッシュ取り違えによる初回フレームのゴミ対策。KCMUIID.h 参照)。
+// Hotspot of the CMYK readout cursor (Alt + left = "compare colour"). The same vertex (10,18) as
+// the check mark, so it sits on the click point. Its CursorID is kept separate from the check
+// cursor's: sharing one made the cursor cache confuse the 24x24 check with the 150x60 readout,
+// and rubbish showed for one frame (see KCMUIID.h).
 resource HOTC(kKCMCmykCursorResID) {10, 18};
 
-// 同・交互切替用の第2ID。ドラッグ中の数値更新は kFalse カーソルの入れ直しで行い、同一スペック再設定の
-// no-op を避けるため 1021/1022 を交互に使う(KCMTracker.cpp の InstallCmykCursor)。ホットスポットは同じ。
+// The second ID, alternated with the one above. While dragging, the numbers are updated by
+// re-installing a kFalse cursor spec, and 1021 / 1022 are used in turn so that re-installing the
+// same spec is never taken as a no-op (KCMTracker.cpp, InstallCmykCursor). Same hotspot.
 resource HOTC(kKCMCmykCursor2ResID) {10, 18};
 
-// ✓カーソルの非アクティブ版(白抜き=黒フチ+白本体)。ホットスポットは黒✓と同じ折れ点 (10,18)=切替で
-// カーソル位置は動かない。出す条件は **Stop 中(比較していない)、またはレイアウトビューの上に居ないとき**
-// (KCMCursorProvider.cpp → KCMToolCursorShouldBeBlack)。
-// ⚠ここは 2026-08-19(不具合再検査 B-U6)まで「**Start 中かつマウス下が Target 文書**」以外、と
-//   書いてあった。それは 2026-07-26 の**ユーザー指定で撤回された旧仕様**で、以後は
-//   **Start 中ならマウス下がどの文書でも黒**(第3の文書でも黒＝「比較は動いている」を示す)。
-//   実装側(KCMCmykCursor.cpp の KCMToolCursorShouldBeBlack)は同日に直っており、
-//   **リソース側の説明文だけが旧仕様のまま残っていた**。
-// こちらも PNG リソース(上の黒✓と同じ理由。2026-07-25)。
+// The inactive form of the check cursor (outlined: black edge, white body). Same vertex (10,18)
+// as the black one, so switching does not move the pointer. It is shown **while the comparison
+// is stopped, or while the pointer is not over a layout view**.
+// ★The rule lives in KCMToolCursorShouldBeBlack, **which is defined in KCMCmykCursor.cpp**;
+//   KCMCursorProvider.cpp is the caller.
+// ⚠This comment described a rule that had been withdrawn: "black only while Started AND with the
+//   pointer over the Target document". The rule since then is **black over any document while
+//   Started** (a third document included -- black says "the comparison is running").
+//   **The code was corrected the day the rule changed; this resource comment was not.**
+// A PNG resource as well, for the reason given for the black one above.
 resource PNGC(kKCMCheckCursorInactiveResID) "KCM_CheckOff_10_18.png"
 resource PNGC(kKCMCheckCursorInactiveResID + kHIDPICrsrOffset) "KCM_CheckOff_10_18@2x.png"
 #ifdef WINDOWS
@@ -1767,8 +1777,8 @@ resource KCMStoryRowWidget(kKCMStoryRowRsrcID + index_enUS)
 	kTrue, kTrue,						// Visible, Enabled
 	"",									// Panel name
 	{
-		// ★★THE EXPAND / COLLAPSE ARROW (user's request, 2026-08-20: "KBS のツリーの様に、UID の
-		//   よこにツリーを閉じたり開いたりするのを付けて欲しい"). Stock part - the tree framework owns
+		// ★★THE EXPAND / COLLAPSE ARROW (user's request: "next to the UID, an expander that opens and
+		//   closes, like the tree in KBS"). Stock part - the tree framework owns
 		//   its clicks and swaps the collapsed / expanded icon itself. Field for field the same as
 		//   KBS's (KBS.fr:1220) and paneltreeview's.
 		// ★It is HIDDEN on a row with no children, by CTreeViewWidgetMgr::HideExpanderIfNotExpandable
@@ -1916,8 +1926,8 @@ resource KCMStoryRowWidget(kKCMStoryChangeRowRsrcID + index_enUS)
 		// Left: the words the edit concerns. ★For a deletion this is what was REMOVED (the model
 		// chose which side - KCMStoryList.h); for everything else it is the new text.
 		//
-		// ★★★IT STARTS WHERE THE STORY ROW'S TEXT STARTS - 68, THE SAME NUMBER (user's call,
-		//   2026-08-20: "子供の文字の始まりは、親の文字の始まりと同じにして欲しい"). It went 84 ->
+		// ★★★IT STARTS WHERE THE STORY ROW'S TEXT STARTS - 68, THE SAME NUMBER (user's call: "let a
+		//   child's text begin where its parent's text begins"). It went 84 ->
 		//   40 -> 68 in one afternoon, and the last move is the one to keep: the two levels read as
 		//   one column of text, and a change reads directly under the story it belongs to.
 		//   ⇒ ★THE INDENT IS NOT IN THE TEXT ANY MORE. What says "this row hangs under that one" is
@@ -1929,7 +1939,8 @@ resource KCMStoryRowWidget(kKCMStoryChangeRowRsrcID + index_enUS)
 		// ★★DRAWN BY HAND, WHERE THE STORY ROW'S IS A STOCK STATIC TEXT (2026-08-20). The changed
 		//   characters keep the theme's text colour and the context on either side of them is faded
 		//   toward the panel's background, which one static text cannot do - it has one colour for
-		//   its whole string (user's request: "変更されたところ以外は薄い色にして欲しい、KBSを参考に").
+		//   its whole string (user's request: "everything but the changed part in a lighter colour,
+		//   follow KBS").
 		//   ⚠The three cells are therefore NO LONGER the same widget type on the two rows. Everything
 		//     that matters stays the same: the same WidgetID, the same frame, the same font (named in
 		//     KCMStoryCellView.cpp, since a generic panel carries no font field). What is gone from
@@ -1981,8 +1992,9 @@ resource KCMStoryRowWidget(kKCMStoryChangeRowRsrcID + index_enUS)
 // ★★A RUBY CHANGE ROW - the same row as above, on two lines (2026-08-22).
 //
 // Ruby is set ABOVE the characters it belongs to, and the user asked for it to look like that
-// rather than like a second column of text ("ちいさくなくてもいいです、文字のサイズは同じで、位置を
-// 漢字の文字の上に、実際のルビの様に" / "位置が重要"). At the palette font's own size that needs two
+// rather than like a second column of text ("it need not be small - the same character size,
+// placed above the kanji, the way real ruby is" / "the position is what matters"). At the
+// palette font's own size that needs two
 // lines, so this row is twice as tall and KCMStoryCellView splits its text cell in half.
 //
 // ★WHY A THIRD RESOURCE RATHER THAN A TALLER SECOND ONE. Only ruby rows are tall; an ordinary text
@@ -2148,13 +2160,13 @@ resource PanelList (kSDKDefPanelResourceID)
 	{
 		kSDKDefPanelResourceID,		// Resource ID for this panel
 		kKCMUIPluginID,				// owning plug-in
-		kIsResizable,				// ★2026-08-10 ユーザー指定で可変に(それまでは kNotResizable)。
-									//   下限を守るのは KCMPanelView::ConstrainDimensions ＝
-									//   幅は今までの固定幅が最小、高さは Story Edits を閉じている間
-									//   だけ上ペインの高さに固定される
+		kIsResizable,				// ★Resizable, at the user's request (it used to be kNotResizable).
+							//   The floor is kept by KCMPanelView::ConstrainDimensions: the width
+							//   never goes below what used to be the fixed width, and while Story
+							//   Edits is closed the height is pinned to the top pane's.
 		kKCMPanelWidgetActionID,	// Action ID to show/hide the panel
 		"",							// panelName empty: place via altMenu below for explicit menu placement
-		kKCMPanelPluginsMenuPath,	// Plug-Ins > Kohaku Plug-Ins > Kohaku Change Marker(束ね名は kKCMCompanyKey の解決値)
+		kKCMPanelPluginsMenuPath,	// Plug-Ins > Kohaku Plug-Ins > Kohaku Change Marker (the grouping name is what kKCMCompanyKey resolves to)
 		kKCMPanelPluginsMenuPosition,	// lower part of the menu
 		kKCMPaletteIconResID, kKCMUIPluginID,	// PNG icon for the collapsed dock tab
 		c_Panel
@@ -2168,7 +2180,12 @@ resource KCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 	kKCMPanelWidgetID,			// WidgetID
 	kPMRsrcID_None,					// RsrcID
 	kBindNone,						// Binding
-	0, 0, 224, 185,					// Frame: left, top, right, bottom (ステータス欄を3→4行に拡張した分、下端を +17px。イラストも下端145へ下寄せ。ステータス欄を+12px広げた分、右端 192→204。2026-07-15 にメッセージ欄を+10px広げ 204→214。2026-08-06 にさらに+10px広げ 214→224=中の widget も全部 +10px 追随させてある。★2026-08-09 に下端 153→173=Story Edits セクションの開閉ボタンを置く 20px の帯を新設した分。★2026-08-10 に 173→185=その帯へ猫イラストを下ろした分(20px の帯には 32×32 の絵が収まらない)。猫が空けた場所はステータス欄が右へ 180→216 で引き取った)
+	0, 0, 224, 185,					// Frame: left, top, right, bottom.
+									// ★The height includes the band at the bottom that carries the Story
+									//   Edits expander and the cat illustration. **The band is 32px because
+									//   a 20px one cannot hold the 32x32 artwork** -- that is what the last
+									//   growth of this panel paid for, and the message area took the width
+									//   the cat left behind (see kKCMStatusTextWidgetID below).
 	kTrue, kTrue,					// Visible, Enabled
 	kFalse,							// Erase background
 	kInterfacePaletteFill,			// Erase to color
@@ -2180,7 +2197,8 @@ resource KCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 	//   for its Link Info section (LinksUIViews_enUS.fr:43-68) - the feature this one is modelled on.
 	//
 	//   ★★THE WIDGETS BELOW ARE UNCHANGED - not one Frame moved. The top pane covers the whole panel
-	//   (0,0,224,153), so every coordinate inside it means what it always meant. Their indentation was
+	//   (0,0,224,185 - the whole panel), so every coordinate inside it means what it always meant.
+	//   Their indentation was
 	//   deliberately left alone too, so the diff shows the nesting and nothing else.
 	//
 	//   Field order is CSplitterPanelControlData (Widgets.fh:403-431) - fourteen of them. The trailing
@@ -2229,28 +2247,31 @@ resource KCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 			kKCMTargetTextWidgetID,
 			kSysStaticTextPMRsrcId,
 			kBindLeft | kBindRight | kBindTop,
-			Frame(8, 8, 216, 24)		// 右端 206→216(パネル+10px 拡張, 2026-08-06)
+			Frame(8, 8, 216, 24)		// right edge follows the panel width
 			kTrue, kTrue,
-			// ★★kEllipsizeBeginning(2026-08-12。旧 kEllipsizeMiddle)。この行が出すのは 2026-08-12 から
-			//   文書名ではなく**フルパス**で(KCMDocPathFromDB)、比べる2つは同じ仕事の版違い＝
-			//   ファイル名まで同じことが多いため、見分けの決め手はパスの末尾側(親フォルダー)になる。
-			//   ⇒ 溢れたら**前を削る**＝決め手とファイル名を残す(`…\new\ch01.indd`)。中央省略だと
-			//     その親フォルダーがちょうど消えて2行が同じ文字列に見える。ブック比較ダイアログも同じ。
-			//   ⚠**この行の幅は 208px なのでフルパスはたいてい溢れ、行頭の「Target: 」ラベルも
-			//     一緒に消える**。承知のうえでの指定(2026-08-12 ユーザー「フルパスにしてみて、
-			//     ...がつくかも」)＝上下の並び(上が Target・下が Source)がラベルの代わりになる。
-			//   ★収まりの判断はここ1か所＝C++ 側は一切削らない(文字数ベースの自前短縮は 2026-08-06 の
-			//     監査ブロック8 A-2 で撤去済み)。
-			// ★末尾の kFalse = Convert ampersands を切る。kTrue だと単独の '&' がキーボード
-			//   アクセラレータとして食われ、"A&B.indd" が "AB.indd"(B に下線)になる。
-			//   KCM の StaticText は4つとも associated widget が kInvalidWidgetID =
-			//   アクセラレータの飛び先が1つも無いので、kTrue にしておく利益がゼロ。
-			//   製品 linksui もリンクファイル名の widget は kFalse(LinksUIViews_enUS.fr:412)。
-			//   ⚠公式には2流儀あり、layerpanel のツリー行は kTrue のまま C++ 側で
-			//     InsertAmpersandForDisplay('&'→'&&')を通す(LayerPanelViewsPageItemTreeNode.fr:86)。
-			//     KBS はツリー行と CAlert(=.fr が届かない層)を持つのでそちらを採っている。
-			//     KCM は CAlert に可変文字列を載せずツリーも無いので、widget 側で切る方が
-			//     「新しいメッセージで二重化を通し忘れる」経路ごと消える(2026-08-06 ユーザー判断)。
+			// ★★kEllipsizeBeginning, not kEllipsizeMiddle. **This line shows a FULL PATH**, not a document
+			//   name (KCMDocPathFromDB), and the two documents being compared are versions of one job, so
+			//   the file names are often identical: what tells them apart is the tail of the path (the
+			//   parent folder).
+			//   ⇒ On overflow, **cut from the front** and keep the deciding part with the file name
+			//     (`...\new\ch01.indd`). Middle-ellipsis removes exactly that parent folder and the two
+			//     lines then read as the same string. The book comparison dialog does the same.
+			//   ⚠**This line is 208px wide, so a full path usually overflows and the leading "Target: "
+			//     label goes with it.** That was accepted deliberately (user: "try the full path"): the
+			//     order of the two lines -- Target above, Source below -- stands in for the labels.
+			//   ★Fitting is decided HERE and nowhere else: the C++ side trims nothing (a character-count
+			//     shortener used to exist and was removed).
+			// ★The trailing kFalse turns Convert ampersands OFF. With kTrue a lone '&' is eaten as a
+			//   keyboard accelerator and "A&B.indd" shows as "AB.indd" (with B underlined).
+			//   All four of KCM's static texts have kInvalidWidgetID as their associated widget, so there
+			//   is no accelerator target anywhere and nothing to gain from kTrue.
+			//   The product's linksui also uses kFalse for the link file name (LinksUIViews_enUS.fr:412).
+			//   ⚠There are two official ways: layerpanel keeps kTrue on its tree rows and doubles the
+			//     ampersand in C++ instead ('&' -> '&&' through InsertAmpersandForDisplay,
+			//     LayerPanelViewsPageItemTreeNode.fr:86). KBS takes that road because it has tree rows and
+			//     CAlert text, neither of which a .fr reaches.
+			//     KCM puts no variable string in a CAlert and has no such rows, so turning it off in the
+			//     widget removes the whole "forgot to double it in a new message" route.
 			kAlignLeft, kEllipsizeBeginning, kFalse,
 			kKCMTargetLabelKey,
 			kInvalidWidgetID,
@@ -2260,90 +2281,96 @@ resource KCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 			kKCMSourceTextWidgetID,
 			kSysStaticTextPMRsrcId,
 			kBindLeft | kBindRight | kBindTop,
-			Frame(8, 26, 216, 42)		// 右端 206→216(パネル+10px 拡張, 2026-08-06)
+			Frame(8, 26, 216, 42)		// right edge follows the panel width
 			kTrue, kTrue,
-			kAlignLeft, kEllipsizeBeginning, kFalse,	// ★ellipsize も ampersand も Target 側と同じ理由(上のコメント参照)
+			kAlignLeft, kEllipsizeBeginning, kFalse,	// ★ellipsize and ampersand for the same reasons as the Target line above
 			kKCMSourceLabelKey,
 			kInvalidWidgetID,
 		),
 
-		// (Target/Source 下の区切り線は 2026-07-10 に撤去。以下を 8px 上へ詰めた。)
+		// (The rule below Target/Source is gone, and what follows moved up by 8px.)
 
-		// (Start / Stop・Print comparison marks・Marks opacity 25%/75% は 2026-07-10 にパネルから
-		//  フライアウトメニュー項目へ移行(kKCMPopupStartStopActionID / kKCMPopupPrintMarksActionID /
-		//  kKCMPopupOpacity25ActionID / kKCMPopupOpacity75ActionID)。ボタン/チェック/ラジオは撤去し、
-		//  以下を上へ詰めた。パネルに残るのは Target/Source・セパレータ・Prev/Next・ステータス+アイコン。)
+		// (Start / Stop, "Print comparison marks" and the 25% / 75% opacity radios left the panel for
+		//  the flyout menu: kKCMPopupStartStopActionID / kKCMPopupPrintMarksActionID /
+		//  kKCMPopupOpacity25ActionID / kKCMPopupOpacity75ActionID. **The panel deliberately holds no
+		//  buttons for them** -- what is left here is Target/Source, Prev/Next, the message area and
+		//  the icons.)
 
 		// Change navigation: jump the Target layout view to the previous / next page that carries a
 		// KCM mark (changed ring, Added border, or overflow "/"). Handled by KCMChangeNav.cpp.
-		// レイアウトは KESCL パネルにならい「[Prev]  3/12  [Next]」。ボタンは文字幅相当(幅48)まで詰め、
-		// 中央に現在位置(kKCMNavPosTextWidgetID)を置く(2026-07-15 ユーザー指定)。左右マージンは12pxで対称。
+		// The layout follows the KESCL panel: "[Prev]  3/12  [Next]". The buttons are narrowed to about
+		// the width of their captions and the position readout (kKCMNavPosTextWidgetID) sits between
+		// them; the left and right margins are a symmetric 12px.
 		ButtonWidget
 		(
 			kKCMPrevChangeButtonWidgetID,
 			kSysButtonPMRsrcId,
 			kBindLeft | kBindTop,
-			Frame(48, 48, 106, 70)		// 幅58維持。★2026-08-07 にツール切替ボタンと左右入れ替え=クラスタは右側へ(ツールの右端40から8px)
+			Frame(48, 48, 106, 70)		// width kept at 58. ★Swapped left-right with the tool switch button, so the cluster is on the right (8px from the tool's right edge, 40)
 			kTrue, kTrue,
 			kKCMPrevChangeKey,
 		),
-		// Prev/Next の間の現在位置表示「3/12」(中央揃え)。値は KCMChangeNav.cpp が KCMSetNavPosition で
-		// 実行時に埋める(初期は空)。旧来はステータス行に出していたが、KESCL 風にボタン間へ移設(2026-07-15)。
+		// The position readout "3/12" between Prev and Next (centred). KCMChangeNav.cpp fills it in at
+		// run time through KCMSetNavPosition; it starts empty. It used to be part of the status line.
 		StaticTextWidget
 		(
 			kKCMNavPosTextWidgetID,
 			kSysStaticTextPMRsrcId,
-			// ★★2026-08-10: **可変幅でも動かさない**(ユーザー指定「Prev と Next が離れてしまう。
-			//   これの間のサイズは固定で、左側につねに寄せる感じで」)。一度 kBindRight を足して
-			//   Next を右端に貼り付けたが、広げるとクラスタが左右に引き裂かれた。
-			//   ★Prev・位置表示・Next の3つは**1つの操作部品**として読まれるので、間隔が伸びると
-			//     ばらばらの部品に見える。伸びてよいのは Target/Source 行・ステータス欄・一覧の側。
+			// ★★**It does not move when the panel is widened** (user: "Prev and Next end up far apart --
+			//   keep the space between them fixed and the whole thing to the left"). kBindRight was tried
+			//   here once, pinning Next to the right edge, and widening then tore the cluster in two.
+			//   ★Prev, the readout and Next are read as **one control**, so a growing gap makes them look
+			//     like three unrelated ones. What may grow is the Target/Source lines, the message area
+			//     and the list.
 			kBindLeft | kBindTop,
-			Frame(106, 51, 158, 70)		// Prev(〜106)と Next(158〜)の間(幅52)。縦位置合わせで top を +3px。左右入れ替えでクラスタごと右へ(2026-08-07)
+			Frame(106, 51, 158, 70)		// between Prev (..106) and Next (158..), width 52; top +3px to line the text up with the buttons
 			kTrue, kTrue,
-			kAlignCenter, kEllipsizeEnd, kFalse,	// ★ampersand 変換は切る(理由は Target のコメント)。ここは "3/12" だけだが4つの流儀を揃える
-			"",							// 初期テキストは空(実行時に位置を設定)
+			kAlignCenter, kEllipsizeEnd, kFalse,	// ★ampersand conversion off (see the Target line). Only "3/12" appears here, but all four static texts follow one rule
+			"",							// empty to start with; the position is written at run time
 			kInvalidWidgetID,
 		),
 		ButtonWidget
 		(
 			kKCMNextChangeButtonWidgetID,
 			kSysButtonPMRsrcId,
-			kBindLeft | kBindTop,		// ★Prev と一体で左に留まる(理由は位置表示のコメント。2026-08-10)
-			Frame(158, 48, 216, 70)		// 幅58維持。★右端 216 は下の猫イラスト(184〜216)と揃う。パネル右端 224 まで 8px
+			kBindLeft | kBindTop,		// ★stays left, as one piece with Prev (see the readout comment)
+			Frame(158, 48, 216, 70)		// width kept at 58. ★The right edge, 216, lines up with the cat illustration (184..216); 8px from the panel edge at 224
 			kTrue, kTrue,
 			kKCMNextChangeKey,
 		),
 
-		// ★ツール切替ボタン(2026-08-07 ユーザー要望)。押すと **ツールボックスの琥珀のツール**
-		//   (kKCMToolBoss)がアクティブツールになる。絵はツールボックスに出ているものと同じ
-		//   リソース(kKCMToolIconResID)をそのまま参照している＝別画像を用意していない。
-		//   KCMIconWidget を使うのは IID_ITIP(ツールチップ)を載せるため。出す文字列は猫イラストと
-		//   別で、ツールボックスと同じツール名 —— 出し分けは KCMIconTip.cpp が WidgetID で行う。
+		// ★The tool switch button (user's request). Pressing it makes **the plug-in's toolbox tool**
+		//   (kKCMToolBoss) the active tool. The artwork is the very resource the toolbox shows
+		//   (kKCMToolIconResID) -- no second image was made for it.
+		//   It is a KCMIconWidget so that it can carry IID_ITIP: its tooltip is not the cat
+		//   illustration's but the tool name from the toolbox, and KCMIconTip.cpp tells them apart by
+		//   WidgetID.
 		//
-		// ★位置 = Prev ボタン(48〜)の左隣。パネル左端から 8px で、Target ラベル/ステータス欄と縦に揃う。
-		//   上下は Prev/Next(48〜70)と揃えて横一列に見せる。
-		//   (2026-08-07 に3度動かしてここへ落ち着いた: 猫イラストの真上 → Next の右隣 → Prev/Next
-		//    クラスタと左右入れ替え。いずれもユーザー指定。)
-		// ★★枠を**正方形にしない**のが要点(同日ユーザー指定「ツールボックスと同じようにクリッピング
-		//   して欲しい、ツールボックスのは正方形ではない」)。24×22 の枠に 32×32 の PNG を入れると
-		//   周囲の余白が切り取られ、ツールボックスのツール枠と同じ見え方になる。
-		//   ⚠**絵は欠けない**: このツールアイコンは 32px の中に横69%(≒22px)・縦56%(≒18px)で
-		//     描く規格に従って作ってあり([[toolbox-icon-spec]])、切り落とされるのは余白のほう。
+		// ★Position = to the left of the Prev button (48..), 8px from the panel edge so that it lines
+		//   up with the Target label and the message area; vertically level with Prev/Next (48..70) so
+		//   the three read as one row.
+		// ★★**The frame is deliberately NOT square** (user: "clip it the way the toolbox does -- the
+		//   toolbox one is not square"). Putting a 32x32 PNG into a 24x22 frame clips the margin
+		//   around the drawing, which is what makes it look like a toolbox tool slot.
+		//   ⚠**Nothing of the drawing is lost**: this tool icon is drawn to the spec of 69% of 32px
+		//     across (about 22px) and 56% down (about 18px) ([[toolbox-icon-spec]]), so what gets cut
+		//     off is the margin.
 		KCMIconWidget
 		(
 			kKCMToolButtonWidgetID,
 			kKCMToolIconResID, kKCMUIPluginID,
-			kBindLeft | kBindTop,		// Next と同じ束縛(横一列で動く)
-			Frame(8, 48, 40, 70)		// 32×22。★2026-08-07 に Prev/Next と**左右を入れ替えた**(ユーザー指定)。
-										//   左端 8px は Target ラベル/ステータス欄と揃う
+			kBindLeft | kBindTop,		// bound like Next, so the row moves as one
+			Frame(8, 48, 40, 70)		// 32x22. ★Swapped left-right with the Prev/Next cluster
+									//   at the user's request; the left edge, 8px, lines up with the
+									//   Target label and the message area
 			kTrue, kTrue,
-			// ★★kADBEIconSuiteButtonDrawWellType = 選択中に**くぼんだ(押された)見た目**になる型
-			//   (2026-08-07 ユーザー要望「ツールボックスのように、選択されていたら色が変わるように」)。
-			//   IconStyleDefs.h:46 の中身は kIconCentering, (kIconRaisedLook | kIconWellLook), kTrue で、
-			//   3つ目が Widgets.fh:84 の「bool, draw Well」。素の kADBEIconSuiteButtonType は
-			//   (…, kIconRaisedLook, kFalse) ＝ well を描かないので、選択状態が見た目に出ない。
-			//   状態そのものは KCMTool::Select / Deselect が ITriStateControlData へ書く。
+			// ★★kADBEIconSuiteButtonDrawWellType is the type that draws a **sunken (pressed) look while
+			//   selected** (user's request: "change colour when selected, the way the toolbox does").
+			//   IconStyleDefs.h:46 spells it out as kIconCentering, (kIconRaisedLook | kIconWellLook),
+			//   kTrue, where the third is Widgets.fh:84's "bool, draw Well". The plain
+			//   kADBEIconSuiteButtonType is (..., kIconRaisedLook, kFalse) -- it draws no well, so the
+			//   selected state never shows.
+			//   The state itself is written to ITriStateControlData by KCMTool::Select / Deselect.
 			kADBEIconSuiteButtonDrawWellType,
 		),
 
@@ -2353,15 +2380,22 @@ resource KCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 		(
 			kKCMIconOffWidgetID,
 			kKCMIconOffResID, kKCMUIPluginID,
-			// ★2026-08-10: kBindRight を足した。可変幅になったので、右寄せの意図を binding に持たせないと
-			//   イラストだけ元の位置に取り残され、右へ伸びたステータス欄と重なる。
+			// ★kBindRight is needed now the panel is resizable: without the intent expressed in the
+			//   binding, the illustration is left where it was while the message area grows to the right,
+			//   and the two overlap.
 			kBindRight | kBindTop,
-			// ★★2026-08-10: Story Edits の帯へ下ろした(ユーザー指定「Story Edits の行に猫のイラストを
-			//   置いて欲しい。猫が下に降りたぶんパネルのメッセージを横に広げられたら広げて欲しい」)。
-			//   ⚠帯は元々 20px で、この絵は 32×32 のうち猫が縦いっぱいに描かれている(ツールアイコンと
-			//     違って切り落としてよい余白が無い)ため、帯の方を 32px に広げた＝パネル下端 173→185。
-			//   ★空いた 180〜216 はステータス欄が引き取る(下の kKCMStatusTextWidgetID)。
-			Frame(178, 149, 210, 181)	// 32×32。★2026-08-10 に「もう少し左上へ」(ユーザー指定)＝帯ぴったりの (184,153,216,185) から上へ4px・左へ6px(4px 戻した後、さらに 2px)。⚠帯(32px)と絵(32px)が同じ高さなので**帯の中では上下に余白を作れない**——上へ出た 4px は、ステータス欄(下端145)との 8px マージンを分け合っている。ON側と同座標
+			// ★★It sits in the Story Edits band (user: "put the cat illustration on the Story Edits row,
+			//   and if that lets the panel message grow wider, let it").
+			//   ⚠The band was 20px, and this artwork is a cat drawn to the full height of its 32x32 --
+			//     unlike the tool icon it has no margin to clip -- so **the band was widened to 32px**
+			//     instead, which is what made the panel taller.
+			//   ★The width it left behind is taken by the message area (kKCMStatusTextWidgetID below).
+			Frame(178, 149, 210, 181)	// 32x32. ★Nudged up and left from the band-exact
+									//   (184,153,216,185), at the user's request ("a little further up and
+									//   left"). ⚠**The band (32px) and the artwork (32px) are the same
+									//   height, so no padding can exist inside the band** -- what pokes out
+									//   at the top runs up against the message area above. Same coordinates
+									//   as the ON icon.
 			kTrue, kTrue,
 			kADBEIconSuiteButtonType,
 		),
@@ -2369,74 +2403,92 @@ resource KCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 		(
 			kKCMIconOnWidgetID,
 			kKCMIconOnResID, kKCMUIPluginID,
-			kBindRight | kBindTop,		// ★OFF 側と同じ理由(2026-08-10)
-			Frame(178, 149, 210, 181)	// ★OFF 側と同座標(移設と位置の理由はあちらのコメント。2026-08-10 に Story Edits の帯へ)
+			kBindRight | kBindTop,		// ★same reason as the OFF icon
+			Frame(178, 149, 210, 181)	// ★same coordinates as the OFF icon (which carries the reason)
 			kFalse, kTrue,
 			kADBEIconSuiteButtonType,
 		),
 
 		// Status text (filled in by the observer with the result of each action).
-		// ★★2026-08-20: これは StaticMultiLineTextWidget だった。**変わったのは描き方だけ**＝
-		//   WidgetID も Frame も binding も、KCMSetStatus で届くメッセージも同じ。stock に出来なかった
-		//   のは**1つの箱に2色**で、変更行をクリックしたときこの箱は**その編集のもう一方の側**を出す
-		//   ＝読み手の問いは「どの文字が違うのか」(KCMStatusTextView.cpp / IKCMStatusTextData.h)。
-		// ⚠以下は GenericPanelWidget のフィールド。**5つ消えた**のは描画側が決めるようになったから＝
-		//   alignment(常に左)/ellipsize style(折り返す箱に「1行」は無い)/ampersand(kFalse のまま。理由は下)/
-		//   font ID/**行数**。
-		//   ★★**行数**が要点＝ここは 4 と書いていたが、自前描画の箱は**高さが持てるだけ**取る
-		//     ＝日本語UIでは 4行(74px の箱に 17.9px の行)、英語UIでは 6行。stock はその余りを空けていた。
-		// ★ampersand 変換は切る(理由は Target のコメント)。ここは Save Panel Settings /
-		//   Save Check & Register / Export Changed Pages が**保存先フルパス**を出す行なので
-		//   (KCMPanelState.cpp:144-150 ほか)、"Q&A資料" のようなフォルダ名が消えていた。
-		//   ⇒ 描画側も同じ kFalse を明示している(KCMStatusTextView.cpp)。
+		// ★★This used to be a StaticMultiLineTextWidget. **Only the drawing changed**: the same
+		//   WidgetID, the same Frame, the same binding, the same messages arriving through
+		//   KCMSetStatus. What stock could not do is **two colours in one box**, and this box shows
+		//   **the other side of the edit** whose row was clicked, where the reader's question is
+		//   "which characters differ" (KCMStatusTextView.cpp / IKCMStatusTextData.h).
+		// ⚠The fields below belong to GenericPanelWidget. **Five of them are gone**, because the
+		//   drawing code decides them now: alignment (always left), ellipsize style (a wrapping box
+		//   has no "one line"), ampersand conversion (kFalse either way, see below), the font ID and
+		//   **the line count**.
+		//   ★★**The line count is the one that matters.** It used to say 4; a self-drawn box takes
+		//     **as many whole lines as its height allows**, which is 4 on a Japanese UI (17.9px lines
+		//     in a 74px box) and 6 on an English one. The stock widget left the remainder empty.
+		// ★Ampersand conversion is off (see the Target line). This is the row that prints **full save
+		//   paths** for Save Panel Settings / Save Check & Register / Export Changed Pages, so a
+		//   folder named "Q&A資料" was losing its ampersand. The drawing code states the same kFalse
+		//   (KCMStatusTextView.cpp).
 		KCMStatusTextWidget
 		(
 			kKCMStatusTextWidgetID,
 			kPMRsrcID_None,
 			kBindLeft | kBindRight | kBindTop,
-			Frame(8, 76, 216, 150)		// ★★2026-08-11: 下端 145→150(+5px)。**日本語UIでは4行が入っていなかった**——パレットフォントの1行の実高は 17.9px(実測: ascent 12.7 + descent 5.2 / leading 0。測り方は memory palette-font-line-height-by-ui-language)で、4行に 74px 要るのに枠は 69px しかなく、4行目が約5px 切れていた。★英語UIは1行12px=48pxなので、広げた分は余るだけで無害。★下の Story Edits の帯(153〜)との隙間は 8→3px に詰まるが、上の Prev/Next(〜70)との 6px は触っていない。⚠「4行のまま余裕ができた」という下の旧記述は**文字数の話**で、高さは足りていなかった。★2026-08-10: 右 180→216。猫イラストが Story Edits の帯へ下りて、その 36px が空いた(ユーザー指定「猫が下に降りたぶん横に広げて」)。右端 216 は Target/Source 行・Next ボタンと揃う。★4行のまま行あたりの文字数が増えるので、`failed=N` が付いても折り返しに余裕ができる。以下は旧記述: 右180まで=イラスト(184-216)と横並び(4px間隔)。下端を 128→145 に拡張(3→4行)。メッセージ部分を+12px広げるためパネル全体も192→204に拡張(2026-07-14)。+10px拡張で右 160→170・パネル204→214(2026-07-15)。さらに+10pxで右 170→180・パネル214→224(2026-08-06)
+			Frame(8, 76, 216, 150)		// ★★The bottom edge is 150 because **a Japanese UI did not fit
+									//   four lines**: a palette-font line really occupies 17.9px
+									//   (measured -- ascent 12.7 + descent 5.2, leading 0; the method is
+									//   in memory palette-font-line-height-by-ui-language), so four need
+									//   74px where the box had 69 and the fourth was clipped by about 5px.
+									//   ⚠The older note claiming "four lines with room to spare" was
+									//   counting CHARACTERS; the height was short.
+									//   ★An English UI draws 12px lines, so the extra height is simply
+									//   spare there.
+									//   ★The right edge, 216, lines up with the Target/Source lines and the
+									//   Next button. The width came from the cat illustration moving down
+									//   into the Story Edits band.
 			kTrue, kTrue,
 			"",								// Panel name (none)
 			{
 			}
 		),
 
-		// ★Story Edits セクションの開閉ボタン(2026-08-09 新設)。
-		// ★★上ペインの中に置くのが要点＝下ペインに置くと、閉じた瞬間にボタンごと消えて二度と
-		//   開けなくなる。製品 linksui も同じ理由で上ペイン側に置いている
-		//   (LinksUIViews_enUS.fr:135-142 は splitter の下ペインではなく上ペインの内側)。
-		// ★絵は自前の PNG を持たず、本体の開閉三角(kTreeBranchCollapsed/ExpandedRsrcID)を借りる。
-		//   向きの差し替えは KCMUpdateStorySectionButtonState が実状態から行う。
-		// ★この帯のためにパネルの下端を 153→173 にした(2026-08-09。既存 widget は1つも動いていない)。
-		//   ★さらに 173→185 へ(2026-08-10)＝猫イラスト(32×32)を右端に下ろすため、帯自体を 20→32px に。
+		// ★The Story Edits section's expander.
+		// ★★**It has to live in the TOP pane.** Put it in the lower one and it vanishes together with
+		//   the section the moment that closes, leaving no way to open it again. The product's linksui
+		//   puts its own toggle in the top pane for the same reason (LinksUIViews_enUS.fr:135-142 is
+		//   inside the upper pane, not the splitter's lower one).
+		// ★It carries no PNG of its own: it borrows InDesign's expander triangles
+		//   (kTreeBranchCollapsed / ExpandedRsrcID), and KCMUpdateStorySectionButtonState swaps the
+		//   direction from the real state.
 		KCMStorySectionToggleWidget
 		(
 			kKCMStorySectionToggleWidgetID,
 			kTreeBranchCollapsedRsrcID, kApplicationRsrcPluginID,
-			// ★★kBindTop であって kBindBottom ではない(2026-08-09 ユーザー報告で修正)。
-			//   上ペインは kBindAll なのでパネルの高さが変わると一緒に伸び縮みする。既存 widget は
-			//   全部 kBindTop なので動かないが、ここだけ下端に縛ると**ボタンだけが下へ流れていく**
-			//   ——ドックに入れて開閉したときに実際にそうなった。「下端の帯に置く」という意図は
-			//   Frame の座標が担っていて、binding が担う話ではなかった。
+			// ★★**kBindTop, NOT kBindBottom** (the user reported it when it was the other way). The top
+			//   pane is kBindAll, so it grows and shrinks with the panel. Every other widget in it is
+			//   kBindTop and stays put; bind this one to the bottom and **the button alone drifts
+			//   downwards** -- which is exactly what happened once it was docked and reopened.
+			//   "Sit in the band at the bottom" is carried by the Frame coordinates, not by the binding.
 			kBindLeft | kBindTop,
-			Frame(4, 161, 20, 177)		// 上ペイン下端の帯(153〜185)の中で縦センタリング(16px の絵なので上下8pxずつ)。左端4pxはステータス欄(8)より少し内側。★帯は 2026-08-10 に 20→32px(猫イラストを下ろした)
+			Frame(4, 161, 20, 177)		// centred vertically in the band at the bottom of the top pane
+									//   (153..185; the artwork is 16px, so 8px above and below). The left
+									//   edge, 4px, sits slightly inside the message area's 8px.
 			kTrue, kTrue,
 			kADBEIconSuiteButtonType,
 		),
 
-		// ★セクション見出し。三角の右隣、同じ帯(153〜185=32px)の中。件数は C++ が実行時に足す
-		//   (⚠「20px の帯」と書いてあったのを 2026-08-18・不具合再検査 B-U1 に直した＝帯は 2026-08-10 に
-		//    20→32px になっており、**隣の三角のコメントだけがその時に直っていた**)。
-		//   (KCMUpdateStorySectionLabel が "Story Edits (3)" に書き換える)。
-		// ★★ここに件数を置くのはステータス欄に余白が無いから＝4行枠は既に埋まっており、
-		//   もう1行増えると `failed=N` がはみ出す。閉じたままでも件数が読めるという利点もある。
-		// ★binding は隣の三角と揃えて kBindLeft | kBindTop(理由は上のコメント)。
+		// ★The section heading, to the right of the expander and inside the same band. The count is
+		//   appended at run time by KCMUpdateStorySectionLabel ("Story Edits (3)").
+		// ★★The count is here because **the message area has no room left**: its lines are already
+		//   used, and one more would push `failed=N` out of the box. It also means the count stays
+		//   readable while the section is closed.
+		// ★The binding matches the expander's, kBindLeft | kBindTop (the reason is in its comment).
 		StaticTextWidget
 		(
 			kKCMStorySectionLabelWidgetID,
 			kSysStaticTextPMRsrcId,
-			kBindLeft | kBindRight | kBindTop,	// 可変幅で見出しの帯も一緒に伸びる(2026-08-10)
-			Frame(24, 162, 174, 176)	// 三角(4〜20)の右。上下は帯(153〜185)の中で縦センタリング。★右端 216→174 は猫イラスト(178〜210)の 4px 手前。両方とも kBindRight なので、パネルを広げても間隔は保たれる(2026-08-10)
+			kBindLeft | kBindRight | kBindTop,	// the heading stretches with the panel
+			Frame(24, 162, 174, 176)	// to the right of the expander (4..20), centred vertically in the
+									//   band (153..185). ★The right edge stops 4px short of the cat
+									//   illustration (178..210); both are kBindRight, so widening the
+									//   panel keeps that gap.
 			kTrue, kTrue,
 			kAlignLeft, kDontEllipsize, kFalse,
 			kKCMStorySectionLabelKey,
@@ -2454,7 +2506,9 @@ resource KCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 			(
 				kKCMStorySectionWidgetID, kPMRsrcID_None,
 				kBindAll,
-				Frame(0, 185, 224, 285 + kKCMStoryHeaderHeight)	// ★下端 +18px(2026-08-10): 列見出しの帯を足しても、見える行数が減らないようにした
+				Frame(0, 185, 224, 285 + kKCMStoryHeaderHeight)	// ★+18px at the bottom: the heading band
+												// is added without costing the
+												// section a visible row
 				kFalse, kTrue,			// ★Visible = kFalse: starts closed
 				"",
 				{
@@ -2472,7 +2526,7 @@ resource KCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 					//     fixed at the right. Change a column here and the row has to change with it -
 					//     the agreement is only in these numbers, nothing enforces it.
 					//     ⚠★★AND IT WENT WRONG EXACTLY THAT WAY (fixed 2026-08-20, user's report:
-					//       "UID の位置を数値が始まる辺りに / Story の位置も Text が始まる辺りに").
+					//       "put UID about where the numbers begin, and Story about where the text begins").
 					//       When the expander was put in front of the story row on 2026-08-20, every
 					//       cell in the row moved 16px right - and these three did not follow, because
 					//       nothing links them. They read 8..48 and 52..154 against cells that had
@@ -2610,26 +2664,24 @@ resource VersionedScriptElementInfo(10)
 {
 	//Contexts
 	{
-		// ★★feature set が kInDesignAllLanguagesFS(=InDesign 全言語。InCopy と InDesign Server を除く)
-		//   なのは**正しい**。手本 = snapshot/Snap.fr:2089 —— **SnapTool の ScriptID を
-		//   kToolBoxEnumScriptElement へ登録しているリソースが、まさに同じ kInDesignAllLanguagesFS 単独**。
-		//   理由もはっきりしている: **ツールボックスは InDesign デスクトップにしか無い**(InCopy にも
-		//   Server にも無い)ので、ツールの列挙子を登録する context は InDesign に絞るのが筋。
-		//   ★同じ snapshot が **Snap.fr:1795 では kWildFS を使っている**(あちらはツールを含まない
-		//     スクリプト API のリソース) ＝ **公式は1つのプラグイン内で内容によって使い分けている。**
-		//   ⚠**KBS(KBS.fr:1326)が kWildFS なのは割れではない**。KBS のリソースは Property だけで
-		//     ツールを含まないため。**内容が違うので正しく違う** ---- そして**この側は今もツールを持つ**
-		//     ので、上の「ツールボックスは InDesign にしかない」という根拠はここでは生きている
-		//     (⚠model 側の KCM.fr で同じ文が失効したのは、ツールがこちらへ出て行ったから＝
-		//      不具合再検査 B1 の D-1)。
-		//   ⚠**参照は KBS.fr:1282 と書いてあった。実体は :1326**(resource VersionedScriptElementInfo(1)。
-		//     1282 行目は widget 定義の途中)。B1 が model 側の同じ参照を壊れていると測ったのが 2026-08-17、
-		//     こちら側のコピーを直したのは 2026-08-18(B-U1)＝**両側コピーの片方だけを直していた**。
-		// ⚠2026-08-07 に一度 kWildFS へ変えたが**同日中に撤回した**。「kInDesignAllLanguagesFS 単独の
-		//   公式実例はゼロ」と判定したのが誤りで、走査結果の件数上限で Snap.fr:2089 を見落としていた
-		//   (経緯 = docs/ai-notes/kescm-api-audit-block14-2026-08-07.md の A-1)。
-		// ★script version は kCS5。公式サンプルは CS2〜CS5〜Firedrake と幅があり、新しい版を選ぶこと
-		//   自体が公式の範囲内(CustSE / XDocBk / **Snap.fr:2089 のツール登録も kCS5**)。
+		// ★★The feature set is kInDesignAllLanguagesFS (InDesign in every language, InCopy and
+		//   InDesign Server excluded), and that is **correct**. The model is snapshot: the resource
+		//   that registers SnapTool's ScriptID in kToolBoxEnumScriptElement declares exactly the same
+		//   single kInDesignAllLanguagesFS. The reason is plain -- **a toolbox exists only in the
+		//   InDesign desktop application**, not in InCopy and not in Server -- so the context of a
+		//   tool enumerator belongs to InDesign.
+		//   ★The same sample uses kWildFS in its OTHER scripting resource, the one that contains no
+		//     tool: **the official code chooses per content inside one plug-in.**
+		//   ⚠**KBS using kWildFS is not a disagreement.** Its VersionedScriptElementInfo publishes
+		//     properties only and contains no tool -- **different content, correctly different** --
+		//     and this half does still own the tool, so the "a toolbox is InDesign-only" reason holds
+		//     here. (⚠In the model half's KCM.fr the same sentence lapsed, because the tool left for
+		//     this side.)
+		// ⚠kWildFS was tried here once and withdrawn the same day. The judgement "there is no official
+		//   example of a bare kInDesignAllLanguagesFS" was wrong: snapshot's tool registration is one,
+		//   and a result-count limit in that scan had hidden it.
+		// ★The script version is kCS5. The official samples range from CS2 to Firedrake, so choosing a
+		//   recent one is inside the official range (snapshot's tool registration is kCS5 as well).
 		kCS5ScriptVersion, kCoreScriptManagerBoss, kInDesignAllLanguagesFS, k_Wild,
 	}
 	//Elements
