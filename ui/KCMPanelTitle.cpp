@@ -4,7 +4,7 @@
 //
 //  Kohaku Change Marker (KCM)
 //
-//  パネルのタブ名。契約は KCMPanelTitle.h。
+//  The panel's tab name. The contract is in KCMPanelTitle.h.
 //
 //========================================================================================
 
@@ -12,30 +12,30 @@
 
 // Interface includes:
 #include "IApplication.h"		// QueryPanelManager
-#include "IControlView.h"		// パネルは control view ＝ GetPanelFromWidgetID が返すもの
+#include "IControlView.h"		// a panel is a control view = what GetPanelFromWidgetID answers with
 #include "IPanelMgr.h"			// GetPanelFromWidgetID / GetPaletteRefContainingPanel
 #include "ISession.h"
 
 // General includes:
-#include "PaletteRefUtils.h"	// SetPaletteLabel（タブ自身のラベル）
+#include "PaletteRefUtils.h"	// SetPaletteLabel (the label of the tab itself)
 #include "PMString.h"
 #include "Utils.h"				// Utils<IKCMCompareFacade>()
 
 // Project includes:
 #include "KCMUIID.h"				// kKCMPanelWidgetID
 #include "KCMBoundaryID.h"		// kKCMDisplayName / KCMCompareMode
-#include "IKCMCompareFacade.h"	// GetCompareMode（境界越しに model へ聞く）
+#include "IKCMCompareFacade.h"	// GetCompareMode (asking the model across the boundary)
 #include "KCMPanelTitle.h"
 
 namespace
 {
 
-/** タブにラベルを置く。パネルが無い／パレットに入っていないときは何もしない。 */
+/** Put a label on the tab. Does nothing when there is no panel, or when it is in no palette. */
 void SetTabLabel(const PMString& label)
 {
-	// ⚠**終了処理中はセッションが既に無いことがある**（KCMPanelAlpha.cpp が同じ理由で
-	//   ポインタを変数に受けてから使う）。Restore() は Shutdown から呼ばれる＝ここが唯一
-	//   teardown を通る入口なので、素直に nil を見る。
+	// ⚠**During teardown the session can already be gone** (KCMPanelAlpha.cpp receives the pointer
+	//   into a variable before using it for the same reason). Restore() is called from Shutdown ＝
+	//   this is the one entrance that passes through teardown, so the nil is simply tested for.
 	ISession* session = GetExecutionContextSession();
 	if (session == nil)
 		return;
@@ -48,19 +48,21 @@ void SetTabLabel(const PMString& label)
 	if (panelMgr == nil)
 		return;
 
-	// 非所有（Get であって Query ではない）。パネルを一度も開いていなければ nil で、それが
-	// 起動直後の通常の状態＝呼び手はいつでも撃ってよい。
+	// Not owned (a Get, not a Query). It is nil until the panel has been opened once, which is the
+	// ordinary state right after startup ＝ a caller may fire at any time.
 	//
-	// ★★**「見えているパネルだけ」の入口を使わない理由。** この plug-in の他所は
-	//   `Utils<IPalettePanelUtils>()->QueryPanelByWidgetID` で取るが、あれは画面に出ていない
-	//   パネルには nil を返す。**タブ名だけはそれで困る** ---- ラベルはパネルの中身ではなく
-	//   パレットの持ち物で、パネルの中身が見えないときにも画面に残るから（最小化したパレットは
-	//   まさに「タブの帯だけ」の状態）。その状態でもフライアウトからモードは変えられる。
+	// ★★**Why not the "only if it is visible" entry point.** Elsewhere this plug-in takes the panel
+	//   with `IPanelMgr::GetVisiblePanel` (KCMGetVisibleOwnPanel), which answers nil for a panel
+	//   that is not on screen. **The tab name is the one thing that cannot use it** ---- the label
+	//   belongs to the palette rather than to the panel’s contents, and it stays on screen when
+	//   those contents are not visible (a collapsed palette is exactly "the tab strip and nothing
+	//   else"). The mode can still be changed from the flyout in that state.
 	IControlView* panelView = panelMgr->GetPanelFromWidgetID(kKCMPanelWidgetID);
 	if (panelView == nil)
 		return;
 
-	// ラベルは**容器**の持ち物（通常のタブ付きパレットなら、タブを描く kTabPanelContainerType）。
+	// The label belongs to **the container** (for an ordinary tabbed palette, the
+	// kTabPanelContainerType that draws the tab).
 	const PaletteRef container = panelMgr->GetPaletteRefContainingPanel(panelView);
 	if (!container.IsValid())
 		return;
@@ -72,15 +74,17 @@ void SetTabLabel(const PMString& label)
 
 void KCMPanelTitle::Update()
 {
-	// ★区切りは素の ASCII ハイフン（KBS と同じ）。タブは狭く、全角ダッシュだと間延びして見える。
-	//   ASCII に留めれば、BOM の無い .cpp で非 ASCII リテラルが CP932 に落ちる問題とも無縁になる
-	//   ---- ただしこのファイルは日本語コメントを持つので BOM 付き（[[cpp-japanese-needs-bom]]）。
+	// ★The separator is a plain ASCII hyphen, as in KBS. A tab is narrow, and a full-width dash
+	//   looks stretched there. Keeping to ASCII also stays clear of the problem where a non-ASCII
+	//   literal in a .cpp without a BOM is read as CP932.
 	PMString title(kKCMDisplayName);
 	title.Append(" - ");
-	// ★短い方を採る（メニューは "Pixel Changes" / "Story Changes" だが、タブは幅が無い）。
+	// ★The shorter wording is used: the menu says "Pixel Changes" / "Story Changes", but a tab has
+	// no room for that.
 	title.Append(Utils<IKCMCompareFacade>()->GetCompareMode() == kKCMModeStory ? "Story" : "Pixel");
-	// ⚠パレットのラベルも**翻訳キーの候補**として扱われる＝訳せる印を落とさないと、
-	//   文字列テーブルにたまたま同じキーがあったときに別の語へ差し替わる。
+	// ⚠A palette label is treated as **a candidate translation key** as well ＝ without clearing the
+	//   translatable flag, a string table that happens to hold the same key would swap it for
+	//   another word.
 	title.SetTranslatable(kFalse);
 
 	SetTabLabel(title);

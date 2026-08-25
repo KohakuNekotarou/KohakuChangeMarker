@@ -2,27 +2,35 @@
 //
 //  KCMPanelTitle.h
 //
-//  パネルのタブに「今どちらのモードで比べるのか」を出す（2026-08-21・ユーザー指定）。
-//    「Kohaku Change Marker - Pixel」／「Kohaku Change Marker - Story」
+//  Shows **which mode the comparison is in** on the panel's tab (user's instruction):
+//    "Kohaku Change Marker - Pixel" / "Kohaku Change Marker - Story"
 //
-//  ★★手本は KBS の同名ファイル（`KBS/source/KBSPanelTitle.cpp`）。あちらは検索範囲を
-//    「- Document」／「- Book」と出しており、ユーザーの指定も「KBS のドキュメントとブックの様に」。
-//    ⇒ 仕組みごと同じにする（[[follow-official-implementation-first]] の社内版）。
+//  ★★Modelled on the file of the same name in KBS (`KBS/source/KBSPanelTitle.cpp`), which shows
+//    its search scope as "- Document" / "- Book" -- the user asked for it "like the document and
+//    book in KBS". ⇒ The mechanism is copied whole ([[follow-official-implementation-first]],
+//    applied in-house).
 //
-//  ★**ラベルはパネルではなくパレット（タブを描く容器）の持ち物**。`IPanelMgr::GetPaletteRef
-//    ContainingPanel` で容器を取り、`PaletteRefUtils::SetPaletteLabel(..., kTitle_PanelLabel)`。
+//  ★**The label belongs to the palette -- the container that draws the tab -- not to the panel.**
+//    Take the container with `IPanelMgr::GetPaletteRefContainingPanel`, then
+//    `PaletteRefUtils::SetPaletteLabel(..., kTitle_PanelLabel)`.
 //
-//  ⚠**素の名前は読み戻せない**ので、こちら側で綴っておくしかない
-//    （`PaletteRefUtils::GetPaletteLabel` は一度も表示されていないパレットには空を返し、
-//      `IWindow::GetTitle` は「最後に SET した値」しか返さない＝どちらも「元の名前」を知らない）。
-//    ⇒ 素の名前は `kKCMDisplayName`（表示名の唯一の定義）から組み立てる。
+//  ⚠**The plain name cannot be read back**, so this side has to spell it out.
+//    (`PaletteRefUtils::GetPaletteLabel` answers empty for a palette that has never been shown,
+//     and `IWindow::GetTitle` answers only "the value last SET" ＝ neither of them knows the
+//     original name.)
+//    ⇒ The plain name is built from `kKCMDisplayName`, the one definition of the display name.
 //
-//  ★**呼ぶのは3か所**（どれも「今の状態を書き直す」だけなので、いつ何度呼んでもよい）:
-//     ① モードを切り替えたとき（KCMActionComponent の KCMApplyCompareMode）
-//     ② パネルが表示されたとき（KCMPanelObserver::AutoAttach。widget は毎回作り直されるが、
-//        **タブのラベルはパレットの持ち物なので消えない** ---- ただし初回表示までは書く先が無い
-//        ＝下の関数は panelView==nil で黙って戻るので、そのときの一手がここになる）
-//     ③ 終了時に素へ戻す（KCMUIStartup の Shutdown）
+//  ★**Callers** -- each of them only "writes the current state", so any of them may run at any
+//    time and as often as it likes:
+//     - the mode was switched (KCMApplyCompareMode in KCMActionComponent)
+//     - the panel was shown (KCMPanelObserver::AutoAttach; the widgets are rebuilt every time,
+//       but **the tab label belongs to the palette and survives** ---- until the first time the
+//       panel is shown there is nowhere to write, and the function below returns quietly on
+//       panelView==nil, which is what this call is for)
+//     - the saved settings were restored (KCMPanelState)
+//     - the plug-in is shutting down and the name goes back (KCMUIStartup)
+//    ⚠**Do not write a count here.** It said "three places" while there were four -- the
+//      settings restore arrived later and this line did not follow.
 //
 //========================================================================================
 
@@ -31,10 +39,11 @@
 
 namespace KCMPanelTitle
 {
-	/** 今の比較モードをタブへ書く。パネルがまだ無ければ何もしない（安全に何度でも呼べる）。 */
+	/** Write the current compare mode onto the tab. Does nothing while there is no panel (safe to
+	    call as often as you like). */
 	void Update();
 
-	/** タブを素の名前へ戻す。終了処理から呼ぶ。 */
+	/** Put the plain name back on the tab. Called from the shutdown path. */
 	void Restore();
 }
 

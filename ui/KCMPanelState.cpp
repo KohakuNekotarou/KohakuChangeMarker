@@ -2,14 +2,14 @@
 //
 //  KCMPanelState.cpp
 //
-//  パネルのフライアウトの設定系トグルを、独自 JSON ファイルとしてローカルのユーザー環境設定
-//  フォルダーへ保存/復元する(KCMPanelState.h 参照)。InDesign 本体のデータには一切書かない。
+//  Saves and restores the settings toggles of the panel flyout as a private JSON file in the
+//  user's preferences folder (see KCMPanelState.h). Nothing is written into InDesign's own data.
 //
 //========================================================================================
 
 #include "VCPlugInHeaders.h"
 
-// 一般:
+// General includes:
 #include "PMString.h"
 #include "FileUtils.h"		// GetAppRoamingDataFolder / AppendPath / OpenFile / DoesFileExist / SysFileToPMString
 #include "IDFile.h"
@@ -17,42 +17,46 @@
 #include <string>
 #include <cstdio>			// FILE / fread / fwrite / fclose
 
-// プロジェクト内(各トグルの状態アクセサ):
+// Project includes (the state accessors of each toggle):
 #include "KCMPanelState.h"
 #include "Utils.h"					// Utils<IKCMCompareFacade>()
-#include "IKCMCompareFacade.h"	// 印刷マーク設定の読み書き(2026-08-13・分割 第1段 Task 11 で Facade 経由へ)
+#include "IKCMCompareFacade.h"	// reading and writing the print-marks setting, across the boundary
 #include "KCMUIShared.h"	// panel / status line / nav readout / tool button (split from KCMCore.h on 2026-08-13)
-#include "KCMViewSync.h"			// KCMGetLayoutSync / KCMSetLayoutSync(2026-08-13 に KCMCore.h から移動)
+#include "KCMViewSync.h"			// KCMGetLayoutSync / KCMSetLayoutSync
 #include "KCMScrollMap.h"			// KCMGetScrollMapEnabled / KCMSetScrollMapEnabled
-#include "KCMPanelAlpha.h"		// KCMGetPanelTranslucent / KCMSetPanelTranslucent(Translucent Panel)
-#include "KCMPanelTitle.h"		// KCMPanelTitle::Update(復元した比較モードをタブへ反映)
+#include "KCMPanelAlpha.h"		// KCMGetPanelTranslucent / KCMSetPanelTranslucent (Translucent Panel)
+#include "KCMPanelTitle.h"		// KCMPanelTitle::Update (put the restored compare mode on the tab)
 
-// 保存ファイル名(Roaming 直下。★サブフォルダーは 2026-07-12 に廃止=下の KCMPanelStateFile と
-// KCMPanelState.h:11 の説明が正)。
+// The file name, directly under Roaming. ★No subfolder (see KCMPanelStateFile below and the
+// account in KCMPanelState.h).
 static const char* const kKCMPanelStateFileName = "KCMPanelState.json";
 
 //----------------------------------------------------------------------------------------
-// 保存先の解決
+// Resolving where to save
 //----------------------------------------------------------------------------------------
 
-// ローミング環境設定フォルダー(locale 付き)直下の KCMPanelState.json への IDFile を outFile に返す。
-// ★サブフォルダーは作らない(ユーザー指定 2026-07-12)。GetAppRoamingDataFolder の subFolderName に
-//   ファイル名をそのまま渡すと、そのフォルダー直下の「ファイルの」IDFile が返る(SDK 実例:
-//   SnpShareAppResources.cpp / SuppUISysFileData.cpp)。親フォルダーは InDesign が環境設定用に既に
-//   作っているので CreateFolderIfNeeded は不要(旧実装で "KCM" サブフォルダー作成が要ったのは、
-//   存在しないサブフォルダー配下へ開こうとしていたため)。取得できなければ kFalse。
+// Returns, in outFile, an IDFile for KCMPanelState.json directly under the roaming preferences
+// folder (the one with the locale in its path).
+// ★No subfolder is created (user's instruction). Passing the file name straight to
+//   GetAppRoamingDataFolder's subFolderName gives the IDFile **of the file** in that folder (the
+//   SDK does the same in SnpShareAppResources.cpp and SuppUISysFileData.cpp). The parent folder
+//   is one InDesign has already made for its preferences, so CreateFolderIfNeeded is not needed
+//   (the old implementation needed it only because it opened under a "KCM" subfolder that did
+//   not exist). kFalse when it cannot be resolved.
 static bool16 KCMPanelStateFile(IDFile& outFile)
 {
 	return FileUtils::GetAppRoamingDataFolder(&outFile, PMString(kKCMPanelStateFileName));
 }
 
 //----------------------------------------------------------------------------------------
-// 極小 JSON(自前で書き/寛容 read)
-//   保存内容はフラットな真偽値だけなので、boost(IJsonUtils)依存を避けて自前で扱う。
-//   ★公式クラス(`public/interfaces/utils/IJsonUtils.h` の `JSON`)の実例と、寄せない理由の全文は
-//     `source/KCMPageCheck.cpp` の保存/読み込みブロック(2026-08-16・API 監査 B4)。
-//   ★**stdio(FileUtils::OpenFile)を使い IPMStream を使わない理由も同じ場所**＝IPMStream の
-//     Close()/Flush() が void で、ディスクフルを検出できないため(2026-08-10 に KBS 側で決着)。
+// A minimal JSON (written by hand, read permissively)
+//   What is saved is a flat set of booleans, so it is handled here rather than through boost
+//   (IJsonUtils).
+//   ★The example of the official class (`JSON` in `public/interfaces/utils/IJsonUtils.h`), and
+//     the full account of why this does not use it, are in the save/load block of
+//     `source/KCMPageCheck.cpp`.
+//   ★**The reason for stdio (FileUtils::OpenFile) rather than IPMStream is in the same place**:
+//     IPMStream's Close()/Flush() return void, so a full disk cannot be detected.
 //----------------------------------------------------------------------------------------
 
 static const char* KCMBoolLiteral(bool16 b)
@@ -60,7 +64,8 @@ static const char* KCMBoolLiteral(bool16 b)
 	return b ? "true" : "false";
 }
 
-// text の中から "key" を探し、その後の最初の ':' に続く true/false を読む。見つからなければ defVal。
+// Finds "key" in text and reads the true/false after the first ':' that follows it; defVal when
+// there is none.
 static bool16 KCMJsonReadBool(const std::string& text, const char* key, bool16 defVal)
 {
 	std::string needle("\"");
@@ -85,10 +90,12 @@ static bool16 KCMJsonReadBool(const std::string& text, const char* key, bool16 d
 	return defVal;
 }
 
-// text の中から "key" を探し、その後の最初の ':' に続く "文字列" を読む。見つからなければ空。
-// ★★**bool にしなかった理由**（2026-08-21）＝比較モードは enum で、`"storyMode": true/false` と
-//   書くと3つ目のモードが増えた日に**保存ファイルの意味が変わる**（false が「pixel」なのか
-//   「story ではない何か」なのか言えなくなる）。名前で書けばその日に読み手を足すだけで済む。
+// Finds "key" in text and reads the "string" after the first ':' that follows it; empty when
+// there is none.
+// ★★**Why it is not a bool**: the compare mode is an enum, and written as
+//   `"storyMode": true/false` **the meaning of a saved file would change on the day a third mode
+//   arrives** (false could no longer say whether it means "pixel" or "not story"). Written by
+//   name, that day costs one more reader and nothing else.
 static std::string KCMJsonReadString(const std::string& text, const char* key)
 {
 	std::string needle("\"");
@@ -113,7 +120,7 @@ static std::string KCMJsonReadString(const std::string& text, const char* key)
 }
 
 //----------------------------------------------------------------------------------------
-// 保存(フライアウトの「Save Panel Settings」から呼ばれる)
+// Saving (called from "Save Panel Settings" on the flyout)
 //----------------------------------------------------------------------------------------
 
 void KCMSavePanelState()
@@ -121,36 +128,42 @@ void KCMSavePanelState()
 	IDFile file;
 	if (!KCMPanelStateFile(file))
 	{
-		PMString err("Save failed (folder)");	// パネルのステータス行に表示(幅が狭いので短く)
+		PMString err("Save failed (folder)");	// shown in the panel’s status line (kept short: the line is narrow)
 		err.SetTranslatable(kFalse);
 		KCMSetStatus(err, kTrue /*forceRedrawNow*/);
 		return;
 	}
 
-	// 現在の状態を JSON 文字列に組み立てる。
-	// ★何度も聞くので InterfacePtr で1回引く(`Utils.h:74-80`＝「several places で使うなら一度引いて
-	//   InterfacePtr に持て」)。⚠**公式は回数を数字で示していない**——「3回以上なら」は手元の目安で、
-	//   旧コメントはそれを「公式」と書いていた(2026-08-16・監査 B-U3 で訂正)。
+	// Build the current state into a JSON string.
+	// ★It is asked many times, so the interface is taken once into an InterfacePtr (`Utils.h:74-80`
+	//   ＝ "if you want to use a utility interface in several places, get it once and save it in an
+	//   InterfacePtr"). ⚠**The official text names no number** -- "three or more" is a rule of
+	//   thumb of ours, and an older comment here presented it as official.
 	InterfacePtr<IKCMCompareFacade> compare(Utils<IKCMCompareFacade>().QueryUtilInterface());
 	std::string json;
 	json += "{\n";
 	json += "  \"version\": 1,\n";
-	// ⚠★★**「Print comparison marks」(printMarks)はここに書かない**(2026-08-25・ユーザー指定)。
-	//   ★これは**保存し忘れではなく仕様**＝あのトグルは**画面だけでなく紙と PDF に何が出るかを変える**
-	//     ので、起動のたびに既定の OFF から始まり、出したい回に明示的に ON にする形にした。
-	//     (前は保存していた＝公開版 1.3.0 の挙動。増分の説明は `source/KCMID.h` の⑱。)
-	//   ⚠**古い設定ファイルには "printMarks" が残っている**が、読み手(下の復元)が名指しで探す方式なので
-	//     単に無視される。次にこの関数が走った時点でキーごと消える。
-	//   ⚠**不透明度(opacity25)は従来どおり保存する**＝あちらは「出るときにどう見えるか」の設定で、
-	//     出力に何かが増えるわけではない。
+	// ⚠★★**"Print comparison marks" (printMarks) is deliberately not written here** (user’s
+	//   instruction).
+	//   ★**This is the specification, not a forgotten save** ＝ that toggle changes **what comes
+	//     out on paper and in a PDF**, not just what is on screen, so every launch starts from the
+	//     default OFF and marks reach an output only in a session where they were switched ON
+	//     deliberately. (It used to be saved ＝ the behaviour of the released 1.3.0; the change is
+	//     written up in `source/KCMID.h`.)
+	//   ⚠**Older settings files still contain "printMarks"**, and the reader below looks up keys by
+	//     name, so it is simply ignored; the next time this function runs the key disappears.
+	//   ⚠**The opacity (opacity25) IS still saved** ＝ that one is "how it looks when it does
+	//     appear", and it adds nothing to an output.
 	json += "  \"opacity25\": ";              json += KCMBoolLiteral(compare->GetMarkOpacity25());                json += ",\n";
-	// ★「Mark colour」(Red/Cyan)。⚠**2026-08-24 に足したとき、ここへ入れ忘れていた**(2026-08-25 の
-	//   点検で発見・修正)＝選んで保存しても**起動し直すと赤へ戻っていた**。しかも Save 自体は成功の
-	//   メッセージを出すので、「保存したのに効かない」という見え方になる。
-	//   ★bool でよい理由＝取り得る値が2つしかない(Red/Cyan)。3つ目が増える形の設定ではないので、
-	//     compareMode を文字列にした理由(下の KCMJsonReadString の頭)はこちらには当てはまらない。
+	// ★"Mark colour" (Red/Cyan). ⚠**It was missing here when the feature was added** (found and
+	//   fixed in a later review) ＝ choosing a colour and saving still **came back red after a
+	//   restart**. Save itself reported success, so it looked like "I saved it and it does not
+	//   work".
+	//   ★Why a bool is right: there are only two values (Red/Cyan). It is not a setting that grows a
+	//     third one, so the reason compareMode is a string (at KCMJsonReadString above) does not
+	//     apply here.
 	json += "  \"markColorCyan\": ";          json += KCMBoolLiteral(compare->GetMarkColorCyan());                json += ",\n";
-	// (\"holdToHideMarks\" は 2026-08-22 にトグルごと撤去。古い設定ファイルに残っていても読まれない)
+	// ("holdToHideMarks" went with its toggle; left in an older file, it is simply never read.)
 	json += "  \"showTgtMarks\": ";           json += KCMBoolLiteral(compare->GetShowTargetMarks());              json += ",\n";
 	json += "  \"showSrcMarks\": ";           json += KCMBoolLiteral(compare->GetShowSourceMarks());              json += ",\n";
 	json += "  \"showOldNumbers\": ";         json += KCMBoolLiteral(compare->GetShowOldPageNumbers());           json += ",\n";
@@ -160,9 +173,9 @@ void KCMSavePanelState()
 	json += "  \"translucentPanel\": ";       json += KCMBoolLiteral(KCMGetPanelTranslucent());                 json += ",\n";
 	json += "  \"translucentPagesPanel\": ";  json += KCMBoolLiteral(KCMGetPagesPanelTranslucent());            json += ",\n";
 	json += "  \"translucentBookDialog\": ";  json += KCMBoolLiteral(KCMGetBookDialogTranslucent());            json += ",\n";
-	// ★比較モード（2026-08-21・ユーザー指定）。⚠**唯一の非 bool の項目**なので、上と違って
-	//   値を引用符で囲む。⚠**古い設定ファイルにはこのキーが無い**が、読み手が「無ければ今の値」を
-	//   採るので、旧ファイルを読んでも既定（Pixel）のままになるだけで害は無い。
+	// ★The compare mode (user’s instruction). ⚠**The only non-bool item**, so unlike the lines above
+	//   its value is quoted. ⚠**Older settings files do not have this key**, and the reader takes
+	//   "the current value when it is absent", so reading one simply leaves the default (Pixel).
 	json += "  \"compareMode\": \"";
 	json += (compare->GetCompareMode() == kKCMModeStory ? "story" : "pixel");
 	json += "\"\n";
@@ -171,30 +184,31 @@ void KCMSavePanelState()
 	FILE* fp = FileUtils::OpenFile(file, "wb");
 	if (fp == nil)
 	{
-		PMString err("Save failed (open)");	// パネルのステータス行に表示
+		PMString err("Save failed (open)");	// shown in the panel’s status line
 		err.SetTranslatable(kFalse);
 		KCMSetStatus(err, kTrue /*forceRedrawNow*/);
 		return;
 	}
-	// ★書込バイト数と fclose の成否を確認(2026-07-25 監査で追加): ディスクフル等の部分書込を
-	//   「保存できた」(保存先パス表示)と誤報告しない。
+	// ★Check the byte count AND the result of fclose: a partial write (a full disk, say) must not be
+	//   reported as "saved" with a path.
 	const size_t wrote = fwrite(json.data(), 1, json.size(), fp);
 	const int closed = fclose(fp);
 	if (wrote != json.size() || closed != 0)
 	{
-		PMString err("Save failed (write)");	// パネルのステータス行に表示
+		PMString err("Save failed (write)");	// shown in the panel’s status line
 		err.SetTranslatable(kFalse);
 		KCMSetStatus(err, kTrue /*forceRedrawNow*/);
 		return;
 	}
 
-	// 保存先のフルパスをパネルのステータス行に表示する(ユーザー要望 2026-07-11: モーダルからパネル表示へ)。
-	// ★パスのみ(「Settings saved:」等のラベルを付けるとステータス行から溢れるため)。
-	// ⚠寸法は書き写さない＝正本は `ui/KCMUI.fr` の kKCMStatusTextWidgetID(StaticMultiLineTextWidget)の
-	//   `Frame(8,76,216,150)`(208×74px・4行)。旧「幅152px×4行」は 2026-07-15 世代の値で、同じ数字が
-	//   3ファイルに散っていた(不具合再検査 B5)。
-	//   (⚠旧引用 ":1921" は**空行**を指していた＝7行ずれ。2026-08-18・不具合再検査 B-U3 で
-	//    widget 名で引く形へ。行番号は黙って嘘になる＝[[verify-claims-in-comments]]。)
+	// Show the full path in the panel’s status line (user’s request: from a modal to the panel).
+	// ★The path alone -- a label such as "Settings saved:" would overflow the line.
+	// ⚠**Do not copy the dimensions here.** They belong to kKCMStatusTextWidgetID in `ui/KCMUI.fr`
+	//   (a **KCMStatusTextWidget**, self-drawn since the message area needed two colours -- it was a
+	//   StaticMultiLineTextWidget before that). **How many lines fit is not a constant either**: the
+	//   box takes as many whole lines as its height allows, which is four on a Japanese UI and six on
+	//   an English one. An older note here wrote both the widget type and "4 lines" as facts, and the
+	//   same numbers had been scattered across three files before that.
 	PMString msg;
 	msg.SetTranslatable(kFalse);
 	msg.Append(FileUtils::SysFileToPMString(file));
@@ -202,8 +216,9 @@ void KCMSavePanelState()
 }
 
 //----------------------------------------------------------------------------------------
-// 復元(起動時=KCMUIStartup::Startup から呼ばれる。セッション内一度だけ。
-//   パネル AutoAttach からの呼び出しは内部ガードで no-op になる保険として残る。KCMPanelState.h 参照)
+// Restoring (called at startup from KCMUIStartup::Startup, once per session; the call from the
+//   panel’s AutoAttach stays as a no-op safety net through the internal guard. See
+//   KCMPanelState.h)
 //----------------------------------------------------------------------------------------
 
 void KCMLoadPanelStateIfPresent()
@@ -211,13 +226,13 @@ void KCMLoadPanelStateIfPresent()
 	static bool16 sLoaded = kFalse;
 	if (sLoaded)
 		return;
-	sLoaded = kTrue;	// 成否に関わらずセッションで一度だけ試みる
+	sLoaded = kTrue;	// try once per session, whether or not it succeeds
 
 	IDFile file;
 	if (!KCMPanelStateFile(file))
 		return;
 	if (!FileUtils::DoesFileExist(file))
-		return;		// 保存データが無い=初回。既定値のまま。
+		return;		// no saved data = first run. The defaults stand
 
 	FILE* fp = FileUtils::OpenFile(file, "rb");
 	if (fp == nil)
@@ -230,39 +245,43 @@ void KCMLoadPanelStateIfPresent()
 	const bool readFailed = (ferror(fp) != 0);
 	fclose(fp);
 	if (readFailed)
-		return;		// ★読み取りが途中で失敗した部分テキストで適用しない(2026-08-06 再点検。
-					//   KCMReadWholeFile(KCMPageCheck.cpp)と同じ作法。全トグル既定値のままにする)
+		return;		// ★Do not apply a partially read text (the same discipline as KCMReadWholeFile in
+					//   KCMPageCheck.cpp): every toggle keeps its default.
 	if (text.empty())
 		return;
 
-	// ---- 各トグルへ適用 ----
-	// ★順序: 不透明度に影響する表示トグルを先に反映してから SetPrintMarks を呼ぶ。SetPrintMarks は
-	//   常時表示の画面不透明度を現在の選択から再計算する(KCMBaseScreenOpacity)ので、その入力が
-	//   先に入っていなければならない。
-	//   ⚠★2026-08-22＝**その入力は「Hold to Hide Marks」から「Always Show Marks on Target」へ移った**
-	//     (Hold は撤去)。順序の要件は変わっていない＝下の SetShowTargetMarks が SetPrintMarks より
-	//     前にあること。**行を並べ替えるときはこの依存を先に見ること。**
+	// ---- apply to each toggle ----
+	// ★Order: the display toggles that feed the opacity go in before SetPrintMarks is called.
+	//   SetPrintMarks recomputes the always-on screen opacity from the current choice
+	//   (KCMBaseScreenOpacity), so its inputs have to be in place first.
+	//   ⚠★That input **moved from "Hold to Hide Marks" to "Always Show Marks on Target"** when Hold
+	//     was removed. The ordering requirement did not change ＝ SetShowTargetMarks below must come
+	//     before SetPrintMarks. **Look at this dependency before reordering these lines.**
 	InterfacePtr<IKCMCompareFacade> compare(Utils<IKCMCompareFacade>().QueryUtilInterface());
 	compare->SetShowTargetMarks   (KCMJsonReadBool(text, "showTgtMarks",    compare->GetShowTargetMarks()));
 	compare->SetShowSourceMarks   (KCMJsonReadBool(text, "showSrcMarks",    compare->GetShowSourceMarks()));
 	compare->SetShowOldPageNumbers(KCMJsonReadBool(text, "showOldNumbers",  compare->GetShowOldPageNumbers()));
 
-	// ⚠★★**印刷マーク(printMarks)は復元しない**(2026-08-25・ユーザー指定。保存側も書いていない)。
-	//   ∴ 毎回の起動で既定の OFF から始まる＝出力にマークを出すのは、その回に明示的に ON にしたときだけ。
-	// ★**それでも SetPrintMarks を通す**理由＝復元したいのは不透明度で、その反映口がこれしかないため
-	//   (`SetMarkOpacity25` は中で `KCMActiveDoc()` を引き、ステータス行に文字を出す
-	//    ＝`KCMComparisonRun.cpp` のフライアウト用の実装で、起動時に通す経路ではない)。
-	//   ⇒ 第1引数は**今の印刷フラグをそのまま**渡す(起動直後なので既定 kFalse)。
+	// ⚠★★**The print marks (printMarks) are not restored** (user’s instruction; the save side does
+	//   not write them either). ∴ every launch starts from the default OFF ＝ marks reach an output
+	//   only in a session where they were switched ON deliberately.
+	// ★**SetPrintMarks is still called** because the opacity is what has to be restored and this is
+	//   its only way in (`SetMarkOpacity25` looks up `KCMActiveDoc()` inside and writes to the status
+	//   line ＝ it is the flyout’s implementation in `KCMComparisonRun.cpp`, not a route to take at
+	//   startup).
+	//   ⇒ The first argument passes **the current print flag through unchanged** (the default kFalse,
+	//     this early).
 	const bool16 opacity25  = KCMJsonReadBool(text, "opacity25",  compare->GetMarkOpacity25());
-	compare->SetPrintMarks(compare->GetPrintMarks(), opacity25, nil);	// db=nil: フラグ設定のみ(未 Start なので再描画対象は無い)
+	compare->SetPrintMarks(compare->GetPrintMarks(), opacity25, nil);	// db=nil: set the flag only (nothing is armed yet, so there is nothing to redraw)
 
-	// ★マークの色(2026-08-25 に補った。⑰で足したときの入れ忘れ)。
-	// ★**起動時に通してよい**＝`KCMDoSetMarkColor`(KCMCore.cpp)は**値が変わらなければ即 return** し、
-	//   変わった回も `KCMActiveDoc()` から取った db を再描画するだけ。文書が1つも無ければ
-	//   `KCMInvalidateDB(nil)` になるだけで害は無い。
-	// ★**後始末は要らない**＝不透明度と違い、色は**描くたびに `SelectedMarkColor()` を読み直す**ので
-	//   `KCMStoryMarksRefresh()` を頼む必要が無い(理由の全文は KCMActionComponent.cpp の
-	//   kKCMPopupColorRedActionID の頭)。∴ 上の opacity と違ってここは1行で済む。
+	// ★The mark colour (added later, to make up for the miss when the feature went in).
+	// ★**It is safe at startup**: `KCMDoSetMarkColor` (KCMCore.cpp) **returns immediately when the
+	//   value does not change**, and on the run where it does it only redraws the db it took from
+	//   `KCMActiveDoc()`. With no document open that is `KCMInvalidateDB(nil)`, which is harmless.
+	// ★**No follow-up is needed**: unlike the opacity, the colour is **re-read by
+	//   `SelectedMarkColor()` on every draw**, so nothing has to ask for `KCMStoryMarksRefresh()`.
+	//   (The full reason is at kKCMPopupColorRedActionID in KCMActionComponent.cpp.) ∴ unlike the
+	//   opacity above, one line does it.
 	compare->SetMarkColor(KCMJsonReadBool(text, "markColorCyan", compare->GetMarkColorCyan()));
 
 	KCMSetLayoutSync            (KCMJsonReadBool(text, "syncLayoutViews",         KCMGetLayoutSync()));
@@ -270,38 +289,43 @@ void KCMLoadPanelStateIfPresent()
 	compare->SetIgnorePageNumberMarker(
 		KCMJsonReadBool(text, "ignorePageNumberMarker", compare->GetIgnorePageNumberMarker()));
 
-	// ★ここでは窓に触らない(触れない): この復元は起動時(KCMUIStartup::Startup)に走るので、
-	//   まだパネルが存在しない。実際に半透明を貼るのはパネルの AutoAttach と
-	//   kPaletteVisibilityChangedMessage の購読(KCMPanelAlpha.cpp)。
-	//   ★ただし「フラグを戻すだけ」ではない: ON を復元すると KCMSetPanelTranslucent が Win32 の
-	//     イベントフックを張る(置き場所だけが変わる遷移を拾う唯一の手段)。パネルがまだ無い間は
-	//     コールバックが即 return するので、起動シーケンスへの影響は無い。
+	// ★No window is touched here, and none could be: this restore runs at startup
+	//   (KCMUIStartup::Startup), when the panel does not exist yet. What actually applies the
+	//   translucency is the panel’s AutoAttach and the kPaletteVisibilityChangedMessage subscription
+	//   (KCMPanelAlpha.cpp).
+	//   ★It is not purely "restore a flag" though: restoring ON makes KCMSetPanelTranslucent install
+	//     a Win32 event hook (the only way to catch a transition that changes nothing but where the
+	//     panel sits). While there is no panel the callback returns immediately, so the startup
+	//     sequence is unaffected.
 	KCMSetPanelTranslucent      (KCMJsonReadBool(text, "translucentPanel",       KCMGetPanelTranslucent()));
 	KCMSetPagesPanelTranslucent (KCMJsonReadBool(text, "translucentPagesPanel",  KCMGetPagesPanelTranslucent()));
-	// ★ダイアログの分(2026-08-13)。上の但し書きがそのまま当てはまり、しかも**より素直**: あちらは
-	//   「パネルがまだ無い」だが、こちらは「ダイアログはそもそも開いていない」のが常態で、窓は開くたびに
-	//   KCMBookDialog.cpp が教えてくる。ここで戻すのは旗だけでよい。
+	// ★The dialog’s own. The note above applies unchanged and is **simpler** here: there the case
+	//   was "the panel does not exist yet", while for a dialog "not open" is the ordinary state, and
+	//   KCMBookDialog.cpp hands its window over every time it opens. Restoring the flag is enough.
 	KCMSetBookDialogTranslucent (KCMJsonReadBool(text, "translucentBookDialog",  KCMGetBookDialogTranslucent()));
 
-	// ★★比較モード（2026-08-21・ユーザー指定）。
-	//   ⚠**ここで SetCompareMode を呼ぶのは安全**＝あれは「設定を変えるだけで、走っている比較を
-	//     やり直さない」と契約に明記されている（IKCMCompareFacade.h）。再比較するかを決めるのは
-	//     呼び手で、フライアウトは再比較し、**起動時の復元はしない**。まさにこの場所のための分岐。
-	//   ⚠キーが無ければ今の値のまま（＝旧い設定ファイルは Pixel のまま）。知らない綴りも同じ扱いに
-	//     する ---- 将来モードが増えた版で保存したファイルを古い版で読んだとき、「知らないから
-	//     Pixel にする」より「触らない」ほうが壊れない。
+	// ★★The compare mode (user’s instruction).
+	//   ⚠**Calling SetCompareMode here is safe** ＝ it is contracted (IKCMCompareFacade.h) to change
+	//     the setting only and not to redo a running comparison. Whether to recompare is the
+	//     caller’s decision: the flyout does, **and this startup restore does not**. That branch
+	//     exists for exactly this place.
+	//   ⚠With the key absent the current value stands (＝ an older settings file stays Pixel). A
+	//     spelling we do not know is treated the same way ---- reading a file saved by a later
+	//     version with more modes, "leave it alone" breaks less than "I do not know it, so make it
+	//     Pixel".
 	const std::string mode = KCMJsonReadString(text, "compareMode");
 	if (mode == "story")
 		compare->SetCompareMode(kKCMModeStory);
 	else if (mode == "pixel")
 		compare->SetCompareMode(kKCMModePixel);
 
-	// ★タブの名前も復元後の状態に合わせる。起動時（KCMUIStartup::Startup）から呼ばれた回は
-	//   パネルがまだ無いので中で黙って戻り、実際に書かれるのはパネルの AutoAttach ---- そちらも
-	//   同じ関数を呼ぶ。ここに置くのは「パネルが既にある状態でこの関数が走った回」のため。
+	// ★Bring the tab name into line with the restored state too. On the run called from startup
+	//   (KCMUIStartup::Startup) there is no panel yet, so it returns quietly inside and the name is
+	//   really written by the panel’s AutoAttach ---- which calls the same function. This call is
+	//   here for the run where the panel already exists.
 	KCMPanelTitle::Update();
-	// (「translucentToolbox」= ツールボックスの半透明は 2026-08-07 に機能ごと撤去。古い設定ファイルに
-	//  このキーが残っていても、読まなくなっただけで害は無い＝KCMJsonReadBool はキーを名指しで探す。)
+	// ("translucentToolbox" went with its feature. Left in an older settings file it does no harm:
+	//  it is simply no longer read, since KCMJsonReadBool looks keys up by name.)
 }
 
-// KCMPanelState.cpp 終わり。
+// End, KCMPanelState.cpp.

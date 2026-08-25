@@ -2,69 +2,70 @@
 //
 //  KCMPanelObserver.cpp
 //
-//  ChangeMarker 操作パネルの IObserver。
-//  ★2026-07-10 に Start/Clear・印刷トグル・25%/75% はフライアウトメニューへ移行済みで、現在のパネルは
-//    Target:/Source: の文書名ラベル・Prev/Next ボタン・ステータス行・イラストアイコンだけを持つ。
-//    ここが担うのは (a)Prev/Next のボタン押下 (b)AutoAttach での実状態反映(固定既定値は書かない=
-//    [[panel-autoattach-read-real-state]]) (c)パネルの表示更新の口(KCMRefreshPanel / KCMSetStatus /
-//    KCMSetNavPosition / KCMGetVisibleOwnPanel)。
-//  ★(c)にあった「Start/Stop 実行の実体」は 2026-08-13 に KCMComparisonRun.cpp へ移した
-//    (model/UI 分割 第1段 Task 4)＝**このファイルはパネルの表示だけを担う**。
-//  Target:/Source: ラベルと ON/OFF アイコンは arm 済み(「開始済み」)状態を反映する。これはアプリ全体で
-//  共有される(KCMIsArmed/…)ので、パネルを開き直しても正しい状態が表示され続ける。
+//  The IObserver of the ChangeMarker panel.
+//  ★Start/Clear, the print toggle and 25%/75% moved to the flyout menu, so the panel now holds
+//    only the Target:/Source: document labels, the Prev/Next buttons, the status line and the
+//    illustration. What is left here is (a) the Prev/Next presses, (b) reflecting the real state
+//    in AutoAttach (never writing a fixed default ＝ [[panel-autoattach-read-real-state]]) and
+//    (c) the entry points that update what the panel shows (KCMRefreshPanel / KCMSetStatus /
+//    KCMSetNavPosition / KCMGetVisibleOwnPanel).
+//  ★"Running the Start/Stop itself", which used to be part of (c), moved to KCMComparisonRun.cpp
+//    ＝ **this file only drives what the panel displays**.
+//  The Target:/Source: labels and the ON/OFF icon reflect the armed state, which is shared across
+//  the application, so reopening the panel still shows the right thing.
 //
-//  SnippetRunner のパネルオブザーバ(SnipRunPanelWidgetObserver.cpp)を手本にしている。
+//  Modelled on SnippetRunner's panel observer (SnipRunPanelWidgetObserver.cpp).
 //
 //========================================================================================
 
 #include "VCPlugInHeaders.h"
 
-// インターフェイス:
+// Interface includes:
 #include "IControlView.h"
 #include "IPanelControlData.h"
 #include "ISubject.h"
 #include "ITextControlData.h"
 #include "ITriStateControlData.h"
 #include "IBooleanControlData.h"
-#include "ISession.h"				// GetExecutionContextSession(終了処理中は nil になり得るので型を明示して受ける)
+#include "ISession.h"				// GetExecutionContextSession (can be nil during teardown, so the type is named explicitly)
 #include "IApplication.h"			// QueryApplication
-#include "IPanelMgr.h"				// QueryPanelManager / GetVisiblePanel(外部からのパネル更新)
-// (IActiveContext.h は 2026-08-18 に撤去＝不具合再検査 B-U3。このファイルはアクティブコンテキストを
-//  一度も引かない。分割前に「アクティブ文書から db を出す」処理がここに在った名残だった。)
+#include "IPanelMgr.h"				// QueryPanelManager / GetVisiblePanel (updating the panel from outside)
+// (IActiveContext.h was removed: this file never asks for the active context. It was a leftover
+//  from before the split, when "get the db from the active document" lived here.)
 #include "IDocument.h"
 #include "IDocumentList.h"
 
-// 一般:
+// General includes:
 #include "CObserver.h"
 #include "widgetid.h"				// kTrueStateMessage / kFalseStateMessage
-#include "IDataBase.h"				// GetSysFile(Target/Source のフルパス表示。生存確認の後だけ deref する)
-#include "SDKFileHelper.h"			// IDFile -> パス文字列(Target/Source をフルパスで出す。2026-08-12)
+#include "IDataBase.h"				// GetSysFile (the full path of Target/Source; dereferenced only after the liveness check)
+#include "SDKFileHelper.h"			// IDFile -> a path string (Target/Source are shown as full paths)
 
-// プロジェクト内:
+// Project includes:
 #include "KCMUIID.h"
-#include "IKCMStatusTextData.h"	// ★メッセージ欄は自前描画＝文字列でなく4片を書き込む(2026-08-20)
+#include "IKCMStatusTextData.h"	// ★the message area is self-drawn ＝ four pieces are written, not one string
 #include "Utils.h"					// Utils<IKCMCompareFacade>()
-#include "IKCMCompareFacade.h"	// ★arm 状態とステータス文字列を model に頼む窓口(2026-08-13 Task 11)。
-								//  読み出しは GetSessionStatus、書き込みは StoreSessionStatus ---- 後者は
-								//  2026-08-15(第2段)にここへ来た。それまでは KCMModelNotify.h の自由関数を
-								//  直に呼んでいたが、それは別 .pln からリンクできない。
+#include "IKCMCompareFacade.h"	// ★the way to ask the model for the armed state and the status
+								//  string. Reading is GetSessionStatus, writing is StoreSessionStatus
+								//  ---- the latter came here when the halves became two .pln, because a
+								//  free function of the model cannot be linked from another one.
 #include "KCMUIShared.h"	// panel / status line / nav readout / tool button (split from KCMCore.h on 2026-08-13)
-#include "KCMChangeNav.h"			// KCMGotoNextChange / KCMGotoPrevChange(◀ Prev / Next ▶ ボタン)
-// ★比較の開始/解除の6本は 2026-08-13 に KCMComparisonRun.cpp へ移した(model/UI 分割 第1段 Task 4)。
-//   それだけが使っていた include(KCMScrollMap.h / KCMDrawEventHandler.h / KCMOversetApply.h /
-//   PersistUtils.h)も一緒に移っている。⇒ このファイルは**パネルの表示だけ**を担う UI になった。
-#include "KCMPanelState.h"		// KCMLoadPanelStateIfPresent(読込の主経路は起動時=KCMUIStartup。ここは保険)
-#include "KCMPanelTitle.h"		// KCMPanelTitle::Update(パネルを開いたときタブへ今のモードを書く)
+#include "KCMChangeNav.h"			// KCMGotoNextChange / KCMGotoPrevChange (the Prev and Next buttons)
+// ★The six functions that start and clear a comparison moved to KCMComparisonRun.cpp, and the
+//   includes only they used (KCMScrollMap.h / KCMDrawEventHandler.h / KCMOversetApply.h /
+//   PersistUtils.h) went with them. ⇒ This file is UI that drives **the panel display alone**.
+#include "KCMPanelState.h"		// KCMLoadPanelStateIfPresent (the main route is startup, in KCMUIStartup; this is the safety net)
+#include "KCMPanelTitle.h"		// KCMPanelTitle::Update (write the current mode on the tab when the panel opens)
 #include "KCMPanelAlpha.h"		// KCMAttachPanelVisibilityObserver / KCMApplyAllPanelTranslucency
-									// (パネル再表示時に半透明を貼り直す)。⚠2026-08-19(B-U9)訂正＝ここは
-									// KCMApplyPanelTranslucency と書いていたが、このファイルが呼ぶのは
-									// **All のほう**。同じ取り違えを KCMPanelAlpha.h 側が 2026-08-17 に
-									// 直しており、**その兄弟がここに残っていた**
-#include "KCMPathDisplay.h"		// KCMPathForDisplay(Target:/Source: のパスを "/" 区切りで見せる)
-#include "KCMStorySection.h"		// KCMUpdateStorySectionLabel(見出しの件数も arm 状態の表示の一部)
-#include "KCMStoryTree.h"			// KCMStoryTreeRebuild(一覧の中身も同じく arm 状態で変わる)
+									// (re-apply the translucency when the panel is shown again).
+									// ⚠This said KCMApplyPanelTranslucency once; what this file calls is
+									// **the All one**. KCMPanelAlpha.h had already corrected the same
+									// mix-up on its side, and **its sibling here had been left**.
+#include "KCMPathDisplay.h"		// KCMPathForDisplay (show the Target:/Source: paths with "/" separators)
+#include "KCMStorySection.h"		// KCMUpdateStorySectionLabel (the count in the heading is part of the armed-state display)
+#include "KCMStoryTree.h"			// KCMStoryTreeRebuild (what the list holds changes with the armed state too)
 
-/** ChangeMarker パネルのウィジェットを監視し、共有のオーバーレイ操作を駆動する。 */
+/** Watches the widgets of the ChangeMarker panel and drives the shared overlay actions. */
 class KCMPanelObserver : public CObserver
 {
 public:
@@ -85,35 +86,40 @@ private:
 CREATE_PMINTERFACE(KCMPanelObserver, kKCMPanelObserverImpl)
 
 //----------------------------------------------------------------------------------------
-// (★今セッションのステータス文字列を覚えるのは **model 側**の仕事になった＝2026-08-13 Task 9 で
-//  KCMModelNotify.cpp へ移動。理由は設計書 §3.3 ＝ app.kcmStatus(ScriptProvider＝model 側)が
-//  **パネルを閉じていても答える**という仕様と、パネルは再表示のたびに widget を作り直すこと。
-//  ★このファイルに残るのは**表示だけ**。KCMSetStatus は書いた文字列を Facade の
-//  StoreSessionStatus で model 側へ預け、AutoAttach は GetSessionStatus で読み戻す
-//  (2026-08-15・第2段。それまでは KCMModelNotify.h の自由関数を直に呼んでいた)。
-//  ⚠StaticMultiLineTextWidget の内容はワークスペースに永続化されるので、再起動後にアイコン状態から
-//  開くと**前回セッションの文字列が残る** ---- だから AutoAttach で必ず上書きする、という事情は不変。)
+// (★Remembering this session's status string is **the model side's** job (KCMModelNotify.cpp).
+//  The reason is that app.kcmStatus -- served by the ScriptProvider, which is model-side --
+//  **answers with the panel closed**, and that the panel rebuilds its widgets on every re-show.
+//  ★What is left in this file is **the display alone**: KCMSetStatus hands what it wrote to the
+//  model through the facade's StoreSessionStatus, and AutoAttach reads it back with
+//  GetSessionStatus.
+//  ⚠The contents of the message widget are persisted into the workspace, so opening the panel
+//  from its icon after a restart shows **the previous session's string** ---- which is why
+//  AutoAttach always overwrites it. That has not changed with the widget itself (it is a
+//  self-drawn KCMStatusTextWidget now, not the stock StaticMultiLineTextWidget).)
 //----------------------------------------------------------------------------------------
 
 //----------------------------------------------------------------------------------------
-// ローカルヘルパ
+// Local helpers
 //----------------------------------------------------------------------------------------
 
-// db を所有する文書の**フルパス**(取れなければ文書名)。
+// The **full path** of the document that owns db (its name when the path cannot be had).
 //
-// ★★2026-08-12 に「名前だけ」から変更(ユーザー指示「パネルの方も」)。理由はブック比較の
-//   ダイアログと同じ＝**比べる2つは同じ仕事の版違いで、ファイル名まで同じことが多い**。名前だけだと
-//   Target と Source が同じ文字列になり、2行が「どちらがどちらか」を何も語らなくなる。
+// ★★It shows a path rather than a name (user’s instruction, "the panel too") for the same reason
+//   as the book comparison dialog: **the two being compared are versions of one job and often
+//   have the same file name**. With names alone, Target and Source read as the same string and
+//   the two lines say nothing about which is which.
 //
-// ★★同日に**末尾2つ(親フォルダー\ファイル名)→フルパス**へ再変更(ユーザー指示「フルパスにしてみて、
-//   ...がつくかも」)。**溢れることを承知の上での指定**なので、収まりの判断は widget に一任し、ここでは
-//   一切削らない。この行の幅は 208px しか無いのでフルパスはたいてい溢れ、対の `.fr` が
-//   kEllipsizeBeginning ＝ **前が削られる**(`…\new\ch01.indd`)。⚠溢れた行では行頭の「Target: 」
-//   ラベルも一緒に消える——2行の上下(上が Target・下が Source)がその代わりになる。
-//   ★ブック比較ダイアログ側も同じくフルパス＋前方省略。**2か所とも同じ答えになった。**
+// ★★It went from "the last two components (parent folder\file name)" to the full path the same
+//   day (user’s instruction: "try the full path"). **Overflowing was accepted deliberately**, so
+//   fitting is left entirely to the widget and nothing is trimmed here. The line is only 208px
+//   wide, so a full path usually overflows and the matching `.fr` uses kEllipsizeBeginning ＝
+//   **the front is cut** (`...\new\ch01.indd`). ⚠On an overflowing line the leading "Target: "
+//   goes with it -- the order of the two lines (Target above, Source below) stands in for it.
+//   ★The book comparison dialog shows full paths with front ellipsis as well. **Two places, one
+//   answer.**
 //
-// ★未保存の文書はファイルを持たない(IDataBase.h:270-273 が明記)ので、そのときは文書名へ落ちる。
-// 呼び出しは下の Target/Source ラベル2箇所だけ。
+// ★An unsaved document has no file (IDataBase.h:270-273 says so), and then this falls back to the
+// document name.
 static PMString KCMDocPathFromDB(IDataBase* db)
 {
 	PMString name;
@@ -121,13 +127,15 @@ static PMString KCMDocPathFromDB(IDataBase* db)
 	if (db == nil)
 		return name;
 
-	// ★★**生存確認が先**(2026-08-13 の再検査で順序を戻した)。この db は arm 中の Target/Source を
-	//   生ポインタで持っているもので、文書が閉じた瞬間から `KCMHandleDocsClosed` が disarm する
-	//   までの間は**指す先が無い**。KCM 全体の規約は「閉じた db は FindDocByDataBase への
-	//   ポインタ比較だけに使い、絶対に deref しない」で、`GetSysFile()` はその deref にあたる。
-	//   ⚠この関数はパネルの Update から呼ばれ、**終了処理中でもパネルの Update は走る**ことが
-	//     2026-08-12 に実測されている(KCMDetachPanelVisibilityObserver を新設した理由)。
-	//   ★生存が確かめられた後の db なら deref してよい ---- 下の GetSysFile はその位置にある。
+	// ★★**The liveness check comes first.** This db is a raw pointer to the armed Target or Source,
+	//   and between the moment a document closes and `KCMHandleDocsClosed` disarming it, **there is
+	//   nothing at the other end**. The rule across KCM is "a closed db may only be compared as a
+	//   pointer against FindDocByDataBase, never dereferenced", and `GetSysFile()` is such a
+	//   dereference.
+	//   ⚠This function is called from the panel’s Update, and **the panel’s Update does run during
+	//     teardown** (measured; it is why KCMDetachPanelVisibilityObserver exists).
+	//   ★A db that has been shown to be alive may be dereferenced ---- which is where GetSysFile
+	//     below stands.
 	InterfacePtr<IApplication> app(GetExecutionContextSession() ? GetExecutionContextSession()->QueryApplication() : nil);
 	InterfacePtr<IDocumentList> docList(app ? app->QueryDocumentList() : nil);
 	if (docList == nil)
@@ -135,9 +143,10 @@ static PMString KCMDocPathFromDB(IDataBase* db)
 
 	IDocument* d = docList->FindDocByDataBase(db);
 	if (d == nil)
-		return name;			// 閉じた/知らない db = 何も返さない(触りもしない)
+		return name;			// a closed or unknown db = answer nothing, and touch nothing
 
-	// ★パスは db に直接聞く(生存確認済み)。名前は下の fallback で IDocument 経由。
+	// ★The path is asked of the db directly (its liveness is established). The name, in the fallback
+	// below, comes through IDocument.
 	const IDFile* sysFile = db->GetSysFile();
 	if (sysFile != nil)
 	{
@@ -145,44 +154,48 @@ static PMString KCMDocPathFromDB(IDataBase* db)
 		PMString path = helper.GetPath();
 		if (!path.IsEmpty())
 		{
-			// ★2026-08-15(ユーザー要望): 区切りは "/" で見せる。日本語環境では "\" が円記号で
-			//   描かれ、"…\new\ch01.indd" が "…¥new¥ch01.indd" と読めてしまうため。
-			//   規則は KCMPathDisplay.h の1か所だけ ---- ブック比較も同じ関数を通る
-			//   (★**通り道は3つ**＝このパネルの2行／ダイアログの2行／比較前の確認アラート。
-			//    KCMPathDisplay.h の冒頭が数えているとおりで、旧「ブック比較の2行」はアラートを
-			//    落としていた。2026-08-18・不具合再検査 B-U3 で全数を確認)。
+			// ★The separator is shown as "/" (user’s request): in a Japanese environment "\" is drawn as
+			//   the yen sign, so "...\new\ch01.indd" reads as "...¥new¥ch01.indd".
+			//   The rule is in one place, KCMPathDisplay.h ---- the book comparison goes through the same
+			//   function (★**three routes reach it**: these two panel lines, the two lines of the dialog,
+			//   and the confirmation alert before a comparison. The head of KCMPathDisplay.h counts them;
+			//   an older note here left the alert out).
 			return KCMPathForDisplay(path);
 		}
 	}
 
 	d->GetName(name);
 
-	// ★長い文字列の切り詰めはここでは行わない。widget 側の ellipsize に一任する(KCMUI.fr の
-	//   kKCMTargetTextWidgetID / kKCMSourceTextWidgetID)。文字数ではなくフレーム幅で判断するので、
-	//   日本語(全角)混じりでも正しく収まる。
-	//   (2026-08-06 監査 A-2: 従来はここで文字数ベースに先頭を切っていたが、.fr は末尾を切る設定=
-	//    二重かつ逆方向に効いており、末尾を見せる目的が達成できていなかった。)
+	// ★A long string is not trimmed here: that is left to the widget’s ellipsize (kKCMTargetTextWidgetID
+	//   / kKCMSourceTextWidgetID in KCMUI.fr), which judges by frame width rather than character
+	//   count and therefore fits Japanese (full-width) text correctly too.
+	//   (There used to be a character-count trim of the front here as well, while the `.fr` trims
+	//    the end ＝ the two worked twice over and in opposite directions, and the point of showing
+	//    the end was never achieved.)
 	name.SetTranslatable(kFalse);
 	return name;
 }
 
 //----------------------------------------------------------------------------------------
-// アタッチ / デタッチ
+// Attach / detach
 //----------------------------------------------------------------------------------------
 
 void KCMPanelObserver::AutoAttach()
 {
-	// ★保存済みのパネル設定(独自 JSON)の読み込みは起動時(KCMUIStartup::Startup)へ前倒し済み
-	//   (2026-07-15: 同期が Stop 中+ツール選択でも動くため、パネルを開く前でも保存設定を効かせる)。
-	//   ここは起動サービスの順序が万一変わっても取りこぼさないための保険呼び出し(通常はセッション
-	//   一度きりの内部ガードで no-op。途中変更を巻き戻すこともない)。
+	// ★Reading the saved panel settings has been moved forward to startup (KCMUIStartup::Startup):
+	//   syncing runs while stopped with the tool active, so a saved setting has to take effect
+	//   before the panel is opened.
+	//   This call is the safety net in case the order of the startup services ever changes (normally
+	//   a no-op through the once-per-session guard, and it never rolls back a setting changed
+	//   since).
 	KCMLoadPanelStateIfPresent();
 
-	// ★★タブに今のモードを出す（2026-08-21）。**ここが「初めて書ける瞬間」**＝ラベルの書き先は
-	//   パレットだが、そのパレットは `IPanelMgr::GetPanelFromWidgetID` がパネルを返すようになって
-	//   初めて辿れる（起動時の復元ではまだ nil で、KCMPanelTitle は黙って戻っている）。
-	//   ⚠widget と違ってラベルはパレットの持ち物なので**開き直しても消えない**が、ここで書くのは
-	//     安いうえ、上の復元でモードが変わっている場合の唯一の反映点になる。
+	// ★★Put the current mode on the tab. **This is the first moment it can be written**: the label
+	//   goes to the palette, and the palette can only be reached once
+	//   `IPanelMgr::GetPanelFromWidgetID` answers with a panel (during the startup restore it is
+	//   still nil and KCMPanelTitle returns quietly).
+	//   ⚠Unlike a widget, the label belongs to the palette and **survives a re-open**; writing it
+	//     here is cheap, and it is the only place the mode restored above becomes visible.
 	KCMPanelTitle::Update();
 
 	InterfacePtr<IPanelControlData> pcd(this, UseDefaultIID());
@@ -191,81 +204,91 @@ void KCMPanelObserver::AutoAttach()
 
 	this->AttachWidget(pcd, kKCMPrevChangeButtonWidgetID,   IBooleanControlData::kDefaultIID);
 	this->AttachWidget(pcd, kKCMNextChangeButtonWidgetID,   IBooleanControlData::kDefaultIID);
-	// イラスト(ON/OFF アイコン、どちらか一方だけが可視)のクリックで「このプラグインについて」の配布元
-	// URL を開く。RollOverIconButtonWidget ベースのボスは ITriStateControlData のクリックで
-	// kTrueStateMessage を送る(pictureicon サンプル PicIcoRollOverButtonObserver と同じ流儀)。
+	// Clicking the illustration (the ON and OFF icons, only one of them visible) opens the
+	// distribution URL. A boss based on RollOverIconButtonWidget sends kTrueStateMessage through
+	// ITriStateControlData on a click (the same practice as the pictureicon sample's
+	// PicIcoRollOverButtonObserver).
 	this->AttachWidget(pcd, kKCMIconOnWidgetID,             ITriStateControlData::kDefaultIID);
 	this->AttachWidget(pcd, kKCMIconOffWidgetID,            ITriStateControlData::kDefaultIID);
-	// ★ツール切替ボタン(Prev の左)。押すとツールボックスの琥珀のツールがアクティブになる。
-	//   同じ RollOverIconButtonWidget 系の boss なので、受け方は上の2つとまったく同じ。
+	// ★The tool switch button (left of Prev). Pressing it makes this plug-in’s toolbox tool active.
+	//   It is a boss of the same RollOverIconButtonWidget family, so it is received exactly like the
+	//   two above.
 	this->AttachWidget(pcd, kKCMToolButtonWidgetID,         ITriStateControlData::kDefaultIID);
 
-	// (印刷ON/OFF と 不透明度 25%/75% は 2026-07-10 にフライアウトメニューへ移行:
-	//  kKCMPopupPrintMarksActionID / kKCMPopupOpacity25ActionID / kKCMPopupOpacity75ActionID。
-	//  それらの状態は UpdateActionStates が engine 実状態(KCMGetPrintMarks/KCMGetMarkOpacity25)を
-	//  読んでチェックマークで反映するので、ここでパネルウィジェットを復元する必要はなくなった。)
+	// (The print toggle and the 25%/75% opacity moved to the flyout menu:
+	//  kKCMPopupPrintMarksActionID / kKCMPopupOpacity25ActionID / kKCMPopupOpacity75ActionID.
+	//  UpdateActionStates reads the engine state (KCMGetPrintMarks / KCMGetMarkOpacity25) and shows
+	//  it as a check mark, so no panel widget has to be restored here any more.)
 
-	this->UpdateInfoDisplay();		// 開始済みなら Target/Source 名と ON アイコン、未開始なら名前なし+OFF
+	this->UpdateInfoDisplay();		// armed: the Target/Source names and the ON icon; not armed: no names and OFF
 
-	// ステータス欄はワークスペースに永続化されるため、再起動後にアイコン状態から開くと前回
-	// セッションの文字列が残る。今セッションで表示したメッセージ(未操作なら空)で必ず上書きする。
-	// ★未操作(空)のとき=初めてパネルを開いたときは、使い方の初期ヒントを英語で表示する
-	//   (ソース/ターゲットを開いてフライアウトメニューから Start、という案内)。以後は Start 等の
-	//   実メッセージが gSessionStatus を上書きしていくので、ヒストリとしては最後の1件だけが残る。
-	// ⚠この分岐を「まだ何も操作していないか」の判定に使わないこと(2026-08-07 現行化。旧コメントは
-	//   「Start 等を一度でも操作すれば埋まる」と書いていたが、実際は**ヒントを出した時点で
-	//   KCMSetStatus を通って gSessionStatus が埋まる**)。∴ 2回目以降は必ず else 側を通り、
-	//   同じヒント文をそのまま復元する(画面の見え方は同じ)。★app.kcmStatus も同じ値を返すので、
-	//   スクリプトから「未操作」を見分けることはできない。
-	// ★★2026-08-20: **4片で取り戻す**。欄が自前描画になり、変更行をクリックしたときのメッセージは
-	//   「見出し／前の文脈／変更された文字／後の文脈」に分かれている。連結した1本で復元すると、
-	//   パネルを閉じて開き直しただけで**色分けだけが静かに消える**——同じ文が、通った経路によって
-	//   別の見え方をすることになる。⇒ 覚える場所は今までどおり model 側の1か所で、そこが4片を持つ。
-	//   ★普通のメッセージは真ん中の1片だけが埋まっているので、この経路を通っても見え方は変わらない。
+	// The status area is persisted into the workspace, so opening the panel from its icon after a
+	// restart shows the previous session’s string. It is always overwritten here with what this
+	// session has shown (empty if nothing yet).
+	// ★When nothing has been shown -- the first time the panel is opened -- an English hint is put up
+	//   (open the source and target documents, then choose Start from the flyout). After that the
+	//   real messages overwrite the remembered one, so only the last of them survives as history.
+	// ⚠**Do not use this branch as a test for "nothing has been done yet"**: showing the hint goes
+	//   through KCMSetStatus and fills the remembered value, so from the second time on the else
+	//   side always runs and restores the same hint (the screen looks identical either way).
+	//   ★app.kcmStatus answers with the same value, so a script cannot tell "untouched" apart
+	//   either.
+	// ★★**It is restored as four pieces.** The area is self-drawn, and the message shown when a
+	//   change row is clicked is split into heading / context / changed characters / context.
+	//   Restoring it as one concatenated string would make **the colours quietly disappear just from
+	//   closing and reopening the panel** -- the same sentence would look different depending on the
+	//   route it took. ⇒ It is remembered in the same one place on the model side, and that place
+	//   holds four pieces.
+	//   ★An ordinary message fills only the middle piece, so this route does not change how it looks.
 	PMString savedLabel, savedPre, savedMid, savedPost, savedRuby;
-	Utils<IKCMCompareFacade>()->GetSessionStatusSegments(savedLabel, savedPre, savedMid, savedPost, savedRuby);	// ★覚えているのは model 側(2026-08-13 Task 9 で移動・Task 11 で Facade 経由へ)
+	Utils<IKCMCompareFacade>()->GetSessionStatusSegments(savedLabel, savedPre, savedMid, savedPost, savedRuby);	// ★remembered on the model side
 	if (savedLabel.IsEmpty() && savedPre.IsEmpty() && savedMid.IsEmpty() && savedPost.IsEmpty())
 	{
 		PMString hint("Open the target and source documents (the active one becomes the Target), then choose Start from the panel menu.");
 		hint.SetTranslatable(kFalse);
-		KCMSetStatus(hint);	// (メンバ SetStatus は単純転送だったため撤去し直接呼ぶ 2026-07-25)
+		KCMSetStatus(hint);	// (the member SetStatus was a plain forwarder and was removed; this calls directly)
 	}
 	else
 	{
 		KCMSetStatusSegments(savedLabel, savedPre, savedMid, savedPost, savedRuby);
 	}
 
-	// Prev/Next の間の現在位置表示とボタン有効/無効は、上の UpdateInfoDisplay(→KCMApplyPanelInfo
-	// →KCMRefreshNavPosition)で今の実状態から作り直し済み。ワークスペースに永続化された前回の値は
-	// そこで確実に上書きされるので、ここでの復元処理は不要。
+	// The position readout between Prev and Next, and whether the buttons are enabled, have already
+	// been rebuilt from the real state by UpdateInfoDisplay above (-> KCMApplyPanelInfo ->
+	// KCMRefreshNavPosition). Whatever the workspace persisted from last time is overwritten there,
+	// so nothing has to be restored here.
 
-	// 半透明トグルが ON なら貼り直す。パネルを開き直すと半透明の付け先である
-	// トップレベル窓(OWL.Dock)が別物に変わるため([[win32-window-alpha-transparency]])。
-	// ★2026-08-06: 対象が2つ(自パネル/本体のページパネル)になったので、ここは全対象を見る。
-	//   自分のパネルが作り直された機会にページパネル側も貼り直しておく方が取りこぼしが無い。
-	// ★OFF のときはこちらで弾いて呼ばない(2026-08-06 再点検)。Apply は OFF でも中で弾かれない
-	//   (弾くのはドッキング中=対象窓なしのときだけ)ので、無条件に呼ぶと使っていない人にも
-	//   窓探索(キャッシュ失効時は SDK への問い合わせ)+alpha 書き+影の SW_SHOWNA の費用を払わせる。
-	//   MouseEnter/MouseLeave/フック/可視性オブザーバの各入口が OFF を弾くのと同じ方針。
-	//   ★対象ごとの OFF は KCMApplyAllPanelTranslucency が飛ばす(2026-08-07 修正。片方 ON・
-	//     片方 OFF で両者が同じフローティンググループにいると、OFF 側が同じ窓へ 255 を上書きして
-	//     ON 側の半透明を打ち消していた)。∴ ここの条件は「**このパネル2つがどちらも OFF なら**
-	//     呼ぶ意味が無い」の意味。
-	//   ⚠2026-08-19(B-U9)訂正＝ここは「全部 OFF なら」と書いていたが、トグルは**3つ**あり
-	//     (3つ目＝ブック比較ダイアログ・2026-08-13)、この条件はそれを見ていない。**見ないのが正しい**
-	//     ＝ダイアログはパネルではないので、パネルの widget が作り直されても窓は無傷。
-	//     ⇒ 数え落としているのは条件ではなく、この説明文のほうだった。
-	//   ⚠Apply**For** 側に OFF ガードを入れてはいけない: メニューで OFF にした瞬間の 255 復元・
-	//     影の再表示は、対象を名指しで呼ぶあちらが担っている(KCMActionComponent.cpp のトグル経路)。
-	// ★ここは保険で、主たる追随は KCMPanelAlpha.cpp のオブザーバ(kPaletteVisibilityChangedMessage)。
-	//   ★注意: この AutoAttach は widget を作り直すたびに走るので、固定の既定値を書く場所ではない
-	//   (KCMGetPanelTranslucent の現在値を読んで反映するだけ)。
+	// Re-apply the translucency when its toggle is ON: reopening the panel replaces the top-level
+	// window it is applied to (the OWL.Dock) with a different one
+	// ([[win32-window-alpha-transparency]]).
+	// ★There are two panel targets (our own and InDesign’s Pages panel), so all of them are looked
+	//   at here: the moment our panel is rebuilt is a good moment to re-apply the other one too.
+	// ★When they are OFF the call is skipped here rather than inside. Apply does not reject an OFF
+	//   target (it only rejects "docked, so no window"), so calling unconditionally would make
+	//   someone who uses none of this pay for a window lookup (an SDK query when the cache is
+	//   stale), an alpha write and a SW_SHOWNA for the shadow. The MouseEnter / MouseLeave / hook /
+	//   visibility-observer entrances all reject OFF the same way.
+	//   ★Per-target OFF is skipped by KCMApplyAllPanelTranslucency itself (fixed after one ON and
+	//     one OFF target in the same floating group let the OFF one write 255 over the same window
+	//     and cancel the ON one). ∴ the condition here means "**if both of these panels are OFF**
+	//     there is no point calling".
+	//   ⚠There are **three** translucency toggles, the third being the book comparison dialog, and
+	//     this condition does not look at it. **Not looking is right** ＝ a dialog is not a panel, so
+	//     rebuilding the panel’s widgets leaves its window untouched.
+	//   ⚠**Do not put an OFF guard inside Apply*For***: restoring 255 and re-showing the shadow at
+	//     the moment the menu switches it OFF is done by that call, which names its target
+	//     (the toggle route in KCMActionComponent.cpp).
+	// ★This is a safety net; the real following-along is the observer in KCMPanelAlpha.cpp
+	//   (kPaletteVisibilityChangedMessage).
+	//   ★Note: this AutoAttach runs every time the widgets are rebuilt, so it is not a place to
+	//   write fixed defaults (it only reads and reflects the current KCMGetPanelTranslucent).
 	//
-	// ★起動時(KCMUIStartup::Startup)にはパネルマネージャがまだ立ち上がっておらず購読に
-	//   失敗している可能性があるため、ここでも購読を試す(IsAttached ガードがあるので二重にならない)。
+	// ★At startup (KCMUIStartup::Startup) the panel manager may not be up yet and the subscription
+	//   may have failed, so it is attempted here as well (the IsAttached guard keeps it single).
 	KCMAttachPanelVisibilityObserver();
-	// (「乗っている」状態を落とす KCMResetPanelHover の呼び出しは 2026-07-29 に撤去。判定を
-	//  旗から Win32 の実測へ変えたので、widget を作り直しても落とすべき状態が無い。)
+	// (The KCMResetPanelHover call that cleared the "pointer is over it" state was removed: the test
+	//  became a Win32 measurement rather than a flag, so rebuilding the widgets leaves no state to
+	//  clear.)
 	if (KCMGetPanelTranslucent() || KCMGetPagesPanelTranslucent())
 		KCMApplyAllPanelTranslucency();
 }
@@ -280,7 +303,7 @@ void KCMPanelObserver::AutoDetach()
 	this->DetachWidget(pcd, kKCMNextChangeButtonWidgetID,   IBooleanControlData::kDefaultIID);
 	this->DetachWidget(pcd, kKCMIconOnWidgetID,             ITriStateControlData::kDefaultIID);
 	this->DetachWidget(pcd, kKCMIconOffWidgetID,            ITriStateControlData::kDefaultIID);
-	this->DetachWidget(pcd, kKCMToolButtonWidgetID,         ITriStateControlData::kDefaultIID);	// ★AutoAttach と対で外す
+	this->DetachWidget(pcd, kKCMToolButtonWidgetID,         ITriStateControlData::kDefaultIID);	// ★detached as the pair of AutoAttach
 }
 
 void KCMPanelObserver::AttachWidget(const InterfacePtr<IPanelControlData>& pcd, const WidgetID& wid, const PMIID& iid)
@@ -304,7 +327,7 @@ void KCMPanelObserver::DetachWidget(const InterfacePtr<IPanelControlData>& pcd, 
 }
 
 //----------------------------------------------------------------------------------------
-// Update のディスパッチ
+// Update dispatch
 //----------------------------------------------------------------------------------------
 
 void KCMPanelObserver::Update(const ClassID& theChange, ISubject* theSubject, const PMIID& /*protocol*/, void* /*changedBy*/)
@@ -315,17 +338,20 @@ void KCMPanelObserver::Update(const ClassID& theChange, ISubject* theSubject, co
 
 	const WidgetID wid = cv->GetWidgetID();
 
-	// ★★ツール切替ボタンだけは kFalseStateMessage も見る(2026-08-07 ユーザー報告
-	//   「ツールボックスから押すと同期するが、パネルから押すと押しっぱなしの見え方にならない」)。
-	//   原因: この widget は push button の挙動で、**クリック処理の最後に自分で状態を落とす**。
-	//   順番はこうなっていた —— ①押下で kTrueStateMessage → ②下の case がツールを切り替える →
-	//   ③ITool::Select が状態を kSelected にする → ④**widget がクリックを閉じる際に kUnselected へ戻す**。
-	//   ④が最後に来るので押下表示が消える。ツールボックスから選んだときは①④が走らない＝残る、
-	//   というユーザーの観測とも合う。
-	//   ⇒ ④の直後に飛ぶ kFalseStateMessage で「実際にアクティブか」を見て塗り直す。
-	//   ★実状態(KCMIsOwnToolActive)を見るので、ツールが本当に切り替わらなかったときは
-	//     押下表示も戻らない ＝ 見た目と実態がずれない。
-	//   (トグル系 widget で kTrue/kFalse 両方のメッセージを見るのは製品コードでも定石＝レイヤーパネル。)
+	// ★★The tool switch button is the one widget whose kFalseStateMessage is watched as well (user
+	//   report: "pressing it in the toolbox keeps them in step, but pressing it on the panel never
+	//   looks held down").
+	//   The cause: this widget behaves as a push button and **clears its own state at the end of
+	//   handling the click**. The order was ① press raises kTrueStateMessage → ② the case below
+	//   switches the tool → ③ ITool::Select sets the state to kSelected → ④ **the widget returns it
+	//   to kUnselected as it closes the click**. ④ comes last, so the pressed look disappears.
+	//   Choosing from the toolbox runs neither ① nor ④ ＝ it stays, which matches what the user saw.
+	//   ⇒ The kFalseStateMessage that follows ④ is used to repaint from **whether the tool really is
+	//     active**.
+	//   ★Because it reads the real state (KCMIsOwnToolActive), a tool that did not actually switch
+	//     leaves the pressed look off ＝ the look and the truth cannot part company.
+	//   (Watching both kTrue and kFalse on a toggle-like widget is standard in the product code too
+	//    ＝ the Layers panel.)
 	if (theChange == kFalseStateMessage && wid.Get() == kKCMToolButtonWidgetID)
 	{
 		KCMSetToolButtonSelected(KCMIsOwnToolActive());
@@ -336,35 +362,37 @@ void KCMPanelObserver::Update(const ClassID& theChange, ISubject* theSubject, co
 	{
 		switch (wid.Get())
 		{
-			// ◀ Prev / Next ▶: 見るべきページ(変更/Added/未比較)へ Target ビューをスクロール。
-			// (Start/Stop はパネルボタン→フライアウトメニュー kKCMPopupStartStopActionID へ移行 2026-07-10)
+			// Prev / Next: scroll the Target view to the previous or next page worth looking at (changed,
+			// Added, or not compared).
+			// (Start/Stop left the panel button for the flyout item kKCMPopupStartStopActionID.)
 			case kKCMPrevChangeButtonWidgetID:  KCMGotoPrevChange(); break;
 			case kKCMNextChangeButtonWidgetID:  KCMGotoNextChange(); break;
-			// (印刷ON/OFF と 不透明度 25%/75% はフライアウトメニューへ移行 2026-07-10。ここでは扱わない。)
-			// イラストクリック → 「このプラグインについて」の配布元URLをブラウザで開く。
+			// (The print toggle and the 25%/75% opacity moved to the flyout menu and are not handled here.)
+			// Clicking the illustration -> open the distribution URL in the browser.
 			case kKCMIconOnWidgetID:
 			case kKCMIconOffWidgetID:
 				KCMOpenAboutURL();
 				break;
-			// ★ツール切替ボタン → このプラグインのツール(ツールボックスの琥珀のツール)を
-			//   アクティブにする。ツールボックスでそれをクリックしたのと同じ状態になる。
-			//   実体は KCMTool.cpp(Utils<IToolBoxUtils>()->QueryTool → SetActiveTool)。
+			// ★The tool switch button -> make this plug-in’s tool (the one in the toolbox) active, exactly
+			//   as clicking it in the toolbox would. The work is in KCMTool.cpp
+			//   (Utils<IToolBoxUtils>()->QueryTool -> SetActiveTool).
 			case kKCMToolButtonWidgetID:
 			{
-				// ★押した結果をステータス行に出す(2026-08-07 ユーザー要望)。SetActiveTool は
-				//   「実際にアクティブになったか」を返すので、断られた場合も黙って終わらない。
+				// ★Report the result in the status line (user’s request). SetActiveTool answers whether the
+				//   tool really became active, so a refusal does not end in silence.
 				const bool16 activated = KCMActivateOwnTool();
 
-				// ★★出す名前は**ツールチップと同じ**(2026-08-07 ユーザー指定)。そうなるのは同じ
-				//   文字列テーブルのキーを引いているから ＝ 名前を持つ場所は1つだけで、
-				//   ツールボックスのツール名(KCMTool::Init の SetName)・ツールチップ
-				//   (KCMIconTip::GetTipText)・この行の3か所が必ず一致する([[one-question-one-place]])。
-				//   PMString::Translate() が「キー → 今のロケールの実文字列」に解決する(PMString.h:692-696)。
+				// ★★The name shown is **the same as the tooltip’s** (user’s instruction), and it is so because
+				//   both look up the same string table key ＝ the name lives in one place, and the toolbox tool
+				//   name (KCMTool::Init’s SetName), the tooltip (KCMIconTip::GetTipText) and this line cannot
+				//   disagree ([[one-question-one-place]]).
+				//   PMString::Translate() resolves "key -> the real string for this locale"
+				//   (PMString.h:692-696).
 				PMString toolName(kKCMToolStringKey);
 				toolName.Translate();
 
 				PMString msg;
-				msg.SetTranslatable(kFalse);	// ★組み立て終わった文をもう一度キー扱いさせない
+				msg.SetTranslatable(kFalse);	// ★do not let the finished sentence be treated as a key again
 				if (activated)
 				{
 					msg.Append(toolName);
@@ -385,32 +413,33 @@ void KCMPanelObserver::Update(const ClassID& theChange, ISubject* theSubject, co
 }
 
 //----------------------------------------------------------------------------------------
-// 表示ヘルパ
+// Display helpers
 //----------------------------------------------------------------------------------------
 
-// 表示中の ChangeMarker パネルの IControlView を返す(隠れている/引けないときは nil)。
-// ★下の KCMRefreshPanel / KCMSetStatus / KCMSetNavPosition が
-//   「session → app → panelMgr → GetVisiblePanel」の定型を丸ごと3回持っていたので一本化した
-//   (2026-08-06 監査 C-1)。同じプラグイン内の **KCMGetVisiblePagesPanel**
-//   (KCMThumbnailRefresh.h で宣言)と同じ作り＝Pages パネル側だけ解いてあった穴を埋める形。
-//   (⚠旧引用 ":24-27" は空行を指していた＝2026-08-16 の監査 B-U3 で関数名へ。)
-// ★session の nil ガードもここで吸収する: 3つとも**アプリ終了のティアダウン中に到達し得る**
-//   (2026-07-25 に KCM 全体で統一した規約)。
-//   ⚠★根拠の書き換え(2026-08-18・不具合再検査 B-U3)。旧文は「3つともクローズ responder から
-//     呼ばれ」と書いていたが、**それは model/UI 分割の前の話**で、今は成立しない ---- クローズの
-//     掃除(KCMHandleDocsClosed)は model 側にあり、別 .pln のこの3本を直に呼べない。今の呼び手は
-//     KCMRefreshPanel=通知の受け手(KCMModelChangeObserver)と KCMPeekGesture、
-//     KCMSetNavPosition=KCMChangeNav だけ。
-//   ★**結論のほうは生きている**: 終了処理中でもパネルの Update は走ることを 2026-08-12 に実測して
-//     いる(KCMDetachPanelVisibilityObserver を新設した理由＝下の KCMDocPathFromDB のコメント)。
-//     ∴ nil ガードは要る。**根拠が失効しても結論が失効するとは限らない**([[verify-claims-in-comments]])。
-// ★2026-08-09: static を外して公開した(当時の置き場は KCMCore.h。2026-08-13 の model/UI 分割で
-//   **KCMUIShared.h** へ移った)。4人目の使い手が別ファイルに現れたため
-//   (KCMStorySection.cpp = Story Edits セクションの開閉。パネルの寸法を触るのに同じパネルが要る)。
-//   ここを複製すると「どのパネルを指すか」の判断が2か所に分かれるので、公開する方を選んだ。
+// The IControlView of the ChangeMarker panel if it is showing (nil when it is hidden or cannot be
+// reached).
+// ★KCMRefreshPanel / KCMSetStatus / KCMSetNavPosition below each held the whole
+//   "session -> app -> panelMgr -> GetVisiblePanel" idiom, so it was brought into one place. The
+//   same construction as **KCMGetVisiblePagesPanel** (declared in KCMThumbnailRefresh.h) in this
+//   plug-in ＝ filling in the hole on the side that had only been solved for the Pages panel.
+// ★The nil guard for the session (teardown while the application quits) is absorbed here too: all
+//   three can be reached during teardown.
+//   ⚠★The GROUNDS were rewritten. The old text said "all three are called from the close
+//     responder", which was true before the model/UI split and is not now ---- the close clean-up
+//     (KCMHandleDocsClosed) is on the model side and cannot call these three directly. Today the
+//     callers are KCMRefreshPanel from the notification receiver (KCMModelChangeObserver) and
+//     from KCMPeekGesture, and KCMSetNavPosition from KCMChangeNav.
+//   ★**The conclusion survived**: the panel’s Update does run during teardown (measured; it is
+//     why KCMDetachPanelVisibilityObserver exists ＝ the comment in KCMDocPathFromDB above).
+//     ∴ the nil guard is needed. **Grounds can lapse without the conclusion lapsing**
+//     ([[verify-claims-in-comments]]).
+// ★It stopped being static and was published (it now lives in **KCMUIShared.h**) when a fourth
+//   user appeared in another file (KCMStorySection.cpp ＝ opening and closing the Story Edits
+//   section, which needs the same panel to touch its dimensions). Copying it would split the
+//   decision of "which panel is meant" across two places, so publishing was the answer.
 IControlView* KCMGetVisibleOwnPanel()
 {
-	ISession* session = GetExecutionContextSession();	// 終了処理中は nil になり得る
+	ISession* session = GetExecutionContextSession();	// can be nil during teardown
 	InterfacePtr<IApplication> app(session != nil ? session->QueryApplication() : nil);
 	if (app == nil)
 		return nil;
@@ -420,24 +449,29 @@ IControlView* KCMGetVisibleOwnPanel()
 	return panelMgr->GetVisiblePanel(kKCMPanelWidgetID);
 }
 
-// パネルの ON/OFF 表示(Target/Source 名・アイコン・トグルラベル)を現在の arm 状態
-// (KCMIsArmed 等)に合わせて更新する共通処理。メンバ UpdateInfoDisplay(自パネル)と外部の
-// KCMRefreshPanel(可視パネルをレスポンダから)双方から使うため、pcd を引数に取る自由関数にする。
+// Brings the panel’s ON/OFF display (the Target/Source names, the icon, the toggle label) into
+// line with the current armed state (KCMIsArmed and friends). It is a free function taking pcd so
+// that the member UpdateInfoDisplay (our own panel) and the external KCMRefreshPanel (the showing
+// panel) can both use it.
 static void KCMApplyPanelInfo(const InterfacePtr<IPanelControlData>& pcd)
 {
 	if (pcd == nil)
 		return;
 
-	// ★5回聞くので InterfacePtr で1回引く(2026-08-16・監査 B-U3)。`Utils.h:74-80` が
-	//   「several places で使うなら一度引いて InterfacePtr に持て、その方が QueryInterface と
-	//   Release が1回で済む」と明記している。⚠**公式は回数を数字で示していない**——手元の
-	//   「3回以上なら」は目安([[utils-boss-facade-access]])。同じプラグインの
-	//   KCMPanelState.cpp / KCMActionComponent.cpp は既にこの形なので、割れを揃えた形。
-	// ⚠nil 検査は**足していない**＝従来と同じ挙動を保つため(Utils<>()-> も nil なら同じく落ちる)。
+	// ★The facade is asked several times here, so it is taken once into an InterfacePtr.
+	//   `Utils.h:74-80` states it: "if you want to use a utility interface in several places, get
+	//   the interface once, save it in an InterfacePtr, and call it from there", which does the
+	//   QueryInterface and the Release once instead of once per call. ⚠**The official text names no
+	//   number**; "three or more" is a rule of thumb of ours ([[utils-boss-facade-access]]).
+	//   KCMPanelState.cpp and KCMActionComponent.cpp in this plug-in already do the same, so this
+	//   evened out a split.
+	// ⚠A nil check is **deliberately not added**, to keep the behaviour identical (Utils<>()-> would
+	//   fall over on nil in just the same way).
 	InterfacePtr<IKCMCompareFacade> compare(Utils<IKCMCompareFacade>().QueryUtilInterface());
 	const bool16 started = compare->IsArmed() && (compare->GetArmedTargetDB() != nil);
 
-	// Target:/Source: ラベルは常時。名前は開始中のみ表示(英語固定: 現状英語のまま)。
+	// The Target:/Source: labels are always shown; the names only while armed (English, as the rest
+	// of the panel is).
 	PMString target("Target:"); target.SetTranslatable(kFalse);
 	if (started)
 	{
@@ -464,74 +498,78 @@ static void KCMApplyPanelInfo(const InterfacePtr<IPanelControlData>& pcd)
 		if (tcd != nil) tcd->SetString(source);
 	}
 
-	// アイコン: 開始中=ON / 未開始=OFF を出し分ける(2枚を重ねて可視を切替)。
-	// ★ShowView は見た目を消すだけでヒットテストは無効化しないため、隠れている方もクリックを拾って
-	// KCMOpenAboutURL が二重発火する(ブラウザタブが2つ開く)。Enable も可視状態と合わせて切り替え、
-	// 隠れている方はクリックに反応しないようにする。
+	// The icon: ON while armed, OFF otherwise (two of them stacked, with the visibility switched).
+	// ★ShowView only removes the appearance and does not disable hit testing, so the hidden one
+	// still catches clicks and KCMOpenAboutURL fires twice (two browser tabs). Enable is switched
+	// with the visibility so that the hidden one does not react.
 	IControlView* onView  = pcd->FindWidget(kKCMIconOnWidgetID);
 	IControlView* offView = pcd->FindWidget(kKCMIconOffWidgetID);
 	if (onView  != nil) { onView->ShowView(started ? kTrue : kFalse);  onView->Enable(started ? kTrue : kFalse); }
 	if (offView != nil) { offView->ShowView(started ? kFalse : kTrue); offView->Enable(started ? kFalse : kTrue); }
 
-	// ★★Story Edits の一覧と見出しもここで作り直す。**どちらも arm 状態を映す表示だから**、
-	//   Target/Source ラベルやアイコンと同じ場所に属する。
-	// ⚠★★これを比較の側(KCMDoMarkChangesDoc / KCMDoClearMarks)だけに置くと**必ずずれる**——
-	//   Start は「比較 → 成功したら arm」、Stop は「マーク消去 → disarm」の順で、どちらも
-	//   一覧を作る瞬間の arm 状態が**その後の状態と逆**になる。実機で出た症状は3つとも同じ原因だった
-	//   (2026-08-10): 見出しに件数が出ない／Stop したのに "No edits" の行が残る／0件で Start しても
-	//   "No edits" が出ない。arm の切り替わりの後に必ず通るのはこの関数なので、ここで揃える。
-	//   ★比較側の呼び出しも残してある: Refresh Page Comparison は arm 状態を変えずに件数だけ
-	//   変えるので、あちらはあちらで要る。
+	// ★★The Story Edits list and its heading are rebuilt here as well: **both of them display the
+	//   armed state**, so they belong with the Target/Source labels and the icon.
+	// ⚠★★Putting this on the comparison side alone (KCMDoMarkChangesDoc / KCMDoClearMarks) **is
+	//   bound to go out of step** ---- Start is "compare, then arm on success" and Stop is "clear the
+	//   marks, then disarm", so in both of them the armed state at the moment the list is built is
+	//   **the opposite of what it becomes**. Three symptoms seen in the running application had that
+	//   one cause: no count in the heading; a "No edits" row left after a Stop; no "No edits" after
+	//   starting with zero edits. What always runs after the armed state changes is this function,
+	//   so this is where they are brought into line.
+	//   ★The calls on the comparison side are kept: Refresh Page Comparison changes the count
+	//   without changing the armed state, so that side needs its own.
 	KCMStoryTreeRebuild();
 	KCMUpdateStorySectionLabel();
 
-	// Prev/Next(変更ページナビ)の有効/無効と、その間の現在位置表示(k/N・-・空)は
-	// KCMRefreshNavPosition に一元化(比較中かつ変更ページありのときだけ有効。無ければ無効+"/"、
-	// 未 Start は無効+空)。attach 時・Start/Stop・文書クローズ/切替のすべてがこの関数を通るので
-	// 初期状態から正しく反映される。値の作り方は KCMChangeNav.cpp を参照。
+	// Whether Prev/Next are enabled, and the position readout between them (k/N, "-", or empty), are
+	// all decided in one place, KCMRefreshNavPosition (enabled only while comparing and with changed
+	// pages; without them, disabled and "/"; before a Start, disabled and empty). Attach, Start/Stop
+	// and a document closing or switching all pass through it, so it is right from the initial state
+	// onward. How the values are made is in KCMChangeNav.cpp.
 	KCMRefreshNavPosition();
 
-	// ★ツール切替ボタンの押下表示を**実状態**へ合わせる(2026-08-07)。パネルは表示のたびに widget を
-	//   作り直すので、ここで固定の既定値(未選択)を書いてしまうと、ツールがアクティブなままパネルを
-	//   開き直したときに押下表示が落ちる([[panel-autoattach-read-real-state]])。
-	//   ★「今アクティブか」の判断は KCMTool.cpp の1か所だけが持つ。
+	// ★Bring the pressed look of the tool switch button into line with **the real state**. The panel
+	//   rebuilds its widgets every time it is shown, so writing a fixed default (not selected) here
+	//   would drop the pressed look whenever the panel is reopened with the tool still active
+	//   ([[panel-autoattach-read-real-state]]).
+	//   ★"Is it active now" is answered in one place only, KCMTool.cpp.
 	IControlView* toolView = pcd->FindWidget(kKCMToolButtonWidgetID);
 	if (toolView != nil)
 	{
 		InterfacePtr<ITriStateControlData> tsd(toolView, UseDefaultIID());
 		if (tsd != nil)
 		{
-			// 第3引数 kFalse = 通知を出さない(理由は下の KCMSetToolButtonSelected と同じ)。
+			// third argument kFalse = raise no notification (the reason is at KCMSetToolButtonSelected below)
 			tsd->SetState(KCMIsOwnToolActive() ? ITriStateControlData::kSelected
 												 : ITriStateControlData::kUnselected, kTrue, kFalse);
 		}
 	}
 
-	// (Start/Stop の切替はパネルボタンから撤去し、フライアウト項目 kKCMPopupStartStopActionID の
-	//  動的ラベル(UpdateActionStates)へ移行 2026-07-10。ここでのボタンラベル設定は不要になった。)
+	// (Start/Stop left the panel button for the dynamic label of the flyout item
+	//  kKCMPopupStartStopActionID (UpdateActionStates), so no button label is set here any more.)
 }
 
 //========================================================================================
-// KCMSetToolButtonSelected(KCMUIShared.h で宣言)
-//   パネルのツール切替ボタンを「押されている/いない」表示にする。ツールボックスのツール枠と同じ
-//   見た目(くぼみ)になるのは、.fr でこの widget を kADBEIconSuiteButtonDrawWellType にしてあるため。
+// KCMSetToolButtonSelected (declared in KCMUIShared.h)
+//   Shows the panel’s tool switch button as pressed or not pressed. It looks sunken like a
+//   toolbox tool slot because the `.fr` gives that widget kADBEIconSuiteButtonDrawWellType.
 //
-//   ★呼び元は3つ(2026-08-18・不具合再検査 B-U3 で数え直した。旧「KCMTool::Select / Deselect の
-//     2つだけ」は**同じファイルの3つ目を落としていた**):
-//       ・KCMTool::Select   … ツールがアクティブになった
-//       ・KCMTool::Deselect … ツールが降りた
-//       ・**このファイルの Update(kFalseStateMessage)** … push button が自分で状態を落とした後の
-//         塗り直し(2026-08-07 に足した経路。理由はそちらのコメント)
-//   ★数は3つでも**答えの出どころは1つ**なのは変わらない ---- 3つとも「今アクティブか」を
-//     KCMIsOwnToolActive() に聞いてから渡すので、パネルとツールボックスが食い違う経路は
-//     構造的に無い([[one-question-one-place]])。ツールボックスで選んでも、パネルのボタンで選んでも、
-//     ショートカットでも、スクリプトでも、ITool::Select は必ず呼ばれる。
+//   ★Callers (measured):
+//       - KCMTool::Select   ... the tool became active
+//       - KCMTool::Deselect ... the tool stood down
+//       - **the Update in this file (kFalseStateMessage)** ... repainting after the push button
+//         cleared its own state (the reason is in that comment)
+//   ★However many they are, **the answer comes from one place**: each of them asks
+//     KCMIsOwnToolActive() before passing it on, so there is no route by which the panel and the
+//     toolbox can disagree ([[one-question-one-place]]). Whether the tool is chosen in the
+//     toolbox, on the panel button, by shortcut or from a script, ITool::Select is always
+//     called.
 //========================================================================================
 void KCMSetToolButtonSelected(bool16 selected)
 {
 	IControlView* panel = KCMGetVisibleOwnPanel();
 	if (panel == nil)
-		return;		// パネルは隠れている(または終了処理中): 触る先が無い。
+		return;		// the panel is hidden (or teardown is under way): there is nothing to touch
 	InterfacePtr<IPanelControlData> pcd(panel, UseDefaultIID());
 	if (pcd == nil)
 		return;
@@ -544,12 +582,12 @@ void KCMSetToolButtonSelected(bool16 selected)
 	if (tsd == nil)
 		return;
 
-	// ★★第3引数 notifyOfChange = kFalse(ITriStateControlData.h:52)。
-	//   ⚠kTrue のままだと状態変更で kTrueStateMessage が飛び、この Observer の Update が
-	//     KCMActivateOwnTool を呼び返す → SetActiveTool → ITool::Select → またここ、と往復する。
-	//     ここは実状態を**映すだけ**なので、通知は要らない。
+	// ★★The third argument, notifyOfChange, is kFalse (ITriStateControlData.h:52).
+	//   ⚠Left kTrue, the state change raises kTrueStateMessage, this observer’s Update calls
+	//     KCMActivateOwnTool back → SetActiveTool → ITool::Select → here again, and round it goes.
+	//     This only **reflects** the real state, so no notification is wanted.
 	tsd->SetState(selected ? ITriStateControlData::kSelected : ITriStateControlData::kUnselected, kTrue, kFalse);
-	cv->ForceRedraw();		// 押下表示は即座に見えてほしい(次のイベントループまで待たせない)
+	cv->ForceRedraw();		// the pressed look should be visible at once (do not wait for the next event loop)
 }
 
 void KCMPanelObserver::UpdateInfoDisplay()
@@ -559,41 +597,47 @@ void KCMPanelObserver::UpdateInfoDisplay()
 }
 
 //========================================================================================
-// KCMRefreshPanel(KCMUIShared.h で宣言)
-//   現在表示中の ChangeMarker パネルがあれば、その ON/OFF 表示を現在の arm 状態へ更新する。
-//   パネルが隠れていれば何もしない(次に開いたとき AutoAttach が実状態を反映する)。
-//   クローズレスポンダ(KCMHandleDocsClosed)から、追跡文書が閉じてパネルを OFF に戻すときに呼ぶ。
+// KCMRefreshPanel (declared in KCMUIShared.h)
+//   If a ChangeMarker panel is showing, brings its ON/OFF display into line with the current
+//   armed state. Does nothing while the panel is hidden (AutoAttach reflects the real state when
+//   it is next opened).
+//   ⚠**Not called from the close responder.** That clean-up is on the model side and cannot link
+//   a UI free function; the notification receiver (KCMModelChangeObserver) calls this instead,
+//   as does KCMPeekGesture. (The same correction is written out above KCMGetVisibleOwnPanel.)
 //========================================================================================
 void KCMRefreshPanel()
 {
-	// ★session の nil ガード(終了処理中のティアダウン)も含めて KCMGetVisibleOwnPanel が持つ。
+	// ★the nil guard for the session (teardown) is inside KCMGetVisibleOwnPanel as well
 	IControlView* panel = KCMGetVisibleOwnPanel();
 	if (panel == nil)
-		return;		// パネルは隠れている(または終了処理中): 触る先が無い。
+		return;		// the panel is hidden (or teardown is under way): there is nothing to touch
 	InterfacePtr<IPanelControlData> pcd(panel, UseDefaultIID());
 	KCMApplyPanelInfo(pcd);
 }
 
 //========================================================================================
-// KCMSetStatus / KCMSetStatusSegments(KCMUIShared.h で宣言)
-//   パネルのステータス行を更新する。メンバ SetStatus(自パネル)と同じ処理を自由関数として公開し、
-//   クローズレスポンダ(KCMHandleDocsClosed)からも Stop 相当のメッセージを出せるようにする。
-//   パネルが隠れていてもセッション状態は覚えておき、再表示時に復元する。
+// KCMSetStatus / KCMSetStatusSegments (declared in KCMUIShared.h)
+//   Updates the panel’s status line. It is published as a free function so that a caller outside
+//   this file can put a message up as well. The session state is remembered even while the panel
+//   is hidden, and restored when it is shown again.
+//   ⚠**Not called from the close responder either** ---- see KCMRefreshPanel above.
 //
-// ★★2026-08-20: この欄は自前描画になった(KCMStatusTextView.cpp)。入口は2つに増えたが、
-//   **欄へ流し込む手順は下の1本だけ**＝widget を探す・書く・描き直させるが1か所にある。
+// ★★The area is self-drawn now (KCMStatusTextView.cpp). There are two entrances, but **only one
+//   way in to the area itself**: finding the widget, writing to it and having it repainted all
+//   live in one place below.
 //========================================================================================
 namespace
 {
 
 /* KCMWriteStatusToPanel
-   4片をメッセージ欄へ流し込む。パネルが隠れていれば何もしない(再表示時に AutoAttach が、
-   覚えている値から復元する)。
+   Writes the four pieces into the message area. Does nothing while the panel is hidden (on the
+   next show, AutoAttach restores from the remembered value).
 
-   ⚠★★**Invalidate を自分で呼ぶ。** stock の静的テキストでは ITextControlData::SetString が
-     やっていた(第2引数 invalidate の既定が kTrue で、その @param が「specifies whether the
-     control should be redrawn」)。自前描画の欄は**ただのデータ入れ物に書くだけ**なので、
-     画面が古くなったことを誰も知らない。「書いたのに変わらない」の原因はここになる。
+   ⚠★★**Invalidate has to be called here.** With the stock static text,
+     ITextControlData::SetString did it (its second argument, invalidate, defaults to kTrue, and
+     its @param reads "specifies whether the control should be redrawn"). A self-drawn area is
+     **written to as a plain data holder**, so nobody knows the screen has gone stale. This is
+     where "I wrote it and nothing changed" comes from.
 */
 void KCMWriteStatusToPanel(const PMString& label, const PMString& pre,
 							 const PMString& mid, const PMString& post, const PMString& ruby,
@@ -601,7 +645,7 @@ void KCMWriteStatusToPanel(const PMString& label, const PMString& pre,
 {
 	IControlView* panel = KCMGetVisibleOwnPanel();
 	if (panel == nil)
-		return;		// パネルは隠れている(または終了処理中): 触る先が無い。
+		return;		// the panel is hidden (or teardown is under way): there is nothing to touch
 	InterfacePtr<IPanelControlData> pcd(panel, UseDefaultIID());
 	if (pcd == nil)
 		return;
@@ -615,8 +659,9 @@ void KCMWriteStatusToPanel(const PMString& label, const PMString& pre,
 	data->SetSegments(label, pre, mid, post, ruby);
 	cv->Invalidate();
 
-	// この直後にブロッキング処理(比較ループ等)が続く場合、Invalidate は次のイベントループまで
-	// 画面に届かない。busyMsg 表示のために今すぐ同期描画させる。
+	// When a blocking stretch of work (a comparison loop, say) follows immediately, an Invalidate
+	// does not reach the screen until the next event loop. This draws synchronously right away so
+	// that a "busy" message is actually seen.
 	if (forceRedrawNow)
 		panel->ForceRedraw(nil, kTrue);
 }
@@ -625,13 +670,15 @@ void KCMWriteStatusToPanel(const PMString& label, const PMString& pre,
 
 void KCMSetStatus(const PMString& s, bool16 forceRedrawNow)
 {
-	// ★覚えるのは model 側(KCMModelNotify.cpp)。パネルを隠して再表示したときの復元と、
-	//   app.kcmStatus の答えが、そこ1か所から出る(2026-08-13 Task 9)。
-	//   ⚠ここで通知は出さない ---- この関数は**通知を受けた側**でもあるので、輪になる。
+	// ★It is remembered on the model side (KCMModelNotify.cpp). Restoring after the panel is hidden
+	//   and shown again, and the answer app.kcmStatus gives, both come from that one place.
+	//   ⚠No notification is raised here ---- this function is also **on the receiving end** of one,
+	//   so it would go round in a circle.
 	Utils<IKCMCompareFacade>()->StoreSessionStatus(s);
 
-	// ★普通のメッセージは**真ん中の1片**として渡す＝1色で描かれ、stock の静的テキストが
-	//   描いていた絵と同じになる。だから 72 か所ある呼び手は1つも変えていない。
+	// ★An ordinary message is passed as **the middle piece**: it is drawn in one colour and looks
+	//   exactly like the stock static text used to, which is why not one of the many call sites had
+	//   to change.
 	const PMString kNothing;
 	KCMWriteStatusToPanel(kNothing, kNothing, s, kNothing, kNothing, forceRedrawNow);
 }
@@ -639,43 +686,44 @@ void KCMSetStatus(const PMString& s, bool16 forceRedrawNow)
 void KCMSetStatusSegments(const PMString& label, const PMString& pre,
 							const PMString& mid, const PMString& post, const PMString& ruby)
 {
-	// ★覚える場所は上とまったく同じ1か所。連結して1本の文字列にするのは model 側なので、
-	//   app.kcmStatus の答えは「見出し + 改行 + 本文」＝この欄に見えているとおりになる。
+	// ★Remembered in exactly the same one place as above. Joining the pieces into a single string is
+	//   done on the model side, so app.kcmStatus answers "heading + newline + body" ＝ what this area
+	//   shows.
 	Utils<IKCMCompareFacade>()->StoreSessionStatusSegments(label, pre, mid, post, ruby);
 
-	// ★forceRedrawNow は渡さない＝この経路は行のクリックで、直後にブロッキング処理が続かない。
+	// ★forceRedrawNow is not passed: this route is a row click, with no blocking work behind it
 	KCMWriteStatusToPanel(label, pre, mid, post, ruby, kFalse);
 }
 
-// (★KCMGetSessionStatus と KCMClearSessionStatus は 2026-08-13 Task 9 で
-//  **KCMModelNotify.cpp(model 側)**へ移した。文字列を持つ場所と、それを答える場所
-//  (app.kcmStatus＝ScriptProvider も model 側)を揃えるため。このファイルは表示だけを担う。
-//  ⚠2026-08-15 以降、UI からその2本を**直に呼ぶことはできない**(別 .pln になるとリンクできない)
-//  ＝IKCMCompareFacade の GetSessionStatus / ClearSessionStatus を通す。)
+// (★KCMGetSessionStatus and KCMClearSessionStatus moved to **KCMModelNotify.cpp, on the model
+//  side**, so that the place holding the string and the place answering for it (app.kcmStatus,
+//  whose ScriptProvider is model-side as well) are the same. This file drives the display only.
+//  ⚠Since the halves became two .pln, the UI **cannot call those two directly** ＝ it goes
+//  through GetSessionStatus / ClearSessionStatus on IKCMCompareFacade.)
 
 //========================================================================================
-// KCMSetNavPosition(KCMUIShared.h で宣言)
-//   Prev/Next の間の現在位置表示(kKCMNavPosTextWidgetID、例 "3/12")と、Prev/Next ボタンの
-//   有効/無効をまとめて更新する。パネルが隠れていれば何もしない(再表示時に KCMRefreshNavPosition が
-//   実状態を反映する)。値の決定は呼び出し側(KCMRefreshNavPosition)に集約。
+// KCMSetNavPosition (declared in KCMUIShared.h)
+//   Updates the position readout between Prev and Next (kKCMNavPosTextWidgetID, "3/12" for
+//   instance) together with whether the two buttons are enabled. Does nothing while the panel is
+//   hidden (KCMRefreshNavPosition reflects the real state when it is shown again). Deciding the
+//   values is gathered in the caller, KCMRefreshNavPosition.
 //========================================================================================
 void KCMSetNavPosition(const PMString& posText, bool16 navButtonsEnabled)
 {
 	IControlView* panel = KCMGetVisibleOwnPanel();
 	if (panel == nil)
-		return;		// パネルは隠れている(または終了処理中): 触る先が無い。
+		return;		// the panel is hidden (or teardown is under way): there is nothing to touch
 	InterfacePtr<IPanelControlData> pcd(panel, UseDefaultIID());
 	if (pcd == nil)
 		return;
 
-	// 位置表示。★inval は SetString がやっている(ITextControlData::SetString の第2引数 invalidate は
-	//   既定 kTrue で、その @param が「specifies whether the control should be redrawn」)。
-	//   (⚠旧引用 ":53-54" は宣言の行で、引いている文言はその上の @param 行にあった＝2026-08-18・
-	//    不具合再検査 B-U3 で名前で引く形へ。)ただし inval だけでは次の
-	//   イベントループまで画面に届かないので、Start での変化や Next/Prev の値変更を即時反映させるため
-	//   ForceRedraw で今すぐ描かせる(IControlView.h:281-286「Redraws the invalid region directly」。
-	//   2026-07-15 ユーザー報告「1/5 が即時更新されない」。重複していた Invalidate() は 2026-08-06 の
-	//   監査(ブロック8 A-3)で撤去)。
+	// The readout. ★The invalidate is done by SetString itself (the second argument of
+	//   ITextControlData::SetString defaults to kTrue, and its @param reads "specifies whether the
+	//   control should be redrawn"). But an invalidate alone does not reach the screen until the
+	//   next event loop, so ForceRedraw draws it at once, which is what makes the change at a Start
+	//   and the new value on Next/Prev appear immediately (IControlView.h:281-286, "Redraws the
+	//   invalid region directly"; user report: "1/5 does not update immediately"). A duplicate
+	//   Invalidate() that stood here was removed.
 	IControlView* cv = pcd->FindWidget(kKCMNavPosTextWidgetID);
 	if (cv != nil)
 	{
@@ -687,11 +735,12 @@ void KCMSetNavPosition(const PMString& posText, bool16 navButtonsEnabled)
 		}
 	}
 
-	// Prev/Next ボタンの有効/無効(変更ページが無ければ押せないようにする=ユーザー指定 2026-07-15)。
+	// Whether Prev/Next are enabled (with no changed pages they cannot be pressed -- user’s
+	// instruction).
 	IControlView* prevView = pcd->FindWidget(kKCMPrevChangeButtonWidgetID);
 	IControlView* nextView = pcd->FindWidget(kKCMNextChangeButtonWidgetID);
 	if (prevView != nil) prevView->Enable(navButtonsEnabled);
 	if (nextView != nil) nextView->Enable(navButtonsEnabled);
 }
 
-// KCMPanelObserver.cpp 終わり。
+// End, KCMPanelObserver.cpp.

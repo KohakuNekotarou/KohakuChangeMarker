@@ -2,50 +2,53 @@
 //
 //  KCMIconTip.cpp
 //
-//  kKCMIconWidgetBoss を載せた widget にホバーした時のツールチップ。★この boss はパネルの
-//  **3つの widget** で共有されているので、出す文言は WidgetID で分ける(2026-08-07):
-//    ・イラスト(ON/OFF アイコン)      → 配布元URL(kKCMRepoURL)。クリックの飛び先そのものを
-//                                       表示して、押すとそこへ飛ぶと分かるようにする。
-//    ・ツール切替ボタン(+42)          → ツールボックスと同じツール名(kKCMToolStringKey)。
-//                                       ★同じ文字列キーを KCMTool::Init の SetName も使っている
-//                                       ので、ツールボックスのツールチップと必ず一致する。
+//  The tooltip shown when the pointer is over a widget carrying kKCMIconWidgetBoss. ★That boss is
+//  shared by **three widgets** of the panel, so the wording is chosen by WidgetID:
+//    - the illustration (the ON and OFF icons) -> the distribution URL (kKCMRepoURL). Showing the
+//      click target itself is what says that clicking goes there.
+//    - the tool switch button                  -> the same tool name as the toolbox
+//      (kKCMToolStringKey). ★KCMTool::Init passes the same string key to SetName, so the two
+//      tooltips cannot disagree.
 //
-//  ***** なぜ AbstractTip を継承するのか *****
+//  ***** WHY IT DERIVES FROM AbstractTip *****
 //
-//  AbstractTip(source/public/libs/widgetbin/includes/AbstractTip.h)は、製品コードのツールチップが
-//  例外なく継承している基底(linksui/LinkInfoIconTip.cpp:35 ほか13件)。外部プラグインの例も
-//  customconditionaltextui/CusCondTxtUIIconTip.cpp:42 が同じ形で、★ITip を CPMUnknown 直下に
-//  実装しているコードは SDK 全体に1つも無い。
+//  AbstractTip (source/public/libs/widgetbin/includes/AbstractTip.h) is the base every tooltip in
+//  the product code derives from, without exception (linksui's LinkInfoIconTip.cpp:35 among them).
+//  The one sample outside the product code does the same
+//  (customconditionaltextui/CusCondTxtUIIconTip.cpp:42), and ★**no code of Adobe’s implements ITip
+//  directly under CPMUnknown**.
+//    ⚠Measured 2026-08-25: the two that do are **ours** -- KESCL’s KESCLButtonTip.cpp and
+//      KESCLIconTip.cpp, written before this was established. (The older wording here said "not
+//      one in the whole SDK", which counted a set that includes our own plug-ins.)
 //
-//  この基底が、このクラスが意見を持たない2つを供給するので、書くのは GetTipText だけで済む:
-//    UpdateToolTipOnMouseMove - 基底は return kFalse(AbstractTip.cpp:45-48)。ITip.h:44-50 は
-//                               この API を ID_DEPRECATED で囲っている。
-//    SetTipText               - 基底は空実装(AbstractTip.h:56)。ITip.h:51-53 が「一般ケースでは
-//                               未実装」と明記している。
+//  The base supplies the two things this class has no opinion about, so only GetTipText is
+//  written:
+//    UpdateToolTipOnMouseMove - the base returns kFalse (AbstractTip.cpp:45-48), and ITip.h:44-50
+//                               wraps that API in ID_DEPRECATED.
+//    SetTipText               - the base is empty (AbstractTip.h:56); ITip.h:51-53 states that it
+//                               is unimplemented in the general case.
 //
-//  実体は DV_WidgetBin.lib にある。★かつてはそれが「使わない理由」だったが、KCM は 2026-07-11 に
-//  自前描画ビュー(KCMScrollMap の DVControlView)のため全4構成で同ライブラリをリンクしており
-//  (`buildproj/README.md` の「このプロジェクトファイルに入っているカスタム」＝リンクライブラリの節)、
-//  基底のコストはゼロ。(⚠旧引用 "_buildproj/README.md:18-20" は**フォルダー名も行も違った** ----
-//  先頭のアンダースコアが付いたフォルダーは存在せず、:18-20 は KCMUI のソース移設の話だった。
-//  2026-08-18・不具合再検査 B-U3 で見出しで引く形へ。) 2026-08-06 の監査(ブロック8 A-1)で、
-//  「リンクしていないから使えない」という当時のコメントが既に事実に反していたことが判り、寄せた。
+//  The implementation lives in DV_WidgetBin.lib. ★That used to be the reason for NOT using it, but
+//  KCM links that library in all four configurations for its self-drawn views (the DVControlView
+//  of KCMScrollMap) -- see the "custom parts of this project file" section of
+//  `buildproj/README.md` -- so the base costs nothing.
 //
 //========================================================================================
 
 #include "VCPlugInHeaders.h"
 
-// インターフェイス:
-#include "AbstractTip.h"		// 製品のツールチップが全部継承している基底
-#include "IControlView.h"		// GetWidgetID(★自分がどの widget に載っているかを聞く)
+// Interface includes:
+#include "AbstractTip.h"		// the base every product tooltip derives from
+#include "IControlView.h"		// GetWidgetID (★asking oneself which widget one is on)
 
-// 一般:
+// General includes:
 #include "PMString.h"
 
-// プロジェクト内:
+// Project includes:
 #include "KCMUIID.h"
 
-/** kKCMIconWidgetBoss のツールチップ: イラストなら飛び先(配布元URL)、ツール切替ボタンならツール名。 */
+/** The tooltip of kKCMIconWidgetBoss: the click target (the distribution URL) on the
+    illustration, the tool name on the tool switch button. */
 class KCMIconTip : public AbstractTip
 {
 public:
@@ -67,21 +70,22 @@ KCMIconTip::~KCMIconTip()
 
 PMString KCMIconTip::GetTipText(const PMPoint& /*mouseLocation*/)
 {
-	// ★どの widget に載っているかで文言を変える(2026-08-07)。ITip と widget は**同じ boss の別
-	//   インターフェイス**なので、自分自身に IControlView を聞けば WidgetID が分かる
-	//   (親を辿る必要は無い＝1段で済む)。
+	// ★The wording is chosen by which widget this is on. The ITip and the widget are **two
+	//   interfaces of one boss**, so asking oneself for IControlView gives the WidgetID (no walking
+	//   up to a parent ＝ one step).
 	InterfacePtr<IControlView> cv(this, UseDefaultIID());
 	if (cv != nil && cv->GetWidgetID() == kKCMToolButtonWidgetID)
 	{
-		// ★ツールボックスのツール名と**同じ文字列キー**を返す(KCMTool::Init の SetName と同一)。
-		//   翻訳フラグは落とさない ＝ 文字列テーブルのキーとして解決させる。
+		// ★Return **the same string key** as the toolbox tool name (the one KCMTool::Init passes to
+		//   SetName). The translatable flag is deliberately left on ＝ let it resolve through the
+		//   string table.
 		return PMString(kKCMToolStringKey);
 	}
 
-	// URL は翻訳する語句ではない(同じ理由で文字列テーブルにも置いていない)。
+	// A URL is not a phrase to translate (which is also why it is in no string table).
 	PMString tip(kKCMRepoURL);
 	tip.SetTranslatable(kFalse);
 	return tip;
 }
 
-// KCMIconTip.cpp 終わり。
+// End, KCMIconTip.cpp.

@@ -2,84 +2,86 @@
 //
 //  KCMActionComponent.cpp
 //
-//  プラグインの全メニューアクションの中枢。About・パネルフライアウトの全項目(Start/Stop・表示トグル・
-//  Save/Load・Find Overset 等)・ページパネル右クリック(Check / Register / Refresh)の DoAction と
-//  UpdateActionStates(動的ラベル・条件付き有効化)をここで担う。骨格は BasicPanel サンプル
-//  (BscPnlActionComponent.cpp)を手本にしている(当初は About 2項目だけだった)。
+//  The hub of every menu action in the plug-in. About, every item of the panel flyout
+//  (Start/Stop, the display toggles, Save/Load, Find Overset and the rest) and the Pages panel
+//  context menu (Check / Register / Refresh) have their DoAction and their UpdateActionStates
+//  (dynamic labels, conditional enabling) here. The skeleton is modelled on the BasicPanel sample
+//  (BscPnlActionComponent.cpp), from when this was two About items and nothing else.
 //
 //========================================================================================
 
 #include "VCPlugInHeaders.h"
 
-// 一般:
+// General includes:
 #include "CActionComponent.h"
 #include "CAlert.h"
-#include "IActionStateList.h"		// UpdateActionStates(チェックマーク表示)。IPMUnknown 派生ではない
+#include "IActionStateList.h"		// UpdateActionStates (the check marks). Not derived from IPMUnknown
 #include "PMString.h"
 
-// ★Hide Unchanged Spreads(kHideSpreadCmdBoss)と overset 走査の適用は 2026-08-13 に
-//   KCMHideUnchanged.cpp / KCMOversetApply.cpp へ移した(model/UI 分割 第1段 Task 2)。
-//   ここに在った SDK インクルード(CmdUtils / ICommand / IBoolData / UIDList / ISpread /
-//   ISpreadList / SpreadID / ISession / IApplication / IDocumentList / IDataBase と <map> / <set>)も、
-//   それを使う側と一緒に移っている。
-#include <vector>					// DoFindOversetToggle(サムネイル更新へ渡すページ列)
+// ★Hide Unchanged Spreads (kHideSpreadCmdBoss) and applying an overset scan moved to
+//   KCMHideUnchanged.cpp / KCMOversetApply.cpp with the model/UI split. The SDK includes they
+//   needed (CmdUtils / ICommand / IBoolData / UIDList / ISpread / ISpreadList / SpreadID /
+//   ISession / IApplication / IDocumentList / IDataBase, plus <map> and <set>) went with them.
+#include <vector>					// DoFindOversetToggle (the page list handed to the thumbnail refresh)
 
-// (Split Target(90/10)機能は 2026-07-04 撤去。専用 include 群も削除。
-//  仕組みは docs/ai-notes/kescm-split-target-mechanism.md と git 履歴 69c4b07 に保存)
+// (The Split Target (90/10) feature was removed, and its includes with it. How it worked is kept
+//  in docs/ai-notes/kescm-split-target-mechanism.md and in the git history at 69c4b07.)
 
-// プロジェクト内:
+// Project includes:
 #include "KCMUIID.h"
-#include "KCMLoc.h"		// 実行時の日本語切替(How to Use の1箇所だけ。Hide Unchanged の確認文言は
-							// 2026-08-13 に本体ごと KCMHideUnchanged.cpp へ移った)
+#include "KCMLoc.h"		// the run-time Japanese switch (only How to Use; the Hide Unchanged
+							// confirmation went to KCMHideUnchanged.cpp with its feature)
 #include "Utils.h"					// Utils<IKCMCompareFacade>()
-#include "IKCMCompareFacade.h"	// ★UI が比較エンジンに頼む唯一の窓口(2026-08-13・model/UI 分割 第1段 Task 11)。
-									//  Start/Stop・arm 状態・比較の実行・印刷マーク・overset・Hide Unchanged は
-									//  すべてこれ経由。手本＝customconditionaltextui が Utils<ICusCondTxtFacade>() だけを使う形
+#include "IKCMCompareFacade.h"	// ★the one way the UI asks the comparison engine for anything:
+									//  Start/Stop, the armed state, running a comparison, the print marks,
+									//  overset and Hide Unchanged all go through it. Modelled on
+									//  customconditionaltextui, which uses Utils<ICusCondTxtFacade>() alone
 #include "KCMUIShared.h"	// panel / status line / nav readout / tool button (split from KCMCore.h on 2026-08-13)
-#include "IKCMMarkData.h"			// マーク/overset の読み取り(2026-08-13 Task 12。表示トグルの読み書きは IKCMCompareFacade 側)
-#include "IKCMPageFlagsFacade.h"	// Register(追加/削除ページ)と Check(✓)の2トグル＋メニュー状態＋Save/Load。
-									// 2026-08-13 Task 13 で KCMPageMap.h / KCMPageCheck.h から移した
-#include "KCMThumbnailRefresh.h"	// KCMTryRefreshPagesPanelThumbnails(Source サムネイルの枠を即 ON/OFF)
-#include "KCMViewSync.h"			// KCMGetLayoutSync/Set/KCMAlignOtherViewsToActiveNow(2026-08-13 に KCMCore.h から移動)
-#include "KCMScrollMap.h"		// KCMScrollMapAttach/DetachAll/InvalidateAll(地図トグルと Find Overset)
-#include "KCMPanelState.h"		// KCMSavePanelState(フライアウト「Save Panel Settings」)
-#include "KCMPanelTitle.h"		// KCMPanelTitle::Update(タブに Pixel / Story を出す)
-#include "IKCMBookFacade.h"		// ResolveBookPair(「Compare Books」を有効にしてよいかの判定)。2026-08-14 Task 15 で Facade 経由へ
-#include "KCMBookPanelLookup.h"	// KCMGetPanelBookFile(前面タブの観測。2026-08-15 Task 9B で UI 側へ)
-#include "KCMBookRun.h"		// KCMRunBookComparison(フライアウト「Compare Books」＝確認して比較して見せる)
-#include "KCMBookOpen.h"			// KCMBookMenuRow/CanStart/StartComparisonForRow(章行の右クリック「Start Change Marker」)
-#include "KCMChangeNav.h"			// KCMRefreshNavPosition(overset トグルで Prev/Next の対象数を更新)
-#include "KCMStoryRefresh.h"		// KCMStoryMenuRow/CanRefresh/RefreshMenuRow(Story Edits 行の右クリック「Refresh Story Comparison」)
-#include "KCMPanelAlpha.h"		// KCMGetPanelTranslucent/Set/Apply(フライアウト「Translucent Panel」)
-#include "KCMStoryPressMarks.h"	// KCMStoryMarksRefresh(Story モードの常時表示マークを作り直す)
-// (★`IActiveContext.h` / `IDocument.h` / `PersistUtils.h` の3本は 2026-08-18 に撤去＝不具合再検査 B-U3。
-//  **どれも一度も使っていなかった**。DoAction / UpdateActionStates は `IActiveContext*` を受け取るが
-//  仮引数名ごとコメントアウトしてあり、「アクティブ文書 → db」の解決は 2026-08-13 の model/UI 分割で
-//  model 側(KCMActiveDoc / GetOversetScanTargetDB)へ出ている。⚠旧コメントは残った include に
-//  「GetContextDocument(アクティブ文書の解決)」と**使っていない機能の説明**を付けており、
-//  読む人には「ここで解決している」と見える形だった。)
+#include "IKCMMarkData.h"			// reading the marks and the overset (the display toggles are read and written through IKCMCompareFacade)
+#include "IKCMPageFlagsFacade.h"	// the Register (added/removed pages) and Check toggles, their menu
+									// states, and Save/Load
+#include "KCMThumbnailRefresh.h"	// KCMTryRefreshPagesPanelThumbnails (turn the frame on a Source thumbnail on and off at once)
+#include "KCMViewSync.h"			// KCMGetLayoutSync / Set / KCMAlignOtherViewsToActiveNow
+#include "KCMScrollMap.h"		// KCMScrollMapAttach / DetachAll / InvalidateAll (the map toggle and Find Overset)
+#include "KCMPanelState.h"		// KCMSavePanelState (the "Save Panel Settings" flyout item)
+#include "KCMPanelTitle.h"		// KCMPanelTitle::Update (put Pixel / Story on the tab)
+#include "IKCMBookFacade.h"		// ResolveBookPair (deciding whether "Compare Books" may be enabled)
+#include "KCMBookPanelLookup.h"	// KCMGetPanelBookFile (observing the front tab; a UI-side job)
+#include "KCMBookRun.h"		// KCMRunBookComparison (the "Compare Books" flyout item: confirm, compare, show)
+#include "KCMBookOpen.h"			// KCMBookMenuRow / CanStart / StartComparisonForRow (the "Start Change Marker" row item)
+#include "KCMChangeNav.h"			// KCMRefreshNavPosition (the overset toggle changes what Prev/Next walks)
+#include "KCMStoryRefresh.h"		// KCMStoryMenuRow / CanRefresh / RefreshMenuRow (the "Refresh Story Comparison" row item)
+#include "KCMPanelAlpha.h"		// KCMGetPanelTranslucent / Set / Apply (the "Translucent Panel" flyout item)
+#include "KCMStoryPressMarks.h"	// KCMStoryMarksRefresh (rebuild the always-on marks of Story mode)
+// (★`IActiveContext.h` / `IDocument.h` / `PersistUtils.h` were removed: **none of them was ever
+//  used**. DoAction and UpdateActionStates are handed an `IActiveContext*`, but the parameter
+//  name itself is commented out, and resolving "active document -> db" went to the model side
+//  (KCMActiveDoc / GetOversetScanTargetDB) with the split. ⚠The older comment on the remaining
+//  include described a facility that is not used here ("GetContextDocument, resolving the active
+//  document"), which read as if the resolving happened in this file.)
 
-// ★注意: source/public/includes/URLUtils.h は "namespace URLUtils { PUBLIC_DECL void GoToURL(...); }" と
-// 宣言しているが、これはヘッダーとバイナリの不一致(Public.lib 側の実エクスポート名と食い違っている)。
-// build/win/objrx64/Public.lib の生シンボルを確認したところ、実際にリンク可能な名前は
-// "?GoToURL@GoToURLUtils@@YAXAEBVPMString@@F@Z" = void GoToURLUtils::GoToURL(const PMString&, bool16)
-// であり、URLUtils 名前空間版は存在しない(リンクエラー確認済み)。ヘッダーは信用せず、実バイナリに
-// 合わせてここで自前に前方宣言する。
+// ★NOTE: source/public/includes/URLUtils.h declares
+// "namespace URLUtils { PUBLIC_DECL void GoToURL(...); }", but **the header and the binary do not
+// agree** (the real exported name in Public.lib is a different one). Inspecting the raw symbols
+// of build/win/objrx64/Public.lib, the name that can actually be linked is
+// "?GoToURL@GoToURLUtils@@YAXAEBVPMString@@F@Z" = void GoToURLUtils::GoToURL(const PMString&,
+// bool16); there is no URLUtils-namespace version (confirmed by the link error). The header is
+// not to be trusted here, so the declaration below is written to match the binary.
 namespace GoToURLUtils
 {
 	PUBLIC_DECL void GoToURL(const PMString& goToURL, bool16 isAGoURL);
 }
 
-// (「Hide Unchanged Spreads」の状態5本 —— トグルの旗と、Target/Source 各側の IDataBase* と
-//  隠したスプレッド UID の控え —— は 2026-08-13 に KCMHideUnchanged.cpp へ移した。書き手である
-//  トグル本体を一緒に移してあるので、状態が分割の両側に割れることはない。ここから読むのは
-//  メニューのチェックマークだけで、Facade の GetHideUnchangedOn() で聞く。)
+// (The five pieces of "Hide Unchanged Spreads" state -- the toggle flag, the IDataBase* of each
+//  side and the record of the spreads hidden -- moved to KCMHideUnchanged.cpp together with the
+//  toggle that writes them, so the state cannot end up split across the two halves. All that is
+//  read from here is the check mark, through the facade's GetHideUnchangedOn().)
 
-// (overset 走査の対象文書を返す KCMOversetScanTargetDB も、2026-08-13 の Task 11 から
-//  Facade の GetOversetScanTargetDB() で聞く。以前はこのファイルの下の方に static で持っており、
-//  ここに前方宣言があった。)
+// (KCMOversetScanTargetDB, which answers with the document an overset scan should run on, is
+//  likewise asked through the facade's GetOversetScanTargetDB(). It used to be a static further
+//  down this file, with a forward declaration here.)
 
-/** ChangeMarker プラグインのメニュー項目に対する IActionComponent の実装。
+/** The IActionComponent implementation behind the ChangeMarker plug-in's menu items.
 */
 class KCMActionComponent : public CActionComponent
 {
@@ -89,26 +91,28 @@ public:
 	/** Execute the requested menu action. */
 	void DoAction(IActiveContext* ac, ActionID actionID, GSysPoint mousePoint = kInvalidMousePoint, IPMUnknown* widget = nil);
 
-	/** チェック式トグル(kCustomEnabling)のチェックマークを現在の状態に合わせて更新する。 */
+	/** Brings the check marks of the check-style toggles (kCustomEnabling) into line with the
+	    current state. */
 	virtual void UpdateActionStates(IActiveContext* ac, IActionStateList* listToUpdate, GSysPoint mousePoint = kInvalidMousePoint, IPMUnknown* widget = nil);
 
 private:
 	void DoAbout();
 	void DoUsage();
-	void DoFindOversetToggle();		// フライアウト「Find Overset」: アクティブ文書を走査して十字表示/消去(トグル)
-	void DoRefreshOverset();		// フライアウト「Refresh Overset」: ON時のみ・アクティブ文書を再走査
+	void DoFindOversetToggle();		// flyout "Find Overset": scan the active document and show or clear the crosses (a toggle)
+	void DoRefreshOverset();		// flyout "Refresh Overset": only while ON = rescan the active document
 };
 
 /* Binds the C++ implementation class onto its ImplementationID. */
 CREATE_PMINTERFACE(KCMActionComponent, kKCMActionComponentImpl)
 
-/* KCMApplyCompareMode — 比較モードを切り替え、Start 中ならその場で比較し直す(2026-08-20)。
+/* KCMApplyCompareMode - switches the compare mode and, while Started, recompares on the spot.
 
-   ★**2つの入口が同じ手順を通るように関数にした**。Pixel / Story のどちらを選んでも起きることは
-   同じで、違うのは渡す値だけ(Marks opacity 25%/75% が Facade の1関数を共有しているのと同型)。
+   ★**It is a function so that the two entrances take the same steps.** Choosing Pixel or Story
+   makes the same things happen and only the value differs (the same shape as Marks opacity
+   25%/75% sharing one function of the facade).
 
-   ⚠**同じモードを選び直したときは何もしない**。すでに Story を見ている人がもう一度 Story を選んで
-   比較が走り直したら、待たされた末に同じ画面が出るだけになる。
+   ⚠**Choosing the mode that is already set does nothing.** Someone already looking at Story who
+   picks Story again would otherwise wait through a comparison for the same screen.
 */
 static void KCMApplyCompareMode(KCMCompareMode mode)
 {
@@ -121,19 +125,20 @@ static void KCMApplyCompareMode(KCMCompareMode mode)
 	PMString msg(mode == kKCMModeStory ? "Compare mode: story changes." : "Compare mode: pixel changes.");
 	msg.SetTranslatable(kFalse);
 
-	// ★Start 中なら、新しいモードで全体を比較し直す。比較していないときは設定を変えるだけ＝
-	//   次に Start したときに効く。
+	// ★While Started, everything is compared again in the new mode. When nothing is being compared
+	//   this only changes the setting ＝ it takes effect at the next Start.
 	InterfacePtr<IKCMMarkData> marks(Utils<IKCMMarkData>().QueryUtilInterface());
 	IDataBase* const markedDB    = (marks != nil) ? marks->GetMarkedTargetDB() : nil;
 	IDataBase* const markedSrcDB = (marks != nil) ? marks->GetMarkedSourceDB() : nil;
 	if (markedDB != nil && markedSrcDB != nil)
 	{
 		PMString report;
-		// ★allowIncremental は渡さない=全ページ再比較。差分再比較は「前回と同じ比較方法で、
-		//   ペアの変わったページだけやり直す」ための道具で、比較方法そのものが変わるここでは
-		//   前回の結果を1つも再利用できない。
-		// ★キャンセルされたときの後始末は Ignore Page Number Marker と同じ理由で Stop まで戻す
-		//   (マークは破棄済みなので、arm だけ残ると「枠が1つも無い Start 中」になる)。
+		// ★allowIncremental is not passed ＝ every page is compared again. An incremental comparison is
+		//   the tool for "the same method as last time, redo the pages whose pairing changed", and here
+		//   the method itself is what changed, so not one of the previous results can be reused.
+		// ★A cancellation is unwound all the way to Stop, for the same reason as Ignore Page Number
+		//   Marker (the marks are already discarded, so leaving only the armed state would mean
+		//   "Started with not one frame drawn").
 		if (compare->MarkChanges(markedDB, markedSrcDB, report) == kSuccess)
 			msg.Append(" (recompared)");
 		else
@@ -143,9 +148,9 @@ static void KCMApplyCompareMode(KCMCompareMode mode)
 		}
 	}
 
-	// ★★タブに今のモードを出す（2026-08-21・ユーザー指定「KBS のドキュメントとブックの様に」）。
-	//   ここは「モードが変わる唯一の場所」なので、書き直す場所もここ1つで足りる。
-	//   （パネルを開き直したときは KCMPanelObserver::AutoAttach が同じ関数を呼ぶ。）
+	// ★★Put the current mode on the tab (user’s instruction: "like the document and book in KBS").
+	//   This is the one place the mode changes, so it is the one place that has to write it.
+	//   (When the panel is reopened, KCMPanelObserver::AutoAttach calls the same function.)
 	KCMPanelTitle::Update();
 
 	KCMSetStatus(msg);
@@ -161,33 +166,37 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 			this->DoAbout();
 			break;
 
-		// フライアウト先頭の「Start / Stop」: 比較の開始/解除トグル(旧パネルボタン→2026-07-10 メニュー化)。
-		// 実体は KCMComparisonRun.cpp の自由関数(arm 状態を見て開始 or 解除、実行後にパネル更新)。
+		// "Start / Stop" at the head of the flyout: the toggle that starts and clears a comparison (it
+		// used to be a panel button). The work is a free function in KCMComparisonRun.cpp (it looks at
+		// the armed state, starts or clears, then refreshes the panel).
 		case kKCMPopupStartStopActionID:
 			Utils<IKCMCompareFacade>()->ToggleStartStop();
 			break;
 
-		// フライアウトの「Print comparison marks」: 印刷マーク ON/OFF トグル(旧パネルのチェックボックス
-		// →2026-07-10 メニュー化)。実体は KCMPanelObserver.cpp の自由関数。
+		// Flyout "Print comparison marks": the print-marks toggle (it used to be a checkbox on the
+		// panel).
 		case kKCMPopupPrintMarksActionID:
 			Utils<IKCMCompareFacade>()->TogglePrintMarks();
-			// ★★2026-08-23＝**Story モードのマークもこのトグルを入力に持つようになった**ので、
-			//   ここでも作り直しを頼む。Print が ON の間は画面にも常時出る（Pixel の枠と同じ
-			//   WYSIWYG）ので、頼まないと**トグルを切っても Story のマークが動かない**。
-			//   ⚠この case だけ長らく Refresh を呼んでいなかった＝呼んでいる下の4つ（opacity 2つ・
-			//     Show Src/Tgt）と揃った。
+			// ★★**The marks of Story mode take this toggle as an input too**, so a rebuild is asked for
+			//   here as well. While Print is ON they are on screen at all times (the same WYSIWYG as the
+			//   Pixel ring), so without the request **switching the toggle would leave the Story marks
+			//   unchanged**.
+			//   ⚠This case was the last one not calling Refresh; it now matches the four below that do
+			//     (the two opacities and Show Src/Tgt).
 			KCMStoryMarksRefresh();
-			// ★2026-08-24 ユーザー指示＝**ON にしたときだけ**「印刷と PDF に出る」と知らせる。
-			//   OFF は告知しない（元に戻すだけで、出力に何かが増えることは無いため）。
-			//   ⚠**Refresh の後に出す**＝ModalAlert は画面を止めるので、先に描き直しを頼んでおけば
-			//     アラートの後ろで既にマークが正しい姿になっている。
-			//   ⚠**トグル後の実際の値を読む**（`!GetPrintMarks()` を自分で計算しない）＝同じ判断を
-			//     2か所に置かない。model 側が何かの事情で反転しなければアラートも出ない、が正しい。
+			// ★User’s instruction: say "these will appear in print and in exported PDFs" **only when it is
+			//   switched ON**. Switching it OFF says nothing (it only puts things back; nothing is added to
+			//   an output).
+			//   ⚠**The alert comes after the Refresh**: a ModalAlert stops the screen, so asking for the
+			//     repaint first means the marks are already right behind it.
+			//   ⚠**Read the value after the toggle** (rather than computing `!GetPrintMarks()` here) ＝ do
+			//     not put the same judgement in two places. If the model side does not flip it for some
+			//     reason, no alert appearing is the right outcome.
 			if (Utils<IKCMCompareFacade>()->GetPrintMarks())
 			{
 				CAlert::ModalAlert
 				(
-					// 文字列キーを渡す(CAlert が翻訳する)＝About と同じ形。全ロケール英語。
+					// pass the string key (CAlert translates it), the same shape as About. English in every locale
 					PMString(kKCMPrintMarksOnKey),
 					kOKString,					// OK button
 					kNullString,				// No second button
@@ -198,13 +207,15 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 			}
 			break;
 
-		// フライアウトの「Marks opacity 25% / 75%」(ラジオ風): 選んだ方の不透明度に設定する。
-		// 実体は KCMPanelObserver.cpp の自由関数(印刷フラグは維持し不透明度だけ変更)。
-		// ⚠★★**Story の色地マークは「出したときの不透明度」を焼き込んで持っている**(2026-08-22 の
-		//   不具合再検査 A4)。model 側の SetMarkOpacity25 が再描画するのは Pixel の枠だけで、あちらは
-		//   描画のたびに現在値を読み直すが、こちらはアドーンメントに載せた値がそのまま残る。
-		//   ⇒ **設定を変えたら作り直しを頼む**。★model からは頼めない＝あちらは UI プラグインの
-		//     アドーンメントを知らない(model/UI 分割の依存は UI→model の一方向)。∴ここで呼ぶ。
+		// Flyout "Marks opacity 25% / 75%" (radio-like): set the opacity to whichever was chosen. The
+		// work is a free function on the model side (it keeps the print flag and changes only the
+		// opacity).
+		// ⚠★★**A Story colour ground carries the opacity it was created with baked in.** What the
+		//   model’s SetMarkOpacity25 repaints is the Pixel ring, which re-reads the current value on
+		//   every draw; the adornment keeps whatever value was put on it.
+		//   ⇒ **Ask for a rebuild whenever the setting changes.** ★The model cannot ask: it does not
+		//     know about a UI plug-in’s adornment (the dependency runs one way, UI -> model). ∴ the
+		//     call belongs here.
 		case kKCMPopupOpacity25ActionID:
 			Utils<IKCMCompareFacade>()->SetMarkOpacity25(kTrue);
 			KCMStoryMarksRefresh();
@@ -214,12 +225,13 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 			KCMStoryMarksRefresh();
 			break;
 
-		// ★「Mark colour」(2026-08-24)。⚠**上の opacity と違い、ここでは作り直しを頼まない。**
-		//   不透明度は**マークを install したときの値がそのまま載る**ので設定を変えたら作り直しが
-		//   要るが、色は Story 側の Draw が**描くたびに SelectedMarkColor() を読み直す**ので、
-		//   model 側の再描画(KCMDoSetMarkColor)だけで新しい色になる。
-		//   ★同じ「設定を変えた」でも、値がどこに載っているかで必要な後始末が違う ---- Pixel の
-		//     リング画像はキャッシュなので model 側でキャッシュを畳んでいる(KCMCore.cpp)。
+		// ★"Mark colour". ⚠**Unlike the opacity above, no rebuild is asked for here.** The opacity is
+		//   **carried by the mark as it was installed**, so changing it needs a rebuild; the colour is
+		//   **re-read by the Story side’s Draw on every paint** (SelectedMarkColor()), so the model’s
+		//   own repaint (KCMDoSetMarkColor) is enough to bring the new colour up.
+		//   ★Two settings that are both "changed" need different clean-up depending on where the value
+		//     is held ---- the Pixel ring image is a cache, so the model side drops that cache
+		//     (KCMCore.cpp).
 		case kKCMPopupColorRedActionID:
 			Utils<IKCMCompareFacade>()->SetMarkColor(kFalse);
 			break;
@@ -227,44 +239,49 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 			Utils<IKCMCompareFacade>()->SetMarkColor(kTrue);
 			break;
 
-		// (kKCMPopupAboutScriptActionID / DoAboutScript は 2026-07-25 撤去=About Scripting 項目削除。)
+		// (kKCMPopupAboutScriptActionID and DoAboutScript went with the "About Scripting" item.)
 
 		case kKCMPopupUsageActionID:
 			this->DoUsage();
 			break;
 
-		// 「Always Show Marks on Source」トグル: フラグを反転して Source 文書を再描画する(Pixel の表示判定と描画は
-		// The Source branch of KCMDrawEventHandler::DrawSpreadMarks (⚠**not HandleDrawEvent** -- that
-		// entry point went with the move to the adornment). While ON the marks show at all times, in
-		// OPP as well, and in print;
-		// 出る。不透明度はパネルの 25%/75% 選択に連動)。★既定 OFF で Start は触らない(2026-08-22 変更＝
-		// 設定はパネル設定に保存され起動時に復元されるので、Start が上書きすると保存した選択が消える)。
-		// ⚠★★**Target 版と同じく2つの機構に効く**(2026-08-22 の不具合再検査 A1)＝Pixel の枠は描画側が
-		//   sSrcMarksOn を直接見るが、Story の色地マークは別機構(グローバルテキストアドーンメント)なので
-		//   こちらから作り直しを頼む。⇒ **これが無いと Story モードでは ON にしても出ず、OFF にしても
-		//   消えない**(内部状態が変わらないので、下の InvalidateDB で描き直しても同じ絵が出るだけ)。
+		// The "Always Show Marks on Source" toggle: flip the flag and repaint the Source document.
+		// In Pixel mode the decision and the drawing are the Source branch of
+		// KCMDrawEventHandler::DrawSpreadMarks (⚠**not HandleDrawEvent** -- that entry point went with
+		// the move to the adornment). While ON the marks show at all times, in OPP as well, and in
+		// print; the opacity follows the panel’s 25%/75% choice.
+		// ★Default OFF, and Start does not touch it (the setting is saved with the panel settings and
+		//   restored at startup, so a Start that overwrote it would erase the saved choice).
+		// ⚠★★**It drives two mechanisms, as the Target one does**: the Pixel frame is read straight
+		//   from sSrcMarksOn by the drawing side, while the Story colour ground is a different
+		//   mechanism (the global text adornment) and has to be asked for from here. ⇒ **Without that
+		//   request, Story mode neither shows them when switched ON nor clears them when switched OFF**
+		//   (the internal state does not change, so the InvalidateDB below just paints the same picture
+		//   again).
 		case kKCMPopupShowSrcMarksActionID:
 		{
 			InterfacePtr<IKCMCompareFacade> compare(Utils<IKCMCompareFacade>().QueryUtilInterface());
 			const bool16 srcMarksOn = !compare->GetShowSourceMarks();
 			compare->SetShowSourceMarks(srcMarksOn);
-			// ⚠★★★**押下フラグはここで触らない**(2026-08-22・独立レビューの指摘で撤去)。
-			//   撤去した Hold から引き継いだときは sSrcMarksTempHidden＝「隠している」だったので、
-			//   トグルを切り替えるついでに解除するのが正しかった。**同じ日の改名でこれは
-			//   「ツールの左ボタンが物理的に押されている」に変わった**——メニュー操作がそれを
-			//   「押していない」と言い張ってよい道理は無い。
-			//   ★実害＝ショートカットを割り当てて**押下中に**叩くと、離したときに
-			//     KCMTrackerRevealEnd が GetSrcMarksPressed()==kFalse を見て InvalidateDB を
-			//     飛ばし、Source の窓に押下中の枠が残る。
-			//   ★KCMTrackerRevealBegin 側は「トグルを見ない」へ正しく直してあった＝これは
-			//     同じ変更の片割れの直し忘れ([[one-question-one-place]])。
-			KCMStoryMarksRefresh();		// Story モードの色地マーク(Pixel モードでは何もしない)
+			// ⚠★★★**The press flag is not touched here** (removed after an independent review said so).
+			//   When it was inherited from the removed Hold toggle, sSrcMarksTempHidden meant "hidden
+			//   right now", so clearing it while flipping the toggle was right. **The rename on the same
+			//   day changed it to "the tool’s left button is physically down"** -- and a menu action has no
+			//   business claiming that it is not.
+			//   ★The real consequence: assign a shortcut, press it **while the button is down**, and on
+			//     release KCMTrackerRevealEnd sees GetSrcMarksPressed()==kFalse, skips the InvalidateDB and
+			//     leaves the pressed frame on the Source window.
+			//   ★KCMTrackerRevealBegin had already been corrected to "do not look at the toggle" ＝ this was
+			//     the other half of that change, left undone ([[one-question-one-place]]).
+			KCMStoryMarksRefresh();		// the Story colour ground (does nothing in Pixel mode)
 			IDataBase* const srcDB = Utils<IKCMMarkData>()->GetMarkedSourceDB();
 			Utils<IKCMCompareFacade>()->InvalidateDB(srcDB);
-			// ★レイアウトビューだけでなく Pages パネルの Source サムネイルも即時更新する。Source 側の枠は
-			//   wantSrcMarks(=sSrcMarksOn)に依存し、サムネイル(isThumb)でも強制表示されないため、トグルで
-			//   サムネイルを作り直さないと OFF にしても枠が残る/ON にしても出ない。対象ページは Source の
-			//   変更/overflow/登録集合(KCMCollectChangedPageUIDs が引く)で、枠が出得るページと一致する。
+			// ★The Pages panel’s Source thumbnails are refreshed at once as well, not just the layout
+			//   view. A Source frame depends on wantSrcMarks (= sSrcMarksOn) and is not forced on a
+			//   thumbnail (isThumb), so without rebuilding them a frame stays after switching OFF and
+			//   never appears after switching ON. The pages concerned are the Source’s changed /
+			//   overflowing / registered set (what KCMCollectChangedPageUIDs answers with), which is
+			//   exactly the set that can carry a frame.
 			KCMTryRefreshPagesPanelThumbnails(srcDB);
 			PMString msg(srcMarksOn ? "Source marks: on." : "Source marks: off.");
 			msg.SetTranslatable(kFalse);
@@ -272,29 +289,33 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 			break;
 		}
 
-		// 「Always Show Marks on Target」トグル: フラグを反転して Target 文書を再描画する。★Source 版と対で、
-		// ON の間はツールを押さなくてもマークが出たままになる(2026-08-22 ユーザー要望
-		// 「ツールでボタンを押さなくても常にマークが出る様に」)。★既定 OFF で Start は触らない
-		// (Source 版と同じ理由＝設定はパネル設定に保存され、起動時に復元される)。
-		// ⚠★★**2つの機構に効く**＝Pixel の比較リングは描画側が sTgtMarksOn を直接見る
-		//   (KCMDrawEventHandler の alwaysScreen)が、Story の色地マークは別機構(グローバルテキスト
-		//   アドーンメント)なので、こちらから作り直しを頼む。同じトグルで両モードが動くのはそのため。
-		// ⚠Pages パネルのサムネイルは触らない＝サムネイルは isThumb で常にマークを描くので、このトグルで
-		//   見た目は変わらない(Source 版が作り直すのは、あちらの枠が wantSrcMarks に依存するため)。
+		// The "Always Show Marks on Target" toggle: flip the flag and repaint the Target document.
+		// ★It pairs with the Source one: while ON the marks stay up without holding the tool button
+		//   (user’s request, "have the marks show without pressing the tool button").
+		// ★Default OFF, and Start does not touch it (the same reason as the Source one ＝ the setting is
+		//   saved with the panel settings and restored at startup).
+		// ⚠★★**It drives two mechanisms**: the Pixel comparison ring is read straight from sTgtMarksOn
+		//   by the drawing side (alwaysScreen in KCMDrawEventHandler), while the Story colour ground is
+		//   a different mechanism (the global text adornment) and is asked for from here. That is why
+		//   one toggle moves both modes.
+		// ⚠The Pages panel thumbnails are left alone: a thumbnail always draws the marks (isThumb), so
+		//   this toggle changes nothing there (the Source one rebuilds them because ITS frame depends
+		//   on wantSrcMarks).
 		case kKCMPopupShowTgtMarksActionID:
 		{
 			InterfacePtr<IKCMCompareFacade> compare(Utils<IKCMCompareFacade>().QueryUtilInterface());
 			const bool16 tgtMarksOn = !compare->GetShowTargetMarks();
 			compare->SetShowTargetMarks(tgtMarksOn);
-			// ⚠★★この2行は撤去した「Hold to Hide Marks」から引き継いだ後始末(2026-08-22)。
-			//   ①押下中の一時退避を解除する(押したままトグルを切り替える道は無いが、離す前に
-			//     何かで状態が残ると「ON なのに出ない」になる)。
-			//   ②**常時表示の基準不透明度を即反映する**＝KCMBaseScreenOpacity は
-			//     「印刷 ON、または枠が常時出ている」ときだけ 25%/75% を返す。⇒ ここで更新しないと、
-			//     ON にした直後の枠が 1.0(不透明)のまま描かれる。
+			// ⚠★★These two lines are the clean-up inherited from the removed "Hold to Hide Marks":
+			//   ① clear the temporary hide of a press (there is no way to flip the toggle while holding
+			//     the button, but a state left standing before release would read as "ON and yet nothing
+			//     shows");
+			//   ② **apply the base screen opacity at once** ＝ KCMBaseScreenOpacity returns 25%/75% only
+			//     while printing is ON or the frames are permanently shown. ⇒ Without updating it here,
+			//     the frame right after switching ON is drawn at 1.0 (opaque).
 			compare->SetMarksTempHidden(kFalse);
 			compare->SetMarkScreenOpacity(compare->GetBaseScreenOpacity());
-			KCMStoryMarksRefresh();		// Story モードの色地マーク(Pixel モードでは何もしない)
+			KCMStoryMarksRefresh();		// the Story colour ground (does nothing in Pixel mode)
 			compare->InvalidateDB(compare->GetArmedTargetDB());
 			PMString msg(tgtMarksOn ? "Target marks: on." : "Target marks: off.");
 			msg.SetTranslatable(kFalse);
@@ -302,29 +323,31 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 			break;
 		}
 
-		// 「Hide Unchanged Spreads」トグル: OFF→ON は確認ダイアログ→変更なしスプレッドを隠す。
-		// ON→OFF は自分が隠した分だけ再表示。本体は KCMHideUnchanged.cpp の自由関数
-		// (2026-08-13 に DoHideUnchangedToggle から移動＝隠す/戻すのは model 側の仕事)。
+		// The "Hide Unchanged Spreads" toggle: OFF -> ON puts up a confirmation and then hides the
+		// spreads with no change; ON -> OFF shows again exactly what it hid. The work is a free
+		// function in KCMHideUnchanged.cpp (hiding and restoring are the model side’s job).
 		case kKCMPopupHideUnchangedActionID:
 			Utils<IKCMCompareFacade>()->HideUnchangedToggle();
 			break;
 
-		// フライアウト「Find Overset」トグル: アクティブ文書を走査し overset のあるページへ十字表示/OFFで消去。
+		// Flyout "Find Overset" toggle: scan the active document and put a cross on every page with
+		// overset text; OFF clears them.
 		case kKCMPopupFindOversetActionID:
 			this->DoFindOversetToggle();
 			break;
 
-		// フライアウト「Refresh Overset」: Find Overset が ON のときだけ有効=アクティブ文書を再走査して貼り直す。
+		// Flyout "Refresh Overset": live only while Find Overset is ON ＝ rescan the active document
+		// and put them up again.
 		case kKCMPopupRefreshOversetActionID:
 			this->DoRefreshOverset();
 			break;
 
-		// 「Show Original Page Numbers」トグル: フラグを反転して再描画するだけ(バッジの表示判定と描画は
-		// KCMDrawEventHandler::DrawSpreadMarks (⚠**not HandleDrawEvent** -- that entry point went with
-		// the move to the adornment). It is shown under the same conditions as the ring: always with
-		// print marks ON, or
-		// ツール左hold中)。再描画は隠しの当事者になりやすい Target(sDB)と Source を対象にする(他の文書は
-		// 次の自然な再描画で反映される)。
+		// The "Show Original Page Numbers" toggle: flip the flag and repaint, nothing more. The badge’s
+		// visibility and drawing are in KCMDrawEventHandler::DrawSpreadMarks (⚠**not HandleDrawEvent**
+		// -- that entry point went with the move to the adornment); it is shown under the same
+		// conditions as the ring, that is with print marks ON or while the tool’s left button is held.
+		// The repaint covers the Target and the Source, the two most likely to be involved in hiding
+		// (any other document catches up on its next natural repaint).
 		case kKCMPopupShowOldNumsActionID:
 		{
 			InterfacePtr<IKCMCompareFacade> compare(Utils<IKCMCompareFacade>().QueryUtilInterface());
@@ -340,12 +363,14 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 			break;
 		}
 
-		// 「Sync Layout Views」トグル: レイアウトビュー同期の ON/OFF(既定 ON)。実体は KCMPeek.cpp の
-		// KCMSetLayoutSync(購読の付け外し+ON時は即時に一度そろえる)。作動条件は2モード(判定は
-		// KCMSyncOtherDocViewportsTo のガード):
-		//   (A) Start 中: Target↔Source 間のみ・追加/削除補正あり(2026-07-11)。
-		//   (B) Stop 中 + KCM ツール選択中: アクティブ文書へ他の全文書を同期・補正なし(2026-07-15)。
-		// トグル ON でも上記いずれの条件も満たさなければ(Stop かつツール非選択)購読はするが同期は no-op。
+		// The "Sync Layout Views" toggle: layout view syncing on or off (default ON). The work is
+		// KCMSetLayoutSync (attach or detach the subscription; on ON, line them up once immediately).
+		// It fires in two situations (the guard is in KCMSyncOtherDocViewportsTo):
+		//   (A) while Started: between Target and Source only, with the added/removed correction;
+		//   (B) while stopped with the KCM tool active: every other document follows the active one,
+		//       with no correction.
+		// With the toggle ON but neither situation met (stopped and the tool not active), the
+		// subscription is made and the syncing is a no-op.
 		case kKCMPopupSyncViewsActionID:
 		{
 			KCMSetLayoutSync(!KCMGetLayoutSync());
@@ -359,20 +384,24 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 			break;
 		}
 
-		// 「Align Other Views to Active」(実行アクション・ショートカット割当可): アクティブ(最前面)
-		// レイアウトビューの位置+拡大率を他文書の全ビューへ1回そろえる。Sync Layout Views トグルとは独立
-		// (OFF でも効く)。Start 中はページの Add/Remove 補正あり。実体は ui/KCMViewSync.cpp の
-		// KCMAlignOtherViewsToActiveNow(トグル ON 時の初回そろえと同じ同期エンジン)。
-		// ⚠2026-08-19(不具合再検査 B-U7)に置き場所を訂正＝**分割で KCMPeek.cpp から出て行った**のに
-		//   「実体は KCMPeek.cpp」と書いたままだった(KCMUIID.h:219 にも同じ誤りが残っていた=兄弟2件)。
+		// "Align Other Views to Active" (a plain command, shortcut-assignable): set every other
+		// document’s layout views to the active (frontmost) view’s position and zoom, once. It is
+		// independent of the Sync Layout Views toggle (it works with that OFF). While Started, the
+		// page Add/Remove correction is applied. The work is KCMAlignOtherViewsToActiveNow in
+		// ui/KCMViewSync.cpp (the same syncing engine as the first line-up when the toggle goes ON).
+		// ⚠Its home was corrected once: **it left KCMPeek.cpp with the split** while the comment still
+		//   said "the work is in KCMPeek.cpp" (KCMUIID.h carried the same error ＝ two siblings).
 		case kKCMPopupAlignViewsActionID:
 		{
 			const bool16 ok = KCMAlignOtherViewsToActiveNow();
-			// false は3通り: (a) 最前面レイアウトビューが無い / (b) Start 中で最前面が Target/Source 以外の
-			// 第3文書(engine が同期しない) / ★(c) そろえる相手の窓が1つも無い(文書が1つだけ・相手が閉じた・
-			// Target と Source が同じ文書)。どれも「実際にそろえていない」ので成功表示は出さない。
-			// ⚠(c) は 2026-08-19 まで**呼び手に伝わらず、成功表示になっていた**(不具合再検査 B-U7 の A-1)。
-			//   文言も「no view to align **from**」＝手本が無い意味だったので、3通りに当てはまる形へ改めた。
+			// kFalse means one of three things: (a) there is no frontmost layout view; (b) Started, with
+			// the frontmost being a third document that is neither Target nor Source (the engine does not
+			// sync it); ★(c) there is no other window to line up (only one document is open, the other
+			// closed, or Target and Source are the same document). None of them lined anything up, so no
+			// success message is shown.
+			// ⚠(c) **did not reach the caller and was reported as success** until it was fixed. The wording
+			//   was "no view to align **from**", which meant "no example to copy", so it was changed to
+			//   cover all three.
 			PMString msg(ok ? "Aligned other views to the active view."
 			                : "Align: no other view to align (while Started, use the Target or Source view).");
 			msg.SetTranslatable(kFalse);
@@ -380,9 +409,11 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 			break;
 		}
 
-		// 「Show Scrollbar Map」トグル: 文書窓の縦スクロールバー脇に変更位置の地図 strip を出すか(既定 ON)。
-		// ON にしたら現在の比較対象(sDB/sSrcDB)へ即 attach して表示、OFF にしたら全窓から即 detach。
-		// 未 arm(sDB=nil)で ON にした場合は attach が no-op=次の Start で自然に出る(フラグは ON のまま)。
+		// The "Show Scrollbar Map" toggle: whether a strip mapping the changed positions is shown beside
+		// a document window’s vertical scrollbar (default ON). Switching ON attaches it at once to what
+		// is being compared; switching OFF detaches it from every window.
+		// Switching ON while nothing is armed makes the attach a no-op ＝ it appears naturally at the
+		// next Start (the flag stays ON).
 		case kKCMPopupScrollMapActionID:
 		{
 			const bool16 on = !KCMGetScrollMapEnabled();
@@ -392,44 +423,46 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 				InterfacePtr<IKCMMarkData> marks(Utils<IKCMMarkData>().QueryUtilInterface());
 				if (marks->GetMarkedTargetDB() != nil) KCMScrollMapAttach(marks->GetMarkedTargetDB());
 				if (marks->GetMarkedSourceDB() != nil) KCMScrollMapAttach(marks->GetMarkedSourceDB());
-				// Find Overset 単独で ON 中なら、その走査文書窓にも地図を復帰させる(2026-07-24)。
+				// with Find Overset on by itself, bring the map back to its scanned document’s window too
 				if (marks->GetOversetOn() && marks->GetOversetDB() != nil)
 					KCMScrollMapAttach(marks->GetOversetDB());
 				KCMScrollMapInvalidateAll();
 			}
 			else
-				KCMScrollMapDetachAll();	// 既存 strip を全窓から撤去
+				KCMScrollMapDetachAll();	// take any existing strip out of every window
 			PMString msg(on ? "Scrollbar map: on." : "Scrollbar map: off.");
 			msg.SetTranslatable(kFalse);
 			KCMSetStatus(msg);
 			break;
 		}
 
-		// (★「Show HUD」トグルは 2026-08-06 に廃止＝押下中 HUD は**常に出る**ので、出す/出さないを
-		//  選ぶメニュー項目が無い。⚠**HUD 自体は現役**: 2026-08-06 に sprite 版を全廃し、2026-08-07 に
-		//  Draw Event で作り直した(KCMTrackerHud.cpp。押した窓が Target/Source かを左上に出す)。
-		//  ここには全廃した当日の「機能そのものを無くした」が同日中の作り直しを反映しないまま残っていた。)
+		// (★The "Show HUD" toggle is gone: the on-press HUD **always shows**, so there is no menu item
+		//  for choosing whether it does. ⚠**The HUD itself is alive**: the sprite version was removed
+		//  and it was rebuilt on the Draw Event route the next day (KCMTrackerHud.cpp, which says in the
+		//  top-left whether the window pressed is the Target or the Source).)
 
-		// 「Translucent Panel」トグル: このパネル自身を半透明(alpha は kKCMPanelAlphaValue=77 ≒ 30%。
-		// 2026-07-29 に 128 から変更)にするか
-		// (★Windows 専用・既定 OFF)。効くのは「フローティング中」と「アイコンからのドロワー展開中」の
-		// 2 つ。ドック内で展開中は選べるが見た目は変わらない=フラグだけ立ち、上記のどちらかに
-		// 戻した時点で効く(その追随は KCMPanelObserver.cpp が
-		// kPaletteVisibilityChangedMessage を購読して行う)。実体は KCMPanelAlpha.cpp。
+		// The "Translucent Panel" toggle: whether this panel itself is translucent (the alpha is
+		// kKCMPanelAlphaValue). ★Windows only, default OFF. It has effect in two states: floating, and
+		// expanded as a drawer from an icon. Expanded inside a dock it can be ticked but nothing looks
+		// different ＝ only the flag is set, and it takes effect on returning to either of those states
+		// (KCMPanelObserver.cpp follows that by subscribing to kPaletteVisibilityChangedMessage). The
+		// work is in KCMPanelAlpha.cpp.
 		case kKCMPopupTranslucentPanelActionID:
 		{
 			const bool16 on = !KCMGetPanelTranslucent();
 			KCMSetPanelTranslucent(on);
 
-			// 実際に窓へ届いたかでステータス文言を分ける。ドック内で展開中に押しても画面が
-			// 変わらないので、「なぜ効かないか」を言葉で返す。
+			// The status wording differs by whether it actually reached a window: pressing it while
+			// expanded inside a dock changes nothing on screen, so the reason is put into words.
 			const bool16 applied = KCMApplyPanelTranslucency();
 
-			// ★★OFF に戻すと alpha 255 と影の再表示を**その対象の今のトップレベル窓**へ書くが、
-			//   両パネルが**同じフローティンググループ**にいるとその窓は相手と共有なので、ON のまま
-			//   の相手の半透明まで消える。ON の対象だけ貼り直して取り戻す(ON にしたときは呼ばない)。
-			//   ⚠2026-08-07 の再点検で発見。同日 48f0a6b が KCMApplyAllPanelTranslucency に入れた
-			//     「OFF は飛ばす」の取り残しで、こちらは**対象を名指しで呼ぶ**復元経路だった。
+			// ★★Switching OFF writes alpha 255 and re-shows the shadow on **that target’s current
+			//   top-level window**, and when both panels are in **the same floating group** that window is
+			//   shared, so the translucency of the other one -- still ON -- goes with it. Re-applying the
+			//   targets that are ON takes it back (this is not called when switching ON).
+			//   ⚠Found in a review: it was the piece left behind when "skip the ones that are OFF" went
+			//     into KCMApplyAllPanelTranslucency, this being the restore route that **names its
+			//     target**.
 			if (!on)
 				KCMApplyAllPanelTranslucency();
 
@@ -445,22 +478,23 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 			break;
 		}
 
-		// 「Translucent Pages Panel」トグル: **本体のページパネル**を半透明にするか(2026-08-06 追加)。
-		// 上の Translucent Panel と同じ仕組み・同じ制約で、対象だけが違う。
-		// ★対象の窓は WidgetID(kPagesPanelWidgetID = 数値)から引く。窓タイトルは UI 言語で変わる
-		//   ("Pages" / 「ページ」)ので、タイトル照合では本体パネルに届かない。実体 KCMPanelAlpha.cpp。
+		// The "Translucent Pages Panel" toggle: whether **InDesign’s own Pages panel** is translucent.
+		// Same machinery and same limits as Translucent Panel above; only the target differs.
+		// ★The window is found from a WidgetID (kPagesPanelWidgetID, a number). A window title changes
+		//   with the UI language ("Pages" / 「ページ」), so matching on the title could never reach a
+		//   built-in panel. The work is in KCMPanelAlpha.cpp.
 		case kKCMPopupTranslucentPagesActionID:
 		{
 			const bool16 on = !KCMGetPagesPanelTranslucent();
 			KCMSetPagesPanelTranslucent(on);
 
-			// 実際に窓へ届いたかでステータス文言を分ける。ドック内で展開中に押しても画面が
-			// 変わらないので、「なぜ効かないか」を言葉で返す。
-			// ★ページパネルは既定でドックに入っているので、こちらの方が「効かない」に当たりやすい。
+			// The status wording differs by whether it actually reached a window: pressing it while
+			// expanded inside a dock changes nothing on screen, so the reason is put into words.
+			// ★The Pages panel is docked by default, so "no effect" is met more often here.
 			const bool16 applied = KCMApplyPagesPanelTranslucency();
 
-			// ★上の Translucent Panel と同じ理由で、OFF に戻したときだけ ON の対象を貼り直す
-			//   (同じフローティンググループに入れていると、こちらの 255 復元が相手を巻き込むため)。
+			// ★For the same reason as Translucent Panel above, the targets that are ON are re-applied only
+			//   when switching OFF (in one floating group, this 255 restore takes the other one with it).
 			if (!on)
 				KCMApplyAllPanelTranslucency();
 
@@ -476,20 +510,21 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 			break;
 		}
 
-		// (「Translucent Toolbox」トグルは 2026-08-07 に追加し、同日ユーザー判断で撤去した
-		//  ＝本体のツールボックスの見た目を変える機能は KCM には載せない。ActionID +38 は
-		//  欠番のまま再利用しない(.indk はショートカットを数値の ActionID で保存するため)。)
+		// (The "Translucent Toolbox" toggle was added and withdrawn the same day on the user’s call ＝
+		//  changing how InDesign’s own toolbox looks is not something KCM carries. ActionID +38 stays
+		//  vacant and is not reused, because .indk stores a shortcut by the numeric ActionID.)
 
-		// 「Translucent Book Dialog」トグル: **自分のブック比較ダイアログ**を半透明にするか
-		// (2026-08-13 ユーザー要望「ダイアログも半透明に出来る様に」)。上2つと同じ実体
-		// (KCMPanelAlpha.cpp)で対象だけが違う。
-		// ★上2つと違う点が2つある:
-		//   ①ダイアログは**常にフローティング**なので「押しても効かない状態」が無い ⇒ 文言を
-		//     「ドッキング中なので効かない」で分ける必要がそもそも無い。分かれるのは「今そのダイアログが
-		//     開いているか」だけ。
-		//   ②**OFF に戻したときの貼り直しが要らない**。上2つが KCMApplyAllPanelTranslucency を
-		//     呼ぶのは、パネル同士が同じフローティンググループに入ると 255 の復元が相手を巻き込むから
-		//     (2026-08-07 の実害)。ダイアログは自分だけの窓なので、その共有が起こらない。
+		// The "Translucent Book Dialog" toggle: whether **our own book comparison dialog** is
+		// translucent (user’s request, "let the dialog be translucent too"). The same implementation as
+		// the two above (KCMPanelAlpha.cpp) with a different target.
+		// ★Two things differ from those two:
+		//   ① a dialog is **always floating**, so there is no "ticked but ineffective" state ⇒ nothing
+		//     has to be worded as "docked, so it does nothing". The only distinction is whether the
+		//     dialog is open right now.
+		//   ② **no re-apply is needed when switching OFF.** The two above call
+		//     KCMApplyAllPanelTranslucency because panels in one floating group make the 255 restore
+		//     take the other one with it. A dialog has a window to itself, so that sharing cannot
+		//     happen.
 		case kKCMPopupTranslucentBookDialogActionID:
 		{
 			const bool16 on = !KCMGetBookDialogTranslucent();
@@ -509,16 +544,19 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 			break;
 		}
 
-		// (★「Hold to Hide Marks」(+19)は 2026-08-22 に撤去＝ユーザー決定。「常時表示」が
-		//  「Always Show Marks on Target」と完全に重複したため。固有だった「押している間だけ隠す」は
-		//  **両トグル ON のときの標準の挙動**になった＝規則は「押している間は反対になる」の1本。
-		//  ⚠**この case が持っていた後始末2つは上の2つのトグルへ移してある**＝一時退避の解除と、
-		//    常時表示の基準不透明度の即反映(落とすと「ON にしたのに枠が不透明のまま出る」)。
-		//  ActionID +19 は欠番のまま再利用しない。)
+		// (★"Hold to Hide Marks" (+19) was removed on the user’s decision: "keep them visible" had
+		//  become an exact duplicate of "Always Show Marks on Target". What was peculiar to it, hiding
+		//  while the button is held, became **the standard behaviour whenever either toggle is ON** ＝
+		//  one rule: while the button is held, the state is inverted.
+		//  ⚠**The two pieces of clean-up this case carried moved into those two toggles**: clearing the
+		//    temporary hide, and applying the base screen opacity at once (drop the second and "switched
+		//    ON but the frame comes up opaque").
+		//  ActionID +19 stays vacant and is not reused.)
 
-		// 「Ignore Page Number Marker」トグル: ノンブル(自動ページ番号)マーカーを含むフレームを
-		// 比較(CMYKピクセル差分)から除外するか(既定ON)。フラグを反転し、既にStart済みなら
-		// 登録トグルと同じ理由で全体再比較して即座に反映する。
+		// The "Ignore Page Number Marker" toggle: whether frames containing an automatic page number
+		// marker are left out of the comparison (the CMYK pixel difference). It flips the flag and, if a
+		// comparison is already running, recompares everything so the change is visible at once -- the
+		// same reason as the registration toggle.
 		case kKCMPopupIgnorePageNumActionID:
 		{
 			InterfacePtr<IKCMCompareFacade> folio(Utils<IKCMCompareFacade>().QueryUtilInterface());
@@ -531,18 +569,18 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 			if (markedDB != nil && markedSrcDB != nil)
 			{
 				PMString report;
-				// ★ここは allowIncremental を渡していない=全ページ再比較なので、ページ数が多ければ
-				//   進捗バーに Cancel が出る。キャンセルされると KCMDoMarkChangesDoc 側でマークが
-				//   全部破棄され kFailure が返る。戻り値を捨てると arm だけが残って「枠が1つも無い
-				//   Start 中」になるので、Start 経路(KCMToggleStartStop)と同じ考え方で Stop まで戻す
-				//   (KCMToggleStartStop は arm 中に呼べば Stop 分岐に入る)。2026-07-29 の自己レビューで発見。
+				// ★allowIncremental is not passed here either ＝ every page is compared again, so with many
+				//   pages the progress bar offers Cancel. On a cancellation the model side discards every mark
+				//   and answers kFailure. Throwing that away would leave only the armed state ＝ "Started with
+				//   not one frame", so it is unwound to Stop exactly as the Start route does
+				//   (KCMToggleStartStop takes its Stop branch when called while armed). Found in a self-review.
 				if (Utils<IKCMCompareFacade>()->MarkChanges(markedDB, markedSrcDB, report) == kSuccess)
 				{
 					msg.Append(" (recompared)");
 				}
 				else
 				{
-					Utils<IKCMCompareFacade>()->ToggleStartStop();		// マーク破棄済み → strip 撤去・disarm まで揃えて Stop へ
+					Utils<IKCMCompareFacade>()->ToggleStartStop();		// the marks are already discarded -> take the strip out, disarm, and be properly stopped
 					msg.Append(" (cancelled - stopped)");
 				}
 			}
@@ -550,11 +588,11 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 			break;
 		}
 
-		// ★★フライアウトの「Compare mode > Pixel Changes / Story Changes」(2026-08-20)。
-		//   何を比べるかを切り替える。上の「Ignore Page Number Marker」と同じ形＝設定を変えて、
-		//   既に Start 済みならその場で全体を比較し直す。
-		//   ⚠**前のモードの結果は捨てる**。2つの結果を同時に持つと「いま画面が見せているのはどちら
-		//     なのか」の答えが2か所に生まれる([[one-question-one-place]])。
+		// ★★Flyout "Compare mode > Pixel Changes / Story Changes": switch what is compared. The same
+		//   shape as "Ignore Page Number Marker" above ＝ change the setting and, if already Started,
+		//   compare everything again on the spot.
+		//   ⚠**The previous mode’s result is discarded.** Holding both at once would create two answers
+		//     to "which of them is the screen showing" ([[one-question-one-place]]).
 		case kKCMPopupModePixelActionID:
 			KCMApplyCompareMode(kKCMModePixel);
 			break;
@@ -562,42 +600,42 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 			KCMApplyCompareMode(kKCMModeStory);
 			break;
 
-		// フライアウトの「Save Panel Settings」: 現在の設定系トグルを独自 JSON でローカルへ保存し、
-		// 保存先パスを**パネルのステータス行**に出す(実体は KCMPanelState.cpp の KCMSavePanelState。
-		// ⚠旧引用 ":132-137" は 2026-08-16 の監査 B-U3 時点で fclose のエラー処理を指していた＝関数名で引く)。
-		// 読み込みは起動時(KCMUIStartup::Startup。2026-07-15 に「パネル初回オープン時」から前倒し=
-		// KCMPanelState.h の説明が正)。(旧コメントの「ダイアログ表示する」は 2026-07-11 に
-		// モーダルからステータス行へ変えた時点で陳腐化していた。2026-08-06 監査で現行化。)
+		// Flyout "Save Panel Settings": write the current settings toggles to a private JSON file and
+		// show where it went **in the panel’s status line** (the work is KCMSavePanelState in
+		// KCMPanelState.cpp). Reading it back happens at startup (KCMUIStartup::Startup; the account is
+		// in KCMPanelState.h).
 		case kKCMPopupSavePanelStateActionID:
 			KCMSavePanelState();
 			break;
 
-		// ページパネルのページ右クリック「Register as Added/Removed Pages」トグル。
-		// 選択ページを「比較相手なし」として登録/解除する(実体は KCMPageMap.cpp。このステップでは
-		// 登録の保持とチェック表示まで。比較の除外対応表への反映は次ステップ)。
-		// ⚠★★2026-08-24: `[なし]` の行だけを選んでいるときは何もしない(理由は UpdateActionStates 側の
-		//   ガードと同じ＝**メニューからは出さないが、ショートカット割り当ての口が別に在る**ので実行側にも要る)。
+		// The "Register as Added/Removed Pages" toggle on the Pages panel page context menu. It
+		// registers the selected pages as having no counterpart, or clears that (the work is in
+		// KCMPageMap.cpp).
+		// ⚠★★With only the `[none]` row selected it does nothing -- the same reason as the guard in
+		//   UpdateActionStates: **the menu does not offer it, but a shortcut is another way in**, so
+		//   the executing side needs the guard too.
 		case kKCMPageMapToggleActionID:
 			if (KCMPagesPanelSelectionHasNoRealPage())
 				break;
 			Utils<IKCMPageFlagsFacade>()->ToggleRegisterForSelection();
 			break;
 
-		// ページパネルのページ右クリック「Check」トグル。選択ページに✓印を付け外しする
-		// (実体は KCMPageCheck.cpp。✓の描画は KCMDrawEventHandler の isThumb 分岐)。
+		// The "Check" toggle on the Pages panel page context menu: put a tick on the selected pages or
+		// take it off (the work is in KCMPageCheck.cpp; the tick is drawn by the isThumb branch of
+		// KCMDrawEventHandler).
 		case kKCMPageCheckToggleActionID:
 			if (KCMPagesPanelSelectionHasNoRealPage())
-				break;		// ⚠上と同じ理由
+				break;		// ⚠the same reason as above
 			Utils<IKCMPageFlagsFacade>()->ToggleCheckForSelection();
 			break;
 
-		// ページパネルのページ右クリック「Refresh Page Comparison」(実行アクション)。選択ページの
-		// 比較を再検出して枠/サムネイルを更新する(旧 Ctrl+ミドルのスプレッド再比較を移設。2026-07-13)。
-		// 実体は KCMPeek.cpp。結果をステータス行に短く出す。
+		// "Refresh Page Comparison" on the Pages panel page context menu (a plain command): recompare
+		// the selected pages and update their frames and thumbnails. The work is in KCMPeek.cpp, and the
+		// outcome is reported briefly in the status line.
 		case kKCMPageRefreshCompareActionID:
 		{
 			if (KCMPagesPanelSelectionHasNoRealPage())
-				break;		// ⚠`[なし]` の行だけの選択では走らせない(上の2つと同じ理由)
+				break;		// ⚠do not run with only the `[none]` row selected (the same reason as the two above)
 			int32 nPages = 0, nChanged = 0, nFailed = 0;
 			bool16 wasCancelled = kFalse;
 			if (Utils<IKCMCompareFacade>()->RefreshSelectedPages(&nPages, &nChanged, &wasCancelled, &nFailed))
@@ -608,27 +646,28 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 				msg.Append(" (changed ");
 				msg.AppendNumber(nChanged);
 				msg.Append(")");
-				// ★比較できなかったページ(ページサイズ不一致・ラスタ化失敗)は隠さない。その分の枠は
-				//   前回のまま=最新でないことをユーザーに伝える(2026-08-06 再点検)。
+					// ★Pages that could not be compared (mismatched page size, a failed rasterisation) are not
+					//   hidden: their frames stay as they were, which is what tells the user they are not current.
 				if (nFailed > 0)
 				{
 					msg.Append(" (failed ");
 					msg.AppendNumber(nFailed);
 					msg.Append(")");
 				}
-				// ★途中で止めた場合は明示する(残りの選択ページは古いままなので、全部終わったと
-				//   誤解させない。2026-07-27 に進捗バー＋キャンセルを追加)。
+					// ★Say so when it was stopped part way: the remaining selected pages are still stale, and it
+					//   must not read as "all done".
 				if (wasCancelled)
 					msg.Append(" - cancelled");
 				KCMSetStatus(msg);
 			}
 			else
 			{
-				// 有効化判定(KCMRefreshComparisonAvailable)は選択の中身まで見ないため、選択が空/全ページ
-				// 未対応(Added/Removed 登録等)だと何も処理せず kFalse で戻る。その場合も無反応にせず
-				// 「今回は何も再比較しなかった」ことをステータス行に出す(前回の refreshed 表示の残留による
-				// 成功誤認を防ぐ。2026-07-15)。※キャンセルは押した時点のページを処理済み=上の枝に入るので、
-				// ここへ来るのは通常「対象が無かった」ときだけ。出し分けは念のため残す。
+				// The enabling test (KCMRefreshComparisonAvailable) does not look inside the selection, so with
+				// nothing selected -- or with every page unsupported (registered as Added/Removed and so on) --
+				// this returns kFalse having done nothing. Rather than appear unresponsive, it says "nothing was
+				// recompared this time", which also stops a leftover "refreshed" line from reading as success.
+				// ※A cancellation has already processed the pages up to that point and takes the branch above,
+				//  so what reaches here is normally "there was nothing to do". The distinction is kept anyway.
 				PMString msg(wasCancelled ? "refresh cancelled." : "refresh: no comparable pages.");
 				msg.SetTranslatable(kFalse);
 				KCMSetStatus(msg);
@@ -636,31 +675,32 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 			break;
 		}
 
-		// フライアウトの「Save Check & Register」: Start中の Target/Source の現在の Check(✓)+ Register
-		// (Added/Removed)を独自 JSON(KCM\KCMPageChecks.json, v2)へマージ保存し、保存先パスをステータス行に
-		// 出す(実体 KCMPageCheck.cpp)。
+		// Flyout "Save Check & Register": merge the current ticks and Added/Removed registrations of the
+		// Target and Source into a private JSON file and show the path in the status line (the work is in
+		// KCMPageCheck.cpp).
 		case kKCMPopupSaveChecksActionID:
 			Utils<IKCMPageFlagsFacade>()->SaveChecksAndRegister();
 			break;
 
-		// フライアウトの「Load Check & Register」: 上記 JSON から Register を両文書へ適用→再比較→
-		// Check(今もマーク付きのページだけ)を復元する(実体 KCMPageCheck.cpp)。
-		// ⚠★**メニュー項目としては常に押せる**(2026-08-18・不具合再検査 B-U3 で訂正。旧「Start中だけ
-		//   有効」はメニューの有効/無効の話に読めるが、下の UpdateActionStates にこの ActionID の分岐は
-		//   無い)。`.fr` の ActionDef が kCustomEnabling を付けず kDisableIfLowMem だけにしてあり、
-		//   そこに "plain command; guards inside (needs Start)" と書いてある＝**意味を持つのが Start 中
-		//   だけで、断るのは実体の側**。Save Check & Register も同じ作り。
+		// Flyout "Load Check & Register": apply the registrations from that JSON to both documents,
+		// recompare, then restore the ticks (only on pages that still carry a mark). The work is in
+		// KCMPageCheck.cpp.
+		// ⚠★**The menu item is always pressable.** ("Only while Started" would read as menu enabling,
+		//   and UpdateActionStates below has no branch for this ActionID.) The ActionDef in the `.fr`
+		//   carries kDisableIfLowMem without kCustomEnabling and says "plain command; guards inside
+		//   (needs Start)" ＝ **it only means something while Started, and refusing is the work’s own
+		//   job**. Save Check & Register is built the same way.
 		case kKCMPopupLoadChecksActionID:
 			Utils<IKCMPageFlagsFacade>()->LoadChecksAndRegister();
 			break;
 
-		// フライアウトの「Export Changed Pages...」: 現在の比較(Start 後)の変更ページ一覧を
-		// TSV(新ページ/旧ページ/種別=変更/挿入/削除)で保存する(実体 KCMChangedPagesTSV.cpp)。
-		// 比較中(sDB≠nil)のみ有効。オーバーセットは含めない。
+		// Flyout "Export Changed Pages...": save the list of changed pages of the current comparison as
+		// TSV (new page / old page / kind = changed, inserted, deleted). The work is in
+		// KCMChangedPagesTSV.cpp. Enabled only while comparing; overset is not included.
 		case kKCMPopupExportChangedPagesActionID:
 			{
-				// ★2026-08-13(Task 9): 書き出し本体は model 側で、**メッセージは戻り値で受けて
-				//   ここ(UI)が出す**。成功時は無言＝空で返るので、そのときは何も出さない。
+			// ★The writing itself is on the model side and **the message comes back as a return value for
+			//   the UI to show**. Success is silent -- it returns empty -- and then nothing is shown.
 				PMString exportMsg;
 				Utils<IKCMCompareFacade>()->ExportChangedPagesTSV(exportMsg);
 				if (exportMsg.CharCount() > 0)
@@ -668,34 +708,38 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 			}
 			break;
 
-		// フライアウトの「Compare Books」: ブックパネルで前面タブのブック=Target、それ以外で最初に
-		// 開いているブック=Source として、章(ドキュメント)単位で「変更あり/なし」を判定する。
-		// ★既存の文書比較(Start)とは完全に独立=arm しない・枠を作らない・sDB/sEntries を触らない。
-		// ⚠2026-08-16(監査 B-U3)に**陳腐化を1行削った**＝旧「段階1 の途中: いまは解決した2ブックの
-		//   名前をステータスに出すだけ(比較の実体は次の段階)」。**比較も結果ダイアログも章行の右クリックも
-		//   完成している**(2026-08-16 の監査 B8 で公式ルートへの照合と実機 PASS まで済み)。
-		//   ★★すぐ下の3行が「2026-08-12 に流れが変わった」と新しい姿を説明しており、**新旧が同居**していた。
+		// Flyout "Compare Books": the book whose tab is in front in the Book panel is the Target, the
+		// first other open book is the Source, and every chapter (document) is judged changed or
+		// unchanged.
+		// ★It is entirely independent of the document comparison (Start): it does not arm, creates no
+		//   frames and touches neither sDB nor sEntries.
+		// ★★The flow is **a confirmation alert, then OK compares, then the result dialog** (user’s
+		//   instruction). It used to open the dialog first and run from a Compare button inside it (that
+		//   button is gone).
+		//   ⚠**Showing the two books before anything is pressed** has not changed as an aim -- what
+		//     changed is where they are shown (from two lines of the dialog to the body of the alert)
+		//     and that they are **full paths** rather than names, because so many books share a name.
 		case kKCMPopupCompareBooksActionID:
-			// ★★2026-08-12 に流れが変わった(ユーザー指示)。**確認アラート → OK で比較 → 結果ダイアログ**。
-			//   旧: ダイアログを先に開き、中の Compare ボタンで実行(そのボタンは撤去済み)。
-			//   ⚠**対象2ブックを押す前に見せる**という眼目は変わっていない——見せる場所がダイアログの
-			//     2行からアラートの本文へ移り、名前ではなく**フルパス**になった(同名のブックが多いため)。
 			KCMRunBookComparison();
 			break;
 
-		// ブック比較ダイアログの**章行の右クリック**「Start Change Marker」(2026-08-12)。
-		// その章の Target/Source 2文書を窓付きで開き、比較中なら一度 Stop してから比較を開始する。
-		// ★どの行かは右クリックの時点で KCMBookSetMenuRow が控えている——アクションには ActionID
-		//   しか渡らないので、これが「どの章の話か」を知る唯一の手段(KBS の結果行と同じ作り)。
+		// "Start Change Marker" on **a chapter row’s context menu** in the book comparison dialog: open
+		// that chapter’s Target and Source documents in windows and start the comparison, stopping a
+		// running one first.
+		// ★Which row it was is noted by KCMBookSetMenuRow at the moment of the right click -- an action
+		//   is handed nothing but an ActionID, so that is the only way to know which chapter is meant
+		//   (the same construction as KBS’s result rows).
 		case kKCMBookRowStartActionID:
 			KCMBookStartComparisonForRow(KCMBookMenuRow());
 			break;
 
-		// Story Edits の**行の右クリック**「Refresh Story Comparison」(2026-08-21)。その行の
-		// ストーリーだけ本文差分を取り直し、子の変更箇所を今の状態に置き換える。
-		// ★どの行かは章行と同じ作り＝右クリックの時点で KCMStorySetMenuRow が控えている。
-		// ★直し終えて差分が0件になっても**行は残り子だけ消える**(ユーザー判断 2026-08-21)。
-		//   結果はステータス行に出る＝「何も起きなかったのか、差分が無くなったのか」を言い分ける。
+		// "Refresh Story Comparison" on **a Story Edits row’s context menu**: re-run the text diff for
+		// that story alone and replace its children with the current state.
+		// ★Which row it was is noted the same way as for a chapter row, by KCMStorySetMenuRow at the
+		//   right click.
+		// ★Once the differences are gone **the row stays and only the children go** (user’s call). The
+		//   outcome is reported in the status line, which is what tells "nothing happened" apart from
+		//   "the differences are gone".
 		case kKCMStoryRowRefreshActionID:
 			KCMStoryRefreshMenuRow();
 			break;
@@ -705,29 +749,35 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 	}
 }
 
-/* UpdateActionStates — チェック式トグルは ON なら kSelectedAction を立てる(docwatch の
-   DocWchActionComponent::UpdateActionStates と同じ流儀)。条件付きの有効/無効・動的ラベルもここで返す:
-   Start/Stop(名前の出し分け＋Start は文書2つ未満で灰色)・Hide Unchanged Spreads(Start 中のみ有効。
-   2026-08-06 変更)・Find Overset(走査対象文書が無ければ灰色。ON 中は常に有効)・Refresh Overset/
-   Export 等の条件付き有効化。ページパネル右クリックの「Register as Added/Removed Pages」だけは
-   選択依存の有効/無効・中間チェック・動的ラベルがあるため、model へ「今どう見えるべきか」を聞いてから
-   メニューへ書き込む(IKCMPageFlagsFacade::GetRegisterToggleState → KCMPageMapGetToggleState /
-   KCMPageMap.cpp)。⚠2026-08-17 訂正: ここは旧名 KCMPageMapUpdateToggleState のうえ「委譲する」と
-   書いていた ---- 2026-08-15 の API 監査 B2(A-2)で **SetNthActionState/SetNthActionName を呼ぶのは
-   この UI 側**になり、model は答えるだけになっている。 */
+/* UpdateActionStates - a check-style toggle raises kSelectedAction while it is ON (the same
+   practice as docwatch’s DocWchActionComponent::UpdateActionStates). Conditional enabling and
+   dynamic labels are answered here as well: Start/Stop (the name is switched, and Start is greyed
+   with fewer than two documents), Hide Unchanged Spreads (only while Started), Find Overset
+   (greyed with no document to scan; always live while ON), and the conditional enabling of
+   Refresh Overset, Export and the rest.
+   "Register as Added/Removed Pages" on the Pages panel context menu is the one with
+   selection-dependent enabling, an intermediate check and a dynamic label, so the model is asked
+   "how should this look now" and the answer is written into the menu here
+   (IKCMPageFlagsFacade::GetRegisterToggleState -> KCMPageMapGetToggleState / KCMPageMap.cpp).
+   ⚠**Calling SetNthActionState / SetNthActionName is this UI side’s job**; the model only
+   answers. (An older text here used the former name KCMPageMapUpdateToggleState and said the
+   work was delegated.) */
 void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionStateList* listToUpdate, GSysPoint /*mousePoint*/, IPMUnknown* /*widget*/)
 {
 	for (int32 i = 0; i < listToUpdate->Length(); i++)
 	{
 		const ActionID action = listToUpdate->GetNthAction(i);
 
-		// ★★★2026-08-24: **`[なし]`(マスターなし)の行だけを選んでいるときは、ページ向けの3項目を出さない。**
-		//   `[なし]` には実ページが無いので `GetSelectedPages` が「現在のページ」へフォールバックし、
-		//   そのままだと**選んでいないページに✓が付く**(実機で再現・ユーザー指摘)。
-		//   ★判定は1本に集約している＝`KCMPagesPanelSelectionHasNoRealPage()`(理由と実測は宣言側)。
-		//   ⚠**実行側(DoAction)にも同じガードが要る**＝ActionID にはショートカットを割り当てられるので、
-		//     メニューを通らない入口が在る([[one-question-one-place]] の「同じ判断を2か所で聞かない」は
-		//     **判定関数を1本にする**ことで守り、呼ぶ場所が2つあるのは入口が2つあるから)。
+		// ★★★**With only the `[none]` row (no master) selected, the three page items are not offered.**
+		//   `[none]` has no real page, so `GetSelectedPages` falls back to "the current page" and
+		//   **a tick would land on a page nobody selected** (reproduced in the running application, and
+		//   reported by the user).
+		//   ★The test is gathered into one function, `KCMPagesPanelSelectionHasNoRealPage()` (the reason
+		//     and the measurements are where it is declared).
+		//   ⚠**The executing side (DoAction) needs the same guard** ＝ an ActionID can be given a
+		//     shortcut, so there is a way in that does not pass through the menu. ([[one-question-one-place]]
+		//     is kept by **having one test function**; it is called from two places because there are two
+		//     entrances.)
 		if ((action == kKCMPageMapToggleActionID ||
 		     action == kKCMPageCheckToggleActionID ||
 		     action == kKCMPageRefreshCompareActionID) &&
@@ -739,20 +789,21 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 
 		if (action == kKCMPopupStartStopActionID)
 		{
-			// arm 状態でメニュー名を出し分け(arm 中=Stop / 未 arm=Start)。
-			// (kSelectedAction は付けない=チェックマークではなく名前そのものを切り替える。)
-			// ★3回聞くので InterfacePtr で1回引く(`Utils.h:74-80`。2026-08-16・監査 B-U3 で
-			//   このファイルの他の分岐と揃えた ---- :141 / :180 / :363 は既にこの形だった)。
+			// The menu name follows the armed state (armed = Stop, not armed = Start).
+			// (kSelectedAction is not raised: this switches the name itself rather than showing a check.)
+			// ★The facade is asked several times, so it is taken once into an InterfacePtr (`Utils.h:74-80`),
+			//   which is what the other branches of this file already do.
 			InterfacePtr<IKCMCompareFacade> compare(Utils<IKCMCompareFacade>().QueryUtilInterface());
 			const bool16 armed = compare->IsArmed() && (compare->GetArmedTargetDB() != nil);
 			PMString name(armed ? "Stop" : "Start");
 			name.SetTranslatable(kFalse);
 			listToUpdate->SetNthActionName(i, name);
-			// ★Stop は常に有効: 文書が1つも開いていなくてもマーク消去・peek 解除は成立させる
-			//   (KCMToggleStartStop の解除分岐が「実際にマークが描かれていた文書」を自分で控える)。
-			//   Start は Target と Source の2文書が要るので、揃っていなければ灰色にする
-			//   (2026-08-06 ユーザー指定)。判定は実行側と同じ CanStartComparison() を通るので、
-			//   メニューの見た目と押した結果がずれない。
+			// ★Stop is always live: clearing the marks and ending a peek must work even with no document
+			//   open (the clearing branch of KCMToggleStartStop keeps its own record of the documents the
+			//   marks were actually drawn in).
+			//   Start needs two documents, Target and Source, so it is greyed until they are there (user’s
+			//   instruction). The test goes through the same CanStartComparison() the executing side uses,
+			//   so what the menu looks like and what pressing it does cannot part company.
 			listToUpdate->SetNthActionState(i,
 				(armed || compare->CanStartComparison()) ? kEnabledAction : kDisabled_Unselected);
 		}
@@ -760,12 +811,12 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 		{
 			int16 actionState = kEnabledAction;
 			if (Utils<IKCMCompareFacade>()->GetPrintMarks())
-				actionState |= kSelectedAction;	// ON ならチェックマーク
+				actionState |= kSelectedAction;	// a check while it is ON
 			listToUpdate->SetNthActionState(i, actionState);
 		}
 		else if (action == kKCMPopupOpacity25ActionID)
 		{
-			// ラジオ風: 現在 25% ならこの項目に✓(75% と相互排他)。
+			// Radio-like: this item carries the check while 25% is in force (exclusive with 75%).
 			int16 actionState = kEnabledAction;
 			if (Utils<IKCMCompareFacade>()->GetMarkOpacity25())
 				actionState |= kSelectedAction;
@@ -773,19 +824,20 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 		}
 		else if (action == kKCMPopupOpacity75ActionID)
 		{
-			// ラジオ風: 現在 75%(=!25%)ならこの項目に✓。
+			// Radio-like: this item carries the check while 75% (= not 25%) is in force.
 			int16 actionState = kEnabledAction;
 			if (!Utils<IKCMCompareFacade>()->GetMarkOpacity25())
 				actionState |= kSelectedAction;
 			listToUpdate->SetNthActionState(i, actionState);
 		}
-		// ★「Mark colour」の2項目(2026-08-24)。上の Marks opacity と同じラジオ風＝いま効いている方に✓。
-		//   **どちらも常に有効**＝比較していないときでも選べる(次の Start にも効く)。
+		// ★The two "Mark colour" items. Radio-like, as Marks opacity above ＝ the one in force carries
+		//   the check. **Both are always live**: they can be chosen with nothing being compared, and
+		//   they apply to the next Start.
 		else if (action == kKCMPopupColorRedActionID)
 		{
 			int16 actionState = kEnabledAction;
 			if (!Utils<IKCMCompareFacade>()->GetMarkColorCyan())
-				actionState |= kSelectedAction;		// 赤(既定)ならこちらに✓
+				actionState |= kSelectedAction;		// red (the default) puts the check here
 			listToUpdate->SetNthActionState(i, actionState);
 		}
 		else if (action == kKCMPopupColorCyanActionID)
@@ -795,8 +847,9 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 				actionState |= kSelectedAction;
 			listToUpdate->SetNthActionState(i, actionState);
 		}
-		// ★「Compare mode」の2項目(2026-08-20)。上の Marks opacity と同じラジオ風＝いま効いている
-		//   方に✓。**どちらも常に有効**＝比較していないときでも選べる(次の Start に効く)。
+		// ★The two "Compare mode" items. Radio-like, as Marks opacity above ＝ the one in force carries
+		//   the check. **Both are always live**: they can be chosen with nothing being compared, and
+		//   they apply to the next Start.
 		else if (action == kKCMPopupModePixelActionID)
 		{
 			int16 actionState = kEnabledAction;
@@ -813,28 +866,30 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 		}
 		else if (action == kKCMPopupHideUnchangedActionID)
 		{
-			// ★Start 中(arm 済み)でなければ灰色にする(2026-08-06 ユーザー指定)。この機能は比較マーク
-			//   (sEntries)を根拠に「変更のないスプレッド」を選ぶので、Start していなければ何も選べない
-			//   (DoHideUnchangedToggle 側も同じ理由で先頭にガードがある)。他の実行アクションと同じ
-			//   kDisabled_Unselected を使う(Refresh Overset / Export Changed Pages と揃えた)。
-			// ★「ON のまま灰色になって戻せない」状態は作れない: Stop(**KCMDoClearMarks**)が必ず
-			//   ResetHideUnchanged(kTrue) を呼び、隠したスプレッドを戻してトグルを OFF にする。
-			//   再比較(**KCMDoMarkChangesDoc**)と文書クローズ(**KCMHandleDocsClosed**)も同じ。
-			// ⚠2026-08-16(監査 B-U3)に**行番号での引用をやめた**——3つとも外れていた
-			//   (旧: KCMCore.cpp:566 / :312 / KCMPeek.cpp:2267。前2つは無関係な行を指しており、
-			//   **KCMPeek.cpp に至ってはファイルが 906 行しかない**＝EOF の1,300行以上先)。
-			//   model/UI 分割でファイルが大きく動いたため。★**関数名で引けば動かない。**
-			// ★★2026-08-21(Story 変更モード Task 8): **Story モードでも灰色にする。**
-			//   この機能が隠すのは「比較マーク(sEntries)が1ページも無いスプレッド」で、ストーリー差分は
-			//   entry を1つも作らない ---- ∴ Story モードで押すと「登録ページや overflow のあるスプレッド
-			//   だけ残して、他を全部隠す」になる。
-			//   ⚠**実行側の安全網では止まらない**: KCMHideUnchangedToggle が中止するのは
-			//     「sEntries も登録も overflow も**全部**空」のときと「表示中スプレッドを**全部**隠すことに
-			//     なる」ときだけで、登録や overflow が1つでもあれば素通りして隠してしまう。⇒ ここで断る。
-			//   ★「ON のまま灰色になって戻せない」状態は作れない: モード切替(KCMApplyCompareMode)は
-			//     Start 中なら必ず MarkChanges で全体を比較し直し、その入口の KCMDoMarkChangesDoc が
-			//     KCMResetHideUnchanged(kTrue) を呼ぶ。Start していなければ IsArmed が偽で元から灰色。
-			// ★3回聞くので InterfacePtr で1回引く(Utils.h:74-80。上の Start/Stop 分岐と同じ形)。
+			// ★Greyed unless Started (armed), by the user’s instruction. This feature picks "the spreads
+			//   with no change" from the comparison marks (sEntries), so with nothing Started there is
+			//   nothing to pick (the work has a guard at its head for the same reason). It uses the same
+			//   kDisabled_Unselected as the other plain commands (Refresh Overset, Export Changed Pages).
+			// ★There is no way to end up "ON and greyed and unable to get back": a Stop
+			//   (**KCMDoClearMarks**) always calls ResetHideUnchanged(kTrue), which shows the hidden
+			//   spreads again and turns the toggle off. So do a recomparison (**KCMDoMarkChangesDoc**) and
+			//   a document closing (**KCMHandleDocsClosed**).
+			//   ⚠Line numbers were dropped from those three references: all three had gone stale, and one
+			//     pointed more than a thousand lines past the end of its file. ★**A name does not move.**
+			// ★★**Greyed in Story mode as well.** What this hides is "a spread with not one page carrying a
+			//   comparison mark (sEntries)", and a story diff creates no entry at all ---- ∴ pressing it in
+			//   Story mode would mean "hide everything except the spreads with a registration or an
+			//   overflow".
+			//   ⚠**The safety net on the executing side does not stop it**: KCMHideUnchangedToggle only
+			//     refuses when sEntries, the registrations and the overflows are **all** empty, or when
+			//     every visible spread would be hidden; with one registration or one overflow it goes
+			//     through and hides them. ⇒ It is refused here.
+			//   ★"ON and greyed and stuck" cannot happen here either: switching mode (KCMApplyCompareMode)
+			//     always recompares everything while Started, and the entry to that, KCMDoMarkChangesDoc,
+			//     calls KCMResetHideUnchanged(kTrue). Not Started, IsArmed is false and it was already
+			//     greyed.
+			// ★The facade is asked several times, so it is taken once into an InterfacePtr (Utils.h:74-80,
+			//   the same shape as the Start/Stop branch above).
 			InterfacePtr<IKCMCompareFacade> compare(Utils<IKCMCompareFacade>().QueryUtilInterface());
 			int16 actionState;
 			if (!compare->IsArmed() || compare->GetCompareMode() == kKCMModeStory)
@@ -861,34 +916,36 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 		{
 			int16 actionState = kEnabledAction;
 			if (KCMGetScrollMapEnabled())
-				actionState |= kSelectedAction;	// ON(既定)ならチェックマーク
+				actionState |= kSelectedAction;	// a check while it is ON (the default)
 			listToUpdate->SetNthActionState(i, actionState);
 		}
 		else if (action == kKCMPopupTranslucentPanelActionID)
 		{
-			// ★ドッキング中でも選べる(グレーアウトしない)=ユーザー指定 2026-07-29。
-			// 押した結果が見えないケースは DoAction 側がステータス文言で伝える。
+			// ★It can be chosen while docked (it is not greyed) -- the user’s instruction. The case where
+			// pressing it has no visible result is explained by the status wording in DoAction.
 			int16 actionState = kEnabledAction;
 			if (KCMGetPanelTranslucent())
-				actionState |= kSelectedAction;	// ON ならチェックマーク
+				actionState |= kSelectedAction;	// a check while it is ON
 			listToUpdate->SetNthActionState(i, actionState);
 		}
 		else if (action == kKCMPopupTranslucentPagesActionID)
 		{
-			// ★上と同じ方針: ページパネルがドッキング中/閉じていても選べる。
-			//   (「今フローティングか」で灰色にすると、ドックに入れた瞬間に設定を戻せなくなる。)
+			// ★Same policy as above: it can be chosen with the Pages panel docked or closed.
+			// (Greying it by "is it floating right now" would make the setting impossible to undo the
+			//  moment the panel goes into a dock.)
 			int16 actionState = kEnabledAction;
 			if (KCMGetPagesPanelTranslucent())
-				actionState |= kSelectedAction;	// ON ならチェックマーク
+				actionState |= kSelectedAction;	// a check while it is ON
 			listToUpdate->SetNthActionState(i, actionState);
 		}
 		else if (action == kKCMPopupTranslucentBookDialogActionID)
 		{
-			// ★上2つと同じ方針: ダイアログが今開いていなくても選べる。閉じている間に決めた設定は
-			//   次に開いたときに効く(KCMBookDialog.cpp が開くたびに貼る)。
+			// ★Same policy as the two above: it can be chosen while the dialog is not open. A setting made
+			// while it is closed takes effect the next time it opens (KCMBookDialog.cpp applies it on every
+			// open).
 			int16 actionState = kEnabledAction;
 			if (KCMGetBookDialogTranslucent())
-				actionState |= kSelectedAction;	// ON ならチェックマーク
+				actionState |= kSelectedAction;	// a check while it is ON
 			listToUpdate->SetNthActionState(i, actionState);
 		}
 		else if (action == kKCMPopupShowSrcMarksActionID)
@@ -914,10 +971,11 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 		}
 		else if (action == kKCMPageMapToggleActionID)
 		{
-			// ページパネル右クリックの登録トグル: 有効/無効(選択の有無)・チェック(全登録=✓/
-			// 一部=中間)・ラベル(Target=Added/Source=Removed)。★**数えるのは model・書くのはここ。**
-			// ★★2026-08-15(API 監査 B2 の A-2): model は**答えるだけ**になり、メニューに書き込むのと
-			//   ラベルの文字列を持つのはここ(UI)になった。理由＝KCMPageMap.h の KCMPageToggleState。
+			// The registration toggle on the Pages panel context menu: enabling (is anything selected),
+			// the check (all registered = tick, some = intermediate) and the label (Target = Added,
+			// Source = Removed). ★**The model counts; this side writes.**
+			// ★★The model **only answers**; writing into the menu and holding the label strings is this
+			//   side’s job. The shape of the answer is KCMPageToggleState in KCMPageMap.h.
 			const KCMPageToggleState st = Utils<IKCMPageFlagsFacade>()->GetRegisterToggleState();
 			if (!st.fEnabled)
 			{
@@ -927,14 +985,15 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 			{
 				int16 actionState = kEnabledAction;
 				if (st.fTick == kKCMPageTickAll)
-					actionState |= kSelectedAction;			// 全部登録済み=チェック
+					actionState |= kSelectedAction;			// all of them registered = a check
 				else if (st.fTick == kKCMPageTickSome)
-					actionState |= kMultiSelectedAction;	// 一部だけ登録済み=中間チェック
+					actionState |= kMultiSelectedAction;	// only some registered = an intermediate check
 				listToUpdate->SetNthActionState(i, actionState);
 
-				// 動的ラベル(英語固定=パネル UI と同方針)。IActionStateList.h:78 の
-				// 「状態でメニュー名を動的に変える」用途そのもの(dynamic menu の仕組みは不要)。
-				// ⚠無効のときは名前を触らない ---- 旧実装と同じ挙動(.fr の既定名のまま)。
+				// The dynamic label (English, as the rest of the panel UI). This is exactly what
+				// IActionStateList.h:78 describes -- changing a menu name by state -- and it needs none of the
+				// dynamic-menu machinery.
+				// ⚠While disabled the name is left alone (the .fr default stands), as before.
 				PMString name(st.fRole == kKCMPageRoleSource ? "Register as Removed Pages"
 															   : "Register as Added Pages");
 				name.SetTranslatable(kFalse);
@@ -943,9 +1002,10 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 		}
 		else if (action == kKCMPageCheckToggleActionID)
 		{
-			// ページパネル右クリックの「Check」トグル: 有効/無効(Start中+Target/Source+選択)と
-			// チェック(全部✓/一部=中間)。★登録トグルと同じく、数えるのは model・書くのはここ。
-			// ★同上。Check はラベルが固定なので fRole は読まない。
+			// The "Check" toggle on the Pages panel context menu: enabling (Started, on the Target or
+			// Source, with a selection) and the check (all ticked / some = intermediate). ★As with the
+			// registration toggle, the model counts and this side writes.
+			// ★Check has a fixed label, so fRole is not read.
 			const KCMPageToggleState st = Utils<IKCMPageFlagsFacade>()->GetCheckToggleState();
 			if (!st.fEnabled)
 			{
@@ -955,52 +1015,58 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 			{
 				int16 actionState = kEnabledAction;
 				if (st.fTick == kKCMPageTickAll)
-					actionState |= kSelectedAction;			// 対象の選択ページが全部チェック済み=✓(★対象はモードで違う。model 側の KCMCollectCheckablePageUIDs)
+					actionState |= kSelectedAction;			// every selected page in scope is ticked (★what is in scope depends on the mode; the model’s KCMCollectCheckablePageUIDs)
 				else if (st.fTick == kKCMPageTickSome)
-					actionState |= kMultiSelectedAction;	// 一部だけチェック済み=中間チェック
+					actionState |= kMultiSelectedAction;	// only some ticked = an intermediate check
 				listToUpdate->SetNthActionState(i, actionState);
 			}
 		}
 		else if (action == kKCMPageRefreshCompareActionID)
 		{
-			// ページパネル右クリックの「Refresh Page Comparison」(トグルではない実行アクション):
-			// Start中(arm済み)かつ前面文書が Target/Source のときだけ有効化。それ以外はグレーアウト。
+			// "Refresh Page Comparison" on the Pages panel context menu (a plain command, not a toggle):
+			// live only while Started (armed) and with the Target or Source in front; greyed otherwise.
 			listToUpdate->SetNthActionState(i, Utils<IKCMCompareFacade>()->RefreshComparisonAvailable() ? kEnabledAction : kDisabled_Unselected);
 		}
 		else if (action == kKCMPopupFindOversetActionID)
 		{
-			// ★ON の間は常に有効(OFF に戻して十字を消せる必要がある)。OFF のときは走査する文書が
-			//   無ければ灰色にする(2026-08-06 ユーザー指定)。対象の決め方は実行側 DoFindOversetToggle
-			//   と同じ GetOversetScanTargetDB()＝比較中は Target、未 Start はアクティブ文書。
-			//   (従来はここが常に有効で、文書を開かずに押すと "no active document" とだけ出ていた。)
+			// ★Always live while ON (it has to be possible to switch it back off and clear the crosses).
+			//   While OFF it is greyed when there is no document to scan (user’s instruction). What counts
+			//   as the target is decided by the same GetOversetScanTargetDB() the executing side uses ＝
+			//   the Target while comparing, the active document otherwise.
+			//   (It used to be always live, so pressing it with no document open said nothing but "no active
+			//    document".)
 			const bool16 on = Utils<IKCMMarkData>()->GetOversetOn();
 			int16 actionState = (on || Utils<IKCMCompareFacade>()->GetOversetScanTargetDB() != nil) ? kEnabledAction
 			                                                              : kDisabled_Unselected;
 			if (on)
-				actionState |= kSelectedAction;	// ON ならチェックマーク
+				actionState |= kSelectedAction;	// a check while it is ON
 			listToUpdate->SetNthActionState(i, actionState);
 		}
 		else if (action == kKCMPopupRefreshOversetActionID)
 		{
-			// Find Overset が ON のときだけ有効(=再走査可能)。OFF 時は灰色(kDisabled_Unselected)。
+			// Live only while Find Overset is ON (= there is something to rescan); greyed otherwise.
 			listToUpdate->SetNthActionState(i, Utils<IKCMMarkData>()->GetOversetOn() ? kEnabledAction : kDisabled_Unselected);
 		}
 		else if (action == kKCMPopupExportChangedPagesActionID)
 		{
-			// 比較中(マークの Target 文書が在る)のみ有効=書き出す変更データが在り得るとき。未 Start は灰色。
+			// Live only while comparing (a marked Target document exists) ＝ when there can be changes to
+			// write out. Greyed before a Start.
 			listToUpdate->SetNthActionState(i, (Utils<IKCMMarkData>()->GetMarkedTargetDB() != nil) ? kEnabledAction : kDisabled_Unselected);
 		}
 		else if (action == kKCMPopupCompareBooksActionID)
 		{
-			// ★実行と同じ解決子を通す=メニューの見た目と押した結果がずれない。有効になるのは
-			//   「ブックパネルに前面タブがあり、かつ別のブックも開いている」ときだけ。
-			//   ⚠ここはメニューを開くたびに走り、中でパネルを全走査する。フライアウトを開く頻度
-			//     でしか呼ばれないので許容している(KBS も同じ走査を同じ場所でしている)。
-			//   ★★2026-08-15(第2段 Task 9B): 前面タブの観測が **こちら側(UI)へ移った**。
-			//     パネル走査には PaletteRefUtils / IBookUIUtils / IPanelMgr が要り、model プラグイン
-			//     はそのどれにも触れない(WidgetBin.lib を外した瞬間にリンカが名指しした)。
-			//     ⚠**判定は変わっていない**＝観測に失敗したら Facade を呼ばない。これは以前
-			//       model 側の ResolveBookPair が中で kFalse を返していたのと同じ結果。
+			// ★It goes through the same resolver as the execution, so what the menu looks like and what
+			//   pressing it does cannot part company. It is live only when "the Book panel has a front tab
+			//   and another book is open as well".
+			//   ⚠This runs every time the menu is opened and walks the whole panel inside. It is called only
+			//     as often as the flyout is opened, which is why that is accepted (KBS walks the same way in
+			//     the same place).
+			//   ★★Observing the front tab is **on this side (the UI)**: walking the panels needs
+			//     PaletteRefUtils / IBookUIUtils / IPanelMgr, none of which a model plug-in can touch (the
+			//     linker named them the moment WidgetBin.lib came off).
+			//     ⚠**The decision itself did not change** ＝ if the observation fails, the facade is not
+			//       called, which is the same outcome as the model-side ResolveBookPair returning kFalse
+			//       from inside, as it used to.
 			IBook* target = nil;
 			IBook* source = nil;
 			IDFile panelBookFile;
@@ -1012,22 +1078,25 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 		}
 		else if (action == kKCMBookRowStartActionID)
 		{
-			// ★実行と同じ判定を通す(KCMBookRowCanStart)=メニューの見た目と押した結果がずれない。
-			//   有効になるのは **判定が Changed の行だけ**(ユーザー指定 2026-08-12)で、かつ Target と
-			//   Source の両方のファイルを持つ行。∴灰色になるのは片側にしか無い章(ChapterAdded /
-			//   ChapterDeleted)とファイルを示さない章に限らず、**NoChange / Failed / NotCompared も灰色**。
-			//   ⚠この項目は行メニューの唯一の項目なので、灰色のとき**メニュー自体が出ない**(InDesign の挙動。
-			//     それが仕様＝空メニューを出す実装に「改善」しないこと)。
+			// ★It goes through the same test as the execution (KCMBookRowCanStart), so the menu and the
+			//   result cannot part company. It is live **only on a row judged Changed** (user’s
+			//   instruction) that has both a Target file and a Source file. ∴ greyed covers not only the
+			//   chapters that exist on one side (ChapterAdded / ChapterDeleted) and those naming no file,
+			//   but **NoChange / Failed / NotCompared as well**.
+			//   ⚠This is the only item on that row menu, so when it is greyed **the menu does not appear at
+			//     all** (InDesign’s behaviour). That is the specification -- do not "improve" it into
+			//     something that shows an empty menu.
 			listToUpdate->SetNthActionState(i, KCMBookRowCanStart(KCMBookMenuRow()) ? kEnabledAction
 			                                                                            : kDisabled_Unselected);
 		}
 		else if (action == kKCMStoryRowRefreshActionID)
 		{
-			// ★実行と同じ判定をそのまま通す(KCMStoryRowCanRefresh)＝メニューの見た目と押した
-			//   結果がずれない。有効になるのは **Story モードで比較中、かつ相手のあるストーリーの行**
-			//   だけ(ユーザー指定 2026-08-21「ストーリーモードでのみで」)。
-			//   ⚠この項目も行メニューの唯一の項目なので、灰色のとき**メニュー自体が出ない**——
-			//     Pixel モードで右クリックしても何も出ないのは、この一行がそう決めている。
+			// ★It goes through the same test as the execution (KCMStoryRowCanRefresh), so the menu and the
+			//   result cannot part company. It is live only **in Story mode, while comparing, on a row
+			//   whose story has a counterpart** (user’s instruction, "only in the story mode").
+			//   ⚠This too is the only item on its row menu, so when it is greyed **the menu does not appear
+			//     at all** -- that a right click in Pixel mode brings up nothing is decided by this one
+			//     line.
 			listToUpdate->SetNthActionState(i, KCMStoryRowCanRefresh() ? kEnabledAction
 			                                                            : kDisabled_Unselected);
 		}
@@ -1039,8 +1108,9 @@ void KCMActionComponent::DoAbout()
 {
 	CAlert::ModalAlert
 	(
-		// 文字列キーを渡す(CAlert が翻訳する)。★2026-08-06 に UI を英語のみへ戻したので、
-		// 実行時の日本語切替(旧 KCMLoc.h)は撤去した。中身は enUS テーブルの1行=「名前, version x.y.z」。
+		// Pass the string key (CAlert translates it). ★The UI went back to English only, so the
+		// run-time Japanese switch was taken out of here. The content is one line of the enUS table:
+		// "<name> version x.y.z".
 		PMString(kKCMAboutBoxStringKey),
 		kOKString,					// OK button
 		kNullString,				// No second button
@@ -1050,29 +1120,33 @@ void KCMActionComponent::DoAbout()
 	);
 }
 
-/* (DoAboutScript は 2026-07-25 撤去=About Scripting 項目削除。スクリプトAPIは元々撤去済みで、
-    "No scripts are currently available." を出すだけの項目だった。) */
+/* (DoAboutScript went with the "About Scripting" item. The scripting API had been removed
+    before that, so the item did nothing but say "No scripts are currently available.") */
 
-/* DoUsage — パネルのフライアウト「使い方」。操作リファレンス(=旧パネルの説明文)を表示する。 */
+/* DoUsage - the "How to Use" flyout item: shows the operating reference (what used to be the
+   panel’s description text). */
 void KCMActionComponent::DoUsage()
 {
-	// ★本文は**2本に分けて持ち、ここで連結する**(2026-08-19)。読み手からは1本の文章。
-	//   ⚠分けた理由は英語側の都合＝odfrc は StringTable の1文字列に長さ上限があり、ブック比較の節を
-	//     足す余地が enUS の kKCMHintKey に無かった([[odfrc-long-string-limit]])。上限は文字列ごとに
-	//     掛かるので、2本に割れば回避できる。**割れ目はブックの節を置きたい位置**(オーバーセットの
-	//     検出の前)で決めてあり、2本目は「ブック比較以降の後半すべて」＝免責文もその末尾にある。
-	//   ★**Append する前に Translate 済みでなければならない**: KCMLoc::Text は
-	//     「日本語 UI なら日本語リテラル、他は enUS テーブルを引いた結果」を返す**完成テキスト**
-	//     (untranslatable)なので、連結しても翻訳キーとして壊れない。**キー同士を連結してはいけない。**
+	// ★The text is **kept in two parts and joined here**; the reader sees one piece of writing.
+	//   ⚠The split is for the English side: odfrc caps the length of one string in a StringTable,
+	//     and there was no room left in the enUS kKCMHintKey for the book section
+	//     ([[odfrc-long-string-limit]]). The cap is per string, so two parts clear it. **The seam is
+	//     where the book section had to go** (before "finding overset"), and the second part is
+	//     everything from there on, the disclaimer at its end included.
+	//   ★**Each part must be translated BEFORE it is appended**: KCMLoc::Text returns **finished
+	//     text** (marked untranslatable) -- the Japanese literal on a Japanese UI, the enUS table’s
+	//     string otherwise -- so joining them cannot break a translation key. **Never join keys to
+	//     each other.**
 	PMString usage = KCMLoc::Text(kKCMHintKey, KCMJa::kHint);
 	usage.Append(KCMLoc::Text(kKCMHint2Key, KCMJa::kHint2));
 	usage.SetTranslatable(kFalse);
 
 	CAlert::ModalAlert
 	(
-		// 完成済みテキスト(キーではない): 日本語 UI なら日本語、他は enUS テーブルの英語。
-		// ★使い方の案内は日本語 UI では日本語で出す(2026-08-06 ユーザー指示)。初めて使う人への説明なので、
-		//   メニュー/パネル/ステータス行を英語で統一する方針の例外にする(KBS と同じ線引き)。
+		// Finished text, not a key: Japanese on a Japanese UI, the enUS table’s English otherwise.
+		// ★The how-to-use text is shown in Japanese on a Japanese UI (user’s instruction). It explains
+		//   the plug-in to someone using it for the first time, so it is the exception to keeping the
+		//   menus, the panel and the status line English (the same line KBS draws).
 		usage,
 		kOKString,					// OK button
 		kNullString,				// No second button
@@ -1082,46 +1156,55 @@ void KCMActionComponent::DoUsage()
 	);
 }
 
-// (KCMDoSplitTarget(Split Target 90/10)は 2026-07-04 撤去。実装全文と実測知見は
-//  docs/ai-notes/kescm-split-target-mechanism.md と git 履歴 69c4b07 に保存=他プラグインへの転用候補)
+// (KCMDoSplitTarget (Split Target 90/10) was removed. The whole implementation and what was
+//  measured about it are kept in docs/ai-notes/kescm-split-target-mechanism.md and in the git
+//  history at 69c4b07 ＝ a candidate for reuse in another plug-in.)
 
 
 //========================================================================================
-// Find Overset(フライアウト): アクティブ1文書を走査し、overset のあるページに十字を出す/消す。
-// 比較とは完全に独立。状態は model 側が持ち、ここからは IKCMMarkData / IKCMCompareFacade で読み書きする。
+// Find Overset (flyout): scan one active document and put a cross on -- or clear it from -- every
+// page with overset text.
+// Entirely independent of the comparison. The state belongs to the model side and is read and
+// written from here through IKCMMarkData / IKCMCompareFacade.
 //========================================================================================
 
-// (アクティブ文書の解決は KCMActiveDocDB(KCMCore)に統合。2026-07-25 重複解消)
+// (Resolving the active document is gathered into KCMActiveDocDB (KCMCore); the duplicate here
+//  was removed.)
 
-/* DoFindOversetToggle — フライアウト「Find Overset」トグル。
-   OFF→ON: 走査対象文書(比較中はTarget/それ以外はアクティブ)を走査→ overset を反映。
-   ON→OFF: 集合を空にしてトグル OFF、走査していた文書を再描画して目印を消す。 */
+/* DoFindOversetToggle - the "Find Overset" flyout toggle.
+   OFF -> ON: scan the target document (the Target while comparing, the active document
+   otherwise) and apply the overset it finds.
+   ON -> OFF: empty the set, turn the toggle off, and repaint the scanned document to clear the
+   marks. */
 void KCMActionComponent::DoFindOversetToggle()
 {
-	// ON→OFF: ＋を消す。
+	// ON -> OFF: clear the crosses.
 	InterfacePtr<IKCMMarkData> marks(Utils<IKCMMarkData>().QueryUtilInterface());
 	if (marks->GetOversetOn())
 	{
 		IDataBase* prevDB = marks->GetOversetDB();
-		// Pages パネルのサムネイルから＋を消すため、消える前にページ集合を控える。
+		// Note the page set before it goes, so the crosses can be cleared from the Pages panel
+		// thumbnails.
 		std::vector<UID> prevPages;
 		marks->GetOversetPageUIDs(prevPages);
 		Utils<IKCMCompareFacade>()->ClearOverset();
-		KCMRefreshThumbnailsForPages(prevDB, prevPages);	// サムネイルを作り直して＋を消す
-		// スクロールバー地図: 比較もしていなければ全窓から撤去、比較中なら残して赤帯だけ描き直す。
+		KCMRefreshThumbnailsForPages(prevDB, prevPages);	// rebuild the thumbnails so the crosses go
+		// The scrollbar map: with nothing being compared, take it out of every window; while comparing,
+		// keep it and repaint the red bands alone.
 		if (Utils<IKCMCompareFacade>()->IsArmed())
 			KCMScrollMapInvalidateAll();
 		else
 			KCMScrollMapDetachAll();
-		Utils<IKCMCompareFacade>()->InvalidateDB(prevDB);	// nil 安全(他の呼び出しと同じ)
-		KCMRefreshNavPosition();	// Prev/Next から overset 箇所を外す(比較のみ/対象なしへ)
+		Utils<IKCMCompareFacade>()->InvalidateDB(prevDB);	// nil-safe, as the other calls are
+		KCMRefreshNavPosition();	// take the overset places out of Prev/Next (leaving the comparison alone, or nothing at all)
 		PMString msg("Find Overset: off.");
 		msg.SetTranslatable(kFalse);
 		KCMSetStatus(msg);
 		return;
 	}
 
-	// OFF→ON: 走査対象文書(比較中は Target、未 arm はアクティブ)を走査して反映。
+	// OFF -> ON: scan the target document (the Target while comparing, the active one otherwise)
+	// and apply the result.
 	IDataBase* db = Utils<IKCMCompareFacade>()->GetOversetScanTargetDB();
 	if (db == nil)
 	{
@@ -1132,12 +1215,13 @@ void KCMActionComponent::DoFindOversetToggle()
 	}
 	Utils<IKCMCompareFacade>()->ApplyOversetForDoc(db);
 
-	// ★トグルが実際に立ったかを聞いてから報告する(2026-08-17)。ApplyOversetForDoc は渡された db が
-	//   文書リストに居なければ**何もせず戻る**(閉じた文書のポインタを deref しないための最終ライン防御)
-	//   ので、そのときトグルは OFF のまま。以前はここが無条件に "on" と書いていたため、
-	//   **OFF なのに「on」と報告し、フライアウトのチェックだけが外れている**状態になり得た。
-	//   ⚠到達条件は稀＝GetOversetScanTargetDB() が返した db がその直後に死んでいる場合(クローズの生存
-	//   スイープ漏れ)。稀でも「表示と実態が食い違う」形なので、状態を読み直して答える。
+	// ★Ask whether the toggle actually went up before reporting. ApplyOversetForDoc **does nothing**
+	//   when the db it is handed is not in the document list (the last line of defence against
+	//   dereferencing a closed document), and then the toggle is still OFF. This used to report "on"
+	//   unconditionally, so it could say "on" **while it was OFF and the flyout check was clear**.
+	//   ⚠It is a rare path ＝ the db GetOversetScanTargetDB() answered with died immediately
+	//     afterwards (a gap in the close sweep). Rare or not, it is the shape where the display and
+	//     the truth disagree, so the state is read back and reported.
 	if (!Utils<IKCMMarkData>()->GetOversetOn())
 	{
 		PMString msg("Find Overset: document is gone.");
@@ -1153,13 +1237,13 @@ void KCMActionComponent::DoFindOversetToggle()
 	KCMSetStatus(msg);
 }
 
-/* DoRefreshOverset — フライアウト「Refresh Overset」。Find Overset が ON のときだけ有効(OFF時は
-   UpdateActionStates で灰色)。アクティブ文書を再走査して集合を貼り直す。文書が切り替わっていたら
-   前の文書の十字も消す。 */
+/* DoRefreshOverset - the "Refresh Overset" flyout item. Live only while Find Overset is ON (it is
+   greyed by UpdateActionStates otherwise). It rescans the active document and puts the set up
+   again; if the document has changed, the previous one’s crosses are cleared too. */
 void KCMActionComponent::DoRefreshOverset()
 {
 	if (!Utils<IKCMMarkData>()->GetOversetOn())
-		return;	// OFF時は無効(保険。通常はメニューが灰色で呼ばれない)
+		return;	// inactive while OFF (a safety net; normally the menu is greyed and this is not reached)
 
 	IDataBase* db = Utils<IKCMCompareFacade>()->GetOversetScanTargetDB();
 	if (db == nil)
@@ -1169,11 +1253,12 @@ void KCMActionComponent::DoRefreshOverset()
 		KCMSetStatus(msg);
 		return;
 	}
-	Utils<IKCMCompareFacade>()->ApplyOversetForDoc(db);	// 再走査・反映(別文書なら前の文書の目印も消す)は共有処理に集約
+	Utils<IKCMCompareFacade>()->ApplyOversetForDoc(db);	// rescan and apply (with another document, the previous one’s marks are cleared as well) - gathered in the shared call
 
-	// ★こちらに上の ON 経路と同じ読み直しは要らない(2026-08-17 に数えて確認)。Apply が db の死亡で早期
-	//   return しても**トグルは既に ON** なので「on と言いながら OFF」にはならず、前回の件数がそのまま
-	//   出る＝「再走査したが増減が無かった」と見分けが付かないだけ。∴ 実行文は足さない。
+	// ★The read-back the ON route above does is not needed here. Even if Apply returns early because
+	//   the db has died, **the toggle is already ON**, so it cannot say "on" while it is OFF; the
+	//   previous count is simply reported again, which is indistinguishable from "rescanned and
+	//   nothing changed". ∴ no statement is added.
 	PMString msg("Refresh Overset: ");
 	msg.SetTranslatable(kFalse);
 	msg.AppendNumber(Utils<IKCMMarkData>()->GetOversetPageCount());
@@ -1185,10 +1270,12 @@ void KCMActionComponent::DoRefreshOverset()
 // It opens the distribution URL (kKCMRepoURL) in the default browser. ⚠**About does not carry
 // that URL**: DoAbout shows one line of name and version. The other user of the URL is the
 // illustration's tooltip (KCMIconTip.cpp). Nothing here touches the document model
-// 触れない(=OSへの外部起動要求のみ)ため、Command 化は不要。
-// GoToURLUtils::GoToURL は IURLAccess(hyperlink 用の内部インターフェイス)経由で Win/Mac 双方の既定
-// ブラウザを起動する InDesign 純正のユーティリティ関数(PUBLIC_DECL、boss/IID 取得不要)。
-// isAGoURL=kFalse は Adobe の "go.adobe.com" 短縮リンク専用フラグで、通常の外部URLでは使わない。
+// (it only asks the OS to launch something), so it needs no Command.
+// GoToURLUtils::GoToURL is InDesign’s own utility function, which launches the default browser on
+// Windows and the Mac alike through IURLAccess, the internal interface behind hyperlinks
+// (PUBLIC_DECL; no boss and no IID have to be obtained).
+// isAGoURL=kFalse: that flag is only for Adobe’s "go.adobe.com" short links and is not used for an
+// ordinary external URL.
 void KCMOpenAboutURL()
 {
 	PMString url(kKCMRepoURL);
@@ -1196,4 +1283,4 @@ void KCMOpenAboutURL()
 	GoToURLUtils::GoToURL(url, kFalse);
 }
 
-// KCMActionComponent.cpp 終わり。
+// End, KCMActionComponent.cpp.
