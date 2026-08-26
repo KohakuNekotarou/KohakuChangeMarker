@@ -366,10 +366,10 @@ static bool16 KCMCmykDocsAlive()
 		return kFalse;
 	if (sCmykOtherDB != nil)
 		return Utils<IKCMCompareFacade>()->ArmedDocsAlive();
-	ISession* session = GetExecutionContextSession();	// can be nil during shutdown
-	InterfacePtr<IApplication> app(session != nil ? session->QueryApplication() : nil);
-	InterfacePtr<IDocumentList> docList(app ? app->QueryDocumentList() : nil);
-	return (docList != nil && docList->FindDocByDataBase(sCmykHoverDB) != nil) ? kTrue : kFalse;
+	// Liveness is the model's answer, and it is already on the boundary: IsDocDBOpen is
+	// KCMIsDocDBOpen (KCMCore.h), the same pointer comparison against FindDocByDataBase that this
+	// used to spell out for itself.
+	return Utils<IKCMCompareFacade>()->IsDocDBOpen(sCmykHoverDB);
 }
 
 bool16 KCMTrackerUpdateCmykDrag()

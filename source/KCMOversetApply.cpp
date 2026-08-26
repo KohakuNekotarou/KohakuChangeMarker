@@ -45,9 +45,7 @@ void KCMApplyOversetForDoc(IDataBase* db)
 	//   would dereference a released IDataBase -- so liveness is checked once, here. The check
 	//   itself only compares pointers through FindDocByDataBase and dereferences nothing, which is
 	//   KCM's rule everywhere. A dead one simply returns.
-	InterfacePtr<IApplication> app(GetExecutionContextSession() ? GetExecutionContextSession()->QueryApplication() : nil);
-	InterfacePtr<IDocumentList> docList(app != nil ? app->QueryDocumentList() : nil);
-	if (docList == nil || docList->FindDocByDataBase(db) == nil)
+	if (!KCMIsDocDBOpen(db))
 		return;
 
 	// Remember what the last scan looked at: moving to another document means clearing that one's
