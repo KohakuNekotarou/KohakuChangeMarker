@@ -825,6 +825,13 @@ bool16     KCMIsArmed()        { return sPeekArmed; }
 IDataBase* KCMArmedTargetDB()  { return sPeekTargetDB; }
 IDataBase* KCMArmedSourceDB()  { return sPeekSourceDB; }
 
+// KCMIsComparedDoc (declared in KCMCore.h) -- the three above in the combination the per-page
+// flags always want. It sits here because that is where the three it is built from live.
+bool16 KCMIsComparedDoc(IDataBase* db)
+{
+	return KCMIsArmed() && (db == sPeekTargetDB || db == sPeekSourceDB);
+}
+
 //========================================================================================
 // KCMHandleDocsClosed (declared in KCMCore.h)
 //   Called right after documents close (from the kAfterCloseDoc responder). Every database KCM is
@@ -996,9 +1003,7 @@ void KCMHandleDocsClosed()
 		// anyway, so nothing is touched.
 		if (!quitting)
 		{
-			PMString s("marks cleared");	// the same message the Stop button reports
-			s.SetTranslatable(kFalse);
-			KCMNotifyStatus(s);
+			KCMSayStatus("marks cleared");	// the same message the Stop button reports
 
 			KCMInvalidateDB(survivorTargetDB);
 			if (survivorOrigDB != survivorTargetDB)

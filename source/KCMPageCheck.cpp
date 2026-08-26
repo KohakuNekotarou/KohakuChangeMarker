@@ -93,7 +93,7 @@ void KCMPageCheckToggleSelectedPages()
 
 	// Ticking is only possible while a comparison is running (armed) and the selected document is
 	// the Target or the Source.
-	if (!KCMIsArmed() || (db != KCMArmedTargetDB() && db != KCMArmedSourceDB()))
+	if (!KCMIsComparedDoc(db))
 		return;
 
 	// Narrow the selection to the pages that may be ticked (which depends on the mode -- see
@@ -103,24 +103,12 @@ void KCMPageCheckToggleSelectedPages()
 	if (pages.empty())
 		return;		// nothing eligible in the selection; the menu should be disabled anyway
 
-	const bool16 anyUnchecked = sChecked.AnyNotIn(db, pages);
+	const bool16 anyUnchecked = sChecked.ToggleAll(db, pages);
 
 	PMString msg;
 	msg.SetTranslatable(kFalse);
-	if (anyUnchecked)
-	{
-		for (size_t i = 0; i < pages.size(); ++i)
-			sChecked.Insert(db, pages[i]);
-		msg.Append("check +");
-		msg.AppendNumber((int32)pages.size());
-	}
-	else
-	{
-		for (size_t i = 0; i < pages.size(); ++i)
-			sChecked.Erase(db, pages[i]);
-		msg.Append("check -");
-		msg.AppendNumber((int32)pages.size());
-	}
+	msg.Append(anyUnchecked ? "check +" : "check -");
+	msg.AppendNumber((int32)pages.size());
 
 	// The total is counted after the change (Erase has already dropped the document's entry when
 	// unticking emptied it, so 0 comes back).
@@ -162,7 +150,7 @@ KCMPageToggleState KCMPageCheckGetToggleState()
 
 	// Enabled only while a comparison is running and the selected document is the Target or the
 	// Source; grey otherwise.
-	if (!KCMIsArmed() || (db != KCMArmedTargetDB() && db != KCMArmedSourceDB()))
+	if (!KCMIsComparedDoc(db))
 		return st;
 
 	// Disabled when the selection holds no page that may be ticked. In the Pixel mode Check does
@@ -672,9 +660,7 @@ void KCMPageCheckSaveToFile()
 {
 	if (!KCMIsArmed())
 	{
-		PMString msg("Save: start first");	// the status line is small (its Frame is in ui/KCMUI.fr), so keep it short
-		msg.SetTranslatable(kFalse);
-		KCMNotifyStatus(msg, kTrue /*forceRedrawNow*/);
+		KCMSayStatus("Save: start first", kTrue /*forceRedrawNow*/);	// the status line is small (its Frame is in ui/KCMUI.fr), so keep it short
 		return;
 	}
 
@@ -688,9 +674,7 @@ void KCMPageCheckSaveToFile()
 	{
 		// The file exists but cannot be read, or is broken. Overwriting it now would delete what
 		//   was saved for every other document, so give up instead.
-		PMString err("Save failed (read old)");
-		err.SetTranslatable(kFalse);
-		KCMNotifyStatus(err, kTrue /*forceRedrawNow*/);
+		KCMSayStatus("Save failed (read old)", kTrue /*forceRedrawNow*/);
 		return;
 	}
 
@@ -740,18 +724,14 @@ void KCMPageCheckSaveToFile()
 	//   file only ever rides along with a save that has something to write.**
 	if (savedDocs == 0)
 	{
-		PMString msg(skippedUnsaved > 0 ? "Save doc first" : "Nothing to save");
-		msg.SetTranslatable(kFalse);
-		KCMNotifyStatus(msg, kTrue /*forceRedrawNow*/);
+		KCMSayStatus(skippedUnsaved > 0 ? "Save doc first" : "Nothing to save", kTrue /*forceRedrawNow*/);
 		return;
 	}
 
 	IDFile outFile;
 	if (!KCMWriteSetsMap(merged, outFile))
 	{
-		PMString err("Save failed (write)");	// covers a failed open, write or close alike
-		err.SetTranslatable(kFalse);
-		KCMNotifyStatus(err, kTrue /*forceRedrawNow*/);
+		KCMSayStatus("Save failed (write)", kTrue /*forceRedrawNow*/);	// covers a failed open, write or close alike
 		return;
 	}
 
@@ -768,18 +748,14 @@ void KCMPageCheckLoadFromFile()
 {
 	if (!KCMIsArmed())
 	{
-		PMString msg("Load: start first");	// the status line is small, so keep it short
-		msg.SetTranslatable(kFalse);
-		KCMNotifyStatus(msg, kTrue /*forceRedrawNow*/);
+		KCMSayStatus("Load: start first", kTrue /*forceRedrawNow*/);	// the status line is small, so keep it short
 		return;
 	}
 
 	std::map<std::string, KCMDocSets> saved;
 	if (!KCMReadSetsMap(saved))
 	{
-		PMString msg("No saved data");
-		msg.SetTranslatable(kFalse);
-		KCMNotifyStatus(msg, kTrue /*forceRedrawNow*/);
+		KCMSayStatus("No saved data", kTrue /*forceRedrawNow*/);
 		return;
 	}
 
@@ -837,9 +813,7 @@ void KCMPageCheckLoadFromFile()
 
 	if (!anyDocFound)
 	{
-		PMString msg("No saved data for docs");
-		msg.SetTranslatable(kFalse);
-		KCMNotifyStatus(msg, kTrue /*forceRedrawNow*/);
+		KCMSayStatus("No saved data for docs", kTrue /*forceRedrawNow*/);
 		return;
 	}
 
@@ -863,9 +837,7 @@ void KCMPageCheckLoadFromFile()
 		{
 			KCMToggleStartStop();		// armed, so this takes the Stop branch: strip removed,
 										// disarmed, ticks and registrations dropped
-			PMString msg("Load cancelled");
-			msg.SetTranslatable(kFalse);
-			KCMNotifyStatus(msg, kTrue /*forceRedrawNow*/);
+			KCMSayStatus("Load cancelled", kTrue /*forceRedrawNow*/);
 			return;
 		}
 	}

@@ -166,6 +166,14 @@ void KCMNotifyStatus(const PMString& s, bool16 forceRedrawNow)
 	KCMNotify(kKCMStatusTextMessage, &payload);
 }
 
+// KCMSayStatus (declared in KCMModelNotify.h) -- the literal form of the above.
+void KCMSayStatus(const char* text, bool16 forceRedrawNow)
+{
+	PMString msg(text);
+	msg.SetTranslatable(kFalse);
+	KCMNotifyStatus(msg, forceRedrawNow);
+}
+
 // KCMStoreSessionStatus (declared in KCMModelNotify.h) -- remember, do not notify.
 // Two callers: the UI's KCMSetStatus, and KCMNotifyStatus above, which stores through here and
 // then notifies. A message raised by a UI action is painted by the UI itself and needs no

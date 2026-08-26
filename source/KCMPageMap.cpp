@@ -204,10 +204,10 @@ void KCMPageMapToggleSelectedPages()
 	// Registering is only possible while a comparison is running (armed) and the selected
 	//   document is the Target or the Source. KCMPageMapGetToggleState's answer will have greyed
 	//   the menu out already, but the rule is enforced here too.
-	if (!KCMIsArmed() || (db != KCMArmedTargetDB() && db != KCMArmedSourceDB()))
+	if (!KCMIsComparedDoc(db))
 		return;
 
-	const bool16 anyUnregistered = sRegistered.AnyNotIn(db, pages);
+	const bool16 anyUnregistered = sRegistered.ToggleAll(db, pages);
 
 	// The panel's status area is small in both width and lines, and it is kDontEllipsize, so
 	// nothing is shortened for you: keep the message to one short line.
@@ -221,24 +221,10 @@ void KCMPageMapToggleSelectedPages()
 	//   as a different number ([[ellipsis-in-status-line-breaks-numbers]]).
 	PMString msg;
 	msg.SetTranslatable(kFalse);
-	if (anyUnregistered)
-	{
-		for (size_t i = 0; i < pages.size(); ++i)
-			sRegistered.Insert(db, pages[i]);
-		msg.Append("+");
-		msg.AppendNumber((int32)pages.size());
-		msg.Append(" ");
-		msg.Append(KCMPageMapRoleWord(db));
-	}
-	else
-	{
-		for (size_t i = 0; i < pages.size(); ++i)
-			sRegistered.Erase(db, pages[i]);
-		msg.Append("-");
-		msg.AppendNumber((int32)pages.size());
-		msg.Append(" ");
-		msg.Append(KCMPageMapRoleWord(db));
-	}
+	msg.Append(anyUnregistered ? "+" : "-");
+	msg.AppendNumber((int32)pages.size());
+	msg.Append(" ");
+	msg.Append(KCMPageMapRoleWord(db));
 
 	// The total is counted after the change (Erase has already dropped the document's entry when
 	// unregistering emptied it, so 0 comes back).
@@ -271,9 +257,7 @@ void KCMPageMapToggleSelectedPages()
 		{
 			KCMToggleStartStop();		// armed, so this takes the Stop branch: marks, registrations
 										// and ticks dropped, disarmed, panel updated
-			PMString cmsg("Recompare cancelled");
-			cmsg.SetTranslatable(kFalse);
-			KCMNotifyStatus(cmsg, kTrue /*forceRedrawNow*/);
+			KCMSayStatus("Recompare cancelled", kTrue /*forceRedrawNow*/);
 			return;
 		}
 		msg.Append(" (recompared)");
@@ -336,7 +320,7 @@ KCMPageToggleState KCMPageMapGetToggleState()
 	// Registering is only possible while a comparison is running (armed) and the selected
 	//   document is the Target or the Source; anything else is greyed out. That covers a Pages
 	//   panel showing no comparison at all, and one showing some third document.
-	if (!KCMIsArmed() || (db != KCMArmedTargetDB() && db != KCMArmedSourceDB()))
+	if (!KCMIsComparedDoc(db))
 		return st;
 
 	const int32 regCount = sRegistered.CountIn(db, pages);

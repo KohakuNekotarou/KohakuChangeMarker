@@ -214,6 +214,15 @@ void		KCMRebuildStoryEdits(IDataBase* targetDB, IDataBase* sourceDB);
 IDataBase*	KCMArmedTargetDB();
 IDataBase*	KCMArmedSourceDB();
 
+// kTrue when a comparison is running AND db is one of the two documents in it.
+//
+// **The per-page flags both refuse to work anywhere else** -- registering a page or ticking it
+// only means something inside a comparison -- and each of the four places that enforce it wrote
+// the same expression out. The menu's kCustomEnabling has usually greyed the item out before any
+// of them is reached; this is the belt to that pair of braces, which is why it is enforced in the
+// command as well as asked by the menu.
+bool16		KCMIsComparedDoc(IDataBase* db);
+
 // The current print-mark settings, used to restore the check box and the radio to the real state
 // when the panel is re-opened.
 bool16		KCMGetPrintMarks();		// print marks on/off

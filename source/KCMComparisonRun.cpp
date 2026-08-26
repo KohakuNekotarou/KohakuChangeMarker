@@ -103,8 +103,7 @@ void KCMStopComparison()
 	// Attach+Invalidate and Prev/Next together.
 	if (KCMDrawEventHandler::sOversetOn)
 		KCMApplyOversetForDoc(KCMDrawEventHandler::sOversetDB);
-	PMString s("marks cleared"); s.SetTranslatable(kFalse);
-	KCMNotifyStatus(s);
+	KCMSayStatus("marks cleared");
 
 	// **Cleared is emitted a second time, on purpose.** When KCMDoClearMarks emitted it, the
 	// disarm three lines above had not run yet, so the armed state was still up and the panel
@@ -189,10 +188,8 @@ void KCMToggleStartStop()
 	if (!KCMResolveComparisonPair(target, source))
 	{
 		// Name what is actually missing: if the target resolved, only the Source is absent.
-		PMString s(target == nil ? "Target and source documents not found."
+		KCMSayStatus(target == nil ? "Target and source documents not found."
 		                         : "Source document not found.");
-		s.SetTranslatable(kFalse);
-		KCMNotifyStatus(s);
 		// This branch needs the notification too. It returns from inside the else, so it never
 		// reaches the end of the function -- an early implementation refreshed the panel only at
 		// the end and left this path without a redraw.

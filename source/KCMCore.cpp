@@ -652,9 +652,7 @@ ErrorCode KCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMString
 	// the loop blocks. A differential run rasterises few pages and finishes at once, but saying so
 	// does no harm.
 	{
-		PMString busyMsg("Comparing changes...");
-		busyMsg.SetTranslatable(kFalse);
-		KCMNotifyStatus(busyMsg, kTrue /*forceRedrawNow*/);
+		KCMSayStatus("Comparing changes...", kTrue /*forceRedrawNow*/);
 	}
 
 	// Settle up front which pages will actually be rasterised (as indices into tPages/sPages). That

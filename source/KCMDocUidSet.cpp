@@ -143,6 +143,27 @@ void KCMDocUidSet::Erase(IDataBase* db, UID uid)
 		fMap.erase(it);
 }
 
+bool16 KCMDocUidSet::ToggleAll(IDataBase* db, const std::vector<UID>& uids)
+{
+	if (db == nil || uids.empty())
+		return kFalse;
+
+	// The lock is held across the decision and the change alike. **KCMMarkStateLock is recursive**
+	// (the discipline is in KCMThreadSafety.h), so the three calls below take it again harmlessly
+	// -- and going through them is the point: the rule that an entry which became empty is dropped
+	// at once lives in Erase, and writing the loop here again would be a second copy of it.
+	KCMMarkStateLock lock(KCMMarkStateMutex());
+	const bool16 anyNotIn = AnyNotIn(db, uids);
+	for (size_t i = 0; i < uids.size(); ++i)
+	{
+		if (anyNotIn)
+			Insert(db, uids[i]);
+		else
+			Erase(db, uids[i]);
+	}
+	return anyNotIn;
+}
+
 // (ClearDoc was removed: its only caller KCMPageMapClearAll had no caller of its own. When one
 //  document's set has to be dropped, Replace(db, empty) does exactly that -- entry and all.)
 
