@@ -137,7 +137,7 @@ struct KCMParaAttrs
 		    single frame, and the cells (which live after the whole of the body) are text+break
 		    each, with no row terminator among them.
 		So TotalLength = text + BodyRowCount per table + sum(cell text) + 1 per cell.
-		The "+1 per cell" needs nothing here -- a cell IS a paragraph, and ParagraphStarts already
+		The "+1 per cell" needs nothing here -- a cell IS a paragraph, and ComputedLength already
 		adds one break character per paragraph. What this field carries is the table's own run.
 
 		@warning **the reading this replaced** said "one for the table, one at the end of every row
@@ -537,13 +537,46 @@ inline void ExtractParagraphs(const std::string& xml,
 	if (storyStart == std::string::npos || storyEnd == std::string::npos || storyEnd < storyStart)
 		return;
 
+	/* OpenRange
+	   What the <CharacterStyleRange> the reader is inside puts over the characters it holds.
+
+	   **THE FIVE MOVE TOGETHER, AND USED TO BE FIVE SEPARATE VARIABLES.** They are opened by one
+	   tag, read by one branch and closed by another, and a nested table saves and restores all of
+	   them at once -- which was five lines in each of four places, and a sixth piece of state
+	   would have had to be added to every one of them. Naming the group is what makes the four
+	   agree by construction.
+	*/
+	struct OpenRange
+	{
+		std::string	fRuby;			// the ruby of the range we are inside, "" for none
+		bool16		fGroup;			// ...and whether that one is group ruby
+		bool16		fContinues;		// ...and whether it CONTINUES the span before it (RubyFlag="2")
+		bool16		fStarted;		// ...and whether a span was already opened inside THIS range
+		std::string	fKenten;		// the KentenKind of that same range, "" for none
+
+		OpenRange() : fGroup(kFalse), fContinues(kFalse), fStarted(kFalse) {}
+
+		/** The range has ended.
+
+			@warning **fStarted is deliberately NOT cleared here.** It says whether a span was
+			  already opened inside the range, and it is the OPENING tag that sets it to kFalse --
+			  which is where it belongs, since that is the moment a range has contributed nothing
+			  yet. Clearing it here as well would be the same fact decided in two places
+			  ([[one-question-one-place]]), and the two would have to be kept agreeing for a state
+			  that nothing reads while no range is open.
+		*/
+		void Close()
+		{
+			fRuby.clear();
+			fGroup = kFalse;
+			fContinues = kFalse;
+			fKenten.clear();
+		}
+	};
+
 	std::string current;
 	KCMParaAttrs currentAttrs;		// spans found so far in the paragraph being built
-	std::string openRuby;				// the ruby of the CharacterStyleRange we are inside, "" for none
-	bool16 openGroup = kFalse;			// ...and whether that one is group ruby
-	bool16 openContinues = kFalse;		// ...and whether it CONTINUES the span before it (RubyFlag="2")
-	bool16 openStarted = kFalse;		// ...and whether a span was already opened inside THIS range
-	std::string openKenten;				// the KentenKind of that same range, "" for none
+	OpenRange open;					// what the CharacterStyleRange being read puts over its text
 	int32 paraPos = 0;					// code points appended to `current` so far
 	size_t pos = storyStart;
 
@@ -572,7 +605,6 @@ inline void ExtractParagraphs(const std::string& xml,
 	//   So the rule is not "tables in the body"; it is "a table charges the thread it stands in",
 	//     and a cell IS a thread. The same three counters do for both, and what has to be kept is
 	//     the PLACE: which table a cell belongs to, and whose paragraph a nested table charges.
-	//     is the PLACE: which table a cell belongs to, and whose paragraph a nested table charges.
 	int32 tableDepth = 0;				// >0 while inside a table (tables can nest)
 	int32 nextTableOrdinal = 0;			// every table, nested ones included, in the order they appear
 	std::vector<int32> openTables;		// the ordinal of each table now open, innermost last
@@ -600,11 +632,7 @@ inline void ExtractParagraphs(const std::string& xml,
 		int32				fCellCol;
 		// @warning the character range state as well: the inner table's cells open and close ranges
 		//   of their own, which would otherwise leave the parent's looking closed.
-		std::string			fOpenRuby;
-		bool16				fOpenGroup;
-		bool16				fOpenContinues;
-		bool16				fOpenStarted;
-		std::string			fOpenKenten;
+		OpenRange			fOpen;
 	};
 	std::vector<Suspended> suspended;
 
@@ -701,11 +729,7 @@ inline void ExtractParagraphs(const std::string& xml,
 			held.fCellOrdinal = cellOrdinal;
 			held.fCellRow = cellRow;
 			held.fCellCol = cellCol;
-			held.fOpenRuby = openRuby;
-			held.fOpenGroup = openGroup;
-			held.fOpenContinues = openContinues;
-			held.fOpenStarted = openStarted;
-			held.fOpenKenten = openKenten;
+			held.fOpen = open;
 
 			const int32 myOrdinal = nextTableOrdinal;
 			if (held.fText.empty())
@@ -730,11 +754,7 @@ inline void ExtractParagraphs(const std::string& xml,
 			cellOrdinal = KCMParaAttrs::kNotACell;
 			cellRow = -1;
 			cellCol = -1;
-			openRuby.clear();
-			openGroup = kFalse;
-			openContinues = kFalse;
-			openStarted = kFalse;
-			openKenten.clear();
+			open = OpenRange();			// the inner table is read from a clean slate
 
 			openTables.push_back(nextTableOrdinal++);
 			++tableDepth;
@@ -759,11 +779,7 @@ inline void ExtractParagraphs(const std::string& xml,
 					cellOrdinal = held.fCellOrdinal;
 					cellRow = held.fCellRow;
 					cellCol = held.fCellCol;
-					openRuby = held.fOpenRuby;
-					openGroup = held.fOpenGroup;
-					openContinues = held.fOpenContinues;
-					openStarted = held.fOpenStarted;
-					openKenten = held.fOpenKenten;
+					open = held.fOpen;
 					suspended.pop_back();
 				}
 			}
@@ -837,7 +853,7 @@ inline void ExtractParagraphs(const std::string& xml,
 		}
 		else if (tableDepth > 0 && xml.compare(lt, 7, "</Cell>") == 0)
 		{
-			// The cell's text ends here. Its own break character is what ParagraphStarts adds to
+			// The cell's text ends here. Its own break character is what ComputedLength adds to
 			// every paragraph, which is exactly the "+1 per cell" the measurement asked for.
 			Flush::Do(current, currentAttrs, paraPos, paragraphs, attrsPerPara);
 			cellOrdinal = KCMParaAttrs::kNotACell;	// what follows is not this cell's
@@ -860,7 +876,7 @@ inline void ExtractParagraphs(const std::string& xml,
 			DecodeEntities(decoded);
 			const int32 pieceLen = CountCodePoints(decoded);
 
-			if (!openRuby.empty() && pieceLen > 0)
+			if (!open.fRuby.empty() && pieceLen > 0)
 			{
 				// **WHETHER THIS CONTINUES THE SPAN BEFORE IT IS INDESIGN'S ANSWER, NOT A GUESS MADE
 				//   HERE.** RubyFlag says it: "1" opens a run, "2" carries the same run onto the next
@@ -875,19 +891,18 @@ inline void ExtractParagraphs(const std::string& xml,
 				//   (2) this range has already contributed -- one range can hold several <Content> runs
 				//     when the base text changes formatting part-way through, and that is one ruby over
 				//     one stretch, not two.
-				//     ruby over one stretch, not two.
-				const bool16 continues = (openContinues || openStarted) ? kTrue : kFalse;
+				const bool16 continues = (open.fContinues || open.fStarted) ? kTrue : kFalse;
 				if (continues && !currentAttrs.fRuby.empty() &&
-					currentAttrs.fRuby.back().fValue == openRuby &&
+					currentAttrs.fRuby.back().fValue == open.fRuby &&
 					currentAttrs.fRuby.back().fStart + currentAttrs.fRuby.back().fLen == paraPos)
 				{
 					currentAttrs.fRuby.back().fLen += pieceLen;
 				}
 				else
 				{
-					currentAttrs.fRuby.push_back(KCMAttrSpan(paraPos, pieceLen, openRuby, openGroup));
+					currentAttrs.fRuby.push_back(KCMAttrSpan(paraPos, pieceLen, open.fRuby, open.fGroup));
 				}
-				openStarted = kTrue;
+				open.fStarted = kTrue;
 			}
 
 			// **KENTEN JOINS ADJACENT RANGES, WHERE RUBY MUST NOT** (measured on
@@ -902,17 +917,17 @@ inline void ExtractParagraphs(const std::string& xml,
 			//     comparison of these spans would read as a change to the marks themselves.
 			//     (@warning nothing compares them today -- see fKenten -- so this is what keeps the
 			//      answer right for whoever turns that back on, not something the panel depends on now.)
-			if (!openKenten.empty() && pieceLen > 0)
+			if (!open.fKenten.empty() && pieceLen > 0)
 			{
 				if (!currentAttrs.fKenten.empty() &&
-					currentAttrs.fKenten.back().fValue == openKenten &&
+					currentAttrs.fKenten.back().fValue == open.fKenten &&
 					currentAttrs.fKenten.back().fStart + currentAttrs.fKenten.back().fLen == paraPos)
 				{
 					currentAttrs.fKenten.back().fLen += pieceLen;
 				}
 				else
 				{
-					currentAttrs.fKenten.push_back(KCMAttrSpan(paraPos, pieceLen, openKenten));
+					currentAttrs.fKenten.push_back(KCMAttrSpan(paraPos, pieceLen, open.fKenten));
 				}
 			}
 
@@ -943,17 +958,17 @@ inline void ExtractParagraphs(const std::string& xml,
 			//   rule (GetRubyStrandInfo turns the attribute off when the string it read has length 0).
 			if (!flag.empty() && flag != "0" && !str.empty())
 			{
-				openRuby = str;
-				openGroup = (AttrValue(tag, "RubyType") == "GroupRuby") ? kTrue : kFalse;
-				openContinues = (flag != "1") ? kTrue : kFalse;
+				open.fRuby = str;
+				open.fGroup = (AttrValue(tag, "RubyType") == "GroupRuby") ? kTrue : kFalse;
+				open.fContinues = (flag != "1") ? kTrue : kFalse;
 			}
 			else
 			{
-				openRuby.clear();
-				openGroup = kFalse;
-				openContinues = kFalse;
+				open.fRuby.clear();
+				open.fGroup = kFalse;
+				open.fContinues = kFalse;
 			}
-			openStarted = kFalse;		// a new range has contributed nothing yet
+			open.fStarted = kFalse;		// a new range has contributed nothing yet
 
 			// **KENTEN IS ONE ATTRIBUTE ON THE RANGE** -- no flag, no run to rebuild. Measured: five
 			//   characters marked with one kind come out as ONE range carrying KentenKind, where the
@@ -962,9 +977,8 @@ inline void ExtractParagraphs(const std::string& xml,
 			//   Kenten_None into the attribute rather than removing it (SnpPerformTextAttrKenten), so a
 			//   range can carry a kind that means "no mark". Both spellings are refused because only
 			//   the attribute name has been seen in a real file so far -- the OFF value has not.
-			//   only the attribute name has been seen in a real file so far - the OFF value has not.
 			const std::string kenten = AttrValue(tag, "KentenKind");
-			openKenten = (kenten.empty() || kenten == "KentenNone" || kenten == "Kenten_None")
+			open.fKenten = (kenten.empty() || kenten == "KentenNone" || kenten == "Kenten_None")
 						 ? std::string() : kenten;
 
 			pos = gt + 1;
@@ -973,10 +987,7 @@ inline void ExtractParagraphs(const std::string& xml,
 		{
 			// Safe even for group ruby, which spans several ranges: each range carries its own
 			//   RubyString and its own flag, so the next one re-opens what it needs.
-			openRuby.clear();
-			openGroup = kFalse;
-			openContinues = kFalse;
-			openKenten.clear();
+			open.Close();
 			pos = lt + 22;
 		}
 		else if (const size_t itemNameLen = AnchoredItemTagLen(xml, lt))
@@ -994,7 +1005,6 @@ inline void ExtractParagraphs(const std::string& xml,
 			//   is the same character, so swapping a rectangle for an oval leaves the text identical.
 			//   Reporting that would mean remembering WHICH item each character was -- the same shape
 			//   as ruby, and deliberately not done in this first pass.
-			//   shape as ruby, and deliberately not done in this first pass.
 			current.append("\xEF\xBF\xBC");		// U+FFFC in UTF-8 - one code point
 			paraPos += 1;
 			pos = SkipItemElement(xml, lt, itemNameLen, storyEnd);
@@ -1059,7 +1069,7 @@ inline std::string JoinParagraphs(const std::vector<std::string>& paragraphs, in
 	  - the table's OWN RUN of characters does count -- one per body row -- because it stands in
 	    the body where the table is (KCMParaAttrs::fExtraChars has the measurements).
 
-	@warning **this is not the total.** ParagraphStarts still adds up everything, because that
+	@warning **this is not the total.** ComputedLength still adds up everything, because that
 	  total is what LengthAgrees checks against ITextModel::TotalLength. The two answer different
 	  questions and both are needed.
 
@@ -1183,6 +1193,24 @@ struct RegionPair
 	RegionPair() : fSourceStart(0), fSourceCount(0), fTargetStart(0), fTargetCount(0) {}
 };
 
+/** Add one piece to the answer.
+
+	**ONE PLACE**, because SplitRunAtPlaces below describes a piece in four different situations
+	and every one of them has to fill in all four fields. Written out at each, a field added to
+	RegionPair would be set at three of them and forgotten at the fourth -- and the piece that
+	forgot it would still compile and still look right.
+*/
+inline void AppendPair(std::vector<RegionPair>& out,
+					   int32 sourceStart, int32 sourceCount, int32 targetStart, int32 targetCount)
+{
+	RegionPair piece;
+	piece.fSourceStart = sourceStart;
+	piece.fSourceCount = sourceCount;
+	piece.fTargetStart = targetStart;
+	piece.fTargetCount = targetCount;
+	out.push_back(piece);
+}
+
 /** Cut one run of the paragraph diff into one piece per PLACE (see ParaRegion).
 
 	**WHEN IT DOES NOT CUT, IT SAYS SO BY ANSWERING WITH ONE PIECE.** Three shapes are cut:
@@ -1206,37 +1234,18 @@ inline void SplitRunAtPlaces(const std::vector<KCMParaAttrs>& sourceAttrs,
 	ParagraphRegions(sourceAttrs, aStart, aCount, aRegions);
 	ParagraphRegions(targetAttrs, bStart, bCount, bRegions);
 
-	RegionPair whole;
-	whole.fSourceStart = aStart;
-	whole.fSourceCount = aCount;
-	whole.fTargetStart = bStart;
-	whole.fTargetCount = bCount;
-
 	if (aCount == 0 && bRegions.size() > 1)
 	{
+		// Nothing of the older version is involved: every piece goes in at the same spot.
 		for (size_t i = 0; i < bRegions.size(); ++i)
-		{
-			RegionPair piece;
-			piece.fSourceStart = aStart;			// nothing of the older version is involved
-			piece.fSourceCount = 0;
-			piece.fTargetStart = bRegions[i].fStart;
-			piece.fTargetCount = bRegions[i].fCount;
-			out.push_back(piece);
-		}
+			AppendPair(out, aStart, 0, bRegions[i].fStart, bRegions[i].fCount);
 		return;
 	}
 
 	if (bCount == 0 && aRegions.size() > 1)
 	{
 		for (size_t i = 0; i < aRegions.size(); ++i)
-		{
-			RegionPair piece;
-			piece.fSourceStart = aRegions[i].fStart;
-			piece.fSourceCount = aRegions[i].fCount;
-			piece.fTargetStart = bStart;
-			piece.fTargetCount = 0;
-			out.push_back(piece);
-		}
+			AppendPair(out, aRegions[i].fStart, aRegions[i].fCount, bStart, 0);
 		return;
 	}
 
@@ -1246,22 +1255,18 @@ inline void SplitRunAtPlaces(const std::vector<KCMParaAttrs>& sourceAttrs,
 		{
 			if (!aRegions[i].SamePlaceAs(bRegions[i]))
 			{
-				out.clear();
-				out.push_back(whole);		// the versions do not pass through the same places
+				out.clear();				// the versions do not pass through the same places
+				AppendPair(out, aStart, aCount, bStart, bCount);
 				return;
 			}
 
-			RegionPair piece;
-			piece.fSourceStart = aRegions[i].fStart;
-			piece.fSourceCount = aRegions[i].fCount;
-			piece.fTargetStart = bRegions[i].fStart;
-			piece.fTargetCount = bRegions[i].fCount;
-			out.push_back(piece);
+			AppendPair(out, aRegions[i].fStart, aRegions[i].fCount,
+					   bRegions[i].fStart, bRegions[i].fCount);
 		}
 		return;
 	}
 
-	out.push_back(whole);
+	AppendPair(out, aStart, aCount, bStart, bCount);	// the run, left whole
 }
 
 /** Where the run of paragraphs belonging to ONE cell ends -- the index one past its last.
