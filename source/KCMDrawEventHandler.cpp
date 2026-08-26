@@ -313,6 +313,21 @@ static void KCMDistTransform(const uint8* mask, int32 wt, int32 ht, uint8* out)
 // KCMDrawEventHandler.h because the book comparison (KCMBookCompare.cpp) needs the identical test
 // and used to hold a copy of the same four lines.
 
+// Destroy both snapshots and both accessors. MakeEntry gives up on a page from three different
+// places and every one of them has to release the same four, in this order (an accessor before
+// the snapshot it came from). Written out at each exit, the way one of them gets left behind is
+// that a later exit is added and copies three lines out of four.
+// @warning the pointers are taken by value: the caller's own variables are dangling afterwards,
+//   which is why every call site returns immediately.
+static void KCMDropSnapshotPair(AGMImageAccessor* accSH, SnapshotUtilsEx* snapSH,
+                                AGMImageAccessor* accTH, SnapshotUtilsEx* snapTH)
+{
+	if (accSH)  delete accSH;
+	if (snapSH) delete snapSH;
+	if (accTH)  delete accTH;
+	if (snapTH) delete snapTH;
+}
+
 ErrorCode KCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef& sourceRef, bool16& changed)
 {
 	changed = kFalse;
@@ -563,10 +578,7 @@ ErrorCode KCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef& 
 						// Out of memory: release what was allocated, destroy the snapshots, and give
 						// up on this page (the same shape as MakeOrigImage's allocation failure).
 						delete[] M;
-						if (accSH)  delete accSH;
-						if (snapSH) delete snapSH;
-						if (accTH)  delete accTH;
-						if (snapTH) delete snapTH;
+						KCMDropSnapshotPair(accSH, snapSH, accTH, snapTH);
 						return kFailure;
 					}
 					e->w = wl;  e->h = hl;  e->rowBytes = rbL;  e->bpp = bppL;
@@ -596,10 +608,7 @@ ErrorCode KCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef& 
 					if (e->buf == nil)
 					{
 						delete e;
-						if (accSH)  delete accSH;
-						if (snapSH) delete snapSH;
-						if (accTH)  delete accTH;
-						if (snapTH) delete snapTH;
+						KCMDropSnapshotPair(accSH, snapSH, accTH, snapTH);
 						return kFailure;
 					}
 					BuildRing(e->buf, rbL, bppL, wl, hl, e->dist, kKCMBaseRadius);
@@ -672,11 +681,7 @@ ErrorCode KCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef& 
 		}
 	}
 
-	// Clean-up: destroy both snapshots and accessors.
-	if (accSH)  delete accSH;
-	if (snapSH) delete snapSH;
-	if (accTH)  delete accTH;
-	if (snapTH) delete snapTH;
+	KCMDropSnapshotPair(accSH, snapSH, accTH, snapTH);
 	return status;
 }
 
@@ -1035,6 +1040,39 @@ static void KCMDrawRingForPrint(IGraphicsPort* gPort, IViewPortAttributes* vpAtt
 enum { kKCMDrawModeScreen = 0, kKCMDrawModePrint = 1 };
 
 //========================================================================================
+// A page's box in SPREAD coordinates. kFalse when the UID names nothing with geometry, and
+// outRect is then left as the caller had it.
+//
+// **Every mark in this file starts here** -- the ring, the border, the "/", the "+", the tick,
+// the peek and the old-number badge all need the same rectangle in the same coordinates, and
+// each of them used to spell out the four lines below. The two warnings are why this is one
+// function rather than a shape to copy: written out eight times, they were written out ONCE and
+// referred to seven times, and a reference is what goes stale.
+//
+// The official Facade replaced a hand-built GetPathBoundingBox + ::InnerToSpreadMatrix +
+//   Transform. Worked example: snapshot/SnapTracker.cpp:621. (Line :616 of the same function
+//   takes the same page in PasteboardCoordinates -- **calling it twice with different coordinate
+//   systems is the official shape**. IGeometryFacade.h:209 lists only Pasteboard, Parent and
+//   Inner, which is an omission: the product's CPageItemAdaptiveTransform.cpp:197,362 and the
+//   public lib's CPathCreationTracker.cpp:300 call it with SpreadCoordinates.)
+//   @warning keep the IGeometry Query and its nil test -- whether this UID has geometry at all
+//     is not the Facade's guarantee (the worked example does the same in the same order).
+//     UIDRef(db, pageUID) is handed on so the Facade does not cost a second Query.
+//   @warning pass Geometry::PathBounds(). The worked example uses OuterStrokeBounds, but
+//     PathBounds is what matches GetPathBoundingBox.
+//========================================================================================
+static bool16 KCMQueryPageRect(IDataBase* db, UID pageUID, PMRect& outRect)
+{
+	InterfacePtr<IGeometry> pageGeo(db, pageUID, UseDefaultIID());
+	if (pageGeo == nil)
+		return kFalse;
+
+	outRect = Utils<Facade::IGeometryFacade>()->GetItemBounds(
+		UIDRef(db, pageUID), Transform::SpreadCoordinates(), Geometry::PathBounds());
+	return kTrue;
+}
+
+//========================================================================================
 // Drawing one page's ring. It fits e's ring image to db/pageUID's page rectangle, recomputing the
 //   ring thickness (BuildRing) as needed. Called for the Target side and for the Source side
 //   ("Always Show Marks on Source"): the Source side lays the Target's ring image over the Source
@@ -1054,25 +1092,11 @@ static void KCMDrawEntryOnPage(IGraphicsPort* gPort, IViewPortAttributes* vpAttr
 		return;
 
 	const int32 iw = e->w, ih = e->h;
-	InterfacePtr<IGeometry> pageGeo(db, pageUID, UseDefaultIID());
-	if (iw <= 0 || ih <= 0 || pageGeo == nil)
+	// COORDINATES: the drawing port is in spread coordinates, so the page's box is taken in the
+	// same ones (KCMQueryPageRect, which carries the reasoning) and the image is fitted to it.
+	PMRect pr;
+	if (iw <= 0 || ih <= 0 || !KCMQueryPageRect(db, pageUID, pr))
 		return;
-
-	// COORDINATES: the drawing port is in spread coordinates, so the page's box is taken in spread
-	// coordinates and the image is fitted to it.
-	// The official Facade replaced a hand-built GetPathBoundingBox + ::InnerToSpreadMatrix +
-	//   Transform. Worked example: snapshot/SnapTracker.cpp:621. (Line :616 of the same function
-	//   takes the same page in PasteboardCoordinates -- **calling it twice with different coordinate
-	//   systems is the official shape**. IGeometryFacade.h:209 lists only Pasteboard, Parent and
-	//   Inner, which is an omission: the product's CPageItemAdaptiveTransform.cpp:197,362 and the
-	//   public lib's CPathCreationTracker.cpp:300 call it with SpreadCoordinates.)
-	//   @warning keep the IGeometry Query and its nil test -- whether this UID has geometry at all
-	//     is not the Facade's guarantee (the worked example does the same in the same order).
-	//     Pass UIDRef(db, pageUID) so the Facade does not cost an extra Query.
-	//   @warning pass Geometry::PathBounds(). The worked example uses OuterStrokeBounds, but
-	//     PathBounds is what matches GetPathBoundingBox.
-	PMRect pr = Utils<Facade::IGeometryFacade>()->GetItemBounds(
-		UIDRef(db, pageUID), Transform::SpreadCoordinates(), Geometry::PathBounds());
 
 	// RING THICKNESS: work out the dilation radius (in image pixels) for this mode and redraw if it
 	// differs from last time.
@@ -1193,14 +1217,9 @@ static void KCMDrawEntryOnPage(IGraphicsPort* gPort, IViewPortAttributes* vpAttr
 static void KCMDrawPageBorder(IGraphicsPort* gPort, IDataBase* db, UID pageUID,
 	uint8 cr, uint8 cg, uint8 cb)
 {
-	InterfacePtr<IGeometry> pageGeo(db, pageUID, UseDefaultIID());
-	if (pageGeo == nil)
+	PMRect pr;
+	if (!KCMQueryPageRect(db, pageUID, pr))
 		return;
-
-	// COORDINATES: as in KCMDrawEntryOnPage, the page's box comes from the Facade already in spread
-	// coordinates (the reasoning is there).
-	PMRect pr = Utils<Facade::IGeometryFacade>()->GetItemBounds(
-		UIDRef(db, pageUID), Transform::SpreadCoordinates(), Geometry::PathBounds());
 
 	// THICKNESS: a fixed fraction of the page's short side (the border's own divisor). A thumbnail
 	// has no view, so the zoom formula is unavailable.
@@ -1267,13 +1286,9 @@ static void KCMDrawPageNumberMarkerFill(IGraphicsPort* gPort, IDataBase* db, UID
 	if (markerRects.empty())
 		return;
 
-	InterfacePtr<IGeometry> pageGeo(db, pageUID, UseDefaultIID());
-	if (pageGeo == nil)
+	PMRect pr;
+	if (!KCMQueryPageRect(db, pageUID, pr))
 		return;
-
-	// The page's box from the Facade, in spread coordinates (the reasoning is in KCMDrawEntryOnPage).
-	const PMRect pr = Utils<Facade::IGeometryFacade>()->GetItemBounds(
-		UIDRef(db, pageUID), Transform::SpreadCoordinates(), Geometry::PathBounds());
 
 	AutoGSave ag(gPort);
 	gPort->setopacity(kKCMExcludeFillOpacity, kFalse);
@@ -1302,13 +1317,9 @@ static void KCMDrawPageDiagonal(IGraphicsPort* gPort, IDataBase* db, UID pageUID
 	const PMReal& sxr, int32 drawMode, const PMReal& screenOpacity,
 	uint8 cr, uint8 cg, uint8 cb)
 {
-	InterfacePtr<IGeometry> pageGeo(db, pageUID, UseDefaultIID());
-	if (pageGeo == nil)
+	PMRect pr;
+	if (!KCMQueryPageRect(db, pageUID, pr))
 		return;
-
-	// The page's box from the Facade, in spread coordinates (the reasoning is in KCMDrawEntryOnPage).
-	const PMRect pr = Utils<Facade::IGeometryFacade>()->GetItemBounds(
-		UIDRef(db, pageUID), Transform::SpreadCoordinates(), Geometry::PathBounds());
 
 	// Thickness: screen and print adapt to the zoom; a thumbnail (sxr <= 0) uses a fixed fraction of
 	// the page's short side (the slash's own divisor).
@@ -1349,13 +1360,9 @@ static void KCMDrawPageDiagonal(IGraphicsPort* gPort, IDataBase* db, UID pageUID
 //========================================================================================
 static void KCMDrawPageCrossOutlined(IGraphicsPort* gPort, IDataBase* db, UID pageUID)
 {
-	InterfacePtr<IGeometry> pageGeo(db, pageUID, UseDefaultIID());
-	if (pageGeo == nil)
+	PMRect pr;
+	if (!KCMQueryPageRect(db, pageUID, pr))
 		return;
-
-	// The page's box from the Facade, in spread coordinates (the reasoning is in KCMDrawEntryOnPage).
-	const PMRect pr = Utils<Facade::IGeometryFacade>()->GetItemBounds(
-		UIDRef(db, pageUID), Transform::SpreadCoordinates(), Geometry::PathBounds());
 
 	// The red line's thickness is the page's short side over its own divisor (thicker than the "/").
 	// The white halo is stroked wider so it shows on both sides.
@@ -1413,13 +1420,9 @@ static void KCMDrawPageCheck(IGraphicsPort* gPort, IDataBase* db, UID pageUID,
 	const PMReal& sxr, int32 drawMode, const PMReal& screenOpacity,
 	uint8 cr, uint8 cg, uint8 cb, bool16 layoutStyle = kFalse)
 {
-	InterfacePtr<IGeometry> pageGeo(db, pageUID, UseDefaultIID());
-	if (pageGeo == nil)
+	PMRect pr;
+	if (!KCMQueryPageRect(db, pageUID, pr))
 		return;
-
-	// The page's box from the Facade, in spread coordinates (the reasoning is in KCMDrawEntryOnPage).
-	const PMRect pr = Utils<Facade::IGeometryFacade>()->GetItemBounds(
-		UIDRef(db, pageUID), Transform::SpreadCoordinates(), Geometry::PathBounds());
 
 	const PMReal minDim = std::min(pr.Width(), pr.Height());
 	// The tick's overall size, as a fraction of the short side: much larger for the layout view.
@@ -1852,12 +1855,9 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 			KCMOrigImage* o = it->second;
 			if (o == nil || o->buf == nil || o->w <= 0 || o->h <= 0)
 				continue;
-			InterfacePtr<IGeometry> pageGeo(db, pageUID, UseDefaultIID());
-			if (pageGeo == nil)
+			PMRect pr;
+			if (!KCMQueryPageRect(db, pageUID, pr))
 				continue;
-			// The page's box from the Facade, in spread coordinates (see KCMDrawEntryOnPage).
-			const PMRect pr = Utils<Facade::IGeometryFacade>()->GetItemBounds(
-				UIDRef(db, pageUID), Transform::SpreadCoordinates(), Geometry::PathBounds());
 			AutoGSave ag(gPort);
 			gPort->setopacity(sPeekOpacity, kFalse);		// Shift peek = 1.0 (opaque), Shift+Alt peek = 0.5
 			gPort->translate(pr.Left(), pr.Top());
@@ -1977,12 +1977,9 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 				if (orig == cur)
 					continue;	// not shifted: no hidden spread before this page
 
-				InterfacePtr<IGeometry> pageGeo(db, pageUID, UseDefaultIID());
-				if (pageGeo == nil)
+				PMRect pr;
+				if (!KCMQueryPageRect(db, pageUID, pr))
 					continue;
-				// The page's box from the Facade, in spread coordinates (see KCMDrawEntryOnPage).
-				const PMRect pr = Utils<Facade::IGeometryFacade>()->GetItemBounds(
-					UIDRef(db, pageUID), Transform::SpreadCoordinates(), Geometry::PathBounds());
 
 				PMReal textW = 0.0;
 				if (fontInst != nil)
@@ -2177,9 +2174,10 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 		{
 			if (isThumb)
 			{
-				// A thumbnail's border follows the panel's "Mark colour" as well (the reason is at
-				// the Source side above: this is the only changed-page display that does not use
-				// the ring image, so it was left behind when the colour became a choice).
+				// A thumbnail's border follows the panel's "Mark colour" as well: this is the only
+				// changed-page display that does not use the ring image (a solid border is drawn
+				// instead of shrinking the image), which is how it was left behind at red when the
+				// colour became a choice.
 				uint8 mr = 0, mg = 0, mb = 0;
 				SelectedMarkColor(mr, mg, mb);
 				KCMDrawPageBorder(gPort, db, pageUID, mr, mg, mb);
@@ -2197,8 +2195,9 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 		{
 			// Not registered either: a page that overflowed the page-count difference. The red slash
 			// says it was never compared.
-			// @warning this red does not follow the "Mark colour" choice, deliberately (the full
-			//   reason is at the Source side above).
+			// @warning this red does not follow the "Mark colour" choice, deliberately: it says
+			//   something different ("not compared", not "changed"), and stands with the registered
+			//   pages' green "/" as a mark whose meaning does not change with the mark colour.
 			KCMDrawPageDiagonal(gPort, db, pageUID, sxr, drawMode, screenMarkOp, kKCMRingR, kKCMRingG, kKCMRingB);
 		}
 		// With the toggle on, the green wash goes only over the pages actually being compared
