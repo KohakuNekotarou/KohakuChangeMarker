@@ -268,6 +268,23 @@ static bool16 KCMMarksCouldBeTranslucent()
 // 3) On and off the session's global list
 //========================================================================================
 
+/** The session's global page item adornment list, or nil.
+
+	@warning **there is no `IGlobalPageItemAdornmentList.h`.** The interface is the ordinary
+	  IPageItemAdornmentList, and **taking it off the session under a different IID** is the whole
+	  of it (kSessionBoss / IID_IGLOBALPAGEITEMADORNMENTLIST / kGlobalPageItemAdornmentListImpl).
+	  Written out at both call sites, that is the kind of thing only one of the two copies ends up
+	  saying.
+	@warning the session itself is nil while the application is shutting down, which is an ordinary
+	  outcome here rather than a failure -- Unregister is called from exactly that moment. */
+static IPageItemAdornmentList* KCMQueryGlobalAdornmentList()
+{
+	ISession* session = GetExecutionContextSession();
+	if (session == nil)
+		return nil;
+	return (IPageItemAdornmentList*)session->QueryInterface(IID_IGLOBALPAGEITEMADORNMENTLIST);
+}
+
 void KCMRingAdornmentRegister()
 {
 	// @warning **do not remember "already registered" in a static and return early.** **This
@@ -294,13 +311,7 @@ void KCMRingAdornmentRegister()
 	//     standing down in (2) no longer exists. (1) is unchanged: **registration does not cross
 	//     threads.**
 
-	// @warning **there is no `IGlobalPageItemAdornmentList.h`.** The interface is the ordinary
-	//   IPageItemAdornmentList, and **taking it off the session under a different IID** is the whole
-	//   of it (kSessionBoss / IID_IGLOBALPAGEITEMADORNMENTLIST / kGlobalPageItemAdornmentListImpl).
-	ISession* session = GetExecutionContextSession();
-	if (session == nil)
-		return;
-	InterfacePtr<IPageItemAdornmentList> globalList(session, IID_IGLOBALPAGEITEMADORNMENTLIST);
+	InterfacePtr<IPageItemAdornmentList> globalList(KCMQueryGlobalAdornmentList());
 	if (globalList == nil)
 		return;
 
@@ -312,12 +323,9 @@ void KCMRingAdornmentRegister()
 
 void KCMRingAdornmentUnregister()
 {
-	ISession* session = GetExecutionContextSession();	// can be nil while the application is shutting down
-	if (session == nil)
-		return;
-	InterfacePtr<IPageItemAdornmentList> globalList(session, IID_IGLOBALPAGEITEMADORNMENTLIST);
+	InterfacePtr<IPageItemAdornmentList> globalList(KCMQueryGlobalAdornmentList());
 	if (globalList == nil)
-		return;
+		return;	// the session is gone: the application is shutting down, which is when this is called
 
 	if (globalList->HasAdornment(kKCMRingAdornmentBoss))
 		globalList->RemoveAdornment(kKCMRingAdornmentBoss, kFalse);
@@ -341,15 +349,21 @@ enum KCMXPListAction
 	kKCMXPListRemove		///< it does not - leave the list (kXPC_RemovedSomeXP)
 };
 
-static void KCMSetItemXPState(IDataBase* db, KCMXPListAction action)
+/** db's transparency manager, or nil. The two callers want different things when it cannot be had
+	(one returns, one answers -1), so the nil is handed back rather than acted on here. */
+static IXPManager* KCMQueryXPManagerFor(IDataBase* db)
 {
 	if (db == nil)
-		return;
-
+		return nil;
 	Utils<IXPUtils> xpUtils;
 	if (!xpUtils)
-		return;
-	InterfacePtr<IXPManager> xpManager(xpUtils->QueryXPManager(db));
+		return nil;
+	return xpUtils->QueryXPManager(db);
+}
+
+static void KCMSetItemXPState(IDataBase* db, KCMXPListAction action)
+{
+	InterfacePtr<IXPManager> xpManager(KCMQueryXPManagerFor(db));
 	if (xpManager == nil)
 		return;
 
@@ -631,13 +645,11 @@ bool16 KCMPDFExportSetup::PDFProcessEvent(PDFExportEvent* ev, int32 /*pageNum*/)
 	{
 		switch (ev->id)
 		{
+			// The second case is a book export moving on to another document (measured with a
+			// two-chapter book).
+			// @warning without kPDFExportEventNewDocument, using only the db from BeginExport,
+			//   **every chapter from the second on works against the wrong document**.
 			case kPDFExportEventBeginExport:
-				KCMBeginExportOn(ev->db);
-				break;
-
-			// A book export moving on to another document (measured with a two-chapter book).
-			// @warning without this, using only the db from BeginExport, **every chapter from the
-			//   second on works against the wrong document**.
 			case kPDFExportEventNewDocument:
 				KCMBeginExportOn(ev->db);
 				break;
@@ -673,13 +685,7 @@ bool16 KCMPDFExportSetup::PDFProcessEvent(PDFExportEvent* ev, int32 /*pageNum*/)
 	  measured is the list itself.** */
 int32 KCMGetNumItemsWithXP(IDataBase* db)
 {
-	if (db == nil)
-		return -1;
-
-	Utils<IXPUtils> xpUtils;
-	if (!xpUtils)
-		return -1;
-	InterfacePtr<IXPManager> xpManager(xpUtils->QueryXPManager(db));
+	InterfacePtr<IXPManager> xpManager(KCMQueryXPManagerFor(db));
 	if (xpManager == nil)
 		return -1;
 
