@@ -527,12 +527,28 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowStateWidgetID, kKCMUIPrefix + 49)	// = t
 #define kKCMAboutMenuPath		kSDKDefStandardAboutMenuPath kKCMCompanyKey
 
 // (kKCMPluginsMenuKey / Path, for the old "Plug-ins" sub-menu, were removed as unused. Where the
-//  panel appears in the menus is kKCMPanelPluginsMenuPath below.)
+//  panel appears in the menus is kKCMPanelWindowMenuName below.)
 
-// The path and position that put the panel on the Plug-Ins menu:
-// Plug-Ins > KohakuNekotarou > Kohaku Change Marker (the leaf is the panel name key).
-#define kKCMPanelPluginsMenuPath		kSDKDefPlugInsStandardMenuPath kKCMCompanyKey kSDKDefDelimitMenuPath kKCMPanelTitleKey
-#define kKCMPanelPluginsMenuPosition	100.0	// the larger, the further down
+// ★THE WINDOW MENU'S NAME FOR THE PANEL, WITH A SUB-MENU IN FRONT OF IT.
+//
+//  PanelList.fh spells this out on the panelName field: "Panel name(used for Window menu). Can
+//  also specify a submenu here, as in "MyWindowSubmenu:MyPanelName"" - so a colon buys a level.
+//  InDesign's own panels are full of it (Window > Styles > Character Styles is stored exactly like
+//  this, as "StylesSubmenu:CharStyles_Menu"), and the sub-menu part is a STRING KEY like any other,
+//  so kKCMCompanyKey resolves to "Kohaku Plug-Ins" the same way it does on the Plug-Ins side.
+//
+//  => Window > Kohaku Plug-Ins > Kohaku Change Marker.
+#define kKCMPanelWindowMenuName			kKCMCompanyKey kSDKDefDelimitMenuPath kKCMPanelTitleKey
+
+// (The panel used to be placed on the Plug-Ins menu instead, through kKCMPanelPluginsMenuPath and
+//  kKCMPanelPluginsMenuPosition. Both were removed on 2026-08-27 with the move to the Window menu:
+//  the PanelList's alternate path is empty now, and they had no other reader.
+//
+//  ⚠KEEP THIS IN MIND IF ONE IS EVER PUT BACK: a MenuDef path names the menu that HOLDS the item,
+//  while panelName names the ITEM. With panelName filled in, a path ending in kKCMPanelTitleKey
+//  turns that last component into a SUB-MENU holding a single item - measured on this panel the
+//  same day: "Plug-Ins > Kohaku Plug-Ins > Kohaku Change Marker > Kohaku Change Marker". The same
+//  mistake is on record in Kohaku InDesign MCP, 2026-08-24, for the same reason.)
 
 // Menu item keys:
 // Other StringKeys:

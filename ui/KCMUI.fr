@@ -2165,9 +2165,16 @@ resource PanelList (kSDKDefPanelResourceID)
 							//   never goes below what used to be the fixed width, and while Story
 							//   Edits is closed the height is pinned to the top pane's.
 		kKCMPanelWidgetActionID,	// Action ID to show/hide the panel
-		"",							// panelName empty: place via altMenu below for explicit menu placement
-		kKCMPanelPluginsMenuPath,	// Plug-Ins > Kohaku Plug-Ins > Kohaku Change Marker (the grouping name is what kKCMCompanyKey resolves to)
-		kKCMPanelPluginsMenuPosition,	// lower part of the menu
+		kKCMPanelWindowMenuName,	// Window > Kohaku Plug-Ins > Kohaku Change Marker. ★The colon
+									// inside this key is what buys the sub-menu level (PanelList.fh
+									// on this field).
+		"",							// ★NO ALTERNATE MENU PATH (2026-08-27, the user's decision):
+									// this panel lives on the Window menu alone, which is where
+									// InDesign's own panels live and where people look for one.
+									// It used to sit under Plug-Ins instead, and that was not a
+									// preference - an empty panelName means NO Window entry at all,
+									// so Plug-Ins was the only place left to put it.
+		0.0,						// Alternate menu position - meaningless without a path.
 		kKCMPaletteIconResID, kKCMUIPluginID,	// PNG icon for the collapsed dock tab
 		c_Panel
 	}
