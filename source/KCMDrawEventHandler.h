@@ -25,6 +25,7 @@
 #include "GraphicsExternal.h"   // AGMImageRecord (a struct member below)
 #include "UIDRef.h"             // UID / UIDRef
 #include "PMReal.h"
+#include "PMRect.h"             // PMRect - the folio rectangles the sieve below converts
 #include "IDThreading.h"        // IDThreading::ThreadLocal (tl_Rasterizing below)
 #include "KCMThreadSafety.h"  // KCMMarkStateMutex / KCMMarkStateLock, taken wherever sEntries is deleted
 
@@ -496,9 +497,64 @@ private:
 // KCMPeekStartup::Shutdown). The implementation is in KCMDrawEventHandler.cpp, beside the cache.
 void KCMReleaseOldNumFontCache();
 
+// The folio-exclusion rectangles, in the comparison's own pixels. **Both pages go into ONE list**,
+// because the two are the same page size and therefore the same (x, y) space -- a folio area on
+// either side is skipped on both.
+// This and the bbox below are here for the same reason as the per-row test that follows them:
+// the three steps are the ONE sieve, they ran in two .cpp files, and only the third had been
+// pulled out -- so two thirds of it was still a copy waiting to be edited on one side only.
+// @warning **the caller decides WHETHER to exclude anything.** The document comparison asks the
+//   "Ignore page numbers" toggle; the book comparison always excludes, because inserting one
+//   chapter shifts every folio after it. This only converts what it is handed.
+// @warning it APPENDS. Both callers hand in a vector they have just declared.
+inline void KCMCollectFolioExcludeRects(const std::vector<PMRect>& tRects,
+										 const std::vector<PMRect>& sRects,
+										 const PMReal& hiRes,
+										 std::vector<Int32Rect>& outRects)
+{
+	const PMReal pxScale = hiRes / PMReal(72.0);	// points -> comparison-resolution pixels
+	for (int pass = 0; pass < 2; ++pass)		// 0 = target, 1 = source (both into the same space)
+	{
+		const std::vector<PMRect>& mrs = (pass == 0) ? tRects : sRects;
+		for (size_t mi = 0; mi < mrs.size(); ++mi)
+		{
+			const PMRect& mr = mrs[mi];
+			Int32Rect epr;
+			epr.left   = ::ToInt32(::Round(mr.Left()   * pxScale));
+			epr.top    = ::ToInt32(::Round(mr.Top()    * pxScale));
+			epr.right  = ::ToInt32(::Round(mr.Right()  * pxScale));
+			epr.bottom = ::ToInt32(::Round(mr.Bottom() * pxScale));
+			outRects.push_back(epr);
+		}
+	}
+}
+
+// Stage 1 of the two-stage sieve: the union bbox of those rectangles. After this, a row outside
+// its vertical range costs zero tests and an x outside its horizontal range costs two
+// comparisons. All four come back 0 for an empty list, which is why both callers test
+// excludeRects.empty() before they use them.
+inline void KCMFolioExcludeBBox(const std::vector<Int32Rect>& rects,
+								 int32& outTop, int32& outBottom, int32& outLeft, int32& outRight)
+{
+	outTop = outBottom = outLeft = outRight = 0;
+	if (rects.empty())
+		return;
+
+	outTop  = rects[0].top;   outBottom = rects[0].bottom;
+	outLeft = rects[0].left;  outRight  = rects[0].right;
+	for (size_t mi = 1; mi < rects.size(); ++mi)
+	{
+		const Int32Rect& r = rects[mi];
+		if (r.top    < outTop)    outTop    = r.top;
+		if (r.bottom > outBottom) outBottom = r.bottom;
+		if (r.left   < outLeft)   outLeft   = r.left;
+		if (r.right  > outRight)  outRight  = r.right;
+	}
+}
+
 // The folio-exclusion test, per row: is x inside any of the rectangles that reach this row?
 // The document comparison (MakeEntry in KCMDrawEventHandler.cpp) and the book comparison
-// (CompareRasters in KCMBookCompare.cpp) use the same test. It is one function because the same
+// (ComparePages in KCMBookCompare.cpp) use the same test. It is one function because the same
 // four lines used to be copied into both .cpp files, with a comment asking whoever edited one to
 // edit the other -- a promise that splits silently the first time it is forgotten.
 // It is inline in the header because it is called from the **innermost (per pixel)** loop of the

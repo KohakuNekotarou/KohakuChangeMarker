@@ -461,21 +461,7 @@ ErrorCode KCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef& 
 					//   has to copy by value or use one at a time.
 					const std::vector<PMRect>& tRects = KCMGetPageNumberMarkerRects(targetRef, kTrue);
 					const std::vector<PMRect>& sRects = KCMGetPageNumberMarkerRects(sourceRef, kTrue);
-					const PMReal pxScale = hiRes / PMReal(72.0);	// points -> comparison-resolution pixels
-					for (int pass = 0; pass < 2; ++pass)		// 0 = target, 1 = source (both into the same (x, y) space)
-					{
-						const std::vector<PMRect>& mrs = (pass == 0) ? tRects : sRects;
-						for (size_t mi = 0; mi < mrs.size(); ++mi)
-						{
-							const PMRect& mr = mrs[mi];
-							Int32Rect epr;
-							epr.left   = ::ToInt32(::Round(mr.Left()   * pxScale));
-							epr.top    = ::ToInt32(::Round(mr.Top()    * pxScale));
-							epr.right  = ::ToInt32(::Round(mr.Right()  * pxScale));
-							epr.bottom = ::ToInt32(::Round(mr.Bottom() * pxScale));
-							excludeRects.push_back(epr);
-						}
-					}
+					KCMCollectFolioExcludeRects(tRects, sRects, hiRes, excludeRects);
 				}
 
 				// COMPARE AT HIGH RESOLUTION, SCATTER INTO LOW-RESOLUTION CELLS.
@@ -492,19 +478,7 @@ ErrorCode KCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef& 
 				// row outside its vertical range costs zero tests, and an x outside its horizontal
 				// range costs two comparisons.
 				int32 exTop = 0, exBottom = 0, exLeft = 0, exRight = 0;
-				if (!excludeRects.empty())
-				{
-					exTop  = excludeRects[0].top;   exBottom = excludeRects[0].bottom;
-					exLeft = excludeRects[0].left;  exRight  = excludeRects[0].right;
-					for (size_t mi = 1; mi < excludeRects.size(); ++mi)
-					{
-						const Int32Rect& r = excludeRects[mi];
-						if (r.top    < exTop)    exTop    = r.top;
-						if (r.bottom > exBottom) exBottom = r.bottom;
-						if (r.left   < exLeft)   exLeft   = r.left;
-						if (r.right  > exRight)  exRight  = r.right;
-					}
-				}
+				KCMFolioExcludeBBox(excludeRects, exTop, exBottom, exLeft, exRight);
 				std::vector<const Int32Rect*> rowRects;	// only the rectangles reaching this row (allocated outside the loop and reused)
 				rowRects.reserve(excludeRects.size());
 				for (int32 y = 0; y < hth; ++y)
