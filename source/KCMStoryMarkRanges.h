@@ -130,6 +130,7 @@ inline void KCMMergeMarkRanges(KCMMarkRangeList& ranges)
 		std::sort(carets.begin(), carets.end(), KCMMarkRangeIsBefore);
 
 		TextIndex lastCaret = -1;
+		size_t stretch = 0;
 		for (KCMMarkRangeList::const_iterator c = carets.begin(); c != carets.end(); ++c)
 		{
 			if (c->fFrom == lastCaret)
@@ -137,14 +138,16 @@ inline void KCMMergeMarkRanges(KCMMarkRangeList& ranges)
 
 			// Is this place already lit by a stretch? Only the fused stretches are searched (the
 			// carets added so far are past `stretchCount` and are not sorted against them yet).
-			bool inside = false;
-			for (size_t i = 0; i < stretchCount; ++i)
-			{
-				if (merged[i].fFrom <= c->fFrom && c->fFrom < merged[i].fTo) { inside = true; break; }
-				if (merged[i].fFrom > c->fFrom) break;		// sorted: no later stretch can hold it
-			}
-			if (inside)
-				continue;
+			// **ONE WALK OVER BOTH LISTS, NOT ONE SCAN PER CARET.** Both are sorted, so the stretch
+			//   a caret has to be tested against is never before the one the previous caret stopped
+			//   at: `stretch` is carried across the loop instead of starting at 0 each time. A press
+			//   over a story with a few thousand edits makes both of these lists long.
+			// @warning it is an INDEX and not an iterator on purpose -- the push_back below can
+			//   reallocate `merged`, and only the stretches before stretchCount are ever read here.
+			while (stretch < stretchCount && merged[stretch].fTo <= c->fFrom)
+				++stretch;
+			if (stretch < stretchCount && merged[stretch].fFrom <= c->fFrom)
+				continue;					// inside a stretch: this place is already lit
 
 			merged.push_back(*c);
 			lastCaret = c->fFrom;
@@ -158,7 +161,8 @@ inline void KCMMergeMarkRanges(KCMMarkRangeList& ranges)
 		//   TOUCHES it, which this list allows between a caret and its neighbour (they are not fused,
 		//   deliberately: fusing would lose the flag).
 		//   @warning a clipping pass was written here first and removed: it could never fire, and the
-		//     one thing it could do was turn
+		//     one thing it could do was turn [i, i+1) into an empty range that the intersect below
+		//     drops.
 	}
 
 	ranges.swap(merged);

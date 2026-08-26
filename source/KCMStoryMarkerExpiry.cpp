@@ -15,8 +15,7 @@
 //  answers kEndOfTime for a task that was not there). So every entry point below simply
 //  uninstalls first and asks no questions -- the shape Adobe's own re-arming code uses
 //  (spellpanel/DynSpellCheckEventWatcher.cpp does it on every keystroke). KBS learned this the
-//  hard way in its own audit; the flag it
-//  removed then is not being reintroduced here.
+//  hard way in its own audit; the flag it removed then is not being reintroduced here.
 //
 //========================================================================================
 

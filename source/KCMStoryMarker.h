@@ -55,11 +55,6 @@
 #define __KCMStoryMarker_h__
 
 #include "BaseType.h"		// bool16, int32
-#include "PMReal.h"			// @warning NOT needed BY THIS HEADER: the opacity stopped being a
-							//  parameter when the two kinds of mark were separated, and nothing here
-							//  names a PMReal. It stays because KCMStoryMarker.cpp reaches PMReal
-							//  THROUGH this file (it holds the opacity in a static); moving it to the
-							//  .cpp that uses it is a tidy-up, not something to do in passing
 #include "TextID.h"			// TextIndex
 #include "UIDRef.h"			// UID
 

@@ -40,7 +40,7 @@ namespace
 {
 
 // Is the tool's button down, and over which window? @warning NOT "is anything showing" -- the
-// be holding marks up with no button down at all.
+// toggles can be holding marks up with no button down at all.
 bool16 gPressActive = kFalse;
 bool16 gPressUseSource = kFalse;
 
@@ -95,16 +95,24 @@ void KCMStoryCollectRanges(IDataBase* db, bool16 useSourceDocument, KCMStoryMark
 	if (db == nil)
 		return;
 
+	// **HELD FOR THE WHOLE LOOP, NOT ASKED FOR PER ROW.** Every Utils<IFace>() written out is its
+	//   own Query off the Utils boss -- the constructor calls UtilsBoss::QueryUtils and the
+	//   destructor Releases (Utils.h:87-89) -- and this loop asks for a row, its change count and
+	//   every one of its changes. On a document with a few thousand edits that was a few thousand
+	//   Queries, and the whole of it runs again on every press and every refresh. Two other files
+	//   here already hold it across a loop (KCMStoryNav.cpp, KCMChangeNav.cpp).
 	// @warning **asked without a nil test, where KCMStoryMarkRefresh below tests its own facade**
 	//   -- and the two are not in disagreement. That one is the entry point and can be reached from
 	//   a model notification during teardown; **this is only ever reached after it has already got
 	//   IKCMCompareFacade off kUtilsBoss**, which answers the same question for the whole boss.
 	//   Testing again here would be the second place one fact is written down.
-	const int32 rowCount = Utils<IKCMStoryEditsFacade>()->GetRowCount();
+	InterfacePtr<IKCMStoryEditsFacade> edits(Utils<IKCMStoryEditsFacade>().QueryUtilInterface());
+
+	const int32 rowCount = edits->GetRowCount();
 	for (int32 n = 0; n < rowCount; ++n)
 	{
 		IKCMStoryEditsFacade::Row row;
-		if (!Utils<IKCMStoryEditsFacade>()->GetRow(n, row))
+		if (!edits->GetRow(n, row))
 			continue;
 		if (row.fStoryUID == kInvalidUID)
 			continue;
@@ -138,7 +146,7 @@ void KCMStoryCollectRanges(IDataBase* db, bool16 useSourceDocument, KCMStoryMark
 		if (useSourceDocument ? addedRow : removedRow)
 			continue;
 
-		const int32 changeCount = Utils<IKCMStoryEditsFacade>()->GetChangeCount(n);
+		const int32 changeCount = edits->GetChangeCount(n);
 
 		KCMMarkRangeList ranges;
 
@@ -172,7 +180,7 @@ void KCMStoryCollectRanges(IDataBase* db, bool16 useSourceDocument, KCMStoryMark
 		for (int32 i = 0; i < changeCount; ++i)		// no changes = not entered; the whole range is already in
 		{
 			IKCMStoryEditsFacade::Change change;
-			if (!Utils<IKCMStoryEditsFacade>()->GetChange(n, i, change))
+			if (!edits->GetChange(n, i, change))
 				continue;
 
 			TextIndex from = 0;
@@ -206,8 +214,7 @@ void KCMStoryCollectRanges(IDataBase* db, bool16 useSourceDocument, KCMStoryMark
 				//   The range still covers one character so that it sorts and merges like every other one;
 				//     the flag is all the drawing side needs (KCMStoryMarkRanges.h).
 				//   The jump's flash answers the same way (KCMStoryMarker::AddFlashRange), so the two agree
-				//     about what a
-				//     deletion looks like (KCMStoryMarker::Show).
+				//     about what a deletion looks like.
 				ranges.push_back(KCMMarkRange::Caret(from));
 				continue;
 			}
@@ -220,7 +227,7 @@ void KCMStoryCollectRanges(IDataBase* db, bool16 useSourceDocument, KCMStoryMark
 			// @warning **APPENDED, NOT ASSIGNED.** Two rows naming the same story in the same document
 			//   should not happen -- the list holds one row per story per side -- but if it ever did, an
 			//   assignment would silently throw the first one's edits away. Appending cannot: the marker
-			//   merges each story
+			//   merges each story's list before it draws anything.
 			KCMMarkRangeList& dst = out[row.fStoryUID];
 			dst.insert(dst.end(), ranges.begin(), ranges.end());
 		}
