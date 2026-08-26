@@ -130,10 +130,17 @@ bool16 KCMIsSameDoc(IDataBase* a, IDataBase* b);
 //         GetOversetPageUIDs and GetOversetLocations -- the scrollbar map, Prev/Next and the
 //         flyout's counts. **A kUIPlugIn boss is invisible from a background thread**, so none
 //         of these can be reached from one.
-//   @warning **neither of those is a designed defence**: (a) is the order of the terms in one
-//     condition, (b) is which plug-in the caller happens to live in. The day the "+" is drawn
-//     anywhere other than a thumbnail -- canvas, print, export -- **these two go under the
-//     lock**. So does reordering that condition.
+//     (c) **model side, main thread only**: KCMApplyOversetForDoc reads the new set straight
+//         back (KCMOversetApply.cpp), to hand the UI the pages whose "+" may have changed. It
+//         is the writer reading what it wrote, four lines after its own swap, on the thread
+//         that wrote it -- safe for a THIRD reason, and listed because the rule below is to
+//         count places. **It was missing from this list until the waste sweep measured it**,
+//         in a paragraph that ends by saying to count places rather than containers.
+//   @warning **none of those three is a designed defence**: (a) is the order of the terms in
+//     one condition, (b) is which plug-in the caller happens to live in, and (c) is that one
+//     function happening to be main-thread-only. The day the "+" is drawn anywhere other than
+//     a thumbnail -- canvas, print, export -- **these two go under the lock**. So does
+//     reordering that condition.
 //
 // **"Covered" and "not covered" are counted per PLACE THAT TOUCHES, not per container.** A
 //   covered container was once read in an uncovered place: the `anyMarkableContent` gate at
