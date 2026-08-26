@@ -377,9 +377,13 @@ public:
 	// Rasterise sourceRef (the older side) once at `resolution` dpi and keep the opaque picture in
 	// sOrigImages[target.UID] (replacing any existing one). The offscreen is destroyed immediately,
 	// so only one is ever alive at a time.
-	// resolution defaults to kKCMOrigResolution; the peek route passes a dpi derived from the
-	// current zoom, so the picture is always crisp.
-	static ErrorCode MakeOrigImage(const UIDRef& targetRef, const UIDRef& sourceRef, const PMReal& resolution = kKCMOrigResolution);
+	// The caller decides the dpi and there is deliberately no default: the only caller is the peek
+	// route (KCMPeek.cpp), which derives it from the current zoom - 72.0 * effScale, clamped to
+	// 16..300 - so the picture is always crisp. A default here would only be reached by a future
+	// caller that forgot to think about resolution, and it would render blurry without saying so.
+	// The cost grows with the square of the dpi: about 2MB per A4 page at 72dpi against 26-35MB at
+	// 300dpi, and one image is kept alive per page peeked at.
+	static ErrorCode MakeOrigImage(const UIDRef& targetRef, const UIDRef& sourceRef, const PMReal& resolution);
 
 	// Rebuild the overflow cache (sOverflowT / sOverflowS) from the current sDB / sSrcDB, with one
 	// call to KCMBuildPairing. Called from the comparison (KCMDoMarkChangesDoc), so it is up to

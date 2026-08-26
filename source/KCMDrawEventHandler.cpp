@@ -609,8 +609,8 @@ ErrorCode KCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef& 
 					//   **216.000 inch (15,551.996pt, 5486.4mm)**, so at most **216 x 36 = 7,776 px**
 					//   -- 24% of the ceiling.
 					//   @warning MakeOrigImage below DOES have an explicit `b.right <= 32767` guard,
-					//     and the asymmetry is correct: that one works at kKCMOrigResolution = 72dpi
-					//     and the peek passes a dpi derived from the current zoom, so
+					//     and the asymmetry is correct: its dpi comes from the caller rather than
+					//     from a constant here, and the peek route clamps it at 300, so
 					//     **216 inch x 300dpi = 64,800 really does overflow**.
 					//   The comparison resolution (144dpi) reaches 31,104 px in wth/hth, but those
 					//     stay int32 and are never narrowed to int16.
