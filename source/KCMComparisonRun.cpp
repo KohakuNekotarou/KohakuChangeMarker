@@ -89,8 +89,7 @@ void KCMStopComparison()
 	// The active document is only used for the redraw, and nil is fine: KCMDoClearMarks and
 	// KCMDoDisarmMousePeek each remember the document the marks were actually drawn on (sDB, the
 	// armed target) and redraw that, so clearing and disarming still work with no document open.
-	IDocument* active = KCMActiveDoc();
-	IDataBase* db = (active != nil) ? ::GetUIDRef(active).GetDataBase() : nil;
+	IDataBase* db = KCMActiveDocDB();
 
 	KCMDoClearMarks(db);
 	KCMDoDisarmMousePeek(db);
@@ -205,24 +204,32 @@ void KCMToggleStartStop()
 	KCMStartComparisonFor(target, source);
 }
 
+// Put the state of the two mark settings on the status line. Both callers below change one of the
+// pair and keep the other, so both have to say the same sentence.
+// **Written out twice, the two copies drifted**: when the plug-in was renamed (2026-08-25) the
+// prefix here was left at the old "kescm:" in every copy, and the reader saw a name that no longer
+// exists on three of the flyout's toggles. Saying it in one place is also what makes it possible
+// to change what is said.
+static void KCMReportMarkSettings(bool16 printFlag, bool16 op25)
+{
+	PMString report;
+	report.SetTranslatable(kFalse);
+	report.Append(op25 ? "kcm: marks opacity 25%" : "kcm: marks opacity 75%");
+	report.Append(printFlag ? "; will print (and stay visible on screen)"
+	                        : "; screen-only (won't print)");
+	KCMNotifyStatus(report);
+}
+
 // KCMSetMarkOpacity25 (declared in KCMComparisonRun.h) -- set the frame opacity to 25% or 75%,
 // from the flyout's kKCMPopupOpacity25ActionID / kKCMPopupOpacity75ActionID. The current print
 // flag is kept. The radio-button look (a tick on the chosen item) is applied when the menu opens,
 // by UpdateActionStates reading KCMGetMarkOpacity25.
 void KCMSetMarkOpacity25(bool16 op25)
 {
-	IDocument* active = KCMActiveDoc();
-	IDataBase* db = (active != nil) ? ::GetUIDRef(active).GetDataBase() : nil;
-
 	const bool16 flag = KCMGetPrintMarks();	// keep the current print on/off
-	KCMDoSetPrintMarks(flag, op25, db);
+	KCMDoSetPrintMarks(flag, op25, KCMActiveDocDB());
 
-	PMString report;
-	report.SetTranslatable(kFalse);
-	report.Append(op25 ? "kescm: marks opacity 25%" : "kescm: marks opacity 75%");
-	report.Append(flag ? "; will print (and stay visible on screen)"
-	                   : "; screen-only (won't print)");
-	KCMNotifyStatus(report);
+	KCMReportMarkSettings(flag, op25);
 }
 
 // KCMSetMarkColor (declared in KCMComparisonRun.h) -- set the mark colour to red or cyan, from
@@ -234,14 +241,13 @@ void KCMSetMarkOpacity25(bool16 op25)
 // have disagreed about how the colour is chosen.
 void KCMSetMarkColor(bool16 cyan)
 {
-	IDocument* active = KCMActiveDoc();
-	IDataBase* db = (active != nil) ? ::GetUIDRef(active).GetDataBase() : nil;
+	KCMDoSetMarkColor(cyan, KCMActiveDocDB());
 
-	KCMDoSetMarkColor(cyan, db);
-
+	// Not KCMReportMarkSettings: this one reports the colour, which is not part of the print /
+	// opacity pair. It carries the same prefix, and the prefix is the whole of what they share.
 	PMString report;
 	report.SetTranslatable(kFalse);
-	report.Append(cyan ? "kescm: mark colour cyan" : "kescm: mark colour red");
+	report.Append(cyan ? "kcm: mark colour cyan" : "kcm: mark colour red");
 	KCMNotifyStatus(report);
 }
 
@@ -251,19 +257,11 @@ void KCMSetMarkColor(bool16 cyan)
 // KCMGetPrintMarks.
 void KCMTogglePrintMarks()
 {
-	IDocument* active = KCMActiveDoc();
-	IDataBase* db = (active != nil) ? ::GetUIDRef(active).GetDataBase() : nil;
-
 	const bool16 newFlag = !KCMGetPrintMarks();
 	const bool16 op25    = KCMGetMarkOpacity25();
-	KCMDoSetPrintMarks(newFlag, op25, db);
+	KCMDoSetPrintMarks(newFlag, op25, KCMActiveDocDB());
 
-	PMString report;
-	report.SetTranslatable(kFalse);
-	report.Append(op25 ? "kescm: marks opacity 25%" : "kescm: marks opacity 75%");
-	report.Append(newFlag ? "; will print (and stay visible on screen)"
-	                      : "; screen-only (won't print)");
-	KCMNotifyStatus(report);
+	KCMReportMarkSettings(newFlag, op25);
 }
 
 // End of KCMComparisonRun.cpp.

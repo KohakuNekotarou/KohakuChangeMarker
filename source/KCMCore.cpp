@@ -59,6 +59,10 @@
 #include "KCMID.h"			// kKCM*Message, the notification IDs
 #include "KCMModelNotify.h"	// KCMNotifyStatus / KCMNotifyDocs - the model tells the UI, it never calls it
 
+// Declared here and defined next to KCMInvalidateDB, which it is built on: the comparison uses it
+// several hundred lines before that point.
+static void KCMInvalidateDocs(IDataBase* first, IDataBase* second, IDataBase* third = nil);
+
 //========================================================================================
 // Helper: every page UID in the document, flattened in the document's page order.
 //
@@ -302,6 +306,31 @@ IDataBase* KCMActiveDocDB()
 	return doc ? ::GetUIDRef(doc).GetDataBase() : nil;
 }
 
+// Is pt (pasteboard coordinates) inside this page's own box? Asked of ordinary pages and of
+// master pages by the two loops in KCMFindPageUnderMouse below, which used to spell it out twice
+// -- and only one of the two copies carried the warning that follows.
+//
+// Getting a page's rectangle in pasteboard coordinates is the Facade's job; the worked example
+// snapshot/SnapTracker.cpp:610-616 does exactly this **for a page**, and :616-617 does the
+// containment test with the same official pair, **PMRect::Normalize()** (PMRect.h:622) and
+// **PMRect::PointIn()** (:814-816, a closed interval compared with PMReal's epsilon).
+// @warning the nil test and the Normalize both stay: the Facade guarantees neither that the item
+//   has geometry nor that the rectangle comes back normalised.
+// @warning **do not drop the Normalize.** PointIn is a plain comparison that assumes
+//   left <= right and top <= bottom, so an un-normalised box makes it **always kFalse** -- no page
+//   is ever hit, and nothing reports an error.
+static bool16 KCMPageContainsPoint(IDataBase* db, UID pageUID, const PMPoint& pt)
+{
+	InterfacePtr<IGeometry> geo(db, pageUID, UseDefaultIID());
+	if (geo == nil)
+		return kFalse;
+
+	PMRect bb = Utils<Facade::IGeometryFacade>()->GetItemBounds(
+		::GetUIDRef(geo), Transform::PasteboardCoordinates(), Geometry::PathBounds());
+	bb.Normalize();
+	return bb.PointIn(pt);
+}
+
 bool16 KCMFindPageUnderMouse(IDataBase* targetDB, PMReal mx, PMReal my, KCMPageHit& out,
                                UID onlySpreadUID)
 {
@@ -402,24 +431,7 @@ bool16 KCMFindPageUnderMouse(IDataBase* targetDB, PMReal mx, PMReal my, KCMPageH
 		for (int32 p = 0; p < np; ++p)
 		{
 			const UID pageUID = spread->GetNthPageUID(p);
-			InterfacePtr<IGeometry> geo(targetDB, pageUID, UseDefaultIID());
-			if (geo == nil)
-				continue;
-			// Getting a page's rectangle in pasteboard coordinates is the Facade's job; the worked
-			// example snapshot/SnapTracker.cpp:610-616 does exactly this **for a page**.
-			// The nil test above and the Normalize below stay: the Facade guarantees neither that
-			// the item has geometry nor that the rectangle comes back normalised.
-			PMRect bb = Utils<Facade::IGeometryFacade>()->GetItemBounds(
-				::GetUIDRef(geo), Transform::PasteboardCoordinates(), Geometry::PathBounds());
-			// The containment test is the official pair as well: **PMRect::Normalize()**
-			// (PMRect.h:622) and **PMRect::PointIn()** (:814-816, a closed interval compared with
-			// PMReal's epsilon). Identical in behaviour to a hand-written swap plus four
-			// comparisons, and shorter. Worked example: SnapTracker.cpp:616-617.
-			// @warning do not drop the Normalize. PointIn is a plain comparison that assumes
-			//   left <= right and top <= bottom, so an un-normalised box makes it **always kFalse**
-			//   -- no page is ever hit.
-			bb.Normalize();
-			if (bb.PointIn(pt))
+			if (KCMPageContainsPoint(targetDB, pageUID, pt))
 			{
 				out.spreadIndex    = s;
 				out.spreadUID      = spreadUID;
@@ -471,13 +483,7 @@ bool16 KCMFindPageUnderMouse(IDataBase* targetDB, PMReal mx, PMReal my, KCMPageH
 		for (int32 p = 0; p < mp; ++p)
 		{
 			const UID pageUID = ms->GetNthPageUID(p);
-			InterfacePtr<IGeometry> geo(targetDB, pageUID, UseDefaultIID());
-			if (geo == nil)
-				continue;
-			PMRect bb = Utils<Facade::IGeometryFacade>()->GetItemBounds(
-				::GetUIDRef(geo), Transform::PasteboardCoordinates(), Geometry::PathBounds());
-			bb.Normalize();
-			if (bb.PointIn(pt))
+			if (KCMPageContainsPoint(targetDB, pageUID, pt))
 			{
 				out.spreadIndex    = -1;			// a master is not in the spread list
 				out.spreadUID      = msUID;
@@ -857,9 +863,7 @@ ErrorCode KCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMString
 	// RebuildOverflowCache above.
 	KCMPageCheckPruneToMarked();
 
-	KCMInvalidateDB(targetDB);
-	if (sourceDB != targetDB)
-		KCMInvalidateDB(sourceDB);	// so the Source's always-on frames update at once
+	KCMInvalidateDocs(targetDB, sourceDB);	// the Source too, so its always-on frames update at once
 
 	PMString report;
 	report.SetTranslatable(kFalse);
@@ -1012,6 +1016,24 @@ void KCMInvalidateDB(IDataBase* db)
 		Utils<ILayoutUtils>()->InvalidateViews(doc);
 }
 
+// Redraw the documents a mark change reaches, skipping the repeats. The three are typically the
+// document the marks are on, the caller's own (the one that was active when the reader acted) and
+// the Source; the third is left out for the two-document form.
+//
+// **The order matters and is not the argument order by accident**: the first is redrawn first, and
+// it is meant to be the document the marks are actually on, so its appearance updates even when
+// the caller's own document is a different one. Four call sites wrote this out, each with its own
+// spelling of "have I already done this one", which is where a document gets redrawn twice or
+// missed. nil is fine anywhere -- KCMInvalidateDB above returns at once for it.
+static void KCMInvalidateDocs(IDataBase* first, IDataBase* second, IDataBase* third)
+{
+	KCMInvalidateDB(first);
+	if (second != first)
+		KCMInvalidateDB(second);
+	if (third != nil && third != first && third != second)
+		KCMInvalidateDB(third);
+}
+
 void KCMDoClearMarks(IDataBase* db)
 {
 	// The marks are the evidence for "unchanged", so with them gone any spread hidden by
@@ -1038,11 +1060,7 @@ void KCMDoClearMarks(IDataBase* db)
 	KCMDrawEventHandler::DropAll();
 	KCMDrawEventHandler::DropAllOrig();	// and the peek's cached pictures, to release the memory
 
-	KCMInvalidateDB(markedDB);
-	if (db != markedDB)
-		KCMInvalidateDB(db);
-	if (srcDB != markedDB && srcDB != db)
-		KCMInvalidateDB(srcDB);			// so the Source's always-on frames go at once too
+	KCMInvalidateDocs(markedDB, db, srcDB);	// the Source too, so its always-on frames go at once
 
 	// The screen half of Stop's clean-up is one notification: removing the strips, rebuilding the
 	// Pages panel thumbnails, the panel display, the Prev/Next cursor and position.
@@ -1083,15 +1101,11 @@ void KCMDoSetPrintMarks(bool16 printFlag, bool16 opacity25Flag, IDataBase* db)
 	// Bring the always-on (screen) opacity into line with the print setting at once.
 	KCMDrawEventHandler::sMarkScreenOpacity = KCMBaseScreenOpacity();
 
-	// Redraw the document the marks are actually on (sDB) first, so that its appearance updates even
+	// The document the marks are actually on (sDB) goes FIRST, so that its appearance updates even
 	// when the caller's db -- the active document -- is not it (the Source, or an unrelated third
 	// document, being in front). Before a Start (sDB == nil) only db is redrawn, as before.
 	// The Source's always-on frames follow the 25%/75% choice, so the Source is redrawn too.
-	KCMInvalidateDB(KCMDrawEventHandler::sDB);
-	if (db != KCMDrawEventHandler::sDB)
-		KCMInvalidateDB(db);
-	if (KCMDrawEventHandler::sSrcDB != KCMDrawEventHandler::sDB && KCMDrawEventHandler::sSrcDB != db)
-		KCMInvalidateDB(KCMDrawEventHandler::sSrcDB);
+	KCMInvalidateDocs(KCMDrawEventHandler::sDB, db, KCMDrawEventHandler::sSrcDB);
 
 	// (Three notifications to the transparency manager stood here too and were removed, for the
 	//  reason given above: the declaration is now made **only for the duration of an export or a
@@ -1136,11 +1150,7 @@ void KCMDoSetMarkColor(bool16 cyan, IDataBase* db)
 	}
 
 	// The redraw covers the same three documents as KCMDoSetPrintMarks (marked, active, Source).
-	KCMInvalidateDB(KCMDrawEventHandler::sDB);
-	if (db != KCMDrawEventHandler::sDB)
-		KCMInvalidateDB(db);
-	if (KCMDrawEventHandler::sSrcDB != KCMDrawEventHandler::sDB && KCMDrawEventHandler::sSrcDB != db)
-		KCMInvalidateDB(KCMDrawEventHandler::sSrcDB);
+	KCMInvalidateDocs(KCMDrawEventHandler::sDB, db, KCMDrawEventHandler::sSrcDB);
 }
 
 bool16 KCMGetMarkColorCyan()
