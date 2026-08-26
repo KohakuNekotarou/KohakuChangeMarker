@@ -155,14 +155,10 @@ void KCMNotifyDocsPages(ClassID theChange,
 // only "repaint right now" rides on the payload, being particular to this one notification.
 void KCMNotifyStatus(const PMString& s, bool16 forceRedrawNow)
 {
-	// A message raised by the model has no split -- it is one body. The other four pieces are
-	// CLEARED rather than left: a heading or a context left over from the previous message would
-	// stand around the new sentence.
-	sStatusLabel.Clear();
-	sStatusPre.Clear();
-	sStatusMid = s;
-	sStatusPost.Clear();
-	sStatusRuby.Clear();
+	// Storing goes through the function whose job it is, rather than being written out a second
+	// time: the five pieces are ONE value, and a sixth piece added to only one of two identical
+	// assignments is a difference nothing would report.
+	KCMStoreSessionStatus(s);
 
 	KCMNotifyPayload payload;
 	payload.fStatusForceRedraw = forceRedrawNow;
@@ -171,13 +167,17 @@ void KCMNotifyStatus(const PMString& s, bool16 forceRedrawNow)
 }
 
 // KCMStoreSessionStatus (declared in KCMModelNotify.h) -- remember, do not notify.
-// The one caller is the UI's KCMSetStatus. A message raised by a UI action is painted by the UI
-// itself and needs no notification, but **there must still be exactly one place that remembers
-// it** (app.kcmStatus answers from it, and the panel restores from it on re-show).
-// @warning notifying from here would loop: observer -> KCMSetStatus -> here.
+// Two callers: the UI's KCMSetStatus, and KCMNotifyStatus above, which stores through here and
+// then notifies. A message raised by a UI action is painted by the UI itself and needs no
+// notification, but **there must still be exactly one place that remembers it** (app.kcmStatus
+// answers from it, and the panel restores from it on re-show).
+// @warning notifying from here would loop: observer -> KCMSetStatus -> here. That is also why
+// KCMNotifyStatus calls THIS one and not the other way round.
 void KCMStoreSessionStatus(const PMString& s)
 {
-	// An unsplit message is one body; the other four are cleared for the same reason as above.
+	// A message that arrives as one string has no split, so the other four pieces are CLEARED
+	// rather than left: a heading or a context from the previous message would otherwise stand
+	// around the new sentence. An unsplit message is the special case of the five-piece shape.
 	sStatusLabel.Clear();
 	sStatusPre.Clear();
 	sStatusMid = s;
