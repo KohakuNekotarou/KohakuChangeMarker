@@ -40,7 +40,7 @@
 #include <set>
 
 // Project includes:
-#include "KCMID.h"
+#include "KCMID.h"		// kKCMPageFlagsChangedMessage (the notification ID)
 #include "KCMLoc.h"		// the confirmation shown before the document is changed follows the UI language
 #include "KCMHideUnchanged.h"
 #include "KCMCore.h"		// KCMIsDocDBOpen / KCMArmedSourceDB
@@ -50,7 +50,6 @@
 							//   i.e. the same thing the screen, the thumbnails and the map read**,
 							//   so that hiding agrees with what is drawn.
 #include "KCMPageMap.h"	// KCMPageMapIsRegistered / KCMPageMapHasAnyRegistered
-#include "KCMID.h"		// kKCMPageFlagsChangedMessage (the notification ID)
 // The UI-side header KCMScrollMap.h is deliberately NOT included: redrawing the map after a
 // hide or a restore is the job of the UI that receives the notification.
 
