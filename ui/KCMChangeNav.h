@@ -2,18 +2,23 @@
 //
 //  KCMChangeNav.h
 //
-//  「見るべき箇所」を順に巡回するナビゲーション(パネルの ◀ Prev / Next ▶ ボタンの実体)。
-//  巡回対象(2026-08-24 現行化。実装は KCMChangeNav.cpp の KCMBuildStops が正):
-//    ① 変更あり(赤/青リング)のページ = sEntries にキーがある(**Pixel モードで**比較 Start 中)
-//    ② overset「+」箇所 = Find Overset の sOversetLocs(未 Start でも単独巡回可。1箇所=1ストップ)
-//    ③ ★**Story Edits 一覧の葉**(2026-08-24 追加。**Story モードで**比較 Start 中)＝1つの編集、
-//       または子を持たない行そのもの。**子のある行は含めない**(規則と理由＝KCMStoryNav.h)。
-//  ※Added/Removed(登録・緑「/」)と Overflow(赤「/」)は巡回対象に含めない(2026-07-10 ユーザー指定)。
-//  ※①と③は**排他**＝モードで決まる(Story モードは1枚もラスタ化しないので①は元から0件)。②はどちらの
-//    モードでも Find Overset が ON なら**末尾に続く**。
-//  変更ページはズームを変えずページ中心へ、overset は「+」点へスクロールするだけ(選択はしない)。
-//  ③だけは飛び方が違い、**一覧の行をクリックしたときと同じ実装**を呼ぶ(ジャンプ＋一瞬のマーク＋
-//  メッセージ欄。KCMStoryNav.cpp → KCMStoryJump.cpp)。
+//  Walking "the places worth looking at" in order -- what the panel's Prev and Next buttons do.
+//  What is walked (KCMBuildStops in KCMChangeNav.cpp is the statement of record):
+//    1. pages with a change on them (a red/blue ring) = those with a key in sEntries. Only while
+//       a comparison is running IN THE PIXEL MODE.
+//    2. overset "+" places = Find Overset's sOversetLocs. These can be walked on their own,
+//       without a comparison; one place is one stop.
+//    3. THE LEAVES OF THE STORY EDITS LIST -- one edit, or a row with no children at all. Rows
+//       that DO have children are not stops (the rule and the reason are in KCMStoryNav.h). Only
+//       while a comparison is running IN THE STORY MODE.
+//  Added/Removed (registered, a green "/") and Overflow (a red "/") are NOT walked, at the user's
+//  request.
+//  1 and 3 are mutually exclusive, decided by the mode (the Story mode rasterises no page at all,
+//  so 1 is empty to begin with). 2 FOLLOWS EITHER OF THEM whenever Find Overset is on.
+//  A changed page is scrolled to its centre without touching the zoom; an overset stop scrolls to
+//  its "+" point. Neither selects anything.
+//  Case 3 travels differently: it calls THE SAME IMPLEMENTATION A CLICK ON THE LIST ROW DOES
+//  (jump, a brief mark, the message line -- KCMStoryNav.cpp into KCMStoryJump.cpp).
 //
 //========================================================================================
 
@@ -26,93 +31,97 @@
 class IDataBase;
 class IControlView;
 
-// view が spreadUID を映していなければ、公式コマンド kSetSpreadCmdBoss で切り替える(2026-08-11 に
-// 1ビュー単位で括り出して公開)。既に映していれば何もしないので、何度呼んでも安い。
-// ★スクロールだけでは別スプレッド(とくにマスタースプレッド)へは届かない＝空のペーストボードに
-//   着地する。「違うスプレッドなら切り替える」は公式の作法(手本 SnapTracker.cpp:224 に特例なし)。
-// ★Prev/Next(この .cpp 内)と、レイアウトビュー同期(**KCMViewSync.cpp**)の両方が呼ぶ＝同じ判断を
-//   2か所に書かないため([[one-question-one-place]])。
-// 戻り値: 実際に切り替えたら kTrue(既に映していた・失敗した場合は kFalse)。
-// ⚠2026-08-19(不具合再検査 B-U8)訂正＝上は「KCMPeek.cpp」と書いていたが、同期エンジンは 2026-08-13 の
-//   model/UI 分割で出て行っている(呼び所は KCMViewSync.cpp の KCMSyncOtherDocViewportsTo)。
-//   ★**同じ主張を .cpp 側は 2026-08-17 に訂正済みで、この .h だけが残っていた**＝1本直したときに
-//   同じ形の兄弟を探さなかった型([[verify-claims-in-comments]] の「近い兄弟ほど残る」)。
+// Unless view is already showing spreadUID, switch it with the official kSetSpreadCmdBoss.
+// A view that is already showing it costs nothing, so this is cheap to call repeatedly.
+// SCROLLING ALONE WILL NOT REACH ANOTHER SPREAD, a master spread least of all: it lands on empty
+// pasteboard instead. "Switch when it is a different spread" is the official form -- SnapTracker
+// makes no exception for masters either.
+// Both Prev/Next (in this .cpp) and the layout view synchroniser (KCMViewSync.cpp) call it, so
+// that one judgement is not written down twice.
+// Returns kTrue when it actually switched (kFalse when it was already showing it, or on
+// failure).
 bool16 KCMEnsureViewShowsSpread(IControlView* view, IDataBase* db, UID spreadUID);
 
-// 次/前の「見るべきページ」へレイアウトビューをスクロールする。未 Start(sDB==nil)や対象0件のときは
-// スクロールせず、パネルのステータス行にその旨を出すだけ(安全に何度でも呼べる)。
+// Scroll the layout view to the next or previous place worth looking at. With no comparison
+// running, or nothing to walk, nothing is scrolled and the panel's status line says so. Safe to
+// call any number of times.
 void KCMGotoNextChange();
 void KCMGotoPrevChange();
 
-// 巡回の基準点(直近ページ)を忘れる。比較の Start(全再比較=対象文書入れ替え)と Stop で呼ぶ。
-// ★UID はデータベース単位なので、別文書で再 Start したときに旧文書のページ UID が偶然一致して
-// 誤った位置から巡回が始まるのを防ぐ(セッションを跨いだ基準点の持ち越しを断つ)。
+// Forget where the walk is (the page last visited). Called on Start -- a full recomparison, so
+// the documents are swapped -- and on Stop.
+// A UID means nothing outside its own database, so this is what stops a page UID from the old
+// document happening to match one in the new and the walk resuming from the wrong place.
 void KCMResetNav();
 
-// Prev/Next の間の現在位置表示を「今の変更ページ集合＋巡回基準点」から作り直してパネルへ送る。
-// KESCL の UpdateNavWidgets と同じ発想で、Next/Prev を押さなくても状態変化に追従させるために、
-// 変更ページ集合が変わり得るすべての契機から呼ぶ。
-// ⚠2026-08-19(不具合再検査 B-U8)訂正＝ここには呼び手を4つ名指ししてあったが、**3つは分割で失効していた**
-//   (KCMDoMarkChangesDoc / KCMRefreshComparisonForSelectedPages / KCMDoClearMarks は
-//   いずれも model 側＝別 .pln のこの UI 関数を呼べない)。今の呼び手は全数 Grep で次のとおり:
-//     ・KCMModelChangeObserver … 比較の再構築/消去の通知、あふれ走査の通知、**Story Edits 一覧の
-//       作り直しの通知**(2026-08-24 追加＝Refresh Story Comparison で子の数が変わると N が変わる)
-//     ・KCMActionComponent     … Find Overset を OFF にしたとき(巡回対象からあふれを外す)
-//     ・KCMPanelObserver       … パネルの表示内容を作り直すとき(KCMApplyPanelInfo。4つ目だけ生きていた)
-//     ・KCMChangeNav.cpp 自身  … 巡回の各出口(3か所)
-// 表示規則:
-//   ・巡回対象の文書が無い          → 空(＝未 Start **かつ** Find Overset も OFF)
-//   ・対象文書あり・ストップ 0 件   → "/"
-//   ・対象文書あり・N 件(未巡回)    → "1/N"(Start 直後に即表示)
-//   ・k 番目を巡回中                → "k/N"
-// ⚠同じ 2026-08-19 の訂正＝旧記述は「未 Start(比較なし)→空」だったが、**未 Start でも Find Overset が
-//   ON なら "1/N" が出る**(巡回対象はあふれ箇所)。.cpp 側(KCMRefreshNavPosition の末尾)は
-//   「未 Start かつ overset 無し」と正しく書いており、ここでも .h だけが古かった。
+// Rebuild the position readout between Prev and Next out of the current set of stops and where
+// the walk is, and send it to the panel. As with KESCL's UpdateNavWidgets, this is called from
+// every path that can change the set, so the readout follows without Prev or Next being pressed.
+// The callers are:
+//   - KCMModelChangeObserver ... a comparison rebuilt or cleared, an overset scan, and the Story
+//     Edits list being rebuilt (a Refresh Story Comparison changes a row's child count, which
+//     changes N)
+//   - KCMActionComponent     ... Find Overset going off (its places leave the walk)
+//   - KCMPanelObserver       ... the panel's contents being rebuilt (KCMApplyPanelInfo)
+//   - KCMChangeNav.cpp itself ... every exit of the walk, and KCMNoteStoryStop
+// What is shown:
+//   - nothing to walk in any document -> empty (no comparison AND Find Overset off)
+//   - a document but no stops         -> "/"
+//   - N stops, none visited yet       -> "1/N" (shown as soon as a comparison starts)
+//   - standing on the k'th            -> "k/N"
+// Note that WITHOUT A COMPARISON BUT WITH FIND OVERSET ON, "1/N" does appear -- what is walked is
+// then the overset places.
 void KCMRefreshNavPosition();
 
-// ★★★Story Edits の行へ「今立った」ことを巡回位置(k/N)に反映する(2026-08-24 ユーザー要望
-//   「StoryEdit の行を選択した時も Prev のほうに連動しないと違和感」)。
+// Record that the walk now stands on a Story Edits row, so that k/N reflects it. (The user asked
+// for this: selecting a StoryEdit row and having Prev/Next not follow felt wrong.)
 //
-// ★**呼び手は2本のジャンプ関数だけ**＝`KCMStoryJumpToRow` と `KCMStoryJumpToChange`
-//   (KCMStoryJump.cpp。2026-08-25 の再検査で全数 Grep して確認＝この2つ以外に呼び手は無い)。
-//   行のクリックも、矢印キーの歩きも、Prev/Next の巡回も、**行きたい先が決まったら必ずその2本のどちらかを
-//   通る** ∴「今どのストップに立っているか」を決める場所は1つで済む([[one-question-one-place]])。
-//   ⚠Prev/Next 側でも別に覚えさせると、同じ行について2つの答えが出る。
+// THE ONLY CALLERS ARE THE TWO JUMP FUNCTIONS, KCMStoryJumpToRow and KCMStoryJumpToChange
+// (KCMStoryJump.cpp). A click on a row, an arrow key walking the list, and Prev/Next all end up
+// in one of those two once they know where they are going, so where the walk stands is decided
+// in a single place. Recording it on the Prev/Next side as well would give one row two answers.
 //
-// 引数の意味は3通りで、**3つ目がこの関数の要**:
-//   ・changeIndex >= 0            … その変更に立つ(そのままストップ)
-//   ・changeIndex < 0 で子が無い行 … その行に立つ(行そのものがストップ)
-//   ・changeIndex < 0 で子が有る行 … ★**その最初の子の「入口」に立つ**＝表示はその子の番号だが、
-//     **まだそこへは行っていない**。次に Next を押すとその子へ行く(飛ばさない)／Prev を押すと
-//     1つ前のストップへ行く。⇒ **比較を Start した直後に「1/N」と出るのとまったく同じ規則**
-//     （表示＝次に Next で行く先。ユーザー決定 2026-08-24）。子のある親行は巡回対象では無い
-//     （KCMStoryNav.h）ので、立てる場所がここしか無い。
+// The argument means three different things, and THE THIRD IS THE POINT OF THE FUNCTION:
+//   - changeIndex >= 0             ... stand on that change (it is a stop in its own right)
+//   - changeIndex < 0, row without children ... stand on the row (the row itself is the stop)
+//   - changeIndex < 0, row WITH children    ... STAND AT THE ENTRANCE TO ITS FIRST CHILD. The
+//     readout shows that child's number, but THE WALK HAS NOT GONE THERE YET. The next Next goes
+//     to it (it is not skipped); Prev goes to the stop before it. That is exactly the rule that
+//     makes a comparison show "1/N" the moment it starts -- what is shown is where Next will go
+//     (the user's decision). A parent row with children is not a stop (KCMStoryNav.h), so this
+//     entrance is the only place to stand.
 //
-// ⚠**Pixel モードでは何もしない。** あちらの巡回対象はページで、一覧の行はその列に居ない
-//   ---- 触ると「行をクリックしたらページの巡回位置が飛ぶ」ことになる。
-// ⚠rowIndex が今の一覧の外なら何もしない(一覧が作り直された直後のクリック)。
+// IN THE PIXEL MODE THIS DOES NOTHING: what is walked there is pages, and a list row is not among
+// them -- touching it would make clicking a row move the page walk.
+// A rowIndex outside the current list does nothing either (a click arriving just after the list
+// was rebuilt).
 void KCMNoteStoryStop(int32 rowIndex, int32 changeIndex);
 
-// Story Edits の行から呼ぶジャンプ: そのストーリーの先頭フレームを画面中央に出す。
-//   ・frameUID のスプレッドを先に出すので、別スプレッドでもマスターでもペーストボードでも届く
-//   ・★★Source 窓も連れて行くが、合わせるのは**ページではなく同じストーリー**(storyUID)＝2つの版で
-//     そのストーリーが違う場所にあっても、両方の窓が同じストーリーを映す。Prev/Next が対応表で
-//     ページを引くのとは意図して違う(2026-08-10 ユーザー指摘)。Source に無いストーリー(Added)なら
-//     Target だけが動く。⚠「Sync Layout Views」が ON のときは Source を手動で動かさない
-//     (Sync が Target のスクロールを運ぶので二重になる)
-//   ・Pages パネルは両側とも追随する(pageUID がその解決に要る。kInvalidUID＝ページに載っていない
-//     フレームなら Pages パネルは動かない)
-//   ・★Prev/Next の巡回位置「k/N」には影響しない(別の動線なので基準点を動かさない)
-// 戻り値: 1つでもビューをスクロールできたら kTrue。実体は KCMChangeNav.cpp。
+// The jump a Story Edits row makes: put the first frame of that story in the centre of the view.
+//   - the spread of frameUID is shown first, so this reaches another spread, a master, or the
+//     pasteboard
+//   - THE SOURCE WINDOW COMES ALONG TOO, but what it is lined up on is THE SAME STORY (storyUID),
+//     not the same page: when that story sits somewhere else in the two versions, both windows
+//     still show the story. That is deliberately unlike Prev/Next, which looks a page up in the
+//     pairing table. For a story with no counterpart in the Source (an Added one) only the Target
+//     moves. While "Sync Layout Views" is on, the Source is NOT moved by hand -- Sync already
+//     carries the Target's scroll over, and doing both would double it.
+//   - the Pages panel follows on both sides (pageUID is what resolves that; kInvalidUID, a frame
+//     that is on no page, leaves the Pages panel where it is)
+//   - the Prev/Next position k/N is NOT affected: this is a different route, so it does not move
+//     the walk
+// Returns kTrue when at least one view could be scrolled. Defined in KCMChangeNav.cpp.
 //
-// ★★focusIndex / sourceFocusIndex (2026-08-22 ユーザー要望)＝渡すと「ストーリーの書き出し」ではなく
-//   **その文字**(キャレットが立つ位置)を画面中央に置く。★**両側を別々に受ける**のは、同じ編集でも
-//   新旧で文字位置が違うから＝Change の fTargetStart / fSourceStart をそのまま渡す。
-//   ⚠kInvalidTextIndex(既定)なら従来どおりストーリーの書き出しへ＝**親のストーリー行はこれで呼ぶ**
-//     (行が指しているのがストーリーそのものなので)。
-//   ⚠**呼び手は db(新側)に IDataBase::SaveRestoreModifiedState を持つこと**＝点を出すのに組版が要り、
-//     組版は文書を dirty にする(IKCMStoryEditsFacade::GetStoryPointAt)。
-//     ★**旧側のガードはこの関数が自分で持つ**＝旧文書に触るのはここだけなので。
+// focusIndex / sourceFocusIndex: pass them to centre THAT CHARACTER -- where the caret would
+// stand -- rather than the start of the story. THE TWO SIDES ARE TAKEN SEPARATELY because the
+// same edit is at different character positions in the two versions: pass a Change's fTargetStart
+// and fSourceStart straight through.
+// kInvalidTextIndex (the default) means the start of the story as before, and that is what A
+// PARENT STORY ROW passes, the row pointing at the story itself.
+// @warning THE CALLER MUST HOLD AN IDataBase::SaveRestoreModifiedState ON db (the new side):
+//   producing the point needs composition, and composition dirties the document
+//   (IKCMStoryEditsFacade::GetStoryPointAt). The guard for the OLD side is held by this function
+//   itself, since this is the only place that touches the old document.
 bool16 KCMGotoStoryFrame(IDataBase* db, UID frameUID, UID pageUID, UID storyUID,
 	TextIndex focusIndex = kInvalidTextIndex, TextIndex sourceFocusIndex = kInvalidTextIndex);
 

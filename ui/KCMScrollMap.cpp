@@ -2,42 +2,43 @@
 //
 //  KCMScrollMap.cpp
 //
-//  スクロールバー地図: 文書ウィンドウ(kLayoutPresentationBoss)の縦スクロールバー左隣に、
-//  KCM の枠(変更マーク)ページ位置を示す細い strip を実行時注入する(VS の検索マーク風)。
-//  SDK 裏取りの全記録は docs/ai-notes/scrollbar-minimap.md(SDK ルートからの相対パス)。要点:
-//    - 注入先: presentation の IPanelControlData(kOWLHostedPanelControlDataImpl)。
-//      スクロールバー boss 自身は IPanelControlData を持たないので子にはできない。
-//    - 実行時生成→注入の標準形は open/components/linksui/LinkInfoPanelObserver.cpp:281
-//      (::CreateObject(db, RsrcSpec(..., kViewRsrcType, resID), IID_ICONTROLVIEW) →
-//       AddWidget → SetFrame → SetFrameBinding)。
-//    - リサイズ追従は枠組み保証(IControlView.h:150 の契約)。binding は縦スクロールバー自身の
-//      GetFrameBinding() をコピーするのが最も堅い。
-//    - 自前描画 widget boss の手本 = customdatalinkui kCusDtLnkUITreeCViewPanelWidgetBoss
-//      (kGenericPanelWidgetBoss + 自前 IID_ICONTROLVIEW)。
+//  The scrollbar map: a narrow strip injected at run time just left of a document window's
+//  (kLayoutPresentationBoss) vertical scrollbar, showing where the pages carrying a KCM frame are
+//  -- Visual Studio's search marks, for pages. The whole record of how this was established
+//  against the SDK is docs/ai-notes/scrollbar-minimap.md, relative to the SDK root. In brief:
+//    - Where it goes: the presentation's IPanelControlData (kOWLHostedPanelControlDataImpl). The
+//      scrollbar boss itself has no IPanelControlData, so the strip cannot be its child.
+//    - The standard shape for building a widget at run time and injecting it is
+//      open/components/linksui/LinkInfoPanelObserver.cpp (::CreateObject with a RsrcSpec of
+//      kViewRsrcType, then AddWidget, SetFrame, SetFrameBinding).
+//    - Following a resize is guaranteed by the framework (the contract on
+//      IControlView::SetFrameBinding). The most robust binding is a copy of the vertical
+//      scrollbar's own GetFrameBinding().
+//    - The model for a widget boss that draws itself is customdatalinkui's
+//      kCusDtLnkUITreeCViewPanelWidgetBoss (kGenericPanelWidgetBoss plus its own IID_ICONTROLVIEW).
 //
-//  フェーズ1(プローブ=オレンジ塗り)は 2026-07-11 実機表示OK。現在はフェーズ2=実データ描画:
-//  変更ページ(sEntries)=赤 / Add/Remove 登録ページ=緑(色はユーザー指定)。表示専用で
-//  クリック移動等は付けない(ユーザー指定 2026-07-11)→イベントハンドラ不要のシンプル構成。
+//  The strip draws real data: changed pages (sEntries) in red, pages registered as Add/Remove in
+//  green. It is display only -- no click-to-navigate (the user's decision), which is why it needs
+//  no event handler at all.
 //
-//  ライフサイクル: Start(比較開始)で KCMScrollMapAttach、Stop/Clear で KCMScrollMapDetachAll。
-//  ⚠2026-08-17 訂正(API 監査 B-U8): 旧記述は「KCMPanelObserver.cpp の KCMToggleStartStop から
-//  呼ぶ」だったが、**KCMToggleStartStop は model 側(KCMComparisonRun.cpp)にあり、この UI 関数を
-//  呼べない**。今は model が比較の開始/終了を**通知**し、UI 側の KCMModelChangeObserver が受けて
-//  Attach/DetachAll する(フライアウトのトグル操作は KCMActionComponent から)。
-//  strip へのポインタは一切保持しない(毎回 FindWidget で探す)ので、窓ごと閉じられて widget が
-//  消えていても安全。
+//  Lifecycle: KCMScrollMapAttach on Start (a comparison begins), KCMScrollMapDetachAll on
+//  Stop/Clear. The model posts a notification when a comparison starts or ends and the UI-side
+//  KCMModelChangeObserver does the attaching and detaching; the flyout toggle goes through
+//  KCMActionComponent. No pointer to a strip is ever held (each one is looked up with FindWidget),
+//  so it is safe even once a window and its widgets are gone.
 //
-//  ★ビルド時リンク依存:
-//    このファイルは 2 つの追加ライブラリを要求する(Dolly 既定の PMRuntime / Public だけでは未解決
-//    シンボルになり、大量のリンクエラーで落ちる)。
-//      - DV_WidgetBin ... 下で継承している DVControlView(自前描画ビュー基底。#include "DVControlView.h")
-//      - WidgetBin    ... ::CreateObject + kViewRsrcType + AddWidget によるウィジェット実行時生成
-//    Windows(.vcxproj)では AdditionalDependencies に WidgetBin.lib / DV_WidgetBin.lib を追加済み
-//    (repo 内の控え = KCM/buildproj/。⚠2026-08-17 訂正: 旧記述の「_buildproj」は存在しない)。
-//    ★Mac は追加不要(2026-07-25 追補で訂正): Mac 側の実体は libPublicPlugIn.a の 1 本だけで、
-//    Windows で 4 つに分かれているもの(PMRuntime / Public / WidgetBin / DV_WidgetBin)がそこに統合
-//    されている。DVControlView を使う SDK サンプル customdatalinkui の Xcode プロジェクトも、
-//    InDesignModelAndUI.framework + libPublicPlugIn.a の 2 つしかリンクしていない。
+//  BUILD-TIME LINK DEPENDENCIES. This file needs two libraries beyond Dolly's defaults (PMRuntime
+//  and Public), without which it fails to link with a long list of unresolved symbols:
+//      - DV_WidgetBin ... DVControlView, the base class for a view that draws itself
+//                         (#include "DVControlView.h")
+//      - WidgetBin    ... building a widget at run time with ::CreateObject + kViewRsrcType +
+//                         AddWidget
+//  On Windows (.vcxproj) both are already in AdditionalDependencies; the copy kept in the repo is
+//  under KCM/buildproj/.
+//  The Mac needs neither: its equivalent is the single libPublicPlugIn.a, into which everything
+//  Windows splits into four (PMRuntime / Public / WidgetBin / DV_WidgetBin) has been folded. The
+//  Xcode project of customdatalinkui, the SDK sample that uses DVControlView, links only
+//  InDesignModelAndUI.framework and libPublicPlugIn.a.
 //
 //========================================================================================
 
@@ -47,81 +48,87 @@
 #include "IControlView.h"
 #include "IPanelControlData.h"
 #include "IWidgetParent.h"
-#include "IDocumentPresentation.h"	// IID_IDOCUMENTPRESENTATION(文書ウィンドウ判定)
-#include "ILayoutViewUtils.h"		// GetAllLayoutViews(Split Window 両ペイン+全窓の列挙)
-// (ILayoutControlData.h は 2026-08-19 の不具合再検査 B-U8 で外した＝「そのビューは今どのスプレッドか」は
-//  KCMViewLookup の KCMQuerySpreadUIDForView に一本化し、このファイルから直接の Query が消えた)
-#include "IMasterSpreadList.h"		// マスタースプレッドかの判定(表示中スプレッドの切り分け)
-#include "IPanorama.h"				// GetBounds(パノラマのスクロール全域=スクロールバーが表す範囲)
+#include "IDocumentPresentation.h"	// IID_IDOCUMENTPRESENTATION (identifying a document window)
+#include "ILayoutViewUtils.h"		// GetAllLayoutViews (both panes of a Split Window, across every window)
+// (ILayoutControlData.h is deliberately not included: "which spread is this view showing" is
+//  asked in one place only, KCMViewLookup's KCMQuerySpreadUIDForView, so this file queries for it
+//  nowhere.)
+#include "IMasterSpreadList.h"		// telling a master spread from an ordinary one (which pages go on the map)
+#include "IPanorama.h"				// GetBounds (the whole scrollable extent, which is what the scrollbar represents)
 #include "IGraphicsPort.h"
-#include "IGeometry.h"				// ページ矩形(pasteboard 写像用)
-#include "IInterfaceColors.h"		// 背景をテーマ地色(kInterfacePaletteFill)に
-#include "ISpreadList.h"			// スプレッド順の走査(隠しスプレッド除外のため)
+#include "IGeometry.h"				// page rectangles (mapped into pasteboard coordinates)
+#include "IInterfaceColors.h"		// paint the background in the theme colour (kInterfacePaletteFill)
+#include "ISpreadList.h"			// walking the spreads in order (so hidden ones can be left out)
 #include "ISpread.h"
-#include "IBoolData.h"				// スプレッドの隠し状態(IID_IHIDESPREADBOOLDATA)の読み取り
-#include "SpreadID.h"				// IID_IHIDESPREADBOOLDATA(kSpreadBoss 上の IBoolData)
+#include "IBoolData.h"				// reading a spread's hidden flag (IID_IHIDESPREADBOOLDATA)
+#include "SpreadID.h"				// IID_IHIDESPREADBOOLDATA (an IBoolData on kSpreadBoss)
 
 // General includes:
 #include "K2Vector.h"
 #include "Utils.h"
-#include "CreateObject.h"			// ::CreateObject(db, RsrcSpec, IID)
+#include "CreateObject.h"			// ::CreateObject2(db, RsrcSpec)
 #include "RsrcSpec.h"
 #include "LocaleSetting.h"
-#include "DVControlView.h"			// 自前描画ビューの基底(customdatalinkui と同じ)
+#include "DVControlView.h"			// the base class for a view that draws itself (as in customdatalinkui)
 #include "AGMGraphicsContext.h"
 #include "AutoGSave.h"
-#include "LayoutUIID.h"				// kVertScrollBarWidgetID / kLayoutWidgetID(レイアウトビューを名指しで引く)
+#include "LayoutUIID.h"				// kVertScrollBarWidgetID / kLayoutWidgetID (naming the layout view outright)
 #include "CoreResTypes.h"			// kViewRsrcType
-#include "IGeometryFacade.h"		// GetItemBounds(ページ矩形をペーストボード座標で。手本=SnapTracker.cpp:610-616)
-#include <algorithm>				// std::find(presentation の重複判定)
+#include "IGeometryFacade.h"		// GetItemBounds (page rectangles in pasteboard coordinates; modelled on SnapTracker)
+#include <algorithm>				// std::find (spotting a presentation already seen)
 #include <vector>
 #include <set>
-#include <chrono>					// steady_clock(手動 Hide/Show 検出のスロットル。単調増加の壁時計=Win/Mac 共通で正しい。
-									// 旧 std::clock は Win=壁時計/POSIX(Mac)=CPU時間 と意味が食い違うため置換)
+#include <chrono>					// steady_clock, for throttling the manual Hide/Show detection.
+									// A monotonic wall clock means the same thing on Windows and
+									// on the Mac, whereas std::clock does not (wall time on
+									// Windows, CPU time on POSIX).
 
 // Project includes:
 #include "KCMUIID.h"
 #include "KCMScrollMap.h"
-#include "IKCMCompareFacade.h"	// arm 状態(2026-08-13・分割 第1段 Task 11 で Facade 経由へ)
-#include "IKCMMarkData.h"			// 変更ページ・overflow・overset の読み取り(赤/薄赤/濃赤の供給元)。2026-08-13 Task 12
-                                    // ＋ GetRegisteredPages(Add/Remove 登録ページ=緑マーク。2026-08-13 Task 13)
-#include "KCMViewLookup.h"		// KCMQuerySpreadUIDForView(「そのビューは今どのスプレッドか」の唯一の口。
-									// 2026-08-19 の不具合再検査 B-U8 でこちらへ寄せた)
+#include "IKCMCompareFacade.h"	// the armed state
+#include "IKCMMarkData.h"			// changed / overflow / overset pages (the source of the red
+									// shades) plus GetRegisteredPages (Add/Remove registrations,
+									// the green marks)
+#include "KCMViewLookup.h"		// KCMQuerySpreadUIDForView -- the one place that answers "which
+									// spread is this view showing"'
 
-// strip の幅(px)。縦スクロールバーの左辺にこの幅で並べる(6→5px、ユーザー指定 2026-07-11。
-// 移動はバー自体のクリックで足りるため表示は細めに)。
+// The strip's width in px; it sits along the left edge of the vertical scrollbar. Kept narrow on
+// purpose -- clicking the bar itself is enough to move, so the strip is there to be read.
 static const PMReal kKCMScrollMapWidth = 5.0;
 
-// 帯マークの不透明度(0〜1、ユーザー要望 2026-07-11 で半透明化)。実際の合成は、帯が「自分で塗った
-// 背景(テーマ地色)の上」にしか載らない性質を利用した混色(色'=α×マーク色+(1-α)×背景色)で行う。
-// setopacity(IGraphicsPort.h:389)でも可能だが、混色は API の透明合成挙動に依存せず確実(見た目は同一)。
-// 背景はテーマ連動(IInterfaceColors の kInterfacePaletteFill)なので、ライト/ダークどちらでも馴染む。
-// 枠(変更ページ=赤)+登録ページ(緑)の不透明度。
-static const PMReal kKCMScrollMapMarkAlpha     = 0.4;	// 枠(変更)はしっかり見せる(ユーザー指定 2026-07-13)
-// overflow「/」ページ(相手が無いページ)の不透明度。枠と差を付けて薄く(ユーザー指定 2026-07-13)。
-static const PMReal kKCMScrollMapOverflowAlpha = 0.15;	// 「/」は下地とよく混ぜて薄く(0.2→0.15、ユーザー指定 2026-07-13)
-// Find Overset の帯の不透明度。変更帯(0.4)より混色を控えて濃い赤にする(ユーザー指定 2026-07-24。
-// 「もう少し濃く」で 0.7→0.85)。
-static const PMReal kKCMScrollMapOversetAlpha  = 0.85;	// overset は下地とほぼ混ぜず赤を強く
+// The opacity of a band, 0 to 1. The blend is done by hand -- colour' = a x mark + (1-a) x
+// background -- which works because a band is only ever drawn on top of the background this view
+// painted itself. IGraphicsPort::setopacity would do it too; mixing by hand does not depend on
+// how the port composites transparency, and looks identical.
+// The background follows the theme (IInterfaceColors' kInterfacePaletteFill), so the result sits
+// well in both the light and the dark UI.
+// This is the opacity of the frame bands (changed pages, red) and the registered ones (green).
+static const PMReal kKCMScrollMapMarkAlpha     = 0.4;	// frames are meant to be clearly visible
+// The opacity of an overflow "/" page (one with no counterpart): deliberately fainter than a
+// frame, so the two reds are told apart.
+static const PMReal kKCMScrollMapOverflowAlpha = 0.15;	// mixed well into the background
+// The opacity of a Find Overset band: less of the background mixed in than a changed band, so
+// the red comes out stronger.
+static const PMReal kKCMScrollMapOversetAlpha  = 0.85;	// barely mixed with the background
 
-// ★トラックの追い込みマージン(実機で調整した採用値)。矢印ボタンの内側から、さらに上下
-// それぞれこのぶんだけ詰めた範囲に地図を描く。つまみが実際に動ける範囲は、矢印ボタンの内側より
-// もう少し狭い(バーの上下にボタンとは別の余白がある)ため、この分を引くと帯とつまみが最もよく揃う。
-// 実機で 5.0 → 8.0(2026-07-29「良い感じ」) → 6.0 → 6.5(2026-07-30 ユーザー指定。8.0 から
-// 「上下 2px ずつ減らす」で 6.0 にし、そこから半 px だけ戻して微調整) → 7.5(2026-08-07 ユーザー
-// 指定「＋1」) → 8.0(同日ユーザー指定。結果として 07-29 に「良い感じ」と言っていた値に戻った)と
-// 詰めてきた。0.0 にすると矢印ボタンの内側いっぱいに描く(この追い込みを入れる前の動作)。
-// 効き所は Draw の写像部の 1 箇所だけで、trackTop と trackBottom の両方に同じ値が効く=必ず上下対称。
-// (2026-07-30: 実験時の名残だった kKCMScrollMapTestInset から改名)
+// How far the track is pulled in, in px, on top of the arrow buttons: the map is drawn inside a
+// range narrower than the inside of the buttons by this much at each end. The thumb's real range
+// of travel IS narrower than that (there is padding beyond the buttons at both ends of the bar),
+// and subtracting this is what lines the bands up with the thumb best. Tuned on a live build.
+// Set it to 0.0 to draw right up to the inside of the arrow buttons (what it did before this
+// existed). It takes effect in exactly one place, in the mapping inside Draw, where it applies to
+// trackTop and trackBottom alike -- so the pull-in is always symmetrical.
 static const PMReal kKCMScrollMapTrackInset = 8.0;
 
-// スクロールバー地図の有効/無効(フライアウト「Show Scrollbar Map」トグル。既定=ON)。
-// OFF の間は Attach / NoticeDrawEvent を即 return させる(strip を注入しない・毎描画の指紋計算もしない)。
-// トグルを OFF にした瞬間の既存 strip 撤去は、操作側(KCMActionComponent)が DetachAll を呼ぶ。
+// Whether the scrollbar map is on: the "Show Scrollbar Map" toggle in the flyout, on by default.
+// While it is off, Attach and NoticeDrawEvent return at once, so no strip is injected and no
+// fingerprint is computed on every draw. Removing the strips that already exist when the toggle
+// goes off is the caller's job (KCMActionComponent calls DetachAll).
 static bool16 sScrollMapOn = kTrue;
 
 //========================================================================================
-// KCMScrollMapView — strip の自前描画(IControlView 実装)
+// KCMScrollMapView -- the strip draws itself (an IControlView implementation)
 //========================================================================================
 
 class KCMScrollMapView : public DVControlView
@@ -137,34 +144,40 @@ public:
 
 CREATE_PERSIST_PMINTERFACE(KCMScrollMapView, kKCMScrollMapViewImpl)
 
-// ★写像をスクロールバーに合わせるための実測値を、strip と同じ窓から実行時に読む(2026-07-29)。
-//   outArrowH  = 縦スクロールバーの矢印ボタン(「^」「v」)の高さ。ボタンは正方形なので
-//                「バーの frame の幅」がそのまま高さになる(実機キャプチャで確認: バー 15px 幅に対し
-//                ボタン領域 16px。UI スケールが変わってもバー幅と一緒に変わるので固定値は使わない。
-//                公開定数 kCC2017SpectrumScrollBarWidth=13 は固定値なので採らない)。
-//   outPanoTop/outPanoBottom = パノラマのスクロール全域(content 座標の Y)。スクロールバーの全長が
-//                表しているのはページの範囲ではなくこちら(ページの上下のペーストボード余白を含む)。
-// どちらも取れないことがある(窓の構成が想定と違う/座標系が別)ので取得可否を返し、呼び出し側は
-// 取れなかった分だけ従来の写像へフォールバックする=今より悪くならないようにする。
-// strip はスクロールバーの兄弟として注入してあるので、親パネルを辿ればバーもレイアウトビューも見つかる
-// (IPanorama を持つのはレイアウトビューだけ)。ポインタは保持せず毎 Draw で引き直す(窓ごと閉じられても安全)。
-// この strip が載っている**ペイン**のレイアウトビュー。引けなければ nil。
+// Read, at run time and from the strip's own window, the measurements that align the mapping
+// with the scrollbar.
+//   outArrowH  = the height of the vertical scrollbar's arrow buttons. The buttons are square, so
+//                the bar's frame WIDTH is that height (captured on a live build: a 16px button
+//                area on a 15px-wide bar). Deriving it from the bar means it follows a change of
+//                UI scale; the public constant kCC2017SpectrumScrollBarWidth is fixed, so it is
+//                not used.
+//   outPanoTop / outPanoBottom = the whole scrollable extent of the panorama, in content
+//                coordinates. What the full length of the scrollbar stands for is THIS, not the
+//                extent of the pages (it includes the pasteboard margins above and below them).
+// Either can fail to come out (a window built differently from what is assumed, or another
+// coordinate system), so success is reported back and the caller falls back to the older mapping
+// for whichever it did not get -- never worse than before.
+// The strip is injected as a sibling of the scrollbar, so walking up to the parent finds both the
+// bar and the layout view (the layout view is the only one with an IPanorama). Nothing is cached:
+// every Draw looks them up again, which is what makes it safe when the window has gone.
+// The layout view of the PANE this strip sits in; nil when it cannot be found.
 //
-// ★★★「この strip はどのペインのものか」を答える唯一の場所([[one-question-one-place]])。
-//   strip は縦スクロールバーの兄弟として注入してあるので、親をたどれば必ず自分のペインに着く。
-//   ⚠Split Window では **1つの presentation に2つのレイアウトビューが載る**
-//   (`ILayoutViewUtils.h:65` が "will return both layout views in a split layout view if both shown"
-//   と明記)。∴ presentation 単位で「最初に一致したビュー」を採ると、**隣のペインの答え**が返り得る。
+// THE ONE PLACE THAT ANSWERS "which pane is this strip in". The strip is injected as a sibling of
+// the vertical scrollbar, so walking up to the parent always lands in its own pane.
+// @warning in a Split Window ONE PRESENTATION CARRIES TWO LAYOUT VIEWS -- ILayoutViewUtils says
+//   GetAllLayoutViews "will return both layout views in a split layout view if both shown". So
+//   taking "the first view that matches" per presentation can return the NEIGHBOURING PANE'S
+//   answer.
 //
-// ★2026-08-19(不具合再検査 B-U8)にここへ集約した。それまで「今どのスプレッドを見ているか」だけは
-//   presentation を突き合わせる別関数(KCMSpreadShownInPresentation)が答えており、**同じ問いに
-//   答えが2つ**あった(Y の分母に使う panorama はこの関数と同じ道で引いていた)。
-//   ★★**実測では両者は一致していた**(2026-08-19。Split Window にして**主ペインだけ**マスタースプレッドへ
-//   動かし、2ペインが別のスプレッドを映す状態を作って測定＝`views=[245,238]` に対し両方の答えが 245)。
-//   ⇒ **不具合ではなかった。** ただし一致の理由は「strip は必ず**主**ペインの縦スクロールバーの隣に
-//   入る」×「GetAllLayoutViews は主ペインを先に返す」という**二重の偶然**で、どちらが崩れても
-//   静かにずれる(片方のペインがマスターを出していると、載せるページと Y の分母が別ペインのものになる)。
-//   ∴ 動作が同じうちに答えを1つへ寄せた。
+// This used to be two answers to one question: "which spread is being shown" was answered by a
+// separate function that matched on the presentation, while the panorama used for the Y
+// denominator came through the path below. MEASURED, THE TWO AGREED -- with a Split Window whose
+// panes showed different spreads (views [245, 238], both answers 245) -- so it was never a
+// defect. But they agreed by a double coincidence: the strip always goes next to the PRIMARY
+// pane's vertical scrollbar, and GetAllLayoutViews happens to return the primary pane first.
+// Either of those changing would make it drift silently (with one pane on a master, the pages
+// put on the map and the Y denominator would come from different panes). So while the behaviour
+// was still the same, the question was given one answer.
 static IControlView* KCMStripLayoutView(IControlView* strip)
 {
 	InterfacePtr<IWidgetParent> wp(strip, IID_IWIDGETPARENT);
@@ -174,11 +187,14 @@ static IControlView* KCMStripLayoutView(IControlView* strip)
 	if (parentPanel == nil)
 		return nil;
 
-	// ★レイアウトビューは WidgetID で名指しに引く(製品 spellpanel/PrivateSpellingUtils.cpp:362 と同じ)。
-	//   ⚠同じ関数の主ペイン側(:356)は FindWidget(kLayoutWidgetBoss)＝**ClassID** を渡しているが、
-	//   kLayoutWidgetBoss(kClassIDSpace, kLayoutUIPrefix+3) と kLayoutWidgetID(kWidgetIDSpace, 同+3) は
-	//   数値が同じでたまたま動いているだけなので、寄せる先は副ペイン側が使っている kLayoutWidgetID。
-	//   引けなかったときは従来どおり兄弟を総なめする(窓の構成が想定と違っても今より悪くならない)。
+	// The layout view is looked up by WidgetID, as the shipping spellpanel/PrivateSpellingUtils.cpp
+	// does for the secondary pane.
+	// @warning the primary-pane line in that same function passes FindWidget a CLASS ID
+	//   (kLayoutWidgetBoss) instead. kLayoutWidgetBoss (kClassIDSpace, kLayoutUIPrefix + 3) and
+	//   kLayoutWidgetID (kWidgetIDSpace, the same + 3) merely happen to hold the same number, so
+	//   the form to copy is the secondary pane's kLayoutWidgetID.
+	// When that finds nothing, fall back to walking the siblings, so a window built differently
+	// from what is assumed is never worse off than before.
 	IControlView* layoutView = parentPanel->FindWidget(kLayoutWidgetID);
 	if (layoutView != nil)
 		return layoutView;
@@ -188,10 +204,10 @@ static IControlView* KCMStripLayoutView(IControlView* strip)
 	{
 		IControlView* sib = parentPanel->GetWidget(i);
 		if (sib == nil || sib == strip)
-			continue;	// 縦スクロールバーは panorama を持たないので、下の判定で自然に外れる
+			continue;	// the vertical scrollbar has no panorama, so the test below drops it anyway
 		InterfacePtr<IPanorama> sibPano(sib, UseDefaultIID());
 		if (sibPano != nil)
-			return sib;	// パノラマを持つ最初の兄弟=レイアウトビュー
+			return sib;	// the first sibling with a panorama is the layout view
 	}
 	return nil;
 }
@@ -214,9 +230,10 @@ static void KCMScrollMapProbeWindow(IControlView* strip, PMReal& outArrowH,
 	if (sbView != nil)
 		outArrowH = sbView->GetFrame().Width();
 
-	// ★IPanorama の Query と nil 判定は残す: 欲しいのは「パノラマを持つビュー」であって widget 名ではない
-	//   (WidgetID で引けても、そこにパノラマが載っているかは別の話)。bounds が不正なら従来の写像へ任せる。
-	InterfacePtr<IPanorama> panorama(KCMStripLayoutView(strip), UseDefaultIID());	// nil でも可(InterfacePtr.h:459)
+	// Keep the IPanorama query and its nil test: what is wanted is a view WITH A PANORAMA, not a
+	// widget with a particular name -- being found by WidgetID says nothing about whether a
+	// panorama is on it. Bounds that make no sense are left to the older mapping.
+	InterfacePtr<IPanorama> panorama(KCMStripLayoutView(strip), UseDefaultIID());	// nil is allowed here (InterfacePtr)
 	if (panorama != nil)
 	{
 		const PMRect bounds = panorama->GetBounds();
@@ -229,10 +246,11 @@ static void KCMScrollMapProbeWindow(IControlView* strip, PMReal& outArrowH,
 	}
 }
 
-// spreadUID が db のマスタースプレッドなら kTrue(2026-08-11)。
-// ★IMasterSpreadList::GetMasterSpreadIndex(UID) は使わない: 「マスターでない UID を渡したとき何を
-//   返すか」がヘッダーに書かれていない(IMasterSpreadList.h:101-107 は "Return the index" としか
-//   言わない)。負が返る保証の無いものを判定に使わず、自分で突き合わせる。マスターは通常数枚なので安い。
+// kTrue when spreadUID is one of this db's master spreads.
+// IMasterSpreadList::GetMasterSpreadIndex(UID) is deliberately NOT used: the header does not say
+// what it returns for a UID that is not a master ("Return the index" is all it says). Rather than
+// build a test on an unpromised negative, match them here. There are rarely many masters, so this
+// is cheap.
 static bool16 KCMIsMasterSpread(IDataBase* db, UID spreadUID)
 {
 	if (db == nil || spreadUID == kInvalidUID)
@@ -247,19 +265,23 @@ static bool16 KCMIsMasterSpread(IDataBase* db, UID spreadUID)
 	return kFalse;
 }
 
-// フェーズ2の実データ描画(表示専用。クリック移動等は付けない=ユーザー指定 2026-07-11)。
-//   ・背景 = テーマ地色(kInterfacePaletteFill)
-//   ・変更ページ(sEntries) = 赤の塗りつぶし
-//   ・Add/Remove 登録ページ(IKCMMarkData::GetRegisteredPages。実体は model 側の
-//     KCMPageMapCollectRegistered) = 緑の塗りつぶし
-// 写像は「文書全体基準」(VS方式)。★2026-07-29 にスクロールバー実物へ合わせて基準を直した:
-// 縦の範囲は strip の全高ではなく「つまみが動けるトラック(上下の矢印ボタンの内側)」、Y の分母は
-// ページ矩形の全域ではなく「パノラマのスクロール全域(IPanorama::GetBounds。ペーストボード余白込み)」。
-// これで帯の位置とつまみの位置が同じ尺になる(詳細は下の写像部のコメント)。各対象ページの Y 帯を
-// そのまま帯マークにする(最低3px)のは従来どおり。スクロール位置・ズームに依存しないので、再描画は
-// 比較結果が変わったとき(KCMScrollMapInvalidateAll)だけでよい。
-// 隠しスプレッド(Hide Unchanged 等)はページ収集の時点で除外する(下記)ので、隠し使用中も
-// 表示中スプレッドの現座標だけで正規化され、マーク位置は実表示と一致する。
+// Drawing the real data. Display only -- there is no click-to-navigate (the user's decision).
+//   - the background is the theme colour (kInterfacePaletteFill)
+//   - changed pages (sEntries) are filled red
+//   - pages registered as Add/Remove (IKCMMarkData::GetRegisteredPages, backed on the model side
+//     by KCMPageMapCollectRegistered) are filled green
+//
+// THE MAPPING IS RELATIVE TO THE WHOLE DOCUMENT, the way VS does it, and it is aligned to the
+// real scrollbar: the vertical range is not the strip's full height but THE TRACK THE THUMB CAN
+// TRAVEL (inside the arrow buttons at both ends), and the Y denominator is not the extent of the
+// page rectangles but THE WHOLE SCROLLABLE EXTENT OF THE PANORAMA (IPanorama::GetBounds, which
+// includes the pasteboard margins). That puts a band and the thumb on the same scale; the mapping
+// section below has the detail. Each page's Y band becomes a mark (at least 3px tall).
+// Nothing here depends on the scroll position or the zoom, so a redraw is only needed when the
+// comparison result changes (KCMScrollMapInvalidateAll).
+// Spreads that are hidden (Hide Unchanged and the like) are left out when the pages are collected
+// -- see below -- so even while hiding is in use the normalisation uses only the coordinates of
+// the spreads on screen and the marks line up with what is displayed.
 void KCMScrollMapView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 {
 	AGMGraphicsContext gc(viewPort, this, updateRgn);
@@ -271,8 +293,9 @@ void KCMScrollMapView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 
 	const PMRect frame(this->GetInnerContentFrame());
 
-	// 背景: テーマ地色(取得失敗時は中間グレー)。session が終了処理中に nil でも InterfacePtr(p, iid) は
-	// nil を許す(InterfacePtr.h:459)ので colors==nil になるだけ=下のグレーへフォールバックする。
+	// The background: the theme colour, or a mid grey when it cannot be read. A session that has
+	// gone nil during teardown is fine -- InterfacePtr(p, iid) allows a nil pointer, so colors ends
+	// up nil and the grey below is used.
 	PMReal bgR(0.5), bgG(0.5), bgB(0.5);
 	{
 		InterfacePtr<IInterfaceColors> colors(GetExecutionContextSession(), IID_IINTERFACECOLORS);
@@ -287,52 +310,57 @@ void KCMScrollMapView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 	gPort->rectpath(frame);
 	gPort->fill();
 
-	// この strip が属する窓の文書を特定し(presentation の GetDocumentUIDRef)、Target 窓か
-	// Source 窓かでマークの供給元を切り替える(2026-07-11 ユーザー要望で Source 窓にも表示)。
-	// どちらの文書でもない・未 arm・クローズ済みなら背景のみ。
-	// ⚠2026-08-19(不具合再検査 B-U8)訂正＝「stripPres は下の『今どのスプレッドを見ているか』でも使う」と
-	//   書いてあったが、その問いは KCMStripLayoutView(＝**ペイン**単位)へ移した。ここで presentation を
-	//   引くのは**文書を知るため**だけ(GetDocumentUIDRef)。
+	// Identify the document this strip's window belongs to (the presentation's GetDocumentUIDRef)
+	// and take the marks from the Target or from the Source accordingly (the Source window shows
+	// them too, at the user's request). A window that is neither, or unarmed, or already closed,
+	// gets the background only.
+	// The presentation is queried here ONLY to learn the document. "Which spread is being shown"
+	// is a question about the PANE, and it is answered by KCMStripLayoutView.
 	InterfacePtr<IWidgetParent> stripParent(this, IID_IWIDGETPARENT);
 	InterfacePtr<IDocumentPresentation> stripPres(
 		stripParent != nil ? (IDocumentPresentation*)stripParent->QueryParentFor(IID_IDOCUMENTPRESENTATION) : nil);
 	IDataBase* const db = (stripPres != nil) ? stripPres->GetDocumentUIDRef().GetDataBase() : nil;
-	// ★この Draw だけで3回聞くので InterfacePtr に1回受ける(Utils.h:74-80。2026-08-17 の API 監査 B-U8)。
-	//   ここは strip の再描画のたびに通る＝下の marks と同じ扱いに揃える。
+	// The facade is asked several times in this one Draw, so it is queried into an InterfacePtr
+	// once (Utils.h says to do that rather than pay for a query per call). This runs on every
+	// redraw of the strip, the same as marks below.
 	InterfacePtr<IKCMCompareFacade> compare(Utils<IKCMCompareFacade>().QueryUtilInterface());
 	const bool16 isTarget = (db != nil && db == compare->GetArmedTargetDB());
 	const bool16 isSource = (!isTarget && db != nil && db == compare->GetArmedSourceDB());
-	// ★Find Overset の帯(2026-07-24): 比較(arm)とは独立に、走査した文書(sOversetDB)の窓にも
-	//   overset ページを赤帯で出す。比較していない文書でもこの strip は描く(=オーバーセット検査だけでも
-	//   地図が出る)。比較と同じ文書なら赤どうしで自然に重なる。
+	// The Find Overset bands are independent of the comparison: the window of the scanned document
+	// gets a red band on its overset pages whether or not anything is armed, so a strip appears
+	// even when only the overset check is running. When it is the same document as the comparison,
+	// the two reds simply overlap.
 	InterfacePtr<IKCMMarkData> marks(Utils<IKCMMarkData>().QueryUtilInterface());
 	const bool16 isOverset = (db != nil && marks->GetOversetOn() &&
 		db == marks->GetOversetDB());
 	if ((!isTarget && !isSource && !isOverset) || !compare->IsDocDBOpen(db))
 		return;
 
-	// 全ページの pasteboard Y 帯をスプレッド順・ページ順で集める。★隠しスプレッド(Hide Unchanged
-	// Spreads / ページパネルの Hide Spread)は除外する: 隠すと表示中スプレッドは再配置(座標更新)される
-	// のに、隠れたスプレッドは旧座標のまま残るため、含めると正規化が汚れて全マークがズレる
-	// (ユーザー報告 2026-07-11。KCMFindPageUnderMouse のヒットテスト除外と同じ理由・同じ判定)。
-	// ★★2026-08-17(API 監査 B-U8): **ここは IPageList へ寄せない。** 平坦なページ列を集めるだけなら
-	//   IPageList が公式ルートで、KCMCollectPageUIDs は 2026-08-16 の B3 A-3 でそちらへ寄せてある。
-	//   だが **IPageList は隠しスプレッドのページも含み、除外する口を持たない**(実測で確認済み＝
-	//   `IPageList.h:104` の includePagesOfHiddenSpread は GetPageIndex にしか無い)。この地図は
-	//   「隠れているページを載せない」ことが成立条件なので、スプレッドを1つずつ見て
-	//   IID_IHIDESPREADBOOLDATA を聞ける ISpreadList の道が要る。⇒ **意図的な非対称であって寄せ漏れではない。**
-	// ★★載せるページは「この窓が今どのスプレッドを見ているか」で切り替える(2026-08-11)。
-	// マスタースプレッドは通常スプレッドとは別の座標空間に居るので、マスターを表示している窓に
-	// 通常ページの帯を並べると、Y の分母(パノラマのスクロール全域=そのときはマスター側の範囲)と
-	// 噛み合わず、まったく別の場所に帯が出る。マスター表示中はそのマスタースプレッドのページだけを
-	// 載せる(枠も overset も無ければ何も描かれない=自然に空になる)。
+	// Collect every page's pasteboard Y band, in spread order and then page order.
+	// HIDDEN SPREADS (Hide Unchanged Spreads, or Hide Spread from the Pages panel) ARE LEFT OUT:
+	// hiding re-flows the spreads that remain on screen while a hidden one keeps its old
+	// coordinates, so including them dirties the normalisation and every mark shifts (reported
+	// from a live build). The hit test in KCMFindPageUnderMouse leaves them out for the same
+	// reason, with the same test.
+	// THIS IS DELIBERATELY NOT MOVED ONTO IPageList. For a flat list of pages IPageList is the
+	// official route, and the model-side page collection was moved onto it. But IPageList INCLUDES
+	// the pages of hidden spreads and offers no way to exclude them (measured; its
+	// includePagesOfHiddenSpread parameter is on GetPageIndex and nowhere else). This map only
+	// works if hidden pages stay off it, so it needs the ISpreadList route, where each spread can
+	// be asked for its IID_IHIDESPREADBOOLDATA. The asymmetry is intentional, not an oversight.
+	// WHICH PAGES GO ON THE MAP DEPENDS ON THE SPREAD THIS WINDOW IS SHOWING. A master spread
+	// lives in a different coordinate space from the ordinary ones, so putting ordinary pages on
+	// the map of a window showing a master gives bands that do not agree with the Y denominator
+	// (the panorama's extent, which is then the master's) and land somewhere else entirely. While
+	// a master is shown, only that master spread's pages go on. With no frame and no overset there
+	// they simply come out empty, which is right.
 	const UID shownSpread = KCMQuerySpreadUIDForView(KCMStripLayoutView(this));
 	const bool16 showingMaster = KCMIsMasterSpread(db, shownSpread);
 
 	std::vector<UID> pages;
 	if (showingMaster)
 	{
-		// ★マスター側で隠しフラグを見ないのは、マスタースプレッドが Hide Spread の対象ではないため。
+		// No hidden-flag test on the master side: a master spread is not what Hide Spread hides.
 		InterfacePtr<ISpread> spread(db, shownSpread, UseDefaultIID());
 		if (spread == nil)
 			return;
@@ -351,7 +379,7 @@ void KCMScrollMapView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 			const UID spreadUID = spreadList->GetNthSpreadUID(s);
 			InterfacePtr<IBoolData> hideFlag(db, spreadUID, IID_IHIDESPREADBOOLDATA);
 			if (hideFlag != nil && hideFlag->GetBool())
-				continue;	// 隠し中のスプレッドは地図に載せない(スクロールでも到達できない)
+				continue;	// a hidden spread does not go on the map (scrolling cannot reach it either)
 			InterfacePtr<ISpread> spread(db, spreadUID, UseDefaultIID());
 			if (spread == nil)
 				continue;
@@ -372,13 +400,13 @@ void KCMScrollMapView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 		InterfacePtr<IGeometry> geo(db, pages[i], UseDefaultIID());
 		if (geo == nil)
 			continue;
-		// ★ページ矩形をペーストボード座標で得るのは Facade の仕事(2026-08-06 ブロック12 監査で寄せた。
-		//   ブロック10 で ChangeNav を寄せたときの論点が、ここと KCMCore/KCMPeek に残っていた)。
-		//   手本 snapshot/SnapTracker.cpp:610-616 が**ページに対して**同じことをしている。旧実装は
-		//   「GetPathBoundingBox + ::InnerToPasteboardMatrix + 自前 Transform」で同じ答えを組んでいた。
-		//   ★上の nil 判定は残す: 「この UID は本当に幾何を持つ」を Facade は担保しない(手本も同じ順序)。
-		//   ★下の入れ替えも残す: 旧実装がついでに担保していた正規化で、IGeometryFacade.h は返す矩形が
-		//   正規化済みだとは明言していない。
+		// Getting a page rectangle in pasteboard coordinates is the facade's job; SnapTracker.cpp
+		// does exactly this TO A PAGE. (The older code built the same answer out of
+		// GetPathBoundingBox + ::InnerToPasteboardMatrix + a Transform of its own.)
+		// The nil test above stays: the facade does not promise that a given UID really has
+		// geometry, and the model does the same test in the same order.
+		// The swap below stays too: the older code normalised the rectangle as a side effect, and
+		// IGeometryFacade never says the rectangle it returns is normalised.
 		const PMRect box = Utils<Facade::IGeometryFacade>()->GetItemBounds(
 			::GetUIDRef(geo), Transform::PasteboardCoordinates(), Geometry::PathBounds());
 		PMReal a = box.Top(), b = box.Bottom();
@@ -390,69 +418,77 @@ void KCMScrollMapView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 	if (first || maxY <= minY)
 		return;
 
-	// マーク対象の集合。赤の供給元(2026-07-11 に overflow「/」も赤に含めるようユーザー指定):
-	//   Target 窓 = 変更ページ(sEntries) + overflow(sOverflowT=登録されていないのに相手が無い「/」)
-	//   Source 窓 = 変更ペアの Source 側(sSrcPageToTarget のキー) + overflow(sOverflowS)
-	// 緑 = Add/Remove 登録ページ(その db のもの)。両方に該当したら赤を優先。
-	// ★overflow キャッシュを現在の文書対へ合わせるのは IsOverflowPage の中でやる(2026-08-13 Task 12)。
-	//   キャッシュがどの文書対のものかの照合も向こうが持つ＝ここからは「このページは overflow か」
-	//   だけを聞く。合わせ直しは sDB/sSrcDB を書かないので、engineMatch の答えは変わらない。
+	// What gets marked. The reds come from:
+	//   the Target window = changed pages (sEntries) + overflow (sOverflowT, pages with no
+	//     counterpart and no registration, drawn as "/")
+	//   the Source window = the Source side of each changed pair (the keys of sSrcPageToTarget) +
+	//     overflow (sOverflowS)
+	// Green = pages registered as Add/Remove in that db. A page that is both is drawn red.
+	// Bringing the overflow cache into line with the current pair of documents happens inside
+	// IsOverflowPage, which also matches which pair the cache belongs to -- from here the only
+	// question asked is "is this page an overflow one". That realignment does not write sDB or
+	// sSrcDB, so it cannot change the answer engineMatch already holds.
 	const bool16 engineMatch = isTarget ? (marks->GetMarkedTargetDB() == db)
 	                                    : (marks->GetMarkedSourceDB() == db);
 	std::set<UID> greens;
 	marks->GetRegisteredPages(db, greens);
 
-	// 帯の色(背景=テーマ地色との混色で半透明風)。枠(変更)=kKCMScrollMapMarkAlpha、
-	// overflow「/」=kKCMScrollMapOverflowAlpha と、赤でも α を分けて濃さに差を付ける
-	// (ユーザー指定 2026-07-13。枠はしっかり/「/」は薄く)。緑(登録)は枠と同じ α。
+	// The band colours, mixed with the theme background so they read as translucent. The two reds
+	// use different alphas -- a frame is meant to stand out, an overflow "/" to stay faint. Green
+	// (registered) uses the frame's alpha.
 	const PMReal ma = kKCMScrollMapMarkAlpha;
 	const PMReal oa = kKCMScrollMapOverflowAlpha;
-	const PMReal redR = ma * PMReal(0.85) + (PMReal(1.0) - ma) * bgR;	// 枠(変更)=赤
+	const PMReal redR = ma * PMReal(0.85) + (PMReal(1.0) - ma) * bgR;	// frame (changed) = red
 	const PMReal redG = ma * PMReal(0.08) + (PMReal(1.0) - ma) * bgG;
 	const PMReal redB = ma * PMReal(0.08) + (PMReal(1.0) - ma) * bgB;
-	const PMReal ovrR = oa * PMReal(0.85) + (PMReal(1.0) - oa) * bgR;	// overflow「/」=薄い赤
+	const PMReal ovrR = oa * PMReal(0.85) + (PMReal(1.0) - oa) * bgR;	// overflow "/" = faint red
 	const PMReal ovrG = oa * PMReal(0.08) + (PMReal(1.0) - oa) * bgG;
 	const PMReal ovrB = oa * PMReal(0.08) + (PMReal(1.0) - oa) * bgB;
-	const PMReal osa = kKCMScrollMapOversetAlpha;						// overset=濃い赤(混色控えめ)
+	const PMReal osa = kKCMScrollMapOversetAlpha;						// overset = deep red (barely mixed)
 	const PMReal ovsR = osa * PMReal(0.85) + (PMReal(1.0) - osa) * bgR;
 	const PMReal ovsG = osa * PMReal(0.08) + (PMReal(1.0) - osa) * bgG;
 	const PMReal ovsB = osa * PMReal(0.08) + (PMReal(1.0) - osa) * bgB;
-	const PMReal grnR = ma * PMReal(0.10) + (PMReal(1.0) - ma) * bgR;	// 登録=緑
+	const PMReal grnR = ma * PMReal(0.10) + (PMReal(1.0) - ma) * bgR;	// registered = green
 	const PMReal grnG = ma * PMReal(0.70) + (PMReal(1.0) - ma) * bgG;
 	const PMReal grnB = ma * PMReal(0.25) + (PMReal(1.0) - ma) * bgB;
 
-	// ★写像の基準をスクロールバーに合わせる(2026-07-29 の修正。ユーザー報告のキャプチャで確定)。
-	// 従来は「ページ矩形の Y 全域 → strip の全高」に線形写像していたが、実際のバーとは2点で食い違う:
-	//   ① つまみが動けるのは上下の矢印ボタン(「^」「v」)の内側だけなのに、strip はバーと同じ全高に
-	//      描いていた(上端で +ボタン高・中央で 0・下端で -ボタン高 の系統的なズレ。キャプチャでは
-	//      1ページ目の帯が上矢印ボタンの真横=つまみが絶対に来られない位置に出ていた)。
-	//   ② バーの全長が表すのはページの範囲ではなく「パノラマのスクロール全域」(ページの上下にある
-	//      ペーストボード余白を含む)。
-	// ①はバーの frame 幅(=正方形ボタンの高さ)、②は IPanorama::GetBounds() で、どちらも実行時に読む。
+	// ALIGN THE MAPPING WITH THE REAL SCROLLBAR. Mapping "the whole Y extent of the page
+	// rectangles" onto "the strip's full height" disagrees with the bar on two counts:
+	//   1. the thumb can only travel INSIDE the arrow buttons, while the strip was drawn over the
+	//      bar's full height -- a systematic drift of +buttonHeight at the top, zero in the middle
+	//      and -buttonHeight at the bottom. In the capture that showed it, the band for page 1 sat
+	//      level with the up arrow, where the thumb can never be.
+	//   2. the bar's full length stands for THE WHOLE SCROLLABLE EXTENT OF THE PANORAMA, not the
+	//      extent of the pages (it takes in the pasteboard margins above and below them).
+	// The first comes from the bar's frame width (its square buttons' height), the second from
+	// IPanorama::GetBounds(); both are read at run time.
 	PMReal arrowH(0), panoTop(0), panoBottom(0);
 	bool16 hasPano = kFalse;
 	KCMScrollMapProbeWindow(this, arrowH, panoTop, panoBottom, hasPano);
 
-	// バーの frame は親ローカル座標、frame(GetInnerContentFrame)は strip 自身のローカル座標。通常は
-	// 1:1 だが、縦の縮尺が違う場合に備えて strip の外形高さとの比で換算しておく。
+	// The bar's frame is in the parent's coordinates while frame (GetInnerContentFrame) is in the
+	// strip's own. They are normally 1:1; converting through the ratio to the strip's outer height
+	// covers the case where the vertical scales differ.
 	const PMReal outerH = this->GetFrame().Height();
 	if (outerH > 0 && frame.Height() > 0)
 		arrowH = arrowH * frame.Height() / outerH;
 
-	// トラックの追い込み(実機で決めた採用値。宣言部のコメント参照)。つまみが動ける範囲は矢印ボタンの
-	// 内側よりさらに少し狭いので、そのぶんを引いてから写像する。
+	// Pull the track in (the value is on the declaration). The thumb's range of travel is a little
+	// narrower still than the inside of the arrow buttons, so that much is taken off before the
+	// mapping.
 	arrowH = arrowH + kKCMScrollMapTrackInset;
 
-	PMReal trackTop    = frame.Top() + arrowH;		// つまみが動ける範囲(=地図を描くべき範囲)
+	PMReal trackTop    = frame.Top() + arrowH;		// where the thumb can travel = where the map should be drawn
 	PMReal trackBottom = frame.Bottom() - arrowH;
-	if (trackBottom - trackTop < PMReal(8.0))		// 窓が極端に低い/バーが引けない → 補正をあきらめて全高
+	if (trackBottom - trackTop < PMReal(8.0))		// a very short window, or no bar: give up the correction and use the full height
 	{
 		trackTop    = frame.Top();
 		trackBottom = frame.Bottom();
 	}
 
-	// 分母。パノラマ全域がページ全域を包含していれば採用する。包含していない=座標系が想定と違う
-	// (または隠しスプレッド等で食い違う)ときは従来どおりページ矩形の全域を使う。
+	// The denominator. Use the panorama's extent when it contains the extent of the pages; when it
+	// does not -- another coordinate system, or a disagreement caused by hidden spreads -- fall
+	// back to the extent of the page rectangles as before.
 	PMReal spanTop = minY, spanBottom = maxY;
 	if (hasPano && panoBottom > panoTop &&
 		panoTop <= minY + PMReal(1.0) && panoBottom >= maxY - PMReal(1.0))
@@ -463,20 +499,23 @@ void KCMScrollMapView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 
 	const PMReal scale = (trackBottom - trackTop) / (spanBottom - spanTop);
 
-	// ★各ページの色区分と帯座標(y0/y1)を先に決め、優先度別の添字リスト(byLevel)へ振り分ける。見開きの
-	//   2ページ(例: 4p と 5p)は同一スプレッドで pasteboard Y 帯が同じ位置に重なるため、単純にページ順で
-	//   描くと後のページが上書きする(ユーザー報告 2026-07-24: 4p=overset・5p=変更 だと変更色が overset を
-	//   上書きしていた)。そこで優先度(overset > 変更 > overflow > 登録)の低い順にまとめて描き、高い優先度が
-	//   必ず上=勝つようにする。ページ内の優先(280行相当)は 1 ページ 1 レベルの決定で吸収し、別ページ同士の
-	//   重なりは描画順で解決。level: 1=登録(緑) / 2=overflow「/」(薄赤) / 3=変更(赤) / 4=overset(濃赤)。
-	std::vector<size_t> byLevel[5];	// [1..4]=そのレベルに属するページ添字(0は未使用)。描画は合計 N ループで済む
+	// Decide each page's colour class and band coordinates (y0/y1) first, and sort the indices into
+	// per-priority lists (byLevel). The two pages of a spread (4 and 5, say) share a pasteboard Y
+	// band, so drawing them in plain page order lets the later page paint over the earlier one
+	// (reported from a live build: with 4 overset and 5 changed, the changed colour covered the
+	// overset one). Drawing the low priorities first and the high ones last means the higher
+	// priority always wins. Priority within ONE page is settled by choosing a single level for it;
+	// only the overlap between different pages is left to the drawing order.
+	// The levels: 1 = registered (green) / 2 = overflow "/" (faint red) / 3 = changed (red) /
+	// 4 = overset (deep red).
+	std::vector<size_t> byLevel[5];	// [1..4] hold the page indices at that level (0 is unused); N fills in total
 	std::vector<PMReal> y0s(pages.size()), y1s(pages.size());
 	for (size_t i = 0; i < pages.size(); ++i)
 	{
 		if (bottoms[i] <= tops[i])
-			continue;	// 幾何が取れなかったページ
-		bool16 isRed = kFalse;			// 枠(変更ページ)由来の赤
-		bool16 isOverflowRed = kFalse;	// overflow「/」由来の赤(枠とは別の薄い赤にする)
+			continue;	// a page whose geometry could not be read
+		bool16 isRed = kFalse;			// red from a frame (a changed page)
+		bool16 isOverflowRed = kFalse;	// red from an overflow "/" (a fainter red than a frame)
 		if (engineMatch)
 		{
 			if (isTarget)
@@ -486,48 +525,50 @@ void KCMScrollMapView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 		}
 		if (!isRed && marks->IsOverflowPage(db, pages[i], isTarget))
 		{
-			isRed = kTrue;			// 純粋な overflow(変更ではない)だけ薄い赤にする
-			isOverflowRed = kTrue;	// 変更ページが overflow にも入る場合は上で先に確定=枠色優先
+			isRed = kTrue;			// only a pure overflow (not a change) gets the faint red
+			isOverflowRed = kTrue;	// a changed page that is also an overflow was settled above: the frame colour wins
 		}
 		const bool16 isGreen = (!isRed && greens.find(pages[i]) != greens.end());
-		// ★overset ページ(この文書が sOversetDB のとき)=しっかりした赤(＋マークと揃える。ユーザー指定 2026-07-24)。
+		// An overset page (when this document is the scanned one) is a strong red, to match the "+"
+		// mark.
 		const bool16 isOversetRed = (isOverset && marks->IsOversetPage(pages[i]));
 
 		int32 c = 0;
-		if (isOversetRed)   c = 4;					// overset = 最優先(最後に描いて上へ)
-		else if (isRed)     c = isOverflowRed ? 2 : 3;	// 変更=3 / 純 overflow「/」=2
-		else if (isGreen)   c = 1;					// 登録(緑)
+		if (isOversetRed)   c = 4;					// overset wins: drawn last, so it lands on top
+		else if (isRed)     c = isOverflowRed ? 2 : 3;	// changed = 3, a pure overflow "/" = 2
+		else if (isGreen)   c = 1;					// registered (green)
 		if (c == 0)
 			continue;
 
 		PMReal y0 = trackTop + (tops[i]    - spanTop) * scale;
 		PMReal y1 = trackTop + (bottoms[i] - spanTop) * scale;
-		if (y1 - y0 < PMReal(3.0))	// 細くなり過ぎたら中心を保って3pxに
+		if (y1 - y0 < PMReal(3.0))	// too thin to see: keep the centre and make it 3px
 		{
 			const PMReal cy = (y0 + y1) / PMReal(2.0);
 			y0 = cy - PMReal(1.5);
 			y1 = cy + PMReal(1.5);
 		}
-		if (y0 < trackTop)    y0 = trackTop;		// 矢印ボタンの横には出さない(つまみが来られない位置)
+		if (y0 < trackTop)    y0 = trackTop;		// never level with an arrow button, where the thumb cannot go
 		if (y1 > trackBottom) y1 = trackBottom;
 
 		y0s[i] = y0;
 		y1s[i] = y1;
-		byLevel[c].push_back(i);	// c は 1..4(c==0 は上で continue 済み)
+		byLevel[c].push_back(i);	// c is 1..4 (0 was skipped above)
 	}
 
-	// 優先度の低い順(1→4)に描く=高い優先度が上(最後)に来て、同スプレッドの重なりでも必ず勝つ。
-	// 色設定は各レベルで1回だけ。描画は byLevel の添字だけを辿るので全体で合計 N 回の fill で済む。
+	// Draw from the lowest priority to the highest, so the higher one comes last and wins wherever
+	// two pages of a spread overlap. The colour is set once per level, and only the indices in
+	// byLevel are walked, so this is N fills in total.
 	for (int32 level = 1; level <= 4; ++level)
 	{
 		if (byLevel[level].empty())
 			continue;
 		switch (level)
 		{
-			case 1: gPort->setrgbcolor(grnR, grnG, grnB); break;	// 登録=緑
-			case 2: gPort->setrgbcolor(ovrR, ovrG, ovrB); break;	// 純 overflow「/」= 薄い赤
-			case 3: gPort->setrgbcolor(redR, redG, redB); break;	// 変更 = しっかりした赤
-			case 4: gPort->setrgbcolor(ovsR, ovsG, ovsB); break;	// overset = 濃い赤(最優先)
+			case 1: gPort->setrgbcolor(grnR, grnG, grnB); break;	// registered = green
+			case 2: gPort->setrgbcolor(ovrR, ovrG, ovrB); break;	// a pure overflow "/" = faint red
+			case 3: gPort->setrgbcolor(redR, redG, redB); break;	// changed = a clear red
+			case 4: gPort->setrgbcolor(ovsR, ovsG, ovsB); break;	// overset = deep red (the highest priority)
 		}
 		for (size_t k = 0; k < byLevel[level].size(); ++k)
 		{
@@ -539,18 +580,19 @@ void KCMScrollMapView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 }
 
 //========================================================================================
-// 注入/取り外し
+// Injection and removal
 //========================================================================================
 
-// db のレイアウトビュー群から、それぞれが属する文書ウィンドウ(presentation)を重複なしで集める。
-// 戻りは presentation の IPanelControlData(addref 済み)を out に積む。
-// GetAllLayoutViews の戻り(IControlView*)は既存 KCM コードと同じく非所有として扱う。
+// Collect, without duplicates, the document windows (presentations) behind this db's layout
+// views. What lands in out is each presentation's IPanelControlData, already addref'd.
+// The IControlView* values GetAllLayoutViews returns are treated as unowned, as everywhere else
+// in KCM.
 static void KCMCollectPresentationPanels(IDataBase* db, K2Vector<IPanelControlData*>& out)
 {
 	K2Vector<IControlView*> views;
 	Utils<ILayoutViewUtils>()->GetAllLayoutViews(views, nil, db);
 
-	K2Vector<IPMUnknown*> seen;	// presentation の同一性判定(同じ IID の QI 結果同士なのでポインタ比較可)
+	K2Vector<IPMUnknown*> seen;	// identity of a presentation (all QI results for one IID, so pointers compare)
 	for (int32 i = 0; i < (int32)views.size(); ++i)
 	{
 		if (views[i] == nil)
@@ -563,8 +605,8 @@ static void KCMCollectPresentationPanels(IDataBase* db, K2Vector<IPanelControlDa
 		if (pres == nil)
 			continue;
 
-		// 線形探索は std::find で書く(手本=Adobe 製品コード。K2Vector に対する実例=
-		// open/components/incopyfileactions/InCopyDocFileHandler.cpp:268)。
+		// The linear search is written with std::find, as the shipping code does over a K2Vector in
+		// open/components/incopyfileactions/InCopyDocFileHandler.cpp.
 		IPMUnknown* const presKey = (IPMUnknown*)(IDocumentPresentation*)pres;
 		if (std::find(seen.begin(), seen.end(), presKey) != seen.end())
 			continue;
@@ -578,11 +620,12 @@ static void KCMCollectPresentationPanels(IDataBase* db, K2Vector<IPanelControlDa
 	}
 }
 
-// KCMScrollMapAttach(KCMScrollMap.h 参照) — targetDB の各文書ウィンドウに strip を注入する。
+// KCMScrollMapAttach (declared in KCMScrollMap.h) -- inject a strip into each of targetDB's
+// document windows.
 void KCMScrollMapAttach(IDataBase* targetDB)
 {
 	if (!sScrollMapOn)
-		return;	// 「Show Scrollbar Map」OFF 中は strip を注入しない(Start しても地図は出ない)
+		return;	// with "Show Scrollbar Map" off, no strip is injected (a Start shows no map)
 	if (targetDB == nil)
 		return;
 
@@ -591,18 +634,20 @@ void KCMScrollMapAttach(IDataBase* targetDB)
 
 	for (int32 i = 0; i < (int32)panels.size(); ++i)
 	{
-		InterfacePtr<IPanelControlData> presPanel(panels[i]);	// 所有権引き取り(Release 担当)
+		InterfacePtr<IPanelControlData> presPanel(panels[i]);	// takes ownership (this is what releases it)
 
-		// 二重注入ガード(窓単位)
+		// one strip per window
 		if (presPanel->FindWidget(kKCMScrollMapWidgetID) != nil)
 			continue;
 
-		// 縦スクロールバーを探す(FindWidget は既定で全子孫再帰)。無い窓はスキップ。
+		// Find the vertical scrollbar (FindWidget recurses through every descendant by default).
+// A window without one is skipped.
 		IControlView* sbView = presPanel->FindWidget(kVertScrollBarWidgetID);
 		if (sbView == nil)
 			continue;
 
-		// strip はスクロールバーの「直接の親」に追加する(座標系とリサイズ追従をバーと揃えるため)。
+			// The strip is added to the scrollbar's IMMEDIATE parent, so that it shares the bar's
+			// coordinate system and follows a resize the same way.
 		InterfacePtr<IWidgetParent> sbWP(sbView, IID_IWIDGETPARENT);
 		if (sbWP == nil)
 			continue;
@@ -610,25 +655,22 @@ void KCMScrollMapAttach(IDataBase* targetDB)
 		if (sbParentPanel == nil)
 			continue;
 
-		// 実行時生成(linksui と同じ標準形)。db は親 widget 群と同じ UI データベース。
-		// ★2026-08-17(API 監査 B-U9 の A-3)＝C スタイルキャストの ::CreateObject から**型つきの
-		//   ::CreateObject2<IControlView>(db, spec)** へ(CreateObject.h:190-203)。
-		//   **公式実例＝`widgetbin/treeview/CTreeViewWidgetMgr.cpp:519`** が行ごと同型
-		//   (`::CreateObject2<IControlView>(::GetDataBase(this), fCurrentStyleRsrcSpec)`)。
-		//   ⚠この形は IID を渡さず FACE::kDefaultIID を使う＝`IControlView` の既定 IID は
-		//     IID_ICONTROLVIEW なので、旧コードが明示していた IID と同じものが要求される。
-		//   ★ここは B-U8 の担当ファイルだが、**命題はブロックに属さない**(B5 の教訓)ので
-		//     「CreateObject＋手キャスト」を数えたこの回にまとめて直した。
+			// Built at run time, in the standard shape linksui uses; the db is the same UI database
+			// the parent widgets are in. The typed ::CreateObject2<IControlView>(db, spec) is what
+			// the shipping widgetbin/treeview/CTreeViewWidgetMgr.cpp uses, line for line. That
+			// form passes no IID and uses FACE::kDefaultIID, which for IControlView is
+			// IID_ICONTROLVIEW -- the same interface the older C-style cast asked for.
 		InterfacePtr<IControlView> strip(::CreateObject2<IControlView>(
 			::GetDataBase(sbParentPanel),
 			RsrcSpec(LocaleSetting::GetLocale(), kKCMUIPluginID, kViewRsrcType, kKCMScrollMapRsrcID)));
 		if (strip == nil)
 			continue;
 
-		sbParentPanel->AddWidget(strip);	// 末尾追加=描画順で最前面
+		sbParentPanel->AddWidget(strip);	// appended, so it draws in front
 
-		// バーの左隣・同じ高さ。座標はバーと同じ親ローカル。binding はバーのものをコピー
-		// (右端固定+上下ストレッチ相当のはず。実際に何が入っているかはプローブで観察)。
+			// Left of the bar and the same height, in the same parent-local coordinates. The binding
+			// is copied from the bar (which should amount to "pinned right, stretching vertically"
+			// -- what it actually holds can be read with a probe).
 		const PMRect sbFrame = sbView->GetFrame();
 		const PMReal stripLeft = sbFrame.Left() - kKCMScrollMapWidth;
 		PMRect stripFrame(stripLeft, sbFrame.Top(), sbFrame.Left(), sbFrame.Bottom());
@@ -637,12 +679,14 @@ void KCMScrollMapAttach(IDataBase* targetDB)
 		strip->ShowView();
 		strip->Invalidate();
 
-		// ★strip の列をレイアウトビューから「専有」する(実機で確認した残像対策 2026-07-11)。
-		// レイアウトビューはスクロールを画面ピクセルのずらしコピー(blit)で高速化しており、ビューの
-		// 領域に strip が重なっていると strip のピクセルごと横/縦にコピーされて残像になる。そこで、
-		// strip 列に右端が食い込んでいる兄弟(=レイアウトビュー)の右端を strip の左端まで詰めて、
-		// 重なりをゼロにする(縦スクロールバーと縦帯が重なる兄弟だけが対象。下端の横スクロールバーや
-		// 上端のルーラーは縦範囲が重ならないので触らない)。取り外し時に元へ戻す(Detach 側)。
+			// CLAIM THE STRIP'S COLUMN FROM THE LAYOUT VIEW (a smearing fix confirmed on a live
+			// build). The layout view speeds scrolling up by blitting the screen pixels sideways
+			// or up and down, so a strip overlapping the view's area gets copied along with them
+			// and smears. So any sibling whose right edge reaches into the strip's column -- that
+			// is, the layout view -- has its right edge pulled back to the strip's left, leaving no
+			// overlap at all. Only siblings that overlap the vertical band of the scrollbar are
+			// touched: the horizontal scrollbar at the bottom and the ruler at the top do not
+			// overlap it vertically and are left alone. Detach puts this back.
 		const int32 numSiblings = sbParentPanel->Length();
 		for (int32 c = 0; c < numSiblings; ++c)
 		{
@@ -661,22 +705,24 @@ void KCMScrollMapAttach(IDataBase* targetDB)
 	}
 }
 
-// KCMScrollMapDetachAll(KCMScrollMap.h 参照) — 全文書の全ウィンドウから strip を取り外す。
+// KCMScrollMapDetachAll (declared in KCMScrollMap.h) -- remove the strip from every window of
+// every document.
 void KCMScrollMapDetachAll()
 {
 	K2Vector<IPanelControlData*> panels;
-	KCMCollectPresentationPanels(nil, panels);	// db=nil で全レイアウトビュー
+	KCMCollectPresentationPanels(nil, panels);	// db = nil gathers every layout view
 
 	for (int32 i = 0; i < (int32)panels.size(); ++i)
 	{
-		InterfacePtr<IPanelControlData> presPanel(panels[i]);	// 所有権引き取り(Release 担当)
+		InterfacePtr<IPanelControlData> presPanel(panels[i]);	// takes ownership (this is what releases it)
 
 		IControlView* strip = presPanel->FindWidget(kKCMScrollMapWidgetID);
 		if (strip == nil)
 			continue;
 
-		// strip の直接の親パネルから外す(deleteUID=kTrue で UI データベースからも削除。
-		// linksui AddDeleteCaptionRowButtonObserver.cpp:157 と同じ作法)。
+		// Removed from its immediate parent panel, with deleteUID=kTrue so it goes out of the UI
+		// database too -- the same form as the shipping
+		// linksui/AddDeleteCaptionRowButtonObserver.cpp.
 		InterfacePtr<IWidgetParent> wp(strip, IID_IWIDGETPARENT);
 		if (wp == nil)
 			continue;
@@ -684,9 +730,10 @@ void KCMScrollMapDetachAll()
 		if (parentPanel == nil)
 			continue;
 
-		// Attach 時に strip 列ぶん右端を詰めた兄弟(=レイアウトビュー)を元の幅へ戻す。
-		// 「右端が strip の左端に(ほぼ)一致し、縦帯が重なる兄弟」= 詰めた本人。strip の右端
-		// (=スクロールバーの左端)まで広げ直す。
+		// Give back the width taken from the sibling (the layout view) whose right edge Attach
+		// pulled in. It is identified as "the right edge sits (all but exactly) on the strip's left
+		// edge, and the vertical bands overlap", and it is widened back out to the strip's right
+		// edge -- the scrollbar's left.
 		const PMRect stripFrame = strip->GetFrame();
 		const int32 numSiblings = parentPanel->Length();
 		for (int32 c = 0; c < numSiblings; ++c)
@@ -709,28 +756,23 @@ void KCMScrollMapDetachAll()
 	}
 }
 
-// KCMScrollMapInvalidateAll(KCMScrollMap.h 参照) — 注入済みの全 strip を再描画する。
-// ⚠2026-08-17 訂正(API 監査 B-U8): 旧記述は「呼び所は2箇所(①KCMDoMarkChangesDoc の末尾
-// ②KCMPeek.cpp のスプレッド再比較)」だったが、**どちらも model 側でこの UI 関数を呼べない**。
-// 分割で「比較が動いた」は通知になり、受け手の UI が地図を描き直す形になっている。
-// 全数 Grep での現状は**8箇所**＝KCMModelChangeObserver.cpp(4＝全再比較/部分再比較/overset/クローズ)、
-// KCMActionComponent.cpp(2＝地図トグル ON と Find Overset)、KCMPeekGesture.cpp(1＝一括クローズ完了)、
-// **このファイル自身(1＝下の KCMScrollMapNoticeDrawEvent＝手動 Hide/Show とスプレッド切替の検出)**。
-// ⚠2026-08-19(不具合再検査 B-U8)訂正＝2026-08-17 に「7箇所」と数えて3ファイルを名指ししたとき、
-//   **自分のファイルの中にある8つ目を数え落としていた**。しかもそれは「他の7つでは捕まらない変化を
-//   拾うための独立経路」＝下の一文がいちばん大事だと言っている当のもの。
-//   ★**呼び手を数えるときは自分のファイルも母集合に入れる**(B-U3 で「呼び元は2つだけ」の3つ目が
-//     同じファイルの180行上にいたのと同型)。
-// ★数より大事なのは「独立経路が複数ある」ことで、それは分割後も変わっていない
-// (＝比較の再実行を1か所で捕まえることはできないので、増えたら都度ここを呼ぶ)。
+// KCMScrollMapInvalidateAll (declared in KCMScrollMap.h) -- redraw every injected strip.
+// The callers are spread across the UI side, and that is the point: THERE IS NO ONE PLACE WHERE A
+// COMPARISON CHANGING CAN BE CAUGHT, so each independent path calls this for itself.
+//   - KCMModelChangeObserver ... a full recomparison, a partial one, an overset scan, a close
+//   - KCMActionComponent     ... the map toggle going on, and Find Overset
+//   - KCMPeekGesture        ... a batch close finishing
+//   - this file itself       ... KCMScrollMapNoticeDrawEvent below, which catches the manual
+//     Hide/Show and the spread switch that none of the others can see
+// Anything that becomes another such path has to call this as well.
 void KCMScrollMapInvalidateAll()
 {
 	K2Vector<IPanelControlData*> panels;
-	KCMCollectPresentationPanels(nil, panels);	// db=nil で全レイアウトビュー
+	KCMCollectPresentationPanels(nil, panels);	// db = nil gathers every layout view
 
 	for (int32 i = 0; i < (int32)panels.size(); ++i)
 	{
-		InterfacePtr<IPanelControlData> presPanel(panels[i]);	// 所有権引き取り(Release 担当)
+		InterfacePtr<IPanelControlData> presPanel(panels[i]);	// takes ownership (this is what releases it)
 		IControlView* strip = presPanel->FindWidget(kKCMScrollMapWidgetID);
 		if (strip != nil)
 			strip->Invalidate();
@@ -738,11 +780,12 @@ void KCMScrollMapInvalidateAll()
 }
 
 //========================================================================================
-// 手動 Hide/Show Spread の検出(スプレッド描画イベント便乗+スロットル)
+// Detecting a manual Hide/Show Spread (riding the spread draw event, throttled)
 //========================================================================================
 
-// db の「スプレッド構成+隠しフラグ」の指紋。隠し/再表示・スプレッド増減で必ず値が変わる。
-// db が nil/クローズ済みなら 0(=arm 解除後は両指紋 0 で安定し、比較は常に一致)。
+// A fingerprint of this db's spread layout and hidden flags. Hiding, showing, or adding and
+// removing spreads always changes it. A db that is nil or already closed gives 0, so once
+// everything is unarmed both fingerprints settle at 0 and always compare equal.
 static uint32 KCMHiddenFingerprint(IDataBase* db)
 {
 	if (db == nil || !Utils<IKCMCompareFacade>()->IsDocDBOpen(db))
@@ -762,12 +805,12 @@ static uint32 KCMHiddenFingerprint(IDataBase* db)
 	return h;
 }
 
-// db の窓が「今どのマスタースプレッドを見ているか」の指紋(2026-08-11)。
-// ★地図に載せるページは表示中スプレッドで変わる(マスター表示中はそのマスターのページだけ)のに、
-//   スプレッドの切り替えは KCM のどのフックも通らない。必ず再描画は起こるので、隠しフラグと
-//   同じ便乗経路で拾う。
-// ★通常スプレッドは 0 に畳む: 通常スプレッドの間を移動しても地図は全ページを載せたままで中身が
-//   変わらないため、そこで Invalidate しても再描画が無駄になるだけ。
+// A fingerprint of which master spread this db's windows are showing.
+// What goes on the map changes with the spread on screen (while a master is shown, only that
+// master's pages), and switching spreads goes through none of KCM's hooks. A redraw always
+// happens, so this rides the same path the hidden flags do.
+// Ordinary spreads all fold to 0: moving between them leaves the map holding every page and its
+// contents unchanged, so invalidating there would only cost a redraw for nothing.
 static uint32 KCMShownMasterFingerprint(IDataBase* db)
 {
 	if (db == nil || !Utils<IKCMCompareFacade>()->IsDocDBOpen(db))
@@ -777,41 +820,45 @@ static uint32 KCMShownMasterFingerprint(IDataBase* db)
 	uint32 h = 0;
 	for (int32 i = 0; i < (int32)views.size(); ++i)
 	{
-		// ★「そのビューは今どのスプレッドか」は KCMQuerySpreadUIDForView に一本化してある
-		//   (2026-08-19・不具合再検査 B-U8。引けなければ kInvalidUID＝マスターではないと扱われる)。
-		const UID shown = KCMQuerySpreadUIDForView(views[i]);	// nil ビューは中で弾く
+		// "Which spread is this view showing" is asked in one place, KCMQuerySpreadUIDForView.
+		// When it cannot be answered the result is kInvalidUID, which counts as "not a master".
+		const UID shown = KCMQuerySpreadUIDForView(views[i]);	// a nil view is dropped inside
 		h = h * 131u + (KCMIsMasterSpread(db, shown) ? shown.Get() : 0u);
 	}
 	return h;
 }
 
-static std::chrono::steady_clock::time_point sHiddenCheckLast;	// 前回チェック時刻(スロットル用)
-static bool16 sHiddenCheckStarted = kFalse;	// 一度でもチェックしたか(初回は必ず通す。time_point 既定値との比較を避ける)
-// 指紋は「隠しフラグ構成」と「表示中マスタースプレッド」の合成(2026-08-11 に後者を追加)。
-// どちらが変わっても地図の中身が変わるので、1本の数にまとめて比較する。
-static uint32 sHiddenFingerT = 0;			// 前回の Target 側指紋
-static uint32 sHiddenFingerS = 0;			// 前回の Source 側指紋
-static uint32 sHiddenFingerO = 0;			// 前回の overset 走査文書側指紋(Find Overset 単独時の隠し追従)
+static std::chrono::steady_clock::time_point sHiddenCheckLast;	// when it was last checked (for the throttle)
+// default-constructed time_point)
+static bool16 sHiddenCheckStarted = kFalse;	// has it been checked at all? (the first one always runs, rather than comparing against a
+// The fingerprint combines the hidden-flag layout with the master spread on screen. Either one
+// changing changes what the map holds, so they are folded into a single number and compared as
+// one.
+static uint32 sHiddenFingerT = 0;			// the Target side, as last seen
+static uint32 sHiddenFingerS = 0;			// the Source side, as last seen
+static uint32 sHiddenFingerO = 0;			// the overset-scanned document (so a Find Overset alone still follows a hide)
 
-// KCMScrollMapNoticeDrawEvent(KCMScrollMap.h 参照) — 描画イベントごとに呼ばれる軽量チェック。
-// 250ms スロットル内は時刻比較1回で即 return。指紋が変わっていたら地図を Invalidate する
-// (strip は専有列にいてレイアウトビューと重ならないので、描画イベント中の Invalidate でも
-// スプレッド再描画→再検出の無限ループにはならない)。
+// KCMScrollMapNoticeDrawEvent (declared in KCMScrollMap.h) -- the cheap check called on every
+// draw event. Inside the 250 ms throttle it costs one comparison of times and returns. When the
+// fingerprint has changed, the map is invalidated. (The strip sits in a column of its own and
+// does not overlap the layout view, so invalidating from inside a draw event cannot loop back
+// through another spread redraw into another detection.)
 void KCMScrollMapNoticeDrawEvent()
 {
 	if (!sScrollMapOn)
-		return;		// 「Show Scrollbar Map」OFF 中は strip も無い=毎描画の指紋計算を省く
-	// 未 arm でも Find Overset 単独なら strip があり得るので、その場合は続行する(2026-07-24)。
-	// ★この関数だけで3回聞くので InterfacePtr に1回受ける(Utils.h:74-80。2026-08-17 の API 監査 B-U8)。
-	//   ここは**描画イベントごと**に通る経路なので、marks と同じ扱いに揃える。
+		return;		// with the map off there is no strip either, so skip the per-draw fingerprint
+	// An unarmed state does not return: a Find Overset on its own can still have put a strip up.
+	// Both facades are asked more than once here, so each is queried into an InterfacePtr first
+	// (Utils.h says to do that rather than pay for a query per call) -- this path runs on EVERY
+	// draw event.
 	InterfacePtr<IKCMMarkData> marks(Utils<IKCMMarkData>().QueryUtilInterface());
 	InterfacePtr<IKCMCompareFacade> compare(Utils<IKCMCompareFacade>().QueryUtilInterface());
 	if (compare->GetArmedTargetDB() == nil &&
 		!(marks->GetOversetOn() && marks->GetOversetDB() != nil))
-		return;		// arm も overset も無い = strip も無い(指紋は無意味なので触らない)
+		return;		// neither armed nor scanning means no strip, so the fingerprints mean nothing
 
-	// スロットル(250ms)。steady_clock は単調増加なのでラップ/負 delta の心配は無い(旧 clock_t 版に
-	// あった 32bit ラップ対策は不要になった)。初回(sHiddenCheckStarted=kFalse)は必ず通す。
+	// The throttle, 250 ms. steady_clock only moves forward, so there is no wrap and no negative
+	// delta to guard against. The first check always runs.
 	const std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
 	if (sHiddenCheckStarted)
 	{
@@ -834,15 +881,15 @@ void KCMScrollMapNoticeDrawEvent()
 		sHiddenFingerT = ft;
 		sHiddenFingerS = fs;
 		sHiddenFingerO = fo;
-		KCMScrollMapInvalidateAll();	// 初回(0→現指紋)の1回だけ余計に走るが無害
+		KCMScrollMapInvalidateAll();	// the first time (0 -> current) runs once for nothing, which is harmless
 	}
 }
 
-// ── 有効/無効フラグ(フライアウト「Show Scrollbar Map」トグル。既定 ON) ─────────────────
-// フラグの反転に伴う strip の attach / detach は呼び手が担う。ここは値の保持だけ。
-// ★呼び手は2つで、後始末をするのは①だけ＝理由と「不具合ではない」根拠は KCMScrollMap.h の
-//   KCMSetScrollMapEnabled の宣言に書いてある(2026-08-19・不具合再検査 B-U8)。
+// -- the on/off flag ("Show Scrollbar Map" in the flyout, on by default) --------------------
+// Attaching and detaching strips as the flag flips belongs to the callers; this only holds the
+// value. There are two callers and only one of them does that cleanup -- the reason, and why that
+// is not a defect, is on the declaration of KCMSetScrollMapEnabled in KCMScrollMap.h.
 bool16 KCMGetScrollMapEnabled()      { return sScrollMapOn; }
 void   KCMSetScrollMapEnabled(bool16 on) { sScrollMapOn = on; }
 
-// KCMScrollMap.cpp 終わり。
+// End of KCMScrollMap.cpp

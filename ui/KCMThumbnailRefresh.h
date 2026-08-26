@@ -2,18 +2,22 @@
 //
 //  KCMThumbnailRefresh.h
 //
-//  比較実行後に、Pages パネルの「既に表示済み」のサムネイルを再生成させる隔離モジュール。
-//  ★2026-07-06 実機で切り分け完了。効く最小セット=2手だけ:
-//    ④ IImageCacheMgr::Purge で共有画像キャッシュを無効化(=Pagesサムネイルはこの共有キャッシュに
-//       載っている。2026-07-05の「内部専用キャッシュで不可」は誤りだった)+ ③ ForceRedraw で即再描画。
-//       ★Purge の単位は「ページ UID ごと」(2026-07-07 に db 全体 Purge から変更。理由は .cpp 冒頭:
-//       全体 Purge は既存サムネイルの無効化としては効かず、しかもパネル全体を点滅させる)。
-//  不要と分かって外した手: ① InvalidateSpreadWidget+UpdatePagesPanel(bForcePurge)、② IPendingUpdateController。
-//  ⚠①は IPagesSubPanelController(公開ヘッダー)の公式 API だが、単独では実機で不発(2026-07-05)。
-//    SDK 全体で Adobe 自身の使用例もゼロ。「④と組み合わせたら効くか」は未再試験。
-//  背景と切り分け経過: memory の **pages-panel-thumbnail-refresh.md**。
-//  ⚠2026-08-19(不具合再検査 B-U8)訂正＝ここは "kescm-pages-panel-thumbnails" という**実在しない名前**を
-//    指していた(memory に該当ファイル無し。実在するのは上の名前)。
+//  The isolated module that makes the Pages panel rebuild thumbnails it has ALREADY drawn, once
+//  a comparison has run.
+//
+//  THE SMALLEST SET THAT WORKS is two steps, isolated on a live build:
+//    - IImageCacheMgr::Purge invalidates the shared image cache. The Pages panel thumbnails do
+//      live in that shared cache (an earlier note claiming they sat in a private one was wrong).
+//      The unit of the purge is ONE PAGE UID, not the whole db -- purging the db turns out not to
+//      invalidate thumbnails that already exist, and it makes the whole panel flash. The .cpp
+//      says more.
+//    - ForceRedraw then makes the panel rebuild them on the spot.
+//  TWO THINGS THAT DO NOT WORK and were taken out: InvalidateSpreadWidget + UpdatePagesPanel
+//  (bForcePurge), and IPendingUpdateController. The first is the documented API on the public
+//  IPagesSubPanelController, and it still did nothing on its own -- Adobe's own code does not use
+//  it anywhere in the SDK either. Whether it would work when combined with the purge is untested.
+//  The full record of how this was narrowed down is in the memory note
+//  pages-panel-thumbnail-refresh.
 //
 //========================================================================================
 
@@ -27,94 +31,98 @@
 class IDataBase;
 class IControlView;
 
-// 表示中の Pages パネル(kPagesPanelWidgetID)の IControlView を返す(非表示/取得失敗は nil)。
-// IPanelMgr→GetVisiblePanel の定型を一本化した共有ヘルパ(ここでのサムネイル再描画と、
-// KCMChangeNav の Pages パネル連動スクロールが共用)。実体は KCMThumbnailRefresh.cpp。
+// The IControlView of the Pages panel (kPagesPanelWidgetID) if it is showing; nil when it is
+// hidden or cannot be obtained. One copy of the IPanelMgr -> GetVisiblePanel idiom, shared by the
+// thumbnail redraw here and by KCMChangeNav's Pages-panel scrolling. Defined in the .cpp.
 IControlView* KCMGetVisiblePagesPanel();
 
-// ★★★2026-08-24 新設: **Pages パネルの選択に「実ページ」が1枚も無いか**(＝`[なし]` の行だけを
-//   選んでいるか)。真のときページ向けの項目(Check / Register / Refresh)は出さない。
+// Does the Pages panel's selection contain NO real page -- that is, are only [None] rows (the
+// "no master" row) selected? When it is true, the page-directed items (Check / Register /
+// Refresh) are left out.
 //
-// なぜ要るか(実機で確定): `[なし]`(マスターなし)の行には実ページが無いため、
-// **`ILayoutUIUtils::GetSelectedPages` は「現在のページ」へフォールバックする**。KCM からは
-// 「そのページが選ばれた」としか見えず、**`[なし]` を選んでいるのにページ1に✓が付く**という
-// 挙動になっていた（2026-08-24 にユーザー指摘 → 実機で再現・確認）。
-// ⚠**`GetSelectedPages` の第3引数(bCurrentPageOnly)では防げない**。kFalse にするとフォールバックが
-//   「現在スプレッドの全ページ」へ広がって悪化する(試して撤回済み)。
+// WHY THIS IS NEEDED (confirmed on a live build). A [None] row has no real page behind it, so
+// ILayoutUIUtils::GetSelectedPages FALLS BACK TO THE CURRENT PAGE. From here that is
+// indistinguishable from "that page was selected", and the visible result was a check mark
+// appearing on page 1 while [None] was what the user had selected.
+// @warning the third argument of GetSelectedPages (bCurrentPageOnly) does not prevent this.
+//   Passing kFalse widens the fallback to every page of the current spread, which is worse.
 //
-// ★どうやって見分けるか＝**Pages パネル自身が持つ UID リスト**(`IUIDListControlData`。
-//   `kPagesPanelWidgetBoss` の一部＝実装は `kPagesPanelUIDListControlDataImpl`)を読む。
-//   **`[なし]` を選ぶと len=1・UID=`kInvalidUID`(0) が入る**（実測。対照＝ページ1:240 /
-//   ページ3:262 / マスター:252）。⇒ 本体は `[なし]` を「無効な UID」として保持している。
-// ⚠`IUIDListControlData` のメソッドは名前に `___` が付く(Adobe の内部用マーク)。**読み取りだけ**に使う。
-// ★`[なし]` と実ページを同時に選んだ場合は kFalse＝実ページ側に効く(巻き添えにしない)。
+// HOW IT IS TOLD APART: read the UID list the Pages panel itself keeps (IUIDListControlData, part
+// of kPagesPanelWidgetBoss, implemented by kPagesPanelUIDListControlDataImpl). Selecting [None]
+// puts a single kInvalidUID (0) in it -- measured, against page 1: 240 / page 3: 262 / master:
+// 252. So the application does hold [None] as an invalid UID.
+// @warning the IUIDListControlData methods carry a `___` suffix, Adobe's mark for internal use.
+//   Read from them only.
+// Selecting [None] together with a real page gives kFalse, so the real page still gets the
+// action and is not caught up in this.
 bool16 KCMPagesPanelSelectionHasNoRealPage();
 
-// db(比較対象文書)の Pages パネルサムネイルの再生成を試みる。パネルが隠れていても画像キャッシュの
-// Purge だけは試す。安全に何度でも呼べる。
-//   redrawNow(既定 kTrue): kFalse なら Purge だけ行い ForceRedraw をスキップする。Target/Source の
-//     2文書を続けて更新する呼び出し側が、前半を kFalse にして最後の1回だけ再描画するためのバッチ化
-//     (2026-07-25 監査: 1操作で最大9回走っていた同期 ForceRedraw の多重実行を削減)。
+// Try to rebuild this db's Pages panel thumbnails. The image cache purge is attempted even when
+// the panel is hidden. Safe to call any number of times.
+//   redrawNow (kTrue by default): pass kFalse to purge without the ForceRedraw. That is how a
+//     caller updating both the Target and the Source batches them -- kFalse for the first, then
+//     one redraw at the end. (Before that batching, a single operation could run up to nine
+//     synchronous ForceRedraws.)
 //
-// ⚠★★2026-08-19(不具合再検査 B-U8)に **extraPages 引数を落とした。**
-//   「変更ページ集合に加えて Purge したいページ UID(＝再ペアリングで旧集合から抜けたページ)」を
-//   呼び出し側が足せる、という約束だったが、**呼び手2つ(KCMActionComponent / KCMThumbIdleTask)の
-//   どちらも渡していなかった**＝誰も渡さない値を受け取る約束([[verify-claims-in-comments]] §18)。
-//   その仕事は今は **KCMPurgeAllPageThumbs(全ページ Purge)** と、通知がページ集合を運ぶようになった
-//   **KCMRefreshThumbnailsForPages** が引き受けている(下のコメント参照)。
-//   ★**将来また「旧集合も混ぜたい」が要るようになったら、引数を戻すのではなく**、通知に旧集合を載せて
-//     KCMRefreshThumbnailsForPages へ渡す形(＝既に動いている兄弟の形)を写すこと。
+// This used to take an extraPages argument as well -- "page UIDs to purge on top of the changed
+// set", meaning the pages that a re-pairing had dropped out of the old set. NEITHER caller ever
+// passed anything, so it was a promise nobody used, and it is gone. That job now belongs to
+// KCMPurgeAllPageThumbs (purge every page) and to KCMRefreshThumbnailsForPages, now that the
+// notification carries the page set (see below).
+// If mixing in the old set is ever wanted again, do NOT put the argument back: put the old set on
+// the notification and hand it to KCMRefreshThumbnailsForPages -- the shape the sibling path
+// already uses.
 void KCMTryRefreshPagesPanelThumbnails(IDataBase* db, bool16 redrawNow = kTrue);
 
-// ★KCMCollectChangedPageUIDs は **KCMCore.h へ移した**(2026-08-13・model/UI 分割 第1段 Task 10)。
-//   widget を1つも触らない model の問いで、呼び手も model 側だけだった(逆流台帳 §2-1)。
+// "Which pages can carry a mark right now" moved to the model side: it touches no widget, and
+// every caller was on the model side. From the UI the answer comes through the boundary facade
+// IKCMMarkData::GetMarkablePageUIDs.
 
-// db の**全ページ**(通常＋マスター)を per-UID Purge して、Pages パネルのサムネイルを作り直させる。
+// Purge EVERY page of the db (ordinary and master) per UID, so the Pages panel rebuilds all of
+// its thumbnails.
 //
-// ★★なぜ「全ページ」という乱暴な入口が在るか(2026-08-13・Task 10)。
-//   model は UI を直接呼ばなくなり、代わりに通知(kKCM*Message)を投げる。そのとき
-//   KCMTryRefreshPagesPanelThumbnails の extraPages ---- 「再比較の**前**に枠が付いていた旧集合」
-//   ---- を渡す道が無かった。旧集合は再比較で失われるため、今の集合だけを Purge すると
-//   **枠が消えたページのサムネイルに古い枠が残る**(この .cpp が 2026-07-08 に直した当の不具合)。
-//   全ページを Purge すれば取りこぼしは原理的に起きない ---- ページ数に比例して遅くなるだけ。
+// WHY SO BLUNT AN ENTRY POINT EXISTS. The model no longer calls the UI directly; it posts a
+// notification instead. For a full recomparison there is no way to put "the set that HAD frames
+// before the comparison" on that notification -- the old set is lost in the act of recomparing,
+// and purging only the new set leaves a stale frame on the thumbnail of a page whose frame has
+// just gone (exactly the defect this .cpp was written to fix). Purging every page cannot miss
+// anything; it is only slower, in proportion to the page count.
 //
-// ⚠★★★**2026-08-16(API 監査 B4)訂正**: ここに書いてあった理由「**通知は ClassID しか運べない**」は
-//   **誤りだった**。ISubject::Change の第3引数 changedBy で運べる(`ISubject.h:150`。本体の実例＝
-//   `linksui/EditOriginalResumeObserver.cpp:127`)。2026-08-15 の監査 B2 が model 側の static 4本を
-//   その道へ移した時点で覆っていたのに、**その訂正がこのヘッダーまで配られていなかった**
-//   (同じ誤った命題が4箇所に残っていた＝[[verify-claims-in-comments]])。
-//   ⇒ **ページフラグ(Register/✓)の経路は 2026-08-16 に per-UID へ戻した**＝model が
-//     `KCMNotifyPages` で「トグルしたページ集合」を載せ、受け手(KCMModelChangeObserver)が
-//     下の KCMRefreshThumbnailsForPages へ渡す。**Task 10 の「一時的な後退」はここで終わり。**
+// @warning an earlier version of this note said the reason was that "a notification can carry
+//   nothing but a ClassID". That is untrue: ISubject::Change carries it in the third argument,
+//   changedBy (the shipping linksui/EditOriginalResumeObserver.cpp does exactly that). The page
+//   flag path (Register / check mark) went back to per-UID once that was understood: the model
+//   puts the toggled page set on KCMNotifyPages and KCMModelChangeObserver hands it to
+//   KCMRefreshThumbnailsForPages below. Two more paths went back to per-UID with it -- the
+//   partial recomparison (Refresh Page Comparison, which decides which pages it will touch before
+//   it starts) and the overset scan (Find Overset, where the old set is still there after
+//   sOversetPages.swap() and was simply being thrown away).
 //
-// ★★2026-08-16(API 監査 B5)でさらに2経路が per-UID へ戻った＝**部分再比較**(Refresh Page Comparison。
-//   触るページを先に決めてから回るので集合が手元にある)と**あふれ走査**(Find Overset。旧集合は
-//   `sOversetPages.swap()` の後に残っているのを捨てていただけだった)。どちらも B4 の
-//   「全数4箇所」の数え上げから漏れていた ---- **B4 が自分のブロックの6ファイルだけを grep したため**。
+// WHAT STILL COMES HERE:
+//   - a full recomparison (and Stop), where what is needed is the set from BEFORE the comparison
+//     and the model would have to save it first (not done). NOTE that the partial recomparison is
+//     no longer one of these.
+//   - any notification that carries no page set at all (fPagesA == nil), as the fallback.
 //
-// ★**この入口が残っている用途は2つ**:
-//   ①**全再比較(KCMDoMarkChangesDoc)と Stop**＝要るのは「再比較の**前**に枠が付いていた旧集合」で、
-//     通知を出す時点で既に捨てられている。載せるには model 側で先に退避する必要がある(未実施)。
-//     ⚠**部分再比較はこちらではない**(上記)。
-//   ②通知にページ集合が付いていないとき(fPagesA == nil)のフォールバック。
-//
-// ⚠★2026-08-19(不具合再検査 B-U8)に **redrawNow 引数を落とした。** 呼び手は**全7か所とも kFalse**で、
-//   既定値の kTrue は一度も来ていなかった(＝呼び手は必ず自分で KCMForceRedrawPagesPanelNow を
-//   最後に1回呼ぶ形に揃っている＝2026-07-25 のバッチ化以来)。この関数は Purge だけを行う。
+// This function only purges. It used to take a redrawNow argument, and every caller passed
+// kFalse, because they all end with a single KCMForceRedrawPagesPanelNow of their own.
 void KCMPurgeAllPageThumbs(IDataBase* db);
 
-// db 内の指定ページ UID 群だけを per-UID Purge → Pages パネル再描画する。登録/解除トグルの直後など、
-// 「変更ページ集合(sEntries/overflow)には自動では入らないが、確実にサムネイルを作り直したい」特定
-// ページを明示更新するために使う。特に登録解除は sRegistered から先に消えるため、解除したページの
-// 緑「/」を消すにはこの明示 Purge が必要。db が nil か pages が空なら何もしない。安全に何度でも呼べる。
-// redrawNow の意味は KCMTryRefreshPagesPanelThumbnails と同じ(kFalse=Purge のみ、バッチ化用)。
-// ★std::set 版(2026-08-16・API 監査 B4)＝通知が運んでくるページ集合をそのまま渡すため。中身の
-//   Purge は元から入れ物を選ばないテンプレートなので、実装は1行の転送(使い捨ての vector を作らない)。
+// Purge just the named page UIDs of this db, per UID, then redraw the Pages panel. Use it for
+// pages that will not turn up in the changed set (sEntries / overflow) but must still be rebuilt
+// -- a registration toggle above all. Un-registering removes the page from the registered set
+// first, so the only way to clear its green "/" is this explicit purge. Does nothing when db is
+// nil or pages is empty, and is safe to call any number of times. redrawNow means what it means
+// on KCMTryRefreshPagesPanelThumbnails (kFalse = purge only, for batching).
+// The std::set overload exists so that the page set a notification carries can be passed straight
+// through: the purge itself is a template that does not care about the container, so the
+// implementation is a one-line forward rather than a throwaway vector.
 void KCMRefreshThumbnailsForPages(IDataBase* db, const std::vector<UID>& pages, bool16 redrawNow = kTrue);
 void KCMRefreshThumbnailsForPages(IDataBase* db, const std::set<UID>& pages, bool16 redrawNow = kTrue);
 
-// Pages パネルが表示されていれば今すぐ再描画する(Purge 済みサムネイルの作り直しトリガー)。
-// redrawNow=kFalse でバッチ化した呼び出し側が、最後に1回だけ呼ぶための公開版。
+// Redraw the Pages panel now, if it is showing: the trigger that rebuilds purged thumbnails.
+// This is the public form, for a caller that batched its purges with redrawNow=kFalse and calls
+// this once at the end.
 void KCMForceRedrawPagesPanelNow();
 
 #endif // __KCMThumbnailRefresh_h__

@@ -2,24 +2,25 @@
 //
 //  KCMThumbIdleTask.h
 //
-//  Pages パネルサムネイルの再生成を「次の idle」に遅延させる仕組み(KCMThumbIdleTask.cpp)。
+//  Defers the rebuild of the Pages panel thumbnails to the next idle (KCMThumbIdleTask.cpp).
 //
-//  ★なぜ遅延が要るか(2026-07-08 実機で切り分け): ターゲット文書を閉じてソースが新たに
-//    アクティブ化する場合、クローズ responder(kAfterCloseDoc)のその場で
-//    KCMTryRefreshPagesPanelThumbnails を呼んでも、Pages パネルがソースへ切り替わる過渡で
-//    ForceRedraw が再生成を起こしきれず、ソースのサムネイルに枠が残る。切替が落ち着いた後
-//    (次の idle)に purge＋ForceRedraw すれば、アクティブが安定した状態=確実に消える。
+//  WHY THE DELAY IS NEEDED (isolated on a live build). When the Target document is closed and
+//    the Source becomes the newly active one, calling KCMTryRefreshPagesPanelThumbnails from
+//    inside the close responder (kAfterCloseDoc) is too early: the Pages panel is still switching
+//    over to the Source, the ForceRedraw does not get the thumbnails rebuilt, and the frames stay
+//    on the Source's thumbnails. Purging and forcing the redraw once the switch has settled -- on
+//    the next idle -- clears them every time.
 //
-//  使い方: 生存している db を KCMScheduleThumbRefresh に渡す。
-//  ⚠2026-08-17 訂正(API 監査 B-U8): ここは「呼び出し元は2つとも KCMPeek.cpp」と書いていたが、
-//    2026-08-13 の model/UI 分割で**呼び手は両方とも UI 側へ移っている**(model からこの UI 関数は
-//    呼べない)。全数 Grep での現状は2ファイル4箇所:
-//    ①KCMModelChangeObserver.cpp … model からのクローズ通知を受けて、生き残った文書を渡す(3本)
-//    ②KCMPeekGesture.cpp … 一括クローズ完了(kPendingDocumentsClosedMsg)で保留した UI 仕事を
-//      流す経路(こちらは「今開いている文書」をその場で列挙し直す)。
-//    約 150ms 後に一度だけ走り(RunTask 末尾の UninstallTask で自分をキューから外す。
-//    ★kEndOfTime 返しは CIdleTask の fCurrentlyInstalled が残る契約違反=cpp 側の説明が正)、生存して
-//    いる db にだけ KCMTryRefreshPagesPanelThumbnails を呼ぶ。終了時は KCMShutdownThumbIdleTask で解放。
+//  Usage: hand a live db to KCMScheduleThumbRefresh. Every caller is on the UI side (the model
+//    side cannot reach this function at all, it is in the other .pln):
+//      - KCMModelChangeObserver.cpp ... takes the close notification from the model and passes
+//        whichever documents survived
+//      - KCMPeekGesture.cpp ... flushes the UI work that was held back until a batch close
+//        finished (kPendingDocumentsClosedMsg); that path re-enumerates the open documents itself
+//    The task then fires once, about 150 ms later, and takes itself off the queue (UninstallTask
+//    at the end of RunTask -- the .cpp says why returning kEndOfTime instead breaks the contract).
+//    Only documents whose db is still open get the refresh. KCMShutdownThumbIdleTask releases it
+//    at shutdown.
 //
 //========================================================================================
 
@@ -28,12 +29,14 @@
 
 class IDataBase;
 
-// db の Pages パネルサムネイル再生成を「次の idle(既定約150ms後)」に予約する。前面切替が
-// 落ち着いてから走るので、クローズで survivor が新たにアクティブ化するケースでも確実に消える。
-// 何度呼んでも安全(db を集約し、idle task は1個を再利用。二重 AddTask はしない)。
+// Schedule a rebuild of this db's Pages panel thumbnails for the next idle (about 150 ms).
+// Running after the frontmost document has settled is what makes it work even when closing one
+// document promotes another one to active. Safe to call any number of times: the databases are
+// collected into one set and a single idle task is reused (never added to the queue twice).
 void KCMScheduleThumbRefresh(IDataBase* db);
 
-// 共有 idle task インスタンスを解放する(アプリ終了時に呼ぶ)。予約中なら RemoveTask してから解放。
+// Release the shared idle task instance (call at application shutdown). If one is scheduled it
+// is removed from the queue first.
 void KCMShutdownThumbIdleTask();
 
 #endif // __KCMThumbIdleTask_h__

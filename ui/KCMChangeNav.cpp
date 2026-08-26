@@ -2,27 +2,33 @@
 //
 //  KCMChangeNav.cpp
 //
-//  「中身が変わったページ」を順に巡回する Next/Prev ナビ(KCMChangeNav.h で宣言)。
-//  KESCL の「検索ヒットをパノラマの中央へ送る」動きと同じ発想で、対象は KCM の
-//  「見るべきページ」= Target(sDB)で内容変更マークが付くページ(sEntries)。
-//  ★Added/Removed(登録ページ)・Overflow(未比較)はページ増減由来なので巡回対象に含めない
-//    (2026-07-10 ユーザー指定)。
+//  The Next/Prev walk over "the pages whose contents changed" (declared in KCMChangeNav.h).
+//  The same idea as KESCL sending a search hit to the centre of the panorama; here the subject is
+//  KCM's pages worth looking at -- the pages of the Target (sDB) that carry a change mark
+//  (sEntries). Added/Removed (registered) and Overflow (uncompared) pages come from pages being
+//  added or removed rather than from a change, and at the user's request they are not walked.
 //
-//  巡回リストは呼ばれるたびにその場で作り直す(再比較でマークが動いても常に最新に追従し、
-//  index ではなく現在ページ UID を覚えておくことで位置を見失わない)。順序は文書のページ順そのもの
-//  (KCMCollectPageUIDs)。
+//  THE LIST OF STOPS IS REBUILT EVERY TIME, so it always follows a recomparison that moved the
+//  marks; the place in it is kept as the CURRENT PAGE UID rather than an index, so it is not lost
+//  when the list changes. The order is the document's own page order.
 //
-//  移動は「対象ページの矩形をペーストボード座標で取り(Facade::IGeometryFacade::GetItemBounds)、その中心を
-//  KCMQueryPanorama()->ScrollContentLocationToFrameCenter() へ」。ズームは触らない(現在の倍率のまま中央へ)。
-//  対象文書は常に Target なので、Target のレイアウトビュー(GetAllLayoutViews(db))をスクロールする
-//  (Source を前面にして押しても背面の Target ビューが動く=ユーザー指定の「常に Target」)。
+//  The move itself is: take the page's rectangle in pasteboard coordinates
+//  (Facade::IGeometryFacade::GetItemBounds) and hand its centre to
+//  KCMQueryPanorama()->ScrollContentLocationToFrameCenter(). The zoom is not touched -- the
+//  centring happens at whatever magnification is in use.
+//  The document walked is always the Target, so it is the Target's layout views
+//  (GetAllLayoutViews(db)) that scroll: pressing the button with the Source in front still moves
+//  the Target's view behind it, which is what the user asked for.
 //
-//  ★Source 側も連動: Target の対象ページに対応する Source ページ(KCMSourcePageForTarget)へ
-//  Source のビューも同時にスクロールする(背面のまま位置だけ)。ページの追加/削除で番号がズレていても
-//  対応表(KCMBuildPairing)が正しい相手を返すので正しく飛ぶ。Source に直接の相手が無い Added/
-//  Overflow ページは、ページ順で最も近いペア済みページの相手(挿入位置の近傍)へ寄せる。
-//  ★さらに Source の拡大率も Target に合わせる(Target の実効ズーム GetXScaleFactor(kTrue) を読み、
-//  Source のビューへ MakeZoomCmd(kZoomToCmdBoss) で反映=KCMPeek のビューポート同期と同じ手法)。
+//  THE SOURCE FOLLOWS ALONG: the Source's views scroll to the page that corresponds to the
+//  Target's (KCMSourcePageForTarget), staying behind, position only. Page numbers shifted by an
+//  addition or a deletion do not matter, because the pairing table (KCMBuildPairing) returns the
+//  right counterpart. A page with no direct counterpart on the Source -- an Added or Overflow one
+//  -- is drawn to the counterpart of the nearest paired page, so what appears is the
+//  neighbourhood of where it was inserted.
+//  THE SOURCE'S MAGNIFICATION IS MATCHED TOO: the Target's effective zoom (GetXScaleFactor(kTrue))
+//  is read and applied to the Source's views with MakeZoomCmd (kZoomToCmdBoss), the same way the
+//  viewport synchroniser does it.
 //
 //========================================================================================
 
@@ -31,99 +37,106 @@
 #include "IControlView.h"
 #include "IPanorama.h"
 #include "ILayoutViewUtils.h"	// GetAllLayoutViews(db)
-#include "ILayoutUIUtils.h"		// MakeZoomCmd(kZoomToCmdBoss。他文書ビューのズームを合わせる公式経路)
+#include "ILayoutUIUtils.h"		// MakeZoomCmd (kZoomToCmdBoss), the official route to another document's zoom
 #include "IPanelControlData.h"
 #include "IDocument.h"
-#include "IPagesSubPanelController.h"	// ScrollPanelToSpread(page/spread UID 可と明記あり)
+#include "IPagesSubPanelController.h"	// ScrollPanelToSpread (a page uid is allowed, and the header says so)
 #include "PagesPanelID.h"		// kPagesPanelWidgetID / kLayoutPagesSubPanelWidgetID / IID_IPAGESSUBPANELCONTROLLER
-#include "ICommand.h"			// ズームコマンド
+#include "ICommand.h"			// the zoom command
 #include "CmdUtils.h"			// ProcessCommand
 #include "IGeometry.h"
 #include "IDataBase.h"
-#include "IHierarchy.h"			// GetSpreadUID(ページ→スプレッド。スクロール前の切替判定に使う)
-#include "ILayoutControlData.h"	// GetSpreadRef(そのビューが今どのスプレッドを見ているか)/GetDocument
-#include "ILayoutCmdData.h"		// kSetSpreadCmdBoss が要求するデータ(対象の文書とビュー)
-#include "SpreadID.h"			// kSetSpreadCmdBoss(レイアウトビューにスプレッドを出すコマンド)
-#include "ErrorUtils.h"			// PMSetGlobalErrorCode / GlobalErrorStatePreserver
-								//   (切替やズームに失敗しても後続コマンドを巻き添えにせず、外へも出さない)
+#include "IHierarchy.h"			// GetSpreadUID (page to spread, for the switch made before scrolling)
+#include "ILayoutControlData.h"	// GetSpreadRef (which spread a view is showing) / GetDocument
+#include "ILayoutCmdData.h"		// what kSetSpreadCmdBoss wants: the document and the view
+#include "SpreadID.h"			// kSetSpreadCmdBoss (the command that puts a spread in a layout view)
+#include "ErrorUtils.h"			// PMSetGlobalErrorCode / GlobalErrorStatePreserver -- a failed
+								// spread switch or zoom must not take later commands down with
+								// it, nor escape this file
 #include "PersistUtils.h"		// ::GetUIDRef / ::GetDataBase
-#include "UIDList.h"			// SetItemList(切替先スプレッド)
-#include "IPageList.h"			// GetPageString / kDefaultPageType(飛んだページ番号の表示ラベル "Page: 1" 等)
-#include "IGeometryFacade.h"	// GetItemBounds(ページ矩形をペーストボード座標で。手本=SnapTracker.cpp:616)
+#include "UIDList.h"			// SetItemList (the spread to switch to)
+#include "IPageList.h"			// GetPageString / kDefaultPageType (the page label, "Page: 1" and so on)
+#include "IGeometryFacade.h"	// GetItemBounds (a page rectangle in pasteboard coordinates; modelled on SnapTracker)
 #include "PMRect.h"
-#include "PMPoint.h"			// PBPMPoint(= PMPoint の typedef)
+#include "PMPoint.h"			// PBPMPoint (a typedef of PMPoint)
 #include "PMString.h"
 #include "Utils.h"
 #include "K2Vector.h"
 
 #include <map>
-#include <set>			// 通常スプレッドに載るページの集合(マスターページ上の overset を見分ける)
+#include <set>			// the pages of the ordinary spreads (telling an overset on a master apart)
 #include <vector>
 
 #include "KCMUIShared.h"	// panel / status line / nav readout / tool button (split from KCMCore.h on 2026-08-13)
-#include "KCMViewSync.h"			// KCMGetLayoutSync(同期 ON なら連動スクロールを任せる。2026-08-13 に KCMCore.h から移動)
-#include "IKCMCompareFacade.h"		// GetActiveDocDB(2026-08-14 Task 16 で Facade 経由へ)
-#include "IKCMMarkData.h"			// 比較結果の読み取り(変更ページ・変化セル数・overset 箇所)。2026-08-13 Task 12
-#include "KCMViewLookup.h"		// KCMQueryPanorama(同 Task 12 に KCMDrawEventHandler.h から移動)
-#include "KCMOversetScan.h"		// KCMOversetLoc(overset「+」箇所の位置)
-                                    // ＋ GetPagePairing(Source 側連動スクロールの対応表。2026-08-13 Task 13 で
-                                    //   KCMPageMap.h から IKCMMarkData 経由へ)
-#include "KCMThumbnailRefresh.h"	// KCMGetVisiblePagesPanel(表示中 Pages パネル取得の共有ヘルパ)
-#include "IKCMStoryEditsFacade.h"	// GetFirstFrameUID(Source 側で「同じストーリー」の先頭フレームを引く)／
-									// GetStoryStartPoint(本文の書き出し位置)。2026-08-13 Task 14 で Facade 経由へ
-#include "KCMStoryNav.h"			// Story Changes モードのストップ列(=一覧の葉)と、その飛び方。2026-08-24
+#include "KCMViewSync.h"			// KCMGetLayoutSync (with Sync on, the companion scrolling is left to it)
+#include "IKCMCompareFacade.h"		// GetActiveDocDB / GetCompareMode
+#include "IKCMMarkData.h"			// reading the comparison result (changed pages, changed cell counts, overset places)
+#include "KCMViewLookup.h"		// KCMQueryPanorama
+#include "KCMOversetScan.h"		// KCMOversetLoc, the position of an overset "+" place
+#include "KCMThumbnailRefresh.h"	// KCMGetVisiblePagesPanel (the shared way to get the visible Pages panel)
+#include "IKCMStoryEditsFacade.h"	// GetFirstFrameUID (the first frame of "the same story" on
+									// the Source side) / GetStoryStartPoint (where its text
+									// begins)
+#include "KCMStoryNav.h"			// the stops of the Story Changes mode (the leaves of the list) and how they are travelled to
 #include "KCMChangeNav.h"
 
-// 巡回の1ストップ。change=そのページの変更(枠)= ページ中心へスクロール / overset=あふれ「+」箇所=
-// その pb 点へスクロール(KBS 流)。pageUID は並び順・ラベル・Source 連動に、pb は overset のときだけ有効。
+// One stop of the walk. A change stop is a page with a frame on it, scrolled to the page's
+// centre; an overset stop is an overflow "+" place, scrolled to its pasteboard point (the way KBS
+// does it). pageUID drives the order, the label and the Source's companion move; pb only means
+// anything on an overset stop.
 struct KCMNavStop
 {
 	UID			pageUID;
-	bool16		isOverset;			// kFalse=変更(枠), kTrue=overset(「+」)
-	PBPMPoint	pb;					// overset の「+」点(isOverset のときのみ有効)
-	int32		oversetOrd;			// 同じページ内の overset ストップ通し番号(0始まり。リスト再構築後の同定用)
-	int32		oversetCountOnPage;	// そのページの overset 件数(ラベルで (n) を出すか判定。1件なら番号なし)
+	bool16		isOverset;			// kFalse = a change (a frame), kTrue = an overset ("+")
+	PBPMPoint	pb;					// the overset "+" point (only on an overset stop)
+	int32		oversetOrd;			// this overset stop's number within its page (from 0), for finding it again
+	int32		oversetCountOnPage;	// how many oversets that page has (with one, the label carries no (n))
 
-	// ★★★Story Changes モードのストップ(2026-08-24)。上の2種が指すのは**ページ**だが、こちらが
-	//   指すのは **Story Edits 一覧の葉**＝1つの編集(または子を持たない行そのもの)。
-	//   ⚠**pageUID は使わない**(kInvalidUID のまま)＝どのページに着くかは飛んでみるまで決まらない
-	//     (連結ストーリーの後ろの編集は、そのストーリーの先頭フレームのページではない
-	//     ＝KCMStoryJumpToChange が GetStoryFrameAt で解決する)。∴ Story ストップは
-	//     ページを前提にした処理 ---- 隠しページ判定・KCMStopLabel・KCMSyncCompanionViews ----
-	//     を**1つも通さない**(下の KCMGoto の分岐)。
+	// A stop of the Story Changes mode. The two above point at a PAGE; this one points at A LEAF
+	// OF THE STORY EDITS LIST -- one edit, or a row that has no children.
+	// @warning pageUID IS NOT USED here (it stays kInvalidUID): which page it lands on is not
+	//   known until the jump happens (an edit further down a threaded story is not on the page of
+	//   that story's first frame; KCMStoryJumpToChange resolves it with GetStoryFrameAt). So a
+	//   Story stop goes through NONE of the page-based work -- the hidden-page test, KCMStopLabel,
+	//   KCMSyncCompanionViews -- see the branch in KCMGoto below.
 	bool16		isStory;
-	int32		storyRow;			// KCMStoryList の行番号(Facade に渡す語彙)
-	int32		storyChange;		// その行の何番目の変更か。**-1 = 子を持たない行そのもの**
-	UID			storyUID;			// 同定用＝「どのストーリーか」(下の sNavStoryUID 参照)
+	int32		storyRow;			// the row number in KCMStoryList (the vocabulary the facade is given)
+	int32		storyChange;		// which change of that row; -1 = the row itself, which has no children
+	UID			storyUID;			// which story it is, for finding it again (see sNavStoryUID below)
 
 	KCMNavStop() : pageUID(kInvalidUID), isOverset(kFalse), oversetOrd(0), oversetCountOnPage(0),
 					 isStory(kFalse), storyRow(-1), storyChange(-1), storyUID(kInvalidUID) {}
 };
 
-// 直近に巡回したストップの同定情報。index ではなく内容(ページ+種別+ページ内序数)で持つことで、リストが
-// 再構築されても位置を追える。対象が消えたら KCMFindCurrentStop が -1 を返し先頭/末尾から始め直す。
+// How the stop last visited is identified. Holding its CONTENT -- page, kind, and number within
+// the page -- rather than an index is what lets the place survive the list being rebuilt. When
+// what it points at is gone, KCMFindCurrentStop returns -1 and the walk starts again from the
+// front or the back.
 static UID    sNavPageUID    = kInvalidUID;
 static bool16 sNavIsOverset  = kFalse;
 static int32  sNavOversetOrd = 0;
 
-// Story ストップの基準点(2026-08-24)。**行番号ではなくストーリーで覚える**のは上とまったく同じ理由＝
-// 「Refresh Story Comparison」はその行の子を作り直し、次の比較は一覧ごと作り直す。ストーリーで覚えて
-// おけば、子が増減しても同じ編集を指し続け、その編集が消えていれば見つからず先頭/末尾から始まる。
+// Where the walk stands on a Story stop. IT IS REMEMBERED BY STORY, NOT BY ROW NUMBER, for
+// exactly the reason above: a "Refresh Story Comparison" rebuilds that row's children and the
+// next comparison rebuilds the whole list. Remembered by story, it goes on pointing at the same
+// edit as children come and go, and when that edit is gone it is simply not found and the walk
+// starts from the front or the back.
 static bool16 sNavIsStory     = kFalse;
 static UID    sNavStoryUID    = kInvalidUID;
 static int32  sNavStoryRow    = -1;
 static int32  sNavStoryChange = -1;
 
-// ★★「入口に立っている」＝上の基準点が指すストップへ**まだ行っていない**(2026-08-24)。
-//   子のある親行を選んだときだけ立つ ---- あの行は巡回対象では無い(KCMStoryNav.h)ので、
-//   代わりに**その最初の子の入口**に立たせる。次の Next はそのストップ「へ」行き(進めない)、
-//   Prev は1つ前へ行く。⇒ **Start 直後に「1/N」と出て、Next で1番目へ行く**のと同じ規則で、
-//   実際そちらも「基準点がまだ無い(cur<0)」という同じ形で表現されている。
+// "Standing at the entrance" means THE WALK HAS NOT YET GONE to the stop the anchor above points
+// at. It happens only when a parent row with children was selected: such a row is not a stop
+// (KCMStoryNav.h), so the walk stands at THE ENTRANCE TO ITS FIRST CHILD instead. The next Next
+// goes TO that stop rather than past it; Prev goes to the one before.
+// It is the same rule that shows "1/N" the moment a comparison starts -- and that case is
+// expressed the same way, as "there is no anchor yet" (cur < 0).
 static bool16 sNavStoryAtEntry = kFalse;
 
 //----------------------------------------------------------------------------------------
-// 巡回する文書。比較 Start 中は Target(sDB)。未 Start でも Find Overset ON ならその走査文書(sOversetDB)。
-// どちらでもなければ nil(巡回対象なし)。
+// The document being walked: the Target while a comparison is running, or, with no comparison
+// but Find Overset on, the document it scanned. nil when there is nothing to walk.
 //----------------------------------------------------------------------------------------
 static IDataBase* KCMNavDoc()
 {
@@ -136,20 +149,24 @@ static IDataBase* KCMNavDoc()
 }
 
 //----------------------------------------------------------------------------------------
-// 巡回ストップ列を文書のページ順に組む。各ページで「まず変更(枠)→ 次に overset の各「+」箇所」の順
-// (ユーザー指定 2026-07-24)。
-//   ・変更ストップ = 比較 Start 中(navDB==sDB)かつ sEntries にあるページ。ページ中心へ。
-//     ★Added/Removed・Overflow(ページ増減由来)は従来どおり含めない(2026-07-10)。
-//   ・overset ストップ = Find Overset ON かつ sOversetDB==navDB。そのページに載る「+」を箇所ごとに1つ
-//     (sOversetLocs の並び=走査順)。KBS 流に「+」pb 点へ。
-//   比較と overset が別文書のとき(navDB==Target、overset は別文書)は overset を混ぜない(そのページ順の
-//   意味が崩れるため。overset 単独時はその文書を navDB として overset だけを巡る)。
+// Build the list of stops in the document's page order, each page contributing its change (the
+// frame) first and then each of its overset "+" places, at the user's request.
+//   - a change stop needs a comparison to be running on this document and the page to be in
+//     sEntries. It scrolls to the page's centre. Added/Removed and Overflow pages come from pages
+//     being added or removed and are still not included.
+//   - an overset stop needs Find Overset to be on and to have scanned this same document. One per
+//     "+" place, in the order the scan found them, scrolled to the "+" point the way KBS does it.
+//   When the comparison and the overset scan are on DIFFERENT documents, the overset places are
+//   not mixed in, because the page order they are in would stop meaning anything. (An overset
+//   scan on its own makes its document the one being walked, and only its places are walked.)
 //----------------------------------------------------------------------------------------
-// pageUID に載る overset「+」箇所を走査順にストップとして足す(ページ内の枝番と件数もここで振る)。
-// ★通常ページ用のループとマスターページ等の追い足しの両方から呼ぶので、枝番の付け方が2箇所に
-//   分かれないようここへ切り出してある。
-// ★locs は呼び手が1回だけ引いた「今の overset 箇所」の写し(2026-08-13 Task 12)。境界の向こうから
-//   毎ページ引き直すと同じものを何度もコピーすることになるので、走査の間ずっと使い回す。
+// Append the overset "+" places on pageUID as stops, in scan order, numbering them within the
+// page and recording how many there are.
+// Both the ordinary-page loop and the master-page top-up call this, so the numbering is not
+// written twice.
+// locs is the caller's single copy of "the overset places as they are now": asking across the
+// boundary once per page would copy the same thing over and over, so it is reused for the whole
+// walk.
 static void KCMAppendOversetStopsForPage(UID pageUID, const std::vector<KCMOversetLoc>& locs,
 										   std::vector<KCMNavStop>& out)
 {
@@ -175,28 +192,33 @@ static void KCMBuildStops(std::vector<KCMNavStop>& out)
 		return;
 	InterfacePtr<IKCMMarkData> marks(Utils<IKCMMarkData>().QueryUtilInterface());
 
-	// ★★★Story Changes モードには「変更(枠)」のストップが1つも無い ---- ページを1枚もラスタ化しない
-	//   ので sEntries が空のまま(KCMCore.cpp の `toRaster.clear()`)。代わりに巡るのは
-	//   **Story Edits 一覧の葉**(2026-08-24。規則は KCMStoryNav.h)。
-	//   ⚠`== kKCMModeStory` と書くのは意図＝`!= kKCMModePixel` と書くと、将来「枠を作らない3つ目の
-	//     モード」が増えたときに**黙ってこちらへ流れ込む**(KCMPeek.cpp:175 が同じ用心を書いている)。
+	// THE STORY CHANGES MODE HAS NO CHANGE (FRAME) STOPS AT ALL: it rasterises no page, so
+	// sEntries stays empty (KCMCore.cpp empties toRaster). What it walks instead are THE LEAVES OF
+	// THE STORY EDITS LIST; the rule is in KCMStoryNav.h.
+	// @warning `== kKCMModeStory` is deliberate. Written as `!= kKCMModePixel`, a future third mode
+	//   that builds no frames would SILENTLY FALL IN HERE. KCMPeek.cpp carries the same warning on
+	//   its own `== kKCMModePixel` test, for the mirror-image reason.
 	const bool16 storyMode   = (Utils<IKCMCompareFacade>()->GetCompareMode() == kKCMModeStory);
-	const bool16 changeHere  = (!storyMode && marks->GetMarkedTargetDB() == navDB);	// 変更(枠)を混ぜるのは比較 Target のときだけ
+	const bool16 changeHere  = (!storyMode && marks->GetMarkedTargetDB() == navDB);	// frames are only mixed in on the comparison Target
 	const bool16 oversetHere = (marks->GetOversetOn() && marks->GetOversetDB() == navDB);
 
-	// overset 箇所は3か所から引くので、ここで1回だけ写しを取る(下の3つのブロックが使い回す)。
+	// The overset places are needed in more than one block below, so one copy is taken here and
+	// shared by all of them.
 	std::vector<KCMOversetLoc> locs;
 	if (oversetHere)
 		marks->GetOversetLocations(locs);
 
-	// 0) ★Story の葉を**先に**並べる(2026-08-24)。
-	//    ⚠**ページ順に混ぜない。** 一覧は「ページ順 → 削除された行だけ後ろへ」という独自の並びを持って
-	//      いる(KCMStoryList::Build)ので、ページ単位で割り込ませると**画面に見えている順と Prev/Next の
-	//      順が食い違う**。押す人は一覧を見ながら押すのだから、そちらに合わせる。
-	//    ★あふれ「+」は従来どおりこの後ろに続く＝**Story モードでも Find Overset は使えるまま**。
-	//      OFF なら「k/N」の N は一覧の編集の数そのものになる。
-	//    ★条件が `marks->GetMarkedTargetDB() == navDB` なのは changeHere と同じ問い＝一覧は比較が作った
-	//      ものなので、巡回文書が比較の Target のときだけ意味を持つ(あふれ単独走査の文書では出さない)。
+	// 0) The Story leaves go FIRST.
+	//    THEY ARE NOT INTERLEAVED IN PAGE ORDER. The list has an order of its own -- page order,
+	//      with the deleted rows moved to the end (KCMStoryList::Build) -- so slotting them in per
+	//      page would make THE ORDER ON SCREEN AND THE ORDER OF Prev/Next DISAGREE. Whoever
+	//      presses the button is looking at the list, so the list wins.
+	//    The overflow "+" places still follow after these, so FIND OVERSET REMAINS USABLE IN THE
+	//      STORY MODE. With it off, the N of "k/N" is simply the number of edits in the list.
+	//    The test is `marks->GetMarkedTargetDB() == navDB`, the same question changeHere asks: the
+	//      list is something the comparison built, so it only means anything when the document
+	//      being walked is the comparison's Target (never on a document that was only scanned for
+	//      overflow).
 	if (storyMode && marks->GetMarkedTargetDB() == navDB)
 	{
 		std::vector<KCMStoryNavStop> storyStops;
@@ -212,49 +234,53 @@ static void KCMBuildStops(std::vector<KCMNavStop>& out)
 		}
 	}
 
-	// ★marks は上で InterfacePtr に引いてあるので、そのまま使う(Utils.h:74-80。2026-08-17 の
-	//   API 監査 B-U8＝同じ関数の中で InterfacePtr と直呼びが混在していた)。
+	// marks was queried into an InterfacePtr above, so it is used as it stands rather than asked
+	// for again (Utils.h says to do that when a utility interface is used more than once).
 	std::vector<UID> flat;
 	marks->GetAllPageUIDs(navDB, flat);
 	for (size_t i = 0; i < flat.size(); ++i)
 	{
 		const UID u = flat[i];
-		// 1) そのページの変更(枠)= ページ中心。
+		// 1) That page's change (its frame): the page centre.
 		if (changeHere && marks->HasEntryForPage(u))
 		{
 			KCMNavStop s; s.pageUID = u; s.isOverset = kFalse;
 			out.push_back(s);
 		}
-		// 2) そのページの overset「+」箇所(走査順に1つずつ)。
+		// 2) That page's overset "+" places, one at a time in scan order.
 		if (oversetHere)
 			KCMAppendOversetStopsForPage(u, locs, out);
 	}
 
-	// ★★KCMCollectPageUIDs が返すのは **文書の通常ページだけ**で、マスタースプレッドは
-	//    IMasterSpreadList の別管理なので上のループには一度も現れない。以下でマスターを追い足す。
-	//    (2026-08-16 に中身が ISpreadList の2重ループから **IPageList** へ移ったが、マスターを
-	//     含まないのは契約＝`IPageList.h:81` "does not include master pages"。前提は不変。)
-	//    ★KCMCollectPageUIDs 自体は変えない: あれは比較のページ対応(KCMBuildPairing)でも使う共有
-	//    ヘルパで、マスターページを混ぜると**比較する対象そのものが変わる**。ここで足すのが正しい。
-	//    順序は「通常ページを全部回った後」＝ページ順の意味を壊さない。
+	// GetAllPageUIDs returns THE DOCUMENT'S ORDINARY PAGES ONLY. Master spreads are kept in a
+	// separate IMasterSpreadList and never appear in the loop above, so they are topped up below.
+	// (Its body moved from a double loop over ISpreadList onto IPageList, which does not include
+	// master pages either -- IPageList says so by contract. The premise is unchanged.)
+	// THE COLLECTION ITSELF IS LEFT ALONE: it is shared with the comparison's page pairing
+	// (KCMBuildPairing), where mixing master pages in would change what is being compared. Adding
+	// them here is the right place. They go on AFTER every ordinary page, so the meaning of the
+	// page order is not broken.
 	std::set<UID> covered(flat.begin(), flat.end());
 
-	// 3) ★マスタースプレッドのページ(2026-08-06=overset / 2026-08-11=変更枠)。
-	//    overset は 2026-08-06 のユーザー報告「マスターのオーバーセット、見つけますがボタンが押せない」
-	//    の修正で足した(検出はできていてサムネイルの「+」も出るのに、ストップ列から丸ごと落ちていた)。
-	//    ★変更(枠)を 2026-08-11 に同じ場所へ足した: マスターを比較対象に加えた結果、同じ形の
-	//    「枠は出るのに Prev/Next で飛べない」が起きうるため。
-	//    ★通常ページのループと同じく「1ページにつき [枠 → overset...]」の順に足す(あふれだけを別に
-	//    まとめると、マスターが複数あるとき枠とあふれが離れて並ぶ)。
+	// 3) The pages of the master spreads.
+	//    The overset ones were added after a report that an overset on a master was found but
+	//      could not be reached: it was detected, the "+" showed on the thumbnail, and the stop
+	//      list dropped it entirely.
+	//    The changed ones (frames) were added in the same place afterwards: once masters were part
+	//      of the comparison, the same shape of defect -- "a frame appears but Prev/Next will not
+	//      go there" -- could happen to them too.
+	//    They follow the same "[frame, then overset...] per page" order the ordinary loop does;
+	//      gathering the overflows separately would separate a master's frame from its overflow
+	//      when there is more than one master.
 	if (changeHere || oversetHere)
 	{
 		std::vector<UID> masters;
-		marks->GetMasterPageUIDs(navDB, masters);	// ★上で引いた InterfacePtr を使う(Utils.h:74-80)
+		marks->GetMasterPageUIDs(navDB, masters);	// the InterfacePtr queried above
 		for (size_t i = 0; i < masters.size(); ++i)
 		{
 			const UID u = masters[i];
 			if (covered.find(u) != covered.end())
-				continue;			// 上のループで拾い済み(マスターがそこに出ることは無いが、二重に足さない)
+				continue;			// already taken above (a master cannot turn up there, but do not add it twice)
 			covered.insert(u);
 			if (changeHere && marks->HasEntryForPage(u))
 			{
@@ -266,18 +292,18 @@ static void KCMBuildStops(std::vector<KCMNavStop>& out)
 		}
 	}
 
-	// 4) それでも残る overset(通常ページにもマスターページにも属さないページ)を末尾に足す。
-	//    ★2026-08-11 にマスターを 3) で拾うようになった後も残す安全網: ここが空になる保証は
-	//    「ページ UID は通常スプレッドかマスタースプレッドのどちらかに属する」という前提に頼るが、
-	//    その前提はこちらのコードでは担保できない。落ちるより出す。
+	// 4) Any overset left over -- on a page belonging to neither an ordinary spread nor a master
+	//    one -- goes on the end. This is the safety net kept after masters were picked up in 3):
+	//    what would make it unnecessary is the premise that every page UID belongs to one or the
+	//    other, and nothing in this code can guarantee that. Better shown than dropped.
 	if (oversetHere)
 	{
-		std::vector<UID> extra;		// 走査順・重複なし
+		std::vector<UID> extra;		// in scan order, without duplicates
 		for (size_t j = 0; j < locs.size(); ++j)
 		{
 			const UID pu = locs[j].pageUID;
 			if (covered.find(pu) != covered.end())
-				continue;			// 通常ページ/マスターページ=上で拾い済み
+				continue;			// an ordinary or master page, taken above
 			bool16 already = kFalse;
 			for (size_t e = 0; e < extra.size() && !already; ++e)
 				if (extra[e] == pu)
@@ -290,32 +316,35 @@ static void KCMBuildStops(std::vector<KCMNavStop>& out)
 	}
 }
 
-// リスト内で「今の基準ストップ」の index を返す(見つからなければ -1)。
+// The index of the stop the walk is standing on, or -1 when it is not in the list.
 static int32 KCMFindCurrentStop(const std::vector<KCMNavStop>& stops)
 {
 	for (size_t i = 0; i < stops.size(); ++i)
 	{
-		// ★★種別が違えば見るまでもなく別物。⚠**ここで分けないとページ側の条件が Story ストップにも
-		//   当たる**＝Story ストップの pageUID は kInvalidUID のままなので、「ページの取れないストップ」
-		//   どうしが取り違う(基準点が初期値のときはどちらも kInvalidUID)。
+		// A different kind is a different stop, with nothing more to check.
+		// @warning WITHOUT THIS SPLIT THE PAGE-SIDE TEST WOULD ALSO MATCH A STORY STOP: a Story
+		//   stop's pageUID stays kInvalidUID, so two "stops with no page" would be taken for each
+		//   other (the anchor is kInvalidUID too while it holds its initial value).
 		if (stops[i].isStory != sNavIsStory)
 			continue;
 
 		if (stops[i].isStory)
 		{
-			// ★**ストーリー・行・編集の3つが揃って初めて同じストップ**(2026-08-25 の再検査で
-			//   storyRow を足した)。
-			// ⚠★★★**足した理由は誤っていた。同日中に裏を取って撤回した。** 「版どうしでない2文書では
-			//   Target 側の行と Source 側の削除行の UID が衝突しうる」と書いたが、**衝突は起きない** ----
-			//   `KCMStoryStamp.h` の kKCMStoryKindAdded / kKCMStoryKindRemoved が Added を「**Source 側にこの UID のストーリーが無い**」、
-			//   Removed を「**Target 側に無い**」と定義しており、**同じ UID が両側にあれば必ずペアになる**
-			//   ＝どちらの行にもならない。⇒ **一覧の中で同じ UID が2行に現れることは無い。**
-			// ★**それでも3つ見るままにしてある**＝(a)UID の一意性は上のペアリングの実装に依存しており、
-			//   ここはその契約を知らずに済むほうがよい (b)行番号は Facade に渡す語彙そのもので、
-			//   どのみち持っている (c)**どれかがずれたら「見つからない」＝先頭から始まる**＝安全側に倒れる。
-			// ★**行番号を混ぜても壊れない**＝行の並びが変わるのは**新しい比較のとき**だけで、そのときは
-			//   KCMResetNav が基準点ごと捨てる。「Refresh Story Comparison」は1行の子を作り直すだけで
-			//   並びを変えない(IKCMStoryEditsFacade::RefreshRow が明記)。
+			// STORY, ROW AND EDIT MUST ALL AGREE for this to be the same stop.
+			// Note that all three are checked even though the story UID alone would do. The list
+			// cannot hold the same story UID on two rows: KCMStoryStamp.h defines
+			// kKCMStoryKindAdded as "no story with this UID on the source side" and
+			// kKCMStoryKindRemoved as "none on the target side", so a UID present on both sides is
+			// always paired and becomes neither row.
+			// All three are kept anyway because (a) that uniqueness rests on how the pairing is
+			// implemented, and it is better not to have to know that here, (b) the row number is
+			// the vocabulary the facade is given and is held either way, and (c) IF ANY OF THEM
+			// DRIFTS THE STOP IS SIMPLY NOT FOUND and the walk starts from the front -- it fails
+			// safe.
+			// Mixing the row number in cannot break it: the order of the rows changes only on a
+			// NEW COMPARISON, and that is when KCMResetNav throws the anchor away. A "Refresh
+			// Story Comparison" rebuilds one row's children and leaves the order alone
+			// (IKCMStoryEditsFacade::RefreshRow says so).
 			if (stops[i].storyUID == sNavStoryUID && stops[i].storyRow == sNavStoryRow &&
 				stops[i].storyChange == sNavStoryChange)
 				return (int32)i;
@@ -330,9 +359,10 @@ static int32 KCMFindCurrentStop(const std::vector<KCMNavStop>& stops)
 }
 
 //----------------------------------------------------------------------------------------
-// 文書 db の実効ズーム(拡大率)を読む。最初に見つかったレイアウトビューのパノラマの
-// GetXScaleFactor(kTrue)(モニタPPI補正込みの実効スケール。1.0=100%)。ビューが無ければ -1。
-// ★ビューポート同期(KCMPeek)と同じ次元の値で、そのまま MakeZoomCmd に渡せる。
+// The effective zoom of document db: GetXScaleFactor(kTrue) -- the effective scale with the
+// monitor PPI taken in, 1.0 being 100% -- from the panorama of the first layout view found.
+// -1 when it has no view. This is the same quantity the viewport synchroniser works in, so it can
+// go straight to MakeZoomCmd.
 //----------------------------------------------------------------------------------------
 static PMReal KCMReadDocZoom(IDataBase* db)
 {
@@ -352,43 +382,43 @@ static PMReal KCMReadDocZoom(IDataBase* db)
 }
 
 //----------------------------------------------------------------------------------------
-// スクロールの前に、対象のスプレッドをビューに出す。
+// Put the spread being aimed at into the view, before scrolling.
 //
-// ★★itemUID は**ページでもページアイテムでもよい**。IHierarchy::GetSpreadUID は「この階層ノードの
-//   スプレッド」を返す契約(IHierarchy.h:177-181)で、ページに限った話ではない。∴ ページに載っていない
-//   (ペーストボード上の)フレームでも、正しいスプレッドへ切り替えてから測れる。
-//   ⚠この一般性は Story Edits の行ジャンプ(2026-08-10)で必要になった。ページを渡す従来の呼び手
-//   (KCMScrollDocToItemCenter)の挙動は1つも変わらない。
+// itemUID MAY BE A PAGE OR A PAGE ITEM. IHierarchy::GetSpreadUID returns "the spread of this
+// hierarchy node" by contract, which says nothing about pages in particular. So a frame that is
+// on no page at all -- one out on the pasteboard -- can still have its spread brought up before
+// anything is measured. That generality is what the Story Edits row jump needs; the older caller
+// that passes a page (KCMScrollDocToItemCenter) behaves exactly as it did.
 //
-// ★★ペーストボード点へのスクロールは「そのビューが既にその点のスプレッドを映している」ことを
-//   前提にしている。別のスプレッドを見ているビューにとって、その座標は別の場所か、どこでもない。
-//   ★マスタースプレッドでこれが露骨に出る: 通常スプレッドの連続したペーストボードに含まれないので、
-//   スクロールをいくらしても絶対に届かず、空のペーストボードに着地する。
-//   ⚠KBS が 2026-08-05 に実測で踏んだ不具合とまったく同じ形(あちらは行の locator は "PA" と正しいのに
-//   クリックすると何も無い場所へ飛んだ)。手当ても同じ＝**KBS の `KBSJump.cpp` の `EnsureSpreadInView`** の移植。
-//   ⚠2026-08-19(不具合再検査 B-U8)訂正＝ここは "KBSJump.cpp:280" と行番号で引いていた。**書いた日
-//     (KBS の初出コミット `6ccdf1a`)は :280 ちょうどで当たっていた**が、今は :348 へ動いている(+68)。
-//     ★**他リポジトリを指す参照は sha でも救えない**(こちらの git では検算できない)⇒**関数名で引く**。
+// SCROLLING TO A PASTEBOARD POINT ASSUMES THE VIEW IS ALREADY SHOWING THAT POINT'S SPREAD. To a
+// view showing a different one, that coordinate is somewhere else, or nowhere. A master spread
+// makes this obvious: it is not part of the continuous pasteboard the ordinary spreads share, so
+// no amount of scrolling will ever arrive -- what is reached is empty pasteboard. KBS hit exactly
+// this shape of defect (its row locator read "PA", correctly, and clicking it went nowhere), and
+// the remedy is the same: EnsureSpreadInView from KBS's KBSJump.cpp, ported.
 //
-// ★★判定は「マスターかどうか」ではなく「違うスプレッドかどうか」。Adobe 自身がそう書いている
-//   (snapshot/SnapTracker.cpp:224 は ::GetUIDRef(spread) と ILayoutControlData::GetSpreadRef() を
-//   比べ、違えば無条件にコマンドを出す。マスターの特例はどこにも無い)。KBS は当初これを
-//   「マスターのときだけ」に絞って書いたが、ユーザー指摘で公式どおり無条件へ直した経緯がある。
+// THE TEST IS "IS IT A DIFFERENT SPREAD", NOT "IS IT A MASTER". Adobe writes it that way:
+// snapshot/SnapTracker.cpp compares ::GetUIDRef(spread) with ILayoutControlData::GetSpreadRef()
+// and issues the command whenever they differ, with no special case for masters anywhere. KBS
+// first narrowed it to "only for masters" and was corrected back to the official form.
 //
-// ★★呼んだ「後」に座標を読むこと(SnapTracker.cpp:234-235 "Re-calculate the starting point")。
-//   下の KCMScrollDocToItemCenter は幾何を読む前にここを通す。overset の「+」点だけは例外で、
-//   スキャン時に ::InnerToPasteboardMatrix で確定した**ビュー非依存**の座標なので切替後も有効
-//   (再スキャンせずに使ってよいのはそのため)。
+// READ THE COORDINATES AFTERWARDS, not before (SnapTracker's own "Re-calculate the starting
+// point"). KCMScrollDocToItemCenter below comes through here before it reads any geometry. The
+// overset "+" point is the one exception: it was fixed with ::InnerToPasteboardMatrix at scan
+// time and is therefore VIEW-INDEPENDENT, which is why it stays valid across the switch and does
+// not have to be scanned again.
 //
-// コマンドは kSetSpreadCmdBoss + ILayoutCmdData(SnapTracker.cpp:390-413 が完全な実例)。
-// ★KCM は KBS と違い「その文書の全レイアウトビュー」を対象にする(Split Window・複数窓でも
-//   スクロール先が揃うように。既存の KCMScrollDocToPBPoint と同じ範囲)。
-// 取れないビューは黙って飛ばす=そのビューは従来どおりスクロールだけになり、悪化はしない。
+// The command is kSetSpreadCmdBoss plus ILayoutCmdData; SnapTracker's CreateAndProcessSetSpreadCmd
+// is a complete worked example.
+// Unlike KBS, KCM applies this to EVERY layout view of the document, so that a Split Window or
+// several windows all end up in the same place (the same scope KCMScrollDocToPBPoint uses).
+// A view that cannot be handled is skipped silently: it is left with the scroll alone, as before,
+// which is no worse.
 //----------------------------------------------------------------------------------------
-// KCMEnsureViewShowsSpread(KCMChangeNav.h で宣言) — 1つのビューぶん。
-// ★1ビュー単位で括り出してある(2026-08-11)。同期経路(KCMViewSync.cpp。分割前は KCMPeek.cpp)も「このビューを相手の
-//   マスタースプレッドへ移す」ために同じ判断を要るようになったため＝判断の置き場は1つ
-//   ([[one-question-one-place]])。下の KCMEnsureSpreadInView は db の全ビューにこれを配るだけ。
+// KCMEnsureViewShowsSpread (declared in KCMChangeNav.h) -- one view's worth.
+// It is factored out per view because the synchroniser (KCMViewSync.cpp) needs the same judgement
+// to move a view onto the other document's master spread, and that judgement belongs in one
+// place. KCMEnsureSpreadInView below merely hands it to every view of a db.
 bool16 KCMEnsureViewShowsSpread(IControlView* view, IDataBase* db, UID spreadUID)
 {
 	if (view == nil || db == nil || spreadUID == kInvalidUID)
@@ -397,21 +427,23 @@ bool16 KCMEnsureViewShowsSpread(IControlView* view, IDataBase* db, UID spreadUID
 	if (layout == nil)
 		return kFalse;
 	if (layout->GetSpreadRef().GetUID() == spreadUID)
-		return kFalse;	// もう映している=通常のケース。いちばん安い出口
+		return kFalse;	// already showing it -- the usual case, and the cheapest way out
 
-	// コマンドはビューを名指しするので、その「ビュー自身の文書」を渡す(KBS/SnapTracker と同じ)。
+	// The command names a view, so what it is given is THAT VIEW'S OWN document (as in KBS and
+	// SnapTracker).
 	IDocument* const viewDoc = layout->GetDocument();
 	if (viewDoc == nil)
 		return kFalse;
-	// UID は出どころの db の外では意味を持たない。同じはずだが確かめてから渡す。
+	// A UID means nothing outside the db it came from. It should be the same one; check before
+	// passing it on.
 	if (::GetDataBase(viewDoc) != db)
 		return kFalse;
 
-	// ★失敗したスプレッド切替をこの関数の外へ出さない(2026-08-17 の API 監査 B-U7)。下の
-	//   PMSetGlobalErrorCode(kSuccess) だけだと**入る前に立っていたエラーまで消す**。公式の口は
-	//   ErrorUtils.h:118。KCM では BookCompare / BookOpen / HideUnchanged(B10)が採用済みで、
-	//   ここと KCMViewSync のズームだけが取り残されていた(全数3箇所)。
-	//   ★早期 return を全部抜けた後＝実際にコマンドを出す直前に作る(上の3つの出口は何も壊さない)。
+	// Do not let a failed spread switch escape this function. PMSetGlobalErrorCode(kSuccess)
+	// below, on its own, WOULD ALSO CLEAR AN ERROR THAT WAS ALREADY SET ON THE WAY IN; the official
+	// way to avoid that is ErrorUtils' GlobalErrorStatePreserver.
+	// It is constructed after every early return, immediately before a command is actually issued
+	// -- none of those exits disturbs anything.
 	GlobalErrorStatePreserver setSpreadErrorState;
 
 	InterfacePtr<ICommand> setSpreadCmd(CmdUtils::CreateCommand(kSetSpreadCmdBoss));
@@ -424,7 +456,7 @@ bool16 KCMEnsureViewShowsSpread(IControlView* view, IDataBase* db, UID spreadUID
 	setSpreadCmd->SetItemList(UIDList(db, spreadUID));
 	if (CmdUtils::ProcessCommand(setSpreadCmd) != kSuccess)
 	{
-		ErrorUtils::PMSetGlobalErrorCode(kSuccess);	// スクロールは続行。後続コマンドを巻き添えにしない
+		ErrorUtils::PMSetGlobalErrorCode(kSuccess);	// the scroll goes on; later commands must not be taken down with this
 		return kFalse;
 	}
 	return kTrue;
@@ -445,26 +477,31 @@ static void KCMEnsureSpreadInView(IDataBase* db, UID itemUID)
 	K2Vector<IControlView*> views;
 	Utils<ILayoutViewUtils>()->GetAllLayoutViews(views, nil, db);
 	for (int32 i = 0; i < (int32)views.size(); ++i)
-		KCMEnsureViewShowsSpread(views[i], db, spreadUID);	// nil ビューは中で弾く
+		KCMEnsureViewShowsSpread(views[i], db, spreadUID);	// a nil view is dropped inside
 }
 
 //----------------------------------------------------------------------------------------
-// 文書 db の全レイアウトビューを、pbPoint(ペーストボード座標)が画面中央に来るようスクロールする。
-//   applyZoom > 0 のときは、センタリングの前に各ビューの実効ズームを applyZoom に合わせる
-//   (Source を Target の拡大率に合わせる用。ズームは UI のズーム欄と同じ公式コマンド
-//   kZoomToCmdBoss=MakeZoomCmd 経由。★ILayoutViewUtils::ZoomLayoutViews 直呼びは他文書ビューに
-//   効かないため不可=KCMPeek のビューポート同期と同じ理由)。既に一致していれば触らない。
-//   applyZoom <= 0 ならズームは変えない(従来どおり位置だけ)。1つでもスクロールできれば kTrue。
+// Scroll every layout view of document db so that pbPoint (in pasteboard coordinates) ends up in
+// the centre of the view.
+//   With applyZoom > 0, each view's effective zoom is brought to applyZoom before the centring
+//   (this is how the Source is matched to the Target's magnification). The zoom goes through the
+//   same official command the UI's zoom field uses, kZoomToCmdBoss via MakeZoomCmd.
+//   (ILayoutViewUtils::ZoomLayoutViews cannot be called directly: it has no effect on another
+//   document's views -- the same reason the viewport synchroniser gives.) A view already at that
+//   zoom is left alone.
+//   With applyZoom <= 0 the zoom is not touched and only the position changes, as before.
+// kTrue when at least one view was scrolled.
 //----------------------------------------------------------------------------------------
 static bool16 KCMScrollDocToPBPoint(IDataBase* db, const PBPMPoint& pbPoint, PMReal applyZoom = PMReal(-1.0))
 {
 	if (db == nil)
 		return kFalse;
 
-	// ★失敗したズームをこの関数の外へ出さない(2026-08-17 の API 監査 B-U7。理由と全数は
-	//   KCMEnsureViewShowsSpread の同じ宣言を見よ)。⚠保存はコンストラクタで必ず起きる＝
-	//   applyZoom <= 0 のときも作られるが、その経路はコマンドを1本も出さずエラー状態を動かさないので、
-	//   デストラクタの復元は同じ値を書き戻すだけになる。
+	// Do not let a failed zoom escape this function (the reason is on the same declaration in
+	// KCMEnsureViewShowsSpread).
+	// @warning the save happens in the constructor either way, so this is built even when
+	//   applyZoom <= 0 -- but that path issues no command and moves no error state, so the
+	//   destructor only writes the same value back.
 	GlobalErrorStatePreserver scrollZoomErrorState;
 
 	K2Vector<IControlView*> views;
@@ -479,8 +516,9 @@ static bool16 KCMScrollDocToPBPoint(IDataBase* db, const PBPMPoint& pbPoint, PMR
 		if (pano == nil)
 			continue;
 
-		// ズーム合わせ(要求があり、かつ現状と食い違う時だけ)。ズーム後にセンタリングするので新しい
-		// 倍率で正しく中央に来る(KCMPeek のビューポート同期と同じ順序)。
+			// Match the zoom, but only when one was asked for and it differs from what is there.
+			// The centring happens after the zoom, so it lands correctly at the new magnification
+			// -- the same order the viewport synchroniser uses.
 		if (applyZoom > PMReal(0.0))
 		{
 			const PMReal cur = pano->GetXScaleFactor(kTrue);
@@ -489,30 +527,23 @@ static bool16 KCMScrollDocToPBPoint(IDataBase* db, const PBPMPoint& pbPoint, PMR
 				InterfacePtr<ICommand> zoomCmd(Utils<ILayoutUIUtils>()->MakeZoomCmd(view, applyZoom));
 				if (zoomCmd == nil || CmdUtils::ProcessCommand(zoomCmd) != kSuccess)
 				{
-					// ★ズームは飛び先表示の便宜で、失敗してもスクロール自体は続けてよい。ただしエラー状態を
-					//   持ち越すと後続コマンドが巻き添えで失敗する([[command-sequence-rollback-on-error]])ので
-					//   掃除して続行(KCMEnsureSpreadInView の失敗時と同じ作法。2026-08-06 再点検)。
+					// The zoom is a convenience for looking at where the walk landed, so the scroll
+					// carries on when it fails. But carrying the error state forward would take
+					// later commands down with it, so it is cleared and the walk continues -- the
+					// same form KCMEnsureSpreadInView uses when its command fails.
 					ErrorUtils::PMSetGlobalErrorCode(kSuccess);
 				}
 			}
 		}
 
-		// ★名称は新しい方(2026-08-06 ブロック10 監査で寄せた)。IPanorama.h:141-145 が旧 ScrollViewCenterTo を
-		//   「An obsolete name … New code should call ScrollContentLocationToFrameCenter … this function
-		//   will go away in a future release」と明記している。中身は同じ(:135-138 の inline が旧名を呼ぶ)。
-		//   ⚠2026-08-17 訂正(API 監査 B-U8): 旧記述は「★KCMPeek.cpp は既に新名称(:1010 ほか)」だったが、
-		//   **KCMPeek.cpp はそもそもこの API を1回も呼んでいない**(全数 Grep)。
-		//   ⚠2026-08-19(不具合再検査 B-U8)＝ここには「906行しかなく」と**行数**を根拠に書いてあったが、
-		//     実測 968 行へ増えていた。★**行数は「何行目を指せるか」の根拠にしか使えず、しかも黙って腐る**
-		//     ので落とした——**「1回も呼んでいない」の方は Grep で何度でも引き直せる**。
-		//   分割で同期エンジンが移ったため＝新名称を使っているもう1つは **KCMViewSync.cpp の
-		//   KCMSyncOtherDocViewportsTo(末尾の ScrollContentLocationToFrameCenter)**
-		//   (ほかに KCMStoryJump.cpp が説明として引用)。★行番号でよそのファイルを指す引用は、
-		//   そのファイルが分割・改名されると黙って嘘になる ---- B-U6 で同型を2件直したのに続く3件目。
-		//   ⚠★★2026-08-18(不具合再検査 B-U2)＝**この一文自身がその通りになった**。ここには
-		//     "KCMViewSync.cpp:681" と書いてあり、書いた 2026-08-17(B-U8)の時点では**その行がまさに
-		//     当の呼び**だったが、翌日には :686 へずれていた。⇒ **警告を書くだけでは足りない。警告が
-		//     付いている当の引用を、名前で引き直すところまでやる。**
+			// The newer name is used. IPanorama calls ScrollViewCenterTo "an obsolete name for
+			// ScrollContentLocationToFrameCenter" and says new code should call the latter and
+			// that the former "will go away in a future release". They do the same thing (the
+			// inline form of the new name simply calls the old one).
+			// The other place on the KCM side that uses the new name is KCMViewSync.cpp, at the
+			// end of KCMSyncOtherDocViewportsTo (KCMStoryJump.cpp quotes it in a comment as well).
+			// Note that KCMPeek.cpp does not call this API at all -- something a grep can be
+			// re-run on at any time, which is why it is put that way rather than as a line count.
 		pano->ScrollContentLocationToFrameCenter(pbPoint, kTrue /*forceRedraw*/);
 		any = kTrue;
 	}
@@ -520,39 +551,41 @@ static bool16 KCMScrollDocToPBPoint(IDataBase* db, const PBPMPoint& pbPoint, PMR
 }
 
 //----------------------------------------------------------------------------------------
-// 文書 db の全レイアウトビューを、itemUID の矩形中心が画面中央に来るようスクロールする。
-// ★itemUID は**ページでもページアイテムでもよい**(GetItemBounds はどちらにも答える)。
-//   ⚠2026-08-19(不具合再検査 B-U8)訂正＝「呼び手は2つ」と書いてあったが、**実測3つ**:
-//     ①Prev/Next の巡回(KCMGoto)      … ページを渡す
-//     ②Source 側の連動(KCMSyncCompanionViews) … 対応表で引いた Source のページを渡す ←数え落ち
-//     ③Story Edits の行ジャンプ(KCMScrollDocToStoryStart のフォールバック) … フレームを渡す(2026-08-10)
-//   ★渡す物の**種類**は2つ(ページ／フレーム)で、そこは正しかった＝**「何を数えているか」を言い直すと
-//     ずれが見える**([[verify-claims-in-comments]] §24)。
-// 上の pb 版へ委譲(inner 中心 → ペーストボード変換)。
+// Scroll every layout view of document db so that the centre of itemUID's rectangle ends up in
+// the centre of the view.
+// itemUID MAY BE A PAGE OR A PAGE ITEM (GetItemBounds answers for either). The callers are:
+//   - the Prev/Next walk (KCMGoto) ........................ passes a page
+//   - the Source's companion move (KCMSyncCompanionViews) . passes the Source page the pairing
+//                                                           table gave it
+//   - the Story Edits row jump (the fallback inside KCMScrollDocToStoryStart) ... passes a frame
+// Delegates to the pasteboard-point form above (inner centre, converted).
 //----------------------------------------------------------------------------------------
 static bool16 KCMScrollDocToItemCenter(IDataBase* db, UID itemUID, PMReal applyZoom = PMReal(-1.0))
 {
 	if (db == nil || itemUID == kInvalidUID)
 		return kFalse;
 
-	// ★先にスプレッドを出す。マスタースプレッド上のページは、これが無いとスクロールでは届かない
-	//   (上の KCMEnsureSpreadInView の説明を参照)。★幾何を読むのはこの後(切替前の座標は当てにしない
-	//   ＝SnapTracker.cpp:234-235 と同じ順序)。
+	// Bring the spread up FIRST. Without it, a page on a master spread cannot be reached by
+	// scrolling at all (see KCMEnsureSpreadInView above). The geometry is read afterwards -- the
+	// coordinates from before a switch are not to be trusted, which is the order SnapTracker uses
+	// as well.
 	KCMEnsureSpreadInView(db, itemUID);
 
 	InterfacePtr<IGeometry> itemGeo(db, itemUID, UseDefaultIID());
 	if (itemGeo == nil)
-		return kFalse;	// 幾何を持たない UID=これは測れない(呼び出し側は「動かせなかった」と出す)
+		return kFalse;	// a UID with no geometry cannot be measured (the caller reports it could not move)
 
-	// ★矩形をペーストボード座標で得るのは Facade の仕事(2026-08-06 ブロック10 監査で寄せた)。
-	//   手本 snapshot/SnapTracker.cpp:610-616 が**ページに対して**まったく同じことをしている＝
-	//   IGeometry を Query して nil を弾き、その ::GetUIDRef を GetItemBounds に渡す。旧実装は
-	//   「GetPathBoundingBox + ::InnerToPasteboardMatrix + 自前 Transform」で同じ答えを組んでいた。
-	//   ★上の nil 判定は残す: 旧実装が「ついでに担保していたこと」(この UID は本当に幾何を持つ)を
-	//   Facade は担保しない。手本も同じ順序で書いている。
-	//   ⚠BoundsKind は PathBounds(＝旧 GetPathBoundingBox と同じ意味)。手本は OuterStrokeBounds だが、
-	//   ページに線幅は無く、フレームの線は矩形の四辺に対称に付くので**どちらでも中心の座標は変わらない**
-	//   ——意味の合う方を採る。
+	// Getting a rectangle in pasteboard coordinates is the facade's job; snapshot/SnapTracker.cpp
+	// does exactly the same thing TO A PAGE -- query IGeometry, reject nil, hand its ::GetUIDRef to
+	// GetItemBounds. (The older code built the same answer out of GetPathBoundingBox +
+	// ::InnerToPasteboardMatrix + a Transform of its own.)
+	// The nil test above stays: what the older code guaranteed as a side effect -- that this UID
+	// really has geometry -- the facade does not, and the model does the same test in the same
+	// order.
+	// The BoundsKind is PathBounds, which means what the old GetPathBoundingBox meant. SnapTracker
+	// uses OuterStrokeBounds, but a page has no stroke width and a frame's stroke sits
+	// symmetrically on the four sides of its rectangle, so THE CENTRE COMES OUT THE SAME EITHER
+	// WAY -- the one whose meaning fits is used.
 	const PMRect box = Utils<Facade::IGeometryFacade>()->GetItemBounds(
 		::GetUIDRef(itemGeo), Transform::PasteboardCoordinates(), Geometry::PathBounds());
 	return KCMScrollDocToPBPoint(db,
@@ -561,14 +594,16 @@ static bool16 KCMScrollDocToItemCenter(IDataBase* db, UID itemUID, PMReal applyZ
 }
 
 //----------------------------------------------------------------------------------------
-// Target のあるページに対して、Source 側で表示すべきページ UID を決める。
-//   ・通常のペア済みページ … 対応表(KCMBuildPairing)で正しい Source ページを直接引く。
-//     ★ページの追加/削除で番号がズレていても、対応表は登録済みページを除いて残りを順番対応させて
-//     いるので、ズレを吸収した「本来の相手」が返る(ここが増減対応の肝)。
-//   ・Added / Overflow ページ(Target 側にしか無い=Source に直接の相手が無い) … ページ順で最も
-//     近いペア済みページの Source 相手へ寄せる(同じ距離なら前方=挿入位置の手前を優先)。これで
-//     「この追加ページが旧版のどのあたりに入ったか」の近傍が Source ビューに出る。
-//   見つからなければ kInvalidUID(呼び出し側は Source を動かさない)。
+// Decide which page the Source should show for a given page of the Target.
+//   - an ordinary paired page ... looked straight up in the pairing table (KCMBuildPairing).
+//     Page numbers shifted by an addition or a deletion do not matter: the table leaves the
+//     registered pages out and matches the rest in order, so what comes back is the counterpart
+//     with the shift already absorbed. That is what makes additions and deletions work.
+//   - an Added or Overflow page, one that exists only on the Target and so has no direct
+//     counterpart ... drawn to the counterpart of the nearest paired page, preferring the one
+//     BEFORE it when the distance is equal (the near side of where it was inserted). What the
+//     Source window then shows is roughly where this new page went in the older version.
+//   kInvalidUID when nothing is found, and then the caller leaves the Source alone.
 //----------------------------------------------------------------------------------------
 static UID KCMSourcePageForTarget(IDataBase* targetDB, IDataBase* sourceDB, UID targetPageUID)
 {
@@ -576,9 +611,9 @@ static UID KCMSourcePageForTarget(IDataBase* targetDB, IDataBase* sourceDB, UID 
 		return kInvalidUID;
 
 	std::vector<UID> tPages, sPages;
-	Utils<IKCMMarkData>()->GetPagePairing(targetDB, sourceDB, tPages, sPages);	// ペア済み(登録除外・ズレ吸収済み)
+	Utils<IKCMMarkData>()->GetPagePairing(targetDB, sourceDB, tPages, sPages);	// paired (registrations left out, the shift absorbed)
 
-	// 直接の相手(Target→Source)を探す。
+	// Look for the direct counterpart, Target to Source.
 	std::map<UID, UID> t2s;
 	for (size_t i = 0; i < tPages.size(); ++i)
 	{
@@ -587,7 +622,8 @@ static UID KCMSourcePageForTarget(IDataBase* targetDB, IDataBase* sourceDB, UID 
 		t2s[tPages[i]] = sPages[i];
 	}
 
-	// 相手なし(Added/Overflow)。ページ順で最も近いペア済みページの Source 相手へ寄せる。
+	// No counterpart (Added or Overflow): draw to the Source counterpart of the nearest paired
+	// page in page order.
 	std::vector<UID> flat;
 	Utils<IKCMMarkData>()->GetAllPageUIDs(targetDB, flat);
 	int32 idx = -1;
@@ -599,7 +635,7 @@ static UID KCMSourcePageForTarget(IDataBase* targetDB, IDataBase* sourceDB, UID 
 	const int32 n = (int32)flat.size();
 	for (int32 d = 1; d < n; ++d)
 	{
-		if (idx - d >= 0)	// 前方(挿入位置の手前)を優先
+		if (idx - d >= 0)	// prefer the one before it, the near side of where it was inserted
 		{
 			std::map<UID, UID>::const_iterator it = t2s.find(flat[idx - d]);
 			if (it != t2s.end())
@@ -616,45 +652,48 @@ static UID KCMSourcePageForTarget(IDataBase* targetDB, IDataBase* sourceDB, UID 
 }
 
 //----------------------------------------------------------------------------------------
-// Pages パネルも対象ページのスプレッドへ連動スクロールする(ベストエフォート)。
-//   ★Pages パネルは「アクティブ文書」のページ一覧を表示するので、アクティブ文書が db と
-//   一致する時だけ動かす(Source がアクティブのまま Next/Prev を押した場合、パネルは Source の一覧を
-//   表示中=Target のページ UID を渡しても意味がないので何もしない)。
-//   経路は KCMThumbnailRefresh と同じ IPanelMgr→GetVisiblePanel(kPagesPanelWidgetID)→
-//   FindWidget(kLayoutPagesSubPanelWidgetID)→IPagesSubPanelController。ScrollPanelToSpread は
-//   ヘッダー注記により page UID をそのまま渡してよい(「spread or page uid」)。
+// Scroll the Pages panel to the spread of the page as well, on a best-effort basis.
+//   The Pages panel lists the pages of THE ACTIVE DOCUMENT, so it is only moved when the active
+//   document is db. (With the Source in front and Prev/Next pressed, the panel is showing the
+//   Source's list, and handing it a Target page UID would mean nothing -- so nothing is done.)
+//   The route is the same as KCMThumbnailRefresh's: IPanelMgr -> GetVisiblePanel
+//   (kPagesPanelWidgetID) -> FindWidget(kLayoutPagesSubPanelWidgetID) ->
+//   IPagesSubPanelController. ScrollPanelToSpread takes a page UID directly; its header says so
+//   ("spread or page uid").
 //----------------------------------------------------------------------------------------
 static void KCMScrollPagesPanelToPage(IDataBase* db, UID pageUID)
 {
 	if (db == nil || pageUID == kInvalidUID)
 		return;
 
-	// アクティブ文書のページ一覧を表示中か(違えば触らない)。
-	// ★db は KCMActiveDocDB()(=IActiveContext::GetContextDocument)で引く(2026-08-06 ブロック9 監査 A-1)。
-	//   「Pages パネルが今どの文書を見せているか」は KCMPageMapReadSelection と同じ問いなので、
-	//   同じ口で聞く([[one-question-one-place]])。旧実装の GetFrontDocument() は契約が
-	//   「frontmost *layout* presentation の文書」(ILayoutUIUtils.h:95-98)で、アクティブ文書と食い違い得る。
+	// Is it the active document's page list that is on screen? If not, leave it alone.
+	// The db is obtained through GetActiveDocDB (IActiveContext::GetContextDocument). "Which
+	// document is the Pages panel showing" is the same question the model's page-map selection
+	// asks, so it is asked through the same door. The older code used GetFrontDocument, whose
+	// contract is "the document associated with the frontmost LAYOUT presentation" -- which can
+	// differ from the active document.
 	if (Utils<IKCMCompareFacade>()->GetActiveDocDB() != db)
 		return;
 
-	// パネル取得は共有ヘルパ(KCMThumbnailRefresh.h)に一本化(2026-07-10)。
+	// Getting the panel goes through the shared helper in KCMThumbnailRefresh.h.
 	IControlView* panel = KCMGetVisiblePagesPanel();
 	if (panel == nil)
-		return;	// パネル非表示なら何もしない(次に開いたときは通常表示でよい)
+		return;	// nothing to do while the panel is hidden (it will be built normally when next opened)
 	InterfacePtr<IPanelControlData> pcd(panel, UseDefaultIID());
 	if (pcd == nil)
 		return;
 	IControlView* subView = pcd->FindWidget(kLayoutPagesSubPanelWidgetID);
 	if (subView == nil)
 		return;
-	// ★マスターページはレイアウト側サブパネル(kLayoutPagesSubPanelWidgetID)の管轄外なので渡さない
-	//   (2026-08-06 追補。マスター overset へのジャンプ自体はスプレッド切替で成立し、パネル連動だけ
-	//   諦める)。通常ページかどうかは IPageList への所属(GetPageIndex>=0)で判定する(IPageList.h:97-104)。
-	// ★2026-08-17 追記(API 監査 B-U8): **第2引数 includePagesOfHiddenSpread の既定 kTrue に依存している。**
-	//   ここで欲しいのは「マスターではない=通常ページか」であって、隠れているかどうかは関係ない
-	//   ---- Hide Unchanged で隠れているページも通常ページなので kTrue が正しい。⚠ここを kFalse にすると
-	//   「隠したページへは Pages パネルが連動しない」に化ける(B7 A-2 で Story Edits の並び順が同じ引数の
-	//   既定に依存していたのと同型＝**依存していること自体を書いておく**)。
+	// A MASTER PAGE IS NOT THIS SUB-PANEL'S BUSINESS (kLayoutPagesSubPanelWidgetID), so it is not
+	// passed on; jumping to an overset on a master still works through the spread switch, and only
+	// the panel following it is given up. Whether a page is an ordinary one is decided by whether
+	// IPageList knows it (GetPageIndex >= 0).
+	// @warning THIS RELIES ON THE DEFAULT kTrue OF THE SECOND ARGUMENT, includePagesOfHiddenSpread.
+	//   What is wanted here is "is this not a master", and whether it is hidden has nothing to do
+	//   with it -- a page hidden by Hide Unchanged is still an ordinary page, so kTrue is right.
+	//   Setting it to kFalse would silently turn this into "the Pages panel does not follow to a
+	//   hidden page". The dependency is written down because it is a dependency.
 	InterfacePtr<IPageList> pageList(db, db->GetRootUID(), UseDefaultIID());
 	if (pageList == nil || pageList->GetPageIndex(pageUID) < 0)
 		return;
@@ -664,13 +703,16 @@ static void KCMScrollPagesPanelToPage(IDataBase* db, UID pageUID)
 }
 
 //----------------------------------------------------------------------------------------
-// 変更セル数 changed / ページ全体のセル数 total から、表示用の割合文字列を作る。
-//   1% 以上            → 整数     例 "12%"
-//   0.05% 以上 1% 未満 → 小数1桁  例 "0.4%"
-//   0.05% 未満         → "<0.1%"  (小数1桁に丸めると "0.0%" になり「変更なし」と誤読されるため)
-// total<=0 / changed<=0 なら空文字列を返す(呼び出し側は何も足さない)。
-// ★小数点は自前で "." を足す: PMString の実数書式はロケールで小数点が "," になり得るため、
-//   千分率を整数演算で出してから桁を組み、表記を固定する(ロケール差の入り込む余地を作らない)。
+// Build the percentage string shown to the user, out of the changed cell count and the page's
+// total cell count.
+//   1% and over        -> a whole number    e.g. "12%"
+//   0.05% up to 1%     -> one decimal place e.g. "0.4%"
+//   under 0.05%        -> "<0.1%" (rounded to one place it would read "0.0%", which would be
+//                         taken to mean "nothing changed")
+// An empty string when total <= 0 or changed <= 0, and then the caller appends nothing.
+// THE DECIMAL POINT IS WRITTEN BY HAND: PMString's real number formatting can produce a "," for
+// it depending on the locale. Working in integer per-mille and assembling the digits fixes the
+// notation and leaves no room for a locale to change it.
 //----------------------------------------------------------------------------------------
 static PMString KCMFormatChangeRatio(int32 changed, int32 total)
 {
@@ -678,18 +720,18 @@ static PMString KCMFormatChangeRatio(int32 changed, int32 total)
 	if (total <= 0 || changed <= 0)
 		return out;
 
-	// 千分率(0.1% 単位・四捨五入)。changed <= total なので 1000 以下。int64 で計算するので桁あふれしない。
+	// per-mille, rounded. changed <= total, so this is at most 1000; the int64 cannot overflow
 	const int32 permille = (int32)(((int64)changed * 1000 + total / 2) / total);
 
-	if (permille >= 10)			// 1% 以上: 整数の % を別途四捨五入して出す
+	if (permille >= 10)			// 1% and over: round the whole-number percentage separately
 		out.AppendNumber((int32)(((int64)changed * 100 + total / 2) / total));
-	else if (permille >= 1)		// 0.05% 以上 1% 未満: 小数1桁("0" + "." + 1桁)
+	else if (permille >= 1)		// 0.05% up to 1%: one decimal place ("0" + "." + one digit)
 	{
 		out.AppendNumber(permille / 10);
 		out.Append(".");
 		out.AppendNumber(permille % 10);
 	}
-	else						// 0.05% 未満: 丸めると 0 になるので下限表記
+	else						// under 0.05%: rounding gives 0, so the floor is spelled out instead
 		out.Append("<0.1");
 
 	out.Append("%");
@@ -697,25 +739,32 @@ static PMString KCMFormatChangeRatio(int32 changed, int32 total)
 }
 
 //----------------------------------------------------------------------------------------
-// 飛んだ先のラベルを組む(パネルのメッセージ欄に出す)。★2026-07-27 に "P1" 形式から改めた(ユーザー指定)。
-//   変更(枠)           = "Page: <番号>, Change <割合>" 例: Page: 1, Change 12% / Page: 4, Change 0.4%
-//   overset(1件のページ)  = "Page: <番号> Overset"      例: Page: 1 Overset
-//   overset(複数のページ) = "Page: <番号> (n) Overset"  例: Page: 1 (1) Overset / Page: 1 (2) Overset  (n=1始まり)
-// ★2026-07-29 に割合の区切りを半角スペースから ", Change " へ変更(ユーザー指定)＝何の % なのか読んで分かる
-//   ようにするため。overset 側は既に "Overset" の語が付いているので従来どおりスペース区切りのまま。
-// (n)・Overset は半角スペース1つ区切り。ページ番号は IPageList::GetPageString
-// (セクション込み・**ページパネルの番号**)。
-// ★★★2026-08-18(不具合再検査 B10 の2周目)＝第7 bIncludePagesOfHiddenSpread を kFalse から **kTrue** へ。
-//   InDesign はページ番号を2つ持っており(実機で実測)、kFalse は「ページに刷られる実ノンブル」の側＝
-//   隠しスプレッドを飛ばして数える番号だった。ラベルは「次に見るべきページはどれか」を人に見せる所で、
-//   受け取った人はページパネルで探す ---- ∴ ページパネルと同じ番号(kTrue)で綴る。
-//   ★TSV(KCMChangedPagesTSV.cpp の PageDisplay)と Story Edits(KCMStoryJump.cpp の PageLabel)も
-//     同じ日に同じ理由で揃えた。**この3つは「同じページを人にどう綴るか」という1つの問い**なので、
-//     どれか1つだけ直すと Hide 中にパネルと書き出しが食い違う([[one-question-one-place]])。
-//   ⚠ノンブル除外矩形(KCMPageNumberMarker.cpp)だけは kFalse のままで正しい＝あちらは実際に刷られる
-//     数字のインク範囲を測る用途。用途が違うので揃えてはいけない。
-// ★割合は変更ストップにだけ付ける(overset は「あふれ」であって変更量とは無関係)。エントリが引けない等で
-//   値が作れないときは付けない=従来どおりのラベル。仕様は docs/ai-notes/kescm-change-ratio.md。
+// Build the label for where the walk landed, shown in the panel's message line.
+//   a change (a frame)                 = "Page: <n>, Change <percentage>"
+//                                        e.g. Page: 1, Change 12% / Page: 4, Change 0.4%
+//   an overset, one on the page        = "Page: <n> Overset"        e.g. Page: 1 Overset
+//   an overset, several on the page    = "Page: <n> (k) Overset"    e.g. Page: 1 (2) Overset
+//                                        (k counts from 1)
+// The percentage is separated with ", Change " rather than a space so that what the percentage is
+// OF can be read off; the overset form already carries the word "Overset" and keeps its space.
+// The (k) and Overset are separated by single spaces. The page number comes from
+// IPageList::GetPageString -- with the section, and AS THE PAGES PANEL NUMBERS IT.
+//
+// THE SEVENTH ARGUMENT, bIncludePagesOfHiddenSpread, IS kTrue AND NOT kFalse. InDesign holds two
+// page numbers (measured on a live build): kFalse gives the folio actually printed on the page,
+// which counts past hidden spreads. This label is where a human is told which page to look at
+// next, and they will go and find it in the Pages panel -- so it is spelled the way the Pages
+// panel spells it (kTrue).
+//   The TSV export (PageDisplay in KCMChangedPagesTSV.cpp) and the Story Edits label (PageLabel in
+//   KCMStoryJump.cpp) were brought into line for the same reason. THE THREE ARE ONE QUESTION --
+//   "how is this page spelled to a human" -- so fixing one alone makes the panel and the export
+//   disagree while anything is hidden.
+// @warning the folio exclusion rectangle (KCMPageNumberMarker.cpp) is right to stay kFalse: that
+//   one measures the ink of the digits actually printed. It is a different question and must not
+//   be brought into line.
+// The percentage goes on a change stop only (an overset is an overflow, and has nothing to do
+// with how much changed). When no value can be produced -- the entry cannot be read, say -- none
+// is appended and the label is as it was. The specification is docs/ai-notes/kescm-change-ratio.md.
 //----------------------------------------------------------------------------------------
 static PMString KCMStopLabel(IDataBase* db, const KCMNavStop& stop)
 {
@@ -729,51 +778,55 @@ static PMString KCMStopLabel(IDataBase* db, const KCMNavStop& stop)
 	if (numStr.NumUTF16TextChars() > 0)
 		label.Append(numStr);
 	else if (stop.isOverset)
-		label.Append("Master");	// マスターページの overset 用の受け皿(2026-08-06 追補)。「?」より事情が伝わる語。
-								// ⚠実機ではここへ来ない: GetPageString はマスターページにもプレフィックス
-								//   を返すので(実測 2026-08-06、日本語版で "Page: A Overset" と出た)、上の
-								//   numStr が空にならない。★残してあるのは保険であって、期待値ではない
-								//   ——テストで "Master" を期待して書かないこと。
+		label.Append("Master");	// the catch-all for an overset on a master page: more informative
+								// than "?".
+								// @warning THIS IS NOT REACHED IN PRACTICE. GetPageString returns
+								//   a prefix for a master page too (measured: a Japanese build
+								//   produced "Page: A Overset"), so numStr does not come back
+								//   empty. It is kept as a safety net, not as an expected value
+								//   -- DO NOT WRITE A TEST THAT EXPECTS "Master".
 	else
-		label.Append("?");	// 番号が取れないページ(通常は起きない)
+		label.Append("?");	// a page whose number cannot be read (does not normally happen)
 
 	if (stop.isOverset)
 	{
-		if (stop.oversetCountOnPage > 1)	// 同ページに複数あるときだけ (n) を付ける(1始まり)
+		if (stop.oversetCountOnPage > 1)	// the (k) goes on only when the page has more than one (counting from 1)
 		{
-			label.Append(" (");			// 番号と枝番が詰まって読みにくいので空ける("Page: 1 (2)")
+			label.Append(" (");			// spaced out, since "Page: 1(2)" is hard to read
 			label.AppendNumber(stop.oversetOrd + 1);
 			label.Append(")");
 		}
-		label.Append(" Overset");	// 半角スペース + Overset
+		label.Append(" Overset");	// a space, then Overset
 	}
 	else
 	{
-		// 変更ストップ: そのページの変更の割合を足す(例 "Page: 3, Change 12%")。分子=比較時に数えた変化セル数、
-		// 分母=そのページの低解像度セル数(= w * h。エントリの画像寸法がそのまま分母)。
+		// A change stop: append how much of that page changed (e.g. "Page: 3, Change 12%"). The
+		// numerator is the changed cell count taken during the comparison; the denominator is that
+		// page's low-resolution cell count (w * h, straight from the entry's image dimensions).
 		int32 changedCells = 0, totalCells = 0;
 		if (Utils<IKCMMarkData>()->GetChangeCells(stop.pageUID, changedCells, totalCells))
 		{
 			const PMString ratio = KCMFormatChangeRatio(changedCells, totalCells);
 			if (ratio.NumUTF16TextChars() > 0)
 			{
-				label.Append(", Change ");	// 何の % なのか分かるようにラベルを付ける("Page: 3, Change 12%")
+				label.Append(", Change ");	// name what the percentage is of ("Page: 3, Change 12%")
 				label.Append(ratio);
 			}
 		}
 	}
 
-	// ★★2026-08-18(不具合再検査 B10 の2周目・ユーザー指定): **隠れているスプレッドのページは
-	//   スクロールで行けない**（実測＝押しても `activePage` が動かない）。**ストップは巡回に残したまま、
-	//   「なぜ画面が動かないのか」をここで言う。**
-	//   ⚠**この但し書きは同日の kTrue 化とセットで要る**: 以前はここが実ノンブル基準(kFalse)で、
-	//     隠れたページは番号を持たず "Page: #" と出ていた ---- 異常な見た目そのものが「行けない」の
-	//     合図になっていた。ページパネルの番号にした結果**普通の "Page: 2" に見えるようになった**ので、
-	//     行けない理由を明示しないと「押しても何も起きない」だけが残る。
-	//   ★ステータス行は全ロケール英語（KCMID.h の表示方針。日本語で出すのは How to Use と
-	//     Hide Unchanged の確認アラートの2つだけ）。
-	//   ★印の綴りは TSV の Page 列と同じ "(Hide)"＝同じ状態を2通りに綴らない
-	//     （KCMChangedPagesTSV.cpp の PageDisplay）。
+	// A PAGE ON A HIDDEN SPREAD CANNOT BE SCROLLED TO (measured: pressing the button leaves
+	// activePage where it was). The stop stays in the walk, and the reason the screen does not
+	// move is said here instead.
+	// @warning THIS NOTE IS PART OF THE SAME CHANGE THAT MADE THE NUMBER kTrue ABOVE. While the
+	//   label was on the printed folio (kFalse), a hidden page had no number and came out as
+	//   "Page: #" -- the oddity itself was the signal that it could not be reached. Numbering it
+	//   the way the Pages panel does makes it look like an ordinary "Page: 2", so without saying
+	//   why, all that is left is a button that appears to do nothing.
+	// The status line is English in every locale (the display policy is in KCMID.h; the only two
+	// things shown in Japanese are How to Use and the Hide Unchanged confirmation).
+	// The mark is spelled "(Hide)", the same as in the TSV's Page column (PageDisplay in
+	// KCMChangedPagesTSV.cpp) -- one state is not spelled two ways.
 	if (db != nil && Utils<IKCMMarkData>()->IsPageOnHiddenSpread(db, stop.pageUID))
 		label.Append(" (Hide)");
 
@@ -781,77 +834,93 @@ static PMString KCMStopLabel(IDataBase* db, const KCMNavStop& stop)
 }
 
 //----------------------------------------------------------------------------------------
-// Target 側の移動が済んだ後、周りのビューを追随させる(Pages パネルと Source 窓)。
+// Once the Target has moved, bring the views around it along: the Pages panel and the Source
+// window.
 //
-// ★呼び手は Prev/Next の巡回(KCMGoto)だけ。⚠**Story Edits の行ジャンプはここを通らない**
-//   ---- あちらは Target しか動かさない(2026-08-10 ユーザー決定。Source も見たいときは
-//   「Sync Layout Views」を使う、という切り分け)。関数として分けたままにしてあるのは、ズーム合わせ・
-//   Sync ON のときの除外・対応表でのページ解決の3つが「連れて行くとはどういうことか」の答えで、
-//   巡回本体に混ぜると読めなくなるため。
-// ★pageUID が kInvalidUID(ペーストボード上のフレーム)なら寄せる先が決められないので、Source も
-//   Pages パネルも動かさない。Target 側の移動は呼び手が済ませてあるので、それだけが成立する。
+// THE ONLY CALLER IS THE Prev/Next WALK (KCMGoto). The Story Edits row jump does NOT come through
+// here -- it moves the Target only (the user's decision; "Sync Layout Views" is the way to see
+// the Source as well). It is kept as a function of its own because matching the zoom, standing
+// aside when Sync is on, and resolving the page through the pairing table are the three parts of
+// the answer to "what does bringing it along mean", and folding them into the walk itself would
+// make that unreadable.
+// A kInvalidUID pageUID -- a frame out on the pasteboard -- gives nothing to draw either the
+// Source or the Pages panel to, so neither is moved. The Target's move was the caller's and
+// stands on its own.
 //----------------------------------------------------------------------------------------
 static void KCMSyncCompanionViews(IDataBase* navDB, UID pageUID)
 {
 	if (navDB == nil || pageUID == kInvalidUID)
 		return;
 
-	// Pages パネルも対象ページへ連動スクロール(前面文書が navDB のときだけ。ベストエフォート)。
+	// The Pages panel follows to the page as well (only while navDB is the one in front;
+	// best-effort).
 	KCMScrollPagesPanelToPage(navDB, pageUID);
 
-	// Source 側も対応ページへ連動スクロール(比較 Start 中のみ=sSrcDB 非nil。背面のまま位置だけ)。
-	// ページの追加/削除でズレていても対応表で正しい相手へ、相手が無い Added/Overflow は近傍へ寄せる。
-	// ★Source の拡大率も Target に合わせる。overset ストップでも「そのページ」の対応 Source ページへ寄せる。
-	// ベストエフォート: Source ビューが無い/相手が引けなくても navDB 側の移動は成立させる。
+	// The Source follows to the corresponding page too, while a comparison is running -- staying
+	// behind, position only. Page numbers shifted by an addition or a deletion are handled by the
+	// pairing table, and a page with no counterpart (Added or Overflow) is drawn to the nearest
+	// one. The Source's magnification is matched to the Target's as well. On an overset stop it is
+	// still "that page's" corresponding Source page that is used.
+	// Best-effort: with no Source view, or no counterpart to be found, the move on navDB's side
+	// still stands.
 	IDataBase* sourceDB = Utils<IKCMMarkData>()->GetMarkedSourceDB();
 	if (sourceDB != nil && sourceDB != navDB)
 	{
 		const UID srcPage = KCMSourcePageForTarget(navDB, sourceDB, pageUID);
 		if (srcPage != kInvalidUID)
 		{
-			// ★Sync layout views が ON のときは Source の「ビュー」スクロールをしない。理由: Sync オブザーバ
-			//   (KCMViewSync.cpp。2026-08-13 の分割で KCMPeek.cpp から移った)が navDB(Target)の
-			//   スクロールをページオフセット込みで Source へ自動ミラーする。
-			//   ここで Source を手動スクロールすると、その変化が Sync により Target へ逆ミラーされ、overset の
-			//   「+」スクロールがページ中心に打ち消される(2026-07-24 ユーザー発見: sync OFF なら overset に飛ぶ)。
-			//   sync ON では Target のスクロール(呼び手がやった分)を Sync が Source へ伝える。
-			//   Pages パネルの連動は Sync の対象外なので、そちらは sync の有無に関わらず行う。
-			// ★★2026-08-18(B10 の2周目): Source 側も**隠れているページへは動かさない**（Target と同じ
-			//   理由＝スプレッドは切り替わらないのにスクロールだけ効いて見当違いへ寄る）。Hide Unchanged は
-			//   両文書の対応スプレッドを隠すので、Target が隠れていれば相手も隠れているのが普通。
-			//   ⚠Pages パネルの連動（下）は隠れていても行う＝「どのページか」は見せる。
+				// WITH "Sync Layout Views" ON, THE SOURCE'S VIEW IS NOT SCROLLED HERE. The sync
+				// observer (KCMViewSync.cpp) already mirrors navDB's -- the Target's -- scroll onto
+				// the Source, page offset included. Scrolling the Source by hand on top of that
+				// gets mirrored BACK onto the Target, and an overset "+" scroll ends up cancelled
+				// out by the page centring (found by the user: with sync off, the jump to the
+				// overset worked). With sync on, the Target's scroll -- the caller's -- is what
+				// Sync carries over.
+				// The Pages panel is not Sync's business, so it follows either way.
+				// THE SOURCE IS NOT MOVED TO A HIDDEN PAGE EITHER, for the same reason as the
+				// Target: the spread does not switch, the scroll takes effect all the same, and it
+				// ends up somewhere unrelated. Hide Unchanged hides the corresponding spread in
+				// both documents, so when the Target's page is hidden its counterpart usually is
+				// too.
+				// @warning the Pages panel below still follows: which page it is remains worth
+				//   showing.
 			if (!KCMGetLayoutSync() &&
 			    !Utils<IKCMMarkData>()->IsPageOnHiddenSpread(sourceDB, srcPage))
 			{
-				const PMReal targetZoom = KCMReadDocZoom(navDB);	// 実効ズーム(<=0 ならズームは変えない)
+				const PMReal targetZoom = KCMReadDocZoom(navDB);	// the effective zoom (<= 0 leaves the zoom alone)
 				KCMScrollDocToItemCenter(sourceDB, srcPage, targetZoom);
 			}
-			// Source が前面の場合、Pages パネルは Source の一覧を表示しているので、そちらの対応ページへ
-			// 連動スクロール(ヘルパー内の前面一致ガードにより、navDB 前面ならこの呼び出しは何もしない)。
+				// With the Source in front, the Pages panel is showing the Source's list, so it
+				// follows to the corresponding page there. (The helper's own "is this the document
+				// in front" guard means this call does nothing while navDB is in front.)
 			KCMScrollPagesPanelToPage(sourceDB, srcPage);
 		}
 	}
 }
 
 //----------------------------------------------------------------------------------------
-// 文書 db のビューを、storyUID の「**一番最初**」が画面中央に来るようスクロールする。
+// Scroll document db's views so that THE VERY BEGINNING of storyUID ends up in the centre.
 //
-// ★★飛び先はフレームの中心ではなく**本文の書き出し**(ユーザー決定 2026-08-10)。背の高いフレームでは
-//   中心は本文の途中で、読みたいのは書き出しの方。点の算出は IKCMStoryEditsFacade::GetStoryStartPoint
-//   (実体は KCMStoryList.cpp の KCMStoryStartPoint)
-//   (＝overset の「+」を出す KCMLastPlacedOutport の鏡像。同じ3つの座標系を同じ順に通る)。
-// ★点へ寄せる手順も overset とまったく同じ＝**先にスプレッドを出してから** pb 点へ。pb 点への
-//   スクロールは「そのビューが既にそのスプレッドを映している」ことが前提だから(上の
-//   KCMEnsureSpreadInView の説明)。
-// ★まだ1度も組まれていない等で点が採れなければ、フレームの中心へ落とす(2026-08-10 以前の動き)。
-//   outFrame には実際に着地したフレームを返す ---- Pages パネルの連動がページを引くのに使う。
+// WHAT IS AIMED AT IS WHERE THE TEXT BEGINS, not the centre of the frame (the user's decision):
+// in a tall frame the centre is somewhere in the middle of the text, and what is worth reading is
+// the beginning. The point comes from IKCMStoryEditsFacade::GetStoryStartPoint (backed by
+// KCMStoryStartPoint in KCMStoryList.cpp), which is the mirror image of KCMLastPlacedOutport, the
+// one that puts up the overset "+": it goes through the same three coordinate systems in the same
+// order.
+// Getting to the point works exactly as the overset one does: BRING THE SPREAD UP FIRST, then
+// scroll to the pasteboard point -- scrolling to a pasteboard point assumes the view is already
+// showing that point's spread (see KCMEnsureSpreadInView above).
+// When no point can be had -- nothing has been composed yet, say -- it falls back to the centre
+// of the frame (what it did before). outFrame reports the frame actually landed on, which is what
+// the Pages panel's own move uses to resolve a page.
 //
-// ★★★focusIndex を渡すと「ストーリーの書き出し」ではなく**その文字**へ寄せる(ユーザー要望 2026-08-22
-//   「変更された部分の一番最初の部分がレイアウトビューの真ん中に移動して欲しい」)。長いストーリーの
-//   後ろの方が変わっているとき、書き出しへ飛ぶのは**そのストーリーを指しているだけで変更を指していない**。
-//   点はキャレット(選択のときに立つ縦線)の位置＝`GetStoryPointAt`。
-//   ⚠**採れなかったときは黙って書き出しへ落ちる**＝overset・未配置・未組版はいずれも「その文字は今どこにも
-//     出ていない」であって、行そのものは正しい。⇒ 何も動かないより、ストーリーを見せる方がよい。
+// PASS focusIndex TO AIM AT THAT CHARACTER instead of the start of the story (the user asked for
+// "the very first part of what changed to move to the middle of the layout view"). When a long
+// story has changed near its end, jumping to its beginning POINTS AT THE STORY WITHOUT POINTING
+// AT THE CHANGE. The point is where the caret would stand: GetStoryPointAt.
+// @warning WHEN IT CANNOT BE HAD, THIS FALLS BACK TO THE BEGINNING SILENTLY. Overset, unplaced
+//   and uncomposed all amount to "that character is nowhere on any page right now", while the row
+//   itself is still correct -- showing the story beats moving nothing at all.
 //----------------------------------------------------------------------------------------
 static bool16 KCMScrollDocToStoryStart(IDataBase* db, UID storyUID, UID fallbackFrameUID,
 	UID& outFrame, PMReal applyZoom = PMReal(-1.0), TextIndex focusIndex = kInvalidTextIndex)
@@ -861,19 +930,18 @@ static bool16 KCMScrollDocToStoryStart(IDataBase* db, UID storyUID, UID fallback
 		PBPMPoint focusPb;
 		if (Utils<IKCMStoryEditsFacade>()->GetStoryPointAt(db, storyUID, focusIndex, focusPb))
 		{
-			// ★★スプレッドを出すのに使うフレームは**呼び手が渡したもの**＝変更箇所を含むフレームで
-			//   なければならない。**ペーストボード座標はスプレッドごと**なので、別のスプレッドを出した
-			//   まま点へ寄せると「少しずれる」ではなく**別のページに着く**。
-			//   ⚠★★★2026-08-22(不具合再検査)＝**この但し書きは、書かれた時点で片方の呼び手でしか
-			//     成立していなかった**。新側(KCMStoryJumpToChange)は解決済みのフレームを渡していたが、
-			//     旧側(下の Source 分岐)は `GetFirstFrameUID`＝**ストーリーの先頭フレーム**を渡していた
-			//     ⇒ 連結ストーリーの後ろの方が変わっていると、旧版の窓だけ無関係な場所へ飛んでいた。
-			//     **今は両方の呼び手が `GetStoryFrameAt` で同じ問いを出す**([[one-question-one-place]])。
+			// THE FRAME USED TO BRING THE SPREAD UP IS THE ONE THE CALLER PASSED, and it has to be
+			// the frame that contains the change. PASTEBOARD COORDINATES ARE PER SPREAD, so
+			// aiming at the point with the wrong spread up does not land "a little off" -- IT
+			// LANDS ON A DIFFERENT PAGE.
+			// Both callers now ask the same question through GetStoryFrameAt. (One of them used to
+			// pass GetFirstFrameUID, THE STORY'S FIRST FRAME, which sent the old version's window
+			// somewhere unrelated whenever the change was further down a threaded story.)
 			outFrame = fallbackFrameUID;
 			KCMEnsureSpreadInView(db, fallbackFrameUID);
 			return KCMScrollDocToPBPoint(db, focusPb, applyZoom);
 		}
-		// 採れなければ下の「書き出しへ」に落ちる(フォールバックは1本にまとめてある)。
+		// otherwise fall through to "the beginning" below (one fallback, in one place)
 	}
 
 	UID startFrame = kInvalidUID;
@@ -890,9 +958,10 @@ static bool16 KCMScrollDocToStoryStart(IDataBase* db, UID storyUID, UID fallback
 }
 
 //----------------------------------------------------------------------------------------
-// 巡回本体(dir=+1 で次、-1 で前)。端は折り返す。位置表示「3/12」は Prev/Next 間のウィジェットへ、
-// 飛んだページラベル「Page: 1, Change 12%」等はメッセージ欄へ。ストップは「変更(枠)=ページ中心」または
-// 「overset=「+」pb 点(KBS 流)」。
+// The walk itself: dir = +1 for next, -1 for previous, wrapping at either end. The position
+// readout ("3/12") goes to the widget between Prev and Next; the label of where it landed
+// ("Page: 1, Change 12%" and the like) goes to the message line. A stop is either a change (the
+// page's centre) or an overset (its "+" pasteboard point, the way KBS does it).
 //----------------------------------------------------------------------------------------
 static void KCMGoto(int32 dir)
 {
@@ -910,59 +979,68 @@ static void KCMGoto(int32 dir)
 	{
 		PMString s("Nothing to review."); s.SetTranslatable(kFalse);
 		KCMSetStatus(s);
-		KCMRefreshNavPosition();	// 巡回対象なし: 位置は "/"・Prev/Next は無効化(通常はボタン無効で来ない)
+		KCMRefreshNavPosition();	// nothing to walk: "/" and dead buttons (normally unreachable, they are already disabled)
 		return;
 	}
 
-	// 現在位置を内容で探す。見つからなければ(初回/前回ストップが消えた)、次=先頭・前=末尾から。
+	// Find where the walk stands, by content. When it is not there -- the first press, or the
+	// previous stop is gone -- next starts at the front and previous at the back.
 	int32 cur = KCMFindCurrentStop(stops);
 	int32 next;
 	if (cur < 0)
 	{
 		next = (dir > 0) ? 0 : (int32)stops.size() - 1;
-		// ⚠**入口フラグも落とす**(2026-08-25 の再検査)＝基準点そのものが消えた(その行を Refresh して
-		//   子が無くなった等)のに、「どのストップの入口か」だけが残るのは意味を成さない。
-		//   今は下の分岐が cur>=0 のときしか読まないので実害は出ないが、**読まれないから正しい状態**を
-		//   置いておくと、次に条件が1つ変わった日に壊れる。
+		// DROP THE ENTRANCE FLAG TOO. With the anchor itself gone -- that row was refreshed and
+		// left with no children, say -- "which stop's entrance" means nothing on its own.
+		// Nothing reads it while cur < 0 today, so this causes no harm as it stands; leaving an
+		// incorrect state in place because nothing reads it is what breaks on the day one
+		// condition changes.
 		sNavStoryAtEntry = kFalse;
 	}
 	else if (sNavStoryAtEntry && stops[cur].isStory)
 	{
-		// ★★★「入口に立っている」＝**子のある親行を選んだ**状態(2026-08-24 ユーザー決定)。基準点は
-		//   その行の最初の子を指しているが、**まだそこへは行っていない** ---- 行のクリックが飛んだ先は
-		//   ストーリーの書き出しで、中の最初の変更ではないから。
-		//   ⇒ **Next はそのストップ「へ」行く**(進めない)＝親を選んで Next を押した人が、中の最初の
-		//     1件を飛ばされない。**Prev は1つ前のストップへ**(入口の手前へ出る)。
-		//   ★これは上の `cur < 0`(まだ一度も巡っていない＝Start 直後の「1/N」)とまったく同じ考え方で、
-		//     違いは「行を選んだので、どのストップの入口かが分かっている」ことだけ。
+		// STANDING AT THE ENTRANCE means a parent row with children was selected. The anchor
+		// points at that row's first child, BUT THE WALK HAS NOT GONE THERE: what the click on the
+		// row jumped to was the start of the story, not the first change inside it.
+		// So NEXT GOES TO THAT STOP rather than past it -- whoever selected the parent and pressed
+		// Next does not have its first change skipped -- and PREVIOUS GOES TO THE STOP BEFORE IT,
+		// stepping out in front of the entrance.
+		// This is the same idea as cur < 0 above (nothing walked yet, the "1/N" a comparison shows
+		// as it starts); the only difference is that selecting a row says WHICH stop's entrance it
+		// is.
 		next = (dir > 0) ? cur : cur - 1;
-		if (next < 0) next = (int32)stops.size() - 1;	// 先頭の入口で「前」→末尾へ折り返し
+		if (next < 0) next = (int32)stops.size() - 1;	// previous from the first entrance wraps to the end
 	}
 	else
 	{
 		next = cur + dir;
-		if (next < 0)                        next = (int32)stops.size() - 1;	// 先頭で「前」→末尾へ折り返し
-		else if (next >= (int32)stops.size()) next = 0;						// 末尾で「次」→先頭へ折り返し
+		if (next < 0)                        next = (int32)stops.size() - 1;	// previous from the first wraps to the end
+		else if (next >= (int32)stops.size()) next = 0;						// next from the last wraps to the front
 	}
 	const KCMNavStop& stop = stops[next];
 
-	// ★★★Story Changes モードのストップ(2026-08-24)＝**この先のページ処理を1つも通さない。**
-	//   飛び方も、マークも、メッセージ欄の中身も、**一覧の行をクリックしたときとまったく同じ実装**を
-	//   呼ぶ(KCMStoryNav.cpp → KCMStoryJump.cpp)。⇒ ユーザー指定「StoryEdit の行を選択したのと
-	//   同じ挙動」は、**ここで作り直さないこと**によってしか保てない([[one-question-one-place]])。
-	//   ⚠**下の KCMStopLabel と KCMSyncCompanionViews は呼ばない**:
-	//     ①ラベル(`Page: 3, Change 12%`)は画素比較の変化セル数の割合で、Story には分母が無い。しかも
-	//       メッセージ欄はジャンプ側が既に埋めている(変更なら旧側の本文、行なら `Page: 3`)ので、
-	//       ここで書くと**それを上書きして消す**。
-	//     ②Source 窓と Pages パネルの追随は KCMGotoStoryFrame が中でやっており、しかも
-	//       **ページではなく「同じストーリー」に**合わせる(2026-08-10 のユーザー指摘)。ページで
-	//       合わせるあちらを重ねると、まさに見せたい「動いたストーリー」を見失う。
-	//   ★隠しスプレッドの扱いも持ち込まない ---- KCMGotoStoryFrame が「レイアウトは動かさず Pages
-	//     パネルだけ合わせて kTrue を返す」と既に決めている(2026-08-18・同じ判断を2か所に書かない)。
-	//   ★★**基準ストップはジャンプの成否に関わらず進める。** 未配置のストーリーの行は「行けない」と
-	//     自分で言うが、それでもストップではある ---- 進めないと**そこで詰まって次へ行けない**。
-	//     ページ側が「スクロールできなければ進めない」のは、あちらの失敗が「そのページが今は無い」＝
-	//     リストの作り直しで消える類だから。
+	// A STOP OF THE STORY CHANGES MODE GOES THROUGH NONE OF THE PAGE WORK BELOW.
+	// How it travels, the mark it flashes and what goes in the message line are all THE SAME
+	// IMPLEMENTATION A CLICK ON THE LIST ROW USES (KCMStoryNav.cpp into KCMStoryJump.cpp). The
+	// user asked for "the same behaviour as selecting a StoryEdit row", and the only way to keep
+	// that is BY NOT REBUILDING IT HERE.
+	// @warning KCMStopLabel and KCMSyncCompanionViews below are deliberately NOT called:
+	//   1. the label ("Page: 3, Change 12%") is a proportion of changed cells from the pixel
+	//      comparison, and a Story stop has no denominator. Worse, the jump has ALREADY filled the
+	//      message line (with the old side's text for a change, or "Page: 3" for a row), so
+	//      writing here would overwrite and erase it.
+	//   2. the Source window and the Pages panel are brought along by KCMGotoStoryFrame itself,
+	//      and it lines them up on THE SAME STORY rather than on a page (the user's point). Adding
+	//      the page-based one on top of it loses sight of the very story the jump is there to
+	//      show.
+	// The hidden-spread handling is not brought over either -- KCMGotoStoryFrame has already
+	// decided that case ("leave the layout alone, move the Pages panel, return kTrue"), and that
+	// judgement is not written down twice.
+	// THE ANCHOR MOVES ON WHETHER OR NOT THE JUMP SUCCEEDED. A row whose story is unplaced says
+	// so for itself, but it is still a stop -- not advancing would leave the walk STUCK ON IT with
+	// no way past. (The page side does refuse to advance when it cannot scroll, because ITS
+	// failures mean "that page is not there any more", the kind that disappears when the list is
+	// rebuilt.)
 	if (stop.isStory)
 	{
 		KCMStoryNavStop storyStop;
@@ -971,32 +1049,37 @@ static void KCMGoto(int32 dir)
 		storyStop.fStoryUID = stop.storyUID;
 		KCMGotoStoryNavStop(storyStop);
 
-		// ★★**基準点はここで置かない。** 置くのはジャンプ側(KCMStoryJump.cpp → KCMNoteStoryStop)
-		//   で、**行のクリックも矢印キーの歩きもそこを通る** ---- ここでも置くと、同じ「今どこに
-		//   立っているか」を2か所が別々に決めることになる([[one-question-one-place]])。
-		//   ⚠あちらは**行が実在すると分かった時点**で置くので、飛べなかった行(未配置のストーリー・
-		//     隠しページ)でも基準は進む＝**そこで詰まらない**。
-		KCMRefreshNavPosition();		// 「k/N」とボタンの有効/無効(ページ側の出口と同じ締め方)
+		// THE ANCHOR IS NOT SET HERE. It is set on the jump side (KCMStoryJump.cpp calling
+		// KCMNoteStoryStop), and a click on a row and an arrow key walking the list both go
+		// through there -- setting it here as well would have two places deciding where the walk
+		// stands.
+		// That side sets it AS SOON AS THE ROW IS KNOWN TO EXIST, so the anchor advances even for
+		// a row that could not be jumped to (an unplaced story, a hidden page) and the walk never
+		// gets stuck.
+		KCMRefreshNavPosition();		// "k/N" and the button states, closing the same way the page side does
 		return;
 	}
 
-	// overset は「+」点へ(KBS 流)、変更はページ中心へスクロール。
-	// ★基準ストップ(sNav*)の更新はスクロール成功後(2026-07-25 監査で移動): 失敗時に基準だけ先へ進むと、
-	//   位置表示「k/N」が古いまま・次回の巡回起点も移動済み、という不整合が残るため。
-	// ★overset 経路は pb 点へ直接スクロールするので、ここでスプレッドを出しておく(ページ中心経路は
-	//   KCMScrollDocToItemCenter の中で同じことをしている)。これが無いとマスタースプレッド上の
-	//   あふれに飛べない=空のペーストボードに着地する(2026-08-06 ユーザー指摘。KBS と同じ手当て)。
-	// ★★★2026-08-18(不具合再検査 B10 の2周目・ユーザー指定): **隠れているスプレッドのページへは
-	//   レイアウトビューを動かさない。**
-	//   ⚠実測＝隠しページのストップへ飛ぶと、**スプレッドは切り替わらないのにスクロールだけ効く**
-	//     （kSetSpreadCmdBoss は隠しスプレッドを出せないので、今映しているスプレッドのまま、隠れた
-	//     ページのペーストボード座標へ寄ってしまう）＝**画面が見当違いの場所へ動く**。
-	//     「行けないなら動かない」ほうが、押した人の予想と合う。
-	//   ★**ストップ自体は巡回に残す**（ユーザー指定「Prev などには入る」）＝基準の更新・位置表示
-	//     「k/N」・ステータス行のラベル（末尾に "(Hide)"）・**Pages パネルの連動**は下でそのまま行う。
-	//     ⇒ 画面は動かないが、「どのページが変わっているか」はパネルとステータス行で分かる。
+	// An overset scrolls to its "+" point (the way KBS does it); a change scrolls to the page's
+	// centre.
+	// THE ANCHOR IS UPDATED ONLY AFTER A SUCCESSFUL SCROLL: advancing it on a failure would leave
+	// the readout "k/N" stale AND the next walk starting from somewhere it never reached.
+	// The overset path scrolls straight to a pasteboard point, so the spread is brought up here
+	// (the page-centre path does the same thing inside KCMScrollDocToItemCenter). Without it an
+	// overflow on a master spread cannot be reached and the view lands on empty pasteboard --
+	// reported by the user, and the same remedy KBS uses.
+	// THE LAYOUT VIEW IS NOT MOVED TO A PAGE ON A HIDDEN SPREAD.
+	// @warning measured: jumping to a hidden page leaves THE SPREAD UNCHANGED WHILE THE SCROLL
+	//   STILL TAKES EFFECT (kSetSpreadCmdBoss cannot bring up a hidden spread, so the view stays
+	//   where it is and slides to the hidden page's pasteboard coordinates) -- the screen moves
+	//   somewhere unrelated. "If it cannot go, it does not move" matches what the person pressing
+	//   the button expects.
+	// THE STOP ITSELF STAYS IN THE WALK (the user asked for that): the anchor update, the "k/N"
+	// readout, the status line label -- with "(Hide)" on the end -- and the Pages panel move all
+	// still happen below. The screen does not move, but which page changed can be read off the
+	// panel and the status line.
 	const bool16 stopHidden = Utils<IKCMMarkData>()->IsPageOnHiddenSpread(navDB, stop.pageUID);
-	bool16 ok = kTrue;		// 隠れているときは「スクロールしなかった」を成功として扱う(下の早期 return を避ける)
+	bool16 ok = kTrue;		// while hidden, "did not scroll" counts as success (so the early return below is not taken)
 	if (!stopHidden)
 	{
 		if (stop.isOverset)
@@ -1008,106 +1091,119 @@ static void KCMGoto(int32 dir)
 	{
 		PMString s("Could not scroll."); s.SetTranslatable(kFalse);
 		KCMSetStatus(s);
-		KCMRefreshNavPosition();	// 表示とボタン状態は「移動しなかった現状」で作り直す
+		KCMRefreshNavPosition();	// rebuild the readout and the buttons from the state that did not move
 		return;
 	}
 	sNavPageUID    = stop.pageUID;
 	sNavIsOverset  = stop.isOverset;
 	sNavOversetOrd = stop.oversetOrd;
-	// ページ側へ戻ってきた＝Story の基準点は種別ごと無効になる(上の分岐と対)。
-	// ⚠**入口フラグも一緒に落とす**(2026-08-25 の再検査)＝これを残すと、Story ストップの入口に立った
-	//   まま Prev であふれ箇所へ抜けたときに kTrue が居座る。今は `sNavIsStory` が偽なので読まれずに
-	//   済んでいるが、**「読まれないから正しい」は次に条件が1つ変わった日に崩れる**。
+	// Back on the page side, so the Story anchor is void, kind and all (the counterpart of the
+	// branch above).
+	// THE ENTRANCE FLAG GOES WITH IT: left set, it would sit there as kTrue after the walk stood
+	// at a Story stop's entrance and then went out to an overflow place with Prev. Nothing reads
+	// it while sNavIsStory is false, but "nothing reads it, so it is fine" breaks on the day one
+	// condition changes.
 	sNavIsStory      = kFalse;
 	sNavStoryAtEntry = kFalse;
 
-	// 飛んだ先をメッセージ欄へ(例 "Page: 1, Change 12%" / "Page: 1 Overset" / "Page: 1 (2) Overset"
-	// =KCMStopLabel 参照。2026-08-06 現行化: 旧 "P1" 表記は 2026-07-27 に廃止済み)。
-	// 位置 k/N は別ウィジェット(下の RefreshNavPosition)。
+	// Where it landed goes to the message line (e.g. "Page: 1, Change 12%" / "Page: 1 Overset" /
+	// "Page: 1 (2) Overset" -- see KCMStopLabel). The k/N position is a separate widget, filled in
+	// by KCMRefreshNavPosition below.
 	KCMSetStatus(KCMStopLabel(navDB, stop));
 
-	// 周りのビュー(Pages パネル・Source 窓)を追随させる。★Story Edits の行ジャンプと同じ関数を通る。
+	// Bring the views around it along: the Pages panel and the Source window.
 	KCMSyncCompanionViews(navDB, stop.pageUID);
 
-	// 現在位置は Prev/Next の間の専用ウィジェット(KESCL 風「3/12」)へ。基準ストップは上で更新済みなので、
-	// 共通関数で今のストップ列から「k/N」を作り直す(値の組み立てとボタン有効/無効を1箇所に集約)。
+	// The position goes to the widget between Prev and Next ("3/12", as in KESCL). The anchor was
+	// updated above, so the shared function rebuilds "k/N" from the current list of stops -- the
+	// value and the button states are assembled in one place.
 	KCMRefreshNavPosition();
 }
 
 //========================================================================================
-// KCMGotoNextChange / KCMGotoPrevChange(KCMChangeNav.h で宣言)
+// KCMGotoNextChange / KCMGotoPrevChange (declared in KCMChangeNav.h)
 //========================================================================================
 void KCMGotoNextChange() { KCMGoto(+1); }
 void KCMGotoPrevChange() { KCMGoto(-1); }
 
 //========================================================================================
-// KCMGotoStoryFrame(KCMChangeNav.h で宣言)
+// KCMGotoStoryFrame (declared in KCMChangeNav.h)
 //========================================================================================
 bool16 KCMGotoStoryFrame(IDataBase* db, UID frameUID, UID pageUID, UID storyUID,
 	TextIndex focusIndex, TextIndex sourceFocusIndex)
 {
-	// ★この関数だけで4回聞くので InterfacePtr に1回受ける(Utils.h:74-80。2026-08-17 の API 監査 B-U8)。
-	// ★2026-08-18(B10 の2周目)に**関数の先頭へ移した**＝すぐ下の隠しページ判定がこれを使うため。
+	// The facade is asked more than once here, so it is queried into an InterfacePtr first
+	// (Utils.h says to do that rather than pay for a query per call). It is at the very top of the
+	// function because the hidden-page test immediately below already uses it.
 	InterfacePtr<IKCMMarkData> marks(Utils<IKCMMarkData>().QueryUtilInterface());
 
-	// ★★★2026-08-18(不具合再検査 B10 の2周目): **隠れているスプレッドのページへはレイアウトビューを
-	//   動かさない** ---- Prev/Next(KCMGoto)とまったく同じ判断。あちらだけ直して**ここを直さないと、
-	//   同じ「隠れたページへ行こうとする」が、パネルのボタンでは動かず・Story Edits の行では見当違いの
-	//   場所へ動く**という食い違いになる([[one-question-one-place]])。
-	//   ★Pages パネルの連動は行う＝「どのページか」は見せる。行のラベル(KCMStoryJump.cpp の PageLabel)
-	//     が末尾に "(Hide)" を出すので、動かなかった理由はユーザーに伝わる。
-	//   ★戻り値は kTrue＝「行けなかった」ではなく「**行かないと決めた**」。呼び手
-	//     (KCMStoryJumpToRow)は kFalse を "Could not scroll." と綴るので、ここで kFalse を返すと
-	//     失敗でないものを失敗として報告してしまう。
+	// THE LAYOUT VIEW IS NOT MOVED TO A PAGE ON A HIDDEN SPREAD -- exactly the judgement Prev/Next
+	// (KCMGoto) makes. Fixing that one WITHOUT FIXING THIS ONE would leave "trying to go to a
+	// hidden page" doing nothing from the panel's buttons and going somewhere unrelated from a
+	// Story Edits row: one question with two answers.
+	// The Pages panel still follows: which page it is remains worth showing. The row's label
+	// (PageLabel in KCMStoryJump.cpp) puts "(Hide)" on the end, so the reason nothing moved does
+	// reach the user.
+	// THE RETURN VALUE IS kTrue -- not "could not go" but "DECIDED NOT TO GO". The caller
+	// (KCMStoryJumpToRow) spells kFalse as "Could not scroll.", so returning kFalse here would
+	// report a failure that did not happen.
 	if (marks->IsPageOnHiddenSpread(db, pageUID))
 	{
 		KCMScrollPagesPanelToPage(db, pageUID);
 		return kTrue;
 	}
 
-	// 変更箇所が指定されていればその文字へ、無ければストーリーの書き出しへ(フレームの中心ではない。
-	// 上の KCMScrollDocToStoryStart 参照)。
+	// To the character when a change was named, and to the start of the story when it was not --
+	// NOT to the centre of the frame (see KCMScrollDocToStoryStart above).
 	UID landedFrame = kInvalidUID;
 	if (!KCMScrollDocToStoryStart(db, storyUID, frameUID, landedFrame, PMReal(-1.0), focusIndex))
 		return kFalse;
 
-	// Pages パネルも、**実際に着地したフレーム**のページへ(ページに載っていないなら中で何もしない)。
-	// ★行が覚えている pageUID ではなく着地側から引く: 先頭フレームにパーセルが1つも配置されていない
-	//   ときは、着地するのは次のフレーム＝別のページのことがある。表示と実際がずれない方を採る。
+	// The Pages panel goes to the page of THE FRAME ACTUALLY LANDED ON (a frame on no page does
+	// nothing inside). It is resolved from where the jump landed rather than from the pageUID the
+	// row remembers: WHEN THE FIRST FRAME HAS NO PARCEL PLACED IN IT, what is landed on is the
+	// next frame, which can be on another page. What is shown and what happened should not
+	// disagree.
 	KCMScrollPagesPanelToPage(db, (landedFrame != kInvalidUID) ? marks->GetFramePageUID(db, landedFrame) : pageUID);
 
-	// ***** Source 側も連れて行く。ただし合わせるのは「ページ」ではなく「ストーリー」。*****
+	// ***** THE SOURCE COMES ALONG TOO -- but lined up on THE STORY, not on the page. *****
 	//
-	// ★★ここが Prev/Next(KCMSyncCompanionViews)と違うところ。あちらが指しているのはページなので
-	//   対応表でページを引けば足りるが、この行が指しているのは**ストーリー**で、**同じストーリーが
-	//   2つの版で違う場所にあることがある**(2026-08-10 ユーザー指摘。レイアウトが変われば当然そうなる)。
-	//   ∴ Source でも同じ story UID の先頭フレームを引き、それを中心に出す ---- ページ番号を経由すると、
-	//   まさにこの機能が見せたい「動いたストーリー」を見失う。
-	// ★UID で引き当てられる根拠は、この機能全体が乗っているのと同じ前提＝**別名保存では story UID が
-	//   引き継がれる**(KCMStoryStamp.h の "WHY TWO VERSIONS CAN BE MATCHED AT ALL" に実測済み。
-	//   ⚠2026-08-17 訂正＝旧「:36-38」は挿入で腐った行番号で、実体は10行下だった)。
-	//   Source に無いストーリー(=Added の行)は
-	//   kInvalidUID が返るので、そのときは Target だけが動く。
+	// This is where it differs from Prev/Next (KCMSyncCompanionViews). What that one points at is
+	// a page, so looking the page up in the pairing table is enough. What THIS row points at is A
+	// STORY, and THE SAME STORY CAN BE IN A DIFFERENT PLACE IN THE TWO VERSIONS (the user's point;
+	// of course it can, once the layout changes). So the Source is given the first frame of the
+	// same story UID and centred on that -- going through a page number loses sight of the very
+	// "story that moved" this feature exists to show.
+	// What makes matching by UID possible is the premise the whole feature rests on: A SAVE-AS
+	// CARRIES THE STORY UID OVER (measured; the section "WHY TWO VERSIONS CAN BE MATCHED AT ALL"
+	// in KCMStoryStamp.h). A story with no counterpart on the Source -- an Added row -- comes back
+	// as kInvalidUID, and then only the Target moves.
 	IDataBase* sourceDB = marks->GetMarkedSourceDB();
 	if (sourceDB != nil && sourceDB != db && storyUID != kInvalidUID)
 	{
-		// ⚠★★旧側にも dirty ガードが要る(2026-08-22)。sourceFocusIndex を渡すと、その文字の位置と
-		//   その文字を載せているフレームを出すために**旧文書の組版**が最新化されることがあり、
-		//   組版は文書を汚す(IKCMStoryEditsFacade::GetStoryPointAt / GetStoryFrameAt)。
-		//   新側のガードは呼び手が持っているが、**旧文書に触るのはこの関数だけなので、ここが持つ**。
-		//   ★焦点を渡さない経路(親のストーリー行)では組版は起きないので、このガードは何もしない。
+		// THE OLD SIDE NEEDS A DIRTY GUARD OF ITS OWN. Passing sourceFocusIndex can bring THE OLD
+		// DOCUMENT'S COMPOSITION up to date, in order to produce that character's position and the
+		// frame carrying it, and composing dirties a document
+		// (IKCMStoryEditsFacade::GetStoryPointAt / GetStoryFrameAt).
+		// The guard for the new side is the caller's, but THE OLD DOCUMENT IS TOUCHED ONLY HERE,
+		// so this function holds that one itself.
+		// On the path that passes no focus (a parent story row) nothing is composed and the guard
+		// does nothing.
 		IDataBase::SaveRestoreModifiedState sourceDirtyGuard(sourceDB);
 
 		UID srcFrame = Utils<IKCMStoryEditsFacade>()->GetFirstFrameUID(sourceDB, storyUID);
 
-		// ★★★**旧側も「変更箇所を含むフレーム」を引く**(2026-08-22 の不具合再検査)。
-		//   上の GetFirstFrameUID が返すのは**ストーリーの先頭フレーム**で、行が指しているのが
-		//   ストーリーそのもの(親の行)ならそれで正しい ---- が、**変更箇所へ寄せるときにそれで
-		//   スプレッドを決めると、連結ストーリーの後ろの方の変更で別のスプレッドを出してしまう**。
-		//   ペーストボード座標はスプレッドごとなので、着地は「少しずれる」ではなく別のページになる。
-		//   ⇒ 新側(KCMStoryJumpToChange)とまったく同じ問いを、同じ口へ出す。
-		//   ⚠採れなければ先頭フレームのまま＝従来どおりの動きに落ちる(overset・未配置・比較後に
-		//     旧文書が短くなった場合はいずれもここへ来る)。
+			// THE OLD SIDE ALSO ASKS FOR "THE FRAME CONTAINING THE CHANGE".
+			// GetFirstFrameUID above returns THE STORY'S FIRST FRAME, which is right when what the
+			// row points at is the story itself (a parent row) -- but USING IT TO DECIDE THE
+			// SPREAD WHEN AIMING AT A CHANGE brings up the wrong spread for a change further down
+			// a threaded story. Pasteboard coordinates are per spread, so the landing is not "a
+			// little off": it is a different page.
+			// So the same question is put to the same door the new side uses
+			// (KCMStoryJumpToChange).
+			// @warning when it cannot be had, the first frame stands and the behaviour falls back
+			//   to what it was (overset, unplaced, and an old document that grew shorter since the
+			//   comparison all arrive here).
 		if (sourceFocusIndex != kInvalidTextIndex)
 		{
 			const UID srcFocusFrame =
@@ -1118,26 +1214,32 @@ bool16 KCMGotoStoryFrame(IDataBase* db, UID frameUID, UID pageUID, UID storyUID,
 
 		if (srcFrame != kInvalidUID)
 		{
-			// ★Sync layout views が ON のときは Source を手動で動かさない ---- Sync のオブザーバ
-			//   (KCMViewSync.cpp)が、すぐ上でやった Target のスクロールを Source へ既にミラーしている。
-			//   ここでも動かすと二重になり、しかもその変化が Sync 経由で Target へ逆ミラーされて、
-			//   出したはずのフレームが押し戻される(2026-07-24 に overset で実際に起きた形)。
-			//   ⚠ ON のとき Source が映すのは「Target と同じ座標」なので、ストーリーの位置がずれて
-			//   いれば厳密には別の場所になる。それでも Sync の約束(2つの窓を同じ座標で並べる)の方が
-			//   ユーザーの明示的な指定なので、そちらを優先する。KCMSyncCompanionViews と同じ判断。
+				// WITH "Sync Layout Views" ON, THE SOURCE IS NOT MOVED BY HAND -- the sync observer
+				// (KCMViewSync.cpp) has already mirrored the Target scroll just made onto the
+				// Source. Moving it here as well doubles it, and that movement gets mirrored BACK
+				// onto the Target, pushing away the very frame that was just brought up (the shape
+				// that actually happened with an overset).
+				// @warning with Sync on, what the Source shows is "the same coordinates as the
+				//   Target", so where the story has moved it is strictly speaking somewhere else.
+				//   Sync's promise -- the two windows side by side at the same coordinates -- is
+				//   the user's explicit instruction, so it wins. KCMSyncCompanionViews makes the
+				//   same judgement.
 			if (!KCMGetLayoutSync())
 			{
-				// ★Target とまったく同じ寄せ方(ズームも Target に合わせる)。
-				// ★★★**旧側も「対応する文字」まで寄せる**(2026-08-22)＝sourceFocusIndex が
-				//   Change::fSourceStart。これで KCMID.h の増分⑬にある「⚠まだ第1段＝旧側の窓は
-				//   『同じストーリー』までで、対応する文字までは寄せていない」が解消する。
-				//   ⚠**新旧で文字位置は違う**ので、Target の focusIndex を使い回してはいけない
-				//     (旧版で同じ番号の文字はまったく別の場所にある)。差分が両側の位置を出しているので、
-				//     使うのはそちら＝[[one-question-one-place]] の逆で、**別の問いには別の答え**。
-				//   ★★2026-08-22＝**挿入でも旧側の位置が来る**。以前は呼び手が kInvalidTextIndex を
-				//     渡していた（「旧側に指す場所が無い」という理由）が、それは**文字**の話で
-				//     **場所**の話ではなかった＝新しい語が入った隙間は旧版にちゃんとある。今は
-				//     fSourceStart（空範囲の開始＝キャレットの位置）が来るので、ここは何も分岐しない。
+					// Aimed at exactly the way the Target was, zoom included.
+					// THE OLD SIDE IS BROUGHT TO THE CORRESPONDING CHARACTER TOO: sourceFocusIndex
+					// is the change's fSourceStart.
+					// @warning THE CHARACTER POSITIONS DIFFER BETWEEN THE TWO VERSIONS, so the
+					//   Target's focusIndex must NOT be reused (the character with that number in
+					//   the old version is somewhere else entirely). The diff produces both sides'
+					//   positions, so both are used -- one question, one answer, and these are two
+					//   questions.
+					// AN INSERTION HAS AN OLD-SIDE POSITION AS WELL. The caller used to pass
+					// kInvalidTextIndex for one, reasoning that there is nowhere on the old side
+					// to point at -- but that was about the CHARACTER, not about the PLACE, and
+					// the gap where the new words went in is certainly there in the old version.
+					// fSourceStart (the start of an empty range, i.e. where the caret goes) now
+					// arrives for it too, so nothing branches here.
 				UID srcLanded = kInvalidUID;
 				KCMScrollDocToStoryStart(sourceDB, storyUID, srcFrame, srcLanded, KCMReadDocZoom(db),
 										   sourceFocusIndex);
@@ -1145,116 +1247,127 @@ bool16 KCMGotoStoryFrame(IDataBase* db, UID frameUID, UID pageUID, UID storyUID,
 					srcFrame = srcLanded;
 			}
 
-			// Pages パネルは Sync の対象外なので ON/OFF に関わらず追随させる(Source が前面のときだけ
-			// 中で効く。Target が前面なら上の呼び出しの方が効いている)。
+				// The Pages panel is not Sync's business, so it follows either way (it only takes
+				// effect inside while the Source is in front; with the Target in front, the call
+				// above is the one that took effect).
 			KCMScrollPagesPanelToPage(sourceDB, marks->GetFramePageUID(sourceDB, srcFrame));
 		}
 	}
 
-	// ★巡回の基準点(sNavPageUID 等)は動かさない。行ジャンプは Prev/Next とは別の動線で、ここで基準を
-	//   書き換えると「Next を押したら一覧で飛んだ場所の次から始まる」という、どちらの機能の説明にも
-	//   出てこない挙動になる(2026-08-10 の設計判断)。
+	// THE WALK'S ANCHOR IS NOT MOVED. A row jump is a different route from Prev/Next, and
+	// rewriting the anchor here would mean "press Next and it carries on from wherever the list
+	// jumped to" -- behaviour that appears in the description of neither feature.
 	return kTrue;
 }
 
 //========================================================================================
-// KCMNoteStoryStop(KCMChangeNav.h で宣言)
-//   ★一覧の行へ「今立った」ことを巡回位置へ反映する。呼び手はジャンプ関数の中ただ1つで、
-//     クリック・矢印キー・Prev/Next の**全部がそこを通る**(規則と理由はヘッダー)。
+// KCMNoteStoryStop (declared in KCMChangeNav.h)
+//   Record that the walk stands on a list row. Only the jump functions call this, and a click, an
+//   arrow key and Prev/Next all go through them (the rule and the reason are on the declaration).
 //========================================================================================
 void KCMNoteStoryStop(int32 rowIndex, int32 changeIndex)
 {
 	if (rowIndex < 0)
 		return;
 
-	// ⚠Pixel モードの巡回対象はページで、一覧の行はその列に居ない ---- 触ると「行をクリックしたら
-	//   ページの巡回位置が飛ぶ」ことになる。あちらの「行ジャンプは基準点を動かさない」は据え置き。
+	// What the Pixel mode walks is pages, and a list row is not among them -- touching the anchor
+	// there would make clicking a row move the page walk. Its rule, that a row jump leaves the
+	// anchor alone, stands.
 	if (Utils<IKCMCompareFacade>()->GetCompareMode() != kKCMModeStory)
 		return;
 
-	// 行の実在と storyUID、そして子の数を聞く(3つとも同じ facade なので1回引く)。
+	// Whether the row exists, its storyUID, and its child count: all three come from the same
+	// facade, so it is queried once.
 	InterfacePtr<IKCMStoryEditsFacade> edits(Utils<IKCMStoryEditsFacade>().QueryUtilInterface());
 	if (edits == nil)
 		return;
 
 	IKCMStoryEditsFacade::Row row;
 	if (!edits->GetRow(rowIndex, row))
-		return;		// 一覧が作り直された直後にクリックが届いた: その行はもう無い
+		return;		// a click arriving just after the list was rebuilt: that row is gone
 
 	sNavIsStory    = kTrue;
 	sNavStoryUID   = row.fStoryUID;
-	sNavStoryRow   = rowIndex;		// ★UID と対で同定する(理由は KCMFindCurrentStop の説明。
-									//   ⚠そこに書いた「UID が衝突しうる」は誤りで、同日中に撤回した)
-	sNavPageUID    = kInvalidUID;	// ページ側の基準は持ち越さない(種別で分かれるので値も残さない)
+	sNavStoryRow   = rowIndex;		// identified together with the UID (KCMFindCurrentStop explains
+									// why all three are checked)
+	sNavPageUID    = kInvalidUID;	// the page-side anchor is not carried over (the kind decides, so the value goes too)
 	sNavIsOverset  = kFalse;
 	sNavOversetOrd = 0;
 
 	if (changeIndex >= 0)
 	{
 		sNavStoryChange   = changeIndex;
-		sNavStoryAtEntry  = kFalse;		// その変更そのものに立っている
+		sNavStoryAtEntry  = kFalse;		// standing on that change itself
 	}
 	else
 	{
-		// 行そのものを選んだ。★子があるならこの行はストップでは無い(KCMStoryNav.h)ので、
-		//   **その最初の子の入口**に立つ ---- 表示はその子の番号、Next を押すとそこへ行く。
-		//   子が無ければ行そのものがストップなので、普通に立つ。
+		// The row itself was selected. WITH CHILDREN it is not a stop (KCMStoryNav.h), so the walk
+		// stands AT THE ENTRANCE TO ITS FIRST CHILD -- the readout shows that child's number and
+		// Next goes to it. With no children the row IS the stop, and the walk simply stands on it.
 		const int32 changeCount = edits->GetChangeCount(rowIndex);
 		sNavStoryChange  = (changeCount > 0) ? 0 : -1;
 		sNavStoryAtEntry = (changeCount > 0) ? kTrue : kFalse;
 	}
 
-	// ★★表示も作り直す。**行のクリックと矢印キーは、これ以外に「k/N」を書き換える経路を持たない**
-	//   ---- 基準点だけ動かして表示を置き去りにすると、パネルが自分と食い違う。
-	//   ⚠Prev/Next は自分の出口でも呼ぶので二重になるが、**今の状態から作り直すだけ**なので同じ値。
+	// Rebuild the readout as well. A CLICK ON A ROW AND AN ARROW KEY HAVE NO OTHER PATH that
+	// rewrites "k/N" -- moving the anchor and leaving the readout behind would leave the panel
+	// disagreeing with itself.
+	// Prev/Next calls this at its own exit too, so it runs twice there; since it only rebuilds
+	// from the current state, both give the same value.
 	KCMRefreshNavPosition();
 }
 
-// 巡回の基準点を忘れる(KCMChangeNav.h)。次回の Next/Prev はリストの先頭/末尾から始まる。
-// ★表示更新はしない(基準点を落とすだけ): これは比較の総入れ替え(Start)の途中でも呼ばれるため、
-//   位置表示は呼び出し側(KCMDoMarkChangesDoc 末尾 / KCMDoClearMarks)が確定後に
-//   KCMRefreshNavPosition で一括更新する。
+// Forget where the walk stands (KCMChangeNav.h). The next Next or Prev starts from the front or
+// the back of the list.
+// THE READOUT IS NOT UPDATED HERE, only the anchor dropped: this is also called part-way through
+// a Start, when the comparison is being swapped wholesale, so the readout is brought up to date
+// by the caller with one KCMRefreshNavPosition once everything has settled.
 void KCMResetNav()
 {
 	sNavPageUID = kInvalidUID; sNavIsOverset = kFalse; sNavOversetOrd = 0;
-	// ★Story 側も同じ理由で捨てる(2026-08-24)＝一覧は比較のたびに丸ごと作り直されるので、前の比較の
-	//   ストーリーも編集の番号も意味を持たない。⚠ここを足し忘れると、別の文書対で再 Start したときに
-	//   **偶然 UID が一致した行から巡回が始まる**(ページ UID について上の説明が言っているのと同じ形)。
+	// The Story side goes for the same reason: the list is rebuilt wholesale by every comparison,
+	// so neither the story nor the number of the edit from the previous one means anything.
+	// @warning forgetting this line would let a walk over a different pair of documents START FROM
+	//   A ROW WHOSE UID HAPPENS TO MATCH -- the same shape of defect the note above describes for
+	//   page UIDs.
 	sNavIsStory = kFalse; sNavStoryUID = kInvalidUID; sNavStoryRow = -1; sNavStoryChange = -1;
 	sNavStoryAtEntry = kFalse;
 }
 
-// KCMChangeNav.h 参照。今のストップ列(変更+overset 箇所)＋基準ストップから Prev/Next 間の位置表示を
-// 作り直し、Prev/Next ボタンの有効/無効もあわせて更新する(値組み立てとボタン状態を1箇所に集約=KESCL の
-// UpdateNavWidgets と同じ発想)。表示規則: 未Start&overset無し→空 / 対象0件→"/" / N件→"k/N"。
+// See KCMChangeNav.h. Rebuild the position readout between Prev and Next out of the current list
+// of stops and where the walk stands, and update whether the Prev and Next buttons are enabled
+// (the value and the button states are assembled in one place, as in KESCL's UpdateNavWidgets).
+// What is shown: nothing to walk -> empty / no stops -> "/" / N stops -> "k/N".
 void KCMRefreshNavPosition()
 {
 	PMString text; text.SetTranslatable(kFalse);
 	bool16 navEnabled = kFalse;
 
-	IDataBase* navDB = KCMNavDoc();	// 比較 Start 中 or Find Overset ON のとき非nil
+	IDataBase* navDB = KCMNavDoc();	// non-nil while a comparison is running or Find Overset is on
 	if (navDB != nil)
 	{
 		std::vector<KCMNavStop> stops;
 		KCMBuildStops(stops);
 		if (stops.empty())
 		{
-			text.Append("/");	// 対象0件: 巡回対象なし → "/"・ボタン無効(ユーザー指定 2026-07-15)
+			text.Append("/");	// no stops at all: "/" and the buttons go dead (the user's choice)
 		}
 		else
 		{
-			// 基準ストップの現在位置(1始まり)。まだ巡回していない(列内に無い)ときは先頭扱いで "1/N"。
+				// Where the anchor stands, counting from 1. Nothing walked yet -- it is not in the
+				// list -- counts as the front, giving "1/N".
 			const int32 cur = KCMFindCurrentStop(stops);
 			const int32 shown = (cur < 0) ? 1 : (cur + 1);
 			text.AppendNumber(shown);
 			text.Append("/");
 			text.AppendNumber((int32)stops.size());
-			navEnabled = kTrue;	// 巡回対象あり → Prev/Next 有効
+			navEnabled = kTrue;	// there is something to walk, so Prev and Next are live
 		}
 	}
-	// 未 Start かつ overset 無し(navDB==nil): text は空・navEnabled=false(位置欄クリア・ボタン無効)
+	// Nothing to walk (navDB == nil): the text stays empty and navEnabled false, which clears
 
+	// the readout and disables the buttons.
 	KCMSetNavPosition(text, navEnabled);
 }
 
-// KCMChangeNav.cpp 終わり。
+// End of KCMChangeNav.cpp
