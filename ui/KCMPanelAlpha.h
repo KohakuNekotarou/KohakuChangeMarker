@@ -2,22 +2,24 @@
 //
 //  KCMPanelAlpha.h
 //
-//  パネルのフライアウト「Translucent Panel」/「Translucent Pages Panel」トグルの実体。
+//  The flyout toggles "Translucent Panel" / "Translucent Pages Panel", and what they do.
 //
-//  ★Windows 専用。Win32 の SetLayeredWindowAttributes でパネルの窓に alpha をかける
-//    (Mac では下の公開関数は残るが KCMApplyPanelTranslucency が何もしない)。
-//  ★効くのは「フローティング中」のときだけ。ドッキング中のパネルはメインフレームの子窓に
-//    なるため単独では透かせない(その場合は何もしない=フラグだけ立つ)。
+//  WINDOWS ONLY. The alpha is put on the panel's window with Win32's
+//    SetLayeredWindowAttributes. On the Mac the functions below still exist, but
+//    KCMApplyPanelTranslucency does nothing.
+//  IT ONLY WORKS WHILE THE PANEL IS FLOATING. A docked panel is a child window of the main frame
+//    and cannot be made translucent on its own; then nothing happens and only the flag is set.
 //
-//  ★★対象は**3つ**(⚠2026-08-17 訂正＝ここは長く「対象は2つ」のままだった。3つ目は 2026-08-13 に
-//    足してあり、**この同じファイルの下のほうにその説明が書いてある**＝新旧が同居していた):
-//     ①自分のパネル ②**本体のページパネル**(2026-08-06) ③**自分のブック比較ダイアログ**(2026-08-13)
-//     それぞれ独立したトグルを持つ。実装は KCMPanelAlpha.cpp 内で1本化されていて、
-//     ①②は WidgetID(数値)で狙い撃ちする ＝ 窓タイトル(UI 言語で変わる)に依存しない
-//     (③だけは窓の見つけ方が違う。下の専用ブロックを見よ)。
+//  THERE ARE THREE TARGETS, each with a toggle of its own:
+//     1. our own panel
+//     2. the application's Pages panel
+//     3. our own book comparison dialog
+//    The implementation is one shared path in KCMPanelAlpha.cpp. The first two are found by
+//    WidgetID -- a number, so it does not depend on the window title, which changes with the UI
+//    language. The third one is found differently; see its own block below.
 //
-//  技術的根拠(実測の全記録) = docs/ai-notes/win32-window-transparency.md
-//                             memory/win32-window-alpha-transparency.md
+//  The whole record of what was measured is in docs/ai-notes/win32-window-transparency.md and in
+//  the memory note win32-window-alpha-transparency.
 //
 //========================================================================================
 
@@ -26,95 +28,109 @@
 
 #include "BaseType.h"
 
-// トグルの現在状態(★既定 OFF)。
+// The toggle as it stands (off by default).
 bool16	KCMGetPanelTranslucent();
 
-// トグル状態を設定する。★フラグを更新するだけで窓には触らない
-// (起動時の設定復元ではパネルがまだ存在しないため、適用と分離してある)。
+// Set the toggle. THIS ONLY UPDATES THE FLAG and does not touch any window -- restoring the
+// saved settings at startup happens before the panel exists, which is why setting and applying
+// are separate.
 void	KCMSetPanelTranslucent(bool16 on);
 
-// 現在のフラグをパネルの窓へ反映する。
-//  - パネルが見つからない / ドッキング中 のときは何もしない(エラーにしない)
-//  - 呼ぶ場所は**3つ**(2026-08-17 訂正。⚠旧記述は KCMPanelObserver.cpp を挙げていたが、あちらが
-//    呼ぶのは KCMApplyAllPanelTranslucency のほうで、この関数ではない。逆に**同じファイルの
-//    IMouseRollOver の2つ**を数えていなかった):
-//      ①メニュー押下時 = KCMActionComponent.cpp の kKCMPopupTranslucentPanelActionID
-//      ②③カーソルの出入り = KCMPanelAlpha.cpp の KCMPanelRollOver::MouseEnter / MouseLeave
-//         (どちらもトグル OFF なら呼ばずに返る)
-//  - 返り値: 実際に窓へ alpha を設定できたら kTrue。パネルが無い/ドッキング中/Mac なら kFalse
-//    (メニュー押下時のステータス文言を「効いた」「ドッキング中なので効かない」で分けるために使う)
+// Put the current flag onto the panel's window.
+//  - does nothing (and is not an error) when the panel cannot be found or is docked
+//  - the callers are:
+//      the menu being pressed = kKCMPopupTranslucentPanelActionID in KCMActionComponent.cpp
+//      the pointer arriving and leaving = KCMPanelRollOver::MouseEnter / MouseLeave in
+//        KCMPanelAlpha.cpp (both of which return without calling when the toggle is off)
+//  - returns kTrue when the alpha really reached a window; kFalse when there is no panel, it is
+//    docked, or this is the Mac. (The menu uses that to word its status line as either "it took
+//    effect" or "it is docked, so it does nothing".)
 bool16	KCMApplyPanelTranslucency();
 
 //----------------------------------------------------------------------------------------
-// 本体のページパネル用(2026-08-06 追加)。上の3つと同じ意味・同じ実装で、対象だけが違う。
-//  ★あちらは自分のパネルではないので IMouseRollOver を付けられない。ホバーで不透明に戻す判定は
-//    Win32 フック(OBJID_CURSOR)側だけで成立している。
+// For the application's Pages panel. Same meaning and same implementation as the three above;
+// only the target differs.
+//  IT IS NOT OUR PANEL, so no IMouseRollOver can be put on it. Going opaque under the pointer
+//    rests entirely on the Win32 hook (OBJID_CURSOR) for this one.
 //----------------------------------------------------------------------------------------
 bool16	KCMGetPagesPanelTranslucent();
 void	KCMSetPagesPanelTranslucent(bool16 on);
 bool16	KCMApplyPagesPanelTranslucency();
 
 //----------------------------------------------------------------------------------------
-// ブック比較ダイアログ用(2026-08-13 追加。ユーザー要望「ダイアログも半透明に出来る様に」)。
+// For the book comparison dialog (added at the user's request that the dialog be translucent
+// too).
 //
-//  ★★上の2つと違うのは**窓の見つけ方だけ**。あちらは WidgetID で本体のパネルマネージャに聞けるが、
-//    ダイアログはパネルではないので同じ道が無い ---- 代わりに**ダイアログ側が窓を教える**
-//    (KCMBookDialog.cpp が窓を用意した直後に KCMSetBookDialogWindow を呼ぶ)。
-//  ★もう1つの違い: ダイアログは**それ自身がトップレベル窓**なので、パネルのような
-//    「今どのドックに載っているか」の解決が要らない ＝ ドッキング中は効かない、という制限も無い。
-//  ⚠**窓は開いている間しか無い**。トグルだけ ON にして閉じている間は何も起きず、次に開いたときに
-//    効く(適用は KCMBookDialog.cpp が開くたびに呼ぶ)。
-//  ★2026-08-17(監査 B-U9)＝その「開くたびの無条件 Apply」は**正しい**(⚠理由は「kCacheDialog が
-//    前回の alpha ごと窓を返すから」ではない——**窓は開くたびに新品で必ず不透明から始まる**ので、
-//    ON なら 77 を毎回書き直すしかない。実測＝3回開いて HWND は3つとも別)。
-//    その上で**一度も透かしていない窓には触らない**ようにした＝未 layered かつ狙いが 255 なら何もしない。
+//  ONLY THE WAY THE WINDOW IS FOUND DIFFERS from the two above. Those ask the application's panel
+//    manager by WidgetID; a dialog is not a panel, so there is no such route -- instead THE DIALOG
+//    HANDS ITS WINDOW OVER (KCMBookDialog.cpp calls KCMSetBookDialogWindow as soon as it has one).
+//  The other difference: a dialog IS ITSELF A TOP-LEVEL WINDOW, so none of the panel's "which dock
+//    is it in right now" resolution is needed -- and neither is the restriction that it does
+//    nothing while docked.
+//  @warning THE WINDOW ONLY EXISTS WHILE THE DIALOG IS OPEN. Turning the toggle on while it is
+//    closed does nothing at the time; it takes effect the next time the dialog opens (which
+//    applies it, every time it opens).
+//  That unconditional apply on every open IS correct -- not because a cached dialog would hand
+//    back the window with its old alpha, but because THE WINDOW IS NEW EVERY TIME AND ALWAYS
+//    STARTS OPAQUE (measured: three opens gave three different HWNDs), so when the toggle is on
+//    the alpha has to be written again each time.
+//  On top of that, A WINDOW THAT HAS NEVER BEEN MADE TRANSLUCENT IS LEFT ALONE: when it is not
+//    layered and the wanted alpha is 255, nothing is done.
 //----------------------------------------------------------------------------------------
 bool16	KCMGetBookDialogTranslucent();
 void	KCMSetBookDialogTranslucent(bool16 on);
 bool16	KCMApplyBookDialogTranslucency();
 
-// ブック比較ダイアログの窓を教える。★呼び手は**1つだけ**＝KCMBookDialog.cpp が**開くたび**に呼ぶ。
-//  ⚠2026-08-19(B-U9)訂正＝旧記述は「(閉じるときは nil)」と書いていたが、**そう呼ぶ呼び手は一度も
-//    存在しない**。閉じるときに何も要らないのは、窓が死ぬからではなく(ハンドルの値は別の窓へ配り
-//    直される)、**登録時にこの窓の題名も控えて以後の使用を毎回それと突き合わせる**から＝使い回された
-//    ハンドルは書く前に捨てられる。呼ぶ側にも同じことが書いてある(KCMBookDialog.cpp の
-//    「there is no matching "forget" call to write」)。nil を渡すこと自体は今も安全。
-// ★HWND をこのヘッダーに出さないために void* で受ける ---- KCMPanelAlpha.h は BaseType.h しか
-//   include しておらず、windows.h を持ち込むと他の .cpp 全部に波及する。実体側でキャストする。
+// Hand the book comparison dialog's window over. The only caller is KCMBookDialog.cpp, on every
+// open.
+//  There is no "forget" call, and none is needed. It is not that the window dies (the handle value
+//  gets handed out to other windows), but that THE WINDOW'S TITLE IS RECORDED ALONGSIDE IT and
+//  checked against every later use -- a recycled handle is dropped before anything is written to
+//  it. The calling side says the same thing ("there is no matching 'forget' call to write" in
+//  KCMBookDialog.cpp). Passing nil is still safe.
+// The HWND is taken as a void* to keep it out of this header: KCMPanelAlpha.h includes nothing but
+// BaseType.h, and pulling windows.h in here would reach every other .cpp. The cast is done in the
+// implementation.
 void	KCMSetBookDialogWindow(void* sysWindow);
 
-// (ツールボックス用の3つは 2026-08-07 に追加し、同日ユーザー判断で撤去した。対象を1つ足すだけで
-//  動いたが、本体 UI の見た目を変える機能なので KCM には載せない、という判断。実測値の記録は
-//  memory/translucent-toolbox-idea.md に残してある。)
+// (A fourth target, the toolbox, was added and then taken out again the same day, at the user's
+//  decision: adding one target was all it took to make it work, but it changes the look of the
+//  application's own UI, and that does not belong in KCM. The measurements are kept in the memory
+//  note translucent-toolbox-idea.)
 
-// 全対象へ貼り直す。★パネルの表示状態が変わったとき等、「どれが対象か」を呼び出し側が
-//   知らなくてよい場面で使う(対象が増えても呼び出し側を直さずに済む)。
+// Re-apply to every target. For places -- the panel's visibility changing, and the like -- where
+// the caller should not have to know which targets there are (adding one then costs the callers
+// nothing).
 void	KCMApplyAllPanelTranslucency();
 
-// パネルの表示状態変化(開く/閉じる/ドッキング⇄フローティング)の購読を始める。
-// ★呼ぶ場所は**2か所**で、何度呼んでも安全: KCMUIStartup::Startup と パネルの AutoAttach
-//   (KCMPanelObserver.cpp)。★2つめは念のためではない ---- パネルマネージャは本体の起動シーケンスの
-//   途中で立ち上がるので Startup の時点では nil のことがあり、その購読は AutoAttach の回で拾う。
-//   どの購読も IsAttached を先に聞くので、重ねて呼んでも二重には付かない。
-// ★仕組み: kPanelManagerBoss の IID_IPANELMGR subject に飛ぶ kPaletteVisibilityChangedMessage を
-//   受ける(2026-07-29 に Debug 版の Spy で実測して特定。ドッキング切り替えのたびに飛ぶ)。
-//   もう1つ kAppBoss / IID_IAPPLICATION も購読する(関数本体のコメント参照)。
+// Start listening for the panel's visibility changing: opened, closed, docked, undocked.
+// There are two callers and it is safe to call any number of times: KCMUIStartup::Startup, and the
+// panel's AutoAttach (KCMPanelObserver.cpp). THE SECOND ONE IS NOT BELT-AND-BRACES -- the panel
+// manager comes up part-way through the application's own startup sequence, so at Startup it can
+// still be nil, and that subscription is picked up on the AutoAttach pass instead. Every
+// subscription asks IsAttached first, so calling twice does not attach twice.
+// How it works: the kPaletteVisibilityChangedMessage that goes to the IID_IPANELMGR subject of
+// kPanelManagerBoss (identified with the Debug build's Spy; it goes out on every docking change).
+// A second subject, kAppBoss / IID_IAPPLICATION, is subscribed to as well -- see the comment on
+// the function itself.
 void	KCMAttachPanelVisibilityObserver();
 
-// 上が張った購読を全部外す。プラグイン終了時(KCMUIStartup::Shutdown)から、**KCMShutdownPanelAlpha
-// より前に**呼ぶ ＝ 通知を止めてからタイマーとフックを畳む。
-// ★なぜ要るか(2026-08-12): 購読している間、セッションが持っているのはこの .pln の中へのポインタで、
-//   終了処理中のパネル破棄は実際に通知を飛ばす ---- 消えかけのコードで Update が走ることになる。
-//   KBS が 2026-08-08 に同じ理由で新設した対で、こちらには来ていなかった分。
+// Undo every subscription the above made. Called at plug-in shutdown (KCMUIStartup::Shutdown),
+// BEFORE KCMShutdownPanelAlpha: stop the notifications first, then fold up the timer and the hook.
+// WHY IT IS NEEDED: while the subscription stands, what the session holds is a pointer INTO THIS
+// .pln, and destroying a panel during shutdown really does send the notification -- so Update
+// would run in code that is on its way out. KBS added the same pair for the same reason; this is
+// that fix, coming the other way.
 void	KCMDetachPanelVisibilityObserver();
 
-// (KCMResetPanelHover は 2026-07-29 に撤去。「カーソルが乗っているか」は旗で持たず
-//  KCMApplyPanelTranslucency のたびに Win32 で実測する方式へ変更したので、落とすべき状態が
-//  そもそも存在しない＝張り付きが構造的に起きない。)
+// (There is deliberately no "forget the hover state" call. Whether the pointer is over the panel
+//  is not held in a flag: it is measured through Win32 every time KCMApplyPanelTranslucency runs,
+//  so there is no state that can be left behind, and the flag cannot get stuck on.)
 
-// 遅延再適用に使う one-shot タイマーの後始末。プラグイン終了時(KCMUIStartup::Shutdown)から
-// 呼ぶ。★ICallbackTimer のコールバックは参照カウントされない生関数ポインタなので、予約を残した
-// まま .pln が降りるとクラッシュする。実体は KCMPanelAlpha.cpp(Mac では空実装)。
+// Tidy up the one-shot timer used for the delayed re-apply. Called at plug-in shutdown
+// (KCMUIStartup::Shutdown). ICallbackTimer's callback is a raw function pointer that is NOT
+// reference-counted, so leaving a booking outstanding while this .pln goes down is a crash.
+// Defined in KCMPanelAlpha.cpp (empty on the Mac).
 void	KCMShutdownPanelAlpha();
 
 #endif // __KCMPanelAlpha_h__

@@ -2,111 +2,118 @@
 //
 //  KCMPanelAlpha.cpp
 //
-//  パネル半透明トグルの実装。★Win32 依存はこのファイルに閉じ込める。
+//  The panel translucency toggles. EVERY WIN32 DEPENDENCY IS CONFINED TO THIS FILE.
 //
-//  ★手順(2026-07-29 の実測に基づく。変更するときは必ず docs/ai-notes/win32-window-transparency.md を読むこと):
-//    1. パネルの WidgetID から OWL.Palette の窓を得る ——
-//       IPanelMgr::GetPanelFromWidgetID → GetPaletteRefContainingPanel → PaletteRef::GetOWLControl
-//       ★2026-08-06 にここを入れ替えた。旧実装は「cls=="OWL.Palette" かつ title==パネル表示名」で
-//         EnumWindows していたが、**窓タイトルは UI 言語で変わる**(本体のページパネルは
-//         英語UI="Pages" / 日本語UI="ページ")ので、本体パネルには通用しなかった。WidgetID は数値。
-//    2. GetAncestor(GA_ROOT) で「今の」トップレベル窓を得る
-//    3. それが "indesign"(メインフレーム)ならドック内で展開中 → 何もしない
-//    4. "OWL.Dock"(フローティング) / "OWL.FrameDrawer"(アイコンをクリックしたドロワー展開) なら
-//       SetLayeredWindowAttributes で alpha を設定
+//  HOW IT WORKS (established by measurement; read docs/ai-notes/win32-window-transparency.md
+//  before changing any of it):
+//    1. get the OWL.Palette window from the panel's WidgetID --
+//       IPanelMgr::GetPanelFromWidgetID -> GetPaletteRefContainingPanel -> PaletteRef::GetOWLControl
+//       An earlier version instead ran EnumWindows looking for cls == "OWL.Palette" and
+//       title == the panel's display name, and THAT DOES NOT WORK FOR THE APPLICATION'S OWN
+//       PANELS -- the window title changes with the UI language (the Pages panel is "Pages" in an
+//       English UI). A WidgetID is a number.
+//    2. GetAncestor(GA_ROOT) gives the top-level window it is in RIGHT NOW
+//    3. if that is "indesign" (the main frame) it is expanded inside a dock -- do nothing
+//    4. if it is "OWL.Dock" (floating) or "OWL.FrameDrawer" (the drawer that opens when its icon
+//       is clicked), set the alpha with SetLayeredWindowAttributes
 //
-//  ★OWL.Dock の HWND は「ドッキング → フローティングに戻す」で変わる(古い窓は破棄され、新しく
-//    作られる)。⚠パネルを**閉じて開き直す**のは別で、**同じ Dock が alpha ごと生き残る**
-//    (2026-08-04 に KBS 側で Release 21.0.2.2 を一段ずつ外部から測って確定。ここに長く書いてあった
-//     「閉じて開き直すと変わる」は誤りだった)。OWL.Palette の HWND はどちらでも不変。
-//    だから Dock の HWND は保持せず毎回探し直す。
-//  ★Dock は 1 つのパネルに属する(起動時から 55〜56 組が非可視で待機し、それぞれ自分のパネル名を
-//    名乗っている)ので、あるパネルの alpha が別のパネルへ渡ることはない。
-//  ★OWL.Dock は InDesign 自身が WS_EX_LAYERED を立てている(EXSTYLE=0x08080000)。
-//    スタイルの追加も除去も不要。★除去すると本体の描画が壊れる(復元は alpha=255 のみ)。
-//  ★子窓(OWL.Palette)に直接 WS_EX_LAYERED を立てるな。半透明にならず色が壊れる(実測)。
+//  THE OWL.Dock HWND CHANGES when a panel is docked and then floated again (the old window is
+//    destroyed and a new one built). CLOSING AND REOPENING A PANEL IS DIFFERENT: the same Dock
+//    survives, alpha and all (measured from outside on Release 21.0.2.2, one step at a time; an
+//    earlier note here claiming it changed was wrong). The OWL.Palette HWND survives both.
+//    So the Dock's HWND is never cached -- it is looked up every time.
+//  A Dock belongs to ONE panel (55-56 pairs sit invisible from startup, each naming its own
+//    panel), so one panel's alpha can never reach another's.
+//  InDesign ITSELF sets WS_EX_LAYERED on OWL.Dock (EXSTYLE=0x08080000). The style needs neither
+//    adding nor removing -- AND REMOVING IT BREAKS THE APPLICATION'S OWN DRAWING (restoring means
+//    alpha=255 and nothing else).
+//  DO NOT PUT WS_EX_LAYERED ON THE CHILD WINDOW (OWL.Palette): it does not go translucent and the
+//    colours break (measured).
 //
 //========================================================================================
 
 #include "VCPlugInHeaders.h"
 
-// プロジェクト内:
+// This plug-in:
 #include "KCMPanelAlpha.h"
-#include "KCMConstants.h"		// kKCMPanelAlphaValue / kKCMPanelAlphaReapplyTries / …DelayMillis
-#include "KCMUIID.h"			// kKCMPanelWidgetID(狙い撃ちする WidgetID)/独自 IID・ImplID
-								// ⚠2026-08-17 訂正: 旧コメントは kKCMDisplayName(=窓 title で引く
-								//   パネル名)と書いていたが、**窓タイトル照合は 2026-08-06 に捨てた**
-								//   ので、このファイルはその定数をもう使っていない
+#include "KCMConstants.h"		// kKCMPanelAlphaValue / kKCMPanelAlphaReapplyTries / ...DelayMillis
+#include "KCMUIID.h"			// kKCMPanelWidgetID (the WidgetID this aims at) and our own IIDs
+									// and ImplIDs
 
-// パネルの表示状態変化を購読するオブザーバ用:
+// For the observer that subscribes to the panel's visibility changing:
 #include "CObserver.h"
 #include "ISubject.h"			// AttachObserver / IsAttached
-#include "ISession.h"			// GetExecutionContextSession(終了処理中は nil になり得る)
+#include "ISession.h"			// GetExecutionContextSession (can be nil during teardown)
 #include "IApplication.h"		// QueryPanelManager
-#include "IActiveContext.h"		// オブザーバ実体の同居先(kActiveContextBoss)
-#include "IPanelMgr.h"			// IID_IPANELMGR(購読する subject)
-#include "AppUIID.h"			// ★kPaletteVisibilityChangedMessage(公開ヘッダー。AppUIID.h:325)
-#include "ShuksanID.h"			// kApplicationSuspendMsg(ShuksanID.h:1151。別アプリへ切り替わった通知)
+#include "IActiveContext.h"		// kActiveContextBoss, where the observer implementation lives
+#include "IPanelMgr.h"			// IID_IPANELMGR (the subject subscribed to)
+#include "AppUIID.h"			// kPaletteVisibilityChangedMessage (a public header)
+#include "ShuksanID.h"			// kApplicationSuspendMsg (another application became frontmost)
 
-// 通知の「あと」に窓が作り直されるので、一巡させてから貼り直すための one-shot タイマー:
-#include "ICallbackTimer.h"		// StartTimer/StopTimer(IIdleTask 派生。kEndOfTime もここ経由)
+// The window is rebuilt AFTER the notification, so a one-shot timer is used to let the events go
+// round once and then apply again:
+#include "ICallbackTimer.h"		// StartTimer / StopTimer (derived from IIdleTask, which is where kEndOfTime comes from)
 #include "CreateObject.h"		// ::CreateObject2<ICallbackTimer>(kCallbackTimerBoss, IID_ICALLBACKTIMER)
 
-// カーソルが乗っている間だけ不透明に戻すため:
-#include "CPMUnknown.h"			// 実装の基底
-#include "IMouseRollOver.h"		// MouseEnter/MouseOver/MouseLeave(ui/IMouseRollOver.h)
+// For going opaque again while the pointer is over the panel:
+#include "CPMUnknown.h"			// the implementation base class
+#include "IMouseRollOver.h"		// MouseEnter / MouseOver / MouseLeave
 
-// ★★★パネルの窓(HWND)を SDK 側から得るための一式(2026-08-06 に確立)。
-//   PaletteRef は内部に HWND を持っている: PaletteRef.h:47 で OWLControlRef は HWND そのもの、
-//   :188 の GetOWLControl() がそれを返す。IPanelMgr::GetPanelFromWidgetID(数値の WidgetID)から
-//   GetPaletteRefContainingPanel() で PaletteRef を得れば、そこに窓がある。
-//   ⇒ **窓タイトル照合(翻訳される)も EnumWindows(全窓走査)も要らない。**
-//   ⚠ここは 2026-08-06 のブロック13監査で「パネルの HWND を SDK から得る道は無い(4ルート全滅)」と
-//     結論した箇所の訂正。5つ目のルートがこれで、実機で全パネル到達を確認済み。
-#include "IControlView.h"		// GetPanelFromWidgetID が返すパネル
-#include "PaletteRef.h"			// PaletteRef::GetOWLControl(=HWND)
-#include "PagesPanelID.h"		// kPagesPanelWidgetID(:391) - 本体ページパネルの狙い撃ち先
-								// ⚠"PaletteRefUtils.h" はここに長く include されていたが
-								//   (コメントは「GetParentOfPalette(階層を上がる)」)、このファイルは
-								//   一度も呼んでいなかった。2026-08-17(B-U9)に実測してから外した
-								//   ＝理由は下の KCMQueryTranslucentTarget を見よ
+// EVERYTHING NEEDED TO GET A PANEL'S WINDOW (HWND) FROM THE SDK SIDE.
+//   PaletteRef holds an HWND inside it: PaletteRef.h defines OWLControlRef as HWND, and
+//   GetOWLControl() returns it. Going from IPanelMgr::GetPanelFromWidgetID (a numeric WidgetID) to
+//   GetPaletteRefContainingPanel() gives the PaletteRef, and the window is in there.
+//   => NEITHER TITLE MATCHING (which is translated) NOR EnumWindows (which walks every window) IS
+//      NEEDED. An earlier audit concluded there was no route from the SDK to a panel's HWND (four
+//      candidates all failed); this is the fifth, and every panel was reached with it on a live
+//      build.
+#include "IControlView.h"		// the panel GetPanelFromWidgetID returns
+#include "PaletteRef.h"			// PaletteRef::GetOWLControl (= the HWND)
+#include "PagesPanelID.h"		// kPagesPanelWidgetID -- what the Pages panel is aimed at.
+									// (PaletteRefUtils.h was included here for a long time, with a
+									//  comment about walking up the hierarchy, and this file never
+									//  called any of it. It was measured and then removed -- the
+									//  reason is on KCMQueryTranslucentTarget below.)
 
-// ★windows.h は SDK ヘッダーより後に置くこと(マクロが SDK 側の名前とぶつからないように)。
+// windows.h goes AFTER the SDK headers, so that its macros do not collide with SDK names.
 #ifdef WINDOWS
 #include <windows.h>
 #endif
 
 //----------------------------------------------------------------------------------------
-// 半透明にできる対象パネル(2026-08-06 に2つへ拡張)。
+// The targets that can be made translucent.
 //
-//  ★1つ目 = 自分のパネル。2つ目 = **本体のページパネル**(ユーザー要望)。
-//  ★対象を WidgetID(数値)で持てるようになったのが 08-06 の肝 —— 窓タイトルは UI 言語で変わるので
-//    本体のパネルには使えなかった(英語UI="Pages" / 日本語UI="ページ")。
-//  ★増やすときは enum に1つ足し、kKCMAlphaWidgetIDs に WidgetID を1つ足すだけでよい。
-//    ただしトグル(メニュー項目・永続化キー)は対象ごとに要る。
-//  (2026-08-07 に3つ目＝**ツールボックス**を足したが、同日ユーザー判断で撤去した。1つ足すだけで
-//   動いた＝この作りが対象を選ばないことの実証にはなっている。実測した窓構造と狙い撃ち先の記録は
-//   memory/translucent-toolbox-idea.md に残してあるので、再挑戦するならそこから。)
-//----------------------------------------------------------------------------------------
-//  ★★3つ目 = **ブック比較ダイアログ**(2026-08-13 ユーザー要望)。ここで初めて「パネルではないもの」が
-//    対象に入った。**この作りが吸収できなかったのは1点だけ＝窓の見つけ方**で、それは
-//    KCMQueryPaletteWindow と KCMQueryTranslucentTarget の2か所を which で分岐して収めてある。
-//    alpha の書き込み・カーソルで不透明に戻す判定・遅延再適用・Win32 フックへの追随は、
-//    パネルと1行も変わらずそのまま効く。
+//  1 = our own panel. 2 = THE APPLICATION'S PAGES PANEL (at the user's request).
+//  Holding a target as a WidgetID -- a number -- is what makes the second one possible: window
+//    titles change with the UI language, so they cannot be used for the application's own panels
+//    ("Pages" in an English UI).
+//  TO ADD ONE, add an enumerator here and its WidgetID to kKCMAlphaWidgetIDs. A toggle (a menu
+//    item and a key for persistence) is needed per target either way.
+//  (A toolbox target was added and taken out again the same day, at the user's decision. That it
+//   worked with only those additions does show this shape does not care what the target is. The
+//   window structure and where to aim were measured and kept in the memory note
+//   translucent-toolbox-idea, if it is ever tried again.)
+//
+//  3 = THE BOOK COMPARISON DIALOG (at the user's request), the first target that is not a panel.
+//    THE ONLY THING THIS SHAPE COULD NOT ABSORB WAS HOW TO FIND THE WINDOW, and that is confined
+//    to a `which` branch in each of KCMQueryPaletteWindow and KCMQueryTranslucentTarget. Writing
+//    the alpha, deciding to go opaque under the pointer, the delayed re-apply and following the
+//    Win32 hook all work on it unchanged, line for line.
 enum
 {
-	kKCMAlphaSelf       = 0,	// 自分のパネル(Kohaku Change Marker)
-	kKCMAlphaPages      = 1,	// 本体のページパネル
-	kKCMAlphaBookDialog = 2,	// ★自分のブック比較ダイアログ(パネルではない=窓の出所が違う)
+	kKCMAlphaSelf       = 0,	// our own panel (Kohaku Change Marker)
+	kKCMAlphaPages      = 1,	// the application's Pages panel
+	kKCMAlphaBookDialog = 2,	// our own book comparison dialog (not a panel: the window comes from elsewhere)
 	kKCMAlphaCount      = 3
 };
 
-// トグル状態(セッション内で保持。永続化は KCMPanelState.cpp が担当)。★既定 OFF
-// ※Mac でも状態だけは持つ(適用側が何もしないだけ)。
+// The toggles, held for the session; persisting them is KCMPanelState.cpp's job. Off by default.
+// The state is kept on the Mac too -- it is only the applying that does nothing there.
 static bool16 sTranslucentOn[kKCMAlphaCount] = { kFalse, kFalse, kFalse };
 
-// どれか1つでも ON か。★Win32 フックを張る/外す判断と、遅延再適用を続ける/やめる判断で共有する
-//   (同じことを2か所で数えると必ずずれる)。
+// Is any of them on? Shared by the decision to install or remove the Win32 hook and by the
+// decision to carry on or stop the delayed re-apply -- counting the same thing in two places is
+// how the two come to disagree.
 static bool16 KCMAnyTranslucentOn()
 {
 	for (int32 i = 0; i < kKCMAlphaCount; ++i)
@@ -119,57 +126,57 @@ static bool16 KCMAnyTranslucentOn()
 
 #ifdef WINDOWS
 
-// カーソルが対象窓(パネルが今載っているトップレベル窓)の上にあるか。
+// Is the pointer over the target window -- the top-level window the panel is in right now?
 //
-// ★★旗を持たず毎回実測する(2026-07-29 に変更)。以前は IMouseRollOver が上下させる static な旗
-//   だったが、次の 2 つの弱点があった。実測ならどちらも構造的に起きない:
-//     (a)MouseLeave は「カーソルを乗せたままパネルを閉じる/ドッキングする/別アプリへ切り替える」
-//        経路では飛ばない。取りこぼすと「乗っている」が張り付き、トグルが ON でも一切薄くならない。
-//     (b)IMouseRollOver が見るのは**パネル本体の widget だけ**なので、タブ帯("Kohaku Change Marker"
-//        と出ている帯)やタイトル帯(<< / x の帯)にカーソルを乗せても反応しない(ユーザー要望の発端)。
+// THIS IS MEASURED EVERY TIME RATHER THAN HELD IN A FLAG. It used to be a static flag raised and
+//   lowered by IMouseRollOver, which had two weaknesses; measuring makes both structurally
+//   impossible:
+//     (a) MouseLeave does NOT arrive when the panel is closed, docked, or another application is
+//         switched to WITH THE POINTER STILL ON IT. Miss one and "the pointer is on it" sticks,
+//         so the toggle can be on and nothing ever goes translucent.
+//     (b) IMouseRollOver only sees THE PANEL'S OWN WIDGETS, so it does not react on the tab strip
+//         (the one reading "Kohaku Change Marker") or the title strip (the << and x strip) -- which
+//         is what prompted the user's request in the first place.
 //
-// ★対象窓はタブ帯もタイトル帯もパネル本体も含む 1 つの窓なので、この判定だけで「パネルのどこかに
-//   乗っている」が丸ごと取れる。★★タブ帯を SDK 側で取る道が無いことは実機で確定済み(2026-07-29):
-//   パネル widget の親は kOWLHostedPanelWrapperBoss(0x1645a) の 1 段で尽き(QueryParent()==nil)、
-//   しかもその bbox はパネル本体と同一だった ＝ クロムは widget ツリーの外(OWL 側)。
+// The target window contains the tab strip, the title strip and the panel body alike, so this one
+//   test covers "the pointer is somewhere on the panel" entirely. THAT THE TAB STRIP CANNOT BE
+//   REACHED FROM THE SDK SIDE was settled on a live build: the panel widget's parent chain ends
+//   after ONE step at kOWLHostedPanelWrapperBoss (QueryParent() == nil), and its bbox was
+//   identical to the panel body's -- the chrome is outside the widget tree, on the OWL side.
 //
-// ★矩形(GetWindowRect+PtInRect)だけで判定してはいけない。他の窓が上に重なっていても「乗っている」に
-//   なってしまう。矩形は安い足切りに使い、確定は WindowFromPoint → GA_ROOT の一致で行う。
+// DO NOT DECIDE ON THE RECTANGLE ALONE (GetWindowRect + PtInRect): another window on top of it
+//   would still count as "on it". The rectangle is the cheap rejection; the answer comes from
+//   WindowFromPoint plus a GA_ROOT match.
 //
-// ★★★2026-08-07(夜): **KBS と同じ判定に戻した**(ユーザー指示「KBS のようにしてほしい」)。
-//   ＝「カーソルがパネルの**矩形の中**にあり、その下にあるのが InDesign 自身の窓なら乗っている」。
-//   メニューが出ていても、カーソルがパネルの上にある限り不透明のまま。
-//   ★この関数は対象共通(呼び出し側がその対象の窓を target に渡すだけ)なので、**自分のパネルと
-//     本体のページパネルの両方**に同じ挙動が効く。
+// THE TEST IS THE ONE KBS USES (at the user's instruction): the pointer is on the panel when it is
+//   INSIDE THE PANEL'S RECTANGLE and what is under it belongs to InDesign itself. With a menu
+//   open, it stays opaque as long as the pointer is over the panel.
+//   This function is shared by every target (the caller just passes that target's window), so our
+//   own panel and the application's Pages panel behave identically.
 //
-//   経緯 —— ここは5回変わっている:
-//     2026-07-29  メニューが重なると薄くなるのを「仕様」として許容
-//     2026-08-05  KBS でユーザー報告(「行を右クリックすると不透明のパネルがまた薄くなる」)→
-//                 「カーソル下が自プロセスの窓なら乗っている」を追加して修正
-//     2026-08-06  KCM へ移植。さらに「矩形の外へはみ出したメニュー」も拾うため、
-//                 自プロセス窓 ∧ 容れ物クラスでない ∧ **パネル矩形と交差**、という補助判定を追加
-//     2026-08-07  揺れるので全部撤去(＝メニューが出ている間は薄いまま に統一)
-//     2026-08-07  **自プロセス判定だけを戻す**(このコード)。撤去すべきだったのは交差判定の方だった。
+//   THIS PLACE HAS CHANGED FIVE TIMES, and what settled it was:
+//     the wobble was caused by AN INTERSECTION TEST, not by the "belongs to this process" test.
+//     The user's report -- open the panel menu, pick the frame opacity item, and while walking its
+//     submenu the opaque panel goes translucent -- happened like this:
+//       the flyout itself overlaps the panel  -> intersects     -> opaque
+//       its submenu opens off to the right    -> does not       -> translucent
+//     It was deciding on THE MENU WINDOW'S POSITION, so it had to wobble with which way the menu
+//     opened and how long it was (both of which vary with the position on screen).
 //
-//   ★★揺れの真犯人は 08-06 に足した**交差判定**であって、自プロセス判定ではなかった。ユーザー報告
-//   「パネルメニューを出す→枠の透明度を選ぶ→子供のメニューが出てそれを選んでいると、
-//     不透明が半透明になる」はこう起きていた:
-//     フライアウト本体はパネルに重なる → 交差する → 不透明
-//     その子メニューは右へ開く       → 交差しない → 半透明
-//   ＝**メニュー窓の位置**で判定していたから、開く向きと長さ(画面位置で変わる)で必ず揺れた。
+//   WHAT IS TESTED NOW IS THE POINTER'S POSITION AND NOTHING ELSE:
+//     1. outside the panel's rectangle -> not on it (wherever a menu may be is irrelevant)
+//     2. inside it, with a window of our own (InDesign's) underneath -> on it
+//   The rectangle does not move, so walking a menu and its submenu inside case 2 cannot change the
+//   answer. Nothing to wobble.
 //
-//   ★いま採る判定はそれとは別物で、見るのは**カーソルの位置**だけ:
-//     ①パネルの矩形の外 → 乗っていない(メニューがどこに出ていようと無関係)
-//     ②矩形の中で、カーソル下が自分(InDesign)の窓 → 乗っている
-//   矩形は動かないので、②の中でメニューの親子をどう行き来しても答えは変わらない ＝ 揺れない。
-//
-//   ⚠この判断で受け入れたもの:
-//     ・メニューがパネル矩形の**外**まで伸び、その外側の項目にカーソルを置いている間は薄くなる。
-//       判定の基準が「パネルの矩形」1つなので、薄くなる理由と見た目が一致する。
-//     ・InDesign の**別の窓**がパネルに重なっている場合、その上にカーソルがあっても「パネルに乗って
-//       いる」と数える。隠れているので画面上おかしく見えるものは無く、カーソルが矩形の外へ出れば
-//       次の一手で直る。KBS が 2026-08-05 から受け入れているのと同じ割り切り。
-static bool KCMClassIs(HWND h, const wchar_t* wanted);	// 実体は下(窓クラス名の完全一致)
+//   @warning WHAT THIS DELIBERATELY ACCEPTS:
+//     - while a menu extends OUTSIDE the panel's rectangle and the pointer is on one of those
+//       outer items, the panel goes translucent. The test has exactly one reference -- the panel's
+//       rectangle -- so what is seen matches why it happened.
+//     - when ANOTHER InDesign WINDOW overlaps the panel, a pointer over that window counts as
+//       being on the panel. It is hidden, so nothing looks wrong on screen, and moving the pointer
+//       out of the rectangle puts it right on the next move. KBS has accepted the same trade.
+static bool KCMClassIs(HWND h, const wchar_t* wanted);	// defined below (an exact match on the window class name)
 
 static bool KCMCursorOverWindow(HWND target)
 {
@@ -184,7 +191,7 @@ static bool KCMCursorOverWindow(HWND target)
 	if (!::GetWindowRect(target, &rc))
 		return false;
 	if (!::PtInRect(&rc, pt))
-		return false;		// 矩形の外 = 確実に乗っていない(マウス移動のほとんどはここで終わる)
+		return false;		// outside the rectangle: certainly not on it (where most pointer movement ends)
 
 	HWND under = ::WindowFromPoint(pt);
 	if (under == nullptr)
@@ -192,21 +199,23 @@ static bool KCMCursorOverWindow(HWND target)
 
 	const HWND root = ::GetAncestor(under, GA_ROOT);
 	if (root == target)
-		return true;		// パネル自身 = 普通の答え
+		return true;		// the panel itself: the ordinary answer
 
-	// ★自分(InDesign)の窓でもあるか。ならばそれはパネルが自分の上に出したもの(フライアウト・その子
-	//   メニュー・右クリックメニュー・ツールチップ)で、カーソルはパネルから離れていない。
-	//   ★**トップレベル窓**に対して聞くこと: メニューはパネルの子ではなく、アプリが所有する独立した
-	//     トップレベル窓として作られる。
+	// Does it belong to InDesign as well? Then it is something the panel put up over itself -- a
+	// flyout, its submenu, a context menu, a tooltip -- and the pointer has not left the panel.
+	// ASK THE TOP-LEVEL WINDOW: a menu is not a child of the panel, it is an independent top-level
+	// window owned by the application.
 	DWORD pid = 0;
 	::GetWindowThreadProcessId(root, &pid);
 	return (pid == ::GetCurrentProcessId());
 }
 
-// ★実効 alpha ＝ その対象のトグルが ON で、かつカーソルが乗っていないときだけ薄くする。
-//   ここ1箇所に集約しておくこと(適用側・フックの判定側の両方から使う)。
-//   ★OFF ならカーソル位置すら見ない(この機能は ON のときだけ動く=ユーザー方針 2026-07-29)。
-//   ※Mac には適用そのものが無いので置かない(未使用関数の警告を出さないため)。
+// The effective alpha: translucent only when that target's toggle is on AND the pointer is not
+// over it. Kept in this one place, because both the applying side and the hook's test use it.
+// WITH THE TOGGLE OFF IT DOES NOT EVEN LOOK AT THE POINTER (this feature runs only when it is on,
+// which is the user's decision).
+// Not built on the Mac at all, where there is nothing to apply -- so that it is not an unused
+// function warning.
 static uint8 KCMEffectiveAlpha(int32 which, HWND target)
 {
 	if (!sTranslucentOn[which])
@@ -215,22 +224,23 @@ static uint8 KCMEffectiveAlpha(int32 which, HWND target)
 	return KCMCursorOverWindow(target) ? 255 : kKCMPanelAlphaValue;
 }
 
-// ★Win32 イベントフックの出し入れ(実体は下の WINDOWS ブロック)。ON の間だけ張る。
+// Installing and removing the Win32 event hook (defined in the WINDOWS block below). It is
+// only installed while a toggle is on.
 static void KCMInstallWinEventHook();
 static void KCMRemoveWinEventHook();
 #endif
 
-// 対象を指定して状態を書く。下の公開 API はこれを呼ぶだけの薄いラッパー
-// (判断はここ1箇所に集約する ＝ トグルが2つに増えても分岐が2か所に散らない)。
+// Write one target's state. The public functions below are thin wrappers around this, so that
+// the decision lives in one place and does not spread out as targets are added.
 static void KCMSetTranslucentFor(int32 which, bool16 on)
 {
 	sTranslucentOn[which] = on;
 
 #ifdef WINDOWS
-	// ★「ドック内展開 ⇄ フローティング」と「ドロワー展開 → フローティング」は SDK 通知が
-	//   1本も飛ばない(2026 で Debug/Release 両方から確認)。唯一の手掛かりが Win32 の
-	//   親変更イベントなので、フックを張る。★対象が2つに増えたので、**どれか1つでも ON なら張り、
-	//   全部 OFF になったときだけ外す**(片方を OFF にしただけで、もう片方の追随が止まらないように)。
+	// "Expanded in a dock <-> floating" and "drawer -> floating" SEND NOT ONE SDK NOTIFICATION
+	// (confirmed on both the Debug and the Release build). The only handle on them is Win32's
+	// parent-change event, so a hook is installed. INSTALL IT WHEN ANY TARGET IS ON AND REMOVE IT
+	// ONLY WHEN THEY ALL GO OFF -- otherwise turning one off would stop the other one following.
 	if (KCMAnyTranslucentOn())
 		KCMInstallWinEventHook();
 	else
@@ -260,39 +270,42 @@ void KCMSetPagesPanelTranslucent(bool16 on)
 
 #ifdef WINDOWS
 
-// ★★★パネルの OWL.Palette 窓を SDK 側から得る(2026-08-06 に確立。旧実装 = 窓タイトルで EnumWindows)。
+// GET A PANEL'S OWL.Palette WINDOW FROM THE SDK SIDE.
 //
-//  なぜ変えたか: 旧実装は「クラス名が OWL.Palette かつ 窓タイトル == パネル表示名」で全窓を走査して
-//  いた。自分のパネルは表示名が全ロケール英語で固定なので成立していたが、**本体のパネルには通用
-//  しない** —— 同じ機械の同じパネルで、英語UI="Pages" / 日本語UI="ページ" と変わることを実測した
-//  (2026-08-06。Debug ビルド=英語UI と Release=日本語UI で見比べた)。
+//  WHY IT WAS CHANGED: the older code walked every window looking for class == OWL.Palette and
+//  title == the panel's display name. Our own panel has an English display name in every locale,
+//  so that held -- but IT DOES NOT WORK FOR THE APPLICATION'S OWN PANELS: on one machine, one
+//  panel, the title was measured as "Pages" in an English UI and its translation in a Japanese one
+//  (a Debug build in English against a Release build in Japanese).
 //
-//  正しい道 = PaletteRef が内部に HWND を持っている:
-//    IPanelMgr::GetPanelFromWidgetID(WidgetID)      … WidgetID は数値なので言語に依存しない
-//      -> IPanelMgr::GetPaletteRefContainingPanel() … その panel を載せている PaletteRef
-//         -> PaletteRef::GetOWLControl()            … PaletteRef.h:47(OWLControlRef=HWND), :188
+//  THE RIGHT ROUTE: PaletteRef holds an HWND inside it.
+//    IPanelMgr::GetPanelFromWidgetID(WidgetID)      ... a WidgetID is a number, so no language
+//      -> IPanelMgr::GetPaletteRefContainingPanel() ... the PaletteRef holding that panel
+//         -> PaletteRef::GetOWLControl()            ... OWLControlRef is HWND (PaletteRef.h)
 //
-//  ★★「何が返るか」は実測ではなく**契約**(2026-08-07 のブロック13再監査で裏取り):
-//    IPanelMgr.h:197-201 が GetPaletteRefContainingPanel について
-//    "For regular tabbed palettes, this should return an object of type kTabPanelContainerType"
-//    と明記している。＝下の階層の type=8 が返るのはヘッダーの約束であって、環境で変わる観測ではない。
-//    (だから下の KCMQueryPanelPaletteFromSDK は戻り値のクラス名を検証しない。キャッシュ側と
-//     フック側がクラス名を見るのは別の理由 ＝ HWND を OS が使い回すことへの対策。)
+//  WHAT COMES BACK IS A CONTRACT, NOT AN OBSERVATION. IPanelMgr says of
+//    GetPaletteRefContainingPanel that "for regular tabbed palettes, this should return an object
+//    of type kTabPanelContainerType" -- so getting type=8 from the hierarchy below is what the
+//    header promises, not something that varies by environment. (Which is why
+//    KCMQueryPanelPaletteFromSDK does not check the class name of what it returns. The cache and
+//    the hook check class names for a different reason: the OS recycles HWNDs.)
 //
-//  実測した階層(2026-08-06。ページパネルと自パネルの両方で同一。PaletteRef.h:87-123 の記述どおり):
-//    type=8 kTabPanelContainerType = OWL.Palette   ← ここが返る(上記の契約)
+//  THE HIERARCHY, measured, identical for the Pages panel and ours, and matching what PaletteRef.h
+//  describes:
+//    type=8 kTabPanelContainerType = OWL.Palette   <- this is what comes back (see the contract)
 //    type=7 kTabGroupType          = OWL.TabGroup
 //    type=6 kTabPaneType           = OWL.TabPane
-//    type=3 kDockType              = OWL.Dock      ← alpha を書く窓
-//  ★**トップレベル窓への変換は従来どおり下の KCMQueryTranslucentTarget(GetAncestor)に任せる。**
-//    ドロワー展開(OWL.FrameDrawer)とドック内展開(indesign)の面倒を見ているのはあちらで、そこは
-//    実績があるので触らない。ここで置き換えたのは「OWL.Palette をどう見つけるか」だけ。
+//    type=3 kDockType              = OWL.Dock      <- the window the alpha is written to
+//  TURNING THAT INTO A TOP-LEVEL WINDOW IS STILL KCMQueryTranslucentTarget'S JOB (GetAncestor).
+//    Handling the drawer (OWL.FrameDrawer) and the in-dock expansion (indesign) belongs there and
+//    has a track record, so it is left alone. What changed here is only HOW THE OWL.Palette IS
+//    FOUND.
 //
-//  ⚠2026-08-06 のブロック13監査は「パネルの HWND を SDK から得る道は無い(4ルート全滅)」と結論して
-//    いたが、それは誤りだった。これが5つ目のルート。
+//  (An earlier audit concluded there was no route from the SDK to a panel's HWND, four candidates
+//   having failed. That was wrong; this is the fifth.)
 static HWND KCMQueryPanelPaletteFromSDK(const WidgetID& panelWidgetID)
 {
-	// ★終了処理中は session が nil になり得る。
+	// the session can be nil during teardown
 	ISession* session = GetExecutionContextSession();
 	if (session == nil)
 		return nullptr;
@@ -305,11 +318,11 @@ static HWND KCMQueryPanelPaletteFromSDK(const WidgetID& panelWidgetID)
 	if (panelMgr == nil)
 		return nullptr;
 
-	// ★GetPanelFromWidgetID は AddRef しない(IPanelMgr.h:112。「caller must release」と明記されて
-	//   いるのは CreatePanel だけ)ので Release もしない。
+	// GetPanelFromWidgetID does not AddRef (in IPanelMgr, "the caller must release" is said of
+	// CreatePanel and of nothing else), so this does not Release either.
 	IControlView* panel = panelMgr->GetPanelFromWidgetID(panelWidgetID);
 	if (panel == nil)
-		return nullptr;		// そのパネルはまだ一度も作られていない
+		return nullptr;		// that panel has never been built
 
 	const PaletteRef container = panelMgr->GetPaletteRefContainingPanel(panel);
 	if (!container.IsValid())
@@ -319,90 +332,95 @@ static HWND KCMQueryPanelPaletteFromSDK(const WidgetID& panelWidgetID)
 	return (h != nullptr && ::IsWindow(h)) ? h : nullptr;
 }
 
-// ★見つけた OWL.Palette を覚えておく。パネルを閉じて開き直しても、ドッキングとフローティングを
-//   切り替えても OWL.Palette の HWND は変わらない(変わるのは親の OWL.Dock で、しかも
-//   「ドッキング → フローティング」のときだけ = 上のファイル冒頭を参照)ので、キャッシュが効く。
-//   ここを入れる理由: 購読している kPaletteVisibilityChangedMessage は「文書を1つ開く」だけでも
-//   複数回飛ぶ(2026-07-29 実測)。そのたびに SDK へ問い合わせるのは無駄で、しかも下の Win32 フックは
-//   マウス移動のたびに走る ＝ **Win32 コールバックからモデルへ触る回数は最小に保ちたい**
-//   (KBS が同じ理由で負のキャッシュまで置いている ＝ KBSQueryFindChangeWindow の sFcLookedUp
-//    「探したが無かった。窓リストが変わるまで探し直さない」。⚠2026-08-17 訂正＝ここは長く
-//    KBSPanelAlpha.cpp:492-502 と行番号で引いていたが、その行は別関数(Find/Change の IWindow 取得)
-//    だった＝**兄弟のファイルも動くので、行番号でなく関数名で引く**)。
+// Remember the OWL.Palette once it is found. Its HWND survives both closing and reopening a panel
+//   and docking and undocking it (what changes is the parent OWL.Dock, and only when going from
+//   docked to floating -- see the head of this file), so a cache is worth having.
+//   WHY: the kPaletteVisibilityChangedMessage subscribed to below arrives SEVERAL TIMES for
+//   opening a single document (measured). Asking the SDK on each of those is waste, and the Win32
+//   hook below runs on every pointer movement -- SO THE NUMBER OF TIMES A WIN32 CALLBACK REACHES
+//   INTO THE MODEL SHOULD BE KEPT AS LOW AS POSSIBLE. (KBS goes further for the same reason and
+//   caches a negative too: KBSQueryFindChangeWindow's sFcLookedUp means "looked and found none;
+//   do not look again until the window list changes".)
 static HWND sPaletteWnd[kKCMAlphaCount] = { nullptr, nullptr, nullptr };
 
-// 対象ごとの狙い撃ち先。★enum の並びと必ず同じ順にすること。
-//  ※WidgetID ではなく生の uint32 で持つ: DECLARE_PMID が作るのは uint32 で、静的初期化に使える。
-//  ⚠3つ目(ブック比較ダイアログ)は **WidgetID では引けない**。パネルマネージャが知っているのは
-//    パネルだけで、ダイアログはそこに載っていない ---- 窓はダイアログ自身が
-//    KCMSetBookDialogWindow で教えてくる。表を揃えるためだけに 0 を置いてある(使われない)。
+// What each target is aimed at. KEEP THIS IN THE SAME ORDER AS THE enum.
+//  Held as a raw uint32 rather than a WidgetID: DECLARE_PMID produces a uint32, which can be used
+//  in a static initialiser.
+//  @warning THE BOOK DIALOG CANNOT BE LOOKED UP BY WidgetID. The panel manager knows about panels,
+//    and a dialog is not one of them -- its window is handed over by KCMSetBookDialogWindow. The 0
+//    is there to keep the table lined up and is never used.
 static const uint32 kKCMAlphaWidgetIDs[kKCMAlphaCount] =
 {
-	kKCMPanelWidgetID,		// kKCMAlphaSelf  = 自分のパネル
-	kPagesPanelWidgetID,		// kKCMAlphaPages = 本体のページパネル
-	0							// kKCMAlphaBookDialog = 引かない(上記)
+	kKCMPanelWidgetID,		// kKCMAlphaSelf = our own panel
+	kPagesPanelWidgetID,		// kKCMAlphaPages = the application's Pages panel
+	0							// kKCMAlphaBookDialog = never looked up (see above)
 };
 
-// ★★ダイアログの窓を登録したときの**窓タイトル**(照合用。2026-08-13 の再検査で追加)。
-//   ⚠これが要る理由＝**HWND の値は OS が別の窓へ使い回す**。ダイアログは閉じると窓ごと消えるのに
-//     (IDialogMgr.h:63「the dialog will take care of destructing itself when the dialog is closed」)、
-//     こちらはハンドルを持ち続けるので、使い回された瞬間から `IsWindow` は他人の窓に対して真を返す。
-//     そのまま進むと **無関係な窓に WS_EX_LAYERED を立てて alpha 77 を書く** ＝ 2026-07-29 に
-//     パネルで実際に起きた「他人のパネルを透かす」と同じ事故になる。
-//   ★パネルはクラス名("OWL.Palette")で同じことを確かめている。ダイアログのクラス名は
-//     本体中が使う汎用名で証拠にならないので、**代わりに登録時の綴りを控えて突き合わせる**
-//     (自分のダイアログのタイトルは固定文＝`.fr` が持つ 1 つだけ)。
+// The window title recorded when the dialog's window was registered, for checking against.
+//   WHY IT IS NEEDED: THE OS HANDS AN HWND VALUE OUT TO ANOTHER WINDOW LATER. The dialog's window
+//     is destroyed when it closes (IDialogMgr: "the dialog will take care of destructing itself
+//     when the dialog is closed") while this side goes on holding the handle, so from the moment
+//     it is recycled IsWindow answers truthfully -- about somebody else's window. Carrying on from
+//     there means PUTTING WS_EX_LAYERED ON AN UNRELATED WINDOW AND WRITING 77 TO IT: the same
+//     accident as "making another panel translucent", which really happened once with panels.
+//   A panel proves the same thing with its class name ("OWL.Palette"). A dialog's class name is a
+//     generic one the application uses everywhere and proves nothing, SO THE SPELLING RECORDED AT
+//     REGISTRATION IS MATCHED INSTEAD (our dialog's title is a fixed string -- the one in the
+//     .fr).
 static wchar_t sBookDialogTitle[128] = { 0 };
 
-// 窓タイトルが登録時と同じか。★控えが空のときは kTrue を返す(＝照合できない＝従来どおり
-//   IsWindow だけで通す)。控えが取れないのは GetWindowTextW が失敗したときだけで、そこで
-//   弾いてしまうと自分のダイアログを二度と透かせなくなる。
+// Is the window's title the one recorded? WITH NOTHING RECORDED THIS RETURNS kTrue -- there is
+//   nothing to check against, so it falls back to IsWindow alone, as before. The record is only
+//   missing when GetWindowTextW failed, and rejecting on that would mean our own dialog could
+//   never be made translucent again.
 static bool KCMTitleMatchesBookDialog(HWND h)
 {
 	if (h == nullptr)
 		return false;
 	if (sBookDialogTitle[0] == L'\0')
-		return true;			// 控えが無い = 照合しない(従来の振る舞い)
+		return true;			// nothing recorded: no check (the earlier behaviour)
 	wchar_t title[128] = { 0 };
 	::GetWindowTextW(h, title, 128);
 	return ::wcscmp(title, sBookDialogTitle) == 0;
 }
 
-// キャッシュ優先でパネル窓を得る。★ハンドルは OS が使い回すので、生存確認だけでなくクラス名の
-//   一致も見てから使う(SDK へ問い合わせ直すより安い)。
-//   ⚠旧実装はここで窓タイトルも照合していた。それは「本当に自分のパネルか」を見るためだったが、
-//     引き直しが WidgetID 狙い撃ちになった今、綴りを合わせる相手がいない。
+// The panel window, from the cache where possible. THE OS RECYCLES HANDLES, so the class name is
+//   checked as well as whether the window is alive -- which is still cheaper than asking the SDK
+//   again.
+//   (The older code checked the window title here too, to see whether it really was our panel.
+//   Now that the lookup aims at a WidgetID, there is no spelling left to match.)
 //
-//   ★★★**2026-08-19(不具合再検査 B-U9)＝ここには長く「窓の作り直しと HWND の使い回しは
-//     kPaletteVisibilityChangedMessage か Win32 フックのどちらかを必ず伴い、そこでキャッシュを
-//     捨てているので、クラス名までで足りる」と書いてあったが、前半は事実ではない**——
-//     **可視性の通知でキャッシュを捨てている場所はどこにも無い**(このファイルの下の Update は
-//     貼り直すだけで、しかも全部 OFF なら即 return する)。捨てているのは Win32 フックだけで、
-//     **そのフックはトグルが ON の間しか張っていない**。
-//   ★上の2つの検査(生存 + クラス名)では「破棄されて、そのハンドルを OS が**別のパネルの**
-//     OWL.Palette に配り直した」を見分けられない(どちらも生きた OWL.Palette になる)。
-//     ⇒ 兄弟の KBS は 2026-08-12(`e1320ca`)に**可視性の通知が来たら無条件にキャッシュを捨てる**
-//     (`KBSForgetPaletteWindow`)を足しており、理由に「ワークスペースの変更がパレットを作り直す」
-//     を挙げている。
-//   ★★★**それを写していないのは、その前提が実測で成り立たなかったから**(2026-08-19・21.0.2.2。
-//     一時診断ビルドで「今キャッシュにある HWND」と「今 IPanelMgr に聞いた HWND」を並べて採取):
-//       ・自分のパネルを閉じる/開く                                    → 0x080DE8 のまま(same=1)
-//       ・ワークスペース切替(Essentials J → Advanced J → Essentials J) → same=1
-//       ・ワークスペースのリセット                                      → same=1
-//       ・本体のページパネルを閉じる → その OWL.Palette(0x0D0746)は**生きたまま**・題名もそのまま
-//     ＝**OWL.Palette はセッション中に破棄されない**。このファイルの冒頭が 2026-07-29 から書いている
-//     「起動時から 55〜56 組が非可視で待機」を、破棄の側から確かめた形になる。使い回しが起きない
-//     以上、捨てる機会も要らない。
-//   ⚠**もしパレットが作り直される経路が見つかったら**、KBS と同じ位置(可視性の通知を受けた直後・
-//     トグルを見るより前)に捨てる処理を足すこと。★**ただし KCM では丸ごと写せない**——
-//     ダイアログの窓は引き直す当てが無い(ダイアログ自身が教えてくるだけ)ので、捨ててよいのは
-//     **パネルマネージャに聞き直せる対象＝`kKCMAlphaWidgetIDs[i] != 0` の側だけ**。
+//   WHY THE CLASS NAME IS ENOUGH. This used to say that a window being rebuilt, or a handle being
+//     recycled, always comes with either a kPaletteVisibilityChangedMessage or a Win32 hook event,
+//     and that the cache is dropped at one of those. THE FIRST HALF IS NOT TRUE: nothing drops the
+//     cache on a visibility notification (the Update below only re-applies, and returns at once
+//     when everything is off). The only place that drops it is the Win32 hook, AND THAT HOOK IS
+//     ONLY INSTALLED WHILE A TOGGLE IS ON.
+//   The two checks here (alive + class name) cannot tell apart "destroyed, and the OS handed that
+//     handle to ANOTHER PANEL'S OWL.Palette" -- both of those are a live OWL.Palette.
+//     KBS therefore drops its cache unconditionally whenever a visibility notification arrives
+//     (KBSForgetPaletteWindow), giving "a workspace change rebuilds the palettes" as the reason.
+//   THAT WAS NOT COPIED HERE BECAUSE THE PREMISE DID NOT HOLD WHEN MEASURED (21.0.2.2, with a
+//     temporary diagnostic build printing the cached HWND next to the one IPanelMgr gives now):
+//       - closing and reopening our own panel                          -> unchanged
+//       - switching workspaces (Essentials -> Advanced -> Essentials)  -> unchanged
+//       - resetting the workspace                                      -> unchanged
+//       - closing the application's Pages panel -> its OWL.Palette stayed ALIVE, title and all
+//     => OWL.Palette WINDOWS ARE NOT DESTROYED DURING A SESSION. That is the same fact the head of
+//     this file states from the other side ("55-56 pairs sit invisible from startup"), seen from
+//     destruction rather than creation. With no recycling, there is no need for a place to drop it.
+//   @warning IF A PATH IS EVER FOUND THAT DOES REBUILD A PALETTE, add the drop in the same place
+//     KBS has it -- right after the visibility notification, before the toggles are looked at.
+//     BUT IT CANNOT BE COPIED WHOLESALE HERE: the dialog's window cannot be looked up again (the
+//     dialog only hands it over), so the only targets safe to drop are the ones the panel manager
+//     can be asked about -- those with kKCMAlphaWidgetIDs[i] != 0.
 static HWND KCMQueryPaletteWindow(int32 which)
 {
-	// ★★ダイアログは自分で名乗る(2026-08-13)。パネルマネージャに載っていないので下の SDK 経路は
-	//   使えず、代わりに KCMBookDialog.cpp が窓を用意した直後に教えてくる。ここでやることは
-	//   「その窓がまだ生きていて、まだ**あの**窓か」の2つ ---- どちらか崩れていれば忘れる
-	//   (次に開いたときまた教わる。引き直す当ては無いので、捨てる=OFF と同じ安全側に倒れる)。
+	// THE DIALOG NAMES ITSELF. It is not on the panel manager, so the SDK route below cannot be
+	// used; KCMBookDialog.cpp hands the window over as soon as it has one. All that is done here is
+	// to ask whether that window is still alive and still THE one -- if either has gone, forget it
+	// (the next open hands it over again; with no way to look it up, forgetting fails safe, the
+	// same as being off).
 	if (which == kKCMAlphaBookDialog)
 	{
 		if (sPaletteWnd[which] != nullptr &&
@@ -421,7 +439,7 @@ static HWND KCMQueryPaletteWindow(int32 which)
 	return sPaletteWnd[which];
 }
 
-// 窓のクラス名が期待どおりか。
+// Is the window's class name the expected one?
 static bool KCMClassIs(HWND h, const wchar_t* wanted)
 {
 	if (h == nullptr)
@@ -432,47 +450,55 @@ static bool KCMClassIs(HWND h, const wchar_t* wanted)
 	return ::wcscmp(cls, wanted) == 0;
 }
 
-// パネルが載っている「今の」トップレベル窓のうち、単独で透かせるものだけを返す。
-// ドック内で展開中(GA_ROOT がメインフレーム)なら nullptr。
+// The top-level window the panel is in RIGHT NOW, but only when it is one that can be made
+// translucent on its own. nullptr while it is expanded inside a dock (GA_ROOT being the main
+// frame).
 //
-// ★GA_ROOT は 3 分岐する(2026-07-29 に Pages パネルで 3 状態を実測。OWL.Palette 側の HWND は不変):
-//     "indesign"        ドック内で展開(メインウィンドウにくっついた状態)。EXSTYLE=0x00000100
-//                       ＝WS_EX_LAYERED が無く、立てるとアプリ全体が対象になる → 単独制御は不可
-//     "OWL.Dock"        フローティング。EXSTYLE=0x08080000
-//     "OWL.FrameDrawer" アイコンをクリックしたドロワー展開。EXSTYLE=0x08080000
-//   後ろ 2 つは InDesign 自身が WS_EX_LAYERED を立てているので、まったく同じ扱いでよい。
-// ⚠"OWL.Dock" だけで判定していると、ドロワー展開が黙って対象外になる(2026-07-29 まで実際にそうだった)。
+// GA_ROOT HAS THREE OUTCOMES (measured on the Pages panel in all three states; the OWL.Palette
+// HWND is the same throughout):
+//     "indesign"        expanded inside a dock, attached to the main window. EXSTYLE=0x00000100,
+//                       i.e. no WS_EX_LAYERED -- and setting it would take the whole application
+//                       with it, so it cannot be controlled on its own
+//     "OWL.Dock"        floating. EXSTYLE=0x08080000
+//     "OWL.FrameDrawer" the drawer that opens when its icon is clicked. EXSTYLE=0x08080000
+//   InDesign itself sets WS_EX_LAYERED on the last two, so they are treated identically.
+// @warning testing for "OWL.Dock" alone silently leaves the drawer out (which it did, until this
+//   was measured).
 //
-// ★★★**この3分岐を SDK(PaletteRefUtils)へ寄せられないか＝2026-08-17(監査 B-U9)に一時診断ビルドで
-//   測って「寄せない」で決着した。** 動機は正当だった——クラス名文字列は undocumented な OWL の内部名で、
-//   **同じ理由(窓タイトルは翻訳される)で 2026-08-06 に窓の探し方を WidgetID へ移している**。
-//   しかも「浮いているか」を聞く公式の口は実在し、**このプラグイン自身が別ファイルで使っている**
-//   (PaletteRefUtils::IsPaletteFloating ＝ KCMStorySection.cpp。製品も linksui/LinksUIUtils.cpp が使用)。
-//   ⇒ **測って2つとも外れた**(パネルを ①フローティング ②ドック内展開 ③ドロワー展開 で往復させて採取):
-//     ①**IsPaletteFloating はドロワーで 0 と 1 の両方を返した**——端のドックをアイコン化して開いた
-//       ドロワーでは 0、浮きドック(flotilla)をアイコン化して開いたドロワーでは 1。
-//       ＝この API が答えているのは「**所属しているドックが浮いているか**」であって、
-//         このコードが聞きたい「**今このパネルは単独で透かせるトップレベル窓を持つか**」ではない。
-//     ②★**"OWL.FrameDrawer" の HWND はパレット階層に一度も現れない**(実測 0x150260 / 0x0D06AA。
-//       階層を根まで辿っても出てこず、Dock が名乗るのは別の HWND)。PaletteRefType(PaletteRef.h:127-166)
-//       の**列挙子12個**(⚠2026-08-19 B-U9 で数え直した。旧記述の「全11型」は `kUnknownPaletteType` か
-//       `kTabGroupClusterType_OBSOLETE` のどちらかを落としていた)にドロワーに当たる型が無いことの、
-//       実測版。⇒ **SDK は貼るべき窓そのものを返せない。**
-//   ∴ **GA_ROOT + クラス名照合が、この3状態を1本で正しく分ける唯一の道**。⚠**次に監査する人へ**:
-//     ここは「Win32 の文字列比較が残っている」ように見えるが、**寄せ先を測ったうえで残している**。
-//   ★ついでに採れた検算2つ＝**OWL.Palette の HWND は3状態・往復6回とも不変**(0x060AE2。キャッシュ
-//     設計の根拠そのもの)／**Dock の HWND はフローティングし直すと変わる**(0x140260→0x0B067A＝
-//     ファイル冒頭の主張どおり)。★フローティング時だけは Dock の GetOWLControl() が GA_ROOT と一致した
-//     (0x140260)＝**「①だけなら SDK でも取れる」が、②③を同じ道で扱えないので採らない**。
+// CAN THIS THREE-WAY TEST BE MOVED ONTO THE SDK (PaletteRefUtils)? MEASURED, AND THE ANSWER IS NO.
+//   The motive was sound: class-name strings are undocumented OWL internals, and the window lookup
+//   was moved onto WidgetIDs for the very same reason (titles are translated). There IS an official
+//   way to ask whether a palette is floating, AND THIS PLUG-IN ITSELF USES IT ELSEWHERE
+//   (PaletteRefUtils::IsPaletteFloating, in KCMStorySection.cpp; the shipping
+//   linksui/LinksUIUtils.cpp uses it too).
+//   => BOTH CANDIDATES FAILED WHEN MEASURED (moving a panel between floating, in-dock and drawer):
+//     1. IsPaletteFloating RETURNED BOTH 0 AND 1 FOR A DRAWER -- 0 for a drawer opened from an
+//        edge dock that had been iconised, 1 for one opened from an iconised floating dock
+//        (a flotilla). What that API answers is "IS THE DOCK IT BELONGS TO FLOATING", not the
+//        question this code has, which is "DOES THIS PANEL HAVE A TOP-LEVEL WINDOW THAT CAN BE
+//        MADE TRANSLUCENT ON ITS OWN".
+//     2. THE "OWL.FrameDrawer" HWND NEVER APPEARS IN THE PALETTE HIERARCHY AT ALL (measured;
+//        walking to the root does not produce it, and the Dock names a different HWND). That is
+//        the measured form of there being no PaletteRefType (there are twelve enumerators) for a
+//        drawer. => THE SDK CANNOT RETURN THE VERY WINDOW THAT HAS TO BE WRITTEN TO.
+//   THEREFORE GA_ROOT PLUS A CLASS-NAME MATCH IS THE ONLY THING THAT SEPARATES THESE THREE STATES
+//   IN ONE PIECE. @warning TO WHOEVER AUDITS THIS NEXT: this looks like a leftover Win32 string
+//   comparison, but it is here because the alternative was measured.
+//   Two useful checks came out of the same measurement: THE OWL.Palette HWND WAS UNCHANGED across
+//   all three states and six transitions (which is what the cache design rests on), and THE Dock
+//   HWND DID CHANGE on being floated again (as the head of this file says). While floating -- and
+//   only then -- the Dock's GetOWLControl() did equal GA_ROOT, so state 1 alone COULD be had from
+//   the SDK; it is not taken, because states 2 and 3 cannot be had the same way.
 static HWND KCMQueryTranslucentTarget(int32 which, HWND palette)
 {
 	if (palette == nullptr)
 		return nullptr;
 
-	// ★★ダイアログは**それ自身がトップレベル窓**なので、この関数がパネルのためにしている解決
-	//   （「今どのドックに載っているか」を GA_ROOT で辿る）が丸ごと要らない。
-	//   ⇒ 副産物として、パネル側にある「ドック内で展開中は単独で透かせない」という制限も無い:
-	//     ダイアログは常にフローティングなので、いつ押しても効く。
+	// A DIALOG IS ITSELF A TOP-LEVEL WINDOW, so everything this function does for a panel --
+	// walking GA_ROOT to find which dock it is in right now -- is simply not needed.
+	// A side effect is that the panel's restriction, that it cannot be made translucent while
+	// expanded inside a dock, does not apply either: a dialog always floats, so pressing the menu
+	// always takes effect.
 	if (which == kKCMAlphaBookDialog)
 		return palette;
 
@@ -487,57 +513,65 @@ static HWND KCMQueryTranslucentTarget(int32 which, HWND palette)
 	if (::wcscmp(cls, L"OWL.Dock") == 0 || ::wcscmp(cls, L"OWL.FrameDrawer") == 0)
 		return root;
 
-	return nullptr;		// "indesign" = メインフレーム = ドック内で展開中
+	return nullptr;		// "indesign" = the main frame = expanded inside a dock
 }
 
 #endif // WINDOWS
 
-// 対象を1つ指定して適用する。★alpha を書く実体はここだけ(公開 API は下の薄いラッパー)。
+// Apply to one named target. THIS IS THE ONLY PLACE THAT WRITES AN ALPHA; the public functions
+// below are thin wrappers.
 static bool16 KCMApplyFor(int32 which)
 {
 #ifdef WINDOWS
 	HWND palette = KCMQueryPaletteWindow(which);
 	HWND target  = KCMQueryTranslucentTarget(which, palette);
 	if (target == nullptr)
-		return kFalse;		// パネルが無い / ドック内で展開中 / ダイアログが閉じている → 何もしない
+		return kFalse;		// no panel / expanded inside a dock / the dialog is closed -- do nothing
 
-	// ★カーソルが乗っている間は不透明に戻す(KCMEffectiveAlpha が今の位置を実測して判断)。
-	//   タブ帯・タイトル帯の上でも「乗っている」になる ＝ 対象窓がそれらを含むため。
+	// Opaque again while the pointer is over it (KCMEffectiveAlpha measures where it is now). The
+	// tab strip and the title strip count as "over it" too, because the target window contains
+	// them.
 	const BYTE alpha = KCMEffectiveAlpha(which, target);
 
-	// ★★ダイアログには WS_EX_LAYERED を**自分で立てる**(2026-08-13)。パネル側でこれが要らないのは
-	//   InDesign が OWL.Dock / OWL.FrameDrawer に最初から立てているからで、窓一般の性質ではない
-	//   ---- ダイアログの窓には立っておらず、実測すると SetLayeredWindowAttributes は失敗し、
-	//   GetLayeredWindowAttributes も "not layered" を返した(この機能で最初に踏んだ壁)。
-	//   ⚠OFF に戻すときも外さない: 見た目は alpha 255 で戻るし、外す/立てるを往復させると
-	//     per-pixel 描画との切り替わりを招きかねない(影で同じ罠を踏んでいる。下のコメント参照)。
-	//   ★**スタイルを足す側に SetWindowPos は要らない**(KBS が 2026-08-11 に実測して決着した分。
-	//     MSDN の SetWindowPos Remarks は「SetWindowLong で変えた *certain window data* は
-	//     SetWindowPos(SWP_NOMOVE|SWP_NOSIZE|SWP_NOZORDER|SWP_FRAMECHANGED)を呼ぶまで効かない」と
-	//     書くが、**何がそれに当たるかは書いていない**＝測るしかない領域。実測では WS_EX_LAYERED の
-	//     追加は SetWindowPos 無しで効いた(直後の SetLayeredWindowAttributes がコミットしている)。
-	//     ⚠**外す側は事情が違う**＝スタイルが消えたことを窓に伝えて描き直させる必要があるので
-	//       SetWindowPos + RedrawWindow が要る＝**非対称には理由がある**。この関数は外さないので不要。
-	//       (同じダイアログの枠スタイルを変える KCMBookDialog.cpp は、外す側なので4フラグを使う。)
+	// THE DIALOG NEEDS WS_EX_LAYERED SET BY US. A panel does not, because InDesign has already set
+	// it on OWL.Dock / OWL.FrameDrawer -- that is a property of those windows, not of windows in
+	// general. The dialog's window does not have it: measured, SetLayeredWindowAttributes failed
+	// and GetLayeredWindowAttributes reported "not layered" (the first wall this feature hit).
+	// @warning IT IS NOT REMOVED WHEN SWITCHING OFF: an alpha of 255 restores the look anyway, and
+	//   removing and re-adding it invites a switch between per-pixel and uniform alpha drawing
+	//   (the trap already hit with the shadow -- see the comment below).
+	// ADDING A STYLE NEEDS NO SetWindowPos (measured by KBS and settled there). MSDN's SetWindowPos
+	//   Remarks says that *certain window data* changed with SetWindowLong does not take effect
+	//   until SetWindowPos(SWP_NOMOVE|SWP_NOSIZE|SWP_NOZORDER|SWP_FRAMECHANGED) is called, BUT IT
+	//   DOES NOT SAY WHICH data -- so it has to be measured, and adding WS_EX_LAYERED took effect
+	//   without it (the SetLayeredWindowAttributes right after commits it).
+	//   @warning REMOVING one is a different matter: the window has to be told the style is gone so
+	//     that it redraws, which needs SetWindowPos + RedrawWindow. THE ASYMMETRY HAS A REASON.
+	//     This function never removes one, so it needs neither. (KCMBookDialog.cpp, which changes
+	//     the same dialog's frame style, is on the removing side and does use the four flags.)
 	if (which == kKCMAlphaBookDialog)
 	{
 		const LONG_PTR ex = ::GetWindowLongPtr(target, GWL_EXSTYLE);
 		if ((ex & WS_EX_LAYERED) == 0)
 		{
-			// ★★2026-08-17(API 監査 B-U9 の A-2)＝**まだ layered でない窓に、alpha 255 を書くためだけに
-			//   スタイルを立てない。** 呼び手(KCMBookDialog.cpp)は開くたびに**無条件で**ここへ来る。
-			//   ⚠その無条件呼びは正しい＝**閉じている間にトグルが ON へ動いていることがあり、
-			//     開き直した窓は必ず不透明から始まる**ので、77 は毎回書き直すしかない(実測 PASS)。
-			//   ★だが逆向き(トグル OFF のまま開いた)には復元すべき値が無い——**窓は開くたびに新品**
-			//     (2026-08-17 実測＝3回開いて HWND が3つとも別・再オープン直後は非 layered。
-			//      kCacheDialog が保つのは中身の行であって OS の窓ではない)。
-			//     ⇒ そこで 255 を書くために本体が作った窓へ WS_EX_LAYERED を立て続けるのは、この機能が
-			//       「ON のときだけ動く」というユーザー方針(2026-07-29)にも反する。
-			//   ★★**見るのはトグルではなく「この窓が layered か」と「狙いが 255 か」**＝だから
-			//     KCMApplyFor 本体に OFF ガードを入れる話にはならない(上の 255 復元経路は生きたまま)。
-			//   ★返り値は kTrue＝「窓には届いている」。ここに来るのはトグル ON でカーソルが乗っている
-			//     場合(＝望みが 255)もあり、そのときパネル側は kTrue を返す＝**メニューの文言を
-			//     パネルと同じにする**(kFalse は「ダイアログが閉じている」の意味に取ってある)。
+			// DO NOT SET THE STYLE ON A WINDOW THAT IS NOT YET LAYERED JUST TO WRITE 255 TO IT. The
+			// caller (KCMBookDialog.cpp) comes through here UNCONDITIONALLY on every open.
+			// That unconditional call is right: THE TOGGLE MAY HAVE BEEN TURNED ON WHILE THE DIALOG
+			//   WAS CLOSED, and a reopened window always starts opaque, so 77 has to be written
+			//   again every time (measured, and it passes).
+			// But in the other direction -- opened with the toggle off -- there is no value to
+			//   restore: THE WINDOW IS NEW EVERY TIME (measured: three opens, three different
+			//   HWNDs, not layered right after each reopen; what a cached dialog keeps is its
+			//   contents, not the OS window). Setting WS_EX_LAYERED on a window the application
+			//   built, and leaving it there, just to write 255, also goes against this feature only
+			//   running when it is on (the user's decision).
+			// WHAT IS TESTED IS NOT THE TOGGLE BUT "IS THIS WINDOW LAYERED" AND "IS 255 WHAT WE
+			//   WANT" -- which is why this is not an argument for putting an off-guard in
+			//   KCMApplyFor itself (that would kill the 255 restore path above).
+			// It returns kTrue: the alpha did reach the window. This is also where a toggle that is
+			//   ON with the pointer over the dialog ends up (255 being what is wanted), and the
+			//   panels return kTrue in that case -- SO THE MENU IS WORDED THE SAME WAY FOR BOTH
+			//   (kFalse is reserved for "the dialog is closed").
 			if (alpha == 255)
 				return kTrue;
 
@@ -545,36 +579,43 @@ static bool16 KCMApplyFor(int32 which)
 		}
 	}
 
-	// ★パネルでは WS_EX_LAYERED は InDesign が最初から立てているので触らない(上のダイアログ分岐参照)。
+	// For a panel, InDesign set WS_EX_LAYERED long ago, so it is left alone (see the dialog branch
+	// above).
 	const BOOL ok = ::SetLayeredWindowAttributes(target, 0, alpha, LWA_ALPHA);
 
-	// ★影(OWL.ShadowView)も一緒に処理する。影は Dock の owner にあたる「別のトップレベル窓」なので、
-	//   Dock だけ透かすと影は不透明のまま残り、その部分だけ濃く見えて違和感が出る
-	//   (2026-07-29 ユーザー報告: 「ドラッグ中は綺麗だが離すと影の部分だけ濃い」
-	//    = ドラッグ中は影が出ず、確定した瞬間に影が描かれるため)。半透明の間は影ごと隠す。
+	// THE SHADOW (OWL.ShadowView) IS HANDLED ALONGSIDE. The shadow is a separate top-level window,
+	// the Dock's owner, so making only the Dock translucent leaves the shadow opaque and that part
+	// looks noticeably darker (reported: "it looks fine while dragging, but the shadow is dark once
+	// you let go" -- no shadow is drawn while dragging, and it appears the moment the move is
+	// committed). While translucent, the shadow is hidden along with it.
 	//
-	// ★★ここで SetLayeredWindowAttributes を使ってはいけない(2026-07-29 に実機で壊して確認):
-	//   影は UpdateLayeredWindow による per-pixel alpha(ぼかしのある影)で描かれている。Win32 では
-	//   一様 alpha(SetLayeredWindowAttributes)と per-pixel alpha は排他で、一度でも前者を設定すると
-	//   255 に戻しても per-pixel 描画には復帰せず、OFF にしたとき影が不自然な塊になる。
-	//   表示/非表示の切り替えなら描画方式に触らないので安全。
-	//   ★★2026-08-17 追記(MSDN の Remarks で裏取り。KBS が 08-11 に確定した書き分けがこちらへ
-	//     来ていなかった分)＝**「復帰しない」ではなく「我々にとって一方通行」が正確**:
-	//     "once SetLayeredWindowAttributes has been called for a layered window, subsequent
-	//      UpdateLayeredWindow calls will fail **until the layering style bit is cleared and set
-	//      again**" ＝ 公式は回復手段まで書いている(WS_EX_LAYERED を外して付け直す)。
-	//     ⚠**判断は変わらない**＝相手は InDesign が持つ窓で、このファイル自身が冒頭で
-	//       「そのスタイルを外すと本体の描画が壊れる」と書いている ⇒ その道は採らない。
-	//     ★2026-07-29 の実測が公式契約で裏付けられた例(measurement が contract に格上げされた)。
-	//   ※ SW_SHOWNA = アクティブ化せずに表示(影の窓は WS_EX_NOACTIVATE で、前面化させたくない)。
-	//   ※ドロワー展開("OWL.FrameDrawer")の owner が ShadowView でない場合は、下の判定で素通りする。
-	//   ★★影の出し入れは alpha ではなく**トグルの ON/OFF だけ**で決める(2026-07-29 修正)。
-	//     ON の間はカーソルで不透明に戻っていても影は隠したままにする。
-	//     ⚠理由(ユーザー報告の不具合): パネルはタブ帯／タイトル帯をつかんで動かすが、そこは
-	//       「カーソルが乗っている」＝不透明なので、alpha で判定すると**ドラッグ中に影を表示**
-	//       してしまう。InDesign はドラッグ中に影を出さない(確定した瞬間に描く)作りなので、
-	//       こちらが強引に出すと**位置が更新されない影が元の場所に取り残される**。
-	//     ★副次効果: カーソルがパネルを出入りするたびに影が点いたり消えたりするちらつきも消える。
+	// DO NOT USE SetLayeredWindowAttributes ON THE SHADOW (established by breaking it on a live
+	//   build). The shadow is drawn with per-pixel alpha through UpdateLayeredWindow (that is what
+	//   makes it soft). In Win32, uniform alpha and per-pixel alpha are mutually exclusive: once
+	//   the former has been set, going back to 255 does not restore per-pixel drawing, and turning
+	//   the feature off leaves the shadow an unnatural block. Showing and hiding it touches no
+	//   drawing mode and is safe.
+	//   MSDN's Remarks bear the measurement out, and "IT DOES NOT COME BACK" is better put as "IT
+	//   IS ONE-WAY FOR US": "once SetLayeredWindowAttributes has been called for a layered window,
+	//   subsequent UpdateLayeredWindow calls will fail **until the layering style bit is cleared
+	//   and set again**" -- so there IS an official way back (clear WS_EX_LAYERED and set it
+	//   again).
+	//   @warning THE DECISION IS UNCHANGED: the window belongs to InDesign, and the head of this
+	//     file says that removing that style breaks the application's own drawing. That road is not
+	//     taken. (A case of a measurement later being confirmed by the documented contract.)
+	//   SW_SHOWNA shows it without activating: the shadow window is WS_EX_NOACTIVATE and must not
+	//     be brought to the front.
+	//   When a drawer's ("OWL.FrameDrawer") owner is not a ShadowView, the test below simply passes
+	//     it by.
+	//
+	// SHOWING AND HIDING THE SHADOW IS DECIDED BY THE TOGGLE ALONE, NOT BY THE ALPHA. While the
+	//   toggle is on, the shadow stays hidden even when the pointer has made the panel opaque.
+	//   @warning WHY (a reported defect): a panel is dragged by its tab or title strip, and the
+	//     pointer IS on the panel there, so deciding by the alpha would SHOW THE SHADOW MID-DRAG.
+	//     InDesign does not draw a shadow while dragging (it draws one when the move is committed),
+	//     so forcing one out leaves A SHADOW AT THE OLD POSITION THAT NEVER MOVES.
+	//   A second benefit: the shadow no longer flickers on and off as the pointer crosses the
+	//     panel's edge.
 	const bool16 hideShadow = sTranslucentOn[which];
 	HWND shadow = ::GetWindow(target, GW_OWNER);
 	if (KCMClassIs(shadow, L"OWL.ShadowView"))
@@ -583,7 +624,7 @@ static bool16 KCMApplyFor(int32 which)
 	return ok ? kTrue : kFalse;
 #else
 	(void)which;
-	return kFalse;		// Mac: 半透明化の手段が無いので常に「適用しなかった」
+	return kFalse;		// the Mac has no way to do this, so it always reports "not applied"
 #endif
 }
 
@@ -612,19 +653,21 @@ bool16 KCMApplyBookDialogTranslucency()
 	return KCMApplyFor(kKCMAlphaBookDialog);
 }
 
-// ダイアログが自分の窓を教えてくる。★KCMBookDialog.cpp から、窓を用意した直後に呼ばれる。
-//  ⚠2026-08-19(B-U9)＝**「手放す」呼びは存在しない**(nil を渡す呼び手はゼロ)。閉じるときに何も
-//    要らない理由は下の sBookDialogTitle の照合＝ヘッダーの宣言のところに書いてある。
-//  ⚠ここは alpha を書かない ---- 「窓を覚える」と「今の状態を貼る」は別の仕事で、後者は呼び出し側が
-//    続けて KCMApplyBookDialogTranslucency を呼ぶ(トグルが OFF なら何も起きないのが正しい)。
+// The dialog hands its window over. Called by KCMBookDialog.cpp as soon as it has one.
+//  There is no "let go" call (nothing ever passes nil). Why nothing is needed on close is on the
+//    declaration in the header, next to sBookDialogTitle.
+//  NO ALPHA IS WRITTEN HERE: "remember the window" and "apply the current state" are separate
+//    jobs, and the caller does the second one itself by calling KCMApplyBookDialogTranslucency
+//    next (with the toggle off, nothing happening is the right outcome).
 void KCMSetBookDialogWindow(void* sysWindow)
 {
 #ifdef WINDOWS
 	HWND hwnd = static_cast<HWND>(sysWindow);
 	sPaletteWnd[kKCMAlphaBookDialog] = hwnd;
 
-	// ★同時に窓タイトルを控える(2026-08-13 の再検査)。以後の照合はこの綴りとの一致だけで行う
-	//   ＝**「あのとき教わった窓」以外には絶対に書かない**。理由は sBookDialogTitle の宣言のところ。
+	// The window's title is recorded at the same time. Every later check is a match against this
+	// spelling and nothing else, SO NOTHING IS EVER WRITTEN TO ANY WINDOW BUT THE ONE HANDED OVER.
+	// The reason is on the declaration of sBookDialogTitle.
 	sBookDialogTitle[0] = L'\0';
 	if (hwnd != nullptr && ::IsWindow(hwnd))
 		::GetWindowTextW(hwnd, sBookDialogTitle, 128);
@@ -633,26 +676,26 @@ void KCMSetBookDialogWindow(void* sysWindow)
 #endif
 }
 
-// 全対象へ貼り直す。★通知・遅延再適用・Win32 フックからはこちらを呼ぶ
-//   (対象が増えても、追随させる側のコードを直さなくて済むように)。
+// Re-apply to every target. The notifications, the delayed re-apply and the Win32 hook all call
+// this one, so that adding a target costs the code that has to follow along nothing.
 //
-// ★★OFF の対象は飛ばす(2026-08-07 修正)。KCMApplyFor は OFF でも窓を探し、alpha 255 を書き、
-//   影を SW_SHOWNA する —— 対象が1つだった頃は呼び出し側が OFF を弾いていたので表に出なかったが、
-//   ここが「どちらか一方でも ON なら全部」になったことで OFF 側にも毎回届くようになっていた。
-//   ⚠**実害は「両方を同じフローティンググループに入れたとき」に出る**: そのとき2つの対象は同じ
-//     OWL.Dock を GA_ROOT に持つので、ON 側が 77 を書いた直後に OFF 側が同じ窓へ 255 を上書きし、
-//     半透明が打ち消される(影も SW_HIDE→SW_SHOWNA で往復する)。ほかに、OFF 側の影を勝手に出して
-//     しまう(ドラッグ確定前に当たると「位置が更新されない影が取り残される」= 2026-07-29 に潰した形)。
-//   ★ここで絞ってよい理由 = OFF へ切り替えた瞬間の 255 復元と影の再表示は、フライアウトのハンドラが
-//     対象を名指しで Apply して担っている(KCMActionComponent.cpp の
-//     kKCMPopupTranslucentPanelActionID / kKCMPopupTranslucentPagesActionID の case が
-//     KCMApplyPanelTranslucency / KCMApplyPagesPanelTranslucency をそれぞれ呼ぶ。
-//     ⚠**この2つの case は行番号で引かない**＝2026-08-17 に「:274 / :299」が外れていたのを
-//       「:271 / :305」へ直したが、**その2つも2日で +8 腐った**(2026-08-19 B-U9 で実測。
-//       腐らせたのは B-U7 ほか4コミット)。⇒ **同じ文が「行番号で引かない」と書きながら
-//       新しい行番号を置いていた**ので、今度は数字を置かず ActionID の名前だけで引く)。この関数は
-//     「ON を貼り直す」ためのものなので、OFF を回す必要がそもそも無い。
-//     ⚠だから KCMApplyFor 本体には OFF ガードを入れないこと(上記の復元経路が死ぬ)。
+// TARGETS THAT ARE OFF ARE SKIPPED. KCMApplyFor looks up a window even when a target is off, writes
+//   alpha 255 and SW_SHOWNAs the shadow -- which never showed while there was a single target,
+//   because the caller rejected "off" first, but started reaching the off targets once this became
+//   "if any of them is on, do all of them".
+//   @warning THE REAL DAMAGE SHOWS WHEN TWO TARGETS ARE PUT IN THE SAME FLOATING GROUP: they then
+//     share one OWL.Dock as their GA_ROOT, so the moment after the on one writes 77, the off one
+//     writes 255 over the same window and the translucency is cancelled out (and the shadow goes
+//     SW_HIDE then SW_SHOWNA). Beyond that, it would show the off target's shadow uninvited -- and
+//     catching that before a drag is committed is exactly the "shadow left behind at the old
+//     position" that was fixed earlier.
+//   WHY IT IS SAFE TO NARROW IT HERE: restoring 255 and bringing the shadow back at the moment a
+//     toggle goes off is done by the flyout's own handlers, which apply their target by name.
+//     Each of the translucency ActionIDs in KCMActionComponent.cpp -- for our panel, for the Pages
+//     panel and for the book dialog -- calls that target's own Apply. This function exists to
+//     RE-apply what is on, so it never needs to visit what is off.
+//   @warning WHICH IS WHY KCMApplyFor ITSELF MUST NOT GET AN OFF-GUARD (it would kill that restore
+//     path).
 void KCMApplyAllPanelTranslucency()
 {
 	for (int32 i = 0; i < kKCMAlphaCount; ++i)
@@ -663,58 +706,62 @@ void KCMApplyAllPanelTranslucency()
 }
 
 //========================================================================================
-// 遅延再適用 — 窓の作り直しに負けないようにする
+// The delayed re-apply -- not losing to the window being rebuilt
 //
-//   ★なぜ要るか(2026-07-29 実測で判明): 下のオブザーバが kPaletteVisibilityChangedMessage を
-//     受けてすぐ適用しても、その直後に InDesign がトップレベル窓を作り直すことがあり、書いた
-//     alpha ごと捨てられる。症状は「アイコンからフローティングに戻すと不透明に戻る。ただし
-//     メニューで OFF→ON し直すと効く」。
-//     ★診断値が決定的だった —— 適用直後の読み返しは rb=128 で成功しているのに、外部ツールで
-//     後から測ると alpha=255。しかも適用先 HWND(dk=0x5B0BF0)と、そのとき実在した窓(0x21656)が
-//     別物だった。＝「値を上書きされた」のではなく「別の窓に作り替えられた」。
-//   ★対策: 通知の直後に加えて、イベントを一巡させてから「そのときの GA_ROOT」へ貼り直す。
-//     窓が落ち着くまで数回だけ追いかける(kKCMPanelAlphaReapplyTries)。回数で必ず止まる。
-//   ⚠ICallbackTimer のコールバックは参照カウントされない生関数ポインタなので、予約を残したまま
-//     この .pln が降りるとクラッシュする → KCMShutdownPanelAlpha() で必ず停止・解放する。
+//   WHY IT IS NEEDED (measured): applying as soon as the observer below receives
+//     kPaletteVisibilityChangedMessage is not enough, because InDesign can rebuild the top-level
+//     window right after that, throwing the alpha away with it. The symptom is "going from the
+//     icon back to floating comes out opaque -- but switching the menu off and on again works".
+//     THE DIAGNOSTIC THAT SETTLED IT: reading back right after applying gave 128 and succeeded,
+//     while measuring later from an external tool gave 255 -- and the HWND applied to was not the
+//     window that existed at that point. So the value was not overwritten; THE WINDOW WAS
+//     REPLACED.
+//   THE REMEDY: as well as applying right after the notification, let the events go round once and
+//     apply again to whatever GA_ROOT is by then. It chases the window for a few rounds while it
+//     settles (kKCMPanelAlphaReapplyTries), and the count is what guarantees it stops.
+//   @warning ICallbackTimer's callback is a raw function pointer that is NOT reference-counted, so
+//     leaving a booking outstanding while this .pln goes down is a crash -- KCMShutdownPanelAlpha()
+//     always stops and releases it.
 //========================================================================================
 
 #ifdef WINDOWS
 
 static ICallbackTimer* sReapplyTimer = nil;
-static int32           sReapplyLeft  = 0;			// 残り回数(0 で打ち切り＝暴走止め)
-static bool            sPanelAlphaShutdown = false;	// ★KCMShutdownPanelAlpha 済み(以後タイマーを作り直さない)
+static int32           sReapplyLeft  = 0;			// rounds left (0 stops it; this is the runaway guard)
+static bool            sPanelAlphaShutdown = false;	// KCMShutdownPanelAlpha has run (no timer is built after that)
 
 static uint32 KCMReapplyTimerProc(void* refPtr);
 
-// 通知を受けた側から呼ぶ。窓が落ち着くまでの貼り直しを(再)開始する。
-// ★★「予約中なら重ねない」門番(旧 sReapplyPending)は撤去した(2026-07-29 の自己レビュー)。
-//   下の連鎖が何かの拍子に途切れると、その旗が立ったまま戻らず**この関数が以後ずっと no-op**になる
-//   ＝そのセッションでは二度と貼り直せない、という壊れ方をする構造だった。ICallbackTimer は
-//   1 インスタンス 1 予約なので、生きている予約に重ねて StartTimer しても置き換わるだけ。
-//   新しい通知が来たら無条件に武装し直す方が、連鎖の実装差に関わらず確実に動く
-//   (回数も毎回 kKCMPanelAlphaReapplyTries に戻るので、実質デバウンスとして働く)。
+// Called from wherever a notification arrives. Starts (or restarts) the chase until the window
+// settles.
+// THE "DO NOT STACK A BOOKING" GATE WAS TAKEN OUT (a self-review decision). Should the chain below
+//   ever break part-way, that flag would stay raised and NEVER COME DOWN, leaving this function a
+//   no-op for the rest of the session -- a failure mode where it can never be re-applied again.
+//   ICallbackTimer holds one booking per instance, so calling StartTimer over a live booking only
+//   replaces it. Re-arming unconditionally on every new notification works whatever the
+//   implementation does underneath (and since the count goes back to kKCMPanelAlphaReapplyTries
+//   each time, it debounces in effect).
 static void KCMScheduleReapply()
 {
-	// ★Shutdown 後の再武装禁止(2026-08-06 再点検)。可視性オブザーバは detach しない設計なので、終了
-	//   処理中のパネル破棄が通知を出すと(トグルは ON のまま)ここへ来る。後始末の後にタイマーを
-	//   CreateObject し直すと、上の⚠が警告する「生関数ポインタの予約を残したまま .pln が降りる」が
-	//   後始末の後から再生成されてしまう。
+	// NO RE-ARMING AFTER SHUTDOWN. A panel being destroyed during teardown sends the notification
+	// (with the toggle still on) and arrives here. Building the timer again with CreateObject after
+	// the tidy-up would recreate, from after the tidy-up, exactly the state the warning above
+	// guards against: a raw function pointer booked while the .pln goes down.
 	if (sPanelAlphaShutdown)
 		return;
 
-	sReapplyLeft = kKCMPanelAlphaReapplyTries;	// 通知のたびに回数を戻す
+	sReapplyLeft = kKCMPanelAlphaReapplyTries;	// every notification puts the count back
 	if (sReapplyLeft <= 0)
-		return;		// 定数 0 = 遅延再適用そのものを止める設定
+		return;		// a constant of 0 turns the delayed re-apply off altogether
 
-	// ★2026-08-17(API 監査 B-U9 の A-1)＝C スタイルキャストの ::CreateObject から
-	//   **型つきの ::CreateObject2** へ。CreateObject.h:144-158 が「face pointer を正しい型へ
-	//   coerce して返す」版として用意しているもので、KBS が 2026-08-11 のグローバル関数照合で
-	//   3か所とも寄せた形。⚠**KCM 内でも KCMThumbIdleTask.cpp が既にこの形**＝同一プラグイン内の割れ。
-	//   ⚠★**1引数形 CreateObject2<ICallbackTimer>(kCallbackTimerBoss) は使えない**＝1引数形は
-	//     FACE::kDefaultIID を要求する(CreateObject.h:136-142)が、**ICallbackTimer は自前の
-	//     kDefaultIID を持たず基底 IIdleTask のもの(IID_IIDLETASK)を継承する**ので、
-	//     IID_IIDLETASK を要求して ICallbackTimer* へ static_cast する＝型が壊れる。
-	//     ∴ **IID を明示する2引数形が正しい寄せ先**。
+	// The typed ::CreateObject2 is used rather than a C-style cast over ::CreateObject -- the form
+	// CreateObject.h provides to return the face pointer already coerced to the right type, and the
+	// one KCMThumbIdleTask.cpp uses elsewhere in this same plug-in.
+	// @warning THE ONE-ARGUMENT FORM CreateObject2<ICallbackTimer>(kCallbackTimerBoss) CANNOT BE
+	//   USED. It asks for FACE::kDefaultIID, and ICallbackTimer HAS NO kDefaultIID OF ITS OWN: it
+	//   inherits its base IIdleTask's (IID_IIDLETASK). That would ask for IID_IIDLETASK and
+	//   static_cast the result to ICallbackTimer* -- a broken type.
+	//   THE TWO-ARGUMENT FORM, WITH THE IID SPELLED OUT, IS THE CORRECT ONE.
 	if (sReapplyTimer == nil)
 		sReapplyTimer = ::CreateObject2<ICallbackTimer>(kCallbackTimerBoss, IID_ICALLBACKTIMER);
 	if (sReapplyTimer == nil)
@@ -727,55 +774,62 @@ static uint32 KCMReapplyTimerProc(void* /*refPtr*/)
 {
 	--sReapplyLeft;
 
-	// ★ここで Release しない(RunTask の実行中に自分を解放すると自己破棄になる)。
-	//   解放は KCMShutdownPanelAlpha() の1箇所に集約する。
-	//   ★対象が複数になったので「**全部** OFF になったら」やめる(2026-08-06)。
+	// DO NOT Release HERE: releasing itself while RunTask is running is self-destruction. Releasing
+	// happens in one place, KCMShutdownPanelAlpha().
+	// With more than one target, the chase stops when they are ALL off.
 	if (!KCMAnyTranslucentOn())
 	{
-		sReapplyLeft = 0;		// 全部 OFF になったので追いかけをやめる
+		sReapplyLeft = 0;		// everything is off: stop chasing
 		return IIdleTask::kEndOfTime;
 	}
 
 	KCMApplyAllPanelTranslucency();
 
-	// ★★連鎖は「戻り値」で行う(2026-07-29 修正)。以前はここから StartTimer を呼び直して
-	//   いたが、その直後に kEndOfTime を返していたため予約が打ち消され、8 回のはずが
-	//   2 回しか走っていなかった(実測 rp=2)。戻り値が再スケジュール値そのものなので、
-	//   続けたいときは待ち時間を返せばよい。
-	//   ⚠ICallbackTimer の公開契約は one-shot(ヘッダー: "register a one time only callback")なので、
-	//     この連鎖は実装依存の観測に乗っている。万一効かない環境でも、次の通知で
-	//     KCMScheduleReapply が無条件に武装し直すので「二度と動かない」状態にはならない。
+	// THE CHAIN IS DRIVEN BY THE RETURN VALUE. It used to call StartTimer again from in here and
+	// then return kEndOfTime, which cancelled the very booking it had just made -- eight rounds
+	// turned out to be two (measured). The return value IS the reschedule, so returning a delay is
+	// how it carries on.
+	// @warning ICallbackTimer's documented contract is one-shot ("register a one time only
+	//   callback"), so this chain rides on an observation about the implementation. Even where it
+	//   does not hold, the next notification re-arms KCMScheduleReapply unconditionally, so it can
+	//   never end up never running again.
 	if (sReapplyLeft > 0)
 		return kKCMPanelAlphaReapplyDelayMillis;
 
-	// ★★戻り値は IIdleTask::RunTask の再スケジュール値。**0 は「すぐまた呼べ」**であって終了では
-	//   ない(KCMTracker.cpp で 0 を返して InDesign を固めた前科がある)。終わるなら kEndOfTime。
+	// The return value is IIdleTask::RunTask's reschedule. 0 MEANS "CALL ME AGAIN IMMEDIATELY", not
+	// "stop" -- returning it by mistake locks InDesign up. To stop, return kEndOfTime.
 	return IIdleTask::kEndOfTime;
 }
 
 //========================================================================================
-// ★★Win32 イベントフック — SDK 通知が飛ばない遷移を拾う唯一の手段(2026-07-29)
+// The Win32 event hook -- the only way to catch the transitions that send no SDK notification
 //
-//   実測で確定したこと(Debug 2026 / Release 2026 の両方で一致):
-//     ・kPaletteVisibilityChangedMessage は名前のとおり「**可視性**が変わったとき」だけ飛ぶ。
-//       パネルの開閉・アイコン化・ドロワー展開では飛ぶが、**置き場所だけが変わる遷移**
-//       (ドック内展開 ⇄ フローティング、ドロワー展開 → フローティング)では飛ばない。
-//     ・kDockedPaletteAreaChangedByUserMsg は 2025 では飛んだが **2026 では飛ばない**
-//       (しかも飛び先は kPanelManagerBoss ではなく kAppBoss だった)。
-//     ・ビュー再計算(kFitInViewCmdBoss 等)への相乗りも考えたが、ドロワーからの引き出しでは
-//       ドック幅が変わらないため何も起きず、これも使えない。
-//   → 残る手掛かりは「OWL.Palette の親が付け替わる」という Win32 の事実だけ。
+//   ESTABLISHED BY MEASUREMENT (the same on both the Debug and the Release build):
+//     - kPaletteVisibilityChangedMessage arrives, as its name says, only when VISIBILITY changes.
+//       Opening, closing, iconising and opening a drawer all send it; TRANSITIONS THAT ONLY CHANGE
+//       WHERE IT SITS (in-dock <-> floating, drawer -> floating) DO NOT.
+//     - kDockedPaletteAreaChangedByUserMsg arrived in the 2025 release BUT NOT IN 2026 (and it
+//       went to kAppBoss rather than kPanelManagerBoss).
+//     - Riding a view recalculation (kFitInViewCmdBoss and the like) was considered too, but
+//       pulling a panel out of a drawer does not change the dock's width, so nothing happens
+//       there either.
+//   -> The only handle left is the Win32 fact that OWL.Palette's parent is swapped.
 //
-//   ★自プロセス限定 + WINEVENT_OUTOFCONTEXT(他プロセスへの DLL 注入なし)で影響範囲は閉じている。
-//   ★ON の間だけ張り、OFF と終了時に必ず外す(UnhookWinEvent 漏れはリソースリークになる)。
+//   Limited to our own process, with WINEVENT_OUTOFCONTEXT (no DLL injected into anyone else), so
+//     the blast radius is closed.
+//   Installed only while a toggle is on, and always removed on off and at shutdown (a missing
+//     UnhookWinEvent is a resource leak).
 //
-//   ⚠★**再入は公式が名指しで警告している**(2026-08-17 追記)＝"While a hook function processes an
-//     event, additional events may be triggered, which may cause the hook function to **reenter**"。
-//     **このファイルは自分で再入を起こす**＝KCMApplyFor の中の ShowWindow が
-//     EVENT_OBJECT_SHOW(0x8002)/HIDE(0x8003) を出し、どちらも下で張る範囲 0x8002〜0x800B の中にある。
-//     ★**それでも直さない**＝このコールバックは「望みの状態と違うときだけ書く」冪等な形
-//     (alphaOk && shadowOk なら即 continue)なので、再入は1段で収束する。公式が言う「順序が狂う」害は
-//     順序に依存していないので出ない。⇒ **状態を積む処理をここへ足すなら、この前提が崩れる。**
+//   @warning REENTRY IS WARNED ABOUT BY NAME IN THE DOCUMENTATION: "While a hook function processes
+//     an event, additional events may be triggered, which may cause the hook function to
+//     **reenter**". THIS FILE CAUSES ITS OWN REENTRY: the ShowWindow inside KCMApplyFor emits
+//     EVENT_OBJECT_SHOW (0x8002) / HIDE (0x8003), both inside the 0x8002-0x800B range installed
+//     below.
+//     IT IS DELIBERATELY NOT "FIXED": this callback is idempotent -- it writes only when the state
+//     differs from what is wanted (alphaOk && shadowOk continues at once) -- so the reentry
+//     converges in one step. The harm the documentation warns of, events arriving out of order,
+//     cannot appear because nothing here depends on their order.
+//     => ADDING ANYTHING HERE THAT ACCUMULATES STATE BREAKS THAT PREMISE.
 //========================================================================================
 
 static HWINEVENTHOOK sWinEventHook = nullptr;
@@ -784,63 +838,71 @@ static void CALLBACK KCMWinEventProc(HWINEVENTHOOK /*hook*/, DWORD /*event*/, HW
 									   LONG idObject, LONG idChild,
 									   DWORD /*thread*/, DWORD /*time*/)
 {
-	// 見るのは 2 種類だけ:
-	//   ①窓そのもののイベント(OBJID_WINDOW) = 窓の作り直し・移動。従来からの本命。
-	//   ★②カーソルの移動(OBJID_CURSOR) = マウスが動いた合図(2026-07-29 追加)。これを拾うことで
-	//     **タブ帯やタイトル帯にカーソルが乗ったとき**も不透明に戻せる(そこは widget ツリーの外なので
-	//     SDK の IMouseRollOver では届かない)。フックも定期タイマーも増やさず、既に張ってある
-	//     このフックへ流れてくるものを捨てずに使うだけ。
-	//   ⚠子要素(idChild != CHILDID_SELF)は窓イベントのときだけ弾く。カーソルのイベントは
-	//     idChild にカーソルの状態が入ることがあるため、ここで弾くと取りこぼす。
+	// Only two kinds are of interest:
+	//   1. events about a window itself (OBJID_WINDOW) = it was rebuilt or moved. The original
+	//      purpose.
+	//   2. the pointer moving (OBJID_CURSOR) = a signal that the mouse moved. Catching this is what
+	//      makes it possible to go opaque again WHEN THE POINTER IS ON THE TAB STRIP OR THE TITLE
+	//      STRIP, which are outside the widget tree and so out of the SDK's IMouseRollOver's reach.
+	//      It adds neither a hook nor a periodic timer: it simply stops discarding something that
+	//      already arrives here.
+	//   @warning child elements (idChild != CHILDID_SELF) are rejected FOR WINDOW EVENTS ONLY. A
+	//     cursor event can carry the cursor's state in idChild, and rejecting on that would lose
+	//     them.
 	const bool isWindowEvent = (idObject == OBJID_WINDOW && idChild == CHILDID_SELF);
 	const bool isCursorEvent = (idObject == OBJID_CURSOR);
 	if (!isWindowEvent && !isCursorEvent)
 		return;
 
-	// ★対象ごとに独立して判断する(2026-08-06。自分のパネルと本体のページパネル)。
-	//   片方がドッキング中でも、もう片方は貼り直せなければならないので continue で回す。
+	// Each target is decided independently: one of them being docked must not stop the other from
+	// being re-applied, hence the loop with continue.
 	bool16 didApply = kFalse;
 
 	for (int32 which = 0; which < kKCMAlphaCount; ++which)
 	{
-		// ★この機能はトグルが ON のときだけ動く(全部 OFF ならフック自体を張っていないが、
-		//   外れる直前の取りこぼしもここで弾く)。
+		// This feature only runs while a toggle is on. (With everything off the hook is not even
+		// installed, but this also rejects anything still in flight as it is being removed.)
 		if (!sTranslucentOn[which] || sPaletteWnd[which] == nullptr)
 			continue;
 
-		// ★★キャッシュしたハンドルでも「今もそのパネルか」を必ず確かめる(2026-07-29 の自己レビューで追加)。
-		//   HWND は OS が使い回すので、パネルを閉じたあと同じ値が別の窓へ再割り当てされうる。検証せずに
-		//   GA_ROOT を辿ると**他人のパネルを透かす**(しかもフックは OFF にするまで外れないので、
-		//   ON のままパネルを閉じた後もここへ流れ込み続ける)。
-		//   ⚠ここでは SDK へ問い合わせ直さない: 失効していたらキャッシュを捨てて次へ進むだけにして、
-		//     引き直しは SDK 通知や Apply の経路(KCMQueryPaletteWindow)へ任せる。このフックは
-		//     大量に飛ぶので、1件あたりを軽く保つのが最優先。
+		// EVEN A CACHED HANDLE IS CHECKED FOR STILL BEING THAT PANEL. The OS recycles HWNDs, so the
+		// same value can be handed to another window after a panel is closed. Walking GA_ROOT
+		// without checking would MAKE SOMEBODY ELSE'S PANEL TRANSLUCENT -- and since the hook is
+		// not removed until the toggle goes off, events keep arriving here after a panel is closed
+		// with it still on.
+		// @warning THE SDK IS NOT ASKED AGAIN HERE: a stale entry is simply dropped and the loop
+		//   moves on, leaving the lookup to the SDK notification or to Apply
+		//   (KCMQueryPaletteWindow). This hook fires a great deal, so keeping each pass cheap comes
+		//   first.
 		if (!::IsWindow(sPaletteWnd[which]))
 		{
-			sPaletteWnd[which] = nullptr;	// 失効(パネルを閉じた等)。次からは上の行で弾かれる
+			sPaletteWnd[which] = nullptr;	// stale (the panel was closed, say): the line above rejects it from now on
 			continue;
 		}
 
-		// ★クラス名の照合は**窓のイベントのときだけ**行う(2026-07-29)。カーソルが動いただけの回まで
-		//   GetClassNameW を叩くのは無駄(秒間 60〜100 回走る)。
-		//   ⚠安全性の根拠: HWND が別の窓へ使い回されるには、その窓が作られて**表示される**必要がある。
-		//     表示は EVENT_OBJECT_SHOW ＝窓イベントなので、すり替わった瞬間には必ずこの照合を通る。
-		//     非表示のままの窓は KCMQueryTranslucentTarget が "OWL.Dock"/"OWL.FrameDrawer" 以外として
-		//     弾くので、透かす対象にもならない。
-		//   ⚠2026-08-06: 旧実装はここで窓タイトルも照合していた(自分のパネルかを綴りで見ていた)。
-		//     引き直しが WidgetID 狙い撃ちになったので綴りを合わせる相手が無くなり、クラス名までにした。
-		//     ここで捨てれば次の Apply が SDK から正しい窓を引き直す。
-		//   ⚠★**ダイアログはクラス名では照合できない**(2026-08-13)。その窓は "OWL.Palette" ではなく、
-		//     クラス名は本体中が使う汎用名なので、ここを通すと窓イベントのたびに捨てられて半透明が
-		//     一瞬で解ける。★かといって**照合ゼロで通してはいけない**(2026-08-13 の再検査): ハンドルは
-		//     使い回されるので、`IsWindow` だけでは他人の窓を透かしうる ---- パネルがこの行で防いで
-		//     いるのと**同じ事故**。∴ダイアログには**登録時の窓タイトル**を突き合わせる
-		//     (KCMTitleMatchesBookDialog。同じ窓イベントのときだけ＝コストの掛け方もパネルと同じ)。
-		//   ★**カーソルの回に照合しないことで「他人の窓へ書く」道が開くのではないか**——
-		//     2026-08-19(B-U9)に追った結果**開かない**。この下で読むのは属性だけ(GetLayeredWindowAttributes)で、
-		//     **実際に書くのは KCMApplyFor で、あちらは必ず KCMQueryPaletteWindow を通る**＝
-		//     パネルならクラス名・ダイアログなら題名を、その場でもう一度照合してから書く。
-		//     ⇒ ここの照合は「捨てるのを早める」ためのもので、書き込みの安全はここに依存していない。
+		// THE CLASS-NAME CHECK IS DONE FOR WINDOW EVENTS ONLY. Calling GetClassNameW on every pass
+		// where the pointer merely moved is waste (those run 60-100 times a second).
+		// @warning WHY THAT IS SAFE: for an HWND to be recycled onto another window, that window
+		//   has to be created and SHOWN. Being shown is EVENT_OBJECT_SHOW, a window event, so the
+		//   moment of any swap always passes through this check. A window that is never shown is
+		//   rejected by KCMQueryTranslucentTarget as being neither "OWL.Dock" nor
+		//   "OWL.FrameDrawer", so it never becomes a target either.
+		//   (The older code checked the window title here as well, to see whether it was our panel
+		//   by its spelling. Once the lookup aimed at a WidgetID there was no spelling left to
+		//   match, so the class name is where it stops. Dropping it here means the next Apply looks
+		//   the right window up from the SDK again.)
+		// @warning A DIALOG CANNOT BE CHECKED BY CLASS NAME. Its window is not an "OWL.Palette",
+		//   and its class name is a generic one the application uses everywhere -- putting it
+		//   through here would drop it on every window event and the translucency would come
+		//   undone at once. NOR CAN IT GO UNCHECKED: handles get recycled, so IsWindow alone could
+		//   make somebody else's window translucent -- the same accident this line prevents for
+		//   panels. So a dialog is matched against ITS RECORDED WINDOW TITLE
+		//   (KCMTitleMatchesBookDialog), on window events only, at the same cost as a panel.
+		// DOES NOT CHECKING ON CURSOR PASSES OPEN A ROUTE TO WRITING TO SOMEBODY ELSE'S WINDOW?
+		//   No. All that is read below is an attribute (GetLayeredWindowAttributes); THE WRITING IS
+		//   DONE BY KCMApplyFor, WHICH ALWAYS GOES THROUGH KCMQueryPaletteWindow and checks the
+		//   class name (panel) or the title (dialog) again, right then. The check here only makes
+		//   a stale entry go sooner -- the safety of the write does not rest on it.
 		if (isWindowEvent)
 		{
 			const bool stillOurs = (which == kKCMAlphaBookDialog)
@@ -853,109 +915,117 @@ static void CALLBACK KCMWinEventProc(HWINEVENTHOOK /*hook*/, DWORD /*event*/, HW
 			}
 		}
 
-		// ★★当初は「hwnd == sPaletteWnd」で絞っていたが、**OWL.Palette 宛てのイベントは
-		//   PARENTCHANGE も LOCATIONCHANGE も一度も飛んでこなかった**(実測 hk=1/0)。子ウィンドウの
-		//   移動ではシステムがこれらを生成しないことがある。
-		//   → 発信元は問わず、「イベントが来たら対象パネルの今のトップレベル窓を引き直して、
-		//     alpha がずれていたら貼る」方式にする。判定は GetAncestor + 属性読みだけで、
-		//     ずれていなければ即 continue するので、大量に飛んできても実害はない。
+		// This once filtered on hwnd == sPaletteWnd, but NOT ONE PARENTCHANGE OR LOCATIONCHANGE
+		// ADDRESSED TO AN OWL.Palette EVER ARRIVED (measured). The system does not always generate
+		// those for a child window being moved.
+		// -> So the sender is not looked at. When an event arrives, the target's current top-level
+		//   window is looked up again and the alpha written if it has drifted. The test is a
+		//   GetAncestor and an attribute read, and it continues at once when nothing has drifted,
+		//   so the volume does no harm.
 		HWND target = KCMQueryTranslucentTarget(which, sPaletteWnd[which]);
 		if (target == nullptr)
-			continue;				// ドック内で展開中 = 対象外
+			continue;				// expanded inside a dock: not a target
 
-		// ★★ここは移動中に何度も呼ばれる。「望みの状態と違うときだけ」実処理へ進むこと
-		//   (実測では総イベント 1477 件に対し、実際の書き込みは 1 件だけだった)。
+		// THIS RUNS MANY TIMES DURING A MOVE. Only go on to the real work WHEN THE STATE DIFFERS
+		// FROM WHAT IS WANTED (measured: 1477 events produced exactly one write).
 
-		// ①alpha が望みの値か(カーソルが乗っていれば不透明が「望みの値」になる)
-		// ★★**失敗の腕は「念のため」ではなく、この窓の documented な状態**(2026-08-17 追記。
-		//   MSDN の Remarks: "GetLayeredWindowAttributes can be called only if the application has
-		//   previously called SetLayeredWindowAttributes on the window. The function will fail if the
-		//   layered window was setup with UpdateLayeredWindow.")。
-		//   ★パネル側の WS_EX_LAYERED を立てたのは **InDesign** であってこちらではない(ファイル冒頭)
-		//     ⇒ **こちらが一度書くまで、この読み取りは正当に失敗しうる**。
-		//   ∴ **「読めない」は必ず「適用する」に倒すこと**(「もう正しい」と読んではいけない)＝
-		//     倒し方が逆だと、作り直された Dock がトグル ON のまま不透明で残る。
-		//   ★一度書けば以後は読めるので、下の「1477 イベント中の書き込み1件」は定常状態の話。
+			// 1. is the alpha what is wanted? (with the pointer over it, opaque is what is wanted)
+			// THE FAILURE ARM IS NOT BELT-AND-BRACES; IT IS THIS WINDOW'S DOCUMENTED STATE. MSDN's
+			//   Remarks: "GetLayeredWindowAttributes can be called only if the application has
+			//   previously called SetLayeredWindowAttributes on the window. The function will fail
+			//   if the layered window was setup with UpdateLayeredWindow."
+			//   For a panel, WS_EX_LAYERED was set by INDESIGN and not by us (see the head of this
+			//   file) => UNTIL WE HAVE WRITTEN ONCE, THIS READ CAN LEGITIMATELY FAIL.
+			// SO "CANNOT READ" MUST FALL ON THE SIDE OF "APPLY" and never be read as "already
+			//   correct": the other way round leaves a rebuilt Dock opaque with the toggle on.
+			// Once written, it reads back from then on -- so "one write in 1477 events" above is
+			//   about the steady state.
 		const BYTE want = KCMEffectiveAlpha(which, target);
 		BYTE  cur = 0;
 		DWORD key = 0, flags = 0;
 		const bool16 alphaOk = (::GetLayeredWindowAttributes(target, &key, &cur, &flags) && cur == want) ? kTrue : kFalse;
 
-		// ②影(OWL.ShadowView)の表示状態が望みどおりか。
-		//   ★パネルをドラッグで動かすと InDesign が影を出し直す。alpha だけを見ていると
-		//     「影だけ戻って濃く見える」状態が残る(2026-07-29 実機で判明)。
+			// 2. is the shadow (OWL.ShadowView) shown or hidden as wanted?
+			//   Dragging a panel makes InDesign put the shadow back. Watching only the alpha leaves
+			//   the state where THE SHADOW ALONE HAS RETURNED and that part looks dark (found on a
+			//   live build).
 		bool16 shadowOk = kTrue;
 		HWND   shadow   = ::GetWindow(target, GW_OWNER);
 		if (KCMClassIs(shadow, L"OWL.ShadowView"))
 		{
 			const bool16 visible = ::IsWindowVisible(shadow) ? kTrue : kFalse;
-			// ★望みの状態は alpha ではなく**トグルの ON/OFF**で決まる(上の適用側と必ず揃えること)。
-			//   ここに到達するのはその対象が ON のときだけなので、望みは常に「隠れている」。
+				// What is wanted is decided by THE TOGGLE, not by the alpha -- KEEP THIS IN STEP
+				// WITH THE APPLYING SIDE ABOVE. Only targets that are on reach this point, so what
+				// is wanted here is always "hidden".
 			shadowOk = (visible == kFalse);
 		}
 
 		if (alphaOk && shadowOk)
-			continue;				// どちらも望みどおり = 何もしない
+			continue;				// both as wanted: nothing to do
 
 		KCMApplyFor(which);
 		didApply = kTrue;
 	}
 
-	// ★遅延の貼り直し(8 回 × 50ms)は**窓のイベントのときだけ**。窓が作り直されて alpha ごと
-	//   捨てられるのを追いかけるための仕掛けなので、カーソルが動いただけの回で回すのは純粋な無駄
-	//   (しかもカーソルは何度も動くので、その都度 8 回の連鎖を張り直すことになる)。
-	//   ★対象が複数でも予約は1本でよい(タイマー側が全対象を貼り直すため)。
+	// THE DELAYED RE-APPLY IS FOR WINDOW EVENTS ONLY. It exists to chase a window that gets rebuilt
+	// with the alpha thrown away, so running it on a pass where only the pointer moved is pure
+	// waste -- and since the pointer moves constantly, it would mean re-arming the whole chain over
+	// and over.
+	// One booking covers every target, because the timer re-applies to all of them.
 	if (isWindowEvent && didApply)
 		KCMScheduleReapply();
 }
 
 static void KCMInstallWinEventHook()
 {
-	// ★★Shutdown 後は張り直さない(2026-08-13)。**上の KCMScheduleReapply と同じ理由・同じ形**で、
-	//   こちらにだけ無かった分。KCMSetTranslucentFor は「どれか1つでも ON なら張る」ので、
-	//   KCMShutdownPanelAlpha が外した後にトグルを触る経路ができると、**OS が KCMWinEventProc
-	//   (参照カウントされない生関数ポインタ)を握ったまま .pln が降りる**——このファイルが
-	//   ICallbackTimer について何重にも防いでいる当の状態が、フックの側から再現してしまう。
-	//   ⚠**Remove 側は塞がない**。あちらは「外す」方向なので、OFF にしたときの復元経路を殺さないため。
-	//   ※今日の呼び手はメニュー押下だけで Shutdown の後には来ない＝実害は出ていない。塞ぐのは
-	//     「同じ性質の予約(タイマーとフック)のうち片方だけが守られている」非対称そのものに対して。
+	// NOT INSTALLED AGAIN AFTER SHUTDOWN -- the same reason and the same shape as KCMScheduleReapply
+	// above, which is where this was missing. KCMSetTranslucentFor installs "when any of them is
+	// on", so a path that touches a toggle after KCMShutdownPanelAlpha has removed the hook would
+	// leave THE OS HOLDING KCMWinEventProc, A RAW UNCOUNTED FUNCTION POINTER, WHILE THE .pln GOES
+	// DOWN: precisely the state this file guards against several times over for ICallbackTimer.
+	// @warning THE REMOVE SIDE IS DELIBERATELY NOT GUARDED. That direction takes things away, and
+	//   blocking it would kill the restore path for switching a toggle off.
+	// (Today's only caller is the menu being pressed, which never comes after Shutdown, so nothing
+	//  has actually gone wrong. This is closing the asymmetry itself: two bookings of the same
+	//  nature -- a timer and a hook -- of which only one was guarded.)
 	if (sPanelAlphaShutdown)
 		return;
 
 	if (sWinEventHook != nullptr)
-		return;		// 既に張ってある
+		return;		// already installed
 
-	// ★範囲は SHOW(0x8002)〜LOCATIONCHANGE(0x800B)。当初 PARENTCHANGE(0x800F) だけを張ったが
-	//   **一度も発火しなかった**(実測 hk=1/0)。OWL は SetParent ではない方法で窓を組み替えている。
-	//   パネルが移動する以上 LOCATIONCHANGE は必ず飛ぶので、そこまで含めて拾う。
-	//   ⚠この範囲は他の窓でも大量に飛ぶ。コールバック側で「自分のパネル窓」かつ
-	//     「alpha が期待値と違う」ときだけ動くよう二段で絞ってある。
+	// The range is SHOW (0x8002) through LOCATIONCHANGE (0x800B). PARENTCHANGE (0x800F) alone was
+	// installed at first AND NEVER FIRED ONCE (measured): OWL rearranges its windows by some means
+	// other than SetParent. A panel does move, so LOCATIONCHANGE is certain to arrive, and the
+	// range is taken out that far.
+	// @warning this range fires a great deal for other windows too. The callback narrows it in two
+	//   stages: it must be one of our panel windows, AND the alpha must differ from what is
+	//   wanted.
 	sWinEventHook = ::SetWinEventHook(EVENT_OBJECT_SHOW, EVENT_OBJECT_LOCATIONCHANGE,
-									  nullptr,						// フック DLL 無し(自プロセス内の関数)
+									  nullptr,						// no hook DLL (a function inside our own process)
 									  KCMWinEventProc,
-									  ::GetCurrentProcessId(), 0,	// ★自プロセスの全スレッド限定
-									  WINEVENT_OUTOFCONTEXT);		// ★注入なし
+									  ::GetCurrentProcessId(), 0,	// our own process, every thread of it
+									  WINEVENT_OUTOFCONTEXT);		// nothing injected
 }
 
-// ★★★フックを**本当に外せたときだけ**ハンドルを忘れる(2026-08-12。KBS が 08-11 に直した形を移植)。
-//   !以前は戻り値を見ずに nullptr を代入していた。MSDN は UnhookWinEvent が失敗する条件を3つ挙げており
-//     (ハンドルが無効／既に外されている／**張ったスレッド以外から呼んだ**)、3つ目のときフックは**まだ生きている**。
-//     そこでハンドルを捨てると二度と外す手段が無くなる ---- KCMShutdownPanelAlpha は nullptr を見て
-//     「済んだ」と判断し、**OS が KCMWinEventProc(参照カウントされない生関数ポインタ)を握ったまま
-//     .pln が降りる**。このファイルが ICallbackTimer について二重に防いでいる当の状態そのもの。
-//   ⚠★**2026-08-12 訂正＝旧記述「ハンドルを残す副作用は無い」は言いすぎだった**。
-//     KCMInstallWinEventHook は `sWinEventHook != nullptr` を見て即 return するので、
-//     (⚠2026-08-19 B-U9＝ここは 2026-08-12 に `:671` と行番号で書き、その日は当たっていたが、
-//      model/UI 分割でこのファイルが伸びて **+220 ずれた**。⇒ **指すのは関数名**。)
-//     **フックが実際には消えているのにハンドルだけ残った場合、張り直しがそのセッション中ずっと no-op**
-//     になる＝ドッキング切り替えへの追随が黙って死ぬ。MSDN の失敗3条件のうち「無効なハンドル」
-//     「既に外されている」がそれに当たる。
-//   ★それでもこの形(戻り値を見て、失敗したら残す)を採るのは、**現実に起こりうる失敗が3つめ
-//     (張ったスレッド以外から呼んだ)だけ**だから＝そのときフックは**生きている**ので、Install が
-//     no-op になるのは正しい動作になる。呼び手は今もメニュー押下と Shutdown の2つで、どちらもメイン
-//     スレッド。⇒ **別スレッドから呼ぶ経路ができたら、ここを再検討する。**
-//   !今日の呼び手はすべてメインスレッド(メニュー押下と Shutdown)なので実際に失敗したことは無い。
-//     狙いは「失敗を握りつぶさない」ことにある。
+// FORGET THE HANDLE ONLY WHEN THE HOOK REALLY CAME OFF (ported from the shape KBS settled on).
+//   It used to assign nullptr without looking at the return value. MSDN gives three ways
+//     UnhookWinEvent can fail -- an invalid handle, one already removed, and BEING CALLED FROM A
+//     THREAD OTHER THAN THE ONE THAT INSTALLED IT -- and in the third case THE HOOK IS STILL ALIVE.
+//     Throwing the handle away then leaves no way to ever remove it: KCMShutdownPanelAlpha sees
+//     nullptr, concludes it is done, and THE OS IS LEFT HOLDING KCMWinEventProc, A RAW UNCOUNTED
+//     FUNCTION POINTER, WHILE THE .pln GOES DOWN -- the very state this file guards against twice
+//     over for ICallbackTimer.
+//   @warning "KEEPING THE HANDLE HAS NO SIDE EFFECT" WAS TOO STRONG. KCMInstallWinEventHook returns
+//     at once on sWinEventHook != nullptr, so IF THE HOOK IS IN FACT GONE AND ONLY THE HANDLE
+//     REMAINS, INSTALLING AGAIN IS A NO-OP FOR THE REST OF THE SESSION -- following a docking
+//     change dies silently. MSDN's first two failure conditions are exactly that case.
+//   THIS SHAPE (look at the return value; keep the handle on failure) is taken anyway BECAUSE THE
+//     ONLY FAILURE THAT CAN REALISTICALLY HAPPEN IS THE THIRD ONE, where the hook IS alive, and
+//     then Install being a no-op is the correct behaviour. The callers today are the menu being
+//     pressed and Shutdown, both on the main thread.
+//     => IF A PATH EVER CALLS THIS FROM ANOTHER THREAD, REVISIT IT.
+//   No failure has ever actually happened; the point is not to swallow one.
 static void KCMRemoveWinEventHook()
 {
 	if (sWinEventHook != nullptr)
@@ -967,12 +1037,13 @@ static void KCMRemoveWinEventHook()
 
 void KCMShutdownPanelAlpha()
 {
-	// プラグイン終了時の保険。ポインタは deref せず、停止と解放だけ(終了処理中でも安全)。
-	sPanelAlphaShutdown = true;		// ★以後 KCMScheduleReapply がタイマーを作り直さない(再武装禁止)
-	KCMRemoveWinEventHook();		// ★フックを残したまま .pln が降りると危険
+	// The backstop at plug-in shutdown. Nothing is dereferenced: it only stops and releases, which
+	// is safe even during teardown.
+	sPanelAlphaShutdown = true;		// from here on KCMScheduleReapply builds no timer (no re-arming)
+	KCMRemoveWinEventHook();		// leaving the hook installed while the .pln goes down is dangerous
 
 	for (int32 i = 0; i < kKCMAlphaCount; ++i)
-		sPaletteWnd[i] = nullptr;	// 覚えていた HWND も手放す(OS が使い回す値を抱えたままにしない)
+		sPaletteWnd[i] = nullptr;	// let the remembered HWNDs go too (never hold a value the OS recycles)
 
 	if (sReapplyTimer != nil)
 	{
@@ -983,7 +1054,7 @@ void KCMShutdownPanelAlpha()
 	sReapplyLeft = 0;
 }
 
-#else	// Mac: 適用そのものが無いので、予約も後始末も要らない
+#else	// the Mac applies nothing, so it needs neither a booking nor a tidy-up
 
 static void KCMScheduleReapply() {}
 void        KCMShutdownPanelAlpha() {}
@@ -991,73 +1062,86 @@ void        KCMShutdownPanelAlpha() {}
 #endif // WINDOWS
 
 //========================================================================================
-// パネルの開閉・ドッキング切り替えへの追随
+// Following a panel being opened, closed or (un)docked
 //
-//   ★半透明は「今のトップレベル窓」に付けるので、その窓が作り直されると失われる。具体的には
-//     (a)パネルを閉じて開き直す (b)ドック⇄フローティングを切り替える
-//     (c)アイコン状態からフローティングへ引き出す (d)アイコンをクリックしてドロワー展開する。
-//     ★★4 つとも下の通知 1 本で拾える(2026-07-29 に Spy で実測)ので、ON のままなら自動で貼り直る。
+//   The translucency is put on THE TOP-LEVEL WINDOW OF THE MOMENT, so it is lost when that window
+//     is rebuilt -- which happens on: (a) closing and reopening a panel, (b) docking or undocking
+//     it, (c) pulling it out of its icon into a floating window, (d) clicking its icon to open the
+//     drawer.
+//     ALL FOUR ARRIVE AS THE SINGLE NOTIFICATION BELOW (measured with the Spy), so while a toggle
+//     is on they are re-applied automatically.
 //
-//   ★購読する通知の特定は 2026-07-29 に Debug 版 InDesign の Spy で実測した:
+//   WHICH NOTIFICATION IT IS was measured with the Debug build's Spy:
 //       kPaletteVisibilityChangedMessage @ kPanelManagerBoss (IID_IPANELMGR)
-//     ドッキング切り替えのたびに飛ぶ。本体側の受け手(kLibraryPanelWindowObserverBoss /
-//     kBookPaletteWindowObserverBoss)も普通の IID_IOBSERVER で受けている。
-//     ★★上記(a)〜(d)のどれでも「widget の作り直し(Observer 再 Attach 46 件) → 本メッセージ」
-//       という同じ順序で流れる(2026-07-29 実測)。つまり Update が呼ばれた時点で widget は
-//       再構築済みなので、そこで貼り直してよい。
-//     ⚠事前に候補と考えた kDockedPaletteAreaChangedMsg は一度も飛ばなかった(=使えない)。
-//     ⚠kPanelChangedMessage(widgetid.h) も別物。CPanelControlData が送る「子 widget 構成の
-//       変更」通知で、パレットの表示状態とは無関係(パネル開閉でも飛ばないことを実測で確認)。
-//     ⚠「パネルが開いた」専用の通知は存在しない(閉じる直前の kAboutToClosePaletteMsg に
-//       対応するものは無く、開閉もドッキング切り替えもアイコン復帰もこの1本にまとまっている)。
+//     It goes out on every docking change. The application's own listeners
+//     (kLibraryPanelWindowObserverBoss / kBookPaletteWindowObserverBoss) take it on a plain
+//     IID_IOBSERVER as well.
+//     FOR EVERY ONE OF (a) TO (d), THE ORDER IS THE SAME (measured): the widgets are rebuilt (the
+//       observers re-attach) and THEN this message arrives. So by the time Update runs the widgets
+//       are already rebuilt, and it is safe to apply there.
+//     @warning kDockedPaletteAreaChangedMsg, considered first, never arrived at all.
+//     @warning kPanelChangedMessage (widgetid.h) is a different thing: CPanelControlData sends it
+//       for "the child widget layout changed", which has nothing to do with a palette's
+//       visibility (measured: it does not even arrive when a panel is opened or closed).
+//     @warning THERE IS NO NOTIFICATION MEANING "A PANEL OPENED". Nothing mirrors the
+//       kAboutToClosePaletteMsg sent just before closing; opening, docking and coming back from an
+//       icon are all rolled into this one message.
 //
-//   ★オブザーバ実体は kActiveContextBoss に AddIn して同居させる(.fr)。レイアウト同期オブザーバ・
-//     一括クローズオブザーバと同じ実証済みの構成。
-//   ⚠★★**2026-08-12 訂正＝旧記述「終了時に明示 detach はしない(detach 自体がクラッシュ要因になる)」は
-//     撤回**。同日に KCMDetachPanelVisibilityObserver を新設し、Shutdown から KCMShutdownPanelAlpha
-//     より**前に**呼ぶようにした(理由の全文はそちらの関数コメント)。要は**外さないほうが危ない**＝
-//     購読している間セッションが握っているのは「この .pln の中へのポインタ」で、終了処理中のパネル破棄は
-//     実際に通知を飛ばすので、消えかけのコードで Update が走る。★KBS が 2026-08-08 に同じ結論へ移って
-//     おり、これはその移植。
-//     ⚠残る2つのオブザーバ(レイアウト同期・一括クローズ)は今も detach していない。**方針が割れているの
-//       ではなく**、「終了処理の途中で壊されるもの(パネル)」を見ているのがこの1本だけ、という違い。
+//   The observer implementation is AddIn'd onto kActiveContextBoss in the .fr, alongside the layout
+//     synchronisation observer and the batch-close observer -- the same proven arrangement.
+//   IT IS DETACHED AT SHUTDOWN, by KCMDetachPanelVisibilityObserver, called BEFORE
+//     KCMShutdownPanelAlpha (the full reason is on that function). NOT DETACHING IS THE MORE
+//     DANGEROUS OPTION: while the subscription stands, what the session holds is a pointer INTO
+//     THIS .pln, and destroying a panel during teardown really does send the notification, so
+//     Update would run in code that is on its way out. KBS came to the same conclusion; this is
+//     that fix, ported.
+//     @warning THE OTHER TWO OBSERVERS (layout synchronisation and batch close) ARE STILL NOT
+//       DETACHED. That is not two policies: this is the only one watching something that gets
+//       destroyed part-way through teardown.
 //========================================================================================
 
 //========================================================================================
-// カーソルが乗っている間だけ不透明に戻す(IMouseRollOver)
+// Going opaque again while the pointer is over the panel (IMouseRollOver)
 //
-//   ★狙い: 半透明は「下が見えて邪魔にならない」ためのものだが、読みたい/操作したいときは
-//     不透明の方がよい。カーソルが乗ったら解除し、離れたら戻す。
-//   ★仕組み: IMouseRollOver(ui/IMouseRollOver.h)は widget に roll-over 挙動を付けるための
-//     公開インターフェイス。MouseEnter / MouseOver / MouseLeave が呼ばれる。
-//     .fr でパネル boss(kKCMPanelWidgetBoss)に IID_IMOUSEROLLOVER として AddIn する。
-//   ★★載せ先 = kKCMPanelWidgetBoss(パネル本体。kPalettePanelWidgetBoss 派生)。名指ししているのは
-//     KCMUI.fr の kKCMPanelWidgetBoss の Class ブロック。
-//     **パネル全域で反応することを実機で確認済み**(2026-07-29。記録は同じ Class ブロックのコメント)。
-//     ⚠**ファクトリ登録(KCMUIFactoryList.h)を忘れると、何のエラーも出ずに黙って呼ばれない**
-//       (CREATE_PMINTERFACE だけでは足りない)。効かなくなったらまずそこを疑う。
-//   ★調査の記録: 実機ダンプ(IObjectModel_RomanFS.txt)で IID_IMOUSEROLLOVER を実際に持つ boss を洗うと、
-//     本体側で実装を持っているのは次の系統だった(載せ先を変えるときの手掛かり)。
-//       kRollOverIconButtonBoss 系(アイコンボタン全般) → kMouseRollOverImpl
-//       kPanelWithRolloverWidgetBoss(.fr 型 PanelWithRollOverWidget) → kPanelMouseRollOverImpl
-//       kClickableTextWidgetBoss 系(リンク文字) → kHyperlinkRollOverImpl
-//       kGIFPlayerWidgetBoss → kGIFMouseRollOverImpl
-//     ＝**MouseEnter を呼ぶ側は widget 側の実装**なので、載せ替えるときは受け手があるかを先に確かめる。
-//   ⚠判定範囲は**パネル本体の widget まで**。タイトルバーやタブ帯(OWL クロム)の上では
-//     反応しない(クロムはマウスイベントを app dispatcher に流さない)。
+//   THE POINT: translucency is there so that what is underneath shows through and the panel is out
+//     of the way -- but when it is to be read or used, opaque is better. The pointer arriving
+//     lifts it; the pointer leaving puts it back.
+//   HOW: IMouseRollOver (ui/IMouseRollOver.h) is the public interface for giving a widget
+//     roll-over behaviour: MouseEnter / MouseOver / MouseLeave get called. It is AddIn'd as
+//     IID_IMOUSEROLLOVER onto the panel boss (kKCMPanelWidgetBoss) in the .fr.
+//   WHERE IT IS PUT: kKCMPanelWidgetBoss, the panel itself (derived from kPalettePanelWidgetBoss).
+//     The Class block for kKCMPanelWidgetBoss in KCMUI.fr is what names it, and REACTING OVER THE
+//     WHOLE PANEL AREA WAS CONFIRMED ON A LIVE BUILD (the record is in a comment in that same Class
+//     block).
+//     @warning FORGETTING THE FACTORY ENTRY (KCMUIFactoryList.h) MEANS IT IS SIMPLY NEVER CALLED,
+//       WITH NO ERROR OF ANY KIND (CREATE_PMINTERFACE alone is not enough). If it stops working,
+//       suspect that first.
+//   FROM THE INVESTIGATION: going through a live boss registry dump (IObjectModel_RomanFS.txt) for
+//     the bosses that really carry IID_IMOUSEROLLOVER, the application implements it on these
+//     families (useful if this is ever moved elsewhere):
+//       kRollOverIconButtonBoss and kin (icon buttons generally) -> kMouseRollOverImpl
+//       kPanelWithRolloverWidgetBoss (the .fr type PanelWithRollOverWidget) -> kPanelMouseRollOverImpl
+//       kClickableTextWidgetBoss and kin (link text) -> kHyperlinkRollOverImpl
+//       kGIFPlayerWidgetBoss -> kGIFMouseRollOverImpl
+//     => WHAT CALLS MouseEnter IS THE WIDGET'S OWN IMPLEMENTATION, so before moving this onto
+//       another boss, check that there is something there to call it.
+//   @warning ITS REACH ENDS AT THE PANEL'S OWN WIDGETS. It does not react over the title bar or the
+//     tab strip (the OWL chrome), which do not pass mouse events to the app dispatcher.
 //
-//   ★★2026-07-29 変更: 「乗っているか」の判定はもうここでは持たない。KCMCursorOverWindow() が
-//     呼ばれるたびにカーソル位置を実測する。理由は 2 つ:
-//       (a)上の⚠のとおり、タブ帯・タイトル帯では一切呼ばれない。そこはユーザーが実際に触る場所
-//          なので、届かないままにはできない(実機のツリーダンプでクロムが widget ツリーの外＝
-//          kOWLHostedPanelWrapperBoss で親が尽きることを確定させた)。
-//       (b)MouseLeave は取りこぼす経路があり、旗方式だと「乗っている」が張り付いて半透明が
-//          二度と効かなくなる壊れ方をしていた。
-//     ＝ここは「マウスが動いたから貼り直せ」と伝えるだけの**補助トリガー**に降格した。旗を持たない
-//       ので、どちら側のイベントを取りこぼしても状態がずれたままにならない。
+//   WHETHER THE POINTER IS OVER IT IS NO LONGER HELD HERE: KCMCursorOverWindow() measures the
+//     pointer's position every time it is called. Two reasons:
+//       (a) as the warning above says, this is never called at all on the tab strip or the title
+//           strip -- which is where the user actually reaches, so it cannot be left unreachable.
+//           (A widget-tree dump on a live build settled that the chrome is outside the tree: the
+//           parent chain ends at kOWLHostedPanelWrapperBoss.)
+//       (b) MouseLeave has paths where it is missed, and with a flag "the pointer is on it" would
+//           stick, breaking translucency for the rest of the session.
+//     => This has been demoted to A SUPPLEMENTARY TRIGGER that only says "the mouse moved, apply
+//       again". Holding no flag, missing an event on either side cannot leave the state wrong.
 //========================================================================================
 
-/** パネルにカーソルが乗り降りしたら半透明を貼り直す(判定は持たない=補助トリガー)。 */
+/** Re-applies the translucency as the pointer arrives on and leaves the panel. Holds no state of
+    its own -- it is only a trigger. */
 class KCMPanelRollOver : public CPMUnknown<IMouseRollOver>
 {
 public:
@@ -1080,47 +1164,53 @@ void KCMPanelRollOver::MouseEnter(const PMPoint& localMousePos)
 {
 	fLastPos = localMousePos;
 
-	// ★トグルが OFF なら何もしない(2026-08-06 追加)。★ここには長く「OFF のときは中で弾かれる」と
-	//   書いてあったが**そうなっていなかった**: KCMApplyPanelTranslucency は OFF でも窓を探し
-	//   (キャッシュが失効していれば SDK へ問い合わせ直す)、alpha=255 を書き、影を SW_SHOWNA する。
-	//   ★同じファイルの IsMouseOver() が 2026-07-30 に「OFF なら実測しない」と決めた判断が、
-	//     こちら側に届いていなかった(同一ファイル内の割れ)。使っていない人に費用を払わせない。
-	//   ⚠OFF へ切り替えた瞬間の 255 への復元は、フライアウトのハンドラが明示的に
-	//     KCMApplyPanelTranslucency() を呼ぶので保証されている(KCMActionComponent.cpp)。
+	// Nothing to do while the toggle is off. This used to say "it gets rejected inside", AND IT
+	// DID NOT: KCMApplyPanelTranslucency looks a window up even when off (asking the SDK again when
+	// the cache is stale), writes alpha=255, and SW_SHOWNAs the shadow.
+	// The judgement IsMouseOver() below had already made -- do not measure while off -- had simply
+	// not reached this side (a disagreement inside one file). DO NOT MAKE PEOPLE WHO ARE NOT USING
+	// THE FEATURE PAY FOR IT.
+	// @warning restoring 255 at the moment the toggle goes off is guaranteed by the flyout's
+	//   handler, which calls KCMApplyPanelTranslucency() explicitly
+	//   (KCMActionComponent.cpp).
 	if (!KCMGetPanelTranslucent())
 		return;
 
-	KCMApplyPanelTranslucency();		// → 実測して不透明へ
+	KCMApplyPanelTranslucency();		// measures, and goes opaque
 }
 
 void KCMPanelRollOver::MouseOver(const PMPoint& localMousePos)
 {
-	// ★移動のたびに呼ばれる。位置を控えるだけにして窓へは書きに行かない
-	//   (Enter で不透明にし終えているので、毎回 SetLayeredWindowAttributes を叩く意味がない)。
+	// Called on every movement. It only records the position and never writes to the window --
+	// Enter has already made it opaque, so hammering SetLayeredWindowAttributes each time would
+	// achieve nothing.
 	fLastPos = localMousePos;
 }
 
 void KCMPanelRollOver::MouseLeave()
 {
-	if (!KCMGetPanelTranslucent())	// ★MouseEnter と同じ理由(上のコメント参照)
+	if (!KCMGetPanelTranslucent())	// the same reason as MouseEnter above
 		return;
 
-	KCMApplyPanelTranslucency();		// → 実測して元の半透明へ
+	KCMApplyPanelTranslucency();		// measures, and goes back to translucent
 }
 
 bool8 KCMPanelRollOver::IsMouseOver() const
 {
-	// ★旗を持たないので、その場で実測して答える。
-	//   ⚠ヘッダーの契約は厳密には「**直前の MouseEnter/Over/Leave の呼び出しから決まる**」
-	//     (IMouseRollOver.h:50)。実測はそれより正確な答えを返すが、契約の文言そのものではない
-	//     ——旗を捨てた以上ここで実測する以外に答えようが無く、呼び手の期待にもそちらが合う。
+	// Holding no flag, this measures and answers on the spot.
+	// @warning THE HEADER'S CONTRACT IS STRICTLY "as determined by the previous calls to
+	//   MouseEnter/Over/Leave" (IMouseRollOver). Measuring gives a MORE accurate answer than that,
+	//   but it is not the letter of the contract -- with the flag gone there is no other way to
+	//   answer, and measuring is what a caller actually wants.
 #ifdef WINDOWS
-	// ★トグルが OFF なら実測しない(2026-07-30 の再確認で追加)。この AddIn は半透明トグル専用で、
-	//   OFF の間は誰もこの答えを使わない。一方 KCMQueryPaletteWindow はキャッシュが失効していると
-	//   SDK(IPanelMgr)へ問い合わせ直すので、使っていない人にその費用を払わせない
-	//   (適用側 KCMEffectiveAlpha が OFF でカーソル位置すら見ないのと同じ方針)。
-	// ★この AddIn は**自分のパネルの widget** に付いているので、見るのは自分の側だけ
-	//   (本体のページパネルには AddIn できない。あちらのホバーは Win32 フックの OBJID_CURSOR で拾う)。
+	// Do not measure while the toggle is off. This AddIn exists only for the translucency toggle,
+	// and while it is off nobody uses this answer -- whereas KCMQueryPaletteWindow asks the SDK
+	// (IPanelMgr) again whenever its cache is stale. DO NOT MAKE PEOPLE WHO ARE NOT USING THE
+	// FEATURE PAY FOR IT (the same policy as the applying side, where KCMEffectiveAlpha does not
+	// even look at the pointer while off).
+	// This AddIn is on OUR OWN PANEL'S widget, so it only ever looks at our side. (Nothing can be
+	// AddIn'd to the application's Pages panel; the pointer over that one is caught by the Win32
+	// hook's OBJID_CURSOR.)
 	if (!sTranslucentOn[kKCMAlphaSelf])
 		return kFalse;
 	return KCMCursorOverWindow(
@@ -1130,7 +1220,8 @@ bool8 KCMPanelRollOver::IsMouseOver() const
 #endif
 }
 
-/** パネルの表示状態が変わったら半透明を貼り直すオブザーバ。購読先は パネルマネージャの subject。 */
+/** Re-applies the translucency when the panel's visibility changes. It subscribes to the panel
+    manager's subject. */
 class KCMPanelVisibilityObserver : public CObserver
 {
 public:
@@ -1144,41 +1235,47 @@ CREATE_PMINTERFACE(KCMPanelVisibilityObserver, kKCMPanelVisibilityObserverImpl)
 
 void KCMPanelVisibilityObserver::Update(const ClassID& theChange, ISubject* /*theSubject*/, const PMIID& protocol, void* /*changedBy*/)
 {
-	// ★★購読している subject は2つ(2026-07-29 に Debug 版の Spy で実測):
-	//   ①kPanelManagerBoss / IID_IPANELMGR の kPaletteVisibilityChangedMessage
-	//     ＝パネルの開閉・アイコンからの復帰・ドロワー展開。widget 再構築の直後に飛ぶ。
-	//     ★名前のとおり「可視性」が変わったときだけで、置き場所だけが変わる遷移では飛ばない。
-	//   ②kAppBoss / IID_IAPPLICATION の kDockedPaletteAreaChangedByUserMsg
-	//     ＝ドック内で展開している状態からドラッグでフローティングにしたとき。
-	//     ⚠**2025 では飛ぶが 2026 では飛ばない**(実測)。2026 のためにこれを当てにしてはいけない。
-	//       残しているのは 2025 で動かしたときのため。2026 では Win32 フックが本命(上のブロック)。
-	//     ⚠飛び先は kPanelManagerBoss ではなく kAppBoss。長く「飛ばない」と誤解していたのは
-	//       購読先を間違えていたため。
-	//   ⚠kAppBoss / IID_IAPPLICATION には kApplicationResumeMsg / kApplicationSuspendMsg も
-	//     流れてくるので、theChange で必ず絞ること。
+	// TWO SUBJECTS ARE SUBSCRIBED TO (measured with the Debug build's Spy):
+	//   1. kPanelManagerBoss / IID_IPANELMGR, kPaletteVisibilityChangedMessage
+	//      = a panel opened or closed, came back from an icon, or opened its drawer. It arrives
+	//      right after the widgets are rebuilt.
+	//      As its name says, it is only about VISIBILITY -- transitions that change nothing but
+	//      where it sits do not send it.
+	//   2. kAppBoss / IID_IAPPLICATION, kDockedPaletteAreaChangedByUserMsg
+	//      = dragging out of an in-dock expansion into a floating window.
+	//      @warning IT ARRIVES IN THE 2025 RELEASE BUT NOT IN 2026 (measured), so nothing in 2026
+	//        may depend on it. It is kept for running against 2025; in 2026 the Win32 hook above
+	//        is what does this.
+	//      @warning it goes to kAppBoss, NOT to kPanelManagerBoss. Believing for a long time that
+	//        it never arrived came from subscribing to the wrong one.
+	//   @warning kApplicationResumeMsg and kApplicationSuspendMsg come through kAppBoss /
+	//     IID_IAPPLICATION as well, so theChange must always be checked.
 	const bool16 isPaletteMsg = (protocol == IID_IPANELMGR    && theChange == kPaletteVisibilityChangedMessage);
 	const bool16 isDockMsg    = (protocol == IID_IAPPLICATION && theChange == kDockedPaletteAreaChangedByUserMsg);
-	// ★③アプリが背面へ回った(kApplicationSuspendMsg)。2026-07-29 追加。
-	//   ⚠これが無いと: カーソルをタブ帯／タイトル帯に乗せたまま別アプリへマウスを出すと、
-	//     自プロセス限定の Win32 フックにはもうカーソルイベントが来ないので、**不透明のまま固まる**
-	//     (パネル本体から出た場合だけは IMouseRollOver の MouseLeave が救ってくれるが、クロムの上は
-	//      そもそも MouseLeave の対象外)。ここで一度貼り直せば、実測で「乗っていない」と分かって薄く戻る。
-	//   ★alpha を1つ書くだけで、モデルにも UI にも触らない ＝ 非アクティブ化の最中に呼んでも安全
-	//     ([[app-resume-and-safe-timing]] のガード集は「重い自動処理」向けで、ここには当たらない)。
+	// 3. the application went to the back (kApplicationSuspendMsg).
+	//   @warning WITHOUT THIS: leaving the pointer on the tab strip or the title strip and moving
+	//     the mouse out to another application means no more cursor events reach a hook limited to
+	//     our own process, SO IT STAYS OPAQUE FOREVER. (Leaving the panel BODY is rescued by
+	//     IMouseRollOver's MouseLeave, but the chrome is outside its reach in the first place.)
+	//     Applying once here measures "not on it" and it goes translucent again.
+	//   It writes a single alpha and touches neither the model nor the UI, SO IT IS SAFE TO CALL
+	//     WHILE THE APPLICATION IS BEING DEACTIVATED (the guards collected in
+	//     [[app-resume-and-safe-timing]] are for heavy automatic work and do not apply here).
 	const bool16 isSuspendMsg = (protocol == IID_IAPPLICATION && theChange == kApplicationSuspendMsg);
 	if (!isPaletteMsg && !isDockMsg && !isSuspendMsg)
 		return;
 
-	// ★全部 OFF のときは何もしない。この通知は「文書を1つ開く」だけでも複数回飛ぶ(実測)ので、
-	//   使っていない人にまで窓探索を走らせない(貼り直しが要るのは ON のときだけ)。
+	// Nothing to do while everything is off. This notification arrives SEVERAL TIMES for opening a
+	// single document (measured), so people who are not using the feature are not made to run a
+	// window lookup (re-applying is only needed while something is on).
 	if (!KCMAnyTranslucentOn())
 		return;
 
 	KCMApplyAllPanelTranslucency();
 
-	// ★ここで書いた alpha は、直後に InDesign が窓を作り直すと捨てられる(実測)。
-	//   イベントを一巡させてから「そのときの窓」へ貼り直す。
-	//   ★ただし背面へ回っただけ(Suspend)のときは窓に変化が無いので、追いかけは要らない。
+	// The alpha written here is thrown away if InDesign rebuilds the window right afterwards
+	// (measured). Let the events go round once and apply again to whatever window exists by then.
+	// Going to the back (Suspend) changes no window, so it needs no chase.
 	if (!isSuspendMsg)
 		KCMScheduleReapply();
 }
@@ -1198,14 +1295,15 @@ void KCMAttachPanelVisibilityObserver()
 	if (app == nil)
 		return;
 
-	// ★パネルマネージャは本体の起動シーケンスの途中で立ち上がる(kPanelMgrHasStartedMsg が存在する)。
-	//   起動サービスから呼ぶとここが nil になる可能性がある。
-	// ★★nil でも下の購読へ進むこと(2026-08-06。KBS が 08-04 の監査で直したのと同じ形)。ここで return
-	//   すると kAppBoss 側の購読まで道連れになり、**kApplicationSuspendMsg が購読されないまま残る**
-	//   ——それは「カーソルをパネルに乗せたまま別アプリへ出ると不透明のまま固まる」を防ぐ唯一の
-	//   手掛かりで、パネルマネージャとは何の関係もない。片方の subject が無いことを、もう片方を
-	//   あきらめる理由にしない。
-	//   ※パレット側の購読はパネルの AutoAttach(KCMPanelObserver.cpp)がここを呼び直すので後から拾える。
+	// The panel manager comes up part-way through the application's own startup sequence (there is
+	// a kPanelMgrHasStartedMsg), so calling from a startup service can find it nil here.
+	// GO ON TO THE SUBSCRIPTION BELOW EVEN WHEN IT IS (the same shape KBS settled on). Returning
+	//   here would take the kAppBoss subscription down with it, LEAVING kApplicationSuspendMsg
+	//   UNSUBSCRIBED -- and that is the only handle on "leave the pointer on the panel, switch to
+	//   another application, and it stays opaque forever", which has nothing to do with the panel
+	//   manager. One subject being absent is not a reason to give up on the other.
+	//   (The palette subscription is picked up later, because the panel's AutoAttach
+	//    (KCMPanelObserver.cpp) calls this again.)
 	InterfacePtr<IPanelMgr> panelMgr(app->QueryPanelManager());
 	if (panelMgr != nil)
 	{
@@ -1217,10 +1315,11 @@ void KCMAttachPanelVisibilityObserver()
 		}
 	}
 
-	// ★2つめの購読先 = kAppBoss / IID_IAPPLICATION。
-	//   「ドック内で展開 → ドラッグでフローティング」は PanelMgr には出ず、2025 ではここに
-	//   kDockedPaletteAreaChangedByUserMsg として飛ぶ。⚠**2026 では飛ばない**ので、
-	//   2026 での本命は Win32 フックのほう。これは 2025 で動かしたときの保険。
+	// The second subject: kAppBoss / IID_IAPPLICATION.
+	//   "Expanded in a dock -> dragged out to floating" does not surface on the PanelMgr; in the
+	//   2025 release it arrives here as kDockedPaletteAreaChangedByUserMsg. @warning IT DOES NOT
+	//   ARRIVE IN 2026, where the Win32 hook is what does this. This is the fallback for running
+	//   against 2025.
 	InterfacePtr<ISubject> appSubject(app, IID_ISUBJECT);
 	if (appSubject != nil &&
 		!appSubject->IsAttached(ISubject::kRegularAttachment, obs, IID_IAPPLICATION, IID_IKCMPANELVISIBILITYOBSERVER))
@@ -1229,19 +1328,23 @@ void KCMAttachPanelVisibilityObserver()
 	}
 }
 
-// ★上の鏡像。プラグイン終了時(KCMUIStartup::Shutdown)から、**KCMShutdownPanelAlpha より前に**呼ぶ
-//   ＝通知を止めてから道具(タイマーと Win32 フック)を畳む。2026-08-12 追加。
-//   ★★なぜ要るか: 購読している間、セッションが握っているのは**この .pln の中へのポインタ**。終了処理の
-//     途中でパネルが壊されると通知が飛ぶので、消えかけのコードで Update が走る。
-//     ★KBS が 2026-08-08 に同じ理由で新設した(KBSDetachPanelVisibilityObserver)分で、こちらへは
-//       歩いてこなかった ---- **修正は兄弟へ自分では歩いてこない**(このプラグインが KBS から
-//       ferror チェックや再武装ガードを受け取ったのと、向きが逆になっただけ)。
-//   ★Attach 側と**同じ attachment type** で外す(ISubject.h:288 が :280 の対)。Regular で付けたものは
-//     Regular で外す。
-//   ★外す前に IsAttached を聞くのは、Attach 側が付ける前に聞くのと同じ理由。Attach は2か所から呼ばれる
-//     (起動サービスと パネルの AutoAttach)ので、「本当に付いているか」は両側で正直な問い。
-//   ★パネルマネージャは終了処理中には既に降りていることがある。そこが nil でも kAppBoss 側の購読は
-//     独立なので道連れにしない(Attach 側が 2026-08-06 に学んだのと同じ形)。
+// The mirror image of the above. Called at plug-in shutdown (KCMUIStartup::Shutdown), BEFORE
+//   KCMShutdownPanelAlpha: stop the notifications first, then fold up the tools (the timer and the
+//   Win32 hook).
+//   WHY IT IS NEEDED: while the subscription stands, what the session holds is A POINTER INTO THIS
+//     .pln. A panel destroyed part-way through teardown sends the notification, so Update would
+//     run in code that is on its way out.
+//     KBS added the same thing for the same reason (KBSDetachPanelVisibilityObserver) and it never
+//     walked over here -- FIXES DO NOT WALK TO THEIR SIBLINGS BY THEMSELVES (this plug-in took the
+//     ferror check and the re-arm guards from KBS; this is the same thing in the other direction).
+//   Detach with THE SAME ATTACHMENT TYPE it was attached with: what went on as Regular comes off
+//     as Regular.
+//   IsAttached is asked before detaching for the same reason the attach side asks before
+//     attaching: attach is called from two places (the startup service and the panel's
+//     AutoAttach), so "is it really attached" is an honest question on both sides.
+//   The panel manager can already be gone during teardown. Even when it is, the kAppBoss
+//     subscription is independent and is not taken down with it (the same lesson the attach side
+//     learned).
 void KCMDetachPanelVisibilityObserver()
 {
 	ISession* session = GetExecutionContextSession();
