@@ -50,8 +50,7 @@
 //
 //  KCM.fr therefore names this one boss in three blocks -- Object{Application} carrying the two
 //  strings, Object{Story} the four counters, Object{Document} the transparency count -- and this
-//  class serves them all, splitting on
-//  the ScriptID.
+//  class serves them all, splitting on the ScriptID.
 //
 //  MEASURED on the running application right after the change:
 //
@@ -86,8 +85,8 @@
 //  plug-in is broken" from "the two files genuinely read the same" without reading the source.
 //  They read the same -- a counter is a VERSION NUMBER for the story's state, not a count of
 //  edits, so two documents built by the same script with the same number of edits carry the same
-//  counters however different the words
-//  are (measured 2026-08-08, docs/ai-notes/text-change-counters-2026-08-08.md).
+//  counters however different the words are (measured 2026-08-08,
+//  docs/ai-notes/text-change-counters-2026-08-08.md).
 //
 //  READ-ONLY matters for both kinds. A script that could write the status line could make the
 //  panel appear to say something it never said; one that could write a counter could make the
@@ -149,6 +148,9 @@ private:
 	    exists so that "did we leave ourselves on that list when the document was saved?" can be
 	    answered from outside, and the list persists in the .indd. */
 	ErrorCode ReadTransparencyItemCount(ScriptID propID, IScriptRequestData* data, IScript* script);
+
+	/** Hand an int32 back to the script. The two numeric properties above both end this way. */
+	ErrorCode ReturnInt32(int32 value, ScriptID propID, IScriptRequestData* data, IScript* script);
 };
 
 CREATE_PMINTERFACE(KCMScriptProvider, kKCMScriptProviderImpl)
@@ -246,13 +248,9 @@ ErrorCode KCMScriptProvider::ReadStoryCounter(int32 id, ScriptID propID, IScript
 	else if (id == p_KCMOtherChangeCount)
 		value = stamp.fOtherCount;
 
-	// Int32Type in the .fr, so the script gets a number it can compare with < and ==, rather than
-	// a string it would have to parse. The counters are small in practice (single or double digits
-	// after ordinary editing), so the cast cannot lose anything a reader would notice.
-	ScriptData outputData;
-	outputData.SetInt32(static_cast<int32>(value));
-	data->AppendReturnData(script, propID, outputData);
-	return kSuccess;
+	// The counters are small in practice (single or double digits after ordinary editing), so the
+	//   cast cannot lose anything a reader would notice.
+	return this->ReturnInt32(static_cast<int32>(value), propID, data, script);
 }
 
 ErrorCode KCMScriptProvider::ReadTransparencyItemCount(ScriptID propID, IScriptRequestData* data, IScript* script)
@@ -269,10 +267,20 @@ ErrorCode KCMScriptProvider::ReadTransparencyItemCount(ScriptID propID, IScriptR
 	if (count < 0)
 		return kInvalidScriptTargetError;	// XPManager could not be reached for that database
 
-	// Int32Type in the .fr, like the story counters - a script compares this with 0 to answer
-	// "was anything left on the list?", so it must not arrive as a string.
+	// A script compares this with 0 to answer "was anything left on the list?" -- see ReturnInt32
+	//   for why it must not arrive as a string.
+	return this->ReturnInt32(count, propID, data, script);
+}
+
+ErrorCode KCMScriptProvider::ReturnInt32(int32 value, ScriptID propID, IScriptRequestData* data,
+										 IScript* script)
+{
+	// **Int32Type in the .fr, for both of the callers.** A script gets a number it can compare
+	//   with < and ==, rather than a string it would have to parse. Written once so that the two
+	//   numeric properties cannot come to disagree about how a number is handed back; the one
+	//   string property (ReadAppString) keeps its own three lines, there being nothing to share.
 	ScriptData outputData;
-	outputData.SetInt32(count);
+	outputData.SetInt32(value);
 	data->AppendReturnData(script, propID, outputData);
 	return kSuccess;
 }
