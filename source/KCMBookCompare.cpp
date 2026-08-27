@@ -32,6 +32,7 @@
 #include "ProgressBar.h"		// RangeProgressBar - the progress and the cancel (see KCMCompareBooks)
 #include "SDKFileHelper.h"		// GetPath - documents are compared by their path
 #include "SnapshotUtilsEx.h"	// the rasteriser, on the SAME terms the document comparison uses
+#include "K2SmartPtr.h"			// K2::scoped_ptr -- the snapshots and accessors below, freed on every exit
 
 // Project includes:
 #include "KCMBookCompare.h"
@@ -379,21 +380,23 @@ ErrorCode PageDiffers(const UIDRef& targetPage, const UIDRef& sourcePage, bool16
 	//     layers or the flattener is overridden for the snapshot.
 	const PMReal hiRes = kKCMResolution * kKCMHiResMul;
 
-	SnapshotUtilsEx*  snapT  = nil;
-	SnapshotUtilsEx*  snapS  = nil;
-	AGMImageAccessor* accT   = nil;
-	AGMImageAccessor* accS   = nil;
-	ErrorCode         status = kFailure;
-
 	// nothrow throughout, as in the document comparison: the ordinary new throws instead of
 	// returning nil, and an exception crossing an event boundary crashes. With nothrow an OOM
-	// costs this one page.
-	snapT = new (std::nothrow) SnapshotUtilsEx(targetPage, 1.0, 1.0, hiRes, hiRes, 0.0,
-	                                           SnapshotUtilsEx::kCsCMYK, kFalse);
-	snapS = new (std::nothrow) SnapshotUtilsEx(sourcePage, 1.0, 1.0, hiRes, hiRes, 0.0,
-	                                           SnapshotUtilsEx::kCsCMYK, kFalse);
+	// costs this one page. **K2::scoped_ptr, not std::vector or any throwing container** -- see
+	// KCMDrawEventHandler.cpp's MakeEntry for why nothrow is a requirement here and not a habit.
+	// @warning **the declaration order below is the release order.** scoped_ptrs go down in the
+	//   reverse of declaration, so snapshots-then-accessors gives accS, accT, snapS, snapT: each
+	//   accessor before the snapshot it came from, which is what the four hand-written deletes at
+	//   the end of this function used to spell out.
+	K2::scoped_ptr<SnapshotUtilsEx>  snapT(new (std::nothrow) SnapshotUtilsEx(targetPage, 1.0, 1.0, hiRes, hiRes, 0.0,
+	                                                                         SnapshotUtilsEx::kCsCMYK, kFalse));
+	K2::scoped_ptr<SnapshotUtilsEx>  snapS(new (std::nothrow) SnapshotUtilsEx(sourcePage, 1.0, 1.0, hiRes, hiRes, 0.0,
+	                                                                         SnapshotUtilsEx::kCsCMYK, kFalse));
+	K2::scoped_ptr<AGMImageAccessor> accT;
+	K2::scoped_ptr<AGMImageAccessor> accS;
+	ErrorCode                        status = kFailure;
 
-	if (snapT != nil && snapS != nil)
+	if (snapT.get() != nil && snapS.get() != nil)
 	{
 		ErrorCode drewT = kFailure;
 		ErrorCode drewS = kFailure;
@@ -405,21 +408,16 @@ ErrorCode PageDiffers(const UIDRef& targetPage, const UIDRef& sourcePage, bool16
 			                    SnapshotUtils::kXPHigh, nil, nil, kFalse);
 		}
 
-		accT = (drewT == kSuccess) ? snapT->CreateAGMImageAccessor() : nil;
-		accS = (drewS == kSuccess) ? snapS->CreateAGMImageAccessor() : nil;
+		accT.reset((drewT == kSuccess) ? snapT->CreateAGMImageAccessor() : nil);
+		accS.reset((drewS == kSuccess) ? snapS->CreateAGMImageAccessor() : nil);
 
-		if (accT != nil && accS != nil)
-			status = ComparePages(accT, accS, targetPage, sourcePage, hiRes, outDiffers);
+		if (accT.get() != nil && accS.get() != nil)
+			status = ComparePages(accT.get(), accS.get(), targetPage, sourcePage, hiRes, outDiffers);
 	}
 
-	// **Released on EVERY path.** This function returns early the moment a difference is found,
-	// which the document comparison never does -- so its "delete at the end" shape would leak
-	// here. Everything is allocated in one place and freed in one place instead.
-	if (accS  != nil) delete accS;
-	if (accT  != nil) delete accT;
-	if (snapS != nil) delete snapS;
-	if (snapT != nil) delete snapT;
-
+	// **Released on EVERY path**, which is why they are scoped_ptrs: this function returns early the
+	// moment a difference is found, and a "delete at the end" shape would leak on that path. The
+	// release order is the declaration order reversed -- see the note where they are declared.
 	return status;
 }
 

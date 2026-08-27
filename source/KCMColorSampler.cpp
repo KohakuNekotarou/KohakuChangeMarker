@@ -18,6 +18,7 @@
 #include "PMString.h"
 #include "SnapshotUtilsEx.h"
 #include "AGMImageAccessor.h"
+#include "K2SmartPtr.h"			// K2::scoped_ptr -- the snapshot and its accessor, freed on every exit
 
 #include "KCMConstants.h"
 #include "KCMDrawEventHandler.h"   // KCMRasterizingGuard / KCMDrawEventHandler::tl_Rasterizing
@@ -120,9 +121,11 @@ static bool16 KCMReadCmykPixel(const UIDRef& pageRef, const PMPoint& spreadPt, u
 	const PMReal hp = kKCMSampleHalfPt;
 	PMRect clip(spreadPt.X() - hp, spreadPt.Y() - hp, spreadPt.X() + hp, spreadPt.Y() + hp);
 
-	SnapshotUtilsEx* snap = new (std::nothrow) SnapshotUtilsEx(clip, PMMatrix(), pageRef, 1.0, 1.0,
-		kKCMSampleDpi, 72.0, 0.0, SnapshotUtilsEx::kCsCMYK, kFalse);
-	if (snap == nil)
+	// Snapshot first, accessor second: scoped_ptrs go down in reverse declaration order, so the
+	// accessor is destroyed before the snapshot it came from.
+	K2::scoped_ptr<SnapshotUtilsEx> snap(new (std::nothrow) SnapshotUtilsEx(clip, PMMatrix(), pageRef, 1.0, 1.0,
+		kKCMSampleDpi, 72.0, 0.0, SnapshotUtilsEx::kCsCMYK, kFalse));
+	if (snap.get() == nil)
 		return kFalse;	// nothrow: out of memory costs one sample, nothing more (as in KCMDrawEventHandler)
 	// Proxy drawing (fullRes=kFalse), the same as the frame comparison uses, so no placed image is
 	// generated at full resolution. Dirtying is guarded separately, by the SaveRestoreModifiedState
@@ -150,10 +153,10 @@ static bool16 KCMReadCmykPixel(const UIDRef& pageRef, const PMPoint& spreadPt, u
 		KCMRasterizingGuard rg;	// RAII: no marks are drawn into this Draw by re-entry
 		drew = snap->Draw(IShape::kPreviewMode, kFalse /*fullRes*/, 0.0 /*greek off*/, kFalse /*AA off*/);
 	}
-	AGMImageAccessor* acc = (drew == kSuccess) ? snap->CreateAGMImageAccessor() : nil;
+	K2::scoped_ptr<AGMImageAccessor> acc((drew == kSuccess) ? snap->CreateAGMImageAccessor() : nil);
 
 	bool16 ok = kFalse;
-	if (acc != nil)
+	if (acc.get() != nil)
 	{
 		Int32Rect b = acc->GetBounds();
 		const int32 w = b.right - b.left, h = b.bottom - b.top;
@@ -167,9 +170,8 @@ static bool16 KCMReadCmykPixel(const UIDRef& pageRef, const PMPoint& spreadPt, u
 			out[0] = px[0]; out[1] = px[1]; out[2] = px[2]; out[3] = px[3];	// C, M, Y, K from offset 0
 			ok = kTrue;
 		}
-		delete acc;
 	}
-	delete snap;
+	// (acc and snap are freed by their scoped_ptrs -- the accessor first.)
 	return ok;
 }
 

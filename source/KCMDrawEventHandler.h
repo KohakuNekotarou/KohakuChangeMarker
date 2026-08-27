@@ -23,6 +23,11 @@
 #include "CPMUnknown.h"
 #include "IDrwEvtHandler.h"
 #include "GraphicsExternal.h"   // AGMImageRecord (a struct member below)
+#include "K2SmartPtr.h"         // K2::scoped_array -- the two structs below own their pixel buffers with it
+                                //   rather than with a hand-written destructor.
+                                //   @warning **this makes both structs non-copyable** (scoped_array is
+                                //   boost::noncopyable). That is correct and not a restriction: they are
+                                //   only ever held as pointers, in sEntries and sOrigImages.
 #include "UIDRef.h"             // UID / UIDRef
 #include "PMReal.h"
 #include "PMRect.h"             // PMRect - the folio rectangles the sieve below converts
@@ -36,9 +41,9 @@ class IPanorama;
 
 struct KCMOverlayEntry
 {
-	uint8*         buf;			// our own ARGB buffer (the ring image). Owned.
-	AGMImageRecord rec;			// our own image record pointing at buf (for the blit)
-	uint8*         dist;		// chessboard distance transform of the difference mask (w*h, uint8,
+	K2::scoped_array<uint8> buf;	// our own ARGB buffer (the ring image). Owned.
+	AGMImageRecord rec;			// our own image record pointing at buf.get() (for the blit)
+	K2::scoped_array<uint8> dist;	// chessboard distance transform of the difference mask (w*h, uint8,
 								//   0 = a changed pixel, clamped at 255). Owned.
 								//   The ring is 0 < dist <= radius, which lets BuildRing paint it in
 								//   one pass with no dilation (the mask is discarded once dist exists).
@@ -51,17 +56,14 @@ struct KCMOverlayEntry
 									//   The denominator is NOT stored: w * h IS the denominator, and
 									//   holding the same number twice is how the two drift apart.
 
-	KCMOverlayEntry() : buf(nil), dist(nil), w(0), h(0), rowBytes(0), bpp(0), lastRadius(-1),
+	KCMOverlayEntry() : w(0), h(0), rowBytes(0), bpp(0), lastRadius(-1),
 		changedCells(0)
 	{
 		rec.baseAddr = nil; rec.decodeArray = nil;
 		rec.colorTab.numColors = 0; rec.colorTab.theColors = nil;
 	}
-	~KCMOverlayEntry()
-	{
-		if (buf)   delete[] buf;
-		if (dist)  delete[] dist;
-	}
+	// (No destructor. buf and dist are scoped_arrays: they start nil and delete[] themselves, which
+	//  is what the two lines here used to do.)
 };
 
 
@@ -75,21 +77,18 @@ struct KCMOverlayEntry
 //========================================================================================
 struct KCMOrigImage
 {
-	uint8*         buf;			// our own image buffer (opaque). Owned.
-	AGMImageRecord rec;			// our own image record pointing at buf (for the blit)
+	K2::scoped_array<uint8> buf;	// our own image buffer (opaque). Owned.
+	AGMImageRecord rec;			// our own image record pointing at buf.get() (for the blit)
 	int32          w, h;
 	int32          rowBytes;
 	int32          bpp;
 
-	KCMOrigImage() : buf(nil), w(0), h(0), rowBytes(0), bpp(0)
+	KCMOrigImage() : w(0), h(0), rowBytes(0), bpp(0)
 	{
 		rec.baseAddr = nil; rec.decodeArray = nil;
 		rec.colorTab.numColors = 0; rec.colorTab.theColors = nil;
 	}
-	~KCMOrigImage()
-	{
-		if (buf) delete[] buf;
-	}
+	// (No destructor -- buf is a scoped_array.)
 };
 
 
