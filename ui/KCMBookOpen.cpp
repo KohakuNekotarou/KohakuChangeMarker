@@ -262,11 +262,13 @@ void ComposeChapter(const UIDRef& docRef)
 
     outWasAlreadyOpen separates "it is on screen because of this click" from "it was there all
     along" - the two need different words in the status line, and the caller is the only one that
-    knows which of them matters. */
-bool16 OpenChapterWindowed(const IDFile& file, UIDRef& outDocRef, bool16& outWasAlreadyOpen)
+    knows which of them matters. ★Optional - the comparison path treated both the same and had to
+    declare two variables it never read to say so. */
+bool16 OpenChapterWindowed(const IDFile& file, UIDRef& outDocRef, bool16* outWasAlreadyOpen = nil)
 {
-	outDocRef         = UIDRef::gNull;
-	outWasAlreadyOpen = kFalse;
+	outDocRef = UIDRef::gNull;
+	if (outWasAlreadyOpen != nil)
+		*outWasAlreadyOpen = kFalse;
 
 	SDKFileHelper fileHelper(file);
 	const PMString wantedPath = fileHelper.GetPath();
@@ -281,8 +283,9 @@ bool16 OpenChapterWindowed(const IDFile& file, UIDRef& outDocRef, bool16& outWas
 			IDocument* openDoc = docList->FindDoc(file);
 			if (DocumentLivesInFile(openDoc, wantedPath))
 			{
-				outDocRef         = ::GetUIDRef(openDoc);
-				outWasAlreadyOpen = kTrue;
+				outDocRef = ::GetUIDRef(openDoc);
+				if (outWasAlreadyOpen != nil)
+					*outWasAlreadyOpen = kTrue;
 				// ***** Raise it - and window it if it has none. ***** Without this, a double click
 				// on a chapter that was already open did nothing a user could see, and a chapter
 				// open WINDOWLESS was reported as open with nothing on screen. Both are one route:
@@ -345,6 +348,16 @@ void Say(const PMString& text)
 	PMString msg(text);
 	msg.SetTranslatable(kFalse);
 	KCMSetStatus(msg);
+}
+
+/** The same, for the shape three of the reports below are: a fixed phrase, then the chapter's name
+    (KCMUIShared.h keeps a const char* overload of KCMSetStatus for the same reason). ⚠The fourth
+    puts the name FIRST and stays written out. */
+void Say(const char* text, const PMString& name)
+{
+	PMString msg(text);
+	msg.Append(name);
+	Say(msg);
 }
 
 }	// anonymous namespace
@@ -443,12 +456,12 @@ void KCMBookOpenChapterForRow(int32 rowIndex)
 
 	if (hasSource)
 	{
-		if (OpenChapterWindowed(sourceFile, docRef, wasOpen)) { if (wasOpen) ++already; else ++opened; }
+		if (OpenChapterWindowed(sourceFile, docRef, &wasOpen)) { if (wasOpen) ++already; else ++opened; }
 		else ++failed;
 	}
 	if (hasTarget)
 	{
-		if (OpenChapterWindowed(targetFile, docRef, wasOpen)) { if (wasOpen) ++already; else ++opened; }
+		if (OpenChapterWindowed(targetFile, docRef, &wasOpen)) { if (wasOpen) ++already; else ++opened; }
 		else ++failed;
 	}
 
@@ -503,23 +516,19 @@ void KCMBookStartComparisonForRow(int32 rowIndex)
 	const IDFile   sourceFile = row->fSourceFile;
 	// ★row is not touched again below this line.
 
+	// ★Already open or not changes nothing here, so that answer is not asked for.
 	UIDRef targetRef, sourceRef;
-	bool16 targetWasOpen = kFalse, sourceWasOpen = kFalse;
-	if (!OpenChapterWindowed(targetFile, targetRef, targetWasOpen))
+	if (!OpenChapterWindowed(targetFile, targetRef))
 	{
-		PMString msg("could not open the target side of ");
-		msg.Append(name);
-		Say(msg);
+		Say("could not open the target side of ", name);
 		return;
 	}
-	if (!OpenChapterWindowed(sourceFile, sourceRef, sourceWasOpen))
+	if (!OpenChapterWindowed(sourceFile, sourceRef))
 	{
 		// ⚠ The target side stays open. It was opened at the user's request and holds no state of
 		// this run; closing it again would undo something they asked for to tidy up after something
 		// they did not.
-		PMString msg("could not open the source side of ");
-		msg.Append(name);
-		Say(msg);
+		Say("could not open the source side of ", name);
 		return;
 	}
 
@@ -529,8 +538,12 @@ void KCMBookStartComparisonForRow(int32 rowIndex)
 	// documents nobody is comparing any more. The user asked for "start on this chapter", and
 	// stopping the previous one is part of that (their words, 2026-08-12: "if it is already started,
 	// stop and start").
-	if (Utils<IKCMCompareFacade>()->IsArmed() && Utils<IKCMCompareFacade>()->GetArmedTargetDB() != nil)
-		Utils<IKCMCompareFacade>()->StopComparison();
+	// ★Queried once and held: everything below reaches the facade through this one reference - the
+	//   shape Utils.h:74-80 asks for when an interface is used "in several places", as KCMBookRun.cpp
+	//   does. ⚠Not nil-checked: the raw Utils<> calls it replaces were not either.
+	InterfacePtr<IKCMCompareFacade> compare(Utils<IKCMCompareFacade>().QueryUtilInterface());
+	if (compare->IsArmed() && compare->GetArmedTargetDB() != nil)
+		compare->StopComparison();
 
 	// Held for the length of the call: KCMStartComparisonFor takes raw IDocument pointers, and
 	// these references are what keep them alive while it runs.
@@ -538,9 +551,7 @@ void KCMBookStartComparisonForRow(int32 rowIndex)
 	InterfacePtr<IDocument> sourceDoc(sourceRef, UseDefaultIID());
 	if (targetDoc == nil || sourceDoc == nil)
 	{
-		PMString msg("could not read the documents for ");
-		msg.Append(name);
-		Say(msg);
+		Say("could not read the documents for ", name);
 		return;
 	}
 
@@ -583,7 +594,7 @@ void KCMBookStartComparisonForRow(int32 rowIndex)
 
 	// ★The status line is left to the comparison itself - it ends by writing its own report there
 	// (page counts, failures), which is more use than anything this function could add.
-	Utils<IKCMCompareFacade>()->StartComparisonFor(targetDoc, sourceDoc);
+	compare->StartComparisonFor(targetDoc, sourceDoc);
 }
 
 // End, KCMBookOpen.cpp.

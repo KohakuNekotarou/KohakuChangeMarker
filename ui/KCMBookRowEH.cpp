@@ -128,9 +128,6 @@ int32 KCMBookRowEH::RowForClick(IEvent* e, bool16 baseHandled) const
 	if (nodeData == nil)
 		return -1;
 	const NodeID& node = nodeData->Get();
-	TreeNodePtr<ListIndexNodeID> nodeID(node);
-	if (nodeID == nil)
-		return -1;
 
 	// The selection lives on the tree, not on the row, so ask upwards for it.
 	InterfacePtr<const IWidgetParent> widgetParent(this, UseDefaultIID());
@@ -141,7 +138,9 @@ int32 KCMBookRowEH::RowForClick(IEvent* e, bool16 baseHandled) const
 	if (treeController == nil || !treeController->IsSelected(node))
 		return -1;
 
-	return nodeID->GetIndex();
+	// WHICH row this is is the node's own answer, and is given in one place (RowIndex) - the
+	// shape KCMStoryRowEH::RowForClick ends in.
+	return this->RowIndex();
 }
 
 // Nothing of this plug-in's own happens on the way DOWN. The one job here is to start every click
