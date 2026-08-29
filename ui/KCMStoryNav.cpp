@@ -12,7 +12,6 @@
 
 // Interface includes:
 #include "IControlView.h"
-#include "IPanelControlData.h"		// FindWidget - the tree lives inside the panel
 #include "ITreeViewController.h"	// the selection
 #include "ITreeViewMgr.h"			// expanding and scrolling to a node
 
@@ -50,15 +49,7 @@ namespace
 */
 void SelectInTree(const KCMStoryNavStop& stop)
 {
-	IControlView* panel = KCMGetVisibleOwnPanel();
-	if (panel == nil)
-		return;
-
-	InterfacePtr<const IPanelControlData> panelData(panel, UseDefaultIID());
-	if (panelData == nil)
-		return;
-
-	IControlView* treeView = panelData->FindWidget(kKCMStoryTreeWidgetID);
+	IControlView* treeView = KCMFindPanelWidget(kKCMStoryTreeWidgetID);
 	if (treeView == nil)
 		return;
 

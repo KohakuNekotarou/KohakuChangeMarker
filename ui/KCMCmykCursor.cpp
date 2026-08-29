@@ -600,9 +600,7 @@ void KCMCmykEndPress()
 	//   space, and no hint appears.
 	if (sCmykCursorPending)
 	{
-		PMString blank(" ");
-		blank.SetTranslatable(kFalse);
-		KCMSetStatus(blank);
+		KCMSetStatus(" ");
 		sCmykCursorText.Clear();
 		sCmykCursorPending = kFalse;
 	}

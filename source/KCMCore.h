@@ -268,10 +268,11 @@ void		KCMHandleDocsClosed();
 //   asking a view          -> KCMViewLookup.h    (KCMQueryMouseContentPoint / KCMQueryViewUnderMouse /
 //                                                 KCMFindDocDbForView / KCMQuerySpreadUIDForView /
 //                                                 KCMQueryPanorama)
-//   touching a widget      -> KCMUIShared.h      (KCMGetVisibleOwnPanel / KCMRefreshPanel /
-//                                                 KCMSetStatus / KCMSetNavPosition /
-//                                                 KCMSetToolButtonSelected / KCMActivateOwnTool /
-//                                                 KCMIsOwnToolActive / KCMOpenAboutURL)
+//   touching a widget      -> KCMUIShared.h      (KCMGetVisibleOwnPanel / KCMFindPanelWidget /
+//                                                 KCMRefreshPanel / KCMSetStatus /
+//                                                 KCMSetNavPosition / KCMSetToolButtonSelected /
+//                                                 KCMActivateOwnTool / KCMIsOwnToolActive /
+//                                                 KCMOpenAboutURL)
 //   start/stop a comparison-> KCMComparisonRun.h (the six: toggle, stop, start-for, can-start,
 //                                                 print marks, opacity)
 //   the status string      -> KCMModelNotify.h   (held by the MODEL, displayed by the UI:

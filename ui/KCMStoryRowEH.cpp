@@ -150,7 +150,8 @@ int32 KCMStoryRowEH::RowForClick(IEvent* e, bool16 baseHandled, int32* outChange
 	if (baseHandled || e == nil || e->ShiftKeyDown() || e->CmdKeyDown())
 		return -1;
 
-	// The node's NodeID lives on this boss's ITreeNodeIDData (every tree node widget carries it).
+	// This row's node again (RowFromNode says where it lives) - wanted here to ask the tree
+	// whether this is the row the click landed on.
 	InterfacePtr<ITreeNodeIDData> nodeData(this, UseDefaultIID());
 	if (nodeData == nil)
 		return -1;

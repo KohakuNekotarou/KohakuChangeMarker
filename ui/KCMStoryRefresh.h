@@ -41,9 +41,6 @@
 */
 void KCMStorySetMenuRow(int32 rowIndex);
 
-/** Which row the last right-click menu was popped over, or -1. */
-int32 KCMStoryMenuRow();
-
 /** Whether "Refresh Story Comparison" may be offered for the stashed row.
 
 	Answers kFalse in every case where the item would do nothing or would lie:
@@ -51,7 +48,7 @@ int32 KCMStoryMenuRow();
 	  - no comparison is armed (there is nothing to compare against);
 	  - the panel is in the PIXEL mode - the whole point of the item is the text diff, which that
 	    mode does not run, so refreshing there would report "no differences" about a story that has
-	    //  never been looked at that way (user's call: "only in the story mode");
+	    never been looked at that way (user's call: "only in the story mode");
 	  - the row is an ADDED story, which has no partner in the older document at all.
 
 	⚠Being the only item in its menu, greyed means the MENU DOES NOT APPEAR - which is what makes

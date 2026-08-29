@@ -245,9 +245,8 @@ void KCMPanelObserver::AutoAttach()
 	Utils<IKCMCompareFacade>()->GetSessionStatusSegments(savedLabel, savedPre, savedMid, savedPost, savedRuby);	// ★remembered on the model side
 	if (savedLabel.IsEmpty() && savedPre.IsEmpty() && savedMid.IsEmpty() && savedPost.IsEmpty())
 	{
-		PMString hint("Open the target and source documents (the active one becomes the Target), then choose Start from the panel menu.");
-		hint.SetTranslatable(kFalse);
-		KCMSetStatus(hint);	// (the member SetStatus was a plain forwarder and was removed; this calls directly)
+		// (the member SetStatus was a plain forwarder and was removed; this calls directly)
+		KCMSetStatus("Open the target and source documents (the active one becomes the Target), then choose Start from the panel menu.");
 	}
 	else
 	{
@@ -459,6 +458,18 @@ IControlView* KCMGetVisibleOwnPanel()
 	return panelMgr->GetVisiblePanel(kKCMPanelWidgetID);
 }
 
+// One widget of the showing panel (declared in KCMUIShared.h, with the reason and the callers
+// that deliberately do not use it).
+IControlView* KCMFindPanelWidget(const WidgetID& id)
+{
+	IControlView* panel = KCMGetVisibleOwnPanel();
+	if (panel == nil)
+		return nil;		// the panel is hidden (or teardown is under way): there is nothing to touch
+
+	InterfacePtr<IPanelControlData> pcd(panel, UseDefaultIID());
+	return pcd != nil ? pcd->FindWidget(id) : nil;
+}
+
 // Brings the panel’s ON/OFF display (the Target/Source names, the icon, the toggle label) into
 // line with the current armed state (KCMIsArmed and friends). It is a free function taking pcd so
 // that the member UpdateInfoDisplay (our own panel) and the external KCMRefreshPanel (the showing
@@ -577,16 +588,9 @@ static void KCMApplyPanelInfo(const InterfacePtr<IPanelControlData>& pcd)
 //========================================================================================
 void KCMSetToolButtonSelected(bool16 selected)
 {
-	IControlView* panel = KCMGetVisibleOwnPanel();
-	if (panel == nil)
-		return;		// the panel is hidden (or teardown is under way): there is nothing to touch
-	InterfacePtr<IPanelControlData> pcd(panel, UseDefaultIID());
-	if (pcd == nil)
-		return;
-
-	IControlView* cv = pcd->FindWidget(kKCMToolButtonWidgetID);
+	IControlView* cv = KCMFindPanelWidget(kKCMToolButtonWidgetID);
 	if (cv == nil)
-		return;
+		return;		// the panel is hidden (or teardown is under way): there is nothing to touch
 
 	InterfacePtr<ITriStateControlData> tsd(cv, UseDefaultIID());
 	if (tsd == nil)
@@ -691,6 +695,14 @@ void KCMSetStatus(const PMString& s, bool16 forceRedrawNow)
 	//   to change.
 	const PMString kNothing;
 	KCMWriteStatusToPanel(kNothing, kNothing, s, kNothing, kNothing, forceRedrawNow);
+}
+
+// A message written out where it is used (declared in KCMUIShared.h, with the reason).
+void KCMSetStatus(const char* s, bool16 forceRedrawNow)
+{
+	PMString msg(s);
+	msg.SetTranslatable(kFalse);
+	KCMSetStatus(msg, forceRedrawNow);
 }
 
 void KCMSetStatusSegments(const PMString& label, const PMString& pre,

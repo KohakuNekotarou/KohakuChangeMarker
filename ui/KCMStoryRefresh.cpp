@@ -41,17 +41,14 @@ int32 gMenuRow = -1;
 }	// anonymous namespace
 
 //----------------------------------------------------------------------------------------
-// KCMStorySetMenuRow / KCMStoryMenuRow
+// KCMStorySetMenuRow
+//   ⚠NO GETTER, where the chapter rows have KCMBookMenuRow: that item is handed its row, while
+//   both readers of this one take no argument and test gMenuRow themselves.
 //----------------------------------------------------------------------------------------
 
 void KCMStorySetMenuRow(int32 rowIndex)
 {
 	gMenuRow = rowIndex;
-}
-
-int32 KCMStoryMenuRow()
-{
-	return gMenuRow;
 }
 
 //----------------------------------------------------------------------------------------
@@ -103,9 +100,7 @@ bool16 KCMStoryRefreshMenuRow()
 	// is not re-tested by anybody else.
 	if (!KCMStoryRowCanRefresh())
 	{
-		PMString msg("story refresh: nothing to compare.");
-		msg.SetTranslatable(kFalse);
-		KCMSetStatus(msg);
+		KCMSetStatus("story refresh: nothing to compare.");
 		return kFalse;
 	}
 

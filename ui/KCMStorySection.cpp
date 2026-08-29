@@ -42,7 +42,6 @@
 #include "KCMUIID.h"
 #include "Utils.h"					// Utils<IKCMCompareFacade>()
 #include "IKCMCompareFacade.h"	// IsArmed, asked across the boundary
-//  (KCMGetVisibleOwnPanel lives in KCMUIShared.h)
 #include "KCMUIShared.h"	// panel / status line / nav readout / tool button (split from KCMCore.h on 2026-08-13)
 #include "IKCMStoryEditsFacade.h"	// GetRowCount - the number in the heading (Facade since 2026-08-13, Task 14)
 #include "KCMStorySection.h"
@@ -347,15 +346,7 @@ void KCMUpdateStorySectionButtonState()
 */
 void KCMUpdateStorySectionLabel()
 {
-	IControlView* panel = KCMGetVisibleOwnPanel();
-	if (panel == nil)
-		return;
-
-	InterfacePtr<const IPanelControlData> panelData(panel, UseDefaultIID());
-	if (panelData == nil)
-		return;
-
-	InterfacePtr<ITextControlData> label(panelData->FindWidget(kKCMStorySectionLabelWidgetID), UseDefaultIID());
+	InterfacePtr<ITextControlData> label(KCMFindPanelWidget(kKCMStorySectionLabelWidgetID), UseDefaultIID());
 	if (label == nil)
 		return;
 

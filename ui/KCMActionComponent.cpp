@@ -50,7 +50,7 @@
 #include "KCMBookRun.h"		// KCMRunBookComparison (the "Compare Books" flyout item: confirm, compare, show)
 #include "KCMBookOpen.h"			// KCMBookMenuRow / CanStart / StartComparisonForRow (the "Start Change Marker" row item)
 #include "KCMChangeNav.h"			// KCMRefreshNavPosition (the overset toggle changes what Prev/Next walks)
-#include "KCMStoryRefresh.h"		// KCMStoryMenuRow / CanRefresh / RefreshMenuRow (the "Refresh Story Comparison" row item)
+#include "KCMStoryRefresh.h"		// KCMStoryRowCanRefresh / KCMStoryRefreshMenuRow (the "Refresh Story Comparison" row item)
 #include "KCMPanelAlpha.h"		// KCMGetPanelTranslucent / Set / Apply (the "Translucent Panel" flyout item)
 #include "KCMStoryPressMarks.h"	// KCMStoryMarksRefresh (rebuild the always-on marks of Story mode)
 // (★`IActiveContext.h` / `IDocument.h` / `PersistUtils.h` were removed: **none of them was ever
@@ -1162,9 +1162,7 @@ void KCMActionComponent::DoFindOversetToggle()
 			KCMScrollMapDetachAll();
 		Utils<IKCMCompareFacade>()->InvalidateDB(prevDB);	// nil-safe, as the other calls are
 		KCMRefreshNavPosition();	// take the overset places out of Prev/Next (leaving the comparison alone, or nothing at all)
-		PMString msg("Find Overset: off.");
-		msg.SetTranslatable(kFalse);
-		KCMSetStatus(msg);
+		KCMSetStatus("Find Overset: off.");
 		return;
 	}
 
@@ -1173,9 +1171,7 @@ void KCMActionComponent::DoFindOversetToggle()
 	IDataBase* db = Utils<IKCMCompareFacade>()->GetOversetScanTargetDB();
 	if (db == nil)
 	{
-		PMString msg("Find Overset: no active document.");
-		msg.SetTranslatable(kFalse);
-		KCMSetStatus(msg);
+		KCMSetStatus("Find Overset: no active document.");
 		return;
 	}
 	Utils<IKCMCompareFacade>()->ApplyOversetForDoc(db);
@@ -1189,9 +1185,7 @@ void KCMActionComponent::DoFindOversetToggle()
 	//     the truth disagree, so the state is read back and reported.
 	if (!Utils<IKCMMarkData>()->GetOversetOn())
 	{
-		PMString msg("Find Overset: document is gone.");
-		msg.SetTranslatable(kFalse);
-		KCMSetStatus(msg);
+		KCMSetStatus("Find Overset: document is gone.");
 		return;
 	}
 
@@ -1213,9 +1207,7 @@ void KCMActionComponent::DoRefreshOverset()
 	IDataBase* db = Utils<IKCMCompareFacade>()->GetOversetScanTargetDB();
 	if (db == nil)
 	{
-		PMString msg("Refresh Overset: no active document.");
-		msg.SetTranslatable(kFalse);
-		KCMSetStatus(msg);
+		KCMSetStatus("Refresh Overset: no active document.");
 		return;
 	}
 	Utils<IKCMCompareFacade>()->ApplyOversetForDoc(db);	// rescan and apply (with another document, the previous one’s marks are cleared as well) - gathered in the shared call

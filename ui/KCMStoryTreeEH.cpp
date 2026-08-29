@@ -33,8 +33,10 @@
 //    QueryInterface, so naming it in KCMUI.fr is not enough - the key-focus hand-off at the foot of
 //    KCMStoryRowEH::LButtonUp is what brings it into being, and what puts the arrows here at all.
 //
-//  Same shape as KBS's KBSResultTreeEH, minus the branch handling: this list is flat, so there is
-//  nothing to expand on arrival.
+//  Same shape as KBS's KBSResultTreeEH. ⚠This said "the list is flat, so there is nothing to
+//  expand on arrival" until 2026-08-20, when the list was given a second level. Nothing is
+//  expanded here all the same, for a different reason: the rebuild opens every story
+//  (KCMStoryTreeRebuild), so an arrow can only land on a row that is already on screen.
 //
 //========================================================================================
 
