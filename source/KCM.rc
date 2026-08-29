@@ -42,7 +42,9 @@
 //  Public.rc:47, spellpanel/SpellPanel.rc:54, buttonui .../AppearancePanelDialogs.rc:45, plus the
 //  candlechartui sample (CdlChtUI.rc:45). Judging by the samples alone would say "no official
 //  route" and be wrong (audit B1, 2026-08-15).
-// *KCMUI.rc (the UI half) still carries the same fault, as do KESCL and KT.
+// *KCMUI.rc (the UI half) has carried the same pragma since 2026-08-25 -- this line said it did
+//  not until 2026-08-30, which was the record of the moment the model half was fixed alone, left
+//  standing after the other half caught up. KESCL and KT still lack it (measured, both 0 hits).
 #pragma code_page(1252)
 
 #include "WinRezFlags.h"

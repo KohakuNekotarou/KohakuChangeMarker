@@ -2,8 +2,14 @@
 //
 //  KCMConstants.h
 //
-//  Tuning constants for ChangeMarker (KCM), shared by the drawing engine, peek and the
-//  color sampler. Everything here is static const, so each TU gets its own copy (no ODR issue).
+//  Tuning constants for ChangeMarker (KCM). Read by the drawing engine, peek, the book
+//  comparison and the color sampler on this side, and by KCMPanelAlpha.cpp and KCMTracker.cpp
+//  in the UI half - the four constants at the end of this file are used ONLY over there.
+//
+//  Namespace-scope const has internal linkage in C++ whether or not `static` is written, so each
+//  TU gets its own copy and there is no ODR issue either way. The `static` below is redundant,
+//  not load-bearing; it is kept because removing it from thirty declarations would change
+//  nothing. (This header used to credit `static` with that property, which was wrong.)
 //
 //========================================================================================
 #ifndef __KCMConstants_h__
