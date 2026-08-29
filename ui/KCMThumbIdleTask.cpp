@@ -69,7 +69,9 @@ uint32 KCMThumbIdleTask::RunTask(uint32 flags, IdleTimer* /*idleTimer*/)
 	// take this task off the queue. This covers a document close during the quit that schedules
 	// the task, with the idle firing before Shutdown gets to RemoveTask -- a purge plus
 	// ForceRedraw into a panel that is being torn down is the classic crash-on-quit on the Mac.
-	if (Utils<IKCMCompareFacade>()->IsAppQuitting())
+	// ★Held once: asked here and again for every db in the loop below (Utils.h:74-80).
+	InterfacePtr<IKCMCompareFacade> compare(Utils<IKCMCompareFacade>().QueryUtilInterface());
+	if (compare->IsAppQuitting())
 	{
 		sPendingDBs.clear();
 		this->UninstallTask();
@@ -90,7 +92,7 @@ uint32 KCMThumbIdleTask::RunTask(uint32 flags, IdleTimer* /*idleTimer*/)
 	for (std::vector<IDataBase*>::iterator it = dbs.begin(); it != dbs.end(); ++it)
 	{
 		// A db closed between the schedule and the idle must not be dereferenced.
-		if (Utils<IKCMCompareFacade>()->IsDocDBOpen(*it))
+		if (compare->IsDocDBOpen(*it))
 		{
 			KCMTryRefreshPagesPanelThumbnails(*it, kFalse /*redrawNow*/);	// purge only
 			purgedAny = kTrue;
