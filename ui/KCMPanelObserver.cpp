@@ -77,6 +77,7 @@ public:
 	virtual void Update(const ClassID& theChange, ISubject* theSubject, const PMIID& protocol, void* changedBy);
 
 private:
+	void SetWidgetAttached(const InterfacePtr<IPanelControlData>& pcd, const WidgetID& wid, const PMIID& iid, bool16 attach);
 	void AttachWidget(const InterfacePtr<IPanelControlData>& pcd, const WidgetID& wid, const PMIID& iid);
 	void DetachWidget(const InterfacePtr<IPanelControlData>& pcd, const WidgetID& wid, const PMIID& iid);
 
@@ -306,24 +307,33 @@ void KCMPanelObserver::AutoDetach()
 	this->DetachWidget(pcd, kKCMToolButtonWidgetID,         ITriStateControlData::kDefaultIID);	// ★detached as the pair of AutoAttach
 }
 
-void KCMPanelObserver::AttachWidget(const InterfacePtr<IPanelControlData>& pcd, const WidgetID& wid, const PMIID& iid)
+// Subscribe to, or unsubscribe from, one widget of this panel.
+// ★**One function with a flag**, the shape this plug-in uses for the same job elsewhere
+//   (KCMLayoutSyncAttachContext in KCMViewSync.cpp, KCMSetModelChangeObserverAttached in
+//   KCMModelChangeObserver.cpp). ★The two named wrappers stay: the ten call sites in AutoAttach /
+//   AutoDetach read better naming their direction than carrying a kTrue / kFalse.
+void KCMPanelObserver::SetWidgetAttached(const InterfacePtr<IPanelControlData>& pcd, const WidgetID& wid, const PMIID& iid, bool16 attach)
 {
 	IControlView* cv = pcd->FindWidget(wid);
 	if (cv == nil)
 		return;
 	InterfacePtr<ISubject> subject(cv, UseDefaultIID());
-	if (subject != nil)
+	if (subject == nil)
+		return;
+	if (attach)
 		subject->AttachObserver(this, iid);
+	else
+		subject->DetachObserver(this, iid);
+}
+
+void KCMPanelObserver::AttachWidget(const InterfacePtr<IPanelControlData>& pcd, const WidgetID& wid, const PMIID& iid)
+{
+	this->SetWidgetAttached(pcd, wid, iid, kTrue);
 }
 
 void KCMPanelObserver::DetachWidget(const InterfacePtr<IPanelControlData>& pcd, const WidgetID& wid, const PMIID& iid)
 {
-	IControlView* cv = pcd->FindWidget(wid);
-	if (cv == nil)
-		return;
-	InterfacePtr<ISubject> subject(cv, UseDefaultIID());
-	if (subject != nil)
-		subject->DetachObserver(this, iid);
+	this->SetWidgetAttached(pcd, wid, iid, kFalse);
 }
 
 //----------------------------------------------------------------------------------------

@@ -64,9 +64,18 @@ static const char* KCMBoolLiteral(bool16 b)
 	return b ? "true" : "false";
 }
 
-// Finds "key" in text and reads the true/false after the first ':' that follows it; defVal when
-// there is none.
-static bool16 KCMJsonReadBool(const std::string& text, const char* key, bool16 defVal)
+// Report a failed save on the panel's status line. ★The wording is this short on purpose: the
+// status line is narrow, and what overflows is shortened by the widget, not by the reader.
+static void KCMSaySaveFailed(const char* what)
+{
+	PMString err(what);
+	err.SetTranslatable(kFalse);
+	KCMSetStatus(err, kTrue /*forceRedrawNow*/);
+}
+
+// Where the value of "key" begins ＝ just past the first ':' that follows it; npos when the key
+// is not there, or has no ':' after it. ★The two readers below opened with exactly this.
+static size_t KCMJsonValueStart(const std::string& text, const char* key)
 {
 	std::string needle("\"");
 	needle += key;
@@ -74,12 +83,19 @@ static bool16 KCMJsonReadBool(const std::string& text, const char* key, bool16 d
 
 	const size_t k = text.find(needle);
 	if (k == std::string::npos)
-		return defVal;
+		return std::string::npos;
 	const size_t colon = text.find(':', k + needle.size());
-	if (colon == std::string::npos)
+	return (colon == std::string::npos) ? std::string::npos : colon + 1;
+}
+
+// Finds "key" in text and reads the true/false after the first ':' that follows it; defVal when
+// there is none.
+static bool16 KCMJsonReadBool(const std::string& text, const char* key, bool16 defVal)
+{
+	size_t p = KCMJsonValueStart(text, key);
+	if (p == std::string::npos)
 		return defVal;
 
-	size_t p = colon + 1;
 	while (p < text.size() && (text[p] == ' ' || text[p] == '\t' || text[p] == '\n' || text[p] == '\r'))
 		++p;
 
@@ -98,18 +114,11 @@ static bool16 KCMJsonReadBool(const std::string& text, const char* key, bool16 d
 //   name, that day costs one more reader and nothing else.
 static std::string KCMJsonReadString(const std::string& text, const char* key)
 {
-	std::string needle("\"");
-	needle += key;
-	needle += "\"";
-
-	const size_t k = text.find(needle);
-	if (k == std::string::npos)
-		return std::string();
-	const size_t colon = text.find(':', k + needle.size());
-	if (colon == std::string::npos)
+	const size_t p = KCMJsonValueStart(text, key);
+	if (p == std::string::npos)
 		return std::string();
 
-	const size_t open = text.find('"', colon + 1);
+	const size_t open = text.find('"', p);
 	if (open == std::string::npos)
 		return std::string();
 	const size_t close = text.find('"', open + 1);
@@ -128,9 +137,7 @@ void KCMSavePanelState()
 	IDFile file;
 	if (!KCMPanelStateFile(file))
 	{
-		PMString err("Save failed (folder)");	// shown in the panel’s status line (kept short: the line is narrow)
-		err.SetTranslatable(kFalse);
-		KCMSetStatus(err, kTrue /*forceRedrawNow*/);
+		KCMSaySaveFailed("Save failed (folder)");
 		return;
 	}
 
@@ -184,9 +191,7 @@ void KCMSavePanelState()
 	FILE* fp = FileUtils::OpenFile(file, "wb");
 	if (fp == nil)
 	{
-		PMString err("Save failed (open)");	// shown in the panel’s status line
-		err.SetTranslatable(kFalse);
-		KCMSetStatus(err, kTrue /*forceRedrawNow*/);
+		KCMSaySaveFailed("Save failed (open)");
 		return;
 	}
 	// ★Check the byte count AND the result of fclose: a partial write (a full disk, say) must not be
@@ -195,9 +200,7 @@ void KCMSavePanelState()
 	const int closed = fclose(fp);
 	if (wrote != json.size() || closed != 0)
 	{
-		PMString err("Save failed (write)");	// shown in the panel’s status line
-		err.SetTranslatable(kFalse);
-		KCMSetStatus(err, kTrue /*forceRedrawNow*/);
+		KCMSaySaveFailed("Save failed (write)");
 		return;
 	}
 
