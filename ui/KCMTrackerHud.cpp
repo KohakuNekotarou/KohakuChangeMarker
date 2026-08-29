@@ -69,7 +69,9 @@ static IPMFont*       sFont         = nil;
 static IFontInstance* sFontInst     = nil;
 static PMReal         sFontInstSize = 0.0;
 
-static void KCMTrackerHudReleaseFont()
+/** Let the cached instance go. The full release below and the rebuild on a size change both end
+	here, so the size is never left describing an instance that is gone. */
+static void KCMTrackerHudReleaseFontInstance()
 {
 	if (sFontInst != nil)
 	{
@@ -77,6 +79,11 @@ static void KCMTrackerHudReleaseFont()
 		sFontInst = nil;
 	}
 	sFontInstSize = 0.0;
+}
+
+static void KCMTrackerHudReleaseFont()
+{
+	KCMTrackerHudReleaseFontInstance();
 	if (sFont != nil)
 	{
 		sFont->Release();
@@ -108,11 +115,7 @@ static IFontInstance* KCMTrackerHudQueryFontInstance(IPMFont* font, const PMReal
 	if (sFontInst != nil && sFontInstSize == size)
 		return sFontInst;
 
-	if (sFontInst != nil)
-	{
-		sFontInst->Release();
-		sFontInst = nil;
-	}
+	KCMTrackerHudReleaseFontInstance();
 	InterfacePtr<IFontMgr> fontMgr(GetExecutionContextSession(), UseDefaultIID());
 	if (fontMgr == nil)
 		return nil;
@@ -140,14 +143,16 @@ static PMString KCMTrackerHudLabel(IControlView* view)
 {
 	PMString out;
 
-	if (!Utils<IKCMCompareFacade>()->IsArmed())
+	// ★Held once: the facade is asked again for each of the two documents below (Utils.h:74-80).
+	InterfacePtr<IKCMCompareFacade> compare(Utils<IKCMCompareFacade>().QueryUtilInterface());
+	if (!compare->IsArmed())
 		out = PMString("Not comparing");
 	else
 	{
 		IDataBase* const db = KCMFindDocDbForView(view);	// the pressed window's document (only ever compared as a pointer)
-		if (db != nil && db == Utils<IKCMCompareFacade>()->GetArmedTargetDB())
+		if (db != nil && db == compare->GetArmedTargetDB())
 			out = PMString("Target");
-		else if (db != nil && db == Utils<IKCMCompareFacade>()->GetArmedSourceDB())
+		else if (db != nil && db == compare->GetArmedSourceDB())
 			out = PMString("Source");
 		else
 			out = PMString("Not in comparison");

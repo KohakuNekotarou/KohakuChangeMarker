@@ -571,23 +571,31 @@ void KCMCmykBeginPress()
 	}
 }
 
-// KCMCmykEndPress (see KCMCmykCursor.h) - the clean-up when the button is released.
-// ★Cut out of KCMTrackerRevealEnd's CMYK part, line for line.
-void KCMCmykEndPress()
+/** Give back everything ONE PRESS was holding: the borrowed font, the mode fixed at press time and
+	the drag throttle. Both the release and the shutdown path end here ＝ "nothing is held outside a
+	press" on either route. ★sCmykCursorText / sCmykCursorPending are NOT touched: they say what is on
+	SCREEN, and the two callers answer that differently. */
+static void KCMCmykDropPressState()
 {
-	// Return and drop what the press was holding (taken in KCMCmykBeginPress; nothing is held outside a
-	// press).
 	if (sCmykCursorFont != nil)
 	{
 		sCmykCursorFont->Release();
 		sCmykCursorFont = nil;
 	}
-	Utils<IKCMCompareFacade>()->EndColorDrag();
-	// Let go of the CMYK mode (hover/other) that was fixed for this press.
 	sCmykHoverDB       = nil;
 	sCmykOtherDB       = nil;
 	sCmykHoverIsTarget = kFalse;
-	sCmykDragThrottleStarted = kFalse;	// so the next press lets its first drag sample through
+	sCmykDragThrottleStarted = kFalse;
+}
+
+// KCMCmykEndPress (see KCMCmykCursor.h) - the clean-up when the button is released.
+// ★Cut out of KCMTrackerRevealEnd's CMYK part, line for line.
+void KCMCmykEndPress()
+{
+	// Return and drop what the press was holding (taken in KCMCmykBeginPress; nothing is held outside a
+	// press). The page-pairing cache is the model side's, so it is ended separately.
+	KCMCmykDropPressState();
+	Utils<IKCMCompareFacade>()->EndColorDrag();
 
 	// On release, clear the CMYK value the press had put on the panel's status line ---- the user asked
 	// for the message to go when the hold ends. sCmykCursorPending is raised only where a press really
@@ -615,30 +623,23 @@ void KCMCmykShutdown()
 	// carrying a heap buffer that far is the safer thing.
 	sCmykCursorText.Clear();
 	sCmykCursorPending = kFalse;	// ★do not leave it raised where the application quit mid-press ---- the
-									//   same "nothing is held outside a press" as sCmykCursorFont and
-									//   sCmykHoverDB below
+									//   same "nothing is held outside a press" that KCMCmykDropPressState
+									//   below applies to the font and the press-time pointers
 
 	// ★Where the application ends during an Alt + left hold (a scripted quit, say) RevealEnd is never
-	//   reached and sCmykCursorFont is left alive, so it is released here. On the ordinary route it is
-	//   always nil outside a press and this does nothing.
-	if (sCmykCursorFont != nil)
-	{
-		sCmykCursorFont->Release();
-		sCmykCursorFont = nil;
-	}
-	// The same route can leave the press-time document pointers behind. They are only ever compared,
-	// never dereferenced, but a released pointer is not carried past shutdown either.
-	sCmykHoverDB       = nil;
-	sCmykOtherDB       = nil;
-	sCmykHoverIsTarget = kFalse;
-	sCmykDragThrottleStarted = kFalse;	// nor is the drag throttle's flag left standing
+	//   reached, so the font, the press-time pointers and the throttle can all still be standing. On
+	//   the ordinary route they are already nil and this does nothing.
+	KCMCmykDropPressState();
 
 	// The press-time page-pairing cache (hover -> other) is dropped the same way. It goes through the
 	// facade rather than the free function it used to call.
-	// ⚠**This is the one place that checks for nil**: during shutdown the utils boss may already be
-	//   gone, and the Utils<>()->M() form would dereference nil. KCMCmykEndPress above is a button
-	//   release ＝ ordinary running time, so it calls plainly.
-	InterfacePtr<IKCMCompareFacade> compare(Utils<IKCMCompareFacade>().QueryUtilInterface());
-	if (compare != nil)
-		compare->EndColorDrag();
+	// ⚠**This is the one place that checks**: during shutdown the utils boss may already be gone.
+	//   KCMCmykEndPress above is a button release ＝ ordinary running time, so it calls plainly.
+	// ★★★IT HAS TO BE Exists(), NOT A nil TEST ON THE RESULT: `QueryUtilInterface()` is
+	//   `fFace->AddRef()` with no guard (Utils.h:116), so a nil is already dereferenced by the time
+	//   there is a pointer to test - the guard that stood here read as protection and was none.
+	//   Utils.h names Exists() as the test for exactly this case ("the plug-in that supplies the
+	//   interface has been removed").
+	if (Utils<IKCMCompareFacade>().Exists())
+		Utils<IKCMCompareFacade>()->EndColorDrag();
 }
