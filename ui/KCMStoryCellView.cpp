@@ -246,15 +246,9 @@ void KCMStoryCellView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 	const RealAGMColor kChangeColor = fg;
 	const RealAGMColor kContextColor = KCMBlendColor(bg, fg, PMReal(kKCMContextTextWeight));
 
-	// Named rather than passed as bare kFalse, the way the app's own drawing code writes it. Every
-	// call below spells both out instead of letting the defaults apply, because the defaults in
-	// DrawStringUtils.h DISAGREE with each other: the draw calls default to kFalse but the measure
-	// and ellipsize calls default to kTrue, so taking the defaults would measure a string
-	// differently from how it is drawn. ⚠'&' has to survive verbatim in any case - this is
-	// document text, not a menu label, and the .fr cell it replaced set Convert ampersands kFalse
-	// for the same reason.
-	const bool16 kDontConvertAmpersand = kFalse;
-	const bool16 kNoUnderline = kFalse;
+	// (kKCMDontConvertAmpersand / kKCMNoUnderline are in KCMPanelTextDraw.h, with the reason both
+	//  widgets share. They were declared here and in KCMStatusTextView.cpp, under two different
+	//  names, with that reason written out twice.)
 
 	const PMReal availWidth = rightEdge - x;
 	if (availWidth <= PMReal(0.0))
@@ -265,8 +259,8 @@ void KCMStoryCellView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 	{
 		if (s.IsEmpty())
 			return;
-		StringUtils::PMDrawStringRGB(&gc, PMPoint(x, y), s, fontInfo, c, kDontConvertAmpersand, kNoUnderline);
-		x += StringUtils::PMMeasureString(&gc, s, fontInfo, kDontConvertAmpersand).X();
+		StringUtils::PMDrawStringRGB(&gc, PMPoint(x, y), s, fontInfo, c, kKCMDontConvertAmpersand, kKCMNoUnderline);
+		x += StringUtils::PMMeasureString(&gc, s, fontInfo, kKCMDontConvertAmpersand).X();
 	};
 
 	// ★WHERE THE CHANGED CHARACTERS ACTUALLY LANDED. The reading has to stand over THEM, and where
@@ -283,9 +277,9 @@ void KCMStoryCellView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 		drawnMidW = x - drawnMidX;
 	};
 
-	const PMReal preW  = pre.IsEmpty()  ? PMReal(0.0) : StringUtils::PMMeasureString(&gc, pre,  fontInfo, kDontConvertAmpersand).X();
-	const PMReal midW  = mid.IsEmpty()  ? PMReal(0.0) : StringUtils::PMMeasureString(&gc, mid,  fontInfo, kDontConvertAmpersand).X();
-	const PMReal postW = post.IsEmpty() ? PMReal(0.0) : StringUtils::PMMeasureString(&gc, post, fontInfo, kDontConvertAmpersand).X();
+	const PMReal preW  = pre.IsEmpty()  ? PMReal(0.0) : StringUtils::PMMeasureString(&gc, pre,  fontInfo, kKCMDontConvertAmpersand).X();
+	const PMReal midW  = mid.IsEmpty()  ? PMReal(0.0) : StringUtils::PMMeasureString(&gc, mid,  fontInfo, kKCMDontConvertAmpersand).X();
+	const PMReal postW = post.IsEmpty() ? PMReal(0.0) : StringUtils::PMMeasureString(&gc, post, fontInfo, kKCMDontConvertAmpersand).X();
 
 	// ★THE CHANGE IS WHAT SURVIVES A NARROW PANEL. The stock cell this replaced ellipsized in the
 	//   MIDDLE, which is right for a story's opening words and wrong here - the middle is exactly
@@ -303,7 +297,7 @@ void KCMStoryCellView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 		// The change alone overflows the cell: ellipsize the change itself (tail) and drop the
 		// context. Nothing is lost that the reader could have used - the context is only there to
 		// place a change that is too short to place itself.
-		const PMString m = StringUtils::PMEllipsizeString(&gc, availWidth, mid, fontInfo, kEllipsizeEnd, nil, kDontConvertAmpersand);
+		const PMString m = StringUtils::PMEllipsizeString(&gc, availWidth, mid, fontInfo, kEllipsizeEnd, nil, kKCMDontConvertAmpersand);
 		drawChange(m);
 	}
 	else
@@ -314,13 +308,13 @@ void KCMStoryCellView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 		const PMReal rem = availWidth - midW;
 		PMString preCut = pre;
 		if (!pre.IsEmpty())
-			preCut = StringUtils::PMEllipsizeString(&gc, rem, pre, fontInfo, kEllipsizeBeginning, nil, kDontConvertAmpersand);
-		const PMReal preCutW = preCut.IsEmpty() ? PMReal(0.0) : StringUtils::PMMeasureString(&gc, preCut, fontInfo, kDontConvertAmpersand).X();
+			preCut = StringUtils::PMEllipsizeString(&gc, rem, pre, fontInfo, kEllipsizeBeginning, nil, kKCMDontConvertAmpersand);
+		const PMReal preCutW = preCut.IsEmpty() ? PMReal(0.0) : StringUtils::PMMeasureString(&gc, preCut, fontInfo, kKCMDontConvertAmpersand).X();
 
 		const PMReal postBudget = rem - preCutW;
 		PMString postCut;
 		if (!post.IsEmpty() && postBudget > PMReal(0.0))
-			postCut = StringUtils::PMEllipsizeString(&gc, postBudget, post, fontInfo, kEllipsizeEnd, nil, kDontConvertAmpersand);
+			postCut = StringUtils::PMEllipsizeString(&gc, postBudget, post, fontInfo, kEllipsizeEnd, nil, kKCMDontConvertAmpersand);
 
 		drawRun(preCut, kContextColor);
 		drawChange(mid);
@@ -337,7 +331,7 @@ void KCMStoryCellView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 	//   jump half a row against the rows above and below it.
 	if (twoLines && !ruby.IsEmpty())
 	{
-		const PMReal rubyW = StringUtils::PMMeasureString(&gc, ruby, fontInfo, kDontConvertAmpersand).X();
+		const PMReal rubyW = StringUtils::PMMeasureString(&gc, ruby, fontInfo, kKCMDontConvertAmpersand).X();
 
 		// ★CENTRED ON THE BASE CHARACTERS, and worked out by the rule the message area uses too
 		//   (KCMPanelTextDraw.h) - that box draws the OLDER version's reading over the same kind
@@ -351,14 +345,14 @@ void KCMStoryCellView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 			if (room <= PMReal(0.0))
 				return;
 			// Cut the TAIL: a reading is read from its head, and the head is what identifies it.
-			shown = StringUtils::PMEllipsizeString(&gc, room, ruby, fontInfo, kEllipsizeEnd, nil, kDontConvertAmpersand);
+			shown = StringUtils::PMEllipsizeString(&gc, room, ruby, fontInfo, kEllipsizeEnd, nil, kKCMDontConvertAmpersand);
 		}
 
 		// ★FULL STRENGTH, like the changed characters below it - the reading IS the change on
 		//   these rows. What stays faded is the context on the lower line, which is what "fade
 		//   everything but the ruby" asks for.
 		StringUtils::PMDrawStringRGB(&gc, PMPoint(rubyX, upperY), shown, fontInfo, kChangeColor,
-									 kDontConvertAmpersand, kNoUnderline);
+									 kKCMDontConvertAmpersand, kKCMNoUnderline);
 	}
 }
 
