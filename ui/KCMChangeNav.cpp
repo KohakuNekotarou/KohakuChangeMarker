@@ -184,6 +184,24 @@ static void KCMAppendOversetStopsForPage(UID pageUID, const std::vector<KCMOvers
 	}
 }
 
+/** The stops ONE PAGE contributes, in the order the walk expects: its frame first, then its
+	overflow places. ★Both page loops go through this, so the order cannot drift apart between
+	ordinary pages and master pages - which is what the note at the master loop asks for. */
+static void KCMAppendStopsForPage(UID pageUID, bool16 changeHere, bool16 oversetHere,
+                                    IKCMMarkData* marks, const std::vector<KCMOversetLoc>& locs,
+                                    std::vector<KCMNavStop>& out)
+{
+	// 1) That page's change (its frame): the page centre.
+	if (changeHere && marks->HasEntryForPage(pageUID))
+	{
+		KCMNavStop s; s.pageUID = pageUID; s.isOverset = kFalse;
+		out.push_back(s);
+	}
+	// 2) That page's overset "+" places, one at a time in scan order.
+	if (oversetHere)
+		KCMAppendOversetStopsForPage(pageUID, locs, out);
+}
+
 static void KCMBuildStops(std::vector<KCMNavStop>& out)
 {
 	out.clear();
@@ -239,18 +257,7 @@ static void KCMBuildStops(std::vector<KCMNavStop>& out)
 	std::vector<UID> flat;
 	marks->GetAllPageUIDs(navDB, flat);
 	for (size_t i = 0; i < flat.size(); ++i)
-	{
-		const UID u = flat[i];
-		// 1) That page's change (its frame): the page centre.
-		if (changeHere && marks->HasEntryForPage(u))
-		{
-			KCMNavStop s; s.pageUID = u; s.isOverset = kFalse;
-			out.push_back(s);
-		}
-		// 2) That page's overset "+" places, one at a time in scan order.
-		if (oversetHere)
-			KCMAppendOversetStopsForPage(u, locs, out);
-	}
+		KCMAppendStopsForPage(flat[i], changeHere, oversetHere, marks, locs, out);
 
 	// GetAllPageUIDs returns THE DOCUMENT'S ORDINARY PAGES ONLY. Master spreads are kept in a
 	// separate IMasterSpreadList and never appear in the loop above, so they are topped up below.
@@ -282,13 +289,7 @@ static void KCMBuildStops(std::vector<KCMNavStop>& out)
 			if (covered.find(u) != covered.end())
 				continue;			// already taken above (a master cannot turn up there, but do not add it twice)
 			covered.insert(u);
-			if (changeHere && marks->HasEntryForPage(u))
-			{
-				KCMNavStop s; s.pageUID = u; s.isOverset = kFalse;
-				out.push_back(s);
-			}
-			if (oversetHere)
-				KCMAppendOversetStopsForPage(u, locs, out);
+			KCMAppendStopsForPage(u, changeHere, oversetHere, marks, locs, out);
 		}
 	}
 
@@ -506,6 +507,8 @@ static bool16 KCMScrollDocToPBPoint(IDataBase* db, const PBPMPoint& pbPoint, PMR
 
 	K2Vector<IControlView*> views;
 	Utils<ILayoutViewUtils>()->GetAllLayoutViews(views, nil, db);
+	// ★Held across the loop: the zoom command below is built once per view (Utils.h:74-80).
+	InterfacePtr<ILayoutUIUtils> layoutUIUtils(Utils<ILayoutUIUtils>().QueryUtilInterface());
 	bool16 any = kFalse;
 	for (int32 i = 0; i < (int32)views.size(); ++i)
 	{
@@ -524,7 +527,7 @@ static bool16 KCMScrollDocToPBPoint(IDataBase* db, const PBPMPoint& pbPoint, PMR
 			const PMReal cur = pano->GetXScaleFactor(kTrue);
 			if (abs(cur - applyZoom) > PMReal(0.0001))
 			{
-				InterfacePtr<ICommand> zoomCmd(Utils<ILayoutUIUtils>()->MakeZoomCmd(view, applyZoom));
+				InterfacePtr<ICommand> zoomCmd(layoutUIUtils->MakeZoomCmd(view, applyZoom));
 				if (zoomCmd == nil || CmdUtils::ProcessCommand(zoomCmd) != kSuccess)
 				{
 					// The zoom is a convenience for looking at where the walk landed, so the scroll
@@ -968,8 +971,7 @@ static void KCMGoto(int32 dir)
 	IDataBase* navDB = KCMNavDoc();
 	if (navDB == nil)
 	{
-		PMString s("Start a comparison or run Find Overset first."); s.SetTranslatable(kFalse);
-		KCMSetStatus(s);
+		KCMSetStatus("Start a comparison or run Find Overset first.");
 		return;
 	}
 
@@ -977,8 +979,7 @@ static void KCMGoto(int32 dir)
 	KCMBuildStops(stops);
 	if (stops.empty())
 	{
-		PMString s("Nothing to review."); s.SetTranslatable(kFalse);
-		KCMSetStatus(s);
+		KCMSetStatus("Nothing to review.");
 		KCMRefreshNavPosition();	// nothing to walk: "/" and dead buttons (normally unreachable, they are already disabled)
 		return;
 	}
@@ -1089,8 +1090,7 @@ static void KCMGoto(int32 dir)
 	}
 	if (!ok)
 	{
-		PMString s("Could not scroll."); s.SetTranslatable(kFalse);
-		KCMSetStatus(s);
+		KCMSetStatus("Could not scroll.");
 		KCMRefreshNavPosition();	// rebuild the readout and the buttons from the state that did not move
 		return;
 	}
@@ -1278,9 +1278,12 @@ void KCMNoteStoryStop(int32 rowIndex, int32 changeIndex)
 
 	// Whether the row exists, its storyUID, and its child count: all three come from the same
 	// facade, so it is queried once.
-	InterfacePtr<IKCMStoryEditsFacade> edits(Utils<IKCMStoryEditsFacade>().QueryUtilInterface());
-	if (edits == nil)
+	// ★★★THE GUARD IS Exists(), NOT A nil TEST ON THE RESULT: `QueryUtilInterface()` is
+	//   `fFace->AddRef()` with no guard (Utils.h:116), so a nil is dereferenced before there is
+	//   a pointer to test. Same correction as KCMCmykCursor.cpp's shutdown path.
+	if (!Utils<IKCMStoryEditsFacade>().Exists())
 		return;
+	InterfacePtr<IKCMStoryEditsFacade> edits(Utils<IKCMStoryEditsFacade>().QueryUtilInterface());
 
 	IKCMStoryEditsFacade::Row row;
 	if (!edits->GetRow(rowIndex, row))

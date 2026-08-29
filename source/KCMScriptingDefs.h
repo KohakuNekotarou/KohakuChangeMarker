@@ -42,7 +42,6 @@
 //  @warning **the SDK never does it to a PROPERTY** -- its three uses of kNotSupported are
 //  Parent / RepresentObject / CollectionMethod (basicshape, candlechart, customdatalink), so
 //  this was measured with two builds that differed in that one resource and nothing else:
-//  differed in that one resource and nothing else:
 //
 //      with the resource:     stories[0].kcmChangeCount -> 6      IDML: no Kcm attribute
 //      without it (control):  stories[0].kcmChangeCount -> 6      IDML: KcmChangeCount="6"

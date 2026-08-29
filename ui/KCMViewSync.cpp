@@ -629,6 +629,8 @@ static bool16 KCMSyncOtherDocViewportsTo(IControlView* srcView, IPanorama* srcPa
 	//   (Utils.h:74-80). Building Utils<ILayoutUIUtils>() inside the loop would run a QueryInterface
 	//   and a Release per view, on a path taken dozens of times a second.
 	InterfacePtr<ILayoutUIUtils> layoutUIUtils(Utils<ILayoutUIUtils>().QueryUtilInterface());
+	// ★Same reason, same place: the loop below asks for one document's layout views per destination.
+	InterfacePtr<ILayoutViewUtils> layoutViewUtils(Utils<ILayoutViewUtils>().QueryUtilInterface());
 
 	// The re-entry guard is raised with RAII, so that a ProcessCommand in the copy loop throwing
 	// cannot leave the flag up ＝ cannot disable the sync for the rest of the session.
@@ -668,7 +670,7 @@ static bool16 KCMSyncOtherDocViewportsTo(IControlView* srcView, IPanorama* srcPa
 		}
 
 		K2Vector<IControlView*> views;
-		Utils<ILayoutViewUtils>()->GetAllLayoutViews(views, nil, db);
+		layoutViewUtils->GetAllLayoutViews(views, nil, db);
 
 		for (int32 vi = 0; vi < (int32)views.size(); ++vi)
 		{
@@ -798,10 +800,14 @@ static IObserver* KCMQueryLayoutSyncObserver()
 	return (IObserver*)ctx->QueryInterface(IID_IKCMLAYOUTSYNCOBSERVER);
 }
 
-// Subscribe to every layout view, skipping the ones already subscribed to. Called when the toggle
-// goes on and on every document switch while it is on, so a newly opened document or a newly
-// appeared window is never missed.
-static void KCMLayoutSyncAttachAllPanoramas()
+// Subscribe to, or unsubscribe from, every layout view. Attaching skips the ones already
+// subscribed to, so it is called both when the toggle goes on and on every document switch while
+// it is on ＝ a newly opened document or a newly appeared window is never missed. Detaching only
+// has to reach the views that still exist: one that has closed is no longer in GetAllLayoutViews,
+// and its subscription went with it.
+// ★**Both directions are one function**, which is the shape KCMLayoutSyncAttachContext below
+//   already had: everything but the last three lines was identical.
+static void KCMLayoutSyncAttachAllPanoramas(bool16 attach)
 {
 	InterfacePtr<IObserver> obs(KCMQueryLayoutSyncObserver());
 	if (obs == nil)
@@ -815,29 +821,10 @@ static void KCMLayoutSyncAttachAllPanoramas()
 		InterfacePtr<ISubject> subject(views[i], UseDefaultIID());
 		if (subject == nil)
 			continue;
-		if (!subject->IsAttached(ISubject::kRegularAttachment, obs, IID_IPANORAMA, IID_IKCMLAYOUTSYNCOBSERVER))
+		const bool16 attached = subject->IsAttached(ISubject::kRegularAttachment, obs, IID_IPANORAMA, IID_IKCMLAYOUTSYNCOBSERVER);
+		if (attach && !attached)
 			subject->AttachObserver(ISubject::kRegularAttachment, obs, IID_IPANORAMA, IID_IKCMLAYOUTSYNCOBSERVER);
-	}
-}
-
-// Unsubscribe from every layout view (when the toggle goes off). A view that has already closed
-// does not appear in GetAllLayoutViews, and its subscription went with it, so unsubscribing from
-// the surviving ones is enough.
-static void KCMLayoutSyncDetachAllPanoramas()
-{
-	InterfacePtr<IObserver> obs(KCMQueryLayoutSyncObserver());
-	if (obs == nil)
-		return;
-	K2Vector<IControlView*> views;
-	Utils<ILayoutViewUtils>()->GetAllLayoutViews(views, nil, nil);
-	for (int32 i = 0; i < (int32)views.size(); ++i)
-	{
-		if (views[i] == nil)
-			continue;
-		InterfacePtr<ISubject> subject(views[i], UseDefaultIID());
-		if (subject == nil)
-			continue;
-		if (subject->IsAttached(ISubject::kRegularAttachment, obs, IID_IPANORAMA, IID_IKCMLAYOUTSYNCOBSERVER))
+		else if (!attach && attached)
 			subject->DetachObserver(ISubject::kRegularAttachment, obs, IID_IPANORAMA, IID_IKCMLAYOUTSYNCOBSERVER);
 	}
 }
@@ -899,7 +886,7 @@ void KCMLayoutSyncObserver::Update(const ClassID& theChange, ISubject* theSubjec
 	{
 		IActiveContext::ContextInfo* info = (IActiveContext::ContextInfo*)changedBy;
 		if (info != nil && (info->Key() == IID_IDOCUMENT || info->Key() == IID_ICONTROLVIEW))
-			KCMLayoutSyncAttachAllPanoramas();
+			KCMLayoutSyncAttachAllPanoramas(kTrue);
 		return;
 	}
 
@@ -989,7 +976,7 @@ void KCMSetLayoutSync(bool16 on)
 			return;
 		sLayoutSyncOn = kTrue;
 		KCMLayoutSyncAttachContext(kTrue);
-		KCMLayoutSyncAttachAllPanoramas();
+		KCMLayoutSyncAttachAllPanoramas(kTrue);
 
 		// Align once the moment it goes on, taking the frontmost layout view as the model. After that
 		// it is notification-driven.
@@ -1005,7 +992,7 @@ void KCMSetLayoutSync(bool16 on)
 	else
 	{
 		sLayoutSyncOn = kFalse;
-		KCMLayoutSyncDetachAllPanoramas();
+		KCMLayoutSyncAttachAllPanoramas(kFalse);
 		KCMLayoutSyncAttachContext(kFalse);
 		// The observer belongs to kActiveContextBoss (AddIn), so there is no lifetime to manage here.
 	}

@@ -202,9 +202,14 @@ void KCMModelChangeObserver::Update(const ClassID& theChange, ISubject* /*theSub
 		//   correction had simply not reached this branch).
 		//   ⚠A notification whose fPagesA is nil still means every page (the way out for a sender that
 		//     has no set).
+		//   ⚠★The nil test on docA is **for the reader, not for the callee**: KCMRefreshThumbnailsForPages
+		//     returns on a nil db of its own accord, as do KCMPurgeAllPageThumbs, KCMScrollMapAttach and
+		//     KCMScheduleThumbRefresh (measured 2026-08-29). It is written because **every other call
+		//     site in this function writes it**, and this one, alone in not writing it, read as a
+		//     missing guard.
 		if (n.fPagesA != nil)
 		{
-			KCMRefreshThumbnailsForPages(docA, *n.fPagesA, kFalse /*redrawNow*/);
+			if (docA != nil) KCMRefreshThumbnailsForPages(docA, *n.fPagesA, kFalse /*redrawNow*/);
 		}
 		else
 		{
@@ -342,10 +347,15 @@ void KCMModelChangeObserver::Update(const ClassID& theChange, ISubject* /*theSub
 	}
 }
 
-// Attach to the application subject (once, from the UI’s Startup). The same shape as
-// KCMAttachDocsClosedObserver; IsAttached is asked first, so calling it twice does not attach
-// twice.
-void KCMAttachModelChangeObserver()
+// Subscribe to, or unsubscribe from, the application's subject.
+// ★**One function with a flag**, which is the shape this plug-in already settled on for the same
+//   job: KCMLayoutSyncAttachContext in KCMViewSync.cpp. The two directions differ in **one call**,
+//   and everything ahead of it -- the session, the active context, the observer, the subject --
+//   was written out twice here (2026-08-29).
+// ★IsAttached is asked either way, so calling either direction twice is a no-op.
+// ⚠The session can be nil while the application is quitting, which is why the detach direction
+//   has to survive it.
+static void KCMSetModelChangeObserverAttached(bool16 attach)
 {
 	ISession* session = GetExecutionContextSession();
 	IActiveContext* ctx = (session != nil) ? session->GetActiveContext() : nil;
@@ -358,8 +368,18 @@ void KCMAttachModelChangeObserver()
 	InterfacePtr<ISubject> subject(app, IID_ISUBJECT);
 	if (subject == nil)
 		return;
-	if (!subject->IsAttached(ISubject::kRegularAttachment, obs, IID_IKCMMODELCHANGEOBSERVER, IID_IKCMMODELCHANGEOBSERVER))
+	const bool16 attached = subject->IsAttached(ISubject::kRegularAttachment, obs, IID_IKCMMODELCHANGEOBSERVER, IID_IKCMMODELCHANGEOBSERVER);
+	if (attach && !attached)
 		subject->AttachObserver(ISubject::kRegularAttachment, obs, IID_IKCMMODELCHANGEOBSERVER, IID_IKCMMODELCHANGEOBSERVER);
+	else if (!attach && attached)
+		subject->DetachObserver(ISubject::kRegularAttachment, obs, IID_IKCMMODELCHANGEOBSERVER, IID_IKCMMODELCHANGEOBSERVER);
+}
+
+// Attach to the application subject (once, from the UI’s Startup). The same shape as
+// KCMAttachDocsClosedObserver.
+void KCMAttachModelChangeObserver()
+{
+	KCMSetModelChangeObserverAttached(kTrue);
 }
 
 // Detach on the way out. ★Call it **before the panel is taken down** (the order in
@@ -379,19 +399,7 @@ void KCMAttachModelChangeObserver()
 //   the subject, but what Update does.**
 void KCMDetachModelChangeObserver()
 {
-	ISession* session = GetExecutionContextSession();
-	IActiveContext* ctx = (session != nil) ? session->GetActiveContext() : nil;
-	if (ctx == nil)
-		return;
-	InterfacePtr<IObserver> obs((IObserver*)ctx->QueryInterface(IID_IKCMMODELCHANGEOBSERVER));
-	if (obs == nil)
-		return;
-	InterfacePtr<IApplication> app(session->QueryApplication());
-	InterfacePtr<ISubject> subject(app, IID_ISUBJECT);
-	if (subject == nil)
-		return;
-	if (subject->IsAttached(ISubject::kRegularAttachment, obs, IID_IKCMMODELCHANGEOBSERVER, IID_IKCMMODELCHANGEOBSERVER))
-		subject->DetachObserver(ISubject::kRegularAttachment, obs, IID_IKCMMODELCHANGEOBSERVER, IID_IKCMMODELCHANGEOBSERVER);
+	KCMSetModelChangeObserverAttached(kFalse);
 }
 
 // End, KCMModelChangeObserver.cpp.

@@ -43,6 +43,12 @@
 #include "IXPManager.h"				// GetDocumentBlendingSpace / ReleaseBlendingSpace (the PDF export's transparency group)
 #include "IViewPortAttributes.h"		// asking the port for kPDFExportVPAttr / kPDFIsFlattenerTargetVPAttr
 #include "PDFID.h"					// those two ViewPortAttr IDs (PDFID.h:1543-1544)
+#include "K2SmartPtr.h"				// K2::scoped_array / K2::scoped_ptr -- the SDK's own scoped ownership, so that
+									//   every exit from a function frees what it allocated. Worked examples in the
+									//   product: linksui/LinksUIUtils.cpp:133, spellpanel/LinguisticTestMenu.cpp:1204.
+									//   @warning **not std::vector.** Every buffer below is new (std::nothrow) on
+									//   purpose (the reason is at MakeEntry), and a vector THROWS instead of
+									//   returning nil -- which is the one thing this file must not do.
 
 
 // For the original-page-number badge (Show Original Page Numbers):
@@ -313,6 +319,16 @@ static void KCMDistTransform(const uint8* mask, int32 wt, int32 ht, uint8* out)
 // KCMDrawEventHandler.h because the book comparison (KCMBookCompare.cpp) needs the identical test
 // and used to hold a copy of the same four lines.
 
+// (KCMDropSnapshotPair lived here. It destroyed both snapshots and both accessors, because MakeEntry
+//  gives up on a page from three different places and every one of them had to release the same four
+//  **in one order: an accessor before the snapshot it came from**. It is gone because the four are
+//  now held by K2::scoped_ptr, which frees them at every exit including the ones written since.
+//  ★**THE ORDER IS STILL ENFORCED, BY THE DECLARATIONS.** A scoped_ptr is destroyed in the reverse
+//  of declaration order, and MakeEntry declares snapTH, accTH, snapSH, accSH -- so destruction runs
+//  accSH, snapSH, accTH, snapTH, which is each accessor before its own snapshot, exactly what the
+//  helper existed to guarantee. **Declare a new snapshot before its accessor and this keeps holding;
+//  swap them and it silently stops.**)
+
 ErrorCode KCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef& sourceRef, bool16& changed)
 {
 	changed = kFalse;
@@ -331,8 +347,11 @@ ErrorCode KCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef& 
 	// The comparison is always four-channel CMYK, rasterised opaque (small CMYK differences are
 	// rounded away by a conversion to RGB). The displayed ring is composited separately as ARGB,
 	// so the comparison raster does not need an alpha channel (addTransparencyAlpha = kFalse).
-	SnapshotUtilsEx* snapTH = new (std::nothrow) SnapshotUtilsEx(targetRef, 1.0, 1.0, hiRes, hiRes, 0.0, SnapshotUtilsEx::kCsCMYK, kFalse);
-	if (snapTH == nil)
+	// @warning the declaration order of the four below (snapshot, then its accessor, twice) is what
+	//   keeps each accessor being destroyed before the snapshot it came from -- see the note where
+	//   KCMDropSnapshotPair used to be.
+	K2::scoped_ptr<SnapshotUtilsEx> snapTH(new (std::nothrow) SnapshotUtilsEx(targetRef, 1.0, 1.0, hiRes, hiRes, 0.0, SnapshotUtilsEx::kCsCMYK, kFalse));
+	if (snapTH.get() == nil)
 		return kFailure;
 	// Rasterise with ANTI-ALIASING OFF (4th argument enableAntiAliasing = kFalse). It removes the
 	//   grey halo at edges, and with it the banding that a sub-pixel shift would otherwise register
@@ -367,15 +386,11 @@ ErrorCode KCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef& 
 		drewTH = snapTH->Draw(IShape::kPreviewMode, kFalse, 0.0, kFalse,
 		                      SnapshotUtils::kXPHigh, nil, nil, kFalse);
 	}
-	AGMImageAccessor* accTH = (drewTH == kSuccess) ? snapTH->CreateAGMImageAccessor() : nil;
+	K2::scoped_ptr<AGMImageAccessor> accTH((drewTH == kSuccess) ? snapTH->CreateAGMImageAccessor() : nil);
 
-	SnapshotUtilsEx* snapSH = new (std::nothrow) SnapshotUtilsEx(sourceRef, 1.0, 1.0, hiRes, hiRes, 0.0, SnapshotUtilsEx::kCsCMYK, kFalse);
-	if (snapSH == nil)
-	{
-		if (accTH) delete accTH;
-		delete snapTH;
-		return kFailure;
-	}
+	K2::scoped_ptr<SnapshotUtilsEx> snapSH(new (std::nothrow) SnapshotUtilsEx(sourceRef, 1.0, 1.0, hiRes, hiRes, 0.0, SnapshotUtilsEx::kCsCMYK, kFalse));
+	if (snapSH.get() == nil)
+		return kFailure;	// snapTH and accTH free themselves on the way out
 	ErrorCode drewSH;
 	{
 		KCMRasterizingGuard rg;
@@ -383,10 +398,10 @@ ErrorCode KCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef& 
 		drewSH = snapSH->Draw(IShape::kPreviewMode, kFalse, 0.0, kFalse,
 		                      SnapshotUtils::kXPHigh, nil, nil, kFalse);
 	}
-	AGMImageAccessor* accSH = (drewSH == kSuccess) ? snapSH->CreateAGMImageAccessor() : nil;
+	K2::scoped_ptr<AGMImageAccessor> accSH((drewSH == kSuccess) ? snapSH->CreateAGMImageAccessor() : nil);
 
 	ErrorCode status = kFailure;
-	if (accTH != nil && accSH != nil)
+	if (accTH.get() != nil && accSH.get() != nil)
 	{
 		// The high-resolution (comparison) dimensions and buffers.
 		Int32Rect bth = accTH->GetBounds();
@@ -417,11 +432,15 @@ ErrorCode KCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef& 
 			//   nothing and an out-of-memory would send an exception through an event boundary.
 			//   With nothrow, running out of memory only means this page gets no mark.
 			const size_t N = (size_t)wl * hl;
-			uint8*  M     = new (std::nothrow) uint8[N];	// the stored low-resolution mask: the pooling result
-			uint16* cntHi = new (std::nothrow) uint16[N];	// per low-resolution cell, how many high-resolution pixels changed (pooling scratch)
-			if (M != nil && cntHi != nil)
+			// **Held by K2::scoped_array, so every exit below frees them** -- including the two early
+			//   returns further down, which used to have to name each buffer again. The nothrow stays
+			//   exactly as it was: scoped_array owns whatever it is handed, and `delete[] nil` is
+			//   harmless (K2SmartPtr.h:205), so a failed allocation needs no guard of its own.
+			K2::scoped_array<uint8>  M(new (std::nothrow) uint8[N]);		// the stored low-resolution mask: the pooling result
+			K2::scoped_array<uint16> cntHi(new (std::nothrow) uint16[N]);	// per low-resolution cell, how many high-resolution pixels changed (pooling scratch)
+			if (M.get() != nil && cntHi.get() != nil)
 			{
-				memset(cntHi, 0, N * sizeof(uint16));
+				memset(cntHi.get(), 0, N * sizeof(uint16));
 
 				// The folio exclusion. While the toggle is on, the rectangles of the frames holding
 				// a "Current Page Number" marker are collected for BOTH pages (in points with the
@@ -446,21 +465,7 @@ ErrorCode KCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef& 
 					//   has to copy by value or use one at a time.
 					const std::vector<PMRect>& tRects = KCMGetPageNumberMarkerRects(targetRef, kTrue);
 					const std::vector<PMRect>& sRects = KCMGetPageNumberMarkerRects(sourceRef, kTrue);
-					const PMReal pxScale = hiRes / PMReal(72.0);	// points -> comparison-resolution pixels
-					for (int pass = 0; pass < 2; ++pass)		// 0 = target, 1 = source (both into the same (x, y) space)
-					{
-						const std::vector<PMRect>& mrs = (pass == 0) ? tRects : sRects;
-						for (size_t mi = 0; mi < mrs.size(); ++mi)
-						{
-							const PMRect& mr = mrs[mi];
-							Int32Rect epr;
-							epr.left   = ::ToInt32(::Round(mr.Left()   * pxScale));
-							epr.top    = ::ToInt32(::Round(mr.Top()    * pxScale));
-							epr.right  = ::ToInt32(::Round(mr.Right()  * pxScale));
-							epr.bottom = ::ToInt32(::Round(mr.Bottom() * pxScale));
-							excludeRects.push_back(epr);
-						}
-					}
+					KCMCollectFolioExcludeRects(tRects, sRects, hiRes, excludeRects);
 				}
 
 				// COMPARE AT HIGH RESOLUTION, SCATTER INTO LOW-RESOLUTION CELLS.
@@ -477,19 +482,7 @@ ErrorCode KCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef& 
 				// row outside its vertical range costs zero tests, and an x outside its horizontal
 				// range costs two comparisons.
 				int32 exTop = 0, exBottom = 0, exLeft = 0, exRight = 0;
-				if (!excludeRects.empty())
-				{
-					exTop  = excludeRects[0].top;   exBottom = excludeRects[0].bottom;
-					exLeft = excludeRects[0].left;  exRight  = excludeRects[0].right;
-					for (size_t mi = 1; mi < excludeRects.size(); ++mi)
-					{
-						const Int32Rect& r = excludeRects[mi];
-						if (r.top    < exTop)    exTop    = r.top;
-						if (r.bottom > exBottom) exBottom = r.bottom;
-						if (r.left   < exLeft)   exLeft   = r.left;
-						if (r.right  > exRight)  exRight  = r.right;
-					}
-				}
+				KCMFolioExcludeBBox(excludeRects, exTop, exBottom, exLeft, exRight);
 				std::vector<const Int32Rect*> rowRects;	// only the rectangles reaching this row (allocated outside the loop and reused)
 				rowRects.reserve(excludeRects.size());
 				for (int32 y = 0; y < hth; ++y)
@@ -498,7 +491,7 @@ ErrorCode KCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef& 
 					const uint8* rowS = psH + (size_t)y * rbTH;
 					int32 yl = (int32)((int64)y * hl / hth);
 					if (yl >= hl) yl = hl - 1;
-					uint16* cntRow = cntHi + (size_t)yl * wl;
+					uint16* cntRow = cntHi.get() + (size_t)yl * wl;
 
 					// Stage 2: collect the rectangles reaching this row (outside the bbox's
 					// vertical range it stays empty, and every test below is skipped).
@@ -542,12 +535,11 @@ ErrorCode KCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef& 
 					M[i] = m;
 					if (m) ++diffCount;
 				}
-				delete[] cntHi; cntHi = nil;
+				cntHi.reset();	// the pooling scratch is finished with -- hand the memory back now, not at the end of the scope
 
 				if (diffCount == 0)
 				{
-					// Nothing changed: no entry is created.
-					delete[] M;
+					// Nothing changed: no entry is created. (M is freed by its scoped_array.)
 					status = kSuccess;	// success, with changed = false
 				}
 				else
@@ -557,16 +549,15 @@ ErrorCode KCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef& 
 					// buf below. Neither the SnapshotUtilsEx nor the accessor is kept, and
 					// GetAGMImageRecord is not called -- which removes the crash-on-destroy that
 					// holding an accessor causes.
-					KCMOverlayEntry* e = new (std::nothrow) KCMOverlayEntry();
-					if (e == nil)
+					// **Scoped until it is registered.** The entry belongs to this function until the
+					//   line that puts it in sEntries, and to the map afterwards; release() below is
+					//   where that hand-over happens. Between here and there are two early returns.
+					K2::scoped_ptr<KCMOverlayEntry> e(new (std::nothrow) KCMOverlayEntry());
+					if (e.get() == nil)
 					{
-						// Out of memory: release what was allocated, destroy the snapshots, and give
-						// up on this page (the same shape as MakeOrigImage's allocation failure).
-						delete[] M;
-						if (accSH)  delete accSH;
-						if (snapSH) delete snapSH;
-						if (accTH)  delete accTH;
-						if (snapTH) delete snapTH;
+						// Out of memory: give up on this page (the same shape as MakeOrigImage's
+						// allocation failure). The mask, both snapshots and both accessors all free
+						// themselves on the way out.
 						return kFailure;
 					}
 					e->w = wl;  e->h = hl;  e->rowBytes = rbL;  e->bpp = bppL;
@@ -578,13 +569,13 @@ ErrorCode KCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef& 
 					// Build the distance transform from the mask once and keep it; every later
 					// BuildRing works from it alone. The mask is freed as soon as dist exists, so
 					// the resident memory does not grow (dist replaces mask).
-					e->dist = new (std::nothrow) uint8[N];
-					if (e->dist != nil)
-						KCMDistTransform(M, wl, hl, e->dist);
-					delete[] M;
+					e->dist.reset(new (std::nothrow) uint8[N]);
+					if (e->dist.get() != nil)
+						KCMDistTransform(M.get(), wl, hl, e->dist.get());
+					M.reset();	// dist replaces the mask, so hand it back here rather than at the end of the scope
 
 					// Draw the first ring (at the base radius) straight into buf.
-					e->buf = (e->dist != nil) ? new (std::nothrow) uint8[(size_t)rbL * hl] : nil;
+					e->buf.reset((e->dist.get() != nil) ? new (std::nothrow) uint8[(size_t)rbL * hl] : nil);
 
 					// **If either dist or buf could not be allocated, this page gets no mark at all.**
 					//   Falling back ("clear buf to transparent when dist is missing", "let the
@@ -593,30 +584,23 @@ ErrorCode KCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef& 
 					//   Prev/Next jumps to the page as changed and no frame is there -- it looks
 					//   broken. Giving the page up on out-of-memory matches e == nil above and
 					//   MakeOrigImage.
-					if (e->buf == nil)
-					{
-						delete e;
-						if (accSH)  delete accSH;
-						if (snapSH) delete snapSH;
-						if (accTH)  delete accTH;
-						if (snapTH) delete snapTH;
-						return kFailure;
-					}
-					BuildRing(e->buf, rbL, bppL, wl, hl, e->dist, kKCMBaseRadius);
+					if (e->buf.get() == nil)
+						return kFailure;	// e (with whatever it holds) is freed on the way out
+					BuildRing(e->buf.get(), rbL, bppL, wl, hl, e->dist.get(), kKCMBaseRadius);
 					// **The int16 casts here cannot overflow.** AGMImageRecord.bounds is int16
 					//   (up to 32,767) and wl/hl are pixel counts at the STORED resolution,
 					//   kKCMResolution = 36dpi. The largest page InDesign allows is
 					//   **216.000 inch (15,551.996pt, 5486.4mm)**, so at most **216 x 36 = 7,776 px**
 					//   -- 24% of the ceiling.
 					//   @warning MakeOrigImage below DOES have an explicit `b.right <= 32767` guard,
-					//     and the asymmetry is correct: that one works at kKCMOrigResolution = 72dpi
-					//     and the peek passes a dpi derived from the current zoom, so
+					//     and the asymmetry is correct: its dpi comes from the caller rather than
+					//     from a constant here, and the peek route clamps it at 300, so
 					//     **216 inch x 300dpi = 64,800 really does overflow**.
 					//   The comparison resolution (144dpi) reaches 31,104 px in wth/hth, but those
 					//     stay int32 and are never narrowed to int16.
 					e->rec.bounds.xMin = 0;             e->rec.bounds.yMin = 0;
 					e->rec.bounds.xMax = (int16)wl;     e->rec.bounds.yMax = (int16)hl;
-					e->rec.baseAddr     = e->buf;
+					e->rec.baseAddr     = e->buf.get();
 					e->rec.byteWidth    = rbL;
 					// ARGB (alpha first). Without the HasAlpha flag the transparent pixels are drawn
 					// as opaque white. ARGB is the default order, so no SwapAlpha is needed (RGBA
@@ -637,7 +621,7 @@ ErrorCode KCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef& 
 						KCMMarkStateLock lock(KCMMarkStateMutex());
 						std::map<UID, KCMOverlayEntry*>::iterator old = sEntries.find(key);
 						if (old != sEntries.end()) { delete old->second; sEntries.erase(old); }
-						sEntries[key] = e;
+						sEntries[key] = e.release();	// ★the hand-over: the map owns the entry from here on
 
 						// The Source-side mapping ("Always Show Marks on Source") is recorded here,
 						// in the same place the entry is registered, so any route that reaches
@@ -664,19 +648,12 @@ ErrorCode KCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef& 
 					status = kSuccess;
 				}
 			}
-			else
-			{
-				if (M)     delete[] M;
-				if (cntHi) delete[] cntHi;
-			}
+			// (No else. An allocation that failed leaves status at kFailure, and whichever half did
+			//  succeed is freed by its own scoped_array on the way out of this scope.)
 		}
 	}
 
-	// Clean-up: destroy both snapshots and accessors.
-	if (accSH)  delete accSH;
-	if (snapSH) delete snapSH;
-	if (accTH)  delete accTH;
-	if (snapTH) delete snapTH;
+	// (both snapshots and both accessors are freed by their scoped_ptrs, in the order noted above.)
 	return status;
 }
 
@@ -699,18 +676,20 @@ ErrorCode KCMDrawEventHandler::MakeOrigImage(const UIDRef& targetRef, const UIDR
 	//   a reproduction of "how it was".
 	//   @warning so a non-printing object that moved can differ in the peek image while no mark
 	//     appears. The asymmetry is intended; matching them means setting both to kFalse.
-	SnapshotUtilsEx* snap = new (std::nothrow) SnapshotUtilsEx(sourceRef, 1.0, 1.0, resolution, resolution, 0.0, SnapshotUtilsEx::kCsRGB, kFalse);
-	if (snap == nil)
+	// Snapshot before accessor, as in MakeEntry: scoped_ptrs are destroyed in the reverse of
+	// declaration order, so that order is what puts the accessor down before the snapshot it came from.
+	K2::scoped_ptr<SnapshotUtilsEx> snap(new (std::nothrow) SnapshotUtilsEx(sourceRef, 1.0, 1.0, resolution, resolution, 0.0, SnapshotUtilsEx::kCsRGB, kFalse));
+	if (snap.get() == nil)
 		return kFailure;	// nothrow: out of memory only costs this page its picture (as in MakeEntry)
 	ErrorCode drew;
 	{
 		KCMRasterizingGuard rg;	// a re-entrant draw during this Draw must not paint marks into our own raster
 		drew = snap->Draw(IShape::kPreviewMode);
 	}
-	AGMImageAccessor* acc = (drew == kSuccess) ? snap->CreateAGMImageAccessor() : nil;
+	K2::scoped_ptr<AGMImageAccessor> acc((drew == kSuccess) ? snap->CreateAGMImageAccessor() : nil);
 
 	ErrorCode status = kFailure;
-	if (acc != nil)
+	if (acc.get() != nil)
 	{
 		Int32Rect b = acc->GetBounds();
 		const int32 w = b.right - b.left, h = b.bottom - b.top;
@@ -726,21 +705,17 @@ ErrorCode KCMDrawEventHandler::MakeOrigImage(const UIDRef& targetRef, const UIDR
 		if (p != nil && w > 0 && h > 0 && rb > 0 && bpp >= 3 && b.right <= 32767 && b.bottom <= 32767)
 		{
 			// nothrow: a 300dpi large-format page (about 140MB of buffer for A2) is the likeliest
-			// place to actually run out of memory. The early return below frees the partial state.
-			KCMOrigImage* o = new (std::nothrow) KCMOrigImage();
-			uint8* obuf = (o != nil) ? new (std::nothrow) uint8[(size_t)rb * h] : nil;
-			if (o == nil || obuf == nil)
-			{
-				// allocation failed: free any partial state and bail (same safety as MakeEntry)
-				if (obuf) delete[] obuf;
-				if (o)    delete o;
-				if (acc)  delete acc;
-				if (snap) delete snap;
-				return kFailure;
-			}
-			o->buf = obuf;
+			// place to actually run out of memory. Everything here is scoped, so the early return
+			// below frees whichever half did succeed -- and the accessor and snapshot with it.
+			// **Scoped until it is registered**, the same shape MakeEntry uses: release() at the
+			// line that puts it in sOrigImages is where the map takes over.
+			K2::scoped_ptr<KCMOrigImage> o(new (std::nothrow) KCMOrigImage());
+			if (o.get() != nil)
+				o->buf.reset(new (std::nothrow) uint8[(size_t)rb * h]);
+			if (o.get() == nil || o->buf.get() == nil)
+				return kFailure;	// allocation failed (same safety as MakeEntry)
 			o->w = w;  o->h = h;  o->rowBytes = rb;  o->bpp = bpp;
-			memcpy(o->buf, p, (size_t)rb * h);
+			memcpy(o->buf.get(), p, (size_t)rb * h);
 			// Guarantee opacity: with ARGB (alpha first), set every alpha to 255 so nothing shows
 			// through the overlay.
 			// A grid of about 8x8 samples is checked first, and if they are all already 255 the
@@ -754,7 +729,7 @@ ErrorCode KCMDrawEventHandler::MakeOrigImage(const UIDRef& targetRef, const UIDR
 				const int32 sx = (w > 8) ? w / 8 : 1;
 				for (int32 y = 0; y < h && alreadyOpaque; y += sy)
 				{
-					const uint8* row = o->buf + (size_t)y * rb;
+					const uint8* row = o->buf.get() + (size_t)y * rb;
 					for (int32 x = 0; x < w; x += sx)
 						if (row[(size_t)x * bpp] != 255) { alreadyOpaque = kFalse; break; }
 				}
@@ -762,7 +737,7 @@ ErrorCode KCMDrawEventHandler::MakeOrigImage(const UIDRef& targetRef, const UIDR
 				{
 					for (int32 y = 0; y < h; ++y)
 					{
-						uint8* row = o->buf + (size_t)y * rb;
+						uint8* row = o->buf.get() + (size_t)y * rb;
 						for (int32 x = 0; x < w; ++x)
 							row[(size_t)x * bpp] = 255;
 					}
@@ -770,7 +745,7 @@ ErrorCode KCMDrawEventHandler::MakeOrigImage(const UIDRef& targetRef, const UIDR
 			}
 			o->rec.bounds.xMin = (int16)b.left;   o->rec.bounds.yMin = (int16)b.top;
 			o->rec.bounds.xMax = (int16)b.right;  o->rec.bounds.yMax = (int16)b.bottom;
-			o->rec.baseAddr     = o->buf;
+			o->rec.baseAddr     = o->buf.get();
 			o->rec.byteWidth    = rb;
 			o->rec.colorSpace   = (int16)((bpp >= 4) ? (kRGBColorSpace | kColorSpaceHasAlpha) : kRGBColorSpace);
 			o->rec.bitsPerPixel = (int16)acc->GetBitsPerPixel();
@@ -781,13 +756,12 @@ ErrorCode KCMDrawEventHandler::MakeOrigImage(const UIDRef& targetRef, const UIDR
 			UID key = targetRef.GetUID();
 			std::map<UID, KCMOrigImage*>::iterator old = sOrigImages.find(key);
 			if (old != sOrigImages.end()) { delete old->second; sOrigImages.erase(old); }
-			sOrigImages[key] = o;
+			sOrigImages[key] = o.release();	// ★the hand-over: the map owns the picture from here on
 			status = kSuccess;
 		}
 	}
 
-	if (acc)  delete acc;
-	if (snap) delete snap;
+	// (acc and snap are freed by their scoped_ptrs -- the accessor first.)
 	return status;
 }
 
@@ -843,7 +817,7 @@ void KCMSetOutputColor(IGraphicsPort* gPort, uint8 r, uint8 g, uint8 b, bool16 u
 static void KCMDrawRingForPrint(IGraphicsPort* gPort, IViewPortAttributes* vpAttr, IDataBase* db,
 	KCMOverlayEntry* e)
 {
-	if (gPort == nil || e == nil || e->buf == nil || e->w <= 0 || e->h <= 0 || e->bpp < 4)
+	if (gPort == nil || e == nil || e->buf.get() == nil || e->w <= 0 || e->h <= 0 || e->bpp < 4)
 		return;
 	// The transparency utilities (used to create and release the alpha server). They are always
 	// present in a running application, but as the transparencyeffect sample does, do nothing if
@@ -912,14 +886,17 @@ static void KCMDrawRingForPrint(IGraphicsPort* gPort, IViewPortAttributes* vpAtt
 	// masks still works exactly right**: only the chosen colour's mask has anything in it, and the
 	// other is skipped by the `if (!passes[p].any) continue;` below. That is why the print side
 	// needed no change when the colour became a choice.
-	uint8* maskR = new (std::nothrow) uint8[N];	// nothrow, so the nil test right below means something (failure just means no frame)
-	uint8* maskB = new (std::nothrow) uint8[N];
-	if (maskR == nil || maskB == nil) { if (maskR) delete[] maskR; if (maskB) delete[] maskB; return; }
+	// nothrow, so the nil test right below means something (failure just means no frame); the
+	// scoped_arrays free both on every path, including that early return.
+	K2::scoped_array<uint8> maskR(new (std::nothrow) uint8[N]);
+	K2::scoped_array<uint8> maskB(new (std::nothrow) uint8[N]);
+	if (maskR.get() == nil || maskB.get() == nil)
+		return;
 	// Count whether each mask has **any** pixel at all; the reason is at the continue below.
 	bool16 anyR = kFalse, anyB = kFalse;
 	for (int32 y = 0; y < h; ++y)
 	{
-		const uint8* row = e->buf + (size_t)y * rb;
+		const uint8* row = e->buf.get() + (size_t)y * rb;
 		for (int32 x = 0; x < w; ++x)
 		{
 			const uint8* px  = row + (size_t)x * bpp;	// [alpha, R, G, B]
@@ -947,8 +924,8 @@ static void KCMDrawRingForPrint(IGraphicsPort* gPort, IViewPortAttributes* vpAtt
 	// The test (`B > R`) is true for both, so it never showed up in behaviour.
 	struct PassDef { uint8* buf; uint8 r, g, b; bool16 any; };
 	PassDef passes[2] = {
-		{ maskR, kKCMRingR,    kKCMRingG,    kKCMRingB,    anyR },	// red
-		{ maskB, kKCMRingAltR, kKCMRingAltG, kKCMRingAltB, anyB }		// cyan
+		{ maskR.get(), kKCMRingR,    kKCMRingG,    kKCMRingB,    anyR },	// red
+		{ maskB.get(), kKCMRingAltR, kKCMRingAltG, kKCMRingAltB, anyB }		// cyan
 	};
 
 	for (int p = 0; p < 2; ++p)
@@ -1018,8 +995,7 @@ static void KCMDrawRingForPrint(IGraphicsPort* gPort, IViewPortAttributes* vpAtt
 		}
 	}
 
-	delete[] maskR;
-	delete[] maskB;
+	// (maskR and maskB are freed by their scoped_arrays.)
 }
 
 
@@ -1033,6 +1009,39 @@ static void KCMDrawRingForPrint(IGraphicsPort* gPort, IViewPortAttributes* vpAtt
 //   in kPreviewMode, and the thumbnail branches of the loops below draw a border and a "/" instead
 //   of the ring image.)
 enum { kKCMDrawModeScreen = 0, kKCMDrawModePrint = 1 };
+
+//========================================================================================
+// A page's box in SPREAD coordinates. kFalse when the UID names nothing with geometry, and
+// outRect is then left as the caller had it.
+//
+// **Every mark in this file starts here** -- the ring, the border, the "/", the "+", the tick,
+// the peek and the old-number badge all need the same rectangle in the same coordinates, and
+// each of them used to spell out the four lines below. The two warnings are why this is one
+// function rather than a shape to copy: written out eight times, they were written out ONCE and
+// referred to seven times, and a reference is what goes stale.
+//
+// The official Facade replaced a hand-built GetPathBoundingBox + ::InnerToSpreadMatrix +
+//   Transform. Worked example: snapshot/SnapTracker.cpp:621. (Line :616 of the same function
+//   takes the same page in PasteboardCoordinates -- **calling it twice with different coordinate
+//   systems is the official shape**. IGeometryFacade.h:209 lists only Pasteboard, Parent and
+//   Inner, which is an omission: the product's CPageItemAdaptiveTransform.cpp:197,362 and the
+//   public lib's CPathCreationTracker.cpp:300 call it with SpreadCoordinates.)
+//   @warning keep the IGeometry Query and its nil test -- whether this UID has geometry at all
+//     is not the Facade's guarantee (the worked example does the same in the same order).
+//     UIDRef(db, pageUID) is handed on so the Facade does not cost a second Query.
+//   @warning pass Geometry::PathBounds(). The worked example uses OuterStrokeBounds, but
+//     PathBounds is what matches GetPathBoundingBox.
+//========================================================================================
+static bool16 KCMQueryPageRect(IDataBase* db, UID pageUID, PMRect& outRect)
+{
+	InterfacePtr<IGeometry> pageGeo(db, pageUID, UseDefaultIID());
+	if (pageGeo == nil)
+		return kFalse;
+
+	outRect = Utils<Facade::IGeometryFacade>()->GetItemBounds(
+		UIDRef(db, pageUID), Transform::SpreadCoordinates(), Geometry::PathBounds());
+	return kTrue;
+}
 
 //========================================================================================
 // Drawing one page's ring. It fits e's ring image to db/pageUID's page rectangle, recomputing the
@@ -1050,33 +1059,19 @@ static void KCMDrawEntryOnPage(IGraphicsPort* gPort, IViewPortAttributes* vpAttr
 	KCMOverlayEntry* e, IDataBase* db, UID pageUID,
 	const PMReal& sxr, int32 drawMode, const PMReal& screenOpacity)
 {
-	if (e == nil || e->buf == nil)
+	if (e == nil || e->buf.get() == nil)
 		return;
 
 	const int32 iw = e->w, ih = e->h;
-	InterfacePtr<IGeometry> pageGeo(db, pageUID, UseDefaultIID());
-	if (iw <= 0 || ih <= 0 || pageGeo == nil)
+	// COORDINATES: the drawing port is in spread coordinates, so the page's box is taken in the
+	// same ones (KCMQueryPageRect, which carries the reasoning) and the image is fitted to it.
+	PMRect pr;
+	if (iw <= 0 || ih <= 0 || !KCMQueryPageRect(db, pageUID, pr))
 		return;
-
-	// COORDINATES: the drawing port is in spread coordinates, so the page's box is taken in spread
-	// coordinates and the image is fitted to it.
-	// The official Facade replaced a hand-built GetPathBoundingBox + ::InnerToSpreadMatrix +
-	//   Transform. Worked example: snapshot/SnapTracker.cpp:621. (Line :616 of the same function
-	//   takes the same page in PasteboardCoordinates -- **calling it twice with different coordinate
-	//   systems is the official shape**. IGeometryFacade.h:209 lists only Pasteboard, Parent and
-	//   Inner, which is an omission: the product's CPageItemAdaptiveTransform.cpp:197,362 and the
-	//   public lib's CPathCreationTracker.cpp:300 call it with SpreadCoordinates.)
-	//   @warning keep the IGeometry Query and its nil test -- whether this UID has geometry at all
-	//     is not the Facade's guarantee (the worked example does the same in the same order).
-	//     Pass UIDRef(db, pageUID) so the Facade does not cost an extra Query.
-	//   @warning pass Geometry::PathBounds(). The worked example uses OuterStrokeBounds, but
-	//     PathBounds is what matches GetPathBoundingBox.
-	PMRect pr = Utils<Facade::IGeometryFacade>()->GetItemBounds(
-		UIDRef(db, pageUID), Transform::SpreadCoordinates(), Geometry::PathBounds());
 
 	// RING THICKNESS: work out the dilation radius (in image pixels) for this mode and redraw if it
 	// differs from last time.
-	if (e->dist != nil)
+	if (e->dist.get() != nil)
 	{
 		int32 R = -1;	// -1 = this mode cannot decide a radius; draw with the buffer as it is
 		if (sxr > 0)
@@ -1108,7 +1103,7 @@ static void KCMDrawEntryOnPage(IGraphicsPort* gPort, IViewPortAttributes* vpAttr
 		}
 		if (R > 0 && R != e->lastRadius)
 		{
-			KCMDrawEventHandler::BuildRing(e->buf, e->rowBytes, e->bpp, e->w, e->h, e->dist, R);
+			KCMDrawEventHandler::BuildRing(e->buf.get(), e->rowBytes, e->bpp, e->w, e->h, e->dist.get(), R);
 			e->lastRadius = R;
 		}
 	}
@@ -1193,14 +1188,9 @@ static void KCMDrawEntryOnPage(IGraphicsPort* gPort, IViewPortAttributes* vpAttr
 static void KCMDrawPageBorder(IGraphicsPort* gPort, IDataBase* db, UID pageUID,
 	uint8 cr, uint8 cg, uint8 cb)
 {
-	InterfacePtr<IGeometry> pageGeo(db, pageUID, UseDefaultIID());
-	if (pageGeo == nil)
+	PMRect pr;
+	if (!KCMQueryPageRect(db, pageUID, pr))
 		return;
-
-	// COORDINATES: as in KCMDrawEntryOnPage, the page's box comes from the Facade already in spread
-	// coordinates (the reasoning is there).
-	PMRect pr = Utils<Facade::IGeometryFacade>()->GetItemBounds(
-		UIDRef(db, pageUID), Transform::SpreadCoordinates(), Geometry::PathBounds());
 
 	// THICKNESS: a fixed fraction of the page's short side (the border's own divisor). A thumbnail
 	// has no view, so the zoom formula is unavailable.
@@ -1267,13 +1257,9 @@ static void KCMDrawPageNumberMarkerFill(IGraphicsPort* gPort, IDataBase* db, UID
 	if (markerRects.empty())
 		return;
 
-	InterfacePtr<IGeometry> pageGeo(db, pageUID, UseDefaultIID());
-	if (pageGeo == nil)
+	PMRect pr;
+	if (!KCMQueryPageRect(db, pageUID, pr))
 		return;
-
-	// The page's box from the Facade, in spread coordinates (the reasoning is in KCMDrawEntryOnPage).
-	const PMRect pr = Utils<Facade::IGeometryFacade>()->GetItemBounds(
-		UIDRef(db, pageUID), Transform::SpreadCoordinates(), Geometry::PathBounds());
 
 	AutoGSave ag(gPort);
 	gPort->setopacity(kKCMExcludeFillOpacity, kFalse);
@@ -1302,13 +1288,9 @@ static void KCMDrawPageDiagonal(IGraphicsPort* gPort, IDataBase* db, UID pageUID
 	const PMReal& sxr, int32 drawMode, const PMReal& screenOpacity,
 	uint8 cr, uint8 cg, uint8 cb)
 {
-	InterfacePtr<IGeometry> pageGeo(db, pageUID, UseDefaultIID());
-	if (pageGeo == nil)
+	PMRect pr;
+	if (!KCMQueryPageRect(db, pageUID, pr))
 		return;
-
-	// The page's box from the Facade, in spread coordinates (the reasoning is in KCMDrawEntryOnPage).
-	const PMRect pr = Utils<Facade::IGeometryFacade>()->GetItemBounds(
-		UIDRef(db, pageUID), Transform::SpreadCoordinates(), Geometry::PathBounds());
 
 	// Thickness: screen and print adapt to the zoom; a thumbnail (sxr <= 0) uses a fixed fraction of
 	// the page's short side (the slash's own divisor).
@@ -1349,13 +1331,9 @@ static void KCMDrawPageDiagonal(IGraphicsPort* gPort, IDataBase* db, UID pageUID
 //========================================================================================
 static void KCMDrawPageCrossOutlined(IGraphicsPort* gPort, IDataBase* db, UID pageUID)
 {
-	InterfacePtr<IGeometry> pageGeo(db, pageUID, UseDefaultIID());
-	if (pageGeo == nil)
+	PMRect pr;
+	if (!KCMQueryPageRect(db, pageUID, pr))
 		return;
-
-	// The page's box from the Facade, in spread coordinates (the reasoning is in KCMDrawEntryOnPage).
-	const PMRect pr = Utils<Facade::IGeometryFacade>()->GetItemBounds(
-		UIDRef(db, pageUID), Transform::SpreadCoordinates(), Geometry::PathBounds());
 
 	// The red line's thickness is the page's short side over its own divisor (thicker than the "/").
 	// The white halo is stroked wider so it shows on both sides.
@@ -1413,13 +1391,9 @@ static void KCMDrawPageCheck(IGraphicsPort* gPort, IDataBase* db, UID pageUID,
 	const PMReal& sxr, int32 drawMode, const PMReal& screenOpacity,
 	uint8 cr, uint8 cg, uint8 cb, bool16 layoutStyle = kFalse)
 {
-	InterfacePtr<IGeometry> pageGeo(db, pageUID, UseDefaultIID());
-	if (pageGeo == nil)
+	PMRect pr;
+	if (!KCMQueryPageRect(db, pageUID, pr))
 		return;
-
-	// The page's box from the Facade, in spread coordinates (the reasoning is in KCMDrawEntryOnPage).
-	const PMRect pr = Utils<Facade::IGeometryFacade>()->GetItemBounds(
-		UIDRef(db, pageUID), Transform::SpreadCoordinates(), Geometry::PathBounds());
 
 	const PMReal minDim = std::min(pr.Width(), pr.Height());
 	// The tick's overall size, as a fraction of the short side: much larger for the layout view.
@@ -1850,14 +1824,11 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 			if (it == sOrigImages.end())
 				continue;
 			KCMOrigImage* o = it->second;
-			if (o == nil || o->buf == nil || o->w <= 0 || o->h <= 0)
+			if (o == nil || o->buf.get() == nil || o->w <= 0 || o->h <= 0)
 				continue;
-			InterfacePtr<IGeometry> pageGeo(db, pageUID, UseDefaultIID());
-			if (pageGeo == nil)
+			PMRect pr;
+			if (!KCMQueryPageRect(db, pageUID, pr))
 				continue;
-			// The page's box from the Facade, in spread coordinates (see KCMDrawEntryOnPage).
-			const PMRect pr = Utils<Facade::IGeometryFacade>()->GetItemBounds(
-				UIDRef(db, pageUID), Transform::SpreadCoordinates(), Geometry::PathBounds());
 			AutoGSave ag(gPort);
 			gPort->setopacity(sPeekOpacity, kFalse);		// Shift peek = 1.0 (opaque), Shift+Alt peek = 0.5
 			gPort->translate(pr.Left(), pr.Top());
@@ -1977,12 +1948,9 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 				if (orig == cur)
 					continue;	// not shifted: no hidden spread before this page
 
-				InterfacePtr<IGeometry> pageGeo(db, pageUID, UseDefaultIID());
-				if (pageGeo == nil)
+				PMRect pr;
+				if (!KCMQueryPageRect(db, pageUID, pr))
 					continue;
-				// The page's box from the Facade, in spread coordinates (see KCMDrawEntryOnPage).
-				const PMRect pr = Utils<Facade::IGeometryFacade>()->GetItemBounds(
-					UIDRef(db, pageUID), Transform::SpreadCoordinates(), Geometry::PathBounds());
 
 				PMReal textW = 0.0;
 				if (fontInst != nil)
@@ -2177,9 +2145,10 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 		{
 			if (isThumb)
 			{
-				// A thumbnail's border follows the panel's "Mark colour" as well (the reason is at
-				// the Source side above: this is the only changed-page display that does not use
-				// the ring image, so it was left behind when the colour became a choice).
+				// A thumbnail's border follows the panel's "Mark colour" as well: this is the only
+				// changed-page display that does not use the ring image (a solid border is drawn
+				// instead of shrinking the image), which is how it was left behind at red when the
+				// colour became a choice.
 				uint8 mr = 0, mg = 0, mb = 0;
 				SelectedMarkColor(mr, mg, mb);
 				KCMDrawPageBorder(gPort, db, pageUID, mr, mg, mb);
@@ -2197,8 +2166,9 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 		{
 			// Not registered either: a page that overflowed the page-count difference. The red slash
 			// says it was never compared.
-			// @warning this red does not follow the "Mark colour" choice, deliberately (the full
-			//   reason is at the Source side above).
+			// @warning this red does not follow the "Mark colour" choice, deliberately: it says
+			//   something different ("not compared", not "changed"), and stands with the registered
+			//   pages' green "/" as a mark whose meaning does not change with the mark colour.
 			KCMDrawPageDiagonal(gPort, db, pageUID, sxr, drawMode, screenMarkOp, kKCMRingR, kKCMRingG, kKCMRingB);
 		}
 		// With the toggle on, the green wash goes only over the pages actually being compared

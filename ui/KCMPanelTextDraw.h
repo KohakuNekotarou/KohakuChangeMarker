@@ -32,6 +32,16 @@
 // General includes:
 #include "PMReal.h"
 
+/** The two flags every draw and every measure passes, spelled out rather than left to a default.
+	★★**THE DEFAULTS IN DrawStringUtils.h DISAGREE**: the draw calls default to kFalse, the measure
+	and ellipsize calls to kTrue ⇒ taking them would **measure a string differently from how it is
+	drawn**, which is precisely what these two widgets must not do.
+	⚠'&' has to survive verbatim either way: one box shows **document text**, the other **full save
+	  paths**, and a folder called "Q&A資料" lost its ampersand until the `.fr` cell this replaced
+	  set the same flag (KCMUI.fr). */
+const bool16 kKCMDontConvertAmpersand = kFalse;
+const bool16 kKCMNoUnderline = kFalse;
+
 /** How much of the theme's text colour the CONTEXT keeps. 0 = the background itself (invisible),
 	1 = the full text colour (no fade at all).
 

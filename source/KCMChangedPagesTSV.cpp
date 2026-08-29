@@ -109,6 +109,18 @@ struct KCMChangeRow
 	KCMChangeRow() : kind(kKindChanged) { page.SetTranslatable(kFalse); }
 };
 
+// One row, appended. **The four lines were written out four times** (Changed / Inserted /
+// the master spreads / Deleted). What that risked is not the four lines but the PAIR: the page
+// name and the kind have to be set together, and a fifth kind would have been a fifth place to
+// remember both. The kind is one of the fixed literals above, so it is not copied.
+void AppendRow(std::vector<KCMChangeRow>& rows, const PMString& page, const char* kind)
+{
+	KCMChangeRow row;
+	row.page = page;
+	row.kind = kind;
+	rows.push_back(row);
+}
+
 // The status message (English and non-translatable, as in KESCL and the rest of KCM).
 // **It is remembered for the caller rather than written to the status line.** A TSV export
 // naturally answers with "did it work, and where did it go", and has no reason to raise a
@@ -159,7 +171,6 @@ PMString PageDisplay(IDataBase* db, UID pageUID)
 	out.SetTranslatable(kFalse);	// set again, in case GetPageString put it back
 
 	// **A page on a hidden spread is listed with its original number, plus a mark saying it is
-	//   hidden** ("2 (Hide)", the user's specification), so that a reader who goes looking for
 	//   hidden** ("2 (Hide)", the user's specification), so that a reader who goes looking for
 	//   page 2 and does not find it is not left stuck. The number and the state travel in the
 	//   same column. The number itself is the one from before it was hidden.
@@ -350,17 +361,11 @@ bool16 CollectRows(IDataBase* targetDB, IDataBase* sourceDB, std::vector<KCMChan
 		const UID t = targetOrder[i];
 		if (KCMDrawEventHandler::sEntries.count(t) > 0)
 		{
-			KCMChangeRow row;
-			row.page = PageDisplay(targetDB, t);
-			row.kind = kKindChanged;
-			rows.push_back(row);
+			AppendRow(rows, PageDisplay(targetDB, t), kKindChanged);
 		}
 		else if (registeredT.count(t) > 0 || overflowT.count(t) > 0)
 		{
-			KCMChangeRow row;
-			row.page = PageDisplay(targetDB, t);
-			row.kind = kKindInserted;
-			rows.push_back(row);
+			AppendRow(rows, PageDisplay(targetDB, t), kKindInserted);
 		}
 	}
 
@@ -381,12 +386,10 @@ bool16 CollectRows(IDataBase* targetDB, IDataBase* sourceDB, std::vector<KCMChan
 		const UID m = masterOrder[i];
 		if (KCMDrawEventHandler::sEntries.count(m) == 0)
 			continue;
-		KCMChangeRow row;
-		row.page = MasterPageDisplay(targetDB, m);
-		if (row.page.NumUTF16TextChars() == 0)
-			row.page = PageDisplay(targetDB, m);	// fallback when the name cannot be had (the prefix alone is better than nothing)
-		row.kind = kKindChanged;
-		rows.push_back(row);
+		PMString name = MasterPageDisplay(targetDB, m);
+		if (name.NumUTF16TextChars() == 0)
+			name = PageDisplay(targetDB, m);	// fallback when the name cannot be had (the prefix alone is better than nothing)
+		AppendRow(rows, name, kKindChanged);
 	}
 
 	// ---- The Source in document order: Deleted (Source pages with no counterpart) ----
@@ -399,10 +402,7 @@ bool16 CollectRows(IDataBase* targetDB, IDataBase* sourceDB, std::vector<KCMChan
 		const UID s = sourceOrder[i];
 		if (registeredS.count(s) > 0 || overflowS.count(s) > 0)
 		{
-			KCMChangeRow row;
-			row.page = PageDisplay(sourceDB, s);
-			row.kind = kKindDeleted;
-			rows.push_back(row);
+			AppendRow(rows, PageDisplay(sourceDB, s), kKindDeleted);
 		}
 	}
 

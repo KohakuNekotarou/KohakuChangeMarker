@@ -235,6 +235,25 @@ void ActivateDocument(IDataBase* db)
 		Utils<ISelectionUtils>()->ActivateView(view);	// return value is the context; nobody needs it
 }
 
+/** Bring a range from the comparison into the story AS IT STANDS NOW.
+
+	★The diff ran against the story as it was when the comparison did, and the reader may have
+	edited it since - a stale end would be refused by the selection suite, and a stale start would
+	select the wrong words silently.
+	@param to a NEGATIVE value means "to the end of the story", which is what the whole-story
+		double click asks for. ⚠Nothing the diff hands over is ever negative, so that rule only
+		fires for the caller that asks for it on purpose.
+*/
+void ClampToStory(ITextModel* model, TextIndex& from, TextIndex& to)
+{
+	const TextIndex total = model->TotalLength();
+	if (to < 0) to = total;
+	if (from < 0) from = 0;
+	if (to > total) to = total;
+	if (from > total) from = total;
+	if (to < from) to = from;
+}
+
 /** Select from..to of one story in ONE document, with the Type tool on.
 
 	Everything the two double clicks have in common lives here, so that "how KCM makes a text
@@ -257,15 +276,7 @@ bool16 SelectRangeIn(IDataBase* db, UID storyUID, TextIndex from, TextIndex to)
 						//  existed over there, and the two versions have to be versions of each
 						//  other for a uid to mean the same story at all (KCMStoryStamp.h, "WHY TWO VERSIONS CAN BE MATCHED AT ALL")
 
-	// ★The range is clamped to the story as it stands NOW. The diff ran against the story as it was
-	//   when the comparison did, and the reader may have edited it since - a stale end would be
-	//   refused by the suite, and a stale start would select the wrong words silently.
-	const TextIndex total = model->TotalLength();
-	if (to < 0) to = total;		// "the whole story", asked for by the story row
-	if (from < 0) from = 0;
-	if (to > total) to = total;
-	if (from > total) from = total;
-	if (to < from) to = from;
+	ClampToStory(model, from, to);		// "to" may be -1 here: the story row asks for the whole story
 
 	// ★Making a selection recomposes, and this plug-in may only have the document open in order to
 	//   look at it. IDataBase.h:389-412 restores the flag the document came in with rather than
@@ -404,9 +415,7 @@ bool16 KCMStoryJumpToRow(int32 rowIndex)
 							   : Utils<IKCMCompareFacade>()->GetArmedTargetDB();
 	if (db == nil || !Utils<IKCMCompareFacade>()->IsDocDBOpen(db))
 	{
-		PMString s("The comparison is no longer running.");
-		s.SetTranslatable(kFalse);
-		KCMSetStatus(s);
+		KCMSetStatus("The comparison is no longer running.");
 		return kFalse;
 	}
 
@@ -414,9 +423,7 @@ bool16 KCMStoryJumpToRow(int32 rowIndex)
 	// is nowhere on a page to show it. Say so rather than moving to an arbitrary place.
 	if (row.fFrameUID == kInvalidUID)
 	{
-		PMString s("That story is not placed in a frame.");
-		s.SetTranslatable(kFalse);
-		KCMSetStatus(s);
+		KCMSetStatus("That story is not placed in a frame.");
 		return kFalse;
 	}
 
@@ -441,9 +448,7 @@ bool16 KCMStoryJumpToRow(int32 rowIndex)
 	//   the view. Then measure again rather than reasoning from here.
 	if (!KCMGotoStoryFrame(db, row.fFrameUID, row.fPageUID, row.fStoryUID))
 	{
-		PMString s("Could not scroll.");	// the same wording as a failed Prev/Next (it is the same event)
-		s.SetTranslatable(kFalse);
-		KCMSetStatus(s);
+		KCMSetStatus("Could not scroll.");	// the same wording as a failed Prev/Next (it is the same event)
 		return kFalse;
 	}
 
@@ -452,11 +457,8 @@ bool16 KCMStoryJumpToRow(int32 rowIndex)
 }
 
 //----------------------------------------------------------------------------------------
-// KCMStorySelectWholeStory (declared in KCMStoryJump.h)
+// KCMStoryJumpToChange (declared in KCMStoryJump.h)
 //----------------------------------------------------------------------------------------
-/* KCMStoryJumpToChange
-   See the header for what this aims at and why it switches the tool.
-*/
 bool16 KCMStoryJumpToChange(int32 rowIndex, int32 changeIndex)
 {
 	IKCMStoryEditsFacade::Row row;
@@ -479,16 +481,9 @@ bool16 KCMStoryJumpToChange(int32 rowIndex, int32 changeIndex)
 	if (model == nil)
 		return kFalse;
 
-	// ★The range is clamped to the story as it stands NOW. The diff ran against the story as it was
-	//   when the comparison did, and the reader may have edited it since - a stale end would be
-	//   refused by the suite, and a stale start would select the wrong words silently.
-	const TextIndex total = model->TotalLength();
 	TextIndex from = change.fTargetStart;
 	TextIndex to = change.fTargetEnd;
-	if (from < 0) from = 0;
-	if (to > total) to = total;
-	if (from > total) from = total;
-	if (to < from) to = from;
+	ClampToStory(model, from, to);
 
 	// Making a selection recomposes - the same guard, and the same reason, as the double click's.
 	IDataBase::SaveRestoreModifiedState dirtyGuard(db);

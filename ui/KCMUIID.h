@@ -41,7 +41,8 @@
 //   ([[one-question-one-place]]).
 //   ⚠The template named kSDKDefPlugInCompanyKey -- the SDK samples' own name -- which filed
 //     this plug-in in the About menu under the same grouping as Adobe's samples.
-#define kKCMUICompanyKey	kKCMCompanyKey
+//   (kKCMUICompanyKey, an alias of kKCMCompanyKey, was **deleted**: nothing referenced it -- the
+//    .fr and the string table name kKCMCompanyKey itself. Template residue, as kKCMUIAuthor was.)
 #define kKCMUICompanyValue	kKCMCompanyValue
 
 // Plug-in:
@@ -78,7 +79,10 @@
 
 // Plug-in Prefix: (please change kKCMUIPrefixNumber above to modify the prefix.)
 #define kKCMUIPrefix		RezLong(kKCMUIPrefixNumber)				// The unique numeric prefix for all object model IDs for this plug-in.
-#define kKCMUIStringPrefix	SDK_DEF_STRINGIZE(kKCMUIPrefixNumber)	// The string equivalent of the unique prefix number for  this plug-in.
+// (The template's kKCMUIStringPrefix was **deleted**. Nothing referenced it, and nothing may:
+//  **KCM's string keys carry the MODEL's prefix**, for the reason given at the head of the
+//  UI-only IDs below. ⚠It was not a spare part but a trap -- spelling a key with it would have
+//  changed that key's VALUE, and the table answers only the value the .fr wrote.)
 
 // Missing plug-in: (see ExtraPluginInfo resource)
 #define kKCMUIMissingPluginURLValue		kSDKDefPartnersStandardValue_enUS // URL displayed in Missing Plug-in dialog
@@ -346,9 +350,10 @@ DECLARE_PMID(kActionIDSpace, kKCMPopupShowTgtMarksActionID, kKCMUIPrefix + 45)	/
 DECLARE_PMID(kActionIDSpace, kKCMPopupColorRedActionID,  kKCMUIPrefix + 46)	// ★"Mark colour > Red" on the panel flyout (user's request: "let the menu choose red or blue"). Mutually exclusive with Cyan, the selected one carrying the check (kCustomEnabling + kSelectedAction, the shape of Marks opacity 25%/75%). ★The default. KCMActionComponent.cpp -> IKCMCompareFacade::SetMarkColor
 DECLARE_PMID(kActionIDSpace, kKCMPopupColorCyanActionID, kKCMUIPrefix + 47)	// ★"Mark colour > Cyan" on the flyout. ⚠★★This **replaces an automatic switch by background**: the ring used to turn cyan by itself wherever the pixels underneath were reddish (kKCMRedBgDom). It went for two reasons -- the user's call ("the user can just choose"), and **the Story mode cannot read the pixels underneath**, so the same automatic test was impossible there and the colour would have been decided differently in the two modes. ★The choice applies to both the Pixel ring and the Story ground (both pass through KCMDrawEventHandler::SelectedMarkColor)
 
-//DECLARE_PMID(kActionIDSpace, kKCMActionID, kKCMUIPrefix + 41)
-
-
+// (The template's spare //DECLARE_PMID(kActionIDSpace, kKCMActionID, kKCMUIPrefix + 41) was
+//  **deleted**. ⚠★★It was not inert: **+41 is taken** (kKCMPopupTranslucentBookDialogActionID
+//  above), so uncommenting it declares one ActionID twice. **A commented-out declaration carries
+//  a number, and a number goes stale exactly the way a written total does.**)
 
 // WidgetIDs:
 DECLARE_PMID(kWidgetIDSpace, kKCMPanelWidgetID, kKCMUIPrefix + 0)
@@ -485,9 +490,20 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowStateWidgetID, kKCMUIPrefix + 49)	// = t
 //        ⚠A widget persists state into saved data, so **the first time a shared form goes in,
 //          check it in the running application.**
 //
-//    (b) **The holes at +27..+33, and +53..+56** -- nothing uses them now.
-//        ⚠They were used and dropped, so look at the git history before reusing one (a widget ID
-//        can appear in the workspace, i.e. the panel layout, that a user has saved).
+//    (b) **The holes: +3..+25 (never used -- the template's spare slots), and +2, +27..+33,
+//        +53..+56 (used and dropped; what each one was is written where it was declared).**
+//        ⚠For the dropped ones, look at the git history before reusing one (a widget ID can
+//        appear in the workspace, i.e. the panel layout, that a user has saved).
+//        ★**This is the only place the free numbers are listed.** A second copy of the +3..+25
+//        part stood below as commented-out declarations until 2026-08-29, and the two disagreed.
+//        ⚠★★★**+65 IS ALSO A DROPPED NUMBER, AND IT IS THE ONE THE INSTRUCTION ABOVE HANDS YOU.**
+//        In the KESCM era the book row's two cells had IDs of their own (+64 name / +65 state);
+//        they were then made to share the Story row's +48 / +49, and +65 fell out of use. The
+//        highest declaration is now +64, so "take the next number after the highest one declared"
+//        lands exactly on it. **Take +3 instead.** (Measured 2026-08-29 by listing every
+//        DECLARE_PMID(kWidgetIDSpace, ...) in the whole history of both halves: the set ever
+//        declared is 0, 1, 2, 26, 27..33 and 34..65 -- so +3..+25 really are untouched, and +65
+//        really was touched.)
 //
 //    (c) If that is still not enough, **obtain a second prefix** (no existing ID moves, and 256
 //        fresh slots arrive with compatibility to released versions intact). The proper way is
@@ -498,41 +514,36 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowStateWidgetID, kKCMUIPrefix + 49)	// = t
 //====================================================================================
 // (+2 was in use 2026-08-13..2026-08-19 for kKCMBookHintTextWidgetID; that widget now names
 //  kInvalidWidgetID in the .fr, so +2 is FREE again. See the note where it was declared.)
-//DECLARE_PMID(kWidgetIDSpace, kKCMWidgetID, kKCMUIPrefix + 3)
-//DECLARE_PMID(kWidgetIDSpace, kKCMWidgetID, kKCMUIPrefix + 4)
-//DECLARE_PMID(kWidgetIDSpace, kKCMWidgetID, kKCMUIPrefix + 5)
-//DECLARE_PMID(kWidgetIDSpace, kKCMWidgetID, kKCMUIPrefix + 6)
-//DECLARE_PMID(kWidgetIDSpace, kKCMWidgetID, kKCMUIPrefix + 7)
-//DECLARE_PMID(kWidgetIDSpace, kKCMWidgetID, kKCMUIPrefix + 8)
-//DECLARE_PMID(kWidgetIDSpace, kKCMWidgetID, kKCMUIPrefix + 9)
-//DECLARE_PMID(kWidgetIDSpace, kKCMWidgetID, kKCMUIPrefix + 10)
-//DECLARE_PMID(kWidgetIDSpace, kKCMWidgetID, kKCMUIPrefix + 11)
-//DECLARE_PMID(kWidgetIDSpace, kKCMWidgetID, kKCMUIPrefix + 12)
-//DECLARE_PMID(kWidgetIDSpace, kKCMWidgetID, kKCMUIPrefix + 13)
-//DECLARE_PMID(kWidgetIDSpace, kKCMWidgetID, kKCMUIPrefix + 14)
-//DECLARE_PMID(kWidgetIDSpace, kKCMWidgetID, kKCMUIPrefix + 15)
-//DECLARE_PMID(kWidgetIDSpace, kKCMWidgetID, kKCMUIPrefix + 16)
-//DECLARE_PMID(kWidgetIDSpace, kKCMWidgetID, kKCMUIPrefix + 17)
-//DECLARE_PMID(kWidgetIDSpace, kKCMWidgetID, kKCMUIPrefix + 18)
-//DECLARE_PMID(kWidgetIDSpace, kKCMWidgetID, kKCMUIPrefix + 19)
-//DECLARE_PMID(kWidgetIDSpace, kKCMWidgetID, kKCMUIPrefix + 20)
-//DECLARE_PMID(kWidgetIDSpace, kKCMWidgetID, kKCMUIPrefix + 21)
-//DECLARE_PMID(kWidgetIDSpace, kKCMWidgetID, kKCMUIPrefix + 22)
-//DECLARE_PMID(kWidgetIDSpace, kKCMWidgetID, kKCMUIPrefix + 23)
-//DECLARE_PMID(kWidgetIDSpace, kKCMWidgetID, kKCMUIPrefix + 24)
-//DECLARE_PMID(kWidgetIDSpace, kKCMWidgetID, kKCMUIPrefix + 25)
+// (Twenty-three of the template's spare lines stood here -- //DECLARE_PMID(kWidgetIDSpace,
+//  kKCMWidgetID, kKCMUIPrefix + 3 .. + 25) -- saying a second time what (b) above says: free.)
 
 // "About Plug-ins" sub-menu:
 #define kKCMAboutMenuKey			kKCMStringPrefix "kKCMAboutMenuKey"
 #define kKCMAboutMenuPath		kSDKDefStandardAboutMenuPath kKCMCompanyKey
 
 // (kKCMPluginsMenuKey / Path, for the old "Plug-ins" sub-menu, were removed as unused. Where the
-//  panel appears in the menus is kKCMPanelPluginsMenuPath below.)
+//  panel appears in the menus is kKCMPanelWindowMenuName below.)
 
-// The path and position that put the panel on the Plug-Ins menu:
-// Plug-Ins > KohakuNekotarou > Kohaku Change Marker (the leaf is the panel name key).
-#define kKCMPanelPluginsMenuPath		kSDKDefPlugInsStandardMenuPath kKCMCompanyKey kSDKDefDelimitMenuPath kKCMPanelTitleKey
-#define kKCMPanelPluginsMenuPosition	100.0	// the larger, the further down
+// ★THE WINDOW MENU'S NAME FOR THE PANEL, WITH A SUB-MENU IN FRONT OF IT.
+//
+//  PanelList.fh spells this out on the panelName field: "Panel name(used for Window menu). Can
+//  also specify a submenu here, as in "MyWindowSubmenu:MyPanelName"" - so a colon buys a level.
+//  InDesign's own panels are full of it (Window > Styles > Character Styles is stored exactly like
+//  this, as "StylesSubmenu:CharStyles_Menu"), and the sub-menu part is a STRING KEY like any other,
+//  so kKCMCompanyKey resolves to "Kohaku Plug-Ins" the same way it does on the Plug-Ins side.
+//
+//  => Window > Kohaku Plug-Ins > Kohaku Change Marker.
+#define kKCMPanelWindowMenuName			kKCMCompanyKey kSDKDefDelimitMenuPath kKCMPanelTitleKey
+
+// (The panel used to be placed on the Plug-Ins menu instead, through kKCMPanelPluginsMenuPath and
+//  kKCMPanelPluginsMenuPosition. Both were removed on 2026-08-27 with the move to the Window menu:
+//  the PanelList's alternate path is empty now, and they had no other reader.
+//
+//  ⚠KEEP THIS IN MIND IF ONE IS EVER PUT BACK: a MenuDef path names the menu that HOLDS the item,
+//  while panelName names the ITEM. With panelName filled in, a path ending in kKCMPanelTitleKey
+//  turns that last component into a SUB-MENU holding a single item - measured on this panel the
+//  same day: "Plug-Ins > Kohaku Plug-Ins > Kohaku Change Marker > Kohaku Change Marker". The same
+//  mistake is on record in Kohaku InDesign MCP, 2026-08-24, for the same reason.)
 
 // Menu item keys:
 // Other StringKeys:

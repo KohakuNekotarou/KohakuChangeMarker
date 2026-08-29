@@ -23,6 +23,7 @@
 #define __KCMUIShared_h__
 
 #include "BaseType.h"
+#include "OMTypes.h"		// WidgetID
 #include "PMString.h"
 
 class IControlView;
@@ -31,6 +32,13 @@ class IControlView;
 // "session -> app -> panelMgr -> GetVisiblePanel" idiom lives only here. Absorbs the
 // shutdown path where session goes nil.
 IControlView*	KCMGetVisibleOwnPanel();
+
+// One widget of the showing panel, or nil -- panel hidden, or no such widget. The
+// "panel -> IPanelControlData -> FindWidget" idiom lives here for the reason the one above it
+// does: every caller of KCMGetVisibleOwnPanel went straight on to write it out.
+// ⚠IT LOOKS THE PANEL UP EACH TIME, so the callers that want SEVERAL widgets, or the panel
+//   itself, take the IPanelControlData their own way on purpose.
+IControlView*	KCMFindPanelWidget(const WidgetID& id);
 
 // Bring the showing panel's ON/OFF display (Target/Source names, icon, toggle label) in line
 // with the current armed state. Does nothing when the panel is hidden -- AutoAttach reflects
@@ -47,6 +55,13 @@ void			KCMRefreshPanel();
 //   KCMStoreSessionStatus), which is where app.kcmStatus answers from -- so the property
 //   still returns the right value with the panel closed.
 void			KCMSetStatus(const PMString& s, bool16 forceRedrawNow = kFalse);
+
+// The same, for a message written out where it is used.
+// ★IT MARKS THE STRING UNTRANSLATABLE, which every one of these call sites did by hand: a
+//   finished sentence left translatable turns into something else the moment it matches an entry
+//   of the built-in table ("Source:" came out as a style-source phrase in a Japanese locale).
+// ⚠A message that IS a key must not come through here. Translate it and hand over the PMString.
+void			KCMSetStatus(const char* s, bool16 forceRedrawNow = kFalse);
 
 // The same message area, written **with the colour boundaries marked**.
 // ★`label` is the heading (it always takes a line of its own and is never trimmed away),

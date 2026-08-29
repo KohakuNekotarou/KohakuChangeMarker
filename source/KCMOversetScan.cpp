@@ -72,6 +72,22 @@
 #include "KCMOversetScan.h"
 
 
+// The parcel list of the thread at pos, or nil.
+//
+// **Two steps and two nil tests**, and both are needed: ITextParcelList is what the text model
+// hands out, IParcelList is the one that can be walked. Both functions below spelled this out for
+// themselves. (KCMThreadIsOverset does not use it -- that one asks ITextParcelList itself, whose
+// GetIsOverset is the per-thread judgement and has no parcel walk behind it.)
+static IParcelList* KCMQueryParcelList(ITextModel* textModel, TextIndex pos)
+{
+	if (textModel == nil)
+		return nil;
+	InterfacePtr<ITextParcelList> tpl(textModel->QueryTextParcelList(pos));
+	if (tpl == nil)
+		return nil;
+	return (IParcelList*)tpl->QueryInterface(IParcelList::kDefaultIID);
+}
+
 //========================================================================================
 // The outport of the last placed parcel of this thread (the parcel list pos composes into).
 // Walking backwards from the end, the first parcel with a valid frame (GetParcelFrameUID !=
@@ -88,12 +104,9 @@
 static bool16 KCMLastPlacedOutport(ITextModel* textModel, IDataBase* db, TextIndex pos,
 	UID& outFrame, PBPMPoint& outPb)
 {
-	if (textModel == nil || db == nil)
+	if (db == nil)
 		return kFalse;
-	InterfacePtr<ITextParcelList> tpl(textModel->QueryTextParcelList(pos));
-	if (tpl == nil)
-		return kFalse;
-	InterfacePtr<IParcelList> pl(tpl, UseDefaultIID());
+	InterfacePtr<IParcelList> pl(KCMQueryParcelList(textModel, pos));
 	if (pl == nil)
 		return kFalse;
 
@@ -147,12 +160,7 @@ static bool16 KCMLastPlacedOutport(ITextModel* textModel, IDataBase* db, TextInd
 //========================================================================================
 static bool16 KCMThreadHasPlacedParcel(ITextModel* textModel, TextIndex pos)
 {
-	if (textModel == nil)
-		return kFalse;
-	InterfacePtr<ITextParcelList> tpl(textModel->QueryTextParcelList(pos));
-	if (tpl == nil)
-		return kFalse;
-	InterfacePtr<IParcelList> pl(tpl, UseDefaultIID());
+	InterfacePtr<IParcelList> pl(KCMQueryParcelList(textModel, pos));
 	if (pl == nil)
 		return kFalse;
 

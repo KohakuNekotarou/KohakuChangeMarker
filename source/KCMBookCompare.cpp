@@ -32,6 +32,7 @@
 #include "ProgressBar.h"		// RangeProgressBar - the progress and the cancel (see KCMCompareBooks)
 #include "SDKFileHelper.h"		// GetPath - documents are compared by their path
 #include "SnapshotUtilsEx.h"	// the rasteriser, on the SAME terms the document comparison uses
+#include "K2SmartPtr.h"			// K2::scoped_ptr -- the snapshots and accessors below, freed on every exit
 
 // Project includes:
 #include "KCMBookCompare.h"
@@ -218,9 +219,24 @@ bool16 CloseChapter(const UIDRef& docRef, bool16 weOpened)
 	return kTrue;
 }
 
+/** Close both sides of a chapter, counting the ones that refused into ioLeftOpen.
+
+    Source first, then target -- the order both call sites used. The reason to have one function
+    is not the four lines: it is that **counting the refusal is the easy half to forget**, and
+    the report's "left open" is the only thing that tells the user a document is still holding
+    its .indd open with no window to close it by. */
+void CloseChapterPair(const UIDRef& targetRef, bool16 targetMine,
+					   const UIDRef& sourceRef, bool16 sourceMine, int32& ioLeftOpen)
+{
+	if (!CloseChapter(sourceRef, sourceMine))
+		++ioLeftOpen;
+	if (!CloseChapter(targetRef, targetMine))
+		++ioLeftOpen;
+}
+
 /** Finish composing a chapter before anything reads its pixels.
 
-    **A document that has just been opened is NOT composed yet.**
+    **A document that has just been opened is NOT composed yet.** Rasterising it in that
     state paints composition in progress, and two chapters with identical content then come out
     different. The document comparison never hit this because it only ever rasterises documents the
     user has open on screen, which are composed by the time anyone asks.
@@ -274,48 +290,23 @@ ErrorCode ComparePages(AGMImageAccessor* accT, AGMImageAccessor* accS,
 
 	// The folio (automatic page number) areas, ALWAYS skipped for a book comparison: inserting one
 	// chapter shifts every folio after it, and without this every page from there on would read as
-	// changed. Same rects the document comparison uses, so the two agree about what a folio is.
+	// changed. The document comparison asks its own toggle instead; the sieve itself is shared
+	// (KCMDrawEventHandler.h), so the two can never disagree about what a folio is.
 	//
 	// The rects are re-measured here (refresh=kTrue). Holding two references at once is safe only
-	// because the cache is a std::map, whose inserts do not invalidate existing references - do not
+	// because the cache is a std::map, whose inserts do not invalidate existing references -- do not
 	// swap it for an unordered_map or a vector without changing this to copy by value.
 	std::vector<Int32Rect> excludeRects;
 	{
 		const std::vector<PMRect>& tRects = KCMGetPageNumberMarkerRects(targetPage, kTrue);
 		const std::vector<PMRect>& sRects = KCMGetPageNumberMarkerRects(sourcePage, kTrue);
-		const PMReal pxScale = hiRes / PMReal(72.0);		// pt -> comparison pixels
-		for (int pass = 0; pass < 2; ++pass)				// 0 = target, 1 = source (same coordinates)
-		{
-			const std::vector<PMRect>& mrs = (pass == 0) ? tRects : sRects;
-			for (size_t mi = 0; mi < mrs.size(); ++mi)
-			{
-				const PMRect& mr = mrs[mi];
-				Int32Rect epr;
-				epr.left   = ::ToInt32(::Round(mr.Left()   * pxScale));
-				epr.top    = ::ToInt32(::Round(mr.Top()    * pxScale));
-				epr.right  = ::ToInt32(::Round(mr.Right()  * pxScale));
-				epr.bottom = ::ToInt32(::Round(mr.Bottom() * pxScale));
-				excludeRects.push_back(epr);
-			}
-		}
+		KCMCollectFolioExcludeRects(tRects, sRects, hiRes, excludeRects);
 	}
 
 	// Two-stage sieve, as in the document comparison: the union bbox first, then only the rects
 	// that actually cover this row. Outside the bbox the whole test is one comparison.
 	int32 exTop = 0, exBottom = 0, exLeft = 0, exRight = 0;
-	if (!excludeRects.empty())
-	{
-		exTop  = excludeRects[0].top;   exBottom = excludeRects[0].bottom;
-		exLeft = excludeRects[0].left;  exRight  = excludeRects[0].right;
-		for (size_t mi = 1; mi < excludeRects.size(); ++mi)
-		{
-			const Int32Rect& r = excludeRects[mi];
-			if (r.top    < exTop)    exTop    = r.top;
-			if (r.bottom > exBottom) exBottom = r.bottom;
-			if (r.left   < exLeft)   exLeft   = r.left;
-			if (r.right  > exRight)  exRight  = r.right;
-		}
-	}
+	KCMFolioExcludeBBox(excludeRects, exTop, exBottom, exLeft, exRight);
 
 	const int   nch      = 4;					// CMYK
 	const int32 colorOff = 0;
@@ -384,24 +375,28 @@ ErrorCode PageDiffers(const UIDRef& targetPage, const UIDRef& sourcePage, bool16
 	//     SnapshotUtilsEx::Draw, which also warns that it does NOT affect non-printing LAYERS.
 	//     Arguments 5-7 are the defaults spelled out, because the 8th cannot be reached without
 	//     them: kXPHigh (lowering it would hide changes to shadows, feathers and blends), no abort
-	//     callback (cancellation is checked at page boundaries, see KCMCore.cpp), no viewport map
+	//     callback (cancellation is checked at page boundaries, see KCMCore.cpp), and no viewport
+	//     attribute map (pVPAttrMap, SnapshotUtilsEx.h:251), so nothing about baseline grids,
+	//     layers or the flattener is overridden for the snapshot.
 	const PMReal hiRes = kKCMResolution * kKCMHiResMul;
-
-	SnapshotUtilsEx*  snapT  = nil;
-	SnapshotUtilsEx*  snapS  = nil;
-	AGMImageAccessor* accT   = nil;
-	AGMImageAccessor* accS   = nil;
-	ErrorCode         status = kFailure;
 
 	// nothrow throughout, as in the document comparison: the ordinary new throws instead of
 	// returning nil, and an exception crossing an event boundary crashes. With nothrow an OOM
-	// costs this one page.
-	snapT = new (std::nothrow) SnapshotUtilsEx(targetPage, 1.0, 1.0, hiRes, hiRes, 0.0,
-	                                           SnapshotUtilsEx::kCsCMYK, kFalse);
-	snapS = new (std::nothrow) SnapshotUtilsEx(sourcePage, 1.0, 1.0, hiRes, hiRes, 0.0,
-	                                           SnapshotUtilsEx::kCsCMYK, kFalse);
+	// costs this one page. **K2::scoped_ptr, not std::vector or any throwing container** -- see
+	// KCMDrawEventHandler.cpp's MakeEntry for why nothrow is a requirement here and not a habit.
+	// @warning **the declaration order below is the release order.** scoped_ptrs go down in the
+	//   reverse of declaration, so snapshots-then-accessors gives accS, accT, snapS, snapT: each
+	//   accessor before the snapshot it came from, which is what the four hand-written deletes at
+	//   the end of this function used to spell out.
+	K2::scoped_ptr<SnapshotUtilsEx>  snapT(new (std::nothrow) SnapshotUtilsEx(targetPage, 1.0, 1.0, hiRes, hiRes, 0.0,
+	                                                                         SnapshotUtilsEx::kCsCMYK, kFalse));
+	K2::scoped_ptr<SnapshotUtilsEx>  snapS(new (std::nothrow) SnapshotUtilsEx(sourcePage, 1.0, 1.0, hiRes, hiRes, 0.0,
+	                                                                         SnapshotUtilsEx::kCsCMYK, kFalse));
+	K2::scoped_ptr<AGMImageAccessor> accT;
+	K2::scoped_ptr<AGMImageAccessor> accS;
+	ErrorCode                        status = kFailure;
 
-	if (snapT != nil && snapS != nil)
+	if (snapT.get() != nil && snapS.get() != nil)
 	{
 		ErrorCode drewT = kFailure;
 		ErrorCode drewS = kFailure;
@@ -413,21 +408,16 @@ ErrorCode PageDiffers(const UIDRef& targetPage, const UIDRef& sourcePage, bool16
 			                    SnapshotUtils::kXPHigh, nil, nil, kFalse);
 		}
 
-		accT = (drewT == kSuccess) ? snapT->CreateAGMImageAccessor() : nil;
-		accS = (drewS == kSuccess) ? snapS->CreateAGMImageAccessor() : nil;
+		accT.reset((drewT == kSuccess) ? snapT->CreateAGMImageAccessor() : nil);
+		accS.reset((drewS == kSuccess) ? snapS->CreateAGMImageAccessor() : nil);
 
-		if (accT != nil && accS != nil)
-			status = ComparePages(accT, accS, targetPage, sourcePage, hiRes, outDiffers);
+		if (accT.get() != nil && accS.get() != nil)
+			status = ComparePages(accT.get(), accS.get(), targetPage, sourcePage, hiRes, outDiffers);
 	}
 
-	// **Released on EVERY path.** This function returns early the moment a difference is found,
-	// which the document comparison never does -- so its "delete at the end" shape would leak
-	// here. Everything is allocated in one place and freed in one place instead.
-	if (accS  != nil) delete accS;
-	if (accT  != nil) delete accT;
-	if (snapS != nil) delete snapS;
-	if (snapT != nil) delete snapT;
-
+	// **Released on EVERY path**, which is why they are scoped_ptrs: this function returns early the
+	// moment a difference is found, and a "delete at the end" shape would leak on that path. The
+	// release order is the declaration order reversed -- see the note where they are declared.
 	return status;
 }
 
@@ -577,10 +567,7 @@ ErrorCode KCMCompareBooks(IBook* target, IBook* source,
 		{
 			// Whichever side did open has to be put back before moving on. (When the first open
 			// failed the second never ran, and closing a null UIDRef is a no-op.)
-			if (!CloseChapter(sourceRef, sourceMine))
-				++leftOpen;
-			if (!CloseChapter(targetRef, targetMine))
-				++leftOpen;
+			CloseChapterPair(targetRef, targetMine, sourceRef, sourceMine, leftOpen);
 
 			// **THE BOOK KNOWS WHY, SO ASK IT.** On its own "could not open" is the same sentence for
 			// a chapter that was deleted, one another user has open, and one saved by a newer version.
@@ -646,10 +633,7 @@ ErrorCode KCMCompareBooks(IBook* target, IBook* source,
 		// **The chapters this run opened are closed even when it was cancelled.** Cancelling stops
 		// the comparison, not the tidying up: a chapter left open would go on locking its .indd with
 		// no window for the user to close it by.
-		if (!CloseChapter(sourceRef, sourceMine))
-			++leftOpen;
-		if (!CloseChapter(targetRef, targetMine))
-			++leftOpen;
+		CloseChapterPair(targetRef, targetMine, sourceRef, sourceMine, leftOpen);
 
 		if (cancelled)
 			break;

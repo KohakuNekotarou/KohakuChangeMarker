@@ -27,16 +27,18 @@
 #include "MenuDef.fh"
 #include "ActionDef.fh"
 #include "ActionDefs.h"
-#include "AdobeMenuPositions.h"
 #include "LocaleIndex.h"
 #include "PMLocaleIds.h"
 #include "StringTable.fh"
 #include "ObjectModelTypes.fh"
 #include "ShuksanID.h"
 #include "ActionID.h"
-#include "CommandID.h"
-#include "WorkspaceID.h"
 #include "WidgetID.h"
+// ★★**BuildNumber.h is NOT unused, and a search for its names says it is.** Not one of them
+//   appears below -- but ObjectModelTypes.fh:58 defines kTargetVersion, which the PluginVersion
+//   resource writes, as **RezLong(kBuildNumber) in a DEBUG build** (kReleaseVersion otherwise).
+//   ⇒ Dropping it builds cleanly in Release and breaks Debug. **A header can be needed through a
+//     macro, so "no name of it is mentioned" is not a reason to remove one.**
 #include "BuildNumber.h"
 #include "PlugInModel_UIAttributes.h"
 
@@ -54,10 +56,6 @@
 #include "IControlViewDefs.h"
 #include "SysControlIds.h"
 #include "TreeViewDefs.h"			// kHideRootNode - the Story Edits list (2026-08-10)
-#include "TextID.h"				// kGlobalTextAdornmentServiceImpl / IID_IGLOBALTEXTADORNMENT - the
-									// jump marker (2026-08-20). ⚠The API SHIPS the service provider;
-									// only the adornment itself is ours, so this header has to be
-									// here or the Class below cannot name it.
 #include "EveInfo.fh"				// EVE widget types + layout flags - the book comparison dialog (2026-08-11)
 
 // ⚠**AppFrameworkID.h and DocumentID.h are deliberately NOT included, and must not come back.**
@@ -74,6 +72,15 @@
 //   ⚠**kActiveContextBoss, which the AddIn below uses, comes from ShuksanID.h:99, not from
 //     AppFrameworkID.h** (kUtilsBoss likewise, :241). Look a boss up before dropping a header --
 //     "it is a boss, so it must be in AppFrameworkID.h" is how this goes wrong.
+//
+// ★**AdobeMenuPositions.h, CommandID.h, WorkspaceID.h and TextID.h went the same way on
+//   2026-08-29** -- measured, not assumed: no name any of them defines is written in this file,
+//   and no macro used here expands into one.
+//   ★★**TextID.h is the one worth remembering: it was the residue of a MOVE.** It was here for
+//     kGlobalTextAdornmentServiceImpl / IID_IGLOBALTEXTADORNMENT, and the Story jump marker that
+//     needed them **left for the model half on 2026-08-23** (the Class comment below records the
+//     move). The include stayed, and its comment went on describing a Class this file no longer
+//     has. ⇒ **When a Class leaves, its headers leave with it.**
 // ScriptInfoTypes.fh: a toolbox tool has to register its ScriptID in kToolBoxEnumScriptElement
 // (ITool.h:192-223) - that is the tool's identity, not a scripting API. This single header is
 // enough for the resource at the end of this file: it also pulls in ScriptingID.h
@@ -1473,33 +1480,18 @@ resource ToolDef (kKCMToolIconResID)
 /*  
  * String LocaleIndex.
  */
+// ★★**ONE ROW, AND THAT IS NOT A SHORTCUT** (2026-08-29). Fourteen rows stood here and **all
+//   fourteen pointed at the same table**: there is only one, the jaJP table having been retired
+//   on 2026-08-05 (Japanese is switched in at run time by KCMLoc.h). The full account is at the
+//   model half's String LocaleIndex in KCM.fr, which was cut to one row on 2026-08-15 -- ★★**this
+//   half was simply left behind for two weeks**, the same way KCMUI.rc was left without the code
+//   page pragma.
+//   ⚠**The k_Wild row is the one that must never go**: a row is a MATCH, not a default
+//     (LocaleIndex.h:124-134), and a UI language that matches nothing draws every key RAW.
 resource LocaleIndex ( kSDKDefStringsResourceID)
 {
 	kStringTableRsrcType,
 	{
-		kWildFS, k_enUS, kSDKDefStringsResourceID + index_enUS
-		kWildFS, k_enGB, kSDKDefStringsResourceID + index_enUS
-		kWildFS, k_deDE, kSDKDefStringsResourceID + index_enUS
-		kWildFS, k_frFR, kSDKDefStringsResourceID + index_enUS
-		kWildFS, k_esES, kSDKDefStringsResourceID + index_enUS
-		kWildFS, k_ptBR, kSDKDefStringsResourceID + index_enUS
-		kWildFS, k_svSE, kSDKDefStringsResourceID + index_enUS
-		kWildFS, k_daDK, kSDKDefStringsResourceID + index_enUS
-		kWildFS, k_nlNL, kSDKDefStringsResourceID + index_enUS
-		kWildFS, k_itIT, kSDKDefStringsResourceID + index_enUS
-		kWildFS, k_nbNO, kSDKDefStringsResourceID + index_enUS
-		kWildFS, k_fiFI, kSDKDefStringsResourceID + index_enUS
-		// kWildFS with the enUS table: the jaJP string table was retired (the same decision as KBS).
-		// The strings that speak Japanese are switched in at run time by KCMLoc.h -- which is where
-		// they are listed; do not re-count them here.
-		// The old form (kInDesignJapaneseFS plus a jaJP table) matched **no row at all** on a Roman
-		// engine with a Japanese UI, and every key then shows raw (measured).
-		kWildFS, k_jaJP, kSDKDefStringsResourceID + index_enUS
-		// ★The catch-all, for UI languages not listed above (Chinese, Korean, Russian and so on).
-		//   Without this row they find no table and every key shows raw -- "no matching row means raw
-		//   keys" is exactly what retiring the jaJP table measured. The official samples (basicpanel
-		//   among them) and KBS all carry it.
-		//   ⚠**It has to stay last**: put it before the individual rows and none of them is reached.
 		kWildFS, k_Wild, kSDKDefStringsResourceID + index_enUS
 	}
 };
@@ -2165,9 +2157,16 @@ resource PanelList (kSDKDefPanelResourceID)
 							//   never goes below what used to be the fixed width, and while Story
 							//   Edits is closed the height is pinned to the top pane's.
 		kKCMPanelWidgetActionID,	// Action ID to show/hide the panel
-		"",							// panelName empty: place via altMenu below for explicit menu placement
-		kKCMPanelPluginsMenuPath,	// Plug-Ins > Kohaku Plug-Ins > Kohaku Change Marker (the grouping name is what kKCMCompanyKey resolves to)
-		kKCMPanelPluginsMenuPosition,	// lower part of the menu
+		kKCMPanelWindowMenuName,	// Window > Kohaku Plug-Ins > Kohaku Change Marker. ★The colon
+									// inside this key is what buys the sub-menu level (PanelList.fh
+									// on this field).
+		"",							// ★NO ALTERNATE MENU PATH (2026-08-27, the user's decision):
+									// this panel lives on the Window menu alone, which is where
+									// InDesign's own panels live and where people look for one.
+									// It used to sit under Plug-Ins instead, and that was not a
+									// preference - an empty panelName means NO Window entry at all,
+									// so Plug-Ins was the only place left to put it.
+		0.0,						// Alternate menu position - meaningless without a path.
 		kKCMPaletteIconResID, kKCMUIPluginID,	// PNG icon for the collapsed dock tab
 		c_Panel
 	}

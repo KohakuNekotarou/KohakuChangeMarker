@@ -105,9 +105,6 @@ public:
 	/** Is this a change row - a leaf? */
 	bool16 IsChangeRow() const { return fChange >= 0; }
 
-	/** Is this a story row - the level that exists in both modes? */
-	bool16 IsStoryRow() const { return fRow >= 0 && fChange < 0; }
-
 	/** Is this the hidden root? */
 	bool16 IsRoot() const { return fRow < 0; }
 

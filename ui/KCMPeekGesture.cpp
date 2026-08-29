@@ -539,9 +539,7 @@ static void KCMFlushDeferredCloseUi()
 	else
 		KCMScrollMapDetachAll();
 
-	PMString s("marks cleared");	// the same wording the Stop button (DoClear) uses
-	s.SetTranslatable(kFalse);
-	KCMSetStatus(s);
+	KCMSetStatus("marks cleared");	// the same wording the Stop button (DoClear) uses
 
 	// ★What survives is not necessarily what survived when the deferral was raised -- it is a batch
 	//   close, so more have been shut since. No recorded pointer is used: the documents open **now**

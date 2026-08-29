@@ -75,16 +75,22 @@ bool16 EarlierBlock(const TableAt& a, const TableAt& b)
 	return a.fBlockStart < b.fBlockStart;
 }
 
-/* CheckNestedAnchor
+/* CheckAnchor
    One table's first character, as the reader worked it out, against the document's own answer.
 
    @warning it also MARKS the table as accounted for. The two go together: a table whose position
     nobody ever worked out is exactly as dangerous as one whose position disagrees -- its cells
     would be placed from an ordering that nothing had checked -- and keeping the two facts in one
     place is what stops the second from being forgotten.
+
+   **BOTH KINDS OF TABLE COME THROUGH HERE** -- the body's, whose anchor the reader worked out
+     while walking the body, and a nested one's, whose anchor is not known until the document has
+     been asked about the cell it stands in. The body's used to be checked by a copy of these six
+     lines written out at the call site, which is exactly where the marking above can be left out
+     of one of the two.
 */
-bool16 CheckNestedAnchor(const std::vector<TableAt>& tables, std::vector<bool16>& checked,
-						 int32 ordinal, TextIndex expected)
+bool16 CheckAnchor(const std::vector<TableAt>& tables, std::vector<bool16>& checked,
+				   int32 ordinal, TextIndex expected)
 {
 	const size_t which = static_cast<size_t>(ordinal);
 	if (ordinal < 0 || which >= tables.size())
@@ -177,16 +183,13 @@ bool16 KCMResolveParagraphPositions(const UIDRef& storyRef,
 	//   story shapes the body walk does not understand -- two tables sharing one boundary, where
 	//   nothing says how the characters divide between them, so no anchor is reported at all.
 	//   @warning a NESTED table is not checked here -- where its cell's text sits is not known
-	//     until the document has been asked. It is checked below, on the same terms, once it is.
+	//     until the document has been asked. It is checked below, on the same terms, once it is --
+	//     literally the same terms: both go through CheckAnchor.
 	std::vector<bool16> anchorChecked(tables.size(), kFalse);
 	for (size_t a = 0; a < anchors.size(); ++a)
 	{
-		const size_t which = static_cast<size_t>(anchors[a].fOrdinal);
-		if (anchors[a].fOrdinal < 0 || which >= tables.size())
+		if (!CheckAnchor(tables, anchorChecked, anchors[a].fOrdinal, anchors[a].fIndex))
 			return kFalse;
-		if (tables[which].fAnchor != anchors[a].fIndex)
-			return kFalse;
-		anchorChecked[which] = kTrue;
 	}
 
 	// Now ask the document where each cell's text sits.
@@ -258,7 +261,7 @@ bool16 KCMResolveParagraphPositions(const UIDRef& storyRef,
 			//   agreed by both sides before any cell of it is placed, which is what makes the ORDER the
 			//   tables were sorted into safe to rely on.
 			if (attrs[k].fLeadingTables == 1
-				&& !CheckNestedAnchor(tables, anchorChecked, attrs[k].fLeadingTable, at))
+				&& !CheckAnchor(tables, anchorChecked, attrs[k].fLeadingTable, at))
 				return kFalse;
 			at += attrs[k].fLeadingChars;
 
@@ -266,7 +269,7 @@ bool16 KCMResolveParagraphPositions(const UIDRef& storyRef,
 			at += KCMSnippetText::CountCodePoints(paragraphs[k]) + 1;
 
 			if (attrs[k].fExtraTables == 1
-				&& !CheckNestedAnchor(tables, anchorChecked, attrs[k].fExtraTable, at))
+				&& !CheckAnchor(tables, anchorChecked, attrs[k].fExtraTable, at))
 				return kFalse;
 			at += attrs[k].fExtraChars;
 		}

@@ -109,14 +109,6 @@ struct KCMFrag
 		: fText(text), fFaded(faded), fIsChange(isChange), fLine(line), fX(x) {}
 };
 
-// Spelled out rather than passed as bare kFalse, and spelled out on EVERY call: the defaults in
-// DrawStringUtils.h disagree with each other (the draw calls default to kFalse, the measure calls to
-// kTrue), so taking the defaults would measure a string differently from how it is drawn.
-// ⚠'&' has to survive verbatim - this box shows save paths, and a folder called "Q&A資料" lost its
-//   ampersand until the resource this replaced set the same flag to kFalse (KCMUI.fr).
-const bool16 kKCMDontConvertAmpersand = kFalse;
-const bool16 kKCMNoUnderline = kFalse;
-
 /* KCMHead / KCMTail
    The first n characters, and everything from the nth on. ★Written with Truncate/Remove rather than
    PMString::Substring because those work in the same unit as CharCount and hand back a value -
@@ -585,27 +577,39 @@ void KCMStatusTextView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 		std::vector<KCMFrag> best;
 		bool16 found = kFalse;
 
-		// The largest amount of context that still fits, the same amount on each side.
-		if (maxKeep > 0)
+		// ★★THE SEARCH IS WRITTEN ONCE. The two attempts below differ only in **what they build out
+		//   of `keep`** -- the first gives the context away from both ends, the second cuts the
+		//   change's own tail.
+		//   ⚠**`keep` is "how much to KEEP", so bigger is better**: a fit moves the search UP and
+		//     overwrites `best`, which is why the answer is the LAST fit rather than the first.
+		auto largestFitting = [&](int32 hi, auto build) -> bool16
 		{
-			int32 lo = 0, hi = maxKeep;
+			bool16 any = kFalse;
+			int32 lo = 0;
 			while (lo <= hi)
 			{
 				const int32 keep = lo + (hi - lo) / 2;
 				std::vector<KCMFrag> trial;
-				const bool16 fits = KCMLayoutRuns(&gc, fontInfo,
-					KCMMakeRuns(label, KCMTrimLeadingContext(pre, keep), mid,
-								  KCMTrimTrailingContext(post, keep)),
-					availWidth, maxLines, trial);
-				if (fits)
+				if (KCMLayoutRuns(&gc, fontInfo, build(keep), availWidth, maxLines, trial))
 				{
 					best.swap(trial);
-					found = kTrue;
+					any = kTrue;
 					lo = keep + 1;
 				}
 				else
 					hi = keep - 1;
 			}
+			return any;
+		};
+
+		// The largest amount of context that still fits, the same amount on each side.
+		if (maxKeep > 0)
+		{
+			found = largestFitting(maxKeep, [&](int32 keep)
+			{
+				return KCMMakeRuns(label, KCMTrimLeadingContext(pre, keep), mid,
+									 KCMTrimTrailingContext(post, keep));
+			});
 		}
 
 		// Still no room: the change alone overflows the box. Cut its tail and say so.
@@ -614,10 +618,8 @@ void KCMStatusTextView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 		if (!found)
 		{
 			const PMString kNothing;
-			int32 lo = 0, hi = mid.CharCount();
-			while (lo <= hi)
+			found = largestFitting(mid.CharCount(), [&](int32 keep)
 			{
-				const int32 keep = lo + (hi - lo) / 2;
 				PMString midCut;
 				if (keep >= mid.CharCount())
 					midCut = mid;
@@ -627,18 +629,8 @@ void KCMStatusTextView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 					midCut.Append(KCMEllipsis());
 					midCut.SetTranslatable(kFalse);
 				}
-				std::vector<KCMFrag> trial;
-				const bool16 fits = KCMLayoutRuns(&gc, fontInfo,
-					KCMMakeRuns(label, kNothing, midCut, kNothing), availWidth, maxLines, trial);
-				if (fits)
-				{
-					best.swap(trial);
-					found = kTrue;
-					lo = keep + 1;
-				}
-				else
-					hi = keep - 1;
-			}
+				return KCMMakeRuns(label, kNothing, midCut, kNothing);
+			});
 		}
 
 		if (found)

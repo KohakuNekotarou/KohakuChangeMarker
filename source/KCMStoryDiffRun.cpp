@@ -6,7 +6,7 @@
 //
 //  See KCMStoryDiffRun.h for what this is for and what it deliberately does not do.
 //
-//  The reading helpers (ParagraphStarts / Join / Slice, and the XML parsing that now lives in
+//  The reading helpers (ComputedLength / Join / Slice, and the XML parsing that now lives in
 //  KCMSnippetText.h) came from KohakuTest's KTStoryDiff and work the same way. The comparison
 //  itself is NOT a straight port -- it does two things KT had no need of:
 //
@@ -67,19 +67,30 @@ const int32 kContextCodePoints = 14;
 // here (a ruby missed reads as "nothing changed", which is the very bug this was written for).
 // Test = work\kescm-snippet-test, which builds those headers as they stand.
 
-/* ParagraphStarts
-   Where each paragraph begins, counted in CODE POINTS - the unit InDesign counts text positions
-   in, so a number worked out here can be handed to the text model unchanged (a surrogate pair is
-   one TextIndex). Every paragraph is followed by one break character, including the last: a story
-   always ends with one.
-*/
-void ParagraphStarts(const std::vector<std::string>& paragraphs,
-					 const std::vector<KCMParaAttrs>& attrs,
-					 std::vector<int32>& starts, int32& total)
-{
-	starts.clear();
-	starts.reserve(paragraphs.size());
+/* ComputedLength
+   How long the story is according to the snippet, counted in CODE POINTS - the unit InDesign
+   counts text positions in, so this can be set against ITextModel::TotalLength as it stands (a
+   surrogate pair is one TextIndex). Every paragraph is followed by one break character,
+   including the last: a story always ends with one.
 
+   **IT ANSWERS THE TOTAL AND NOTHING ELSE.** It used to fill in a table of paragraph positions
+     as well, and not one of those numbers was ever read: KCMResolveParagraphPositions replaces
+     the whole table (BodyParagraphStarts assigns over it), on the no-cells path as much as on
+     any other. Where a paragraph BEGINS is that function's answer, and a second answer to one
+     question is a second thing to keep right ([[one-question-one-place]]) -- one that agrees
+     with the first only while no table is in the way, which is precisely the case the resolver
+     exists for.
+
+   **COUNTED WITH CountCodePoints, WHICH IS WHAT EVERY OTHER READER USES** -- BodyParagraphStarts,
+     IndexInStory, CellRunLength, and the test harness's own copy of this walk. It used to build a
+     vector of code points per paragraph and take its size, which is the same number for
+     well-formed UTF-8 and NOT the same for anything else (ToCodePoints counts a stray lead byte,
+     CountCodePoints does not). The length check is what refuses a story whose positions cannot be
+     trusted, so it has to count the way those positions are counted.
+*/
+int32 ComputedLength(const std::vector<std::string>& paragraphs,
+					 const std::vector<KCMParaAttrs>& attrs)
+{
 	int32 index = 0;
 	for (size_t i = 0; i < paragraphs.size(); ++i)
 	{
@@ -92,11 +103,7 @@ void ParagraphStarts(const std::vector<std::string>& paragraphs,
 		if (i < attrs.size())
 			index += attrs[i].fLeadingChars;
 
-		starts.push_back(index);
-
-		std::vector<int32> codePoints;
-		KCMTextDiff::ToCodePoints(paragraphs[i], codePoints);
-		index += static_cast<int32>(codePoints.size()) + 1;
+		index += KCMSnippetText::CountCodePoints(paragraphs[i]) + 1;
 
 		// **CHARACTERS THE TEXT MODEL COUNTS THAT THE TEXT DOES NOT SHOW** -- a table's own
 		//   character, and one at the end of every row but the last. Without them every position
@@ -106,7 +113,7 @@ void ParagraphStarts(const std::vector<std::string>& paragraphs,
 			index += attrs[i].fExtraChars;
 	}
 
-	total = index;
+	return index;
 }
 
 // Join lives in KCMSnippetText.h as JoinParagraphs. It is one half of a convention -- how far
@@ -337,6 +344,23 @@ struct RunSide
 	}
 };
 
+/* SetDocumentText
+   One field of a change, filled from text that came out of a document.
+
+   **THE TWO CALLS BELONG TOGETHER AND WERE WRITTEN APART.** Text out of a document is not a
+   translation key: without SetTranslatable(kFalse) it can be looked up in the string tables and
+   come back as something else entirely (memory menu-string-translation-traps). Every field here
+   holds document text -- the context pieces most of all, being the ones most likely to be a
+   short common word a table has an entry for -- so the two calls are one act, and were a column
+   of six SetUTF8String followed by a column of six SetTranslatable, then eight and eight. A
+   field added to either column and not the other is a fault nothing would report.
+*/
+void SetDocumentText(PMString& out, const std::string& utf8)
+{
+	out.SetUTF8String(utf8);
+	out.SetTranslatable(kFalse);
+}
+
 /* Add
    Builds one change and appends it. Kept in one place so that the two callers below - a run that
    was narrowed down to characters, and one that was not - cannot describe the same thing in two
@@ -398,25 +422,14 @@ void Add(std::vector<KCMStoryChange>& out, int32 paraIndex,
 	//     why it is named that rather than "old".
 	const bool16 rowShowsOldSide = (change.fKind == KCMStoryChange::kDelete);
 
-	change.fTextPre.SetUTF8String(rowShowsOldSide ? oldPre : newPre);
-	change.fText.SetUTF8String(rowShowsOldSide ? oldMid : newMid);
-	change.fTextPost.SetUTF8String(rowShowsOldSide ? oldPost : newPost);
+	// All six pieces are document text, not just the middles -- see SetDocumentText.
+	SetDocumentText(change.fTextPre, rowShowsOldSide ? oldPre : newPre);
+	SetDocumentText(change.fText, rowShowsOldSide ? oldMid : newMid);
+	SetDocumentText(change.fTextPost, rowShowsOldSide ? oldPost : newPost);
 
-	change.fOtherTextPre.SetUTF8String(rowShowsOldSide ? newPre : oldPre);
-	change.fOtherText.SetUTF8String(rowShowsOldSide ? newMid : oldMid);
-	change.fOtherTextPost.SetUTF8String(rowShowsOldSide ? newPost : oldPost);
-
-	// Text out of a document is not a translation key. Without this it can be looked up in the
-	//   string tables and come back as something else entirely (memory
-	//   menu-string-translation-traps). All six pieces, not just the middles: they are all
-	//   document text, and the context pieces are the ones most likely to be a short common word
-	//   that a table has an entry for.
-	change.fTextPre.SetTranslatable(kFalse);
-	change.fText.SetTranslatable(kFalse);
-	change.fTextPost.SetTranslatable(kFalse);
-	change.fOtherTextPre.SetTranslatable(kFalse);
-	change.fOtherText.SetTranslatable(kFalse);
-	change.fOtherTextPost.SetTranslatable(kFalse);
+	SetDocumentText(change.fOtherTextPre, rowShowsOldSide ? newPre : oldPre);
+	SetDocumentText(change.fOtherText, rowShowsOldSide ? newMid : oldMid);
+	SetDocumentText(change.fOtherTextPost, rowShowsOldSide ? newPost : oldPost);
 
 	out.push_back(change);
 }
@@ -435,10 +448,17 @@ void Add(std::vector<KCMStoryChange>& out, int32 paraIndex,
    the same one, so whoever draws it has to be told which it is looking at. Filling that in
    here is what let the mistake be a one-line one when it happened, in the single place that
    asked the wrong question (KCMStoryJump's message area).
+
+   @param tBytes/sBytes where each code point of the two paragraphs begins, as ToCodePoints
+    filled them in. **PASSED IN RATHER THAN WORKED OUT HERE**, because this is called once per
+    DIFFERING SPAN and the two paragraphs do not change between those calls: a paragraph with
+    four altered readings was walked eight times to produce the same two tables. The caller has
+    the paragraphs for the whole comparison, so it makes them once.
 */
 void AddAttrChange(KCMStoryChange::Kind kind, KCMStoryAttrKind attrKind,
 				   int32 tStart, int32 tCount, int32 sStart, int32 sCount,
-				   const std::string& targetPara, const std::string& sourcePara,
+				   const std::string& targetPara, const std::vector<int32>& tBytes,
+				   const std::string& sourcePara, const std::vector<int32>& sBytes,
 				   const std::string& newRuby, const std::string& oldRuby,
 				   int32 tBase, int32 sBase, int32 paraIndex,
 				   std::vector<KCMStoryChange>& out)
@@ -459,32 +479,19 @@ void AddAttrChange(KCMStoryChange::Kind kind, KCMStoryAttrKind attrKind,
 	change.fSourceStart = sBase + sStart;
 	change.fSourceEnd   = change.fSourceStart + sCount;
 
-	std::vector<int32> tCode, tBytes, sCode, sBytes;
-	KCMTextDiff::ToCodePoints(targetPara, tCode, &tBytes);
-	KCMTextDiff::ToCodePoints(sourcePara, sCode, &sBytes);
-
 	std::string newPre, newMid, newPost, oldPre, oldMid, oldPost;
 	Slice(targetPara, tBytes, tStart, tCount, kContextCodePoints, newPre, newMid, newPost);
 	Slice(sourcePara, sBytes, sStart, sCount, kContextCodePoints, oldPre, oldMid, oldPost);
 
-	change.fTextPre.SetUTF8String(newPre);
-	change.fText.SetUTF8String(newMid);
-	change.fTextPost.SetUTF8String(newPost);
-	change.fOtherTextPre.SetUTF8String(oldPre);
-	change.fOtherText.SetUTF8String(oldMid);
-	change.fOtherTextPost.SetUTF8String(oldPost);
-	change.fRuby.SetUTF8String(newRuby);
-	change.fOtherRuby.SetUTF8String(oldRuby);
-
-	// Same reason as the text pieces: document text is not a translation key.
-	change.fTextPre.SetTranslatable(kFalse);
-	change.fText.SetTranslatable(kFalse);
-	change.fTextPost.SetTranslatable(kFalse);
-	change.fOtherTextPre.SetTranslatable(kFalse);
-	change.fOtherText.SetTranslatable(kFalse);
-	change.fOtherTextPost.SetTranslatable(kFalse);
-	change.fRuby.SetTranslatable(kFalse);
-	change.fOtherRuby.SetTranslatable(kFalse);
+	// The readings go through the same door as the base text: they are document text too.
+	SetDocumentText(change.fTextPre, newPre);
+	SetDocumentText(change.fText, newMid);
+	SetDocumentText(change.fTextPost, newPost);
+	SetDocumentText(change.fOtherTextPre, oldPre);
+	SetDocumentText(change.fOtherText, oldMid);
+	SetDocumentText(change.fOtherTextPost, oldPost);
+	SetDocumentText(change.fRuby, newRuby);
+	SetDocumentText(change.fOtherRuby, oldRuby);
 
 	out.push_back(change);
 }
@@ -507,6 +514,15 @@ void CompareParagraphAttr(KCMStoryAttrKind attrKind,
 	if (!KCMSnippetText::SpansDiffer(sourceSpans, targetSpans))
 		return;
 
+	// Where each code point of the two paragraphs begins, made ONCE for however many spans differ
+	//   -- the paragraphs are the same for all of them. AddAttrChange used to work these out for
+	//   itself, so a paragraph with four altered readings was walked eight times.
+	//   @warning the code points themselves are not wanted: cutting the excerpt needs the byte
+	//     boundaries, and the spans' own positions are already in code points.
+	std::vector<int32> codePoints, tBytes, sBytes;
+	KCMTextDiff::ToCodePoints(targetPara, codePoints, &tBytes);
+	KCMTextDiff::ToCodePoints(sourcePara, codePoints, &sBytes);
+
 	size_t i = 0, j = 0;
 	while (i < sourceSpans.size() || j < targetSpans.size())
 	{
@@ -523,7 +539,7 @@ void CompareParagraphAttr(KCMStoryAttrKind attrKind,
 				AddAttrChange(KCMStoryChange::kReplace, attrKind,
 							  targetSpans[j].fStart, targetSpans[j].fLen,
 							  sourceSpans[i].fStart, sourceSpans[i].fLen,
-							  targetPara, sourcePara,
+							  targetPara, tBytes, sourcePara, sBytes,
 							  targetSpans[j].fValue, sourceSpans[i].fValue,
 							  tBase, sBase, paraIndex, out);
 			}
@@ -536,7 +552,7 @@ void CompareParagraphAttr(KCMStoryAttrKind attrKind,
 			AddAttrChange(KCMStoryChange::kInsert, attrKind,
 						  targetSpans[j].fStart, targetSpans[j].fLen,
 						  targetSpans[j].fStart, targetSpans[j].fLen,
-						  targetPara, sourcePara,
+						  targetPara, tBytes, sourcePara, sBytes,
 						  targetSpans[j].fValue, std::string(),
 						  tBase, sBase, paraIndex, out);
 			++j;
@@ -548,7 +564,7 @@ void CompareParagraphAttr(KCMStoryAttrKind attrKind,
 			AddAttrChange(KCMStoryChange::kDelete, attrKind,
 						  sourceSpans[i].fStart, sourceSpans[i].fLen,
 						  sourceSpans[i].fStart, sourceSpans[i].fLen,
-						  targetPara, sourcePara,
+						  targetPara, tBytes, sourcePara, sBytes,
 						  std::string(), sourceSpans[i].fValue,
 						  tBase, sBase, paraIndex, out);
 			++i;
@@ -700,28 +716,27 @@ bool16 CompareOneStory(const UIDRef& targetStory, const UIDRef& sourceStory,
 		paragraphChanges.swap(byPlace);
 	}
 
-	std::vector<int32> targetStarts;
-	std::vector<int32> sourceStarts;
-	int32 targetComputed = 0;
-	int32 sourceComputed = 0;
-	ParagraphStarts(targetParas, targetAttrs, targetStarts, targetComputed);
-	ParagraphStarts(sourceParas, sourceAttrs, sourceStarts, sourceComputed);
+	const int32 targetComputed = ComputedLength(targetParas, targetAttrs);
+	const int32 sourceComputed = ComputedLength(sourceParas, sourceAttrs);
 
 	// **BOTH SIDES ARE CHECKED.** KohakuTest checked only the side it selected in; here a click
 	//   moves both windows, so a mismatch on the older side would aim the older window wrongly.
 	if (!LengthAgrees(targetStory, targetComputed) || !LengthAgrees(sourceStory, sourceComputed))
 		return kFalse;
 
-	// **AND THEN THE POSITIONS THEMSELVES ARE ASKED OF THE DOCUMENT**, which REPLACES what
-	//   ParagraphStarts just put in the two tables. The count above is still needed -- it is what
-	//   LengthAgrees checks -- but it is counted straight down the snippet, and a table's cells
-	//   are not where the snippet puts them: the text model keeps them after the whole of the
-	//   story's own text (ITableTextContent.h). Counting therefore places everything after a
-	//   table wrongly, and no total can show it. See KCMStoryCellBases.h for the measurements.
+	// **AND THE POSITIONS THEMSELVES ARE ASKED OF THE DOCUMENT.** The count above cannot give
+	//   them: it runs straight down the snippet, and a table's cells are not where the snippet
+	//   puts them -- the text model keeps them after the whole of the story's own text
+	//   (ITableTextContent.h), so counting places everything after a table wrongly and no total
+	//   can show it. See KCMStoryCellBases.h for the measurements.
 	//   @warning it refuses stories it cannot match up (a shape the body walk does not
 	//     understand, a table whose position the two sides disagree about), and a refusal here
 	//     means the same as one above: no differences for this story, rather than differences
 	//     aimed at the wrong words.
+	//   The two tables are filled in ENTIRELY by this call -- it assigns over whatever they hold
+	//     -- so they arrive empty and nothing reads them before it returns.
+	std::vector<int32> targetStarts;
+	std::vector<int32> sourceStarts;
 	if (!KCMResolveParagraphPositions(targetStory, targetParas, targetAttrs, targetStarts)
 		|| !KCMResolveParagraphPositions(sourceStory, sourceParas, sourceAttrs, sourceStarts))
 		return kFalse;

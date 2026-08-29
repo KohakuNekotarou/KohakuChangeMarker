@@ -66,6 +66,17 @@ public:
 	// Remove uid from db's set. Drops the whole entry once it is empty.
 	void Erase(IDataBase* db, UID uid);
 
+	/** Put all of `uids` in, or take all of them out -- whichever the set is not already full of.
+		Returns kTrue when they went IN, which is what the caller words its message from.
+
+		**The rule is "any missing means add them all"**, so a partly ticked selection ticks the
+		rest rather than clearing what is there. Both per-page flags (Register and Check) work that
+		way and each wrote the loop out for itself.
+		@warning the decision and the change are under ONE lock here. Written out at the call
+		  sites they were in two, which only a second thread could tell apart -- but the answer is
+		  what decides the direction, so they belong in one. */
+	bool16 ToggleAll(IDataBase* db, const std::vector<UID>& uids);
+
 	// (ClearDoc(db), which dropped one document's set, was removed: its only caller
 	//  KCMPageMapClearAll had no caller of its own. Replace(db, empty) does the same thing today.
 	//  Should "forget just this document" be wanted back, bring it in together with its caller --

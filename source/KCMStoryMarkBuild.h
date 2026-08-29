@@ -92,8 +92,8 @@ bool16 KCMStoryMarkPrintAllowedFor(IDataBase* db);
 
 	@warning **IT MUST STAY THE OR OF THE SAME TWO FLAGS the finer question reads.** If it ever
 	 grew a condition of its own, a mark could be refused here and allowed there, which reads as
-	 "printing
-	works for some documents and not others" with nothing to point at ([[one-question-one-place]]).
+	 "printing works for some documents and not others" with nothing to point at
+	 ([[one-question-one-place]]).
 */
 bool16 KCMStoryMarkPrintPossibleAtAll();
 

@@ -60,6 +60,17 @@ void KCMStoryEdits::CollectStamps(IDataBase* db, std::vector<KCMStoryStamp>& out
 	}
 }
 
+// One row of the answer. The three places below build it identically and differ only in which uid
+// and which kinds go in, so a field added to KCMStoryDiff is added here once rather than in three
+// places that have to be found first.
+static void AppendDiff(std::vector<KCMStoryDiff>& out, UID storyUID, uint32 kinds)
+{
+	KCMStoryDiff row;
+	row.fStoryUID = storyUID;
+	row.fKinds    = kinds;
+	out.push_back(row);
+}
+
 /* Compare
 */
 void KCMStoryEdits::Compare(const std::vector<KCMStoryStamp>& source,
@@ -82,10 +93,7 @@ void KCMStoryEdits::Compare(const std::vector<KCMStoryStamp>& source,
 		if (found == sourceByUID.end())
 		{
 			// Nothing to compare against, so no kind can be named - "added" is the whole answer.
-			KCMStoryDiff row;
-			row.fStoryUID = it->fStoryUID;
-			row.fKinds = kKCMStoryKindAdded;
-			out.push_back(row);
+			AppendDiff(out, it->fStoryUID, kKCMStoryKindAdded);
 			continue;
 		}
 
@@ -102,10 +110,7 @@ void KCMStoryEdits::Compare(const std::vector<KCMStoryStamp>& source,
 		if (kinds == kKCMStoryKindNone)
 			kinds = kKCMStoryKindOther;	// aggregate moved, no sub-counter did - say "something"
 
-		KCMStoryDiff row;
-		row.fStoryUID = it->fStoryUID;
-		row.fKinds = kinds;
-		out.push_back(row);
+		AppendDiff(out, it->fStoryUID, kinds);
 	}
 
 	// ---- Removed: a story the SOURCE holds and the target does not ----
@@ -131,10 +136,7 @@ void KCMStoryEdits::Compare(const std::vector<KCMStoryStamp>& source,
 		if (targetUIDs.find(it->fStoryUID) != targetUIDs.end())
 			continue;	// still there - it was reported above, or it read the same
 
-		KCMStoryDiff row;
-		row.fStoryUID = it->fStoryUID;	// the SOURCE document's uid
-		row.fKinds = kKCMStoryKindRemoved;
-		out.push_back(row);
+		AppendDiff(out, it->fStoryUID, kKCMStoryKindRemoved);	// the SOURCE document's uid
 	}
 }
 

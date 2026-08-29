@@ -126,6 +126,17 @@ static bool16 KCMAnyTranslucentOn()
 
 #ifdef WINDOWS
 
+// Is the window's class name the expected one?
+static bool KCMClassIs(HWND h, const wchar_t* wanted)
+{
+	if (h == nullptr)
+		return false;
+	wchar_t cls[64] = { 0 };
+	if (::GetClassNameW(h, cls, 64) == 0)
+		return false;
+	return ::wcscmp(cls, wanted) == 0;
+}
+
 // Is the pointer over the target window -- the top-level window the panel is in right now?
 //
 // THIS IS MEASURED EVERY TIME RATHER THAN HELD IN A FLAG. It used to be a static flag raised and
@@ -176,8 +187,6 @@ static bool16 KCMAnyTranslucentOn()
 //     - when ANOTHER InDesign WINDOW overlaps the panel, a pointer over that window counts as
 //       being on the panel. It is hidden, so nothing looks wrong on screen, and moving the pointer
 //       out of the rectangle puts it right on the next move. KBS has accepted the same trade.
-static bool KCMClassIs(HWND h, const wchar_t* wanted);	// defined below (an exact match on the window class name)
-
 static bool KCMCursorOverWindow(HWND target)
 {
 	if (target == nullptr)
@@ -384,6 +393,17 @@ static bool KCMTitleMatchesBookDialog(HWND h)
 	return ::wcscmp(title, sBookDialogTitle) == 0;
 }
 
+// Is that handle still the window this target was given? ONE QUESTION IN ONE PLACE: the cache
+//   below asks it for both kinds of target, and KCMWinEventProc asks it again on every window
+//   event. Why a panel is proved by its class name and a dialog by the title recorded when it
+//   was handed over is on sBookDialogTitle.
+static bool KCMStillOurWindow(int32 which, HWND h)
+{
+	if (h == nullptr || !::IsWindow(h))
+		return false;
+	return (which == kKCMAlphaBookDialog) ? KCMTitleMatchesBookDialog(h) : KCMClassIs(h, L"OWL.Palette");
+}
+
 // The panel window, from the cache where possible. THE OS RECYCLES HANDLES, so the class name is
 //   checked as well as whether the window is alive -- which is still cheaper than asking the SDK
 //   again.
@@ -423,31 +443,17 @@ static HWND KCMQueryPaletteWindow(int32 which)
 	// same as being off).
 	if (which == kKCMAlphaBookDialog)
 	{
-		if (sPaletteWnd[which] != nullptr &&
-			(!::IsWindow(sPaletteWnd[which]) || !KCMTitleMatchesBookDialog(sPaletteWnd[which])))
-		{
+		if (!KCMStillOurWindow(which, sPaletteWnd[which]))
 			sPaletteWnd[which] = nullptr;
-		}
 		return sPaletteWnd[which];
 	}
 
 	HWND cached = sPaletteWnd[which];
-	if (cached != nullptr && ::IsWindow(cached) && KCMClassIs(cached, L"OWL.Palette"))
+	if (KCMStillOurWindow(which, cached))
 		return cached;
 
 	sPaletteWnd[which] = KCMQueryPanelPaletteFromSDK(kKCMAlphaWidgetIDs[which]);
 	return sPaletteWnd[which];
-}
-
-// Is the window's class name the expected one?
-static bool KCMClassIs(HWND h, const wchar_t* wanted)
-{
-	if (h == nullptr)
-		return false;
-	wchar_t cls[64] = { 0 };
-	if (::GetClassNameW(h, cls, 64) == 0)
-		return false;
-	return ::wcscmp(cls, wanted) == 0;
 }
 
 // The top-level window the panel is in RIGHT NOW, but only when it is one that can be made
@@ -514,6 +520,15 @@ static HWND KCMQueryTranslucentTarget(int32 which, HWND palette)
 		return root;
 
 	return nullptr;		// "indesign" = the main frame = expanded inside a dock
+}
+
+// The window's shadow (OWL.ShadowView), or nullptr when it has none (a drawer's owner is not
+//   one). ONE QUESTION IN ONE PLACE: the applying side shows and hides it while the Win32 hook
+//   reads back whether that took, so the two have to agree on what counts as the shadow.
+static HWND KCMQueryPanelShadow(HWND target)
+{
+	HWND shadow = ::GetWindow(target, GW_OWNER);
+	return KCMClassIs(shadow, L"OWL.ShadowView") ? shadow : nullptr;
 }
 
 #endif // WINDOWS
@@ -617,8 +632,8 @@ static bool16 KCMApplyFor(int32 which)
 	//   A second benefit: the shadow no longer flickers on and off as the pointer crosses the
 	//     panel's edge.
 	const bool16 hideShadow = sTranslucentOn[which];
-	HWND shadow = ::GetWindow(target, GW_OWNER);
-	if (KCMClassIs(shadow, L"OWL.ShadowView"))
+	HWND shadow = KCMQueryPanelShadow(target);
+	if (shadow != nullptr)
 		::ShowWindow(shadow, hideShadow ? SW_HIDE : SW_SHOWNA);
 
 	return ok ? kTrue : kFalse;
@@ -903,16 +918,10 @@ static void CALLBACK KCMWinEventProc(HWINEVENTHOOK /*hook*/, DWORD /*event*/, HW
 		//   DONE BY KCMApplyFor, WHICH ALWAYS GOES THROUGH KCMQueryPaletteWindow and checks the
 		//   class name (panel) or the title (dialog) again, right then. The check here only makes
 		//   a stale entry go sooner -- the safety of the write does not rest on it.
-		if (isWindowEvent)
+		if (isWindowEvent && !KCMStillOurWindow(which, sPaletteWnd[which]))
 		{
-			const bool stillOurs = (which == kKCMAlphaBookDialog)
-				? KCMTitleMatchesBookDialog(sPaletteWnd[which])
-				: KCMClassIs(sPaletteWnd[which], L"OWL.Palette");
-			if (!stillOurs)
-			{
-				sPaletteWnd[which] = nullptr;
-				continue;
-			}
+			sPaletteWnd[which] = nullptr;
+			continue;
 		}
 
 		// This once filtered on hwnd == sPaletteWnd, but NOT ONE PARENTCHANGE OR LOCATIONCHANGE
@@ -950,8 +959,8 @@ static void CALLBACK KCMWinEventProc(HWINEVENTHOOK /*hook*/, DWORD /*event*/, HW
 			//   the state where THE SHADOW ALONE HAS RETURNED and that part looks dark (found on a
 			//   live build).
 		bool16 shadowOk = kTrue;
-		HWND   shadow   = ::GetWindow(target, GW_OWNER);
-		if (KCMClassIs(shadow, L"OWL.ShadowView"))
+		HWND   shadow   = KCMQueryPanelShadow(target);
+		if (shadow != nullptr)
 		{
 			const bool16 visible = ::IsWindowVisible(shadow) ? kTrue : kFalse;
 				// What is wanted is decided by THE TOGGLE, not by the alpha -- KEEP THIS IN STEP
@@ -1280,7 +1289,17 @@ void KCMPanelVisibilityObserver::Update(const ClassID& theChange, ISubject* /*th
 		KCMScheduleReapply();
 }
 
-void KCMAttachPanelVisibilityObserver()
+// Subscribe to, or unsubscribe from, both subjects. ONE FUNCTION WITH A FLAG, the shape this
+//   plug-in already settled on for the same job: KCMSetModelChangeObserverAttached in
+//   KCMModelChangeObserver.cpp, which itself followed KCMLayoutSyncAttachContext in
+//   KCMViewSync.cpp. The two directions differ in ONE CALL PER SUBJECT; everything ahead of
+//   that -- the session, the active context, the observer, the application -- was written out
+//   twice here.
+//   IsAttached is asked either way, so calling either direction twice is a no-op -- an honest
+//     question on both sides, since attach is called both from the startup service and from
+//     the panel's AutoAttach.
+//   @warning WHAT WENT ON AS kRegularAttachment HAS TO COME OFF AS kRegularAttachment.
+static void KCMSetPanelVisibilityObserverAttached(bool16 attach)
 {
 	ISession* session = GetExecutionContextSession();
 	IActiveContext* ctx = (session != nil) ? session->GetActiveContext() : nil;
@@ -1296,22 +1315,26 @@ void KCMAttachPanelVisibilityObserver()
 		return;
 
 	// The panel manager comes up part-way through the application's own startup sequence (there is
-	// a kPanelMgrHasStartedMsg), so calling from a startup service can find it nil here.
-	// GO ON TO THE SUBSCRIPTION BELOW EVEN WHEN IT IS (the same shape KBS settled on). Returning
-	//   here would take the kAppBoss subscription down with it, LEAVING kApplicationSuspendMsg
-	//   UNSUBSCRIBED -- and that is the only handle on "leave the pointer on the panel, switch to
-	//   another application, and it stays opaque forever", which has nothing to do with the panel
-	//   manager. One subject being absent is not a reason to give up on the other.
-	//   (The palette subscription is picked up later, because the panel's AutoAttach
-	//    (KCMPanelObserver.cpp) calls this again.)
+	// a kPanelMgrHasStartedMsg), so calling from a startup service can find it nil here -- and it
+	// can already be gone by the time the detach direction runs during teardown.
+	// GO ON TO THE SECOND SUBJECT EITHER WAY (the same shape KBS settled on). Returning here would
+	//   take the kAppBoss subscription down with it, LEAVING kApplicationSuspendMsg UNSUBSCRIBED --
+	//   and that is the only handle on "leave the pointer on the panel, switch to another
+	//   application, and it stays opaque forever", which has nothing to do with the panel manager.
+	//   One subject being absent is not a reason to give up on the other.
+	//   (On the attach side the palette subscription is picked up later, because the panel's
+	//    AutoAttach (KCMPanelObserver.cpp) calls this again.)
 	InterfacePtr<IPanelMgr> panelMgr(app->QueryPanelManager());
 	if (panelMgr != nil)
 	{
 		InterfacePtr<ISubject> subject(panelMgr, IID_ISUBJECT);
-		if (subject != nil &&
-			!subject->IsAttached(ISubject::kRegularAttachment, obs, IID_IPANELMGR, IID_IKCMPANELVISIBILITYOBSERVER))
+		if (subject != nil)
 		{
-			subject->AttachObserver(ISubject::kRegularAttachment, obs, IID_IPANELMGR, IID_IKCMPANELVISIBILITYOBSERVER);
+			const bool16 attached = subject->IsAttached(ISubject::kRegularAttachment, obs, IID_IPANELMGR, IID_IKCMPANELVISIBILITYOBSERVER);
+			if (attach && !attached)
+				subject->AttachObserver(ISubject::kRegularAttachment, obs, IID_IPANELMGR, IID_IKCMPANELVISIBILITYOBSERVER);
+			else if (!attach && attached)
+				subject->DetachObserver(ISubject::kRegularAttachment, obs, IID_IPANELMGR, IID_IKCMPANELVISIBILITYOBSERVER);
 		}
 	}
 
@@ -1321,60 +1344,34 @@ void KCMAttachPanelVisibilityObserver()
 	//   ARRIVE IN 2026, where the Win32 hook is what does this. This is the fallback for running
 	//   against 2025.
 	InterfacePtr<ISubject> appSubject(app, IID_ISUBJECT);
-	if (appSubject != nil &&
-		!appSubject->IsAttached(ISubject::kRegularAttachment, obs, IID_IAPPLICATION, IID_IKCMPANELVISIBILITYOBSERVER))
+	if (appSubject != nil)
 	{
-		appSubject->AttachObserver(ISubject::kRegularAttachment, obs, IID_IAPPLICATION, IID_IKCMPANELVISIBILITYOBSERVER);
+		const bool16 attached = appSubject->IsAttached(ISubject::kRegularAttachment, obs, IID_IAPPLICATION, IID_IKCMPANELVISIBILITYOBSERVER);
+		if (attach && !attached)
+			appSubject->AttachObserver(ISubject::kRegularAttachment, obs, IID_IAPPLICATION, IID_IKCMPANELVISIBILITYOBSERVER);
+		else if (!attach && attached)
+			appSubject->DetachObserver(ISubject::kRegularAttachment, obs, IID_IAPPLICATION, IID_IKCMPANELVISIBILITYOBSERVER);
 	}
 }
 
-// The mirror image of the above. Called at plug-in shutdown (KCMUIStartup::Shutdown), BEFORE
-//   KCMShutdownPanelAlpha: stop the notifications first, then fold up the tools (the timer and the
-//   Win32 hook).
-//   WHY IT IS NEEDED: while the subscription stands, what the session holds is A POINTER INTO THIS
-//     .pln. A panel destroyed part-way through teardown sends the notification, so Update would
-//     run in code that is on its way out.
-//     KBS added the same thing for the same reason (KBSDetachPanelVisibilityObserver) and it never
-//     walked over here -- FIXES DO NOT WALK TO THEIR SIBLINGS BY THEMSELVES (this plug-in took the
-//     ferror check and the re-arm guards from KBS; this is the same thing in the other direction).
-//   Detach with THE SAME ATTACHMENT TYPE it was attached with: what went on as Regular comes off
-//     as Regular.
-//   IsAttached is asked before detaching for the same reason the attach side asks before
-//     attaching: attach is called from two places (the startup service and the panel's
-//     AutoAttach), so "is it really attached" is an honest question on both sides.
-//   The panel manager can already be gone during teardown. Even when it is, the kAppBoss
-//     subscription is independent and is not taken down with it (the same lesson the attach side
-//     learned).
+// Start listening. Who calls it, and why the second caller is not belt-and-braces, is on the
+// declaration in the header.
+void KCMAttachPanelVisibilityObserver()
+{
+	KCMSetPanelVisibilityObserverAttached(kTrue);
+}
+
+// The mirror image. Called at plug-in shutdown (KCMUIStartup::Shutdown), BEFORE
+//   KCMShutdownPanelAlpha: stop the notifications first, then fold up the tools (the timer and
+//   the Win32 hook).
+//   WHY IT IS NEEDED: while the subscription stands, what the session holds is A POINTER INTO
+//     THIS .pln. A panel destroyed part-way through teardown sends the notification, so Update
+//     would run in code that is on its way out.
+//     KBS added the same thing for the same reason (KBSDetachPanelVisibilityObserver) and it
+//     never walked over here -- FIXES DO NOT WALK TO THEIR SIBLINGS BY THEMSELVES (this plug-in
+//     took the ferror check and the re-arm guards from KBS; this is the same thing in the other
+//     direction).
 void KCMDetachPanelVisibilityObserver()
 {
-	ISession* session = GetExecutionContextSession();
-	IActiveContext* ctx = (session != nil) ? session->GetActiveContext() : nil;
-	if (ctx == nil)
-		return;
-
-	InterfacePtr<IObserver> obs((IObserver*)ctx->QueryInterface(IID_IKCMPANELVISIBILITYOBSERVER));
-	if (obs == nil)
-		return;
-
-	InterfacePtr<IApplication> app(session->QueryApplication());
-	if (app == nil)
-		return;
-
-	InterfacePtr<IPanelMgr> panelMgr(app->QueryPanelManager());
-	if (panelMgr != nil)
-	{
-		InterfacePtr<ISubject> subject(panelMgr, IID_ISUBJECT);
-		if (subject != nil &&
-			subject->IsAttached(ISubject::kRegularAttachment, obs, IID_IPANELMGR, IID_IKCMPANELVISIBILITYOBSERVER))
-		{
-			subject->DetachObserver(ISubject::kRegularAttachment, obs, IID_IPANELMGR, IID_IKCMPANELVISIBILITYOBSERVER);
-		}
-	}
-
-	InterfacePtr<ISubject> appSubject(app, IID_ISUBJECT);
-	if (appSubject != nil &&
-		appSubject->IsAttached(ISubject::kRegularAttachment, obs, IID_IAPPLICATION, IID_IKCMPANELVISIBILITYOBSERVER))
-	{
-		appSubject->DetachObserver(ISubject::kRegularAttachment, obs, IID_IAPPLICATION, IID_IKCMPANELVISIBILITYOBSERVER);
-	}
+	KCMSetPanelVisibilityObserverAttached(kFalse);
 }

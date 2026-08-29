@@ -18,9 +18,7 @@
 // Interface includes:
 #include "IGlobalTextAdornment.h"
 #include "IGraphicsContext.h"		// GraphicsData
-#include "IDocument.h"				// the document InvalidateViews is asked about
 #include "IGraphicsPort.h"
-#include "ILayoutUtils.h"			// InvalidateViews - the repaint that puts the mark up / takes it down
 #include "IShape.h"					// kPrinting / kPreviewMode
 #include "ITextModel.h"				// which story a wax run belongs to
 #include "IWaxGlyphs.h"
@@ -31,12 +29,18 @@
 // General includes:
 #include "AutoGSave.h"
 #include "CPMUnknown.h"
+#include "PMReal.h"		// the opacity, which is held in a static below. It reached this
+						//   file through KCMStoryMarker.h until now, whose own comment asked
+						//   for it to be moved to the .cpp that actually names one
 #include <set>			// the documents to repaint when a mark moves between them
 #include "UIDRef.h"
 #include "Utils.h"
 
 // Project includes:
-#include "IKCMCompareFacade.h"	// IsDocDBOpen - never repaint a document that has gone
+#include "IKCMCompareFacade.h"	// GetSelectedMarkOpacity - what both kinds of mark are drawn at
+#include "KCMCore.h"			// KCMIsDocDBOpen / KCMInvalidateDB. Both were written out here
+									//   instead while this lived in the UI plug-in, which cannot call
+									//   into the model at all
 #include "KCMDrawEventHandler.h"	// SelectedMarkColor (the panel's red/cyan) and KCMSetOutputColor
 									// (screen in RGB, paper in CMYK) -- both shared with the Pixel
 									// mode's frames.
@@ -118,35 +122,57 @@ const double kCaretWidthFraction = 0.25;
    adornment is only consulted while text is being drawn, so a mark that nobody repaints for would
    appear the next time the user happened to scroll.
 
-   @warning asked of the compare facade first, because this runs while a document is being closed
-    as well: InvalidateViews on a database that is going away is exactly the crash KBS's marker
-    guards against with its own shutdown flag.
+   @warning the document is asked whether it is still open FIRST, because this runs while one is
+    being closed as well: redrawing a database that is going away is exactly the crash KBS's
+    marker guards against with its own shutdown flag.
+   **BOTH QUESTIONS BELONG TO KCMCore.h**, and both were written out here instead: the first as a
+    Query for IKCMCompareFacade (which is what a kUIPlugIn has to do to reach the model at all),
+    the second as IDocument + ILayoutUtils::InvalidateViews. The marker is in the model plug-in
+    now, where each is one call -- and the second of them is shared with ten other callers, so
+    what "repaint a document" means is settled in one place.
 */
 void KCMStoryMarkerRepaint(IDataBase* db)
 {
 	if (db == nil || gShutdown)
 		return;
-	if (!Utils<IKCMCompareFacade>()->IsDocDBOpen(db))
+	if (!KCMIsDocDBOpen(db))
 		return;
 
-	InterfacePtr<IDocument> doc(db, db->GetRootUID(), UseDefaultIID());
-	if (doc != nil)
-		Utils<ILayoutUtils>()->InvalidateViews(doc);
+	KCMInvalidateDB(db);
 }
 
-/* KCMStoryMarkerFindRunRanges
-   Which parts of this wax run are marked, as offsets into the run.
+/* KCMStoryMarkerRunSpan
+   The characters this wax run covers, and kFalse when there is nothing to ask about it.
 
-   **THREE QUESTIONS, CHEAPEST FIRST, AND THE ORDER IS THE WHOLE PERFORMANCE STORY.** A press
-   marks every edit in the document, so this is asked of every run on every page being drawn:
-     1. does the run fall within the marked span at all -- two integer comparisons
-     2. which story does it belong to -- a Query, and the reason 1 exists
-     3. which of that story's ranges it overlaps -- a binary search (KCMStoryMarkRanges.h)
+   **THE CHEAPEST OF THREE QUESTIONS, AND THE ONLY ONE THAT IS FREE.** A press marks every edit
+   in the document, so the two lookups below are made for every run on every page being drawn:
+     1. is anything marked at all, and does this run hold any characters -- here
+     2. does the run fall within the whole marked span -- two integer comparisons
+     3. which story does it belong to, and which of that story's ranges does the run overlap --
+        a Query and a binary search (2 and 3 are KCMStoryMarkerRangesFor, KCMStoryMarkRanges.h)
 
-   @warning step 2 cannot be skipped even when only one story is marked. A document can be open
-    twice over (target and source) and both are being drawn in their own windows, so "the right
-    characters" is never enough -- it has to be the right story in the right database.
+   @warning **gHasMark IS READ WITHOUT THE LOCK, WHICH IS WHY THIS STEP IS ITS OWN.** It is a
+    bool16 the main thread only ever sets to kTrue after the map is complete and to kFalse
+    before emptying it, so testing it unlocked costs a run nothing and refuses almost all of
+    them outright. Everything after it reads state the main thread rewrites, so both callers
+    take the lock the moment this returns.
+   @warning **both of them wrote these lines out for themselves** until this was pulled out,
+    which put the order the whole hot path rests on -- flag first, lock second -- in two places.
 */
+bool16 KCMStoryMarkerRunSpan(const IWaxRun* waxRun, TextIndex& outRunStart, TextIndex& outRunEnd)
+{
+	if (!gHasMark || waxRun == nil)
+		return kFalse;
+
+	const int32 runCount = waxRun->GetCharCount();
+	if (runCount <= 0)
+		return kFalse;
+
+	outRunStart = waxRun->TextOrigin();
+	outRunEnd = outRunStart + runCount;
+	return kTrue;
+}
+
 /* KCMStoryMarkerRangesFor
    The ranges lit up in the story this run belongs to, or nil if none are.
 
@@ -163,12 +189,19 @@ void KCMStoryMarkerRepaint(IDataBase* db)
 
    @warning THE CALLER MUST HOLD KCMMarkStateMutex: the returned pointer points into gMarkDocs.
 
+   @param runStart, runEnd the run's characters, as KCMStoryMarkerRunSpan worked them out. The
+       whole marked span is tested against them on the first line, which is what refuses most
+       runs before the Query below is ever reached.
    @param forPrint kTrue when the drawing is going to paper or an export. The document is then
        asked whether its marks may go there at all -- and the question is asked HERE because this
        is where the database has just been worked out, so printing costs no extra lookup.
 */
-const KCMMarkRangeList* KCMStoryMarkerRangesFor(const IWaxRun* waxRun, bool16 forPrint)
+const KCMMarkRangeList* KCMStoryMarkerRangesFor(const IWaxRun* waxRun, bool16 forPrint,
+												 TextIndex runStart, TextIndex runEnd)
 {
+	if (runEnd <= gMarkLowest || runStart >= gMarkHighest)
+		return nil;						// before or after everything that is marked
+
 	const IWaxLine* waxLine = waxRun->GetWaxLine();
 	if (waxLine == nil)
 		return nil;
@@ -199,30 +232,25 @@ const KCMMarkRangeList* KCMStoryMarkerRangesFor(const IWaxRun* waxRun, bool16 fo
 	return nil;
 }
 
+/* KCMStoryMarkerFindRunRanges
+   Which parts of this wax run are marked, as offsets into the run.
+
+   @warning the story has to be worked out even when only one of them is marked. A document can
+    be open twice over (target and source) and both are being drawn in their own windows, so "the
+    right characters" is never enough -- it has to be the right story in the right database.
+*/
 bool16 KCMStoryMarkerFindRunRanges(const IWaxRun* waxRun, bool16 forPrint, KCMMarkRangeList& outRanges)
 {
 	outRanges.clear();
 
-	if (!gHasMark || waxRun == nil)
+	TextIndex runStart = 0;
+	TextIndex runEnd = 0;
+	if (!KCMStoryMarkerRunSpan(waxRun, runStart, runEnd))
 		return kFalse;
 
-	const TextIndex runStart = waxRun->TextOrigin();
-	const int32 runCount = waxRun->GetCharCount();
-	if (runCount <= 0)
-		return kFalse;
-
-	const TextIndex runEnd = runStart + runCount;
-
-	// **THE LOCK GOES HERE AND NOT ABOVE.** gHasMark is a bool16 that the main thread only ever
-	//   sets to kTrue after the map is complete and to kFalse before emptying it, so testing it
-	//   unlocked costs a run nothing and refuses almost all of them outright. Everything below
-	//   reads state the main thread rewrites (KCMStoryMarkerSetDocs), so it is all inside.
 	KCMMarkStateLock lock(KCMMarkStateMutex());
 
-	if (runEnd <= gMarkLowest || runStart >= gMarkHighest)
-		return kFalse;						// before or after everything that is marked
-
-	const KCMMarkRangeList* ranges = KCMStoryMarkerRangesFor(waxRun, forPrint);
+	const KCMMarkRangeList* ranges = KCMStoryMarkerRangesFor(waxRun, forPrint, runStart, runEnd);
 	if (ranges == nil)
 		return kFalse;
 
@@ -232,34 +260,23 @@ bool16 KCMStoryMarkerFindRunRanges(const IWaxRun* waxRun, bool16 forPrint, KCMMa
 
 /* KCMStoryMarkerRunIsMarked
    The same question with no list built - what GetCouldDraw and GetIsActive want.
+
+   @warning kFalse = "not asked about printing". GetCouldDraw, which is what calls this, is handed
+    no iShapeFlags at all -- so this can only answer the wider question "is this run marked
+    anywhere". A run that turns out not to be printable is refused later, in Draw. The cost of
+    being generous here is one Draw call that draws nothing; being strict is not possible.
 */
 bool16 KCMStoryMarkerRunIsMarked(const IWaxRun* waxRun)
 {
-	if (!gHasMark || waxRun == nil)
+	TextIndex runStart = 0;
+	TextIndex runEnd = 0;
+	if (!KCMStoryMarkerRunSpan(waxRun, runStart, runEnd))
 		return kFalse;
 
-	const TextIndex runStart = waxRun->TextOrigin();
-	const int32 runCount = waxRun->GetCharCount();
-	if (runCount <= 0)
-		return kFalse;
+	KCMMarkStateLock lock(KCMMarkStateMutex());
 
-	const TextIndex runEnd = runStart + runCount;
-
-	KCMMarkStateLock lock(KCMMarkStateMutex());		// same order as above: gHasMark first, lock second
-
-	if (runEnd <= gMarkLowest || runStart >= gMarkHighest)
-		return kFalse;
-
-	// @warning kFalse = "not asked about printing". GetCouldDraw, which is what calls this, is
-	//   handed no iShapeFlags at all -- so this can only answer the wider question "is this run
-	//   marked anywhere". A run that turns out not to be printable is refused later, in Draw. The
-	//   cost of being generous here is one Draw call that draws nothing; being strict is not
-	//   possible.
-	const KCMMarkRangeList* ranges = KCMStoryMarkerRangesFor(waxRun, kFalse);
-	if (ranges == nil)
-		return kFalse;
-
-	return KCMMarkRangesTouchRun(*ranges, runStart, runEnd);
+	const KCMMarkRangeList* ranges = KCMStoryMarkerRangesFor(waxRun, kFalse, runStart, runEnd);
+	return (ranges != nil) ? KCMMarkRangesTouchRun(*ranges, runStart, runEnd) : kFalse;
 }
 
 /* KCMStoryMarkerSetDocs
@@ -813,7 +830,7 @@ void KCMStoryMarker::Shutdown()
 {
 	// @warning the flag goes up FIRST: from here on nothing repaints, because the document the mark
 	//   was in may already be half torn down. Taking a mark down the ordinary way would go looking
-	//   for it. Same door, and the same reason, as KBS
+	//   for it. Same door, and the same reason, as KBS's marker shutdown.
 	{
 		// @warning **LOCKED LIKE EVERY OTHER WRITE.** Teardown is exactly when a background export may
 		//   still be walking gMarkDocs, and clearing a map out from under a reader is the crash this

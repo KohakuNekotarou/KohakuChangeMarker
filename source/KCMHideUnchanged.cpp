@@ -40,7 +40,7 @@
 #include <set>
 
 // Project includes:
-#include "KCMID.h"
+#include "KCMID.h"		// kKCMPageFlagsChangedMessage (the notification ID)
 #include "KCMLoc.h"		// the confirmation shown before the document is changed follows the UI language
 #include "KCMHideUnchanged.h"
 #include "KCMCore.h"		// KCMIsDocDBOpen / KCMArmedSourceDB
@@ -50,7 +50,6 @@
 							//   i.e. the same thing the screen, the thumbnails and the map read**,
 							//   so that hiding agrees with what is drawn.
 #include "KCMPageMap.h"	// KCMPageMapIsRegistered / KCMPageMapHasAnyRegistered
-#include "KCMID.h"		// kKCMPageFlagsChangedMessage (the notification ID)
 // The UI-side header KCMScrollMap.h is deliberately NOT included: redrawing the map after a
 // hide or a restore is the job of the UI that receives the notification.
 
@@ -75,14 +74,6 @@ static int32 KCMResetHideUnchangedCore(bool16 restoreSpreads);
 //========================================================================================
 // Hide Unchanged Spreads (the flyout's checked toggle)
 //========================================================================================
-
-// A status message for the panel's status line (English and non-translatable, as elsewhere).
-static void KCMHideStatus(const char* text)
-{
-	PMString msg(text);
-	msg.SetTranslatable(kFalse);
-	KCMNotifyStatus(msg);
-}
 
 // Hide or show `uids` with a single kHideSpreadCmdBoss. hide = kTrue hides.
 // The direction rides on IBoolData, kTrue = hide (measured; the same shape as kLockLayerCmdBoss).
@@ -135,9 +126,9 @@ void KCMHideUnchangedToggle()
 		//   next Start rebuilds it), so a failure here leaves the user to re-show them by hand from
 		//   the Pages panel -- not a failure to swallow silently.
 		if (failed > 0)
-			KCMHideStatus("Hide Unchanged: could not show all hidden spreads back.");
+			KCMSayStatus("Hide Unchanged: could not show all hidden spreads back.");
 		else
-			KCMHideStatus("Hide Unchanged: hidden spreads restored.");
+			KCMSayStatus("Hide Unchanged: hidden spreads restored.");
 		return;
 	}
 
@@ -146,7 +137,7 @@ void KCMHideUnchangedToggle()
 	if (db == nil)
 	{
 		// Nothing started yet.
-		KCMHideStatus("Hide Unchanged: Start first.");
+		KCMSayStatus("Hide Unchanged: Start first.");
 		return;
 	}
 
@@ -184,7 +175,7 @@ void KCMHideUnchangedToggle()
 	// spread be a candidate -- and InDesign does not allow hiding them all, so it stops.
 	if (KCMDrawEventHandler::sEntries.empty() && !KCMPageMapHasAnyRegistered(db) && tOverflowSet.empty())
 	{
-		KCMHideStatus("Hide Unchanged: no changes to hide.");
+		KCMSayStatus("Hide Unchanged: no changes to hide.");
 		return;
 	}
 
@@ -192,7 +183,7 @@ void KCMHideUnchangedToggle()
 	InterfacePtr<ISpreadList> spreadList(db, db->GetRootUID(), UseDefaultIID());
 	if (spreadList == nil)
 	{
-		KCMHideStatus("Hide Unchanged: spread list not available.");
+		KCMSayStatus("Hide Unchanged: spread list not available.");
 		return;
 	}
 	std::vector<UID> unchanged;
@@ -235,7 +226,7 @@ void KCMHideUnchangedToggle()
 
 	if (unchanged.empty())
 	{
-		KCMHideStatus("Hide Unchanged: all changed; none to hide.");
+		KCMSayStatus("Hide Unchanged: all changed; none to hide.");
 		return;
 	}
 	if ((int32)unchanged.size() >= visibleCount)
@@ -243,7 +234,7 @@ void KCMHideUnchangedToggle()
 		// Belt and braces (with sEntries non-empty this is not normally reached): stop if every
 		// visible spread would be hidden. InDesign does not allow it, and the denominator is the
 		// spreads visible NOW, so manually hidden ones are already out of it.
-		KCMHideStatus("Hide Unchanged: can't hide all spreads.");
+		KCMSayStatus("Hide Unchanged: can't hide all spreads.");
 		return;
 	}
 
@@ -411,7 +402,7 @@ void KCMHideUnchangedToggle()
 
 	if (err != kSuccess)
 	{
-		KCMHideStatus("Hide Unchanged: hide command failed.");
+		KCMSayStatus("Hide Unchanged: hide command failed.");
 		return;
 	}
 

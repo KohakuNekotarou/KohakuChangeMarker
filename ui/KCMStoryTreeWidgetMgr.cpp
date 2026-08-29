@@ -61,6 +61,20 @@
 namespace
 {
 
+/** A string from the plug-in's own table, ready to be shown: translated, and no longer a key.
+
+	★The second half matters as much as the first. A translated string left translatable is
+	translated AGAIN by whatever it is handed to, against the built-in table - which is how
+	"Source:" came out as a style-source phrase in a Japanese locale.
+*/
+PMString Translated(const char* key)
+{
+	PMString s(key);
+	s.Translate();
+	s.SetTranslatable(kFalse);
+	return s;
+}
+
 /** Name the kind of change that moved - the first one, with a '+' when there were others.
 
 	★ONE WORD, NOT A LIST (user's call, 2026-08-10: "when there are two or more, something like a
@@ -99,28 +113,13 @@ namespace
 PMString KindLabel(uint32 kinds, bool16 sameKind, int32 attrKind)
 {
 	if (sameKind)
-	{
-		PMString none(kKCMStoryKindNoneKey);
-		none.Translate();
-		none.SetTranslatable(kFalse);
-		return none;
-	}
+		return Translated(kKCMStoryKindNoneKey);
 
 	if (kinds & kKCMStoryKindAdded)
-	{
-		PMString added(kKCMStoryKindAddedKey);
-		added.Translate();
-		added.SetTranslatable(kFalse);
-		return added;
-	}
+		return Translated(kKCMStoryKindAddedKey);
 
 	if (kinds & kKCMStoryKindRemoved)
-	{
-		PMString removed(kKCMStoryKindRemovedKey);
-		removed.Translate();
-		removed.SetTranslatable(kFalse);
-		return removed;
-	}
+		return Translated(kKCMStoryKindRemovedKey);
 
 	// ★What the diff FOUND, ahead of what the counters merely reported. ⚠Only when the text itself
 	//   did not change: a story whose words were rewritten AND whose ruby moved is a text edit
@@ -130,12 +129,7 @@ PMString KindLabel(uint32 kinds, bool16 sameKind, int32 attrKind)
 	//   comparison that produced it has been switched off (KCMStoryDiffRun's AddAttrOnlyChanges),
 	//   so no child ever arrives carrying that kind and a branch for it would be unreachable.
 	if ((kinds & kKCMStoryKindText) == 0 && attrKind == kKCMStoryAttrRuby)
-	{
-		PMString named(kKCMStoryKindRubyKey);
-		named.Translate();
-		named.SetTranslatable(kFalse);
-		return named;
-	}
+		return Translated(kKCMStoryKindRubyKey);
 
 	PMString out;
 	out.SetTranslatable(kFalse);	// composed, so no longer a key - see the note in KCMStoryList.cpp
@@ -378,9 +372,7 @@ public:
 		{
 			// ★The placeholder the adapter asks for while a comparison is running and found nothing
 			//   (see GetNumListItems). Left cell only: there is no kind to name.
-			text = PMString(kKCMStoryNoEditsKey);
-			text.Translate();
-			text.SetTranslatable(kFalse);
+			text = Translated(kKCMStoryNoEditsKey);
 		}
 
 		this->SetNodeName(widgetList, uid, kKCMStoryRowUIDWidgetID);
@@ -557,15 +549,7 @@ void KCMStoryTreeRebuild()
 {
 	// Reached through the panel, which is nil while it is closed - and a comparison run with the
 	// panel closed is perfectly normal, so that is a quiet return rather than a failure.
-	IControlView* panel = KCMGetVisibleOwnPanel();
-	if (panel == nil)
-		return;
-
-	InterfacePtr<const IPanelControlData> panelData(panel, UseDefaultIID());
-	if (panelData == nil)
-		return;
-
-	InterfacePtr<ITreeViewMgr> treeMgr(panelData->FindWidget(kKCMStoryTreeWidgetID), UseDefaultIID());
+	InterfacePtr<ITreeViewMgr> treeMgr(KCMFindPanelWidget(kKCMStoryTreeWidgetID), UseDefaultIID());
 	if (treeMgr == nil)
 		return;
 

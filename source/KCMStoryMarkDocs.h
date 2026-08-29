@@ -56,6 +56,29 @@ typedef std::map<UID, KCMMarkRangeList> KCMStoryMarkMap;
 	it is the same structure holding one entry. */
 typedef std::map<IDataBase*, KCMStoryMarkMap> KCMStoryMarkDocs;
 
+/** Copy one document into the composed set, keeping only what would actually draw something.
+
+	**THE EMPTINESS TEST IS THE WHOLE OF IT, AND IT IS ASKED TWICE:** a story whose list holds no
+	range is left out, and a document all of whose stories were left out does not appear at all.
+	What the caller tests to decide "this document is spoken for" would otherwise be answered by
+	an entry that draws nothing.
+	@warning both halves of the composition below call this. They wrote the four lines out
+	 separately until it was pulled together, which is two places for one rule. */
+inline void KCMAddDrawableStories(KCMStoryMarkDocs& out, IDataBase* db,
+								   const KCMStoryMarkMap& from)
+{
+	KCMStoryMarkMap kept;
+	for (KCMStoryMarkMap::const_iterator it = from.begin(); it != from.end(); ++it)
+	{
+		if (it->second.empty())
+			continue;
+		kept[it->first] = it->second;
+	}
+
+	if (!kept.empty())
+		out[db].swap(kept);
+}
+
 /** Put the standing marks and the flash together into the one set that gets drawn.
 
 	A document that appears in `standing` is taken from there and its flash is dropped; a document
@@ -67,31 +90,13 @@ typedef std::map<IDataBase*, KCMStoryMarkMap> KCMStoryMarkDocs;
 	@param flash what a jump wants to show for a moment. May be empty.
 	@param out receives the union under the rule above. Cleared first; may not alias either input.
 */
-/** Copy the stories that would actually draw something. Implementation detail of the composition
-	below; the emptiness test is what keeps "this document is spoken for" from being answered by an
-	entry that draws nothing. */
-inline void KCMCopyDrawableStories(const KCMStoryMarkMap& from, KCMStoryMarkMap& to)
-{
-	for (KCMStoryMarkMap::const_iterator it = from.begin(); it != from.end(); ++it)
-	{
-		if (it->second.empty())
-			continue;
-		to[it->first] = it->second;
-	}
-}
-
 inline void KCMComposeMarkDocs(const KCMStoryMarkDocs& standing, const KCMStoryMarkDocs& flash,
 								 KCMStoryMarkDocs& out)
 {
 	out.clear();
 
 	for (KCMStoryMarkDocs::const_iterator doc = standing.begin(); doc != standing.end(); ++doc)
-	{
-		KCMStoryMarkMap kept;
-		KCMCopyDrawableStories(doc->second, kept);
-		if (!kept.empty())
-			out[doc->first].swap(kept);
-	}
+		KCMAddDrawableStories(out, doc->first, doc->second);
 
 	for (KCMStoryMarkDocs::const_iterator doc = flash.begin(); doc != flash.end(); ++doc)
 	{
@@ -101,10 +106,7 @@ inline void KCMComposeMarkDocs(const KCMStoryMarkDocs& standing, const KCMStoryM
 		if (out.find(doc->first) != out.end())
 			continue;			// a standing mark is up in this document, and it wins whole
 
-		KCMStoryMarkMap kept;
-		KCMCopyDrawableStories(doc->second, kept);
-		if (!kept.empty())
-			out[doc->first].swap(kept);
+		KCMAddDrawableStories(out, doc->first, doc->second);
 	}
 }
 

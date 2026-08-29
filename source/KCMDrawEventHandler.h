@@ -23,8 +23,14 @@
 #include "CPMUnknown.h"
 #include "IDrwEvtHandler.h"
 #include "GraphicsExternal.h"   // AGMImageRecord (a struct member below)
+#include "K2SmartPtr.h"         // K2::scoped_array -- the two structs below own their pixel buffers with it
+                                //   rather than with a hand-written destructor.
+                                //   @warning **this makes both structs non-copyable** (scoped_array is
+                                //   boost::noncopyable). That is correct and not a restriction: they are
+                                //   only ever held as pointers, in sEntries and sOrigImages.
 #include "UIDRef.h"             // UID / UIDRef
 #include "PMReal.h"
+#include "PMRect.h"             // PMRect - the folio rectangles the sieve below converts
 #include "IDThreading.h"        // IDThreading::ThreadLocal (tl_Rasterizing below)
 #include "KCMThreadSafety.h"  // KCMMarkStateMutex / KCMMarkStateLock, taken wherever sEntries is deleted
 
@@ -35,9 +41,9 @@ class IPanorama;
 
 struct KCMOverlayEntry
 {
-	uint8*         buf;			// our own ARGB buffer (the ring image). Owned.
-	AGMImageRecord rec;			// our own image record pointing at buf (for the blit)
-	uint8*         dist;		// chessboard distance transform of the difference mask (w*h, uint8,
+	K2::scoped_array<uint8> buf;	// our own ARGB buffer (the ring image). Owned.
+	AGMImageRecord rec;			// our own image record pointing at buf.get() (for the blit)
+	K2::scoped_array<uint8> dist;	// chessboard distance transform of the difference mask (w*h, uint8,
 								//   0 = a changed pixel, clamped at 255). Owned.
 								//   The ring is 0 < dist <= radius, which lets BuildRing paint it in
 								//   one pass with no dilation (the mask is discarded once dist exists).
@@ -50,17 +56,14 @@ struct KCMOverlayEntry
 									//   The denominator is NOT stored: w * h IS the denominator, and
 									//   holding the same number twice is how the two drift apart.
 
-	KCMOverlayEntry() : buf(nil), dist(nil), w(0), h(0), rowBytes(0), bpp(0), lastRadius(-1),
+	KCMOverlayEntry() : w(0), h(0), rowBytes(0), bpp(0), lastRadius(-1),
 		changedCells(0)
 	{
 		rec.baseAddr = nil; rec.decodeArray = nil;
 		rec.colorTab.numColors = 0; rec.colorTab.theColors = nil;
 	}
-	~KCMOverlayEntry()
-	{
-		if (buf)   delete[] buf;
-		if (dist)  delete[] dist;
-	}
+	// (No destructor. buf and dist are scoped_arrays: they start nil and delete[] themselves, which
+	//  is what the two lines here used to do.)
 };
 
 
@@ -74,21 +77,18 @@ struct KCMOverlayEntry
 //========================================================================================
 struct KCMOrigImage
 {
-	uint8*         buf;			// our own image buffer (opaque). Owned.
-	AGMImageRecord rec;			// our own image record pointing at buf (for the blit)
+	K2::scoped_array<uint8> buf;	// our own image buffer (opaque). Owned.
+	AGMImageRecord rec;			// our own image record pointing at buf.get() (for the blit)
 	int32          w, h;
 	int32          rowBytes;
 	int32          bpp;
 
-	KCMOrigImage() : buf(nil), w(0), h(0), rowBytes(0), bpp(0)
+	KCMOrigImage() : w(0), h(0), rowBytes(0), bpp(0)
 	{
 		rec.baseAddr = nil; rec.decodeArray = nil;
 		rec.colorTab.numColors = 0; rec.colorTab.theColors = nil;
 	}
-	~KCMOrigImage()
-	{
-		if (buf) delete[] buf;
-	}
+	// (No destructor -- buf is a scoped_array.)
 };
 
 
@@ -377,9 +377,13 @@ public:
 	// Rasterise sourceRef (the older side) once at `resolution` dpi and keep the opaque picture in
 	// sOrigImages[target.UID] (replacing any existing one). The offscreen is destroyed immediately,
 	// so only one is ever alive at a time.
-	// resolution defaults to kKCMOrigResolution; the peek route passes a dpi derived from the
-	// current zoom, so the picture is always crisp.
-	static ErrorCode MakeOrigImage(const UIDRef& targetRef, const UIDRef& sourceRef, const PMReal& resolution = kKCMOrigResolution);
+	// The caller decides the dpi and there is deliberately no default: the only caller is the peek
+	// route (KCMPeek.cpp), which derives it from the current zoom - 72.0 * effScale, clamped to
+	// 16..300 - so the picture is always crisp. A default here would only be reached by a future
+	// caller that forgot to think about resolution, and it would render blurry without saying so.
+	// The cost grows with the square of the dpi: about 2MB per A4 page at 72dpi against 26-35MB at
+	// 300dpi, and one image is kept alive per page peeked at.
+	static ErrorCode MakeOrigImage(const UIDRef& targetRef, const UIDRef& sourceRef, const PMReal& resolution);
 
 	// Rebuild the overflow cache (sOverflowT / sOverflowS) from the current sDB / sSrcDB, with one
 	// call to KCMBuildPairing. Called from the comparison (KCMDoMarkChangesDoc), so it is up to
@@ -492,9 +496,64 @@ private:
 // KCMPeekStartup::Shutdown). The implementation is in KCMDrawEventHandler.cpp, beside the cache.
 void KCMReleaseOldNumFontCache();
 
+// The folio-exclusion rectangles, in the comparison's own pixels. **Both pages go into ONE list**,
+// because the two are the same page size and therefore the same (x, y) space -- a folio area on
+// either side is skipped on both.
+// This and the bbox below are here for the same reason as the per-row test that follows them:
+// the three steps are the ONE sieve, they ran in two .cpp files, and only the third had been
+// pulled out -- so two thirds of it was still a copy waiting to be edited on one side only.
+// @warning **the caller decides WHETHER to exclude anything.** The document comparison asks the
+//   "Ignore page numbers" toggle; the book comparison always excludes, because inserting one
+//   chapter shifts every folio after it. This only converts what it is handed.
+// @warning it APPENDS. Both callers hand in a vector they have just declared.
+inline void KCMCollectFolioExcludeRects(const std::vector<PMRect>& tRects,
+										 const std::vector<PMRect>& sRects,
+										 const PMReal& hiRes,
+										 std::vector<Int32Rect>& outRects)
+{
+	const PMReal pxScale = hiRes / PMReal(72.0);	// points -> comparison-resolution pixels
+	for (int pass = 0; pass < 2; ++pass)		// 0 = target, 1 = source (both into the same space)
+	{
+		const std::vector<PMRect>& mrs = (pass == 0) ? tRects : sRects;
+		for (size_t mi = 0; mi < mrs.size(); ++mi)
+		{
+			const PMRect& mr = mrs[mi];
+			Int32Rect epr;
+			epr.left   = ::ToInt32(::Round(mr.Left()   * pxScale));
+			epr.top    = ::ToInt32(::Round(mr.Top()    * pxScale));
+			epr.right  = ::ToInt32(::Round(mr.Right()  * pxScale));
+			epr.bottom = ::ToInt32(::Round(mr.Bottom() * pxScale));
+			outRects.push_back(epr);
+		}
+	}
+}
+
+// Stage 1 of the two-stage sieve: the union bbox of those rectangles. After this, a row outside
+// its vertical range costs zero tests and an x outside its horizontal range costs two
+// comparisons. All four come back 0 for an empty list, which is why both callers test
+// excludeRects.empty() before they use them.
+inline void KCMFolioExcludeBBox(const std::vector<Int32Rect>& rects,
+								 int32& outTop, int32& outBottom, int32& outLeft, int32& outRight)
+{
+	outTop = outBottom = outLeft = outRight = 0;
+	if (rects.empty())
+		return;
+
+	outTop  = rects[0].top;   outBottom = rects[0].bottom;
+	outLeft = rects[0].left;  outRight  = rects[0].right;
+	for (size_t mi = 1; mi < rects.size(); ++mi)
+	{
+		const Int32Rect& r = rects[mi];
+		if (r.top    < outTop)    outTop    = r.top;
+		if (r.bottom > outBottom) outBottom = r.bottom;
+		if (r.left   < outLeft)   outLeft   = r.left;
+		if (r.right  > outRight)  outRight  = r.right;
+	}
+}
+
 // The folio-exclusion test, per row: is x inside any of the rectangles that reach this row?
 // The document comparison (MakeEntry in KCMDrawEventHandler.cpp) and the book comparison
-// (CompareRasters in KCMBookCompare.cpp) use the same test. It is one function because the same
+// (ComparePages in KCMBookCompare.cpp) use the same test. It is one function because the same
 // four lines used to be copied into both .cpp files, with a comment asking whoever edited one to
 // edit the other -- a promise that splits silently the first time it is forgotten.
 // It is inline in the header because it is called from the **innermost (per pixel)** loop of the

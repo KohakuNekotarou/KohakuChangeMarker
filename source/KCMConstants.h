@@ -103,16 +103,6 @@ static const PMReal kKCMCheckLayoutStrokeRatio = 0.12;	// stroke width, as a fra
 static const uint8  kKCMExcludeFillR = 0, kKCMExcludeFillG = 200, kKCMExcludeFillB = 0;
 static const PMReal kKCMExcludeFillOpacity = 0.35;	// opacity of the excluded-area fill (0..1)
 
-// Resolution (dpi) for the "show the old page underneath" overlay: the counterpart page is
-// rasterized once, off-screen, and blitted opaque over the whole page rectangle. Higher means
-// sharper and heavier (about 26-35MB per A4 page at 300dpi); one image is kept per page peeked
-// at. 72dpi matches document inch to screen px 1:1 at 100% on a non-HiDPI display and is the
-// lightest option (about 2MB per A4 page).
-// Careful: this is only the default argument of MakeOrigImage. The one live caller (KCMPeek.cpp)
-// derives its own dpi from the zoom - 72.0 * effScale, clamped to 16..300 - and passes it, so
-// changing the value here does NOT change what peek renders. Edit KCMPeek.cpp for that.
-static const PMReal kKCMOrigResolution = 72.0;
-
 // Click-point CMYK sampling. Only a tiny area around the click is rasterized, at high dpi and
 // in CMYK, and the raw value (0..255) of the center pixel is read from the new and the old
 // document. Anti-aliasing is off, so the intermediate colors along vector edges are not sampled.

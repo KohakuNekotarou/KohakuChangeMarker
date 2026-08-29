@@ -50,7 +50,7 @@
 #include "KCMBookRun.h"		// KCMRunBookComparison (the "Compare Books" flyout item: confirm, compare, show)
 #include "KCMBookOpen.h"			// KCMBookMenuRow / CanStart / StartComparisonForRow (the "Start Change Marker" row item)
 #include "KCMChangeNav.h"			// KCMRefreshNavPosition (the overset toggle changes what Prev/Next walks)
-#include "KCMStoryRefresh.h"		// KCMStoryMenuRow / CanRefresh / RefreshMenuRow (the "Refresh Story Comparison" row item)
+#include "KCMStoryRefresh.h"		// KCMStoryRowCanRefresh / KCMStoryRefreshMenuRow (the "Refresh Story Comparison" row item)
 #include "KCMPanelAlpha.h"		// KCMGetPanelTranslucent / Set / Apply (the "Translucent Panel" flyout item)
 #include "KCMStoryPressMarks.h"	// KCMStoryMarksRefresh (rebuild the always-on marks of Story mode)
 // (★`IActiveContext.h` / `IDocument.h` / `PersistUtils.h` were removed: **none of them was ever
@@ -104,6 +104,42 @@ private:
 
 /* Binds the C++ implementation class onto its ImplementationID. */
 CREATE_PMINTERFACE(KCMActionComponent, kKCMActionComponentImpl)
+
+/* KCMSayToggle - report a toggle on the panel's status line as "<what>: on." / "<what>: off.".
+
+   ⚠The message is finished text, so it is marked untranslatable here -- the step each site used to
+     have to remember for itself.
+*/
+static void KCMSayToggle(const char* what, bool16 on)
+{
+	PMString msg(what);
+	msg.Append(on ? ": on." : ": off.");
+	msg.SetTranslatable(kFalse);
+	KCMSetStatus(msg);
+}
+
+/* KCMSayTranslucency - report one of the three translucency toggles.
+
+   ⚠They say **three** things, not two: off / on / on-but-nothing-visible-yet. **Do not fold them
+     into KCMSayToggle above** -- losing the third turns "ticked and nothing happened" back into a
+     silence, which is the report that made it necessary. Only that third wording differs between
+     the three toggles, which is what `ineffective` carries.
+*/
+static void KCMSayTranslucency(const char* what, bool16 on, bool16 applied, const char* ineffective)
+{
+	PMString msg(what);
+	if (!on)
+		msg.Append(": off.");
+	else if (applied)
+		msg.Append(": on.");
+	else
+	{
+		msg.Append(": on - ");
+		msg.Append(ineffective);
+	}
+	msg.SetTranslatable(kFalse);
+	KCMSetStatus(msg);
+}
 
 /* KCMApplyCompareMode - switches the compare mode and, while Started, recompares on the spot.
 
@@ -283,9 +319,7 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 			//   overflowing / registered set (what KCMCollectChangedPageUIDs answers with), which is
 			//   exactly the set that can carry a frame.
 			KCMTryRefreshPagesPanelThumbnails(srcDB);
-			PMString msg(srcMarksOn ? "Source marks: on." : "Source marks: off.");
-			msg.SetTranslatable(kFalse);
-			KCMSetStatus(msg);
+			KCMSayToggle("Source marks", srcMarksOn);
 			break;
 		}
 
@@ -317,9 +351,7 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 			compare->SetMarkScreenOpacity(compare->GetBaseScreenOpacity());
 			KCMStoryMarksRefresh();		// the Story colour ground (does nothing in Pixel mode)
 			compare->InvalidateDB(compare->GetArmedTargetDB());
-			PMString msg(tgtMarksOn ? "Target marks: on." : "Target marks: off.");
-			msg.SetTranslatable(kFalse);
-			KCMSetStatus(msg);
+			KCMSayToggle("Target marks", tgtMarksOn);
 			break;
 		}
 
@@ -357,9 +389,7 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 			Utils<IKCMCompareFacade>()->InvalidateDB(markedDB);
 			if (compare->GetArmedSourceDB() != markedDB)
 				Utils<IKCMCompareFacade>()->InvalidateDB(compare->GetArmedSourceDB());
-			PMString msg(showOldNums ? "Show original page numbers: on." : "Show original page numbers: off.");
-			msg.SetTranslatable(kFalse);
-			KCMSetStatus(msg);
+			KCMSayToggle("Show original page numbers", showOldNums);
 			break;
 		}
 
@@ -374,13 +404,7 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 		case kKCMPopupSyncViewsActionID:
 		{
 			KCMSetLayoutSync(!KCMGetLayoutSync());
-			PMString msg;
-			if (KCMGetLayoutSync())
-				msg = "Sync layout views: on.";
-			else
-				msg = "Sync layout views: off.";
-			msg.SetTranslatable(kFalse);
-			KCMSetStatus(msg);
+			KCMSayToggle("Sync layout views", KCMGetLayoutSync());
 			break;
 		}
 
@@ -430,9 +454,7 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 			}
 			else
 				KCMScrollMapDetachAll();	// take any existing strip out of every window
-			PMString msg(on ? "Scrollbar map: on." : "Scrollbar map: off.");
-			msg.SetTranslatable(kFalse);
-			KCMSetStatus(msg);
+			KCMSayToggle("Scrollbar map", on);
 			break;
 		}
 
@@ -466,15 +488,7 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 			if (!on)
 				KCMApplyAllPanelTranslucency();
 
-			PMString msg;
-			if (!on)
-				msg = "Translucent panel: off.";
-			else if (applied)
-				msg = "Translucent panel: on.";
-			else
-				msg = "Translucent panel: on - has no effect while the panel is docked.";
-			msg.SetTranslatable(kFalse);
-			KCMSetStatus(msg);
+			KCMSayTranslucency("Translucent panel", on, applied, "has no effect while the panel is docked.");
 			break;
 		}
 
@@ -498,15 +512,7 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 			if (!on)
 				KCMApplyAllPanelTranslucency();
 
-			PMString msg;
-			if (!on)
-				msg = "Translucent Pages panel: off.";
-			else if (applied)
-				msg = "Translucent Pages panel: on.";
-			else
-				msg = "Translucent Pages panel: on - has no effect while the Pages panel is docked or closed.";
-			msg.SetTranslatable(kFalse);
-			KCMSetStatus(msg);
+			KCMSayTranslucency("Translucent Pages panel", on, applied, "has no effect while the Pages panel is docked or closed.");
 			break;
 		}
 
@@ -532,15 +538,7 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 
 			const bool16 applied = KCMApplyBookDialogTranslucency();
 
-			PMString msg;
-			if (!on)
-				msg = "Translucent book dialog: off.";
-			else if (applied)
-				msg = "Translucent book dialog: on.";
-			else
-				msg = "Translucent book dialog: on - takes effect the next time the dialog is open.";
-			msg.SetTranslatable(kFalse);
-			KCMSetStatus(msg);
+			KCMSayTranslucency("Translucent book dialog", on, applied, "takes effect the next time the dialog is open.");
 			break;
 		}
 
@@ -749,6 +747,21 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 	}
 }
 
+/* KCMSetCheckState - a check-style toggle: **always available, with a check while it is ON**.
+
+   ⚠**Not every toggle is this shape**: "Hide Unchanged Spreads" is greyed unless Started, and the
+     two Pages-panel toggles carry an INTERMEDIATE check (kMultiSelectedAction) when only some of
+     the selected pages are flagged. Reaching for this where the answer is not simply on-or-off is
+     how one of those states quietly disappears.
+*/
+static void KCMSetCheckState(IActionStateList* listToUpdate, int32 i, bool16 on)
+{
+	int16 actionState = kEnabledAction;
+	if (on)
+		actionState |= kSelectedAction;
+	listToUpdate->SetNthActionState(i, actionState);
+}
+
 /* UpdateActionStates - a check-style toggle raises kSelectedAction while it is ON (the same
    practice as docwatch’s DocWchActionComponent::UpdateActionStates). Conditional enabling and
    dynamic labels are answered here as well: Start/Stop (the name is switched, and Start is greyed
@@ -809,60 +822,39 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 		}
 		else if (action == kKCMPopupPrintMarksActionID)
 		{
-			int16 actionState = kEnabledAction;
-			if (Utils<IKCMCompareFacade>()->GetPrintMarks())
-				actionState |= kSelectedAction;	// a check while it is ON
-			listToUpdate->SetNthActionState(i, actionState);
+			KCMSetCheckState(listToUpdate, i, Utils<IKCMCompareFacade>()->GetPrintMarks());
 		}
 		else if (action == kKCMPopupOpacity25ActionID)
 		{
 			// Radio-like: this item carries the check while 25% is in force (exclusive with 75%).
-			int16 actionState = kEnabledAction;
-			if (Utils<IKCMCompareFacade>()->GetMarkOpacity25())
-				actionState |= kSelectedAction;
-			listToUpdate->SetNthActionState(i, actionState);
+			KCMSetCheckState(listToUpdate, i, Utils<IKCMCompareFacade>()->GetMarkOpacity25());
 		}
 		else if (action == kKCMPopupOpacity75ActionID)
 		{
 			// Radio-like: this item carries the check while 75% (= not 25%) is in force.
-			int16 actionState = kEnabledAction;
-			if (!Utils<IKCMCompareFacade>()->GetMarkOpacity25())
-				actionState |= kSelectedAction;
-			listToUpdate->SetNthActionState(i, actionState);
+			KCMSetCheckState(listToUpdate, i, !Utils<IKCMCompareFacade>()->GetMarkOpacity25());
 		}
 		// ★The two "Mark colour" items. Radio-like, as Marks opacity above ＝ the one in force carries
 		//   the check. **Both are always live**: they can be chosen with nothing being compared, and
 		//   they apply to the next Start.
 		else if (action == kKCMPopupColorRedActionID)
 		{
-			int16 actionState = kEnabledAction;
-			if (!Utils<IKCMCompareFacade>()->GetMarkColorCyan())
-				actionState |= kSelectedAction;		// red (the default) puts the check here
-			listToUpdate->SetNthActionState(i, actionState);
+			KCMSetCheckState(listToUpdate, i, !Utils<IKCMCompareFacade>()->GetMarkColorCyan());	// red (the default) puts the check here
 		}
 		else if (action == kKCMPopupColorCyanActionID)
 		{
-			int16 actionState = kEnabledAction;
-			if (Utils<IKCMCompareFacade>()->GetMarkColorCyan())
-				actionState |= kSelectedAction;
-			listToUpdate->SetNthActionState(i, actionState);
+			KCMSetCheckState(listToUpdate, i, Utils<IKCMCompareFacade>()->GetMarkColorCyan());
 		}
 		// ★The two "Compare mode" items. Radio-like, as Marks opacity above ＝ the one in force carries
 		//   the check. **Both are always live**: they can be chosen with nothing being compared, and
 		//   they apply to the next Start.
 		else if (action == kKCMPopupModePixelActionID)
 		{
-			int16 actionState = kEnabledAction;
-			if (Utils<IKCMCompareFacade>()->GetCompareMode() == kKCMModePixel)
-				actionState |= kSelectedAction;
-			listToUpdate->SetNthActionState(i, actionState);
+			KCMSetCheckState(listToUpdate, i, Utils<IKCMCompareFacade>()->GetCompareMode() == kKCMModePixel);
 		}
 		else if (action == kKCMPopupModeStoryActionID)
 		{
-			int16 actionState = kEnabledAction;
-			if (Utils<IKCMCompareFacade>()->GetCompareMode() == kKCMModeStory)
-				actionState |= kSelectedAction;
-			listToUpdate->SetNthActionState(i, actionState);
+			KCMSetCheckState(listToUpdate, i, Utils<IKCMCompareFacade>()->GetCompareMode() == kKCMModeStory);
 		}
 		else if (action == kKCMPopupHideUnchangedActionID)
 		{
@@ -900,74 +892,47 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 		}
 		else if (action == kKCMPopupShowOldNumsActionID)
 		{
-			int16 actionState = kEnabledAction;
-			if (Utils<IKCMCompareFacade>()->GetShowOldPageNumbers())
-				actionState |= kSelectedAction;
-			listToUpdate->SetNthActionState(i, actionState);
+			KCMSetCheckState(listToUpdate, i, Utils<IKCMCompareFacade>()->GetShowOldPageNumbers());
 		}
 		else if (action == kKCMPopupSyncViewsActionID)
 		{
-			int16 actionState = kEnabledAction;
-			if (KCMGetLayoutSync())
-				actionState |= kSelectedAction;
-			listToUpdate->SetNthActionState(i, actionState);
+			KCMSetCheckState(listToUpdate, i, KCMGetLayoutSync());
 		}
 		else if (action == kKCMPopupScrollMapActionID)
 		{
-			int16 actionState = kEnabledAction;
-			if (KCMGetScrollMapEnabled())
-				actionState |= kSelectedAction;	// a check while it is ON (the default)
-			listToUpdate->SetNthActionState(i, actionState);
+			KCMSetCheckState(listToUpdate, i, KCMGetScrollMapEnabled());	// a check while it is ON (the default)
 		}
 		else if (action == kKCMPopupTranslucentPanelActionID)
 		{
 			// ★It can be chosen while docked (it is not greyed) -- the user’s instruction. The case where
 			// pressing it has no visible result is explained by the status wording in DoAction.
-			int16 actionState = kEnabledAction;
-			if (KCMGetPanelTranslucent())
-				actionState |= kSelectedAction;	// a check while it is ON
-			listToUpdate->SetNthActionState(i, actionState);
+			KCMSetCheckState(listToUpdate, i, KCMGetPanelTranslucent());
 		}
 		else if (action == kKCMPopupTranslucentPagesActionID)
 		{
 			// ★Same policy as above: it can be chosen with the Pages panel docked or closed.
 			// (Greying it by "is it floating right now" would make the setting impossible to undo the
 			//  moment the panel goes into a dock.)
-			int16 actionState = kEnabledAction;
-			if (KCMGetPagesPanelTranslucent())
-				actionState |= kSelectedAction;	// a check while it is ON
-			listToUpdate->SetNthActionState(i, actionState);
+			KCMSetCheckState(listToUpdate, i, KCMGetPagesPanelTranslucent());
 		}
 		else if (action == kKCMPopupTranslucentBookDialogActionID)
 		{
 			// ★Same policy as the two above: it can be chosen while the dialog is not open. A setting made
 			// while it is closed takes effect the next time it opens (KCMBookDialog.cpp applies it on every
 			// open).
-			int16 actionState = kEnabledAction;
-			if (KCMGetBookDialogTranslucent())
-				actionState |= kSelectedAction;	// a check while it is ON
-			listToUpdate->SetNthActionState(i, actionState);
+			KCMSetCheckState(listToUpdate, i, KCMGetBookDialogTranslucent());
 		}
 		else if (action == kKCMPopupShowSrcMarksActionID)
 		{
-			int16 actionState = kEnabledAction;
-			if (Utils<IKCMCompareFacade>()->GetShowSourceMarks())
-				actionState |= kSelectedAction;
-			listToUpdate->SetNthActionState(i, actionState);
+			KCMSetCheckState(listToUpdate, i, Utils<IKCMCompareFacade>()->GetShowSourceMarks());
 		}
 		else if (action == kKCMPopupShowTgtMarksActionID)
 		{
-			int16 actionState = kEnabledAction;
-			if (Utils<IKCMCompareFacade>()->GetShowTargetMarks())
-				actionState |= kSelectedAction;
-			listToUpdate->SetNthActionState(i, actionState);
+			KCMSetCheckState(listToUpdate, i, Utils<IKCMCompareFacade>()->GetShowTargetMarks());
 		}
 		else if (action == kKCMPopupIgnorePageNumActionID)
 		{
-			int16 actionState = kEnabledAction;
-			if (Utils<IKCMCompareFacade>()->GetIgnorePageNumberMarker())
-				actionState |= kSelectedAction;
-			listToUpdate->SetNthActionState(i, actionState);
+			KCMSetCheckState(listToUpdate, i, Utils<IKCMCompareFacade>()->GetIgnorePageNumberMarker());
 		}
 		else if (action == kKCMPageMapToggleActionID)
 		{
@@ -1197,9 +1162,7 @@ void KCMActionComponent::DoFindOversetToggle()
 			KCMScrollMapDetachAll();
 		Utils<IKCMCompareFacade>()->InvalidateDB(prevDB);	// nil-safe, as the other calls are
 		KCMRefreshNavPosition();	// take the overset places out of Prev/Next (leaving the comparison alone, or nothing at all)
-		PMString msg("Find Overset: off.");
-		msg.SetTranslatable(kFalse);
-		KCMSetStatus(msg);
+		KCMSetStatus("Find Overset: off.");
 		return;
 	}
 
@@ -1208,9 +1171,7 @@ void KCMActionComponent::DoFindOversetToggle()
 	IDataBase* db = Utils<IKCMCompareFacade>()->GetOversetScanTargetDB();
 	if (db == nil)
 	{
-		PMString msg("Find Overset: no active document.");
-		msg.SetTranslatable(kFalse);
-		KCMSetStatus(msg);
+		KCMSetStatus("Find Overset: no active document.");
 		return;
 	}
 	Utils<IKCMCompareFacade>()->ApplyOversetForDoc(db);
@@ -1224,9 +1185,7 @@ void KCMActionComponent::DoFindOversetToggle()
 	//     the truth disagree, so the state is read back and reported.
 	if (!Utils<IKCMMarkData>()->GetOversetOn())
 	{
-		PMString msg("Find Overset: document is gone.");
-		msg.SetTranslatable(kFalse);
-		KCMSetStatus(msg);
+		KCMSetStatus("Find Overset: document is gone.");
 		return;
 	}
 
@@ -1248,9 +1207,7 @@ void KCMActionComponent::DoRefreshOverset()
 	IDataBase* db = Utils<IKCMCompareFacade>()->GetOversetScanTargetDB();
 	if (db == nil)
 	{
-		PMString msg("Refresh Overset: no active document.");
-		msg.SetTranslatable(kFalse);
-		KCMSetStatus(msg);
+		KCMSetStatus("Refresh Overset: no active document.");
 		return;
 	}
 	Utils<IKCMCompareFacade>()->ApplyOversetForDoc(db);	// rescan and apply (with another document, the previous one’s marks are cleared as well) - gathered in the shared call

@@ -94,6 +94,32 @@ PMReal KCMBaseScreenOpacity()
 	       ? KCMDrawEventHandler::SelectedMarkOpacity() : PMReal(1.0);
 }
 
+// Every paired page of the two documents as target UID -> source UID, **masters included**.
+//
+// The two rules differ -- ordinary pages pair by position, master spreads by name -- so they come
+// from two separate functions, and both go into ONE map: page UIDs are unique within a document.
+// (The view sync's KCMEnsureSyncPairing has the same shape.)
+//
+// @warning **leaving the masters out is a bug that hides.** Both callers below had it once, and
+//   both times it looked like something else: the peek showed nothing at all on a master page,
+//   and selecting a master and choosing Refresh found nothing in the pairing and silently
+//   reported "no pages". **The comparison itself had learned to handle masters while the callers
+//   of this pairing had not, so the frames appeared but nothing else worked on them.**
+static void KCMBuildFullPairing(IDataBase* targetDB, IDataBase* sourceDB,
+                                std::map<UID, UID>& outTargetToSource)
+{
+	std::vector<UID> pairT, pairS;
+	KCMBuildPairing(targetDB, sourceDB, pairT, pairS);
+	for (size_t k = 0; k < pairT.size(); ++k)
+		outTargetToSource[pairT[k]] = pairS[k];
+
+	std::vector<UID> mT, mS;
+	KCMBuildMasterPairing(targetDB, sourceDB, mT, mS);
+	for (size_t k = 0; k < mT.size(); ++k)
+		outTargetToSource[mT[k]] = mS[k];
+}
+
+
 // Lay the older version of the spread at **the given point** over the current one.
 //   targetDB is the document on display (newer), sourceDB the older one laid over it.
 //   A spread already in the cache is reused immediately; otherwise the old cache is thrown away
@@ -217,23 +243,8 @@ void KCMPeekShowAt(IDataBase* targetDB, IDataBase* sourceDB,
 		KCMDrawEventHandler::sOrigDB = targetDB;
 		KCMDrawEventHandler::sOrigScale = effScale;	// remembered so a later peek can tell whether to rebuild
 		// The pairing is the same for every page of the spread, so it is built once before the loop.
-		std::vector<UID> pairT, pairS;
-		KCMBuildPairing(targetDB, sourceDB, pairT, pairS);
 		std::map<UID, UID> targetToSource;
-		for (size_t k = 0; k < pairT.size(); ++k)
-			targetToSource[pairT[k]] = pairS[k];
-		// **The master spread pairs go into the same table** -- without them a master page showed
-		//   no peek at all. Page UIDs are unique within a document, so both kinds can live in one
-		//   map, which is what the partial re-comparison (KCMRefreshComparisonCore) and the view
-		//   sync (KCMEnsureSyncPairing) already do.
-		//   @warning **the rules themselves differ** (ordinary pages pair by position, masters by
-		//   name), so the two are built by two separate functions.
-		{
-			std::vector<UID> mT, mS;
-			KCMBuildMasterPairing(targetDB, sourceDB, mT, mS);
-			for (size_t k = 0; k < mT.size(); ++k)
-				targetToSource[mT[k]] = mS[k];
-		}
+		KCMBuildFullPairing(targetDB, sourceDB, targetToSource);
 		for (int32 p = 0; p < np; ++p)
 		{
 			const UID tPageUID = spread->GetNthPageUID(p);
@@ -293,25 +304,8 @@ static bool16 KCMRefreshComparisonCore(IDataBase* targetDB, IDataBase* sourceDB,
 	KCMDrawEventHandler::sDB = targetDB;
 
 	// Build the exclusion pairing once, so that target -> source can be looked up.
-	std::vector<UID> pairT, pairS;
-	KCMBuildPairing(targetDB, sourceDB, pairT, pairS);
 	std::map<UID, UID> targetToSource;
-	for (size_t k = 0; k < pairT.size(); ++k)
-		targetToSource[pairT[k]] = pairS[k];
-
-	// **The master spread pairs go into the same table.** Page UIDs are unique within a document,
-	//   so both kinds live in one map (the same shape as the view sync's KCMEnsureSyncPairing).
-	//   Until they did, selecting a master page and choosing Refresh found nothing in the pairing
-	//   and silently reported "no pages": the comparison had learned to handle masters while the
-	//   partial re-comparison had not, so **the frames appeared but could not be refreshed**.
-	//   The two rules are the same pair the comparison itself uses (ordinary pages by position,
-	//   masters by name).
-	{
-		std::vector<UID> mT, mS;
-		KCMBuildMasterPairing(targetDB, sourceDB, mT, mS);
-		for (size_t k = 0; k < mT.size(); ++k)
-			targetToSource[mT[k]] = mS[k];
-	}
+	KCMBuildFullPairing(targetDB, sourceDB, targetToSource);
 
 	// Re-compare the given pages and update their rings. The pages touched -- each target page and
 	// its counterpart -- are collected so the Pages panel thumbnails can be purged per UID
@@ -502,6 +496,31 @@ static bool16 KCMRefreshComparisonCore(IDataBase* targetDB, IDataBase* sourceDB,
 	return kTrue;
 }
 
+// The two documents of a RUNNING PIXEL comparison, or kFalse (leaving both out arguments nil).
+//
+// **The command and the test that greys the command out ask exactly this**, and asking it in one
+// place is what keeps the menu's answer and the command's answer from drifting apart
+// ([[one-question-one-place]]) -- the pair below is the same shape as KCMResolveComparisonPair,
+// which exists for the same reason.
+// @warning **the Story mode is excluded on purpose**: it rasterises no page, so "re-compare these
+//   pages" has nothing to do there. It has a refresh of its own ("Refresh Story Comparison" on a
+//   Story Edits row), so each mode has exactly one way to refresh and the two do not overlap.
+static bool16 KCMQueryPixelComparePair(IDataBase*& outTarget, IDataBase*& outSource)
+{
+	outTarget = nil;
+	outSource = nil;
+
+	if (!KCMIsArmed())
+		return kFalse;
+	if (KCMGetCompareMode() == kKCMModeStory)
+		return kFalse;
+
+	outTarget = KCMArmedTargetDB();
+	outSource = KCMArmedSourceDB();
+	return (outTarget != nil && outSource != nil) ? kTrue : kFalse;
+}
+
+
 // Re-detect and update the comparison of the pages selected in the Pages panel -- the body behind
 // the context-menu item "Refresh Page Comparison". It runs only while a comparison is armed and
 // with the Target as the frontmost document.
@@ -514,17 +533,13 @@ bool16 KCMRefreshComparisonForSelectedPages(int32* outPages, int32* outChanged, 
 	if (outCancelled) *outCancelled = kFalse;
 	if (outFailed)    *outFailed = 0;
 
-	if (!KCMIsArmed())
-		return kFalse;
-	// Never in the Story mode. KCMRefreshComparisonAvailable has already removed the menu item, so
-	//   this is not normally reached -- but an ActionID can be given a keyboard shortcut, so **the
-	//   command refuses on its own account too**: this is the "what happens when it is invoked"
-	//   side, and it has entry points the menu's appearance does not govern.
-	if (KCMGetCompareMode() == kKCMModeStory)
-		return kFalse;
-	IDataBase* targetDB = KCMArmedTargetDB();
-	IDataBase* sourceDB = KCMArmedSourceDB();
-	if (targetDB == nil || sourceDB == nil)
+	// @warning the command refuses on its own account, not only through the greyed-out menu:
+	//   KCMRefreshComparisonAvailable has normally removed the item already, but **an ActionID can
+	//   be given a keyboard shortcut**, so this side has entry points the menu's appearance does
+	//   not govern.
+	IDataBase* targetDB = nil;
+	IDataBase* sourceDB = nil;
+	if (!KCMQueryPixelComparePair(targetDB, sourceDB))
 		return kFalse;
 
 	// Read the Pages panel's selection through the reader Register and Check share
@@ -581,23 +596,16 @@ bool16 KCMRefreshComparisonForSelectedPages(int32* outPages, int32* outChanged, 
 //   on the same source ([[one-question-one-place]]).
 bool16 KCMRefreshComparisonAvailable()
 {
-	if (!KCMIsArmed())
-		return kFalse;
-	// **Not offered in the Story mode.** What this item rebuilds is the result of comparing
-	//   pixels, and the Story mode rasterises no page at all (KCMDoMarkChangesDoc empties
-	//   toRaster). Pressing it would spend time redrawing the selected pages one by one and
-	//   **change nothing on screen**, the drawing side holding the rings back with
-	//   `drawRings = (mode != Story)`.
-	// **The Story mode has a refresh of its own**: "Refresh Story Comparison" on the context menu
-	//   of a Story Edits row. Each mode therefore has exactly one way to refresh, and they do not
-	//   overlap.
+	// **Not offered in the Story mode** (KCMQueryPixelComparePair refuses there). What this item
+	//   rebuilds is the result of comparing pixels, and the Story mode rasterises no page at all
+	//   (KCMDoMarkChangesDoc empties toRaster). Pressing it would spend time redrawing the selected
+	//   pages one by one and **change nothing on screen**, the drawing side holding the rings back
+	//   with `drawRings = (mode != Story)`.
 	// Disabling it **removes the item entirely**, a context menu showing no disabled items. That
 	//   is the intent.
-	if (KCMGetCompareMode() == kKCMModeStory)
-		return kFalse;
-	IDataBase* targetDB = KCMArmedTargetDB();
-	IDataBase* sourceDB = KCMArmedSourceDB();
-	if (targetDB == nil || sourceDB == nil)
+	IDataBase* targetDB = nil;
+	IDataBase* sourceDB = nil;
+	if (!KCMQueryPixelComparePair(targetDB, sourceDB))
 		return kFalse;
 	IDataBase* db = KCMActiveDocDB();
 	return (db != nil && db == targetDB) ? kTrue : kFalse;
@@ -825,6 +833,13 @@ bool16     KCMIsArmed()        { return sPeekArmed; }
 IDataBase* KCMArmedTargetDB()  { return sPeekTargetDB; }
 IDataBase* KCMArmedSourceDB()  { return sPeekSourceDB; }
 
+// KCMIsComparedDoc (declared in KCMCore.h) -- the three above in the combination the per-page
+// flags always want. It sits here because that is where the three it is built from live.
+bool16 KCMIsComparedDoc(IDataBase* db)
+{
+	return KCMIsArmed() && (db == sPeekTargetDB || db == sPeekSourceDB);
+}
+
 //========================================================================================
 // KCMHandleDocsClosed (declared in KCMCore.h)
 //   Called right after documents close (from the kAfterCloseDoc responder). Every database KCM is
@@ -996,9 +1011,7 @@ void KCMHandleDocsClosed()
 		// anyway, so nothing is touched.
 		if (!quitting)
 		{
-			PMString s("marks cleared");	// the same message the Stop button reports
-			s.SetTranslatable(kFalse);
-			KCMNotifyStatus(s);
+			KCMSayStatus("marks cleared");	// the same message the Stop button reports
 
 			KCMInvalidateDB(survivorTargetDB);
 			if (survivorOrigDB != survivorTargetDB)
