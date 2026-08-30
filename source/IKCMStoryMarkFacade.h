@@ -20,11 +20,21 @@
 //  equivalent for page item adornments, which is why kKCMRingAdornmentStartupBoss exists and why
 //  nothing like it is needed here (KCM.fr states the contrast in full).
 //
-//  NO STL ACROSS THIS BOUNDARY, AND THAT IS WHY ShowJumpFlash HAS SIX PARAMETERS. The marker's own
-//  vocabulary is a nested std::map (database -> story -> ranges), which must not cross a DLL edge.
-//  The rest of this plug-in's boundary answers the same way - IKCMStoryEditsFacade hands out one
-//  flat Row at a time rather than the list - and a jump only ever names TWO ranges (the same story
-//  seen in each of the two documents), so nothing variable-length has to travel.
+//  SIX PARAMETERS RATHER THAN THE MARKER'S OWN TYPE, BECAUSE THE UI DOES NOT BUILD RANGES. The
+//  marker's vocabulary is a nested std::map (database -> story -> ranges); handing that across
+//  would put the UI in charge of WHAT IS LIT, which is the one thing the rule below reserves for
+//  the model. A jump names only TWO ranges (the same story seen in each of the two documents), so
+//  six numbers say all of it and nothing variable-length has to travel.
+//  @warning THIS IS NOT AN ABI RULE, whatever this header said until 2026-08-30 ("must not cross
+//  a DLL edge"). Containers cross this very boundary in eleven places already - IKCMMarkData passes
+//  std::vector / std::set in eight methods, IKCMBookFacade::CompareBooks in one, and
+//  KCMNotifyPayload carries two const std::set<UID>* - and they are safe because both halves are
+//  built here, against one RuntimeLibrary=MultiThreadedDLL (build/win/prj/Release.props), so they
+//  share a heap. Adobe crosses it the same way: K2Vector IS std::vector in this SDK (K2Vector.h:35,
+//  reached because Base.props defines K2_BE_GONE=1), and pure virtuals in public/interfaces take a
+//  K2Vector<UID> in fifteen places. IKCMStoryEditsFacade hands out one flat Row at a time for a
+//  DIFFERENT reason again - OWNERSHIP, not ABI: the model's row is a pointer into a list it may
+//  rebuild underneath the caller, as that header says itself.
 //
 //  THE OLDER DOCUMENT IS NOT PASSED, BUT THE ROW'S OWN ONE IS, AND THE ASYMMETRY IS REAL. Which
 //  document a Story Edits row is READ OUT OF depends on the row: a Removed story exists only in

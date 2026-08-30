@@ -93,8 +93,13 @@ public:
 			not be opened or compared is not a failure of the run: it comes back as a VERDICT on that
 			chapter (Failed / NotCompared, with a reason), which is the whole point of the result
 			list, and a cancelled run is a normal ending too. The ErrorCode is here because that is
-			the shape a facade method takes (the guide's seventh rule for writing one), not because
-			there is a failure to report.
+			the shape a facade method takes (the gs-04 guide's rule that a facade method which
+			writes data returns one - stated by what it says, not by its number, which was cited
+			wrongly here until 2026-08-30), not because there is a failure to report.
+			@warning that rule is about METHODS THAT WRITE DATA, and this one writes none: it opens
+			each chapter pair, reads them and closes them again. Keeping the ErrorCode is a choice
+			to look like the rest of the boundary, not a requirement - which is why the caller may
+			ignore it without a second thought.
 			@warning anything that ever DOES return a failure from here has to change KCMBookRun.cpp,
 			which today stores and shows the result without asking. */
 	virtual ErrorCode	CompareBooks(IBook* target, IBook* source,
