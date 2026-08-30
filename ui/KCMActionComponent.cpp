@@ -862,8 +862,11 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 		//     and the refusal cannot part company.
 		//   ⚠**Not greyed when the same document is already chosen for the other one.** Choosing one
 		//     document for both is allowed, and the panel showing the same name twice is the reader
-		//     seeing what they asked for; what refuses is the Start, with a message that says which
-		//     of the two to change (KCMToggleStartStop).
+		//     seeing what they asked for; what refuses is the Start, with a message naming both ways
+		//     out of it (KCMToggleStartStop). ★**Both, because setting is not the only way in**: the
+		//     commoner one is choosing a Source alone and pressing Start without switching documents,
+		//     since the unchosen Target then resolves to that very document -- and the way out of
+		//     that one is to bring the other document to the front.
 		else if (action == kKCMPopupSetTargetActionID || action == kKCMPopupSetSourceActionID)
 		{
 			InterfacePtr<IKCMCompareFacade> compare(Utils<IKCMCompareFacade>().QueryUtilInterface());

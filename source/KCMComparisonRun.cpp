@@ -30,6 +30,7 @@
 #include "KCMModelNotify.h"	// KCMNotifyStatus / KCMNotify - the model tells the UI, it never calls it
 #include "KCMDrawEventHandler.h"	// sSrcMarksOn / sOversetOn / sOversetDB
 #include "KCMOversetApply.h"		// KCMApplyOversetForDoc -- re-apply overset on Start and on Stop
+#include "KCMThreadSafety.h"		// KCMIsSameDoc -- the one place this plug-in asks whether two dbs are one document
 
 //----------------------------------------------------------------------------------------
 // The resolver: which two documents to compare
@@ -95,25 +96,29 @@ IDataBase* KCMChosenSourceDB()	{ return (KCMLiveChosenDoc(sChosenSourceDB) != ni
 // menu and the comparison agreeing about which document that is
 // ([[document-activation-is-presentation]] -- GetNthDoc(0) and GetFrontDocument each mean
 // something else).
+//   **Asked through KCMActiveDocDB, not KCMActiveDoc plus a GetUIDRef written out here**: that
+//   pair IS KCMActiveDocDB (KCMCore.cpp), and it is what the UI's UpdateActionStates already goes
+//   through the facade to reach (GetActiveDocDB) when it decides whether to grey these two items.
+//   Spelled out a second time, the greying and the setting would be two answers to one question.
 //
 // **Setting the same document as both is allowed.** The reader may well want to point at one
 // document twice while working out which is which; what refuses is the Start
 // (KCMToggleStartStop), where a comparison of a document against itself is meaningless.
 bool16 KCMSetChosenTargetToActive()
 {
-	IDocument* doc = KCMActiveDoc();
-	if (doc == nil)
+	IDataBase* db = KCMActiveDocDB();
+	if (db == nil)
 		return kFalse;			// the flyout greys the item in this case; this guards a document closing while the menu stands open
-	sChosenTargetDB = ::GetUIDRef(doc).GetDataBase();
+	sChosenTargetDB = db;
 	return kTrue;
 }
 
 bool16 KCMSetChosenSourceToActive()
 {
-	IDocument* doc = KCMActiveDoc();
-	if (doc == nil)
+	IDataBase* db = KCMActiveDocDB();
+	if (db == nil)
 		return kFalse;
-	sChosenSourceDB = ::GetUIDRef(doc).GetDataBase();
+	sChosenSourceDB = db;
 	return kTrue;
 }
 
@@ -129,6 +134,19 @@ void KCMForgetChosenDocsThatClosed(IDocumentList* docList)
 		sChosenTargetDB = nil;
 	if (sChosenSourceDB != nil && docList->FindDocByDataBase(sChosenSourceDB) == nil)
 		sChosenSourceDB = nil;
+}
+
+// KCMClearChosenDocs (declared in KCMComparisonRun.h) -- the model's Shutdown drops both, in the
+// same slot and for the same reason as the peek's armed state (KCMPeekStartup::Shutdown): left
+// standing, a kAfterCloseDoc responder arriving after shutdown reaches
+// KCMForgetChosenDocsThatClosed and weighs a stale pointer against the live document list. The
+// normal order -- documents close, then Shutdown -- should never allow that, so this is
+// defensive. Assignment only, nothing dereferenced, and idempotent, so it is safe at any point in
+// the shutdown sequence.
+void KCMClearChosenDocs()
+{
+	sChosenTargetDB = nil;
+	sChosenSourceDB = nil;
 }
 
 // The first open document that is not `target` = the Source (the older version).
@@ -320,9 +338,28 @@ void KCMToggleStartStop()
 	// and pressing it answers (user's instruction: "rejected at the start, with a message on the
 	// panel"). The automatic rule cannot produce this case -- KCMFirstOtherDoc excludes the
 	// Target -- so it only ever arises from a choice, and the message can say so.
-	if (target == source)
+	//
+	// ★**Asked of KCMIsSameDoc, which is where this plug-in answers "are these two one document".**
+	// Everywhere else the question is put to it and never to `==` (the drawing side says so in as
+	// many words: "KCMIsSameDoc, NOT ==", KCMStoryMarkBuild.cpp). Comparing the IDocument* the
+	// resolver handed back would have been a second way of asking, and would have rested on the
+	// two routes into a document -- GetContextDocument and FindDocByDataBase -- giving out one
+	// pointer for one document, which nothing here has established.
+	//   ★**Its background-thread half does not come into it here** (a clone db is a different
+	//   pointer naming the same file): this runs from a menu, so both sides are the main thread's
+	//   own databases and the answer is settled by the pointer test at its head. Going through it
+	//   anyway is what keeps the one question in one place -- and what stops the next reader from
+	//   having to work out whether this spot is the exception.
+	//
+	// ⚠**The message names both ways out**, because this case is reached from two different
+	// mistakes and their remedies are not the same. Choosing one document for both is the obvious
+	// one. **The commoner one is choosing only a Source and pressing Start without switching
+	// documents**: "Set as Source" takes the ACTIVE document, so the Target, left unchosen,
+	// resolves to that very document. The way out of that one is to bring the other document to
+	// the front -- setting something is what the reader has already done.
+	if (KCMIsSameDoc(::GetUIDRef(target).GetDataBase(), ::GetUIDRef(source).GetDataBase()))
 	{
-		KCMSayStatus("Target and Source are the same document. Set one of them to another document.");
+		KCMSayStatus("Target and Source are the same document. Bring another document to the front, or set one of them to another document.");
 		// As in the branch above: this one returns without reaching the end of the function, so it
 		// asks for the panel refresh itself. No document travels with it -- nothing has changed but
 		// what the status line says.

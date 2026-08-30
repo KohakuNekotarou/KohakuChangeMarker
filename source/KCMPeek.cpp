@@ -773,6 +773,14 @@ void KCMPeekStartup::Shutdown()
 	sPeekArmed = kFalse;
 	sPeekTargetDB = nil;
 	sPeekSourceDB = nil;
+	// The chosen Target/Source ("Set as Target" / "Set as Source") go with them, for exactly the
+	// same reason: they are model-side statics that the same responder path reads
+	// (KCMForgetChosenDocsThatClosed). They live in KCMComparisonRun.cpp, so the clearing is
+	// reached through a function of its own -- as with the book result and the export message
+	// above.
+	// ⚠**Here and not in the close sweep's comparisonDocClosed branch**: that branch is the
+	// comparison's own all-or-nothing clean-up, and a choice outlives a Stop by design.
+	KCMClearChosenDocs();
 
 	// (Dropping the sync caches, clearing the sync flags and the CMYK clean-up all live in the UI's
 	//  KCMUIStartup.cpp, that state belonging to UI files.)

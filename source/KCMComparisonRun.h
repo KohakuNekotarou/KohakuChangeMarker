@@ -74,6 +74,12 @@ IDataBase*	KCMChosenSourceDB();
 // "not in the list" means "closed" (a background thread sees clones, guide vol1-07).
 void	KCMForgetChosenDocsThatClosed(IDocumentList* docList);
 
+// Drop both choices. Called from the model's Shutdown (KCMPeekStartup::Shutdown), which closes
+// every model-side static on the principle that nothing live may reach static destruction -- the
+// same slot as the peek's armed state, and defensive for the same reason (a close responder
+// firing after shutdown). Assignment only, so it is safe anywhere in the shutdown sequence.
+void	KCMClearChosenDocs();
+
 // The print-marks toggle: flips the current print flag and keeps the current opacity choice.
 void	KCMTogglePrintMarks();
 
