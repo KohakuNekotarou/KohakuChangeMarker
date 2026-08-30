@@ -49,7 +49,6 @@
 							// (ClearCache is no longer called - see InstallCmykCursor)
 
 #include "KCMUIID.h"
-#include "KCMConstants.h"	// kKCMCursorSettleMillis (the settle wait after the install)
 #include "KCMPeekGesture.h"	// KCMClassifyGesture / KCMTrackerRevealBegin / KCMTrackerRevealEnd
 #include "KCMCmykCursor.h"	// the CMYK cursor entry points (HasPending / CursorProc / UpdateCmykDrag)
 #include "KCMTrackerHud.h"	// says Target/Source top-left while the button is held (drawn on the draw event)
@@ -57,9 +56,23 @@
 #include <chrono>			// milliseconds, for that settle wait
 #include <thread>			// std::this_thread::sleep_for, likewise (the same on Windows and Mac)
 
+// Settle time (ms) after installing the CMYK cursor: the cursor is installed while hidden with
+// ICursorMgr::Hide(), and Show() follows this delay. 0 = no wait.
+// Hiding alone is not enough - the hidden stretch has to contain real elapsed time, or one
+// stale frame reaches the screen, because the hardware cursor is composited by the OS
+// independently of the app. Only a blocking wait fixes it, which puts whatever is being waited
+// for on the OS / cursor manager side rather than in our own code.
+// Measured: 0 = garbage frames, 30 = clean, 60 = clean. This is the only knob for "how long the
+// cursor stays invisible after the press" - the expensive sampling happens outside the wait.
+// It is 0 today because the checkmark cursor became a PNG resource, which removed the source of
+// the extra frame. Put it back to 30 if garbage frames reappear.
+// ★It lived in the model half's KCMConstants.h until 2026-08-30, when the API re-audit of M1
+//   found this file was its only reader. Now it sits next to the scope guard that is that reader.
+static const int32 kKCMCursorSettleMillis = 0;
+
 /** Guarantees the ICursorMgr::Hide() -> Show() pair by scope.
 	The install of a cursor takes one frame in which rubbish can be seen, so it is bracketed by
-	Hide/Show (how that was pinned down is at kKCMCursorSettleMillis in KCMConstants.h).
+	Hide/Show (how that was pinned down is at kKCMCursorSettleMillis, just above).
 	★Miss the Show and the cursor stays invisible for good, so it is left to the scope rather than
 	written out.
 	With mgr == nil it does nothing - nothing needs covering (a gesture other than CMYK, or no value
@@ -185,7 +198,7 @@ public:
 		//     and the cursor visibly disappears (also reported).
 		//   -> As it stands: (2) is finished before anything is hidden (computed with the checkmark cursor
 		//     still up), and what is hidden is only (1) + (3) + the settle wait. The wait is
-		//     kKCMCursorSettleMillis (KCMConstants.h); raise it if rubbish is ever seen again.
+		//     kKCMCursorSettleMillis (top of this file); raise it if rubbish is ever seen again.
 		//   ★AutoBusyCursor(kFalse) keeps the command layer's automatic busy cursor from cutting in
 		//     during the sampling ---- the same thing the base does in InitializeModalCursor, brought
 		//     forward. Leaving the scope puts it back.

@@ -3,8 +3,9 @@
 //  KCMConstants.h
 //
 //  Tuning constants for ChangeMarker (KCM). Read by the drawing engine, peek, the book
-//  comparison and the color sampler on this side, and by KCMPanelAlpha.cpp and KCMTracker.cpp
-//  in the UI half - the four constants at the end of this file are used ONLY over there.
+//  comparison and the color sampler - ALL OF THEM ON THE MODEL SIDE. Nothing under ui/ includes
+//  this header (2026-08-30; the four constants that were read only from over there moved to the
+//  files that read them - see the note at the end).
 //
 //  Namespace-scope const has internal linkage in C++ whether or not `static` is written, so each
 //  TU gets its own copy and there is no ODR issue either way. The `static` below is redundant,
@@ -115,18 +116,6 @@ static const PMReal kKCMExcludeFillOpacity = 0.35;	// opacity of the excluded-ar
 static const PMReal kKCMSampleDpi    = 300.0;	// raster resolution (dpi) of the sample
 static const PMReal kKCMSampleHalfPt = 1.0;	// half-width (pt) of the sampled area. At 300dpi that is about 2pt square (8px), of which the center pixel is read.
 
-// Settle time (ms) after installing the CMYK cursor: the cursor is installed while hidden with
-// ICursorMgr::Hide(), and Show() follows this delay (KCMTracker.cpp, BeginTracking). 0 = no wait.
-// Hiding alone is not enough - the hidden stretch has to contain real elapsed time, or one
-// stale frame reaches the screen, because the hardware cursor is composited by the OS
-// independently of the app. Only a blocking wait fixes it, which puts whatever is being waited
-// for on the OS / cursor manager side rather than in our own code.
-// Measured: 0 = garbage frames, 30 = clean, 60 = clean. This is the only knob for "how long the
-// cursor stays invisible after the press" - the expensive sampling happens outside the wait.
-// It is 0 today because the checkmark cursor became a PNG resource, which removed the source of
-// the extra frame. Put it back to 30 if garbage frames reappear.
-static const int32 kKCMCursorSettleMillis = 0;
-
 // Original page number badge (flyout "Show Original Page Numbers"). Hiding spreads makes
 // InDesign renumber the current-page markers across the gap, so the number a page had before
 // hiding is drawn at the bottom center of the page, under the same visibility rules as the ring
@@ -144,36 +133,14 @@ static const PMReal kKCMOldNumR = 0.0, kKCMOldNumG = 0.0, kKCMOldNumB = 0.0;
 static const PMReal kKCMOldNumHaloEm = 0.06;	// halo thickness (em)
 static const PMReal kKCMOldNumPadEm  = 0.20;	// padding of the transparency group bbox (em), wide enough for the halo to fit
 
-// Alpha of the translucent panel (flyout "Translucent Panel"). 0 = fully transparent,
-// 255 = opaque; 77 is about 30%. Rolling the pointer over the panel brings it back to opaque
-// (IMouseRollOver), which is what lets it be this faint while idle. There is no slider and no
-// step setting, so this one place is where the density is changed. Windows only, implemented in
-// KCMPanelAlpha.cpp.
-// Never set this to 0. MSDN, Window Features / Layered Windows: "Hit testing of a layered window
-// is based on the shape and transparency of the window. This means that the areas of the window
-// that are color-keyed or whose alpha value is zero will let the mouse messages through". At 0
-// the panel stops receiving the pointer at all, and since the whole feature rests on "opaque
-// again once the pointer is over it", the way back is lost together with it. The "0 = fully
-// transparent" above documents what the argument means, not a value to put here.
-static const uint8 kKCMPanelAlphaValue = 77;
-// How many times, and how far apart, the alpha is applied again after the notification.
-// Writing alpha when kPaletteVisibilityChangedMessage arrives is not enough: InDesign may
-// rebuild the top-level window right afterwards and throw the value away - diagnostics read back
-// rb=128 while an outside measurement said 255, and the HWND written to was not the window that
-// actually existed at the time. So the value is re-applied on idle a few times until the window
-// settles. 0 turns the delayed re-apply off.
-// Count and interval come from tracking window replacement at 40ms: turning the panel into an
-// icon (one click) settled within 3ms, but making it float (drag and release) never settled and
-// stayed at 255, because a drag leaves a far longer gap between the notification and the final
-// window. About 400ms of chasing covers it.
-static const int32  kKCMPanelAlphaReapplyTries       = 8;
-static const uint32 kKCMPanelAlphaReapplyDelayMillis = 50;	// 50ms * 8 = about 400ms of chasing
-// The panel shadow (OWL.ShadowView) is controlled by showing and hiding it, not by alpha, and
-// there is no density constant for it: the shadow is drawn with per-pixel alpha, which is
-// exclusive with a uniform alpha, so once alpha has been set the original shadow does not come
-// back when the toggle goes off. MSDN does describe a way back - "subsequent UpdateLayeredWindow
-// calls will fail until the layering style bit is cleared and set again" - but clearing
-// WS_EX_LAYERED on a window InDesign owns breaks its own drawing, so for us it is one-way.
-// See KCMPanelAlpha.cpp for the details.
+// ⚠ THE UI HALF'S TUNING CONSTANTS ARE NOT HERE. The translucent panel's alpha and its delayed
+// re-apply (kKCMPanelAlphaValue / ...ReapplyTries / ...ReapplyDelayMillis) and the CMYK cursor's
+// settle wait (kKCMCursorSettleMillis) lived in this header until 2026-08-30. The API re-audit of
+// M1 measured the readers: no file under source/ used any of the four, and each was read by
+// exactly one file under ui/. They now sit at the top of those files (KCMPanelAlpha.cpp and
+// KCMTracker.cpp), which is the shape the rest of the UI half already used for a file-local
+// tuning value (KCMScrollMap.cpp, KCMThumbIdleTask.cpp, KCMTrackerHud.cpp) and the shape the
+// product code uses (linksui/LinksUIUtils.cpp).
+// ⇒ **No file under ui/ includes this header any more.**
 
 #endif // __KCMConstants_h__

@@ -259,8 +259,17 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 	//
 	// So the hook has to sit on the SAVE, not on the close. kBeforeSaveDoc covers both ways a
 	// document reaches the disk: File > Save, and the save that a close performs.
-	// ⚠ Save As and Save a Copy raise their own signals (kBeforeSaveAsDoc /
-	// kBeforeSaveACopyDoc, DocumentID.h:318,321) and are NOT covered here.
+	// ★★★ Save As and Save a Copy are DELIBERATELY NOT ANSWERED, and that is the feature, not a
+	// gap. They raise their own signals (kBeforeSaveAsDoc / kBeforeSaveACopyDoc,
+	// DocumentID.h:318,321) and this boss names none of them, so those two paths write the
+	// document with its spreads STILL HIDDEN. The division the user asked for:
+	//     Save / closing save  -> spreads restored, the original file stays honest
+	//     Save As / Save a Copy -> spreads kept hidden, for when that copy is what you want
+	// ⚠ THE REASON AND THE MEASUREMENT LIVE IN ONE PLACE ONLY - the header comment of
+	// KCMDocResponder.cpp, above KCMBeforeSaveDocResponder. Read it before touching this block.
+	// This line used to stop at "are NOT covered here", which reads as an oversight; the API
+	// re-audit of 2026-08-30 duly reported it as one, having read this file and not that one.
+	// ⚠ Adding a signal here destroys the division. Say so before doing it.
 	//
 	// ★Still the "one signal, one boss, no ServiceProvider of its own" shape as above - the
 	// CServiceProvider + HasMultipleIDs shape is only needed by a boss answering several signals,
