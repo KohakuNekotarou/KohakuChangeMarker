@@ -365,7 +365,14 @@ ErrorCode KCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef& 
 	//   greeked alike, so **a change in small text produces no difference at all**
 	//   (SnapshotUtilsEx.h:224-225 -- the threshold is "point size multiplied by the scaling", and
 	//   the header does not say what that scaling is, so whether it kills everything under 7pt or
-	//   only under 3.5pt cannot be settled). KCM compares pixels, so it passes 0.0 and always gets
+	//   only under 3.5pt cannot be settled; the 3.5 is 7.0 over this rasterisation's 144dpi / 72.
+	//   The nearest the SDK comes to an answer is IDrawOptions.h:279, which calls the same setting
+	//   "at what **effective** point size do we start greeking the text" -- the size as drawn
+	//   rather than as typed -- but it still does not say what multiplies it here.
+	//   **This is the one place that question is written out**: KCMColorSampler.cpp, which
+	//   rasterises at 300dpi for the CMYK sample, points at this line instead of answering it
+	//   again -- it did answer it once, and got both the multiplier and this file's dpi wrong).
+	//   KCM compares pixels, so it passes 0.0 and always gets
 	//   letterforms; the price is a slightly slower rasterisation on pages full of small text.
 	//   The official sample (snapshot/SnapTracker.cpp:318) leaves the default, but its purpose is
 	//   a visual snapshot. **Target and source must use the same value.**

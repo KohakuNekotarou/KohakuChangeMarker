@@ -136,13 +136,18 @@ static bool16 KCMReadCmykPixel(const UIDRef& pageRef, const PMPoint& spreadPt, u
 	//   bar appears on both sides, the two values agree and the mistake is invisible. Reading
 	//   pixels therefore wants greeking off, the same judgement the comparison rasterisation
 	//   (MakeEntry) makes. It costs only a slightly slower rasterisation of a 2pt square.
-	//   @warning **the greek threshold is multiplied by the scale** ("its point size multiplied by
-	//     the scaling is less than the greek below value"). At the 300dpi used here that is 4.17x,
-	//     so even the default would only have greeked text below about 1.68pt: the danger above is
-	//     narrower than it reads.
-	//     **It is decisive in the comparison rasterisation instead**, which runs at 36dpi (0.5x):
-	//     the default greeks everything below 14pt, which is the body text of most documents. The
-	//     same 0.0 matters far more there.
+	//   @warning **how far the default would actually reach cannot be worked out here.** The header
+	//     says the threshold is "its point size multiplied by the scaling" but never says what that
+	//     scaling is: at the 300dpi used here it is either 4.17x (300/72, so only text below about
+	//     1.68pt) or 1.0x (the snapshot's scale factor, so everything below 7pt).
+	//     **The question is written out in one place only** -- beside the 3rd argument of the
+	//     comparison rasterisation in KCMDrawEventHandler.cpp (MakeEntry) -- and 0.0 is the right
+	//     value to pass whichever way it is answered, so it is not answered again here.
+	//     ⚠**that comparison rasterisation runs at 144dpi**, not at the 36dpi of kKCMResolution
+	//     (144 = kKCMResolution x kKCMHiResMul, KCMConstants.h:59). This comment used to read the
+	//     storage resolution as the comparison one, put the default at "everything below 14pt, the
+	//     body text of most documents", and conclude from that the same 0.0 mattered far more
+	//     there than here: 4x out, and the conclusion rested on it.
 	// **Non-printing objects are left switched on** (the eighth argument, bDrawNonPrintingObjects,
 	//   defaults to kTrue). This deliberately differs from the comparison rasterisation, which
 	//   passes kFalse: that one asks "did the printed result change", while this one answers "what
