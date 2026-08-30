@@ -19,6 +19,11 @@
 //    that only sees a page-icon selection and comes back empty when the user selected the spread,
 //    which made the menu item vanish. The panel also has two sub-panels (document pages and
 //    masters), so there is no single place where "the selection" lives.
+//      ⚠ **that is about READING THE SELECTION.** The very same interface IS read, on the UI side,
+//      to answer a different question -- "does the selection hold no real page at all" -- and there
+//      an empty answer is not ambiguous, because [None] is held in it as an explicit kInvalidUID
+//      (KCMPagesPanelSelectionHasNoRealPage, ui/KCMThumbnailRefresh.h; see the [None] warning
+//      further down this file). **One interface, two questions, two answers.**
 //  - The menu: **ui/KCMUI.fr** adds the toggle to the Pages panel's page context menu, whose
 //    untranslated internal name is "RtMenuPagesPanel" (measured) and therefore the same in every
 //    locale. The menu lives in the UI plug-in; the model's KCM.fr has no RtMenuPagesPanel in it.
@@ -151,7 +156,15 @@ bool16 KCMPageMapReadSelection(IDataBase*& outDB, std::vector<UID>& outPages, bo
 	//   The header's contract is "kTrue = use the current page only when the panel is not
 	//     visible", but the implementation also treats it as **a fallback for an empty
 	//     selection**, which the contract does not say.
-	//   Telling `[None]` apart therefore needs some entry point other than this API (unsolved).
+	//   Telling `[None]` apart therefore needs some entry point other than this API -- and **it has
+	//     had one since 2026-08-24**: the UI reads the Pages panel's own selection list and leaves
+	//     the three page-directed items (Check / Register / Refresh) out of the menu while nothing
+	//     but `[None]` rows are selected (`KCMPagesPanelSelectionHasNoRealPage`,
+	//     ui/KCMThumbnailRefresh.h -- the measurements are on its declaration).
+	//   ⇒ **this function is still blind to `[None]`, and does not have to be: the guard is at the
+	//     entrance.** @warning that makes the model side depend on the UI side for this one case,
+	//     so **a route that reaches here without passing through the menu enabling brings the hole
+	//     straight back** ([[one-question-one-place]]).
 	Utils<ILayoutUIUtils>()->GetSelectedPages(sel, includeMasters, kTrue /*currentPageOnly*/, kTrue /*pagesOnly*/);
 
 	// What is being searched is the document's whole page list, so it goes into a set (see the

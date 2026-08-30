@@ -694,6 +694,14 @@ static void KCMScrollPagesPanelToPage(IDataBase* db, UID pageUID)
 	// passed on; jumping to an overset on a master still works through the spread switch, and only
 	// the panel following it is given up. Whether a page is an ordinary one is decided by whether
 	// IPageList knows it (GetPageIndex >= 0).
+	//   ⚠ **the header does not say what GetPageIndex returns for a page it does not hold**
+	//   (IPageList.h:96-104 gives only "@return int32"), so this leans on something unwritten.
+	//   ★ **The SDK's only caller leans on the very same thing, and in this very shape**:
+	//   codesnippets/SnpModifyLayoutGrid.cpp:1406-1413 initialises `int32 pageIndex = -1`, calls
+	//   GetPageIndex, and on `if (pageIndex < 0)` comments "couldn't find the page in the page list
+	//   - **this might be a master page**" before switching to IMasterPage. So "negative = not an
+	//   ordinary page of this pub, look at the master side" is the official reading, measured or
+	//   not. (Checked 2026-08-30; that snippet is the only call site in the whole SDK.)
 	// @warning THIS RELIES ON THE DEFAULT kTrue OF THE SECOND ARGUMENT, includePagesOfHiddenSpread.
 	//   What is wanted here is "is this not a master", and whether it is hidden has nothing to do
 	//   with it -- a page hidden by Hide Unchanged is still an ordinary page, so kTrue is right.
