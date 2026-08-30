@@ -230,6 +230,20 @@ static bool16 KCMFindOversetOutport(ITextModel* textModel, IDataBase* db, TextIn
 //   GetIsOverset is the proper judgement, "anything but the final CR failed to compose", and it
 //   deliberately does not count "only the final CR" as overset, which matches both InDesign's red
 //   dot and the DOM's cell.overflows.
+//   @warning **what is ruled out is the LAST parcel, not parcels in general.** "Is the parcel at
+//     this one TextIndex placed" is a different question with a different answer, and KESCL asks
+//     exactly that (IsTextIndexOverset in KESCLFindInDoc.cpp) because what it needs is "is this
+//     search hit visible", not "does this thread overflow". **Three plug-ins judge overset three
+//     ways and all three are right**; what reads as a contradiction is only that each wrote down
+//     the method it had rejected.
+// **The official callers ask it exactly as this file does** -- GetIsOverset() with no argument,
+//   judging only: SnpManipulateTextFootnotes.cpp:915 (is this footnote overset) and
+//   SnpTextModelHelper.cpp:448 (is this thread fully displayed). The optional out parameter is the
+//   first overset TextIndex, which no official caller asks for; KBS does, because its rows print
+//   how many characters overflowed, and it therefore has a case to consider that this file has
+//   not -- the header warns that WaxAnchoredElements can make a thread overset with no such index
+//   (ITextParcelList.h:124-125), and a judgement written as "overset AND the index is valid"
+//   answers kFalse there.
 //========================================================================================
 static bool16 KCMThreadIsOverset(ITextModel* textModel, TextIndex pos)
 {
@@ -249,10 +263,11 @@ static bool16 KCMThreadIsOverset(ITextModel* textModel, TextIndex pos)
 // cannot see it: each cell's first TextIndex is fetched through the story thread dictionaries (the
 // official worked example is SnpIterTableUseDictHier.cpp), judged by KCMThreadIsOverset, and, when
 // it is overset, located with KCMFindOversetOutport and KCMFramePageUID.
-//   **Tables are reached through the thread-dictionary hierarchy, not ITableModelList.** Either
-//     works, but the SDK says outright which is which: the snippet that uses ITableModelList calls
-//     itself "an older way" and names the "better technique" (SnpIterTableStories.cpp). The walk
-//     below is SnpIterTableUseDictHier.cpp's.
+//   **Tables are reached through the thread-dictionary hierarchy, not ITableModelList.** This is
+//     not a matter of taste: the snippet that uses ITableModelList calls that route
+//     **"deprecated"** twice in its own description (SnpIterTableStories.cpp:45,47), "an older way"
+//     at the call site (:152), and names SnpIterTableUseDictHier as the "better technique"
+//     (:68-70). The walk below is SnpIterTableUseDictHier.cpp's.
 //     **This is also what brings nested tables in by contract**:
 //     ITextStoryThreadDictHier::NextUID flattens the hierarchy, so a table anchored inside a cell
 //     lands in the same list as a top-level one. On the older route "nested tables should come
@@ -389,6 +404,14 @@ void KCMCollectOversetLocations(IDataBase* db, std::vector<KCMOversetLoc>& outLo
 		//   The official route is SnpInspectTextModel.cpp (look at the damaged index, then
 		//   RecomposeThruLastFrame); KBS runs the same three lines in KBSOversetScanEngine and in
 		//   KBSJump::RecomposeIfDamaged.
+		//   @warning **this call cannot be interrupted, and that is the only shape the SDK shows.**
+		//     IFrameListComposer has six methods, two of which take an IdleTimer and can give up
+		//     part-way (RecomposeOneFrame, RecomposeUntil) -- the application's own background
+		//     composition uses those. **Every call site in the SDK uses RecomposeThruLastFrame**
+		//     (SnpInspectTextModel.cpp:732,785 / SnpManipulateTextFrame.cpp:471 /
+		//     SnpTextModelHelper.cpp:379) and none uses the interruptible pair. So should Find
+		//     Overset ever need to stay responsive on a huge document, there is an API for it but
+		//     no worked example, and a half-composed document answers the question below wrongly.
 		//   **The cell pass at (2) reads settled composition as well** -- @warning **but not
 		//     because composing the frame list settles the tables in it**. That is a question
 		//     [[text-composition-damage-and-recompose]] records as unverified, and it must not be
