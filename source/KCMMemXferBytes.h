@@ -10,10 +10,29 @@
 //  StreamUtil::CreateMemoryStreamWrite takes an IXferBytes, and the SDK ships no usable
 //  implementation of one: public/libs/publiclib/strings/WideString.cpp:37 includes
 //  "MemXferBytes.h", but that header appears nowhere in the SDK, so the class it names is
-//  product-internal and cannot be reached from plug-in code. The one public implementation is
-//  hostadapter/IDHAMemoryXferBytes. This is that idea rewritten over std::vector so the buffer
-//  grows by itself, and with the written bytes handed out directly - reading them back through
-//  a second stream, the way the sample does, buys nothing when the caller wants the bytes.
+//  product-internal and cannot be reached from plug-in code. **TWO samples implement one**, and
+//  they are the same design twice over: hostadapter/IDHAMemoryXferBytes (a char* buffer, 256KB to
+//  start) and printmemorystream/PrtMemMemoryXferBytes (a uint8* buffer, 1MB to start), each
+//  growing itself through its own resizeBuffer. This is that idea rewritten over std::vector so
+//  the buffer grows by itself, and with the written bytes handed out directly - reading them back
+//  through a second stream, the way the samples do, buys nothing when the caller wants the bytes.
+//
+//  @warning **THIS std::vector IS WHERE KCM'S TWO MEMORY POLICIES MEET, AND WHICH ONE APPLIES
+//   HERE HAS NOT BEEN DECIDED.**
+//     - The drawing side allocates with new (std::nothrow) and holds the result in
+//       K2::scoped_array, on the stated grounds that MSVC's ordinary new does not return nil but
+//       THROWS, and an exception crossing an event boundary brings InDesign down. The 2026-08-27
+//       conversion wrote that down as a requirement rather than a habit, and said in as many words
+//       that std::vector cannot stand in for it.
+//     - The Story-diff engine this file belongs to is built on std containers throughout, and
+//       deliberately: not touching the SDK is what lets it be compiled and tested outside
+//       InDesign. KCM has no try/catch anywhere, so a bad_alloc raised by the resize below would
+//       leave through the menu handler that started the comparison.
+//   What makes the two defensible side by side is SIZE -- the drawing buffers are whole CMYK pages
+//   (tens of MB), this one holds one story's XML -- but that is an argument, not a measurement,
+//   and the 2026-08-27 pass never considered this file at all.
+//   **If the argument is accepted, say so here. If it is not, the fix is a K2::scoped_array with
+//   the same manual resize both Adobe samples write.**
 //
 //========================================================================================
 
