@@ -36,9 +36,10 @@
 // Project includes:
 #include "KCMBoundaryID.h"	// IID_IKCMMARKDATA. The boundary header rather than KCMID.h, which
 							// would drag the model's whole ID set through a header the UI includes.
-#include "KCMOversetScan.h"	// KCMOversetLoc. Borrowed for the type -- but this header also
-							// declares one model-side free function, which the UI can see and
-							// cannot link to.
+#include "KCMOversetLoc.h"	// KCMOversetLoc. A header of TYPES ONLY, which is what a header the
+							// UI includes has to be: this used to reach the struct through
+							// KCMOversetScan.h, whose scan function the UI could then see and
+							// could not link to.
 
 class IDataBase;
 

@@ -13,21 +13,13 @@
 #define __KCMOversetScan_h__
 
 #include <vector>
-#include "UIDRef.h"		// UID
-#include "PMPoint.h"	// PBPMPoint (the pasteboard coordinates of an overset "+")
+
+// What one location IS. IT LIVES IN ITS OWN HEADER because IKCMMarkData hands these out, and a
+// header the UI includes must not also put the scan BELOW within its reach -- it is model-side
+// and cannot be linked from there.
+#include "KCMOversetLoc.h"	// KCMOversetLoc (and, through it, UID and PBPMPoint)
 
 class IDataBase;
-
-// Where one overset "+" is. pageUID is the page it sits on, pb its pasteboard point -- the outport
-// (bottom-right corner) of the last placed parcel, computed exactly as KBS's KBSOversetLocator
-// does. This is what Prev/Next jumps to when cycling through overset.
-struct KCMOversetLoc
-{
-	UID			pageUID;
-	PBPMPoint	pb;
-	KCMOversetLoc() : pageUID(kInvalidUID) {}
-	KCMOversetLoc(UID p, const PBPMPoint& pt) : pageUID(p), pb(pt) {}
-};
 
 // Scan db and append one entry per piece of overset text to outLocs (the caller clears it first).
 // Both kinds are detected: a story's primary thread overflowing an ordinary frame (the red "+")

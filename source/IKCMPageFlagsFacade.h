@@ -23,10 +23,10 @@
 // Project includes:
 #include "KCMBoundaryID.h"	// IID_IKCMPAGEFLAGSFACADE. The boundary header rather than KCMID.h,
 							// for the reason given at the same spot in IKCMCompareFacade.h.
-#include "KCMPageMap.h"	// KCMPageToggleState. Borrowed for the type -- but this header also
-						// declares 13 model-side free functions, and the UI can SEE all of them.
-						// Calling one fails at link time rather than silently, so the risk is a
-						// wasted build, not a wrong build.
+#include "KCMPageFlagState.h"	// KCMPageToggleState. A header of TYPES ONLY, which is what a
+							// header the UI includes has to be: this used to reach the type
+							// through KCMPageMap.h, whose 13 model-side free functions the UI
+							// could then see and could not link to.
 
 class IKCMPageFlagsFacade : public IPMUnknown
 {

@@ -72,7 +72,9 @@
 #include "IKCMCompareFacade.h"		// GetActiveDocDB / GetCompareMode
 #include "IKCMMarkData.h"			// reading the comparison result (changed pages, changed cell counts, overset places)
 #include "KCMViewLookup.h"		// KCMQueryPanorama
-#include "KCMOversetScan.h"		// KCMOversetLoc, the position of an overset "+" place
+#include "KCMOversetLoc.h"		// KCMOversetLoc, the position of an overset "+" place. The types-
+									// only header: KCMOversetScan.h, where it used to live, also
+									// declares the scan, whose body is in the model .pln alone
 #include "KCMThumbnailRefresh.h"	// KCMGetVisiblePagesPanel (the shared way to get the visible Pages panel)
 #include "IKCMStoryEditsFacade.h"	// GetFirstFrameUID (the first frame of "the same story" on
 									// the Source side) / GetStoryStartPoint (where its text

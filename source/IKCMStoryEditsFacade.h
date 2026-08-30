@@ -44,9 +44,10 @@
 // Project includes:
 #include "KCMBoundaryID.h"	// IID_IKCMSTORYEDITSFACADE. The boundary header rather than KCMID.h,
 							// for the reason given at the same spot in IKCMCompareFacade.h.
-#include "KCMStoryStamp.h"	// KCMStoryChangeKind. Borrowed for the type -- but this header also
-							// declares three model-side free functions, which the UI can see and
-							// cannot link to.
+#include "KCMStoryKinds.h"	// KCMStoryChangeKind. A header of TYPES ONLY, which is what a header
+							// the UI includes has to be: this used to reach the enum through
+							// KCMStoryStamp.h, whose three model-side free functions the UI could
+							// then see and could not link to.
 
 class IDataBase;
 
