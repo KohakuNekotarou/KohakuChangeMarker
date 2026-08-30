@@ -43,6 +43,94 @@
 // the two answers would drift ([[one-question-one-place]]).
 static bool16 KCMResolveComparisonPair(IDocument*& outTarget, IDocument*& outSource);
 
+//----------------------------------------------------------------------------------------
+// The chosen Target and Source (the flyout's "Set as Target" / "Set as Source")
+//
+// **Databases, not documents, and never dereferenced.** The pointer is only ever handed to
+// IDocumentList::FindDocByDataBase, which is how the rest of this plug-in asks whether a
+// database is still open (KCMArmedDocsAlive, KCMHandleDocsClosed). A closed document's
+// IDataBase may already be freed and its address reused, so a raw IDocument* held across a
+// close would be worse, not better ([[uidref-reuse-after-close]]).
+//
+// **The address-reuse window is closed at the other end**: kAfterCloseDoc runs
+// KCMForgetChosenDocsThatClosed the moment a document goes, so a stale pointer does not
+// survive long enough for a newly opened document to be given its address. The liveness test
+// inside KCMLiveChosenDoc below is the second line, not the first.
+//----------------------------------------------------------------------------------------
+
+static IDataBase* sChosenTargetDB = nil;
+static IDataBase* sChosenSourceDB = nil;
+
+// The document `db` names, or nil when it is not (or no longer) an open document.
+// Takes the list rather than fetching it so that the close sweep, which already holds one, can
+// use the same test.
+static IDocument* KCMLiveChosenDoc(IDataBase* db, IDocumentList* docList)
+{
+	if (db == nil || docList == nil)
+		return nil;
+	return docList->FindDocByDataBase(db);
+}
+
+// The same test for callers that have no list in hand. nil during the shutdown sequence, which
+// is the right answer: with no session there is no way to judge liveness at all.
+static IDocument* KCMLiveChosenDoc(IDataBase* db)
+{
+	if (db == nil)
+		return nil;
+	ISession* session = GetExecutionContextSession();
+	InterfacePtr<IApplication> app(session != nil ? session->QueryApplication() : nil);
+	InterfacePtr<IDocumentList> docList(app ? app->QueryDocumentList() : nil);
+	return KCMLiveChosenDoc(db, docList);
+}
+
+// KCMChosenTargetDB / KCMChosenSourceDB (declared in KCMComparisonRun.h).
+IDataBase* KCMChosenTargetDB()	{ return (KCMLiveChosenDoc(sChosenTargetDB) != nil) ? sChosenTargetDB : nil; }
+IDataBase* KCMChosenSourceDB()	{ return (KCMLiveChosenDoc(sChosenSourceDB) != nil) ? sChosenSourceDB : nil; }
+
+// KCMSetChosenTargetToActive / KCMSetChosenSourceToActive (declared in KCMComparisonRun.h).
+//
+// **The active document is resolved here, on the model side.** The flyout item that calls this
+// has no business naming a document -- IActiveContext::GetContextDocument is what "the active
+// document" means in this plug-in (KCMActiveDoc), and asking it in one place is what keeps the
+// menu and the comparison agreeing about which document that is
+// ([[document-activation-is-presentation]] -- GetNthDoc(0) and GetFrontDocument each mean
+// something else).
+//
+// **Setting the same document as both is allowed.** The reader may well want to point at one
+// document twice while working out which is which; what refuses is the Start
+// (KCMToggleStartStop), where a comparison of a document against itself is meaningless.
+bool16 KCMSetChosenTargetToActive()
+{
+	IDocument* doc = KCMActiveDoc();
+	if (doc == nil)
+		return kFalse;			// the flyout greys the item in this case; this guards a document closing while the menu stands open
+	sChosenTargetDB = ::GetUIDRef(doc).GetDataBase();
+	return kTrue;
+}
+
+bool16 KCMSetChosenSourceToActive()
+{
+	IDocument* doc = KCMActiveDoc();
+	if (doc == nil)
+		return kFalse;
+	sChosenSourceDB = ::GetUIDRef(doc).GetDataBase();
+	return kTrue;
+}
+
+// KCMForgetChosenDocsThatClosed (declared in KCMComparisonRun.h) -- the close sweep's half of
+// the rule. **Each choice is judged on its own**, so closing one of the two documents leaves the
+// other one chosen: that is the whole point of stating the pair rather than inferring it. The
+// pointers are compared, never dereferenced.
+void KCMForgetChosenDocsThatClosed(IDocumentList* docList)
+{
+	if (docList == nil)
+		return;					// no way to judge liveness; the choices stay, and KCMLiveChosenDoc still guards every read
+	if (sChosenTargetDB != nil && docList->FindDocByDataBase(sChosenTargetDB) == nil)
+		sChosenTargetDB = nil;
+	if (sChosenSourceDB != nil && docList->FindDocByDataBase(sChosenSourceDB) == nil)
+		sChosenSourceDB = nil;
+}
+
 // The first open document that is not `target` = the Source (the older version).
 static IDocument* KCMFirstOtherDoc(IDocument* target)
 {
@@ -61,10 +149,32 @@ static IDocument* KCMFirstOtherDoc(IDocument* target)
 }
 
 // The resolver declared above.
+//
+// **A chosen document wins; an unchosen one falls to the old rule.** Choosing neither leaves
+// the behaviour exactly as it was before the two flyout items existed, and choosing one leaves
+// the other to be worked out -- "Set as Source" on the older version, then Start from whichever
+// document is in front, is a perfectly good way to work.
+//
+// @warning **the automatic Source is still "the first document that is not the Target"**, and
+// the Target may now be a document that is not in front. That is what makes the pair right:
+// picking "not the active document" instead would let the chosen Target be handed to itself as
+// the Source the moment the reader brought a third document forward.
+//
+// **Whether the two come out the same is not decided here.** This answers "which two", and the
+// menu's grey state rests on it; "are they the same document" is a different question with a
+// different answer (a message, not a grey item), and it is asked once, in KCMToggleStartStop
+// ([[one-question-one-place]] is kept by having each question in one place, not by folding two
+// questions into one function).
 static bool16 KCMResolveComparisonPair(IDocument*& outTarget, IDocument*& outSource)
 {
-	outTarget = KCMActiveDoc();
-	outSource = (outTarget != nil) ? KCMFirstOtherDoc(outTarget) : nil;
+	outTarget = KCMLiveChosenDoc(sChosenTargetDB);
+	if (outTarget == nil)
+		outTarget = KCMActiveDoc();
+
+	outSource = KCMLiveChosenDoc(sChosenSourceDB);
+	if (outSource == nil)
+		outSource = (outTarget != nil) ? KCMFirstOtherDoc(outTarget) : nil;
+
 	return (outTarget != nil && outSource != nil) ? kTrue : kFalse;
 }
 
@@ -194,6 +304,28 @@ void KCMToggleStartStop()
 		// reaches the end of the function -- an early implementation refreshed the panel only at
 		// the end and left this path without a redraw.
 		// No document travels with it: the display is only being brought up to the current state.
+		KCMNotify(kKCMMarksRebuiltMessage);
+		return;
+	}
+
+	// **One document cannot be compared against itself**, and with "Set as Target" / "Set as
+	// Source" it can now be asked for: both items take the active document, so pressing them one
+	// after the other without switching documents chooses the same one twice. That is deliberately
+	// ALLOWED as a choice -- the panel shows the same name on both lines, which is the reader
+	// seeing what they have asked for -- and refused here, at the Start.
+	//
+	// @warning **this is not folded into KCMCanStartComparison**, which would grey the Start out
+	// instead. A greyed item says "not now" and names no reason; the reader who has just chosen
+	// the same document twice needs to be told which of the two to change. So the item stays live
+	// and pressing it answers (user's instruction: "rejected at the start, with a message on the
+	// panel"). The automatic rule cannot produce this case -- KCMFirstOtherDoc excludes the
+	// Target -- so it only ever arises from a choice, and the message can say so.
+	if (target == source)
+	{
+		KCMSayStatus("Target and Source are the same document. Set one of them to another document.");
+		// As in the branch above: this one returns without reaching the end of the function, so it
+		// asks for the panel refresh itself. No document travels with it -- nothing has changed but
+		// what the status line says.
 		KCMNotify(kKCMMarksRebuiltMessage);
 		return;
 	}

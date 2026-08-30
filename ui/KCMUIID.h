@@ -272,9 +272,14 @@ DECLARE_PMID(kActionIDSpace, kKCMPanelWidgetActionID, kKCMUIPrefix + 1)	// show 
 DECLARE_PMID(kActionIDSpace, kKCMPopupAboutThisActionID, kKCMUIPrefix + 2)	// "About this plug-in" on the panel flyout
 DECLARE_PMID(kActionIDSpace, kKCMPopupAboutScriptActionID, kKCMUIPrefix + 3)	// (retired, reserved) the old "About Scripting" flyout item. The slot stays reserved
 DECLARE_PMID(kActionIDSpace, kKCMPopupUsageActionID, kKCMUIPrefix + 4)	// "How to Use" on the panel flyout
-// +5 is free (it was kKCMPopupTestSplitActionID; the Split Test menu is gone)
-// +6 is free (it was kKCMPopupSplitTargetActionID; "Split Target on Start" is gone -- how it
-//   worked is kept in docs/ai-notes/kescm-split-target-mechanism.md)
+// +5 and +6 were free (they were kKCMPopupTestSplitActionID, the Split Test menu, and
+//   kKCMPopupSplitTargetActionID, "Split Target on Start" -- how that one worked is kept in
+//   docs/ai-notes/kescm-split-target-mechanism.md). They now carry the two "Set as" items.
+//   ⚠**Reusing a retired slot is only safe because neither was shortcut-assignable**
+//   (kSDKDefInvisibleInKBSCEditorFlag, as these two are): a shortcut the reader had saved
+//   against the old ActionID would otherwise now fire the new item.
+DECLARE_PMID(kActionIDSpace, kKCMPopupSetTargetActionID, kKCMUIPrefix + 5)	// ★"Set as Target" on the panel flyout (a plain command): the active document becomes the comparison's Target. Live only while NOT comparing, and only with an active document. The choice survives a Stop and is dropped when that document closes. kCustomEnabling. KCMActionComponent.cpp -> IKCMCompareFacade::SetChosenTargetToActive
+DECLARE_PMID(kActionIDSpace, kKCMPopupSetSourceActionID, kKCMUIPrefix + 6)	// ★"Set as Source" on the panel flyout (a plain command): the active document becomes the Source (the older version). Same enabling and the same lifetime as +5. ★**Choosing the same document for both is allowed** -- the panel shows it on both lines -- and the Start is what refuses it, with a message (KCMToggleStartStop)
 DECLARE_PMID(kActionIDSpace, kKCMPopupHideUnchangedActionID, kKCMUIPrefix + 7)	// "Hide Unchanged Spreads" check toggle on the panel flyout (ON = hide the spreads with no change)
 DECLARE_PMID(kActionIDSpace, kKCMPopupShowOldNumsActionID, kKCMUIPrefix + 8)	// "Show Original Page Numbers" check toggle on the panel flyout (the badge with the number a page had before hiding, while marks show or printing is on)
 DECLARE_PMID(kActionIDSpace, kKCMPopupSyncViewsActionID, kKCMUIPrefix + 9)	// "Sync Layout Views" check toggle on the panel flyout (keeps the other documents' views at the same position and zoom)
@@ -577,6 +582,8 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowStateWidgetID, kKCMUIPrefix + 49)	// = t
 #define kKCMRefreshOversetMenuKey	kKCMStringPrefix "kKCMRefreshOversetMenuKey"	// the menu name of "Refresh Overset" on the panel flyout
 #define kKCMExportChangedPagesMenuKey	kKCMStringPrefix "kKCMExportChangedPagesMenuKey"	// the menu name of "Export Changed Pages..." on the panel flyout
 #define kKCMCompareBooksMenuKey	kKCMStringPrefix "kKCMCompareBooksMenuKey"	// the menu name of "Compare Books" on the panel flyout (compare two books chapter by chapter)
+#define kKCMSetTargetMenuKey		kKCMStringPrefix "kKCMSetTargetMenuKey"	// ★the menu name of "Set as Target" on the panel flyout (the active document becomes the comparison's Target)
+#define kKCMSetSourceMenuKey		kKCMStringPrefix "kKCMSetSourceMenuKey"	// ★the menu name of "Set as Source" on the panel flyout (the active document becomes the older version)
 #define kKCMBookDialogTitleKey	kKCMStringPrefix "kKCMBookDialogTitleKey"	// the title of the book comparison dialog
 #define kKCMBookCompareKey		kKCMStringPrefix "kKCMBookCompareKey"		// (retired) the label of the old "Compare" button. The button was removed, so nothing refers to it, but it is kept together with its enUS table row so that the set can be restored together
 #define kKCMBookReadyKey			kKCMStringPrefix "kKCMBookReadyKey"			// the status line before a comparison. ★What reaches it now is only "the dialog was opened without a comparison ever having been run" - otherwise the summary overwrites it
@@ -869,6 +876,8 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowStateWidgetID, kKCMUIPrefix + 49)	// = t
 //   ⇒ **Read the values below in ascending order: that IS the flyout.**
 // ※Menu names are English in every locale. The separators are Sep1 / OversetSep / Sep3 / Sep2.
 #define kKCMStartStopMenuItemPosition		9.0	// "Start / Stop" at the head of the flyout. Its name follows the armed state between Start and Stop
+#define kKCMSetTargetMenuItemPosition		9.02	// ★"Set as Target" -- **directly under Start, above Compare Books**: choosing the two documents is part of starting a comparison, so it reads Start / choose / choose
+#define kKCMSetSourceMenuItemPosition		9.03	// ★"Set as Source", right below its Target counterpart (the pair reads new-then-old, as the two "Always Show Marks on" toggles do)
 #define kKCMSep1MenuItemPosition			9.1	// the separator below Start (a path ending in ":-")
 #define kKCMCompareModeSubmenuMenuItemPosition	9.15	// ★the "Compare mode" submenu (Pixel Changes / Story Changes). **Right after Sep1, above the display toggles**: what is compared is settled before how it is shown, and the order carries that
 #define kKCMModePixelSubMenuItemPosition		1.0	// inside "Compare mode": Pixel Changes (checked when selected)

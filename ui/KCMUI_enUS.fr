@@ -65,6 +65,8 @@ resource StringTable (kSDKDefStringsResourceID + index_enUS)
                 kKCMRefreshOversetMenuKey,		"Refresh Overset",
                 kKCMExportChangedPagesMenuKey,	"Export Changed Pages...",
                 kKCMCompareBooksMenuKey,			"Compare Books",
+                kKCMSetTargetMenuKey,				"Set as Target",
+                kKCMSetSourceMenuKey,				"Set as Source",
                 kKCMBookDialogTitleKey,			"Kohaku Change Marker - Compare Books",
                 kKCMBookCompareKey,				"Compare",
                 kKCMBookReadyKey,					"No comparison has been run yet.",

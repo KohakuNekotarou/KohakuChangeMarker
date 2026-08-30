@@ -78,6 +78,13 @@ public:
 													{ KCMStartComparisonFor(target, source); }
 	virtual bool16		CanStartComparison()	{ return KCMCanStartComparison(); }
 
+	// The chosen Target/Source. The setters resolve "the active document" on this side; see the
+	// reason on the interface.
+	virtual bool16		SetChosenTargetToActive()	{ return KCMSetChosenTargetToActive(); }
+	virtual bool16		SetChosenSourceToActive()	{ return KCMSetChosenSourceToActive(); }
+	virtual IDataBase*	GetChosenTargetDB()		{ return KCMChosenTargetDB(); }
+	virtual IDataBase*	GetChosenSourceDB()		{ return KCMChosenSourceDB(); }
+
 	virtual bool16		IsArmed()				{ return KCMIsArmed(); }
 	virtual IDataBase*	GetArmedTargetDB()		{ return KCMArmedTargetDB(); }
 	virtual IDataBase*	GetArmedSourceDB()		{ return KCMArmedSourceDB(); }

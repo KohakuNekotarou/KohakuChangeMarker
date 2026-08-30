@@ -43,8 +43,11 @@ public:
 
 	// ---- starting and stopping ----------------------------------------------------------
 
-	/** The Start/Stop toggle. When armed, clears; when not armed, resolves the active
-		document as Target and another open document as Source, and starts. */
+	/** The Start/Stop toggle. When armed, clears; when not armed, resolves the pair -- the
+		chosen Target and Source, and the old automatic rule (active document = Target, another
+		open document = Source) for whichever of the two has not been chosen -- and starts.
+		@warning it refuses, with a message on the status line, when the two come out the same
+		document. That cannot happen by the automatic rule; it is what a choice can ask for. */
 	virtual void		ToggleStartStop() = 0;
 
 	/** Stop: remove the marks and disarm the peek. */
@@ -56,10 +59,37 @@ public:
 		if you want "stop, then start". */
 	virtual void		StartComparisonFor(IDocument* target, IDocument* source) = 0;
 
-	/** Whether a comparison can be started: an active document plus at least one other open
-		document. Goes through the same resolver as the start branch, so what the menu shows
-		and what pressing it does cannot disagree. */
+	/** Whether a comparison can be started: two documents resolve. Goes through the same
+		resolver as the start branch, so what the menu shows and what pressing it does cannot
+		disagree.
+		@warning it does NOT answer "are they the same document". That is asked at the Start,
+		which says so rather than greying itself out -- see ToggleStartStop. */
 	virtual bool16		CanStartComparison() = 0;
+
+	// ---- the chosen Target and Source --------------------------------------------------
+	//
+	// "Set as Target" / "Set as Source" on the flyout. The choice is made before starting and
+	// **survives a Stop**; what ends it is the document closing, and then only for the document
+	// that closed. Whichever has not been chosen still falls to the automatic rule.
+	//
+	// WHY THE SETTERS TAKE NO DOCUMENT. The menu item's job is to say "the active one", not to
+	// name a document: which document is active is answered on the model side, in the one place
+	// that already answers it for the comparison. A UI that resolved it for itself would be a
+	// second answer to the same question, and the two would drift the first time "active" was
+	// found to mean something more exact than it does today.
+
+	/** Make the active (front) document the Target / the Source. kFalse, and nothing set, when
+		there is no active document.
+		@warning they only set. Refreshing the panel and saying so on the status line are the
+		caller's, exactly as with SetCompareMode -- what the UI shows is the UI's decision. */
+	virtual bool16		SetChosenTargetToActive() = 0;
+	virtual bool16		SetChosenSourceToActive() = 0;
+
+	/** What has been chosen, for the panel's Target:/Source: lines.
+		@warning nil unless that document is still open -- and nil also means "not chosen", which
+		is deliberate: to the panel and to the resolver the two cases are the same. */
+	virtual IDataBase*	GetChosenTargetDB() = 0;
+	virtual IDataBase*	GetChosenSourceDB() = 0;
 
 	// ---- state -------------------------------------------------------------------------
 
