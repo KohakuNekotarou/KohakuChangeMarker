@@ -11,6 +11,14 @@
 //  file adds is what kind of change it was: the words, their formatting, or something attached to
 //  the story such as a table.
 //
+//  **NOTHING IN THE SDK READS THESE COUNTERS, WHICH IS WHY SO MUCH BELOW IS MEASURED RATHER THAN
+//  CITED.** GetChangeCount and its three companions have no call site anywhere in source/open or
+//  source/sdksamples (counted again 2026-08-30), so there is no worked example to follow and no
+//  Adobe code to compare against -- only what the headers promise and what this plug-in measured
+//  for itself. Adobe does point AT them, though: the deprecated HasChanged() just above them says
+//  "our direction is to remove this InCopy 'special' and make them use the new change counters"
+//  (ITextModel.h, in the ID_DEPRECATED block at HasChanged).
+//
 //  ALL FOUR COUNTERS ARE READ, and they answer two different questions:
 //
 //    - GetChangeCount() -- the "all changes" counter -- decides whether the story is reported at
