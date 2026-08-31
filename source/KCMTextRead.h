@@ -30,10 +30,11 @@
 //   IDataBase::SaveRestoreModifiedState for both sides (KCMStoryDiffRun's targetDirtyGuard and
 //   sourceDirtyGuard), and everything here runs inside them.
 //
-//  ⚠WHAT THIS FILE READS TODAY: the body only. Table cells (Task 2) and footnotes (Task 4) are
-//   threads of the same model living past the body; until they are walked, a story containing
-//   either will disagree with the old route - which is exactly what the parallel run below is
-//   for. Plan: docs/superpowers/plans/2026-08-31-kcm-story-direct-read.md
+//  ⚠WHAT THIS FILE READS TODAY: the body AND every table cell (nested tables included). The
+//   walk is over THREADS, so footnotes come back from it as well - but nothing decides yet what
+//   to call them, so a story with one still disagrees with the old route until Task 4. Ruby
+//   arrives in Task 3. Until then the parallel run below is what says so out loud.
+//   Plan: docs/superpowers/plans/2026-08-31-kcm-story-direct-read.md
 //
 //========================================================================================
 
@@ -60,8 +61,9 @@ namespace KCMTextRead
 	@param outParas OUT one entry per paragraph, UTF-8, WITHOUT the trailing break character -
 		   the same shape KCMSnippetText::ExtractParagraphs produces, so the diff downstream
 		   cannot tell which route filled it.
-	@param outAttrs OUT the same length as outParas. **Today it holds nothing but the defaults**;
-		   the ruby and the cell identity arrive in later tasks.
+	@param outAttrs OUT the same length as outParas. **The cell identity is filled in**
+		   (fTableOrdinal / fCellRow / fCellCol, or the kNotACell defaults for body text);
+		   the ruby arrives in Task 3.
 	@param outStarts OUT the same length again: where each paragraph begins, as a TextIndex.
 		   ★NOT COUNTED - taken from the walk. That is the whole point of this file.
 	@return kFalse only when the story cannot be opened at all. **An empty story is not a
