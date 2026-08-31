@@ -491,19 +491,36 @@ static void KCMApplyPanelInfo(const InterfacePtr<IPanelControlData>& pcd)
 	InterfacePtr<IKCMCompareFacade> compare(Utils<IKCMCompareFacade>().QueryUtilInterface());
 	const bool16 started = compare->IsArmed() && (compare->GetArmedTargetDB() != nil);
 
-	// The Target:/Source: labels are always shown; the names only while armed (English, as the rest
-	// of the panel is).
+	// The Target:/Source: labels are always shown; the names come from whichever of two states is
+	// in force (English, as the rest of the panel is).
+	//
+	// ★**Armed first, chosen second.** While a comparison runs, the line has to name the document
+	//   the marks on screen were actually made from -- and that is the armed pair, which a Start
+	//   settled. The chosen pair is what the NEXT Start will use, and the two can differ for one
+	//   moment only: the flyout's "Set as" items are greyed while armed, so the only way to part
+	//   them is to choose, Start (the choice is now also armed), Stop, and choose again.
+	//   ⚠**Do not merge the two into one getter on the model side.** They answer different
+	//     questions -- "what is being compared" and "what will be compared" -- and a single
+	//     "current Target" would have to pick one of them for every caller, including the ones
+	//     that clear marks off a document ([[one-question-one-place]] is about asking each
+	//     question once, not about having fewer questions).
+	// ★**Nothing chosen shows the bare label**, exactly as before a Start always did. That is also
+	//   what a closed document leaves behind: GetChosenTargetDB returns nil for a document that is
+	//   no longer open, so the line empties itself with no help from here.
+	IDataBase* const targetDB = started ? compare->GetArmedTargetDB() : compare->GetChosenTargetDB();
+	IDataBase* const sourceDB = started ? compare->GetArmedSourceDB() : compare->GetChosenSourceDB();
+
 	PMString target("Target:"); target.SetTranslatable(kFalse);
-	if (started)
+	if (targetDB != nil)
 	{
 		target.Append(" ");
-		target.Append(KCMDocPathFromDB(compare->GetArmedTargetDB()));
+		target.Append(KCMDocPathFromDB(targetDB));
 	}
 	PMString source("Source:"); source.SetTranslatable(kFalse);
-	if (started && compare->GetArmedSourceDB() != nil)
+	if (sourceDB != nil)
 	{
 		source.Append(" ");
-		source.Append(KCMDocPathFromDB(compare->GetArmedSourceDB()));
+		source.Append(KCMDocPathFromDB(sourceDB));
 	}
 
 	IControlView* tView = pcd->FindWidget(kKCMTargetTextWidgetID);

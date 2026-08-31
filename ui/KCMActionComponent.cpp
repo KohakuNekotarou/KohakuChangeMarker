@@ -209,6 +209,37 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 			Utils<IKCMCompareFacade>()->ToggleStartStop();
 			break;
 
+		// ★"Set as Target" / "Set as Source" directly below Start: the active document becomes the
+		//   comparison's Target / Source, so that which two documents are compared is **stated**
+		//   rather than inferred from what happens to be in front at the moment Start is pressed.
+		//   The choice outlives a Stop; what ends it is that document closing.
+		//   ★**Which document is "active" is not decided here.** The facade's setter asks
+		//     KCMActiveDoc on the model side ＝ the one place this plug-in answers that question
+		//     ([[document-activation-is-presentation]]: GetNthDoc(0) and GetFrontDocument each mean
+		//     something else, and the comparison must not be told a different answer from the menu).
+		//   ★**The panel refresh and the status line are done here, not by the setter** ＝ the same
+		//     division as KCMApplyCompareMode above: the facade changes the setting, the UI decides
+		//     what the UI shows. The name of the document lands on the panel's Target:/Source: line
+		//     through KCMRefreshPanel, which is why the status line does not repeat it.
+		//   ⚠**Say nothing when nothing was set.** With no active document the setter refuses, and
+		//     an unconditional "Target set." would be a lie -- the case is real even though the item
+		//     is greyed without a document, because a menu can stand open while one closes.
+		case kKCMPopupSetTargetActionID:
+			if (Utils<IKCMCompareFacade>()->SetChosenTargetToActive())
+			{
+				KCMRefreshPanel();
+				KCMSetStatus("Target set.");
+			}
+			break;
+
+		case kKCMPopupSetSourceActionID:
+			if (Utils<IKCMCompareFacade>()->SetChosenSourceToActive())
+			{
+				KCMRefreshPanel();
+				KCMSetStatus("Source set.");
+			}
+			break;
+
 		// Flyout "Print comparison marks": the print-marks toggle (it used to be a checkbox on the
 		// panel).
 		case kKCMPopupPrintMarksActionID:
@@ -819,6 +850,29 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 			//   so what the menu looks like and what pressing it does cannot part company.
 			listToUpdate->SetNthActionState(i,
 				(armed || compare->CanStartComparison()) ? kEnabledAction : kDisabled_Unselected);
+		}
+		// ★"Set as Target" / "Set as Source". The two share a branch because they are enabled by the
+		//   same two conditions, and writing the pair twice is how the two would come to differ.
+		//   ★**Live only while nothing is being compared** (user's instruction): the pair a running
+		//     comparison was started on is what its marks were made from, so letting the choice move
+		//     underneath it would put a name on the panel that the marks on screen do not come from.
+		//     Choose, then Start ＝ the order the items sit in on the flyout.
+		//   ★**And only with an active document to name**, since that is what these set. The
+		//     executing side asks the same question by taking the setter's kFalse, so the grey item
+		//     and the refusal cannot part company.
+		//   ⚠**Not greyed when the same document is already chosen for the other one.** Choosing one
+		//     document for both is allowed, and the panel showing the same name twice is the reader
+		//     seeing what they asked for; what refuses is the Start, with a message naming both ways
+		//     out of it (KCMToggleStartStop). ★**Both, because setting is not the only way in**: the
+		//     commoner one is choosing a Source alone and pressing Start without switching documents,
+		//     since the unchosen Target then resolves to that very document -- and the way out of
+		//     that one is to bring the other document to the front.
+		else if (action == kKCMPopupSetTargetActionID || action == kKCMPopupSetSourceActionID)
+		{
+			InterfacePtr<IKCMCompareFacade> compare(Utils<IKCMCompareFacade>().QueryUtilInterface());
+			const bool16 armed = compare->IsArmed() && (compare->GetArmedTargetDB() != nil);
+			listToUpdate->SetNthActionState(i,
+				(!armed && compare->GetActiveDocDB() != nil) ? kEnabledAction : kDisabled_Unselected);
 		}
 		else if (action == kKCMPopupPrintMarksActionID)
 		{

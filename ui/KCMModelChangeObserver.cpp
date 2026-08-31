@@ -27,12 +27,12 @@
 #include "KCMUIID.h"
 #include "Utils.h"					// Utils<IKCMCompareFacade>()
 #include "IKCMCompareFacade.h"	// GetSessionStatus / IsAppQuitting
-#include "KCMModelNotify.h"		// KCMNotifyPayload ---- ★**the type alone is borrowed**
-									// ⚠The **free functions** this header declares have bodies only on the
-									//   model side, so another .pln cannot link them. **A struct definition
-									//   needs no linking**, which is why the type may be borrowed -- the same
-									//   shape as IKCMMarkData.h borrowing KCMOversetLoc from KCMOversetScan.h.
-									//   **Do not call the functions.**
+#include "KCMNotifyPayload.h"	// KCMNotifyPayload ---- the whole of what arrives as changedBy.
+									// ★A header of TYPES ONLY, so there is nothing here to call by
+									//   mistake. It used to be borrowed out of KCMModelNotify.h,
+									//   which declares the SENDING functions as well -- their bodies
+									//   are in the model .pln, so another .pln cannot link them
+									//   (2026-08-30: split, and this note is what asked for it).
 #include "KCMUIShared.h"			// KCMSetStatus (display; UI-internal) / KCMRefreshPanel
 // ★Everything below is **a UI-side header**. This observer exists to turn a notification back
 //   into UI work, so calling the UI is its job -- not reverse flow. Reading the model through

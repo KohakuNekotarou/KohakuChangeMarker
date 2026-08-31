@@ -36,7 +36,6 @@
 
 // This plug-in:
 #include "KCMPanelAlpha.h"
-#include "KCMConstants.h"		// kKCMPanelAlphaValue / kKCMPanelAlphaReapplyTries / ...DelayMillis
 #include "KCMUIID.h"			// kKCMPanelWidgetID (the WidgetID this aims at) and our own IIDs
 									// and ImplIDs
 
@@ -106,6 +105,46 @@ enum
 	kKCMAlphaBookDialog = 2,	// our own book comparison dialog (not a panel: the window comes from elsewhere)
 	kKCMAlphaCount      = 3
 };
+
+//----------------------------------------------------------------------------------------
+// The three tuning constants of this feature. They lived in the model half's KCMConstants.h
+// until 2026-08-30, when the API re-audit of M1 found that nothing on that side read them --
+// this file was the only reader, and it is the UI half. Same shape as every other file-local
+// tuning value on this side (KCMScrollMap.cpp, KCMThumbIdleTask.cpp, KCMTrackerHud.cpp) and
+// the shape the product code uses for a constant one file needs (linksui/LinksUIUtils.cpp).
+//----------------------------------------------------------------------------------------
+
+// Alpha of the translucent panel (flyout "Translucent Panel"). 0 = fully transparent,
+// 255 = opaque; 77 is about 30%. Rolling the pointer over the panel brings it back to opaque
+// (IMouseRollOver), which is what lets it be this faint while idle. There is no slider and no
+// step setting, so this one place is where the density is changed. Windows only.
+// Never set this to 0. MSDN, Window Features / Layered Windows: "Hit testing of a layered window
+// is based on the shape and transparency of the window. This means that the areas of the window
+// that are color-keyed or whose alpha value is zero will let the mouse messages through". At 0
+// the panel stops receiving the pointer at all, and since the whole feature rests on "opaque
+// again once the pointer is over it", the way back is lost together with it. The "0 = fully
+// transparent" above documents what the argument means, not a value to put here.
+static const uint8 kKCMPanelAlphaValue = 77;
+
+// How many times, and how far apart, the alpha is applied again after the notification.
+// Writing alpha when kPaletteVisibilityChangedMessage arrives is not enough: InDesign may
+// rebuild the top-level window right afterwards and throw the value away - diagnostics read back
+// rb=128 while an outside measurement said 255, and the HWND written to was not the window that
+// actually existed at the time. So the value is re-applied on idle a few times until the window
+// settles. 0 turns the delayed re-apply off.
+// Count and interval come from tracking window replacement at 40ms: turning the panel into an
+// icon (one click) settled within 3ms, but making it float (drag and release) never settled and
+// stayed at 255, because a drag leaves a far longer gap between the notification and the final
+// window. About 400ms of chasing covers it.
+static const int32  kKCMPanelAlphaReapplyTries       = 8;
+static const uint32 kKCMPanelAlphaReapplyDelayMillis = 50;	// 50ms * 8 = about 400ms of chasing
+
+// The panel shadow (OWL.ShadowView) is controlled by showing and hiding it, not by alpha, and
+// there is no density constant for it: the shadow is drawn with per-pixel alpha, which is
+// exclusive with a uniform alpha, so once alpha has been set the original shadow does not come
+// back when the toggle goes off. MSDN does describe a way back - "subsequent UpdateLayeredWindow
+// calls will fail until the layering style bit is cleared and set again" - but clearing
+// WS_EX_LAYERED on a window InDesign owns breaks its own drawing, so for us it is one-way.
 
 // The toggles, held for the session; persisting them is KCMPanelState.cpp's job. Off by default.
 // The state is kept on the Mac too -- it is only the applying that does nothing there.

@@ -54,8 +54,10 @@
 #include "KCMUIShared.h"	// panel / status line / nav readout / tool button (split from KCMCore.h on 2026-08-13)
 #include "Utils.h"					// Utils<IKCMStoryEditsFacade>()
 #include "IKCMStoryEditsFacade.h"	// the rows themselves (Facade since 2026-08-13, Task 14)
-#include "KCMStoryStamp.h"		// KCMStoryChangeKind - the bits KindLabel names. A type only,
-									// which is why it may be included from either side of the split
+#include "KCMStoryKinds.h"		// KCMStoryChangeKind - the bits KindLabel names. A header of types
+									// only, which is why it may be included from either side of the
+									// split (KCMStoryStamp.h, where these used to live, cannot: its
+									// free functions have bodies in the model .pln alone)
 #include "KCMStoryTree.h"
 
 namespace

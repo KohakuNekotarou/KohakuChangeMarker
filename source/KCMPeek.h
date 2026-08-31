@@ -69,9 +69,12 @@ void KCMPeekShowAt(IDataBase* targetDB, IDataBase* sourceDB,
 // The last line of defence: are the armed Target and Source still in the IDocumentList (the body
 // is in KCMPeek.cpp)? If either is not, KCMHandleDocsClosed() performs the full clean-up that Stop
 // would (disarming included) and kFalse comes back.
-// Called from KCMPeekGesture.cpp (starting a peek, pressing for CMYK) and KCMCmykCursor.cpp (the
+// Called from KCMPeekGesture.cpp (starting a peek) and KCMCmykCursor.cpp (pressing for CMYK, the
 //   cursor colour, and the liveness check during a drag). It is the guard that keeps a released
 //   IDataBase from reaching the sampler or the peek.
+//   @warning every caller reaches it through the Facade's ArmedDocsAlive(), so **grep for both
+//   spellings**. This list had the CMYK press filed under KCMPeekGesture.cpp, where a grep for the
+//   model-side name finds nothing at all.
 bool16 KCMArmedDocsAlive();
 
 // The body behind the Pages panel context-menu item "Refresh Page Comparison": re-detects the

@@ -24,43 +24,12 @@
 #include <vector>
 #include <set>
 
+// The toggle-state type the two answers below are given in. IT LIVES IN ITS OWN HEADER because
+// IKCMPageFlagsFacade returns it, and a header the UI includes must not also put the thirteen
+// free functions BELOW within its reach -- they are model-side and cannot be linked from there.
+#include "KCMPageFlagState.h"	// KCMPageTick / KCMPageRole / KCMPageToggleState
+
 class IDataBase;
-
-//----------------------------------------------------------------------------------------
-// How a per-page toggle (Register / Check) should look right now.
-//
-// **Writing to the menu is the UI's job**, so the model only answers "is it enabled", "all or
-//   some of them", and "which role does this document play". That keeps `IActionStateList` out
-//   of the model's boundary altogether, the same shape as the worked example `ICusCondTxtFacade`,
-//   which has no menu-state method at all. **The label strings belong to the UI too**, being UI
-//   strings.
-//
-// Register and Check share this type: the answer has the same shape for both, and only what is
-// being counted differs.
-//----------------------------------------------------------------------------------------
-enum KCMPageTick
-{
-	kKCMPageTickNone = 0,		// none of them are ticked
-	kKCMPageTickSome,			// some are (the mixed tick = kMultiSelectedAction)
-	kKCMPageTickAll			// the whole selection is (a tick = kSelectedAction)
-};
-
-enum KCMPageRole
-{
-	kKCMPageRoleNone = 0,		// not comparing, or some third document
-	kKCMPageRoleTarget,		// the comparison's Target (newer) side
-	kKCMPageRoleSource		// the comparison's Source (older) side
-};
-
-struct KCMPageToggleState
-{
-	bool16			fEnabled;	// kFalse greys the menu out (fTick / fRole mean nothing then)
-	KCMPageTick	fTick;
-	KCMPageRole	fRole;		// picks Register's label. Check does not read it
-
-	KCMPageToggleState()
-		: fEnabled(kFalse), fTick(kKCMPageTickNone), fRole(kKCMPageRoleNone) {}
-};
 
 // The shared reader of the Pages panel's selected pages. outDB is the document the selection
 // belongs to (the active / frontmost one) and outPages the selected page UIDs that really exist

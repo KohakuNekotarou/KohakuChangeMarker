@@ -609,12 +609,19 @@ bool16 KCMStoryMarkerAdornment::GetIsActive(const IParcelShape* /*parcelShape*/,
 	//   adornment which does not draw when printing must not draw for print preview either
 	//   (IGlobalTextAdornment.h, at GetIsActive). Asking one function keeps that true by
 	//   construction.
-	// @warning **the answer here is coarser than the one Draw gives, and it has to be** (measured):
-	//   **IParcelShape is not an IPMUnknown**, so there is no GetDataBase to call on it and this
-	//   pass cannot name the document it is about -- the first draft tried it and the compiler
-	//   refused the cast. So refuse the whole pass only when NOTHING is printable; let Draw decide
-	//   per run, where the run's own database is at hand. The cost of being generous is a Draw call
-	//   that draws nothing; being strict here is not possible.
+	// @warning **the answer here is coarser than the one Draw gives, and it has to be.**
+	//   This pass cannot name the document it is about: the header says of this very parameter
+	//   "the parcel this text is in. **It MAY NOT be a UID based object**"
+	//   (IGlobalTextAdornment.h, at GetIsActive), so GetDataBase has nothing to answer with even
+	//   when it can be called. So refuse the whole pass only when NOTHING is printable; let Draw
+	//   decide per run, where the run's own database is at hand. The cost of being generous is a
+	//   Draw call that draws nothing; being strict here is not possible.
+	//   @warning **this said "IParcelShape is not an IPMUnknown" and that is simply false**
+	//     (IParcelShape.h: `class IParcelShape : public IPMUnknown`, and GetDataBase takes a
+	//     const IPMUnknown* -- PersistUtils.h -- so the call compiles). Whatever the first draft's
+	//     compiler refused, it was not that. **The conclusion was right and the reason was wrong**,
+	//     which is the worse of the two failures: a reason that does not hold stops warning anybody
+	//     the day it stops applying. The real reason is above, and it was in the header all along.
 	if (iShapeFlags & (IShape::kPrinting | IShape::kPreviewMode))
 		return KCMStoryMarkPrintPossibleAtAll();
 

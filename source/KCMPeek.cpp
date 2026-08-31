@@ -51,6 +51,7 @@
 #include "KCMConstants.h"
 #include "KCMDrawEventHandler.h"   // the engine's shared statics
 #include "KCMCore.h"               // the arm/disarm/state declarations
+#include "KCMComparisonRun.h"      // KCMForgetChosenDocsThatClosed -- the chosen Target/Source lose whichever document closed
 #include "KCMModelNotify.h"	// KCMNotifyStatus - the model tells the UI, it never calls it
 // The UI's KCMViewLookup.h is deliberately absent. Resolving which view the mouse is over belongs
 //   to the caller (the UI); this .cpp only peeks at the spread of the point it is given.
@@ -772,6 +773,14 @@ void KCMPeekStartup::Shutdown()
 	sPeekArmed = kFalse;
 	sPeekTargetDB = nil;
 	sPeekSourceDB = nil;
+	// The chosen Target/Source ("Set as Target" / "Set as Source") go with them, for exactly the
+	// same reason: they are model-side statics that the same responder path reads
+	// (KCMForgetChosenDocsThatClosed). They live in KCMComparisonRun.cpp, so the clearing is
+	// reached through a function of its own -- as with the book result and the export message
+	// above.
+	// ⚠**Here and not in the close sweep's comparisonDocClosed branch**: that branch is the
+	// comparison's own all-or-nothing clean-up, and a choice outlives a Stop by design.
+	KCMClearChosenDocs();
 
 	// (Dropping the sync caches, clearing the sync flags and the CMYK clean-up all live in the UI's
 	//  KCMUIStartup.cpp, that state belonging to UI files.)
@@ -887,6 +896,17 @@ void KCMHandleDocsClosed()
 	InterfacePtr<IDocumentList> docList(app ? app->QueryDocumentList() : nil);
 	if (docList == nil)
 		return;
+
+	// The chosen Target/Source ("Set as Target" / "Set as Source"): whichever names the document
+	// that has just closed is forgotten, and **the other one is left standing**.
+	//   This is the one thing here that is NOT part of "clean up if a compared document closed".
+	//   A choice can be made with nothing being compared at all, so it has to be swept on every
+	//   close, not only when comparisonDocClosed comes out true below -- and it is swept
+	//   per document, where the comparison's own clean-up is all-or-nothing (one of the two
+	//   closing makes the whole comparison meaningless; one of the two choices closing leaves the
+	//   other perfectly good).
+	//   Memory only, so it is safe while quitting; the pointers are compared, never dereferenced.
+	KCMForgetChosenDocsThatClosed(docList);
 
 	// A document has closed, so neither the page structure nor any database pointer can be relied
 	// on: the sync caches are dropped unconditionally. They belong to the UI (KCMViewSync), so what

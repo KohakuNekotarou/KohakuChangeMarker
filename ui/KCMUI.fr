@@ -711,6 +711,21 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKCMStartStopMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
+		// "Set as Target" / "Set as Source" on the panel flyout (popup) menu, directly below
+		// Start. Each makes the ACTIVE document the comparison's Target / Source, so that which
+		// two documents are compared is stated rather than inferred from what is in front. Live
+		// only while nothing is being compared (UpdateActionStates, kCustomEnabling). Whichever
+		// is not set still falls to the old automatic rule at the Start.
+		kKCMPopupSetTargetActionID,
+		kKCMPopupMenuPath,
+		kKCMSetTargetMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
+		kKCMPopupSetSourceActionID,
+		kKCMPopupMenuPath,
+		kKCMSetSourceMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
 		// Separator below Start (path ending in ":-" renders a menu separator; no ActionDef needed).
 		kKCMPopupSep1ActionID,
 		kKCMPopupMenuPath kSDKDefDelimiterAndSeparatorPath,
@@ -1138,6 +1153,27 @@ resource ActionDef (kSDKDefActionResourceID)
 		kOtherActionArea,
 		kNormalAction,
 		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates supplies the dynamic Start/Stop label
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		// "Set as Target" / "Set as Source": the active document becomes the comparison's Target /
+		// Source. kCustomEnabling because UpdateActionStates greys them while a comparison is
+		// running and when there is no active document to name.
+		kKCMActionComponentBoss,
+		kKCMPopupSetTargetActionID,
+		kKCMSetTargetMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates enables it only while not comparing, with an active document
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		kKCMActionComponentBoss,
+		kKCMPopupSetSourceActionID,
+		kKCMSetSourceMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,	// the same enabling as its Target counterpart
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 

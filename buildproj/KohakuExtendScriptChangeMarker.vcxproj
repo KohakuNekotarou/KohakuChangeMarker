@@ -268,15 +268,18 @@
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMConstants.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMCore.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMDrawEventHandler.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMOversetLoc.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMOversetScan.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMID.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMBoundaryID.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMLoc.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMFactoryList.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPageFlagState.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPageMap.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPageCheck.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMDocUidSet.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMThreadSafety.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMStoryKinds.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMStoryStamp.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMSnippetText.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMStoryList.h" />
@@ -292,6 +295,7 @@
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMHideUnchanged.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMOversetApply.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMComparisonRun.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMNotifyPayload.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMModelNotify.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\IKCMCompareFacade.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\IKCMMarkData.h" />

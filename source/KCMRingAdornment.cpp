@@ -401,9 +401,10 @@ static void KCMSetItemXPState(IDataBase* db, KCMXPListAction action)
 		return;
 
 	// **The kind is chosen by the direction** (IXPManager.h:95-105).
-	//   - joining = `kXPC_AddedSomeXP`    ... "some transparency was added". transparencyeffect does
-	//                                         the same (TranFxUtils.cpp:451-457, "update the
-	//                                         item-has-xp list").
+	//   - joining = `kXPC_AddedSomeXP`    ... "some transparency was added". The same change type
+	//                                         transparencyeffect passes (TranFxUtils.cpp:451-457,
+	//                                         "update the item-has-xp list") - but not through the
+	//                                         same call; see the second warning below.
 	//   - leaving = `kXPC_RemovedSomeXP`  ... "some transparency was removed".
 	//   @warning **`kXPC_MayHaveAddedSomeXP` is not an "either direction" kind.** Measured on one
 	//     document: `MayHaveAdded` gives **1->1, it does not leave**; `RemovedSomeXP` gives **1->0,
@@ -418,6 +419,13 @@ static void KCMSetItemXPState(IDataBase* db, KCMXPListAction action)
 	//   to the document's data and has to be undoable**. KCM registers on the session side and changes
 	//   not one byte of the document, so there is nothing to put on the undo stack - putting something
 	//   there would break what Ctrl+Z means.
+	//   @warning **which leaves this call without a precedent in the SDK.** `ItemXPChanged` is
+	//     declared at IXPManager.h:106-107 and **called from nowhere in the shipped source**;
+	//     `ProcessItemXPChangedCmd` (:110) is called from nowhere either (counted 2026-08-30 across
+	//     source/: declarations and comments only). Every official path is the command boss, by way
+	//     of TranFxUtils::Inval. **What is taken from transparencyeffect is the change type and the
+	//     moment, not the call** - so this line is on the "no official road" side of the audit, and
+	//     the reasoning above is all there is to stand on.
 	//
 	// @warning **this call dirties the document** (measured with the guard removed: one press of the
 	//   flyout was enough for `modified=true`). **The list is data on the document side**, which is
