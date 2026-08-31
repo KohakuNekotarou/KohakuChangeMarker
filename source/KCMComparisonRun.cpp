@@ -150,6 +150,22 @@ void KCMClearChosenDocs()
 }
 
 // The first open document that is not `target` = the Source (the older version).
+//
+// ★**"First" is IDocumentList's order, which is the order the documents were OPENED -- and it is
+//   NOT the order scripting reports.** app.documents is most-recently-active first, so a test
+//   written against the DOM predicts the wrong Source. Measured 2026-08-31: with the DOM listing
+//   third / new / old and `third` chosen as the Target, this returned `old` -- the one opened
+//   earliest of the remaining two, where the DOM's own "first other" would have been `new`.
+//   [[document-activation-is-presentation]] is the same trap for "which document is in front";
+//   this is its ordering half.
+//
+// ⚠**`d != target` is a pointer comparison on purpose, and KCMIsSameDoc is deliberately NOT used
+//   here.** That function answers "are these two databases one document" -- the question for a
+//   pair that reached the caller by two different roads (KCMToggleStartStop, where a clone
+//   database is possible). Here both sides come off the SAME IDocumentList within one call, so
+//   the question is not identity but "skip this element", and one document has one IDocument*.
+//   Measured the same day: a Target chosen through FindDocByDataBase was correctly skipped by the
+//   pointer GetNthDoc handed back. ⇒ Two comparisons, two questions; do not fold them into one.
 static IDocument* KCMFirstOtherDoc(IDocument* target)
 {
 	InterfacePtr<IApplication> app(GetExecutionContextSession() ? GetExecutionContextSession()->QueryApplication() : nil);
