@@ -38,7 +38,8 @@
 // Project includes:
 #include "KCMSnippetText.h"	// the snippet's text AND its ruby - see the note at "reading the text"
 #include "KCMStoryDiffRun.h"
-#include "KCMStoryCellBases.h"	// where a table's cells REALLY are -- see the note at LengthAgrees
+#include "KCMStoryCellBases.h"
+#include "KCMTextRead.h"		// the new reader, and the parallel run that checks it	// where a table's cells REALLY are -- see the note at LengthAgrees
 #include "KCMStoryList.h"
 #include "KCMStoryStamp.h"	// kKCMStoryKindAdded - which rows have no partner to compare against
 #include "KCMStoryXml.h"
@@ -721,8 +722,12 @@ bool16 CompareOneStory(const UIDRef& targetStory, const UIDRef& sourceStory,
 
 	// **BOTH SIDES ARE CHECKED.** KohakuTest checked only the side it selected in; here a click
 	//   moves both windows, so a mismatch on the older side would aim the older window wrongly.
-	if (!LengthAgrees(targetStory, targetComputed) || !LengthAgrees(sourceStory, sourceComputed))
-		return kFalse;
+	// ⚠**THE ANSWER IS TAKEN, NOT ACTED ON YET.** The refusal happens below, after the parallel
+	//   run has had its look: a story the old route refuses is exactly the case worth measuring
+	//   (one footnote is enough to make this fail, measured 2026-08-31), and returning here would
+	//   hide it from the very check written to catch it.
+	const bool16 lengthsAgree = (LengthAgrees(targetStory, targetComputed)
+								 && LengthAgrees(sourceStory, sourceComputed)) ? kTrue : kFalse;
 
 	// **AND THE POSITIONS THEMSELVES ARE ASKED OF THE DOCUMENT.** The count above cannot give
 	//   them: it runs straight down the snippet, and a table's cells are not where the snippet
@@ -737,8 +742,28 @@ bool16 CompareOneStory(const UIDRef& targetStory, const UIDRef& sourceStory,
 	//     -- so they arrive empty and nothing reads them before it returns.
 	std::vector<int32> targetStarts;
 	std::vector<int32> sourceStarts;
-	if (!KCMResolveParagraphPositions(targetStory, targetParas, targetAttrs, targetStarts)
-		|| !KCMResolveParagraphPositions(sourceStory, sourceParas, sourceAttrs, sourceStarts))
+
+	// ⚠ONLY WHEN THE LENGTHS AGREED. Placing paragraphs from a model the document has already
+	//   contradicted would be asking a question whose answer nobody may use.
+	const bool16 placed = lengthsAgree
+						  && KCMResolveParagraphPositions(targetStory, targetParas, targetAttrs, targetStarts)
+						  && KCMResolveParagraphPositions(sourceStory, sourceParas, sourceAttrs, sourceStarts);
+
+	// ★★★THE OLD ROUTE AND THE NEW ONE, SIDE BY SIDE (off by default; app.kcmStoryReadCompare).
+	//   It changes nothing about what this function answers - it only records where the two
+	//   readers disagree, so that the migration is MEASURED rather than argued. See KCMTextRead.h.
+	//   ★It runs on the REFUSED stories too, and says so: those are the ones the new route exists
+	//     for, and a check that only looked at the stories the old route could already handle
+	//     would agree with itself all the way to the end.
+	if (KCMStoryReadCompareIsOn())
+	{
+		const char* const tgtWhich = placed ? "target" : "target(OLD ROUTE REFUSED)";
+		const char* const srcWhich = placed ? "source" : "source(OLD ROUTE REFUSED)";
+		KCMCompareReadRoutes(targetStory, targetParas, targetAttrs, targetStarts, tgtWhich);
+		KCMCompareReadRoutes(sourceStory, sourceParas, sourceAttrs, sourceStarts, srcWhich);
+	}
+
+	if (!placed)
 		return kFalse;
 
 	for (size_t c = 0; c < paragraphChanges.size(); ++c)

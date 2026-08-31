@@ -233,6 +233,7 @@
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMStoryXml.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMStoryCellBases.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMStoryDiffRun.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMTextRead.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMStoryMarker.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMStoryMarkerExpiry.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMStoryMarkBuild.cpp" />
@@ -289,6 +290,7 @@
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMStoryXml.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMStoryCellBases.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMStoryDiffRun.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMTextRead.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPageNumberMarker.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPeek.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMRingAdornment.h" />

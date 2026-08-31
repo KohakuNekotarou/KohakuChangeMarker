@@ -108,6 +108,9 @@
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMStoryDiffRun.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMTextRead.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMStoryMarker.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -159,6 +162,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMStoryDiffRun.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMTextRead.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\IKCMStoryMarkFacade.h">

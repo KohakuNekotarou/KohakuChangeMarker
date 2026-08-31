@@ -526,6 +526,27 @@ resource VersionedScriptElementInfo(10)
 			kNoAttributeClass,					// attribute class ID
 		}
 
+		// app.kcmStoryReadCompare (2026-08-31) - ⚠TEMPORARY, for the direct-read migration.
+		//
+		// ★★★THE ONLY READ-WRITE PROPERTY IN THIS FILE. Assigning "on" arms the parallel run
+		//   (both readers over every story, reporting where they disagree); anything else disarms
+		//   it. Reading returns the last report. The convention - "on" arms, everything else
+		//   disarms - is KIDMCP's app.kmcpHttp.
+		// ⚠IT IS ON THE APPLICATION, NOT THE DOCUMENT, and that is what keeps it out of IDML:
+		//   the application object is not part of a document's IDML at all (measured, B11), so
+		//   this needs no kNotSupported declaration in the INX resource below - unlike the story
+		//   and document properties, which do.
+		Property
+		{
+			kKCMStoryReadComparePropertyScriptElement,
+			p_KCMStoryReadCompare,
+			"kcm story read compare",			// name -> app.kcmStoryReadCompare
+			"Arms the migration's parallel run with \"on\"; reading returns the last report.",
+			StringType,
+			{}
+			kNoAttributeClass,
+		}
+
 		// app.kcmBookResult (2026-08-11) - the last book comparison, one line per chapter,
 		// "name<TAB>state". Same shape and same purpose as the property above: the status line
 		// holds one line, so the per-chapter answers need their own way out to be checkable
@@ -554,6 +575,8 @@ resource VersionedScriptElementInfo(10)
 				Object{ kApplicationObjectScriptElement },
 				Property{ kKCMStatusPropertyScriptElement, kReadOnly },
 				Property{ kKCMBookResultPropertyScriptElement, kReadOnly },
+				// ⚠kReadWrite, alone in this file. See the property's own declaration above.
+				Property{ kKCMStoryReadComparePropertyScriptElement, kReadWrite },
 			}
 		}
 

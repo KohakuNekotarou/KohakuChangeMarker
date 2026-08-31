@@ -261,7 +261,8 @@ DECLARE_PMID(kScriptInfoIDSpace, kKCMTextChangeCountPropertyScriptElement, kKCMP
 DECLARE_PMID(kScriptInfoIDSpace, kKCMAttrChangeCountPropertyScriptElement, kKCMPrefix + 17)	// stories[n].kcmAttrChangeCount (formatting; GetAttrChangeCount)
 DECLARE_PMID(kScriptInfoIDSpace, kKCMOtherChangeCountPropertyScriptElement, kKCMPrefix + 18)	// stories[n].kcmOtherChangeCount (everything else; GetOtherChangeCount)
 // Same rule as the four above: this ID is repeated in KCM.fr's second VersionedScriptElementInfo.
-DECLARE_PMID(kScriptInfoIDSpace, kKCMTransparencyItemCountPropertyScriptElement, kKCMPrefix + 19)	// document.kcmTransparencyItemCount (read-only; the size of IXPManager's list of page items that have transparency). It is how we check from outside that nothing was left on the list and saved: the list persists into the .indd, so save, close, reopen and read.
+DECLARE_PMID(kScriptInfoIDSpace, kKCMTransparencyItemCountPropertyScriptElement, kKCMPrefix + 19)
+DECLARE_PMID(kScriptInfoIDSpace, kKCMStoryReadComparePropertyScriptElement, kKCMPrefix + 20)	// app.kcmStoryReadCompare (READ-WRITE, and the only one — assigning "on" arms the migration's parallel run, anything else disarms it; reading returns the last report). ⚠TEMPORARY: it goes when the direct-read migration lands (docs/superpowers/plans/2026-08-31-kcm-story-direct-read.md)	// document.kcmTransparencyItemCount (read-only; the size of IXPManager's list of page items that have transparency). It is how we check from outside that nothing was left on the list and saved: the list persists into the .indd, so save, close, reopen and read.
 // (The tool's enumerator goes on the application's own kToolBoxEnumScriptElement, so this side
 //  needs no ID for it.)
 
