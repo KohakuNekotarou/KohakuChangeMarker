@@ -472,6 +472,20 @@ static void KCMExportChangedPagesTSVRun()
 	chooser.SetFilename(BuildSuggestedFileName(targetDB));
 	PMString filterName("Text file(txt)");
 	filterName.SetTranslatable(kFalse);
+	// **The hard-wired creator/type/extension is a decision, not an oversight.** SDKFileHelper.h
+	//   :507-510 recommends the other overload -- AddFilter(FileTypeInfoID, name) -- so that file
+	//   creator, type and extension need not be hard wired, and the ID exists
+	//   (kTEXTFileTypeInfoID, ShuksanID.h:1434). It is not taken because that overload reads the
+	//   EXTENSION from the registry as well (SDKFileHelper.cpp:851-858 -> GetCurrentFileTypeInfo),
+	//   and the registry is built from the application's own FileTypeTable resource, which SDK
+	//   source cannot read (FileTypeRegistry.h:57). ⇒ **nothing guarantees the file still ends in
+	//   .txt**, and that extension is user-visible (matched with KESCL deliberately). What is
+	//   gained is one hard-coded triple; what is risked is the name of the file the reader gets.
+	//   ★**Re-measured 2026-08-31**: the SDK's ONLY call of that overload
+	//   (codesnippets/SnpChooseFile.cpp:202) passes a filter NAME and never states the resulting
+	//   extension, so **the official example does not answer this question** -- it stays something
+	//   to MEASURE (open the chooser, or print GetCurrentFileTypeInfo(...).GetFileExtension()),
+	//   not something to look up. Full record: docs/ai-notes/kescm-api-audit-b10-2026-08-16.md C-1.
 	chooser.AddFilter('CWIE', 'TEXT', "txt", filterName);
 	chooser.ShowDialog();
 	if (!chooser.IsChosen())
