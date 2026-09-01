@@ -15,10 +15,14 @@
 //       Nothing extra is diffed for it: KCMTextDiff::Change already carries the a-side range,
 //       and the same paragraph-start arithmetic runs over the older side's paragraphs.
 //
-//    2. IT CHOOSES WHICH SIDE'S WORDS TO SHOW. KT reported the newer text and left a deletion
-//       blank, which is right for a report ("what is gone is precisely what is not there") and
-//       useless in a panel, where it is a row with nothing in it. A deletion here shows the
-//       text that was REMOVED, taken from the older side.
+//    2. IT CARRIES BOTH SIDES' WORDS. KT reported the newer text and nothing else; here the row
+//       shows the newer version and the panel's message area shows the older one, so a reader can
+//       see what a passage used to say without leaving the row.
+//       ⚠**THE ROW IS THE NEWER VERSION FOR EVERY KIND OF CHANGE, INCLUDING A DELETION**
+//       (2026-09-01, user's decision). Deletions used to show the older text in the row - the
+//       words that had gone - which made them the one row in the list showing the opposite
+//       document from every other, and read as though the panel had the two files the wrong way
+//       round. What was deleted is in the message area, where every other row's other side is.
 //========================================================================================
 
 #include "VCPlugInHeaders.h"
@@ -608,6 +612,7 @@ void CompareParagraphAttr(KCMStoryAttrKind attrKind,
     restore the row this function exists to remove.
 */
 KCMAttrSpanList SpansWhoseTextSurvives(const KCMAttrSpanList& spans,
+									   const KCMAttrSpanList& otherSpans,
 									   const std::string& ownPara, const std::string& otherPara)
 {
 	KCMAttrSpanList kept;
@@ -619,15 +624,46 @@ KCMAttrSpanList SpansWhoseTextSurvives(const KCMAttrSpanList& spans,
 
 	for (size_t i = 0; i < spans.size(); ++i)
 	{
+		// ★★★A SPAN THE OTHER SIDE ALSO HAS IS ALWAYS COMPARED (2026-09-01, user: "when the ruby
+		//   changes AND the kanji under it changes, report both"). Both versions mark these
+		//   characters, so **something about the marking changed or it did not** - and that is a
+		//   question this filter has no business answering. Testing the base text here would drop
+		//   exactly the case the user asked for: rewrite 琥珀 as 玻珀 and re-type its reading, and
+		//   neither version's text is found in the other, so both spans would vanish and the panel
+		//   would report the kanji alone.
+		//   ⚠MATCHED THE WAY CompareParagraphAttr MATCHES - by fStart. Two different rules for
+		//    "the same span" is how the filter and the comparison would come to disagree.
+		bool16 paired = kFalse;
+		for (size_t k = 0; k < otherSpans.size(); ++k)
+		{
+			if (otherSpans[k].fStart == spans[i].fStart)
+			{
+				paired = kTrue;
+				break;
+			}
+		}
+		if (paired)
+		{
+			kept.push_back(spans[i]);
+			continue;
+		}
+
+		// ---- from here: a span ONE side has and the other does not ----------------------------
+		// It is either "the mark was taken off characters that are still there" (a change worth
+		// reporting) or "the characters went, and the mark with them" (not a change of its own -
+		// **the text is what changed, the mark merely followed**, which is the user's rule:
+		// the text is the subject, ruby and kenten are its attendants).
 		const int32 from = spans[i].fStart;
 		const int32 to   = spans[i].fStart + spans[i].fLen;
 
 		if (from < 0 || to <= from || to >= static_cast<int32>(bytes.size()))
 		{
-			kept.push_back(spans[i]);		// unreadable - see the warning above
+			kept.push_back(spans[i]);		// unreadable position - see the warning above
 			continue;
 		}
 
+		// ⚠MATCHED BY THE TEXT, NOT BY POSITION. After an edit the same characters sit at a
+		//  different offset, so a positional test would call every surviving span deleted.
 		const std::string text = ownPara.substr(static_cast<size_t>(bytes[from]),
 												static_cast<size_t>(bytes[to] - bytes[from]));
 		if (text.empty() || otherPara.find(text) != std::string::npos)
@@ -682,10 +718,10 @@ void AddAttributeChanges(const std::vector<KCMTextDiff::Change>& paragraphChange
 		//   characters are the same on both sides by definition, so the filter is not run there: it
 		//   would cost a walk per span to answer a question already settled.
 		const KCMAttrSpanList sourceRuby = onlyWhereTextSurvives
-			? SpansWhoseTextSurvives(sourceAttrs[ai].fRuby, sourceParas[ai], targetParas[bi])
+			? SpansWhoseTextSurvives(sourceAttrs[ai].fRuby, targetAttrs[bi].fRuby, sourceParas[ai], targetParas[bi])
 			: sourceAttrs[ai].fRuby;
 		const KCMAttrSpanList targetRuby = onlyWhereTextSurvives
-			? SpansWhoseTextSurvives(targetAttrs[bi].fRuby, targetParas[bi], sourceParas[ai])
+			? SpansWhoseTextSurvives(targetAttrs[bi].fRuby, sourceAttrs[ai].fRuby, targetParas[bi], sourceParas[ai])
 			: targetAttrs[bi].fRuby;
 
 		CompareParagraphAttr(kKCMStoryAttrRuby,
@@ -700,10 +736,10 @@ void AddAttributeChanges(const std::vector<KCMTextDiff::Change>& paragraphChange
 		//   read it aloud. What answers that is fAttrKind, which every row and every change already
 		//   carries. ⇒ **The mistake was one place asking the wrong question, not this call.**
 		const KCMAttrSpanList sourceKenten = onlyWhereTextSurvives
-			? SpansWhoseTextSurvives(sourceAttrs[ai].fKenten, sourceParas[ai], targetParas[bi])
+			? SpansWhoseTextSurvives(sourceAttrs[ai].fKenten, targetAttrs[bi].fKenten, sourceParas[ai], targetParas[bi])
 			: sourceAttrs[ai].fKenten;
 		const KCMAttrSpanList targetKenten = onlyWhereTextSurvives
-			? SpansWhoseTextSurvives(targetAttrs[bi].fKenten, targetParas[bi], sourceParas[ai])
+			? SpansWhoseTextSurvives(targetAttrs[bi].fKenten, sourceAttrs[ai].fKenten, targetParas[bi], sourceParas[ai])
 			: targetAttrs[bi].fKenten;
 
 		CompareParagraphAttr(kKCMStoryAttrKenten,
