@@ -615,21 +615,24 @@ bool16 KCMStoryJumpToChange(int32 rowIndex, int32 changeIndex)
 	//   ★The label is its own argument rather than the head of the first piece: when the message
 	//     does not fit, the CONTEXT gives way from its outer ends, and a label living in the context
 	//     would be the first thing cut. It is the one piece that has to survive.
-	// ⚠★★★WHICH DOCUMENT fOtherText CAME FROM IS NOT ALWAYS INFERABLE FROM fKind (2026-08-22).
-	//   For a TEXT change it is: the row shows the side that changed, so a deletion (kind 2) shows
-	//   the older side and fOtherText is therefore the newer one.
-	//   For a RUBY change it is NOT: the characters exist in both versions, so KCMStoryDiffRun's
-	//   AddRubyChange always puts the target in fText and the source in fOtherText, with no
-	//   rowShowsOldSide branch to make. Reading fKind alone labelled a removed ruby "Target Text:"
-	//   over text that had come from the SOURCE.
-	//   ⇒ Ask what sort of change it is FIRST. (Found by an independent review of this range, after
-	//     I had read the same diff and called it clean - the fault was reading the new code without
-	//     counting who already reads the values it sets.)
-	const bool16 otherIsTarget = (change.fWhat == IKCMStoryEditsFacade::Change::kWhatText
-								  && change.fKind == 2) ? kTrue : kFalse;
+	// ⚠★★WHICH DOCUMENT fOtherText CAME FROM USED TO DEPEND ON THE KIND OF CHANGE (2026-08-22), and
+	//   getting that wrong once labelled a removed ruby "Target Text:" over text that had come from
+	//   the SOURCE. **That whole question is gone as of 2026-09-01**: every row shows the newer
+	//   version, so fOtherText is the older one for every kind of change there is.
+	//   ★The lesson outlived the branch, and is why the note stays: a value that can come from
+	//   either document must be labelled from what the change IS, never from what it looks like.
+	// ★★★ALWAYS THE SOURCE, BECAUSE THE ROW IS ALWAYS THE TARGET (2026-09-01, user's decision).
+	//   The row shows the newer version for every kind of change now - including a deletion, which
+	//   used to be the exception - so the other side is the older one every time and this label
+	//   never has to work out which document it is looking at.
+	//   ⚠**THE BRANCH THAT STOOD HERE WAS NOT A STYLE CHOICE**: while deletions showed the older
+	//   text in the row, this had to say "Target Text:" for them or it would have labelled the
+	//   newer text as the source. It went out with the rule that made it necessary - and the two
+	//   MUST go together. Restoring one without the other mislabels every deletion in the list.
+	//   (KCMStoryDiffRun's Slice is the other half.)
 	PMString label;
 	label.SetTranslatable(kFalse);
-	label.Append(otherIsTarget ? "Target Text:" : "Source Text:");
+	label.Append("Source Text:");
 
 	// ★★THE OTHER SIDE'S READING GOES WITH IT (2026-08-22). The list shows the NEWER version, so a
 	//   reading that was REMOVED can be seen nowhere else - and the row's own upper line is left

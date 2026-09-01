@@ -417,20 +417,32 @@ void Add(std::vector<KCMStoryChange>& out, int32 paraIndex,
 	std::string oldPre, oldMid, oldPost;
 	Slice(sourceText, sourceBytes, sFrom, sCount, kContextCodePoints, oldPre, oldMid, oldPost);
 
-	// A deletion shows the OLDER side on the row: what was taken out is what the reader has to
-	//   see, and the newer side has nothing there to show. Everything else shows the newer side.
-	//   Whichever of the two that is, the OTHER one goes to fOtherText -- see KCMStoryList.h for
-	//     why it is named that rather than "old".
-	const bool16 rowShowsOldSide = (change.fKind == KCMStoryChange::kDelete);
-
+	// ★★★THE ROW IS ALWAYS THE NEWER VERSION. ONE RULE, NO EXCEPTIONS (2026-09-01, user's
+	//   decision: "if that had become the spec, I am changing the spec").
+	//
+	//   ⚠**WHAT WAS HERE BEFORE, AND WHY IT WENT.** A DELETION used to show the OLDER side on the
+	//   row - the words that had gone - because "the newer side has nothing there to show". That
+	//   was decided in this file on 2026-08-20 and **was never asked for**; it made the deletion
+	//   the one row in the list that shows the opposite document from every other row, and a
+	//   reader watching the row and the message area swap places called it exactly that: the panel
+	//   looked as though it had the two documents the wrong way round.
+	//   ⇒ The old reasoning was not wrong about the cost - a deletion's row really does lose its
+	//     highlighted middle - it was wrong about the price. **Consistency across every row is
+	//     worth more than one row being self-contained**, and what was deleted is not lost: it is
+	//     in the message area, which is where every other row's other side already is, and the
+	//     Change column's '-' says which kind of row it is.
+	//
+	//   Whichever side the row shows, the OTHER one goes to fOtherText -- see KCMStoryList.h for
+	//   why it is named that rather than "old".
+	//
 	// All six pieces are document text, not just the middles -- see SetDocumentText.
-	SetDocumentText(change.fTextPre, rowShowsOldSide ? oldPre : newPre);
-	SetDocumentText(change.fText, rowShowsOldSide ? oldMid : newMid);
-	SetDocumentText(change.fTextPost, rowShowsOldSide ? oldPost : newPost);
+	SetDocumentText(change.fTextPre, newPre);
+	SetDocumentText(change.fText, newMid);
+	SetDocumentText(change.fTextPost, newPost);
 
-	SetDocumentText(change.fOtherTextPre, rowShowsOldSide ? newPre : oldPre);
-	SetDocumentText(change.fOtherText, rowShowsOldSide ? newMid : oldMid);
-	SetDocumentText(change.fOtherTextPost, rowShowsOldSide ? newPost : oldPost);
+	SetDocumentText(change.fOtherTextPre, oldPre);
+	SetDocumentText(change.fOtherText, oldMid);
+	SetDocumentText(change.fOtherTextPost, oldPost);
 
 	out.push_back(change);
 }
