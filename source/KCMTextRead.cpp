@@ -405,6 +405,7 @@ bool16 KCMTextRead::ReadStory(const UIDRef& storyRef,
 	const TextIndex total = model->TotalLength();
 	size_t nextCell = 0;
 	size_t nextRuby = 0;
+	int32 nextFootnote = 0;
 
 	// ★★★ONE LOOP FOR THE BODY, THE CELLS AND THE FOOTNOTES. QueryStoryThread hands back the
 	//   thread containing a position together with where it starts and how long it is; stepping by
@@ -432,6 +433,27 @@ bool16 KCMTextRead::ReadStory(const UIDRef& storyRef,
 			place.fCellRow = cells[nextCell].fRow;
 			place.fCellCol = cells[nextCell].fCol;
 			++nextCell;
+		}
+		else if (position != 0)
+		{
+			// ★★★A THREAD THAT IS NEITHER THE BODY NOR A CELL IS A FOOTNOTE (or an endnote), and
+			//   THE BODY IS THE ONE THAT STARTS AT ZERO - every other thread of a story hangs off
+			//   something standing in it. ⚠That is the whole of the test, and it is worth saying
+			//   plainly: a shape this walk has never met would be counted as a footnote here.
+			//   The parallel run is what would say so (it prints the place of every paragraph),
+			//   and the three footnote pairs are what proved the shape it does meet.
+			//
+			//   ★THEY ARE READ AS PARAGRAPHS LIKE ANY OTHERS AND KEEP THEIR REAL TextIndex, which
+			//   is what the XML route could never do: IDMS and .icml both put a footnote's text in
+			//   the MIDDLE of the body, while the text model keeps it past the end. Measured
+			//   2026-08-31: the old parser produced "BBFOOTBB" - a string that exists nowhere in
+			//   the document - and the story was then refused with no differences at all, whether
+			//   the edit was in the body or in the note (work/kcm-selftest/footnote/README.md).
+			//
+			//   ⚠NUMBERED IN THE ORDER THE THREADS COME OUT, which is TextIndex order. Unlike
+			//    tables there is no nesting to reorder (a footnote inside a footnote is not a
+			//    thing), so no equivalent of EarlierBlock is needed.
+			place.fFootnoteOrdinal = nextFootnote++;
 		}
 
 		std::string text;
@@ -626,6 +648,9 @@ void KCMCompareReadRoutes(const UIDRef& storyRef,
 					//   ⚠POSITIONS AND LENGTHS ONLY, never the readings - the same rule the rest of
 					//    this report keeps (KCMTextRead.h: it names positions, not text).
 					const size_t ni = it->second;
+					if (ni < newAttrs.size() && newAttrs[ni].IsFootnote())
+						detail << " fn" << newAttrs[ni].fFootnoteOrdinal;
+
 					if (ni < newAttrs.size() && !newAttrs[ni].fRuby.empty())
 					{
 						detail << " ruby";
@@ -644,13 +669,20 @@ void KCMCompareReadRoutes(const UIDRef& storyRef,
 
 			const bool16 sameText = (oldParas[oi] == newParas[ni]) ? kTrue : kFalse;
 
-			// ⚠THE CELL IDENTITY IS PART OF "THE SAME ANSWER". SplitRunAtPlaces cuts rows by it,
-			//   so two readers that agree on every character and every position can still put a
-			//   row in the wrong place if they disagree here.
+			// ⚠THE PLACE IS PART OF "THE SAME ANSWER". SplitRunAtPlaces cuts rows by it, so two
+			//   readers that agree on every character and every position can still put a row in the
+			//   wrong place if they disagree here.
+			//   ⚠★★THE FOOTNOTE IS ASKED ABOUT TOO, AND THE TWO ROUTES ARE EXPECTED TO DISAGREE:
+			//    the snippet parser does not know <Footnote> at all, so it answers kNotAFootnote
+			//    for text that IS in one. **That disagreement is the fault being fixed, printed
+			//    rather than hidden** - and it can only be seen at all on a story the old route
+			//    still consents to read.
 			const bool16 samePlace = (oi < oldAttrs.size() && ni < newAttrs.size()
 									  && oldAttrs[oi].fTableOrdinal == newAttrs[ni].fTableOrdinal
 									  && oldAttrs[oi].fCellRow == newAttrs[ni].fCellRow
-									  && oldAttrs[oi].fCellCol == newAttrs[ni].fCellCol) ? kTrue : kFalse;
+									  && oldAttrs[oi].fCellCol == newAttrs[ni].fCellCol
+									  && oldAttrs[oi].fFootnoteOrdinal == newAttrs[ni].fFootnoteOrdinal)
+									 ? kTrue : kFalse;
 
 			// ⚠★★★THE RUBY IS PART OF "THE SAME ANSWER" AS WELL, AND UNTIL IT WAS ASKED FOR HERE
 			//   THE PARALLEL RUN ANSWERED "agree" ABOUT A READER THAT HAD NEVER READ ANY.
@@ -685,12 +717,15 @@ void KCMCompareReadRoutes(const UIDRef& storyRef,
 					detail << "ruby(" << oldSpans << "/" << newSpans << ")";
 				}
 				if (!samePlace)
+					// table, row, column, footnote - old side, then new side.
 					detail << "place(" << (oi < oldAttrs.size() ? oldAttrs[oi].fTableOrdinal : -9)
 						   << "," << (oi < oldAttrs.size() ? oldAttrs[oi].fCellRow : -9)
 						   << "," << (oi < oldAttrs.size() ? oldAttrs[oi].fCellCol : -9)
+						   << ",fn" << (oi < oldAttrs.size() ? oldAttrs[oi].fFootnoteOrdinal : -9)
 						   << "/" << (ni < newAttrs.size() ? newAttrs[ni].fTableOrdinal : -9)
 						   << "," << (ni < newAttrs.size() ? newAttrs[ni].fCellRow : -9)
-						   << "," << (ni < newAttrs.size() ? newAttrs[ni].fCellCol : -9) << ")";
+						   << "," << (ni < newAttrs.size() ? newAttrs[ni].fCellCol : -9)
+						   << ",fn" << (ni < newAttrs.size() ? newAttrs[ni].fFootnoteOrdinal : -9) << ")";
 				detail << "]";
 			}
 		}

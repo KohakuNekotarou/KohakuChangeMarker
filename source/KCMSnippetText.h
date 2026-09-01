@@ -234,10 +234,26 @@ struct KCMParaAttrs
 	int32				fCellRow;		// grid row of that cell, -1 when not a cell
 	int32				fCellCol;		// grid column of that cell, -1 when not a cell
 
+	/** Which footnote of the story this paragraph stands in, kNotAFootnote when it is not in one.
+
+		★A FOOTNOTE IS A PLACE, exactly as a cell is, and for the same reason IsCell() exists: the
+		text of a footnote paragraph and of a body paragraph are indistinguishable after the fact,
+		and SplitRunAtPlaces has to cut a run where the PLACE changes - otherwise one row spans a
+		body edit and a footnote edit and points at neither.
+		⚠A FOOTNOTE IS NOT A CELL. It has no table, no row and no column, so it gets a field of its
+		  own rather than a borrowed fTableOrdinal - and a paragraph is never both.
+		@warning **only the model route fills this in.** The snippet parser does not know
+		  <Footnote> at all (it folds the note's text into the body, which is why a story with one
+		  was refused outright), so paragraphs it produces always answer kNotAFootnote. */
+	enum { kNotAFootnote = -1 };
+
+	int32				fFootnoteOrdinal;
+
 	KCMParaAttrs()
 		: fExtraChars(0), fLeadingChars(0), fExtraTables(0), fLeadingTables(0),
 		  fExtraTable(-1), fLeadingTable(-1),
-		  fTableOrdinal(kNotACell), fCellRow(-1), fCellCol(-1) {}
+		  fTableOrdinal(kNotACell), fCellRow(-1), fCellCol(-1),
+		  fFootnoteOrdinal(kNotAFootnote) {}
 
 	/** Whether this paragraph is a table cell whose position must be asked of the text model.
 
@@ -248,6 +264,9 @@ struct KCMParaAttrs
 		-- the inner table is charged to the cell it stands in, and the document is asked about its
 		cells the same way it is asked about any others. */
 	bool16 IsCell() const { return fTableOrdinal >= 0; }
+
+	/** Whether this paragraph stands inside a footnote. */
+	bool16 IsFootnote() const { return fFootnoteOrdinal >= 0; }
 };
 
 namespace KCMSnippetText
@@ -1148,13 +1167,21 @@ struct ParaRegion
 	int32	fTable;		///< KCMParaAttrs::kNotACell for body text, else which table
 	int32	fRow;		///< grid row when it is a cell, -1 otherwise
 	int32	fCol;		///< grid column when it is a cell, -1 otherwise
+	int32	fFootnote;	///< KCMParaAttrs::kNotAFootnote for body text and cells, else which footnote
 
-	ParaRegion() : fStart(0), fCount(0), fTable(KCMParaAttrs::kNotACell), fRow(-1), fCol(-1) {}
+	ParaRegion() : fStart(0), fCount(0), fTable(KCMParaAttrs::kNotACell), fRow(-1), fCol(-1),
+				   fFootnote(KCMParaAttrs::kNotAFootnote) {}
 
-	/** The same place - not the same paragraphs. */
+	/** The same place - not the same paragraphs.
+
+		⚠**THE FOOTNOTE HAS TO BE ASKED ABOUT HERE AND FILLED IN BY ParagraphRegions, OR NEITHER
+		  WORKS.** If only one of the two is done, every region carries the same -1 and the runs are
+		  cut exactly as they were before - the code reads as though footnotes were separated while
+		  nothing separates them. */
 	bool16 SamePlaceAs(const ParaRegion& other) const
 	{
-		return fTable == other.fTable && fRow == other.fRow && fCol == other.fCol;
+		return fTable == other.fTable && fRow == other.fRow && fCol == other.fCol
+			&& fFootnote == other.fFootnote;
 	}
 };
 
@@ -1168,11 +1195,17 @@ inline void ParagraphRegions(const std::vector<KCMParaAttrs>& attrs, int32 start
 		ParaRegion here;
 		here.fStart = i;
 		here.fCount = 1;
-		if (i >= 0 && static_cast<size_t>(i) < attrs.size() && attrs[i].IsCell())
+		if (i >= 0 && static_cast<size_t>(i) < attrs.size())
 		{
-			here.fTable = attrs[i].fTableOrdinal;
-			here.fRow = attrs[i].fCellRow;
-			here.fCol = attrs[i].fCellCol;
+			if (attrs[i].IsCell())
+			{
+				here.fTable = attrs[i].fTableOrdinal;
+				here.fRow = attrs[i].fCellRow;
+				here.fCol = attrs[i].fCellCol;
+			}
+			// ⚠NOT an `else`: the two are separate fields and a paragraph could in principle carry
+			//   both (a table inside a footnote). Asking them one at a time keeps that possible.
+			here.fFootnote = attrs[i].fFootnoteOrdinal;
 		}
 
 		if (!out.empty() && out.back().SamePlaceAs(here))
