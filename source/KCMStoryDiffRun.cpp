@@ -654,22 +654,40 @@ bool16 CompareOneStory(const UIDRef& targetStory, const UIDRef& sourceStory,
 {
 	out.clear();
 
-	std::string targetXml;
-	std::string sourceXml;
-	if (!KCMStoryXml::ExportStory(targetStory, targetXml))
-		return kFalse;
-	if (!KCMStoryXml::ExportStory(sourceStory, sourceXml))
-		return kFalse;
-
-	// Ruby comes out of the same read as the text, and for the reason spelt out in
-	//   KCMSnippetText.h: a comparison is one moment, and asking the live model for ruby instead
-	//   would put two moments in one row.
+	// ★★★READ STRAIGHT FROM THE TEXT MODEL. The story used to be exported as a snippet and parsed
+	//   back out of XML, and the positions counted from it then had to be checked against the
+	//   document's own answer - two sets of books, five ways to refuse a story, and a whole file
+	//   (KCMStoryCellBases) to reconcile them. **The document is now asked once, and its answer is
+	//   the only one.** ⇒ KCMTextRead.h carries why, and the parallel run that measured it.
+	//
+	//   ⚠WHAT THIS CHANGES FOR THE READER, in one line each:
+	//   ・**a footnote no longer silences a story** - the parser did not know <Footnote> and folded
+	//     the note into the body, so the length never matched and the whole story was refused
+	//     (measured: one footnote turned edits=1 into edits=0, in the body AND in the note).
+	//   ・**a table standing inside a paragraph no longer does either** (work/kcm-selftest/midtable).
+	//   ・**the ruby is read from the strand**, not inferred from an attribute's presence.
+	//   ・**the paragraph ORDER differs where a table stands**: the snippet put a table's cells
+	//     where the table is, the model keeps them past the body. Both sides come out in the same
+	//     order as each other, and ChangeIsBefore sorts the rows by TextIndex in the end, so the
+	//     panel reads the same - **but SplitRunAtPlaces cuts differently** (the body is now
+	//     contiguous), which is the one visible difference and is the more natural cutting.
+	//
+	//   ★ONE READ, ONE MOMENT. Ruby comes out of the same walk as the text, for the reason spelt
+	//   out in KCMSnippetText.h: a comparison is one moment, and reading the ruby separately would
+	//   put two moments in one row.
 	std::vector<std::string> targetParas;
 	std::vector<std::string> sourceParas;
 	std::vector<KCMParaAttrs> targetAttrs;
 	std::vector<KCMParaAttrs> sourceAttrs;
-	KCMSnippetText::ExtractParagraphs(targetXml, targetParas, &targetAttrs);
-	KCMSnippetText::ExtractParagraphs(sourceXml, sourceParas, &sourceAttrs);
+	std::vector<int32> targetStarts;
+	std::vector<int32> sourceStarts;
+
+	// ⚠**THE FIRST OF THE TWO REMAINING WAYS TO DECLINE**, and it means one thing only: the story
+	//   could not be opened at all. **An empty story is not a failure** (KCMTextRead.h).
+	if (!KCMTextRead::ReadStory(targetStory, targetParas, targetAttrs, targetStarts))
+		return kFalse;
+	if (!KCMTextRead::ReadStory(sourceStory, sourceParas, sourceAttrs, sourceStarts))
+		return kFalse;
 
 	// **ONE TABLE FOR BOTH SEQUENCES.** Numbering them from separate tables would give equal
 	//   paragraphs different tokens, and every paragraph would look changed.
@@ -717,54 +735,30 @@ bool16 CompareOneStory(const UIDRef& targetStory, const UIDRef& sourceStory,
 		paragraphChanges.swap(byPlace);
 	}
 
-	const int32 targetComputed = ComputedLength(targetParas, targetAttrs);
-	const int32 sourceComputed = ComputedLength(sourceParas, sourceAttrs);
+	// Where each story ends, for a run that covers no paragraph of its own (an insertion past the
+	//   last one). ★**ASKED OF THE DOCUMENT.** ComputedLength used to work this number out by
+	//   adding up what the snippet said, and it needed KCMParaAttrs::fExtraChars to do it - a set
+	//   of counters that existed only because the positions came from somewhere other than the
+	//   model. Nothing counts any more, so nothing has to be reconciled.
+	InterfacePtr<ITextModel> targetModel(targetStory, UseDefaultIID());
+	InterfacePtr<ITextModel> sourceModel(sourceStory, UseDefaultIID());
+	const int32 targetComputed = (targetModel != nil) ? targetModel->TotalLength() : 0;
+	const int32 sourceComputed = (sourceModel != nil) ? sourceModel->TotalLength() : 0;
 
-	// **BOTH SIDES ARE CHECKED.** KohakuTest checked only the side it selected in; here a click
-	//   moves both windows, so a mismatch on the older side would aim the older window wrongly.
-	// ⚠**THE ANSWER IS TAKEN, NOT ACTED ON YET.** The refusal happens below, after the parallel
-	//   run has had its look: a story the old route refuses is exactly the case worth measuring
-	//   (one footnote is enough to make this fail, measured 2026-08-31), and returning here would
-	//   hide it from the very check written to catch it.
-	const bool16 lengthsAgree = (LengthAgrees(targetStory, targetComputed)
-								 && LengthAgrees(sourceStory, sourceComputed)) ? kTrue : kFalse;
-
-	// **AND THE POSITIONS THEMSELVES ARE ASKED OF THE DOCUMENT.** The count above cannot give
-	//   them: it runs straight down the snippet, and a table's cells are not where the snippet
-	//   puts them -- the text model keeps them after the whole of the story's own text
-	//   (ITableTextContent.h), so counting places everything after a table wrongly and no total
-	//   can show it. See KCMStoryCellBases.h for the measurements.
-	//   @warning it refuses stories it cannot match up (a shape the body walk does not
-	//     understand, a table whose position the two sides disagree about), and a refusal here
-	//     means the same as one above: no differences for this story, rather than differences
-	//     aimed at the wrong words.
-	//   The two tables are filled in ENTIRELY by this call -- it assigns over whatever they hold
-	//     -- so they arrive empty and nothing reads them before it returns.
-	std::vector<int32> targetStarts;
-	std::vector<int32> sourceStarts;
-
-	// ⚠ONLY WHEN THE LENGTHS AGREED. Placing paragraphs from a model the document has already
-	//   contradicted would be asking a question whose answer nobody may use.
-	const bool16 placed = lengthsAgree
-						  && KCMResolveParagraphPositions(targetStory, targetParas, targetAttrs, targetStarts)
-						  && KCMResolveParagraphPositions(sourceStory, sourceParas, sourceAttrs, sourceStarts);
-
-	// ★★★THE OLD ROUTE AND THE NEW ONE, SIDE BY SIDE (off by default; app.kcmStoryReadCompare).
-	//   It changes nothing about what this function answers - it only records where the two
-	//   readers disagree, so that the migration is MEASURED rather than argued. See KCMTextRead.h.
-	//   ★It runs on the REFUSED stories too, and says so: those are the ones the new route exists
-	//     for, and a check that only looked at the stories the old route could already handle
-	//     would agree with itself all the way to the end.
-	if (KCMStoryReadCompareIsOn())
-	{
-		const char* const tgtWhich = placed ? "target" : "target(OLD ROUTE REFUSED)";
-		const char* const srcWhich = placed ? "source" : "source(OLD ROUTE REFUSED)";
-		KCMCompareReadRoutes(targetStory, targetParas, targetAttrs, targetStarts, tgtWhich);
-		KCMCompareReadRoutes(sourceStory, sourceParas, sourceAttrs, sourceStarts, srcWhich);
-	}
-
-	if (!placed)
-		return kFalse;
+	// ⚠★★★**THE OTHER FOUR WAYS TO DECLINE ARE GONE, AND THE TWO THAT REMAIN CARRY A REASON.**
+	//   What used to stand here - ComputedLength, LengthAgrees, KCMResolveParagraphPositions, and
+	//   the parallel run that measured them - existed to reconcile positions counted from the XML
+	//   with the document's own. Nothing counts them any more, so there is nothing to reconcile
+	//   and nothing to refuse over: a story is either readable (above) or too different to place
+	//   (KCMTextDiff::Diff, further up). ⇒ **A row that shows nothing now means one of two things,
+	//   and both of them are known** - which was the point of the migration as much as the footnote
+	//   was (see the note in KCMTextRead.h on the two sets of books).
+	//
+	//   ⚠**THE OLD ROUTE ITSELF IS STILL HERE** (KCMStoryXml, KCMSnippetText::ExtractParagraphs,
+	//    KCMStoryCellBases, ComputedLength, LengthAgrees) - it is simply no longer called from
+	//    this path. Task 7 removes it. Keeping it one more step is deliberate: **if a regression
+	//    turns up, the two answers can still be put side by side** by turning the parallel run
+	//    back on where it stood.
 
 	for (size_t c = 0; c < paragraphChanges.size(); ++c)
 	{
