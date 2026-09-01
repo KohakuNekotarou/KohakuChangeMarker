@@ -627,9 +627,38 @@ bool16 KCMStoryJumpToChange(int32 rowIndex, int32 changeIndex)
 	//     counting who already reads the values it sets.)
 	const bool16 otherIsTarget = (change.fWhat == IKCMStoryEditsFacade::Change::kWhatText
 								  && change.fKind == 2) ? kTrue : kFalse;
+	// ★★KENTEN NAMES ITSELF IN THE LABEL (2026-09-01). The row draws the mark, which says WHICH
+	//   CHARACTERS carry it; the label says WHICH MARK, which a shape a few pixels across cannot be
+	//   asked to prove - Bullseye against Fisheye is one filled dot. **The two answers are in the
+	//   two places that can each carry one**, rather than both being crowded onto the upper line
+	//   where the name would sit over the text as though it were a reading. That last part is the
+	//   fault this whole feature was withdrawn for in August; see the note further down.
+	// ⚠BOTH SIDES ARE NAMED when both exist. A kenten change is nearly always a kind SWAP, and
+	//   "Source Kenten: Bullseye" alone would leave the reader to find the new kind by eye.
+	const bool16 labelIsKenten =
+		(change.fAttrKind == static_cast<int32>(kKCMStoryAttrKenten)) ? kTrue : kFalse;
+
 	PMString label;
 	label.SetTranslatable(kFalse);
-	label.Append(otherIsTarget ? "Target Text:" : "Source Text:");
+	label.Append(otherIsTarget ? "Target " : "Source ");
+	label.Append(labelIsKenten ? "Kenten:" : "Text:");
+
+	if (labelIsKenten)
+	{
+		// ⚠THE VALUES ARE PRINTED AS THE READER STORED THEM, custom marks included
+		//   ("Custom:2:9679"). Trimming that back to the word "Custom" would hide the only thing
+		//   that tells two custom marks apart - which is exactly the case where a reader is asking.
+		if (!change.fOtherRuby.IsEmpty())
+		{
+			label.Append(" ");
+			label.Append(change.fOtherRuby);
+		}
+		if (!change.fRuby.IsEmpty())
+		{
+			label.Append(" -> ");
+			label.Append(change.fRuby);
+		}
+	}
 
 	// ★★THE OTHER SIDE'S READING GOES WITH IT (2026-08-22). The list shows the NEWER version, so a
 	//   reading that was REMOVED can be seen nowhere else - and the row's own upper line is left
@@ -639,13 +668,15 @@ bool16 KCMStoryJumpToChange(int32 rowIndex, int32 changeIndex)
 	//   default-constructed and reading it anyway would be relying on that rather than on the
 	//   contract.
 	// ⚠★★★AND THE QUESTION IS fAttrKind, NEVER fWhat (corrected 2026-08-23, bug recheck). fWhat says
-	//   "not the words"; it does NOT say the value is something a reader reads. Kenten filled these
-	//   very fields with a KIND - "KentenBlackCircle" - so asking fWhat drew that name over the
-	//   older text as though it were a reading. Kenten is no longer reported at all (user's call the
-	//   same day), which makes the two questions give the same answer again - and that is exactly
-	//   when a stand-in gets left in place until the next attribute arrives. The panel's own cell
-	//   and the row height have asked fAttrKind since the day kenten appeared; this is the third
-	//   place, and it now agrees with them.
+	//   "not the words"; it does NOT say the value is something a reader reads. Kenten fills these
+	//   very fields with a KIND ("BlackCircle"), so asking fWhat drew that name over the older text
+	//   as though it were a reading - the fault the feature was withdrawn for.
+	// ★★AND SINCE 2026-09-01 THE TWO QUESTIONS GIVE DIFFERENT ANSWERS AGAIN: kenten is reported
+	//   once more, so a change reaching here really can be one whose value is a name. **The upper
+	//   line is left empty for it deliberately** - the kind is in the label above, drawn as a mark
+	//   in the row itself, and writing it here as well would put it back exactly where it did not
+	//   belong. The stand-in this comment warned about is gone: the branch below is now load-bearing
+	//   rather than merely correct.
 	PMString otherRuby;
 	if (change.fAttrKind == static_cast<int32>(kKCMStoryAttrRuby))
 	{

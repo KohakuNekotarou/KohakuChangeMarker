@@ -97,12 +97,13 @@ public:
 		bool16		fTextCompared;
 
 		/** WHICH KIND OF ATTRIBUTE this row's children found a difference in, when they found one.
-			0 = none; 1 = ruby.
+			**0 = none; 1 = ruby; 2 = kenten.**
 
 			A NUMBER RATHER THAN A FLAG, so that a second attribute costs one more value here and
-			one more label - not another field and another branch everywhere. Kenten was that
-			second value briefly and is no longer reported (the list shows text changes and ruby,
-			nothing else); the number it used stays reserved (KCMStoryStamp.h).
+			one more label - not another field and another branch everywhere. Kenten is that second
+			value: it was reported for a day in August, withdrawn, and reported again from
+			2026-09-01 (user's call), through this same number - which is the design working. **A
+			value must never be renumbered once it has shipped**, and 2 has now shipped twice.
 
 			@warning NOT DERIVED FROM fKinds, which comes from the two documents' CHANGE COUNTERS
 			and is deliberately left alone by a row refresh ("read it again and it says the same").
@@ -206,8 +207,8 @@ public:
 		PMString	fRuby;
 		PMString	fOtherRuby;
 
-		// WHICH attribute this is: 0 = none, 1 = ruby. (2 was kenten, no longer reported -
-		// KCMStoryStamp.h.)
+		// WHICH attribute this is: 0 = none, 1 = ruby, 2 = kenten (reported again since
+		// 2026-09-01 - KCMStoryKinds.h).
 		// fWhat SAYS "not the words", THIS SAYS WHAT INSTEAD - and the panel needs both, because
 		//   the two are not the same question. fWhat does not promise the value is something a
 		//   reader READS: kenten filled fRuby / fOtherRuby with a KIND ("KentenBlackCircle"), and a
@@ -235,7 +236,7 @@ public:
 	virtual bool16	GetChange(int32 nth, int32 which, Change& out) = 0;
 
 	/** WHICH ATTRIBUTE this difference is in - Change::fAttrKind, and nothing else (0 = none,
-		1 = ruby). 0 for a text change and for an index that names no change.
+		1 = ruby, 2 = kenten). 0 for a text change and for an index that names no change.
 
 		WHY THE ONE FIELD HAS A CALL OF ITS OWN. The tree asks this of every row it lays out, to
 		decide how TALL the row is - a ruby change is drawn on two lines, the reading above the

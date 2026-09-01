@@ -126,12 +126,17 @@ PMString KindLabel(uint32 kinds, bool16 sameKind, int32 attrKind)
 	// ★What the diff FOUND, ahead of what the counters merely reported. ⚠Only when the text itself
 	//   did not change: a story whose words were rewritten AND whose ruby moved is a text edit
 	//   first, and the "Text+" below already says there was more than one kind of change.
-	// ⚠★★RUBY IS THE ONLY ONE THE LIST NAMES (user's call: "what Story Edits shows in the story
-	//   mode is text changes and ruby, and nothing else"). Kenten had a label here for one day and the
-	//   comparison that produced it has been switched off (KCMStoryDiffRun's AddAttrOnlyChanges),
-	//   so no child ever arrives carrying that kind and a branch for it would be unreachable.
-	if ((kinds & kKCMStoryKindText) == 0 && attrKind == kKCMStoryAttrRuby)
-		return Translated(kKCMStoryKindRubyKey);
+	// ⚠★★EACH REPORTED ATTRIBUTE NAMES ITSELF. Ruby has since the beginning; kenten does again
+	//   since 2026-09-01 (user's call), the comparison behind it having been switched back on in
+	//   KCMStoryDiffRun's AddAttrOnlyChanges. **A branch here is only reachable while that call
+	//   exists** - which is the pair to watch if either is ever removed again.
+	if ((kinds & kKCMStoryKindText) == 0)
+	{
+		if (attrKind == kKCMStoryAttrRuby)
+			return Translated(kKCMStoryKindRubyKey);
+		if (attrKind == kKCMStoryAttrKenten)
+			return Translated(kKCMStoryKindKentenKey);
+	}
 
 	PMString out;
 	out.SetTranslatable(kFalse);	// composed, so no longer a key - see the note in KCMStoryList.cpp
@@ -404,15 +409,15 @@ private:
 		that differs, and both end here. */
 	bool16 IsTwoLineChange(int32 row, int32 change) const
 	{
-		// ★★RUBY ONLY, AND NOT "any attribute" (corrected 2026-08-22, the same day the first version
-		//   was written). The upper line exists to carry a READING, and being an attribute does not
-		//   make a value one: kenten's was a name like "KentenBlackCircle", so "is this an attribute"
-		//   would have given every kenten row a permanently empty upper line.
-		//   ⚠Kenten is no longer reported at all (2026-08-23, user's call), so today the two
-		//     questions give the same answer - which is exactly why this one stays written as the
-		//     question it is really asking.
-		return Utils<IKCMStoryEditsFacade>()->GetChangeAttrKind(row, change)
-			   == static_cast<int32>(kKCMStoryAttrRuby);
+		// ★★NAMED KINDS, NOT "any attribute" (the shape of this was settled 2026-08-22 and the
+		//   reasoning still holds): the upper line has to be worth having, and an attribute whose
+		//   value nothing can show would leave it permanently empty. Ruby earns it with a reading;
+		//   kenten earns it since 2026-09-01 by having its KIND DRAWN there as the mark itself
+		//   (KCMKentenMark, user's call). A third attribute would have to earn it in its turn -
+		//   which is why this stays a list and does not become "attrKind != none".
+		const int32 attrKind = Utils<IKCMStoryEditsFacade>()->GetChangeAttrKind(row, change);
+		return (attrKind == static_cast<int32>(kKCMStoryAttrRuby) ||
+				attrKind == static_cast<int32>(kKCMStoryAttrKenten)) ? kTrue : kFalse;
 	}
 
 	bool16 IsTwoLineNode(const NodeID& node) const
@@ -451,6 +456,7 @@ private:
 		PMString kind;
 		PMString textPre, textMid, textPost, ruby;
 		bool16 twoLines = kFalse;
+		int32 attrKind = 0;		// KCMStoryAttrKind: 0 = none, 1 = ruby, 2 = kenten
 		kind.SetTranslatable(kFalse);
 		textPre.SetTranslatable(kFalse);
 		textMid.SetTranslatable(kFalse);
@@ -513,6 +519,11 @@ private:
 			{
 				ruby = change.fRuby;
 				ruby.SetTranslatable(kFalse);
+
+				// ★WHICH attribute it is, carried through to the cell. The cell writes a READING
+				//   out as text and paints a KIND as a mark, and the string alone cannot tell it
+				//   which it has - a reading could be the word "Bullseye".
+				attrKind = change.fAttrKind;
 			}
 		}
 
@@ -529,7 +540,7 @@ private:
 		InterfacePtr<IKCMStoryCellData> cellData(textCell, UseDefaultIID());
 		if (cellData != nil)
 		{
-			cellData->SetSegments(textPre, textMid, textPost, ruby, twoLines);
+			cellData->SetSegments(textPre, textMid, textPost, ruby, twoLines, attrKind);
 			// ★Writing the strings does not ask for a redraw - SetNodeName does that for a stock
 			//   cell, and this one has no such courtesy. Without it a recycled row can keep the
 			//   picture the row it used to be left behind. (KBS's widget manager makes the same

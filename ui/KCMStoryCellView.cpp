@@ -55,7 +55,9 @@
 // Project includes:
 #include "IKCMStoryCellData.h"
 #include "KCMUIID.h"
+#include "KCMKentenMark.h"	// the emphasis marks, drawn as shapes rather than written as characters
 #include "KCMPanelTextDraw.h"	// kKCMContextTextWeight, KCMBlendColor - shared with the message area
+#include "KCMStoryKinds.h"	// kKCMStoryAttrKenten - which attribute the upper line belongs to
 
 namespace
 {
@@ -105,11 +107,11 @@ class KCMStoryCellData : public CPMUnknown<IKCMStoryCellData>
 {
 public:
 	KCMStoryCellData(IPMUnknown* boss)
-		: CPMUnknown<IKCMStoryCellData>(boss), fTwoLines(kFalse) {}
+		: CPMUnknown<IKCMStoryCellData>(boss), fTwoLines(kFalse), fAttrKind(0) {}
 	virtual ~KCMStoryCellData() {}
 
 	virtual void SetSegments(const PMString& pre, const PMString& mid, const PMString& post,
-							 const PMString& ruby, bool16 twoLines)
+							 const PMString& ruby, bool16 twoLines, int32 attrKind)
 	{
 		// ★Not translation keys. This is text out of a document, and a short common word can
 		//   otherwise be looked up in the string tables and come back as something else entirely
@@ -120,24 +122,30 @@ public:
 		fPost = post; fPost.SetTranslatable(kFalse);
 		fRuby = ruby; fRuby.SetTranslatable(kFalse);
 		fTwoLines = twoLines;
+		fAttrKind = attrKind;
 	}
 
 	virtual void GetSegments(PMString& outPre, PMString& outMid, PMString& outPost,
-							 PMString& outRuby, bool16& outTwoLines) const
+							 PMString& outRuby, bool16& outTwoLines, int32& outAttrKind) const
 	{
 		outPre = fPre;
 		outMid = fMid;
 		outPost = fPost;
 		outRuby = fRuby;
 		outTwoLines = fTwoLines;
+		outAttrKind = fAttrKind;
 	}
 
 private:
 	PMString fPre;
 	PMString fMid;
 	PMString fPost;
+
+	/** The reading (ruby) or the kind (kenten) - which one is fAttrKind's business, never this
+		field's. See IKCMStoryCellData.h. */
 	PMString fRuby;
 	bool16   fTwoLines;
+	int32    fAttrKind;
 };
 
 CREATE_PMINTERFACE(KCMStoryCellData, kKCMStoryCellDataImpl)
@@ -173,7 +181,14 @@ void KCMStoryCellView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 
 	PMString pre, mid, post, ruby;
 	bool16 twoLines = kFalse;
-	data->GetSegments(pre, mid, post, ruby, twoLines);
+	int32 attrKind = 0;
+	data->GetSegments(pre, mid, post, ruby, twoLines, attrKind);
+
+	// ★WHAT THE UPPER LINE IS, ASKED ONCE. Kenten's value is the NAME of a mark, so it is painted
+	//   as the mark; ruby's is a reading and is written out. Everything below that has to know the
+	//   difference asks this, never the string itself - "does it look like a name" is not a
+	//   question a value can be trusted to answer (a reading could BE the word "Bullseye").
+	const bool16 isKenten = (attrKind == static_cast<int32>(kKCMStoryAttrKenten)) ? kTrue : kFalse;
 
 	// ★NOTHING IS PAINTED BEHIND THE TEXT. The row widget draws the row's background and its
 	//   selection fill; this cell adds the words on top, exactly as the stock cell it replaced did.
@@ -329,8 +344,48 @@ void KCMStoryCellView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 	//   reading that was removed is read in the panel's message area, which shows the other side.
 	//   The row is still laid out on two lines - see the widget manager - so the base text does not
 	//   jump half a row against the rows above and below it.
-	if (twoLines && !ruby.IsEmpty())
+	if (twoLines && !ruby.IsEmpty() && isKenten && KCMKentenMark::CanDraw(ruby))
 	{
+		// ★★ONE MARK PER CHARACTER, over the characters themselves (user's call, 2026-09-01: the
+		//   mark is drawn "so that which character it sits on can be seen by eye"). Kenten IS one
+		//   mark per character - that is what makes it kenten and not ruby - so a single mark
+		//   standing for a whole span would misdescribe every span longer than one character.
+		// ⚠THE COUNT IS THE CHANGED CHARACTERS, not the span's length in the document: this cell
+		//   was handed the text that was CUT to fit, and drawing more marks than there are
+		//   characters under them is the one thing the eye would catch immediately.
+		const int32 count = mid.CharCount();
+		if (count > 0 && drawnMidW > PMReal(0.0))
+		{
+			// The width one character got, which is what a mark has to fit in. CJK is even enough
+			// for this to land the mark over its character; a proportional run drifts, and the
+			// alternative - measuring every character on its own - would cost a measure call per
+			// mark to correct a few pixels nobody is reading to that precision.
+			const PMReal perChar = drawnMidW / PMReal(count);
+
+			PMReal markSize = lineHeight * PMReal(0.70);
+			if (perChar < markSize)
+				markSize = perChar;			// a narrow column shrinks the marks rather than overlapping them
+
+			// ⚠THE CENTRE OF THE UPPER HALF, NOT THE BASELINE. upperY is where TEXT sits on this
+			//   line; a shape has no baseline, and hanging one from a text baseline puts it low
+			//   enough to touch the characters below.
+			const PMReal markY = lineHeight / PMReal(2.0);
+
+			for (int32 i = 0; i < count; ++i)
+			{
+				const PMReal cx = drawnMidX + perChar * (PMReal(i) + PMReal(0.5));
+				if (cx + (markSize / PMReal(2.0)) > rightEdge)
+					break;					// ran out of cell - the rest are simply not shown
+				KCMKentenMark::Draw(gPort, ruby, cx, markY, markSize, kChangeColor);
+			}
+		}
+	}
+	else if (twoLines && !ruby.IsEmpty())
+	{
+		// ★A READING, OR A KIND THIS BUILD CANNOT DRAW (Custom, or a kind newer than this code):
+		//   both are written out as text. **A mark that cannot be drawn is still not nothing** -
+		//   its name says which one it is, which is the whole reason KentenKindName never answers
+		//   with an empty string.
 		const PMReal rubyW = StringUtils::PMMeasureString(&gc, ruby, fontInfo, kKCMDontConvertAmpersand).X();
 
 		// ★CENTRED ON THE BASE CHARACTERS, and worked out by the rule the message area uses too

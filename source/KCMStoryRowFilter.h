@@ -13,8 +13,9 @@
 //  of it.
 //
 //  @warning **WHAT COUNTS AS CONTENT IS SETTLED ELSEWHERE:** the words, and the ruby written
-//    over them. Kenten was in that list for one day and is no longer reported at all. This file
-//    did not have to change for that and must not grow a list of its own: it asks whether the
+//    over them, and the emphasis marks (kenten) over them again since 2026-09-01. This file did
+//    not have to change for ANY of that -- kenten left the list in August and came back without
+//    touching a line here -- and it must not grow a list of its own: it asks whether the
 //    diff found ANY child, and what the diff looks for is KCMStoryDiffRun's business
 //    ([[one-question-one-place]]).
 //

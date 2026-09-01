@@ -554,9 +554,9 @@ void KCMRebuildStoryEdits(IDataBase* targetDB, IDataBase* sourceDB)
 	// **Drop the rows where only formatting moved** (the reader asked for attribute changes to be
 	// ignored). The counters answer "not identical", so changing a font, a colour, a style or a
 	// table's rules puts a story in the list as well, up to this point.
-	// **What survives is text changes and ruby, and nothing else.** (Kenten was reported briefly
-	// and then withdrawn -- the comparison for it is switched off, so a story where only kenten
-	// moved drops here like a font-only one.)
+	// **What survives is text changes, ruby and kenten.** (Kenten was reported briefly in August,
+	// withdrawn, and reported again from 2026-09-01 -- so a story where only the emphasis marks
+	// moved now stays, where a font-only one still drops.)
 	// @warning it must be **after Build and after Run**. Earlier, a Story-mode row whose ruby alone
 	//   changed still looks like an attribute-only row and is dropped just before the diff would
 	//   have found that ruby.

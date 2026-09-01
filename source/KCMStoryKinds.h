@@ -54,9 +54,9 @@ enum KCMStoryChangeKind
 
 	**THE ORDER MEANS NOTHING** -- these are names, not ranks. Ruby came first because a Japanese
 	document uses it constantly, and because a ruby-only edit is precisely the case the reader
-	found being reported as "None". **RUBY IS ALL THAT IS REPORTED:** the Story Edits list shows
-	text changes and ruby, nothing else. Kenten was added and withdrawn the next day -- and it is a
-	different mechanism again: ruby is a STRAND (IRubyAttrStrand, run-based, written in the snippet
+	found being reported as "None". **TEXT, RUBY AND KENTEN ARE WHAT IS REPORTED** (kenten added in
+	August, withdrawn the next day, and back since 2026-09-01) -- and the two attributes are
+	different mechanisms: ruby is a STRAND (IRubyAttrStrand, run-based, written in the snippet
 	as RubyFlag 1/2 over one CharacterStyleRange per character) while kenten is a set of CHARACTER
 	ATTRIBUTES (the twenty kTAKenten*Boss on kCharAttrStrandBoss, its kind in kTAKentenKindBoss
 	with Kenten_None for off). What the panel cared about is the one thing they share: the text did
@@ -71,14 +71,16 @@ enum KCMStoryAttrKind
 {
 	kKCMStoryAttrNone = 0,	// the children are text changes, or there are none
 	kKCMStoryAttrRuby = 1,	// a reading over characters that did not themselves change
-	kKCMStoryAttrKenten = 2	// emphasis marks (kenten). **NO CHILD EVER CARRIES THIS TODAY:** the
-								// Story Edits list reports text changes and ruby, nothing else. It
-								// was reported for one day, and the comparison that produced it is
-								// switched off in KCMStoryDiffRun's AddAttrOnlyChanges. The value is
-								// kept because the snippet parser still READS kenten spans and its
-								// test still proves it reads them rightly, so re-enabling is that one
-								// call plus a label -- and the number must not be given to anything
-								// else meanwhile.
+	kKCMStoryAttrKenten = 2	// emphasis marks (kenten), over characters that did not themselves
+								// change. ★Reported from 2026-09-01 (user: "if it can be found, I
+								// want to find it"), after a day in August and a long pause. The
+								// pause is why the number is worth reading twice: **the value was
+								// held reserved throughout it**, so turning the feature back on
+								// renumbered nothing and invalidated no saved state.
+								// ⚠ITS VALUE IS A KIND, NOT A READING ("BlackCircle"), and the
+								// panel draws it as the MARK rather than writing it out
+								// (ui/KCMKentenMark). Anything that shows it must ask fAttrKind
+								// first - the string cannot say which it is.
 };
 
 /** The two kinds that mean "this story has no partner in the other version".

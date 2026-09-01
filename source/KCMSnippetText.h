@@ -110,13 +110,15 @@ struct KCMParaAttrs
 {
 	KCMAttrSpanList	fRuby;
 
-	/** @warning **READ, BUT NOT REPORTED.** Kenten spans were compared for one day and are not
-		any more -- KCMStoryDiffRun's AddAttrOnlyChanges is where that was switched off, and it is
-		the only place that has to change to switch it back on.
-		THE READING IS KEPT because it costs nothing (it comes off the same pass as the ruby) and
-		because getting it right cost a snippet from the user: five characters marked with one kind
-		come out as ONE range, where the same five with ruby come out as five. The test harness
-		still proves that, so the knowledge cannot rot while it waits. */
+	/** ★**READ AND REPORTED AGAIN SINCE 2026-09-01** (user's call). It was compared for a day in
+		August, switched off, and switched back on in the one place that decides it -
+		KCMStoryDiffRun's AddAttrOnlyChanges. **Keeping the reading through the months it was not
+		reported is what made turning it back on one call**: had the parser stopped filling this,
+		the knowledge that five characters marked with one kind are ONE range - which cost a snippet
+		from the user to get right, and which is the opposite of ruby, where the same five come out
+		as five - would have had to be found a second time.
+		@warning the value is a KIND ("BlackCircle"), never something a reader reads aloud. Whoever
+		 draws it asks Change::fAttrKind first; see the note on KCMAttrSpan::fValue. */
 	KCMAttrSpanList	fKenten;
 
 	/** Characters the text model counts after this paragraph that are not in its text.

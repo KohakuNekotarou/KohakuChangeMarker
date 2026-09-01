@@ -149,10 +149,10 @@ struct KCMStoryChange
 	/** WHICH attribute this is, when fWhat is kAttr. kKCMStoryAttrNone for a text change.
 
 		**fWhat SAYS "not the words", THIS SAYS WHAT INSTEAD** -- and the panel needs both, because
-		fWhat does not promise the VALUE is something a reader reads. Kenten proved that within a
-		day: its change filled these very fields with a KIND ("KentenBlackCircle"), so anything
-		asking fWhat alone treated a name as a reading, and the message area drew it over the older
-		text.
+		fWhat does not promise the VALUE is something a reader reads. Kenten proves it: its change
+		fills these very fields with a KIND ("BlackCircle"), so anything asking fWhat alone treats a
+		name as a reading - which is what the message area did in August, and the reason the feature
+		was withdrawn that day rather than the comparison being wrong.
 		@warning **"does this carry a reading", and "is this drawn on two lines", is THIS field,
 		  never fWhat.** Ruby being the only kind reported today, the two happen to agree again --
 		  which is exactly the state in which a stand-in survives unnoticed.
@@ -222,9 +222,9 @@ struct KCMStoryRow
 		the row can name it ("Ruby") rather than falling back on "Attr".
 
 		**A NUMBER, NOT A FLAG**, so that a second attribute is one more value here and one more
-		label -- not another field, and not another branch in every place that draws a row. Kenten
-		was that second value for a day and was then withdrawn, which is the shape working as
-		intended: the comparison stopped producing it and no drawing code had to change.
+		label -- not another field, and not another branch in every place that draws a row. Kenten is
+		that second value: withdrawn in August and reported again from 2026-09-01, and **both times
+		the comparison alone decided it** -- which is the shape working as intended.
 		@warning **ruby is therefore the only value any row carries today. Do not simplify this to a
 		  flag on the strength of that** -- the reason it is a number has not gone away.
 

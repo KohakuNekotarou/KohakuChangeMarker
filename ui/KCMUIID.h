@@ -723,6 +723,7 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowStateWidgetID, kKCMUIPrefix + 49)	// = t
 //     from one that could not be compared in the first place.
 #define kKCMStoryKindNoneKey		kKCMStringPrefix "kKCMStoryKindNoneKey"		// row, right: no difference in the text
 #define kKCMStoryKindRubyKey		kKCMStringPrefix "kKCMStoryKindRubyKey"		// row, right: the ruby changed while the text did not. ★It names the case rather than reporting the counter-derived "Attr"
+#define kKCMStoryKindKentenKey	kKCMStringPrefix "kKCMStoryKindKentenKey"	// row, right: the emphasis marks changed while the text did not. Same shape as the ruby key above and for the same reason - "Attr" would be true and useless. ⚠The word is the typographic term, not a translation of it: the panel is English (KCM's convention) and "Kenten" is what the Kenten panel this reader compares against is called
 // ⚠★★**The kenten (emphasis dot) key was removed** ＝ what Story Edits reports is text changes
 //   and ruby, and nothing else (user's decision). The key that existed for one day became a
 //   string nobody asked for the moment the comparison behind it was stopped, so the two went

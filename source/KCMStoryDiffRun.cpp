@@ -443,9 +443,9 @@ void Add(std::vector<KCMStoryChange>& out, int32 paraIndex,
    attribute is different: the characters are in BOTH versions and only what sits over them
    changed, so the newer side always has something to show and there is no case to branch on.
 
-   **IT TAKES attrKind RATHER THAN ASSUMING RUBY**, and that was kept after kenten was
-   withdrawn. What an attribute's VALUE means is not the same for all of them -- a ruby's is a
-   READING and a kenten's was a KIND ("KentenBlackCircle") -- and the field they travel in is
+   **IT TAKES attrKind RATHER THAN ASSUMING RUBY**, which was kept through the months kenten was
+   not reported and is load-bearing again now. What an attribute's VALUE means is not the same for
+   all of them -- a ruby's is a READING and a kenten's is a KIND ("BlackCircle") -- and the field they travel in is
    the same one, so whoever draws it has to be told which it is looking at. Filling that in
    here is what let the mistake be a one-line one when it happened, in the single place that
    asked the wrong question (KCMStoryJump's message area).
@@ -613,16 +613,25 @@ void AddAttrOnlyChanges(const std::vector<KCMTextDiff::Change>& paragraphChanges
 				// **EACH ATTRIBUTE IS COMPARED ON ITS OWN LIST**, and they cannot be merged into one
 				//   pass: two sets of spans are matched by position within their OWN kind.
 				//
-				// @warning **KENTEN IS NOT COMPARED HERE, AND THAT IS A DECISION, NOT AN OMISSION.** It
-				//   WAS compared for one day and the machinery all still stands -- the snippet parser
-				//   still reads the spans and the test harness still checks that it reads them rightly,
-				//   because that reading cost a snippet from the user to get right and is free to keep
-				//   (it comes off the same pass as the ruby). What was removed is the REPORTING: a
-				//   kenten-only edit now produces no child row, and its story therefore drops out of the
-				//   list on the row filter, exactly as a font-only edit does.
-				//   Turning it back on is this one call and its label. Nothing else was taken out.
 				CompareParagraphAttr(kKCMStoryAttrRuby,
 									 sourceAttrs[a].fRuby, targetAttrs[b].fRuby,
+									 sourceParas[a], targetParas[b],
+									 sourceStarts[a], targetStarts[b], b, out);
+
+				// ★KENTEN IS REPORTED AGAIN (2026-09-01, user's call: "if it can be found, I want
+				//   to find it"). It was compared for one day in August and withdrawn, and the
+				//   withdrawal was never about the comparison: the KIND it produces travelled in
+				//   the same field as a ruby's READING, and the message area drew that name over
+				//   the older text as though somebody could read it aloud. What answers that is
+				//   fAttrKind, which every row and every change already carries and which the
+				//   drawing side is required to ask instead of fWhat (IKCMStoryEditsFacade.h says
+				//   so in as many words). ⇒ **The mistake was one place asking the wrong question,
+				//   not this call.**
+				// ⚠RUBY FIRST, KENTEN SECOND, and it does not matter: ChangeIsBefore re-sorts the
+				//   whole list by fTargetStart afterwards. The order here is only what two changes
+				//   standing at the very same character fall back on.
+				CompareParagraphAttr(kKCMStoryAttrKenten,
+									 sourceAttrs[a].fKenten, targetAttrs[b].fKenten,
 									 sourceParas[a], targetParas[b],
 									 sourceStarts[a], targetStarts[b], b, out);
 			}

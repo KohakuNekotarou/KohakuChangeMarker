@@ -17,10 +17,13 @@
 
 // Interface includes:
 #include "IAttrReport.h"		// what QueryAttributeAt hands back
+#include "IAttributeStrand.h"	// kenten's run boundaries - see ScanKenten
 #include "IComposeScanner.h"	// the way to an attribute's value over a range
+#include "IKentenStyle.h"		// IKentenStyle::KentenKind, and Kenten_None for "no kenten"
 #include "IRubyStrand.h"		// IRubyAttrStrand - ⚠the file is IRubyStrand.h, the class is not
 #include "ITableModel.h"
 #include "ITextAttrBoolean.h"	// kTAMojiRubyBoss - mono against group
+#include "ITextAttrInt16.h"	// kTAKentenKindBoss / kTAKentenCharacterBoss - both are int16
 #include "ITextAttrWideString.h"	// kTARubyStringBoss - the reading itself
 #include "ITextModel.h"
 #include "ITextStoryThread.h"
@@ -28,10 +31,11 @@
 #include "ITextStoryThreadDictHier.h"
 
 // General includes:
-#include "CJKID.h"			// kRubyAttrStrandBoss and the two ruby attributes
+#include "CJKID.h"			// kRubyAttrStrandBoss, the two ruby attributes, and the kTAKenten* ones
 #include "PMString.h"
 #include "TableTypes.h"		// GridAddress, RowRange, ColRange
 #include "TextChar.h"		// kTextChar_CR / kTextChar_Table / kTextChar_TableContinued
+#include "TextID.h"			// kCharAttrStrandBoss - the strand kenten's attributes sit on
 #include "TextIterator.h"
 #include "UIDRef.h"
 #include "WideString.h"
@@ -177,22 +181,33 @@ bool16 BuildCellIndex(ITextModel* model, std::vector<CellPlace>& out)
 	return kTrue;
 }
 
-/* RubyRun
-   One ruby run as the STRAND holds it, in the model's own count.
+/* AttrRun
+   One stretch of characters with something standing over it, in the model's own count. RUBY AND
+   KENTEN BOTH COME BACK IN THIS SHAPE, which is the same decision KCMAttrSpan already made
+   downstream ("fValue holds the READING for ruby and the KIND for kenten").
 
-   ★★★RUBY IS NOT IN THE TEXT. It rides a strand beside it (kRubyAttrStrandBoss), so nothing the
-   walk above reads out of the characters can ever mention it: a story whose readings were retyped
-   comes back byte-for-byte identical as text. That is the whole reason this exists - and it is
-   the change the ruby-only test pair contains and nothing else.
+   ★★★NEITHER OF THEM IS IN THE TEXT. Ruby rides a strand beside it (kRubyAttrStrandBoss) and
+   kenten is a set of character ATTRIBUTES (kTAKenten*Boss on kCharAttrStrandBoss), so nothing the
+   walk above reads out of the characters can ever mention either: a story whose readings were
+   retyped, or whose emphasis marks were changed from sesame dots to bullseyes, comes back
+   byte-for-byte identical as text. That is the whole reason this exists.
+
+   ⚠THE TWO ARE READ BY DIFFERENT MEANS AND MUST NOT BE MERGED INTO ONE SCAN. A strand answers
+    "where does this run end"; an attribute has to be asked over a range that something else
+    decided. ScanRuby and ScanKenten are therefore separate walks that happen to fill one shape.
 */
-struct RubyRun
+struct AttrRun
 {
 	TextIndex	fAt;
 	int32		fLen;
-	std::string	fReading;
+	std::string	fValue;
+
+	/** ⚠RUBY ONLY. Kenten is one mark per character by nature and has no group/mono distinction,
+		so ScanKenten always leaves this kFalse - which is what KCMAttrSpan's own header says the
+		comparison then relies on. */
 	bool16		fGroup;
 
-	RubyRun() : fAt(0), fLen(0), fGroup(kFalse) {}
+	AttrRun() : fAt(0), fLen(0), fGroup(kFalse) {}
 };
 
 /** The reading, out of the SDK's string and into the one the rest of this file speaks. */
@@ -251,7 +266,7 @@ bool16 IsFootnoteMarkerOnly(const WideString& w)
    ⚠AN EMPTY READING IS NO RUBY. Not a defensive check - the SDK's own rule, stated in the same
     snippet: when the string comes back empty the ruby is off, whatever the strand says.
 */
-void ScanRuby(ITextModel* model, std::vector<RubyRun>& out)
+void ScanRuby(ITextModel* model, std::vector<AttrRun>& out)
 {
 	InterfacePtr<IRubyAttrStrand> strand(
 		(IRubyAttrStrand*)model->QueryStrand(kRubyAttrStrandBoss, IRubyAttrStrand::kDefaultIID));
@@ -283,7 +298,7 @@ void ScanRuby(ITextModel* model, std::vector<RubyRun>& out)
 				scanner->QueryAttributeAt(i, end, kTARubyStringBoss));
 			InterfacePtr<const ITextAttrWideString> reading(readingAttr, UseDefaultIID());
 
-			RubyRun run;
+			AttrRun run;
 			run.fAt = (runBegin >= 0 && runBegin <= i) ? runBegin : i;
 			run.fLen = len + static_cast<int32>(i - run.fAt);
 			// ⚠A FOOTNOTE'S MARKER RIDES THIS STRAND TOO - see IsFootnoteMarkerOnly. Left in, it
@@ -291,9 +306,9 @@ void ScanRuby(ITextModel* model, std::vector<RubyRun>& out)
 			//   typed. The reading is dropped rather than the run skipped, so the empty-reading
 			//   rule below is the one place that decides what is not ruby.
 			if (reading != nil && !IsFootnoteMarkerOnly(reading->Get()))
-				AppendWide(run.fReading, reading->Get());
+				AppendWide(run.fValue, reading->Get());
 
-			if (!run.fReading.empty())
+			if (!run.fValue.empty())
 			{
 				// ★MONO OR GROUP IS READ, NOT INFERRED. The old route decided it from whether the
 				//   XML carried a RubyType attribute; the document states it outright.
@@ -313,8 +328,148 @@ void ScanRuby(ITextModel* model, std::vector<RubyRun>& out)
 	}
 }
 
-/* TakeRubyFor
-   The ruby standing over one paragraph, in the paragraph's own count.
+/* KentenKindName
+   The SDK's own spelling for one kind of emphasis mark.
+
+   ★THE TABLE IS THE OFFICIAL ONE, copied from codesnippets/SnpPerformTextAttrKenten.cpp's
+   kSnpKentenKindTable rather than invented here: IKentenStyle declares the enum but no names, and
+   a second vocabulary beside the one every snippet log already prints would mean two answers to
+   "which mark is this". The panel shows these strings, so they are what a reader compares by eye
+   against the Kenten panel.
+
+   ⚠AN UNKNOWN VALUE IS NAMED, NOT DROPPED. A kind this build has never heard of still means the
+    characters carry SOMETHING, and reporting "no kenten" for it would be a silent wrong answer -
+    the one kind of answer this comparison must never give. It comes back as "Kind<n>", which
+    compares correctly against itself and reads as unfamiliar to a person.
+*/
+std::string KentenKindName(int16 kind)
+{
+	switch (kind)
+	{
+		case IKentenStyle::Kenten_BlackSesameDot:	return "BlackSesameDot";
+		case IKentenStyle::Kenten_WhiteSesameDot:	return "WhiteSesameDot";
+		case IKentenStyle::Kenten_Fisheye:			return "Fisheye";
+		case IKentenStyle::Kenten_BlackCircle:		return "BlackCircle";
+		case IKentenStyle::Kenten_SmallBlackCircle:	return "SmallBlackCircle";
+		case IKentenStyle::Kenten_Bullseye:			return "Bullseye";
+		case IKentenStyle::Kenten_BlackTriangle:	return "BlackTriangle";
+		case IKentenStyle::Kenten_WhiteTriangle:	return "WhiteTriangle";
+		case IKentenStyle::Kenten_WhiteCircle:		return "WhiteCircle";
+		case IKentenStyle::Kenten_SmallWhiteCircle:	return "SmallWhiteCircle";
+		case IKentenStyle::Kenten_Custom:			return "Custom";
+		default:									break;
+	}
+
+	std::ostringstream unknown;
+	unknown << "Kind" << kind;
+	return unknown.str();
+}
+
+/* ScanKenten
+   Every stretch of kenten in the story, in reading order.
+
+   ★★★KENTEN IS NOT A STRAND - IT IS A SET OF CHARACTER ATTRIBUTES, and that is the whole
+   difference from ScanRuby above. Ruby's strand knows where its own runs end (GetRubyRun answers
+   with a length); an attribute has no runs of its own, so the walk has to be told where to stop by
+   the strand the attributes SIT ON (kCharAttrStrandBoss). Its boundaries are where the character
+   style or the local overrides change - never in the middle of either - so an attribute asked over
+   one of them is answered for the whole of it.
+
+   ⚠THE BOUNDARIES ARE OVER-FINE, AND THAT IS WHY THE MERGE BELOW EXISTS. A style change with no
+    kenten in it still ends a run, so five characters marked with one kind can arrive as two runs.
+    The user's own snippet is what settled the rule this has to honour: **five characters marked
+    with one kind are ONE range**, where the same five with ruby are five (KCMSnippetText.h says so
+    and its test still proves it). Merging adjacent runs of equal value is what makes both routes
+    agree on that.
+
+   ⚠OFF IS A VALUE, NOT AN ABSENCE. Turning kenten off writes Kenten_None into the attribute rather
+    than removing it (SnpPerformTextAttrKenten does exactly that), so a run whose value is
+    Kenten_None carries no mark and must produce no span - otherwise every character in a document
+    that once had kenten anywhere would come back "marked".
+
+   ★CUSTOM CARRIES ITS CHARACTER INTO THE VALUE. Two custom marks are the same mark only if they
+   use the same glyph, so the code and its character set ride along in the string ("Custom:2:9679").
+   The panel shows only the "Custom" part; the rest is there so that swapping one custom glyph for
+   another is reported as the change it is.
+*/
+void ScanKenten(ITextModel* model, std::vector<AttrRun>& out)
+{
+	InterfacePtr<IAttributeStrand> strand(
+		(IAttributeStrand*)model->QueryStrand(kCharAttrStrandBoss, IID_IATTRIBUTESTRAND));
+	if (strand == nil)
+		return;
+
+	InterfacePtr<IComposeScanner> scanner(model, UseDefaultIID());
+	if (scanner == nil)
+		return;
+
+	const TextIndex total = model->TotalLength();
+	for (TextIndex i = 0; i < total; )
+	{
+		// ⚠BOTH ARE ASKED, AND THE SHORTER ONE WINS. A kenten can come from a character style or
+		//   from a local override, so a walk that stepped by only one of them would step straight
+		//   over a change in the other.
+		int32 styleLen = 0;
+		int32 overrideLen = 0;
+		strand->GetStyleUID(i, &styleLen);
+		strand->GetLocalOverrides(i, &overrideLen);
+
+		int32 len = styleLen;
+		if (overrideLen > 0 && (len <= 0 || overrideLen < len))
+			len = overrideLen;
+		if (len <= 0)
+			break;					// the strand has nothing further to say - the official stop
+		if (i + len > total)
+			len = static_cast<int32>(total - i);
+
+		const TextIndex end = i + len;
+
+		InterfacePtr<const IAttrReport> kindAttr(
+			scanner->QueryAttributeAt(i, end, kTAKentenKindBoss));
+		InterfacePtr<const ITextAttrInt16> kind(kindAttr, UseDefaultIID());
+
+		if (kind != nil && kind->Get() != IKentenStyle::Kenten_None)
+		{
+			std::string value = KentenKindName(kind->Get());
+
+			if (kind->Get() == IKentenStyle::Kenten_Custom)
+			{
+				InterfacePtr<const IAttrReport> charAttr(
+					scanner->QueryAttributeAt(i, end, kTAKentenCharacterBoss));
+				InterfacePtr<const ITextAttrInt16> customChar(charAttr, UseDefaultIID());
+				InterfacePtr<const IAttrReport> setAttr(
+					scanner->QueryAttributeAt(i, end, kTAKentenCharacterSetBoss));
+				InterfacePtr<const ITextAttrInt16> customSet(setAttr, UseDefaultIID());
+
+				std::ostringstream extra;
+				extra << ":" << (customSet != nil ? customSet->Get() : -1)
+					  << ":" << (customChar != nil ? customChar->Get() : 0);
+				value += extra.str();
+			}
+
+			// ★MERGED WHERE THEY TOUCH - see the warning above. Compared by VALUE as well as by
+			//   position, so two different kinds meeting at a boundary stay two spans.
+			if (!out.empty() && out.back().fValue == value &&
+				out.back().fAt + out.back().fLen == i)
+			{
+				out.back().fLen += len;
+			}
+			else
+			{
+				AttrRun run;
+				run.fAt = i;
+				run.fLen = len;
+				run.fValue = value;
+				out.push_back(run);		// fGroup stays kFalse - kenten has no group/mono
+			}
+		}
+
+		i += len;
+	}
+}
+
+/* TakeAttrFor
+   The ruby or kenten standing over one paragraph, in the paragraph's own count.
 
    ★THE CURSOR WALKS FORWARD WITH THE PARAGRAPHS. Both lists are in TextIndex order, so a run that
    ended before this paragraph began can never be wanted again - but a run that REACHES PAST the
@@ -336,7 +491,7 @@ int32 CountUncounted(const std::vector<TextIndex>& uncounted, TextIndex at)
 	return n;
 }
 
-void TakeRubyFor(const std::vector<RubyRun>& runs, size_t& cursor,
+void TakeAttrFor(const std::vector<AttrRun>& runs, size_t& cursor,
 				 TextIndex paraStart, TextIndex paraEnd,
 				 const std::vector<TextIndex>& uncounted, KCMAttrSpanList& out)
 {
@@ -365,7 +520,7 @@ void TakeRubyFor(const std::vector<RubyRun>& runs, size_t& cursor,
 			out.push_back(KCMAttrSpan(static_cast<int32>(from - paraStart) - skipBefore,
 									  static_cast<int32>(to - from)
 										  - (CountUncounted(uncounted, to) - skipBefore),
-									  runs[i].fReading, runs[i].fGroup));
+									  runs[i].fValue, runs[i].fGroup));
 		}
 	}
 }
@@ -384,14 +539,18 @@ void ClosePara(std::vector<std::string>& outParas,
 			   const std::string& text,
 			   const KCMParaAttrs& place,
 			   TextIndex paraStart, TextIndex paraEnd,
-			   const std::vector<RubyRun>& runs, size_t& rubyCursor,
+			   const std::vector<AttrRun>& ruby, size_t& rubyCursor,
+			   const std::vector<AttrRun>& kenten, size_t& kentenCursor,
 			   std::vector<TextIndex>& uncounted)
 {
 	outParas.push_back(text);
 	outStarts.push_back(static_cast<int32>(paraStart));
 
 	KCMParaAttrs attrs = place;		// the cell identity, which is the same for every paragraph here
-	TakeRubyFor(runs, rubyCursor, paraStart, paraEnd, uncounted, attrs.fRuby);
+	// ⚠ONE CURSOR EACH. The two lists are walked in step with the paragraphs but are not the same
+	//   length, so a shared cursor would drag one of them past its own runs.
+	TakeAttrFor(ruby, rubyCursor, paraStart, paraEnd, uncounted, attrs.fRuby);
+	TakeAttrFor(kenten, kentenCursor, paraStart, paraEnd, uncounted, attrs.fKenten);
 	outAttrs.push_back(attrs);
 
 	// ⚠EMPTIED HERE, WHERE THE PARAGRAPH ENDS, so that the two places a paragraph can close cannot
@@ -428,12 +587,18 @@ bool16 KCMTextRead::ReadStory(const UIDRef& storyRef,
 	//   text comes from the model, so its ruby does too.
 	//   ⚠NOTHING MAY RUN BETWEEN THIS AND THE WALK BELOW. No command, no recompose, no second
 	//    document - anything that edits the story between them would date one against the other.
-	std::vector<RubyRun> ruby;
+	std::vector<AttrRun> ruby;
 	ScanRuby(model, ruby);
+
+	// ★KENTEN COMES OFF THE SAME MOMENT, for the reason stated just above: a story read here and
+	//   its emphasis marks read after some command ran would be two photographs in one row.
+	std::vector<AttrRun> kenten;
+	ScanKenten(model, kenten);
 
 	const TextIndex total = model->TotalLength();
 	size_t nextCell = 0;
 	size_t nextRuby = 0;
+	size_t nextKenten = 0;
 	int32 nextFootnote = 0;
 
 	// ★★★ONE LOOP FOR THE BODY, THE CELLS AND THE FOOTNOTES. QueryStoryThread hands back the
@@ -526,8 +691,8 @@ bool16 KCMTextRead::ReadStory(const UIDRef& storyRef,
 
 			if (cp == kTextChar_CR)
 			{
-				ClosePara(outParas, outAttrs, outStarts, text, place, paraStart, i, ruby, nextRuby,
-						  uncounted);
+				ClosePara(outParas, outAttrs, outStarts, text, place, paraStart, i,
+						  ruby, nextRuby, kenten, nextKenten, uncounted);
 				text.clear();
 				paraStart = i + 1;
 				paraHasCharacters = kFalse;
@@ -548,8 +713,8 @@ bool16 KCMTextRead::ReadStory(const UIDRef& storyRef,
 		// last paragraph itself. This catches the one that does not - and an empty tail is NOT
 		// pushed, or every thread would end with a paragraph nobody wrote.
 		if (!text.empty())
-			ClosePara(outParas, outAttrs, outStarts, text, place, paraStart, threadEnd, ruby, nextRuby,
-					  uncounted);
+			ClosePara(outParas, outAttrs, outStarts, text, place, paraStart, threadEnd,
+					  ruby, nextRuby, kenten, nextKenten, uncounted);
 
 		position = threadEnd;
 	}
@@ -650,7 +815,7 @@ void KCMCompareReadRoutes(const UIDRef& storyRef,
 		for (size_t i = 0; i < newStarts.size() && i < newParas.size(); ++i)
 			newByStart[newStarts[i]] = i;
 
-		size_t missing = 0, extra = 0, textDiffs = 0, placeDiffs = 0, rubyDiffs = 0;
+		size_t missing = 0, extra = 0, textDiffs = 0, placeDiffs = 0, rubyDiffs = 0, kentenDiffs = 0;
 		std::ostringstream detail;
 		size_t shown = 0;
 
@@ -686,6 +851,14 @@ void KCMCompareReadRoutes(const UIDRef& storyRef,
 						for (size_t r = 0; r < newAttrs[ni].fRuby.size(); ++r)
 							detail << (r == 0 ? ":" : ",") << newAttrs[ni].fRuby[r].fStart
 								   << "+" << newAttrs[ni].fRuby[r].fLen;
+					}
+
+					if (ni < newAttrs.size() && !newAttrs[ni].fKenten.empty())
+					{
+						detail << " kenten";
+						for (size_t k = 0; k < newAttrs[ni].fKenten.size(); ++k)
+							detail << (k == 0 ? ":" : ",") << newAttrs[ni].fKenten[k].fStart
+								   << "+" << newAttrs[ni].fKenten[k].fLen;
 					}
 
 					detail << "]";
@@ -727,11 +900,26 @@ void KCMCompareReadRoutes(const UIDRef& storyRef,
 									 && !KCMSnippetText::SpansDiffer(oldAttrs[oi].fRuby,
 																	 newAttrs[ni].fRuby)) ? kTrue : kFalse;
 
+			// ★KENTEN IS ASKED FOR THE SAME REASON AS THE RUBY ABOVE, and the rule that made it
+			//   necessary is now written down: **a value added to KCMParaAttrs is added to this
+			//   report in the same sitting.** Skip it and the two routes are declared to agree
+			//   about a field neither of them was asked about - the exact state the ruby was in
+			//   until 2026-09-01.
+			//   ⚠THE TWO ROUTES SPELL THE KIND DIFFERENTLY BY NATURE: the snippet parser copies
+			//    the XML's word ("KentenBlackCircle"), this file uses the SDK's own table
+			//    ("BlackCircle"). A run of this report over a document that HAS kenten will
+			//    therefore report kenten differences that are not faults - the spans line up, the
+			//    spelling does not. The counts and positions are what to read there.
+			const bool16 sameKenten = (oi < oldAttrs.size() && ni < newAttrs.size()
+									   && !KCMSnippetText::SpansDiffer(oldAttrs[oi].fKenten,
+																	   newAttrs[ni].fKenten)) ? kTrue : kFalse;
+
 			if (!sameText) ++textDiffs;
 			if (!samePlace) ++placeDiffs;
 			if (!sameRuby) ++rubyDiffs;
+			if (!sameKenten) ++kentenDiffs;
 
-			if ((!sameText || !samePlace || !sameRuby) && shown < kKCMMaxDetails)
+			if ((!sameText || !samePlace || !sameRuby || !sameKenten) && shown < kKCMMaxDetails)
 			{
 				++shown;
 				detail << " [@" << it->first << ":";
@@ -744,6 +932,15 @@ void KCMCompareReadRoutes(const UIDRef& storyRef,
 					const size_t oldSpans = (oi < oldAttrs.size()) ? oldAttrs[oi].fRuby.size() : 0;
 					const size_t newSpans = (ni < newAttrs.size()) ? newAttrs[ni].fRuby.size() : 0;
 					detail << "ruby(" << oldSpans << "/" << newSpans << ")";
+				}
+				if (!sameKenten)
+				{
+					// ⚠SPAN COUNTS, NOT KINDS - the same rule as the ruby just above, and here it
+					//   also keeps the two routes' different spellings out of a report that is read
+					//   as ASCII by a script.
+					const size_t oldSpans = (oi < oldAttrs.size()) ? oldAttrs[oi].fKenten.size() : 0;
+					const size_t newSpans = (ni < newAttrs.size()) ? newAttrs[ni].fKenten.size() : 0;
+					detail << "kenten(" << oldSpans << "/" << newSpans << ")";
 				}
 				if (!samePlace)
 					// table, row, column, footnote - old side, then new side.
@@ -782,7 +979,8 @@ void KCMCompareReadRoutes(const UIDRef& storyRef,
 				++orderDiffs;
 		}
 
-		if (missing == 0 && extra == 0 && textDiffs == 0 && placeDiffs == 0 && rubyDiffs == 0)
+		if (missing == 0 && extra == 0 && textDiffs == 0 && placeDiffs == 0 && rubyDiffs == 0 &&
+			kentenDiffs == 0)
 		{
 			line << "agree (" << newParas.size() << " paragraphs";
 			if (orderDiffs != 0)
@@ -793,6 +991,7 @@ void KCMCompareReadRoutes(const UIDRef& storyRef,
 		{
 			line << "DIFFER missing=" << missing << " extra=" << extra
 				 << " text=" << textDiffs << " place=" << placeDiffs << " ruby=" << rubyDiffs
+				 << " kenten=" << kentenDiffs
 				 << " of " << newParas.size() << " (order " << orderDiffs << ")" << detail.str();
 			if (shown == kKCMMaxDetails)
 				line << " ...";
