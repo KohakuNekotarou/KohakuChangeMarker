@@ -667,6 +667,29 @@ KCMAttrSpanList SpansWhoseTextSurvives(const KCMAttrSpanList& spans,
 		const std::string text = ownPara.substr(static_cast<size_t>(bytes[from]),
 												static_cast<size_t>(bytes[to] - bytes[from]));
 		if (text.empty() || otherPara.find(text) != std::string::npos)
+		{
+			kept.push_back(spans[i]);		// the characters are still there - the mark alone moved
+			continue;
+		}
+
+		// ★★★THE CHARACTERS ARE NOT FOUND, AND TWO VERY DIFFERENT EDITS LOOK ALIKE HERE
+		//   (2026-09-01, user: "when the kanji changes and the ruby is removed, I want two rows"):
+		//     a) they were REWRITTEN - 琥珀 became 真珠 and its reading was taken off. **Two edits**,
+		//        and the reader asked to see both.
+		//     b) they were DELETED - 銀河 went and its reading went with it. **One** edit, which the
+		//        text row already reports (the user's rule: the text is the subject, the mark
+		//        follows it).
+		//
+		//   ⚠**TOLD APART BY THE PARAGRAPH'S LENGTH, WHICH IS AN APPROXIMATION AND IS WRITTEN DOWN
+		//    AS ONE.** A deletion leaves the paragraph shorter; a same-length rewrite does not. That
+		//    is exactly right for the two shapes above and WRONG for a rewrite that also shortens
+		//    the paragraph (琥珀 -> 真, reading removed), which this treats as a deletion and does
+		//    not report.
+		//   ⇒ The honest fix is a CHARACTER-level diff of the paragraph, so that "was this range
+		//     replaced or deleted" is answered rather than guessed. It is a larger piece of work and
+		//     is not here yet. What is here errs toward reporting LESS, which is the direction the
+		//     text-is-the-subject rule already points.
+		if (KCMSnippetText::CountCodePoints(otherPara) >= KCMSnippetText::CountCodePoints(ownPara))
 			kept.push_back(spans[i]);
 	}
 
