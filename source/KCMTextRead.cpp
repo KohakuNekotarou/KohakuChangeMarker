@@ -202,6 +202,31 @@ void AppendWide(std::string& out, const WideString& w)
 		KCMSnippetText::AppendUtf8(out, static_cast<int32>(w.GetChar(k).GetValue()));
 }
 
+/* IsFootnoteMarkerOnly
+   True when the "reading" is nothing but InDesign's own footnote marker.
+
+   ★★★NOT A GUESS - THE SDK NAMES THE CHARACTER: kTextChar_FootnoteMarker is U+0004
+   (TextChar.h:37), and a footnote's first character carries it AS ITS RUBY READING. Measured
+   2026-09-01 on work/kcm-selftest/footnote: the character at DOM index 7 is 'F' (the start of the
+   note's own text) and its rubyString is [0004] and nothing else - so the reader below produced a
+   ruby span standing over the marker, reported by the dump as `[+5 ruby:2+1]`.
+
+   ⚠THE OLD ROUTE NEVER SAW THIS, AND NOT BY LUCK. A <Footnote> carries no base text in the
+    snippet, so the parser made no span at all - and the panel has always agreed with that.
+    **A reading nobody can read is not a change anybody can make**, so reporting one would be a
+    regression this migration introduced rather than a fault it uncovered.
+
+   ⚠ONLY WHEN IT IS THE WHOLE READING. A real reading that happened to contain the character
+    alongside others is not this case, and is left alone.
+*/
+bool16 IsFootnoteMarkerOnly(const WideString& w)
+{
+	if (w.CharCount() != 1)
+		return kFalse;
+	return (static_cast<int32>(w.GetChar(0).GetValue())
+			== static_cast<int32>(kTextChar_FootnoteMarker)) ? kTrue : kFalse;
+}
+
 /* ScanRuby
    Every ruby run in the story, in reading order.
 
@@ -261,7 +286,11 @@ void ScanRuby(ITextModel* model, std::vector<RubyRun>& out)
 			RubyRun run;
 			run.fAt = (runBegin >= 0 && runBegin <= i) ? runBegin : i;
 			run.fLen = len + static_cast<int32>(i - run.fAt);
-			if (reading != nil)
+			// ⚠A FOOTNOTE'S MARKER RIDES THIS STRAND TOO - see IsFootnoteMarkerOnly. Left in, it
+			//   would put a ruby span over every footnote in the document, none of which anybody
+			//   typed. The reading is dropped rather than the run skipped, so the empty-reading
+			//   rule below is the one place that decides what is not ruby.
+			if (reading != nil && !IsFootnoteMarkerOnly(reading->Get()))
 				AppendWide(run.fReading, reading->Get());
 
 			if (!run.fReading.empty())

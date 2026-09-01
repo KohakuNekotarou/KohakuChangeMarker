@@ -760,6 +760,25 @@ bool16 CompareOneStory(const UIDRef& targetStory, const UIDRef& sourceStory,
 	//    turns up, the two answers can still be put side by side** by turning the parallel run
 	//    back on where it stood.
 
+	// ★★★THE INSTRUMENT OUTLIVED WHAT IT MEASURED, AND IS KEPT AS A DUMP.
+	//   The parallel run compared the new route against the old one, and the old one is no longer
+	//   called - so **the instrument went away together with the thing it measured**. The very
+	//   next fault found after the switch (ScanRuby picking up the footnote marker, measured
+	//   2026-09-01) then had nothing to read it with.
+	//   ⇒ **EMPTY OLD LISTS ARE PASSED ON PURPOSE.** Every paragraph is then an "extra", which is
+	//     precisely the branch that prints WHAT THE NEW ROUTE READ - its place, its footnote and
+	//     its ruby spans. It is a dump, not a comparison, and the label says so.
+	//   ⚠OFF BY DEFAULT, and it re-reads each story once more when on: nobody pays for it unless
+	//    they are measuring. Task 7 decides whether it stays.
+	if (KCMStoryReadCompareIsOn())
+	{
+		const std::vector<std::string> noParas;
+		const std::vector<KCMParaAttrs> noAttrs;
+		const std::vector<int32> noStarts;
+		KCMCompareReadRoutes(targetStory, noParas, noAttrs, noStarts, "target(DUMP)");
+		KCMCompareReadRoutes(sourceStory, noParas, noAttrs, noStarts, "source(DUMP)");
+	}
+
 	for (size_t c = 0; c < paragraphChanges.size(); ++c)
 	{
 		const KCMTextDiff::Change& change = paragraphChanges[c];
