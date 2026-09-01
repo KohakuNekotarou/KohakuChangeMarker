@@ -63,6 +63,8 @@
 // Project includes:
 #include "IKCMStatusTextData.h"
 #include "KCMUIID.h"
+#include "KCMKentenMark.h"	// the emphasis marks - the SAME drawing the change row uses
+#include "KCMStoryKinds.h"	// kKCMStoryAttrKenten - which attribute the upper line belongs to
 #include "KCMPanelTextDraw.h"	// kKCMContextTextWeight, KCMBlendColor - shared with the row cell
 
 // Std includes:
@@ -408,12 +410,12 @@ PMString KCMTrimTrailingContext(const PMString& post, int32 keep)
 class KCMStatusTextData : public CPMUnknown<IKCMStatusTextData>
 {
 public:
-	KCMStatusTextData(IPMUnknown* boss) : CPMUnknown<IKCMStatusTextData>(boss) {}
+	KCMStatusTextData(IPMUnknown* boss) : CPMUnknown<IKCMStatusTextData>(boss), fAttrKind(0) {}
 	virtual ~KCMStatusTextData() {}
 
 	virtual void SetSegments(const PMString& label, const PMString& pre,
 							 const PMString& mid, const PMString& post,
-							 const PMString& ruby)
+							 const PMString& ruby, int32 attrKind)
 	{
 		// ★Not translation keys. Messages are assembled sentences and document text, and a short
 		//   common word left translatable can be looked up in the string tables and come back as
@@ -424,16 +426,19 @@ public:
 		fMid   = mid;   fMid.SetTranslatable(kFalse);
 		fPost  = post;  fPost.SetTranslatable(kFalse);
 		fRuby  = ruby;  fRuby.SetTranslatable(kFalse);
+		fAttrKind = attrKind;
 	}
 
 	virtual void GetSegments(PMString& outLabel, PMString& outPre,
-							 PMString& outMid, PMString& outPost, PMString& outRuby) const
+							 PMString& outMid, PMString& outPost, PMString& outRuby,
+							 int32& outAttrKind) const
 	{
 		outLabel = fLabel;
 		outPre   = fPre;
 		outMid   = fMid;
 		outPost  = fPost;
 		outRuby  = fRuby;
+		outAttrKind = fAttrKind;
 	}
 
 private:
@@ -442,6 +447,9 @@ private:
 	PMString fMid;
 	PMString fPost;
 	PMString fRuby;
+
+	/** Which attribute the upper line belongs to - see IKCMStatusTextData.h. */
+	int32    fAttrKind;
 };
 
 CREATE_PMINTERFACE(KCMStatusTextData, kKCMStatusTextDataImpl)
@@ -476,7 +484,8 @@ void KCMStatusTextView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 		return;
 
 	PMString label, pre, mid, post, ruby;
-	data->GetSegments(label, pre, mid, post, ruby);
+	int32 attrKind = 0;
+	data->GetSegments(label, pre, mid, post, ruby, attrKind);
 
 	// ★NOTHING IS PAINTED BEHIND THE TEXT. The panel draws its own background; this box adds words
 	//   on top of it, exactly as the stock widget it replaced did. An empty message is therefore a
@@ -652,6 +661,7 @@ void KCMStatusTextView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 	//   word, and the reading belongs to its beginning - which is also where the eye looks for it.
 	int32 rubyLine = -1;
 	PMReal rubyBaseX(0.0), rubyBaseW(0.0);
+	int32 rubyBaseChars = 0;	// how many characters that run holds - a kenten draws one mark per character
 	if (!ruby.IsEmpty())
 	{
 		for (size_t i = 0; i < frags.size(); ++i)
@@ -661,6 +671,7 @@ void KCMStatusTextView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 			rubyLine  = frags[i].fLine;
 			rubyBaseX = frags[i].fX;
 			rubyBaseW = KCMWidth(&gc, frags[i].fText, fontInfo);
+			rubyBaseChars = frags[i].fText.CharCount();
 			break;
 		}
 	}
@@ -687,6 +698,19 @@ void KCMStatusTextView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 
 	if (rubyLine >= 0)
 	{
+		// ★★A KENTEN IS DRAWN HERE EXACTLY AS IT IS IN THE LIST - same function, same rules (user's
+		//   call, 2026-09-01: "the source text should show it the way ruby does, and use the same
+		//   code"). This box shows the OTHER version, so it is where a mark that was REMOVED can be
+		//   seen at all - the row itself shows the newer version, where there is nothing left.
+		if (attrKind == static_cast<int32>(kKCMStoryAttrKenten) &&
+			KCMKentenMark::DrawOverRun(gc, gPort, fontInfo, ruby,
+									   frame.Left() + rubyBaseX, rubyBaseW, rubyBaseChars,
+									   lineHeight, baseline0 + lineHeight * PMReal(rubyLine),
+									   frame.Right(), kChangeColor))
+		{
+			return;		// the marks are the upper line - nothing is written over them
+		}
+
 		// ★The same centring rule the change row's cell uses (KCMPanelTextDraw.h).
 		const PMReal rubyW = KCMWidth(&gc, ruby, fontInfo);
 		const PMReal rubyX = KCMRubyX(frame.Left() + rubyBaseX, rubyBaseW, rubyW, frame.Left());

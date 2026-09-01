@@ -162,7 +162,7 @@ void	KCMStoreSessionStatus(const PMString& s);
 // @warning the ruby is NOT part of what KCMGetSessionStatus assembles -- see there.
 void	KCMStoreSessionStatusSegments(const PMString& label, const PMString& pre,
 										const PMString& mid, const PMString& post,
-										const PMString& ruby);
+										const PMString& ruby, int32 attrKind);
 
 // The last string given to KCMNotifyStatus or KCMStoreSessionStatus. This is what
 // app.kcmStatus returns.
@@ -179,7 +179,8 @@ void	KCMGetSessionStatus(PMString& out);
 // re-appears, so that a coloured message comes back coloured.
 // A message stored as one string answers with that string in `outMid` and four empty pieces.
 void	KCMGetSessionStatusSegments(PMString& outLabel, PMString& outPre,
-									  PMString& outMid, PMString& outPost, PMString& outRuby);
+									  PMString& outMid, PMString& outPost, PMString& outRuby,
+									  int32& outAttrKind);
 
 // Shutdown only: empty the stored message, so the static PMStrings' destructors have no live
 // heap buffer to free when the plug-in unloads (Mac unload order differs from Windows).

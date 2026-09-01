@@ -627,38 +627,9 @@ bool16 KCMStoryJumpToChange(int32 rowIndex, int32 changeIndex)
 	//     counting who already reads the values it sets.)
 	const bool16 otherIsTarget = (change.fWhat == IKCMStoryEditsFacade::Change::kWhatText
 								  && change.fKind == 2) ? kTrue : kFalse;
-	// ★★KENTEN NAMES ITSELF IN THE LABEL (2026-09-01). The row draws the mark, which says WHICH
-	//   CHARACTERS carry it; the label says WHICH MARK, which a shape a few pixels across cannot be
-	//   asked to prove - Bullseye against Fisheye is one filled dot. **The two answers are in the
-	//   two places that can each carry one**, rather than both being crowded onto the upper line
-	//   where the name would sit over the text as though it were a reading. That last part is the
-	//   fault this whole feature was withdrawn for in August; see the note further down.
-	// ⚠BOTH SIDES ARE NAMED when both exist. A kenten change is nearly always a kind SWAP, and
-	//   "Source Kenten: Bullseye" alone would leave the reader to find the new kind by eye.
-	const bool16 labelIsKenten =
-		(change.fAttrKind == static_cast<int32>(kKCMStoryAttrKenten)) ? kTrue : kFalse;
-
 	PMString label;
 	label.SetTranslatable(kFalse);
-	label.Append(otherIsTarget ? "Target " : "Source ");
-	label.Append(labelIsKenten ? "Kenten:" : "Text:");
-
-	if (labelIsKenten)
-	{
-		// ⚠THE VALUES ARE PRINTED AS THE READER STORED THEM, custom marks included
-		//   ("Custom:2:9679"). Trimming that back to the word "Custom" would hide the only thing
-		//   that tells two custom marks apart - which is exactly the case where a reader is asking.
-		if (!change.fOtherRuby.IsEmpty())
-		{
-			label.Append(" ");
-			label.Append(change.fOtherRuby);
-		}
-		if (!change.fRuby.IsEmpty())
-		{
-			label.Append(" -> ");
-			label.Append(change.fRuby);
-		}
-	}
+	label.Append(otherIsTarget ? "Target Text:" : "Source Text:");
 
 	// ★★THE OTHER SIDE'S READING GOES WITH IT (2026-08-22). The list shows the NEWER version, so a
 	//   reading that was REMOVED can be seen nowhere else - and the row's own upper line is left
@@ -685,7 +656,7 @@ bool16 KCMStoryJumpToChange(int32 rowIndex, int32 changeIndex)
 	}
 
 	KCMSetStatusSegments(label, change.fOtherTextPre, change.fOtherText, change.fOtherTextPost,
-						   otherRuby);
+						   otherRuby, change.fAttrKind);
 
 	return moved;
 }

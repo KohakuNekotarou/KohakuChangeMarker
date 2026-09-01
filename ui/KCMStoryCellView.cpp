@@ -344,43 +344,20 @@ void KCMStoryCellView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 	//   reading that was removed is read in the panel's message area, which shows the other side.
 	//   The row is still laid out on two lines - see the widget manager - so the base text does not
 	//   jump half a row against the rows above and below it.
-	if (twoLines && !ruby.IsEmpty() && isKenten && KCMKentenMark::CanDraw(ruby))
-	{
-		// ★★ONE MARK PER CHARACTER, over the characters themselves (user's call, 2026-09-01: the
-		//   mark is drawn "so that which character it sits on can be seen by eye"). Kenten IS one
-		//   mark per character - that is what makes it kenten and not ruby - so a single mark
-		//   standing for a whole span would misdescribe every span longer than one character.
-		// ⚠THE COUNT IS THE CHANGED CHARACTERS, not the span's length in the document: this cell
-		//   was handed the text that was CUT to fit, and drawing more marks than there are
-		//   characters under them is the one thing the eye would catch immediately.
-		const int32 count = mid.CharCount();
-		if (count > 0 && drawnMidW > PMReal(0.0))
-		{
-			// The width one character got, which is what a mark has to fit in. CJK is even enough
-			// for this to land the mark over its character; a proportional run drifts, and the
-			// alternative - measuring every character on its own - would cost a measure call per
-			// mark to correct a few pixels nobody is reading to that precision.
-			const PMReal perChar = drawnMidW / PMReal(count);
+	// ★★THE MARKS ARE DRAWN BY THE SAME CODE THE MESSAGE AREA USES (user's call, 2026-09-01:
+	//   "use the same code where it can be the same"). Everything about how a kenten looks - one
+	//   mark per character, how big, where the custom glyph goes - lives in KCMKentenMark, so the
+	//   two places that show one cannot drift apart.
+	// ⚠THE COUNT IS THE CHARACTERS THAT WERE DRAWN, not the span's length in the document: this
+	//   cell was handed text that had been cut to fit, and more marks than characters is the one
+	//   thing an eye catches immediately.
+	const bool16 kentenDrawn =
+		(twoLines && !ruby.IsEmpty() && isKenten)
+		? KCMKentenMark::DrawOverRun(gc, gPort, fontInfo, ruby, drawnMidX, drawnMidW,
+									 mid.CharCount(), lineHeight, upperY, rightEdge, kChangeColor)
+		: kFalse;
 
-			PMReal markSize = lineHeight * PMReal(0.70);
-			if (perChar < markSize)
-				markSize = perChar;			// a narrow column shrinks the marks rather than overlapping them
-
-			// ⚠THE CENTRE OF THE UPPER HALF, NOT THE BASELINE. upperY is where TEXT sits on this
-			//   line; a shape has no baseline, and hanging one from a text baseline puts it low
-			//   enough to touch the characters below.
-			const PMReal markY = lineHeight / PMReal(2.0);
-
-			for (int32 i = 0; i < count; ++i)
-			{
-				const PMReal cx = drawnMidX + perChar * (PMReal(i) + PMReal(0.5));
-				if (cx + (markSize / PMReal(2.0)) > rightEdge)
-					break;					// ran out of cell - the rest are simply not shown
-				KCMKentenMark::Draw(gPort, ruby, cx, markY, markSize, kChangeColor);
-			}
-		}
-	}
-	else if (twoLines && !ruby.IsEmpty())
+	if (twoLines && !ruby.IsEmpty() && !kentenDrawn)
 	{
 		// ★A READING, OR A KIND THIS BUILD CANNOT DRAW (Custom, or a kind newer than this code):
 		//   both are written out as text. **A mark that cannot be drawn is still not nothing** -

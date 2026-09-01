@@ -82,7 +82,7 @@ void			KCMSetStatus(const char* s, bool16 forceRedrawNow = kFalse);
 //     (KCMStatusTextView.cpp).
 void			KCMSetStatusSegments(const PMString& label, const PMString& pre,
 									   const PMString& mid, const PMString& post,
-									   const PMString& ruby);
+									   const PMString& ruby, int32 attrKind);
 
 // Start / stop the UI-side observer of the model's notifications (KCMModelChangeObserver.cpp).
 // Attached in Startup; detached in Shutdown **before** the panel is taken down.

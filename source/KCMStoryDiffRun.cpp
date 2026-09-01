@@ -573,7 +573,59 @@ void CompareParagraphAttr(KCMStoryAttrKind attrKind,
 	}
 }
 
-/* AddAttrOnlyChanges
+/* SpansWhoseTextSurvives
+   The spans whose BASE CHARACTERS are still there on the other side.
+
+   ★★★WHY THIS EXISTS (2026-09-01, user: "the deleted one looks wrong"). Once attribute changes
+   were also looked for in paragraphs the diff HAD reported, deleting a word that carried ruby
+   produced two rows for one edit: the words going ("これは銀河の行です。" -> "これはの行です。")
+   and, beside it, "the ruby was removed" - which is not a second thing that happened. Worse, the
+   two rows show OPPOSITE SIDES of the document by design (a deletion shows the older text, an
+   attribute change shows the newer), so the pair read as though the panel had swapped them over.
+
+   ⇒ **An attribute is only a change of its own while the characters under it survive.** When they
+   go, what happened is the deletion, and the deletion row already says so.
+
+   ⚠MATCHED BY THE TEXT, NOT BY POSITION, and that is the point: after an edit the same characters
+    sit at a different offset, so a positional test would call every surviving span deleted. Asking
+    "do these characters appear anywhere in the other version of this paragraph" is exactly the
+    question - **it does not matter where they moved to**, only whether they are gone.
+
+   ⚠A SPAN THIS CANNOT READ IS KEPT, not dropped. A position that does not resolve to a byte range
+    is a bug in the reader, and losing a real change to it would be silent; keeping it can at worst
+    restore the row this function exists to remove.
+*/
+KCMAttrSpanList SpansWhoseTextSurvives(const KCMAttrSpanList& spans,
+									   const std::string& ownPara, const std::string& otherPara)
+{
+	KCMAttrSpanList kept;
+	if (spans.empty())
+		return kept;
+
+	std::vector<int32> codePoints, bytes;
+	KCMTextDiff::ToCodePoints(ownPara, codePoints, &bytes);
+
+	for (size_t i = 0; i < spans.size(); ++i)
+	{
+		const int32 from = spans[i].fStart;
+		const int32 to   = spans[i].fStart + spans[i].fLen;
+
+		if (from < 0 || to <= from || to >= static_cast<int32>(bytes.size()))
+		{
+			kept.push_back(spans[i]);		// unreadable - see the warning above
+			continue;
+		}
+
+		const std::string text = ownPara.substr(static_cast<size_t>(bytes[from]),
+												static_cast<size_t>(bytes[to] - bytes[from]));
+		if (text.empty() || otherPara.find(text) != std::string::npos)
+			kept.push_back(spans[i]);
+	}
+
+	return kept;
+}
+
+/* AddAttributeChanges
    Ruby differences in the paragraphs the text diff said were UNCHANGED.
 
    **THIS IS WHERE THE WHOLE FEATURE LIVES.** A ruby-only edit leaves the text identical, so
@@ -584,7 +636,7 @@ void CompareParagraphAttr(KCMStoryAttrKind attrKind,
      so they already have children saying so, and ruby that moved with rewritten words is not
      a separate edit the reader needs pointed out.
 */
-void AddAttrOnlyChanges(const std::vector<KCMTextDiff::Change>& paragraphChanges,
+void AddAttributeChanges(const std::vector<KCMTextDiff::Change>& paragraphChanges,
 						const std::vector<std::string>& sourceParas,
 						const std::vector<std::string>& targetParas,
 						const std::vector<KCMParaAttrs>& sourceAttrs,
@@ -595,6 +647,58 @@ void AddAttrOnlyChanges(const std::vector<KCMTextDiff::Change>& paragraphChanges
 {
 	int32 a = 0;
 	int32 b = 0;
+
+	// ★ONE PLACE DECIDES WHAT AN ATTRIBUTE COMPARISON IS, and both walks below call it. The two
+	//   walks differ only in WHICH paragraphs they hand over; writing the comparison twice would be
+	//   two things to keep right ([[one-question-one-place]]), and the second copy is exactly where
+	//   a kind gets forgotten when a third one is added.
+	auto compareParagraphPair = [&](int32 ai, int32 bi, bool16 onlyWhereTextSurvives)
+	{
+		if (ai < 0 || bi < 0 ||
+			ai >= static_cast<int32>(sourceAttrs.size())  || bi >= static_cast<int32>(targetAttrs.size()) ||
+			ai >= static_cast<int32>(sourceParas.size())  || bi >= static_cast<int32>(targetParas.size()) ||
+			ai >= static_cast<int32>(sourceStarts.size()) || bi >= static_cast<int32>(targetStarts.size()))
+			return;
+
+		// **EACH ATTRIBUTE IS COMPARED ON ITS OWN LIST**, and they cannot be merged into one pass:
+		//   two sets of spans are matched by position within their OWN kind.
+		// ⚠RUBY FIRST, KENTEN SECOND, and it does not matter: ChangeIsBefore re-sorts the whole list
+		//   by fTargetStart afterwards. The order here is only what two changes standing at the very
+		//   same character fall back on.
+		// ⚠WHEN THE WORDS THEMSELVES MOVED, only the attributes whose characters survived are a
+		//   change of their own - see SpansWhoseTextSurvives. In a paragraph the diff left alone the
+		//   characters are the same on both sides by definition, so the filter is not run there: it
+		//   would cost a walk per span to answer a question already settled.
+		const KCMAttrSpanList sourceRuby = onlyWhereTextSurvives
+			? SpansWhoseTextSurvives(sourceAttrs[ai].fRuby, sourceParas[ai], targetParas[bi])
+			: sourceAttrs[ai].fRuby;
+		const KCMAttrSpanList targetRuby = onlyWhereTextSurvives
+			? SpansWhoseTextSurvives(targetAttrs[bi].fRuby, targetParas[bi], sourceParas[ai])
+			: targetAttrs[bi].fRuby;
+
+		CompareParagraphAttr(kKCMStoryAttrRuby,
+							 sourceRuby, targetRuby,
+							 sourceParas[ai], targetParas[bi],
+							 sourceStarts[ai], targetStarts[bi], bi, out);
+
+		// ★KENTEN IS REPORTED AGAIN (2026-09-01, user's call: "if it can be found, I want to find
+		//   it"). It was compared for one day in August and withdrawn, and the withdrawal was never
+		//   about the comparison: the KIND it produces travelled in the same field as a ruby's
+		//   READING, and the message area drew that name over the older text as though somebody could
+		//   read it aloud. What answers that is fAttrKind, which every row and every change already
+		//   carries. ⇒ **The mistake was one place asking the wrong question, not this call.**
+		const KCMAttrSpanList sourceKenten = onlyWhereTextSurvives
+			? SpansWhoseTextSurvives(sourceAttrs[ai].fKenten, sourceParas[ai], targetParas[bi])
+			: sourceAttrs[ai].fKenten;
+		const KCMAttrSpanList targetKenten = onlyWhereTextSurvives
+			? SpansWhoseTextSurvives(targetAttrs[bi].fKenten, targetParas[bi], sourceParas[ai])
+			: targetAttrs[bi].fKenten;
+
+		CompareParagraphAttr(kKCMStoryAttrKenten,
+							 sourceKenten, targetKenten,
+							 sourceParas[ai], targetParas[bi],
+							 sourceStarts[ai], targetStarts[bi], bi, out);
+	};
 
 	// Walk the two paragraph lists side by side, stepping over each reported change. What is left
 	// between them lines up one to one - that is what "unchanged" means to the diff.
@@ -607,40 +711,32 @@ void AddAttrOnlyChanges(const std::vector<KCMTextDiff::Change>& paragraphChanges
 
 		while (a < aStop && b < bStop)
 		{
-			if (a < static_cast<int32>(sourceAttrs.size()) && b < static_cast<int32>(targetAttrs.size()) &&
-				a < static_cast<int32>(sourceStarts.size()) && b < static_cast<int32>(targetStarts.size()))
-			{
-				// **EACH ATTRIBUTE IS COMPARED ON ITS OWN LIST**, and they cannot be merged into one
-				//   pass: two sets of spans are matched by position within their OWN kind.
-				//
-				CompareParagraphAttr(kKCMStoryAttrRuby,
-									 sourceAttrs[a].fRuby, targetAttrs[b].fRuby,
-									 sourceParas[a], targetParas[b],
-									 sourceStarts[a], targetStarts[b], b, out);
-
-				// ★KENTEN IS REPORTED AGAIN (2026-09-01, user's call: "if it can be found, I want
-				//   to find it"). It was compared for one day in August and withdrawn, and the
-				//   withdrawal was never about the comparison: the KIND it produces travelled in
-				//   the same field as a ruby's READING, and the message area drew that name over
-				//   the older text as though somebody could read it aloud. What answers that is
-				//   fAttrKind, which every row and every change already carries and which the
-				//   drawing side is required to ask instead of fWhat (IKCMStoryEditsFacade.h says
-				//   so in as many words). ⇒ **The mistake was one place asking the wrong question,
-				//   not this call.**
-				// ⚠RUBY FIRST, KENTEN SECOND, and it does not matter: ChangeIsBefore re-sorts the
-				//   whole list by fTargetStart afterwards. The order here is only what two changes
-				//   standing at the very same character fall back on.
-				CompareParagraphAttr(kKCMStoryAttrKenten,
-									 sourceAttrs[a].fKenten, targetAttrs[b].fKenten,
-									 sourceParas[a], targetParas[b],
-									 sourceStarts[a], targetStarts[b], b, out);
-			}
+			compareParagraphPair(a, b, kFalse);
 			++a;
 			++b;
 		}
 
 		if (c < paragraphChanges.size())
 		{
+			// ⚠★★★AND THE PARAGRAPHS THE DIFF *DID* REPORT (fixed 2026-09-01, user: "this is
+			//   definitely a bug"). A paragraph whose WORDS changed AND whose ruby or kenten changed in
+			//   the same edit used to lose the attribute half of that entirely: this walk only ever
+			//   looked BETWEEN the reported changes, and the function's old name (AddAttributeChanges)
+			//   said so out loud. **A reader who rewrote a line and re-marked it in one pass was shown
+			//   half of what they had done**, with nothing to say the other half existed.
+			// ⚠ONLY WHEN THE TWO SIDES HOLD THE SAME NUMBER OF PARAGRAPHS HERE. Then they line up one
+			//   to one and their attribute lists can be matched by position, which is what
+			//   CompareParagraphAttr needs. A change that INSERTS or DELETES paragraphs has no such
+			//   correspondence, and pairing them off anyway would report readings and marks moving
+			//   between paragraphs that have nothing to do with each other - a wrong answer where there
+			//   is currently a missing one.
+			if (paragraphChanges[c].aCount == paragraphChanges[c].bCount)
+			{
+				for (int32 k = 0; k < paragraphChanges[c].aCount; ++k)
+					compareParagraphPair(paragraphChanges[c].aStart + k,
+										 paragraphChanges[c].bStart + k, kTrue);
+			}
+
 			a = paragraphChanges[c].aStart + paragraphChanges[c].aCount;
 			b = paragraphChanges[c].bStart + paragraphChanges[c].bCount;
 		}
@@ -862,7 +958,7 @@ bool16 CompareOneStory(const UIDRef& targetStory, const UIDRef& sourceStory,
 	//   whose ruby alone was edited came out of it with no children at all -- the row said
 	//   "None", which is what the reader reported. The paragraphs the diff did NOT mention are
 	//   exactly the ones to ask about.
-	AddAttrOnlyChanges(paragraphChanges, sourceParas, targetParas, sourceAttrs, targetAttrs,
+	AddAttributeChanges(paragraphChanges, sourceParas, targetParas, sourceAttrs, targetAttrs,
 					   sourceStarts, targetStarts, out);
 
 	// @warning put back in reading order. The ruby children were found by a separate walk, so

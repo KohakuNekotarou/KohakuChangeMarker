@@ -242,7 +242,8 @@ void KCMPanelObserver::AutoAttach()
 	//   holds four pieces.
 	//   ★An ordinary message fills only the middle piece, so this route does not change how it looks.
 	PMString savedLabel, savedPre, savedMid, savedPost, savedRuby;
-	Utils<IKCMCompareFacade>()->GetSessionStatusSegments(savedLabel, savedPre, savedMid, savedPost, savedRuby);	// ★remembered on the model side
+	int32 savedAttrKind = 0;
+	Utils<IKCMCompareFacade>()->GetSessionStatusSegments(savedLabel, savedPre, savedMid, savedPost, savedRuby, savedAttrKind);	// ★remembered on the model side
 	if (savedLabel.IsEmpty() && savedPre.IsEmpty() && savedMid.IsEmpty() && savedPost.IsEmpty())
 	{
 		// (the member SetStatus was a plain forwarder and was removed; this calls directly)
@@ -250,7 +251,7 @@ void KCMPanelObserver::AutoAttach()
 	}
 	else
 	{
-		KCMSetStatusSegments(savedLabel, savedPre, savedMid, savedPost, savedRuby);
+		KCMSetStatusSegments(savedLabel, savedPre, savedMid, savedPost, savedRuby, savedAttrKind);
 	}
 
 	// The position readout between Prev and Next, and whether the buttons are enabled, have already
@@ -672,7 +673,7 @@ namespace
 */
 void KCMWriteStatusToPanel(const PMString& label, const PMString& pre,
 							 const PMString& mid, const PMString& post, const PMString& ruby,
-							 bool16 forceRedrawNow)
+							 int32 attrKind, bool16 forceRedrawNow)
 {
 	IControlView* panel = KCMGetVisibleOwnPanel();
 	if (panel == nil)
@@ -687,7 +688,7 @@ void KCMWriteStatusToPanel(const PMString& label, const PMString& pre,
 	if (data == nil)
 		return;
 
-	data->SetSegments(label, pre, mid, post, ruby);
+	data->SetSegments(label, pre, mid, post, ruby, attrKind);
 	cv->Invalidate();
 
 	// When a blocking stretch of work (a comparison loop, say) follows immediately, an Invalidate
@@ -711,7 +712,7 @@ void KCMSetStatus(const PMString& s, bool16 forceRedrawNow)
 	//   exactly like the stock static text used to, which is why not one of the many call sites had
 	//   to change.
 	const PMString kNothing;
-	KCMWriteStatusToPanel(kNothing, kNothing, s, kNothing, kNothing, forceRedrawNow);
+	KCMWriteStatusToPanel(kNothing, kNothing, s, kNothing, kNothing, 0, forceRedrawNow);
 }
 
 // A message written out where it is used (declared in KCMUIShared.h, with the reason).
@@ -723,15 +724,16 @@ void KCMSetStatus(const char* s, bool16 forceRedrawNow)
 }
 
 void KCMSetStatusSegments(const PMString& label, const PMString& pre,
-							const PMString& mid, const PMString& post, const PMString& ruby)
+							const PMString& mid, const PMString& post, const PMString& ruby,
+							int32 attrKind)
 {
 	// ★Remembered in exactly the same one place as above. Joining the pieces into a single string is
 	//   done on the model side, so app.kcmStatus answers "heading + newline + body" ＝ what this area
 	//   shows.
-	Utils<IKCMCompareFacade>()->StoreSessionStatusSegments(label, pre, mid, post, ruby);
+	Utils<IKCMCompareFacade>()->StoreSessionStatusSegments(label, pre, mid, post, ruby, attrKind);
 
 	// ★forceRedrawNow is not passed: this route is a row click, with no blocking work behind it
-	KCMWriteStatusToPanel(label, pre, mid, post, ruby, kFalse);
+	KCMWriteStatusToPanel(label, pre, mid, post, ruby, attrKind, kFalse);
 }
 
 // (★KCMGetSessionStatus and KCMClearSessionStatus moved to **KCMModelNotify.cpp, on the model

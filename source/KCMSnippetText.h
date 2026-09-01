@@ -112,7 +112,8 @@ struct KCMParaAttrs
 
 	/** ★**READ AND REPORTED AGAIN SINCE 2026-09-01** (user's call). It was compared for a day in
 		August, switched off, and switched back on in the one place that decides it -
-		KCMStoryDiffRun's AddAttrOnlyChanges. **Keeping the reading through the months it was not
+		KCMStoryDiffRun's AddAttributeChanges (called AddAttrOnlyChanges until 2026-09-01, when it
+		stopped being attr-ONLY - see there). **Keeping the reading through the months it was not
 		reported is what made turning it back on one call**: had the parser stopped filling this,
 		the knowledge that five characters marked with one kind are ONE range - which cost a snippet
 		from the user to get right, and which is the opposite of ruby, where the same five come out

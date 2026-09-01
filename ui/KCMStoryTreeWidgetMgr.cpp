@@ -128,7 +128,7 @@ PMString KindLabel(uint32 kinds, bool16 sameKind, int32 attrKind)
 	//   first, and the "Text+" below already says there was more than one kind of change.
 	// ⚠★★EACH REPORTED ATTRIBUTE NAMES ITSELF. Ruby has since the beginning; kenten does again
 	//   since 2026-09-01 (user's call), the comparison behind it having been switched back on in
-	//   KCMStoryDiffRun's AddAttrOnlyChanges. **A branch here is only reachable while that call
+	//   KCMStoryDiffRun's AddAttributeChanges. **A branch here is only reachable while that call
 	//   exists** - which is the pair to watch if either is ever removed again.
 	if ((kinds & kKCMStoryKindText) == 0)
 	{
@@ -409,15 +409,25 @@ private:
 		that differs, and both end here. */
 	bool16 IsTwoLineChange(int32 row, int32 change) const
 	{
-		// ★★NAMED KINDS, NOT "any attribute" (the shape of this was settled 2026-08-22 and the
-		//   reasoning still holds): the upper line has to be worth having, and an attribute whose
-		//   value nothing can show would leave it permanently empty. Ruby earns it with a reading;
-		//   kenten earns it since 2026-09-01 by having its KIND DRAWN there as the mark itself
-		//   (KCMKentenMark, user's call). A third attribute would have to earn it in its turn -
+		// ★★NAMED KINDS, NOT "any attribute": the upper line has to be worth having, and an
+		//   attribute nothing can show there would leave it permanently empty. Ruby earns it with a
+		//   reading; kenten earns it since 2026-09-01 by having its KIND DRAWN there as the mark
+		//   itself (KCMKentenMark, user's call). A third attribute would have to earn it in turn -
 		//   which is why this stays a list and does not become "attrKind != none".
 		const int32 attrKind = Utils<IKCMStoryEditsFacade>()->GetChangeAttrKind(row, change);
-		return (attrKind == static_cast<int32>(kKCMStoryAttrRuby) ||
-				attrKind == static_cast<int32>(kKCMStoryAttrKenten)) ? kTrue : kFalse;
+		if (attrKind != static_cast<int32>(kKCMStoryAttrRuby) &&
+			attrKind != static_cast<int32>(kKCMStoryAttrKenten))
+			return kFalse;
+
+		// ⚠★★AND THE UPPER LINE HAS TO HAVE SOMETHING IN IT (2026-09-01, user's call: "when the
+		//   ruby or the kenten is gone, make it one line"). **This reverses the decision of
+		//   2026-08-22**, which kept a removed attribute on two lines so that its base text would
+		//   not sit half a row higher than its neighbours. Measured against the alternative, the
+		//   gap was the worse of the two: a blank upper line reads as "something should be here",
+		//   and the row that most needs to be plainly readable is the one where the mark is gone.
+		//   ★The height and the drawing still come from THIS ONE ANSWER, which is what stops them
+		//   disagreeing - the point the older note was really making.
+		return Utils<IKCMStoryEditsFacade>()->GetChangeHasAttrValue(row, change);
 	}
 
 	bool16 IsTwoLineNode(const NodeID& node) const

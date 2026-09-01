@@ -437,14 +437,44 @@ void ScanKenten(ITextModel* model, std::vector<AttrRun>& out)
 				InterfacePtr<const IAttrReport> charAttr(
 					scanner->QueryAttributeAt(i, end, kTAKentenCharacterBoss));
 				InterfacePtr<const ITextAttrInt16> customChar(charAttr, UseDefaultIID());
-				InterfacePtr<const IAttrReport> setAttr(
-					scanner->QueryAttributeAt(i, end, kTAKentenCharacterSetBoss));
-				InterfacePtr<const ITextAttrInt16> customSet(setAttr, UseDefaultIID());
 
-				std::ostringstream extra;
-				extra << ":" << (customSet != nil ? customSet->Get() : -1)
-					  << ":" << (customChar != nil ? customChar->Get() : 0);
-				value += extra.str();
+				// ★THE CHARACTER ITSELF, NOT ITS NUMBER (corrected 2026-09-01 after the panel was
+				//   seen showing "Custom:0:8251" to a reader). The value has two readers - the
+				//   comparison, which only needs two custom marks to differ when the glyphs differ,
+				//   and the panel, which has to SHOW one. A number satisfies the first and fails
+				//   the second, and the failure is the same shape as the one this feature was
+				//   withdrawn for in August: something internal drawn where a person looks.
+				// ⚠BMP ONLY, and that is the SDK's limit rather than this line's: the attribute is
+				//   an int16 (SnpPerformTextAttrKenten's fCustomCharacter), so a glyph outside the
+				//   basic plane cannot be named as a custom kenten at all.
+				// ⚠THE CHARACTER SET ATTRIBUTE IS DELIBERATELY NOT READ. Measured 2026-09-01: the
+				//   code came back 8251 = U+203B for a mark entered as 'kome', with
+				//   kTAKentenCharacterSetBoss reading 0 - which the C++ enum calls kShiftJIS while
+				//   the scripting DOM calls the same setting CHARACTER_INPUT. The two disagree, so
+				//   the field cannot be used to decide how to read the code; the code was Unicode
+				//   in the one case that was measured, and that is what this assumes. **A mark
+				//   entered through the Shift-JIS or kuten boxes is therefore untested here** - it
+				//   would compare correctly and could show the wrong glyph.
+				if (customChar != nil && customChar->Get() != 0)
+				{
+					const uint16 code = static_cast<uint16>(customChar->Get());
+					value += ":";
+					if (code < 0x80)
+					{
+						value += static_cast<char>(code);
+					}
+					else if (code < 0x800)
+					{
+						value += static_cast<char>(0xC0 | (code >> 6));
+						value += static_cast<char>(0x80 | (code & 0x3F));
+					}
+					else
+					{
+						value += static_cast<char>(0xE0 | (code >> 12));
+						value += static_cast<char>(0x80 | ((code >> 6) & 0x3F));
+						value += static_cast<char>(0x80 | (code & 0x3F));
+					}
+				}
 			}
 
 			// ★MERGED WHERE THEY TOUCH - see the warning above. Compared by VALUE as well as by

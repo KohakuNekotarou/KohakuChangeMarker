@@ -249,6 +249,20 @@ public:
 		is once again the only kind reported, which is precisely the state a stand-in survives in. */
 	virtual int32	GetChangeAttrKind(int32 nth, int32 which) = 0;
 
+	/** kTrue when this change has something to SHOW on an upper line - a reading, or a kind whose
+		mark can be drawn. kFalse for a text change, for an index that names no change, and for an
+		attribute that was REMOVED.
+
+		★★WHY IT IS SEPARATE FROM GetChangeAttrKind (2026-09-01, user's call: "when the ruby or the
+		kenten is gone, make it one line"). The kind says which attribute differs; this says whether
+		the newer version still carries one. A removed ruby is still a ruby change - so the row must
+		still be able to name it - but there is nothing to put above the text, and a row laid out on
+		two lines with an empty upper one is a gap the reader has to interpret.
+		⚠**The row's height and the row's drawing must ask the same question**, which is why this
+		 is one call rather than each of them testing the string it happens to hold.
+		★AS CHEAP AS GetChangeAttrKind: it reads one field off the change, no strings copied. */
+	virtual bool16	GetChangeHasAttrValue(int32 nth, int32 which) = 0;
+
 	/** Compare row nth's story again against the older document, and replace its differences with
 		what stands there now - "Refresh Story Comparison" on the row's right-click menu.
 

@@ -112,8 +112,8 @@ public:
 	virtual void		GetSessionStatus(PMString& out)	{ KCMGetSessionStatus(out); }
 	virtual void		GetSessionStatusSegments(PMString& outLabel, PMString& outPre,
 												 PMString& outMid, PMString& outPost,
-												 PMString& outRuby)
-							{ KCMGetSessionStatusSegments(outLabel, outPre, outMid, outPost, outRuby); }
+												 PMString& outRuby, int32& outAttrKind)
+							{ KCMGetSessionStatusSegments(outLabel, outPre, outMid, outPost, outRuby, outAttrKind); }
 
 	// ---- the status line ------------------------------------------------------------------
 	// Free functions from KCMModelNotify.h. The panel's status writer and the UI shutdown reach
@@ -124,8 +124,8 @@ public:
 	virtual void		StoreSessionStatus(const PMString& s)	{ KCMStoreSessionStatus(s); }
 	virtual void		StoreSessionStatusSegments(const PMString& label, const PMString& pre,
 												   const PMString& mid, const PMString& post,
-												   const PMString& ruby)
-							{ KCMStoreSessionStatusSegments(label, pre, mid, post, ruby); }
+												   const PMString& ruby, int32 attrKind)
+							{ KCMStoreSessionStatusSegments(label, pre, mid, post, ruby, attrKind); }
 	virtual void		ClearSessionStatus()	{ KCMClearSessionStatus(); }
 
 	virtual bool16		ArmedDocsAlive()		{ return KCMArmedDocsAlive(); }
@@ -425,6 +425,20 @@ public:
 			return static_cast<int32>(kKCMStoryAttrNone);
 
 		return static_cast<int32>(row->fChanges[which].fAttrKind);
+	}
+
+	virtual bool16	GetChangeHasAttrValue(int32 nth, int32 which)
+	{
+		// Same out-of-range rule as the kind above, and for the same caller: an unknown row gets
+		// the ordinary one-line height rather than an error.
+		const KCMStoryRow* row = KCMStoryList::GetRow(nth);
+		if (row == nil || which < 0 || which >= static_cast<int32>(row->fChanges.size()))
+			return kFalse;
+
+		// ⚠THE SIDE THE ROW SHOWS, which is fRuby - not fOtherRuby. The list shows the newer
+		//   version, so an attribute that was removed leaves this empty and the row is drawn on one
+		//   line; the older side's value is still read, but it belongs to the message area.
+		return row->fChanges[which].fRuby.IsEmpty() ? kFalse : kTrue;
 	}
 
 	virtual int32	RefreshRow(int32 nth)
