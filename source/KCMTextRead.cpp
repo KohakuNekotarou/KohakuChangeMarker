@@ -16,18 +16,25 @@
 #include "VCPlugInHeaders.h"
 
 // Interface includes:
+#include "IAttrReport.h"		// what QueryAttributeAt hands back
+#include "IComposeScanner.h"	// the way to an attribute's value over a range
+#include "IRubyStrand.h"		// IRubyAttrStrand - ⚠the file is IRubyStrand.h, the class is not
 #include "ITableModel.h"
+#include "ITextAttrBoolean.h"	// kTAMojiRubyBoss - mono against group
+#include "ITextAttrWideString.h"	// kTARubyStringBoss - the reading itself
 #include "ITextModel.h"
 #include "ITextStoryThread.h"
 #include "ITextStoryThreadDict.h"
 #include "ITextStoryThreadDictHier.h"
 
 // General includes:
+#include "CJKID.h"			// kRubyAttrStrandBoss and the two ruby attributes
 #include "PMString.h"
 #include "TableTypes.h"		// GridAddress, RowRange, ColRange
 #include "TextChar.h"		// kTextChar_CR / kTextChar_Table / kTextChar_TableContinued
 #include "TextIterator.h"
 #include "UIDRef.h"
+#include "WideString.h"
 
 #include <algorithm>
 #include <map>
@@ -170,6 +177,199 @@ bool16 BuildCellIndex(ITextModel* model, std::vector<CellPlace>& out)
 	return kTrue;
 }
 
+/* RubyRun
+   One ruby run as the STRAND holds it, in the model's own count.
+
+   ★★★RUBY IS NOT IN THE TEXT. It rides a strand beside it (kRubyAttrStrandBoss), so nothing the
+   walk above reads out of the characters can ever mention it: a story whose readings were retyped
+   comes back byte-for-byte identical as text. That is the whole reason this exists - and it is
+   the change the ruby-only test pair contains and nothing else.
+*/
+struct RubyRun
+{
+	TextIndex	fAt;
+	int32		fLen;
+	std::string	fReading;
+	bool16		fGroup;
+
+	RubyRun() : fAt(0), fLen(0), fGroup(kFalse) {}
+};
+
+/** The reading, out of the SDK's string and into the one the rest of this file speaks. */
+void AppendWide(std::string& out, const WideString& w)
+{
+	for (int32 k = 0; k < w.CharCount(); ++k)
+		KCMSnippetText::AppendUtf8(out, static_cast<int32>(w.GetChar(k).GetValue()));
+}
+
+/* ScanRuby
+   Every ruby run in the story, in reading order.
+
+   ★THE STRAND IS ASKED FOR ONCE, AND ITS ABSENCE IS AN ANSWER: no strand means no ruby anywhere in
+   this story, and the whole scan is skipped - "there is no ruby strand, which means there can't be
+   any ruby here", the official walk this follows (SnpPerformTextAttrRuby::GetRubyStrandInfo).
+
+   ⚠THE LOOP ADVANCES BY WHAT THE STRAND SAYS, not by one. GetRubyRun answers for the run the
+    position falls in - ruby or not - so stepping by the length it hands back always lands on the
+    next boundary, and len <= 0 is the official stop (the snippet breaks on exactly that).
+    @warning the header calls that count "the distance from position to the end of the STRAND"
+      (IRubyStrand.h:50), but the official walk treats it as the distance to the end of the RUN and
+      steps by it - which is the only reading under which its loop terminates anywhere but the end
+      of the story. The snippet is followed here, and the parallel run is what says it was right.
+
+   ⚠THE WHOLE STORY, NOT JUST THE BODY - unlike KIDMCP's reader of the same shape, which stops at
+    the body because it compares cells as little stories of their own. Here the cells' text is read
+    in the same walk as the body (see ReadStory), so their ruby has to arrive with it or the two
+    routes would disagree on every cell that carries one. ★KCM READ IT BEFORE, so dropping it would
+    be a regression rather than a gap.
+
+   ⚠AN EMPTY READING IS NO RUBY. Not a defensive check - the SDK's own rule, stated in the same
+    snippet: when the string comes back empty the ruby is off, whatever the strand says.
+*/
+void ScanRuby(ITextModel* model, std::vector<RubyRun>& out)
+{
+	InterfacePtr<IRubyAttrStrand> strand(
+		(IRubyAttrStrand*)model->QueryStrand(kRubyAttrStrandBoss, IRubyAttrStrand::kDefaultIID));
+	if (strand == nil)
+		return;
+
+	InterfacePtr<IComposeScanner> scanner(model, UseDefaultIID());
+	if (scanner == nil)
+		return;
+
+	const TextIndex total = model->TotalLength();
+	for (TextIndex i = 0; i < total; )
+	{
+		int32 len = 0;
+		TextIndex runBegin = i;
+		const bool16 on = strand->GetRubyRun(i, &len, &runBegin);
+		if (len <= 0)
+			break;
+
+		if (on)
+		{
+			// ⚠ASKED OVER THE WHOLE RUN, not at one character. An attribute is answered for a
+			//   RANGE, and a range of one character would answer for one base character of a group
+			//   ruby - which is how two characters sharing one reading turn into two runs each
+			//   claiming the whole of it.
+			const TextIndex end = i + len;
+
+			InterfacePtr<const IAttrReport> readingAttr(
+				scanner->QueryAttributeAt(i, end, kTARubyStringBoss));
+			InterfacePtr<const ITextAttrWideString> reading(readingAttr, UseDefaultIID());
+
+			RubyRun run;
+			run.fAt = (runBegin >= 0 && runBegin <= i) ? runBegin : i;
+			run.fLen = len + static_cast<int32>(i - run.fAt);
+			if (reading != nil)
+				AppendWide(run.fReading, reading->Get());
+
+			if (!run.fReading.empty())
+			{
+				// ★MONO OR GROUP IS READ, NOT INFERRED. The old route decided it from whether the
+				//   XML carried a RubyType attribute; the document states it outright.
+				//   ⚠kTAMojiRubyBoss IS kTrue FOR MONO (SnpRubyDataSettings::fMojiRuby) and
+				//    KCMAttrSpan::fGroup is kTrue for GROUP - **the two are opposite**, and its
+				//    ABSENCE means mono, which is InDesign's own default and not "unknown".
+				InterfacePtr<const IAttrReport> mojiAttr(
+					scanner->QueryAttributeAt(i, end, kTAMojiRubyBoss));
+				InterfacePtr<const ITextAttrBoolean> moji(mojiAttr, UseDefaultIID());
+				run.fGroup = ((moji != nil) && (moji->Get() == kFalse)) ? kTrue : kFalse;
+
+				out.push_back(run);
+			}
+		}
+
+		i += len;
+	}
+}
+
+/* TakeRubyFor
+   The ruby standing over one paragraph, in the paragraph's own count.
+
+   ★THE CURSOR WALKS FORWARD WITH THE PARAGRAPHS. Both lists are in TextIndex order, so a run that
+   ended before this paragraph began can never be wanted again - but a run that REACHES PAST the
+   paragraph's end must stay, because the next paragraph still has to see it. That is why only the
+   first kind moves the cursor.
+
+   ⚠CLIPPED TO THE PARAGRAPH. KCMAttrSpan positions are offsets INSIDE one paragraph (its header
+    says so), and the diff downstream cuts rows by them, so a span reaching past the end would put
+    a mark on characters that are not there.
+*/
+int32 CountUncounted(const std::vector<TextIndex>& uncounted, TextIndex at)
+{
+	// ★A WALK, DELIBERATELY. A paragraph holds one of these per table standing inside it, which is
+	//   almost always none and never many, so anything cleverer would cost more to read than it
+	//   saves to run.
+	int32 n = 0;
+	for (size_t k = 0; k < uncounted.size() && uncounted[k] < at; ++k)
+		++n;
+	return n;
+}
+
+void TakeRubyFor(const std::vector<RubyRun>& runs, size_t& cursor,
+				 TextIndex paraStart, TextIndex paraEnd,
+				 const std::vector<TextIndex>& uncounted, KCMAttrSpanList& out)
+{
+	while (cursor < runs.size() && (runs[cursor].fAt + runs[cursor].fLen) <= paraStart)
+		++cursor;
+
+	for (size_t i = cursor; i < runs.size() && runs[i].fAt < paraEnd; ++i)
+	{
+		const TextIndex runEnd = runs[i].fAt + runs[i].fLen;
+		const TextIndex from = (runs[i].fAt > paraStart) ? runs[i].fAt : paraStart;
+		const TextIndex to = (runEnd < paraEnd) ? runEnd : paraEnd;
+		if (to > from)
+		{
+			// ⚠★★★THE DISTANCE IS NOT THE OFFSET. KCMAttrSpan counts "the first character of the
+			//   BASE TEXT, within its paragraph", and the base text is what the paragraph SHOWS -
+			//   so every position the model counts but does not show has to come back out again.
+			//   MEASURED 2026-09-01: a table CAN stand in the middle of a paragraph -
+			//   "あい[0016]うえ" came back as ONE paragraph of six characters
+			//   (work/kcm-selftest/midtable) - which is the case the rest of the diff assumes away
+			//   (KCMStoryDiffRun, at RunSide: "a table's own character ... sits exactly at a
+			//   paragraph boundary"). ★IT IS NOT ALWAYS TRUE, and without this the reading over
+			//   う would be reported as standing over え.
+			//   ⚠THE LENGTH IS CORRECTED TOO, not just the start: a run reaching across the
+			//    table's character covers one FEWER character of text than of model.
+			const int32 skipBefore = CountUncounted(uncounted, from);
+			out.push_back(KCMAttrSpan(static_cast<int32>(from - paraStart) - skipBefore,
+									  static_cast<int32>(to - from)
+										  - (CountUncounted(uncounted, to) - skipBefore),
+									  runs[i].fReading, runs[i].fGroup));
+		}
+	}
+}
+
+/* ClosePara
+   One finished paragraph: its text, where it stands, and everything riding over it.
+
+   ★IT IS ONE FUNCTION BECAUSE A PARAGRAPH ENDS IN TWO PLACES - at its carriage return, and at the
+   end of a thread that has none - and a paragraph closed one way but not the other would carry its
+   ruby only sometimes. That is the kind of fault the parallel run would report as a single
+   disagreement in one story out of a hundred.
+*/
+void ClosePara(std::vector<std::string>& outParas,
+			   std::vector<KCMParaAttrs>& outAttrs,
+			   std::vector<int32>& outStarts,
+			   const std::string& text,
+			   const KCMParaAttrs& place,
+			   TextIndex paraStart, TextIndex paraEnd,
+			   const std::vector<RubyRun>& runs, size_t& rubyCursor,
+			   std::vector<TextIndex>& uncounted)
+{
+	outParas.push_back(text);
+	outStarts.push_back(static_cast<int32>(paraStart));
+
+	KCMParaAttrs attrs = place;		// the cell identity, which is the same for every paragraph here
+	TakeRubyFor(runs, rubyCursor, paraStart, paraEnd, uncounted, attrs.fRuby);
+	outAttrs.push_back(attrs);
+
+	// ⚠EMPTIED HERE, WHERE THE PARAGRAPH ENDS, so that the two places a paragraph can close cannot
+	//   disagree about it - the same reason this function exists at all.
+	uncounted.clear();
+}
+
 }	// anonymous namespace
 
 //----------------------------------------------------------------------------------------
@@ -193,8 +393,18 @@ bool16 KCMTextRead::ReadStory(const UIDRef& storyRef,
 	if (!BuildCellIndex(model, cells))
 		return kFalse;
 
+	// ★THE RUBY IS READ IN THE SAME BREATH AS THE TEXT. A comparison is a photograph of one moment,
+	//   and text from one instant beside ruby from another puts two moments in one row - the rule
+	//   KCMSnippetText.h states, kept here. The rule is "one moment", not "one source": this file's
+	//   text comes from the model, so its ruby does too.
+	//   ⚠NOTHING MAY RUN BETWEEN THIS AND THE WALK BELOW. No command, no recompose, no second
+	//    document - anything that edits the story between them would date one against the other.
+	std::vector<RubyRun> ruby;
+	ScanRuby(model, ruby);
+
 	const TextIndex total = model->TotalLength();
 	size_t nextCell = 0;
+	size_t nextRuby = 0;
 
 	// ★★★ONE LOOP FOR THE BODY, THE CELLS AND THE FOOTNOTES. QueryStoryThread hands back the
 	//   thread containing a position together with where it starts and how long it is; stepping by
@@ -228,6 +438,10 @@ bool16 KCMTextRead::ReadStory(const UIDRef& storyRef,
 		TextIndex paraStart = position;
 		bool16 paraHasCharacters = kFalse;
 
+		// Positions INSIDE the paragraph being built that the model counts and the text does not.
+		// ⚠It is cleared by ClosePara, not here, so that a paragraph ending either way clears it.
+		std::vector<TextIndex> uncounted;
+
 		TextIterator iter(model, position);
 		for (TextIndex i = position; i < threadEnd; ++i, ++iter)
 		{
@@ -241,20 +455,28 @@ bool16 KCMTextRead::ReadStory(const UIDRef& storyRef,
 			//   paragraph text differ from the old route's. They still move the index, and a
 			//   paragraph standing behind one starts AFTER it - which is where the old route puts
 			//   it too (KCMStoryCellBases adds fLeadingChars before recording the start).
-			//   @warning they sit exactly at a paragraph boundary (KCMStoryDiffRun says so at
-			//     RunSide), never inside a paragraph's own text.
+			//   ⚠★★★THEY DO NOT ALWAYS SIT AT A PARAGRAPH BOUNDARY, whatever the rest of the diff
+			//     assumes (KCMStoryDiffRun, at RunSide). MEASURED 2026-09-01: inserting a table at
+			//     the third insertion point of "あいうえ" leaves ONE paragraph reading
+			//     [3042 3044 **0016** 3046 3048 000d] - the character stands BETWEEN two of the
+			//     paragraph's own (work/kcm-selftest/midtable). ⇒ every position inside such a
+			//     paragraph is one further along in the model than in its text, which is why the
+			//     ones met here are recorded rather than merely stepped over.
+			//     @warning the OLD route refuses a story shaped like this outright (measured:
+			//       "stories changed=0 edits=0"), so nothing downstream has ever had to face one.
 			if (cp == kTextChar_Table || cp == kTextChar_TableContinued)
 			{
 				if (!paraHasCharacters)
 					paraStart = i + 1;
+				else
+					uncounted.push_back(i);
 				continue;
 			}
 
 			if (cp == kTextChar_CR)
 			{
-				outParas.push_back(text);
-				outAttrs.push_back(place);
-				outStarts.push_back(static_cast<int32>(paraStart));
+				ClosePara(outParas, outAttrs, outStarts, text, place, paraStart, i, ruby, nextRuby,
+						  uncounted);
 				text.clear();
 				paraStart = i + 1;
 				paraHasCharacters = kFalse;
@@ -275,11 +497,8 @@ bool16 KCMTextRead::ReadStory(const UIDRef& storyRef,
 		// last paragraph itself. This catches the one that does not - and an empty tail is NOT
 		// pushed, or every thread would end with a paragraph nobody wrote.
 		if (!text.empty())
-		{
-			outParas.push_back(text);
-			outAttrs.push_back(place);
-			outStarts.push_back(static_cast<int32>(paraStart));
-		}
+			ClosePara(outParas, outAttrs, outStarts, text, place, paraStart, threadEnd, ruby, nextRuby,
+					  uncounted);
 
 		position = threadEnd;
 	}
@@ -380,7 +599,7 @@ void KCMCompareReadRoutes(const UIDRef& storyRef,
 		for (size_t i = 0; i < newStarts.size() && i < newParas.size(); ++i)
 			newByStart[newStarts[i]] = i;
 
-		size_t missing = 0, extra = 0, textDiffs = 0, placeDiffs = 0;
+		size_t missing = 0, extra = 0, textDiffs = 0, placeDiffs = 0, rubyDiffs = 0;
 		std::ostringstream detail;
 		size_t shown = 0;
 
@@ -394,7 +613,28 @@ void KCMCompareReadRoutes(const UIDRef& storyRef,
 				if (shown < kKCMMaxDetails)
 				{
 					++shown;
-					detail << " [+" << it->first << "]";
+					detail << " [+" << it->first;
+
+					// ★★★THE NEW ROUTE'S OWN ANSWER, PRINTED WHERE THERE IS NOTHING TO COMPARE IT
+					//   AGAINST - which is precisely the case where it most needs reading. The old
+					//   route REFUSES a story outright when its length does not add up, and one of
+					//   the shapes it refuses is the very shape this file corrects positions for:
+					//   a table standing INSIDE a paragraph (measured 2026-09-01, work/kcm-
+					//   selftest/midtable - "stories changed=0 edits=0"). Without this the report
+					//   could only say "the old route said nothing", and the correction would ship
+					//   having never been read by anything.
+					//   ⚠POSITIONS AND LENGTHS ONLY, never the readings - the same rule the rest of
+					//    this report keeps (KCMTextRead.h: it names positions, not text).
+					const size_t ni = it->second;
+					if (ni < newAttrs.size() && !newAttrs[ni].fRuby.empty())
+					{
+						detail << " ruby";
+						for (size_t r = 0; r < newAttrs[ni].fRuby.size(); ++r)
+							detail << (r == 0 ? ":" : ",") << newAttrs[ni].fRuby[r].fStart
+								   << "+" << newAttrs[ni].fRuby[r].fLen;
+					}
+
+					detail << "]";
 				}
 				continue;
 			}
@@ -412,15 +652,38 @@ void KCMCompareReadRoutes(const UIDRef& storyRef,
 									  && oldAttrs[oi].fCellRow == newAttrs[ni].fCellRow
 									  && oldAttrs[oi].fCellCol == newAttrs[ni].fCellCol) ? kTrue : kFalse;
 
+			// ⚠★★★THE RUBY IS PART OF "THE SAME ANSWER" AS WELL, AND UNTIL IT WAS ASKED FOR HERE
+			//   THE PARALLEL RUN ANSWERED "agree" ABOUT A READER THAT HAD NEVER READ ANY.
+			//   Measured 2026-09-01 on the ruby-only pair (work/kescm-selftest/rubytest, whose two
+			//   versions carry the SAME 59 characters and differ in nothing but their ruby): the
+			//   comparison reported edits=5 while this said "agree (5 paragraphs)" in the same
+			//   breath. ★A CHECK THAT CANNOT FAIL IS NOT A MEASUREMENT - it is the shape of
+			//   [[investigate-with-tools-not-shell]]'s rule, met here: "0 differences" was a
+			//   product of what was being asked, not of what the two routes held.
+			//   The list is the one the panel itself compares (KCMSnippetText::SpansDiffer), so a
+			//   disagreement here is exactly a disagreement the user would have seen reported.
+			const bool16 sameRuby = (oi < oldAttrs.size() && ni < newAttrs.size()
+									 && !KCMSnippetText::SpansDiffer(oldAttrs[oi].fRuby,
+																	 newAttrs[ni].fRuby)) ? kTrue : kFalse;
+
 			if (!sameText) ++textDiffs;
 			if (!samePlace) ++placeDiffs;
+			if (!sameRuby) ++rubyDiffs;
 
-			if ((!sameText || !samePlace) && shown < kKCMMaxDetails)
+			if ((!sameText || !samePlace || !sameRuby) && shown < kKCMMaxDetails)
 			{
 				++shown;
 				detail << " [@" << it->first << ":";
 				if (!sameText)
 					detail << "text(len " << oldParas[oi].size() << "/" << newParas[ni].size() << ")";
+				if (!sameRuby)
+				{
+					// ⚠THE COUNT OF SPANS, NOT THE READINGS. The readings are the document's
+					//   words, and this report crosses into a script as ASCII (KCMTextRead.h).
+					const size_t oldSpans = (oi < oldAttrs.size()) ? oldAttrs[oi].fRuby.size() : 0;
+					const size_t newSpans = (ni < newAttrs.size()) ? newAttrs[ni].fRuby.size() : 0;
+					detail << "ruby(" << oldSpans << "/" << newSpans << ")";
+				}
 				if (!samePlace)
 					detail << "place(" << (oi < oldAttrs.size() ? oldAttrs[oi].fTableOrdinal : -9)
 						   << "," << (oi < oldAttrs.size() ? oldAttrs[oi].fCellRow : -9)
@@ -455,7 +718,7 @@ void KCMCompareReadRoutes(const UIDRef& storyRef,
 				++orderDiffs;
 		}
 
-		if (missing == 0 && extra == 0 && textDiffs == 0 && placeDiffs == 0)
+		if (missing == 0 && extra == 0 && textDiffs == 0 && placeDiffs == 0 && rubyDiffs == 0)
 		{
 			line << "agree (" << newParas.size() << " paragraphs";
 			if (orderDiffs != 0)
@@ -465,7 +728,7 @@ void KCMCompareReadRoutes(const UIDRef& storyRef,
 		else
 		{
 			line << "DIFFER missing=" << missing << " extra=" << extra
-				 << " text=" << textDiffs << " place=" << placeDiffs
+				 << " text=" << textDiffs << " place=" << placeDiffs << " ruby=" << rubyDiffs
 				 << " of " << newParas.size() << " (order " << orderDiffs << ")" << detail.str();
 			if (shown == kKCMMaxDetails)
 				line << " ...";
