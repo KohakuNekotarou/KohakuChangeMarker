@@ -161,7 +161,8 @@ bool16 KCMKentenMark::CanDraw(const PMString& kindValue)
 bool16 KCMKentenMark::DrawOverRun(AGMGraphicsContext& gc, IGraphicsPort* gPort,
 								  const InterfaceFontInfo& font, const PMString& kindValue,
 								  const PMReal& runLeft, const PMReal& runWidth, int32 charCount,
-								  const PMReal& lineHeight, const PMReal& baselineY,
+								  const PMReal& lineHeight, const PMReal& markCentreY,
+								  const PMReal& baselineY,
 								  const PMReal& rightEdge, const RealAGMColor& colour)
 {
 	const bool16 asShape = CanDraw(kindValue);
@@ -191,9 +192,6 @@ bool16 KCMKentenMark::DrawOverRun(AGMGraphicsContext& gc, IGraphicsPort* gPort,
 	if (perChar < markSize)
 		markSize = perChar;		// a narrow column shrinks the marks rather than overlapping them
 
-	// ⚠THE CENTRE OF THE LINE, NOT ITS BASELINE. A shape has no baseline, and hanging one from a
-	//   text baseline puts it low enough to touch the characters below.
-	const PMReal markY = lineHeight / PMReal(2.0);
 
 	const PMReal glyphW = glyph.IsEmpty()
 						  ? PMReal(0.0)
@@ -207,7 +205,7 @@ bool16 KCMKentenMark::DrawOverRun(AGMGraphicsContext& gc, IGraphicsPort* gPort,
 			break;				// ran out of room - the rest are simply not shown
 
 		if (asShape)
-			Draw(gPort, kindValue, cx, markY, markSize, colour);
+			Draw(gPort, kindValue, cx, markCentreY, markSize, colour);
 		else
 			StringUtils::PMDrawStringRGB(&gc, PMPoint(cx - (glyphW / PMReal(2.0)), baselineY),
 										 glyph, font, colour,

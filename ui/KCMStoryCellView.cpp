@@ -354,7 +354,8 @@ void KCMStoryCellView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 	const bool16 kentenDrawn =
 		(twoLines && !ruby.IsEmpty() && isKenten)
 		? KCMKentenMark::DrawOverRun(gc, gPort, fontInfo, ruby, drawnMidX, drawnMidW,
-									 mid.CharCount(), lineHeight, upperY, rightEdge, kChangeColor)
+									 mid.CharCount(), lineHeight, lineHeight / PMReal(2.0), upperY,
+									 rightEdge, kChangeColor)
 		: kFalse;
 
 	if (twoLines && !ruby.IsEmpty() && !kentenDrawn)

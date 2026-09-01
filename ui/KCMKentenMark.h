@@ -94,7 +94,12 @@ namespace KCMKentenMark
 		@param charCount how many characters are under that width - **the characters that were
 		 DRAWN**, not the span's length in the document: a caller that cut its text to fit would
 		 otherwise draw more marks than there are characters beneath them.
-		@param lineHeight the height of the upper line; the marks are centred in it and sized from it.
+		@param lineHeight how tall the upper line is. **SIZE ONLY** - markCentreY says where.
+		@param markCentreY the y the drawn marks are centred on.
+		 ⚠**THE CALLER WORKS THIS OUT, AND THAT IS THE POINT.** It was computed here as lineHeight/2,
+		 which is right in a cell whose whole height IS the two lines and wrong in the message area,
+		 where the upper line can be the fourth line down - the marks landed on the box's heading
+		 (seen 2026-09-01: "Source T●●").
 		@param baselineY where TEXT sits on that line. Used only for a custom mark, which is written
 		 rather than drawn - a shape has no baseline and is centred instead.
 		@param rightEdge marks that would cross it are dropped rather than clipped.
@@ -105,7 +110,8 @@ namespace KCMKentenMark
 	bool16 DrawOverRun(AGMGraphicsContext& gc, IGraphicsPort* gPort,
 					   const InterfaceFontInfo& font, const PMString& kindValue,
 					   const PMReal& runLeft, const PMReal& runWidth, int32 charCount,
-					   const PMReal& lineHeight, const PMReal& baselineY,
+					   const PMReal& lineHeight, const PMReal& markCentreY,
+					   const PMReal& baselineY,
 					   const PMReal& rightEdge, const RealAGMColor& colour);
 }
 

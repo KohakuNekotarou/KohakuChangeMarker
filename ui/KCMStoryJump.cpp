@@ -646,13 +646,17 @@ bool16 KCMStoryJumpToChange(int32 rowIndex, int32 changeIndex)
 	//   very fields with a KIND ("BlackCircle"), so asking fWhat drew that name over the older text
 	//   as though it were a reading - the fault the feature was withdrawn for.
 	// ★★AND SINCE 2026-09-01 THE TWO QUESTIONS GIVE DIFFERENT ANSWERS AGAIN: kenten is reported
-	//   once more, so a change reaching here really can be one whose value is a name. **The upper
-	//   line is left empty for it deliberately** - the kind is in the label above, drawn as a mark
-	//   in the row itself, and writing it here as well would put it back exactly where it did not
-	//   belong. The stand-in this comment warned about is gone: the branch below is now load-bearing
-	//   rather than merely correct.
+	//   once more, so a change reaching here really can be one whose value is a name rather than a
+	//   reading. **That is why the KIND travels beside it** (the last argument below): the box
+	//   draws a name as the MARK it names, exactly as the row does - it never writes it out.
+	// ★★KENTEN COMES THROUGH HERE TOO (2026-09-01, user: "can the kenten be shown above the source
+	//   text, the way ruby is?"). This box shows the OTHER version, so **it is the only place a
+	//   mark that was REMOVED can be seen at all** - the row shows the newer version, where there
+	//   is nothing left to draw. Leaving kenten out of this condition made exactly that case
+	//   invisible, and it was invisible in a way that looked deliberate.
 	PMString otherRuby;
-	if (change.fAttrKind == static_cast<int32>(kKCMStoryAttrRuby))
+	if (change.fAttrKind == static_cast<int32>(kKCMStoryAttrRuby) ||
+		change.fAttrKind == static_cast<int32>(kKCMStoryAttrKenten))
 	{
 		otherRuby = change.fOtherRuby;
 		otherRuby.SetTranslatable(kFalse);

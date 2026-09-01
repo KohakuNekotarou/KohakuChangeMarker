@@ -705,7 +705,16 @@ void KCMStatusTextView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 		if (attrKind == static_cast<int32>(kKCMStoryAttrKenten) &&
 			KCMKentenMark::DrawOverRun(gc, gPort, fontInfo, ruby,
 									   frame.Left() + rubyBaseX, rubyBaseW, rubyBaseChars,
-									   lineHeight, baseline0 + lineHeight * PMReal(rubyLine),
+									   lineHeight,
+									   // ⚠THE MARKS' CENTRE, WORKED OUT HERE. A text baseline sits
+									   //   near the BOTTOM of its line, so a shape centred on it
+									   //   would hang into the characters below; the middle of the
+									   //   line is about a third of a line-height above it.
+									   //   ★This box has MANY lines, which is why the function
+									   //   cannot work this out for itself (KCMKentenMark.h).
+									   baseline0 + lineHeight * PMReal(rubyLine)
+											 - lineHeight * PMReal(0.33),
+									   baseline0 + lineHeight * PMReal(rubyLine),
 									   frame.Right(), kChangeColor))
 		{
 			return;		// the marks are the upper line - nothing is written over them
