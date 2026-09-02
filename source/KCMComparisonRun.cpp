@@ -31,6 +31,7 @@
 #include "KCMDrawEventHandler.h"	// sSrcMarksOn / sOversetOn / sOversetDB
 #include "KCMOversetApply.h"		// KCMApplyOversetForDoc -- re-apply overset on Start and on Stop
 #include "KCMThreadSafety.h"		// KCMIsSameDoc -- the one place this plug-in asks whether two dbs are one document
+#include "KCMExternalSource.h"	// the lent Source: registered and chosen by KCMStartComparisonWithSourceDB, forgotten by the lender's Release
 
 //----------------------------------------------------------------------------------------
 // The resolver: which two documents to compare
@@ -42,7 +43,7 @@
 // Resolving in one place is the point: "can a comparison be started" is asked by the menu's grey
 // state (KCMCanStartComparison) and by the command itself (KCMToggleStartStop), and written twice
 // the two answers would drift ([[one-question-one-place]]).
-static bool16 KCMResolveComparisonPair(IDocument*& outTarget, IDocument*& outSource);
+static bool16 KCMResolveComparisonPair(IDataBase*& outTargetDB, IDataBase*& outSourceDB);
 
 //----------------------------------------------------------------------------------------
 // The chosen Target and Source (the flyout's "Set as Target" / "Set as Source")
@@ -86,7 +87,14 @@ static IDocument* KCMLiveChosenDoc(IDataBase* db)
 
 // KCMChosenTargetDB / KCMChosenSourceDB (declared in KCMComparisonRun.h).
 IDataBase* KCMChosenTargetDB()	{ return (KCMLiveChosenDoc(sChosenTargetDB) != nil) ? sChosenTargetDB : nil; }
-IDataBase* KCMChosenSourceDB()	{ return (KCMLiveChosenDoc(sChosenSourceDB) != nil) ? sChosenSourceDB : nil; }
+// ★THE SOURCE MAY BE THE LENT DATABASE (KCMExternalSource.h), which is in no document list: it is
+//  "live" for exactly as long as it is registered, and the lender's Release is what ends that.
+IDataBase* KCMChosenSourceDB()
+{
+	if (KCMIsExternalSource(sChosenSourceDB))
+		return sChosenSourceDB;
+	return (KCMLiveChosenDoc(sChosenSourceDB) != nil) ? sChosenSourceDB : nil;
+}
 
 // KCMSetChosenTargetToActive / KCMSetChosenSourceToActive (declared in KCMComparisonRun.h).
 //
@@ -118,6 +126,11 @@ bool16 KCMSetChosenSourceToActive()
 	IDataBase* db = KCMActiveDocDB();
 	if (db == nil)
 		return kFalse;
+	// A real document replaces the lent Source. Its registration goes with it -- unless a
+	// comparison is still drawing from it, in which case the lender's Release ends it later
+	// (KCMExternalSource.h: registered while chosen OR armed).
+	if (KCMIsExternalSource(sChosenSourceDB) && KCMArmedSourceDB() != sChosenSourceDB)
+		KCMForgetExternalSource();
 	sChosenSourceDB = db;
 	return kTrue;
 }
@@ -132,7 +145,9 @@ void KCMForgetChosenDocsThatClosed(IDocumentList* docList)
 		return;					// no way to judge liveness; the choices stay, and KCMLiveChosenDoc still guards every read
 	if (sChosenTargetDB != nil && docList->FindDocByDataBase(sChosenTargetDB) == nil)
 		sChosenTargetDB = nil;
-	if (sChosenSourceDB != nil && docList->FindDocByDataBase(sChosenSourceDB) == nil)
+	// KCMIsDbAlive, not the bare list test: the lent Source is in no list and must survive an
+	// unrelated document closing. Its own end is the lender's Release, never this sweep.
+	if (sChosenSourceDB != nil && !KCMIsDbAlive(docList, sChosenSourceDB))
 		sChosenSourceDB = nil;
 }
 
@@ -147,6 +162,7 @@ void KCMClearChosenDocs()
 {
 	sChosenTargetDB = nil;
 	sChosenSourceDB = nil;
+	KCMForgetExternalSource();	// the lent Source is a choice too, and this is the shutdown slot for choices
 }
 
 // The first open document that is not `target` = the Source (the older version).
@@ -199,26 +215,43 @@ static IDocument* KCMFirstOtherDoc(IDocument* target)
 // different answer (a message, not a grey item), and it is asked once, in KCMToggleStartStop
 // ([[one-question-one-place]] is kept by having each question in one place, not by folding two
 // questions into one function).
-static bool16 KCMResolveComparisonPair(IDocument*& outTarget, IDocument*& outSource)
+//
+// **Databases out, not documents** (2026-09-02): the chosen Source may be the lent database
+// (KCMExternalSource.h), which has no IDocument in any list. Both callers only ever needed the
+// databases -- the procedure (KCMStartComparisonOn) runs on those.
+static bool16 KCMResolveComparisonPair(IDataBase*& outTargetDB, IDataBase*& outSourceDB)
 {
-	outTarget = KCMLiveChosenDoc(sChosenTargetDB);
-	if (outTarget == nil)
-		outTarget = KCMActiveDoc();
+	IDocument* target = KCMLiveChosenDoc(sChosenTargetDB);
+	if (target == nil)
+		target = KCMActiveDoc();
+	outTargetDB = (target != nil) ? ::GetUIDRef(target).GetDataBase() : nil;
 
-	outSource = KCMLiveChosenDoc(sChosenSourceDB);
-	if (outSource == nil)
-		outSource = (outTarget != nil) ? KCMFirstOtherDoc(outTarget) : nil;
+	// ★THE LENT SOURCE WINS while it is chosen: that is what lets the flyout's own Start compare
+	//  against the task-start copy again after a Stop, exactly as it would against a chosen
+	//  document. It stops being chosen when the lender releases it (KCMReleaseExternalSource) or
+	//  when "Set as Source" names a real document instead.
+	if (KCMIsExternalSource(sChosenSourceDB))
+	{
+		outSourceDB = sChosenSourceDB;
+	}
+	else
+	{
+		IDocument* source = KCMLiveChosenDoc(sChosenSourceDB);
+		if (source == nil)
+			source = (target != nil) ? KCMFirstOtherDoc(target) : nil;
+		outSourceDB = (source != nil) ? ::GetUIDRef(source).GetDataBase() : nil;
+	}
 
-	return (outTarget != nil && outSource != nil) ? kTrue : kFalse;
+	return (outTargetDB != nil && outSourceDB != nil) ? kTrue : kFalse;
 }
 
 // KCMCanStartComparison (declared in KCMComparisonRun.h) -- whether the flyout's Start may be
 // enabled. Goes through the same resolver as the command, so the two cannot disagree.
 bool16 KCMCanStartComparison()
 {
-	IDocument* target = nil;
-	IDocument* source = nil;
-	return KCMResolveComparisonPair(target, source);
+	IDataBase* targetDB = nil;
+	IDataBase* sourceDB = nil;
+	return KCMResolveComparisonPair(targetDB, sourceDB);
 }
 
 //----------------------------------------------------------------------------------------
@@ -261,24 +294,22 @@ void KCMStopComparison()
 	KCMNotify(kKCMMarksClearedMessage);
 }
 
-// KCMStartComparisonFor (declared in KCMComparisonRun.h) -- start a comparison ON THESE TWO
-// DOCUMENTS.
+// The procedure itself, on two DATABASES -- start a comparison ON THESE TWO.
 //
 // **The resolver (which two) and the procedure (what to do) are kept apart.** There is no
 // document-choosing here at all; it starts on whatever it is handed. The reason is that there are
-// two callers:
+// three callers:
 //   1. KCMToggleStartStop, which resolves active = Target and another open document = Source;
-//   2. "Start Change Marker" on a book comparison row, which opens that chapter's two files.
-// Copying the procedure into each would let the two drift ([[one-question-one-place]]), and the
+//   2. "Start Change Marker" on a book comparison row, which opens that chapter's two files;
+//   3. KCMStartComparisonWithSourceDB, where the Source is a database another plug-in lent
+//      (2026-09-02) -- which is why this takes databases and KCMStartComparisonFor only unwraps.
+// Copying the procedure into each would let the three drift ([[one-question-one-place]]), and the
 // procedure holds three decisions that all fail quietly when forgotten: do not arm on cancel, let
 // the strips go onto both windows, re-apply overset.
-void KCMStartComparisonFor(IDocument* target, IDocument* source)
+static void KCMStartComparisonOn(IDataBase* targetDB, IDataBase* sourceDB)
 {
-	if (target == nil || source == nil)
+	if (targetDB == nil || sourceDB == nil)
 		return;
-
-	IDataBase* targetDB = ::GetUIDRef(target).GetDataBase();
-	IDataBase* sourceDB = ::GetUIDRef(source).GetDataBase();
 
 	PMString report;
 	// **Start does not touch "Always Show Marks on Target / Source".** Setting them here would
@@ -314,6 +345,77 @@ void KCMStartComparisonFor(IDocument* target, IDocument* source)
 	KCMNotify(kKCMMarksRebuiltMessage);
 }
 
+// KCMStartComparisonFor (declared in KCMComparisonRun.h) -- the two-DOCUMENT entry. It only
+// unwraps; the procedure is KCMStartComparisonOn above.
+void KCMStartComparisonFor(IDocument* target, IDocument* source)
+{
+	if (target == nil || source == nil)
+		return;
+	KCMStartComparisonOn(::GetUIDRef(target).GetDataBase(), ::GetUIDRef(source).GetDataBase());
+}
+
+// KCMStartComparisonWithSourceDB (declared in KCMComparisonRun.h) -- the lent Source's entry.
+void KCMStartComparisonWithSourceDB(IDocument* target, IDataBase* sourceDB, const PMString& sourceLabel)
+{
+	if (target == nil || sourceDB == nil)
+		return;
+
+	IDataBase* const targetDB = ::GetUIDRef(target).GetDataBase();
+	// KCMIsSameDoc is deliberately NOT asked here: the lent database is a clone of this very
+	// document and names the same file, so by file the two ARE one document -- which is the
+	// whole point. Only the pointer can say "you handed me the Target itself".
+	if (targetDB == sourceDB)
+	{
+		KCMSayStatus("Target and Source are the same database.");
+		KCMNotify(kKCMMarksRebuiltMessage);
+		return;
+	}
+
+	// **Stop first**, through the ordinary Stop, so that the previous pair's marks and strips come
+	// off on the same path every other Stop takes before the new pair is chosen and drawn. (The
+	// registration is not touched by a Stop; it is REPLACED two lines below.)
+	if (KCMIsArmed() && KCMArmedTargetDB() != nil)
+		KCMStopComparison();
+
+	// Registered BEFORE the run: the rasteriser's liveness checks (KCMIsDbAlive) have to say
+	// "yes" about this database while its pages are being drawn.
+	KCMRegisterExternalSource(sourceDB, sourceLabel);
+
+	// ★★CHOSEN AS WELL AS STARTED (the user's ask, 2026-09-02: "keep Target and Source after a
+	//  Stop, as a chosen pair is kept"). This is "Set as Target" + "Set as Source" + Start in one:
+	//  the panel keeps naming both after a Stop, and the flyout's own Start compares against the
+	//  same copy again, until the lender releases it. A cancel inside the run leaves the choice
+	//  standing too -- the copy is still there, and Start is the way to try again.
+	sChosenTargetDB = targetDB;
+	sChosenSourceDB = sourceDB;
+
+	KCMStartComparisonOn(targetDB, sourceDB);
+}
+
+// KCMReleaseExternalSource (declared in KCMComparisonRun.h) -- the lender is deleting it.
+void KCMReleaseExternalSource(IDataBase* sourceDB)
+{
+	if (sourceDB == nil || !KCMIsExternalSource(sourceDB))
+		return;			// not ours to stop: the lender frees many databases and calls this for each
+
+	// The ordinary Stop when it is being drawn from: marks off, peek disarmed, strips removed by
+	// the UI on the notification. The database is still valid at this moment (the lender calls
+	// before its delete), so the redraws inside are safe.
+	const bool16 wasArmed = KCMIsArmed() && KCMArmedSourceDB() == sourceDB;
+	if (wasArmed)
+		KCMStopComparison();
+
+	// The choice goes with it -- the panel's Source: line must not go on naming a copy that no
+	// longer exists -- and so does the registration, here and nowhere else on the lender's side.
+	if (sChosenSourceDB == sourceDB)
+		sChosenSourceDB = nil;
+	KCMForgetExternalSource();
+
+	KCMSayStatus(wasArmed ? "Stopped: the task-start copy used as Source was released."
+	                      : "The task-start copy chosen as Source was released.");
+	KCMNotify(kKCMMarksClearedMessage);
+}
+
 void KCMToggleStartStop()
 {
 	const bool16 armed = KCMIsArmed() && (KCMArmedTargetDB() != nil);
@@ -327,13 +429,13 @@ void KCMToggleStartStop()
 	// The flyout's Start is grey unless two documents are there (KCMCanStartComparison goes
 	// through the same resolver), so this normally cannot fail. It is the guard for the case
 	// where a document is closed while the menu stands open.
-	IDocument* target = nil;
-	IDocument* source = nil;
-	if (!KCMResolveComparisonPair(target, source))
+	IDataBase* targetDB = nil;
+	IDataBase* sourceDB = nil;
+	if (!KCMResolveComparisonPair(targetDB, sourceDB))
 	{
 		// Name what is actually missing: if the target resolved, only the Source is absent.
-		KCMSayStatus(target == nil ? "Target and source documents not found."
-		                         : "Source document not found.");
+		KCMSayStatus(targetDB == nil ? "Target and source documents not found."
+		                           : "Source document not found.");
 		// This branch needs the notification too. It returns from inside the else, so it never
 		// reaches the end of the function -- an early implementation refreshed the panel only at
 		// the end and left this path without a redraw.
@@ -373,7 +475,9 @@ void KCMToggleStartStop()
 	// documents**: "Set as Source" takes the ACTIVE document, so the Target, left unchosen,
 	// resolves to that very document. The way out of that one is to bring the other document to
 	// the front -- setting something is what the reader has already done.
-	if (KCMIsSameDoc(::GetUIDRef(target).GetDataBase(), ::GetUIDRef(source).GetDataBase()))
+	//   ★**And a lent Source is never "the same document"** (KCMIsSameDoc answers by pointer for
+	//   it): the copy IS a copy of the Target, and comparing the two is the whole request.
+	if (KCMIsSameDoc(targetDB, sourceDB))
 	{
 		KCMSayStatus("Target and Source are the same document. Bring another document to the front, or set one of them to another document.");
 		// As in the branch above: this one returns without reaching the end of the function, so it
@@ -383,7 +487,7 @@ void KCMToggleStartStop()
 		return;
 	}
 
-	KCMStartComparisonFor(target, source);
+	KCMStartComparisonOn(targetDB, sourceDB);
 }
 
 // Put the state of the two mark settings on the status line. Both callers below change one of the

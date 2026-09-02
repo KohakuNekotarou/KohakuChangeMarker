@@ -456,6 +456,33 @@ public:
 		inside: the status line belongs to the UI, and the flyout item that asked is the one
 		that reports. */
 	virtual void		ExportChangedPagesTSV(PMString& outMessage) = 0;
+
+	// ---- a Source that is not an open document (2026-09-02) -------------------------------
+	//
+	// Kohaku InDesign MCP holds a task-start copy of a document (an IDataBase it made and owns),
+	// and lends it here so that "what changed since the task started" can be seen as marks.
+	// ★THE ONLY ENTRANCE THROUGH WHICH A DATABASE THAT IS NOT IN IDocumentList MAY BECOME THE
+	//  SOURCE. Everywhere else KCM asks "is it in the list", and a lent database is not.
+	// ⚠THE CONTRACT WITH THE LENDER: call ReleaseExternalSourceDB BEFORE deleting the database,
+	//  every time, on every path -- KCM holds the pointer for as long as the database is the
+	//  chosen or the armed Source (a Stop keeps the choice) and cannot find out on its own that
+	//  it has gone. See KCMExternalSource.h.
+
+	/** Start with `target` as the Target and `sourceDB` as the Source. Stops an armed comparison
+		first, and CHOOSES both (as Set as Target / Set as Source would): a Stop keeps the pair on
+		the panel, and the flyout's own Start compares against `sourceDB` again until it is
+		released. `sourceLabel` is shown on the panel's Source: line. nil does nothing. */
+	virtual void		StartComparisonWithSourceDB(IDocument* target, IDataBase* sourceDB,
+													const PMString& sourceLabel) = 0;
+
+	/** The lender is about to delete `sourceDB`: if it is the armed Source, the comparison is
+		stopped; if it is the chosen Source, the choice is dropped; either way the status line says
+		so. Any other database is ignored. */
+	virtual void		ReleaseExternalSourceDB(IDataBase* sourceDB) = 0;
+
+	/** kTrue, and outLabel filled, when `db` is the lent Source (chosen or armed) -- the panel
+		asks this when FindDocByDataBase has no name for it. */
+	virtual bool16		GetExternalSourceLabel(IDataBase* db, PMString& outLabel) = 0;
 };
 
 #endif // __IKCMCompareFacade_h__

@@ -144,7 +144,15 @@ static PMString KCMDocPathFromDB(IDataBase* db)
 
 	IDocument* d = docList->FindDocByDataBase(db);
 	if (d == nil)
-		return name;			// a closed or unknown db = answer nothing, and touch nothing
+	{
+		// Not an open document. The one other thing the armed Source can be is a database another
+		// plug-in lent (Kohaku InDesign MCP's task-start copy), and the MODEL names it -- this side
+		// still dereferences nothing. A closed or unknown db answers nothing, as before.
+		Utils<IKCMCompareFacade> compare;
+		if (compare)
+			compare->GetExternalSourceLabel(db, name);
+		return name;
+	}
 
 	// ★The path is asked of the db directly (its liveness is established). The name, in the fallback
 	// below, comes through IDocument.

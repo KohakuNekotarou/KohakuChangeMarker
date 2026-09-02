@@ -51,6 +51,7 @@
 #include "KCMBookCompare.h"		// the book comparison itself
 #include "KCMPageNumberMarker.h"	// the folio exclusion toggle
 #include "KCMChangedPagesTSV.h"	// the TSV export
+#include "KCMExternalSource.h"	// KCMExternalSourceLabel -- the lent Source's words for the panel
 #include "KCMStoryMarkBuild.h"	// what the Story mode should be lighting up (Refresh / SetPress)
 #include "KCMStoryMarker.h"		// the adornment that draws it - the flash and the shutdown
 
@@ -197,6 +198,13 @@ public:
 
 	virtual void		ExportChangedPagesTSV(PMString& outMessage)
 													{ KCMExportChangedPagesTSV(outMessage); }
+
+	// The lent Source (see the interface). Three one-line transfers; the rules are model-side.
+	virtual void		StartComparisonWithSourceDB(IDocument* target, IDataBase* sourceDB, const PMString& sourceLabel)
+													{ KCMStartComparisonWithSourceDB(target, sourceDB, sourceLabel); }
+	virtual void		ReleaseExternalSourceDB(IDataBase* sourceDB)	{ KCMReleaseExternalSource(sourceDB); }
+	virtual bool16		GetExternalSourceLabel(IDataBase* db, PMString& outLabel)
+													{ return KCMExternalSourceLabel(db, outLabel); }
 };
 
 CREATE_PMINTERFACE(KCMCompareFacade, kKCMCompareFacadeImpl)

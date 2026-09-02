@@ -52,6 +52,7 @@
 #include "KCMStoryList.h"          // the list of changed stories (the model the Story Edits section reads)
 #include "KCMStoryDiffRun.h"       // in the Story mode, what changed inside each row
 #include "KCMHideUnchanged.h"      // KCMResetHideUnchanged
+#include "KCMExternalSource.h"     // KCMIsDbAlive -- "still there" includes the lent Source
 // **No UI header is included here.** Everything this file used to do to the screen is now a
 // KCMNotify*() call, so the comparison engine says only WHAT CHANGED and has zero dependency on
 // the UI.
@@ -963,7 +964,8 @@ ErrorCode KCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMString
 }
 
 // Is this database still an open document's (declared in KCMCore.h)? A closed one must never be
-// dereferenced, so this is a pointer comparison against IDocumentList and nothing more.
+// dereferenced, so this is a pointer comparison against IDocumentList -- and, since 2026-09-02,
+// against the one lent Source (KCMExternalSource.h) -- and nothing more.
 // **The nil guard on the session is required**: this is called from KCMScrollMapView::Draw and from
 // the deferred thumbnail idle task, both of which can fire during the application's teardown. On a
 // platform whose session is already dismantled (the Mac's Cocoa teardown order in particular) an
@@ -976,7 +978,9 @@ bool16 KCMIsDocDBOpen(IDataBase* db)
 	ISession* session = GetExecutionContextSession();
 	InterfacePtr<IApplication> app(session != nil ? session->QueryApplication() : nil);
 	InterfacePtr<IDocumentList> docList(app ? app->QueryDocumentList() : nil);
-	return (docList != nil && docList->FindDocByDataBase(db) != nil) ? kTrue : kFalse;
+	// A nil list means teardown is under way, and "not open" is the safe side -- so the lent
+	// Source is not consulted either: nothing may be drawn on it once the session is going.
+	return (docList != nil) ? KCMIsDbAlive(docList, db) : kFalse;
 }
 
 // kTrue while the application is shutting down (kQuitting = after QuitCmd's Terminate,

@@ -70,6 +70,7 @@
 #include "KCMPageCheck.h"          // KCMPageCheckIsChecked / KCMPageCheckHasAny (the "Check" ticks)
 #include "KCMPageNumberMarker.h"   // KCMGetIgnorePageNumberMarker / KCMAppendPageNumberMarkerRects (the folio exclusion)
 #include "KCMThreadSafety.h"       // KCMIsSameDoc (the background thread's cloned db) / KCMIsMainThread / the mark-state lock
+#include "KCMExternalSource.h"     // KCMIsDbAlive -- a lent Source is not in IDocumentList and is still there
 // The press-time HUD moved to the UI's own drawing service (KCMUIDrawEvent.cpp): whether a button
 // is held is the tool's state, which is the UI's and not visible from the model. **This file
 // includes no UI header.**
@@ -1729,10 +1730,10 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 		InterfacePtr<IApplication> app(session != nil ? session->QueryApplication() : nil);
 		InterfacePtr<IDocumentList> docList(app ? app->QueryDocumentList() : nil);
 		if (docList != nil &&
-		    ((sDB != nil && docList->FindDocByDataBase(sDB) == nil) ||
-		     (sOrigDB != nil && docList->FindDocByDataBase(sOrigDB) == nil) ||
-		     (sSrcDB != nil && docList->FindDocByDataBase(sSrcDB) == nil) ||
-		     (sOversetDB != nil && docList->FindDocByDataBase(sOversetDB) == nil)))
+		    ((sDB != nil && !KCMIsDbAlive(docList, sDB)) ||
+		     (sOrigDB != nil && !KCMIsDbAlive(docList, sOrigDB)) ||
+		     (sSrcDB != nil && !KCMIsDbAlive(docList, sSrcDB)) ||
+		     (sOversetDB != nil && !KCMIsDbAlive(docList, sOversetDB))))
 			KCMHandleDocsClosed();
 	}
 

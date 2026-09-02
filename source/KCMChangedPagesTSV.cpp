@@ -78,6 +78,7 @@
 									//   the "as compared" record, i.e. what the screen, the thumbnails and
 									//   the map read**
 #include "KCMPageMap.h"			// KCMPageMapCollectRegistered
+#include "KCMExternalSource.h"	// KCMExternalSourceLabel -- the Source may be a lent database with no document name
 #include "KCMChangedPagesTSV.h"
 
 namespace
@@ -282,7 +283,12 @@ PMString DocNameFromDB(IDataBase* db)
 		return out;
 	IDocument* d = docList->FindDocByDataBase(db);	// no ref -- the name is read without a deref
 	if (d == nil)
+	{
+		// Not an open document. The one other thing a Source can be is a database another plug-in
+		// lent (KCMExternalSource.h), and that comes with words of its own; anything else stays empty.
+		KCMExternalSourceLabel(db, out);
 		return out;
+	}
 	d->GetName(out);
 	out.SetTranslatable(kFalse);
 	return out;

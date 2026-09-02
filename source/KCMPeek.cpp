@@ -52,6 +52,7 @@
 #include "KCMDrawEventHandler.h"   // the engine's shared statics
 #include "KCMCore.h"               // the arm/disarm/state declarations
 #include "KCMComparisonRun.h"      // KCMForgetChosenDocsThatClosed -- the chosen Target/Source lose whichever document closed
+#include "KCMExternalSource.h"     // KCMIsDbAlive (the lent Source counts as alive)
 #include "KCMModelNotify.h"	// KCMNotifyStatus - the model tells the UI, it never calls it
 // The UI's KCMViewLookup.h is deliberately absent. Resolving which view the mouse is over belongs
 //   to the caller (the UI); this .cpp only peeks at the spread of the point it is given.
@@ -626,8 +627,8 @@ bool16 KCMArmedDocsAlive()
 	InterfacePtr<IApplication> app(session != nil ? session->QueryApplication() : nil);
 	InterfacePtr<IDocumentList> docList(app ? app->QueryDocumentList() : nil);
 	if (docList == nil ||
-	    docList->FindDocByDataBase(sPeekTargetDB) == nil ||
-	    docList->FindDocByDataBase(sPeekSourceDB) == nil)
+	    !KCMIsDbAlive(docList, sPeekTargetDB) ||
+	    !KCMIsDbAlive(docList, sPeekSourceDB))
 	{
 		KCMHandleDocsClosed();
 		return kFalse;
@@ -824,6 +825,8 @@ void KCMDoDisarmMousePeek(IDataBase* db)
 	// As on the arming side, dropping the sync caches and clearing the gesture state are left to
 	//   the UI: disarming is immediately followed by KCMStopComparison sending
 	//   kKCMMarksClearedMessage.
+	// (The lent Source's registration is NOT dropped here: it stays chosen after a Stop, as a
+	//  chosen document does -- KCMExternalSource.h. The lender's Release is what ends it.)
 	sPeekArmed = kFalse;
 	sPeekTargetDB = nil;
 	sPeekSourceDB = nil;
@@ -939,7 +942,7 @@ void KCMHandleDocsClosed()
 	//   is safe while quitting, and no redraw is needed -- the crosses were never on any other
 	//   document, and the closed one's window is gone.
 	if (KCMDrawEventHandler::sOversetOn && KCMDrawEventHandler::sOversetDB != nil &&
-	    docList->FindDocByDataBase(KCMDrawEventHandler::sOversetDB) == nil)
+	    !KCMIsDbAlive(docList, KCMDrawEventHandler::sOversetDB))
 	{
 		KCMDrawEventHandler::DropOverset();
 	}
@@ -951,12 +954,12 @@ void KCMHandleDocsClosed()
 	// same document as sPeekSourceDB, but it is checked separately so that the answer does not
 	// depend on anything still being armed.
 	const bool16 comparisonDocClosed =
-		(KCMDrawEventHandler::sDB     != nil && docList->FindDocByDataBase(KCMDrawEventHandler::sDB)     == nil) ||
-		(KCMDrawEventHandler::sOrigDB != nil && docList->FindDocByDataBase(KCMDrawEventHandler::sOrigDB) == nil) ||
-		(KCMDrawEventHandler::sSrcDB  != nil && docList->FindDocByDataBase(KCMDrawEventHandler::sSrcDB)  == nil) ||
+		(KCMDrawEventHandler::sDB     != nil && !KCMIsDbAlive(docList, KCMDrawEventHandler::sDB))     ||
+		(KCMDrawEventHandler::sOrigDB != nil && !KCMIsDbAlive(docList, KCMDrawEventHandler::sOrigDB)) ||
+		(KCMDrawEventHandler::sSrcDB  != nil && !KCMIsDbAlive(docList, KCMDrawEventHandler::sSrcDB))  ||
 		(sPeekArmed &&
-		 ((sPeekTargetDB != nil && docList->FindDocByDataBase(sPeekTargetDB) == nil) ||
-		  (sPeekSourceDB != nil && docList->FindDocByDataBase(sPeekSourceDB) == nil)));
+		 ((sPeekTargetDB != nil && !KCMIsDbAlive(docList, sPeekTargetDB)) ||
+		  (sPeekSourceDB != nil && !KCMIsDbAlive(docList, sPeekSourceDB))));
 
 	// The surviving databases are declared outside the block below because the notification at the
 	//   end of the function carries them too.
@@ -971,17 +974,17 @@ void KCMHandleDocsClosed()
 	{
 		// Record the databases that are still open before DropAll and DropAllOrig clear them. They
 		// have passed the liveness check, so invalidating their views later is safe.
-		if (KCMDrawEventHandler::sDB != nil && docList->FindDocByDataBase(KCMDrawEventHandler::sDB) != nil)
+		if (KCMDrawEventHandler::sDB != nil && KCMIsDbAlive(docList, KCMDrawEventHandler::sDB))
 			survivorTargetDB = KCMDrawEventHandler::sDB;
-		if (KCMDrawEventHandler::sOrigDB != nil && docList->FindDocByDataBase(KCMDrawEventHandler::sOrigDB) != nil)
+		if (KCMDrawEventHandler::sOrigDB != nil && KCMIsDbAlive(docList, KCMDrawEventHandler::sOrigDB))
 			survivorOrigDB = KCMDrawEventHandler::sOrigDB;
-		if (KCMDrawEventHandler::sSrcDB != nil && docList->FindDocByDataBase(KCMDrawEventHandler::sSrcDB) != nil)
+		if (KCMDrawEventHandler::sSrcDB != nil && KCMIsDbAlive(docList, KCMDrawEventHandler::sSrcDB))
 			survivorSrcDB = KCMDrawEventHandler::sSrcDB;
 		if (sPeekArmed)
 		{
-			if (survivorTargetDB == nil && sPeekTargetDB != nil && docList->FindDocByDataBase(sPeekTargetDB) != nil)
+			if (survivorTargetDB == nil && sPeekTargetDB != nil && KCMIsDbAlive(docList, sPeekTargetDB))
 				survivorTargetDB = sPeekTargetDB;
-			if (survivorOrigDB == nil && sPeekSourceDB != nil && docList->FindDocByDataBase(sPeekSourceDB) != nil)
+			if (survivorOrigDB == nil && sPeekSourceDB != nil && KCMIsDbAlive(docList, sPeekSourceDB))
 				survivorOrigDB = sPeekSourceDB;
 		}
 
@@ -1051,8 +1054,8 @@ void KCMHandleDocsClosed()
 	IDataBase* hideSrcDB = KCMGetHideUnchangedSrcDB();
 	if (hideDB != nil || hideSrcDB != nil)
 	{
-		const bool16 hideTargetClosed = (hideDB    != nil && docList->FindDocByDataBase(hideDB)    == nil);
-		const bool16 hideSourceClosed = (hideSrcDB != nil && docList->FindDocByDataBase(hideSrcDB) == nil);
+		const bool16 hideTargetClosed = (hideDB    != nil && !KCMIsDbAlive(docList, hideDB));
+		const bool16 hideSourceClosed = (hideSrcDB != nil && !KCMIsDbAlive(docList, hideSrcDB));
 		if (hideTargetClosed || hideSourceClosed || comparisonDocClosed)
 		{
 			// While quitting, kFalse discards the state without issuing the command that shows the
