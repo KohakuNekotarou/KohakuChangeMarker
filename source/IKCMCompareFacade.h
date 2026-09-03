@@ -13,6 +13,20 @@
 //  the other .pln. Every call that crosses the boundary has to go through an interface on a
 //  boss. That is the whole reason this file exists.
 //
+//  ★A THIRD READER SINCE 2026-09-02: Kohaku InDesign MCP includes this header
+//  (KIDMCPKcmBridge.cpp - compiled straight against source/sdksamples/KCM/source, no copy) and
+//  calls the lent-Source methods at the end of this interface through Utils<IKCMCompareFacade>().
+//  It ships on its own schedule, so this interface's vtable is now an ABI between two PRODUCTS,
+//  not between two halves of one build. The rule that follows from that:
+//    - add methods at the END only; never insert, reorder or remove a method that stands. A
+//      mismatch does not fail to load - the other product calls the wrong slot, silently.
+//    - when that rule cannot be kept, do what Adobe does with a shipped facade: derive a NEW
+//      interface with a NEW IID and leave this one standing (IDigitalPublishingFacade2 : public
+//      IDigitalPublishingFacade, IID_IDIGITALPUBLISHINGFACADE2 - the one such pair among the
+//      SDK's public interfaces, graphics/IDigitalPublishingFacade2.h).
+//  (Written by the API re-audit of 2026-09-03, which found the third reader a day after it
+//  arrived and no rule anywhere. The methods it calls are the last three below.)
+//
 //========================================================================================
 
 #ifndef __IKCMCompareFacade_h__

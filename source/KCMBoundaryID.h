@@ -11,6 +11,12 @@
 //  (Adobe ships the same shape: customconditionaltext/CusCondTxtRezDefs.h and the file of the
 //  same name in customconditionaltextui, byte for byte identical.)
 //
+//  ★SINCE 2026-09-02 A THIRD PLUG-IN READS THE MODEL COPY: Kohaku InDesign MCP includes
+//  IKCMCompareFacade.h - and through it this file - straight from source/sdksamples/KCM/source.
+//  There is no third copy to keep in step, but the values here are now promised to a product
+//  that ships on its own schedule: renumbering one breaks it as silently as it would break the
+//  UI. (The vtable rule that goes with this is at the top of IKCMCompareFacade.h.)
+//
 //  WHY A COPY EACH SIDE, AND WHY THE SAME VALUE. An ID is unique by its VALUE, not per plug-in.
 //  What lives here is the three kinds of thing one side writes and the other reads, and each of
 //  them **stops working silently the moment the two values disagree** (the build still passes):
