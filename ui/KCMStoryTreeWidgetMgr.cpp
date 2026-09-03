@@ -106,13 +106,16 @@ PMString Translated(const char* key)
 	⚠It is checked before the counters and after Added/Removed/None: those three describe the row
 	  itself, this describes what was found inside it.
 	★IT TAKES THE KIND RATHER THAN A "hasRuby" FLAG, so that a second attribute costs a key here and
-	  nothing else. Kenten (emphasis dots) briefly was that second one and is no longer reported at all
-	  (user's call, 2026-08-23) - see the note at the test below.
+	  nothing else. Kenten (emphasis dots) is that second one, reported again since 2026-09-01.
+	★AND HOW MANY KINDS, so that a story whose ruby AND kenten both moved over unchanged text reads
+	  "Ruby+" (2026-09-03, user's ask) - the same '+' the counters' "Text+" below has always used, and
+	  for the same reason: the word names the first thing, the sign says there was a second.
 
 	@param sameKind kTrue when the text was compared and nothing differs - see above.
-	@param attrKind which attribute the children found, as KCMStoryAttrKind; 0 for none.
+	@param attrKind which attribute the children found FIRST, as KCMStoryAttrKind; 0 for none.
+	@param attrKindCount how many DIFFERENT attribute kinds they found; > 1 puts the '+' on.
 */
-PMString KindLabel(uint32 kinds, bool16 sameKind, int32 attrKind)
+PMString KindLabel(uint32 kinds, bool16 sameKind, int32 attrKind, int32 attrKindCount)
 {
 	if (sameKind)
 		return Translated(kKCMStoryKindNoneKey);
@@ -132,10 +135,24 @@ PMString KindLabel(uint32 kinds, bool16 sameKind, int32 attrKind)
 	//   exists** - which is the pair to watch if either is ever removed again.
 	if ((kinds & kKCMStoryKindText) == 0)
 	{
+		const char* attrKey = nil;
 		if (attrKind == kKCMStoryAttrRuby)
-			return Translated(kKCMStoryKindRubyKey);
-		if (attrKind == kKCMStoryAttrKenten)
-			return Translated(kKCMStoryKindKentenKey);
+			attrKey = kKCMStoryKindRubyKey;
+		else if (attrKind == kKCMStoryAttrKenten)
+			attrKey = kKCMStoryKindKentenKey;
+
+		if (attrKey != nil)
+		{
+			// ★"Ruby+" / "Kenten+" when the children hold more than one kind (2026-09-03). Composed
+			//   the same way as the "Text+" below, and for the same reason it is no longer a key.
+			PMString named = Translated(attrKey);
+			if (attrKindCount > 1)
+			{
+				named.SetTranslatable(kFalse);
+				named.Append("+");
+			}
+			return named;
+		}
 	}
 
 	PMString out;
@@ -373,7 +390,7 @@ public:
 			//   draw a triangle, so the two can never disagree.
 			const bool16 sameKind = row.fTextCompared
 				&& (Utils<IKCMStoryEditsFacade>()->GetChangeCount(nodeID->GetRow()) == 0);
-			kinds = KindLabel(row.fKinds, sameKind, row.fAttrKind);
+			kinds = KindLabel(row.fKinds, sameKind, row.fAttrKind, row.fAttrKindCount);
 		}
 		else if (Utils<IKCMStoryEditsFacade>()->GetRowCount() == 0)
 		{

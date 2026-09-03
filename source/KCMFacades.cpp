@@ -379,7 +379,7 @@ public:
 		if (row == nil)
 			return kFalse;	// out of range, or the placeholder row -- out is left as the caller had it
 
-		// Seven of the row's nine fields. fPageIndex is the list's sort key and no caller reads
+		// Eight of the row's ten fields. fPageIndex is the list's sort key and no caller reads
 		// it; fChanges is the child list, handed over one at a time by GetChange.
 		out.fStoryUID	= row->fStoryUID;
 		out.fText		= row->fText;
@@ -387,7 +387,8 @@ public:
 		out.fFrameUID	= row->fFrameUID;
 		out.fPageUID	= row->fPageUID;
 		out.fTextCompared = row->fTextCompared;
-		out.fAttrKind	= static_cast<int32>(row->fAttrKind);	// 0 = none, 1 = ruby
+		out.fAttrKind	= static_cast<int32>(row->fAttrKind);	// 0 = none, 1 = ruby, 2 = kenten
+		out.fAttrKindCount = row->fAttrKindCount;				// how many DIFFERENT kinds - "Ruby+" when > 1
 		return kTrue;
 	}
 

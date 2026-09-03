@@ -225,19 +225,27 @@ struct KCMStoryRow
 		label -- not another field, and not another branch in every place that draws a row. Kenten is
 		that second value: withdrawn in August and reported again from 2026-09-01, and **both times
 		the comparison alone decided it** -- which is the shape working as intended.
-		@warning **ruby is therefore the only value any row carries today. Do not simplify this to a
-		  flag on the strength of that** -- the reason it is a number has not gone away.
-
 		@warning **not part of fKinds.** That one comes from the two documents' change COUNTERS, and
 		  a row refresh deliberately leaves it alone because reading the counters again gives the
 		  same answer. This is a finding of the DIFF -- it does not exist until the two versions have
 		  been compared -- so putting it there would break that promise. */
 	KCMStoryAttrKind fAttrKind;
 
+	/** HOW MANY DIFFERENT KINDS of attribute the children found - 0, 1 or 2 today.
+
+		★THE ONE MORE FACT SetRowChanges said a "Ruby+" would need (2026-09-03, user's ask: a story
+		whose text stood still while BOTH its ruby and its kenten moved read as "Ruby" alone, and
+		the kenten half of the edit was invisible from the list). fAttrKind names the FIRST kind
+		seen; this says whether there were more, and KindLabel appends the same '+' it appends to
+		"Text" when a second counter moved. **A count and not a second kind field**, so that a
+		third attribute costs nothing here: the label is "first kind" plus "there is more".
+		⚠Worked out beside fAttrKind, from the same walk, and nowhere else. */
+	int32			fAttrKindCount;
+
 	KCMStoryRow()
 		: fStoryUID(kInvalidUID), fKinds(kKCMStoryKindNone), fFrameUID(kInvalidUID),
 		  fPageUID(kInvalidUID), fPageIndex(kMaxInt32), fTextCompared(kFalse),
-		  fAttrKind(kKCMStoryAttrNone) {}
+		  fAttrKind(kKCMStoryAttrNone), fAttrKindCount(0) {}
 };
 
 /** The first frame a story is placed in -- where a jump to that story should go.

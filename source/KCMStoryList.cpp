@@ -671,25 +671,33 @@ void KCMStoryList::SetRowChanges(int32 nth, const std::vector<KCMStoryChange>& c
 
 	// **WHICH ATTRIBUTE THE ROW SHOULD NAME**, worked out here rather than asked for later: the
 	//   row is drawn many times and the children are walked once.
-	// **FIRST ONE WINS.** Only one kind of attribute is reported today (ruby), so no row can hold
-	//   two; the loop is written to survive a second one arriving rather than to depend on there
-	//   being none. @warning if a second ever does come back, decide then whether a row holding
-	//   both should read "Ruby+" the way KindLabel's "Text+" does -- the fix would belong here and
-	//   would need one more fact on the row (how many kinds were seen), not a change to how the
-	//   children are made.
+	// **FIRST ONE NAMES THE ROW, AND THE COUNT SAYS WHETHER THERE WERE MORE** (2026-09-03, user's
+	//   ask: "Ruby+" / "Kenten+" when both moved). The second half is exactly the "one more fact on
+	//   the row" this comment used to say a "Ruby+" would need - how many kinds were seen - and it
+	//   is worked out in the same walk, so the two cannot disagree about which children exist.
+	//   ⚠DISTINCT kinds, not attribute children: four ruby edits are one kind. The children are in
+	//     reading order (ChangeIsBefore), so "first" is the kind that stands earliest in the story.
 	// **THE CHILD CARRIES THE ANSWER**, so this does not guess it from which string is filled. The
 	//   old test -- "fRuby is not empty, or fOtherRuby is" -- was really asking "is this a ruby",
 	//   and kenten showed within a day why that is not the same question: it filled the very same
 	//   fields with a KIND rather than a reading, and every such test called it a ruby.
 	gRows[nth].fAttrKind = kKCMStoryAttrNone;
+	gRows[nth].fAttrKindCount = 0;
+	uint32 seen = 0;		// one bit per KCMStoryAttrKind value, so a kind is counted once
 	for (size_t i = 0; i < changes.size(); ++i)
 	{
-		if (changes[i].fWhat == KCMStoryChange::kAttr &&
-			changes[i].fAttrKind != kKCMStoryAttrNone)
-		{
+		if (changes[i].fWhat != KCMStoryChange::kAttr ||
+			changes[i].fAttrKind == kKCMStoryAttrNone)
+			continue;
+
+		const uint32 bit = 1u << static_cast<uint32>(changes[i].fAttrKind);
+		if ((seen & bit) != 0)
+			continue;
+		seen |= bit;
+
+		if (gRows[nth].fAttrKind == kKCMStoryAttrNone)
 			gRows[nth].fAttrKind = changes[i].fAttrKind;
-			break;
-		}
+		++gRows[nth].fAttrKindCount;
 	}
 }
 

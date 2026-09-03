@@ -111,9 +111,16 @@ public:
 			so mixing it into fKinds would break that promise. */
 		int32		fAttrKind;
 
+		/** HOW MANY DIFFERENT attribute kinds the children found - 0, 1 or 2 today. fAttrKind names
+			the first; this is what lets the row say "Ruby+" when a kenten moved as well (2026-09-03,
+			user's ask), the same '+' the row already puts after "Text" when a second counter moved.
+			**Added at the END of the struct** - the UI reads Row by value, so the two halves have to
+			be built together whenever this struct changes (they always are). */
+		int32		fAttrKindCount;
+
 		Row()
 			: fStoryUID(kInvalidUID), fKinds(kKCMStoryKindNone), fFrameUID(kInvalidUID),
-			  fPageUID(kInvalidUID), fTextCompared(kFalse), fAttrKind(0) {}
+			  fPageUID(kInvalidUID), fTextCompared(kFalse), fAttrKind(0), fAttrKindCount(0) {}
 	};
 
 	// ---- the list ------------------------------------------------------------------------
