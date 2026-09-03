@@ -37,8 +37,9 @@
 #include "AppFrameworkID.h"
 // ScriptInfoTypes.fh is enough on its own for the resource at the end of this file: it also pulls
 // in ScriptingID.h (kCoreScriptManagerBoss) and defines kCS5ScriptVersion. What keeps it here are
-// app.kcmStatus and app.kcmBookResult, served by kKCMScriptProviderBoss; the toolbox tool's
-// ScriptID registration, which is what first needed it, now lives in KCMUI.fr with the tool.
+// the properties served by kKCMScriptProviderBoss (the Provider blocks at the end of this file);
+// the toolbox tool's ScriptID registration, which is what first needed it, now lives in KCMUI.fr
+// with the tool.
 #include "ScriptInfoTypes.fh"	// VersionedScriptElementInfo / Property / Provider
 // DocumentID.h: the close-document responder boss names the API's OWN service provider
 // implementation instead of carrying a hand-written one (see that Class below).
@@ -47,7 +48,10 @@
 #include "PDFID.h"	// kPDFExportSetupServiceImpl / IID_IPDFEXPORTSETUPPROVIDER (declares the transparency
 					// only while an export runs - see the boss below). Without this include ODFRC fails with
 					// "R32725: Identifier 'kPDFExportSetupServiceImpl' does not name a numeric value."
-#include "GraphicsID.h"	// IID_IDRWEVTHANDLER (the comparison marks' draw service - the whole point of the model half)
+// GraphicsID.h is NOT included here any more (2026-09-03). It was kept for IID_IDRWEVTHANDLER, the
+// draw event service that painted the marks; that boss left this half on 2026-08-13/15 (the UI
+// keeps its own, KCMUI.fr) and the marks are painted by the adornment below. Nothing else in
+// this file comes from GraphicsID.h - measured against every identifier the resources use.
 #include "GenericID.h"	// IID_IADORNMENTSHAPE (GenericID.h:279) - the adornment route for the same marks
 #include "XPID.h"	// IID_IADORNMENTFLATTENERUSAGE (XPID.h:513) - how the adornment declares its
 					// transparency to the flattener. This is the whole reason the adornment route exists:
@@ -338,7 +342,8 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 	//   service (kGlobalTextAdornmentServiceImpl, TextID.h, service kGlobalTextAdornmentService).
 	//   The same pair as the product's dynamic spelling squiggle (SpellPanelClass.fr:768-776).
 	// ⚠kInvalidClass as the parent: this boss is not a widget or a page item, it exists only to be
-	//   found in the service registry - same as the draw-event service boss above.
+	//   found in the service registry - same as every other service boss in this file (the
+	//   draw-event service boss this line used to name moved to the UI half on 2026-08-13/15).
 	//
 	// ★★★MOVED HERE FROM THE UI PLUG-IN ON 2026-08-23 (it was kKCMUIPrefix + 30), so that the marks
 	//   can be printed and exported. **The UI's File > Export > PDF runs in the background and a
@@ -402,9 +407,11 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 	},
 
 	/*
-	 * Scripting provider: serves EVERYTHING this plug-in publishes - app.kcmStatus and
-	 * app.kcmBookResult on the application object, and the four ITextModel change counters on the
-	 * story object. Derives from kBaseScriptProviderBoss, which brings the machinery that dispatches
+	 * Scripting provider: serves EVERYTHING this plug-in publishes - the properties on the
+	 * application, the story and the document objects. The Provider blocks at the end of this
+	 * file ARE the list; this comment does not repeat it, because every copy of that list in this
+	 * half had gone stale by 2026-09-03 (two properties were added without any copy being
+	 * re-counted). Derives from kBaseScriptProviderBoss, which brings the machinery that dispatches
 	 * script requests; all this boss adds is our own handler. The properties themselves are declared
 	 * in the VersionedScriptElementInfo resource at the end of this file. Same shape as KBS
 	 * (KBS.fr:406-413), which follows the official scripting sample BPI.fr.
@@ -465,12 +472,13 @@ resource LocaleIndex ( kSDKDefStringsResourceID)
 };
 
 /*
- * What KCM adds to the object model: one read-only property (two, counting the book result).
+ * What KCM adds to the object model: properties only - the Property and Provider entries below
+ * are the list (on app, story and document). No methods.
  *
  * ⚠2026-08-15 (split stage 2 task 6B-2): THE TOOL'S ENUMERATOR ENTRY LEFT THIS RESOURCE.
  * It registers the toolbox tool's ScriptID, and the tool is a UI boss, so it now lives in
- * KCMUI.fr's own VersionedScriptElementInfo. What stays here is what the model half answers:
- * app.kcmStatus and app.kcmBookResult, served by kKCMScriptProviderBoss.
+ * KCMUI.fr's own VersionedScriptElementInfo. What stays here is what the model half answers,
+ * served by kKCMScriptProviderBoss.
  * ★The paragraph below is kept because it is the record of WHY the tool has a ScriptID at all;
  * the same text is in KCMUI.fr next to the entry itself.
  *
@@ -492,8 +500,8 @@ resource VersionedScriptElementInfo(10)
 	//Contexts
 	{
 		// The three values on the next line are inherited, not chosen for what this resource now
-		// holds: the tool enumerator moved out to KCMUI.fr and only Properties are left here (2 on
-		// app, 4 on story). They are kept anyway, and each has its own measured reason.
+		// holds: the tool enumerator moved out to KCMUI.fr and only Properties are left here (on
+		// app, story and document). They are kept anyway, and each has its own measured reason.
 		//
 		// script version (kCS5) is the one that really narrows who can see these properties.
 		// Measured by varying app.scriptPreferences.version:
@@ -526,26 +534,9 @@ resource VersionedScriptElementInfo(10)
 			kNoAttributeClass,					// attribute class ID
 		}
 
-		// app.kcmStoryReadCompare (2026-08-31) - ⚠TEMPORARY, for the direct-read migration.
-		//
-		// ★★★THE ONLY READ-WRITE PROPERTY IN THIS FILE. Assigning "on" arms the parallel run
-		//   (both readers over every story, reporting where they disagree); anything else disarms
-		//   it. Reading returns the last report. The convention - "on" arms, everything else
-		//   disarms - is KIDMCP's app.kmcpHttp.
-		// ⚠IT IS ON THE APPLICATION, NOT THE DOCUMENT, and that is what keeps it out of IDML:
-		//   the application object is not part of a document's IDML at all (measured, B11), so
-		//   this needs no kNotSupported declaration in the INX resource below - unlike the story
-		//   and document properties, which do.
-		Property
-		{
-			kKCMStoryReadComparePropertyScriptElement,
-			p_KCMStoryReadCompare,
-			"kcm story read compare",			// name -> app.kcmStoryReadCompare
-			"Arms the migration's parallel run with \"on\"; reading returns the last report.",
-			StringType,
-			{}
-			kNoAttributeClass,
-		}
+		// app.kcmStoryReadCompare - the direct-read migration's parallel run, and the only
+		// read-write property this file ever declared - stood here from 2026-08-31 to 2026-09-03.
+		// It went with the old reading route (plan Task 7). Every property below is read-only.
 
 		// app.kcmBookResult (2026-08-11) - the last book comparison, one line per chapter,
 		// "name<TAB>state". Same shape and same purpose as the property above: the status line
@@ -575,8 +566,6 @@ resource VersionedScriptElementInfo(10)
 				Object{ kApplicationObjectScriptElement },
 				Property{ kKCMStatusPropertyScriptElement, kReadOnly },
 				Property{ kKCMBookResultPropertyScriptElement, kReadOnly },
-				// ⚠kReadWrite, alone in this file. See the property's own declaration above.
-				Property{ kKCMStoryReadComparePropertyScriptElement, kReadWrite },
 			}
 		}
 

@@ -102,16 +102,10 @@ enum KCMScriptProperties
 								// per chapter ("name<TAB>state"). Checked against the registry in
 								// docs/ai-notes/kes-scriptid-registry.md before use (2026-08-11).
 
-	/** app.kcmStoryReadCompare - r = read compare.
-
-		★**THE ONLY READ-WRITE PROPERTY KCM HAS**, and it is temporary: assigning "on" arms the
-		parallel run that checks the new reader against the old one, anything else disarms it, and
-		reading returns the last report. It goes when the migration lands.
-		⚠'pKGr' was checked against the registry (docs/ai-notes/kes-scriptid-registry.md) and
-		 against all four of my plug-ins before use - 0 hits, 2026-08-31. The check was validated
-		 first by searching for 'pKGx', which does exist: a search that matches nothing would call
-		 every candidate free. */
-	p_KCMStoryReadCompare = 'pKGr'
+	// 'pKGr' (app.kcmStoryReadCompare, the direct-read migration's parallel run) stood here from
+	// 2026-08-31 to 2026-09-03 and was never registered with Adobe nor shipped; the code is free
+	// again (docs/ai-notes/kes-scriptid-registry.md says so too). It was the only read-write
+	// property KCM has ever had.
 };
 
 /** Properties KCM adds to the STORY object (at the user's request).

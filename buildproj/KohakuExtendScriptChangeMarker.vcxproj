@@ -230,8 +230,6 @@
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMStoryList.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMTextDiff.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMMemXferBytes.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMStoryXml.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMStoryCellBases.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMStoryDiffRun.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMTextRead.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMStoryMarker.cpp" />
@@ -287,8 +285,6 @@
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMStoryRowFilter.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMTextDiff.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMMemXferBytes.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMStoryXml.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMStoryCellBases.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMStoryDiffRun.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMTextRead.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPageNumberMarker.h" />

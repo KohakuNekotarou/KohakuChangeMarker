@@ -150,13 +150,9 @@ private:
 	    answered from outside, and the list persists in the .indd. */
 	ErrorCode ReadTransparencyItemCount(ScriptID propID, IScriptRequestData* data, IScript* script);
 
-	/** app.kcmStoryReadCompare -- the migration's parallel run.
-
-	    ★**THE ONLY PROPERTY HERE THAT ACCEPTS A PUT**, and the only one that is temporary. "on"
-	    arms it, anything else disarms it; reading returns the last report. ⚠It goes when the
-	    direct-read migration lands (docs/superpowers/plans/2026-08-31-kcm-story-direct-read.md). */
-	ErrorCode WriteStoryReadCompare(ScriptID propID, IScriptRequestData* data, IScript* script);
-	ErrorCode ReadStoryReadCompare(ScriptID propID, IScriptRequestData* data, IScript* script);
+	// app.kcmStoryReadCompare, the direct-read migration's parallel run, stood here from
+	// 2026-08-31 to 2026-09-03 - the only property that ever accepted a put. It went with the old
+	// route (plan Task 7); everything published is read-only again.
 
 	/** Hand an int32 back to the script. The two numeric properties above both end this way. */
 	ErrorCode ReturnInt32(int32 value, ScriptID propID, IScriptRequestData* data, IScript* script);
@@ -172,9 +168,8 @@ ErrorCode KCMScriptProvider::AccessProperty(ScriptID propID, IScriptRequestData*
 	const bool16 isStoryCounter = (id == p_KCMChangeCount || id == p_KCMTextChangeCount ||
 								   id == p_KCMAttrChangeCount || id == p_KCMOtherChangeCount);
 	const bool16 isDocXPCount = (id == p_KCMTransparencyItemCount);
-	const bool16 isReadCompare = (id == p_KCMStoryReadCompare);
 
-	if (!isAppString && !isStoryCounter && !isDocXPCount && !isReadCompare)
+	if (!isAppString && !isStoryCounter && !isDocXPCount)
 		return CScriptProvider::AccessProperty(propID, data, script);
 
 	// **NO nil CHECK ON data OR script**, and that is measured rather than assumed. The framework
@@ -199,17 +194,13 @@ ErrorCode KCMScriptProvider::AccessProperty(ScriptID propID, IScriptRequestData*
 	// rather than a message.
 	// @warning KBS had already moved to this call (KBSScriptProvider.cpp) and this file, written
 	//   from that one, did not bring the change with it.
-	// ★**ONE EXCEPTION, AND IT IS DECLARED kReadWrite IN KCM.fr.** Everything else here refuses a
-	//   put; app.kcmStoryReadCompare accepts one because arming the parallel run is what it is for.
-	//   ⚠The two have to agree: a property the resource calls kReadOnly can never reach the branch
-	//     below, and one the resource calls kReadWrite would silently accept nothing if this line
-	//     refused it. The pair is the contract.
+	// ★NO EXCEPTIONS AGAIN since 2026-09-03: app.kcmStoryReadCompare, declared kReadWrite in KCM.fr
+	//   and accepted here, was the one put this file ever took, and it went with the parallel run.
+	//   ⚠Should a writable property ever come back: the resource's kReadWrite and a branch here are
+	//     a PAIR - a kReadOnly declaration never reaches this line, and a kReadWrite one that this
+	//     line refused would silently accept nothing.
 	if (data->IsPropertyPut())
-	{
-		if (isReadCompare)
-			return this->WriteStoryReadCompare(propID, data, script);
 		return Utils<IScriptErrorUtils>()->SetReadOnlyPropertyErrorData(data, propID);
-	}
 
 	if (!data->IsPropertyGet())
 		return CScriptProvider::AccessProperty(propID, data, script);
@@ -226,8 +217,6 @@ ErrorCode KCMScriptProvider::AccessProperty(ScriptID propID, IScriptRequestData*
 	//   in PowerShell, a CEP panel on a timer). Then this needs KBS's shape: a flag the comparison
 	//   sets, and a "busy" sentence returned instead of the stale one.
 
-	if (isReadCompare)
-		return this->ReadStoryReadCompare(propID, data, script);
 	if (isAppString)
 		return this->ReadAppString(id, propID, data, script);
 	if (isDocXPCount)
@@ -293,45 +282,6 @@ ErrorCode KCMScriptProvider::ReadTransparencyItemCount(ScriptID propID, IScriptR
 	return this->ReturnInt32(count, propID, data, script);
 }
 
-ErrorCode KCMScriptProvider::WriteStoryReadCompare(ScriptID propID, IScriptRequestData* data,
-												  IScript* script)
-{
-	ScriptData inputData;
-	ErrorCode result = data->ExtractRequestData(propID, inputData);
-	if (result != kSuccess)
-		return result;
-
-	PMString command;
-	result = inputData.GetPMString(command);
-	if (result != kSuccess)
-		return result;
-	command.SetTranslatable(kFalse);
-
-	// ★"on" ARMS IT AND ANYTHING ELSE DISARMS IT - the same convention KIDMCP uses for
-	//   app.kmcpHttp. Case-insensitive, because a switch that answers differently to "On" is a
-	//   switch that will be reported as broken.
-	PMString armed;
-	armed.SetCString("on", PMString::kEncodingASCII);
-	armed.SetTranslatable(kFalse);
-
-	KCMSetStoryReadCompare((command.Compare(kFalse /*caseSensitive*/, armed) == 0) ? kTrue : kFalse);
-	return kSuccess;
-}
-
-//----------------------------------------------------------------------------------------
-ErrorCode KCMScriptProvider::ReadStoryReadCompare(ScriptID propID, IScriptRequestData* data,
-												 IScript* script)
-{
-	PMString report;
-	KCMGetStoryReadCompareReport(report);
-
-	ScriptData outputData;
-	outputData.SetWideString(WideString(report));
-	data->AppendReturnData(script, propID, outputData);
-	return kSuccess;
-}
-
-//----------------------------------------------------------------------------------------
 ErrorCode KCMScriptProvider::ReturnInt32(int32 value, ScriptID propID, IScriptRequestData* data,
 										 IScript* script)
 {

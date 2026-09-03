@@ -6,9 +6,10 @@
 //
 //  See KCMStoryDiffRun.h for what this is for and what it deliberately does not do.
 //
-//  The reading helpers (ComputedLength / Join / Slice, and the XML parsing that now lives in
-//  KCMSnippetText.h) came from KohakuTest's KTStoryDiff and work the same way. The comparison
-//  itself is NOT a straight port -- it does two things KT had no need of:
+//  The text is read straight from the text model (KCMTextRead); the helpers that cut and join
+//  it (Join / Slice, and the pure functions in KCMSnippetText.h) came from KohakuTest's KTStoryDiff
+//  and work the same way. The comparison itself is NOT a straight port -- it does two things KT
+//  had no need of:
 //
 //    1. IT WORKS OUT THE OLDER DOCUMENT'S POSITIONS TOO. KT selected in the front document
 //       only. Here a click moves both windows, so the source-side TextIndex has to exist.
@@ -40,13 +41,11 @@
 #include <vector>
 
 // Project includes:
-#include "KCMSnippetText.h"	// the snippet's text AND its ruby - see the note at "reading the text"
+#include "KCMSnippetText.h"	// KCMParaAttrs and the pure functions over paragraphs (Join / IndexInStory / SplitRunAtPlaces / SpansDiffer)
 #include "KCMStoryDiffRun.h"
-#include "KCMStoryCellBases.h"
-#include "KCMTextRead.h"		// the new reader, and the parallel run that checks it	// where a table's cells REALLY are -- see the note at LengthAgrees
+#include "KCMTextRead.h"		// the reader: paragraphs, their positions and their attributes, straight from the text model
 #include "KCMStoryList.h"
 #include "KCMStoryStamp.h"	// kKCMStoryKindAdded - which rows have no partner to compare against
-#include "KCMStoryXml.h"
 #include "KCMTextDiff.h"
 
 namespace
@@ -63,70 +62,21 @@ const int32 kExcerptCodePoints = 60;
 	opposite of what it is for. */
 const int32 kContextCodePoints = 14;
 
-// ---- reading the text out of the snippet ----------------------------------------------
+// ---- cutting the text up for the rows --------------------------------------------------
 //
-// AppendUtf8 / DecodeEntities / ExtractParagraphs live in KCMSnippetText.h. They turn one
-// string into another and touch nothing else, so out there they can be measured without
-// starting InDesign -- which is what RUBY made necessary: the parsing went from "find
-// <Content>" to a small XML reader carrying state, and a mistake in that is invisible from
-// here (a ruby missed reads as "nothing changed", which is the very bug this was written for).
-// Test = work\kescm-snippet-test, which builds those headers as they stand.
-
-/* ComputedLength
-   How long the story is according to the snippet, counted in CODE POINTS - the unit InDesign
-   counts text positions in, so this can be set against ITextModel::TotalLength as it stands (a
-   surrogate pair is one TextIndex). Every paragraph is followed by one break character,
-   including the last: a story always ends with one.
-
-   **IT ANSWERS THE TOTAL AND NOTHING ELSE.** It used to fill in a table of paragraph positions
-     as well, and not one of those numbers was ever read: KCMResolveParagraphPositions replaces
-     the whole table (BodyParagraphStarts assigns over it), on the no-cells path as much as on
-     any other. Where a paragraph BEGINS is that function's answer, and a second answer to one
-     question is a second thing to keep right ([[one-question-one-place]]) -- one that agrees
-     with the first only while no table is in the way, which is precisely the case the resolver
-     exists for.
-
-   **COUNTED WITH CountCodePoints, WHICH IS WHAT EVERY OTHER READER USES** -- BodyParagraphStarts,
-     IndexInStory, CellRunLength, and the test harness's own copy of this walk. It used to build a
-     vector of code points per paragraph and take its size, which is the same number for
-     well-formed UTF-8 and NOT the same for anything else (ToCodePoints counts a stray lead byte,
-     CountCodePoints does not). The length check is what refuses a story whose positions cannot be
-     trusted, so it has to count the way those positions are counted.
-*/
-int32 ComputedLength(const std::vector<std::string>& paragraphs,
-					 const std::vector<KCMParaAttrs>& attrs)
-{
-	int32 index = 0;
-	for (size_t i = 0; i < paragraphs.size(); ++i)
-	{
-		// **AND THE ONES STANDING IN FRONT OF IT.** A story that BEGINS with a table -- a frame
-		//   holding nothing but a table, which is the ordinary way to make one -- has the table's
-		//   character before its first paragraph, where there is no earlier paragraph to charge it
-		//   to. It used to be dropped, the story counted one short, and LengthAgrees below then
-		//   refused the whole thing (no text differences, no ruby). Only the first paragraph can
-		//   carry this -- see KCMParaAttrs::fLeadingChars.
-		if (i < attrs.size())
-			index += attrs[i].fLeadingChars;
-
-		index += KCMSnippetText::CountCodePoints(paragraphs[i]) + 1;
-
-		// **CHARACTERS THE TEXT MODEL COUNTS THAT THE TEXT DOES NOT SHOW** -- a table's own
-		//   character, and one at the end of every row but the last. Without them every position
-		//   after a table is short by that much, and LengthAgrees below refuses the whole story
-		//   rather than aim a jump at the wrong words. See KCMParaAttrs::fExtraChars.
-		if (i < attrs.size())
-			index += attrs[i].fExtraChars;
-	}
-
-	return index;
-}
-
-// Join lives in KCMSnippetText.h as JoinParagraphs. It is one half of a convention -- how far
-// apart two paragraphs are once they have been strung together -- and the other half
-// (IndexInStory, which turns an offset back into a document position) has to agree with it
-// EXACTLY. While they sat in different files only one of them knew that a table puts extra
-// characters at a paragraph boundary, and a change spanning such a boundary was placed one
-// character early. Both are now in the one header the test harness can build without InDesign.
+// The paragraphs, their positions and their attributes come from KCMTextRead, which asks the
+// text model. What stands here only cuts and joins strings. Join lives in KCMSnippetText.h as
+// JoinParagraphs: it is one half of a convention -- how far apart two paragraphs are once they
+// have been strung together -- and the other half (IndexInStory, which turns an offset back into
+// a document position) has to agree with it EXACTLY. Both are in the one header the test harness
+// (work\kescm-snippet-test) builds without InDesign.
+//
+// ⚠2026-09-03: the XML route is gone. Until then the story was exported as a snippet and parsed
+//   back out of the XML, every position was COUNTED and then checked against the document
+//   (ComputedLength / LengthAgrees / KCMStoryCellBases, five ways to refuse a story), and the
+//   parallel run that measured the migration stood here. Nothing counts any more, so none of that
+//   has anything to reconcile. The record of what it was and why it went:
+//   docs/superpowers/specs/2026-08-31-kcm-story-direct-read-design.md.
 
 /* MarkUpBreaks
    Turns the break characters into the marks InDesign itself draws with Show Hidden Characters on,
@@ -295,27 +245,6 @@ void Slice(const std::string& text, const std::vector<int32>& byteOffsets,
 		outPost += "\xE2\x80\xA6";
 }
 
-/* LengthAgrees
-   **THE CHECK THAT KEEPS A WRONG SELECTION FROM LOOKING LIKE A RIGHT ONE.**
-
-   Every position handed out below is counted from the XML. If the XML and the text model
-   disagree about how long the story is, every one of them is off by the difference -- and a
-   selection that lands on the wrong words looks exactly like one that landed on the right
-   words. There is no symptom to notice later, so it is caught here instead.
-
-   Measured in KohakuTest at 12,987 against 12,987 on a 60-paragraph story; this is the guard
-   for the case where that stops being true (a construct the paragraph reader does not know
-   about).
-*/
-bool16 LengthAgrees(const UIDRef& storyRef, int32 computed)
-{
-	InterfacePtr<ITextModel> model(storyRef, UseDefaultIID());
-	if (model == nil)
-		return kFalse;
-
-	return model->TotalLength() == computed;
-}
-
 // ---- one story --------------------------------------------------------------------------
 
 /* RunSide
@@ -325,11 +254,12 @@ bool16 LengthAgrees(const UIDRef& storyRef, int32 computed)
    **IT REPLACED A BARE `base`, AND THAT IS THE WHOLE OF THE FIX.** `base + offset` is right
    only while the joined text and the document agree about how far apart two paragraphs are,
    and a table makes them disagree -- its own character and its row terminators sit exactly at
-   a paragraph boundary (KCMParaAttrs::fExtraChars). A change covering two adjacent paragraphs
-   with one of those between them came out short, silently, and no length check could see it.
-   The run is asked instead of counted on, and the rule it answers with lives beside
-   JoinParagraphs in KCMSnippetText.h, where the two ends of the convention can be measured
-   against each other.
+   a paragraph boundary, and its cells stand past the end of the body. A change covering two
+   adjacent paragraphs with one of those between them came out short, silently, and no length
+   check could see it. The run is asked instead of counted on: every paragraph's start is a
+   TextIndex the reader took from the walk, and the rule that turns an offset into one lives
+   beside JoinParagraphs in KCMSnippetText.h, where the two ends of the convention can be
+   measured against each other.
 */
 struct RunSide
 {
@@ -834,7 +764,8 @@ bool16 CompareOneStory(const UIDRef& targetStory, const UIDRef& sourceStory,
 	//   back out of XML, and the positions counted from it then had to be checked against the
 	//   document's own answer - two sets of books, five ways to refuse a story, and a whole file
 	//   (KCMStoryCellBases) to reconcile them. **The document is now asked once, and its answer is
-	//   the only one.** ⇒ KCMTextRead.h carries why, and the parallel run that measured it.
+	//   the only one.** ⇒ KCMTextRead.h carries why; the parallel run that measured the switch is
+	//   gone with the old route (2026-09-03).
 	//
 	//   ⚠WHAT THIS CHANGES FOR THE READER, in one line each:
 	//   ・**a footnote no longer silences a story** - the parser did not know <Footnote> and folded
@@ -912,48 +843,26 @@ bool16 CompareOneStory(const UIDRef& targetStory, const UIDRef& sourceStory,
 	}
 
 	// Where each story ends, for a run that covers no paragraph of its own (an insertion past the
-	//   last one). ★**ASKED OF THE DOCUMENT.** ComputedLength used to work this number out by
-	//   adding up what the snippet said, and it needed KCMParaAttrs::fExtraChars to do it - a set
-	//   of counters that existed only because the positions came from somewhere other than the
-	//   model. Nothing counts any more, so nothing has to be reconciled.
+	//   last one). ★**ASKED OF THE DOCUMENT.** The total used to be added up from what the snippet
+	//   said, with a set of counters that existed only because the positions came from somewhere
+	//   other than the model. Nothing counts any more, so nothing has to be reconciled.
 	InterfacePtr<ITextModel> targetModel(targetStory, UseDefaultIID());
 	InterfacePtr<ITextModel> sourceModel(sourceStory, UseDefaultIID());
 	const int32 targetComputed = (targetModel != nil) ? targetModel->TotalLength() : 0;
 	const int32 sourceComputed = (sourceModel != nil) ? sourceModel->TotalLength() : 0;
 
-	// ⚠★★★**THE OTHER FOUR WAYS TO DECLINE ARE GONE, AND THE TWO THAT REMAIN CARRY A REASON.**
-	//   What used to stand here - ComputedLength, LengthAgrees, KCMResolveParagraphPositions, and
-	//   the parallel run that measured them - existed to reconcile positions counted from the XML
-	//   with the document's own. Nothing counts them any more, so there is nothing to reconcile
-	//   and nothing to refuse over: a story is either readable (above) or too different to place
-	//   (KCMTextDiff::Diff, further up). ⇒ **A row that shows nothing now means one of two things,
-	//   and both of them are known** - which was the point of the migration as much as the footnote
-	//   was (see the note in KCMTextRead.h on the two sets of books).
-	//
-	//   ⚠**THE OLD ROUTE ITSELF IS STILL HERE** (KCMStoryXml, KCMSnippetText::ExtractParagraphs,
-	//    KCMStoryCellBases, ComputedLength, LengthAgrees) - it is simply no longer called from
-	//    this path. Task 7 removes it. Keeping it one more step is deliberate: **if a regression
-	//    turns up, the two answers can still be put side by side** by turning the parallel run
-	//    back on where it stood.
-
-	// ★★★THE INSTRUMENT OUTLIVED WHAT IT MEASURED, AND IS KEPT AS A DUMP.
-	//   The parallel run compared the new route against the old one, and the old one is no longer
-	//   called - so **the instrument went away together with the thing it measured**. The very
-	//   next fault found after the switch (ScanRuby picking up the footnote marker, measured
-	//   2026-09-01) then had nothing to read it with.
-	//   ⇒ **EMPTY OLD LISTS ARE PASSED ON PURPOSE.** Every paragraph is then an "extra", which is
-	//     precisely the branch that prints WHAT THE NEW ROUTE READ - its place, its footnote and
-	//     its ruby spans. It is a dump, not a comparison, and the label says so.
-	//   ⚠OFF BY DEFAULT, and it re-reads each story once more when on: nobody pays for it unless
-	//    they are measuring. Task 7 decides whether it stays.
-	if (KCMStoryReadCompareIsOn())
-	{
-		const std::vector<std::string> noParas;
-		const std::vector<KCMParaAttrs> noAttrs;
-		const std::vector<int32> noStarts;
-		KCMCompareReadRoutes(targetStory, noParas, noAttrs, noStarts, "target(DUMP)");
-		KCMCompareReadRoutes(sourceStory, noParas, noAttrs, noStarts, "source(DUMP)");
-	}
+	// ⚠★★★**THERE ARE TWO WAYS TO DECLINE, AND BOTH CARRY A REASON.** A story is either
+	//   unreadable (ReadStory, above) or too different to place (KCMTextDiff::Diff, further up).
+	//   The XML route had five, and carried none of them back; a row with no children then meant
+	//   "nothing to show" or "I could not look" and nobody could tell which. ⇒ **A row that shows
+	//   nothing now means one of two known things** - which was the point of the migration as much
+	//   as the footnote was.
+	//   ★The old route, the checks that reconciled it (ComputedLength / LengthAgrees /
+	//     KCMStoryCellBases) and the parallel run that measured the switch were removed on
+	//     2026-09-03, after every pair in work/kcm-selftest agreed and the regression of
+	//     2026-09-01 (docs/ai-notes/kcm-story-direct-read-regression-2026-09-01.md) passed.
+	//     ⚠**With them went the only instrument that could dump what the reader read** - the user's
+	//     call; the reader's answer now reaches the outside only through the rows themselves.
 
 	for (size_t c = 0; c < paragraphChanges.size(); ++c)
 	{
@@ -1053,8 +962,8 @@ int32 KCMStoryDiffRun::Run(IDataBase* targetDB, IDataBase* sourceDB)
 		return 0;
 
 	// **THE GUARD BELONGS HERE, NOT AT THE CALLER** -- see the header for the two callers and
-	//   which one of them lacks it. Exporting a snippet can compose (asking for text that has
-	//   never been laid out lays it out), and composing sets the modified flag on a document this
+	//   which one of them lacks it. Reading a story can compose (asking for text that has never
+	//   been laid out lays it out), and composing sets the modified flag on a document this
 	//   feature only ever reads. KCM's whole premise is that comparing changes nothing.
 	IDataBase::SaveRestoreModifiedState targetDirtyGuard(targetDB);
 	IDataBase::SaveRestoreModifiedState sourceDirtyGuard(sourceDB);

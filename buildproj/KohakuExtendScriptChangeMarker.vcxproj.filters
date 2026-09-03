@@ -102,9 +102,6 @@
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMMemXferBytes.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMStoryXml.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMStoryDiffRun.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -153,9 +150,6 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMMemXferBytes.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMStoryXml.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMStoryKinds.h">

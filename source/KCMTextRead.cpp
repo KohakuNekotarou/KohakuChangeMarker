@@ -2,14 +2,13 @@
 //
 //  KCMTextRead.cpp
 //
-//  See KCMTextRead.h for what this is for and why the snippet's own order cannot be trusted for
-//  positions.
+//  See KCMTextRead.h for what this is for and why positions are taken from the walk, never counted.
 //
 //  The walk follows SnpInspectTextModel's InspectStoryThreads for its shape: QueryStoryThread
 //  hands back one thread at a time, and `position + span` steps to the next one. That single loop
-//  covers the body, every table cell and every footnote - which is the whole reason for the
-//  migration, because the XML route has to know each of those shapes by name and goes silent on
-//  the ones it does not.
+//  covers the body, every table cell and every footnote - which was the whole reason for the
+//  migration away from the snippet XML (gone since 2026-09-03), whose parser had to know each of
+//  those shapes by name and went silent on the ones it did not.
 //
 //========================================================================================
 
@@ -42,8 +41,7 @@
 
 #include <algorithm>
 #include <map>
-#include <boost/thread/recursive_mutex.hpp>	// the same shape KCMThreadSafety uses
-#include <sstream>
+#include <sstream>		// the kenten kind table's "unknown" spelling
 
 // Project includes:
 #include "KCMTextRead.h"
@@ -59,9 +57,10 @@ namespace
    it after a second top-level table that is written before it. The SDK states the rule at
    ITextStoryThreadDict::GetThreadBlockTextRange ("the location of the dictionary's thread block is
    determined by the location of the dictionary's anchor relative to other dictionaries"), and it
-   is the order the XML is written in, which is the order KCMSnippetText numbers tables in.
-   ⚠KCMStoryCellBases learned this the hard way (see EarlierBlock there); the same rule is kept
-    here so that the two routes number the same table the same way while both exist.
+   is the order the XML was written in, which is the order the snippet route numbered tables in.
+   ⚠KCMStoryCellBases (the reconciler of that route, gone since 2026-09-03) learned this the hard
+    way; the rule is kept here because fTableOrdinal is what SplitRunAtPlaces tells cells apart by,
+    and two versions of one document have to number the same table the same way.
 */
 struct TableAt
 {
@@ -77,9 +76,9 @@ bool16 EarlierBlock(const TableAt& a, const TableAt& b)
 /* CellPlace
    Where one cell's text begins, and which cell it is.
 
-   ★THE DOCUMENT IS ASKED, NOT COUNTED - GetTextStart() on the cell's own thread. That is the whole
-   difference from the XML route, which counts down the snippet and then has to check the total
-   against the model (and refuses the story when they disagree).
+   ★THE DOCUMENT IS ASKED, NOT COUNTED - GetTextStart() on the cell's own thread. That was the whole
+   difference from the XML route, which counted down the snippet and then had to check the total
+   against the model (and refused the story when they disagreed).
 */
 struct CellPlace
 {
@@ -255,7 +254,8 @@ bool16 IsFootnoteMarkerOnly(const WideString& w)
     @warning the header calls that count "the distance from position to the end of the STRAND"
       (IRubyStrand.h:50), but the official walk treats it as the distance to the end of the RUN and
       steps by it - which is the only reading under which its loop terminates anywhere but the end
-      of the story. The snippet is followed here, and the parallel run is what says it was right.
+      of the story. The snippet is followed here, and the parallel run of the migration (gone with
+      the old route) measured it right on every ruby pair (2026-09-01).
 
    ⚠THE WHOLE STORY, NOT JUST THE BODY - unlike KIDMCP's reader of the same shape, which stops at
     the body because it compares cells as little stories of their own. Here the cells' text is read
@@ -596,9 +596,9 @@ bool16 KCMTextRead::ReadStory(const UIDRef& storyRef,
 							  std::vector<KCMParaAttrs>& outAttrs,
 							  std::vector<int32>& outStarts)
 {
-	// **EMPTIED FIRST, ALL THREE.** The caller may hand in vectors that already hold the other
-	// route's answer (that is exactly what KCMCompareReadRoutes does), and a reader that appended
-	// would silently report agreement on a doubled list.
+	// **EMPTIED FIRST, ALL THREE.** A caller may hand in vectors that already hold something (the
+	// migration's parallel run handed in the other route's answer), and a reader that appended
+	// would silently report a doubled list.
 	outParas.clear();
 	outAttrs.clear();
 	outStarts.clear();
@@ -664,8 +664,10 @@ bool16 KCMTextRead::ReadStory(const UIDRef& storyRef,
 			//   THE BODY IS THE ONE THAT STARTS AT ZERO - every other thread of a story hangs off
 			//   something standing in it. ⚠That is the whole of the test, and it is worth saying
 			//   plainly: a shape this walk has never met would be counted as a footnote here.
-			//   The parallel run is what would say so (it prints the place of every paragraph),
-			//   and the three footnote pairs are what proved the shape it does meet.
+			//   The three footnote pairs (work/kcm-selftest/footnote) proved the shape it does
+			//   meet; ⚠nothing prints the place of every paragraph any more (the parallel run did,
+			//   and went with the old route on 2026-09-03), so an unmet shape would show up only as
+			//   a row cut in an odd place.
 			//
 			//   ★THEY ARE READ AS PARAGRAPHS LIKE ANY OTHERS AND KEEP THEIR REAL TextIndex, which
 			//   is what the XML route could never do: IDMS and .icml both put a footnote's text in
@@ -697,10 +699,9 @@ bool16 KCMTextRead::ReadStory(const UIDRef& storyRef,
 
 			// ★A TABLE'S OWN CHARACTERS ARE NOT TEXT, BUT THEY ARE POSITIONS. The model holds
 			//   kTextChar_Table for the anchor plus one kTextChar_TableContinued per row after the
-			//   first; the snippet holds none of them, so leaving them in would make every
-			//   paragraph text differ from the old route's. They still move the index, and a
-			//   paragraph standing behind one starts AFTER it - which is where the old route puts
-			//   it too (KCMStoryCellBases adds fLeadingChars before recording the start).
+			//   first; they are not text, so they are not put into the paragraph (the panel would
+			//   show them as a gap, and the diff would count them as characters that changed).
+			//   They still move the index, and a paragraph standing behind one starts AFTER it.
 			//   ⚠★★★THEY DO NOT ALWAYS SIT AT A PARAGRAPH BOUNDARY, whatever the rest of the diff
 			//     assumes (KCMStoryDiffRun, at RunSide). MEASURED 2026-09-01: inserting a table at
 			//     the third insertion point of "あいうえ" leaves ONE paragraph reading
@@ -750,288 +751,6 @@ bool16 KCMTextRead::ReadStory(const UIDRef& storyRef,
 	}
 
 	return kTrue;
-}
-
-//----------------------------------------------------------------------------------------
-//  The parallel run. See the header for why it exists and why it is off by default.
-//
-//  **File-scope statics, not function-local ones** - guide vol1-07 names function-local statics
-//  as the thing to remove, and KCMThreadSafety follows the same rule for its mutex.
-//----------------------------------------------------------------------------------------
-
-static boost::recursive_mutex	sKCMReadCompareMutex;
-static bool16					sKCMReadCompareOn = kFalse;
-static std::string				sKCMReadCompareReport;
-
-/** How many disagreements are spelt out in full before the report stops describing them.
-
-	★THE COUNT IS NOT CAPPED, ONLY THE DESCRIPTION. "How many differ" and "which ones" are two
-	questions, and capping the first is how an instrument stops being able to raise an alarm.
-*/
-static const size_t kKCMMaxDetails = 12;
-
-//----------------------------------------------------------------------------------------
-bool16 KCMStoryReadCompareIsOn()
-{
-	boost::recursive_mutex::scoped_lock lock(sKCMReadCompareMutex);
-	return sKCMReadCompareOn;
-}
-
-//----------------------------------------------------------------------------------------
-void KCMSetStoryReadCompare(bool16 on)
-{
-	boost::recursive_mutex::scoped_lock lock(sKCMReadCompareMutex);
-	sKCMReadCompareOn = on;
-
-	// **CLEARED EITHER WAY.** A report left over from the last run, read after a re-arm, would be
-	// answering about a comparison the reader is no longer looking at.
-	sKCMReadCompareReport.clear();
-}
-
-//----------------------------------------------------------------------------------------
-void KCMGetStoryReadCompareReport(PMString& out)
-{
-	boost::recursive_mutex::scoped_lock lock(sKCMReadCompareMutex);
-
-	const char* const text = sKCMReadCompareReport.empty()
-							 ? (sKCMReadCompareOn ? "armed, nothing compared yet" : "off")
-							 : sKCMReadCompareReport.c_str();
-
-	// ⚠NOT TRANSLATABLE. It is a diagnostic, and a PMString built from a c-string is treated as a
-	//   translation key unless it is told otherwise.
-	out.SetCString(text, PMString::kEncodingASCII);
-	out.SetTranslatable(kFalse);
-}
-
-//----------------------------------------------------------------------------------------
-void KCMCompareReadRoutes(const UIDRef& storyRef,
-						  const std::vector<std::string>& oldParas,
-						  const std::vector<KCMParaAttrs>& oldAttrs,
-						  const std::vector<int32>& oldStarts,
-						  const char* which)
-{
-	std::vector<std::string> newParas;
-	std::vector<KCMParaAttrs> newAttrs;
-	std::vector<int32> newStarts;
-
-	const bool16 read = KCMTextRead::ReadStory(storyRef, newParas, newAttrs, newStarts);
-
-	std::ostringstream line;
-	line << which << ": ";
-
-	if (!read)
-	{
-		line << "NEW ROUTE COULD NOT READ THE STORY (old had " << oldParas.size() << " paragraphs)";
-	}
-	else
-	{
-		// ★★★THE TWO ROUTES DO NOT AGREE ON ORDER, AND THAT IS BY DESIGN.
-		//   The snippet puts a table's cells where the table STANDS, so the old route reads
-		//   body, body, cell, cell, cell, cell, body. The text model keeps cells PAST the body
-		//   (ITableTextContent.h), so the new route reads body, body, body, cell, cell, cell, cell.
-		//   Both lists are complete and both carry the right TextIndex for every paragraph - they
-		//   are the same set in a different sequence.
-		//   ⇒ **MATCHED BY POSITION, NOT BY INDEX.** Comparing entry i against entry i reported
-		//     every paragraph after the first table as different while nothing was wrong at all
-		//     (measured 2026-08-31: tablepost came back "DIFFER text=5 start=5 place=5 of 7", and
-		//     reading the detail showed the two lists were the same paragraphs, shifted by one).
-		//   ⚠THE ORDER IS STILL REPORTED, because the diff downstream walks these lists IN ORDER.
-		//     "The same set" is what makes the positions trustworthy; "the same sequence" is a
-		//     different question, and the migration has to answer both.
-		std::map<int32, size_t> oldByStart;
-		std::map<int32, size_t> newByStart;
-		for (size_t i = 0; i < oldStarts.size() && i < oldParas.size(); ++i)
-			oldByStart[oldStarts[i]] = i;
-		for (size_t i = 0; i < newStarts.size() && i < newParas.size(); ++i)
-			newByStart[newStarts[i]] = i;
-
-		size_t missing = 0, extra = 0, textDiffs = 0, placeDiffs = 0, rubyDiffs = 0, kentenDiffs = 0;
-		std::ostringstream detail;
-		size_t shown = 0;
-
-		for (std::map<int32, size_t>::const_iterator it = newByStart.begin();
-			 it != newByStart.end(); ++it)
-		{
-			const std::map<int32, size_t>::const_iterator o = oldByStart.find(it->first);
-			if (o == oldByStart.end())
-			{
-				++extra;
-				if (shown < kKCMMaxDetails)
-				{
-					++shown;
-					detail << " [+" << it->first;
-
-					// ★★★THE NEW ROUTE'S OWN ANSWER, PRINTED WHERE THERE IS NOTHING TO COMPARE IT
-					//   AGAINST - which is precisely the case where it most needs reading. The old
-					//   route REFUSES a story outright when its length does not add up, and one of
-					//   the shapes it refuses is the very shape this file corrects positions for:
-					//   a table standing INSIDE a paragraph (measured 2026-09-01, work/kcm-
-					//   selftest/midtable - "stories changed=0 edits=0"). Without this the report
-					//   could only say "the old route said nothing", and the correction would ship
-					//   having never been read by anything.
-					//   ⚠POSITIONS AND LENGTHS ONLY, never the readings - the same rule the rest of
-					//    this report keeps (KCMTextRead.h: it names positions, not text).
-					const size_t ni = it->second;
-					if (ni < newAttrs.size() && newAttrs[ni].IsFootnote())
-						detail << " fn" << newAttrs[ni].fFootnoteOrdinal;
-
-					if (ni < newAttrs.size() && !newAttrs[ni].fRuby.empty())
-					{
-						detail << " ruby";
-						for (size_t r = 0; r < newAttrs[ni].fRuby.size(); ++r)
-							detail << (r == 0 ? ":" : ",") << newAttrs[ni].fRuby[r].fStart
-								   << "+" << newAttrs[ni].fRuby[r].fLen;
-					}
-
-					if (ni < newAttrs.size() && !newAttrs[ni].fKenten.empty())
-					{
-						detail << " kenten";
-						for (size_t k = 0; k < newAttrs[ni].fKenten.size(); ++k)
-							detail << (k == 0 ? ":" : ",") << newAttrs[ni].fKenten[k].fStart
-								   << "+" << newAttrs[ni].fKenten[k].fLen;
-					}
-
-					detail << "]";
-				}
-				continue;
-			}
-
-			const size_t ni = it->second;
-			const size_t oi = o->second;
-
-			const bool16 sameText = (oldParas[oi] == newParas[ni]) ? kTrue : kFalse;
-
-			// ⚠THE PLACE IS PART OF "THE SAME ANSWER". SplitRunAtPlaces cuts rows by it, so two
-			//   readers that agree on every character and every position can still put a row in the
-			//   wrong place if they disagree here.
-			//   ⚠★★THE FOOTNOTE IS ASKED ABOUT TOO, AND THE TWO ROUTES ARE EXPECTED TO DISAGREE:
-			//    the snippet parser does not know <Footnote> at all, so it answers kNotAFootnote
-			//    for text that IS in one. **That disagreement is the fault being fixed, printed
-			//    rather than hidden** - and it can only be seen at all on a story the old route
-			//    still consents to read.
-			const bool16 samePlace = (oi < oldAttrs.size() && ni < newAttrs.size()
-									  && oldAttrs[oi].fTableOrdinal == newAttrs[ni].fTableOrdinal
-									  && oldAttrs[oi].fCellRow == newAttrs[ni].fCellRow
-									  && oldAttrs[oi].fCellCol == newAttrs[ni].fCellCol
-									  && oldAttrs[oi].fFootnoteOrdinal == newAttrs[ni].fFootnoteOrdinal)
-									 ? kTrue : kFalse;
-
-			// ⚠★★★THE RUBY IS PART OF "THE SAME ANSWER" AS WELL, AND UNTIL IT WAS ASKED FOR HERE
-			//   THE PARALLEL RUN ANSWERED "agree" ABOUT A READER THAT HAD NEVER READ ANY.
-			//   Measured 2026-09-01 on the ruby-only pair (work/kescm-selftest/rubytest, whose two
-			//   versions carry the SAME 59 characters and differ in nothing but their ruby): the
-			//   comparison reported edits=5 while this said "agree (5 paragraphs)" in the same
-			//   breath. ★A CHECK THAT CANNOT FAIL IS NOT A MEASUREMENT - it is the shape of
-			//   [[investigate-with-tools-not-shell]]'s rule, met here: "0 differences" was a
-			//   product of what was being asked, not of what the two routes held.
-			//   The list is the one the panel itself compares (KCMSnippetText::SpansDiffer), so a
-			//   disagreement here is exactly a disagreement the user would have seen reported.
-			const bool16 sameRuby = (oi < oldAttrs.size() && ni < newAttrs.size()
-									 && !KCMSnippetText::SpansDiffer(oldAttrs[oi].fRuby,
-																	 newAttrs[ni].fRuby)) ? kTrue : kFalse;
-
-			// ★KENTEN IS ASKED FOR THE SAME REASON AS THE RUBY ABOVE, and the rule that made it
-			//   necessary is now written down: **a value added to KCMParaAttrs is added to this
-			//   report in the same sitting.** Skip it and the two routes are declared to agree
-			//   about a field neither of them was asked about - the exact state the ruby was in
-			//   until 2026-09-01.
-			//   ⚠THE TWO ROUTES SPELL THE KIND DIFFERENTLY BY NATURE: the snippet parser copies
-			//    the XML's word ("KentenBlackCircle"), this file uses the SDK's own table
-			//    ("BlackCircle"). A run of this report over a document that HAS kenten will
-			//    therefore report kenten differences that are not faults - the spans line up, the
-			//    spelling does not. The counts and positions are what to read there.
-			const bool16 sameKenten = (oi < oldAttrs.size() && ni < newAttrs.size()
-									   && !KCMSnippetText::SpansDiffer(oldAttrs[oi].fKenten,
-																	   newAttrs[ni].fKenten)) ? kTrue : kFalse;
-
-			if (!sameText) ++textDiffs;
-			if (!samePlace) ++placeDiffs;
-			if (!sameRuby) ++rubyDiffs;
-			if (!sameKenten) ++kentenDiffs;
-
-			if ((!sameText || !samePlace || !sameRuby || !sameKenten) && shown < kKCMMaxDetails)
-			{
-				++shown;
-				detail << " [@" << it->first << ":";
-				if (!sameText)
-					detail << "text(len " << oldParas[oi].size() << "/" << newParas[ni].size() << ")";
-				if (!sameRuby)
-				{
-					// ⚠THE COUNT OF SPANS, NOT THE READINGS. The readings are the document's
-					//   words, and this report crosses into a script as ASCII (KCMTextRead.h).
-					const size_t oldSpans = (oi < oldAttrs.size()) ? oldAttrs[oi].fRuby.size() : 0;
-					const size_t newSpans = (ni < newAttrs.size()) ? newAttrs[ni].fRuby.size() : 0;
-					detail << "ruby(" << oldSpans << "/" << newSpans << ")";
-				}
-				if (!sameKenten)
-				{
-					// ⚠SPAN COUNTS, NOT KINDS - the same rule as the ruby just above, and here it
-					//   also keeps the two routes' different spellings out of a report that is read
-					//   as ASCII by a script.
-					const size_t oldSpans = (oi < oldAttrs.size()) ? oldAttrs[oi].fKenten.size() : 0;
-					const size_t newSpans = (ni < newAttrs.size()) ? newAttrs[ni].fKenten.size() : 0;
-					detail << "kenten(" << oldSpans << "/" << newSpans << ")";
-				}
-				if (!samePlace)
-					// table, row, column, footnote - old side, then new side.
-					detail << "place(" << (oi < oldAttrs.size() ? oldAttrs[oi].fTableOrdinal : -9)
-						   << "," << (oi < oldAttrs.size() ? oldAttrs[oi].fCellRow : -9)
-						   << "," << (oi < oldAttrs.size() ? oldAttrs[oi].fCellCol : -9)
-						   << ",fn" << (oi < oldAttrs.size() ? oldAttrs[oi].fFootnoteOrdinal : -9)
-						   << "/" << (ni < newAttrs.size() ? newAttrs[ni].fTableOrdinal : -9)
-						   << "," << (ni < newAttrs.size() ? newAttrs[ni].fCellRow : -9)
-						   << "," << (ni < newAttrs.size() ? newAttrs[ni].fCellCol : -9)
-						   << ",fn" << (ni < newAttrs.size() ? newAttrs[ni].fFootnoteOrdinal : -9) << ")";
-				detail << "]";
-			}
-		}
-
-		for (std::map<int32, size_t>::const_iterator it = oldByStart.begin();
-			 it != oldByStart.end(); ++it)
-		{
-			if (newByStart.find(it->first) == newByStart.end())
-			{
-				++missing;
-				if (shown < kKCMMaxDetails)
-				{
-					++shown;
-					detail << " [-" << it->first << "]";
-				}
-			}
-		}
-
-		// The sequence, asked separately from the set.
-		size_t orderDiffs = 0;
-		const size_t common = (oldStarts.size() < newStarts.size()) ? oldStarts.size() : newStarts.size();
-		for (size_t i = 0; i < common; ++i)
-		{
-			if (oldStarts[i] != newStarts[i])
-				++orderDiffs;
-		}
-
-		if (missing == 0 && extra == 0 && textDiffs == 0 && placeDiffs == 0 && rubyDiffs == 0 &&
-			kentenDiffs == 0)
-		{
-			line << "agree (" << newParas.size() << " paragraphs";
-			if (orderDiffs != 0)
-				line << ", " << orderDiffs << " in a different ORDER - expected where a table stands";
-			line << ")";
-		}
-		else
-		{
-			line << "DIFFER missing=" << missing << " extra=" << extra
-				 << " text=" << textDiffs << " place=" << placeDiffs << " ruby=" << rubyDiffs
-				 << " kenten=" << kentenDiffs
-				 << " of " << newParas.size() << " (order " << orderDiffs << ")" << detail.str();
-			if (shown == kKCMMaxDetails)
-				line << " ...";
-		}
-	}
-
-	boost::recursive_mutex::scoped_lock lock(sKCMReadCompareMutex);
-	if (!sKCMReadCompareReport.empty())
-		sKCMReadCompareReport += "\n";
-	sKCMReadCompareReport += line.str();
 }
 
 // End, KCMTextRead.cpp.
