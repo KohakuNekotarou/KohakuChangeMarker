@@ -1163,6 +1163,23 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKCMBookRowStartMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
+		// ----- The panel tool button's flyout (2026-09-04) -----
+		// Held down, the panel's tool button raises this two-item menu so that either tool can be
+		// picked by name (KCMToolButtonEH::LButtonUp -> IMenuManager::HandlePopupMenu). It is the
+		// toolbox's press-and-hold in the only shape a plug-in can build: ⚠**the toolbox draws its
+		// own flyout and publishes no way to raise one** -- IToolBoxUtils has ten methods and none
+		// of them is about flyouts -- so this is a popup MENU rather than a strip of icons.
+		// ★The items are listed parent-then-subtool, the order the toolbox itself uses.
+		kKCMFlyoutPickToolActionID,
+		kKCMToolFlyoutMenuName,
+		kKCMFlyoutPickToolMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
+		kKCMFlyoutPickPawToolActionID,
+		kKCMToolFlyoutMenuName,
+		kKCMFlyoutPickPawToolMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
 		// ----- The Story Edits rows: right-click menu (2026-08-21) -----
 		// A second menu of its own, on the same machinery as the chapter rows above
 		// (KCMStoryRowEH::RButtonDn -> IMenuManager::HandlePopupMenu with this subtree's name).
@@ -1442,6 +1459,30 @@ resource ActionDef (kSDKDefActionResourceID)
 		kOtherActionArea,
 		kNormalAction,
 		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates enables only when both books resolve (front tab + one other)
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		// The two items of the panel tool button's flyout (2026-09-04). They pick a tool by name, so
+		// ★the LABELS ARE THE TOOL NAMES THEMSELVES -- the very string keys ITool::Init passes to
+		// SetName, which is what makes the menu, the tooltip and the toolbox read alike
+		// ([[one-question-one-place]]).
+		// ⚠No kCustomEnabling: a tool can always be picked, and greying the one already active
+		// would hide it from a menu whose whole job is to show what there is.
+		kKCMActionComponentBoss,
+		kKCMFlyoutPickToolActionID,
+		kKCMToolStringKey,
+		kOtherActionArea,
+		kNormalAction,
+		kDisableIfLowMem,
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		kKCMActionComponentBoss,
+		kKCMFlyoutPickPawToolActionID,
+		kKCMPawToolStringKey,
+		kOtherActionArea,
+		kNormalAction,
+		kDisableIfLowMem,
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 

@@ -6,10 +6,16 @@
 //  there is nothing to follow afterwards, so BeginTracking answers kFalse ＝ the single-shot
 //  shape of sdksamples/snapshot, whose tracker likewise does its whole job in BeginTracking.
 //
-//  ★THREE GESTURES (2026-09-04, the user's choice after using the first build):
-//      plain press    place an ordinary paw
-//      Shift + press  lift the paw under the point
-//      Alt + press    place a big one (kKCMPawBigScale)
+//  ★FOUR GESTURES (2026-09-04, the user's choices while using the builds):
+//      plain press          place a PINK paw
+//      Alt + press          place a CYAN one
+//      Shift + Alt + press  place a GREEN one
+//      Shift + press        lift the paw under the point
+//    ⚠★★Alt CHANGED THE SIZE for about an hour (1.6x, then 10x, then 5x) before the user replaced
+//      the idea with colour: a bigger paw is the same mark drawn larger, a different colour is a
+//      different KIND of mark. Every paw is the ordinary size now.
+//    ⚠★The lift is the gesture that has to test BOTH keys -- Shift alone lifts, Shift with Alt
+//      places -- so `if (shift)` on its own would eat the green paw.
 //    ⚠★★A PLAIN PRESS NEVER LIFTS ANY MORE. It was a toggle for one day, and the fault showed
 //      within minutes of first use: putting paws down in a row, the second press near the first
 //      took the first one off. Placing and lifting are two intentions, so they are two gestures.
@@ -47,7 +53,7 @@
 
 #include "KCMUIID.h"
 #include "KCMUIShared.h"			// KCMSetStatus -- the panel's status line
-#include "KCMConstants.h"			// kKCMPawBigScale / kKCMPawNormalScale -- what Alt is worth
+#include "KCMConstants.h"			// KCMPawColour -- what the modifier keys choose between
 #include "IKCMPageFlagsFacade.h"	// ★the ONLY way across to the store: place / lift / count / size
 #include "IKCMCompareFacade.h"		// InvalidateDB -- repaint the document that was pressed
 
@@ -247,25 +253,34 @@ bool16 KCMPawTracker::BeginTracking(IEvent* theEvent)
 		}
 		else
 		{
-			// ★Shift wins over Alt: lifting has no size, so the combination has nothing to mean.
+			// ★★THE FOUR GESTURES. ⚠SHIFT ALONE LIFTS, but Shift WITH Alt places a green one --
+			//   so the lift is the one combination that has to test BOTH keys. Reading Shift on
+			//   its own would swallow the green paw before it was ever placed.
+			const bool16 shiftDown = theEvent->ShiftKeyDown();
+			const bool16 altDown   = theEvent->OptionAltKeyDown();
+
 			bool16 changed = kFalse;
-			if (theEvent->ShiftKeyDown())
+			if (shiftDown && !altDown)
 			{
 				changed = flags->PawStampLiftAt(db, pageUID, x, y, half);
 				msg = changed ? "Paw lifted (" : "Paw: none under that point (";
 			}
 			else
 			{
-				const bool16 big = theEvent->OptionAltKeyDown();
-				changed = flags->PawStampPlaceAt(db, pageUID, x, y,
-				                                 big ? kKCMPawBigScale : kKCMPawNormalScale, half);
-				// ⚠Three outcomes, not two: a press that lands on a paw already there places
+				int32 colour = kKCMPawColourPink;
+				if (altDown)
+					colour = shiftDown ? kKCMPawColourGreen : kKCMPawColourCyan;
+
+				changed = flags->PawStampPlaceAt(db, pageUID, x, y, colour, half);
+				// ⚠Four outcomes, not three: a press that lands on a paw already there places
 				//   nothing, and saying "placed" then would be a lie the count does not correct
 				//   (the count is unchanged, which is exactly what a slip looks like).
 				if (!changed)
 					msg = "Paw: one is already there (";
-				else if (big)
-					msg = "Big paw placed (";
+				else if (colour == kKCMPawColourGreen)
+					msg = "Green paw placed (";
+				else if (colour == kKCMPawColourCyan)
+					msg = "Cyan paw placed (";
 				else
 					msg = "Paw placed (";
 			}

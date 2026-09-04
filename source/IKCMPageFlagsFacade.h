@@ -79,9 +79,9 @@ public:
 	//   ui/KCMPawTracker.cpp calling KCMPawStampToggleAt() directly does not link (measured
 	//   2026-09-04: LNK2019, three unresolved symbols). **Every crossing is a facade method.**
 
-	/** Place a paw at (x, y) on that page. scale is a multiple of the page's ordinary paw size
-		(kKCMPawNormalScale for a plain press, kKCMPawBigScale for Alt); baseHalf is half that
-		ordinary size, the same value the lift takes.
+	/** Place a paw at (x, y) on that page, in one of the three colours (a KCMPawColour: pink for a
+		plain press, cyan for Alt, green for Shift+Alt). baseHalf is half a paw's size on that
+		page, the same value the lift takes.
 		★x and y are measured from the PAGE'S TOP-LEFT in points, never in pasteboard coordinates
 		  -- KCMPawStamp.h carries the measurement that makes that a requirement.
 		★★IT ONLY ADDS, AND IT WILL NOT STACK. Placing and lifting are two intentions and
@@ -89,11 +89,11 @@ public:
 		  the user's request on 2026-09-04.
 		@return kTrue when one was placed, kFalse when a paw was already under that point. */
 	virtual bool16	PawStampPlaceAt(IDataBase* db, UID pageUID, const PMReal& x, const PMReal& y,
-	                                const PMReal& scale, const PMReal& baseHalf) = 0;
+	                                int32 colour, const PMReal& baseHalf) = 0;
 
-	/** Lift the paw under (x, y) -- Shift + press. baseHalf is half the page's ORDINARY paw size
-		(PawHalfSizeForPage); each paw is judged over a SQUARE of that times its own scale, so a
-		big paw is lifted by pressing anywhere on the big paw.
+	/** Lift the paw under (x, y) -- Shift + press (without Alt, which places a green one).
+		baseHalf is half a paw's size on that page (PawHalfSizeForPage); a paw is judged over a
+		SQUARE of that, so what can be seen is what can be lifted.
 		@return kTrue when one was lifted, kFalse when the press landed on none. */
 	virtual bool16	PawStampLiftAt(IDataBase* db, UID pageUID, const PMReal& x, const PMReal& y,
 	                               const PMReal& baseHalf) = 0;

@@ -84,8 +84,8 @@ static KCMPawMap::iterator KCMPawFindDoc(IDataBase* db)
 //    sits 1.41 times the radius from the centre, so the square is the more forgiving of the two
 //    and a press a little wide of a paw still finds it. For a mark you drop by hand and take off
 //    by hand, forgiving is the right way to be wrong.
-//  ★Each paw is judged at ITS OWN size -- the page's ordinary half-size times the scale it was
-//    placed at -- so a big paw answers over its whole reach and a small one over its own.
+//  ★Every paw is the same size, so one half-size serves them all. (It was per-stamp while the
+//    modifier keys changed the SIZE; they choose the COLOUR now, and colour has no reach.)
 //  ★Backwards, so where paws overlap the one placed LAST is found: that makes repeated pressing
 //    behave like undo rather than a lottery.
 static int32 KCMPawIndexAt(const std::vector<KCMPawStamp>& v, UID pageUID,
@@ -96,17 +96,16 @@ static int32 KCMPawIndexAt(const std::vector<KCMPawStamp>& v, UID pageUID,
 		if (v[i].fPageUID != pageUID)
 			continue;
 
-		const PMReal half = baseHalf * v[i].fScale;
-		const PMReal dx   = v[i].fX - x;
-		const PMReal dy   = v[i].fY - y;
-		if (dx >= -half && dx <= half && dy >= -half && dy <= half)
+		const PMReal dx = v[i].fX - x;
+		const PMReal dy = v[i].fY - y;
+		if (dx >= -baseHalf && dx <= baseHalf && dy >= -baseHalf && dy <= baseHalf)
 			return i;
 	}
 	return -1;
 }
 
 bool16 KCMPawStampPlaceAt(IDataBase* db, UID pageUID, const PMReal& x, const PMReal& y,
-                          const PMReal& scale, const PMReal& baseHalf)
+                          int32 colour, const PMReal& baseHalf)
 {
 	if (db == nil || pageUID == kInvalidUID)
 		return kFalse;
@@ -128,7 +127,7 @@ bool16 KCMPawStampPlaceAt(IDataBase* db, UID pageUID, const PMReal& x, const PMR
 	//   fault in it within minutes of first use: putting paws down in a row, the second press near
 	//   the first took the first one off. Placing and lifting are two intentions, so they are two
 	//   gestures -- plain press and Shift + press.
-	sPaws[db].push_back(KCMPawStamp(pageUID, x, y, scale));
+	sPaws[db].push_back(KCMPawStamp(pageUID, x, y, colour));
 	return kTrue;
 }
 

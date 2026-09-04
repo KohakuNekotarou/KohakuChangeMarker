@@ -44,6 +44,14 @@
 #include "BuildNumber.h"
 #include "KCMUIID.h"
 
+// The two pictures the panel's press-and-hold flyout puts beside its names. They are WIN32
+// bitmaps because MENUITEMINFO.hbmpItem takes an HBITMAP, which no InDesign PNG resource can
+// supply -- so these live here, in the plug-in's own Win32 resources, rather than in KCMUI.fr.
+// Made by work/kcm-make-paw-icons.ps1 (Save-MenuBitmap): 16x16, premultiplied, and with the
+// luminance inverted so that near-white toolbox artwork reads on a light system menu.
+kKCMToolMenuBitmapID    BITMAP  "KCM_ToolMenu_16.bmp"
+kKCMPawToolMenuBitmapID BITMAP  "KCM_PawToolMenu_16.bmp"
+
 1 VERSIONINFO
  FILEVERSION kMajorVersionNumberForResource, kMinorVersionNumberForResource, 0, kBuildNumber
  PRODUCTVERSION kMajorVersionNumberForResource, kMinorVersionNumberForResource, 0, 0

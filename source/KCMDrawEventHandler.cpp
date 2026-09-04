@@ -1578,10 +1578,9 @@ static void KCMDrawPawStamps(IGraphicsPort* gPort, IDataBase* db, UID pageUID,
 
 	// ★The size is asked of the very function the tracker's hit box comes from, so what is drawn
 	//   is exactly what can be lifted. That one answers the HALF size; a paw's own s is twice it.
-	//   This is the page's ORDINARY size -- each stamp multiplies it by the scale it was placed at
-	//   (kKCMPawBigScale for an Alt press), which the hit test reads from the same field.
-	const PMReal baseS = KCMPawHalfSizeForPage(db, pageUID) * PMReal(2.0);
-	if (baseS < PMReal(0.5))
+	//   ★Every paw is this size: the modifier keys choose the COLOUR, not the size.
+	const PMReal s = KCMPawHalfSizeForPage(db, pageUID) * PMReal(2.0);
+	if (s < PMReal(0.5))
 		return;
 
 	const PMReal opacity = (drawMode == kKCMDrawModePrint)
@@ -1592,10 +1591,23 @@ static void KCMDrawPawStamps(IGraphicsPort* gPort, IDataBase* db, UID pageUID,
 	// that this rectangle is being touched -- the reasoning is written out in KCMDrawPageCheck.
 	gPort->rectclip(pr);
 	gPort->setopacity(opacity, kFalse);		// constant opacity, not shape alpha -- as every other mark here
-	gPort->setrgbcolor(kKCMPawR / PMReal(255.0), kKCMPawG / PMReal(255.0), kKCMPawB / PMReal(255.0));
 
 	for (size_t i = 0; i < paws.size(); ++i)
 	{
+		// ★★THE COLOUR IS SET INSIDE THE LOOP, because it belongs to the stamp and not to the page:
+		//   pink, cyan and green paws sit on one page at the same time, which is the whole reason
+		//   for having three. ⚠Hoisting this out of the loop would paint them all alike.
+		uint8 cr = kKCMPawR, cg = kKCMPawG, cb = kKCMPawB;			// a plain press
+		if (paws[i].fColour == kKCMPawColourCyan)
+		{
+			cr = kKCMPawCyanR;  cg = kKCMPawCyanG;  cb = kKCMPawCyanB;
+		}
+		else if (paws[i].fColour == kKCMPawColourGreen)
+		{
+			cr = kKCMPawGreenR; cg = kKCMPawGreenG; cb = kKCMPawGreenB;
+		}
+		gPort->setrgbcolor(cr / PMReal(255.0), cg / PMReal(255.0), cb / PMReal(255.0));
+
 		// ★A stamp is stored as an offset from the PAGE'S TOP-LEFT. That is what lets it survive a
 		//   page being added or removed, AND what makes this addition right in spread coordinates
 		//   even though the press was read in pasteboard ones -- measured 2026-09-04: the two
@@ -1603,13 +1615,12 @@ static void KCMDrawPawStamps(IGraphicsPort* gPort, IDataBase* db, UID pageUID,
 		//   page's own rectangle on each side is what cancels it.
 		const PMReal cx = pr.Left() + paws[i].fX;
 		const PMReal cy = pr.Top()  + paws[i].fY;
-		const PMReal s  = baseS * paws[i].fScale;
 
 		// ★All five outlines go into ONE path before the fill, so the pad and the toes merge where
 		//   they touch instead of showing a seam between them.
 		gPort->newpath();
-		for (int32 b = 0; b < 5; ++b)
-			KCMPawShapePath(gPort, kKCMPawOutlines[b], cx, cy, s);
+		for (int32 blob = 0; blob < 5; ++blob)
+			KCMPawShapePath(gPort, kKCMPawOutlines[blob], cx, cy, s);
 		gPort->fill();
 	}
 }

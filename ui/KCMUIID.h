@@ -386,6 +386,15 @@ DECLARE_PMID(kActionIDSpace, kKCMPopupColorCyanActionID, kKCMUIPrefix + 47)	// �
 
 DECLARE_PMID(kActionIDSpace, kKCMPawToolActionID, kKCMUIPrefix + 48)	// the tool-select shortcut of the cat-paw stamp tool, named by its ToolDef. ★No ActionDef is needed -- the toolbox framework provides a tool's own selection action (the same as +29 for the KCM tool)
 DECLARE_PMID(kActionIDSpace, kKCMClearPawsActionID, kKCMUIPrefix + 49)	// "Clear Cat Paws in This Document" on the panel flyout (a plain command; Task 6 of the paw stamp plan). Greyed where the active document holds no paw, through kCustomEnabling
+// ★The two items of the PANEL TOOL BUTTON'S FLYOUT (2026-09-04) -- the little menu that appears
+//   when the button is held down, so that either tool can be picked by name. It is the toolbox's
+//   press-and-hold in the only shape a plug-in can build: ⚠**the toolbox's own flyout is drawn by
+//   the toolbox panel itself and IToolBoxUtils publishes nothing to raise one** (10 methods,
+//   measured), so this is a popup MENU rather than the strip of icons the toolbox shows.
+// ⚠They are NOT the ToolDefs' own action IDs (+29 / +48). Those exist for the toolbox's keyboard
+//   shortcut and carry no ActionDef -- no ActionDef, no label, and a menu item needs one.
+DECLARE_PMID(kActionIDSpace, kKCMFlyoutPickToolActionID, kKCMUIPrefix + 50)	// flyout item: choose the comparison tool
+DECLARE_PMID(kActionIDSpace, kKCMFlyoutPickPawToolActionID, kKCMUIPrefix + 51)	// flyout item: choose the cat-paw stamp
 
 // (The template's spare //DECLARE_PMID(kActionIDSpace, kKCMActionID, kKCMUIPrefix + 41) was
 //  **deleted**. ⚠★★It was not inert: **+41 is taken** (kKCMPopupTranslucentBookDialogActionID
@@ -649,6 +658,10 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowStateWidgetID, kKCMUIPrefix + 49)	// = t
 // ★The name of the root never reaches the screen, so a plain literal will do; it needs no
 // translation key.
 #define kKCMBookRowMenuName		"KCMRtMenuBookRow"
+// The panel tool button's flyout, raised by KCMToolButtonEH when the button is HELD. Same
+// machinery as the row menus above (IMenuManager::HandlePopupMenu on a MenuDef subtree of this
+// name). ★The root's name never reaches the screen, so a plain literal will do.
+#define kKCMToolFlyoutMenuName	"KCMToolFlyout"
 #define kKCMStoryRowRefreshMenuKey	kKCMStringPrefix "kKCMStoryRowRefreshMenuKey"	// the "Refresh Story Comparison" item on a Story Edits row context menu
 // The Story Edits row context menu. The same mechanism as the chapter menu above:
 // KCMStoryRowEH::RButtonDn puts the MenuDef subtree of this name up at the cursor through
@@ -940,6 +953,18 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowStateWidgetID, kKCMUIPrefix + 49)	// = t
 #define kKCMToolPanelIconResID	1032
 #define kKCMPawToolPanelIconResID	1033
 
+// ★★WIN32 RESOURCE IDS, NOT InDesign ones -- a different numbering altogether. These name the two
+//   16x16 bitmaps in KCMUI.rc that the panel's press-and-hold flyout puts beside its names
+//   (MENUITEMINFO.hbmpItem takes an HBITMAP, which no InDesign PNG resource can supply).
+//   ⚠They are numbered from 2001 to keep them visibly apart from the 1001.. resources above; the
+//     two spaces could not collide even if they overlapped, but a reader should not have to know
+//     that to read this file.
+//   ★The bitmaps' luminance is INVERTED against the toolbox artwork (a Win32 menu is painted in
+//     the system's light menu colour, where near-white artwork is invisible) -- see
+//     work/kcm-make-paw-icons.ps1, Save-MenuBitmap.
+#define kKCMToolMenuBitmapID	2001
+#define kKCMPawToolMenuBitmapID	2002
+
 // Menu item positions.
 // ⚠**There is no written running order of the flyout here any more.** One stood in this place
 //   and rotted: it listed a toggle that had been removed, missed five items that had been
@@ -998,6 +1023,10 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowStateWidgetID, kKCMUIPrefix + 49)	// = t
 // flyout, under kKCMBookRowMenuName).
 #define kKCMBookRowStartMenuItemPosition	1.0		// chapter row context menu: "Start Change Marker"
 #define kKCMStoryRowRefreshMenuItemPosition	1.0	// Story Edits row context menu: "Refresh Story Comparison" (a different subtree, so it may share 1.0 with the chapter row)
+// The panel tool button's flyout: the two tools, in the order the toolbox lists them (the parent
+// tool first, then its subtool). Its own subtree, so the numbers start again at 1.
+#define kKCMFlyoutPickToolMenuItemPosition	1.0
+#define kKCMFlyoutPickPawToolMenuItemPosition	2.0
 // -- the informational items, at the end --
 #define kKCMSep2MenuItemPosition			9.95	// the separator above How to Use (a path ending in ":-")
 #define kKCMUsageMenuItemPosition			10.0	// "How to Use"

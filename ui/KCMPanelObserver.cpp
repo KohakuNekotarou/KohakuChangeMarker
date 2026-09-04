@@ -653,21 +653,17 @@ void KCMSyncToolButton()
 //   One press of the panel's tool button, already measured by KCMToolButtonEH: which face was
 //   pressed, and whether it was held.
 //
-//   ★★THE RULE, and it lives only here:
-//       HOLD  -> the OTHER tool. The toolbox's press-and-hold, which is what the user asked the
-//                panel to copy ("the toolbox manages it -- hold it down and you can pick either").
-//       CLICK -> the tool on show. Clicking the tool that is already active therefore does
-//                nothing, exactly as clicking a toolbox slot that is already current does
-//                nothing. Switching is what the hold is for.
+//   ★★TWO WAYS IN, ONE ENDING:
+//       a CLICK on the button          -> the tool whose face was showing (KCMToolButtonEH)
+//       an item of its HELD-DOWN FLYOUT -> the tool the reader named (KCMActionComponent)
+//     Both report the same way and both recover the same way when a tool refuses to activate,
+//     because there is only one of this function ([[one-question-one-place]]).
 //   ★THE FACE IS NOT SET HERE. Activating goes SetActiveTool -> ITool::Select ->
 //     KCMSyncToolButton, so a tool that REFUSES to activate leaves the button showing the truth
 //     rather than a lie about what happened.
 //========================================================================================
-void KCMToolButtonPressed(bool16 pawFace, const PMReal& heldRaw)
+void KCMToolButtonPressed(bool16 wantPaw)
 {
-	const bool16 held    = (heldRaw >= kKCMToolButtonHoldSeconds) ? kTrue : kFalse;
-	const bool16 wantPaw = held ? !pawFace : pawFace;
-
 	// ★Report the result in the status line (user’s request). SetActiveTool answers whether the
 	//   tool really became active, so a refusal does not end in silence.
 	const bool16 activated = wantPaw ? KCMActivatePawTool() : KCMActivateOwnTool();

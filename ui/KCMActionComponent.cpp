@@ -773,6 +773,20 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 			KCMStoryRefreshMenuRow();
 			break;
 
+		// The two items of **the panel tool button's flyout**, raised by holding that button down
+		// (KCMToolButtonEH). Each simply picks its tool -- the button's face and pressed look follow
+		// on their own, through ITool::Select -> KCMSyncToolButton.
+		// ★They go through the same function a click on the button does, so a pick from the menu
+		//   ends exactly where a click ends: same activation, same status line, same recovery when
+		//   a tool refuses.
+		case kKCMFlyoutPickToolActionID:
+			KCMToolButtonPressed(kFalse);
+			break;
+
+		case kKCMFlyoutPickPawToolActionID:
+			KCMToolButtonPressed(kTrue);
+			break;
+
 		default:
 			break;
 	}
