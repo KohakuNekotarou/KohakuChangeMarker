@@ -90,6 +90,7 @@ resource StringTable (kSDKDefStringsResourceID + index_enUS)
                 // ----- Panel/dialog strings
                 kKCMPanelTitleKey,			"Kohaku Change Marker",
                 kKCMToolStringKey,			"Kohaku Change Marker Tool",	// the tool name in the toolbox tooltip; English in every locale
+                kKCMPawToolStringKey,		"Kohaku Paw Stamp",		// the stamp tool's name in the KCM tool's flyout (its tooltip); English in every locale, as the line above
                 kKCMTargetLabelKey,			"Target:",
                 kKCMSourceLabelKey,			"Source:",
                 kKCMStartButtonKey,			"Start",

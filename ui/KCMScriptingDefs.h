@@ -58,7 +58,15 @@
 */
 enum KCMScriptEnums
 {
-	en_KCMTool = 'nKGt'	// n = enumerator, K = Kohaku, G = KCM, t = tool
+	en_KCMTool = 'nKGt',	// n = enumerator, K = Kohaku, G = KCM, t = tool
+	// ★The cat-paw stamp tool (2026-09-04). It is a SUBTOOL of the one above -- it lives in that
+	//   tool's press-and-hold flyout -- but a subtool is a tool, so ITool.h:192-223 asks the same
+	//   of it: its own ScriptID, registered in kToolBoxEnumScriptElement (KCMUI.fr) and returned
+	//   from ITool::GetScriptID (KCMPawTool.cpp). wavetool does exactly this for its own subtool
+	//   (en_SineWaveTl, WavTl.fr:319-336).
+	// ★'p' = paw. Checked against ScriptingDefs.h, GenericID.h, the whole of source/ and the
+	//   registry in docs/ai-notes/kes-scriptid-registry.md before use: 0 hits.
+	en_KCMPawTool = 'nKGp'	// n = enumerator, K = Kohaku, G = KCM, p = paw stamp
 };
 
 #endif // __KCMUIScriptingDefs_h__

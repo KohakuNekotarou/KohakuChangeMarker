@@ -567,6 +567,40 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 		}
 	},
 
+	// The cat-paw stamp tool (2026-09-04). ★A SUBTOOL of the tool above: the ToolDef further
+	// down names kKCMToolBoss as its parent, which puts it in that tool's press-and-hold flyout
+	// and spends no toolbox slot. The boss itself is the ordinary four-piece tool shape --
+	// kGenericToolBoss supplies the button view and IID_IPMPERSIST persists the selected state,
+	// exactly as for kKCMToolBoss.
+	// ⚠No IID_ICURSORPROVIDER yet: the paw cursor arrives with the drawing, in Task 3 of the
+	//   plan. Until then the tool shows the arrow, which is honest -- it says nothing about
+	//   where the paw would land, and there is no paw to land yet.
+	Class
+	{
+		kKCMPawToolBoss,
+		kGenericToolBoss,
+		{
+			IID_ITOOL,      kKCMPawToolImpl,
+			IID_IPMPERSIST, kPMPersistImpl,
+		}
+	},
+
+	// That tool's tracker. IID_ITRACKER reads the press; IID_IEVENTHANDLER is the stock
+	// CTrackerEventHandler shape its neighbour uses. ★Nothing is captured -- BeginTracking
+	// answers kFalse -- so the event handler never carries a button-up here; it is on the boss
+	// because a tracker boss is asked for one.
+	// ★NO SPRITE, for the reason written out at kKCMTrackerBoss above: a sprite is a condition
+	//   of CLayoutTracker / CPathCreationTracker, and this derives from CTracker directly.
+	Class
+	{
+		kKCMPawTrackerBoss,
+		kInvalidClass,
+		{
+			IID_ITRACKER,      kKCMPawTrackerImpl,
+			IID_IEVENTHANDLER, kKCMPawTrackerEHImpl,
+		}
+	},
+
 	/*
 	 * The book comparison dialog (2026-08-11). Stock kDialogBoss plus our controller - the same
 	 * shape as KESCL's Jump Offset dialog and the basicdialog sample.
@@ -1508,6 +1542,35 @@ resource ToolDef (kKCMToolIconResID)
 
 
 /*
+ * The cat-paw stamp tool (2026-09-04).
+ *
+ * ★★THE THIRD VALUE IS WHAT MAKES IT A SUBTOOL. Naming kKCMToolBoss as the parent tool puts
+ *   this tool inside that tool's PRESS-AND-HOLD FLYOUT and spends **no toolbox slot** -- the
+ *   toolbox is a scarce, shared surface, so a second slot for a companion of an existing tool
+ *   would be the wrong thing to take. With a parent named, the group and tool numbers are
+ *   ignored and the SUBTOOL number becomes the order within the flyout
+ *   (ToolRecord.h:49,54,59-61,65).
+ * ★The SDK's only worked example is wavetool/WavTl.fr:264-276 (its sine tool sits under its saw
+ *   tool); this follows it value for value.
+ * kKCMPawToolActionID is the tool-select shortcut action -- as for the tool above, no ActionDef
+ * is needed, because the toolbox framework supplies a tool's own selection action.
+ */
+resource ToolDef (kKCMPawToolIconResID)
+{
+	kKCMPawToolBoss,			// classID for the tool boss
+	kPointerToolBoss,			// tool type = the exclusion group (the same one the KCM tool uses)
+	kKCMToolBoss,				// ★parent tool boss -> this tool lives in THAT tool's flyout
+	kDoesNotApply,				// group number (ignored while a parent is named)
+	kDoesNotApply,				// tool number (ignored likewise)
+	kFirstAdobeTool,			// subtool number = the order inside the flyout
+	kKCMPawToolActionID,		// action ID associated with the tool-select shortcut
+	kKCMPawToolIconResID,		// icon resource ID
+	kKCMUIPluginID,				// plug-in ID
+	kADBEIconSuiteButtonType
+};
+
+
+/*
  * Locale Indicies.
  * The LocaleIndex should have indicies that point at your
  * localizations for each language system that you are localized for.
@@ -1581,6 +1644,22 @@ resource PNGAD(kKCMToolIconResID + kHIDPIIconOffset) "KCM_Tool_64.png"	// no dar
 #ifdef WINDOWS
 resource PNGA(kKCMToolIconResID + kHIDPIIconOffset150)  "KCM_Tool_32.png"
 resource PNGAD(kKCMToolIconResID + kHIDPIIconOffset150) "KCM_Tool_32.png"
+#endif
+
+// The cat-paw stamp tool's icon, drawn by work/kcm-make-paw-icons.ps1 from the very table the
+// drawing side uses for the paw itself. Same specification as the icon above: 32x22 normal, 64x44 for
+// HiDPI, no dark version (PNGAD points at the light artwork), and Windows 1.5x reuses the
+// normal one.
+// ⚠No PNGR / PNGRD here, unlike the tool above. Those exist only because the PANEL carries a
+//   rollover button showing the KCM tool's artwork; this tool has no panel button, and the
+//   toolbox slot itself reads PNGA / PNGAD alone.
+resource PNGA(kKCMPawToolIconResID)  "KCM_PawTool_32.png"
+resource PNGAD(kKCMPawToolIconResID) "KCM_PawTool_32.png"	// no dark version: the light artwork is reused
+resource PNGA(kKCMPawToolIconResID + kHIDPIIconOffset)  "KCM_PawTool_64.png"
+resource PNGAD(kKCMPawToolIconResID + kHIDPIIconOffset) "KCM_PawTool_64.png"
+#ifdef WINDOWS
+resource PNGA(kKCMPawToolIconResID + kHIDPIIconOffset150)  "KCM_PawTool_32.png"
+resource PNGAD(kKCMPawToolIconResID + kHIDPIIconOffset150) "KCM_PawTool_32.png"
 #endif
 // ★The rollover forms exist because **the tool switch button inside the panel**
 //   (kKCMToolButtonWidgetID) shows the same artwork. A RollOverIconButtonWidget asks for PNGR
@@ -2729,6 +2808,12 @@ resource VersionedScriptElementInfo(10)
 			kToolBoxEnumScriptElement,
 			{
 				en_KCMTool, "kohaku change marker tool", "The Kohaku Change Marker tool.",
+				// ★The stamp tool is registered here on the same terms as the one above: a
+				//   subtool is a tool, so it needs its own enumerator to be told apart from
+				//   "nothing selected" and to be selectable from a script. The name below
+				//   surfaces as UITools.KOHAKU_PAW_STAMP_TOOL. wavetool registers its own
+				//   subtool in exactly this way (en_SineWaveTl, WavTl.fr:319-336).
+				en_KCMPawTool, "kohaku paw stamp tool", "The Kohaku Paw Stamp tool.",
 			}
 		}
 	}

@@ -192,6 +192,17 @@ DECLARE_PMID(kClassIDSpace, kKCMStoryChangeCellBoss, kKCMUIPrefix + 29)	// kGene
 // ★The WidgetID and the Frame are unchanged (`kKCMStatusTextWidgetID`), so nothing around it
 //   moves.
 DECLARE_PMID(kClassIDSpace, kKCMStatusTextWidgetBoss, kKCMUIPrefix + 32)	// kGenericPanelWidgetBoss + IID_ICONTROLVIEW (kKCMStatusTextViewImpl) + IID_IKCMSTATUSTEXTDATA (kKCMStatusTextDataImpl): the panel's message area. It takes a heading and three pieces (context, the changed characters, context), wraps them and draws them in at most two colours (KCMStatusTextView.cpp)
+// The cat-paw stamp tool (2026-09-04). ★It is a **SUBTOOL of the KCM tool**: its ToolDef names
+// kKCMToolBoss as the parent tool, which puts it inside that tool's press-and-hold flyout and
+// **costs no toolbox slot** (ToolRecord.h:49,54,59-61,65; the SDK's only worked example is
+// wavetool/WavTl.fr:264-276). The boss itself is the same shape as kKCMToolBoss above --
+// kGenericToolBoss supplies the toolbox button view, IID_IPMPERSIST persists the selected state.
+DECLARE_PMID(kClassIDSpace, kKCMPawToolBoss, kKCMUIPrefix + 33)
+// That tool's tracker. ★A press places one paw, or lifts the one it landed on, and there is
+// nothing to track afterwards, so BeginTracking answers kFalse ＝ the single-shot shape of
+// sdksamples/snapshot. It derives from CTracker directly, so it carries **no sprite** -- the
+// reason is written out at kKCMTrackerBoss in KCMUI.fr.
+DECLARE_PMID(kClassIDSpace, kKCMPawTrackerBoss, kKCMUIPrefix + 34)
 // InterfaceIDs:
 // ⚠★What is here are **the IIDs that appear only on UI-side bosses**. The ones that cross the
 //   boundary (the five facades plus the notification protocol) are in **KCMBoundaryID.h**,
@@ -266,6 +277,11 @@ DECLARE_PMID(kImplementationIDSpace, kKCMStoryCellDataImpl, kKCMUIPrefix + 40)	/
 DECLARE_PMID(kImplementationIDSpace, kKCMStatusTextViewImpl, kKCMUIPrefix + 43)	// IControlView (DVControlView subclass). The panel's message area: it wraps to fill the box, draws the changed characters in the theme text colour and fades the heading and the context (KCMStatusTextView.cpp). ★**The PERSIST form** -- this widget is built from the panel's .fr, so it has to be persistent like the IID_ICONTROLVIEW of the kGenericPanelWidgetBoss it is built on
 DECLARE_PMID(kImplementationIDSpace, kKCMStatusTextDataImpl, kKCMUIPrefix + 44)	// IKCMStatusTextData (a non-persistent container for the four pieces; it lives on the same boss as the area above. KCMStatusTextView.cpp)
 DECLARE_PMID(kImplementationIDSpace, kKCMSplitterEHImpl, kKCMUIPrefix + 34)	// IEventHandler (CEventHandler subclass ＝ the base whose every method just answers kFalse). It makes the panel's divider take no presses, so it cannot be dragged (KCMSplitterEH.cpp)
+// The cat-paw stamp tool's three implementations (2026-09-04). ★The tool and its tracker are
+// the same pair as +13 / +14 / +16 above; only what the tracker does with the press differs.
+DECLARE_PMID(kImplementationIDSpace, kKCMPawToolImpl, kKCMUIPrefix + 45)	// ITool (the cat-paw stamp tool. KCMPawTool.cpp)
+DECLARE_PMID(kImplementationIDSpace, kKCMPawTrackerImpl, kKCMUIPrefix + 46)	// ITracker (CTracker subclass; one left press places a paw, or lifts the one under it. KCMPawTracker.cpp)
+DECLARE_PMID(kImplementationIDSpace, kKCMPawTrackerEHImpl, kKCMUIPrefix + 47)	// IEventHandler (CTrackerEventHandler subclass, the companion of the tracker above -- a bare subclass, as kKCMTrackerEHImpl is. KCMPawTracker.cpp)
 // ActionIDs:
 DECLARE_PMID(kActionIDSpace, kKCMAboutActionID, kKCMUIPrefix + 0)
 DECLARE_PMID(kActionIDSpace, kKCMPanelWidgetActionID, kKCMUIPrefix + 1)	// show / hide the panel (Window menu)
@@ -355,6 +371,9 @@ DECLARE_PMID(kActionIDSpace, kKCMPopupShowTgtMarksActionID, kKCMUIPrefix + 45)	/
 DECLARE_PMID(kActionIDSpace, kKCMPopupColorRedActionID,  kKCMUIPrefix + 46)	// ★"Mark colour > Red" on the panel flyout (user's request: "let the menu choose red or blue"). Mutually exclusive with Cyan, the selected one carrying the check (kCustomEnabling + kSelectedAction, the shape of Marks opacity 25%/75%). ★The default. KCMActionComponent.cpp -> IKCMCompareFacade::SetMarkColor
 DECLARE_PMID(kActionIDSpace, kKCMPopupColorCyanActionID, kKCMUIPrefix + 47)	// ★"Mark colour > Cyan" on the flyout. ⚠★★This **replaces an automatic switch by background**: the ring used to turn cyan by itself wherever the pixels underneath were reddish (kKCMRedBgDom). It went for two reasons -- the user's call ("the user can just choose"), and **the Story mode cannot read the pixels underneath**, so the same automatic test was impossible there and the colour would have been decided differently in the two modes. ★The choice applies to both the Pixel ring and the Story ground (both pass through KCMDrawEventHandler::SelectedMarkColor)
 
+DECLARE_PMID(kActionIDSpace, kKCMPawToolActionID, kKCMUIPrefix + 48)	// the tool-select shortcut of the cat-paw stamp tool, named by its ToolDef. ★No ActionDef is needed -- the toolbox framework provides a tool's own selection action (the same as +29 for the KCM tool)
+DECLARE_PMID(kActionIDSpace, kKCMClearPawsActionID, kKCMUIPrefix + 49)	// "Clear Cat Paws in This Document" on the panel flyout (a plain command; Task 6 of the paw stamp plan). Greyed where the active document holds no paw, through kCustomEnabling
+
 // (The template's spare //DECLARE_PMID(kActionIDSpace, kKCMActionID, kKCMUIPrefix + 41) was
 //  **deleted**. ⚠★★It was not inert: **+41 is taken** (kKCMPopupTranslucentBookDialogActionID
 //  above), so uncommenting it declares one ActionID twice. **A commented-out declaration carries
@@ -384,6 +403,12 @@ DECLARE_PMID(kWidgetIDSpace, kKCMNextChangeButtonWidgetID, kKCMUIPrefix + 39)	//
 DECLARE_PMID(kWidgetIDSpace, kKCMScrollMapWidgetID, kKCMUIPrefix + 40)	// the scrollbar map strip, injected at run time beside a document window's vertical scrollbar (KCMScrollMap.cpp)
 DECLARE_PMID(kWidgetIDSpace, kKCMToolWidgetID, kKCMUIPrefix + 41)	// the WidgetID of the tool button in the toolbox (KCMTool::InitWidget)
 DECLARE_PMID(kWidgetIDSpace, kKCMToolButtonWidgetID, kKCMUIPrefix + 42)	// ★the tool switch button inside the panel (left of Prev, 32x22). Pressing it makes kKCMToolBoss the active tool (KCMActivateOwnTool). A different thing from +41 above, which is the toolbox slot
+// ★The cat-paw stamp tool's toolbox widget (2026-09-04). It is kept **next to the two tool IDs
+//   above rather than in numeric order**, because that is where a reader looks for it; the
+//   number itself is the next free one (+65), the ones between belonging to the Story Edits
+//   list. ⚠A subtool occupies no slot of its own in the toolbox, but the widget the tool builds
+//   in the flyout still needs an ID (KCMPawTool::InitWidget).
+DECLARE_PMID(kWidgetIDSpace, kKCMPawToolWidgetID, kKCMUIPrefix + 65)
 // ★The "Story Edits" section. The panel is divided by a SplitterPanelWidget and the lower pane
 //   lists the stories whose text was edited. Modelled on the "Link Info" section of the
 //   product's linksui.
@@ -439,7 +464,7 @@ DECLARE_PMID(kWidgetIDSpace, kKCMStoryRowUIDWidgetID, kKCMUIPrefix + 52)	// ★r
 DECLARE_PMID(kWidgetIDSpace, kKCMBookDialogWidgetID, kKCMUIPrefix + 57)
 DECLARE_PMID(kWidgetIDSpace, kKCMBookTargetTextWidgetID, kKCMUIPrefix + 58)	// "Target: new.indb" (the book whose tab is in front)
 DECLARE_PMID(kWidgetIDSpace, kKCMBookSourceTextWidgetID, kKCMUIPrefix + 59)	// "Source: old.indb" (the first other open book)
-DECLARE_PMID(kWidgetIDSpace, kKCMBookCompareButtonWidgetID, kKCMUIPrefix + 60)	// (retired) the old "Compare" button. ★The button itself was removed -- the flow became "confirmation alert, then OK compares" -- so **nothing refers to this ID**, but it is kept declared together with its label key kKCMBookCompareKey, the enUS table row and the note in KCMUI.fr, so that the set can be restored together. ★The number is not reused. ⚠This is the only declared-but-unreferenced ID in any of the ID spaces (measured mechanically), and the label key had said "retired" from the start while this one still read as live
+DECLARE_PMID(kWidgetIDSpace, kKCMBookCompareButtonWidgetID, kKCMUIPrefix + 60)	// (retired) the old "Compare" button. ★The button itself was removed -- the flow became "confirmation alert, then OK compares" -- so **nothing refers to this ID**, but it is kept declared together with its label key kKCMBookCompareKey, the enUS table row and the note in KCMUI.fr, so that the set can be restored together. ★The number is not reused. ⚠This line used to claim it was **the only** declared-but-unreferenced ID "measured mechanically". ★★**That was already untrue when it was written**: kKCMPopupAboutScriptActionID (+3) had been retired-but-reserved all along, and a re-measurement on 2026-09-04 found three of them -- that one, this one, and kKCMClearPawsActionID (+49), a slot booked in advance for the paw stamp's "clear" item. ⇒ ★★★**Do not read a count off any line here; measure it -- and mind the two traps that made the first measurement wrong.** (1) Take the names only from lines that BEGIN with DECLARE_PMID: a commented-out declaration is not a declaration (there is one in the ActionID block). (2) Strip comments before counting occurrences: a name mentioned in prose -- **this sentence included** -- is not a reference, and counting it hides exactly the ID it names. A name left with one occurrence in the stripped text is unreferenced. The label key had said "retired" from the start while this one still read as live
 DECLARE_PMID(kWidgetIDSpace, kKCMBookStatusTextWidgetID, kKCMUIPrefix + 61)	// the status line (a summary of the comparison; it always includes the number of chapters)
 DECLARE_PMID(kWidgetIDSpace, kKCMBookTreeWidgetID, kKCMUIPrefix + 62)		// the chapter list itself (the largest part of the dialog)
 // ★A second status line (the hint that a right click on a changed chapter starts Change Marker)
@@ -697,6 +722,7 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowStateWidgetID, kKCMUIPrefix + 49)	// = t
 //     move one without the other.**
 #define kKCMHint2Key			kKCMStringPrefix "kKCMHint2Key"
 #define kKCMToolStringKey		kKCMStringPrefix "kKCMToolStringKey"	// the tool name in the toolbox (its tooltip). English in every locale
+#define kKCMPawToolStringKey	kKCMStringPrefix "kKCMPawToolStringKey"	// the cat-paw stamp tool's name in the flyout (its tooltip). ★English in every locale, as the line above: the jaJP string table was retired on 2026-08-05 and Japanese now comes from ui/KCMLoc.h at run time -- a tool name is not one of the strings that file carries
 
 // The strings of the Story Edits section. ⚠**Do not use the word "text" in them** -- the list
 // carries changes that are not text, so a phrase like "No text edits" would not be true.
@@ -868,6 +894,13 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowStateWidgetID, kKCMUIPrefix + 49)	// = t
 // (KCM_Tool_32.png/_64.png, supplied by the user). There is no dark version, so PNGAD points at
 // the light artwork as well.
 #define kKCMToolIconResID	1030
+
+// The toolbox icon of the cat-paw stamp tool (32x32 normal / 64x64 = +kHIDPIIconOffset), drawn
+// by work/kcm-make-paw-icons.ps1. There is no dark version, so PNGAD points at the light
+// artwork, exactly as the line above.
+// ★The ToolDef resource is declared with this same number (a resource ID is a namespace per
+//   type, so the ToolDef and the PNGs may share it -- the KCM tool does the same).
+#define kKCMPawToolIconResID	1031
 
 // Menu item positions.
 // ⚠**There is no written running order of the flyout here any more.** One stood in this place
