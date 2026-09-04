@@ -723,6 +723,20 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 			Utils<IKCMPageFlagsFacade>()->LoadChecksAndRegister();
 			break;
 
+		// Flyout "Clear Checks in This Document": drop the active document's ticks. The work, the
+		// status line and the notification that takes the ticks off the Pages panel's thumbnails
+		// are all on the model side (KCMPageCheck.cpp), which is why nothing is reported here.
+		// ★It exists because **Stop no longer clears the ticks** (2026-09-04): Stop used to double
+		//   as the way to be rid of them all.
+		case kKCMClearChecksActionID:
+			Utils<IKCMPageFlagsFacade>()->ClearChecksInDoc(Utils<IKCMCompareFacade>()->GetActiveDocDB());
+			break;
+
+		// Flyout "Clear Cat Paws in This Document": the same for the cat-paw stamps.
+		case kKCMClearPawsActionID:
+			Utils<IKCMPageFlagsFacade>()->ClearPawsInDoc(Utils<IKCMCompareFacade>()->GetActiveDocDB());
+			break;
+
 		// Flyout "Export Changed Pages...": save the list of changed pages of the current comparison as
 		// TSV (new page / old page / kind = changed, inserted, deleted). The work is in
 		// KCMChangedPagesTSV.cpp. Enabled only while comparing; overset is not included.
@@ -1077,6 +1091,24 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 			// Live only while comparing (a marked Target document exists) ＝ when there can be changes to
 			// write out. Greyed before a Start.
 			listToUpdate->SetNthActionState(i, (Utils<IKCMMarkData>()->GetMarkedTargetDB() != nil) ? kEnabledAction : kDisabled_Unselected);
+		}
+		else if (action == kKCMClearChecksActionID)
+		{
+			// ★**The same resolver the command uses** (GetActiveDocDB), so the grey and the command
+			//   cannot end up meaning two different documents ([[one-question-one-place]]).
+			//   Greyed where the active document holds no tick -- which, now that a tick outlives
+			//   Stop, is the only thing worth asking: whether a comparison is running says nothing
+			//   about whether there is anything to clear.
+			IDataBase* db = Utils<IKCMCompareFacade>()->GetActiveDocDB();
+			listToUpdate->SetNthActionState(i,
+				Utils<IKCMPageFlagsFacade>()->PageCheckHasAny(db) ? kEnabledAction : kDisabled_Unselected);
+		}
+		else if (action == kKCMClearPawsActionID)
+		{
+			// The same, asked of the paws. A paw never depended on a comparison at all.
+			IDataBase* db = Utils<IKCMCompareFacade>()->GetActiveDocDB();
+			listToUpdate->SetNthActionState(i,
+				(Utils<IKCMPageFlagsFacade>()->PawStampCount(db) > 0) ? kEnabledAction : kDisabled_Unselected);
 		}
 		else if (action == kKCMPopupCompareBooksActionID)
 		{

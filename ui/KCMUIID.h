@@ -336,7 +336,7 @@ DECLARE_PMID(kActionIDSpace, kKCMPopupAlignViewsActionID, kKCMUIPrefix + 20)	// 
 DECLARE_PMID(kActionIDSpace, kKCMPopupScrollMapActionID, kKCMUIPrefix + 21)	// "Show Scrollbar Map" check toggle on the panel flyout (ON = a strip beside each document window's vertical scrollbar maps where the changes are. Default ON; the state is sScrollMapOn in KCMScrollMap.cpp)
 DECLARE_PMID(kActionIDSpace, kKCMPopupSavePanelStateActionID, kKCMUIPrefix + 22)	// "Save Panel Settings" on the panel flyout (a plain command, not a check). It writes the current settings toggles to a private JSON file and shows the saved path. They are read back at startup (KCMUIStartup::Startup). KCMPanelState.cpp
 DECLARE_PMID(kActionIDSpace, kKCMPopupSep3ActionID, kKCMUIPrefix + 23)	// flyout: the separator below Refresh Overset (a MenuDef path ending in ":-"; no ActionDef needed). Its position is kKCMSep3MenuItemPosition below
-DECLARE_PMID(kActionIDSpace, kKCMPageCheckToggleActionID, kKCMUIPrefix + 24)	// "Check" toggle on the Pages panel page context menu (RtMenuPagesPanel): puts a check mark on the selected pages, or takes it off. Only while Started; cleared on Stop. The check mark and the enabling come from kCustomEnabling. ★**Which pages can be checked depends on the mode**: in Pixel only pages that carry a mark, in Story any page. The answer lives in one place, the model's KCMCollectCheckablePageUIDs. KCMPageCheck.cpp, and the check itself is drawn by the isThumb branch of KCMDrawEventHandler
+DECLARE_PMID(kActionIDSpace, kKCMPageCheckToggleActionID, kKCMUIPrefix + 24)	// "Check" toggle on the Pages panel page context menu (RtMenuPagesPanel): puts a check mark on the selected pages, or takes it off. The check mark and the enabling come from kCustomEnabling. ★★**No comparison is required, and Stop does not clear the ticks** (2026-09-04) -- the old "only while Started; cleared on Stop" is gone. ★**Which pages can be checked**: any page of a document nobody is comparing; of a document being compared, in Pixel only the pages that carry a mark and in Story any page. The answer lives in one place, the model's KCMCollectCheckablePageUIDs. KCMPageCheck.cpp, and the check itself is drawn by the isThumb branch of KCMDrawEventHandler
 DECLARE_PMID(kActionIDSpace, kKCMPopupSaveChecksActionID, kKCMUIPrefix + 25)	// "Save Check & Register" on the panel flyout (a plain command). It merges the current checks and Added/Removed registrations of Target and Source into a private JSON file (KCM\KCMPageChecks.json, v2) and shows the saved path. KCMPageCheck.cpp
 DECLARE_PMID(kActionIDSpace, kKCMPopupLoadChecksActionID, kKCMUIPrefix + 26)	// "Load Check & Register" on the panel flyout (a plain command). Enabled only while Started: it applies the registrations from that file to both documents, recompares, then restores the checks (still only where a mark is). KCMPageCheck.cpp
 // kKCMPopupPagesPanelShortcutActionID (kKCMUIPrefix + 27) went with the middle-button gestures,
@@ -394,6 +394,7 @@ DECLARE_PMID(kActionIDSpace, kKCMClearPawsActionID, kKCMUIPrefix + 49)	// "Clear
 //   shows up in QuickApply as a command that does nothing a reader asked for.
 //   **Do not reuse the numbers** -- a .indk written while they existed would map a shortcut onto
 //   whatever took the slot ([[id-prefix-256-slot-budget]]).
+DECLARE_PMID(kActionIDSpace, kKCMClearChecksActionID, kKCMUIPrefix + 52)	// "Clear Checks in This Document" on the panel flyout (a plain command). ★It exists because **Stop no longer clears the ticks** (2026-09-04): Stop used to double as the way to be rid of them all, and taking that away would have left no way at all. Greyed where the active document holds no tick, through kCustomEnabling. ⚠The number is +52, not +50: see the note directly above
 
 // (The template's spare //DECLARE_PMID(kActionIDSpace, kKCMActionID, kKCMUIPrefix + 41) was
 //  **deleted**. ⚠★★It was not inert: **+41 is taken** (kKCMPopupTranslucentBookDialogActionID
@@ -632,6 +633,8 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowStateWidgetID, kKCMUIPrefix + 49)	// = t
 #define kKCMSavePanelStateMenuKey	kKCMStringPrefix "kKCMSavePanelStateMenuKey"	// the menu name of "Save Panel Settings" on the panel flyout
 #define kKCMSaveChecksMenuKey		kKCMStringPrefix "kKCMSaveChecksMenuKey"	// the menu name of "Save Check & Register" on the panel flyout
 #define kKCMLoadChecksMenuKey		kKCMStringPrefix "kKCMLoadChecksMenuKey"	// the menu name of "Load Check & Register" on the panel flyout
+#define kKCMClearChecksMenuKey		kKCMStringPrefix "kKCMClearChecksMenuKey"	// the menu name of "Clear Checks in This Document" on the panel flyout
+#define kKCMClearPawsMenuKey		kKCMStringPrefix "kKCMClearPawsMenuKey"	// the menu name of "Clear Cat Paws in This Document" on the panel flyout
 #define kKCMFindOversetMenuKey	kKCMStringPrefix "kKCMFindOversetMenuKey"	// the menu name of the "Find Overset" toggle on the panel flyout
 #define kKCMRefreshOversetMenuKey	kKCMStringPrefix "kKCMRefreshOversetMenuKey"	// the menu name of "Refresh Overset" on the panel flyout
 #define kKCMExportChangedPagesMenuKey	kKCMStringPrefix "kKCMExportChangedPagesMenuKey"	// the menu name of "Export Changed Pages..." on the panel flyout
@@ -1008,6 +1011,8 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowStateWidgetID, kKCMUIPrefix + 49)	// = t
 #define kKCMSavePanelStateMenuItemPosition	9.56	// plain command "Save Panel Settings"
 #define kKCMSaveChecksMenuItemPosition	9.58	// plain command "Save Check & Register"
 #define kKCMLoadChecksMenuItemPosition	9.60	// plain command "Load Check & Register"
+#define kKCMClearChecksMenuItemPosition	9.62	// plain command "Clear Checks in This Document", directly under the Save/Load pair it undoes
+#define kKCMClearPawsMenuItemPosition	9.64	// plain command "Clear Cat Paws in This Document". ★Two items rather than one: a tick records progress and a paw is a landmark, so they are wanted gone at different moments
 #define kKCMExportChangedPagesMenuItemPosition	9.53	// plain command "Export Changed Pages..." (the list of changed pages as TSV), directly below Align
 // ★★Compare Books sits at 9.05, **between Start (9.0) and the separator Sep1 (9.1)** ＝ no rule
 //   falls between it and Start, so the two items that **begin** a comparison read as one group

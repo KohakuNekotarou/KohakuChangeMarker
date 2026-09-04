@@ -47,7 +47,7 @@
 #include "KCMThreadSafety.h"       // needed to walk the entries when the mark colour changes and their cached ring images must be dropped
 #include "KCMPeek.h"               // KCMBaseScreenOpacity
 #include "KCMPageMap.h"            // KCMBuildPairing (the exclusion pairing) / KCMPageMapCollectRegistered
-#include "KCMPageCheck.h"          // KCMPageCheckClearAllDocs (Stop clears every tick)
+#include "KCMPageCheck.h"          // ⚠**nothing here calls into it any more** (2026-09-04): Stop stopped clearing the ticks and the prune was removed. Left in place because dropping an include is a change a build has to prove, not a comment
 #include "KCMStoryStamp.h"         // the stories' change counters -- whether text was edited, which pixels cannot say
 #include "KCMStoryList.h"          // the list of changed stories (the model the Story Edits section reads)
 #include "KCMStoryDiffRun.h"       // in the Story mode, what changed inside each row
@@ -174,6 +174,26 @@ bool16 KCMCollectCheckablePageUIDs(IDataBase* db, KCMCheckablePages& out)
 	out.fAllPages = kFalse;
 	out.fPages.clear();
 
+	if (db == nil)
+		return kFalse;
+
+	// ★NOT ONE OF THE COMPARED DOCUMENTS = EVERY PAGE MAY BE TICKED (2026-09-04, user decision).
+	//   A tick is the reader's own marker and no longer waits on a comparison: it can be put on a
+	//   document nobody is comparing, and it survives Stop.
+	//   **This one test covers two cases**, and they are the same case seen twice: nothing started
+	//   at all (both pointers nil), and a third document open beside a running comparison. Writing
+	//   it as "nothing is armed" would have answered the first and left the second refusing ticks.
+	//   ⚠**This answers "may a tick be PUT here", and nothing else.** "May a tick STAY here" was a
+	//   second question the same function used to answer, through the prune -- and answering both
+	//   with one rule is what made a tick die when a comparison started on the document carrying
+	//   it. The prune is gone (KCMPageCheck.h says where and why); a tick stays until someone
+	//   clears it.
+	if (db != KCMDrawEventHandler::sDB && db != KCMDrawEventHandler::sSrcDB)
+	{
+		out.fAllPages = kTrue;
+		return kTrue;
+	}
+
 	if (KCMGetCompareMode() != kKCMModeStory)
 	{
 		// Pixel = only the pages carrying a mark. Whether db is one of the compared documents is
@@ -191,11 +211,8 @@ bool16 KCMCollectCheckablePageUIDs(IDataBase* db, KCMCheckablePages& out)
 		return kTrue;
 	}
 
-	// Story mode = every page, when db is one of the two being compared. Which documents those are
-	// is decided by the same two pointers the function above uses.
-	if (db == nil || (db != KCMDrawEventHandler::sDB && db != KCMDrawEventHandler::sSrcDB))
-		return kFalse;
-
+	// Story mode = every page. That db is one of the two being compared was settled at the top, so
+	// there is nothing left to test here.
 	out.fAllPages = kTrue;
 	return kTrue;
 }
@@ -852,15 +869,14 @@ ErrorCode KCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMString
 	// drawing has the current overflow (and EnsureOverflowCache keeps a full walk out of each draw).
 	KCMDrawEventHandler::RebuildOverflowCache();
 
-	// The ticks: a page that has LOST its mark (frame or "/") in this re-comparison also loses its
-	// tick.
-	// **It must be called before KCMInvalidateDB below.** The tick is drawn in the layout view as
-	// well, so pruning after the invalidate redraws the layout while the tick is still there and
-	// leaves it on screen (the thumbnail is refreshed after the prune and loses it, so the two
-	// disagree).
-	// The mark sets the prune needs (sEntries, registered, overflow) are settled by the
-	// RebuildOverflowCache above.
-	KCMPageCheckPruneToMarked();
+	// ★**THE TICKS ARE NOT TOUCHED** (2026-09-04). A page losing its mark in this re-comparison
+	//   used to lose its tick with it -- "the frame is gone, and the memory of having checked it
+	//   goes with it". That reading died with the tick's own meaning: it marks "I have looked at
+	//   this page", and looking at a page is not undone by the page turning out to be unchanged.
+	//   ⚠**Two things went with the prune**: switching Story -> Pixel no longer unticks anything,
+	//   and a tick made before any comparison survives the Start that follows it (which is what
+	//   the removal was actually for -- without it, ticking a document and then comparing it threw
+	//   the ticks away at the moment the comparison began).
 
 	KCMInvalidateDocs(targetDB, sourceDB);	// the Source too, so its always-on frames update at once
 
@@ -1056,8 +1072,14 @@ void KCMDoClearMarks(IDataBase* db)
 	// restarted with a different pair.
 	KCMPageMapClearAllDocs();
 
-	// The ticks are forgotten at Stop too (they exist only while a comparison is running).
-	KCMPageCheckClearAllDocs();
+	// ★THE TICKS ARE **NOT** FORGOTTEN AT STOP (2026-09-04, user decision). A tick is the reader's
+	//   own marker rather than a by-product of the comparison: it can be put on any open document,
+	//   it is saved and restored on its own, and dropping it here would throw away work nobody
+	//   asked to discard. What clears ticks now is the flyout's "Clear Checks in This Document"
+	//   (one document), closing a document (the sweep), and shutdown.
+	//   ⚠**The registrations just above are a different matter and are still cleared**: they are an
+	//   INPUT to the comparison, so an old Added/Removed left standing would creep into the pairing
+	//   when a comparison is restarted with a different pair.
 
 	KCMDrawEventHandler::DropAll();
 	KCMDrawEventHandler::DropAllOrig();	// and the peek's cached pictures, to release the memory

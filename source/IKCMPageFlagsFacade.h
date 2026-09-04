@@ -107,6 +107,26 @@ public:
 		  asks for its picture, so what can be seen is exactly what can be lifted. Answers 0 when
 		  the page cannot be measured, which the caller reads as "do not stamp here". */
 	virtual PMReal	PawHalfSizeForPage(IDataBase* db, UID pageUID) = 0;
+
+	// ---- clearing one document's marks (the two flyout items, 2026-09-04) -------------------
+	// ⚠**Which document is the caller's to name**, through IKCMCompareFacade::GetActiveDocDB --
+	//   the one place KCM asks what is in front ([[document-activation-is-presentation]]). These
+	//   take the answer rather than working it out again, so the greying and the command cannot
+	//   end up disagreeing about which document they mean.
+
+	/** Does this document hold any tick -- what greys "Clear Checks in This Document". */
+	virtual bool16	PageCheckHasAny(IDataBase* db) = 0;
+
+	/** "Clear Checks in This Document": drop that document's ticks, and refresh the Pages panel's
+		thumbnails and the layout view with them.
+		@return how many ticks went, for the status line. */
+	virtual int32	ClearChecksInDoc(IDataBase* db) = 0;
+
+	/** "Clear Cat Paws in This Document": the same for the paws.
+		⚠Paws reach no thumbnail (the drawing side excludes them from the isThumb branch), so only
+		  the layout view is refreshed.
+		@return how many paws went. */
+	virtual int32	ClearPawsInDoc(IDataBase* db) = 0;
 };
 
 #endif // __IKCMPageFlagsFacade_h__

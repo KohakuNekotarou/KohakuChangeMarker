@@ -6,7 +6,14 @@
 //  context-menu toggle "Check" puts a "seen" mark on them and takes it off again. A checked page
 //  gets a blue tick, drawn as vector strokes, in the middle of its Pages panel thumbnail (by
 //  KCMDrawEventHandler's isThumb branch). The set is independent of the registrations
-//  (KCMPageMap), lives for the session only, and Stop clears it.
+//  (KCMPageMap) and lives for the session only.
+//
+//  ★**A TICK NO LONGER DEPENDS ON A COMPARISON** (2026-09-04, user decision). It can be put on any
+//  open document, it survives Stop, and it is saved and restored on its own -- so the mark means
+//  "I have looked at this page" rather than "I have looked at this changed page". What ends one is
+//  the flyout's "Clear Checks in This Document", closing the document, or shutdown.
+//  ⚠While a comparison IS running, which of the compared pages may take a tick is still the mode's
+//  business (Pixel = the marked ones, Story = all) -- that part did not change.
 //
 //  The structure follows KCMPageMap.cpp: the same shared reader for the selection
 //  (KCMPageMapReadSelection), the same per-document UID set, and a close sweep that compares
@@ -37,7 +44,7 @@
 #include <string>
 #include <cstdio>				// FILE / fread / fwrite / fclose
 
-#include "KCMCore.h"			// KCMCollectPageUIDs / KCMCollectMasterPageUIDs / KCMIsArmed / KCMArmedTargetDB / KCMArmedSourceDB / KCMDoMarkChangesDoc
+#include "KCMCore.h"			// KCMCollectPageUIDs / KCMCollectMasterPageUIDs / KCMActiveDocDB / KCMIsComparedDoc / KCMArmedTargetDB / KCMArmedSourceDB / KCMDoMarkChangesDoc / KCMInvalidateDB
 #include "KCMModelNotify.h"	// KCMNotifyStatus - the model tells the UI, it never calls it
 #include "KCMComparisonRun.h"	// KCMToggleStartStop
 #include "KCMPageCheck.h"
@@ -56,12 +63,17 @@ static KCMDocUidSet sChecked;
 // **Which pages may be ticked depends on the mode.** The answer is built in one place,
 //   KCMCollectCheckablePageUIDs in KCMCore.cpp, and this file only asks it (the reasoning is with
 //   the declaration in KCMCore.h). In short:
-//     - Pixel mode ... only pages carrying a mark (a frame, a registered "/", an overflow "/")
-//     - Story mode ... **every page** of the Target and the Source
-//   @warning **four routes ask this question** -- the toggle, the toggle's state, the prune, and
-//     Load's restore -- and every one of them goes through KCMCollectCheckable /
-//     KCMFilterToCheckable below. Calling KCMCollectChangedPageUIDs directly instead only ever
-//     gives the Pixel answer ([[one-question-one-place]]).
+//     - not being compared ... **every page** (a tick needs no comparison -- 2026-09-04)
+//     - Pixel mode ....... only pages carrying a mark (a frame, a registered "/", an overflow "/")
+//     - Story mode ....... **every page** of the Target and the Source
+//   ★**TWO routes ask it, and both are about PUTTING a tick on**: the toggle and the toggle's
+//     state. Both go through KCMCollectCheckable / KCMFilterToCheckable below; calling
+//     KCMCollectChangedPageUIDs directly instead only ever gives the Pixel answer
+//     ([[one-question-one-place]]).
+//   ⚠**It used to be four**, and the two that went are the whole of 2026-09-04's bug: the prune
+//     and Load's restore asked this same question to decide **which ticks may STAY**, which is a
+//     different question and had a different right answer. Both now test only that the page
+//     exists. **If a third route ever needs this, check which of the two questions it is asking.**
 //
 // **Ask once and then use Includes() when judging several pages.** The Pixel branch walks the
 //   whole of sEntries each time, so asking per page costs O(pages x changes).
@@ -76,7 +88,7 @@ static void KCMFilterToCheckable(IDataBase* db, const std::vector<UID>& pages, s
 	out.clear();
 	KCMCheckablePages checkable;
 	if (!KCMCollectCheckable(db, checkable))
-		return;		// db is not one of the compared documents = nothing may be ticked
+		return;		// there is no document at all -- every real one answers kTrue now (KCMCore.h)
 	for (size_t i = 0; i < pages.size(); ++i)
 		if (checkable.Includes(pages[i]))
 			out.push_back(pages[i]);
@@ -92,10 +104,11 @@ void KCMPageCheckToggleSelectedPages()
 	if (!KCMPageMapReadSelection(db, selPages, kTrue /*includeMasters*/))
 		return;		// kCustomEnabling should already have greyed the menu out; belt and braces
 
-	// Ticking is only possible while a comparison is running (armed) and the selected document is
-	// the Target or the Source.
-	if (!KCMIsComparedDoc(db))
-		return;
+	// ★NO COMPARISON IS REQUIRED (2026-09-04, user decision). A tick is the reader's own marker:
+	//   it goes on any open document, it survives Stop, and it is saved and restored on its own.
+	//   **Which pages may take one is still asked** -- of KCMCollectCheckablePageUIDs, which
+	//   answers "every page" for a document nobody is comparing and keeps the Pixel rule for the
+	//   two that are being compared.
 
 	// Narrow the selection to the pages that may be ticked (which depends on the mode -- see
 	// KCMFilterToCheckable above).
@@ -149,10 +162,9 @@ KCMPageToggleState KCMPageCheckGetToggleState()
 	if (!KCMPageMapReadSelection(db, pages, kTrue /*includeMasters*/))
 		return st;
 
-	// Enabled only while a comparison is running and the selected document is the Target or the
-	// Source; grey otherwise.
-	if (!KCMIsComparedDoc(db))
-		return st;
+	// ★NO COMPARISON IS REQUIRED (2026-09-04) -- **and it has to be the very same rule the toggle
+	//   itself uses**: greying the item here while the toggle would have accepted the click is a
+	//   menu that lies about what the command does. Both go through KCMFilterToCheckable below.
 
 	// Disabled when the selection holds no page that may be ticked. In the Pixel mode Check does
 	//   not appear on pages without a frame or a "/", while in the Story mode every page counts;
@@ -192,56 +204,46 @@ void KCMPageCheckClearAllDocs()
 }
 
 //========================================================================================
-// KCMPageCheckPruneToMarked (declared in KCMPageCheck.h)
-//   After a re-comparison, narrow each document's ticks to the pages that may still be ticked,
-//   forgetting the rest. KCMCollectCheckablePageUIDs only answers for the two documents being
-//   compared; for any other one it comes back empty, which unticks that document entirely.
-//   No pointer is dereferenced.
-//   @warning **the name still says "ToMarked"** while the meaning has widened to "keep only what
-//     may still be ticked" -- see the header. Renaming belongs in a commit of its own.
+// KCMPageCheckClearDoc (declared in KCMPageCheck.h)
+//   The flyout item "Clear Checks in This Document": drop ONE document's ticks and tell the UI
+//   which pages changed, so that the Pages panel's thumbnails lose their ticks along with the
+//   layout view.
+//   ★**THE PAGE SET IS TAKEN BEFORE THE TICKS GO.** Once they are gone nothing can say which
+//     pages carried one -- the notification carries a page set, and there would be no set left to
+//     build it from. (Load's phase 3 carries the union of old and new ticks for the same reason.)
+//   @return how many ticks were dropped, for the status line.
 //========================================================================================
-void KCMPageCheckPruneToMarked(std::map<IDataBase*, std::set<UID> >* outUnchecked)
+int32 KCMPageCheckClearDoc(IDataBase* db)
 {
-	if (sChecked.IsEmpty())
-		return;
-	// The eligibility set is built once per document and then filtered against, which needs the
-	//   entry point that hands out the sets themselves (GetMap). The entries emptied by that are
-	//   dropped by PruneEmptyDocs() at the end (KCMDocUidSet.h's rule).
-	// **GetMap() hands out the raw map, so the lock the container's own methods take does not
-	//   apply**; it is taken explicitly here. Erasing while a background thread's drawing pass
-	//   reads the same set corrupts it. The lock is recursive, so PruneEmptyDocs() taking it
-	//   again below is fine.
-	KCMMarkStateLock lock(KCMMarkStateMutex());
-	KCMDocUidSet::Map& m = sChecked.GetMap();
-	for (KCMDocUidSet::Map::iterator it = m.begin(); it != m.end(); ++it)
-	{
-		// **What is asked here is "may this page still be ticked", not "does it still carry a
-		//   mark".** The two look alike only in the Pixel mode: in the Story mode every page is
-		//   eligible, so **nothing comes off**, which is correct. Asking
-		//   KCMCollectChangedPageUIDs here instead would wipe out every tick made in the Story
-		//   mode at the next re-comparison -- the side that puts ticks on and the side that takes
-		//   them off would be asking two different questions.
-		KCMCheckablePages checkable;
-		KCMCollectCheckable(it->first, checkable);		// empty unless db is compared = all come off
-		std::set<UID>& chk = it->second;
-		for (std::set<UID>::iterator c = chk.begin(); c != chk.end(); )
-		{
-			if (!checkable.Includes(*c))
-			{
-				// Tell the caller which page was unticked, when it asked to be told. Losing a
-				//   tick changes the thumbnail, but the page is in no set once the tick is gone,
-				//   so **not catching it here means it never gets purged at all**
-				//   (see KCMPageCheck.h).
-				if (outUnchecked != nil)
-					(*outUnchecked)[it->first].insert(*c);
-				chk.erase(c++);		// no longer eligible: forget the tick
-			}
-			else
-				++c;
-		}
-	}
-	sChecked.PruneEmptyDocs();
+	if (db == nil)
+		return 0;
+
+	std::set<UID> cleared;
+	sChecked.CollectInto(db, cleared);		// **before**, never after
+	if (cleared.empty())
+		return 0;							// nothing to do, and nothing to tell anyone about
+
+	sChecked.Replace(db, std::set<UID>());	// an empty set drops the document's entry outright
+
+	KCMNotifyPages(kKCMPageFlagsChangedMessage, db, cleared);
+	KCMInvalidateDB(db);					// the layout view's ticks, which the notification does not cover
+	return (int32)cleared.size();
 }
+
+//========================================================================================
+// (KCMPageCheckPruneToMarked lived here and was REMOVED on 2026-09-04.)
+//   It narrowed each document's ticks to the pages that still carried a mark, after every
+//   re-comparison -- "the frame is gone, and the memory of having checked it goes with it".
+//   ★**That reading died with the tick's own meaning.** A tick now says "I have looked at this
+//     page", and looking at a page is not undone by the page turning out to be unchanged.
+//   ⚠**It was doing real harm by the end**: ticking a document that nobody was comparing and then
+//     starting a comparison ON that document threw those ticks away at the moment the comparison
+//     began, because the prune ran at the end of every comparison and judged them by the Pixel
+//     rule. Loading a saved set into a compared document lost the same ticks the same way.
+//   Nothing replaced it. A tick on a page that has since been deleted is never drawn (the drawing
+//     side walks the spread's real pages), is dropped on the way into Load (which walks them too),
+//     and goes with the document at close (KCMPageCheckSweepClosedDocs).
+//========================================================================================
 
 //========================================================================================
 // KCMPageCheckIsChecked (declared in KCMPageCheck.h)
@@ -791,15 +793,64 @@ static bool16 KCMDocUtf8Path(IDataBase* db, std::string& outUtf8)
 //----------------------------------------------------------------------------------------
 void KCMPageCheckSaveToFile()
 {
-	if (!KCMIsArmed())
+	// ★THE ACTIVE DOCUMENT, ALWAYS -- with a comparison running or without one (2026-09-04, user
+	//   decision). Two things were wrong with the old rule ("only while armed, and then both
+	//   compared documents"): the ticks and the paws no longer need a comparison to EXIST, so
+	//   refusing without one produced state that could not be saved at all (measured 2026-09-04 --
+	//   after Stop the paws went on being drawn while Save answered "start first", the menu item
+	//   staying enabled throughout); and letting "which documents" depend on the comparison is a
+	//   second rule where one does.
+	//   ⚠**Widening it to "every open document" instead would have cost data.** A document that
+	//   holds saved paws, opened but not yet Loaded, holds nothing in memory -- and it would have
+	//   been written out as empty. The active document is the one in front of the reader, so what
+	//   gets saved is always what they are looking at.
+	IDataBase* db = KCMActiveDocDB();
+	if (db == nil)
 	{
-		KCMSayStatus("Save: start first", kTrue /*forceRedrawNow*/);	// the status line is small (its Frame is in ui/KCMUI.fr), so keep it short
+		KCMSayStatus("Save: no document", kTrue /*forceRedrawNow*/);	// the status line is small (its Frame is in ui/KCMUI.fr), so keep it short
 		return;
 	}
 
-	// Read the existing file first, so that what was saved for other documents survives, then
-	// overwrite (or delete) the entries of the two documents being compared with their current
-	// ticks and registrations.
+	std::string path;
+	if (!KCMDocUtf8Path(db, path))
+	{
+		KCMSayStatus("Save doc first", kTrue /*forceRedrawNow*/);	// an unsaved document has no path to key on
+		return;
+	}
+
+	// What this document holds right now: the ticks, the registrations (Added/Removed = the green
+	// "/", which another module owns) and the cat-paw stamps (a third module -- they carry
+	// coordinates, so unlike the other two they travel as a list rather than a set of UIDs).
+	KCMDocSets sets;
+	std::set<UID> chk;
+	sChecked.CollectInto(db, chk);
+	for (std::set<UID>::const_iterator u = chk.begin(); u != chk.end(); ++u)
+		sets.checks.insert((uint32)u->Get());
+	std::set<UID> reg;
+	KCMPageMapCollectRegistered(db, reg);
+	for (std::set<UID>::const_iterator u = reg.begin(); u != reg.end(); ++u)
+		sets.registered.insert((uint32)u->Get());
+	KCMPawStampGetForSave(db, sets.paws);
+
+	// **With nothing to save, the file is not touched at all** -- not even read, and this
+	//   document's record in it is left exactly as it was.
+	//   ★This is deliberate, and it is what keeps a saved record safe: writing an empty document
+	//   out would mean "forget what was saved for it", and **nothing here can tell the two apart**
+	//   -- "I cleared this document's marks" and "I have not Loaded them back yet" both look like
+	//   a document holding nothing. So **a record is only ever replaced by a save that has
+	//   something to write.**
+	//   ⚠There is therefore no way to delete a record through Save, by design. A stale record
+	//   costs a few bytes; deleting one the reader still wanted costs their work.
+	//   (The rule predates this change -- it was written after a save-with-nothing wiped records
+	//   for real -- and the change only narrows what "nothing" can mean.)
+	if (sets.checks.empty() && sets.registered.empty() && sets.paws.empty())
+	{
+		KCMSayStatus("Nothing to save", kTrue /*forceRedrawNow*/);
+		return;
+	}
+
+	// Read the existing file first, so that what was saved for OTHER documents survives, then
+	// replace this one's entry.
 	std::map<std::string, KCMDocSets> merged;
 	bool16 readError = kFalse;
 	KCMReadSetsMap(merged, &readError);	// empty when there is no file
@@ -811,58 +862,7 @@ void KCMPageCheckSaveToFile()
 		return;
 	}
 
-	IDataBase* dbs[2] = { KCMArmedTargetDB(), KCMArmedSourceDB() };
-	int32 savedDocs = 0;
-	int32 skippedUnsaved = 0;
-	for (int i = 0; i < 2; ++i)
-	{
-		IDataBase* db = dbs[i];
-		if (db == nil)
-			continue;
-		std::string path;
-		if (!KCMDocUtf8Path(db, path))
-		{
-			++skippedUnsaved;	// an unsaved document has no path to key on
-			continue;
-		}
-
-		KCMDocSets sets;
-		// The ticks
-		std::set<UID> chk;
-		sChecked.CollectInto(db, chk);
-		for (std::set<UID>::const_iterator u = chk.begin(); u != chk.end(); ++u)
-			sets.checks.insert((uint32)u->Get());
-		// The registrations (Added/Removed = green "/"), which another module owns.
-		std::set<UID> reg;
-		KCMPageMapCollectRegistered(db, reg);
-		for (std::set<UID>::const_iterator u = reg.begin(); u != reg.end(); ++u)
-			sets.registered.insert((uint32)u->Get());
-		// The cat-paw stamps, which a third module owns. They carry coordinates, so unlike the two
-		// above they travel as a list rather than a set of UIDs.
-		KCMPawStampGetForSave(db, sets.paws);
-
-		if (!sets.checks.empty() || !sets.registered.empty() || !sets.paws.empty())
-		{
-			merged[path] = sets;
-			++savedDocs;
-		}
-		else
-		{
-			merged.erase(path);	// nothing of ours on it now: drop it from the file too
-		}
-	}
-
-	// **With nothing to save, the file is not touched at all.** It used to be written even then,
-	//   so pressing Save while both documents were empty -- right after a restart, say, Stop
-	//   having cleared every tick -- wrote out a file from which merged.erase above had already
-	//   removed what was saved before, while the status line said "Nothing to save". It looked
-	//   as though nothing had happened, and Load could not bring it back. **Deleting from the
-	//   file only ever rides along with a save that has something to write.**
-	if (savedDocs == 0)
-	{
-		KCMSayStatus(skippedUnsaved > 0 ? "Save doc first" : "Nothing to save", kTrue /*forceRedrawNow*/);
-		return;
-	}
+	merged[path] = sets;
 
 	IDFile outFile;
 	if (!KCMWriteSetsMap(merged, outFile))
@@ -882,9 +882,13 @@ void KCMPageCheckSaveToFile()
 //----------------------------------------------------------------------------------------
 void KCMPageCheckLoadFromFile()
 {
-	if (!KCMIsArmed())
+	// ★THE ACTIVE DOCUMENT, ALWAYS -- the rule Save follows, and it has to be the same one:
+	//   a state that can be saved but not loaded back (or the reverse) is worse than either rule
+	//   on its own. (2026-09-04, user decision.)
+	IDataBase* db = KCMActiveDocDB();
+	if (db == nil)
 	{
-		KCMSayStatus("Load: start first", kTrue /*forceRedrawNow*/);	// the status line is small, so keep it short
+		KCMSayStatus("Load: no document", kTrue /*forceRedrawNow*/);	// the status line is small, so keep it short
 		return;
 	}
 
@@ -895,63 +899,54 @@ void KCMPageCheckLoadFromFile()
 		return;
 	}
 
-	IDataBase* tgt = KCMArmedTargetDB();
-	IDataBase* src = KCMArmedSourceDB();
-	IDataBase* dbs[2] = { tgt, src };
+	std::string path;
+	if (!KCMDocUtf8Path(db, path))
+	{
+		KCMSayStatus("Save doc first", kTrue /*forceRedrawNow*/);	// an unsaved document has no path to key on
+		return;
+	}
+	std::map<std::string, KCMDocSets>::const_iterator s = saved.find(path);
+	if (s == saved.end())
+	{
+		KCMSayStatus("No saved data for doc", kTrue /*forceRedrawNow*/);
+		return;		// nothing saved for it: its ticks, registrations and paws stay as they are
+	}
 
-	// Which of the two compared documents have saved data, and where that data is.
-	std::map<std::string, KCMDocSets>::const_iterator saveIt[2] = { saved.end(), saved.end() };
-	bool16 anyDocFound = kFalse;
-
-	// Each document's flat page list is collected in phase 1 and used again in phase 3 -- a
-	// re-comparison adds and removes no pages -- and only for the documents that have saved data.
-	// **The master pages are cached separately.** Phase 3 (restoring the ticks) looks at both,
-	//   while phase 1 (restoring the registrations) looks at **ordinary pages only**: a master is
+	// The page list is collected here and used by both phases -- a re-comparison adds and removes
+	// no pages, so collecting it twice would only cost time.
+	// **The master pages are collected separately.** Phase 3 (the ticks and the paws) looks at
+	//   both, while phase 1 (the registrations) looks at **ordinary pages only**: a master is
 	//   never registered, since Register calls the shared reader with includeMasters=kFalse.
 	//   Using one concatenated list for both would write the assumption "a master could be
 	//   registered too" into the code.
-	std::vector<UID> flatCache[2];
-	std::vector<UID> masterCache[2];
+	std::vector<UID> pageList;
+	std::vector<UID> masterList;
+	KCMCollectPageUIDs(db, pageList);
+	KCMCollectMasterPageUIDs(db, masterList);
 
-	//--- Phase 1: apply the registrations to both documents, before the re-comparison so that ---
-	//--- they reach the pairing. ---------------------------------------------------------------
+	//--- Phase 1: apply the registrations, before the re-comparison so that they reach the -------
+	//--- pairing. -------------------------------------------------------------------------------
 	// Of the saved registered UIDs, only the pages that really exist in this document go into the
-	// set. A document that has saved data is set even when its saved registrations are empty,
-	// which is what restores the state as it was saved.
-	int32 regApplied = 0;
-	for (int i = 0; i < 2; ++i)
+	// set. An empty saved set is applied too, which is what restores the state as it was saved.
+	//
+	// ★★**THE REGISTRATIONS STAY TIED TO THE COMPARISON -- user decision, 2026-09-04. Do not
+	//   re-propose.** The ticks and the paws stopped depending on it that same day; the
+	//   registrations deliberately did not, because a registration is an INPUT to the comparison
+	//   ("treat this page as added") rather than a mark the reader leaves behind.
+	//   ⇒ **They are restored here even with nothing being compared, but the green "/" is drawn
+	//   only for the two documents that ARE being compared** (the Target/Source loops in
+	//   KCMDrawEventHandler). So a Load without a comparison restores them invisibly, and they
+	//   appear the moment one starts. **That asymmetry is intended, not an oversight** -- it was
+	//   put to the reader as a choice against making all three alike, and this is the answer.
+	std::vector<UID> regPages;
+	for (size_t k = 0; k < pageList.size(); ++k)
 	{
-		IDataBase* db = dbs[i];
-		if (db == nil)
-			continue;
-		std::string path;
-		if (!KCMDocUtf8Path(db, path))
-			continue;
-		std::map<std::string, KCMDocSets>::const_iterator s = saved.find(path);
-		if (s == saved.end())
-			continue;	// nothing saved for this document: its ticks and registrations stay as they are
-		saveIt[i] = s;
-		anyDocFound = kTrue;
-
-		std::vector<UID> regPages;
-		std::vector<UID>& flat = flatCache[i];
-		KCMCollectPageUIDs(db, flat);		// phase 3 reuses this very list
-		KCMCollectMasterPageUIDs(db, masterCache[i]);	// for phase 3 only; not used here
-		for (size_t k = 0; k < flat.size(); ++k)
-		{
-			const UID u = flat[k];
-			if (s->second.registered.count((uint32)u.Get()) > 0)
-				regPages.push_back(u);
-		}
-		KCMPageMapReplaceRegistered(db, regPages);	// empty clears the document's registrations
-		regApplied += (int32)regPages.size();
+		const UID u = pageList[k];
+		if (s->second.registered.count((uint32)u.Get()) > 0)
+			regPages.push_back(u);
 	}
-
-	if (!anyDocFound)
-	{
-		KCMSayStatus("No saved data for docs", kTrue /*forceRedrawNow*/);
-		return;
-	}
+	KCMPageMapReplaceRegistered(db, regPages);	// empty clears the document's registrations
+	const int32 regApplied = (int32)regPages.size();
 
 	//--- Phase 2: re-compare, once. -------------------------------------------------------------
 	// The registrations changed, so the pairing is rebuilt exactly as Start would. The
@@ -966,15 +961,27 @@ void KCMPageCheckLoadFromFile()
 	//   So nothing is restored and, as on the Start route, everything goes back to Stop, leaving
 	//   no running comparison without frames. The saved file is untouched, so starting again and
 	//   loading again works.
-	if (tgt != nil && src != nil)
+	// ★**ONLY WHEN THE DOCUMENT JUST LOADED IS PART OF A RUNNING COMPARISON** (2026-09-04).
+	//   With nothing being compared, or with the active document a third one, its registrations
+	//   change nothing that is on screen and re-comparing would be work nobody asked for.
+	//   ⚠**The pair re-compared is the ARMED pair, not the active document.** The comparison
+	//   belongs to those two whichever of them the reader happens to be looking at, and one side's
+	//   registrations changing is reason enough to rebuild the pairing -- it is built from both.
+	if (KCMIsComparedDoc(db))
 	{
-		PMString report;
-		if (KCMDoMarkChangesDoc(tgt, src, report, kTrue /*allowIncremental*/) != kSuccess)
+		IDataBase* tgt = KCMArmedTargetDB();
+		IDataBase* src = KCMArmedSourceDB();
+		if (tgt != nil && src != nil)
 		{
-			KCMToggleStartStop();		// armed, so this takes the Stop branch: strip removed,
-										// disarmed, ticks and registrations dropped
-			KCMSayStatus("Load cancelled", kTrue /*forceRedrawNow*/);
-			return;
+			PMString report;
+			if (KCMDoMarkChangesDoc(tgt, src, report, kTrue /*allowIncremental*/) != kSuccess)
+			{
+				KCMToggleStartStop();		// armed, so this takes the Stop branch: strip removed,
+											// disarmed, registrations dropped (⚠the ticks survive
+											// a Stop now, so they are not among the casualties)
+				KCMSayStatus("Load cancelled", kTrue /*forceRedrawNow*/);
+				return;
+			}
 		}
 	}
 
@@ -982,19 +989,17 @@ void KCMPageCheckLoadFromFile()
 	//--- re-comparison. -------------------------------------------------------------------------
 	int32 checksRestored = 0;
 	int32 pawsRestored = 0;
-	for (int i = 0; i < 2; ++i)
 	{
-		IDataBase* db = dbs[i];
-		if (db == nil || saveIt[i] == saved.end())
-			continue;
+		const std::set<uint32>& savedChecks = s->second.checks;
 
-		const std::set<uint32>& savedChecks = saveIt[i]->second.checks;
-
-		// Build the "may this be ticked" answer once per document; asking per page costs
-		// O(pages x changes). In the Story mode every page is eligible, so a saved tick comes
-		// back whether the page carries a mark or not.
-		KCMCheckablePages checkable;
-		KCMCollectCheckable(db, checkable);
+		// ★**THE ONLY TEST IS "DOES THE PAGE STILL EXIST"** (2026-09-04) -- and the loops below
+		//   already walk the pages that do, so there is nothing left to ask.
+		//   It used to ask "may this page be ticked" as well, which meant a saved tick came back
+		//   only where the page still carried a mark. That was right while a tick meant "I looked
+		//   at this changed page"; it is wrong now that it means "I looked at this page", and it
+		//   showed up as **a Load into a compared document silently restoring fewer ticks than
+		//   were saved**. The same reading is what the prune used to do, and it went for the same
+		//   reason -- the paws never asked the question at all.
 
 		// Restore from both the ordinary pages and the master pages: masters are compared, get
 		//   frames, and therefore get ticks.
@@ -1003,14 +1008,14 @@ void KCMPageCheckLoadFromFile()
 		//   loop only checked the ordinary page list, a master's tick could be saved but vanished
 		//   silently on load.
 		std::set<UID> newSet;
-		const std::vector<UID>* lists[2] = { &flatCache[i], &masterCache[i] };	// collected in phase 1; not collected again
+		const std::vector<UID>* lists[2] = { &pageList, &masterList };	// collected above; not collected again
 		for (int L = 0; L < 2; ++L)
 		{
 			const std::vector<UID>& flat = *lists[L];
 			for (size_t k = 0; k < flat.size(); ++k)
 			{
 				const UID u = flat[k];
-				if (savedChecks.count((uint32)u.Get()) > 0 && checkable.Includes(u))
+				if (savedChecks.count((uint32)u.Get()) > 0)
 					newSet.insert(u);
 			}
 		}
@@ -1030,7 +1035,7 @@ void KCMPageCheckLoadFromFile()
 					livePages.insert((uint32)flat[k].Get());
 			}
 
-			const std::vector<KCMPawStamp>& savedPaws = saveIt[i]->second.paws;
+			const std::vector<KCMPawStamp>& savedPaws = s->second.paws;
 			std::vector<KCMPawStamp> livePaws;
 			for (size_t k = 0; k < savedPaws.size(); ++k)
 			{

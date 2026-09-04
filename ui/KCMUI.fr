@@ -1030,6 +1030,24 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKCMLoadChecksMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
+		// "Clear Checks in This Document" on the panel flyout (popup) menu. Plain command that drops
+		// the active document's checks, and the checks on its Pages panel thumbnails with them.
+		// ★It exists because **Stop no longer clears the checks** (2026-09-04): Stop used to double
+		// as the way to be rid of them all, so removing that left no way at all.
+		kKCMClearChecksActionID,
+		kKCMPopupMenuPath,
+		kKCMClearChecksMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
+		// "Clear Cat Paws in This Document" on the panel flyout (popup) menu. Plain command; the same
+		// for the cat-paw stamps. ⚠Two items and not one: a check records progress through a
+		// comparison while a paw is a landmark the reader put down, so they are wanted gone at
+		// different moments.
+		kKCMClearPawsActionID,
+		kKCMPopupMenuPath,
+		kKCMClearPawsMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
 		// "Export Changed Pages..." on the panel flyout (popup) menu. Plain command (not a toggle):
 		// writes the current comparison's changed-page list to a tab-separated UTF-8 text file
 		// (2 columns: Page / Type, where Type = Changed / Inserted / Deleted) for pasting into
@@ -1429,7 +1447,25 @@ resource ActionDef (kSDKDefActionResourceID)
 		kKCMLoadChecksMenuKey,
 		kOtherActionArea,
 		kNormalAction,
-		kDisableIfLowMem,					// plain command; guards inside (needs Start)
+		kDisableIfLowMem,					// plain command; guards inside (needs a saved record for the active document)
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		kKCMActionComponentBoss,
+		kKCMClearChecksActionID,
+		kKCMClearChecksMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates greys it where the active document holds no check
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		kKCMActionComponentBoss,
+		kKCMClearPawsActionID,
+		kKCMClearPawsMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,	// the same, asked of the paws instead
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 

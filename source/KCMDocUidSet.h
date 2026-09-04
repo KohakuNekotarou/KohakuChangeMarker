@@ -103,8 +103,12 @@ public:
 	// is not an entry point a background thread may use. Its one caller is on the main thread.
 	bool16 IsEmpty() const { return fMap.empty() ? kTrue : kFalse; }
 
-	// The way in for work that has to modify the sets themselves, such as a bulk prune
-	// (KCMPageCheckPruneToMarked builds one eligibility set per document and filters against it).
+	// The way in for work that has to modify the sets themselves, such as a bulk prune.
+	// ⚠★**NO CALLER AS OF 2026-09-04**, and neither has PruneEmptyDocs below: the one user of both
+	//   was KCMPageCheckPruneToMarked, which was removed when a tick stopped depending on the
+	//   comparison (KCMPageCheck.h says why). They are kept because the pair is the only way to
+	//   edit the sets in bulk, and the next feature that needs to will want them -- but **a reader
+	//   counting "who uses this" should measure rather than trust this line.**
 	// @warning this hands out the raw map, so **the caller takes the lock** itself
 	// (KCMMarkStateLock, KCMThreadSafety.h) -- the container's own methods cannot do it here.
 	// Call PruneEmptyDocs() afterwards to drop the entries that were emptied.

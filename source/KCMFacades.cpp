@@ -335,10 +335,25 @@ CREATE_PMINTERFACE(KCMMarkData, kKCMMarkDataImpl)
 //========================================================================================
 // KCMPageFlagsFacade -- IKCMPageFlagsFacade
 //
-// The writing half of the two per-page flags. Six forwarders, no logic: which pages are
-// selected, what the menu label should say, where the JSON file goes -- all of that already
-// lives in KCMPageMap.cpp / KCMPageCheck.cpp and stays there.
+// The writing half of the per-page flags. Forwarders, almost no logic: which pages are selected,
+// what the menu label should say, where the JSON file goes -- all of that already lives in
+// KCMPageMap.cpp / KCMPageCheck.cpp / KCMPawStamp.cpp and stays there.
 //========================================================================================
+
+// "cleared chk3" / "cleared paw0" for the status line. The two clear items say the same thing
+// about different marks, so the lines that build it are written once.
+// ⚠**SetTranslatable(kFalse) is what keeps the reader from being shown the key itself** -- the
+//   reason every literal put on this line needs the mark is with KCMNotifyStatus in
+//   KCMModelNotify.h.
+static void KCMSayCleared(const char* what, int32 n)
+{
+	PMString msg;
+	msg.SetTranslatable(kFalse);
+	msg.Append(what);
+	msg.AppendNumber(n);
+	KCMNotifyStatus(msg, kTrue /*forceRedrawNow*/);
+}
+
 class KCMPageFlagsFacade : public CPMUnknown<IKCMPageFlagsFacade>
 {
 public:
@@ -364,6 +379,32 @@ public:
 	virtual int32	PawStampCount(IDataBase* db)	{ return KCMPawStampCount(db); }
 	virtual PMReal	PawHalfSizeForPage(IDataBase* db, UID pageUID)
 									{ return KCMPawHalfSizeForPage(db, pageUID); }
+
+	// Clearing one document's marks (the two flyout items). **The status line is written here**,
+	// on the model side, the way Save and Load write theirs -- the UI's action component has no
+	// call site of its own for the status line and should not grow one.
+	virtual bool16	PageCheckHasAny(IDataBase* db)	{ return KCMPageCheckHasAny(db); }
+	virtual int32	ClearChecksInDoc(IDataBase* db)
+					{
+						const int32 n = KCMPageCheckClearDoc(db);
+						KCMSayCleared("cleared chk", n);
+						return n;
+					}
+	virtual int32	ClearPawsInDoc(IDataBase* db)
+					{
+						// ★The count is read FIRST: KCMPawStampClearDoc answers nothing, and once it
+						//   has run there is nothing left to count. (Its tick counterpart returns the
+						//   number itself, because it has to read the page set before clearing
+						//   anyway -- the notification needs that set.)
+						const int32 n = KCMPawStampCount(db);
+						if (n > 0)
+						{
+							KCMPawStampClearDoc(db);
+							KCMInvalidateDB(db);	// no thumbnail carries a paw, so this is the whole refresh
+						}
+						KCMSayCleared("cleared paw", n);
+						return n;
+					}
 };
 
 CREATE_PMINTERFACE(KCMPageFlagsFacade, kKCMPageFlagsFacadeImpl)

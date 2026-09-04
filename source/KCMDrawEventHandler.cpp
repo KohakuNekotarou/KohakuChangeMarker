@@ -1708,8 +1708,12 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 		anyMarkableContent = !sEntries.empty() ||
 			(sDB    != nil && KCMPageMapHasAnyRegistered(sDB)) ||
 			(sSrcDB != nil && KCMPageMapHasAnyRegistered(sSrcDB)) ||
-			(sDB    != nil && KCMPageCheckHasAny(sDB)) ||		// the "Check" ticks (so a thumbnail redraw is triggered)
-			(sSrcDB != nil && KCMPageCheckHasAny(sSrcDB)) ||
+			// The "Check" ticks (so a thumbnail redraw is triggered).
+			// ★ASKED OF THE DOCUMENT BEING DRAWN, not of sDB / sSrcDB (2026-09-04): a tick no
+			//   longer needs a comparison to exist, so it can sit on a document nobody is
+			//   comparing -- the shape wantPaws uses below, and for the same reason. This gate
+			//   is what lets a thumbnail redraw reach a tick that is the page's only mark.
+			KCMPageCheckHasAny(::GetDataBase(ded->changedBy)) ||
 			(!sOverflowT.empty() || !sOverflowS.empty());
 	}
 	// **While the button is held, the marks in that window are the other way round.**
@@ -1784,12 +1788,13 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 	const bool16 wantOrig  = !suppressForPrint && !printing && sShowOriginal && !sOrigImages.empty();
 	// The layout-view version of the "Check" tick. On screen it is shown **at all times**,
 	// completely independently of the frame toggles and the tool's left button. It reaches print and
-	// PDF only with sPrintMarks (Print comparison marks) on, for the Target and Source alike. The
-	// tick sets only exist on the armed Target/Source (sDB/sSrcDB) and are cleared by Stop, so
-	// testing those two databases is enough.
+	// PDF only with sPrintMarks (Print comparison marks) on, for the Target and Source alike.
+	// ★A TICK NO LONGER DEPENDS ON A COMPARISON (2026-09-04). It can be put on any open document
+	//   and it survives Stop, so "does this one have any" is asked of **the document being drawn**
+	//   rather than of sDB / sSrcDB -- the same shape, and the same reasoning, as wantPaws below.
 	// Thumbnails (isThumb) are drawn by their own block below and are not included here.
 	const bool16 wantChecks = !isThumb && (!printing || sPrintMarks) &&
-		((sDB != nil && KCMPageCheckHasAny(sDB)) || (sSrcDB != nil && KCMPageCheckHasAny(sSrcDB)));
+		KCMPageCheckHasAny(::GetDataBase(ded->changedBy));
 	// The cat-paw stamps follow the tick's rules -- always on screen, in print only with
 	// sPrintMarks -- with ★ONE DIFFERENCE THAT DECIDES THE SHAPE OF THIS LINE: a paw is NOT tied
 	// to an armed comparison. It can be put on any open document, so "does this one have any" has
@@ -1935,9 +1940,10 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 	//   spread's db may be the Target or the Source, and if that db has ticks they are drawn. It
 	//   comes before the Target/Source loops below and is not subject to their gates. The layout
 	//   view and print version is the wantChecks block further down.
-	//   Armed only (the tick sets are cleared by Stop, so they are empty when nothing is armed --
-	//   the arm test is insurance).
-	if (isThumb && KCMIsArmed() && KCMPageCheckHasAny(db))
+	//   ★NO ARM TEST (2026-09-04). A tick survives Stop and can be put on a document nobody is
+	//   comparing, so demanding a running comparison here would hide it in the Pages panel while
+	//   the layout view went on showing it -- one mark, two answers.
+	if (isThumb && KCMPageCheckHasAny(db))
 	{
 		const int32 npChk = spread->GetNumPages();
 		for (int32 i = 0; i < npChk; ++i)
@@ -2020,7 +2026,12 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 	//   (SelectedMarkOpacity), the same on screen and in print.
 	//   It comes right after the peek so that the tick sits on top of the peek's opaque picture and
 	//   stays visible, and before the Source/Target loops because the Source loop ends in a return.
-	if (wantChecks && KCMIsArmed() && KCMPageCheckHasAny(db))
+	// ⚠★★**NO KCMIsArmed() HERE EITHER, since 2026-09-04.** A tick no longer waits on a comparison,
+	//   and this gate was the LAST of the four that still said it did -- **the other three were
+	//   changed in the same sitting and this one was missed**, which showed up in the running
+	//   application as a tick appearing in the Pages panel thumbnail and nowhere else. One mark,
+	//   two answers. ⇒ **When a condition like this changes, count the places that carry it.**
+	if (wantChecks && KCMPageCheckHasAny(db))
 	{
 		const int32 npc = spread->GetNumPages();
 		for (int32 i = 0; i < npc; ++i)
@@ -2033,9 +2044,9 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 	}
 
 	// The cat-paw stamps, on the same route as the tick above and with the same visibility rules.
-	// ⚠★NO KCMIsArmed() HERE, deliberately -- that is the one condition a paw does not carry. It
-	//   is the reader's own mark on a document they are reading, which may be a document nobody is
-	//   comparing; requiring an armed comparison would take the feature's point away.
+	// ⚠★No KCMIsArmed() here. **The tick used to be the one that carried it and the paw the one
+	//   that did not**; since 2026-09-04 neither does, because both are the reader's own mark on a
+	//   document they are reading -- which may be a document nobody is comparing.
 	if (wantPaws && KCMPawStampHasAny(db))
 	{
 		const int32 npp = spread->GetNumPages();

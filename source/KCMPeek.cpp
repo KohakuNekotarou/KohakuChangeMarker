@@ -442,29 +442,13 @@ static bool16 KCMRefreshComparisonCore(IDataBase* targetDB, IDataBase* sourceDB,
 	// The older-version images are stale now; the next peek rebuilds them at the current zoom.
 	KCMDrawEventHandler::DropAllOrig();
 
-	// The ticks: a page that lost its ring in this partial re-comparison loses its tick with it --
-	//   "the frame is gone, and the memory of having checked it goes with it".
-	//   **This must run before the KCMInvalidateDB below**: untick after invalidating and the
-	//   layout is redrawn with the old ticks still on it.
-	// **The pages the prune unticked are collected and merged into the touched set.** Without them
-	//   the per-UID purge misses those pages every time: losing a tick changes the thumbnail, but
-	//   once the tick is gone the page is in none of the sets the current state can produce, so it
-	//   **cannot be recovered afterwards** (see outUnchecked in KCMPageCheck.h).
-	std::map<IDataBase*, std::set<UID> > uncheckedByDoc;
-	KCMPageCheckPruneToMarked(&uncheckedByDoc);
-	{
-		std::map<IDataBase*, std::set<UID> >::const_iterator u = uncheckedByDoc.find(targetDB);
-		if (u != uncheckedByDoc.end())
-			touchedTargetPages.insert(u->second.begin(), u->second.end());
-		u = uncheckedByDoc.find(sourceDB);
-		if (u != uncheckedByDoc.end())
-			touchedSourcePages.insert(u->second.begin(), u->second.end());
-		// @warning **documents other than the target and the source are not collected** -- the
-		//   notification carries at most two. Nothing can be in them today: ticks only go on the
-		//   Target and the Source of a running comparison, and Stop clears them all
-		//   (KCMPageCheck.h). Should a third document ever become tickable, this is where the
-		//   pages would go missing.
-	}
+	// ★**THE TICKS ARE NOT TOUCHED** (2026-09-04). A tick is the reader's own "I have looked at
+	//   this page" mark, so a page losing its ring in a re-comparison is no reason to take the
+	//   mark away. The prune that used to do exactly that is gone, and with it the collecting of
+	//   the pages it unticked and the merging of those into the touched set.
+	//   ⚠**The comment removed from here ended in a warning that came true**: "should a third
+	//   document ever become tickable, this is where the pages would go missing". A third document
+	//   did become tickable -- on the same day, and the prune went for the same reason.
 
 	KCMInvalidateDB(targetDB);
 	// The Source's layout views are redrawn too: gaining or losing entries changes how its
@@ -1004,7 +988,12 @@ void KCMHandleDocsClosed()
 		//   stay on whichever of the two survived and creep into the pairing at the next Start.
 		//   (Emptying a map, so nothing is dereferenced.)
 		KCMPageMapClearAllDocs();
-		KCMPageCheckClearAllDocs();	// the ticks, which only exist while a comparison runs
+		// ★THE TICKS ARE **NOT** CLEARED HERE (2026-09-04). They no longer belong to the
+		//   comparison, so emptying every document's ticks because one COMPARED document closed
+		//   would take a third document's with it -- a document the reader never touched.
+		//   What does have to go, the ticks of the document that actually closed, is taken by
+		//   KCMPageCheckSweepClosedDocs further down this same function, which runs whether a
+		//   comparison was involved or not.
 		// The Story Edits list goes as well: its rows hold story and page UIDs of the Target, which
 		//   point at nothing once that document has closed. The panel's tree and heading are
 		//   rebuilt from the real state by the UI, so throwing the state away is all that is needed
