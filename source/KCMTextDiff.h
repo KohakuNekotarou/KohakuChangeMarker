@@ -6,13 +6,22 @@
 //
 //  The difference between two sequences, by Myers' algorithm.
 //
-//  **PORTED FROM KohakuTest's KTTextDiff, UNCHANGED EXCEPT FOR THE NAMES.** It was measured
-//  there against real documents before it was brought here -- a two-character Japanese edit
-//  selected exactly those two characters, and "sleeping" -> "awake" came back as one change
-//  rather than two. The record of that is docs/ai-notes/kt-story-diff-experiment-2026-08-17.md.
-//  @warning **TWO COPIES EXIST.** If a fault is found in either, fix BOTH or delete the KT one
-//   (source/sdksamples/KT/KTTextDiff.cpp): two copies that quietly disagree are worse than
-//   either of them alone.
+//  **ORIGINALLY PORTED FROM KohakuTest's KTTextDiff**, and at the time unchanged except for the
+//  names. It was measured there against real documents before it was brought here -- a
+//  two-character Japanese edit selected exactly those two characters, and "sleeping" -> "awake"
+//  came back as one change rather than two. The record is
+//  docs/ai-notes/kt-story-diff-experiment-2026-08-17.md.
+//
+//  ⚠★★**THE TWO COPIES HAVE DIVERGED, AND THIS IS THE LIVE ONE.** Measured 2026-09-04: 27 KB
+//   here against 11 KB there, and every one of the differences is an improvement made on this
+//   side -- the linear-space search (FindMiddleSnake), MergeNearbyChanges' "strictly shorter"
+//   rule, and AlignChangeBoundaries. **KT's copy is the August implementation, still compiled and
+//   still used by KT/KTStoryDiff.cpp.**
+//   ⇒ **Read this file first.** A fault found here does not need carrying over there; a fault
+//     found there may well be one this file has already fixed.
+//   ⚠**The old instruction "fix BOTH" is withdrawn**: it was written when the two were the same
+//     file, and following it now would mean porting three separate improvements backwards into an
+//     experiment. ⬜Whether KT's copy should be retired instead is undecided (2026-09-04).
 //
 //  Written from the published method -- Eugene W. Myers, "An O(ND) Difference Algorithm and Its
 //  Variations", Algorithmica 1(2), 1986 -- and not from anybody's source. An algorithm is not
@@ -73,7 +82,11 @@ namespace KCMTextDiff
 		thing holding that number down, and the price was that any story needing more edits than
 		the ceiling got no detail at all. The search now runs in LINEAR SPACE (Myers' own
 		divide-and-conquer refinement), so distance costs time and not memory: **50,000 tokens
-		against 50,000 unrelated ones needs 1.6 MB.**
+		against 50,000 unrelated ones needs 3.2 MB.**
+		★The figure is worth being able to re-derive rather than trust: the search keeps TWO rows of
+		4*(N+M)+7 int32s, so 50,000 + 50,000 gives 400,007 entries each, 1.6 MB a row and 3.2 MB the
+		pair. ⚠**This line said 1.6 MB until 2026-09-04** -- one row's worth, written as though it
+		were both.
 
 		@warning what a ceiling would still buy is a bound on TIME, which is O((N+M)*D). Measured
 		 in work/textdiff-test: 8,000 vs 8,000 with one percent changed = **1 ms**; 3,000 vs 3,000

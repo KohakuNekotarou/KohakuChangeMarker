@@ -314,8 +314,12 @@ namespace
 		// **Allocated once for the whole run.** The width has to cover more than the diagonals
 		//   the search writes: the overlap test reads the OTHER row at delta-k, and |delta-k| can
 		//   reach (n+m) + (n+m)/2 when one side is much longer than the other. 2*(n+m)+3 covers
-		//   that with room to spare and is still O(N+M) -- 50,000 against 50,000 is 1.6 MB for
-		//   both rows together, against the 31 MB the old row-per-step search needed at D=2000.
+		//   that with room to spare and is still O(N+M). **Each row is 2*offset+1 = 4*(N+M)+7
+		//   int32s**, so 50,000 against 50,000 is 400,007 entries -- 1.6 MB a row, **3.2 MB for the
+		//   pair** -- against the 31 MB the old row-per-step search needed at D=2000.
+		//   ⚠**This said 1.6 MB "for both rows together" until 2026-09-04**: one row's worth,
+		//     written as though it covered both. The arithmetic is spelled out so the next reader
+		//     can re-derive it instead of trusting a number.
 		FrontierRows rows;
 		rows.offset = 2 * (n + m) + 3;
 		rows.forward.assign(2 * rows.offset + 1, 0);
@@ -385,8 +389,15 @@ namespace
 		if ((cp >= 0x30A1 && cp <= 0x30FF) || (cp >= 0xFF66 && cp <= 0xFF9D))
 			return kScriptKatakana;
 
+		// ★**The supplementary planes count as Han too** (U+20000 and above: extensions B through G
+		//   and the compatibility supplement). ⚠They were missing until 2026-09-04, which filed
+		//   characters like 𠮟 -- a character of the Japanese standard set, not an exotic one -- as
+		//   "other", and a boundary next to one scored as though no script changed there.
+		//   One range covers the lot rather than six: the gaps between the extensions are
+		//   unassigned, so calling them Han costs nothing and the next extension is already in.
 		if ((cp >= 0x4E00 && cp <= 0x9FFF) || (cp >= 0x3400 && cp <= 0x4DBF) ||
-			(cp >= 0xF900 && cp <= 0xFAFF) || cp == 0x3005)
+			(cp >= 0xF900 && cp <= 0xFAFF) || cp == 0x3005 ||
+			(cp >= 0x20000 && cp <= 0x3134F))
 			return kScriptHan;
 
 		if ((cp >= 0x3001 && cp <= 0x303F) ||					// 、。「」【】ほか
@@ -647,7 +658,17 @@ void KCMTextDiff::ToCodePoints(const std::string& utf8, std::vector<int32>& code
 
 		++i;
 		for (int32 n = 0; n < extra && i < utf8.size(); ++n, ++i)
-			value = (value << 6) | (static_cast<unsigned char>(utf8[i]) & 0x3F);
+		{
+			// ★**A CONTINUATION BYTE, OR THE SEQUENCE STOPS HERE.** Without this test a lead byte
+			//   claiming three followers ate the next three bytes whatever they were, so ONE bad
+			//   byte cost up to FOUR characters -- while the comment below promised it would cost
+			//   one. Breaking leaves i on the offending byte, which the outer loop then reads as a
+			//   fresh lead byte, so everything after the damage lines up again.
+			const unsigned char cont = static_cast<unsigned char>(utf8[i]);
+			if ((cont & 0xC0) != 0x80)
+				break;
+			value = (value << 6) | (cont & 0x3F);
+		}
 
 		codePoints.push_back(value);
 	}
