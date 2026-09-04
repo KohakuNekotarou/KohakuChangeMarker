@@ -50,18 +50,24 @@ struct KCMPawStamp
 };
 
 /** Place a paw at (x, y) on that page. scale is a multiple of the page's ordinary paw size
-	(kKCMPawNormalScale, or kKCMPawBigScale for Alt).
+	(kKCMPawNormalScale, or kKCMPawBigScale for Alt); baseHalf is half the page's ordinary size,
+	the same value the lift takes.
 	★★A PLAIN PRESS ALWAYS PLACES -- it never lifts (changed 2026-09-04 at the user's request).
 	  It began as a toggle, and stamping repeatedly is what a reader actually does: with a toggle,
 	  a second paw beside the first kept taking the first one off. Lifting has a key of its own.
+	★★AND IT REFUSES TO STACK. A press that lands on a paw already there does nothing (the user's
+	  request, the same day): two paws on one spot look like one and only the top can be lifted, so
+	  the second press is far more likely to be a slip than an intention.
+	@return kTrue when one was placed, kFalse when a paw was already there (or the arguments were
+	  no good).
 	@warning writes go to THIS db and no other: unlike the readers below there is no fallback on
 	  file identity, because a write always happens on the main thread and means "add to the
 	  document I am looking at". Growing a clone's entry would be a wrong document, not a rescue. */
-void KCMPawStampPlaceAt(IDataBase* db, UID pageUID, const PMReal& x, const PMReal& y,
-                        const PMReal& scale);
+bool16 KCMPawStampPlaceAt(IDataBase* db, UID pageUID, const PMReal& x, const PMReal& y,
+                          const PMReal& scale, const PMReal& baseHalf);
 
 /** Lift the paw under (x, y) -- Shift + press. baseHalf is half the page's ORDINARY paw size;
-	each stamp's own square is that times its fScale, so what can be seen is what can be lifted.
+	each stamp's own reach is that times its fScale.
 	Where paws overlap, the one placed last comes off first.
 	@return kTrue when one was lifted, kFalse when the press landed on none. */
 bool16 KCMPawStampLiftAt(IDataBase* db, UID pageUID, const PMReal& x, const PMReal& y,

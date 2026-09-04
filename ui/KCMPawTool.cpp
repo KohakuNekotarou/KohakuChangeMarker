@@ -24,7 +24,12 @@
 #include "VCPlugInHeaders.h"
 
 #include "CTool.h"
+#include "ITool.h"				// what QueryTool hands back
+#include "IToolBoxUtils.h"		// QueryTool / SetActiveTool - the official way to change tool
+#include "Utils.h"				// Utils<> - how every SDK utility is reached
+#include "PersistUtils.h"		// ::GetClass - is the active tool this one?
 
+#include "KCMUIShared.h"		// KCMSyncToolButton - the panel's one tool button
 #include "KCMUIID.h"
 #include "KCMScriptingDefs.h"	// en_KCMPawTool (this tool's ScriptID, registered in KCMUI.fr)
 
@@ -50,11 +55,16 @@ public:
 		(en_SineWaveTl). */
 	virtual ScriptID GetScriptID() const { return en_KCMPawTool; }
 
-	// ★Select / Deselect are deliberately NOT overridden. The panel's tool button stands for the
-	//   KCM tool alone (KCMTool.cpp writes its pressed state from those two methods), and picking
-	//   the stamp tool takes the active tool away from the KCM tool -- so the button going dark
-	//   at that moment is correct, and it already happens through KCMTool::Deselect. Overriding
-	//   them here would be a second place deciding one thing ([[one-question-one-place]]).
+	/** Called as this tool becomes / stops being the active one.
+		⚠★They ARE overridden now (2026-09-04). They were not while the panel's tool button stood
+		  for the comparison tool alone -- then KCMTool::Deselect said everything there was to say.
+		  Since the button carries BOTH tools, the panel has to hear about this one as well: pick
+		  the stamp from the toolbox and the button must come to wear the paw.
+		★Neither method is told what to display. Both call the one function that READS the toolbox,
+		  so there is still exactly one place deciding what the button shows
+		  ([[one-question-one-place]]). */
+	virtual void Select();
+	virtual void Deselect();
 };
 
 /*
@@ -67,6 +77,54 @@ void KCMPawTool::Init(RsrcID iconID, const PluginID& pluginID)
 {
 	SetName(kKCMPawToolStringKey);
 	InitWidget(kKCMPawToolWidgetID, iconID, pluginID);
+}
+
+void KCMPawTool::Select()
+{
+	CTool::Select();					// base first - it tells the selection the tool is changing
+	KCMSyncToolButton();
+}
+
+void KCMPawTool::Deselect()
+{
+	CTool::Deselect();					// base first, same reason
+	KCMSyncToolButton();
+}
+
+//========================================================================================
+// The pair the panel calls: make this tool active, and ask whether it is.
+//
+//  ★Written out rather than shared with KCMTool.cpp's pair through a boss argument. Two functions
+//    of four lines, each naming its own boss, read better at the call site than one that has to be
+//    handed kKCMToolBoss or kKCMPawToolBoss -- and the call site is a switch that already knows
+//    which tool it means.
+//  *SetActiveTool's second parameter (the exclusion group) is left at its default for the reason
+//   written out in KCMTool.cpp: the toolbox has one active tool at a time.
+//========================================================================================
+
+bool16 KCMActivatePawTool()
+{
+	// Nothing to do where there is no toolbox (InDesign Server and the like).
+	if (!Utils<IToolBoxUtils>().Exists())
+		return kFalse;
+
+	InterfacePtr<ITool> tool(Utils<IToolBoxUtils>()->QueryTool(kKCMPawToolBoss));
+	if (tool == nil)
+		return kFalse;	// not registered - cannot happen, but a button press must not take the app down
+
+	return Utils<IToolBoxUtils>()->SetActiveTool(tool);
+}
+
+bool16 KCMIsPawToolActive()
+{
+	if (!Utils<IToolBoxUtils>().Exists())
+		return kFalse;
+
+	InterfacePtr<ITool> active(Utils<IToolBoxUtils>()->QueryActiveTool());
+	if (active == nil)
+		return kFalse;
+
+	return (::GetClass(active) == kKCMPawToolBoss) ? kTrue : kFalse;
 }
 
 // End, KCMPawTool.cpp.

@@ -79,19 +79,21 @@ public:
 	//   ui/KCMPawTracker.cpp calling KCMPawStampToggleAt() directly does not link (measured
 	//   2026-09-04: LNK2019, three unresolved symbols). **Every crossing is a facade method.**
 
-	/** Place a paw at (x, y) on that page. scale is a multiple of the page's ordinary paw size:
-		kKCMPawNormalScale for a plain press, kKCMPawBigScale for Alt.
+	/** Place a paw at (x, y) on that page. scale is a multiple of the page's ordinary paw size
+		(kKCMPawNormalScale for a plain press, kKCMPawBigScale for Alt); baseHalf is half that
+		ordinary size, the same value the lift takes.
 		★x and y are measured from the PAGE'S TOP-LEFT in points, never in pasteboard coordinates
 		  -- KCMPawStamp.h carries the measurement that makes that a requirement.
-		★★IT ONLY ADDS. Placing and lifting are two intentions and therefore two gestures; the
-		  toggle this replaced took the previous paw off whenever the next one was put down beside
-		  it (found by the user within minutes of first use, 2026-09-04). */
-	virtual void	PawStampPlaceAt(IDataBase* db, UID pageUID, const PMReal& x, const PMReal& y,
-	                                const PMReal& scale) = 0;
+		★★IT ONLY ADDS, AND IT WILL NOT STACK. Placing and lifting are two intentions and
+		  therefore two gestures; and a press landing on a paw already there does nothing, both at
+		  the user's request on 2026-09-04.
+		@return kTrue when one was placed, kFalse when a paw was already under that point. */
+	virtual bool16	PawStampPlaceAt(IDataBase* db, UID pageUID, const PMReal& x, const PMReal& y,
+	                                const PMReal& scale, const PMReal& baseHalf) = 0;
 
 	/** Lift the paw under (x, y) -- Shift + press. baseHalf is half the page's ORDINARY paw size
-		(PawHalfSizeForPage); each stamp is judged by that times its own scale, so a big paw is
-		lifted by pressing anywhere on the big paw.
+		(PawHalfSizeForPage); each paw is judged over a SQUARE of that times its own scale, so a
+		big paw is lifted by pressing anywhere on the big paw.
 		@return kTrue when one was lifted, kFalse when the press landed on none. */
 	virtual bool16	PawStampLiftAt(IDataBase* db, UID pageUID, const PMReal& x, const PMReal& y,
 	                               const PMReal& baseHalf) = 0;

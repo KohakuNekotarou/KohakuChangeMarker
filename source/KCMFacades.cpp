@@ -355,9 +355,9 @@ public:
 
 	// The cat-paw stamps. The crossing exists because model and UI are two DLLs: the tool lives
 	// on the UI side and the store on this one.
-	virtual void	PawStampPlaceAt(IDataBase* db, UID pageUID, const PMReal& x, const PMReal& y,
-	                                const PMReal& scale)
-									{ KCMPawStampPlaceAt(db, pageUID, x, y, scale); }
+	virtual bool16	PawStampPlaceAt(IDataBase* db, UID pageUID, const PMReal& x, const PMReal& y,
+	                                const PMReal& scale, const PMReal& baseHalf)
+									{ return KCMPawStampPlaceAt(db, pageUID, x, y, scale, baseHalf); }
 	virtual bool16	PawStampLiftAt(IDataBase* db, UID pageUID, const PMReal& x, const PMReal& y,
 	                               const PMReal& baseHalf)
 									{ return KCMPawStampLiftAt(db, pageUID, x, y, baseHalf); }

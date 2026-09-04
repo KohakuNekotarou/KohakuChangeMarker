@@ -223,6 +223,10 @@ void KCMPanelObserver::AutoAttach()
 	//   It is a boss of the same RollOverIconButtonWidget family, so it is received exactly like the
 	//   two above.
 	this->AttachWidget(pcd, kKCMToolButtonWidgetID,         ITriStateControlData::kDefaultIID);
+	// ★The stamp tool's half of that same button. It is attached even while hidden: a hidden
+	//   widget raises nothing, and attaching only the visible one would mean re-attaching every
+	//   time the two swap places.
+	this->AttachWidget(pcd, kKCMPawToolButtonWidgetID,      ITriStateControlData::kDefaultIID);
 
 	// (The print toggle and the 25%/75% opacity moved to the flyout menu:
 	//  kKCMPopupPrintMarksActionID / kKCMPopupOpacity25ActionID / kKCMPopupOpacity75ActionID.
@@ -313,6 +317,7 @@ void KCMPanelObserver::AutoDetach()
 	this->DetachWidget(pcd, kKCMIconOnWidgetID,             ITriStateControlData::kDefaultIID);
 	this->DetachWidget(pcd, kKCMIconOffWidgetID,            ITriStateControlData::kDefaultIID);
 	this->DetachWidget(pcd, kKCMToolButtonWidgetID,         ITriStateControlData::kDefaultIID);	// ★detached as the pair of AutoAttach
+	this->DetachWidget(pcd, kKCMPawToolButtonWidgetID,      ITriStateControlData::kDefaultIID);	// the stamp's half of it
 }
 
 // Subscribe to, or unsubscribe from, one widget of this panel.
@@ -370,9 +375,10 @@ void KCMPanelObserver::Update(const ClassID& theChange, ISubject* theSubject, co
 	//     leaves the pressed look off ＝ the look and the truth cannot part company.
 	//   (Watching both kTrue and kFalse on a toggle-like widget is standard in the product code too
 	//    ＝ the Layers panel.)
-	if (theChange == kFalseStateMessage && wid.Get() == kKCMToolButtonWidgetID)
+	if (theChange == kFalseStateMessage &&
+		(wid.Get() == kKCMToolButtonWidgetID || wid.Get() == kKCMPawToolButtonWidgetID))
 	{
-		KCMSetToolButtonSelected(KCMIsOwnToolActive());
+		KCMSyncToolButton();
 		return;
 	}
 
@@ -391,40 +397,15 @@ void KCMPanelObserver::Update(const ClassID& theChange, ISubject* theSubject, co
 			case kKCMIconOffWidgetID:
 				KCMOpenAboutURL();
 				break;
-			// ★The tool switch button -> make this plug-in’s tool (the one in the toolbox) active, exactly
-			//   as clicking it in the toolbox would. The work is in KCMTool.cpp
-			//   (Utils<IToolBoxUtils>()->QueryTool -> SetActiveTool).
-			case kKCMToolButtonWidgetID:
-			{
-				// ★Report the result in the status line (user’s request). SetActiveTool answers whether the
-				//   tool really became active, so a refusal does not end in silence.
-				const bool16 activated = KCMActivateOwnTool();
-
-				// ★★The name shown is **the same as the tooltip’s** (user’s instruction), and it is so because
-				//   both look up the same string table key ＝ the name lives in one place, and the toolbox tool
-				//   name (KCMTool::Init’s SetName), the tooltip (KCMIconTip::GetTipText) and this line cannot
-				//   disagree ([[one-question-one-place]]).
-				//   PMString::Translate() resolves "key -> the real string for this locale"
-				//   (PMString.h:692-696).
-				PMString toolName(kKCMToolStringKey);
-				toolName.Translate();
-
-				PMString msg;
-				msg.SetTranslatable(kFalse);	// ★do not let the finished sentence be treated as a key again
-				if (activated)
-				{
-					msg.Append(toolName);
-					msg.Append(" selected.");
-				}
-				else
-				{
-					msg.Append("Could not select ");
-					msg.Append(toolName);
-					msg.Append(".");
-				}
-				KCMSetStatus(msg);
-				break;
-			}
+			// ⚠★★THE TOOL BUTTON IS NOT HANDLED HERE ANY MORE (2026-09-04). Its press is read by
+			//   KCMToolButtonEH, which owns IID_IEVENTHANDLER on kKCMToolButtonBoss, and lands in
+			//   KCMToolButtonPressed at the foot of this file. Two measurements moved it:
+			//     - a state message cannot tell a HOLD from a click, and holding is how the second
+			//       tool is reached (the toolbox's own gesture, which the user asked for);
+			//     - **a button already showing selected raises no kTrueStateMessage at all**, so a
+			//       second press on the active tool arrived here as nothing whatsoever.
+			//   ⇒ Do not add a case for it back: it would fire only in the states the handler
+			//     already covers, and only sometimes.
 			default: break;
 		}
 	}
@@ -433,6 +414,12 @@ void KCMPanelObserver::Update(const ClassID& theChange, ISubject* theSubject, co
 //----------------------------------------------------------------------------------------
 // Display helpers
 //----------------------------------------------------------------------------------------
+
+// Forward declaration: the tool button's two faces are settled at the foot of this file, and the
+// panel's AutoAttach (further down but still above it) has to reach it. It is handed the views
+// rather than looking them up, because during AutoAttach this panel is not yet the one
+// KCMFindPanelWidget finds.
+static void KCMSyncToolButtonViews(IControlView* kcmView, IControlView* pawView);
 
 // The IControlView of the ChangeMarker panel if it is showing (nil when it is hidden or cannot be
 // reached).
@@ -580,54 +567,135 @@ static void KCMApplyPanelInfo(const InterfacePtr<IPanelControlData>& pcd)
 	//   would drop the pressed look whenever the panel is reopened with the tool still active
 	//   ([[panel-autoattach-read-real-state]]).
 	//   ★"Is it active now" is answered in one place only, KCMTool.cpp.
-	IControlView* toolView = pcd->FindWidget(kKCMToolButtonWidgetID);
-	if (toolView != nil)
-	{
-		InterfacePtr<ITriStateControlData> tsd(toolView, UseDefaultIID());
-		if (tsd != nil)
-		{
-			// third argument kFalse = raise no notification (the reason is at KCMSetToolButtonSelected below)
-			tsd->SetState(KCMIsOwnToolActive() ? ITriStateControlData::kSelected
-												 : ITriStateControlData::kUnselected, kTrue, kFalse);
-		}
-	}
+	// ★It settles WHICH TOOL'S FACE the button wears as well as whether it looks pressed -- the two
+	//   widgets share one frame (see KCMSyncToolButtonViews at the foot of this file).
+	KCMSyncToolButtonViews(pcd->FindWidget(kKCMToolButtonWidgetID),
+	                       pcd->FindWidget(kKCMPawToolButtonWidgetID));
 
 	// (Start/Stop left the panel button for the dynamic label of the flyout item
 	//  kKCMPopupStartStopActionID (UpdateActionStates), so no button label is set here any more.)
 }
 
 //========================================================================================
-// KCMSetToolButtonSelected (declared in KCMUIShared.h)
-//   Shows the panel’s tool switch button as pressed or not pressed. It looks sunken like a
-//   toolbox tool slot because the `.fr` gives that widget kADBEIconSuiteButtonDrawWellType.
+// KCMSyncToolButton (declared in KCMUIShared.h), and the helper both routes into it share.
 //
-//   ★Callers (measured):
-//       - KCMTool::Select   ... the tool became active
-//       - KCMTool::Deselect ... the tool stood down
-//       - **the Update in this file (kFalseStateMessage)** ... repainting after the push button
-//         cleared its own state (the reason is in that comment)
-//   ★However many they are, **the answer comes from one place**: each of them asks
-//     KCMIsOwnToolActive() before passing it on, so there is no route by which the panel and the
-//     toolbox can disagree ([[one-question-one-place]]). Whether the tool is chosen in the
-//     toolbox, on the panel button, by shortcut or from a script, ITool::Select is always
-//     called.
+//   ★★ONE BUTTON WEARING TWO FACES. kKCMToolButtonWidgetID and kKCMPawToolButtonWidgetID sit in
+//     the SAME frame of the `.fr` and exactly one of them is ever shown, so the panel keeps ONE
+//     tool button and it wears whichever tool is current -- the user's "one place, two tools, the
+//     way the toolbox does it" (2026-09-04). The pressed (sunken) look comes from
+//     kADBEIconSuiteButtonDrawWellType on both widgets.
+//
+//   ★IT READS THE TOOLBOX RATHER THAN BEING TOLD, which is why it takes no argument. What it
+//     replaced, KCMSetToolButtonSelected(bool16), could be handed a stale answer by a caller that
+//     thought it knew; this one asks KCMIsOwnToolActive / KCMIsPawToolActive itself, so the panel
+//     and the toolbox cannot part company ([[one-question-one-place]]). Whether a tool is chosen
+//     in the toolbox, on this button, by shortcut or from a script, ITool::Select is always
+//     called and always lands here.
+//
+//   ⚠WITH NEITHER TOOL ACTIVE THE FACE IS LEFT ALONE -- only the pressed look goes. A toolbox slot
+//     keeps showing the last tool of its flyout that was used, and a button that reverted to the
+//     comparison tool every time the pointer tool was picked would fight the user who has been
+//     stamping.
+//
+//   ★Callers (measured): KCMTool::Select / ::Deselect, KCMPawTool::Select / ::Deselect, the
+//     Update in this file (kFalseStateMessage, repainting after the push button cleared its own
+//     state), and the panel's AutoAttach -- which hands its own two views in, because at that
+//     moment the panel is not yet the one KCMFindPanelWidget can find.
 //========================================================================================
-void KCMSetToolButtonSelected(bool16 selected)
+static void KCMSyncToolButtonViews(IControlView* kcmView, IControlView* pawView)
 {
-	IControlView* cv = KCMFindPanelWidget(kKCMToolButtonWidgetID);
-	if (cv == nil)
+	if (kcmView == nil || pawView == nil)
 		return;		// the panel is hidden (or teardown is under way): there is nothing to touch
 
-	InterfacePtr<ITriStateControlData> tsd(cv, UseDefaultIID());
-	if (tsd == nil)
-		return;
+	const bool16 kcmActive = KCMIsOwnToolActive();
+	const bool16 pawActive = KCMIsPawToolActive();
+
+	bool16 showPaw = pawView->IsVisible();		// neither active -> keep the face already up
+	if (kcmActive)
+		showPaw = kFalse;
+	else if (pawActive)
+		showPaw = kTrue;
+
+	// ⚠★ShowView only removes the APPEARANCE and does not disable hit testing, so the hidden one
+	//   still catches clicks -- and here that would mean pressing the paw and getting the
+	//   comparison tool. Enable is switched with the visibility, exactly as the ON/OFF illustration
+	//   above does it (the same lesson, learnt there first: two browser tabs from one click).
+	IControlView* const front = showPaw ? pawView : kcmView;
+	IControlView* const back  = showPaw ? kcmView : pawView;
+	back->ShowView(kFalse);   back->Enable(kFalse);
+	front->ShowView(kTrue);   front->Enable(kTrue);
 
 	// ★★The third argument, notifyOfChange, is kFalse (ITriStateControlData.h:52).
 	//   ⚠Left kTrue, the state change raises kTrueStateMessage, this observer’s Update calls
-	//     KCMActivateOwnTool back → SetActiveTool → ITool::Select → here again, and round it goes.
+	//     the activation back → SetActiveTool → ITool::Select → here again, and round it goes.
 	//     This only **reflects** the real state, so no notification is wanted.
-	tsd->SetState(selected ? ITriStateControlData::kSelected : ITriStateControlData::kUnselected, kTrue, kFalse);
-	cv->ForceRedraw();		// the pressed look should be visible at once (do not wait for the next event loop)
+	InterfacePtr<ITriStateControlData> tsd(front, UseDefaultIID());
+	if (tsd != nil)
+	{
+		tsd->SetState((kcmActive || pawActive) ? ITriStateControlData::kSelected
+		                                       : ITriStateControlData::kUnselected, kTrue, kFalse);
+	}
+
+	// ⚠Outside the tsd guard, deliberately: the FACE may have changed even where the pressed look
+	//   could not be written, and a face that waits for the next event loop is the one thing a
+	//   button pressed by hand must not do.
+	front->ForceRedraw();
+}
+
+void KCMSyncToolButton()
+{
+	KCMSyncToolButtonViews(KCMFindPanelWidget(kKCMToolButtonWidgetID),
+	                       KCMFindPanelWidget(kKCMPawToolButtonWidgetID));
+}
+
+//========================================================================================
+// KCMToolButtonPressed (declared in KCMUIShared.h)
+//   One press of the panel's tool button, already measured by KCMToolButtonEH: which face was
+//   pressed, and whether it was held.
+//
+//   ★★THE RULE, and it lives only here:
+//       HOLD  -> the OTHER tool. The toolbox's press-and-hold, which is what the user asked the
+//                panel to copy ("the toolbox manages it -- hold it down and you can pick either").
+//       CLICK -> the tool on show. Clicking the tool that is already active therefore does
+//                nothing, exactly as clicking a toolbox slot that is already current does
+//                nothing. Switching is what the hold is for.
+//   ★THE FACE IS NOT SET HERE. Activating goes SetActiveTool -> ITool::Select ->
+//     KCMSyncToolButton, so a tool that REFUSES to activate leaves the button showing the truth
+//     rather than a lie about what happened.
+//========================================================================================
+void KCMToolButtonPressed(bool16 pawFace, const PMReal& heldRaw)
+{
+	const bool16 held    = (heldRaw >= kKCMToolButtonHoldSeconds) ? kTrue : kFalse;
+	const bool16 wantPaw = held ? !pawFace : pawFace;
+
+	// ★Report the result in the status line (user’s request). SetActiveTool answers whether the
+	//   tool really became active, so a refusal does not end in silence.
+	const bool16 activated = wantPaw ? KCMActivatePawTool() : KCMActivateOwnTool();
+
+	// ★★The name shown is **the same as the tooltip’s** (user’s instruction), and it is so because
+	//   both look up the same string table key ＝ the name lives in one place, and the toolbox tool
+	//   name (ITool::Init’s SetName), the tooltip (KCMIconTip::GetTipText) and this line cannot
+	//   disagree ([[one-question-one-place]]).
+	//   PMString::Translate() resolves "key -> the real string for this locale"
+	//   (PMString.h:692-696).
+	PMString toolName(wantPaw ? kKCMPawToolStringKey : kKCMToolStringKey);
+	toolName.Translate();
+
+	PMString msg;
+	msg.SetTranslatable(kFalse);	// ★do not let the finished sentence be treated as a key again
+	if (activated)
+	{
+		msg.Append(toolName);
+		msg.Append(" selected.");
+	}
+	else
+	{
+		msg.Append("Could not select ");
+		msg.Append(toolName);
+		msg.Append(".");
+		KCMSyncToolButton();		// nothing moved, so nothing called the sync: put the look right
+	}
+	KCMSetStatus(msg);
 }
 
 void KCMPanelObserver::UpdateInfoDisplay()

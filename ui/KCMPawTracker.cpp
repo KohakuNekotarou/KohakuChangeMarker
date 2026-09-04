@@ -257,10 +257,17 @@ bool16 KCMPawTracker::BeginTracking(IEvent* theEvent)
 			else
 			{
 				const bool16 big = theEvent->OptionAltKeyDown();
-				flags->PawStampPlaceAt(db, pageUID, x, y,
-				                       big ? kKCMPawBigScale : kKCMPawNormalScale);
-				changed = kTrue;
-				msg = big ? "Big paw placed (" : "Paw placed (";
+				changed = flags->PawStampPlaceAt(db, pageUID, x, y,
+				                                 big ? kKCMPawBigScale : kKCMPawNormalScale, half);
+				// ⚠Three outcomes, not two: a press that lands on a paw already there places
+				//   nothing, and saying "placed" then would be a lie the count does not correct
+				//   (the count is unchanged, which is exactly what a slip looks like).
+				if (!changed)
+					msg = "Paw: one is already there (";
+				else if (big)
+					msg = "Big paw placed (";
+				else
+					msg = "Paw placed (";
 			}
 			msg.AppendNumber(flags->PawStampCount(db));
 			msg += " on this document)";

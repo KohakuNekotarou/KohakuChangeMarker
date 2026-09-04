@@ -119,8 +119,15 @@ static const uint8  kKCMPawR = 240, kKCMPawG = 120, kKCMPawB = 165;	// pink: not
 // ★It is a multiplier of the size above, not a size of its own, so the two cannot drift apart:
 //   change kKCMPawSizeRatio and both paws follow. Each stamp remembers its own multiplier, and
 //   both the drawing and the hit box read it, so a big paw is lifted by pressing anywhere on the
-//   big paw. 1.6 was chosen to be unmistakable beside the ordinary one without dominating a page.
-static const PMReal kKCMPawBigScale = 1.6;	// Alt + press, as a multiple of the ordinary paw
+//   big paw.
+// ★★TEN, the user's own number (it was 1.6 for an hour and they asked for ten). 10 x 0.05 = HALF
+//   THE PAGE'S SHORT SIDE, so this is not "a slightly larger paw" but a mark that claims the page
+//   -- which is the point: it is for the one spot that matters, not for the fifth of thirty.
+//   ⚠A big paw placed near an edge runs off the page. Nothing breaks -- the drawing is clipped to
+//     the page rectangle (KCMDrawPawStamps calls rectclip) -- but the part outside is not drawn,
+//     and the hit box is NOT clipped, so it can still be lifted by pressing the part that shows.
+static const PMReal kKCMPawBigScale = 10.0;	// Alt + press, as a multiple of the ordinary paw
+
 static const PMReal kKCMPawNormalScale = 1.0;	// a plain press
 
 // Fill that shows which areas are excluded from the comparison as page-number regions. While

@@ -93,10 +93,40 @@ void			KCMDetachModelChangeObserver();
 // posText clears. Does nothing when the panel is hidden.
 void			KCMSetNavPosition(const PMString& posText, bool16 navButtonsEnabled);
 
-// Show the tool switch button as pressed / not pressed. Called only from KCMTool::Select
-// and ::Deselect, so the toolbox, the panel button and the shortcut all pass through one
-// place. Does nothing when the panel is hidden.
-void			KCMSetToolButtonSelected(bool16 selected);
+// Bring the panel's tool button into line with the toolbox: WHICH OF THE TWO TOOLS IT WEARS
+// (the comparison tool or the stamp) and whether it looks pressed.
+// ★★ONE BUTTON, TWO TOOLS (the user's design, 2026-09-04: "one place, two tools, the way the
+//   toolbox does it"). Two widgets share one frame and exactly one is shown; this is the only
+//   function that decides which, so the panel and the toolbox cannot disagree
+//   ([[one-question-one-place]]).
+// ★It takes no argument on purpose -- it READS the real state (KCMIsOwnToolActive /
+//   KCMIsPawToolActive) rather than being told. Being told is what let the old
+//   KCMSetToolButtonSelected(kTrue/kFalse) be called with a stale answer.
+// ⚠With neither tool active it leaves the face alone: the button keeps the last tool used, which
+//   is what a toolbox slot does with its flyout. Does nothing when the panel is hidden.
+void			KCMSyncToolButton();
+
+// How long the panel's tool button has to be held for the press to mean "the OTHER tool".
+// ★0.4 s is InDesign's own feel for a press-and-hold on a toolbox slot; below about 0.25 an
+//   ordinary click starts being taken for a hold.
+// ⚠★★★SECONDS, NOT MILLISECONDS, and that was MEASURED rather than read. IEvent::GetTime is
+//   documented as "a DWORD, so it'll roll over after ~47 days" (IEvent.h:144) -- which reads as
+//   milliseconds, and 2^32 ms really is 49 days, so the wording confirms the wrong guess. It
+//   answers SECONDS: a 900 ms press came back as 0.9059, printed through the panel's own status
+//   line on 2026-09-04. Written as 400 the threshold would have been 400 SECONDS and the hold
+//   could never once have fired -- which is exactly the symptom that led here.
+static const PMReal kKCMToolButtonHoldSeconds = 0.4;
+
+// One press of the panel's tool button, decided and carried out.
+//   pawFace : the button was wearing the stamp tool's face (rather than the comparison tool's)
+//   heldRaw : how long the button was down, in SECONDS as IEvent::GetTime counts them, or a
+//             negative number when no button-down reached the handler at all. The handler
+//             measures and this decides, so the threshold lives in one place.
+// ★★THE RULE, in one place: a HOLD always goes to the other tool (the toolbox's press-and-hold,
+//   which is what the user asked for); a CLICK chooses the tool on show. ⚠Clicking the tool that
+//   is already active therefore does nothing, exactly as clicking an already-current toolbox slot
+//   does nothing -- switching is what the hold is for.
+void			KCMToolButtonPressed(bool16 pawFace, const PMReal& heldRaw);
 
 // Make this plug-in's tool the active tool. Returns kTrue when it actually became active.
 // Does nothing in a run configuration without a toolbox.
@@ -105,6 +135,12 @@ bool16			KCMActivateOwnTool();
 // Is this plug-in's tool the active tool right now? Used to restore the button's pressed
 // look when the panel is rebuilt, instead of writing a fixed default.
 bool16			KCMIsOwnToolActive();
+
+// The same pair for the cat-paw stamp tool, which shares the panel's tool button with the one
+// above. Declared here rather than beside the stamp's own code for the reason the two above are:
+// the panel is the caller, and the panel reads one header.
+bool16			KCMActivatePawTool();
+bool16			KCMIsPawToolActive();
 
 // Open the distribution URL from "About this plug-in" in the default browser. Called when
 // the panel illustration is clicked.

@@ -1477,13 +1477,14 @@ static void KCMDrawPageCheck(IGraphicsPort* gPort, IDataBase* db, UID pageUID,
 //    units of the paw's size s and measured from its centre. They were taken off the reference
 //    picture the user supplied (a ray cast from each blob's centroid every 22.5 degrees, noting
 //    where the ink ends) and then made left-right symmetric at their request.
-//  ★THE TWO INNER TOES WERE SMOOTHED afterwards (2026-09-04), the user having seen a lump on each
-//    of them in the first build. The points sit at equal angles, so the shape IS the sequence of
-//    radii, and a lump is one radius out of line with its neighbours: measured, the inner toes ran
-//    0.154, 0.156, 0.113, 0.132, 0.111 where the other side of the same toe fell away evenly.
-//    Each radius was replaced by (previous + 2*this + next) / 4, the angles untouched, which took
-//    the worst deviation from 28% to 5.3% and moved nothing else -- the pad and the outer toes are
-//    the measured numbers still (their own worst is 15%, and the user did not ask).
+//  ★ALL FOUR TOES WERE SMOOTHED afterwards (2026-09-04), the user having seen a lump on each of
+//    them in the first build -- the inner pair first, then the outer pair "like the middle ones".
+//    The points sit at equal angles, so the shape IS the sequence of radii, and a lump is one
+//    radius out of line with its neighbours: measured, the inner toes ran 0.154, 0.156, 0.113,
+//    0.132, 0.111 where the other side of the same toe fell away evenly. Each radius was replaced
+//    by (previous + 2*this + next) / 4, the angles untouched: worst deviation 28% -> 5.3% on the
+//    inner pair, 14.5% -> 5.9% on the outer. ★THE PAD IS THE MEASURED NUMBERS STILL -- its worst
+//    is 15.3%, at the shoulder, and the user has not asked for it.
 //  ⚠★★THE SAME TABLE DRAWS THE TOOLBOX ICON AND THE CURSOR, and it lives in
 //    work/kcm-make-paw-icons.ps1, which prints this block with -EmitCpp. **Change the numbers
 //    there and paste them here, never the other way round** -- edited on one side alone, the tool
@@ -1499,10 +1500,10 @@ static const double kKCMPawOutlines[5][kKCMPawPoints][2] =
 		{ -0.3131,  0.2263 }, { -0.2189,  0.1356 }, { -0.1645,  0.0618 }, { -0.0932,  0.0014 },
 	},
 	{	// outer left toe
-		{ -0.3759, -0.1511 }, { -0.3251, -0.1171 }, { -0.2836, -0.0868 }, { -0.2734, -0.0370 },
-		{ -0.2628,  0.0055 }, { -0.2533,  0.0563 }, { -0.2805,  0.1008 }, { -0.3159,  0.1501 },
-		{ -0.3759,  0.1490 }, { -0.4316,  0.1400 }, { -0.4680,  0.0977 }, { -0.4763,  0.0471 },
-		{ -0.4867,  0.0055 }, { -0.4783, -0.0370 }, { -0.4773, -0.0960 }, { -0.4332, -0.1331 },
+		{ -0.3758, -0.1435 }, { -0.3231, -0.1221 }, { -0.2866, -0.0837 }, { -0.2684, -0.0391 },
+		{ -0.2584,  0.0055 }, { -0.2573,  0.0546 }, { -0.2770,  0.1043 }, { -0.3192,  0.1421 },
+		{ -0.3759,  0.1528 }, { -0.4299,  0.1360 }, { -0.4669,  0.0966 }, { -0.4818,  0.0493 },
+		{ -0.4861,  0.0055 }, { -0.4858, -0.0401 }, { -0.4726, -0.0914 }, { -0.4332, -0.1331 },
 	},
 	{	// inner left toe
 		{ -0.1583, -0.4153 }, { -0.1012, -0.3926 }, { -0.0668, -0.3465 }, { -0.0513, -0.2994 },
@@ -1517,10 +1518,10 @@ static const double kKCMPawOutlines[5][kKCMPawPoints][2] =
 		{  0.0436, -0.2550 }, {  0.0513, -0.2994 }, {  0.0668, -0.3465 }, {  0.1012, -0.3926 },
 	},
 	{	// outer right toe
-		{  0.3759, -0.1511 }, {  0.4332, -0.1331 }, {  0.4773, -0.0960 }, {  0.4783, -0.0370 },
-		{  0.4867,  0.0055 }, {  0.4763,  0.0471 }, {  0.4680,  0.0977 }, {  0.4316,  0.1400 },
-		{  0.3759,  0.1490 }, {  0.3159,  0.1501 }, {  0.2805,  0.1008 }, {  0.2533,  0.0563 },
-		{  0.2628,  0.0055 }, {  0.2734, -0.0370 }, {  0.2836, -0.0868 }, {  0.3251, -0.1171 },
+		{  0.3758, -0.1435 }, {  0.4332, -0.1331 }, {  0.4726, -0.0914 }, {  0.4858, -0.0401 },
+		{  0.4861,  0.0055 }, {  0.4818,  0.0493 }, {  0.4669,  0.0966 }, {  0.4299,  0.1360 },
+		{  0.3759,  0.1528 }, {  0.3192,  0.1421 }, {  0.2770,  0.1043 }, {  0.2573,  0.0546 },
+		{  0.2584,  0.0055 }, {  0.2684, -0.0391 }, {  0.2866, -0.0837 }, {  0.3231, -0.1221 },
 	}
 };
 

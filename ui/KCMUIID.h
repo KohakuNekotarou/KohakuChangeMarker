@@ -203,6 +203,17 @@ DECLARE_PMID(kClassIDSpace, kKCMPawToolBoss, kKCMUIPrefix + 33)
 // sdksamples/snapshot. It derives from CTracker directly, so it carries **no sprite** -- the
 // reason is written out at kKCMTrackerBoss in KCMUI.fr.
 DECLARE_PMID(kClassIDSpace, kKCMPawTrackerBoss, kKCMUIPrefix + 34)
+// ★The panel's tool button (2026-09-04). kKCMIconWidgetBoss with an event handler of its own,
+//   because the button carries TWO tools and the second is reached by HOLDING it -- the toolbox's
+//   press-and-hold, brought to the panel at the user's request.
+// ⚠★★IT REPLACES kAssociatedActionEventHandlerImpl, which is what kRollOverIconButtonBoss puts on
+//   IID_IEVENTHANDLER (measured in the boss dump). That implementation is what turns a click into
+//   the kTrueStateMessage the panel used to listen for, so ONCE IT IS GONE THE PRESS MUST BE
+//   HANDLED HERE IN FULL -- and it is (KCMToolButtonEH.cpp). ★That is not a loss but the point:
+//   the state messages cannot tell a hold from a click, and worse, a button already showing
+//   selected raises no kTrueStateMessage at all -- measured 2026-09-04, which is exactly why
+//   pressing the button a second time did nothing.
+DECLARE_PMID(kClassIDSpace, kKCMToolButtonBoss, kKCMUIPrefix + 35)
 // InterfaceIDs:
 // ⚠★What is here are **the IIDs that appear only on UI-side bosses**. The ones that cross the
 //   boundary (the five facades plus the notification protocol) are in **KCMBoundaryID.h**,
@@ -282,6 +293,7 @@ DECLARE_PMID(kImplementationIDSpace, kKCMSplitterEHImpl, kKCMUIPrefix + 34)	// I
 DECLARE_PMID(kImplementationIDSpace, kKCMPawToolImpl, kKCMUIPrefix + 45)	// ITool (the cat-paw stamp tool. KCMPawTool.cpp)
 DECLARE_PMID(kImplementationIDSpace, kKCMPawTrackerImpl, kKCMUIPrefix + 46)	// ITracker (CTracker subclass; one left press places a paw, or lifts the one under it. KCMPawTracker.cpp)
 DECLARE_PMID(kImplementationIDSpace, kKCMPawTrackerEHImpl, kKCMUIPrefix + 47)	// IEventHandler (CTrackerEventHandler subclass, the companion of the tracker above -- a bare subclass, as kKCMTrackerEHImpl is. KCMPawTracker.cpp)
+DECLARE_PMID(kImplementationIDSpace, kKCMToolButtonEHImpl, kKCMUIPrefix + 49)	// IEventHandler (CEventHandler subclass; the panel tool button's press-and-hold. KCMToolButtonEH.cpp). ⚠It REPLACES the stock kAssociatedActionEventHandlerImpl, so it owns the whole press -- see kKCMToolButtonBoss
 DECLARE_PMID(kImplementationIDSpace, kKCMPawCursorProviderImpl, kKCMUIPrefix + 48)	// ICursorProvider (CToolCursorProvider subclass; the pink paw shown while the stamp tool is active. KCMPawCursorProvider.cpp). ★Simpler than the KCM tool's, which has two states (black while armed, outlined while stopped): a paw can be placed at any time, so it has nothing to say about the comparison's state
 // ActionIDs:
 DECLARE_PMID(kActionIDSpace, kKCMAboutActionID, kKCMUIPrefix + 0)
@@ -410,6 +422,14 @@ DECLARE_PMID(kWidgetIDSpace, kKCMToolButtonWidgetID, kKCMUIPrefix + 42)	// ★th
 //   list. ⚠A subtool occupies no slot of its own in the toolbox, but the widget the tool builds
 //   in the flyout still needs an ID (KCMPawTool::InitWidget).
 DECLARE_PMID(kWidgetIDSpace, kKCMPawToolWidgetID, kKCMUIPrefix + 65)
+// ★The stamp tool's half of the panel's tool button (2026-09-04). ⚠It is NOT a second button:
+//   this widget and kKCMToolButtonWidgetID share ONE frame and only the tool that is current is
+//   shown, the way the toolbox shows one slot for a tool and its subtools ("one place, two tools"
+//   -- the user's words). Pressing the one on show swaps to the other.
+//   ★Two widgets rather than one whose picture changes, because that is how this panel already
+//     switches artwork (kKCMIconOnWidgetID / kKCMIconOffWidgetID) -- an icon widget's resource is
+//     fixed when the panel is built.
+DECLARE_PMID(kWidgetIDSpace, kKCMPawToolButtonWidgetID, kKCMUIPrefix + 66)
 // ★The "Story Edits" section. The panel is divided by a SplitterPanelWidget and the lower pane
 //   lists the stories whose text was edited. Modelled on the "Link Info" section of the
 //   product's linksui.
@@ -909,6 +929,16 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowStateWidgetID, kKCMUIPrefix + 49)	// = t
 // ★The ToolDef resource is declared with this same number (a resource ID is a namespace per
 //   type, so the ToolDef and the PNGs may share it -- the KCM tool does the same).
 #define kKCMPawToolIconResID	1031
+
+// The PANEL button's copies of those two icons, each carrying the little FLYOUT TRIANGLE a toolbox
+// slot wears when it has subtools -- the sign that holding the button down offers another tool.
+// ★★They are separate resources, and have to be: THE TOOLBOX DRAWS ITS OWN MARK on 1030/1031, so a
+//   single image with the triangle already in it would show two of them there. The panel draws no
+//   mark of its own, which is why it needs one drawn in.
+// ★Made by work/kcm-make-paw-icons.ps1 (Add-FlyoutMark), which reads 1030/1031's artwork and
+//   writes a copy -- the user's own KCM_Tool_32/64.png is never modified.
+#define kKCMToolPanelIconResID	1032
+#define kKCMPawToolPanelIconResID	1033
 
 // Menu item positions.
 // ⚠**There is no written running order of the flyout here any more.** One stood in this place

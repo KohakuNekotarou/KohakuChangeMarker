@@ -105,6 +105,7 @@ REGISTER_PMINTERFACE(KCMPawTool, kKCMPawToolImpl)	// ★PERSIST form, as the too
 REGISTER_PMINTERFACE(KCMPawTracker, kKCMPawTrackerImpl)	// one press places a paw, or lifts the one under it (KCMPawTracker.cpp)
 REGISTER_PMINTERFACE(KCMPawTrackerEH, kKCMPawTrackerEHImpl)	// its event handler
 REGISTER_PMINTERFACE(KCMPawCursorProvider, kKCMPawCursorProviderImpl)	// the pink paw cursor (KCMPawCursorProvider.cpp)
+REGISTER_PMINTERFACE(KCMToolButtonEH, kKCMToolButtonEHImpl)	// the panel tool button's press-and-hold: a click picks the tool on show, a hold swaps to the other (KCMToolButtonEH.cpp)
 
 // Injected into the document window, view syncing, thumbnails
 REGISTER_PMINTERFACE(KCMScrollMapView, kKCMScrollMapViewImpl)	// ★PERSIST form. The scroll-map strip (DVControlView subclass; KCMScrollMap.cpp)

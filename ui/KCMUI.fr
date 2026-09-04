@@ -323,6 +323,26 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 		}
 	},
 
+	// ★The panel's TOOL BUTTON (2026-09-04): the boss above plus an event handler of its own, so
+	//   that the press can be TIMED -- a click chooses the tool whose face is showing, a hold of
+	//   kKCMToolButtonHoldMs swaps to the other. That is the toolbox's press-and-hold, which is
+	//   what the user asked the panel to do.
+	// ⚠★★IID_IEVENTHANDLER here REPLACES kRollOverIconButtonBoss's own
+	//   kAssociatedActionEventHandlerImpl, so this handler owns the whole press. The reasoning,
+	//   and the measurement that forced it (a button already showing selected raises no
+	//   kTrueStateMessage), is at kKCMToolButtonBoss in KCMUIID.h and at the head of
+	//   KCMToolButtonEH.cpp. IID_ITIP is carried over unchanged -- KCMIconTip.cpp answers for
+	//   both faces.
+	Class
+	{
+		kKCMToolButtonBoss,
+		kRollOverIconButtonBoss,
+		{
+			IID_ITIP,          kKCMIconTipImpl,
+			IID_IEVENTHANDLER, kKCMToolButtonEHImpl,
+		}
+	},
+
 	// Toggle button for the "Story Edits" section at the bottom of the panel: the same rollover
 	// icon button with an observer attached, which is exactly how the product's Links panel builds
 	// its Link Info toggle (kToggleLinkInfoButtonBoss in open/components/linksui). The observer
@@ -1676,6 +1696,58 @@ resource PNGR(kKCMToolIconResID + kHIDPIIconOffset150)  "KCM_Tool_32.png"
 resource PNGRD(kKCMToolIconResID + kHIDPIIconOffset150) "KCM_Tool_32.png"
 #endif
 
+// The same rollover forms for the stamp tool, which shares that button
+// (kKCMPawToolButtonWidgetID). ⚠Without these the paw disappears the moment the pointer is over
+// the button -- the icon widget asks for PNGR on hover and shows nothing when there is none.
+resource PNGR(kKCMPawToolIconResID)  "KCM_PawTool_32.png"
+resource PNGRD(kKCMPawToolIconResID) "KCM_PawTool_32.png"	// no dark version: the light artwork is reused
+resource PNGR(kKCMPawToolIconResID + kHIDPIIconOffset)  "KCM_PawTool_64.png"
+resource PNGRD(kKCMPawToolIconResID + kHIDPIIconOffset) "KCM_PawTool_64.png"
+#ifdef WINDOWS
+resource PNGR(kKCMPawToolIconResID + kHIDPIIconOffset150)  "KCM_PawTool_32.png"
+resource PNGRD(kKCMPawToolIconResID + kHIDPIIconOffset150) "KCM_PawTool_32.png"
+#endif
+
+//========================================================================================
+// THE PANEL BUTTON'S OWN COPIES, each with the flyout triangle drawn into the bottom-right corner
+// (work/kcm-make-paw-icons.ps1, Add-FlyoutMark).
+//  ★★Why copies rather than the resources above: THE TOOLBOX DRAWS ITS OWN TRIANGLE on a slot that
+//    has subtools, so an image carrying one would show two there. The panel draws none, so its
+//    button needs one drawn in -- and the mark is the only thing on that button that says holding
+//    it down offers the other tool.
+//  ⚠All four forms are needed on each: PNGA/PNGAD for the button at rest, PNGR/PNGRD for while
+//    the pointer is over it (with PNGA alone the picture vanishes on hover).
+//========================================================================================
+resource PNGA(kKCMToolPanelIconResID)  "KCM_ToolPanel_32.png"
+resource PNGAD(kKCMToolPanelIconResID) "KCM_ToolPanel_32.png"
+resource PNGR(kKCMToolPanelIconResID)  "KCM_ToolPanel_32.png"
+resource PNGRD(kKCMToolPanelIconResID) "KCM_ToolPanel_32.png"
+resource PNGA(kKCMToolPanelIconResID + kHIDPIIconOffset)  "KCM_ToolPanel_64.png"
+resource PNGAD(kKCMToolPanelIconResID + kHIDPIIconOffset) "KCM_ToolPanel_64.png"
+resource PNGR(kKCMToolPanelIconResID + kHIDPIIconOffset)  "KCM_ToolPanel_64.png"
+resource PNGRD(kKCMToolPanelIconResID + kHIDPIIconOffset) "KCM_ToolPanel_64.png"
+#ifdef WINDOWS
+resource PNGA(kKCMToolPanelIconResID + kHIDPIIconOffset150)  "KCM_ToolPanel_32.png"
+resource PNGAD(kKCMToolPanelIconResID + kHIDPIIconOffset150) "KCM_ToolPanel_32.png"
+resource PNGR(kKCMToolPanelIconResID + kHIDPIIconOffset150)  "KCM_ToolPanel_32.png"
+resource PNGRD(kKCMToolPanelIconResID + kHIDPIIconOffset150) "KCM_ToolPanel_32.png"
+#endif
+
+resource PNGA(kKCMPawToolPanelIconResID)  "KCM_PawToolPanel_32.png"
+resource PNGAD(kKCMPawToolPanelIconResID) "KCM_PawToolPanel_32.png"
+resource PNGR(kKCMPawToolPanelIconResID)  "KCM_PawToolPanel_32.png"
+resource PNGRD(kKCMPawToolPanelIconResID) "KCM_PawToolPanel_32.png"
+resource PNGA(kKCMPawToolPanelIconResID + kHIDPIIconOffset)  "KCM_PawToolPanel_64.png"
+resource PNGAD(kKCMPawToolPanelIconResID + kHIDPIIconOffset) "KCM_PawToolPanel_64.png"
+resource PNGR(kKCMPawToolPanelIconResID + kHIDPIIconOffset)  "KCM_PawToolPanel_64.png"
+resource PNGRD(kKCMPawToolPanelIconResID + kHIDPIIconOffset) "KCM_PawToolPanel_64.png"
+#ifdef WINDOWS
+resource PNGA(kKCMPawToolPanelIconResID + kHIDPIIconOffset150)  "KCM_PawToolPanel_32.png"
+resource PNGAD(kKCMPawToolPanelIconResID + kHIDPIIconOffset150) "KCM_PawToolPanel_32.png"
+resource PNGR(kKCMPawToolPanelIconResID + kHIDPIIconOffset150)  "KCM_PawToolPanel_32.png"
+resource PNGRD(kKCMPawToolPanelIconResID + kHIDPIIconOffset150) "KCM_PawToolPanel_32.png"
+#endif
+
 // ✓ tool cursor. {X, Y} = the checkmark's vertex (folding point) in 1x logical pixels, which must
 // match the vertex (10,18) drawn by KCMDrawCheckGlyph so the click point sits on the vertex.
 // ★The image is a **PNG resource**, not a callback-drawn bitmap (KCMCheckCursorBitmapProc).
@@ -1754,6 +1826,8 @@ type KCMPanelWidget(kViewRsrcType) : PalettePanelWidget(ClassID = kKCMPanelWidge
 // Panel illustration (ON/OFF icon) widget type: same as RollOverIconButtonWidget, but backed by
 // kKCMIconWidgetBoss so it carries IID_ITIP (tooltip showing the repo URL on hover).
 type KCMIconWidget(kViewRsrcType) : RollOverIconButtonWidget(ClassID = kKCMIconWidgetBoss) { };
+// The same widget on the tool-button boss, which adds the press-and-hold handler.
+type KCMToolButtonWidget(kViewRsrcType) : RollOverIconButtonWidget(ClassID = kKCMToolButtonBoss) { };
 
 // Scroll-map strip widget type (custom-drawn; injected at runtime by KCMScrollMap.cpp).
 type KCMScrollMapWidget(kViewRsrcType) : GenericPanelWidget(ClassID = kKCMScrollMapWidgetBoss) { };
@@ -2481,10 +2555,10 @@ resource KCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 		//   ⚠**Nothing of the drawing is lost**: this tool icon is drawn to the spec of 69% of 32px
 		//     across (about 22px) and 56% down (about 18px) ([[toolbox-icon-spec]]), so what gets cut
 		//     off is the margin.
-		KCMIconWidget
+		KCMToolButtonWidget
 		(
 			kKCMToolButtonWidgetID,
-			kKCMToolIconResID, kKCMUIPluginID,
+			kKCMToolPanelIconResID, kKCMUIPluginID,	// ★the PANEL copy: same drawing, plus the flyout triangle
 			kBindLeft | kBindTop,		// bound like Next, so the row moves as one
 			Frame(8, 48, 40, 70)		// 32x22. ★Swapped left-right with the Prev/Next cluster
 									//   at the user's request; the left edge, 8px, lines up with the
@@ -2497,6 +2571,24 @@ resource KCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 			//   kADBEIconSuiteButtonType is (..., kIconRaisedLook, kFalse) -- it draws no well, so the
 			//   selected state never shows.
 			//   The state itself is written to ITriStateControlData by KCMTool::Select / Deselect.
+			kADBEIconSuiteButtonDrawWellType,
+		),
+
+		// ★★THE STAMP TOOL'S HALF OF THE SAME BUTTON (user's request, 2026-09-04: "one place, two
+		//   tools, the way the toolbox does it"). ⚠**The frame is identical to the one above** --
+		//   these two widgets sit on top of each other and exactly one is ever shown, so the panel
+		//   keeps one tool button and it wears the face of whichever tool is current. Pressing it
+		//   swaps to the other (KCMPanelObserver.cpp).
+		//   ⚠Starts HIDDEN (the kFalse below): the KCM tool is the one the panel opens showing,
+		//     which is what it did before this pair existed. KCMShowPawToolButton puts the right
+		//     one up as soon as either tool is chosen.
+		KCMToolButtonWidget
+		(
+			kKCMPawToolButtonWidgetID,
+			kKCMPawToolPanelIconResID, kKCMUIPluginID,	// ★the PANEL copy, with the flyout triangle
+			kBindLeft | kBindTop,
+			Frame(8, 48, 40, 70)		// ★the SAME frame as kKCMToolButtonWidgetID, deliberately
+			kFalse, kTrue,				// hidden to start with; enabled
 			kADBEIconSuiteButtonDrawWellType,
 		),
 

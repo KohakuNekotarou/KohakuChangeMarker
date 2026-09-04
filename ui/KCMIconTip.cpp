@@ -81,6 +81,12 @@ PMString KCMIconTip::GetTipText(const PMPoint& /*mouseLocation*/)
 		//   string table.
 		return PMString(kKCMToolStringKey);
 	}
+	if (cv != nil && cv->GetWidgetID() == kKCMPawToolButtonWidgetID)
+	{
+		// The stamp tool's face of that same button, named the same way from the same table
+		// (KCMPawTool::Init passes this key to SetName).
+		return PMString(kKCMPawToolStringKey);
+	}
 
 	// A URL is not a phrase to translate (which is also why it is in no string table).
 	PMString tip(kKCMRepoURL);

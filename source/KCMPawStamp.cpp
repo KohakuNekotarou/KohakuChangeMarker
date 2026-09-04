@@ -72,13 +72,56 @@ static KCMPawMap::iterator KCMPawFindDoc(IDataBase* db)
 // Placing and lifting
 //========================================================================================
 
-void KCMPawStampPlaceAt(IDataBase* db, UID pageUID, const PMReal& x, const PMReal& y,
-                        const PMReal& scale)
+// Which paw is under (x, y) on that page, searched from the most recently placed -- or -1 for
+// none.
+//
+//  ★★ONE PLACE ANSWERS "IS THERE A PAW HERE", and BOTH gestures ask it: Shift lifts the paw it
+//    names, and a plain press refuses to stack on the paw it names. Written twice, the two tests
+//    would drift, and the drift would read as "it says one is there but Shift will not take it
+//    off" ([[one-question-one-place]]).
+//  ★THE REACH IS A SQUARE -- the paw's own bounding box. It was made a circle for a few minutes on
+//    2026-09-04 and the user chose the square, having been told the difference: a box's corner
+//    sits 1.41 times the radius from the centre, so the square is the more forgiving of the two
+//    and a press a little wide of a paw still finds it. For a mark you drop by hand and take off
+//    by hand, forgiving is the right way to be wrong.
+//  ★Each paw is judged at ITS OWN size -- the page's ordinary half-size times the scale it was
+//    placed at -- so a big paw answers over its whole reach and a small one over its own.
+//  ★Backwards, so where paws overlap the one placed LAST is found: that makes repeated pressing
+//    behave like undo rather than a lottery.
+static int32 KCMPawIndexAt(const std::vector<KCMPawStamp>& v, UID pageUID,
+                           const PMReal& x, const PMReal& y, const PMReal& baseHalf)
+{
+	for (int32 i = (int32)v.size() - 1; i >= 0; --i)
+	{
+		if (v[i].fPageUID != pageUID)
+			continue;
+
+		const PMReal half = baseHalf * v[i].fScale;
+		const PMReal dx   = v[i].fX - x;
+		const PMReal dy   = v[i].fY - y;
+		if (dx >= -half && dx <= half && dy >= -half && dy <= half)
+			return i;
+	}
+	return -1;
+}
+
+bool16 KCMPawStampPlaceAt(IDataBase* db, UID pageUID, const PMReal& x, const PMReal& y,
+                          const PMReal& scale, const PMReal& baseHalf)
 {
 	if (db == nil || pageUID == kInvalidUID)
-		return;
+		return kFalse;
 
 	KCMMarkStateLock lock(KCMMarkStateMutex());
+
+	// ★★NO STACKING (the user's request). Two paws on one spot look like one, and only the top one
+	//   comes off when Shift is pressed, so the second press is far likelier to be a slip than an
+	//   intention. The test is the very one the lift uses.
+	// ⚠sPaws.find, NOT sPaws[db]: operator[] would create an EMPTY entry for a document that gets
+	//   nothing placed, and an empty entry is exactly what KCMPawStampHasAny reads as "this
+	//   document has paws" -- the drawing side would then walk every page of it for nothing.
+	KCMPawMap::iterator entry = sPaws.find(db);
+	if (entry != sPaws.end() && KCMPawIndexAt(entry->second, pageUID, x, y, baseHalf) >= 0)
+		return kFalse;					// one is already there
 
 	// ★The write goes to THIS db. No fallback on file identity (rule 3).
 	// ★★AND IT ONLY EVER ADDS. This was a toggle for one day (2026-09-04) and the user found the
@@ -86,6 +129,7 @@ void KCMPawStampPlaceAt(IDataBase* db, UID pageUID, const PMReal& x, const PMRea
 	//   the first took the first one off. Placing and lifting are two intentions, so they are two
 	//   gestures -- plain press and Shift + press.
 	sPaws[db].push_back(KCMPawStamp(pageUID, x, y, scale));
+	return kTrue;
 }
 
 bool16 KCMPawStampLiftAt(IDataBase* db, UID pageUID, const PMReal& x, const PMReal& y,
@@ -101,29 +145,14 @@ bool16 KCMPawStampLiftAt(IDataBase* db, UID pageUID, const PMReal& x, const PMRe
 		return kFalse;
 	std::vector<KCMPawStamp>& v = entry->second;
 
-	// Walk backwards, so where two paws overlap the one placed LAST is the one that comes off.
-	// That is what makes repeated pressing feel like undo rather than a lottery.
-	for (int32 i = (int32)v.size() - 1; i >= 0; --i)
-	{
-		if (v[i].fPageUID != pageUID)
-			continue;
+	const int32 i = KCMPawIndexAt(v, pageUID, x, y, baseHalf);
+	if (i < 0)
+		return kFalse;					// the press landed on no paw
 
-		// ★Each paw is judged by ITS OWN square -- the page's ordinary half-size times the scale
-		//   this one was placed at. A big paw is therefore lifted by pressing anywhere on the big
-		//   paw, which is the only rule a reader can see.
-		const PMReal half = baseHalf * v[i].fScale;
-		const PMReal dx = v[i].fX - x;
-		const PMReal dy = v[i].fY - y;
-		if (dx >= -half && dx <= half && dy >= -half && dy <= half)
-		{
-			v.erase(v.begin() + i);
-			if (v.empty())
-				sPaws.erase(entry);		// an emptied entry goes at once
-			return kTrue;				// lifted
-		}
-	}
-
-	return kFalse;						// the press landed on no paw
+	v.erase(v.begin() + i);
+	if (v.empty())
+		sPaws.erase(entry);				// an emptied entry goes at once
+	return kTrue;
 }
 
 //========================================================================================
