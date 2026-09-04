@@ -45,6 +45,7 @@
 #include "KCMDrawEventHandler.h"	// the engine's shared state, which these two publish
 #include "KCMPageMap.h"			// registered pages, the page pairing, and the Register toggle
 #include "KCMPageCheck.h"			// the Check toggle and the Save/Load of both flags
+#include "KCMPawStamp.h"			// the cat-paw stamps (place / lift / count / the one size)
 #include "KCMStoryList.h"			// the Story Edits rows, and where a story begins in a document
 #include "KCMStoryDiffRun.h"		// RunOne - re-comparing one row's story ("Refresh Story Comparison")
 #include "KCMBookPair.h"			// which two books, and their display paths
@@ -351,6 +352,15 @@ public:
 
 	virtual void	SaveChecksAndRegister()			{ KCMPageCheckSaveToFile(); }
 	virtual void	LoadChecksAndRegister()			{ KCMPageCheckLoadFromFile(); }
+
+	// The cat-paw stamps. The crossing exists because model and UI are two DLLs: the tool lives
+	// on the UI side and the store on this one.
+	virtual bool16	PawStampToggleAt(IDataBase* db, UID pageUID, const PMReal& x, const PMReal& y,
+	                                 const PMReal& hitRadius)
+									{ return KCMPawStampToggleAt(db, pageUID, x, y, hitRadius); }
+	virtual int32	PawStampCount(IDataBase* db)	{ return KCMPawStampCount(db); }
+	virtual PMReal	PawHalfSizeForPage(IDataBase* db, UID pageUID)
+									{ return KCMPawHalfSizeForPage(db, pageUID); }
 };
 
 CREATE_PMINTERFACE(KCMPageFlagsFacade, kKCMPageFlagsFacadeImpl)

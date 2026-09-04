@@ -224,6 +224,7 @@
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMOversetScan.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMPageMap.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMPageCheck.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMPawStamp.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMDocUidSet.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMThreadSafety.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMStoryStamp.cpp" />
@@ -276,6 +277,7 @@
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPageFlagState.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPageMap.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPageCheck.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPawStamp.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMDocUidSet.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMThreadSafety.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMStoryKinds.h" />

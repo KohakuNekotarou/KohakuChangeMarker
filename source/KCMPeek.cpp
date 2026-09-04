@@ -58,6 +58,7 @@
 //   to the caller (the UI); this .cpp only peeks at the spread of the point it is given.
 #include "KCMPageMap.h"            // KCMBuildPairing (the exclusion pairing) / KCMPageMapReadSelection / KCMPageMapSweepClosedDocs
 #include "KCMPageCheck.h"          // KCMPageCheckClearAllDocs / KCMPageCheckSweepClosedDocs (clearing the ticks)
+#include "KCMPawStamp.h"           // KCMPawStampSweepClosedDocs (the cat-paw stamps, same sweep)
 #include "KCMColorSampler.h"       // KCMSampleCmykEndDrag (the pairing cached while Alt + left is held; emptied at shutdown)
 #include "KCMThreadSafety.h"       // KCMIsMainThread -- a background thread cannot tell whether a document is still open
 #include "KCMPageNumberMarker.h"   // KCMInvalidatePageNumberMarkerRects (dropping the page-number exclusion rectangles)
@@ -1071,6 +1072,7 @@ void KCMHandleDocsClosed()
 	// do not affect what the panel shows, so `changed` is deliberately not set.
 	KCMPageMapSweepClosedDocs();
 	KCMPageCheckSweepClosedDocs();	// and the ticks, the same way
+	KCMPawStampSweepClosedDocs();	// and the cat-paw stamps, likewise
 
 	// All of the screen-side clean-up travels on **this one notification**.
 	//

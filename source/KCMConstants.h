@@ -103,6 +103,17 @@ static const uint8 kKCMCheckR = 30, kKCMCheckG = 110, kKCMCheckB = 235;
 static const PMReal kKCMCheckLayoutSizeRatio   = 0.80;	// checkmark size, as a fraction of the page short side
 static const PMReal kKCMCheckLayoutStrokeRatio = 0.12;	// stroke width, as a fraction of the checkmark size
 
+// The cat-paw stamp: the reader's own "I have looked at this spot" mark, placed by the stamp tool
+// at a point on the page. Sized the same way as the tick above -- a fraction of the page's short
+// side -- so it stays similar under zoom and in print, and small, because a page may carry many.
+// ★★THE HIT BOX FOR LIFTING A PAW IS DERIVED FROM THIS ONE VALUE (KCMPawHalfSizeForPage), so
+//   what the reader can see is exactly what they can lift. Writing the size in two places would
+//   let the picture and the target drift apart, and the drift would only show as "sometimes the
+//   paw will not come off" ([[one-question-one-place]]).
+// ⚠The colour lives here too rather than in the drawing file, for the same reason the tick's does.
+static const PMReal kKCMPawSizeRatio = 0.05;	// paw size, as a fraction of the page short side
+static const uint8  kKCMPawR = 240, kKCMPawG = 120, kKCMPawB = 165;	// pink: not the red ring (a change), the green "/" (registered) or the blue tick
+
 // Fill that shows which areas are excluded from the comparison as page-number regions. While
 // the exclusion toggle is on, every excluded rectangle is painted in translucent green so the
 // excluded area can be seen, thin enough that the page number underneath still shows through.

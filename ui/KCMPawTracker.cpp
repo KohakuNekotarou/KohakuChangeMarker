@@ -6,10 +6,12 @@
 //  there is nothing to follow afterwards, so BeginTracking answers kFalse ＝ the single-shot
 //  shape of sdksamples/snapshot, whose tracker likewise does its whole job in BeginTracking.
 //
-//  ★TASK 1 OF THE PAW STAMP PLAN ENDS HERE: a press is only REPORTED, on the panel's status
-//    line. Placing and lifting arrive in Task 2 and the drawing in Task 3. What this file has to
-//    get right today is the one thing all of that rests on -- turning a press into "which page,
-//    and where on that page".
+//  ★A press PLACES a paw, or LIFTS the one it landed on, and says which it did on the panel's
+//    status line. ⚠Nothing is drawn yet -- the drawing arrives in Task 3 of the plan -- so until
+//    then the status line is the only sign a press did anything.
+//  ★The store is the model half's (KCMPawStamp.h): a stamp has to survive on the side that the
+//    drawing and the saving both live on, and a kUIPlugIn's statics are not visible to the
+//    background thread that exports a PDF.
 //
 //  ★NO MODIFIER KEY IS READ. Ctrl is InDesign's own temporary tool switch; Shift and Alt belong
 //    to the KCM tool's gestures, which are classified in ui/KCMPeekGesture.cpp and nowhere else.
@@ -40,7 +42,9 @@
 #include "Utils.h"
 
 #include "KCMUIID.h"
-#include "KCMUIShared.h"		// KCMSetStatus -- the panel's status line
+#include "KCMUIShared.h"			// KCMSetStatus -- the panel's status line
+#include "IKCMPageFlagsFacade.h"	// ★the ONLY way across to the store: place / lift / count / size
+#include "IKCMCompareFacade.h"		// InvalidateDB -- repaint the document that was pressed
 
 //____________________________________________________________________________________
 //	Tracker event handler: forwards events to the tracker while capturing. A bare subclass of
@@ -208,27 +212,46 @@ bool16 KCMPawTracker::BeginTracking(IEvent* theEvent)
 
 	if (KCMPawPointOnPage(fControlView, pb, pageRef, x, y))
 	{
-		msg = "Paw: page uid=";
-		msg.AppendNumber((int32)pageRef.GetUID().Get());
-		msg += ", x=";
-		msg.AppendNumber(x, 2, kFalse, kFalse);
-		msg += "pt, y=";
-		msg.AppendNumber(y, 2, kFalse, kFalse);
-		msg += "pt";
+		IDataBase* const db = pageRef.GetDataBase();
+		const UID pageUID = pageRef.GetUID();
 
-		// ★TASK 1'S MEASUREMENT (spec §4-1), and it is temporary -- Task 2 takes it out again.
-		//   The question it answers: does a page sit at the same place in spread coordinates
-		//   (where the marks are drawn) as in pasteboard coordinates (where a press is read)?
-		//   A non-zero difference here is not a bug, it is the number the drawing side would
-		//   have to add -- but it has to be SEEN before anything is built on top of it.
-		PMRect pbRect, spRect;
-		if (KCMPawPageRect(pageRef, Transform::PasteboardCoordinates(), pbRect) &&
-		    KCMPawPageRect(pageRef, Transform::SpreadCoordinates(), spRect))
+		// ★★EVERY CROSSING TO THE MODEL IS A FACADE CALL. model and UI are two DLLs, so calling
+		//   KCMPawStampToggleAt() straight from here does not link -- measured on 2026-09-04
+		//   (LNK2019, three unresolved symbols), which is how this arrived at its proper shape.
+		// ⚠The utility is taken through QueryUtilInterface() and nil-tested: writing
+		//   `InterfacePtr<T> p(Utils<T>());` does not compile (most vexing parse), and
+		//   QueryUtilInterface() itself has no nil guard inside ([[utils-boss-facade-access]]).
+		InterfacePtr<IKCMPageFlagsFacade> flags(Utils<IKCMPageFlagsFacade>().QueryUtilInterface());
+		if (flags == nil)
 		{
-			msg += " | spread-pb dx=";
-			msg.AppendNumber(spRect.Left() - pbRect.Left(), 2, kFalse, kFalse);
-			msg += " dy=";
-			msg.AppendNumber(spRect.Top() - pbRect.Top(), 2, kFalse, kFalse);
+			msg = "Paw: the model side did not answer";
+			KCMSetStatus(msg.SetTranslatable(kFalse));
+			return kFalse;
+		}
+
+		// ★THE HIT BOX IS THE PAW'S OWN SQUARE, so what can be seen is what can be lifted. The
+		//   size is asked of the one place that owns it rather than worked out again here -- put
+		//   the ratio in two places and the picture and the target drift apart, and the drift
+		//   would only ever show as "sometimes the paw will not come off".
+		const PMReal half = flags->PawHalfSizeForPage(db, pageUID);
+		if (half <= PMReal(0.0))
+		{
+			// The page could not be measured, so there is no honest size to stamp at. Saying so
+			// beats stamping at a guessed one.
+			msg = "Paw: cannot measure that page";
+		}
+		else
+		{
+			const bool16 placed = flags->PawStampToggleAt(db, pageUID, x, y, half);
+			msg = placed ? "Paw placed (" : "Paw lifted (";
+			msg.AppendNumber(flags->PawStampCount(db));
+			msg += " on this document)";
+
+			// ★Repaint THIS document -- deliberately not the comparison's Target. A paw can be
+			//   put on a document that is not being compared at all, which is the point of the
+			//   tool, so KCMInvalidateMarksDoc next door (which repaints the Target) would be the
+			//   wrong call. The facade ignores nil, so no test is needed.
+			Utils<IKCMCompareFacade>()->InvalidateDB(db);
 		}
 	}
 	else

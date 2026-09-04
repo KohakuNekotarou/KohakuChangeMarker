@@ -23,6 +23,8 @@
 // Project includes:
 #include "KCMBoundaryID.h"	// IID_IKCMPAGEFLAGSFACADE. The boundary header rather than KCMID.h,
 							// for the reason given at the same spot in IKCMCompareFacade.h.
+#include "OMTypes.h"			// UID -- which page a paw sits on
+#include "PMReal.h"			// the paw's coordinates and its size
 #include "KCMPageFlagState.h"	// KCMPageToggleState. A header of TYPES ONLY, which is what a
 							// header the UI includes has to be: this used to reach the type
 							// through KCMPageMap.h, whose 13 model-side free functions the UI
@@ -67,6 +69,33 @@ public:
 		re-compare, then restore the ticks -- but only on pages that still carry a mark. Armed
 		only. */
 	virtual void	LoadChecksAndRegister() = 0;
+
+	// ---- the cat-paw stamps --------------------------------------------------------------
+	//
+	// ★They belong to this facade because they are the same KIND of thing as Register and Check:
+	//   a mark **the reader puts there by hand**, held outside the document. What differs is only
+	//   the grain -- a paw sits at a point on a page rather than flagging the whole page.
+	// ★★★AND BECAUSE THE UI CANNOT REACH THE MODEL ANY OTHER WAY. model and UI are two DLLs, so
+	//   ui/KCMPawTracker.cpp calling KCMPawStampToggleAt() directly does not link (measured
+	//   2026-09-04: LNK2019, three unresolved symbols). **Every crossing is a facade method.**
+
+	/** Place a paw at (x, y) on that page, or lift the one already sitting there.
+		★x and y are measured from the PAGE'S TOP-LEFT in points, never in pasteboard coordinates
+		  -- KCMPawStamp.h carries the measurement that makes that a requirement.
+		hitRadius is half the drawn size, so "already there" means inside the paw's own square.
+		@return kTrue when one was PLACED, kFalse when one was lifted (or nothing happened). */
+	virtual bool16	PawStampToggleAt(IDataBase* db, UID pageUID, const PMReal& x, const PMReal& y,
+	                                 const PMReal& hitRadius) = 0;
+
+	/** How many paws this document holds. The tool says it on the status line after every press,
+		which is what tells "placed" and "lifted" apart while nothing is drawn yet. */
+	virtual int32	PawStampCount(IDataBase* db) = 0;
+
+	/** Half a paw's drawn size on that page, in points.
+		★★THE ONE PLACE THE SIZE COMES FROM: the tool asks for its hit box and the drawing side
+		  asks for its picture, so what can be seen is exactly what can be lifted. Answers 0 when
+		  the page cannot be measured, which the caller reads as "do not stamp here". */
+	virtual PMReal	PawHalfSizeForPage(IDataBase* db, UID pageUID) = 0;
 };
 
 #endif // __IKCMPageFlagsFacade_h__
