@@ -254,6 +254,7 @@
       <ClCompile Include="..\..\..\source\sdksamples\KCM\ui\KCMTracker.cpp"/>
       <ClCompile Include="..\..\..\source\sdksamples\KCM\ui\KCMPawTool.cpp"/>
       <ClCompile Include="..\..\..\source\sdksamples\KCM\ui\KCMPawTracker.cpp"/>
+      <ClCompile Include="..\..\..\source\sdksamples\KCM\ui\KCMPawCursorProvider.cpp"/>
       <ClCompile Include="..\..\..\source\sdksamples\KCM\ui\KCMTrackerRegister.cpp"/>
       <ClCompile Include="..\..\..\source\sdksamples\KCM\ui\KCMBookTreeAdapter.cpp"/>
       <ClCompile Include="..\..\..\source\sdksamples\KCM\ui\KCMBookTreeWidgetMgr.cpp"/>

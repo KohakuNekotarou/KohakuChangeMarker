@@ -72,16 +72,34 @@ static KCMPawMap::iterator KCMPawFindDoc(IDataBase* db)
 // Placing and lifting
 //========================================================================================
 
-bool16 KCMPawStampToggleAt(IDataBase* db, UID pageUID, const PMReal& x, const PMReal& y,
-                           const PMReal& hitRadius)
+void KCMPawStampPlaceAt(IDataBase* db, UID pageUID, const PMReal& x, const PMReal& y,
+                        const PMReal& scale)
+{
+	if (db == nil || pageUID == kInvalidUID)
+		return;
+
+	KCMMarkStateLock lock(KCMMarkStateMutex());
+
+	// ★The write goes to THIS db. No fallback on file identity (rule 3).
+	// ★★AND IT ONLY EVER ADDS. This was a toggle for one day (2026-09-04) and the user found the
+	//   fault in it within minutes of first use: putting paws down in a row, the second press near
+	//   the first took the first one off. Placing and lifting are two intentions, so they are two
+	//   gestures -- plain press and Shift + press.
+	sPaws[db].push_back(KCMPawStamp(pageUID, x, y, scale));
+}
+
+bool16 KCMPawStampLiftAt(IDataBase* db, UID pageUID, const PMReal& x, const PMReal& y,
+                         const PMReal& baseHalf)
 {
 	if (db == nil || pageUID == kInvalidUID)
 		return kFalse;
 
 	KCMMarkStateLock lock(KCMMarkStateMutex());
 
-	// ★The write goes to THIS db. No fallback on file identity (rule 3).
-	std::vector<KCMPawStamp>& v = sPaws[db];
+	KCMPawMap::iterator entry = sPaws.find(db);		// by pointer: a lift is a main-thread request
+	if (entry == sPaws.end())
+		return kFalse;
+	std::vector<KCMPawStamp>& v = entry->second;
 
 	// Walk backwards, so where two paws overlap the one placed LAST is the one that comes off.
 	// That is what makes repeated pressing feel like undo rather than a lottery.
@@ -90,19 +108,22 @@ bool16 KCMPawStampToggleAt(IDataBase* db, UID pageUID, const PMReal& x, const PM
 		if (v[i].fPageUID != pageUID)
 			continue;
 
+		// ★Each paw is judged by ITS OWN square -- the page's ordinary half-size times the scale
+		//   this one was placed at. A big paw is therefore lifted by pressing anywhere on the big
+		//   paw, which is the only rule a reader can see.
+		const PMReal half = baseHalf * v[i].fScale;
 		const PMReal dx = v[i].fX - x;
 		const PMReal dy = v[i].fY - y;
-		if (dx >= -hitRadius && dx <= hitRadius && dy >= -hitRadius && dy <= hitRadius)
+		if (dx >= -half && dx <= half && dy >= -half && dy <= half)
 		{
 			v.erase(v.begin() + i);
 			if (v.empty())
-				sPaws.erase(db);		// an emptied entry goes at once
-			return kFalse;				// lifted
+				sPaws.erase(entry);		// an emptied entry goes at once
+			return kTrue;				// lifted
 		}
 	}
 
-	v.push_back(KCMPawStamp(pageUID, x, y));
-	return kTrue;						// placed
+	return kFalse;						// the press landed on no paw
 }
 
 //========================================================================================

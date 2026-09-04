@@ -572,9 +572,6 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 	// and spends no toolbox slot. The boss itself is the ordinary four-piece tool shape --
 	// kGenericToolBoss supplies the button view and IID_IPMPERSIST persists the selected state,
 	// exactly as for kKCMToolBoss.
-	// ⚠No IID_ICURSORPROVIDER yet: the paw cursor arrives with the drawing, in Task 3 of the
-	//   plan. Until then the tool shows the arrow, which is honest -- it says nothing about
-	//   where the paw would land, and there is no paw to land yet.
 	Class
 	{
 		kKCMPawToolBoss,
@@ -582,6 +579,9 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 		{
 			IID_ITOOL,      kKCMPawToolImpl,
 			IID_IPMPERSIST, kPMPersistImpl,
+			// The pink paw shown while this tool is active, with its hot spot at the paw's centre
+			// so the pointer sits where the paw will land (KCMPawCursorProvider.cpp).
+			IID_ICURSORPROVIDER, kKCMPawCursorProviderImpl,
 		}
 	},
 
@@ -1692,6 +1692,18 @@ resource PNGC(kKCMCheckCursorResID + kHIDPICrsrOffset) "KCM_Check_10_18@2x.png"
 resource PNGC(kKCMCheckCursorResID + kHIDPI150CrsrOffset) "KCM_Check_10_18@3to2x.png"
 #endif
 resource HOTC(kKCMCheckCursorResID) {10, 18};
+
+// The cat-paw stamp tool's cursor: a pink paw with a dark rim, drawn by
+// work/kcm-make-paw-icons.ps1 from the same five outlines the stamp itself is drawn from.
+// ★The hot spot is the paw's CENTRE (10,10), not a corner -- the paw is placed centred on the
+//   point pressed, so the cursor has to sit where the paw will land. (The check cursor's (10,18)
+//   is its vertex, because that is what a tick points with.)
+resource PNGC(kKCMPawCursorResID) "KCM_PawCursor_10_10.png"
+resource PNGC(kKCMPawCursorResID + kHIDPICrsrOffset) "KCM_PawCursor_10_10@2x.png"
+#ifdef WINDOWS
+resource PNGC(kKCMPawCursorResID + kHIDPI150CrsrOffset) "KCM_PawCursor_10_10@3to2x.png"
+#endif
+resource HOTC(kKCMPawCursorResID) {10, 10};
 
 // Hotspot of the CMYK readout cursor (Alt + left = "compare colour"). The same vertex (10,18) as
 // the check mark, so it sits on the click point. Its CursorID is kept separate from the check

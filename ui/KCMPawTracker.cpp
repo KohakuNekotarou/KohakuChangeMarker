@@ -6,17 +6,21 @@
 //  there is nothing to follow afterwards, so BeginTracking answers kFalse ＝ the single-shot
 //  shape of sdksamples/snapshot, whose tracker likewise does its whole job in BeginTracking.
 //
-//  ★A press PLACES a paw, or LIFTS the one it landed on, and says which it did on the panel's
-//    status line. ⚠Nothing is drawn yet -- the drawing arrives in Task 3 of the plan -- so until
-//    then the status line is the only sign a press did anything.
+//  ★THREE GESTURES (2026-09-04, the user's choice after using the first build):
+//      plain press    place an ordinary paw
+//      Shift + press  lift the paw under the point
+//      Alt + press    place a big one (kKCMPawBigScale)
+//    ⚠★★A PLAIN PRESS NEVER LIFTS ANY MORE. It was a toggle for one day, and the fault showed
+//      within minutes of first use: putting paws down in a row, the second press near the first
+//      took the first one off. Placing and lifting are two intentions, so they are two gestures.
+//    ⚠Ctrl is not read and cannot be: InDesign takes it for the temporary switch to the selection
+//      tool, so a Ctrl + press never arrives here at all.
+//    ★This is a DIFFERENT TABLE from the KCM tool's gestures (ui/KCMPeekGesture.cpp) and not a
+//      second copy of it: that one belongs to the KCM tool's tracker, this to the stamp tool's,
+//      and a tool's modifiers are read by its own tracker or by nobody.
 //  ★The store is the model half's (KCMPawStamp.h): a stamp has to survive on the side that the
 //    drawing and the saving both live on, and a kUIPlugIn's statics are not visible to the
 //    background thread that exports a PDF.
-//
-//  ★NO MODIFIER KEY IS READ. Ctrl is InDesign's own temporary tool switch; Shift and Alt belong
-//    to the KCM tool's gestures, which are classified in ui/KCMPeekGesture.cpp and nowhere else.
-//    A stamp that changed meaning under a modifier would be a second place to look for that
-//    table.
 //
 //  ITracker (a CTracker subclass) plus its companion event handler, the same pair as
 //  KCMTracker.cpp. ⚠No sprite on the boss: that is asked for by CLayoutTracker and
@@ -43,6 +47,7 @@
 
 #include "KCMUIID.h"
 #include "KCMUIShared.h"			// KCMSetStatus -- the panel's status line
+#include "KCMConstants.h"			// kKCMPawBigScale / kKCMPawNormalScale -- what Alt is worth
 #include "IKCMPageFlagsFacade.h"	// ★the ONLY way across to the store: place / lift / count / size
 #include "IKCMCompareFacade.h"		// InvalidateDB -- repaint the document that was pressed
 
@@ -242,8 +247,21 @@ bool16 KCMPawTracker::BeginTracking(IEvent* theEvent)
 		}
 		else
 		{
-			const bool16 placed = flags->PawStampToggleAt(db, pageUID, x, y, half);
-			msg = placed ? "Paw placed (" : "Paw lifted (";
+			// ★Shift wins over Alt: lifting has no size, so the combination has nothing to mean.
+			bool16 changed = kFalse;
+			if (theEvent->ShiftKeyDown())
+			{
+				changed = flags->PawStampLiftAt(db, pageUID, x, y, half);
+				msg = changed ? "Paw lifted (" : "Paw: none under that point (";
+			}
+			else
+			{
+				const bool16 big = theEvent->OptionAltKeyDown();
+				flags->PawStampPlaceAt(db, pageUID, x, y,
+				                       big ? kKCMPawBigScale : kKCMPawNormalScale);
+				changed = kTrue;
+				msg = big ? "Big paw placed (" : "Paw placed (";
+			}
 			msg.AppendNumber(flags->PawStampCount(db));
 			msg += " on this document)";
 
@@ -251,7 +269,10 @@ bool16 KCMPawTracker::BeginTracking(IEvent* theEvent)
 			//   put on a document that is not being compared at all, which is the point of the
 			//   tool, so KCMInvalidateMarksDoc next door (which repaints the Target) would be the
 			//   wrong call. The facade ignores nil, so no test is needed.
-			Utils<IKCMCompareFacade>()->InvalidateDB(db);
+			// ⚠Only when something actually moved: a Shift press that landed on no paw changed
+			//   nothing, and redrawing a spread to show the same picture is work for nobody.
+			if (changed)
+				Utils<IKCMCompareFacade>()->InvalidateDB(db);
 		}
 	}
 	else

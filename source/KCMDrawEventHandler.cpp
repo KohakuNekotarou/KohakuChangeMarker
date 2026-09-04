@@ -68,6 +68,7 @@
 #include "KCMCore.h"               // KCMHandleDocsClosed -- one place for the after-a-close clean-up
 #include "KCMPageMap.h"            // KCMPageMapIsRegistered / KCMPageMapHasAnyRegistered (the added/removed pages)
 #include "KCMPageCheck.h"          // KCMPageCheckIsChecked / KCMPageCheckHasAny (the "Check" ticks)
+#include "KCMPawStamp.h"           // KCMPawStampsOnPage / KCMPawStampHasAny / KCMPawHalfSizeForPage (the cat-paw stamps: the store, and the one size)
 #include "KCMPageNumberMarker.h"   // KCMGetIgnorePageNumberMarker / KCMAppendPageNumberMarkerRects (the folio exclusion)
 #include "KCMThreadSafety.h"       // KCMIsSameDoc (the background thread's cloned db) / KCMIsMainThread / the mark-state lock
 #include "KCMExternalSource.h"     // KCMIsDbAlive -- a lent Source is not in IDocumentList and is still there
@@ -1469,6 +1470,150 @@ static void KCMDrawPageCheck(IGraphicsPort* gPort, IDataBase* db, UID pageUID,
 }
 
 
+//========================================================================================
+// The cat-paw stamps
+//
+//  ★THE SHAPE IS A TABLE, NOT CODE. Five outlines -- a pad and four toes -- of 16 points each, in
+//    units of the paw's size s and measured from its centre. They were taken off the reference
+//    picture the user supplied (a ray cast from each blob's centroid every 22.5 degrees, noting
+//    where the ink ends) and then made left-right symmetric at their request.
+//  ★THE TWO INNER TOES WERE SMOOTHED afterwards (2026-09-04), the user having seen a lump on each
+//    of them in the first build. The points sit at equal angles, so the shape IS the sequence of
+//    radii, and a lump is one radius out of line with its neighbours: measured, the inner toes ran
+//    0.154, 0.156, 0.113, 0.132, 0.111 where the other side of the same toe fell away evenly.
+//    Each radius was replaced by (previous + 2*this + next) / 4, the angles untouched, which took
+//    the worst deviation from 28% to 5.3% and moved nothing else -- the pad and the outer toes are
+//    the measured numbers still (their own worst is 15%, and the user did not ask).
+//  ⚠★★THE SAME TABLE DRAWS THE TOOLBOX ICON AND THE CURSOR, and it lives in
+//    work/kcm-make-paw-icons.ps1, which prints this block with -EmitCpp. **Change the numbers
+//    there and paste them here, never the other way round** -- edited on one side alone, the tool
+//    stamps one paw while its own icon shows a different one ([[one-question-one-place]]).
+//========================================================================================
+static const int32 kKCMPawPoints = 16;
+static const double kKCMPawOutlines[5][kKCMPawPoints][2] =
+{
+	{	// the pad
+		{  0.0000, -0.0085 }, {  0.0932,  0.0014 }, {  0.1645,  0.0618 }, {  0.2189,  0.1356 },
+		{  0.3131,  0.2263 }, {  0.3053,  0.3528 }, {  0.1753,  0.4016 }, {  0.0724,  0.4010 },
+		{  0.0000,  0.4002 }, { -0.0724,  0.4010 }, { -0.1753,  0.4016 }, { -0.3053,  0.3528 },
+		{ -0.3131,  0.2263 }, { -0.2189,  0.1356 }, { -0.1645,  0.0618 }, { -0.0932,  0.0014 },
+	},
+	{	// outer left toe
+		{ -0.3759, -0.1511 }, { -0.3251, -0.1171 }, { -0.2836, -0.0868 }, { -0.2734, -0.0370 },
+		{ -0.2628,  0.0055 }, { -0.2533,  0.0563 }, { -0.2805,  0.1008 }, { -0.3159,  0.1501 },
+		{ -0.3759,  0.1490 }, { -0.4316,  0.1400 }, { -0.4680,  0.0977 }, { -0.4763,  0.0471 },
+		{ -0.4867,  0.0055 }, { -0.4783, -0.0370 }, { -0.4773, -0.0960 }, { -0.4332, -0.1331 },
+	},
+	{	// inner left toe
+		{ -0.1583, -0.4153 }, { -0.1012, -0.3926 }, { -0.0668, -0.3465 }, { -0.0513, -0.2994 },
+		{ -0.0436, -0.2550 }, { -0.0428, -0.2072 }, { -0.0564, -0.1531 }, { -0.0977, -0.1089 },
+		{ -0.1583, -0.0969 }, { -0.2138, -0.1210 }, { -0.2494, -0.1639 }, { -0.2713, -0.2083 },
+		{ -0.2767, -0.2550 }, { -0.2722, -0.3023 }, { -0.2578, -0.3546 }, { -0.2179, -0.3991 },
+	},
+	{	// inner right toe
+		{  0.1583, -0.4153 }, {  0.2179, -0.3991 }, {  0.2578, -0.3546 }, {  0.2722, -0.3023 },
+		{  0.2767, -0.2550 }, {  0.2713, -0.2083 }, {  0.2494, -0.1639 }, {  0.2138, -0.1210 },
+		{  0.1583, -0.0969 }, {  0.0977, -0.1089 }, {  0.0564, -0.1531 }, {  0.0428, -0.2072 },
+		{  0.0436, -0.2550 }, {  0.0513, -0.2994 }, {  0.0668, -0.3465 }, {  0.1012, -0.3926 },
+	},
+	{	// outer right toe
+		{  0.3759, -0.1511 }, {  0.4332, -0.1331 }, {  0.4773, -0.0960 }, {  0.4783, -0.0370 },
+		{  0.4867,  0.0055 }, {  0.4763,  0.0471 }, {  0.4680,  0.0977 }, {  0.4316,  0.1400 },
+		{  0.3759,  0.1490 }, {  0.3159,  0.1501 }, {  0.2805,  0.1008 }, {  0.2533,  0.0563 },
+		{  0.2628,  0.0055 }, {  0.2734, -0.0370 }, {  0.2836, -0.0868 }, {  0.3251, -0.1171 },
+	}
+};
+
+// One outline, drawn as a CLOSED CATMULL-ROM SPLINE through its points, span by span as cubic
+// Beziers -- the only curve a port speaks (IGraphicsPort has curveto / curvetov / rectpath, and no
+// arc or oval of its own). The tangent at a point is (next - previous)/6, the standard conversion.
+// ★This is why the table is 16 points and not 48: the control points are derived from it.
+static void KCMPawShapePath(IGraphicsPort* gPort, const double outline[kKCMPawPoints][2],
+	const PMReal& cx, const PMReal& cy, const PMReal& s)
+{
+	PMReal px[kKCMPawPoints], py[kKCMPawPoints];
+	for (int32 i = 0; i < kKCMPawPoints; ++i)
+	{
+		px[i] = cx + PMReal(outline[i][0]) * s;
+		py[i] = cy + PMReal(outline[i][1]) * s;
+	}
+
+	const PMReal kSixth = PMReal(1.0) / PMReal(6.0);
+	gPort->moveto(px[0], py[0]);
+	for (int32 i = 0; i < kKCMPawPoints; ++i)
+	{
+		const int32 i0 = (i - 1 + kKCMPawPoints) % kKCMPawPoints;
+		const int32 i2 = (i + 1) % kKCMPawPoints;
+		const int32 i3 = (i + 2) % kKCMPawPoints;
+		gPort->curveto(px[i]  + (px[i2] - px[i0]) * kSixth, py[i]  + (py[i2] - py[i0]) * kSixth,
+		               px[i2] - (px[i3] - px[i])  * kSixth, py[i2] - (py[i3] - py[i])  * kSixth,
+		               px[i2], py[i2]);
+	}
+	gPort->closepath();
+}
+
+//========================================================================================
+// Every paw on one page. They are placed by the stamp tool (ui/KCMPawTracker.cpp) and held
+// outside the document (source/KCMPawStamp.cpp), so nothing here reads or writes the .indd.
+//   Screen      -- always, exactly like the "Check" tick: independent of the frame toggles and of
+//                  the tool's left button, because a paw is a mark the reader put there on purpose.
+//   Print / PDF -- only with "Print comparison marks" on, the rule every other mark follows.
+//   Opacity     -- the panel's 25%/75% choice, so screen and print agree.
+//========================================================================================
+static void KCMDrawPawStamps(IGraphicsPort* gPort, IDataBase* db, UID pageUID,
+	int32 drawMode, const PMReal& screenOpacity)
+{
+	if (gPort == nil || db == nil)
+		return;
+
+	std::vector<KCMPawStamp> paws;
+	KCMPawStampsOnPage(db, pageUID, paws);
+	if (paws.empty())
+		return;
+
+	PMRect pr;
+	if (!KCMQueryPageRect(db, pageUID, pr))
+		return;
+
+	// ★The size is asked of the very function the tracker's hit box comes from, so what is drawn
+	//   is exactly what can be lifted. That one answers the HALF size; a paw's own s is twice it.
+	//   This is the page's ORDINARY size -- each stamp multiplies it by the scale it was placed at
+	//   (kKCMPawBigScale for an Alt press), which the hit test reads from the same field.
+	const PMReal baseS = KCMPawHalfSizeForPage(db, pageUID) * PMReal(2.0);
+	if (baseS < PMReal(0.5))
+		return;
+
+	const PMReal opacity = (drawMode == kKCMDrawModePrint)
+		? KCMDrawEventHandler::SelectedMarkOpacity() : screenOpacity;
+
+	AutoGSave ag(gPort);
+	// The clip is what the Pages panel thumbnail route requires, and it is also the declaration
+	// that this rectangle is being touched -- the reasoning is written out in KCMDrawPageCheck.
+	gPort->rectclip(pr);
+	gPort->setopacity(opacity, kFalse);		// constant opacity, not shape alpha -- as every other mark here
+	gPort->setrgbcolor(kKCMPawR / PMReal(255.0), kKCMPawG / PMReal(255.0), kKCMPawB / PMReal(255.0));
+
+	for (size_t i = 0; i < paws.size(); ++i)
+	{
+		// ★A stamp is stored as an offset from the PAGE'S TOP-LEFT. That is what lets it survive a
+		//   page being added or removed, AND what makes this addition right in spread coordinates
+		//   even though the press was read in pasteboard ones -- measured 2026-09-04: the two
+		//   spaces differ by a whole spread from the second spread onwards, and subtracting the
+		//   page's own rectangle on each side is what cancels it.
+		const PMReal cx = pr.Left() + paws[i].fX;
+		const PMReal cy = pr.Top()  + paws[i].fY;
+		const PMReal s  = baseS * paws[i].fScale;
+
+		// ★All five outlines go into ONE path before the fill, so the pad and the toes merge where
+		//   they touch instead of showing a seam between them.
+		gPort->newpath();
+		for (int32 b = 0; b < 5; ++b)
+			KCMPawShapePath(gPort, kKCMPawOutlines[b], cx, cy, s);
+		gPort->fill();
+	}
+}
+
+
 bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 {
 	if (ded == nil || ded->gd == nil)
@@ -1633,6 +1778,16 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 	// Thumbnails (isThumb) are drawn by their own block below and are not included here.
 	const bool16 wantChecks = !isThumb && (!printing || sPrintMarks) &&
 		((sDB != nil && KCMPageCheckHasAny(sDB)) || (sSrcDB != nil && KCMPageCheckHasAny(sSrcDB)));
+	// The cat-paw stamps follow the tick's rules -- always on screen, in print only with
+	// sPrintMarks -- with ★ONE DIFFERENCE THAT DECIDES THE SHAPE OF THIS LINE: a paw is NOT tied
+	// to an armed comparison. It can be put on any open document, so "does this one have any" has
+	// to be asked of **the document being drawn**, not of sDB / sSrcDB.
+	// ⚠db itself is taken further down (after the thumbnail branch), and this question has to be
+	//   answered before the early-out just below -- so the database is fetched here as well.
+	//   ::GetDataBase is a pointer walk, and asking twice costs nothing beside drawing.
+	//   KCMPawStampHasAny answers kFalse for nil, so nothing else needs guarding.
+	const bool16 wantPaws = !isThumb && (!printing || sPrintMarks) &&
+		KCMPawStampHasAny(::GetDataBase(ded->changedBy));
 	// Find Overset's "+": completely independent of the comparison and the ticks. **It is never
 	// drawn on the canvas** -- only into the Pages panel's thumbnails (isThumb), as red with a white
 	// halo. A scan having run (sOversetOn) with a non-empty set makes it a candidate; whether this
@@ -1650,7 +1805,7 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 	// registering itself now requires an armed comparison). So the green "/" is drawn only by the
 	// Target and Source loops below, both of which imply an armed comparison.
 
-	if (!wantMarks && !wantOrig && !wantOldNums && !wantSrcMarks && !wantChecks && !wantOversetThumb)
+	if (!wantMarks && !wantOrig && !wantOldNums && !wantSrcMarks && !wantChecks && !wantPaws && !wantOversetThumb)
 		return kFalse;
 
 	GraphicsData* gd = ded->gd;
@@ -1863,6 +2018,17 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 				KCMDrawPageCheck(gPort, db, puid, sxr, drawMode, SelectedMarkOpacity(),
 					kKCMCheckR, kKCMCheckG, kKCMCheckB, kTrue /*layoutStyle*/);
 		}
+	}
+
+	// The cat-paw stamps, on the same route as the tick above and with the same visibility rules.
+	// ⚠★NO KCMIsArmed() HERE, deliberately -- that is the one condition a paw does not carry. It
+	//   is the reader's own mark on a document they are reading, which may be a document nobody is
+	//   comparing; requiring an armed comparison would take the feature's point away.
+	if (wantPaws && KCMPawStampHasAny(db))
+	{
+		const int32 npp = spread->GetNumPages();
+		for (int32 i = 0; i < npp; ++i)
+			KCMDrawPawStamps(gPort, db, spread->GetNthPageUID(i), drawMode, SelectedMarkOpacity());
 	}
 
 	// The original-page-number badge (Show Original Page Numbers). On a page whose "current page

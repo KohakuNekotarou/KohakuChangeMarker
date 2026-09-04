@@ -81,6 +81,9 @@
       <ClCompile Include="..\..\..\source\sdksamples\KCM\ui\KCMPawTracker.cpp">
          <Filter>Source Files</Filter>
       </ClCompile>
+      <ClCompile Include="..\..\..\source\sdksamples\KCM\ui\KCMPawCursorProvider.cpp">
+         <Filter>Source Files</Filter>
+      </ClCompile>
       <ClCompile Include="..\..\..\source\sdksamples\KCM\ui\KCMTrackerRegister.cpp">
          <Filter>Source Files</Filter>
       </ClCompile>

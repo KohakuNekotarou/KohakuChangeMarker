@@ -79,13 +79,22 @@ public:
 	//   ui/KCMPawTracker.cpp calling KCMPawStampToggleAt() directly does not link (measured
 	//   2026-09-04: LNK2019, three unresolved symbols). **Every crossing is a facade method.**
 
-	/** Place a paw at (x, y) on that page, or lift the one already sitting there.
+	/** Place a paw at (x, y) on that page. scale is a multiple of the page's ordinary paw size:
+		kKCMPawNormalScale for a plain press, kKCMPawBigScale for Alt.
 		★x and y are measured from the PAGE'S TOP-LEFT in points, never in pasteboard coordinates
 		  -- KCMPawStamp.h carries the measurement that makes that a requirement.
-		hitRadius is half the drawn size, so "already there" means inside the paw's own square.
-		@return kTrue when one was PLACED, kFalse when one was lifted (or nothing happened). */
-	virtual bool16	PawStampToggleAt(IDataBase* db, UID pageUID, const PMReal& x, const PMReal& y,
-	                                 const PMReal& hitRadius) = 0;
+		★★IT ONLY ADDS. Placing and lifting are two intentions and therefore two gestures; the
+		  toggle this replaced took the previous paw off whenever the next one was put down beside
+		  it (found by the user within minutes of first use, 2026-09-04). */
+	virtual void	PawStampPlaceAt(IDataBase* db, UID pageUID, const PMReal& x, const PMReal& y,
+	                                const PMReal& scale) = 0;
+
+	/** Lift the paw under (x, y) -- Shift + press. baseHalf is half the page's ORDINARY paw size
+		(PawHalfSizeForPage); each stamp is judged by that times its own scale, so a big paw is
+		lifted by pressing anywhere on the big paw.
+		@return kTrue when one was lifted, kFalse when the press landed on none. */
+	virtual bool16	PawStampLiftAt(IDataBase* db, UID pageUID, const PMReal& x, const PMReal& y,
+	                               const PMReal& baseHalf) = 0;
 
 	/** How many paws this document holds. The tool says it on the status line after every press,
 		which is what tells "placed" and "lifted" apart while nothing is drawn yet. */

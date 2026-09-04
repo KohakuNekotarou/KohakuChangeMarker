@@ -39,18 +39,33 @@ struct KCMPawStamp
 {
 	UID    fPageUID;
 	PMReal fX, fY;
-	KCMPawStamp() : fPageUID(kInvalidUID) {}
-	KCMPawStamp(UID p, const PMReal& x, const PMReal& y) : fPageUID(p), fX(x), fY(y) {}
+	/** How big this one is, as a multiple of the page's ordinary paw size: kKCMPawNormalScale for
+		a plain press, kKCMPawBigScale for Alt. ★It is kept PER STAMP rather than as a flag, so the
+		drawing and the hit box read the same number and a big paw is lifted by pressing anywhere
+		on the big paw. */
+	PMReal fScale;
+	KCMPawStamp() : fPageUID(kInvalidUID), fScale(1.0) {}
+	KCMPawStamp(UID p, const PMReal& x, const PMReal& y, const PMReal& scale)
+		: fPageUID(p), fX(x), fY(y), fScale(scale) {}
 };
 
-/** Lift the stamp under (x, y) if there is one, otherwise place a new one there. hitRadius is
-	half the drawn size, so "under" means inside the paw's own square.
-	@return kTrue when a stamp was ADDED, kFalse when one was lifted (or nothing happened).
+/** Place a paw at (x, y) on that page. scale is a multiple of the page's ordinary paw size
+	(kKCMPawNormalScale, or kKCMPawBigScale for Alt).
+	★★A PLAIN PRESS ALWAYS PLACES -- it never lifts (changed 2026-09-04 at the user's request).
+	  It began as a toggle, and stamping repeatedly is what a reader actually does: with a toggle,
+	  a second paw beside the first kept taking the first one off. Lifting has a key of its own.
 	@warning writes go to THIS db and no other: unlike the readers below there is no fallback on
 	  file identity, because a write always happens on the main thread and means "add to the
 	  document I am looking at". Growing a clone's entry would be a wrong document, not a rescue. */
-bool16 KCMPawStampToggleAt(IDataBase* db, UID pageUID, const PMReal& x, const PMReal& y,
-                           const PMReal& hitRadius);
+void KCMPawStampPlaceAt(IDataBase* db, UID pageUID, const PMReal& x, const PMReal& y,
+                        const PMReal& scale);
+
+/** Lift the paw under (x, y) -- Shift + press. baseHalf is half the page's ORDINARY paw size;
+	each stamp's own square is that times its fScale, so what can be seen is what can be lifted.
+	Where paws overlap, the one placed last comes off first.
+	@return kTrue when one was lifted, kFalse when the press landed on none. */
+bool16 KCMPawStampLiftAt(IDataBase* db, UID pageUID, const PMReal& x, const PMReal& y,
+                         const PMReal& baseHalf);
 
 /** The stamps on one page, in the order they were placed. out is cleared first.
 	@warning ★THIS IS READ FROM A BACKGROUND THREAD (the asynchronous PDF export draws there), and
@@ -68,8 +83,9 @@ bool16 KCMPawStampHasAny(IDataBase* db);
 /** How many stamps this document holds (the status line reports it). */
 int32 KCMPawStampCount(IDataBase* db);
 
-/** Half the drawn size of a paw on this page, in points: the page's short side times
-	kKCMPawSizeRatio, halved.
+/** Half an ORDINARY paw's drawn size on this page, in points: the page's short side times
+	kKCMPawSizeRatio, halved. A stamp placed with Alt is that times kKCMPawBigScale, which is what
+	each stamp's own fScale carries -- this answers the page's baseline, not any one stamp's size.
 	★★THE ONE PLACE THE SIZE COMES FROM. The tracker asks for the hit box and the drawing side
 	  asks for the picture, so what can be seen is exactly what can be lifted. Answers 0 when the
 	  page cannot be measured, which the caller reads as "do not stamp here". */

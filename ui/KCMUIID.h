@@ -282,6 +282,7 @@ DECLARE_PMID(kImplementationIDSpace, kKCMSplitterEHImpl, kKCMUIPrefix + 34)	// I
 DECLARE_PMID(kImplementationIDSpace, kKCMPawToolImpl, kKCMUIPrefix + 45)	// ITool (the cat-paw stamp tool. KCMPawTool.cpp)
 DECLARE_PMID(kImplementationIDSpace, kKCMPawTrackerImpl, kKCMUIPrefix + 46)	// ITracker (CTracker subclass; one left press places a paw, or lifts the one under it. KCMPawTracker.cpp)
 DECLARE_PMID(kImplementationIDSpace, kKCMPawTrackerEHImpl, kKCMUIPrefix + 47)	// IEventHandler (CTrackerEventHandler subclass, the companion of the tracker above -- a bare subclass, as kKCMTrackerEHImpl is. KCMPawTracker.cpp)
+DECLARE_PMID(kImplementationIDSpace, kKCMPawCursorProviderImpl, kKCMUIPrefix + 48)	// ICursorProvider (CToolCursorProvider subclass; the pink paw shown while the stamp tool is active. KCMPawCursorProvider.cpp). ★Simpler than the KCM tool's, which has two states (black while armed, outlined while stopped): a paw can be placed at any time, so it has nothing to say about the comparison's state
 // ActionIDs:
 DECLARE_PMID(kActionIDSpace, kKCMAboutActionID, kKCMUIPrefix + 0)
 DECLARE_PMID(kActionIDSpace, kKCMPanelWidgetActionID, kKCMUIPrefix + 1)	// show / hide the panel (Window menu)
@@ -893,6 +894,13 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowStateWidgetID, kKCMUIPrefix + 49)	// = t
 // to borrow the panel icon (kKCMIconOnResID) until artwork of its own arrived
 // (KCM_Tool_32.png/_64.png, supplied by the user). There is no dark version, so PNGAD points at
 // the light artwork as well.
+// The cat-paw stamp tool's cursor: a pink paw with a dark rim, hot spot at its centre (10,10) --
+// the point the paw is placed at, so the cursor shows where it will land. A PNGC resource, not a
+// drawing callback, for the reason written at the check cursor above.
+// ★Its own CursorID, separate from 1020..1023, so switching tools really changes the spec (the
+//   cursor cache is keyed by ID -- sharing one is what once mixed up the check and the readout).
+#define kKCMPawCursorResID	1024
+
 #define kKCMToolIconResID	1030
 
 // The toolbox icon of the cat-paw stamp tool (32x32 normal / 64x64 = +kHIDPIIconOffset), drawn

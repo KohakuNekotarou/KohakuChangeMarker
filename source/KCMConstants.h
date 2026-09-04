@@ -114,6 +114,15 @@ static const PMReal kKCMCheckLayoutStrokeRatio = 0.12;	// stroke width, as a fra
 static const PMReal kKCMPawSizeRatio = 0.05;	// paw size, as a fraction of the page short side
 static const uint8  kKCMPawR = 240, kKCMPawG = 120, kKCMPawB = 165;	// pink: not the red ring (a change), the green "/" (registered) or the blue tick
 
+// Alt while pressing places a BIGGER paw (user's choice, 2026-09-04) -- for the spot that matters
+// more than the others, which is what a reader reaches for once they have put down a few.
+// ★It is a multiplier of the size above, not a size of its own, so the two cannot drift apart:
+//   change kKCMPawSizeRatio and both paws follow. Each stamp remembers its own multiplier, and
+//   both the drawing and the hit box read it, so a big paw is lifted by pressing anywhere on the
+//   big paw. 1.6 was chosen to be unmistakable beside the ordinary one without dominating a page.
+static const PMReal kKCMPawBigScale = 1.6;	// Alt + press, as a multiple of the ordinary paw
+static const PMReal kKCMPawNormalScale = 1.0;	// a plain press
+
 // Fill that shows which areas are excluded from the comparison as page-number regions. While
 // the exclusion toggle is on, every excluded rectangle is painted in translucent green so the
 // excluded area can be seen, thin enough that the page number underneath still shows through.
