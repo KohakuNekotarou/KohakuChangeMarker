@@ -386,15 +386,14 @@ DECLARE_PMID(kActionIDSpace, kKCMPopupColorCyanActionID, kKCMUIPrefix + 47)	// �
 
 DECLARE_PMID(kActionIDSpace, kKCMPawToolActionID, kKCMUIPrefix + 48)	// the tool-select shortcut of the cat-paw stamp tool, named by its ToolDef. ★No ActionDef is needed -- the toolbox framework provides a tool's own selection action (the same as +29 for the KCM tool)
 DECLARE_PMID(kActionIDSpace, kKCMClearPawsActionID, kKCMUIPrefix + 49)	// "Clear Cat Paws in This Document" on the panel flyout (a plain command; Task 6 of the paw stamp plan). Greyed where the active document holds no paw, through kCustomEnabling
-// ★The two items of the PANEL TOOL BUTTON'S FLYOUT (2026-09-04) -- the little menu that appears
-//   when the button is held down, so that either tool can be picked by name. It is the toolbox's
-//   press-and-hold in the only shape a plug-in can build: ⚠**the toolbox's own flyout is drawn by
-//   the toolbox panel itself and IToolBoxUtils publishes nothing to raise one** (10 methods,
-//   measured), so this is a popup MENU rather than the strip of icons the toolbox shows.
-// ⚠They are NOT the ToolDefs' own action IDs (+29 / +48). Those exist for the toolbox's keyboard
-//   shortcut and carry no ActionDef -- no ActionDef, no label, and a menu item needs one.
-DECLARE_PMID(kActionIDSpace, kKCMFlyoutPickToolActionID, kKCMUIPrefix + 50)	// flyout item: choose the comparison tool
-DECLARE_PMID(kActionIDSpace, kKCMFlyoutPickPawToolActionID, kKCMUIPrefix + 51)	// flyout item: choose the cat-paw stamp
+// ⚠**+50 and +51 ARE FREE AGAIN, AND ARE LEFT UNUSED.** They were the two items of the panel tool
+//   button's flyout for a few hours on 2026-09-04, as a MenuDef subtree plus ActionDefs. The
+//   flyout is a **Win32 popup** now (TrackPopupMenu, so that holding-dragging-releasing picks an
+//   item, which IMenuManager cannot do) and it calls KCMToolButtonPressed directly, so nothing
+//   named these. ★They were removed rather than left: an ActionDef with no menu behind it still
+//   shows up in QuickApply as a command that does nothing a reader asked for.
+//   **Do not reuse the numbers** -- a .indk written while they existed would map a shortcut onto
+//   whatever took the slot ([[id-prefix-256-slot-budget]]).
 
 // (The template's spare //DECLARE_PMID(kActionIDSpace, kKCMActionID, kKCMUIPrefix + 41) was
 //  **deleted**. ⚠★★It was not inert: **+41 is taken** (kKCMPopupTranslucentBookDialogActionID
@@ -658,10 +657,8 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowStateWidgetID, kKCMUIPrefix + 49)	// = t
 // ★The name of the root never reaches the screen, so a plain literal will do; it needs no
 // translation key.
 #define kKCMBookRowMenuName		"KCMRtMenuBookRow"
-// The panel tool button's flyout, raised by KCMToolButtonEH when the button is HELD. Same
-// machinery as the row menus above (IMenuManager::HandlePopupMenu on a MenuDef subtree of this
-// name). ★The root's name never reaches the screen, so a plain literal will do.
-#define kKCMToolFlyoutMenuName	"KCMToolFlyout"
+// (kKCMToolFlyoutMenuName was here on 2026-09-04 and is gone with the MenuDef it named: the panel
+//  tool button's flyout is a Win32 popup, built in code by KCMToolButtonEH.)
 #define kKCMStoryRowRefreshMenuKey	kKCMStringPrefix "kKCMStoryRowRefreshMenuKey"	// the "Refresh Story Comparison" item on a Story Edits row context menu
 // The Story Edits row context menu. The same mechanism as the chapter menu above:
 // KCMStoryRowEH::RButtonDn puts the MenuDef subtree of this name up at the cursor through
@@ -1023,10 +1020,8 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowStateWidgetID, kKCMUIPrefix + 49)	// = t
 // flyout, under kKCMBookRowMenuName).
 #define kKCMBookRowStartMenuItemPosition	1.0		// chapter row context menu: "Start Change Marker"
 #define kKCMStoryRowRefreshMenuItemPosition	1.0	// Story Edits row context menu: "Refresh Story Comparison" (a different subtree, so it may share 1.0 with the chapter row)
-// The panel tool button's flyout: the two tools, in the order the toolbox lists them (the parent
-// tool first, then its subtool). Its own subtree, so the numbers start again at 1.
-#define kKCMFlyoutPickToolMenuItemPosition	1.0
-#define kKCMFlyoutPickPawToolMenuItemPosition	2.0
+// (The panel tool button's flyout had two positions here on 2026-09-04. Gone with its MenuDef --
+//  a Win32 popup orders its items by the order they are appended, in code.)
 // -- the informational items, at the end --
 #define kKCMSep2MenuItemPosition			9.95	// the separator above How to Use (a path ending in ":-")
 #define kKCMUsageMenuItemPosition			10.0	// "How to Use"

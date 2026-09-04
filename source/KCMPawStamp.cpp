@@ -227,6 +227,39 @@ PMReal KCMPawHalfSizeForPage(IDataBase* db, UID pageUID)
 }
 
 //========================================================================================
+// Saving and restoring (KCMPageChecks.json, version 3)
+//========================================================================================
+
+void KCMPawStampGetForSave(IDataBase* db, std::vector<KCMPawStamp>& out)
+{
+	out.clear();
+	if (db == nil)
+		return;
+
+	KCMMarkStateLock lock(KCMMarkStateMutex());
+	// ⚠By pointer, deliberately: saving is a main-thread request about the document in front of
+	//   the reader. The file-identity fallback exists for the background thread's clone, which
+	//   never saves.
+	KCMPawMap::const_iterator it = sPaws.find(db);
+	if (it != sPaws.end())
+		out = it->second;
+}
+
+void KCMPawStampReplaceAll(IDataBase* db, const std::vector<KCMPawStamp>& in)
+{
+	if (db == nil)
+		return;
+
+	KCMMarkStateLock lock(KCMMarkStateMutex());
+	// ★REPLACE, not merge: loading means "restore what was saved", and merging would double
+	//   everything on a second load.
+	if (in.empty())
+		sPaws.erase(db);		// keeps the promise that an entry which exists is not empty
+	else
+		sPaws[db] = in;
+}
+
+//========================================================================================
 // Forgetting
 //========================================================================================
 

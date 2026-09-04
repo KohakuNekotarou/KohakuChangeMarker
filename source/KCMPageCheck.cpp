@@ -42,6 +42,7 @@
 #include "KCMComparisonRun.h"	// KCMToggleStartStop
 #include "KCMPageCheck.h"
 #include "KCMPageMap.h"		// KCMPageMapCollectRegistered (save) / KCMPageMapReplaceRegistered (load)
+#include "KCMPawStamp.h"		// KCMPawStampGetForSave / KCMPawStampReplaceAll -- the cat-paw stamps ride this same file
 #include "KCMDocUidSet.h"		// the shared "document -> page UID set" container (Register uses it too)
 #include "KCMThreadSafety.h"	// the shared-state lock, for reaching inside the container through GetMap
 #include "KCMID.h"				// kKCMPageFlagsChangedMessage (the notification's ID)
@@ -277,15 +278,25 @@ bool16 KCMPageCheckHasAny(IDataBase* db)
 //     file format nor compatibility with older files -- the loading side always checks that a
 //     page really exists in the document it is restoring into.
 //
-//   The format (version 2):
+//   The format (version 3):
 //     {
-//       "version": 2,
+//       "version": 3,
 //       "docs": [
-//         { "path": "<utf8 path>", "checks": [12, 45], "registered": [3, 7] }
+//         { "path": "<utf8 path>", "checks": [12, 45], "registered": [3, 7],
+//           "paws": [ {"page":12,"x":12340,"y":5670,"c":1} ] }
 //       ]
 //     }
 //   Reading is lenient: the version is not looked at, and an old v1 file's "pages" array is
 //     accepted as checks (an old file without "registered" simply has no registrations).
+//
+//   ★★"paws" ARRIVED IN VERSION 3 (2026-09-04) -- the cat-paw stamps, which unlike the two arrays
+//     above carry coordinates, so they are objects rather than bare UIDs.
+//     - **x and y are HUNDREDTHS OF A POINT, as integers**, measured from the page's top-left.
+//       ⚠Not a decimal: sprintf/strtod follow LC_NUMERIC, so a decimal would be written "123,4" on
+//       a machine whose locale says so and read back as 123. 1/100 pt is 3.5 micrometres.
+//     - **"c" is the colour** (0 pink / 1 cyan / 2 green), optional, defaulting to pink.
+//     ★Because the version is not looked at, BOTH directions are safe: an older KCM reading a v3
+//       file skips "paws", and this KCM reading a v2 file finds none.
 //
 //  --------------------------------------------------------------------------------------
 //  **WHY THIS READS AND WRITES ITS OWN JSON INSTEAD OF USING THE SDK'S CLASS.**
@@ -330,11 +341,12 @@ bool16 KCMPageCheckHasAny(IDataBase* db)
 //========================================================================================
 
 // What is saved for one document: the ticked and the registered (Added/Removed) pages, as raw
-// UID values (uint32).
+// UID values (uint32), and the cat-paw stamps (which carry coordinates, so they are not a set).
 struct KCMDocSets
 {
 	std::set<uint32> checks;
 	std::set<uint32> registered;
+	std::vector<KCMPawStamp> paws;		// version 3 onward; absent from a file written by an older KCM
 };
 
 static const char* const kKCMPageChecksFileName = "KCMPageChecks.json";
@@ -492,6 +504,91 @@ static bool16 KCMParseUintArray(const std::string& text, size_t regionBegin, siz
 	return kTrue;	// the key was there, empty array or not
 }
 
+// One integer that follows key inside [from, to). kFalse when the key is not there, so "absent"
+// can be told from "zero" -- which matters for "c", where 0 is a real colour (pink).
+// ⚠Digits and a leading '-' only. **No strtod, no locale**: see the note on KCMAppendPawList.
+static bool16 KCMReadJsonInt(const std::string& text, size_t from, size_t to,
+	const char* key, int32& out)
+{
+	const size_t k = text.find(key, from);
+	if (k == std::string::npos || k >= to)
+		return kFalse;
+	size_t p = text.find(':', k);
+	if (p == std::string::npos || p >= to)
+		return kFalse;
+	++p;
+	while (p < to && (text[p] == ' ' || text[p] == '\t'))
+		++p;
+
+	bool16 neg = kFalse;
+	if (p < to && text[p] == '-')
+	{
+		neg = kTrue;
+		++p;
+	}
+	if (p >= to || text[p] < '0' || text[p] > '9')
+		return kFalse;
+
+	int32 v = 0;
+	while (p < to && text[p] >= '0' && text[p] <= '9')
+	{
+		v = v * 10 + (int32)(text[p] - '0');
+		++p;
+	}
+	out = neg ? -v : v;
+	return kTrue;
+}
+
+// Read a "paws" array: [ {"page":12,"x":12340,"y":5670,"c":1}, ... ].
+// ★Lenient in the same way as everything else in this file: an entry that cannot be made sense of
+//   is skipped rather than failing the whole document, and a MISSING "paws" is simply no paws --
+//   which is exactly what a version 2 file is.
+// ★"c" is optional and defaults to pink, so a file written before the colours existed restores as
+//   what it was drawn in.
+static void KCMParsePawArray(const std::string& text, size_t regionBegin, size_t regionEnd,
+	std::vector<KCMPawStamp>& out)
+{
+	out.clear();
+	const std::string key("\"paws\"");
+	const size_t k = KCMFindJsonKey(text, regionBegin, key);
+	if (k == std::string::npos || k >= regionEnd)
+		return;
+	const size_t lb = text.find('[', k + key.size());
+	if (lb == std::string::npos || lb >= regionEnd)
+		return;
+	const size_t rb = text.find(']', lb + 1);
+	if (rb == std::string::npos || rb > regionEnd)
+		return;
+
+	size_t p = lb + 1;
+	while (p < rb)
+	{
+		const size_t ob = text.find('{', p);
+		if (ob == std::string::npos || ob >= rb)
+			break;
+		const size_t oe = text.find('}', ob + 1);
+		if (oe == std::string::npos || oe > rb)
+			break;
+
+		int32 page = 0, xh = 0, yh = 0, colour = kKCMPawColourPink;
+		if (KCMReadJsonInt(text, ob, oe, "\"page\"", page) && page > 0 &&
+			KCMReadJsonInt(text, ob, oe, "\"x\"", xh) &&
+			KCMReadJsonInt(text, ob, oe, "\"y\"", yh))
+		{
+			if (!KCMReadJsonInt(text, ob, oe, "\"c\"", colour) ||
+				colour < kKCMPawColourPink || colour > kKCMPawColourGreen)
+			{
+				colour = kKCMPawColourPink;		// absent, or a value this build does not know
+			}
+			out.push_back(KCMPawStamp(UID((uint32)page),
+			                          PMReal(xh) / PMReal(100.0),
+			                          PMReal(yh) / PMReal(100.0),
+			                          colour));
+		}
+		p = oe + 1;
+	}
+}
+
 // Read KCMPageChecks.json into path (UTF-8) -> (checks / registered). A missing file gives kFalse
 // and an empty map.
 // The parsing is lenient: each "path" is found in turn, and "registered" and "checks" are read
@@ -559,8 +656,10 @@ static bool16 KCMReadSetsMap(std::map<std::string, KCMDocSets>& out, bool16* out
 		// v2's "checks"; failing that, an old v1 file's "pages" is taken as checks.
 		if (!KCMParseUintArray(text, q, regionEnd, "\"checks\"", sets.checks))
 			KCMParseUintArray(text, q, regionEnd, "\"pages\"", sets.checks);
+		// v3's cat-paw stamps. Absent in an older file, which reads as "no paws".
+		KCMParsePawArray(text, q, regionEnd, sets.paws);
 
-		if (!sets.checks.empty() || !sets.registered.empty())
+		if (!sets.checks.empty() || !sets.registered.empty() || !sets.paws.empty())
 			out[pathStr] = sets;
 
 		p = regionEnd;	// on to the next document
@@ -590,8 +689,36 @@ static void KCMAppendUintList(std::string& json, const std::set<uint32>& s)
 	}
 }
 
-// Write path (UTF-8) -> (checks / registered) out to KCMPageChecks.json (version 2). The file
-// written to comes back in outFile.
+// Append the cat-paw stamps as {"page":12,"x":12340,"y":5670,"c":1}, ... (the brackets are the
+// caller's).
+//
+//  ⚠★★★THE COORDINATES ARE HUNDREDTHS OF A POINT, AS INTEGERS, and that is not tidiness. Writing
+//    them as decimals would hand them to the C runtime's LC_NUMERIC: sprintf("%f") writes "123,4"
+//    where the locale's decimal separator is a comma, and strtod reads it back as 123. InDesign
+//    runs in the host's locale, so this is not "one day on someone's machine" -- it is certain on
+//    a machine set that way. 1/100 pt is 3.5 micrometres, far finer than anything a hand-placed
+//    mark needs, so making it an integer removes the whole class of fault.
+//  ★"c" is the colour (a KCMPawColour: 0 pink / 1 cyan / 2 green). Absent in a file written before
+//    colours existed, and 0 is pink -- which is what those stamps were drawn in.
+static void KCMAppendPawList(std::string& json, const std::vector<KCMPawStamp>& v)
+{
+	for (size_t i = 0; i < v.size(); ++i)
+	{
+		if (i > 0)
+			json += ", ";
+		char buf[96];
+		// ⚠%d only: the locale can reach sprintf through the decimal point, and there is none here.
+		std::snprintf(buf, sizeof(buf), "{\"page\":%lu,\"x\":%d,\"y\":%d,\"c\":%d}",
+		              (unsigned long)v[i].fPageUID.Get(),
+		              (int)::ToInt32(v[i].fX * PMReal(100.0)),
+		              (int)::ToInt32(v[i].fY * PMReal(100.0)),
+		              (int)v[i].fColour);
+		json += buf;
+	}
+}
+
+// Write path (UTF-8) -> (checks / registered / paws) out to KCMPageChecks.json (version 3). The
+// file written to comes back in outFile.
 static bool16 KCMWriteSetsMap(const std::map<std::string, KCMDocSets>& in, IDFile& outFile)
 {
 	if (!KCMPageChecksFile(outFile))
@@ -599,12 +726,16 @@ static bool16 KCMWriteSetsMap(const std::map<std::string, KCMDocSets>& in, IDFil
 
 	std::string json;
 	json += "{\n";
-	json += "  \"version\": 2,\n";
+	// ★★VERSION 3 = the paws were added. ⚠**The reading side does not look at this number** (it
+	//   asks for keys and ignores what it does not know), which is what makes both directions
+	//   safe: an older KCM reading a v3 file simply skips "paws", and this KCM reading a v2 file
+	//   simply finds none. The number is here for a human reading the file.
+	json += "  \"version\": 3,\n";
 	json += "  \"docs\": [\n";
 	bool16 firstDoc = kTrue;
 	for (std::map<std::string, KCMDocSets>::const_iterator d = in.begin(); d != in.end(); ++d)
 	{
-		if (d->second.checks.empty() && d->second.registered.empty())
+		if (d->second.checks.empty() && d->second.registered.empty() && d->second.paws.empty())
 			continue;	// an empty entry is not written out
 		if (!firstDoc)
 			json += ",\n";
@@ -618,6 +749,8 @@ static bool16 KCMWriteSetsMap(const std::map<std::string, KCMDocSets>& in, IDFil
 		KCMAppendUintList(json, d->second.checks);
 		json += "], \"registered\": [";
 		KCMAppendUintList(json, d->second.registered);
+		json += "], \"paws\": [";
+		KCMAppendPawList(json, d->second.paws);
 		json += "] }";
 	}
 	json += "\n  ]\n}\n";
@@ -704,15 +837,18 @@ void KCMPageCheckSaveToFile()
 		KCMPageMapCollectRegistered(db, reg);
 		for (std::set<UID>::const_iterator u = reg.begin(); u != reg.end(); ++u)
 			sets.registered.insert((uint32)u->Get());
+		// The cat-paw stamps, which a third module owns. They carry coordinates, so unlike the two
+		// above they travel as a list rather than a set of UIDs.
+		KCMPawStampGetForSave(db, sets.paws);
 
-		if (!sets.checks.empty() || !sets.registered.empty())
+		if (!sets.checks.empty() || !sets.registered.empty() || !sets.paws.empty())
 		{
 			merged[path] = sets;
 			++savedDocs;
 		}
 		else
 		{
-			merged.erase(path);	// neither ticks nor registrations now: drop it from the file too
+			merged.erase(path);	// nothing of ours on it now: drop it from the file too
 		}
 	}
 
@@ -845,6 +981,7 @@ void KCMPageCheckLoadFromFile()
 	//--- Phase 3: restore the ticks, keeping only the pages that may still be ticked after the ---
 	//--- re-comparison. -------------------------------------------------------------------------
 	int32 checksRestored = 0;
+	int32 pawsRestored = 0;
 	for (int i = 0; i < 2; ++i)
 	{
 		IDataBase* db = dbs[i];
@@ -878,6 +1015,34 @@ void KCMPageCheckLoadFromFile()
 			}
 		}
 
+		//--- The cat-paw stamps, restored beside the ticks. ---
+		// ★THE ONLY TEST IS "DOES THE PAGE STILL EXIST", and deliberately so: a paw does not
+		//   depend on a comparison having run -- it can be put on a document nobody is comparing --
+		//   so the "may this be ticked" question above has nothing to say about it. What WOULD go
+		//   wrong is a stamp pointing at a page deleted since the save, which is what this drops.
+		// ⚠Both lists, ordinary pages and masters, for the reason the ticks read both.
+		{
+			std::set<uint32> livePages;
+			for (int L = 0; L < 2; ++L)
+			{
+				const std::vector<UID>& flat = *lists[L];
+				for (size_t k = 0; k < flat.size(); ++k)
+					livePages.insert((uint32)flat[k].Get());
+			}
+
+			const std::vector<KCMPawStamp>& savedPaws = saveIt[i]->second.paws;
+			std::vector<KCMPawStamp> livePaws;
+			for (size_t k = 0; k < savedPaws.size(); ++k)
+			{
+				if (livePages.count((uint32)savedPaws[k].fPageUID.Get()) > 0)
+					livePaws.push_back(savedPaws[k]);
+			}
+			// Replace, so that loading restores the saved state rather than adding to what is
+			// there. An empty list clears the document's paws, which is the saved state too.
+			KCMPawStampReplaceAll(db, livePaws);
+			pawsRestored += (int32)livePaws.size();
+		}
+
 		// Refresh the thumbnails of the affected pages -- the old ticks together with the new ones
 		// -- so that both the ticks gained and the ticks lost show. CollectInto does not clear
 		// its out parameter, so adding the old ticks to newSet gives exactly that union.
@@ -894,12 +1059,18 @@ void KCMPageCheckLoadFromFile()
 			//   none of the new sets**, so it cannot be worked out from the current state
 			//   afterwards. That is the whole reason the page set is carried on the notification.
 			KCMNotifyPages(kKCMPageFlagsChangedMessage, db, affected);
-			// The layout view's tick needs invalidating again. Phase 2's re-comparison
-			// (KCMDoMarkChangesDoc) invalidated both documents, but against the ticks as they
-			// were **before** the restore; without a second invalidation here the restored and
-			// removed ticks do not reach the layout view -- the same reasoning as in the toggle.
-			KCMInvalidateDB(db);
 		}
+
+		// The layout view's tick needs invalidating again. Phase 2's re-comparison
+		// (KCMDoMarkChangesDoc) invalidated both documents, but against the ticks as they
+		// were **before** the restore; without a second invalidation here the restored and
+		// removed ticks do not reach the layout view -- the same reasoning as in the toggle.
+		// ⚠★UNCONDITIONAL since the paws joined this file (2026-09-04). It used to sit inside the
+		//   test above, which asks about TICKS -- and a document whose ticks did not move can
+		//   still have gained or lost paws, so the restored paws would have waited for some other
+		//   reason to redraw. (The notification above stays conditional: it carries a page set,
+		//   and there is no page set to carry when no tick moved.)
+		KCMInvalidateDB(db);
 	}
 
 	// The outcome, abbreviated to fit the narrow status line.
@@ -909,6 +1080,14 @@ void KCMPageCheckLoadFromFile()
 	msg.AppendNumber(checksRestored);
 	msg.Append(" reg");
 	msg.AppendNumber(regApplied);
+	// ★Only when there are any: the line is narrow, and a reader who never used the stamp tool
+	//   should not have to read about it. (The two counts above are always shown because Load is
+	//   about them.)
+	if (pawsRestored > 0)
+	{
+		msg.Append(" paw");
+		msg.AppendNumber(pawsRestored);
+	}
 	KCMNotifyStatus(msg, kTrue /*forceRedrawNow*/);
 }
 

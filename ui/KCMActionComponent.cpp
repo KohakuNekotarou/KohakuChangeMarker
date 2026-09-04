@@ -773,19 +773,11 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 			KCMStoryRefreshMenuRow();
 			break;
 
-		// The two items of **the panel tool button's flyout**, raised by holding that button down
-		// (KCMToolButtonEH). Each simply picks its tool -- the button's face and pressed look follow
-		// on their own, through ITool::Select -> KCMSyncToolButton.
-		// ★They go through the same function a click on the button does, so a pick from the menu
-		//   ends exactly where a click ends: same activation, same status line, same recovery when
-		//   a tool refuses.
-		case kKCMFlyoutPickToolActionID:
-			KCMToolButtonPressed(kFalse);
-			break;
-
-		case kKCMFlyoutPickPawToolActionID:
-			KCMToolButtonPressed(kTrue);
-			break;
+		// (The panel tool button's flyout had two cases here for a few hours on 2026-09-04. They
+		//  are gone with their ActionDefs: the flyout is a Win32 popup raised by KCMToolButtonEH,
+		//  and it calls KCMToolButtonPressed itself. ⚠Do not add them back without a MenuDef --
+		//  an action nothing can invoke is a command in QuickApply that does nothing a reader
+		//  asked for.)
 
 		default:
 			break;

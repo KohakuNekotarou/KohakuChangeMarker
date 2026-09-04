@@ -174,6 +174,15 @@ static void KCMRaiseToolFlyout()
 	HWND owner = ::WindowFromPoint(sDownWhere);
 	if (owner == nil)
 		owner = ::GetActiveWindow();
+	if (owner == nil)
+	{
+		// ⚠TrackPopupMenu refuses a null owner, and refusing here is what keeps the menu handle
+		//   from leaking on that path.
+		::DestroyMenu(menu);
+		if (bmpTool != nil) ::DeleteObject(bmpTool);
+		if (bmpPaw  != nil) ::DeleteObject(bmpPaw);
+		return;
+	}
 
 	// ★TPM_RETURNCMD: the choice comes back as the return value, so no menu message has to be
 	//   routed anywhere. TPM_NONOTIFY keeps WM_COMMAND off the owner entirely.
@@ -198,6 +207,22 @@ static void KCMRaiseToolFlyout()
 //   idle tick. There is no second firing here by design.
 static uint32 KCMToolFlyoutTimerFired(void* /*refPtr*/)
 {
+	// ⚠★★★THE TIMER IS LET GO HERE, BEFORE THE MENU. It cannot be left to LButtonUp, because
+	//   **TrackPopupMenu captures the mouse and the release goes to the menu, not to this widget**
+	//   -- so the button-up this handler was relying on may never arrive. The object would then sit
+	//   here owned by nobody until the next press, and ICallbackTimer.h names exactly that as a
+	//   crash: a timer holding a raw function pointer into a plug-in that unloads.
+	// ★Dropped before rather than after the menu, because the menu runs a modal loop: anything
+	//   wanting to stop the timer during it would find nothing to stop, which is the honest state.
+	//   (The SDK's own user of ICallbackTimer likewise releases inside its callback.)
+	ICallbackTimer* fired = sTimer;
+	sTimer = nil;
+	if (fired != nil)
+	{
+		fired->StopTimer();
+		fired->Release();
+	}
+
 	sFlyoutShown = kTrue;
 	KCMRaiseToolFlyout();		// ⚠returns only when the reader has let go of the button
 	return IIdleTask::kEndOfTime;

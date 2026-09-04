@@ -94,6 +94,18 @@ int32 KCMPawStampCount(IDataBase* db);
 	  page cannot be measured, which the caller reads as "do not stamp here". */
 PMReal KCMPawHalfSizeForPage(IDataBase* db, UID pageUID);
 
+/** Every stamp of one document, in the order they were placed -- what the JSON is written from.
+	out is cleared first. Answers nothing for a document that holds none. */
+void KCMPawStampGetForSave(IDataBase* db, std::vector<KCMPawStamp>& out);
+
+/** Put a document's stamps back to exactly this list -- what the JSON is read into.
+	★It REPLACES rather than merges: loading is "restore the state that was saved", and merging
+	  would make a second load double everything.
+	⚠By pointer, no fallback on file identity: loading happens on the main thread and means "this
+	  document I have open" (the writers' rule -- see the head of the .cpp). An empty list drops
+	  the entry, which keeps the "an entry that exists has something in it" promise. */
+void KCMPawStampReplaceAll(IDataBase* db, const std::vector<KCMPawStamp>& in);
+
 /** Drop every stamp of one document (the flyout's "clear"). */
 void KCMPawStampClearDoc(IDataBase* db);
 
