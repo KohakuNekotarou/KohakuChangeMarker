@@ -12,12 +12,17 @@
 //  and it includes THIS FILE as it stands -- not a copy that can drift, the way KTTextDiff
 //  drifted from KCMTextDiff.
 //
-//  ★THE NAME IS HISTORICAL. Until 2026-09-03 this header also held the parser that read a
-//  story's text, ruby and kenten out of the snippet XML (IDMS / InCopy interchange), and the
-//  counters that reconciled positions counted from that XML with the document's own. The story
-//  is read straight from the text model now (KCMTextRead.cpp), which fills the same two structs
-//  below - so the diff, the rows, the jump and the marks never noticed the change. What went,
-//  and why: docs/superpowers/specs/2026-08-31-kcm-story-direct-read-design.md.
+//  ★**IT WAS CALLED KCMSnippetText.h UNTIL 2026-09-04**, and the old name is worth knowing for
+//  two reasons: the notes written before that date use it (they are records of their own time and
+//  were deliberately left alone), and it says what this header used to be. Until 2026-09-03 it
+//  ALSO held the parser that read a story's text, ruby and kenten out of the snippet XML (IDMS /
+//  InCopy interchange), and the counters that reconciled positions counted from that XML against
+//  the document's own. The story is read straight from the text model now (KCMTextRead.cpp),
+//  which fills the same two structs below - so the diff, the rows, the jump and the marks never
+//  noticed the change, and the name was the last thing still pointing at the old route. What
+//  went, and why: docs/superpowers/specs/2026-08-31-kcm-story-direct-read-design.md.
+//  ⚠**work\kescm-snippet-test keeps its own name** - it measures this header and KCMStoryMarkRanges.h,
+//   and renaming a directory that four notes point at buys less than it costs.
 //
 //  @warning **AN EMPTY RUBY STRING IS NO RUBY**, which is the official rule and not an
 //   invention here: GetRubyStrandInfo turns its attribute flag off when the string it read has
@@ -26,8 +31,8 @@
 //
 //========================================================================================
 
-#ifndef __KCMSnippetText_h__
-#define __KCMSnippetText_h__
+#ifndef __KCMParaText_h__
+#define __KCMParaText_h__
 
 #include "BaseType.h"		// int32, bool16 (nothing else - this header does not even use nil)
 
@@ -144,6 +149,34 @@ struct KCMParaAttrs
 
 	int32				fFootnoteOrdinal;
 
+	/** The positions inside this paragraph that THE DOCUMENT COUNTS AND THE TEXT DOES NOT, given
+		in the text's own count and in order. Almost always empty.
+
+		★★★**WHY A PARAGRAPH NEEDS THIS AT ALL: A TABLE CAN STAND IN THE MIDDLE OF ONE.** The
+		model holds kTextChar_Table for a table's anchor plus one kTextChar_TableContinued per row
+		after the first, and those are not text - the reader leaves them out of fText, or the panel
+		would show a gap and the diff would count them as characters that changed. Measured
+		2026-09-01: inserting a table at the third insertion point of "あいうえ" leaves ONE
+		paragraph reading [あ い **0016** う え CR] (work/kcm-selftest/midtable).
+		⇒ **From there on, the two counts disagree**: う is the third character of the text and the
+		fourth position of the document.
+
+		⚠**WHAT WENT WRONG WITHOUT IT (measured 2026-09-04, before it existed).** KCMTextRead
+		 already took the uncounted characters back out when it reported a ruby's offset - so the
+		 PANEL was right - but everything that turned an offset back into a document position added
+		 it to the paragraph's start and stopped there. Double-clicking the one reported change of
+		 the midtable pair selected `Character index=2, charCode=16` - **the table's own anchor**,
+		 one place short of the う whose reading had changed. A table of several rows would be short
+		 by its row count.
+		⇒ The conversion belongs to the paragraph, which is why it rides here rather than being
+		  worked out again at each of the two places that need it (ModelOffsetInParagraph below,
+		  used by IndexInStory and by KCMStoryDiffRun's AddAttrChange).
+
+		@warning **FILLED BY THE READER, LIKE EVERY FIELD HERE** (KCMTextRead::ClosePara). Left
+		 empty it reads as "the two counts agree", which is true of every paragraph without a table
+		 standing inside it - and was the assumption the whole diff made until this field existed. */
+	std::vector<int32>	fUncountedAt;
+
 	KCMParaAttrs()
 		: fTableOrdinal(kNotACell), fCellRow(-1), fCellCol(-1),
 		  fFootnoteOrdinal(kNotAFootnote) {}
@@ -159,7 +192,7 @@ struct KCMParaAttrs
 	bool16 IsFootnote() const { return fFootnoteOrdinal >= 0; }
 };
 
-namespace KCMSnippetText
+namespace KCMParaText
 {
 
 /** Append one code point to a UTF-8 string. */
@@ -187,6 +220,64 @@ inline void AppendUtf8(std::string& out, int32 codePoint)
 		out += static_cast<char>(0x80 | ((codePoint >> 6) & 0x3F));
 		out += static_cast<char>(0x80 | (codePoint & 0x3F));
 	}
+}
+
+/** The attributes of one paragraph of a list, or a paragraph that counts both ways the same when
+	the list does not reach it.
+
+	★**A LIST THAT FALLS SHORT IS ANSWERED, NOT REFUSED.** Every caller here already walks past
+	indices that are out of range for the paragraphs themselves, and the answer wanted for a
+	paragraph nobody described is the one every ordinary paragraph gives: nothing uncounted.
+*/
+inline const KCMParaAttrs& AttrsOfParagraph(const std::vector<KCMParaAttrs>& attrs, int32 which)
+{
+	static const KCMParaAttrs kNothingUncounted;
+	return (which >= 0 && static_cast<size_t>(which) < attrs.size()) ? attrs[which]
+																	 : kNothingUncounted;
+}
+
+/** Where a position inside one paragraph stands in THE DOCUMENT'S count, given the TEXT'S.
+
+	**THE TWO COUNTS ARE THE SAME NUMBER until a table stands inside the paragraph**, and then they
+	part company by one for the table's anchor and one more for each row after the first (see
+	KCMParaAttrs::fUncountedAt for the measurement). Everything the comparison hands out - a span's
+	fStart, an offset into a joined run - is counted in the TEXT, because that is what the reader
+	sees and what the panel draws; everything the document is then asked about - a mark, a
+	selection, a jump - is counted in the MODEL. This is the one place that crosses between them.
+
+	⚠**AT a skipped position, the answer is the position AFTER it.** A character standing at text
+	 offset t sits after every uncounted position at or before t: the table's anchor comes between
+	 the two characters, so the one following it has moved along by one. `<=`, not `<`.
+
+	⚠★★**ONE NUMBER, TWO PLACES - AND THIS ANSWERS FOR THE START.** A range is named by two
+	 offsets and the SAME offset means different things at its two ends: as a START, text offset 2
+	 of "あい[表]うえ" is う, which stands AFTER the table; as an END (exclusive), it is the place
+	 just past い, which is BEFORE it. No single answer is right for both, and this one is the
+	 start's - so a range that ENDS exactly where a table stands comes back one position wide of
+	 the mark, taking the anchor in with it.
+	 ⇒ **That is the direction chosen deliberately.** The other reading puts a range that BEGINS
+	   after a table one character short, which is the fault measured on 2026-09-04 (a mark and a
+	   selection landing on the table's anchor instead of on the character whose ruby had changed).
+	   A mark one position wide costs the reader nothing they can see - the anchor carries no wax
+	   of its own, so nothing is drawn over it - while a mark one position short points at the
+	   wrong thing, which is the one answer this comparison must never give.
+	 ⚠It shows up only where a table stands INSIDE a paragraph, and only for a range that stops
+	  exactly at it.
+
+	@param attrs the paragraph's own attributes - only fUncountedAt is read.
+	@param textOffset a position in the paragraph's text, 0 .. its length. Its own end is a valid
+		position (a range that stops at the last character asks for it).
+	@return the same position as an offset from the paragraph's start in the document's count.
+*/
+inline int32 ModelOffsetInParagraph(const KCMParaAttrs& attrs, int32 textOffset)
+{
+	// ★A WALK, DELIBERATELY - the same decision KCMTextRead's CountUncounted made and for the same
+	//   reason: a paragraph holds one of these per table standing inside it, which is almost always
+	//   none and never many, so anything cleverer would cost more to read than it saves to run.
+	int32 skipped = 0;
+	for (size_t k = 0; k < attrs.fUncountedAt.size() && attrs.fUncountedAt[k] <= textOffset; ++k)
+		++skipped;
+	return textOffset + skipped;
 }
 
 /** How many CODE POINTS a UTF-8 string holds -- continuation bytes (10xxxxxx) are not counted.
@@ -408,15 +499,26 @@ inline void SplitRunAtPlaces(const std::vector<KCMParaAttrs>& sourceAttrs,
 	@param paragraphs every paragraph of the story.
 	@param starts one document position per paragraph, as the reader took them from the walk
 		(KCMTextRead::ReadStory, one TextIndex per paragraph - body, cells and footnotes alike).
+	@param attrs the same paragraphs' attributes. **ONLY fUncountedAt IS READ**, and only to cross
+		from the text's count into the document's - see ModelOffsetInParagraph. A list shorter than
+		`paragraphs` (or an empty one) is not an error: a paragraph it does not reach is taken to
+		count the two the same way, which is what every paragraph without a table inside it does.
 	@param start the first paragraph of the run.
 	@param count how many paragraphs the run covers.
 	@param base where to answer from when the run covers no paragraph of its own (an insertion
 		between two paragraphs): the caller's position for the next surviving paragraph.
 	@param joinedOffset a position in JoinParagraphs' answer, in CODE POINTS, 0 .. its length.
 	@return the same position as a TextIndex into the story.
+
+	@warning **THE OFFSET COMING IN IS THE TEXT'S AND THE ANSWER IS THE DOCUMENT'S**, and until
+	 2026-09-04 this added the one straight onto the other. That is right for every paragraph whose
+	 characters are all it holds, which is why nothing caught it: a table standing INSIDE a
+	 paragraph is what makes the two disagree, and the old XML route refused such a story outright,
+	 so nothing downstream had ever met one.
 */
 inline int32 IndexInStory(const std::vector<std::string>& paragraphs,
 						  const std::vector<int32>& starts,
+						  const std::vector<KCMParaAttrs>& attrs,
 						  int32 start, int32 count, int32 base, int32 joinedOffset)
 {
 	// **IT LOOKS EVERY PARAGRAPH UP INSTEAD OF ADDING UP THE HIDDEN CHARACTERS BETWEEN THEM.**
@@ -442,7 +544,8 @@ inline int32 IndexInStory(const std::vector<std::string>& paragraphs,
 		//   kept ("the offset is at or before it -- nothing to add") and the paragraph-start table
 		//   agrees with: the next paragraph's start is where the character AFTER the break sits.
 		if (joinedOffset <= joined + len)
-			return starts[which] + (joinedOffset - joined);
+			return starts[which] + ModelOffsetInParagraph(AttrsOfParagraph(attrs, which),
+														  joinedOffset - joined);
 
 		joined += len + 1;		// the paragraph, and the one character JoinParagraphs puts after it
 	}
@@ -455,7 +558,8 @@ inline int32 IndexInStory(const std::vector<std::string>& paragraphs,
 		const int32 last = start + count - 1;
 		if (last >= 0 && last < static_cast<int32>(paragraphs.size())
 			&& last < static_cast<int32>(starts.size()))
-			return starts[last] + CountCodePoints(paragraphs[last]);
+			return starts[last] + ModelOffsetInParagraph(AttrsOfParagraph(attrs, last),
+														 CountCodePoints(paragraphs[last]));
 	}
 	return base;
 }
@@ -482,8 +586,8 @@ inline bool16 SpansDiffer(const KCMAttrSpanList& a, const KCMAttrSpanList& b)
 	return kFalse;
 }
 
-}	// namespace KCMSnippetText
+}	// namespace KCMParaText
 
-#endif // __KCMSnippetText_h__
+#endif // __KCMParaText_h__
 
-// End, KCMSnippetText.h.
+// End, KCMParaText.h.

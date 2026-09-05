@@ -7,7 +7,7 @@
 //  See KCMStoryDiffRun.h for what this is for and what it deliberately does not do.
 //
 //  The text is read straight from the text model (KCMTextRead); the helpers that cut and join
-//  it (Join / Slice, and the pure functions in KCMSnippetText.h) came from KohakuTest's KTStoryDiff
+//  it (Join / Slice, and the pure functions in KCMParaText.h) came from KohakuTest's KTStoryDiff
 //  and work the same way. The comparison itself is NOT a straight port -- it does two things KT
 //  had no need of:
 //
@@ -41,7 +41,7 @@
 #include <vector>
 
 // Project includes:
-#include "KCMSnippetText.h"	// KCMParaAttrs and the pure functions over paragraphs (Join / IndexInStory / SplitRunAtPlaces / SpansDiffer)
+#include "KCMParaText.h"	// KCMParaAttrs and the pure functions over paragraphs (Join / IndexInStory / SplitRunAtPlaces / SpansDiffer)
 #include "KCMStoryDiffRun.h"
 #include "KCMTextRead.h"		// the reader: paragraphs, their positions and their attributes, straight from the text model
 #include "KCMStoryList.h"
@@ -65,7 +65,7 @@ const int32 kContextCodePoints = 14;
 // ---- cutting the text up for the rows --------------------------------------------------
 //
 // The paragraphs, their positions and their attributes come from KCMTextRead, which asks the
-// text model. What stands here only cuts and joins strings. Join lives in KCMSnippetText.h as
+// text model. What stands here only cuts and joins strings. Join lives in KCMParaText.h as
 // JoinParagraphs: it is one half of a convention -- how far apart two paragraphs are once they
 // have been strung together -- and the other half (IndexInStory, which turns an offset back into
 // a document position) has to agree with it EXACTLY. Both are in the one header the test harness
@@ -93,7 +93,7 @@ const int32 kContextCodePoints = 14;
 std::string MarkUpBreaks(const std::string& utf8)
 {
 	// U+FFFC OBJECT REPLACEMENT CHARACTER - what the text model holds where an anchored page
-	// item stands (measured 2026-08-23; see AnchoredItemTagLen in KCMSnippetText.h).
+	// item stands (measured 2026-08-23; see AnchoredItemTagLen in KCMParaText.h).
 	static const char kAnchorChar[] = "\xEF\xBF\xBC";
 
 	if (utf8.find('\n') == std::string::npos && utf8.find('\r') == std::string::npos
@@ -258,24 +258,31 @@ void Slice(const std::string& text, const std::vector<int32>& byteOffsets,
    adjacent paragraphs with one of those between them came out short, silently, and no length
    check could see it. The run is asked instead of counted on: every paragraph's start is a
    TextIndex the reader took from the walk, and the rule that turns an offset into one lives
-   beside JoinParagraphs in KCMSnippetText.h, where the two ends of the convention can be
+   beside JoinParagraphs in KCMParaText.h, where the two ends of the convention can be
    measured against each other.
 */
 struct RunSide
 {
 	const std::vector<std::string>*		fParagraphs;
 	const std::vector<int32>*			fStarts;	// one document position per paragraph
+	const std::vector<KCMParaAttrs>*	fAttrs;		// only fUncountedAt is read - see Index
 	int32								fStart;		// first paragraph of the run
 	int32								fCount;		// how many it covers
 	int32								fBase;		// where the run begins, as a TextIndex
 
 	RunSide(const std::vector<std::string>& paragraphs, const std::vector<int32>& starts,
-			int32 start, int32 count, int32 base)
-		: fParagraphs(&paragraphs), fStarts(&starts), fStart(start), fCount(count), fBase(base) {}
+			const std::vector<KCMParaAttrs>& attrs, int32 start, int32 count, int32 base)
+		: fParagraphs(&paragraphs), fStarts(&starts), fAttrs(&attrs),
+		  fStart(start), fCount(count), fBase(base) {}
 
+	/** Where an offset into the run's joined TEXT stands in the DOCUMENT.
+		⚠**THE ATTRIBUTES ARE CARRIED FOR ONE FIELD** (fUncountedAt), and it is what makes this a
+		 crossing between two counts rather than a lookup: a table standing inside a paragraph is
+		 counted by the document and not by the text. See KCMParaText::ModelOffsetInParagraph. */
 	int32 Index(int32 joinedOffset) const
 	{
-		return KCMSnippetText::IndexInStory(*fParagraphs, *fStarts, fStart, fCount, fBase, joinedOffset);
+		return KCMParaText::IndexInStory(*fParagraphs, *fStarts, *fAttrs,
+											fStart, fCount, fBase, joinedOffset);
 	}
 };
 
@@ -381,6 +388,61 @@ void Add(std::vector<KCMStoryChange>& out, int32 paraIndex,
 	out.push_back(change);
 }
 
+/* ParaSide
+   ONE PARAGRAPH OF ONE VERSION, and everything an attribute comparison asks about it: its text,
+   where it stands in the document, the crossing from the text's count into the document's, and
+   the byte each of its code points begins at - the last of these MADE ONLY IF SOMETHING ASKS.
+
+   ★**WHY THE BYTE TABLE IS LAZY.** Most paragraphs carrying a mark carry the SAME mark in both
+   versions, so the table is never wanted at all; building it up front would buy a walk of every
+   marked paragraph in the document. Building it inside each helper - which is what happened until
+   2026-09-04 - walked the same paragraph up to THREE times per attribute (the filter, then both
+   sides of the comparison), six for a paragraph carrying ruby and kenten both. Asked for here, it
+   is made once per paragraph per comparison, or not at all.
+   ⚠It also asked ToCodePoints for the code points themselves and dropped them; that argument is
+    optional since the same day, so nothing is built to be discarded any more.
+
+   ★**WHY THE BASE AND THE ATTRIBUTES RIDE WITH IT.** They travelled as separate arguments to
+   AddAttrChange, which had thirteen of them, and the three are one paragraph seen from one side.
+   Apart, a helper could be handed one version's text with the other version's base and still
+   compile - and the answer would be a position in the wrong document.
+*/
+struct ParaSide
+{
+	const std::string&		fText;
+	const KCMParaAttrs&		fAttrs;
+	int32					fBase;		// where this paragraph begins, as a TextIndex
+
+	ParaSide(const std::string& text, const KCMParaAttrs& attrs, int32 base)
+		: fText(text), fAttrs(attrs), fBase(base), fBytesMade(kFalse) {}
+
+	/** Where each code point of the paragraph begins, in bytes - made once, on the first ask. */
+	const std::vector<int32>& Bytes()
+	{
+		if (!fBytesMade)
+		{
+			KCMTextDiff::ToCodePoints(fText, nil, &fBytes);
+			fBytesMade = kTrue;
+		}
+		return fBytes;
+	}
+
+	/** Where an offset into this paragraph's TEXT stands in the document.
+		⚠**NOT fBase + offset.** A table standing inside the paragraph is counted by the document
+		 and not by the text, and this is the crossing - see
+		 KCMParaText::ModelOffsetInParagraph, which also says which end of a range it answers
+		 for. It read `fBase + offset` until 2026-09-04, and the midtable pair's one reported
+		 change then selected the table's anchor rather than the character after it. */
+	int32 ModelIndex(int32 textOffset) const
+	{
+		return fBase + KCMParaText::ModelOffsetInParagraph(fAttrs, textOffset);
+	}
+
+private:
+	std::vector<int32>	fBytes;
+	bool16				fBytesMade;
+};
+
 /* AddAttrChange
    One ATTRIBUTE difference -- a ruby today -- turned into the child row that reports it.
 
@@ -396,19 +458,17 @@ void Add(std::vector<KCMStoryChange>& out, int32 paraIndex,
    here is what let the mistake be a one-line one when it happened, in the single place that
    asked the wrong question (KCMStoryJump's message area).
 
-   @param tBytes/sBytes where each code point of the two paragraphs begins, as ToCodePoints
-    filled them in. **PASSED IN RATHER THAN WORKED OUT HERE**, because this is called once per
-    DIFFERING SPAN and the two paragraphs do not change between those calls: a paragraph with
-    four altered readings was walked eight times to produce the same two tables. The caller has
-    the paragraphs for the whole comparison, so it makes them once.
+   @param target/source the two paragraphs, each carrying its own text, its base and its byte
+    table. **THE TABLE IS MADE ONCE PER PARAGRAPH, NOT PER SPAN** - this is called once per
+    DIFFERING SPAN and the paragraphs do not change between those calls, so a paragraph with four
+    altered readings was walked eight times to build the same two tables. ParaSide is where that
+    now happens, and it also carries the base, which used to arrive as two more arguments.
 */
 void AddAttrChange(KCMStoryChange::Kind kind, KCMStoryAttrKind attrKind,
 				   int32 tStart, int32 tCount, int32 sStart, int32 sCount,
-				   const std::string& targetPara, const std::vector<int32>& tBytes,
-				   const std::string& sourcePara, const std::vector<int32>& sBytes,
+				   ParaSide& target, ParaSide& source,
 				   const std::string& newRuby, const std::string& oldRuby,
-				   int32 tBase, int32 sBase, int32 paraIndex,
-				   std::vector<KCMStoryChange>& out)
+				   int32 paraIndex, std::vector<KCMStoryChange>& out)
 {
 	KCMStoryChange change;
 	change.fKind = kind;
@@ -416,19 +476,23 @@ void AddAttrChange(KCMStoryChange::Kind kind, KCMStoryAttrKind attrKind,
 	change.fAttrKind = attrKind;
 	change.fParaIndex = paraIndex;
 
-	change.fTargetStart = tBase + tStart;
-	change.fTargetEnd   = change.fTargetStart + tCount;
+	// @warning **BOTH ENDS ARE ASKED FOR SEPARATELY**, exactly as Add does for a text change and
+	//   for a reason it did not have: a span reaching across a table's own character covers one
+	//   FEWER character of text than of model, so `start + count` would be a length in the wrong
+	//   count. ModelIndex crosses between the two.
+	change.fTargetStart = target.ModelIndex(tStart);
+	change.fTargetEnd   = target.ModelIndex(tStart + tCount);
 
 	// @warning **THE OLDER SIDE ALWAYS HAS CHARACTERS HERE**, unlike a text change: a ruby-only
 	//   difference is found by comparing two paragraphs whose TEXT matched, so the same
 	//   characters exist on both sides. (Ruby being ADDED is still "these characters, which are
 	//   in both, now carry a reading".) This range is never empty, where a text insertion's is.
-	change.fSourceStart = sBase + sStart;
-	change.fSourceEnd   = change.fSourceStart + sCount;
+	change.fSourceStart = source.ModelIndex(sStart);
+	change.fSourceEnd   = source.ModelIndex(sStart + sCount);
 
 	std::string newPre, newMid, newPost, oldPre, oldMid, oldPost;
-	Slice(targetPara, tBytes, tStart, tCount, kContextCodePoints, newPre, newMid, newPost);
-	Slice(sourcePara, sBytes, sStart, sCount, kContextCodePoints, oldPre, oldMid, oldPost);
+	Slice(target.fText, target.Bytes(), tStart, tCount, kContextCodePoints, newPre, newMid, newPost);
+	Slice(source.fText, source.Bytes(), sStart, sCount, kContextCodePoints, oldPre, oldMid, oldPost);
 
 	// The readings go through the same door as the base text: they are document text too.
 	SetDocumentText(change.fTextPre, newPre);
@@ -454,21 +518,11 @@ void AddAttrChange(KCMStoryChange::Kind kind, KCMStoryAttrKind attrKind,
 */
 void CompareParagraphAttr(KCMStoryAttrKind attrKind,
 						  const KCMAttrSpanList& sourceSpans, const KCMAttrSpanList& targetSpans,
-						  const std::string& sourcePara, const std::string& targetPara,
-						  int32 sBase, int32 tBase, int32 paraIndex,
+						  ParaSide& source, ParaSide& target, int32 paraIndex,
 						  std::vector<KCMStoryChange>& out)
 {
-	if (!KCMSnippetText::SpansDiffer(sourceSpans, targetSpans))
-		return;
-
-	// Where each code point of the two paragraphs begins, made ONCE for however many spans differ
-	//   -- the paragraphs are the same for all of them. AddAttrChange used to work these out for
-	//   itself, so a paragraph with four altered readings was walked eight times.
-	//   @warning the code points themselves are not wanted: cutting the excerpt needs the byte
-	//     boundaries, and the spans' own positions are already in code points.
-	std::vector<int32> codePoints, tBytes, sBytes;
-	KCMTextDiff::ToCodePoints(targetPara, codePoints, &tBytes);
-	KCMTextDiff::ToCodePoints(sourcePara, codePoints, &sBytes);
+	if (!KCMParaText::SpansDiffer(sourceSpans, targetSpans))
+		return;		// ★and NOTHING is built: the byte tables are asked for below or never
 
 	size_t i = 0, j = 0;
 	while (i < sourceSpans.size() || j < targetSpans.size())
@@ -486,9 +540,9 @@ void CompareParagraphAttr(KCMStoryAttrKind attrKind,
 				AddAttrChange(KCMStoryChange::kReplace, attrKind,
 							  targetSpans[j].fStart, targetSpans[j].fLen,
 							  sourceSpans[i].fStart, sourceSpans[i].fLen,
-							  targetPara, tBytes, sourcePara, sBytes,
+							  target, source,
 							  targetSpans[j].fValue, sourceSpans[i].fValue,
-							  tBase, sBase, paraIndex, out);
+							  paraIndex, out);
 			}
 			++i;
 			++j;
@@ -499,9 +553,9 @@ void CompareParagraphAttr(KCMStoryAttrKind attrKind,
 			AddAttrChange(KCMStoryChange::kInsert, attrKind,
 						  targetSpans[j].fStart, targetSpans[j].fLen,
 						  targetSpans[j].fStart, targetSpans[j].fLen,
-						  targetPara, tBytes, sourcePara, sBytes,
+						  target, source,
 						  targetSpans[j].fValue, std::string(),
-						  tBase, sBase, paraIndex, out);
+						  paraIndex, out);
 			++j;
 		}
 		else
@@ -511,9 +565,9 @@ void CompareParagraphAttr(KCMStoryAttrKind attrKind,
 			AddAttrChange(KCMStoryChange::kDelete, attrKind,
 						  sourceSpans[i].fStart, sourceSpans[i].fLen,
 						  sourceSpans[i].fStart, sourceSpans[i].fLen,
-						  targetPara, tBytes, sourcePara, sBytes,
+						  target, source,
 						  std::string(), sourceSpans[i].fValue,
-						  tBase, sBase, paraIndex, out);
+						  paraIndex, out);
 			++i;
 		}
 	}
@@ -543,14 +597,14 @@ void CompareParagraphAttr(KCMStoryAttrKind attrKind,
 */
 KCMAttrSpanList SpansWhoseTextSurvives(const KCMAttrSpanList& spans,
 									   const KCMAttrSpanList& otherSpans,
-									   const std::string& ownPara, const std::string& otherPara)
+									   ParaSide& own, const std::string& otherPara)
 {
 	KCMAttrSpanList kept;
 	if (spans.empty())
-		return kept;
+		return kept;		// ★nothing asked of own, so its byte table is not built
 
-	std::vector<int32> codePoints, bytes;
-	KCMTextDiff::ToCodePoints(ownPara, codePoints, &bytes);
+	const std::string& ownPara = own.fText;
+	const std::vector<int32>& bytes = own.Bytes();
 
 	for (size_t i = 0; i < spans.size(); ++i)
 	{
@@ -586,7 +640,24 @@ KCMAttrSpanList SpansWhoseTextSurvives(const KCMAttrSpanList& spans,
 		const int32 from = spans[i].fStart;
 		const int32 to   = spans[i].fStart + spans[i].fLen;
 
-		if (from < 0 || to <= from || to >= static_cast<int32>(bytes.size()))
+		// ⚠★★★**THE END OF THE PARAGRAPH IS A POSITION, AND IT HAS NO ENTRY.** bytes holds one
+		//   entry per code point, so the boundary AFTER the last character is named by the length of
+		//   the text and by nothing else - exactly as Slice's ByteAt says above. This read
+		//   `to >= bytes.size()` until 2026-09-04, so a span ending at the last character of its
+		//   paragraph always took the "unreadable" way out and was always kept: **a word carrying
+		//   ruby or kenten at the end of a line, deleted outright, produced the second row this
+		//   function exists to remove**, in defiance of the user's rule that the text is the subject
+		//   and the marks its attendants.
+		//   ★MEASURED BOTH WAYS on 2026-09-04, because a fix that simply reported less would look
+		//     the same from one side: work/kcm-selftest/endruby (「これは銀河」-> 「これは」, the
+		//     ruby ON THE LAST TWO CHARACTERS) went from edits=2 to edits=1, while the two controls
+		//     did not move - endruby/midruby, the same deletion with text after it, stayed at 1, and
+		//     kenten/del-*, a SAME-LENGTH rewrite that also loses its ruby, stayed at 2 (which is
+		//     what the rule asks for: nothing was deleted, so the mark's removal is its own edit).
+		//   ⚠It went unseen for as long as it did because no resource ended a marked span at a
+		//    paragraph's end - the two that existed both mark a word with text after it.
+		const int32 codePointCount = static_cast<int32>(bytes.size());
+		if (from < 0 || to <= from || from >= codePointCount || to > codePointCount)
 		{
 			kept.push_back(spans[i]);		// unreadable position - see the warning above
 			continue;
@@ -594,8 +665,10 @@ KCMAttrSpanList SpansWhoseTextSurvives(const KCMAttrSpanList& spans,
 
 		// ⚠MATCHED BY THE TEXT, NOT BY POSITION. After an edit the same characters sit at a
 		//  different offset, so a positional test would call every surviving span deleted.
-		const std::string text = ownPara.substr(static_cast<size_t>(bytes[from]),
-												static_cast<size_t>(bytes[to] - bytes[from]));
+		const int32 fromByte = bytes[from];
+		const int32 toByte = (to < codePointCount) ? bytes[to] : static_cast<int32>(ownPara.size());
+		const std::string text = ownPara.substr(static_cast<size_t>(fromByte),
+												static_cast<size_t>(toByte - fromByte));
 		if (text.empty() || otherPara.find(text) != std::string::npos)
 		{
 			kept.push_back(spans[i]);		// the characters are still there - the mark alone moved
@@ -619,7 +692,7 @@ KCMAttrSpanList SpansWhoseTextSurvives(const KCMAttrSpanList& spans,
 		//     replaced or deleted" is answered rather than guessed. It is a larger piece of work and
 		//     is not here yet. What is here errs toward reporting LESS, which is the direction the
 		//     text-is-the-subject rule already points.
-		if (KCMSnippetText::CountCodePoints(otherPara) >= KCMSnippetText::CountCodePoints(ownPara))
+		if (KCMParaText::CountCodePoints(otherPara) >= KCMParaText::CountCodePoints(ownPara))
 			kept.push_back(spans[i]);
 	}
 
@@ -661,6 +734,12 @@ void AddAttributeChanges(const std::vector<KCMTextDiff::Change>& paragraphChange
 			ai >= static_cast<int32>(sourceStarts.size()) || bi >= static_cast<int32>(targetStarts.size()))
 			return;
 
+		// The two paragraphs, each as ONE thing: its text, its base, the crossing into the
+		//   document's count, and a byte table built only if something below asks for it (see
+		//   ParaSide). A paragraph whose marks did not move asks for nothing.
+		ParaSide source(sourceParas[ai], sourceAttrs[ai], sourceStarts[ai]);
+		ParaSide target(targetParas[bi], targetAttrs[bi], targetStarts[bi]);
+
 		// **EACH ATTRIBUTE IS COMPARED ON ITS OWN LIST**, and they cannot be merged into one pass:
 		//   two sets of spans are matched by position within their OWN kind.
 		// ⚠RUBY FIRST, KENTEN SECOND, and it does not matter: ChangeIsBefore re-sorts the whole list
@@ -671,16 +750,13 @@ void AddAttributeChanges(const std::vector<KCMTextDiff::Change>& paragraphChange
 		//   characters are the same on both sides by definition, so the filter is not run there: it
 		//   would cost a walk per span to answer a question already settled.
 		const KCMAttrSpanList sourceRuby = onlyWhereTextSurvives
-			? SpansWhoseTextSurvives(sourceAttrs[ai].fRuby, targetAttrs[bi].fRuby, sourceParas[ai], targetParas[bi])
+			? SpansWhoseTextSurvives(sourceAttrs[ai].fRuby, targetAttrs[bi].fRuby, source, targetParas[bi])
 			: sourceAttrs[ai].fRuby;
 		const KCMAttrSpanList targetRuby = onlyWhereTextSurvives
-			? SpansWhoseTextSurvives(targetAttrs[bi].fRuby, sourceAttrs[ai].fRuby, targetParas[bi], sourceParas[ai])
+			? SpansWhoseTextSurvives(targetAttrs[bi].fRuby, sourceAttrs[ai].fRuby, target, sourceParas[ai])
 			: targetAttrs[bi].fRuby;
 
-		CompareParagraphAttr(kKCMStoryAttrRuby,
-							 sourceRuby, targetRuby,
-							 sourceParas[ai], targetParas[bi],
-							 sourceStarts[ai], targetStarts[bi], bi, out);
+		CompareParagraphAttr(kKCMStoryAttrRuby, sourceRuby, targetRuby, source, target, bi, out);
 
 		// ★KENTEN IS REPORTED AGAIN (2026-09-01, user's call: "if it can be found, I want to find
 		//   it"). It was compared for one day in August and withdrawn, and the withdrawal was never
@@ -689,16 +765,13 @@ void AddAttributeChanges(const std::vector<KCMTextDiff::Change>& paragraphChange
 		//   read it aloud. What answers that is fAttrKind, which every row and every change already
 		//   carries. ⇒ **The mistake was one place asking the wrong question, not this call.**
 		const KCMAttrSpanList sourceKenten = onlyWhereTextSurvives
-			? SpansWhoseTextSurvives(sourceAttrs[ai].fKenten, targetAttrs[bi].fKenten, sourceParas[ai], targetParas[bi])
+			? SpansWhoseTextSurvives(sourceAttrs[ai].fKenten, targetAttrs[bi].fKenten, source, targetParas[bi])
 			: sourceAttrs[ai].fKenten;
 		const KCMAttrSpanList targetKenten = onlyWhereTextSurvives
-			? SpansWhoseTextSurvives(targetAttrs[bi].fKenten, sourceAttrs[ai].fKenten, targetParas[bi], sourceParas[ai])
+			? SpansWhoseTextSurvives(targetAttrs[bi].fKenten, sourceAttrs[ai].fKenten, target, sourceParas[ai])
 			: targetAttrs[bi].fKenten;
 
-		CompareParagraphAttr(kKCMStoryAttrKenten,
-							 sourceKenten, targetKenten,
-							 sourceParas[ai], targetParas[bi],
-							 sourceStarts[ai], targetStarts[bi], bi, out);
+		CompareParagraphAttr(kKCMStoryAttrKenten, sourceKenten, targetKenten, source, target, bi, out);
 	};
 
 	// Walk the two paragraph lists side by side, stepping over each reported change. What is left
@@ -780,7 +853,7 @@ bool16 CompareOneStory(const UIDRef& targetStory, const UIDRef& sourceStory,
 	//     contiguous), which is the one visible difference and is the more natural cutting.
 	//
 	//   ★ONE READ, ONE MOMENT. Ruby comes out of the same walk as the text, for the reason spelt
-	//   out in KCMSnippetText.h: a comparison is one moment, and reading the ruby separately would
+	//   out in KCMParaText.h: a comparison is one moment, and reading the ruby separately would
 	//   put two moments in one row.
 	std::vector<std::string> targetParas;
 	std::vector<std::string> sourceParas;
@@ -823,11 +896,11 @@ bool16 CompareOneStory(const UIDRef& targetStory, const UIDRef& sourceStory,
 	//     SplitRunAtPlaces leaves a run whole rather than pair its halves up wrongly.
 	{
 		std::vector<KCMTextDiff::Change> byPlace;
-		std::vector<KCMSnippetText::RegionPair> pieces;
+		std::vector<KCMParaText::RegionPair> pieces;
 		for (size_t c = 0; c < paragraphChanges.size(); ++c)
 		{
 			const KCMTextDiff::Change& run = paragraphChanges[c];
-			KCMSnippetText::SplitRunAtPlaces(sourceAttrs, run.aStart, run.aCount,
+			KCMParaText::SplitRunAtPlaces(sourceAttrs, run.aStart, run.aCount,
 											   targetAttrs, run.bStart, run.bCount, pieces);
 			for (size_t k = 0; k < pieces.size(); ++k)
 			{
@@ -868,8 +941,8 @@ bool16 CompareOneStory(const UIDRef& targetStory, const UIDRef& sourceStory,
 	{
 		const KCMTextDiff::Change& change = paragraphChanges[c];
 
-		const std::string sourceText = KCMSnippetText::JoinParagraphs(sourceParas, change.aStart, change.aCount);
-		const std::string targetText = KCMSnippetText::JoinParagraphs(targetParas, change.bStart, change.bCount);
+		const std::string sourceText = KCMParaText::JoinParagraphs(sourceParas, change.aStart, change.aCount);
+		const std::string targetText = KCMParaText::JoinParagraphs(targetParas, change.bStart, change.bCount);
 
 		// Where this run starts on each side. A run with no paragraphs of its own sits where the
 		// next surviving paragraph begins.
@@ -880,15 +953,15 @@ bool16 CompareOneStory(const UIDRef& targetStory, const UIDRef& sourceStory,
 
 		// The run itself, so that a position inside it can be asked for rather than added up -- see
 		//   RunSide. Built once here because both callers of Add below need the same two.
-		const RunSide tRun(targetParas, targetStarts, change.bStart, change.bCount, tBase);
-		const RunSide sRun(sourceParas, sourceStarts, change.aStart, change.aCount, sBase);
+		const RunSide tRun(targetParas, targetStarts, targetAttrs, change.bStart, change.bCount, tBase);
+		const RunSide sRun(sourceParas, sourceStarts, sourceAttrs, change.aStart, change.aCount, sBase);
 
 		std::vector<int32> sourceCodePoints;
 		std::vector<int32> targetCodePoints;
 		std::vector<int32> sourceBytes;
 		std::vector<int32> targetBytes;
-		KCMTextDiff::ToCodePoints(sourceText, sourceCodePoints, &sourceBytes);
-		KCMTextDiff::ToCodePoints(targetText, targetCodePoints, &targetBytes);
+		KCMTextDiff::ToCodePoints(sourceText, &sourceCodePoints, &sourceBytes);
+		KCMTextDiff::ToCodePoints(targetText, &targetCodePoints, &targetBytes);
 
 		// The second pass: narrow the run down to the characters that actually differ, so that a
 		// one-word edit selects the word and not the paragraph it sits in.

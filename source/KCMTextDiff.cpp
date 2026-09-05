@@ -627,10 +627,11 @@ void KCMTextDiff::Tokenize(const std::vector<std::string>& strings,
 
 /* ToCodePoints
 */
-void KCMTextDiff::ToCodePoints(const std::string& utf8, std::vector<int32>& codePoints,
+void KCMTextDiff::ToCodePoints(const std::string& utf8, std::vector<int32>* codePoints,
 							  std::vector<int32>* byteOffsets)
 {
-	codePoints.clear();
+	if (codePoints != nil)
+		codePoints->clear();
 	if (byteOffsets != nil)
 		byteOffsets->clear();
 
@@ -670,7 +671,8 @@ void KCMTextDiff::ToCodePoints(const std::string& utf8, std::vector<int32>& code
 			value = (value << 6) | (cont & 0x3F);
 		}
 
-		codePoints.push_back(value);
+		if (codePoints != nil)
+			codePoints->push_back(value);
 	}
 }
 

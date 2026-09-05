@@ -788,7 +788,7 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowStateWidgetID, kKCMUIPrefix + 49)	// = t
 //   and ruby, and nothing else (user's decision). The key that existed for one day became a
 //   string nobody asked for the moment the comparison behind it was stopped, so the two went
 //   together (with the matching row in KCMUI_enUS.fr).
-//   ★The side that reads kenten out of a snippet is still there (KCMSnippetText.h), so bringing
+//   ★The side that reads kenten out of a snippet is still there (KCMParaText.h), so bringing
 //     it back needs that one comparison and this key.
 
 // The column headings of the list. ★**Do not reuse the words from inside it**: the second

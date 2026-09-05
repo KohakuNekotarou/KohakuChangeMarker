@@ -209,7 +209,7 @@ public:
 		//   no new one.
 		// @warning mono and group ruby are both in here and the difference is NOT in the string -
 		//   it is in the span (fTargetStart/fTargetEnd): one reading over several characters,
-		//   against one reading each. See KCMSnippetText.h for how the two are told apart in the
+		//   against one reading each. See KCMParaText.h for how the two are told apart in the
 		//   snippet.
 		PMString	fRuby;
 		PMString	fOtherRuby;

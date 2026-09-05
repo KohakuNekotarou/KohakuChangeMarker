@@ -190,11 +190,20 @@ namespace KCMTextDiff
 		handed to the text model unchanged.
 
 		@param utf8 IN the text.
-		@param codePoints OUT one entry per code point. Emptied first.
+		@param codePoints OUT optional; one entry per code point, emptied first. Pass nil when only
+		the byte offsets are wanted.
 		@param byteOffsets OUT optional; for each code point, where it starts in utf8. Pass nil
 		when only the comparison is wanted.
+
+		★**BOTH ANSWERS ARE OPTIONAL, and the first one became so on 2026-09-04.** It was a
+		reference, so a caller that wanted only the byte offsets - three of them, in
+		KCMStoryDiffRun - had to hand over a vector, watch it be filled, and drop it. Cutting an
+		excerpt needs the byte boundaries and nothing else, and a paragraph carrying ruby was
+		walked for a list nobody read up to six times over.
+		@warning nil for both is legal and does nothing, which is the honest answer to being asked
+		 for nothing.
 	*/
-	void ToCodePoints(const std::string& utf8, std::vector<int32>& codePoints,
+	void ToCodePoints(const std::string& utf8, std::vector<int32>* codePoints,
 					  std::vector<int32>* byteOffsets = nil);
 }
 

@@ -683,17 +683,23 @@ void KCMStoryList::SetRowChanges(int32 nth, const std::vector<KCMStoryChange>& c
 	//   fields with a KIND rather than a reading, and every such test called it a ruby.
 	gRows[nth].fAttrKind = kKCMStoryAttrNone;
 	gRows[nth].fAttrKindCount = 0;
-	uint32 seen = 0;		// one bit per KCMStoryAttrKind value, so a kind is counted once
+
+	// **THE KINDS ALREADY MET, AND NOT A BIT PER KIND.** This held `1u << fAttrKind` until
+	//   2026-09-04, which is correct for the values that exist (0, 1, 2) and undefined for the
+	//   thirty-second -- and KCMStoryKinds.h invites exactly that, in as many words: a third
+	//   attribute is "one more value". A list costs the same to read, cannot be made undefined by
+	//   accepting that invitation, and does not have to be counted against the width of a uint32.
+	std::vector<int32> kindsSeen;
 	for (size_t i = 0; i < changes.size(); ++i)
 	{
 		if (changes[i].fWhat != KCMStoryChange::kAttr ||
 			changes[i].fAttrKind == kKCMStoryAttrNone)
 			continue;
 
-		const uint32 bit = 1u << static_cast<uint32>(changes[i].fAttrKind);
-		if ((seen & bit) != 0)
+		const int32 kind = static_cast<int32>(changes[i].fAttrKind);
+		if (std::find(kindsSeen.begin(), kindsSeen.end(), kind) != kindsSeen.end())
 			continue;
-		seen |= bit;
+		kindsSeen.push_back(kind);
 
 		if (gRows[nth].fAttrKind == kKCMStoryAttrNone)
 			gRows[nth].fAttrKind = changes[i].fAttrKind;

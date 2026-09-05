@@ -142,7 +142,7 @@ struct KCMStoryChange
 		@warning **MONO AND GROUP RUBY BOTH LAND HERE AND THE DIFFERENCE IS NOT IN THE STRING.** One
 		  reading over two characters and two readings over one character each can produce the same
 		  characters; what tells them apart is the SPAN. The spans are what the diff compared
-		  (KCMSnippetText.h), and fTargetStart/fTargetEnd is the span this change is about. */
+		  (KCMParaText.h), and fTargetStart/fTargetEnd is the span this change is about. */
 	PMString	fRuby;
 	PMString	fOtherRuby;
 

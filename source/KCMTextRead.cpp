@@ -31,7 +31,6 @@
 
 // General includes:
 #include "CJKID.h"			// kRubyAttrStrandBoss, the two ruby attributes, and the kTAKenten* ones
-#include "PMString.h"
 #include "TableTypes.h"		// GridAddress, RowRange, ColRange
 #include "TextChar.h"		// kTextChar_CR / kTextChar_Table / kTextChar_TableContinued
 #include "TextID.h"			// kCharAttrStrandBoss - the strand kenten's attributes sit on
@@ -40,7 +39,6 @@
 #include "WideString.h"
 
 #include <algorithm>
-#include <map>
 #include <sstream>		// the kenten kind table's "unknown" spelling
 
 // Project includes:
@@ -213,7 +211,7 @@ struct AttrRun
 void AppendWide(std::string& out, const WideString& w)
 {
 	for (int32 k = 0; k < w.CharCount(); ++k)
-		KCMSnippetText::AppendUtf8(out, static_cast<int32>(w.GetChar(k).GetValue()));
+		KCMParaText::AppendUtf8(out, static_cast<int32>(w.GetChar(k).GetValue()));
 }
 
 /* IsFootnoteMarkerOnly
@@ -378,7 +376,7 @@ std::string KentenKindName(int16 kind)
    ⚠THE BOUNDARIES ARE OVER-FINE, AND THAT IS WHY THE MERGE BELOW EXISTS. A style change with no
     kenten in it still ends a run, so five characters marked with one kind can arrive as two runs.
     The user's own snippet is what settled the rule this has to honour: **five characters marked
-    with one kind are ONE range**, where the same five with ruby are five (KCMSnippetText.h says so
+    with one kind are ONE range**, where the same five with ruby are five (KCMParaText.h says so
     and its test still proves it). Merging adjacent runs of equal value is what makes both routes
     agree on that.
 
@@ -577,6 +575,23 @@ void ClosePara(std::vector<std::string>& outParas,
 	outStarts.push_back(static_cast<int32>(paraStart));
 
 	KCMParaAttrs attrs = place;		// the cell identity, which is the same for every paragraph here
+
+	// ★★★**THE SKIPPED POSITIONS TRAVEL WITH THE PARAGRAPH, IN THE TEXT'S COUNT.** Everything this
+	//   file hands out is counted the way the panel reads it - the table's own characters left out
+	//   - and everything downstream eventually has to ask the DOCUMENT about one of those positions
+	//   (a mark, a jump, a selection). That crossing was made by adding the offset to the
+	//   paragraph's start, which is right only while the paragraph holds nothing but its text;
+	//   measured 2026-09-04, the midtable pair's one reported change selected the table's anchor
+	//   rather than the character after it. Recording them here is what lets
+	//   KCMParaText::ModelOffsetInParagraph put it back, in the two places that need it.
+	//   ⚠**THE k-th ONE HAS k BEFORE IT**, so its place in the text is its model position less the
+	//    paragraph's start and less the ones already met. They arrive in order, which is what makes
+	//    that subtraction the whole of the conversion.
+	attrs.fUncountedAt.reserve(uncounted.size());
+	for (size_t k = 0; k < uncounted.size(); ++k)
+		attrs.fUncountedAt.push_back(static_cast<int32>(uncounted[k] - paraStart) -
+									 static_cast<int32>(k));
+
 	// ⚠ONE CURSOR EACH. The two lists are walked in step with the paragraphs but are not the same
 	//   length, so a shared cursor would drag one of them past its own runs.
 	TakeAttrFor(ruby, rubyCursor, paraStart, paraEnd, uncounted, attrs.fRuby);
@@ -613,7 +628,7 @@ bool16 KCMTextRead::ReadStory(const UIDRef& storyRef,
 
 	// ★THE RUBY IS READ IN THE SAME BREATH AS THE TEXT. A comparison is a photograph of one moment,
 	//   and text from one instant beside ruby from another puts two moments in one row - the rule
-	//   KCMSnippetText.h states, kept here. The rule is "one moment", not "one source": this file's
+	//   KCMParaText.h states, kept here. The rule is "one moment", not "one source": this file's
 	//   text comes from the model, so its ruby does too.
 	//   ⚠NOTHING MAY RUN BETWEEN THIS AND THE WALK BELOW. No command, no recompose, no second
 	//    document - anything that edits the story between them would date one against the other.
@@ -735,7 +750,7 @@ bool16 KCMTextRead::ReadStory(const UIDRef& storyRef,
 			//   downstream counts the same way. Encoding a character as two would put the two
 			//   counts out of step, and the comparison would quote the right words at the wrong
 			//   place.
-			KCMSnippetText::AppendUtf8(text, cp);
+			KCMParaText::AppendUtf8(text, cp);
 			paraHasCharacters = kTrue;
 		}
 

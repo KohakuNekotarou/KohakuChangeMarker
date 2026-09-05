@@ -138,15 +138,175 @@ void SesamePath(IGraphicsPort* gPort, const PMReal& cx, const PMReal& cy,
 	gPort->closepath();
 }
 
-/** Everything this file can draw, spelled the way the reader spells it (KCMTextRead's
-	KentenKindName, which copies the SDK's own table). */
-bool16 IsKnownKind(const PMString& kind)
+/** Which shape one kind is drawn as. kShapeUnknown covers Custom and anything this build has
+	never heard of, both of which the caller shows as text. */
+enum Shape
 {
-	return (kind == "BlackSesameDot"  || kind == "WhiteSesameDot"   ||
-			kind == "Fisheye"         || kind == "BlackCircle"      ||
-			kind == "SmallBlackCircle"|| kind == "Bullseye"         ||
-			kind == "BlackTriangle"   || kind == "WhiteTriangle"    ||
-			kind == "WhiteCircle"     || kind == "SmallWhiteCircle") ? kTrue : kFalse;
+	kShapeUnknown = 0,
+	kShapeBlackCircle,
+	kShapeWhiteCircle,
+	kShapeSmallBlackCircle,
+	kShapeSmallWhiteCircle,
+	kShapeFisheye,
+	kShapeBullseye,
+	kShapeBlackTriangle,
+	kShapeWhiteTriangle,
+	kShapeBlackSesame,
+	kShapeWhiteSesame
+};
+
+/* ShapeFor
+   Everything this file can draw, spelled the way the reader spells it (KCMTextRead's
+   KentenKindName, which copies the SDK's own table).
+
+   ★★**THE ONE PLACE THE TEN NAMES ARE WRITTEN.** They were written twice until 2026-09-04 - a
+   list in IsKnownKind to answer CanDraw, and a chain of comparisons in Draw to choose the shape -
+   so a kind added to one and not the other would have answered "yes, I can draw that" and then
+   drawn nothing at all. Two lists, one question ([[one-question-one-place]]).
+
+   ⚠**AND IT WAS READ ONCE PER CHARACTER.** DrawOverRun paints one mark per character of the run
+    and called Draw for each, which re-read the name from the top: up to twenty string comparisons
+    per mark, to reach the same answer every time. The name is read once now, and the shape is
+    what travels into the loop.
+*/
+Shape ShapeFor(const PMString& kind)
+{
+	if (kind == "BlackSesameDot")	return kShapeBlackSesame;
+	if (kind == "WhiteSesameDot")	return kShapeWhiteSesame;
+	if (kind == "Fisheye")			return kShapeFisheye;
+	if (kind == "BlackCircle")		return kShapeBlackCircle;
+	if (kind == "SmallBlackCircle")	return kShapeSmallBlackCircle;
+	if (kind == "Bullseye")			return kShapeBullseye;
+	if (kind == "BlackTriangle")	return kShapeBlackTriangle;
+	if (kind == "WhiteTriangle")	return kShapeWhiteTriangle;
+	if (kind == "WhiteCircle")		return kShapeWhiteCircle;
+	if (kind == "SmallWhiteCircle")	return kShapeSmallWhiteCircle;
+	return kShapeUnknown;
+}
+
+/** Paints one mark of a shape already decided. The public Draw is this with the name resolved.
+
+	@warning the port's colour, line width and path are all left as they were found - a cell draws
+	 text before and after this. */
+void DrawShape(IGraphicsPort* gPort, Shape shape,
+			   const PMReal& centreX, const PMReal& centreY, const PMReal& size,
+			   const RealAGMColor& colour)
+{
+	if (gPort == nil || size <= PMReal(0.0) || shape == kShapeUnknown)
+		return;
+
+	// ★THE PORT IS HANDED BACK AS IT WAS. This runs in the middle of a cell that draws text before
+	//   and after it, and a colour or a line width left behind would repaint that text.
+	gPort->gsave();
+
+	gPort->setrgbcolor(colour.red, colour.green, colour.blue);
+
+	// Thin enough that a white mark reads as an outline rather than a blob at these sizes, with a
+	// floor so it never disappears on a low-resolution screen.
+	PMReal lineWidth = size * PMReal(0.10);
+	if (lineWidth < PMReal(0.75))
+		lineWidth = PMReal(0.75);
+	gPort->setlinewidth(lineWidth);
+
+	// ⚠THE STROKE IS DRAWN ON THE PATH, HALF IN AND HALF OUT, so a hollow mark of the same nominal
+	//   radius reads slightly larger than a filled one. The radii below already allow for it: the
+	//   outlined kinds are pulled in by half a line width so that black and white marks of the same
+	//   kind occupy the same box on screen.
+	const PMReal r = size * PMReal(0.40);
+	const PMReal rStroke = StrokeRadius(r, lineWidth);
+
+	switch (shape)
+	{
+		case kShapeBlackCircle:
+			EllipsePath(gPort, centreX, centreY, r, r);
+			gPort->fill();
+			break;
+
+		case kShapeWhiteCircle:
+			EllipsePath(gPort, centreX, centreY, rStroke, rStroke);
+			gPort->stroke();
+			break;
+
+		case kShapeSmallBlackCircle:
+		{
+			const PMReal rs = size * PMReal(0.24);
+			EllipsePath(gPort, centreX, centreY, rs, rs);
+			gPort->fill();
+			break;
+		}
+
+		case kShapeSmallWhiteCircle:
+		{
+			const PMReal rs = StrokeRadius(size * PMReal(0.24), lineWidth);
+			EllipsePath(gPort, centreX, centreY, rs, rs);
+			gPort->stroke();
+			break;
+		}
+
+		case kShapeFisheye:
+		{
+			// A ring with a SOLID DOT inside, and **the dot is large** - measured off the user's
+			// capture of InDesign's own mark (2026-09-01): the black centre is about half the outer
+			// diameter, with a clear white gap left around it. A small dot reads as a bullseye instead,
+			// which is the one mark this must not be confused with.
+			EllipsePath(gPort, centreX, centreY, rStroke, rStroke);
+			gPort->stroke();
+			const PMReal inner = size * PMReal(0.22);
+			EllipsePath(gPort, centreX, centreY, inner, inner);
+			gPort->fill();
+			break;
+		}
+
+		case kShapeBullseye:
+		{
+			// Bullseye - two rings, nothing filled. ⚠THIS IS THE ONE THAT MUST NOT BE CONFUSED WITH
+			//   Fisheye above: they differ only in whether the inner shape is filled, and that is
+			//   exactly the difference a reader is looking at the panel to see.
+			EllipsePath(gPort, centreX, centreY, rStroke, rStroke);
+			gPort->stroke();
+			const PMReal inner = size * PMReal(0.20);
+			EllipsePath(gPort, centreX, centreY, inner, inner);
+			gPort->stroke();
+			break;
+		}
+
+		case kShapeBlackTriangle:
+			TrianglePath(gPort, centreX, centreY, r);
+			gPort->fill();
+			break;
+
+		case kShapeWhiteTriangle:
+			TrianglePath(gPort, centreX, centreY, rStroke);
+			gPort->stroke();
+			break;
+
+		case kShapeBlackSesame:
+		case kShapeWhiteSesame:
+		{
+			// A LEANING TEARDROP, matched to InDesign's own mark - see SesamePath. It was an upright
+			// oval until the user put a capture of the real one beside it.
+			const PMReal rx = size * PMReal(0.20);
+			const PMReal ry = size * PMReal(0.38);
+			if (shape == kShapeBlackSesame)
+			{
+				SesamePath(gPort, centreX, centreY, rx, ry);
+				gPort->fill();
+			}
+			else
+			{
+				SesamePath(gPort, centreX, centreY,
+						   StrokeRadius(rx, lineWidth), StrokeRadius(ry, lineWidth));
+				gPort->stroke();
+			}
+			break;
+		}
+
+		case kShapeUnknown:
+		default:
+			break;		// refused above; named so that a new shape has to be dealt with here
+	}
+
+	gPort->grestore();
 }
 
 }	// anonymous namespace
@@ -154,7 +314,7 @@ bool16 IsKnownKind(const PMString& kind)
 //----------------------------------------------------------------------------------------
 bool16 KCMKentenMark::CanDraw(const PMString& kindValue)
 {
-	return IsKnownKind(kindValue);
+	return (ShapeFor(kindValue) != kShapeUnknown) ? kTrue : kFalse;
 }
 
 //----------------------------------------------------------------------------------------
@@ -165,7 +325,11 @@ bool16 KCMKentenMark::DrawOverRun(AGMGraphicsContext& gc, IGraphicsPort* gPort,
 								  const PMReal& baselineY,
 								  const PMReal& rightEdge, const RealAGMColor& colour)
 {
-	const bool16 asShape = CanDraw(kindValue);
+	// ★THE KIND'S NAME IS READ ONCE, HERE, and the shape is what goes into the loop below. It was
+	//   read per character until 2026-09-04 - CanDraw walked a list of ten names and then every
+	//   Draw walked a chain of ten more, to reach the same answer for every mark of one run.
+	const Shape shape = ShapeFor(kindValue);
+	const bool16 asShape = (shape != kShapeUnknown) ? kTrue : kFalse;
 
 	// A custom mark is the glyph the reader chose, so it is WRITTEN where the others are DRAWN.
 	PMString glyph;
@@ -205,7 +369,7 @@ bool16 KCMKentenMark::DrawOverRun(AGMGraphicsContext& gc, IGraphicsPort* gPort,
 			break;				// ran out of room - the rest are simply not shown
 
 		if (asShape)
-			Draw(gPort, kindValue, cx, markCentreY, markSize, colour);
+			DrawShape(gPort, shape, cx, markCentreY, markSize, colour);
 		else
 			StringUtils::PMDrawStringRGB(&gc, PMPoint(cx - (glyphW / PMReal(2.0)), baselineY),
 										 glyph, font, colour,
@@ -248,104 +412,10 @@ void KCMKentenMark::Draw(IGraphicsPort* gPort, const PMString& kindValue,
 						 const PMReal& centreX, const PMReal& centreY, const PMReal& size,
 						 const RealAGMColor& colour)
 {
-	if (gPort == nil || size <= PMReal(0.0) || !IsKnownKind(kindValue))
-		return;
-
-	// ★THE PORT IS HANDED BACK AS IT WAS. This runs in the middle of a cell that draws text before
-	//   and after it, and a colour or a line width left behind would repaint that text.
-	gPort->gsave();
-
-	gPort->setrgbcolor(colour.red, colour.green, colour.blue);
-
-	// Thin enough that a white mark reads as an outline rather than a blob at these sizes, with a
-	// floor so it never disappears on a low-resolution screen.
-	PMReal lineWidth = size * PMReal(0.10);
-	if (lineWidth < PMReal(0.75))
-		lineWidth = PMReal(0.75);
-	gPort->setlinewidth(lineWidth);
-
-	// ⚠THE STROKE IS DRAWN ON THE PATH, HALF IN AND HALF OUT, so a hollow mark of the same nominal
-	//   radius reads slightly larger than a filled one. The radii below already allow for it: the
-	//   outlined kinds are pulled in by half a line width so that black and white marks of the same
-	//   kind occupy the same box on screen.
-	const PMReal r = size * PMReal(0.40);
-	const PMReal rStroke = StrokeRadius(r, lineWidth);
-
-	if (kindValue == "BlackCircle")
-	{
-		EllipsePath(gPort, centreX, centreY, r, r);
-		gPort->fill();
-	}
-	else if (kindValue == "WhiteCircle")
-	{
-		EllipsePath(gPort, centreX, centreY, rStroke, rStroke);
-		gPort->stroke();
-	}
-	else if (kindValue == "SmallBlackCircle")
-	{
-		const PMReal rs = size * PMReal(0.24);
-		EllipsePath(gPort, centreX, centreY, rs, rs);
-		gPort->fill();
-	}
-	else if (kindValue == "SmallWhiteCircle")
-	{
-		const PMReal rs = StrokeRadius(size * PMReal(0.24), lineWidth);
-		EllipsePath(gPort, centreX, centreY, rs, rs);
-		gPort->stroke();
-	}
-	else if (kindValue == "Fisheye")
-	{
-		// A ring with a SOLID DOT inside, and **the dot is large** - measured off the user's
-		// capture of InDesign's own mark (2026-09-01): the black centre is about half the outer
-		// diameter, with a clear white gap left around it. A small dot reads as a bullseye instead,
-		// which is the one mark this must not be confused with.
-		EllipsePath(gPort, centreX, centreY, rStroke, rStroke);
-		gPort->stroke();
-		const PMReal inner = size * PMReal(0.22);
-		EllipsePath(gPort, centreX, centreY, inner, inner);
-		gPort->fill();
-	}
-	else if (kindValue == "Bullseye")
-	{
-		// Bullseye - two rings, nothing filled. ⚠THIS IS THE ONE THAT MUST NOT BE CONFUSED WITH
-		//   Fisheye above: they differ only in whether the inner shape is filled, and that is
-		//   exactly the difference a reader is looking at the panel to see.
-		EllipsePath(gPort, centreX, centreY, rStroke, rStroke);
-		gPort->stroke();
-		const PMReal inner = size * PMReal(0.20);
-		EllipsePath(gPort, centreX, centreY, inner, inner);
-		gPort->stroke();
-	}
-	else if (kindValue == "BlackTriangle")
-	{
-		TrianglePath(gPort, centreX, centreY, r);
-		gPort->fill();
-	}
-	else if (kindValue == "WhiteTriangle")
-	{
-		TrianglePath(gPort, centreX, centreY, rStroke);
-		gPort->stroke();
-	}
-	else if (kindValue == "BlackSesameDot" || kindValue == "WhiteSesameDot")
-	{
-		// A LEANING TEARDROP, matched to InDesign's own mark - see SesamePath. It was an upright
-		// oval until the user put a capture of the real one beside it.
-		const PMReal rx = size * PMReal(0.20);
-		const PMReal ry = size * PMReal(0.38);
-		if (kindValue == "BlackSesameDot")
-		{
-			SesamePath(gPort, centreX, centreY, rx, ry);
-			gPort->fill();
-		}
-		else
-		{
-			SesamePath(gPort, centreX, centreY,
-					   StrokeRadius(rx, lineWidth), StrokeRadius(ry, lineWidth));
-			gPort->stroke();
-		}
-	}
-
-	gPort->grestore();
+	// ★THE NAME IS RESOLVED, AND THE DRAWING IS DrawShape'S. A caller painting a whole run resolves
+	//   it ONCE and goes straight there (DrawOverRun); this entry point is for a single mark, where
+	//   reading the name again costs nothing.
+	DrawShape(gPort, ShapeFor(kindValue), centreX, centreY, size, colour);
 }
 
 // End, KCMKentenMark.cpp.
