@@ -121,6 +121,7 @@
 #include "KCMBookCompare.h"	// KCMGetBookResultText - the last book comparison, also in the module
 #include "KCMStoryStamp.h"	// KCMStoryEdits::ReadStamp - the SAME reading the panel uses
 #include "KCMRingAdornment.h"	// KCMGetNumItemsWithXP - document.kcmTransparencyItemCount
+#include "KCMTextRead.h"		// the parallel run's switch and report (⚠temporary - see the header)
 
 /** Serves every scripting addition this plug-in makes -- the properties listed at the top of
     this file, on three different script objects. One boss, because the .fr splits them by
@@ -148,6 +149,10 @@ private:
 	    exists so that "did we leave ourselves on that list when the document was saved?" can be
 	    answered from outside, and the list persists in the .indd. */
 	ErrorCode ReadTransparencyItemCount(ScriptID propID, IScriptRequestData* data, IScript* script);
+
+	// app.kcmStoryReadCompare, the direct-read migration's parallel run, stood here from
+	// 2026-08-31 to 2026-09-03 - the only property that ever accepted a put. It went with the old
+	// route (plan Task 7); everything published is read-only again.
 
 	/** Hand an int32 back to the script. The two numeric properties above both end this way. */
 	ErrorCode ReturnInt32(int32 value, ScriptID propID, IScriptRequestData* data, IScript* script);
@@ -189,6 +194,11 @@ ErrorCode KCMScriptProvider::AccessProperty(ScriptID propID, IScriptRequestData*
 	// rather than a message.
 	// @warning KBS had already moved to this call (KBSScriptProvider.cpp) and this file, written
 	//   from that one, did not bring the change with it.
+	// ★NO EXCEPTIONS AGAIN since 2026-09-03: app.kcmStoryReadCompare, declared kReadWrite in KCM.fr
+	//   and accepted here, was the one put this file ever took, and it went with the parallel run.
+	//   ⚠Should a writable property ever come back: the resource's kReadWrite and a branch here are
+	//     a PAIR - a kReadOnly declaration never reaches this line, and a kReadWrite one that this
+	//     line refused would silently accept nothing.
 	if (data->IsPropertyPut())
 		return Utils<IScriptErrorUtils>()->SetReadOnlyPropertyErrorData(data, propID);
 

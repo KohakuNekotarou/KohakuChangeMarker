@@ -20,6 +20,7 @@
 
 // Project includes:
 #include "KCMThreadSafety.h"
+#include "KCMExternalSource.h"	// KCMIsExternalSource -- the lent Source matches nothing but its own pointer
 
 //----------------------------------------------------------------------------------------
 bool16 KCMIsMainThread()
@@ -34,6 +35,15 @@ bool16 KCMIsSameDoc(IDataBase* a, IDataBase* b)
 	if (a == b)
 		return (a != nil) ? kTrue : kFalse;
 	if (a == nil || b == nil)
+		return kFalse;
+
+	// **A lent Source (KCMExternalSource.h) is nothing but its own pointer.** It is a clone of a
+	// document that is still open, so by file -- and by document ID -- it would come out "the
+	// same" as that document, and every window of the Target would count as a Source window too
+	// (the Source marks would land on the Target). It has no window and no export of its own, so
+	// there is no second pointer that could legitimately name it. The pointer test above has
+	// already answered for the equal case.
+	if (KCMIsExternalSource(a) || KCMIsExternalSource(b))
 		return kFalse;
 
 	// From here on is the background's path: its clone DB is a different pointer but names the

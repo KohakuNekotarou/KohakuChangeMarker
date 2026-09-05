@@ -104,9 +104,16 @@ void CollectChapters(IBook* book, std::vector<ChapterEntry>& out)
 				// **The answer is checked, not assumed.** IBookContent::GetIDFile is
 				// documented as returning "kTrue if a file can be obtained", so a chapter
 				// without one is a real case. It cannot be compared -- but it still reaches
-				// the list, with a reason (see the pairing). KBS discards this return value;
-				// here it is the difference between "no change" and "never looked", which is
-				// exactly the distinction that took a day to find in KBS.
+				// the list, with a reason (see the pairing). Here it is the difference between
+				// "no change" and "never looked", which is exactly the distinction that took a
+				// day to find in KBS.
+				//   ⚠**This line used to say "KBS discards this return value". It did; it no
+				//   longer does** -- measured 2026-08-31, KBSBookScope.cpp:1252-1259 now keeps
+				//   the answer and says so in capitals ("THE ANSWER IS KEPT, NOT DISCARDED").
+				//   The one still throwing it away is KESCL (KESCLBookScope.cpp:400), where the
+				//   same one-line fix is still waiting.
+				//   ★**A claim about a SIBLING rots when the sibling is fixed, and nothing on
+				//   this side can notice.** Re-measure before repeating one.
 				entry.fHasFile = content->GetIDFile(entry.fFile);
 			}
 		}

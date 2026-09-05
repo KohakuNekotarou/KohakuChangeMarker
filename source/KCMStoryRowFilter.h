@@ -13,8 +13,9 @@
 //  of it.
 //
 //  @warning **WHAT COUNTS AS CONTENT IS SETTLED ELSEWHERE:** the words, and the ruby written
-//    over them. Kenten was in that list for one day and is no longer reported at all. This file
-//    did not have to change for that and must not grow a list of its own: it asks whether the
+//    over them, and the emphasis marks (kenten) over them again since 2026-09-01. This file did
+//    not have to change for ANY of that -- kenten left the list in August and came back without
+//    touching a line here -- and it must not grow a list of its own: it asks whether the
 //    diff found ANY child, and what the diff looks for is KCMStoryDiffRun's business
 //    ([[one-question-one-place]]).
 //
@@ -37,14 +38,19 @@
 //  full of PMStrings and UIDs and cannot leave InDesign; these three fields can, and they are
 //  the whole of the decision. work/kescm-rowfilter-test builds this header against a stub
 //  UIDRef.h and runs the table of cases -- the same way KCMStoryMarkRanges.h and
-//  KCMSnippetText.h are checked.
+//  KCMParaText.h are checked.
 //
 //========================================================================================
 
 #ifndef __KCMStoryRowFilter_h__
 #define __KCMStoryRowFilter_h__
 
-#include "KCMStoryStamp.h"	// KCMStoryChangeKind, kKCMStoryKindUnpaired
+// The TYPES ONLY, which is the whole of what this file needs and the reason that header exists.
+// ⚠It included KCMStoryStamp.h until 2026-09-04, and that one also declares the free functions
+//  that READ a document's counters - so it drags in UIDRef and KCMStoryDiff to say something
+//  this file never asks. The offline test measured the difference: it had to keep a stub
+//  UIDRef.h to build a header whose decision is three plain numbers.
+#include "KCMStoryKinds.h"	// KCMStoryChangeKind, kKCMStoryKindUnpaired
 
 /** Does this row's story differ in its CONTENT -- the words, or the ruby written over them --
 	rather than only in how it is set?

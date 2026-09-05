@@ -82,7 +82,7 @@ void			KCMSetStatus(const char* s, bool16 forceRedrawNow = kFalse);
 //     (KCMStatusTextView.cpp).
 void			KCMSetStatusSegments(const PMString& label, const PMString& pre,
 									   const PMString& mid, const PMString& post,
-									   const PMString& ruby);
+									   const PMString& ruby, int32 attrKind);
 
 // Start / stop the UI-side observer of the model's notifications (KCMModelChangeObserver.cpp).
 // Attached in Startup; detached in Shutdown **before** the panel is taken down.
@@ -93,10 +93,40 @@ void			KCMDetachModelChangeObserver();
 // posText clears. Does nothing when the panel is hidden.
 void			KCMSetNavPosition(const PMString& posText, bool16 navButtonsEnabled);
 
-// Show the tool switch button as pressed / not pressed. Called only from KCMTool::Select
-// and ::Deselect, so the toolbox, the panel button and the shortcut all pass through one
-// place. Does nothing when the panel is hidden.
-void			KCMSetToolButtonSelected(bool16 selected);
+// Bring the panel's tool button into line with the toolbox: WHICH OF THE TWO TOOLS IT WEARS
+// (the comparison tool or the stamp) and whether it looks pressed.
+// ★★ONE BUTTON, TWO TOOLS (the user's design, 2026-09-04: "one place, two tools, the way the
+//   toolbox does it"). Two widgets share one frame and exactly one is shown; this is the only
+//   function that decides which, so the panel and the toolbox cannot disagree
+//   ([[one-question-one-place]]).
+// ★It takes no argument on purpose -- it READS the real state (KCMIsOwnToolActive /
+//   KCMIsPawToolActive) rather than being told. Being told is what let the old
+//   KCMSetToolButtonSelected(kTrue/kFalse) be called with a stale answer.
+// ⚠With neither tool active it leaves the face alone: the button keeps the last tool used, which
+//   is what a toolbox slot does with its flyout. Does nothing when the panel is hidden.
+void			KCMSyncToolButton();
+
+// How long the panel's tool button has to be held before its flyout appears, in MILLISECONDS
+// (which is what ICallbackTimer::StartTimer takes).
+// ★400 is InDesign's own feel for a press-and-hold on a toolbox slot; below about 250 an ordinary
+//   click starts being taken for a hold.
+// ⚠★★★A NOTE WORTH KEEPING even though this value is no longer compared against it:
+//   **IEvent::GetTime answers SECONDS**, measured 2026-09-04 (a 900 ms press came back as 0.9059,
+//   printed through the panel's status line). The header says "a DWORD, so it'll roll over after
+//   ~47 days" (IEvent.h:144), which reads as milliseconds -- and 2^32 ms really is 49 days, so
+//   the wording confirms the wrong guess. An earlier version of this button compared event times
+//   against 400 and could never fire, because that meant 400 seconds.
+static const uint32 kKCMToolButtonHoldMs = 400;
+
+// Choose one of the two tools and say so on the status line. wantPaw picks the cat-paw stamp,
+// otherwise the comparison tool.
+// ★★TWO CALLERS, ONE ENDING: a CLICK on the panel's tool button (KCMToolButtonEH, which passes
+//   the face that was showing) and an item of its HELD-DOWN FLYOUT (KCMActionComponent, which
+//   passes the tool the reader named). Both end here, so both report the same way and both
+//   recover the same way when a tool refuses to activate.
+// ★The button's face and pressed look are NOT set here: activating goes SetActiveTool ->
+//   ITool::Select -> KCMSyncToolButton, so a refusal leaves the button telling the truth.
+void			KCMToolButtonPressed(bool16 wantPaw);
 
 // Make this plug-in's tool the active tool. Returns kTrue when it actually became active.
 // Does nothing in a run configuration without a toolbox.
@@ -105,6 +135,12 @@ bool16			KCMActivateOwnTool();
 // Is this plug-in's tool the active tool right now? Used to restore the button's pressed
 // look when the panel is rebuilt, instead of writing a fixed default.
 bool16			KCMIsOwnToolActive();
+
+// The same pair for the cat-paw stamp tool, which shares the panel's tool button with the one
+// above. Declared here rather than beside the stamp's own code for the reason the two above are:
+// the panel is the caller, and the panel reads one header.
+bool16			KCMActivatePawTool();
+bool16			KCMIsPawToolActive();
 
 // Open the distribution URL from "About this plug-in" in the default browser. Called when
 // the panel illustration is clicked.

@@ -121,7 +121,11 @@ bool16 KCMIsSameDoc(IDataBase* a, IDataBase* b);
 //   - `sOversetPages` (std::set) / `sOversetLocs` (std::vector), which main's
 //     KCMApplyOversetForDoc **swaps wholesale**. Same shape as the sets above: a swap while
 //     something is reading corrupts it.
-//   Their readers are:
+//   Their readers are (⚠**the list below is `sOversetPages`'s**. Measured 2026-08-31:
+//   `sOversetLocs` has (b) ALONE -- one Facade getter, GetOversetLocations -- and no reader in
+//   the drawing at all. It is listed here with its neighbour because it is swapped in the same
+//   breath, not because it has the same exposure; ★do not read (a) or (c) as covering it, and
+//   do not conclude from "no reader in the drawing" that a new one would be safe):
 //     (a) **model side, inside the drawing**: `wantOversetThumb = isThumb && sOversetOn &&
 //         sOversetDB != nil && !sOversetPages.empty()` ---- **`isThumb` is the FIRST term**, so
 //         on BG (the asynchronous export, where isThumb is false) short-circuit evaluation

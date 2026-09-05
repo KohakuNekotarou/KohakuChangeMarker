@@ -671,25 +671,39 @@ void KCMStoryList::SetRowChanges(int32 nth, const std::vector<KCMStoryChange>& c
 
 	// **WHICH ATTRIBUTE THE ROW SHOULD NAME**, worked out here rather than asked for later: the
 	//   row is drawn many times and the children are walked once.
-	// **FIRST ONE WINS.** Only one kind of attribute is reported today (ruby), so no row can hold
-	//   two; the loop is written to survive a second one arriving rather than to depend on there
-	//   being none. @warning if a second ever does come back, decide then whether a row holding
-	//   both should read "Ruby+" the way KindLabel's "Text+" does -- the fix would belong here and
-	//   would need one more fact on the row (how many kinds were seen), not a change to how the
-	//   children are made.
+	// **FIRST ONE NAMES THE ROW, AND THE COUNT SAYS WHETHER THERE WERE MORE** (2026-09-03, user's
+	//   ask: "Ruby+" / "Kenten+" when both moved). The second half is exactly the "one more fact on
+	//   the row" this comment used to say a "Ruby+" would need - how many kinds were seen - and it
+	//   is worked out in the same walk, so the two cannot disagree about which children exist.
+	//   ⚠DISTINCT kinds, not attribute children: four ruby edits are one kind. The children are in
+	//     reading order (ChangeIsBefore), so "first" is the kind that stands earliest in the story.
 	// **THE CHILD CARRIES THE ANSWER**, so this does not guess it from which string is filled. The
 	//   old test -- "fRuby is not empty, or fOtherRuby is" -- was really asking "is this a ruby",
 	//   and kenten showed within a day why that is not the same question: it filled the very same
 	//   fields with a KIND rather than a reading, and every such test called it a ruby.
 	gRows[nth].fAttrKind = kKCMStoryAttrNone;
+	gRows[nth].fAttrKindCount = 0;
+
+	// **THE KINDS ALREADY MET, AND NOT A BIT PER KIND.** This held `1u << fAttrKind` until
+	//   2026-09-04, which is correct for the values that exist (0, 1, 2) and undefined for the
+	//   thirty-second -- and KCMStoryKinds.h invites exactly that, in as many words: a third
+	//   attribute is "one more value". A list costs the same to read, cannot be made undefined by
+	//   accepting that invitation, and does not have to be counted against the width of a uint32.
+	std::vector<int32> kindsSeen;
 	for (size_t i = 0; i < changes.size(); ++i)
 	{
-		if (changes[i].fWhat == KCMStoryChange::kAttr &&
-			changes[i].fAttrKind != kKCMStoryAttrNone)
-		{
+		if (changes[i].fWhat != KCMStoryChange::kAttr ||
+			changes[i].fAttrKind == kKCMStoryAttrNone)
+			continue;
+
+		const int32 kind = static_cast<int32>(changes[i].fAttrKind);
+		if (std::find(kindsSeen.begin(), kindsSeen.end(), kind) != kindsSeen.end())
+			continue;
+		kindsSeen.push_back(kind);
+
+		if (gRows[nth].fAttrKind == kKCMStoryAttrNone)
 			gRows[nth].fAttrKind = changes[i].fAttrKind;
-			break;
-		}
+		++gRows[nth].fAttrKindCount;
 	}
 }
 

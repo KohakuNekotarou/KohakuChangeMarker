@@ -142,17 +142,17 @@ struct KCMStoryChange
 		@warning **MONO AND GROUP RUBY BOTH LAND HERE AND THE DIFFERENCE IS NOT IN THE STRING.** One
 		  reading over two characters and two readings over one character each can produce the same
 		  characters; what tells them apart is the SPAN. The spans are what the diff compared
-		  (KCMSnippetText.h), and fTargetStart/fTargetEnd is the span this change is about. */
+		  (KCMParaText.h), and fTargetStart/fTargetEnd is the span this change is about. */
 	PMString	fRuby;
 	PMString	fOtherRuby;
 
 	/** WHICH attribute this is, when fWhat is kAttr. kKCMStoryAttrNone for a text change.
 
 		**fWhat SAYS "not the words", THIS SAYS WHAT INSTEAD** -- and the panel needs both, because
-		fWhat does not promise the VALUE is something a reader reads. Kenten proved that within a
-		day: its change filled these very fields with a KIND ("KentenBlackCircle"), so anything
-		asking fWhat alone treated a name as a reading, and the message area drew it over the older
-		text.
+		fWhat does not promise the VALUE is something a reader reads. Kenten proves it: its change
+		fills these very fields with a KIND ("BlackCircle"), so anything asking fWhat alone treats a
+		name as a reading - which is what the message area did in August, and the reason the feature
+		was withdrawn that day rather than the comparison being wrong.
 		@warning **"does this carry a reading", and "is this drawn on two lines", is THIS field,
 		  never fWhat.** Ruby being the only kind reported today, the two happen to agree again --
 		  which is exactly the state in which a stand-in survives unnoticed.
@@ -222,22 +222,30 @@ struct KCMStoryRow
 		the row can name it ("Ruby") rather than falling back on "Attr".
 
 		**A NUMBER, NOT A FLAG**, so that a second attribute is one more value here and one more
-		label -- not another field, and not another branch in every place that draws a row. Kenten
-		was that second value for a day and was then withdrawn, which is the shape working as
-		intended: the comparison stopped producing it and no drawing code had to change.
-		@warning **ruby is therefore the only value any row carries today. Do not simplify this to a
-		  flag on the strength of that** -- the reason it is a number has not gone away.
-
+		label -- not another field, and not another branch in every place that draws a row. Kenten is
+		that second value: withdrawn in August and reported again from 2026-09-01, and **both times
+		the comparison alone decided it** -- which is the shape working as intended.
 		@warning **not part of fKinds.** That one comes from the two documents' change COUNTERS, and
 		  a row refresh deliberately leaves it alone because reading the counters again gives the
 		  same answer. This is a finding of the DIFF -- it does not exist until the two versions have
 		  been compared -- so putting it there would break that promise. */
 	KCMStoryAttrKind fAttrKind;
 
+	/** HOW MANY DIFFERENT KINDS of attribute the children found - 0, 1 or 2 today.
+
+		★THE ONE MORE FACT SetRowChanges said a "Ruby+" would need (2026-09-03, user's ask: a story
+		whose text stood still while BOTH its ruby and its kenten moved read as "Ruby" alone, and
+		the kenten half of the edit was invisible from the list). fAttrKind names the FIRST kind
+		seen; this says whether there were more, and KindLabel appends the same '+' it appends to
+		"Text" when a second counter moved. **A count and not a second kind field**, so that a
+		third attribute costs nothing here: the label is "first kind" plus "there is more".
+		⚠Worked out beside fAttrKind, from the same walk, and nowhere else. */
+	int32			fAttrKindCount;
+
 	KCMStoryRow()
 		: fStoryUID(kInvalidUID), fKinds(kKCMStoryKindNone), fFrameUID(kInvalidUID),
 		  fPageUID(kInvalidUID), fPageIndex(kMaxInt32), fTextCompared(kFalse),
-		  fAttrKind(kKCMStoryAttrNone) {}
+		  fAttrKind(kKCMStoryAttrNone), fAttrKindCount(0) {}
 };
 
 /** The first frame a story is placed in -- where a jump to that story should go.

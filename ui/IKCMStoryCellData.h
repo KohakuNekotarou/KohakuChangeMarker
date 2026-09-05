@@ -70,12 +70,21 @@ public:
 			stays empty and the old reading is read in the message area). The row's HEIGHT is
 			decided from the same fact, in KCMStoryTreeWidgetMgr.
 	*/
-	virtual void SetSegments(const PMString& pre, const PMString& mid, const PMString& post,
-							 const PMString& ruby, bool16 twoLines) = 0;
+	/** @param attrKind WHICH attribute the upper line belongs to - KCMStoryAttrKind as a plain
+		 int32, the same way it crosses the model/UI boundary.
 
-	/** Read back what was written. Answers empty strings and kFalse before the first apply. */
+		★★★IT IS NOT ENOUGH TO KNOW THAT THERE IS AN UPPER LINE. Ruby's value is a READING and is
+		written out as it stands; kenten's is a KIND ("Bullseye") and is drawn as a MARK. Handing
+		the cell only the string and a two-line flag is exactly the state this panel was in when
+		kenten was withdrawn in August: the name of a mark was painted over the base text as though
+		somebody could read it aloud. **The cell has to be told which it is looking at**, and
+		IKCMStoryEditsFacade.h says the same thing about every other place that asks. */
+	virtual void SetSegments(const PMString& pre, const PMString& mid, const PMString& post,
+							 const PMString& ruby, bool16 twoLines, int32 attrKind) = 0;
+
+	/** Read back what was written. Answers empty strings, kFalse and 0 before the first apply. */
 	virtual void GetSegments(PMString& outPre, PMString& outMid, PMString& outPost,
-							 PMString& outRuby, bool16& outTwoLines) const = 0;
+							 PMString& outRuby, bool16& outTwoLines, int32& outAttrKind) const = 0;
 };
 
 #endif // __IKCMStoryCellData_h__

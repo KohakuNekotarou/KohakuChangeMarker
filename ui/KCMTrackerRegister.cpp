@@ -37,6 +37,11 @@ CREATE_PMINTERFACE(KCMTrackerRegister, kKCMTrackerRegisterImpl)
 void KCMTrackerRegister::Register(ITrackerFactory* factory)
 {
 	factory->InstallTracker(kLayoutWidgetBoss, kKCMToolBoss, kKCMTrackerBoss);
+	// The cat-paw stamp tool's tracker (2026-09-04): the same layout widget, a different tool.
+	// One registrar serves both tools -- InstallTracker is keyed by (widget, tool), so a second
+	// entry adds a tracker rather than replacing the first. Being a subtool of the KCM tool
+	// makes no difference here: what is installed against is the tool boss itself.
+	factory->InstallTracker(kLayoutWidgetBoss, kKCMPawToolBoss, kKCMPawTrackerBoss);
 }
 
 // End, KCMTrackerRegister.cpp.

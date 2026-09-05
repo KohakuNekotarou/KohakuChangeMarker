@@ -100,6 +100,12 @@ REGISTER_PMINTERFACE(KCMTracker, kKCMTrackerImpl)	// the drag engine (KCMTracker
 REGISTER_PMINTERFACE(KCMTrackerEH, kKCMTrackerEHImpl)	// its event handler
 REGISTER_PMINTERFACE(KCMTrackerRegister, kKCMTrackerRegisterImpl)	// registers the tracker with the application (KCMTrackerRegister.cpp)
 REGISTER_PMINTERFACE(KCMCheckCursorProvider, kKCMCursorProviderImpl)	// the tool's cursor (CToolCursorProvider subclass; KCMCursorProvider.cpp)
+// The cat-paw stamp tool (2026-09-04): a subtool of the one above, living in its flyout.
+REGISTER_PMINTERFACE(KCMPawTool, kKCMPawToolImpl)	// ★PERSIST form, as the tool above -- IID_IPMPERSIST saves the selected state (KCMPawTool.cpp)
+REGISTER_PMINTERFACE(KCMPawTracker, kKCMPawTrackerImpl)	// one press places a paw, or lifts the one under it (KCMPawTracker.cpp)
+REGISTER_PMINTERFACE(KCMPawTrackerEH, kKCMPawTrackerEHImpl)	// its event handler
+REGISTER_PMINTERFACE(KCMPawCursorProvider, kKCMPawCursorProviderImpl)	// the pink paw cursor (KCMPawCursorProvider.cpp)
+REGISTER_PMINTERFACE(KCMToolButtonEH, kKCMToolButtonEHImpl)	// the panel tool button's press-and-hold: a click picks the tool on show, a hold swaps to the other (KCMToolButtonEH.cpp)
 
 // Injected into the document window, view syncing, thumbnails
 REGISTER_PMINTERFACE(KCMScrollMapView, kKCMScrollMapViewImpl)	// ★PERSIST form. The scroll-map strip (DVControlView subclass; KCMScrollMap.cpp)

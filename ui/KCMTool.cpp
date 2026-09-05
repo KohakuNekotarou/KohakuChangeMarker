@@ -134,13 +134,13 @@ bool16 KCMActivateOwnTool()
 void KCMTool::Select()
 {
 	CTool::Select();					// base first - it tells the selection the tool is changing
-	KCMSetToolButtonSelected(kTrue);
+	KCMSyncToolButton();
 }
 
 void KCMTool::Deselect()
 {
 	CTool::Deselect();					// base first, same reason
-	KCMSetToolButtonSelected(kFalse);
+	KCMSyncToolButton();
 }
 
 // Is this plug-in's tool the active one right now? Asked when the panel is (re)built, so a panel

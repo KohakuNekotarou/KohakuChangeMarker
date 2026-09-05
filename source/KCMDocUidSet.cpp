@@ -17,6 +17,7 @@
 
 #include "KCMDocUidSet.h"
 #include "KCMThreadSafety.h"	// KCMIsSameDoc (a background thread's clone) / the shared-state lock
+#include "KCMExternalSource.h"	// KCMIsDbAlive (the lent Source's page state must survive the close sweep)
 
 //========================================================================================
 // This container is **written by the main thread and read by the background thread's drawing
@@ -243,7 +244,7 @@ void KCMDocUidSet::SweepClosedDocs()
 	Map::iterator it = fMap.begin();
 	while (it != fMap.end())
 	{
-		if (docList->FindDocByDataBase(it->first) == nil)
+		if (!KCMIsDbAlive(docList, it->first))
 			fMap.erase(it++);	// a closed document: drop the state, dereference nothing
 		else
 			++it;

@@ -615,21 +615,24 @@ bool16 KCMStoryJumpToChange(int32 rowIndex, int32 changeIndex)
 	//   ★The label is its own argument rather than the head of the first piece: when the message
 	//     does not fit, the CONTEXT gives way from its outer ends, and a label living in the context
 	//     would be the first thing cut. It is the one piece that has to survive.
-	// ⚠★★★WHICH DOCUMENT fOtherText CAME FROM IS NOT ALWAYS INFERABLE FROM fKind (2026-08-22).
-	//   For a TEXT change it is: the row shows the side that changed, so a deletion (kind 2) shows
-	//   the older side and fOtherText is therefore the newer one.
-	//   For a RUBY change it is NOT: the characters exist in both versions, so KCMStoryDiffRun's
-	//   AddRubyChange always puts the target in fText and the source in fOtherText, with no
-	//   rowShowsOldSide branch to make. Reading fKind alone labelled a removed ruby "Target Text:"
-	//   over text that had come from the SOURCE.
-	//   ⇒ Ask what sort of change it is FIRST. (Found by an independent review of this range, after
-	//     I had read the same diff and called it clean - the fault was reading the new code without
-	//     counting who already reads the values it sets.)
-	const bool16 otherIsTarget = (change.fWhat == IKCMStoryEditsFacade::Change::kWhatText
-								  && change.fKind == 2) ? kTrue : kFalse;
+	// ⚠★★WHICH DOCUMENT fOtherText CAME FROM USED TO DEPEND ON THE KIND OF CHANGE (2026-08-22), and
+	//   getting that wrong once labelled a removed ruby "Target Text:" over text that had come from
+	//   the SOURCE. **That whole question is gone as of 2026-09-01**: every row shows the newer
+	//   version, so fOtherText is the older one for every kind of change there is.
+	//   ★The lesson outlived the branch, and is why the note stays: a value that can come from
+	//   either document must be labelled from what the change IS, never from what it looks like.
+	// ★★★ALWAYS THE SOURCE, BECAUSE THE ROW IS ALWAYS THE TARGET (2026-09-01, user's decision).
+	//   The row shows the newer version for every kind of change now - including a deletion, which
+	//   used to be the exception - so the other side is the older one every time and this label
+	//   never has to work out which document it is looking at.
+	//   ⚠**THE BRANCH THAT STOOD HERE WAS NOT A STYLE CHOICE**: while deletions showed the older
+	//   text in the row, this had to say "Target Text:" for them or it would have labelled the
+	//   newer text as the source. It went out with the rule that made it necessary - and the two
+	//   MUST go together. Restoring one without the other mislabels every deletion in the list.
+	//   (KCMStoryDiffRun's Slice is the other half.)
 	PMString label;
 	label.SetTranslatable(kFalse);
-	label.Append(otherIsTarget ? "Target Text:" : "Source Text:");
+	label.Append("Source Text:");
 
 	// ★★THE OTHER SIDE'S READING GOES WITH IT (2026-08-22). The list shows the NEWER version, so a
 	//   reading that was REMOVED can be seen nowhere else - and the row's own upper line is left
@@ -639,22 +642,28 @@ bool16 KCMStoryJumpToChange(int32 rowIndex, int32 changeIndex)
 	//   default-constructed and reading it anyway would be relying on that rather than on the
 	//   contract.
 	// ⚠★★★AND THE QUESTION IS fAttrKind, NEVER fWhat (corrected 2026-08-23, bug recheck). fWhat says
-	//   "not the words"; it does NOT say the value is something a reader reads. Kenten filled these
-	//   very fields with a KIND - "KentenBlackCircle" - so asking fWhat drew that name over the
-	//   older text as though it were a reading. Kenten is no longer reported at all (user's call the
-	//   same day), which makes the two questions give the same answer again - and that is exactly
-	//   when a stand-in gets left in place until the next attribute arrives. The panel's own cell
-	//   and the row height have asked fAttrKind since the day kenten appeared; this is the third
-	//   place, and it now agrees with them.
+	//   "not the words"; it does NOT say the value is something a reader reads. Kenten fills these
+	//   very fields with a KIND ("BlackCircle"), so asking fWhat drew that name over the older text
+	//   as though it were a reading - the fault the feature was withdrawn for.
+	// ★★AND SINCE 2026-09-01 THE TWO QUESTIONS GIVE DIFFERENT ANSWERS AGAIN: kenten is reported
+	//   once more, so a change reaching here really can be one whose value is a name rather than a
+	//   reading. **That is why the KIND travels beside it** (the last argument below): the box
+	//   draws a name as the MARK it names, exactly as the row does - it never writes it out.
+	// ★★KENTEN COMES THROUGH HERE TOO (2026-09-01, user: "can the kenten be shown above the source
+	//   text, the way ruby is?"). This box shows the OTHER version, so **it is the only place a
+	//   mark that was REMOVED can be seen at all** - the row shows the newer version, where there
+	//   is nothing left to draw. Leaving kenten out of this condition made exactly that case
+	//   invisible, and it was invisible in a way that looked deliberate.
 	PMString otherRuby;
-	if (change.fAttrKind == static_cast<int32>(kKCMStoryAttrRuby))
+	if (change.fAttrKind == static_cast<int32>(kKCMStoryAttrRuby) ||
+		change.fAttrKind == static_cast<int32>(kKCMStoryAttrKenten))
 	{
 		otherRuby = change.fOtherRuby;
 		otherRuby.SetTranslatable(kFalse);
 	}
 
 	KCMSetStatusSegments(label, change.fOtherTextPre, change.fOtherText, change.fOtherTextPost,
-						   otherRuby);
+						   otherRuby, change.fAttrKind);
 
 	return moved;
 }

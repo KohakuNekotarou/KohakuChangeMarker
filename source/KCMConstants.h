@@ -103,6 +103,45 @@ static const uint8 kKCMCheckR = 30, kKCMCheckG = 110, kKCMCheckB = 235;
 static const PMReal kKCMCheckLayoutSizeRatio   = 0.80;	// checkmark size, as a fraction of the page short side
 static const PMReal kKCMCheckLayoutStrokeRatio = 0.12;	// stroke width, as a fraction of the checkmark size
 
+// The cat-paw stamp: the reader's own "I have looked at this spot" mark, placed by the stamp tool
+// at a point on the page. Sized the same way as the tick above -- a fraction of the page's short
+// side -- so it stays similar under zoom and in print, and small, because a page may carry many.
+// ★★THE HIT BOX FOR LIFTING A PAW IS DERIVED FROM THIS ONE VALUE (KCMPawHalfSizeForPage), so
+//   what the reader can see is exactly what they can lift. Writing the size in two places would
+//   let the picture and the target drift apart, and the drift would only show as "sometimes the
+//   paw will not come off" ([[one-question-one-place]]).
+// ⚠The colour lives here too rather than in the drawing file, for the same reason the tick's does.
+static const PMReal kKCMPawSizeRatio = 0.05;	// paw size, as a fraction of the page short side
+
+// ★★THREE COLOURS, ONE SIZE (2026-09-04, the user's decision). ⚠It was the SIZE that the modifier
+//   keys changed for an hour -- 1.6x, then 10x, then 5x -- and the user replaced the whole idea
+//   after putting a big one on a real page: **a bigger paw is the same mark drawn larger, while a
+//   different colour is a different KIND of mark.** Every paw is now the ordinary size and the
+//   keys choose between:
+//       plain press        pink   (the default)
+//       Alt + press        cyan
+//       Shift + Alt press  green
+//   ★The two extra colours are ONES THIS PLUG-IN ALREADY USES -- the ring's cyan (kKCMRingAlt*)
+//     and the registered-page green (kKCMAddedBorder*) -- so KCM keeps one palette rather than
+//     growing a second one beside it.
+//   ⚠The pink is the one of the three that is NOT shared: it exists so that a paw is never taken
+//     for the red ring (a change), the green "/" (registered) or the blue tick (Check).
+static const uint8 kKCMPawR = 240, kKCMPawG = 120, kKCMPawB = 165;	// plain press: pink
+static const uint8 kKCMPawCyanR = 0, kKCMPawCyanG = 255, kKCMPawCyanB = 255;	// Alt + press
+static const uint8 kKCMPawGreenR = 0, kKCMPawGreenG = 200, kKCMPawGreenB = 0;	// Shift + Alt + press
+
+// Which of the three a stamp was placed in.
+// ★An enum rather than three stored numbers: the colours themselves live above, in one place, so
+//   changing a shade never means going near the saved data ([[one-question-one-place]]).
+// ⚠kKCMPawColourPink is 0 on purpose -- a stamp saved before colours existed reads back as pink,
+//   which is what it was drawn in.
+enum KCMPawColour
+{
+	kKCMPawColourPink	= 0,
+	kKCMPawColourCyan	= 1,
+	kKCMPawColourGreen	= 2
+};
+
 // Fill that shows which areas are excluded from the comparison as page-number regions. While
 // the exclusion toggle is on, every excluded rectangle is painted in translucent green so the
 // excluded area can be seen, thin enough that the page number underneath still shows through.

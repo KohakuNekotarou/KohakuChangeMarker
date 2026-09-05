@@ -23,6 +23,8 @@
 // Project includes:
 #include "KCMBoundaryID.h"	// IID_IKCMPAGEFLAGSFACADE. The boundary header rather than KCMID.h,
 							// for the reason given at the same spot in IKCMCompareFacade.h.
+#include "OMTypes.h"			// UID -- which page a paw sits on
+#include "PMReal.h"			// the paw's coordinates and its size
 #include "KCMPageFlagState.h"	// KCMPageToggleState. A header of TYPES ONLY, which is what a
 							// header the UI includes has to be: this used to reach the type
 							// through KCMPageMap.h, whose 13 model-side free functions the UI
@@ -67,6 +69,64 @@ public:
 		re-compare, then restore the ticks -- but only on pages that still carry a mark. Armed
 		only. */
 	virtual void	LoadChecksAndRegister() = 0;
+
+	// ---- the cat-paw stamps --------------------------------------------------------------
+	//
+	// ★They belong to this facade because they are the same KIND of thing as Register and Check:
+	//   a mark **the reader puts there by hand**, held outside the document. What differs is only
+	//   the grain -- a paw sits at a point on a page rather than flagging the whole page.
+	// ★★★AND BECAUSE THE UI CANNOT REACH THE MODEL ANY OTHER WAY. model and UI are two DLLs, so
+	//   ui/KCMPawTracker.cpp calling KCMPawStampToggleAt() directly does not link (measured
+	//   2026-09-04: LNK2019, three unresolved symbols). **Every crossing is a facade method.**
+
+	/** Place a paw at (x, y) on that page, in one of the three colours (a KCMPawColour: pink for a
+		plain press, cyan for Alt, green for Shift+Alt). baseHalf is half a paw's size on that
+		page, the same value the lift takes.
+		★x and y are measured from the PAGE'S TOP-LEFT in points, never in pasteboard coordinates
+		  -- KCMPawStamp.h carries the measurement that makes that a requirement.
+		★★IT ONLY ADDS, AND IT WILL NOT STACK. Placing and lifting are two intentions and
+		  therefore two gestures; and a press landing on a paw already there does nothing, both at
+		  the user's request on 2026-09-04.
+		@return kTrue when one was placed, kFalse when a paw was already under that point. */
+	virtual bool16	PawStampPlaceAt(IDataBase* db, UID pageUID, const PMReal& x, const PMReal& y,
+	                                int32 colour, const PMReal& baseHalf) = 0;
+
+	/** Lift the paw under (x, y) -- Shift + press (without Alt, which places a green one).
+		baseHalf is half a paw's size on that page (PawHalfSizeForPage); a paw is judged over a
+		SQUARE of that, so what can be seen is what can be lifted.
+		@return kTrue when one was lifted, kFalse when the press landed on none. */
+	virtual bool16	PawStampLiftAt(IDataBase* db, UID pageUID, const PMReal& x, const PMReal& y,
+	                               const PMReal& baseHalf) = 0;
+
+	/** How many paws this document holds. The tool says it on the status line after every press,
+		which is what tells "placed" and "lifted" apart while nothing is drawn yet. */
+	virtual int32	PawStampCount(IDataBase* db) = 0;
+
+	/** Half a paw's drawn size on that page, in points.
+		★★THE ONE PLACE THE SIZE COMES FROM: the tool asks for its hit box and the drawing side
+		  asks for its picture, so what can be seen is exactly what can be lifted. Answers 0 when
+		  the page cannot be measured, which the caller reads as "do not stamp here". */
+	virtual PMReal	PawHalfSizeForPage(IDataBase* db, UID pageUID) = 0;
+
+	// ---- clearing one document's marks (the two flyout items, 2026-09-04) -------------------
+	// ⚠**Which document is the caller's to name**, through IKCMCompareFacade::GetActiveDocDB --
+	//   the one place KCM asks what is in front ([[document-activation-is-presentation]]). These
+	//   take the answer rather than working it out again, so the greying and the command cannot
+	//   end up disagreeing about which document they mean.
+
+	/** Does this document hold any tick -- what greys "Clear Checks in This Document". */
+	virtual bool16	PageCheckHasAny(IDataBase* db) = 0;
+
+	/** "Clear Checks in This Document": drop that document's ticks, and refresh the Pages panel's
+		thumbnails and the layout view with them.
+		@return how many ticks went, for the status line. */
+	virtual int32	ClearChecksInDoc(IDataBase* db) = 0;
+
+	/** "Clear Cat Paws in This Document": the same for the paws.
+		⚠Paws reach no thumbnail (the drawing side excludes them from the isThumb branch), so only
+		  the layout view is refreshed.
+		@return how many paws went. */
+	virtual int32	ClearPawsInDoc(IDataBase* db) = 0;
 };
 
 #endif // __IKCMPageFlagsFacade_h__

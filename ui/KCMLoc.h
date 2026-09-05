@@ -102,15 +102,18 @@ namespace KCMJa
 		u"・登録したページは緑の斜線、ページ数の差で比較相手がいないページは赤の斜線で表示\n"
 		u"・Start済みの状態で登録・解除すると、その場で自動的に比較し直します\n\n"
 		u"【ページのチェック(Check)】\n"
-		u"確認が済んだページにチェック印を付けられます。Start中のみ使用でき、Stopで消えます。\n"
+		u"確認が済んだページにチェック印を付けられます。消すまで残ります(Stopでも消えず、文書を閉じたときに忘れます)。\n"
 		u"・使い方: ページパネルでページを選択して右クリックし、「Check」を選びます(もう一度で解除)\n"
-		u"・Pixel比較モードでは、チェック印を付けられるのは比較枠や斜線などのマークが付いているページだけです。Story比較モードでは、どのページにも付けられます\n"
-		u"・チェック印と登録(Add / Remove)は保存・読込できます。パネルのフライアウトメニューから:\n"
+		u"・比較していなくても、開いているどの文書のどのページにも付けられます。比較中の2文書だけは従来どおりで、Pixel比較モードではマークの付いているページだけ、Story比較モードではどのページにも付けられます\n"
+		u"・チェック印・登録(Add / Remove)・猫の手は保存・読込できます。対象は「アクティブな文書1つ」です。パネルのフライアウトメニューから:\n"
 		// ★A "&" inside a menu name is doubled to "&&" here: this text goes to CAlert::ModalAlert,
 		//   and CAlert eats a lone "&" as a mnemonic ([[ampersand-eaten-in-ui-strings]]; KBS does
 		//   the same).
-		u"　「Save Check && Register」= 現在のチェック印と登録を専用ファイルに保存(保存先のパスを表示)\n"
-		u"　「Load Check && Register」= 保存内容を読み込み、登録を適用して比較し直し、チェック印を復元(Start中のみ)\n"
+		u"　「Save Check && Register」= アクティブな文書が持っている分を専用ファイルに保存(保存先のパスを表示)\n"
+		u"　「Load Check && Register」= 保存内容を読み込みます。その文書が比較中なら、登録を適用して比較し直してから復元します\n"
+		u"　「Clear Checks in This Document」「Clear Cat Paws in This Document」= アクティブな文書の印を消します\n"
+		u"・新旧2つの文書ぶんを残したいときは、タブを切り替えてもう一度保存してください\n"
+		u"・印を1つも持たない文書は書き出さないので、保存を押して既存の記録が消えることはありません\n"
 		u"・保存はこのプラグイン専用のファイル(環境設定フォルダー)に書くだけで、InDesignの文書やワークスペースには一切書き込みません\n"
 		u"・文書を別の場所へ移動したり別名保存したりして保存場所(パス)が変わると、保存したチェック印は復元できません\n\n"
 		u"【ページ比較の更新(Refresh Page Comparison)】\n"
@@ -161,6 +164,14 @@ namespace KCMJa
 		u"・テキストフレームのあふれに加え、表のセル単独のあふれ(赤丸)も検出\n"
 		u"・Prev/Nextであふれ箇所を巡回(比較中は各ページ 変更→あふれの順)\n"
 		u"・編集後は「Refresh Overset」で走査し直し(Find OversetがONのときのみ)\n\n"
+		u"【猫の手スタンプ(Kohaku Paw Stamp)】\n"
+		u"ページの好きな場所に肉球の目印を置けます。ツールボックスの Kohaku Change Marker ツール(またはパネルのツールボタン)を押しっぱなしにするとフライアウトが開くので、スタンプツールを選びます。\n"
+		u"・クリックで置く／Shift+クリックで剥がす／Alt+クリックはシアン、Shift+Alt+クリックは緑\n"
+		u"・すでに肉球がある場所には重ねて置けません\n"
+		u"・比較していなくても使え、Stopでも消えません(チェック印と同じ)\n"
+		u"・画面には常に出ます。印刷とPDFには「Print comparison marks」がONのときだけ出ます。濃さは「Marks opacity 25% / 75%」に連動します\n"
+		u"・文書には一切書き込みません。肉球はこのプラグイン専用のファイルに入り、「Save Check && Register」で一緒に保存されます\n"
+		u"・フライアウトの「Clear Cat Paws in This Document」でアクティブな文書の肉球だけを消せます(チェック印は別の項目)\n\n"
 		u"【注意】どのような問題が起こっても責任を取れません。ご利用は自己責任でお願いします。";
 
 	// (About has no Japanese: it is one English line, "<name> version x.y.z", with nothing to

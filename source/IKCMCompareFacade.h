@@ -13,6 +13,20 @@
 //  the other .pln. Every call that crosses the boundary has to go through an interface on a
 //  boss. That is the whole reason this file exists.
 //
+//  ★A THIRD READER SINCE 2026-09-02: Kohaku InDesign MCP includes this header
+//  (KIDMCPKcmBridge.cpp - compiled straight against source/sdksamples/KCM/source, no copy) and
+//  calls the lent-Source methods at the end of this interface through Utils<IKCMCompareFacade>().
+//  It ships on its own schedule, so this interface's vtable is now an ABI between two PRODUCTS,
+//  not between two halves of one build. The rule that follows from that:
+//    - add methods at the END only; never insert, reorder or remove a method that stands. A
+//      mismatch does not fail to load - the other product calls the wrong slot, silently.
+//    - when that rule cannot be kept, do what Adobe does with a shipped facade: derive a NEW
+//      interface with a NEW IID and leave this one standing (IDigitalPublishingFacade2 : public
+//      IDigitalPublishingFacade, IID_IDIGITALPUBLISHINGFACADE2 - the one such pair among the
+//      SDK's public interfaces, graphics/IDigitalPublishingFacade2.h).
+//  (Written by the API re-audit of 2026-09-03, which found the third reader a day after it
+//  arrived and no rule anywhere. The methods it calls are the last three below.)
+//
 //========================================================================================
 
 #ifndef __IKCMCompareFacade_h__
@@ -276,17 +290,20 @@ public:
 		@warning like StoreSessionStatus, it must not notify. */
 	virtual void		StoreSessionStatusSegments(const PMString& label, const PMString& pre,
 												   const PMString& mid, const PMString& post,
-												   const PMString& ruby) = 0;
+												   const PMString& ruby, int32 attrKind) = 0;
 
 	/** The stored message in its five pieces. The UI reads this back when the panel re-appears, so
 		that a coloured message comes back coloured rather than flattening into one colour.
 		A message stored as one string answers with that string in outMid and the rest empty.
 		outRuby is the READING drawn above the changed characters, and it comes back here for the
 		same reason the colours do: a re-shown panel that lost only the reading would be showing
-		the older version WITHOUT the very thing the row could not show. */
+		the older version WITHOUT the very thing the row could not show.
+		★outAttrKind says WHICH attribute that upper line belongs to, so a kenten comes back as its
+		MARK rather than as the name of one - the same question every other reader of these two
+		fields has to ask (IKCMStoryEditsFacade.h). */
 	virtual void		GetSessionStatusSegments(PMString& outLabel, PMString& outPre,
 												 PMString& outMid, PMString& outPost,
-												 PMString& outRuby) = 0;
+												 PMString& outRuby, int32& outAttrKind) = 0;
 
 	/** Shutdown only: empty the stored string, so the model's static PMString has no live heap
 		buffer to free when the plug-ins unload (Mac unload order differs from Windows).
@@ -453,6 +470,76 @@ public:
 		inside: the status line belongs to the UI, and the flyout item that asked is the one
 		that reports. */
 	virtual void		ExportChangedPagesTSV(PMString& outMessage) = 0;
+
+	// ---- a Source that is not an open document (2026-09-02) -------------------------------
+	//
+	// Kohaku InDesign MCP holds a task-start copy of a document (an IDataBase it made and owns),
+	// and lends it here so that "what changed since the task started" can be seen as marks.
+	// ★THE ONLY ENTRANCE THROUGH WHICH A DATABASE THAT IS NOT IN IDocumentList MAY BECOME THE
+	//  SOURCE. Everywhere else KCM asks "is it in the list", and a lent database is not.
+	// ⚠THE CONTRACT WITH THE LENDER: call ReleaseExternalSourceDB BEFORE deleting the database,
+	//  every time, on every path -- KCM holds the pointer for as long as the database is the
+	//  chosen or the armed Source (a Stop keeps the choice) and cannot find out on its own that
+	//  it has gone. See KCMExternalSource.h.
+
+	/** Start with `target` as the Target and `sourceDB` as the Source. Stops an armed comparison
+		first, and CHOOSES both (as Set as Target / Set as Source would): a Stop keeps the pair on
+		the panel, and the flyout's own Start compares against `sourceDB` again until it is
+		released. `sourceLabel` is shown on the panel's Source: line. nil does nothing. */
+	virtual void		StartComparisonWithSourceDB(IDocument* target, IDataBase* sourceDB,
+													const PMString& sourceLabel) = 0;
+
+	/** The lender is about to delete `sourceDB`: if it is the armed Source, the comparison is
+		stopped; if it is the chosen Source, the choice is dropped; either way the status line says
+		so. Any other database is ignored. */
+	virtual void		ReleaseExternalSourceDB(IDataBase* sourceDB) = 0;
+
+	/** kTrue, and outLabel filled, when `db` is the lent Source (chosen or armed) -- the panel
+		asks this when FindDocByDataBase has no name for it. */
+	virtual bool16		GetExternalSourceLabel(IDataBase* db, PMString& outLabel) = 0;
+
+	// ---- clearing the chosen pair (2026-09-05) --------------------------------------------
+
+	/** Drop both chosen documents, so that the next Start falls back to the automatic rule
+		(active document = Target, the earliest-opened other document = Source). The panel's
+		Target:/Source: lines go back to bare labels, and a lent Source is forgotten with them.
+
+		@warning it does NOT stop a running comparison. The armed pair is what is on screen;
+		this changes only what the NEXT Start will use. The flyout item is greyed while a
+		comparison is armed, exactly as the two "Set as" items it undoes are.
+
+		★AT THE END OF THIS INTERFACE BECAUSE THE VTABLE IS AN ABI (see the head of this
+		file): Kohaku InDesign MCP calls the three methods above through the same vtable, so a
+		method inserted anywhere but the end would move their slots and be called silently. */
+	virtual void		ClearChosenDocs() = 0;
+
+	// ---- refreshing a running comparison (2026-09-05) -------------------------------------
+
+	/** Compare the SAME TWO DOCUMENTS again -- the flyout's "Refresh Comparison", under Start.
+
+		What it is for: the reader has edited one of the two and wants the marks to say what is
+		true now. It was Stop-then-Start before this existed, which is two presses and takes the
+		marks off the screen in between.
+
+		★**IT RUNS THE START PROCEDURE**, with the armed pair, so a refresh and a start cannot
+		come to disagree about what starting means. Nothing is stopped first: arming is
+		idempotent, and re-comparing an armed pair is what the register toggle already does.
+		⚠It does nothing when nothing is armed, or when either document has gone -- ask
+		IsArmed() and ArmedDocsAlive() to decide whether to OFFER it (that is what the menu's
+		enable state does). This is a full comparison, so it costs what a Start costs.
+		⚠**NOT the two partial refreshes.** RefreshSelectedPages above re-does the pages chosen
+		in the Pages panel, and IKCMStoryEditsFacade::RefreshRow re-does one row; both leave the
+		rest alone. This one re-does everything, in whichever mode is current.
+		★If the comparison is CANCELLED (the progress bar's Cancel, on longer runs), the
+		comparison is STOPPED rather than left armed with no marks -- see KCMComparisonRun.h.
+
+		⚠★★★**IT STANDS HERE, AFTER ClearChosenDocs, AND THAT IS THE WHOLE POINT.** It was first
+		written between StartComparisonFor and CanStartComparison on 2026-09-04, which moved the
+		slot of every method after it -- including the three Kohaku InDesign MCP calls. That does
+		not fail to load: the other product calls the wrong slot, silently, and only when the two
+		are built apart. Moved here on 2026-09-05. **The rule at the head of this file is not
+		advice.** */
+	virtual void		RefreshComparison() = 0;
 };
 
 #endif // __IKCMCompareFacade_h__

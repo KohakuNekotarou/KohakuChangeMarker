@@ -48,6 +48,13 @@ static PMString sStatusMid;
 static PMString sStatusPost;
 static PMString sStatusRuby;
 
+/** Which attribute sStatusRuby belongs to (KCMStoryAttrKind as a plain int32).
+	★A KENTEN'S VALUE IS A KIND, A RUBY'S IS A READING, and they share the field above - so the
+	panel cannot redraw a restored message correctly without this. ⚠Not a PMString, so it is not
+	in the Clear list for the heap reason; it is reset there anyway, because a stale kind beside
+	an empty string is a state nothing should be able to read. */
+static int32 sStatusAttrKind = 0;
+
 // Get at the application's subject. During shutdown the session and the application cannot be
 // resolved, so nil comes back and the caller gives up quietly (KCM's rule everywhere: do not touch
 // what has closed or gone).
@@ -191,6 +198,7 @@ void KCMStoreSessionStatus(const PMString& s)
 	sStatusMid = s;
 	sStatusPost.Clear();
 	sStatusRuby.Clear();
+	sStatusAttrKind = 0;
 }
 
 // KCMStoreSessionStatusSegments (declared in KCMModelNotify.h) -- remember the split, do not notify.
@@ -198,13 +206,14 @@ void KCMStoreSessionStatus(const PMString& s)
 // the other side of the edit.
 void KCMStoreSessionStatusSegments(const PMString& label, const PMString& pre,
 									 const PMString& mid, const PMString& post,
-									 const PMString& ruby)
+									 const PMString& ruby, int32 attrKind)
 {
 	sStatusLabel = label;
 	sStatusPre   = pre;
 	sStatusMid   = mid;
 	sStatusPost  = post;
 	sStatusRuby  = ruby;
+	sStatusAttrKind = attrKind;
 }
 
 // KCMGetSessionStatus (declared in KCMModelNotify.h)
@@ -228,13 +237,15 @@ void KCMGetSessionStatus(PMString& out)
 
 // KCMGetSessionStatusSegments (declared in KCMModelNotify.h)
 void KCMGetSessionStatusSegments(PMString& outLabel, PMString& outPre,
-								   PMString& outMid, PMString& outPost, PMString& outRuby)
+								   PMString& outMid, PMString& outPost, PMString& outRuby,
+								   int32& outAttrKind)
 {
 	outLabel = sStatusLabel;	outLabel.SetTranslatable(kFalse);
 	outPre   = sStatusPre;		outPre.SetTranslatable(kFalse);
 	outMid   = sStatusMid;		outMid.SetTranslatable(kFalse);
 	outPost  = sStatusPost;		outPost.SetTranslatable(kFalse);
 	outRuby  = sStatusRuby;		outRuby.SetTranslatable(kFalse);
+	outAttrKind = sStatusAttrKind;
 }
 
 // KCMClearSessionStatus (declared in KCMModelNotify.h)
@@ -248,6 +259,7 @@ void KCMClearSessionStatus()
 	sStatusMid.Clear();
 	sStatusPost.Clear();
 	sStatusRuby.Clear();
+	sStatusAttrKind = 0;
 }
 
 // End of KCMModelNotify.cpp.

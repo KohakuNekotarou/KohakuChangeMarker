@@ -79,13 +79,22 @@ public:
 			a fixed height that must match its neighbours' even when there is no reading to draw.
 			This box has no neighbours to line up with, so an empty reading simply costs no line.
 	*/
+	/** @param attrKind WHICH attribute the upper line belongs to - KCMStoryAttrKind as a plain
+		 int32 (0 = none, 1 = ruby, 2 = kenten).
+
+		★★IT IS PASSED, NEVER GUESSED FROM THE STRING. A ruby's value is a reading and is written
+		out; a kenten's is a KIND and is drawn as the mark. Both arrive in `ruby`, so the only thing
+		that can tell them apart is this - and a reading could perfectly well BE the word
+		"Bullseye". The same rule the row's cell follows (IKCMStoryCellData.h) and the one
+		IKCMStoryEditsFacade.h states outright. */
 	virtual void SetSegments(const PMString& label, const PMString& pre,
 							 const PMString& mid, const PMString& post,
-							 const PMString& ruby) = 0;
+							 const PMString& ruby, int32 attrKind) = 0;
 
-	/** Read back what was written. Answers empty strings before the first message. */
+	/** Read back what was written. Answers empty strings and 0 before the first message. */
 	virtual void GetSegments(PMString& outLabel, PMString& outPre,
-							 PMString& outMid, PMString& outPost, PMString& outRuby) const = 0;
+							 PMString& outMid, PMString& outPost, PMString& outRuby,
+							 int32& outAttrKind) const = 0;
 };
 
 #endif // __IKCMStatusTextData_h__

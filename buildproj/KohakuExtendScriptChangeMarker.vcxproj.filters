@@ -90,6 +90,9 @@
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMPageCheck.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMPawStamp.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMPageNumberMarker.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -102,10 +105,10 @@
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMMemXferBytes.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMStoryXml.cpp">
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMStoryDiffRun.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMStoryDiffRun.cpp">
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMTextRead.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMStoryMarker.cpp">
@@ -152,13 +155,13 @@
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMMemXferBytes.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMStoryXml.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMStoryKinds.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMStoryDiffRun.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMTextRead.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\IKCMStoryMarkFacade.h">
@@ -234,6 +237,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPageCheck.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPawStamp.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPageNumberMarker.h">

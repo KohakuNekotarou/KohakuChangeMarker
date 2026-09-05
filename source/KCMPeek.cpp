@@ -52,11 +52,13 @@
 #include "KCMDrawEventHandler.h"   // the engine's shared statics
 #include "KCMCore.h"               // the arm/disarm/state declarations
 #include "KCMComparisonRun.h"      // KCMForgetChosenDocsThatClosed -- the chosen Target/Source lose whichever document closed
+#include "KCMExternalSource.h"     // KCMIsDbAlive (the lent Source counts as alive)
 #include "KCMModelNotify.h"	// KCMNotifyStatus - the model tells the UI, it never calls it
 // The UI's KCMViewLookup.h is deliberately absent. Resolving which view the mouse is over belongs
 //   to the caller (the UI); this .cpp only peeks at the spread of the point it is given.
 #include "KCMPageMap.h"            // KCMBuildPairing (the exclusion pairing) / KCMPageMapReadSelection / KCMPageMapSweepClosedDocs
 #include "KCMPageCheck.h"          // KCMPageCheckClearAllDocs / KCMPageCheckSweepClosedDocs (clearing the ticks)
+#include "KCMPawStamp.h"           // KCMPawStampSweepClosedDocs (the cat-paw stamps, same sweep)
 #include "KCMColorSampler.h"       // KCMSampleCmykEndDrag (the pairing cached while Alt + left is held; emptied at shutdown)
 #include "KCMThreadSafety.h"       // KCMIsMainThread -- a background thread cannot tell whether a document is still open
 #include "KCMPageNumberMarker.h"   // KCMInvalidatePageNumberMarkerRects (dropping the page-number exclusion rectangles)
@@ -440,29 +442,13 @@ static bool16 KCMRefreshComparisonCore(IDataBase* targetDB, IDataBase* sourceDB,
 	// The older-version images are stale now; the next peek rebuilds them at the current zoom.
 	KCMDrawEventHandler::DropAllOrig();
 
-	// The ticks: a page that lost its ring in this partial re-comparison loses its tick with it --
-	//   "the frame is gone, and the memory of having checked it goes with it".
-	//   **This must run before the KCMInvalidateDB below**: untick after invalidating and the
-	//   layout is redrawn with the old ticks still on it.
-	// **The pages the prune unticked are collected and merged into the touched set.** Without them
-	//   the per-UID purge misses those pages every time: losing a tick changes the thumbnail, but
-	//   once the tick is gone the page is in none of the sets the current state can produce, so it
-	//   **cannot be recovered afterwards** (see outUnchecked in KCMPageCheck.h).
-	std::map<IDataBase*, std::set<UID> > uncheckedByDoc;
-	KCMPageCheckPruneToMarked(&uncheckedByDoc);
-	{
-		std::map<IDataBase*, std::set<UID> >::const_iterator u = uncheckedByDoc.find(targetDB);
-		if (u != uncheckedByDoc.end())
-			touchedTargetPages.insert(u->second.begin(), u->second.end());
-		u = uncheckedByDoc.find(sourceDB);
-		if (u != uncheckedByDoc.end())
-			touchedSourcePages.insert(u->second.begin(), u->second.end());
-		// @warning **documents other than the target and the source are not collected** -- the
-		//   notification carries at most two. Nothing can be in them today: ticks only go on the
-		//   Target and the Source of a running comparison, and Stop clears them all
-		//   (KCMPageCheck.h). Should a third document ever become tickable, this is where the
-		//   pages would go missing.
-	}
+	// ★**THE TICKS ARE NOT TOUCHED** (2026-09-04). A tick is the reader's own "I have looked at
+	//   this page" mark, so a page losing its ring in a re-comparison is no reason to take the
+	//   mark away. The prune that used to do exactly that is gone, and with it the collecting of
+	//   the pages it unticked and the merging of those into the touched set.
+	//   ⚠**The comment removed from here ended in a warning that came true**: "should a third
+	//   document ever become tickable, this is where the pages would go missing". A third document
+	//   did become tickable -- on the same day, and the prune went for the same reason.
 
 	KCMInvalidateDB(targetDB);
 	// The Source's layout views are redrawn too: gaining or losing entries changes how its
@@ -626,8 +612,8 @@ bool16 KCMArmedDocsAlive()
 	InterfacePtr<IApplication> app(session != nil ? session->QueryApplication() : nil);
 	InterfacePtr<IDocumentList> docList(app ? app->QueryDocumentList() : nil);
 	if (docList == nil ||
-	    docList->FindDocByDataBase(sPeekTargetDB) == nil ||
-	    docList->FindDocByDataBase(sPeekSourceDB) == nil)
+	    !KCMIsDbAlive(docList, sPeekTargetDB) ||
+	    !KCMIsDbAlive(docList, sPeekSourceDB))
 	{
 		KCMHandleDocsClosed();
 		return kFalse;
@@ -824,6 +810,8 @@ void KCMDoDisarmMousePeek(IDataBase* db)
 	// As on the arming side, dropping the sync caches and clearing the gesture state are left to
 	//   the UI: disarming is immediately followed by KCMStopComparison sending
 	//   kKCMMarksClearedMessage.
+	// (The lent Source's registration is NOT dropped here: it stays chosen after a Stop, as a
+	//  chosen document does -- KCMExternalSource.h. The lender's Release is what ends it.)
 	sPeekArmed = kFalse;
 	sPeekTargetDB = nil;
 	sPeekSourceDB = nil;
@@ -939,7 +927,7 @@ void KCMHandleDocsClosed()
 	//   is safe while quitting, and no redraw is needed -- the crosses were never on any other
 	//   document, and the closed one's window is gone.
 	if (KCMDrawEventHandler::sOversetOn && KCMDrawEventHandler::sOversetDB != nil &&
-	    docList->FindDocByDataBase(KCMDrawEventHandler::sOversetDB) == nil)
+	    !KCMIsDbAlive(docList, KCMDrawEventHandler::sOversetDB))
 	{
 		KCMDrawEventHandler::DropOverset();
 	}
@@ -951,12 +939,12 @@ void KCMHandleDocsClosed()
 	// same document as sPeekSourceDB, but it is checked separately so that the answer does not
 	// depend on anything still being armed.
 	const bool16 comparisonDocClosed =
-		(KCMDrawEventHandler::sDB     != nil && docList->FindDocByDataBase(KCMDrawEventHandler::sDB)     == nil) ||
-		(KCMDrawEventHandler::sOrigDB != nil && docList->FindDocByDataBase(KCMDrawEventHandler::sOrigDB) == nil) ||
-		(KCMDrawEventHandler::sSrcDB  != nil && docList->FindDocByDataBase(KCMDrawEventHandler::sSrcDB)  == nil) ||
+		(KCMDrawEventHandler::sDB     != nil && !KCMIsDbAlive(docList, KCMDrawEventHandler::sDB))     ||
+		(KCMDrawEventHandler::sOrigDB != nil && !KCMIsDbAlive(docList, KCMDrawEventHandler::sOrigDB)) ||
+		(KCMDrawEventHandler::sSrcDB  != nil && !KCMIsDbAlive(docList, KCMDrawEventHandler::sSrcDB))  ||
 		(sPeekArmed &&
-		 ((sPeekTargetDB != nil && docList->FindDocByDataBase(sPeekTargetDB) == nil) ||
-		  (sPeekSourceDB != nil && docList->FindDocByDataBase(sPeekSourceDB) == nil)));
+		 ((sPeekTargetDB != nil && !KCMIsDbAlive(docList, sPeekTargetDB)) ||
+		  (sPeekSourceDB != nil && !KCMIsDbAlive(docList, sPeekSourceDB))));
 
 	// The surviving databases are declared outside the block below because the notification at the
 	//   end of the function carries them too.
@@ -971,17 +959,17 @@ void KCMHandleDocsClosed()
 	{
 		// Record the databases that are still open before DropAll and DropAllOrig clear them. They
 		// have passed the liveness check, so invalidating their views later is safe.
-		if (KCMDrawEventHandler::sDB != nil && docList->FindDocByDataBase(KCMDrawEventHandler::sDB) != nil)
+		if (KCMDrawEventHandler::sDB != nil && KCMIsDbAlive(docList, KCMDrawEventHandler::sDB))
 			survivorTargetDB = KCMDrawEventHandler::sDB;
-		if (KCMDrawEventHandler::sOrigDB != nil && docList->FindDocByDataBase(KCMDrawEventHandler::sOrigDB) != nil)
+		if (KCMDrawEventHandler::sOrigDB != nil && KCMIsDbAlive(docList, KCMDrawEventHandler::sOrigDB))
 			survivorOrigDB = KCMDrawEventHandler::sOrigDB;
-		if (KCMDrawEventHandler::sSrcDB != nil && docList->FindDocByDataBase(KCMDrawEventHandler::sSrcDB) != nil)
+		if (KCMDrawEventHandler::sSrcDB != nil && KCMIsDbAlive(docList, KCMDrawEventHandler::sSrcDB))
 			survivorSrcDB = KCMDrawEventHandler::sSrcDB;
 		if (sPeekArmed)
 		{
-			if (survivorTargetDB == nil && sPeekTargetDB != nil && docList->FindDocByDataBase(sPeekTargetDB) != nil)
+			if (survivorTargetDB == nil && sPeekTargetDB != nil && KCMIsDbAlive(docList, sPeekTargetDB))
 				survivorTargetDB = sPeekTargetDB;
-			if (survivorOrigDB == nil && sPeekSourceDB != nil && docList->FindDocByDataBase(sPeekSourceDB) != nil)
+			if (survivorOrigDB == nil && sPeekSourceDB != nil && KCMIsDbAlive(docList, sPeekSourceDB))
 				survivorOrigDB = sPeekSourceDB;
 		}
 
@@ -1000,7 +988,12 @@ void KCMHandleDocsClosed()
 		//   stay on whichever of the two survived and creep into the pairing at the next Start.
 		//   (Emptying a map, so nothing is dereferenced.)
 		KCMPageMapClearAllDocs();
-		KCMPageCheckClearAllDocs();	// the ticks, which only exist while a comparison runs
+		// ★THE TICKS ARE **NOT** CLEARED HERE (2026-09-04). They no longer belong to the
+		//   comparison, so emptying every document's ticks because one COMPARED document closed
+		//   would take a third document's with it -- a document the reader never touched.
+		//   What does have to go, the ticks of the document that actually closed, is taken by
+		//   KCMPageCheckSweepClosedDocs further down this same function, which runs whether a
+		//   comparison was involved or not.
 		// The Story Edits list goes as well: its rows hold story and page UIDs of the Target, which
 		//   point at nothing once that document has closed. The panel's tree and heading are
 		//   rebuilt from the real state by the UI, so throwing the state away is all that is needed
@@ -1051,8 +1044,8 @@ void KCMHandleDocsClosed()
 	IDataBase* hideSrcDB = KCMGetHideUnchangedSrcDB();
 	if (hideDB != nil || hideSrcDB != nil)
 	{
-		const bool16 hideTargetClosed = (hideDB    != nil && docList->FindDocByDataBase(hideDB)    == nil);
-		const bool16 hideSourceClosed = (hideSrcDB != nil && docList->FindDocByDataBase(hideSrcDB) == nil);
+		const bool16 hideTargetClosed = (hideDB    != nil && !KCMIsDbAlive(docList, hideDB));
+		const bool16 hideSourceClosed = (hideSrcDB != nil && !KCMIsDbAlive(docList, hideSrcDB));
 		if (hideTargetClosed || hideSourceClosed || comparisonDocClosed)
 		{
 			// While quitting, kFalse discards the state without issuing the command that shows the
@@ -1068,6 +1061,7 @@ void KCMHandleDocsClosed()
 	// do not affect what the panel shows, so `changed` is deliberately not set.
 	KCMPageMapSweepClosedDocs();
 	KCMPageCheckSweepClosedDocs();	// and the ticks, the same way
+	KCMPawStampSweepClosedDocs();	// and the cat-paw stamps, likewise
 
 	// All of the screen-side clean-up travels on **this one notification**.
 	//

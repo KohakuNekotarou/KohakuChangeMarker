@@ -65,7 +65,7 @@
 														// ★Adobe Exchange の公開版は **1.3.0**(2026-08-07 承認・公開)。1.2.1 は提出しないまま 1.3.0 へ繰り上げた(機能追加が入ったので patch では足りない)。
 														// ★★**「版数が◯◯だった時期にコードへ入れた」ことと「提出した◯◯のビルドに入っている」ことは別物**。取り違えると提出説明を誤る(2026-08-07 に実際に踏んだ)ので、増分は**提出したビルドを境に**2段へ分けてある。★提出文を起こすときは【次に提出する分】だけを読むこと。
 														//
-														// ■■【2.0.0 = 次に提出する分】★公開版 1.3.0 から見た増分。**提出説明はここだけを使う**。(版数は 1.3.1→1.4.0→1.5.0→1.6.0→2.0.0 と繰り上げ。①〜⑦は 1.4.0 のとき、⑧⑨は 1.5.0 のときと同一で、2026-08-19 に⑪・2026-08-20 に⑫・2026-08-21 に⑬が加わった。⚠**⑩は「設定が初期化される」という注意書きで、機能の増分ではない**＝番号を振るときに数え間違えやすい。★**major を上げた理由は⑬**＝2026-08-21 ユーザー判断)
+														// ■■【2.0.0 = 次に提出する分】★公開版 1.3.0 から見た増分。**提出説明はここだけを使う**。(版数は 1.3.1→1.4.0→1.5.0→1.6.0→2.0.0 と繰り上げ。★★**2026-09-05 に 2.1.0 から 2.0.0 へ戻した**(ユーザー指示)＝**2.0.0 はまだ提出していない**ので、下の⑤末尾が明文化している「**提出していない版数は繰り上げずに中身を足す**」(1.2.1→1.3.0 と同じ考え方)に従う。⇒ **猫の手スタンプ㉕と「✓ を比較非依存に」㉖は 2.0.0 の中身**。①〜⑦は 1.4.0 のとき、⑧⑨は 1.5.0 のときと同一で、2026-08-19 に⑪・2026-08-20 に⑫・2026-08-21 に⑬が加わった。⚠**⑩は「設定が初期化される」という注意書きで、機能の増分ではない**＝番号を振るときに数え間違えやすい。★**major を上げた理由は⑬**＝2026-08-21 ユーザー判断)
 														//   ①パネルにツール切替ボタン(kKCMToolButtonWidgetID) = 押すとツールボックスの琥珀のツールがアクティブになる。絵はツールボックスと同じリソースを参照。★押下表示はツールボックスと双方向に同期する(状態を書くのは ITool::Select/Deselect の1か所だけなので、どちらから選んでも食い違わない)。How to Use の冒頭も「ツールボックス、またはパネルのツールボタン」へ追随済み。
 														//   ②半透明パネルの「不透明に戻す」判定を変更 = カーソルがパネルの矩形の中にある限り、その上にフライアウト・子メニュー・ツールチップが出ていても不透明のまま。公開版 1.3.0 は自分の窓が上に出ると薄くなった(KBS と同じ判定へ揃えたもの)。
 														//   ③★★**Story Edits(パネル下部の開閉セクション) = minor を上げた理由。★2026-08-10 に完成(段階1〜4)＝提出説明に書いてよい。**
@@ -127,7 +127,17 @@
 														//     ⚠★★**公開版からの挙動変更**(2026-08-25 ユーザー指定)＝**この「Print comparison marks」は Save Panel Settings に保存されなくなった**。⇒ **InDesign を起動し直すたびに必ず OFF から始まる**(公開版 1.3.0 は ON のまま保存・復元していた)。理由＝このトグルだけは**画面の見え方ではなく、紙と PDF に何が出るかを変える**ので、前に使った回の設定が黙って残っていると、**気づかないままマーク入りで出力してしまう**。⇒ 出力に載せたい回だけ、その場で ON にする形にした。★**「Marks opacity 25% / 75%」は従来どおり保存される**(あちらは「出るときにどう見えるか」の設定で、出力に何かが増えるわけではないため)。⇒ リリースノートに書く価値がある。														//   ⑲★**ページパネルの右クリックの2項目を、比較モードに合わせた**(2026-08-24 ユーザー指摘)。(a)**「Refresh Page Comparison」を Story Changes モードでは出さない**＝この項目が作り直すのは画素比較の結果で、Story モードはページを1枚もラスタ化しないため、押しても時間がかかるだけで画面が変わらなかった。Story モードの更新は Story Edits の行の右クリック「Refresh Story Comparison」が持つ(⇒ どちらのモードにも更新の口がちょうど1つずつ在る)。(b)**「Check」を Story Changes モードでは全ページに付けられるようにした**＝Pixel モードでは「比較枠や斜線の付いたページだけ」に限っており、Story モードは枠を作らないので**項目そのものがメニューから消えていた**(無効な項目はコンテキストメニューに出ないため)。⇒ Story モードでは確認の済んだページを自由にチェックできる。★Pixel モードの挙動は従来どおり(枠のあるページだけ／枠が消えたらチェックも外れる)。
 														//   ⑳★★**Story Changes モードでも ◀ Prev / Next ▶ が使えるようになった**(2026-08-24 ユーザー要望)。巡回するのは **Story Edits 一覧の「変更そのもの」**＝**変更のぶら下がっている行はその変更を1つずつ**、**ぶら下がっていない行はその行を1つ**(同じ場所を二度案内しないため)。押すと**一覧の行をクリックしたときとまったく同じことが起きる**＝新旧2つの窓がその箇所へ動き、**変わった文字の上に印が一瞬光り**、パネルのメッセージ欄に**もう一方の版の本文**が出る。★ボタンの間の表示は「1/4」のように**変更の件数**を数える(ページ数ではない)。★**一覧の選択も一緒に動く**ので、いまどの変更を見ているのかが一覧でも分かり、そのまま矢印キーで続きを歩ける。⚠Pixel モードの巡回は従来どおり(変更のあったページを1ページずつ)。Find Overset が ON のときのあふれ箇所は、どちらのモードでも従来どおり末尾に続く。
 														//   ㉑★**「Mark colour」の選択が Save Panel Settings に保存されるようになった**(2026-08-25)。⑰でこのメニューを足したときに保存の口へ入れ忘れており、**Cyan を選んで保存しても InDesign を起動し直すと赤へ戻っていた**(しかも保存そのものは成功と表示されるので「保存したのに効かない」と見える)。⇒ 他の設定系トグルと同じ扱いになった。⚠**公開版 1.3.0 にはこのメニュー自体が無い**ので、提出説明では⑰の一部として書けばよく、独立した「修正」として説明する必要は無い。
-														//   ㉒★**プラグイン内部の名前(識別子・ファイル名・フォルダー名)を KCM に統一した**(2026-08-25 ユーザー指定)。★**利用者から見える変更は2つだけ**＝(a)**ページパネルの右クリックに出る3項目から接頭辞が消えた**(「KCM: Check」→「Check」ほか。直前に区切り線があるので、自作分がひとまとまりに見えることは変わらない)。(b)**パネル設定とチェック印の保存先ファイル名が変わった**。⚠**引き継ぎ処理は入れていない**ので、**更新した人はパネル設定が既定に戻り、保存済みのチェック印と Add/Remove 登録は読めなくなる**⇒**リリースノートに書く**。★**変えていないもの**＝ID の数値(ショートカット割当は .indk が数値 ID を保存するので外れない)／ScriptID の4文字コードと DOM 名(app.kcmStatus ほか。Adobe に登録済みのペアなので改名は再申請になる)／.pln 名・表示名・内部名。
+														//   ㉓★★★**Story Changes の本文の読み取りを、スニペット XML 経由から ITextModel の直読へ替えた**(2026-08-31〜09-03・`feature/story-direct-read`)。**利用者から見える変化＝比較できなかった形が比較できるようになった**：(a)**脚注を1つでも含むストーリーは、本文を変えても脚注を変えても変更が1件も出なかった**(実測 `edits=0`)→出る (b)**段落の途中に表が立つ形**も同じく出るようになった (c)**圏点を読んで報告する**(㉔) (d)ルビの mono/group は属性の有無から推論せず `kTAMojiRubyBoss` を読む。⚠**行の分かれ方が1点だけ変わる**＝表のセルは本文の後ろに並ぶので、本文と表の変更が隣り合っても1行にまとまらず、本文の行が連続する。★同時に**「比較できなかった行」が2種類だけになり理由を持つ**(読めない／差が大きすぎる)。2026-09-03 に旧経路・並行運転・一時プロパティ `app.kcmStoryReadCompare`(一度も提出していない)を撤去。回帰＝`docs/ai-notes/kcm-story-direct-read-regression-2026-09-01.md`。
+//   ㉔★★**Story Edits が圏点(けんてん)の変更も報告する**(2026-09-01 ユーザー決定「見つけられるなら見つけたい」)＝**③の「ルビと本文だけ」の絞り込みを一部撤回**。上段に種類のマーク(11種)を**図として描く**(文字だと CP932 とフォントの都合で化けうるため)。Custom は名前。★**本文が変わった段落のルビ・圏点も報告**する(親文字が変わっても属性が残っていれば2件、文字ごと消えたら本文の1件だけ＝「テキストが主、ルビ・圏点は従」)。★**結果の行は常に新版**(削除の行だけ旧版だったのを統一)。★★**本文が変わらずルビと圏点の両方が動いた行は Change 列が `Ruby+`/`Kenten+`**(2026-09-03)。
+//   ㉕★★★**猫の手スタンプ(Kohaku Paw Stamp) = 2つ目のツール**(2026-09-04)。**KCM ツールを長押しすると出るフライアウト**に入るので、**ツールボックスのマスは増えない**(親のマスに小さな三角が付く)。ページの上をクリックすると、その点に肉球の印を置く。★**Shift＋クリックで剥がす**／★**Alt＋クリックで通常の10倍(ページ短辺の半分)の大きい印**。★**同じ場所へ重ねては置けない**(既に印のある所を普通に押しても何も起きず、ステータス行がそう言う)。★★**文書は1バイトも変えない**＝印はプラグインが持つ(比較マークと同じ約束)ので、**比較していない文書にも置ける**。★画面には常に出る。**印刷と PDF には「Print comparison marks」が ON のときだけ**出る(他のマークと同じ規則)。濃さは「Marks opacity 25% / 75%」に連動。★**パネルのツールボタンが2つのツールを持つようになった**＝**押しっぱなしでもう一方に切り替わる**(ツールボックスのフライアウトと同じ操作)。ボタンには**フライアウトの▽**が付き、**いま選ばれているほうのツールの絵**を表示する。★ScriptID **`nKGp`**(`UITools.KOHAKU_PAW_STAMP_TOOL`)を採番＝スクリプトから選べる。⚠**このコードは Adobe に未登録**なので、**次の提出のときに申請する**(登録済みの7件＝`pKGm` `pKGb` `pKGC` `pKGT` `pKGA` `pKGO` `nKGt`)。★**保存される**＝フライアウトの「Save Check & Register」で ✓・登録と一緒に KCM 自身の JSON へ書かれ、「Load Check & Register」で位置も色もそのまま戻る(㉖)。
+//   ㉖★★★**✓(Check)と猫の手が「比較していなくても使える印」になった**(2026-09-04 ユーザー決定)。**公開版から見た挙動変更を含むのでリリースノートに書く。**
+//     (a)**どの文書のどのページにも ✓ を付けられる**＝比較を Start していなくてよい。⚠**比較中の2文書だけは従来どおりモードに従う**(Pixel＝マークのあるページ、Story＝どのページでも)。
+//     (b)★★**Stop しても ✓ が消えなくなった**(従来は Stop が全部消していた)。消えるのは**文書を閉じたとき**と**下の Clear を押したとき**だけ。
+//     (c)★★★**比較の結果で ✓ が落ちなくなった**＝従来は「マークが消えたページの ✓ も消す」規則があり、**Story→Pixel の切替や再比較のたびに ✓ が減っていた**。✓ が「変更を見た印」から「**ページを見た印**」になったので、この規則ごと撤去した。⚠**撤去しないと(a)が成立しない**＝比較していない文書に付けた ✓ が、その文書で比較を始めた瞬間に全部消えていた。
+//     (d)**フライアウトに「Clear Checks in This Document」「Clear Cat Paws in This Document」を新設**＝Stop が兼ねていた「まとめて消す」手段の代わり。**アクティブ文書だけ**が対象で、印が無ければ灰色。⚠**2項目に分けた**＝✓ は作業の進捗、猫の手は目印で、消したい時が違うため。
+//     (e)★★**「Save Check & Register」「Load Check & Register」の対象がアクティブ文書1つになった**(従来は比較中の2文書)。**比較していなくても保存・復元できる**⇒(a)(b)で作れる状態がそのまま残せる。⚠**新旧2文書ぶん残すにはタブを切り替えてもう一度押す**。★**印を1つも持たない文書は書き出さない**ので、保存済みの記録が Save で消えることは無い。
+//   ㉗★★**フライアウトの Start の真下に「Refresh Comparison」を新設**(2026-09-04 ユーザー要望)。**いま比べている2文書をもう一度比べ直す**＝片方を編集したあとでマークを現状に合わせるための項目。★**従来は Stop → Start の2手**でしかできず、途中でマークが一度画面から消えていた。比較モード(Pixel / Story)はそのままで、**今のモードのやり方で全体を再比較**する。★**比較中にしか押せない**(Start 前と Stop 後は灰色)。⚠**既存の2つの部分的な Refresh とは別物**――Pages パネルの「Refresh Page Comparison」は選んだページだけ、Story Edits の行の「Refresh Story Comparison」はその行だけを更新する。これは全体。
+//   ㉒★**プラグイン内部の名前(識別子・ファイル名・フォルダー名)を KCM に統一した**(2026-08-25 ユーザー指定)。★**利用者から見える変更は2つだけ**＝(a)**ページパネルの右クリックに出る3項目から接頭辞が消えた**(「KCM: Check」→「Check」ほか。直前に区切り線があるので、自作分がひとまとまりに見えることは変わらない)。(b)**パネル設定とチェック印の保存先ファイル名が変わった**。⚠**引き継ぎ処理は入れていない**ので、**更新した人はパネル設定が既定に戻り、保存済みのチェック印と Add/Remove 登録は読めなくなる**⇒**リリースノートに書く**。★**変えていないもの**＝ID の数値(ショートカット割当は .indk が数値 ID を保存するので外れない)／ScriptID の4文字コードと DOM 名(app.kcmStatus ほか。Adobe に登録済みのペアなので改名は再申請になる)／.pln 名・表示名・内部名。
 															//   ■1.3.1 で撤去したもの: 「Translucent Toolbox」トグル(フローティング中の**ツールボックス**を半透明にする)。★★**提出説明に「機能を削除した」と書かないこと** ＝ **提出した 1.3.0 のビルドに最初から入っていない**(2026-08-07 ユーザー明言)ので、公開版から見れば存在しなかった機能。ActionID +38 は欠番のまま再利用しない。
 														//   ⚠**①②とも「版数が 1.3.0 だった時期にコードへ入れた」もの**だが、提出した 1.3.0 のビルド(commit 5ff22c5 時点)には入っていない。**版数コメントが載っている位置で「提出済みか」を判断しない**。
 														//
@@ -164,7 +174,7 @@
 // ActionID space, because an .indk stores action IDs as plain numbers.
 // What lives on this side is the work that stands up without a window: drawing the comparison
 // marks, startup and shutdown, document close, and the ScriptProvider.
-DECLARE_PMID(kClassIDSpace, kKCMScriptProviderBoss, kKCMPrefix + 3)	// The only ScriptProvider this plug-in has. It serves both application properties (kcmStatus, kcmBookResult) AND the four story counters: the .fr gives this same boss two Provider blocks and separates them by Object (the last blocks of KCM.fr). Everything published is a read-only property - there are no methods.
+DECLARE_PMID(kClassIDSpace, kKCMScriptProviderBoss, kKCMPrefix + 3)	// The only ScriptProvider this plug-in has. It serves every property this half publishes - on the application, the story and the document objects: the .fr gives this same boss one Provider block per object (the last blocks of KCM.fr), and that is the list; do not repeat it here. There are no methods. All are read-only except app.kcmStoryReadCompare, a temporary read-write one (see the ScriptInfoIDs below).
 // +4 retired: kKCMDrawEventServiceBoss, when mark drawing was unified on kKCMRingAdornmentBoss.
 // +5 retired: kKCMPeekWatcherBoss, when the middle-button watcher was dropped.
 DECLARE_PMID(kClassIDSpace, kKCMPeekStartupBoss, kKCMPrefix + 6)	// IStartupShutdown: starts the peek watcher when the application starts.
@@ -205,7 +215,7 @@ DECLARE_PMID(kClassIDSpace, kKCMStoryMarkerExpiryBoss, kKCMPrefix + 33)	// IIdle
 // ImplementationIDs:
 // The UI half's implementations are in ui/KCMUIID.h, keeping their original offsets. Whatever is
 // declared here belongs in source/KCMFactoryList.h, not in ui/KCMUIFactoryList.h.
-DECLARE_PMID(kImplementationIDSpace, kKCMScriptProviderImpl, kKCMPrefix + 0)	// CScriptProvider implementation (KCMScriptProvider.cpp). This one implementation serves all six published properties - the two on app and the four on story.
+DECLARE_PMID(kImplementationIDSpace, kKCMScriptProviderImpl, kKCMPrefix + 0)	// CScriptProvider implementation (KCMScriptProvider.cpp). This one implementation serves every published property, on app, story and document alike (the list is KCM.fr's Provider blocks).
 // +1 / +2 retired: kKCMDrawEventSrvcImpl / kKCMDrawEventHandlerImpl, with the draw event route.
 // +3 retired: kKCMPeekWatcherImpl, with the middle-button watcher.
 DECLARE_PMID(kImplementationIDSpace, kKCMPeekStartupImpl, kKCMPrefix + 4)	// IStartupShutdown implementation (starts the peek watcher).
@@ -239,8 +249,11 @@ DECLARE_PMID(kImplementationIDSpace, kKCMStoryMarkerExpiryImpl, kKCMPrefix + 52)
 //     +6 kKCMComparisonDocsClosedMessage
 //   Why +6 is separate from Stop, and what it carries, is documented where it now lives.
 
-// Script element IDs. Six are live - the two application properties and the four story counters,
-// all read-only. +1..+12 are the graves of the old scripting METHODS, which were removed
+// Script element IDs. The live ones are the DECLAREs below, +13 onwards; what object each hangs
+// off and whether it is read-only is in KCM.fr's Provider blocks - count them THERE. (This line
+// used to say "six, all read-only", and was wrong on both counts by 2026-08-31: a document
+// property came on 2026-08-20 and a read-write application property on 2026-08-31, and neither
+// author re-counted here.) +1..+12 are the graves of the old scripting METHODS, which were removed
 // wholesale; new properties are taken from +13 so that nothing is confused with a retired method.
 DECLARE_PMID(kScriptInfoIDSpace, kKCMStatusPropertyScriptElement, kKCMPrefix + 13)	// app.kcmStatus (read-only; the last line shown in the panel's status area)
 DECLARE_PMID(kScriptInfoIDSpace, kKCMBookResultPropertyScriptElement, kKCMPrefix + 14)	// app.kcmBookResult (read-only; the last book comparison as one TSV line per chapter, "name<TAB>state"). The status line can only show one line, so this is what makes a chapter-by-chapter result checkable without a human reading it.
@@ -262,6 +275,11 @@ DECLARE_PMID(kScriptInfoIDSpace, kKCMAttrChangeCountPropertyScriptElement, kKCMP
 DECLARE_PMID(kScriptInfoIDSpace, kKCMOtherChangeCountPropertyScriptElement, kKCMPrefix + 18)	// stories[n].kcmOtherChangeCount (everything else; GetOtherChangeCount)
 // Same rule as the four above: this ID is repeated in KCM.fr's second VersionedScriptElementInfo.
 DECLARE_PMID(kScriptInfoIDSpace, kKCMTransparencyItemCountPropertyScriptElement, kKCMPrefix + 19)	// document.kcmTransparencyItemCount (read-only; the size of IXPManager's list of page items that have transparency). It is how we check from outside that nothing was left on the list and saved: the list persists into the .indd, so save, close, reopen and read.
+// (The line above lost this comment on 2026-08-31, when +20 was inserted and the two trailing
+//  comments ended up on one line. Put back by the API re-audit of 2026-09-03.)
+// +20 retired: kKCMStoryReadComparePropertyScriptElement (app.kcmStoryReadCompare, the direct-read
+//   migration's parallel run, READ-WRITE and temporary; 2026-08-31 to 2026-09-03). Never shipped,
+//   so the slot could be reused - it is left empty anyway, the way +1..+12 are.
 // (The tool's enumerator goes on the application's own kToolBoxEnumScriptElement, so this side
 //  needs no ID for it.)
 

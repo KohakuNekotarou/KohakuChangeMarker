@@ -45,12 +45,14 @@
 #include "KCMDrawEventHandler.h"	// the engine's shared state, which these two publish
 #include "KCMPageMap.h"			// registered pages, the page pairing, and the Register toggle
 #include "KCMPageCheck.h"			// the Check toggle and the Save/Load of both flags
+#include "KCMPawStamp.h"			// the cat-paw stamps (place / lift / count / the one size)
 #include "KCMStoryList.h"			// the Story Edits rows, and where a story begins in a document
 #include "KCMStoryDiffRun.h"		// RunOne - re-comparing one row's story ("Refresh Story Comparison")
 #include "KCMBookPair.h"			// which two books, and their display paths
 #include "KCMBookCompare.h"		// the book comparison itself
 #include "KCMPageNumberMarker.h"	// the folio exclusion toggle
 #include "KCMChangedPagesTSV.h"	// the TSV export
+#include "KCMExternalSource.h"	// KCMExternalSourceLabel -- the lent Source's words for the panel
 #include "KCMStoryMarkBuild.h"	// what the Story mode should be lighting up (Refresh / SetPress)
 #include "KCMStoryMarker.h"		// the adornment that draws it - the flash and the shutdown
 
@@ -76,6 +78,7 @@ public:
 	virtual void		StopComparison()		{ KCMStopComparison(); }
 	virtual void		StartComparisonFor(IDocument* target, IDocument* source)
 													{ KCMStartComparisonFor(target, source); }
+	virtual void		RefreshComparison()		{ KCMRefreshComparison(); }
 	virtual bool16		CanStartComparison()	{ return KCMCanStartComparison(); }
 
 	// The chosen Target/Source. The setters resolve "the active document" on this side; see the
@@ -84,6 +87,10 @@ public:
 	virtual bool16		SetChosenSourceToActive()	{ return KCMSetChosenSourceToActive(); }
 	virtual IDataBase*	GetChosenTargetDB()		{ return KCMChosenTargetDB(); }
 	virtual IDataBase*	GetChosenSourceDB()		{ return KCMChosenSourceDB(); }
+	// ★Declared at the END of the interface (its vtable is an ABI shared with Kohaku InDesign
+	//   MCP), but kept here beside the other chosen-pair members, where it reads. The order of
+	//   the overrides in this class has no bearing on the vtable.
+	virtual void		ClearChosenDocs()		{ KCMClearChosenDocs(); }
 
 	virtual bool16		IsArmed()				{ return KCMIsArmed(); }
 	virtual IDataBase*	GetArmedTargetDB()		{ return KCMArmedTargetDB(); }
@@ -112,8 +119,8 @@ public:
 	virtual void		GetSessionStatus(PMString& out)	{ KCMGetSessionStatus(out); }
 	virtual void		GetSessionStatusSegments(PMString& outLabel, PMString& outPre,
 												 PMString& outMid, PMString& outPost,
-												 PMString& outRuby)
-							{ KCMGetSessionStatusSegments(outLabel, outPre, outMid, outPost, outRuby); }
+												 PMString& outRuby, int32& outAttrKind)
+							{ KCMGetSessionStatusSegments(outLabel, outPre, outMid, outPost, outRuby, outAttrKind); }
 
 	// ---- the status line ------------------------------------------------------------------
 	// Free functions from KCMModelNotify.h. The panel's status writer and the UI shutdown reach
@@ -124,8 +131,8 @@ public:
 	virtual void		StoreSessionStatus(const PMString& s)	{ KCMStoreSessionStatus(s); }
 	virtual void		StoreSessionStatusSegments(const PMString& label, const PMString& pre,
 												   const PMString& mid, const PMString& post,
-												   const PMString& ruby)
-							{ KCMStoreSessionStatusSegments(label, pre, mid, post, ruby); }
+												   const PMString& ruby, int32 attrKind)
+							{ KCMStoreSessionStatusSegments(label, pre, mid, post, ruby, attrKind); }
 	virtual void		ClearSessionStatus()	{ KCMClearSessionStatus(); }
 
 	virtual bool16		ArmedDocsAlive()		{ return KCMArmedDocsAlive(); }
@@ -197,6 +204,13 @@ public:
 
 	virtual void		ExportChangedPagesTSV(PMString& outMessage)
 													{ KCMExportChangedPagesTSV(outMessage); }
+
+	// The lent Source (see the interface). Three one-line transfers; the rules are model-side.
+	virtual void		StartComparisonWithSourceDB(IDocument* target, IDataBase* sourceDB, const PMString& sourceLabel)
+													{ KCMStartComparisonWithSourceDB(target, sourceDB, sourceLabel); }
+	virtual void		ReleaseExternalSourceDB(IDataBase* sourceDB)	{ KCMReleaseExternalSource(sourceDB); }
+	virtual bool16		GetExternalSourceLabel(IDataBase* db, PMString& outLabel)
+													{ return KCMExternalSourceLabel(db, outLabel); }
 };
 
 CREATE_PMINTERFACE(KCMCompareFacade, kKCMCompareFacadeImpl)
@@ -326,10 +340,25 @@ CREATE_PMINTERFACE(KCMMarkData, kKCMMarkDataImpl)
 //========================================================================================
 // KCMPageFlagsFacade -- IKCMPageFlagsFacade
 //
-// The writing half of the two per-page flags. Six forwarders, no logic: which pages are
-// selected, what the menu label should say, where the JSON file goes -- all of that already
-// lives in KCMPageMap.cpp / KCMPageCheck.cpp and stays there.
+// The writing half of the per-page flags. Forwarders, almost no logic: which pages are selected,
+// what the menu label should say, where the JSON file goes -- all of that already lives in
+// KCMPageMap.cpp / KCMPageCheck.cpp / KCMPawStamp.cpp and stays there.
 //========================================================================================
+
+// "cleared chk3" / "cleared paw0" for the status line. The two clear items say the same thing
+// about different marks, so the lines that build it are written once.
+// ⚠**SetTranslatable(kFalse) is what keeps the reader from being shown the key itself** -- the
+//   reason every literal put on this line needs the mark is with KCMNotifyStatus in
+//   KCMModelNotify.h.
+static void KCMSayCleared(const char* what, int32 n)
+{
+	PMString msg;
+	msg.SetTranslatable(kFalse);
+	msg.Append(what);
+	msg.AppendNumber(n);
+	KCMNotifyStatus(msg, kTrue /*forceRedrawNow*/);
+}
+
 class KCMPageFlagsFacade : public CPMUnknown<IKCMPageFlagsFacade>
 {
 public:
@@ -343,6 +372,44 @@ public:
 
 	virtual void	SaveChecksAndRegister()			{ KCMPageCheckSaveToFile(); }
 	virtual void	LoadChecksAndRegister()			{ KCMPageCheckLoadFromFile(); }
+
+	// The cat-paw stamps. The crossing exists because model and UI are two DLLs: the tool lives
+	// on the UI side and the store on this one.
+	virtual bool16	PawStampPlaceAt(IDataBase* db, UID pageUID, const PMReal& x, const PMReal& y,
+	                                int32 colour, const PMReal& baseHalf)
+									{ return KCMPawStampPlaceAt(db, pageUID, x, y, colour, baseHalf); }
+	virtual bool16	PawStampLiftAt(IDataBase* db, UID pageUID, const PMReal& x, const PMReal& y,
+	                               const PMReal& baseHalf)
+									{ return KCMPawStampLiftAt(db, pageUID, x, y, baseHalf); }
+	virtual int32	PawStampCount(IDataBase* db)	{ return KCMPawStampCount(db); }
+	virtual PMReal	PawHalfSizeForPage(IDataBase* db, UID pageUID)
+									{ return KCMPawHalfSizeForPage(db, pageUID); }
+
+	// Clearing one document's marks (the two flyout items). **The status line is written here**,
+	// on the model side, the way Save and Load write theirs -- the UI's action component has no
+	// call site of its own for the status line and should not grow one.
+	virtual bool16	PageCheckHasAny(IDataBase* db)	{ return KCMPageCheckHasAny(db); }
+	virtual int32	ClearChecksInDoc(IDataBase* db)
+					{
+						const int32 n = KCMPageCheckClearDoc(db);
+						KCMSayCleared("cleared chk", n);
+						return n;
+					}
+	virtual int32	ClearPawsInDoc(IDataBase* db)
+					{
+						// ★The count is read FIRST: KCMPawStampClearDoc answers nothing, and once it
+						//   has run there is nothing left to count. (Its tick counterpart returns the
+						//   number itself, because it has to read the page set before clearing
+						//   anyway -- the notification needs that set.)
+						const int32 n = KCMPawStampCount(db);
+						if (n > 0)
+						{
+							KCMPawStampClearDoc(db);
+							KCMInvalidateDB(db);	// no thumbnail carries a paw, so this is the whole refresh
+						}
+						KCMSayCleared("cleared paw", n);
+						return n;
+					}
 };
 
 CREATE_PMINTERFACE(KCMPageFlagsFacade, kKCMPageFlagsFacadeImpl)
@@ -371,7 +438,7 @@ public:
 		if (row == nil)
 			return kFalse;	// out of range, or the placeholder row -- out is left as the caller had it
 
-		// Seven of the row's nine fields. fPageIndex is the list's sort key and no caller reads
+		// Eight of the row's ten fields. fPageIndex is the list's sort key and no caller reads
 		// it; fChanges is the child list, handed over one at a time by GetChange.
 		out.fStoryUID	= row->fStoryUID;
 		out.fText		= row->fText;
@@ -379,7 +446,8 @@ public:
 		out.fFrameUID	= row->fFrameUID;
 		out.fPageUID	= row->fPageUID;
 		out.fTextCompared = row->fTextCompared;
-		out.fAttrKind	= static_cast<int32>(row->fAttrKind);	// 0 = none, 1 = ruby
+		out.fAttrKind	= static_cast<int32>(row->fAttrKind);	// 0 = none, 1 = ruby, 2 = kenten
+		out.fAttrKindCount = row->fAttrKindCount;				// how many DIFFERENT kinds - "Ruby+" when > 1
 		return kTrue;
 	}
 
@@ -425,6 +493,20 @@ public:
 			return static_cast<int32>(kKCMStoryAttrNone);
 
 		return static_cast<int32>(row->fChanges[which].fAttrKind);
+	}
+
+	virtual bool16	GetChangeHasAttrValue(int32 nth, int32 which)
+	{
+		// Same out-of-range rule as the kind above, and for the same caller: an unknown row gets
+		// the ordinary one-line height rather than an error.
+		const KCMStoryRow* row = KCMStoryList::GetRow(nth);
+		if (row == nil || which < 0 || which >= static_cast<int32>(row->fChanges.size()))
+			return kFalse;
+
+		// ⚠THE SIDE THE ROW SHOWS, which is fRuby - not fOtherRuby. The list shows the newer
+		//   version, so an attribute that was removed leaves this empty and the row is drawn on one
+		//   line; the older side's value is still read, but it belongs to the message area.
+		return row->fChanges[which].fRuby.IsEmpty() ? kFalse : kTrue;
 	}
 
 	virtual int32	RefreshRow(int32 nth)

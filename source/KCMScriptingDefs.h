@@ -98,9 +98,14 @@
 enum KCMScriptProperties
 {
 	p_KCMStatus     = 'pKGm',	// p = property, K = Kohaku, G = KCM, m = message (app.kcmStatus)
-	p_KCMBookResult = 'pKGb'	// b = book. app.kcmBookResult - the last book comparison, one line
+	p_KCMBookResult = 'pKGb',	// b = book. app.kcmBookResult - the last book comparison, one line
 								// per chapter ("name<TAB>state"). Checked against the registry in
 								// docs/ai-notes/kes-scriptid-registry.md before use (2026-08-11).
+
+	// 'pKGr' (app.kcmStoryReadCompare, the direct-read migration's parallel run) stood here from
+	// 2026-08-31 to 2026-09-03 and was never registered with Adobe nor shipped; the code is free
+	// again (docs/ai-notes/kes-scriptid-registry.md says so too). It was the only read-write
+	// property KCM has ever had.
 };
 
 /** Properties KCM adds to the STORY object (at the user's request).

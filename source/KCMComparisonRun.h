@@ -18,6 +18,7 @@
 class IDataBase;
 class IDocument;
 class IDocumentList;
+class PMString;
 
 // The Start/Stop toggle. When armed, clears (marks removed, peek disarmed); when not armed,
 // starts (the chosen Target and Source, and for whichever of the two has not been chosen the
@@ -31,6 +32,50 @@ void	KCMToggleStartStop();
 // "stop, then start" must call KCMStopComparison first.
 void	KCMStopComparison();
 void	KCMStartComparisonFor(IDocument* target, IDocument* source);
+
+// Compare THE SAME TWO DOCUMENTS AGAIN - the flyout's "Refresh Comparison", directly under Start.
+//
+// ★WHAT IT IS FOR: the reader edits one of the two documents and wants the marks to say what is
+// true NOW. Until this existed the only way was Stop then Start, which is two presses and takes
+// the marks off the screen in between.
+//
+// ★**IT IS THE START PROCEDURE, NOT A SECOND ONE.** It runs KCMStartComparisonOn with the ARMED
+// pair, so a refresh and a start cannot come to disagree about what starting means
+// ([[one-question-one-place]]). Nothing here has to stop first: arming is idempotent
+// (KCMDoArmMousePeek only assigns, and skips its cache drop when the pair is unchanged), and
+// re-comparing an armed pair is what the register toggle already does (KCMPageMap.cpp).
+//
+// ⚠**A FULL COMPARISON, NEVER THE INCREMENTAL ONE.** KCMDoMarkChangesDoc's allowIncremental reuses
+// the previous pairing and is documented as a speed-up for the register toggle ALONE, "where the
+// document's content does not change and only the pairing moves". This exists precisely because
+// the content may have changed, so it takes the default.
+//
+// ⚠★★★**A CANCELLED REFRESH STOPS THE COMPARISON.** The progress bar carries a Cancel on longer
+// runs, and by the time it is pressed the marks are already gone (KCMDoMarkChangesDoc discards them
+// before it starts). A Start that is cancelled simply does not arm, which puts the reader back where
+// they were; a REFRESH was already armed, so leaving it alone would produce the one state that
+// return value exists to prevent - "armed after a cancel, with the menu stuck on Stop" and no marks
+// anywhere. So it stops, and says so on the status line.
+//
+// ⚠Does nothing when no comparison is armed, or when either document has since gone. The menu item
+// is greyed in exactly those cases (KCMActionComponent's UpdateActionStates), so this is the second
+// line of defence rather than the first.
+void	KCMRefreshComparison();
+
+// Start with the front document (or whichever the caller names) as the Target and a database
+// that is NOT an open document as the Source -- a task-start copy Kohaku InDesign MCP lends
+// (KCMExternalSource.h). `sourceLabel` is what the panel's Source: line shows for it.
+// **Stops first** if a comparison is armed, unlike KCMStartComparisonFor, and **chooses both**
+// (Set as Target + Set as Source + Start in one): a Stop keeps the pair on the panel, and the
+// flyout's own Start compares against the same copy again until the lender releases it. nil
+// does nothing; a Source that IS the Target's own database is refused with a word on the status
+// line.
+void	KCMStartComparisonWithSourceDB(IDocument* target, IDataBase* sourceDB, const PMString& sourceLabel);
+
+// The lender is about to delete its database: stop the comparison if that database is the armed
+// Source, and say why on the status line. A database that is not the registered lent Source is
+// ignored, so the lender may call this for every database it frees.
+void	KCMReleaseExternalSource(IDataBase* sourceDB);
 
 // Whether a comparison can be started at all: there is an active (front) document and at
 // least one other open document. Used to decide whether the flyout's Start may be enabled.

@@ -192,6 +192,28 @@ DECLARE_PMID(kClassIDSpace, kKCMStoryChangeCellBoss, kKCMUIPrefix + 29)	// kGene
 // ★The WidgetID and the Frame are unchanged (`kKCMStatusTextWidgetID`), so nothing around it
 //   moves.
 DECLARE_PMID(kClassIDSpace, kKCMStatusTextWidgetBoss, kKCMUIPrefix + 32)	// kGenericPanelWidgetBoss + IID_ICONTROLVIEW (kKCMStatusTextViewImpl) + IID_IKCMSTATUSTEXTDATA (kKCMStatusTextDataImpl): the panel's message area. It takes a heading and three pieces (context, the changed characters, context), wraps them and draws them in at most two colours (KCMStatusTextView.cpp)
+// The cat-paw stamp tool (2026-09-04). ★It is a **SUBTOOL of the KCM tool**: its ToolDef names
+// kKCMToolBoss as the parent tool, which puts it inside that tool's press-and-hold flyout and
+// **costs no toolbox slot** (ToolRecord.h:49,54,59-61,65; the SDK's only worked example is
+// wavetool/WavTl.fr:264-276). The boss itself is the same shape as kKCMToolBoss above --
+// kGenericToolBoss supplies the toolbox button view, IID_IPMPERSIST persists the selected state.
+DECLARE_PMID(kClassIDSpace, kKCMPawToolBoss, kKCMUIPrefix + 33)
+// That tool's tracker. ★A press places one paw, or lifts the one it landed on, and there is
+// nothing to track afterwards, so BeginTracking answers kFalse ＝ the single-shot shape of
+// sdksamples/snapshot. It derives from CTracker directly, so it carries **no sprite** -- the
+// reason is written out at kKCMTrackerBoss in KCMUI.fr.
+DECLARE_PMID(kClassIDSpace, kKCMPawTrackerBoss, kKCMUIPrefix + 34)
+// ★The panel's tool button (2026-09-04). kKCMIconWidgetBoss with an event handler of its own,
+//   because the button carries TWO tools and the second is reached by HOLDING it -- the toolbox's
+//   press-and-hold, brought to the panel at the user's request.
+// ⚠★★IT REPLACES kAssociatedActionEventHandlerImpl, which is what kRollOverIconButtonBoss puts on
+//   IID_IEVENTHANDLER (measured in the boss dump). That implementation is what turns a click into
+//   the kTrueStateMessage the panel used to listen for, so ONCE IT IS GONE THE PRESS MUST BE
+//   HANDLED HERE IN FULL -- and it is (KCMToolButtonEH.cpp). ★That is not a loss but the point:
+//   the state messages cannot tell a hold from a click, and worse, a button already showing
+//   selected raises no kTrueStateMessage at all -- measured 2026-09-04, which is exactly why
+//   pressing the button a second time did nothing.
+DECLARE_PMID(kClassIDSpace, kKCMToolButtonBoss, kKCMUIPrefix + 35)
 // InterfaceIDs:
 // ⚠★What is here are **the IIDs that appear only on UI-side bosses**. The ones that cross the
 //   boundary (the five facades plus the notification protocol) are in **KCMBoundaryID.h**,
@@ -266,6 +288,13 @@ DECLARE_PMID(kImplementationIDSpace, kKCMStoryCellDataImpl, kKCMUIPrefix + 40)	/
 DECLARE_PMID(kImplementationIDSpace, kKCMStatusTextViewImpl, kKCMUIPrefix + 43)	// IControlView (DVControlView subclass). The panel's message area: it wraps to fill the box, draws the changed characters in the theme text colour and fades the heading and the context (KCMStatusTextView.cpp). ★**The PERSIST form** -- this widget is built from the panel's .fr, so it has to be persistent like the IID_ICONTROLVIEW of the kGenericPanelWidgetBoss it is built on
 DECLARE_PMID(kImplementationIDSpace, kKCMStatusTextDataImpl, kKCMUIPrefix + 44)	// IKCMStatusTextData (a non-persistent container for the four pieces; it lives on the same boss as the area above. KCMStatusTextView.cpp)
 DECLARE_PMID(kImplementationIDSpace, kKCMSplitterEHImpl, kKCMUIPrefix + 34)	// IEventHandler (CEventHandler subclass ＝ the base whose every method just answers kFalse). It makes the panel's divider take no presses, so it cannot be dragged (KCMSplitterEH.cpp)
+// The cat-paw stamp tool's three implementations (2026-09-04). ★The tool and its tracker are
+// the same pair as +13 / +14 / +16 above; only what the tracker does with the press differs.
+DECLARE_PMID(kImplementationIDSpace, kKCMPawToolImpl, kKCMUIPrefix + 45)	// ITool (the cat-paw stamp tool. KCMPawTool.cpp)
+DECLARE_PMID(kImplementationIDSpace, kKCMPawTrackerImpl, kKCMUIPrefix + 46)	// ITracker (CTracker subclass; one left press places a paw, or lifts the one under it. KCMPawTracker.cpp)
+DECLARE_PMID(kImplementationIDSpace, kKCMPawTrackerEHImpl, kKCMUIPrefix + 47)	// IEventHandler (CTrackerEventHandler subclass, the companion of the tracker above -- a bare subclass, as kKCMTrackerEHImpl is. KCMPawTracker.cpp)
+DECLARE_PMID(kImplementationIDSpace, kKCMToolButtonEHImpl, kKCMUIPrefix + 49)	// IEventHandler (CEventHandler subclass; the panel tool button's press-and-hold. KCMToolButtonEH.cpp). ⚠It REPLACES the stock kAssociatedActionEventHandlerImpl, so it owns the whole press -- see kKCMToolButtonBoss
+DECLARE_PMID(kImplementationIDSpace, kKCMPawCursorProviderImpl, kKCMUIPrefix + 48)	// ICursorProvider (CToolCursorProvider subclass; the pink paw shown while the stamp tool is active. KCMPawCursorProvider.cpp). ★Simpler than the KCM tool's, which has two states (black while armed, outlined while stopped): a paw can be placed at any time, so it has nothing to say about the comparison's state
 // ActionIDs:
 DECLARE_PMID(kActionIDSpace, kKCMAboutActionID, kKCMUIPrefix + 0)
 DECLARE_PMID(kActionIDSpace, kKCMPanelWidgetActionID, kKCMUIPrefix + 1)	// show / hide the panel (Window menu)
@@ -307,7 +336,7 @@ DECLARE_PMID(kActionIDSpace, kKCMPopupAlignViewsActionID, kKCMUIPrefix + 20)	// 
 DECLARE_PMID(kActionIDSpace, kKCMPopupScrollMapActionID, kKCMUIPrefix + 21)	// "Show Scrollbar Map" check toggle on the panel flyout (ON = a strip beside each document window's vertical scrollbar maps where the changes are. Default ON; the state is sScrollMapOn in KCMScrollMap.cpp)
 DECLARE_PMID(kActionIDSpace, kKCMPopupSavePanelStateActionID, kKCMUIPrefix + 22)	// "Save Panel Settings" on the panel flyout (a plain command, not a check). It writes the current settings toggles to a private JSON file and shows the saved path. They are read back at startup (KCMUIStartup::Startup). KCMPanelState.cpp
 DECLARE_PMID(kActionIDSpace, kKCMPopupSep3ActionID, kKCMUIPrefix + 23)	// flyout: the separator below Refresh Overset (a MenuDef path ending in ":-"; no ActionDef needed). Its position is kKCMSep3MenuItemPosition below
-DECLARE_PMID(kActionIDSpace, kKCMPageCheckToggleActionID, kKCMUIPrefix + 24)	// "Check" toggle on the Pages panel page context menu (RtMenuPagesPanel): puts a check mark on the selected pages, or takes it off. Only while Started; cleared on Stop. The check mark and the enabling come from kCustomEnabling. ★**Which pages can be checked depends on the mode**: in Pixel only pages that carry a mark, in Story any page. The answer lives in one place, the model's KCMCollectCheckablePageUIDs. KCMPageCheck.cpp, and the check itself is drawn by the isThumb branch of KCMDrawEventHandler
+DECLARE_PMID(kActionIDSpace, kKCMPageCheckToggleActionID, kKCMUIPrefix + 24)	// "Check" toggle on the Pages panel page context menu (RtMenuPagesPanel): puts a check mark on the selected pages, or takes it off. The check mark and the enabling come from kCustomEnabling. ★★**No comparison is required, and Stop does not clear the ticks** (2026-09-04) -- the old "only while Started; cleared on Stop" is gone. ★**Which pages can be checked**: any page of a document nobody is comparing; of a document being compared, in Pixel only the pages that carry a mark and in Story any page. The answer lives in one place, the model's KCMCollectCheckablePageUIDs. KCMPageCheck.cpp, and the check itself is drawn by the isThumb branch of KCMDrawEventHandler
 DECLARE_PMID(kActionIDSpace, kKCMPopupSaveChecksActionID, kKCMUIPrefix + 25)	// "Save Check & Register" on the panel flyout (a plain command). It merges the current checks and Added/Removed registrations of Target and Source into a private JSON file (KCM\KCMPageChecks.json, v2) and shows the saved path. KCMPageCheck.cpp
 DECLARE_PMID(kActionIDSpace, kKCMPopupLoadChecksActionID, kKCMUIPrefix + 26)	// "Load Check & Register" on the panel flyout (a plain command). Enabled only while Started: it applies the registrations from that file to both documents, recompares, then restores the checks (still only where a mark is). KCMPageCheck.cpp
 // kKCMPopupPagesPanelShortcutActionID (kKCMUIPrefix + 27) went with the middle-button gestures,
@@ -355,6 +384,21 @@ DECLARE_PMID(kActionIDSpace, kKCMPopupShowTgtMarksActionID, kKCMUIPrefix + 45)	/
 DECLARE_PMID(kActionIDSpace, kKCMPopupColorRedActionID,  kKCMUIPrefix + 46)	// ★"Mark colour > Red" on the panel flyout (user's request: "let the menu choose red or blue"). Mutually exclusive with Cyan, the selected one carrying the check (kCustomEnabling + kSelectedAction, the shape of Marks opacity 25%/75%). ★The default. KCMActionComponent.cpp -> IKCMCompareFacade::SetMarkColor
 DECLARE_PMID(kActionIDSpace, kKCMPopupColorCyanActionID, kKCMUIPrefix + 47)	// ★"Mark colour > Cyan" on the flyout. ⚠★★This **replaces an automatic switch by background**: the ring used to turn cyan by itself wherever the pixels underneath were reddish (kKCMRedBgDom). It went for two reasons -- the user's call ("the user can just choose"), and **the Story mode cannot read the pixels underneath**, so the same automatic test was impossible there and the colour would have been decided differently in the two modes. ★The choice applies to both the Pixel ring and the Story ground (both pass through KCMDrawEventHandler::SelectedMarkColor)
 
+DECLARE_PMID(kActionIDSpace, kKCMPawToolActionID, kKCMUIPrefix + 48)	// the tool-select shortcut of the cat-paw stamp tool, named by its ToolDef. ★No ActionDef is needed -- the toolbox framework provides a tool's own selection action (the same as +29 for the KCM tool)
+DECLARE_PMID(kActionIDSpace, kKCMClearPawsActionID, kKCMUIPrefix + 49)	// "Clear Cat Paws in This Document" on the panel flyout (a plain command; Task 6 of the paw stamp plan). Greyed where the active document holds no paw, through kCustomEnabling
+// ⚠**+50 and +51 ARE FREE AGAIN, AND ARE LEFT UNUSED.** They were the two items of the panel tool
+//   button's flyout for a few hours on 2026-09-04, as a MenuDef subtree plus ActionDefs. The
+//   flyout is a **Win32 popup** now (TrackPopupMenu, so that holding-dragging-releasing picks an
+//   item, which IMenuManager cannot do) and it calls KCMToolButtonPressed directly, so nothing
+//   named these. ★They were removed rather than left: an ActionDef with no menu behind it still
+//   shows up in QuickApply as a command that does nothing a reader asked for.
+//   **Do not reuse the numbers** -- a .indk written while they existed would map a shortcut onto
+//   whatever took the slot ([[id-prefix-256-slot-budget]]).
+DECLARE_PMID(kActionIDSpace, kKCMPopupRefreshCompareActionID, kKCMUIPrefix + 53)	// "Refresh Comparison" on the panel flyout, DIRECTLY UNDER Start (a plain command). Compares the same two documents again, in whichever mode is current - what the reader wants after editing one of them. Enabled only while a comparison is armed and both documents are still open (kCustomEnabling); it was Stop-then-Start before this existed. ★It is NOT either of the two partial refreshes: kKCMPageRefreshCompareActionID does the pages selected in the Pages panel and kKCMStoryRowRefreshActionID does one row, while this one re-does everything. KCMRefreshComparison in KCMComparisonRun.cpp
+DECLARE_PMID(kActionIDSpace, kKCMClearChecksActionID, kKCMUIPrefix + 52)	// "Clear Checks in This Document" on the panel flyout (a plain command). ★It exists because **Stop no longer clears the ticks** (2026-09-04): Stop used to double as the way to be rid of them all, and taking that away would have left no way at all. Greyed where the active document holds no tick, through kCustomEnabling. ⚠The number is +52, not +50: see the note directly above
+
+DECLARE_PMID(kActionIDSpace, kKCMClearChosenActionID, kKCMUIPrefix + 54)	// "Clear Target and Source" on the panel flyout (a plain command; 2026-09-05, user's request). Drops both chosen documents, so the next Start falls back to the automatic rule and the panel's Target:/Source: lines go back to bare labels. A lent Source is forgotten with them. ★It does NOT stop a running comparison. Greyed unless nothing is armed AND at least one of the two is chosen, through kCustomEnabling -- the same "not while armed" gate as the two "Set as" items it undoes. ⚠The number is +54, not +50 or +51: those two are retired, see the note above
+
 // (The template's spare //DECLARE_PMID(kActionIDSpace, kKCMActionID, kKCMUIPrefix + 41) was
 //  **deleted**. ⚠★★It was not inert: **+41 is taken** (kKCMPopupTranslucentBookDialogActionID
 //  above), so uncommenting it declares one ActionID twice. **A commented-out declaration carries
@@ -384,6 +428,20 @@ DECLARE_PMID(kWidgetIDSpace, kKCMNextChangeButtonWidgetID, kKCMUIPrefix + 39)	//
 DECLARE_PMID(kWidgetIDSpace, kKCMScrollMapWidgetID, kKCMUIPrefix + 40)	// the scrollbar map strip, injected at run time beside a document window's vertical scrollbar (KCMScrollMap.cpp)
 DECLARE_PMID(kWidgetIDSpace, kKCMToolWidgetID, kKCMUIPrefix + 41)	// the WidgetID of the tool button in the toolbox (KCMTool::InitWidget)
 DECLARE_PMID(kWidgetIDSpace, kKCMToolButtonWidgetID, kKCMUIPrefix + 42)	// ★the tool switch button inside the panel (left of Prev, 32x22). Pressing it makes kKCMToolBoss the active tool (KCMActivateOwnTool). A different thing from +41 above, which is the toolbox slot
+// ★The cat-paw stamp tool's toolbox widget (2026-09-04). It is kept **next to the two tool IDs
+//   above rather than in numeric order**, because that is where a reader looks for it; the
+//   number itself is the next free one (+65), the ones between belonging to the Story Edits
+//   list. ⚠A subtool occupies no slot of its own in the toolbox, but the widget the tool builds
+//   in the flyout still needs an ID (KCMPawTool::InitWidget).
+DECLARE_PMID(kWidgetIDSpace, kKCMPawToolWidgetID, kKCMUIPrefix + 65)
+// ★The stamp tool's half of the panel's tool button (2026-09-04). ⚠It is NOT a second button:
+//   this widget and kKCMToolButtonWidgetID share ONE frame and only the tool that is current is
+//   shown, the way the toolbox shows one slot for a tool and its subtools ("one place, two tools"
+//   -- the user's words). Pressing the one on show swaps to the other.
+//   ★Two widgets rather than one whose picture changes, because that is how this panel already
+//     switches artwork (kKCMIconOnWidgetID / kKCMIconOffWidgetID) -- an icon widget's resource is
+//     fixed when the panel is built.
+DECLARE_PMID(kWidgetIDSpace, kKCMPawToolButtonWidgetID, kKCMUIPrefix + 66)
 // ★The "Story Edits" section. The panel is divided by a SplitterPanelWidget and the lower pane
 //   lists the stories whose text was edited. Modelled on the "Link Info" section of the
 //   product's linksui.
@@ -439,7 +497,7 @@ DECLARE_PMID(kWidgetIDSpace, kKCMStoryRowUIDWidgetID, kKCMUIPrefix + 52)	// ★r
 DECLARE_PMID(kWidgetIDSpace, kKCMBookDialogWidgetID, kKCMUIPrefix + 57)
 DECLARE_PMID(kWidgetIDSpace, kKCMBookTargetTextWidgetID, kKCMUIPrefix + 58)	// "Target: new.indb" (the book whose tab is in front)
 DECLARE_PMID(kWidgetIDSpace, kKCMBookSourceTextWidgetID, kKCMUIPrefix + 59)	// "Source: old.indb" (the first other open book)
-DECLARE_PMID(kWidgetIDSpace, kKCMBookCompareButtonWidgetID, kKCMUIPrefix + 60)	// (retired) the old "Compare" button. ★The button itself was removed -- the flow became "confirmation alert, then OK compares" -- so **nothing refers to this ID**, but it is kept declared together with its label key kKCMBookCompareKey, the enUS table row and the note in KCMUI.fr, so that the set can be restored together. ★The number is not reused. ⚠This is the only declared-but-unreferenced ID in any of the ID spaces (measured mechanically), and the label key had said "retired" from the start while this one still read as live
+DECLARE_PMID(kWidgetIDSpace, kKCMBookCompareButtonWidgetID, kKCMUIPrefix + 60)	// (retired) the old "Compare" button. ★The button itself was removed -- the flow became "confirmation alert, then OK compares" -- so **nothing refers to this ID**, but it is kept declared together with its label key kKCMBookCompareKey, the enUS table row and the note in KCMUI.fr, so that the set can be restored together. ★The number is not reused. ⚠This line used to claim it was **the only** declared-but-unreferenced ID "measured mechanically". ★★**That was already untrue when it was written**: kKCMPopupAboutScriptActionID (+3) had been retired-but-reserved all along, and a re-measurement on 2026-09-04 found three of them -- that one, this one, and kKCMClearPawsActionID (+49), a slot booked in advance for the paw stamp's "clear" item. ⇒ ★★★**Do not read a count off any line here; measure it -- and mind the two traps that made the first measurement wrong.** (1) Take the names only from lines that BEGIN with DECLARE_PMID: a commented-out declaration is not a declaration (there is one in the ActionID block). (2) Strip comments before counting occurrences: a name mentioned in prose -- **this sentence included** -- is not a reference, and counting it hides exactly the ID it names. A name left with one occurrence in the stripped text is unreferenced. The label key had said "retired" from the start while this one still read as live
 DECLARE_PMID(kWidgetIDSpace, kKCMBookStatusTextWidgetID, kKCMUIPrefix + 61)	// the status line (a summary of the comparison; it always includes the number of chapters)
 DECLARE_PMID(kWidgetIDSpace, kKCMBookTreeWidgetID, kKCMUIPrefix + 62)		// the chapter list itself (the largest part of the dialog)
 // ★A second status line (the hint that a right click on a changed chapter starts Change Marker)
@@ -578,12 +636,16 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowStateWidgetID, kKCMUIPrefix + 49)	// = t
 #define kKCMSavePanelStateMenuKey	kKCMStringPrefix "kKCMSavePanelStateMenuKey"	// the menu name of "Save Panel Settings" on the panel flyout
 #define kKCMSaveChecksMenuKey		kKCMStringPrefix "kKCMSaveChecksMenuKey"	// the menu name of "Save Check & Register" on the panel flyout
 #define kKCMLoadChecksMenuKey		kKCMStringPrefix "kKCMLoadChecksMenuKey"	// the menu name of "Load Check & Register" on the panel flyout
+#define kKCMClearChecksMenuKey		kKCMStringPrefix "kKCMClearChecksMenuKey"	// the menu name of "Clear Checks in This Document" on the panel flyout
+#define kKCMClearPawsMenuKey		kKCMStringPrefix "kKCMClearPawsMenuKey"	// the menu name of "Clear Cat Paws in This Document" on the panel flyout
 #define kKCMFindOversetMenuKey	kKCMStringPrefix "kKCMFindOversetMenuKey"	// the menu name of the "Find Overset" toggle on the panel flyout
+#define kKCMRefreshCompareMenuKey	kKCMStringPrefix "kKCMRefreshCompareMenuKey"	// the menu name of "Refresh Comparison" on the panel flyout (directly under Start). ⚠Not kKCMPageRefreshCompareMenuKey, which is the Pages panel's partial one
 #define kKCMRefreshOversetMenuKey	kKCMStringPrefix "kKCMRefreshOversetMenuKey"	// the menu name of "Refresh Overset" on the panel flyout
 #define kKCMExportChangedPagesMenuKey	kKCMStringPrefix "kKCMExportChangedPagesMenuKey"	// the menu name of "Export Changed Pages..." on the panel flyout
 #define kKCMCompareBooksMenuKey	kKCMStringPrefix "kKCMCompareBooksMenuKey"	// the menu name of "Compare Books" on the panel flyout (compare two books chapter by chapter)
 #define kKCMSetTargetMenuKey		kKCMStringPrefix "kKCMSetTargetMenuKey"	// ★the menu name of "Set as Target" on the panel flyout (the active document becomes the comparison's Target)
 #define kKCMSetSourceMenuKey		kKCMStringPrefix "kKCMSetSourceMenuKey"	// ★the menu name of "Set as Source" on the panel flyout (the active document becomes the older version)
+#define kKCMClearChosenMenuKey	kKCMStringPrefix "kKCMClearChosenMenuKey"	// ★the menu name of "Clear Target and Source" on the panel flyout (drops both choices; the next Start falls back to the automatic rule)
 #define kKCMBookDialogTitleKey	kKCMStringPrefix "kKCMBookDialogTitleKey"	// the title of the book comparison dialog
 #define kKCMBookCompareKey		kKCMStringPrefix "kKCMBookCompareKey"		// (retired) the label of the old "Compare" button. The button was removed, so nothing refers to it, but it is kept together with its enUS table row so that the set can be restored together
 #define kKCMBookReadyKey			kKCMStringPrefix "kKCMBookReadyKey"			// the status line before a comparison. ★What reaches it now is only "the dialog was opened without a comparison ever having been run" - otherwise the summary overwrites it
@@ -603,6 +665,8 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowStateWidgetID, kKCMUIPrefix + 49)	// = t
 // ★The name of the root never reaches the screen, so a plain literal will do; it needs no
 // translation key.
 #define kKCMBookRowMenuName		"KCMRtMenuBookRow"
+// (kKCMToolFlyoutMenuName was here on 2026-09-04 and is gone with the MenuDef it named: the panel
+//  tool button's flyout is a Win32 popup, built in code by KCMToolButtonEH.)
 #define kKCMStoryRowRefreshMenuKey	kKCMStringPrefix "kKCMStoryRowRefreshMenuKey"	// the "Refresh Story Comparison" item on a Story Edits row context menu
 // The Story Edits row context menu. The same mechanism as the chapter menu above:
 // KCMStoryRowEH::RButtonDn puts the MenuDef subtree of this name up at the cursor through
@@ -697,6 +761,7 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowStateWidgetID, kKCMUIPrefix + 49)	// = t
 //     move one without the other.**
 #define kKCMHint2Key			kKCMStringPrefix "kKCMHint2Key"
 #define kKCMToolStringKey		kKCMStringPrefix "kKCMToolStringKey"	// the tool name in the toolbox (its tooltip). English in every locale
+#define kKCMPawToolStringKey	kKCMStringPrefix "kKCMPawToolStringKey"	// the cat-paw stamp tool's name in the flyout (its tooltip). ★English in every locale, as the line above: the jaJP string table was retired on 2026-08-05 and Japanese now comes from ui/KCMLoc.h at run time -- a tool name is not one of the strings that file carries
 
 // The strings of the Story Edits section. ⚠**Do not use the word "text" in them** -- the list
 // carries changes that are not text, so a phrase like "No text edits" would not be true.
@@ -723,11 +788,12 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowStateWidgetID, kKCMUIPrefix + 49)	// = t
 //     from one that could not be compared in the first place.
 #define kKCMStoryKindNoneKey		kKCMStringPrefix "kKCMStoryKindNoneKey"		// row, right: no difference in the text
 #define kKCMStoryKindRubyKey		kKCMStringPrefix "kKCMStoryKindRubyKey"		// row, right: the ruby changed while the text did not. ★It names the case rather than reporting the counter-derived "Attr"
+#define kKCMStoryKindKentenKey	kKCMStringPrefix "kKCMStoryKindKentenKey"	// row, right: the emphasis marks changed while the text did not. Same shape as the ruby key above and for the same reason - "Attr" would be true and useless. ⚠The word is the typographic term, not a translation of it: the panel is English (KCM's convention) and "Kenten" is what the Kenten panel this reader compares against is called
 // ⚠★★**The kenten (emphasis dot) key was removed** ＝ what Story Edits reports is text changes
 //   and ruby, and nothing else (user's decision). The key that existed for one day became a
 //   string nobody asked for the moment the comparison behind it was stopped, so the two went
 //   together (with the matching row in KCMUI_enUS.fr).
-//   ★The side that reads kenten out of a snippet is still there (KCMSnippetText.h), so bringing
+//   ★The side that reads kenten out of a snippet is still there (KCMParaText.h), so bringing
 //     it back needs that one comparison and this key.
 
 // The column headings of the list. ★**Do not reuse the words from inside it**: the second
@@ -866,7 +932,43 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowStateWidgetID, kKCMUIPrefix + 49)	// = t
 // to borrow the panel icon (kKCMIconOnResID) until artwork of its own arrived
 // (KCM_Tool_32.png/_64.png, supplied by the user). There is no dark version, so PNGAD points at
 // the light artwork as well.
+// The cat-paw stamp tool's cursor: a pink paw with a dark rim, hot spot at its centre (10,10) --
+// the point the paw is placed at, so the cursor shows where it will land. A PNGC resource, not a
+// drawing callback, for the reason written at the check cursor above.
+// ★Its own CursorID, separate from 1020..1023, so switching tools really changes the spec (the
+//   cursor cache is keyed by ID -- sharing one is what once mixed up the check and the readout).
+#define kKCMPawCursorResID	1024
+
 #define kKCMToolIconResID	1030
+
+// The toolbox icon of the cat-paw stamp tool (32x32 normal / 64x64 = +kHIDPIIconOffset), drawn
+// by work/kcm-make-paw-icons.ps1. There is no dark version, so PNGAD points at the light
+// artwork, exactly as the line above.
+// ★The ToolDef resource is declared with this same number (a resource ID is a namespace per
+//   type, so the ToolDef and the PNGs may share it -- the KCM tool does the same).
+#define kKCMPawToolIconResID	1031
+
+// The PANEL button's copies of those two icons, each carrying the little FLYOUT TRIANGLE a toolbox
+// slot wears when it has subtools -- the sign that holding the button down offers another tool.
+// ★★They are separate resources, and have to be: THE TOOLBOX DRAWS ITS OWN MARK on 1030/1031, so a
+//   single image with the triangle already in it would show two of them there. The panel draws no
+//   mark of its own, which is why it needs one drawn in.
+// ★Made by work/kcm-make-paw-icons.ps1 (Add-FlyoutMark), which reads 1030/1031's artwork and
+//   writes a copy -- the user's own KCM_Tool_32/64.png is never modified.
+#define kKCMToolPanelIconResID	1032
+#define kKCMPawToolPanelIconResID	1033
+
+// ★★WIN32 RESOURCE IDS, NOT InDesign ones -- a different numbering altogether. These name the two
+//   16x16 bitmaps in KCMUI.rc that the panel's press-and-hold flyout puts beside its names
+//   (MENUITEMINFO.hbmpItem takes an HBITMAP, which no InDesign PNG resource can supply).
+//   ⚠They are numbered from 2001 to keep them visibly apart from the 1001.. resources above; the
+//     two spaces could not collide even if they overlapped, but a reader should not have to know
+//     that to read this file.
+//   ★The bitmaps' luminance is INVERTED against the toolbox artwork (a Win32 menu is painted in
+//     the system's light menu colour, where near-white artwork is invisible) -- see
+//     work/kcm-make-paw-icons.ps1, Save-MenuBitmap.
+#define kKCMToolMenuBitmapID	2001
+#define kKCMPawToolMenuBitmapID	2002
 
 // Menu item positions.
 // ⚠**There is no written running order of the flyout here any more.** One stood in this place
@@ -876,8 +978,10 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowStateWidgetID, kKCMUIPrefix + 49)	// = t
 //   ⇒ **Read the values below in ascending order: that IS the flyout.**
 // ※Menu names are English in every locale. The separators are Sep1 / OversetSep / Sep3 / Sep2.
 #define kKCMStartStopMenuItemPosition		9.0	// "Start / Stop" at the head of the flyout. Its name follows the armed state between Start and Stop
+#define kKCMRefreshCompareMenuItemPosition	9.01	// ★plain command "Refresh Comparison" -- **directly under Start**, above the two "Set as" items (2026-09-04, user's call). Start and Refresh are both VERBS that run the comparison; Set as Target / Source are the CHOICES it runs on, so the group reads run / run / choose / choose
 #define kKCMSetTargetMenuItemPosition		9.02	// ★"Set as Target" -- **directly under Start, above Compare Books**: choosing the two documents is part of starting a comparison, so it reads Start / choose / choose
 #define kKCMSetSourceMenuItemPosition		9.03	// ★"Set as Source", right below its Target counterpart (the pair reads new-then-old, as the two "Always Show Marks on" toggles do)
+#define kKCMClearChosenMenuItemPosition	9.04	// ★"Clear Target and Source", directly below the two "Set as" items it undoes and still above Sep1 (9.1), so the group reads run / run / choose / choose / clear
 #define kKCMSep1MenuItemPosition			9.1	// the separator below Start (a path ending in ":-")
 #define kKCMCompareModeSubmenuMenuItemPosition	9.15	// ★the "Compare mode" submenu (Pixel Changes / Story Changes). **Right after Sep1, above the display toggles**: what is compared is settled before how it is shown, and the order carries that
 #define kKCMModePixelSubMenuItemPosition		1.0	// inside "Compare mode": Pixel Changes (checked when selected)
@@ -914,6 +1018,8 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowStateWidgetID, kKCMUIPrefix + 49)	// = t
 #define kKCMSavePanelStateMenuItemPosition	9.56	// plain command "Save Panel Settings"
 #define kKCMSaveChecksMenuItemPosition	9.58	// plain command "Save Check & Register"
 #define kKCMLoadChecksMenuItemPosition	9.60	// plain command "Load Check & Register"
+#define kKCMClearChecksMenuItemPosition	9.62	// plain command "Clear Checks in This Document", directly under the Save/Load pair it undoes
+#define kKCMClearPawsMenuItemPosition	9.64	// plain command "Clear Cat Paws in This Document". ★Two items rather than one: a tick records progress and a paw is a landmark, so they are wanted gone at different moments
 #define kKCMExportChangedPagesMenuItemPosition	9.53	// plain command "Export Changed Pages..." (the list of changed pages as TSV), directly below Align
 // ★★Compare Books sits at 9.05, **between Start (9.0) and the separator Sep1 (9.1)** ＝ no rule
 //   falls between it and Start, so the two items that **begin** a comparison read as one group
@@ -926,6 +1032,8 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowStateWidgetID, kKCMUIPrefix + 49)	// = t
 // flyout, under kKCMBookRowMenuName).
 #define kKCMBookRowStartMenuItemPosition	1.0		// chapter row context menu: "Start Change Marker"
 #define kKCMStoryRowRefreshMenuItemPosition	1.0	// Story Edits row context menu: "Refresh Story Comparison" (a different subtree, so it may share 1.0 with the chapter row)
+// (The panel tool button's flyout had two positions here on 2026-09-04. Gone with its MenuDef --
+//  a Win32 popup orders its items by the order they are appended, in code.)
 // -- the informational items, at the end --
 #define kKCMSep2MenuItemPosition			9.95	// the separator above How to Use (a path ending in ":-")
 #define kKCMUsageMenuItemPosition			10.0	// "How to Use"
