@@ -46,7 +46,7 @@
 
 #include "KCMCore.h"			// KCMCollectPageUIDs / KCMCollectMasterPageUIDs / KCMActiveDocDB / KCMIsComparedDoc / KCMArmedTargetDB / KCMArmedSourceDB / KCMDoMarkChangesDoc / KCMInvalidateDB
 #include "KCMModelNotify.h"	// KCMNotifyStatus - the model tells the UI, it never calls it
-#include "KCMComparisonRun.h"	// KCMToggleStartStop
+#include "KCMComparisonRun.h"	// KCMStopComparison
 #include "KCMPageCheck.h"
 #include "KCMPageMap.h"		// KCMPageMapCollectRegistered (save) / KCMPageMapReplaceRegistered (load)
 #include "KCMPawStamp.h"		// KCMPawStampGetForSave / KCMPawStampReplaceAll -- the cat-paw stamps ride this same file
@@ -976,10 +976,10 @@ void KCMPageCheckLoadFromFile()
 			PMString report;
 			if (KCMDoMarkChangesDoc(tgt, src, report, kTrue /*allowIncremental*/) != kSuccess)
 			{
-				KCMToggleStartStop();		// armed, so this takes the Stop branch: strip removed,
-											// disarmed, registrations dropped (⚠the ticks survive
-											// a Stop now, so they are not among the casualties)
-				KCMSayStatus("Load cancelled", kTrue /*forceRedrawNow*/);
+				KCMStopComparison();		// strip removed, disarmed, registrations dropped
+											// (⚠the ticks survive a Stop now, so they are not
+											// among the casualties)
+				KCMSayStatus("Load cancelled - comparison stopped", kTrue /*forceRedrawNow*/);
 				return;
 			}
 		}

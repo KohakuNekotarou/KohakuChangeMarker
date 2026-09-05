@@ -51,7 +51,7 @@
 
 #include "KCMCore.h"			// KCMCollectPageUIDs / KCMCollectMasterPageUIDs / KCMArmedTargetDB / KCMArmedSourceDB
 #include "KCMModelNotify.h"	// KCMNotifyStatus - the model tells the UI, it never calls it
-#include "KCMComparisonRun.h"	// KCMToggleStartStop
+#include "KCMComparisonRun.h"	// KCMStopComparison
 #include "KCMPageMap.h"
 #include "KCMDocUidSet.h"		// the shared "document -> page UID set" container (the tick uses it too)
 #include "KCMID.h"				// kKCMPageFlagsChangedMessage (the notification's ID)
@@ -268,9 +268,8 @@ void KCMPageMapToggleSelectedPages()
 		PMString report;
 		if (KCMDoMarkChangesDoc(KCMArmedTargetDB(), KCMArmedSourceDB(), report, kTrue /*allowIncremental*/) != kSuccess)
 		{
-			KCMToggleStartStop();		// armed, so this takes the Stop branch: marks, registrations
-										// and ticks dropped, disarmed, panel updated
-			KCMSayStatus("Recompare cancelled", kTrue /*forceRedrawNow*/);
+			KCMStopComparison();		// marks, registrations and ticks dropped, disarmed, panel updated
+			KCMSayStatus("Recompare cancelled - comparison stopped", kTrue /*forceRedrawNow*/);
 			return;
 		}
 		msg.Append(" (recompared)");

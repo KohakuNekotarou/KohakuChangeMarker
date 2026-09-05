@@ -179,7 +179,7 @@ static void KCMApplyCompareMode(KCMCompareMode mode)
 			msg.Append(" (recompared)");
 		else
 		{
-			compare->ToggleStartStop();
+			compare->StopComparison();
 			msg.Append(" (cancelled - stopped)");
 		}
 	}
@@ -609,15 +609,15 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 				// ★allowIncremental is not passed here either ＝ every page is compared again, so with many
 				//   pages the progress bar offers Cancel. On a cancellation the model side discards every mark
 				//   and answers kFailure. Throwing that away would leave only the armed state ＝ "Started with
-				//   not one frame", so it is unwound to Stop exactly as the Start route does
-				//   (KCMToggleStartStop takes its Stop branch when called while armed). Found in a self-review.
+				//   not one frame", so it is stopped outright. ★StopComparison, not the toggle: a toggle
+				//   depends on being armed and would START if it were not. Found in a self-review.
 				if (Utils<IKCMCompareFacade>()->MarkChanges(markedDB, markedSrcDB, report) == kSuccess)
 				{
 					msg.Append(" (recompared)");
 				}
 				else
 				{
-					Utils<IKCMCompareFacade>()->ToggleStartStop();		// the marks are already discarded -> take the strip out, disarm, and be properly stopped
+					Utils<IKCMCompareFacade>()->StopComparison();		// the marks are already discarded -> take the strip out, disarm, and be properly stopped
 					msg.Append(" (cancelled - stopped)");
 				}
 			}
