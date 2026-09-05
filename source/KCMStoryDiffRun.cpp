@@ -42,6 +42,7 @@
 
 // Project includes:
 #include "KCMParaText.h"	// KCMParaAttrs and the pure functions over paragraphs (Join / IndexInStory / SplitRunAtPlaces / SpansDiffer)
+#include "KCMProgressBar.h"	// KCMDeferredProgressBar - the progress bar and Cancel of Run, shown after kKCMProgressBarDelayMs
 #include "KCMStoryDiffRun.h"
 #include "KCMTextRead.h"		// the reader: paragraphs, their positions and their attributes, straight from the text model
 #include "KCMStoryList.h"
@@ -1029,8 +1030,10 @@ bool16 CompareOneStory(const UIDRef& targetStory, const UIDRef& sourceStory,
 // Run
 //----------------------------------------------------------------------------------------
 
-int32 KCMStoryDiffRun::Run(IDataBase* targetDB, IDataBase* sourceDB)
+int32 KCMStoryDiffRun::Run(IDataBase* targetDB, IDataBase* sourceDB, bool16* outCancelled)
 {
+	if (outCancelled != nil)
+		*outCancelled = kFalse;
 	if (targetDB == nil || sourceDB == nil)
 		return 0;
 
@@ -1043,7 +1046,24 @@ int32 KCMStoryDiffRun::Run(IDataBase* targetDB, IDataBase* sourceDB)
 
 	int32 total = 0;
 
+	// How many rows will actually be read -- the progress bar's range. The same test as the loop's,
+	//   so the two cannot disagree about what counts.
 	const int32 rowCount = KCMStoryList::GetRowCount();
+	int32 pairedCount = 0;
+	for (int32 i = 0; i < rowCount; ++i)
+	{
+		const KCMStoryRow* row = KCMStoryList::GetRow(i);
+		if (row != nil && row->fStoryUID != kInvalidUID && (row->fKinds & kKCMStoryKindUnpaired) == 0)
+			++pairedCount;
+	}
+	// **The bar, with its Cancel, appears after kKCMProgressBarDelayMs** (2026-09-05, the user's
+	//   call: "a document can hold an enormous number of stories"). Until then this loop had no bar
+	//   at all -- the Pixel mode's was tied to a page count, and this mode rasterises no page.
+	PMString barTitle("Comparing stories...");
+	barTitle.SetTranslatable(kFalse);
+	KCMDeferredProgressBar progress(barTitle, pairedCount);
+	int32 done = 0;
+
 	for (int32 i = 0; i < rowCount; ++i)
 	{
 		const KCMStoryRow* row = KCMStoryList::GetRow(i);
@@ -1061,17 +1081,37 @@ int32 KCMStoryDiffRun::Run(IDataBase* targetDB, IDataBase* sourceDB)
 		if ((row->fKinds & kKCMStoryKindUnpaired) != 0)
 			continue;
 
-		std::vector<KCMStoryChange> changes;
-		if (!CompareOneStory(UIDRef(targetDB, row->fStoryUID),
-							 UIDRef(sourceDB, row->fStoryUID), changes))
-			continue;		// the row keeps its place and loses its detail
+		PMString item("Story ");
+		item.AppendNumber(done + 1);
+		item.Append(" / ");
+		item.AppendNumber(pairedCount);
+		item.SetTranslatable(kFalse);	// it holds numbers, so it is not a translatable string
+		progress.Step(done, item);		// `done` stories are read; this is also where the bar first appears, once the delay has passed
 
-		// **WRITTEN EVEN WHEN NOTHING DIFFERS.** It used to `continue` here, on the grounds that
-		//   writing an empty list changes nothing -- which was true of the CHANGES and false of the
-		//   fact that somebody looked. That fact is what lets the row say "None" instead of standing
-		//   there mute beside the rows that could not be compared at all.
-		KCMStoryList::SetRowChanges(i, changes, kTrue);
-		total += static_cast<int32>(changes.size());
+		std::vector<KCMStoryChange> changes;
+		if (CompareOneStory(UIDRef(targetDB, row->fStoryUID),
+							UIDRef(sourceDB, row->fStoryUID), changes))
+		{
+			// **WRITTEN EVEN WHEN NOTHING DIFFERS.** It used to `continue` here, on the grounds that
+			//   writing an empty list changes nothing -- which was true of the CHANGES and false of the
+			//   fact that somebody looked. That fact is what lets the row say "None" instead of standing
+			//   there mute beside the rows that could not be compared at all.
+			KCMStoryList::SetRowChanges(i, changes, kTrue);
+			total += static_cast<int32>(changes.size());
+		}
+		// (else: the row keeps its place and loses its detail)
+		++done;
+
+		// A cancel is tested at a safe point, with a story fully read: WasCancelled pumps events.
+		// **Not after the LAST one** -- with nothing left to do there is nothing to interrupt, and a
+		//   press landing just after the final story would throw away a comparison that is already
+		//   complete (the same rule as the raster loop in KCMCore.cpp).
+		if (done < pairedCount && progress.WasCancelled())
+		{
+			if (outCancelled != nil)
+				*outCancelled = kTrue;
+			return total;
+		}
 	}
 
 	return total;

@@ -39,7 +39,7 @@
 #include "PMReal.h"
 
 // The progress bar of the partial re-comparison:
-#include "ProgressBar.h"			// TaskProgressBar (progress and Cancel for a large Refresh)
+#include "KCMProgressBar.h"		// KCMDeferredProgressBar (progress and Cancel for a large Refresh; it appears after kKCMProgressBarDelayMs)
 #include "ErrorUtils.h"				// PMSetGlobalErrorCode (no error is carried past a cancellation)
 
 #include <map>
@@ -335,14 +335,13 @@ static bool16 KCMRefreshComparisonCore(IDataBase* targetDB, IDataBase* sourceDB,
 	if (toCompareT.empty())
 		return kFalse;
 
-	// The progress bar with its Cancel only appears for a large enough job. The threshold, and why
-	//   KCM sets one of its own, are with kKCMProgressBarMinPages in KCMConstants.h.
+	// The progress bar with its Cancel appears once the job has run for kKCMProgressBarDelayMs
+	//   (KCMConstants.h says why it is time and not a page count); until then the rasterisation is
+	//   kept from putting up bars of its own.
 	const int32 compareCount = (int32)toCompareT.size();
-	const bool8 showBar = (compareCount >= kKCMProgressBarMinPages) ? kTrue : kFalse;
 	PMString barTitle(compareCount == 1 ? "Refreshing 1 page..." : "Refreshing pages...");
 	barTitle.SetTranslatable(kFalse);
-	TaskProgressBar progress(barTitle, compareCount, showBar);
-	progress.DisableChildProgressBars(kTrue);	// stop the rasterisation putting up bars of its own
+	KCMDeferredProgressBar progress(barTitle, compareCount);
 
 	int32 changedCount = 0;
 	int32 failedCount = 0;
@@ -362,7 +361,7 @@ static bool16 KCMRefreshComparisonCore(IDataBase* targetDB, IDataBase* sourceDB,
 		item.Append(" / ");
 		item.AppendNumber(compareCount);
 		item.SetTranslatable(kFalse);	// it holds numbers, so it is not a translatable string
-		progress.DoTask(item);			// one step on; this is also where the previous one is marked done
+		progress.Step((int32)i, item);	// i pages are done; this is also where the bar first appears, once the delay has passed
 
 		const UID tUID = toCompareT[i];
 		const UID sUID = toCompareS[i];
@@ -402,14 +401,14 @@ static bool16 KCMRefreshComparisonCore(IDataBase* targetDB, IDataBase* sourceDB,
 		}
 
 		// Cancellation is tested at a safe point, with a page fully compared: WasCancelled pumps
-		//   events, so it must not be called in the middle of a rasterisation. The kFalse argument
-		//   means "do not set the global error state", which would otherwise make the commands that
-		//   follow fail with it.
+		//   events, so it must not be called in the middle of a rasterisation. It never sets the
+		//   global error state (KCMDeferredProgressBar passes kFalse), which would otherwise make the
+		//   commands that follow fail with it.
 		// **Unlike Start's comparison, this stops and keeps what it has done.** The command updates
 		//   only the selected pages to begin with, so stopping halfway leaves some pages updated
 		//   and some still old -- the same state as running it on a narrower selection. It cannot
 		//   produce what Start could: a whole document half compared and half not.
-		if (progress.WasCancelled(kFalse))
+		if (progress.WasCancelled())
 		{
 			cancelled = kTrue;
 			ErrorUtils::PMSetGlobalErrorCode(kSuccess);	// carry no error out of the cancellation
@@ -563,7 +562,7 @@ bool16 KCMRefreshComparisonForSelectedPages(int32* outPages, int32* outChanged, 
 	//   KCMRebuildStoryEdits' job.
 	// @warning without this, the list kept showing its pre-edit state after a Refresh and only
 	//   after a Refresh.
-	KCMRebuildStoryEdits(targetDB, sourceDB);
+	KCMRebuildStoryEdits(targetDB, sourceDB);	// its "cancelled" answer is not read: this item is greyed in the Story mode, and only there does a story diff (and its bar) run
 
 	if (outPages)   *outPages = processed;
 	if (outChanged) *outChanged = changed;

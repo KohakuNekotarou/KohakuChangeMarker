@@ -515,7 +515,7 @@ ErrorCode KCMCompareBooks(IBook* target, IBook* source,
 	// TaskProgressBar; textimportfilter counts bytes with RangeProgressBar + SetPosition).
 	//
 	// **showImmediate = kTrue, unconditionally.** The document comparison needs the
-	// kKCMProgressBarMinPages threshold because a two-page incremental recompare is instant; a
+	// kKCMProgressBarDelayMs delay because a two-page incremental recompare is instant; a
 	// book comparison never is -- every chapter is opened, composed and rasterised, which measured
 	// at ~200 ms per chapter even on small test chapters (15 chapters ~ 3 s).
 	// @warning kFalse does NOT mean "appear if it takes a while"; it means the bar never appears

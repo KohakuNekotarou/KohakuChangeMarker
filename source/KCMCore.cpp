@@ -36,7 +36,7 @@
 // IPanelControlData / LayoutUIID / ILayoutViewUtils / ILayoutControlData / K2Vector / PMPoint).
 // **This file now includes no view header at all**, which is one of the conditions for being on
 // the model side.
-#include "ProgressBar.h"			// TaskProgressBar (the progress bar and Cancel for a heavy comparison)
+#include "KCMProgressBar.h"		// KCMDeferredProgressBar (the progress bar and Cancel for a heavy comparison; it appears after kKCMProgressBarDelayMs)
 #include "ErrorUtils.h"				// PMSetGlobalErrorCode (do not leave a global error standing after a cancel)
 
 #include <vector>
@@ -540,10 +540,10 @@ bool16 KCMFindPageUnderMouse(IDataBase* targetDB, PMReal mx, PMReal my, KCMPageH
 
 	Reading the counters composes nothing, so this costs a walk of the story list and no more.
 */
-void KCMRebuildStoryEdits(IDataBase* targetDB, IDataBase* sourceDB)
+bool16 KCMRebuildStoryEdits(IDataBase* targetDB, IDataBase* sourceDB)
 {
 	if (targetDB == nil || sourceDB == nil)
-		return;
+		return kTrue;
 
 	std::vector<KCMStoryStamp> targetStamps;
 	std::vector<KCMStoryStamp> sourceStamps;
@@ -566,8 +566,14 @@ void KCMRebuildStoryEdits(IDataBase* targetDB, IDataBase* sourceDB)
 	// Pixel mode this is not called, so rows have no children and the list stays flat.
 	// @warning it must run **after Build**. A change names its row by position in the sorted list,
 	//   so running it before the order is settled attaches it to the wrong row.
+	bool16 cancelled = kFalse;
 	if (KCMGetCompareMode() == kKCMModeStory)
-		KCMStoryDiffRun::Run(targetDB, sourceDB);
+		KCMStoryDiffRun::Run(targetDB, sourceDB, &cancelled);
+	// A cancel leaves half a list: rows read so far carry their changes, the rest none. It is NOT
+	//   cleared here -- the caller answers a cancel by going back to Stop, and Stop's KCMDoClearMarks
+	//   runs KCMStoryList::Clear() (the same argument the raster cancel in KCMDoMarkChangesDoc makes).
+	if (cancelled)
+		return kFalse;
 
 	// **Drop the rows where only formatting moved** (the reader asked for attribute changes to be
 	// ignored). The counters answer "not identical", so changing a font, a colour, a style or a
@@ -591,6 +597,7 @@ void KCMRebuildStoryEdits(IDataBase* targetDB, IDataBase* sourceDB)
 	// with the section collapsed.
 	// The model says only "the list was rebuilt"; where and how that shows is the UI's decision.
 	KCMNotify(kKCMStoryEditsRebuiltMessage);
+	return kTrue;
 }
 
 ErrorCode KCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMString& outReport, bool16 allowIncremental)
@@ -740,20 +747,26 @@ ErrorCode KCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMString
 	// A heavy comparison gets a progress bar with a Cancel. The total is "the pages about to be
 	// rasterised" (for a differential run, only the ones being recomputed). The title is fixed
 	// English like KCM's other strings, hence SetTranslatable(kFalse).
-	// **showImmediate (the third argument) does not mean "appear if this takes a while".** kFalse
-	// (the default) means "never appear" -- a 100-page comparison showed no bar at all. So the
-	// decision is ours, from the threshold kKCMProgressBarMinPages (KCMConstants.h): no bar for the
-	// few pages a register toggle re-compares, always one for a real comparison.
+	// **The bar appears on TIME, not on a page count** (2026-09-05, the user's call: Pixel and
+	// Story alike, kKCMProgressBarDelayMs). It used to be "10 pages or more" because the SDK's
+	// showImmediate=kFalse means "never appear", not "appear once this takes a while";
+	// KCMDeferredProgressBar supplies the waiting the SDK does not, and keeps the rasterising
+	// internals from raising bars of their own meanwhile.
 	const int32 rasterCount = (int32)toRaster.size();
-	const bool8 showBar = (rasterCount >= kKCMProgressBarMinPages) ? kTrue : kFalse;
 	PMString barTitle(rasterCount == 1 ? "Comparing 1 page..." : "Comparing pages...");
 	barTitle.SetTranslatable(kFalse);
-	TaskProgressBar progress(barTitle, rasterCount, showBar);
-	progress.DisableChildProgressBars(kTrue);	// stop the rasterising internals raising bars of their own
-
 	bool16 cancelled = kFalse;
 	int32 changedCount = 0;
 	int32 failedCount = 0;
+	// ⚠**THE BAR'S LIFETIME IS THE LOOP'S, AND THAT IS NOT TIDINESS.** While a
+	//   KCMDeferredProgressBar exists it holds every OTHER progress bar down (its suppressor,
+	//   KCMProgressBar.h), so one left alive here would sit on top of the Story comparison's own
+	//   bar further down (KCMRebuildStoryEdits -> KCMStoryDiffRun::Run). Measured 2026-09-05:
+	//   "the bar shows in the Pixel mode and not in the Story mode" -- in the Story mode this loop
+	//   runs zero times, the object stayed alive with nothing to do, and the Story bar was refused
+	//   registration (sup=1 regDis=1 reg=0) for as long as it lived.
+	{
+	KCMDeferredProgressBar progress(barTitle, rasterCount);
 	for (size_t k = 0; k < toRaster.size(); ++k)
 	{
 		const size_t i = toRaster[k];
@@ -763,7 +776,7 @@ ErrorCode KCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMString
 		item.Append(" / ");
 		item.AppendNumber(rasterCount);
 		item.SetTranslatable(kFalse);	// it contains numbers, so it is not for translation
-		progress.DoTask(item);			// advance one (which also registers the previous one as finished)
+		progress.Step((int32)k, item);	// k pages are done; this is also where the bar first appears, once the delay has passed
 
 		bool16 changed = kFalse;
 		const ErrorCode mkErr =
@@ -782,8 +795,8 @@ ErrorCode KCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMString
 			++changedCount;
 
 		// Test for a cancel at the safe point, having finished one page: WasCancelled pumps events,
-		// so it must not be asked in the middle of a rasterisation. The kFalse argument means "do
-		// not raise a global error state" -- raised, it drags subsequent commands down with it.
+		// so it must not be asked in the middle of a rasterisation. It never raises the global error
+		// state (KCMDeferredProgressBar passes kFalse) -- raised, it drags subsequent commands down with it.
 		// **Do not test after the LAST page.** A cancel on this route means "discard every mark and
 		// go back to Stop", so catching a press that lands just after the final page **throws away
 		// a comparison that is already complete** (after 100 pages, all of it). With nothing left to
@@ -791,16 +804,25 @@ ErrorCode KCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMString
 		// (The Refresh route in KCMPeek.cpp is designed to KEEP what it has already refreshed, so a
 		//  press at its end costs nothing -- the status line just says "- cancelled". That one is
 		//  right as it stands.)
-		if (k + 1 < toRaster.size() && progress.WasCancelled(kFalse))
+		if (k + 1 < toRaster.size() && progress.WasCancelled())
 		{
 			cancelled = kTrue;
 			break;
 		}
 	}
+	}	// the raster loop's bar goes here, before the Story comparison can want its own
 	// On a differential run the pages that were not rasterised (the reused results) still count
 	// towards how many pages currently differ.
 	if (doIncremental && !cancelled)
 		changedCount = (int32)KCMDrawEventHandler::sEntries.size();
+
+	// **The Story Edits list is rebuilt HERE, before the cancel is settled.** In the Story mode this
+	//   is the work that takes the time (the raster loop above ran zero times), and its progress
+	//   bar's Cancel has to end exactly as the raster loop's does -- one ending, the block below,
+	//   rather than a second copy of it ([[one-question-one-place]]). It stood after the report
+	//   until 2026-09-05; the report only reads the counts the list holds, so it reads them the same.
+	if (!cancelled && !KCMRebuildStoryEdits(targetDB, sourceDB))
+		cancelled = kTrue;
 
 	if (cancelled)
 	{
@@ -815,7 +837,7 @@ ErrorCode KCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMString
 		// **The Story Edits list does NOT need clearing here**, although reading this function alone
 		//   suggests it does (the marks all go, so a list left standing would show rows pointing into
 		//   two documents that are no longer being compared, and those rows can be clicked).
-		//   Opening all four callers shows it cannot happen. When this returns kFailure (i.e. a cancel):
+		//   Opening all five callers shows it cannot happen. When this returns kFailure (i.e. a cancel):
 		//     - Start (KCMStartComparisonFor) ... does not arm. Before it, nothing was armed, so the
 		//       list is empty. (The book comparison's "Start Change Marker",
 		//       KCMBookStartComparisonForRow, likewise Stops before it starts.)
@@ -823,7 +845,10 @@ ErrorCode KCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMString
 		//       KCMToggleStartStop()
 		//     - Load Check & Register (KCMPageCheckLoadFromFile) ... the same
 		//     - the Ignore toggle (the UI's KCMActionComponent) ... the same
-		//   All four end at Stop, so KCMDoClearMarks's KCMStoryList::Clear() always runs.
+		//     - Refresh Comparison (KCMRefreshComparison) ... stops outright, being armed already
+		//   All five end at Stop, so KCMDoClearMarks's KCMStoryList::Clear() always runs -- and
+		//   that is also what empties the HALF-BUILT list a cancelled Story comparison leaves
+		//   (KCMRebuildStoryEdits, above).
 		//   Measured: cancelling a 30-page re-comparison at the progress bar takes the heading from
 		//   "Story Edits (3)" back to "Story Edits".
 		//   @warning callers are named rather than cited by line here **because line numbers go
@@ -911,14 +936,9 @@ ErrorCode KCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMString
 			}
 		}
 
-		// The Story Edits list. A pixel comparison answers "this page looks different" and cannot
-		// tell whether the text changed or only the layout moved. The two complement each other: a
-		// story can be unchanged while the page moves, and a page can look the same while the text
-		// changed.
-		KCMRebuildStoryEdits(targetDB, sourceDB);
-
-		// The Story mode's report can only be built **after** that -- the counts do not exist until
-		// the list does.
+		// The Story mode's report reads the counts the Story Edits list holds (rebuilt above, before
+		// the cancel was settled). A pixel comparison answers "this page looks different" and cannot
+		// tell whether the text changed or only the layout moved; the two complement each other.
 		if (storyMode)
 		{
 			const int32 storyCount = KCMStoryList::GetRowCount();
@@ -959,7 +979,7 @@ ErrorCode KCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMString
 	//
 	// @warning **"cancelled AND differential" is the one case where navReset is kFalse** even though
 	//   DropAll removed every mark, so read here alone it looks as though Prev/Next would start from
-	//   a page that no longer exists. It cannot: all four callers go back to Stop afterwards
+	//   a page that no longer exists. It cannot: all five callers go back to Stop afterwards
 	//   (this returns kFailure), and Stop emits Cleared with navReset=kTrue, which discards the
 	//   cursor there. Changing this expression to `!doIncremental && !cancelled` would put the same
 	//   clean-up in two places, and one of them would eventually be fixed alone

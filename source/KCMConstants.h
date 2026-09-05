@@ -60,14 +60,14 @@ static const PMReal kKCMResolution = 36.0;
 static const PMReal kKCMHiResMul    = 4.0;
 static const int32  kKCMPoolMinCount = 1;	// Pooling: a stored cell counts as changed when this many high-res pixels inside it changed. 1 = most sensitive (picks up edge noise); higher survives noise better, at a slightly higher risk of missing a change.
 
-// Minimum number of pages before a comparison shows a TaskProgressBar, counted against the
-// pages actually about to be rasterized.
-// The threshold has to be ours: TaskProgressBar's showImmediate = kFalse (the default) does
-// not mean "appear once this takes a while", it means "never appear" - a 100 page comparison
-// showed no bar at all. Every place in the product that does show one passes kTrue.
-// Callers: the full/partial comparison in KCMCore.cpp, and Refresh for the pages selected in
-// the Pages panel (KCMPeek.cpp).
-static const int32  kKCMProgressBarMinPages = 10;
+// How long a comparison runs before its progress bar (with Cancel) appears, in milliseconds.
+// Pixel and Story alike (2026-09-05, the user's call: three seconds). It used to be a PAGE
+// COUNT (10 or more to be rasterised), which the Story mode - rasterising nothing - could never
+// reach; and the SDK's own showImmediate = kFalse does not wait, it means "never appear" (a 100
+// page comparison showed no bar at all). The waiting is done by KCMDeferredProgressBar
+// (KCMProgressBar.h). Callers: the full comparison (KCMCore.cpp), Refresh for the pages
+// selected in the Pages panel (KCMPeek.cpp), and the Story comparison (KCMStoryDiffRun.cpp).
+static const int32  kKCMProgressBarDelayMs = 3000;
 
 // Ticks handed to one chapter on the book-comparison progress bar (KCMBookCompare.cpp).
 // With the chapter count alone as the denominator the needle freezes for the whole of a 100

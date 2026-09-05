@@ -58,11 +58,16 @@ namespace KCMStoryDiffRun
 
 		@param targetDB the newer document. nil does nothing.
 		@param sourceDB the older document. nil does nothing.
+		@param outCancelled OUT kTrue when the person pressed Cancel on the progress bar, which
+			appears after kKCMProgressBarDelayMs (KCMProgressBar.h). The rows read so far keep
+			their changes and the rest are left as Build made them; the caller decides what to do
+			with that (KCMRebuildStoryEdits hands it up, and the comparison's callers go back to
+			Stop). nil when the caller does not care.
 		@return how many differences were attached in total, across every row. 0 is a real
 			answer: the counters can flag a story whose text is identical, because they also
 			move for formatting and for things attached to the story.
 	*/
-	int32 Run(IDataBase* targetDB, IDataBase* sourceDB);
+	int32 Run(IDataBase* targetDB, IDataBase* sourceDB, bool16* outCancelled = nil);
 
 	/** Compare ONE row's story again, and replace what is attached to it.
 

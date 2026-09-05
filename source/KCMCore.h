@@ -217,7 +217,10 @@ bool16		KCMIsArmed();
 // Two callers: the whole-document comparison (KCMDoMarkChangesDoc) and "Refresh Page Comparison".
 // The second one does not go through KCMDoMarkChangesDoc, so without sharing this the list would
 // be left stale after a refresh and only after a refresh. nil is ignored silently.
-void		KCMRebuildStoryEdits(IDataBase* targetDB, IDataBase* sourceDB);
+// @return kFalse when the Story comparison inside it was CANCELLED at its progress bar (the list
+//   is then half built; the caller goes back to Stop, which clears it). kTrue otherwise, and
+//   always in the Pixel mode, which runs no story diff.
+bool16		KCMRebuildStoryEdits(IDataBase* targetDB, IDataBase* sourceDB);
 
 IDataBase*	KCMArmedTargetDB();
 IDataBase*	KCMArmedSourceDB();

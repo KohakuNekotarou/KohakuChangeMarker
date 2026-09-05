@@ -283,6 +283,7 @@
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMStoryKinds.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMStoryStamp.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMParaText.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMProgressBar.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMStoryList.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMStoryRowFilter.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMTextDiff.h" />
