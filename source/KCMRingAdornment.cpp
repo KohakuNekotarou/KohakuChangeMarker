@@ -700,4 +700,39 @@ int32 KCMGetNumItemsWithXP(IDataBase* db)
 	return xpManager->GetNumItemsWithXP();
 }
 
+/* KCMRevalidateItemXPList -- declared and explained in KCMRingAdornment.h. */
+void KCMRevalidateItemXPList(IDataBase* db)
+{
+	if (db == nil || !KCMIsMainThread())
+		return;
+	// Mid-export on this thread the declarations standing are the right ones (KCMBeginExportOn put
+	// them up for the flattener); asking again now would take them down under the export.
+	if (tl_ExportingDB.Get() != nil)
+		return;
+
+	InterfacePtr<IXPManager> xpManager(KCMQueryXPManagerFor(db));
+	if (xpManager == nil)
+		return;
+
+	// The list as it stands, read before anything is sent: ItemXPChanged rebuilds it, so reading
+	// and sending cannot be interleaved.
+	const int32 count = xpManager->GetNumItemsWithXP();
+	if (count <= 0)
+		return;
+	UIDList items(db);
+	for (int32 i = 0; i < count; ++i)
+	{
+		const UID uid = xpManager->GetNthItemWithXP(i);
+		if (uid != kInvalidUID)
+			items.Append(uid);
+	}
+	if (items.Length() == 0)
+		return;
+
+	{
+		IDataBase::SaveRestoreModifiedState dirtyGuard(db);
+		xpManager->ItemXPChanged(items, IXPManager::kXPC_RemovedSomeXP);	// "ask again", not "take off"
+	}
+}
+
 // End, KCMRingAdornment.cpp.

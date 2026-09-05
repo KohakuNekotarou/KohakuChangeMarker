@@ -31,6 +31,7 @@
 #include "KCMDrawEventHandler.h"	// sSrcMarksOn / sOversetOn / sOversetDB
 #include "KCMOversetApply.h"		// KCMApplyOversetForDoc -- re-apply overset on Start and on Stop
 #include "KCMPeek.h"				// KCMArmedDocsAlive -- Refresh must not hand a closed document to the comparison
+#include "KCMRingAdornment.h"		// KCMRevalidateItemXPList -- the transparency-list insurance, at Start and at Stop
 #include "KCMThreadSafety.h"		// KCMIsSameDoc -- the one place this plug-in asks whether two dbs are one document
 #include "KCMExternalSource.h"	// the lent Source: registered and chosen by KCMStartComparisonWithSourceDB, forgotten by the lender's Release
 
@@ -264,6 +265,18 @@ bool16 KCMCanStartComparison()
 // one place** ([[one-question-one-place]]).
 void KCMStopComparison()
 {
+	// **The transparency-list insurance, on the pair being stopped** (KCMRingAdornment.h says what
+	//   it is for). Asked through KCMIsDocDBOpen first: an armed db whose document has since closed
+	//   is a pointer nothing may dereference, and Stop is reachable in exactly that state.
+	{
+		IDataBase* const armedTarget = KCMArmedTargetDB();
+		IDataBase* const armedSource = KCMArmedSourceDB();
+		if (KCMIsDocDBOpen(armedTarget))
+			KCMRevalidateItemXPList(armedTarget);
+		if (KCMIsDocDBOpen(armedSource))
+			KCMRevalidateItemXPList(armedSource);
+	}
+
 	// The active document is only used for the redraw, and nil is fine: KCMDoClearMarks and
 	// KCMDoDisarmMousePeek each remember the document the marks were actually drawn on (sDB, the
 	// armed target) and redraw that, so clearing and disarming still work with no document open.
@@ -315,6 +328,12 @@ static bool16 KCMStartComparisonOn(IDataBase* targetDB, IDataBase* sourceDB)
 {
 	if (targetDB == nil || sourceDB == nil)
 		return kFalse;
+
+	// **The transparency-list insurance, on both documents, before anything is drawn**
+	//   (KCMRingAdornment.h says what it is for). Both are live here -- the resolvers above only
+	//   hand over open documents or the lent Source -- so no liveness test is needed.
+	KCMRevalidateItemXPList(targetDB);
+	KCMRevalidateItemXPList(sourceDB);
 
 	PMString report;
 	// **Start does not touch "Always Show Marks on Target / Source".** Setting them here would

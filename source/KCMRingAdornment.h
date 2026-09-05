@@ -131,4 +131,25 @@ void KCMRingAdornmentUnregister();
 // whether anything was written.
 int32 KCMGetNumItemsWithXP(IDataBase* db);
 
+// **The insurance: put the item-has-transparency list back to what the document itself says.**
+// Every item the list holds now is sent `ItemXPChanged(kXPC_RemovedSomeXP)` in one call, which
+// is not "take it off" but "ask again" (IXPManager.h) -- an item with real transparency (a drop
+// shadow, an opacity under 100) answers "still transparent" and stays; a declaration KCM left
+// behind has nothing behind it and goes.
+// **When it can matter**: the declarations above are made only during an export and only on
+// the database the export hands over (a clone, for an asynchronous PDF -- measured 2026-09-05:
+// the document's own list reads 0 before and after an export with the marks printing). So this
+// guards the cases nobody has measured: a synchronous route handing over the real document and
+// then never reaching EndExport (a crash mid-way), and documents that a development build
+// before that rule baked a declaration into. The user's call (2026-09-05): keep the insurance.
+// **Called at Start (both documents) and at Stop (the armed pair)**, on the main thread only,
+// and **never while this thread is exporting** -- mid-export the declarations up are the right
+// ones and re-asking would take them down. Wrapped in SaveRestoreModifiedState: it changes
+// nothing the reader would want to save. nil, or a db without an XPManager, does nothing.
+// @warning **not KCMSetItemXPState(db, kKCMXPListRemove)**: that one picks each spread's
+//   representative item afresh (the first item on the page), and the item chosen when the
+//   declaration went up need not be the one chosen now if items came and went in between.
+//   Reading the list itself is what makes this exact.
+void KCMRevalidateItemXPList(IDataBase* db);
+
 #endif // __KCMRingAdornment_h__
