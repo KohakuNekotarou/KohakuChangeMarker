@@ -78,6 +78,7 @@ public:
 	virtual void		StopComparison()		{ KCMStopComparison(); }
 	virtual void		StartComparisonFor(IDocument* target, IDocument* source)
 													{ KCMStartComparisonFor(target, source); }
+	virtual void		RefreshComparison()		{ KCMRefreshComparison(); }
 	virtual bool16		CanStartComparison()	{ return KCMCanStartComparison(); }
 
 	// The chosen Target/Source. The setters resolve "the active document" on this side; see the
@@ -86,6 +87,10 @@ public:
 	virtual bool16		SetChosenSourceToActive()	{ return KCMSetChosenSourceToActive(); }
 	virtual IDataBase*	GetChosenTargetDB()		{ return KCMChosenTargetDB(); }
 	virtual IDataBase*	GetChosenSourceDB()		{ return KCMChosenSourceDB(); }
+	// ★Declared at the END of the interface (its vtable is an ABI shared with Kohaku InDesign
+	//   MCP), but kept here beside the other chosen-pair members, where it reads. The order of
+	//   the overrides in this class has no bearing on the vtable.
+	virtual void		ClearChosenDocs()		{ KCMClearChosenDocs(); }
 
 	virtual bool16		IsArmed()				{ return KCMIsArmed(); }
 	virtual IDataBase*	GetArmedTargetDB()		{ return KCMArmedTargetDB(); }

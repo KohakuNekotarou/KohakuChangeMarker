@@ -399,6 +399,14 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 			this->DoFindOversetToggle();
 			break;
 
+		// Flyout "Refresh Comparison", directly under Start: compare the same two documents again,
+		// in whichever mode is current ＝ what the reader wants after editing one of them. It was
+		// Stop-then-Start before this existed. ★The model runs the START procedure with the armed
+		// pair, so a refresh and a start cannot come to mean different things (KCMComparisonRun.h).
+		case kKCMPopupRefreshCompareActionID:
+			Utils<IKCMCompareFacade>()->RefreshComparison();
+			break;
+
 		// Flyout "Refresh Overset": live only while Find Overset is ON ＝ rescan the active document
 		// and put them up again.
 		case kKCMPopupRefreshOversetActionID:
@@ -735,6 +743,19 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 		// Flyout "Clear Cat Paws in This Document": the same for the cat-paw stamps.
 		case kKCMClearPawsActionID:
 			Utils<IKCMPageFlagsFacade>()->ClearPawsInDoc(Utils<IKCMCompareFacade>()->GetActiveDocDB());
+			break;
+
+		// Flyout "Clear Target and Source": drop both choices, so the next Start falls back to the
+		// automatic rule (active document = Target, the earliest-opened other document = Source).
+		// ★**The panel refresh and the status line are done here, not by the facade** -- the same
+		//   division as the two "Set as" items this undoes ([[one-question-one-place]]: the facade
+		//   changes the state, the UI decides what the UI shows).
+		// ⚠It does not stop a running comparison, and it does not need to: the item is greyed
+		//   while one is armed.
+		case kKCMClearChosenActionID:
+			Utils<IKCMCompareFacade>()->ClearChosenDocs();
+			KCMRefreshPanel();
+			KCMSetStatus("Target and Source cleared.");
 			break;
 
 		// Flyout "Export Changed Pages...": save the list of changed pages of the current comparison as
@@ -1081,6 +1102,18 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 				actionState |= kSelectedAction;	// a check while it is ON
 			listToUpdate->SetNthActionState(i, actionState);
 		}
+		else if (action == kKCMPopupRefreshCompareActionID)
+		{
+			// Live only while a comparison is armed AND both its documents are still open ＝ exactly
+			//   when there is something to compare again. Greyed before a Start and after a Stop.
+			// ★**THE SAME TWO QUESTIONS THE COMMAND ASKS** (KCMRefreshComparison), in the same order,
+			//   so the grey and the command cannot end up disagreeing ([[one-question-one-place]]).
+			//   ⚠ArmedDocsAlive is asked SECOND on purpose: it reads the armed state, which is only
+			//   meaningful once IsArmed has said there is one.
+			listToUpdate->SetNthActionState(i,
+				(Utils<IKCMCompareFacade>()->IsArmed() && Utils<IKCMCompareFacade>()->ArmedDocsAlive())
+					? kEnabledAction : kDisabled_Unselected);
+		}
 		else if (action == kKCMPopupRefreshOversetActionID)
 		{
 			// Live only while Find Overset is ON (= there is something to rescan); greyed otherwise.
@@ -1102,6 +1135,21 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 			IDataBase* db = Utils<IKCMCompareFacade>()->GetActiveDocDB();
 			listToUpdate->SetNthActionState(i,
 				Utils<IKCMPageFlagsFacade>()->PageCheckHasAny(db) ? kEnabledAction : kDisabled_Unselected);
+		}
+		else if (action == kKCMClearChosenActionID)
+		{
+			// ★**Two questions, and both are needed.** "Not while armed" is the gate the two
+			//   "Set as" items carry -- a choice cannot be changed in the middle of a comparison,
+			//   and this item changes the same state they do. "At least one of them is chosen" is
+			//   what makes clearing mean anything; with neither set there is nothing to undo.
+			//   Both are asked through the same facade the command uses, so the grey and the
+			//   command cannot come to mean different things ([[one-question-one-place]]).
+			InterfacePtr<IKCMCompareFacade> compare(Utils<IKCMCompareFacade>().QueryUtilInterface());
+			const bool16 armed = compare->IsArmed() && (compare->GetArmedTargetDB() != nil);
+			const bool16 anyChosen = (compare->GetChosenTargetDB() != nil) ||
+			                         (compare->GetChosenSourceDB() != nil);
+			listToUpdate->SetNthActionState(i,
+				(!armed && anyChosen) ? kEnabledAction : kDisabled_Unselected);
 		}
 		else if (action == kKCMClearPawsActionID)
 		{

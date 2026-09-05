@@ -765,6 +765,16 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKCMStartStopMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
+		// "Refresh Comparison" -- DIRECTLY UNDER Start (2026-09-04, user's call). Compares the same
+		// two documents again, in whichever mode is current: what the reader wants after editing one
+		// of them. It was Stop-then-Start before this, which is two presses and blanks the marks in
+		// between. Enabled only while a comparison is armed and both documents are still open
+		// (UpdateActionStates, kCustomEnabling).
+		kKCMPopupRefreshCompareActionID,
+		kKCMPopupMenuPath,
+		kKCMRefreshCompareMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
 		// "Set as Target" / "Set as Source" on the panel flyout (popup) menu, directly below
 		// Start. Each makes the ACTIVE document the comparison's Target / Source, so that which
 		// two documents are compared is stated rather than inferred from what is in front. Live
@@ -778,6 +788,15 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKCMPopupSetSourceActionID,
 		kKCMPopupMenuPath,
 		kKCMSetSourceMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
+		// "Clear Target and Source" on the panel flyout (popup) menu. Plain command: drops both
+		// chosen documents, so the next Start falls back to the automatic rule (active = Target,
+		// the earliest-opened other document = Source). Directly below the two "Set as" items it
+		// undoes, so the group reads Start / Refresh / choose / choose / clear.
+		kKCMClearChosenActionID,
+		kKCMPopupMenuPath,
+		kKCMClearChosenMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
 		// Separator below Start (path ending in ":-" renders a menu separator; no ActionDef needed).
@@ -1255,6 +1274,18 @@ resource ActionDef (kSDKDefActionResourceID)
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 
+		// "Clear Target and Source". It undoes the two "Set as" items above, so it carries the
+		// same "not while a comparison is armed" gate -- plus "at least one of the two is
+		// actually chosen", or there would be nothing to clear (UpdateActionStates).
+		kKCMActionComponentBoss,
+		kKCMClearChosenActionID,
+		kKCMClearChosenMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
 		kKCMActionComponentBoss,
 		kKCMPopupPrintMarksActionID,
 		kKCMPrintCheckKey,				// "Print comparison marks" (same label as the former panel checkbox)
@@ -1522,6 +1553,15 @@ resource ActionDef (kSDKDefActionResourceID)
 		kOtherActionArea,
 		kNormalAction,
 		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates supplies the check mark (kSelectedAction)
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		kKCMActionComponentBoss,
+		kKCMPopupRefreshCompareActionID,
+		kKCMRefreshCompareMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates enables it only while a comparison is armed and both documents are alive
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 

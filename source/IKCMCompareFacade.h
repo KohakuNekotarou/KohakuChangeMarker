@@ -497,6 +497,49 @@ public:
 	/** kTrue, and outLabel filled, when `db` is the lent Source (chosen or armed) -- the panel
 		asks this when FindDocByDataBase has no name for it. */
 	virtual bool16		GetExternalSourceLabel(IDataBase* db, PMString& outLabel) = 0;
+
+	// ---- clearing the chosen pair (2026-09-05) --------------------------------------------
+
+	/** Drop both chosen documents, so that the next Start falls back to the automatic rule
+		(active document = Target, the earliest-opened other document = Source). The panel's
+		Target:/Source: lines go back to bare labels, and a lent Source is forgotten with them.
+
+		@warning it does NOT stop a running comparison. The armed pair is what is on screen;
+		this changes only what the NEXT Start will use. The flyout item is greyed while a
+		comparison is armed, exactly as the two "Set as" items it undoes are.
+
+		★AT THE END OF THIS INTERFACE BECAUSE THE VTABLE IS AN ABI (see the head of this
+		file): Kohaku InDesign MCP calls the three methods above through the same vtable, so a
+		method inserted anywhere but the end would move their slots and be called silently. */
+	virtual void		ClearChosenDocs() = 0;
+
+	// ---- refreshing a running comparison (2026-09-05) -------------------------------------
+
+	/** Compare the SAME TWO DOCUMENTS again -- the flyout's "Refresh Comparison", under Start.
+
+		What it is for: the reader has edited one of the two and wants the marks to say what is
+		true now. It was Stop-then-Start before this existed, which is two presses and takes the
+		marks off the screen in between.
+
+		★**IT RUNS THE START PROCEDURE**, with the armed pair, so a refresh and a start cannot
+		come to disagree about what starting means. Nothing is stopped first: arming is
+		idempotent, and re-comparing an armed pair is what the register toggle already does.
+		⚠It does nothing when nothing is armed, or when either document has gone -- ask
+		IsArmed() and ArmedDocsAlive() to decide whether to OFFER it (that is what the menu's
+		enable state does). This is a full comparison, so it costs what a Start costs.
+		⚠**NOT the two partial refreshes.** RefreshSelectedPages above re-does the pages chosen
+		in the Pages panel, and IKCMStoryEditsFacade::RefreshRow re-does one row; both leave the
+		rest alone. This one re-does everything, in whichever mode is current.
+		★If the comparison is CANCELLED (the progress bar's Cancel, on longer runs), the
+		comparison is STOPPED rather than left armed with no marks -- see KCMComparisonRun.h.
+
+		⚠★★★**IT STANDS HERE, AFTER ClearChosenDocs, AND THAT IS THE WHOLE POINT.** It was first
+		written between StartComparisonFor and CanStartComparison on 2026-09-04, which moved the
+		slot of every method after it -- including the three Kohaku InDesign MCP calls. That does
+		not fail to load: the other product calls the wrong slot, silently, and only when the two
+		are built apart. Moved here on 2026-09-05. **The rule at the head of this file is not
+		advice.** */
+	virtual void		RefreshComparison() = 0;
 };
 
 #endif // __IKCMCompareFacade_h__

@@ -30,6 +30,7 @@
 #include "KCMModelNotify.h"	// KCMNotifyStatus / KCMNotify - the model tells the UI, it never calls it
 #include "KCMDrawEventHandler.h"	// sSrcMarksOn / sOversetOn / sOversetDB
 #include "KCMOversetApply.h"		// KCMApplyOversetForDoc -- re-apply overset on Start and on Stop
+#include "KCMPeek.h"				// KCMArmedDocsAlive -- Refresh must not hand a closed document to the comparison
 #include "KCMThreadSafety.h"		// KCMIsSameDoc -- the one place this plug-in asks whether two dbs are one document
 #include "KCMExternalSource.h"	// the lent Source: registered and chosen by KCMStartComparisonWithSourceDB, forgotten by the lender's Release
 
@@ -306,10 +307,14 @@ void KCMStopComparison()
 // Copying the procedure into each would let the three drift ([[one-question-one-place]]), and the
 // procedure holds three decisions that all fail quietly when forgotten: do not arm on cancel, let
 // the strips go onto both windows, re-apply overset.
-static void KCMStartComparisonOn(IDataBase* targetDB, IDataBase* sourceDB)
+// @return kTrue when the comparison ran and the pair is armed; kFalse when it did not (a CANCEL
+//   from the progress bar, or a failure). ★**THE ANSWER MATTERS ONLY TO A CALLER THAT WAS ALREADY
+//   ARMED** - KCMRefreshComparison. For the other two, "not armed" is where they started, so the
+//   kFalse case leaves exactly the state they began in and there is nothing to undo.
+static bool16 KCMStartComparisonOn(IDataBase* targetDB, IDataBase* sourceDB)
 {
 	if (targetDB == nil || sourceDB == nil)
-		return;
+		return kFalse;
 
 	PMString report;
 	// **Start does not touch "Always Show Marks on Target / Source".** Setting them here would
@@ -321,7 +326,8 @@ static void KCMStartComparisonOn(IDataBase* targetDB, IDataBase* sourceDB)
 	// not start: the marks have already been discarded inside KCMDoMarkChangesDoc, so leaving the
 	// arm and the strips out puts everything back the way it was before the press, rather than
 	// creating an armed state with no marks in it.
-	if (KCMDoMarkChangesDoc(targetDB, sourceDB, report) == kSuccess)
+	const bool16 compared = (KCMDoMarkChangesDoc(targetDB, sourceDB, report) == kSuccess) ? kTrue : kFalse;
+	if (compared)
 	{
 		KCMDoArmMousePeek(targetDB, sourceDB);
 		// The scrollbar map's strips are injected by the UI when it receives the
@@ -343,6 +349,47 @@ static void KCMStartComparisonOn(IDataBase* targetDB, IDataBase* sourceDB)
 	// No document travels with it (docA/docB are nil) so the thumbnail purge is not repeated --
 	// only the display is being brought up to date.
 	KCMNotify(kKCMMarksRebuiltMessage);
+
+	return compared;
+}
+
+// KCMRefreshComparison (declared in KCMComparisonRun.h) -- compare the SAME pair again.
+//
+// It is three lines because the procedure is KCMStartComparisonOn's and this only supplies the
+// documents. See the header for why nothing is stopped first, and why the comparison is the full
+// one rather than the incremental one.
+void KCMRefreshComparison()
+{
+	IDataBase* const targetDB = KCMArmedTargetDB();
+	IDataBase* const sourceDB = KCMArmedSourceDB();
+	if (targetDB == nil || sourceDB == nil)
+		return;					// nothing is armed - the menu item is greyed for this
+
+	// ⚠**ASKED, NOT ASSUMED.** A document that has been closed since the comparison started leaves
+	//   its IDataBase* behind in the armed state (that is the whole reason KCMArmedDocsAlive
+	//   exists), and handing a dead one to the comparison is how a stale pointer gets dereferenced.
+	if (!KCMArmedDocsAlive())
+		return;
+
+	if (KCMStartComparisonOn(targetDB, sourceDB))
+		return;
+
+	// ⚠★★★**A CANCELLED REFRESH HAS TO STOP THE COMPARISON, AND THAT IS NOT TIDINESS.**
+	//   KCMDoMarkChangesDoc discards the marks BEFORE it can know it will be cancelled, and it
+	//   returns kFailure precisely so that the Start route does not arm - its own comment says
+	//   why: "always returning kSuccess would leave it armed after a cancel, with the menu stuck
+	//   on Stop". **The Start route is safe because it was not armed to begin with.** A refresh
+	//   IS armed, so doing nothing here leaves exactly the state that return value exists to
+	//   prevent: the menu reading Stop, the panel naming two documents, and not one mark on
+	//   screen. Stopping puts the reader somewhere they can act from - the same place a cancelled
+	//   Start leaves them.
+	KCMStopComparison();
+
+	// KCMStopComparison ends with "marks cleared", which is true and says nothing about WHY. The
+	//   reader pressed Cancel and needs to know that the comparison went with it - otherwise the
+	//   only visible difference between "I cancelled a refresh" and "I pressed Stop" is one the
+	//   panel does not show.
+	KCMSayStatus("refresh cancelled - comparison stopped");
 }
 
 // KCMStartComparisonFor (declared in KCMComparisonRun.h) -- the two-DOCUMENT entry. It only

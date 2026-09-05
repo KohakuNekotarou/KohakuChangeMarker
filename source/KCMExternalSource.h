@@ -13,13 +13,22 @@
 //  same shape the background thread's clone produced during asynchronous PDF export.
 //
 //  ★THE INVARIANT: **a database is registered here while it is the CHOSEN Source or the ARMED
-//    Source, and at no other time.** Registration happens inside KCMStartComparisonWithSourceDB
-//    and nowhere else, which also CHOOSES it (Set as Target + Set as Source + Start in one, the
-//    user's ask of 2026-09-02: a Stop keeps the pair on the panel, and the flyout's own Start
-//    compares against the copy again). It is forgotten in exactly three places: the lender's
-//    KCMReleaseExternalSource (the copy is going), "Set as Source" naming a real document in its
-//    place (KCMSetChosenSourceToActive, when nothing is drawing from it), and the model's
-//    shutdown (KCMClearChosenDocs). A Stop does NOT forget it, deliberately.
+//    Source -- or until the lender takes it back, whichever is later.** Registration happens
+//    inside KCMStartComparisonWithSourceDB and nowhere else, which also CHOOSES it (Set as Target
+//    + Set as Source + Start in one, the user's ask of 2026-09-02: a Stop keeps the pair on the
+//    panel, and the flyout's own Start compares against the copy again). It is forgotten in
+//    exactly three places: the lender's KCMReleaseExternalSource (the copy is going), "Set as
+//    Source" naming a real document in its place (KCMSetChosenSourceToActive, when nothing is
+//    drawing from it), and the model's shutdown (KCMClearChosenDocs). A Stop does NOT forget it,
+//    deliberately.
+//    ⚠**THE "whichever is later" IS NOT SLACK IN THE WORDING** -- it is a state the code really
+//     reaches, and this line said "and at no other time" until 2026-09-04. Choose a real document
+//     as Source WHILE THE COMPARISON IS ARMED and KCMSetChosenSourceToActive declines to forget
+//     the registration (something is drawing from it); Stop then leaves a database registered
+//     that is neither chosen nor armed, until the lender releases it. **No harm follows** --
+//     KCMIsDbAlive answers kTrue about a database nothing draws from -- but a reader checking
+//     the code against this paragraph would have found the paragraph wrong, which is worse than
+//     the state it describes.
 //
 //  ⚠THE LENDER OWNS THE DATABASE AND MUST CALL KCMReleaseExternalSource (through the facade's
 //    ReleaseExternalSourceDB) BEFORE DELETING IT. KCM never deletes it and never asks whether it

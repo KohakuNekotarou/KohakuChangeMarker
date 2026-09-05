@@ -394,7 +394,10 @@ DECLARE_PMID(kActionIDSpace, kKCMClearPawsActionID, kKCMUIPrefix + 49)	// "Clear
 //   shows up in QuickApply as a command that does nothing a reader asked for.
 //   **Do not reuse the numbers** -- a .indk written while they existed would map a shortcut onto
 //   whatever took the slot ([[id-prefix-256-slot-budget]]).
+DECLARE_PMID(kActionIDSpace, kKCMPopupRefreshCompareActionID, kKCMUIPrefix + 53)	// "Refresh Comparison" on the panel flyout, DIRECTLY UNDER Start (a plain command). Compares the same two documents again, in whichever mode is current - what the reader wants after editing one of them. Enabled only while a comparison is armed and both documents are still open (kCustomEnabling); it was Stop-then-Start before this existed. ★It is NOT either of the two partial refreshes: kKCMPageRefreshCompareActionID does the pages selected in the Pages panel and kKCMStoryRowRefreshActionID does one row, while this one re-does everything. KCMRefreshComparison in KCMComparisonRun.cpp
 DECLARE_PMID(kActionIDSpace, kKCMClearChecksActionID, kKCMUIPrefix + 52)	// "Clear Checks in This Document" on the panel flyout (a plain command). ★It exists because **Stop no longer clears the ticks** (2026-09-04): Stop used to double as the way to be rid of them all, and taking that away would have left no way at all. Greyed where the active document holds no tick, through kCustomEnabling. ⚠The number is +52, not +50: see the note directly above
+
+DECLARE_PMID(kActionIDSpace, kKCMClearChosenActionID, kKCMUIPrefix + 54)	// "Clear Target and Source" on the panel flyout (a plain command; 2026-09-05, user's request). Drops both chosen documents, so the next Start falls back to the automatic rule and the panel's Target:/Source: lines go back to bare labels. A lent Source is forgotten with them. ★It does NOT stop a running comparison. Greyed unless nothing is armed AND at least one of the two is chosen, through kCustomEnabling -- the same "not while armed" gate as the two "Set as" items it undoes. ⚠The number is +54, not +50 or +51: those two are retired, see the note above
 
 // (The template's spare //DECLARE_PMID(kActionIDSpace, kKCMActionID, kKCMUIPrefix + 41) was
 //  **deleted**. ⚠★★It was not inert: **+41 is taken** (kKCMPopupTranslucentBookDialogActionID
@@ -636,11 +639,13 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowStateWidgetID, kKCMUIPrefix + 49)	// = t
 #define kKCMClearChecksMenuKey		kKCMStringPrefix "kKCMClearChecksMenuKey"	// the menu name of "Clear Checks in This Document" on the panel flyout
 #define kKCMClearPawsMenuKey		kKCMStringPrefix "kKCMClearPawsMenuKey"	// the menu name of "Clear Cat Paws in This Document" on the panel flyout
 #define kKCMFindOversetMenuKey	kKCMStringPrefix "kKCMFindOversetMenuKey"	// the menu name of the "Find Overset" toggle on the panel flyout
+#define kKCMRefreshCompareMenuKey	kKCMStringPrefix "kKCMRefreshCompareMenuKey"	// the menu name of "Refresh Comparison" on the panel flyout (directly under Start). ⚠Not kKCMPageRefreshCompareMenuKey, which is the Pages panel's partial one
 #define kKCMRefreshOversetMenuKey	kKCMStringPrefix "kKCMRefreshOversetMenuKey"	// the menu name of "Refresh Overset" on the panel flyout
 #define kKCMExportChangedPagesMenuKey	kKCMStringPrefix "kKCMExportChangedPagesMenuKey"	// the menu name of "Export Changed Pages..." on the panel flyout
 #define kKCMCompareBooksMenuKey	kKCMStringPrefix "kKCMCompareBooksMenuKey"	// the menu name of "Compare Books" on the panel flyout (compare two books chapter by chapter)
 #define kKCMSetTargetMenuKey		kKCMStringPrefix "kKCMSetTargetMenuKey"	// ★the menu name of "Set as Target" on the panel flyout (the active document becomes the comparison's Target)
 #define kKCMSetSourceMenuKey		kKCMStringPrefix "kKCMSetSourceMenuKey"	// ★the menu name of "Set as Source" on the panel flyout (the active document becomes the older version)
+#define kKCMClearChosenMenuKey	kKCMStringPrefix "kKCMClearChosenMenuKey"	// ★the menu name of "Clear Target and Source" on the panel flyout (drops both choices; the next Start falls back to the automatic rule)
 #define kKCMBookDialogTitleKey	kKCMStringPrefix "kKCMBookDialogTitleKey"	// the title of the book comparison dialog
 #define kKCMBookCompareKey		kKCMStringPrefix "kKCMBookCompareKey"		// (retired) the label of the old "Compare" button. The button was removed, so nothing refers to it, but it is kept together with its enUS table row so that the set can be restored together
 #define kKCMBookReadyKey			kKCMStringPrefix "kKCMBookReadyKey"			// the status line before a comparison. ★What reaches it now is only "the dialog was opened without a comparison ever having been run" - otherwise the summary overwrites it
@@ -973,8 +978,10 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowStateWidgetID, kKCMUIPrefix + 49)	// = t
 //   ⇒ **Read the values below in ascending order: that IS the flyout.**
 // ※Menu names are English in every locale. The separators are Sep1 / OversetSep / Sep3 / Sep2.
 #define kKCMStartStopMenuItemPosition		9.0	// "Start / Stop" at the head of the flyout. Its name follows the armed state between Start and Stop
+#define kKCMRefreshCompareMenuItemPosition	9.01	// ★plain command "Refresh Comparison" -- **directly under Start**, above the two "Set as" items (2026-09-04, user's call). Start and Refresh are both VERBS that run the comparison; Set as Target / Source are the CHOICES it runs on, so the group reads run / run / choose / choose
 #define kKCMSetTargetMenuItemPosition		9.02	// ★"Set as Target" -- **directly under Start, above Compare Books**: choosing the two documents is part of starting a comparison, so it reads Start / choose / choose
 #define kKCMSetSourceMenuItemPosition		9.03	// ★"Set as Source", right below its Target counterpart (the pair reads new-then-old, as the two "Always Show Marks on" toggles do)
+#define kKCMClearChosenMenuItemPosition	9.04	// ★"Clear Target and Source", directly below the two "Set as" items it undoes and still above Sep1 (9.1), so the group reads run / run / choose / choose / clear
 #define kKCMSep1MenuItemPosition			9.1	// the separator below Start (a path ending in ":-")
 #define kKCMCompareModeSubmenuMenuItemPosition	9.15	// ★the "Compare mode" submenu (Pixel Changes / Story Changes). **Right after Sep1, above the display toggles**: what is compared is settled before how it is shown, and the order carries that
 #define kKCMModePixelSubMenuItemPosition		1.0	// inside "Compare mode": Pixel Changes (checked when selected)
