@@ -58,7 +58,7 @@
 #define kKCMCompanyKey	"KohakuNekotarou"	// Company name used internally for menu paths and the like. Must be globally unique, only A-Z, 0-9, space and "_".
 #define kKCMCompanyValue	"KohakuNekotarou"	// Company name displayed externally.
 #define kKCMDisplayName	"Kohaku Change Marker"	// Shown in the About menu item, the About box, and as the panel and tool name. Words separated by spaces, matching KBS's "Kohaku Search Panel".
-#define kKCMVersion		"2.1.0"				// The product version, and it MUST be the same on both sides. It appears in the About box, in both .rc files as FileVersion, and in both PluginVersion resources. The history and the increments still to be submitted are kept in KCMID.h's long comment, which is the master copy.
+#define kKCMVersion		"2.0.0"				// The product version, and it MUST be the same on both sides. It appears in the About box, in both .rc files as FileVersion, and in both PluginVersion resources. The history and the increments still to be submitted are kept in KCMID.h's long comment, which is the master copy.
 
 // The modifier key as the USER sees it named. The implementation does not branch: the SDK's
 // IEvent already absorbs the difference (OptionAltKeyDown = Alt on Windows, Option on the Mac;
