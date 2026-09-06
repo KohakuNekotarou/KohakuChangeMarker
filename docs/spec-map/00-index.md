@@ -75,7 +75,7 @@ git log -p -- docs/spec-map/        # コミット済みの書き込み
 | # | 章 | 状態 |
 |---|---|---|
 | 01 | [全体像](01-overview.md) | ✅ |
-| 02 | 比較の起動と停止（Target/Source の決まり方・Start/Stop・外部 Source） | ⬜ |
+| 02 | [比較の起動と停止](02-start-stop.md)（Target/Source の決まり方・Start/Stop・外部 Source） | ✅ |
 | 03 | Pixel 変更モード ― 何をどう比べるか | ⬜ |
 | 04 | Pixel のマーク ― 画面に何が出るか | ⬜ |
 | 05 | ページの手動フラグ（登録 Added/Removed・✓・猫の手スタンプ） | ⬜ |
