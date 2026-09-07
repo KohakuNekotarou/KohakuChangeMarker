@@ -339,8 +339,12 @@ DECLARE_PMID(kActionIDSpace, kKCMPopupScrollMapActionID, kKCMUIPrefix + 21)	// "
 DECLARE_PMID(kActionIDSpace, kKCMPopupSavePanelStateActionID, kKCMUIPrefix + 22)	// "Save Panel Settings" on the panel flyout (a plain command, not a check). It writes the current settings toggles to a private JSON file and shows the saved path. They are read back at startup (KCMUIStartup::Startup). KCMPanelState.cpp
 DECLARE_PMID(kActionIDSpace, kKCMPopupSep3ActionID, kKCMUIPrefix + 23)	// flyout: the separator below Refresh Overset (a MenuDef path ending in ":-"; no ActionDef needed). Its position is kKCMSep3MenuItemPosition below
 DECLARE_PMID(kActionIDSpace, kKCMPageCheckToggleActionID, kKCMUIPrefix + 24)	// "Check" toggle on the Pages panel page context menu (RtMenuPagesPanel): puts a check mark on the selected pages, or takes it off. The check mark and the enabling come from kCustomEnabling. ★★**No comparison is required, and Stop does not clear the ticks** (2026-09-04) -- the old "only while Started; cleared on Stop" is gone. ★**Which pages can be checked**: any page of a document nobody is comparing; of a document being compared, in Pixel only the pages that carry a mark and in Story any page. The answer lives in one place, the model's KCMCollectCheckablePageUIDs. KCMPageCheck.cpp, and the check itself is drawn by the isThumb branch of KCMDrawEventHandler
-DECLARE_PMID(kActionIDSpace, kKCMPopupSaveChecksActionID, kKCMUIPrefix + 25)	// "Save Check & Register" on the panel flyout (a plain command). It merges the current checks and Added/Removed registrations of Target and Source into a private JSON file (KCM\KCMPageChecks.json, v2) and shows the saved path. KCMPageCheck.cpp
-DECLARE_PMID(kActionIDSpace, kKCMPopupLoadChecksActionID, kKCMUIPrefix + 26)	// "Load Check & Register" on the panel flyout (a plain command). Enabled only while Started: it applies the registrations from that file to both documents, recompares, then restores the checks (still only where a mark is). KCMPageCheck.cpp
+// kKCMPopupSaveChecksActionID (kKCMUIPrefix + 25) and kKCMPopupLoadChecksActionID (+ 26) were
+//   "Save Check & Register" / "Load Check & Register". Both went on 2026-09-07 (spec map FLG-24):
+//   the ticks and the paws are written into the document itself now, so a second copy in a private
+//   file was the same thing twice, and the registrations are an input to one comparison.
+//   ⚠**The two slots stay reserved and are never reused** -- a shortcut a reader assigned to the old
+//   item is stored by number, and reusing the number would fire something else.
 // kKCMPopupPagesPanelShortcutActionID (kKCMUIPrefix + 27) went with the middle-button gestures,
 //   together with its "Invoke Pages Panel Shortcut" toggle. The slot stays reserved.
 DECLARE_PMID(kActionIDSpace, kKCMPageMapSepActionID, kKCMUIPrefix + 28)	// Pages panel page context menu (RtMenuPagesPanel): the separator above the KCM items (Register / Check). A MenuDef path ending in ":-" - no ActionDef and no DoAction, only a unique ID. It sets the KCM items apart from InDesign's own
@@ -645,10 +649,8 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowStateWidgetID, kKCMUIPrefix + 49)	// = t
 // (kKCMHoldToHideMarksMenuKey went with that toggle - see the note at ActionID +19.)
 #define kKCMScrollMapMenuKey		kKCMStringPrefix "kKCMScrollMapMenuKey"	// the menu name of the "Show Scrollbar Map" toggle on the panel flyout
 #define kKCMSavePanelStateMenuKey	kKCMStringPrefix "kKCMSavePanelStateMenuKey"	// the menu name of "Save Panel Settings" on the panel flyout
-#define kKCMSaveChecksMenuKey		kKCMStringPrefix "kKCMSaveChecksMenuKey"	// the menu name of "Save Check & Register" on the panel flyout
 // (kKCMSaveMarksMenuKey stood here for one morning, 2026-09-07, and went with its menu item.)
 #define kKCMClearMarksMenuKey		kKCMStringPrefix "kKCMClearMarksMenuKey"	// the menu name of "Clear Marks from Document"
-#define kKCMLoadChecksMenuKey		kKCMStringPrefix "kKCMLoadChecksMenuKey"	// the menu name of "Load Check & Register" on the panel flyout
 #define kKCMClearChecksMenuKey		kKCMStringPrefix "kKCMClearChecksMenuKey"	// the menu name of "Clear Checks in This Document" on the panel flyout
 #define kKCMClearPawsMenuKey		kKCMStringPrefix "kKCMClearPawsMenuKey"	// the menu name of "Clear Cat Paws in This Document" on the panel flyout
 #define kKCMFindOversetMenuKey	kKCMStringPrefix "kKCMFindOversetMenuKey"	// the menu name of the "Find Overset" toggle on the panel flyout
@@ -1032,8 +1034,6 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowStateWidgetID, kKCMUIPrefix + 49)	// = t
 #define kKCMAlignViewsMenuItemPosition	9.52	// plain command "Align Other Views to Active", first of the group
 #define kKCMHideUnchangedMenuItemPosition	9.54	// check toggle "Hide Unchanged Spreads". ⚠It once shared 9.54 with Compare Books, and **two items at one value leave the order to the MenuDef registration order alone**; Compare Books has since moved up under Start
 #define kKCMSavePanelStateMenuItemPosition	9.56	// plain command "Save Panel Settings"
-#define kKCMSaveChecksMenuItemPosition	9.58	// plain command "Save Check & Register"
-#define kKCMLoadChecksMenuItemPosition	9.60	// plain command "Load Check & Register"
 #define kKCMClearChecksMenuItemPosition	9.62	// plain command "Clear Checks in This Document", directly under the Save/Load pair it undoes
 #define kKCMClearPawsMenuItemPosition	9.64	// plain command "Clear Cat Paws in This Document". ★Two items rather than one: a tick records progress and a paw is a landmark, so they are wanted gone at different moments
 #define kKCMClearMarksMenuItemPosition	9.66	// plain command "Clear Marks from Document", last of the three because it is the other two together. ⚠★**It shared 9.64 with Clear Cat Paws until 2026-09-07**, and two items at one value leave the order to the MenuDef registration order alone -- the very trap the Hide Unchanged line above records. (9.62 was likewise shared, with the now-retired "Save Marks to Document".)

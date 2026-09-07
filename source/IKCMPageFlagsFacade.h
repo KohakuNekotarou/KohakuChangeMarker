@@ -59,16 +59,15 @@ public:
 	virtual KCMPageToggleState	GetRegisterToggleState() = 0;
 	virtual KCMPageToggleState	GetCheckToggleState() = 0;
 
-	// ---- the JSON store ------------------------------------------------------------------
-
-	/** "Save Check & Register": write both flags for the armed pair next to the Target document
-		and report where they went on the status line. Armed only; says so if not. */
-	virtual void	SaveChecksAndRegister() = 0;
-
-	/** "Load Check & Register": read that file back, apply Register to both documents,
-		re-compare, then restore the ticks -- but only on pages that still carry a mark. Armed
-		only. */
-	virtual void	LoadChecksAndRegister() = 0;
+	// ---- (the JSON store went on 2026-09-07) ---------------------------------------------
+	//
+	// SaveChecksAndRegister() and LoadChecksAndRegister() stood here. They wrote the ticks, the
+	// paws and the registrations into a private file beside the document. The ticks and the paws
+	// are written INTO the document now, as they are made, so the file held a second copy of the
+	// same thing; the registrations are an input to one comparison and are not kept past it.
+	// ⚠**This is a vtable, so removing them moved every slot below.** Both halves of the plug-in
+	//   are rebuilt together, and Kohaku InDesign MCP -- the one other product that compiles a KCM
+	//   facade header -- uses IKCMCompareFacade and not this one (checked before removing them).
 
 	// ---- the cat-paw stamps --------------------------------------------------------------
 	//

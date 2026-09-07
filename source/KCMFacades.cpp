@@ -371,8 +371,8 @@ public:
 	virtual KCMPageToggleState	GetRegisterToggleState()	{ return KCMPageMapGetToggleState(); }
 	virtual KCMPageToggleState	GetCheckToggleState()		{ return KCMPageCheckGetToggleState(); }
 
-	virtual void	SaveChecksAndRegister()			{ KCMPageCheckSaveToFile(); }
-	virtual void	LoadChecksAndRegister()			{ KCMPageCheckLoadFromFile(); }
+	// (SaveChecksAndRegister / LoadChecksAndRegister went on 2026-09-07 -- IKCMPageFlagsFacade.h
+	//  says why. Their model-side bodies went with them.)
 	// ★SaveMarksToDocument was removed on 2026-09-07. Writing is no longer something the reader
 	//   asks for separately: a tick or a paw goes into the document the moment it is made, and
 	//   comes back out again with Ctrl+Z. There is nothing left for a "save" to do.

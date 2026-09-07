@@ -188,28 +188,23 @@ bool16 KCMCollectCheckablePageUIDs(IDataBase* db, KCMCheckablePages& out)
 	//   with one rule is what made a tick die when a comparison started on the document carrying
 	//   it. The prune is gone (KCMPageCheck.h says where and why); a tick stays until someone
 	//   clears it.
-	if (db != KCMDrawEventHandler::sDB && db != KCMDrawEventHandler::sSrcDB)
-	{
-		out.fAllPages = kTrue;
-		return kTrue;
-	}
+	// (The test that stood here -- "is db one of the two documents being compared" -- went on
+	//  2026-09-07. Both of its branches now answer the same thing, for the reason just below, and a
+	//  test whose two answers are equal is only a place for them to drift apart.)
 
-	if (KCMGetCompareMode() != kKCMModeStory)
-	{
-		// Pixel = only the pages carrying a mark. Whether db is one of the compared documents is
-		// decided by the function called here (kFalse if it is not).
-		if (!KCMCollectChangedPageUIDs(db, out.fPages))
-			return kFalse;
-		// **A master page may always be ticked, difference or no difference.** The Pixel rule
-		// (only pages with a ring or a "/") stands for ordinary pages; masters are the exception.
-		// The reason: in the Story mode every page can be ticked, masters included, so switching
-		// to Pixel took that away again -- the same page could and then could not be ticked
-		// depending on the mode.
-		std::vector<UID> masters;
-		KCMCollectMasterPageUIDs(db, masters);
-		out.fPages.insert(masters.begin(), masters.end());
-		return kTrue;
-	}
+	// ★★★**AND EVERY PAGE OF A COMPARED DOCUMENT TOO, IN EITHER MODE** (2026-09-07, the author's
+	//   decision through the spec map's FLG-12: "どのページにも付けれるようにしましょうか").
+	//   The Pixel mode used to allow a tick only on a page carrying a mark (plus every master, an
+	//   exception added because the Story mode allowed all of them and switching mode took it away
+	//   again). That restriction was the last piece of "a tick belongs to the comparison", and the
+	//   rest of that idea went on 2026-09-04: a tick is the reader's own note that they have looked
+	//   at a page, and **a page can be worth marking as looked-at precisely because nothing changed
+	//   on it**.
+	//   ⇒ There is now ONE answer for every document and every mode, so nothing below branches.
+	//   ⚠**Do not widen "could this page be carrying a mark" (KCMCollectChangedPageUIDs) to match.**
+	//     That one drives the thumbnail purge and is a different question; letting it name every
+	//     page would rebuild every thumbnail in the document on every comparison. The two functions
+	//     sit next to each other for exactly this reason.
 
 	// Story mode = every page. That db is one of the two being compared was settled at the top, so
 	// there is nothing left to test here.

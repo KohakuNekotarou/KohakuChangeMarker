@@ -86,13 +86,13 @@ struct KCMCheckablePages
 
 // Fill out with the pages of db that may carry a "Check" tick. **kFalse comes back only when there
 // is no document at all (db == nil)** -- it does not mean "nothing may be ticked".
-// ★A TICK NO LONGER DEPENDS ON A COMPARISON (2026-09-04, user decision):
-//   - db is NOT one of the compared documents ... fAllPages = kTrue, every page. **One answer for
-//       two situations**: a third document open beside a running comparison, and nothing started
-//       at all. (Phrasing it as "nothing is armed" would have served the second and left the
-//       first refusing ticks.)
-//   - db IS being compared, Pixel mode ......... the pages carrying a mark, plus every master page
-//   - db IS being compared, Story mode ......... fAllPages = kTrue
+// ★★A TICK DEPENDS ON NOTHING (2026-09-04, then 2026-09-07: the last piece went with FLG-12).
+//   **Every page of every open document may be ticked** -- compared or not, Pixel or Story,
+//   ordinary page or master. fAllPages comes back kTrue and fPages stays empty.
+//   The Pixel mode used to allow it only on pages carrying a mark; the author removed that, on the
+//   ground that **a page can be worth marking as looked-at precisely because nothing changed on
+//   it**. ⇒ The function keeps its shape (and fPages) because the answer is still given through
+//   KCMCheckablePages, but there is no longer a case that fills fPages.
 // ⚠**The old contract was the opposite** -- kFalse for anything but the compared pair -- so a
 //   caller written against it reads as "refuse" where it should now read "there is no document".
 // @warning the "is it being compared" test uses **the same two pointers** (sDB/sSrcDB) as

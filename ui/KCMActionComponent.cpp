@@ -712,24 +712,10 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 			break;
 		}
 
-		// Flyout "Save Check & Register": merge the current ticks and Added/Removed registrations of the
-		// Target and Source into a private JSON file and show the path in the status line (the work is in
-		// KCMPageCheck.cpp).
-		case kKCMPopupSaveChecksActionID:
-			Utils<IKCMPageFlagsFacade>()->SaveChecksAndRegister();
-			break;
-
-		// Flyout "Load Check & Register": apply the registrations from that JSON to both documents,
-		// recompare, then restore the ticks (only on pages that still carry a mark). The work is in
-		// KCMPageCheck.cpp.
-		// ⚠★**The menu item is always pressable.** ("Only while Started" would read as menu enabling,
-		//   and UpdateActionStates below has no branch for this ActionID.) The ActionDef in the `.fr`
-		//   carries kDisableIfLowMem without kCustomEnabling and says "plain command; guards inside
-		//   (needs Start)" ＝ **it only means something while Started, and refusing is the work’s own
-		//   job**. Save Check & Register is built the same way.
-		case kKCMPopupLoadChecksActionID:
-			Utils<IKCMPageFlagsFacade>()->LoadChecksAndRegister();
-			break;
+		// (The cases for "Save Check & Register" and "Load Check & Register" stood here and went on
+		//  2026-09-07 with the menu items themselves -- spec map FLG-24. The ticks and the paws are
+		//  written into the document as they are made, so a private file beside it held a second
+		//  copy of the same thing.)
 
 		// "Clear Marks from Document" (2026-09-07): takes the ticks and paws out of the document,
 		//   where they live as script labels (KCMPageMarksDoc.h).

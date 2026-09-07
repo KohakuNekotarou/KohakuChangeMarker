@@ -109,14 +109,9 @@ namespace KCMJa
 		// ★A "&" inside a menu name is doubled to "&&" here: this text goes to CAlert::ModalAlert,
 		//   and CAlert eats a lone "&" as a mnemonic ([[ampersand-eaten-in-ui-strings]]; KBS does
 		//   the same).
-		u"　「Save Check && Register」= アクティブな文書が持っている分を専用ファイルに保存(保存先のパスを表示)\n"
-		u"　「Load Check && Register」= 保存内容を読み込みます。その文書が比較中なら、登録を適用して比較し直してから復元します\n"
-		u"　「Clear Checks in This Document」「Clear Cat Paws in This Document」= アクティブな文書の印を消します\n"
-		u"・新旧2つの文書ぶんを残したいときは、タブを切り替えてもう一度保存してください\n"
-		u"・印を1つも持たない文書は書き出さないので、保存を押して既存の記録が消えることはありません\n"
-		u"・「Save Check && Register」の保存先は、このプラグイン専用のファイル(環境設定フォルダー)です。ワークスペースには何も書き込みません\n"
-		u"・⚠チェック印と肉球は、それとは別に文書のページにも書き込まれます(置いた時点で自動。Undo/Redoで戻せます)。登録(Added/Removed)は文書には入りません\n"
-		u"・文書を別の場所へ移動したり別名保存したりして保存場所(パス)が変わると、保存したチェック印は復元できません\n\n"
+		u"　「Clear Checks in This Document」「Clear Cat Paws in This Document」= アクティブドキュメントの印を消します\n"
+		u"・チェック印と肉球は、置いた時点で文書のページに自動で書き込まれます(Undo/Redoで戻せます)。文書を保存すれば、次に開いたときも残っています\n"
+		u"・登録(Added/Removed)は比較のための指定なので、文書には書き込まれず、Stopで消えます\n\n"
 		u"【ページ比較の更新(Refresh Page Comparison)】\n"
 		u"編集したページだけを比較し直せます。Start中で、かつPixel比較モードのときだけ使用できます"
 		u"(Story比較モードはページをラスタ化しないため、代わりにStory Editsの行を右クリックして"
@@ -172,7 +167,7 @@ namespace KCMJa
 		u"・比較していなくても使え、Stopでも消えません(チェック印と同じ)\n"
 		u"・画面には常に出ます。印刷とPDFには「Print comparison marks」がONのときだけ出ます。濃さは「Marks opacity 25% / 75%」に連動します\n"
 		u"・肉球は文書のページに書き込まれます(置いた時点で自動。Undo/Redoで戻せ、文書を保存すれば次に開いたときも残ります)\n"
-		u"・「Save Check && Register」でプラグイン専用のファイルにも保存できます(チェック印・登録と一緒)\n"
+		u"・フライアウトの「Clear Marks from Document」で、その文書のチェック印と肉球をまとめて消せます\n"
 		u"・フライアウトの「Clear Cat Paws in This Document」でアクティブな文書の肉球だけを消せます(チェック印は別の項目)\n\n"
 		u"【注意】どのような問題が起こっても責任を取れません。ご利用は自己責任でお願いします。";
 

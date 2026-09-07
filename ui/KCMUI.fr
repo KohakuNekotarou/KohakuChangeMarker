@@ -1051,22 +1051,14 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKCMSavePanelStateMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
-		// "Save Check & Register" on the panel flyout (popup) menu. Plain command that writes the current
-		// per-page checks (Check) and registered Added/Removed pages of the started Target/Source
-		// documents to a private JSON file (KCM\KCMPageChecks.json, v2), merged with any previously saved
-		// documents. Shows the saved path.
-		kKCMPopupSaveChecksActionID,
-		kKCMPopupMenuPath,
-		kKCMSaveChecksMenuItemPosition,
-		kSDKDefIsNotDynamicMenuFlag,
-
-		// "Load Check & Register" on the panel flyout (popup) menu. Plain command; only meaningful while started.
-		// Applies the saved registered pages to both documents, recompares once, then restores the saved checks
-		// whose pages are still marked (frame/"/").
-		kKCMPopupLoadChecksActionID,
-		kKCMPopupMenuPath,
-		kKCMLoadChecksMenuItemPosition,
-		kSDKDefIsNotDynamicMenuFlag,
+		// ("Save Check & Register" and "Load Check & Register" stood here and were REMOVED on
+		//  2026-09-07, at the author's request through the spec map's FLG-24: "これはなくしましょう。
+		//  チェックは自動で書き込まれますし /は保存する必要無いかな".
+		//  They wrote the ticks, the paws and the registrations to a private JSON file. The ticks and
+		//  the paws now go into the DOCUMENT the moment they are made (KCMPageMarksDoc.h), so saving
+		//  them beside it was a second copy of the same thing; the registrations are an input to a
+		//  comparison and are not worth keeping past one. ⚠**Their ActionIDs are not reused**
+		//  (kKCMUIPrefix + 25 / + 26 are dead numbers -- see KCMUIID.h).)
 
 		// "Clear Marks from Document" (2026-09-07): takes the ticks and cat paws out of the document
 		// itself, where they live as script labels on the pages that carry them (KCMPageMarksDoc.h).
@@ -1495,23 +1487,8 @@ resource ActionDef (kSDKDefActionResourceID)
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 
-		kKCMActionComponentBoss,
-		kKCMPopupSaveChecksActionID,
-		kKCMSaveChecksMenuKey,
-		kOtherActionArea,
-		kNormalAction,
-		kDisableIfLowMem,					// plain command; guards inside (needs Start + checks)
-		kInvalidInterfaceID,
-		kSDKDefInvisibleInKBSCEditorFlag,
-
-		kKCMActionComponentBoss,
-		kKCMPopupLoadChecksActionID,
-		kKCMLoadChecksMenuKey,
-		kOtherActionArea,
-		kNormalAction,
-		kDisableIfLowMem,					// plain command; guards inside (needs a saved record for the active document)
-		kInvalidInterfaceID,
-		kSDKDefInvisibleInKBSCEditorFlag,
+		// (The ActionDefs for "Save Check & Register" and "Load Check & Register" stood here and
+		//  went with their menu items on 2026-09-07 -- the MenuDef above says why.)
 
 		// ★The document-side marks item. kCustomEnabling: UpdateActionStates greys "Clear" when
 		//   there is no active document at all. (Its "Save" twin went on 2026-09-07 -- see the
