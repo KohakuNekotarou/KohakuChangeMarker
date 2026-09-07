@@ -251,9 +251,10 @@ bool32 KCMRingFlattenerUsage::IsFlattenerRequired_(IPMUnknown* /*iThing*/,
 static bool16 KCMMarksCouldBeTranslucent()
 {
 	// If the marks are set not to go into print or export, no transparency arises in the output.
-	//   - sPrintMarks  ... the Target side's "Print comparison marks"
-	//   - sSrcMarksOn  ... the Source side's frames, which by design always go into print
-	if (!KCMDrawEventHandler::sPrintMarks && !KCMDrawEventHandler::sSrcMarksOn)
+	// ★**ONE SWITCH DECIDES IT: "Print comparison marks"** (sPrintMarks). Since 2026-09-07 the
+	//   Source side follows it too (spec map MK-14), so the Source toggle no longer has to be
+	//   consulted here -- with sPrintMarks off, neither side reaches the output.
+	if (!KCMDrawEventHandler::sPrintMarks)
 		return kFalse;
 
 	// No mark to draw means no transparency either.

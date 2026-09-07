@@ -212,9 +212,13 @@ public:
 	// **Start does not touch it.** The setting is saved in the panel state and restored at
 	// start-up, so a Start that overwrote it would wipe the reader's saved choice on every
 	// comparison. (KCMStartComparisonFor used to set it kTrue.)
-	// The opacity follows the panel's 25%/75% choice (SelectedMarkOpacity), it is not hidden by
-	// overprint preview, and it always goes into print and PDF -- independently of the Target
-	// side's sPrintMarks.
+	// The opacity follows the panel's 25%/75% choice (SelectedMarkOpacity), and it is not hidden by
+	// overprint preview.
+	// ★**WHAT REACHES PRINT AND PDF IS DECIDED BY "Print comparison marks", exactly as on the
+	//   Target side** (2026-09-07, the author's decision through the spec map's MK-14).
+	//   ⚠**It used to go into print and PDF on this toggle alone**, ignoring sPrintMarks -- so
+	//   "Print comparison marks: off" did not mean what it said for a Source document. One
+	//   setting, one meaning: this toggle now decides the SCREEN only.
 	static bool16 sSrcMarksOn;
 	// "Always Show Marks on Target": the Target document's marks are shown **on screen** at all
 	// times, regardless of the tool's left button. The pair of the Source one above.

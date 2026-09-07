@@ -227,7 +227,7 @@ static const PMReal kKCMPawTextHaloRatio  = 0.16;	// the outline's width, as a f
 // excluded area can be seen, thin enough that the page number underneath still shows through.
 // It is a vector rectangle plus setopacity, so it composites correctly on screen and in print.
 static const uint8  kKCMExcludeFillR = 0, kKCMExcludeFillG = 200, kKCMExcludeFillB = 0;
-static const PMReal kKCMExcludeFillOpacity = 0.35;	// opacity of the excluded-area fill (0..1)
+static const PMReal kKCMExcludeFillOpacity = 0.25;	// opacity of the excluded-area fill (0..1). 0.35 until 2026-09-07, lowered at the author's request (spec map MK-19): it sits over the design, so it has to be readable through.
 
 // Click-point CMYK sampling. Only a tiny area around the click is rasterized, at high dpi and
 // in CMYK, and the raw value (0..255) of the center pixel is read from the new and the old

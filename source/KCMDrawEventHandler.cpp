@@ -1924,10 +1924,11 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 	// on screen: the frames held under the tool's left button, the Shift / Shift+Alt peek and the
 	// badge all stay visible in it. Only real printing (kPrinting) suppresses, so "print the frames"
 	// being off still keeps them out of the printed result.
-	// The Source-side frames ("Always Show Marks on Source") are shown at ALL times while the
-	// toggle is on -- not hidden by OPP, and always printed (independently of the Target side's
-	// sPrintMarks). Whether this draw really is a Source document's spread is decided once the db
-	// is known; here it is only "could it be drawn".
+	// The Source-side frames ("Always Show Marks on Source") are shown at ALL times on screen while
+	// the toggle is on, and are not hidden by OPP. ★**Print and PDF follow "Print comparison
+	// marks", as on the Target side** (2026-09-07, spec map MK-14; they used to be printed on the
+	// Source toggle alone). Whether this draw really is a Source document's spread is decided once
+	// the db is known; here it is only "could it be drawn".
 	// Even with sEntries empty there may be registered ("Added"/"Removed") pages, or pages that
 	// overflowed the pairing because of a page-count difference, so the walk continues in order to
 	// draw their green and red slashes. The overflow sets come from the cache
@@ -1975,8 +1976,8 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 	//   @warning **the Target side cannot take this shape**: its "show" is sMarksVisible, which
 	//     other routes (the peek) also raise, which is why it needs the two separate flags
 	//     (wantMarks and alwaysScreen) below.
-	// @warning it must not affect print or PDF: the Source frames are always printed, so the press
-	//   is gated on !printing and a printing context reads sSrcMarksOn alone.
+	// @warning it must not affect print or PDF, so the press is gated on !printing and a printing
+	//   context does not look at it at all (what a printing context reads is the line below).
 	// A press over any other window does not raise sSrcMarksPressed (KCMPeekGesture.cpp decides).
 	const bool16 srcPressed = (sSrcMarksPressed && !printing) ? kTrue : kFalse;
 	// **In the Pages panel's thumbnails the Source frames are always shown**, symmetrically with
@@ -1988,13 +1989,17 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 	//     never exposed to it, thanks to isThumb).
 	// @warning it is written `(a != 0) != (b != 0)`: bool16 is an integer type, and a bare != gives
 	//   the wrong answer for a true value that is not kTrue.
-	const bool16 srcWanted = printing ? sSrcMarksOn
+	// ★**PRINTING TAKES BOTH TOGGLES** (2026-09-07, spec map MK-14): the Source side's own switch,
+	//   AND "Print comparison marks". It used to take sSrcMarksOn alone, which meant a Source
+	//   document printed its frames while the reader had asked for no marks in the output -- one
+	//   switch quietly meaning two things. Screen behaviour is untouched.
+	const bool16 srcWanted = printing ? ((sSrcMarksOn && sPrintMarks) ? kTrue : kFalse)
 	                       : (isThumb ? kTrue
 	                                  : ((((sSrcMarksOn != 0) != (srcPressed != 0))) ? kTrue : kFalse));
 	const bool16 wantSrcMarks = srcWanted && sSrcDB != nil && anyMarkableContent;
-	// When printing with "print the frames" off, none of the Target-side overlay is drawn.
-	// The Source-side frames are always printed, so if wantSrcMarks is alive the walk continues and
-	// only the Target part is dropped by the want flags below.
+	// When printing with "print the frames" off, none of the overlay is drawn -- Target or Source.
+	// ★Since 2026-09-07 the Source side reads sPrintMarks too (see srcWanted above), so this flag
+	//   and that one now agree instead of pulling in opposite directions.
 	const bool16 suppressForPrint = printing && !sPrintMarks;
 	if (suppressForPrint && !wantSrcMarks)
 		return kFalse;
