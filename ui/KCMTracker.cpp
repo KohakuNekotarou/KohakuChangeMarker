@@ -158,15 +158,27 @@ public:
 		// ★Only a LEFT press engages; middle and right are left to their usual handling (the context
 		//   menu and so on).
 		//   ⚠It is deliberately not restricted to kLButtonDn: press, release, press again inside the
-		//   system double-click time and the second one arrives as **kDoubleClick**, which IEvent
-		//   documents as "double click on **any** mouse button". LButtonDn() - "the left button was
-		//   pressed when this event was generated" - is what narrows it back to the left.
+		//   system double-click time and the second one arrives as **kDoubleClick**.
+		//   ⚠★★★**AND THE BUTTON IS NOT ASKED OF THE EVENT**, because it answers wrongly. Measured
+		//     2026-09-07 on the running application, in the stamp tool's tracker next door and with
+		//     the user's own hand on the mouse: a kDoubleClick arrives with **LButtonDn() == kFalse**
+		//     every time, both plain and with Shift. (The MODIFIERS on that same event are correct --
+		//     Shift reads as Shift -- so only the button is affected.) The old
+		//     `&& theEvent->LButtonDn()` therefore threw every double click away in silence; over
+		//     there that broke a whole gesture, and here it meant the second press of a double click
+		//     revealed nothing. **Nothing takes its place**: kDoubleClick is raised for the left
+		//     button only ([[overprint-simulation-and-mouse-timing]]), and the SDK's own
+		//     double-click code asks no button question either.
+		//   ★The reasoning in full -- the measured values, what IS and IS NOT measured about the
+		//     other buttons, and the one term to put back should it ever prove necessary -- is at
+		//     the head of the same guard in KCMPawTracker.cpp. One place; this is the copy that
+		//     points at it.
 		//   The product tracker this file was copied from (AnimationUIButtonTriggerTracker) has no event
 		//   type filter at all.
 		const IEvent::EventType evType = theEvent->GetType();
 		const bool16 leftPress =
 			(evType == IEvent::kLButtonDn) ||
-			(evType == IEvent::kDoubleClick && theEvent->LButtonDn());
+			(evType == IEvent::kDoubleClick);
 		if (!leftPress)
 			return kFalse;
 

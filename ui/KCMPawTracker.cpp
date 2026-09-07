@@ -212,16 +212,47 @@ bool16 KCMPawTracker::BeginTracking(IEvent* theEvent)
 	if (theEvent == nil)
 		return kFalse;
 
-	// ★Left press only. ⚠Deliberately not kLButtonDn alone: press, release, press again inside
-	//   the system double-click time and the second press arrives as **kDoubleClick**, which
-	//   IEvent documents as "double click on ANY mouse button" -- LButtonDn() is what narrows it
-	//   back to the left one. The same two lines as KCMTracker.cpp, and the reason matters here
-	//   more than there: stamping twice in one spot is exactly what a user does when they meant
-	//   to place and then lift.
+	// ★A LEFT PRESS, IN EITHER OF THE TWO SHAPES IT ARRIVES IN: kLButtonDn for the first press of a
+	//   sequence, and **kDoubleClick for the second** -- press, release, press again inside the
+	//   system double-click time and Windows sends WM_LBUTTONDBLCLK in place of the second
+	//   WM_LBUTTONDOWN, which reaches here as kDoubleClick (10).
+	//
+	// ⚠★★★**`theEvent->LButtonDn()` MUST NOT BE ASKED HERE, AND THAT WAS MEASURED** (2026-09-07,
+	//   on the running application, with a probe in this very spot and with the user's own hand on
+	//   the mouse):
+	//       plain double click   ev=10  L=0  S=0
+	//       Shift + double click ev=10  L=0  S=1
+	//   **L is 0 both times.** IEvent.h:39-41 promises "kTrue if left mouse button was pressed when
+	//   this event was generated" and that promise is not kept for kDoubleClick. The modifiers ARE
+	//   kept (S follows Shift exactly), so everything below may read them as it always has.
+	//   ⇒ The old guard `(evType == kDoubleClick && theEvent->LButtonDn())` threw every double
+	//     click away, and this function's ONE exit that writes no message at all is that guard --
+	//     which is why Shift + double click looked like nothing whatsoever had happened, with the
+	//     status line still showing the first press's "Paw lifted". The clearing code was right the
+	//     whole time and was never reached.
+	//
+	// ★NOTHING NARROWS kDoubleClick TO THE LEFT BUTTON, AND THAT IS A DECISION (the user's, made on
+	//   2026-09-07 after the measurement above: "it is probably fine without it"). Three things say
+	//   no narrowing is needed:
+	//     - **kDoubleClick is raised for the left button only** -- measured in this plug-in's
+	//       earlier life and kept as [[overprint-simulation-and-mouse-timing]]: a MIDDLE button
+	//       raises none at all, which is why KESCM had to time its middle-button presses by hand
+	//       with IEvent::GetTime;
+	//     - **the SDK's only tracker that acts on a double click does exactly this**, and asks
+	//       nothing else -- snapshot/SnapTracker.cpp:238-244 compares the type and stops;
+	//     - **not one of the sixteen ButtonDblClk implementations in the SDK consults LButtonDn()**
+	//       (counted 2026-09-07, product code and samples alike).
+	//   ⚠WHAT IS NOT MEASURED IS THE RIGHT BUTTON. The middle one is; the right one nobody has
+	//     tried. If it ever does raise a kDoubleClick here, a plain right double click would place
+	//     one paw -- a single undo step -- and the cure is one term:
+	//     `&& Utils<IEventUtils>()->IsMouseButtonDown()`, whose contract is "the current state of
+	//     the LEFT mouse button" (IEventUtils.h:65-69, and the only door to the button state now
+	//     that the event's has been found lying). It was written, then taken back out on purpose:
+	//     put it back with a measurement in hand, not on a hunch.
 	const IEvent::EventType evType = theEvent->GetType();
 	const bool16 leftPress =
 		(evType == IEvent::kLButtonDn) ||
-		(evType == IEvent::kDoubleClick && theEvent->LButtonDn());
+		(evType == IEvent::kDoubleClick);
 	if (!leftPress)
 		return kFalse;
 	// ★The SECOND press of a pair, which Shift turns into "clear this page" below.

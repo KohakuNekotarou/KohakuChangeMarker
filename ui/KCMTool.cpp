@@ -140,7 +140,11 @@ void KCMTool::Select()
 void KCMTool::Deselect()
 {
 	CTool::Deselect();					// base first, same reason
-	KCMSyncToolButton();
+	// *THE BOSS IS PASSED because the toolbox is not yet telling the truth here: inside Deselect,
+	//  QueryActiveTool still answers with THIS tool (measured on the running application
+	//  2026-09-07), so a sync that simply asked would write "pressed" as the button's last word and
+	//  it would stay pressed under whatever tool comes next. KCMUIShared.h carries the measurement.
+	KCMSyncToolButton(kKCMToolBoss);
 }
 
 // Is this plug-in's tool the active one right now? Asked when the panel is (re)built, so a panel

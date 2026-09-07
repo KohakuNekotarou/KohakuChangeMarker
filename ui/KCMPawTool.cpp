@@ -88,7 +88,9 @@ void KCMPawTool::Select()
 void KCMPawTool::Deselect()
 {
 	CTool::Deselect();					// base first, same reason
-	KCMSyncToolButton();
+	// ★Its own boss goes with it, for the reason written out at KCMTool::Deselect and measured on
+	//   2026-09-07: the toolbox still names this tool as the active one while Deselect is running.
+	KCMSyncToolButton(kKCMPawToolBoss);
 }
 
 //========================================================================================

@@ -99,12 +99,25 @@ void			KCMSetNavPosition(const PMString& posText, bool16 navButtonsEnabled);
 //   toolbox does it"). Two widgets share one frame and exactly one is shown; this is the only
 //   function that decides which, so the panel and the toolbox cannot disagree
 //   ([[one-question-one-place]]).
-// ★It takes no argument on purpose -- it READS the real state (KCMIsOwnToolActive /
-//   KCMIsPawToolActive) rather than being told. Being told is what let the old
-//   KCMSetToolButtonSelected(kTrue/kFalse) be called with a stale answer.
+// ★It READS the real state (KCMIsOwnToolActive / KCMIsPawToolActive) rather than being told which
+//   tool is current. Being told a whole answer is what let the old
+//   KCMSetToolButtonSelected(kTrue/kFalse) be called with a stale one.
+// ⚠★★★`leavingTool` IS THE ONE THING IT HAS TO BE TOLD, AND IT WAS MEASURED (2026-09-07).
+//   ITool::Deselect calls this, and AT THAT MOMENT IToolBoxUtils::QueryActiveTool STILL ANSWERS
+//   WITH THE TOOL BEING DESELECTED -- so asking the toolbox there returns "yes, mine is active",
+//   the button is written kSelected, and since no tool of ours is ever selected again that is the
+//   LAST word: the button stays looking pressed under the Type tool, the Selection tool, every
+//   tool (the user's report, reproduced on the running application: with the Type tool active the
+//   visible face still read `checked`, and closing and reopening the panel -- the same function,
+//   asked at a quiet moment -- put it right, which is what proved the logic sound and the MOMENT
+//   wrong).
+//   ⇒ Deselect passes its own boss ClassID and this counts that tool as not active. It is a fact
+//     the caller cannot get wrong ("I have just been deselected"), which is the whole difference
+//     from the old KCMSetToolButtonSelected: that one was a guess about the world.
+//   ★Everybody else leaves it at kInvalidClass and the toolbox is believed in full.
 // ⚠With neither tool active it leaves the face alone: the button keeps the last tool used, which
 //   is what a toolbox slot does with its flyout. Does nothing when the panel is hidden.
-void			KCMSyncToolButton();
+void			KCMSyncToolButton(ClassID leavingTool = kInvalidClass);
 
 // How long the panel's tool button has to be held before its flyout appears, in MILLISECONDS
 // (which is what ICallbackTimer::StartTimer takes).

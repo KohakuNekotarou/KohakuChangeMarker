@@ -79,6 +79,11 @@ static ICallbackTimer*	sTimer = nil;
 static SysPoint			sDownWhere;			// where the press began, in global coordinates
 static bool16			sFlyoutShown = kFalse;	// did the timer fire and put the menu up?
 
+// ★WHICH FACE THE BUTTON WAS WEARING WHEN THE PRESS LANDED -- read from the widget the press came
+//   through, which is the same reading LButtonUp makes to decide what a short press chooses. The
+//   flyout's tick uses it (see KCMRaiseToolFlyout), so the menu and the button cannot disagree.
+static bool16			sDownFaceIsPaw = kFalse;
+
 static void KCMStopFlyoutTimer()
 {
 	if (sTimer != nil)
@@ -430,8 +435,21 @@ static void KCMRaiseToolFlyout()
 	WideString w1(n1);
 	WideString w2(n2);
 
-	// ★A tick marks the tool that is current, which is what the toolbox's own flyout shows.
-	const bool16 pawNow = KCMIsPawToolActive();
+	// ★★THE TICK MARKS THE FACE THE BUTTON IS WEARING -- which is to say, the tool a short press
+	//   would give you. It is NOT "whichever of the two is active".
+	//   ⚠★★★It used to be `KCMIsPawToolActive()` alone, written as a two-way choice:
+	//       items[0].fCurrent = (pawNow == kFalse);   // the comparison tool
+	//       items[1].fCurrent = (pawNow != kFalse);   // the stamp
+	//     That reads "if the stamp is not active then the comparison tool must be current", and
+	//     **when NEITHER is active it is simply false**: with the Type tool in hand the tick sat on
+	//     the comparison tool, which the reader had not chosen and was not using (the user's report,
+	//     2026-09-07: "the panel still wears the paw, but the menu's tick is on the other one").
+	//   ★The face is the right answer because the face is already a decided thing: with neither
+	//     tool active the button deliberately KEEPS the last tool used, the way a toolbox slot does
+	//     (KCMSyncToolButtonViews says why). Ticking anything else makes the menu contradict the
+	//     button it hangs from. And when one of the two IS active the face is that tool, so nothing
+	//     about the ordinary case changes ([[one-question-one-place]]).
+	const bool16 tickPaw = sDownFaceIsPaw;
 
 	// ★A picture beside each name, as the toolbox's own flyout has (the user's request). ⚠The
 	//   bitmaps are owned HERE and deleted below: a menu does not take them over, and leaking one
@@ -470,8 +488,8 @@ static void KCMRaiseToolFlyout()
 	const wchar_t* const text2 = reinterpret_cast<const wchar_t*>(w2.GrabUTF16Buffer(nil));
 
 	KCMFlyoutItem items[2];
-	items[0].fText = text1; items[0].fIcon = bmpTool; items[0].fCurrent = (pawNow == kFalse);
-	items[1].fText = text2; items[1].fIcon = bmpPaw;  items[1].fCurrent = (pawNow != kFalse);
+	items[0].fText = text1; items[0].fIcon = bmpTool; items[0].fCurrent = (tickPaw == kFalse);
+	items[1].fText = text2; items[1].fIcon = bmpPaw;  items[1].fCurrent = (tickPaw != kFalse);
 
 	HBRUSH menuBack = nil;
 	if (ownerDrawn)
@@ -499,8 +517,10 @@ static void KCMRaiseToolFlyout()
 	else
 	{
 		// The menu as it was before the colours: the system draws it, in the system's colours.
-		::AppendMenuW(menu, MF_STRING | (pawNow ? MF_UNCHECKED : MF_CHECKED), 1, text1);
-		::AppendMenuW(menu, MF_STRING | (pawNow ? MF_CHECKED : MF_UNCHECKED), 2, text2);
+		// ⚠The same source as the owner-drawn tick above: two answers to one question is what put
+		//   the tick on the wrong tool in the first place.
+		::AppendMenuW(menu, MF_STRING | (tickPaw ? MF_UNCHECKED : MF_CHECKED), 1, text1);
+		::AppendMenuW(menu, MF_STRING | (tickPaw ? MF_CHECKED : MF_UNCHECKED), 2, text2);
 		if (bmpTool != nil || bmpPaw != nil)
 		{
 			MENUITEMINFOW mii;
@@ -632,6 +652,12 @@ bool16 KCMToolButtonEH::LButtonDn(IEvent* e)
 	KCMStopFlyoutTimer();			// a press that never got its release: start clean
 	sFlyoutShown = kFalse;
 	sDownWhere   = e->GlobalWhere();
+
+	// The face under the press. Two widgets share this frame and only the shown one is enabled, so
+	// the widget this handler is on IS the face the reader can see.
+	InterfacePtr<IControlView> downView(this, UseDefaultIID());
+	sDownFaceIsPaw = (downView != nil &&
+	                  downView->GetWidgetID() == kKCMPawToolButtonWidgetID) ? kTrue : kFalse;
 
 	sTimer = (ICallbackTimer*)::CreateObject(kCallbackTimerBoss, IID_ICALLBACKTIMER);
 	if (sTimer != nil)

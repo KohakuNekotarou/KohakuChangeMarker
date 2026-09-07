@@ -419,7 +419,8 @@ void KCMPanelObserver::Update(const ClassID& theChange, ISubject* theSubject, co
 // panel's AutoAttach (further down but still above it) has to reach it. It is handed the views
 // rather than looking them up, because during AutoAttach this panel is not yet the one
 // KCMFindPanelWidget finds.
-static void KCMSyncToolButtonViews(IControlView* kcmView, IControlView* pawView);
+static void KCMSyncToolButtonViews(IControlView* kcmView, IControlView* pawView,
+                                   ClassID leavingTool = kInvalidClass);
 
 // The IControlView of the ChangeMarker panel if it is showing (nil when it is hidden or cannot be
 // reached).
@@ -602,13 +603,19 @@ static void KCMApplyPanelInfo(const InterfacePtr<IPanelControlData>& pcd)
 //     state), and the panel's AutoAttach -- which hands its own two views in, because at that
 //     moment the panel is not yet the one KCMFindPanelWidget can find.
 //========================================================================================
-static void KCMSyncToolButtonViews(IControlView* kcmView, IControlView* pawView)
+static void KCMSyncToolButtonViews(IControlView* kcmView, IControlView* pawView,
+                                   ClassID leavingTool)
 {
 	if (kcmView == nil || pawView == nil)
 		return;		// the panel is hidden (or teardown is under way): there is nothing to touch
 
-	const bool16 kcmActive = KCMIsOwnToolActive();
-	const bool16 pawActive = KCMIsPawToolActive();
+	// ⚠★★★THE ONE THING THE TOOLBOX CANNOT BE ASKED. Inside ITool::Deselect, QueryActiveTool still
+	//   answers with the tool being deselected -- measured on the running application 2026-09-07 --
+	//   so believing it there writes kSelected as the button's last word and it stays pressed for
+	//   ever under whatever tool the reader picked next. The caller that knows says so, and only
+	//   about ITSELF. (KCMUIShared.h carries the measurement in full.)
+	const bool16 kcmActive = (leavingTool == kKCMToolBoss)    ? kFalse : KCMIsOwnToolActive();
+	const bool16 pawActive = (leavingTool == kKCMPawToolBoss) ? kFalse : KCMIsPawToolActive();
 
 	bool16 showPaw = pawView->IsVisible();		// neither active -> keep the face already up
 	if (kcmActive)
@@ -629,12 +636,21 @@ static void KCMSyncToolButtonViews(IControlView* kcmView, IControlView* pawView)
 	//   ⚠Left kTrue, the state change raises kTrueStateMessage, this observer’s Update calls
 	//     the activation back → SetActiveTool → ITool::Select → here again, and round it goes.
 	//     This only **reflects** the real state, so no notification is wanted.
+	const ITriStateControlData::TriState wanted = (kcmActive || pawActive)
+		? ITriStateControlData::kSelected
+		: ITriStateControlData::kUnselected;
+
 	InterfacePtr<ITriStateControlData> tsd(front, UseDefaultIID());
 	if (tsd != nil)
-	{
-		tsd->SetState((kcmActive || pawActive) ? ITriStateControlData::kSelected
-		                                       : ITriStateControlData::kUnselected, kTrue, kFalse);
-	}
+		tsd->SetState(wanted, kTrue, kFalse);
+
+	// ★THE HIDDEN FACE IS WRITTEN TOO, so the pair cannot hold two different answers to one
+	//   question. It was measured carrying a stale `checked` while no tool of ours was active
+	//   (2026-09-07, inspect_ui on the running application): harmless only for as long as nothing
+	//   shows it, and the face DOES swap.
+	InterfacePtr<ITriStateControlData> tsdBack(back, UseDefaultIID());
+	if (tsdBack != nil)
+		tsdBack->SetState(wanted, kFalse /*invalidate: it is hidden*/, kFalse);
 
 	// ⚠Outside the tsd guard, deliberately: the FACE may have changed even where the pressed look
 	//   could not be written, and a face that waits for the next event loop is the one thing a
@@ -642,10 +658,11 @@ static void KCMSyncToolButtonViews(IControlView* kcmView, IControlView* pawView)
 	front->ForceRedraw();
 }
 
-void KCMSyncToolButton()
+void KCMSyncToolButton(ClassID leavingTool)
 {
 	KCMSyncToolButtonViews(KCMFindPanelWidget(kKCMToolButtonWidgetID),
-	                       KCMFindPanelWidget(kKCMPawToolButtonWidgetID));
+	                       KCMFindPanelWidget(kKCMPawToolButtonWidgetID),
+	                       leavingTool);
 }
 
 //========================================================================================
