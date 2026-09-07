@@ -152,18 +152,6 @@ static HBITMAP KCMLoadMenuBitmap(int32 rsrcID)
 //    cannot be read falls back to a mid grey. The flyout never fails to appear over cosmetics.
 //========================================================================================
 
-/** This plug-in's module, found from an address inside it rather than by name (the reason is at
-	KCMLoadMenuBitmap above, which asks the same question). */
-static HMODULE KCMSelfModule()
-{
-	HMODULE self = nil;
-	if (!::GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
-	                          GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-	                          reinterpret_cast<LPCWSTR>(&KCMSelfModule), &self))
-		return nil;
-	return self;
-}
-
 /** One of InDesign's interface colours as a COLORREF, or `fallback` when it cannot be read -- no
 	session during teardown, say. ⚠InterfacePtr(p, iid) accepts a nil pointer, so a gone session
 	simply produces a nil interface here rather than a crash (the shape KCMScrollMap.cpp uses). */
@@ -382,6 +370,49 @@ static LRESULT CALLBACK KCMFlyoutOwnerProc(HWND hwnd, UINT msg, WPARAM wp, LPARA
 	                                : ::DefWindowProcW(hwnd, msg, wp, lp);
 }
 
+/** Stands the procedure above in front of a window, and PUTS THE REAL ONE BACK however the caller
+	leaves -- normally, or by an exception crossing TrackPopupMenu's modal loop.
+
+	⚠★★**A WINDOW LEFT POINTING AT A PLUG-IN THAT THEN UNLOADS IS A CRASH**, which is the same rule
+	  this file already keeps for its timer (ICallbackTimer.h). One statement at the end of the
+	  happy path is not enough to keep it, so the restore is a destructor.
+	⚠★★**IT REFUSES TO STACK.** A second press arriving while a menu is up would otherwise read
+	  OUR procedure back as "the previous one" and install it permanently -- the window would then
+	  be pointing at this plug-in with nothing behind it. When one is already in place this one
+	  installs nothing and the caller builds the plain menu instead. */
+struct KCMFlyoutSubclass
+{
+	explicit KCMFlyoutSubclass(HWND window) : fWindow(nil)
+	{
+		if (window == nil || sFlyoutPrevProc != nil)
+			return;
+		WNDPROC prev = (WNDPROC)::SetWindowLongPtrW(window, GWLP_WNDPROC,
+		                                           (LONG_PTR)&KCMFlyoutOwnerProc);
+		if (prev == nil)
+			return;					// refused: the caller falls back to the plain menu
+		sFlyoutPrevProc = prev;
+		fWindow         = window;
+	}
+
+	~KCMFlyoutSubclass()
+	{
+		if (fWindow != nil)
+		{
+			::SetWindowLongPtrW(fWindow, GWLP_WNDPROC, (LONG_PTR)sFlyoutPrevProc);
+			sFlyoutPrevProc = nil;
+		}
+	}
+
+	bool Installed() const { return fWindow != nil; }
+
+private:
+	HWND fWindow;
+
+	// Not copyable: two of these would put the procedure back twice.
+	KCMFlyoutSubclass(const KCMFlyoutSubclass&);
+	KCMFlyoutSubclass& operator=(const KCMFlyoutSubclass&);
+};
+
 #endif
 
 static void KCMRaiseToolFlyout()
@@ -426,12 +457,11 @@ static void KCMRaiseToolFlyout()
 	//   The two owner-draw messages go to the menu's OWNER, and the owner has to be a window that
 	//   is really on screen and in front (a hidden one of our own was tried and the menu stopped
 	//   appearing at all). So the owner stays InDesign's and this file stands in front of its
-	//   procedure for the length of ONE SYNCHRONOUS CALL, putting it back immediately afterwards.
+	//   procedure for the length of ONE SYNCHRONOUS CALL.
 	//   ⚠When the swap is refused, `ownerDrawn` stays false and the plain menu is built instead --
 	//   the flyout is never lost over its appearance.
-	sFlyoutPrevProc = (WNDPROC)::SetWindowLongPtrW(owner, GWLP_WNDPROC,
-	                                               (LONG_PTR)&KCMFlyoutOwnerProc);
-	const bool ownerDrawn = (sFlyoutPrevProc != nil);
+	KCMFlyoutSubclass subclass(owner);
+	const bool ownerDrawn = subclass.Installed();
 
 	// ⚠The cast is sound HERE and only here: wchar_t is 16 bits on Windows, and this whole
 	//   function is inside #ifdef WINDOWS. (On the Mac it is 32 and the same cast would read past
@@ -505,14 +535,8 @@ static void KCMRaiseToolFlyout()
 		::DeleteObject(sFlyoutFont);
 		sFlyoutFont = nil;
 	}
-	// ⚠★★THE PROCEDURE GOES BACK HERE, AND THIS IS THE ONE LINE THAT MUST NOT BE MISSED: a window
-	//   left pointing at a plug-in that then unloads is a crash, which is the same rule this file
-	//   already keeps for the timer.
-	if (sFlyoutPrevProc != nil)
-	{
-		::SetWindowLongPtrW(owner, GWLP_WNDPROC, (LONG_PTR)sFlyoutPrevProc);
-		sFlyoutPrevProc = nil;
-	}
+	// (The borrowed procedure is put back by ~KCMFlyoutSubclass, on every way out of this
+	//  function -- see the class for why that is not left to a statement here.)
 
 	if (picked == 1)
 		KCMToolButtonPressed(kFalse);
