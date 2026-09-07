@@ -116,6 +116,9 @@ void			KCMSyncToolButton();
 //   ~47 days" (IEvent.h:144), which reads as milliseconds -- and 2^32 ms really is 49 days, so
 //   the wording confirms the wrong guess. An earlier version of this button compared event times
 //   against 400 and could never fire, because that meant 400 seconds.
+// ★**THE FALLBACK ONLY, SINCE 2026-09-07.** The delay actually used is the application's own
+//   (IPatientUserPreference, read in KCMToolFlyoutDelayMs); this stands in when that preference
+//   cannot be reached or says the mode is off.
 static const uint32 kKCMToolButtonHoldMs = 400;
 
 // Choose one of the two tools and say so on the status line. wantPaw picks the cat-paw stamp,

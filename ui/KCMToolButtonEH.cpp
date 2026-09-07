@@ -45,6 +45,9 @@
 #include "IControlView.h"		// GetWidgetID -- which of the two faces was pressed
 #include "ICallbackTimer.h"		// the one-shot delay that lets the flyout appear mid-press
 #include "IIdleTask.h"			// kEndOfTime -- what a one-shot callback MUST return
+#include "IPatientUserPreference.h"	// how long the APPLICATION says a hold-to-reveal gesture waits
+#include "ISession.h"			// GetExecutionContextSession (nil during teardown, so the type is spelled out)
+#include "IWorkspace.h"			// the session workspace, where that preference lives
 
 // General includes:
 #include "CreateObject.h"		// ::CreateObject -- the timer is made, not queried
@@ -228,6 +231,40 @@ static uint32 KCMToolFlyoutTimerFired(void* /*refPtr*/)
 	return IIdleTask::kEndOfTime;
 }
 
+/* How long the button must be held before the tool flyout opens.
+
+   ★★**IT IS THE APPLICATION'S SETTING, NOT A NUMBER OF OURS** (2026-09-07). InDesign keeps one
+     delay for hold-to-reveal gestures -- IPatientUserPreference on the session workspace, with
+     named values (Off -1 / NoDelay 0 / Fast 330 / Standard 500 / Long 1000, and anything up to
+     10000). A reader who has set the application to "long" and finds this one button opening on a
+     schedule of its own is being told, in the only way an interface can say it, that this panel is
+     not part of the application. The 400 ms this used to hold is now only the fallback.
+
+   ⚠**OFF (-1) FALLS BACK TO OUR DEFAULT rather than switching the flyout off.** Off means the
+     application's own hold-to-reveal behaviour is off; here the flyout is the ONLY way to reach the
+     other tool FROM THIS BUTTON, so reading it literally would take a function away rather than
+     change a timing. (The toolbox's own flyout is a separate road and is unaffected either way.)
+   ★A missing interface -- no session during teardown, or a workspace without the preference --
+     takes the same road, which is why the fallback is written once, here.
+
+   ⚠**Zero is honoured but not passed on as 0.** ICallbackTimer's callback treats 0 as "call me
+     again at once" and this file's own comment records freezing InDesign that way; one millisecond
+     is the same gesture to a person and cannot be mistaken for that.
+*/
+static uint32 KCMToolFlyoutDelayMs()
+{
+	ISession* const session = GetExecutionContextSession();
+	InterfacePtr<IWorkspace> ws(session != nil ? session->QueryWorkspace() : nil);
+	InterfacePtr<IPatientUserPreference> patient(ws, UseDefaultIID());
+	if (patient == nil)
+		return kKCMToolButtonHoldMs;
+
+	const int32 ms = patient->GetPatientUserDelayTime();
+	if (ms < 0)
+		return kKCMToolButtonHoldMs;		// patient user mode off -- see above
+	return (ms == 0) ? 1 : (uint32)ms;
+}
+
 /** The panel tool button's press-and-hold handler.
 
 	It owns the whole press: down starts the clock, up decides what the press meant.
@@ -257,7 +294,7 @@ bool16 KCMToolButtonEH::LButtonDn(IEvent* e)
 
 	sTimer = (ICallbackTimer*)::CreateObject(kCallbackTimerBoss, IID_ICALLBACKTIMER);
 	if (sTimer != nil)
-		sTimer->StartTimer(KCMToolFlyoutTimerFired, kKCMToolButtonHoldMs, this);
+		sTimer->StartTimer(KCMToolFlyoutTimerFired, KCMToolFlyoutDelayMs(), this);
 
 	// kTrue = handled. Nothing is decided yet: what the press MEANS depends on how long it lasts.
 	return kTrue;
