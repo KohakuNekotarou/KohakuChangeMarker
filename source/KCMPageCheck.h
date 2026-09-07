@@ -16,7 +16,11 @@
 //    @warning **keeping "marked pages only" in the Story mode makes the menu item disappear**:
 //    that mode builds no sEntries, so the candidate set is all but empty. That is why "could a
 //    mark appear on this page" and "may this page be ticked" are two separate questions.
-//  - Session only: nothing is written to the document file, so nothing is dirtied.
+//  - ⚠**NO LONGER SESSION ONLY** (2026-09-07). The tick and the cat paw are written INTO the
+//    document as script labels on the page (KCMPageMarksDoc.h), through a command, so they are
+//    undoable and travel with the file. **This set is now a CACHE of those labels**, kept because
+//    the drawing side has to answer "is this page ticked" once per page per draw, on a background
+//    thread as well. The registrations (Added/Removed) are still session-only.
 //    ⚠★**Stop does NOT forget it** (2026-09-04). A tick outlives the comparison it was made
 //    during, and can be made without one at all. It goes when the reader clears it (the flyout's
 //    "Clear Checks in This Document"), when the document closes, or at shutdown -- and it can be

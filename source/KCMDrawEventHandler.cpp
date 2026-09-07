@@ -42,6 +42,7 @@
 #include "IXPUtils.h"
 #include "IXPManager.h"				// GetDocumentBlendingSpace / ReleaseBlendingSpace (the PDF export's transparency group)
 #include "IViewPortAttributes.h"		// asking the port for kPDFExportVPAttr / kPDFIsFlattenerTargetVPAttr
+#include "OutPrvID.h"					// kSepPrvOPPEnabledVPAttr -- is overprint preview on (2026-09-07)
 #include "PDFID.h"					// those two ViewPortAttr IDs (PDFID.h:1543-1544)
 #include "K2SmartPtr.h"				// K2::scoped_array / K2::scoped_ptr -- the SDK's own scoped ownership, so that
 									//   every exit from a function frees what it allocated. Worked examples in the
@@ -1919,11 +1920,25 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 	const bool16 isThumb = sThumbExperiment && !printing &&
 		ded->gd->GetView() == nil && (ded->flags & IShape::kPreviewMode) != 0;	// gd was nil-checked at the top of the function
 
-	// **Overprint preview (OPP) is NOT suppressed.** It used to be treated as "a print simulation"
-	// (by reading kSepPrvOPPEnabledVPAttr) and suppressed like printing, but OPP is a working mode
-	// on screen: the frames held under the tool's left button, the Shift / Shift+Alt peek and the
-	// badge all stay visible in it. Only real printing (kPrinting) suppresses, so "print the frames"
-	// being off still keeps them out of the printed result.
+	// ★★**OVERPRINT PREVIEW SHOWS WHAT WILL BE PRINTED, SO ONLY WHAT WOULD BE PRINTED IS SHOWN**
+	//   (2026-09-07, the author's decision: "オーバープリントプレビュー中は、印刷がOnの物だけ表示される").
+	//   While OPP is on, everything this plug-in draws is hidden unless "Print comparison marks"
+	//   is on -- the rings, the "/" marks, the ticks, the paws and the folio wash alike.
+	//   ⚠**THIS REVERSES A 2026-07-05 DECISION** that read the other way ("OPP is a working mode on
+	//     screen, so nothing is suppressed there"). The reader is looking at a simulation of the
+	//     printed sheet; anything on it that will not be printed is telling them something false.
+	//   ★**The peek (Shift / Shift+Alt) is deliberately NOT included**: it is a momentary look at
+	//     the older version held under a button, not something claiming to be on the sheet.
+	//   ⚠**kPreviewMode cannot be used for this** -- it shares a bit with PDF export
+	//     (kPDFExportMode), so it would catch exports too. The viewport attribute below is exact.
+	bool16 overprintPreview = kFalse;
+	{
+		IViewPortAttributes* const vpa = ded->gd->GetViewPortAttributes();	// gd was nil-checked at the top
+		if (vpa != nil)
+			overprintPreview = (vpa->GetAttr(kSepPrvOPPEnabledVPAttr, 0) != 0) ? kTrue : kFalse;
+	}
+	// The one test the marks below share: in OPP, with printing of marks off, draw nothing.
+	const bool16 oppHides = (overprintPreview && !sPrintMarks) ? kTrue : kFalse;
 	// The Source-side frames ("Always Show Marks on Source") are shown at ALL times on screen while
 	// the toggle is on, and are not hidden by OPP. ★**Print and PDF follow "Print comparison
 	// marks", as on the Target side** (2026-09-07, spec map MK-14; they used to be printed on the
@@ -1996,7 +2011,7 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 	const bool16 srcWanted = printing ? ((sSrcMarksOn && sPrintMarks) ? kTrue : kFalse)
 	                       : (isThumb ? kTrue
 	                                  : ((((sSrcMarksOn != 0) != (srcPressed != 0))) ? kTrue : kFalse));
-	const bool16 wantSrcMarks = srcWanted && sSrcDB != nil && anyMarkableContent;
+	const bool16 wantSrcMarks = srcWanted && !oppHides && sSrcDB != nil && anyMarkableContent;
 	// When printing with "print the frames" off, none of the overlay is drawn -- Target or Source.
 	// ★Since 2026-09-07 the Source side reads sPrintMarks too (see srcWanted above), so this flag
 	//   and that one now agree instead of pulling in opposite directions.
@@ -2026,7 +2041,7 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 	//   is decided by sPrintMarks alone, asymmetrically with the Source side's sSrcMarksOn, and that
 	//   asymmetry is deliberate.
 	const bool16 alwaysScreen = sTgtMarksOn && !sMarksTempHidden && !printing;
-	const bool16 wantMarks = !suppressForPrint && (sPrintMarks || sMarksVisible || alwaysScreen || isThumb) && anyMarkableContent;
+	const bool16 wantMarks = !suppressForPrint && !oppHides && (sPrintMarks || sMarksVisible || alwaysScreen || isThumb) && anyMarkableContent;
 	// **The Story mode draws no comparison ring** (nothing from sEntries). A story diff creates no
 	//   entries, so sEntries is empty and the find() below would always miss -- but rather than rely
 	//   on "there is nothing, so nothing is drawn", the mode is consulted and it stops explicitly.
@@ -2046,7 +2061,7 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 	//   and it survives Stop, so "does this one have any" is asked of **the document being drawn**
 	//   rather than of sDB / sSrcDB -- the same shape, and the same reasoning, as wantPaws below.
 	// Thumbnails (isThumb) are drawn by their own block below and are not included here.
-	const bool16 wantChecks = !isThumb && (!printing || sPrintMarks) &&
+	const bool16 wantChecks = !isThumb && !oppHides && (!printing || sPrintMarks) &&
 		KCMPageCheckHasAny(::GetDataBase(ded->changedBy));
 	// The cat-paw stamps follow the tick's rules -- always on screen, in print only with
 	// sPrintMarks -- with ★ONE DIFFERENCE THAT DECIDES THE SHAPE OF THIS LINE: a paw is NOT tied
@@ -2056,7 +2071,7 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 	//   answered before the early-out just below -- so the database is fetched here as well.
 	//   ::GetDataBase is a pointer walk, and asking twice costs nothing beside drawing.
 	//   KCMPawStampHasAny answers kFalse for nil, so nothing else needs guarding.
-	const bool16 wantPaws = !isThumb && (!printing || sPrintMarks) &&
+	const bool16 wantPaws = !isThumb && !oppHides && (!printing || sPrintMarks) &&
 		KCMPawStampHasAny(::GetDataBase(ded->changedBy));
 	// Find Overset's "+": completely independent of the comparison and the ticks. **It is never
 	// drawn on the canvas** -- only into the Pages panel's thumbnails (isThumb), as red with a white
@@ -2465,7 +2480,10 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 		//   The Source side alone used to be on the route that ignores sPrintMarks (its frames are
 		//   always printed), so the green appeared in a Source print even with "Print comparison
 		//   marks" off. Target and Source are both screen-only now.
-		const bool16 fillExcluded = !printing && KCMGetIgnorePageNumberMarker();	// the folio wash: toggle on, screen only
+		// ★**Hidden in overprint preview as well** (2026-09-07): the wash never reaches print, so a
+		//   preview of the printed sheet must not carry it. Unlike the marks it does not consult
+		//   sPrintMarks -- there is no setting that would ever put it into the output.
+		const bool16 fillExcluded = !printing && !overprintPreview && KCMGetIgnorePageNumberMarker();	// the folio wash: toggle on, screen only
 		for (int32 i = 0; i < nps; ++i)
 		{
 			const UID srcPageUID = spread->GetNthPageUID(i);
