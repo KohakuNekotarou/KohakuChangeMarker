@@ -64,10 +64,15 @@ namespace KCMPawWordDialog
 	void AskAndPlaceLater(IDataBase* db, UID pageUID, const PMReal& x, const PMReal& y,
 	                      int32 colour, const PMReal& baseHalf);
 
-	/** Drop the timer and forget the waiting press. Called from the UI half's shutdown.
+	/** Drop the timer, forget the waiting press, and arm nothing further. Called from the UI
+		half's shutdown.
 		⚠**Not optional.** ICallbackTimer holds a raw function pointer into this plug-in; one left
 		  armed while the plug-in unloads is a crash, and the timer is the reason this file has a
-		  shutdown at all. */
+		  shutdown at all.
+		★**The refusal is the second half and was added later** (2026-09-07): dropping what is
+		  armed says nothing about a press that arrives AFTER this runs, and that one would both
+		  build a timer and try to open a modal dialog mid-teardown. AskAndPlaceLater returns at
+		  once from here on. */
 	void Shutdown();
 }
 

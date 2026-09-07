@@ -54,6 +54,10 @@ PMReal			gY       = 0.0;
 int32			gColour  = 0;
 PMReal			gHalf    = 0.0;
 ICallbackTimer*	gTimer   = nil;
+// ★Raised by Shutdown: from there on no press arms a timer. The plug-in's other two timers keep
+//   the same flag (KCMToolButtonEH's sShutdown, KCMPanelAlpha's sPanelAlphaShutdown), and this one
+//   was the last without it (2026-09-07, the spec map's RUN-61).
+bool16			gShutdown = kFalse;
 
 // ★THE WORD WAITS UNTIL THE DIALOG HAS CLOSED. OK only keeps it and says so; the paw is placed
 //  afterwards. The reason is with PlaceFired.
@@ -189,6 +193,13 @@ uint32 TimerFired(void* /*refPtr*/)
 void KCMPawWordDialog::AskAndPlaceLater(IDataBase* db, UID pageUID, const PMReal& x, const PMReal& y,
                                         int32 colour, const PMReal& baseHalf)
 {
+	// ⚠**Nothing is armed once Shutdown has run.** The tracker can still deliver a release after
+	//   the UI's shutdown service has gone through, and a timer built then would hold a raw
+	//   function pointer into a plug-in that is unloading -- and its callback would try to open a
+	//   modal dialog during teardown. Refusing here loses the word box, and only after Shutdown.
+	if (gShutdown)
+		return;
+
 	StopTimer();
 	gDb     = db;
 	gPage   = pageUID;
@@ -213,6 +224,10 @@ void KCMPawWordDialog::AskAndPlaceLater(IDataBase* db, UID pageUID, const PMReal
 
 void KCMPawWordDialog::Shutdown()
 {
+	// ★**Two halves, not one**: stop what is armed, and refuse to arm again (AskAndPlaceLater
+	//   reads the flag). Stopping alone leaves the window between Shutdown and unload open, which
+	//   is the same gap KCMToolButtonEH had until 2026-09-07.
+	gShutdown = kTrue;
 	StopTimer();
 	Forget();
 }

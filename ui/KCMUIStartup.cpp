@@ -131,6 +131,11 @@ void KCMUIStartup::Shutdown()
 	// the delayed re-apply timer of the panel translucency goes the same way (again, leave no raw
 	// function pointer behind)
 	KCMShutdownPanelAlpha();
+	// the tool button's press-and-hold timer goes the same way, and from here on a press arms no
+	// other one. ★The stopping was already covered (the press's exits, and the handler's
+	// destructor); what this door adds is that refusal -- the same pair KCMShutdownPanelAlpha and
+	// KCMShutdownThumbIdleTask keep.
+	KCMToolButtonShutdown();
 	// return the font reference the on-press HUD holds; the path where the application quits
 	// mid-press is cleaned up too
 	KCMTrackerHudShutdown();

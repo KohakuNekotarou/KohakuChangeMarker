@@ -78,6 +78,10 @@
 static ICallbackTimer*	sTimer = nil;
 static SysPoint			sDownWhere;			// where the press began, in global coordinates
 static bool16			sFlyoutShown = kFalse;	// did the timer fire and put the menu up?
+// ★Set by KCMToolButtonShutdown at the foot of this file: from there on no press arms a timer.
+//   The other two timers in this plug-in keep the same flag (KCMPanelAlpha's sPanelAlphaShutdown,
+//   KCMThumbIdleTask's sShutdown); the reasoning is with the function.
+static bool16			sShutdown = kFalse;
 
 // ★WHICH FACE THE BUTTON WAS WEARING WHEN THE PRESS LANDED -- read from the widget the press came
 //   through, which is the same reading LButtonUp makes to decide what a short press chooses. The
@@ -659,9 +663,17 @@ bool16 KCMToolButtonEH::LButtonDn(IEvent* e)
 	sDownFaceIsPaw = (downView != nil &&
 	                  downView->GetWidgetID() == kKCMPawToolButtonWidgetID) ? kTrue : kFalse;
 
-	sTimer = (ICallbackTimer*)::CreateObject(kCallbackTimerBoss, IID_ICALLBACKTIMER);
-	if (sTimer != nil)
-		sTimer->StartTimer(KCMToolFlyoutTimerFired, KCMToolFlyoutDelayMs(), this);
+	// ⚠**Nothing is armed once the plug-in's Shutdown has run.** A widget can still be standing,
+	//   and still deliver a press, after the UI's shutdown service has gone through -- and a timer
+	//   built then would hold a raw function pointer into a plug-in that is unloading. The press is
+	//   still handled: LButtonUp below chooses the tool whose face is showing, which is what a short
+	//   press does anyway. Only the held-down flyout is lost, and only after Shutdown.
+	if (!sShutdown)
+	{
+		sTimer = (ICallbackTimer*)::CreateObject(kCallbackTimerBoss, IID_ICALLBACKTIMER);
+		if (sTimer != nil)
+			sTimer->StartTimer(KCMToolFlyoutTimerFired, KCMToolFlyoutDelayMs(), this);
+	}
 
 	// kTrue = handled. Nothing is decided yet: what the press MEANS depends on how long it lasts.
 	return kTrue;
@@ -687,6 +699,27 @@ bool16 KCMToolButtonEH::LButtonUp(IEvent* e)
 
 	KCMToolButtonPressed(cv->GetWidgetID() == kKCMPawToolButtonWidgetID ? kTrue : kFalse);
 	return kTrue;
+}
+
+/* KCMToolButtonShutdown (declared in KCMUIShared.h) -- the plug-in is going down.
+
+   ★**THE SECOND HALF IS WHAT THIS ADDS.** Stopping the timer was already covered twice: every
+     exit from a press goes through KCMStopFlyoutTimer, and this handler's destructor calls it as
+     well, so a panel closed mid-press was already safe. What was missing is the REFUSAL TO ARM
+     AGAIN -- the shape the plug-in's other two timers already have (KCMPanelAlpha's
+     sPanelAlphaShutdown, KCMThumbIdleTask's sShutdown). The destructor only fires when the widget
+     is destroyed, and nothing here decided what happens if the UI's shutdown service runs first.
+   ⚠**No fault has been observed from its absence**, and the window was never large: the timer is
+     armed only between a press and its release. It is written because a rule kept in two places
+     out of three is not a rule -- and because the delay is no longer a number of ours: it is the
+     application's, whose named settings reach 1000 ms and whose preference accepts up to 10000
+     (KCMToolFlyoutDelayMs), so the window is not as short as it was when 400 was fixed here.
+   ★Asked for by the spec map's RUN-61 ("the clean-up during a quit, checked again in the code").
+*/
+void KCMToolButtonShutdown()
+{
+	sShutdown = kTrue;
+	KCMStopFlyoutTimer();
 }
 
 // End, KCMToolButtonEH.cpp.

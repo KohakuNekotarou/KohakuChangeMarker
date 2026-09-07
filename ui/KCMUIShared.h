@@ -144,6 +144,12 @@ static const uint32 kKCMToolButtonHoldMs = 400;
 //   ITool::Select -> KCMSyncToolButton, so a refusal leaves the button telling the truth.
 void			KCMToolButtonPressed(bool16 wantPaw);
 
+// Shutdown only: stop the tool button's press-and-hold timer, and refuse to arm another.
+// ★**Both halves matter and the second is the reason it exists** -- the stopping was already
+//   covered by the press's own exits and by the event handler's destructor. The note at the foot
+//   of KCMToolButtonEH.cpp says what the flag is for.
+void			KCMToolButtonShutdown();
+
 // Make this plug-in's tool the active tool. Returns kTrue when it actually became active.
 // Does nothing in a run configuration without a toolbox.
 bool16			KCMActivateOwnTool();
