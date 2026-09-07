@@ -78,7 +78,7 @@ git log -p -- docs/spec-map/        # コミット済みの書き込み
 | 02 | [比較の起動と停止](02-start-stop.md)（Target/Source の決まり方・Start/Stop・外部 Source） | ✅ |
 | 03 | [Pixel 変更モード ― 何をどう比べるか](03-pixel-compare.md)（対応づけ・ラスタ化の条件・違いの数え方・ノンブル除外） | ✅ |
 | 04 | [Pixel のマーク ― 画面に何が出るか](04-pixel-marks.md)（リングの形・色と濃さ・**いつ見えるか**・Target と Source の非対称） | ✅ |
-| 05 | ページの手動フラグ（登録 Added/Removed・✓・猫の手スタンプ） | ⬜ |
+| 05 | [ページの手動フラグ](05-page-flags.md)（登録 Added/Removed・✓・猫の手スタンプ。**3つの性格の違い**と**どこに残るか**） | ✅ |
 | 06 | あふれ（overset）の検出 | ⬜ |
 | 07 | Story 変更モード ― 何を検出し、どう差分するか | ⬜ |
 | 08 | Story Edits の一覧 UI（行・ツリー・クリック・ナビ） | ⬜ |
