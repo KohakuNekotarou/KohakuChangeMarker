@@ -46,12 +46,14 @@
 #include "ICallbackTimer.h"		// the one-shot delay that lets the flyout appear mid-press
 #include "IIdleTask.h"			// kEndOfTime -- what a one-shot callback MUST return
 #include "IPatientUserPreference.h"	// how long the APPLICATION says a hold-to-reveal gesture waits
+#include "IInterfaceColors.h"	// the interface colours (and class RealAGMColor) the menu is painted in
 #include "ISession.h"			// GetExecutionContextSession (nil during teardown, so the type is spelled out)
 #include "IWorkspace.h"			// the session workspace, where that preference lives
 
 // General includes:
 #include "CreateObject.h"		// ::CreateObject -- the timer is made, not queried
 #include "PMString.h"
+#include <vector>				// the icon is composited by hand (KCMDrawFlyoutIcon)
 #include "ShuksanID.h"			// kCallbackTimerBoss / IID_ICALLBACKTIMER
 #include "WideString.h"			// the UTF-16 route from PMString to AppendMenuW
 #ifdef WINDOWS
@@ -125,6 +127,263 @@ static HBITMAP KCMLoadMenuBitmap(int32 rsrcID)
 }
 #endif
 
+#ifdef WINDOWS
+//========================================================================================
+// THE FLYOUT IN INDESIGN'S COLOURS (2026-09-07, the user's request: "it is white now -- I want it
+// to match InDesign's interface").
+//
+//  ★★A Win32 popup is drawn by the OS in the OS's colours, so against InDesign's dark interface it
+//    arrives as a white rectangle. Three things make it match instead:
+//      1. **the colours are asked of InDesign** -- IInterfaceColors on the session, the very route
+//         the panel's scrollbar map already takes (KCMScrollMap.cpp) -- so all four brightness
+//         themes are followed and not one colour is written down here;
+//      2. **the items are owner-drawn**, because a menu's TEXT colour cannot be set any other way
+//         (MENUINFO carries a background brush and nothing else, so the background alone would
+//         leave black text on a dark ground);
+//      3. **the menu is given an owner window of our own**, because WM_MEASUREITEM and WM_DRAWITEM
+//         go to the OWNER -- which used to be InDesign's own window, whose procedure knows nothing
+//         of them and would leave every item blank.
+//
+//  ⚠**THE OWNER IS CREATED AND DESTROYED AROUND THE MENU, class and all.** A window class whose
+//    procedure lives in a plug-in that later unloads is the same shape of crash as a timer holding
+//    a raw function pointer, which this file already guards against ([[plugin-teardown-robustness]]).
+//  ★**EVERY STEP CAN FAIL BACK TO THE OLD MENU**: no owner window means no owner-draw, and the
+//    items are appended as plain strings against InDesign's window exactly as before. A theme that
+//    cannot be read falls back to a mid grey. The flyout never fails to appear over cosmetics.
+//========================================================================================
+
+/** This plug-in's module, found from an address inside it rather than by name (the reason is at
+	KCMLoadMenuBitmap above, which asks the same question). */
+static HMODULE KCMSelfModule()
+{
+	HMODULE self = nil;
+	if (!::GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+	                          GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+	                          reinterpret_cast<LPCWSTR>(&KCMSelfModule), &self))
+		return nil;
+	return self;
+}
+
+/** One of InDesign's interface colours as a COLORREF, or `fallback` when it cannot be read -- no
+	session during teardown, say. ⚠InterfacePtr(p, iid) accepts a nil pointer, so a gone session
+	simply produces a nil interface here rather than a crash (the shape KCMScrollMap.cpp uses). */
+static COLORREF KCMThemeColour(int32 which, COLORREF fallback)
+{
+	InterfacePtr<IInterfaceColors> colors(GetExecutionContextSession(), IID_IINTERFACECOLORS);
+	if (colors == nil)
+		return fallback;
+
+	RealAGMColor c;
+	if (!colors->GetRealAGMColor(which, c))
+		return fallback;
+
+	const int r = (int)(ToDouble(c.red)   * 255.0 + 0.5);
+	const int g = (int)(ToDouble(c.green) * 255.0 + 0.5);
+	const int b = (int)(ToDouble(c.blue)  * 255.0 + 0.5);
+	return RGB(r < 0 ? 0 : (r > 255 ? 255 : r),
+	           g < 0 ? 0 : (g > 255 ? 255 : g),
+	           b < 0 ? 0 : (b > 255 ? 255 : b));
+}
+
+/** What one owner-drawn item needs in order to draw itself. These live on KCMRaiseToolFlyout's
+	stack for as long as the menu is up -- TrackPopupMenu does not return before then. */
+struct KCMFlyoutItem
+{
+	const wchar_t*	fText;
+	HBITMAP			fIcon;
+	bool			fCurrent;		// the tool in use wears the tick
+};
+
+// The gutter that holds the tick, the gap after the icon, and the padding, in pixels.
+static const int kKCMFlyoutTickWidth = 18;
+static const int kKCMFlyoutGap       = 8;
+static const int kKCMFlyoutPadY      = 5;
+static const int kKCMFlyoutPadRight  = 20;
+
+/** The font the system would have used for a menu, so the items are the size a reader expects.
+	Owned by KCMRaiseToolFlyout for the life of one menu; the drawing procedure only reads it. */
+static HFONT sFlyoutFont = nil;
+
+static HFONT KCMFlyoutFont()
+{
+	NONCLIENTMETRICSW ncm;
+	::ZeroMemory(&ncm, sizeof(ncm));
+	ncm.cbSize = sizeof(ncm);
+	if (!::SystemParametersInfoW(SPI_GETNONCLIENTMETRICS, sizeof(ncm), &ncm, 0))
+		return nil;
+	return ::CreateFontIndirectW(&ncm.lfMenuFont);
+}
+
+static void KCMFlyoutIconSize(HBITMAP bmp, int& outW, int& outH)
+{
+	outW = outH = 0;
+	BITMAP info;
+	if (bmp != nil && ::GetObject(bmp, sizeof(info), &info) != 0)
+	{
+		outW = info.bmWidth;
+		outH = info.bmHeight;
+	}
+}
+
+/** Draw one of this plug-in's 32-bit bitmaps over a solid background, by hand.
+
+	★★**NO AlphaBlend, AND THAT IS TO AVOID A NEW LIBRARY.** AlphaBlend lives in msimg32, which
+	  this project does not link; adding it means editing build files that sit OUTSIDE the
+	  repository ([[vcxproj-registration-not-build-dependency]]) or reaching for a #pragma. The
+	  icons are 16 pixels square, so compositing them here costs nothing and depends on nothing.
+	⚠**The resource is premultiplied** -- that is what a menu's hbmpItem expects and what these
+	  bitmaps were made for -- so the mix is `src + back*(255-a)/255`, not `src*a + back*(1-a)`. */
+static void KCMDrawFlyoutIcon(HDC dc, HBITMAP bmp, int x, int y, COLORREF back)
+{
+	BITMAP info;
+	if (dc == nil || bmp == nil || ::GetObject(bmp, sizeof(info), &info) == 0)
+		return;
+
+	const int w = info.bmWidth;
+	const int h = info.bmHeight;
+	if (w <= 0 || h <= 0)
+		return;
+
+	BITMAPINFO bi;
+	::ZeroMemory(&bi, sizeof(bi));
+	bi.bmiHeader.biSize        = sizeof(bi.bmiHeader);
+	bi.bmiHeader.biWidth       = w;
+	bi.bmiHeader.biHeight      = -h;			// top-down: row 0 is the top one
+	bi.bmiHeader.biPlanes      = 1;
+	bi.bmiHeader.biBitCount    = 32;
+	bi.bmiHeader.biCompression = BI_RGB;
+
+	std::vector<BYTE> bits((size_t)w * (size_t)h * 4);
+	if (::GetDIBits(dc, bmp, 0, (UINT)h, &bits[0], &bi, DIB_RGB_COLORS) == 0)
+		return;
+
+	const int br = GetRValue(back), bg = GetGValue(back), bb = GetBValue(back);
+	for (size_t i = 0; i + 3 < bits.size(); i += 4)
+	{
+		const int a = bits[i + 3];
+		if (a == 255)
+			continue;
+		const int inv = 255 - a;
+		bits[i + 0] = (BYTE)(bits[i + 0] + bb * inv / 255);		// BGRA order
+		bits[i + 1] = (BYTE)(bits[i + 1] + bg * inv / 255);
+		bits[i + 2] = (BYTE)(bits[i + 2] + br * inv / 255);
+		bits[i + 3] = 255;
+	}
+	::SetDIBitsToDevice(dc, x, y, (DWORD)w, (DWORD)h, 0, 0, 0, (UINT)h,
+	                    &bits[0], &bi, DIB_RGB_COLORS);
+}
+
+/** The window procedure InDesign's window had before the menu went up, put back the moment it
+	comes down. ⚠One menu at a time, on the main thread only -- the same assumption the file's other
+	statics rest on. */
+static WNDPROC sFlyoutPrevProc = nil;
+
+/** Stands in front of the owner window's procedure for the life of one menu. It exists for exactly
+	two messages -- the ones a menu sends about owner-drawn items -- and passes everything else on.
+
+	⚠**WHY NOT A WINDOW OF OUR OWN.** That was built first and MEASURED not to work: a hidden 0x0
+	  owner made the flyout stop appearing altogether (held 1400 ms, nothing on screen, where the
+	  same press had shown the menu a minute earlier). A popup menu needs an owner that is really
+	  there and in front; InDesign's window is, and borrowing its procedure for the length of one
+	  synchronous call is the smaller change of the two. */
+static LRESULT CALLBACK KCMFlyoutOwnerProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
+{
+	if (msg == WM_MEASUREITEM)
+	{
+		MEASUREITEMSTRUCT* const mis = reinterpret_cast<MEASUREITEMSTRUCT*>(lp);
+		const KCMFlyoutItem* const item =
+			(mis != nil) ? reinterpret_cast<const KCMFlyoutItem*>(mis->itemData) : nil;
+		if (item == nil || item->fText == nil)
+			return ::DefWindowProcW(hwnd, msg, wp, lp);
+
+		int iconW = 0, iconH = 0;
+		KCMFlyoutIconSize(item->fIcon, iconW, iconH);
+
+		SIZE text = { 0, 0 };
+		HDC dc = ::GetDC(nil);
+		if (dc != nil)
+		{
+			HGDIOBJ old = (sFlyoutFont != nil) ? ::SelectObject(dc, sFlyoutFont) : nil;
+			::GetTextExtentPoint32W(dc, item->fText, (int)::wcslen(item->fText), &text);
+			if (old != nil)
+				::SelectObject(dc, old);
+			::ReleaseDC(nil, dc);
+		}
+
+		mis->itemWidth  = (UINT)(kKCMFlyoutTickWidth + iconW + kKCMFlyoutGap +
+		                         text.cx + kKCMFlyoutPadRight);
+		mis->itemHeight = (UINT)((iconH > text.cy ? iconH : text.cy) + kKCMFlyoutPadY * 2);
+		return TRUE;
+	}
+
+	if (msg == WM_DRAWITEM)
+	{
+		DRAWITEMSTRUCT* const dis = reinterpret_cast<DRAWITEMSTRUCT*>(lp);
+		const KCMFlyoutItem* const item =
+			(dis != nil) ? reinterpret_cast<const KCMFlyoutItem*>(dis->itemData) : nil;
+		if (item == nil || dis->hDC == nil || item->fText == nil)
+			return ::DefWindowProcW(hwnd, msg, wp, lp);
+
+		const bool selected = (dis->itemState & ODS_SELECTED) != 0;
+		// ★The fallbacks are the dark interface's own values, so a theme that cannot be read still
+		//   produces a readable menu rather than the white one this replaced.
+		const COLORREF back = selected ? KCMThemeColour(kInterfaceHighLight,     RGB( 70, 100, 140))
+		                               : KCMThemeColour(kInterfacePaletteFill,   RGB( 50,  50,  50));
+		const COLORREF fore = selected ? KCMThemeColour(kInterfaceHighLightText, RGB(255, 255, 255))
+		                               : KCMThemeColour(kInterfaceTextColor,     RGB(215, 215, 215));
+
+		HBRUSH backBrush = ::CreateSolidBrush(back);
+		if (backBrush != nil)
+		{
+			::FillRect(dis->hDC, &dis->rcItem, backBrush);
+			::DeleteObject(backBrush);
+		}
+
+		// The tick is DRAWN rather than borrowed: DrawFrameControl paints in the system's colours,
+		// which is the one thing this menu is getting away from.
+		if (item->fCurrent)
+		{
+			HPEN pen = ::CreatePen(PS_SOLID, 2, fore);
+			if (pen != nil)
+			{
+				HGDIOBJ oldPen = ::SelectObject(dis->hDC, pen);
+				const int cx = dis->rcItem.left + kKCMFlyoutTickWidth / 2;
+				const int cy = (dis->rcItem.top + dis->rcItem.bottom) / 2;
+				::MoveToEx(dis->hDC, cx - 4, cy, nil);
+				::LineTo(dis->hDC, cx - 1, cy + 3);
+				::LineTo(dis->hDC, cx + 4, cy - 4);
+				::SelectObject(dis->hDC, oldPen);
+				::DeleteObject(pen);
+			}
+		}
+
+		int iconW = 0, iconH = 0;
+		KCMFlyoutIconSize(item->fIcon, iconW, iconH);
+		if (iconW > 0 && iconH > 0)
+			KCMDrawFlyoutIcon(dis->hDC, item->fIcon,
+			                  dis->rcItem.left + kKCMFlyoutTickWidth,
+			                  (dis->rcItem.top + dis->rcItem.bottom - iconH) / 2, back);
+
+		RECT textRect = dis->rcItem;
+		textRect.left += kKCMFlyoutTickWidth + iconW + kKCMFlyoutGap;
+		::SetBkMode(dis->hDC, TRANSPARENT);
+		::SetTextColor(dis->hDC, fore);
+		HGDIOBJ oldFont = (sFlyoutFont != nil) ? ::SelectObject(dis->hDC, sFlyoutFont) : nil;
+		::DrawTextW(dis->hDC, item->fText, -1, &textRect,
+		            DT_SINGLELINE | DT_VCENTER | DT_LEFT | DT_NOPREFIX);
+		if (oldFont != nil)
+			::SelectObject(dis->hDC, oldFont);
+		return TRUE;
+	}
+
+	// ★Everything else belongs to the window we borrowed: this procedure is standing in front of
+	//   InDesign's own for the life of one menu, and only two messages are ours.
+	return (sFlyoutPrevProc != nil) ? ::CallWindowProcW(sFlyoutPrevProc, hwnd, msg, wp, lp)
+	                                : ::DefWindowProcW(hwnd, msg, wp, lp);
+}
+
+#endif
+
 static void KCMRaiseToolFlyout()
 {
 #ifdef WINDOWS
@@ -142,36 +401,12 @@ static void KCMRaiseToolFlyout()
 
 	// ★A tick marks the tool that is current, which is what the toolbox's own flyout shows.
 	const bool16 pawNow = KCMIsPawToolActive();
-	// ⚠The cast is sound HERE and only here: wchar_t is 16 bits on Windows, and this whole
-	//   function is inside #ifdef WINDOWS. (On the Mac it is 32 and the same cast would read past
-	//   the buffer -- the mistake KCMChangedPagesTSV.cpp records having made once.)
-	::AppendMenuW(menu, MF_STRING | (pawNow ? MF_UNCHECKED : MF_CHECKED), 1,
-	              reinterpret_cast<LPCWSTR>(w1.GrabUTF16Buffer(nil)));
-	::AppendMenuW(menu, MF_STRING | (pawNow ? MF_CHECKED : MF_UNCHECKED), 2,
-	              reinterpret_cast<LPCWSTR>(w2.GrabUTF16Buffer(nil)));
 
 	// ★A picture beside each name, as the toolbox's own flyout has (the user's request). ⚠The
 	//   bitmaps are owned HERE and deleted below: a menu does not take them over, and leaking one
 	//   per press would be a handle leak that only shows after a long session.
 	HBITMAP bmpTool = KCMLoadMenuBitmap(kKCMToolMenuBitmapID);
 	HBITMAP bmpPaw  = KCMLoadMenuBitmap(kKCMPawToolMenuBitmapID);
-	if (bmpTool != nil || bmpPaw != nil)
-	{
-		MENUITEMINFOW mii;
-		::ZeroMemory(&mii, sizeof(mii));
-		mii.cbSize = sizeof(mii);
-		mii.fMask  = MIIM_BITMAP;
-		if (bmpTool != nil)
-		{
-			mii.hbmpItem = bmpTool;
-			::SetMenuItemInfoW(menu, 1, FALSE, &mii);
-		}
-		if (bmpPaw != nil)
-		{
-			mii.hbmpItem = bmpPaw;
-			::SetMenuItemInfoW(menu, 2, FALSE, &mii);
-		}
-	}
 
 	// SysPoint is POINT on Windows (WSysType.h:56), so the press point goes straight through.
 	HWND owner = ::WindowFromPoint(sDownWhere);
@@ -187,6 +422,74 @@ static void KCMRaiseToolFlyout()
 		return;
 	}
 
+	// ***** BORROW THAT WINDOW'S PROCEDURE, WHICH IS WHAT MAKES THE COLOURS POSSIBLE. *****
+	//   The two owner-draw messages go to the menu's OWNER, and the owner has to be a window that
+	//   is really on screen and in front (a hidden one of our own was tried and the menu stopped
+	//   appearing at all). So the owner stays InDesign's and this file stands in front of its
+	//   procedure for the length of ONE SYNCHRONOUS CALL, putting it back immediately afterwards.
+	//   ⚠When the swap is refused, `ownerDrawn` stays false and the plain menu is built instead --
+	//   the flyout is never lost over its appearance.
+	sFlyoutPrevProc = (WNDPROC)::SetWindowLongPtrW(owner, GWLP_WNDPROC,
+	                                               (LONG_PTR)&KCMFlyoutOwnerProc);
+	const bool ownerDrawn = (sFlyoutPrevProc != nil);
+
+	// ⚠The cast is sound HERE and only here: wchar_t is 16 bits on Windows, and this whole
+	//   function is inside #ifdef WINDOWS. (On the Mac it is 32 and the same cast would read past
+	//   the buffer -- the mistake KCMChangedPagesTSV.cpp records having made once.)
+	const wchar_t* const text1 = reinterpret_cast<const wchar_t*>(w1.GrabUTF16Buffer(nil));
+	const wchar_t* const text2 = reinterpret_cast<const wchar_t*>(w2.GrabUTF16Buffer(nil));
+
+	KCMFlyoutItem items[2];
+	items[0].fText = text1; items[0].fIcon = bmpTool; items[0].fCurrent = (pawNow == kFalse);
+	items[1].fText = text2; items[1].fIcon = bmpPaw;  items[1].fCurrent = (pawNow != kFalse);
+
+	HBRUSH menuBack = nil;
+	if (ownerDrawn)
+	{
+		sFlyoutFont = KCMFlyoutFont();
+
+		// MF_OWNERDRAW: the text and the picture both come from the item data below, so no string
+		// and no hbmpItem is given to the menu at all.
+		::AppendMenuW(menu, MF_OWNERDRAW, 1, reinterpret_cast<LPCWSTR>(&items[0]));
+		::AppendMenuW(menu, MF_OWNERDRAW, 2, reinterpret_cast<LPCWSTR>(&items[1]));
+
+		// ★The BACKGROUND BRUSH as well as the items: the menu paints a margin of its own around
+		//   them, and an owner-drawn item cannot reach it. Without this the frame stays white.
+		menuBack = ::CreateSolidBrush(KCMThemeColour(kInterfacePaletteFill, RGB(50, 50, 50)));
+		if (menuBack != nil)
+		{
+			MENUINFO mi;
+			::ZeroMemory(&mi, sizeof(mi));
+			mi.cbSize  = sizeof(mi);
+			mi.fMask   = MIM_BACKGROUND | MIM_APPLYTOSUBMENUS;
+			mi.hbrBack = menuBack;
+			::SetMenuInfo(menu, &mi);
+		}
+	}
+	else
+	{
+		// The menu as it was before the colours: the system draws it, in the system's colours.
+		::AppendMenuW(menu, MF_STRING | (pawNow ? MF_UNCHECKED : MF_CHECKED), 1, text1);
+		::AppendMenuW(menu, MF_STRING | (pawNow ? MF_CHECKED : MF_UNCHECKED), 2, text2);
+		if (bmpTool != nil || bmpPaw != nil)
+		{
+			MENUITEMINFOW mii;
+			::ZeroMemory(&mii, sizeof(mii));
+			mii.cbSize = sizeof(mii);
+			mii.fMask  = MIIM_BITMAP;
+			if (bmpTool != nil)
+			{
+				mii.hbmpItem = bmpTool;
+				::SetMenuItemInfoW(menu, 1, FALSE, &mii);
+			}
+			if (bmpPaw != nil)
+			{
+				mii.hbmpItem = bmpPaw;
+				::SetMenuItemInfoW(menu, 2, FALSE, &mii);
+			}
+		}
+	}
+
 	// ★TPM_RETURNCMD: the choice comes back as the return value, so no menu message has to be
 	//   routed anywhere. TPM_NONOTIFY keeps WM_COMMAND off the owner entirely.
 	const int picked = ::TrackPopupMenu(menu,
@@ -196,6 +499,20 @@ static void KCMRaiseToolFlyout()
 	::DestroyMenu(menu);
 	if (bmpTool != nil) ::DeleteObject(bmpTool);
 	if (bmpPaw  != nil) ::DeleteObject(bmpPaw);
+	if (menuBack != nil) ::DeleteObject(menuBack);
+	if (sFlyoutFont != nil)
+	{
+		::DeleteObject(sFlyoutFont);
+		sFlyoutFont = nil;
+	}
+	// ⚠★★THE PROCEDURE GOES BACK HERE, AND THIS IS THE ONE LINE THAT MUST NOT BE MISSED: a window
+	//   left pointing at a plug-in that then unloads is a crash, which is the same rule this file
+	//   already keeps for the timer.
+	if (sFlyoutPrevProc != nil)
+	{
+		::SetWindowLongPtrW(owner, GWLP_WNDPROC, (LONG_PTR)sFlyoutPrevProc);
+		sFlyoutPrevProc = nil;
+	}
 
 	if (picked == 1)
 		KCMToolButtonPressed(kFalse);
