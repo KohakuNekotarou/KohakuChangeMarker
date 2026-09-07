@@ -61,6 +61,8 @@ resource StringTable (kSDKDefStringsResourceID + index_enUS)
                 kKCMSavePanelStateMenuKey,			"Save Panel Settings",
                 kKCMSaveChecksMenuKey,			"Save Check && Register",
                 kKCMLoadChecksMenuKey,			"Load Check && Register",
+                kKCMSaveMarksMenuKey,			"Save Marks to Document",
+                kKCMClearMarksMenuKey,			"Clear Marks from Document",
                 kKCMClearChecksMenuKey,			"Clear Checks in This Document",
                 kKCMClearPawsMenuKey,			"Clear Cat Paws in This Document",
                 kKCMFindOversetMenuKey,			"Find Overset",

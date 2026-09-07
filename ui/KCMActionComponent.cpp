@@ -731,6 +731,52 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 			Utils<IKCMPageFlagsFacade>()->LoadChecksAndRegister();
 			break;
 
+		// ★"Save Marks to Document" / "Clear Marks from Document" (2026-09-07): the ticks and paws
+		//   written into the document itself as script labels (KCMPageMarksDoc.h).
+		//   ⚠**These CHANGE THE DOCUMENT**, which is why they are presses and never automatic: KCM's
+		//     standing promise is that comparing leaves a document as it was found. Putting the marks
+		//     BACK is free and does happen on its own, in the after-open responder.
+		//   ★The model counts and this side words it, the same division as everywhere here.
+		case kKCMSaveMarksToDocActionID:
+		{
+			IDataBase* const db = Utils<IKCMCompareFacade>()->GetActiveDocDB();
+			const int32 pages = Utils<IKCMPageFlagsFacade>()->SaveMarksToDocument(db);
+			PMString msg;
+			msg.SetTranslatable(kFalse);
+			if (pages < 0)
+				msg.Append("No document.");
+			else if (pages == 0)
+				msg.Append("Nothing to save into this document.");
+			else
+			{
+				msg.Append("Marks saved into the document (");
+				msg.AppendNumber(pages);
+				msg.Append(pages == 1 ? " page)." : " pages).");
+			}
+			KCMSetStatus(msg);
+			break;
+		}
+
+		case kKCMClearMarksFromDocActionID:
+		{
+			IDataBase* const db = Utils<IKCMCompareFacade>()->GetActiveDocDB();
+			const int32 pages = Utils<IKCMPageFlagsFacade>()->ClearMarksFromDocument(db);
+			PMString msg;
+			msg.SetTranslatable(kFalse);
+			if (pages < 0)
+				msg.Append("No document.");
+			else if (pages == 0)
+				msg.Append("This document carries no marks of ours.");
+			else
+			{
+				msg.Append("Marks cleared from the document (");
+				msg.AppendNumber(pages);
+				msg.Append(pages == 1 ? " page)." : " pages).");
+			}
+			KCMSetStatus(msg);
+			break;
+		}
+
 		// Flyout "Clear Checks in This Document": drop the active document's ticks. The work, the
 		// status line and the notification that takes the ticks off the Pages panel's thumbnails
 		// are all on the model side (KCMPageCheck.cpp), which is why nothing is reported here.
@@ -1179,6 +1225,24 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 			IDataBase* db = Utils<IKCMCompareFacade>()->GetActiveDocDB();
 			listToUpdate->SetNthActionState(i,
 				(Utils<IKCMPageFlagsFacade>()->PawStampCount(db) > 0) ? kEnabledAction : kDisabled_Unselected);
+		}
+		else if (action == kKCMSaveMarksToDocActionID)
+		{
+			// ★Live only when there is something to write. ⚠It asks the SESSION, not the document: what
+			//   this item saves is what the reader has put on the page in this session.
+			IDataBase* db = Utils<IKCMCompareFacade>()->GetActiveDocDB();
+			const bool16 anything = (db != nil) &&
+				(Utils<IKCMPageFlagsFacade>()->PageCheckHasAny(db) ||
+				 Utils<IKCMPageFlagsFacade>()->PawStampCount(db) > 0);
+			listToUpdate->SetNthActionState(i, anything ? kEnabledAction : kDisabled_Unselected);
+		}
+		else if (action == kKCMClearMarksFromDocActionID)
+		{
+			// ⚠**A document is all this one asks for.** Whether it carries any of our labels can only be
+			//   answered by walking every page, and this runs every time the menu opens -- so the item
+			//   stays live and says "no marks of ours" when there were none.
+			listToUpdate->SetNthActionState(i,
+				(Utils<IKCMCompareFacade>()->GetActiveDocDB() != nil) ? kEnabledAction : kDisabled_Unselected);
 		}
 		else if (action == kKCMPopupCompareBooksActionID)
 		{

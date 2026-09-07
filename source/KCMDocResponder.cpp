@@ -56,6 +56,8 @@
 #include "KCMHideUnchanged.h"		// KCMResetHideUnchanged / the two hidden-side getters
 #include "KCMID.h"
 #include "KCMThreadSafety.h"		// KCMIsMainThread
+#include "KCMPageMarksDoc.h"		// KCMMarksRestoreFromDocument -- the marks the document carries
+#include "KCMModelNotify.h"		// KCMSayStatus -- the model owns the words, the UI shows them
 
 /** KCMDocResponder
 	Responds to the "after close document" signal by cleaning up any of KCM's
@@ -166,6 +168,59 @@ void KCMBeforeSaveDocResponder::Respond(ISignalMgr* signalMgr)
 	// per side internally, so a side that has already gone is skipped.
 	if (db == KCMGetHideUnchangedDB() || db == KCMGetHideUnchangedSrcDB())
 		KCMResetHideUnchanged(kTrue);
+}
+
+/** KCMAfterOpenDocResponder
+
+	Puts back the ticks and cat paws that the document carries as script labels (KCMPageMarksDoc.h),
+	the moment it finishes opening.
+
+	★**IT CHANGES NOTHING IN THE DOCUMENT.** It reads labels that are already there and fills this
+	  plug-in's own session stores from them, so a document opened and closed again is untouched --
+	  which is what lets this run by itself while WRITING stays a menu item the reader presses.
+	⚠Restoring REPLACES what the session held for that document, which is right for an open: there
+	  was nothing there a moment ago.
+*/
+class KCMAfterOpenDocResponder : public CResponder
+{
+public:
+	KCMAfterOpenDocResponder(IPMUnknown* boss) : CResponder(boss) {}
+
+	virtual void Respond(ISignalMgr* signalMgr);
+};
+
+CREATE_PMINTERFACE(KCMAfterOpenDocResponder, kKCMAfterOpenResponderImpl)
+
+void KCMAfterOpenDocResponder::Respond(ISignalMgr* signalMgr)
+{
+	// ⚠The same guard the sweep above carries, and for the same reason: on a background thread every
+	//   database is a clone, and this plug-in's stores belong to the main thread.
+	if (!KCMIsMainThread())
+		return;
+
+	InterfacePtr<IDocumentSignalData> signalData(signalMgr, UseDefaultIID());
+	if (signalData == nil)
+		return;
+
+	IDataBase* const db = signalData->GetDocument().GetDataBase();
+	if (db == nil)
+		return;
+
+	int32 checks = 0, paws = 0;
+	if (KCMMarksRestoreFromDocument(db, &checks, &paws) <= 0)
+		return;				// the document carries none of ours: say nothing at all
+
+	// The marks are drawn from the stores, so the views have to be asked to draw again.
+	KCMInvalidateDB(db);
+
+	PMString msg;
+	msg.SetTranslatable(kFalse);
+	msg.Append("Marks restored from the document: ");
+	msg.AppendNumber(checks);
+	msg.Append(checks == 1 ? " tick, " : " ticks, ");
+	msg.AppendNumber(paws);
+	msg.Append(paws == 1 ? " paw." : " paws.");
+	KCMNotifyStatus(msg);		// the PMString door; KCMSayStatus is the const char* one
 }
 
 // End, KCMDocResponder.cpp.

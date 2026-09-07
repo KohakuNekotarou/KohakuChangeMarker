@@ -1049,6 +1049,21 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKCMLoadChecksMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
+		// ★"Save Marks to Document" / "Clear Marks from Document" (2026-09-07, the user's request):
+		// the ticks and cat paws written into the document itself, as script labels on the pages that
+		// carry them (KCMPageMarksDoc.h). They sit next to the file-based pair above because they are
+		// the same question answered a different way -- beside the file, or inside it.
+		// ⚠There is no "load" to match: putting them back happens on its own when a document opens.
+		kKCMSaveMarksToDocActionID,
+		kKCMPopupMenuPath,
+		kKCMSaveMarksMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
+		kKCMClearMarksFromDocActionID,
+		kKCMPopupMenuPath,
+		kKCMClearMarksMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
 		// "Clear Checks in This Document" on the panel flyout (popup) menu. Plain command that drops
 		// the active document's checks, and the checks on its Pages panel thumbnails with them.
 		// ★It exists because **Stop no longer clears the checks** (2026-09-04): Stop used to double
@@ -1479,6 +1494,27 @@ resource ActionDef (kSDKDefActionResourceID)
 		kOtherActionArea,
 		kNormalAction,
 		kDisableIfLowMem,					// plain command; guards inside (needs a saved record for the active document)
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		// ★The two document-side marks items. kCustomEnabling: UpdateActionStates greys "Save"
+		//   when the active document holds neither a tick nor a paw, and "Clear" when there is no
+		//   active document at all.
+		kKCMActionComponentBoss,
+		kKCMSaveMarksToDocActionID,
+		kKCMSaveMarksMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		kKCMActionComponentBoss,
+		kKCMClearMarksFromDocActionID,
+		kKCMClearMarksMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 

@@ -127,6 +127,22 @@ public:
 		  the layout view is refreshed.
 		@return how many paws went. */
 	virtual int32	ClearPawsInDoc(IDataBase* db) = 0;
+
+	// ---- the marks the DOCUMENT itself carries (2026-09-07) --------------------------------
+	//
+	// ★**WRITING IS ALWAYS ASKED FOR, READING IS NOT.** These two are the flyout's; putting them
+	//   back happens on its own when a document opens (the after-open responder), which is why there
+	//   is no "load" to match the "save". The reasoning is in KCMPageMarksDoc.h.
+
+	/** "Save Marks to Document": write this document's ticks and paws onto its pages as script
+		labels, and take our labels off the pages that no longer carry either.
+		@return how many pages were changed, or -1 when the document could not be used. */
+	virtual int32	SaveMarksToDocument(IDataBase* db) = 0;
+
+	/** "Clear Marks from Document": take every label of OURS off every page, leaving all other
+		labels exactly as they were.
+		@return how many pages were changed, or -1 when the document could not be used. */
+	virtual int32	ClearMarksFromDocument(IDataBase* db) = 0;
 };
 
 #endif // __IKCMPageFlagsFacade_h__

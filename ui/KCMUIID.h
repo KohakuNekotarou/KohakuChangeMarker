@@ -397,6 +397,8 @@ DECLARE_PMID(kActionIDSpace, kKCMClearPawsActionID, kKCMUIPrefix + 49)	// "Clear
 DECLARE_PMID(kActionIDSpace, kKCMPopupRefreshCompareActionID, kKCMUIPrefix + 53)	// "Refresh Comparison" on the panel flyout, DIRECTLY UNDER Start (a plain command). Compares the same two documents again, in whichever mode is current - what the reader wants after editing one of them. Enabled only while a comparison is armed and both documents are still open (kCustomEnabling); it was Stop-then-Start before this existed. ★It is NOT either of the two partial refreshes: kKCMPageRefreshCompareActionID does the pages selected in the Pages panel and kKCMStoryRowRefreshActionID does one row, while this one re-does everything. KCMRefreshComparison in KCMComparisonRun.cpp
 DECLARE_PMID(kActionIDSpace, kKCMClearChecksActionID, kKCMUIPrefix + 52)	// "Clear Checks in This Document" on the panel flyout (a plain command). ★It exists because **Stop no longer clears the ticks** (2026-09-04): Stop used to double as the way to be rid of them all, and taking that away would have left no way at all. Greyed where the active document holds no tick, through kCustomEnabling. ⚠The number is +52, not +50: see the note directly above
 
+DECLARE_PMID(kActionIDSpace, kKCMSaveMarksToDocActionID, kKCMUIPrefix + 55)	// ★"Save Marks to Document" on the panel flyout (a plain command; 2026-09-07, the user's request). Writes the ticks and cat paws onto the pages as script labels (KCMPageMarksDoc.h). ⚠It CHANGES THE DOCUMENT -- which is why it is a press and never automatic. Greyed when the active document holds neither
+DECLARE_PMID(kActionIDSpace, kKCMClearMarksFromDocActionID, kKCMUIPrefix + 56)	// "Clear Marks from Document": takes OUR labels off every page and leaves every other label alone. Greyed with no active document
 DECLARE_PMID(kActionIDSpace, kKCMClearChosenActionID, kKCMUIPrefix + 54)	// "Clear Target and Source" on the panel flyout (a plain command; 2026-09-05, user's request). Drops both chosen documents, so the next Start falls back to the automatic rule and the panel's Target:/Source: lines go back to bare labels. A lent Source is forgotten with them. ★★It STOPS a running comparison first (2026-09-07, user's instruction -- it used to be greyed while armed and to leave the comparison running). Live through kCustomEnabling whenever a comparison is armed OR at least one of the two is chosen. ⚠The number is +54, not +50 or +51: those two are retired, see the note above
 
 // (The template's spare //DECLARE_PMID(kActionIDSpace, kKCMActionID, kKCMUIPrefix + 41) was
@@ -635,6 +637,8 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowStateWidgetID, kKCMUIPrefix + 49)	// = t
 #define kKCMScrollMapMenuKey		kKCMStringPrefix "kKCMScrollMapMenuKey"	// the menu name of the "Show Scrollbar Map" toggle on the panel flyout
 #define kKCMSavePanelStateMenuKey	kKCMStringPrefix "kKCMSavePanelStateMenuKey"	// the menu name of "Save Panel Settings" on the panel flyout
 #define kKCMSaveChecksMenuKey		kKCMStringPrefix "kKCMSaveChecksMenuKey"	// the menu name of "Save Check & Register" on the panel flyout
+#define kKCMSaveMarksMenuKey		kKCMStringPrefix "kKCMSaveMarksMenuKey"	// the menu name of "Save Marks to Document"
+#define kKCMClearMarksMenuKey		kKCMStringPrefix "kKCMClearMarksMenuKey"	// the menu name of "Clear Marks from Document"
 #define kKCMLoadChecksMenuKey		kKCMStringPrefix "kKCMLoadChecksMenuKey"	// the menu name of "Load Check & Register" on the panel flyout
 #define kKCMClearChecksMenuKey		kKCMStringPrefix "kKCMClearChecksMenuKey"	// the menu name of "Clear Checks in This Document" on the panel flyout
 #define kKCMClearPawsMenuKey		kKCMStringPrefix "kKCMClearPawsMenuKey"	// the menu name of "Clear Cat Paws in This Document" on the panel flyout
@@ -1018,6 +1022,8 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowStateWidgetID, kKCMUIPrefix + 49)	// = t
 #define kKCMSavePanelStateMenuItemPosition	9.56	// plain command "Save Panel Settings"
 #define kKCMSaveChecksMenuItemPosition	9.58	// plain command "Save Check & Register"
 #define kKCMLoadChecksMenuItemPosition	9.60	// plain command "Load Check & Register"
+#define kKCMSaveMarksMenuItemPosition	9.62	// plain command "Save Marks to Document" -- next to the file-based pair it is the document-side twin of
+#define kKCMClearMarksMenuItemPosition	9.64	// plain command "Clear Marks from Document", directly under it
 #define kKCMClearChecksMenuItemPosition	9.62	// plain command "Clear Checks in This Document", directly under the Save/Load pair it undoes
 #define kKCMClearPawsMenuItemPosition	9.64	// plain command "Clear Cat Paws in This Document". ★Two items rather than one: a tick records progress and a paw is a landmark, so they are wanted gone at different moments
 #define kKCMExportChangedPagesMenuItemPosition	9.53	// plain command "Export Changed Pages..." (the list of changed pages as TSV), directly below Align

@@ -44,7 +44,8 @@
 #include "KCMHideUnchanged.h"		// the Hide Unchanged toggle and its state
 #include "KCMDrawEventHandler.h"	// the engine's shared state, which these two publish
 #include "KCMPageMap.h"			// registered pages, the page pairing, and the Register toggle
-#include "KCMPageCheck.h"			// the Check toggle and the Save/Load of both flags
+#include "KCMPageCheck.h"
+#include "KCMPageMarksDoc.h"	// the marks the document itself carries (the two below)			// the Check toggle and the Save/Load of both flags
 #include "KCMPawStamp.h"			// the cat-paw stamps (place / lift / count / the one size)
 #include "KCMStoryList.h"			// the Story Edits rows, and where a story begins in a document
 #include "KCMStoryDiffRun.h"		// RunOne - re-comparing one row's story ("Refresh Story Comparison")
@@ -372,6 +373,8 @@ public:
 
 	virtual void	SaveChecksAndRegister()			{ KCMPageCheckSaveToFile(); }
 	virtual void	LoadChecksAndRegister()			{ KCMPageCheckLoadFromFile(); }
+	virtual int32	SaveMarksToDocument(IDataBase* db)	{ return KCMMarksSaveToDocument(db); }
+	virtual int32	ClearMarksFromDocument(IDataBase* db)	{ return KCMMarksClearFromDocument(db); }
 
 	// The cat-paw stamps. The crossing exists because model and UI are two DLLs: the tool lives
 	// on the UI side and the store on this one.

@@ -292,6 +292,24 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 		}
 	},
 
+	// ***** PUT BACK THE MARKS THE DOCUMENT ITSELF CARRIES (2026-09-07). *****
+	// The reader's ticks and cat paws can be written into the document as script labels
+	// (KCMPageMarksDoc.h). Writing is always something they ask for; READING IS FREE, so it happens
+	// on its own the moment a document opens -- the only point at which the pages are there to be
+	// read and nothing of ours is in the session for them yet.
+	// ★Restoring changes NOTHING in the document: it fills this plug-in's own stores from labels that
+	//   are already there, so a document opened and closed again is untouched.
+	// Same "one signal, one boss, no ServiceProvider of its own" shape as the two above.
+	Class
+	{
+		kKCMAfterOpenResponderServiceBoss,
+		kInvalidClass,
+		{
+			IID_IK2SERVICEPROVIDER, kAfterOpenDocSignalRespServiceImpl,
+			IID_IRESPONDER,         kKCMAfterOpenResponderImpl,
+		}
+	},
+
 	// Declares the adornment's transparency, but only while an export is running.
 	//
 	// Why it has to be temporary: IXPManager's list of page items that have transparency is
