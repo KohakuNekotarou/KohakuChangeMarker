@@ -745,18 +745,37 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 			Utils<IKCMPageFlagsFacade>()->ClearPawsInDoc(Utils<IKCMCompareFacade>()->GetActiveDocDB());
 			break;
 
-		// Flyout "Clear Target and Source": drop both choices, so the next Start falls back to the
-		// automatic rule (active document = Target, the earliest-opened other document = Source).
+		// Flyout "Clear Target and Source": put the panel's two lines back to bare labels, so the
+		// next Start falls back to the automatic rule (active document = Target, the earliest-opened
+		// other document = Source).
+		// ★★**IT STOPS A RUNNING COMPARISON FIRST** (user's instruction, 2026-09-07: "let it be
+		//   pressed while started as well -- pressing it stops, then clears both choices"). It used to
+		//   be greyed while armed, on the reasoning that a choice must not move under a running
+		//   comparison. **That reasoning belongs to the two "Set as" items**, which change what the
+		//   NEXT Start uses while the current one goes on; it does not hold here, because this item
+		//   ends both together -- and while a comparison runs the panel names the ARMED pair
+		//   (KCMPanelObserver), so what the reader sees named is exactly what they ask to clear.
+		// ★**StopComparison, not ToggleStartStop**: the toggle would START when nothing is armed,
+		//   which is the opposite of this item. The same choice the Ignore Page Number Marker toggle
+		//   makes above.
 		// ★**The panel refresh and the status line are done here, not by the facade** -- the same
 		//   division as the two "Set as" items this undoes ([[one-question-one-place]]: the facade
 		//   changes the state, the UI decides what the UI shows).
-		// ⚠It does not stop a running comparison, and it does not need to: the item is greyed
-		//   while one is armed.
 		case kKCMClearChosenActionID:
-			Utils<IKCMCompareFacade>()->ClearChosenDocs();
+		{
+			InterfacePtr<IKCMCompareFacade> compare(Utils<IKCMCompareFacade>().QueryUtilInterface());
+			const bool16 wasArmed = compare->IsArmed() && (compare->GetArmedTargetDB() != nil);
+			if (wasArmed)
+				compare->StopComparison();
+			compare->ClearChosenDocs();
 			KCMRefreshPanel();
-			KCMSetStatus("Target and Source cleared.");
+			// ⚠**Say that the comparison went with it.** StopComparison writes "marks cleared" of its
+			//   own and the line below replaces it, so without naming the stop there would be nothing on
+			//   screen to tell "I cleared two choices" from "I ended a comparison" -- the same reasoning
+			//   as the cancelled Refresh (KCMComparisonRun.cpp).
+			KCMSetStatus(wasArmed ? "Stopped, and Target and Source cleared." : "Target and Source cleared.");
 			break;
+		}
 
 		// Flyout "Export Changed Pages...": save the list of changed pages of the current comparison as
 		// TSV (new page / old page / kind = changed, inserted, deleted). The work is in
@@ -1138,18 +1157,21 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 		}
 		else if (action == kKCMClearChosenActionID)
 		{
-			// ★**Two questions, and both are needed.** "Not while armed" is the gate the two
-			//   "Set as" items carry -- a choice cannot be changed in the middle of a comparison,
-			//   and this item changes the same state they do. "At least one of them is chosen" is
-			//   what makes clearing mean anything; with neither set there is nothing to undo.
-			//   Both are asked through the same facade the command uses, so the grey and the
-			//   command cannot come to mean different things ([[one-question-one-place]]).
+			// ★**Live whenever the panel's two lines have something to clear**: either a comparison
+			//   is running (the lines name the armed pair) or at least one document is chosen (they
+			//   name the choice). With neither, they are bare labels already and there is nothing to
+			//   undo.
+			// ⚠**The "not while armed" gate the two "Set as" items carry is deliberately absent**
+			//   (user's instruction, 2026-09-07). This item does not move a choice underneath a running
+			//   comparison -- it stops the comparison first and clears both together (DoAction).
+			//   Asked through the same facade the command uses, so the grey and the command cannot
+			//   come to mean different things ([[one-question-one-place]]).
 			InterfacePtr<IKCMCompareFacade> compare(Utils<IKCMCompareFacade>().QueryUtilInterface());
 			const bool16 armed = compare->IsArmed() && (compare->GetArmedTargetDB() != nil);
 			const bool16 anyChosen = (compare->GetChosenTargetDB() != nil) ||
 			                         (compare->GetChosenSourceDB() != nil);
 			listToUpdate->SetNthActionState(i,
-				(!armed && anyChosen) ? kEnabledAction : kDisabled_Unselected);
+				(armed || anyChosen) ? kEnabledAction : kDisabled_Unselected);
 		}
 		else if (action == kKCMClearPawsActionID)
 		{

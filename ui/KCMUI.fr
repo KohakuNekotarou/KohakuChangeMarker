@@ -790,10 +790,10 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKCMSetSourceMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
-		// "Clear Target and Source" on the panel flyout (popup) menu. Plain command: drops both
-		// chosen documents, so the next Start falls back to the automatic rule (active = Target,
-		// the earliest-opened other document = Source). Directly below the two "Set as" items it
-		// undoes, so the group reads Start / Refresh / choose / choose / clear.
+		// "Clear Target and Source" on the panel flyout (popup) menu. Plain command: stops a running
+		// comparison and drops both chosen documents, so the next Start falls back to the automatic
+		// rule (active = Target, the earliest-opened other document = Source). Directly below the two
+		// "Set as" items it undoes, so the group reads Start / Refresh / choose / choose / clear.
 		kKCMClearChosenActionID,
 		kKCMPopupMenuPath,
 		kKCMClearChosenMenuItemPosition,
@@ -1274,9 +1274,9 @@ resource ActionDef (kSDKDefActionResourceID)
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 
-		// "Clear Target and Source". It undoes the two "Set as" items above, so it carries the
-		// same "not while a comparison is armed" gate -- plus "at least one of the two is
-		// actually chosen", or there would be nothing to clear (UpdateActionStates).
+		// "Clear Target and Source". It undoes the two "Set as" items above, but NOT their "not
+		// while a comparison is armed" gate (2026-09-07): it STOPS a running comparison first, so it
+		// is live whenever there is a comparison or a choice to clear (UpdateActionStates).
 		kKCMActionComponentBoss,
 		kKCMClearChosenActionID,
 		kKCMClearChosenMenuKey,
