@@ -845,16 +845,19 @@ ErrorCode KCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMString
 		// **The Story Edits list does NOT need clearing here**, although reading this function alone
 		//   suggests it does (the marks all go, so a list left standing would show rows pointing into
 		//   two documents that are no longer being compared, and those rows can be clicked).
-		//   Opening all five callers shows it cannot happen. When this returns kFailure (i.e. a cancel):
+		//   Opening every caller shows it cannot happen. When this returns kFailure (i.e. a cancel):
+		//   ⚠**Do not write the number here.** It said "all five" until 2026-09-07, when one of the
+		//     five (Load Check & Register) was removed with its feature and the count went stale in
+		//     the same commit. Count the bullets below instead.
 		//     - Start (KCMStartComparisonFor) ... does not arm. Before it, nothing was armed, so the
 		//       list is empty. (The book comparison's "Start Change Marker",
 		//       KCMBookStartComparisonForRow, likewise Stops before it starts.)
 		//     - the register toggle (KCMPageMapToggleSelectedPages) ... goes back to Stop through
 		//       KCMToggleStartStop()
-		//     - Load Check & Register (KCMPageCheckLoadFromFile) ... the same
 		//     - the Ignore toggle (the UI's KCMActionComponent) ... the same
 		//     - Refresh Comparison (KCMRefreshComparison) ... stops outright, being armed already
-		//   All five end at Stop, so KCMDoClearMarks's KCMStoryList::Clear() always runs -- and
+		//   (Load Check & Register stood in this list and went with its feature on 2026-09-07.)
+		//   They all end at Stop, so KCMDoClearMarks's KCMStoryList::Clear() always runs -- and
 		//   that is also what empties the HALF-BUILT list a cancelled Story comparison leaves
 		//   (KCMRebuildStoryEdits, above).
 		//   Measured: cancelling a 30-page re-comparison at the progress bar takes the heading from
