@@ -1525,6 +1525,76 @@ static const double kKCMPawOutlines[5][kKCMPawPoints][2] =
 	}
 };
 
+//========================================================================================
+// The font every piece of text this file draws is set in: the system's default, fetched once per
+// session.
+//
+//  ★★**ONE PLACE FETCHES IT.** Two of them now want it -- the original-page-number badge and the
+//    word beside a cat paw -- and the fetch writes three shared statics
+//    (sOldNumFontTried / sOldNumFont / sOldNumFontInst). Written twice, two threads could issue
+//    QueryFont twice and lose one of the pointers, which is a leak that nothing reports.
+//  ⚠**ONLY THE MAIN THREAD PERFORMS THE FIRST FETCH.** On a background thread with nothing fetched
+//    yet this answers nil and the caller simply draws no text. That is the deliberate shape: the
+//    marks that must reach a PDF are the drawn ones, and text is decoration on top of them. It does
+//    mean "the word is missing from the PDF only" is possible if the page was never on screen.
+//  ★The cached font INSTANCE is at the badge's own fixed size, so only the badge may use it; the
+//    paw's word is a different size and asks selectfont for it directly.
+//========================================================================================
+static IPMFont* KCMQueryMarkFont()
+{
+	if (!sOldNumFontTried && KCMIsMainThread())
+	{
+		sOldNumFontTried = kTrue;
+		// InterfacePtr(p, iid) accepts p == nil (InterfacePtr.h:459 -- QueryInterface_ tests for
+		//   it), so a session that is nil during shutdown just leaves fontMgr nil here. An
+		//   explicit guard is only needed for a **direct method call** such as
+		//   session->QueryApplication().
+		InterfacePtr<IFontMgr> fontMgr(GetExecutionContextSession(), UseDefaultIID());
+		if (fontMgr != nil)
+		{
+			sOldNumFont = fontMgr->QueryFont(fontMgr->GetDefaultFontName());
+			if (sOldNumFont != nil)
+			{
+				// The size is fixed at the equivalent of 50% document zoom, so the instance
+				//   (font x matrix) never changes and can be cached.
+				const PMReal cacheSize = kKCMOldNumFontPx / kKCMOldNumFixedZoom;
+				PMMatrix fontMatrix(cacheSize, 0.0, 0.0, cacheSize, 0.0, 0.0);
+				sOldNumFontInst = fontMgr->QueryFontInstance(sOldNumFont, fontMatrix);
+			}
+		}
+	}
+	return sOldNumFont;
+}
+
+//========================================================================================
+// The two shades one paw is drawn in.
+//
+//  ★**ink** is the mark's own colour: what the WORD beside the paw is written in.
+//  ★**fill** is that colour mixed with white: what the PAW ITSELF is filled with.
+//    The reasoning is at kKCMPawFillWhiteMix -- a solid blob and a few thin strokes cannot share
+//    a shade and both be right.
+//  ⚠ONE PLACE ANSWERS "what colour is this paw", so the layout and the thumbnail cannot drift.
+//========================================================================================
+static void KCMPawColours(int32 colour,
+	uint8& inkR, uint8& inkG, uint8& inkB,
+	uint8& fillR, uint8& fillG, uint8& fillB)
+{
+	if (colour == kKCMPawColourBlue)
+	{
+		inkR = kKCMPawBlueR; inkG = kKCMPawBlueG; inkB = kKCMPawBlueB;
+	}
+	else
+	{
+		inkR = kKCMPawRedR;  inkG = kKCMPawRedG;  inkB = kKCMPawRedB;
+	}
+
+	// Towards white by the mix. ⚠In PMReal, then back: the arithmetic on uint8 would wrap.
+	const PMReal mix = kKCMPawFillWhiteMix;
+	fillR = (uint8)ToInt32(PMReal(inkR) + (PMReal(255.0) - PMReal(inkR)) * mix);
+	fillG = (uint8)ToInt32(PMReal(inkG) + (PMReal(255.0) - PMReal(inkG)) * mix);
+	fillB = (uint8)ToInt32(PMReal(inkB) + (PMReal(255.0) - PMReal(inkB)) * mix);
+}
+
 // One outline, drawn as a CLOSED CATMULL-ROM SPLINE through its points, span by span as cubic
 // Beziers -- the only curve a port speaks (IGraphicsPort has curveto / curvetov / rectpath, and no
 // arc or oval of its own). The tangent at a point is (next - previous)/6, the standard conversion.
@@ -1551,6 +1621,151 @@ static void KCMPawShapePath(IGraphicsPort* gPort, const double outline[kKCMPawPo
 		               px[i2], py[i2]);
 	}
 	gPort->closepath();
+}
+
+
+//========================================================================================
+// (KCMDrawPawThumb stood here on 2026-09-07 and was REMOVED the same day, at the user's word:
+//  "let us stop drawing the cat paw illustration on the Pages panel".)
+//  It drew ONE red paw at the centre of a page's thumbnail, under the tick. What it cost was
+//  four passes over its size in one afternoon -- 0.72 of the page's short side, then the paw's
+//  own size, then five times that, then ten -- because a thumbnail is a tenth of the page's
+//  width and nothing sized for the page survives there. ★The lesson worth keeping is the one
+//  the tick already knew: a thumbnail mark is a DIFFERENT PICTURE of the same idea, not the
+//  same picture at another zoom. ⚠If a paw is ever wanted there again, that is the starting
+//  point -- not the paw outline scaled down.
+//========================================================================================
+
+//========================================================================================
+// The word beside one paw (2026-09-07, the user's request: "Alt lets you type, like the blue
+// pencil").
+//
+//  ★**18pt ON THE PAGE, so it follows the zoom** -- the same as the paw itself. (The original page
+//    numbers are the other kind, a fixed size on screen; a caption belongs to the page, not to the
+//    view, so shrinking the view has to shrink it.)
+//  ★**BOLD THE WAY KOHAKU INDESIGN MCP IS BOLD**: not a bold FACE but fill-then-stroke, so it does
+//    not depend on the default font having one. ⚠**TWO show CALLS, NOT ONE WITH THE FLAGS COMBINED**
+//    -- measured over there on 2026-09-06, `kFillText | kStrokeText` drew the outline only and the
+//    letters came out hollow. The fill goes first and the stroke over it.
+//  ⚠**The colour and the opacity are the CALLER'S**, already set for the paw: the word is part of
+//    the same mark, so it must not choose either for itself.
+//========================================================================================
+static void KCMDrawPawWord(IGraphicsPort* gPort, const PMString& text,
+	const PMReal& cx, const PMReal& cy, const PMReal& s,
+	uint8 cr, uint8 cg, uint8 cb)
+{
+	IPMFont* const font = KCMQueryMarkFont();
+	if (gPort == nil || font == nil || text.IsEmpty())
+		return;
+
+	// ***** THE NOTE IS SPLIT INTO LINES FIRST (2026-09-07, when the box became multiline). *****
+	//  ⚠**A newline handed straight to show() is not a newline** -- it is one more glyph to draw,
+	//    and the substitute font draws it as a box or as nothing. The splitting has to happen here,
+	//    on this side of the port.
+	//  ★Both endings are cut: the edit box gives CR LF on Windows, and a lone CR left on the end of
+	//    a line would be that same stray glyph.
+	//  ★What is DRAWN is cut; **the label always keeps the whole note**. A caption on the page is a
+	//    reminder of the note, not the note.
+	std::vector<PMString> lines;
+	{
+		const std::string utf8 = text.GetUTF8String();
+		std::string one;
+		for (size_t i = 0; i <= utf8.size(); ++i)
+		{
+			const char c = (i < utf8.size()) ? utf8[i] : '\n';
+			if (c != '\n')
+			{
+				if (c != '\r')
+					one += c;
+				continue;
+			}
+			PMString ln;
+			ln.SetTranslatable(kFalse);
+			if (!one.empty())
+				ln.SetUTF8String(one);
+			const int32 n = ln.NumUTF16TextChars();
+			if (n > kKCMPawTextMaxChars)
+				ln.Truncate(n - kKCMPawTextMaxChars);
+			lines.push_back(ln);
+			one.clear();
+			if ((int32)lines.size() >= kKCMPawTextMaxLines)
+				break;
+		}
+		// A note ending in a newline leaves an empty last line; drawing it would only make the
+		// white ground taller than the words in it.
+		while (!lines.empty() && lines.back().IsEmpty())
+			lines.pop_back();
+	}
+	if (lines.empty())
+		return;
+
+	// To the RIGHT of the paw, its middle on the paw's middle. 0.49 is the outlines' own half
+	// width (the outer toes reach +/-0.4861 -- kKCMPawOutlines), so the gap is measured from the
+	// picture rather than from a number chosen to look right at one size.
+	const PMReal x = cx + (s * PMReal(0.49)) + (s * kKCMPawTextGapRatio);
+	// A baseline sits UNDER the letters, so pushing it down by about a third of the size puts the
+	// body of the FIRST line on the paw's centre line rather than above it.
+	const PMReal y = cy + (kKCMPawTextPt * PMReal(0.34));
+	const PMReal lineH = kKCMPawTextPt * kKCMPawTextLineRatio;
+
+	gPort->selectfont(font, kKCMPawTextPt);
+
+	// ***** PASS ONE: THE WHITE OUTLINE, EVERY LINE OF IT. *****
+	//  ★★**ALL the outlines before ANY of the letters**, and that is not tidiness: an outline is a
+	//    stroke half of which falls OUTSIDE the glyph, so an outline drawn after a neighbouring
+	//    line's letters would bite into them. Two passes over the lines is the price of never
+	//    having to think about which line is next to which.
+	//  ★Opaque, at the caller's own opacity (KCMDrawPawStamps set 1.0 for the whole paw) -- the
+	//    user asked for the edge to be opaque, and it already is; nothing is changed here.
+	//  ⚠A stroke of width 0 is not "no stroke" to a port, it is the thinnest line it can draw, so
+	//    the whole pass is skipped rather than drawn at zero.
+	const bool16 halo = (kKCMPawTextHaloRatio > PMReal(0.0)) ? kTrue : kFalse;
+	if (halo)
+	{
+		gPort->setrgbcolor(PMReal(1.0), PMReal(1.0), PMReal(1.0));
+		gPort->setlinewidth(kKCMPawTextPt * kKCMPawTextHaloRatio);
+		// ⚠★★**ROUND JOINS, OR THE OUTLINE GROWS HORNS.** A port joins two stroke segments with a
+		//   MITRE by default, and a mitre at a sharp angle runs out to a point -- on a glyph, which
+		//   is nothing but sharp angles, that point can be several times the stroke's own width.
+		//   The user photographed one on a Japanese "to" (work/キャプチャ.PNG, 2026-09-07): a spike
+		//   standing off the top right of the character, longer than the outline is thick.
+		//   ⇒ Round join, and round cap for the open ends of a stroke, so the outline follows the
+		//     letter instead of shooting off it. **This is a property of stroking TEXT, not of this
+		//     note** -- anything that outlines glyphs this way needs the same two lines.
+		gPort->setlinejoin(kPMRoundJoin);
+		gPort->setlinecap(kPMRoundCap);
+		for (size_t i = 0; i < lines.size(); ++i)
+		{
+			int32 n16 = 0;
+			const UTF16TextChar* const buf16 = lines[i].GrabUTF16Buffer(&n16);
+			if (buf16 == nil || n16 <= 0)
+				continue;
+			gPort->show(x, y + (lineH * PMReal((double)i)), (uint32)n16, buf16,
+			            IGraphicsPort::kStrokeText);
+		}
+	}
+
+	// ***** PASS TWO: THE LETTERS, OVER THE OUTLINES. *****
+	//  ⚠TWO show CALLS PER LINE AT MOST, NEVER ONE WITH THE FLAGS COMBINED: measured in Kohaku
+	//    InDesign MCP on 2026-09-06, kFillText | kStrokeText drew the outline only and the letters
+	//    came out hollow.
+	gPort->setrgbcolor(cr / PMReal(255.0), cg / PMReal(255.0), cb / PMReal(255.0));
+	// The faux bold, when it is asked for -- currently off (kKCMPawTextBoldStroke is 0).
+	const bool16 bold = (kKCMPawTextBoldStroke > PMReal(0.0)) ? kTrue : kFalse;
+	for (size_t i = 0; i < lines.size(); ++i)
+	{
+		int32 n16 = 0;
+		const UTF16TextChar* const buf16 = lines[i].GrabUTF16Buffer(&n16);
+		if (buf16 == nil || n16 <= 0)
+			continue;					// an empty line in the middle of a note is a blank line
+		const PMReal ly = y + (lineH * PMReal((double)i));
+		gPort->show(x, ly, (uint32)n16, buf16, IGraphicsPort::kFillText);
+		if (bold)
+		{
+			gPort->setlinewidth(kKCMPawTextPt * kKCMPawTextBoldStroke);
+			gPort->show(x, ly, (uint32)n16, buf16, IGraphicsPort::kStrokeText);
+		}
+	}
 }
 
 //========================================================================================
@@ -1583,30 +1798,31 @@ static void KCMDrawPawStamps(IGraphicsPort* gPort, IDataBase* db, UID pageUID,
 	if (s < PMReal(0.5))
 		return;
 
-	const PMReal opacity = (drawMode == kKCMDrawModePrint)
-		? KCMDrawEventHandler::SelectedMarkOpacity() : screenOpacity;
+	// ★★**A PAW IS OPAQUE** (the user, 2026-09-07: "let us make the colour opaque -- the stamp
+	//   too"). It used to follow the panel's 25%/75% choice like every other mark, and that was
+	//   wrong for this one: **that choice is about the COMPARISON marks**, which lie over the page
+	//   and have to be seen through. A paw is not laid over the reader's work to be read past -- it
+	//   IS the reader's work, put there on purpose, and a landmark you have to squint at is not a
+	//   landmark. ⚠screenOpacity is still taken as a parameter (the caller has it to hand and the
+	//   signature is shared) and is deliberately unused here.
+	(void)screenOpacity;
+	(void)drawMode;
 
 	AutoGSave ag(gPort);
 	// The clip is what the Pages panel thumbnail route requires, and it is also the declaration
 	// that this rectangle is being touched -- the reasoning is written out in KCMDrawPageCheck.
 	gPort->rectclip(pr);
-	gPort->setopacity(opacity, kFalse);		// constant opacity, not shape alpha -- as every other mark here
+	gPort->setopacity(PMReal(1.0), kFalse);	// constant opacity, not shape alpha -- as every other mark here
 
 	for (size_t i = 0; i < paws.size(); ++i)
 	{
 		// ★★THE COLOUR IS SET INSIDE THE LOOP, because it belongs to the stamp and not to the page:
-		//   pink, cyan and green paws sit on one page at the same time, which is the whole reason
-		//   for having three. ⚠Hoisting this out of the loop would paint them all alike.
-		uint8 cr = kKCMPawR, cg = kKCMPawG, cb = kKCMPawB;			// a plain press
-		if (paws[i].fColour == kKCMPawColourCyan)
-		{
-			cr = kKCMPawCyanR;  cg = kKCMPawCyanG;  cb = kKCMPawCyanB;
-		}
-		else if (paws[i].fColour == kKCMPawColourGreen)
-		{
-			cr = kKCMPawGreenR; cg = kKCMPawGreenG; cb = kKCMPawGreenB;
-		}
-		gPort->setrgbcolor(cr / PMReal(255.0), cg / PMReal(255.0), cb / PMReal(255.0));
+		//   a red paw and a blue one sit on one page at the same time, which is the whole reason
+		//   for having two. ⚠Hoisting this out of the loop would paint them all alike.
+		uint8 ir = 0, ig = 0, ib = 0, fr = 0, fg = 0, fb = 0;
+		KCMPawColours(paws[i].fColour, ir, ig, ib, fr, fg, fb);
+		// The SHAPE takes the softened shade; the word below takes the ink one.
+		gPort->setrgbcolor(fr / PMReal(255.0), fg / PMReal(255.0), fb / PMReal(255.0));
 
 		// ★A stamp is stored as an offset from the PAGE'S TOP-LEFT. That is what lets it survive a
 		//   page being added or removed, AND what makes this addition right in spread coordinates
@@ -1618,10 +1834,37 @@ static void KCMDrawPawStamps(IGraphicsPort* gPort, IDataBase* db, UID pageUID,
 
 		// ★All five outlines go into ONE path before the fill, so the pad and the toes merge where
 		//   they touch instead of showing a seam between them.
+		// ★★**THE WHITE OUTLINE FIRST, THE COLOUR OVER IT** (2026-09-07). The path is built twice
+		//   on purpose -- a stroke consumes it, and stroking and filling in one pass would leave the
+		//   white lines the pad and the toes make where they overlap showing INSIDE the paw, which
+		//   is the very seam the single merged path exists to hide. The fill covers them.
+		//   ⚠Round join and cap, for the reason the word's outline needs them: a mitre on a sharp
+		//     corner shoots off a spike far longer than the line is wide.
+		if (kKCMPawHaloRatio > PMReal(0.0))
+		{
+			gPort->newpath();
+			for (int32 blob = 0; blob < 5; ++blob)
+				KCMPawShapePath(gPort, kKCMPawOutlines[blob], cx, cy, s);
+			gPort->setrgbcolor(PMReal(1.0), PMReal(1.0), PMReal(1.0));
+			gPort->setlinewidth(s * kKCMPawHaloRatio);
+			gPort->setlinejoin(kPMRoundJoin);
+			gPort->setlinecap(kPMRoundCap);
+			gPort->stroke();
+			gPort->setrgbcolor(fr / PMReal(255.0), fg / PMReal(255.0), fb / PMReal(255.0));
+		}
+
 		gPort->newpath();
 		for (int32 blob = 0; blob < 5; ++blob)
 			KCMPawShapePath(gPort, kKCMPawOutlines[blob], cx, cy, s);
 		gPort->fill();
+
+		// The word the reader typed when they placed it with Alt (2026-09-07).
+		// ⚠**In the INK shade, not the paw's.** The two were the same colour for an hour and are
+		//   deliberately not now: the paw is that colour softened with white, the word is the
+		//   colour itself (kKCMPawFillWhiteMix says why). Passing fr/fg/fb here would look like a
+		//   tidy-up and would undo the decision.
+		if (!paws[i].fText.IsEmpty())
+			KCMDrawPawWord(gPort, paws[i].fText, cx, cy, s, ir, ig, ib);
 	}
 }
 
@@ -1714,6 +1957,11 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 			//   comparing -- the shape wantPaws uses below, and for the same reason. This gate
 			//   is what lets a thumbnail redraw reach a tick that is the page's only mark.
 			KCMPageCheckHasAny(::GetDataBase(ded->changedBy)) ||
+			// (The cat paws were added to this gate on 2026-09-07, so a page carrying ONLY paws
+			//  would reach the thumbnail drawing, and taken out again when that drawing was
+			//  dropped. ⚠They belong here ONLY if something draws them into a thumbnail: the
+			//  layout and print routes reach the port through wantPaws, which is tested on its own
+			//  in the early-out below.)
 			(!sOverflowT.empty() || !sOverflowS.empty());
 	}
 	// **While the button is held, the marks in that window are the other way round.**
@@ -2079,28 +2327,7 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 		//     `numFont != nil` below simply skips the badge. The badge is an off-by-default toggle,
 		//     and with it on the screen drawing (main thread) fills the cache first, so "the badge
 		//     is missing from the PDF only" needs it never to have been shown on screen.
-		if (!sOldNumFontTried && KCMIsMainThread())
-		{
-			sOldNumFontTried = kTrue;
-			// InterfacePtr(p, iid) accepts p == nil (InterfacePtr.h:459 -- QueryInterface_ tests for
-			//   it), so a session that is nil during shutdown just leaves fontMgr nil here. An
-			//   explicit guard is only needed for a **direct method call** such as
-			//   session->QueryApplication().
-			InterfacePtr<IFontMgr> fontMgr(GetExecutionContextSession(), UseDefaultIID());
-			if (fontMgr != nil)
-			{
-				sOldNumFont = fontMgr->QueryFont(fontMgr->GetDefaultFontName());
-				if (sOldNumFont != nil)
-				{
-					// The size is fixed at the equivalent of 50% document zoom, so the instance
-					//   (font x matrix) never changes and can be cached.
-					const PMReal cacheSize = kKCMOldNumFontPx / kKCMOldNumFixedZoom;
-					PMMatrix fontMatrix(cacheSize, 0.0, 0.0, cacheSize, 0.0, 0.0);
-					sOldNumFontInst = fontMgr->QueryFontInstance(sOldNumFont, fontMatrix);
-				}
-			}
-		}
-		IPMFont*       numFont  = sOldNumFont;
+		IPMFont*       numFont  = KCMQueryMarkFont();
 		IFontInstance* fontInst = sOldNumFontInst;	// nil is fine: the branches below fall back
 		if (pageList != nil && numFont != nil)
 		{

@@ -731,32 +731,13 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 			Utils<IKCMPageFlagsFacade>()->LoadChecksAndRegister();
 			break;
 
-		// ★"Save Marks to Document" / "Clear Marks from Document" (2026-09-07): the ticks and paws
-		//   written into the document itself as script labels (KCMPageMarksDoc.h).
-		//   ⚠**These CHANGE THE DOCUMENT**, which is why they are presses and never automatic: KCM's
-		//     standing promise is that comparing leaves a document as it was found. Putting the marks
-		//     BACK is free and does happen on its own, in the after-open responder.
+		// "Clear Marks from Document" (2026-09-07): takes the ticks and paws out of the document,
+		//   where they live as script labels (KCMPageMarksDoc.h).
+		//   ★There is no "Save" case beside it any more. Writing stopped being a separate act on
+		//     2026-09-07: a tick or a paw goes into the document as it is made, undoably, so there
+		//     was nothing left for a save to do. Putting them back still happens on its own, in the
+		//     after-open responder.
 		//   ★The model counts and this side words it, the same division as everywhere here.
-		case kKCMSaveMarksToDocActionID:
-		{
-			IDataBase* const db = Utils<IKCMCompareFacade>()->GetActiveDocDB();
-			const int32 pages = Utils<IKCMPageFlagsFacade>()->SaveMarksToDocument(db);
-			PMString msg;
-			msg.SetTranslatable(kFalse);
-			if (pages < 0)
-				msg.Append("No document.");
-			else if (pages == 0)
-				msg.Append("Nothing to save into this document.");
-			else
-			{
-				msg.Append("Marks saved into the document (");
-				msg.AppendNumber(pages);
-				msg.Append(pages == 1 ? " page)." : " pages).");
-			}
-			KCMSetStatus(msg);
-			break;
-		}
-
 		case kKCMClearMarksFromDocActionID:
 		{
 			IDataBase* const db = Utils<IKCMCompareFacade>()->GetActiveDocDB();
@@ -1225,16 +1206,6 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 			IDataBase* db = Utils<IKCMCompareFacade>()->GetActiveDocDB();
 			listToUpdate->SetNthActionState(i,
 				(Utils<IKCMPageFlagsFacade>()->PawStampCount(db) > 0) ? kEnabledAction : kDisabled_Unselected);
-		}
-		else if (action == kKCMSaveMarksToDocActionID)
-		{
-			// ★Live only when there is something to write. ⚠It asks the SESSION, not the document: what
-			//   this item saves is what the reader has put on the page in this session.
-			IDataBase* db = Utils<IKCMCompareFacade>()->GetActiveDocDB();
-			const bool16 anything = (db != nil) &&
-				(Utils<IKCMPageFlagsFacade>()->PageCheckHasAny(db) ||
-				 Utils<IKCMPageFlagsFacade>()->PawStampCount(db) > 0);
-			listToUpdate->SetNthActionState(i, anything ? kEnabledAction : kDisabled_Unselected);
 		}
 		else if (action == kKCMClearMarksFromDocActionID)
 		{

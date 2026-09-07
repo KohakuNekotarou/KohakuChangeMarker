@@ -56,7 +56,8 @@
 #include "KCMHideUnchanged.h"		// KCMResetHideUnchanged / the two hidden-side getters
 #include "KCMID.h"
 #include "KCMThreadSafety.h"		// KCMIsMainThread
-#include "KCMPageMarksDoc.h"		// KCMMarksRestoreFromDocument -- the marks the document carries
+#include "KCMMarksObserver.h"		// KCMMarksEnsureObserver -- so later writes reach the store
+#include "KCMPageMarksDoc.h"		// KCMMarksSyncFromDocument -- the marks the document carries
 #include "KCMModelNotify.h"		// KCMSayStatus -- the model owns the words, the UI shows them
 
 /** KCMDocResponder
@@ -206,12 +207,17 @@ void KCMAfterOpenDocResponder::Respond(ISignalMgr* signalMgr)
 	if (db == nil)
 		return;
 
+	// The observer goes on for EVERY document that opens, whether or not it carries marks today:
+	// the reader may put the first one on a moment from now, and the write has to find a listener
+	// already there. It is idempotent, so the command asking again later costs nothing.
+	KCMMarksEnsureObserver(db);
+
 	int32 checks = 0, paws = 0;
-	if (KCMMarksRestoreFromDocument(db, &checks, &paws) <= 0)
+	if (KCMMarksSyncFromDocument(db, &checks, &paws) <= 0)
 		return;				// the document carries none of ours: say nothing at all
 
-	// The marks are drawn from the stores, so the views have to be asked to draw again.
-	KCMInvalidateDB(db);
+	// Redrawing is NOT done here any more: KCMMarksSyncFromDocument invalidates the views and
+	// notifies the changed pages itself, because it is the only one that knows which pages moved.
 
 	PMString msg;
 	msg.SetTranslatable(kFalse);

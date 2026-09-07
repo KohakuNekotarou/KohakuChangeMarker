@@ -630,6 +630,23 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 	 * row to open that chapter" (a modal dialog could never offer that). The dialog type is not
 	 * declared here - it is an argument to CreateNewDialog (KCMBookDialog.cpp).
 	 */
+	/*
+	 * The paw word box (2026-09-07): one line of text, asked for when the cat-paw tool is pressed
+	 * with Alt. Stock kDialogBoss plus our controller, the same shape as the book dialog below.
+	 * ⚠It is opened MODAL and a millisecond AFTER the tracker lets go -- KCMPawWordDialog.h carries
+	 *   the reason, which is the same one KCM's own tool-button flyout already obeys.
+	 */
+	Class
+	{
+		kKCMPawWordDialogBoss,
+		kDialogBoss,
+		{
+			IID_IDIALOGCONTROLLER, kKCMPawWordDialogControllerImpl,
+			// No IID_IOBSERVER, for the reason spelled out on the book dialog below: naming one
+			// REPLACES the stock CDialogObserver that makes the close box and the buttons work.
+		}
+	},
+
 	Class
 	{
 		kKCMBookDialogBoss,
@@ -1049,16 +1066,13 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKCMLoadChecksMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
-		// ★"Save Marks to Document" / "Clear Marks from Document" (2026-09-07, the user's request):
-		// the ticks and cat paws written into the document itself, as script labels on the pages that
-		// carry them (KCMPageMarksDoc.h). They sit next to the file-based pair above because they are
-		// the same question answered a different way -- beside the file, or inside it.
-		// ⚠There is no "load" to match: putting them back happens on its own when a document opens.
-		kKCMSaveMarksToDocActionID,
-		kKCMPopupMenuPath,
-		kKCMSaveMarksMenuItemPosition,
-		kSDKDefIsNotDynamicMenuFlag,
-
+		// "Clear Marks from Document" (2026-09-07): takes the ticks and cat paws out of the document
+		// itself, where they live as script labels on the pages that carry them (KCMPageMarksDoc.h).
+		// ⚠There is no "save" beside it and no "load" either. Writing is not something the reader
+		//   asks for any more -- a tick or a paw goes into the document at the moment it is made and
+		//   comes out again with Ctrl+Z -- and putting them back happens on its own when a document
+		//   opens. ★"Save Marks to Document" stood here for one morning; its ActionID
+		//   (kKCMUIPrefix + 55) stays retired and is never reused, the way kKCMUIPrefix + 38 is.
 		kKCMClearMarksFromDocActionID,
 		kKCMPopupMenuPath,
 		kKCMClearMarksMenuItemPosition,
@@ -1497,18 +1511,9 @@ resource ActionDef (kSDKDefActionResourceID)
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 
-		// ★The two document-side marks items. kCustomEnabling: UpdateActionStates greys "Save"
-		//   when the active document holds neither a tick nor a paw, and "Clear" when there is no
-		//   active document at all.
-		kKCMActionComponentBoss,
-		kKCMSaveMarksToDocActionID,
-		kKCMSaveMarksMenuKey,
-		kOtherActionArea,
-		kNormalAction,
-		kCustomEnabling|kDisableIfLowMem,
-		kInvalidInterfaceID,
-		kSDKDefInvisibleInKBSCEditorFlag,
-
+		// ★The document-side marks item. kCustomEnabling: UpdateActionStates greys "Clear" when
+		//   there is no active document at all. (Its "Save" twin went on 2026-09-07 -- see the
+		//   MenuDef above for why, and why its ActionID is not reused.)
 		kKCMActionComponentBoss,
 		kKCMClearMarksFromDocActionID,
 		kKCMClearMarksMenuKey,
@@ -2007,6 +2012,12 @@ type KCMBookDialogWidget(kViewRsrcType) : DialogBoss(ClassID = kKCMBookDialogBos
 	WidgetEveInfo;
 };
 
+// The paw word box (2026-09-07). Same form, one line of text and a button row.
+type KCMPawWordDialogWidget(kViewRsrcType) : DialogBoss(ClassID = kKCMPawWordDialogBoss)
+{
+	WidgetEveInfo;
+};
+
 // The chapter list inside that dialog. ★WidgetEveInfo, unlike the panel's tree: this one lives
 // among EVE children, so it has to carry the trailing EVE flag they all carry. Both official
 // examples of a tree in an EVE dialog declare their tree type exactly this way - the product's
@@ -2057,6 +2068,143 @@ resource LocaleIndex (kKCMBookDialogRsrcID)
 	{
 		kWildFS, k_Wild, kKCMBookDialogRsrcID + index_enUS
 	}
+};
+
+resource LocaleIndex (kKCMPawWordDialogRsrcID)
+{
+	kViewRsrcType,
+	{
+		kWildFS, k_Wild, kKCMPawWordDialogRsrcID + index_enUS
+	}
+};
+
+/*
+ * The paw word box. Laid out with EVE exactly as KESCL's Jump Offset dialog is (KESCL.fr:1538):
+ * the dialog arranges its children in a column, the label and the box share a row, and the button
+ * row is right-aligned. ⚠The trailing arrange flag after the children is REQUIRED - without it
+ * ODFRC fails with R32697.
+ * ★The width is set by the CHILD frames, never by this one (the book dialog above carries the
+ *   eight measurements behind that).
+ */
+resource KCMPawWordDialogWidget (kKCMPawWordDialogRsrcID + index_enUS)
+{
+	__FILE__, __LINE__,
+	kKCMPawWordDialogWidgetID,		// WidgetID
+	kPMRsrcID_None,					// RsrcID
+	kBindNone,						// Binding
+	Frame(0, 0, 460, 160),			// Frame (l,t,r,b) - EVE follows the children, not this
+	kTrue, kTrue,					// Visible, Enabled
+	kKCMPawWordDialogTitleKey,		// Dialog name
+	{
+		// ----- the one row: label + box -----
+		EVEGenericPanelWidget
+		(
+			kInvalidWidgetID,		// WidgetId
+			0						// RsrcId
+			0,						// Widget EVE Info
+			kBindNone,				// Frame binding
+			Frame(0, 0, 440, 80)	// Frame
+			kTrue,					// Visible
+			kTrue,					// Enabled
+			kEVEAlignLeft | kEVERegularSpaceAfter | kEVEArrangeChildrenInRow,
+
+			{
+				EVEStaticTextWidget
+				(
+					kInvalidWidgetID,			// WidgetId
+					kSysStaticTextPMRsrcId,		// RsrcId
+					kBindNone,					// Frame binding
+					Frame(0, 0, 40, 20)			// Frame (l,t,r,b)
+					kTrue, kTrue, kAlignLeft,	// Visible, Enabled, Alignment
+					kDontEllipsize, kTrue,		// Ellipsize style, Convert ampersands
+					kKCMPawWordLabelKey,		// Text ("Note:")
+					kKCMPawWordEditWidgetID	// Associated control for shortcut focus
+
+					// ⚠kEVEAlignTop DOES NOT EXIST. EveInfo.fh:33-36 has Left / Right / Center / Fill and
+					//   nothing else, so a tall box beside a one-line label leaves the label centred on it.
+					//   Cosmetic, and the alternative would be a hand-placed frame.
+					kEVEAlignLeft | kEVERegularSpaceAfter,
+				),
+
+				// ★★**MULTILINE, AND THAT IS A TYPE WITH NO WORKED EXAMPLE** (2026-09-07, the user
+				//   asked for several lines). EVEMultilineTextEditBoxWidget is declared in
+				//   EveInfo.fh:330 over MultilineTextEditBoxWidget (Widgets.fh:1304), whose only
+				//   difference from the single-line type is `CEditBoxAttributes (multiline = kTrue)`
+				//   -- **the field list below is byte for byte the one an EVETextEditBoxWidget
+				//   takes**, which is why the swap is one word.
+				//   ⚠**It has ZERO uses in the whole SDK**, and KohakuTest looked at it once and
+				//     walked away for that reason ("a stock type with no worked example is not a
+				//     road", KT.fr:1303, leaving "try multiline once this works"). ⇒ **This is that
+				//     try.** If it misbehaves, changing the type back to EVETextEditBoxWidget and
+				//     the height back to 20 is the whole retreat.
+				EVEMultilineTextEditBoxWidget
+				(
+					kKCMPawWordEditWidgetID,	// WidgetId
+					kSysEditBoxPMRsrcId,		// RsrcId
+					kBindNone,					// Frame binding
+					// ★THIS FRAME IS THE DIALOG'S SIZE. The width, because EVE follows the widest
+					//   child (the book dialog carries the eight measurements behind that); the
+					//   height, because a multiline box does not grow itself -- about four lines.
+					Frame(0, 0, 380, 76)		// Frame (l,t,r,b)
+					kTrue, kTrue				// Visible, Enabled
+					0,							// Widget id of nudge button (0 = none)
+					0, 0,						// small, large nudge amount
+					0,							// max num chars (0 = no limit)
+					kFalse,						// is read only
+					kFalse,						// should notify each key stroke
+					kFalse,						// range checking enabled (there is nothing to range)
+					kTrue,						// ★blank entry allowed - an empty OK still places a paw
+					0,							// Upper bounds
+					0,							// Lower bounds
+					"",							// Initial text (the controller empties it every time)
+
+					kEVEAlignLeft | kEVERegularSpaceAfter,
+				),
+			}
+		),
+
+		// ----- OK / Cancel -----
+		EVEGenericPanelWidget
+		(
+			kInvalidWidgetID,		// WidgetId
+			0						// RsrcId
+			0,						// Widget EVE Info
+			kBindNone,				// Frame binding
+			Frame(0, 0, 160, 24)	// Frame
+			kTrue,					// Visible
+			kTrue,					// Enabled
+			kEVEAlignRight | kEVERegularSpaceAfter | kEVEArrangeChildrenInRow,
+
+			{
+				EVEDefaultButtonWidget
+				(
+					kOKButtonWidgetID,		// WidgetID
+					kSysButtonPMRsrcId,		// RsrcID
+					kBindNone,				// Binding
+					Frame(0, 0, 0, 0)		// Frame (l,t,r,b)
+					kTrue, kTrue,			// Visible, Enabled
+					kSDKDefOKButtonApplicationKey,	// Button text
+
+					kEVERegularSpaceAfter,
+				),
+
+				EVECancelButtonWidget
+				(
+					kCancelButton_WidgetID,	// WidgetID
+					kSysButtonPMRsrcId,		// RsrcID
+					kBindNone,				// Binding
+					Frame(0, 0, 0, 0)		// Frame (l,t,r,b)
+					kTrue, kTrue,			// Visible, Enabled
+					kSDKDefCancelButtonApplicationKey,	// Button name
+					kTrue,					// Change to Reset on option-click.
+
+					kEVERegularSpaceAfter,
+				),
+			}
+		),
+	},
+
+	kEVEArrangeChildrenInColumn | kEVELargeMargin,
 };
 
 resource KCMScrollMapWidget(kKCMScrollMapRsrcID + index_enUS)

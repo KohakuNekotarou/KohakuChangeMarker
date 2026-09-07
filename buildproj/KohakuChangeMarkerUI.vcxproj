@@ -278,6 +278,7 @@
       <ClCompile Include="..\..\..\source\sdksamples\KCM\ui\KCMThumbnailRefresh.cpp"/>
       <ClCompile Include="..\..\..\source\sdksamples\KCM\ui\KCMThumbIdleTask.cpp"/>
       <ClCompile Include="..\..\..\source\sdksamples\KCM\ui\KCMBookDialog.cpp"/>
+      <ClCompile Include="..\..\..\source\sdksamples\KCM\ui\KCMPawWordDialog.cpp"/>
       <ClCompile Include="..\..\..\source\sdksamples\KCM\ui\KCMBookRun.cpp"/>
       <ClCompile Include="..\..\..\source\sdksamples\KCM\ui\KCMBookOpen.cpp"/>
       <ClCompile Include="..\..\..\source\sdksamples\KCM\ui\KCMBookPanelLookup.cpp"/>
@@ -326,6 +327,7 @@
       <ClInclude Include="..\..\..\source\sdksamples\KCM\ui\KCMThumbnailRefresh.h"/>
       <ClInclude Include="..\..\..\source\sdksamples\KCM\ui\KCMThumbIdleTask.h"/>
       <ClInclude Include="..\..\..\source\sdksamples\KCM\ui\KCMBookDialog.h"/>
+      <ClInclude Include="..\..\..\source\sdksamples\KCM\ui\KCMPawWordDialog.h"/>
       <ClInclude Include="..\..\..\source\sdksamples\KCM\ui\KCMBookRun.h"/>
       <ClInclude Include="..\..\..\source\sdksamples\KCM\ui\KCMBookOpen.h"/>
       <ClInclude Include="..\..\..\source\sdksamples\KCM\ui\KCMBookPanelLookup.h"/>

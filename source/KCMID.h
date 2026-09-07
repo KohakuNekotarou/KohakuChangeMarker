@@ -201,10 +201,11 @@ DECLARE_PMID(kClassIDSpace, kKCMRingAdornmentStartupBoss, kKCMPrefix + 30)	// IS
 // failing an export only costs the export.
 DECLARE_PMID(kClassIDSpace, kKCMPDFExportSetupBoss, kKCMPrefix + 31)	// IK2ServiceProvider (Adobe's kPDFExportSetupServiceImpl) + IPDFExportSetupProvider: joins the transparency list in BeginExport and leaves it in EndExport. An asynchronous export hands this the CLONE db it exports from, which is what makes it possible to change the output without touching the original document. It replaces kKCMExportXPResponderServiceBoss, which used the kBeforeExport / kAfterExport / kFailedExport signals against the ORIGINAL db and therefore baked the list into the .indd if the user saved mid-export.
 DECLARE_PMID(kClassIDSpace, kKCMStoryMarkerBoss, kKCMPrefix + 32)	// IK2ServiceProvider (the API's own kGlobalTextAdornmentServiceImpl) + IID_IGLOBALTEXTADORNMENT: the global text adornment that lays a colored ground under changed characters in Story mode (KCMStoryMarker.cpp). It lives on the model side because File > Export > PDF runs on a background thread and a kUIPlugIn is never handed a single draw there. Unlike the page item adornment at +29 it needs no manual per-context registration: it is a service, so the registry resolves it for background threads too.
-DECLARE_PMID(kClassIDSpace, kKCMStoryMarkerExpiryBoss, kKCMPrefix + 33)
-DECLARE_PMID(kClassIDSpace, kKCMAfterOpenResponderServiceBoss, kKCMPrefix + 34)	// IResponder for kAfterOpenDoc: puts back the ticks and paws the document carries as script labels (KCMDocResponder.cpp / KCMPageMarksDoc.h, 2026-09-07)	// IIdleTask: withdraws just the jump flash of the marker above after about a second (KCMStoryMarkerExpiry.cpp). It is on this side because the adornment starts and stops it; leaving it in the UI would invert the dependency.
+DECLARE_PMID(kClassIDSpace, kKCMStoryMarkerExpiryBoss, kKCMPrefix + 33)	// IIdleTask: withdraws just the jump flash of the marker above after about a second (KCMStoryMarkerExpiry.cpp). It is on this side because the adornment starts and stops it; leaving it in the UI would invert the dependency.
+DECLARE_PMID(kClassIDSpace, kKCMAfterOpenResponderServiceBoss, kKCMPrefix + 34)	// IResponder for kAfterOpenDoc: puts back the ticks and paws the document carries as script labels (KCMDocResponder.cpp / KCMPageMarksDoc.h, 2026-09-07)
+DECLARE_PMID(kClassIDSpace, kKCMSetPageMarksCmdBoss, kKCMPrefix + 35)	// ICommand (Command) + IKCMPageMarksCmdData: the ONE way a tick or a cat paw is written (KCMPageMarksCmd.cpp, 2026-09-07). It writes the pages script labels through IScriptUtils and then notifies on the DOCUMENTS subject, which is what makes the change undoable AND what puts the session store back on undo and redo. Nothing else may write those labels.
 										// There is no print-side counterpart (kPrintSetupService + IPrintSetupProvider). Not because it would not work: with it the marks come out denser in print too (measured 16,076 against 8,407 colored pixels, and neither case turns solid). It was left out because print does not need that precision - what goes to the printer is the PDF. The A/B and the way back are in section 5 of KCMRingAdornment.cpp.
-										// Next new boss: +34.
+										// Next new boss: +36. WARNING: this line went stale the moment +34 was taken and was still saying +34 on 2026-09-07. COUNT, do not read: grep "DECLARE_PMID(kClassIDSpace" in this file and take the largest, then check the retirement notes above and below it.
 
 // InterfaceIDs:
 // +0..+3 (three observer attachment IDs and the Story Edits section height) moved to
@@ -212,7 +213,18 @@ DECLARE_PMID(kClassIDSpace, kKCMAfterOpenResponderServiceBoss, kKCMPrefix + 34)	
 // +4..+9 (the Facade IIDs and the notification protocol IID) moved to KCMBoundaryID.h, because
 //   they mean nothing unless the UI half sees the same value. The offsets did not change either,
 //   so all of +0..+9 are in use and none of them may be reused here.
-// +10..+25 are free.
+// +10 is NOT free: IID_IKCMSTORYMARKFACADE took it in KCMBoundaryID.h (this line said "+10..+25
+//   are free" until 2026-09-07, which would have handed out a colliding number).
+// +14..+25 are free. COUNT before taking one: the facade IIDs live in KCMBoundaryID.h, not here,
+//   so the largest number in THIS file is not the largest number in use.
+//
+// The three below are MODEL-ONLY, which is why they are here and not in KCMBoundaryID.h: the UI
+// neither sends nor receives any of them. Keeping them out of the boundary header is what stops
+// the two copies of that file having to be edited in step for a change the UI cannot see.
+DECLARE_PMID(kInterfaceIDSpace, IID_IKCMPAGEMARKSCMDDATA, kKCMPrefix + 11)	// what kKCMSetPageMarksCmdBoss is told to write (KCMPageMarksCmd.h). Non-persistent: it is a parameter, not document data.
+DECLARE_PMID(kInterfaceIDSpace, IID_IKCMPAGEMARKS, kKCMPrefix + 12)	// the PROTOCOL of the notification the command raises on the documents subject. It names no interface -- a protocol IID is a filter, and this one means "the ticks or the paws of this document changed".
+DECLARE_PMID(kInterfaceIDSpace, IID_IKCMMARKSOBSERVER, kKCMPrefix + 13)	// the observer that listens for it, AddIn on kDocBoss (KCMMarksObserver.cpp). It has an IID of its own because kDocBoss already carries somebody elses IID_IOBSERVER.
+
 
 // ImplementationIDs:
 // The UI half's implementations are in ui/KCMUIID.h, keeping their original offsets. Whatever is
@@ -239,10 +251,13 @@ DECLARE_PMID(kImplementationIDSpace, kKCMPDFExportSetupImpl, kKCMPrefix + 48)		/
 //   three export signals on one boss. The PDF export service replaced it and supplies its own.
 DECLARE_PMID(kImplementationIDSpace, kKCMStoryMarkFacadeImpl, kKCMPrefix + 50)	// IKCMStoryMarkFacade implementation (KCMFacades.cpp). How the UI reports that a toggle moved, a press started, or a jump happened.
 DECLARE_PMID(kImplementationIDSpace, kKCMStoryMarkerAdornmentImpl, kKCMPrefix + 51)	// IGlobalTextAdornment implementation (KCMStoryMarker.cpp). Lays a colored ground under changed characters.
-DECLARE_PMID(kImplementationIDSpace, kKCMStoryMarkerExpiryImpl, kKCMPrefix + 52)
-DECLARE_PMID(kImplementationIDSpace, kKCMAfterOpenResponderImpl, kKCMPrefix + 53)	// IResponder implementation (KCMDocResponder.cpp)	// IIdleTask implementation (KCMStoryMarkerExpiry.cpp). Withdraws the jump flash after about a second.
+DECLARE_PMID(kImplementationIDSpace, kKCMStoryMarkerExpiryImpl, kKCMPrefix + 52)	// IIdleTask implementation (KCMStoryMarkerExpiry.cpp). Withdraws the jump flash after about a second.
+DECLARE_PMID(kImplementationIDSpace, kKCMAfterOpenResponderImpl, kKCMPrefix + 53)	// IResponder implementation (KCMDocResponder.cpp)
+DECLARE_PMID(kImplementationIDSpace, kKCMSetPageMarksCmdImpl, kKCMPrefix + 54)	// the Command itself (KCMPageMarksCmd.cpp).
+DECLARE_PMID(kImplementationIDSpace, kKCMPageMarksCmdDataImpl, kKCMPrefix + 55)	// its parameter interface, on the same boss (same file). Non-persistent.
+DECLARE_PMID(kImplementationIDSpace, kKCMMarksObserverImpl, kKCMPrefix + 56)	// the lazy observer AddIn on kDocBoss (KCMMarksObserver.cpp).
 										// There is no IPrintSetupProvider implementation (the old +50); see the note on the Class side.
-										// Next new implementation: +53. Read this line before picking a number - the retirement notes are BELOW the DECLAREs, so deciding from the last line alone picks a slot that is already spoken for.
+										// Next new implementation: +57. Read this line before picking a number - the retirement notes are BELOW the DECLAREs, so deciding from the last line alone picks a slot that is already spoken for.
 
 // MessageIDs: how the model tells the UI what changed. All seven moved to KCMBoundaryID.h - sender
 //   and receiver must see the same value, or the build succeeds and nothing happens at run time.

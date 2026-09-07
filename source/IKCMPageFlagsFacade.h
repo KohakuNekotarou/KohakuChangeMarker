@@ -79,19 +79,21 @@ public:
 	//   ui/KCMPawTracker.cpp calling KCMPawStampToggleAt() directly does not link (measured
 	//   2026-09-04: LNK2019, three unresolved symbols). **Every crossing is a facade method.**
 
-	/** Place a paw at (x, y) on that page, in one of the three colours (a KCMPawColour: pink for a
-		plain press, cyan for Alt, green for Shift+Alt). baseHalf is half a paw's size on that
+	/** Place a paw at (x, y) on that page, in one of the two colours (a KCMPawColour: red or blue,
+		whichever the tool is holding -- Shift+Alt swaps it). baseHalf is half a paw's size on that
 		page, the same value the lift takes.
 		★x and y are measured from the PAGE'S TOP-LEFT in points, never in pasteboard coordinates
 		  -- KCMPawStamp.h carries the measurement that makes that a requirement.
 		★★IT ONLY ADDS, AND IT WILL NOT STACK. Placing and lifting are two intentions and
 		  therefore two gestures; and a press landing on a paw already there does nothing, both at
 		  the user's request on 2026-09-04.
+		@param text the word to put beside it, or empty. An Alt press asks the reader for one
+		  (2026-09-07); every other gesture passes nothing.
 		@return kTrue when one was placed, kFalse when a paw was already under that point. */
 	virtual bool16	PawStampPlaceAt(IDataBase* db, UID pageUID, const PMReal& x, const PMReal& y,
-	                                int32 colour, const PMReal& baseHalf) = 0;
+	                                int32 colour, const PMReal& baseHalf, const PMString& text) = 0;
 
-	/** Lift the paw under (x, y) -- Shift + press (without Alt, which places a green one).
+	/** Lift the paw under (x, y) -- Shift + press (without Alt, which asks for a word).
 		baseHalf is half a paw's size on that page (PawHalfSizeForPage); a paw is judged over a
 		SQUARE of that, so what can be seen is what can be lifted.
 		@return kTrue when one was lifted, kFalse when the press landed on none. */
@@ -101,6 +103,11 @@ public:
 	/** How many paws this document holds. The tool says it on the status line after every press,
 		which is what tells "placed" and "lifted" apart while nothing is drawn yet. */
 	virtual int32	PawStampCount(IDataBase* db) = 0;
+
+	/** Drop every paw on ONE page -- what Shift + DOUBLE click asks for (2026-09-07). The page's
+		tick is untouched.
+		@return how many went; 0 for a page carrying none, which is not a failure. */
+	virtual int32	PawStampClearPage(IDataBase* db, UID pageUID) = 0;
 
 	/** Half a paw's drawn size on that page, in points.
 		★★THE ONE PLACE THE SIZE COMES FROM: the tool asks for its hit box and the drawing side
@@ -130,17 +137,15 @@ public:
 
 	// ---- the marks the DOCUMENT itself carries (2026-09-07) --------------------------------
 	//
-	// ★**WRITING IS ALWAYS ASKED FOR, READING IS NOT.** These two are the flyout's; putting them
-	//   back happens on its own when a document opens (the after-open responder), which is why there
-	//   is no "load" to match the "save". The reasoning is in KCMPageMarksDoc.h.
+	// ★★**THERE IS NO "SAVE" ANY MORE, BECAUSE THERE IS NOTHING TO SAVE.** A tick or a paw goes
+	//   into the document at the moment it is made, and Ctrl+Z takes it out again; the labels ARE
+	//   the marks. `SaveMarksToDocument` was the door while writing was a separate act, and it went
+	//   with the act (the flyout item too -- ActionID kKCMUIPrefix + 55 stays retired).
+	//   Putting the marks back when a document opens still happens on its own, in the after-open
+	//   responder. The reasoning is in KCMPageMarksDoc.h and KCMPageMarksCmd.h.
 
-	/** "Save Marks to Document": write this document's ticks and paws onto its pages as script
-		labels, and take our labels off the pages that no longer carry either.
-		@return how many pages were changed, or -1 when the document could not be used. */
-	virtual int32	SaveMarksToDocument(IDataBase* db) = 0;
-
-	/** "Clear Marks from Document": take every label of OURS off every page, leaving all other
-		labels exactly as they were.
+	/** "Clear Marks from Document": take every mark of OURS off every page in one undoable step,
+		leaving all other labels exactly as they were.
 		@return how many pages were changed, or -1 when the document could not be used. */
 	virtual int32	ClearMarksFromDocument(IDataBase* db) = 0;
 };

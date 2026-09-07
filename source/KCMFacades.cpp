@@ -373,18 +373,22 @@ public:
 
 	virtual void	SaveChecksAndRegister()			{ KCMPageCheckSaveToFile(); }
 	virtual void	LoadChecksAndRegister()			{ KCMPageCheckLoadFromFile(); }
-	virtual int32	SaveMarksToDocument(IDataBase* db)	{ return KCMMarksSaveToDocument(db); }
+	// ★SaveMarksToDocument was removed on 2026-09-07. Writing is no longer something the reader
+	//   asks for separately: a tick or a paw goes into the document the moment it is made, and
+	//   comes back out again with Ctrl+Z. There is nothing left for a "save" to do.
 	virtual int32	ClearMarksFromDocument(IDataBase* db)	{ return KCMMarksClearFromDocument(db); }
 
 	// The cat-paw stamps. The crossing exists because model and UI are two DLLs: the tool lives
 	// on the UI side and the store on this one.
 	virtual bool16	PawStampPlaceAt(IDataBase* db, UID pageUID, const PMReal& x, const PMReal& y,
-	                                int32 colour, const PMReal& baseHalf)
-									{ return KCMPawStampPlaceAt(db, pageUID, x, y, colour, baseHalf); }
+	                                int32 colour, const PMReal& baseHalf, const PMString& text)
+									{ return KCMPawStampPlaceAt(db, pageUID, x, y, colour, baseHalf, text); }
 	virtual bool16	PawStampLiftAt(IDataBase* db, UID pageUID, const PMReal& x, const PMReal& y,
 	                               const PMReal& baseHalf)
 									{ return KCMPawStampLiftAt(db, pageUID, x, y, baseHalf); }
 	virtual int32	PawStampCount(IDataBase* db)	{ return KCMPawStampCount(db); }
+	virtual int32	PawStampClearPage(IDataBase* db, UID pageUID)
+									{ return KCMPawStampClearPage(db, pageUID); }
 	virtual PMReal	PawHalfSizeForPage(IDataBase* db, UID pageUID)
 									{ return KCMPawHalfSizeForPage(db, pageUID); }
 
@@ -403,13 +407,10 @@ public:
 						// ★The count is read FIRST: KCMPawStampClearDoc answers nothing, and once it
 						//   has run there is nothing left to count. (Its tick counterpart returns the
 						//   number itself, because it has to read the page set before clearing
-						//   anyway -- the notification needs that set.)
+						//   anyway -- the write needs that set.)
 						const int32 n = KCMPawStampCount(db);
 						if (n > 0)
-						{
-							KCMPawStampClearDoc(db);
-							KCMInvalidateDB(db);	// no thumbnail carries a paw, so this is the whole refresh
-						}
+							KCMPawStampClearDoc(db);	// writes the document; the observer redraws
 						KCMSayCleared("cleared paw", n);
 						return n;
 					}

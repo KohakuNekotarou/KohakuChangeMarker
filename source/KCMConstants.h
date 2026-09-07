@@ -113,34 +113,114 @@ static const PMReal kKCMCheckLayoutStrokeRatio = 0.12;	// stroke width, as a fra
 // ⚠The colour lives here too rather than in the drawing file, for the same reason the tick's does.
 static const PMReal kKCMPawSizeRatio = 0.05;	// paw size, as a fraction of the page short side
 
-// ★★THREE COLOURS, ONE SIZE (2026-09-04, the user's decision). ⚠It was the SIZE that the modifier
-//   keys changed for an hour -- 1.6x, then 10x, then 5x -- and the user replaced the whole idea
-//   after putting a big one on a real page: **a bigger paw is the same mark drawn larger, while a
-//   different colour is a different KIND of mark.** Every paw is now the ordinary size and the
-//   keys choose between:
-//       plain press        pink   (the default)
-//       Alt + press        cyan
-//       Shift + Alt press  green
-//   ★The two extra colours are ONES THIS PLUG-IN ALREADY USES -- the ring's cyan (kKCMRingAlt*)
-//     and the registered-page green (kKCMAddedBorder*) -- so KCM keeps one palette rather than
-//     growing a second one beside it.
-//   ⚠The pink is the one of the three that is NOT shared: it exists so that a paw is never taken
-//     for the red ring (a change), the green "/" (registered) or the blue tick (Check).
-static const uint8 kKCMPawR = 240, kKCMPawG = 120, kKCMPawB = 165;	// plain press: pink
-static const uint8 kKCMPawCyanR = 0, kKCMPawCyanG = 255, kKCMPawCyanB = 255;	// Alt + press
-static const uint8 kKCMPawGreenR = 0, kKCMPawGreenG = 200, kKCMPawGreenB = 0;	// Shift + Alt + press
+// ★★TWO COLOURS, ONE SIZE (2026-09-07, the user's decision -- it was three until that day).
+//   ⚠It was the SIZE that the modifier keys changed for an hour on 2026-09-04 -- 1.6x, then 10x,
+//   then 5x -- and the user replaced the whole idea after putting a big one on a real page:
+//   **a bigger paw is the same mark drawn larger, while a different colour is a different KIND of
+//   mark.** Every paw is the ordinary size, and Shift+Alt swaps between:
+//       red    the default, what a plain press puts down until the colour is swapped
+//       blue
+//
+//  ★★★**BOTH COLOURS ARE BORROWED FROM KOHAKU INDESIGN MCP, AND THAT IS THE POINT** (the user,
+//    2026-09-07). The two plug-ins are twins that mark the same documents for the same reader
+//    ([[kcm-kidmcp-story-diff-twins]]), and over there the two hands are told apart by colour
+//    alone: **Claude's own marks are red, the person's blue pencil is blue.** A paw carries the
+//    same reading here, so the shades are the same numbers and not merely similar ones:
+//      red  = KIDMCPMarkDraw.cpp's kClaudeRed  (255, 59, 48)  = #FF3B30
+//      blue = KIDMCPSettings.h's fPencilColor  ( 30, 91, 255) = #1E5BFF
+//    ⚠**Changing either one here alone breaks the pairing silently** -- nothing in a build can see
+//     that the twin moved. If one changes, change both, or the reading is gone.
+static const uint8 kKCMPawRedR  = 255, kKCMPawRedG  =  59, kKCMPawRedB  =  48;	// the default
+static const uint8 kKCMPawBlueR =  30, kKCMPawBlueG =  91, kKCMPawBlueB = 255;
 
-// Which of the three a stamp was placed in.
-// ★An enum rather than three stored numbers: the colours themselves live above, in one place, so
-//   changing a shade never means going near the saved data ([[one-question-one-place]]).
-// ⚠kKCMPawColourPink is 0 on purpose -- a stamp saved before colours existed reads back as pink,
-//   which is what it was drawn in.
+// ★★**THE SHAPE AND THE WORD ARE NOT THE SAME SHADE** (the user, 2026-09-07: "the paw part only,
+//   pink -- and the blue one a blue with white mixed in; the text stays as it is").
+//   The paw is a big solid blob and the word is a few thin strokes, so one colour cannot serve
+//   both: at full strength the blob shouts over the page, and softened, the word stops being
+//   readable. ⇒ **The paw is the colour mixed with white; the word is the colour itself.**
+//   ⚠This is why the drawing carries TWO colours and passes the second one down to the word --
+//     dropping to one would look like a simplification and would undo the decision.
+// 0 = the colour as it is, 1 = white.
+//   0.50 -> red (255,157,151), blue (142,173,255)   -- the first cut, "make it paler"
+//   0.65 -> red (255,196,192), blue (178,198,255)   -- where it stands
+// ⚠**The WORD does not follow this**, and that is the point of having two shades: paling the paw
+//   further makes the note beside it MORE readable, not less, because the contrast between them
+//   grows. There is no number here that trades one against the other.
+static const PMReal kKCMPawFillWhiteMix = 0.65;
+
+// ★**AND THE PAW GETS A WHITE OUTLINE TOO** (the user, 2026-09-07, after seeing the note's:
+//   "can the cat paw illustration have a white edge as well?"). Same reason as the word's -- a
+//   softened pink over a dark photograph is a smudge until something separates it from the
+//   background -- and the same trick: stroke white first, fill over it.
+//   ⚠**The path has to be BUILT TWICE**, because a stroke consumes it: five subpaths, stroke, five
+//     subpaths again, fill. Stroking and filling one path in one pass would leave the white lines
+//     the pad and the toes make where they overlap INSIDE the shape, which is the seam the single
+//     merged path exists to hide.
+// ⚠**RAISING THIS PUSHES THE PICTURE PAST THE TARGET.** The outline is centred on the paw's edge,
+//   so half of it falls OUTSIDE, and the hit box for lifting is a square of +/- half the paw's size
+//   (KCMPawHalfSizeForPage). The outlines themselves reach 0.486 of the size, so the sums are:
+//       0.10 -> the rim ends at 1.07 x the hit box     0.16 -> 1.11 x
+//   ⇒ a thin band of what can be SEEN cannot be lifted, and KCMPawStamp.h's promise that "what can
+//     be seen is exactly what can be lifted" is about the paw, not its rim. Known and accepted;
+//     if it ever bites, the fix is to widen the hit box, not to thin the rim.
+static const PMReal kKCMPawHaloRatio = 0.16;	// the outline's width, as a fraction of the paw's size
+
+// Which of the two a stamp was placed in.
+// ★An enum rather than a stored colour: the shades themselves live above, in one place, so
+//   changing one never means going near the saved data ([[one-question-one-place]]).
+//
+// ⚠★★★**0, 1 AND 2 ARE RETIRED AND MUST NOT BE REUSED.** They were pink, cyan and green, and they
+//   are IN THE READER'S DOCUMENTS -- in script labels and in KCM's own JSON. Giving a new colour
+//   an old number would silently repaint every paw saved before today, and nothing would report
+//   it. The new values therefore start at 3, and KCMPawColourFromStored (KCMPawStamp.h) is the one
+//   place that turns an old number into a new one.
 enum KCMPawColour
 {
-	kKCMPawColourPink	= 0,
-	kKCMPawColourCyan	= 1,
-	kKCMPawColourGreen	= 2
+	kKCMPawColourBlue	= 3,
+	kKCMPawColourRed	= 4
 };
+
+// The word an Alt press puts beside a paw (2026-09-07, the user's request).
+//
+// ★**18pt, and BOLD THE WAY KOHAKU INDESIGN MCP IS BOLD** -- which is not a bold FACE but a faux
+//   bold: the glyphs are filled and then stroked at this fraction of the point size, so it does
+//   not depend on the substitute font having a bold face at all (KIDMCPMarkDraw.cpp's kBoldStroke,
+//   the same 0.04). KCM asks the font manager for the default font exactly as the original page
+//   numbers do, and that font is whatever the system gives -- so the same care applies.
+// ⚠The size is in POINTS ON THE PAGE, so it follows the zoom, like the paw itself. (The original
+//   page numbers are the other kind, fixed on screen; a caption belongs to the page, not the view.)
+static const PMReal kKCMPawTextPt         = 18.0;
+static const PMReal kKCMPawTextBoldStroke = 0.0;	// line width as a fraction of the size; 0 = no faux bold
+// ⚠★**0 ON PURPOSE** (the user, 2026-09-07: "try taking the weight off the text once"). It was
+//   0.04 -- Kohaku InDesign MCP's own faux bold -- and the note came out heavier than the page it
+//   sits on. Putting the weight back is this one number; the drawing skips the stroke pass while
+//   it is zero, so nothing else has to change either way.
+static const PMReal kKCMPawTextGapRatio   = 0.35;	// gap between the paw's edge and the word, as a fraction of the paw's size
+// What is DRAWN. ⚠**The label always keeps the whole string** -- these two cut the picture, never
+// the note, so a reader who typed more than fits still has all of it in the document and in the
+// Script Label panel.
+static const int32  kKCMPawTextMaxChars   = 60;		// per line
+static const int32  kKCMPawTextMaxLines   = 6;		// the box takes about four; a few more are drawn
+static const PMReal kKCMPawTextLineRatio  = 1.25;	// line spacing, as a multiple of the point size
+
+// ★★**A WHITE OUTLINE ROUND THE LETTERS, NOT A BOX BEHIND THEM** (the user, 2026-09-07, replacing
+//   the ground: "drop the white background -- red letters with a white edge, the edge opaque, draw
+//   the edge and then the letters over it").
+//   A caption goes wherever the reader pressed, which is over the page's own text as often as not,
+//   and coloured letters on top of black letters are neither. **A box hid the page as well as the
+//   words** -- and what is under the note is the thing the note is ABOUT. An outline lifts the
+//   letters off whatever is behind them while hiding almost none of it.
+//   ★This is the trick the original-page-number badge already uses on this page, which is why it
+//     is a known quantity here rather than an experiment.
+//   ⚠**Order is the whole of it**: every outline is stroked FIRST, and the letters are filled over
+//     the lot. Drawing one line's outline after another line's letters would eat into them.
+//   ⚠A retired pair used to stand here -- kKCMPawTextPadRatio and kKCMPawTextGroundOpacity, the
+//     box's margin and its half transparency. They went with the box.
+static const PMReal kKCMPawTextHaloRatio  = 0.16;	// the outline's width, as a fraction of the point size
+
+// (The Pages panel thumbnail carried a paw for one afternoon on 2026-09-07 --
+//  kKCMPawThumbSizeMul and kKCMPawThumbDropRatio lived here -- and the user dropped the
+//  idea. KCMDrawEventHandler.cpp keeps the note on what it cost and what it taught.)
 
 // Fill that shows which areas are excluded from the comparison as page-number regions. While
 // the exclusion toggle is on, every excluded rectangle is painted in translucent green so the

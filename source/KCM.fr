@@ -43,7 +43,8 @@
 #include "ScriptInfoTypes.fh"	// VersionedScriptElementInfo / Property / Provider
 // DocumentID.h: the close-document responder boss names the API's OWN service provider
 // implementation instead of carrying a hand-written one (see that Class below).
-#include "DocumentID.h"	// kAfterCloseDocSignalRespServiceImpl
+#include "CommandID.h"	// IID_ICOMMAND (CommandID.h:89) - the marks command's own interface. ⚠ShuksanID.h does NOT carry it, which odfrc reports as "Identifier 'IID_ICOMMAND' does not name a numeric value" rather than as a missing include
+#include "DocumentID.h"	// kAfterCloseDocSignalRespServiceImpl / kDocBoss (DocumentID.h:38) - the boss the marks observer is AddIn'd to
 #include "DocFrameworkID.h"	// kDocumentObjectScriptElement (the object document.kcmTransparencyItemCount hangs off)
 #include "PDFID.h"	// kPDFExportSetupServiceImpl / IID_IPDFEXPORTSETUPPROVIDER (declares the transparency
 					// only while an export runs - see the boss below). Without this include ODFRC fails with
@@ -293,10 +294,9 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 	},
 
 	// ***** PUT BACK THE MARKS THE DOCUMENT ITSELF CARRIES (2026-09-07). *****
-	// The reader's ticks and cat paws can be written into the document as script labels
-	// (KCMPageMarksDoc.h). Writing is always something they ask for; READING IS FREE, so it happens
-	// on its own the moment a document opens -- the only point at which the pages are there to be
-	// read and nothing of ours is in the session for them yet.
+	// The reader's ticks and cat paws live in the document as script labels (KCMPageMarksDoc.h).
+	// READING IS FREE, so it happens on its own the moment a document opens -- the only point at
+	// which the pages are there to be read and nothing of ours is in the session for them yet.
 	// ★Restoring changes NOTHING in the document: it fills this plug-in's own stores from labels that
 	//   are already there, so a document opened and closed again is untouched.
 	// Same "one signal, one boss, no ServiceProvider of its own" shape as the two above.
@@ -307,6 +307,22 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 		{
 			IID_IK2SERVICEPROVIDER, kAfterOpenDocSignalRespServiceImpl,
 			IID_IRESPONDER,         kKCMAfterOpenResponderImpl,
+		}
+	},
+
+	// ***** THE COMMAND THAT WRITES THEM (2026-09-07). *****
+	// Every tick and every cat paw goes through this one boss, and nothing else may write the
+	// labels. It exists so the change is UNDOABLE: Do() writes, DoNotify() raises a ModelChange on
+	// the document's subject, and the runtimes replay that notification on undo and on redo.
+	// The full reasoning, with the two passages from ISubject.h and LazyNotificationData.h that it
+	// rests on, is at the top of KCMPageMarksCmd.h.
+	Class
+	{
+		kKCMSetPageMarksCmdBoss,
+		kInvalidClass,
+		{
+			IID_ICOMMAND,               kKCMSetPageMarksCmdImpl,
+			IID_IKCMPAGEMARKSCMDDATA,   kKCMPageMarksCmdDataImpl,
 		}
 	},
 
@@ -407,6 +423,29 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 	// implementation to an existing boss is how you collide with another vendor's plug-in and fail to
 	// load, and the unit of collision is the ImplementationID, not the IID.
 	//
+	// ***** THE LISTENER THAT KEEPS THE SESSION STORES IN STEP (2026-09-07). *****
+	//
+	// One observer per document, riding on kDocBoss itself. It hears the notification the command
+	// above raises and refills this plug-in's caches of ticks and paws from the document's labels
+	// -- on the way in, and again on undo and redo, which is the whole reason it exists.
+	//
+	// WARNING: an IID of OUR OWN, not IID_IOBSERVER. kDocBoss already carries somebody else's
+	// IID_IOBSERVER, and a boss holds one interface per IID; the AddIn would either fail or take
+	// theirs over. The implementation is ours too, for the reason spelled out on the kUtilsBoss
+	// AddIn below - the unit of collision is the ImplementationID.
+	//
+	// It is ATTACHED at run time and never persistently (KCMMarksObserver.cpp): an attachment
+	// written into the .indd would be a change made to the reader's file by merely opening it.
+	AddIn
+	{
+		kDocBoss,
+		kInvalidClass,
+		{
+			// Implementation: KCMMarksObserver.cpp
+			IID_IKCMMARKSOBSERVER, kKCMMarksObserverImpl,
+		}
+	},
+
 	// Tasks 12-15 add their four interfaces to THIS block - they do not open a second AddIn.
 	AddIn
 	{

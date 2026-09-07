@@ -89,6 +89,7 @@ REGISTER_PMINTERFACE(KCMStatusTextData, kKCMStatusTextDataImpl)	// the four piec
 REGISTER_PMINTERFACE(KCMStatusTextView, kKCMStatusTextViewImpl)	// ★PERSIST form. The message area: wraps by itself, changed characters in the theme colour, heading and context faded (DVControlView subclass; KCMStatusTextView.cpp)
 
 // The book comparison dialog and its chapter list (kDialogBoss derived, so UI by construction)
+REGISTER_PMINTERFACE(KCMPawWordDialogController, kKCMPawWordDialogControllerImpl)	// the one-line box that asks for the word beside a cat paw (CDialogController subclass; KCMPawWordDialog.cpp)
 REGISTER_PMINTERFACE(KCMBookDialogController, kKCMBookDialogControllerImpl)	// the modeless book comparison dialog (CDialogController subclass; KCMBookDialog.cpp)
 REGISTER_PMINTERFACE(KCMBookTreeAdapter, kKCMBookTreeAdapterImpl)	// what the chapter list holds (KCMBookTreeAdapter.cpp)
 REGISTER_PMINTERFACE(KCMBookTreeWidgetMgr, kKCMBookTreeWidgetMgrImpl)	// builds the chapter rows and fills them (KCMBookTreeWidgetMgr.cpp)

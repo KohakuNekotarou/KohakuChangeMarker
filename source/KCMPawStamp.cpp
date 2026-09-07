@@ -38,14 +38,30 @@
 #include "KCMPawStamp.h"
 #include "KCMConstants.h"		// kKCMPawSizeRatio
 #include "KCMCore.h"			// KCMIsDocDBOpen (the liveness test, pointer comparison only)
+#include "KCMPageCheck.h"		// KCMPageCheckIsChecked -- a page's tick has to survive a paw write
+#include "KCMPageMarksCmd.h"	// KCMPageMarks / KCMMarksWrite -- the only door to a change
 #include "KCMThreadSafety.h"	// KCMIsSameDoc / KCMMarkStateLock / KCMMarkStateMutex
 
 #include <map>
+#include <set>
 
 typedef std::map<IDataBase*, std::vector<KCMPawStamp> > KCMPawMap;
 
-// The stamps, session only. Never written to a document file; Load and Save (Task 4) move them
-// through KCM's own JSON.
+// The stamps, per document, for the session.
+//
+// ★★★**THIS IS A CACHE, NOT THE TRUTH** (2026-09-07). The paws live in the document, as script
+//   labels on the pages that carry them (KCMPageMarksDoc.h). What is held here is a copy of them,
+//   kept because the drawing side has to answer "any paws on this page" once per page per draw, on
+//   background threads as well as the main one.
+// ⚠**NOTHING IN THIS FILE MAY WRITE IT.** The single writer is KCMMarksObserver, which refills it
+//   from the labels whenever they change -- on the way in, and again on undo and redo. The
+//   placing and lifting below therefore READ this map and then ask the command to write the
+//   document, and the observer refills it.
+//   The two exceptions are KCMPawStampReplaceAll (which IS the observer's write) and
+//   KCMPawStampSweepClosedDocs (a closed document has no labels left to read).
+// ⚠**The refill is NOT deferred to an idle** (measured 2026-09-07): it has already happened by the
+//   next statement after KCMMarksWrite returns. Read anything you need out of this map BEFORE the
+//   write rather than betting either way on the timing.
 static KCMPawMap sPaws;
 
 // The entry for db, falling back on file identity when the pointer misses -- the shape of
@@ -105,30 +121,48 @@ static int32 KCMPawIndexAt(const std::vector<KCMPawStamp>& v, UID pageUID,
 }
 
 bool16 KCMPawStampPlaceAt(IDataBase* db, UID pageUID, const PMReal& x, const PMReal& y,
-                          int32 colour, const PMReal& baseHalf)
+                          int32 colour, const PMReal& baseHalf, const PMString& text)
 {
 	if (db == nil || pageUID == kInvalidUID)
 		return kFalse;
 
-	KCMMarkStateLock lock(KCMMarkStateMutex());
+	// This page's paws as they stand. Read under the lock and COPIED OUT: the write below runs a
+	// command, and a command must never run while this file holds the store's mutex.
+	std::vector<KCMPawStamp> onPage;
+	{
+		KCMMarkStateLock lock(KCMMarkStateMutex());
 
-	// ★★NO STACKING (the user's request). Two paws on one spot look like one, and only the top one
-	//   comes off when Shift is pressed, so the second press is far likelier to be a slip than an
-	//   intention. The test is the very one the lift uses.
-	// ⚠sPaws.find, NOT sPaws[db]: operator[] would create an EMPTY entry for a document that gets
-	//   nothing placed, and an empty entry is exactly what KCMPawStampHasAny reads as "this
-	//   document has paws" -- the drawing side would then walk every page of it for nothing.
-	KCMPawMap::iterator entry = sPaws.find(db);
-	if (entry != sPaws.end() && KCMPawIndexAt(entry->second, pageUID, x, y, baseHalf) >= 0)
-		return kFalse;					// one is already there
+		// ★★NO STACKING (the user's request). Two paws on one spot look like one, and only the top
+		//   one comes off when Shift is pressed, so the second press is far likelier to be a slip
+		//   than an intention. The test is the very one the lift uses.
+		// ⚠sPaws.find, NOT sPaws[db]: operator[] would create an EMPTY entry for a document that
+		//   gets nothing placed, and an empty entry is exactly what KCMPawStampHasAny reads as
+		//   "this document has paws" -- the drawing side would then walk every page for nothing.
+		KCMPawMap::iterator entry = sPaws.find(db);
+		if (entry != sPaws.end())
+		{
+			if (KCMPawIndexAt(entry->second, pageUID, x, y, baseHalf) >= 0)
+				return kFalse;			// one is already there
 
-	// ★The write goes to THIS db. No fallback on file identity (rule 3).
-	// ★★AND IT ONLY EVER ADDS. This was a toggle for one day (2026-09-04) and the user found the
-	//   fault in it within minutes of first use: putting paws down in a row, the second press near
-	//   the first took the first one off. Placing and lifting are two intentions, so they are two
+			for (size_t i = 0; i < entry->second.size(); ++i)
+				if (entry->second[i].fPageUID == pageUID)
+					onPage.push_back(entry->second[i]);
+		}
+	}
+
+	// ★★IT ONLY EVER ADDS. This was a toggle for one day (2026-09-04) and the user found the fault
+	//   in it within minutes of first use: putting paws down in a row, the second press near the
+	//   first took the first one off. Placing and lifting are two intentions, so they are two
 	//   gestures -- plain press and Shift + press.
-	sPaws[db].push_back(KCMPawStamp(pageUID, x, y, colour));
-	return kTrue;
+	onPage.push_back(KCMPawStamp(pageUID, x, y, colour, text));
+
+	// ★The paw goes into the DOCUMENT, and the store catches up when the notification arrives.
+	//  The page's tick has to be carried along: a write says what the whole page carries
+	//  afterwards, so leaving it out would take the tick off as a side effect of stamping.
+	std::vector<KCMPageMarks> wanted;
+	wanted.push_back(KCMPageMarks(pageUID, KCMPageCheckIsChecked(db, pageUID)));
+	wanted.back().fPaws = onPage;
+	return (KCMMarksWrite(db, wanted, "Place Cat Paw") == kSuccess) ? kTrue : kFalse;
 }
 
 bool16 KCMPawStampLiftAt(IDataBase* db, UID pageUID, const PMReal& x, const PMReal& y,
@@ -137,21 +171,32 @@ bool16 KCMPawStampLiftAt(IDataBase* db, UID pageUID, const PMReal& x, const PMRe
 	if (db == nil || pageUID == kInvalidUID)
 		return kFalse;
 
-	KCMMarkStateLock lock(KCMMarkStateMutex());
+	// The same read-then-write shape as the placing above, and for the same reason.
+	std::vector<KCMPawStamp> onPage;
+	{
+		KCMMarkStateLock lock(KCMMarkStateMutex());
 
-	KCMPawMap::iterator entry = sPaws.find(db);		// by pointer: a lift is a main-thread request
-	if (entry == sPaws.end())
-		return kFalse;
-	std::vector<KCMPawStamp>& v = entry->second;
+		KCMPawMap::iterator entry = sPaws.find(db);	// by pointer: a lift is a main-thread request
+		if (entry == sPaws.end())
+			return kFalse;
 
-	const int32 i = KCMPawIndexAt(v, pageUID, x, y, baseHalf);
-	if (i < 0)
-		return kFalse;					// the press landed on no paw
+		const int32 i = KCMPawIndexAt(entry->second, pageUID, x, y, baseHalf);
+		if (i < 0)
+			return kFalse;				// the press landed on no paw
 
-	v.erase(v.begin() + i);
-	if (v.empty())
-		sPaws.erase(entry);				// an emptied entry goes at once
-	return kTrue;
+		// Everything on this page except the one that was hit. ⚠The index is into the DOCUMENT'S
+		//   vector, not into a per-page one, so the comparison has to be made there.
+		for (size_t k = 0; k < entry->second.size(); ++k)
+		{
+			if (entry->second[k].fPageUID == pageUID && (int32)k != i)
+				onPage.push_back(entry->second[k]);
+		}
+	}
+
+	std::vector<KCMPageMarks> wanted;
+	wanted.push_back(KCMPageMarks(pageUID, KCMPageCheckIsChecked(db, pageUID)));
+	wanted.back().fPaws = onPage;		// empty is meaningful: it takes our paws label off the page
+	return (KCMMarksWrite(db, wanted, "Lift Cat Paw") == kSuccess) ? kTrue : kFalse;
 }
 
 //========================================================================================
@@ -268,10 +313,47 @@ void KCMPawStampClearDoc(IDataBase* db)
 	if (db == nil)
 		return;
 
-	KCMMarkStateLock lock(KCMMarkStateMutex());
-	// ★By pointer, deliberately: "clear the document in front of me" is a main-thread request
-	//   about one document, the same reasoning as rule 3.
-	sPaws.erase(db);
+	// Which pages carry a paw. ★By pointer, deliberately: "clear the document in front of me" is a
+	//   main-thread request about one document, the same reasoning as rule 3.
+	std::set<UID> pages;
+	{
+		KCMMarkStateLock lock(KCMMarkStateMutex());
+		KCMPawMap::const_iterator entry = sPaws.find(db);
+		if (entry == sPaws.end())
+			return;
+		for (size_t i = 0; i < entry->second.size(); ++i)
+			pages.insert(entry->second[i].fPageUID);
+	}
+
+	// Each of those pages, keeping its tick and losing its paws. One command, so one undo step.
+	std::vector<KCMPageMarks> wanted;
+	for (std::set<UID>::const_iterator it = pages.begin(); it != pages.end(); ++it)
+		wanted.push_back(KCMPageMarks(*it, KCMPageCheckIsChecked(db, *it)));
+
+	KCMMarksWrite(db, wanted, "Clear Cat Paws");
+}
+
+int32 KCMPawStampClearPage(IDataBase* db, UID pageUID)
+{
+	if (db == nil || pageUID == kInvalidUID)
+		return 0;
+
+	// How many are there to lose. ★Counted BEFORE the write, because afterwards nothing can say --
+	//   the same reason the tick's own clear reads its page set first.
+	std::vector<KCMPawStamp> onPage;
+	KCMPawStampsOnPage(db, pageUID, onPage);
+	if (onPage.empty())
+		return 0;						// nothing here, and that is not a failure
+
+	// ⚠The page's TICK travels with the write. A write says what the page carries afterwards, so a
+	//   list that mentions no tick takes the tick off -- which this gesture never means to do.
+	std::vector<KCMPageMarks> wanted;
+	wanted.push_back(KCMPageMarks(pageUID, KCMPageCheckIsChecked(db, pageUID)));	// and no paws
+
+	if (KCMMarksWrite(db, wanted, "Clear Cat Paws on Page") != kSuccess)
+		return 0;
+
+	return (int32)onPage.size();
 }
 
 void KCMPawStampSweepClosedDocs()

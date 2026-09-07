@@ -5,9 +5,14 @@
 //  The cat-paw stamps: the reader's own "I have looked at this spot" marks, one per point they
 //  pressed with the stamp tool. Session-only state, held here on the model side.
 //
-//  ★NOTHING IS WRITTEN TO THE DOCUMENT. The stamps live in this plug-in and are saved to KCM's
-//    own JSON, so the .indd is never touched -- the same promise the comparison marks make, and
-//    the reason a paw can be put on a document that is not being compared at all.
+//  ⚠★★★**THIS FILE'S STORE IS A CACHE. THE PAWS LIVE IN THE DOCUMENT** (2026-09-07). Each one is
+//    part of a script label on the page that carries it (KCMPageMarksDoc.h), it is written by a
+//    command so Ctrl+Z takes it back, and this map is refilled from those labels by
+//    KCMMarksObserver. ⚠**The old promise printed here -- "NOTHING IS WRITTEN TO THE DOCUMENT ...
+//    the .indd is never touched" -- became false the moment writing went automatic, and it stood
+//    here for half a day afterwards.** The comparison marks still keep that promise; the paw and
+//    the tick are the two exceptions the user asked for, because they are the READER'S OWN marks.
+//    A paw can still be put on a document that is not being compared at all.
 //
 //  ★THE SHAPE OF THE CONTAINER IS KCMDocUidSet'S, deliberately. That class holds
 //    "document -> set of page UIDs" for the registered pages and the ticks; this holds
@@ -25,6 +30,7 @@
 #include "BaseType.h"		// int32, bool16
 #include "OMTypes.h"		// UID
 #include "PMReal.h"
+#include "PMString.h"		// the word an Alt press puts beside a paw
 #include "KCMConstants.h"	// KCMPawColour -- what fColour below holds
 #include <vector>
 
@@ -40,17 +46,53 @@ struct KCMPawStamp
 {
 	UID    fPageUID;
 	PMReal fX, fY;
-	/** Which of the three colours this one was placed in (a KCMPawColour: pink / cyan / green,
-		chosen by the modifier keys). ★Kept PER STAMP, because the point of the colours is that
-		paws of different kinds sit on the same page at the same time. */
+	/** Which of the two colours this one was placed in (a KCMPawColour: red / blue, swapped with
+		Shift+Alt). ★Kept PER STAMP, because the point of the colours is that paws of different
+		kinds sit on the same page at the same time.
+		⚠**A stamp read from a document may carry a RETIRED number** (0 pink / 1 cyan / 2 green).
+		  Everything that reads one runs it through KCMPawColourFromStored below; nothing else in
+		  KCM knows the old numbers exist. */
 	int32 fColour;
-	KCMPawStamp() : fPageUID(kInvalidUID), fColour(kKCMPawColourPink) {}
+	/** The word the reader typed when they placed it with Alt, or empty. Drawn beside the paw and
+		kept in the page's script label with the rest of the stamp.
+		⚠Empty is the ordinary case -- a plain press has no word -- so nothing may assume one. */
+	PMString fText;
+
+	KCMPawStamp() : fPageUID(kInvalidUID), fColour(kKCMPawColourRed) {}
 	KCMPawStamp(UID p, const PMReal& x, const PMReal& y, int32 colour)
 		: fPageUID(p), fX(x), fY(y), fColour(colour) {}
+	KCMPawStamp(UID p, const PMReal& x, const PMReal& y, int32 colour, const PMString& text)
+		: fPageUID(p), fX(x), fY(y), fColour(colour), fText(text) {}
 };
 
-/** Place a paw at (x, y) on that page, in one of the three colours (a KCMPawColour, chosen by the
-	modifier keys). baseHalf is half the page's paw size, the same value the lift takes.
+/** Turn a colour number READ FROM A DOCUMENT into one this build draws.
+
+	★**The one place that knows the retired numbers.** Paws saved before 2026-09-07 carry 0 (pink),
+	 1 (cyan) or 2 (green); those three colours are gone, and the user's ruling is pink and cyan
+	 read as BLUE and green as RED. Anything unrecognised reads as red, the default -- a stamp
+	 whose colour cannot be understood is still a stamp, and dropping it would lose the reader's
+	 work over a number.
+	⚠Applied at READ time only. Nothing writes an old number again, so a document rewrites itself
+	 into the new numbering the first time any of its marks is touched. */
+inline int32 KCMPawColourFromStored(int32 stored)
+{
+	switch (stored)
+	{
+		case 0:						// retired: pink, what a plain press used to be
+		case 1:						// retired: cyan, what Alt used to place
+			return kKCMPawColourBlue;
+		case 2:						// retired: green, what Shift+Alt used to place
+			return kKCMPawColourRed;
+		case kKCMPawColourBlue:
+			return kKCMPawColourBlue;
+		default:
+			return kKCMPawColourRed;
+	}
+}
+
+/** Place a paw at (x, y) on that page, in one of the two colours (a KCMPawColour; Shift+Alt swaps
+	which one the tool is holding). baseHalf is half the page's paw size, the same value the lift
+	takes.
 	★★A PLAIN PRESS ALWAYS PLACES -- it never lifts (changed 2026-09-04 at the user's request).
 	  It began as a toggle, and stamping repeatedly is what a reader actually does: with a toggle,
 	  a second paw beside the first kept taking the first one off. Lifting has a key of its own.
@@ -62,8 +104,10 @@ struct KCMPawStamp
 	@warning writes go to THIS db and no other: unlike the readers below there is no fallback on
 	  file identity, because a write always happens on the main thread and means "add to the
 	  document I am looking at". Growing a clone's entry would be a wrong document, not a rescue. */
+/** @param text the word to put beside it, or empty for none (an Alt press asks the reader for one;
+	  every other press passes nothing). */
 bool16 KCMPawStampPlaceAt(IDataBase* db, UID pageUID, const PMReal& x, const PMReal& y,
-                          int32 colour, const PMReal& baseHalf);
+                          int32 colour, const PMReal& baseHalf, const PMString& text);
 
 /** Lift the paw under (x, y) -- Shift + press. baseHalf is half a paw's size on that page.
 	Where paws overlap, the one placed last comes off first.
@@ -108,6 +152,12 @@ void KCMPawStampReplaceAll(IDataBase* db, const std::vector<KCMPawStamp>& in);
 
 /** Drop every stamp of one document (the flyout's "clear"). */
 void KCMPawStampClearDoc(IDataBase* db);
+
+/** Drop every stamp on ONE page -- Shift + DOUBLE click (2026-09-07, the user's request).
+	The page's tick is left exactly as it was: this clears paws, and a write says what the whole
+	page carries afterwards, so the tick has to be carried along rather than merely not mentioned.
+	@return how many paws went (0 for a page carrying none, which is not a failure). */
+int32 KCMPawStampClearPage(IDataBase* db, UID pageUID);
 
 /** The liveness sweep run after documents close: drops the entries of documents that have gone.
 	@warning a closed database is never dereferenced -- this compares pointers through

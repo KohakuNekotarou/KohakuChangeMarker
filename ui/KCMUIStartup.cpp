@@ -42,6 +42,7 @@
 #include "KCMViewSync.h"			// KCMInvalidateSyncCaches / KCMViewSyncShutdown
 #include "KCMCmykCursor.h"		// KCMCmykShutdown (the cursor strings and a font reference)
 #include "KCMBookDialog.h"		// KCMBookDialogShutdown (the book comparison result: rows, two paths, summary)
+#include "KCMPawWordDialog.h"		// KCMPawWordDialog::Shutdown (the paw word box's one-shot timer)
 #include "KCMUIShared.h"			// KCMAttachModelChangeObserver / KCMDetachModelChangeObserver
 #include "Utils.h"					// Utils<IKCMCompareFacade>()
 #include "IKCMCompareFacade.h"	// ClearSessionStatus (drop the remembered status line)
@@ -153,6 +154,11 @@ void KCMUIStartup::Shutdown()
 	//     its own list** ＝ "fix one and do not look for its siblings".
 	//   It touches no widget and no document, so it is safe wherever in the teardown it is reached.
 	KCMBookDialogShutdown();
+	// ⚠**The timer, not the dialog.** ICallbackTimer holds a raw function pointer into this
+	//   plug-in, and one left armed while the plug-in unloads is a crash (ICallbackTimer.h). The
+	//   window between arming and firing is a millisecond, so this almost never has anything to
+	//   do -- which is exactly why leaving it out would never be noticed until it was.
+	KCMPawWordDialog::Shutdown();
 	// The remembered status line (kept on the model side) goes the same way. ⚠**With a nil check**:
 	// during teardown kUtilsBoss can already be gone (the same reason as the nil check on
 	// KCMCmykShutdown's EndColorDrag -- neighbouring lines of one shutdown, treated alike).

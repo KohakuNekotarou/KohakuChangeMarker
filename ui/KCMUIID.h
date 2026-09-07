@@ -132,6 +132,7 @@ DECLARE_PMID(kClassIDSpace, kKCMStoryRowCellBoss, kKCMUIPrefix + 20)	// kInfoSta
 // dialog closes that road). It is the stock kDialogBoss with an IDialogController of ours on
 // it -- the same shape as KESCL's Jump Offset dialog.
 DECLARE_PMID(kClassIDSpace, kKCMBookDialogBoss, kKCMUIPrefix + 21)
+DECLARE_PMID(kClassIDSpace, kKCMPawWordDialogBoss, kKCMUIPrefix + 36)	// kDialogBoss + our controller: the one-line box that asks for the word an Alt press puts beside a cat paw (2026-09-07, KCMPawWordDialog.cpp). ★Modal, and opened a millisecond AFTER the tracker lets go -- a modal raised inside a tracker runs its loop under a captured mouse (KIDMCPUIPencilDialog.h says why, and KCMToolButtonEH.cpp waits on the same timer for the same reason)
 // The chapter list inside that dialog. ★**The same three pieces as the Story Edits list**: the
 // tree itself (adapter + widget manager), the row, and the row's cell. The only difference is
 // where it lives -- a dialog rather than a palette, so the theme is kIDDialogTheme and the font
@@ -263,6 +264,7 @@ DECLARE_PMID(kImplementationIDSpace, kKCMStoryRowEHImpl, kKCMUIPrefix + 27)	// I
 //  Unlike an ActionID, an implementation number is referenced by nothing that is stored
 //  outside the plug-in, so it was reused below.)
 DECLARE_PMID(kImplementationIDSpace, kKCMStoryTreeEHImpl, kKCMUIPrefix + 28)	// IEventHandler (TreeViewEventHandler subclass). ★Key handling for the list **itself**: up/down move between rows and jump to the row they land on (KCMStoryTreeEH.cpp). A different thing from the row-side kKCMStoryRowEHImpl, which handles clicks
+DECLARE_PMID(kImplementationIDSpace, kKCMPawWordDialogControllerImpl, kKCMUIPrefix + 50)	// IDialogController (CDialogController subclass) for the paw word box (KCMPawWordDialog.cpp). Its ApplyDialogFields is what OK means; Cancel never reaches it, and that is how the two are told apart
 DECLARE_PMID(kImplementationIDSpace, kKCMBookDialogControllerImpl, kKCMUIPrefix + 29)	// IDialogController (CDialogController subclass). The modeless book comparison dialog: on open it fills in the names of the two books being compared (KCMBookDialog.cpp)
 // (Retired: kKCMBookDialogObserverImpl (kKCMUIPrefix + 30) was the IObserver behind the Compare
 //  button of the book comparison dialog. ★The button itself was removed -- the flow became
@@ -397,7 +399,12 @@ DECLARE_PMID(kActionIDSpace, kKCMClearPawsActionID, kKCMUIPrefix + 49)	// "Clear
 DECLARE_PMID(kActionIDSpace, kKCMPopupRefreshCompareActionID, kKCMUIPrefix + 53)	// "Refresh Comparison" on the panel flyout, DIRECTLY UNDER Start (a plain command). Compares the same two documents again, in whichever mode is current - what the reader wants after editing one of them. Enabled only while a comparison is armed and both documents are still open (kCustomEnabling); it was Stop-then-Start before this existed. ★It is NOT either of the two partial refreshes: kKCMPageRefreshCompareActionID does the pages selected in the Pages panel and kKCMStoryRowRefreshActionID does one row, while this one re-does everything. KCMRefreshComparison in KCMComparisonRun.cpp
 DECLARE_PMID(kActionIDSpace, kKCMClearChecksActionID, kKCMUIPrefix + 52)	// "Clear Checks in This Document" on the panel flyout (a plain command). ★It exists because **Stop no longer clears the ticks** (2026-09-04): Stop used to double as the way to be rid of them all, and taking that away would have left no way at all. Greyed where the active document holds no tick, through kCustomEnabling. ⚠The number is +52, not +50: see the note directly above
 
-DECLARE_PMID(kActionIDSpace, kKCMSaveMarksToDocActionID, kKCMUIPrefix + 55)	// ★"Save Marks to Document" on the panel flyout (a plain command; 2026-09-07, the user's request). Writes the ticks and cat paws onto the pages as script labels (KCMPageMarksDoc.h). ⚠It CHANGES THE DOCUMENT -- which is why it is a press and never automatic. Greyed when the active document holds neither
+// ⚠★★**+55 IS RETIRED AND MUST NOT BE REUSED.** It was "Save Marks to Document", which lived for
+//   one morning (2026-09-07) and was withdrawn the same day: writing stopped being a separate act
+//   when a tick and a paw began going into the document as they are made, undoably. An ActionID is
+//   the one ID space where reuse is unsafe -- a .indk stores keyboard shortcuts as plain numbers,
+//   so a reader who had bound a key to +55 would find it working the new item. (+38 is retired for
+//   the same reason: it was the Translucent Toolbox toggle.)
 DECLARE_PMID(kActionIDSpace, kKCMClearMarksFromDocActionID, kKCMUIPrefix + 56)	// "Clear Marks from Document": takes OUR labels off every page and leaves every other label alone. Greyed with no active document
 DECLARE_PMID(kActionIDSpace, kKCMClearChosenActionID, kKCMUIPrefix + 54)	// "Clear Target and Source" on the panel flyout (a plain command; 2026-09-05, user's request). Drops both chosen documents, so the next Start falls back to the automatic rule and the panel's Target:/Source: lines go back to bare labels. A lent Source is forgotten with them. ★★It STOPS a running comparison first (2026-09-07, user's instruction -- it used to be greyed while armed and to leave the comparison running). Live through kCustomEnabling whenever a comparison is armed OR at least one of the two is chosen. ⚠The number is +54, not +50 or +51: those two are retired, see the note above
 
@@ -497,6 +504,8 @@ DECLARE_PMID(kWidgetIDSpace, kKCMStoryRowUIDWidgetID, kKCMUIPrefix + 52)	// ★r
 // The book comparison dialog. ★OK and Cancel use the stock WidgetIDs (kOKButtonWidgetID /
 // kCancelButton_WidgetID), so what has to be declared here is the dialog itself.
 DECLARE_PMID(kWidgetIDSpace, kKCMBookDialogWidgetID, kKCMUIPrefix + 57)
+DECLARE_PMID(kWidgetIDSpace, kKCMPawWordDialogWidgetID, kKCMUIPrefix + 67)	// the paw word dialog itself
+DECLARE_PMID(kWidgetIDSpace, kKCMPawWordEditWidgetID, kKCMUIPrefix + 68)	// its one edit box. ⚠It IS referred to (the controller reads it and the label points at it for keyboard focus), which is why it has an ID at all -- a widget nobody names does not need one
 DECLARE_PMID(kWidgetIDSpace, kKCMBookTargetTextWidgetID, kKCMUIPrefix + 58)	// "Target: new.indb" (the book whose tab is in front)
 DECLARE_PMID(kWidgetIDSpace, kKCMBookSourceTextWidgetID, kKCMUIPrefix + 59)	// "Source: old.indb" (the first other open book)
 DECLARE_PMID(kWidgetIDSpace, kKCMBookCompareButtonWidgetID, kKCMUIPrefix + 60)	// (retired) the old "Compare" button. ★The button itself was removed -- the flow became "confirmation alert, then OK compares" -- so **nothing refers to this ID**, but it is kept declared together with its label key kKCMBookCompareKey, the enUS table row and the note in KCMUI.fr, so that the set can be restored together. ★The number is not reused. ⚠This line used to claim it was **the only** declared-but-unreferenced ID "measured mechanically". ★★**That was already untrue when it was written**: kKCMPopupAboutScriptActionID (+3) had been retired-but-reserved all along, and a re-measurement on 2026-09-04 found three of them -- that one, this one, and kKCMClearPawsActionID (+49), a slot booked in advance for the paw stamp's "clear" item. ⇒ ★★★**Do not read a count off any line here; measure it -- and mind the two traps that made the first measurement wrong.** (1) Take the names only from lines that BEGIN with DECLARE_PMID: a commented-out declaration is not a declaration (there is one in the ActionID block). (2) Strip comments before counting occurrences: a name mentioned in prose -- **this sentence included** -- is not a reference, and counting it hides exactly the ID it names. A name left with one occurrence in the stripped text is unreferenced. The label key had said "retired" from the start while this one still read as live
@@ -637,7 +646,7 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowStateWidgetID, kKCMUIPrefix + 49)	// = t
 #define kKCMScrollMapMenuKey		kKCMStringPrefix "kKCMScrollMapMenuKey"	// the menu name of the "Show Scrollbar Map" toggle on the panel flyout
 #define kKCMSavePanelStateMenuKey	kKCMStringPrefix "kKCMSavePanelStateMenuKey"	// the menu name of "Save Panel Settings" on the panel flyout
 #define kKCMSaveChecksMenuKey		kKCMStringPrefix "kKCMSaveChecksMenuKey"	// the menu name of "Save Check & Register" on the panel flyout
-#define kKCMSaveMarksMenuKey		kKCMStringPrefix "kKCMSaveMarksMenuKey"	// the menu name of "Save Marks to Document"
+// (kKCMSaveMarksMenuKey stood here for one morning, 2026-09-07, and went with its menu item.)
 #define kKCMClearMarksMenuKey		kKCMStringPrefix "kKCMClearMarksMenuKey"	// the menu name of "Clear Marks from Document"
 #define kKCMLoadChecksMenuKey		kKCMStringPrefix "kKCMLoadChecksMenuKey"	// the menu name of "Load Check & Register" on the panel flyout
 #define kKCMClearChecksMenuKey		kKCMStringPrefix "kKCMClearChecksMenuKey"	// the menu name of "Clear Checks in This Document" on the panel flyout
@@ -651,6 +660,8 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowStateWidgetID, kKCMUIPrefix + 49)	// = t
 #define kKCMSetSourceMenuKey		kKCMStringPrefix "kKCMSetSourceMenuKey"	// ★the menu name of "Set as Source" on the panel flyout (the active document becomes the older version)
 #define kKCMClearChosenMenuKey	kKCMStringPrefix "kKCMClearChosenMenuKey"	// ★the menu name of "Clear Target and Source" on the panel flyout (drops both choices; the next Start falls back to the automatic rule)
 #define kKCMBookDialogTitleKey	kKCMStringPrefix "kKCMBookDialogTitleKey"	// the title of the book comparison dialog
+#define kKCMPawWordDialogTitleKey	kKCMStringPrefix "kKCMPawWordDialogTitleKey"	// the title of the paw word box
+#define kKCMPawWordLabelKey	kKCMStringPrefix "kKCMPawWordLabelKey"	// the prompt beside its edit box
 #define kKCMBookCompareKey		kKCMStringPrefix "kKCMBookCompareKey"		// (retired) the label of the old "Compare" button. The button was removed, so nothing refers to it, but it is kept together with its enUS table row so that the set can be restored together
 #define kKCMBookReadyKey			kKCMStringPrefix "kKCMBookReadyKey"			// the status line before a comparison. ★What reaches it now is only "the dialog was opened without a comparison ever having been run" - otherwise the summary overwrites it
 #define kKCMBookHintKey			kKCMStringPrefix "kKCMBookHintKey"			// ★the second status line: the hint that a right click on a row starts the comparison. **It is a fixed sentence**, carried by the .fr as initial text and never written by C++ (unlike the summary, it does not change from run to run)
@@ -848,6 +859,7 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowStateWidgetID, kKCMUIPrefix + 49)	// = t
 // so there is no reason for a second implementation ("draw it on two lines" reaches the cell at
 // run time).
 #define kKCMStoryRubyRowRsrcID	1015
+#define kKCMPawWordDialogRsrcID	1016	// the paw word dialog view resource (2026-09-07). ⚠Next free: 1017
 
 // The row height of the chapter list. ★As with kKCMStoryRowHeight below, **both the .fr and the
 // C++ read this one constant** (the row resource's Frame, the tree's scroll increment,
@@ -1022,10 +1034,9 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowStateWidgetID, kKCMUIPrefix + 49)	// = t
 #define kKCMSavePanelStateMenuItemPosition	9.56	// plain command "Save Panel Settings"
 #define kKCMSaveChecksMenuItemPosition	9.58	// plain command "Save Check & Register"
 #define kKCMLoadChecksMenuItemPosition	9.60	// plain command "Load Check & Register"
-#define kKCMSaveMarksMenuItemPosition	9.62	// plain command "Save Marks to Document" -- next to the file-based pair it is the document-side twin of
-#define kKCMClearMarksMenuItemPosition	9.64	// plain command "Clear Marks from Document", directly under it
 #define kKCMClearChecksMenuItemPosition	9.62	// plain command "Clear Checks in This Document", directly under the Save/Load pair it undoes
 #define kKCMClearPawsMenuItemPosition	9.64	// plain command "Clear Cat Paws in This Document". ★Two items rather than one: a tick records progress and a paw is a landmark, so they are wanted gone at different moments
+#define kKCMClearMarksMenuItemPosition	9.66	// plain command "Clear Marks from Document", last of the three because it is the other two together. ⚠★**It shared 9.64 with Clear Cat Paws until 2026-09-07**, and two items at one value leave the order to the MenuDef registration order alone -- the very trap the Hide Unchanged line above records. (9.62 was likewise shared, with the now-retired "Save Marks to Document".)
 #define kKCMExportChangedPagesMenuItemPosition	9.53	// plain command "Export Changed Pages..." (the list of changed pages as TSV), directly below Align
 // ★★Compare Books sits at 9.05, **between Start (9.0) and the separator Sep1 (9.1)** ＝ no rule
 //   falls between it and Start, so the two items that **begin** a comparison read as one group

@@ -6,16 +6,22 @@
 //  there is nothing to follow afterwards, so BeginTracking answers kFalse ＝ the single-shot
 //  shape of sdksamples/snapshot, whose tracker likewise does its whole job in BeginTracking.
 //
-//  ★FOUR GESTURES (2026-09-04, the user's choices while using the builds):
-//      plain press          place a PINK paw
-//      Alt + press          place a CYAN one
-//      Shift + Alt + press  place a GREEN one
+//  ★FIVE GESTURES (re-cut 2026-09-07; the first cut was 2026-09-04):
+//      plain press          place a paw in the colour the tool is HOLDING
+//      Alt + press          ask for a word, then place the paw carrying it
+//      Shift + Alt + press  SWAP that colour (red <-> blue). ★PLACES NOTHING
 //      Shift + press        lift the paw under the point
+//      Shift + DOUBLE       clear every paw on that page
+//    ★★**THE TOOL HOLDS A COLOUR NOW** (sPawColour below), where it used to read one straight off
+//      the keys. Two colours cannot be reached by three place-gestures, and the user asked for the
+//      keys to SWAP rather than to select: red is the default and Shift+Alt turns it blue and back.
+//      ⚠The colours are Kohaku InDesign MCP's own two -- red is what Claude marks with, blue is
+//        the person's pencil -- and that pairing is the point (KCMConstants.h says why).
 //    ⚠★★Alt CHANGED THE SIZE for about an hour (1.6x, then 10x, then 5x) before the user replaced
 //      the idea with colour: a bigger paw is the same mark drawn larger, a different colour is a
 //      different KIND of mark. Every paw is the ordinary size now.
 //    ⚠★The lift is the gesture that has to test BOTH keys -- Shift alone lifts, Shift with Alt
-//      places -- so `if (shift)` on its own would eat the green paw.
+//      places -- so `if (shift)` on its own would eat the swap.
 //    ⚠★★A PLAIN PRESS NEVER LIFTS ANY MORE. It was a toggle for one day, and the fault showed
 //      within minutes of first use: putting paws down in a row, the second press near the first
 //      took the first one off. Placing and lifting are two intentions, so they are two gestures.
@@ -53,9 +59,16 @@
 
 #include "KCMUIID.h"
 #include "KCMUIShared.h"			// KCMSetStatus -- the panel's status line
-#include "KCMConstants.h"			// KCMPawColour -- what the modifier keys choose between
+#include "KCMConstants.h"			// KCMPawColour -- what the tool holds and Shift+Alt swaps
+#include "KCMPawWordDialog.h"		// the Alt gesture: ask for a word, then place -- NOT from in here
 #include "IKCMPageFlagsFacade.h"	// ★the ONLY way across to the store: place / lift / count / size
 #include "IKCMCompareFacade.h"		// InvalidateDB -- repaint the document that was pressed
+
+// The colour the tool is holding. Session state, main thread only, and deliberately NOT per
+// document: it is a property of the TOOL in the reader's hand, like a pen they have picked up, so
+// carrying it from one document to the next is what a person expects.
+// ★Red to begin with (the user, 2026-09-07).
+static int32 sPawColour = kKCMPawColourRed;
 
 //____________________________________________________________________________________
 //	Tracker event handler: forwards events to the tracker while capturing. A bare subclass of
@@ -211,6 +224,8 @@ bool16 KCMPawTracker::BeginTracking(IEvent* theEvent)
 		(evType == IEvent::kDoubleClick && theEvent->LButtonDn());
 	if (!leftPress)
 		return kFalse;
+	// ★The SECOND press of a pair, which Shift turns into "clear this page" below.
+	const bool16 isDouble = (evType == IEvent::kDoubleClick) ? kTrue : kFalse;
 
 	// CTracker converts the press for us -- the same call the SDK's own tools make
 	// (snapshot/SnapTracker.cpp:211).
@@ -253,48 +268,97 @@ bool16 KCMPawTracker::BeginTracking(IEvent* theEvent)
 		}
 		else
 		{
-			// ★★THE FOUR GESTURES. ⚠SHIFT ALONE LIFTS, but Shift WITH Alt places a green one --
-			//   so the lift is the one combination that has to test BOTH keys. Reading Shift on
-			//   its own would swallow the green paw before it was ever placed.
+			// ★★THE FOUR GESTURES (re-cut 2026-09-07 at the user's request; the colours were
+			//   pink / cyan / green until then):
+			//       plain press      place, in whichever colour the tool is holding
+			//       Alt              ask for a word, then place -- the word goes beside the paw
+			//       Shift + Alt      SWAP the colour (red <-> blue). ★It places NOTHING
+			//       Shift            lift the paw under the point
+			//       Shift + DOUBLE   clear every paw on that page
+			// ⚠SHIFT ALONE LIFTS, but Shift WITH Alt places -- so the lift is the one combination
+			//   that has to test BOTH keys. Reading Shift on its own would swallow the swap before
+			//   it ever happened.
 			const bool16 shiftDown = theEvent->ShiftKeyDown();
 			const bool16 altDown   = theEvent->OptionAltKeyDown();
 
 			bool16 changed = kFalse;
 			if (shiftDown && !altDown)
 			{
-				changed = flags->PawStampLiftAt(db, pageUID, x, y, half);
-				msg = changed ? "Paw lifted (" : "Paw: none under that point (";
+				if (isDouble)
+				{
+					// ★★**SHIFT + DOUBLE CLICK CLEARS THE PAGE** (2026-09-07, the user asked for it).
+					//   ⚠**The single press has ALREADY happened** and lifted the paw under the point:
+					//     Windows delivers kLButtonDn first and kDoubleClick second, and nothing here
+					//     can know a second click is coming. So the reader gets what they asked for --
+					//     an empty page -- in TWO undo steps rather than one, and Ctrl+Z twice puts it
+					//     all back. That is the honest cost of the gesture, not a defect to hunt.
+					const int32 gone = flags->PawStampClearPage(db, pageUID);
+					changed = (gone > 0) ? kTrue : kFalse;
+					msg = changed ? "Cat paws cleared from this page (" : "Paw: none left on this page (";
+				}
+				else
+				{
+					changed = flags->PawStampLiftAt(db, pageUID, x, y, half);
+					msg = changed ? "Paw lifted (" : "Paw: none under that point (";
+				}
+			}
+			else if (shiftDown && altDown)
+			{
+				// ★★**IT ONLY SWAPS THE COLOUR. NOTHING IS PLACED** (the user, 2026-09-07, after
+				//   using the first cut: "when Shift+Alt is pressed it stamps -- make it only
+				//   change the colour setting").
+				//   ⚠The first cut swapped AND placed, on the reasoning that a press which leaves
+				//     the page unmarked reads as a press that did nothing. Wrong reasoning, and the
+				//     use showed why: **the reader swaps the colour when they are about to mark
+				//     something ELSE**, so the swap left a paw where they had merely been choosing.
+				//     Choosing a pen is not writing with it.
+				sPawColour = (sPawColour == kKCMPawColourRed) ? kKCMPawColourBlue : kKCMPawColourRed;
+				// ⚠**This one says its piece and leaves**, because the count appended to every other
+				//   message below belongs to PAWS. "Cat paw colour: blue (2 on this document)" reads
+				//   as "there are two blue paws", which is not what the number counts.
+				msg = (sPawColour == kKCMPawColourBlue) ? "Cat paw colour: blue"
+				                                        : "Cat paw colour: red";
+				msg.SetTranslatable(kFalse);
+				KCMSetStatus(msg);
+				// Nothing was placed, so there is nothing to undo and nothing to redraw.
+				return kFalse;
+			}
+			else if (altDown)
+			{
+				// ⚠★★★**NOTHING IS PLACED HERE.** The word is asked for in a modal dialog, and a
+				//   modal must not be opened from inside a tracker -- the mouse is still captured
+				//   and the dialog's loop would run under it (KCMPawWordDialog.h carries the
+				//   reason, and this plug-in's tool-button flyout already obeys it). So the press
+				//   is handed to a one-shot timer, and the placing, the count and the status line
+				//   all happen over there once the box has been answered.
+				KCMPawWordDialog::AskAndPlaceLater(db, pageUID, x, y, sPawColour, half);
+				return kFalse;			// the message and the redraw belong to the dialog
 			}
 			else
 			{
-				int32 colour = kKCMPawColourPink;
-				if (altDown)
-					colour = shiftDown ? kKCMPawColourGreen : kKCMPawColourCyan;
-
-				changed = flags->PawStampPlaceAt(db, pageUID, x, y, colour, half);
-				// ⚠Four outcomes, not three: a press that lands on a paw already there places
+				changed = flags->PawStampPlaceAt(db, pageUID, x, y, sPawColour, half, PMString());
+				// ⚠Three outcomes, not two: a press that lands on a paw already there places
 				//   nothing, and saying "placed" then would be a lie the count does not correct
 				//   (the count is unchanged, which is exactly what a slip looks like).
 				if (!changed)
 					msg = "Paw: one is already there (";
-				else if (colour == kKCMPawColourGreen)
-					msg = "Green paw placed (";
-				else if (colour == kKCMPawColourCyan)
-					msg = "Cyan paw placed (";
 				else
 					msg = "Paw placed (";
 			}
 			msg.AppendNumber(flags->PawStampCount(db));
 			msg += " on this document)";
 
-			// ★Repaint THIS document -- deliberately not the comparison's Target. A paw can be
-			//   put on a document that is not being compared at all, which is the point of the
-			//   tool, so KCMInvalidateMarksDoc next door (which repaints the Target) would be the
-			//   wrong call. The facade ignores nil, so no test is needed.
-			// ⚠Only when something actually moved: a Shift press that landed on no paw changed
-			//   nothing, and redrawing a spread to show the same picture is work for nobody.
-			if (changed)
-				Utils<IKCMCompareFacade>()->InvalidateDB(db);
+			// ⚠★★**NOTHING IS REPAINTED FROM HERE ANY MORE** (2026-09-07). This used to call
+			//   IKCMCompareFacade::InvalidateDB when something moved, and it had to: the UI was
+			//   what knew a paw had been placed. It is not any more -- a paw goes into the
+			//   DOCUMENT now, and the model's marks observer repaints when the write lands,
+			//   for undo and redo as well as for the press (KCMMarksObserver.h).
+			//   ★Leaving the call in would have been harmless and wrong: two answers to "who
+			//     redraws after a paw changes", of which only one is right for Ctrl+Z
+			//     ([[one-question-one-place]]). **The UI asks for the change; the model decides
+			//     what moved and shows it.**
+			//   ⚠`changed` is now read for ONE thing only -- how the status line is worded. If it ever
+			//     stops being read, delete it rather than leaving a flag nobody acts on.
 		}
 	}
 	else

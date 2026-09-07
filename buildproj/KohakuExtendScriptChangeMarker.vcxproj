@@ -226,6 +226,8 @@
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMPageCheck.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMPawStamp.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMPageMarksDoc.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMPageMarksCmd.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMMarksObserver.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMDocUidSet.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMThreadSafety.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMStoryStamp.cpp" />
@@ -280,6 +282,9 @@
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPageCheck.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPawStamp.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPageMarksDoc.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPageMarksCmd.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMJsonText.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMMarksObserver.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMDocUidSet.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMThreadSafety.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMStoryKinds.h" />

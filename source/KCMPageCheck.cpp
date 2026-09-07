@@ -44,20 +44,41 @@
 #include <string>
 #include <cstdio>				// FILE / fread / fwrite / fclose
 
-#include "KCMCore.h"			// KCMCollectPageUIDs / KCMCollectMasterPageUIDs / KCMActiveDocDB / KCMIsComparedDoc / KCMArmedTargetDB / KCMArmedSourceDB / KCMDoMarkChangesDoc / KCMInvalidateDB
+#include "KCMCore.h"			// KCMCollectPageUIDs / KCMCollectMasterPageUIDs / KCMActiveDocDB / KCMIsComparedDoc / KCMArmedTargetDB / KCMArmedSourceDB / KCMDoMarkChangesDoc
+								// ⚠KCMInvalidateDB is NOT among them any more (2026-09-07): redrawing moved to KCMMarksObserver, which is the only place that knows which pages moved
 #include "KCMModelNotify.h"	// KCMNotifyStatus - the model tells the UI, it never calls it
 #include "KCMComparisonRun.h"	// KCMStopComparison
 #include "KCMPageCheck.h"
 #include "KCMPageMap.h"		// KCMPageMapCollectRegistered (save) / KCMPageMapReplaceRegistered (load)
-#include "KCMPawStamp.h"		// KCMPawStampGetForSave / KCMPawStampReplaceAll -- the cat-paw stamps ride this same file
+#include "KCMPawStamp.h"		// KCMPawStampsOnPage / KCMPawStampGetForSave -- the cat-paw stamps ride this same file
+#include "KCMPageMarksCmd.h"	// KCMPageMarks / KCMMarksWrite -- the only door to a change
+#include "KCMJsonText.h"		// KCMJsonEscape / KCMJsonReadString -- shared with KCMPageMarksDoc.cpp
 #include "KCMDocUidSet.h"		// the shared "document -> page UID set" container (Register uses it too)
 #include "KCMThreadSafety.h"	// the shared-state lock, for reaching inside the container through GetMap
-#include "KCMID.h"				// kKCMPageFlagsChangedMessage (the notification's ID)
+// ⚠KCMID.h was included here for kKCMPageFlagsChangedMessage and is gone with it (2026-09-07):
+//   this file no longer notifies anybody. KCMMarksObserver does, because it is the only place that
+//   can name the pages whose picture moved -- including the ones that LOST a mark.
 // This file deliberately does not include the UI's KCMThumbnailRefresh.h: rebuilding a thumbnail
 // is the job of whoever receives the notification, which is the UI.
 
-// The ticked pages: document database -> set of page UIDs, session only.
+// The ticked pages: document database -> set of page UIDs.
 // An entry whose set became empty disappears at once (KCMDocUidSet's rule).
+//
+// ★★★**THIS IS A CACHE, NOT THE TRUTH** (2026-09-07). A tick lives in the document, as a script
+//   label on the page that carries it (KCMPageMarksDoc.h). What is held here is a copy, kept
+//   because the drawing side asks "is this page ticked" once per page per draw, on background
+//   threads as well as the main one.
+// ⚠**NOTHING IN THIS FILE MAY WRITE IT except KCMPageCheckReplaceAll**, which exists solely for
+//   KCMMarksSyncFromDocument to call (KCMPageMarksDoc.h) -- the one road from the document to this
+//   cache, driven by the marks observer and by the document-opened responder. Everything else here
+//   READS it and then asks the command to write the DOCUMENT. That is what makes Ctrl+Z work: undo
+//   puts the label back and the same road refills the cache from it.
+//   Two writers are outside that road and belong outside it, because neither is a change to any
+//   document: the closed-document sweep and the shutdown clear.
+// ⚠**WHEN the refill happens was MEASURED, and it is not "later"** (2026-09-07): it has already
+//   run by the next statement after KCMMarksWrite returns. Do not write code that waits for it,
+//   and do not write code that assumes it has not happened yet -- read what you need BEFORE the
+//   write instead. The toggle below carries the account of getting this wrong once.
 static KCMDocUidSet sChecked;
 
 // **Which pages may be ticked depends on the mode.** The answer is built in one place,
@@ -117,34 +138,53 @@ void KCMPageCheckToggleSelectedPages()
 	if (pages.empty())
 		return;		// nothing eligible in the selection; the menu should be disabled anyway
 
-	const bool16 anyUnchecked = sChecked.ToggleAll(db, pages);
+	// What the press means: any eligible page still unticked ticks them all, otherwise they all
+	// come off. ★**Asked without changing anything.** The store is a cache now, so the change is
+	// made by writing the document and this only works out what to write.
+	const int32  wasChecked   = sChecked.CountIn(db, pages);
+	const int32  totalBefore  = sChecked.CountIn(db);		// ⚠**read BEFORE the write** -- see the status line below
+	const bool16 anyUnchecked = (wasChecked < (int32)pages.size()) ? kTrue : kFalse;
+
+	// ⚠**Each page's paws travel with its tick.** A write says what the page carries AFTERWARDS,
+	//   so a page whose paws were left out of the list would lose them as a side effect of being
+	//   ticked.
+	std::vector<KCMPageMarks> wanted;
+	for (size_t i = 0; i < pages.size(); ++i)
+	{
+		KCMPageMarks m(pages[i], anyUnchecked);
+		KCMPawStampsOnPage(db, pages[i], m.fPaws);
+		wanted.push_back(m);
+	}
+
+	// One command for the whole selection, so five ticked pages are ONE Ctrl+Z and not five.
+	// ⚠**A failure has to SAY so.** The write is the whole of what this menu item does, so a silent
+	//   return leaves the reader looking at a menu item that did nothing and told them nothing --
+	//   and the sequence has already rolled the document back, so there is not even a half-result
+	//   on screen to hint at it.
+	if (KCMMarksWrite(db, wanted, anyUnchecked ? "Check Pages" : "Uncheck Pages") != kSuccess)
+	{
+		KCMSayStatus("Could not write the marks into the document.");
+		return;
+	}
 
 	PMString msg;
 	msg.SetTranslatable(kFalse);
 	msg.Append(anyUnchecked ? "check +" : "check -");
 	msg.AppendNumber((int32)pages.size());
 
-	// The total is counted after the change (Erase has already dropped the document's entry when
-	// unticking emptied it, so 0 comes back).
+	// ★★**THE TOTAL IS THE ONE READ BEFORE THE WRITE, PLUS WHAT THIS PRESS DID.** Never the store
+	//   read back afterwards, and never the store read afterwards MINUS the delta -- both of those
+	//   are bets on WHEN the observer refills it, and the bet is not needed.
+	// ⚠Measured 2026-09-07, and it went the other way from the guess: the observer had ALREADY run
+	//   by the time this line was built (the lazy notification is flushed when the command sequence
+	//   ends, not at some later idle), so a first attempt that subtracted the delta from the store
+	//   printed "check -1, total -1". Reading before and adding is right whichever way the timing
+	//   goes, which is the whole reason to write it this way rather than to correct the sign.
 	msg.Append(", total ");
-	msg.AppendNumber(sChecked.CountIn(db));
+	msg.AppendNumber(totalBefore + (anyUnchecked ? (int32)pages.size() - wasChecked : -wasChecked));
 
-	// Refresh the toggled pages' thumbnails so the tick shows at once. No re-comparison is needed;
-	// a tick changes nothing about the comparison itself.
-	// The page set travels on the notification (ISubject::Change's changedBy parameter, see
-	//   KCMModelNotify.h), so the UI purges per UID. Ticking and unticking change the picture of
-	//   the touched pages and of nothing else, so this set cannot miss one.
-	{
-		const std::set<UID> touched(pages.begin(), pages.end());
-		KCMNotifyPages(kKCMPageFlagsChangedMessage, db, touched);
-	}
-
-	// The layout view's tick has to be refreshed as well, and by a different route. It is drawn
-	// whenever marks are visible, so without invalidating the toggled document's layout views the
-	// change does not reach the screen until something else redraws them -- which showed up as
-	// "the tick is still there after I switched it off", until the user scrolled.
-	KCMInvalidateDB(db);
-
+	// Neither the thumbnails nor the layout view are refreshed here any more. KCMMarksObserver does
+	// both when the write lands -- and does them again on undo and on redo, which this could not.
 	KCMNotifyStatus(msg);
 }
 
@@ -205,12 +245,12 @@ void KCMPageCheckClearAllDocs()
 
 //========================================================================================
 // KCMPageCheckClearDoc (declared in KCMPageCheck.h)
-//   The flyout item "Clear Checks in This Document": drop ONE document's ticks and tell the UI
-//   which pages changed, so that the Pages panel's thumbnails lose their ticks along with the
-//   layout view.
-//   ★**THE PAGE SET IS TAKEN BEFORE THE TICKS GO.** Once they are gone nothing can say which
-//     pages carried one -- the notification carries a page set, and there would be no set left to
-//     build it from. (Load's phase 3 carries the union of old and new ticks for the same reason.)
+//   The flyout item "Clear Checks in This Document": take ONE document's ticks off, as a single
+//   undoable step.
+//   ★**THE PAGE SET IS STILL TAKEN FIRST**, though for a different reason than it used to be: the
+//     write has to name the pages it clears, and once the ticks are gone nothing can say which
+//     pages carried one. (Refreshing the screen is no longer done here at all -- the observer
+//     works out what moved by comparing the store before with the store after.)
 //   @return how many ticks were dropped, for the status line.
 //========================================================================================
 int32 KCMPageCheckClearDoc(IDataBase* db)
@@ -223,10 +263,19 @@ int32 KCMPageCheckClearDoc(IDataBase* db)
 	if (cleared.empty())
 		return 0;							// nothing to do, and nothing to tell anyone about
 
-	sChecked.Replace(db, std::set<UID>());	// an empty set drops the document's entry outright
+	// ⚠The paws of each of those pages are carried along untouched: this item clears TICKS, and a
+	//   write says what the page carries afterwards.
+	std::vector<KCMPageMarks> wanted;
+	for (std::set<UID>::const_iterator it = cleared.begin(); it != cleared.end(); ++it)
+	{
+		KCMPageMarks m(*it, kFalse);
+		KCMPawStampsOnPage(db, *it, m.fPaws);
+		wanted.push_back(m);
+	}
 
-	KCMNotifyPages(kKCMPageFlagsChangedMessage, db, cleared);
-	KCMInvalidateDB(db);					// the layout view's ticks, which the notification does not cover
+	if (KCMMarksWrite(db, wanted, "Clear Checks") != kSuccess)
+		return 0;
+
 	return (int32)cleared.size();
 }
 
@@ -381,61 +430,10 @@ static bool16 KCMPageChecksFile(IDFile& outFile)
 	return FileUtils::GetAppRoamingDataFolder(&outFile, PMString(kKCMPageChecksFileName));
 }
 
-// Escape a UTF-8 string for a JSON string literal (backslash, quote, control characters). A UTF-8
-// continuation byte is never 0x5C or 0x22, so walking it byte by byte is safe.
-static void KCMJsonEscape(const std::string& in, std::string& out)
-{
-	out.clear();
-	out.reserve(in.size() + 8);
-	for (size_t i = 0; i < in.size(); ++i)
-	{
-		const char c = in[i];
-		switch (c)
-		{
-			case '\\': out += "\\\\"; break;
-			case '\"': out += "\\\""; break;
-			case '\n': out += "\\n";  break;
-			case '\r': out += "\\r";  break;
-			case '\t': out += "\\t";  break;
-			default:   out += c;      break;
-		}
-	}
-}
-
-// With text[pos] on an opening quote, unescape up to the closing quote into out and leave pos
-// just past it. kFalse when it does not start on a quote.
-static bool16 KCMJsonReadString(const std::string& text, size_t& pos, std::string& out)
-{
-	out.clear();
-	if (pos >= text.size() || text[pos] != '\"')
-		return kFalse;
-	++pos;	// step over the opening quote
-	while (pos < text.size())
-	{
-		const char c = text[pos++];
-		if (c == '\"')
-			return kTrue;	// the closing quote
-		if (c == '\\' && pos < text.size())
-		{
-			const char e = text[pos++];
-			switch (e)
-			{
-				case 'n':  out += '\n'; break;
-				case 'r':  out += '\r'; break;
-				case 't':  out += '\t'; break;
-				case '\\': out += '\\'; break;
-				case '\"': out += '\"'; break;
-				case '/':  out += '/';  break;
-				default:   out += e;    break;	// an escape we do not know is kept as it is
-			}
-		}
-		else
-		{
-			out += c;
-		}
-	}
-	return kFalse;	// no closing quote = broken
-}
+// The two JSON string helpers that used to stand here moved to KCMJsonText.h on 2026-09-07:
+// the cat paws inside a page script label now carry the reader's own words too, so the same
+// escaping had to serve two files. Two copies of an escape rule are two rules the day one is
+// fixed, and the failure is silent -- a document that saves and reads back as something else.
 
 // Read the whole file into a std::string. Missing or unopenable gives kFalse and an empty string.
 static bool16 KCMReadWholeFile(const IDFile& file, std::string& outText)
@@ -558,12 +556,38 @@ static bool16 KCMReadJsonInt(const std::string& text, size_t from, size_t to,
 	return kTrue;
 }
 
-// Read a "paws" array: [ {"page":12,"x":12340,"y":5670,"c":1}, ... ].
+// The '}' that closes the object opened at `ob`, or npos. STRING LITERALS ARE STEPPED OVER.
+//
+// ⚠★★**A plain find('}') was right until 2026-09-07 and is not right any more.** Every value in
+//   this file used to be a number, so the first '}' after the '{' was always the end of the object.
+//   Then paws gained "t" -- a word the READER typed -- and a reader who types "}" would have cut
+//   their own entry in half. The entry would then fail to parse and be dropped: their paw would
+//   vanish on the next Load, with nothing said. Skipping over strings is what makes the end of an
+//   object a fact about the JSON rather than a fact about the reader's vocabulary.
+static size_t KCMFindObjectEnd(const std::string& text, size_t ob, size_t limit)
+{
+	for (size_t p = ob + 1; p < text.size() && p < limit; ++p)
+	{
+		if (text[p] == '}')
+			return p;
+		if (text[p] != '\"')
+			continue;
+
+		// a string literal: run to its closing quote, honouring backslash escapes
+		++p;
+		while (p < text.size() && p < limit && text[p] != '\"')
+			p += (text[p] == '\\') ? 2 : 1;
+		if (p >= text.size() || p >= limit)
+			return std::string::npos;		// the string never closed: broken
+	}
+	return std::string::npos;
+}
+
+// Read a "paws" array: [ {"page":12,"x":12340,"y":5670,"c":4,"t":"here"}, ... ].
 // ★Lenient in the same way as everything else in this file: an entry that cannot be made sense of
 //   is skipped rather than failing the whole document, and a MISSING "paws" is simply no paws --
 //   which is exactly what a version 2 file is.
-// ★"c" is optional and defaults to pink, so a file written before the colours existed restores as
-//   what it was drawn in.
+// ★"c" is optional and "t" usually absent. A colour this build does not know reads as red.
 static void KCMParsePawArray(const std::string& text, size_t regionBegin, size_t regionEnd,
 	std::vector<KCMPawStamp>& out)
 {
@@ -585,24 +609,44 @@ static void KCMParsePawArray(const std::string& text, size_t regionBegin, size_t
 		const size_t ob = text.find('{', p);
 		if (ob == std::string::npos || ob >= rb)
 			break;
-		const size_t oe = text.find('}', ob + 1);
-		if (oe == std::string::npos || oe > rb)
+		const size_t oe = KCMFindObjectEnd(text, ob, rb);
+		if (oe == std::string::npos)
 			break;
 
-		int32 page = 0, xh = 0, yh = 0, colour = kKCMPawColourPink;
+		int32 page = 0, xh = 0, yh = 0, colour = 0;
 		if (KCMReadJsonInt(text, ob, oe, "\"page\"", page) && page > 0 &&
 			KCMReadJsonInt(text, ob, oe, "\"x\"", xh) &&
 			KCMReadJsonInt(text, ob, oe, "\"y\"", yh))
 		{
-			if (!KCMReadJsonInt(text, ob, oe, "\"c\"", colour) ||
-				colour < kKCMPawColourPink || colour > kKCMPawColourGreen)
+			// ⚠**Every value goes through KCMPawColourFromStored**, including one this build wrote:
+			//   it is the only place that knows the retired pink / cyan / green, and it answers red
+			//   for anything it does not recognise, so a number from a newer KCM still draws.
+			const int32 stored = KCMReadJsonInt(text, ob, oe, "\"c\"", colour)
+			                   ? colour : (int32)kKCMPawColourRed;
+
+			// The word beside the paw, if the file has one.
+			PMString word;
+			word.SetTranslatable(kFalse);
 			{
-				colour = kKCMPawColourPink;		// absent, or a value this build does not know
+				const std::string tk("\"t\"");
+				const size_t tp = KCMFindJsonKey(text, ob, tk);
+				if (tp != std::string::npos && tp < oe)
+				{
+					size_t q = text.find('\"', tp + tk.size());	// the value's opening quote
+					std::string utf8;
+					if (q != std::string::npos && q < oe && KCMJsonReadString(text, q, utf8)
+						&& !utf8.empty())
+					{
+						word.SetUTF8String(utf8);
+					}
+				}
 			}
+
 			out.push_back(KCMPawStamp(UID((uint32)page),
 			                          PMReal(xh) / PMReal(100.0),
 			                          PMReal(yh) / PMReal(100.0),
-			                          colour));
+			                          KCMPawColourFromStored(stored),
+			                          word));
 		}
 		p = oe + 1;
 	}
@@ -717,8 +761,11 @@ static void KCMAppendUintList(std::string& json, const std::set<uint32>& s)
 //    runs in the host's locale, so this is not "one day on someone's machine" -- it is certain on
 //    a machine set that way. 1/100 pt is 3.5 micrometres, far finer than anything a hand-placed
 //    mark needs, so making it an integer removes the whole class of fault.
-//  ★"c" is the colour (a KCMPawColour: 0 pink / 1 cyan / 2 green). Absent in a file written before
-//    colours existed, and 0 is pink -- which is what those stamps were drawn in.
+//  ★"c" is the colour (a KCMPawColour). ⚠**The numbers 0, 1 and 2 in an older file are the retired
+//    pink, cyan and green**; KCMPawColourFromStored turns them into the two colours this build has,
+//    and only the reader knows they ever existed.
+//  ★"t" is the word an Alt press put beside the paw (2026-09-07). Written only when there is one,
+//    and escaped -- it is text the reader chose, which is exactly the text that holds a quote.
 static void KCMAppendPawList(std::string& json, const std::vector<KCMPawStamp>& v)
 {
 	for (size_t i = 0; i < v.size(); ++i)
@@ -727,12 +774,21 @@ static void KCMAppendPawList(std::string& json, const std::vector<KCMPawStamp>& 
 			json += ", ";
 		char buf[96];
 		// ⚠%d only: the locale can reach sprintf through the decimal point, and there is none here.
-		std::snprintf(buf, sizeof(buf), "{\"page\":%lu,\"x\":%d,\"y\":%d,\"c\":%d}",
+		std::snprintf(buf, sizeof(buf), "{\"page\":%lu,\"x\":%d,\"y\":%d,\"c\":%d",
 		              (unsigned long)v[i].fPageUID.Get(),
 		              (int)::ToInt32(v[i].fX * PMReal(100.0)),
 		              (int)::ToInt32(v[i].fY * PMReal(100.0)),
 		              (int)v[i].fColour);
 		json += buf;
+		if (!v[i].fText.IsEmpty())
+		{
+			std::string escaped;
+			KCMJsonEscape(v[i].fText.GetUTF8String(), escaped);
+			json += ",\"t\":\"";
+			json += escaped;
+			json += '\"';
+		}
+		json += '}';
 	}
 }
 
@@ -1043,6 +1099,9 @@ void KCMPageCheckLoadFromFile()
 		//   so the "may this be ticked" question above has nothing to say about it. What WOULD go
 		//   wrong is a stamp pointing at a page deleted since the save, which is what this drops.
 		// ⚠Both lists, ordinary pages and masters, for the reason the ticks read both.
+		// ★Declared out here because the write below needs it: the paws and the ticks go into the
+		//   document together, as ONE step.
+		std::vector<KCMPawStamp> livePaws;
 		{
 			std::set<uint32> livePages;
 			for (int L = 0; L < 2; ++L)
@@ -1053,46 +1112,57 @@ void KCMPageCheckLoadFromFile()
 			}
 
 			const std::vector<KCMPawStamp>& savedPaws = s->second.paws;
-			std::vector<KCMPawStamp> livePaws;
 			for (size_t k = 0; k < savedPaws.size(); ++k)
 			{
 				if (livePages.count((uint32)savedPaws[k].fPageUID.Get()) > 0)
 					livePaws.push_back(savedPaws[k]);
 			}
-			// Replace, so that loading restores the saved state rather than adding to what is
-			// there. An empty list clears the document's paws, which is the saved state too.
-			KCMPawStampReplaceAll(db, livePaws);
 			pawsRestored += (int32)livePaws.size();
 		}
 
-		// Refresh the thumbnails of the affected pages -- the old ticks together with the new ones
-		// -- so that both the ticks gained and the ticks lost show. CollectInto does not clear
-		// its out parameter, so adding the old ticks to newSet gives exactly that union.
-		std::set<UID> affected = newSet;
-		sChecked.CollectInto(db, affected);
+		// ★★**THE RESTORE IS A WRITE TO THE DOCUMENT** (2026-09-07), no longer a poke at the
+		//   session store. What Load means is unchanged -- it still REPLACES rather than merges --
+		//   but the replacing now happens where the marks actually live, which is what lets one
+		//   Ctrl+Z put back everything a Load overwrote.
+		// ⚠**EVERY page is offered, not only the ones that gain something.** A page that carried a
+		//   tick and is absent from the saved set has to be written too, to lose its label; and a
+		//   page that had nothing and gains nothing is skipped inside KCMMarksWriteOnePage, so
+		//   offering it costs one label read and leaves no undo step behind.
+		{
+			std::map<UID, std::vector<KCMPawStamp> > pawsByPage;
+			for (size_t k = 0; k < livePaws.size(); ++k)
+				pawsByPage[livePaws[k].fPageUID].push_back(livePaws[k]);
 
-		// Replace this document's ticks with the restored set (an empty one drops the entry).
-		sChecked.Replace(db, newSet);
+			std::vector<KCMPageMarks> wanted;
+			for (int L = 0; L < 2; ++L)
+			{
+				const std::vector<UID>& flat = *lists[L];
+				for (size_t k = 0; k < flat.size(); ++k)
+				{
+					KCMPageMarks m(flat[k], newSet.count(flat[k]) > 0 ? kTrue : kFalse);
+					std::map<UID, std::vector<KCMPawStamp> >::const_iterator p =
+						pawsByPage.find(flat[k]);
+					if (p != pawsByPage.end())
+						m.fPaws = p->second;
+					wanted.push_back(m);
+				}
+			}
+			// One command for the ticks AND the paws, so Load is one step and not two.
+			// ⚠**Say so when it fails**, and stop: the counts below would otherwise report a
+			//   restore that the document does not carry, and the sequence has already rolled back.
+			if (KCMMarksWrite(db, wanted, "Load Marks") != kSuccess)
+			{
+				KCMSayStatus("Load: could not write the marks into the document",
+				             kTrue /*forceRedrawNow*/);
+				return;
+			}
+		}
 		checksRestored += (int32)newSet.size();
 
-		if (!affected.empty())
-		{
-			// What travels is the union, not just the new ticks: **a tick that came off is in
-			//   none of the new sets**, so it cannot be worked out from the current state
-			//   afterwards. That is the whole reason the page set is carried on the notification.
-			KCMNotifyPages(kKCMPageFlagsChangedMessage, db, affected);
-		}
-
-		// The layout view's tick needs invalidating again. Phase 2's re-comparison
-		// (KCMDoMarkChangesDoc) invalidated both documents, but against the ticks as they
-		// were **before** the restore; without a second invalidation here the restored and
-		// removed ticks do not reach the layout view -- the same reasoning as in the toggle.
-		// ⚠★UNCONDITIONAL since the paws joined this file (2026-09-04). It used to sit inside the
-		//   test above, which asks about TICKS -- and a document whose ticks did not move can
-		//   still have gained or lost paws, so the restored paws would have waited for some other
-		//   reason to redraw. (The notification above stays conditional: it carries a page set,
-		//   and there is no page set to carry when no tick moved.)
-		KCMInvalidateDB(db);
+		// Nothing is notified or invalidated here any more. The marks observer sees the write and
+		// refreshes exactly the pages whose picture moved -- including the ones that LOST a tick,
+		// which it can name because it compares the store before with the store after. That used
+		// to be this function's job and was done here with a hand-built union of old and new.
 	}
 
 	// The outcome, abbreviated to fit the narrow status line.
