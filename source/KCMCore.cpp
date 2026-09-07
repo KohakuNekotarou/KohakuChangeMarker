@@ -608,6 +608,19 @@ ErrorCode KCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMString
 	// Rasterising every page can trigger the lazy recompose of a story that was never composed --
 	// "asking composes it, and composing dirties the document". KCM's design rests on never
 	// modifying the model and never dirtying it, so if it was clean going in it is clean coming out.
+	// ⚠★★★**WHAT THESE TWO DO HAS NOT BEEN MEASURED FROM OUTSIDE, AND ONE ATTEMPT FAILED**
+	//   (2026-09-07, at the author's request through the spec map's CMP-29). They were commented
+	//   out, the plug-in rebuilt, and two documents saved to disk (both `modified=false`) compared:
+	//   both came back `modified=true`. **That looked like proof and was not.** Put back, the same
+	//   run gave the same answer -- and then, with **no comparison run at all**, the two documents
+	//   reached `modified=true` on their own within a couple of calls.
+	//   ⇒ **What moved was the instrument, not the guard**: a document opened by a script is marked
+	//     as modified by itself. The spec map (RUN-24) had already recorded that this route cannot
+	//     measure it, which is exactly the note that was not heeded.
+	//   ★**Measuring it needs a document opened BY HAND**, with only KCM's operations on it, and
+	//     the question asked when it is closed ("save?").
+	//   ⚠**Do not remove them on the strength of a measurement that was never made.** They stand on
+	//     the SDK's contract and on KCM's design rule of never modifying the model.
 	IDataBase::SaveRestoreModifiedState targetDirtyGuard(targetDB);
 	IDataBase::SaveRestoreModifiedState sourceDirtyGuard(sourceDB);
 
