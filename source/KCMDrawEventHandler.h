@@ -173,12 +173,21 @@ public:
 	// (sEntries) is not touched; only the display is. Default kFalse (hidden): it goes kTrue while
 	// the tool's left button is held and back to kFalse on release, and nothing is drawn while it
 	// is kFalse. The peek at the older version (sShowOriginal) is not affected by it -- that is
-	// driven separately, by a double click.
+	// driven separately, by **Shift + left (opaque) and Shift+Alt + left (50%)**, held rather than
+	// clicked, and it works from either window (KCMPeekGesture.cpp).
+	// ⚠**This line used to say "by a double click"**, and there is no double click anywhere in the
+	//   peek (measured: zero occurrences). Corrected 2026-09-07 after the author caught the same
+	//   claim in the spec map (MK-13).
 	static bool16 sMarksVisible;
 	// The EFFECTIVE opacity applied to the on-screen marks (the rings). Default 1.0.
 	//   - while the tool's left button is held = SelectedMarkOpacity() (the panel's 25%/75%)
-	//   - while shown permanently             = KCMBaseScreenOpacity() (the selected opacity when
-	//                                            printing is on, 1.0 when it is off)
+	//   - while shown permanently             = KCMBaseScreenOpacity() ⇒ **the selected 25%/75%
+	//       whenever EITHER "Print comparison marks" OR "Always Show Marks on Target" is on**, and
+	//       1.0 only when both are off.
+	//       ⚠**This line used to name printing alone**, which reads as "always show = opaque" and is
+	//         wrong: that is the very toggle that puts the marks up permanently. Corrected
+	//         2026-09-07 after the author caught it in the spec map (MK-10). The one function that
+	//         decides is KCMBaseScreenOpacity in KCMPeek.cpp -- ask it rather than restating it.
 	static PMReal sMarkScreenOpacity;
 	// Whether the change marks (rings) also go into print and PDF (KCMDoSetPrintMarks).
 	// Default kFalse (screen only). While it is on they are also shown on screen at all times,
