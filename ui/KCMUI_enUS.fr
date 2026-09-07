@@ -62,8 +62,6 @@ resource StringTable (kSDKDefStringsResourceID + index_enUS)
                 kKCMClearMarksMenuKey,			"Clear Marks from Document",
                 kKCMClearChecksMenuKey,			"Clear Checks in This Document",
                 kKCMClearPawsMenuKey,			"Clear Cat Paws in This Document",
-                kKCMFindOversetMenuKey,			"Find Overset",
-                kKCMRefreshOversetMenuKey,		"Refresh Overset",
                 kKCMRefreshCompareMenuKey,		"Refresh Comparison",
                 kKCMExportChangedPagesMenuKey,	"Export Changed Pages...",
                 kKCMCompareBooksMenuKey,			"Compare Books",

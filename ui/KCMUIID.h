@@ -350,9 +350,13 @@ DECLARE_PMID(kActionIDSpace, kKCMPageCheckToggleActionID, kKCMUIPrefix + 24)	// 
 DECLARE_PMID(kActionIDSpace, kKCMPageMapSepActionID, kKCMUIPrefix + 28)	// Pages panel page context menu (RtMenuPagesPanel): the separator above the KCM items (Register / Check). A MenuDef path ending in ":-" - no ActionDef and no DoAction, only a unique ID. It sets the KCM items apart from InDesign's own
 DECLARE_PMID(kActionIDSpace, kKCMToolActionID, kKCMUIPrefix + 29)	// the ActionID for the toolbox tool-select shortcut (referenced by the ToolDef; no ActionDef needed - the toolbox framework provides the action)
 DECLARE_PMID(kActionIDSpace, kKCMPageRefreshCompareActionID, kKCMUIPrefix + 30)	// "Refresh Page Comparison" on the Pages panel page context menu (RtMenuPagesPanel): recompares the selected pages and updates their marks and thumbnails. Enabled only while Started, ★**in the Pixel mode**, and with the Target document in front - otherwise the item disappears (kCustomEnabling). ★It is absent in the Story mode because that mode rasterises no page, so pressing it would change nothing on screen; a Story refresh is on the row context menu instead (kKCMStoryRowRefreshActionID). KCMRefreshComparisonForSelectedPages in KCMPeek.cpp
-DECLARE_PMID(kActionIDSpace, kKCMPopupFindOversetActionID, kKCMUIPrefix + 31)	// "Find Overset" check toggle on the panel flyout (ON = scan the active document and put a large cross on every page with overset text. Independent of the comparison. kCustomEnabling. KCMActionComponent.cpp / KCMOversetScan.cpp)
-DECLARE_PMID(kActionIDSpace, kKCMPopupRefreshOversetActionID, kKCMUIPrefix + 32)	// "Refresh Overset" on the panel flyout (a plain command). Enabled only while Find Overset is ON (greyed otherwise) = rescan the active document and redo the crosses. kCustomEnabling
-DECLARE_PMID(kActionIDSpace, kKCMPopupOversetSepActionID, kKCMUIPrefix + 33)	// flyout: the separator above the Find Overset group (a MenuDef path ending in ":-"; no ActionDef and no DoAction, only a unique ID)
+// kKCMPopupFindOversetActionID (kKCMUIPrefix + 31), kKCMPopupRefreshOversetActionID (+ 32) and
+//   kKCMPopupOversetSepActionID (+ 33) were the Find Overset group. All three went on
+//   2026-09-08 (the author's call, recorded in the spec map's sixth chapter): InDesign's own
+//   Preflight panel finds overset text, keeps itself up to date as the document is edited, and
+//   JUMPS TO THE PLACE -- which this never did, stopping at "which page".
+//   ⚠**The three slots stay reserved and are never reused** (a shortcut a reader assigned is
+//   stored by number, so reusing one would fire something else).
 DECLARE_PMID(kActionIDSpace, kKCMPopupExportChangedPagesActionID, kKCMUIPrefix + 34)	// "Export Changed Pages..." on the panel flyout (a plain command). Enabled only during a comparison (sDB != nil) = write the list of changed pages as TSV (new / old / kind). KCMChangedPagesTSV.cpp
 // (+35 = kKCMPopupHudActionID, "Show HUD", went out with the feature itself.
 //  ★**That number is not reused** ＝ a shortcut assignment is stored in .indk by the NUMERIC
@@ -653,9 +657,7 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowStateWidgetID, kKCMUIPrefix + 49)	// = t
 #define kKCMClearMarksMenuKey		kKCMStringPrefix "kKCMClearMarksMenuKey"	// the menu name of "Clear Marks from Document"
 #define kKCMClearChecksMenuKey		kKCMStringPrefix "kKCMClearChecksMenuKey"	// the menu name of "Clear Checks in This Document" on the panel flyout
 #define kKCMClearPawsMenuKey		kKCMStringPrefix "kKCMClearPawsMenuKey"	// the menu name of "Clear Cat Paws in This Document" on the panel flyout
-#define kKCMFindOversetMenuKey	kKCMStringPrefix "kKCMFindOversetMenuKey"	// the menu name of the "Find Overset" toggle on the panel flyout
 #define kKCMRefreshCompareMenuKey	kKCMStringPrefix "kKCMRefreshCompareMenuKey"	// the menu name of "Refresh Comparison" on the panel flyout (directly under Start). ⚠Not kKCMPageRefreshCompareMenuKey, which is the Pages panel's partial one
-#define kKCMRefreshOversetMenuKey	kKCMStringPrefix "kKCMRefreshOversetMenuKey"	// the menu name of "Refresh Overset" on the panel flyout
 #define kKCMExportChangedPagesMenuKey	kKCMStringPrefix "kKCMExportChangedPagesMenuKey"	// the menu name of "Export Changed Pages..." on the panel flyout
 #define kKCMCompareBooksMenuKey	kKCMStringPrefix "kKCMCompareBooksMenuKey"	// the menu name of "Compare Books" on the panel flyout (compare two books chapter by chapter)
 #define kKCMSetTargetMenuKey		kKCMStringPrefix "kKCMSetTargetMenuKey"	// ★the menu name of "Set as Target" on the panel flyout (the active document becomes the comparison's Target)
@@ -1026,11 +1028,8 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowStateWidgetID, kKCMUIPrefix + 49)	// = t
 #define kKCMTranslucentPanelMenuItemPosition	9.38	// check toggle "Translucent Panel", the last of the display toggles (★Windows only; the panel itself while floating)
 #define kKCMTranslucentBookDialogMenuItemPosition	9.39	// check toggle "Translucent Dialog" (★Windows only; the book comparison dialog). The last of the three Translucent items
 // -- the Overset group --
-#define kKCMOversetSepMenuItemPosition	9.40	// the separator above the Find Overset group (a path ending in ":-")
-#define kKCMFindOversetMenuItemPosition	9.42	// check toggle "Find Overset" (crosses on the overset pages of the active document)
-#define kKCMRefreshOversetMenuItemPosition	9.44	// plain command "Refresh Overset" (live only while the toggle is ON = rescan)
 // -- the plain commands --
-#define kKCMSep3MenuItemPosition			9.50	// the separator below Refresh Overset (a path ending in ":-"); the plain commands go below it
+#define kKCMSep3MenuItemPosition			9.50	// the separator that used to sit below Refresh Overset (removed 2026-09-08) (a path ending in ":-"); the plain commands go below it
 #define kKCMAlignViewsMenuItemPosition	9.52	// plain command "Align Other Views to Active", first of the group
 #define kKCMHideUnchangedMenuItemPosition	9.54	// check toggle "Hide Unchanged Spreads". ⚠It once shared 9.54 with Compare Books, and **two items at one value leave the order to the MenuDef registration order alone**; Compare Books has since moved up under Start
 #define kKCMSavePanelStateMenuItemPosition	9.56	// plain command "Save Panel Settings"

@@ -531,13 +531,9 @@ static void KCMFlushDeferredCloseUi()
 	if (compare->IsArmed())
 		return;
 
-	// If Find Overset is on by itself (and its scanned document is still alive), keep the map and
-	// only repaint it; otherwise remove it. The same decision the close branch makes when it cleans
-	// up immediately.
-	if (Utils<IKCMMarkData>()->GetOversetOn())
-		KCMScrollMapInvalidateAll();
-	else
-		KCMScrollMapDetachAll();
+	// (Find Overset could keep the scrollbar map alive on its own. That feature went on
+	//  2026-09-08, so the map now belongs to the comparison alone.)
+	KCMScrollMapDetachAll();
 
 	KCMSetStatus("marks cleared");	// the same wording the Stop button (DoClear) uses
 

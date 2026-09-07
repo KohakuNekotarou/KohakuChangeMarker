@@ -323,14 +323,8 @@ void KCMModelChangeObserver::Update(const ClassID& theChange, ISubject* /*theSub
 
 		if (comparisonEnded)
 		{
-			// The strip: ★if Find Overset is on by itself (and its scanned document is still alive),
-			//   **keep it** and only repaint the red bands. If the scanned document is the one that
-			//   closed, the model has already done DropOverset ＝ sOversetOn is false, and it is removed
-			//   as usual.
-			if (Utils<IKCMMarkData>()->GetOversetOn())
-				KCMScrollMapInvalidateAll();
-			else
-				KCMScrollMapDetachAll();
+			// (Find Overset could keep the strip alive on its own; that feature went 2026-09-08.)
+			KCMScrollMapDetachAll();
 
 			// ★The thumbnails are **not rebuilt here but deferred to the next idle**. When the Target is
 			//   the one that closed and the survivor is about to be activated, the regeneration does not

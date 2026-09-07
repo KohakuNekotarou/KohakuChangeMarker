@@ -98,8 +98,6 @@ public:
 private:
 	void DoAbout();
 	void DoUsage();
-	void DoFindOversetToggle();		// flyout "Find Overset": scan the active document and show or clear the crosses (a toggle)
-	void DoRefreshOverset();		// flyout "Refresh Overset": only while ON = rescan the active document
 };
 
 /* Binds the C++ implementation class onto its ImplementationID. */
@@ -393,24 +391,12 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 			Utils<IKCMCompareFacade>()->HideUnchangedToggle();
 			break;
 
-		// Flyout "Find Overset" toggle: scan the active document and put a cross on every page with
-		// overset text; OFF clears them.
-		case kKCMPopupFindOversetActionID:
-			this->DoFindOversetToggle();
-			break;
-
 		// Flyout "Refresh Comparison", directly under Start: compare the same two documents again,
 		// in whichever mode is current ＝ what the reader wants after editing one of them. It was
 		// Stop-then-Start before this existed. ★The model runs the START procedure with the armed
 		// pair, so a refresh and a start cannot come to mean different things (KCMComparisonRun.h).
 		case kKCMPopupRefreshCompareActionID:
 			Utils<IKCMCompareFacade>()->RefreshComparison();
-			break;
-
-		// Flyout "Refresh Overset": live only while Find Overset is ON ＝ rescan the active document
-		// and put them up again.
-		case kKCMPopupRefreshOversetActionID:
-			this->DoRefreshOverset();
 			break;
 
 		// The "Show Original Page Numbers" toggle: flip the flag and repaint, nothing more. The badge’s
@@ -486,9 +472,6 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 				InterfacePtr<IKCMMarkData> marks(Utils<IKCMMarkData>().QueryUtilInterface());
 				if (marks->GetMarkedTargetDB() != nil) KCMScrollMapAttach(marks->GetMarkedTargetDB());
 				if (marks->GetMarkedSourceDB() != nil) KCMScrollMapAttach(marks->GetMarkedSourceDB());
-				// with Find Overset on by itself, bring the map back to its scanned document’s window too
-				if (marks->GetOversetOn() && marks->GetOversetDB() != nil)
-					KCMScrollMapAttach(marks->GetOversetDB());
 				KCMScrollMapInvalidateAll();
 			}
 			else
@@ -1119,21 +1102,8 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 			// live only while Started (armed) and with the Target or Source in front; greyed otherwise.
 			listToUpdate->SetNthActionState(i, Utils<IKCMCompareFacade>()->RefreshComparisonAvailable() ? kEnabledAction : kDisabled_Unselected);
 		}
-		else if (action == kKCMPopupFindOversetActionID)
-		{
-			// ★Always live while ON (it has to be possible to switch it back off and clear the crosses).
-			//   While OFF it is greyed when there is no document to scan (user’s instruction). What counts
-			//   as the target is decided by the same GetOversetScanTargetDB() the executing side uses ＝
-			//   the Target while comparing, the active document otherwise.
-			//   (It used to be always live, so pressing it with no document open said nothing but "no active
-			//    document".)
-			const bool16 on = Utils<IKCMMarkData>()->GetOversetOn();
-			int16 actionState = (on || Utils<IKCMCompareFacade>()->GetOversetScanTargetDB() != nil) ? kEnabledAction
-			                                                              : kDisabled_Unselected;
-			if (on)
-				actionState |= kSelectedAction;	// a check while it is ON
-			listToUpdate->SetNthActionState(i, actionState);
-		}
+		// (The Find Overset and Refresh Overset branches stood here and went with the feature on
+		//  2026-09-08.)
 		else if (action == kKCMPopupRefreshCompareActionID)
 		{
 			// Live only while a comparison is armed AND both its documents are still open ＝ exactly
@@ -1145,11 +1115,6 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 			listToUpdate->SetNthActionState(i,
 				(Utils<IKCMCompareFacade>()->IsArmed() && Utils<IKCMCompareFacade>()->ArmedDocsAlive())
 					? kEnabledAction : kDisabled_Unselected);
-		}
-		else if (action == kKCMPopupRefreshOversetActionID)
-		{
-			// Live only while Find Overset is ON (= there is something to rescan); greyed otherwise.
-			listToUpdate->SetNthActionState(i, Utils<IKCMMarkData>()->GetOversetOn() ? kEnabledAction : kDisabled_Unselected);
 		}
 		else if (action == kKCMPopupExportChangedPagesActionID)
 		{
@@ -1310,101 +1275,9 @@ void KCMActionComponent::DoUsage()
 
 
 //========================================================================================
-// Find Overset (flyout): scan one active document and put a cross on -- or clear it from -- every
-// page with overset text.
-// Entirely independent of the comparison. The state belongs to the model side and is read and
-// written from here through IKCMMarkData / IKCMCompareFacade.
-//========================================================================================
-
-// (Resolving the active document is gathered into KCMActiveDocDB (KCMCore); the duplicate here
-//  was removed.)
-
-/* DoFindOversetToggle - the "Find Overset" flyout toggle.
-   OFF -> ON: scan the target document (the Target while comparing, the active document
-   otherwise) and apply the overset it finds.
-   ON -> OFF: empty the set, turn the toggle off, and repaint the scanned document to clear the
-   marks. */
-void KCMActionComponent::DoFindOversetToggle()
-{
-	// ON -> OFF: clear the crosses.
-	InterfacePtr<IKCMMarkData> marks(Utils<IKCMMarkData>().QueryUtilInterface());
-	if (marks->GetOversetOn())
-	{
-		IDataBase* prevDB = marks->GetOversetDB();
-		// Note the page set before it goes, so the crosses can be cleared from the Pages panel
-		// thumbnails.
-		std::vector<UID> prevPages;
-		marks->GetOversetPageUIDs(prevPages);
-		Utils<IKCMCompareFacade>()->ClearOverset();
-		KCMRefreshThumbnailsForPages(prevDB, prevPages);	// rebuild the thumbnails so the crosses go
-		// The scrollbar map: with nothing being compared, take it out of every window; while comparing,
-		// keep it and repaint the red bands alone.
-		if (Utils<IKCMCompareFacade>()->IsArmed())
-			KCMScrollMapInvalidateAll();
-		else
-			KCMScrollMapDetachAll();
-		Utils<IKCMCompareFacade>()->InvalidateDB(prevDB);	// nil-safe, as the other calls are
-		KCMRefreshNavPosition();	// take the overset places out of Prev/Next (leaving the comparison alone, or nothing at all)
-		KCMSetStatus("Find Overset: off.");
-		return;
-	}
-
-	// OFF -> ON: scan the target document (the Target while comparing, the active one otherwise)
-	// and apply the result.
-	IDataBase* db = Utils<IKCMCompareFacade>()->GetOversetScanTargetDB();
-	if (db == nil)
-	{
-		KCMSetStatus("Find Overset: no active document.");
-		return;
-	}
-	Utils<IKCMCompareFacade>()->ApplyOversetForDoc(db);
-
-	// ★Ask whether the toggle actually went up before reporting. ApplyOversetForDoc **does nothing**
-	//   when the db it is handed is not in the document list (the last line of defence against
-	//   dereferencing a closed document), and then the toggle is still OFF. This used to report "on"
-	//   unconditionally, so it could say "on" **while it was OFF and the flyout check was clear**.
-	//   ⚠It is a rare path ＝ the db GetOversetScanTargetDB() answered with died immediately
-	//     afterwards (a gap in the close sweep). Rare or not, it is the shape where the display and
-	//     the truth disagree, so the state is read back and reported.
-	if (!Utils<IKCMMarkData>()->GetOversetOn())
-	{
-		KCMSetStatus("Find Overset: document is gone.");
-		return;
-	}
-
-	PMString msg("Find Overset: on (");
-	msg.SetTranslatable(kFalse);
-	msg.AppendNumber(Utils<IKCMMarkData>()->GetOversetPageCount());
-	msg.Append(" page(s)).");
-	KCMSetStatus(msg);
-}
-
-/* DoRefreshOverset - the "Refresh Overset" flyout item. Live only while Find Overset is ON (it is
-   greyed by UpdateActionStates otherwise). It rescans the active document and puts the set up
-   again; if the document has changed, the previous one’s crosses are cleared too. */
-void KCMActionComponent::DoRefreshOverset()
-{
-	if (!Utils<IKCMMarkData>()->GetOversetOn())
-		return;	// inactive while OFF (a safety net; normally the menu is greyed and this is not reached)
-
-	IDataBase* db = Utils<IKCMCompareFacade>()->GetOversetScanTargetDB();
-	if (db == nil)
-	{
-		KCMSetStatus("Refresh Overset: no active document.");
-		return;
-	}
-	Utils<IKCMCompareFacade>()->ApplyOversetForDoc(db);	// rescan and apply (with another document, the previous one’s marks are cleared as well) - gathered in the shared call
-
-	// ★The read-back the ON route above does is not needed here. Even if Apply returns early because
-	//   the db has died, **the toggle is already ON**, so it cannot say "on" while it is OFF; the
-	//   previous count is simply reported again, which is indistinguishable from "rescanned and
-	//   nothing changed". ∴ no statement is added.
-	PMString msg("Refresh Overset: ");
-	msg.SetTranslatable(kFalse);
-	msg.AppendNumber(Utils<IKCMMarkData>()->GetOversetPageCount());
-	msg.Append(" page(s).");
-	KCMSetStatus(msg);
-}
+// (Find Overset lived here: DoFindOversetToggle and DoRefreshOverset, about 95 lines. The
+//  feature went on 2026-09-08 at the author's request -- InDesign's own Preflight panel finds
+//  overset text, keeps up with edits, and jumps to the place, which this never did.)
 
 // KCMOpenAboutURL (declared in KCMUIShared.h) - called when the panel illustration is clicked.
 // It opens the distribution URL (kKCMRepoURL) in the default browser. ⚠**About does not carry

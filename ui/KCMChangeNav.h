@@ -6,17 +6,15 @@
 //  What is walked (KCMBuildStops in KCMChangeNav.cpp is the statement of record):
 //    1. pages with a change on them (a red/blue ring) = those with a key in sEntries. Only while
 //       a comparison is running IN THE PIXEL MODE.
-//    2. overset "+" places = Find Overset's sOversetLocs. These can be walked on their own,
-//       without a comparison; one place is one stop.
+//    (2. was overset "+" places, walkable without a comparison. Find Overset went 2026-09-08.)
 //    3. THE LEAVES OF THE STORY EDITS LIST -- one edit, or a row with no children at all. Rows
 //       that DO have children are not stops (the rule and the reason are in KCMStoryNav.h). Only
 //       while a comparison is running IN THE STORY MODE.
 //  Added/Removed (registered, a green "/") and Overflow (a red "/") are NOT walked, at the user's
 //  request.
 //  1 and 3 are mutually exclusive, decided by the mode (the Story mode rasterises no page at all,
-//  so 1 is empty to begin with). 2 FOLLOWS EITHER OF THEM whenever Find Overset is on.
-//  A changed page is scrolled to its centre without touching the zoom; an overset stop scrolls to
-//  its "+" point. Neither selects anything.
+//  so 1 is empty to begin with) -- so the walk is now one kind of stop or the other, never both.
+//  A changed page is scrolled to its centre without touching the zoom. It selects nothing.
 //  Case 3 travels differently: it calls THE SAME IMPLEMENTATION A CLICK ON THE LIST ROW DOES
 //  (jump, a brief mark, the message line -- KCMStoryNav.cpp into KCMStoryJump.cpp).
 //
@@ -58,19 +56,18 @@ void KCMResetNav();
 // the walk is, and send it to the panel. As with KESCL's UpdateNavWidgets, this is called from
 // every path that can change the set, so the readout follows without Prev or Next being pressed.
 // The callers are:
-//   - KCMModelChangeObserver ... a comparison rebuilt or cleared, an overset scan, and the Story
-//     Edits list being rebuilt (a Refresh Story Comparison changes a row's child count, which
-//     changes N)
-//   - KCMActionComponent     ... Find Overset going off (its places leave the walk)
+//   - KCMModelChangeObserver ... a comparison rebuilt or cleared, and the Story Edits list being
+//     rebuilt (a Refresh Story Comparison changes a row's child count, which changes N)
 //   - KCMPanelObserver       ... the panel's contents being rebuilt (KCMApplyPanelInfo)
 //   - KCMChangeNav.cpp itself ... every exit of the walk, and KCMNoteStoryStop
 // What is shown:
-//   - nothing to walk in any document -> empty (no comparison AND Find Overset off)
+//   - nothing to walk -> empty (there is no comparison)
 //   - a document but no stops         -> "/"
 //   - N stops, none visited yet       -> "1/N" (shown as soon as a comparison starts)
 //   - standing on the k'th            -> "k/N"
-// Note that WITHOUT A COMPARISON BUT WITH FIND OVERSET ON, "1/N" does appear -- what is walked is
-// then the overset places.
+// (There used to be a fourth case: with no comparison but Find Overset on, "1/N" appeared and the
+//  overset places were what got walked. Find Overset went on 2026-09-08, so no comparison now
+//  means nothing to walk.)
 void KCMRefreshNavPosition();
 
 // Record that the walk now stands on a Story Edits row, so that k/N reflects it. (The user asked

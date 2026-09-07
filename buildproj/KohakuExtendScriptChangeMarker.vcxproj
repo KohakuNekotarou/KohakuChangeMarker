@@ -221,7 +221,6 @@
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMColorSampler.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMCore.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMDrawEventHandler.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMOversetScan.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMPageMap.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMPageCheck.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMPawStamp.cpp" />
@@ -243,7 +242,6 @@
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMPeek.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMRingAdornment.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMHideUnchanged.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMOversetApply.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMComparisonRun.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMModelNotify.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMFacades.cpp" />
@@ -271,8 +269,6 @@
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMConstants.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMCore.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMDrawEventHandler.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMOversetLoc.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMOversetScan.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMID.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMBoundaryID.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMLoc.h" />
@@ -301,7 +297,6 @@
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPeek.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMRingAdornment.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMHideUnchanged.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMOversetApply.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMComparisonRun.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMNotifyPayload.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMModelNotify.h" />

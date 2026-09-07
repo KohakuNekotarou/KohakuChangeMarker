@@ -40,7 +40,6 @@
 #include "KCMPeek.h"				// armed docs alive / peek / RefreshSelectedPages / base opacity
 #include "KCMColorSampler.h"		// the Alt+left CMYK sample and its drag-time pairing cache
 #include "KCMModelNotify.h"		// GetSessionStatus
-#include "KCMOversetApply.h"		// ApplyOversetForDoc / OversetScanTargetDB
 #include "KCMHideUnchanged.h"		// the Hide Unchanged toggle and its state
 #include "KCMDrawEventHandler.h"	// the engine's shared state, which these two publish
 #include "KCMPageMap.h"			// registered pages, the page pairing, and the Register toggle
@@ -157,9 +156,8 @@ public:
 													{ KCMSampleCmykBeginDrag(hoverDB, otherDB, hoverIsTarget); }
 	virtual void		EndColorDrag()			{ KCMSampleCmykEndDrag(); }
 
-	virtual void		ApplyOversetForDoc(IDataBase* db)	{ KCMApplyOversetForDoc(db); }
-	virtual IDataBase*	GetOversetScanTargetDB()	{ return KCMOversetScanTargetDB(); }
-	virtual void		ClearOverset()			{ KCMDrawEventHandler::DropOverset(); }
+	// (ApplyOversetForDoc / GetOversetScanTargetDB / ClearOverset went with Find Overset,
+	//  2026-09-08.)
 
 	// ---- display toggles and press-time display state ---------------------------------------
 	// These reach the engine's static members rather than a free function, because there is no
@@ -286,27 +284,7 @@ public:
 			? kTrue : kFalse;
 	}
 
-	virtual bool16		GetOversetOn()			{ return KCMDrawEventHandler::sOversetOn; }
-	virtual IDataBase*	GetOversetDB()			{ return KCMDrawEventHandler::sOversetDB; }
-
-	virtual bool16		IsOversetPage(UID pageUID)
-	{
-		return (KCMDrawEventHandler::sOversetPages.find(pageUID) !=
-				KCMDrawEventHandler::sOversetPages.end()) ? kTrue : kFalse;
-	}
-
-	virtual int32		GetOversetPageCount()	{ return (int32)KCMDrawEventHandler::sOversetPages.size(); }
-
-	virtual void		GetOversetPageUIDs(std::vector<UID>& out)
-	{
-		out.assign(KCMDrawEventHandler::sOversetPages.begin(),
-				   KCMDrawEventHandler::sOversetPages.end());
-	}
-
-	virtual void		GetOversetLocations(std::vector<KCMOversetLoc>& out)
-	{
-		out = KCMDrawEventHandler::sOversetLocs;
-	}
+	// (The six overset readers went with the feature, 2026-09-08.)
 
 	virtual void		GetRegisteredPages(IDataBase* db, std::set<UID>& out)
 	{

@@ -60,7 +60,6 @@
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMDrawEventHandler.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMOversetScan.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMPeek.cpp">
@@ -72,7 +71,6 @@
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMHideUnchanged.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMOversetApply.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMComparisonRun.cpp">
@@ -188,10 +186,8 @@
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source$newh">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMOversetLoc.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMOversetScan.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPeek.h">
@@ -203,7 +199,6 @@
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMHideUnchanged.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMOversetApply.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMComparisonRun.h">

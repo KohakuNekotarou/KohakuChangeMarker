@@ -106,10 +106,6 @@ IDataBase* KCMDrawEventHandler::sOrigDB = nil;
 bool16 KCMDrawEventHandler::sShowOriginal = kFalse;	// default hidden
 PMReal KCMDrawEventHandler::sOrigScale = 0.0;	// the zoom scale the pictures were rasterised at (0 = not set)
 PMReal KCMDrawEventHandler::sPeekOpacity = 1.0;	// default opaque (Shift peek). Shift+Alt peek sets 0.5
-bool16 KCMDrawEventHandler::sOversetOn = kFalse;	// the Find Overset toggle (default off)
-IDataBase* KCMDrawEventHandler::sOversetDB = nil;	// the document scanned (identity only)
-std::set<UID> KCMDrawEventHandler::sOversetPages;	// the page UIDs holding overset
-std::vector<KCMOversetLoc> KCMDrawEventHandler::sOversetLocs;	// where each overset "+" goes (Prev/Next's stops)
 
 // How far inside the page rectangle to clip, in points. Facing pages meet at the spine with no
 // gap, so clipping exactly at the page rectangle puts the outermost pixel of a frame or slash on
@@ -2073,11 +2069,7 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 	//   KCMPawStampHasAny answers kFalse for nil, so nothing else needs guarding.
 	const bool16 wantPaws = !isThumb && !oppHides && (!printing || sPrintMarks) &&
 		KCMPawStampHasAny(::GetDataBase(ded->changedBy));
-	// Find Overset's "+": completely independent of the comparison and the ticks. **It is never
-	// drawn on the canvas** -- only into the Pages panel's thumbnails (isThumb), as red with a white
-	// halo. A scan having run (sOversetOn) with a non-empty set makes it a candidate; whether this
-	// particular spread gets it is decided in the drawing block (db == sOversetDB).
-	const bool16 wantOversetThumb = isThumb && sOversetOn && sOversetDB != nil && !sOversetPages.empty();
+	// (Find Overset's "+" was decided here and drawn further down. The feature went on 2026-09-08.)
 	// The original-page-number badge: the toggle on, and the frames visible (printing on, or the
 	// tool's left button held) -- the same visibility rule wantMarks uses. In a printing context
 	// suppressForPrint leaves it alive only with sPrintMarks on, so it prints only when the marks
@@ -2090,7 +2082,7 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 	// registering itself now requires an armed comparison). So the green "/" is drawn only by the
 	// Target and Source loops below, both of which imply an armed comparison.
 
-	if (!wantMarks && !wantOrig && !wantOldNums && !wantSrcMarks && !wantChecks && !wantPaws && !wantOversetThumb)
+	if (!wantMarks && !wantOrig && !wantOldNums && !wantSrcMarks && !wantChecks && !wantPaws)
 		return kFalse;
 
 	GraphicsData* gd = ded->gd;
@@ -2164,7 +2156,7 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 	//   @warning "do nothing on a background thread" is right **because that function discards
 	//     state**. Stopping the DRAWING side on a background thread would defeat the whole point of
 	//     making the marks reach an exported PDF.
-	if (sDB != nil || sOrigDB != nil || sSrcDB != nil || sOversetDB != nil)
+	if (sDB != nil || sOrigDB != nil || sSrcDB != nil)
 	{
 		ISession* session = GetExecutionContextSession();	// can be nil during shutdown
 		InterfacePtr<IApplication> app(session != nil ? session->QueryApplication() : nil);
@@ -2172,8 +2164,7 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 		if (docList != nil &&
 		    ((sDB != nil && !KCMIsDbAlive(docList, sDB)) ||
 		     (sOrigDB != nil && !KCMIsDbAlive(docList, sOrigDB)) ||
-		     (sSrcDB != nil && !KCMIsDbAlive(docList, sSrcDB)) ||
-		     (sOversetDB != nil && !KCMIsDbAlive(docList, sOversetDB))))
+		     (sSrcDB != nil && !KCMIsDbAlive(docList, sSrcDB))))
 			KCMHandleDocsClosed();
 	}
 
@@ -2232,20 +2223,9 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 	//   canvas.** It is independent of the comparison and the ticks, so it appears while sOversetOn
 	//   even with nothing armed (an overset check has a result whether or not documents are being
 	//   compared).
-	if (wantOversetThumb && db == sOversetDB)
-	{
-		const int32 npx = spread->GetNumPages();
-		for (int32 i = 0; i < npx; ++i)
-		{
-			const UID puid = spread->GetNthPageUID(i);
-			if (sOversetPages.count(puid) > 0)
-			{
-				KCMDrawPageBorder(gPort, db, puid,
-					kKCMRingR, kKCMRingG, kKCMRingB);	// the same red border a change gets, for visibility
-				KCMDrawPageCrossOutlined(gPort, db, puid);	// and the red-with-white-halo "+" at the centre
-			}
-		}
-	}
+	// (The overset "+" was drawn into the Pages panel thumbnail here -- a red page border and
+	//  a red-with-white-halo cross. Find Overset went on 2026-09-08; the Preflight panel does
+	//  the job and can jump to the place.)
 
 	// Is the spread being drawn the one currently being peeked at? The peek covers only the single
 	// spread under the mouse (whose pages are in sOrigImages). That spread should show the older

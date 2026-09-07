@@ -118,8 +118,10 @@ bool16 KCMIsSameDoc(IDataBase* a, IDataBase* b);
 //
 // **TWO SHARED CONTAINERS ARE NOT COVERED**, and what keeps them safe is where their readers
 // live -- not the lock:
-//   - `sOversetPages` (std::set) / `sOversetLocs` (std::vector), which main's
-//     KCMApplyOversetForDoc **swaps wholesale**. Same shape as the sets above: a swap while
+//   - (`sOversetPages` / `sOversetLocs` were guarded here. Find Overset went on 2026-09-08 and
+//     both are gone. What follows described them; it is kept because the REASONING still
+//     applies to any set the main thread swaps wholesale while the drawing reads it.)
+//     Same shape as the sets above: a swap while
 //     something is reading corrupts it.
 //   Their readers are (⚠**the list below is `sOversetPages`'s**. Measured 2026-08-31:
 //   `sOversetLocs` has (b) ALONE -- one Facade getter, GetOversetLocations -- and no reader in

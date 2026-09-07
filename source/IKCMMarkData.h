@@ -36,10 +36,7 @@
 // Project includes:
 #include "KCMBoundaryID.h"	// IID_IKCMMARKDATA. The boundary header rather than KCMID.h, which
 							// would drag the model's whole ID set through a header the UI includes.
-#include "KCMOversetLoc.h"	// KCMOversetLoc. A header of TYPES ONLY, which is what a header the
-							// UI includes has to be: this used to reach the struct through
-							// KCMOversetScan.h, whose scan function the UI could then see and
-							// could not link to.
+// (KCMOversetLoc.h was included here for the overset locations. Find Overset went on 2026-09-08.)
 
 class IDataBase;
 
@@ -98,27 +95,13 @@ public:
 		it paints, so that pressing the button over an untouched document does nothing. */
 	virtual bool16		HasAnyMarkableContent() = 0;
 
-	// ---- overset (the Find Overset feature, independent of the comparison) ----------------
-
-	/** The Find Overset toggle and the document that was scanned. The database is identity
-		only, like the two above. */
-	virtual bool16		GetOversetOn() = 0;
-	virtual IDataBase*	GetOversetDB() = 0;
-
-	/** kTrue when the last scan found overset on this page. Which document the page belongs to
-		is the caller's business -- compare against GetOversetDB() first. */
-	virtual bool16		IsOversetPage(UID pageUID) = 0;
-
-	/** How many pages carry overset, for the status line. */
-	virtual int32		GetOversetPageCount() = 0;
-
-	/** Every page that carries overset. out is cleared first. Used to repaint exactly those
-		thumbnails when the feature is switched off. */
-	virtual void		GetOversetPageUIDs(std::vector<UID>& out) = 0;
-
-	/** Every individual overset location, in scan order -- one per "+" rather than one per
-		page, because Prev/Next stops at each of them. out is cleared first. */
-	virtual void		GetOversetLocations(std::vector<KCMOversetLoc>& out) = 0;
+	// ---- (the Find Overset readers stood here) -------------------------------------------
+	//
+	// GetOversetOn / GetOversetDB / IsOversetPage / GetOversetPageCount / GetOversetPageUIDs /
+	// GetOversetLocations went with the feature on 2026-09-08. InDesign's own Preflight panel
+	// finds overset text, keeps up with edits, and jumps to the place -- which this never did.
+	// ⚠**This is a vtable and every slot below moved.** Both halves are rebuilt together, and
+	//   Kohaku InDesign MCP compiles IKCMCompareFacade, not this one (checked before removing).
 
 	// ---- the page flags, read side --------------------------------------------------------
 	//

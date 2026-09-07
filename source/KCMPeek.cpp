@@ -710,7 +710,6 @@ void KCMPeekStartup::Shutdown()
 	//   PMStrings are cleared.
 	//   None of these dereferences a pointer; each only empties a container, which is safe at any
 	//   point in the shutdown sequence.
-	KCMDrawEventHandler::DropOverset();	// sOversetPages / sOversetLocs
 	KCMPageMapClearAllDocs();				// the registrations (Added/Removed)
 	KCMPageCheckClearAllDocs();			// the ticks
 	KCMResetHideUnchanged(kFalse);		// the Hide Unchanged record (kFalse: the documents are not touched at all)
@@ -925,11 +924,7 @@ void KCMHandleDocsClosed()
 	//   document once its address is reused, so it is cleared here deliberately. Memory only, so it
 	//   is safe while quitting, and no redraw is needed -- the crosses were never on any other
 	//   document, and the closed one's window is gone.
-	if (KCMDrawEventHandler::sOversetOn && KCMDrawEventHandler::sOversetDB != nil &&
-	    !KCMIsDbAlive(docList, KCMDrawEventHandler::sOversetDB))
-	{
-		KCMDrawEventHandler::DropOverset();
-	}
+	// (The Find Overset state was dropped here when its document closed. Gone 2026-09-08.)
 
 	bool16 changed = kFalse;
 

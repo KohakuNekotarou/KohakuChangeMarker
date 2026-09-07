@@ -87,9 +87,9 @@
 #include "KCMUIID.h"
 #include "KCMScrollMap.h"
 #include "IKCMCompareFacade.h"	// the armed state
-#include "IKCMMarkData.h"			// changed / overflow / overset pages (the source of the red
-									// shades) plus GetRegisteredPages (Add/Remove registrations,
-									// the green marks)
+#include "IKCMMarkData.h"			// changed and overflow pages (the source of the red shades)
+									// plus GetRegisteredPages (Add/Remove registrations, the
+									// green marks)
 #include "KCMViewLookup.h"		// KCMQuerySpreadUIDForView -- the one place that answers "which
 									// spread is this view showing"'
 
@@ -108,9 +108,8 @@ static const PMReal kKCMScrollMapMarkAlpha     = 0.4;	// frames are meant to be 
 // The opacity of an overflow "/" page (one with no counterpart): deliberately fainter than a
 // frame, so the two reds are told apart.
 static const PMReal kKCMScrollMapOverflowAlpha = 0.15;	// mixed well into the background
-// The opacity of a Find Overset band: less of the background mixed in than a changed band, so
-// the red comes out stronger.
-static const PMReal kKCMScrollMapOversetAlpha  = 0.85;	// barely mixed with the background
+// (kKCMScrollMapOversetAlpha stood here for the Find Overset band. That feature went on
+//  2026-09-08.)
 
 // How far the track is pulled in, in px, on top of the arrow buttons: the map is drawn inside a
 // range narrower than the inside of the buttons by this much at each end. The thumb's real range
@@ -326,14 +325,12 @@ void KCMScrollMapView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 	InterfacePtr<IKCMCompareFacade> compare(Utils<IKCMCompareFacade>().QueryUtilInterface());
 	const bool16 isTarget = (db != nil && db == compare->GetArmedTargetDB());
 	const bool16 isSource = (!isTarget && db != nil && db == compare->GetArmedSourceDB());
-	// The Find Overset bands are independent of the comparison: the window of the scanned document
-	// gets a red band on its overset pages whether or not anything is armed, so a strip appears
-	// even when only the overset check is running. When it is the same document as the comparison,
-	// the two reds simply overlap.
+	// ★**The strip belongs to the comparison alone.** A document that is neither the Target nor
+	//   the Source gets none.
+	//   (Find Overset used to put bands on the window of whatever document it had scanned, armed
+	//    or not, so a strip could appear with nothing being compared. That went on 2026-09-08.)
 	InterfacePtr<IKCMMarkData> marks(Utils<IKCMMarkData>().QueryUtilInterface());
-	const bool16 isOverset = (db != nil && marks->GetOversetOn() &&
-		db == marks->GetOversetDB());
-	if ((!isTarget && !isSource && !isOverset) || !compare->IsDocDBOpen(db))
+	if ((!isTarget && !isSource) || !compare->IsDocDBOpen(db))
 		return;
 
 	// Collect every page's pasteboard Y band, in spread order and then page order.
@@ -352,8 +349,8 @@ void KCMScrollMapView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 	// lives in a different coordinate space from the ordinary ones, so putting ordinary pages on
 	// the map of a window showing a master gives bands that do not agree with the Y denominator
 	// (the panorama's extent, which is then the master's) and land somewhere else entirely. While
-	// a master is shown, only that master spread's pages go on. With no frame and no overset there
-	// they simply come out empty, which is right.
+	// a master is shown, only that master spread's pages go on. With nothing marked there they
+	// simply come out empty, which is right.
 	const UID shownSpread = KCMQuerySpreadUIDForView(KCMStripLayoutView(this));
 	const bool16 showingMaster = KCMIsMasterSpread(db, shownSpread);
 
@@ -444,10 +441,6 @@ void KCMScrollMapView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 	const PMReal ovrR = oa * PMReal(0.85) + (PMReal(1.0) - oa) * bgR;	// overflow "/" = faint red
 	const PMReal ovrG = oa * PMReal(0.08) + (PMReal(1.0) - oa) * bgG;
 	const PMReal ovrB = oa * PMReal(0.08) + (PMReal(1.0) - oa) * bgB;
-	const PMReal osa = kKCMScrollMapOversetAlpha;						// overset = deep red (barely mixed)
-	const PMReal ovsR = osa * PMReal(0.85) + (PMReal(1.0) - osa) * bgR;
-	const PMReal ovsG = osa * PMReal(0.08) + (PMReal(1.0) - osa) * bgG;
-	const PMReal ovsB = osa * PMReal(0.08) + (PMReal(1.0) - osa) * bgB;
 	const PMReal grnR = ma * PMReal(0.10) + (PMReal(1.0) - ma) * bgR;	// registered = green
 	const PMReal grnG = ma * PMReal(0.70) + (PMReal(1.0) - ma) * bgG;
 	const PMReal grnB = ma * PMReal(0.25) + (PMReal(1.0) - ma) * bgB;
@@ -502,13 +495,14 @@ void KCMScrollMapView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 	// Decide each page's colour class and band coordinates (y0/y1) first, and sort the indices into
 	// per-priority lists (byLevel). The two pages of a spread (4 and 5, say) share a pasteboard Y
 	// band, so drawing them in plain page order lets the later page paint over the earlier one
-	// (reported from a live build: with 4 overset and 5 changed, the changed colour covered the
-	// overset one). Drawing the low priorities first and the high ones last means the higher
-	// priority always wins. Priority within ONE page is settled by choosing a single level for it;
-	// only the overlap between different pages is left to the drawing order.
-	// The levels: 1 = registered (green) / 2 = overflow "/" (faint red) / 3 = changed (red) /
-	// 4 = overset (deep red).
-	std::vector<size_t> byLevel[5];	// [1..4] hold the page indices at that level (0 is unused); N fills in total
+	// (reported from a live build, back when there were four levels: page 4 and page 5 of one
+	// spread, and the later page painted over the earlier). Drawing the low priorities first and
+	// the high ones last means the higher priority always wins. Priority within ONE page is
+	// settled by choosing a single level for it; only the overlap between different pages is left
+	// to the drawing order.
+	// The levels: 1 = registered (green) / 2 = overflow "/" (faint red) / 3 = changed (red).
+	// (A fourth, overset = deep red, went with Find Overset on 2026-09-08.)
+	std::vector<size_t> byLevel[4];	// [1..3] hold the page indices at that level (0 is unused); N fills in total
 	std::vector<PMReal> y0s(pages.size()), y1s(pages.size());
 	for (size_t i = 0; i < pages.size(); ++i)
 	{
@@ -529,13 +523,9 @@ void KCMScrollMapView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 			isOverflowRed = kTrue;	// a changed page that is also an overflow was settled above: the frame colour wins
 		}
 		const bool16 isGreen = (!isRed && greens.find(pages[i]) != greens.end());
-		// An overset page (when this document is the scanned one) is a strong red, to match the "+"
-		// mark.
-		const bool16 isOversetRed = (isOverset && marks->IsOversetPage(pages[i]));
-
 		int32 c = 0;
-		if (isOversetRed)   c = 4;					// overset wins: drawn last, so it lands on top
-		else if (isRed)     c = isOverflowRed ? 2 : 3;	// changed = 3, a pure overflow "/" = 2
+		// (An overset page used to win here with colour 4. Find Overset went 2026-09-08.)
+		if (isRed)          c = isOverflowRed ? 2 : 3;	// changed = 3, a pure overflow "/" = 2
 		else if (isGreen)   c = 1;					// registered (green)
 		if (c == 0)
 			continue;
@@ -553,13 +543,13 @@ void KCMScrollMapView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 
 		y0s[i] = y0;
 		y1s[i] = y1;
-		byLevel[c].push_back(i);	// c is 1..4 (0 was skipped above)
+		byLevel[c].push_back(i);	// c is 1..3 (0 was skipped above)
 	}
 
 	// Draw from the lowest priority to the highest, so the higher one comes last and wins wherever
 	// two pages of a spread overlap. The colour is set once per level, and only the indices in
 	// byLevel are walked, so this is N fills in total.
-	for (int32 level = 1; level <= 4; ++level)
+	for (int32 level = 1; level <= 3; ++level)
 	{
 		if (byLevel[level].empty())
 			continue;
@@ -568,7 +558,7 @@ void KCMScrollMapView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 			case 1: gPort->setrgbcolor(grnR, grnG, grnB); break;	// registered = green
 			case 2: gPort->setrgbcolor(ovrR, ovrG, ovrB); break;	// a pure overflow "/" = faint red
 			case 3: gPort->setrgbcolor(redR, redG, redB); break;	// changed = a clear red
-			case 4: gPort->setrgbcolor(ovsR, ovsG, ovsB); break;	// overset = deep red (the highest priority)
+			// (case 4 was the overset deep red, the highest priority. Find Overset went 2026-09-08.)
 		}
 		for (size_t k = 0; k < byLevel[level].size(); ++k)
 		{
@@ -853,9 +843,8 @@ void KCMScrollMapNoticeDrawEvent()
 	// draw event.
 	InterfacePtr<IKCMMarkData> marks(Utils<IKCMMarkData>().QueryUtilInterface());
 	InterfacePtr<IKCMCompareFacade> compare(Utils<IKCMCompareFacade>().QueryUtilInterface());
-	if (compare->GetArmedTargetDB() == nil &&
-		!(marks->GetOversetOn() && marks->GetOversetDB() != nil))
-		return;		// neither armed nor scanning means no strip, so the fingerprints mean nothing
+	if (compare->GetArmedTargetDB() == nil)
+		return;		// not armed means no strip, so the fingerprints mean nothing
 
 	// The throttle, 250 ms. steady_clock only moves forward, so there is no wrap and no negative
 	// delta to guard against. The first check always runs.
@@ -872,15 +861,13 @@ void KCMScrollMapNoticeDrawEvent()
 
 	IDataBase* const tDB = compare->GetArmedTargetDB();
 	IDataBase* const sDB = compare->GetArmedSourceDB();
-	IDataBase* const oDB = marks->GetOversetOn() ? marks->GetOversetDB() : nil;
 	const uint32 ft = KCMHiddenFingerprint(tDB) * 31u + KCMShownMasterFingerprint(tDB);
 	const uint32 fs = KCMHiddenFingerprint(sDB) * 31u + KCMShownMasterFingerprint(sDB);
-	const uint32 fo = KCMHiddenFingerprint(oDB) * 31u + KCMShownMasterFingerprint(oDB);
-	if (ft != sHiddenFingerT || fs != sHiddenFingerS || fo != sHiddenFingerO)
+	// (A third fingerprint watched the Find Overset document. That feature went on 2026-09-08.)
+	if (ft != sHiddenFingerT || fs != sHiddenFingerS)
 	{
 		sHiddenFingerT = ft;
 		sHiddenFingerS = fs;
-		sHiddenFingerO = fo;
 		KCMScrollMapInvalidateAll();	// the first time (0 -> current) runs once for nothing, which is harmless
 	}
 }

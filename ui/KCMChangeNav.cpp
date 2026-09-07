@@ -72,9 +72,6 @@
 #include "IKCMCompareFacade.h"		// GetActiveDocDB / GetCompareMode
 #include "IKCMMarkData.h"			// reading the comparison result (changed pages, changed cell counts, overset places)
 #include "KCMViewLookup.h"		// KCMQueryPanorama
-#include "KCMOversetLoc.h"		// KCMOversetLoc, the position of an overset "+" place. The types-
-									// only header: KCMOversetScan.h, where it used to live, also
-									// declares the scan, whose body is in the model .pln alone
 #include "KCMThumbnailRefresh.h"	// KCMGetVisiblePagesPanel (the shared way to get the visible Pages panel)
 #include "IKCMStoryEditsFacade.h"	// GetFirstFrameUID (the first frame of "the same story" on
 									// the Source side) / GetStoryStartPoint (where its text
@@ -82,17 +79,16 @@
 #include "KCMStoryNav.h"			// the stops of the Story Changes mode (the leaves of the list) and how they are travelled to
 #include "KCMChangeNav.h"
 
-// One stop of the walk. A change stop is a page with a frame on it, scrolled to the page's
-// centre; an overset stop is an overflow "+" place, scrolled to its pasteboard point (the way KBS
-// does it). pageUID drives the order, the label and the Source's companion move; pb only means
-// anything on an overset stop.
+// One stop of the walk: a page with a frame on it, scrolled to the page's centre. pageUID drives
+// the order, the label and the Source's companion move.
+// (There was a second kind -- an overset "+" place, scrolled to its own pasteboard point. Find
+//  Overset went on 2026-09-08.)
 struct KCMNavStop
 {
 	UID			pageUID;
-	bool16		isOverset;			// kFalse = a change (a frame), kTrue = an overset ("+")
-	PBPMPoint	pb;					// the overset "+" point (only on an overset stop)
-	int32		oversetOrd;			// this overset stop's number within its page (from 0), for finding it again
-	int32		oversetCountOnPage;	// how many oversets that page has (with one, the label carries no (n))
+	// (An overset stop -- a "+" place with its own pasteboard point and its number within the
+	//  page -- was a second kind of stop here. Find Overset went on 2026-09-08, so every
+	//  page-based stop is now a change.)
 
 	// A stop of the Story Changes mode. The two above point at a PAGE; this one points at A LEAF
 	// OF THE STORY EDITS LIST -- one edit, or a row that has no children.
@@ -106,7 +102,7 @@ struct KCMNavStop
 	int32		storyChange;		// which change of that row; -1 = the row itself, which has no children
 	UID			storyUID;			// which story it is, for finding it again (see sNavStoryUID below)
 
-	KCMNavStop() : pageUID(kInvalidUID), isOverset(kFalse), oversetOrd(0), oversetCountOnPage(0),
+	KCMNavStop() : pageUID(kInvalidUID),
 					 isStory(kFalse), storyRow(-1), storyChange(-1), storyUID(kInvalidUID) {}
 };
 
@@ -115,8 +111,6 @@ struct KCMNavStop
 // what it points at is gone, KCMFindCurrentStop returns -1 and the walk starts again from the
 // front or the back.
 static UID    sNavPageUID    = kInvalidUID;
-static bool16 sNavIsOverset  = kFalse;
-static int32  sNavOversetOrd = 0;
 
 // Where the walk stands on a Story stop. IT IS REMEMBERED BY STORY, NOT BY ROW NUMBER, for
 // exactly the reason above: a "Refresh Story Comparison" rebuilds that row's children and the
@@ -137,71 +131,42 @@ static int32  sNavStoryChange = -1;
 static bool16 sNavStoryAtEntry = kFalse;
 
 //----------------------------------------------------------------------------------------
-// The document being walked: the Target while a comparison is running, or, with no comparison
-// but Find Overset on, the document it scanned. nil when there is nothing to walk.
+// The document being walked: the Target of a running comparison. nil when nothing is being
+// compared -- so with no comparison there is nothing to walk.
+// (Find Overset used to make its scanned document walkable on its own; it went 2026-09-08.)
 //----------------------------------------------------------------------------------------
 static IDataBase* KCMNavDoc()
 {
 	InterfacePtr<IKCMMarkData> marks(Utils<IKCMMarkData>().QueryUtilInterface());
 	if (marks->GetMarkedTargetDB() != nil)
 		return marks->GetMarkedTargetDB();
-	if (marks->GetOversetOn() && marks->GetOversetDB() != nil)
-		return marks->GetOversetDB();
 	return nil;
 }
 
 //----------------------------------------------------------------------------------------
-// Build the list of stops in the document's page order, each page contributing its change (the
-// frame) first and then each of its overset "+" places, at the user's request.
+// Build the list of stops in the document's page order: one per page that carries a change.
 //   - a change stop needs a comparison to be running on this document and the page to be in
 //     sEntries. It scrolls to the page's centre. Added/Removed and Overflow pages come from pages
 //     being added or removed and are still not included.
-//   - an overset stop needs Find Overset to be on and to have scanned this same document. One per
-//     "+" place, in the order the scan found them, scrolled to the "+" point the way KBS does it.
-//   When the comparison and the overset scan are on DIFFERENT documents, the overset places are
-//   not mixed in, because the page order they are in would stop meaning anything. (An overset
-//   scan on its own makes its document the one being walked, and only its places are walked.)
+//   (A page used to contribute its overset "+" places after its change, so one page could hold
+//    several stops. Find Overset went on 2026-09-08 and a page now holds at most one.)
 //----------------------------------------------------------------------------------------
-// Append the overset "+" places on pageUID as stops, in scan order, numbering them within the
-// page and recording how many there are.
-// Both the ordinary-page loop and the master-page top-up call this, so the numbering is not
-// written twice.
-// locs is the caller's single copy of "the overset places as they are now": asking across the
-// boundary once per page would copy the same thing over and over, so it is reused for the whole
-// walk.
-static void KCMAppendOversetStopsForPage(UID pageUID, const std::vector<KCMOversetLoc>& locs,
-										   std::vector<KCMNavStop>& out)
-{
-	std::vector<size_t> onPage;
-	for (size_t j = 0; j < locs.size(); ++j)
-		if (locs[j].pageUID == pageUID)
-			onPage.push_back(j);
-	const int32 cnt = (int32)onPage.size();
-	for (int32 k = 0; k < cnt; ++k)
-	{
-		const KCMOversetLoc& loc = locs[onPage[k]];
-		KCMNavStop s; s.pageUID = pageUID; s.isOverset = kTrue; s.pb = loc.pb;
-		s.oversetOrd = k; s.oversetCountOnPage = cnt;
-		out.push_back(s);
-	}
-}
+// (KCMAppendOversetStopsForPage stood here: it turned each overset "+" place on a page into a
+//  stop of its own. Find Overset went on 2026-09-08.)
 
-/** The stops ONE PAGE contributes, in the order the walk expects: its frame first, then its
-	overflow places. ★Both page loops go through this, so the order cannot drift apart between
-	ordinary pages and master pages - which is what the note at the master loop asks for. */
-static void KCMAppendStopsForPage(UID pageUID, bool16 changeHere, bool16 oversetHere,
-                                    IKCMMarkData* marks, const std::vector<KCMOversetLoc>& locs,
+/** The stops ONE PAGE contributes. ★Both page loops go through this, so the order cannot
+	drift apart between ordinary pages and master pages - which is what the note at the master
+	loop asks for. (It used to add the page's overset "+" places after its change; Find Overset
+	went on 2026-09-08, so a page contributes at most one stop.) */
+static void KCMAppendStopsForPage(UID pageUID, bool16 changeHere,
+                                    IKCMMarkData* marks,
                                     std::vector<KCMNavStop>& out)
 {
-	// 1) That page's change (its frame): the page centre.
 	if (changeHere && marks->HasEntryForPage(pageUID))
 	{
-		KCMNavStop s; s.pageUID = pageUID; s.isOverset = kFalse;
+		KCMNavStop s; s.pageUID = pageUID;
 		out.push_back(s);
 	}
-	// 2) That page's overset "+" places, one at a time in scan order.
-	if (oversetHere)
-		KCMAppendOversetStopsForPage(pageUID, locs, out);
 }
 
 static void KCMBuildStops(std::vector<KCMNavStop>& out)
@@ -220,13 +185,6 @@ static void KCMBuildStops(std::vector<KCMNavStop>& out)
 	//   its own `== kKCMModePixel` test, for the mirror-image reason.
 	const bool16 storyMode   = (Utils<IKCMCompareFacade>()->GetCompareMode() == kKCMModeStory);
 	const bool16 changeHere  = (!storyMode && marks->GetMarkedTargetDB() == navDB);	// frames are only mixed in on the comparison Target
-	const bool16 oversetHere = (marks->GetOversetOn() && marks->GetOversetDB() == navDB);
-
-	// The overset places are needed in more than one block below, so one copy is taken here and
-	// shared by all of them.
-	std::vector<KCMOversetLoc> locs;
-	if (oversetHere)
-		marks->GetOversetLocations(locs);
 
 	// 0) The Story leaves go FIRST.
 	//    THEY ARE NOT INTERLEAVED IN PAGE ORDER. The list has an order of its own -- page order,
@@ -259,7 +217,7 @@ static void KCMBuildStops(std::vector<KCMNavStop>& out)
 	std::vector<UID> flat;
 	marks->GetAllPageUIDs(navDB, flat);
 	for (size_t i = 0; i < flat.size(); ++i)
-		KCMAppendStopsForPage(flat[i], changeHere, oversetHere, marks, locs, out);
+		KCMAppendStopsForPage(flat[i], changeHere, marks, out);
 
 	// GetAllPageUIDs returns THE DOCUMENT'S ORDINARY PAGES ONLY. Master spreads are kept in a
 	// separate IMasterSpreadList and never appear in the loop above, so they are topped up below.
@@ -272,16 +230,12 @@ static void KCMBuildStops(std::vector<KCMNavStop>& out)
 	std::set<UID> covered(flat.begin(), flat.end());
 
 	// 3) The pages of the master spreads.
-	//    The overset ones were added after a report that an overset on a master was found but
-	//      could not be reached: it was detected, the "+" showed on the thumbnail, and the stop
-	//      list dropped it entirely.
-	//    The changed ones (frames) were added in the same place afterwards: once masters were part
-	//      of the comparison, the same shape of defect -- "a frame appears but Prev/Next will not
-	//      go there" -- could happen to them too.
-	//    They follow the same "[frame, then overset...] per page" order the ordinary loop does;
-	//      gathering the overflows separately would separate a master's frame from its overflow
-	//      when there is more than one master.
-	if (changeHere || oversetHere)
+	//    ★They are here because of a defect of the shape "a mark appears but Prev/Next will not go
+	//      there" -- first reported for an overset on a master (detected, drawn on the thumbnail,
+	//      and dropped from the stop list), then possible for a master's frame once masters became
+	//      part of the comparison. Both go through the same appender as the ordinary pages, so the
+	//      order cannot drift apart.
+	if (changeHere)
 	{
 		std::vector<UID> masters;
 		marks->GetMasterPageUIDs(navDB, masters);	// the InterfacePtr queried above
@@ -291,32 +245,12 @@ static void KCMBuildStops(std::vector<KCMNavStop>& out)
 			if (covered.find(u) != covered.end())
 				continue;			// already taken above (a master cannot turn up there, but do not add it twice)
 			covered.insert(u);
-			KCMAppendStopsForPage(u, changeHere, oversetHere, marks, locs, out);
+			KCMAppendStopsForPage(u, changeHere, marks, out);
 		}
 	}
 
-	// 4) Any overset left over -- on a page belonging to neither an ordinary spread nor a master
-	//    one -- goes on the end. This is the safety net kept after masters were picked up in 3):
-	//    what would make it unnecessary is the premise that every page UID belongs to one or the
-	//    other, and nothing in this code can guarantee that. Better shown than dropped.
-	if (oversetHere)
-	{
-		std::vector<UID> extra;		// in scan order, without duplicates
-		for (size_t j = 0; j < locs.size(); ++j)
-		{
-			const UID pu = locs[j].pageUID;
-			if (covered.find(pu) != covered.end())
-				continue;			// an ordinary or master page, taken above
-			bool16 already = kFalse;
-			for (size_t e = 0; e < extra.size() && !already; ++e)
-				if (extra[e] == pu)
-					already = kTrue;
-			if (!already)
-				extra.push_back(pu);
-		}
-		for (size_t e = 0; e < extra.size(); ++e)
-			KCMAppendOversetStopsForPage(extra[e], locs, out);
-	}
+	// (4) picked up overset places on pages that belonged to neither an ordinary spread nor a
+	//  master one. Find Overset went on 2026-09-08, and a change always sits on a real page.)
 }
 
 // The index of the stop the walk is standing on, or -1 when it is not in the list.
@@ -354,8 +288,7 @@ static int32 KCMFindCurrentStop(const std::vector<KCMNavStop>& stops)
 			continue;
 		}
 
-		if (stops[i].pageUID == sNavPageUID && stops[i].isOverset == sNavIsOverset &&
-			(!stops[i].isOverset || stops[i].oversetOrd == sNavOversetOrd))
+		if (stops[i].pageUID == sNavPageUID)
 			return (int32)i;
 	}
 	return -1;
@@ -755,9 +688,8 @@ static PMString KCMFormatChangeRatio(int32 changed, int32 total)
 // Build the label for where the walk landed, shown in the panel's message line.
 //   a change (a frame)                 = "Page: <n>, Change <percentage>"
 //                                        e.g. Page: 1, Change 12% / Page: 4, Change 0.4%
-//   an overset, one on the page        = "Page: <n> Overset"        e.g. Page: 1 Overset
-//   an overset, several on the page    = "Page: <n> (k) Overset"    e.g. Page: 1 (2) Overset
-//                                        (k counts from 1)
+//   (An overset stop read "Page: <n> Overset", or "Page: <n> (k) Overset" where a page held
+//    several. Find Overset went on 2026-09-08.)
 // The percentage is separated with ", Change " rather than a space so that what the percentage is
 // OF can be read off; the overset form already carries the word "Overset" and keeps its space.
 // The (k) and Overset are separated by single spaces. The page number comes from
@@ -790,28 +722,11 @@ static PMString KCMStopLabel(IDataBase* db, const KCMNavStop& stop)
 		pageList->GetPageString(stop.pageUID, &numStr, kTrue, kFalse, kDefaultPageType, kTrue, kTrue);
 	if (numStr.NumUTF16TextChars() > 0)
 		label.Append(numStr);
-	else if (stop.isOverset)
-		label.Append("Master");	// the catch-all for an overset on a master page: more informative
-								// than "?".
-								// @warning THIS IS NOT REACHED IN PRACTICE. GetPageString returns
-								//   a prefix for a master page too (measured: a Japanese build
-								//   produced "Page: A Overset"), so numStr does not come back
-								//   empty. It is kept as a safety net, not as an expected value
-								//   -- DO NOT WRITE A TEST THAT EXPECTS "Master".
 	else
 		label.Append("?");	// a page whose number cannot be read (does not normally happen)
 
-	if (stop.isOverset)
-	{
-		if (stop.oversetCountOnPage > 1)	// the (k) goes on only when the page has more than one (counting from 1)
-		{
-			label.Append(" (");			// spaced out, since "Page: 1(2)" is hard to read
-			label.AppendNumber(stop.oversetOrd + 1);
-			label.Append(")");
-		}
-		label.Append(" Overset");	// a space, then Overset
-	}
-	else
+	// (An overset stop added " (k) Overset" here instead of the percentage below. Find Overset went
+	//  on 2026-09-08, so every page stop is a change stop and the branch went with it.)
 	{
 		// A change stop: append how much of that page changed (e.g. "Page: 3, Change 12%"). The
 		// numerator is the changed cell count taken during the comparison; the denominator is that
@@ -1093,10 +1008,7 @@ static void KCMGoto(int32 dir)
 	bool16 ok = kTrue;		// while hidden, "did not scroll" counts as success (so the early return below is not taken)
 	if (!stopHidden)
 	{
-		if (stop.isOverset)
-			KCMEnsureSpreadInView(navDB, stop.pageUID);
-		ok = stop.isOverset ? KCMScrollDocToPBPoint(navDB, stop.pb)
-		                    : KCMScrollDocToItemCenter(navDB, stop.pageUID);
+		ok = KCMScrollDocToItemCenter(navDB, stop.pageUID);
 	}
 	if (!ok)
 	{
@@ -1105,8 +1017,6 @@ static void KCMGoto(int32 dir)
 		return;
 	}
 	sNavPageUID    = stop.pageUID;
-	sNavIsOverset  = stop.isOverset;
-	sNavOversetOrd = stop.oversetOrd;
 	// Back on the page side, so the Story anchor is void, kind and all (the counterpart of the
 	// branch above).
 	// THE ENTRANCE FLAG GOES WITH IT: left set, it would sit there as kTrue after the walk stood
@@ -1303,9 +1213,7 @@ void KCMNoteStoryStop(int32 rowIndex, int32 changeIndex)
 	sNavStoryUID   = row.fStoryUID;
 	sNavStoryRow   = rowIndex;		// identified together with the UID (KCMFindCurrentStop explains
 									// why all three are checked)
-	sNavPageUID    = kInvalidUID;	// the page-side anchor is not carried over (the kind decides, so the value goes too)
-	sNavIsOverset  = kFalse;
-	sNavOversetOrd = 0;
+	sNavPageUID    = kInvalidUID;	// the page-side anchor is not carried over
 
 	if (changeIndex >= 0)
 	{
@@ -1337,7 +1245,7 @@ void KCMNoteStoryStop(int32 rowIndex, int32 changeIndex)
 // by the caller with one KCMRefreshNavPosition once everything has settled.
 void KCMResetNav()
 {
-	sNavPageUID = kInvalidUID; sNavIsOverset = kFalse; sNavOversetOrd = 0;
+	sNavPageUID = kInvalidUID;
 	// The Story side goes for the same reason: the list is rebuilt wholesale by every comparison,
 	// so neither the story nor the number of the edit from the previous one means anything.
 	// @warning forgetting this line would let a walk over a different pair of documents START FROM

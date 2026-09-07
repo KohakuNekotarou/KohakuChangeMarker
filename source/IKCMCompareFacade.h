@@ -393,21 +393,18 @@ public:
 	virtual void		BeginColorDrag(IDataBase* hoverDB, IDataBase* otherDB, bool16 hoverIsTarget) = 0;
 	virtual void		EndColorDrag() = 0;
 
-	// ---- overset -----------------------------------------------------------------------
-
-	/** Scan db for overset locations and store them in the engine state. Emits
-		kKCMOversetRescannedMessage. Does not write the status line. */
-	virtual void		ApplyOversetForDoc(IDataBase* db) = 0;
-
-	/** Which document an overset scan should look at: the comparison Target while a comparison
-		is running, the active document otherwise. nil when there is nothing to scan.
-		The Find Overset / Refresh Overset menu handlers and UpdateActionStates all ask this
-		before calling ApplyOversetForDoc. */
-	virtual IDataBase*	GetOversetScanTargetDB() = 0;
-
-	/** Switch Find Overset off and drop what the scan found. The caller repaints -- it knows
-		which document was being scanned, because it asked before calling this. */
-	virtual void		ClearOverset() = 0;
+	// ---- (overset stood here) ----------------------------------------------------------
+	//
+	// ApplyOversetForDoc / GetOversetScanTargetDB / ClearOverset went with Find Overset on
+	// 2026-09-08 (the author's call): InDesign's own Preflight panel finds overset text, keeps up
+	// with edits, and JUMPS TO THE PLACE -- which this never did, stopping at "which page".
+	// ⚠**This vtable is an ABI shared with Kohaku InDesign MCP** (the rule at the head of this
+	//   file). The three that went were **in the middle**, so every slot below them moved.
+	//   That is safe here only because KIDMCP calls three methods that all sit at the END of this
+	//   interface (StartComparisonWithSourceDB / ReleaseExternalSourceDB / GetExternalSourceLabel
+	//   and ClearChosenDocs / RefreshComparison after them) -- **and because both products are
+	//   rebuilt from this same header**. ★If KIDMCP is ever shipped without rebuilding it against
+	//   this change, it calls the wrong slots silently.
 
 	// ---- Hide Unchanged Spreads --------------------------------------------------------
 	//

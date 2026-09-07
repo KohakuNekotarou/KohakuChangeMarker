@@ -29,7 +29,6 @@
 #include "KCMID.h"				// kKCMMarksRebuiltMessage / kKCMMarksClearedMessage
 #include "KCMModelNotify.h"	// KCMNotifyStatus / KCMNotify - the model tells the UI, it never calls it
 #include "KCMDrawEventHandler.h"	// sSrcMarksOn / sOversetOn / sOversetDB
-#include "KCMOversetApply.h"		// KCMApplyOversetForDoc -- re-apply overset on Start and on Stop
 #include "KCMPeek.h"				// KCMArmedDocsAlive -- Refresh must not hand a closed document to the comparison
 #include "KCMRingAdornment.h"		// KCMRevalidateItemXPList -- the transparency-list insurance, at Start and at Stop
 #include "KCMThreadSafety.h"		// KCMIsSameDoc -- the one place this plug-in asks whether two dbs are one document
@@ -288,12 +287,7 @@ void KCMStopComparison()
 	// by the UI when it receives the kKCMMarksClearedMessage the KCMDoClearMarks above emits.
 	// If Find Overset is on by itself, re-apply it to the overset document (sOversetDB) so the
 	// Source window is not left with a comparison strip, AND so the overset set itself is scanned
-	// again: with overset present, Start, then an edit that resolves it, then Stop used to leave
-	// the pre-edit set standing and the plug-in went on reporting overset that was gone.
-	// KCMApplyOversetForDoc re-scans sOversetDB and updates the thumbnails, the map's
-	// Attach+Invalidate and Prev/Next together.
-	if (KCMDrawEventHandler::sOversetOn)
-		KCMApplyOversetForDoc(KCMDrawEventHandler::sOversetDB);
+	// (Stop used to re-apply the Find Overset scan here. That feature went on 2026-09-08.)
 	KCMSayStatus("marks cleared");
 
 	// **Cleared is emitted a second time, on purpose.** When KCMDoClearMarks emitted it, the
@@ -357,8 +351,7 @@ static bool16 KCMStartComparisonOn(IDataBase* targetDB, IDataBase* sourceDB)
 		// document -- otherwise an overset set belonging to a different document (sOversetDB != sDB)
 		// drops out of the walk silently; (b) overset that edits have added or removed since the
 		// last scan is picked up, which a same-document Start would otherwise miss.
-		if (KCMDrawEventHandler::sOversetOn)
-			KCMApplyOversetForDoc(targetDB);
+		// (Start used to re-bind the Find Overset scan to the Target here -- gone 2026-09-08.)
 	}
 	KCMNotifyStatus(report);
 

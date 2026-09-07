@@ -19,7 +19,6 @@
 #include <set>
 #include <vector>
 #include "KCMConstants.h"
-#include "KCMOversetScan.h"	// KCMOversetLoc (the element type of sOversetLocs)
 #include "CPMUnknown.h"
 #include "IDrwEvtHandler.h"
 #include "GraphicsExternal.h"   // AGMImageRecord (a struct member below)
@@ -348,27 +347,9 @@ public:
 	static PMReal sPeekOpacity;							// the peek's opacity: Shift+left = 1.0 (opaque),
 														// Shift+Alt+left = 0.5. Read by the drawing block
 
-	// The overset cross (the flyout's "Find Overset"). Completely independent of the comparison.
-	// One active document is scanned and the pages holding overset are kept in sOversetPages;
-	// while sOversetOn, drawing a spread of that document (sOversetDB) paints a page-sized red "+"
-	// on those pages, on screen only (colour, weight and opacity follow the change frames).
-	// sOversetDB only identifies which document was scanned: the drawing compares pointers and
-	// never dereferences it, which is what makes it safe after a close. Switching the toggle off,
-	// or closing the document, empties sOversetPages.
-	static bool16 sOversetOn;			// the Find Overset toggle (default off)
-	static IDataBase* sOversetDB;		// the document scanned (identity only, never dereferenced)
-	static std::set<UID> sOversetPages;	// page UIDs holding overset (for the Pages panel's frame and "+", and the scrollbar map's band)
-	static std::vector<KCMOversetLoc> sOversetLocs;	// where each overset "+" goes (page + pasteboard point). Prev/Next's stops
-
-	// Clear Find Overset (the toggle going off, the scanned document closing, switching document).
-	// Empties the sets and puts the toggle off.
-	static void DropOverset()
-	{
-		sOversetOn = kFalse;
-		sOversetDB = nil;
-		sOversetPages.clear();
-		sOversetLocs.clear();
-	}
+	// (The Find Overset state stood here -- sOversetOn, sOversetDB, sOversetPages, sOversetLocs
+	//  and DropOverset() -- and went with the feature on 2026-09-08. InDesign's own Preflight
+	//  panel finds overset text, keeps up with edits, and jumps to the place.)
 
 	// (The transient toast mechanism was removed; messages go to the panel's status line
 	//  (KCMSetStatus). The mechanism itself may be worth reusing in another plug-in:
