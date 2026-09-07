@@ -256,6 +256,23 @@ bool16 KCMPageCheckIsChecked(IDataBase* db, UID pageUID)
 //========================================================================================
 // KCMPageCheckHasAny (declared in KCMPageCheck.h)
 //========================================================================================
+//========================================================================================
+// The doors KCMPageMarksDoc needs (2026-09-07): the same set the file-based save reads, reached
+// from outside this file. Both go straight to the container, which does its own locking.
+//========================================================================================
+void KCMPageCheckCollect(IDataBase* db, std::set<UID>& out)
+{
+	out.clear();
+	if (db != nil)
+		sChecked.CollectInto(db, out);
+}
+
+void KCMPageCheckReplaceAll(IDataBase* db, const std::set<UID>& in)
+{
+	if (db != nil)
+		sChecked.Replace(db, in);
+}
+
 bool16 KCMPageCheckHasAny(IDataBase* db)
 {
 	return sChecked.HasAny(db);

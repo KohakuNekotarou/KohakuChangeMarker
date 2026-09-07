@@ -98,6 +98,15 @@ bool16 KCMPageCheckIsChecked(IDataBase* db, UID pageUID);
 // (anyMarkableContent in KCMDrawEventHandler::DrawSpreadMarks).
 bool16 KCMPageCheckHasAny(IDataBase* db);
 
+/** The ticked pages of one document -- what a save reads. out is cleared first.
+	★Added 2026-09-07 for KCMPageMarksDoc: the file-based save reaches the same set through the
+	 container's GetMap, which is inside this file; a caller outside it needs a door of its own. */
+void KCMPageCheckCollect(IDataBase* db, std::set<UID>& out);
+
+/** Put one document's ticks back to exactly this set -- what a restore writes.
+	★REPLACES rather than merges, for the reason KCMPawStampReplaceAll gives. */
+void KCMPageCheckReplaceAll(IDataBase* db, const std::set<UID>& in);
+
 // The flyout item "Save Check & Register": writes the ticks, the registrations (Added/Removed =
 // green "/") and the cat-paw stamps of **THE ACTIVE DOCUMENT** to KCMPageChecks.json (version 3),
 // a JSON file of KCM's own directly in the roaming preferences folder. The key is the document's
