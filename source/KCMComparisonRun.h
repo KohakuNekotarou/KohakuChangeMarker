@@ -119,7 +119,10 @@ IDataBase*	KCMChosenSourceDB();
 // "not in the list" means "closed" (a background thread sees clones, guide vol1-07).
 void	KCMForgetChosenDocsThatClosed(IDocumentList* docList);
 
-// Drop both choices. Called from the model's Shutdown (KCMPeekStartup::Shutdown), which closes
+// Drop both choices. **Two callers, and only one of them is a shutdown**: the flyout's "Clear
+// Target and Source" (through the facade -- ★it stops a running comparison BEFORE calling this,
+// so this function never runs under one; the stop belongs to the UI, not here), and the model's
+// Shutdown (KCMPeekStartup::Shutdown), which closes
 // every model-side static on the principle that nothing live may reach static destruction -- the
 // same slot as the peek's armed state, and defensive for the same reason (a close responder
 // firing after shutdown). Assignment only, so it is safe anywhere in the shutdown sequence.

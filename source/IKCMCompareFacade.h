@@ -504,9 +504,14 @@ public:
 		(active document = Target, the earliest-opened other document = Source). The panel's
 		Target:/Source: lines go back to bare labels, and a lent Source is forgotten with them.
 
-		@warning it does NOT stop a running comparison. The armed pair is what is on screen;
-		this changes only what the NEXT Start will use. The flyout item is greyed while a
-		comparison is armed, exactly as the two "Set as" items it undoes are.
+		@warning **THIS METHOD does not stop a running comparison.** It drops the choices and
+		nothing else, so clearing while a comparison is armed leaves that comparison drawing --
+		and the panel goes on naming the ARMED pair, so nothing appears to have happened until
+		the next Stop.
+		★**THE FLYOUT ITEM IS NOT THIS BARE METHOD** (2026-09-07): it stops first and then
+		clears, and it is live WHILE a comparison is armed -- unlike the two "Set as" items it
+		undoes, which stay greyed (KCMActionComponent, DoAction and UpdateActionStates).
+		⇒ a caller that wants what the menu item does must call StopComparison() itself first.
 
 		★AT THE END OF THIS INTERFACE BECAUSE THE VTABLE IS AN ABI (see the head of this
 		file): Kohaku InDesign MCP calls the three methods above through the same vtable, so a

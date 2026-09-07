@@ -19,7 +19,9 @@
 //    panel, and the flyout's own Start compares against the copy again). It is forgotten in
 //    exactly three places: the lender's KCMReleaseExternalSource (the copy is going), "Set as
 //    Source" naming a real document in its place (KCMSetChosenSourceToActive, when nothing is
-//    drawing from it), and the model's shutdown (KCMClearChosenDocs). A Stop does NOT forget it,
+//    drawing from it), and KCMClearChosenDocs -- which is BOTH the model's shutdown AND the
+//    flyout's "Clear Target and Source" (that item stops the comparison first, so the copy is
+//    never forgotten while it is being drawn from). A Stop does NOT forget it,
 //    deliberately.
 //    ⚠**THE "whichever is later" IS NOT SLACK IN THE WORDING** -- it is a state the code really
 //     reaches, and this line said "and at no other time" until 2026-09-04. Choose a real document
