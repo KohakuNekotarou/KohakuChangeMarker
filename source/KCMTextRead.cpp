@@ -542,11 +542,21 @@ void TakeAttrFor(const std::vector<AttrRun>& runs, size_t& cursor,
 			//   う would be reported as standing over え.
 			//   ⚠THE LENGTH IS CORRECTED TOO, not just the start: a run reaching across the
 			//    table's character covers one FEWER character of text than of model.
+			//   ⚠★★★**AND THE LENGTH CAN COME OUT 0.** The guard above (`to > from`) is in the MODEL's
+			//    count while the length here is in the TEXT's, so a run standing over NOTHING BUT
+			//    uncounted positions passes the first and measures nothing in the second. Not
+			//    hypothetical: a ruby can be applied to a table's own anchor, and InDesign keeps it there
+			//    although it draws nowhere ([[indesign-special-text-characters]]). MEASURED 2026-09-08 -
+			//    work/kcm-selftest/anchorruby put one there and KCM reported `edits=1` for a change that
+			//    is on no character anybody can see.
+			//    ⇒ **A span over no text is not a span**, which is the rule the reader already applies to
+			//      an empty reading (KCMParaText.h, "AN EMPTY RUBY STRING IS NO RUBY").
 			const int32 skipBefore = CountUncounted(uncounted, from);
-			out.push_back(KCMAttrSpan(static_cast<int32>(from - paraStart) - skipBefore,
-									  static_cast<int32>(to - from)
-										  - (CountUncounted(uncounted, to) - skipBefore),
-									  runs[i].fValue, runs[i].fGroup));
+			const int32 textLen = static_cast<int32>(to - from)
+								  - (CountUncounted(uncounted, to) - skipBefore);
+			if (textLen > 0)
+				out.push_back(KCMAttrSpan(static_cast<int32>(from - paraStart) - skipBefore,
+										  textLen, runs[i].fValue, runs[i].fGroup));
 		}
 	}
 }

@@ -498,10 +498,17 @@ void AddAttrChange(KCMStoryChange::Kind kind, KCMStoryAttrKind attrKind,
 	change.fTargetStart = target.ModelIndex(tStart);
 	change.fTargetEnd   = target.ModelIndex(tStart + tCount);
 
-	// @warning **THE OLDER SIDE ALWAYS HAS CHARACTERS HERE**, unlike a text change: a ruby-only
-	//   difference is found by comparing two paragraphs whose TEXT matched, so the same
-	//   characters exist on both sides. (Ruby being ADDED is still "these characters, which are
-	//   in both, now carry a reading".) This range is never empty, where a text insertion's is.
+	// ⚠★★★**THE OLDER SIDE HAS CHARACTERS HERE ONLY WHILE THE TWO PARAGRAPHS SHARE THEIR TEXT.**
+	//   Until 2026-09-01 that was always so - attribute changes were looked for only in paragraphs
+	//   the diff had NOT reported, so one number named the same character on both sides. That day the
+	//   search widened to paragraphs whose WORDS had changed too, and **this sentence was not
+	//   re-read**: measured 2026-09-08, the commit that widened it (`cce0cc5`, 17 files) touched
+	//   neither this comment nor the call that leans on it.
+	//   ⇒ **The caller decides now.** For a span that exists on ONE side only, CompareParagraphAttr
+	//     hands the other side the PARAGRAPH'S START and no characters rather than a position that
+	//     would point at a different word - see its `textDiffered`.
+	//   MEASURED before the fix (work/kcm-selftest/attrpos): a ruby added to 銀河 at target index 3
+	//   selected 名な in the older document, because that is what stands at index 3 over there.
 	change.fSourceStart = source.ModelIndex(sStart);
 	change.fSourceEnd   = source.ModelIndex(sStart + sCount);
 
@@ -525,10 +532,14 @@ void AddAttrChange(KCMStoryChange::Kind kind, KCMStoryAttrKind attrKind,
    identifies "the same ruby" across the two versions. Length is NOT part of the matching: it
    is part of what changed (琥珀 read as こ+はく against こはく is a change of length, and
    the whole point).
+
+   ⚠**textDiffered** says the diff reported THIS pair of paragraphs as a change, so their texts are
+    not the same. A span that exists on one side only then gets **no position on the other side** -
+    the two branches below say why, and work/kcm-selftest/attrpos is what it was measured on.
 */
 void CompareParagraphAttr(KCMStoryAttrKind attrKind,
 						  const KCMAttrSpanList& sourceSpans, const KCMAttrSpanList& targetSpans,
-						  ParaSide& source, ParaSide& target,
+						  ParaSide& source, ParaSide& target, bool16 textDiffered,
 						  std::vector<KCMStoryChange>& out)
 {
 	if (!KCMParaText::SpansDiffer(sourceSpans, targetSpans))
@@ -560,9 +571,15 @@ void CompareParagraphAttr(KCMStoryAttrKind attrKind,
 		else if (haveT && (!haveS || targetSpans[j].fStart < sourceSpans[i].fStart))
 		{
 			// Ruby where there was none.
+			// ⚠**THE OLDER SIDE KEEPS THIS POSITION ONLY WHILE THE TEXT IS SHARED.** Where the words
+			//   changed as well, the same number names a different word over there, so the older side is
+			//   given the paragraph's start and no characters - it has a PLACE but nothing to select,
+			//   which is the shape a text insertion already uses (KCMStoryList.h, fSourceStart).
+			const int32 sStart = textDiffered ? 0 : targetSpans[j].fStart;
+			const int32 sLen   = textDiffered ? 0 : targetSpans[j].fLen;
 			AddAttrChange(KCMStoryChange::kInsert, attrKind,
 						  targetSpans[j].fStart, targetSpans[j].fLen,
-						  targetSpans[j].fStart, targetSpans[j].fLen,
+						  sStart, sLen,
 						  target, source,
 						  targetSpans[j].fValue, std::string(),
 						  out);
@@ -572,8 +589,12 @@ void CompareParagraphAttr(KCMStoryAttrKind attrKind,
 		{
 			// Ruby taken off. @warning the characters are still there -- it is the reading that is
 			//   gone -- so the range is a real one on both sides, unlike a text deletion.
+			// ⚠**Unless the words changed too**, and then the NEWER side gets the paragraph's start and
+			//   no characters, for the reason spelt out in the branch above. The mirror image of it.
+			const int32 tStart = textDiffered ? 0 : sourceSpans[i].fStart;
+			const int32 tLen   = textDiffered ? 0 : sourceSpans[i].fLen;
 			AddAttrChange(KCMStoryChange::kDelete, attrKind,
-						  sourceSpans[i].fStart, sourceSpans[i].fLen,
+						  tStart, tLen,
 						  sourceSpans[i].fStart, sourceSpans[i].fLen,
 						  target, source,
 						  std::string(), sourceSpans[i].fValue,
@@ -736,7 +757,12 @@ void AddAttributeChanges(const std::vector<KCMTextDiff::Change>& paragraphChange
 	//   walks differ only in WHICH paragraphs they hand over; writing the comparison twice would be
 	//   two things to keep right ([[one-question-one-place]]), and the second copy is exactly where
 	//   a kind gets forgotten when a third one is added.
-	auto compareParagraphPair = [&](int32 ai, int32 bi, bool16 onlyWhereTextSurvives)
+	// ⚠**ONE FACT, ONE NAME.** `textDiffered` says the diff reported THIS pair of paragraphs as a
+	//   change, and two things follow from it: the spans have to be filtered (a mark whose characters
+	//   went is not a change of its own), and **a position on one side cannot be handed to the other**
+	//   (2026-09-08). It travelled as `onlyWhereTextSurvives` - the name of one of the two - until the
+	//   second consequence was found.
+	auto compareParagraphPair = [&](int32 ai, int32 bi, bool16 textDiffered)
 	{
 		if (ai < 0 || bi < 0 ||
 			ai >= static_cast<int32>(sourceAttrs.size())  || bi >= static_cast<int32>(targetAttrs.size()) ||
@@ -766,14 +792,14 @@ void AddAttributeChanges(const std::vector<KCMTextDiff::Change>& paragraphChange
 		auto compareAttr = [&](KCMStoryAttrKind kind,
 							   const KCMAttrSpanList& sourceSpans, const KCMAttrSpanList& targetSpans)
 		{
-			const KCMAttrSpanList keptSource = onlyWhereTextSurvives
+			const KCMAttrSpanList keptSource = textDiffered
 				? SpansWhoseTextSurvives(sourceSpans, targetSpans, source, targetParas[bi])
 				: sourceSpans;
-			const KCMAttrSpanList keptTarget = onlyWhereTextSurvives
+			const KCMAttrSpanList keptTarget = textDiffered
 				? SpansWhoseTextSurvives(targetSpans, sourceSpans, target, sourceParas[ai])
 				: targetSpans;
 
-			CompareParagraphAttr(kind, keptSource, keptTarget, source, target, out);
+			CompareParagraphAttr(kind, keptSource, keptTarget, source, target, textDiffered, out);
 		};
 
 		compareAttr(kKCMStoryAttrRuby, sourceAttrs[ai].fRuby, targetAttrs[bi].fRuby);
