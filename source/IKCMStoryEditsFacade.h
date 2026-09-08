@@ -97,7 +97,7 @@ public:
 		bool16		fTextCompared;
 
 		/** WHICH KIND OF ATTRIBUTE this row's children found a difference in, when they found one.
-			**0 = none; 1 = ruby; 2 = kenten.**
+			**0 = none; 1 = ruby; 2 = kenten; 3 = footnote; 4 = endnote.**
 
 			A NUMBER RATHER THAN A FLAG, so that a second attribute costs one more value here and
 			one more label - not another field and another branch everywhere. Kenten is that second
@@ -118,9 +118,23 @@ public:
 			be built together whenever this struct changes (they always are). */
 		int32		fAttrKindCount;
 
+		/** Whether the diff found a change in the WORDS, as opposed to in something over them.
+
+			★**THE COLUMN ASKS THIS RATHER THAN fKinds** (2026-09-08). A footnote or endnote marker
+			is a CHARACTER, so adding one moves the document's own text counter - and fKinds, which
+			comes from those counters, then says "the words changed" for an edit whose only visible
+			difference is a note. The diff knows better: it takes the marker out of the text and
+			reports it as an attribute. Ruby and kenten never showed this up because neither is a
+			character, so the two answers happened to agree.
+			⚠MEANINGLESS UNLESS fTextCompared IS kTrue - it is the diff's answer, and in the pixel
+			 mode nobody diffed anything. **Added at the END of the struct**, as fAttrKindCount was
+			 and for the same reason. */
+		bool16		fHasTextChange;
+
 		Row()
 			: fStoryUID(kInvalidUID), fKinds(kKCMStoryKindNone), fFrameUID(kInvalidUID),
-			  fPageUID(kInvalidUID), fTextCompared(kFalse), fAttrKind(0), fAttrKindCount(0) {}
+			  fPageUID(kInvalidUID), fTextCompared(kFalse), fAttrKind(0), fAttrKindCount(0),
+			  fHasTextChange(kFalse) {}
 	};
 
 	// ---- the list ------------------------------------------------------------------------
@@ -259,7 +273,8 @@ public:
 	virtual bool16	GetChange(int32 nth, int32 which, Change& out) = 0;
 
 	/** WHICH ATTRIBUTE this difference is in - Change::fAttrKind, and nothing else (0 = none,
-		1 = ruby, 2 = kenten). 0 for a text change and for an index that names no change.
+		1 = ruby, 2 = kenten, 3 = footnote, 4 = endnote). 0 for a text change and for an index that
+		names no change.
 
 		WHY THE ONE FIELD HAS A CALL OF ITS OWN. The tree asks this of every row it lays out, to
 		decide how TALL the row is - a ruby change is drawn on two lines, the reading above the

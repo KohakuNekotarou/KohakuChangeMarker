@@ -884,6 +884,16 @@ void AddAttributeChanges(const std::vector<KCMTextDiff::Change>& paragraphChange
 		//   read it aloud. What answers that is fAttrKind, which every row and every change already
 		//   carries. ⇒ **The mistake was one place asking the wrong question, not this call.**
 		compareAttr(kKCMStoryAttrKenten, sourceAttrs[ai].fKenten, targetAttrs[bi].fKenten);
+
+		// ★NOTE MARKERS, THROUGH THE SAME DOOR (2026-09-08, user's request). A reference is a
+		//   character rather than an attribute, but the reader's question about it is the same one
+		//   ruby answers - "what is standing over these words, and did it change" - and its VALUE is
+		//   the number the page prints. ⇒ adding it cost two lines here because
+		//   `compareAttr` had already been made to take a kind rather than to know about ruby.
+		//   ⚠**AN ENDNOTE'S TEXT IS NOT COMPARED HERE**: it lives in another story
+		//     (kEndnoteStoryBoss) and arrives as a story row of its own. This is the marker alone.
+		compareAttr(kKCMStoryAttrFootnote, sourceAttrs[ai].fFootnote, targetAttrs[bi].fFootnote);
+		compareAttr(kKCMStoryAttrEndnote,  sourceAttrs[ai].fEndnote,  targetAttrs[bi].fEndnote);
 	};
 
 	// Walk the two paragraph lists side by side, stepping over each reported change. What is left

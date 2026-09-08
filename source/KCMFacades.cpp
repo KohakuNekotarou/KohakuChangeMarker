@@ -428,8 +428,9 @@ public:
 		out.fFrameUID	= row->fFrameUID;
 		out.fPageUID	= row->fPageUID;
 		out.fTextCompared = row->fTextCompared;
-		out.fAttrKind	= static_cast<int32>(row->fAttrKind);	// 0 = none, 1 = ruby, 2 = kenten
+		out.fAttrKind	= static_cast<int32>(row->fAttrKind);	// 0 = none, 1 = ruby, 2 = kenten, 3 = footnote, 4 = endnote
 		out.fAttrKindCount = row->fAttrKindCount;				// how many DIFFERENT kinds - "Ruby+" when > 1
+		out.fHasTextChange = row->fHasTextChange;				// what the DIFF found, not what the counters said
 		return kTrue;
 	}
 

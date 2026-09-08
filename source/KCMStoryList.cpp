@@ -683,6 +683,11 @@ void KCMStoryList::SetRowChanges(int32 nth, const std::vector<KCMStoryChange>& c
 	//   fields with a KIND rather than a reading, and every such test called it a ruby.
 	gRows[nth].fAttrKind = kKCMStoryAttrNone;
 	gRows[nth].fAttrKindCount = 0;
+	// ★**AND WHETHER THE WORDS THEMSELVES MOVED** - worked out in the same walk, for the reason on
+	//   KCMStoryRow::fHasTextChange: a note's marker is a character, so the change counters answer
+	//   "the text changed" for an edit whose only visible difference is a note. What the column
+	//   needs is what the DIFF found.
+	gRows[nth].fHasTextChange = kFalse;
 
 	// **THE KINDS ALREADY MET, AND NOT A BIT PER KIND.** This held `1u << fAttrKind` until
 	//   2026-09-04, which is correct for the values that exist (0, 1, 2) and undefined for the
@@ -694,7 +699,11 @@ void KCMStoryList::SetRowChanges(int32 nth, const std::vector<KCMStoryChange>& c
 	{
 		if (changes[i].fWhat != KCMStoryChange::kAttr ||
 			changes[i].fAttrKind == kKCMStoryAttrNone)
+		{
+			if (changes[i].fWhat == KCMStoryChange::kText)
+				gRows[nth].fHasTextChange = kTrue;
 			continue;
+		}
 
 		const int32 kind = static_cast<int32>(changes[i].fAttrKind);
 		if (std::find(kindsSeen.begin(), kindsSeen.end(), kind) != kindsSeen.end())

@@ -116,7 +116,8 @@ PMString Translated(const char* key)
 	@param attrKind which attribute the children found FIRST, as KCMStoryAttrKind; 0 for none.
 	@param attrKindCount how many DIFFERENT attribute kinds they found; > 1 puts the '+' on.
 */
-PMString KindLabel(uint32 kinds, bool16 sameKind, int32 attrKind, int32 attrKindCount)
+PMString KindLabel(uint32 kinds, bool16 sameKind, int32 attrKind, int32 attrKindCount,
+				   bool16 hasTextChange)
 {
 	if (sameKind)
 		return Translated(kKCMStoryKindNoneKey);
@@ -130,17 +131,28 @@ PMString KindLabel(uint32 kinds, bool16 sameKind, int32 attrKind, int32 attrKind
 	// ★What the diff FOUND, ahead of what the counters merely reported. ⚠Only when the text itself
 	//   did not change: a story whose words were rewritten AND whose ruby moved is a text edit
 	//   first, and the "Text+" below already says there was more than one kind of change.
+	// ⚠★★★**"THE TEXT DID NOT CHANGE" IS THE DIFF'S ANSWER, NOT THE COUNTERS'** (2026-09-08). This
+	//   read `(kinds & kKCMStoryKindText) == 0` until footnotes arrived, and the two questions had
+	//   never disagreed because ruby and kenten are not characters. **A note's marker IS one**:
+	//   adding an endnote moves the document's text counter, so the row said "Text+" for an edit
+	//   whose only difference was the note - the very row this feature exists to make readable.
+	//   ⇒ ask what was FOUND (KCMStoryRow::fHasTextChange). The counters keep their job one branch
+	//   down, where nothing was diffed and they are all there is.
 	// ⚠★★EACH REPORTED ATTRIBUTE NAMES ITSELF. Ruby has since the beginning; kenten does again
 	//   since 2026-09-01 (user's call), the comparison behind it having been switched back on in
 	//   KCMStoryDiffRun's AddAttributeChanges. **A branch here is only reachable while that call
 	//   exists** - which is the pair to watch if either is ever removed again.
-	if ((kinds & kKCMStoryKindText) == 0)
+	if (!hasTextChange)
 	{
 		const char* attrKey = nil;
 		if (attrKind == kKCMStoryAttrRuby)
 			attrKey = kKCMStoryKindRubyKey;
 		else if (attrKind == kKCMStoryAttrKenten)
 			attrKey = kKCMStoryKindKentenKey;
+		else if (attrKind == kKCMStoryAttrFootnote)
+			attrKey = kKCMStoryKindFootnoteKey;
+		else if (attrKind == kKCMStoryAttrEndnote)
+			attrKey = kKCMStoryKindEndnoteKey;
 
 		if (attrKey != nil)
 		{
@@ -391,7 +403,8 @@ public:
 			//   draw a triangle, so the two can never disagree.
 			const bool16 sameKind = row.fTextCompared
 				&& (Utils<IKCMStoryEditsFacade>()->GetChangeCount(nodeID->GetRow()) == 0);
-			kinds = KindLabel(row.fKinds, sameKind, row.fAttrKind, row.fAttrKindCount);
+			kinds = KindLabel(row.fKinds, sameKind, row.fAttrKind, row.fAttrKindCount,
+							  row.fHasTextChange);
 		}
 		else if (Utils<IKCMStoryEditsFacade>()->GetRowCount() == 0)
 		{
@@ -432,9 +445,15 @@ private:
 		//   reading; kenten earns it since 2026-09-01 by having its KIND DRAWN there as the mark
 		//   itself (KCMKentenMark, user's call). A third attribute would have to earn it in turn -
 		//   which is why this stays a list and does not become "attrKind != none".
+		// ★A FOOTNOTE AND AN ENDNOTE EARN IT WITH THEIR NUMBER (2026-09-08, user's request: "the
+		//   page shows a 1 above the character - show it in the row the way ruby is shown"). The
+		//   number is written out on the upper line exactly as a reading is, which is also what the
+		//   page does with it.
 		const int32 attrKind = Utils<IKCMStoryEditsFacade>()->GetChangeAttrKind(row, change);
 		if (attrKind != static_cast<int32>(kKCMStoryAttrRuby) &&
-			attrKind != static_cast<int32>(kKCMStoryAttrKenten))
+			attrKind != static_cast<int32>(kKCMStoryAttrKenten) &&
+			attrKind != static_cast<int32>(kKCMStoryAttrFootnote) &&
+			attrKind != static_cast<int32>(kKCMStoryAttrEndnote))
 			return kFalse;
 
 		// ⚠★★AND THE UPPER LINE HAS TO HAVE SOMETHING IN IT (2026-09-01, user's call: "when the

@@ -18,6 +18,7 @@
 #include "IAttrReport.h"		// what QueryAttributeAt hands back
 #include "IAttributeStrand.h"	// kenten's run boundaries - see ScanKenten
 #include "IComposeScanner.h"	// the way to an attribute's value over a range
+#include "IFootnoteNumber.h"	// the number a note's marker PRINTS - asked for, never counted (ScanNotes)
 #include "IKentenStyle.h"		// IKentenStyle::KentenKind, and Kenten_None for "no kenten"
 #include "IRubyStrand.h"		// IRubyAttrStrand - ⚠the file is IRubyStrand.h, the class is not
 #include "ITableModel.h"
@@ -28,12 +29,14 @@
 #include "ITextStoryThread.h"
 #include "ITextStoryThreadDict.h"
 #include "ITextStoryThreadDictHier.h"
+#include "ITextUtils.h"		// CollectOwnedItems + OwnedItemDataList - how the SDK's own snippets find note markers
 
 // General includes:
 #include "CJKID.h"			// kRubyAttrStrandBoss, the two ruby attributes, and the kTAKenten* ones
 #include "TableTypes.h"		// GridAddress, RowRange, ColRange
 #include "TextChar.h"		// kTextChar_CR / kTextChar_Table / kTextChar_TableContinued
-#include "TextID.h"			// kCharAttrStrandBoss - the strand kenten's attributes sit on
+#include "TextID.h"			// kCharAttrStrandBoss (kenten's strand) and kFootnoteReferenceBoss / kEndnoteAnchorBoss (the note markers)
+#include "Utils.h"			// Utils<ITextUtils> - the collector above
 #include "TextIterator.h"
 #include "UIDRef.h"
 #include "WideString.h"
@@ -486,6 +489,94 @@ void ScanKenten(ITextModel* model, std::vector<AttrRun>& out)
 	}
 }
 
+/* ScanNotes
+   FOOTNOTE and ENDNOTE references, as one-character spans standing where each marker stands.
+
+   ★★★WHY THEY TRAVEL WITH RUBY AND KENTEN (2026-09-08, user's request: "the page shows a 1 above
+   the character - show it in the row the way ruby is shown"). A reference is a CHARACTER, not an
+   attribute: U+0004 (footnote) or U+0005 (endnote), standing in the text. Read as text it draws
+   nothing, so the row showed a "□" where a note had been added and the reader could not tell what
+   had happened. Reported as a span with the NUMBER as its value, the row draws that number over
+   the marker exactly as it draws a reading over its base text -- which is what the page does too.
+
+   ★**THE NUMBER IS ASKED FOR, NEVER COUNTED.** IFootnoteNumber::GetNumberString answers with the
+   text InDesign itself prints, so a document that restarts its numbering per page or per section
+   still agrees with the row. Counting the markers here would be right only for the default
+   setting. The route is the SDK's own: codesnippets/SnpManipulateTextFootnotes.cpp collects the
+   owned items, keeps the ones whose class is kFootnoteReferenceBoss, and asks each for its
+   number; SnpManipulateTextEndnotes.cpp does the same with kEndnoteAnchorBoss.
+   ★**AND THE ENDNOTE ANCHOR ANSWERS THE SAME INTERFACE** - IEndnoteAnchorData names
+   IFootnoteNumber in as many words - so one loop serves both and there is no second way to be
+   wrong about a number.
+
+   ⚠★★★**THE WHOLE STORY, NOT THE PRIMARY THREAD** - and that is a deliberate departure from the
+    snippets, which both ask for GetPrimaryStoryThreadSpan(). MEASURED 2026-09-08
+    (work/kcm-selftest/footnote2/cellfoot): a footnote inside a TABLE CELL is not in the primary
+    thread, so with the snippets' range its marker was collected by nobody - while ReadStory, which
+    walks every thread, had already taken that marker OUT of the text. The row then showed the note's
+    words arriving and **nothing at all about the note**, which is worse than the "□" this whole
+    feature replaced. ⇒ the range is the model's own TotalLength.
+   ⚠A REFERENCE WHOSE NUMBER CANNOT BE READ still becomes a span, with "?" for its value: the
+    marker IS there, and reporting nothing would be the one wrong answer (the same rule
+    KentenKindName follows for a kind it does not know).
+*/
+void ScanNotes(ITextModel* model, std::vector<AttrRun>& outFootnotes, std::vector<AttrRun>& outEndnotes)
+{
+	Utils<ITextUtils> textUtils;
+	if (textUtils == nil)
+		return;
+
+	const int32 wholeStory = model->TotalLength();
+	if (wholeStory <= 0)
+		return;
+
+	OwnedItemDataList owned;
+	textUtils->CollectOwnedItems(model, 0, wholeStory - 1, &owned);
+
+	IDataBase* const db = ::GetDataBase(model);
+	if (db == nil)
+		return;
+
+	for (int32 i = 0; i < static_cast<int32>(owned.size()); ++i)
+	{
+		const bool16 isFootnote = (owned[i].fClassID == kFootnoteReferenceBoss) ? kTrue : kFalse;
+		const bool16 isEndnote  = (owned[i].fClassID == kEndnoteAnchorBoss) ? kTrue : kFalse;
+		if (!isFootnote && !isEndnote)
+			continue;			// an inline, an anchored object, a note - none of them is a numbered reference
+
+		// ★★★THE SPAN SITS ON THE CHARACTER BEFORE THE MARKER, NOT ON THE MARKER ITSELF, and it has
+		//   to: the marker is taken out of the text (ReadStory), so a span standing on it would
+		//   measure nothing and be dropped - the very rule that stops a ruby on a table's anchor
+		//   from being reported (TakeAttrFor). ★It is also where the page puts the number: at the
+		//   top right of the word the note hangs off.
+		//   ⚠A MARKER AT THE VERY START OF ITS PARAGRAPH HAS NO SUCH CHARACTER. Its span reaches
+		//    back past the paragraph's start, TakeAttrFor clips it away, and the note goes
+		//    unreported - written down in the chapter's unconfirmed list rather than guessed at.
+		if (owned[i].fAt <= 0)
+			continue;
+
+		AttrRun run;
+		run.fAt = owned[i].fAt - 1;
+		run.fLen = 1;
+
+		// ★ASKED OF THE OBJECT, not of the settings: the settings say how numbering WORKS, this
+		//   says what this one note's number IS.
+		PMString numberString;
+		InterfacePtr<IFootnoteNumber> noteNumber(db, owned[i].fUID, UseDefaultIID());
+		if (noteNumber != nil)
+			noteNumber->GetNumberString(IFootnoteNumber::kFootnoteReferenceInText, numberString);
+
+		run.fValue = numberString.GetUTF8String();
+		if (run.fValue.empty())
+			run.fValue = "?";		// the marker is real even when its number is not readable
+
+		if (isFootnote)
+			outFootnotes.push_back(run);
+		else
+			outEndnotes.push_back(run);
+	}
+}
+
 /* CountUncounted
    How many of a paragraph's uncounted positions stand before `at` -- the whole of the difference
    between the model's count and the text's, at one point.
@@ -569,14 +660,42 @@ void TakeAttrFor(const std::vector<AttrRun>& runs, size_t& cursor,
    ruby only sometimes. That is the kind of fault the parallel run would report as a single
    disagreement in one story out of a hundred.
 */
+/** Every kind of mark the walk carries, each with its own place in its own list.
+
+	★**ONE CURSOR PER LIST, AND THEY CANNOT BE SHARED.** The lists are walked in step with the
+	paragraphs but are not the same length, so a shared cursor would drag one of them past its
+	own runs.
+
+	★**IT IS A STRUCT BECAUSE THE THIRD AND FOURTH KINDS ARRIVED** (2026-09-08). ClosePara took a
+	list and a cursor per kind as separate arguments - two kinds were four of its nine - and
+	footnotes and endnotes would have made thirteen, which is the count AddAttrChange had reached
+	before ParaSide was made for exactly this reason (KCMStoryDiffRun.cpp). A fifth kind now costs
+	a field here and one line in ReadStory, not two arguments at every call site. */
+struct AttrWalk
+{
+	const std::vector<AttrRun>&	fRuby;
+	const std::vector<AttrRun>&	fKenten;
+	const std::vector<AttrRun>&	fFootnote;
+	const std::vector<AttrRun>&	fEndnote;
+
+	size_t	fRubyAt;
+	size_t	fKentenAt;
+	size_t	fFootnoteAt;
+	size_t	fEndnoteAt;
+
+	AttrWalk(const std::vector<AttrRun>& ruby, const std::vector<AttrRun>& kenten,
+			 const std::vector<AttrRun>& footnote, const std::vector<AttrRun>& endnote)
+		: fRuby(ruby), fKenten(kenten), fFootnote(footnote), fEndnote(endnote),
+		  fRubyAt(0), fKentenAt(0), fFootnoteAt(0), fEndnoteAt(0) {}
+};
+
 void ClosePara(std::vector<std::string>& outParas,
 			   std::vector<KCMParaAttrs>& outAttrs,
 			   std::vector<int32>& outStarts,
 			   const std::string& text,
 			   const KCMParaAttrs& place,
 			   TextIndex paraStart, TextIndex paraEnd,
-			   const std::vector<AttrRun>& ruby, size_t& rubyCursor,
-			   const std::vector<AttrRun>& kenten, size_t& kentenCursor,
+			   AttrWalk& walk,
 			   std::vector<TextIndex>& uncounted)
 {
 	outParas.push_back(text);
@@ -600,10 +719,15 @@ void ClosePara(std::vector<std::string>& outParas,
 		attrs.fUncountedAt.push_back(static_cast<int32>(uncounted[k] - paraStart) -
 									 static_cast<int32>(k));
 
-	// ⚠ONE CURSOR EACH. The two lists are walked in step with the paragraphs but are not the same
-	//   length, so a shared cursor would drag one of them past its own runs.
-	TakeAttrFor(ruby, rubyCursor, paraStart, paraEnd, uncounted, attrs.fRuby);
-	TakeAttrFor(kenten, kentenCursor, paraStart, paraEnd, uncounted, attrs.fKenten);
+	// ⚠ONE CURSOR EACH - see AttrWalk, which is where they live now.
+	// ★**THE NOTE MARKERS GO THROUGH THE SAME DOOR** as ruby and kenten (2026-09-08), so a marker
+	//   inside a paragraph that also holds a table is shifted into the text's own count by the
+	//   very same arithmetic. Written separately it would have been a second place to get that
+	//   crossing wrong.
+	TakeAttrFor(walk.fRuby,     walk.fRubyAt,     paraStart, paraEnd, uncounted, attrs.fRuby);
+	TakeAttrFor(walk.fKenten,   walk.fKentenAt,   paraStart, paraEnd, uncounted, attrs.fKenten);
+	TakeAttrFor(walk.fFootnote, walk.fFootnoteAt, paraStart, paraEnd, uncounted, attrs.fFootnote);
+	TakeAttrFor(walk.fEndnote,  walk.fEndnoteAt,  paraStart, paraEnd, uncounted, attrs.fEndnote);
 	outAttrs.push_back(attrs);
 
 	// ⚠EMPTIED HERE, WHERE THE PARAGRAPH ENDS, so that the two places a paragraph can close cannot
@@ -648,10 +772,20 @@ bool16 KCMTextRead::ReadStory(const UIDRef& storyRef,
 	std::vector<AttrRun> kenten;
 	ScanKenten(model, kenten);
 
+	// ★AND THE NOTE MARKERS, OFF THE SAME MOMENT AGAIN (2026-09-08). Their numbers are read here
+	//   too, so a row shows the number the page showed when the comparison ran - not the one the
+	//   document would print after the next edit.
+	std::vector<AttrRun> footnotes;
+	std::vector<AttrRun> endnotes;
+	ScanNotes(model, footnotes, endnotes);
+
+	AttrWalk walk(ruby, kenten, footnotes, endnotes);
+
 	const TextIndex total = model->TotalLength();
 	size_t nextCell = 0;
-	size_t nextRuby = 0;
-	size_t nextKenten = 0;
+	// ⚠**NOT THE MARKERS ABOVE.** This numbers the footnote THREADS as the walk meets them, which
+	//   is what tells one note's paragraphs from another's (KCMParaAttrs::fFootnoteOrdinal). The
+	//   markers are spans and are counted by nobody - they carry the number InDesign gave them.
 	int32 nextFootnote = 0;
 
 	// ★★★ONE LOOP FOR THE BODY, THE CELLS AND THE FOOTNOTES. QueryStoryThread hands back the
@@ -743,10 +877,30 @@ bool16 KCMTextRead::ReadStory(const UIDRef& storyRef,
 				continue;
 			}
 
+			// ★★★A NOTE'S MARKER IS A POSITION, NOT TEXT (2026-09-08). U+0004 and U+0005 draw
+			//   nothing at all, so read as text they put a "□" in the row and the reader was shown a
+			//   one-character change nobody could identify - which is what the user reported. They
+			//   are reported as SPANS instead, carrying the number the page prints (ScanNotes), and
+			//   the same treatment the table's own characters get keeps the two counts in step.
+			//   ⚠**AND THAT IS WHY THEY HAVE TO COME OUT OF THE TEXT.** Left in, the paragraph
+			//     holding a new note counts as a paragraph whose WORDS changed, and an attribute
+			//     found in such a paragraph is dropped unless its characters survive on both sides
+			//     (KCMStoryDiffRun's SpansWhoseTextSurvives) - a marker that has just been added
+			//     never does. The span would be built and then thrown away, and the row would say
+			//     what it said before.
+			if (cp == kTextChar_FootnoteMarker || cp == kTextChar_EndnoteMarker)
+			{
+				if (!paraHasCharacters)
+					paraStart = i + 1;
+				else
+					uncounted.push_back(i);
+				continue;
+			}
+
 			if (cp == kTextChar_CR)
 			{
 				ClosePara(outParas, outAttrs, outStarts, text, place, paraStart, i,
-						  ruby, nextRuby, kenten, nextKenten, uncounted);
+						  walk, uncounted);
 				text.clear();
 				paraStart = i + 1;
 				paraHasCharacters = kFalse;
@@ -768,7 +922,7 @@ bool16 KCMTextRead::ReadStory(const UIDRef& storyRef,
 		// pushed, or every thread would end with a paragraph nobody wrote.
 		if (!text.empty())
 			ClosePara(outParas, outAttrs, outStarts, text, place, paraStart, threadEnd,
-					  ruby, nextRuby, kenten, nextKenten, uncounted);
+					  walk, uncounted);
 
 		position = threadEnd;
 	}

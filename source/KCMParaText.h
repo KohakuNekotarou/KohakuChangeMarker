@@ -114,6 +114,27 @@ struct KCMParaAttrs
 		 draws it asks Change::fAttrKind first; see the note on KCMAttrSpan::fValue. */
 	KCMAttrSpanList	fKenten;
 
+	/** ★**FOOTNOTE AND ENDNOTE MARKERS, CARRIED AS IF THEY WERE MARKS OVER THE TEXT**
+		(2026-09-08, user's request: "the page shows a 1 above the character - show it in the row
+		the way ruby is shown").
+
+		⚠**THEY ARE NOT ATTRIBUTES AND THAT IS THE POINT.** A reference is a CHARACTER standing in
+		 the text (U+0004 for a footnote, U+0005 for an endnote), not something laid over one. Read
+		 as text it is invisible, so the panel showed a "□" and the reader could not tell what had
+		 happened - which is exactly what the user reported. Carried here, the difference comes out
+		 as one attribute change with the note's NUMBER above the words, the way the page prints it.
+
+		★**THE VALUE IS THE NUMBER InDesign ITSELF WOULD PRINT**, taken from IFootnoteNumber rather
+		 than counted here, so a document that restarts its numbering per page or per section still
+		 agrees with the row (KCMTextRead::ScanNotes).
+
+		⚠**THE SPAN IS THE MARKER ITSELF** - one character, at the marker's own place - so the row
+		 draws the number over the reference, not over the word beside it.
+		@warning an ENDNOTE's own words are NOT here: they live in another story
+		 (kEndnoteStoryBoss), which arrives as a story row of its own. Only the marker is reported. */
+	KCMAttrSpanList	fFootnote;
+	KCMAttrSpanList	fEndnote;
+
 	/** Which table cell this paragraph IS, if it is one at all.
 
 		**WHY IT EXISTS: A CELL IS A PLACE.** The text of a cell paragraph and of a body paragraph

@@ -809,12 +809,13 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowStateWidgetID, kKCMUIPrefix + 49)	// = t
 #define kKCMStoryKindNoneKey		kKCMStringPrefix "kKCMStoryKindNoneKey"		// row, right: no difference in the text
 #define kKCMStoryKindRubyKey		kKCMStringPrefix "kKCMStoryKindRubyKey"		// row, right: the ruby changed while the text did not. ★It names the case rather than reporting the counter-derived "Attr"
 #define kKCMStoryKindKentenKey	kKCMStringPrefix "kKCMStoryKindKentenKey"	// row, right: the emphasis marks changed while the text did not. Same shape as the ruby key above and for the same reason - "Attr" would be true and useless. ⚠The word is the typographic term, not a translation of it: the panel is English (KCM's convention) and "Kenten" is what the Kenten panel this reader compares against is called
-// ⚠★★**The kenten (emphasis dot) key was removed** ＝ what Story Edits reports is text changes
-//   and ruby, and nothing else (user's decision). The key that existed for one day became a
-//   string nobody asked for the moment the comparison behind it was stopped, so the two went
-//   together (with the matching row in KCMUI_enUS.fr).
-//   ★The side that reads kenten out of a snippet is still there (KCMParaText.h), so bringing
-//     it back needs that one comparison and this key.
+#define kKCMStoryKindFootnoteKey	kKCMStringPrefix "kKCMStoryKindFootnoteKey"	// ★row, right: a FOOTNOTE was added, removed or renumbered while the words stayed (2026-09-08, user's request). Same shape as the two keys above: the case names itself rather than arriving as the counters' "Text"
+#define kKCMStoryKindEndnoteKey	kKCMStringPrefix "kKCMStoryKindEndnoteKey"	// ★row, right: the same for an ENDNOTE. ⚠A SEPARATE WORD, not "Footnote" for both: the two are different features with different numbering, and the endnote's own text is in another story while the footnote's is in this one - a reader who cannot tell them apart from the row would have to open the document to find out which they are looking at
+// ⚠★★**THE PARAGRAPH THAT STOOD HERE SAID THE KENTEN KEY HAD BEEN REMOVED** - and the key is two
+//   lines above, has been since 2026-09-01, and the note was written when it was taken out for one
+//   day in August. It survived the feature coming back because nothing that reads the code has to
+//   read a comment. ⇒ **A note about a thing being GONE is the kind that rots silently**: the thing
+//   returning does not touch it. (2026-09-08)
 
 // The column headings of the list. ★**Do not reuse the words from inside it**: the second
 // heading is "Story" rather than "Text" and the third is "Change" rather than "Kind" (the

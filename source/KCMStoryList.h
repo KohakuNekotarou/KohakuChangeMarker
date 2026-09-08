@@ -257,10 +257,24 @@ struct KCMStoryRow
 		⚠Worked out beside fAttrKind, from the same walk, and nowhere else. */
 	int32			fAttrKindCount;
 
+	/** Whether the diff found a change in the WORDS - as opposed to in something standing over them.
+
+		★★★**IT EXISTS BECAUSE A NOTE'S MARKER IS A CHARACTER** (2026-09-08). The Change column
+		names an attribute only when the words did not move, and it asked the CHANGE COUNTERS for
+		that. Ruby and kenten are not characters, so the counters agreed with the diff and nobody
+		noticed the difference between the two questions. A footnote reference IS a character: adding
+		one moves the text counter, so the counters say "the words changed" while the diff - which
+		takes the marker out of the text on purpose (KCMTextRead) - has found nothing of the kind.
+		The row then read "Text+" for an edit whose only visible difference was a note.
+		⇒ **The column now asks what was FOUND, not what the counters reported.** The counters are
+		still the fallback for a row nobody diffed (KCMStoryRowFilter.h says where).
+		⚠It is the diff's answer, so it means nothing unless fTextCompared is kTrue. */
+	bool16			fHasTextChange;
+
 	KCMStoryRow()
 		: fStoryUID(kInvalidUID), fKinds(kKCMStoryKindNone), fFrameUID(kInvalidUID),
 		  fPageUID(kInvalidUID), fPageIndex(kMaxInt32), fTextCompared(kFalse),
-		  fAttrKind(kKCMStoryAttrNone), fAttrKindCount(0) {}
+		  fAttrKind(kKCMStoryAttrNone), fAttrKindCount(0), fHasTextChange(kFalse) {}
 };
 
 /** The first frame a story is placed in -- where a jump to that story should go.

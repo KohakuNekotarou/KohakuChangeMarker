@@ -71,7 +71,7 @@ enum KCMStoryAttrKind
 {
 	kKCMStoryAttrNone = 0,	// the children are text changes, or there are none
 	kKCMStoryAttrRuby = 1,	// a reading over characters that did not themselves change
-	kKCMStoryAttrKenten = 2	// emphasis marks (kenten), over characters that did not themselves
+	kKCMStoryAttrKenten = 2,	// emphasis marks (kenten), over characters that did not themselves
 								// change. ★Reported from 2026-09-01 (user: "if it can be found, I
 								// want to find it"), after a day in August and a long pause. The
 								// pause is why the number is worth reading twice: **the value was
@@ -81,6 +81,23 @@ enum KCMStoryAttrKind
 								// panel draws it as the MARK rather than writing it out
 								// (ui/KCMKentenMark). Anything that shows it must ask fAttrKind
 								// first - the string cannot say which it is.
+	kKCMStoryAttrFootnote = 3,	// ★a FOOTNOTE hanging off one character (2026-09-08, user's
+								// request: "the page shows a 1 above the character - show it in the
+								// row the way ruby is shown"). ITS VALUE IS THE NUMBER AS THE PAGE
+								// PRINTS IT ("1"), asked of InDesign rather than counted here, so a
+								// document that restarts its numbering still agrees with the row.
+								// ⚠**THE MARKER IS A CHARACTER AND THE OTHER TWO ARE NOT.** Ruby and
+								// kenten are attributes over text that stays; a footnote reference is
+								// U+0004 standing IN the text. It travels as an attribute all the
+								// same, because what the reader needs of it is identical - a value
+								// sitting over a place - and because the alternative (a text change
+								// of one invisible character) is what the panel used to show: a "□"
+								// nobody could read.
+	kKCMStoryAttrEndnote = 4	// ★the same for an ENDNOTE (U+0005). ⚠**ITS TEXT LIVES IN ANOTHER
+								// STORY** (kEndnoteStoryBoss - measured 2026-09-08: adding one makes
+								// app.documents[0].stories go from 1 to 2), so only the marker is
+								// reported here; the note's own words arrive as a story row of their
+								// own, exactly as they did before.
 };
 
 /** The two kinds that mean "this story has no partner in the other version".
