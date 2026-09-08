@@ -35,6 +35,12 @@
 #include "ISpreadList.h"
 #include "IStoryList.h"	// stage 9 - a story on its own
 #include "IXferBytes.h"
+#include "IExportProvider.h"	// ExportToStream - the document, into memory
+#include "IK2ServiceProvider.h"
+#include "IK2ServiceRegistry.h"
+#include "IUCFPackageUtils.h"	// a UCF package (IDML) opened from a stream, not a file
+#include "ISelectionManager.h"	// the active selection - what SnpExportEPub passes as targetboss
+#include "ISelectionUtils.h"
 
 // General includes:
 #include "DocFrameworkID.h"	// kDocumentObjectScriptElement - the document as a scripting object
@@ -44,9 +50,18 @@
 #include "StreamUtil.h"
 #include "UIDList.h"
 #include "Utils.h"
+#include "ErrorUtils.h"		// ExportToStream returns void; failure lands on the global code
+#include "SaveBackID.h"		// kSaveBackExportProviderBoss - the IDML export provider
+#include "SnippetID.h"		// kSnippetExportProviderBoss - named in the catalogue
+#include "XMLID.h"			// kXMLExportProviderBoss - named in the catalogue
+#include "AssignmentID.h"	// kAssignmentExport{All,Spreads,Frames}PolicyBoss
+#include "JBXID.h"			// kJBXExportPolicyBoss - the only policy that carries settings
+#include "AppFrameworkID.h"	// kActionExportPolicyBoss
+#include "PackageAndPreflightID.h"	// kPreflightProfileExportPolicyBoss
 
 #include <windows.h>		// ::GetTickCount - each route reports how long it took
 #include <stdio.h>			// the log survives a crash; the report string does not
+#include <string.h>		// strcmp - the resume file is read back as plain lines
 #include <map>
 #include <string>
 
@@ -165,16 +180,72 @@ IDocument* FirstDocument()
 	return docList->GetNthDoc(0);
 }
 
+/** The policies already tried, kept in a file so that a crash does not force a rebuild.
+
+    Each candidate is recorded BEFORE it is tried. If InDesign dies inside one - as it did in
+    kSaveBackExportPolicyBoss on 2026-09-09 - the name is already on disk and the next run skips
+    straight past it, instead of stopping the sweep at the same place forever. */
+const char* const kDonePath =
+	"C:/Users/user/Desktop/plugin_sdk_21.0.0.192/work/kcm-policy-done.txt";
+/** Where stage 23 writes the whole export, so it can be diffed from outside InDesign. */
+const char* const kDumpPath =
+	"C:/Users/user/Desktop/plugin_sdk_21.0.0.192/work/kcm-inx-action.xml";
+
+bool16 AlreadyTried(const char* name)
+{
+	FILE* f = nil;
+	if (::fopen_s(&f, kDonePath, "r") != 0 || f == nil)
+		return kFalse;
+	char line[256];
+	bool16 found = kFalse;
+	while (::fgets(line, sizeof(line), f) != nil)
+	{
+		size_t n = ::strlen(line);
+		while (n > 0 && (line[n - 1] == '\n' || line[n - 1] == '\r'))
+			line[--n] = 0;
+		if (::strcmp(line, name) == 0)
+		{
+			found = kTrue;
+			break;
+		}
+	}
+	::fclose(f);
+	return found;
+}
+
+void MarkTried(const char* name)
+{
+	FILE* f = nil;
+	if (::fopen_s(&f, kDonePath, "a") == 0 && f != nil)
+	{
+		::fprintf(f, "%s\n", name);
+		::fclose(f);
+	}
+}
+
+/** Log a label and a number. Same reason as Log: what is in the file is what survives. */
+void LogNum(const char* label, int32 value)
+{
+	char buf[512];
+	::sprintf_s(buf, sizeof(buf), "    %s%d", label, static_cast<int>(value));
+	Log(buf);
+}
+
 void Line(PMString& out, const char* text)
 {
 	out.Append(text);
 	out.Append("\n");
+	Log(text);	// see LineNum: the report dies with the run, the log survives it
 }
 
 void LineNum(PMString& out, const char* label, int32 value)
 {
 	out.Append(label);
 	out.AppendNumber(value);
+	// ALSO to the log. The report string is built in memory and returned at the END of the run,
+	// so a stage that HANGS or dies takes every earlier answer with it - which is exactly what
+	// happened on 2026-09-09: stage 16 wedged InDesign and stages 13-15 became unreadable.
+	LogNum(label, value);
 	out.Append("\n");
 }
 
@@ -196,6 +267,26 @@ void Report(PMString& out, const char* what, ErrorCode err, const ProbeBytes& by
 	}
 }
 
+
+/** Open a stream if it is not already usable, and report the state either way.
+
+    SnpImportExportXML.cpp:211-216 opens its stream and checks GetStreamState() before handing it
+    to ExportToStream. Omitting that was the ONE difference between the snippet's call and mine,
+    and the call that omitted it KILLED INDESIGN on 2026-09-09 (the log ends at
+    "stage16: about to call ExportToStream (XML)", with no "returned" after it).
+
+    Shared on purpose: this is the preparation BEFORE a route, not the route itself, so it does
+    not blur which route died. */
+bool16 EnsureStreamOpen(IPMStream* stream, PMString& out)
+{
+	if (stream == nil)
+		return kFalse;
+	if (stream->GetStreamState() != kStreamStateGood)
+		stream->Open();
+	LineNum(out, "stream state handed to ExportToStream (good = ", static_cast<int32>(kStreamStateGood));
+	LineNum(out, "  actual state: ", static_cast<int32>(stream->GetStreamState()));
+	return (stream->GetStreamState() == kStreamStateGood);
+}
 /** Count the names that answer the real question: does THIS snippet carry styles, swatches
     and fonts, or only a reference to them?
 
@@ -807,6 +898,869 @@ void Stage12_PropertiesOfStyle(IDocument* doc, IScriptRequestData* data, PMStrin
 	Log("stage12: leave (ok)");
 }
 
+/** Name the export providers we already know, so the catalogue reads as something other than a
+    list of anonymous formats. Comparison only: ClassID compares, and that is all that is needed
+    here - the SDK promises no numeric value for one. */
+const char* KnownProviderName(const ClassID& cls)
+{
+	if (cls == kSaveBackExportProviderBoss)			return "SaveBack -- IDML";
+	if (cls == kSnippetExportProviderBoss)			return "Snippet -- IDMS";
+	if (cls == kSnippetStructureExportProviderBoss)	return "Snippet structure";
+	if (cls == kXMLExportProviderBoss)				return "XML";
+	return "";
+}
+
+/** STAGE 13 - the catalogue. Every registered export provider, and every format name it answers
+    to. Reading only: CountFormats and GetNthFormatName ask the provider about itself and touch
+    no document, so this stage cannot break one.
+
+    It has to come first because STAGE 14 needs a format name and THE SDK NEVER WRITES ONE DOWN
+    for IDML - not in a header, not in a sample. The only way to learn it is to ask the running
+    application. Worth keeping for its own sake too: this is the only list of what this InDesign
+    can be asked to write. */
+void Stage13_ListExportFormats(IDocument* doc, PMString& out)
+{
+	Log("stage13: enter -- reading only");
+	Line(out, "-- STAGE 13: every export provider and the format names it answers to --");
+
+	InterfacePtr<IK2ServiceRegistry> registry(GetExecutionContextSession(), UseDefaultIID());
+	if (registry == nil)
+	{
+		Line(out, "skipped (no service registry)");
+		Log("stage13: leave (no registry)");
+		return;
+	}
+
+	const int32 count = registry->GetServiceProviderCount(kExportProviderService);
+	LineNum(out, "export providers registered: ", count);
+
+	for (int32 i = 0; i < count; ++i)
+	{
+		InterfacePtr<IK2ServiceProvider> provider(
+			registry->QueryNthServiceProvider(kExportProviderService, i));
+		if (provider == nil)
+			continue;
+		InterfacePtr<IExportProvider> exporter(provider, IID_IEXPORTPROVIDER);
+		if (exporter == nil)
+			continue;
+
+		const ClassID cls = ::GetClass(provider);
+		const char* const known = KnownProviderName(cls);
+		const int32 formats = exporter->CountFormats();
+
+		for (int32 f = 0; f < formats; ++f)
+		{
+			PMString name = exporter->GetNthFormatName(f);
+			name.SetTranslatable(kFalse);
+			out.Append("  [");
+			out.Append(name);
+			out.Append("] toFile=");
+			out.Append(exporter->CanExportToFile() ? "y" : "n");
+			out.Append(" thisDoc=");
+			out.Append(exporter->CanExportThisFormat(doc, nil, name) ? "y" : "n");
+			if (known[0] != 0)
+			{
+				out.Append("   <== ");
+				out.Append(known);
+			}
+			out.Append("\n");
+		}
+	}
+	Log("stage13: leave (ok)");
+}
+
+/** STAGE 14 - THE QUESTION. Ask the IDML export provider to write the WHOLE DOCUMENT into a
+    stream that lives in memory.
+
+    IExportProvider.h:77 puts ExportToStream beside ExportToFile and hands it an IDocument*, so
+    the unit is the document, not the selection. kSaveBackExportProviderBoss is the IDML provider
+    (SaveBack is the plug-in behind 'export as INX'; ScriptingDefs.h:622 still says so in its
+    heading), and the dictionary taken from the running application says it implements
+    IID_IEXPORTPROVIDER.
+
+    Shape copied from codesnippets/SnpImportExportXML.cpp:189-221: address the provider by
+    ClassID, ask CanExportThisFormat, then ExportToStream. That snippet is also the only place
+    that says where the error goes - ExportToStream returns void, and failure arrives on the
+    GLOBAL error code. */
+void Stage14_ExportDocumentToStream(IDocument* doc, ProbeBytes& bytes, PMString& out, PMString& usedFormat)
+{
+	Log("stage14: enter -- CAN CRASH");
+	Line(out, "-- STAGE 14: ExportToStream on the WHOLE DOCUMENT, into memory --");
+
+	InterfacePtr<IK2ServiceRegistry> registry(GetExecutionContextSession(), UseDefaultIID());
+	if (registry == nil)
+	{
+		Line(out, "skipped (no service registry)");
+		Log("stage14: leave (no registry)");
+		return;
+	}
+
+	InterfacePtr<IK2ServiceProvider> provider(
+		registry->QueryServiceProviderByClassID(kExportProviderService, kSaveBackExportProviderBoss));
+	out.Append("the SaveBack (IDML) provider answers: ");
+	Line(out, (provider != nil) ? "yes" : "no");
+	if (provider == nil)
+	{
+		Log("stage14: leave (no provider)");
+		return;
+	}
+
+	InterfacePtr<IExportProvider> exporter(provider, IID_IEXPORTPROVIDER);
+	out.Append("it answers IExportProvider: ");
+	Line(out, (exporter != nil) ? "yes" : "no");
+	if (exporter == nil)
+	{
+		Log("stage14: leave (no IExportProvider)");
+		return;
+	}
+
+	// Take the first format it says it can write FOR THIS DOCUMENT. Asking is the point: the
+	// name is not knowable from the SDK.
+	PMString chosen;
+	chosen.SetTranslatable(kFalse);
+	const int32 formats = exporter->CountFormats();
+	LineNum(out, "formats this provider offers: ", formats);
+	for (int32 f = 0; f < formats; ++f)
+	{
+		PMString name = exporter->GetNthFormatName(f);
+		name.SetTranslatable(kFalse);
+		const bool16 can = exporter->CanExportThisFormat(doc, nil, name);
+		out.Append("  format [");
+		out.Append(name);
+		out.Append("] canExportThisFormat=");
+		Line(out, can ? "yes" : "no");
+		if (can && chosen.IsEmpty())
+			chosen = name;
+	}
+	if (chosen.IsEmpty())
+	{
+		Line(out, "no format was accepted for this document - NOTHING WAS TRIED");
+		Log("stage14: leave (no format accepted)");
+		return;
+	}
+
+	InterfacePtr<IPMStream> stream(StreamUtil::CreateMemoryStreamWrite(&bytes));
+	if (stream == nil)
+	{
+		Line(out, "skipped (no stream)");
+		Log("stage14: leave (no stream)");
+		return;
+	}
+
+	if (!EnsureStreamOpen(stream, out))
+	{
+		Line(out, "the stream is NOT good - nothing was tried (this is the 2026-09-09 crash guard)");
+		return;
+	}
+	ErrorUtils::PMSetGlobalErrorCode(kSuccess);	// clear whatever was standing before we ask
+	Log("stage14: about to call ExportToStream");
+	const DWORD began = ::GetTickCount();
+	exporter->ExportToStream(stream, doc, nil, chosen, kSuppressUI);
+	const DWORD took = ::GetTickCount() - began;
+	Log("stage14: ExportToStream returned");
+	stream->Flush();
+
+	const ErrorCode err = ErrorUtils::PMGetGlobalErrorCode();
+	out.Append("ExportToStream global ErrorCode (0 = kSuccess): ");
+	out.AppendNumber(static_cast<int32>(err));
+	out.Append("\n");
+	LineNum(out, "bytes: ", static_cast<int32>(bytes.Size()));
+	LineNum(out, "milliseconds: ", static_cast<int32>(took));
+
+	// A UCF package IS a zip, so the first four bytes have to be 'P','K',03,04. Checking the
+	// signature rather than printing the head keeps binary out of a PMString, and it answers a
+	// sharper question than a byte count does: did we get a PACKAGE, or some text?
+	if (bytes.Size() >= 4)
+	{
+		const std::string& d = bytes.Data();
+		const bool16 isZip = (d[0] == 'P' && d[1] == 'K' &&
+			static_cast<uchar>(d[2]) == 0x03 && static_cast<uchar>(d[3]) == 0x04);
+		out.Append("starts with the zip signature PK 03 04: ");
+		Line(out, isZip ? "yes" : "no");
+		if (!isZip)
+		{
+			out.Append("first line: ");
+			out.Append(bytes.FirstLine(160));
+			out.Append("\n");
+		}
+	}
+
+	if (bytes.Size() > 0)
+		usedFormat = chosen;
+	Log("stage14: leave (ok)");
+}
+
+/** STAGE 15 - and can we read it back without ever touching the disk?
+
+    IUCFPackageUtils has an IPMStream overload beside every IDFile one (IUCFPackageUtils.h:134,137),
+    so a package that only exists in memory can be opened and a single member read out of it -
+    no unzip, no temporary folder.
+
+    The count at the end is the part that matters. A byte count only proves that something came
+    out; comparing the Story components named in designmap.xml against the stories the live
+    document actually has is what proves the bytes are THIS DOCUMENT. (2026-09-08 taught this the
+    hard way: ExportAppPrefs produced 331,797 bytes that did not move when the document changed.) */
+void Stage15_OpenAsUcfPackage(IDocument* doc, ProbeBytes& bytes, PMString& out)
+{
+	Log("stage15: enter");
+	Line(out, "-- STAGE 15: open those bytes as a UCF package, in memory --");
+
+	if (bytes.Size() == 0)
+	{
+		Line(out, "skipped (stage 14 produced no bytes)");
+		Log("stage15: leave (no bytes)");
+		return;
+	}
+
+	bytes.Seek(0, kSeekFromStart);
+	InterfacePtr<IPMStream> in(StreamUtil::CreateMemoryStreamRead(&bytes));
+	if (in == nil)
+	{
+		Line(out, "skipped (no read stream)");
+		Log("stage15: leave (no stream)");
+		return;
+	}
+
+	IUCFPackageUtils::UCFErrorCode err = IUCFPackageUtils::kSuccess;
+	Log("stage15: about to call OpenPackage");
+	IUCFPackageUtils::PackageRefPtr ref = Utils<IUCFPackageUtils>()->OpenPackage(in, err);
+	Log("stage15: OpenPackage returned");
+	LineNum(out, "OpenPackage UCFErrorCode (0 = success): ", static_cast<int32>(err));
+	out.Append("package opened: ");
+	Line(out, (ref != nil) ? "yes" : "no");
+	if (ref == nil)
+	{
+		Log("stage15: leave (not a package)");
+		return;
+	}
+
+	static const char* const kPaths[] = {
+		"mimetype", "designmap.xml", "META-INF/container.xml",
+		"Resources/Styles.xml", "Resources/Fonts.xml", "Resources/Graphic.xml",
+		"Resources/Preferences.xml", "XML/Tags.xml", "XML/BackingStory.xml" };
+
+	Line(out, "members present:");
+	for (int32 p = 0; p < static_cast<int32>(sizeof(kPaths) / sizeof(kPaths[0])); ++p)
+	{
+		PMString path(kPaths[p]);
+		path.SetTranslatable(kFalse);
+		const bool16 exists = Utils<IUCFPackageUtils>()->FileExists(ref, WideString(path));
+		out.Append("  [");
+		out.Append(exists ? "y" : "n");
+		out.Append("] ");
+		out.Append(kPaths[p]);
+		out.Append("\n");
+	}
+
+	// designmap.xml is the one member worth reading: it names every other component, so it says
+	// how many stories and spreads the package believes the document has.
+	PMString dmName("designmap.xml");
+	dmName.SetTranslatable(kFalse);
+	Log("stage15: about to open designmap.xml");
+	InterfacePtr<IPMStream> dm(Utils<IUCFPackageUtils>()->OpenStream(ref, WideString(dmName)));
+	Log("stage15: OpenStream returned");
+	if (dm != nil)
+	{
+		std::string text;
+		uchar buf[4096];
+		int32 got = 0;
+		while ((got = dm->XferByte(buf, static_cast<int32>(sizeof(buf)))) > 0)
+			text.append(reinterpret_cast<const char*>(buf), static_cast<size_t>(got));
+		dm->Close();
+
+		LineNum(out, "designmap.xml bytes read: ", static_cast<int32>(text.size()));
+
+		int32 stories = 0;
+		for (size_t at = text.find("Stories/Story"); at != std::string::npos;
+			 at = text.find("Stories/Story", at + 1))
+			++stories;
+		int32 spreads = 0;
+		for (size_t at = text.find("Spreads/Spread"); at != std::string::npos;
+			 at = text.find("Spreads/Spread", at + 1))
+			++spreads;
+
+		LineNum(out, "Story components named in designmap:  ", stories);
+		LineNum(out, "Spread components named in designmap: ", spreads);
+
+		InterfacePtr<IStoryList> storyList(doc, UseDefaultIID());
+		if (storyList != nil)
+			LineNum(out, "  ...the LIVE document has this many user stories: ",
+				storyList->GetUserAccessibleStoryCount());
+		InterfacePtr<ISpreadList> spreadList(doc, UseDefaultIID());
+		if (spreadList != nil)
+			LineNum(out, "  ...the LIVE document has this many spreads:       ",
+				spreadList->GetSpreadCount());
+	}
+	else
+	{
+		Line(out, "designmap.xml could not be opened");
+	}
+
+	Utils<IUCFPackageUtils>()->ClosePackage(ref);
+	Log("stage15: leave (ok)");
+}
+
+/** STAGE 16 - THE CONTROL, and it has to come before any conclusion about stage 14.
+
+    Stage 14 got 0 bytes and no error. That has two possible causes and they are not the same:
+    the provider wrote nothing, or MY STREAM cannot be written to through this route. Measuring
+    one without the other cannot tell them apart.
+
+    So: the XML provider, called exactly the way codesnippets/SnpImportExportXML.cpp:189-221
+    calls it - ClassID-addressed, targetboss nil, format "XML" - into the same kind of memory
+    stream. The DOM says an XML export of this document is about 70 bytes, so ~70 here means the
+    route works and stage 14's silence belongs to SaveBack; 0 here means the fault is mine. */
+void Stage16_ControlXmlProviderToStream(IDocument* doc, PMString& out)
+{
+	Log("stage16: enter -- CONTROL");
+	Line(out, "-- STAGE 16: CONTROL - the XML provider into a memory stream (nil targetboss) --");
+
+	InterfacePtr<IK2ServiceRegistry> registry(GetExecutionContextSession(), UseDefaultIID());
+	if (registry == nil)
+	{
+		Line(out, "skipped (no service registry)");
+		Log("stage16: leave (no registry)");
+		return;
+	}
+	InterfacePtr<IK2ServiceProvider> provider(
+		registry->QueryServiceProviderByClassID(kExportProviderService, kXMLExportProviderBoss));
+	InterfacePtr<IExportProvider> exporter(provider, IID_IEXPORTPROVIDER);
+	if (exporter == nil)
+	{
+		Line(out, "skipped (no XML export provider)");
+		Log("stage16: leave (no provider)");
+		return;
+	}
+
+	PMString formatName("XML");
+	formatName.SetTranslatable(kFalse);
+	out.Append("CanExportThisFormat(doc, nil, \"XML\"): ");
+	Line(out, exporter->CanExportThisFormat(doc, nil, formatName) ? "yes" : "no");
+
+	ProbeBytes bytes;
+	InterfacePtr<IPMStream> stream(StreamUtil::CreateMemoryStreamWrite(&bytes));
+	if (stream == nil)
+	{
+		Line(out, "skipped (no stream)");
+		Log("stage16: leave (no stream)");
+		return;
+	}
+
+	if (!EnsureStreamOpen(stream, out))
+	{
+		Line(out, "the stream is NOT good - nothing was tried (this is the 2026-09-09 crash guard)");
+		return;
+	}
+	ErrorUtils::PMSetGlobalErrorCode(kSuccess);
+	Log("stage16: about to call ExportToStream (XML)");
+	const DWORD began = ::GetTickCount();
+	exporter->ExportToStream(stream, doc, nil, formatName, kSuppressUI);
+	const DWORD took = ::GetTickCount() - began;
+	Log("stage16: ExportToStream returned");
+	stream->Flush();
+
+	const ErrorCode err = ErrorUtils::PMGetGlobalErrorCode();
+	Report(out, "ExportToStream(XML, nil targetboss)", err, bytes, took);
+	Line(out, (bytes.Size() > 0)
+		? ">> THE ROUTE WORKS. A memory stream can be written through ExportToStream."
+		: ">> THE ROUTE PRODUCED NOTHING EITHER - suspect the stream, not the provider.");
+	Log("stage16: leave (ok)");
+}
+
+/** STAGE 17 - stage 14 again, changing ONE thing: targetboss.
+
+    Why this one: the only ExportToStream implementation shipped in source form
+    (open/components/incopyexport/export/InCopyStoryExportProvider.cpp:339-353) does this and
+    nothing else -
+
+        InterfacePtr<IExportProvider> p(targetBoss, IID_IINCOPYEXPORTSUITE);
+        if (p) { p->ExportToStream(...); }        // and if targetBoss is nil: RETURNS SILENTLY
+
+    - which is exactly stage 14's symptom: no bytes, no time, no error. codesnippets/
+    SnpExportEPub.cpp:102-119 passes the active selection there, so that is what we pass. */
+void Stage17_SaveBackWithSelection(IDocument* doc, ProbeBytes& bytes, PMString& out)
+{
+	Log("stage17: enter -- CAN CRASH");
+	Line(out, "-- STAGE 17: SaveBack again, with the ACTIVE SELECTION as targetboss --");
+
+	if (bytes.Size() > 0)
+	{
+		Line(out, "skipped (an earlier stage already produced bytes)");
+		Log("stage17: leave (already have bytes)");
+		return;
+	}
+
+	InterfacePtr<IK2ServiceRegistry> registry(GetExecutionContextSession(), UseDefaultIID());
+	if (registry == nil)
+	{
+		Line(out, "skipped (no service registry)");
+		Log("stage17: leave (no registry)");
+		return;
+	}
+	InterfacePtr<IK2ServiceProvider> provider(
+		registry->QueryServiceProviderByClassID(kExportProviderService, kSaveBackExportProviderBoss));
+	InterfacePtr<IExportProvider> exporter(provider, IID_IEXPORTPROVIDER);
+	if (exporter == nil)
+	{
+		Line(out, "skipped (no SaveBack provider)");
+		Log("stage17: leave (no provider)");
+		return;
+	}
+
+	InterfacePtr<ISelectionManager> selection(Utils<ISelectionUtils>()->QueryActiveSelection());
+	out.Append("the active selection answers: ");
+	Line(out, (selection != nil) ? "yes" : "no");
+
+	PMString formatName("InDesignMarkup");
+	formatName.SetTranslatable(kFalse);
+	out.Append("CanExportThisFormat(doc, selection, \"InDesignMarkup\"): ");
+	Line(out, exporter->CanExportThisFormat(doc, selection, formatName) ? "yes" : "no");
+
+	InterfacePtr<IPMStream> stream(StreamUtil::CreateMemoryStreamWrite(&bytes));
+	if (stream == nil)
+	{
+		Line(out, "skipped (no stream)");
+		Log("stage17: leave (no stream)");
+		return;
+	}
+
+	if (!EnsureStreamOpen(stream, out))
+	{
+		Line(out, "the stream is NOT good - nothing was tried (this is the 2026-09-09 crash guard)");
+		return;
+	}
+	ErrorUtils::PMSetGlobalErrorCode(kSuccess);
+	Log("stage17: about to call ExportToStream (selection as targetboss)");
+	const DWORD began = ::GetTickCount();
+	exporter->ExportToStream(stream, doc, selection, formatName, kSuppressUI);
+	const DWORD took = ::GetTickCount() - began;
+	Log("stage17: ExportToStream returned");
+	stream->Flush();
+
+	const ErrorCode err = ErrorUtils::PMGetGlobalErrorCode();
+	out.Append("ExportToStream(selection) global ErrorCode (0 = kSuccess): ");
+	out.AppendNumber(static_cast<int32>(err));
+	out.Append("\n");
+	LineNum(out, "bytes: ", static_cast<int32>(bytes.Size()));
+	LineNum(out, "milliseconds: ", static_cast<int32>(took));
+	if (bytes.Size() >= 4)
+	{
+		const std::string& d = bytes.Data();
+		const bool16 isZip = (d[0] == 'P' && d[1] == 'K' &&
+			static_cast<uchar>(d[2]) == 0x03 && static_cast<uchar>(d[3]) == 0x04);
+		out.Append("starts with the zip signature PK 03 04: ");
+		Line(out, isZip ? "yes" : "no");
+	}
+	Log("stage17: leave (ok)");
+}
+
+/** STAGE 18 - and if the selection was not the missing piece, try the OTHER difference between
+    my call and the snippet's: SnpImportExportXML opens its stream and checks the state before
+    handing it over. A memory stream is usually live already - RouteA writes to one without
+    opening it - but "usually" is not a measurement. One variable again: Open() added. */
+void Stage18_SaveBackWithOpenedStream(IDocument* doc, ProbeBytes& bytes, PMString& out)
+{
+	Log("stage18: enter -- CAN CRASH");
+	Line(out, "-- STAGE 18: SaveBack with selection AND an explicitly opened stream --");
+
+	if (bytes.Size() > 0)
+	{
+		Line(out, "skipped (an earlier stage already produced bytes)");
+		Log("stage18: leave (already have bytes)");
+		return;
+	}
+
+	InterfacePtr<IK2ServiceRegistry> registry(GetExecutionContextSession(), UseDefaultIID());
+	if (registry == nil)
+	{
+		Line(out, "skipped (no service registry)");
+		Log("stage18: leave (no registry)");
+		return;
+	}
+	InterfacePtr<IK2ServiceProvider> provider(
+		registry->QueryServiceProviderByClassID(kExportProviderService, kSaveBackExportProviderBoss));
+	InterfacePtr<IExportProvider> exporter(provider, IID_IEXPORTPROVIDER);
+	if (exporter == nil)
+	{
+		Line(out, "skipped (no SaveBack provider)");
+		Log("stage18: leave (no provider)");
+		return;
+	}
+
+	InterfacePtr<ISelectionManager> selection(Utils<ISelectionUtils>()->QueryActiveSelection());
+	InterfacePtr<IPMStream> stream(StreamUtil::CreateMemoryStreamWrite(&bytes));
+	if (stream == nil)
+	{
+		Line(out, "skipped (no stream)");
+		Log("stage18: leave (no stream)");
+		return;
+	}
+
+	stream->Open();
+	LineNum(out, "stream state after Open() (0 = kStreamStateGood): ",
+		static_cast<int32>(stream->GetStreamState()));
+
+	PMString formatName("InDesignMarkup");
+	formatName.SetTranslatable(kFalse);
+
+	if (!EnsureStreamOpen(stream, out))
+	{
+		Line(out, "the stream is NOT good - nothing was tried (this is the 2026-09-09 crash guard)");
+		return;
+	}
+	ErrorUtils::PMSetGlobalErrorCode(kSuccess);
+	Log("stage18: about to call ExportToStream (opened stream)");
+	const DWORD began = ::GetTickCount();
+	exporter->ExportToStream(stream, doc, selection, formatName, kSuppressUI);
+	const DWORD took = ::GetTickCount() - began;
+	Log("stage18: ExportToStream returned");
+	stream->Flush();
+
+	const ErrorCode err = ErrorUtils::PMGetGlobalErrorCode();
+	out.Append("ExportToStream(opened) global ErrorCode (0 = kSuccess): ");
+	out.AppendNumber(static_cast<int32>(err));
+	out.Append("\n");
+	LineNum(out, "bytes: ", static_cast<int32>(bytes.Size()));
+	LineNum(out, "milliseconds: ", static_cast<int32>(took));
+	Log("stage18: leave (ok)");
+}
+
+/** STAGE 19 - the INX question, with the one variable that was never tried: a POLICY.
+
+    Stage 5 and 6 never reached ExportINX at all (CreateProxyScriptObject returns nil), and the
+    two crashes on 2026-09-08 were on a root taken OUTSIDE the INX context with policy = nil.
+    IINXExportPolicy has no header in the SDK - only a forward declaration - but 14 bosses
+    implement it in the running application, and the product shows how to hold a type like that:
+    open/components/incopyimport/import/InCopyImportProvider.cpp:413 casts the result of
+    ::CreateObject with a C cast. kDocElementExportBoss is the one export policy with no public
+    method of its own, which is why it is the candidate.
+
+    THIS ONE CAN KILL INDESIGN. It is last for that reason, and the log names it before it goes. */
+void Stage19_ExportInxWithPolicy(IDocument* doc, PMString& out)
+{
+	Log("stage19: enter -- CAN CRASH (ExportINX with a real policy)");
+	Line(out, "-- STAGE 19: ExportINX with policy = kDocElementExportBoss --");
+
+	ISession* session = GetExecutionContextSession();
+	InterfacePtr<IINXManager> inx(session != nil ? session->QueryINXManager() : nil);
+	if (inx == nil)
+	{
+		Line(out, "skipped (no IINXManager)");
+		Log("stage19: leave (no manager)");
+		return;
+	}
+
+	InterfacePtr<IDOMElement> docElement(doc, UseDefaultIID());
+	out.Append("the document answers IDOMElement directly: ");
+	Line(out, (docElement != nil) ? "yes" : "no");
+	if (docElement == nil)
+	{
+		Line(out, "skipped (no element)");
+		Log("stage19: leave (no element)");
+		return;
+	}
+
+	// The policy type is incomplete here, so hold the reference as IPMUnknown and cast the
+	// pointer we pass. The QI was by IID_IINXEXPORTPOLICY, so the vtable is the right one.
+	InterfacePtr<IPMUnknown> policyHolder(
+		(IPMUnknown*)::CreateObject(kDocElementExportBoss, IID_IINXEXPORTPOLICY));
+	out.Append("kDocElementExportBoss gave an IINXEXPORTPOLICY: ");
+	Line(out, (policyHolder != nil) ? "yes" : "no");
+	if (policyHolder == nil)
+	{
+		Line(out, "skipped (no policy) - NOTHING WAS TRIED");
+		Log("stage19: leave (no policy)");
+		return;
+	}
+	IINXExportPolicy* policy = (IINXExportPolicy*)policyHolder.get();
+
+	ProbeBytes bytes;
+	InterfacePtr<IPMStream> stream(StreamUtil::CreateMemoryStreamWrite(&bytes));
+	if (stream == nil)
+	{
+		Line(out, "skipped (no stream)");
+		Log("stage19: leave (no stream)");
+		return;
+	}
+
+	IDOMElement::ElementList roots;
+	roots.push_back(docElement);
+
+	if (!EnsureStreamOpen(stream, out))
+	{
+		Line(out, "the stream is NOT good - nothing was tried");
+		return;
+	}
+	Log("stage19: BeginExportSession");
+	inx->BeginExportSession();
+	Log("stage19: about to call ExportINX WITH A POLICY");
+	const DWORD began = ::GetTickCount();
+	const ErrorCode err = inx->ExportINX(roots, policy, stream, kSuppressUI);
+	const DWORD took = ::GetTickCount() - began;
+	Log("stage19: ExportINX returned");
+	inx->EndExportSession();
+	Log("stage19: EndExportSession done");
+	stream->Flush();
+
+	Report(out, "ExportINX(document root, kDocElementExportBoss)", err, bytes, took);
+	Log("stage19: leave (ok)");
+}
+
+/** Write the bytes out as text. INX is XML, so this is readable; it goes to the log as well,
+    which is the only copy that survives a later stage hanging. Capped, because the whole point
+    of the sweep is to find the policy that produces something BIG. */
+void DumpText(PMString& out, const ProbeBytes& bytes, int32 limit)
+{
+	const std::string& d = bytes.Data();
+	const int32 have = static_cast<int32>(d.size());
+	const int32 n = (have < limit) ? have : limit;
+	std::string safe;
+	safe.reserve(static_cast<size_t>(n));
+	for (int32 i = 0; i < n; ++i)
+	{
+		const char c = d[static_cast<size_t>(i)];
+		safe += (c == '\r') ? '\n' : c;
+	}
+	Line(out, "---- content ----");
+	out.Append(safe.c_str());
+	out.Append("\n");
+	Log(safe.c_str());
+	if (have > n)
+		LineNum(out, "...truncated. total bytes: ", have);
+	Line(out, "---- end of content ----");
+}
+
+/** STAGE 21 - THE SWEEP. ExportINX once per export-policy boss we can name.
+
+    Stage 19 proved the call itself is sound when a policy is supplied: kSuccess, 184 bytes, no
+    crash, where the same call with policy=nil killed InDesign twice on 2026-09-08. 184 bytes is
+    an XML declaration and very little else, so the question is no longer "does it work" but
+    "which policy opens it up".
+
+    The policy type has no header in the SDK - only a forward declaration - so each one is made
+    by ClassID and cast, the way open/components/incopyimport/import/InCopyImportProvider.cpp:413
+    makes an IINXImportValidation.
+
+    EVERY CANDIDATE IS NAMED IN THE LOG BEFORE IT IS TRIED. If one of them takes InDesign down,
+    the last name in the file is the one that did it - the same discipline that placed the
+    2026-09-08 crash and the 2026-09-09 hang in one reading each. */
+/** STAGE 21 - THE SWEEP. ExportINX once per export-policy boss, over the 14 that the running
+    application actually implements IID_IINXEXPORTPOLICY on.
+
+    Stage 19 proved the call is sound when a policy is supplied (kSuccess, 184 bytes, no crash,
+    where policy=nil killed InDesign twice on 2026-09-08). The 184 bytes turned out to be a
+    declaration and two processing instructions with NO CONTENT - 'SnippetType="DocumentElement"'
+    - so kDocElementExportBoss means the XML structure's document element, not the whole document.
+    The question this sweep answers is whether ANY policy opens it up.
+
+    RESUMABLE ON PURPOSE. Each candidate is written to a file BEFORE it is tried, and a name
+    already in that file is skipped. kSaveBackExportPolicyBoss killed InDesign on 2026-09-09
+    inside CINXExportPolicy::OnElementBegin_Internal (crash report read from the reporter window),
+    and it took the six candidates after it down with it, unrun. Without this file, every crash
+    costs a five-minute rebuild to get past one name; with it, the next run carries on.
+    Delete work/kcm-policy-done.txt to start the sweep over.
+
+    ORDER IS BY RISK. The part-shaped policies come first: handed a document root they should
+    decline rather than reach into it. The ones carrying their own data (Assignment's IUIDData,
+    JBX's policy data) come last, because a policy expecting a target that was never set is the
+    shape that just crashed. */
+/** STAGE 23 - the winning policy, dumped IN FULL, on every run.
+
+    kActionExportPolicyBoss produced 376,004 bytes with <Document> at the root, in 125ms, into
+    memory, with nothing written to disk. Two things are still unknown and both need the WHOLE
+    file rather than its first 700 bytes:
+
+      (a) is the CONTENT actually in there - stories, page items, spreads - or only the
+          document's own attributes, dressed up by sheer size to look like more?
+      (b) does the output MOVE when the document changes?
+
+    (b) is the one that decides it, and it is the lesson of 2026-09-08: ExportAppPrefs produced
+    331,797 bytes that did not shift by a SINGLE BYTE when a paragraph style was added. Large and
+    useless. A byte count is not evidence; a byte count that changes with the document is.
+
+    So this stage writes the whole thing out every time, unconditionally and OUTSIDE the resume
+    list, so it can be run before an edit and again after and the two files compared from
+    outside InDesign. */
+void Stage23_FullDump(IDocument* doc, PMString& out)
+{
+	Log("stage23: enter");
+	Line(out, "-- STAGE 23: kActionExportPolicyBoss, dumped in full to a file --");
+
+	ISession* session = GetExecutionContextSession();
+	InterfacePtr<IINXManager> inx(session != nil ? session->QueryINXManager() : nil);
+	InterfacePtr<IDOMElement> docElement(doc, UseDefaultIID());
+	if (inx == nil || docElement == nil)
+	{
+		Line(out, "skipped (no manager or no document element)");
+		Log("stage23: leave (missing part)");
+		return;
+	}
+
+	InterfacePtr<IPMUnknown> holder(
+		(IPMUnknown*)::CreateObject(kActionExportPolicyBoss, IID_IINXEXPORTPOLICY));
+	if (holder == nil)
+	{
+		Line(out, "skipped (no policy)");
+		Log("stage23: leave (no policy)");
+		return;
+	}
+	IINXExportPolicy* policy = (IINXExportPolicy*)holder.get();
+
+	ProbeBytes bytes;
+	InterfacePtr<IPMStream> stream(StreamUtil::CreateMemoryStreamWrite(&bytes));
+	if (stream == nil)
+	{
+		Line(out, "skipped (no stream)");
+		Log("stage23: leave (no stream)");
+		return;
+	}
+	if (stream->GetStreamState() != kStreamStateGood)
+		stream->Open();
+	stream->SetEndOfStream();
+
+	IDOMElement::ElementList roots;
+	roots.push_back(docElement);
+
+	// ★ IDOMElement.h:52-56 - "Since DOM elements CACHE INFORMATION during use, it is best to
+	// call the Reset() method on the topmost node ... This method will recursively reset all
+	// nodes beneath it."
+	//
+	// 2026-09-09: measured that an UNSAVED edit does not appear in the export, and that SAVING
+	// makes it appear even in the same process. That proves saving is sufficient - it does NOT
+	// prove the cache is innocent. If Reset() also makes an unsaved edit appear, then the export
+	// can follow a document being EDITED, which is a different tool entirely.
+	docElement->Reset();
+	Log("stage23: Reset() called on the document element");
+	Log("stage23: about to call ExportINX");
+	const DWORD began = ::GetTickCount();
+	inx->BeginExportSession();
+	const ErrorCode err = inx->ExportINX(roots, policy, stream, kSuppressUI);
+	inx->EndExportSession();
+	const DWORD took = ::GetTickCount() - began;
+	Log("stage23: ExportINX returned");
+	stream->Flush();
+
+	LineNum(out, "ErrorCode (0 = kSuccess): ", static_cast<int32>(err));
+	LineNum(out, "bytes: ", static_cast<int32>(bytes.Size()));
+	LineNum(out, "milliseconds: ", static_cast<int32>(took));
+	if (bytes.Size() == 0)
+	{
+		Line(out, "nothing came out");
+		Log("stage23: leave (no bytes)");
+		return;
+	}
+
+	const std::string& d = bytes.Data();
+	FILE* f = nil;
+	if (::fopen_s(&f, kDumpPath, "wb") == 0 && f != nil)
+	{
+		::fwrite(d.data(), 1, d.size(), f);
+		::fclose(f);
+		Line(out, "written in full to work/kcm-inx-action.xml");
+	}
+	else
+	{
+		Line(out, "COULD NOT WRITE THE DUMP FILE");
+	}
+
+	// (a): what KINDS of thing are in there, without reading 376KB by eye.
+	CountElements(d, out, 20);
+	Log("stage23: leave (ok)");
+}
+
+void Stage21_PolicySweep(IDocument* doc, PMString& out)
+{
+	Log("stage21: enter -- CAN CRASH (one ExportINX per policy)");
+	Line(out, "-- STAGE 21: ExportINX with every export policy boss we can name --");
+
+	ISession* session = GetExecutionContextSession();
+	InterfacePtr<IINXManager> inx(session != nil ? session->QueryINXManager() : nil);
+	InterfacePtr<IDOMElement> docElement(doc, UseDefaultIID());
+	if (inx == nil || docElement == nil)
+	{
+		Line(out, "skipped (no manager or no document element)");
+		Log("stage21: leave (missing part)");
+		return;
+	}
+
+	struct Candidate { ClassID boss; const char* name; };
+	const Candidate candidates[] = {
+		// known-good control, and the one whose 184 bytes we already understand
+		{ kDocElementExportBoss,			"kDocElementExportBoss" },
+		// part-shaped: should decline a document root rather than walk into it
+		{ kPageItemExportBoss,				"kPageItemExportBoss" },
+		{ kXMLElementExportBoss,			"kXMLElementExportBoss" },
+		{ kInCopyInterchangeExportBoss,		"kInCopyInterchangeExportBoss" },
+		{ kGraphicStoryExportBoss,			"kGraphicStoryExportBoss" },
+		{ kAppPrefsExportBoss,				"kAppPrefsExportBoss" },
+		{ kAutoCorrectExportBoss,			"kAutoCorrectExportBoss" },
+		{ kActionExportPolicyBoss,			"kActionExportPolicyBoss" },
+		{ kPreflightProfileExportPolicyBoss,"kPreflightProfileExportPolicyBoss" },
+		// carry their own target data, which is the shape that crashed - so, last
+		{ kAssignmentExportFramesPolicyBoss,"kAssignmentExportFramesPolicyBoss" },
+		{ kAssignmentExportSpreadsPolicyBoss,"kAssignmentExportSpreadsPolicyBoss" },
+		{ kAssignmentExportAllPolicyBoss,	"kAssignmentExportAllPolicyBoss" },
+		{ kJBXExportPolicyBoss,				"kJBXExportPolicyBoss" },
+		// kSaveBackExportPolicyBoss IS NOT HERE. It crashes: see the note above.
+	};
+	const int32 count = static_cast<int32>(sizeof(candidates) / sizeof(candidates[0]));
+
+	for (int32 i = 0; i < count; ++i)
+	{
+		Line(out, "");
+		out.Append("== policy: ");
+		Line(out, candidates[i].name);
+
+		if (AlreadyTried(candidates[i].name))
+		{
+			Line(out, "  (tried in an earlier run - skipped)");
+			continue;
+		}
+		MarkTried(candidates[i].name);	// recorded BEFORE it is tried, so a crash is not repeated
+		Log(candidates[i].name);
+
+		InterfacePtr<IPMUnknown> holder(
+			(IPMUnknown*)::CreateObject(candidates[i].boss, IID_IINXEXPORTPOLICY));
+		if (holder == nil)
+		{
+			Line(out, "  this boss does not give an IINXEXPORTPOLICY - skipped");
+			continue;
+		}
+		IINXExportPolicy* policy = (IINXExportPolicy*)holder.get();
+
+		ProbeBytes bytes;
+		InterfacePtr<IPMStream> stream(StreamUtil::CreateMemoryStreamWrite(&bytes));
+		if (stream == nil)
+		{
+			Line(out, "  no stream - skipped");
+			continue;
+		}
+		if (stream->GetStreamState() != kStreamStateGood)
+			stream->Open();
+		// SnpImportExportSnippet.cpp:183 empties the stream before an INX export.
+		stream->SetEndOfStream();
+
+		IDOMElement::ElementList roots;
+		roots.push_back(docElement);
+
+		Log("  about to call ExportINX");
+		const DWORD began = ::GetTickCount();
+		inx->BeginExportSession();
+		const ErrorCode err = inx->ExportINX(roots, policy, stream, kSuppressUI);
+		inx->EndExportSession();
+		const DWORD took = ::GetTickCount() - began;
+		Log("  ExportINX returned");
+		stream->Flush();
+
+		LineNum(out, "  ErrorCode (0 = kSuccess): ", static_cast<int32>(err));
+		LineNum(out, "  bytes: ", static_cast<int32>(bytes.Size()));
+		LineNum(out, "  milliseconds: ", static_cast<int32>(took));
+		if (bytes.Size() > 0)
+			DumpText(out, bytes, 700);
+	}
+	Log("stage21: leave (ok)");
+}
+
 }	// anonymous namespace
 
 void KCMRunInxProbe(PMString& out, IScriptRequestData* data)
@@ -852,6 +1806,47 @@ void KCMRunInxProbe(PMString& out, IScriptRequestData* data)
 	Stage11_PropertiesOfDocument(doc, data, out);
 	Line(out, "");
 	Stage12_PropertiesOfStyle(doc, data, out);
+
+	// The 2026-09-09 question: can the WHOLE document come out as XML without touching the disk?
+	//
+	// ORDER IS BY RISK, LEAST FIRST, and it is not the order I used the first time. Stage 16 -
+	// the one I called "the safe control" - is the one that killed InDesign, so it now runs
+	// AFTER everything whose answer I want to keep. A stage that dies takes the rest with it.
+	Line(out, "");
+	Stage13_ListExportFormats(doc, out);
+	Line(out, "");
+	ProbeBytes docBytes;
+	PMString usedFormat;
+	usedFormat.SetTranslatable(kFalse);
+	Stage14_ExportDocumentToStream(doc, docBytes, out, usedFormat);
+	Line(out, "");
+	Stage17_SaveBackWithSelection(doc, docBytes, out);
+	Line(out, "");
+	Stage15_OpenAsUcfPackage(doc, docBytes, out);
+	Line(out, "");
+	// STAGE 16 IS DELIBERATELY NOT CALLED.
+	//
+	// It wedged InDesign TWICE on 2026-09-09 - responding=False, still inside ExportToStream,
+	// CPU spinning - once with a stream I had not opened, and once with a stream measured good
+	// (actual state 0) right before the call. So the hang is NOT about Open(), and the stage has
+	// already told us everything it can. Calling it again only buys another forced kill, and it
+	// takes stage 19 down with it, which is the whole reason stage 19 has never once run.
+	//
+	// Kept compiled, not deleted: the finding is "this call hangs", and the code that establishes
+	// it should stay readable next to the finding.
+	// Stage16_ControlXmlProviderToStream(doc, out);
+	Line(out, "");
+	Stage19_ExportInxWithPolicy(doc, out);
+	Line(out, "");
+	Stage23_FullDump(doc, out);
+	Line(out, "");
+	// STAGE 21 IS NOT CALLED ANY MORE. It has done its job: 11 of the 14 policies are measured
+	// and recorded in work/kcm-policy-done.txt, and the three that remain unmeasured all CRASH
+	// (kSaveBack..., and the three Assignment ones - every policy that carries its own data and
+	// was handed none). Leaving it in the run meant InDesign died on every single probe, which
+	// made the change-detection experiment impossible to run twice in a row.
+	// To finish the sweep later: set IUIDData on the Assignment policies first, then re-enable.
+	// Stage21_PolicySweep(doc, out);
 
 	Log("=== probe done ===");
 }
