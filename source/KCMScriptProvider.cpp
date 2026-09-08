@@ -118,6 +118,7 @@
 // KCMUIShared.h is deliberately NOT included: it was added once, but this provider called none
 // of the widget-touching functions in it -- a dead dependency. What it reads is
 // KCMGetSessionStatus (declared in KCMModelNotify.h), which is not a reverse dependency.
+#include "KCMInxProbe.h"	// THROWAWAY (2026-09-08) - delete with the property it serves
 #include "KCMBookCompare.h"	// KCMGetBookResultText - the last book comparison, also in the module
 #include "KCMStoryStamp.h"	// KCMStoryEdits::ReadStamp - the SAME reading the panel uses
 #include "KCMStoryList.h"	// KCMStoryList::RowsAsTsv - app.kcmStoryRows, the reading port
@@ -169,7 +170,8 @@ ErrorCode KCMScriptProvider::AccessProperty(ScriptID propID, IScriptRequestData*
 {
 	const int32 id = propID.Get();
 
-	const bool16 isAppString = (id == p_KCMStatus || id == p_KCMBookResult || id == p_KCMStoryRows);
+	const bool16 isAppString = (id == p_KCMStatus || id == p_KCMBookResult || id == p_KCMStoryRows
+								|| id == p_KCMInxProbe);	// THROWAWAY
 	const bool16 isStoryCounter = (id == p_KCMChangeCount || id == p_KCMTextChangeCount ||
 								   id == p_KCMAttrChangeCount || id == p_KCMOtherChangeCount);
 	const bool16 isDocXPCount = (id == p_KCMTransparencyItemCount);
@@ -234,6 +236,8 @@ ErrorCode KCMScriptProvider::ReadAppString(int32 id, ScriptID propID, IScriptReq
 	PMString value;
 	if (id == p_KCMStatus)
 		KCMGetSessionStatus(value);		// the panel's status line
+	else if (id == p_KCMInxProbe)
+		KCMRunInxProbe(value);			// THROWAWAY - see KCMInxProbe.h
 	else if (id == p_KCMStoryRows)
 		// ★THE WHOLE LIST, and it answers with a header line even when there is nothing to report:
 		//   an empty list is a real answer, and it has to read differently from the property being

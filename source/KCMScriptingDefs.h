@@ -97,6 +97,7 @@
 /** Properties KCM adds to the application object. */
 enum KCMScriptProperties
 {
+	p_KCMInxProbe   = 'pKGi',	// THROWAWAY (2026-09-08). i = INX. app.kcmInxProbe
 	p_KCMStatus     = 'pKGm',	// p = property, K = Kohaku, G = KCM, m = message (app.kcmStatus)
 	p_KCMBookResult = 'pKGb',	// b = book. app.kcmBookResult - the last book comparison, one line
 								// per chapter ("name<TAB>state"). Checked against the registry in

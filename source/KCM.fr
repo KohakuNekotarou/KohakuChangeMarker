@@ -610,6 +610,19 @@ resource VersionedScriptElementInfo(10)
 			kNoAttributeClass,
 		}
 
+		// THROWAWAY (2026-09-08). app.kcmInxProbe - reading it runs the probe described in
+		// source/KCMInxProbe.h and answers with what happened. Delete this block with the file.
+		Property
+		{
+			kKCMInxProbePropertyScriptElement,
+			p_KCMInxProbe,
+			"kcm inx probe",					// name -> app.kcmInxProbe
+			"THROWAWAY probe: can the whole document be exported as INX to a memory stream?",
+			StringType,
+			{}
+			kNoAttributeClass,
+		}
+
 		// app.kcmStoryRows (2026-09-08) - the whole Story Edits list as TSV.
 		//
 		// ★★★WHY, and it is the same argument the property above makes one size down: the list's
@@ -648,6 +661,7 @@ resource VersionedScriptElementInfo(10)
 				//   shows up as ERR:55 the first time a script touches it (memory
 				//   kes-custom-dom-extensions). Both or neither.
 				Property{ kKCMStoryRowsPropertyScriptElement, kReadOnly },
+				Property{ kKCMInxProbePropertyScriptElement, kReadOnly },	// THROWAWAY (2026-09-08)
 			}
 		}
 
