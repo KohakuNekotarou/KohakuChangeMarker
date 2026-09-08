@@ -74,7 +74,7 @@ resource StringTable (kSDKDefStringsResourceID + index_enUS)
                 kKCMBookCompareKey,				"Compare",
                 kKCMBookReadyKey,					"No comparison has been run yet.",
                 kKCMBookHintKey,					"Right-click a changed chapter to start Change Marker.",
-                kKCMBookCompareConfirmKey,		"These two books will be compared, chapter by chapter.",
+                kKCMBookCompareConfirmKey,		"These two books will be compared chapter by chapter, as pictures (the Pixel comparison) - the comparison mode does not change this.",
                 kKCMBookNoPairKey,				"Select a book tab in the Book panel, and open a second book.",
                 kKCMBookRowStartMenuKey,			"Start Change Marker",
                 kKCMStoryRowRefreshMenuKey,		"Refresh Story Comparison",

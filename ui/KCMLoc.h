@@ -9,8 +9,9 @@
 //  language. The test is the UI LANGUAGE, not the feature set -- PMLocaleId carries the two
 //  separately -- so a Roman engine with a Japanese UI gets Japanese as well.
 //
-//  ★**What THIS half holds is what is below**: the How to Use text (kHint / kHint2) and
-//    kBookNoPair, the warning when two books cannot be resolved.
+//  ★**What THIS half holds is what is below**: the How to Use text (kHint / kHint2), and
+//    nothing else since 2026-09-08 -- the book comparison's warning went English with its
+//    confirmation (spec map BK-11), so no alert of that feature passes through here any more.
 //    ⚠**Do not count the product's Japanese here.** The model half has its own KCMLoc.h with
 //      its own string (the Hide Unchanged confirmation, which changes the document, so it
 //      belongs to that side). While both files described the whole product, each of them
@@ -19,10 +20,11 @@
 //  ★**The line is drawn by what the user asked for in Japanese**, not by the nature of the
 //    text. KBS draws the same line: the how-to-use text is Japanese, the panel, the menus and
 //    the status line stay English.
-//    ⚠**Two alerts of ONE feature answer in different languages**: the Compare Books
-//      confirmation went back to English everywhere, while kBookNoPair below stayed Japanese,
-//      because the instruction that moved the first one named only the confirmation. Whether
-//      to align them has not been decided.
+//    ★**The book comparison's two alerts are BOTH English** (2026-09-08, spec map BK-11).
+//      For four weeks they were not: the confirmation had been moved on its own, because the
+//      instruction that moved it named only the confirmation, and the warning stayed here.
+//      ⇒ **An instruction that names one of a pair leaves the other behind, and nothing fails**
+//      -- no build breaks and no test notices, so it is found by reading, if at all.
 //  ⚠**About is English only** -- it is one line, "<name> version x.y.z", with nothing to
 //    translate.
 //
@@ -80,7 +82,7 @@ namespace KCMLoc
 }
 
 // The Japanese that used to live in KCM_jaJP.fr, the part of it this half holds. The matching
-// keys (kKCMHintKey / kKCMHint2Key / kKCMBookNoPairKey) are alive in KCMUIID.h and
+// keys (kKCMHintKey / kKCMHint2Key) are alive in KCMUIID.h and
 // KCMUI_enUS.fr -- an English UI reads those.
 namespace KCMJa
 {
@@ -174,12 +176,10 @@ namespace KCMJa
 	// (The Compare Books confirmation passed through here and left again -- the user asked for it
 	//  in English -- so its only wording is kKCMBookCompareConfirmKey in the enUS table.)
 
-	// Shown when two books could not be resolved (normally unreachable: the menu item is greyed).
-	// ⚠**Its counterpart went English while this one stayed Japanese** -- the instruction named
-	//   the confirmation alert only. Two alerts of one feature answer in different languages;
-	//   whether to align them has not been decided.
-	const char16_t kBookNoPair[] =
-		u"ブックパネルで比較したいブックのタブを前面にして、もう1冊のブックも開いてください。";
+	// (The "no two books" warning left this file on 2026-09-08, at the author's instruction
+	//  through the spec map (BK-11): both alerts of the book comparison are English now, so its
+	//  only wording is kKCMBookNoPairKey in the enUS table -- the same shape as the confirmation
+	//  above. Nothing the book comparison shows passes through this namespace any more.)
 }
 
 #endif // __KCMUILoc_h__

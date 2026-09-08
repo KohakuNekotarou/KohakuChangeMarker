@@ -37,7 +37,9 @@
 #include "KCMBookRun.h"
 #include "KCMPathDisplay.h"	// KCMPathForDisplay - how a path is shown, shared with the panel
 #include "KCMUIID.h"
-#include "KCMLoc.h"			// Japanese in a Japanese UI, English everywhere else
+// (*"KCMLoc.h" was included here for the "no two books" warning alone, and went with it: both
+//  alerts of this feature are English now (2026-09-08, spec map BK-11), so nothing in this file
+//  switches language at run time.)
 
 namespace
 {
@@ -101,8 +103,15 @@ void KCMRunBookComparison()
 	if (!KCMGetPanelBookFile(panelBookFile)
 		|| !books->ResolveBookPair(panelBookFile, target, source))
 	{
-		CAlert::ModalAlert(
-			KCMLoc::Text(kKCMBookNoPairKey, KCMJa::kBookNoPair),
+		// ***** ENGLISH IN EVERY UI LANGUAGE, LIKE THE CONFIRMATION BELOW. ***** (Author, 2026-09-08,
+		// through the spec map: BK-11 "let us align them on English".) Until then this one went
+		// through KCMLoc::Text while the confirmation did not, so THE TWO ALERTS OF ONE FEATURE
+		// ANSWERED IN DIFFERENT LANGUAGES -- the instruction that moved the confirmation named the
+		// confirmation alone, and this half stayed behind for four weeks with nothing failing.
+		PMString noPair(kKCMBookNoPairKey);
+		noPair.Translate();				// from the enUS table, like every other English string here
+
+		CAlert::ModalAlert(noPair,
 			kOKString, kNullString, kNullString,
 			1,							// OK is the default button
 			CAlert::eWarningIcon);
@@ -122,9 +131,10 @@ void KCMRunBookComparison()
 	// this alert back with the rest of KCM's UI, which has been English-only in every locale since
 	// 2026-08-06. What is left in KCMLoc is the case it was built for: text that ASKS THE USER TO
 	// DECIDE something with consequences (How to Use, the Hide Unchanged confirmation).
-	// ⚠ The paired warning for "no two books to compare" (kKCMBookNoPairKey, further up) is STILL
-	//   Japanese on a Japanese UI - it was not part of the request. Two alerts of one feature now
-	//   answer in different languages.
+	// ★ The paired warning for "no two books to compare" (kKCMBookNoPairKey, further up) FOLLOWED
+	//   IT on 2026-09-08 (BK-11). For four weeks the two alerts of one feature answered in
+	//   different languages, because the instruction that moved this one named only this one.
+	//   ★**An instruction that names one of a pair leaves the other behind, and nothing fails.**
 	PMString message(kKCMBookCompareConfirmKey);
 	message.Translate();				// from the enUS table, like every other English string here
 	message.Append(kLineSeparatorString);

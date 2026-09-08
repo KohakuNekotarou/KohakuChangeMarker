@@ -81,8 +81,18 @@ struct KCMChapterResult
 	KCMChapterResult() : fState(kKCMChapterUnknown) {}
 };
 
-/** The word this state is reported by -- in the panel, in the status line, and in the script
-    property. English throughout, like the rest of this plug-in's UI. Not translatable: these
+/** The word this state is reported by. TWO READERS, and NEITHER IS THE PANEL: the chapter
+    list's state column (KCMBookTreeWidgetMgr) and app.kcmBookResult (this file's sibling,
+    KCMBookCompare's gBookResultText).
+
+        @warning this said "in the panel, in the status line, and in the script property"
+        until 2026-09-08, and the first two were never true. The panel's status line is not
+        written by the book comparison at all, and the DIALOG's summary line counts an
+        unchanged chapter with the word "unchanged" - not with this one. Measured that day:
+        one run showed Changed and ChapterDeleted in the list while app.kcmBookResult carried
+        NoChange for the same run, which is the only place that word is ever spelt.
+
+    English throughout, like the rest of this plug-in's UI. Not translatable: these
     are the result's vocabulary, and the live-test scripts read them back verbatim out of
     app.kcmBookResult (work/kescm-selftest/task9/s1-book.jsx, work/kescm-booktest/r3-verify.ps1),
     so a translated word would read as an unknown state rather than as a translation. */
