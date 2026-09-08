@@ -2046,9 +2046,13 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 	// **The rule is one sentence: while the button is held, everything is the other way round.**
 	//     - toggle off ... no frames, so they appear while held (sMarksVisible, the reveal)
 	//     - toggle on  ... frames, so they hide while held (the !sMarksTempHidden in this line)
-	// @warning it must not affect print or PDF -- hence the !printing gate. The Target side's output
-	//   is decided by sPrintMarks alone, asymmetrically with the Source side's sSrcMarksOn, and that
-	//   asymmetry is deliberate.
+	// @warning it must not affect print or PDF -- hence the !printing gate. **Output is decided by
+	//   sPrintMarks alone, on BOTH sides** (2026-09-08; this sentence used to end "asymmetrically
+	//   with the Source side's sSrcMarksOn, and that asymmetry is deliberate" - the asymmetry is
+	//   gone, and the word "deliberate" is exactly what makes a stale note survive a review).
+	// ★AND sPrintMarks SHOWS THEM ON SCREEN TOO - it is the first term of wantMarks below, and the
+	//   Source side now reads it the same way. Turning printing on means "what you see is what
+	//   comes out", which is why it needs no separate display switch.
 	const bool16 alwaysScreen = sTgtMarksOn && !sMarksTempHidden && !printing;
 	const bool16 wantMarks = !suppressForPrint && !oppHides && (sPrintMarks || sMarksVisible || alwaysScreen || isThumb) && anyMarkableContent;
 	// **The Story mode draws no comparison ring** (nothing from sEntries). A story diff creates no
