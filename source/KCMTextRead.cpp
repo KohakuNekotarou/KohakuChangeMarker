@@ -455,23 +455,13 @@ void ScanKenten(ITextModel* model, std::vector<AttrRun>& out)
 				//   would compare correctly and could show the wrong glyph.
 				if (customChar != nil && customChar->Get() != 0)
 				{
-					const uint16 code = static_cast<uint16>(customChar->Get());
+					// ★THE SHARED ENCODER, not a fourth copy of the UTF-8 cases - this file already calls
+					//   AppendUtf8 for every character of every paragraph it reads. ⚠The four-byte case
+					//   cannot arise here (the attribute is an int16, per the BMP warning above), which is
+					//   why writing three of them by hand looked like the whole set.
 					value += ":";
-					if (code < 0x80)
-					{
-						value += static_cast<char>(code);
-					}
-					else if (code < 0x800)
-					{
-						value += static_cast<char>(0xC0 | (code >> 6));
-						value += static_cast<char>(0x80 | (code & 0x3F));
-					}
-					else
-					{
-						value += static_cast<char>(0xE0 | (code >> 12));
-						value += static_cast<char>(0x80 | ((code >> 6) & 0x3F));
-						value += static_cast<char>(0x80 | (code & 0x3F));
-					}
+					KCMParaText::AppendUtf8(value, static_cast<int32>(
+						static_cast<uint16>(customChar->Get())));
 				}
 			}
 
@@ -496,17 +486,13 @@ void ScanKenten(ITextModel* model, std::vector<AttrRun>& out)
 	}
 }
 
-/* TakeAttrFor
-   The ruby or kenten standing over one paragraph, in the paragraph's own count.
+/* CountUncounted
+   How many of a paragraph's uncounted positions stand before `at` -- the whole of the difference
+   between the model's count and the text's, at one point.
 
-   ★THE CURSOR WALKS FORWARD WITH THE PARAGRAPHS. Both lists are in TextIndex order, so a run that
-   ended before this paragraph began can never be wanted again - but a run that REACHES PAST the
-   paragraph's end must stay, because the next paragraph still has to see it. That is why only the
-   first kind moves the cursor.
-
-   ⚠CLIPPED TO THE PARAGRAPH. KCMAttrSpan positions are offsets INSIDE one paragraph (its header
-    says so), and the diff downstream cuts rows by them, so a span reaching past the end would put
-    a mark on characters that are not there.
+   ⚠**THE BLOCK THAT USED TO STAND HERE IS TakeAttrFor's**, and had sat on this function since the
+    file was written: it describes a cursor and a clipping rule that are nowhere in these five
+    lines. Moved down to what it is about (2026-09-08).
 */
 int32 CountUncounted(const std::vector<TextIndex>& uncounted, TextIndex at)
 {
@@ -519,6 +505,18 @@ int32 CountUncounted(const std::vector<TextIndex>& uncounted, TextIndex at)
 	return n;
 }
 
+/* TakeAttrFor
+   The ruby or kenten standing over one paragraph, in the paragraph's own count.
+
+   ★THE CURSOR WALKS FORWARD WITH THE PARAGRAPHS. Both lists are in TextIndex order, so a run that
+   ended before this paragraph began can never be wanted again - but a run that REACHES PAST the
+   paragraph's end must stay, because the next paragraph still has to see it. That is why only the
+   first kind moves the cursor.
+
+   ⚠CLIPPED TO THE PARAGRAPH. KCMAttrSpan positions are offsets INSIDE one paragraph (its header
+    says so), and the diff downstream cuts rows by them, so a span reaching past the end would put
+    a mark on characters that are not there.
+*/
 void TakeAttrFor(const std::vector<AttrRun>& runs, size_t& cursor,
 				 TextIndex paraStart, TextIndex paraEnd,
 				 const std::vector<TextIndex>& uncounted, KCMAttrSpanList& out)

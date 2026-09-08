@@ -508,12 +508,14 @@ bool16 KCMTextDiff::Diff(const std::vector<int32>& a, const std::vector<int32>& 
 	if (!ok)
 		return kFalse;
 
-	for (size_t i = 0; i < middle.size(); ++i)
+	// The section that was searched sits `head` elements into both sequences, so every position
+	// comes back shifted by it. **The list is taken over rather than copied**: it was built here and
+	// nobody else has seen it.
+	changes.swap(middle);
+	for (size_t i = 0; i < changes.size(); ++i)
 	{
-		Change change = middle[i];
-		change.aStart += head;
-		change.bStart += head;
-		changes.push_back(change);
+		changes[i].aStart += head;
+		changes[i].bStart += head;
 	}
 
 	return kTrue;

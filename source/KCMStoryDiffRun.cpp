@@ -97,9 +97,12 @@ std::string MarkUpBreaks(const std::string& utf8)
 	// item stands (measured 2026-08-23; see AnchoredItemTagLen in KCMParaText.h).
 	static const char kAnchorChar[] = "\xEF\xBF\xBC";
 
+	// ⚠**THREE FINDS, NOT ONE** - the line below claimed "one scan" until 2026-09-08. It is left as
+	//   it stands: Slice has already cut the text to kExcerptCodePoints before this is reached, so
+	//   what that sentence was really defending is the ALLOCATION, and THAT part is true.
 	if (utf8.find('\n') == std::string::npos && utf8.find('\r') == std::string::npos
 		&& utf8.find(kAnchorChar) == std::string::npos)
-		return utf8;		// the common case pays one scan and no allocation
+		return utf8;		// nothing to mark up: no allocation, no copy
 
 	std::string out;
 	out.reserve(utf8.size() + 8);
@@ -304,6 +307,29 @@ void SetDocumentText(PMString& out, const std::string& utf8)
 	out.SetTranslatable(kFalse);
 }
 
+/* SetExcerptPieces
+   One side of a change, cut into its three pieces and stored in the row's fields.
+
+   **CUTTING AND STORING ARE ONE ACT.** They stood as ten lines written out twice - once for a text
+   change, once for an attribute one - which is the argument SetDocumentText already made one size
+   down: apart, a piece added to the cut and forgotten in the store is a fault nothing reports.
+   @warning the CONTEXT pieces are document text too, and are the likeliest of the three to be a
+    short common word the string tables have an entry for.
+
+   @param from/count name the CHANGE, in code points, within text.
+*/
+void SetExcerptPieces(PMString& outPre, PMString& outMid, PMString& outPost,
+					  const std::string& text, const std::vector<int32>& bytes,
+					  int32 from, int32 count)
+{
+	std::string pre, mid, post;
+	Slice(text, bytes, from, count, kContextCodePoints, pre, mid, post);
+
+	SetDocumentText(outPre, pre);
+	SetDocumentText(outMid, mid);
+	SetDocumentText(outPost, post);
+}
+
 /* Add
    Builds one change and appends it. Kept in one place so that the two callers below - a run that
    was narrowed down to characters, and one that was not - cannot describe the same thing in two
@@ -311,14 +337,13 @@ void SetDocumentText(PMString& out, const std::string& utf8)
 
    @param tFrom/tCount, sFrom/sCount are offsets WITHIN the joined run, in code points.
 */
-void Add(std::vector<KCMStoryChange>& out, int32 paraIndex,
+void Add(std::vector<KCMStoryChange>& out,
 		 const std::string& targetText, const std::vector<int32>& targetBytes,
 		 const RunSide& tRun, int32 tFrom, int32 tCount,
 		 const std::string& sourceText, const std::vector<int32>& sourceBytes,
 		 const RunSide& sRun, int32 sFrom, int32 sCount)
 {
 	KCMStoryChange change;
-	change.fParaIndex = paraIndex;
 	change.fWhat = KCMStoryChange::kText;
 
 	change.fKind = (sCount == 0) ? KCMStoryChange::kInsert
@@ -353,12 +378,7 @@ void Add(std::vector<KCMStoryChange>& out, int32 paraIndex,
 	// **BOTH SIDES ARE CUT, ALWAYS.** The row shows the side that changed; the panel's message
 	//   area shows the other one while that row is selected, so that the reader can see what the
 	//   words used to be (or, for a deletion, what stands there now).
-	std::string newPre, newMid, newPost;
-	Slice(targetText, targetBytes, tFrom, tCount, kContextCodePoints, newPre, newMid, newPost);
-
-	std::string oldPre, oldMid, oldPost;
-	Slice(sourceText, sourceBytes, sFrom, sCount, kContextCodePoints, oldPre, oldMid, oldPost);
-
+	//
 	// ★★★THE ROW IS ALWAYS THE NEWER VERSION. ONE RULE, NO EXCEPTIONS (2026-09-01, user's
 	//   decision: "if that had become the spec, I am changing the spec").
 	//
@@ -376,15 +396,10 @@ void Add(std::vector<KCMStoryChange>& out, int32 paraIndex,
 	//
 	//   Whichever side the row shows, the OTHER one goes to fOtherText -- see KCMStoryList.h for
 	//   why it is named that rather than "old".
-	//
-	// All six pieces are document text, not just the middles -- see SetDocumentText.
-	SetDocumentText(change.fTextPre, newPre);
-	SetDocumentText(change.fText, newMid);
-	SetDocumentText(change.fTextPost, newPost);
-
-	SetDocumentText(change.fOtherTextPre, oldPre);
-	SetDocumentText(change.fOtherText, oldMid);
-	SetDocumentText(change.fOtherTextPost, oldPost);
+	SetExcerptPieces(change.fTextPre, change.fText, change.fTextPost,
+					 targetText, targetBytes, tFrom, tCount);
+	SetExcerptPieces(change.fOtherTextPre, change.fOtherText, change.fOtherTextPost,
+					 sourceText, sourceBytes, sFrom, sCount);
 
 	out.push_back(change);
 }
@@ -469,13 +484,12 @@ void AddAttrChange(KCMStoryChange::Kind kind, KCMStoryAttrKind attrKind,
 				   int32 tStart, int32 tCount, int32 sStart, int32 sCount,
 				   ParaSide& target, ParaSide& source,
 				   const std::string& newRuby, const std::string& oldRuby,
-				   int32 paraIndex, std::vector<KCMStoryChange>& out)
+				   std::vector<KCMStoryChange>& out)
 {
 	KCMStoryChange change;
 	change.fKind = kind;
 	change.fWhat = KCMStoryChange::kAttr;		// the field that has waited for exactly this
 	change.fAttrKind = attrKind;
-	change.fParaIndex = paraIndex;
 
 	// @warning **BOTH ENDS ARE ASKED FOR SEPARATELY**, exactly as Add does for a text change and
 	//   for a reason it did not have: a span reaching across a table's own character covers one
@@ -491,17 +505,12 @@ void AddAttrChange(KCMStoryChange::Kind kind, KCMStoryAttrKind attrKind,
 	change.fSourceStart = source.ModelIndex(sStart);
 	change.fSourceEnd   = source.ModelIndex(sStart + sCount);
 
-	std::string newPre, newMid, newPost, oldPre, oldMid, oldPost;
-	Slice(target.fText, target.Bytes(), tStart, tCount, kContextCodePoints, newPre, newMid, newPost);
-	Slice(source.fText, source.Bytes(), sStart, sCount, kContextCodePoints, oldPre, oldMid, oldPost);
+	SetExcerptPieces(change.fTextPre, change.fText, change.fTextPost,
+					 target.fText, target.Bytes(), tStart, tCount);
+	SetExcerptPieces(change.fOtherTextPre, change.fOtherText, change.fOtherTextPost,
+					 source.fText, source.Bytes(), sStart, sCount);
 
 	// The readings go through the same door as the base text: they are document text too.
-	SetDocumentText(change.fTextPre, newPre);
-	SetDocumentText(change.fText, newMid);
-	SetDocumentText(change.fTextPost, newPost);
-	SetDocumentText(change.fOtherTextPre, oldPre);
-	SetDocumentText(change.fOtherText, oldMid);
-	SetDocumentText(change.fOtherTextPost, oldPost);
 	SetDocumentText(change.fRuby, newRuby);
 	SetDocumentText(change.fOtherRuby, oldRuby);
 
@@ -519,7 +528,7 @@ void AddAttrChange(KCMStoryChange::Kind kind, KCMStoryAttrKind attrKind,
 */
 void CompareParagraphAttr(KCMStoryAttrKind attrKind,
 						  const KCMAttrSpanList& sourceSpans, const KCMAttrSpanList& targetSpans,
-						  ParaSide& source, ParaSide& target, int32 paraIndex,
+						  ParaSide& source, ParaSide& target,
 						  std::vector<KCMStoryChange>& out)
 {
 	if (!KCMParaText::SpansDiffer(sourceSpans, targetSpans))
@@ -543,7 +552,7 @@ void CompareParagraphAttr(KCMStoryAttrKind attrKind,
 							  sourceSpans[i].fStart, sourceSpans[i].fLen,
 							  target, source,
 							  targetSpans[j].fValue, sourceSpans[i].fValue,
-							  paraIndex, out);
+							  out);
 			}
 			++i;
 			++j;
@@ -556,7 +565,7 @@ void CompareParagraphAttr(KCMStoryAttrKind attrKind,
 						  targetSpans[j].fStart, targetSpans[j].fLen,
 						  target, source,
 						  targetSpans[j].fValue, std::string(),
-						  paraIndex, out);
+						  out);
 			++j;
 		}
 		else
@@ -568,7 +577,7 @@ void CompareParagraphAttr(KCMStoryAttrKind attrKind,
 						  sourceSpans[i].fStart, sourceSpans[i].fLen,
 						  target, source,
 						  std::string(), sourceSpans[i].fValue,
-						  paraIndex, out);
+						  out);
 			++i;
 		}
 	}
@@ -750,14 +759,24 @@ void AddAttributeChanges(const std::vector<KCMTextDiff::Change>& paragraphChange
 		//   change of their own - see SpansWhoseTextSurvives. In a paragraph the diff left alone the
 		//   characters are the same on both sides by definition, so the filter is not run there: it
 		//   would cost a walk per span to answer a question already settled.
-		const KCMAttrSpanList sourceRuby = onlyWhereTextSurvives
-			? SpansWhoseTextSurvives(sourceAttrs[ai].fRuby, targetAttrs[bi].fRuby, source, targetParas[bi])
-			: sourceAttrs[ai].fRuby;
-		const KCMAttrSpanList targetRuby = onlyWhereTextSurvives
-			? SpansWhoseTextSurvives(targetAttrs[bi].fRuby, sourceAttrs[ai].fRuby, target, sourceParas[ai])
-			: targetAttrs[bi].fRuby;
+		//
+		// ★**ONE PLACE PER ATTRIBUTE, NOT ONE BLOCK PER ATTRIBUTE** (2026-09-08). The two were eight
+		//   lines each and differed in nothing but which field of KCMParaAttrs they read, so a THIRD
+		//   attribute meant a third copy - in the very function that decides what a comparison IS.
+		auto compareAttr = [&](KCMStoryAttrKind kind,
+							   const KCMAttrSpanList& sourceSpans, const KCMAttrSpanList& targetSpans)
+		{
+			const KCMAttrSpanList keptSource = onlyWhereTextSurvives
+				? SpansWhoseTextSurvives(sourceSpans, targetSpans, source, targetParas[bi])
+				: sourceSpans;
+			const KCMAttrSpanList keptTarget = onlyWhereTextSurvives
+				? SpansWhoseTextSurvives(targetSpans, sourceSpans, target, sourceParas[ai])
+				: targetSpans;
 
-		CompareParagraphAttr(kKCMStoryAttrRuby, sourceRuby, targetRuby, source, target, bi, out);
+			CompareParagraphAttr(kind, keptSource, keptTarget, source, target, out);
+		};
+
+		compareAttr(kKCMStoryAttrRuby, sourceAttrs[ai].fRuby, targetAttrs[bi].fRuby);
 
 		// ★KENTEN IS REPORTED AGAIN (2026-09-01, user's call: "if it can be found, I want to find
 		//   it"). It was compared for one day in August and withdrawn, and the withdrawal was never
@@ -765,14 +784,7 @@ void AddAttributeChanges(const std::vector<KCMTextDiff::Change>& paragraphChange
 		//   READING, and the message area drew that name over the older text as though somebody could
 		//   read it aloud. What answers that is fAttrKind, which every row and every change already
 		//   carries. ⇒ **The mistake was one place asking the wrong question, not this call.**
-		const KCMAttrSpanList sourceKenten = onlyWhereTextSurvives
-			? SpansWhoseTextSurvives(sourceAttrs[ai].fKenten, targetAttrs[bi].fKenten, source, targetParas[bi])
-			: sourceAttrs[ai].fKenten;
-		const KCMAttrSpanList targetKenten = onlyWhereTextSurvives
-			? SpansWhoseTextSurvives(targetAttrs[bi].fKenten, sourceAttrs[ai].fKenten, target, sourceParas[ai])
-			: targetAttrs[bi].fKenten;
-
-		CompareParagraphAttr(kKCMStoryAttrKenten, sourceKenten, targetKenten, source, target, bi, out);
+		compareAttr(kKCMStoryAttrKenten, sourceAttrs[ai].fKenten, targetAttrs[bi].fKenten);
 	};
 
 	// Walk the two paragraph lists side by side, stepping over each reported change. What is left
@@ -993,8 +1005,7 @@ bool16 CompareOneStory(const UIDRef& targetStory, const UIDRef& sourceStory,
 		{
 			// The whole run, as one change. This is where a run lands when the character pass
 			// cannot place it - not an error, just a coarser answer.
-			Add(out, change.bStart,
-				targetText, targetBytes, tRun, 0, static_cast<int32>(targetCodePoints.size()),
+			Add(out, targetText, targetBytes, tRun, 0, static_cast<int32>(targetCodePoints.size()),
 				sourceText, sourceBytes, sRun, 0, static_cast<int32>(sourceCodePoints.size()));
 			continue;
 		}
@@ -1002,8 +1013,7 @@ bool16 CompareOneStory(const UIDRef& targetStory, const UIDRef& sourceStory,
 		for (size_t k = 0; k < fineChanges.size(); ++k)
 		{
 			const KCMTextDiff::Change& fine = fineChanges[k];
-			Add(out, change.bStart,
-				targetText, targetBytes, tRun, fine.bStart, fine.bCount,
+			Add(out, targetText, targetBytes, tRun, fine.bStart, fine.bCount,
 				sourceText, sourceBytes, sRun, fine.aStart, fine.aCount);
 		}
 	}

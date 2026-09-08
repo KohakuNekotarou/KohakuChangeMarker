@@ -161,13 +161,10 @@ struct KCMStoryChange
 		out from these by SetRowChanges -- the row names the attribute, the children carry it. */
 	KCMStoryAttrKind fAttrKind;
 
-	int32		fParaIndex;		// which paragraph it fell in. Not drawn; kept for ordering and for
-								// anything later that wants to group changes by paragraph
-
 	KCMStoryChange()
 		: fKind(kReplace), fWhat(kText), fTargetStart(0), fTargetEnd(0),
 		  fSourceStart(0), fSourceEnd(0),
-		  fAttrKind(kKCMStoryAttrNone), fParaIndex(0) {}
+		  fAttrKind(kKCMStoryAttrNone) {}
 };
 
 /** One row of the Story Edits section. */
