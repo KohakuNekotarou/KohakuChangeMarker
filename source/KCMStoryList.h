@@ -497,6 +497,35 @@ namespace KCMStoryList
 
 	/** Empty the list during a controlled shutdown. See the file comment for why this exists. */
 	void ShutdownCleanup();
+
+	/** The whole list as tab-separated text, for app.kcmStoryRows.
+
+		★★★**WHY A READING PORT AT ALL** (2026-09-08). The list's cells are DRAWN BY HAND
+		(ui/KCMStoryCellView), so nothing outside this plug-in can see what a row says: not the
+		reading over a ruby row, not the "Mono"/"Group" word, not a footnote's number. Checking the
+		footnote work that day meant PHOTOGRAPHING the panel and reading the picture, once per
+		measurement - the single biggest cost of the day. KBS reached the same answer first
+		(app.kfcResults), and its reason is the one that matters here too: **a count proves
+		nothing.** "2 changes" is true of the right answer and of several wrong ones.
+
+		★**IT REPORTS FACTS, NOT THE PANEL'S WORDING.** The Change column's word ("Text+",
+		"Ruby+", "Endnote") is composed in the UI half (KCMStoryTreeWidgetMgr::KindLabel), which
+		lives in another plug-in and cannot be reached from here - and copying that rule into this
+		file would be the same judgement in two places ([[one-question-one-place]]), which is how
+		the two would come to disagree. What comes out instead is everything the rule is made of,
+		so a reader can work out the word and, more importantly, can see WHY it is that word.
+
+		Two kinds of line, told apart by the second column:
+
+		    row  change  uid  kinds  flags               attr      kind     value  text
+		    0    -       256  Text   compared,hasText,…  Footnote  -        -      あいうえお。…
+		    0    0       -    -      -                   Footnote  insert   1      あいうえお。…
+		    0    1       -    -      -                   -         insert   -      注A
+
+		@param out [out] the text. A header line, then the rows. Empty list = header only, which is
+			a real answer and reads differently from the property being missing.
+	*/
+	void RowsAsTsv(PMString& out);
 }
 
 #endif // __KCMStoryList_h__

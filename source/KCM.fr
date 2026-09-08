@@ -610,6 +610,25 @@ resource VersionedScriptElementInfo(10)
 			kNoAttributeClass,
 		}
 
+		// app.kcmStoryRows (2026-09-08) - the whole Story Edits list as TSV.
+		//
+		// ★★★WHY, and it is the same argument the property above makes one size down: the list's
+		// cells are DRAWN BY HAND (ui/KCMStoryCellView), so nothing outside the plug-in can read
+		// the reading over a ruby row, the "Mono"/"Group" word, or a footnote's number. Checking
+		// the footnote work on 2026-09-08 meant photographing the panel and reading the picture,
+		// every time. KBS reached this answer first (app.kfcResults) and wrote down the reason:
+		// **a count proves nothing.** A row's own words do.
+		Property
+		{
+			kKCMStoryRowsPropertyScriptElement,
+			p_KCMStoryRows,
+			"kcm story rows",					// name -> app.kcmStoryRows
+			"The Story Edits list as tab-separated text: a line per story row and a line per change under it.",
+			StringType,
+			{}
+			kNoAttributeClass,
+		}
+
 		// Puts the property ON the application object.
 		//
 		// Object{}, not Parent{}: Object names an EXISTING scripting object to add members to,
@@ -623,6 +642,12 @@ resource VersionedScriptElementInfo(10)
 				Object{ kApplicationObjectScriptElement },
 				Property{ kKCMStatusPropertyScriptElement, kReadOnly },
 				Property{ kKCMBookResultPropertyScriptElement, kReadOnly },
+				// ⚠★★★THIS LINE IS HALF OF A PAIR. The Property{} block above DEFINES the property;
+				//   this one PUTS IT ON app. Writing only the definition builds cleanly, loads
+				//   cleanly, warns about nothing - and the property simply is not there, which
+				//   shows up as ERR:55 the first time a script touches it (memory
+				//   kes-custom-dom-extensions). Both or neither.
+				Property{ kKCMStoryRowsPropertyScriptElement, kReadOnly },
 			}
 		}
 

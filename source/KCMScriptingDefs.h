@@ -102,10 +102,22 @@ enum KCMScriptProperties
 								// per chapter ("name<TAB>state"). Checked against the registry in
 								// docs/ai-notes/kes-scriptid-registry.md before use (2026-08-11).
 
-	// 'pKGr' (app.kcmStoryReadCompare, the direct-read migration's parallel run) stood here from
-	// 2026-08-31 to 2026-09-03 and was never registered with Adobe nor shipped; the code is free
-	// again (docs/ai-notes/kes-scriptid-registry.md says so too). It was the only read-write
-	// property KCM has ever had.
+	p_KCMStoryRows  = 'pKGr',	// r = rows. app.kcmStoryRows - the whole Story Edits list as TSV,
+								// one line per PARENT row and one per CHANGE under it.
+								// ★★★WHY IT EXISTS (2026-09-08). The list's own cells are drawn by
+								// hand (KCMStoryCellView), so nothing outside can read them: a
+								// test that wanted to know whether the ruby reading, the Mono/Group
+								// word or a footnote's number had appeared had to PHOTOGRAPH the
+								// panel and read the picture. Measured that day - it was the single
+								// biggest cost of checking the footnote work. This is the same
+								// answer KBS reached with app.kfcResults, and for the same stated
+								// reason: **a count proves nothing**; the row's own words do.
+								// ⚠READ-ONLY like every other property here.
+								// ★THE CODE IS A REUSE. 'pKGr' was app.kcmStoryReadCompare (the
+								// direct-read migration's parallel run) from 2026-08-31 to
+								// 2026-09-03 - never registered with Adobe, never shipped, and the
+								// registry says the code is free (kes-scriptid-registry.md). That
+								// property was also the only READ-WRITE one KCM has ever had.
 };
 
 /** Properties KCM adds to the STORY object (at the user's request).

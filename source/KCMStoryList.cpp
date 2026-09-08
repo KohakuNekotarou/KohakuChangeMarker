@@ -38,6 +38,8 @@
 #include "WideString.h"
 
 #include <algorithm>			// std::sort, std::remove_if
+#include <sstream>			// the reading port's number formatting (RowsAsTsv)
+#include <string>
 #include <vector>
 
 // Project includes:
@@ -761,5 +763,160 @@ void KCMStoryList::ShutdownCleanup()
 	gRows = std::vector<KCMStoryRow>();
 }
 
+//----------------------------------------------------------------------------------------
+// RowsAsTsv -- the reading port. See the header for why it exists.
+//----------------------------------------------------------------------------------------
+
+namespace
+{
+
+/** One field, with the two characters that would break a TSV taken out.
+
+	⚠**THE TEXT PIECES ARE ALREADY MARKED UP** (KCMStoryDiffRun's MarkUpBreaks turns a paragraph
+	 end into ¶ and a line break into ↵), so this catches what that does not reach: a reading, a
+	 kenten kind, and any field a future change adds. A tab inside a field would silently shift
+	 every column after it - the failure that reads as "the plug-in reported the wrong thing".
+*/
+std::string Field(const PMString& value)
+{
+	std::string utf8 = value.GetUTF8String();
+	for (size_t i = 0; i < utf8.size(); ++i)
+	{
+		if (utf8[i] == '\t' || utf8[i] == '\n' || utf8[i] == '\r')
+			utf8[i] = ' ';
+	}
+	return utf8.empty() ? std::string("-") : utf8;
+}
+
+std::string Num(int32 n)
+{
+	std::ostringstream s;
+	s << n;
+	return s.str();
+}
+
+/** Which change counters moved, as words - the raw material of the panel's Change column.
+
+	⚠**NOT THE COLUMN'S WORDING.** The '+' and the "name the first, sign that there were more"
+	 rule live in the UI half (KCMStoryTreeWidgetMgr::KindLabel). Repeating them here would put one
+	 judgement in two plug-ins.
+*/
+std::string KindsWord(uint32 kinds)
+{
+	std::string s;
+	if (kinds & kKCMStoryKindAdded)   s += (s.empty() ? "" : ",") + std::string("Added");
+	if (kinds & kKCMStoryKindRemoved) s += (s.empty() ? "" : ",") + std::string("Removed");
+	if (kinds & kKCMStoryKindText)    s += (s.empty() ? "" : ",") + std::string("Text");
+	if (kinds & kKCMStoryKindAttr)    s += (s.empty() ? "" : ",") + std::string("Attr");
+	if (kinds & kKCMStoryKindOther)   s += (s.empty() ? "" : ",") + std::string("Other");
+	return s.empty() ? std::string("-") : s;
+}
+
+/** Which attribute a row or a change is about. ⚠The values are KCMStoryAttrKind's, so a kind
+	added there and forgotten here comes out as "Attr<n>" rather than as silence. */
+std::string AttrWord(int32 attrKind)
+{
+	switch (attrKind)
+	{
+		case kKCMStoryAttrNone:		return "-";
+		case kKCMStoryAttrRuby:		return "Ruby";
+		case kKCMStoryAttrKenten:	return "Kenten";
+		case kKCMStoryAttrFootnote:	return "Footnote";
+		case kKCMStoryAttrEndnote:	return "Endnote";
+		default:					return "Attr" + Num(attrKind);
+	}
+}
+
+/** What sort of edit one change is. Same three the row draws as + - ≠. */
+std::string ChangeKindWord(int32 kind)
+{
+	switch (kind)
+	{
+		case KCMStoryChange::kInsert:	return "insert";
+		case KCMStoryChange::kDelete:	return "delete";
+		case KCMStoryChange::kReplace:	return "replace";
+		default:						return "kind" + Num(kind);
+	}
+}
+
+/** The three facts about a row that the Change column's rule reads, beside the counters.
+
+	★**hasText IS THE ONE THAT MATTERS MOST HERE** (2026-09-08): the column names an attribute only
+	when the DIFF found no text change, and a note's marker is a character, so the counters and the
+	diff disagree exactly where footnotes are involved. Printing both is what lets a reader see
+	which of the two the column obeyed.
+*/
+/** How a ruby is SET, for the row that reports one - "Mono" or "Group", the two words the panel
+	draws on the upper line.
+
+	★★★**IT NEEDS A COLUMN OF ITS OWN, and finding that out is what this port is for** (2026-09-08).
+	The first version of RowsAsTsv printed the READING in `value` and stopped there, so a
+	mono-to-group change - where both readings are identical and only the setting moved - came out
+	as `Ruby replace こはく 琥珀`: two rows that differ in nothing. The panel shows the difference
+	(LIST-17), the table did not, and a reader checking the panel against the table would have
+	concluded the panel was inventing it.
+	⚠**BOTH SIDES.** "it is mono now" is only half the fact; what changed is mono AGAINST group.
+	⚠**RUBY ONLY** - kenten has no such distinction and a note's marker has none either, so they
+	 print "-" rather than a word that would read as a claim about them.
+*/
+std::string RubySetting(const KCMStoryChange& c)
+{
+	if (c.fAttrKind != kKCMStoryAttrRuby)
+		return "-";
+
+	std::string s;
+	s += c.fOtherRuby.IsEmpty() ? "-" : (c.fOtherRubyGroup ? "Group" : "Mono");
+	s += ">";
+	s += c.fRuby.IsEmpty() ? "-" : (c.fRubyGroup ? "Group" : "Mono");
+	return s;
+}
+
+std::string FlagsWord(const KCMStoryRow& row)
+{
+	std::string s;
+	if (row.fTextCompared)  s += "compared";
+	if (row.fHasTextChange) s += (s.empty() ? "" : ",") + std::string("hasText");
+	s += (s.empty() ? "" : ",") + std::string("attrs=") + Num(row.fAttrKindCount);
+	s += ",changes=" + Num(static_cast<int32>(row.fChanges.size()));
+	return s;
+}
+
+}	// anonymous namespace
+
+/* RowsAsTsv
+*/
+void KCMStoryList::RowsAsTsv(PMString& out)
+{
+	std::string s = "row\tchange\tuid\tkinds\tflags\tattr\tkind\tset\tvalue\ttext\r\n";
+
+	for (size_t i = 0; i < gRows.size(); ++i)
+	{
+		const KCMStoryRow& row = gRows[i];
+
+		// The PARENT line: what the story row itself says.
+		s += Num(static_cast<int32>(i)) + "\t-\t" + Num(static_cast<int32>(row.fStoryUID.Get()))
+		   + "\t" + KindsWord(row.fKinds)
+		   + "\t" + FlagsWord(row)
+		   + "\t" + AttrWord(static_cast<int32>(row.fAttrKind))
+		   + "\t-\t-\t-\t" + Field(row.fText) + "\r\n";
+
+		// One line per CHANGE under it. ⚠**fRuby IS THE VALUE COLUMN**, and it holds a reading for
+		//   a ruby, a kind for a kenten and a NUMBER for a note - which is precisely the field no
+		//   reader outside could see before this port existed.
+		for (size_t k = 0; k < row.fChanges.size(); ++k)
+		{
+			const KCMStoryChange& c = row.fChanges[k];
+			s += Num(static_cast<int32>(i)) + "\t" + Num(static_cast<int32>(k))
+			   + "\t-\t-\t-\t" + AttrWord(static_cast<int32>(c.fAttrKind))
+			   + "\t" + ChangeKindWord(static_cast<int32>(c.fKind))
+			   + "\t" + RubySetting(c)
+			   + "\t" + Field(c.fRuby)
+			   + "\t" + Field(c.fText) + "\r\n";
+		}
+	}
+
+	out.SetUTF8String(s);
+	out.SetTranslatable(kFalse);	// document text rides in here - see SetDocumentText's note
+}
 
 // End, KCMStoryList.cpp.

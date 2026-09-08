@@ -120,8 +120,13 @@
 // KCMGetSessionStatus (declared in KCMModelNotify.h), which is not a reverse dependency.
 #include "KCMBookCompare.h"	// KCMGetBookResultText - the last book comparison, also in the module
 #include "KCMStoryStamp.h"	// KCMStoryEdits::ReadStamp - the SAME reading the panel uses
+#include "KCMStoryList.h"	// KCMStoryList::RowsAsTsv - app.kcmStoryRows, the reading port
 #include "KCMRingAdornment.h"	// KCMGetNumItemsWithXP - document.kcmTransparencyItemCount
-#include "KCMTextRead.h"		// the parallel run's switch and report (⚠temporary - see the header)
+// ⚠**KCMTextRead.h WENT WITH THE FEATURE THAT NEEDED IT** (2026-09-08). It was included here for
+//   app.kcmStoryReadCompare - the direct-read migration's parallel run - and its own comment said
+//   "temporary". The property was removed on 2026-09-03; the include outlived it by five days and
+//   was the file's ONLY mention of that header. ★An include nobody uses costs a compile
+//   dependency and, worse, tells the next reader that this file still does something it does not.
 
 /** Serves every scripting addition this plug-in makes -- the properties listed at the top of
     this file, on three different script objects. One boss, because the .fr splits them by
@@ -164,7 +169,7 @@ ErrorCode KCMScriptProvider::AccessProperty(ScriptID propID, IScriptRequestData*
 {
 	const int32 id = propID.Get();
 
-	const bool16 isAppString = (id == p_KCMStatus || id == p_KCMBookResult);
+	const bool16 isAppString = (id == p_KCMStatus || id == p_KCMBookResult || id == p_KCMStoryRows);
 	const bool16 isStoryCounter = (id == p_KCMChangeCount || id == p_KCMTextChangeCount ||
 								   id == p_KCMAttrChangeCount || id == p_KCMOtherChangeCount);
 	const bool16 isDocXPCount = (id == p_KCMTransparencyItemCount);
@@ -229,6 +234,11 @@ ErrorCode KCMScriptProvider::ReadAppString(int32 id, ScriptID propID, IScriptReq
 	PMString value;
 	if (id == p_KCMStatus)
 		KCMGetSessionStatus(value);		// the panel's status line
+	else if (id == p_KCMStoryRows)
+		// ★THE WHOLE LIST, and it answers with a header line even when there is nothing to report:
+		//   an empty list is a real answer, and it has to read differently from the property being
+		//   absent (which is ERR:55, not an empty string).
+		KCMStoryList::RowsAsTsv(value);
 	else
 		KCMGetBookResultText(value);		// the last book comparison, one line per chapter
 

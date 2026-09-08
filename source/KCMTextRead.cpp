@@ -552,6 +552,11 @@ void ScanNotes(ITextModel* model, std::vector<AttrRun>& outFootnotes, std::vecto
 		//   ⚠A MARKER AT THE VERY START OF ITS PARAGRAPH HAS NO SUCH CHARACTER. Its span reaches
 		//    back past the paragraph's start, TakeAttrFor clips it away, and the note goes
 		//    unreported - written down in the chapter's unconfirmed list rather than guessed at.
+		// ⚠**THE TEST BELOW IS NOT THAT CASE**, and saying so is the point: it guards the START OF
+		//   THE STORY, where fAt - 1 would be a negative index. The paragraph case above needs no
+		//   guard at all - the span is built, and TakeAttrFor drops it when it clips to nothing.
+		//   (Written out because the two look alike and the comment above would otherwise read as
+		//   this line's explanation.)
 		if (owned[i].fAt <= 0)
 			continue;
 
