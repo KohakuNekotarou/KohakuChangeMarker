@@ -356,10 +356,22 @@ bool16 KCMStoryMarkPrintAllowedFor(IDataBase* db)
 	if (KCMDrawEventHandler::sPrintMarks && KCMIsSameDoc(db, KCMArmedTargetDB()))
 		return kTrue;
 
-	// THE OLDER DOCUMENT IGNORES THE PRINT TOGGLE -- "Always Show Marks on Source" decides its
-	//   screen and its paper together. Asymmetric on purpose, and stated as the specification in
-	//   IKCMCompareFacade.h (at GetShowSourceMarks) long before the Story mode could print at all.
-	if (KCMDrawEventHandler::sSrcMarksOn && KCMIsSameDoc(db, KCMArmedSourceDB()))
+	// ★**THE OLDER DOCUMENT TAKES BOTH TOGGLES TOO** (2026-09-08, spec map SMK-19; the user:
+	//   "make Target and Source the same - the Pixel side was already like that"). Its own switch,
+	//   AND "Print comparison marks".
+	//   ⚠**IT USED TO TAKE sSrcMarksOn ALONE**, and the comment here defended that as deliberate,
+	//     citing IKCMCompareFacade.h as the specification. **The Pixel side had already stopped
+	//     doing it on 2026-09-07** (KCMDrawEventHandler.cpp, srcWanted -- spec map MK-14: a Source
+	//     document printed its frames while the reader had asked for no marks in the output). This
+	//     file's header says "THE RULE IS THE PIXEL MODE'S, WORD FOR WORD" - and it kept the word
+	//     the Pixel mode had retracted the day before.
+	//   ★★★**THE LESSON IS ABOUT THE CITATION, NOT THE RULE**: naming another file as the
+	//     specification does not subscribe you to its changes. Three places said the same stale
+	//     thing (this line, this file's header, IKCMCompareFacade.h at GetShowSourceMarks), and the
+	//     one actually edited on 09-07 was a fourth.
+	//   ★Screen behaviour is untouched, exactly as on the Pixel side.
+	if (KCMDrawEventHandler::sSrcMarksOn && KCMDrawEventHandler::sPrintMarks
+		&& KCMIsSameDoc(db, KCMArmedSourceDB()))
 		return kTrue;
 
 	return kFalse;

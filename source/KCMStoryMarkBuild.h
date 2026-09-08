@@ -58,13 +58,16 @@ void KCMStoryMarkSetPress(bool16 active, bool16 useSourceDocument);
 
 /** May this document's marks be drawn onto paper or into an exported PDF?
 
-	**THE RULE IS THE PIXEL MODE'S, WORD FOR WORD:**
-	  * the NEWER document prints when "Print comparison marks" is on;
-	  * the OLDER one prints when "Always Show Marks on Source" is on, and does not consult the
-	    print toggle at all.
-	That asymmetry is not this file's invention -- IKCMCompareFacade.h states it as the
-	specification where GetShowSourceMarks is declared ("ON SCREEN ONLY, where the Source one also
-	prints. What comes out of the Target document is decided by Print comparison marks alone").
+	**THE RULE IS THE PIXEL MODE'S, AND IT IS SYMMETRICAL** (2026-09-08): a document prints its
+	marks when ITS OWN switch is on AND "Print comparison marks" is on. The Target's own switch is
+	"Print comparison marks" itself, so it reads as one test there and two here.
+
+	⚠**IT WAS ASYMMETRIC UNTIL TODAY**, and the way that survived is worth more than the rule.
+	 This header said "WORD FOR WORD" and cited IKCMCompareFacade.h as the specification -- but the
+	 Pixel mode had already dropped the asymmetry on 2026-09-07 (spec map MK-14: a Source document
+	 printed its frames while the reader had asked for no marks in the output). **Quoting a file as
+	 the specification does not subscribe you to its edits.** Three places went on saying the old
+	 thing; the one that changed was a fourth.
 
 	@warning **IT IS ASKED FROM THE DRAWING PATH, ON BACKGROUND THREADS**, so it reads the state
 	 directly rather than querying a facade off kUtilsBoss -- a Query per parcel is not what this

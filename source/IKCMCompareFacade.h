@@ -195,11 +195,18 @@ public:
 		than only while the tool's button is held.
 
 		IT MEANS THE SAME THING IN BOTH COMPARE MODES - the Pixel mode's rings and the Story mode's
-		inverted characters. The two are drawn by completely different machinery, so each reads
-		this for itself: the rings in KCMDrawEventHandler, the characters in KCMStoryMarkBuild.
-		@warning ON SCREEN ONLY, where the Source one also prints. What comes out of the Target
-		document is decided by "Print comparison marks" alone, and this must not quietly override
-		it. */
+		coloured wash under the changed characters. The two are drawn by completely different
+		machinery, so each reads this for itself: the rings in KCMDrawEventHandler, the wash in
+		KCMStoryMarkBuild.
+		@warning **ON SCREEN ONLY.** What reaches paper or a PDF is decided by "Print comparison
+		 marks", for BOTH documents, and neither of these two switches may quietly override it.
+		⚠**THIS PARAGRAPH SAID THE OPPOSITE UNTIL 2026-09-08** ("where the Source one also
+		 prints"), and it was cited as the specification by KCMStoryMarkBuild - so when the Pixel
+		 side made the two symmetrical on 2026-09-07 (spec map MK-14), the Story side went on
+		 printing a Source document's marks with the print toggle off. ★It also called the Story
+		 mark "inverted characters", which it stopped being when the inversion was replaced by a
+		 wash (spec map SMK-07). **A sentence quoted as a specification has to be edited when the
+		 thing it describes changes - nothing warns you.** */
 	virtual bool16		GetShowTargetMarks() = 0;
 	virtual void		SetShowTargetMarks(bool16 on) = 0;
 
