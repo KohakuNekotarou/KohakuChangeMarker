@@ -460,6 +460,8 @@ public:
 		out.fOtherTextPost	= change.fOtherTextPost;
 		out.fRuby			= change.fRuby;			// only meaningful when fWhat is kAttr
 		out.fOtherRuby		= change.fOtherRuby;
+		out.fRubyGroup		= change.fRubyGroup;	// how it is SET - the readings alone cannot say
+		out.fOtherRubyGroup	= change.fOtherRubyGroup;
 		out.fAttrKind		= static_cast<int32>(change.fAttrKind);
 		return kTrue;
 	}

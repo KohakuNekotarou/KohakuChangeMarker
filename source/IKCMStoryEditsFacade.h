@@ -214,6 +214,21 @@ public:
 		PMString	fRuby;
 		PMString	fOtherRuby;
 
+		// HOW the ruby above is set: kTrue = GROUP (one reading over several characters),
+		//   kFalse = MONO (one per character). Same pairing as the readings - fRubyGroup is the
+		//   side the row shows.
+		// ★**THE ROW COULD NOT SAY WHAT CHANGED WITHOUT IT** (2026-09-08, user's request):
+		//   re-setting group ruby as mono leaves every reading identical, so both lines of the row
+		//   read the same and the change looks like nothing at all. The comparison always found it
+		//   (KCMStoryDiffRun's CompareParagraphAttr tests it beside the value and the length); this
+		//   is what carries it out. The panel shows it as "Mono" / "Group" on the upper line's
+		//   right-hand column (kKCMStoryRubyKindWidgetID).
+		// @warning KENTEN LEAVES BOTH kFalse and means nothing by it, and a side with NO ruby is
+		//   kFalse for want of anything else - what says "there is no ruby here" is the empty
+		//   reading, never this. The model's own KCMStoryChange says the same at more length.
+		bool16		fRubyGroup;
+		bool16		fOtherRubyGroup;
+
 		// WHICH attribute this is: 0 = none, 1 = ruby, 2 = kenten (reported again since
 		// 2026-09-01 - KCMStoryKinds.h).
 		// fWhat SAYS "not the words", THIS SAYS WHAT INSTEAD - and the panel needs both, because
@@ -228,7 +243,8 @@ public:
 
 		Change()
 			: fKind(0), fWhat(0), fTargetStart(0), fTargetEnd(0),
-			  fSourceStart(0), fSourceEnd(0), fAttrKind(0) {}
+			  fSourceStart(0), fSourceEnd(0), fRubyGroup(kFalse), fOtherRubyGroup(kFalse),
+			  fAttrKind(0) {}
 	};
 
 	/** How many differences row nth holds.

@@ -146,6 +146,24 @@ struct KCMStoryChange
 	PMString	fRuby;
 	PMString	fOtherRuby;
 
+	/** How the ruby above is SET -- kTrue for GROUP (one reading over several characters), kFalse
+		for MONO (one reading per character). fRubyGroup belongs to the side the row shows and
+		fOtherRubyGroup to the other, the same pairing as fRuby / fOtherRuby.
+
+		★**IT IS CARRIED BECAUSE THE READING CANNOT SAY IT** (2026-09-08, user's request: "when it
+		changes from group to mono, the row does not say what changed"). Turning group ruby into
+		mono ruby leaves every reading identical, so the two lines of the row come out the same and
+		the reader is shown a change with nothing visibly changed in it. The comparison has always
+		FOUND it -- CompareParagraphAttr tests fGroup along with the value and the length -- and
+		this is what carries the answer out to the panel.
+		@warning **MEANINGLESS WHERE THERE IS NO RUBY ON THAT SIDE**, and the empty string beside it
+		  is what says so: a removed ruby has no fRuby, and its fRubyGroup is kFalse because it has
+		  to be something, not because the ruby that is gone was mono.
+		@warning **RUBY ONLY.** Kenten travels in the same fields (fAttrKind says which), and it has
+		  no such distinction -- it is per character by nature -- so both stay kFalse there. */
+	bool16		fRubyGroup;
+	bool16		fOtherRubyGroup;
+
 	/** WHICH attribute this is, when fWhat is kAttr. kKCMStoryAttrNone for a text change.
 
 		**fWhat SAYS "not the words", THIS SAYS WHAT INSTEAD** -- and the panel needs both, because
@@ -162,7 +180,7 @@ struct KCMStoryChange
 	KCMStoryAttrKind fAttrKind;
 
 	KCMStoryChange()
-		: fKind(kReplace), fWhat(kText), fTargetStart(0), fTargetEnd(0),
+		: fKind(kReplace), fWhat(kText), fTargetStart(0), fTargetEnd(0), fRubyGroup(kFalse), fOtherRubyGroup(kFalse),
 		  fSourceStart(0), fSourceEnd(0),
 		  fAttrKind(kKCMStoryAttrNone) {}
 };

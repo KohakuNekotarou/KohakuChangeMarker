@@ -31,6 +31,7 @@
 // Interface includes:
 #include "IControlView.h"
 #include "IPanelControlData.h"
+#include "ITextControlData.h"		// the ruby row's "Mono" / "Group" cell is written directly, not through SetNodeName
 #include "ITreeViewMgr.h"			// ClearTree / ChangeRoot - the rebuild
 
 // General includes:
@@ -573,6 +574,37 @@ private:
 			//   picture the row it used to be left behind. (KBS's widget manager makes the same
 			//   call for the same reason, right after handing its cell its segments.)
 			textCell->Invalidate();
+		}
+
+		// ★HOW THE RUBY IS SET, on the upper line's right-hand column - the half of that column the
+		//   sign leaves empty (2026-09-08, user's request: "when it changes from group to mono, the
+		//   row does not say what changed"). Re-setting group ruby as mono leaves every reading
+		//   identical, so both lines of the row read the same and the change looks like nothing.
+		// ⚠**ONLY WHERE THE SETTING IS PART OF WHAT CHANGED.** Naming it in every ruby row would
+		//   make it scenery: a re-typed reading over ruby that stayed mono says nothing by adding
+		//   "Mono". So it appears when the two sides are set differently, and when the ruby is NEW -
+		//   there is no older setting to differ from, and "this arrived as group ruby" is worth the
+		//   same glance. ⚠A ruby that was REMOVED names nothing: there is no newer side to describe.
+		// ⚠IT IS FOUND RATHER THAN WRITTEN THROUGH SetNodeName. Only the ruby row carries this
+		//   widget, and SetNodeName asserts on a row that does not have the one it was handed.
+		// ⚠THE EMPTY STRING IS WRITTEN TOO, and has to be: rows are recycled, so a row that says
+		//   nothing must actively say nothing or it keeps the word the row before it left there.
+		IControlView* rubyKindCell = widgetList->FindWidget(kKCMStoryRubyKindWidgetID);
+		if (rubyKindCell != nil)
+		{
+			const bool16 isRuby = (have && change.fAttrKind == static_cast<int32>(kKCMStoryAttrRuby)) ? kTrue : kFalse;
+			const bool16 settingIsNews = (isRuby && !change.fRuby.IsEmpty() &&
+										  (change.fOtherRuby.IsEmpty() ||
+										   (change.fRubyGroup != 0) != (change.fOtherRubyGroup != 0))) ? kTrue : kFalse;
+
+			PMString rubyKind;
+			if (settingIsNews)
+				rubyKind = PMString(change.fRubyGroup ? "Group" : "Mono");
+			rubyKind.SetTranslatable(kFalse);	// ★the words the Japanese typesetter uses, not keys
+
+			InterfacePtr<ITextControlData> rubyKindData(rubyKindCell, UseDefaultIID());
+			if (rubyKindData != nil)
+				rubyKindData->SetString(rubyKind);
 		}
 
 		return kTrue;

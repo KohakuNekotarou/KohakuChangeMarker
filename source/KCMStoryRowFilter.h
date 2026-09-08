@@ -78,8 +78,13 @@
 
 	**A ROW THAT WAS NOT DIFFED FALLS BACK ON THE TEXT COUNTER**, which is the best that can be
 	  known about it. Two quite different rows arrive here and the same reading serves both: every
-	  row in the pixel mode, and a row in the story mode whose diff was refused (the edit distance
-	  ran past the limit, or the length check failed). In both, "the Text counter moved" is real
+	  row in the pixel mode, and a row in the story mode whose story could not be READ at all
+	  (KCMStoryDiffRun's ReadStory).
+	  ⚠**THIS USED TO NAME TWO MORE REASONS AND NEITHER EXISTS** (measured 2026-09-08): the length
+	    check went with the XML route on 2026-09-03, and "the edit distance ran past the limit"
+	    cannot happen -- KCMTextDiff::Diff takes a ceiling and KCM never passes one (maxEdits
+	    defaults to 0, meaning none), so the only other way out of it is a guard whose own comment
+	    calls itself unreachable. In both, "the Text counter moved" is real
 	  evidence that characters were inserted, removed or replaced, and it is evidence nobody else
 	  is offering.
 	  @warning Attr or Other alone is dropped here -- and in the story mode that costs the ruby of

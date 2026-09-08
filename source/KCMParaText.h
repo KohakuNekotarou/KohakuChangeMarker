@@ -61,9 +61,18 @@ struct KCMAttrSpan
 		-- against MONO ruby, where each character has its own (琥 -> こ, 珀 -> はく).
 
 		It is carried because the two are different typesetting, so turning one into the other IS
-		a change even when every reading stays the same. InDesign writes it as RubyType="GroupRuby"
-		and omits the attribute for mono, so mono is the default here too. The pair is the SDK's
-		own: IRubyStyle::RubyKind, kRubyKind_Group / kRubyKind_Mono.
+		a change even when every reading stays the same -- and since 2026-09-08 the panel SAYS which
+		it now is, on the ruby row's upper line ("Mono" / "Group"; KCMStoryList.h, fRubyGroup).
+		The pair is the SDK's own: IRubyStyle::RubyKind, kRubyKind_Group / kRubyKind_Mono.
+		InDesign writes GROUP out as RubyType="GroupRuby" and leaves the attribute OFF for mono, so
+		mono is the default here too -- ⚠**but that is true of a TEXT RUN only.** A STYLE DEFINITION
+		writes every property it holds, PerCharacterRuby among them, so "PerCharacterRuby" found in
+		a snippet has most likely been found inside a ParagraphStyle and is not a ruby at all
+		(measured 2026-09-08: the sentence above was briefly "corrected" into a wrong one on the
+		strength of exactly that hit -- [[investigate-with-tools-not-shell]], tell a DEFINITION from
+		a USE before counting).
+		★NOTHING HERE RESTS ON EITHER, since 2026-09-03: the setting is READ from the document
+		(kTAMojiRubyBoss in KCMTextRead.cpp), never inferred from an attribute being present.
 		@warning RUBY ONLY. Kenten has no such distinction -- it is per character by nature -- so
 		  its spans always leave this kFalse, and the comparison then never reports a difference
 		  in it. */
