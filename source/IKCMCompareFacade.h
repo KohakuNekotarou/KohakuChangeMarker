@@ -187,7 +187,19 @@ public:
 	// The three here are the three the UI actually WRITES. The overset flag looks like a fourth
 	// and is not: the UI only reads it, and clears the whole feature through ClearOverset() below.
 
-	/** "Always Show Marks on Source": the Source document carries the same rings at all times. */
+	/** "Always Show Marks on Source": the Source document carries the same rings at all times.
+
+		★★★**THE TWO DISPLAY TOGGLES ARE ABOUT THE SCREEN, AND ONLY THE SCREEN** (2026-09-08, the
+		user, settling it in one sentence: "with Print ON they are printable and permanently shown;
+		Always Show only ever shows"). What reaches paper, a PDF or the print preview is decided by
+		**"Print comparison marks" alone, for BOTH documents** - and because that switch also puts
+		the marks up on screen, turning it on means "what you see is what will come out".
+		⇒ These two never grant output, and never withhold it.
+		⚠**THIS PARAGRAPH IS THE ONE OTHER FILES CITE.** It said the opposite for the Source side
+		 until today ("ON SCREEN ONLY, where the Source one also prints"), and that sentence was
+		 copied into KCMStoryMarkBuild as the specification - so when the Pixel side changed on
+		 2026-09-07, the Story side kept the retracted rule. **A citation does not follow its
+		 source.** If this changes again, grep for GetShowSourceMarks before believing anything. */
 	virtual bool16		GetShowSourceMarks() = 0;
 	virtual void		SetShowSourceMarks(bool16 on) = 0;
 

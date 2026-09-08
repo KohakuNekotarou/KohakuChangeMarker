@@ -2000,13 +2000,26 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 	//     never exposed to it, thanks to isThumb).
 	// @warning it is written `(a != 0) != (b != 0)`: bool16 is an integer type, and a bare != gives
 	//   the wrong answer for a true value that is not kTrue.
-	// ★**PRINTING TAKES BOTH TOGGLES** (2026-09-07, spec map MK-14): the Source side's own switch,
-	//   AND "Print comparison marks". It used to take sSrcMarksOn alone, which meant a Source
-	//   document printed its frames while the reader had asked for no marks in the output -- one
-	//   switch quietly meaning two things. Screen behaviour is untouched.
-	const bool16 srcWanted = printing ? ((sSrcMarksOn && sPrintMarks) ? kTrue : kFalse)
+	// ★★★**PRINTING IS DECIDED BY "Print comparison marks" ALONE - ON BOTH SIDES** (2026-09-08,
+	//   the user, restating what spec map MK-14's rule already said: "with Print ON I want them in
+	//   the output; Always Show is only ever about the screen").
+	//   ⚠**THIS LINE HAS BEEN WRONG TWICE, IN OPPOSITE DIRECTIONS.** Until 2026-09-07 it read
+	//     `sSrcMarksOn` alone, so a Source document printed its frames with the print toggle OFF.
+	//     The fix that day made it `sSrcMarksOn && sPrintMarks` - which stopped that, and created
+	//     the mirror fault: with Print ON and Always Show OFF the Source marks did NOT print,
+	//     although the reader had asked for marks in the output. **A display switch must not hold a
+	//     veto over the output.**
+	//   ★The rule MK-14 states has always been the right one; both faults were readings of it.
+	// ★★★**AND ON SCREEN, "Print comparison marks" SHOWS THEM TOO** (2026-09-08, the user's call:
+	//   "with Print ON they are printable AND permanently shown, including in the print preview").
+	//   The Target side has always read sPrintMarks on screen; the Source side did not, so turning
+	//   Print on lit one document and not the other.
+	//   ⚠**IT IS OR-ed WITH THE TOGGLE, NOT XOR-ed WITH THE PRESS.** The held button still reverses
+	//     what the toggle asks for; what it can no longer do is hide a mark that Print is showing.
+	//     ⇒ while Print is on, the Source marks stand - that is what "permanently shown" means.
+	const bool16 srcWanted = printing ? (sPrintMarks ? kTrue : kFalse)
 	                       : (isThumb ? kTrue
-	                                  : ((((sSrcMarksOn != 0) != (srcPressed != 0))) ? kTrue : kFalse));
+	                                  : ((sPrintMarks || ((sSrcMarksOn != 0) != (srcPressed != 0))) ? kTrue : kFalse));
 	const bool16 wantSrcMarks = srcWanted && !oppHides && sSrcDB != nil && anyMarkableContent;
 	// When printing with "print the frames" off, none of the overlay is drawn -- Target or Source.
 	// ★Since 2026-09-07 the Source side reads sPrintMarks too (see srcWanted above), so this flag

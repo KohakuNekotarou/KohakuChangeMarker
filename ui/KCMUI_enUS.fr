@@ -100,7 +100,11 @@ resource StringTable (kSDKDefStringsResourceID + index_enUS)
                 kKCMPrintCheckKey,			"Print comparison marks",
                 // An alert, shown every time the toggle above is switched ON (never when it is
                 // switched OFF). English in every locale - see the note on the key in KCMUIID.h.
-                kKCMPrintMarksOnKey,			"Comparison marks will now appear in print and in exported PDF files.",
+                // ★**IT NAMES THE SCREEN TOO** (2026-09-08). Turning this on also shows the marks on
+                // screen, permanently, in BOTH documents - that is what makes "what you see is what
+                // comes out" true. The sentence used to mention only print and PDF, so the reader
+                // watched the screen change and was told nothing about why.
+                kKCMPrintMarksOnKey,			"Comparison marks will now appear in print and in exported PDF files, and stay visible on screen in both documents.",
                 kKCMOpacity25Key,				"25%",
                 kKCMOpacity75Key,				"75%",
                 kKCMColorRedKey,				"Red",

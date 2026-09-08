@@ -279,12 +279,17 @@ void KCMStoryMarkRefresh()
 		//   this same set -- so "on paper but not on screen" would mean keeping a second set of ranges,
 		//   which is one question answered in two places ([[one-question-one-place]]). The screen and
 		//   the page agree because there is only ever one answer to draw from.
-		// @warning **the Source side does NOT read the print toggle** -- "Always Show Marks on Source"
-		//   decides both its screen and its paper, which is the specification in IKCMCompareFacade.h,
-		//   where GetShowSourceMarks is declared.
+		// ★★★**BOTH SIDES READ THE PRINT TOGGLE, ON SCREEN AND ON PAPER** (2026-09-08, the user's
+		//   call: "with Print ON they are printable AND permanently shown, print preview included").
+		//   ⚠**THE PARAGRAPH THAT STOOD HERE SAID THE OPPOSITE** for the Source side, and cited
+		//     IKCMCompareFacade.h as the specification - the same citation that carried the stale
+		//     rule into the printing test further down this file. Both were corrected today.
+		//   ★So the two lines below are now the SAME SHAPE, which is the point: a reader can see at
+		//     a glance that the sides agree, instead of having to work out why they differ.
 		const bool16 tgtWanted = (compare->GetShowTargetMarks() || compare->GetPrintMarks()) ? kTrue : kFalse;
+		const bool16 srcWanted = (compare->GetShowSourceMarks() || compare->GetPrintMarks()) ? kTrue : kFalse;
 		const bool16 wantTarget = ((tgtWanted != 0) != (pressTarget != 0)) ? kTrue : kFalse;
-		const bool16 wantSource = ((compare->GetShowSourceMarks() != 0) != (pressSource != 0)) ? kTrue : kFalse;
+		const bool16 wantSource = ((srcWanted != 0) != (pressSource != 0)) ? kTrue : kFalse;
 
 		IDataBase* const targetDB = compare->GetArmedTargetDB();
 		IDataBase* const sourceDB = compare->GetArmedSourceDB();
@@ -356,9 +361,12 @@ bool16 KCMStoryMarkPrintAllowedFor(IDataBase* db)
 	if (KCMDrawEventHandler::sPrintMarks && KCMIsSameDoc(db, KCMArmedTargetDB()))
 		return kTrue;
 
-	// ★**THE OLDER DOCUMENT TAKES BOTH TOGGLES TOO** (2026-09-08, spec map SMK-19; the user:
-	//   "make Target and Source the same - the Pixel side was already like that"). Its own switch,
-	//   AND "Print comparison marks".
+	// ★★★**THE OLDER DOCUMENT PRINTS ON "Print comparison marks" ALONE, LIKE THE NEWER ONE**
+	//   (2026-09-08, the user: "with Print ON I want them in the output; Always Show is only ever
+	//   about the screen").
+	//   ⚠**MY FIRST ATTEMPT THAT DAY MADE IT `sSrcMarksOn && sPrintMarks`**, copied from the Pixel
+	//     side - which was itself the mirror fault of the one it had fixed the day before. A
+	//     display switch must not hold a veto over the output.
 	//   ⚠**IT USED TO TAKE sSrcMarksOn ALONE**, and the comment here defended that as deliberate,
 	//     citing IKCMCompareFacade.h as the specification. **The Pixel side had already stopped
 	//     doing it on 2026-09-07** (KCMDrawEventHandler.cpp, srcWanted -- spec map MK-14: a Source
@@ -370,8 +378,7 @@ bool16 KCMStoryMarkPrintAllowedFor(IDataBase* db)
 	//     thing (this line, this file's header, IKCMCompareFacade.h at GetShowSourceMarks), and the
 	//     one actually edited on 09-07 was a fourth.
 	//   ★Screen behaviour is untouched, exactly as on the Pixel side.
-	if (KCMDrawEventHandler::sSrcMarksOn && KCMDrawEventHandler::sPrintMarks
-		&& KCMIsSameDoc(db, KCMArmedSourceDB()))
+	if (KCMDrawEventHandler::sPrintMarks && KCMIsSameDoc(db, KCMArmedSourceDB()))
 		return kTrue;
 
 	return kFalse;
@@ -379,10 +386,15 @@ bool16 KCMStoryMarkPrintAllowedFor(IDataBase* db)
 
 bool16 KCMStoryMarkPrintPossibleAtAll()
 {
-	// @warning **the same two flags as above, with the document test dropped** -- see the header
-	//   for why the coarse form exists at all (GetIsActive is handed an IParcelShape, which is not
-	//   an IPMUnknown and therefore has no database to ask about).
-	return (KCMDrawEventHandler::sPrintMarks || KCMDrawEventHandler::sSrcMarksOn) ? kTrue : kFalse;
+	// @warning **THE SAME FLAG AS ABOVE, with the document test dropped** -- see the header for why
+	//   the coarse form exists at all (GetIsActive is handed an IParcelShape, which is not an
+	//   IPMUnknown and therefore has no database to ask about).
+	// ⚠**IT WAS `sPrintMarks || sSrcMarksOn` UNTIL 2026-09-08**, when the fine-grained answer
+	//   stopped reading sSrcMarksOn (printing is decided by "Print comparison marks" alone, on both
+	//   sides). Left as it was, this gate would have gone on ALLOWING a pass that the finer test
+	//   then refused - harmless in what it draws, and exactly the kind of drift the header warns
+	//   about: two answers to one question, one of them stale.
+	return KCMDrawEventHandler::sPrintMarks ? kTrue : kFalse;
 }
 
 // End, KCMStoryMarkBuild.cpp.
