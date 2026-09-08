@@ -278,6 +278,18 @@ void KCMStoryCellView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 		x += StringUtils::PMMeasureString(&gc, s, fontInfo, kKCMDontConvertAmpersand).X();
 	};
 
+	// ★**A DELETION HAS NOTHING TO SHOW ON THIS SIDE**, so the place it left is drawn as a bar
+	//   instead of as a gap the reader cannot see (2026-09-08 - see kKCMCaretWidth for the whole
+	//   argument). ⚠**TEXT CHANGES ONLY**: a ruby or kenten change keeps its base characters here,
+	//   so there is nothing missing to point at, and those rows are left exactly as they were
+	//   (user's call the same day).
+	const bool16 wantCaret = (mid.IsEmpty() &&
+							  attrKind == static_cast<int32>(kKCMStoryAttrNone)) ? kTrue : kFalse;
+	const PMString caretRoom = KCMCaretPlaceholder();
+	const PMReal caretRoomW = wantCaret
+		? StringUtils::PMMeasureString(&gc, caretRoom, fontInfo, kKCMDontConvertAmpersand).X()
+		: PMReal(0.0);
+
 	// ★WHERE THE CHANGED CHARACTERS ACTUALLY LANDED. The reading has to stand over THEM, and where
 	//   they land is not known until the line has been laid out: all three branches below place the
 	//   change at a different x, because how much leading context fitted decides it. So the change
@@ -288,12 +300,23 @@ void KCMStoryCellView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 	auto drawChange = [&](const PMString& s)
 	{
 		drawnMidX = x;
-		drawRun(s, kChangeColor);
+		if (wantCaret && s.IsEmpty())
+		{
+			// The bar spans the cell's own height, so it reads as a place between two characters.
+			KCMDrawCaret(gPort, kChangeColor, x, caretRoomW,
+						 frame.Top() + PMReal(1.0), frame.Height() - PMReal(2.0));
+			x += caretRoomW;
+		}
+		else
+		{
+			drawRun(s, kChangeColor);
+		}
 		drawnMidW = x - drawnMidX;
 	};
 
 	const PMReal preW  = pre.IsEmpty()  ? PMReal(0.0) : StringUtils::PMMeasureString(&gc, pre,  fontInfo, kKCMDontConvertAmpersand).X();
-	const PMReal midW  = mid.IsEmpty()  ? PMReal(0.0) : StringUtils::PMMeasureString(&gc, mid,  fontInfo, kKCMDontConvertAmpersand).X();
+	const PMReal midW  = wantCaret ? caretRoomW
+					   : (mid.IsEmpty() ? PMReal(0.0) : StringUtils::PMMeasureString(&gc, mid, fontInfo, kKCMDontConvertAmpersand).X());
 	const PMReal postW = post.IsEmpty() ? PMReal(0.0) : StringUtils::PMMeasureString(&gc, post, fontInfo, kKCMDontConvertAmpersand).X();
 
 	// ★THE CHANGE IS WHAT SURVIVES A NARROW PANEL. The stock cell this replaced ellipsized in the

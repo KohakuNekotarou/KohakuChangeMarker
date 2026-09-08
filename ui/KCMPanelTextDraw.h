@@ -27,10 +27,12 @@
 #define __KCMPanelTextDraw_h__
 
 // Interface includes:
+#include "IGraphicsPort.h"		// setrgbcolor / rectfill - the caret is filled, not written
 #include "IInterfaceColors.h"	// RealAGMColor
 
 // General includes:
 #include "PMReal.h"
+#include "PMString.h"			// the caret's placeholder
 
 /** The two flags every draw and every measure passes, spelled out rather than left to a default.
 	★★**THE DEFAULTS IN DrawStringUtils.h DISAGREE**: the draw calls default to kFalse, the measure
@@ -93,6 +95,65 @@ inline PMReal KCMRubyX(const PMReal& baseX, const PMReal& baseW, const PMReal& r
 	return (x < leftLimit) ? leftLimit : x;
 }
 
+
+/** ★**THE PLACE WORDS LEFT, OR WHERE THEY WENT IN** - the bar this panel draws when a change has
+	a place on this side and no characters (2026-09-08, user's request).
+
+	A DELETION's row shows the NEWER version, where the removed words simply are not there: the
+	context closes up and nothing says WHERE. The mirror case is an INSERTION seen from the message
+	area, which shows the OLDER version. Both are "a place, and nothing to show" - the same fact the
+	marks on the page have always drawn as a caret (KCMStoryMarkBuild turns a zero-width range into
+	KCMMarkRange::Caret). The panel was the one place without it.
+
+	⚠**TEXT CHANGES ONLY** (user's call, the same day): a ruby or kenten change keeps its base
+	 characters on both sides, so there is nothing missing to point at - those are left exactly as
+	 they were.
+
+	★**NOTHING IS ADDED TO ANY STRING.** The bar is DRAWN; the placeholder below only reserves the
+	room, so nothing measured, selected or copied ever gains a character - the rule
+	KCMStoryDiffRun's MarkUpBreaks states for its ¶ and ⚓.
+	★★SHARED BY THE TWO WIDGETS for the reason this header exists: the change ROW draws one side and
+	the MESSAGE AREA the other, and a bar that looked different in the two would read as two things.
+
+	★**HOW WIDE IT IS DRAWN.**
+	★**1.0, NOT 2.0** - shown at 2.0 first, the reader asked for it thinner, and confirmed 1.0 on
+	screen ("it looks right now", 2026-09-08). Both numbers were seen before this one was settled.
+	⚠**IT NEVER LANDS ON A LINE THAT CARRIES A READING, AND THAT IS TWO CONDITIONS MEETING RATHER
+	 THAN ONE RULE.** The bar is drawn only for a TEXT change (attrKind == kKCMStoryAttrNone), and a
+	 text change carries no reading - so the ruby pass in each widget, guarded by !ruby.IsEmpty(),
+	 never runs on a line that has one.
+	 ⇒ **If a bar is ever wanted for an ATTRIBUTE change, that guard stops being enough**: the ruby
+	   pass looks for the run marked "these are the changed characters", and the bar's placeholder is
+	   marked exactly that way - it has to be, so that the layout treats it as the change. */
+const PMReal kKCMCaretWidth(1.0);
+
+/** The room the bar stands in.
+	★**ONE SPACE, NOT AN EMPTY STRING**: the message area wraps its text run by run, and an empty run
+	is indistinguishable from "nothing left to place" there (KCMAnythingLeft). A space is carried
+	through the wrap like any other text, and the bar is drawn over it instead of it. */
+inline PMString KCMCaretPlaceholder()
+{
+	PMString s(" ");
+	s.SetTranslatable(kFalse);
+	return s;
+}
+
+/** Draw the bar, centred in the room the placeholder reserved.
+	@param x the left edge of that room, @param roomW how wide it came out.
+	@param top the top of the line's box and @param height its height - the bar spans the WHOLE of
+	       it, which is what makes it read as "between these two characters" rather than as a
+	       character of its own. */
+inline void KCMDrawCaret(IGraphicsPort* gPort, const RealAGMColor& colour,
+						 const PMReal& x, const PMReal& roomW,
+						 const PMReal& top, const PMReal& height)
+{
+	if (gPort == nil || height <= PMReal(0.0))
+		return;
+
+	const PMReal left = x + (roomW - kKCMCaretWidth) / PMReal(2.0);
+	gPort->setrgbcolor(colour.red, colour.green, colour.blue);
+	gPort->rectfill(left, top, kKCMCaretWidth, height);
+}
 #endif // __KCMPanelTextDraw_h__
 
 // End, KCMPanelTextDraw.h.

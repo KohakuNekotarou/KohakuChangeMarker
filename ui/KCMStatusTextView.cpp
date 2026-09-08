@@ -90,9 +90,14 @@ struct KCMRun
 	   and hang the reading over "Source Text:". */
 	bool16		fIsChange;
 
-	KCMRun() : fFaded(kTrue), fIsChange(kFalse) {}
-	KCMRun(const PMString& text, bool16 faded, bool16 isChange = kFalse)
-		: fText(text), fFaded(faded), fIsChange(isChange) {}
+	/* Is this run the PLACE a change has on this side, with no characters in it (2026-09-08)?
+	   Its text is one space - the room the bar is drawn in - and nothing else about the wrap or the
+	   measuring has to know: see KCMCaretPlaceholder. */
+	bool16		fIsCaret;
+
+	KCMRun() : fFaded(kTrue), fIsChange(kFalse), fIsCaret(kFalse) {}
+	KCMRun(const PMString& text, bool16 faded, bool16 isChange = kFalse, bool16 isCaret = kFalse)
+		: fText(text), fFaded(faded), fIsChange(isChange), fIsCaret(isCaret) {}
 };
 
 /* One piece of the message as it will be drawn: a run, or the part of a run that fell on one line.
@@ -103,12 +108,13 @@ struct KCMFrag
 	PMString	fText;
 	bool16		fFaded;
 	bool16		fIsChange;	// carried through from the run - see KCMRun
+	bool16		fIsCaret;	// likewise: the piece is a PLACE, drawn as a bar rather than written
 	int32		fLine;
 	PMReal		fX;
 
-	KCMFrag() : fFaded(kTrue), fIsChange(kFalse), fLine(0), fX(0.0) {}
-	KCMFrag(const PMString& text, bool16 faded, bool16 isChange, int32 line, const PMReal& x)
-		: fText(text), fFaded(faded), fIsChange(isChange), fLine(line), fX(x) {}
+	KCMFrag() : fFaded(kTrue), fIsChange(kFalse), fIsCaret(kFalse), fLine(0), fX(0.0) {}
+	KCMFrag(const PMString& text, bool16 faded, bool16 isChange, bool16 isCaret, int32 line, const PMReal& x)
+		: fText(text), fFaded(faded), fIsChange(isChange), fIsCaret(isCaret), fLine(line), fX(x) {}
 };
 
 /* KCMHead / KCMTail
@@ -249,6 +255,7 @@ bool16 KCMLayoutRuns(IGraphicsContext* gc, const InterfaceFontInfo& font,
 		PMString rest = runs[r].fText;
 		const bool16 faded = runs[r].fFaded;
 		const bool16 isChange = runs[r].fIsChange;
+		const bool16 isCaret = runs[r].fIsCaret;
 
 		while (!rest.IsEmpty())
 		{
@@ -295,7 +302,7 @@ bool16 KCMLayoutRuns(IGraphicsContext* gc, const InterfaceFontInfo& font,
 				// All of it goes on this line.
 				if (!chunk.IsEmpty())
 				{
-					out.push_back(KCMFrag(chunk, faded, isChange, line, x));
+					out.push_back(KCMFrag(chunk, faded, isChange, isCaret, line, x));
 					x += KCMWidth(gc, chunk, font);
 				}
 				rest = (breakAt < 0) ? PMString() : KCMTail(rest, breakAt);	// leave the break itself
@@ -336,7 +343,7 @@ bool16 KCMLayoutRuns(IGraphicsContext* gc, const InterfaceFontInfo& font,
 
 			const PMString head = KCMHead(chunk, fit);
 			if (!head.IsEmpty())
-				out.push_back(KCMFrag(head, faded, isChange, line, x));
+				out.push_back(KCMFrag(head, faded, isChange, isCaret, line, x));
 			rest = KCMTail(rest, fit);
 			++line;
 			x = PMReal(0.0);
@@ -349,8 +356,12 @@ bool16 KCMLayoutRuns(IGraphicsContext* gc, const InterfaceFontInfo& font,
 }
 
 /** The four pieces as runs, with the heading on a line of its own. */
+/** The four pieces as runs, with the heading on a line of its own.
+	@param wantCaret draw the change as a BAR rather than as characters - what a change with a place
+	       and nothing to show on this side needs (see kKCMCaretWidth). Only ever true when mid is
+	       empty AND the change is a text change. */
 std::vector<KCMRun> KCMMakeRuns(const PMString& label, const PMString& pre,
-									const PMString& mid, const PMString& post)
+									const PMString& mid, const PMString& post, bool16 wantCaret)
 {
 	std::vector<KCMRun> runs;
 	if (!label.IsEmpty())
@@ -367,6 +378,8 @@ std::vector<KCMRun> KCMMakeRuns(const PMString& label, const PMString& pre,
 		runs.push_back(KCMRun(pre, kTrue));
 	if (!mid.IsEmpty())
 		runs.push_back(KCMRun(mid, kFalse, kTrue /*these are the changed characters*/));
+	else if (wantCaret)
+		runs.push_back(KCMRun(KCMCaretPlaceholder(), kFalse, kTrue, kTrue /*a place, drawn as a bar*/));
 	if (!post.IsEmpty())
 		runs.push_back(KCMRun(post, kTrue));
 	return runs;
@@ -499,6 +512,13 @@ void KCMStatusTextView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 	if (mid.IsEmpty())
 		ruby = PMString();		// (assigned rather than Clear()d - see the kNothing below)
 
+	// ★**AN INSERTION HAS NO CHARACTERS ON THE OLDER SIDE**, and this box shows the older side - so
+	//   the place the new words went in is drawn as a bar (2026-09-08; the whole argument is at
+	//   kKCMCaretWidth). ⚠**TEXT CHANGES ONLY** - a ruby or kenten change keeps its base characters
+	//   here, so nothing is missing to point at (user's call the same day).
+	const bool16 wantCaret = (mid.IsEmpty() &&
+							  attrKind == static_cast<int32>(kKCMStoryAttrNone)) ? kTrue : kFalse;
+
 	// The palette window's SYSTEM SCRIPT font - the one the resource this replaced named
 	// (kPaletteWindowFontId there; the system-script variant here for the same reason the change
 	// row's cell uses it, since this box now shows the document's own text as well as the panel's
@@ -575,7 +595,7 @@ void KCMStatusTextView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 	// ---- lay the message out, giving the context away first if it does not fit ----------------
 
 	std::vector<KCMFrag> frags;
-	if (!KCMLayoutRuns(&gc, fontInfo, KCMMakeRuns(label, pre, mid, post), availWidth, maxLines, frags))
+	if (!KCMLayoutRuns(&gc, fontInfo, KCMMakeRuns(label, pre, mid, post, wantCaret), availWidth, maxLines, frags))
 	{
 		// ★frags now holds as much of the whole message as the box could take. It is kept as the
 		//   last resort below, so nothing here has to succeed for something to be drawn.
@@ -617,7 +637,7 @@ void KCMStatusTextView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 			found = largestFitting(maxKeep, [&](int32 keep)
 			{
 				return KCMMakeRuns(label, KCMTrimLeadingContext(pre, keep), mid,
-									 KCMTrimTrailingContext(post, keep));
+									 KCMTrimTrailingContext(post, keep), wantCaret);
 			});
 		}
 
@@ -638,7 +658,7 @@ void KCMStatusTextView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 					midCut.Append(KCMEllipsis());
 					midCut.SetTranslatable(kFalse);
 				}
-				return KCMMakeRuns(label, kNothing, midCut, kNothing);
+				return KCMMakeRuns(label, kNothing, midCut, kNothing, wantCaret);
 			});
 		}
 
@@ -691,6 +711,17 @@ void KCMStatusTextView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 	{
 		const KCMFrag& f = frags[i];
 		const PMPoint at(frame.Left() + f.fX, lineOf(f.fLine));
+
+		// ★**A PLACE WITH NOTHING IN IT IS DRAWN, NOT WRITTEN** (2026-09-08) - an insertion seen from
+		//   this box has no characters on the older side, and the bar is what says where they went in.
+		//   The room was reserved by a space; the bar is drawn over it and the space itself never is.
+		if (f.fIsCaret)
+		{
+			KCMDrawCaret(gPort, kChangeColor, at.X(), KCMWidth(&gc, f.fText, fontInfo),
+						 at.Y() - ascent, lineHeight);
+			continue;
+		}
+
 		StringUtils::PMDrawStringRGB(&gc, at, f.fText, fontInfo,
 									 f.fFaded ? kContextColor : kChangeColor,
 									 kKCMDontConvertAmpersand, kKCMNoUnderline);
