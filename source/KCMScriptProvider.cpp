@@ -237,7 +237,7 @@ ErrorCode KCMScriptProvider::ReadAppString(int32 id, ScriptID propID, IScriptReq
 	if (id == p_KCMStatus)
 		KCMGetSessionStatus(value);		// the panel's status line
 	else if (id == p_KCMInxProbe)
-		KCMRunInxProbe(value);			// THROWAWAY - see KCMInxProbe.h
+		KCMRunInxProbe(value, data);			// THROWAWAY - see KCMInxProbe.h
 	else if (id == p_KCMStoryRows)
 		// ★THE WHOLE LIST, and it answers with a header line even when there is nothing to report:
 		//   an empty list is a real answer, and it has to read differently from the property being

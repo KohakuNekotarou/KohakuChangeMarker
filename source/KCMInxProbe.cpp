@@ -24,7 +24,11 @@
 #include "IScript.h"
 #include "IScriptEngine.h"
 #include "IScriptManager.h"
+#include "IScriptRequestData.h"	// the request our own property arrived on
+#include "IScriptRequestHandler.h"	// GetProperties - the C++ side of obj.properties
 #include "IScriptUtils.h"
+#include "IStyleGroupHierarchy.h"	// GetHierarchyType - style vs group
+#include "IStyleGroupManager.h"	// GetRootHierarchy
 #include "ISession.h"
 #include "ISnippetExport.h"
 #include "ISpread.h"
@@ -34,7 +38,8 @@
 
 // General includes:
 #include "DocFrameworkID.h"	// kDocumentObjectScriptElement - the document as a scripting object
-#include "INXCoreID.h"		// kINXTraditionalImportScriptManagerBoss - the INX script context
+#include "INXCoreID.h"
+#include "TextID.h"			// IID_IPARASTYLEGROUPMANAGER / IID_ISTYLEGROUPHIERARCHY		// kINXTraditionalImportScriptManagerBoss - the INX script context
 #include "PersistUtils.h"
 #include "StreamUtil.h"
 #include "UIDList.h"
@@ -686,9 +691,125 @@ void Stage8_ExportDocScriptElement(IDocument* /*doc*/, PMString& out)
 	Line(out, "-- STAGE 8: CLOSED. A smaller root already died, so this was not tried. --");
 }
 
-}	// anonymous namespace}	// anonymous namespace
+/** STAGE 11 - GetProperties on the DOCUMENT, using the request data our own property arrived on.
 
-void KCMRunInxProbe(PMString& out)
+    CScriptProvider.cpp:1254-1268 does exactly this to implement obj.properties: ask IScriptUtils
+    for the handler belonging to the request's context, call GetProperties, then read the answer
+    back out of the SAME data with GetAllReturnData.
+
+    THE RETURN DATA IS CLEARED AFTERWARDS, and that is not tidiness: this data carries OUR
+    property's answer back to the script, so anything left on it would be handed to the caller as
+    part of app.kcmInxProbe. The stock implementation clears it for the same reason. */
+void Stage11_PropertiesOfDocument(IDocument* doc, IScriptRequestData* data, PMString& out)
+{
+	Log("stage11: enter");
+	Line(out, "-- STAGE 11: GetProperties on the document --");
+	if (data == nil)
+	{
+		Line(out, "skipped (no request data - not called from a script)");
+		Log("stage11: leave (no data)");
+		return;
+	}
+
+	InterfacePtr<IScript> docScript(doc, UseDefaultIID());
+	InterfacePtr<IScriptRequestHandler> handler(
+		Utils<IScriptUtils>()->QueryScriptRequestHandler(data->GetRequestContext()));
+	out.Append("script: ");
+	out.Append((docScript != nil) ? "yes" : "no");
+	out.Append("   request handler: ");
+	Line(out, (handler != nil) ? "yes" : "no");
+	if (docScript == nil || handler == nil)
+	{
+		Log("stage11: leave (missing part)");
+		return;
+	}
+
+	Log("stage11: about to call GetProperties");
+	const ErrorCode err = handler->GetProperties(docScript, data);
+	Log("stage11: GetProperties returned");
+	LineNum(out, "GetProperties ErrorCode (0 = kSuccess): ", static_cast<int32>(err));
+
+	const ScriptRecordData srd =
+		IScriptRequestData::ConvertToScriptRecordData(data->GetAllReturnData(docScript));
+	LineNum(out, "properties returned: ", static_cast<int32>(srd.size()));
+	data->ClearReturnData(docScript);	// ours must reach the caller unpolluted
+	Log("stage11: leave (ok)");
+}
+
+/** STAGE 12 - the same, on a PARAGRAPH STYLE. The one the feature needs: it is how 'what changed
+    inside this style' gets answered without listing hundreds of attributes by hand.
+
+    The style is found the way KIDMCPDefs finds all five kinds - one walk of the hierarchy,
+    telling a style from a group by GetHierarchyType. */
+void Stage12_PropertiesOfStyle(IDocument* doc, IScriptRequestData* data, PMString& out)
+{
+	Log("stage12: enter");
+	Line(out, "-- STAGE 12: GetProperties on a PARAGRAPH STYLE --");
+	if (data == nil)
+	{
+		Line(out, "skipped (no request data)");
+		Log("stage12: leave (no data)");
+		return;
+	}
+
+	InterfacePtr<IStyleGroupManager> manager(doc->GetDocWorkSpace(), IID_IPARASTYLEGROUPMANAGER);
+	IStyleGroupHierarchy* const root = (manager != nil) ? manager->GetRootHierarchy() : nil;
+	IDataBase* const db = (manager != nil) ? ::GetDataBase(manager) : nil;
+	out.Append("style manager: ");
+	Line(out, (root != nil && db != nil) ? "yes" : "no");
+	if (root == nil || db == nil)
+	{
+		Log("stage12: leave (no manager)");
+		return;
+	}
+
+	UIDList nodes(db);
+	root->GetDescendents(&nodes, IID_ISTYLEGROUPHIERARCHY);
+	LineNum(out, "nodes under the paragraph style set: ", nodes.Length());
+
+	UIDRef styleRef = UIDRef::gNull;
+	for (int32 i = 0; i < nodes.Length(); ++i)
+	{
+		InterfacePtr<IStyleGroupHierarchy> node(nodes.GetRef(i), UseDefaultIID());
+		if (node != nil && node->GetHierarchyType() == IStyleGroupHierarchy::kHierarchyTypeStyle)
+		{
+			styleRef = nodes.GetRef(i);
+			break;
+		}
+	}
+	if (styleRef == UIDRef::gNull)
+	{
+		Line(out, "no style found under the set");
+		Log("stage12: leave (no style)");
+		return;
+	}
+
+	InterfacePtr<IScript> styleScript(styleRef, UseDefaultIID());
+	InterfacePtr<IScriptRequestHandler> handler(
+		Utils<IScriptUtils>()->QueryScriptRequestHandler(data->GetRequestContext()));
+	out.Append("the style answers IScript: ");
+	Line(out, (styleScript != nil) ? "yes" : "no");
+	if (styleScript == nil || handler == nil)
+	{
+		Log("stage12: leave (missing part)");
+		return;
+	}
+
+	Log("stage12: about to call GetProperties on a style");
+	const ErrorCode err = handler->GetProperties(styleScript, data);
+	Log("stage12: GetProperties returned");
+	LineNum(out, "GetProperties ErrorCode (0 = kSuccess): ", static_cast<int32>(err));
+
+	const ScriptRecordData srd =
+		IScriptRequestData::ConvertToScriptRecordData(data->GetAllReturnData(styleScript));
+	LineNum(out, "properties returned: ", static_cast<int32>(srd.size()));
+	data->ClearReturnData(styleScript);
+	Log("stage12: leave (ok)");
+}
+
+}	// anonymous namespace
+
+void KCMRunInxProbe(PMString& out, IScriptRequestData* data)
 {
 	out.Clear();
 	out.SetTranslatable(kFalse);
@@ -727,6 +848,10 @@ void KCMRunInxProbe(PMString& out)
 	Stage7_ExportSpreadElement(doc, out);
 	Line(out, "");
 	Stage8_ExportDocScriptElement(doc, out);
+	Line(out, "");
+	Stage11_PropertiesOfDocument(doc, data, out);
+	Line(out, "");
+	Stage12_PropertiesOfStyle(doc, data, out);
 
 	Log("=== probe done ===");
 }

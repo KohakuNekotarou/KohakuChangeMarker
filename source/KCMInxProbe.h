@@ -31,6 +31,8 @@
 
 #include "PMString.h"
 
+class IScriptRequestData;	// stages 11-12 borrow the request our own property arrived on
+
 /** Run the probe against the active document and report what happened, as plain text.
 
     Reads the document and writes nothing to it: every route here exports, and an export is a
@@ -40,7 +42,7 @@
     back, how long it took in milliseconds, and the first line of what was produced. A route that
     could not even be attempted says which step was missing, because "0 bytes" and "never ran"
     are different answers and must not share a word. */
-void KCMRunInxProbe(PMString& out);
+void KCMRunInxProbe(PMString& out, IScriptRequestData* data);
 
 #endif // __KCMInxProbe_h__
 
