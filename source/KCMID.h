@@ -205,7 +205,8 @@ DECLARE_PMID(kClassIDSpace, kKCMStoryMarkerExpiryBoss, kKCMPrefix + 33)	// IIdle
 DECLARE_PMID(kClassIDSpace, kKCMAfterOpenResponderServiceBoss, kKCMPrefix + 34)	// IResponder for kAfterOpenDoc: puts back the ticks and paws the document carries as script labels (KCMDocResponder.cpp / KCMPageMarksDoc.h, 2026-09-07)
 DECLARE_PMID(kClassIDSpace, kKCMSetPageMarksCmdBoss, kKCMPrefix + 35)	// ICommand (Command) + IKCMPageMarksCmdData: the ONE way a tick or a cat paw is written (KCMPageMarksCmd.cpp, 2026-09-07). It writes the pages script labels through IScriptUtils and then notifies on the DOCUMENTS subject, which is what makes the change undoable AND what puts the session store back on undo and redo. Nothing else may write those labels.
 										// There is no print-side counterpart (kPrintSetupService + IPrintSetupProvider). Not because it would not work: with it the marks come out denser in print too (measured 16,076 against 8,407 colored pixels, and neither case turns solid). It was left out because print does not need that precision - what goes to the printer is the PDF. The A/B and the way back are in section 5 of KCMRingAdornment.cpp.
-										// Next new boss: +36. WARNING: this line went stale the moment +34 was taken and was still saying +34 on 2026-09-07. COUNT, do not read: grep "DECLARE_PMID(kClassIDSpace" in this file and take the largest, then check the retirement notes above and below it.
+DECLARE_PMID(kClassIDSpace, kKCMResourceSaxHandlerBoss, kKCMPrefix + 36)	// ISAXContentHandler + IID_IKCMRESOURCESINK: reads the XML that KCMResourceSnapshot produced and hands back one item per definition (KCMResourceParse.cpp, Resources mode). ★The parent is kInvalidClass because nothing creates this except our own ::CreateObject2 -- the same shape as the SDK's only worked example, xmlcataloghandler/XCatHnd.fr:87-98. It carries a SECOND interface of our own so that the parse result can be fetched off the same boss afterwards: ISAXServices hands the handler nothing to write into, and ParseStream's `importer` argument is nil on this route.
+										// Next new boss: +37. WARNING: this line went stale the moment +34 was taken and was still saying +34 on 2026-09-07. COUNT, do not read: grep "DECLARE_PMID(kClassIDSpace" in this file and take the largest, then check the retirement notes above and below it.
 
 // InterfaceIDs:
 // +0..+3 (three observer attachment IDs and the Story Edits section height) moved to
@@ -215,7 +216,9 @@ DECLARE_PMID(kClassIDSpace, kKCMSetPageMarksCmdBoss, kKCMPrefix + 35)	// IComman
 //   so all of +0..+9 are in use and none of them may be reused here.
 // +10 is NOT free: IID_IKCMSTORYMARKFACADE took it in KCMBoundaryID.h (this line said "+10..+25
 //   are free" until 2026-09-07, which would have handed out a colliding number).
-// +14..+25 are free. COUNT before taking one: the facade IIDs live in KCMBoundaryID.h, not here,
+// +14 is spoken for: IID_IKCMRESOURCESFACADE takes it in KCMBoundaryID.h when the Resources
+//   mode's facade lands (Task 4 of docs/superpowers/plans/2026-09-09-kcm-resources-engine.md).
+// +16..+25 are free. COUNT before taking one: the facade IIDs live in KCMBoundaryID.h, not here,
 //   so the largest number in THIS file is not the largest number in use.
 //
 // The three below are MODEL-ONLY, which is why they are here and not in KCMBoundaryID.h: the UI
@@ -224,6 +227,7 @@ DECLARE_PMID(kClassIDSpace, kKCMSetPageMarksCmdBoss, kKCMPrefix + 35)	// IComman
 DECLARE_PMID(kInterfaceIDSpace, IID_IKCMPAGEMARKSCMDDATA, kKCMPrefix + 11)	// what kKCMSetPageMarksCmdBoss is told to write (KCMPageMarksCmd.h). Non-persistent: it is a parameter, not document data.
 DECLARE_PMID(kInterfaceIDSpace, IID_IKCMPAGEMARKS, kKCMPrefix + 12)	// the PROTOCOL of the notification the command raises on the documents subject. It names no interface -- a protocol IID is a filter, and this one means "the ticks or the paws of this document changed".
 DECLARE_PMID(kInterfaceIDSpace, IID_IKCMMARKSOBSERVER, kKCMPrefix + 13)	// the observer that listens for it, AddIn on kDocBoss (KCMMarksObserver.cpp). It has an IID of its own because kDocBoss already carries somebody elses IID_IOBSERVER.
+DECLARE_PMID(kInterfaceIDSpace, IID_IKCMRESOURCESINK, kKCMPrefix + 15)	// how the SAX handler is given somewhere to put what it reads, and how the caller asks afterwards whether anything went wrong (KCMResourceParse.cpp). It sits on kKCMResourceSaxHandlerBoss beside IID_ISAXCONTENTHANDLER, both served by one implementation. ⚠It exists because the SAX route hands a handler NOTHING to write into: ParseStream takes only a stream and a handler, and the `importer` argument that ISAXContentHandler::Register would receive is nil here (it is the XML importer, and this is not an import).
 
 
 // ImplementationIDs:
@@ -257,7 +261,9 @@ DECLARE_PMID(kImplementationIDSpace, kKCMSetPageMarksCmdImpl, kKCMPrefix + 54)	/
 DECLARE_PMID(kImplementationIDSpace, kKCMPageMarksCmdDataImpl, kKCMPrefix + 55)	// its parameter interface, on the same boss (same file). Non-persistent.
 DECLARE_PMID(kImplementationIDSpace, kKCMMarksObserverImpl, kKCMPrefix + 56)	// the lazy observer AddIn on kDocBoss (KCMMarksObserver.cpp).
 										// There is no IPrintSetupProvider implementation (the old +50); see the note on the Class side.
-										// Next new implementation: +57. Read this line before picking a number - the retirement notes are BELOW the DECLAREs, so deciding from the last line alone picks a slot that is already spoken for.
+DECLARE_PMID(kImplementationIDSpace, kKCMResourceSaxHandlerImpl, kKCMPrefix + 57)	// the ISAXContentHandler itself (KCMResourceParse.cpp).
+DECLARE_PMID(kImplementationIDSpace, kKCMResourceSinkImpl, kKCMPrefix + 58)	// IKCMResourceSink on the SAME boss (same file): where the handler puts what it reads. ⚠It has to be a SECOND implementation rather than the same one under two IIDs, because a boss builds ONE OBJECT PER IID -- registering kKCMResourceSaxHandlerImpl twice would produce two unrelated instances and the handler would fill in a list nobody could read.
+										// Next new implementation: +59. Read this line before picking a number - the retirement notes are BELOW the DECLAREs, so deciding from the last line alone picks a slot that is already spoken for.
 
 // MessageIDs: how the model tells the UI what changed. All seven moved to KCMBoundaryID.h - sender
 //   and receiver must see the same value, or the build succeeds and nothing happens at run time.

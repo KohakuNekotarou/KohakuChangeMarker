@@ -63,6 +63,7 @@
 #include "TextID.h"	// kGlobalTextAdornmentServiceImpl / IID_IGLOBALTEXTADORNMENT - the Story mode's
 					// marks (IID_IIDLETASK for their timer is already in ShuksanID.h above)
 
+#include "XMLParserID.h"	// IID_ISAXCONTENTHANDLER (XMLParserID.h:68) - the Resources mode's XML reader. ⚠It is NOT in XMLID.h, and odfrc reports the miss as "does not name a numeric value" rather than as a missing include, the same way IID_ICOMMAND did below
 #include "INXCoreID.h"	// kINXScriptManagerBoss (INXCoreID.h:58) - the Contexts of the INX-only
 						// resource at the end of this file, which keeps the story counters out of IDML
 #include "TextScriptID.h"	// kStoryObjectScriptElement (TextScriptID.h:49) - the story object the
@@ -323,6 +324,27 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 		{
 			IID_ICOMMAND,               kKCMSetPageMarksCmdImpl,
 			IID_IKCMPAGEMARKSCMDDATA,   kKCMPageMarksCmdDataImpl,
+		}
+	},
+
+	// ***** THE RESOURCES MODE'S XML READER (2026-09-09). *****
+	// It reads the XML that KCMResourceSnapshot exported and keeps one item per definition.
+	//
+	// The parent is kInvalidClass because nothing creates this except our own ::CreateObject2 --
+	// the same shape as the SDK's only worked example of a SAX content handler
+	// (xmlcataloghandler/XCatHnd.fr:87-98).
+	//
+	// ⚠THE TWO INTERFACES ARE TWO IMPLEMENTATIONS ON PURPOSE. A boss builds one object per IID,
+	//   so naming kKCMResourceSaxHandlerImpl under both would produce two unrelated instances,
+	//   and the handler would fill in a list that nobody could read back. The sink is a separate
+	//   implementation, and the handler reaches it by asking its own boss for it.
+	Class
+	{
+		kKCMResourceSaxHandlerBoss,
+		kInvalidClass,
+		{
+			IID_ISAXCONTENTHANDLER,     kKCMResourceSaxHandlerImpl,
+			IID_IKCMRESOURCESINK,       kKCMResourceSinkImpl,
 		}
 	},
 

@@ -217,6 +217,7 @@
   <ItemGroup>
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMInxProbe.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMResourceBytes.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMResourceParse.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMResourceSnapshot.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMBookCompare.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMBookPair.cpp" />
@@ -266,6 +267,7 @@
   <ItemGroup>
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMInxProbe.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMResourceBytes.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMResourceParse.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMResourceSnapshot.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMBookCompare.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMBookPair.h" />

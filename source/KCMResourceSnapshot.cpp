@@ -30,6 +30,7 @@
 #include "KCMCore.h"			// KCMActiveDoc
 #include "KCMResourceSnapshot.h"
 #include "KCMResourceBytes.h"
+#include "KCMResourceParse.h"	// what the snapshot is for: the definitions inside it
 
 /** Forward-declared in the SDK and nowhere defined, which is why it is only ever a pointer. */
 class IINXExportPolicy;
@@ -142,6 +143,46 @@ void KCMDescribeResourceSnapshot(PMString& out)
 	out.Append(" bytes, ");
 	out.AppendNumber(static_cast<int32>(took));
 	out.Append(" ms");
+
+	// ----- and what the parse made of it (Task 2)
+	KCMResourceList items;
+	PMString parseWhy;
+	const uint32 parseBegan = ::GetTickCount();
+	const bool16 parsed = KCMParseResources(bytes, items, parseWhy);
+	const uint32 parseTook = ::GetTickCount() - parseBegan;
+
+	if (!parsed)
+	{
+		out.Append("; PARSE FAILED: ");
+		out.Append(parseWhy);
+		return;
+	}
+
+	// How many KINDS, not just how many items: the kinds are what the design is stated in (83
+	// kept, 4 excluded), so it is the number that says whether the blacklist did what it says.
+	K2Vector<PMString> kinds;
+	for (size_t i = 0; i < items.size(); ++i)
+	{
+		bool16 seen = kFalse;
+		for (size_t k = 0; k < kinds.size(); ++k)
+		{
+			if (kinds[k] == items[i].fKind)
+			{
+				seen = kTrue;
+				break;
+			}
+		}
+		if (!seen)
+			kinds.push_back(items[i].fKind);
+	}
+
+	out.Append("; ");
+	out.AppendNumber(static_cast<int32>(kinds.size()));
+	out.Append(" kinds, ");
+	out.AppendNumber(static_cast<int32>(items.size()));
+	out.Append(" items, ");
+	out.AppendNumber(static_cast<int32>(parseTook));
+	out.Append(" ms to parse");
 }
 
 // End, KCMResourceSnapshot.cpp.
