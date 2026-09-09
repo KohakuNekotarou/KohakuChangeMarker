@@ -78,6 +78,19 @@ static const int32  kKCMProgressBarDelayMs = 3000;
 // by at least one tick".
 static const int32  kKCMChapterProgressSpan = 1000;
 
+// How one chapter's span is divided between the three judgements (2026-09-10). They must SUM to
+// kKCMChapterProgressSpan -- there is no code that checks it, so the sum is the thing to re-add
+// after changing any one of them.
+// ★THE SHARES ARE THE MEASURED COSTS, NOT EQUAL THIRDS. The pixels are the only phase that can
+//   report from inside itself (page by page), and they are most of the time on an unchanged
+//   chapter. The story judgement reads change counters, composes nothing and is over at once. The
+//   resources judgement is two whole-document XML exports, 200-2400ms. Equal thirds would leave
+//   the needle sitting still through the two phases that take the time and jumping through the one
+//   that does not, which is worse than no bar: it would say the work is elsewhere.
+static const int32  kKCMBookPixelPhaseTicks     = 700;
+static const int32  kKCMBookStoryPhaseTicks     = 50;
+static const int32  kKCMBookResourcesPhaseTicks = 250;
+
 // Ring color: red by default. Over pixels that are themselves reddish a translucent red ring
 // disappears into the page, so it switches to cyan per pixel. Cyan is the complement of red
 // (180 degrees) and bright (luma about 0.79), which gives maximum contrast in both hue and

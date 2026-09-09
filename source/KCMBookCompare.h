@@ -5,7 +5,11 @@
 //  Book comparison: running it.
 //
 //  Walks the chapter pairs KCMBookPair built, opens each pair windowless, decides whether that
-//  chapter changed, and closes again -- one pair at a time.
+//  chapter changed -- IN THREE WAYS, since 2026-09-10 -- and closes again, one pair at a time.
+//
+//  ★THE PIXEL JUDGEMENT IS IN THIS FILE; the other two are in KCMBookChapterModes, which explains
+//  why they are separate and, more importantly, what they must not touch (the panel's own Story
+//  Edits and Resources lists, each of which holds exactly one result).
 //
 //  **ONE PAIR AT A TIME, never all of them first.** The documentation of the book-side open
 //  (IBookUtils::OpenOneDocument) says that when it runs out of databases it closes documents it
@@ -37,12 +41,22 @@
 
 class IBook;
 
-/** Compare two books chapter by chapter.
+/** Compare two books chapter by chapter, in three ways.
+
+    Each chapter pair is opened ONCE and judged three times, in this order: the pixels, the
+    stories' change counters, and the definitions (the XML export). ★**There is no early exit
+    BETWEEN the three** - a chapter whose pixels already differ is still asked the other two,
+    because the result names every mode that found something. Inside a mode the early exits are all
+    still there.
 
     outChapters comes back with one entry per chapter, each answered (Changed / NoChange /
-    ChapterAdded / ChapterDeleted / Failed). outReport is the one-line summary for the status
-    area, which always states how many chapters were looked at - so "nothing listed" can never be
-    mistaken for "nothing could be opened". */
+    ChapterAdded / ChapterDeleted / Failed / NotCompared) AND carrying which modes found a
+    difference (fChangedModes) and which could not be judged (fUnjudgedModes). ⚠The verdict is
+    DERIVED from those two, not decided separately - see KCMBookResult.h.
+
+    outReport is the one-line summary for the status area, which always states how many chapters
+    were looked at - so "nothing listed" can never be mistaken for "nothing could be opened".
+    ⚠It counts VERDICTS, not modes: a chapter that changed in all three ways is one "changed". */
 ErrorCode KCMCompareBooks(IBook* target, IBook* source,
                             std::vector<KCMChapterResult>& outChapters,
                             PMString& outReport);

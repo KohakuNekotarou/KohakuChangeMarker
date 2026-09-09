@@ -35,6 +35,7 @@
 #include "K2SmartPtr.h"			// K2::scoped_ptr -- the snapshots and accessors below, freed on every exit
 
 // Project includes:
+#include "KCMBookChapterModes.h"	// the story and resources judgements - the other two of the three
 #include "KCMBookCompare.h"
 #include "KCMBookPair.h"			// KCMBuildChapterPairing
 #include "KCMConstants.h"			// kKCMResolution / kKCMHiResMul / kKCMCmykThr / kKCMChapterProgressSpan
@@ -421,19 +422,24 @@ ErrorCode PageDiffers(const UIDRef& targetPage, const UIDRef& sourcePage, bool16
 	return status;
 }
 
-/** Decide one chapter: changed, unchanged, or could not be judged.
+/** The PIXEL judgement for one chapter: do the two chapters' pages differ?
 
-    Three stages, each of which can end the chapter early:
+    ⚠**IT NO LONGER DECIDES THE CHAPTER.** Until 2026-09-10 this returned the chapter's verdict,
+    because the pixels were the only thing looked at. They are now one of three, and the chapter's
+    verdict is derived from all three by the caller -- so what comes back is THIS MODE's answer.
+
+    Three stages, each of which can end the walk early:
       (1) a different page count IS the answer, and costs no rasterising at all
       (2) within a page, the first differing pixel ends the page
-      (3) the first differing page ends the CHAPTER - the rest is never opened
-    So the only chapters read to the end are the unchanged ones.
+      (3) the first differing page ends the walk - the rest is never opened
+    So the only chapters read to the end are the ones whose pixels agree.
 
-    progress/baseTicks move the bar WITHIN this chapter (baseTicks is where this chapter's slice of
-    the bar starts). outCancelled is set when the user pressed Cancel, and the return is then
-    kKCMChapterNotCompared - a chapter whose remaining pages were never read cannot be called
-    unchanged, however many of its pages had already compared equal. */
-KCMChapterState CompareChapter(IDataBase* targetDB, IDataBase* sourceDB,
+    progress/baseTicks move the bar WITHIN this chapter's PIXEL PHASE (baseTicks is where the
+    chapter's slice of the bar starts, and the phase owns kKCMBookPixelPhaseTicks of it).
+    outCancelled is set when the user pressed Cancel, and the answer is then unjudged - a walk whose
+    remaining pages were never read cannot be called unchanged, however many pages had already
+    compared equal. */
+KCMBookModeVerdict ComparePixels(IDataBase* targetDB, IDataBase* sourceDB,
                                  CProgressBar& progress, int32 baseTicks,
                                  bool16& outCancelled, PMString& outWhy)
 {
@@ -446,14 +452,18 @@ KCMChapterState CompareChapter(IDataBase* targetDB, IDataBase* sourceDB,
 
 	if (targetPages.empty() && sourcePages.empty())
 	{
-		outWhy = PMString("no pages");
+		// ★THE MODE IS NAMED IN THE REASON, since 2026-09-10. There are three of them now, and a
+		//   reason that does not say which one produced it sends the reader to the wrong half of
+		//   the comparison. It is still not the VERDICT repeated (see OpenChapter): "Failed" is on
+		//   the row already, "Pixel" is what only this line knows.
+		outWhy = PMString("Pixel: no pages");
 		outWhy.SetTranslatable(kFalse);
-		return kKCMChapterFailed;
+		return kKCMBookVerdictUnjudged;
 	}
 
 	// (1)
 	if (targetPages.size() != sourcePages.size())
-		return kKCMChapterChanged;
+		return kKCMBookVerdictChanged;
 
 	const int32 pageCount = (int32)targetPages.size();
 
@@ -470,19 +480,22 @@ KCMChapterState CompareChapter(IDataBase* targetDB, IDataBase* sourceDB,
 			//   room: it carries a NUMBER, and a number that loses its middle to an ellipsis does not
 			//   look damaged -- it looks like a different number (memory
 			//   ellipsis-in-status-line-breaks-numbers).
-			outWhy = PMString("page ");
+			outWhy = PMString("Pixel: page ");
 			outWhy.AppendNumber(int32(i + 1));
 			outWhy.SetTranslatable(kFalse);
-			return kKCMChapterFailed;
+			return kKCMBookVerdictUnjudged;
 		}
 		if (differs)
-			return kKCMChapterChanged;			// (3)
+			return kKCMBookVerdictChanged;		// (3)
 
 		// This chapter's slice of the bar, divided by its pages. **Multiply BEFORE dividing**, or
 		// every chapter with more pages than the span would sit at 0 until it finished. The
 		// arithmetic is done in size_t (i is one), so the product cannot overflow on the 64-bit build
 		// this plug-in ships as.
-		progress.SetPosition(baseTicks + (int32)((i + 1) * (size_t)kKCMChapterProgressSpan / (size_t)pageCount));
+		// ⚠**THE PHASE'S SHARE, NOT THE WHOLE CHAPTER'S** (2026-09-10). The pixels used to own the
+		//   chapter's entire span because they were the whole comparison; now they own
+		//   kKCMBookPixelPhaseTicks of it and the other two phases have the rest.
+		progress.SetPosition(baseTicks + (int32)((i + 1) * (size_t)kKCMBookPixelPhaseTicks / (size_t)pageCount));
 
 		// **The cancel is asked at the PAGE BOUNDARY.** WasCancelled runs events, so it must not be
 		// called inside the rasterising or the pixel walk -- the same rule the document comparison
@@ -492,10 +505,77 @@ KCMChapterState CompareChapter(IDataBase* targetDB, IDataBase* sourceDB,
 		if (progress.WasCancelled(kFalse))
 		{
 			outCancelled = kTrue;
-			return kKCMChapterNotCompared;
+			outWhy = PMString("Pixel: cancelled");
+			outWhy.SetTranslatable(kFalse);
+			return kKCMBookVerdictUnjudged;
 		}
 	}
 
+	return kKCMBookVerdictUnchanged;
+}
+
+/** What the progress bar says while one phase of one chapter runs.
+
+    ★THE CHAPTER'S NAME COMES FIRST and the phase after it: the chapter is what the reader is
+    waiting for, and the phase is why it is taking as long as it is (the resources phase is two
+    whole-document exports). BK-36's rule is unchanged - the name is the chapter being WAITED FOR,
+    set before the work rather than after it. */
+PMString ChapterPhaseText(const PMString& chapterName, const char* phase)
+{
+	PMString out(chapterName);
+	out.Append(" - ");
+	out.Append(phase);
+	out.SetTranslatable(kFalse);
+	return out;
+}
+
+/** File one mode's answer into the chapter.
+
+    ⚠**THE REASON IS KEPT ONLY FOR THE FIRST MODE THAT COULD NOT BE JUDGED.** fWhy is one string,
+    shown in one cell beside a file name, with about 38 characters to live in (KCMBookResult.h's
+    fWhy, measured 2026-08-19). Two reasons in it would produce exactly the row that note is about:
+    a file name that does not exist, and neither reason readable at either end. Nothing is lost by
+    keeping one - the Change column names EVERY unjudged mode with a '?', so the row says which
+    modes could not be judged, and fWhy says why the first of them could not. */
+void RecordVerdict(KCMChapterResult& chapter, uint32 modeBit, KCMBookModeVerdict verdict,
+                   const PMString& why)
+{
+	if (verdict == kKCMBookVerdictChanged)
+	{
+		chapter.fChangedModes |= modeBit;
+	}
+	else if (verdict == kKCMBookVerdictUnjudged)
+	{
+		chapter.fUnjudgedModes |= modeBit;
+		if (chapter.fWhy.IsEmpty())
+			chapter.fWhy = why;
+	}
+}
+
+/** The chapter's verdict, derived from the three modes.
+
+    ★DERIVED, NOT STORED. fState is not a fourth thing to keep in step with the two bit fields; it
+    is a reading of them, taken once, here (KCMBookResult.h's fChangedModes says the same).
+
+      any mode changed              -> Changed     (even when another could not be judged: a
+                                                    difference that WAS found is not made less true
+                                                    by one that was not)
+      nothing changed, cancelled    -> NotCompared
+      nothing changed, some unjudged-> Failed
+      nothing changed, all judged   -> NoChange
+
+    ⚠**CANCELLED IS ASKED AFTER Changed AND BEFORE Failed**, and both halves of that matter. After
+    Changed, because a difference found before the Cancel is a real answer and the run reporting it
+    is not claiming to have finished. Before Failed, because a mode the Cancel stopped did not
+    FAIL - and calling it a failure would send the reader looking for a broken chapter. */
+KCMChapterState KCMChapterStateFromModes(const KCMChapterResult& chapter, bool16 cancelled)
+{
+	if (chapter.fChangedModes != 0)
+		return kKCMChapterChanged;
+	if (cancelled)
+		return kKCMChapterNotCompared;
+	if (chapter.fUnjudgedModes != 0)
+		return kKCMChapterFailed;
 	return kKCMChapterNoChange;
 }
 
@@ -619,12 +699,56 @@ ErrorCode KCMCompareBooks(IBook* target, IBook* source,
 				RecomposeChapter(targetRef);
 				RecomposeChapter(sourceRef);
 
+				// ***** THREE JUDGEMENTS, IN THE ORDER THE USER ASKED FOR (2026-09-10). *****
+				//
+				// ★★**NO EARLY EXIT BETWEEN MODES**, and that is the cost of the feature rather
+				//   than an oversight: the Change column names EVERY mode that found something, so
+				//   a chapter whose pixels already differ still has to be asked the other two.
+				//   Inside a mode every early exit is still there - the first differing pixel, the
+				//   first differing story, the first differing definition.
+				// ★**THE PAIR IS OPENED ONCE FOR ALL THREE.** Walking the book three times would
+				//   open, compose and close every chapter three times, and opening is most of the
+				//   cost (BK-35: ~0.2s a chapter even on small ones).
 				PMString why;
 				bool16   chapterCancelled = kFalse;
-				chapter.fState = CompareChapter(targetDB, sourceDB, progress, baseTicks,
-				                                chapterCancelled, why);
-				if (chapter.fState == kKCMChapterFailed)
-					chapter.fWhy = why;
+
+				progress.SetTaskText(ChapterPhaseText(chapter.fName, "Pixel"));
+				RecordVerdict(chapter, kKCMBookModePixel,
+				              ComparePixels(targetDB, sourceDB, progress, baseTicks,
+				                            chapterCancelled, why), why);
+
+				// ⚠**A CANCEL STOPS THE CHAPTER, NOT JUST THE PHASE.** Running the other two after
+				//   the person asked to stop would make Cancel take about as long as finishing --
+				//   and the resources phase, the one that would still be to come, is the expensive
+				//   one.
+				if (!chapterCancelled)
+				{
+					progress.SetPosition(baseTicks + kKCMBookPixelPhaseTicks);
+					progress.SetTaskText(ChapterPhaseText(chapter.fName, "Story"));
+					RecordVerdict(chapter, kKCMBookModeStory,
+					              KCMJudgeChapterStory(targetDB, sourceDB, why), why);
+
+					// Asked BETWEEN phases only. WasCancelled runs events, so it must not be called
+					// inside the rasterising, inside the pixel walk, or inside ExportINX - none of
+					// which has a safe point in the middle.
+					if (progress.WasCancelled(kFalse))
+						chapterCancelled = kTrue;
+				}
+
+				if (!chapterCancelled)
+				{
+					progress.SetPosition(baseTicks + kKCMBookPixelPhaseTicks + kKCMBookStoryPhaseTicks);
+					progress.SetTaskText(ChapterPhaseText(chapter.fName, "Resources"));
+					RecordVerdict(chapter, kKCMBookModeResources,
+					              KCMJudgeChapterResources(targetDB, sourceDB, why), why);
+
+					if (progress.WasCancelled(kFalse))
+						chapterCancelled = kTrue;
+				}
+
+				// ★THE CHAPTER'S VERDICT IS DERIVED from the three modes, never stored twice - see
+				//   KCMBookResult.h's fChangedModes.
+				chapter.fState = KCMChapterStateFromModes(chapter, chapterCancelled);
 				if (chapterCancelled)
 					cancelled = kTrue;
 			}
@@ -740,6 +864,20 @@ ErrorCode KCMCompareBooks(IBook* target, IBook* source,
 
 	// The per-chapter read-out, built HERE from the same list the caller receives - so the summary
 	// line and the detail can never disagree about what happened.
+	//
+	// ★★**FOUR COLUMNS, ALWAYS, since 2026-09-10**: name, verdict, modes, reason. It used to be
+	//   "name, verdict [, reason]" -- three fields on a Failed row and two on every other one -- so
+	//   the third field meant a different thing depending on the row. With the modes to report as
+	//   well that becomes unreadable, and reading by position is the only thing a tab-separated
+	//   line offers. Empty fields where there is nothing to say.
+	// ★**THE REASON IS NO LONGER LIMITED TO Failed ROWS.** A cancelled chapter has one, and so does
+	//   a Changed chapter one of whose modes could not be judged - both of which used to have a
+	//   reason recorded and no way to read it.
+	// ⚠**Nothing was broken by the move, and that was counted rather than assumed** (2026-09-10):
+	//   all five scripts that touch app.kcmBookResult print the string whole and cut no fields
+	//   (work/kescm-booktest/r3-verify.ps1, r3-failed-row.ps1, r3-measure.ps1, dlg-tools.ps1, and
+	//   work/kescm-selftest/task9/s1-book.jsx). The VERDICT is still field 2, which is the one a
+	//   reader of those outputs actually looks at.
 	gBookResultText.Clear();
 	gBookResultText.SetTranslatable(kFalse);
 	for (size_t i = 0; i < outChapters.size(); ++i)
@@ -750,11 +888,20 @@ ErrorCode KCMCompareBooks(IBook* target, IBook* source,
 		gBookResultText.Append(chapter.fName);
 		gBookResultText.Append("\t");
 		gBookResultText.Append(KCMChapterStateText(chapter.fState));
-		if (chapter.fState == kKCMChapterFailed && !chapter.fWhy.IsEmpty())
-		{
-			gBookResultText.Append("\t");
+		gBookResultText.Append("\t");
+
+		// SetUTF8String because the modes arrive as std::string (KCMBookModeNames.h has no SDK type
+		// in it, which is what lets it be checked outside InDesign). Every character it produces is
+		// ASCII, so nothing is at risk here - but naming the encoding at both ends is the habit
+		// that stopped a Japanese font name being mangled in the Resources list.
+		PMString modes;
+		modes.SetUTF8String(KCMBookModesString(chapter.fChangedModes, chapter.fUnjudgedModes));
+		modes.SetTranslatable(kFalse);
+		gBookResultText.Append(modes);
+
+		gBookResultText.Append("\t");
+		if (!chapter.fWhy.IsEmpty())
 			gBookResultText.Append(chapter.fWhy);
-		}
 	}
 
 	return kSuccess;
