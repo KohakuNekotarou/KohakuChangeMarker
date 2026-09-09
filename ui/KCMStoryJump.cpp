@@ -56,6 +56,8 @@
 									// this side asks through the boundary rather than calling it.
 #include "IKCMStoryEditsFacade.h"	// the row a click landed on (Facade since 2026-08-13, Task 14)
 #include "IKCMMarkData.h"	// IsPageOnHiddenSpread - a row on a hidden page is labelled, not jumped to (2026-08-18)
+#include "KCMStoryTree.h"			// KCMListShowsResources - which kind of row the click landed on
+#include "KCMResourceValue.h"		// KCMShowSelectedResource - what a Resources row does instead of jumping
 
 namespace
 {
@@ -376,6 +378,25 @@ bool16 SelectRangeIn(IDataBase* db, UID storyUID, TextIndex from, TextIndex to)
 //----------------------------------------------------------------------------------------
 bool16 KCMStoryJumpToRow(int32 rowIndex)
 {
+	// ***** A RESOURCES ROW HAS NOWHERE TO JUMP TO, AND SHOWS ITS VALUES INSTEAD. *****
+	//
+	// ★THE XML HAS NO PAGES. A definition is not on a page - the export writes page items under
+	//   <Spread>, not under <Page>, and a paragraph style is not under either (design section 6).
+	//   Which page changed is the Pixel comparison's answer, and the user's call is that these rows
+	//   do not pretend to have one. What the reader gets instead is the pair of values, in the
+	//   upper pane (KCMResourceValue.cpp).
+	//
+	// ★★THIS IS THE ONE PLACE THE TWO GESTURES MEET. A click on a row (KCMStoryRowEH::LButtonUp)
+	//   and the up / down walk (KCMStoryTreeEH::HandleUpDownKey) both arrive here for a row with no
+	//   children, and a Resources row never has children (design 6-1b). Branching here therefore
+	//   covers both without asking the mode in either of them.
+	//   ⚠**It has to be the FIRST thing in the function.** Everything below reads the row out of
+	//     IKCMStoryEditsFacade, whose list is a different list: in the Resources mode it is empty,
+	//     so the old code path answered kFalse and did nothing at all - which is why a Resources row
+	//     was silently inert rather than wrong, and why this is an addition and not a repair.
+	if (KCMListShowsResources())
+		return KCMShowSelectedResource(rowIndex, -1);	// -1 = the definition row itself, not one attribute
+
 	IKCMStoryEditsFacade::Row row;
 	if (!Utils<IKCMStoryEditsFacade>()->GetRow(rowIndex, row))
 		return kFalse;	// out of range, or the "No edits" placeholder - nowhere to go, silently
@@ -461,6 +482,18 @@ bool16 KCMStoryJumpToRow(int32 rowIndex)
 //----------------------------------------------------------------------------------------
 bool16 KCMStoryJumpToChange(int32 rowIndex, int32 changeIndex)
 {
+	// ***** AN ATTRIBUTE ROW IS A "CHANGE ROW" TOO, AND BELONGS TO THE OTHER MODEL. ***** Since
+	// 2026-09-09 a definition has children - one per attribute that differs - and they carry the
+	// same pair of indices a story's changes do. Everything below reads the STORY model with them,
+	// which would be a row of a different list; and there is nowhere to jump to in any case (the
+	// XML has no pages). What a click on one does is show THAT ATTRIBUTE's older value in the band -
+	// which is the same thing a click on a Story change row does with the older wording, and the
+	// reason these rows exist at all: one click, one value, two lines.
+	// ⚠It is the FIRST thing here for the same reason as in KCMStoryJumpToRow: both the click and
+	//   the arrow walk arrive through this function, so branching here covers both.
+	if (KCMListShowsResources())
+		return KCMShowSelectedResource(rowIndex, changeIndex);
+
 	IKCMStoryEditsFacade::Row row;
 	IKCMStoryEditsFacade::Change change;
 	if (!Utils<IKCMStoryEditsFacade>()->GetRow(rowIndex, row))

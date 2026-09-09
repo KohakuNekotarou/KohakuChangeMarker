@@ -46,6 +46,7 @@
 #include "IKCMStoryEditsFacade.h"	// GetRowCount - the number in the heading (Facade since 2026-08-13, Task 14)
 #include "IKCMResourcesFacade.h"	// GetChangeCount - the same number while the Resources mode is on
 #include "KCMStoryTree.h"			// KCMListShowsResources - which of the two the heading names
+#include "KCMResourceValue.h"		// KCMClearResourceValue - the upper pane's band follows the list
 #include "KCMStorySection.h"
 
 namespace
@@ -290,6 +291,10 @@ void KCMToggleStorySection()
 		// ★MEASURED 2026-08-18 (bug recheck B-U4): open 303 -> closed 185 -> reopened 303, where 185
 		//   is exactly the designed top pane. So the closing arithmetic lands on the number it aims
 		//   at, and the reopen restores the height the section was closed at (SavedSectionHeight).
+		//   ⚠**The 185 in that measurement is the top pane of the day**, which became 230 on
+		//     2026-09-09 (the Resources value band). The numbers are left as measured rather than
+		//     rewritten to 348 / 230: what the measurement establishes is that closing lands ON the
+		//     designed height, and re-measuring is the only thing that may put new numbers here.
 		if (designedTop > 0 && wholeHeight > designedTop)
 			ResizePanelByDelta(panel, designedTop - wholeHeight);
 		else if (designedTop <= 0)
@@ -413,6 +418,26 @@ void KCMUpdateStorySectionLabel()
 	KCMSetColumnHeading(kKCMStoryColUIDWidgetID,  showsResources ? kKCMResourcesColKindKey : kKCMStoryColUIDKey);
 	KCMSetColumnHeading(kKCMStoryColTextWidgetID, showsResources ? kKCMResourcesColKeyKey  : kKCMStoryColTextKey);
 	KCMSetColumnHeading(kKCMStoryColKindWidgetID, kKCMStoryColKindKey);
+
+	// ★★AND THE HEADINGS MOVE WITH THE COLUMNS THEY NAME. The left column is 40px of digits in the
+	//   Story mode and 120px of element names in the Resources one (KCMStoryTree.h says why), and
+	//   the .fr can only write one pair of numbers. **The rows call the same function**, which is
+	//   the only thing that keeps a heading over its own column - the agreement used to be nothing
+	//   but two identical Frames in the .fr, and it has already been broken once that way
+	//   (2026-08-20: the row's cells moved 16px and these three did not follow).
+	KCMApplyListColumnWidths(KCMFindPanelWidget(kKCMStoryColUIDWidgetID),
+							 KCMFindPanelWidget(kKCMStoryColTextWidgetID),
+							 KCMFindPanelWidget(kKCMStoryColKindWidgetID));
+
+	// ★★AND SO DOES THE VALUE BAND, for the same reason it is written here: everything that gets
+	//   this function called - the mode switch, a rebuilt list, the panel's AutoAttach - has just
+	//   made the previous selection meaningless, and a band still showing the definition that was
+	//   selected before is a reading nothing about which looks stale.
+	//   ★It is CLEARED rather than rewritten: after any of those three there is no selected row to
+	//     rewrite it from. The next click or arrow press fills it (KCMStoryJumpToRow).
+	//   ⚠Cleared in all three modes. In Pixel and Story the band is empty anyway, so this costs one
+	//     write of an empty string and removes the need to ask the mode a second time here.
+	KCMClearResourceValue();
 }
 
 // End, KCMStorySection.cpp.

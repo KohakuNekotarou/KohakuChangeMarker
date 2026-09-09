@@ -70,6 +70,7 @@
 // Project includes:
 #include "KCMUIID.h"
 #include "KCMStoryJump.h"
+#include "KCMStoryTree.h"			// KCMListShowsResources - the row menu is the story list's alone
 #include "KCMStoryRefresh.h"		// where the right-click menu's row is stashed for the action to read
 
 namespace
@@ -301,11 +302,16 @@ bool16 KCMStoryRowEH::LButtonUp(IEvent* e)
 // only asking for a menu should not move the user's place in the list - the same rule the chapter
 // rows and KBS both settled on. ⚠It is also what makes the row under the cursor the ONLY thing this
 // can be about, which is why the row is read from this widget's own node.
+// ⚠**AND NOT IN THE RESOURCES MODE AT ALL** (2026-09-09). Every item on this menu acts on a STORY -
+// it is aimed through KCMStorySetMenuRow at a row of the story list - and a definition row carries
+// the same kind of index, so the menu would come up looking right and act on whatever story
+// happened to sit at that number. A row with nothing to offer stays silent, which is the rule the
+// change rows above are already held to.
 bool16 KCMStoryRowEH::RButtonDn(IEvent* e)
 {
 	int32 changeIndex = -1;
 	const int32 rowIndex = this->RowFromNode(&changeIndex);
-	if (rowIndex < 0 || changeIndex >= 0 || e == nil)
+	if (rowIndex < 0 || changeIndex >= 0 || e == nil || KCMListShowsResources())
 		return TreeNodeEventHandler::RButtonDn(e);
 
 	KCMStorySetMenuRow(rowIndex);

@@ -44,6 +44,58 @@ void KCMStoryTreeRebuild();
 */
 bool16 KCMListShowsResources();
 
+class IControlView;
+
+/** How wide the list's LEFT column is, for the mode the list is showing.
+
+	★★THE TWO MODES PUT DIFFERENT THINGS THERE, and one width cannot serve both. The Story mode's
+	left cell holds a UID - five or six digits - and 40px is right for it; the Resources mode holds
+	an element name ("ColorGroupSwatch", "ParagraphStyle") and an attribute name ("PointSize"), and
+	40px clips every one of them (2026-09-09, the user reading the list: "some are cut off").
+
+	★A SHARED, WIDER COLUMN WAS THE OTHER ANSWER AND WAS REJECTED (the user's call): the middle
+	column is the one that gives way, so widening it in both modes would take 80px off the story
+	text for a column of digits that never needed it.
+
+	⚠So the .fr's numbers are the STORY mode's, and the Resources mode is applied on top of them at
+	  run time - which is why every place that lays these columns out has to call the function below
+	  rather than trust what the resource said.
+*/
+int32 KCMListLeftColumnWidth();
+
+/** Lay the left and middle columns out for the mode the list is showing.
+
+	Both the heading band (KCMStorySection.cpp) and the rows themselves (KCMStoryTreeWidgetMgr.cpp)
+	call this, which is what keeps a heading over the column it names: the .fr can only state one
+	pair of numbers, and the agreement between the two is enforced by nothing else.
+
+	★**ABSOLUTE POSITIONS, NEVER RELATIVE ONES.** Row widgets are recycled, so this runs many times
+	on the same widget; "move it right by N" would accumulate and the column would walk across the
+	panel. Every edge written here is computed from constants.
+
+	★★**THE MIDDLE CELL'S RIGHT EDGE IS TAKEN FROM THE RIGHT CELL'S LEFT EDGE**, never computed and
+	never left alone. It cannot be computed here: it moves with the panel's width. And leaving it
+	alone is what went wrong the first time (measured 2026-09-09) - a recycled child row kept a right
+	edge from some earlier layout and its Definition cell ran 96px past the Change column and out of
+	the panel. The right cell is bound to the panel's right edge, so **its** left edge is always
+	where the middle column has to stop: asking it makes the two columns meet by construction
+	instead of by agreement.
+
+	⚠**A CHILD ROW IS NOT INDENTED** (2026-09-09, the user's call: "the child row's Kind and Def
+	  parts are pushed right - make them the same as the parent"). An attribute row was set 16px in
+	  when it was first built, and it was taken out again: the columns are what the reader is
+	  scanning down, and one level of them starting somewhere else breaks that. What says a row is a
+	  child is the parent's expander triangle above it - the same thing that says so in the Story
+	  list, whose change rows are not indented either (their text starts at exactly the story row's).
+
+	@param leftCell    the Kind / UID cell, or its heading. nil is ignored.
+	@param middleCell  the Definition / story-text cell, or its heading. nil is ignored.
+	@param rightCell   the Change cell, or its heading. Not moved - only read. nil leaves the middle
+	                   cell's right edge alone.
+*/
+void KCMApplyListColumnWidths(IControlView* leftCell, IControlView* middleCell,
+							  IControlView* rightCell);
+
 #endif // __KCMStoryTree_h__
 
 // End, KCMStoryTree.h.

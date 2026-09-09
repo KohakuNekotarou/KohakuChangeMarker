@@ -92,11 +92,31 @@ public:
 		if (nodeID == nil || nodeID->IsChangeRow())
 			return 0;					// a change is a leaf
 
-		// ★A DEFINITION HAS NO CHILDREN. The Resources mode's list is one level deep: what changed
-		//   INSIDE a definition is shown in the panel's upper pane, not as rows under it, so that
-		//   the same values are not presented twice (design section 6-1b).
+		// ★★A DEFINITION'S CHILDREN ARE THE ATTRIBUTES THAT DIFFER (2026-09-09, the user's request:
+		//   "give the result rows children ... PointSize in the Kind part and the number in the
+		//   Definition part").
+		//   ⚠**THIS REVERSES design section 6-1b**, which said definitions have no children and that
+		//     the attributes belong in the upper pane alone. The pane is still there, and the two no
+		//     longer say the same thing: the rows carry the NEWER value, the pane the older one.
+		//
+		//   ★★ONLY A `Changed` DEFINITION HAS CHILDREN (the user's call: "children only when it is
+		//     Changed - the same feeling as Story"). An Added definition has no older side and a
+		//     Removed one has no newer side, so every attribute of theirs would be listed as present
+		//     on one side, which is what the parent row's own verdict already says. It is the same
+		//     shape as the story list, where a story with no located differences is a leaf.
 		if (KCMListShowsResources() && !nodeID->IsRoot())
-			return 0;
+		{
+			PMString kind, key;
+			KCMResourceChangeKind what = kKCMResourceChanged;
+			Utils<IKCMResourcesFacade> resources;
+			if (!resources || !resources->GetNthChange(nodeID->GetRow(), kind, key, what))
+				return 0;					// out of range, or the "No differences" placeholder
+
+			if (what != kKCMResourceChanged)
+				return 0;
+
+			return resources->GetNthAttrCount(nodeID->GetRow());
+		}
 
 		if (nodeID->IsRoot())
 		{

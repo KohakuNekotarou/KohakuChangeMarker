@@ -223,8 +223,16 @@ public:
 		//   are the same shape (see the .fr) so that the indent arithmetic below behaves the same
 		//   on all of them - what differs is what the cells hold, where they start, and how tall
 		//   the row is.
+		// ★★THE RESOURCES MODE USES THE STORY ROW'S RESOURCE FOR BOTH OF ITS LEVELS (2026-09-09).
+		//   Its child rows - one per attribute that differs - hold three plain strings just as its
+		//   parent rows do (a name, a value and a sign), so they are the SAME SHAPE and the same
+		//   height, and the change row's hand-drawn cell has nothing to offer them. What tells parent
+		//   from child on screen is the indent applied in ApplyDataToWidget, not a second resource.
+		//   ⚠This is also why GetWidgetTypeForNode below answers one ID in this mode: two shapes that
+		//     really are identical MAY be recycled onto each other, and saying otherwise would only
+		//     make the tree build widgets it already had.
 		TreeNodePtr<KCMStoryNodeID> nodeID(node);
-		const bool16 isChange = (nodeID != nil && nodeID->IsChangeRow());
+		const bool16 isChange = (nodeID != nil && nodeID->IsChangeRow() && !KCMListShowsResources());
 		const RsrcID rsrcID = !isChange           ? kKCMStoryRowRsrcID
 							  : IsTwoLineNode(node) ? kKCMStoryRubyRowRsrcID
 												    : kKCMStoryChangeRowRsrcID;
@@ -265,8 +273,11 @@ public:
 		//   scrolls. ⚠Since 2026-08-22 that includes the ruby row, and there the consequence is
 		//   worse than wrong contents: the widget carries its own HEIGHT, so a recycled tall row
 		//   would overlap the row below it.
+		//   ★In the Resources mode BOTH levels answer kKCMStoryRowWidgetID, because both really are
+		//     the same widget (see CreateWidgetForNode). The rule this comment states is about kinds
+		//     that DIFFER; two that do not are meant to share.
 		TreeNodePtr<KCMStoryNodeID> nodeID(node);
-		if (nodeID == nil || !nodeID->IsChangeRow())
+		if (nodeID == nil || !nodeID->IsChangeRow() || KCMListShowsResources())
 			return kKCMStoryRowWidgetID;
 
 		return IsTwoLineNode(node) ? kKCMStoryRubyRowWidgetID : kKCMStoryChangeRowWidgetID;
@@ -364,21 +375,44 @@ public:
 			return kTrue;
 
 		TreeNodePtr<KCMStoryNodeID> nodeID(node);
+		const bool16 showsResources = KCMListShowsResources();
+		const bool16 isChangeNode = (nodeID != nil && nodeID->IsChangeRow()) ? kTrue : kFalse;
+
+		// ***** THE COLUMNS ARE LAID OUT HERE, ONCE, FOR EVERY ROW BUILT FROM THE STORY ROW'S
+		// RESOURCE. ***** That is every row except the Story mode's change rows, which have a
+		// resource of their own with no left cell at all (see ApplyChangeRow).
+		// ★It is done on EVERY apply for the same reason the cells' text is: row widgets are
+		//   recycled, and one that comes back from a list drawn in the other mode would otherwise
+		//   keep that mode's column widths.
+		// ★★**BOTH LEVELS SIT IN THE SAME COLUMNS** - an attribute row is not indented (the user's
+		//   call; the header carries the reason). What says a row is a child is the triangle on the
+		//   row above it, which is also all the Story list uses.
+		if (showsResources || !isChangeNode)
+		{
+			KCMApplyListColumnWidths(widgetList->FindWidget(kKCMStoryRowUIDWidgetID),
+									 widgetList->FindWidget(kKCMStoryRowTextWidgetID),
+									 widgetList->FindWidget(kKCMStoryRowKindWidgetID));
+		}
+
+		// ★★THE RESOURCES MODE OWNS BOTH OF ITS LEVELS AND IS ASKED FIRST (2026-09-09). A definition
+		//   row and an attribute row under it hold three plain strings each, from the definitions
+		//   model - the story model is not consulted anywhere in this branch. Asking the mode BEFORE
+		//   the change-row test is what keeps the two models apart: the node types are shared, so a
+		//   Resources attribute row IS a "change row" as far as the NodeID is concerned, and the
+		//   test below would hand it to the story machinery.
+		if (showsResources)
+		{
+			if (isChangeNode)
+				return this->ApplyResourceAttrRow(nodeID->GetRow(), nodeID->GetChange(), widgetList);
+
+			return this->ApplyResourceRow((nodeID != nil) ? nodeID->GetRow() : -1, widgetList);
+		}
 
 		// ★A CHANGE ROW IS WRITTEN BY ITS OWN BRANCH AND RETURNS. Its three cells hold different
 		//   things from a story row's, and its widget came from a different resource, so nothing
 		//   below applies to it.
-		if (nodeID != nil && nodeID->IsChangeRow())
+		if (isChangeNode)
 			return this->ApplyChangeRow(*nodeID, widgetList);
-
-		// ★THE RESOURCES MODE WRITES THE SAME THREE CELLS FROM A DIFFERENT MODEL AND RETURNS.
-		//   The row RESOURCE is the same one the Pixel mode's list uses - three plain text cells -
-		//   because a definition needs exactly that shape. Nothing below this line applies: the
-		//   cells hold a kind, a key and a verdict rather than a UID, a story and its change kinds.
-		//   ⚠A definition has no children, so the change-row machinery above is never reached in
-		//     this mode and its heights, templates and hit-testing stay the Story mode's alone.
-		if (KCMListShowsResources())
-			return this->ApplyResourceRow((nodeID != nil) ? nodeID->GetRow() : -1, widgetList);
 
 		// ★A row COPIED out of the model, not a pointer into its list (Task 14). The three cells
 		//   below are written from it and nothing here outlives the call, so the copy costs one
@@ -471,9 +505,98 @@ private:
 			key = Translated(kKCMResourcesNoChangesKey);
 		}
 
+		// ***** THE KIND IS NOT SPELLED TWICE ON ONE ROW. ***** (2026-09-09, the user's call: "for the
+		// parent of the style part, make the Definition just the style name".) The model's key is
+		// `ParagraphStyle/Unused` - kind, separator, name - and the LEFT cell of this very row
+		// already says `ParagraphStyle`, so the Definition column shows `Unused`.
+		//
+		// ★IT IS DONE HERE, IN THE VIEW, AND NOT IN THE MODEL. The full key is the definition's
+		//   identity: it is what pairs the two documents, what the diagnostic property prints, and
+		//   what tells `Color/Black` from `Ink/Black`. Shortening it at the model would shorten it
+		//   for everyone. What is shortened is one cell of one list, because of what the cell NEXT
+		//   to it happens to say.
+		//
+		// ⚠**ONLY WHEN THE KEY REALLY BEGINS WITH THE KIND, AND ONLY WHEN SOMETHING IS LEFT.**
+		//   Not every key is built that way: `DocumentPreference` IS its kind and has no name after
+		//   it, and stripping there would leave an empty cell - a row that says nothing at all. The
+		//   test is a comparison, not an assumption about the format.
+		//   ★The separator is not named: `/` today, and the one character after the kind whatever it
+		//     becomes. Naming it would be a second place to keep the format.
+		if (haveRow)
+		{
+			const CharCounter kindLen = kind.CharCount();
+			if (kindLen > 0 && key.CharCount() > kindLen + 1)
+			{
+				PMString head(key);
+				head.Remove(kindLen, kMaxInt32);		// keep only as many characters as the kind has
+				if (head.Compare(kTrue, kind) == 0)
+					key.Remove(0, kindLen + 1);			// the kind, and the separator after it
+			}
+		}
+
 		this->SetNodeName(widgetList, kind, kKCMStoryRowUIDWidgetID);
 		this->SetNodeName(widgetList, key, kKCMStoryRowTextWidgetID);
 		this->SetNodeName(widgetList, what, kKCMStoryRowKindWidgetID);
+		return kTrue;
+	}
+
+	/** Fills one ATTRIBUTE row - a child of a definition row (2026-09-09, the user's request:
+		"give the result rows children, the changed part of a paragraph style as a child, PointSize
+		in the Kind part and the number in the Definition part").
+
+		★★THE THREE CELLS ARE: the attribute's name, ITS NEW VALUE, and a sign.
+		  ⚠**The value shown here is the TARGET's** - the newer document's. The Source's is in the
+		    panel's upper pane (KCMResourceValue.cpp), and the split is the user's: "the top of the
+		    panel just shows the source side". So the row and the band are two halves of one
+		    reading rather than the same reading twice.
+
+		★★THE SIGN IS THE STORY MODE'S - `+`, `-`, `≠` (the user's call: "the Change part with the
+		  symbol, the same as Story"). The vocabulary is worth sharing exactly: a reader who has
+		  learnt it on one list can read the other, and the same argument that settled it there
+		  applies here - a narrow column, a reader scanning down it, and nothing to translate.
+		  ★An attribute the Source does not have is `+`, one the Target does not have is `-`, and one
+		    both have with different values is `≠`. That is the same three-way split the story list
+		    means by them.
+
+		⚠**ALL THREE CELLS ARE WRITTEN ON EVERY APPLY**, blank ones included - row widgets are
+		  recycled and a cell left alone keeps what the row it used to be had in it.
+	*/
+	bool16 ApplyResourceAttrRow(int32 rowIndex, int32 attrIndex, IPanelControlData* widgetList) const
+	{
+		PMString name, value, sign;
+		name.SetTranslatable(kFalse);
+		value.SetTranslatable(kFalse);
+		sign.SetTranslatable(kFalse);
+
+		PMString source, target;
+		Utils<IKCMResourcesFacade> resources;
+		const bool16 have = resources && (rowIndex >= 0) && (attrIndex >= 0)
+			&& resources->GetNthAttr(rowIndex, attrIndex, name, source, target);
+
+		if (have)
+		{
+			name.SetTranslatable(kFalse);
+			value = target;
+			value.SetTranslatable(kFalse);
+
+			// ⚠NOT AN ASCII CHARACTER, so `≠` is set as UTF-16 rather than written as a narrow
+			//   literal - MSVC would convert it to the system code page and the cell would show
+			//   whatever that came to (the change row above carries the same note and the same code).
+			if (source.IsEmpty())
+				sign = PMString("+");			// only the newer document has it
+			else if (target.IsEmpty())
+				sign = PMString("-");			// only the older one has it
+			else
+			{
+				const char16_t notEqual[] = u"≠";
+				sign.SetXString(reinterpret_cast<const UTF16TextChar*>(notEqual), 1);
+			}
+			sign.SetTranslatable(kFalse);
+		}
+
+		this->SetNodeName(widgetList, name, kKCMStoryRowUIDWidgetID);
+		this->SetNodeName(widgetList, value, kKCMStoryRowTextWidgetID);
+		this->SetNodeName(widgetList, sign, kKCMStoryRowKindWidgetID);
 		return kTrue;
 	}
 
@@ -526,8 +649,12 @@ private:
 
 	bool16 IsTwoLineNode(const NodeID& node) const
 	{
+		// ⚠**THE RESOURCES MODE MUST NOT REACH THE STORY MODEL HERE.** Its child nodes carry the
+		//   same pair of indices, and IsTwoLineChange would ask IKCMStoryEditsFacade about a row that
+		//   belongs to a different list. It would answer - out of range is a legal question there -
+		//   and the answer would mean nothing. No row in this mode is ever two lines.
 		TreeNodePtr<KCMStoryNodeID> nodeID(node);
-		if (nodeID == nil || !nodeID->IsChangeRow())
+		if (nodeID == nil || !nodeID->IsChangeRow() || KCMListShowsResources())
 			return kFalse;
 
 		return this->IsTwoLineChange(nodeID->GetRow(), nodeID->GetChange());
@@ -704,6 +831,62 @@ bool16 KCMListShowsResources()
 		return kFalse;
 
 	return (compare->GetCompareMode() == kKCMModeResources) ? kTrue : kFalse;
+}
+
+//----------------------------------------------------------------------------------------
+// KCMListLeftColumnWidth / KCMApplyListColumnWidths - the columns, laid out per mode
+// (see KCMStoryTree.h for why the .fr cannot state both)
+//----------------------------------------------------------------------------------------
+
+int32 KCMListLeftColumnWidth()
+{
+	// ★40 is what the .fr writes, so the Story mode is left executing the resource unchanged: this
+	//   returns the number that is already there rather than a second opinion about it.
+	// ★120 was measured against the names that actually appear - "ColorGroupSwatch" is 16 characters
+	//   at the palette font - with room for the longer element names the export can produce. Wider
+	//   than this and the Definition column is starved at the panel's minimum width of 224.
+	return KCMListShowsResources() ? 120 : 40;
+}
+
+void KCMApplyListColumnWidths(IControlView* leftCell, IControlView* middleCell,
+							  IControlView* rightCell)
+{
+	// ★The home positions, from the .fr's row resource (kKCMStoryRowRsrcID): the left cell starts at
+	//   24 - where the expander column ends - and the middle cell starts 4px after the left one ends.
+	//   ⚠These two numbers are written in the .fr as well. They are constants HERE because the
+	//     recycling rule above forbids reading them off the widget: a row that has already been laid
+	//     out once would answer with the answer, not with the question.
+	// ★EVERY ROW STARTS AT THE SAME PLACE, child rows included (see the header).
+	const int32 kHomeLeft = 24;
+	const int32 kGap = 4;
+
+	const int32 leftStart = kHomeLeft;
+	const int32 leftEnd = leftStart + KCMListLeftColumnWidth();
+
+	if (leftCell != nil)
+	{
+		PMRect frame = leftCell->GetFrame();
+		frame.Left(PMReal(leftStart));
+		frame.Right(PMReal(leftEnd));
+		leftCell->SetFrame(frame);
+	}
+
+	if (middleCell != nil)
+	{
+		PMRect frame = middleCell->GetFrame();
+		frame.Left(PMReal(leftEnd + kGap));
+
+		// ★★THE RIGHT EDGE COMES FROM THE RIGHT CELL, not from a number and not from what this cell
+		//   happens to say now. ⚠**Leaving it alone was wrong and was measured**: a child row whose
+		//   widget had been laid out under some earlier width kept that right edge, and its
+		//   Definition cell ran 96px past the Change column and out of the panel altogether
+		//   (2026-09-09, seen in the first build of the attribute rows). The Change cell is bound to
+		//   the panel's right edge, so its left edge IS where this column stops, at every width.
+		if (rightCell != nil)
+			frame.Right(rightCell->GetFrame().Left());
+
+		middleCell->SetFrame(frame);
+	}
 }
 
 //----------------------------------------------------------------------------------------

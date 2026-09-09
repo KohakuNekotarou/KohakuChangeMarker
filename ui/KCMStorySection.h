@@ -37,6 +37,8 @@
 	unchanged and is still what is wanted - see the note at the closing branch in the .cpp.
 
 	★MEASURED 2026-08-18 (bug recheck B-U4): open 303 -> closed 185 -> reopened 303 px.
+	⚠The 185 there is the top pane as it was that day; it became 230 on 2026-09-09. Left as
+	measured - the .cpp says why.
 */
 void KCMToggleStorySection();
 
