@@ -1258,11 +1258,24 @@ void KCMResetNav()
 // See KCMChangeNav.h. Rebuild the position readout between Prev and Next out of the current list
 // of stops and where the walk stands, and update whether the Prev and Next buttons are enabled
 // (the value and the button states are assembled in one place, as in KESCL's UpdateNavWidgets).
-// What is shown: nothing to walk -> empty / no stops -> "/" / N stops -> "k/N".
+// What is shown: nothing to walk -> "/" greyed / no stops -> "/" greyed / N stops -> "k/N".
+//
+// ★★**THE "/" IS ALWAYS THERE** (2026-09-10, the user's call: "show it when it is not showing
+//   either, in a colour close to the background"). It used to be blank before a comparison was
+//   started, so the readout appeared out of nowhere at Start and the cluster's width jumped.
+//   A separator that is always drawn keeps Prev, the readout and Next reading as ONE control -
+//   which is exactly why the .fr pins their spacing (see kKCMNavPosTextWidgetID there).
+// ★**Faint rather than absent**: KCMSetNavPosition disables the readout whenever there is nothing
+//   to walk, and a disabled static text is drawn in the platform's own inactive colour - so it
+//   follows the interface theme instead of carrying a colour this plug-in chose.
 void KCMRefreshNavPosition()
 {
 	PMString text; text.SetTranslatable(kFalse);
 	bool16 navEnabled = kFalse;
+
+	// The separator on its own is the resting state, and both "nothing to walk" cases end here:
+	// no comparison running, and a comparison that found nothing.
+	text.Append("/");
 
 	IDataBase* navDB = KCMNavDoc();	// non-nil while a comparison is running or Find Overset is on
 	if (navDB != nil)
@@ -1271,12 +1284,16 @@ void KCMRefreshNavPosition()
 		KCMBuildStops(stops);
 		if (stops.empty())
 		{
-			text.Append("/");	// no stops at all: "/" and the buttons go dead (the user's choice)
+			// no stops at all: the bare "/" already standing, and the buttons go dead
 		}
 		else
 		{
 				// Where the anchor stands, counting from 1. Nothing walked yet -- it is not in the
 				// list -- counts as the front, giving "1/N".
+			// ⚠**CLEARED FIRST**: the resting "/" is already in the string, and appending to it
+			//   would read "/1/5". The separator below is this branch's own.
+			text.Clear();
+			text.SetTranslatable(kFalse);
 			const int32 cur = KCMFindCurrentStop(stops);
 			const int32 shown = (cur < 0) ? 1 : (cur + 1);
 			text.AppendNumber(shown);
@@ -1285,9 +1302,8 @@ void KCMRefreshNavPosition()
 			navEnabled = kTrue;	// there is something to walk, so Prev and Next are live
 		}
 	}
-	// Nothing to walk (navDB == nil): the text stays empty and navEnabled false, which clears
-
-	// the readout and disables the buttons.
+	// Nothing to walk (navDB == nil): the bare "/" set above stands, navEnabled stays false, and
+	// KCMSetNavPosition greys the readout along with the two buttons.
 	KCMSetNavPosition(text, navEnabled);
 }
 

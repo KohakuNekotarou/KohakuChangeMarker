@@ -861,6 +861,17 @@ void KCMSetNavPosition(const PMString& posText, bool16 navButtonsEnabled)
 		if (tcd != nil)
 		{
 			tcd->SetString(posText);
+
+			// ★★**THE READOUT IS GREYED WITH THE BUTTONS** (2026-09-10, the user's call: the "/"
+			//   should be there before a comparison too, "in a colour close to the background").
+			//   It carries the same flag as Prev and Next because it answers the same question -
+			//   is there anything to walk - and a static text that is disabled is drawn in the
+			//   platform's INACTIVE colour. ⇒ the faint look is the interface theme's own, not a
+			//   colour chosen here, so it stays right in both the light and the dark UI.
+			//   ⚠It is a static text: disabling changes how it is DRAWN and nothing else (there is
+			//     no click on it to lose).
+			cv->Enable(navButtonsEnabled);
+
 			cv->ForceRedraw();
 		}
 	}

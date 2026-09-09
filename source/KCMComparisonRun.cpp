@@ -555,11 +555,15 @@ void KCMToggleStartStop()
 // prefix here was left at the old "kescm:" in every copy, and the reader saw a name that no longer
 // exists on three of the flyout's toggles. Saying it in one place is also what makes it possible
 // to change what is said.
+// ★**THE PREFIX IS GONE** (2026-09-10, the user's call: take "KCM:" off the panel's messages).
+//   It said whose message it was, and the box it is drawn in belongs to this panel already -- the
+//   reader is looking at Kohaku Change Marker while they read it. This finishes the removal begun
+//   on 2026-08-25, when the same prefix came off the Pages panel's context items (KCMID.h).
 static void KCMReportMarkSettings(bool16 printFlag, bool16 op25)
 {
 	PMString report;
 	report.SetTranslatable(kFalse);
-	report.Append(op25 ? "kcm: marks opacity 25%" : "kcm: marks opacity 75%");
+	report.Append(op25 ? "Marks opacity 25%" : "Marks opacity 75%");
 	report.Append(printFlag ? "; will print (and stay visible on screen)"
 	                        : "; screen-only (won't print)");
 	KCMNotifyStatus(report);
@@ -589,10 +593,11 @@ void KCMSetMarkColor(bool16 cyan)
 	KCMDoSetMarkColor(cyan, KCMActiveDocDB());
 
 	// Not KCMReportMarkSettings: this one reports the colour, which is not part of the print /
-	// opacity pair. It carries the same prefix, and the prefix is the whole of what they share.
+	// opacity pair. ⚠**They used to share a prefix, and that was all they shared** -- the prefix
+	// came off both on 2026-09-10, so what is left in common is only the shape of the sentence.
 	PMString report;
 	report.SetTranslatable(kFalse);
-	report.Append(cyan ? "kcm: mark colour cyan" : "kcm: mark colour red");
+	report.Append(cyan ? "Mark colour cyan" : "Mark colour red");
 	KCMNotifyStatus(report);
 }
 
