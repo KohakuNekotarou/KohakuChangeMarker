@@ -427,7 +427,7 @@ void KCMUpdateStorySectionLabel()
 	//   (2026-08-20: the row's cells moved 16px and these three did not follow).
 	KCMApplyListColumnWidths(KCMFindPanelWidget(kKCMStoryColUIDWidgetID),
 							 KCMFindPanelWidget(kKCMStoryColTextWidgetID),
-							 KCMFindPanelWidget(kKCMStoryColKindWidgetID));
+							 KCMFindPanelWidget(kKCMStoryColKindWidgetID), 0);
 
 	// ★★AND SO DOES THE VALUE BAND, for the same reason it is written here: everything that gets
 	//   this function called - the mode switch, a rebuilt list, the panel's AutoAttach - has just

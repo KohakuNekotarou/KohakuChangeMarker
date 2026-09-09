@@ -19,6 +19,7 @@
 #include "Utils.h"					// Utils<IKCMResourcesFacade>()
 #include "IKCMResourcesFacade.h"	// GetNthChange / GetNthAttrCount / GetNthAttr
 #include "KCMUIShared.h"			// KCMFindPanelWidget
+#include "KCMXmlPretty.h"			// KCMDecodePercentEscapes - `%3a` is a colon, not a mojibake
 #include "KCMResourceValue.h"
 
 namespace
@@ -61,13 +62,20 @@ PMString KCMShortResourceValue(const PMString& value)
 	//   way to cut a suffix (MediaLocation.h:84, AnimationUIManagePresetsDialogObserver.cpp:308).
 	const CharCounter cut = value.LastIndexOfCharacter('/');
 
-	// No separator, or nothing after the last one: the value stands as it is. ⚠The second case is
-	// the guard that matters - shortening "a/" to "" would replace a real value with a blank cell.
-	if (cut < 0 || cut + 1 >= value.CharCount())
-		return value;
-
+	// No separator, or nothing after the last one: the value stands as it is (but still gets its
+	// escapes read - see below). ⚠The second case is the guard that matters: shortening "a/" to ""
+	// would replace a real value with a blank cell.
 	PMString shortened(value);
-	shortened.Remove(0, cut + 1);
+	if (cut >= 0 && cut + 1 < value.CharCount())
+		shortened.Remove(0, cut + 1);
+
+	// ★★TRIMMED FIRST, DECODED SECOND, and the order is not arbitrary: the `/` this cut at is the
+	//   exporter's own separator, written plain, while a `/` INSIDE a name arrives as `%2f`.
+	//   Decoding first would manufacture a separator that the exporter deliberately escaped, and
+	//   the cut would then land inside somebody's style name.
+	// ★What this undoes: `スタイルグループ 1%3a段落スタイル 1` reads as `スタイルグループ 1:段落スタイル 1`
+	//   (KCMXmlPretty.h carries the measurement and why it is not an encoding fault).
+	shortened.SetUTF8String(KCMDecodePercentEscapes(shortened.GetUTF8String()));
 	shortened.SetTranslatable(kFalse);
 	return shortened;
 }

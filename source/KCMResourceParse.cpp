@@ -163,9 +163,19 @@ bool16 KCMIsExcludedResource(const PMString& elementName)
 	// The XMP packet holds nothing this mode needs -- see the header.
 	// ⚠XmlStory is NOT here on purpose: it is the backing store (unplaced XML elements, the DTD,
 	//   comments), which Story mode never looks at.
+	//
+	// ★★TextDefault, added 2026-09-09 (the user's call: "it doesn't look like something you can
+	//   change from an InDesign panel - hide it"). It is the document's default text formatting,
+	//   and what it produced in practice was noise ABOUT OTHER CHANGES rather than a change of its
+	//   own: it names the default paragraph style by name, so **renaming a style makes this element
+	//   differ too** and the reader is shown a second row for one edit. Its own body is also the
+	//   largest in the document, which made it the row whose flattened attributes filled the list.
+	//   ⚠What is lost with it: an edit made ONLY to the text defaults, and nothing else, is no
+	//     longer reported. That is the cost the user accepted for the noise.
 	return elementName == "Spread"
 		|| elementName == "MasterSpread"
 		|| elementName == "Story"
+		|| elementName == "TextDefault"
 		|| elementName == "MetadataPacketPreference";
 }
 

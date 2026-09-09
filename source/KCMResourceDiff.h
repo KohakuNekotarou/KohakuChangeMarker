@@ -67,10 +67,6 @@ struct KCMResourceDiffStats
 	int32	fAdded;
 	int32	fRemoved;
 	int32	fChanged;
-	/** ★Pairs that the KEY could not find and StyleUniqueId did - a definition that was RENAMED
-	    (2026-09-09). Counted separately from fPaired because it says something the other numbers
-	    cannot: how often the key, which is the whole basis of this mode, was not enough. */
-	int32	fRenamed;
 
 	// ----- ★the three numbers that answer "can StyleUniqueId be used as a sieve?" (design §8-2)
 	//
@@ -88,7 +84,6 @@ struct KCMResourceDiffStats
 
 	KCMResourceDiffStats()
 		: fSourceItems(0), fTargetItems(0), fPaired(0), fAdded(0), fRemoved(0), fChanged(0),
-		  fRenamed(0),
 		  fAgreeSameId(0), fAgreeOtherId(0), fDifferSameId(0), fDifferOtherId(0) {}
 };
 
@@ -107,30 +102,16 @@ PMString KCMResourceKeyOf(const KCMResourceItem& item);
 
 /** Pairs the two lists by key and reports what differs.
 
-    ★★★**THE ID IS ASKED BEFORE THE NAME** (2026-09-09, the user: "not by name - if there is a
-    unique id, use that; paragraph ids to each other"). Two passes:
-      1. StyleUniqueId, for the definitions that carry one
-      2. the key, for everything left over
+    ⚠★★**A RENAMED DEFINITION COMES OUT AS Added PLUS Removed** (2026-09-09, the user's decision
+    after the measurements: "when you rename it, Add and Remove - that cannot be helped"). The key
+    is built from the name, so a rename breaks the pair by construction. A pass on StyleUniqueId
+    stood here for an afternoon and was taken out again; **the three readings that killed it are at
+    the head of KCMResourceAttrDiff.h** and are worth more than the code was.
 
-    ⇒ **A RENAME IS THEN ONE CHANGE, NOT TWO** (the report that started this: "renaming the style
-    itself makes the display odd - it comes out split into an Add and a Remove"). The key is built
-    from the name, so a rename breaks it by construction; the id does not move. Measured the same
-    day on a real rename (`段落スタイル 1` -> `aaa`): the id was IDENTICAL on both sides
-    (`c62347a5-b17a-4cc4-9410-0b0ef0e95adb`).
-    ⚠**This corrects the note in KCMResourceParse.cpp saying the id is "reissued on every edit"** -
-    a RENAME does not reissue it. That is what makes it usable here.
-
-    ★★**AND THE NAME STILL ANSWERS EVERYTHING IT USED TO**, from pass 2: a style DELETED and
-    RE-CREATED under the same name gets a new id, so pass 1 passes it over and the name pairs it -
-    which is the reading a person wants there. The order was written the other way round first and
-    changed after this case and the swap case below were worked through.
-    ★**Only the id can tell two styles that SWAPPED names apart.** Name-first pairs each with the
-    other's old self and reports two large content changes where there were two renames.
-
-    ⚠**IT CANNOT PAIR EVERYTHING, AND THAT IS SAFE.** Only styles carry a StyleUniqueId; a renamed
-    swatch or layer still comes out as Added plus Removed. And in two SEPARATELY BUILT documents no
-    two ids ever agree, so pass 1 finds nothing there and the whole comparison falls through to the
-    name - the one-way property the design calls a limitation (§8-2) is what makes it safe.
+    ★**A NAME IS UNIQUE EVEN INSIDE STYLE GROUPS**, so the key does not collide (the user read it
+    out of the XML: a style in a group is written `Name="スタイルグループ 1:段落スタイル 1"` - the
+    group is part of the name). Two styles of the same short name in different groups pair
+    correctly.
 
     @param source  the older document's definitions.
     @param target  the newer document's definitions.

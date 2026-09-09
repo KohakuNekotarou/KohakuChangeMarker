@@ -17,6 +17,14 @@
 //  same as HowTo"). No dialog resource, no widgets, no new boss - CAlert::ModalAlert takes the
 //  string and InDesign lays it out.
 //
+//  ⚠★★**THE WIDTH IS NOT OURS TO SET, AND THAT WAS ACCEPTED** (2026-09-09). Asked to make this
+//  about twice as wide, the answer is that **CAlert has no width anywhere in its API**
+//  (CAlert.h:132 - a message, up to three button strings, which one is default, and an icon).
+//  InDesign decides the width from the text. Widening it means a dialog of our own - a boss, a
+//  resource, a controller, and `kFixedSizeEVEInfoImpl` to stop EVE stretching it to fit the
+//  content - and the user's call was to keep the alert instead.
+//  ⇒ **Do not "fix" the width here.** There is nothing here to fix it with.
+//
 //========================================================================================
 
 #ifndef __KCMResourceXml_h__

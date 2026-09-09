@@ -58,6 +58,7 @@
 #include "IKCMCompareFacade.h"		// GetCompareMode - asked in ONE function, KCMListShowsResources
 #include "IKCMResourcesFacade.h"	// the definition rows, when that is what the list is showing
 #include "KCMResourceValue.h"		// KCMShortResourceValue - what a `$ID/...` value reads as
+#include "KCMXmlPretty.h"			// KCMDecodePercentEscapes - `%3a` in a group's name is a colon
 #include "KCMStoryKinds.h"		// KCMStoryChangeKind - the bits KindLabel names. A header of types
 									// only, which is why it may be included from either side of the
 									// split (KCMStoryStamp.h, where these used to live, cannot: its
@@ -385,14 +386,16 @@ public:
 		// ★It is done on EVERY apply for the same reason the cells' text is: row widgets are
 		//   recycled, and one that comes back from a list drawn in the other mode would otherwise
 		//   keep that mode's column widths.
-		// ★★**BOTH LEVELS SIT IN THE SAME COLUMNS** - an attribute row is not indented (the user's
-		//   call; the header carries the reason). What says a row is a child is the triangle on the
-		//   row above it, which is also all the Story list uses.
+		// ★★**THE VALUES STAY IN ONE COLUMN AND ONLY THE NAME STEPS IN** (the user's call; the
+		//   header carries the whole history). 12px: enough to see, less than the 16px of the
+		//   expander column, which is what "a little" was asked for.
 		if (showsResources || !isChangeNode)
 		{
+			const int32 kAttrNameIndent = 12;
 			KCMApplyListColumnWidths(widgetList->FindWidget(kKCMStoryRowUIDWidgetID),
 									 widgetList->FindWidget(kKCMStoryRowTextWidgetID),
-									 widgetList->FindWidget(kKCMStoryRowKindWidgetID));
+									 widgetList->FindWidget(kKCMStoryRowKindWidgetID),
+									 (showsResources && isChangeNode) ? kAttrNameIndent : 0);
 		}
 
 		// ★★THE RESOURCES MODE OWNS BOTH OF ITS LEVELS AND IS ASKED FIRST (2026-09-09). A definition
@@ -545,6 +548,13 @@ private:
 				if (isSeparator && head.Compare(kTrue, kind) == 0)
 					key.Remove(0, kindLen + 1);			// the kind, and the separator after it
 			}
+
+			// ★★AND THE ESCAPES ARE READ, LAST. A style inside a group carries the group in its
+			//   Self with the separator written `%3a`, which reads as a mojibake and is not one
+			//   (KCMXmlPretty.h holds the measurement). ⚠After the strip, not before: the kind's
+			//   own separator is written plain, and decoding first could produce another one.
+			key.SetUTF8String(KCMDecodePercentEscapes(key.GetUTF8String()));
+			key.SetTranslatable(kFalse);
 		}
 
 		this->SetNodeName(widgetList, kind, kKCMStoryRowUIDWidgetID);
@@ -867,24 +877,26 @@ int32 KCMListLeftColumnWidth()
 }
 
 void KCMApplyListColumnWidths(IControlView* leftCell, IControlView* middleCell,
-							  IControlView* rightCell)
+							  IControlView* rightCell, int32 leftIndent)
 {
 	// ★The home positions, from the .fr's row resource (kKCMStoryRowRsrcID): the left cell starts at
 	//   24 - where the expander column ends - and the middle cell starts 4px after the left one ends.
 	//   ⚠These two numbers are written in the .fr as well. They are constants HERE because the
 	//     recycling rule above forbids reading them off the widget: a row that has already been laid
 	//     out once would answer with the answer, not with the question.
-	// ★EVERY ROW STARTS AT THE SAME PLACE, child rows included (see the header).
 	const int32 kHomeLeft = 24;
 	const int32 kGap = 4;
 
-	const int32 leftStart = kHomeLeft;
-	const int32 leftEnd = leftStart + KCMListLeftColumnWidth();
+	// ★★THE COLUMN ENDS WHERE IT ALWAYS DOES; ONLY THE TEXT STARTS FURTHER IN. `leftEnd` is
+	//   computed from the HOME position, not from the indented one, so an indented cell is
+	//   narrower rather than shifted - and the Definition column below begins at the same x on a
+	//   parent row and on a child row (see the header).
+	const int32 leftEnd = kHomeLeft + KCMListLeftColumnWidth();
 
 	if (leftCell != nil)
 	{
 		PMRect frame = leftCell->GetFrame();
-		frame.Left(PMReal(leftStart));
+		frame.Left(PMReal(kHomeLeft + leftIndent));
 		frame.Right(PMReal(leftEnd));
 		leftCell->SetFrame(frame);
 	}

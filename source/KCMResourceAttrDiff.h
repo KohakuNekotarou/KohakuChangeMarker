@@ -60,6 +60,26 @@ struct KCMAttrChange
 void KCMDiffAttributes(const std::string& source, const std::string& target,
 					   std::vector<KCMAttrChange>& out);
 
+// ⚠★★★**A RENAME IS REPORTED AS Added PLUS Removed, AND THAT IS THE DECISION** (2026-09-09, the
+//   user, after the three measurements below: "when you rename it, Add and Remove - that cannot be
+//   helped"). Two attempts at detecting one were built and taken out again, and what they measured
+//   is worth more than the code was:
+//
+//   1. **StyleUniqueId is reissued BY THE RENAME.** A pure rename (Alpha -> Beta, nothing else
+//      touched) turned `f3e3fff0-78e8-4d1d-9659-aefab0580f38` into
+//      `9a60a161-e11c-4fc7-9b97-239fb3f80a82`. An earlier reading claimed the opposite and a whole
+//      pairing pass was built on it; that pass reported `renamed 0` on every run, which was the
+//      truth arriving before it was believed.
+//   2. **A non-empty id is not an identifying one.** InDesign writes `StyleUniqueId="$ID/"` on
+//      EVERY built-in style, so pairing on a non-empty id pairs unrelated definitions.
+//   3. **"Identical apart from Self and Name" is a sound test but too narrow** - a name is often
+//      changed together with the contents, and a body that differs in the name AND somewhere else
+//      is indistinguishable from one definition deleted and another created. Telling them apart
+//      needs a threshold, and no measurement supports any particular one.
+//
+//   ⇒ **Do not rebuild this without new evidence.** What would settle it is an identifier that
+//     survives a rename, and the three readings above say the export has none.
+
 #endif // __KCMResourceAttrDiff_h__
 
 // End, KCMResourceAttrDiff.h.

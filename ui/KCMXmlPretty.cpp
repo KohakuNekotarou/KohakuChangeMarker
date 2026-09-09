@@ -134,4 +134,48 @@ std::string KCMPrettyXml(const std::string& xml)
 	return out;
 }
 
+namespace {
+
+/** The value of one hex digit, or -1. */
+int HexValue(char c)
+{
+	if (c >= '0' && c <= '9')	return c - '0';
+	if (c >= 'a' && c <= 'f')	return c - 'a' + 10;
+	if (c >= 'A' && c <= 'F')	return c - 'A' + 10;
+	return -1;
+}
+
+}	// anonymous namespace
+
+std::string KCMDecodePercentEscapes(const std::string& text)
+{
+	std::string out;
+	out.reserve(text.size());
+
+	const std::size_t n = text.size();
+	for (std::size_t i = 0; i < n; ++i)
+	{
+		if (text[i] != '%' || i + 2 >= n)
+		{
+			out += text[i];
+			continue;
+		}
+
+		const int hi = HexValue(text[i + 1]);
+		const int lo = HexValue(text[i + 2]);
+		if (hi < 0 || lo < 0)
+		{
+			// ⚠NOT AN ESCAPE. "50% grey" is a name somebody really uses, and swallowing the % - or
+			//   worse, the two characters after it - would be the corruption this exists to undo.
+			out += text[i];
+			continue;
+		}
+
+		out += static_cast<char>((hi << 4) | lo);
+		i += 2;
+	}
+
+	return out;
+}
+
 // End, KCMXmlPretty.cpp.

@@ -81,20 +81,26 @@ int32 KCMListLeftColumnWidth();
 	where the middle column has to stop: asking it makes the two columns meet by construction
 	instead of by agreement.
 
-	⚠**A CHILD ROW IS NOT INDENTED** (2026-09-09, the user's call: "the child row's Kind and Def
-	  parts are pushed right - make them the same as the parent"). An attribute row was set 16px in
-	  when it was first built, and it was taken out again: the columns are what the reader is
-	  scanning down, and one level of them starting somewhere else breaks that. What says a row is a
-	  child is the parent's expander triangle above it - the same thing that says so in the Story
-	  list, whose change rows are not indented either (their text starts at exactly the story row's).
+	★★**ONLY THE LEFT CELL IS INDENTED ON A CHILD ROW, AND IT TOOK TWO GOES TO GET THERE**
+	  (2026-09-09). The first build indented the whole row 16px and the user asked for it out
+	  ("the child row's Kind and Def parts are pushed right - make them the same as the parent");
+	  the second had no indent at all, and the user asked for a little back, on the Kind cell alone
+	  ("shift just the Kind a bit to the right").
+	  ⇒ **The values stay in one column and only the NAME steps in.** That is the reading the
+	    columns are for: a reader scans the Definition column straight down, parents and children
+	    alike, and the indent says which of the names is a child without moving anything else.
+	  ★The left cell's RIGHT edge does not move with it - the cell narrows instead - so the two
+	    columns still meet in the same place on every row.
 
 	@param leftCell    the Kind / UID cell, or its heading. nil is ignored.
 	@param middleCell  the Definition / story-text cell, or its heading. nil is ignored.
 	@param rightCell   the Change cell, or its heading. Not moved - only read. nil leaves the middle
 	                   cell's right edge alone.
+	@param leftIndent  how far in the LEFT cell alone starts. 0 for a top-level row and for the
+	                   headings.
 */
 void KCMApplyListColumnWidths(IControlView* leftCell, IControlView* middleCell,
-							  IControlView* rightCell);
+							  IControlView* rightCell, int32 leftIndent);
 
 #endif // __KCMStoryTree_h__
 

@@ -45,9 +45,19 @@ class KCMDeferredProgressBar
 {
 public:
 	/** @param title the dialog title, already marked untranslatable by the caller.
-		@param total how many units the job has; the bar's range is 0..total. */
-	KCMDeferredProgressBar(const PMString& title, int32 total)
-		: fTitle(title), fTotal(total),
+		@param total how many units the job has; the bar's range is 0..total.
+		@param delayMs how long the job may run before a bar is worth showing.
+
+		★★THE DELAY IS A PARAMETER, AND EVERY CALLER PASSES THE SAME VALUE (2026-09-09). It became
+		one when the Resources comparison wanted a bar with no wait at all, and it stayed one when
+		the user - having seen that bar - asked for the three seconds back, "like the others".
+		⇒ **Three modes, one rule.** A second value would need the kind of reason this one turned
+		out not to have.
+		⚠Zero, if it is ever passed again, still means "at the first Step" rather than "in the
+		  constructor": nothing is drawn until the caller says what it is about to do. */
+	KCMDeferredProgressBar(const PMString& title, int32 total,
+						   int32 delayMs = kKCMProgressBarDelayMs)
+		: fTitle(title), fTotal(total), fDelayMs(delayMs),
 		  fSince(std::chrono::steady_clock::now()),
 		  fSuppress(new (std::nothrow) SuppressProgressBarDisplay(kTrue))
 	{}
@@ -60,7 +70,7 @@ public:
 		{
 			const int64 elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(
 				std::chrono::steady_clock::now() - fSince).count();
-			if (elapsedMs < kKCMProgressBarDelayMs)
+			if (elapsedMs < fDelayMs)
 				return;
 			fSuppress.reset();		// before the bar: a bar created under the suppressor is suppressed too
 			fBar.reset(new (std::nothrow) RangeProgressBar(fTitle, 0, fTotal, kTrue /*showImmediate*/));
@@ -81,6 +91,7 @@ public:
 private:
 	PMString									fTitle;
 	int32										fTotal;
+	int32										fDelayMs;
 	std::chrono::steady_clock::time_point		fSince;
 	K2::scoped_ptr<SuppressProgressBarDisplay>	fSuppress;	// declared before fBar: destroyed after it
 	K2::scoped_ptr<RangeProgressBar>			fBar;

@@ -143,7 +143,12 @@ void KCMShowResourceXml()
 	// ★The heading is the definition's WHOLE key, not the shortened name the row shows: this window
 	//   stands on its own, away from the Kind column that would otherwise say what sort of thing it
 	//   is (KCMResourceValue.h carries the shortening rule and why the list may shorten).
-	PMString text(key);
+	// ★The escapes are read here too, so the heading of this window and the row that opened it say
+	//   the same thing (`%3a` is a colon - KCMXmlPretty.h). ⚠The BODIES below are left exactly as
+	//   the exporter wrote them: this window is where a reader goes to see the real XML, and
+	//   quietly rewriting it here would defeat the one thing it is for.
+	PMString text;
+	text.SetUTF8String(KCMDecodePercentEscapes(key.GetUTF8String()));
 	text.SetTranslatable(kFalse);
 	text.Append("\n\n");
 

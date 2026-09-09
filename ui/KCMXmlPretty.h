@@ -53,6 +53,29 @@
 */
 std::string KCMPrettyXml(const std::string& xml);
 
+/** Turns `%3a` back into `:` - the exporter's percent-escapes, for a reader.
+
+	★★★MEASURED 2026-09-09, and it is NOT a mojibake although it reads as one. A style inside a
+	group has the group in its name, and the `Self` attribute the key is built from writes the
+	separator escaped:
+
+	    Name="スタイルグループ 1:段落スタイル 1"        <- the XML's own Name, a plain colon
+	    Self="ParagraphStyle/スタイルグループ 1%3a段落スタイル 1"   <- what the panel was showing
+
+	The user reported "the `:` part is garbled in the panel". Nothing was corrupted: the escape was
+	being shown raw. ⇒ ★**Before calling something an encoding fault, read what the exporter
+	actually wrote.**
+
+	⚠**A DISPLAY RULE ONLY.** The escaped form is the definition's identity - it is what pairs the
+	two documents - so the model keeps it. This shortens nothing and changes no comparison.
+	⚠**Bytes, then UTF-8.** `%E3%81%82` is one character in three escapes, so the decoding happens
+	on the byte string and the result is handed back as UTF-8 - which is what the caller turns into
+	a PMString with SetUTF8String.
+	⚠**A `%` that is not followed by two hex digits is left exactly as it is** - a style really can
+	be called "50% grey", and eating that would be the corruption this function exists to undo.
+*/
+std::string KCMDecodePercentEscapes(const std::string& text);
+
 #endif // __KCMXmlPretty_h__
 
 // End, KCMXmlPretty.h.

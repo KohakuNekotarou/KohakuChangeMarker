@@ -31,6 +31,7 @@
 #include "KCMResourceBytes.h"
 #include "KCMResourceDiff.h"
 #include "KCMResourceAttrDiff.h"	// which ATTRIBUTES of one definition differ
+#include "KCMProgressBar.h"			// KCMDeferredProgressBar - here with no delay at all (see Rebuild)
 #include "KCMResourceSnapshot.h"
 #include "KCMResourceStore.h"
 
@@ -102,6 +103,19 @@ std::string Num(int32 n)
 	return os.str();
 }
 
+/** A finished sentence for the progress bar, not a key.
+
+	⚠**PMString HAS NO kNoTranslate** - the flag is set on the object, not chosen at construction
+	(tried and rejected by the compiler, 2026-09-09). Left translatable, a line like "Done." is
+	handed to the built-in table on its way to the screen, which is how KCM once showed
+	"Source:" as a style-source phrase in a Japanese locale. */
+PMString Phase(const char* text)
+{
+	PMString s(text);
+	s.SetTranslatable(kFalse);
+	return s;
+}
+
 }	// anonymous namespace
 
 bool16 KCMResourceStore::Rebuild(IDataBase* targetDB, IDataBase* sourceDB, PMString& whyNot)
@@ -127,19 +141,59 @@ bool16 KCMResourceStore::Rebuild(IDataBase* targetDB, IDataBase* sourceDB, PMStr
 		return kFalse;
 	}
 
+	// ***** A BAR ON Start AND Refresh (2026-09-09, the user's request). *****
+	//
+	// ★★**IT WAITS THE SAME THREE SECONDS THE OTHER TWO MODES DO** - the user's call, the same day
+	//   and in two steps: "show a bar, straight away for now", then, having seen it, "make it come
+	//   up after three seconds like the others". ⇒ **One rule for all three modes.** Most
+	//   comparisons are over before the delay (measured 200-2400ms for the two exports; 328-657ms
+	//   on small documents), and a bar that flashes up for those is noise.
+	//   ⚠The delay parameter stays on the class because the class needed one anyway to be told a
+	//     number rather than to read a constant - but every caller passes the same value now, and a
+	//     second value would need the same kind of reason this one lost.
+	// ★THREE UNITS, and they are the three phases a caller can actually see: read the older
+	//   document, read the newer one, pair them. Nothing inside a phase reports, so the bar moves
+	//   in three steps rather than pretending to a smoothness it has not got.
+	// ⚠**Cancel is polled BETWEEN phases only.** WasCancelled pumps events, and a phase is a single
+	//   call into the SDK with no safe point inside it (KCMProgressBar.h says so).
+	// ⚠No other bar may be alive here - KCMCore.cpp scopes the raster loop's to its loop, and this
+	//   runs after it (the same warning the class carries).
+	PMString barTitle("Kohaku Change Marker");
+	barTitle.SetTranslatable(kFalse);
+	KCMDeferredProgressBar progress(barTitle, 3);	// the default delay: three seconds, as Pixel and Story
+
 	KCMResourceList sourceItems;
 	KCMResourceList targetItems;
+
+	progress.Step(0, Phase("Reading the older document's definitions..."));
 	if (!ReadOneSide(sourceDB, "source", sourceItems, whyNot))
 	{
 		gWhyNot = whyNot;
 		return kFalse;
 	}
+
+	if (progress.WasCancelled())
+	{
+		whyNot = "cancelled";
+		gWhyNot = whyNot;
+		return kFalse;
+	}
+
+	progress.Step(1, Phase("Reading the newer document's definitions..."));
 	if (!ReadOneSide(targetDB, "target", targetItems, whyNot))
 	{
 		gWhyNot = whyNot;
 		return kFalse;
 	}
 
+	if (progress.WasCancelled())
+	{
+		whyNot = "cancelled";
+		gWhyNot = whyNot;
+		return kFalse;
+	}
+
+	progress.Step(2, Phase("Pairing the definitions..."));
 	if (!KCMDiffResources(sourceItems, targetItems, gChanges, gStats))
 	{
 		whyNot = "ran out of memory while pairing the definitions";
@@ -147,6 +201,8 @@ bool16 KCMResourceStore::Rebuild(IDataBase* targetDB, IDataBase* sourceDB, PMStr
 		gChanges.clear();
 		return kFalse;
 	}
+
+	progress.Step(3, Phase("Done."));
 
 	gHasResult = kTrue;
 	return kTrue;
