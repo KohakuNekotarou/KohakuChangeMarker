@@ -215,7 +215,6 @@
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMInxProbe.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMResourceBytes.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMResourceDiff.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMResourceStore.cpp" />
@@ -267,7 +266,6 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMInxProbe.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMResourceBytes.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMResourceDiff.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMResourceKinds.h" />

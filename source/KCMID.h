@@ -300,7 +300,6 @@ DECLARE_PMID(kScriptInfoIDSpace, kKCMAttrChangeCountPropertyScriptElement, kKCMP
 DECLARE_PMID(kScriptInfoIDSpace, kKCMOtherChangeCountPropertyScriptElement, kKCMPrefix + 18)	// stories[n].kcmOtherChangeCount (everything else; GetOtherChangeCount)
 // Same rule as the four above: this ID is repeated in KCM.fr's second VersionedScriptElementInfo.
 DECLARE_PMID(kScriptInfoIDSpace, kKCMStoryRowsPropertyScriptElement, kKCMPrefix + 20)	// ★app.kcmStoryRows (read-only; the whole Story Edits list as TSV - a line per parent row and a line per change under it). ★★★It exists because THE LIST'S CELLS ARE DRAWN BY HAND (KCMStoryCellView), so no reader outside the plug-in can see the reading, the Mono/Group word or a footnote's number - checking the 2026-09-08 footnote work meant PHOTOGRAPHING the panel and reading the picture, which was the single biggest cost of that day. Same answer KBS reached with app.kfcResults, for the reason it wrote down: **a count proves nothing** -- the row's own words do.
-DECLARE_PMID(kScriptInfoIDSpace, kKCMInxProbePropertyScriptElement, kKCMPrefix + 21)	// THROWAWAY (2026-09-08) app.kcmInxProbe - measures whether the whole document can be written as INX into a stream held in memory. Delete with KCMInxProbe.{h,cpp}.
 DECLARE_PMID(kScriptInfoIDSpace, kKCMResourceSnapshotPropertyScriptElement, kKCMPrefix + 22)	// app.kcmResourceSnapshot (read-only; "<bytes> bytes, <ms> ms" for the ACTIVE document, or "FAILED: <which step>"). The Resources mode's engine has no panel yet, so this is how it is measured from outside -- and it stays afterwards for the same reason app.kcmStoryRows does: a count nobody can read from outside is a count nobody can check.
 DECLARE_PMID(kScriptInfoIDSpace, kKCMResourceDiffPropertyScriptElement, kKCMPrefix + 23)	// app.kcmResourceDiff (read-only; a summary line, a header line, then one tab-separated line per definition that differs between the two ARMED documents - or "FAILED: <which step>"). ★It reads the same Target/Source pair the panel does, so a reading says something about the product rather than about the test. It is how the Resources mode's engine is checked until the mode has a panel of its own.
 DECLARE_PMID(kScriptInfoIDSpace, kKCMTransparencyItemCountPropertyScriptElement, kKCMPrefix + 19)	// document.kcmTransparencyItemCount (read-only; the size of IXPManager's list of page items that have transparency). It is how we check from outside that nothing was left on the list and saved: the list persists into the .indd, so save, close, reopen and read.
@@ -309,6 +308,13 @@ DECLARE_PMID(kScriptInfoIDSpace, kKCMTransparencyItemCountPropertyScriptElement,
 // +20 retired: kKCMStoryReadComparePropertyScriptElement (app.kcmStoryReadCompare, the direct-read
 //   migration's parallel run, READ-WRITE and temporary; 2026-08-31 to 2026-09-03). Never shipped,
 //   so the slot could be reused - it is left empty anyway, the way +1..+12 are.
+// +21 retired: kKCMInxProbePropertyScriptElement (app.kcmInxProbe, the throwaway that measured
+//   whether the whole document can be written as INX into a stream held in memory; 2026-09-08 to
+//   2026-09-09). It answered yes, and the Resources mode was built on the answer, so the probe was
+//   deleted whole. Never shipped either; left empty for the same reason as +20. The findings live
+//   in memory document-snapshot-without-a-file and docs/ai-notes/inx-document-as-xml-2026-09-09.md,
+//   not in this plug-in - a throwaway carries knowledge, and deleting it is only safe once that
+//   knowledge is somewhere the deletion cannot reach.
 // (The tool's enumerator goes on the application's own kToolBoxEnumScriptElement, so this side
 //  needs no ID for it.)
 

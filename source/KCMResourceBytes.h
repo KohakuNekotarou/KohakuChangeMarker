@@ -13,9 +13,10 @@
 //  ★IT GROWS WITH A NOTHROW BUFFER, not std::string and not std::vector. Both of those throw on
 //  a failed allocation, and this runs on the MODEL side, which is reached from export and draw
 //  paths -- an exception crossing an event boundary takes InDesign down. The throwaway probe that
-//  measured this route used std::string and said in its own comment that this was the thing to
-//  rewrite if the route was ever kept (KCMInxProbe.cpp, "Throwaway licence"). This is that
-//  rewrite, and it is the reason K2::scoped_array is here rather than a container.
+//  first measured this route used std::string and said so in its own comment: acceptable while
+//  nothing but a probe called it, and the thing to rewrite if the route was ever kept. This is
+//  that rewrite, and it is the reason K2::scoped_array is here rather than a container.
+//  (The probe itself was deleted on 2026-09-09 once the mode stood on its own.)
 //
 //  A failed allocation is reported, not thrown: Write() sets the stream state to bad and keeps
 //  what it already had, so the caller can tell "the export is short" from "the export is whole"

@@ -118,7 +118,6 @@
 // KCMUIShared.h is deliberately NOT included: it was added once, but this provider called none
 // of the widget-touching functions in it -- a dead dependency. What it reads is
 // KCMGetSessionStatus (declared in KCMModelNotify.h), which is not a reverse dependency.
-#include "KCMInxProbe.h"	// THROWAWAY (2026-09-08) - delete with the property it serves
 #include "KCMResourceSnapshot.h"	// KCMDescribeResourceSnapshot - the Resources mode's export
 #include "KCMResourceDiff.h"	// KCMDescribeResourceDiff - the same mode's comparison of the two
 								// armed documents, which is the reading the engine is checked by
@@ -174,8 +173,7 @@ ErrorCode KCMScriptProvider::AccessProperty(ScriptID propID, IScriptRequestData*
 	const int32 id = propID.Get();
 
 	const bool16 isAppString = (id == p_KCMStatus || id == p_KCMBookResult || id == p_KCMStoryRows
-								|| id == p_KCMResourceSnapshot || id == p_KCMResourceDiff
-								|| id == p_KCMInxProbe);	// THROWAWAY
+								|| id == p_KCMResourceSnapshot || id == p_KCMResourceDiff);
 	const bool16 isStoryCounter = (id == p_KCMChangeCount || id == p_KCMTextChangeCount ||
 								   id == p_KCMAttrChangeCount || id == p_KCMOtherChangeCount);
 	const bool16 isDocXPCount = (id == p_KCMTransparencyItemCount);
@@ -240,8 +238,6 @@ ErrorCode KCMScriptProvider::ReadAppString(int32 id, ScriptID propID, IScriptReq
 	PMString value;
 	if (id == p_KCMStatus)
 		KCMGetSessionStatus(value);		// the panel's status line
-	else if (id == p_KCMInxProbe)
-		KCMRunInxProbe(value, data);			// THROWAWAY - see KCMInxProbe.h
 	else if (id == p_KCMResourceSnapshot)
 		// The Resources mode's export, measured from outside while it has no panel of its own.
 		KCMDescribeResourceSnapshot(value);
