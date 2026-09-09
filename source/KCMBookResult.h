@@ -25,6 +25,11 @@
 #include "IDFile.h"
 #include "PMString.h"
 
+#include "KCMBookModeNames.h"	// KCMBookCompareMode - what the two mode fields below hold, and
+								// KCMBookModesString, which spells them. ★A header with no SDK type
+								// in it, so both halves of the plug-in may include it and it can be
+								// checked outside InDesign (work/kcm-bookmodes-test).
+
 /** What the comparison concluded about one chapter. */
 enum KCMChapterState
 {
@@ -78,7 +83,35 @@ struct KCMChapterResult
 	    reason cannot, the answer is a shorter reason, not a wider dialog.** */
 	PMString			fWhy;
 
-	KCMChapterResult() : fState(kKCMChapterUnknown) {}
+	/** WHICH of the three comparisons found a difference -- an OR of KCMBookCompareMode.
+
+	    ★**fState IS DERIVED FROM THIS, not stored alongside it.** Changed when this is non-zero;
+	    NotCompared when it is zero and the run was cancelled; Failed when it is zero and
+	    fUnjudgedModes is not; NoChange when both are zero. Two fields answering "did this chapter
+	    change?" would be one question in two places, which is the shape behind seven of this
+	    project's real bugs.
+
+	    ⚠**Zero for a chapter no comparison was run on** -- Added, Deleted and NotCompared. Their
+	    Change column is empty, which is the right answer and not a gap: nothing was looked at. It
+	    is the same rule the pairing already keeps for those chapters (having no counterpart IS the
+	    answer, and must not be restated as a failure to do something that was never going to be
+	    done). */
+	uint32			fChangedModes;
+
+	/** WHICH comparisons could not be judged -- a page that could not be rasterised, an export that
+	    failed. Named in the Change column with a '?' after them.
+
+	    ⚠**NEVER FOLDED INTO "no change".** A mode nobody could judge and a mode that ran and found
+	    nothing are different answers, and the note above on kKCMChapterNotCompared is entirely
+	    about not letting those two share a word. This is that same rule one level down, at the
+	    mode rather than at the chapter.
+
+	    ⚠fWhy holds the reason for the FIRST mode that landed here and no more: it is shown in one
+	    cell beside a file name, with about 38 characters to live in (see fWhy). Which modes failed
+	    is not lost by that -- the Change column names every one of them. */
+	uint32			fUnjudgedModes;
+
+	KCMChapterResult() : fState(kKCMChapterUnknown), fChangedModes(0), fUnjudgedModes(0) {}
 };
 
 /** The word this state is reported by. TWO READERS, and NEITHER IS THE PANEL: the chapter
