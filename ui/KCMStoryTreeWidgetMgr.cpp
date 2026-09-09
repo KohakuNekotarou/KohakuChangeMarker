@@ -51,6 +51,7 @@
 
 // Project includes:
 #include "IKCMStoryCellData.h"	// the change row's hand-drawn text cell takes its three pieces here
+#include "IStaticTextAttributes.h"	// SetEllipsizeStyle - WHERE a cell that does not fit loses its characters
 #include "KCMUIID.h"
 #include "KCMUIShared.h"	// panel / status line / nav readout / tool button (split from KCMCore.h on 2026-08-13)
 #include "Utils.h"					// Utils<IKCMStoryEditsFacade>()
@@ -396,6 +397,23 @@ public:
 									 widgetList->FindWidget(kKCMStoryRowTextWidgetID),
 									 widgetList->FindWidget(kKCMStoryRowKindWidgetID),
 									 (showsResources && isChangeNode) ? kAttrNameIndent : 0);
+
+			// ★★★AND WHERE THE ELLIPSIS FALLS, on the same schedule and for the same reason
+			//   (2026-09-10, the user's call: "when the panel is narrowed it shortens from both
+			//   ends; for Resources shorten from the back only").
+			//   KCMUI.fr declares this cell **kEllipsizeMiddle**, which is right for a story's
+			//   text - its opening and its closing words both help a reader place the edit - but
+			//   **a definition is read from the left**: `GroupA:StyleX`, `Color/PANTONE 021 C`.
+			//   The middle is the one part of it that must not go.
+			//   ⚠**SET IN BOTH DIRECTIONS, EVERY TIME**, exactly like the widths above. A cell
+			//     coming back from a list drawn in the other mode keeps that mode's setting, and
+			//     "leave it alone unless it is ours" is the trap this list has already sprung once
+			//     (2026-09-09, the child row's right edge: what is not written is the previous
+			//     value, not nothing).
+			InterfacePtr<IStaticTextAttributes> textAttrs(
+				widgetList->FindWidget(kKCMStoryRowTextWidgetID), UseDefaultIID());
+			if (textAttrs != nil)
+				textAttrs->SetEllipsizeStyle(showsResources ? kEllipsizeEnd : kEllipsizeMiddle);
 		}
 
 		// ★★THE RESOURCES MODE OWNS BOTH OF ITS LEVELS AND IS ASKED FIRST (2026-09-09). A definition
