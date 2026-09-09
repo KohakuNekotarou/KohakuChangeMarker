@@ -44,6 +44,8 @@
 #include "IKCMCompareFacade.h"	// IsArmed, asked across the boundary
 #include "KCMUIShared.h"	// panel / status line / nav readout / tool button (split from KCMCore.h on 2026-08-13)
 #include "IKCMStoryEditsFacade.h"	// GetRowCount - the number in the heading (Facade since 2026-08-13, Task 14)
+#include "IKCMResourcesFacade.h"	// GetChangeCount - the same number while the Resources mode is on
+#include "KCMStoryTree.h"			// KCMListShowsResources - which of the two the heading names
 #include "KCMStorySection.h"
 
 namespace
@@ -342,6 +344,26 @@ void KCMUpdateStorySectionButtonState()
 	                                                       : kTreeBranchExpandedRsrcID);
 }
 
+/* KCMSetColumnHeading - write one of the three words above the list.
+
+   Quiet when the panel is closed or the section has never been opened: the headings live INSIDE
+   the section, so with it folded away there is no widget to write to and nothing to fix - the
+   next open builds them from the .fr and this runs again.
+*/
+static void KCMSetColumnHeading(const WidgetID& widgetID, const char* stringKey)
+{
+	InterfacePtr<ITextControlData> cell(KCMFindPanelWidget(widgetID), UseDefaultIID());
+	if (cell == nil)
+		return;
+
+	PMString text(stringKey);
+	text.Translate();
+	// A finished word rather than a key, for the reason the heading above gives: left translatable
+	// it can be swapped again by the built-in table.
+	text.SetTranslatable(kFalse);
+	cell->SetString(text, kTrue, kFalse);
+}
+
 /* KCMUpdateStorySectionLabel
 */
 void KCMUpdateStorySectionLabel()
@@ -350,17 +372,23 @@ void KCMUpdateStorySectionLabel()
 	if (label == nil)
 		return;
 
-	PMString text(kKCMStorySectionLabelKey);
+	// ★The heading names WHAT THE LIST IS SHOWING, and the list is shared: the same widget carries
+	//   the Story Edits rows and, in the Resources mode, the definition rows. It asks the one
+	//   question the list asks anywhere (KCMStoryTree.h) rather than testing the mode itself.
+	const bool16 showsResources = KCMListShowsResources();
+
+	PMString text(showsResources ? kKCMResourcesSectionLabelKey : kKCMStorySectionLabelKey);
 	text.Translate();
 
 	// ★The count is shown only while comparing. Stopped, the list itself is empty, so "(0)" would
 	//   mean "nothing has been compared yet" rather than "nothing changed" ---- showing no number at
 	//   all cuts that mistake off. (The rows draw the same distinction: nothing while stopped, and a
-	//   single "No edits" line for zero edits while comparing.)
+	//   single "No edits" / "No differences" line for zero while comparing.)
 	if (Utils<IKCMCompareFacade>()->IsArmed())
 	{
 		text.Append(" (");
-		text.AppendNumber(Utils<IKCMStoryEditsFacade>()->GetRowCount());
+		text.AppendNumber(showsResources ? Utils<IKCMResourcesFacade>()->GetChangeCount()
+										 : Utils<IKCMStoryEditsFacade>()->GetRowCount());
 		text.Append(")");
 	}
 
@@ -372,6 +400,19 @@ void KCMUpdateStorySectionLabel()
 	// The second argument, invalidate, is kTrue. The third is notifyOfChange and is kFalse here:
 	//   this only writes what is displayed ---- it is not a change anyone has to be told about.
 	label->SetString(text, kTrue, kFalse);
+
+	// ★★THE COLUMN HEADINGS BELONG TO THE SAME QUESTION. The list is shared, so the three words
+	//   above it name whichever rows are in it - "UID / Story / Change" for stories, and
+	//   "Kind / Definition / Change" for definitions.
+	//   ⚠They are written HERE rather than anywhere else because this function is already called
+	//     from every place that can change the answer (the mode switch, a rebuild, and the panel's
+	//     AutoAttach). A second home for them would be a second chance to forget one.
+	//   ⚠★All three are written even though the last word is the same in both modes: writing "the
+	//     ones that differ" would mean keeping a list of which those are, and that list is exactly
+	//     the kind of thing that goes stale when a column is renamed.
+	KCMSetColumnHeading(kKCMStoryColUIDWidgetID,  showsResources ? kKCMResourcesColKindKey : kKCMStoryColUIDKey);
+	KCMSetColumnHeading(kKCMStoryColTextWidgetID, showsResources ? kKCMResourcesColKeyKey  : kKCMStoryColTextKey);
+	KCMSetColumnHeading(kKCMStoryColKindWidgetID, kKCMStoryColKindKey);
 }
 
 // End, KCMStorySection.cpp.

@@ -55,6 +55,8 @@
 #include "KCMUIShared.h"	// panel / status line / nav readout / tool button (split from KCMCore.h on 2026-08-13)
 #include "Utils.h"					// Utils<IKCMStoryEditsFacade>()
 #include "IKCMStoryEditsFacade.h"	// the rows themselves (Facade since 2026-08-13, Task 14)
+#include "IKCMCompareFacade.h"		// GetCompareMode - asked in ONE function, KCMListShowsResources
+#include "IKCMResourcesFacade.h"	// the definition rows, when that is what the list is showing
 #include "KCMStoryKinds.h"		// KCMStoryChangeKind - the bits KindLabel names. A header of types
 									// only, which is why it may be included from either side of the
 									// split (KCMStoryStamp.h, where these used to live, cannot: its
@@ -369,6 +371,15 @@ public:
 		if (nodeID != nil && nodeID->IsChangeRow())
 			return this->ApplyChangeRow(*nodeID, widgetList);
 
+		// ★THE RESOURCES MODE WRITES THE SAME THREE CELLS FROM A DIFFERENT MODEL AND RETURNS.
+		//   The row RESOURCE is the same one the Pixel mode's list uses - three plain text cells -
+		//   because a definition needs exactly that shape. Nothing below this line applies: the
+		//   cells hold a kind, a key and a verdict rather than a UID, a story and its change kinds.
+		//   ⚠A definition has no children, so the change-row machinery above is never reached in
+		//     this mode and its heights, templates and hit-testing stay the Story mode's alone.
+		if (KCMListShowsResources())
+			return this->ApplyResourceRow((nodeID != nil) ? nodeID->GetRow() : -1, widgetList);
+
 		// ★A row COPIED out of the model, not a pointer into its list (Task 14). The three cells
 		//   below are written from it and nothing here outlives the call, so the copy costs one
 		//   PMString per row drawn.
@@ -420,6 +431,52 @@ public:
 	}
 
 private:
+	/** Fill the three cells of one row from the Resources list: kind, key, and what happened.
+
+		★THE CELLS ARE THE PIXEL MODE'S. This is why the Resources mode needed no tree, no row
+		resource and no widget manager of its own - a definition fits the row a changed story
+		already uses, column for column.
+
+		⚠ALL THREE CELLS ARE WRITTEN ON EVERY APPLY, blank ones included, for the same reason the
+		  story branch does it: row widgets are recycled as the list scrolls, and a cell left alone
+		  keeps what the row it used to be had in it.
+	*/
+	bool16 ApplyResourceRow(int32 rowIndex, IPanelControlData* widgetList) const
+	{
+		PMString kind, key, what;
+		kind.SetTranslatable(kFalse);
+		key.SetTranslatable(kFalse);
+		what.SetTranslatable(kFalse);
+
+		Utils<IKCMResourcesFacade> resources;
+		KCMResourceChangeKind changeKind = kKCMResourceChanged;
+		const bool16 haveRow = resources && (rowIndex >= 0)
+			&& resources->GetNthChange(rowIndex, kind, key, changeKind);
+
+		if (haveRow)
+		{
+			switch (changeKind)
+			{
+				case kKCMResourceAdded:		what = "Added";		break;
+				case kKCMResourceRemoved:	what = "Removed";	break;
+				default:					what = "Changed";	break;
+			}
+			what.SetTranslatable(kFalse);
+		}
+		else if (resources && resources->GetChangeCount() == 0)
+		{
+			// ★The placeholder the adapter asks for while a comparison is running and found nothing.
+			//   "The definitions are identical" and "nothing has been compared" must not look alike,
+			//   which is the same distinction the story list draws with its "No edits" row.
+			key = Translated(kKCMResourcesNoChangesKey);
+		}
+
+		this->SetNodeName(widgetList, kind, kKCMStoryRowUIDWidgetID);
+		this->SetNodeName(widgetList, key, kKCMStoryRowTextWidgetID);
+		this->SetNodeName(widgetList, what, kKCMStoryRowKindWidgetID);
+		return kTrue;
+	}
+
 	/** Is this node a change that has to be drawn on TWO LINES - i.e. an attribute difference,
 		which today means a ruby (2026-08-22)?
 
@@ -631,6 +688,23 @@ private:
 };
 
 CREATE_PMINTERFACE(KCMStoryTreeWidgetMgr, kKCMStoryTreeWidgetMgrImpl)
+
+//----------------------------------------------------------------------------------------
+// KCMListShowsResources - the ONE place the list asks which mode is on (see KCMStoryTree.h)
+//----------------------------------------------------------------------------------------
+
+bool16 KCMListShowsResources()
+{
+	// ⚠Utils<T>() has no nil guard of its own, so the OBJECT is tested before -> is used
+	//   (utils-boss-facade-access: QueryUtilInterface() dereferences before there is a pointer to
+	//   test). With the model half absent there is no comparison at all, so "not Resources" is the
+	//   answer that leaves the list exactly as it was before this mode existed.
+	Utils<IKCMCompareFacade> compare;
+	if (!compare)
+		return kFalse;
+
+	return (compare->GetCompareMode() == kKCMModeResources) ? kTrue : kFalse;
+}
 
 //----------------------------------------------------------------------------------------
 // KCMStoryTreeRebuild - redraw the list from the model

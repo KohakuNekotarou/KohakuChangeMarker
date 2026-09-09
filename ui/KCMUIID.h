@@ -471,6 +471,10 @@ DECLARE_PMID(kWidgetIDSpace, kKCMStoryTreeWidgetID, kKCMUIPrefix + 47)		// the S
 DECLARE_PMID(kWidgetIDSpace, kKCMStoryRowTextWidgetID, kKCMUIPrefix + 48)	// row, left: the beginning of the text
 DECLARE_PMID(kWidgetIDSpace, kKCMStoryRowKindWidgetID, kKCMUIPrefix + 49)	// row, right: what kind of change it is (Text / Attr / Other / Added)
 DECLARE_PMID(kWidgetIDSpace, kKCMStorySectionLabelWidgetID, kKCMUIPrefix + 50)	// next to the triangle in the upper pane: "Story Edits (3)". The count is appended at run time
+// ★The three column headings above the list. They carried kInvalidWidgetID until 2026-09-09, on the rule that a widget nothing refers to needs no ID -- and then the Resources mode gave the same three columns different names ("Kind / Definition / Change" rather than "UID / Story / Change"), which made them referable after all. ⇒ An ID is not a property of a widget; it is a record of somebody needing to find it.
+DECLARE_PMID(kWidgetIDSpace, kKCMStoryColUIDWidgetID, kKCMUIPrefix + 69)	// heading over the left cell
+DECLARE_PMID(kWidgetIDSpace, kKCMStoryColTextWidgetID, kKCMUIPrefix + 70)	// heading over the middle cell (the one that grows)
+DECLARE_PMID(kWidgetIDSpace, kKCMStoryColKindWidgetID, kKCMUIPrefix + 71)	// heading over the right cell. ⚠Its text is the same in both modes ("Change"), and it still needs an ID: the mode switch writes all three rather than remembering which ones differ
 DECLARE_PMID(kWidgetIDSpace, kKCMStoryRowWidgetID, kKCMUIPrefix + 51)		// the row template itself. ★This is what GetWidgetTypeForNode answers
 DECLARE_PMID(kWidgetIDSpace, kKCMStoryChangeRowWidgetID, kKCMUIPrefix + 63)	// ★the template of a **change row** (the second level). ★It **has to differ from +51 above**: the framework decides from the ID GetWidgetTypeForNode answers whether a widget can be recycled, and answering the same one hands a story row's widget to a change row while scrolling. ⚠**Its two cells reuse +48 and +49** -- widget IDs need be unique only among the descendants of one widget (guide vol2-12). The book rows share the same two
 DECLARE_PMID(kWidgetIDSpace, kKCMStoryRubyRowWidgetID, kKCMUIPrefix + 64)	// ★the template of a **ruby change row**. It has to differ from +63 for the same reason: the ID GetWidgetTypeForNode answers is what decides whether a widget can be recycled. ⚠Without a separate one, the taller ruby widget is handed to an ordinary change row and **the rows overlap** (the height belongs to the widget, so an unchanged ID means the tree does not replace it)
@@ -790,6 +794,10 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowStateWidgetID, kKCMUIPrefix + 49)	// = t
 // carries changes that are not text, so a phrase like "No text edits" would not be true.
 #define kKCMStorySectionLabelKey	kKCMStringPrefix "kKCMStorySectionLabelKey"	// the section heading (the count is appended by C++)
 #define kKCMStoryNoEditsKey		kKCMStringPrefix "kKCMStoryNoEditsKey"		// the single line shown when there is no change
+#define kKCMResourcesSectionLabelKey	kKCMStringPrefix "kKCMResourcesSectionLabelKey"	// the SAME section heading while the Resources mode is on (= "Resources"). The count is appended by C++, as above
+#define kKCMResourcesNoChangesKey		kKCMStringPrefix "kKCMResourcesNoChangesKey"	// the single line shown when the two documents define the same things
+#define kKCMResourcesColKindKey		kKCMStringPrefix "kKCMResourcesColKindKey"	// column heading over the left cell in the Resources mode (= "Kind"), where the story list says "UID"
+#define kKCMResourcesColKeyKey		kKCMStringPrefix "kKCMResourcesColKeyKey"	// column heading over the middle cell (= "Definition"), where the story list says "Story". ★The right-hand one is shared: "Change" names both a story's change kind and a definition's Added/Removed/Changed
 #define kKCMStoryKindTextKey		kKCMStringPrefix "kKCMStoryKindTextKey"		// row, right: characters changed
 #define kKCMStoryKindAttrKey		kKCMStringPrefix "kKCMStoryKindAttrKey"		// row, right: an attribute changed (an applied style, an override or a table rule among them)
 #define kKCMStoryKindOtherKey		kKCMStringPrefix "kKCMStoryKindOtherKey"	// row, right: none of the above (rare in practice; see KCMStoryStamp.h)

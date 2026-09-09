@@ -127,6 +127,10 @@ resource StringTable (kSDKDefStringsResourceID + index_enUS)
                 // enum, the model and the UI to change four letters that never reach the screen.
                 kKCMStorySectionLabelKey,		"Story Edits",
                 kKCMStoryNoEditsKey,			"No edits",
+                kKCMResourcesSectionLabelKey,	"Resources",
+                kKCMResourcesNoChangesKey,		"No differences",
+                kKCMResourcesColKindKey,		"Kind",
+                kKCMResourcesColKeyKey,			"Definition",
                 kKCMStoryKindTextKey,			"Text",
                 kKCMStoryKindAttrKey,			"Attr",
                 kKCMStoryKindOtherKey,		"Other",

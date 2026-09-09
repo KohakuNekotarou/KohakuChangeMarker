@@ -24,6 +24,26 @@
 */
 void KCMStoryTreeRebuild();
 
+/** kTrue when the list is showing DEFINITIONS (the Resources mode) rather than stories.
+
+	★★★THIS IS THE ONE PLACE THE LIST ASKS WHICH MODE IS ON, and everything that draws the list
+	asks it through here: the hierarchy adapter (how many rows, and have they children), the widget
+	manager (what goes in the three cells) and the section heading. Written out at each of those
+	sites instead, the same judgement would sit in three files and they would drift
+	([[one-question-one-place]]).
+
+	★**The list itself is not duplicated.** The Resources mode reuses the row the Story Edits list
+	already draws in the PIXEL mode - a flat row of three plain text cells - because that row is
+	exactly the shape a definition needs:
+
+	    Story       UID    | the story's text     | what kind of change
+	    Resources   kind   | the key              | Added / Removed / Changed
+
+	⚠So the second level is never grown here: a definition has no children, and the row templates,
+	  heights and hit-testing of the change rows are left to the Story mode alone.
+*/
+bool16 KCMListShowsResources();
+
 #endif // __KCMStoryTree_h__
 
 // End, KCMStoryTree.h.

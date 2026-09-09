@@ -44,7 +44,9 @@
 #include "KCMViewSync.h"			// KCMGetLayoutSync / Set / KCMAlignOtherViewsToActiveNow
 #include "KCMScrollMap.h"		// KCMScrollMapAttach / DetachAll / InvalidateAll (the map toggle and Find Overset)
 #include "KCMPanelState.h"		// KCMSavePanelState (the "Save Panel Settings" flyout item)
-#include "KCMPanelTitle.h"		// KCMPanelTitle::Update (put Pixel / Story on the tab)
+#include "KCMPanelTitle.h"		// KCMPanelTitle::Update (put Pixel / Story / Resources on the tab)
+#include "KCMStoryTree.h"		// KCMStoryTreeRebuild - the shared list changes with the mode
+#include "KCMStorySection.h"	// KCMUpdateStorySectionLabel - and so does its heading
 #include "IKCMBookFacade.h"		// ResolveBookPair (deciding whether "Compare Books" may be enabled)
 #include "KCMBookPanelLookup.h"	// KCMGetPanelBookFile (observing the front tab; a UI-side job)
 #include "KCMBookRun.h"		// KCMRunBookComparison (the "Compare Books" flyout item: confirm, compare, show)
@@ -198,6 +200,16 @@ static void KCMApplyCompareMode(KCMCompareMode mode)
 	//   This is the one place the mode changes, so it is the one place that has to write it.
 	//   (When the panel is reopened, KCMPanelObserver::AutoAttach calls the same function.)
 	KCMPanelTitle::Update();
+
+	// ★★THE LIST IS SHARED, so switching the mode changes what belongs in it - and nothing else
+	//   will notice. While a comparison is running, MarkChanges above has already rebuilt it; with
+	//   nothing armed there is no comparison, no notification, and the rows of the mode just left
+	//   would sit there under the heading of the mode just chosen.
+	//   ⚠Both are needed and neither implies the other: the rows come from the tree, the count and
+	//     the word ("Story Edits" / "Resources") from the heading widget beside it.
+	//   Both return quietly when the panel is closed, which is the ordinary case here.
+	KCMStoryTreeRebuild();
+	KCMUpdateStorySectionLabel();
 
 	KCMSetStatus(msg);
 }

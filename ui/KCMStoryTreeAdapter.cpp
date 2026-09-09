@@ -17,6 +17,18 @@
 //  meant two row templates, two widget managers and two click handlers, i.e. the same judgements
 //  made in two places, which is how they come to disagree ([[one-question-one-place]]).
 //
+//  ★★★AND IT WAS REJECTED AGAIN ON 2026-09-09, when a THIRD mode arrived. The Resources mode
+//  (which definitions differ) shows its rows in THIS list, using the row the PIXEL mode already
+//  draws - a flat row of three plain text cells - because that is exactly the shape a definition
+//  needs: kind, key, and Added/Removed/Changed.
+//  ⚠A second tree was proposed and withdrawn after measuring: the argument for it was that the
+//    Story rows are expensive to draw (KCMStoryCellView, ruby and kenten, two-line heights), and
+//    that expense is ALL IN THE SECOND LEVEL, which the Resources mode never grows. The level this
+//    list shares is the cheap one. ⇒ **Measure where the complexity is before splitting to escape
+//    it.**
+//  ★Which of the two the list is showing is asked in ONE function, KCMListShowsResources
+//    (KCMStoryTree.h); this adapter, the widget manager and the section heading all call it.
+//
 //  *** THE NODE CLASS IS NOW OURS: KCMStoryNodeID. *** It used to be ListIndexNodeID, the class
 //  ListTreeViewAdapter creates and compares against internally - which is exactly why a flat list
 //  could get away with overriding one method. A hierarchy has to answer "what is this node's
@@ -45,6 +57,8 @@
 #include "Utils.h"					// Utils<IKCMStoryEditsFacade>()
 #include "IKCMCompareFacade.h"	// IsArmed - is a comparison running at all (Facade since 2026-08-13, Task 11)
 #include "IKCMStoryEditsFacade.h"	// GetRowCount / GetChangeCount (Facade since 2026-08-13, Task 14)
+#include "IKCMResourcesFacade.h"	// GetChangeCount - the rows while the Resources mode is on
+#include "KCMStoryTree.h"			// KCMListShowsResources - the one place the list asks the mode
 
 /** Hierarchy adapter for the Story Edits list: hidden root -> one node per changed story ->
 	one node per difference inside it (none at all in the pixel mode).
@@ -78,8 +92,26 @@ public:
 		if (nodeID == nil || nodeID->IsChangeRow())
 			return 0;					// a change is a leaf
 
+		// ★A DEFINITION HAS NO CHILDREN. The Resources mode's list is one level deep: what changed
+		//   INSIDE a definition is shown in the panel's upper pane, not as rows under it, so that
+		//   the same values are not presented twice (design section 6-1b).
+		if (KCMListShowsResources() && !nodeID->IsRoot())
+			return 0;
+
 		if (nodeID->IsRoot())
 		{
+			if (KCMListShowsResources())
+			{
+				const int32 defs = Utils<IKCMResourcesFacade>()->GetChangeCount();
+				if (defs > 0)
+					return defs;
+
+				// Same placeholder rule as the story list below: while a comparison is running,
+				// "the definitions are identical" gets a row of its own so that it cannot be read
+				// as "nothing has been compared yet".
+				return Utils<IKCMCompareFacade>()->IsArmed() ? 1 : 0;
+			}
+
 			const int32 rows = Utils<IKCMStoryEditsFacade>()->GetRowCount();
 			if (rows > 0)
 				return rows;
@@ -112,7 +144,11 @@ public:
 			return KCMStoryNodeID::CreateStory(nth);
 		}
 
-		if (nth >= Utils<IKCMStoryEditsFacade>()->GetChangeCount(nodeID->GetRow()))
+		// ★Bounds-checked against GetNumChildren rather than against the facade directly, so that
+		//   "how many children has this node" is answered in ONE place. In the Resources mode that
+		//   answer is 0 and this returns kInvalidNodeID, which is what makes a definition a leaf
+		//   without a second test of the mode here.
+		if (nth >= this->GetNumChildren(node))
 			return kInvalidNodeID;
 		return KCMStoryNodeID::CreateChange(nodeID->GetRow(), nth);
 	}
