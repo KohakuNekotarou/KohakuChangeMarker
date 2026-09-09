@@ -53,6 +53,7 @@
 #include "KCMBookOpen.h"			// KCMBookMenuRow / CanStart / StartComparisonForRow (the "Start Change Marker" row item)
 #include "KCMChangeNav.h"			// KCMRefreshNavPosition (the overset toggle changes what Prev/Next walks)
 #include "KCMStoryRefresh.h"		// KCMStoryRowCanRefresh / KCMStoryRefreshMenuRow (the "Refresh Story Comparison" row item)
+#include "KCMResourceXml.h"			// KCMResourceRowHasXml / KCMShowResourceXml (the "Show as XML" row item)
 #include "KCMPanelAlpha.h"		// KCMGetPanelTranslucent / Set / Apply (the "Translucent Panel" flyout item)
 #include "KCMStoryPressMarks.h"	// KCMStoryMarksRefresh (rebuild the always-on marks of Story mode)
 // (★`IActiveContext.h` / `IDocument.h` / `PersistUtils.h` were removed: **none of them was ever
@@ -850,6 +851,13 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 			KCMStoryRefreshMenuRow();
 			break;
 
+		// "Show as XML" on a DEFINITION row's context menu (2026-09-09). Shows the element the row
+		// names, from both documents, in a modal alert. ★Which row it was is noted the same way as
+		// for the item above, by KCMStorySetMenuRow at the right click.
+		case kKCMResourceRowXmlActionID:
+			KCMShowResourceXml();
+			break;
+
 		// (The panel tool button's flyout had two cases here for a few hours on 2026-09-04. They
 		//  are gone with their ActionDefs: the flyout is a Win32 popup raised by KCMToolButtonEH,
 		//  and it calls KCMToolButtonPressed itself. ⚠Do not add them back without a MenuDef --
@@ -1247,11 +1255,21 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 			// ★It goes through the same test as the execution (KCMStoryRowCanRefresh), so the menu and the
 			//   result cannot part company. It is live only **in Story mode, while comparing, on a row
 			//   whose story has a counterpart** (user’s instruction, "only in the story mode").
-			//   ⚠This too is the only item on its row menu, so when it is greyed **the menu does not appear
-			//     at all** -- that a right click in Pixel mode brings up nothing is decided by this one
-			//     line.
+			//   ⚠**It shares its row menu with "Show as XML" since 2026-09-09**, and the two are live in
+			//     OPPOSITE modes - so each mode's menu still shows exactly one command, and in the Pixel
+			//     mode both are greyed and the menu does not appear at all. The older note here said
+			//     "the only item on its row menu"; that is what changed, and the behaviour it described
+			//     did not.
 			listToUpdate->SetNthActionState(i, KCMStoryRowCanRefresh() ? kEnabledAction
 			                                                            : kDisabled_Unselected);
+		}
+		else if (action == kKCMResourceRowXmlActionID)
+		{
+			// ★The same test the action runs before it does anything (KCMResourceRowHasXml), so the
+			//   menu and the result cannot part company. Live only **in the Resources mode, while
+			//   comparing, on a definition the list still holds**.
+			listToUpdate->SetNthActionState(i, KCMResourceRowHasXml() ? kEnabledAction
+			                                                          : kDisabled_Unselected);
 		}
 	}
 }

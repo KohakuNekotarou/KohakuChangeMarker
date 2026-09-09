@@ -267,6 +267,8 @@
       <ClCompile Include="..\..\..\source\sdksamples\KCM\ui\KCMScrollMap.cpp"/>
       <ClCompile Include="..\..\..\source\sdksamples\KCM\ui\KCMStorySection.cpp"/>
       <ClCompile Include="..\..\..\source\sdksamples\KCM\ui\KCMResourceValue.cpp"/>
+      <ClCompile Include="..\..\..\source\sdksamples\KCM\ui\KCMResourceXml.cpp"/>
+      <ClCompile Include="..\..\..\source\sdksamples\KCM\ui\KCMXmlPretty.cpp"/>
       <ClCompile Include="..\..\..\source\sdksamples\KCM\ui\KCMStoryJump.cpp"/>
       <ClCompile Include="..\..\..\source\sdksamples\KCM\ui\KCMStoryNav.cpp"/>
       <ClCompile Include="..\..\..\source\sdksamples\KCM\ui\KCMStoryRefresh.cpp"/>
@@ -317,6 +319,8 @@
       <ClInclude Include="..\..\..\source\sdksamples\KCM\ui\KCMScrollMap.h"/>
       <ClInclude Include="..\..\..\source\sdksamples\KCM\ui\KCMStorySection.h"/>
       <ClInclude Include="..\..\..\source\sdksamples\KCM\ui\KCMResourceValue.h"/>
+      <ClInclude Include="..\..\..\source\sdksamples\KCM\ui\KCMResourceXml.h"/>
+      <ClInclude Include="..\..\..\source\sdksamples\KCM\ui\KCMXmlPretty.h"/>
       <ClInclude Include="..\..\..\source\sdksamples\KCM\ui\KCMStoryJump.h"/>
       <ClInclude Include="..\..\..\source\sdksamples\KCM\ui\KCMStoryNav.h"/>
       <ClInclude Include="..\..\..\source\sdksamples\KCM\ui\KCMStoryRefresh.h"/>

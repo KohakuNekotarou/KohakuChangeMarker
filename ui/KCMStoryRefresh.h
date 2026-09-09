@@ -31,15 +31,29 @@
 
 #include "BaseType.h"	// bool16, int32
 
-/** Remember which Story Edits row the right-click menu is about.
+/** Remember which row of the list the right-click menu is about.
 
-	Called by KCMStoryRowEH::RButtonDn as the menu is popped, and read back by the action and by
-	its enabling test. ★STORY ROWS ONLY - a right click on a change row raises no menu at all and
-	never reaches here (user's call, 2026-08-21; the reasoning is at that function).
+	Called by KCMStoryRowEH::RButtonDn as the menu is popped, and read back by the actions on that
+	menu and by their enabling tests. ★TOP-LEVEL ROWS ONLY - a right click on a child row raises no
+	menu at all and never reaches here (user's call, 2026-08-21; the reasoning is at that function).
 
-	@param rowIndex the story row, or -1 for "no row" (which greys the item).
+	⚠★★**WHICH LIST THE INDEX BELONGS TO DEPENDS ON THE MODE** (2026-09-09). The list is shared:
+	  in the Story mode this is a story of IKCMStoryEditsFacade, and in the Resources mode it is a
+	  definition of IKCMResourcesFacade. **The number alone does not say which**, so every reader
+	  has to ask the mode first - which each of them does, because each is enabled in one mode only.
+
+	@param rowIndex the row, or -1 for "no row" (which greys every item on the menu).
 */
 void KCMStorySetMenuRow(int32 rowIndex);
+
+/** The row the right-click menu was popped over, or -1.
+
+	★Added 2026-09-09 so that the Resources mode's own menu item can find its definition. The
+	stash was private to the Story refresh until then, and the alternative - a second stash for the
+	second mode - would be the same fact recorded twice, which is how the two would drift apart.
+	⚠Read it with the mode in hand; see the warning above.
+*/
+int32 KCMStoryMenuRow();
 
 /** Whether "Refresh Story Comparison" may be offered for the stashed row.
 

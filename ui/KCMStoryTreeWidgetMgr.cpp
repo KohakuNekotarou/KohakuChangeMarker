@@ -57,6 +57,7 @@
 #include "IKCMStoryEditsFacade.h"	// the rows themselves (Facade since 2026-08-13, Task 14)
 #include "IKCMCompareFacade.h"		// GetCompareMode - asked in ONE function, KCMListShowsResources
 #include "IKCMResourcesFacade.h"	// the definition rows, when that is what the list is showing
+#include "KCMResourceValue.h"		// KCMShortResourceValue - what a `$ID/...` value reads as
 #include "KCMStoryKinds.h"		// KCMStoryChangeKind - the bits KindLabel names. A header of types
 									// only, which is why it may be included from either side of the
 									// split (KCMStoryStamp.h, where these used to live, cannot: its
@@ -516,12 +517,19 @@ private:
 		//   for everyone. What is shortened is one cell of one list, because of what the cell NEXT
 		//   to it happens to say.
 		//
-		// ⚠**ONLY WHEN THE KEY REALLY BEGINS WITH THE KIND, AND ONLY WHEN SOMETHING IS LEFT.**
-		//   Not every key is built that way: `DocumentPreference` IS its kind and has no name after
-		//   it, and stripping there would leave an empty cell - a row that says nothing at all. The
-		//   test is a comparison, not an assumption about the format.
-		//   ★The separator is not named: `/` today, and the one character after the kind whatever it
-		//     becomes. Naming it would be a second place to keep the format.
+		// ⚠**THREE THINGS ARE CHECKED, NOT TWO.** The key has to begin with the kind, something has
+		//   to be left over, **and the character between them has to be a SEPARATOR**.
+		//   - `DocumentPreference` IS its kind with no name after it; stripping would leave an empty
+		//     cell, a row that says nothing at all.
+		//   - ⚠★★And without the third test, a key that merely STARTS with the kind's letters is
+		//     silently mutilated: kind `Color` against a key `ColorABC` passes "begins with" and
+		//     "something is left", and one character too many comes off - `BC`. (Found on
+		//     2026-09-09 re-reading this the same day it was written. The comment that stood here
+		//     claimed "the test is a comparison, not an assumption about the format" while the code
+		//     went on assuming the byte after the kind was a separator.)
+		//   ★The separator is still not NAMED - `/` today, `#` and `@` in other shapes
+		//     (KCMResourceDiff.h). What is asserted is only that it is not a letter or a digit,
+		//     which is what tells `Color/Black` from `ColorABC`.
 		if (haveRow)
 		{
 			const CharCounter kindLen = kind.CharCount();
@@ -529,7 +537,12 @@ private:
 			{
 				PMString head(key);
 				head.Remove(kindLen, kMaxInt32);		// keep only as many characters as the kind has
-				if (head.Compare(kTrue, kind) == 0)
+				// ★PlatformChar's own predicates rather than arithmetic of ours: it is multibyte
+				//   aware, and IsAlpha / IsNumber are exactly the question being asked
+				//   (PlatformChar.h:199-203, :177-179).
+				const PlatformChar between = key.GetChar(kindLen);
+				const bool16 isSeparator = (!between.IsAlpha() && !between.IsNumber()) ? kTrue : kFalse;
+				if (isSeparator && head.Compare(kTrue, kind) == 0)
 					key.Remove(0, kindLen + 1);			// the kind, and the separator after it
 			}
 		}
@@ -576,7 +589,12 @@ private:
 		if (have)
 		{
 			name.SetTranslatable(kFalse);
-			value = target;
+
+			// ★What the cell shows is the TAIL of the value: `$ID/[No paragraph style]` reads as
+			//   "[No paragraph style]" (the user's call, 2026-09-09). The rule and its guard live
+			//   in KCMResourceValue.h, because the band above this list has to shorten the other
+			//   side the same way.
+			value = KCMShortResourceValue(target);
 			value.SetTranslatable(kFalse);
 
 			// ⚠NOT AN ASCII CHARACTER, so `≠` is set as UTF-16 rather than written as a narrow

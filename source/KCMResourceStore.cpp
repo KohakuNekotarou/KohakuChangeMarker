@@ -215,8 +215,19 @@ static bool16 KCMEnsureAttrCache(int32 n)
 	// ⚠**The bodies are std::string on the way in.** The differ takes no SDK types on purpose
 	//   (KCMResourceAttrDiff.h), so the conversion happens here, at the boundary, once per row
 	//   rather than once per attribute.
-	KCMDiffAttributes(std::string(gChanges[n].fSourceBody.GetPlatformString().c_str()),
-					  std::string(gChanges[n].fTargetBody.GetPlatformString().c_str()),
+	//
+	// ⚠★★★**UTF-8, NOT GetPlatformString** (2026-09-09, the user: "when a font is applied to a
+	//   style, the font part of the result comes out garbled - the Japanese"). A font is written
+	//   as `<AppliedFont type="string">小塚明朝 Pr6N</AppliedFont>`, so the value travels through
+	//   here as text. GetPlatformString hands over whatever the SYSTEM CODE PAGE can hold, and the
+	//   PMString built back from a `const char*` on the way out reads it by its own rule - two
+	//   ends, two assumptions, and a name in between that survives only if they happen to agree.
+	//   ★GetUTF8String / SetUTF8String names the encoding at BOTH ends, so nothing has to agree by
+	//     luck, and nothing is dropped for having no place in the code page.
+	//   ★The differ is unaffected: every character it looks for (`<`, `>`, `=`, `"`, `/`) is
+	//     ASCII, and no ASCII byte can occur inside a multi-byte UTF-8 sequence.
+	KCMDiffAttributes(gChanges[n].fSourceBody.GetUTF8String(),
+					  gChanges[n].fTargetBody.GetUTF8String(),
 					  gAttrCache);
 	gAttrRow = n;
 	return kTrue;
@@ -238,9 +249,15 @@ bool16 KCMResourceStore::GetNthAttr(int32 n, int32 i, PMString& outName,
 	if (i < 0 || i >= static_cast<int32>(gAttrCache.size()))
 		return kFalse;
 
-	outName = gAttrCache[i].fName.c_str();
-	outSource = gAttrCache[i].fSource.c_str();
-	outTarget = gAttrCache[i].fTarget.c_str();
+	// ⚠**SetUTF8String, NOT `= c_str()`.** The cache holds UTF-8 (see KCMEnsureAttrCache), and
+	//   assigning a `const char*` to a PMString reads it as a PLATFORM string - which is how a
+	//   Japanese font name came out garbled. Naming the encoding at both ends is the whole fix.
+	//   ★SetUTF8String marks the string untranslatable itself (PMString.h:209), which is what the
+	//     three calls below used to do; they are kept because that promise is worth stating where
+	//     it matters rather than relying on a side effect of the setter.
+	outName.SetUTF8String(gAttrCache[i].fName);
+	outSource.SetUTF8String(gAttrCache[i].fSource);
+	outTarget.SetUTF8String(gAttrCache[i].fTarget);
 	outName.SetTranslatable(kFalse);
 	outSource.SetTranslatable(kFalse);
 	outTarget.SetTranslatable(kFalse);

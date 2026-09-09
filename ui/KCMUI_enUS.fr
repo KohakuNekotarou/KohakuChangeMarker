@@ -78,6 +78,7 @@ resource StringTable (kSDKDefStringsResourceID + index_enUS)
                 kKCMBookNoPairKey,				"Select a book tab in the Book panel, and open a second book.",
                 kKCMBookRowStartMenuKey,			"Start Change Marker",
                 kKCMStoryRowRefreshMenuKey,		"Refresh Story Comparison",
+                kKCMResourceRowXmlMenuKey,		"Show as XML",
                 kKCMIgnorePageNumMenuKey,			"Ignore Page Number Marker",
                 // ("Hold to Hide Marks" was retired on 2026-08-22 - see KCMUI.fr's MenuDef note.)
 

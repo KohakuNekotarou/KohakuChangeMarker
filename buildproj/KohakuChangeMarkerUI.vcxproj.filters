@@ -120,6 +120,12 @@
       <ClCompile Include="..\..\..\source\sdksamples\KCM\ui\KCMResourceValue.cpp">
          <Filter>Source Files</Filter>
       </ClCompile>
+      <ClCompile Include="..\..\..\source\sdksamples\KCM\ui\KCMResourceXml.cpp">
+         <Filter>Source Files</Filter>
+      </ClCompile>
+      <ClCompile Include="..\..\..\source\sdksamples\KCM\ui\KCMXmlPretty.cpp">
+         <Filter>Source Files</Filter>
+      </ClCompile>
       <ClCompile Include="..\..\..\source\sdksamples\KCM\ui\KCMStoryJump.cpp">
          <Filter>Source Files</Filter>
       </ClCompile>
@@ -234,6 +240,12 @@
          <Filter>Header Files</Filter>
       </ClInclude>
       <ClInclude Include="..\..\..\source\sdksamples\KCM\ui\KCMResourceValue.h">
+         <Filter>Header Files</Filter>
+      </ClInclude>
+      <ClInclude Include="..\..\..\source\sdksamples\KCM\ui\KCMResourceXml.h">
+         <Filter>Header Files</Filter>
+      </ClInclude>
+      <ClInclude Include="..\..\..\source\sdksamples\KCM\ui\KCMXmlPretty.h">
          <Filter>Header Files</Filter>
       </ClInclude>
       <ClInclude Include="..\..\..\source\sdksamples\KCM\ui\KCMStoryJump.h">

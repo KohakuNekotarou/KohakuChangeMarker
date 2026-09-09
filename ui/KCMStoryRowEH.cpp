@@ -70,7 +70,6 @@
 // Project includes:
 #include "KCMUIID.h"
 #include "KCMStoryJump.h"
-#include "KCMStoryTree.h"			// KCMListShowsResources - the row menu is the story list's alone
 #include "KCMStoryRefresh.h"		// where the right-click menu's row is stashed for the action to read
 
 namespace
@@ -302,16 +301,18 @@ bool16 KCMStoryRowEH::LButtonUp(IEvent* e)
 // only asking for a menu should not move the user's place in the list - the same rule the chapter
 // rows and KBS both settled on. ⚠It is also what makes the row under the cursor the ONLY thing this
 // can be about, which is why the row is read from this widget's own node.
-// ⚠**AND NOT IN THE RESOURCES MODE AT ALL** (2026-09-09). Every item on this menu acts on a STORY -
-// it is aimed through KCMStorySetMenuRow at a row of the story list - and a definition row carries
-// the same kind of index, so the menu would come up looking right and act on whatever story
-// happened to sit at that number. A row with nothing to offer stays silent, which is the rule the
-// change rows above are already held to.
+// ★★**THE MENU SERVES BOTH MODES** (2026-09-09). It was closed to the Resources mode for a few
+// hours, because every item on it then acted on a STORY and a definition row carries the same kind
+// of index - the menu would have come up looking right and acted on whatever story sat at that
+// number. It is open again now that the menu HAS an item for definitions ("Show as XML"), and what
+// keeps the two apart is not this line but their enabling: each is live in one mode only, and a
+// greyed item does not appear at all. ⇒ In the Pixel mode both are greyed and no menu appears,
+// which is what a right click there did before any of this existed.
 bool16 KCMStoryRowEH::RButtonDn(IEvent* e)
 {
 	int32 changeIndex = -1;
 	const int32 rowIndex = this->RowFromNode(&changeIndex);
-	if (rowIndex < 0 || changeIndex >= 0 || e == nil || KCMListShowsResources())
+	if (rowIndex < 0 || changeIndex >= 0 || e == nil)
 		return TreeNodeEventHandler::RButtonDn(e);
 
 	KCMStorySetMenuRow(rowIndex);

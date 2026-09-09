@@ -415,6 +415,8 @@ DECLARE_PMID(kActionIDSpace, kKCMClearChecksActionID, kKCMUIPrefix + 52)	// "Cle
 //   the same reason: it was the Translucent Toolbox toggle.)
 DECLARE_PMID(kActionIDSpace, kKCMClearMarksFromDocActionID, kKCMUIPrefix + 56)	// "Clear Marks from Document": takes OUR labels off every page and leaves every other label alone. Greyed with no active document
 DECLARE_PMID(kActionIDSpace, kKCMClearChosenActionID, kKCMUIPrefix + 54)	// "Clear Target and Source" on the panel flyout (a plain command; 2026-09-05, user's request). Drops both chosen documents, so the next Start falls back to the automatic rule and the panel's Target:/Source: lines go back to bare labels. A lent Source is forgotten with them. ★★It STOPS a running comparison first (2026-09-07, user's instruction -- it used to be greyed while armed and to leave the comparison running). Live through kCustomEnabling whenever a comparison is armed OR at least one of the two is chosen. ⚠The number is +54, not +50 or +51: those two are retired, see the note above
+// ★"Show as XML" on a DEFINITION row's context menu (2026-09-09, the user's request). Shows the element the row names, both documents' copies, in a modal alert the way How to Use is shown. ★It shares kKCMStoryRowMenuName with the Story refresh item and the two are enabled in OPPOSITE modes, so each mode's menu has exactly one live item and InDesign hides the greyed one. KCMResourceXml.cpp
+DECLARE_PMID(kActionIDSpace, kKCMResourceRowXmlActionID, kKCMUIPrefix + 58)
 DECLARE_PMID(kActionIDSpace, kKCMPopupModeResourcesActionID, kKCMUIPrefix + 57)	// ★"Compare mode > Resources Changes" on the flyout (2026-09-09). The third mode: export each document as XML and compare the DEFINITIONS - styles, swatches, layers - so that a change to something nobody has applied is reported. It moves no pixel and touches no word, which is why neither of the other two modes can see it. Exclusive with Pixel and Story, the selected one carrying the check (kCustomEnabling + kSelectedAction). KCMActionComponent.cpp
 
 // (The template's spare //DECLARE_PMID(kActionIDSpace, kKCMActionID, kKCMUIPrefix + 41) was
@@ -696,6 +698,7 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowStateWidgetID, kKCMUIPrefix + 49)	// = t
 // (kKCMToolFlyoutMenuName was here on 2026-09-04 and is gone with the MenuDef it named: the panel
 //  tool button's flyout is a Win32 popup, built in code by KCMToolButtonEH.)
 #define kKCMStoryRowRefreshMenuKey	kKCMStringPrefix "kKCMStoryRowRefreshMenuKey"	// the "Refresh Story Comparison" item on a Story Edits row context menu
+#define kKCMResourceRowXmlMenuKey	kKCMStringPrefix "kKCMResourceRowXmlMenuKey"	// the "Show as XML" item on a definition row's context menu (the Resources mode)
 // The Story Edits row context menu. The same mechanism as the chapter menu above:
 // KCMStoryRowEH::RButtonDn puts the MenuDef subtree of this name up at the cursor through
 // HandlePopupMenu.
@@ -1073,6 +1076,7 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowStateWidgetID, kKCMUIPrefix + 49)	// = t
 // flyout, under kKCMBookRowMenuName).
 #define kKCMBookRowStartMenuItemPosition	1.0		// chapter row context menu: "Start Change Marker"
 #define kKCMStoryRowRefreshMenuItemPosition	1.0	// Story Edits row context menu: "Refresh Story Comparison" (a different subtree, so it may share 1.0 with the chapter row)
+#define kKCMResourceRowXmlMenuItemPosition	2.0	// ★the SAME subtree: "Show as XML" sits under the refresh item. The two are never live at once (opposite modes), so the order only decides what a future third item would sit between
 // (The panel tool button's flyout had two positions here on 2026-09-04. Gone with its MenuDef --
 //  a Win32 popup orders its items by the order they are appended, in code.)
 // -- the informational items, at the end --

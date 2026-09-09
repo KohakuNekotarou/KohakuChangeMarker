@@ -52,6 +52,27 @@ void WriteBand(const PMString& text)
 }	// anonymous namespace
 
 //----------------------------------------------------------------------------------------
+// KCMShortResourceValue (declared in KCMResourceValue.h)
+//----------------------------------------------------------------------------------------
+PMString KCMShortResourceValue(const PMString& value)
+{
+	// ★PMString's own search, not a loop over bytes: it counts CHARACTERS and is multibyte-safe,
+	//   which matters because a definition can be called "見出し/大". The product uses it the same
+	//   way to cut a suffix (MediaLocation.h:84, AnimationUIManagePresetsDialogObserver.cpp:308).
+	const CharCounter cut = value.LastIndexOfCharacter('/');
+
+	// No separator, or nothing after the last one: the value stands as it is. ⚠The second case is
+	// the guard that matters - shortening "a/" to "" would replace a real value with a blank cell.
+	if (cut < 0 || cut + 1 >= value.CharCount())
+		return value;
+
+	PMString shortened(value);
+	shortened.Remove(0, cut + 1);
+	shortened.SetTranslatable(kFalse);
+	return shortened;
+}
+
+//----------------------------------------------------------------------------------------
 // KCMShowSelectedResource (declared in KCMResourceValue.h)
 //----------------------------------------------------------------------------------------
 bool16 KCMShowSelectedResource(int32 row, int32 attrIndex)
@@ -106,9 +127,12 @@ bool16 KCMShowSelectedResource(int32 row, int32 attrIndex)
 		if (source.IsEmpty())
 			continue;
 
-		source.SetTranslatable(kFalse);
+		// ★Shortened the same way the row below it is, so the two never disagree about what the
+		//   value "is" (KCMShortResourceValue carries the rule and the reason).
+		PMString shown = KCMShortResourceValue(source);
+		shown.SetTranslatable(kFalse);
 		text.Append("\n");
-		text.Append(source);
+		text.Append(shown);
 	}
 
 	// ★THE LABEL ALONE IS A REAL ANSWER, and it has several causes that all mean one thing to the

@@ -1244,6 +1244,19 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKCMStoryRowMenuName,
 		kKCMStoryRowRefreshMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
+
+		// ----- The Resources rows: "Show as XML" (2026-09-09) -----
+		// ★THE SAME SUBTREE AS THE ITEM ABOVE, on purpose. The list is shared between the two
+		// modes, so one right-click menu serves both, and **the two items are enabled in opposite
+		// modes** (kCustomEnabling -> KCMStoryRowCanRefresh / KCMResourceRowHasXml). A greyed item
+		// does not appear at all, so each mode shows a menu with exactly one command on it and
+		// neither mode ever sees the other's.
+		// ⚠That also means the menu is EMPTY - and so does not appear - in the Pixel mode, which is
+		// what it did before this item existed.
+		kKCMResourceRowXmlActionID,
+		kKCMStoryRowMenuName,
+		kKCMResourceRowXmlMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
 	}
 };
 
@@ -1568,6 +1581,18 @@ resource ActionDef (kSDKDefActionResourceID)
 		kOtherActionArea,
 		kNormalAction,
 		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates greys it outside the Story mode (KCMStoryRowCanRefresh)
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		// "Show as XML" on a definition row's context menu (2026-09-09).
+		// ⚠ Not on the flyout, for the same reason as the two items above: it acts on the ROW the
+		// menu was popped over, which a flyout has no way of naming (KCMStoryRowEH stashes it).
+		kKCMActionComponentBoss,
+		kKCMResourceRowXmlActionID,
+		kKCMResourceRowXmlMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates greys it outside the Resources mode (KCMResourceRowHasXml)
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 

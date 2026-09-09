@@ -160,19 +160,76 @@ bool16 KCMDiffResources(const KCMResourceList& source, const KCMResourceList& ta
 			sourceTaken.push_back(kFalse);
 		}
 
+		// ***** WHO PAIRS WITH WHOM IS DECIDED FIRST, FOR EVERYTHING, AND ONLY THEN REPORTED. *****
+		// Two passes settle it; the report below then walks the target in order, so what the reader
+		// sees is still the newer document's own order however the pair was found.
+		K2Vector<int32> targetMatch;
+		K2Vector<bool16> targetPairedById;
 		for (int32 t = 0; t < targetCount; ++t)
 		{
-			const PMString targetKey = KCMResourceKeyOf(target[t]);
+			targetMatch.push_back(-1);
+			targetPairedById.push_back(kFalse);
+		}
 
-			int32 match = -1;
+		// ----- PASS 1: StyleUniqueId. ★THE ID IS ASKED BEFORE THE NAME (2026-09-09, the user:
+		//   "not by name - if there is a unique id, use that; paragraph ids to each other").
+		//
+		// ★★WHY THIS ORDER IS STRICTLY BETTER, and it took writing it the other way round to see:
+		//     * a RENAME    - the id holds, the name does not  -> pass 1 gets it right
+		//     * a style DELETED and RE-CREATED under the same name - the id does NOT hold, so
+		//       pass 1 passes and the NAME in pass 2 pairs them, which is the answer a reader wants
+		//     * two styles that SWAP names - only the id can tell which is which. Name-first pairs
+		//       each with the other's old self and reports two large content changes instead of
+		//       two renames.
+		//   ⇒ Every case the name answers, it still answers - in pass 2, from the leftovers.
+		//
+		// ⚠BOTH SIDES MUST CARRY AN ID, AND THE KINDS MUST MATCH. Most definitions have no id at
+		//   all, and "" == "" would pair every idless item with the first idless item of its kind.
+		// ⚠In two SEPARATELY BUILT documents no two ids agree, so this pass finds nothing there and
+		//   the whole comparison falls through to the name - which is what the mode was built on
+		//   (design §8-2 calls the one-wayness a limitation; here it is the safety catch).
+		for (int32 t = 0; t < targetCount; ++t)
+		{
+			if (target[t].fUniqueId.IsEmpty())
+				continue;
+
+			for (int32 s = 0; s < sourceCount; ++s)
+			{
+				if (sourceTaken[s] || source[s].fUniqueId.IsEmpty())
+					continue;
+				if (source[s].fUniqueId == target[t].fUniqueId && source[s].fKind == target[t].fKind)
+				{
+					targetMatch[t] = s;
+					targetPairedById[t] = kTrue;
+					sourceTaken[s] = kTrue;
+					break;
+				}
+			}
+		}
+
+		// ----- PASS 2: the key, for everything the id could not settle.
+		for (int32 t = 0; t < targetCount; ++t)
+		{
+			if (targetMatch[t] >= 0)
+				continue;
+
+			const PMString targetKey = KCMResourceKeyOf(target[t]);
 			for (int32 s = 0; s < sourceCount; ++s)
 			{
 				if (!sourceTaken[s] && sourceKeys[s] == targetKey)
 				{
-					match = s;
+					targetMatch[t] = s;
+					sourceTaken[s] = kTrue;
 					break;
 				}
 			}
+		}
+
+		// ----- THE REPORT, in the target's own order.
+		for (int32 t = 0; t < targetCount; ++t)
+		{
+			const PMString targetKey = KCMResourceKeyOf(target[t]);
+			const int32 match = targetMatch[t];
 
 			if (match < 0)
 			{
@@ -186,8 +243,13 @@ bool16 KCMDiffResources(const KCMResourceList& source, const KCMResourceList& ta
 				continue;
 			}
 
-			sourceTaken[match] = kTrue;
 			++stats.fPaired;
+
+			// ★A RENAME is a pair the id made whose KEYS disagree. Counted here rather than in
+			//   pass 1 because that is where both keys are in hand, and because "paired by id" and
+			//   "renamed" are not the same thing: most id pairs have matching names too.
+			if (targetPairedById[t] && sourceKeys[match] != targetKey)
+				++stats.fRenamed;
 
 			const bool16 sameBody = (source[match].fBody == target[t].fBody);
 
@@ -373,6 +435,10 @@ void KCMDescribeResourceDiff(PMString& out)
 				  + ", added " + Num(stats.fAdded)
 				  + ", removed " + Num(stats.fRemoved)
 				  + ", changed " + Num(stats.fChanged)
+				  // ★Part of `changed`, not additional to it: a rename IS a change. It is named
+				  //   separately because it is the one kind the KEY could not find, so a number
+				  //   above zero says the second pass earned its place on this document pair.
+				  + " (renamed " + Num(stats.fRenamed) + ")"
 				  + "; sieve agree-same-id " + Num(stats.fAgreeSameId)
 				  + ", agree-other-id " + Num(stats.fAgreeOtherId)
 				  + ", differ-same-id " + Num(stats.fDifferSameId)

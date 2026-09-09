@@ -41,14 +41,23 @@ int32 gMenuRow = -1;
 }	// anonymous namespace
 
 //----------------------------------------------------------------------------------------
-// KCMStorySetMenuRow
-//   ⚠NO GETTER, where the chapter rows have KCMBookMenuRow: that item is handed its row, while
-//   both readers of this one take no argument and test gMenuRow themselves.
+// KCMStorySetMenuRow / KCMStoryMenuRow
+//   ⚠The note that stood here - "NO GETTER, where the chapter rows have KCMBookMenuRow, because
+//   both readers of this one take no argument" - stopped being true on 2026-09-09, when the
+//   Resources mode put a second item on this menu. That item's row belongs to the OTHER list, so
+//   it cannot go through KCMStoryRowCanRefresh and needs the number itself.
+//   ⇒ A getter, rather than a second stash: two records of "which row was right-clicked" would be
+//   the same fact written twice, and one of them would go stale.
 //----------------------------------------------------------------------------------------
 
 void KCMStorySetMenuRow(int32 rowIndex)
 {
 	gMenuRow = rowIndex;
+}
+
+int32 KCMStoryMenuRow()
+{
+	return gMenuRow;
 }
 
 //----------------------------------------------------------------------------------------
