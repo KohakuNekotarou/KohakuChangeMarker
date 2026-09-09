@@ -85,6 +85,25 @@ public:
 	    in front of the user, and the Source's cannot be read anywhere else at all. */
 	virtual bool16	GetNthValues(int32 n, PMString& outSourceBody, PMString& outTargetBody) = 0;
 
+	/** How many ATTRIBUTES of row n differ.
+
+	    ★This is what the panel's upper pane shows: not the whole body, which is a wall of XML,
+	    but the one line that moved. 0 is a real answer - the element changed somewhere this
+	    differ does not look, inside a child element. */
+	virtual int32	GetNthAttrCount(int32 n) = 0;
+
+	/** One differing attribute of row n: its name and each side's value.
+
+	    ⚠A side that does not HAVE the attribute comes back EMPTY, which is how an Added or a
+	    Removed definition is told from one whose value merely changed - **so do not draw an
+	    arrow between two values without looking at whether both are there.**
+	    ⚠Values are VERBATIM. `PointSize` comes back as `8.503937007874015`, with no unit and no
+	    rounding: the export writes bare numbers and nothing knows which attributes are lengths.
+
+	    @return kFalse when n or i is out of range, leaving the outputs alone. */
+	virtual bool16	GetNthAttr(int32 n, int32 i, PMString& outName,
+							   PMString& outSource, PMString& outTarget) = 0;
+
 	/** One line for the status line. ⚠"not compared yet", "no changes" and a failure all read
 	    differently - an empty list and a failed comparison must never look alike. */
 	virtual void	GetSummary(PMString& out) = 0;

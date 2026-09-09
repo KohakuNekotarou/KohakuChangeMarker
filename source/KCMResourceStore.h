@@ -76,6 +76,22 @@ namespace KCMResourceStore
 	    part of a result and the panel needs them only for the row a person has selected. */
 	bool16	GetNthValues(int32 n, PMString& outSourceBody, PMString& outTargetBody);
 
+	/** How many ATTRIBUTES of row n are not the same on the two sides.
+
+	    ★The answer is parsed on demand and the last row asked about is kept, because the panel
+	    asks in a burst about the one row a person selected. 0 is a real answer: the element
+	    changed somewhere this differ does not look (inside a child element, say). */
+	int32	GetNthAttrCount(int32 n);
+
+	/** One differing attribute of row n.
+
+	    ⚠A side that does not HAVE the attribute comes back EMPTY - that is how an Added or a
+	    Removed definition is told from one whose value merely changed.
+	    ⚠Values are VERBATIM: no unit is appended and nothing is rounded (KCMResourceAttrDiff.h).
+
+	    @return kFalse when n or i is out of range, leaving the outputs alone. */
+	bool16	GetNthAttr(int32 n, int32 i, PMString& outName, PMString& outSource, PMString& outTarget);
+
 	/** One line for the status line: how many were compared and what came of it. */
 	void	GetSummary(PMString& out);
 

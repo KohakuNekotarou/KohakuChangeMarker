@@ -567,6 +567,13 @@ public:
 	virtual bool16	GetNthValues(int32 n, PMString& outSourceBody, PMString& outTargetBody)
 					{ return KCMResourceStore::GetNthValues(n, outSourceBody, outTargetBody); }
 
+	virtual int32	GetNthAttrCount(int32 n)
+					{ return KCMResourceStore::GetNthAttrCount(n); }
+
+	virtual bool16	GetNthAttr(int32 n, int32 i, PMString& outName,
+							   PMString& outSource, PMString& outTarget)
+					{ return KCMResourceStore::GetNthAttr(n, i, outName, outSource, outTarget); }
+
 	virtual void	GetSummary(PMString& out)
 					{ KCMResourceStore::GetSummary(out); }
 };

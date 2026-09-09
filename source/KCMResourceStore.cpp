@@ -23,10 +23,14 @@
 #include <sstream>
 #include <string>
 
+// General includes (continued):
+#include <vector>
+
 // Project includes:
 #include "KCMCore.h"				// KCMArmedTargetDB / KCMArmedSourceDB
 #include "KCMResourceBytes.h"
 #include "KCMResourceDiff.h"
+#include "KCMResourceAttrDiff.h"	// which ATTRIBUTES of one definition differ
 #include "KCMResourceSnapshot.h"
 #include "KCMResourceStore.h"
 
@@ -34,6 +38,16 @@
 static KCMResourceChangeList gChanges;
 static KCMResourceDiffStats gStats;
 static bool16 gHasResult = kFalse;
+
+/** The attribute diff of ONE row, cached.
+
+    ★ONE ROW, NOT A MAP. The panel asks about the row a person selected, and it asks in a burst -
+    first how many attributes differ, then each of them - so a single-entry cache turns that burst
+    into one parse. A map would hold every row's parse for a list nobody is looking at.
+    ⚠It is dropped by Clear(), which Rebuild() calls first, so it can never describe a comparison
+      that is no longer held. */
+static int32 gAttrRow = -1;
+static std::vector<KCMAttrChange> gAttrCache;
 
 /** Why the last rebuild failed, so the summary can say so rather than looking like "no changes".
     ⚠★AN EMPTY LIST AND A FAILED COMPARISON MUST NOT READ ALIKE - that is the whole reason this
@@ -145,6 +159,12 @@ void KCMResourceStore::Clear()
 	gHasResult = kFalse;
 	gWhyNot.Clear();
 	gWhyNot.SetTranslatable(kFalse);
+
+	// ⚠The cached attribute diff belongs to a ROW OF gChanges, so it goes with them. Left behind,
+	//   the next comparison's row 0 would be answered with the previous one's attributes - and it
+	//   would look entirely plausible.
+	gAttrRow = -1;
+	gAttrCache.clear();
 }
 
 bool16 KCMResourceStore::HasResult()
@@ -180,6 +200,50 @@ bool16 KCMResourceStore::GetNthValues(int32 n, PMString& outSourceBody, PMString
 	outTargetBody = gChanges[n].fTargetBody;
 	outSourceBody.SetTranslatable(kFalse);
 	outTargetBody.SetTranslatable(kFalse);
+	return kTrue;
+}
+
+/** Make sure gAttrCache holds row n's attributes. @return kFalse when n is out of range. */
+static bool16 KCMEnsureAttrCache(int32 n)
+{
+	if (n < 0 || n >= static_cast<int32>(gChanges.size()))
+		return kFalse;
+
+	if (gAttrRow == n)
+		return kTrue;
+
+	// ⚠**The bodies are std::string on the way in.** The differ takes no SDK types on purpose
+	//   (KCMResourceAttrDiff.h), so the conversion happens here, at the boundary, once per row
+	//   rather than once per attribute.
+	KCMDiffAttributes(std::string(gChanges[n].fSourceBody.GetPlatformString().c_str()),
+					  std::string(gChanges[n].fTargetBody.GetPlatformString().c_str()),
+					  gAttrCache);
+	gAttrRow = n;
+	return kTrue;
+}
+
+int32 KCMResourceStore::GetNthAttrCount(int32 n)
+{
+	if (!KCMEnsureAttrCache(n))
+		return 0;
+
+	return static_cast<int32>(gAttrCache.size());
+}
+
+bool16 KCMResourceStore::GetNthAttr(int32 n, int32 i, PMString& outName,
+									PMString& outSource, PMString& outTarget)
+{
+	if (!KCMEnsureAttrCache(n))
+		return kFalse;
+	if (i < 0 || i >= static_cast<int32>(gAttrCache.size()))
+		return kFalse;
+
+	outName = gAttrCache[i].fName.c_str();
+	outSource = gAttrCache[i].fSource.c_str();
+	outTarget = gAttrCache[i].fTarget.c_str();
+	outName.SetTranslatable(kFalse);
+	outSource.SetTranslatable(kFalse);
+	outTarget.SetTranslatable(kFalse);
 	return kTrue;
 }
 
