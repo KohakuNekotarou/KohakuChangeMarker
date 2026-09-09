@@ -58,14 +58,19 @@ enum KCMBookModeVerdict
     chapter's text move at all". Narrowing this one to match would mean running the text diff on
     every chapter of the book to produce one bit.
 
-    ⚠**UNMEASURED, AND IT CONTRADICTS A MEASUREMENT** (flagged 2026-09-10). The claim was that two
-    documents which are not versions of one another come out CHANGED, because stories are matched by
-    UID and none of them line up (KCMStoryStamp.h reasons that way about text PASTED into a new
-    document). But 2026-08-15 measured the opposite for documents BUILT separately by the same
-    script: the story UIDs lined up, the counters were identical (all eight read 7), and the panel
-    reported no edits although the text differed. Which of the two happens turns on whether two
-    separately built documents end up with the same story UIDs, and nobody has measured that for a
-    book. ⇒ **Do not rely on this paragraph; measure it.** (Spec map BK-78 carries the same warning.)
+    ⚠★★★**TWO DOCUMENTS THAT ARE NOT VERSIONS OF ONE ANOTHER COME OUT UNCHANGED, NOT CHANGED --
+    EVEN WHERE THEIR TEXT DIFFERS.** Measured 2026-09-10, and it is the opposite of what this
+    paragraph claimed until then. Four documents BUILT SEPARATELY by one script all had
+    `storyId 257` and all read `change=6 / text=2 / attr=4 / other=0`: the UIDs line up, so the
+    stories pair, and the counters are VERSION NUMBERS rather than content, so they agree however
+    different the words are. (The reasoning that used to be here belongs to text PASTED into a new
+    document, which is what KCMStoryStamp.h is talking about.)
+    ⚠**The danger is the direction.** This is not a false alarm, it is a SILENT MISS: a chapter
+    whose body text really did change is answered "no story edits". The pixels still catch it if the
+    change is visible -- the measured pair came back Changed with `Pixel` alone -- but a change in
+    OVERSET text is seen by nobody, and that chapter reads NoChange.
+    ⇒ A book comparison means what it says only for two books split from one original. (Spec map
+    BK-78 carries this, with the measurement.)
 
     @param targetDB the newer chapter. nil is unjudged.
     @param sourceDB the older chapter. nil is unjudged.
