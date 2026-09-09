@@ -719,8 +719,8 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 	//
 	// ★WHY THE FRAMES DID NOT HOLD IT. The guide is explicit - "we treat the width in the .fr file
 	//   as a MINIMUM width" (Using EVE, Example 2), and EVE "automatically resizes static text,
-	//   buttons, check boxes, radio buttons and drop-down lists" to fit their labels. So 364 in the
-	//   frame is a floor, never a ceiling.
+	//   buttons, check boxes, radio buttons and drop-down lists" to fit their labels. So the number
+	//   in the frame (364 when this was written, 514 since 2026-09-10) is a floor, never a ceiling.
 	// ⚠ kEVEAlignFill does not stop it either, and the older comments that said it did were wrong:
 	//   Fill means "take the PARENT's width", and the parent is itself grown by the child that asks
 	//   for more. Fill decides how the space is shared, not how much there is.
@@ -2566,11 +2566,11 @@ resource KCMBookRowWidget(kKCMBookRowRsrcID + index_enUS)
 	__FILE__, __LINE__,
 	kKCMBookRowWidgetID, kPMRsrcID_None,	// WidgetId, RsrcId
 	kBindLeft | kBindRight,				// Frame binding: follow the list's width
-	// 364 to match the list it sits in (2026-08-13). ★The binding above means this is only a starting
-	// size - the row is stretched to the list's real width - but a template whose numbers disagree
-	// with the list's is a trap for whoever reads the cell frames below and works out the insets
-	// from them.
-	Frame(0, 0, 364, kKCMBookRowHeight),	// Frame (left, top, right, bottom)
+	// 514 to match the list it sits in (364 until 2026-09-10, when the Change column was added).
+	// ★The binding above means this is only a starting size - the row is stretched to the list's
+	// real width - but a template whose numbers disagree with the list's is a trap for whoever
+	// reads the cell frames below and works out the insets from them.
+	Frame(0, 0, 514, kKCMBookRowHeight),	// Frame (left, top, right, bottom)
 	kTrue, kTrue,						// Visible, Enabled
 	"",									// Panel name
 	{
@@ -2624,14 +2624,48 @@ resource KCMBookRowWidget(kKCMBookRowRsrcID + index_enUS)
 			kPMRsrcID_None,					// RsrcId
 			kBindRight,						// Frame binding: stay at the row's right edge
 			// ★Moved as a WHOLE rather than narrowed, every time the row changed width: 380→377 for
-			//   the wider inset, then 377→347→197→241 as the dialog was resized. The right inset
-			//   stays 11px, matching the left (364 - 11 = 353), and the column KEEPS ITS 112px
-			//   throughout. Narrowing it instead would have clipped "ChapterDeleted" without a sign -
-			//   see the note above.
+			//   the wider inset, then 377→347→197→241 as the dialog was resized. The column KEEPS
+			//   ITS 112px throughout; narrowing it instead would have clipped "ChapterDeleted"
+			//   without a sign - see the note above.
+			// ⚠**2026-09-10: it did NOT move when the Change column was added.** The row grew from
+			//   364 to 514 and all 150 of those pixels went to the new column on the right, so this
+			//   one keeps both its width and its place. What changed is that the 11px right inset is
+			//   now the CHANGE column's (514 - 503), not this one's.
 			Frame(241, 1, 353, kKCMBookRowHeight - 2),	// Frame (112px)
 			kTrue, kTrue,					// Visible, Enabled
 			kAlignRight,					// Alignment
 			kDontEllipsize, kFalse,			// Ellipsize style, Convert ampersands
+			"",								// Text Control Data
+			0,								// WidgetId for associated control for shortcut focus
+			kDialogWindowSystemScriptFontId, kDialogWindowSystemScriptFontId,
+		),
+
+		// Far right: WHICH of the three comparisons found something (2026-09-10). The verdict beside
+		// it says THAT the chapter changed; this says in what way, which is the whole reason for
+		// running three comparisons rather than one.
+		// ★150px, and the number is a BUDGET: the longest string this can hold is
+		//   "Pixel Story Resources?" (22 characters). Measured on screen before it was trusted - the
+		//   dialog font is not the palette font, and the panel's kind column had to be narrowed to
+		//   one word after exactly this kind of estimate.
+		// ⚠**kEllipsizeEnd, NOT the kDontEllipsize of the verdict beside it.** kDontEllipsize is
+		//   only right where the longest value is KNOWN to fit; where it does not, the text is
+		//   clipped with nothing on screen to say so. This plug-in has twice shown a truncated
+		//   string that read as a different, complete one (a chapter name without its extension, and
+		//   a "15 chapters" that read as "5"). A phrase is read from the front, so the tail is what
+		//   to lose - and losing it visibly is the point.
+		// ★kBindRight, like the verdict: the chapter NAME stays the only cell bound on both sides,
+		//   which is what KCMBookTreeWidgetMgr's empty ApplyIndentToWidget override relies on.
+		// ★Left-aligned, unlike the verdict: this cell's content varies in length, and a
+		//   right-aligned column of varying strings makes the eye hunt for where each one starts.
+		KCMBookRowCellWidget
+		(
+			kKCMBookRowChangeWidgetID,		// WidgetId
+			kPMRsrcID_None,					// RsrcId
+			kBindRight,						// Frame binding: stay at the row's right edge
+			Frame(353, 1, 503, kKCMBookRowHeight - 2),	// Frame (150px; 514 - 503 = the same 11px inset as the left)
+			kTrue, kTrue,					// Visible, Enabled
+			kAlignLeft,						// Alignment
+			kEllipsizeEnd, kFalse,			// Ellipsize style, Convert ampersands
 			"",								// Text Control Data
 			0,								// WidgetId for associated control for shortcut focus
 			kDialogWindowSystemScriptFontId, kDialogWindowSystemScriptFontId,
@@ -3291,18 +3325,24 @@ resource KCMBookDialogWidget (kKCMBookDialogRsrcID + index_enUS)
 			kKCMBookTargetTextWidgetID,	// WidgetId
 			kSysStaticTextPMRsrcId,			// RsrcId
 			kBindNone,						// Frame binding
-			// ***** 364 HERE IS WHAT MAKES THE WINDOW 400px WIDE. ***** This number, not the root
-			// frame, is the dialog's width: 364 + 2x10 margin + 16 = 400 (formula and the eight
+			// ***** 514 HERE IS WHAT MAKES THE WINDOW 550px WIDE. ***** This number, not the root
+			// frame, is the dialog's width: 514 + 2x10 margin + 16 = 550 (formula and the eight
 			// measurements behind it are at the root frame above).
-			// ★400 is what the TITLE needs. At 356 it came out as "Kohaku Change Marker - Compare
+			// ⚠ **It was 364 -> 400 until 2026-09-10**, when the chapter list gained a third column
+			//   (which of the three comparisons found the change). All 150 of the added pixels went
+			//   to that column; the two columns that were already there did not move.
+			// ★400 was what the TITLE needed. At 356 it came out as "Kohaku Change Marker - Compare
 			//   ..." - 32 of its 36 characters - and the user asked for a size where it fits
-			//   properly. The title is invisible to EVE, so it can only be served from here.
+			//   properly. The title is invisible to EVE, so it can only be served from here. 514 is
+			//   past that floor, so the title is no longer what decides the width.
 			//   ⚠ Re-measure if the title string changes.
 			// ★The hint line ("Right-click a changed chapter...", ~318px) is the widest CONTENT, so
 			//   anything from ~318 up is safe for the content itself; the extra is for the title.
 			// ⚠ EVERY CHILD BELOW CARRIES THE SAME NUMBER, and they must stay equal - the widest one
-			//   wins silently, so a stale 500 in any of them would set the width on its own.
-			Frame(0, 0, 364, 20)			// Frame (l,t,r,b)
+			//   wins silently, so a stale 364 in any of them would leave that one child short while
+			//   the other five set the width - which is what the 2026-09-10 widening had to check
+			//   for, six frames at a time.
+			Frame(0, 0, 514, 20)			// Frame (l,t,r,b)
 			kTrue, kTrue, kAlignLeft,		// Visible, Enabled, Alignment
 			// ★★Ellipsized at the BEGINNING (2026-08-12, was kEllipsizeMiddle). These lines carry a
 			//   FULL PATH now, and what tells two versions of one job apart is the tail - the last
@@ -3343,7 +3383,7 @@ resource KCMBookDialogWidget (kKCMBookDialogRsrcID + index_enUS)
 			kKCMBookSourceTextWidgetID,	// WidgetId
 			kSysStaticTextPMRsrcId,			// RsrcId
 			kBindNone,						// Frame binding
-			Frame(0, 0, 364, 20)			// Frame (l,t,r,b) - same width as Target above
+			Frame(0, 0, 514, 20)			// Frame (l,t,r,b) - same width as Target above
 			kTrue, kTrue, kAlignLeft,		// Visible, Enabled, Alignment
 			kEllipsizeBeginning, kFalse,	// Ellipsize style, Convert ampersands (as Target above)
 			"",								// Text (the controller fills it)
@@ -3370,7 +3410,7 @@ resource KCMBookDialogWidget (kKCMBookDialogRsrcID + index_enUS)
 			kKCMBookStatusTextWidgetID,	// WidgetId
 			kSysStaticTextPMRsrcId,			// RsrcId
 			kBindNone,						// Frame binding
-			Frame(0, 0, 364, 20)			// Frame (l,t,r,b) - same width as the lines above
+			Frame(0, 0, 514, 20)			// Frame (l,t,r,b) - same width as the lines above
 			kTrue, kTrue, kAlignLeft,		// Visible, Enabled, Alignment
 			kEllipsizeMiddle, kFalse,		// Ellipsize style, Convert ampersands
 			kKCMBookReadyKey,				// Text (replaced after each comparison)
@@ -3402,7 +3442,7 @@ resource KCMBookDialogWidget (kKCMBookDialogRsrcID + index_enUS)
 			kInvalidWidgetID,		// WidgetId
 			kSysStaticTextPMRsrcId,			// RsrcId
 			kBindNone,						// Frame binding
-			Frame(0, 0, 364, 20)			// Frame (l,t,r,b) - same width as the lines above
+			Frame(0, 0, 514, 20)			// Frame (l,t,r,b) - same width as the lines above
 			kTrue, kTrue, kAlignLeft,		// Visible, Enabled, Alignment
 			kEllipsizeEnd, kFalse,			// Ellipsize style, Convert ampersands
 			kKCMBookHintKey,				// Text (fixed - nothing rewrites this)
@@ -3422,7 +3462,7 @@ resource KCMBookDialogWidget (kKCMBookDialogRsrcID + index_enUS)
 		(
 			kKCMBookTreeWidgetID, kPMRsrcID_None,	// WidgetId, RsrcId
 			kBindNone,						// Frame binding (EVE places it)
-			Frame(0, 0, 364, kKCMBookRowHeight * 10)	// Frame - same width as the lines above
+			Frame(0, 0, 514, kKCMBookRowHeight * 10)	// Frame - same width as the lines above
 			kTrue, kTrue,					// Visible, Enabled
 			kTrue,							// EraseBeforeDraw
 			kInterfacePaletteFill,			// InterfaceColor
@@ -3473,11 +3513,12 @@ resource KCMBookDialogWidget (kKCMBookDialogRsrcID + index_enUS)
 	//     = [10,20,10,10] (EveInfo.fh:96-99, four of those). ★The line named EveInfo.fh:89-93 as its
 	//     own evidence, and those five lines are exactly the five that do not include a 20.
 	// ⚠ The dialog is 10px narrower and shorter each way than it was at 15. EVE sizes the window from
-	//   the children (all 364 wide) plus the margin; the fixed Frame above is overridden.
+	//   the children (all 514 wide) plus the margin; the fixed Frame above is overridden.
 	//   ⚠"all 500 wide" until 2026-08-18 (B-U1): the children were narrowed to 364 on 2026-08-15, and
-	//     the warning further up ("a stale 500 in any of them would set the width on its own") was
+	//     the warning further up ("a stale value in any of them would leave that child short") was
 	//     written about exactly that number - the file kept the stale value in the line that explains
-	//     the mechanism while warning about it in the line that lists the frames.
+	//     the mechanism while warning about it in the line that lists the frames. ★It was widened to
+	//     514 on 2026-09-10 for the chapter list's third column, and this line was re-counted then.
 	// ★For the record, KCM's own panel sits at +8 (root x1=119 → labels at x1=127) - but that is
 	//   drawn from absolute coordinates in its .fr, not by EVE, which is why it can hold a value the
 	//   ladder does not have.

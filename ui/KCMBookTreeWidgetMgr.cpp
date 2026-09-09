@@ -4,8 +4,9 @@
 //
 //  KohakuChangeMarker (KCM)
 //
-//  How one row of the book comparison dialog's chapter list is built and filled. Two cells, left
-//  to right: the chapter's file name and the verdict on it.
+//  How one row of the book comparison dialog's chapter list is built and filled. Three cells, left
+//  to right: the chapter's file name, the verdict on it, and WHICH of the three comparisons
+//  produced that verdict (the third arrived on 2026-09-10, with the third comparison mode).
 //
 //  Structure copied from KCMStoryTreeWidgetMgr.cpp, which is the same thing for the panel. Two
 //  differences, and both come from living in a dialog rather than in a palette:
@@ -43,6 +44,7 @@
 
 // Project includes:
 #include "KCMBookDialog.h"		// KCMBookDialogRows - the model
+#include "KCMBookModeNames.h"	// KCMBookModesString - the Change column's text
 #include "KCMBookResult.h"		// KCMChapterResult / KCMChapterStateText
 #include "KCMBookTree.h"
 #include "KCMUIID.h"
@@ -149,17 +151,20 @@ public:
 		const int32 index = nodeID != nil ? nodeID->GetIndex() : -1;
 		const bool16 known = index >= 0 && index < static_cast<int32>(rows.size());
 
-		// ★BOTH cells are written on EVERY apply, including the unknown case. Row widgets are
+		// ★ALL THREE cells are written on EVERY apply, including the unknown case. Row widgets are
 		//   recycled as the list scrolls, so a cell left alone keeps whatever the row it used to be
-		//   had in it.
+		//   had in it. ⚠The Change cell is the one this bites hardest: it is EMPTY for most row
+		//   kinds (Added, Deleted, NotCompared), so a "write it only when there is something to
+		//   say" shape would leave the previous chapter's modes standing on exactly those rows.
 		//
 		// ★An unreadable node writes blanks and still answers kTrue. Answering kFalse would be
 		//   telling the framework to throw this widget away, build another and ask again
 		//   (CTreeViewWidgetMgr.h:160-163) - which cannot help, because a row the model no longer
 		//   holds will be missing from the new widget too.
-		PMString name, state;
+		PMString name, state, change;
 		name.SetTranslatable(kFalse);		// a file name, and then a reason - neither is a key
 		state.SetTranslatable(kFalse);		// the result's own vocabulary (KCMBookResult.h)
+		change.SetTranslatable(kFalse);		// mode names, and they are not keys either
 		if (known)
 		{
 			const KCMChapterResult& row = rows[index];
@@ -190,10 +195,22 @@ public:
 
 			state = PMString(KCMChapterStateText(row.fState));
 			state.SetTranslatable(kFalse);
+
+			// ★BUILT FROM THE TWO BIT FIELDS, not stored as text on the row: the model decides
+			//   WHICH comparisons found something, and this decides how to spell it - the split the
+			//   rest of this boundary keeps (the model hands over numbers, the view writes words).
+			// ⚠SetUTF8String rather than assigning the const char*: the string arrives as a
+			//   std::string, and a PMString built from a bare pointer reads it as a PLATFORM string.
+			//   Everything produced here is ASCII so nothing is at risk today; naming the encoding
+			//   at both ends is the habit that stopped a Japanese font name being mangled in the
+			//   Resources list (KCMResourceStore.cpp).
+			change.SetUTF8String(KCMBookModesString(row.fChangedModes, row.fUnjudgedModes));
+			change.SetTranslatable(kFalse);
 		}
 
 		this->SetNodeName(widgetList, name, kKCMBookRowNameWidgetID);
 		this->SetNodeName(widgetList, state, kKCMBookRowStateWidgetID);
+		this->SetNodeName(widgetList, change, kKCMBookRowChangeWidgetID);
 		return kTrue;
 	}
 };

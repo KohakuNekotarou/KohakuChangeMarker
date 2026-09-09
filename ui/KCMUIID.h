@@ -553,6 +553,13 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookTreeWidgetID, kKCMUIPrefix + 62)		// the ch
 DECLARE_PMID(kWidgetIDSpace, kKCMBookRowWidgetID, kKCMUIPrefix + 51)		// = the same value as kKCMStoryRowWidgetID. The row template itself. ★This is what GetWidgetTypeForNode answers
 DECLARE_PMID(kWidgetIDSpace, kKCMBookRowNameWidgetID, kKCMUIPrefix + 48)	// = the same value as kKCMStoryRowTextWidgetID. Row, left: the chapter file name (with " - reason" appended only when it failed)
 DECLARE_PMID(kWidgetIDSpace, kKCMBookRowStateWidgetID, kKCMUIPrefix + 49)	// = the same value as kKCMStoryRowKindWidgetID. Row, right: the verdict (Changed / NoChange / ChapterAdded / ChapterDeleted / Failed). Fixed width, right-aligned
+// ★**NO STORY COUNTERPART**, unlike the three above -- so the role-for-role correspondence stops
+//   here, and this one takes a value of its own. The Story Edits row has two cells and this list
+//   now has three: the chapter's file name, the verdict, and WHICH of the three comparisons
+//   produced that verdict (2026-09-10).
+//   ⚠**+72 was the highest unused slot when this was added**, counted rather than guessed: in use
+//     were 0, 1, 26, 34-53 and 57-71.
+DECLARE_PMID(kWidgetIDSpace, kKCMBookRowChangeWidgetID, kKCMUIPrefix + 72)	// Row, far right: which comparisons found a difference ("Pixel Story Resources"; a mode that could not be judged carries a '?'). ★Empty for ChapterAdded / ChapterDeleted / NotCompared and for an unchanged chapter -- nothing was looked at, and an empty cell is the honest answer
 //====================================================================================
 // ★★MIND THE CEILING -- this prefix owns "+0 .. +127" (★128 slots **per ID space**)
 //
