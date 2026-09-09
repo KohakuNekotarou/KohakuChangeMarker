@@ -94,6 +94,65 @@ static void KCMParseLogNum(const char* text, int32 n)
 }
 
 //========================================================================================
+// What a UID looks like
+//========================================================================================
+
+bool16 KCMIsOpaqueSelf(const PMString& value)
+{
+	// InDesign writes a UID as 'u' followed by lower-case hexadecimal: "ueb", "uf4", "u13f".
+	// Every name this mode meets carries something a UID cannot -- a '/' ("Color/Black"), a
+	// capital letter ("dABullet0"), a space, or a character outside ASCII (a font name).
+	const int32 length = static_cast<int32>(value.CharCount());
+	if (length < 2)
+		return kFalse;			// "" is not a UID, and neither is a single letter
+
+	if (value.GetWChar(0).GetValue() != 'u')
+		return kFalse;
+
+	for (int32 i = 1; i < length; ++i)
+	{
+		const uint32 c = value.GetWChar(i).GetValue();
+		const bool16 isHexDigit = ((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'));
+		if (!isHexDigit)
+			return kFalse;
+	}
+	return kTrue;
+}
+
+bool16 KCMIsOpaqueReference(const PMString& value)
+{
+	// One UID, or a whitespace-separated list of nothing but UIDs. ★The list form is not a
+	// refinement: measured 2026-09-09, the document element's StoryList reads "u100 u119 ud0",
+	// and with only the single-UID test it counted as a name and made <Document> differ between
+	// every pair of documents there could ever be.
+	const int32 length = static_cast<int32>(value.CharCount());
+	if (length == 0)
+		return kFalse;
+
+	PMString piece;
+	piece.SetTranslatable(kFalse);
+	bool16 sawOne = kFalse;
+
+	for (int32 i = 0; i <= length; ++i)
+	{
+		const uint32 c = (i < length) ? value.GetWChar(i).GetValue() : 0x20;
+		if (c == 0x20 || c == 0x09)
+		{
+			if (!piece.IsEmpty())
+			{
+				if (!KCMIsOpaqueSelf(piece))
+					return kFalse;		// something in the list is not a UID
+				sawOne = kTrue;
+				piece.Clear();
+			}
+			continue;
+		}
+		piece.AppendW(UTF32TextChar(c));
+	}
+	return sawOne;
+}
+
+//========================================================================================
 // The blacklist
 //========================================================================================
 
@@ -176,6 +235,16 @@ void AppendOpenTag(PMString& body, const PMString& name, ISAXAttributes* attrs, 
 				continue;
 
 			const PMString attrName(qname);
+
+			// ★THE DOCUMENT'S OWN FILE NAME IS NOT A DEFINITION. The two documents being
+			//   compared are different files by definition, so this attribute differs every
+			//   single time and would put a permanent row in every result. It is the ONE
+			//   attribute named here rather than tested by shape, because "a name that is
+			//   always different" has no shape - and the panel already shows both file names
+			//   on its Target and Source lines, so nothing is lost by leaving it out.
+			if (name == "Document" && attrName == "Name")
+				continue;
+
 			if (attrName == "StyleUniqueId")
 			{
 				// Held apart rather than dropped: reissued on every edit, so it is a sieve, not
@@ -187,17 +256,83 @@ void AppendOpenTag(PMString& body, const PMString& name, ISAXAttributes* attrs, 
 			body.Append(" ");
 			body.Append(attrName);
 			body.Append("=\"");
-			body.Append(PMString(value));
+
+			// ★A UID IS NOT CONTENT: it is written down as "(uid)" so that the attribute's
+			//   PRESENCE is still compared while its value - which two documents can never
+			//   share - is not. See KCMIsOpaqueSelf for what this cost before it was here.
+			const PMString attrValue(value);
+			if (KCMIsOpaqueReference(attrValue))
+				body.Append("(uid)");
+			else
+				body.Append(attrValue);
+
 			body.Append("\"");
 		}
 	}
 	body.Append(">");
 }
 
+/** kTrue when `text` is nothing but whitespace - the indentation between two elements.
+
+    ★The exported XML is indented, so every element is wrapped in whitespace. Kept, it makes a
+    CONTAINER differ whenever its number of children changes: measured 2026-09-09, adding one
+    swatch reported the colour group as Changed and the only difference in its entire body was two
+    spaces.
+
+    ⚠★★THE FIRST VERSION OF THIS TEST ALSO REQUIRED A LINE BREAK, on the reasoning that a real
+    value would never carry one. IT DID NOT WORK, and the way it failed is worth keeping: the
+    parser hands one run of indentation over in SEVERAL PIECES, and the pieces without the line
+    break went straight through - after that build the colour group was still Changed, with 21
+    spaces on one side and 23 on the other. A per-piece test cannot ask a question about the whole
+    run.
+    What is left is XML's own "ignorable whitespace", and it is safe here because these elements
+    hold no mixed content: a definition's values live in its attributes, not between its tags. */
+bool16 IsIgnorableWhitespace(const PMString& text)
+{
+	const int32 length = static_cast<int32>(text.CharCount());
+	if (length == 0)
+		return kFalse;
+
+	for (int32 i = 0; i < length; ++i)
+	{
+		const uint32 c = text.GetWChar(i).GetValue();
+		if (c != 0x20 && c != 0x09 && c != 0x0A && c != 0x0D)
+			return kFalse;
+	}
+	return kTrue;
+}
+
 }	// anonymous namespace
 
-/** Reads every element and keeps the ones directly under <Document> that the blacklist lets
-    through, flattening each one (attributes and descendants) back into text. */
+/** An item that has been opened and not yet closed, together with the depth it began at.
+
+    ★The two travel in ONE container rather than in two parallel ones so that a failure to grow
+    cannot leave them disagreeing about how many items are open. */
+struct KCMOpenItem
+{
+	KCMResourceItem	fItem;
+	int32			fDepth;
+};
+
+/** Reads every element and keeps the ones the blacklist lets through, flattening each one back
+    into text.
+
+    ★★★WHAT COUNTS AS ONE ITEM, and the second rule is the one that was MEASURED INTO EXISTENCE.
+    An element becomes an item when
+       (1) it sits directly under <Document> -- the 83 kinds this mode is stated in; or
+       (2) it carries a Self, however deep it is.
+    Rule (2) was added on 2026-09-09 after the first live reading: the STYLES DO NOT SIT UNDER
+    <Document>. They hang inside RootParagraphStyleGroup and its four siblings, so with rule (1)
+    alone a newly added paragraph style came back as "RootParagraphStyleGroup changed" -- and ten
+    edited styles would have come back as that same single line, with no way to say which. A Self
+    is exactly what InDesign gives the things a person names and changes one at a time, which
+    makes it the right test rather than a list of kinds (a list would be a whitelist, and the next
+    document may hold a kind this one did not).
+
+    ★AND AN ITEM'S BODY EXCLUDES ITS ITEM CHILDREN. Without that, one change is reported twice --
+    measured in the same reading: adding one swatch produced both "Color added" and "ColorGroup
+    changed", because the group's body carried the swatch reference too. Handing each item only
+    what no other item claims makes the double report impossible rather than tolerated. */
 /** ★It derives from CSAXContentHandler, which is the SDK's own base class for this: it supplies
     an empty body for every method of ISAXContentHandler and keeps the document locator, so only
     the ones that do something appear below. The first version of this file implemented all
@@ -207,8 +342,8 @@ class KCMResourceSaxHandler : public CSAXContentHandler
 {
 public:
 	KCMResourceSaxHandler(IPMUnknown* boss)
-		: CSAXContentHandler(boss), fSAXServices(nil), fDepth(0), fSeen(0),
-		  fCollecting(kFalse), fList(nil), fSinkChecked(kFalse) {}
+		: CSAXContentHandler(boss), fSAXServices(nil), fDepth(0), fSeen(0), fSkipDepth(0),
+		  fList(nil), fSinkChecked(kFalse) {}
 	virtual ~KCMResourceSaxHandler();
 
 	// ----- the seven that do something; the rest are CSAXContentHandler's empty bodies
@@ -229,15 +364,22 @@ private:
 	/** The list to fill, fetched once from our own boss. */
 	KCMResourceList*	List();
 
+	/** Tell the caller, through the sink, that what came back is not a whole reading. */
+	void				NoteMalformed();
+
 	/** Held from Register to the destructor, AddRef'd - the sample does the same and says why:
 	    the SAX services object outlives the handler, so caching the pointer is safe here even
 	    though caching an interface generally is not. */
 	ISAXServices*		fSAXServices;
 
-	int32				fDepth;			// 1 = <Document>, 2 = the definitions we keep
-	int32				fSeen;			// TEMPORARY (2026-09-09): elements arrived so far
-	bool16				fCollecting;	// inside a kept element
-	KCMResourceItem		fCurrent;
+	int32				fDepth;			// 1 = <Document>, 2 = the kinds this mode is stated in
+	int32				fSeen;			// elements arrived so far (for the step log)
+	int32				fSkipDepth;		// >0 while inside an excluded subtree; counts its depth
+
+	/** The items open right now, outermost first. ⚠A stack rather than one current item because
+	    items NEST: a style sits inside a style group, which sits under <Document>. */
+	K2Vector<KCMOpenItem>	fOpen;
+
 	KCMResourceList*	fList;
 	bool16				fSinkChecked;
 };
@@ -264,6 +406,13 @@ KCMResourceList* KCMResourceSaxHandler::List()
 	return fList;
 }
 
+void KCMResourceSaxHandler::NoteMalformed()
+{
+	InterfacePtr<IKCMResourceSink> sink(this, IID_IKCMRESOURCESINK);
+	if (sink != nil)
+		sink->NoteMalformed();
+}
+
 void KCMResourceSaxHandler::Register(ISAXServices* saxServices, IPMUnknown* /*importer*/)
 {
 	// ★NO ELEMENT NAMES ARE CLAIMED, on purpose. RegisterElementHandler is how a handler says
@@ -287,7 +436,8 @@ void KCMResourceSaxHandler::StartDocument(ISAXServices* /*saxServices*/)
 {
 	KCMParseLog("  >> StartDocument");
 	fDepth = 0;
-	fCollecting = kFalse;
+	fSkipDepth = 0;
+	fOpen.clear();
 	fSinkChecked = kFalse;
 	fList = nil;
 	fSeen = 0;
@@ -296,14 +446,12 @@ void KCMResourceSaxHandler::StartDocument(ISAXServices* /*saxServices*/)
 void KCMResourceSaxHandler::EndDocument()
 {
 	KCMParseLogNum("  >> EndDocument, elements seen =", fSeen);
-	if (fCollecting)
+	if (!fOpen.empty())
 	{
-		// An element was open when the document ended: the XML is malformed. Say so rather than
-		// filing a half-read definition that would compare as "changed" against a whole one.
-		InterfacePtr<IKCMResourceSink> sink(this, IID_IKCMRESOURCESINK);
-		if (sink != nil)
-			sink->NoteMalformed();
-		fCollecting = kFalse;
+		// Items were still open when the document ended: the XML is malformed. Say so rather than
+		// filing half-read definitions that would compare as "changed" against whole ones.
+		this->NoteMalformed();
+		fOpen.clear();
 	}
 }
 
@@ -322,77 +470,118 @@ void KCMResourceSaxHandler::StartElement(const WideString& /*uri*/, const WideSt
 	if (fSeen <= 8 || fDepth == 2)
 		KCMParseLog("      name built ok");
 
-	if (fDepth == 2)
+	// Inside <Spread>, <Story> or the XMP packet: another mode's territory, and its page items
+	// carry a Self of their own, so the whole subtree has to be stepped over rather than filtered
+	// element by element.
+	if (fSkipDepth > 0)
 	{
-		fCollecting = !KCMIsExcludedResource(name);
-		if (fCollecting)
+		++fSkipDepth;
+		return;
+	}
+	if (fDepth == 2 && KCMIsExcludedResource(name))
+	{
+		fSkipDepth = 1;
+		return;
+	}
+
+	const bool16 hasSelf = (attrs != nil && attrs->HasAttribute(PMString("Self")));
+	const bool16 startsItem = ((fDepth == 2) || hasSelf);
+
+	if (!startsItem)
+	{
+		// Part of whatever item is open around it -- its attributes and text belong in that
+		// item's body, which is what a change to it will be seen as.
+		if (!fOpen.empty())
 		{
-			fCurrent.fKind = name;
-			fCurrent.fKey.Clear();
-			fCurrent.fBody.Clear();
-			fCurrent.fUniqueId.Clear();
-			fCurrent.fKind.SetTranslatable(kFalse);
-			fCurrent.fKey.SetTranslatable(kFalse);
-			fCurrent.fBody.SetTranslatable(kFalse);
-			fCurrent.fUniqueId.SetTranslatable(kFalse);
-
-			// [B] and most of [C]: Self is the key when there is one. [A]: there is no Self,
-			// because the element occurs once, so its own name identifies it.
-			if (attrs != nil && attrs->HasAttribute(PMString("Self")))
-				fCurrent.fKey = attrs->GetAttributeString(PMString("Self"));
-			else
-				fCurrent.fKey = name;
-
-			AppendOpenTag(fCurrent.fBody, name, attrs, fCurrent.fUniqueId);
+			PMString ignored;
+			ignored.SetTranslatable(kFalse);
+			AppendOpenTag(fOpen.back().fItem.fBody, name, attrs, ignored);
 		}
 		return;
 	}
 
-	if (fCollecting && fDepth > 2)
+	KCMOpenItem opened;
+	opened.fDepth = fDepth;
+	opened.fItem.fKind = name;
+	opened.fItem.fOrdinal = 0;			// filled in once the whole list is known
+	opened.fItem.fKind.SetTranslatable(kFalse);
+	opened.fItem.fSelf.SetTranslatable(kFalse);
+	opened.fItem.fName.SetTranslatable(kFalse);
+	opened.fItem.fBody.SetTranslatable(kFalse);
+	opened.fItem.fUniqueId.SetTranslatable(kFalse);
+
+	// The RAW MATERIALS a key can be made from, and nothing more. Both are taken for every item:
+	// which of them a given kind actually needs is KCMResourceKeyOf's question
+	// (KCMResourceDiff.h), and asking it here as well would be the same question answered in two
+	// files.
+	if (attrs != nil)
 	{
-		PMString ignored;
-		ignored.SetTranslatable(kFalse);
-		AppendOpenTag(fCurrent.fBody, name, attrs, ignored);
+		if (hasSelf)
+			opened.fItem.fSelf = attrs->GetAttributeString(PMString("Self"));
+		if (attrs->HasAttribute(PMString("Name")))
+			opened.fItem.fName = attrs->GetAttributeString(PMString("Name"));
+	}
+
+	// ★The opening tag goes into the NEW item's body and NOT into its parent's. That single
+	//   choice is what stops one change being reported twice, as itself and as the thing around
+	//   it.
+	AppendOpenTag(opened.fItem.fBody, name, attrs, opened.fItem.fUniqueId);
+
+	try
+	{
+		fOpen.push_back(opened);
+	}
+	catch (...)
+	{
+		// The stack could not grow. Everything from here on would be filed against the wrong
+		// parent, so the reading is declared unusable rather than quietly reshaped.
+		this->NoteMalformed();
+		KCMParseLog("    !! the open-item stack could not grow");
 	}
 }
 
 void KCMResourceSaxHandler::EndElement(const WideString& /*uri*/, const WideString& localname,
 									   const WideString& /*qname*/)
 {
-	if (fCollecting && fDepth > 2)
+	if (fSkipDepth > 0)
 	{
-		fCurrent.fBody.Append("</");
-		fCurrent.fBody.Append(PMString(localname));
-		fCurrent.fBody.Append(">");
+		--fSkipDepth;
+		if (fDepth > 0)
+			--fDepth;
+		return;
 	}
-	else if (fCollecting && fDepth == 2)
-	{
-		fCurrent.fBody.Append("</");
-		fCurrent.fBody.Append(PMString(localname));
-		fCurrent.fBody.Append(">");
 
-		KCMResourceList* const list = this->List();
-		if (list != nil)
+	if (!fOpen.empty())
+	{
+		KCMResourceItem& innermost = fOpen.back().fItem;
+		innermost.fBody.Append("</");
+		innermost.fBody.Append(PMString(localname));
+		innermost.fBody.Append(">");
+
+		// Is this the element that OPENED the innermost item? Then the item is complete.
+		if (fOpen.back().fDepth == fDepth)
 		{
-			// ⚠A container throws when it cannot grow, and an exception crossing the SAX
-			//   boundary would take InDesign down with it. Caught here, the parse simply ends up
-			//   short - and KCMParseResources refuses a short result rather than handing back
-			//   a document that would read as "these definitions were removed".
-			//   The sample wraps its whole element handler the same way (processElement's
-			//   try/catch), for the same reason.
-			try
+			KCMResourceList* const list = this->List();
+			if (list != nil)
 			{
-				list->push_back(fCurrent);
+				// ⚠A container throws when it cannot grow, and an exception crossing the SAX
+				//   boundary would take InDesign down with it. Caught here, the parse simply ends
+				//   up short - and KCMParseResources refuses a short result rather than handing
+				//   back a document that would read as "these definitions were removed".
+				//   The sample wraps its whole element handler the same way (processElement's
+				//   try/catch), for the same reason.
+				try
+				{
+					list->push_back(innermost);
+				}
+				catch (...)
+				{
+					this->NoteMalformed();
+					KCMParseLog("    !! push_back threw - the list could not grow");
+				}
 			}
-			catch (...)
-			{
-				InterfacePtr<IKCMResourceSink> sink(this, IID_IKCMRESOURCESINK);
-				if (sink != nil)
-					sink->NoteMalformed();
-				KCMParseLog("    !! push_back threw - the list could not grow");
-			}
+			fOpen.pop_back();
 		}
-		fCollecting = kFalse;
 	}
 
 	if (fDepth > 0)
@@ -401,8 +590,27 @@ void KCMResourceSaxHandler::EndElement(const WideString& /*uri*/, const WideStri
 
 void KCMResourceSaxHandler::Characters(const WideString& chars)
 {
-	if (fCollecting)
-		fCurrent.fBody.Append(PMString(chars));
+	// ★★★INSIDE AN EXCLUDED SUBTREE THERE IS NOTHING TO COLLECT, and forgetting this line was a
+	//   real defect rather than a tidiness point. StartElement and EndElement both step over
+	//   <Spread>, <Story> and the XMP packet; Characters did not, so THEIR TEXT was appended to
+	//   whichever item was open around them - which is <Document>. Measured 2026-09-09: two
+	//   documents that differed in nothing reported <Document> as Changed, and the difference was
+	//   the XMP packet's namespace declarations, 1,114 characters into a body that had no
+	//   business holding them. The same route was feeding every story's body text into
+	//   <Document>, so an edit Story mode owns would have been reported here as well.
+	if (fSkipDepth > 0)
+		return;
+
+	// Text belongs to the INNERMOST open item, for the same reason its child elements do: it is
+	// the item a change to those characters should be reported against.
+	if (fOpen.empty())
+		return;
+
+	const PMString text(chars);
+	if (IsIgnorableWhitespace(text))
+		return;			// the indentation between elements, not anything the document says
+
+	fOpen.back().fItem.fBody.Append(text);
 }
 
 //========================================================================================
@@ -535,6 +743,26 @@ bool16 KCMParseResources(const KCMResourceBytes& xml, KCMResourceList& out, PMSt
 		whyNot = "an element was left open at the end of the document";
 		out.clear();
 		return kFalse;
+	}
+
+	// ----- the ordinals: which one each item is among its OWN KIND, in the order they finished.
+	//
+	// ★It is done here rather than inside the handler, and that is not tidiness. The handler runs
+	// inside the parser, where anything that has to grow is a throw waiting to cross the SAX
+	// boundary (the push_back above is wrapped for exactly that reason). This loop runs after the
+	// parse is over and touches nothing but ints.
+	// The shape is O(n^2) in the number of items -- 171 for a four-page document -- which is the
+	// same shape KCMDescribeResourceSnapshot already uses to count kinds, and at these sizes the
+	// straightforward loop is the one that can be read.
+	for (int32 i = 0; i < static_cast<int32>(out.size()); ++i)
+	{
+		int32 seen = 0;
+		for (int32 j = 0; j < i; ++j)
+		{
+			if (out[j].fKind == out[i].fKind)
+				++seen;
+		}
+		out[i].fOrdinal = seen;
 	}
 	return kTrue;
 }

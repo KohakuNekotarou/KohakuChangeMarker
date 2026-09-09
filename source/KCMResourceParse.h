@@ -48,18 +48,35 @@ struct KCMResourceItem
 	/** The element name: "ParagraphStyle", "Color", "Layer", "DocumentPreference"... */
 	PMString	fKind;
 
-	/** What pairs this item with its counterpart in the OTHER document.
+	/** The Self attribute exactly as the XML carried it, or empty when the element has none.
 
-	    Measured on real documents (2026-09-09), keys fall into three groups:
-	      [A] 53 kinds occur exactly once and carry no Self at all (DocumentPreference,
-	          MarginPreference, ViewPreference...) -> the element name IS the key.
-	      [B] 16 kinds carry a name-shaped Self ("Color/Black", "Ink/$ID/Process Cyan",
-	          "ParagraphStyle/$ID/NormalParagraphStyle") -> Self is the key, and it matches
-	          across documents built separately. That is what makes this mode possible at all.
-	      [C] the rest. A Self beginning with 'd' is also name-based ("dABullet0",
-	          "dTextVariablen...TV XRefChapterNumber") so it behaves like [B]. Genuinely opaque
-	          UIDs are only Layer, Section, Assignment and CrossReferenceFormat. */
-	PMString	fKey;
+	    ⚠IT IS NOT THE KEY, and the distinction is the whole reason this field is raw. What pairs
+	    an item with its counterpart in the other document is decided in ONE place --
+	    KCMResourceKeyOf, in KCMResourceDiff.h -- because Self alone is the wrong answer for the
+	    handful of kinds whose Self is an opaque UID, which two separately built documents can
+	    never share. Deciding it here as well would be the same question answered in two files,
+	    which is the shape that produced seven real bugs in this project already. This file
+	    supplies the materials; the key is made from them there. */
+	PMString	fSelf;
+
+	/** The Name attribute, or empty when the element has none.
+
+	    ★It is what pairs the kinds whose Self is an opaque UID (measured 2026-09-09: Layer,
+	    Section, Assignment and CrossReferenceFormat are the only ones), so it is collected for
+	    every element rather than for those four -- a list of kinds would be a whitelist, and the
+	    next document is allowed to have a kind this one did not. */
+	PMString	fName;
+
+	/** Which one this is among the items of the SAME kind, counting from 0.
+
+	    The last resort for a key: Section's Name can be empty, and "the nth section" is then the
+	    closest thing to a pair there is.
+
+	    ⚠The order is the order items CLOSE in, not the order they open in, because items nest: a
+	    style is filed before the style group that contains it. It pairs two documents correctly
+	    all the same -- both are read by this same rule -- but it is not "document order" and
+	    should not be described as such. */
+	int32		fOrdinal;
 
 	/** The element's attributes and children, flattened back to text. This is what "Changed" is
 	    decided on. ⚠Deliberately NOT the byte count: measured, editing a style's pointSize from
@@ -83,16 +100,45 @@ struct KCMResourceItem
 
 typedef K2Vector<KCMResourceItem> KCMResourceList;
 
+/** kTrue when `value` is one of InDesign's opaque UIDs ("ueb", "u13f") rather than a name.
+
+    ★★A UID IS NOT CONTENT, and this is the test that keeps it out of one. Two separately built
+    documents never share a UID, so any UID left in an item's body makes that item differ every
+    single time. Measured 2026-09-09: two layers of the same name, added the same way to the two
+    documents, came back as Changed because one was "u13c" and the other "u13f" - and the document
+    element came back as Changed because its ActiveLayer pointed at them.
+
+    ⚠The test is on the VALUE'S SHAPE, never on the attribute's name. A list of attribute names
+    would be a whitelist, and the next document is allowed to hold a reference this one did not.
+
+    ⚠It leans towards "opaque" on purpose; the reasoning is in KCMResourceDiff.h, where the same
+    test decides how an item is paired. */
+bool16 KCMIsOpaqueSelf(const PMString& value);
+
+/** kTrue when `value` is a UID, or a whitespace-separated list of nothing but UIDs.
+
+    ★The list form is not a refinement of the above but a second measured case: the document
+    element's StoryList reads "u100 u119 ud0", and treated as a name it made <Document> differ
+    between any two documents that have ever existed. */
+bool16 KCMIsOpaqueReference(const PMString& value);
+
 /** The element names this mode does NOT look at, because another mode does.
 
     ⚠Adding a name here makes the mode blind to something, and nothing will report the loss.
     Removing one only makes a change show up in two places. When in doubt, do not add. */
 bool16 KCMIsExcludedResource(const PMString& elementName);
 
-/** Cuts `xml` into one KCMResourceItem per definition directly under <Document>.
+/** Cuts `xml` into one KCMResourceItem per definition.
+
+    ★A definition is an element directly under <Document> OR any element carrying a Self, however
+    deep. The second half matters: the styles hang inside RootParagraphStyleGroup and its four
+    siblings rather than under <Document>, so without it a new paragraph style comes back as "the
+    root style group changed" and ten edited styles come back as that same single line. Measured
+    on 2026-09-09; the full argument is at the head of the .cpp.
 
     @param xml     the bytes KCMTakeResourceSnapshot produced.
-    @param out     receives the items, in document order. Emptied first.
+    @param out     receives the items, in the order they finish (a nested item before the one
+                   containing it). Emptied first.
     @param whyNot  on kFalse, a short English reason.
     @return kTrue when the XML parsed. ⚠An EMPTY list with kTrue cannot happen for a real
             document (every document carries dozens of preferences), so a caller that sees one

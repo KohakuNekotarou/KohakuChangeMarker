@@ -120,6 +120,8 @@
 // KCMGetSessionStatus (declared in KCMModelNotify.h), which is not a reverse dependency.
 #include "KCMInxProbe.h"	// THROWAWAY (2026-09-08) - delete with the property it serves
 #include "KCMResourceSnapshot.h"	// KCMDescribeResourceSnapshot - the Resources mode's export
+#include "KCMResourceDiff.h"	// KCMDescribeResourceDiff - the same mode's comparison of the two
+								// armed documents, which is the reading the engine is checked by
 #include "KCMBookCompare.h"	// KCMGetBookResultText - the last book comparison, also in the module
 #include "KCMStoryStamp.h"	// KCMStoryEdits::ReadStamp - the SAME reading the panel uses
 #include "KCMStoryList.h"	// KCMStoryList::RowsAsTsv - app.kcmStoryRows, the reading port
@@ -172,7 +174,7 @@ ErrorCode KCMScriptProvider::AccessProperty(ScriptID propID, IScriptRequestData*
 	const int32 id = propID.Get();
 
 	const bool16 isAppString = (id == p_KCMStatus || id == p_KCMBookResult || id == p_KCMStoryRows
-								|| id == p_KCMResourceSnapshot
+								|| id == p_KCMResourceSnapshot || id == p_KCMResourceDiff
 								|| id == p_KCMInxProbe);	// THROWAWAY
 	const bool16 isStoryCounter = (id == p_KCMChangeCount || id == p_KCMTextChangeCount ||
 								   id == p_KCMAttrChangeCount || id == p_KCMOtherChangeCount);
@@ -243,6 +245,11 @@ ErrorCode KCMScriptProvider::ReadAppString(int32 id, ScriptID propID, IScriptReq
 	else if (id == p_KCMResourceSnapshot)
 		// The Resources mode's export, measured from outside while it has no panel of its own.
 		KCMDescribeResourceSnapshot(value);
+	else if (id == p_KCMResourceDiff)
+		// ...and what that export makes of the PAIR the panel is armed on. Same reason as
+		// app.kcmStoryRows above: the differences it finds are not on screen anywhere yet, so a
+		// count would prove nothing and the rows themselves have to be readable.
+		KCMDescribeResourceDiff(value);
 	else if (id == p_KCMStoryRows)
 		// ★THE WHOLE LIST, and it answers with a header line even when there is nothing to report:
 		//   an empty list is a real answer, and it has to read differently from the property being

@@ -107,6 +107,16 @@ enum KCMScriptProperties
 								// ⚠Checked against the code, not the ledger: the ledger still says
 								// 'pKGr' is free, and app.kcmStoryRows has been using it since
 								// 2026-09-08.
+	p_KCMResourceDiff = 'pKGd',	// d = diff. app.kcmResourceDiff - the Resources mode's comparison of
+								// the two ARMED documents, as TSV: a summary line, a header line and
+								// one line per definition that differs. ★It reads the SAME Target and
+								// Source the panel does (KCMArmedTargetDB / KCMArmedSourceDB), which
+								// is what makes a reading here a statement about the product.
+								// ⚠Checked against the code before use, not against the ledger, and
+								// the check was validated first on a code that DOES exist ('cflo' in
+								// ScriptingDefs.h): a pattern that matches nothing reports every
+								// candidate as free. 'pKGd' occurs nowhere in the SDK or in the four
+								// Kohaku plug-ins, and the registry has no entry for it.
 	p_KCMStatus     = 'pKGm',	// p = property, K = Kohaku, G = KCM, m = message (app.kcmStatus)
 	p_KCMBookResult = 'pKGb',	// b = book. app.kcmBookResult - the last book comparison, one line
 								// per chapter ("name<TAB>state"). Checked against the registry in

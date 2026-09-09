@@ -661,6 +661,24 @@ resource VersionedScriptElementInfo(10)
 			kNoAttributeClass,
 		}
 
+		// app.kcmResourceDiff - the Resources mode's answer for the two ARMED documents: a summary
+		// line, a header line, and one tab-separated line per definition that differs.
+		//
+		// ★It reads the panel's own Target and Source rather than, say, the first two open
+		// documents, which is what makes a reading here a statement about the product: the pair is
+		// chosen by the same Set as Target / Set as Source the user presses, and the answer moves
+		// when that choice moves.
+		Property
+		{
+			kKCMResourceDiffPropertyScriptElement,
+			p_KCMResourceDiff,
+			"kcm resource diff",				// name -> app.kcmResourceDiff
+			"Which definitions differ between the two documents being compared, as tab-separated text.",
+			StringType,
+			{}
+			kNoAttributeClass,
+		}
+
 		// app.kcmStoryRows (2026-09-08) - the whole Story Edits list as TSV.
 		//
 		// ★★★WHY, and it is the same argument the property above makes one size down: the list's
@@ -701,6 +719,7 @@ resource VersionedScriptElementInfo(10)
 				Property{ kKCMStoryRowsPropertyScriptElement, kReadOnly },
 				Property{ kKCMInxProbePropertyScriptElement, kReadOnly },	// THROWAWAY (2026-09-08)
 				Property{ kKCMResourceSnapshotPropertyScriptElement, kReadOnly },
+				Property{ kKCMResourceDiffPropertyScriptElement, kReadOnly },
 			}
 		}
 
