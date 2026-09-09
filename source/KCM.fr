@@ -623,6 +623,22 @@ resource VersionedScriptElementInfo(10)
 			kNoAttributeClass,
 		}
 
+		// app.kcmResourceSnapshot - the Resources comparison mode's export of the ACTIVE document,
+		// measured: "376004 bytes, 78 ms", or "FAILED: <the step that failed>". The mode has no
+		// panel yet, so this is the only way to see whether its engine works; it stays afterwards
+		// for the reason app.kcmStoryRows exists, that a number nobody outside can read is a
+		// number nobody can check.
+		Property
+		{
+			kKCMResourceSnapshotPropertyScriptElement,
+			p_KCMResourceSnapshot,
+			"kcm resource snapshot",			// name -> app.kcmResourceSnapshot
+			"How the Resources mode's export of the active document went: bytes, milliseconds.",
+			StringType,
+			{}
+			kNoAttributeClass,
+		}
+
 		// app.kcmStoryRows (2026-09-08) - the whole Story Edits list as TSV.
 		//
 		// ★★★WHY, and it is the same argument the property above makes one size down: the list's
@@ -662,6 +678,7 @@ resource VersionedScriptElementInfo(10)
 				//   kes-custom-dom-extensions). Both or neither.
 				Property{ kKCMStoryRowsPropertyScriptElement, kReadOnly },
 				Property{ kKCMInxProbePropertyScriptElement, kReadOnly },	// THROWAWAY (2026-09-08)
+				Property{ kKCMResourceSnapshotPropertyScriptElement, kReadOnly },
 			}
 		}
 

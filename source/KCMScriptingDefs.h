@@ -98,6 +98,15 @@
 enum KCMScriptProperties
 {
 	p_KCMInxProbe   = 'pKGi',	// THROWAWAY (2026-09-08). i = INX. app.kcmInxProbe
+	p_KCMResourceSnapshot = 'pKGs',	// s = snapshot. app.kcmResourceSnapshot - the Resources mode's
+								// export, measured from outside: "<bytes> bytes, <ms> ms" for the
+								// active document, or "FAILED: <which step>". ★The code 'pKGs' was
+								// retired in 2026-06-24 (a single-page source parameter) and was
+								// NEVER registered with Adobe, so re-using it cannot disagree with
+								// anything registered -- the same standing as 'pKGx' in 2026-08-20.
+								// ⚠Checked against the code, not the ledger: the ledger still says
+								// 'pKGr' is free, and app.kcmStoryRows has been using it since
+								// 2026-09-08.
 	p_KCMStatus     = 'pKGm',	// p = property, K = Kohaku, G = KCM, m = message (app.kcmStatus)
 	p_KCMBookResult = 'pKGb',	// b = book. app.kcmBookResult - the last book comparison, one line
 								// per chapter ("name<TAB>state"). Checked against the registry in
