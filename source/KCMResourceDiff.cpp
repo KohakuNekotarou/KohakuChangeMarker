@@ -34,11 +34,16 @@
 #include <string>
 #include <windows.h>			// ::GetTickCount - how long the whole comparison took
 
+#include "Utils.h"				// Utils<IKCMResourcesFacade>() - the reachability check below
+#include "PersistUtils.h"		// ::CreateObject2 - the second way of asking
+#include "ShuksanID.h"			// kUtilsBoss
+
 // Project includes:
 #include "KCMCore.h"			// KCMArmedTargetDB / KCMArmedSourceDB - the panel's own two documents
-#include "KCMResourceBytes.h"
+#include "IKCMResourcesFacade.h"	// only to check the .fr AddIn took - see the port below
+#include "IKCMStoryEditsFacade.h"	// ...and one that already works, as the control
 #include "KCMResourceDiff.h"
-#include "KCMResourceSnapshot.h"
+#include "KCMResourceStore.h"	// the reading port goes through the store, as the panel will
 
 //========================================================================================
 // A STEP LOG FOR ONE INVESTIGATION, OFF BY DEFAULT.
@@ -333,86 +338,54 @@ void KCMDescribeResourceDiff(PMString& out)
 	out.Clear();
 	out.SetTranslatable(kFalse);
 
-	// ★The two documents the PANEL is working on, not the first two that happen to be open. A
-	//   reading taken from anywhere else would say nothing about the product.
+	// ★★IT GOES THROUGH THE STORE, exactly as the panel will. This port used to take the two
+	//   snapshots itself, which meant the same comparison existed in two places - and two places
+	//   drift. Now there is one Rebuild, and what this reads back is literally what the panel
+	//   reads back.
 	KCMDiffLog("=== KCMDescribeResourceDiff: enter");
 
-	IDataBase* const targetDB = KCMArmedTargetDB();
-	IDataBase* const sourceDB = KCMArmedSourceDB();
-	if (targetDB == nil || sourceDB == nil)
-	{
-		KCMDiffLog("  nothing armed");
-		out = "FAILED: no comparison is armed - press Start first, so this reads the same two documents the panel does";
-		return;
-	}
-	KCMDiffLog("  step 1: both databases are there");
-
-	InterfacePtr<IDocument> targetDoc(targetDB, targetDB->GetRootUID(), UseDefaultIID());
-	KCMDiffLog(targetDoc != nil ? "  step 2: target IDocument ok" : "  step 2: target IDocument is NIL");
-	InterfacePtr<IDocument> sourceDoc(sourceDB, sourceDB->GetRootUID(), UseDefaultIID());
-	KCMDiffLog(sourceDoc != nil ? "  step 3: source IDocument ok" : "  step 3: source IDocument is NIL");
-	if (targetDoc == nil || sourceDoc == nil)
-	{
-		out = "FAILED: one of the two armed databases has no document";
-		return;
-	}
-
-	const uint32 began = ::GetTickCount();
-
-	KCMResourceBytes sourceXml;
-	KCMResourceBytes targetXml;
 	PMString whyNot;
-
-	KCMDiffLog("  step 4: about to export the SOURCE  <-- the clone, when KIDMCP lent it");
-	if (!KCMTakeResourceSnapshot(sourceDoc.get(), sourceXml, whyNot))
-	{
-		KCMDiffLog("  step 4: source export FAILED (returned, did not crash)");
-		out = "FAILED: source snapshot: ";
-		out.Append(whyNot);
-		return;
-	}
-	KCMDiffLog("  step 5: source export came back");
-
-	KCMDiffLog("  step 6: about to export the TARGET");
-	if (!KCMTakeResourceSnapshot(targetDoc.get(), targetXml, whyNot))
-	{
-		KCMDiffLog("  step 6: target export FAILED (returned, did not crash)");
-		out = "FAILED: target snapshot: ";
-		out.Append(whyNot);
-		return;
-	}
-	KCMDiffLog("  step 7: target export came back");
-
-	KCMResourceList sourceItems;
-	KCMResourceList targetItems;
-	if (!KCMParseResources(sourceXml, sourceItems, whyNot))
-	{
-		out = "FAILED: source parse: ";
-		out.Append(whyNot);
-		return;
-	}
-	if (!KCMParseResources(targetXml, targetItems, whyNot))
-	{
-		out = "FAILED: target parse: ";
-		out.Append(whyNot);
-		return;
-	}
-
-	KCMDiffLog("  step 8: both parses came back");
-
-	KCMResourceChangeList changes;
-	KCMResourceDiffStats stats;
-	if (!KCMDiffResources(sourceItems, targetItems, changes, stats))
-	{
-		out = "FAILED: ran out of memory while pairing the definitions";
-		return;
-	}
-
+	const uint32 began = ::GetTickCount();
+	const bool16 built = KCMResourceStore::Rebuild(whyNot);
 	const uint32 took = ::GetTickCount() - began;
+
+	if (!built)
+	{
+		KCMDiffLog("  rebuild refused");
+		out = "FAILED: ";
+		out.Append(whyNot);
+		return;
+	}
+	KCMDiffLog("  rebuild came back");
+
+	// ★★IS THE FACADE ACTUALLY REACHABLE? The panel will come through
+	//   Utils<IKCMResourcesFacade>(), and a facade whose IID is declared but whose AddIn is
+	//   missing from the .fr answers nil - with no warning at build time, none at load time and
+	//   nothing in any log. KCM has been bitten by that exact shape, so the port says it out loud
+	//   instead of leaving it to be discovered while building the UI.
+	//   ⚠Utils<T>() has no nil guard: the OBJECT is tested, never the result of ->.
+	//   ★★AND A CONTROL BESIDE IT. A bare "NO" cannot tell "my AddIn is missing" from "this is
+	//     not how you reach a facade from the model side". IKCMStoryEditsFacade is AddIn'd to the
+	//     same boss in the same resource and has worked for months, so it answers that question:
+	//     if the control says NO too, the instrument is wrong, not the resource.
+	Utils<IKCMResourcesFacade> facade;
+	const bool16 facadeReachable = (facade ? kTrue : kFalse);
+	Utils<IKCMStoryEditsFacade> control;
+	const bool16 controlReachable = (control ? kTrue : kFalse);
+
+	//   ★★AND A SECOND WAY OF ASKING. Utils<T> hands back an interface off the ONE kUtilsBoss the
+	//     session already made; CreateObject2 builds a fresh one. If the fresh boss carries the
+	//     interface and Utils<> does not, the registration is right and something about that one
+	//     long-lived instance is not - which is a different bug from "the AddIn never took".
+	InterfacePtr<IKCMResourcesFacade> fresh(::CreateObject2<IKCMResourcesFacade>(kUtilsBoss));
+	const bool16 freshReachable = (fresh != nil);
 
 	// ----- the summary, then a header line, then one line per difference.
 	// ⚠The header comes back even when nothing differs: "no differences" is a real answer and has
 	//   to read differently from the property not being there at all (which is ERR:55).
+	KCMResourceDiffStats stats;
+	KCMResourceStore::GetStats(stats);
+
 	std::string s = "Resources: source " + Num(stats.fSourceItems) + " items, target "
 				  + Num(stats.fTargetItems) + " items; paired " + Num(stats.fPaired)
 				  + ", added " + Num(stats.fAdded)
@@ -422,25 +395,39 @@ void KCMDescribeResourceDiff(PMString& out)
 				  + ", agree-other-id " + Num(stats.fAgreeOtherId)
 				  + ", differ-same-id " + Num(stats.fDifferSameId)
 				  + ", differ-other-id " + Num(stats.fDifferOtherId)
-				  + "; " + Num(static_cast<int32>(took)) + " ms\r\n";
+				  + "; " + Num(static_cast<int32>(took)) + " ms"
+				  + "; facade reachable: " + (facadeReachable ? "YES" : "NO")
+				  + " (control, a facade that has always worked: " + (controlReachable ? "YES" : "NO")
+				  + "; on a freshly created kUtilsBoss: " + (freshReachable ? "YES" : "NO") + ")"
+				  + "\r\n";
 
 	s += "what\tkind\tkey\tsource\ttarget\r\n";
 
-	for (int32 i = 0; i < static_cast<int32>(changes.size()); ++i)
+	// ★Read back through the STORE's own accessors - the same ones the panel will use. A port
+	//   that reached into the list directly would still be reading, but it would stop being
+	//   evidence about what the panel can see.
+	const int32 count = KCMResourceStore::GetChangeCount();
+	for (int32 i = 0; i < count; ++i)
 	{
-		const KCMResourceChange& change = changes[i];
+		PMString kind;
+		PMString key;
+		KCMResourceChangeKind what = kKCMResourceChanged;
+		if (!KCMResourceStore::GetNthChange(i, kind, key, what))
+			continue;
+
+		PMString sourceBody;
+		PMString targetBody;
+		KCMResourceStore::GetNthValues(i, sourceBody, targetBody);
 
 		// Where the two bodies stop agreeing is where the change is. For an Added or a Removed
 		// item there is only one body, so the excerpt starts at the beginning.
-		const int32 from = (change.fWhat == kKCMResourceChanged)
-						 ? CommonPrefix(change.fSourceBody, change.fTargetBody)
-						 : 0;
+		const int32 from = (what == kKCMResourceChanged) ? CommonPrefix(sourceBody, targetBody) : 0;
 
-		s += std::string(WhatWord(change.fWhat)) + "\t"
-		   + Field(change.fKind) + "\t"
-		   + Field(change.fKey) + "\t"
-		   + Excerpt(change.fSourceBody, from) + "\t"
-		   + Excerpt(change.fTargetBody, from) + "\r\n";
+		s += std::string(WhatWord(what)) + "\t"
+		   + Field(kind) + "\t"
+		   + Field(key) + "\t"
+		   + Excerpt(sourceBody, from) + "\t"
+		   + Excerpt(targetBody, from) + "\r\n";
 	}
 
 	out.SetUTF8String(s);

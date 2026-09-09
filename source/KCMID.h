@@ -262,6 +262,7 @@ DECLARE_PMID(kImplementationIDSpace, kKCMPageMarksCmdDataImpl, kKCMPrefix + 55)	
 DECLARE_PMID(kImplementationIDSpace, kKCMMarksObserverImpl, kKCMPrefix + 56)	// the lazy observer AddIn on kDocBoss (KCMMarksObserver.cpp).
 										// There is no IPrintSetupProvider implementation (the old +50); see the note on the Class side.
 DECLARE_PMID(kImplementationIDSpace, kKCMResourceSaxHandlerImpl, kKCMPrefix + 57)	// the ISAXContentHandler itself (KCMResourceParse.cpp).
+DECLARE_PMID(kImplementationIDSpace, kKCMResourcesFacadeImpl, kKCMPrefix + 59)	// IKCMResourcesFacade on kUtilsBoss (KCMFacades.cpp): the panel's only way to read which DEFINITIONS differ. ⚠The implementation AddIn'd to a shared boss must be our own -- the unit of collision between vendors is the ImplementationID, not the IID.
 DECLARE_PMID(kImplementationIDSpace, kKCMResourceSinkImpl, kKCMPrefix + 58)	// IKCMResourceSink on the SAME boss (same file): where the handler puts what it reads. ⚠It has to be a SECOND implementation rather than the same one under two IIDs, because a boss builds ONE OBJECT PER IID -- registering kKCMResourceSaxHandlerImpl twice would produce two unrelated instances and the handler would fill in a list nobody could read.
 										// Next new implementation: +59. Read this line before picking a number - the retirement notes are BELOW the DECLAREs, so deciding from the last line alone picks a slot that is already spoken for.
 

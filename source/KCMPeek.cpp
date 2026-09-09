@@ -67,6 +67,7 @@
 // and the peek's held-down state are all the UI's property. What used to be called directly from
 // here now happens in KCMModelChangeObserver, which receives the notifications this file sends.
 #include "KCMStoryList.h"          // KCMStoryList::ShutdownCleanup (letting go of the rows' PMStrings)
+#include "KCMResourceStore.h"      // the Resources list, emptied on the same routes
 #include "KCMStoryMarker.h"        // KCMStoryMarker::Shutdown (the Story mode's marks are never drawn again)
 #include "KCMBookCompare.h"        // KCMClearBookResultText (the book comparison's result text)
 #include "KCMChangedPagesTSV.h"    // KCMClearExportMessage (the TSV export's message)
@@ -997,6 +998,7 @@ void KCMHandleDocsClosed()
 		//   being reused ([[uidref-reuse-after-close]]). comparisonDocClosed above already answered
 		//   that through FindDocByDataBase, so this rides on its answer.
 		KCMStoryList::Clear();
+		KCMResourceStore::Clear();		// same reason, same moment - see KCMDoClearMarks
 		// The traversal's anchor is forgotten too. Stop does that, and this "clean-up as Stop
 		//   would" was the one route that did not: a closed document's page UID left as the anchor
 		//   can happen to match a UID in the next document and start the traversal partway through.

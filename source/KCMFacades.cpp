@@ -55,6 +55,8 @@
 #include "KCMExternalSource.h"	// KCMExternalSourceLabel -- the lent Source's words for the panel
 #include "KCMStoryMarkBuild.h"	// what the Story mode should be lighting up (Refresh / SetPress)
 #include "KCMStoryMarker.h"		// the adornment that draws it - the flash and the shutdown
+#include "IKCMResourcesFacade.h"	// the Resources mode's boundary
+#include "KCMResourceStore.h"		// ...and the model side it forwards to
 
 //========================================================================================
 // KCMCompareFacade -- IKCMCompareFacade
@@ -529,6 +531,45 @@ public:
 };
 
 CREATE_PMINTERFACE(KCMStoryEditsFacade, kKCMStoryEditsFacadeImpl)
+
+
+//========================================================================================
+// KCMResourcesFacade -- IKCMResourcesFacade
+//
+// Which DEFINITIONS differ between the two documents. Six forwarders to KCMResourceStore, which
+// holds the answer - see IKCMResourcesFacade.h for why it is held rather than recomputed.
+//
+// ★NOTHING IS DECIDED HERE. Every method is one line, because the questions this interface asks
+// ("is a result held", "what is row n") are the store's questions and the store answers them for
+// the model side too. A facade that computed anything would be a second place to fix.
+//========================================================================================
+
+class KCMResourcesFacade : public CPMUnknown<IKCMResourcesFacade>
+{
+public:
+	KCMResourcesFacade(IPMUnknown* boss) : CPMUnknown<IKCMResourcesFacade>(boss) {}
+
+	virtual bool16	Compare(PMString& whyNot)
+					{ return KCMResourceStore::Rebuild(whyNot); }
+
+	virtual bool16	HasResult()
+					{ return KCMResourceStore::HasResult(); }
+
+	virtual int32	GetChangeCount()
+					{ return KCMResourceStore::GetChangeCount(); }
+
+	virtual bool16	GetNthChange(int32 n, PMString& outKind, PMString& outKey,
+								 KCMResourceChangeKind& outWhat)
+					{ return KCMResourceStore::GetNthChange(n, outKind, outKey, outWhat); }
+
+	virtual bool16	GetNthValues(int32 n, PMString& outSourceBody, PMString& outTargetBody)
+					{ return KCMResourceStore::GetNthValues(n, outSourceBody, outTargetBody); }
+
+	virtual void	GetSummary(PMString& out)
+					{ KCMResourceStore::GetSummary(out); }
+};
+
+CREATE_PMINTERFACE(KCMResourcesFacade, kKCMResourcesFacadeImpl)
 
 
 //========================================================================================

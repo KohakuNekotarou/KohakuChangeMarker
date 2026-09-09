@@ -50,6 +50,7 @@
 #include "KCMPageCheck.h"          // ⚠**nothing here calls into it any more** (2026-09-04): Stop stopped clearing the ticks and the prune was removed. Left in place because dropping an include is a change a build has to prove, not a comment
 #include "KCMStoryStamp.h"         // the stories' change counters -- whether text was edited, which pixels cannot say
 #include "KCMStoryList.h"          // the list of changed stories (the model the Story Edits section reads)
+#include "KCMResourceStore.h"      // the list of changed DEFINITIONS - emptied at the same moment
 #include "KCMStoryDiffRun.h"       // in the Story mode, what changed inside each row
 #include "KCMHideUnchanged.h"      // KCMResetHideUnchanged
 #include "KCMExternalSource.h"     // KCMIsDbAlive -- "still there" includes the lent Source
@@ -1146,6 +1147,13 @@ void KCMDoClearMarks(IDataBase* db)
 	// KCMUpdateStorySectionLabel from the armed state, so the model need only say that the list
 	// changed.
 	KCMStoryList::Clear();
+
+	// The Resources list goes for the same reason and at the same moment. Kept, it would describe
+	// definitions in two documents nobody is comparing any more - and unlike the Story rows it
+	// carries the two versions' VALUES, so it would go on showing "was 17.0079pt" about a pairing
+	// that no longer exists.
+	KCMResourceStore::Clear();
+
 	KCMNotify(kKCMStoryEditsRebuiltMessage);
 }
 

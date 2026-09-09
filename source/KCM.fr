@@ -482,6 +482,7 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 			IID_IKCMBOOKFACADE, kKCMBookFacadeImpl,
 			// ★The sixth, added 2026-08-23 when the Story mode's marks moved to this side.
 			IID_IKCMSTORYMARKFACADE, kKCMStoryMarkFacadeImpl,
+			IID_IKCMRESOURCESFACADE, kKCMResourcesFacadeImpl,
 		}
 	},
 
