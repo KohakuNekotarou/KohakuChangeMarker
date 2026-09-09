@@ -68,7 +68,14 @@ struct KCMResourceDiffStats
 	int32	fRemoved;
 	int32	fChanged;
 
-	// ----- ★the three numbers that answer "can StyleUniqueId be used as a sieve?" (design §8-2)
+	// ----- ★THE FOUR NUMBERS that answer "can StyleUniqueId be used as a sieve?" (design §8-2)
+	//
+	// ⚠**FOUR, AND WHAT COUNTS THEM IS THE LIST BELOW, NOT THIS LINE.** This heading said "three"
+	//   while the sentence two lines down said "the four combinations" and the last one said "THREE
+	//   OF FOUR IS NOT A MEASUREMENT" - three statements about one list, in one block, and only the
+	//   heading was wrong. A number written in prose beside a list is the thing that rots first, so
+	//   count the members (memory kidmcp-api-audit: an enumeration cannot be kept true by increments;
+	//   write down what to recount it from).
 	//
 	// One of them alone cannot: a sieve that is never tested against the thing it claims to
 	// predict will always look right. These count the four combinations of (bodies agree or not)

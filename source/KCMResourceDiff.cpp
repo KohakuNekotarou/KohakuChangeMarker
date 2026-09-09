@@ -394,9 +394,18 @@ void KCMDescribeResourceDiff(PMString& out)
 				  + ", added " + Num(stats.fAdded)
 				  + ", removed " + Num(stats.fRemoved)
 				  + ", changed " + Num(stats.fChanged)
-				  // ★Part of `changed`, not additional to it: a rename IS a change. It is named
-				  //   separately because it is the one kind the KEY could not find, so a number
-				  //   above zero says the second pass earned its place on this document pair.
+				  // ★THE FOUR SIEVE CELLS - a MEASUREMENT, not a result. They answer "could
+				  //   StyleUniqueId have paired these two documents?" (design §8-2, and the essay is
+				  //   on KCMResourceDiffStats).
+				  // ⚠**WHAT STOOD HERE DESCRIBED A `renamed` COUNT THIS LINE NO LONGER PRINTS.** It
+				  //   read "a rename IS a change... it is named separately... the second pass earned
+				  //   its place" - all of it about the StyleUniqueId pairing pass, which was REMOVED
+				  //   on 2026-09-09 (a rename reissues the id, so it paired nothing). The sentence
+				  //   outlived the thing it explained and slid onto the line below it, where it
+				  //   described the sieve as a rename counter. Measured the same day: the port prints
+				  //   `...changed 1; sieve agree-same-id 3...` with no `renamed` anywhere.
+				  //   ⇒ Removing an output means going to the words that named it, in the same pass
+				  //     (memory verify-claims-in-comments).
 				  + "; sieve agree-same-id " + Num(stats.fAgreeSameId)
 				  + ", agree-other-id " + Num(stats.fAgreeOtherId)
 				  + ", differ-same-id " + Num(stats.fDifferSameId)

@@ -59,7 +59,8 @@ public:
 						   int32 delayMs = kKCMProgressBarDelayMs)
 		: fTitle(title), fTotal(total), fDelayMs(delayMs),
 		  fSince(std::chrono::steady_clock::now()),
-		  fSuppress(new (std::nothrow) SuppressProgressBarDisplay(kTrue))
+		  fSuppress(new (std::nothrow) SuppressProgressBarDisplay(kTrue)),
+		  fBarUp(kFalse)
 	{}
 
 	/** Reports that `done` units are finished and names the one about to start. The bar
@@ -77,15 +78,42 @@ public:
 			if (fBar.get() == nil)
 				return;
 			fBar->DisableChildProgressBars(kTrue);	// the rasterising internals must not subdivide it
+
+			// ***** AND NOW ASK WHETHER IT ACTUALLY WENT UP. *****
+			//
+			// ⚠**THE HEADER SAYS THIS IS "not usually necessary to call"** (ProgressBar.h:58) - and it
+			//  names the exact reason it is necessary here in the next sentence: "another progress bar
+			//  calling DisableChildProgressBars()", which is the call one line above, made by every
+			//  other KCMDeferredProgressBar and by KIDMCP's bar as well.
+			// ★THE REFUSAL IS NOT HYPOTHETICAL. It was measured on 2026-09-05 - "the bar shows in the
+			//  Pixel mode and not in the Story mode", the raster loop's object having outlived its
+			//  loop (see the warning at the head of this file).
+			// ⚠**AND IT DID NOT CRASH THAT DAY.** The symptom was a missing bar, nothing more. This
+			//  guard is prevention, not a repair: it was written the same day KIDMCP was found driving
+			//  a refused bar of its own, so that the two plug-ins answer the question the same way.
+			fBarUp = fBar->WasRegisterSuccessful();
 		}
+
+		// ⚠ONE RETURN FOR THREE CALLS - SetTaskText, SetPosition, and WasCancelled below. Driving a
+		//  bar that never registered pumps nothing and shows nothing, so what is given up by stopping
+		//  here is exactly nothing; what is avoided is calling into a window the manager does not know
+		//  about.
+		if (!fBarUp)
+			return;
+
 		fBar->SetTaskText(text, kFalse /*forceRedraw*/);
 		fBar->SetPosition(done);
 	}
 
-	/** kTrue once the person has pressed Cancel. kFalse while no bar is up (nothing is pumped then). */
+	/** kTrue once the person has pressed Cancel. kFalse while no bar is up (nothing is pumped then).
+
+		⚠fBarUp, not just a nil test: a refused bar is an object that exists and cannot be pressed, so
+		 asking it whether it was cancelled can only ever answer no - and it is one of the three calls
+		 the guard in Step() exists to cover. */
 	bool16 WasCancelled()
 	{
-		return (fBar.get() != nil && fBar->WasCancelled(kFalse /*setGlobalErrorState*/)) ? kTrue : kFalse;
+		return (fBarUp && fBar.get() != nil && fBar->WasCancelled(kFalse /*setGlobalErrorState*/))
+			   ? kTrue : kFalse;
 	}
 
 private:
@@ -95,6 +123,10 @@ private:
 	std::chrono::steady_clock::time_point		fSince;
 	K2::scoped_ptr<SuppressProgressBarDisplay>	fSuppress;	// declared before fBar: destroyed after it
 	K2::scoped_ptr<RangeProgressBar>			fBar;
+
+	/** Whether fBar is a bar the manager actually registered. ⚠Declared AFTER fBar so that the
+		initialiser list stays in declaration order; it is set in Step(), never here. */
+	bool16										fBarUp;
 };
 
 #endif // __KCMProgressBar_h__

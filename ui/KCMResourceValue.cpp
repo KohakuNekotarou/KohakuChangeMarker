@@ -85,9 +85,23 @@ PMString KCMShortResourceValue(const PMString& value)
 //----------------------------------------------------------------------------------------
 bool16 KCMShowSelectedResource(int32 row, int32 attrIndex)
 {
+	// ⚠★★THE GUARD GOES ON THE Utils OBJECT, NOT ON WHAT IT HANDS BACK. `Utils<T>()->M()`
+	//  dereferences before there is anything to test, so a facade that is not registered takes the
+	//  panel down with it rather than returning nil ([[utils-boss-facade-access]]).
+	// ★AND THIS FACADE HAS BEEN UNREGISTERED ONCE, in this very feature: 2026-09-09, KCMFactoryList.h
+	//  missing its line (fdc3b39). Every other caller in KCM reads it this way already - KCMChangeNav,
+	//  KCMCmykCursor, KCMPawTracker, KCMPawWordDialog, KCMStoryPressMarks all say so in their own
+	//  comments - and these three calls were simply the ones that had not been brought into line.
+	Utils<IKCMResourcesFacade> resources;
+	if (!resources)
+	{
+		KCMClearResourceValue();
+		return kFalse;
+	}
+
 	PMString kind, key;
 	KCMResourceChangeKind what = kKCMResourceChanged;
-	if (row < 0 || !Utils<IKCMResourcesFacade>()->GetNthChange(row, kind, key, what))
+	if (row < 0 || !resources->GetNthChange(row, kind, key, what))
 	{
 		// Out of range - the list was rebuilt under a selection, or this is the "No differences"
 		// placeholder row. Clear rather than leave the previous definition's values standing:
@@ -122,14 +136,14 @@ bool16 KCMShowSelectedResource(int32 row, int32 attrIndex)
 	//
 	// ⚠**AN ATTRIBUTE THE SOURCE DOES NOT HAVE CONTRIBUTES NO LINE.** There is no older value to
 	//   print. The list says so instead, with the `+` on that attribute's own row.
-	const int32 attrCount = Utils<IKCMResourcesFacade>()->GetNthAttrCount(row);
+	const int32 attrCount = resources->GetNthAttrCount(row);
 	const int32 first = (attrIndex >= 0) ? attrIndex : 0;
 	const int32 last = (attrIndex >= 0) ? attrIndex : attrCount - 1;
 
 	for (int32 i = first; i <= last && i < attrCount; ++i)
 	{
 		PMString name, source, target;
-		if (!Utils<IKCMResourcesFacade>()->GetNthAttr(row, i, name, source, target))
+		if (!resources->GetNthAttr(row, i, name, source, target))
 			break;		// the count and the rows disagree; stop rather than print a blank line
 
 		if (source.IsEmpty())

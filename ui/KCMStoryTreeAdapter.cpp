@@ -122,7 +122,11 @@ public:
 		{
 			if (KCMListShowsResources())
 			{
-				const int32 defs = Utils<IKCMResourcesFacade>()->GetChangeCount();
+				// ⚠GUARDED THE SAME WAY THE BRANCH ABOVE IS. That one takes a Utils object and tests
+				//  it; this one used to dereference straight through, and the two are eleven lines
+				//  apart in the same function ([[utils-boss-facade-access]]).
+				Utils<IKCMResourcesFacade> resources;
+				const int32 defs = resources ? resources->GetChangeCount() : 0;
 				if (defs > 0)
 					return defs;
 

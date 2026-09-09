@@ -389,11 +389,27 @@ void KCMUpdateStorySectionLabel()
 	//   mean "nothing has been compared yet" rather than "nothing changed" ---- showing no number at
 	//   all cuts that mistake off. (The rows draw the same distinction: nothing while stopped, and a
 	//   single "No edits" / "No differences" line for zero while comparing.)
-	if (Utils<IKCMCompareFacade>()->IsArmed())
+	// ⚠★★THREE FACADES ON THREE LINES AND NOT ONE OF THEM WAS GUARDED. `Utils<T>()->M()`
+	//  dereferences before anything can be tested ([[utils-boss-facade-access]]), and this facade has
+	//  been unregistered once for real (2026-09-09, KCMFactoryList.h - fdc3b39).
+	// ★NOT A FAULT THE RESOURCES MODE BROUGHT IN: the Story half on the next line is older and was
+	//  written the same way, so the new mode copied the shape rather than inventing it. Both are
+	//  brought into line here, because fixing one and leaving its twin is how the next reader learns
+	//  the wrong rule (memory verify-claims-in-comments).
+	Utils<IKCMCompareFacade>    compare;
+	Utils<IKCMResourcesFacade>  resources;
+	Utils<IKCMStoryEditsFacade> edits;
+
+	// ⚠WHEN THE FACADE CANNOT ANSWER, NO NUMBER IS SHOWN - rather than a "(0)", which the paragraph
+	//  above says would be read as "nothing changed". An absent count and a count of zero are
+	//  different answers and must not print alike.
+	const bool16 canCount = showsResources ? (resources ? kTrue : kFalse)
+										   : (edits     ? kTrue : kFalse);
+
+	if (compare && compare->IsArmed() && canCount)
 	{
 		text.Append(" (");
-		text.AppendNumber(showsResources ? Utils<IKCMResourcesFacade>()->GetChangeCount()
-										 : Utils<IKCMStoryEditsFacade>()->GetRowCount());
+		text.AppendNumber(showsResources ? resources->GetChangeCount() : edits->GetRowCount());
 		text.Append(")");
 	}
 
