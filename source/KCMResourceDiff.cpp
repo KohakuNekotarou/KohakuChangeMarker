@@ -34,14 +34,8 @@
 #include <string>
 #include <windows.h>			// ::GetTickCount - how long the whole comparison took
 
-#include "Utils.h"				// Utils<IKCMResourcesFacade>() - the reachability check below
-#include "PersistUtils.h"		// ::CreateObject2 - the second way of asking
-#include "ShuksanID.h"			// kUtilsBoss
-
 // Project includes:
 #include "KCMCore.h"			// KCMArmedTargetDB / KCMArmedSourceDB - the panel's own two documents
-#include "IKCMResourcesFacade.h"	// only to check the .fr AddIn took - see the port below
-#include "IKCMStoryEditsFacade.h"	// ...and one that already works, as the control
 #include "KCMResourceDiff.h"
 #include "KCMResourceStore.h"	// the reading port goes through the store, as the panel will
 
@@ -358,29 +352,17 @@ void KCMDescribeResourceDiff(PMString& out)
 	}
 	KCMDiffLog("  rebuild came back");
 
-	// ★★IS THE FACADE ACTUALLY REACHABLE? The panel will come through
-	//   Utils<IKCMResourcesFacade>(), and a facade whose IID is declared but whose AddIn is
-	//   missing from the .fr answers nil - with no warning at build time, none at load time and
-	//   nothing in any log. KCM has been bitten by that exact shape, so the port says it out loud
-	//   instead of leaving it to be discovered while building the UI.
-	//   ⚠Utils<T>() has no nil guard: the OBJECT is tested, never the result of ->.
-	//   ★★AND A CONTROL BESIDE IT. A bare "NO" cannot tell "my AddIn is missing" from "this is
-	//     not how you reach a facade from the model side". IKCMStoryEditsFacade is AddIn'd to the
-	//     same boss in the same resource and has worked for months, so it answers that question:
-	//     if the control says NO too, the instrument is wrong, not the resource.
-	Utils<IKCMResourcesFacade> facade;
-	const bool16 facadeReachable = (facade ? kTrue : kFalse);
-	Utils<IKCMStoryEditsFacade> control;
-	const bool16 controlReachable = (control ? kTrue : kFalse);
-
-	//   ★★AND A SECOND WAY OF ASKING. Utils<T> hands back an interface off the ONE kUtilsBoss the
-	//     session already made; CreateObject2 builds a fresh one. If the fresh boss carries the
-	//     interface and Utils<> does not, the registration is right and something about that one
-	//     long-lived instance is not - which is a different bug from "the AddIn never took".
-	InterfacePtr<IKCMResourcesFacade> fresh(::CreateObject2<IKCMResourcesFacade>(kUtilsBoss));
-	const bool16 freshReachable = (fresh != nil);
-
 	// ----- the summary, then a header line, then one line per difference.
+	// A three-way check of whether Utils<IKCMResourcesFacade>() answers stood here while the facade
+	// was being built, and it earned its keep: the facade came back nil, and the control beside it
+	// (IKCMStoryEditsFacade, on the same boss) came back YES, which is what ruled out the
+	// instrument and left the registration. ⚠THE CAUSE WAS NOT THE ONE THE CHECK NAMED. It blamed
+	// a missing AddIn in the .fr; the AddIn was there, and what was missing was the line in
+	// KCMFactoryList.h - so the boss listed the IID (that table comes from the .fr) while nothing
+	// could build the implementation (that table comes from the factory list). Removed once it
+	// reported YES on all three, 2026-09-09. The lasting guard is not a run-time probe on one
+	// facade but counting CREATE_PMINTERFACE against REGISTER_PMINTERFACE, which covers every
+	// implementation at once - see the header of KCMFactoryList.h.
 	// ⚠The header comes back even when nothing differs: "no differences" is a real answer and has
 	//   to read differently from the property not being there at all (which is ERR:55).
 	KCMResourceDiffStats stats;
@@ -396,9 +378,6 @@ void KCMDescribeResourceDiff(PMString& out)
 				  + ", differ-same-id " + Num(stats.fDifferSameId)
 				  + ", differ-other-id " + Num(stats.fDifferOtherId)
 				  + "; " + Num(static_cast<int32>(took)) + " ms"
-				  + "; facade reachable: " + (facadeReachable ? "YES" : "NO")
-				  + " (control, a facade that has always worked: " + (controlReachable ? "YES" : "NO")
-				  + "; on a freshly created kUtilsBoss: " + (freshReachable ? "YES" : "NO") + ")"
 				  + "\r\n";
 
 	s += "what\tkind\tkey\tsource\ttarget\r\n";
