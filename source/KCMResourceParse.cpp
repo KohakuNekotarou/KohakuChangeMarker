@@ -172,10 +172,36 @@ bool16 KCMIsExcludedResource(const PMString& elementName)
 	//   largest in the document, which made it the row whose flattened attributes filled the list.
 	//   ⚠What is lost with it: an edit made ONLY to the text defaults, and nothing else, is no
 	//     longer reported. That is the cost the user accepted for the noise.
+	//
+	// ★★★Language, added 2026-09-09 (the user's call, on the measurement below). **It does not
+	//   describe the document; it describes how the document was OPENED.** A document still open
+	//   from the session that CREATED it holds all of InDesign's languages in memory; the same file
+	//   reopened from disk holds only the ones it uses. Measured on one pair, whose only real
+	//   difference was one paragraph style: the side made and never closed answered 66 languages,
+	//   the side reopened answered 1, and the comparison reported **65 added**. Closing that side
+	//   and reopening it - the same bytes on disk, nothing edited - brought it to 1 and the
+	//   comparison to **0 added**. Every one of those 65 rows was an artefact of the open route.
+	//   ⚠What is lost with it: a change to a language definition itself (a user dictionary, a
+	//     hyphenation exception - if those even ride in this element) is no longer reported.
+	//     Not measured either way.
+	//   ★★**AND IT IS THE ONLY KIND THAT DOES THIS** - measured, not assumed. Two pairs were built
+	//     whose members were saved one after the other with NO edit in between (so every row that
+	//     comes out is an artefact by construction), one member left open from the session that
+	//     made it and the other reopened from disk. The second pair carried 22 kinds of definition
+	//     on purpose - styles of five kinds, a style group, colour, gradient, tint, layer,
+	//     condition, XML tag, numbering list, cross-reference format, TOC style, master spread,
+	//     section, text variable, hyperlink destination, table, footnote. **Both pairs came back
+	//     with `added 65 Language, removed 0, changed 0` and nothing else.**
+	//   ⚠**THE CAUSE IS STILL NOT Language, and this line does not fix the cause.** ExportINX
+	//     photographs the document AS IT STANDS IN MEMORY, so any element InDesign fills in lazily
+	//     could differ for the same reason; what was measured is that no OTHER kind does today, on
+	//     documents built this way. If a phantom Added ever appears under another name, the fault
+	//     is this same one wearing a different coat - do not read this line as "handled".
 	return elementName == "Spread"
 		|| elementName == "MasterSpread"
 		|| elementName == "Story"
 		|| elementName == "TextDefault"
+		|| elementName == "Language"
 		|| elementName == "MetadataPacketPreference";
 }
 
