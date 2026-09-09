@@ -11,6 +11,7 @@
 #include "VCPlugInHeaders.h"
 
 // Interface includes:
+#include "IDataBase.h"			// GetRootUID - how KCMReadResourceList reaches a database's document
 #include "IDocument.h"
 #include "IDocumentList.h"		// FindDocByDataBase - is this document one the session has?
 #include "IDOMElement.h"
@@ -271,6 +272,53 @@ void KCMDescribeResourceSnapshot(PMString& out)
 	//   began from for the whole session. The working code, the measurements and the traps are in
 	//   docs/ai-notes/kcm-gzip-in-memory-2026-09-09.md, to be copied when that is built.
 	//   ★The compressor is ISVGUtils::CreateZipStream - the name says SVG and means gzip.
+}
+
+//----------------------------------------------------------------------------------------
+// KCMReadResourceList - one database's definitions, snapshot and parse in one call
+//----------------------------------------------------------------------------------------
+
+bool16 KCMReadResourceList(IDataBase* db, const char* which, KCMResourceList& out, PMString& whyNot)
+{
+	// ★EVERY FAILURE NAMES THE SIDE, and it is done here rather than by the caller so that a caller
+	//   with two sides cannot get the two sentences out of step. See the header.
+	if (db == nil)
+	{
+		whyNot = which;
+		whyNot.Append(": no database");
+		whyNot.SetTranslatable(kFalse);
+		return kFalse;
+	}
+
+	InterfacePtr<IDocument> doc(db, db->GetRootUID(), UseDefaultIID());
+	if (doc == nil)
+	{
+		whyNot = which;
+		whyNot.Append(": the database has no document");
+		whyNot.SetTranslatable(kFalse);
+		return kFalse;
+	}
+
+	KCMResourceBytes xml;
+	PMString why;
+	if (!KCMTakeResourceSnapshot(doc.get(), xml, why))
+	{
+		whyNot = which;
+		whyNot.Append(": ");
+		whyNot.Append(why);
+		whyNot.SetTranslatable(kFalse);
+		return kFalse;
+	}
+	if (!KCMParseResources(xml, out, why))
+	{
+		whyNot = which;
+		whyNot.Append(": ");
+		whyNot.Append(why);
+		whyNot.SetTranslatable(kFalse);
+		return kFalse;
+	}
+
+	return kTrue;
 }
 
 // End, KCMResourceSnapshot.cpp.

@@ -17,7 +17,8 @@
 
 // Interface includes:
 #include "IDataBase.h"
-#include "IDocument.h"
+// (IDocument.h went with ReadOneSide on 2026-09-10. Nothing left in this file reaches a document:
+//  it hands two databases to KCMReadResourceList and reads what comes back.)
 
 // General includes:
 #include <sstream>
@@ -28,7 +29,7 @@
 
 // Project includes:
 #include "KCMCore.h"				// KCMArmedTargetDB / KCMArmedSourceDB
-#include "KCMResourceBytes.h"
+// (KCMResourceBytes.h went with ReadOneSide too - the bytes of an export never reach this file now.)
 #include "KCMResourceDiff.h"
 #include "KCMResourceAttrDiff.h"	// which ATTRIBUTES of one definition differ
 #include "KCMProgressBar.h"			// KCMDeferredProgressBar - here with no delay at all (see Rebuild)
@@ -58,43 +59,10 @@ static PMString gWhyNot;
 namespace
 {
 
-/** One document's definitions, or kFalse with the reason. Both sides go through here so that a
-    failure says WHICH side failed without the caller writing the sentence twice. */
-bool16 ReadOneSide(IDataBase* db, const char* which, KCMResourceList& out, PMString& whyNot)
-{
-	if (db == nil)
-	{
-		whyNot = which;
-		whyNot.Append(": no database");
-		return kFalse;
-	}
-
-	InterfacePtr<IDocument> doc(db, db->GetRootUID(), UseDefaultIID());
-	if (doc == nil)
-	{
-		whyNot = which;
-		whyNot.Append(": the database has no document");
-		return kFalse;
-	}
-
-	KCMResourceBytes xml;
-	PMString why;
-	if (!KCMTakeResourceSnapshot(doc.get(), xml, why))
-	{
-		whyNot = which;
-		whyNot.Append(": ");
-		whyNot.Append(why);
-		return kFalse;
-	}
-	if (!KCMParseResources(xml, out, why))
-	{
-		whyNot = which;
-		whyNot.Append(": ");
-		whyNot.Append(why);
-		return kFalse;
-	}
-	return kTrue;
-}
+/* (ReadOneSide stood here until 2026-09-10. The book comparison needed the same two steps -- take
+   a snapshot, parse it, and name the side in the reason -- so it moved next to the snapshot it
+   starts with, as KCMReadResourceList in KCMResourceSnapshot.h. Two copies of the wording is the
+   half that would have drifted, because the wording is the part a reader sees.) */
 
 std::string Num(int32 n)
 {
@@ -166,7 +134,7 @@ bool16 KCMResourceStore::Rebuild(IDataBase* targetDB, IDataBase* sourceDB, PMStr
 	KCMResourceList targetItems;
 
 	progress.Step(0, Phase("Reading the older document's definitions..."));
-	if (!ReadOneSide(sourceDB, "source", sourceItems, whyNot))
+	if (!KCMReadResourceList(sourceDB, "source", sourceItems, whyNot))
 	{
 		gWhyNot = whyNot;
 		return kFalse;
@@ -180,7 +148,7 @@ bool16 KCMResourceStore::Rebuild(IDataBase* targetDB, IDataBase* sourceDB, PMStr
 	}
 
 	progress.Step(1, Phase("Reading the newer document's definitions..."));
-	if (!ReadOneSide(targetDB, "target", targetItems, whyNot))
+	if (!KCMReadResourceList(targetDB, "target", targetItems, whyNot))
 	{
 		gWhyNot = whyNot;
 		return kFalse;

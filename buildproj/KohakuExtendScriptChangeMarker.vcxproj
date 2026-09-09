@@ -222,6 +222,7 @@
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMResourceParse.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMResourceSnapshot.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMBookCompare.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMBookChapterModes.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMBookPair.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMChangedPagesTSV.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMColorSampler.cpp" />
@@ -276,6 +277,8 @@
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMResourceParse.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMResourceSnapshot.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMBookCompare.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMBookChapterModes.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMBookModeNames.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMBookPair.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMBookResult.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMChangedPagesTSV.h" />

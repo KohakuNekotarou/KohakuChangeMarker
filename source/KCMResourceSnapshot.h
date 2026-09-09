@@ -35,6 +35,11 @@
 
 #include "PMString.h"
 
+#include "KCMResourceParse.h"	// KCMResourceList - what KCMReadResourceList produces. ⚠A
+								// MODEL-SIDE header, which is fine here: nothing in the UI half
+								// includes this file.
+
+class IDataBase;
 class IDocument;
 class KCMResourceBytes;
 
@@ -50,6 +55,23 @@ class KCMResourceBytes;
     @return kTrue when a whole export was produced. kFalse means there is nothing usable in
             `out` -- a short export is a failure, not a smaller document. */
 bool16 KCMTakeResourceSnapshot(IDocument* doc, KCMResourceBytes& out, PMString& whyNot);
+
+/** One database's definitions: KCMTakeResourceSnapshot followed by KCMParseResources.
+
+    ★ONE PLACE, TWO CALLERS. This was an anonymous helper inside KCMResourceStore.cpp until
+    2026-09-10, when the book comparison came to need the same two steps, in the same order, with
+    the same wording for a failure. Copying it would have been the shape [[one-question-one-place]]
+    names -- and the wording is the part that would have drifted, because it is the part a reader
+    sees.
+
+    @param db     the document's database. nil is a refusal with a reason, not a crash.
+    @param which  the word the reason begins with: "source", "target". Passed in so that a caller
+                  with two sides never has to write "which one failed" twice.
+    @param out    receives the items. Emptied by KCMParseResources.
+    @param whyNot on kFalse, "<which>: <the step that failed>".
+    @return kTrue when a whole list was produced. ⚠kFalse leaves `out` unusable -- a short export
+            is a failure, never a smaller document. */
+bool16 KCMReadResourceList(IDataBase* db, const char* which, KCMResourceList& out, PMString& whyNot);
 
 /** Takes a snapshot of the ACTIVE document and says what came out, in one line, for
     app.kcmResourceSnapshot: "376004 bytes, 78 ms" or "FAILED: <which step>".
