@@ -34,11 +34,15 @@
 enum KCMChapterState
 {
 	kKCMChapterUnknown = 0,	// paired, not judged yet - never survives into a finished result
-	kKCMChapterChanged,		// at least one page differs (or the page counts differ)
-	kKCMChapterNoChange,		// every page compared equal
+	kKCMChapterChanged,		// at least one MODE found a difference (2026-09-10: three modes, not
+								// only the pages - fChangedModes names which ones)
+	kKCMChapterNoChange,		// every mode ran and none of them found anything
 	kKCMChapterAdded,			// present in the target book only
 	kKCMChapterDeleted,		// present in the source book only
-	kKCMChapterFailed,		// could not be opened; fWhy says what the book knows about it
+	kKCMChapterFailed,		// nothing changed, and at least one mode could not be judged: the
+								// chapter would not open, or it opened and a mode failed on it
+								// (2026-09-10 - it meant "could not be opened" alone until then).
+								// fWhy says which, for the first one
 	kKCMChapterNotCompared	// the run was cancelled before this chapter was judged (see below)
 };
 
@@ -60,7 +64,14 @@ struct KCMChapterResult
 	IDFile				fSourceFile;	// empty when the chapter exists in the target book only
 	KCMChapterState	fState;
 
-	/** WHY this chapter failed -- only filled in for kKCMChapterFailed.
+	/** WHY this chapter has no clean answer: the reason of the FIRST mode that could not be judged,
+	    or, for a chapter that never opened, the word the book itself gave for that.
+
+	    ⚠**NOT ONLY ON Failed ROWS, since 2026-09-10.** A chapter can be Changed - one mode found a
+	    difference - while another mode failed on it, and that row carries this string too. What is
+	    NOT here is a cancel: a mode the reader stopped is not filed at all (KCMBookCompare.cpp).
+	    ⚠The DIALOG still shows it on Failed rows only, because it has to share one cell with the
+	    file name (see the warning below); app.kcmBookResult carries it on every row that has one.
 
 	    **IT SAYS THE REASON AND NOT THE VERDICT.** Everywhere this string is shown, the word
 	    "Failed" is shown beside it: the dialog puts it in the row's state column and
@@ -95,7 +106,9 @@ struct KCMChapterResult
 	    Change column is empty, which is the right answer and not a gap: nothing was looked at. It
 	    is the same rule the pairing already keeps for those chapters (having no counterpart IS the
 	    answer, and must not be restated as a failure to do something that was never going to be
-	    done). */
+	    done). ★A cancel files nothing either, for that same reason (KCMBookCompare.cpp), so a
+	    cancelled chapter's column is empty unless a mode had ALREADY failed on it before the
+	    cancel arrived -- in which case the '?' is reporting that failure and not the cancel. */
 	uint32			fChangedModes;
 
 	/** WHICH comparisons could not be judged -- a page that could not be rasterised, an export that

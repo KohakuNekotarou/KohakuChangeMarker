@@ -291,10 +291,11 @@ void KCMToggleStorySection()
 		// ★MEASURED 2026-08-18 (bug recheck B-U4): open 303 -> closed 185 -> reopened 303, where 185
 		//   is exactly the designed top pane. So the closing arithmetic lands on the number it aims
 		//   at, and the reopen restores the height the section was closed at (SavedSectionHeight).
-		//   ⚠**The 185 in that measurement is the top pane of the day**, which became 230 on
-		//     2026-09-09 (the Resources value band). The numbers are left as measured rather than
-		//     rewritten to 348 / 230: what the measurement establishes is that closing lands ON the
-		//     designed height, and re-measuring is the only thing that may put new numbers here.
+		//   ★**The 185 in that measurement is the top pane, and it still is.** It was briefly 230 on
+		//     2026-09-09 (the Resources value band) and came back to 185 the same day, when that
+		//     band moved into the message area. The numbers are left as measured either way: what
+		//     the measurement establishes is that closing lands ON the designed height, and
+		//     re-measuring is the only thing that may put new numbers here.
 		if (designedTop > 0 && wholeHeight > designedTop)
 			ResizePanelByDelta(panel, designedTop - wholeHeight);
 		else if (designedTop <= 0)

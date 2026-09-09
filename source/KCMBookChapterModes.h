@@ -58,9 +58,14 @@ enum KCMBookModeVerdict
     chapter's text move at all". Narrowing this one to match would mean running the text diff on
     every chapter of the book to produce one bit.
 
-    ⚠**Two documents that are not versions of one another come out CHANGED**, because stories are
-    matched by UID and none of them line up. KCMStoryStamp.h says that is deliberate and needs no
-    special case, and it is the same answer the panel gives for such a pair.
+    ⚠**UNMEASURED, AND IT CONTRADICTS A MEASUREMENT** (flagged 2026-09-10). The claim was that two
+    documents which are not versions of one another come out CHANGED, because stories are matched by
+    UID and none of them line up (KCMStoryStamp.h reasons that way about text PASTED into a new
+    document). But 2026-08-15 measured the opposite for documents BUILT separately by the same
+    script: the story UIDs lined up, the counters were identical (all eight read 7), and the panel
+    reported no edits although the text differed. Which of the two happens turns on whether two
+    separately built documents end up with the same story UIDs, and nobody has measured that for a
+    book. ⇒ **Do not rely on this paragraph; measure it.** (Spec map BK-78 carries the same warning.)
 
     @param targetDB the newer chapter. nil is unjudged.
     @param sourceDB the older chapter. nil is unjudged.

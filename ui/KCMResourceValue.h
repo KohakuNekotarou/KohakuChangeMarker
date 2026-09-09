@@ -4,8 +4,13 @@
 //
 //  Kohaku Change Marker (KCM)
 //
-//  The value band in the panel's upper pane: the selected definition, and the attributes that
-//  differ between the two documents (the Resources mode - design section 6-2 / 6-3).
+//  The value band: the selected definition's OLDER value (the Resources mode - design section
+//  6-2 / 6-3).
+//
+//  ⚠**"BAND" IS A NICKNAME, NOT A WIDGET, SINCE 2026-09-09.** It had one of its own for a day;
+//  it now writes into the panel's MESSAGE AREA, the same box the Story mode puts "Source Text:"
+//  in. The name is kept because the whole file is written around it - what changed is that the
+//  box is SHARED, which is why clearing it has to ask whose text is standing there first.
 //
 //  WHY THE BAND EXISTS. The Target's value can be read off the document in front of the reader.
 //  **The Source's cannot be read anywhere at all** - the older document's paragraph style is not

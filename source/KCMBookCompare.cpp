@@ -438,7 +438,9 @@ ErrorCode PageDiffers(const UIDRef& targetPage, const UIDRef& sourcePage, bool16
     chapter's slice of the bar starts, and the phase owns kKCMBookPixelPhaseTicks of it).
     outCancelled is set when the user pressed Cancel, and the answer is then unjudged - a walk whose
     remaining pages were never read cannot be called unchanged, however many pages had already
-    compared equal. */
+    compared equal. ⚠**The caller then files nothing for this mode**: unjudged is what the walk
+    honestly is, but a cancel must not reach the Change column as a '?' (2026-09-10 - the reasoning
+    is at the call site, and outWhy is left empty for the same reason). */
 KCMBookModeVerdict ComparePixels(IDataBase* targetDB, IDataBase* sourceDB,
                                  CProgressBar& progress, int32 baseTicks,
                                  bool16& outCancelled, PMString& outWhy)
@@ -504,9 +506,13 @@ KCMBookModeVerdict ComparePixels(IDataBase* targetDB, IDataBase* sourceDB,
 		// collateral ([[command-sequence-rollback-on-error]]).
 		if (progress.WasCancelled(kFalse))
 		{
+			// ⚠**NO REASON IS WRITTEN HERE, DELIBERATELY** (2026-09-10). The caller does not file
+			//   this mode at all when a cancel is what ended it -- a cancel is not an unjudged mode
+			//   (the reasoning is at the call site) -- so a reason built here would be dropped
+			//   unread, and a reader of this function would be told it produces something it does
+			//   not. What says the run was stopped is outCancelled, and the summary line's
+			//   "- cancelled".
 			outCancelled = kTrue;
-			outWhy = PMString("Pixel: cancelled");
-			outWhy.SetTranslatable(kFalse);
 			return kKCMBookVerdictUnjudged;
 		}
 	}
@@ -713,14 +719,29 @@ ErrorCode KCMCompareBooks(IBook* target, IBook* source,
 				bool16   chapterCancelled = kFalse;
 
 				progress.SetTaskText(ChapterPhaseText(chapter.fName, "Pixel"));
-				RecordVerdict(chapter, kKCMBookModePixel,
-				              ComparePixels(targetDB, sourceDB, progress, baseTicks,
-				                            chapterCancelled, why), why);
+				const KCMBookModeVerdict pixelVerdict =
+					ComparePixels(targetDB, sourceDB, progress, baseTicks, chapterCancelled, why);
 
-				// ⚠**A CANCEL STOPS THE CHAPTER, NOT JUST THE PHASE.** Running the other two after
-				//   the person asked to stop would make Cancel take about as long as finishing --
-				//   and the resources phase, the one that would still be to come, is the expensive
-				//   one.
+				// ⚠★★★**A CANCEL IS NOT AN UNJUDGED MODE** (2026-09-10, the user's call). The
+				//   Change column's '?' means "this was looked at and could not be judged" -- a page
+				//   that would not rasterise, an export that came back short -- so a reader who sees
+				//   one goes hunting for a broken chapter. A mode the reader THEMSELF stopped is
+				//   none of that. It would also contradict the cell beside it: the chapter's verdict
+				//   is NotCompared, whose whole meaning is that nothing was looked at, and the spec
+				//   map has the Change column empty on exactly those rows (BK-46).
+				//   ⇒ The cancel travels in chapterCancelled alone; this mode is simply not filed.
+				//   ★Pixel is the only phase that can end this way. The other two are asked about
+				//     the cancel AFTER they have answered, so what they file is a real answer.
+				if (!chapterCancelled)
+					RecordVerdict(chapter, kKCMBookModePixel, pixelVerdict, why);
+
+				// ⚠**A CANCEL STOPS THE PHASES THAT HAVE NOT RUN.** Running the other two after the
+				//   person asked to stop would make Cancel take about as long as finishing -- and
+				//   the resources phase, the one that would still be to come, is the expensive one.
+				//   ★**It does not reach back over the phases that HAVE run**: what they filed is a
+				//     real answer, and after the last of them there is nothing left to stop, which
+				//     is why the ask at the end of the Resources block sets the RUN's flag and not
+				//     this chapter's (2026-09-10).
 				if (!chapterCancelled)
 				{
 					progress.SetPosition(baseTicks + kKCMBookPixelPhaseTicks);
@@ -742,8 +763,21 @@ ErrorCode KCMCompareBooks(IBook* target, IBook* source,
 					RecordVerdict(chapter, kKCMBookModeResources,
 					              KCMJudgeChapterResources(targetDB, sourceDB, why), why);
 
+					// ⚠★★★**THE CHAPTER IS FINISHED, SO THIS CANCEL DOES NOT TOUCH ITS VERDICT**
+					//   (2026-09-10). Resources is the LAST of the three phases, so by the time this
+					//   is asked every mode has answered. Calling the chapter NotCompared here would
+					//   deny an answer that was fully arrived at -- BK-38's rule read backwards,
+					//   because "could not be processed" and "processed, and nothing had changed"
+					//   must not share a word in EITHER direction.
+					//   ★What this cancel stops is the RUN: no next chapter is opened. That is the
+					//     same shape as the ask after the loop, which says so in as many words
+					//     ("nothing was lost, but the user did press Cancel").
+					//   ⚠**It was `chapterCancelled` until 2026-09-10**, which took the verdict away
+					//     from a chapter all three modes had just finished judging. Pressing Cancel
+					//     during the Resources phase -- the phase that owns most of a chapter's time
+					//     -- was enough to produce it.
 					if (progress.WasCancelled(kFalse))
-						chapterCancelled = kTrue;
+						cancelled = kTrue;
 				}
 
 				// ★THE CHAPTER'S VERDICT IS DERIVED from the three modes, never stored twice - see
