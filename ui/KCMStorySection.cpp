@@ -451,8 +451,8 @@ void KCMUpdateStorySectionLabel()
 	//   selected before is a reading nothing about which looks stale.
 	//   ★It is CLEARED rather than rewritten: after any of those three there is no selected row to
 	//     rewrite it from. The next click or arrow press fills it (KCMStoryJumpToRow).
-	//   ⚠Cleared in all three modes. In Pixel and Story the band is empty anyway, so this costs one
-	//     write of an empty string and removes the need to ask the mode a second time here.
+	//   ⚠Called in all three modes, and that is no longer free: the band shares the message area
+	//     now, so the clear asks whether the text standing there is its own (KCMResourceValue.cpp).
 	KCMClearResourceValue();
 }
 

@@ -2672,17 +2672,17 @@ resource KCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 	kKCMPanelWidgetID,			// WidgetID
 	kPMRsrcID_None,					// RsrcID
 	kBindNone,						// Binding
-	0, 0, 224, 230,					// Frame: left, top, right, bottom.
+	0, 0, 224, 185,					// Frame: left, top, right, bottom.
 									// ★The height includes the band at the bottom that carries the Story
 									//   Edits expander and the cat illustration. **The band is 32px because
 									//   a 20px one cannot hold the 32x32 artwork** -- that is what the last
 									//   growth of this panel paid for, and the message area took the width
 									//   the cat left behind (see kKCMStatusTextWidgetID below).
-									// ★★2026-09-09: 185 -> 230. The 45px added in the middle is the
-									//   Resources mode's value band (kKCMResourceValueWidgetID), and
-									//   everything below it moved down by exactly that much. The same
-									//   number is written in five more places in this file and once in
-									//   KCMUIID.h (kKCMPanelTopPaneHeight) - nothing links them.
+									// ★★2026-09-09: 185 -> 230 -> 185 again, the same day. The 45px was the
+									//   Resources mode's own value band; that band writes into the message area now
+									//   (the user: "the same display area as the Story mode"), so the widget went
+									//   and the height came back = what the released 1.5.0 already ships with.
+									//   ⚠The number is still written in five more places here and once in KCMUIID.h.
 	kTrue, kTrue,					// Visible, Enabled
 	kFalse,							// Erase background
 	kInterfacePaletteFill,			// Erase to color
@@ -2694,10 +2694,10 @@ resource KCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 	//   for its Link Info section (LinksUIViews_enUS.fr:43-68) - the feature this one is modelled on.
 	//
 	//   ★★THE WIDGETS BELOW ARE UNCHANGED - not one Frame moved. The top pane covers the whole panel
-	//   (0,0,224,230 - the whole panel), so every coordinate inside it means what it always meant.
+	//   (0,0,224,185 - the whole panel), so every coordinate inside it means what it always meant.
 	//   ⚠2026-09-09: "not one Frame moved" was true of the 2026-08-09 change this sentence is about.
-	//     It is no longer true of the file: the value band pushed the message area, the cat, the
-	//     expander and the heading down by 45px. The sentence is kept because it is what makes the
+	//     It was briefly untrue on 2026-09-09, while a value band pushed the message area, the cat,
+	//     the expander and the heading down by 45px. That band is gone and they are back. It makes the
 	//     coordinates below readable against the panel's own origin.
 	//   Their indentation was
 	//   deliberately left alone too, so the diff shows the nesting and nothing else.
@@ -2711,15 +2711,15 @@ resource KCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 	(
 		kKCMSplitterWidgetID, kPMRsrcID_None,
 		kBindAll,
-		Frame(0, 0, 224, 230)			// ★185 -> 230 (see the panel frame above)
+		Frame(0, 0, 224, 185)			// ★230 -> 185 (see the panel frame above)
 		kTrue, kTrue,
 		"",
 		kFirstWidgetIsTop,
 		kTrue,							// Top pane visible
 		kFalse,							// ★Bottom pane hidden = the section starts closed
-		230,							// Splitter position
+		185,							// Splitter position
 		100,							// Splitter init percentage
-		230,							// Top snap = the top pane is never squeezed below its designed height
+		185,							// Top snap = the top pane is never squeezed below its designed height
 		kDontSnapSlider,
 		60 + kKCMStoryHeaderHeight,	// Bottom snap = smallest useful height for the section. ★+18 (2026-08-10): the heading band is always there, so the floor has to rise with it or the smallest section shows two rows where it used to show three
 		kDontSnapSlider,
@@ -2738,7 +2738,7 @@ resource KCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 			(
 				kKCMTopPaneWidgetID, kPMRsrcID_None,
 				kBindAll,
-				Frame(0, 0, 224, 230)		// ★185 -> 230 (see the panel frame above)
+				Frame(0, 0, 224, 185)		// ★230 -> 185 (see the panel frame above)
 				kTrue, kTrue,
 				"",
 				{
@@ -2909,13 +2909,13 @@ resource KCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 			//     unlike the tool icon it has no margin to clip -- so **the band was widened to 32px**
 			//     instead, which is what made the panel taller.
 			//   ★The width it left behind is taken by the message area (kKCMStatusTextWidgetID below).
-			Frame(178, 194, 210, 226)	// 32x32. ★Nudged up and left from the band-exact
-									//   (184,198,216,230), at the user's request ("a little further up and
+			Frame(178, 149, 210, 181)	// 32x32. ★Nudged up and left from the band-exact
+									//   (184,153,216,185), at the user's request ("a little further up and
 									//   left"). ⚠**The band (32px) and the artwork (32px) are the same
 									//   height, so no padding can exist inside the band** -- what pokes out
 									//   at the top runs up against the message area above. Same coordinates
 									//   as the ON icon.
-									// ★2026-09-09: +45px, with everything else below the value band.
+									// ★2026-09-09: +45px and back again - the value band that pushed it is gone.
 			kTrue, kTrue,
 			kADBEIconSuiteButtonType,
 		),
@@ -2924,55 +2924,9 @@ resource KCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 			kKCMIconOnWidgetID,
 			kKCMIconOnResID, kKCMUIPluginID,
 			kBindRight | kBindTop,		// ★same reason as the OFF icon
-			Frame(178, 194, 210, 226)	// ★same coordinates as the OFF icon (which carries the reason)
+			Frame(178, 149, 210, 181)	// ★same coordinates as the OFF icon (which carries the reason)
 			kFalse, kTrue,
 			kADBEIconSuiteButtonType,
-		),
-
-		// ★★THE RESOURCES MODE'S VALUE BAND (2026-09-09, design 6-2 / 6-3). The selected definition's
-		//   key on the first line, then one line per attribute that differs:
-		//
-		//       ParagraphStyle/Body
-		//       PointSize  8.503937007874015 -> 17.007874015748031
-		//
-		// ★WHY IT IS HERE AT ALL. The Target's value can be read off the document in front of the
-		//   reader; **the Source's cannot be read anywhere** - the old document's paragraph style is
-		//   not on screen. This band is the only place the two are put side by side.
-		// ⚠**IT STAYS IN EVERY MODE AND IS EMPTY IN PIXEL AND STORY** (the user's call): making the
-		//   panel taller and shorter on a mode switch would run a full palette re-layout each time
-		//   while docked. The 45px is paid once.
-		// ⚠**Values are verbatim** - no "pt", no rounding. The export writes bare numbers and nothing
-		//   knows which attributes are lengths (IKCMResourcesFacade.h says the same).
-		// ⚠**Added / Removed rows print one side only**, with no arrow: one of the two values does
-		//   not exist, and "-> " with nothing after it reads as "changed to empty".
-		//
-		// ★A stock StaticMultiLineTextWidget, unlike the message area below it, which had to be
-		//   self-drawn to get two colours in one box. Nothing here needs a second colour.
-		// ★The field list is Widgets.fh:1044-1050 = CControlView, StaticTextAttributes,
-		//   StaticMultiLineTextAttr (scroll bar / font / pixels between lines / inset), CTextControlData.
-		//   ⚠The "4" is **fNumPixelsBetweenLines** (Widgets.fh:624), not a line count: the box draws as
-		//     many whole lines as its height allows. **41px of height with 4px leading is 2 lines on a
-		//     Japanese UI (17.9px lines) and 3 on an English one** - a definition with more changed
-		//     attributes than that has the rest clipped. Measured, not assumed; the same measurement
-		//     the message area's comment carries.
-		// ★Ampersand conversion off, as every other static text in this panel: a definition may well
-		//   be named "A&B" and a lone '&' would be eaten as an accelerator.
-		StaticMultiLineTextWidget
-		(
-			kKCMResourceValueWidgetID,
-			kPMRsrcID_None,
-			kBindLeft | kBindRight | kBindTop,	// grows with the panel, stays under the Prev/Next row
-			Frame(8, 76, 216, 117)		// ★The band the panel grew by. Left and right edges are the
-									//   message area's (8..216) so the two read as one column; the
-									//   4px below it before the message area at 121 is the same gap
-									//   this pane uses everywhere else.
-			kTrue, kTrue,
-			kAlignLeft, kDontEllipsize, kFalse,	// alignment / ellipsize / convert ampersands
-			kInvalidWidgetID,			// scroll bar: none. What does not fit is clipped (see above)
-			kPaletteWindowFontId,		// the palette font, as the message area and the headings
-			4,							// pixels between lines
-			2, 0,						// inset
-			"",							// empty until a row is picked (KCMResourceValue.cpp)
 		),
 
 		// Status text (filled in by the observer with the result of each action).
@@ -2997,7 +2951,7 @@ resource KCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 			kKCMStatusTextWidgetID,
 			kPMRsrcID_None,
 			kBindLeft | kBindRight | kBindTop,
-			Frame(8, 121, 216, 195)		// ★2026-09-09: +45px - the value band above took 76..117.
+			Frame(8, 76, 216, 150)		// ★2026-09-09: +45px, then back to 76 when the value band left.
 									//   ★★The bottom edge is 45 past 150 because **a Japanese UI did not fit
 									//   four lines**: a palette-font line is taller than a measured string
 									//   suggests, so four of them needed more than the box had and the
@@ -3037,10 +2991,10 @@ resource KCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 			//   downwards** -- which is exactly what happened once it was docked and reopened.
 			//   "Sit in the band at the bottom" is carried by the Frame coordinates, not by the binding.
 			kBindLeft | kBindTop,
-			Frame(4, 206, 20, 222)		// centred vertically in the band at the bottom of the top pane
-									//   (198..230; the artwork is 16px, so 8px above and below). The left
+			Frame(4, 161, 20, 177)		// centred vertically in the band at the bottom of the top pane
+									//   (153..185; the artwork is 16px, so 8px above and below). The left
 									//   edge, 4px, sits slightly inside the message area's 8px.
-									// ★2026-09-09: +45px (the value band above).
+									// ★2026-09-09: +45px, then -45px again when the value band left.
 			kTrue, kTrue,
 			kADBEIconSuiteButtonType,
 		),
@@ -3056,11 +3010,11 @@ resource KCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 			kKCMStorySectionLabelWidgetID,
 			kSysStaticTextPMRsrcId,
 			kBindLeft | kBindRight | kBindTop,	// the heading stretches with the panel
-			Frame(24, 207, 174, 221)	// to the right of the expander (4..20), centred vertically in the
-									//   band (198..230). ★The right edge stops 4px short of the cat
+			Frame(24, 162, 174, 176)	// to the right of the expander (4..20), centred vertically in the
+									//   band (153..185). ★The right edge stops 4px short of the cat
 									//   illustration (178..210); both are kBindRight, so widening the
 									//   panel keeps that gap.
-									// ★2026-09-09: +45px (the value band above).
+									// ★2026-09-09: +45px, then -45px again when the value band left.
 			kTrue, kTrue,
 			kAlignLeft, kDontEllipsize, kFalse,
 			kKCMStorySectionLabelKey,
@@ -3078,7 +3032,7 @@ resource KCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 			(
 				kKCMStorySectionWidgetID, kPMRsrcID_None,
 				kBindAll,
-				Frame(0, 230, 224, 330 + kKCMStoryHeaderHeight)	// ★185 -> 230: it starts where the top
+				Frame(0, 185, 224, 285 + kKCMStoryHeaderHeight)	// ★230 -> 185: it starts where the top
 												// pane now ends. ★+18px at the bottom: the heading band
 												// is added without costing the
 												// section a visible row

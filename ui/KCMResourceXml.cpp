@@ -39,7 +39,9 @@ namespace
 	★What is kept is a BACKSTOP, not a policy: 6,000 characters is measured to work, and a body an
 	order of magnitude past that is unmeasured territory rather than something known to be safe.
 	⚠It is per SIDE, not per alert: a Changed definition shows two of these.
-	★When it does bite, it says so, and the whole text is always in app.kcmResourceDiff.
+	★When it does bite, it says so. ⚠**And what it says has to be the truth**: the rest is shown
+	  NOWHERE. app.kcmResourceDiff carries a 72-character excerpt around each difference
+	  (kKCMDiffExcerptChars in KCMResourceDiff.cpp), never the element - measured 2026-09-09.
 */
 const int32 kKCMXmlSideLimit = 20000;
 
@@ -65,15 +67,24 @@ void AppendSide(PMString& out, const char* heading, const PMString& body)
 	//   the platform string is whatever the system code page can hold - it silently drops the rest.
 	//   GetUTF8String / SetUTF8String is a lossless round trip, and the layout only ever inserts
 	//   ASCII, which cannot land inside a multi-byte sequence.
+	// ★★★LAID OUT FIRST, DECODED SECOND (2026-09-09, the user's call: "the style group's colon is
+	//   still showing as the symbol"). ⚠**The order is not interchangeable**: a `%3c` decoded first
+	//   would become a `<` that the layout would then read as the start of a tag, and the element
+	//   would be broken apart at a character that is part of somebody's style name.
+	// ⚠★★**THIS IS THE ONE PLACE THE WINDOW NO LONGER SHOWS THE FILE BYTE FOR BYTE**, and the
+	//   heading says so out loud. What it buys: the row that opened the window, the heading above
+	//   it and the body now spell a style name the same way. Before, one name appeared in two
+	//   spellings on one screen and nothing said which was the real one.
 	PMString pretty;
-	pretty.SetUTF8String(KCMPrettyXml(body.GetUTF8String()));
+	pretty.SetUTF8String(KCMDecodePercentEscapes(KCMPrettyXml(body.GetUTF8String())));
 	pretty.SetTranslatable(kFalse);
 
 	if (pretty.CharCount() > kKCMXmlSideLimit)
 	{
 		pretty.Remove(kKCMXmlSideLimit, kMaxInt32);
 		out.Append(pretty);
-		out.Append("\n... (cut here. The whole text is in app.kcmResourceDiff)\n\n");
+		out.Append("\n... (cut here at 20,000 characters. The rest is not shown anywhere:"
+				   " app.kcmResourceDiff carries only a short excerpt around each difference.)\n\n");
 		return;
 	}
 
@@ -144,12 +155,18 @@ void KCMShowResourceXml()
 	//   stands on its own, away from the Kind column that would otherwise say what sort of thing it
 	//   is (KCMResourceValue.h carries the shortening rule and why the list may shorten).
 	// ★The escapes are read here too, so the heading of this window and the row that opened it say
-	//   the same thing (`%3a` is a colon - KCMXmlPretty.h). ⚠The BODIES below are left exactly as
-	//   the exporter wrote them: this window is where a reader goes to see the real XML, and
-	//   quietly rewriting it here would defeat the one thing it is for.
+	//   the same thing (`%3a` is a colon - KCMXmlPretty.h).
+	// ⚠★★**AND SO ARE THE BODIES, SINCE 2026-09-09** (the user: "the style group's colon is still
+	//   showing as the symbol"). They used to be left exactly as the exporter wrote them, on the
+	//   reasoning that this window is where a reader goes to see the real XML. What that overlooked
+	//   is that the heading and the list were ALREADY decoded, so one style name was spelled two
+	//   ways on one screen with nothing to say which was the name it really has. ★The line below
+	//   states what was done, so the window still tells the truth about itself.
 	PMString text;
 	text.SetUTF8String(KCMDecodePercentEscapes(key.GetUTF8String()));
 	text.SetTranslatable(kFalse);
+	text.Append("\n");
+	text.Append("(%XX escapes are decoded for reading; the file holds them escaped.)");
 	text.Append("\n\n");
 
 	// ⚠Source first (the user's call). The Target:/Source: lines at the top of the panel read the

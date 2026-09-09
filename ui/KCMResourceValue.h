@@ -32,7 +32,7 @@
 // signature below, so it is included rather than assumed.
 #include "PMString.h"
 
-/** Write the OLDER values of the selected row into the upper pane's band.
+/** Write the OLDER values of the selected row into the panel's MESSAGE AREA.
 
 	★★★**IT IS THE STORY MODE'S BOX, WORD FOR WORD** (2026-09-09, the user's call: "make it like
 	Story's Source Text - Source Resource - and the second line just the source's value"). Clicking
@@ -55,14 +55,14 @@
 	  knows which attributes are lengths (IKCMResourcesFacade.h states the same contract).
 	⚠**An attribute the Source does not have contributes no line.** There is no older value to
 	  print. The list's own row says so instead, with a `+`.
-	⚠**What does not fit is clipped**: the band holds 2 lines on a Japanese UI and 3 on an English
-	  one (KCMUI.fr carries that measurement next to the widget). ★That is why a click on an
-	  ATTRIBUTE row is the exact case: label plus one value is two lines, always.
+	⚠**What does not fit is clipped**: the message area holds 4 lines on a Japanese UI (KCMUI.fr
+	  carries the measurement next to the widget) - MORE than the retired band's 2. ★A click on an
+	  ATTRIBUTE row is still the exact case: a label and one value.
 
 	@param row        0 .. IKCMResourcesFacade::GetChangeCount()-1. Out of range clears the band.
-	@param attrIndex  which attribute the reader clicked, or -1 for the definition row itself. A
-	                  definition row has no single older value, so it prints one line per attribute
-	                  that HAS one, in the order its child rows stand in.
+	@param attrIndex  which attribute the reader clicked, or -1 for the definition row itself.
+	                  ★A definition row has no single older value, so it shows **the label and
+	                  nothing under it** (the user's call, 2026-09-09).
 	@return kTrue when something was written. ★kFalse is not a failure worth reporting: the panel
 	        may simply not be open, and every caller is a gesture the reader made in the list.
 */

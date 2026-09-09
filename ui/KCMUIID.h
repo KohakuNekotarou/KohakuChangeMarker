@@ -477,8 +477,7 @@ DECLARE_PMID(kWidgetIDSpace, kKCMStorySectionLabelWidgetID, kKCMUIPrefix + 50)	/
 DECLARE_PMID(kWidgetIDSpace, kKCMStoryColUIDWidgetID, kKCMUIPrefix + 69)	// heading over the left cell
 DECLARE_PMID(kWidgetIDSpace, kKCMStoryColTextWidgetID, kKCMUIPrefix + 70)	// heading over the middle cell (the one that grows)
 DECLARE_PMID(kWidgetIDSpace, kKCMStoryColKindWidgetID, kKCMUIPrefix + 71)	// heading over the right cell. ⚠Its text is the same in both modes ("Change"), and it still needs an ID: the mode switch writes all three rather than remembering which ones differ
-// ★The band in the upper pane that shows the SELECTED definition and the attributes that differ, as ONE multi-line string (the Resources mode; empty in the other two). One widget rather than a row of them: how many attributes changed is not known until a row is picked, and a multi-line box takes '\n'
-DECLARE_PMID(kWidgetIDSpace, kKCMResourceValueWidgetID, kKCMUIPrefix + 72)	// upper pane: "ParagraphStyle/Body" then "PointSize  8.5 -> 17.0", one attribute per line
+// (kKCMUIPrefix + 72 is free. It was the Resources mode's own value band, retired on 2026-09-09 - the day it was added - when that band moved into the panel's MESSAGE AREA, the box the Story mode writes "Source Text:" into. ★Left unused rather than reassigned: the panel grew 45px for it and shrank back, and a reader of this file should be able to see that happened.)
 DECLARE_PMID(kWidgetIDSpace, kKCMStoryRowWidgetID, kKCMUIPrefix + 51)		// the row template itself. ★This is what GetWidgetTypeForNode answers
 DECLARE_PMID(kWidgetIDSpace, kKCMStoryChangeRowWidgetID, kKCMUIPrefix + 63)	// ★the template of a **change row** (the second level). ★It **has to differ from +51 above**: the framework decides from the ID GetWidgetTypeForNode answers whether a widget can be recycled, and answering the same one hands a story row's widget to a change row while scrolling. ⚠**Its two cells reuse +48 and +49** -- widget IDs need be unique only among the descendants of one widget (guide vol2-12). The book rows share the same two
 DECLARE_PMID(kWidgetIDSpace, kKCMStoryRubyRowWidgetID, kKCMUIPrefix + 64)	// ★the template of a **ruby change row**. It has to differ from +63 for the same reason: the ID GetWidgetTypeForNode answers is what decides whether a widget can be recycled. ⚠Without a separate one, the taller ruby widget is handed to an ordinary change row and **the rows overlap** (the height belongs to the widget, so an unchanged ID means the tree does not replace it)
@@ -931,17 +930,16 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowStateWidgetID, kKCMUIPrefix + 49)	// = t
 //   While it is open, the floor is "the top pane + the section's minimum (the Bottom snap in the
 //   .fr)", and the C++ asks the splitter for the actual snap value rather than writing that
 //   number in a second place.
-// ★★2026-09-09: 185 -> 230. The extra 45px is the band that shows the selected definition's
-//   changed attributes (kKCMResourceValueWidgetID, design 6-2). ⚠**The band stays in every mode**
-//   and is simply empty in Pixel and Story: resizing the panel on a mode switch would run a full
-//   PaletteRefUtils re-layout each time while docked, which is why the user chose to pay the
-//   height once. ⚠It is visible from the released version, so the release notes have to say so -
-//   the same kind of change as 1.4.0's 153 -> 185.
-// ⚠**The .fr writes 230 in six more places** (the panel frame, the splitter's frame / position /
+// ★★2026-09-09: 185 -> 230 -> 185, all in one day. The 45px was a band of its own for the
+//   Resources mode's values. That band now writes into the panel's MESSAGE AREA instead (the
+//   user: "show it in the same display area as the Story mode"), so the widget went and the
+//   height came back. ⇒ **The panel is the height the released 1.5.0 already ships with**, and
+//   the release notes have nothing to say about it after all - unlike 1.4.0's 153 -> 185.
+// ⚠**The .fr writes 185 in six more places** (the panel frame, the splitter's frame / position /
 //   top snap, the top pane, and the top of the lower pane). They are coordinates, not this
 //   constant, so nothing links them - KCMUI.fr says so at each one.
 #define kKCMPanelMinWidth		224
-#define kKCMPanelTopPaneHeight	230
+#define kKCMPanelTopPaneHeight	185
 
 // The resource ID of the check-mark cursor. It is the CursorID of a CursorSpec, and HOTC(this ID)
 // gives the hotspot (the check mark's vertex, which is the point the click is taken at).

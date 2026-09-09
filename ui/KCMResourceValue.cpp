@@ -11,11 +11,11 @@
 #include "VCPlugInHeaders.h"
 
 // ----- Interfaces -----
-#include "IControlView.h"
-#include "ITextControlData.h"		// the band is a stock StaticMultiLineTextWidget
+#include "IControlView.h"			// what KCMFindPanelWidget hands back
+#include "IKCMStatusTextData.h"		// reading back WHOSE message is standing in the shared box
 
 // ----- Project -----
-#include "KCMUIID.h"				// kKCMResourceValueWidgetID
+#include "KCMUIID.h"				// kKCMStatusTextWidgetID
 #include "Utils.h"					// Utils<IKCMResourcesFacade>()
 #include "IKCMResourcesFacade.h"	// GetNthChange / GetNthAttrCount / GetNthAttr
 #include "KCMUIShared.h"			// KCMFindPanelWidget
@@ -25,29 +25,69 @@
 namespace
 {
 
+/* The label this band writes -- SPELLED IN ONE PLACE, because two things need it.
+
+   ★★IT IS ALSO HOW THE BAND RECOGNISES ITS OWN WRITING. Since the band moved into the message
+     area it shares that box with the panel's ordinary status messages, and KCMClearResourceValue
+     is called in ALL THREE MODES by design (KCMStorySection.cpp says why). Clearing without
+     asking would wipe a message this file never wrote.
+*/
+const char* const kKCMResourceBandLabel = "Source Resource:";
+
 /* WriteBand
 
-   Put a finished string into the band, or clear it.
+   Put a label and its values into the panel's MESSAGE AREA -- the very box the Story mode writes
+   "Source Text:" into (2026-09-09, the user's call: "show it in the same display area as the
+   Story mode"). Until then this band had a widget of its own, and that widget is what the panel
+   had grown 45px to hold.
 
-   ★The string is marked NOT translatable. It is a definition's name and a pair of measured
-     values, and PMString hands anything translatable to the built-in table on its way to the
-     screen: KCM has been bitten by exactly that once already, when a plain "Source:" came out as
-     a style-source phrase in a Japanese locale. A style really can be called "Normal".
-
-   ★SetString's second argument is invalidate (kTrue - this is the whole point of the call) and
-     the third is notifyOfChange (kFalse - nothing observes this widget, and telling the world
-     about a redraw would only invite one).
+   ★The message area takes six pieces (label, pre, mid, post, ruby, attrKind) and colours only
+     pre/post faded; an ordinary status message is (empty, empty, s, empty, empty, 0). A label
+     with a body is therefore (label, empty, body, empty, empty, 0) -- nothing faded here, and
+     nothing with a reading over it.
+   ★Both pieces are marked NOT translatable for the reason the old band was: these are measured
+     values and a definition's name, and PMString hands anything translatable to the built-in
+     table on its way to the screen. KCM has been bitten by exactly that once, when a plain
+     "Source:" came out as a style-source phrase in a Japanese locale.
+   ★KCMSetStatusSegments also stores the pieces on the model side, which is a second thing gained
+     by moving: **app.kcmStatus now answers with this band's contents** ("heading + newline +
+     body"), where the old widget could be read from nowhere outside the panel.
 */
-void WriteBand(const PMString& text)
+void WriteBand(const PMString& label, const PMString& body)
 {
-	InterfacePtr<ITextControlData> band(
-		KCMFindPanelWidget(kKCMResourceValueWidgetID), UseDefaultIID());
-	if (band == nil)
-		return;		// the panel is closed, or is being torn down. Nothing to write to, and nothing wrong
+	PMString finishedLabel(label);
+	finishedLabel.SetTranslatable(kFalse);
 
-	PMString finished(text);
-	finished.SetTranslatable(kFalse);
-	band->SetString(finished, kTrue, kFalse);
+	PMString finishedBody(body);
+	finishedBody.SetTranslatable(kFalse);
+
+	const PMString kNothing;
+	KCMSetStatusSegments(finishedLabel, kNothing, finishedBody, kNothing, kNothing, 0);
+}
+
+/* Is the message standing in the box the one THIS file put there?
+
+   ★Asked of the box rather than of the mode. The mode can be switched between the write and the
+     clear, and what has to be protected is the TEXT, not the state that produced it
+     (the same reasoning as check-a-place-not-a-state: read something nobody else can move).
+   ⚠kFalse when the panel is closed, and that is right -- there is nothing on screen to clear.
+*/
+bool16 BandHoldsOurText()
+{
+	InterfacePtr<IKCMStatusTextData> data(
+		KCMFindPanelWidget(kKCMStatusTextWidgetID), UseDefaultIID());
+	if (data == nil)
+		return kFalse;
+
+	PMString label, pre, mid, post, ruby;
+	int32 attrKind = 0;
+	data->GetSegments(label, pre, mid, post, ruby, attrKind);
+
+	// ★BOTH PIECES ARE ASKED, because this file writes the label into either one: as the HEADING
+	//   when a value goes under it, and as the BODY when none does (KCMShowSelectedResource carries
+	//   the reason - an empty body is drawn as a caret). Asking only about the heading would leave
+	//   a label-only band standing after the list was rebuilt underneath it.
+	return (label == kKCMResourceBandLabel) || (mid == kKCMResourceBandLabel);
 }
 
 }	// anonymous namespace
@@ -110,15 +150,17 @@ bool16 KCMShowSelectedResource(int32 row, int32 attrIndex)
 		return kFalse;
 	}
 
-	// ***** LINE 1: THE LABEL, AND IT IS THE STORY BOX'S. ***** The Story mode writes "Source Text:"
-	// over the older wording of the edit that was clicked (KCMStoryJump.cpp); this is the same
-	// sentence about the other kind of thing, so it is written the same way - a plain English
-	// literal, marked NOT translatable so that the built-in table cannot swap it for something else.
+	// ***** LINE 1: THE LABEL, AND IT IS NOW LITERALLY THE STORY BOX'S. ***** The Story mode writes
+	// "Source Text:" over the older wording of the edit that was clicked (KCMStoryJump.cpp); this
+	// says the same sentence about the other kind of thing, into THE SAME BOX, through the same
+	// call (2026-09-09, the user: "show it in the same display area as the Story mode").
+	// ★The label itself is spelled at the top of this file, not here, because the clear has to
+	//   recognise its own writing (BandHoldsOurText).
 	// ★NOT the definition's name. That is on the row the reader just clicked, in the two columns to
-	//   the left of the value; repeating it here would spend one of the band's two lines saying
+	//   the left of the value; repeating it here would spend one of the box's lines saying
 	//   what the click already said (the user's call, 2026-09-09).
-	PMString text("Source Resource:");
-	text.SetTranslatable(kFalse);
+	PMString body;
+	body.SetTranslatable(kFalse);
 
 	// ***** LINE 2: THE OLDER VALUE, AND NOTHING ELSE. *****
 	//
@@ -127,42 +169,62 @@ bool16 KCMShowSelectedResource(int32 row, int32 attrIndex)
 	//   this is the half that CANNOT BE READ ANYWHERE ELSE: the newer document is in front of the
 	//   reader and its paragraph style can be opened and looked at. The older one cannot.
 	//
-	// ★★AN ATTRIBUTE ROW IS THE EXACT CASE, and that is why the rows were given children at all: one
-	//   click names one attribute, so the band is a label and a single value, which is exactly the
-	//   two lines it holds.
-	// ★A DEFINITION ROW names no single value, so it prints one line per attribute that HAS an older
-	//   one, in the order its child rows stand in. The names are not repeated - the rows below are
-	//   in the same order, and the band has no room to say each thing twice.
+	// ★★AN ATTRIBUTE ROW IS THE ONLY CASE, and that is why the rows were given children at all: one
+	//   click names one attribute, so the band is a label and a single value.
+	// ★A DEFINITION ROW names no single value, so it shows the label alone - the code below carries
+	//   what printing them all cost.
 	//
 	// ⚠**AN ATTRIBUTE THE SOURCE DOES NOT HAVE CONTRIBUTES NO LINE.** There is no older value to
 	//   print. The list says so instead, with the `+` on that attribute's own row.
-	const int32 attrCount = resources->GetNthAttrCount(row);
-	const int32 first = (attrIndex >= 0) ? attrIndex : 0;
-	const int32 last = (attrIndex >= 0) ? attrIndex : attrCount - 1;
-
-	for (int32 i = first; i <= last && i < attrCount; ++i)
+	// ★★★ONLY AN ATTRIBUTE ROW PUTS A VALUE HERE (2026-09-09, the user's call: "when the parent
+	//   is selected, just Source Resource: and nothing below it").
+	//   ⚠It used to print one line per attribute that had an older value. **The names were not
+	//     printed beside them** - the child rows below stand in the same order, and there was no
+	//     room to say each thing twice - so a definition with several changed attributes put a
+	//     column of bare values on screen with nothing tying each to its own attribute. One value
+	//     under a label is a reading; a stack of them is a puzzle.
+	//   ⇒ The band answers ONE question, "what was this attribute before?", and only an ATTRIBUTE
+	//     row asks it. A definition row's own answer is the list of children underneath it.
+	if (attrIndex >= 0)
 	{
+		const int32 attrCount = resources->GetNthAttrCount(row);
 		PMString name, source, target;
-		if (!resources->GetNthAttr(row, i, name, source, target))
-			break;		// the count and the rows disagree; stop rather than print a blank line
-
-		if (source.IsEmpty())
-			continue;
-
-		// ★Shortened the same way the row below it is, so the two never disagree about what the
-		//   value "is" (KCMShortResourceValue carries the rule and the reason).
-		PMString shown = KCMShortResourceValue(source);
-		shown.SetTranslatable(kFalse);
-		text.Append("\n");
-		text.Append(shown);
+		if (attrIndex < attrCount
+			&& resources->GetNthAttr(row, attrIndex, name, source, target)
+			&& !source.IsEmpty())
+		{
+			// ★Shortened the same way the row below it is, so the two never disagree about what the
+			//   value "is" (KCMShortResourceValue carries the rule and the reason).
+			body = KCMShortResourceValue(source);
+			body.SetTranslatable(kFalse);
+		}
 	}
 
 	// ★THE LABEL ALONE IS A REAL ANSWER, and it has several causes that all mean one thing to the
 	//   reader: the definition is new, the difference is inside a child element this differ does not
-	//   walk, or the attribute clicked is one the Source never had. "Source Resource:" with nothing
-	//   under it says there is no older value, which is the truth in every one of them.
+	//   walk, the attribute clicked is one the Source never had, or a DEFINITION row was clicked -
+	//   which shows the label and nothing else since the user's call above. "Source Resource:" with
+	//   nothing under it says there is no older value, which is the truth in every one of them.
+	//
+	// ⚠★★★AND IT GOES IN AS THE BODY, NOT AS THE HEADING. **The message area draws an EMPTY middle
+	//   piece as a vertical BAR** - a caret - because in the Story mode an empty older side means
+	//   "the new words were inserted HERE" (kKCMCaretWidth in KCMStatusTextView.cpp, 2026-09-08).
+	//   Measured 2026-09-10, the user: "when the parent is selected something is shown in the source
+	//   part - a vertical bar". It reads as a value that failed to draw.
+	//   ★A heading with nothing under it is not a heading at all, it is one sentence, so sending it
+	//     as the body is what it actually IS as well as what the box needs. **The line looks
+	//     identical either way**: heading and body are drawn at the same full text colour, and the
+	//     heading occupies a line of its own exactly as a first body line would.
+	//   ⚠**The caret itself is not the bug and is not touched.** It is right for the Story mode;
+	//     what was wrong is this file handing the box a shape it reserves for something else.
+	PMString label(kKCMResourceBandLabel);
+	if (body.IsEmpty())
+	{
+		WriteBand(PMString(""), label);
+		return kTrue;
+	}
 
-	WriteBand(text);
+	WriteBand(label, body);
 	return kTrue;
 }
 
@@ -171,7 +233,16 @@ bool16 KCMShowSelectedResource(int32 row, int32 attrIndex)
 //----------------------------------------------------------------------------------------
 void KCMClearResourceValue()
 {
-	WriteBand(PMString(""));
+	// ★★★ONLY WHAT THIS FILE WROTE, and that test is new with the move. The band used to own a
+	//   widget, so clearing it could not touch anything else; it now shares the message area with
+	//   every status message the panel writes. ⚠**The caller clears in ALL THREE MODES on
+	//   purpose** (KCMStorySection.cpp: "in Pixel and Story the band is empty anyway"), which was
+	//   free before and would now wipe the Story mode's "Source Text:" and every ordinary message
+	//   -- including the result of the comparison that has just finished.
+	if (!BandHoldsOurText())
+		return;
+
+	WriteBand(PMString(""), PMString(""));
 }
 
 // End, KCMResourceValue.cpp.
