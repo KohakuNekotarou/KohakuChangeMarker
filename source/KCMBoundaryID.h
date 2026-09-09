@@ -117,6 +117,7 @@ DECLARE_PMID(kInterfaceIDSpace, IID_IKCMPAGEFLAGSFACADE, kKCMPrefix + 6)	// writ
 DECLARE_PMID(kInterfaceIDSpace, IID_IKCMSTORYEDITSFACADE, kKCMPrefix + 7)	// READ the Story Edits list (read-only but for RefreshRow)
 DECLARE_PMID(kInterfaceIDSpace, IID_IKCMBOOKFACADE, kKCMPrefix + 8)	// ask for a book comparison
 DECLARE_PMID(kInterfaceIDSpace, IID_IKCMSTORYMARKFACADE, kKCMPrefix + 10)	// put the Story mode's marks up and take them down. The numbering skips +9, which the notification protocol below had already taken.
+DECLARE_PMID(kInterfaceIDSpace, IID_IKCMRESOURCESFACADE, kKCMPrefix + 14)	// READ which DEFINITIONS differ between the two documents (the Resources mode). ⚠+11..+13 and +15 are model-only IIDs declared in KCMID.h, and the IID space is shared with this file - counting only the facades here says +11 is free, and it is not.
 
 //----------------------------------------------------------------------------------------
 // The notification protocol IID.

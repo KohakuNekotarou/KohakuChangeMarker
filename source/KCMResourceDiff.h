@@ -34,15 +34,10 @@
 #include "K2Vector.h"
 #include "PMString.h"
 
+#include "KCMResourceKinds.h"	// KCMResourceChangeKind. ★A types-only header, because the UI half
+								// reaches this enum through IKCMResourcesFacade.h and must not be
+								// able to see the model-side functions declared below.
 #include "KCMResourceParse.h"	// KCMResourceItem / KCMResourceList - what is compared
-
-/** What happened to one definition between the two documents. */
-enum KCMResourceChangeKind
-{
-	kKCMResourceAdded = 0,	// in the Target only
-	kKCMResourceRemoved,	// in the Source only
-	kKCMResourceChanged		// in both, with different contents
-};
 
 /** One difference, as the panel will eventually show it. */
 struct KCMResourceChange

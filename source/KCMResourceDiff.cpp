@@ -30,6 +30,7 @@
 
 // General includes:
 #include <sstream>				// number formatting for the reading port, as KCMStoryList does
+#include <stdio.h>				// TEMPORARY: the step log below
 #include <string>
 #include <windows.h>			// ::GetTickCount - how long the whole comparison took
 
@@ -38,6 +39,36 @@
 #include "KCMResourceBytes.h"
 #include "KCMResourceDiff.h"
 #include "KCMResourceSnapshot.h"
+
+//========================================================================================
+// A STEP LOG FOR ONE INVESTIGATION, OFF BY DEFAULT.
+//
+// ⚠kKCMDiffLogging MUST BE kFalse in anything shipped: it opens, appends to and closes a file on
+//   every step and writes to a path that exists only on the author's machine.
+//
+// ★It exists because A CRASH TAKES THE RETURN VALUE WITH IT. On 2026-09-09 this function killed
+//   InDesign outright when the Source was KIDMCP's task-start CLONE (IDataBase::Clone) rather than
+//   an open document, and the only thing the answer could say was that the socket closed. A file
+//   survives the process; a string being returned does not. KCMResourceParse.cpp keeps the same
+//   kind of log for the same reason and says so.
+//========================================================================================
+
+static const bool16 kKCMDiffLogging = kFalse;
+
+static const char* const kKCMDiffLogPath =
+	"C:/Users/user/Desktop/plugin_sdk_21.0.0.192/work/kcm-resource-diff-log.txt";
+
+static void KCMDiffLog(const char* text)
+{
+	if (!kKCMDiffLogging)
+		return;
+	FILE* f = nil;
+	if (::fopen_s(&f, kKCMDiffLogPath, "a") == 0 && f != nil)
+	{
+		::fprintf(f, "%s\n", text);
+		::fclose(f);
+	}
+}
 
 /** How much of a body to show on each side of a difference in the reading port.
 
@@ -304,16 +335,22 @@ void KCMDescribeResourceDiff(PMString& out)
 
 	// ★The two documents the PANEL is working on, not the first two that happen to be open. A
 	//   reading taken from anywhere else would say nothing about the product.
+	KCMDiffLog("=== KCMDescribeResourceDiff: enter");
+
 	IDataBase* const targetDB = KCMArmedTargetDB();
 	IDataBase* const sourceDB = KCMArmedSourceDB();
 	if (targetDB == nil || sourceDB == nil)
 	{
+		KCMDiffLog("  nothing armed");
 		out = "FAILED: no comparison is armed - press Start first, so this reads the same two documents the panel does";
 		return;
 	}
+	KCMDiffLog("  step 1: both databases are there");
 
 	InterfacePtr<IDocument> targetDoc(targetDB, targetDB->GetRootUID(), UseDefaultIID());
+	KCMDiffLog(targetDoc != nil ? "  step 2: target IDocument ok" : "  step 2: target IDocument is NIL");
 	InterfacePtr<IDocument> sourceDoc(sourceDB, sourceDB->GetRootUID(), UseDefaultIID());
+	KCMDiffLog(sourceDoc != nil ? "  step 3: source IDocument ok" : "  step 3: source IDocument is NIL");
 	if (targetDoc == nil || sourceDoc == nil)
 	{
 		out = "FAILED: one of the two armed databases has no document";
@@ -326,18 +363,25 @@ void KCMDescribeResourceDiff(PMString& out)
 	KCMResourceBytes targetXml;
 	PMString whyNot;
 
+	KCMDiffLog("  step 4: about to export the SOURCE  <-- the clone, when KIDMCP lent it");
 	if (!KCMTakeResourceSnapshot(sourceDoc.get(), sourceXml, whyNot))
 	{
+		KCMDiffLog("  step 4: source export FAILED (returned, did not crash)");
 		out = "FAILED: source snapshot: ";
 		out.Append(whyNot);
 		return;
 	}
+	KCMDiffLog("  step 5: source export came back");
+
+	KCMDiffLog("  step 6: about to export the TARGET");
 	if (!KCMTakeResourceSnapshot(targetDoc.get(), targetXml, whyNot))
 	{
+		KCMDiffLog("  step 6: target export FAILED (returned, did not crash)");
 		out = "FAILED: target snapshot: ";
 		out.Append(whyNot);
 		return;
 	}
+	KCMDiffLog("  step 7: target export came back");
 
 	KCMResourceList sourceItems;
 	KCMResourceList targetItems;
@@ -353,6 +397,8 @@ void KCMDescribeResourceDiff(PMString& out)
 		out.Append(whyNot);
 		return;
 	}
+
+	KCMDiffLog("  step 8: both parses came back");
 
 	KCMResourceChangeList changes;
 	KCMResourceDiffStats stats;

@@ -269,6 +269,7 @@
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMInxProbe.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMResourceBytes.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMResourceDiff.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMResourceKinds.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMResourceParse.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMResourceSnapshot.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMBookCompare.h" />
