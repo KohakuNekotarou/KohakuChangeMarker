@@ -737,7 +737,8 @@ ErrorCode KCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMString
 			toRaster.push_back(i);
 	}
 
-	// **The Story mode rasterises no page at all.**
+	// **ONLY THE PIXEL MODE RASTERISES.** (It read "the Story mode rasterises no page" until
+	//   2026-09-09, when a third mode arrived and "not Story" stopped meaning "Pixel".)
 	//
 	//   Everything up to here is shared by both modes, and has to be -- none of it can be skipped:
 	//     - the page pairing (tPages/sPages) ... peek and the original-folio badge ride on it
@@ -750,7 +751,11 @@ ErrorCode KCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMString
 	//   @warning the branch belongs HERE, not inside the two above: those decide WHICH PAGES to
 	//     compare, and the mode decides WHETHER to compare at all. Folded in, the same condition
 	//     would have to be written in both the differential and the full branch.
-	if (KCMGetCompareMode() == kKCMModeStory)
+	// ⚠**ASKED AS "is it Pixel", not "is it Story".** Written the other way round, every mode added
+	//   later inherits the rasterising - and with it a populated sEntries, which is what makes the
+	//   comparison ring appear. The Resources mode would have drawn pixel rings over a comparison it
+	//   never ran.
+	if (KCMGetCompareMode() != kKCMModePixel)
 		toRaster.clear();
 
 	// A heavy comparison gets a progress bar with a Cancel. The total is "the pages about to be
@@ -832,6 +837,24 @@ ErrorCode KCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMString
 	//   until 2026-09-05; the report only reads the counts the list holds, so it reads them the same.
 	if (!cancelled && !KCMRebuildStoryEdits(targetDB, sourceDB))
 		cancelled = kTrue;
+
+	// **The Resources comparison runs HERE, and ONLY in its own mode** -- unlike the Story Edits
+	//   list above, which is built in every mode because the panel's section shows it in every
+	//   mode. This one costs two whole-document exports (200-2400ms), so it is not paid for by a
+	//   reader who is comparing pixels.
+	// ⚠It CANNOT be cancelled: the exports are single calls into the SDK with no progress of their
+	//   own, so there is nothing to poll. That is why it is placed after the cancel-bearing work
+	//   rather than among it.
+	// ⚠A refusal (whyNot) is not an error here. The commonest one is a lent clone as the Source,
+	//   which cannot be exported at all - the store says so and holds no result, and the report
+	//   below reads that back rather than claiming a comparison happened.
+	if (!cancelled && KCMGetCompareMode() == kKCMModeResources)
+	{
+		// ★**The two documents this run is about, not the armed pair** -- they are not armed yet at
+		//   this point in the run, which is exactly what the store's own note describes.
+		PMString whyNot;
+		KCMResourceStore::Rebuild(targetDB, sourceDB, whyNot);
+	}
 
 	if (cancelled)
 	{
@@ -932,11 +955,14 @@ ErrorCode KCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMString
 		report.Append("marks start");
 		report.AppendW(UTF32TextChar(0x0A));	// newline -> second line
 
-		// In the Story mode, do not report how many pages were compared -- none were, and
-		// "pages compared=100 changed=0" is not false but reads as "100 pages were compared and did
-		// not differ". Report what was counted.
-		const bool16 storyMode = (KCMGetCompareMode() == kKCMModeStory);
-		if (!storyMode)
+		// Report only what was actually counted. "pages compared=100 changed=0" is not false in a
+		// mode that rasterised nothing, but it READS as "100 pages were compared and did not
+		// differ" - so the modes that compare no pages say something else instead.
+		// ⚠**THE TEST IS `== kKCMModePixel`.** As `!storyMode` it claimed a page count for every
+		//   mode that was not Story, which the Resources mode is.
+		const KCMCompareMode reportMode = KCMGetCompareMode();
+		const bool16 storyMode = (reportMode == kKCMModeStory);
+		if (reportMode == kKCMModePixel)
 		{
 			report.Append("pages compared="); report.AppendNumber((int32)n);
 			report.Append(" changed="); report.AppendNumber(changedCount);
@@ -971,6 +997,18 @@ ErrorCode KCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMString
 			// reads as "the text did not change".
 			if (storyCount > 0 && editCount == 0)
 				report.Append(" (no text differences located)");
+		}
+
+		// The Resources mode's report comes from the store, which is the only thing that knows how
+		// the comparison went. ★It is asked rather than recomputed here for the same reason the
+		// panel asks it: one comparison, one answer ([[one-question-one-place]]).
+		// ⚠"nothing differs" and "it could not be run" must not read alike, which is why the whole
+		//   line comes from GetSummary rather than being assembled from a count.
+		if (reportMode == kKCMModeResources)
+		{
+			PMString summary;
+			KCMResourceStore::GetSummary(summary);
+			report.Append(summary);
 		}
 	}
 	outReport = report;

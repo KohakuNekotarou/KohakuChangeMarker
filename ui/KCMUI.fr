@@ -883,7 +883,9 @@ resource MenuDef (kSDKDefMenuResourceID)
 		// "Compare mode" on the panel flyout (popup) menu (2026-08-20). Two children, exclusive,
 		// with a check on whichever one is in force - the same shape as "Marks opacity" above.
 		// Pixel Changes rasterises pages and compares them; Story Changes compares the text of the
-		// stories and lists what differs, and draws no rings at all.
+		// stories and lists what differs, and draws no rings at all; Resources Changes compares the
+		// DEFINITIONS through each document's XML, and so is the only one that can report a change
+		// to something no page uses.
 		// Submenu parent node: actionID 0 + path ending in a delimiter, as above.
 		0,
 		kKCMCompareModeSubmenuPath kSDKDefDelimitMenuPath,
@@ -898,6 +900,11 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKCMPopupModeStoryActionID,
 		kKCMCompareModeSubmenuPath,
 		kKCMModeStorySubMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
+		kKCMPopupModeResourcesActionID,
+		kKCMCompareModeSubmenuPath,
+		kKCMModeResourcesSubMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
 		// "Always Show Marks on Source" on the panel flyout (popup) menu. Check-mark toggle:
@@ -1359,6 +1366,15 @@ resource ActionDef (kSDKDefActionResourceID)
 		kOtherActionArea,
 		kNormalAction,
 		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates checks whichever mode is in force (radio-style)
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		kKCMActionComponentBoss,
+		kKCMPopupModeResourcesActionID,
+		kKCMModeResourcesKey,				// "Resources Changes"
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,	// ⚠kCustomEnabling is what makes UpdateActionStates run at all -- without it the check mark can never appear, however correctly the state is set (ActionDefs.h:40)
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 

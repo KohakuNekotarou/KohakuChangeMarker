@@ -2065,7 +2065,11 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 	//   Story mode has too -- KCMDoMarkChangesDoc builds the pairing and the overflow cache in both
 	//   modes and says so. **So this function must not return at its entry** (that would take the
 	//   peek, the ticks and the badge with it).
-	const bool16 drawRings = (KCMGetCompareMode() != kKCMModeStory);
+	// ⚠**`== kKCMModePixel`, NOT `!= kKCMModeStory`** (changed 2026-09-09, when a third mode
+	//   arrived). The ring belongs to the pixel comparison; any other mode must stop here EXPLICITLY
+	//   rather than be caught by an empty sEntries, which is the very argument the paragraph above
+	//   makes. Written as "not Story", the Resources mode would have been handed Pixel's behaviour.
+	const bool16 drawRings = (KCMGetCompareMode() == kKCMModePixel);
 	const bool16 wantOrig  = !suppressForPrint && !printing && sShowOriginal && !sOrigImages.empty();
 	// The layout-view version of the "Check" tick. On screen it is shown **at all times**,
 	// completely independently of the frame toggles and the tool's left button. It reaches print and

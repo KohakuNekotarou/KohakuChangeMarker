@@ -90,7 +90,7 @@ std::string Num(int32 n)
 
 }	// anonymous namespace
 
-bool16 KCMResourceStore::Rebuild(PMString& whyNot)
+bool16 KCMResourceStore::Rebuild(IDataBase* targetDB, IDataBase* sourceDB, PMString& whyNot)
 {
 	whyNot.Clear();
 	whyNot.SetTranslatable(kFalse);
@@ -100,8 +100,12 @@ bool16 KCMResourceStore::Rebuild(PMString& whyNot)
 	//   would look exactly like a fresh result.
 	KCMResourceStore::Clear();
 
-	IDataBase* const targetDB = KCMArmedTargetDB();
-	IDataBase* const sourceDB = KCMArmedSourceDB();
+	// ⚠**THE TWO DOCUMENTS ARE PASSED IN, NOT ASKED FOR** (2026-09-09). This used to call
+	//   KCMArmedTargetDB()/KCMArmedSourceDB() itself, and the comparison run then could not use it:
+	//   KCMDoMarkChangesDoc does its work BEFORE the pair is armed, so a rebuild from there answered
+	//   "no comparison is armed" while holding both databases in its own parameters. The neighbour
+	//   that had the same job, KCMRebuildStoryEdits, already took them as arguments.
+	//   ⇒ Callers that mean "the armed pair" say so at the call site.
 	if (targetDB == nil || sourceDB == nil)
 	{
 		whyNot = "no comparison is armed";

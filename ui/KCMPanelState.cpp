@@ -184,7 +184,15 @@ void KCMSavePanelState()
 	//   its value is quoted. ⚠**Older settings files do not have this key**, and the reader takes
 	//   "the current value when it is absent", so reading one simply leaves the default (Pixel).
 	json += "  \"compareMode\": \"";
-	json += (compare->GetCompareMode() == kKCMModeStory ? "story" : "pixel");
+	// ⚠**A switch, not a ternary** (2026-09-09). As `== kKCMModeStory ? "story" : "pixel"` a panel
+	//   left in the Resources mode was SAVED AS PIXEL - the setting silently changed itself the
+	//   moment it was written down.
+	switch (compare->GetCompareMode())
+	{
+		case kKCMModeStory:		json += "story";		break;
+		case kKCMModeResources:	json += "resources";	break;
+		default:				json += "pixel";		break;
+	}
 	json += "\"\n";
 	json += "}\n";
 
@@ -316,11 +324,15 @@ void KCMLoadPanelStateIfPresent()
 	//     spelling we do not know is treated the same way ---- reading a file saved by a later
 	//     version with more modes, "leave it alone" breaks less than "I do not know it, so make it
 	//     Pixel".
+	//   ★**Every mode is spelled out, and none of them is the `else`.** The rule above - an unknown
+	//     spelling leaves the value alone - only holds while no branch quietly collects the leftovers.
 	const std::string mode = KCMJsonReadString(text, "compareMode");
 	if (mode == "story")
 		compare->SetCompareMode(kKCMModeStory);
 	else if (mode == "pixel")
 		compare->SetCompareMode(kKCMModePixel);
+	else if (mode == "resources")
+		compare->SetCompareMode(kKCMModeResources);
 
 	// ★Bring the tab name into line with the restored state too. On the run called from startup
 	//   (KCMUIStartup::Startup) there is no panel yet, so it returns quietly inside and the name is

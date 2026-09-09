@@ -79,9 +79,17 @@ void KCMPanelTitle::Update()
 	//   literal in a .cpp without a BOM is read as CP932.
 	PMString title(kKCMDisplayName);
 	title.Append(" - ");
-	// ★The shorter wording is used: the menu says "Pixel Changes" / "Story Changes", but a tab has
-	// no room for that.
-	title.Append(Utils<IKCMCompareFacade>()->GetCompareMode() == kKCMModeStory ? "Story" : "Pixel");
+	// ★The shorter wording is used: the menu says "Pixel Changes" / "Story Changes" /
+	// "Resources Changes", but a tab has no room for that.
+	// ⚠**A switch, not a ternary** (2026-09-09). As `== kKCMModeStory ? "Story" : "Pixel"` the tab
+	//   called the Resources mode "Pixel" - a label that is not merely unhelpful but wrong, and the
+	//   one place a reader looks to see which comparison is running.
+	switch (Utils<IKCMCompareFacade>()->GetCompareMode())
+	{
+		case kKCMModeStory:		title.Append("Story");		break;
+		case kKCMModeResources:	title.Append("Resources");	break;
+		default:				title.Append("Pixel");		break;
+	}
 	// ⚠A palette label is treated as **a candidate translation key** as well ＝ without clearing the
 	//   translatable flag, a string table that happens to hold the same key would swap it for
 	//   another word.

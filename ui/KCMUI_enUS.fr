@@ -111,6 +111,7 @@ resource StringTable (kSDKDefStringsResourceID + index_enUS)
                 kKCMColorCyanKey,				"Cyan",
                 kKCMModePixelKey,				"Pixel Changes",
                 kKCMModeStoryKey,				"Story Changes",
+                kKCMModeResourcesKey,			"Resources Changes",
                 kKCMPrevChangeKey,			"< Prev",
                 kKCMNextChangeKey,			"Next >",
 

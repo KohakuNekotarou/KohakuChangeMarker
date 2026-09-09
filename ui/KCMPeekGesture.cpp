@@ -362,6 +362,12 @@ void KCMTrackerRevealBegin(bool16 shiftDown, bool16 altDown, bool16 cmdDown, boo
 		return;		// the frame reveal below does not exist in the Story mode
 	}
 
+	// ⚠**EVERYTHING BELOW IS THE PIXEL MODE'S**, as the heading says - and until 2026-09-09 nothing
+	//   said so in code: the Story branch above returns, and any other mode simply fell through into
+	//   it. The Resources mode would have brought pixel marks up on a press.
+	if (compare->GetCompareMode() != kKCMModePixel)
+		return;
+
 	// ---- No modifier, Pixel mode: bring the marks up for as long as the button is held ----
 	// ★This is the **coming-up side** of "the opposite while held". Where the Target's marks are
 	//   already up, the temp-hide above has just put them away, so there is nothing to do here.

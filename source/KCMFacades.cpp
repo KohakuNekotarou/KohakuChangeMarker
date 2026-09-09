@@ -549,8 +549,10 @@ class KCMResourcesFacade : public CPMUnknown<IKCMResourcesFacade>
 public:
 	KCMResourcesFacade(IPMUnknown* boss) : CPMUnknown<IKCMResourcesFacade>(boss) {}
 
+	// ★The ARMED pair is what the panel means by "compare": the facade is how the UI asks, and the
+	//   UI can only be looking at the comparison that is running.
 	virtual bool16	Compare(PMString& whyNot)
-					{ return KCMResourceStore::Rebuild(whyNot); }
+					{ return KCMResourceStore::Rebuild(KCMArmedTargetDB(), KCMArmedSourceDB(), whyNot); }
 
 	virtual bool16	HasResult()
 					{ return KCMResourceStore::HasResult(); }

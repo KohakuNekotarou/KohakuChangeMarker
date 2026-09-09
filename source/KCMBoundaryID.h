@@ -161,12 +161,24 @@ DECLARE_PMID(kMessageIDSpace, kKCMComparisonDocsClosedMessage, kKCMPrefix + 6)	/
 // appears on the boundary: put it in either side's own header and the other side ends up
 // including its partner's.
 //
-// **THE TWO RESULTS ARE NEVER HELD AT ONCE.** Changing the mode re-runs the comparison. Keeping
-// both would create two answers to "what is on screen right now" ([[one-question-one-place]]).
+// **NO TWO RESULTS ARE HELD AT ONCE.** Changing the mode re-runs the comparison. Keeping more than
+// one would create several answers to "what is on screen right now" ([[one-question-one-place]]).
+//
+// ⚠★★★**READ THIS BEFORE WRITING `!= kKCMModeStory`.** Until 2026-09-09 there were two modes, so
+//   code could say "Story or not" and mean "Story or Pixel". A third mode makes every such test
+//   hand ITS behaviour to Pixel by default - which is how the Resources mode would have run a pixel
+//   comparison and drawn real rings. **Ask for the mode you mean by name.** Every site was
+//   classified one at a time; the table is in section 7-1 of
+//   docs/superpowers/specs/2026-09-09-kcm-resources-compare-mode-design.md, including the four
+//   places that were already written correctly and must NOT be touched.
 enum KCMCompareMode
 {
 	kKCMModePixel = 0,	// the default: rasterize the pages and compare pixels (KCM's original comparison)
-	kKCMModeStory = 1		// compare the stories' text, paragraph by paragraph and then character by character
+	kKCMModeStory = 1,		// compare the stories' text, paragraph by paragraph and then character by character
+	kKCMModeResources = 2	// compare the DEFINITIONS - styles, swatches, layers - by exporting each document as
+							// XML and pairing the definitions by name. It is the only mode that sees a change
+							// to something nobody has applied: such a change cannot move a pixel and does not
+							// touch a word, so neither of the other two can report it.
 };
 
 #endif // __KCMBoundaryID_h__

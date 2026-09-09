@@ -31,22 +31,31 @@
 #include "PMString.h"
 
 #include "KCMResourceKinds.h"	// KCMResourceChangeKind
+
+class IDataBase;	// only ever passed through, so a forward declaration is the whole dependency
 #include "KCMResourceDiff.h"	// KCMResourceDiffStats. ⚠A MODEL-SIDE header, which is fine here:
 								// this file is model-internal and the UI never sees it - the UI
 								// sees IKCMResourcesFacade, which includes the types-only header.
 
 namespace KCMResourceStore
 {
-	/** Compares the two documents the comparison is armed on and KEEPS the answer.
+	/** Compares two documents and KEEPS the answer.
+
+	    ⚠**THE PAIR IS PASSED IN.** It used to ask KCMArmedTargetDB()/KCMArmedSourceDB() for itself,
+	    which made it unusable from the comparison run: KCMDoMarkChangesDoc does its work before the
+	    pair is armed, so a rebuild from there refused with "no comparison is armed" while holding
+	    both databases in its own parameters. A caller that means the armed pair passes it.
 
 	    ⚠It refuses when the Source is a database no session document owns - KIDMCP's task-start
 	    clone is one, and exporting one kills InDesign (2026-09-09, measured twice). The refusal
 	    comes back through whyNot rather than as a crash.
 
+	    @param targetDB the newer document. nil refuses.
+	    @param sourceDB the older document. nil refuses.
 	    @param whyNot  on kFalse, a short English reason. The previous result is dropped either way,
 	                   so a failed rebuild never leaves a stale list looking current.
 	    @return kTrue when a result is being held afterwards. */
-	bool16	Rebuild(PMString& whyNot);
+	bool16	Rebuild(IDataBase* targetDB, IDataBase* sourceDB, PMString& whyNot);
 
 	/** Throws the held result away. Idempotent. Called when the comparison stops. */
 	void	Clear();

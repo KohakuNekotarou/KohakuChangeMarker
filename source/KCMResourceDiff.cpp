@@ -340,7 +340,7 @@ void KCMDescribeResourceDiff(PMString& out)
 
 	PMString whyNot;
 	const uint32 began = ::GetTickCount();
-	const bool16 built = KCMResourceStore::Rebuild(whyNot);
+	const bool16 built = KCMResourceStore::Rebuild(KCMArmedTargetDB(), KCMArmedSourceDB(), whyNot);
 	const uint32 took = ::GetTickCount() - began;
 
 	if (!built)

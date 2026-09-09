@@ -415,6 +415,7 @@ DECLARE_PMID(kActionIDSpace, kKCMClearChecksActionID, kKCMUIPrefix + 52)	// "Cle
 //   the same reason: it was the Translucent Toolbox toggle.)
 DECLARE_PMID(kActionIDSpace, kKCMClearMarksFromDocActionID, kKCMUIPrefix + 56)	// "Clear Marks from Document": takes OUR labels off every page and leaves every other label alone. Greyed with no active document
 DECLARE_PMID(kActionIDSpace, kKCMClearChosenActionID, kKCMUIPrefix + 54)	// "Clear Target and Source" on the panel flyout (a plain command; 2026-09-05, user's request). Drops both chosen documents, so the next Start falls back to the automatic rule and the panel's Target:/Source: lines go back to bare labels. A lent Source is forgotten with them. ★★It STOPS a running comparison first (2026-09-07, user's instruction -- it used to be greyed while armed and to leave the comparison running). Live through kCustomEnabling whenever a comparison is armed OR at least one of the two is chosen. ⚠The number is +54, not +50 or +51: those two are retired, see the note above
+DECLARE_PMID(kActionIDSpace, kKCMPopupModeResourcesActionID, kKCMUIPrefix + 57)	// ★"Compare mode > Resources Changes" on the flyout (2026-09-09). The third mode: export each document as XML and compare the DEFINITIONS - styles, swatches, layers - so that a change to something nobody has applied is reported. It moves no pixel and touches no word, which is why neither of the other two modes can see it. Exclusive with Pixel and Story, the selected one carrying the check (kCustomEnabling + kSelectedAction). KCMActionComponent.cpp
 
 // (The template's spare //DECLARE_PMID(kActionIDSpace, kKCMActionID, kKCMUIPrefix + 41) was
 //  **deleted**. ⚠★★It was not inert: **+41 is taken** (kKCMPopupTranslucentBookDialogActionID
@@ -764,6 +765,7 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowStateWidgetID, kKCMUIPrefix + 49)	// = t
 #define kKCMColorCyanKey		kKCMStringPrefix "kKCMColorCyanKey"	// the child item name inside "Mark colour" (= "Cyan")
 #define kKCMModePixelKey		kKCMStringPrefix "kKCMModePixelKey"	// the child item name inside "Compare mode" (= "Pixel Changes")
 #define kKCMModeStoryKey		kKCMStringPrefix "kKCMModeStoryKey"	// the child item name inside "Compare mode" (= "Story Changes")
+#define kKCMModeResourcesKey	kKCMStringPrefix "kKCMModeResourcesKey"	// the child item name inside "Compare mode" (= "Resources Changes")
 #define kKCMPrevChangeKey		kKCMStringPrefix "kKCMPrevChangeKey"	// the caption of the "< Prev" button on the panel (English everywhere)
 #define kKCMNextChangeKey		kKCMStringPrefix "kKCMNextChangeKey"	// the caption of the "Next >" button on the panel (English everywhere)
 #define kKCMHintKey			kKCMStringPrefix "kKCMHintKey"
@@ -1006,9 +1008,10 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowStateWidgetID, kKCMUIPrefix + 49)	// = t
 #define kKCMSetSourceMenuItemPosition		9.03	// ★"Set as Source", right below its Target counterpart (the pair reads new-then-old, as the two "Always Show Marks on" toggles do)
 #define kKCMClearChosenMenuItemPosition	9.04	// ★"Clear Target and Source", directly below the two "Set as" items it undoes and still above Sep1 (9.1), so the group reads run / run / choose / choose / clear
 #define kKCMSep1MenuItemPosition			9.1	// the separator below Start (a path ending in ":-")
-#define kKCMCompareModeSubmenuMenuItemPosition	9.15	// ★the "Compare mode" submenu (Pixel Changes / Story Changes). **Right after Sep1, above the display toggles**: what is compared is settled before how it is shown, and the order carries that
+#define kKCMCompareModeSubmenuMenuItemPosition	9.15	// ★the "Compare mode" submenu (Pixel / Story / Resources Changes). **Right after Sep1, above the display toggles**: what is compared is settled before how it is shown, and the order carries that
 #define kKCMModePixelSubMenuItemPosition		1.0	// inside "Compare mode": Pixel Changes (checked when selected)
 #define kKCMModeStorySubMenuItemPosition		2.0	// inside "Compare mode": Story Changes (exclusive with Pixel)
+#define kKCMModeResourcesSubMenuItemPosition	3.0	// inside "Compare mode": Resources Changes (exclusive with the two above). ★Last of the three because it is the widest net: pixels answer "which page looks different", stories "which words changed", and this one "which definition changed" - which includes definitions nothing on any page uses
 // -- the display toggles --
 // (9.20 is free: it belonged to "Hold to Hide Marks", which was removed.)
 #define kKCMIgnorePageNumMenuItemPosition	9.22	// check toggle "Ignore Page Number Marker"

@@ -141,9 +141,10 @@ static void KCMSayTranslucency(const char* what, bool16 on, bool16 applied, cons
 
 /* KCMApplyCompareMode - switches the compare mode and, while Started, recompares on the spot.
 
-   ★**It is a function so that the two entrances take the same steps.** Choosing Pixel or Story
-   makes the same things happen and only the value differs (the same shape as Marks opacity
-   25%/75% sharing one function of the facade).
+   ★**It is a function so that the entrances all take the same steps.** Choosing Pixel, Story or
+   Resources makes the same things happen and only the value differs (the same shape as Marks
+   opacity 25%/75% sharing one function of the facade). ⚠It said "the two entrances" until
+   2026-09-09; there are three.
 
    ⚠**Choosing the mode that is already set does nothing.** Someone already looking at Story who
    picks Story again would otherwise wait through a comparison for the same screen.
@@ -156,7 +157,18 @@ static void KCMApplyCompareMode(KCMCompareMode mode)
 
 	compare->SetCompareMode(mode);
 
-	PMString msg(mode == kKCMModeStory ? "Compare mode: story changes." : "Compare mode: pixel changes.");
+	// ⚠**A switch, not a ternary** (2026-09-09): as `== kKCMModeStory ? story : pixel` the status
+	//   line announced "pixel changes" while switching TO the Resources mode.
+	const char* modeWord = "pixel";
+	switch (mode)
+	{
+		case kKCMModeStory:		modeWord = "story";		break;
+		case kKCMModeResources:	modeWord = "resources";	break;
+		default:				modeWord = "pixel";		break;
+	}
+	PMString msg("Compare mode: ");
+	msg.Append(modeWord);
+	msg.Append(" changes.");
 	msg.SetTranslatable(kFalse);
 
 	// ★While Started, everything is compared again in the new mode. When nothing is being compared
@@ -619,6 +631,9 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 		case kKCMPopupModeStoryActionID:
 			KCMApplyCompareMode(kKCMModeStory);
 			break;
+		case kKCMPopupModeResourcesActionID:
+			KCMApplyCompareMode(kKCMModeResources);
+			break;
 
 		// Flyout "Save Panel Settings": write the current settings toggles to a private JSON file and
 		// show where it went **in the panel’s status line** (the work is KCMSavePanelState in
@@ -955,9 +970,13 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 		{
 			KCMSetCheckState(listToUpdate, i, Utils<IKCMCompareFacade>()->GetMarkColorCyan());
 		}
-		// ★The two "Compare mode" items. Radio-like, as Marks opacity above ＝ the one in force carries
-		//   the check. **Both are always live**: they can be chosen with nothing being compared, and
-		//   they apply to the next Start.
+		// ★The "Compare mode" items. Radio-like, as Marks opacity above ＝ the one in force carries
+		//   the check. **All of them are always live**: they can be chosen with nothing being
+		//   compared, and they apply to the next Start.
+		// ★★Each item asks for ITS OWN mode by name rather than sharing a test, which is what let a
+		//   third one be added here without touching the other two.
+		//   ⚠It read "The two items" until 2026-09-09. **A written count goes stale the moment the
+		//     thing it counts grows** - the number is not repeated now, the list below is the list.
 		else if (action == kKCMPopupModePixelActionID)
 		{
 			KCMSetCheckState(listToUpdate, i, Utils<IKCMCompareFacade>()->GetCompareMode() == kKCMModePixel);
@@ -965,6 +984,10 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 		else if (action == kKCMPopupModeStoryActionID)
 		{
 			KCMSetCheckState(listToUpdate, i, Utils<IKCMCompareFacade>()->GetCompareMode() == kKCMModeStory);
+		}
+		else if (action == kKCMPopupModeResourcesActionID)
+		{
+			KCMSetCheckState(listToUpdate, i, Utils<IKCMCompareFacade>()->GetCompareMode() == kKCMModeResources);
 		}
 		else if (action == kKCMPopupHideUnchangedActionID)
 		{
@@ -994,7 +1017,12 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 			//   the same shape as the Start/Stop branch above).
 			InterfacePtr<IKCMCompareFacade> compare(Utils<IKCMCompareFacade>().QueryUtilInterface());
 			int16 actionState;
-			if (!compare->IsArmed() || compare->GetCompareMode() == kKCMModeStory)
+			// ⚠**`!= kKCMModePixel`, not `== kKCMModeStory`** (2026-09-09). Hide Unchanged hides the
+			//   spreads the PIXEL comparison found equal, and no other mode produces that verdict -
+			//   so it is greyed in every mode but Pixel. Asked the old way it came back enabled in
+			//   the Resources mode, where pressing it would have hidden spreads on the strength of a
+			//   comparison that never ran.
+			if (!compare->IsArmed() || compare->GetCompareMode() != kKCMModePixel)
 				actionState = kDisabled_Unselected;
 			else
 				actionState = compare->GetHideUnchangedOn() ? (kEnabledAction | kSelectedAction) : kEnabledAction;

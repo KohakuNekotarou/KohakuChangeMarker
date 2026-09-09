@@ -499,7 +499,11 @@ static bool16 KCMQueryPixelComparePair(IDataBase*& outTarget, IDataBase*& outSou
 
 	if (!KCMIsArmed())
 		return kFalse;
-	if (KCMGetCompareMode() == kKCMModeStory)
+	// ⚠**`!= kKCMModePixel`, not `== kKCMModeStory`** (2026-09-09). The function's name says what it
+	//   answers: the pair for a PIXEL comparison. Asked the old way it handed that pair back in the
+	//   Resources mode too, and "Refresh Page Comparison" would have re-rasterised pages for a
+	//   comparison that is not looking at pages at all.
+	if (KCMGetCompareMode() != kKCMModePixel)
 		return kFalse;
 
 	outTarget = KCMArmedTargetDB();
