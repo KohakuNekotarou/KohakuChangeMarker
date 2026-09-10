@@ -63,6 +63,29 @@ class IControlView;
 */
 int32 KCMListLeftColumnWidth();
 
+/** Fit the Resources mode's Kind column to the widest name the list will show, and remember it.
+
+	★★★**THE WIDTH IS MEASURED, NOT CHOSEN** (2026-09-10, the user's call). It was a fixed 120, and
+	before that a drag handle that was built and taken out again - because the reason the number was
+	wrong in the first place is that nobody knows the right one until the list is on screen. What is
+	measured is every string the column will hold: each definition's kind, and each attribute name
+	PLUS the indent its child row starts at.
+
+	★**Call it when the list is BUILT, not per row.** KCMListLeftColumnWidth is asked once for every
+	row and every heading on every lay-out; measuring in there would be O(rows^2) strings. It is
+	called from KCMStoryTreeRebuild, which is the one place a list comes into being.
+	⚠**Does nothing outside the Resources mode**: the Story mode's 40px is the .fr's own.
+	⚠**An empty list leaves the width alone** - there is nothing to fit to, and snapping back to the
+	  floor would make the headings jump between one comparison and the next.
+*/
+void KCMRecomputeResourcesKindWidth();
+
+/** The clamp the fit is put through: never below a floor, never so wide that the Definition column
+	is starved. ★**The ceiling is read off the panel as it stands now**, not written down - a
+	constant would be right at one panel width and wrong at every other.
+*/
+int32 KCMClampResourcesKindWidth(int32 px);
+
 /** Lay the left and middle columns out for the mode the list is showing.
 
 	Both the heading band (KCMStorySection.cpp) and the rows themselves (KCMStoryTreeWidgetMgr.cpp)

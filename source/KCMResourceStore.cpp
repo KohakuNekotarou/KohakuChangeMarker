@@ -298,17 +298,22 @@ void KCMResourceStore::GetSummary(PMString& out)
 	out.Clear();
 	out.SetTranslatable(kFalse);
 
+	// ★**THE MODE'S NAME IS NOT REPEATED HERE** (2026-09-10, the user's call: "the Resources part
+	//   is not needed - the panel's own name says which mode it is in"). The panel tab carries the
+	//   mode, and this line is read while looking at it. ⚠**The BOOK comparison's reasons keep
+	//   their prefix** (KCMBookChapterModes.cpp): there, three modes report into one cell and the
+	//   name is the only thing saying which of them spoke.
 	if (!gHasResult)
 	{
 		// ⚠"nothing held" and "nothing differs" are different answers and must read differently.
-		out = gWhyNot.IsEmpty() ? PMString("Resources: not compared yet") : PMString("Resources: ");
+		out = gWhyNot.IsEmpty() ? PMString("Not compared yet") : PMString();
 		if (!gWhyNot.IsEmpty())
 			out.Append(gWhyNot);
 		out.SetTranslatable(kFalse);
 		return;
 	}
 
-	const std::string s = "Resources: " + Num(gStats.fPaired) + " paired, "
+	const std::string s = Num(gStats.fPaired) + " paired, "
 						+ Num(gStats.fAdded) + " added, "
 						+ Num(gStats.fRemoved) + " removed, "
 						+ Num(gStats.fChanged) + " changed";

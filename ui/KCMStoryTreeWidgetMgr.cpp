@@ -66,6 +66,32 @@
 									// free functions have bodies in the model .pln alone)
 #include "KCMStoryTree.h"
 
+// Interfaces the column measuring needs (2026-09-10, the self-fitting Kind column):
+#include "IInterfaceFonts.h"		// the palette font the list is drawn in
+#include "ISession.h"				// GetExecutionContextSession (nil during teardown)
+#include "IWidgetParent.h"			// the row's own width, for the column that runs to its edge
+#include "DrawStringUtils.h"		// StringUtils::PMMeasureString - WITHOUT a graphics context
+
+//----------------------------------------------------------------------------------------
+// The list's column geometry, in one place
+//----------------------------------------------------------------------------------------
+// ★These were locals inside KCMApplyListColumnWidths until 2026-09-10; the self-fitting Kind
+//   column has to do the same arithmetic to know what it may ask for, and two copies of a
+//   coordinate is how the headings and the rows came apart once already (KCMStoryTree.h says so).
+// ⚠They are also written in the .fr. They are constants HERE because the recycling rule forbids
+//   reading them off a widget: a row that has been laid out once answers with the answer, not
+//   with the question.
+
+const int32 kKCMListHomeLeft    = 24;	// where the left column starts (the expander column ends there)
+const int32 kKCMListColumnGap   = 4;	// between one column and the next
+const int32 kKCMListChangeWidth = 62;	// the Change column, from the .fr (154..216)
+const int32 kKCMListRightInset  = 8;	// the row's right margin (224 - 216 in the .fr)
+
+// How far a CHILD row's name steps in. ★Only the name moves; the column's right edge does not,
+// so the cell narrows rather than shifts (KCMStoryTree.h carries the reasoning and the two goes
+// it took to arrive at).
+const int32 kKCMAttrNameIndent  = 12;
+
 namespace
 {
 
@@ -392,11 +418,13 @@ public:
 		//   expander column, which is what "a little" was asked for.
 		if (showsResources || !isChangeNode)
 		{
-			const int32 kAttrNameIndent = 12;
+			// ⚠The 12 moved to the top of this file on 2026-09-10: the self-fitting Kind column has
+			//   to add the same indent when it measures a child's name, and a second copy of it
+			//   would drift.
 			KCMApplyListColumnWidths(widgetList->FindWidget(kKCMStoryRowUIDWidgetID),
 									 widgetList->FindWidget(kKCMStoryRowTextWidgetID),
 									 widgetList->FindWidget(kKCMStoryRowKindWidgetID),
-									 (showsResources && isChangeNode) ? kAttrNameIndent : 0);
+									 (showsResources && isChangeNode) ? kKCMAttrNameIndent : 0);
 
 			// ★★★AND WHERE THE ELLIPSIS FALLS, on the same schedule and for the same reason
 			//   (2026-09-10, the user's call: "when the panel is narrowed it shortens from both
@@ -511,11 +539,25 @@ private:
 
 		if (haveRow)
 		{
+			// ★★**THE SAME THREE SIGNS THE CHILD ROWS USE** (2026-09-10, the user's call: "for the
+			//   Change part, shall we make the parent rows + and - as well"). A definition and one
+			//   of its attributes answer the same question - is this only in the newer document,
+			//   only in the older one, or in both and different - so they should not answer it in
+			//   two vocabularies, one of words and one of signs.
+			//   ★It also lets the column be narrow, which is what put it beside Kind.
+			//   ⚠**`≠` goes in through SetXString**, never as a literal: it is in CP932, so a plain
+			//     "≠" in the source would build without a murmur and come out wrong at run time
+			//     (cpp-japanese-needs-bom - the `★` case, which is the dangerous one).
 			switch (changeKind)
 			{
-				case kKCMResourceAdded:		what = "Added";		break;
-				case kKCMResourceRemoved:	what = "Removed";	break;
-				default:					what = "Changed";	break;
+				case kKCMResourceAdded:		what = PMString("+");	break;	// only in the newer
+				case kKCMResourceRemoved:	what = PMString("-");	break;	// only in the older
+				default:
+				{
+					const char16_t notEqual[] = u"≠";
+					what.SetXString(reinterpret_cast<const UTF16TextChar*>(notEqual), 1);
+					break;
+				}
 			}
 			what.SetTranslatable(kFalse);
 		}
@@ -884,45 +926,251 @@ bool16 KCMListShowsResources()
 // (see KCMStoryTree.h for why the .fr cannot state both)
 //----------------------------------------------------------------------------------------
 
+// ───────── the Resources mode's Kind column: measured, not chosen ─────────
+//
+// ★★★**IT FITS ITSELF TO THE WIDEST NAME IN THE LIST** (2026-09-10, the user's call: "it could be
+//   that double-clicking Kind sizes it to the longest text in it - or it could do that by itself;
+//   rather, if you can do that, do that instead"). It replaced a fixed 120 and, before that, a
+//   drag handle that was built and then taken out again: **a width nobody has to set is better
+//   than a width that can be set**, because the reason it was wrong in the first place was that
+//   nobody knew the right number until the list was in front of them.
+//
+// ★**Recomputed when the list is built, never per row.** KCMListLeftColumnWidth is asked once for
+//   every row and every heading on every lay-out; measuring in there would be O(rows^2) strings.
+//
+// 120 stays as the value before the first measurement - the panel opens on it, and it is the
+// measured width of "ColorGroupSwatch" at the palette font.
+static int32 sResourcesKindWidth = 120;
+
+static const int32 kKCMKindWidthMin = 40;		// below this even a short name cannot show
+static const int32 kKCMKindWidthPad = 12;		// air after the longest name, so it is not touching
+static const int32 kKCMDefinitionWidthMin = 60;	// what the Definition column keeps whatever happens
+
+// See KCMStoryTree.h. The ceiling, read off the panel as it stands now.
+int32 KCMClampResourcesKindWidth(int32 px)
+{
+	if (px < kKCMKindWidthMin)
+		px = kKCMKindWidthMin;
+
+	// ★★**THE CEILING IS READ OFF THE BAND'S WIDTH, NOT OFF ANOTHER COLUMN.**
+	//   ⚠**It asked the Change heading's left edge until 2026-09-10, and the reorder made that
+	//     wrong in the SAME BUILD**: the Change column had always been bound to the panel's right
+	//     edge, so its left edge said how much room the columns before it had - and the moment it
+	//     moved to sit beside Kind, that reading became "how much room is there before Change",
+	//     which is a small number. Measured: the Kind column collapsed to its 40px floor.
+	//     ⇒ **A premise written in a comment is still a premise. Changing the layout changed it.**
+	//   ★So the room is worked out from the width of the band the columns live in, which is the one
+	//     figure the order cannot change: everything from home to the right inset, less what Change
+	//     and Definition must keep.
+	// ⚠★★★**THE PANEL'S WIDTH, NOT THE HEADING BAND'S.** The band is inside the Story Edits section,
+	//   and while that section is CLOSED the band has never been laid out - it still measures what
+	//   the .fr wrote, 224, which is the panel's MINIMUM width.
+	//   **Measured 2026-09-10**: a comparison started with the section closed fitted the Kind column
+	//   to 62px on a 899px-wide panel. The measurement was right all along ("ParagraphStyle" = 92,
+	//   fitted = 104); the CEILING was computed from a stale 224 and cut it to 62.
+	//   ⇒ Ask the panel, which is on screen and therefore always laid out. The band spans it, so
+	//     its width is the same number - only never a stale one.
+	{
+		IControlView* panelView = KCMGetVisibleOwnPanel();
+		const PMReal bandWidth = (panelView != nil) ? panelView->GetFrame().Width() : PMReal(0.0);
+
+		if (bandWidth > PMReal(0.0))
+		{
+			const int32 ceiling = ::ToInt32(bandWidth) - kKCMListRightInset - kKCMListHomeLeft
+								- kKCMListColumnGap - kKCMListChangeWidth
+								- kKCMListColumnGap - kKCMDefinitionWidthMin;
+			if (px > ceiling)
+				px = ceiling;
+			if (px < kKCMKindWidthMin)	// a very narrow panel can put the ceiling under the floor
+				px = kKCMKindWidthMin;
+		}
+	}
+	return px;
+}
+
+// See KCMStoryTree.h. Measure every name the Kind column will show and fit the column to the
+// widest of them.
+void KCMRecomputeResourcesKindWidth()
+{
+	if (!KCMListShowsResources())
+		return;			// the Story mode's 40 is the .fr's, and nothing here applies to it
+
+	// ★**MEASURED WITHOUT A GRAPHICS CONTEXT.** DrawStringUtils has an overload that takes only the
+	//   string and the font (DrawStringUtils.h:89) - the other one needs a gc, which exists only
+	//   inside a Draw, and this runs while the list is being BUILT.
+	InterfacePtr<IInterfaceFonts> fonts(GetExecutionContextSession(), UseDefaultIID());
+	if (fonts == nil)
+		return;
+	const InterfaceFontInfo& font = fonts->GetFont(kPaletteWindowSystemScriptFontId);
+
+	Utils<IKCMResourcesFacade> resources;
+	if (!resources)
+		return;			// no model half: leave the width alone (utils-boss-facade-access)
+
+	PMReal widest(0.0);
+	const int32 rows = resources->GetChangeCount();
+	for (int32 i = 0; i < rows; ++i)
+	{
+		PMString kind, key;
+		KCMResourceChangeKind changeKind = kKCMResourceChanged;
+		if (resources->GetNthChange(i, kind, key, changeKind))
+		{
+			const PMReal w = StringUtils::PMMeasureString(kind, font, kFalse).X();
+			if (w > widest)
+			{
+				widest = w;
+			}
+		}
+
+		// ⚠**THE CHILD ROWS COUNT TOO, AND THEY ARE INDENTED.** An attribute name starts
+		//   kKCMAttrNameIndent further in and its cell narrows by exactly that much, so what it
+		//   needs from the column is the indent PLUS the name. Measuring only the parents would
+		//   clip precisely the rows the children were added to show.
+		const int32 attrs = resources->GetNthAttrCount(i);
+		for (int32 j = 0; j < attrs; ++j)
+		{
+			PMString name, source, target;
+			if (resources->GetNthAttr(i, j, name, source, target))
+			{
+				const PMReal w = StringUtils::PMMeasureString(name, font, kFalse).X()
+							   + PMReal(kKCMAttrNameIndent);
+				if (w > widest)
+				{
+					widest = w;
+				}
+			}
+		}
+	}
+
+	// An empty list leaves the width where it was: there is nothing to fit to, and snapping to the
+	// floor would make the headings jump about between comparisons.
+	if (widest <= PMReal(0.0))
+		return;
+
+	const int32 fitted = ::ToInt32(widest) + kKCMKindWidthPad;
+	sResourcesKindWidth = KCMClampResourcesKindWidth(fitted);
+
+}
+
 int32 KCMListLeftColumnWidth()
 {
 	// ★40 is what the .fr writes, so the Story mode is left executing the resource unchanged: this
 	//   returns the number that is already there rather than a second opinion about it.
-	// ★120 was measured against the names that actually appear - "ColorGroupSwatch" is 16 characters
-	//   at the palette font - with room for the longer element names the export can produce. Wider
-	//   than this and the Definition column is starved at the panel's minimum width of 224.
-	return KCMListShowsResources() ? 120 : 40;
+	// ★The Resources mode's number is MEASURED from the list itself (see above). ⚠**Clamped on the
+	//   way out as well as on the way in**: it was fitted against the panel as it stood when the
+	//   list was built, and the panel can be narrower now - so the last word belongs to the width
+	//   the list is being drawn at.
+	return KCMListShowsResources() ? KCMClampResourcesKindWidth(sResourcesKindWidth) : 40;
 }
 
 void KCMApplyListColumnWidths(IControlView* leftCell, IControlView* middleCell,
 							  IControlView* rightCell, int32 leftIndent)
 {
-	// ★The home positions, from the .fr's row resource (kKCMStoryRowRsrcID): the left cell starts at
-	//   24 - where the expander column ends - and the middle cell starts 4px after the left one ends.
-	//   ⚠These two numbers are written in the .fr as well. They are constants HERE because the
-	//     recycling rule above forbids reading them off the widget: a row that has already been laid
-	//     out once would answer with the answer, not with the question.
-	const int32 kHomeLeft = 24;
-	const int32 kGap = 4;
-
 	// ★★THE COLUMN ENDS WHERE IT ALWAYS DOES; ONLY THE TEXT STARTS FURTHER IN. `leftEnd` is
 	//   computed from the HOME position, not from the indented one, so an indented cell is
-	//   narrower rather than shifted - and the Definition column below begins at the same x on a
-	//   parent row and on a child row (see the header).
-	const int32 leftEnd = kHomeLeft + KCMListLeftColumnWidth();
+	//   narrower rather than shifted - and the column after it begins at the same x on a parent row
+	//   and on a child row (see the header).
+	const int32 leftEnd = kKCMListHomeLeft + KCMListLeftColumnWidth();
 
 	if (leftCell != nil)
 	{
 		PMRect frame = leftCell->GetFrame();
-		frame.Left(PMReal(kHomeLeft + leftIndent));
+		frame.Left(PMReal(kKCMListHomeLeft + leftIndent));
 		frame.Right(PMReal(leftEnd));
 		leftCell->SetFrame(frame);
+	}
+
+	// ★★★**IN THE RESOURCES MODE THE CHANGE COLUMN SITS BESIDE Kind, NOT AT THE RIGHT EDGE**
+	//   (2026-09-10, the user's request, marked "experimental"): `Kind | Change | Definition`.
+	//   The two narrow columns pair up on the left and the Definition column takes everything that
+	//   is left, which is the column a reader actually needs the width for.
+	//   ⚠**The Story mode keeps the old order** (`UID | Story | Change`): its right column is the
+	//     kind of change, which belongs at the end of the sentence the row makes.
+	if (KCMListShowsResources())
+	{
+		const int32 changeLeft = leftEnd + kKCMListColumnGap;
+		const int32 changeEnd  = changeLeft + kKCMListChangeWidth;
+
+		if (rightCell != nil)
+		{
+			// ⚠★★★**THE BINDING HAS TO MOVE WITH THE COLUMN, OR THE FRAME IS UNDONE.** The .fr binds
+			//   this cell to the RIGHT edge, which is right where it normally sits - but here it has
+			//   been put beside Kind, and a right-bound widget is dragged back out to the edge the
+			//   next time the panel is resized. **Measured 2026-09-10**: the rows looked correct
+			//   (they are laid out again on every recycle) while the HEADINGS drifted apart and the
+			//   Change and Definition headings overlapped - the same layout, two different answers,
+			//   because only one of them was re-laid after the resize.
+			//   ⇒ Left-bound here, so it stays where it is put; the Definition column is the one
+			//     that stretches now, and it is already bound on both sides.
+			rightCell->SetFrameBinding(kBindLeft);
+
+			// ⚠★★**CENTRED, NOT RIGHT-ALIGNED - AND THAT IS NOT A PREFERENCE.** Right-aligned, the
+			//   text is pressed against the column's right edge and touches whatever follows it:
+			//   the first screen of this order read "Change_Definition" as one word. It is the same
+			//   fault the book dialog's Change column was measured to have on the same day
+			//   ("Changed Pixel" read as one phrase), and the same lesson - **a right-aligned column
+			//   glues itself to the next one**.
+			//   ★Centred suits what is in it now: one sign (`+`, `-`, `≠`) under a one-character
+			//     heading (`Δ`).
+			InterfacePtr<IStaticTextAttributes> attrs(rightCell, UseDefaultIID());
+			if (attrs != nil)
+				attrs->SetAlignment(kAlignCenter);
+
+			PMRect frame = rightCell->GetFrame();
+			frame.Left(PMReal(changeLeft));
+			frame.Right(PMReal(changeEnd));
+			rightCell->SetFrame(frame);
+		}
+
+		if (middleCell != nil)
+		{
+			// ⚠★★★**THE ROW'S RIGHT EDGE COMES FROM THE PARENT, NOT FROM THE CHANGE CELL.** In the
+			//   other order the Change cell is bound to the right edge and its Left IS where this
+			//   column stops - but here it has just been MOVED away from that edge, so asking it
+			//   would put the Definition column's end wherever the last lay-out left it. That is
+			//   the recycling trap this file has already been caught by once (2026-09-09: a child
+			//   row kept an earlier right edge and ran 96px out of the panel).
+			//   ★The parent is the row widget, or the heading band; its width is the row's width.
+			PMReal rowRight(0.0);
+			InterfacePtr<const IWidgetParent> wp(middleCell, UseDefaultIID());
+			if (wp != nil)
+			{
+				InterfacePtr<IControlView> parentView(
+					(IControlView*)wp->QueryParentFor(IID_ICONTROLVIEW));
+				if (parentView != nil)
+					rowRight = parentView->GetFrame().Width() - PMReal(kKCMListRightInset);
+			}
+
+			PMRect frame = middleCell->GetFrame();
+			frame.Left(PMReal(changeEnd + kKCMListColumnGap));
+			if (rowRight > PMReal(changeEnd + kKCMListColumnGap))
+				frame.Right(rowRight);
+			middleCell->SetFrame(frame);
+		}
+		return;
+	}
+
+	// ⚠**PUT THE RIGHT CELL BACK ON THE RIGHT EDGE.** The Resources branch above binds it to the
+	//   left; a panel that has been in that mode and switches back would otherwise keep a Change
+	//   column that no longer follows the panel's width. Setting it every time costs nothing and
+	//   means neither mode has to know what the other did.
+	if (rightCell != nil)
+	{
+		rightCell->SetFrameBinding(kBindRight);
+
+		// ⚠And its alignment back with it: the Resources branch centres this cell, and a widget
+		//   coming from that mode would keep the centring in a column that is right-aligned by
+		//   design ("what is not written is the previous value, not nothing" - the same rule the
+		//   ellipsize style below is set in both directions for).
+		InterfacePtr<IStaticTextAttributes> attrs(rightCell, UseDefaultIID());
+		if (attrs != nil)
+			attrs->SetAlignment(kAlignRight);
 	}
 
 	if (middleCell != nil)
 	{
 		PMRect frame = middleCell->GetFrame();
-		frame.Left(PMReal(leftEnd + kGap));
+		frame.Left(PMReal(leftEnd + kKCMListColumnGap));
 
 		// ★★THE RIGHT EDGE COMES FROM THE RIGHT CELL, not from a number and not from what this cell
 		//   happens to say now. ⚠**Leaving it alone was wrong and was measured**: a child row whose
@@ -948,6 +1196,11 @@ void KCMStoryTreeRebuild()
 	InterfacePtr<ITreeViewMgr> treeMgr(KCMFindPanelWidget(kKCMStoryTreeWidgetID), UseDefaultIID());
 	if (treeMgr == nil)
 		return;
+
+	// ★★**FIT THE KIND COLUMN BEFORE THE ROWS ARE BUILT** (2026-09-10). Every row asks
+	//   KCMListLeftColumnWidth as it is laid out, so the measurement has to be done and cached by
+	//   the time the first one does - and doing it here means it happens exactly once per list.
+	KCMRecomputeResourcesKindWidth();
 
 	// ClearTree(kTrue) drops the remembered expansion state; ChangeRoot reloads the tree.
 	//

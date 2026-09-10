@@ -434,7 +434,30 @@ void KCMUpdateStorySectionLabel()
 	//     the kind of thing that goes stale when a column is renamed.
 	KCMSetColumnHeading(kKCMStoryColUIDWidgetID,  showsResources ? kKCMResourcesColKindKey : kKCMStoryColUIDKey);
 	KCMSetColumnHeading(kKCMStoryColTextWidgetID, showsResources ? kKCMResourcesColKeyKey  : kKCMStoryColTextKey);
-	KCMSetColumnHeading(kKCMStoryColKindWidgetID, kKCMStoryColKindKey);
+
+	// ★★**THE RESOURCES MODE'S CHANGE COLUMN IS HEADED `Δ`** (2026-09-10, the user's choice from
+	//   the abbreviations offered). The column under it holds `+`, `-` and `≠` - three signs - and
+	//   a one-character heading is what fits over them now that the column sits beside Kind.
+	//   ★Delta is the mathematical sign for change, so it needs no translating in any locale.
+	//   ⚠**IT IS BUILT WITH SetXString, NOT WRITTEN IN THE .fr.** `Δ` is in CP932, which is the
+	//     dangerous half of cpp-japanese-needs-bom: a literal would compile silently and draw as
+	//     something else. The same route the `≠` in the rows already takes.
+	//   ⚠The Story mode keeps the word: its column is wide and says "Change".
+	if (showsResources)
+	{
+		InterfacePtr<ITextControlData> kindHeading(
+			KCMFindPanelWidget(kKCMStoryColKindWidgetID), UseDefaultIID());
+		if (kindHeading != nil)
+		{
+			const char16_t delta[] = u"Δ";
+			PMString text;
+			text.SetXString(reinterpret_cast<const UTF16TextChar*>(delta), 1);
+			text.SetTranslatable(kFalse);
+			kindHeading->SetString(text, kTrue, kFalse);
+		}
+	}
+	else
+		KCMSetColumnHeading(kKCMStoryColKindWidgetID, kKCMStoryColKindKey);
 
 	// ★★AND THE HEADINGS MOVE WITH THE COLUMNS THEY NAME. The left column is 40px of digits in the
 	//   Story mode and 120px of element names in the Resources one (KCMStoryTree.h says why), and
