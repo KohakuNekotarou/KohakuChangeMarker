@@ -102,6 +102,27 @@ bool16 KCMIsOpaqueSelf(const PMString& value)
 	// InDesign writes a UID as 'u' followed by lower-case hexadecimal: "ueb", "uf4", "u13f".
 	// Every name this mode meets carries something a UID cannot -- a '/' ("Color/Black"), a
 	// capital letter ("dABullet0"), a space, or a character outside ASCII (a font name).
+	//
+	// ★★★AND A THIRD SHAPE EXISTS, which the sentence above read as a name for as long as this
+	//   function has been here: A UID WITH A SUFFIX. "u10aGradientStop0", "u18ColorGroupSwatch0",
+	//   "ua8BuildingBlock0" -- the owner's UID, the element's name, and an index within that
+	//   owner. It carries capital letters, so the test called it a name, and KCMResourceKeyOf
+	//   then used it VERBATIM as the pairing key (its route [B]).
+	//   ⚠A verbatim key built out of a UID can never match in another document, so every element
+	//     shaped like this came back as Added AND Removed at the same time -- the exact outcome
+	//     route [C] exists to prevent. Measured 2026-09-10 on a pair whose only difference was
+	//     one added gradient: "Added GradientStop x2, Removed GradientStop x2".
+	//   ★WHY IT STAYED HIDDEN FOR SO LONG: two documents built by the SAME steps allocate the
+	//     SAME UIDs, so the verbatim keys happened to match and the control run read
+	//     "232 paired, 0 added, 0 removed". It appears the moment one side is edited -- which is
+	//     every real comparison. One nearly empty document already holds 39 of them
+	//     (BuildingBlock x27, ColorGroupSwatch x10, GradientStop x2), and a real one was seen on
+	//     2026-09-09: "Added ColorGroupSwatch u18ColorGroupSwatchb".
+	//   ⚠THE SUFFIX IS NOT A KEY EITHER: the index restarts inside each owner, so
+	//     "GradientStop0" occurs once per gradient. Answering "opaque" hands the item to route
+	//     [C], which pairs the nth of a kind with the nth of that kind -- the same assumption [C]
+	//     already makes for a Section, and the same trade it already accepts there ("a wrong
+	//     pairing shows one difference, no pairing shows two").
 	const int32 length = static_cast<int32>(value.CharCount());
 	if (length < 2)
 		return kFalse;			// "" is not a UID, and neither is a single letter
@@ -109,11 +130,39 @@ bool16 KCMIsOpaqueSelf(const PMString& value)
 	if (value.GetWChar(0).GetValue() != 'u')
 		return kFalse;
 
-	for (int32 i = 1; i < length; ++i)
+	int32 i = 1;
+	for (; i < length; ++i)
 	{
 		const uint32 c = value.GetWChar(i).GetValue();
 		const bool16 isHexDigit = ((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'));
 		if (!isHexDigit)
+			break;
+	}
+
+	if (i == length)
+		return kTrue;			// nothing but hexadecimal after the 'u' -- a bare UID
+
+	// Something follows the hexadecimal, so this is the suffixed shape or it is a name. It is the
+	// suffixed shape only if a UID actually came first (at least one hexadecimal digit) and the
+	// suffix begins with a capital, which is how InDesign spells the element name it appends.
+	// ⚠A name that merely begins with 'u' does not reach this test: in "uName" the 'N' is not
+	//   preceded by a hexadecimal digit, so i is still 1 and the answer below is no.
+	if (i == 1)
+		return kFalse;
+
+	const uint32 firstOfSuffix = value.GetWChar(i).GetValue();
+	if (firstOfSuffix < 'A' || firstOfSuffix > 'Z')
+		return kFalse;
+
+	// The rest of a generated suffix is ASCII letters and digits and nothing else. Requiring that
+	// keeps the answer to the shape InDesign really writes, rather than to "anything after a
+	// capital" -- which would start swallowing values a person typed.
+	for (++i; i < length; ++i)
+	{
+		const uint32 c = value.GetWChar(i).GetValue();
+		const bool16 isAlnum = ((c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') ||
+								(c >= 'A' && c <= 'Z'));
+		if (!isAlnum)
 			return kFalse;
 	}
 	return kTrue;

@@ -112,7 +112,13 @@ typedef K2Vector<KCMResourceItem> KCMResourceList;
     would be a whitelist, and the next document is allowed to hold a reference this one did not.
 
     ⚠It leans towards "opaque" on purpose; the reasoning is in KCMResourceDiff.h, where the same
-    test decides how an item is paired. */
+    test decides how an item is paired.
+
+    ★★TWO SHAPES ANSWER YES, not one (the second was added 2026-09-10): a bare UID ("u13f"), and
+    A UID WITH A SUFFIX ("u10aGradientStop0", "u18ColorGroupSwatch0", "ua8BuildingBlock0"). The
+    second was read as a name until it was measured, which made every element carrying one report
+    as Added and Removed at the same time in any pair whose UIDs had drifted apart. The full
+    account, and why the control run could not see it, is at the head of the function. */
 bool16 KCMIsOpaqueSelf(const PMString& value);
 
 /** kTrue when `value` is a UID, or a whitespace-separated list of nothing but UIDs.
