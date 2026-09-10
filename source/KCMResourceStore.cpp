@@ -32,6 +32,8 @@
 // (KCMResourceBytes.h went with ReadOneSide too - the bytes of an export never reach this file now.)
 #include "KCMResourceDiff.h"
 #include "KCMResourceAttrDiff.h"	// which ATTRIBUTES of one definition differ
+#include "KCMBoundaryID.h"			// kKCMStoryEditsRebuiltMessage - the one the panel's list listens for
+#include "KCMModelNotify.h"			// KCMNotify - the panel is told whenever this store is refilled
 #include "KCMProgressBar.h"			// KCMDeferredProgressBar - here with no delay at all (see Rebuild)
 #include "KCMResourceSnapshot.h"
 #include "KCMResourceStore.h"
@@ -173,6 +175,34 @@ bool16 KCMResourceStore::Rebuild(IDataBase* targetDB, IDataBase* sourceDB, PMStr
 	progress.Step(3, Phase("Done."));
 
 	gHasResult = kTrue;
+
+	// ***** ★★★WHOEVER FILLS THE STORE, THE PANEL IS TOLD. *****
+	//
+	// ⚠**WRITTEN AFTER A DEFECT THE USER SAW** (2026-09-10): "リソースが０とでてるのに、結果の
+	//  ところに表示がある" - the section heading read `Resources (0)` while the list underneath it
+	//  showed rows, and a recomputation at that same moment answered 9. THREE STATES, all
+	//  disagreeing.
+	//
+	// The cause was that this function has three callers and only one of them was followed by a
+	// notification. The heading takes its number from GetChangeCount() and the rows are built from
+	// the same store, so both were correct about a store that had since been rewritten underneath
+	// them - by app.kcmResourceDiff, which rebuilds here and used to say nothing.
+	//   ⇒ ★THE NOTIFICATION BELONGS HERE, NOT AT THE CALLERS. Three callers meant three chances to
+	//     forget, and one of them had (memory one-question-one-place). Anything that changes what
+	//     the panel would show now says so from the one place that changed it.
+	//
+	// ★★AND IT IS WHAT MAKES app.kcmResourceDiff EVIDENCE AGAIN. The port's own comment says it
+	//  reads back through the store "exactly as the panel will", so that its output is evidence
+	//  about what the panel can see - and that claim only holds while the two are looking at the
+	//  same moment. Without this line the port moved on and the panel did not.
+	//
+	// ⚠THE COST IS THE READER'S SELECTION: the UI rebuilds the whole tree on this message
+	//  (KCMFacades' RefreshRow says so, and declines to send it when nothing changed). It is paid
+	//  here on purpose - a list that disagrees with its own heading is worse than a lost selection,
+	//  and unlike RefreshRow this function cannot tell "nothing changed" from "not compared yet"
+	//  without comparing first, which is the work it has just done.
+	KCMNotify(kKCMStoryEditsRebuiltMessage);
+
 	return kTrue;
 }
 
