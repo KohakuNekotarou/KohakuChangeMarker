@@ -903,7 +903,13 @@ static int32 sResourcesKindWidth = 120;
 // .fr writes and stays the value before the first measurement.
 static int32 sStoryUidWidth = 40;
 
-static const int32 kKCMKindWidthMin = 40;		// below this even a short name cannot show
+static const int32 kKCMKindWidthMin = 24;		// below this even a short name cannot show.
+												// ⚠★★**40 until 2026-09-10, and it was the FLOOR that was showing, not
+												//   the fit**: a Story ID like "257" measures about 20px, so the
+												//   column sat at 40 in every document and the gap before the sign
+												//   was empty cell rather than spacing (the user: "a little narrower
+												//   between ID and the delta"). The fit decides the width; this only
+												//   stops it collapsing when there is nothing to measure.
 static const int32 kKCMKindWidthPad = 6;		// air after the longest name, so it is not touching.
 												// ⚠12 until 2026-09-10 ("narrower" - the same capture)
 static const int32 kKCMDefinitionWidthMin = 60;	// what the Definition column keeps whatever happens
