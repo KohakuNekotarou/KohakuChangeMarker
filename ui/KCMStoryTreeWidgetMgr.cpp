@@ -109,125 +109,67 @@ PMString Translated(const char* key)
 	return s;
 }
 
-/** Name the kind of change that moved - the first one, with a '+' when there were others.
+/** Which sign a story row's change column shows.
 
-	★ONE WORD, NOT A LIST (user's call, 2026-08-10: "when there are two or more, something like a
-	+"). The column is 62px wide and does not ellipsize, so a spelled-out "Text Attr" was being
-	CLIPPED rather than shortened - the reader saw a word cut off mid-stroke and no sign that
-	anything was missing. "Text+" fits, and the '+' is the sign.
+	★★★**FOUR SIGNS, NOT WORDS** (2026-09-10, the user's call, arrived at in three steps: the
+	  column moved next to the UID, its heading became `Δ`, and then "Text Attr Ruby Other should be
+	  the not-equal sign" and "Add and Remove as + and -, None as =").
 
-	The order the kinds are tested in is fixed, so the word before the '+' is always the same one
-	for the same set of changes - "Text+" never comes back as "Attr+". Added and Removed stand alone
-	rather than joining the others: there is no story on the other side to have compared anything
-	against, so no kind could have been named for either, and no '+' can follow them.
-	(Removed arrived 2026-08-21 - the story is in the older version and gone from the newer one.)
+	      +   only in the newer document
+	      -   only in the older one
+	      =   the words were compared and they agree
+	      ≠   they differ - whatever moved: text, an attribute, a ruby, a kenten, a footnote
 
-	★"None" STANDS ALONE TOO, AND IT OUTRANKS THE COUNTERS (2026-08-21, user's request after
-	watching a refreshed row lose its children: "when nothing has changed any more, say so in the
-	Change column; as it is, the children just disappear and it is hard to tell"). When the text has actually been put
-	side by side and comes out the same, saying "Text+" would be repeating what the counters said
-	BEFORE anybody looked at the words - which is exactly the reading the refresh just disproved.
-	⚠It is not "unchanged": the counters moved, or there would be no row. It is "no difference in
-	the words", and the sameKind flag is only ever set when the diff really ran (fTextCompared).
+	★**IT IS THE SAME VOCABULARY THE RESOURCES MODE USES**, which is the point: the two lists answer
+	  the same question and should not answer it in two languages, one of words and one of signs.
 
-	★★AN ATTRIBUTE THE DIFF ACTUALLY IDENTIFIED IS NAMED, rather than falling back on the counters'
-	"Attr" (user's request: "for Change, say Ruby"). "Attr" is what the two documents'
-	CHANGE COUNTERS say - true but vague, and it is all that could be said before the text was
-	compared. When the comparison has gone further and found that a RUBY moved over characters
-	nobody touched, the row can say so.
-	⚠It is checked before the counters and after Added/Removed/None: those three describe the row
-	  itself, this describes what was found inside it.
-	★IT TAKES THE KIND RATHER THAN A "hasRuby" FLAG, so that a second attribute costs a key here and
-	  nothing else. Kenten (emphasis dots) is that second one, reported again since 2026-09-01.
-	★AND HOW MANY KINDS, so that a story whose ruby AND kenten both moved over unchanged text reads
-	  "Ruby+" (2026-09-03, user's ask) - the same '+' the counters' "Text+" below has always used, and
-	  for the same reason: the word names the first thing, the sign says there was a second.
+	⚠★★**WHAT THIS GIVES UP, SAID PLAINLY.** Until now this column named WHICH kind moved - "Text",
+	  "Attr", "Ruby+", with a '+' when more than one had - and the reader could tell a body-text edit
+	  from a ruby that moved over unchanged characters at a glance. `≠` says only that something did.
+	  The detail is still in the list, one level down: a story row's CHILDREN are the changes
+	  themselves, and each says what it is. What is lost is seeing it without opening the row.
+	  ⇒ If that turns out to matter, this function is where it comes back - nothing else was
+	    changed to make it a sign.
 
-	@param sameKind kTrue when the text was compared and nothing differs - see above.
-	@param attrKind which attribute the children found FIRST, as KCMStoryAttrKind; 0 for none.
-	@param attrKindCount how many DIFFERENT attribute kinds they found; > 1 puts the '+' on.
+	⚠`≠` goes in through SetXString, never as a literal: it is in CP932, so a plain "≠" would build
+	  without a murmur and draw as something else (cpp-japanese-needs-bom - the dangerous half).
+
+	@param sameKind      kTrue when the text was compared and nothing differs.
+	@param kinds         the change kinds the counters reported.
+	@param attrKind      ⚠no longer read. Kept so the call sites are untouched and so the detail can
+	@param attrKindCount ⚠  be restored here without hunting for what used to be passed in.
+	@param hasTextChange ⚠
 */
-PMString KindLabel(uint32 kinds, bool16 sameKind, int32 attrKind, int32 attrKindCount,
-				   bool16 hasTextChange)
+PMString KindLabel(uint32 kinds, bool16 sameKind, int32 /*attrKind*/, int32 /*attrKindCount*/,
+				   bool16 /*hasTextChange*/)
 {
+	PMString out;
+	out.SetTranslatable(kFalse);
+
 	if (sameKind)
-		return Translated(kKCMStoryKindNoneKey);
+	{
+		out = PMString("=");
+		out.SetTranslatable(kFalse);
+		return out;
+	}
 
 	if (kinds & kKCMStoryKindAdded)
-		return Translated(kKCMStoryKindAddedKey);
+	{
+		out = PMString("+");
+		out.SetTranslatable(kFalse);
+		return out;
+	}
 
 	if (kinds & kKCMStoryKindRemoved)
-		return Translated(kKCMStoryKindRemovedKey);
-
-	// ★What the diff FOUND, ahead of what the counters merely reported. ⚠Only when the text itself
-	//   did not change: a story whose words were rewritten AND whose ruby moved is a text edit
-	//   first, and the "Text+" below already says there was more than one kind of change.
-	// ⚠★★★**"THE TEXT DID NOT CHANGE" IS THE DIFF'S ANSWER, NOT THE COUNTERS'** (2026-09-08). This
-	//   read `(kinds & kKCMStoryKindText) == 0` until footnotes arrived, and the two questions had
-	//   never disagreed because ruby and kenten are not characters. **A note's marker IS one**:
-	//   adding an endnote moves the document's text counter, so the row said "Text+" for an edit
-	//   whose only difference was the note - the very row this feature exists to make readable.
-	//   ⇒ ask what was FOUND (KCMStoryRow::fHasTextChange). The counters keep their job one branch
-	//   down, where nothing was diffed and they are all there is.
-	// ⚠★★EACH REPORTED ATTRIBUTE NAMES ITSELF. Ruby has since the beginning; kenten does again
-	//   since 2026-09-01 (user's call), the comparison behind it having been switched back on in
-	//   KCMStoryDiffRun's AddAttributeChanges. **A branch here is only reachable while that call
-	//   exists** - which is the pair to watch if either is ever removed again.
-	if (!hasTextChange)
 	{
-		const char* attrKey = nil;
-		if (attrKind == kKCMStoryAttrRuby)
-			attrKey = kKCMStoryKindRubyKey;
-		else if (attrKind == kKCMStoryAttrKenten)
-			attrKey = kKCMStoryKindKentenKey;
-		else if (attrKind == kKCMStoryAttrFootnote)
-			attrKey = kKCMStoryKindFootnoteKey;
-		else if (attrKind == kKCMStoryAttrEndnote)
-			attrKey = kKCMStoryKindEndnoteKey;
-
-		if (attrKey != nil)
-		{
-			// ★"Ruby+" / "Kenten+" when the children hold more than one kind (2026-09-03). Composed
-			//   the same way as the "Text+" below, and for the same reason it is no longer a key.
-			PMString named = Translated(attrKey);
-			if (attrKindCount > 1)
-			{
-				named.SetTranslatable(kFalse);
-				named.Append("+");
-			}
-			return named;
-		}
+		out = PMString("-");
+		out.SetTranslatable(kFalse);
+		return out;
 	}
 
-	PMString out;
-	out.SetTranslatable(kFalse);	// composed, so no longer a key - see the note in KCMStoryList.cpp
-
-	const uint32 bits[3] = { kKCMStoryKindText, kKCMStoryKindAttr, kKCMStoryKindOther };
-	const char* const keys[3] = { kKCMStoryKindTextKey, kKCMStoryKindAttrKey, kKCMStoryKindOtherKey };
-
-	// Which one to name, and whether anything else moved. Counting first rather than appending as
-	// we go, because the '+' depends on what comes AFTER the word that gets printed.
-	int32 firstKind = -1;
-	int32 kindCount = 0;
-	for (int32 i = 0; i < 3; ++i)
-	{
-		if ((kinds & bits[i]) == 0)
-			continue;
-		if (firstKind < 0)
-			firstKind = i;
-		++kindCount;
-	}
-
-	if (firstKind >= 0)
-	{
-		PMString word(keys[firstKind]);
-		word.Translate();
-		out.Append(word);
-
-		if (kindCount > 1)
-			out.Append("+");
-	}
-
+	const char16_t notEqual[] = u"≠";
+	out.SetXString(reinterpret_cast<const UTF16TextChar*>(notEqual), 1);
+	out.SetTranslatable(kFalse);
 	return out;
 }
 
@@ -407,16 +349,20 @@ public:
 		const bool16 showsResources = KCMListShowsResources();
 		const bool16 isChangeNode = (nodeID != nil && nodeID->IsChangeRow()) ? kTrue : kFalse;
 
-		// ***** THE COLUMNS ARE LAID OUT HERE, ONCE, FOR EVERY ROW BUILT FROM THE STORY ROW'S
-		// RESOURCE. ***** That is every row except the Story mode's change rows, which have a
-		// resource of their own with no left cell at all (see ApplyChangeRow).
+		// ***** THE COLUMNS ARE LAID OUT HERE, ONCE, FOR EVERY ROW. *****
 		// ★It is done on EVERY apply for the same reason the cells' text is: row widgets are
 		//   recycled, and one that comes back from a list drawn in the other mode would otherwise
 		//   keep that mode's column widths.
 		// ★★**THE VALUES STAY IN ONE COLUMN AND ONLY THE NAME STEPS IN** (the user's call; the
 		//   header carries the whole history). 12px: enough to see, less than the 16px of the
 		//   expander column, which is what "a little" was asked for.
-		if (showsResources || !isChangeNode)
+		// ⚠★★**THE STORY MODE'S CHANGE ROWS COME THROUGH HERE TOO, SINCE 2026-09-10** (the user:
+		//   put the child rows' sign in the Δ column as well). They used to be excluded, and their
+		//   sign stayed out at the row's right edge while the parent's sat in the Δ column - the
+		//   one column in the list where two rows answered the same question in two places.
+		//   ★**Their resource has no left cell**, and that costs nothing: KCMApplyListColumnWidths
+		//     ignores a nil cell, so the change row gets the sign and the text placed and nothing
+		//     put where its UID would have been.
 		{
 			// ⚠The 12 moved to the top of this file on 2026-09-10: the self-fitting Kind column has
 			//   to add the same indent when it measures a child's name, and a second copy of it
@@ -504,8 +450,14 @@ public:
 		else if (Utils<IKCMStoryEditsFacade>()->GetRowCount() == 0)
 		{
 			// ★The placeholder the adapter asks for while a comparison is running and found nothing
-			//   (see GetNumListItems). Left cell only: there is no kind to name.
-			text = Translated(kKCMStoryNoEditsKey);
+			//   (see GetNumListItems).
+			// ⚠★★**IT SAYS NOTHING SINCE 2026-09-10** (the user: "what shows NoEdit now should show
+			//   nothing - the number of changes already tells you"). The section's own heading
+			//   carries the count ("Story Edits (0)"), so a row spelling it out again was the same
+			//   answer twice, in the one place a reader looks for the answers themselves.
+			//   ★The row is still THERE - an empty one - because the list having a row is what says
+			//     the comparison ran. The string kKCMStoryNoEditsKey is left in the table: putting
+			//     it back is one line if the blank row reads as a fault rather than as an answer.
 		}
 
 		this->SetNodeName(widgetList, uid, kKCMStoryRowUIDWidgetID);
@@ -564,9 +516,10 @@ private:
 		else if (resources && resources->GetChangeCount() == 0)
 		{
 			// ★The placeholder the adapter asks for while a comparison is running and found nothing.
-			//   "The definitions are identical" and "nothing has been compared" must not look alike,
-			//   which is the same distinction the story list draws with its "No edits" row.
-			key = Translated(kKCMResourcesNoChangesKey);
+			// ⚠★★**IT SAYS NOTHING SINCE 2026-09-10**, with the story list's row and for the same
+			//   reason: the heading already carries the count. ★"The definitions are identical" and
+			//   "nothing has been compared" are still told apart - by the heading's number and by
+			//   the status line, not by this cell. kKCMResourcesNoChangesKey stays in the table.
 		}
 
 		// ***** THE KIND IS NOT SPELLED TWICE ON ONE ROW. ***** (2026-09-09, the user's call: "for the
@@ -942,12 +895,16 @@ bool16 KCMListShowsResources()
 // measured width of "ColorGroupSwatch" at the palette font.
 static int32 sResourcesKindWidth = 120;
 
+// The Story mode's left column (a story UID), fitted the same way since 2026-09-10. 40 is what the
+// .fr writes and stays the value before the first measurement.
+static int32 sStoryUidWidth = 40;
+
 static const int32 kKCMKindWidthMin = 40;		// below this even a short name cannot show
 static const int32 kKCMKindWidthPad = 12;		// air after the longest name, so it is not touching
 static const int32 kKCMDefinitionWidthMin = 60;	// what the Definition column keeps whatever happens
 
 // See KCMStoryTree.h. The ceiling, read off the panel as it stands now.
-int32 KCMClampResourcesKindWidth(int32 px)
+int32 KCMClampListLeftColumnWidth(int32 px)
 {
 	if (px < kKCMKindWidthMin)
 		px = kKCMKindWidthMin;
@@ -990,11 +947,8 @@ int32 KCMClampResourcesKindWidth(int32 px)
 
 // See KCMStoryTree.h. Measure every name the Kind column will show and fit the column to the
 // widest of them.
-void KCMRecomputeResourcesKindWidth()
+void KCMRecomputeListLeftColumnWidth()
 {
-	if (!KCMListShowsResources())
-		return;			// the Story mode's 40 is the .fr's, and nothing here applies to it
-
 	// ★**MEASURED WITHOUT A GRAPHICS CONTEXT.** DrawStringUtils has an overload that takes only the
 	//   string and the font (DrawStringUtils.h:89) - the other one needs a gc, which exists only
 	//   inside a Draw, and this runs while the list is being BUILT.
@@ -1002,6 +956,37 @@ void KCMRecomputeResourcesKindWidth()
 	if (fonts == nil)
 		return;
 	const InterfaceFontInfo& font = fonts->GetFont(kPaletteWindowSystemScriptFontId);
+
+	// ───────── the STORY mode: the left column holds a story's UID ─────────
+	// ★**FITTED TOO, SINCE 2026-09-10** (the user: "make the Story side like Resources as well").
+	//   The gain is smaller than in the Resources mode - UIDs are four to six digits and the .fr's
+	//   40px very nearly fits them - but the two lists now behave the same way, and a document whose
+	//   object numbers have run into seven digits is no longer clipped.
+	if (!KCMListShowsResources())
+	{
+		Utils<IKCMStoryEditsFacade> stories;
+		if (!stories)
+			return;
+
+		PMReal widestUid(0.0);
+		const int32 storyRows = stories->GetRowCount();
+		for (int32 i = 0; i < storyRows; ++i)
+		{
+			IKCMStoryEditsFacade::Row row;
+			if (!stories->GetRow(i, row))
+				continue;
+			PMString uid;
+			uid.SetTranslatable(kFalse);
+			uid.AppendNumber(static_cast<int32>(row.fStoryUID.Get()));
+			const PMReal w = StringUtils::PMMeasureString(uid, font, kFalse).X();
+			if (w > widestUid)
+				widestUid = w;
+		}
+
+		if (widestUid > PMReal(0.0))
+			sStoryUidWidth = KCMClampListLeftColumnWidth(::ToInt32(widestUid) + kKCMKindWidthPad);
+		return;
+	}
 
 	Utils<IKCMResourcesFacade> resources;
 	if (!resources)
@@ -1048,7 +1033,7 @@ void KCMRecomputeResourcesKindWidth()
 		return;
 
 	const int32 fitted = ::ToInt32(widest) + kKCMKindWidthPad;
-	sResourcesKindWidth = KCMClampResourcesKindWidth(fitted);
+	sResourcesKindWidth = KCMClampListLeftColumnWidth(fitted);
 
 }
 
@@ -1060,7 +1045,8 @@ int32 KCMListLeftColumnWidth()
 	//   way out as well as on the way in**: it was fitted against the panel as it stood when the
 	//   list was built, and the panel can be narrower now - so the last word belongs to the width
 	//   the list is being drawn at.
-	return KCMListShowsResources() ? KCMClampResourcesKindWidth(sResourcesKindWidth) : 40;
+	return KCMListShowsResources() ? KCMClampListLeftColumnWidth(sResourcesKindWidth)
+										 : KCMClampListLeftColumnWidth(sStoryUidWidth);
 }
 
 void KCMApplyListColumnWidths(IControlView* leftCell, IControlView* middleCell,
@@ -1080,107 +1066,63 @@ void KCMApplyListColumnWidths(IControlView* leftCell, IControlView* middleCell,
 		leftCell->SetFrame(frame);
 	}
 
-	// ★★★**IN THE RESOURCES MODE THE CHANGE COLUMN SITS BESIDE Kind, NOT AT THE RIGHT EDGE**
-	//   (2026-09-10, the user's request, marked "experimental"): `Kind | Change | Definition`.
-	//   The two narrow columns pair up on the left and the Definition column takes everything that
-	//   is left, which is the column a reader actually needs the width for.
-	//   ⚠**The Story mode keeps the old order** (`UID | Story | Change`): its right column is the
-	//     kind of change, which belongs at the end of the sentence the row makes.
-	if (KCMListShowsResources())
-	{
-		const int32 changeLeft = leftEnd + kKCMListColumnGap;
-		const int32 changeEnd  = changeLeft + kKCMListChangeWidth;
+	// ★★★**ONE ORDER FOR EVERY MODE: `left | Δ | wide`** (2026-09-10). The change column sits
+	//   beside the narrow left one and the column that grows takes the rest.
+	//   ★**It began as the Resources mode's own** ("experimental", the user) and reached the other
+	//     two the same day - "make the Story side like Resources as well", and then "the Story Edits
+	//     part of the Pixel mode too". ⇒ the branch that kept the old order went with them: all
+	//     three modes now put a single SIGN in that column, so there is nothing left to tell apart.
+	const int32 changeLeft = leftEnd + kKCMListColumnGap;
+	const int32 changeEnd  = changeLeft + kKCMListChangeWidth;
 
-		if (rightCell != nil)
-		{
-			// ⚠★★★**THE BINDING HAS TO MOVE WITH THE COLUMN, OR THE FRAME IS UNDONE.** The .fr binds
-			//   this cell to the RIGHT edge, which is right where it normally sits - but here it has
-			//   been put beside Kind, and a right-bound widget is dragged back out to the edge the
-			//   next time the panel is resized. **Measured 2026-09-10**: the rows looked correct
-			//   (they are laid out again on every recycle) while the HEADINGS drifted apart and the
-			//   Change and Definition headings overlapped - the same layout, two different answers,
-			//   because only one of them was re-laid after the resize.
-			//   ⇒ Left-bound here, so it stays where it is put; the Definition column is the one
-			//     that stretches now, and it is already bound on both sides.
-			rightCell->SetFrameBinding(kBindLeft);
-
-			// ⚠★★**CENTRED, NOT RIGHT-ALIGNED - AND THAT IS NOT A PREFERENCE.** Right-aligned, the
-			//   text is pressed against the column's right edge and touches whatever follows it:
-			//   the first screen of this order read "Change_Definition" as one word. It is the same
-			//   fault the book dialog's Change column was measured to have on the same day
-			//   ("Changed Pixel" read as one phrase), and the same lesson - **a right-aligned column
-			//   glues itself to the next one**.
-			//   ★Centred suits what is in it now: one sign (`+`, `-`, `≠`) under a one-character
-			//     heading (`Δ`).
-			InterfacePtr<IStaticTextAttributes> attrs(rightCell, UseDefaultIID());
-			if (attrs != nil)
-				attrs->SetAlignment(kAlignCenter);
-
-			PMRect frame = rightCell->GetFrame();
-			frame.Left(PMReal(changeLeft));
-			frame.Right(PMReal(changeEnd));
-			rightCell->SetFrame(frame);
-		}
-
-		if (middleCell != nil)
-		{
-			// ⚠★★★**THE ROW'S RIGHT EDGE COMES FROM THE PARENT, NOT FROM THE CHANGE CELL.** In the
-			//   other order the Change cell is bound to the right edge and its Left IS where this
-			//   column stops - but here it has just been MOVED away from that edge, so asking it
-			//   would put the Definition column's end wherever the last lay-out left it. That is
-			//   the recycling trap this file has already been caught by once (2026-09-09: a child
-			//   row kept an earlier right edge and ran 96px out of the panel).
-			//   ★The parent is the row widget, or the heading band; its width is the row's width.
-			PMReal rowRight(0.0);
-			InterfacePtr<const IWidgetParent> wp(middleCell, UseDefaultIID());
-			if (wp != nil)
-			{
-				InterfacePtr<IControlView> parentView(
-					(IControlView*)wp->QueryParentFor(IID_ICONTROLVIEW));
-				if (parentView != nil)
-					rowRight = parentView->GetFrame().Width() - PMReal(kKCMListRightInset);
-			}
-
-			PMRect frame = middleCell->GetFrame();
-			frame.Left(PMReal(changeEnd + kKCMListColumnGap));
-			if (rowRight > PMReal(changeEnd + kKCMListColumnGap))
-				frame.Right(rowRight);
-			middleCell->SetFrame(frame);
-		}
-		return;
-	}
-
-	// ⚠**PUT THE RIGHT CELL BACK ON THE RIGHT EDGE.** The Resources branch above binds it to the
-	//   left; a panel that has been in that mode and switches back would otherwise keep a Change
-	//   column that no longer follows the panel's width. Setting it every time costs nothing and
-	//   means neither mode has to know what the other did.
 	if (rightCell != nil)
 	{
-		rightCell->SetFrameBinding(kBindRight);
+		// ⚠★★★**THE BINDING HAS TO MOVE WITH THE COLUMN, OR THE FRAME IS UNDONE.** The .fr binds
+		//   this cell to the RIGHT edge, which is where it used to sit - and a right-bound widget is
+		//   dragged back out to that edge the next time the panel is resized. **Measured 2026-09-10**:
+		//   the rows looked correct (they are laid out again on every recycle) while the HEADINGS
+		//   drifted apart until the change and the wide column overlapped - the same layout, two
+		//   different answers, because only one of them was re-laid after the resize.
+		rightCell->SetFrameBinding(kBindLeft);
 
-		// ⚠And its alignment back with it: the Resources branch centres this cell, and a widget
-		//   coming from that mode would keep the centring in a column that is right-aligned by
-		//   design ("what is not written is the previous value, not nothing" - the same rule the
-		//   ellipsize style below is set in both directions for).
+		// ⚠★★**CENTRED, NOT RIGHT-ALIGNED - AND THAT IS NOT A PREFERENCE.** Right-aligned, the text
+		//   is pressed against the column's right edge and touches whatever follows it: the first
+		//   screen of this order read "Change_Definition" as one word. The same fault the book
+		//   dialog's Change column was measured to have on the same day ("Changed Pixel" read as one
+		//   phrase). ★A single sign under a one-character heading wants the middle anyway.
 		InterfacePtr<IStaticTextAttributes> attrs(rightCell, UseDefaultIID());
 		if (attrs != nil)
-			attrs->SetAlignment(kAlignRight);
+			attrs->SetAlignment(kAlignCenter);
+
+		PMRect frame = rightCell->GetFrame();
+		frame.Left(PMReal(changeLeft));
+		frame.Right(PMReal(changeEnd));
+		rightCell->SetFrame(frame);
 	}
 
 	if (middleCell != nil)
 	{
+		// ⚠★★★**THE ROW'S RIGHT EDGE COMES FROM THE PARENT, NOT FROM THE CHANGE CELL.** In the old
+		//   order that cell was bound to the right edge and its Left WAS where this column stopped -
+		//   but it has just been moved away from that edge, so asking it would put this column's end
+		//   wherever the last lay-out left it. That is the recycling trap this file has already been
+		//   caught by once (2026-09-09: a child row kept an earlier right edge and ran 96px out of
+		//   the panel).
+		//   ★The parent is the row widget, or the heading band; its width is the row's width.
+		PMReal rowRight(0.0);
+		InterfacePtr<const IWidgetParent> wp(middleCell, UseDefaultIID());
+		if (wp != nil)
+		{
+			InterfacePtr<IControlView> parentView(
+				(IControlView*)wp->QueryParentFor(IID_ICONTROLVIEW));
+			if (parentView != nil)
+				rowRight = parentView->GetFrame().Width() - PMReal(kKCMListRightInset);
+		}
+
 		PMRect frame = middleCell->GetFrame();
-		frame.Left(PMReal(leftEnd + kKCMListColumnGap));
-
-		// ★★THE RIGHT EDGE COMES FROM THE RIGHT CELL, not from a number and not from what this cell
-		//   happens to say now. ⚠**Leaving it alone was wrong and was measured**: a child row whose
-		//   widget had been laid out under some earlier width kept that right edge, and its
-		//   Definition cell ran 96px past the Change column and out of the panel altogether
-		//   (2026-09-09, seen in the first build of the attribute rows). The Change cell is bound to
-		//   the panel's right edge, so its left edge IS where this column stops, at every width.
-		if (rightCell != nil)
-			frame.Right(rightCell->GetFrame().Left());
-
+		frame.Left(PMReal(changeEnd + kKCMListColumnGap));
+		if (rowRight > PMReal(changeEnd + kKCMListColumnGap))
+			frame.Right(rowRight);
 		middleCell->SetFrame(frame);
 	}
 }
@@ -1200,7 +1142,7 @@ void KCMStoryTreeRebuild()
 	// ★★**FIT THE KIND COLUMN BEFORE THE ROWS ARE BUILT** (2026-09-10). Every row asks
 	//   KCMListLeftColumnWidth as it is laid out, so the measurement has to be done and cached by
 	//   the time the first one does - and doing it here means it happens exactly once per list.
-	KCMRecomputeResourcesKindWidth();
+	KCMRecomputeListLeftColumnWidth();
 
 	// ClearTree(kTrue) drops the remembered expansion state; ChangeRoot reloads the tree.
 	//

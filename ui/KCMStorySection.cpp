@@ -443,7 +443,9 @@ void KCMUpdateStorySectionLabel()
 	//     dangerous half of cpp-japanese-needs-bom: a literal would compile silently and draw as
 	//     something else. The same route the `≠` in the rows already takes.
 	//   ⚠The Story mode keeps the word: its column is wide and says "Change".
-	if (showsResources)
+	// ⚠**IN EVERY MODE, not just Resources** (2026-09-10). It began as the Resources mode's heading
+	//   and reached the other two as their own column became a single sign - so the three lists say
+	//   the same thing the same way, which is what the whole re-ordering was for.
 	{
 		InterfacePtr<ITextControlData> kindHeading(
 			KCMFindPanelWidget(kKCMStoryColKindWidgetID), UseDefaultIID());
@@ -456,8 +458,6 @@ void KCMUpdateStorySectionLabel()
 			kindHeading->SetString(text, kTrue, kFalse);
 		}
 	}
-	else
-		KCMSetColumnHeading(kKCMStoryColKindWidgetID, kKCMStoryColKindKey);
 
 	// ★★AND THE HEADINGS MOVE WITH THE COLUMNS THEY NAME. The left column is 40px of digits in the
 	//   Story mode and 120px of element names in the Resources one (KCMStoryTree.h says why), and

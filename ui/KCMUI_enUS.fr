@@ -147,7 +147,7 @@ resource StringTable (kSDKDefStringsResourceID + index_enUS)
                 // the words in the rows already use "Text" for one of the kinds, so heading the
                 // second column "Text" would put the same word twice in one row meaning two
                 // different things (user's call, 2026-08-10).
-                kKCMStoryColUIDKey,			"UID",
+                kKCMStoryColUIDKey,			"ID",
                 kKCMStoryColTextKey,			"Story",
                 kKCMStoryColKindKey,			"Change",
 
