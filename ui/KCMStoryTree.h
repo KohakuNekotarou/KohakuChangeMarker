@@ -78,13 +78,13 @@ int32 KCMListLeftColumnWidth();
 	⚠**An empty list leaves the width alone** - there is nothing to fit to, and snapping back to the
 	  floor would make the headings jump between one comparison and the next.
 */
-void KCMRecomputeResourcesKindWidth();
+void KCMRecomputeListLeftColumnWidth();
 
 /** The clamp the fit is put through: never below a floor, never so wide that the Definition column
 	is starved. ★**The ceiling is read off the panel as it stands now**, not written down - a
 	constant would be right at one panel width and wrong at every other.
 */
-int32 KCMClampResourcesKindWidth(int32 px);
+int32 KCMClampListLeftColumnWidth(int32 px);
 
 /** Lay the left and middle columns out for the mode the list is showing.
 

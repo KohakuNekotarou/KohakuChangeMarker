@@ -84,7 +84,11 @@
 
 const int32 kKCMListHomeLeft    = 24;	// where the left column starts (the expander column ends there)
 const int32 kKCMListColumnGap   = 4;	// between one column and the next
-const int32 kKCMListChangeWidth = 62;	// the Change column, from the .fr (154..216)
+const int32 kKCMListChangeWidth = 24;	// ★**ONE SIGN WIDE** (2026-09-10). It was 62 - the width two
+										//   words needed when this column spelled "Text Attr" - and a
+										//   62px column holding a single character was the largest
+										//   piece of empty space in the list (the user, on a capture:
+										//   "narrower").
 const int32 kKCMListRightInset  = 8;	// the row's right margin (224 - 216 in the .fr)
 
 // How far a CHILD row's name steps in. ★Only the name moves; the column's right edge does not,
@@ -900,7 +904,8 @@ static int32 sResourcesKindWidth = 120;
 static int32 sStoryUidWidth = 40;
 
 static const int32 kKCMKindWidthMin = 40;		// below this even a short name cannot show
-static const int32 kKCMKindWidthPad = 12;		// air after the longest name, so it is not touching
+static const int32 kKCMKindWidthPad = 6;		// air after the longest name, so it is not touching.
+												// ⚠12 until 2026-09-10 ("narrower" - the same capture)
 static const int32 kKCMDefinitionWidthMin = 60;	// what the Definition column keeps whatever happens
 
 // See KCMStoryTree.h. The ceiling, read off the panel as it stands now.
@@ -1117,6 +1122,20 @@ void KCMApplyListColumnWidths(IControlView* leftCell, IControlView* middleCell,
 				(IControlView*)wp->QueryParentFor(IID_ICONTROLVIEW));
 			if (parentView != nil)
 				rowRight = parentView->GetFrame().Width() - PMReal(kKCMListRightInset);
+		}
+
+		// ⚠★★**FALL BACK TO THE PANEL WHEN THE PARENT CANNOT BE ASKED.** With rowRight left at 0 the
+		//   test below fails and the cell KEEPS THE RIGHT EDGE IT HAPPENED TO HAVE - which on a
+		//   recycled widget is some earlier layout's. **Measured 2026-09-10**: the Definition cell
+		//   ran 57px past the panel's own right edge (rel 609 in a 552px panel), which is the
+		//   96px-overrun of 2026-09-09 come back through a different door.
+		//   ★The panel is on screen, so it always has a real width - the same reason the clamp asks
+		//     it rather than the heading band.
+		if (rowRight <= PMReal(0.0))
+		{
+			IControlView* panelView = KCMGetVisibleOwnPanel();
+			if (panelView != nil)
+				rowRight = panelView->GetFrame().Width() - PMReal(kKCMListRightInset);
 		}
 
 		PMRect frame = middleCell->GetFrame();

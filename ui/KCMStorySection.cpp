@@ -465,6 +465,18 @@ void KCMUpdateStorySectionLabel()
 	//   the only thing that keeps a heading over its own column - the agreement used to be nothing
 	//   but two identical Frames in the .fr, and it has already been broken once that way
 	//   (2026-08-20: the row's cells moved 16px and these three did not follow).
+	// ⚠★★★**THE FIT IS TAKEN AGAIN HERE, AND THAT IS NOT BELT AND BRACES.** It is also done in
+	//   KCMStoryTreeRebuild, but a rebuild can run before the model holds the result - and the fit
+	//   leaves the width alone when the list is empty, so what stays is the width of the PREVIOUS
+	//   comparison. **Measured 2026-09-10 on the user's own document**: a single Added row whose
+	//   only name is "ParagraphStyle" (92px) was drawn in a 187px column, and the resource-diff
+	//   instrument showed the row carried no attributes at all - so nothing in that list could have
+	//   asked for 187. It was the comparison before it.
+	//   ★This function is called from every place that can change what the list holds - the mode
+	//     switch, a rebuild, and the panel's AutoAttach - and it is called AFTER the list is built,
+	//     which is the property the rebuild alone did not have.
+	KCMRecomputeListLeftColumnWidth();
+
 	KCMApplyListColumnWidths(KCMFindPanelWidget(kKCMStoryColUIDWidgetID),
 							 KCMFindPanelWidget(kKCMStoryColTextWidgetID),
 							 KCMFindPanelWidget(kKCMStoryColKindWidgetID), 0);
