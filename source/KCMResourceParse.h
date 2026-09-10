@@ -131,8 +131,33 @@ bool16 KCMIsOpaqueReference(const PMString& value);
 /** The element names this mode does NOT look at, because another mode does.
 
     ⚠Adding a name here makes the mode blind to something, and nothing will report the loss.
-    Removing one only makes a change show up in two places. When in doubt, do not add. */
+    Removing one only makes a change show up in two places. When in doubt, do not add.
+
+    ⚠★★Spread and MasterSpread are NOT in here, and that is not an oversight - they are handled
+    by the three below instead, which is a filter rather than a skip. */
 bool16 KCMIsExcludedResource(const PMString& elementName);
+
+/** The two subtrees that hold page items. They are not compared as items of their own: what they
+    carry is geometry, and geometry is what Pixel photographs. */
+bool16 KCMIsSpreadContainer(const PMString& elementName);
+
+/** Elements inside a spread that carry a Self but are not page items - the spread itself, a
+    <Page> (whose Name is the folio, and folios belong to <Section>), the flattener preference. */
+bool16 KCMIsSpreadStructureElement(const PMString& elementName);
+
+/** ★★★WHAT IS TAKEN FROM A PAGE ITEM, and it is deliberately almost nothing (2026-09-10, the
+    user's request: "I want to see a page item's lock change too").
+
+    A page item carries forty-odd attributes and nearly all of them are drawn - position, size,
+    colour, applied style. A rendered page SHOWS those, so Pixel owns them, and taking them here
+    would put a second row against every object somebody moved. What is left is the short list of
+    things that are true of an object without being visible in it.
+
+    ⚠The script label is not an attribute and is not decided here: it lives in a <Label> subtree
+    and is collected separately, as a pseudo-attribute named "ScriptLabel.<key>".
+    ⚠Nonprinting is deliberately absent: switching it changes what the plate carries, so the
+    pixels move and Pixel reports it. */
+bool16 KCMPageItemAttributeWanted(const PMString& attributeName);
 
 /** Cuts `xml` into one KCMResourceItem per definition.
 

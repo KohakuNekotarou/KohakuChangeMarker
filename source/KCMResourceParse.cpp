@@ -246,12 +246,64 @@ bool16 KCMIsExcludedResource(const PMString& elementName)
 	//     could differ for the same reason; what was measured is that no OTHER kind does today, on
 	//     documents built this way. If a phantom Added ever appears under another name, the fault
 	//     is this same one wearing a different coat - do not read this line as "handled".
-	return elementName == "Spread"
-		|| elementName == "MasterSpread"
-		|| elementName == "Story"
+	//
+	// ⚠★★★Spread AND MasterSpread ARE NO LONGER HERE (2026-09-10, the user's request: "I want to
+	//   see a page item's lock change too"). They are not compared as themselves either - what
+	//   happens to them now is a FILTERED DESCENT rather than a skip, and the rule is
+	//   KCMIsSpreadContainer plus KCMPageItemAttributeWanted. Everything a page renders is still
+	//   Pixel's, and only what a page CANNOT render is taken.
+	return elementName == "Story"
 		|| elementName == "TextDefault"
 		|| elementName == "Language"
 		|| elementName == "MetadataPacketPreference";
+}
+
+//========================================================================================
+// Inside a spread: the filtered descent
+//========================================================================================
+
+bool16 KCMIsSpreadContainer(const PMString& elementName)
+{
+	// The two subtrees that hold page items. They are not compared as items themselves: a spread
+	// carries its own geometry and its page list, all of which Pixel photographs.
+	return elementName == "Spread" || elementName == "MasterSpread";
+}
+
+bool16 KCMIsSpreadStructureElement(const PMString& elementName)
+{
+	// Elements inside a spread that carry a Self but are NOT page items. <Page> is the one that
+	// matters: it has both a Self and a Name (the folio), so without this test every page would
+	// become an item keyed "Page#1" - and page numbering already has an owner, <Section>.
+	return KCMIsSpreadContainer(elementName)
+		|| elementName == "Page"
+		|| elementName == "FlattenerPreference";
+}
+
+bool16 KCMIsUnnamedPageItemName(const PMString& nameValue)
+{
+	// ★★★AN UNNAMED PAGE ITEM DOES NOT HAVE AN EMPTY Name - IT HAS THIS. InDesign writes the
+	//   string-table placeholder "$ID/" for an object nobody has named, so a test for "the name
+	//   is empty" lets every unnamed object through. Measured 2026-09-10, on the counter-test
+	//   written to catch exactly this: a plain rectangle added to one side came back as
+	//   "Added Rectangle#$ID/" - one row for an object nobody can pair, which is the noise this
+	//   filter exists to prevent, arriving through the filter itself.
+	// ⚠It is an EXACT match on purpose. "$ID/" alone means untitled; "$ID/something" is a real
+	//   reference into the string table and is a name.
+	return nameValue == "$ID/";
+}
+
+bool16 KCMPageItemAttributeWanted(const PMString& attributeName)
+{
+	// ★★★THE WHOLE POINT OF THE FILTER. A page item has upwards of forty attributes and nearly
+	//   all of them are geometry, colour and applied styles -- things a rendered page SHOWS, so
+	//   Pixel already owns them. Taking them here would put a second row against every object
+	//   somebody moved, which is exactly the noise TextDefault was blacklisted for.
+	//   These two are what a page cannot render: they are true of the object without being
+	//   visible in it. The third, the script label, is not an attribute at all and is collected
+	//   from the <Label> subtree instead.
+	// ⚠**Nonprinting is deliberately NOT here**: switching it changes what the plate carries, so
+	//   the pixels move and Pixel reports it. Adding it would be the double report again.
+	return attributeName == "Name" || attributeName == "Locked";
 }
 
 //========================================================================================
@@ -397,6 +449,20 @@ struct KCMOpenItem
 {
 	KCMResourceItem	fItem;
 	int32			fDepth;
+
+	/** kTrue for the page items collected out of a <Spread>. They are built by a different rule
+	    from every other item -- only three things about them are kept -- so the two places that
+	    finish an item apart (EndElement and Characters) have to be able to tell them apart. */
+	bool16			fFromSpread;
+
+	/** kTrue while inside that page item's <Label>, which is where a script label lives. */
+	bool16			fInLabel;
+
+	/** kTrue once a script label has supplied this item's key, so a second pair cannot replace
+	    it. A key has to be one string, and the first pair is the one a reader sees first. */
+	bool16			fLabelled;
+
+	KCMOpenItem() : fDepth(0), fFromSpread(kFalse), fInLabel(kFalse), fLabelled(kFalse) {}
 };
 
 /** Reads every element and keeps the ones the blacklist lets through, flattening each one back
@@ -428,7 +494,7 @@ class KCMResourceSaxHandler : public CSAXContentHandler
 public:
 	KCMResourceSaxHandler(IPMUnknown* boss)
 		: CSAXContentHandler(boss), fSAXServices(nil), fDepth(0), fSeen(0), fSkipDepth(0),
-		  fList(nil), fSinkChecked(kFalse) {}
+		  fSpreadDepth(0), fList(nil), fSinkChecked(kFalse) {}
 	virtual ~KCMResourceSaxHandler();
 
 	// ----- the seven that do something; the rest are CSAXContentHandler's empty bodies
@@ -449,6 +515,13 @@ private:
 	/** The list to fill, fetched once from our own boss. */
 	KCMResourceList*	List();
 
+	/** StartElement's rule for everything inside a <Spread>: open a page item when the element
+	    is one and a person has given it an identity, take only the three things a rendered page
+	    cannot show, and ignore the rest. Kept apart from StartElement because it is a DIFFERENT
+	    rule, not a special case of the same one - down here a Self is not enough to make an item
+	    and the body is built from a filter rather than from the whole tag. */
+	void				StartInSpread(const PMString& name, ISAXAttributes* attrs);
+
 	/** Tell the caller, through the sink, that what came back is not a whole reading. */
 	void				NoteMalformed();
 
@@ -460,6 +533,7 @@ private:
 	int32				fDepth;			// 1 = <Document>, 2 = the kinds this mode is stated in
 	int32				fSeen;			// elements arrived so far (for the step log)
 	int32				fSkipDepth;		// >0 while inside an excluded subtree; counts its depth
+	int32				fSpreadDepth;	// >0 while inside a spread; counts its depth (filtered, not skipped)
 
 	/** The items open right now, outermost first. ⚠A stack rather than one current item because
 	    items NEST: a style sits inside a style group, which sits under <Document>. */
@@ -522,6 +596,7 @@ void KCMResourceSaxHandler::StartDocument(ISAXServices* /*saxServices*/)
 	KCMParseLog("  >> StartDocument");
 	fDepth = 0;
 	fSkipDepth = 0;
+	fSpreadDepth = 0;
 	fOpen.clear();
 	fSinkChecked = kFalse;
 	fList = nil;
@@ -540,6 +615,125 @@ void KCMResourceSaxHandler::EndDocument()
 	}
 }
 
+void KCMResourceSaxHandler::StartInSpread(const PMString& name, ISAXAttributes* attrs)
+{
+	// ----- already collecting a page item -------------------------------------------------
+	// The only thing worth taking from inside one is the script label. Everything else down here
+	// - PathGeometry, TextWrapPreference, the transform - is drawn, and drawn things are Pixel's.
+	if (!fOpen.empty() && fOpen.back().fFromSpread)
+	{
+		KCMOpenItem& top = fOpen.back();
+		if (name == "Label")
+		{
+			top.fInLabel = kTrue;
+			return;
+		}
+		if (top.fInLabel && name == "KeyValuePair" && attrs != nil)
+		{
+			PMString key;
+			PMString value;
+			key.SetTranslatable(kFalse);
+			value.SetTranslatable(kFalse);
+			if (attrs->HasAttribute(PMString("Key")))
+				key = attrs->GetAttributeString(PMString("Key"));
+			if (attrs->HasAttribute(PMString("Value")))
+				value = attrs->GetAttributeString(PMString("Value"));
+
+			// Written as a pseudo-attribute so that the attribute diff splits it out on its own
+			// row, the same way a real attribute gets one. A script label IS a key and a value;
+			// this is the shape that says so.
+			top.fItem.fBody.Append(" ScriptLabel.");
+			top.fItem.fBody.Append(key);
+			top.fItem.fBody.Append("=\"");
+			top.fItem.fBody.Append(value);
+			top.fItem.fBody.Append("\"");
+
+			// ★★THE LABEL WINS AS THE KEY, and that is the point of collecting it. A person
+			//   attaches a script label to say "this is the object I mean", and unlike the name
+			//   IT SURVIVES A RENAME - so an item that has one reports "Name: A -> B" as a
+			//   change, while an item identified only by its name reports a rename as a removal
+			//   and an addition (which is what renaming a style does too, by the user's own
+			//   decision of 2026-09-09).
+			if (!top.fLabelled)
+			{
+				top.fLabelled = kTrue;
+				top.fItem.fName = key;
+				top.fItem.fName.Append("=");
+				top.fItem.fName.Append(value);
+			}
+		}
+		return;
+	}
+
+	// ----- not inside one yet: does this element start one? --------------------------------
+	if (attrs == nil || !attrs->HasAttribute(PMString("Self")))
+		return;
+	if (KCMIsSpreadStructureElement(name))
+		return;
+
+	KCMOpenItem opened;
+	opened.fDepth = fDepth;
+	opened.fFromSpread = kTrue;
+	opened.fItem.fKind = name;
+	opened.fItem.fOrdinal = 0;
+	opened.fItem.fKind.SetTranslatable(kFalse);
+	opened.fItem.fSelf.SetTranslatable(kFalse);
+	opened.fItem.fName.SetTranslatable(kFalse);
+	opened.fItem.fBody.SetTranslatable(kFalse);
+	opened.fItem.fUniqueId.SetTranslatable(kFalse);
+
+	// The Self is a bare UID here, which is what sends this item down KCMResourceKeyOf's route
+	// [C] - kind plus the name a person gave it. That is the whole reason the item is only kept
+	// when it HAS such a name: without one, [C] falls through to "the nth of a kind", and one
+	// object inserted anywhere would shift every pair after it.
+	opened.fItem.fSelf = attrs->GetAttributeString(PMString("Self"));
+
+	opened.fItem.fBody.Append("<");
+	opened.fItem.fBody.Append(name);
+
+	const int32 count = attrs->GetLength();
+	for (int32 i = 0; i < count; ++i)
+	{
+		WideString qname;
+		WideString value;
+		if (!attrs->GetQName(static_cast<uint32>(i), qname))
+			continue;
+		if (!attrs->GetValue(static_cast<uint32>(i), value))
+			continue;
+
+		const PMString attrName(qname);
+		if (!KCMPageItemAttributeWanted(attrName))
+			continue;
+
+		const PMString attrValue(value);
+
+		// The placeholder an unnamed object carries is not written down at all: it is not a name,
+		// so it must not become the key, and showing it in the body would put "$ID/" on the panel
+		// as though somebody had typed it.
+		if (attrName == "Name" && KCMIsUnnamedPageItemName(attrValue))
+			continue;
+
+		opened.fItem.fBody.Append(" ");
+		opened.fItem.fBody.Append(attrName);
+		opened.fItem.fBody.Append("=\"");
+		opened.fItem.fBody.Append(attrValue);
+		opened.fItem.fBody.Append("\"");
+
+		if (attrName == "Name")
+			opened.fItem.fName = attrValue;
+	}
+
+	try
+	{
+		fOpen.push_back(opened);
+	}
+	catch (...)
+	{
+		this->NoteMalformed();
+		KCMParseLog("    !! the open-item stack could not grow (in a spread)");
+	}
+}
+
 void KCMResourceSaxHandler::StartElement(const WideString& /*uri*/, const WideString& localname,
 										 const WideString& /*qname*/, ISAXAttributes* attrs)
 {
@@ -555,12 +749,28 @@ void KCMResourceSaxHandler::StartElement(const WideString& /*uri*/, const WideSt
 	if (fSeen <= 8 || fDepth == 2)
 		KCMParseLog("      name built ok");
 
-	// Inside <Spread>, <Story> or the XMP packet: another mode's territory, and its page items
-	// carry a Self of their own, so the whole subtree has to be stepped over rather than filtered
-	// element by element.
+	// Inside <Story> or the XMP packet: another mode's territory, and its elements carry a Self of
+	// their own, so the whole subtree has to be stepped over rather than filtered element by
+	// element.
 	if (fSkipDepth > 0)
 	{
 		++fSkipDepth;
+		return;
+	}
+
+	// ★★A SPREAD IS FILTERED, NOT SKIPPED (2026-09-10). Its rendered content is Pixel's and is
+	//   left alone; what comes out of here is the handful of things a page item can carry that a
+	//   rendered page CANNOT show - its name, its lock, and its script label. StartInSpread is
+	//   where that rule lives.
+	if (fSpreadDepth > 0)
+	{
+		++fSpreadDepth;
+		this->StartInSpread(name, attrs);
+		return;
+	}
+	if (fDepth == 2 && KCMIsSpreadContainer(name))
+	{
+		fSpreadDepth = 1;
 		return;
 	}
 	if (fDepth == 2 && KCMIsExcludedResource(name))
@@ -636,6 +846,55 @@ void KCMResourceSaxHandler::EndElement(const WideString& /*uri*/, const WideStri
 		return;
 	}
 
+	// ★Inside a spread nothing but a page item is being collected, so the closing tag of the
+	//   spread, of a page, or of any geometry must not reach a body. This branch exists to stop
+	//   that: the ordinary path below appends every closing tag to whatever item is open.
+	if (fSpreadDepth > 0)
+	{
+		const PMString endName(localname);
+
+		if (!fOpen.empty() && fOpen.back().fFromSpread)
+		{
+			KCMOpenItem& top = fOpen.back();
+			if (top.fInLabel && endName == "Label")
+				top.fInLabel = kFalse;
+
+			if (top.fDepth == fDepth)
+			{
+				// ★★KEPT ONLY IF A PERSON GAVE IT AN IDENTITY - a name, or a script label.
+				//   Without one there is nothing in the other document to pair it with: route
+				//   [C] would fall through to "the nth of a kind", and a single object inserted
+				//   anywhere would make every pair after it wrong. Silence is better than that.
+				if (!top.fItem.fName.IsEmpty())
+				{
+					top.fItem.fBody.Append("></");
+					top.fItem.fBody.Append(endName);
+					top.fItem.fBody.Append(">");
+
+					KCMResourceList* const list = this->List();
+					if (list != nil)
+					{
+						try
+						{
+							list->push_back(top.fItem);
+						}
+						catch (...)
+						{
+							this->NoteMalformed();
+							KCMParseLog("    !! push_back threw for a page item");
+						}
+					}
+				}
+				fOpen.pop_back();
+			}
+		}
+
+		--fSpreadDepth;
+		if (fDepth > 0)
+			--fDepth;
+		return;
+	}
+
 	if (!fOpen.empty())
 	{
 		KCMResourceItem& innermost = fOpen.back().fItem;
@@ -684,6 +943,14 @@ void KCMResourceSaxHandler::Characters(const WideString& chars)
 	//   business holding them. The same route was feeding every story's body text into
 	//   <Document>, so an edit Story mode owns would have been reported here as well.
 	if (fSkipDepth > 0)
+		return;
+
+	// ★Same reasoning one step further in (2026-09-10): inside a spread a page item's body is
+	//   built from a FILTER, not from what arrives, so text that turns up down there - the
+	//   contents of a <Properties> block, a path's numbers - belongs to nothing here. Letting it
+	//   through would put geometry back into a body that was carefully built without it, and the
+	//   item would differ every time an object moved: the double report all over again.
+	if (fSpreadDepth > 0)
 		return;
 
 	// Text belongs to the INNERMOST open item, for the same reason its child elements do: it is
