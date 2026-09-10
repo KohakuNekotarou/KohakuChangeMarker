@@ -423,6 +423,22 @@ void KCMUpdateStorySectionLabel()
 	//   this only writes what is displayed ---- it is not a change anyone has to be told about.
 	label->SetString(text, kTrue, kFalse);
 
+	// ⚠★★★**AND REDRAWN AT ONCE, OR THE LONGER TEXT LEAVES ITS TAIL BEHIND.** This heading SHRINKS
+	//   on Stop - "Story Edits (1)" becomes "Story Edits" - and the panel is declared with
+	//   **Erase background = kFalse** (KCMUI.fr), so what is not painted over stays on screen. The
+	//   user's capture, 2026-09-10: `Story Edits . .` with the count's leftovers still there.
+	//   ★**KCM already solved this one function away**: KCMSetNavPosition draws the readout between
+	//     Prev and Next and says why - "an invalidate alone does not reach the screen until the next
+	//     event loop, so ForceRedraw draws it at once". That readout shrinks the same way
+	//     ("1/5" -> "/") and has never shown debris. Same cure here.
+	//   ⚠★★**IT CANNOT BE SEEN WITH capture target=panel**: that goes through PrintWindow, which
+	//     REPAINTS the window and hands back a clean face - so the very artefact this fixes is
+	//     invisible to it (measured 2026-09-10: three captures of the Stop were all clean while the
+	//     user was looking at the leftovers). Screen pixels, or a person, are the only witnesses.
+	InterfacePtr<IControlView> labelView(label, UseDefaultIID());
+	if (labelView != nil)
+		labelView->ForceRedraw();
+
 	// ★★THE COLUMN HEADINGS BELONG TO THE SAME QUESTION. The list is shared, so the three words
 	//   above it name whichever rows are in it - "UID / Story / Change" for stories, and
 	//   "Kind / Definition / Change" for definitions.
