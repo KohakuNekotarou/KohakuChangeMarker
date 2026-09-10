@@ -686,9 +686,10 @@ void KCMTextDiff::AlignChangeBoundaries(const std::vector<int32>& a, const std::
 {
 	for (size_t i = 0; i < changes.size(); ++i)
 	{
-		// **NEIGHBOURS ARE WALLS.** A change may rotate through the unchanged run on either side
-		//   of it and no further. Both bounds are honest ones: the previous change is already in
-		//   its final place, and the next has not moved yet, so neither can be crossed by accident.
+		// **NEIGHBOURS ARE WALLS.** A change may rotate or widen through the unchanged run on
+		//   either side of it and no further. Both bounds are honest ones: the previous change is
+		//   already in its final place, and the next has not moved yet, so neither can be crossed
+		//   by accident.
 		const int32 loA = (i > 0) ? changes[i - 1].aStart + changes[i - 1].aCount : 0;
 		const int32 loB = (i > 0) ? changes[i - 1].bStart + changes[i - 1].bCount : 0;
 		const int32 hiA = (i + 1 < changes.size()) ? changes[i + 1].aStart
@@ -729,10 +730,62 @@ void KCMTextDiff::AlignChangeBoundaries(const std::vector<int32>& a, const std::
 			++probe.bStart;
 		}
 
-		// @warning **COUNTS ARE NEVER TOUCHED** -- only the two starts move, and they move
-		//   together. That is what keeps the edit distance exactly as Myers computed it: every
-		//   step of the walk above hands one common character from one side of the run to the other.
+		// @warning **THE ROTATION ABOVE NEVER TOUCHES THE COUNTS** -- only the two starts move, and
+		//   they move together. That is what keeps the edit distance exactly as Myers computed it:
+		//   every step of the walk hands one common character from one side of the run to the other.
 		changes[i] = best;
+
+		// ***** AND THEN, ONLY INSIDE A LATIN WORD, THE RUN IS WIDENED. *****
+		//
+		// ★★★**A CHANGE MUST NOT SPLIT A WORD** (2026-09-10). "OLDWORD" -> "NEWWORD" leaves Myers
+		//   with the common tail "WORD", so the change is OLD -> NEW and the word is drawn in two
+		//   pieces: "OLD" in the change colour, "WORD" in the context colour. **A word drawn in two
+		//   draw calls cannot reproduce the shaping of the whole word**, so the seam shows - as a
+		//   gap here, and as an overlap in the panel the user reported it from. Widening to the
+		//   whole word removes the seam and reads better: "the word changed".
+		//
+		// ★★**THE ROTATION ABOVE COULD NEVER FIX THIS.** CanShiftLeft/Right only rotate, and a
+		//   rotation needs the swallowed character to equal the run's edge ('O' != 'W' here), so the
+		//   change is stuck at a boundary **this file's own scoring calls the worst there is**:
+		//   BoundaryScore returns 0 for a break inside one script class - "no break here at all".
+		//   The score could say the position was bad; nothing could act on it.
+		//
+		// ⚠★★★**LATIN ONLY, AND THAT IS THE WHOLE POINT.** Japanese has no spaces, so nearly every
+		//   edit inside it sits at a 0-scoring boundary too - and widening those to the nearest
+		//   space or punctuation would swallow whole sentences. That would destroy exactly what
+		//   this file was measured on: "a two-character Japanese edit selected exactly those two
+		//   characters" (the header). Latin runs are the only place where a boundary inside one
+		//   script class is also a boundary inside a WORD.
+		//
+		// ⚠**LOSSLESS.** Only characters that are IDENTICAL on both sides are absorbed, at the same
+		//   end of both ranges, so the change still rebuilds `b` from `a` exactly. The offline test
+		//   checks that invariant on every case (work/textdiff-test/align-test.cpp).
+		{
+			Change& c = changes[i];
+
+			// Left: absorb the character before the run while it is the same on both sides and the
+			// boundary is inside a Latin run (BoundaryScore 0 = the two characters straddling this
+			// position are of one class; the Latin test pins which class).
+			while (c.aStart > loA && c.bStart > loB
+				   && a[c.aStart - 1] == b[c.bStart - 1]
+				   && ScriptOf(a[c.aStart - 1]) == kScriptLatin
+				   && (BoundaryScore(a, c.aStart) == 0 || BoundaryScore(b, c.bStart) == 0))
+			{
+				--c.aStart; ++c.aCount;
+				--c.bStart; ++c.bCount;
+			}
+
+			// Right: the mirror image.
+			while (c.aStart + c.aCount < hiA && c.bStart + c.bCount < hiB
+				   && a[c.aStart + c.aCount] == b[c.bStart + c.bCount]
+				   && ScriptOf(a[c.aStart + c.aCount]) == kScriptLatin
+				   && (BoundaryScore(a, c.aStart + c.aCount) == 0
+					   || BoundaryScore(b, c.bStart + c.bCount) == 0))
+			{
+				++c.aCount;
+				++c.bCount;
+			}
+		}
 	}
 }
 

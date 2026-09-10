@@ -133,7 +133,8 @@ namespace KCMTextDiff
 	*/
 	void MergeNearbyChanges(std::vector<Change>& changes);
 
-	/** Slides each change to whichever of its EQUIVALENT positions reads most naturally.
+	/** Slides each change to whichever of its EQUIVALENT positions reads most naturally, then
+		widens it to the whole word where it starts or ends inside a LATIN one.
 
 		**A CHANGE CAN USUALLY SIT IN MORE THAN ONE PLACE AND MEAN THE SAME THING**, and Myers has
 		no reason to prefer one. When the character just after a change is the same as the
@@ -145,8 +146,9 @@ namespace KCMTextDiff
 
 		Both are shortest edit scripts; only the second is the edit a person would describe.
 		@warning this is not a tie-break inside the search -- the search is finished and correct. It
-		 is a cleanup afterwards, and it cannot change the edit distance: every rotation moves one
-		 common character from one side of the run to the other, so the counts never move.
+		 is a cleanup afterwards. **THE ROTATION cannot change the edit distance**: every rotation
+		 moves one common character from one side of the run to the other, so the counts never move.
+		 ⚠**The Latin widening below CAN, and does** -- read to the end before relying on this.
 
 		**HOW THE POSITION IS CHOSEN.** Every reachable rotation is tried and scored by what sits
 		at its two boundaries, on both sides. What scores well is a boundary a reader would put a
@@ -156,6 +158,27 @@ namespace KCMTextDiff
 		 breaks.** diff-match-patch, where this idea comes from, leans on spaces and line ends --
 		 and a Japanese sentence has neither. What it does have is the boundary between 漢字 and
 		 かな and 記号, which marks a word just as reliably.
+
+		**AND THEN, ONLY INSIDE A LATIN WORD, THE RUN IS WIDENED** (2026-09-10). Rotation alone
+		leaves "OLDWORD" -> "NEWWORD" as OLD -> NEW: Myers factors out the common tail "WORD", and
+		no rotation can swallow it back ('O' != 'W'). The word is then drawn in two pieces -- "OLD"
+		in the change colour, "WORD" in the context colour -- and **a word drawn in two draw calls
+		cannot reproduce the shaping of the whole word**, so the seam shows as a gap or an overlap.
+		The change is stuck at a boundary **this file's own scoring calls the worst there is**:
+		BoundaryScore returns 0 for a break inside one script class. The score could say the
+		position was bad; until now nothing could act on it. So once the change is placed,
+		identical characters are absorbed at either end while the boundary falls inside Latin.
+		@warning **THIS ONE GROWS THE COUNTS** -- both of them, by the same amount, absorbing only
+		 characters that are IDENTICAL on both sides, so the change still rebuilds `b` from `a`
+		 exactly. What it no longer preserves is the NUMBER of edited characters, which can only
+		 grow. The offline test (work/textdiff-test/align-test.cpp) checks the rebuild on every
+		 case and holds the edit count to ">= what Myers computed" rather than "==".
+		@warning ⚠**LATIN ONLY, AND THAT IS THE WHOLE POINT.** Japanese has no spaces, so nearly
+		 every edit inside it sits at a 0-scoring boundary too -- and widening those to the nearest
+		 space or punctuation would swallow whole sentences. That would destroy exactly what this
+		 file was measured on: a two-character Japanese edit selecting exactly those two characters.
+		 Latin runs are the only place where a boundary inside one script class is also a boundary
+		 inside a WORD.
 
 		@warning FOR CHARACTERS, NOT FOR PARAGRAPHS -- the same restriction MergeNearbyChanges
 		 carries, and for a plainer reason: the tokens of a paragraph diff are numbers standing for
@@ -167,8 +190,9 @@ namespace KCMTextDiff
 
 		@param a IN the baseline sequence the changes were computed from.
 		@param b IN the target sequence.
-		@param changes IN OUT the runs to align, in order. Counts are never touched; only the
-			two start positions move, and they move together.
+		@param changes IN OUT the runs to align, in order. The rotation moves only the two start
+			positions, and moves them together; the Latin widening moves the starts AND grows both
+			counts by the same amount.
 	*/
 	void AlignChangeBoundaries(const std::vector<int32>& a, const std::vector<int32>& b,
 							   std::vector<Change>& changes);
