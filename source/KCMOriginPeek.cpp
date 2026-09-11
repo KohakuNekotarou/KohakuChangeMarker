@@ -1,4 +1,4 @@
-//========================================================================================
+﻿//========================================================================================
 //
 //  KCMOriginPeek.cpp -- see the header.
 //
@@ -11,9 +11,12 @@
 #include "ICommand.h"
 #include "IDataBase.h"
 #include "IDocumentList.h"
+#include "IHierarchy.h"				// GetSpreadUID - the spread a paired page sits on
 #include "ISession.h"
 #include "ISpread.h"
 #include "ISpreadList.h"
+
+#include <vector>
 
 // General includes:
 #include "CmdUtils.h"
@@ -27,6 +30,7 @@
 #include "KCMExternalSource.h"		// KCMIsDbAlive
 #include "KCMModelNotify.h"			// KCMNotifyStatus / KCMSayStatus
 #include "KCMOrigin.h"
+#include "KCMPageMap.h"				// KCMBuildPairing / KCMBuildMasterPairing - the comparison's own page pairing
 #include "KCMRehydrate.h"
 #include "KCMResourceBytes.h"
 
@@ -76,19 +80,36 @@ bool16 KeepOnlySpread(IDataBase* copyDB, UID keepSpread)
 	return (CmdUtils::ProcessCommand(cmd) == kSuccess) ? kTrue : kFalse;
 }
 
-/** The copy's spread whose label names originalSpreadUID. */
-UID FindLabelledSpread(IDataBase* copyDB, UID originalSpreadUID)
+/** The copy's spread that holds the counterpart of targetSpreadUID's pages, through the same page
+    pairing the comparison used (ordinary pages by position with the registered ones left out,
+    masters by name). kInvalidUID when no page of that spread has a counterpart. */
+UID PairedSpread(IDataBase* targetDB, UID targetSpreadUID, IDataBase* copyDB)
 {
-	InterfacePtr<ISpreadList> spreads(copyDB, copyDB->GetRootUID(), UseDefaultIID());
-	if (spreads == nil)
+	InterfacePtr<ISpread> tSpread(targetDB, targetSpreadUID, UseDefaultIID());
+	if (tSpread == nil)
 		return kInvalidUID;
-	const int32 n = spreads->GetSpreadCount();
-	for (int32 i = 0; i < n; ++i)
+
+	std::vector<UID> tPages, sPages;
+	KCMBuildPairing(targetDB, copyDB, tPages, sPages);
 	{
-		const UID uid = spreads->GetNthSpreadUID(i);
-		UID original = kInvalidUID;
-		if (KCMReadOriginUidLabel(copyDB, uid, original) && original == originalSpreadUID)
-			return uid;
+		std::vector<UID> mT, mS;
+		KCMBuildMasterPairing(targetDB, copyDB, mT, mS);
+		tPages.insert(tPages.end(), mT.begin(), mT.end());
+		sPages.insert(sPages.end(), mS.begin(), mS.end());
+	}
+
+	const int32 np = tSpread->GetNumPages();
+	for (int32 p = 0; p < np; ++p)
+	{
+		const UID tPage = tSpread->GetNthPageUID(p);
+		for (size_t k = 0; k < tPages.size() && k < sPages.size(); ++k)
+		{
+			if (tPages[k] != tPage)
+				continue;
+			InterfacePtr<IHierarchy> hier(copyDB, sPages[k], UseDefaultIID());
+			if (hier != nil)
+				return hier->GetSpreadUID();
+		}
 	}
 	return kInvalidUID;
 }
@@ -122,11 +143,30 @@ IDataBase* KCMOriginPeekDBFor(IDataBase* targetDB, UID targetSpreadUID, UID& out
 		return nil;
 	}
 	IDataBase* const copyDB = copy.GetDataBase();
-	const UID copySpread = FindLabelledSpread(copyDB, targetSpreadUID);
-	if (copySpread == kInvalidUID || !KeepOnlySpread(copyDB, copySpread))
+	// ★THE SPREAD IS FOUND THROUGH THE PAGE PAIRING, NOT THROUGH ITS LABEL (2026-09-12, measured
+	//  on the first live peek): the copy's FIRST spread is the one the new document was born with,
+	//  reused by the import, and it does not receive the <Properties><Label> the injection put on
+	//  it - "labels read on 2 of 3 spreads", and page 1 sits on the missing one. The page pairing
+	//  is what the comparison itself paired the marks by (KCMBuildPairing: ordinary pages by
+	//  position with the registered ones left out, masters by name), so a peek that follows it
+	//  lays over exactly the page the ring was computed against. The spread labels stay in the
+	//  XML - they cost nothing and the tables in KCMOriginCompare still read them where they
+	//  survive - but nothing rests on them any more.
+	const UID copySpread = PairedSpread(targetDB, targetSpreadUID, copyDB);
+	if (copySpread == kInvalidUID)
+	{
+		PMString msg("could not find the spread in the task-start copy: no page of spread ");
+		msg.SetTranslatable(kFalse);
+		msg.AppendNumber(static_cast<int32>(targetSpreadUID.Get()));
+		msg.Append(" has a counterpart");
+		KCMCloseRehydrated(copy);
+		KCMNotifyStatus(msg);
+		return nil;
+	}
+	if (!KeepOnlySpread(copyDB, copySpread))
 	{
 		KCMCloseRehydrated(copy);
-		KCMSayStatus("could not cut the task-start copy down to one spread");
+		KCMSayStatus("could not delete the other spreads of the task-start copy");
 		return nil;
 	}
 	sCopy = copy;
