@@ -113,6 +113,16 @@ bool16	KCMSetChosenSourceToActive();
 IDataBase*	KCMChosenTargetDB();
 IDataBase*	KCMChosenSourceDB();
 
+// Task Start (2026-09-12): the chosen Source is THE ORIGIN (KCMOrigin.h) - a moment, not a
+// document. The pair is then (the origin's document, the origin), and KCMChosenSourceDB answers
+// nil: there is no database until a comparison rehydrates one. kFalse once the origin's
+// document has closed (the origin goes with it).
+bool16	KCMChosenSourceIsOrigin();
+
+// Choose the pair for a fresh origin: Target = originDocDB, Source = the origin. Called by
+// KCMTakeTaskStart and nowhere else.
+void	KCMChooseOriginPair(IDataBase* originDocDB);
+
 // Drop whichever choice names a document that is no longer in `docList`, and leave the other
 // one standing. Called from the close sweep (KCMHandleDocsClosed), which has the list in hand
 // and has already established that it is on the main thread -- the one place that may conclude

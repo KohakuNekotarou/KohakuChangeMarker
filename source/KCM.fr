@@ -686,6 +686,20 @@ resource VersionedScriptElementInfo(10)
 			kNoAttributeClass,
 		}
 
+		// app.kcmOriginStatus - the Task Start origin (2026-09-12), in one line: whether one is
+		// held, of which document, when it was taken, how many bytes, its shape, how many story
+		// stamps, and which spread the peek document holds. The feature's reading from outside.
+		Property
+		{
+			kKCMOriginStatusPropertyScriptElement,
+			p_KCMOriginStatus,
+			"kcm origin status",					// name -> app.kcmOriginStatus
+			"Task Start: whether an origin is held, of which document, when, how many bytes, its shape, its story stamps, and the peek spread.",
+			StringType,
+			{}
+			kNoAttributeClass,
+		}
+
 		// Puts the property ON the application object.
 		//
 		// Object{}, not Parent{}: Object names an EXISTING scripting object to add members to,
@@ -705,6 +719,7 @@ resource VersionedScriptElementInfo(10)
 				//   shows up as ERR:55 the first time a script touches it (memory
 				//   kes-custom-dom-extensions). Both or neither.
 				Property{ kKCMStoryRowsPropertyScriptElement, kReadOnly },
+				Property{ kKCMOriginStatusPropertyScriptElement, kReadOnly },
 				Property{ kKCMResourceSnapshotPropertyScriptElement, kReadOnly },
 				Property{ kKCMResourceDiffPropertyScriptElement, kReadOnly },
 			}

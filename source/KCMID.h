@@ -308,13 +308,7 @@ DECLARE_PMID(kScriptInfoIDSpace, kKCMTransparencyItemCountPropertyScriptElement,
 // +20 retired: kKCMStoryReadComparePropertyScriptElement (app.kcmStoryReadCompare, the direct-read
 //   migration's parallel run, READ-WRITE and temporary; 2026-08-31 to 2026-09-03). Never shipped,
 //   so the slot could be reused - it is left empty anyway, the way +1..+12 are.
-// +21 retired: kKCMInxProbePropertyScriptElement (app.kcmInxProbe, the throwaway that measured
-//   whether the whole document can be written as INX into a stream held in memory; 2026-09-08 to
-//   2026-09-09). It answered yes, and the Resources mode was built on the answer, so the probe was
-//   deleted whole. Never shipped either; left empty for the same reason as +20. The findings live
-//   in memory document-snapshot-without-a-file and docs/ai-notes/inx-document-as-xml-2026-09-09.md,
-//   not in this plug-in - a throwaway carries knowledge, and deleting it is only safe once that
-//   knowledge is somewhere the deletion cannot reach.
+DECLARE_PMID(kScriptInfoIDSpace, kKCMOriginStatusPropertyScriptElement, kKCMPrefix + 21)	// app.kcmOriginStatus (read-only; one line: held=yes/no, the document, when it was taken, the byte count, the shape, the stamp count, the peek spread). The Task Start feature's reading from outside. ★+21 was the throwaway INX probe's slot (app.kcmInxProbe, 2026-09-08 to 09-09, never shipped; its findings live in memory document-snapshot-without-a-file) - reused on 2026-09-12 for the feature that probe made possible.
 // (The tool's enumerator goes on the application's own kToolBoxEnumScriptElement, so this side
 //  needs no ID for it.)
 

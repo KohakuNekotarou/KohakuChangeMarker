@@ -33,6 +33,7 @@
 #include "KCMRingAdornment.h"		// KCMRevalidateItemXPList -- the transparency-list insurance, at Start and at Stop
 #include "KCMThreadSafety.h"		// KCMIsSameDoc -- the one place this plug-in asks whether two dbs are one document
 #include "KCMExternalSource.h"	// the lent Source: registered and chosen by KCMStartComparisonWithSourceDB, forgotten by the lender's Release
+#include "KCMOrigin.h"			// the origin (Task Start): the third kind of Source, chosen by KCMChooseOriginPair
 
 //----------------------------------------------------------------------------------------
 // The resolver: which two documents to compare
@@ -63,6 +64,25 @@ static bool16 KCMResolveComparisonPair(IDataBase*& outTargetDB, IDataBase*& outS
 
 static IDataBase* sChosenTargetDB = nil;
 static IDataBase* sChosenSourceDB = nil;
+
+// The chosen Source may be THE ORIGIN (KCMOrigin.h) rather than a database - a third kind of
+// Source next to "a document" and "the lent database". There is nothing to point at until a
+// comparison rehydrates it, so the choice is a flag, and KCMOriginDocDB is asked for the Target.
+static bool16 sChosenSourceIsOrigin = kFalse;
+
+// KCMChosenSourceIsOrigin / KCMChooseOriginPair (declared in KCMComparisonRun.h).
+bool16 KCMChosenSourceIsOrigin()	{ return (sChosenSourceIsOrigin && KCMOriginDocDB() != nil) ? kTrue : kFalse; }
+
+void KCMChooseOriginPair(IDataBase* originDocDB)
+{
+	if (originDocDB == nil)
+		return;
+	if (KCMIsExternalSource(sChosenSourceDB))
+		KCMForgetExternalSource();		// the lent database gives way, as it does to "Set as Source"
+	sChosenTargetDB = originDocDB;
+	sChosenSourceDB = nil;
+	sChosenSourceIsOrigin = kTrue;
+}
 
 // The document `db` names, or nil when it is not (or no longer) an open document.
 // Takes the list rather than fetching it so that the close sweep, which already holds one, can
@@ -132,6 +152,13 @@ bool16 KCMSetChosenSourceToActive()
 	// (KCMExternalSource.h: registered while chosen OR armed).
 	if (KCMIsExternalSource(sChosenSourceDB) && KCMArmedSourceDB() != sChosenSourceDB)
 		KCMForgetExternalSource();
+	// A real document replaces the origin as well, and the origin is released with the choice:
+	// the flyout greys "Set as Source" while an origin is held, so this is the guard, not the route.
+	if (sChosenSourceIsOrigin)
+	{
+		sChosenSourceIsOrigin = kFalse;
+		KCMReleaseOrigin();
+	}
 	sChosenSourceDB = db;
 	return kTrue;
 }
@@ -150,6 +177,10 @@ void KCMForgetChosenDocsThatClosed(IDocumentList* docList)
 	// unrelated document closing. Its own end is the lender's Release, never this sweep.
 	if (sChosenSourceDB != nil && !KCMIsDbAlive(docList, sChosenSourceDB))
 		sChosenSourceDB = nil;
+	// The origin goes with its document (the user's rule), and the choice with the origin.
+	KCMForgetOriginIfDocClosed(docList);
+	if (sChosenSourceIsOrigin && !KCMHasOrigin())
+		sChosenSourceIsOrigin = kFalse;
 }
 
 // KCMClearChosenDocs (declared in KCMComparisonRun.h) -- the model's Shutdown drops both, in the
@@ -164,6 +195,8 @@ void KCMClearChosenDocs()
 	sChosenTargetDB = nil;
 	sChosenSourceDB = nil;
 	KCMForgetExternalSource();	// the lent Source is a choice too, and this is the shutdown slot for choices
+	sChosenSourceIsOrigin = kFalse;
+	KCMReleaseOrigin();			// "Clear Target and Source" drops the origin too (the user's rule, 2026-09-12)
 }
 
 // The first open document that is not `target` = the Source (the older version).
@@ -222,6 +255,17 @@ static IDocument* KCMFirstOtherDoc(IDocument* target)
 // databases -- the procedure (KCMStartComparisonOn) runs on those.
 static bool16 KCMResolveComparisonPair(IDataBase*& outTargetDB, IDataBase*& outSourceDB)
 {
+	// ★THE ORIGIN WINS while it is chosen (Task Start): the Target is the document it was taken
+	//  from, and the Source is not a database at all. The callers that start ask
+	//  KCMChosenSourceIsOrigin FIRST and go to KCMOriginCompare; here the pair is reported as
+	//  resolvable with a nil Source, which is what the menu's grey state needs to know.
+	if (KCMChosenSourceIsOrigin())
+	{
+		outTargetDB = KCMOriginDocDB();
+		outSourceDB = nil;
+		return (outTargetDB != nil) ? kTrue : kFalse;
+	}
+
 	IDocument* target = KCMLiveChosenDoc(sChosenTargetDB);
 	if (target == nil)
 		target = KCMActiveDoc();

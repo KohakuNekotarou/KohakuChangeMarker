@@ -561,6 +561,28 @@ public:
 		are built apart. Moved here on 2026-09-05. **The rule at the head of this file is not
 		advice.** */
 	virtual void		RefreshComparison() = 0;
+
+	// ---- Task Start (2026-09-12) --------------------------------------------------------
+	//
+	// The origin: the active document's INX, taken when the flyout's Task Start is pressed and
+	// held in memory until "Clear Target and Source" or that document closing. Start / Refresh
+	// then compare the document against a rehydration of it (KCMOriginCompare.h). ONE SLOT.
+	// ★AT THE END OF THE INTERFACE, after RefreshComparison: the vtable is an ABI (see the head
+	//  of this file).
+
+	/** Whether Task Start may be pressed: no origin held, nothing armed, an active document. */
+	virtual bool16		CanTakeTaskStart() = 0;
+
+	/** Take it, and choose the pair. kFalse with a reason (for the status line) when it could not. */
+	virtual bool16		TakeTaskStart(PMString& outWhyNot) = 0;
+
+	virtual bool16		HasOrigin() = 0;
+
+	/** "Task Start 12:34:56" for the panel's Source: line; empty when nothing is held. */
+	virtual void		GetOriginLabel(PMString& outLabel) = 0;
+
+	/** kTrue while a comparison is armed whose Source is the origin (GetArmedSourceDB is nil then). */
+	virtual bool16		IsOriginArmed() = 0;
 };
 
 #endif // __IKCMCompareFacade_h__

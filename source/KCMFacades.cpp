@@ -53,6 +53,7 @@
 #include "KCMPageNumberMarker.h"	// the folio exclusion toggle
 #include "KCMChangedPagesTSV.h"	// the TSV export
 #include "KCMExternalSource.h"	// KCMExternalSourceLabel -- the lent Source's words for the panel
+#include "KCMOrigin.h"			// Task Start: the origin slot the five methods at the end forward to
 #include "KCMStoryMarkBuild.h"	// what the Story mode should be lighting up (Refresh / SetPress)
 #include "KCMStoryMarker.h"		// the adornment that draws it - the flash and the shutdown
 #include "IKCMResourcesFacade.h"	// the Resources mode's boundary
@@ -212,6 +213,13 @@ public:
 	virtual void		ReleaseExternalSourceDB(IDataBase* sourceDB)	{ KCMReleaseExternalSource(sourceDB); }
 	virtual bool16		GetExternalSourceLabel(IDataBase* db, PMString& outLabel)
 													{ return KCMExternalSourceLabel(db, outLabel); }
+
+	// Task Start (see the interface). Transfers; the rules are model-side (KCMOrigin.h).
+	virtual bool16		CanTakeTaskStart()					{ return KCMCanTakeTaskStart(); }
+	virtual bool16		TakeTaskStart(PMString& outWhyNot)	{ return KCMTakeTaskStart(outWhyNot); }
+	virtual bool16		HasOrigin()							{ return KCMHasOrigin(); }
+	virtual void		GetOriginLabel(PMString& outLabel)	{ KCMOriginLabel(outLabel); }
+	virtual bool16		IsOriginArmed()						{ return kFalse; }	// KCMOriginArmed arrives with KCMOriginCompare
 };
 
 CREATE_PMINTERFACE(KCMCompareFacade, kKCMCompareFacadeImpl)

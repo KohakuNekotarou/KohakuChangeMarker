@@ -97,11 +97,10 @@
 /** Properties KCM adds to the application object. */
 enum KCMScriptProperties
 {
-	// 'pKGi' retired 2026-09-09: app.kcmInxProbe, the throwaway that measured whether the whole
-	// document can be written as INX into a stream held in memory. It answered yes and the
-	// Resources mode was built on the answer, so the probe was deleted whole. NEVER REGISTERED
-	// WITH ADOBE (it postdates the 2026-08-17 registration), so the code is free to re-use -
-	// the same standing 'pKGs' had below.
+	p_KCMOriginStatus = 'pKGi',		// i = INX (the code the throwaway probe app.kcmInxProbe had,
+								// 2026-09-08 to 09-09; NEVER REGISTERED WITH ADOBE, so re-used on
+								// 2026-09-12). app.kcmOriginStatus - the Task Start origin, in
+								// one line: held, document, time, bytes, shape, stamps, peek.
 	p_KCMResourceSnapshot = 'pKGs',	// s = snapshot. app.kcmResourceSnapshot - the Resources mode's
 								// export, measured from outside: "<bytes> bytes, <ms> ms" for the
 								// active document, or "FAILED: <which step>". ★The code 'pKGs' was
