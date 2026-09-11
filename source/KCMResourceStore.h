@@ -33,6 +33,7 @@
 #include "KCMResourceKinds.h"	// KCMResourceChangeKind
 
 class IDataBase;	// only ever passed through, so a forward declaration is the whole dependency
+class KCMResourceBytes;	// likewise - the origin's bytes, handed on to the parser
 #include "KCMResourceDiff.h"	// KCMResourceDiffStats. ⚠A MODEL-SIDE header, which is fine here:
 								// this file is model-internal and the UI never sees it - the UI
 								// sees IKCMResourcesFacade, which includes the types-only header.
@@ -56,6 +57,13 @@ namespace KCMResourceStore
 	                   so a failed rebuild never leaves a stale list looking current.
 	    @return kTrue when a result is being held afterwards. */
 	bool16	Rebuild(IDataBase* targetDB, IDataBase* sourceDB, PMString& whyNot);
+
+	/** Task Start (2026-09-12): the same as Rebuild, with the OLDER side supplied as the origin's
+	    own XML rather than exported from a document. A rehydrated copy is born with the app's
+	    defaults - fonts, TypographersQuotes, an object style - which are not changes; the bytes
+	    the origin holds are the document as it stood, so they are what is compared.
+	    @param sourceXml the origin's export. Empty refuses. */
+	bool16	RebuildWithSourceBytes(IDataBase* targetDB, const KCMResourceBytes& sourceXml, PMString& whyNot);
 
 	/** Throws the held result away. Idempotent. Called when the comparison stops. */
 	void	Clear();

@@ -29,7 +29,8 @@
 
 // Project includes:
 #include "KCMCore.h"				// KCMArmedTargetDB / KCMArmedSourceDB
-// (KCMResourceBytes.h went with ReadOneSide too - the bytes of an export never reach this file now.)
+#include "KCMResourceBytes.h"		// the origin's bytes, the older side of RebuildWithSourceBytes (Task Start, 2026-09-12)
+#include "KCMResourceParse.h"		// KCMParseResources - reading a list straight from those bytes
 #include "KCMResourceDiff.h"
 #include "KCMResourceAttrDiff.h"	// which ATTRIBUTES of one definition differ
 #include "KCMBoundaryID.h"			// kKCMStoryEditsRebuiltMessage - the one the panel's list listens for
@@ -86,68 +87,17 @@ PMString Phase(const char* text)
 	return s;
 }
 
-}	// anonymous namespace
+/** The second half of a rebuild, once the OLDER side's list is in hand: read the newer document,
+    pair the two, keep the answer, tell the panel.
 
-bool16 KCMResourceStore::Rebuild(IDataBase* targetDB, IDataBase* sourceDB, PMString& whyNot)
+    ★ONE PLACE, TWO CALLERS (2026-09-12). Rebuild reads the older side by exporting a document;
+    RebuildWithSourceBytes (Task Start) parses the origin's own bytes. Everything from the newer
+    document on is the same, and the notification at the end is the part that must not be
+    written twice - see the note at it. */
+static bool16 FinishRebuild(IDataBase* targetDB, const KCMResourceList& sourceItems,
+							KCMDeferredProgressBar& progress, PMString& whyNot)
 {
-	whyNot.Clear();
-	whyNot.SetTranslatable(kFalse);
-
-	// ★DROPPED FIRST, unconditionally. A rebuild that fails must not leave the previous answer
-	//   standing: it would be about two documents, one of which may no longer be there, and it
-	//   would look exactly like a fresh result.
-	KCMResourceStore::Clear();
-
-	// ⚠**THE TWO DOCUMENTS ARE PASSED IN, NOT ASKED FOR** (2026-09-09). This used to call
-	//   KCMArmedTargetDB()/KCMArmedSourceDB() itself, and the comparison run then could not use it:
-	//   KCMDoMarkChangesDoc does its work BEFORE the pair is armed, so a rebuild from there answered
-	//   "no comparison is armed" while holding both databases in its own parameters. The neighbour
-	//   that had the same job, KCMRebuildStoryEdits, already took them as arguments.
-	//   ⇒ Callers that mean "the armed pair" say so at the call site.
-	if (targetDB == nil || sourceDB == nil)
-	{
-		whyNot = "no comparison is armed";
-		gWhyNot = whyNot;
-		return kFalse;
-	}
-
-	// ***** A BAR ON Start AND Refresh (2026-09-09, the user's request). *****
-	//
-	// ★★**IT WAITS THE SAME THREE SECONDS THE OTHER TWO MODES DO** - the user's call, the same day
-	//   and in two steps: "show a bar, straight away for now", then, having seen it, "make it come
-	//   up after three seconds like the others". ⇒ **One rule for all three modes.** Most
-	//   comparisons are over before the delay (measured 200-2400ms for the two exports; 328-657ms
-	//   on small documents), and a bar that flashes up for those is noise.
-	//   ⚠The delay parameter stays on the class because the class needed one anyway to be told a
-	//     number rather than to read a constant - but every caller passes the same value now, and a
-	//     second value would need the same kind of reason this one lost.
-	// ★THREE UNITS, and they are the three phases a caller can actually see: read the older
-	//   document, read the newer one, pair them. Nothing inside a phase reports, so the bar moves
-	//   in three steps rather than pretending to a smoothness it has not got.
-	// ⚠**Cancel is polled BETWEEN phases only.** WasCancelled pumps events, and a phase is a single
-	//   call into the SDK with no safe point inside it (KCMProgressBar.h says so).
-	// ⚠No other bar may be alive here - KCMCore.cpp scopes the raster loop's to its loop, and this
-	//   runs after it (the same warning the class carries).
-	PMString barTitle("Kohaku Change Marker");
-	barTitle.SetTranslatable(kFalse);
-	KCMDeferredProgressBar progress(barTitle, 3);	// the default delay: three seconds, as Pixel and Story
-
-	KCMResourceList sourceItems;
 	KCMResourceList targetItems;
-
-	progress.Step(0, Phase("Reading the older document's definitions..."));
-	if (!KCMReadResourceList(sourceDB, "source", sourceItems, whyNot))
-	{
-		gWhyNot = whyNot;
-		return kFalse;
-	}
-
-	if (progress.WasCancelled())
-	{
-		whyNot = "cancelled";
-		gWhyNot = whyNot;
-		return kFalse;
-	}
 
 	progress.Step(1, Phase("Reading the newer document's definitions..."));
 	if (!KCMReadResourceList(targetDB, "target", targetItems, whyNot))
@@ -204,6 +154,111 @@ bool16 KCMResourceStore::Rebuild(IDataBase* targetDB, IDataBase* sourceDB, PMStr
 	KCMNotify(kKCMStoryEditsRebuiltMessage);
 
 	return kTrue;
+}
+
+}	// anonymous namespace
+
+bool16 KCMResourceStore::Rebuild(IDataBase* targetDB, IDataBase* sourceDB, PMString& whyNot)
+{
+	whyNot.Clear();
+	whyNot.SetTranslatable(kFalse);
+
+	// ★DROPPED FIRST, unconditionally. A rebuild that fails must not leave the previous answer
+	//   standing: it would be about two documents, one of which may no longer be there, and it
+	//   would look exactly like a fresh result.
+	KCMResourceStore::Clear();
+
+	// ⚠**THE TWO DOCUMENTS ARE PASSED IN, NOT ASKED FOR** (2026-09-09). This used to call
+	//   KCMArmedTargetDB()/KCMArmedSourceDB() itself, and the comparison run then could not use it:
+	//   KCMDoMarkChangesDoc does its work BEFORE the pair is armed, so a rebuild from there answered
+	//   "no comparison is armed" while holding both databases in its own parameters. The neighbour
+	//   that had the same job, KCMRebuildStoryEdits, already took them as arguments.
+	//   ⇒ Callers that mean "the armed pair" say so at the call site.
+	if (targetDB == nil || sourceDB == nil)
+	{
+		whyNot = "no comparison is armed";
+		gWhyNot = whyNot;
+		return kFalse;
+	}
+
+	// ***** A BAR ON Start AND Refresh (2026-09-09, the user's request). *****
+	//
+	// ★★**IT WAITS THE SAME THREE SECONDS THE OTHER TWO MODES DO** - the user's call, the same day
+	//   and in two steps: "show a bar, straight away for now", then, having seen it, "make it come
+	//   up after three seconds like the others". ⇒ **One rule for all three modes.** Most
+	//   comparisons are over before the delay (measured 200-2400ms for the two exports; 328-657ms
+	//   on small documents), and a bar that flashes up for those is noise.
+	//   ⚠The delay parameter stays on the class because the class needed one anyway to be told a
+	//     number rather than to read a constant - but every caller passes the same value now, and a
+	//     second value would need the same kind of reason this one lost.
+	// ★THREE UNITS, and they are the three phases a caller can actually see: read the older
+	//   document, read the newer one, pair them. Nothing inside a phase reports, so the bar moves
+	//   in three steps rather than pretending to a smoothness it has not got.
+	// ⚠**Cancel is polled BETWEEN phases only.** WasCancelled pumps events, and a phase is a single
+	//   call into the SDK with no safe point inside it (KCMProgressBar.h says so).
+	// ⚠No other bar may be alive here - KCMCore.cpp scopes the raster loop's to its loop, and this
+	//   runs after it (the same warning the class carries).
+	PMString barTitle("Kohaku Change Marker");
+	barTitle.SetTranslatable(kFalse);
+	KCMDeferredProgressBar progress(barTitle, 3);	// the default delay: three seconds, as Pixel and Story
+
+	KCMResourceList sourceItems;
+
+	progress.Step(0, Phase("Reading the older document's definitions..."));
+	if (!KCMReadResourceList(sourceDB, "source", sourceItems, whyNot))
+	{
+		gWhyNot = whyNot;
+		return kFalse;
+	}
+
+	if (progress.WasCancelled())
+	{
+		whyNot = "cancelled";
+		gWhyNot = whyNot;
+		return kFalse;
+	}
+
+	return FinishRebuild(targetDB, sourceItems, progress, whyNot);
+}
+
+bool16 KCMResourceStore::RebuildWithSourceBytes(IDataBase* targetDB, const KCMResourceBytes& sourceXml, PMString& whyNot)
+{
+	whyNot.Clear();
+	whyNot.SetTranslatable(kFalse);
+	KCMResourceStore::Clear();			// dropped first, as Rebuild does, and for the same reason
+
+	if (targetDB == nil || sourceXml.Size() == 0)
+	{
+		whyNot = (targetDB == nil) ? "no comparison is armed" : "the origin holds no bytes";
+		gWhyNot = whyNot;
+		return kFalse;
+	}
+
+	// The same bar as Rebuild: the older side is a parse rather than an export, but the reader
+	// sees the same three phases.
+	PMString barTitle("Kohaku Change Marker");
+	barTitle.SetTranslatable(kFalse);
+	KCMDeferredProgressBar progress(barTitle, 3);
+
+	KCMResourceList sourceItems;
+	progress.Step(0, Phase("Reading the task-start definitions..."));
+	PMString parseWhy;
+	if (!KCMParseResources(sourceXml, sourceItems, parseWhy))
+	{
+		whyNot = "source: ";
+		whyNot.Append(parseWhy);
+		gWhyNot = whyNot;
+		return kFalse;
+	}
+
+	if (progress.WasCancelled())
+	{
+		whyNot = "cancelled";
+		gWhyNot = whyNot;
+		return kFalse;
+	}
+
+	return FinishRebuild(targetDB, sourceItems, progress, whyNot);
 }
 
 void KCMResourceStore::Clear()

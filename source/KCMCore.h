@@ -225,6 +225,12 @@ bool16		KCMRebuildStoryEdits(IDataBase* targetDB, IDataBase* sourceDB);
 IDataBase*	KCMArmedTargetDB();
 IDataBase*	KCMArmedSourceDB();
 
+// Task Start (2026-09-12): the armed comparison keeps its Target and its results and LOSES its
+// Source - the rehydrated copy is about to be closed. Clears the armed Source, the drawing side's
+// sSrcDB and its Source-page map, and the older-version image cache, so that the close sweep
+// finds no pointer of ours at the copy. The body is in KCMPeek.cpp with the other armed state.
+void		KCMDetachArmedSource();
+
 // kTrue when a comparison is running AND db is one of the two documents in it.
 //
 // **The per-page flags both refuse to work anywhere else** -- registering a page or ticking it

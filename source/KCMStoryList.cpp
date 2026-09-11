@@ -45,6 +45,7 @@
 // Project includes:
 #include "KCMCore.h"			// KCMFramePageUID - shared with the overset scan since 2026-08-09
 #include "KCMStoryList.h"
+#include "KCMOriginCompare.h"	// KCMOriginToSourceUID - a Removed row's story, under its uid in a Task Start copy
 #include "KCMStoryRowFilter.h"	// KCMStoryRowHasContentChange - which rows belong in the list
 
 namespace
@@ -519,9 +520,11 @@ bool16 KCMStoryPointAt(IDataBase* db, UID storyUID, TextIndex index, PBPMPoint& 
    counters, not from the target's text (KCMStoryStamp.h), so it is not the target document's to
    answer. Nor is fPageIndex -- see RefreshRowFromDocument for why a refresh must not touch it.
 */
-static bool16 ReadRowFromDocument(IDataBase* db, KCMStoryRow& row)
+static bool16 ReadRowFromDocument(IDataBase* db, KCMStoryRow& row, UID storyInDb)
 {
-	InterfacePtr<ITextModel> model(db, row.fStoryUID, UseDefaultIID());
+	// storyInDb is the uid the story has IN db. It is row.fStoryUID for every row but a Removed
+	// one read from a Task Start copy, whose uids are new (KCMOriginToSourceUID at the caller).
+	InterfacePtr<ITextModel> model(db, storyInDb, UseDefaultIID());
 	if (model == nil)
 		return kFalse;	// a story that cannot be read cannot be shown, or jumped to later
 
@@ -538,7 +541,7 @@ static bool16 ReadRowFromDocument(IDataBase* db, KCMStoryRow& row)
 	//   @warning the page is NOT how the older version's window gets aimed -- that goes by story
 	//   UID, because the same story can sit somewhere else entirely over there (KCMGotoStoryFrame).
 	//   Why reading this composes nothing: KCMStoryFirstFrameUID.
-	row.fFrameUID = KCMStoryFirstFrameUID(db, row.fStoryUID);
+	row.fFrameUID = KCMStoryFirstFrameUID(db, storyInDb);
 	row.fPageUID = (row.fFrameUID != kInvalidUID) ? KCMFramePageUID(db, row.fFrameUID)
 												  : kInvalidUID;
 	return kTrue;
@@ -577,7 +580,10 @@ static void AddRowsFromDocument(IDataBase* db, const std::vector<KCMStoryDiff>& 
 		KCMStoryRow row;
 		row.fStoryUID = it->fStoryUID;
 		row.fKinds = it->fKinds;
-		if (!ReadRowFromDocument(db, row))
+		// A Removed row is read from the Source; when that is a Task Start copy the story sits
+		// there under a new uid (identity for any other Source, and for every Target row).
+		const UID storyInDb = wantRemoved ? KCMOriginToSourceUID(db, row.fStoryUID) : row.fStoryUID;
+		if (!ReadRowFromDocument(db, row, storyInDb))
 			continue;
 
 		if (row.fPageUID != kInvalidUID && pageList != nil)
@@ -749,7 +755,7 @@ void KCMStoryList::RefreshRowFromDocument(int32 nth, IDataBase* targetDB)
 	// A story that has since been deleted answers kFalse and the row keeps what it had. That is the
 	// same rule the whole feature follows: a row the comparison found must not vanish because
 	// something about it could not be worked out a second time.
-	(void)ReadRowFromDocument(targetDB, gRows[nth]);
+	(void)ReadRowFromDocument(targetDB, gRows[nth], gRows[nth].fStoryUID);
 }
 
 /* ShutdownCleanup

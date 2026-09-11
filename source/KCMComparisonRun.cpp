@@ -34,6 +34,7 @@
 #include "KCMThreadSafety.h"		// KCMIsSameDoc -- the one place this plug-in asks whether two dbs are one document
 #include "KCMExternalSource.h"	// the lent Source: registered and chosen by KCMStartComparisonWithSourceDB, forgotten by the lender's Release
 #include "KCMOrigin.h"			// the origin (Task Start): the third kind of Source, chosen by KCMChooseOriginPair
+#include "KCMOriginCompare.h"	// KCMOriginStart / KCMOriginRefresh / KCMOriginArmed / KCMOriginOnStop - the origin's Start and Refresh
 
 //----------------------------------------------------------------------------------------
 // The resolver: which two documents to compare
@@ -327,6 +328,7 @@ void KCMStopComparison()
 
 	KCMDoClearMarks(db);
 	KCMDoDisarmMousePeek(db);
+	KCMOriginOnStop();			// Task Start: the armed-origin flag goes, and the peek document with it
 	// Scrollbar map: the strips come off every window (Target and Source alike), and that is done
 	// by the UI when it receives the kKCMMarksClearedMessage the KCMDoClearMarks above emits.
 	// If Find Overset is on by itself, re-apply it to the overset document (sOversetDB) so the
@@ -362,7 +364,7 @@ void KCMStopComparison()
 //   from the progress bar, or a failure). ★**THE ANSWER MATTERS ONLY TO A CALLER THAT WAS ALREADY
 //   ARMED** - KCMRefreshComparison. For the other two, "not armed" is where they started, so the
 //   kFalse case leaves exactly the state they began in and there is nothing to undo.
-static bool16 KCMStartComparisonOn(IDataBase* targetDB, IDataBase* sourceDB)
+bool16 KCMStartComparisonOn(IDataBase* targetDB, IDataBase* sourceDB)
 {
 	if (targetDB == nil || sourceDB == nil)
 		return kFalse;
@@ -416,6 +418,13 @@ static bool16 KCMStartComparisonOn(IDataBase* targetDB, IDataBase* sourceDB)
 // one rather than the incremental one.
 void KCMRefreshComparison()
 {
+	// Task Start: an armed origin pair has no Source database; its own Refresh rehydrates one.
+	if (KCMOriginArmed())
+	{
+		KCMOriginRefresh();
+		return;
+	}
+
 	IDataBase* const targetDB = KCMArmedTargetDB();
 	IDataBase* const sourceDB = KCMArmedSourceDB();
 	if (targetDB == nil || sourceDB == nil)
@@ -525,6 +534,14 @@ void KCMToggleStartStop()
 	if (armed)
 	{
 		KCMStopComparison();
+		return;
+	}
+
+	// Task Start: the chosen Source is the origin. Its own procedure rehydrates and compares; the
+	// pair never reaches the resolver's same-document test below (the Source is not a database).
+	if (KCMChosenSourceIsOrigin())
+	{
+		KCMOriginStart();		// its own words on the status line
 		return;
 	}
 

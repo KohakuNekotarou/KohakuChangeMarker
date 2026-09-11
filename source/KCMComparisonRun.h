@@ -33,6 +33,12 @@ void	KCMToggleStartStop();
 void	KCMStopComparison();
 void	KCMStartComparisonFor(IDocument* target, IDocument* source);
 
+// The procedure itself, on two DATABASES. Public since 2026-09-12 for ONE more caller,
+// KCMOriginCompare (Task Start), which hands it a rehydrated copy as the Source. It resolves
+// nothing and arms on success; see the body for the three decisions it holds.
+// @return kTrue when the comparison ran and the pair is armed; kFalse on a cancel or a failure.
+bool16	KCMStartComparisonOn(IDataBase* targetDB, IDataBase* sourceDB);
+
 // Compare THE SAME TWO DOCUMENTS AGAIN - the flyout's "Refresh Comparison", directly under Start.
 //
 // ★WHAT IT IS FOR: the reader edits one of the two documents and wants the marks to say what is

@@ -54,6 +54,8 @@
 #include "KCMStoryDiffRun.h"       // in the Story mode, what changed inside each row
 #include "KCMHideUnchanged.h"      // KCMResetHideUnchanged
 #include "KCMExternalSource.h"     // KCMIsDbAlive -- "still there" includes the lent Source
+#include "KCMOrigin.h"             // KCMOriginStoryStamps / KCMOriginBytes -- Task Start: the older side kept in memory
+#include "KCMOriginCompare.h"      // KCMOriginRunInProgress -- is the Source of this run the rehydrated copy?
 // **No UI header is included here.** Everything this file used to do to the screen is now a
 // KCMNotify*() call, so the comparison engine says only WHAT CHANGED and has zero dependency on
 // the UI.
@@ -544,7 +546,13 @@ bool16 KCMRebuildStoryEdits(IDataBase* targetDB, IDataBase* sourceDB)
 	std::vector<KCMStoryStamp> targetStamps;
 	std::vector<KCMStoryStamp> sourceStamps;
 	KCMStoryEdits::CollectStamps(targetDB, targetStamps);
-	KCMStoryEdits::CollectStamps(sourceDB, sourceStamps);
+	// Task Start: the copy is freshly imported and its change COUNTERS say nothing. The stamps the
+	// origin took at Task Start - the document's own counters at that moment, in its own uids -
+	// stand in for the older version's, exactly as a saved older version's would.
+	if (KCMOriginRunInProgress() && KCMOriginStoryStamps() != nil)
+		sourceStamps = *KCMOriginStoryStamps();
+	else
+		KCMStoryEdits::CollectStamps(sourceDB, sourceStamps);
 
 	// @warning the argument order is (source, target). Reversed, "added" and "removed" swap: a
 	//   story that was deleted is counted as added, and the real additions are silently lost.
@@ -853,7 +861,12 @@ ErrorCode KCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMString
 		// ★**The two documents this run is about, not the armed pair** -- they are not armed yet at
 		//   this point in the run, which is exactly what the store's own note describes.
 		PMString whyNot;
-		KCMResourceStore::Rebuild(targetDB, sourceDB, whyNot);
+		// Task Start: the older side is the origin's own XML, not an export of the copy - a new
+		// document is born with app defaults (fonts, quotes, an object style) that are not changes.
+		if (KCMOriginRunInProgress() && KCMOriginBytes() != nil)
+			KCMResourceStore::RebuildWithSourceBytes(targetDB, *KCMOriginBytes(), whyNot);
+		else
+			KCMResourceStore::Rebuild(targetDB, sourceDB, whyNot);
 	}
 
 	if (cancelled)

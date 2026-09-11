@@ -44,6 +44,7 @@
 #include "KCMParaText.h"	// KCMParaAttrs and the pure functions over paragraphs (Join / IndexInStory / SplitRunAtPlaces / SpansDiffer)
 #include "KCMProgressBar.h"	// KCMDeferredProgressBar - the progress bar and Cancel of Run, shown after kKCMProgressBarDelayMs
 #include "KCMStoryDiffRun.h"
+#include "KCMOriginCompare.h"	// KCMOriginToSourceUID - the older side's uid when the Source is a Task Start copy
 #include "KCMTextRead.h"		// the reader: paragraphs, their positions and their attributes, straight from the text model
 #include "KCMStoryList.h"
 #include "KCMStoryStamp.h"	// kKCMStoryKindAdded - which rows have no partner to compare against
@@ -1209,7 +1210,7 @@ int32 KCMStoryDiffRun::Run(IDataBase* targetDB, IDataBase* sourceDB, bool16* out
 
 		std::vector<KCMStoryChange> changes;
 		if (CompareOneStory(UIDRef(targetDB, row->fStoryUID),
-							UIDRef(sourceDB, row->fStoryUID), changes))
+							UIDRef(sourceDB, KCMOriginToSourceUID(sourceDB, row->fStoryUID)), changes))
 		{
 			// **WRITTEN EVEN WHEN NOTHING DIFFERS.** It used to `continue` here, on the grounds that
 			//   writing an empty list changes nothing -- which was true of the CHANGES and false of the
@@ -1277,7 +1278,7 @@ int32 KCMStoryDiffRun::RunOne(IDataBase* targetDB, IDataBase* sourceDB, int32 ro
 
 	std::vector<KCMStoryChange> changes;
 	const bool16 compared = CompareOneStory(UIDRef(targetDB, storyUID),
-										    UIDRef(sourceDB, storyUID), changes);
+										    UIDRef(sourceDB, KCMOriginToSourceUID(sourceDB, storyUID)), changes);
 
 	// **WRITTEN EITHER WAY, INCLUDING EMPTY.** What stands under the row after a refresh is what
 	//   the documents say now, and "nothing" is a perfectly good thing for them to say -- the row

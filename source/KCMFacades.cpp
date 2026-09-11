@@ -54,6 +54,7 @@
 #include "KCMChangedPagesTSV.h"	// the TSV export
 #include "KCMExternalSource.h"	// KCMExternalSourceLabel -- the lent Source's words for the panel
 #include "KCMOrigin.h"			// Task Start: the origin slot the five methods at the end forward to
+#include "KCMOriginCompare.h"	// KCMOriginArmed - armed with the origin as the Source
 #include "KCMStoryMarkBuild.h"	// what the Story mode should be lighting up (Refresh / SetPress)
 #include "KCMStoryMarker.h"		// the adornment that draws it - the flash and the shutdown
 #include "IKCMResourcesFacade.h"	// the Resources mode's boundary
@@ -219,7 +220,7 @@ public:
 	virtual bool16		TakeTaskStart(PMString& outWhyNot)	{ return KCMTakeTaskStart(outWhyNot); }
 	virtual bool16		HasOrigin()							{ return KCMHasOrigin(); }
 	virtual void		GetOriginLabel(PMString& outLabel)	{ KCMOriginLabel(outLabel); }
-	virtual bool16		IsOriginArmed()						{ return kFalse; }	// KCMOriginArmed arrives with KCMOriginCompare
+	virtual bool16		IsOriginArmed()						{ return KCMOriginArmed(); }
 };
 
 CREATE_PMINTERFACE(KCMCompareFacade, kKCMCompareFacadeImpl)

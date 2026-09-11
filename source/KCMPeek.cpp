@@ -53,6 +53,7 @@
 #include "KCMCore.h"               // the arm/disarm/state declarations
 #include "KCMComparisonRun.h"      // KCMForgetChosenDocsThatClosed -- the chosen Target/Source lose whichever document closed
 #include "KCMExternalSource.h"     // KCMIsDbAlive (the lent Source counts as alive)
+#include "KCMOriginCompare.h"      // KCMOriginArmed -- Task Start: armed with no Source database
 #include "KCMModelNotify.h"	// KCMNotifyStatus - the model tells the UI, it never calls it
 // The UI's KCMViewLookup.h is deliberately absent. Resolving which view the mouse is over belongs
 //   to the caller (the UI); this .cpp only peeks at the spread of the point it is given.
@@ -610,14 +611,19 @@ bool16 KCMRefreshComparisonAvailable()
 //   sPeek* cleared included -- and kFalse comes back.
 bool16 KCMArmedDocsAlive()
 {
-	if (!sPeekArmed || sPeekTargetDB == nil || sPeekSourceDB == nil)
+	if (!sPeekArmed || sPeekTargetDB == nil)
+		return kFalse;
+	// Task Start: an armed origin pair has no Source database (the copy was closed after the
+	// comparison), so only the Target is asked about. Any other armed pair with no Source is dead.
+	const bool16 sourceIsOrigin = (sPeekSourceDB == nil && KCMOriginArmed()) ? kTrue : kFalse;
+	if (sPeekSourceDB == nil && !sourceIsOrigin)
 		return kFalse;
 	ISession* session = GetExecutionContextSession();	// nil is possible during the shutdown sequence
 	InterfacePtr<IApplication> app(session != nil ? session->QueryApplication() : nil);
 	InterfacePtr<IDocumentList> docList(app ? app->QueryDocumentList() : nil);
 	if (docList == nil ||
 	    !KCMIsDbAlive(docList, sPeekTargetDB) ||
-	    !KCMIsDbAlive(docList, sPeekSourceDB))
+	    (!sourceIsOrigin && !KCMIsDbAlive(docList, sPeekSourceDB)))
 	{
 		KCMHandleDocsClosed();
 		return kFalse;
@@ -826,6 +832,16 @@ void KCMDoDisarmMousePeek(IDataBase* db)
 	KCMInvalidateDB(armedTargetDB);
 	if (db != armedTargetDB)
 		KCMInvalidateDB(db);
+}
+
+// KCMDetachArmedSource (declared in KCMCore.h) -- Task Start: the copy leaves the armed state
+// before it is closed. The Target, the marks (sEntries on sDB) and the stores stay.
+void KCMDetachArmedSource()
+{
+	sPeekSourceDB = nil;
+	KCMDrawEventHandler::sSrcDB = nil;
+	KCMDrawEventHandler::sSrcPageToTarget.clear();
+	KCMDrawEventHandler::DropAllOrig();		// the older-version images were of the copy
 }
 
 // The state accessors the panel reads: an armed peek is what "a comparison is running" means.
