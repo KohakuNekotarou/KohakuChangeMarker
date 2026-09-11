@@ -54,6 +54,10 @@
 #include "KCMComparisonRun.h"      // KCMForgetChosenDocsThatClosed -- the chosen Target/Source lose whichever document closed
 #include "KCMExternalSource.h"     // KCMIsDbAlive (the lent Source counts as alive)
 #include "KCMOriginCompare.h"      // KCMOriginArmed -- Task Start: armed with no Source database
+#include "KCMOrigin.h"             // KCMOriginBytes / KCMOriginShapeOf -- what a page refresh rehydrates from
+#include "KCMOriginPeek.h"         // the one-spread peek document that stands in for the Source
+#include "KCMRehydrate.h"          // KCMRehydrate / KCMCloseRehydrated -- a page refresh's temporary Source
+#include "KCMResourceBytes.h"
 #include "KCMModelNotify.h"	// KCMNotifyStatus - the model tells the UI, it never calls it
 // The UI's KCMViewLookup.h is deliberately absent. Resolving which view the mouse is over belongs
 //   to the caller (the UI); this .cpp only peeks at the spread of the point it is given.
@@ -139,7 +143,14 @@ void KCMPeekShowAt(IDataBase* targetDB, IDataBase* sourceDB,
                      const PMReal& viewScale, const PMReal& uiZoom,
                      UID viewSpreadUID)
 {
-	if (targetDB == nil || sourceDB == nil)
+	if (targetDB == nil)
+		return;
+	// Task Start: there is no Source database while armed; the peek document stands in for it,
+	// built for the spread under the mouse (below, once that spread is known). Its pages are
+	// paired by KCMOriginPeek rather than by KCMBuildFullPairing - a one-spread copy cannot be
+	// paired by walking both documents.
+	const bool16 originMode = (sourceDB == nil && KCMOriginArmed() && targetDB == KCMArmedTargetDB()) ? kTrue : kFalse;
+	if (sourceDB == nil && !originMode)
 		return;
 
 	// Turn the scale the caller measured (content -> window = zoom x device scale) into the
@@ -176,6 +187,15 @@ void KCMPeekShowAt(IDataBase* targetDB, IDataBase* sourceDB,
 	InterfacePtr<ISpread> spread(targetDB, hit.spreadUID, UseDefaultIID());
 	if (spread == nil)
 		return;
+
+	// Task Start: the peek document for THIS spread (built now if the held one is for another).
+	if (originMode)
+	{
+		UID copySpreadUID = kInvalidUID;
+		sourceDB = KCMOriginPeekDBFor(targetDB, hit.spreadUID, copySpreadUID);
+		if (sourceDB == nil)
+			return;
+	}
 
 	// **Skipping an unchanged spread**, and only in the Pixel mode. If this document has already
 	// been compared (sDB == targetDB) and none of this spread's pages is in the changed entries
@@ -248,16 +268,28 @@ void KCMPeekShowAt(IDataBase* targetDB, IDataBase* sourceDB,
 		KCMDrawEventHandler::sOrigDB = targetDB;
 		KCMDrawEventHandler::sOrigScale = effScale;	// remembered so a later peek can tell whether to rebuild
 		// The pairing is the same for every page of the spread, so it is built once before the loop.
+		// (Not in the Task Start mode: the one-spread copy is paired by KCMOriginPeekMapPage.)
 		std::map<UID, UID> targetToSource;
-		KCMBuildFullPairing(targetDB, sourceDB, targetToSource);
+		if (!originMode)
+			KCMBuildFullPairing(targetDB, sourceDB, targetToSource);
 		for (int32 p = 0; p < np; ++p)
 		{
 			const UID tPageUID = spread->GetNthPageUID(p);
-			std::map<UID, UID>::const_iterator mi = targetToSource.find(tPageUID);
-			if (mi == targetToSource.end())
-				continue;
+			UID sPageUID = kInvalidUID;
+			if (originMode)
+			{
+				if (!KCMOriginPeekMapPage(targetDB, tPageUID, sPageUID))
+					continue;
+			}
+			else
+			{
+				std::map<UID, UID>::const_iterator mi = targetToSource.find(tPageUID);
+				if (mi == targetToSource.end())
+					continue;
+				sPageUID = mi->second;
+			}
 			UIDRef tRef(targetDB, tPageUID);
-			UIDRef sRef(sourceDB, mi->second);
+			UIDRef sRef(sourceDB, sPageUID);
 			KCMDrawEventHandler::MakeOrigImage(tRef, sRef, peekDpi);	// a page that fails is simply not laid over
 		}
 	}
@@ -509,8 +541,17 @@ static bool16 KCMQueryPixelComparePair(IDataBase*& outTarget, IDataBase*& outSou
 
 	outTarget = KCMArmedTargetDB();
 	outSource = KCMArmedSourceDB();
-	return (outTarget != nil && outSource != nil) ? kTrue : kFalse;
+	// Task Start: the pair is (the Target, no database) while armed; the caller that needs a
+	// Source rehydrates one for the call (KCMRefreshComparisonForSelectedPages).
+	return (outTarget != nil && (outSource != nil || KCMOriginArmed())) ? kTrue : kFalse;
 }
+
+/** Task Start: a rehydrated copy that lives for one call. Closed on the way out, whichever way. */
+struct KCMScopedRehydration
+{
+	UIDRef fDoc;
+	~KCMScopedRehydration() { KCMCloseRehydrated(fDoc); }	// UIDRef::gNull is ignored
+};
 
 
 // Re-detect and update the comparison of the pages selected in the Pages panel -- the body behind
@@ -533,6 +574,25 @@ bool16 KCMRefreshComparisonForSelectedPages(int32* outPages, int32* outChanged, 
 	IDataBase* sourceDB = nil;
 	if (!KCMQueryPixelComparePair(targetDB, sourceDB))
 		return kFalse;
+
+	// Task Start: rehydrate a Source for this call and close it afterwards (the ordinary route
+	// holds one). The whole document comes back, so the order pairing below holds as it stands.
+	KCMScopedRehydration originCopy;
+	if (sourceDB == nil)
+	{
+		const KCMResourceBytes* bytes = KCMOriginBytes();
+		const KCMOriginShape* shape = KCMOriginShapeOf();
+		PMString whyNot;
+		if (bytes == nil || shape == nil || !KCMRehydrate(*bytes, *shape, originCopy.fDoc, whyNot))
+		{
+			PMString msg("could not rebuild the task-start copy: ");
+			msg.SetTranslatable(kFalse);
+			msg.Append(whyNot);
+			KCMNotifyStatus(msg);
+			return kFalse;
+		}
+		sourceDB = originCopy.fDoc.GetDataBase();
+	}
 
 	// Read the Pages panel's selection through the reader Register and Check share
 	// (KCMPageMap.cpp). Nothing happens unless the document that selection belongs to is the
