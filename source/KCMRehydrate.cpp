@@ -14,6 +14,7 @@
 #include "IDocumentList.h"
 #include "IDocumentUtils.h"
 #include "IDOMElement.h"
+#include "IGlobalRecompose.h"		// ForceRecompositionToComplete - compose the copy before it is rasterised
 #include "IINXManager.h"
 #include "IPMStream.h"
 #include "IScript.h"				// a story's scripting facet IS an IScriptLabel (KCMPageMarksDoc.cpp)
@@ -135,7 +136,19 @@ bool16 KCMRehydrate(const KCMResourceBytes& inx, const KCMOriginShape& expect, U
 		return kFalse;
 	}
 
-	// 4. the check: whole, or nothing
+	// 4. compose BEFORE anything reads pixels or text positions. A document straight out of the
+	//    import has its stories uncomposed, and the Pixel comparison rasterises it at once: measured
+	//    2026-09-12 on the first live Start, every page of an unchanged document came back
+	//    "changed" (4 of 4) until this line. The book comparison does the same for the chapters it
+	//    opens (RecomposeChapter, KCMBookCompare.cpp), and for the same reason. A menu command is
+	//    a safe place to recompose; a draw event would not be.
+	{
+		InterfacePtr<IGlobalRecompose> recompose(doc, IID_IGLOBALRECOMPOSE);
+		if (recompose != nil)
+			recompose->ForceRecompositionToComplete();
+	}
+
+	// 5. the check: whole, or nothing
 	KCMOriginShape got;
 	KCMMeasureShape(ref.GetDataBase(), got);
 	if (!(got == expect))
