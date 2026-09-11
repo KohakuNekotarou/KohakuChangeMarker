@@ -136,6 +136,16 @@ namespace KCMJa
 	//     ⚠**The English side (kKCMHintKey / kKCMHint2Key in KCMUI_enUS.fr) is split at the same
 	//       point. Do not move one without the other.**
 	const char16_t kHint2[] =
+		// ★Task Start (2026-09-12) comes first in this piece: on the English side it is a key of its
+		//   own (kKCMHint3Key), read between hint and hint2, so the two languages read in the same
+		//   order - refresh -> Task Start -> books.
+		u"【少し前の状態と比べる(Task Start)】\n"
+		u"アクティブな文書の状態をメモリに記録し(ディスクには何も書きません)、それを Source にします。"
+		u"編集してから Start(または Refresh Comparison)を押すと、その時点からの変更が3つのモードのどれでも見られます。\n"
+		u"・使い方: パネルのフライアウトメニューから「Task Start」を選びます。Source の行に「Task Start」と記録した時刻が出ます\n"
+		u"・記録は同時に1つだけです。「Clear Target and Source」か、その文書を閉じると解放されます。比較中には記録できません\n"
+		u"・記録が Source の間は Source の窓が無いので、Sync Layout Views・Always Show Marks on Source・ダブルクリックの Source 側は効きません。"
+		u"Shift+押しっぱなし(旧版の表示)は使えます。スプレッドごとに最初の1回だけ、作り直しに少し時間がかかります\n\n"
 		u"【ブックの比較(Compare Books)】\n"
 		u"ブック(.indb)どうしを章(ドキュメント)単位で比べ、どの章が変わったかを一覧します。\n"
 		u"・使い方: ブックパネルで比べたいブックのタブを前面にし、もう1冊のブックも開いてから、"

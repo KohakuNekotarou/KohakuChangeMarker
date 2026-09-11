@@ -807,6 +807,15 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKCMSetSourceMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
+		// "Task Start" on the panel flyout (popup) menu (2026-09-12). Plain command: the active
+		// document's INX is taken as the origin, and the pair becomes (that document, the origin).
+		// Start / Refresh then compare the document against a rehydration of it. One origin at a
+		// time (UpdateActionStates, kCustomEnabling).
+		kKCMPopupTaskStartActionID,
+		kKCMPopupMenuPath,
+		kKCMTaskStartMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
 		// "Clear Target and Source" on the panel flyout (popup) menu. Plain command: stops a running
 		// comparison and drops both chosen documents, so the next Start falls back to the automatic
 		// rule (active = Target, the earliest-opened other document = Source). Directly below the two
@@ -1302,6 +1311,18 @@ resource ActionDef (kSDKDefActionResourceID)
 		kOtherActionArea,
 		kNormalAction,
 		kCustomEnabling|kDisableIfLowMem,	// the same enabling as its Target counterpart
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		// "Task Start" (2026-09-12): the active document's state now becomes the Source. Greyed
+		// while an origin is held, while a comparison is armed, and with no document (facade
+		// CanTakeTaskStart, the one place - UpdateActionStates).
+		kKCMActionComponentBoss,
+		kKCMPopupTaskStartActionID,
+		kKCMTaskStartMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 

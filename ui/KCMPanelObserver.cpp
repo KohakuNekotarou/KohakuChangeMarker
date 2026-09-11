@@ -519,6 +519,15 @@ static void KCMApplyPanelInfo(const InterfacePtr<IPanelControlData>& pcd)
 		source.Append(" ");
 		source.Append(KCMDocPathFromDB(sourceDB));
 	}
+	else if (compare->HasOrigin())
+	{
+		// Task Start: the Source is the origin - a moment, not a document - whether chosen or armed
+		// (an armed origin pair has no Source database either). Named by the model.
+		PMString originLabel;
+		compare->GetOriginLabel(originLabel);
+		source.Append(" ");
+		source.Append(originLabel);
+	}
 
 	IControlView* tView = pcd->FindWidget(kKCMTargetTextWidgetID);
 	if (tView != nil)

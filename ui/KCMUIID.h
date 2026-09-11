@@ -417,6 +417,7 @@ DECLARE_PMID(kActionIDSpace, kKCMClearMarksFromDocActionID, kKCMUIPrefix + 56)	/
 DECLARE_PMID(kActionIDSpace, kKCMClearChosenActionID, kKCMUIPrefix + 54)	// "Clear Target and Source" on the panel flyout (a plain command; 2026-09-05, user's request). Drops both chosen documents, so the next Start falls back to the automatic rule and the panel's Target:/Source: lines go back to bare labels. A lent Source is forgotten with them. ★★It STOPS a running comparison first (2026-09-07, user's instruction -- it used to be greyed while armed and to leave the comparison running). Live through kCustomEnabling whenever a comparison is armed OR at least one of the two is chosen. ⚠The number is +54, not +50 or +51: those two are retired, see the note above
 // ★"Show as XML" on a DEFINITION row's context menu (2026-09-09, the user's request). Shows the element the row names, both documents' copies, in a modal alert the way How to Use is shown. ★It shares kKCMStoryRowMenuName with the Story refresh item and the two are enabled in OPPOSITE modes, so each mode's menu has exactly one live item and InDesign hides the greyed one. KCMResourceXml.cpp
 DECLARE_PMID(kActionIDSpace, kKCMResourceRowXmlActionID, kKCMUIPrefix + 58)
+DECLARE_PMID(kActionIDSpace, kKCMPopupTaskStartActionID, kKCMUIPrefix + 59)	// ★"Task Start" on the panel flyout (a plain command, 2026-09-12): the ACTIVE document's INX is taken as the origin and the pair is chosen (Target = that document, Source = the origin). Live only while no origin is held, nothing is armed and a document is active (facade CanTakeTaskStart - the one place). Released by Clear Target and Source or the document closing.
 DECLARE_PMID(kActionIDSpace, kKCMPopupModeResourcesActionID, kKCMUIPrefix + 57)	// ★"Compare mode > Resources Changes" on the flyout (2026-09-09). The third mode: export each document as XML and compare the DEFINITIONS - styles, swatches, layers - so that a change to something nobody has applied is reported. It moves no pixel and touches no word, which is why neither of the other two modes can see it. Exclusive with Pixel and Story, the selected one carrying the check (kCustomEnabling + kSelectedAction). KCMActionComponent.cpp
 
 // (The template's spare //DECLARE_PMID(kActionIDSpace, kKCMActionID, kKCMUIPrefix + 41) was
@@ -678,6 +679,7 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowChangeWidgetID, kKCMUIPrefix + 72)	// Ro
 #define kKCMCompareBooksMenuKey	kKCMStringPrefix "kKCMCompareBooksMenuKey"	// the menu name of "Compare Books" on the panel flyout (compare two books chapter by chapter)
 #define kKCMSetTargetMenuKey		kKCMStringPrefix "kKCMSetTargetMenuKey"	// ★the menu name of "Set as Target" on the panel flyout (the active document becomes the comparison's Target)
 #define kKCMSetSourceMenuKey		kKCMStringPrefix "kKCMSetSourceMenuKey"	// ★the menu name of "Set as Source" on the panel flyout (the active document becomes the older version)
+#define kKCMTaskStartMenuKey		kKCMStringPrefix "kKCMTaskStartMenuKey"	// ★the menu name of "Task Start" on the panel flyout (the active document's state now becomes the Source)
 #define kKCMClearChosenMenuKey	kKCMStringPrefix "kKCMClearChosenMenuKey"	// ★the menu name of "Clear Target and Source" on the panel flyout (drops both choices; the next Start falls back to the automatic rule)
 #define kKCMBookDialogTitleKey	kKCMStringPrefix "kKCMBookDialogTitleKey"	// the title of the book comparison dialog
 #define kKCMPawWordDialogTitleKey	kKCMStringPrefix "kKCMPawWordDialogTitleKey"	// the title of the paw word box
@@ -798,6 +800,10 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowChangeWidgetID, kKCMUIPrefix + 72)	// Ro
 //   ⚠**The Japanese side (kHint / kHint2 in ui/KCMLoc.h) is split at the same point. Do not
 //     move one without the other.**
 #define kKCMHint2Key			kKCMStringPrefix "kKCMHint2Key"
+// ★**The third part (2026-09-12): Task Start.** Both keys above sit at odfrc's per-string limit, so
+//   this section has a key of its own. DoUsage reads hint / hint3 / hint2, and the Japanese side
+//   (KCMLoc.h) carries the same section at the head of its kHint2 - the same seam, one text.
+#define kKCMHint3Key			kKCMStringPrefix "kKCMHint3Key"
 #define kKCMToolStringKey		kKCMStringPrefix "kKCMToolStringKey"	// the tool name in the toolbox (its tooltip). English in every locale
 #define kKCMPawToolStringKey	kKCMStringPrefix "kKCMPawToolStringKey"	// the cat-paw stamp tool's name in the flyout (its tooltip). ★English in every locale, as the line above: the jaJP string table was retired on 2026-08-05 and Japanese now comes from ui/KCMLoc.h at run time -- a tool name is not one of the strings that file carries
 
@@ -1033,6 +1039,7 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowChangeWidgetID, kKCMUIPrefix + 72)	// Ro
 #define kKCMRefreshCompareMenuItemPosition	9.01	// ★plain command "Refresh Comparison" -- **directly under Start**, above the two "Set as" items (2026-09-04, user's call). Start and Refresh are both VERBS that run the comparison; Set as Target / Source are the CHOICES it runs on. ⚠**Compare mode came between them on 2026-09-10** (the user asked for it directly under Refresh), so the group now reads run / run / WHAT-KIND / choose / choose - the kind of comparison sits with the verbs that run it rather than down among the display toggles
 #define kKCMSetTargetMenuItemPosition		9.02	// ★"Set as Target" -- **directly under Start, above Compare Books**: choosing the two documents is part of starting a comparison, so it reads Start / choose / choose
 #define kKCMSetSourceMenuItemPosition		9.03	// ★"Set as Source", right below its Target counterpart (the pair reads new-then-old, as the two "Always Show Marks on" toggles do)
+#define kKCMTaskStartMenuItemPosition	9.035	// ★"Task Start", between Set as Source (9.03) and Clear (9.04): a choice of the pair too, one whose Source is a moment rather than a document
 #define kKCMClearChosenMenuItemPosition	9.04	// ★"Clear Target and Source", directly below the two "Set as" items it undoes and still above Sep1 (9.1), so the group reads run / run / choose / choose / clear
 #define kKCMSep1MenuItemPosition			9.1	// the separator below Start (a path ending in ":-")
 #define kKCMCompareModeSubmenuMenuItemPosition	9.015	// ★the "Compare mode" submenu (Pixel / Story / Resources Changes). **Directly under Refresh Comparison** (2026-09-10, the user's call; it was 9.15, right after Sep1): what is compared is settled before how it is shown, and the order carries that

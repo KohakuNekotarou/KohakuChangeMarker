@@ -769,6 +769,28 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 			Utils<IKCMPageFlagsFacade>()->ClearPawsInDoc(Utils<IKCMCompareFacade>()->GetActiveDocDB());
 			break;
 
+		// Flyout "Task Start" (2026-09-12): the active document's INX becomes the origin, and the pair
+		// is chosen (Target = that document, Source = the origin). No comparison runs - Start does
+		// that. The panel refresh and the status line are done here, as with the two "Set as" items
+		// ([[one-question-one-place]]: the facade changes the state, the UI decides what it shows).
+		case kKCMPopupTaskStartActionID:
+		{
+			PMString whyNot;
+			if (Utils<IKCMCompareFacade>()->TakeTaskStart(whyNot))
+			{
+				KCMRefreshPanel();
+				KCMSetStatus("Task Start taken. Edit, then Start to compare against it.");
+			}
+			else
+			{
+				PMString msg("Task Start not taken: ");
+				msg.SetTranslatable(kFalse);
+				msg.Append(whyNot);
+				KCMSetStatus(msg);
+			}
+			break;
+		}
+
 		// Flyout "Clear Target and Source": put the panel's two lines back to bare labels, so the
 		// next Start falls back to the automatic rule (active document = Target, the earliest-opened
 		// other document = Source).
@@ -958,12 +980,20 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 		//     commoner one is choosing a Source alone and pressing Start without switching documents,
 		//     since the unchosen Target then resolves to that very document -- and the way out of
 		//     that one is to bring the other document to the front.
+		else if (action == kKCMPopupTaskStartActionID)
+		{
+			// The one place (KCMCanTakeTaskStart): no origin held, nothing armed, an active document.
+			listToUpdate->SetNthActionState(i,
+				Utils<IKCMCompareFacade>()->CanTakeTaskStart() ? kEnabledAction : kDisabled_Unselected);
+		}
 		else if (action == kKCMPopupSetTargetActionID || action == kKCMPopupSetSourceActionID)
 		{
 			InterfacePtr<IKCMCompareFacade> compare(Utils<IKCMCompareFacade>().QueryUtilInterface());
 			const bool16 armed = compare->IsArmed() && (compare->GetArmedTargetDB() != nil);
+			// Task Start: while an origin is held, "Set as Source" would replace it silently - greyed.
+			const bool16 sourceBlocked = (action == kKCMPopupSetSourceActionID && compare->HasOrigin()) ? kTrue : kFalse;
 			listToUpdate->SetNthActionState(i,
-				(!armed && compare->GetActiveDocDB() != nil) ? kEnabledAction : kDisabled_Unselected);
+				(!armed && !sourceBlocked && compare->GetActiveDocDB() != nil) ? kEnabledAction : kDisabled_Unselected);
 		}
 		else if (action == kKCMPopupPrintMarksActionID)
 		{
@@ -1054,7 +1084,11 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 		}
 		else if (action == kKCMPopupSyncViewsActionID)
 		{
-			KCMSetCheckState(listToUpdate, i, KCMGetLayoutSync());
+			// Task Start: there is no Source window to sync with while the origin is the Source.
+			if (Utils<IKCMCompareFacade>()->IsOriginArmed())
+				listToUpdate->SetNthActionState(i, kDisabled_Unselected);
+			else
+				KCMSetCheckState(listToUpdate, i, KCMGetLayoutSync());
 		}
 		else if (action == kKCMPopupScrollMapActionID)
 		{
@@ -1082,7 +1116,11 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 		}
 		else if (action == kKCMPopupShowSrcMarksActionID)
 		{
-			KCMSetCheckState(listToUpdate, i, Utils<IKCMCompareFacade>()->GetShowSourceMarks());
+			// Task Start: no Source window to show marks on while the origin is the Source.
+			if (Utils<IKCMCompareFacade>()->IsOriginArmed())
+				listToUpdate->SetNthActionState(i, kDisabled_Unselected);
+			else
+				KCMSetCheckState(listToUpdate, i, Utils<IKCMCompareFacade>()->GetShowSourceMarks());
 		}
 		else if (action == kKCMPopupShowTgtMarksActionID)
 		{
@@ -1195,7 +1233,8 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 			InterfacePtr<IKCMCompareFacade> compare(Utils<IKCMCompareFacade>().QueryUtilInterface());
 			const bool16 armed = compare->IsArmed() && (compare->GetArmedTargetDB() != nil);
 			const bool16 anyChosen = (compare->GetChosenTargetDB() != nil) ||
-			                         (compare->GetChosenSourceDB() != nil);
+			                         (compare->GetChosenSourceDB() != nil) ||
+			                         compare->HasOrigin();		// Task Start: the origin is a choice too, and this is what releases it
 			listToUpdate->SetNthActionState(i,
 				(armed || anyChosen) ? kEnabledAction : kDisabled_Unselected);
 		}
@@ -1309,6 +1348,10 @@ void KCMActionComponent::DoUsage()
 	//     string otherwise -- so joining them cannot break a translation key. **Never join keys to
 	//     each other.**
 	PMString usage = KCMLoc::Text(kKCMHintKey, KCMJa::kHint);
+	// ★The Task Start section (2026-09-12) is a THIRD English key - both older keys sit at the
+	//   limit - read here between the two. On the Japanese side it is the head of kHint2, so the
+	//   Japanese literal for this key is empty and the order comes out the same in both languages.
+	usage.Append(KCMLoc::Text(kKCMHint3Key, u""));
 	usage.Append(KCMLoc::Text(kKCMHint2Key, KCMJa::kHint2));
 	usage.SetTranslatable(kFalse);
 
