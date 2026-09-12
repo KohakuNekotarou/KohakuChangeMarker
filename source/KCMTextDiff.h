@@ -133,8 +133,9 @@ namespace KCMTextDiff
 	*/
 	void MergeNearbyChanges(std::vector<Change>& changes);
 
-	/** Slides each change to whichever of its EQUIVALENT positions reads most naturally, then
-		widens it to the whole word where it starts or ends inside a LATIN one.
+	/** Slides each change to whichever of its EQUIVALENT positions reads most naturally, widens
+		it to the whole word where it starts or ends inside a LATIN one (letters or digits), and
+		folds together any two changes that have come to touch.
 
 		**A CHANGE CAN USUALLY SIT IN MORE THAN ONE PLACE AND MEAN THE SAME THING**, and Myers has
 		no reason to prefer one. When the character just after a change is the same as the
@@ -178,7 +179,10 @@ namespace KCMTextDiff
 		 space or punctuation would swallow whole sentences. That would destroy exactly what this
 		 file was measured on: a two-character Japanese edit selecting exactly those two characters.
 		 Latin runs are the only place where a boundary inside one script class is also a boundary
-		 inside a WORD.
+		 inside a WORD. ★"Latin" means **Latin letters (ASCII, fullwidth, and the accented ones of
+		 Latin-1 and Latin Extended) AND digits** (2026-09-12): "café" -> "cafés", "Müller" ->
+		 "Möller", "2024" -> "2025" and "iPhone15" -> "iPhone16" are each one word to a reader, and
+		 each used to be quoted as the one or two characters Myers found.
 
 		@warning FOR CHARACTERS, NOT FOR PARAGRAPHS -- the same restriction MergeNearbyChanges
 		 carries, and for a plainer reason: the tokens of a paragraph diff are numbers standing for
@@ -187,15 +191,30 @@ namespace KCMTextDiff
 		**NEIGHBOURS ARE NOT CROSSED.** A change may only rotate into the unchanged run on either
 		side of it, never into or past the change next door -- two changes that swapped places
 		would no longer be in reading order, and the row that quotes them walks them in order.
+		★**But they may be REACHED, and two that then touch are made one** (2026-09-12). A run may
+		widen right up to its neighbour, and once no unchanged character is left between the two
+		they are one change by this file's own definition (Change: "never touch"). One Latin word
+		edited in two places -- "axb" -> "aaxc" -- comes back as the one word, not as "ax" -> "aax"
+		followed by "b" -> "c". ⚠**Only a gap of ZERO is folded**; MergeNearbyChanges' size rule is
+		NOT re-run here, because the widening has just changed the sizes it would compare.
 
 		@param a IN the baseline sequence the changes were computed from.
 		@param b IN the target sequence.
 		@param changes IN OUT the runs to align, in order. The rotation moves only the two start
 			positions, and moves them together; the Latin widening moves the starts AND grows both
-			counts by the same amount.
+			counts by the same amount; the final fold can reduce the NUMBER of entries, never the
+			characters they cover.
+		@param widenWords IN whether to do the Latin widening at all. ★**THE TWO PLUG-INS THAT SHARE
+			THIS ENGINE WANT OPPOSITE ANSWERS** (2026-09-12). KCM DRAWS the change, and a word drawn
+			in two pieces shows a seam, so it passes kTrue. KIDMCP PRINTS the change for a reader who
+			wants to know which characters moved -- "AA[-BB-]{+ZZ+}CC" says more to that reader than
+			"[-AABBCC-]{+AAZZCC+}", and its positions go straight into a script's itemByRange -- so it
+			passes kFalse. The rotation and the fold of touching changes happen either way: those
+			are correctness, this one is presentation. The engine stays identical in both copies;
+			only the call differs (work/kidmcp-textdiff-sync.py compares the engine, not the callers).
 	*/
 	void AlignChangeBoundaries(const std::vector<int32>& a, const std::vector<int32>& b,
-							   std::vector<Change>& changes);
+							   std::vector<Change>& changes, bool16 widenWords);
 
 	/** Turns strings into tokens, giving equal strings equal numbers.
 		@param strings IN the strings to number.

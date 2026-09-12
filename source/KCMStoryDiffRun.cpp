@@ -1108,7 +1108,10 @@ bool16 CompareOneStory(const UIDRef& targetStory, const UIDRef& sourceStory,
 			//   costs Myers nothing and costs the reader the whole sentence.
 			//   @warning AFTER the merge, not before: merging changes the shape of a run, and
 			//     aligning a run that is about to be swallowed would be work thrown away.
-			KCMTextDiff::AlignChangeBoundaries(sourceCodePoints, targetCodePoints, fineChanges);
+			//   ★kTrue = widen a change to the whole Latin word (letters or digits) it sits in: the
+			//     marks are DRAWN, and a word drawn in two pieces shows a seam. KIDMCP, which shares
+			//     this engine and prints instead, passes kFalse (KCMTextDiff.h says why).
+			KCMTextDiff::AlignChangeBoundaries(sourceCodePoints, targetCodePoints, fineChanges, kTrue);
 		}
 
 		if (!narrowed)

@@ -131,12 +131,18 @@ namespace
 		std::vector<int32>& vf = rows.forward;
 		std::vector<int32>& vr = rows.reverse;
 
-		// Clear what this call can touch. Both searches read one diagonal either side of the one
-		// they are writing, and the overlap test reads the OTHER row at delta-k, so the span has
-		// to cover |delta| as well as maxD.
-		// @warning **n+m is NOT enough.** With one side much longer than the other, |delta-k|
-		//   reaches |delta| + maxD ~ (n+m) + (n+m)/2 (e.g. n=10, m=2: delta=8, maxD=7, so 15 > 12).
-		//   The rows are sized to the same 2*(n+m)+3 at the top level, so this stays inside them.
+		// Clear what this call can touch. The rows are shared by every section of the recursion,
+		// so they hold whatever the previous section left behind.
+		// ★**What is actually read before it is written is ONE entry per row**: at d = 0 the single
+		//   diagonal k = 0 takes its start from vf[offset + 1] (and vr likewise), and that entry
+		//   must be 0. Every other read -- the two neighbours a step reads, and the OTHER row at
+		//   delta-k in the overlap test -- is guarded by a range test that only admits diagonals
+		//   the previous step of THIS call has already written (⚠this line said until 2026-09-12
+		//   that the overlap test could read as far as |delta| + maxD; it cannot, the range test
+		//   sits in front of it). The whole span is cleared anyway, at O(n+m) a call, so that a
+		//   future widening of one of those reads can never pick up a stale value from a sibling
+		//   section and turn into a plausible-looking wrong diff. The rows are sized 2*(n+m)+3
+		//   either side at the top level, so this stays inside them.
 		const int32 span = 2 * (n + m) + 3;
 		for (int32 i = -span; i <= span; ++i)
 		{
@@ -379,8 +385,16 @@ namespace
 		if ((cp >= '0' && cp <= '9') || (cp >= 0xFF10 && cp <= 0xFF19))
 			return kScriptDigit;
 
+		// ★**Accented letters are Latin too** (2026-09-12). Until then only ASCII and the fullwidth
+		//   forms counted, so "café" -> "cafés" widened to nothing (é was "other", so the word
+		//   stopped there) and "Müller" -> "Möller" quoted ü -> ö with the rest of the name drawn
+		//   in the context colour -- exactly the seam the Latin widening exists to remove, in
+		//   exactly the words a Japanese document borrows from Europe. ⚠× (U+00D7) and ÷ (U+00F7)
+		//   sit inside the Latin-1 letter block and are taken out: they are operators, not letters.
 		if ((cp >= 'A' && cp <= 'Z') || (cp >= 'a' && cp <= 'z') ||
-			(cp >= 0xFF21 && cp <= 0xFF3A) || (cp >= 0xFF41 && cp <= 0xFF5A))
+			(cp >= 0xFF21 && cp <= 0xFF3A) || (cp >= 0xFF41 && cp <= 0xFF5A) ||
+			(cp >= 0x00C0 && cp <= 0x024F && cp != 0x00D7 && cp != 0x00F7) ||	// Latin-1 letters, Extended-A, Extended-B
+			(cp >= 0x1E00 && cp <= 0x1EFF))										// Latin Extended Additional
 			return kScriptLatin;
 
 		if (cp >= 0x3041 && cp <= 0x309F)
@@ -429,6 +443,32 @@ namespace
 		if (before == kScriptPunct || after == kScriptPunct)
 			return 4;
 		return 2;					// some other change of script
+	}
+
+	/** Is this a character that a WORD is made of - one that is drawn together with its
+		neighbours and must not be cut from them? Latin letters and digits, and nothing else.
+
+		★**Digits joined the letters on 2026-09-12.** "2024" -> "2025" used to quote "4" -> "5" and
+		draw "202" in the context colour, which is the seam the widening exists to remove; and
+		"10月" -> "11月" read as 0 -> 1. A number is drawn as one piece exactly as a word is.
+		★Letters and digits are ONE class here although BoundaryScore keeps them apart: "H2O",
+		"iPhone15", "A4" are single words to a reader, and a change inside one is the whole word.
+		⚠★★**Kana and kanji are deliberately NOT here** - see the block above the widening loops.
+	*/
+	bool16 IsWordChar(int32 cp)
+	{
+		const ScriptClass s = ScriptOf(cp);
+		return (s == kScriptLatin || s == kScriptDigit) ? kTrue : kFalse;
+	}
+
+	/** Does a word run straight through the gap just before `pos` - a word character on BOTH
+		sides of it? The end of the text is never inside a word.
+	*/
+	bool16 WordContinues(const std::vector<int32>& seq, int32 pos)
+	{
+		if (pos <= 0 || pos >= static_cast<int32>(seq.size()))
+			return kFalse;
+		return (IsWordChar(seq[pos - 1]) && IsWordChar(seq[pos])) ? kTrue : kFalse;
 	}
 
 	/** A change has FOUR boundaries - where it starts and ends on each side - and all four are
@@ -682,7 +722,7 @@ void KCMTextDiff::ToCodePoints(const std::string& utf8, std::vector<int32>* code
    See the header for why a change can sit in more than one place and why the choice matters.
 */
 void KCMTextDiff::AlignChangeBoundaries(const std::vector<int32>& a, const std::vector<int32>& b,
-										  std::vector<Change>& changes)
+										  std::vector<Change>& changes, bool16 widenWords)
 {
 	for (size_t i = 0; i < changes.size(); ++i)
 	{
@@ -735,7 +775,7 @@ void KCMTextDiff::AlignChangeBoundaries(const std::vector<int32>& a, const std::
 		//   every step of the walk hands one common character from one side of the run to the other.
 		changes[i] = best;
 
-		// ***** AND THEN, ONLY INSIDE A LATIN WORD, THE RUN IS WIDENED. *****
+		// ***** AND THEN, ONLY INSIDE A LATIN WORD (LETTERS OR DIGITS), THE RUN IS WIDENED. *****
 		//
 		// ★★★**A CHANGE MUST NOT SPLIT A WORD** (2026-09-10). "OLDWORD" -> "NEWWORD" leaves Myers
 		//   with the common tail "WORD", so the change is OLD -> NEW and the word is drawn in two
@@ -755,21 +795,33 @@ void KCMTextDiff::AlignChangeBoundaries(const std::vector<int32>& a, const std::
 		//   space or punctuation would swallow whole sentences. That would destroy exactly what
 		//   this file was measured on: "a two-character Japanese edit selected exactly those two
 		//   characters" (the header). Latin runs are the only place where a boundary inside one
-		//   script class is also a boundary inside a WORD.
+		//   script class is also a boundary inside a WORD. **Digits count as Latin for this
+		//   purpose** (IsWordChar, 2026-09-12): a number is drawn as one piece exactly as a word is,
+		//   and "2024" -> "2025" quoting "4" -> "5" showed the same seam.
 		//
 		// ⚠**LOSSLESS.** Only characters that are IDENTICAL on both sides are absorbed, at the same
 		//   end of both ranges, so the change still rebuilds `b` from `a` exactly. The offline test
 		//   checks that invariant on every case (work/textdiff-test/align-test.cpp).
+		//
+		// ★**"Latin" here means IsWordChar: Latin letters AND digits** (2026-09-12; the block above
+		//   predates that and says "Latin" throughout - read it as "word characters"). The test is
+		//   WordContinues on EITHER side: the character being absorbed has to be a word character
+		//   (it is the same on both sides), and the word has to go on past it on at least one side.
+		//   Either side, because at the end of an insertion only the side that has the run can show
+		//   the word continuing ("OLDWORD" -> "OLDWORDS": the a side has nothing after D).
+		//
+		// ★**Only when the caller asked** (widenWords): KCM draws and wants whole words; KIDMCP
+		//   prints and wants the exact characters (the header says why). ⚠The fold below runs
+		//   regardless -- it is the contract, not a presentation choice.
+		if (widenWords)
 		{
 			Change& c = changes[i];
 
-			// Left: absorb the character before the run while it is the same on both sides and the
-			// boundary is inside a Latin run (BoundaryScore 0 = the two characters straddling this
-			// position are of one class; the Latin test pins which class).
+			// Left: absorb the character before the run while it is the same on both sides and a
+			// word runs through the boundary on at least one side.
 			while (c.aStart > loA && c.bStart > loB
 				   && a[c.aStart - 1] == b[c.bStart - 1]
-				   && ScriptOf(a[c.aStart - 1]) == kScriptLatin
-				   && (BoundaryScore(a, c.aStart) == 0 || BoundaryScore(b, c.bStart) == 0))
+				   && (WordContinues(a, c.aStart) || WordContinues(b, c.bStart)))
 			{
 				--c.aStart; ++c.aCount;
 				--c.bStart; ++c.bCount;
@@ -778,14 +830,51 @@ void KCMTextDiff::AlignChangeBoundaries(const std::vector<int32>& a, const std::
 			// Right: the mirror image.
 			while (c.aStart + c.aCount < hiA && c.bStart + c.bCount < hiB
 				   && a[c.aStart + c.aCount] == b[c.bStart + c.bCount]
-				   && ScriptOf(a[c.aStart + c.aCount]) == kScriptLatin
-				   && (BoundaryScore(a, c.aStart + c.aCount) == 0
-					   || BoundaryScore(b, c.bStart + c.bCount) == 0))
+				   && (WordContinues(a, c.aStart + c.aCount) || WordContinues(b, c.bStart + c.bCount)))
 			{
 				++c.aCount;
 				++c.bCount;
 			}
 		}
+	}
+
+	// ***** AND FINALLY, CHANGES THAT NOW TOUCH BECOME ONE. *****
+	//
+	// ⚠★★★**THE CONTRACT IN THE HEADER SAYS RUNS NEVER TOUCH, AND UNTIL 2026-09-12 THIS FUNCTION
+	//   BROKE IT.** A run may rotate or widen right up to the wall of its neighbour (the bounds
+	//   above allow `end == hiA`), and when it gets there the unchanged run between the two is
+	//   gone. MEASURED in work/textdiff-test before this was written: of 20,000 random pairs,
+	//   5,798 came out with two changes touching. The plain case is one Latin word edited in two
+	//   places -- "axb" -> "aaxc" arrived as "ax" -> "aax" followed by "b" -> "c" -- and the panel
+	//   then quoted one word as two rows, drawn in two calls, which is the very seam the widening
+	//   was added to remove.
+	// ★**Why merge here and not by running MergeNearbyChanges again**: that rule swallows SHORT
+	//   gaps by comparing sizes, and the sizes have just been changed by the widening, so re-running
+	//   it would merge pairs it had declined to merge a moment ago. A gap of ZERO is not a judgement
+	//   call -- Append() already merges touching edits inside the search for exactly this reason --
+	//   so only that case is folded here, and the sizes never enter into it.
+	// ⚠**Both sides must touch.** In a well-formed list they touch together (the gap is the same
+	//   unchanged run on both sides); testing both is what keeps a malformed list from being
+	//   "repaired" into something that no longer rebuilds `b`.
+	{
+		std::vector<Change> joined;
+		joined.reserve(changes.size());
+		for (size_t i = 0; i < changes.size(); ++i)
+		{
+			const Change& c = changes[i];
+			if (!joined.empty())
+			{
+				Change& last = joined.back();
+				if (last.aStart + last.aCount == c.aStart && last.bStart + last.bCount == c.bStart)
+				{
+					last.aCount += c.aCount;
+					last.bCount += c.bCount;
+					continue;
+				}
+			}
+			joined.push_back(c);
+		}
+		changes.swap(joined);
 	}
 }
 
