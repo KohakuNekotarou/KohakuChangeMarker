@@ -41,57 +41,11 @@
 #include "Utils.h"
 #include "XMLParserID.h"		// kXMLParserService / kXMLParserServiceBoss / IID_ISAXCONTENTHANDLER
 
-#include <stdio.h>				// TEMPORARY: the diagnostic log below
-
 // Project includes:
 #include "KCMID.h"
 #include "KCMResourceParse.h"
 #include "KCMResourceBytes.h"
-
-//========================================================================================
-// A STEP LOG, OFF BY DEFAULT.
-//
-// ⚠kKCMParseLogging IS kFalse AND MUST STAY kFalse in anything shipped: it opens, appends to
-//   and closes a file on EVERY element, which is far too slow to leave running, and it writes
-//   to a path that exists only on the author's machine. Turn it on for one build while chasing
-//   a fault in this file, then turn it back off.
-//
-// ★It earns its place because a crash takes the return value with it. On 2026-09-09 the first
-//   version of this file died inside ParseResources with an access violation, and the crash
-//   report could say only which function - the log said which STEP, which is what turned
-//   "something in here is wrong" into "the service registry came back nil". A file survives the
-//   process; a report string does not. The throwaway INX probe had already written that lesson
-//   down after losing three stages to a hang, and this is it being used rather than re-learned.
-//========================================================================================
-
-static const bool16 kKCMParseLogging = kFalse;
-
-static const char* const kKCMParseLogPath =
-	"C:/Users/user/Desktop/plugin_sdk_21.0.0.192/work/kcm-resource-parse-log.txt";
-
-static void KCMParseLog(const char* text)
-{
-	if (!kKCMParseLogging)
-		return;
-	FILE* f = nil;
-	if (::fopen_s(&f, kKCMParseLogPath, "a") == 0 && f != nil)
-	{
-		::fprintf(f, "%s\n", text);
-		::fclose(f);
-	}
-}
-
-static void KCMParseLogNum(const char* text, int32 n)
-{
-	if (!kKCMParseLogging)
-		return;
-	FILE* f = nil;
-	if (::fopen_s(&f, kKCMParseLogPath, "a") == 0 && f != nil)
-	{
-		::fprintf(f, "%s %d\n", text, static_cast<int>(n));
-		::fclose(f);
-	}
-}
+#include "KCMResourceLog.h"		// the mode's step log, off by default - and why it is kept
 
 //========================================================================================
 // What a UID looks like
@@ -354,7 +308,7 @@ namespace
 {
 
 /** Writes "<Name attr="value" ...>" onto `body`, leaving StyleUniqueId out. */
-void AppendOpenTag(PMString& body, const PMString& name, ISAXAttributes* attrs, PMString& uniqueIdOut)
+void AppendOpenTag(PMString& body, const PMString& name, ISAXAttributes* attrs)
 {
 	body.Append("<");
 	body.Append(name);
@@ -382,13 +336,9 @@ void AppendOpenTag(PMString& body, const PMString& name, ISAXAttributes* attrs, 
 			if (name == "Document" && attrName == "Name")
 				continue;
 
+			// Reissued on every edit, so never a difference - see KCMResourceItem::fBody.
 			if (attrName == "StyleUniqueId")
-			{
-				// Held apart rather than dropped: reissued on every edit, so it is a sieve, not
-				// a difference. See KCMResourceItem::fUniqueId.
-				uniqueIdOut = PMString(value);
 				continue;
-			}
 
 			body.Append(" ");
 			body.Append(attrName);
@@ -473,6 +423,21 @@ struct KCMOpenItem
 	bool16			fLabelled;
 
 	KCMOpenItem() : fDepth(0), fFromSpread(kFalse), fInLabel(kFalse), fLabelled(kFalse) {}
+
+	/** The one way an item is begun, from either rule: its kind, the depth it opened at, and every
+	    string marked untranslatable before anything is written into it. The two places that open
+	    items (StartElement and StartInSpread) each wrote this out by hand until 2026-09-12. */
+	void Begin(const PMString& kind, int32 depth, bool16 fromSpread)
+	{
+		fDepth = depth;
+		fFromSpread = fromSpread;
+		fItem.fKind = kind;
+		fItem.fOrdinal = 0;			// filled in once the whole list is known
+		fItem.fKind.SetTranslatable(kFalse);
+		fItem.fSelf.SetTranslatable(kFalse);
+		fItem.fName.SetTranslatable(kFalse);
+		fItem.fBody.SetTranslatable(kFalse);
+	}
 };
 
 /** Reads every element and keeps the ones the blacklist lets through, flattening each one back
@@ -503,7 +468,7 @@ class KCMResourceSaxHandler : public CSAXContentHandler
 {
 public:
 	KCMResourceSaxHandler(IPMUnknown* boss)
-		: CSAXContentHandler(boss), fSAXServices(nil), fDepth(0), fSeen(0), fSkipDepth(0),
+		: CSAXContentHandler(boss), fSAXServices(nil), fDepth(0), fSkipDepth(0),
 		  fSpreadDepth(0), fList(nil), fSinkChecked(kFalse) {}
 	virtual ~KCMResourceSaxHandler();
 
@@ -551,7 +516,6 @@ private:
 	ISAXServices*		fSAXServices;
 
 	int32				fDepth;			// 1 = <Document>, 2 = the kinds this mode is stated in
-	int32				fSeen;			// elements arrived so far (for the step log)
 	int32				fSkipDepth;		// >0 while inside an excluded subtree; counts its depth
 	int32				fSpreadDepth;	// >0 while inside a spread; counts its depth (filtered, not skipped)
 
@@ -576,11 +540,10 @@ KCMResourceList* KCMResourceSaxHandler::List()
 	if (!fSinkChecked)
 	{
 		fSinkChecked = kTrue;
-		KCMParseLog("    List(): asking our own boss for the sink");
 		InterfacePtr<IKCMResourceSink> sink(this, IID_IKCMRESOURCESINK);
 		fList = (sink != nil) ? sink->GetList() : nil;
-		KCMParseLogNum("    List(): sink found =", (sink != nil) ? 1 : 0);
-		KCMParseLogNum("    List(): list found =", (fList != nil) ? 1 : 0);
+		KCMResourceLogNum("    List(): sink found =", (sink != nil) ? 1 : 0);
+		KCMResourceLogNum("    List(): list found =", (fList != nil) ? 1 : 0);
 	}
 	return fList;
 }
@@ -608,12 +571,12 @@ void KCMResourceSaxHandler::Register(ISAXServices* saxServices, IPMUnknown* /*im
 		fSAXServices = saxServices;
 		fSAXServices->AddRef();
 	}
-	KCMParseLog("  >> Register (claiming no element names: we are the default handler)");
+	KCMResourceLog("  >> Register (claiming no element names: we are the default handler)");
 }
 
 void KCMResourceSaxHandler::StartDocument(ISAXServices* /*saxServices*/)
 {
-	KCMParseLog("  >> StartDocument");
+	KCMResourceLog("  >> StartDocument");
 	fDepth = 0;
 	fSkipDepth = 0;
 	fSpreadDepth = 0;
@@ -622,12 +585,11 @@ void KCMResourceSaxHandler::StartDocument(ISAXServices* /*saxServices*/)
 	fPendingText.SetTranslatable(kFalse);
 	fSinkChecked = kFalse;
 	fList = nil;
-	fSeen = 0;
 }
 
 void KCMResourceSaxHandler::EndDocument()
 {
-	KCMParseLogNum("  >> EndDocument, elements seen =", fSeen);
+	KCMResourceLog("  >> EndDocument");
 	// Text after the root's closing tag belongs to nothing; whatever is pending is dropped with
 	// the items below rather than filed.
 	fPendingText.Clear();
@@ -697,15 +659,7 @@ void KCMResourceSaxHandler::StartInSpread(const PMString& name, ISAXAttributes* 
 		return;
 
 	KCMOpenItem opened;
-	opened.fDepth = fDepth;
-	opened.fFromSpread = kTrue;
-	opened.fItem.fKind = name;
-	opened.fItem.fOrdinal = 0;
-	opened.fItem.fKind.SetTranslatable(kFalse);
-	opened.fItem.fSelf.SetTranslatable(kFalse);
-	opened.fItem.fName.SetTranslatable(kFalse);
-	opened.fItem.fBody.SetTranslatable(kFalse);
-	opened.fItem.fUniqueId.SetTranslatable(kFalse);
+	opened.Begin(name, fDepth, kTrue /*fromSpread*/);
 
 	// The Self is a bare UID here, which is what sends this item down KCMResourceKeyOf's route
 	// [C] - kind plus the name a person gave it. That is the whole reason the item is only kept
@@ -755,7 +709,7 @@ void KCMResourceSaxHandler::StartInSpread(const PMString& name, ISAXAttributes* 
 	catch (...)
 	{
 		this->NoteMalformed();
-		KCMParseLog("    !! the open-item stack could not grow (in a spread)");
+		KCMResourceLog("    !! the open-item stack could not grow (in a spread)");
 	}
 }
 
@@ -779,16 +733,8 @@ void KCMResourceSaxHandler::StartElement(const WideString& /*uri*/, const WideSt
 	this->FlushPendingText();
 
 	++fDepth;
-	++fSeen;
-	if (fSeen <= 8 || fDepth == 2)
-	{
-		KCMParseLogNum("    StartElement seen =", fSeen);
-		KCMParseLogNum("      depth =", fDepth);
-	}
 
 	const PMString name(localname);
-	if (fSeen <= 8 || fDepth == 2)
-		KCMParseLog("      name built ok");
 
 	// Inside <Story> or the XMP packet: another mode's territory, and its elements carry a Self of
 	// their own, so the whole subtree has to be stepped over rather than filtered element by
@@ -828,23 +774,12 @@ void KCMResourceSaxHandler::StartElement(const WideString& /*uri*/, const WideSt
 		// Part of whatever item is open around it -- its attributes and text belong in that
 		// item's body, which is what a change to it will be seen as.
 		if (!fOpen.empty())
-		{
-			PMString ignored;
-			ignored.SetTranslatable(kFalse);
-			AppendOpenTag(fOpen.back().fItem.fBody, name, attrs, ignored);
-		}
+			AppendOpenTag(fOpen.back().fItem.fBody, name, attrs);
 		return;
 	}
 
 	KCMOpenItem opened;
-	opened.fDepth = fDepth;
-	opened.fItem.fKind = name;
-	opened.fItem.fOrdinal = 0;			// filled in once the whole list is known
-	opened.fItem.fKind.SetTranslatable(kFalse);
-	opened.fItem.fSelf.SetTranslatable(kFalse);
-	opened.fItem.fName.SetTranslatable(kFalse);
-	opened.fItem.fBody.SetTranslatable(kFalse);
-	opened.fItem.fUniqueId.SetTranslatable(kFalse);
+	opened.Begin(name, fDepth, kFalse /*fromSpread*/);
 
 	// The RAW MATERIALS a key can be made from, and nothing more. Both are taken for every item:
 	// which of them a given kind actually needs is KCMResourceKeyOf's question
@@ -861,7 +796,7 @@ void KCMResourceSaxHandler::StartElement(const WideString& /*uri*/, const WideSt
 	// ★The opening tag goes into the NEW item's body and NOT into its parent's. That single
 	//   choice is what stops one change being reported twice, as itself and as the thing around
 	//   it.
-	AppendOpenTag(opened.fItem.fBody, name, attrs, opened.fItem.fUniqueId);
+	AppendOpenTag(opened.fItem.fBody, name, attrs);
 
 	try
 	{
@@ -872,7 +807,7 @@ void KCMResourceSaxHandler::StartElement(const WideString& /*uri*/, const WideSt
 		// The stack could not grow. Everything from here on would be filed against the wrong
 		// parent, so the reading is declared unusable rather than quietly reshaped.
 		this->NoteMalformed();
-		KCMParseLog("    !! the open-item stack could not grow");
+		KCMResourceLog("    !! the open-item stack could not grow");
 	}
 }
 
@@ -926,7 +861,7 @@ void KCMResourceSaxHandler::EndElement(const WideString& /*uri*/, const WideStri
 						catch (...)
 						{
 							this->NoteMalformed();
-							KCMParseLog("    !! push_back threw for a page item");
+							KCMResourceLog("    !! push_back threw for a page item");
 						}
 					}
 				}
@@ -966,7 +901,7 @@ void KCMResourceSaxHandler::EndElement(const WideString& /*uri*/, const WideStri
 				catch (...)
 				{
 					this->NoteMalformed();
-					KCMParseLog("    !! push_back threw - the list could not grow");
+					KCMResourceLog("    !! push_back threw - the list could not grow");
 				}
 			}
 			fOpen.pop_back();
@@ -1027,7 +962,7 @@ bool16 KCMParseResources(const KCMResourceBytes& xml, KCMResourceList& out, PMSt
 		return kFalse;
 	}
 
-	KCMParseLogNum("=== KCMParseResources: enter, bytes =", static_cast<int32>(xml.Size()));
+	KCMResourceLogNum("=== KCMParseResources: enter, bytes =", static_cast<int32>(xml.Size()));
 
 	// ★★★THE SERVICE REGISTRY COMES FROM THE SESSION, NOT FROM Utils<>.
 	//   Measured 2026-09-09: Utils<IK2ServiceRegistry>() is nil here, and the first version of
@@ -1041,57 +976,57 @@ bool16 KCMParseResources(const KCMResourceBytes& xml, KCMResourceList& out, PMSt
 	InterfacePtr<IK2ServiceRegistry> registry(GetExecutionContextSession(), UseDefaultIID());
 	if (registry == nil)
 	{
-		KCMParseLog("  FAILED: no service registry");
+		KCMResourceLog("  FAILED: no service registry");
 		whyNot = "the service registry is not available";
 		return kFalse;
 	}
-	KCMParseLog("  step 1: registry ok");
+	KCMResourceLog("  step 1: registry ok");
 
 	InterfacePtr<IK2ServiceProvider> xmlProvider(
 		registry->QueryServiceProviderByClassID(kXMLParserService, kXMLParserServiceBoss));
 	if (xmlProvider == nil)
 	{
-		KCMParseLog("  FAILED: no XML parser service");
+		KCMResourceLog("  FAILED: no XML parser service");
 		whyNot = "the XML parser service is not available";
 		return kFalse;
 	}
-	KCMParseLog("  step 2: xmlProvider ok");
+	KCMResourceLog("  step 2: xmlProvider ok");
 
 	InterfacePtr<ISAXServices> saxServices(xmlProvider, UseDefaultIID());
 	if (saxServices == nil)
 	{
-		KCMParseLog("  FAILED: no ISAXServices");
+		KCMResourceLog("  FAILED: no ISAXServices");
 		whyNot = "the parser service does not offer ISAXServices";
 		return kFalse;
 	}
-	KCMParseLog("  step 3: saxServices ok");
+	KCMResourceLog("  step 3: saxServices ok");
 
 	InterfacePtr<ISAXContentHandler> handler(
 		::CreateObject2<ISAXContentHandler>(kKCMResourceSaxHandlerBoss));
 	if (handler == nil)
 	{
-		KCMParseLog("  FAILED: could not create the handler boss");
+		KCMResourceLog("  FAILED: could not create the handler boss");
 		whyNot = "could not create the content handler";
 		return kFalse;
 	}
-	KCMParseLog("  step 4: handler ok");
+	KCMResourceLog("  step 4: handler ok");
 
 	InterfacePtr<IKCMResourceSink> sink(handler, IID_IKCMRESOURCESINK);
 	if (sink == nil)
 	{
 		// The boss is missing its second interface: the .fr and this file disagree.
-		KCMParseLog("  FAILED: the handler boss has no sink interface");
+		KCMResourceLog("  FAILED: the handler boss has no sink interface");
 		whyNot = "the content handler has no sink";
 		return kFalse;
 	}
-	KCMParseLog("  step 5: sink ok");
+	KCMResourceLog("  step 5: sink ok");
 	sink->SetList(&out);
 
 	// ★The sample calls Register itself rather than leaving it to ParseStream
 	//   (XCatHndFacade.cpp:222). Ours claims no element names -- that is what keeps it the
 	//   default handler -- but the call is what hands it the ISAXServices it is running under.
 	handler->Register(saxServices);
-	KCMParseLog("  step 5b: Register called");
+	KCMResourceLog("  step 5b: Register called");
 
 	InterfacePtr<ISAXParserOptions> parserOptions(saxServices, UseDefaultIID());
 	if (parserOptions != nil)
@@ -1102,11 +1037,11 @@ bool16 KCMParseResources(const KCMResourceBytes& xml, KCMResourceList& out, PMSt
 		//   failure mode the live-testing notes call "it stops on an alert". A malformed
 		//   document is reported through the return value instead.
 		parserOptions->SetShowWarningAlert(kFalse);
-		KCMParseLog("  step 5c: parser options set");
+		KCMResourceLog("  step 5c: parser options set");
 	}
 	else
 	{
-		KCMParseLog("  step 5c: no ISAXParserOptions (carrying on with the defaults)");
+		KCMResourceLog("  step 5c: no ISAXParserOptions (carrying on with the defaults)");
 	}
 
 	// The parser reads a stream, and the bytes are already in memory: read them back rather
@@ -1119,16 +1054,16 @@ bool16 KCMParseResources(const KCMResourceBytes& xml, KCMResourceList& out, PMSt
 	InterfacePtr<IPMStream> readStream(StreamUtil::CreateMemoryStreamRead(&mutableBytes, kFalse, kFalse));
 	if (readStream == nil)
 	{
-		KCMParseLog("  FAILED: no read stream");
+		KCMResourceLog("  FAILED: no read stream");
 		sink->SetList(nil);
 		whyNot = "could not open the bytes for reading";
 		return kFalse;
 	}
-	KCMParseLog("  step 6: read stream ok - about to ParseStream");
+	KCMResourceLog("  step 6: read stream ok - about to ParseStream");
 
 	// ⚠TRUE MEANS IT FAILED. Only the sample's comment says so; the header does not.
 	const bool16 parseFailed = saxServices->ParseStream(readStream, handler);
-	KCMParseLogNum("  step 7: ParseStream returned, failed =", parseFailed ? 1 : 0);
+	KCMResourceLogNum("  step 7: ParseStream returned, failed =", parseFailed ? 1 : 0);
 
 	const int32 malformed = sink->GetMalformedCount();
 	sink->SetList(nil);			// the list belongs to the caller; do not keep a pointer to it

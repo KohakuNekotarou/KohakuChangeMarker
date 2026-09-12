@@ -83,19 +83,13 @@ struct KCMResourceItem
 	    24Q to 48Q left the document's size unchanged to the byte, because the two numbers happen
 	    to render the same length. A size is not a fingerprint.
 
-	    ⚠StyleUniqueId is KEPT OUT of this (see fUniqueId). */
+	    ⚠StyleUniqueId is KEPT OUT of this: InDesign REISSUES IT ON EVERY EDIT (a pure rename
+	    included), so left in, two styles with identical settings would compare as different and
+	    every edited style would report a change even after it was edited back. It was held in a
+	    field of its own from 2026-09-09 to 2026-09-12 to measure whether it could serve as a cheap
+	    sieve; the answer - one way only - is at the head of KCMResourceAttrDiff.h, and the field
+	    went with the measurement. */
 	PMString	fBody;
-
-	/** The StyleUniqueId attribute, held apart from fBody. Empty when the element has none.
-
-	    ★It is kept out of fBody because InDesign REISSUES IT ON EVERY EDIT: left in, two styles
-	    with identical settings would compare as different, and every edited style would report a
-	    change even after it was edited back. Held apart, it becomes useful instead of harmful --
-	    a cheap sieve saying "this definition was edited at some point", the same role
-	    ITextModel::GetChangeCount plays for a story.
-	    ⚠"Same id therefore same contents" is NOT verified. Use it to shortlist, never to
-	    conclude that two definitions agree. */
-	PMString	fUniqueId;
 };
 
 typedef K2Vector<KCMResourceItem> KCMResourceList;

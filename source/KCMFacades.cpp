@@ -559,11 +559,12 @@ CREATE_PMINTERFACE(KCMStoryEditsFacade, kKCMStoryEditsFacadeImpl)
 //========================================================================================
 // KCMResourcesFacade -- IKCMResourcesFacade
 //
-// Which DEFINITIONS differ between the two documents. Six forwarders to KCMResourceStore, which
-// holds the answer - see IKCMResourcesFacade.h for why it is held rather than recomputed.
+// Which DEFINITIONS differ between the two documents. Forwarders to KCMResourceStore, one per
+// method of the interface, which holds the answer - see IKCMResourcesFacade.h for why it is held
+// rather than recomputed.
 //
 // ★NOTHING IS DECIDED HERE. Every method is one line, because the questions this interface asks
-// ("is a result held", "what is row n") are the store's questions and the store answers them for
+// ("how many rows", "what is row n") are the store's questions and the store answers them for
 // the model side too. A facade that computed anything would be a second place to fix.
 //========================================================================================
 
@@ -571,14 +572,6 @@ class KCMResourcesFacade : public CPMUnknown<IKCMResourcesFacade>
 {
 public:
 	KCMResourcesFacade(IPMUnknown* boss) : CPMUnknown<IKCMResourcesFacade>(boss) {}
-
-	// ★The ARMED pair is what the panel means by "compare": the facade is how the UI asks, and the
-	//   UI can only be looking at the comparison that is running.
-	virtual bool16	Compare(PMString& whyNot)
-					{ return KCMResourceStore::Rebuild(KCMArmedTargetDB(), KCMArmedSourceDB(), whyNot); }
-
-	virtual bool16	HasResult()
-					{ return KCMResourceStore::HasResult(); }
 
 	virtual int32	GetChangeCount()
 					{ return KCMResourceStore::GetChangeCount(); }

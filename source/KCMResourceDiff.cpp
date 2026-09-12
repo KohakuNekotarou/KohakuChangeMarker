@@ -30,7 +30,6 @@
 
 // General includes:
 #include <sstream>				// number formatting for the reading port, as KCMStoryList does
-#include <stdio.h>				// TEMPORARY: the step log below
 #include <string>
 #include <windows.h>			// ::GetTickCount - how long the whole comparison took
 
@@ -39,37 +38,8 @@
 #include "KCMOrigin.h"			// KCMOriginBytes - Task Start: the older side when the origin is the Source
 #include "KCMOriginCompare.h"	// KCMOriginArmed
 #include "KCMResourceDiff.h"
+#include "KCMResourceLog.h"		// the mode's step log, off by default - and why it is kept
 #include "KCMResourceStore.h"	// the reading port goes through the store, as the panel will
-
-//========================================================================================
-// A STEP LOG FOR ONE INVESTIGATION, OFF BY DEFAULT.
-//
-// ⚠kKCMDiffLogging MUST BE kFalse in anything shipped: it opens, appends to and closes a file on
-//   every step and writes to a path that exists only on the author's machine.
-//
-// ★It exists because A CRASH TAKES THE RETURN VALUE WITH IT. On 2026-09-09 this function killed
-//   InDesign outright when the Source was KIDMCP's task-start CLONE (IDataBase::Clone) rather than
-//   an open document, and the only thing the answer could say was that the socket closed. A file
-//   survives the process; a string being returned does not. KCMResourceParse.cpp keeps the same
-//   kind of log for the same reason and says so.
-//========================================================================================
-
-static const bool16 kKCMDiffLogging = kFalse;
-
-static const char* const kKCMDiffLogPath =
-	"C:/Users/user/Desktop/plugin_sdk_21.0.0.192/work/kcm-resource-diff-log.txt";
-
-static void KCMDiffLog(const char* text)
-{
-	if (!kKCMDiffLogging)
-		return;
-	FILE* f = nil;
-	if (::fopen_s(&f, kKCMDiffLogPath, "a") == 0 && f != nil)
-	{
-		::fprintf(f, "%s\n", text);
-		::fclose(f);
-	}
-}
 
 /** How much of a body to show on each side of a difference in the reading port.
 
@@ -152,8 +122,8 @@ bool16 KCMDiffResources(const KCMResourceList& source, const KCMResourceList& ta
 	//   and a failure comes back through the return value, the way KCMParseResources reports one.
 	try
 	{
-		// The keys, worked out once each. Inside the search below, every source key would be
-		// recomputed once per target item.
+		// The keys, worked out once each, on both sides: a source key would otherwise be recomputed
+		// once per target item inside the search, and a target key once more in the report.
 		K2Vector<PMString> sourceKeys;
 		K2Vector<bool16> sourceTaken;
 		for (int32 s = 0; s < sourceCount; ++s)
@@ -161,29 +131,27 @@ bool16 KCMDiffResources(const KCMResourceList& source, const KCMResourceList& ta
 			sourceKeys.push_back(KCMResourceKeyOf(source[s]));
 			sourceTaken.push_back(kFalse);
 		}
-
-		// ***** WHO PAIRS WITH WHOM IS DECIDED FIRST, FOR EVERYTHING, AND ONLY THEN REPORTED. *****
-		// Two passes settle it; the report below then walks the target in order, so what the reader
-		// sees is still the newer document's own order however the pair was found.
+		K2Vector<PMString> targetKeys;
 		K2Vector<int32> targetMatch;
 		for (int32 t = 0; t < targetCount; ++t)
 		{
+			targetKeys.push_back(KCMResourceKeyOf(target[t]));
 			targetMatch.push_back(-1);
 		}
 
+		// ***** WHO PAIRS WITH WHOM IS DECIDED FIRST, FOR EVERYTHING, AND ONLY THEN REPORTED. *****
+		// The report below then walks the target in order, so what the reader sees is still the
+		// newer document's own order however the pair was found.
+		//
 		// ----- PAIR BY KEY. ★★THE NAME IS THE ONLY ANSWER (2026-09-09, the user, after
 		//   three measurements: "when you rename it, Add and Remove - that cannot be helped"). A pass
 		//   on StyleUniqueId stood here for an afternoon; why it went out is written where the
 		//   evidence is, at the head of KCMResourceAttrDiff.h.
 		for (int32 t = 0; t < targetCount; ++t)
 		{
-			if (targetMatch[t] >= 0)
-				continue;
-
-			const PMString targetKey = KCMResourceKeyOf(target[t]);
 			for (int32 s = 0; s < sourceCount; ++s)
 			{
-				if (!sourceTaken[s] && sourceKeys[s] == targetKey)
+				if (!sourceTaken[s] && sourceKeys[s] == targetKeys[t])
 				{
 					targetMatch[t] = s;
 					sourceTaken[s] = kTrue;
@@ -195,7 +163,7 @@ bool16 KCMDiffResources(const KCMResourceList& source, const KCMResourceList& ta
 		// ----- THE REPORT, in the target's own order.
 		for (int32 t = 0; t < targetCount; ++t)
 		{
-			const PMString targetKey = KCMResourceKeyOf(target[t]);
+			const PMString& targetKey = targetKeys[t];
 			const int32 match = targetMatch[t];
 
 			if (match < 0)
@@ -212,27 +180,7 @@ bool16 KCMDiffResources(const KCMResourceList& source, const KCMResourceList& ta
 
 			++stats.fPaired;
 
-			const bool16 sameBody = (source[match].fBody == target[t].fBody);
-
-			// ----- the sieve, measured rather than assumed (design §8-2).
-			// ⚠Only pairs that actually CARRY a StyleUniqueId are counted. Most definitions have
-			//   none, and counting those would fill "same id" with elements that have no id at
-			//   all -- a number that agrees with everything and therefore measures nothing.
-			const bool16 hasId = (!source[match].fUniqueId.IsEmpty() || !target[t].fUniqueId.IsEmpty());
-			if (hasId)
-			{
-				const bool16 sameId = (source[match].fUniqueId == target[t].fUniqueId);
-				if (sameBody && sameId)
-					++stats.fAgreeSameId;
-				else if (sameBody && !sameId)
-					++stats.fAgreeOtherId;
-				else if (!sameBody && sameId)
-					++stats.fDifferSameId;
-				else
-					++stats.fDifferOtherId;
-			}
-
-			if (sameBody)
+			if (source[match].fBody == target[t].fBody)
 				continue;
 
 			KCMResourceChange changed;
@@ -359,7 +307,7 @@ void KCMDescribeResourceDiff(PMString& out)
 	//   snapshots itself, which meant the same comparison existed in two places - and two places
 	//   drift. Now there is one Rebuild, and what this reads back is literally what the panel
 	//   reads back.
-	KCMDiffLog("=== KCMDescribeResourceDiff: enter");
+	KCMResourceLog("=== KCMDescribeResourceDiff: enter");
 
 	PMString whyNot;
 	const uint32 began = ::GetTickCount();
@@ -372,12 +320,12 @@ void KCMDescribeResourceDiff(PMString& out)
 
 	if (!built)
 	{
-		KCMDiffLog("  rebuild refused");
+		KCMResourceLog("  rebuild refused");
 		out = "FAILED: ";
 		out.Append(whyNot);
 		return;
 	}
-	KCMDiffLog("  rebuild came back");
+	KCMResourceLog("  rebuild came back");
 
 	// ----- the summary, then a header line, then one line per difference.
 	// A three-way check of whether Utils<IKCMResourcesFacade>() answers stood here while the facade
@@ -400,22 +348,10 @@ void KCMDescribeResourceDiff(PMString& out)
 				  + ", added " + Num(stats.fAdded)
 				  + ", removed " + Num(stats.fRemoved)
 				  + ", changed " + Num(stats.fChanged)
-				  // ★THE FOUR SIEVE CELLS - a MEASUREMENT, not a result. They answer "could
-				  //   StyleUniqueId have paired these two documents?" (design §8-2, and the essay is
-				  //   on KCMResourceDiffStats).
-				  // ⚠**WHAT STOOD HERE DESCRIBED A `renamed` COUNT THIS LINE NO LONGER PRINTS.** It
-				  //   read "a rename IS a change... it is named separately... the second pass earned
-				  //   its place" - all of it about the StyleUniqueId pairing pass, which was REMOVED
-				  //   on 2026-09-09 (a rename reissues the id, so it paired nothing). The sentence
-				  //   outlived the thing it explained and slid onto the line below it, where it
-				  //   described the sieve as a rename counter. Measured the same day: the port prints
-				  //   `...changed 1; sieve agree-same-id 3...` with no `renamed` anywhere.
-				  //   ⇒ Removing an output means going to the words that named it, in the same pass
-				  //     (memory verify-claims-in-comments).
-				  + "; sieve agree-same-id " + Num(stats.fAgreeSameId)
-				  + ", agree-other-id " + Num(stats.fAgreeOtherId)
-				  + ", differ-same-id " + Num(stats.fDifferSameId)
-				  + ", differ-other-id " + Num(stats.fDifferOtherId)
+				  // (A `renamed` count and then four StyleUniqueId "sieve" cells were printed after
+				  //  `changed` in turn, each for one measurement, and each was removed once the
+				  //  measurement was made - 2026-09-09 and 2026-09-12. The answers live in
+				  //  KCMResourceAttrDiff.h's head and the design's §8-2, not in this line.)
 				  + "; " + Num(static_cast<int32>(took)) + " ms"
 				  + "\r\n";
 

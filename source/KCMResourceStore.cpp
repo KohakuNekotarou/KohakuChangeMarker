@@ -276,11 +276,6 @@ void KCMResourceStore::Clear()
 	gAttrCache.clear();
 }
 
-bool16 KCMResourceStore::HasResult()
-{
-	return gHasResult;
-}
-
 int32 KCMResourceStore::GetChangeCount()
 {
 	return static_cast<int32>(gChanges.size());

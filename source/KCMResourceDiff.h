@@ -58,7 +58,13 @@ struct KCMResourceChange
 
 typedef K2Vector<KCMResourceChange> KCMResourceChangeList;
 
-/** What the comparison saw on the way, for measurement rather than for display. */
+/** What the comparison saw on the way, for the status line and the reading port.
+
+    ★Four more cells stood here from 2026-09-09 to 2026-09-12 - the (bodies agree or not) x
+    (StyleUniqueId agrees or not) grid that answered design §8-2, "can StyleUniqueId be used as a
+    sieve?". The answer (one way only: a differing id proves nothing, measured `agree-other-id 1`)
+    is written at the head of KCMResourceAttrDiff.h, and a measurement whose answer is written down
+    does not need to be taken again on every comparison. */
 struct KCMResourceDiffStats
 {
 	int32	fSourceItems;
@@ -68,30 +74,8 @@ struct KCMResourceDiffStats
 	int32	fRemoved;
 	int32	fChanged;
 
-	// ----- ★THE FOUR NUMBERS that answer "can StyleUniqueId be used as a sieve?" (design §8-2)
-	//
-	// ⚠**FOUR, AND WHAT COUNTS THEM IS THE LIST BELOW, NOT THIS LINE.** This heading said "three"
-	//   while the sentence two lines down said "the four combinations" and the last one said "THREE
-	//   OF FOUR IS NOT A MEASUREMENT" - three statements about one list, in one block, and only the
-	//   heading was wrong. A number written in prose beside a list is the thing that rots first, so
-	//   count the members (memory kidmcp-api-audit: an enumeration cannot be kept true by increments;
-	//   write down what to recount it from).
-	//
-	// One of them alone cannot: a sieve that is never tested against the thing it claims to
-	// predict will always look right. These count the four combinations of (bodies agree or not)
-	// x (ids agree or not), which is what makes the answer falsifiable.
-	int32	fAgreeSameId;	// same body, same id     -- the sieve told the truth
-	int32	fAgreeOtherId;	// same body, other id    -- the sieve cried wolf (wasteful, harmless)
-	int32	fDifferSameId;	// ★DIFFERENT body, SAME id -- the sieve LIED. Anything but 0 here means
-							//   it can never be used to skip a comparison, only to shortlist one.
-	int32	fDifferOtherId;	// different body, other id -- the sieve working as intended.
-							// ⚠It is counted even though it duplicates part of fChanged, because
-							//   THREE OF FOUR IS NOT A MEASUREMENT: without this cell, "the sieve
-							//   never lied" cannot be told apart from "the sieve never spoke".
-
 	KCMResourceDiffStats()
-		: fSourceItems(0), fTargetItems(0), fPaired(0), fAdded(0), fRemoved(0), fChanged(0),
-		  fAgreeSameId(0), fAgreeOtherId(0), fDifferSameId(0), fDifferOtherId(0) {}
+		: fSourceItems(0), fTargetItems(0), fPaired(0), fAdded(0), fRemoved(0), fChanged(0) {}
 };
 
 /** What pairs `item` with its counterpart in the other document.
@@ -124,7 +108,7 @@ PMString KCMResourceKeyOf(const KCMResourceItem& item);
     @param target  the newer document's definitions.
     @param out     receives one entry per difference, Target order first, then what only the
                    Source had. Emptied first.
-    @param stats   receives the counts, including the sieve's four combinations.
+    @param stats   receives the counts.
 
     @return kFalse when a container could not grow. ⚠`out` is then EMPTY rather than partial: a
             half-built list would read as "these definitions were removed" when nothing was, and

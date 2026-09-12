@@ -68,11 +68,8 @@ namespace KCMResourceStore
 	/** Throws the held result away. Idempotent. Called when the comparison stops. */
 	void	Clear();
 
-	/** kTrue when a result is being held. ⚠Says nothing about whether it is still TRUE of the
-	    documents - see the header's note on staleness. */
-	bool16	HasResult();
-
-	/** How many definitions differ. 0 with HasResult() kTrue is a real answer: nothing differs. */
+	/** How many definitions differ. 0 is a real answer when a result is held - nothing differs -
+	    and GetSummary is what tells "held, nothing differs" from "nothing held" in words. */
 	int32	GetChangeCount();
 
 	/** One row. @return kFalse when n is out of range, leaving the outputs alone. */
@@ -103,12 +100,12 @@ namespace KCMResourceStore
 	/** One line for the status line: how many were compared and what came of it. */
 	void	GetSummary(PMString& out);
 
-	/** The counts the last comparison produced, including the StyleUniqueId sieve's four cells.
+	/** The counts the last comparison produced (items on each side, paired, added, removed,
+	    changed).
 
-	    ⚠MODEL-SIDE ONLY, and deliberately NOT on the facade: the panel has no use for it, and a
-	    method on a boundary that nobody calls is a promise nobody keeps. It exists so that
-	    app.kcmResourceDiff can report the sieve, which is how "is StyleUniqueId usable" was
-	    answered at all (three of its four cells cannot tell "never lied" from "never spoke"). */
+	    ⚠MODEL-SIDE ONLY, and deliberately NOT on the facade: the panel reads GetSummary's words,
+	    and a method on a boundary that nobody calls is a promise nobody keeps. It exists for
+	    app.kcmResourceDiff, whose first line is these numbers. */
 	void	GetStats(KCMResourceDiffStats& out);
 }
 

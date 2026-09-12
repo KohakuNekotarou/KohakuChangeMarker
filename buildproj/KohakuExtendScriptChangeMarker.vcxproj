@@ -277,6 +277,7 @@
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMResourceBytes.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMResourceDiff.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMResourceKinds.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMResourceLog.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMResourceStore.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\IKCMResourcesFacade.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMResourceParse.h" />

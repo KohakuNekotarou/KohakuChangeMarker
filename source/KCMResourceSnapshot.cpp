@@ -33,37 +33,11 @@
 #include "KCMCore.h"			// KCMActiveDoc
 #include "KCMResourceSnapshot.h"
 #include "KCMResourceBytes.h"
+#include "KCMResourceLog.h"		// the mode's step log, off by default - and why it is kept
 #include "KCMResourceParse.h"	// what the snapshot is for: the definitions inside it
 
 /** Forward-declared in the SDK and nowhere defined, which is why it is only ever a pointer. */
 class IINXExportPolicy;
-
-//========================================================================================
-// A STEP LOG, OFF BY DEFAULT.
-//
-// ⚠kKCMSnapshotLogging MUST STAY kFalse in anything shipped: it opens, appends to and closes a
-//   file at every step, and writes to a path that exists only on the author's machine.
-//
-// ★It earned its place on 2026-09-09 and is kept for the same reason KCMResourceParse.cpp keeps
-//   one: A CRASH TAKES THE RETURN VALUE WITH IT. Handed a cloned database, ExportINX killed
-//   InDesign outright, and the only thing the caller could report was that its socket closed.
-//   Turning this on turned "something in here kills it" into "the last line is `about to call
-//   ExportINX`, and Reset() came back fine" - which is what ruled Reset() out and produced the
-//   guard below. A file survives the process; a string being returned does not.
-//========================================================================================
-static const bool16 kKCMSnapshotLogging = kFalse;
-
-static void KCMSnapshotLog(const char* text)
-{
-	if (!kKCMSnapshotLogging)
-		return;
-	FILE* f = nil;
-	if (::fopen_s(&f, "C:/Users/user/Desktop/plugin_sdk_21.0.0.192/work/kcm-resource-diff-log.txt", "a") == 0 && f != nil)
-	{
-		::fprintf(f, "%s\n", text);
-		::fclose(f);
-	}
-}
 
 bool16 KCMTakeResourceSnapshot(IDocument* doc, KCMResourceBytes& out, PMString& whyNot)
 {
@@ -150,7 +124,7 @@ bool16 KCMTakeResourceSnapshot(IDocument* doc, KCMResourceBytes& out, PMString& 
 		whyNot = "could not create the memory stream";
 		return kFalse;
 	}
-	KCMSnapshotLog("    snap: manager, IDOMElement, policy and stream are all there");
+	KCMResourceLog("    snap: manager, IDOMElement, policy and stream are all there");
 
 	IDOMElement::ElementList roots;
 	roots.push_back(docElement);
@@ -169,7 +143,7 @@ bool16 KCMTakeResourceSnapshot(IDocument* doc, KCMResourceBytes& out, PMString& 
 		GlobalErrorStatePreserver errorState;
 		ErrorUtils::PMSetGlobalErrorCode(kSuccess);
 
-		KCMSnapshotLog("    snap: about to call BeginExportSession");
+		KCMResourceLog("    snap: about to call BeginExportSession");
 		inx->BeginExportSession();
 
 		// ★★Without this, an UNSAVED edit does not come out at all. It is the difference between a
@@ -177,13 +151,13 @@ bool16 KCMTakeResourceSnapshot(IDocument* doc, KCMResourceBytes& out, PMString& 
 		//   It sits INSIDE the export session because IDOMElement.h:58-60 says the interface is for
 		//   use under INX context and is unpredictable outside it; until 2026-09-12 it was called
 		//   before BeginExportSession, which worked, but the contract puts it here.
-		KCMSnapshotLog("    snap: about to call docElement->Reset()");
+		KCMResourceLog("    snap: about to call docElement->Reset()");
 		docElement->Reset();
-		KCMSnapshotLog("    snap: Reset() came back");
+		KCMResourceLog("    snap: Reset() came back");
 
-		KCMSnapshotLog("    snap: about to call ExportINX");
+		KCMResourceLog("    snap: about to call ExportINX");
 		err = inx->ExportINX(roots, policy, stream, kSuppressUI);
-		KCMSnapshotLog("    snap: ExportINX came back");
+		KCMResourceLog("    snap: ExportINX came back");
 
 		// ★AND AGAIN WHEN DONE, which is what IDOMElement.h:54-56 actually asks for: "it is best to
 		//   call the Reset() method on the topmost node WHEN YOU ARE FINISHED working with the DOM".
@@ -195,7 +169,7 @@ bool16 KCMTakeResourceSnapshot(IDocument* doc, KCMResourceBytes& out, PMString& 
 		inx->EndExportSession();
 	}
 	stream->Flush();
-	KCMSnapshotLog("    snap: EndExportSession and Flush came back");
+	KCMResourceLog("    snap: EndExportSession and Flush came back");
 
 	if (err != kSuccess)
 	{
@@ -281,33 +255,19 @@ void KCMDescribeResourceSnapshot(PMString& out)
 			kinds.push_back(items[i].fKind);
 	}
 
-	// ★HOW MUCH OF THE EXPORT IS ACTUALLY KEPT. The XML is the whole document; what this mode
-	//   holds is the bodies, with the spreads, the stories and the XMP packet already dropped.
-	//   The number decides a real question -- whether a kept snapshot needs compressing at all
-	//   (IUCFPackageUtils can deflate into an IPMStream, so it could be) or whether the parsed
-	//   form is small enough to keep as it is, which is both simpler and faster to compare.
-	//   ⚠Characters, not bytes: near enough for a decision, and it costs no conversion.
-	int32 bodyChars = 0;
-	for (int32 i = 0; i < static_cast<int32>(items.size()); ++i)
-		bodyChars += static_cast<int32>(items[i].fBody.CharCount());
-
 	out.Append("; ");
 	out.AppendNumber(static_cast<int32>(kinds.size()));
 	out.Append(" kinds, ");
 	out.AppendNumber(static_cast<int32>(items.size()));
 	out.Append(" items, ");
 	out.AppendNumber(static_cast<int32>(parseTook));
-	out.Append(" ms to parse; kept ");
-	out.AppendNumber(bodyChars);
-	out.Append(" chars of body");
+	out.Append(" ms to parse");
 
-	// ⚠COMPRESSION WAS MEASURED HERE AND THEN TAKEN OUT (2026-09-09). Deflating a snapshot works
-	//   -- 184KB to 30KB, 376KB to 157KB, byte-identical on the way back, under 16ms -- but KCM
-	//   has no use for it: it takes two snapshots, compares them and drops them in the same call,
-	//   so compressing would only add work. **The use is KIDMCP's**, which keeps the state a task
-	//   began from for the whole session. The working code, the measurements and the traps are in
-	//   docs/ai-notes/kcm-gzip-in-memory-2026-09-09.md, to be copied when that is built.
-	//   ★The compressor is ISVGUtils::CreateZipStream - the name says SVG and means gzip.
+	// A "kept N chars of body" figure and an in-memory deflate stood here until 2026-09-12; both
+	// answered one question - does a kept snapshot need compressing - and the answer was no for
+	// KCM (it compares two snapshots and drops them in the same call). The measurements and the
+	// working compressor (ISVGUtils::CreateZipStream: the name says SVG and means gzip) are in
+	// docs/ai-notes/kcm-gzip-in-memory-2026-09-09.md for KIDMCP, which does keep a snapshot.
 }
 
 //----------------------------------------------------------------------------------------
@@ -318,42 +278,34 @@ bool16 KCMReadResourceList(IDataBase* db, const char* which, KCMResourceList& ou
 {
 	// ★EVERY FAILURE NAMES THE SIDE, and it is done here rather than by the caller so that a caller
 	//   with two sides cannot get the two sentences out of step. See the header.
+	// Every reason begins with the side, so the prefix is written once and each failure appends
+	// its step. On success the reason is cleared again: a caller reads it only on kFalse.
+	whyNot = which;
+	whyNot.Append(": ");
+	whyNot.SetTranslatable(kFalse);
+
 	if (db == nil)
 	{
-		whyNot = which;
-		whyNot.Append(": no database");
-		whyNot.SetTranslatable(kFalse);
+		whyNot.Append("no database");
 		return kFalse;
 	}
 
 	InterfacePtr<IDocument> doc(db, db->GetRootUID(), UseDefaultIID());
 	if (doc == nil)
 	{
-		whyNot = which;
-		whyNot.Append(": the database has no document");
-		whyNot.SetTranslatable(kFalse);
+		whyNot.Append("the database has no document");
 		return kFalse;
 	}
 
 	KCMResourceBytes xml;
 	PMString why;
-	if (!KCMTakeResourceSnapshot(doc.get(), xml, why))
+	if (!KCMTakeResourceSnapshot(doc.get(), xml, why) || !KCMParseResources(xml, out, why))
 	{
-		whyNot = which;
-		whyNot.Append(": ");
 		whyNot.Append(why);
-		whyNot.SetTranslatable(kFalse);
-		return kFalse;
-	}
-	if (!KCMParseResources(xml, out, why))
-	{
-		whyNot = which;
-		whyNot.Append(": ");
-		whyNot.Append(why);
-		whyNot.SetTranslatable(kFalse);
 		return kFalse;
 	}
 
+	whyNot.Clear();
 	return kTrue;
 }
 
