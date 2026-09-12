@@ -1009,7 +1009,8 @@ void KCMRecomputeListLeftColumnWidth()
 	{
 		PMString kind, key;
 		KCMResourceChangeKind changeKind = kKCMResourceChanged;
-		if (resources->GetNthChange(i, kind, key, changeKind))
+		if (!resources->GetNthChange(i, kind, key, changeKind))
+			continue;
 		{
 			const PMReal w = StringUtils::PMMeasureString(kind, font, kFalse).X();
 			if (w > widest)
@@ -1022,6 +1023,13 @@ void KCMRecomputeListLeftColumnWidth()
 		//   kKCMAttrNameIndent further in and its cell narrows by exactly that much, so what it
 		//   needs from the column is the indent PLUS the name. Measuring only the parents would
 		//   clip precisely the rows the children were added to show.
+		// ⚠★★**ONLY THE ROWS THAT WILL HAVE CHILDREN** (2026-09-12, the user: "the Kind column is
+		//   wider than its text"). An Added or Removed definition answers GetNthAttrCount with
+		//   EVERY attribute it has, and the adapter never grows those rows - so measuring them fitted
+		//   the column to names nobody could see. The question "does this row have children" is
+		//   asked of the one place the adapter asks (KCMResourceRowHasChildren, KCMStoryTree.h).
+		if (!KCMResourceRowHasChildren(changeKind))
+			continue;
 		const int32 attrs = resources->GetNthAttrCount(i);
 		for (int32 j = 0; j < attrs; ++j)
 		{

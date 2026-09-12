@@ -15,6 +15,9 @@
 #ifndef __KCMStoryTree_h__
 #define __KCMStoryTree_h__
 
+#include "BaseType.h"
+#include "KCMResourceKinds.h"	// KCMResourceChangeKind - KCMResourceRowHasChildren (a types-only model header, the one IKCMResourcesFacade.h includes)
+
 /** Redraw the Story Edits list from whatever KCMStoryList holds right now.
 
 	Safe to call at any time: with the panel closed, the section never built, or the list empty, it
@@ -43,6 +46,19 @@ void KCMStoryTreeRebuild();
 	  heights and hit-testing of the change rows are left to the Story mode alone.
 */
 bool16 KCMListShowsResources();
+
+/** Whether a Resources row of this change kind has attribute rows under it. ★THE ONE PLACE
+	(2026-09-12): the tree adapter asks it to grow the children, and the Kind column's fit asks it
+	to decide whose attribute names to measure. ⚠They disagreed until then - the adapter grew
+	children for Changed rows only (the user's call, KCMStoryTreeAdapter.cpp), while the fit
+	measured every row's attributes, and an Added definition lists EVERY attribute it has (each
+	present on one side) - so a single "+ ParagraphStyle" row fitted the column to a hidden
+	"ExtendedKeyboardShortcut" plus its indent, and the user saw a Kind column twice as wide as
+	its one word (work/キャプチャ.PNG). Only Changed rows have children. */
+inline bool16 KCMResourceRowHasChildren(KCMResourceChangeKind what)
+{
+	return (what == kKCMResourceChanged) ? kTrue : kFalse;
+}
 
 class IControlView;
 

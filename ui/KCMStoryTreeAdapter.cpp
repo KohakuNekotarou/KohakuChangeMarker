@@ -112,7 +112,7 @@ public:
 			if (!resources || !resources->GetNthChange(nodeID->GetRow(), kind, key, what))
 				return 0;					// out of range, or the "No differences" placeholder
 
-			if (what != kKCMResourceChanged)
+			if (!KCMResourceRowHasChildren(what))	// the one place (KCMStoryTree.h) - the fit asks it too
 				return 0;
 
 			return resources->GetNthAttrCount(nodeID->GetRow());
