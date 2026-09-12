@@ -54,12 +54,26 @@ struct KCMMarkRange
 		  instead of washing the whole of it (KCMStoryMarker's GetMarkBoxes). Nothing else has to know. */
 	bool16		fCaret;
 
-	KCMMarkRange() : fFrom(0), fTo(0), fCaret(kFalse) {}
-	KCMMarkRange(TextIndex from, TextIndex to) : fFrom(from), fTo(to), fCaret(kFalse) {}
-	KCMMarkRange(TextIndex from, TextIndex to, bool16 caret) : fFrom(from), fTo(to), fCaret(caret) {}
+	/** **A CARET AT THE END OF ITS CHARACTER RATHER THAN THE START** (2026-09-12). A deletion at
+		the very END of a story has no character in front of it to stand before: what follows the
+		gap is the story's final carriage return, which draws nothing, and a range standing on it
+		reaches no wax run at all - so the bar was never drawn, and the reader saw a deletion with
+		no place (found on the live application: 「あe」→「あ」 showed no bar). Such a caret is
+		carried as [last, last+1) over the LAST VISIBLE character, with this flag telling the
+		drawing side to stand the bar after it. Meaningless unless fCaret. */
+	bool16		fCaretAfter;
+
+	KCMMarkRange() : fFrom(0), fTo(0), fCaret(kFalse), fCaretAfter(kFalse) {}
+	KCMMarkRange(TextIndex from, TextIndex to) : fFrom(from), fTo(to), fCaret(kFalse), fCaretAfter(kFalse) {}
+	KCMMarkRange(TextIndex from, TextIndex to, bool16 caret, bool16 caretAfter = kFalse)
+		: fFrom(from), fTo(to), fCaret(caret), fCaretAfter(caretAfter) {}
 
 	/** The caret standing in front of character `at`. */
 	static KCMMarkRange Caret(TextIndex at) { return KCMMarkRange(at, at + 1, kTrue); }
+
+	/** The caret standing AFTER character `at - 1` - for a gap at `at` that nothing visible
+		follows (the end of the story). @warning `at` must be > 0; the caller checks. */
+	static KCMMarkRange CaretAfter(TextIndex at) { return KCMMarkRange(at - 1, at, kTrue, kTrue); }
 };
 
 typedef std::vector<KCMMarkRange> KCMMarkRangeList;
@@ -201,7 +215,7 @@ inline void KCMIntersectMarkRanges(const KCMMarkRangeList& merged,
 		//   flag, which is right: the bar belongs at the START of its character, and that is the end
 		//   the run containing it sees.
 		if (from < to)
-			out.push_back(KCMMarkRange(from - runStart, to - runStart, it->fCaret));
+			out.push_back(KCMMarkRange(from - runStart, to - runStart, it->fCaret, it->fCaretAfter));
 	}
 }
 

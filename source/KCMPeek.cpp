@@ -956,6 +956,15 @@ void KCMHandleDocsClosed()
 	if (docList == nil)
 		return;
 
+	// ★★★**THE STORY MARKS FIRST, AND ON EVERY CLOSE** (2026-09-12, after the third crash of the
+	//   night). Their maps are keyed by IDataBase*, and until this line nothing here took a closed
+	//   document's entry out of them - the sweep below cleared the comparison's other state and
+	//   left the adornment walking a map with a dead pointer in it, which the next composition of
+	//   ANY document (a new one being created) turned into a purecall inside KCMIsSameDoc.
+	//   Unconditional, like the two sweeps that follow: a document with standing marks can close
+	//   without the comparison being armed. Pointers compared, never dereferenced.
+	KCMStoryMarker::ForgetClosedDocs(docList);
+
 	// The chosen Target/Source ("Set as Target" / "Set as Source"): whichever names the document
 	// that has just closed is forgotten, and **the other one is left standing**.
 	//   This is the one thing here that is NOT part of "clean up if a compared document closed".

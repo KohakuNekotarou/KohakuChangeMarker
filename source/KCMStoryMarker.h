@@ -60,6 +60,8 @@
 
 #include "KCMStoryMarkDocs.h"		// KCMStoryMarkDocs, and the rule for putting two sets together
 
+class IDocumentList;
+
 class IDataBase;
 
 /** The mark. Two kinds of caller drive it, and they are exclusive PER DOCUMENT rather than
@@ -153,6 +155,27 @@ namespace KCMStoryMarker
 		down twice ([[one-question-one-place]]), and the two drifted the moment anything else cleared
 		the mark. There is nothing to test now: this takes down what it owns and nothing else. */
 	void ClearStanding();
+
+	/** Forget every mark of a document that is no longer open - standing and flash alike - and
+		repaint only the documents that still are.
+
+		⚠★★★**INDESIGN CRASHED WITHOUT THIS** (2026-09-12, the third crash of the night): the
+		marks' maps are keyed by IDataBase*, and nothing took a closed document's entry out of them
+		until the UI's deferred rebuild came round. In between, composing ANY other document - a
+		new one being created, say - reached the adornment, which walked the map and asked
+		KCMIsSameDoc about the dead pointer: a virtual call on a destroyed object, purecall,
+		straight from KCMStoryMarkerRangesFor. The sweep on kAfterCloseDoc (KCMHandleDocsClosed)
+		cleared every other piece of the comparison's state and never this one.
+
+		**POINTERS ARE COMPARED, NEVER DEREFERENCED**: a closed IDataBase* is dead memory
+		([[uidref-reuse-after-close]] - and its address can already belong to a NEW document, which
+		is the other reason the entry has to go: left in, the marks would come up on that document).
+		Liveness is IDocumentList::FindDocByDataBase plus the lent Source (KCMIsDbAlive).
+
+		@param docList the application's document list, on the MAIN thread only - on a background
+			thread every database is a clone and nothing would look alive (KCMHandleDocsClosed says
+			the same at its entry). Nil does nothing. */
+	void ForgetClosedDocs(IDocumentList* docList);
 
 	/** Take everything down for good (application shutdown). After this, nothing shows again.
 

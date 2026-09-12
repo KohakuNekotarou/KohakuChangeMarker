@@ -215,6 +215,22 @@ void KCMStoryCollectRanges(IDataBase* db, bool16 useSourceDocument, KCMStoryMark
 				//     the flag is all the drawing side needs (KCMStoryMarkRanges.h).
 				//   The jump's flash answers the same way (KCMStoryMarker::AddFlashRange), so the two agree
 				//     about what a deletion looks like.
+				// ★★**AT THE END OF THE STORY THE CARET STANDS AFTER THE LAST CHARACTER** (2026-09-12,
+				//   found on the live application: 「あe」→「あ」 drew no bar at all). The caret in front
+				//   of the final carriage return reaches no wax run - the return draws nothing and the
+				//   last run may not even carry it - so "in front of the next character" has no next
+				//   character to stand before. Standing after the last visible one is the same place
+				//   seen from the other side, and it is what a caret clicked there would do.
+				//   ⚠Asked of the document being marked, once per row and only when a caret needs it.
+				if (from > 0)
+				{
+					TextIndex storyEnd = 0;
+					if (KCMStoryWholeTextEnd(db, row.fStoryUID, storyEnd) && from >= storyEnd)
+					{
+						ranges.push_back(KCMMarkRange::CaretAfter(from));
+						continue;
+					}
+				}
 				ranges.push_back(KCMMarkRange::Caret(from));
 				continue;
 			}

@@ -16,6 +16,7 @@
 #include "VCPlugInHeaders.h"
 
 // Interface includes:
+#include "IDocumentList.h"			// ForgetClosedDocs - which documents are still open (2026-09-12)
 #include "IGlobalTextAdornment.h"
 #include "IGraphicsContext.h"		// GraphicsData
 #include "IGraphicsPort.h"
@@ -44,6 +45,7 @@
 #include "KCMDrawEventHandler.h"	// SelectedMarkColor (the panel's red/cyan) and KCMSetOutputColor
 									// (screen in RGB, paper in CMYK) -- both shared with the Pixel
 									// mode's frames.
+#include "KCMExternalSource.h"	// KCMIsDbAlive - a document in the list, or the lent Source (ForgetClosedDocs)
 #include "KCMID.h"				// moved here from the UI plug-in with the adornment
 #include "KCMStoryMarkBuild.h"	// KCMStoryMarkPrintAllowedFor - may THIS document go on paper
 #include "KCMStoryMarker.h"
@@ -544,7 +546,22 @@ bool16 KCMStoryMarkerAdornment::GetMarkBoxes(const IWaxRun* waxRun, const IWaxRe
 		//   (DynamicSpellCheckAdornment.cpp, in its own drawing loop).
 		int32 glyphIndex = -1;
 		int32 glyphLength = 0;
+		bool16 caretAfter = r->fCaretAfter;
 		waxGlyphs->MapCharsToGlyphs(charStart, charCount, &glyphIndex, &glyphLength);
+
+		// ★**A CARET WHOSE CHARACTER DRAWS NOTHING STANDS AFTER THE ONE BEFORE IT** (2026-09-12).
+		//   A deletion at the end of a PARAGRAPH puts the caret in front of that paragraph's return,
+		//   and a return maps to no glyph - so the box was skipped and the bar never drawn. The
+		//   character before it is in this same run (a return ends the run it is in), and the end of
+		//   that character is the very place the reader would click. The end of the STORY is the
+		//   same case decided one step earlier, by the builder (KCMMarkRange::CaretAfter), because
+		//   there the caret's own character may not reach any run at all.
+		if (r->fCaret && (glyphIndex < 0 || glyphLength <= 0 || glyphIndex >= glyphCount) && charStart > 0)
+		{
+			waxGlyphs->MapCharsToGlyphs(charStart - 1, 1, &glyphIndex, &glyphLength);
+			caretAfter = kTrue;
+		}
+
 		if (glyphIndex < 0 || glyphLength <= 0)
 			continue;						// a range that maps to nothing skips this box, not the run
 		if (glyphIndex >= glyphCount)
@@ -556,7 +573,7 @@ bool16 KCMStoryMarkerAdornment::GetMarkBoxes(const IWaxRun* waxRun, const IWaxRe
 		// @warning added up rather than taken from GetGlyphDrawPosition because a draw position is a
 		//   MATRIX -- it carries the glyph's own transform, and reading a translation out of it is
 		//   only the origin of that one glyph, not the end of the range.
-		const PMReal offset = cumulative[glyphIndex];
+		PMReal offset = cumulative[glyphIndex];
 		PMReal width = cumulative[glyphIndex + glyphLength] - offset;
 
 		if (r->fCaret)
@@ -569,6 +586,10 @@ bool16 KCMStoryMarkerAdornment::GetMarkBoxes(const IWaxRun* waxRun, const IWaxRe
 			//   The range still covers one character so that it sorts and merges like any other
 			//     (KCMStoryMarkRanges.h), but what is DRAWN is a bar standing where the caret would stand
 			//     if you clicked in front of that character -- the same place the jump centres.
+			// ★A caret flagged AFTER stands at the far edge of its character instead (the end of the
+			//   story, or a character whose successor draws nothing - see above).
+			if (caretAfter)
+				offset += width;
 			width = size * PMReal(kCaretWidthFraction);
 		}
 		else if (width <= 0.0)
@@ -770,8 +791,27 @@ void KCMStoryMarker::AddFlashRange(KCMStoryMarkDocs& docs, IDataBase* db, UID st
 	//   the newer document, so the range handed over for the older one is empty and comes out as the
 	//   caret standing where they went in -- which is exactly where the reader is looking. Nothing
 	//   here has to know which of the two cases it is.
-	docs[db][storyUID].push_back((to > from) ? KCMMarkRange(from, to)
-											 : KCMMarkRange::Caret(from));
+	if (to > from)
+	{
+		docs[db][storyUID].push_back(KCMMarkRange(from, to));
+		return;
+	}
+
+	// ★AT THE END OF THE STORY THE CARET STANDS AFTER THE LAST CHARACTER - the same rule, and the
+	//   same reason, as the standing marks (KCMStoryMarkBuild): a caret in front of the final
+	//   carriage return reaches no wax run and was never drawn (2026-09-12). The story's own end is
+	//   asked of the model here because this file has no row to ask it of; TotalLength counts that
+	//   final return, so the last visible character is one before it.
+	if (from > 0)
+	{
+		InterfacePtr<ITextModel> model(UIDRef(db, storyUID), UseDefaultIID());
+		if (model != nil && from >= model->TotalLength() - 1)
+		{
+			docs[db][storyUID].push_back(KCMMarkRange::CaretAfter(from));
+			return;
+		}
+	}
+	docs[db][storyUID].push_back(KCMMarkRange::Caret(from));
 }
 
 void KCMStoryMarker::ShowFlash(const KCMStoryMarkDocs& docs)
@@ -831,6 +871,51 @@ void KCMStoryMarker::ClearStanding()
 
 	gStandingDocs.clear();
 	KCMStoryMarkerInstall();
+}
+
+void KCMStoryMarker::ForgetClosedDocs(IDocumentList* docList)
+{
+	if (docList == nil || gShutdown)
+		return;
+
+	// ASKED BEFORE THE LOCK IS TAKEN, for the reason KCMStoryMarkerInstall gives.
+	const PMReal opacity = MarkOpacityNow();
+
+	std::set<IDataBase*> toRepaint;
+	{
+		KCMMarkStateLock lock(KCMMarkStateMutex());
+
+		// Drop the dead entries from both source sets. ⚠**Pointer comparison only** - the key of a
+		//   dead entry is freed memory, and FindDocByDataBase compares addresses without touching
+		//   what they point at.
+		bool16 dropped = kFalse;
+		for (KCMStoryMarkDocs::iterator it = gStandingDocs.begin(); it != gStandingDocs.end(); )
+		{
+			if (!KCMIsDbAlive(docList, it->first)) { gStandingDocs.erase(it++); dropped = kTrue; }
+			else ++it;
+		}
+		for (KCMStoryMarkDocs::iterator it = gFlashDocs.begin(); it != gFlashDocs.end(); )
+		{
+			if (!KCMIsDbAlive(docList, it->first)) { gFlashDocs.erase(it++); dropped = kTrue; }
+			else ++it;
+		}
+		if (!dropped)
+			return;
+
+		// The drawn map is rebuilt from what survives - the same composition Install performs -
+		//   and only the LIVE documents it names are repainted. ⚠Install itself would have repainted
+		//   every document in the old map, dead one included, which is the very dereference this
+		//   function exists to avoid.
+		KCMStoryMarkDocs composed;
+		KCMComposeMarkDocs(gStandingDocs, gFlashDocs, composed);
+		KCMStoryMarkerSetDocs(composed, opacity);
+
+		for (KCMStoryMarkDocs::const_iterator it = gMarkDocs.begin(); it != gMarkDocs.end(); ++it)
+			toRepaint.insert(it->first);
+	}
+
+	for (std::set<IDataBase*>::const_iterator db = toRepaint.begin(); db != toRepaint.end(); ++db)
+		KCMStoryMarkerRepaint(*db);		// outside the lock, as Install does
 }
 
 void KCMStoryMarker::Shutdown()
