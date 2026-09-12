@@ -2601,32 +2601,11 @@ resource KCMStoryRowWidget(kKCMStoryRubyRowRsrcID + index_enUS)
 			}
 		),
 
-		// Right, UPPER LINE: how the ruby is SET - "Mono" or "Group" (user's request, 2026-09-08:
-		// "when it changes from group to mono, the row does not say what changed"). A reading that
-		// stays the same while the setting changes produces two identical lines, and the row then
-		// shows nothing at all of what moved.
-		// ★IT TAKES THE HALF THE SIGN LEAVES EMPTY. The sign below occupies the lower half only, so
-		//   this column already had a blank upper half in every ruby row - the words go where the
-		//   reader is already looking, and no column had to be widened for them.
-		// ★"Mono" / "Group" rather than the IDML spelling (RubyType="PerCharacterRuby" /
-		//   "GroupRuby"), the user's call on 2026-09-08: the full names do not fit 40px, and this
-		//   panel is read by people who set Japanese type, for whom the two short words are the
-		//   ordinary ones.
-		// ⚠Ellipsized at the END rather than kDontEllipsize: both words fit today, and a font or a
-		//   theme that makes them not fit should cut the tail rather than overrun the sign's column.
-		KCMStoryRowCellWidget
-		(
-			kKCMStoryRubyKindWidgetID,		// WidgetId
-			kPMRsrcID_None,					// RsrcId
-			kBindRight,						// Frame binding: stay at the row's right edge
-			Frame(176, 1, 216, kKCMStoryRubyRowHeight / 2),	// Frame (upper line)
-			kTrue, kTrue,					// Visible, Enabled
-			kAlignRight,					// Alignment
-			kEllipsizeEnd, kFalse,			// Ellipsize style, Convert ampersands
-			"",								// Text Control Data
-			0,								// WidgetId for associated control for shortcut focus
-			kPaletteWindowSystemScriptFontId, kPaletteWindowSystemScriptFontId,
-		),
+		// (Right, UPPER LINE: a "Mono" / "Group" cell (kKCMStoryRubyKindWidgetID) stood here from
+		//  2026-09-08 to 2026-09-12 and is gone with the judgement it reported: a ruby re-set from
+		//  mono to group over the same reading is no longer a change (user's decision, 2026-09-12),
+		//  and a new ruby's setting alone was not worth a column. The upper half of the right-hand
+		//  column is blank again, as it was before 2026-09-08.)
 
 		// Right: the sign, ON THE LOWER LINE with the base text rather than centred in the row.
 		// ★A stock static text centres itself in its own frame, so the frame is the lower half.

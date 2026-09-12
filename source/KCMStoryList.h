@@ -54,13 +54,14 @@ struct KCMStoryChange
 
 	/** What sort of thing changed. kAttr means ruby, and so far nothing else.
 
-		**IT DECIDES HOW fText / fOtherText ARE TO BE READ.** A text change shows whichever side
-		changed, so a deletion puts the newer words in fOtherText; a ruby change always puts the
-		target in fText and the source in fOtherText, because the characters are in BOTH versions
-		and there is no side to choose.
-		@warning anything asking "which document is this text from" has to test this field before
-		  fKind. KCMStoryJump's message-area label did not, and labelled a removed ruby's source
-		  text "Target Text:". */
+		**fText IS THE TARGET SIDE AND fOtherText THE SOURCE SIDE, FOR EVERY KIND AND BOTH WHATS.**
+		⚠This sentence said until 2026-09-12 that a text change "shows whichever side changed, so a
+		  deletion puts the newer words in fOtherText". That stopped being true on 2026-09-01, when
+		  the row became the newer version without exception (KCMStoryDiffRun's Add says why), and
+		  the sentence outlived the rule by eleven days - long enough for the change-row copy item
+		  to be written from it and grey itself on every deleted paragraph. The fields are filled
+		  in one place (Add / AddAttributeChange: SetExcerptPieces from the target into fText and
+		  from the source into fOtherText) and that place, not this comment, is the authority. */
 	enum What { kText, kAttr };
 
 	Kind		fKind;
@@ -88,11 +89,11 @@ struct KCMStoryChange
 	/** The words the row shows, in THREE PIECES: what stands before the change, the changed
 		characters themselves, and what stands after.
 
-		**WHICH SIDE THESE COME FROM DEPENDS ON THE KIND:** the newer text for a replacement or an
-		insertion, and the OLDER text for a deletion. What was removed is precisely what the reader
-		needs to see, and the newer side has nothing there to show. (A script reading a report can
-		live with the newer side alone and blank deletions; a panel cannot -- it is a column of
-		empty rows.)
+		**ALWAYS THE NEWER (TARGET) TEXT, WHATEVER THE KIND** (2026-09-01, the user's decision - the
+		reasoning is at KCMStoryDiffRun's Add). A deletion therefore has an EMPTY middle piece: the
+		newer side has nothing there to show, and the removed words are in fOtherText, where the
+		message area shows them. ⚠Until 2026-09-12 this paragraph still described the rule of
+		2026-08-20 (the OLDER text for a deletion), which had been withdrawn.
 
 		**THREE PIECES SO THE ROW CAN DRAW THE CHANGE AT FULL STRENGTH AND FADE THE CONTEXT** --
 		the way a KBS hit row draws its match. Concatenated they are one plain string again.
@@ -111,19 +112,20 @@ struct KCMStoryChange
 	/** The OTHER side of the same edit, in the same three pieces -- what the panel's message area
 		shows while the row is selected, with the changed part coloured differently from the rest.
 
-		**"THE OTHER SIDE", NOT "THE OLD SIDE", and the distinction is the whole point.** The row
-		already shows the side that CHANGED, and which side that is depends on the kind:
-		    replacement -> the row shows the new words,  so this holds the OLD ones
-		    insertion   -> the row shows what was added, so this holds the old text with nothing
-		                   between the context (there was nothing there to show)
-		    deletion    -> the row shows what was REMOVED, so this holds the NEW text -- the words
-		                   that closed up over the gap
-		Naming it "old" would have made the deletion case a lie, and a deletion is exactly the case
-		where the reader most wants to see what is there now.
+		**THE SOURCE (OLDER) SIDE, FOR EVERY KIND** - since 2026-09-01 the row is always the newer
+		version, so "the other side" and "the old side" are the same side:
+		    replacement -> the row shows the new words,  this holds the OLD ones
+		    insertion   -> the row shows what was added, this holds the old text with nothing
+		                   between the context (there was nothing there)
+		    deletion    -> the row shows the new text with nothing between the context,
+		                   this holds what was REMOVED
+		The name "Other" is older than that rule (it was chosen when a deletion's row showed the
+		older side and this field then held the NEWER text) and has been kept so that nothing needs
+		renaming across the two plug-ins; read it as "source".
 
-		fOtherText is empty for an insertion (nothing stood there) and for a deletion (nothing
-		stands there now). The two context pieces are not: they are the words on either side, which
-		is what makes the empty middle readable as a place rather than as an absence. */
+		fOtherText is empty for an insertion (nothing stood there); fText is empty for a deletion
+		(nothing stands there now). The context pieces are never empty: they are the words on either
+		side, which is what makes an empty middle readable as a place rather than as an absence. */
 	PMString	fOtherTextPre;
 	PMString	fOtherText;
 	PMString	fOtherTextPost;
@@ -150,12 +152,12 @@ struct KCMStoryChange
 		for MONO (one reading per character). fRubyGroup belongs to the side the row shows and
 		fOtherRubyGroup to the other, the same pairing as fRuby / fOtherRuby.
 
-		★**IT IS CARRIED BECAUSE THE READING CANNOT SAY IT** (2026-09-08, user's request: "when it
-		changes from group to mono, the row does not say what changed"). Turning group ruby into
-		mono ruby leaves every reading identical, so the two lines of the row come out the same and
-		the reader is shown a change with nothing visibly changed in it. The comparison has always
-		FOUND it -- CompareParagraphAttr tests fGroup along with the value and the length -- and
-		this is what carries the answer out to the panel.
+		⚠**CARRIED, BUT NO LONGER JUDGED OR SHOWN** (2026-09-12, the user's decision: "a change of
+		ruby kind is not a change - take the judgement out, and the G / M display with it"). From
+		2026-09-08 to 2026-09-12 CompareParagraphAttr tested fGroup beside the value and the length
+		and the ruby row showed "Mono" / "Group"; both are gone. The fields stay so that the
+		facade's layout does not move, and because KCMAttrSpan still reads the setting from the
+		document - nothing judges by it or displays it now.
 		@warning **MEANINGLESS WHERE THERE IS NO RUBY ON THAT SIDE**, and the empty string beside it
 		  is what says so: a removed ruby has no fRuby, and its fRubyGroup is kFalse because it has
 		  to be something, not because the ruby that is gone was mono.

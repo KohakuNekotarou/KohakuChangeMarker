@@ -824,36 +824,11 @@ private:
 			textCell->Invalidate();
 		}
 
-		// ★HOW THE RUBY IS SET, on the upper line's right-hand column - the half of that column the
-		//   sign leaves empty (2026-09-08, user's request: "when it changes from group to mono, the
-		//   row does not say what changed"). Re-setting group ruby as mono leaves every reading
-		//   identical, so both lines of the row read the same and the change looks like nothing.
-		// ⚠**ONLY WHERE THE SETTING IS PART OF WHAT CHANGED.** Naming it in every ruby row would
-		//   make it scenery: a re-typed reading over ruby that stayed mono says nothing by adding
-		//   "Mono". So it appears when the two sides are set differently, and when the ruby is NEW -
-		//   there is no older setting to differ from, and "this arrived as group ruby" is worth the
-		//   same glance. ⚠A ruby that was REMOVED names nothing: there is no newer side to describe.
-		// ⚠IT IS FOUND RATHER THAN WRITTEN THROUGH SetNodeName. Only the ruby row carries this
-		//   widget, and SetNodeName asserts on a row that does not have the one it was handed.
-		// ⚠THE EMPTY STRING IS WRITTEN TOO, and has to be: rows are recycled, so a row that says
-		//   nothing must actively say nothing or it keeps the word the row before it left there.
-		IControlView* rubyKindCell = widgetList->FindWidget(kKCMStoryRubyKindWidgetID);
-		if (rubyKindCell != nil)
-		{
-			const bool16 isRuby = (have && change.fAttrKind == static_cast<int32>(kKCMStoryAttrRuby)) ? kTrue : kFalse;
-			const bool16 settingIsNews = (isRuby && !change.fRuby.IsEmpty() &&
-										  (change.fOtherRuby.IsEmpty() ||
-										   (change.fRubyGroup != 0) != (change.fOtherRubyGroup != 0))) ? kTrue : kFalse;
-
-			PMString rubyKind;
-			if (settingIsNews)
-				rubyKind = PMString(change.fRubyGroup ? "Group" : "Mono");
-			rubyKind.SetTranslatable(kFalse);	// ★the words the Japanese typesetter uses, not keys
-
-			InterfacePtr<ITextControlData> rubyKindData(rubyKindCell, UseDefaultIID());
-			if (rubyKindData != nil)
-				rubyKindData->SetString(rubyKind);
-		}
+		// (A "Mono" / "Group" cell on the upper line's right-hand column was filled here from
+		//  2026-09-08 to 2026-09-12. It went with the judgement behind it - a ruby re-set from mono
+		//  to group over the same reading is not a change any more (user's decision, 2026-09-12) -
+		//  and the widget went from the row template with it. change.fRubyGroup /
+		//  fOtherRubyGroup still cross the facade; nothing on this side reads them now.)
 
 		return kTrue;
 	}

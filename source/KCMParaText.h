@@ -608,10 +608,11 @@ inline bool16 SpansDiffer(const KCMAttrSpanList& a, const KCMAttrSpanList& b)
 	{
 		if (a[i].fStart != b[i].fStart || a[i].fLen != b[i].fLen || a[i].fValue != b[i].fValue)
 			return kTrue;
-		// Mono turned into group is a change even when every reading is the same: 琥珀 read as
-		//   こ+はく and 琥珀 read as こはく are different typesetting, and the reader asked to see it.
-		if ((a[i].fGroup != 0) != (b[i].fGroup != 0))
-			return kTrue;
+		// ★fGroup IS NOT COMPARED (2026-09-12, the user's decision: "mono turned into group is not
+		//   a change - take that judgement out"). It was one from 2026-09-08 to 2026-09-12, on the
+		//   reasoning that こ+はく and こはく are different typesetting; the user withdrew it. The
+		//   flag is still READ (KCMAttrSpan::fGroup) and still carried to the panel (fRubyGroup),
+		//   because the row template once showed it - nothing judges by it any more.
 	}
 	return kFalse;
 }

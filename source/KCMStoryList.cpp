@@ -22,6 +22,8 @@
 #include "ITextFrameColumn.h"	// what QueryFrameContaining hands back (2026-08-22)
 #include "ITextModel.h"
 #include "ITextParcelList.h"	// QueryTextParcelList - the parcels a story flows through
+#include "ITextStoryThread.h"		// QueryStoryThread's answer: which thread (body, cell, footnote) holds an index (2026-09-12)
+#include "ITextStoryThreadDict.h"	// GetAnchorTextRange - where a table or footnote is anchored in the thread above it
 #include "IWaxGlyphs.h"			// GetEscapementAt - how far into the run one character sits
 #include "IWaxIterator.h"		// GetFirstWaxLine - the line a TextIndex was composed onto
 #include "IWaxLine.h"
@@ -32,6 +34,7 @@
 #include "K2SmartPtr.h"			// K2::scoped_ptr - what NewWaxIterator hands back has to be deleted
 #include "PMMatrix.h"
 #include "PMRect.h"				// GetParcelBounds - the leading corner comes off this
+#include "RangeData.h"			// Text::StoryRange - what GetAnchorTextRange answers with
 #include "TextChar.h"			// kTextChar_Space - the boundary the readability test draws its line at
 #include "TransformUtils.h"		// ::InnerToPasteboardMatrix
 #include "UnicodeClass.h"		// IsWhiteSpace
@@ -395,6 +398,67 @@ static void KCMRecomposeIfDamaged(IFrameList* frameList)
 		composer->RecomposeThruLastFrame();
 }
 
+/* KCMPrimaryIndexOf
+   The index in the PRIMARY story thread that stands for `index`: the index itself when it is
+   already in the body, and otherwise the ANCHOR of the table (or footnote) whose thread holds it -
+   climbing out of nested tables until the body is reached.
+
+   ⚠★★★**WRITTEN THE NIGHT INDESIGN CRASHED ON A TABLE** (2026-09-12, measured on the live
+   application). The user added a table to the newer document, the comparison listed each new
+   cell as an inserted paragraph, and a click on one of those rows jumped to it: KCMStoryFrameAt
+   handed the cell's TextIndex to IFrameList::QueryFrameContaining, and the call died inside
+   TEXT.RPLN with EXCEPTION_ACCESS_VIOLATION - the crash reporter's stack reads
+   KCMStoryRowEH::LButtonUp -> KCMStoryJumpToChange -> KCMGotoStoryFrame ->
+   KCMStoryEditsFacade::GetStoryFrameAt -> KCMStoryFrameAt -> (TEXT.RPLN). A cell's characters
+   live in a thread of the same ITextModel that stands AFTER the body text (memory
+   table-cells-live-after-body-text), so the index is smaller than TotalLength and passed every
+   test this file made.
+   ⚠**This crossing alone did NOT stop the crash** - the second crash, with it in place, died at
+     the same instruction. QueryFrameContaining's own contract (IFrameList.h:120-125) admits an
+     index in any thread and COMPOSES up to it, and that composition is what died; what stopped
+     it was leaving that call for the parcel route (KCMStoryFrameAt). This crossing is kept
+     because KCMStoryPointAt's wax reading is of the body, and the two readings must be of one
+     place: what the reader is sent to is the frame that holds the TABLE (its anchor character in
+     the body), which is where the cell is drawn.
+
+   @return the body index, or -1 when the index cannot be placed in the body at all (a thread whose
+    dictionary answers "not anchored" while not being the body's own).
+*/
+static TextIndex KCMPrimaryIndexOf(ITextModel* textModel, TextIndex index)
+{
+	if (textModel == nil)
+		return -1;
+
+	// Bounded rather than while(true): a dictionary that anchors into its own thread would
+	// otherwise spin, and sixteen levels of nested tables is more than a document holds.
+	for (int32 depth = 0; depth < 16; ++depth)
+	{
+		// The body is [0, GetPrimaryStoryThreadSpan) - an index there is its own answer, and so
+		// is the caret position at its very end when the story has no threads beyond it
+		// (KCMStoryFrameAt's `>` test admits TotalLength for exactly that case).
+		if (index < textModel->GetPrimaryStoryThreadSpan())
+			return index;
+
+		InterfacePtr<ITextStoryThread> thread(textModel->QueryStoryThread(index, nil, nil));
+		if (thread == nil)
+			return index;			// nothing claims it (the end-of-story caret) - as before
+
+		InterfacePtr<ITextStoryThreadDict> dict(::GetDataBase(textModel), thread->GetDictUID(), UseDefaultIID());
+		if (dict == nil)
+			return -1;
+
+		// ITextStoryThreadDict.h:86 - the body's own dictionary answers "not anchored"; a table's
+		// or a footnote's answers the range of its anchor character in the thread above it.
+		bool16 anchored = kFalse;
+		const Text::StoryRange anchor = dict->GetAnchorTextRange(&anchored);
+		if (!anchored)
+			return (thread->GetDictUID() == ::GetUID(textModel)) ? index : -1;
+
+		index = anchor.Start(nil);	// RangeData::Start takes an optional Lean* out-parameter (RangeData.h:67)
+	}
+	return -1;
+}
+
 /* KCMStoryFrameAt (declared in KCMStoryList.h)
 
 	**WHY THIS IS NOT KCMStoryFirstFrameUID.** That one answers where a story STARTS, which is the
@@ -425,18 +489,46 @@ UID KCMStoryFrameAt(IDataBase* db, UID storyUID, TextIndex index)
 	//   ANOTHER length: the diff measured the older document as it was, and it may have been edited
 	//   since.
 
-	InterfacePtr<IFrameList> frameList(textModel->QueryFrameList());
-	if (frameList == nil)
+	// ★A cell's or a footnote's index is asked as the index of its ANCHOR in the body, so that the
+	//   two readings of the composition (this and KCMStoryPointAt) are of one place, and that place
+	//   is one the body's wax can answer for (KCMPrimaryIndexOf, 2026-09-12).
+	index = KCMPrimaryIndexOf(textModel, index);
+	if (index < 0)
 		return kInvalidUID;
+
+	InterfacePtr<IFrameList> frameList(textModel->QueryFrameList());
+	if (frameList == nil || frameList->GetFrameCount() == 0)
+		return kInvalidUID;		// a real story placed in no frame: nowhere to go
 
 	KCMRecomposeIfDamaged(frameList);
 
-	int32 frameIndex = 0;
-	InterfacePtr<ITextFrameColumn> column(frameList->QueryFrameContaining(index, &frameIndex));
-	if (column == nil)
+	// ★★★**THE PARCEL ROUTE, NOT IFrameList::QueryFrameContaining** (2026-09-12). InDesign died
+	//   twice inside TEXT.RPLN under this function, both times on the first row of a table the user
+	//   had just added, and both times at the same instruction. QueryFrameContaining's contract
+	//   (IFrameList.h:120-125) admits an index in any thread and COMPOSES up to it, which is more
+	//   than this function wants: it wants to know which frame a body position is in, and the
+	//   parcel list answers exactly that - the same route KCMStoryStartPoint has always taken, and
+	//   the one the story rows' jump survived the same table on. ★Measured after the change
+	//   (2026-09-12, live): 24 changes walked with Next, 16 of them cells of the table that had
+	//   crashed the old route twice, and a breadcrumb probe (since removed) showed each cell index
+	//   crossing to its anchor and the parcel answering.
+	InterfacePtr<ITextParcelList> tpl(textModel->QueryTextParcelList(index));
+	if (tpl == nil)
+		return kInvalidUID;
+	InterfacePtr<IParcelList> pl(tpl, UseDefaultIID());
+	if (pl == nil)
+		return kInvalidUID;
+
+	const ParcelKey key = tpl->GetParcelContaining(index);
+	if (!key.IsValid())
 		return kInvalidUID;		// overset, or placed nowhere - the caller keeps its own fallback
 
-	InterfacePtr<IHierarchy> columnHierarchy(column, UseDefaultIID());
+	// The parcel's page item is the text COLUMN; the frame the reader sees is its parent.
+	const UID columnUID = pl->GetParcelFrameUID(key);
+	if (columnUID == kInvalidUID)
+		return kInvalidUID;
+
+	InterfacePtr<IHierarchy> columnHierarchy(db, columnUID, UseDefaultIID());
 	if (columnHierarchy == nil)
 		return kInvalidUID;
 
@@ -452,6 +544,12 @@ bool16 KCMStoryPointAt(IDataBase* db, UID storyUID, TextIndex index, PBPMPoint& 
 	if (textModel == nil || index > textModel->TotalLength())
 		return kFalse;		// see the @param note above: neither caller can clamp this for us.
 							// `>`, not `>=` -- the reason is written out in KCMStoryFrameAt.
+
+	// ★The same crossing KCMStoryFrameAt makes, for the same reason: the two readings must be of
+	//   the same place, and a cell's index is not a place the body's wax can answer for.
+	index = KCMPrimaryIndexOf(textModel, index);
+	if (index < 0)
+		return kFalse;
 
 	InterfacePtr<IWaxStrand> waxStrand((IWaxStrand*)textModel->QueryStrand(kFrameListBoss, IID_IWAXSTRAND));
 	if (waxStrand == nil)

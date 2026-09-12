@@ -53,12 +53,16 @@ int32 gMenuChange = -1;
 /* SourceTextOf
    The older side's text of a change, or an empty string when nothing stood there.
 
-   ★THE FIELD DEPENDS ON THE KIND, and IKCMStoryEditsFacade::Change says why at its fWhat: a
-   text row shows whichever side CHANGED, so a DELETION carries the removed (older) words in
-   fText and the newer side in fOtherText, while a replacement or an insertion carries the
-   newer words in fText and the older in fOtherText. A ruby row is the other way about and the
-   same way every time - the target in fText, the source in fOtherText, and the READINGS in
-   fRuby (target) / fOtherRuby (source).
+   ★fOtherText IS THE SOURCE SIDE FOR EVERY KIND OF TEXT CHANGE, and fText the target side -
+   KCMStoryDiffRun's Add() fills them that way without looking at the kind (SetExcerptPieces
+   from targetText into fText, from sourceText into fOtherText). So a deletion's removed words
+   are in fOtherText and its fText is EMPTY, which is also why the panel row of a deleted
+   paragraph shows no words. ⚠**The first build read a deletion from fText**, following the
+   facade header's sentence "a deletion puts the NEWER text in fOtherText" - and the item was
+   greyed on every deleted paragraph (measured 2026-09-12 on a "Beta" paragraph: the message
+   area said "Source Text: Beta", the menu did not appear). The header's sentence was wrong and
+   has been corrected; the ruby fields were described right all along (fRuby = target,
+   fOtherRuby = source).
 */
 PMString SourceTextOf(const IKCMStoryEditsFacade::Change& c)
 {
@@ -72,12 +76,9 @@ PMString SourceTextOf(const IKCMStoryEditsFacade::Change& c)
 		return c.fOtherRuby;			// empty for a ruby ADDED - nothing stood there
 	}
 
-	// A text change. fKind: 0 = replace, 1 = insert, 2 = delete.
-	if (c.fKind == 2)
-		return c.fText;					// the row shows what was removed: that IS the older text
-	if (c.fKind == 0)
-		return c.fOtherText;			// what the newer words replaced
-	return PMString();					// an insertion: nothing stood on the older side
+	// A text change: the source side, whatever the kind. Empty for an insertion, which is what
+	// greys the item there.
+	return c.fOtherText;
 }
 
 /* StashedChange

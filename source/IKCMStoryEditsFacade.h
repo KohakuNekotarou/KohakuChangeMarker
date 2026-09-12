@@ -174,11 +174,13 @@ public:
 
 		int32		fKind;			// 0 = replace, 1 = insert, 2 = delete
 		// 0 = text, 1 = attribute (ruby, so far).
-		// @warning it changes how the three fText / fOtherText pieces are to be read: for a TEXT
-		//   change the row shows whichever side changed, so a deletion puts the NEWER text in
-		//   fOtherText - but a ruby change always puts the target in fText and the source in
-		//   fOtherText, because the characters exist in both versions and there is no side to
-		//   choose. Anything deciding "which document is this text from" must look here first.
+		// ★fText / fOtherText are read the SAME WAY whatever this says: fText is the TARGET (newer)
+		//   side and fOtherText the SOURCE (older) side, for a text change and a ruby change alike.
+		//   ⚠This comment said until 2026-09-12 that a text deletion "puts the NEWER text in
+		//     fOtherText". That was the rule of 2026-08-20, withdrawn on 2026-09-01 (the row is
+		//     always the newer version - KCMStoryDiffRun's Add); the sentence outlived it and the
+		//     change-row copy item was first written from it. The fields are filled in one place
+		//     (KCMStoryDiffRun: SetExcerptPieces target -> fText, source -> fOtherText).
 		int32		fWhat;
 		TextIndex	fTargetStart;	// in the NEWER document
 		TextIndex	fTargetEnd;		// an END, not a length (RangeData.h:69)
@@ -192,8 +194,8 @@ public:
 		TextIndex	fSourceStart;
 		TextIndex	fSourceEnd;
 
-		// The words to show, in three pieces: context, the changed characters, context.
-		// For a DELETION they come from the older side's text (see KCMStoryList.h).
+		// The words to show, in three pieces: context, the changed characters, context. ALWAYS THE
+		// TARGET (newer) side, so a DELETION has an empty middle (2026-09-01; see KCMStoryList.h).
 		// Concatenated they are one string; the boundary between them cannot be recovered on this
 		//   side once it is gone (it is a code point index, and PMString counts UTF-16), which is
 		//   why it is carried across rather than worked out here.
@@ -201,14 +203,14 @@ public:
 		PMString	fText;
 		PMString	fTextPost;
 
-		// The OTHER side of the same edit, in the same three pieces - what the panel's message area
-		// shows while this row is selected.
-		// NOT "the old side": the row already shows whichever side CHANGED, so this is the old
-		//   text for a replacement or an insertion and the NEW text for a deletion (where the row is
-		//   showing what was removed, and what the reader wants beside it is what stands there now).
-		//   The full reasoning is on KCMStoryChange in KCMStoryList.h.
-		// The middle is empty where nothing stood on that side; the context pieces are not, which
-		//   is what makes an empty middle read as a place rather than as an absence.
+		// The SOURCE (older) side of the same edit, in the same three pieces - what the panel's
+		// message area shows while this row is selected, and what "Copy Source Text as Plain Text"
+		// copies. The old words for a replacement, the removed words for a deletion, and an empty
+		// middle for an insertion (nothing stood there). The context pieces are never empty, which
+		// is what makes an empty middle read as a place rather than as an absence.
+		// ⚠The name "Other" is older than the rule that made it the source side every time (the
+		//   row showed the older text for a deletion until 2026-09-01, and this then held the
+		//   newer); it is kept so that nothing needs renaming across the two plug-ins.
 		PMString	fOtherTextPre;
 		PMString	fOtherText;
 		PMString	fOtherTextPost;
@@ -231,12 +233,12 @@ public:
 		// HOW the ruby above is set: kTrue = GROUP (one reading over several characters),
 		//   kFalse = MONO (one per character). Same pairing as the readings - fRubyGroup is the
 		//   side the row shows.
-		// ★**THE ROW COULD NOT SAY WHAT CHANGED WITHOUT IT** (2026-09-08, user's request):
-		//   re-setting group ruby as mono leaves every reading identical, so both lines of the row
-		//   read the same and the change looks like nothing at all. The comparison always found it
-		//   (KCMStoryDiffRun's CompareParagraphAttr tests it beside the value and the length); this
-		//   is what carries it out. The panel shows it as "Mono" / "Group" on the upper line's
-		//   right-hand column (kKCMStoryRubyKindWidgetID).
+		// ⚠**CARRIED, BUT NO LONGER JUDGED OR SHOWN** (2026-09-12, the user's decision): a ruby
+		//   re-set from mono to group over the same reading is not reported as a change any more
+		//   (KCMStoryDiffRun's CompareParagraphAttr and KCMParaText's SpansDiffer stopped testing
+		//   it), and the "Mono" / "Group" cell the ruby row showed from 2026-09-08 is gone with it.
+		//   The fields stay so that the boundary's layout does not move; nothing on the UI side
+		//   reads them today.
 		// @warning KENTEN LEAVES BOTH kFalse and means nothing by it, and a side with NO ruby is
 		//   kFalse for want of anything else - what says "there is no ruby here" is the empty
 		//   reading, never this. The model's own KCMStoryChange says the same at more length.

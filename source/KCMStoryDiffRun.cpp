@@ -562,9 +562,11 @@ void CompareParagraphAttr(KCMStoryAttrKind attrKind,
 
 		if (haveS && haveT && sourceSpans[i].fStart == targetSpans[j].fStart)
 		{
+			// ★fGroup is NOT part of "same" (2026-09-12, user's decision - KCMParaText.h's
+			//   SpansDiffer says it in full): a ruby re-set from mono to group over the same
+			//   reading is not reported.
 			const bool16 same = (sourceSpans[i].fValue == targetSpans[j].fValue &&
-								 sourceSpans[i].fLen == targetSpans[j].fLen &&
-								 (sourceSpans[i].fGroup != 0) == (targetSpans[j].fGroup != 0)) ? kTrue : kFalse;
+								 sourceSpans[i].fLen == targetSpans[j].fLen) ? kTrue : kFalse;
 			if (!same)
 			{
 				AddAttrChange(KCMStoryChange::kReplace, attrKind,
@@ -760,9 +762,10 @@ KCMAttrSpanList SpansWhoseTextSurvives(const KCMAttrSpanList& spans,
 		{
 			if (otherClaimed[k])
 				continue;
+			// ★fGroup is not compared here either (2026-09-12; see SpansDiffer): a mark that
+			//   merely moved is the same mark whichever way its ruby is grouped.
 			if (otherSpans[k].fLen != spans[i].fLen ||
-				otherSpans[k].fValue != spans[i].fValue ||
-				(otherSpans[k].fGroup != 0) != (spans[i].fGroup != 0))
+				otherSpans[k].fValue != spans[i].fValue)
 				continue;
 			if (SpanBaseText(otherSpans[k], other) != text)
 				continue;
