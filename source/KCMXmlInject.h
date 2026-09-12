@@ -9,13 +9,28 @@
 //
 //   1. A SACRIFICIAL FIRST RANGE. ImportINX drops the first <ParagraphStyleRange> of a story
 //      whole (13,106 characters came back as 6,298; a five-paragraph story lost exactly its first
-//      paragraph), so a range that says KCMDUMMY is put first and is what goes. Why it happens is
-//      not known; what is known is that this makes the text whole.
-//      !NOT OF EVERY STORY. That was measured on one-story documents. With TWO stories one of
-//      them kept its sacrificial range (2026-09-12: the copy came back "KCMDUMMY" + a return =
-//      9 characters longer than the origin, and the shape check refused it). So the injection
-//      is only half of the rule: after the import, a story whose first paragraph is exactly
-//      kKCMSacrificialText loses that paragraph (KCMRehydrate.cpp, DeleteSurvivingDummies).
+//      paragraph), so a range that says KCMDUMMY is put first and is what goes.
+//      ★WHAT IS ACTUALLY DROPPED (measured 2026-09-12 evening, 13 variants through a throwaway
+//      app.kcmInxFileProbe; docs/ai-notes/kcm-inx-first-range-drop-cause-2026-09-12.md):
+//      **EXACTLY ONE range per import - the SECOND text insertion in file order, counted ACROSS
+//      stories, with an <XmlStory> counting as one insertion however many ranges it has.** The
+//      whole-document export always puts the document's <XmlStory> (the XML backing store, one
+//      range) before the stories, so the second insertion is the first range of the FIRST story
+//      in file order - which is why it looked like "the first range of a story", and why a
+//      document with a single range in a snippet-shaped file loses nothing. The XML is innocent:
+//      the same bytes through ISnippetImport (the PI rewritten to type="snippet") come back
+//      whole. It is the kDocElementImportBoss policy's doing; why it swallows the second
+//      insertion is inside the application and was not pursued.
+//      !NOT OF EVERY STORY - and now the count says why. That was measured on one-story
+//      documents. With TWO stories one of them kept its sacrificial range (2026-09-12: the
+//      copy came back "KCMDUMMY" + a return = 9 characters longer than the origin, and the shape
+//      check refused it): only one range is ever lost, so only the first story's dummy goes. So
+//      the injection is only half of the rule: after the import, a story whose first paragraph
+//      is exactly kKCMSacrificialText loses that paragraph (KCMRehydrate.cpp,
+//      DeleteSurvivingDummies). ⚠The scheme stands on the XmlStory being exported BEFORE the
+//      first story (measured on every export so far). Were it not, the loss would be the first
+//      story's second range = its first REAL paragraph; the shape check would then refuse the
+//      copy rather than hand a shortened one to the comparison.
 //
 //   2. A LABEL NAMING THE ORIGINAL UID. The import renumbers everything, and the Story mode pairs
 //      stories by UID. <Story Self="ufe"> carries the old UID in its Self, so a script label
