@@ -242,7 +242,10 @@ bool16 ImportOnly(const UIDRef& ref, KCMResourceBytes& xml, PMString& whyNot)
 	InterfacePtr<IINXManager> inxManager(session != nil ? session->QueryINXManager() : nil);
 	InterfacePtr<IPMUnknown> holder((IPMUnknown*)::CreateObject(kDocElementImportBoss, IID_IINXIMPORTPOLICY));
 	xml.Seek(0, kSeekFromStart);
-	InterfacePtr<IPMStream> stream(StreamUtil::CreateMemoryStreamRead(&xml));
+	// takeOwnership kFalse, recycleBoss kFalse: `xml` is the caller's copy, and StreamUtil.h:236-239
+	// warns that a recycled stream boss can keep hold of the IXferBytes past its life (the same
+	// two flags as KCMResourceSnapshot / KCMResourceParse, and as KT and KIDMCP).
+	InterfacePtr<IPMStream> stream(StreamUtil::CreateMemoryStreamRead(&xml, kFalse, kFalse));
 	if (doc == nil || parent == nil || inxManager == nil || holder == nil || stream == nil)
 	{
 		whyNot = "the import's parts could not be assembled";

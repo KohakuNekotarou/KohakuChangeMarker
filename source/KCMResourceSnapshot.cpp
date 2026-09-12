@@ -21,6 +21,7 @@
 
 // General includes:
 #include "CmdUtils.h"			// kSuppressUI
+#include "ErrorUtils.h"			// GlobalErrorStatePreserver / PMSetGlobalErrorCode - the export's failures stay its own
 #include "INXCoreID.h"			// IID_IINXEXPORTPOLICY
 #include "AppFrameworkID.h"		// kActionExportPolicyBoss - the policy that yields the document
 #include "PersistUtils.h"		// ::CreateObject
@@ -135,38 +136,73 @@ bool16 KCMTakeResourceSnapshot(IDocument* doc, KCMResourceBytes& out, PMString& 
 	}
 	IINXExportPolicy* const policy = (IINXExportPolicy*)holder.get();
 
-	InterfacePtr<IPMStream> stream(StreamUtil::CreateMemoryStreamWrite(&out));
+	// ★takeOwnership kFalse, recycleBoss kFalse: `out` lives on the caller's stack, and
+	//   StreamUtil.h:247-250 warns that a recycled stream boss may keep hold of the IXferBytes
+	//   until the boss is reused - past the point where `out` has gone away. KT (KTStoryXml.cpp)
+	//   and KIDMCP (KIDMCPRevert.cpp) pass the same two flags for the same reason; this file used
+	//   the defaults until 2026-09-12.
+	// ★The stream comes back OPEN or not at all: StreamUtil::CreateMemoryStream calls Open() and
+	//   returns nil when that fails (StreamUtil.cpp:143-146), so nothing here re-opens it, and
+	//   `out` was emptied above, so nothing needs truncating.
+	InterfacePtr<IPMStream> stream(StreamUtil::CreateMemoryStreamWrite(&out, kFalse, kFalse));
 	if (stream == nil)
 	{
 		whyNot = "could not create the memory stream";
 		return kFalse;
 	}
-	if (stream->GetStreamState() != kStreamStateGood)
-		stream->Open();
-	stream->SetEndOfStream();
 	KCMSnapshotLog("    snap: manager, IDOMElement, policy and stream are all there");
-
-	// ★Without this, an UNSAVED edit does not come out at all. It is the difference between a
-	//   tool that can follow a document being edited and one that can only read what was saved.
-	KCMSnapshotLog("    snap: about to call docElement->Reset()");
-	docElement->Reset();
-	KCMSnapshotLog("    snap: Reset() came back");
 
 	IDOMElement::ElementList roots;
 	roots.push_back(docElement);
 
-	KCMSnapshotLog("    snap: about to call BeginExportSession");
-	inx->BeginExportSession();
-	KCMSnapshotLog("    snap: about to call ExportINX");
-	const ErrorCode err = inx->ExportINX(roots, policy, stream, kSuppressUI);
-	KCMSnapshotLog("    snap: ExportINX came back");
-	inx->EndExportSession();
+	ErrorCode err = kFailure;
+	{
+		// ★THE CALLER'S ERROR STATE IS KEPT OUT OF THIS. A failed export is reported through the
+		//   return value and whyNot; an error it raised would otherwise stand in the global error
+		//   state and pull down whatever command the caller runs next (ErrorUtils.h:41-45 - once an
+		//   error is set, later Sets are ignored until it is cleared). The preserver restores what
+		//   was there before, and the clear gives the export a clean slate to fail on. It is the
+		//   product's own two-line shape (CDialogObserver.cpp:392-394), and the import in
+		//   KCMRehydrate.cpp already wraps ImportINX the same way; until 2026-09-12 the export was the
+		//   odd one out. ⚠Whether ExportINX raises the global error at all is unmeasured - this is
+		//   the shape a failure would need, not a measured fault.
+		GlobalErrorStatePreserver errorState;
+		ErrorUtils::PMSetGlobalErrorCode(kSuccess);
+
+		KCMSnapshotLog("    snap: about to call BeginExportSession");
+		inx->BeginExportSession();
+
+		// ★★Without this, an UNSAVED edit does not come out at all. It is the difference between a
+		//   tool that can follow a document being edited and one that can only read what was saved.
+		//   It sits INSIDE the export session because IDOMElement.h:58-60 says the interface is for
+		//   use under INX context and is unpredictable outside it; until 2026-09-12 it was called
+		//   before BeginExportSession, which worked, but the contract puts it here.
+		KCMSnapshotLog("    snap: about to call docElement->Reset()");
+		docElement->Reset();
+		KCMSnapshotLog("    snap: Reset() came back");
+
+		KCMSnapshotLog("    snap: about to call ExportINX");
+		err = inx->ExportINX(roots, policy, stream, kSuppressUI);
+		KCMSnapshotLog("    snap: ExportINX came back");
+
+		// ★AND AGAIN WHEN DONE, which is what IDOMElement.h:54-56 actually asks for: "it is best to
+		//   call the Reset() method on the topmost node WHEN YOU ARE FINISHED working with the DOM".
+		//   The export has just built a cache over the whole document; released here, it does not
+		//   sit in the document until the next export - which is exactly the state that made the
+		//   Reset above necessary in the first place (a cache left by a previous export masking the
+		//   edits made since).
+		docElement->Reset();
+		inx->EndExportSession();
+	}
 	stream->Flush();
 	KCMSnapshotLog("    snap: EndExportSession and Flush came back");
 
 	if (err != kSuccess)
 	{
-		whyNot = "ExportINX failed";
+		// IINXManager.h:79 names two outcomes short of success: "kCancel if aborted by policy or
+		// user, or an error code". With kSuppressUI a user cannot cancel, so a kCancel here is the
+		// policy's doing, and a reader should not be told it "failed".
+		whyNot = (err == kCancel) ? "ExportINX was cancelled by the export policy" : "ExportINX failed";
 		return kFalse;
 	}
 	if (!out.IsWhole())

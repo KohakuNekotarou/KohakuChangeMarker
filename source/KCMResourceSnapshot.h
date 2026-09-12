@@ -19,7 +19,11 @@
 //    2. docElement->Reset() MUST BE CALLED FIRST. Without it an unsaved edit does not appear in
 //       the export at all (IDOMElement.h:52-56 -- "DOM elements CACHE INFORMATION during use").
 //       With it, the CURRENT state comes out without saving, which is what lets a document that
-//       is being edited be compared at all.
+//       is being edited be compared at all. ★Since 2026-09-12 it is also called AFTER the export
+//       and both calls sit inside Begin/EndExportSession: the header asks for a Reset "when you
+//       are finished" and for the interface to be used under INX context (IDOMElement.h:54-60),
+//       and a cache released at the end is what stops the next export needing the first Reset
+//       to see anything new.
 //
 //    3. IINXExportPolicy is FORWARD-DECLARED ONLY in the SDK, so it cannot be held in an
 //       InterfacePtr of its own type. The C cast below is the product's own idiom for this

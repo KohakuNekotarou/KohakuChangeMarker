@@ -422,8 +422,18 @@ void AppendOpenTag(PMString& body, const PMString& name, ISAXAttributes* attrs, 
     break went straight through - after that build the colour group was still Changed, with 21
     spaces on one side and 23 on the other. A per-piece test cannot ask a question about the whole
     run.
-    What is left is XML's own "ignorable whitespace", and it is safe here because these elements
-    hold no mixed content: a definition's values live in its attributes, not between its tags. */
+
+    ★★★AND SO THIS IS NO LONGER ASKED PER PIECE (2026-09-12). It is asked once, of the WHOLE RUN,
+    when the next structural event arrives (KCMResourceSaxHandler::FlushPendingText). The
+    contract that forced it is ISaxContentHandler.h:83-87 - "SAX parsers may return all
+    contiguous character data in a single chunk, or they may split it into several chunks" - and
+    the split falls wherever the parser's buffer happens to end, which is a BYTE OFFSET. Asked per
+    piece, a real value that ends in a space ("Chapter ") could arrive as "Chapter" + " " and lose
+    its last character on ONE side only, because the two documents are different lengths and
+    their buffers end in different places; the same value would then read as Changed. Asked of
+    the run, whitespace is dropped only when the run holds nothing else, which is XML's own
+    ignorable whitespace and is safe here because these elements hold no mixed content: a
+    definition's values live in its attributes or alone between its tags, never beside a child. */
 bool16 IsIgnorableWhitespace(const PMString& text)
 {
 	const int32 length = static_cast<int32>(text.CharCount());
@@ -525,6 +535,16 @@ private:
 	/** Tell the caller, through the sink, that what came back is not a whole reading. */
 	void				NoteMalformed();
 
+	/** Hand the character run gathered since the last structural event to the innermost open
+	    item, unless the whole run is whitespace. Called at the head of StartElement and EndElement
+	    - the two events that END a run - so that the ignorable-whitespace question is asked of the
+	    run and never of a piece of it (see IsIgnorableWhitespace for what a piece cost). */
+	void				FlushPendingText();
+
+	/** Characters gathered since the last structural event. ⚠The parser may hand one contiguous
+	    run over in several calls (ISaxContentHandler.h:83-87), so a piece is never judged alone. */
+	PMString			fPendingText;
+
 	/** Held from Register to the destructor, AddRef'd - the sample does the same and says why:
 	    the SAX services object outlives the handler, so caching the pointer is safe here even
 	    though caching an interface generally is not. */
@@ -598,6 +618,8 @@ void KCMResourceSaxHandler::StartDocument(ISAXServices* /*saxServices*/)
 	fSkipDepth = 0;
 	fSpreadDepth = 0;
 	fOpen.clear();
+	fPendingText.Clear();
+	fPendingText.SetTranslatable(kFalse);
 	fSinkChecked = kFalse;
 	fList = nil;
 	fSeen = 0;
@@ -606,6 +628,9 @@ void KCMResourceSaxHandler::StartDocument(ISAXServices* /*saxServices*/)
 void KCMResourceSaxHandler::EndDocument()
 {
 	KCMParseLogNum("  >> EndDocument, elements seen =", fSeen);
+	// Text after the root's closing tag belongs to nothing; whatever is pending is dropped with
+	// the items below rather than filed.
+	fPendingText.Clear();
 	if (!fOpen.empty())
 	{
 		// Items were still open when the document ended: the XML is malformed. Say so rather than
@@ -734,9 +759,25 @@ void KCMResourceSaxHandler::StartInSpread(const PMString& name, ISAXAttributes* 
 	}
 }
 
+void KCMResourceSaxHandler::FlushPendingText()
+{
+	if (fPendingText.IsEmpty())
+		return;
+
+	// The run ends here. Only now can "is it nothing but whitespace" be answered truthfully.
+	if (!IsIgnorableWhitespace(fPendingText) && !fOpen.empty())
+		fOpen.back().fItem.fBody.Append(fPendingText);
+
+	fPendingText.Clear();
+}
+
 void KCMResourceSaxHandler::StartElement(const WideString& /*uri*/, const WideString& localname,
 										 const WideString& /*qname*/, ISAXAttributes* attrs)
 {
+	// A new tag ends whatever character run was in progress; file it before anything of the new
+	// element reaches a body, so the body keeps the document's order.
+	this->FlushPendingText();
+
 	++fDepth;
 	++fSeen;
 	if (fSeen <= 8 || fDepth == 2)
@@ -838,6 +879,10 @@ void KCMResourceSaxHandler::StartElement(const WideString& /*uri*/, const WideSt
 void KCMResourceSaxHandler::EndElement(const WideString& /*uri*/, const WideString& localname,
 									   const WideString& /*qname*/)
 {
+	// The closing tag ends the run too - and it has to be filed BEFORE the closing tag is
+	// appended below, or the value would land after its own end tag.
+	this->FlushPendingText();
+
 	if (fSkipDepth > 0)
 	{
 		--fSkipDepth;
@@ -958,11 +1003,12 @@ void KCMResourceSaxHandler::Characters(const WideString& chars)
 	if (fOpen.empty())
 		return;
 
-	const PMString text(chars);
-	if (IsIgnorableWhitespace(text))
-		return;			// the indentation between elements, not anything the document says
-
-	fOpen.back().fItem.fBody.Append(text);
+	// ★GATHERED, NOT FILED. This may be one piece of a run the parser has split
+	//   (ISaxContentHandler.h:83-87), and whether the run is only indentation cannot be known from
+	//   a piece. The next StartElement or EndElement ends the run and FlushPendingText decides.
+	//   ⚠The tests above are safe to make per piece: nothing structural can happen between two
+	//     pieces of one run, so fSkipDepth, fSpreadDepth and fOpen are the same for all of them.
+	fPendingText.Append(PMString(chars));
 }
 
 //========================================================================================
@@ -1067,7 +1113,10 @@ bool16 KCMParseResources(const KCMResourceBytes& xml, KCMResourceList& out, PMSt
 	// than going anywhere near a file.
 	KCMResourceBytes& mutableBytes = const_cast<KCMResourceBytes&>(xml);
 	mutableBytes.Seek(0, kSeekFromStart);		// it is sitting at the end after the export
-	InterfacePtr<IPMStream> readStream(StreamUtil::CreateMemoryStreamRead(&mutableBytes));
+	// takeOwnership kFalse, recycleBoss kFalse: the bytes belong to the caller and may be a stack
+	// object, and StreamUtil.h:236-239 warns that a recycled stream boss can keep hold of the
+	// IXferBytes past its life. KCMResourceSnapshot's write stream says the same.
+	InterfacePtr<IPMStream> readStream(StreamUtil::CreateMemoryStreamRead(&mutableBytes, kFalse, kFalse));
 	if (readStream == nil)
 	{
 		KCMParseLog("  FAILED: no read stream");
