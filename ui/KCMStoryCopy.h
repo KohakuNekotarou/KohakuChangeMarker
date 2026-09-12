@@ -4,9 +4,10 @@
 //
 //  Kohaku Change Marker (KCM)
 //
-//  "Copy Source Text as Plain Text" - the right-click menu of a CHANGE row (a child row of the
-//  Story Edits list). ★"as Plain Text" is in the name at the user's request (2026-09-12): the item
-//  says what arrives - words only, no formatting, none of InDesign's marker characters.
+//  "Copy Source Text" - the right-click menu of a CHANGE row (a child row of the Story Edits
+//  list). What arrives is words only - no formatting, none of InDesign's marker characters.
+//  (The name read "Copy Source Text as Plain Text" for an hour on 2026-09-12, at the user's
+//  request, and the user took the suffix out again the same night.)
 //
 //  The user's ask (2026-09-12): "I want the SOURCE side's text of a change on the clipboard, as
 //  plain text - the words a replacement replaced, the words a deletion removed - and for a ruby
@@ -51,7 +52,7 @@
 */
 void KCMStorySetMenuChange(int32 rowIndex, int32 changeIndex);
 
-/** Whether "Copy Source Text as Plain Text" may be offered for the stashed change.
+/** Whether "Copy Source Text" may be offered for the stashed change.
 
 	Answers kFalse in every case where there is nothing on the older side to copy:
 	  - no change was stashed, or the list has been rebuilt since and the indexes no longer name one;

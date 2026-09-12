@@ -35,7 +35,7 @@
 
 	Called by KCMStoryRowEH::RButtonDn as the menu is popped, and read back by the actions on that
 	menu and by their enabling tests. ★TOP-LEVEL ROWS ONLY - a right click on a child row never
-	reaches here. ⚠Since 2026-09-12 a child row HAS a menu of its own ("Copy Source Text as Plain Text"), with a
+	reaches here. ⚠Since 2026-09-12 a child row HAS a menu of its own ("Copy Source Text"), with a
 	stash of its own (KCMStorySetMenuChange in KCMStoryCopy.h); until then it raised none at all
 	(user's call, 2026-08-21; the reasoning is at that function).
 

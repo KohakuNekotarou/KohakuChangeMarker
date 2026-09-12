@@ -204,7 +204,7 @@ public:
 		PMString	fTextPost;
 
 		// The SOURCE (older) side of the same edit, in the same three pieces - what the panel's
-		// message area shows while this row is selected, and what "Copy Source Text as Plain Text"
+		// message area shows while this row is selected, and what "Copy Source Text"
 		// copies. The old words for a replacement, the removed words for a deletion, and an empty
 		// middle for an insertion (nothing stood there). The context pieces are never empty, which
 		// is what makes an empty middle read as a place rather than as an absence.

@@ -292,8 +292,8 @@ bool16 KCMStoryRowEH::LButtonUp(IEvent* e)
 // story the menu was about. Both the action and its enabling test read it back.
 //
 // ***** TWO MENUS, ONE PER KIND OF ROW. ***** A STORY row pops kKCMStoryRowMenuName; a CHANGE row
-// pops kKCMChangeRowMenuName (2026-09-12, "Copy Source Text as Plain Text"). Neither row is
-// offered the other's.
+// pops kKCMChangeRowMenuName (2026-09-12, "Copy Source Text"). Neither row is offered the
+// other's.
 // ⚠This reverses a decision of 2026-08-21 ("do not bring the context menu up on a child row"),
 // and the reason that decision was right then is exactly why this is right now: the first build
 // offered the STORY row's menu on a child row, aimed at the change's parent story - so the reader,

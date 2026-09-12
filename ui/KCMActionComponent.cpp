@@ -54,7 +54,7 @@
 #include "KCMChangeNav.h"			// KCMRefreshNavPosition (the overset toggle changes what Prev/Next walks)
 #include "KCMStoryRefresh.h"		// KCMStoryRowCanRefresh / KCMStoryRefreshMenuRow (the "Refresh Story Comparison" row item)
 #include "KCMResourceXml.h"			// KCMResourceRowHasXml / KCMShowResourceXml (the "Show as XML" row item)
-#include "KCMStoryCopy.h"			// KCMChangeRowCanCopySource / KCMChangeRowCopySource (the "Copy Source Text as Plain Text" change-row item)
+#include "KCMStoryCopy.h"			// KCMChangeRowCanCopySource / KCMChangeRowCopySource (the "Copy Source Text" change-row item)
 #include "KCMPanelAlpha.h"		// KCMGetPanelTranslucent / Set / Apply (the "Translucent Panel" flyout item)
 #include "KCMStoryPressMarks.h"	// KCMStoryMarksRefresh (rebuild the always-on marks of Story mode)
 // (★`IActiveContext.h` / `IDocument.h` / `PersistUtils.h` were removed: **none of them was ever
@@ -963,7 +963,7 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 			KCMShowResourceXml();
 			break;
 
-		// "Copy Source Text as Plain Text" on a CHANGE row's context menu (2026-09-12): the older side's text of
+		// "Copy Source Text" on a CHANGE row's context menu (2026-09-12): the older side's text of
 		// that one change - or its older ruby reading - on the clipboard as plain text. ★Which
 		// change it was is noted by KCMStorySetMenuChange at the right click, in a stash of its own.
 		case kKCMChangeRowCopySourceActionID:

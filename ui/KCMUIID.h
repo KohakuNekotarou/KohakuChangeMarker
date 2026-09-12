@@ -420,7 +420,7 @@ DECLARE_PMID(kActionIDSpace, kKCMResourceRowXmlActionID, kKCMUIPrefix + 58)
 DECLARE_PMID(kActionIDSpace, kKCMPopupOpenOriginRawActionID, kKCMUIPrefix + 60)	// "Open Task Start XML (raw)" on the panel flyout (a plain command, 2026-09-12, the user's ask: a test instrument). The held origin's XML is imported UNTOUCHED into a new document and given a window, so what ImportINX does to it (the first range of a story going missing) can be seen on the real application. Live while an origin is held (kCustomEnabling). Facade RehydrateOriginRaw + the window from here
 DECLARE_PMID(kActionIDSpace, kKCMPopupOpenOriginCopyActionID, kKCMUIPrefix + 61)	// "Open Task Start Copy (as compared)" on the panel flyout (2026-09-12, the user's ask): the held origin rehydrated exactly as a comparison rehydrates it, given a window - the way to look at the very copy the comparison reads (paragraph styles included). Live while an origin is held. Facade RehydrateOriginAsCompared
 DECLARE_PMID(kActionIDSpace, kKCMPopupSaveOriginRawActionID, kKCMUIPrefix + 62)	// "Save Task Start XML to Desktop" on the panel flyout (2026-09-12, the user's ask: the third instrument). The held origin's XML written to the Desktop exactly as Task Start took it, as "<document>.TaskStart-HHMMSS.xml". Live while an origin is held, with its two twins. Facade SaveOriginRawToDesktop; the status line names the file. ⚠+62 in the ACTION space only - the widget space's +62 is the book tree, and the two spaces are separate accounts
-// ★"Copy Source Text as Plain Text" on a CHANGE row's context menu (2026-09-12, the user's request: "the Source
+// ★"Copy Source Text" on a CHANGE row's context menu (2026-09-12, the user's request: "the Source
 //   side's text only - what a replacement replaced, what a deletion removed, and for ruby the
 //   reading itself, not the characters under it"). A subtree of its own (kKCMChangeRowMenuName),
 //   so the story row's items never appear on a child row. Live in the Story mode on a change
@@ -725,7 +725,7 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowChangeWidgetID, kKCMUIPrefix + 72)	// Ro
 // HandlePopupMenu.
 // ★Its root name never reaches the screen either, so a plain literal will do.
 #define kKCMStoryRowMenuName		"KCMRtMenuStoryRow"
-#define kKCMChangeRowCopySourceMenuKey	kKCMStringPrefix "kKCMChangeRowCopySourceMenuKey"	// the "Copy Source Text as Plain Text" item on a CHANGE row's context menu (2026-09-12. ★"as Plain Text" is in the name at the user's request - it says what arrives: words only, no formatting, no markers)
+#define kKCMChangeRowCopySourceMenuKey	kKCMStringPrefix "kKCMChangeRowCopySourceMenuKey"	// the "Copy Source Text" item on a CHANGE row's context menu (2026-09-12. ⚠The name carried "as Plain Text" for an hour on 2026-09-12 and the user took it out again the same night; what arrives is still words only - no formatting, no markers)
 // The CHANGE row (child row) context menu - a subtree of its own, so that the story row's items
 // (Refresh / Show as XML) are never offered on a child row. KCMStoryRowEH::RButtonDn puts it up
 // through HandlePopupMenu exactly as it does the story row's. ★Its root name never reaches the
@@ -1111,7 +1111,7 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowChangeWidgetID, kKCMUIPrefix + 72)	// Ro
 #define kKCMBookRowStartMenuItemPosition	1.0		// chapter row context menu: "Start Change Marker"
 #define kKCMStoryRowRefreshMenuItemPosition	1.0	// Story Edits row context menu: "Refresh Story Comparison" (a different subtree, so it may share 1.0 with the chapter row)
 #define kKCMResourceRowXmlMenuItemPosition	2.0	// ★the SAME subtree: "Show as XML" sits under the refresh item. The two are never live at once (opposite modes), so the order only decides what a future third item would sit between
-#define kKCMChangeRowCopySourceMenuItemPosition	1.0	// CHANGE row context menu (its own subtree, kKCMChangeRowMenuName): "Copy Source Text as Plain Text"
+#define kKCMChangeRowCopySourceMenuItemPosition	1.0	// CHANGE row context menu (its own subtree, kKCMChangeRowMenuName): "Copy Source Text"
 // (The panel tool button's flyout had two positions here on 2026-09-04. Gone with its MenuDef --
 //  a Win32 popup orders its items by the order they are appended, in code.)
 // -- the informational items, at the end --
