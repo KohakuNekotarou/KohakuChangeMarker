@@ -1,4 +1,4 @@
-//========================================================================================
+﻿//========================================================================================
 //
 //  Owner: KohakuNekotarou
 //
@@ -84,6 +84,32 @@ bool16 KCMInjectForRehydration(const char* xml, size_t size, const char* sacrifi
 /** "ufe" -> 0xfe. The Self of a story, spread or page is "u" + the UID in lower-case hex.
     @return kFalse for anything else ("d", "", "ug", "u"). */
 bool16 KCMParseSelfUid(const char* text, size_t length, uint32& outUid);
+
+/** What the origin's <DocumentPreference> says about the page setup - the part a document has to
+    be CREATED with, because ImportINX does not apply it to a document that already exists.
+    ★MEASURED 2026-09-12 evening: a non-facing origin came back as a facing copy, its single pages
+    laid out as left-hand pages, so every frame (spread coordinates in the XML) sat half a page to
+    the right of where it belonged - page 1 "changed" in a document nobody had touched, and the
+    peek laid the wrong picture over the page. The copy is made with these values now
+    (KCMRehydrate.cpp, NewDocumentLike), the way SDKLayoutHelper::CreateDocument makes one. */
+struct KCMDocSetupFromXml
+{
+	double	fPageWidth;		// points; valid when fHasSize
+	double	fPageHeight;
+	bool16	fFacingPages;	// valid when fHasFacing
+	int32	fBinding;		// ILayoutUtils' DocPageBinding: -1 default, 0 left-to-right, 1 right-to-left; valid when fHasBinding
+	bool16	fHasSize;
+	bool16	fHasFacing;
+	bool16	fHasBinding;
+	KCMDocSetupFromXml()
+		: fPageWidth(0), fPageHeight(0), fFacingPages(kFalse), fBinding(-1),
+		  fHasSize(kFalse), fHasFacing(kFalse), fHasBinding(kFalse) {}
+};
+
+/** Read the first <DocumentPreference ...> element's PageWidth / PageHeight / FacingPages /
+    PageBinding into out. Attributes that are absent or unreadable leave their fHas* kFalse.
+    @return kFalse when there is no <DocumentPreference element at all (out is then untouched). */
+bool16 KCMReadDocumentPreference(const char* xml, size_t size, KCMDocSetupFromXml& out);
 
 #endif // __KCMXmlInject_h__
 

@@ -1,4 +1,4 @@
-//========================================================================================
+﻿//========================================================================================
 //
 //  KCMXmlInject.cpp -- see the header. Pure byte work; nothing here touches the SDK.
 //
@@ -15,6 +15,7 @@
 
 #include "KCMXmlInject.h"
 #include <string.h>
+#include <stdlib.h>				// strtod - the page size of <DocumentPreference>
 
 const char* const kKCMOriginUidLabelKey = "KcmOriginUid";
 
@@ -125,6 +126,94 @@ bool16 KCMParseSelfUid(const char* text, size_t length, uint32& outUid)
 		value = (value << 4) | digit;
 	}
 	outUid = value;
+	return kTrue;
+}
+
+namespace
+{
+
+/** The value of attribute `name` inside tag [tagStart, tagEnd), or kFalse. The value is the bytes
+    between the quotes, not copied. */
+bool16 AttributeOf(const char* xml, size_t tagStart, size_t tagEnd, const char* name,
+				   size_t& outValueBegin, size_t& outValueEnd)
+{
+	const size_t n = ::strlen(name);
+	for (size_t i = tagStart; i + n + 2 < tagEnd; ++i)
+	{
+		// the name must start an attribute: preceded by a space, followed by ="
+		if (xml[i - 1] != ' ' && xml[i - 1] != '\t' && xml[i - 1] != '\n' && xml[i - 1] != '\r')
+			continue;
+		if (::memcmp(xml + i, name, n) != 0 || xml[i + n] != '=' || xml[i + n + 1] != '"')
+			continue;
+		const size_t begin = i + n + 2;
+		size_t end = begin;
+		while (end < tagEnd && xml[end] != '"')
+			++end;
+		if (end >= tagEnd)
+			return kFalse;
+		outValueBegin = begin;
+		outValueEnd = end;
+		return kTrue;
+	}
+	return kFalse;
+}
+
+bool16 ValueIs(const char* xml, size_t begin, size_t end, const char* literal)
+{
+	const size_t n = ::strlen(literal);
+	return (end - begin == n && ::memcmp(xml + begin, literal, n) == 0) ? kTrue : kFalse;
+}
+
+/** A positive number from the attribute's bytes (at most 63 of them). */
+bool16 NumberOf(const char* xml, size_t begin, size_t end, double& out)
+{
+	if (end <= begin || end - begin > 63)
+		return kFalse;
+	char buf[64];
+	::memcpy(buf, xml + begin, end - begin);
+	buf[end - begin] = '\0';
+	char* stop = nil;
+	const double v = ::strtod(buf, &stop);
+	if (stop == buf || v <= 0.0)
+		return kFalse;
+	out = v;
+	return kTrue;
+}
+
+}	// namespace
+
+bool16 KCMReadDocumentPreference(const char* xml, size_t size, KCMDocSetupFromXml& out)
+{
+	if (xml == nil)
+		return kFalse;
+	const size_t tag = Find(xml, size, 0, "<DocumentPreference ");
+	if (tag >= size)
+		return kFalse;
+	const size_t tagEnd = Find(xml, size, tag, ">");
+	if (tagEnd >= size)
+		return kFalse;
+	const size_t attrsFrom = tag + 1;		// past '<', so the name test can look one byte back
+
+	size_t b = 0, e = 0;
+	double w = 0, h = 0;
+	if (AttributeOf(xml, attrsFrom, tagEnd, "PageWidth", b, e) && NumberOf(xml, b, e, w)
+		&& AttributeOf(xml, attrsFrom, tagEnd, "PageHeight", b, e) && NumberOf(xml, b, e, h))
+	{
+		out.fPageWidth = w;
+		out.fPageHeight = h;
+		out.fHasSize = kTrue;
+	}
+	if (AttributeOf(xml, attrsFrom, tagEnd, "FacingPages", b, e))
+	{
+		if (ValueIs(xml, b, e, "true"))       { out.fFacingPages = kTrue;  out.fHasFacing = kTrue; }
+		else if (ValueIs(xml, b, e, "false")) { out.fFacingPages = kFalse; out.fHasFacing = kTrue; }
+	}
+	if (AttributeOf(xml, attrsFrom, tagEnd, "PageBinding", b, e))
+	{
+		if (ValueIs(xml, b, e, "RightToLeft"))      { out.fBinding = 1;  out.fHasBinding = kTrue; }
+		else if (ValueIs(xml, b, e, "LeftToRight")) { out.fBinding = 0;  out.fHasBinding = kTrue; }
+		else if (ValueIs(xml, b, e, "DefaultValue")){ out.fBinding = -1; out.fHasBinding = kTrue; }
+	}
 	return kTrue;
 }
 

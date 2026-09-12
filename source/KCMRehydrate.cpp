@@ -1,4 +1,4 @@
-//========================================================================================
+﻿//========================================================================================
 //
 //  KCMRehydrate.cpp -- see the header.
 //
@@ -18,6 +18,8 @@
 #include "IDOMElement.h"
 #include "IGlobalRecompose.h"		// ForceRecompositionToComplete - compose the copy before it is rasterised
 #include "IINXManager.h"
+#include "INewDocCmdData.h"		// NewDocumentLike - the copy is CREATED with the origin's page setup
+#include "ILayoutUtils.h"			// DocPageBinding (kDefaultBinding / kLeftToRightBinding / kRightToLeftBinding)
 #include "IPMStream.h"
 #include "IScript.h"				// a story's scripting facet IS an IScriptLabel (KCMPageMarksDoc.cpp)
 #include "IScriptLabel.h"
@@ -33,6 +35,8 @@
 #include "StreamUtil.h"
 #include "Utils.h"
 #include "INXCoreID.h"				// IID_IINXIMPORTPOLICY
+#include "PMPageSize.h"				// NewDocumentLike
+#include "UIDList.h"				// the new-document command's item list
 #include "SnippetID.h"				// kDocElementImportBoss
 
 #include <string>
@@ -164,6 +168,59 @@ int32 DeleteSurvivingDummies(IDataBase* db, const char* dummy)
 	return deleted;
 }
 
+/** Step 2 of a rehydration: a fresh windowless document MADE WITH THE ORIGIN'S PAGE SETUP.
+
+	⚠★★★NOT IDocumentCommands::New. Measured 2026-09-12 evening: New makes a document with the
+	application's defaults (facing pages, for one), and ImportINX does not apply the origin's
+	<DocumentPreference> to a document that already exists - a non-facing origin came back as a
+	facing copy whose single pages were laid out as left-hand pages, so every frame (spread
+	coordinates in the XML) sat half a page to the right. Page 1 read "changed" in a document
+	nobody had touched, and the peek laid the wrong picture over the page. So the page size, the
+	pages per spread and the binding are read off the XML (KCMReadDocumentPreference) and given
+	to the new-document command up front, the way SDKLayoutHelper::CreateDocument does it
+	(sdksamples/common). What the XML does not say is left to the defaults, as before. */
+bool16 NewDocumentLike(const KCMResourceBytes& inx, UIDRef& outRef, PMString& whyNot)
+{
+	outRef = UIDRef::gNull;
+	KCMDocSetupFromXml setup;
+	KCMReadDocumentPreference(inx.Bytes(), inx.Size(), setup);	// absent attributes keep the defaults
+
+	InterfacePtr<ICommand> newDocCmd(Utils<IDocumentCommands>()->CreateNewCommand(kSuppressUI));
+	InterfacePtr<INewDocCmdData> data(newDocCmd, UseDefaultIID());
+	if (newDocCmd == nil || data == nil)
+	{
+		whyNot = "could not make the new-document command";
+		return kFalse;
+	}
+	data->SetCreateBasicDocument(kFalse);			// the values below, not the application's defaults
+	if (setup.fHasSize)
+	{
+		data->SetNewDocumentPageSize(PMPageSize(setup.fPageWidth, setup.fPageHeight));
+		data->SetWideOrientation((setup.fPageWidth > setup.fPageHeight) ? kTrue : kFalse);
+	}
+	data->SetNumPages(1);							// the import brings the rest, reusing this one
+	if (setup.fHasFacing)
+		data->SetPagesPerSpread(setup.fFacingPages ? 2 : 1);
+	if (setup.fHasBinding)
+		data->SetPageBinding(setup.fBinding);
+
+	GlobalErrorStatePreserver errorState;
+	ErrorUtils::PMSetGlobalErrorCode(kSuccess);
+	if (CmdUtils::ProcessCommand(newDocCmd) != kSuccess)
+	{
+		whyNot = "could not create a document to rehydrate into";
+		return kFalse;
+	}
+	const UIDList& made = newDocCmd->GetItemListReference();
+	if (made.Length() == 0 || made.GetRef(0) == UIDRef::gNull)
+	{
+		whyNot = "the new-document command made nothing";
+		return kFalse;
+	}
+	outRef = made.GetRef(0);
+	return kTrue;
+}
+
 /** Steps 3 to 5 of a rehydration, on a document that already exists: import the injected XML,
 	compose, check the shape.
 
@@ -278,17 +335,10 @@ bool16 KCMRehydrate(const KCMResourceBytes& inx, const KCMOriginShape& expect, U
 		return kFalse;
 	}
 
-	// 2. a fresh windowless document
+	// 2. a fresh windowless document, made with the origin's page setup (NewDocumentLike says why)
 	UIDRef ref = UIDRef::gNull;
-	{
-		GlobalErrorStatePreserver errorState;
-		ErrorUtils::PMSetGlobalErrorCode(kSuccess);
-		if (Utils<IDocumentCommands>()->New(&ref, kSuppressUI) != kSuccess || ref == UIDRef::gNull)
-		{
-			whyNot = "could not create a document to rehydrate into";
-			return kFalse;
-		}
-	}
+	if (!NewDocumentLike(inx, ref, whyNot))
+		return kFalse;
 	// 3-5. import, compose, check - in a function of their own, so that every interface taken on
 	//      the document is gone before the close below (ImportAndCheck says why that is the rule).
 	if (!ImportAndCheck(ref, copy, expect, dummy.c_str(), whyNot))
@@ -320,16 +370,11 @@ bool16 KCMRehydrateRaw(const KCMResourceBytes& inx, UIDRef& outDoc, PMString& wh
 		whyNot = "out of memory copying the origin";
 		return kFalse;
 	}
+	// The document is made with the origin's page setup even here: that is the document, not the
+	// XML, and without it the raw copy's frames sit half a page off in a non-facing origin.
 	UIDRef ref = UIDRef::gNull;
-	{
-		GlobalErrorStatePreserver errorState;
-		ErrorUtils::PMSetGlobalErrorCode(kSuccess);
-		if (Utils<IDocumentCommands>()->New(&ref, kSuppressUI) != kSuccess || ref == UIDRef::gNull)
-		{
-			whyNot = "could not create a document to rehydrate into";
-			return kFalse;
-		}
-	}
+	if (!NewDocumentLike(inx, ref, whyNot))
+		return kFalse;
 	// The import and nothing after it - no sacrificial range deleted, no compose, no shape check,
 	// no clean mark: the reader asked to see what ImportINX makes of the XML untouched.
 	if (!ImportOnly(ref, copy, whyNot))
