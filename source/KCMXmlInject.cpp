@@ -17,7 +17,6 @@
 #include <string.h>
 
 const char* const kKCMOriginUidLabelKey = "KcmOriginUid";
-const char* const kKCMSacrificialText = kKCMSacrificialTextLiteral;
 
 namespace
 {
@@ -29,10 +28,12 @@ const char* const kRangeOpen   = "<ParagraphStyleRange";
 const char* const kPropsOpen   = "<Properties>";
 const char* const kLabelOpen   = "<Label>";
 const char* const kSelfAttr    = "Self=\"";
-const char* const kDummyRange  =
+// The sacrificial range, in two halves around the token the caller supplies.
+const char* const kDummyHead   =
 	"<ParagraphStyleRange AppliedParagraphStyle=\"ParagraphStyle/$ID/NormalParagraphStyle\">"
 	"<CharacterStyleRange AppliedCharacterStyle=\"CharacterStyle/$ID/[No character style]\">"
-	"<Content>" kKCMSacrificialTextLiteral "</Content><Br /></CharacterStyleRange></ParagraphStyleRange>";
+	"<Content>";
+const char* const kDummyTail   = "</Content><Br /></CharacterStyleRange></ParagraphStyleRange>";
 
 bool16 StartsWith(const char* xml, size_t size, size_t at, const char* literal)
 {
@@ -127,13 +128,13 @@ bool16 KCMParseSelfUid(const char* text, size_t length, uint32& outUid)
 	return kTrue;
 }
 
-bool16 KCMInjectForRehydration(const char* xml, size_t size, KCMByteSink& out,
-							   int32* outStories, int32* outSpreads)
+bool16 KCMInjectForRehydration(const char* xml, size_t size, const char* sacrificialText,
+							   KCMByteSink& out, int32* outStories, int32* outSpreads)
 {
 	int32 stories = 0, spreads = 0;
 	if (outStories) *outStories = 0;
 	if (outSpreads) *outSpreads = 0;
-	if (xml == nil)
+	if (xml == nil || sacrificialText == nil || sacrificialText[0] == '\0')
 		return kFalse;
 
 	size_t pos = 0;			// the first input byte not yet written
@@ -161,7 +162,8 @@ bool16 KCMInjectForRehydration(const char* xml, size_t size, KCMByteSink& out,
 
 		if (storyWantsDummy && next == range)
 		{
-			if (!Emit(out, xml + pos, next - pos) || !EmitLiteral(out, kDummyRange))
+			if (!Emit(out, xml + pos, next - pos) || !EmitLiteral(out, kDummyHead)
+				|| !EmitLiteral(out, sacrificialText) || !EmitLiteral(out, kDummyTail))
 				return kFalse;
 			pos = next;
 			scan = next + 1;

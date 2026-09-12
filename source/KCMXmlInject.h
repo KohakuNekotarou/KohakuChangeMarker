@@ -26,7 +26,7 @@
 //      copy came back "KCMDUMMY" + a return = 9 characters longer than the origin, and the shape
 //      check refused it): only one range is ever lost, so only the first story's dummy goes. So
 //      the injection is only half of the rule: after the import, a story whose first paragraph
-//      is exactly kKCMSacrificialText loses that paragraph (KCMRehydrate.cpp,
+//      is exactly the sacrificial token loses that paragraph (KCMRehydrate.cpp,
 //      DeleteSurvivingDummies). ⚠The scheme stands on the XmlStory being exported BEFORE the
 //      first story (measured on every export so far). Were it not, the loss would be the first
 //      story's second range = its first REAL paragraph; the shape check would then refuse the
@@ -60,20 +60,26 @@ public:
 /** The label key the rehydrated copy carries. The value is the element's Self ("ufe"). */
 extern const char* const kKCMOriginUidLabelKey;
 
-/** The words of the sacrificial first range - ONE token, so that a paragraph made of exactly this
+/** The words of the sacrificial first range: ONE token, so that a paragraph made of exactly this
     can be recognised after the import and deleted if the import left it standing (see 1. above).
-    The macro form is what the injected range is spelled with; the constant is the same bytes. */
-#define kKCMSacrificialTextLiteral "KCMDUMMY"
-extern const char* const kKCMSacrificialText;
+    ★THE TOKEN IS MADE FRESH FOR EVERY REHYDRATION (the user's ask, 2026-09-12): this prefix
+    followed by 32 hex digits of a random nonce (KCMRehydrate.cpp, NewSacrificialToken). A
+    constant "KCMDUMMY" could be a paragraph of the reader's own - a document ABOUT this plug-in
+    is the obvious one - and the deletion would then take a real paragraph (the shape check would
+    refuse the copy, but the comparison would be lost). A nonce nobody has seen cannot be typed.
+    The same string is handed to the injection and to the deletion, so the two cannot disagree. */
+#define kKCMSacrificialPrefix "KCMDUMMY-"
 
 /** Copy xml[0..size) into out with the two injections above.
 
+    @param sacrificialText  the token of the sacrificial range (ASCII, non-empty, no XML
+                            specials - the caller makes it from kKCMSacrificialPrefix + hex).
     @param outStories  how many <Story> elements were labelled (and given a sacrificial range).
     @param outSpreads  how many <Spread> elements were labelled.
-    @return kTrue when the whole copy was written. kFalse when the sink refused, or when a
-            <Story or <Spread open tag has no closing '>' (malformed input). */
-bool16 KCMInjectForRehydration(const char* xml, size_t size, KCMByteSink& out,
-							   int32* outStories, int32* outSpreads);
+    @return kTrue when the whole copy was written. kFalse when the sink refused, when the token is
+            empty, or when a <Story or <Spread open tag has no closing '>' (malformed input). */
+bool16 KCMInjectForRehydration(const char* xml, size_t size, const char* sacrificialText,
+							   KCMByteSink& out, int32* outStories, int32* outSpreads);
 
 /** "ufe" -> 0xfe. The Self of a story, spread or page is "u" + the UID in lower-case hex.
     @return kFalse for anything else ("d", "", "ug", "u"). */

@@ -36,6 +36,8 @@
 #include "SnippetID.h"				// kDocElementImportBoss
 
 #include <string>
+#include <stdio.h>					// sprintf_s - the nonce as hex
+#include <random>					// std::random_device - the nonce (NewSacrificialToken)
 #include "WideString.h"
 
 // Project includes:
@@ -76,20 +78,55 @@ void AppendShape(PMString& out, const KCMOriginShape& s)
 	out.AppendNumber(s.fTextLen);
 }
 
+/** The sacrificial token of ONE rehydration: kKCMSacrificialPrefix + 32 hex digits of a random
+	nonce (the user's ask, 2026-09-12 - see KCMXmlInject.h). std::random_device may throw on a
+	platform with no entropy source; that is caught here, and the fallback mixes the clock with
+	the address of a local, which is still a value nobody has typed. ASCII only, so the token can
+	go into XML text and be compared char by char after the import. */
+std::string NewSacrificialToken()
+{
+	uint32 words[4] = { 0, 0, 0, 0 };
+	bool16 haveRandom = kFalse;
+	try
+	{
+		std::random_device rd;
+		for (int i = 0; i < 4; ++i)
+			words[i] = static_cast<uint32>(rd());
+		haveRandom = kTrue;
+	}
+	catch (...)
+	{
+	}
+	if (!haveRandom)
+	{
+		const uint32 tick = static_cast<uint32>(::GetTickCount());
+		words[0] = tick;
+		words[1] = static_cast<uint32>(reinterpret_cast<uintptr_t>(&words) & 0xFFFFFFFFu);
+		words[2] = tick * 2654435761u;
+		words[3] = ~tick;
+	}
+	char hex[40];
+	::sprintf_s(hex, sizeof(hex), "%08x%08x%08x%08x", words[0], words[1], words[2], words[3]);
+	std::string token(kKCMSacrificialPrefix);
+	token += hex;
+	return token;
+}
+
 /** The sacrificial first range (KCMXmlInject.h) is put in for ImportINX to drop - and on a
 	one-story document it always was. WITH TWO STORIES ONE OF THEM KEPT IT (2026-09-12: the copy
 	came back 9 characters longer than the origin = "KCMDUMMY" + its return, and the shape check
 	refused it, which is what the check is for). So whatever survived is deleted here BY CONTENT:
 	a story whose first paragraph is exactly the sacrificial text loses that paragraph. Through a
 	command, because the text model takes no other route; the copy is ours and windowless, so the
-	undo step lands on nobody's stack (KCMOriginPeek deletes spreads of a copy the same way).
+	undo step lands on nobody's stack.
+	@param dummy the token this rehydration injected (NewSacrificialToken) - the one string both
+	       halves of the rule share.
 	@return how many paragraphs were deleted (the caller only reports it). */
-int32 DeleteSurvivingDummies(IDataBase* db)
+int32 DeleteSurvivingDummies(IDataBase* db, const char* dummy)
 {
 	int32 deleted = 0;
-	if (db == nil)
+	if (db == nil || dummy == nil || dummy[0] == '\0')
 		return 0;
-	const char* const dummy = kKCMSacrificialText;
 	const int32 dummyLen = static_cast<int32>(::strlen(dummy));
 	InterfacePtr<IStoryList> stories(db, db->GetRootUID(), UseDefaultIID());
 	if (stories == nil)
@@ -175,7 +212,8 @@ bool16 ImportOnly(const UIDRef& ref, KCMResourceBytes& xml, PMString& whyNot)
 	return kTrue;
 }
 
-bool16 ImportAndCheck(const UIDRef& ref, KCMResourceBytes& copy, const KCMOriginShape& expect, PMString& whyNot)
+bool16 ImportAndCheck(const UIDRef& ref, KCMResourceBytes& copy, const KCMOriginShape& expect,
+					  const char* dummy, PMString& whyNot)
 {
 	if (!ImportOnly(ref, copy, whyNot))
 		return kFalse;
@@ -186,7 +224,7 @@ bool16 ImportAndCheck(const UIDRef& ref, KCMResourceBytes& copy, const KCMOrigin
 	{
 		GlobalErrorStatePreserver errorState;
 		ErrorUtils::PMSetGlobalErrorCode(kSuccess);
-		DeleteSurvivingDummies(ref.GetDataBase());
+		DeleteSurvivingDummies(ref.GetDataBase(), dummy);
 	}
 
 	// 4. compose BEFORE anything reads pixels or text positions. A document straight out of the
@@ -229,11 +267,12 @@ bool16 KCMRehydrate(const KCMResourceBytes& inx, const KCMOriginShape& expect, U
 		return kFalse;
 	}
 
-	// 1. the injected copy
+	// 1. the injected copy, with this rehydration's own sacrificial token (KCMXmlInject.h)
+	const std::string dummy = NewSacrificialToken();
 	KCMResourceBytes copy;
 	BytesSink sink(copy);
 	int32 stories = 0, spreads = 0;
-	if (!KCMInjectForRehydration(inx.Bytes(), inx.Size(), sink, &stories, &spreads))
+	if (!KCMInjectForRehydration(inx.Bytes(), inx.Size(), dummy.c_str(), sink, &stories, &spreads))
 	{
 		whyNot = "could not prepare the XML (out of memory, or malformed)";
 		return kFalse;
@@ -252,7 +291,7 @@ bool16 KCMRehydrate(const KCMResourceBytes& inx, const KCMOriginShape& expect, U
 	}
 	// 3-5. import, compose, check - in a function of their own, so that every interface taken on
 	//      the document is gone before the close below (ImportAndCheck says why that is the rule).
-	if (!ImportAndCheck(ref, copy, expect, whyNot))
+	if (!ImportAndCheck(ref, copy, expect, dummy.c_str(), whyNot))
 	{
 		KCMCloseRehydrated(ref);	// nothing of ours stands on it any more
 		return kFalse;
