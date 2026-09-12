@@ -231,6 +231,9 @@
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPageMap.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPagePairRule.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPageCheck.h">
       <Filter>Header Files</Filter>
     </ClInclude>

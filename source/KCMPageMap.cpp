@@ -54,6 +54,8 @@
 #include "KCMComparisonRun.h"	// KCMStopComparison
 #include "KCMOriginCompare.h"	// KCMOriginArmed / KCMOriginRefresh - Task Start: the re-comparison when there is no Source database
 #include "KCMPageMap.h"
+#include "KCMPagePairRule.h"	// KCMPairPagesByIdentity - THE pairing rule (pure; proved in work/kcm-pagepair-test)
+#include "KCMRehydrate.h"		// KCMReadOriginUidLabel - a task-start copy's page names the origin's page
 #include "KCMDocUidSet.h"		// the shared "document -> page UID set" container (the tick uses it too)
 #include "KCMID.h"				// kKCMPageFlagsChangedMessage (the notification's ID)
 // This file deliberately does not include the UI's KCMThumbnailRefresh.h: rebuilding a thumbnail
@@ -429,14 +431,73 @@ void KCMPageMapReplaceRegistered(IDataBase* db, const std::vector<UID>& pages)
 }
 
 //========================================================================================
+// The pairing rule switch (declared in KCMPageMap.h). Default = by UID (2026-09-13, the user's
+// decision, "UID only"); the flyout's "Pair Pages by UID" check toggle turns it off, which brings
+// the rule that stood until then back: by position. Session state, saved with the panel settings
+// by the UI (ui/KCMPanelState.cpp), like the folio exclusion.
+//========================================================================================
+static bool16 sPairPagesByUid = kTrue;
+
+bool16 KCMGetPairPagesByUid()
+{
+	return sPairPagesByUid;
+}
+
+void KCMSetPairPagesByUid(bool16 on)
+{
+	sPairPagesByUid = on;
+}
+
+//========================================================================================
+// The identity a Source page answers to. Its own UID for an ordinary document; for a
+// rehydrated task-start copy, whose pages are new, the origin's UID that its KcmOriginUid label
+// names (KCMXmlInject.h), or kInvalidUID for the page that came back without one.
+//
+// WHETHER THE SOURCE IS SUCH A COPY IS ASKED OF THE PAGES, NOT OF WHO OPENED THEM: the first two
+//   ordinary pages are probed for the label (two rather than one, so that a first page the
+//   write-back could not name does not hide a copy), and only when one of them carries it are the
+//   labels read for every page. The comparison run's copy, the peek's copy and a copy the user opened through
+//   "Open Task Start Copy" are then all the same case, with no list of copy databases to keep in
+//   step - and an ordinary document costs two label reads per pairing, which is nothing next to
+//   the two page walks this function does anyway.
+// ⚠A page's label is a script label (IScript::GetTag), read here on the main thread only:
+//   KCMBuildPairing already refuses to run off it (RebuildOverflowCache).
+//========================================================================================
+static void KCMSourcePageKeys(IDataBase* sourceDB, const std::vector<UID>& sourcePages, std::vector<UID>& outKeys)
+{
+	outKeys.assign(sourcePages.begin(), sourcePages.end());
+
+	bool16 isCopy = kFalse;
+	for (size_t i = 0; i < sourcePages.size() && i < 2 && !isCopy; ++i)
+	{
+		UID original = kInvalidUID;
+		if (KCMReadOriginUidLabel(sourceDB, sourcePages[i], original))
+			isCopy = kTrue;
+	}
+	if (!isCopy)
+		return;
+
+	for (size_t i = 0; i < sourcePages.size(); ++i)
+	{
+		UID original = kInvalidUID;
+		outKeys[i] = KCMReadOriginUidLabel(sourceDB, sourcePages[i], original) ? original : kInvalidUID;
+	}
+}
+
+//========================================================================================
 // KCMBuildPairing (declared in KCMPageMap.h)
 //   Take each document's flat page list (KCMCollectPageUIDs), drop the registered pages -- the
-//   ones with no counterpart -- and pair what is left in order. Registered pages are skipped and
-//   everything after them closes up, which is the whole point: without it the two documents are
-//   simply zipped together and every page after an insertion is compared against the wrong one.
-//   Pages that fall off the end because the documents hold different numbers of pages (not
-//   registered, but with no partner left) go into outOverflowTargetPages /
-//   outOverflowSourcePages when those are supplied.
+//   ones the user declared to have no counterpart -- and pair what is left BY IDENTITY: a page
+//   with the page of the same UID on the other side (KCMPagePairRule.h holds the rule and the
+//   reasons; work/kcm-pagepair-test holds its proof). A Target page nobody answers to is an added
+//   page and a Source page nobody names a removed one; both go into outOverflowTargetPages /
+//   outOverflowSourcePages when those are supplied, and the drawing puts the red "/" on them.
+//   Reordered pages pair with their namesakes wherever they now stand.
+//
+//   With the "Pair Pages by UID" toggle OFF the rule that stood until 2026-09-13 is used
+//   instead: pair what is left in order, the pages that fall off the longer document's end
+//   being the overflow. It is kept for two documents that share no history (made separately,
+//   or one of them through IDML, which renumbers), where identity has nothing to say.
 //========================================================================================
 void KCMBuildPairing(IDataBase* targetDB, IDataBase* sourceDB,
 	std::vector<UID>& outTargetPages, std::vector<UID>& outSourcePages,
@@ -463,6 +524,16 @@ void KCMBuildPairing(IDataBase* targetDB, IDataBase* sourceDB,
 		if (!KCMPageMapIsRegistered(sourceDB, sFlat[i]))
 			sFiltered.push_back(sFlat[i]);
 
+	if (sPairPagesByUid)
+	{
+		std::vector<UID> sKeys;
+		KCMSourcePageKeys(sourceDB, sFiltered, sKeys);
+		KCMPairPagesByIdentity<UID>(tFiltered, sFiltered, sKeys, kInvalidUID,
+			outTargetPages, outSourcePages, outOverflowTargetPages, outOverflowSourcePages);
+		return;
+	}
+
+	// by position (the toggle is off)
 	const size_t n = (tFiltered.size() < sFiltered.size()) ? tFiltered.size() : sFiltered.size();
 	outTargetPages.assign(tFiltered.begin(), tFiltered.begin() + n);
 	outSourcePages.assign(sFiltered.begin(), sFiltered.begin() + n);

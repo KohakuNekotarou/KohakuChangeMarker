@@ -23,6 +23,11 @@
 #include "IPMStream.h"
 #include "IScript.h"				// a story's scripting facet IS an IScriptLabel (KCMPageMarksDoc.cpp)
 #include "IScriptLabel.h"
+#include "IScriptUtils.h"			// SetScriptingTags - the page labels written INTO the copy (LabelCopyPages)
+#include "ISpreadList.h"			// LabelCopyPages: the copy's spreads in document order
+#include "ISpread.h"				// LabelCopyPages: a spread's pages in order
+#include "RequestContext.h"			// EngineContext - default-constructed: no engine is asking
+#include "ScriptData.h"				// ScriptList
 #include "ISession.h"
 #include "IStoryList.h"
 #include "ITextModel.h"
@@ -179,6 +184,71 @@ int32 DeleteSurvivingDummies(IDataBase* db, const char* dummy)
 	pages per spread and the binding are read off the XML (KCMReadDocumentPreference) and given
 	to the new-document command up front, the way SDKLayoutHelper::CreateDocument does it
 	(sdksamples/common). What the XML does not say is left to the defaults, as before. */
+/** 3c. Name the copy's pages after the origin's. ImportINX drops the KcmOriginUid label the
+	injection put on every <Page> (measured 2026-09-13: the injected bytes carry all of them, the
+	rehydrated copy carries none, while its spreads and stories keep theirs), and the page pairing
+	is by UID (KCMPagePairRule.h) - so the copy's pages are labelled HERE, after the import, from
+	the spread -> pages table read off the very bytes that were imported (KCMCollectSpreadPages).
+	A spread is matched to its origin through its own label, which the import keeps; the first
+	spread, reused from the new document and unlabelled, is matched by position. The pages are
+	then labelled by index within the spread, which is exact for a copy: it IS the snapshot.
+	Written through IScriptUtils::SetScriptingTags, the door KCMPageMarksDoc.cpp uses, with
+	replaceExistingLabels kFalse. The copy is a throwaway; nothing here touches the origin.
+	@return how many pages were labelled (for the status line's benefit; no caller fails on it). */
+int32 LabelCopyPages(IDataBase* db, const KCMResourceBytes& copyXml)
+{
+	std::vector<KCMXmlSpreadPages> table;
+	if (db == nil || !KCMCollectSpreadPages(copyXml.Bytes(), copyXml.Size(), table) || table.empty())
+		return 0;
+	InterfacePtr<ISpreadList> spreads(db, db->GetRootUID(), UseDefaultIID());
+	if (spreads == nil)
+		return 0;
+
+	int32 written = 0;
+	const int32 n = spreads->GetSpreadCount();
+	for (int32 i = 0; i < n; ++i)
+	{
+		const UID spreadUID = spreads->GetNthSpreadUID(i);
+		const KCMXmlSpreadPages* entry = nil;
+		UID origin = kInvalidUID;
+		if (KCMReadOriginUidLabel(db, spreadUID, origin))
+		{
+			for (size_t k = 0; k < table.size() && entry == nil; ++k)
+				if (table[k].fSpread == origin.Get())
+					entry = &table[k];
+		}
+		else if (i < static_cast<int32>(table.size()))
+			entry = &table[i];			// the unlabelled first spread: by position
+		if (entry == nil)
+			continue;
+
+		InterfacePtr<ISpread> spread(db, spreadUID, UseDefaultIID());
+		if (spread == nil)
+			continue;
+		const int32 np = spread->GetNumPages();
+		for (int32 p = 0; p < np && p < static_cast<int32>(entry->fPages.size()); ++p)
+		{
+			InterfacePtr<IScript> script(db, spread->GetNthPageUID(p), UseDefaultIID());
+			if (script == nil)
+				continue;
+			char self[16];
+			sprintf_s(self, sizeof(self), "u%x", static_cast<unsigned>(entry->fPages[p]));
+			PMString key(kKCMOriginUidLabelKey);
+			key.SetTranslatable(kFalse);
+			PMString value(self);
+			value.SetTranslatable(kFalse);
+			IScriptLabel::ScriptLabelKeyValueList labels;
+			labels.push_back(IScriptLabel::ScriptLabelKeyValuePair(key, value));
+			ScriptList list;
+			list.push_back(script);
+			if (Utils<IScriptUtils>()->SetScriptingTags(list, EngineContext(), labels,
+														kFalse /*replaceExistingLabels*/) == kSuccess)
+				++written;
+		}
+	}
+	return written;
+}
+
 bool16 NewDocumentLike(const KCMResourceBytes& inx, UIDRef& outRef, PMString& whyNot)
 {
 	outRef = UIDRef::gNull;
@@ -285,6 +355,13 @@ bool16 ImportAndCheck(const UIDRef& ref, KCMResourceBytes& copy, const KCMOrigin
 		GlobalErrorStatePreserver errorState;
 		ErrorUtils::PMSetGlobalErrorCode(kSuccess);
 		DeleteSurvivingDummies(ref.GetDataBase(), dummy);
+	}
+
+	// 3c. the pages' origin uids, which the import did not carry (LabelCopyPages says why)
+	{
+		GlobalErrorStatePreserver errorState;
+		ErrorUtils::PMSetGlobalErrorCode(kSuccess);
+		LabelCopyPages(ref.GetDataBase(), copy);
 	}
 
 	// 4. compose BEFORE anything reads pixels or text positions. A document straight out of the

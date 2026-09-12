@@ -1284,8 +1284,9 @@ static void KCMDrawPageNumberMarkerFill(IGraphicsPort* gPort, IDataBase* db, UID
 //   - a registered page (one with no partner, "Added"/"Removed") -> a green "/" (it used to be a
 //     green BORDER; the slash matches the red overflow one, so "this page has no partner" reads the
 //     same either way);
-//   - a page that overflowed the page-count difference and was never compared, and is not
-//     registered either -> a red "/" (the same red as the change marks).
+//   - a page with no partner that was never compared, and is not registered either -> a red "/"
+//     (the same red as the change marks). Under the UID rule that is a page added or removed
+//     since the older version; by position, a page past the shorter document's end.
 // A vector line needing no raster, so setopacity composites it correctly on screen, in print and in
 // thumbnails alike. Thickness and opacity follow KCMDrawPageBorder's rules (a thumbnail uses the
 // fixed ratio and kKCMThumbMarkOpacity, slightly see-through).
@@ -2525,8 +2526,8 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 			}
 			else if (isOverflow)
 			{
-				// Not registered either: a page that overflowed the page-count difference. The red
-				// slash says it was never compared.
+				// Not registered either: a page with no partner (added / removed under the UID rule,
+				// past the shorter end by position). The red slash says it was never compared.
 				// @warning **this red does NOT follow the "Mark colour" choice, deliberately** -- it
 				//   says something different ("not compared", not "changed"). It stands with the
 				//   registered pages' green "/" as **a mark whose meaning does not change with the
@@ -2612,8 +2613,8 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 		}
 		else if (isOverflow)
 		{
-			// Not registered either: a page that overflowed the page-count difference. The red slash
-			// says it was never compared.
+			// Not registered either: a page with no partner (added / removed under the UID rule, past
+			// the shorter end by position). The red slash says it was never compared.
 			// @warning this red does not follow the "Mark colour" choice, deliberately: it says
 			//   something different ("not compared", not "changed"), and stands with the registered
 			//   pages' green "/" as a mark whose meaning does not change with the mark colour.

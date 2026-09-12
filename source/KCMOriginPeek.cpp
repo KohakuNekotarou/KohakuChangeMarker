@@ -45,8 +45,9 @@ bool16 CopyAlive()
 }
 
 /** The copy's spread that holds the counterpart of targetSpreadUID's pages, through the same page
-    pairing the comparison used (ordinary pages by position with the registered ones left out,
-    masters by name). kInvalidUID when no page of that spread has a counterpart. */
+    pairing the comparison used (ordinary pages by UID - the copy's pages naming the origin's
+    through their KcmOriginUid label - with the registered ones left out, masters by name).
+    kInvalidUID when no page of that spread has a counterpart. */
 UID PairedSpread(IDataBase* targetDB, UID targetSpreadUID, IDataBase* copyDB)
 {
 	InterfacePtr<ISpread> tSpread(targetDB, targetSpreadUID, UseDefaultIID());
@@ -123,11 +124,12 @@ IDataBase* KCMOriginPeekDBFor(IDataBase* targetDB, UID targetSpreadUID, UID& out
 	//  on the first live peek): the copy's FIRST spread is the one the new document was born with,
 	//  reused by the import, and it does not receive the <Properties><Label> the injection put on
 	//  it - "labels read on 2 of 3 spreads", and page 1 sits on the missing one. The page pairing
-	//  is what the comparison itself paired the marks by (KCMBuildPairing: ordinary pages by
-	//  position with the registered ones left out, masters by name), so a peek that follows it
-	//  lays over exactly the page the ring was computed against. The spread labels stay in the
-	//  XML - they cost nothing and the tables in KCMOriginCompare still read them where they
-	//  survive - but nothing rests on them any more.
+	//  is what the comparison itself paired the marks by (KCMBuildPairing: ordinary pages by UID,
+	//  a copy's page answering to the origin's UID through its own KcmOriginUid label since
+	//  2026-09-13, the one page that can lose that label being matched by order; masters by
+	//  name), so a peek that follows it lays over exactly the page the ring was computed against.
+	//  The spread labels stay in the XML - they cost nothing and the tables in KCMOriginCompare
+	//  still read them where they survive - but nothing rests on them any more.
 	if (sTargetSpreadUID != targetSpreadUID || sCopySpreadUID == kInvalidUID)
 	{
 		const UID copySpread = PairedSpread(targetDB, targetSpreadUID, copyDB);

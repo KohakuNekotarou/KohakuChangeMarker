@@ -24,6 +24,7 @@ namespace
 
 const char* const kStoryOpen   = "<Story ";
 const char* const kSpreadOpen  = "<Spread ";
+const char* const kPageOpen    = "<Page ";		// the pages of <Spread> and <MasterSpread> alike (2026-09-13)
 const char* const kStoryClose  = "</Story>";
 const char* const kRangeOpen   = "<ParagraphStyleRange";
 const char* const kPropsOpen   = "<Properties>";
@@ -107,6 +108,70 @@ bool16 EmitLabel(const char* xml, size_t size, size_t& pos, KCMByteSink& out, co
 }
 
 }	// namespace
+
+bool16 KCMCollectSpreadPages(const char* xml, size_t size, std::vector<KCMXmlSpreadPages>& out)
+{
+	out.clear();
+	if (xml == nil)
+		return kFalse;
+
+	const char* const kSpreadClose = "</Spread>";
+	bool16 inSpread = kFalse;
+	size_t scan = 0;
+	while (scan < size)
+	{
+		const size_t spread = Find(xml, size, scan, kSpreadOpen);
+		const size_t page   = Find(xml, size, scan, kPageOpen);
+		const size_t close  = Find(xml, size, scan, kSpreadClose);
+		size_t next = spread;
+		if (page < next)  next = page;
+		if (close < next) next = close;
+		if (next >= size)
+			break;
+
+		if (next == close)
+		{
+			inSpread = kFalse;
+			scan = next + 1;
+			continue;
+		}
+
+		const size_t tagEnd = Find(xml, size, next, ">");
+		if (tagEnd >= size)
+			break;								// malformed: no closing '>' - nothing more to read
+		const size_t selfAt = Find(xml, size, next, kSelfAttr);
+		uint32 uid = 0;
+		bool16 haveSelf = kFalse;
+		if (selfAt < tagEnd)
+		{
+			const size_t selfBegin = selfAt + ::strlen(kSelfAttr);
+			const size_t selfEnd = Find(xml, size, selfBegin, "\"");
+			if (selfEnd < tagEnd)
+				haveSelf = KCMParseSelfUid(xml + selfBegin, selfEnd - selfBegin, uid);
+		}
+
+		if (next == spread)
+		{
+			// A spread with no Self takes no pages; a self-closing one (<Spread .../>) has none
+			// and must not be left "open", or the next <Page in the file - a master's, say -
+			// would be attributed to it.
+			const bool16 selfClosing = (tagEnd > 0 && xml[tagEnd - 1] == '/') ? kTrue : kFalse;
+			inSpread = (haveSelf && !selfClosing) ? kTrue : kFalse;
+			if (haveSelf)
+			{
+				KCMXmlSpreadPages entry;
+				entry.fSpread = uid;
+				out.push_back(entry);
+			}
+		}
+		else if (inSpread && haveSelf)
+		{
+			out.back().fPages.push_back(uid);	// a page (self-closing or not - its identity is its Self)
+		}
+		scan = tagEnd + 1;
+	}
+	return kTrue;
+}
 
 bool16 KCMParseSelfUid(const char* text, size_t length, uint32& outUid)
 {
@@ -218,11 +283,12 @@ bool16 KCMReadDocumentPreference(const char* xml, size_t size, KCMDocSetupFromXm
 }
 
 bool16 KCMInjectForRehydration(const char* xml, size_t size, const char* sacrificialText,
-							   KCMByteSink& out, int32* outStories, int32* outSpreads)
+							   KCMByteSink& out, int32* outStories, int32* outSpreads, int32* outPages)
 {
-	int32 stories = 0, spreads = 0;
+	int32 stories = 0, spreads = 0, pages = 0;
 	if (outStories) *outStories = 0;
 	if (outSpreads) *outSpreads = 0;
+	if (outPages)   *outPages = 0;
 	if (xml == nil || sacrificialText == nil || sacrificialText[0] == '\0')
 		return kFalse;
 
@@ -234,6 +300,7 @@ bool16 KCMInjectForRehydration(const char* xml, size_t size, const char* sacrifi
 	{
 		const size_t story  = Find(xml, size, scan, kStoryOpen);
 		const size_t spread = Find(xml, size, scan, kSpreadOpen);
+		const size_t page   = Find(xml, size, scan, kPageOpen);
 		size_t range = size, storyEnd = size;
 		if (storyWantsDummy)
 		{
@@ -244,6 +311,7 @@ bool16 KCMInjectForRehydration(const char* xml, size_t size, const char* sacrifi
 		// the nearest event decides
 		size_t next = story;
 		if (spread < next)   next = spread;
+		if (page < next)     next = page;
 		if (range < next)    next = range;
 		if (storyEnd < next) next = storyEnd;
 		if (next >= size)
@@ -266,8 +334,9 @@ bool16 KCMInjectForRehydration(const char* xml, size_t size, const char* sacrifi
 			continue;
 		}
 
-		// a <Story or <Spread open tag
+		// a <Story, <Spread or <Page open tag
 		const bool16 isStory = (next == story) ? kTrue : kFalse;
+		const bool16 isPage  = (next == page) ? kTrue : kFalse;
 		const size_t tagEnd = Find(xml, size, next, ">");
 		if (tagEnd >= size)
 			return kFalse;					// malformed: no closing '>'
@@ -291,14 +360,16 @@ bool16 KCMInjectForRehydration(const char* xml, size_t size, const char* sacrifi
 		if (!EmitLabel(xml, size, pos, out, xml + selfBegin, selfEnd - selfBegin))
 			return kFalse;
 		scan = pos;
-		if (isStory) { ++stories; storyWantsDummy = kTrue; }
-		else         { ++spreads; }
+		if (isStory)     { ++stories; storyWantsDummy = kTrue; }
+		else if (isPage) { ++pages; }
+		else             { ++spreads; }
 	}
 
 	if (!Emit(out, xml + pos, size - pos))
 		return kFalse;
 	if (outStories) *outStories = stories;
 	if (outSpreads) *outSpreads = spreads;
+	if (outPages)   *outPages = pages;
 	return kTrue;
 }
 

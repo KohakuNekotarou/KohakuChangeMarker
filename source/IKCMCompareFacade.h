@@ -600,6 +600,26 @@ public:
 	    exactly as Task Start took it (KCMOrigin.h, KCMOriginSaveRaw). outPath is the file written,
 	    for the status line. kFalse with a reason when nothing is held or the write failed. */
 	virtual bool16		SaveOriginRawToDesktop(PMString& outPath, PMString& outWhyNot) = 0;
+
+	// ---- the page pairing rule ------------------------------------------------------------
+	//
+	// Whether ordinary pages pair by UID (the default since 2026-09-13; a page with its namesake,
+	// a UID on one side only being an added / removed page) or by position (the older rule, for
+	// two documents that share no history). A flyout check toggle flips it and the saved panel
+	// state reads and writes it, both UI-side; the rule is KCMPagePairRule.h.
+	//
+	// ⚠★★★**NEW VIRTUALS GO AT THE END OF THIS CLASS, NEVER IN THE MIDDLE.** This interface is
+	//   called by vtable slot from OUTSIDE this plug-in: Kohaku InDesign MCP's KIDMCPKcmBridge
+	//   (ReleaseExternalSourceDB / StartComparisonWithSourceDB) is built against a copy of this
+	//   header. Measured 2026-09-13: these two were first put after SetIgnorePageNumberMarker,
+	//   KIDMCP was not rebuilt, and its ReleaseExternalSourceDB call landed two slots further on -
+	//   on ExportChangedPagesTSV - which opened the export dialog on every verify and then died in
+	//   UnicodeSavvyString::CopyFrom with the clone pointer read as a PMString&; the crash reporter
+	//   took the main thread and InDesign hung (work/hang-stacks/stacks-13032.txt). Appending
+	//   keeps every slot the older binary knows where it was; rebuild KIDMCP all the same.
+
+	virtual bool16		GetPairPagesByUid() = 0;
+	virtual void		SetPairPagesByUid(bool16 on) = 0;
 };
 
 #endif // __IKCMCompareFacade_h__

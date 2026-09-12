@@ -659,8 +659,9 @@ ErrorCode KCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMString
 	KCMResetHideUnchanged(kTrue);
 
 	// Pair the two documents' pages through the exclusion table (registered pages -- those with no
-	// partner -- taken out, the rest matched in order). Used by both the differential and the full
-	// path, and recorded at the end as the next run's previous pairing.
+	// partner -- taken out, the rest matched by UID, or in order with the flyout toggle off;
+	// KCMPagePairRule.h). Used by both the differential and the full path, and recorded at the end
+	// as the next run's previous pairing.
 	std::vector<UID> tPages, sPages;
 	KCMBuildPairing(targetDB, sourceDB, tPages, sPages);
 
@@ -985,6 +986,14 @@ ErrorCode KCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMString
 			{
 				report.Append(" failed="); report.AppendNumber(failedCount);
 			}
+			// The pages that found no partner (the red "/"): under the UID rule these ARE the added
+			// and removed pages, found by nobody's hand, so they are worth a word; under the
+			// positional rule they are the longer document's tail. The cache was rebuilt just above
+			// (RebuildOverflowCache) from the very pairing this run used. Silent when there are none.
+			const int32 addedCount   = static_cast<int32>(KCMDrawEventHandler::sOverflowT.size());
+			const int32 removedCount = static_cast<int32>(KCMDrawEventHandler::sOverflowS.size());
+			if (addedCount > 0)   { report.Append(" added=");   report.AppendNumber(addedCount); }
+			if (removedCount > 0) { report.Append(" removed="); report.AppendNumber(removedCount); }
 		}
 
 		// The Story mode's report reads the counts the Story Edits list holds (rebuilt above, before

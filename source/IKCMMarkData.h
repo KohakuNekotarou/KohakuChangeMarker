@@ -115,8 +115,9 @@ public:
 	// ---- the page pairing ----------------------------------------------------------------
 	//
 	// Which page of the Source document corresponds to which page of the Target. Registered
-	// pages are taken out first, then what is left is matched in order, so inserting or
-	// deleting a page shifts the rest without breaking the correspondence.
+	// pages are taken out first, then what is left is matched BY UID (2026-09-13; a page with
+	// its namesake, wherever it now stands - or in order, with the flyout's "Pair Pages by UID"
+	// toggle off. The rule is KCMPagePairRule.h).
 	//
 	// The whole table, not one page at a time. Both callers build their own map out of it and
 	// keep it (the view sync caches it for a 250 ms generation, because it is asked dozens of

@@ -205,6 +205,9 @@ public:
 	virtual void		SetIgnorePageNumberMarker(bool16 on)
 													{ KCMSetIgnorePageNumberMarker(on); }
 
+	virtual bool16		GetPairPagesByUid()			{ return KCMGetPairPagesByUid(); }
+	virtual void		SetPairPagesByUid(bool16 on)	{ KCMSetPairPagesByUid(on); }
+
 	virtual void		ExportChangedPagesTSV(PMString& outMessage)
 													{ KCMExportChangedPagesTSV(outMessage); }
 

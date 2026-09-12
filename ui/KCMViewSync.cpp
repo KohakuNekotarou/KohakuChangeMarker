@@ -426,8 +426,8 @@ static UID KCMQueryViewCenterPage(IControlView* srcView, const PBPMPoint& center
 // The add/remove correction. It takes the page at the centre of the model view (in srcDocDb),
 // maps it to the partner page through the comparison pairing -- the same pairing
 // KCMMapTargetToSource / KCMMapSourceToTarget use: the registered pages are dropped and the rest
-// matched in order, so **the right partner comes back even where an insertion has shifted every
-// number after it** -- and converts the coordinate onto that partner page, keeping the offset from
+// matched by UID (KCMPageMap.h), so **the right partner comes back even where an insertion has
+// shifted every number after it** -- and converts the coordinate onto that partner page, keeping the offset from
 // the page centre. That is what makes the two compared pages show the same place.
 //   ★outSkip: kTrue where the model's centre is on a page with no partner (an Added / Removed
 //     registration, or an overflow page). The caller then does **not** sync that destination

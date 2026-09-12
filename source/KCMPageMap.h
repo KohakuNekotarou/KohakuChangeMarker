@@ -2,18 +2,24 @@
 //
 //  KCMPageMap.h
 //
-//  The way in to page pairing (added / removed pages). Pages that fall outside the flat pairing
-//  of the two documents -- added in the newer version or removed from the older one, both of
-//  which mean "no counterpart to compare against" -- are registered and unregistered by the user
-//  through a toggle on the Pages panel's context menu. A registration lives for the session only
-//  and is never written to the document file.
+//  The way in to page pairing: which page of the Target is compared against which page of the
+//  Source. Since 2026-09-13 the pairing is BY IDENTITY - a page pairs with the page of the same
+//  UID on the other side, and a UID found on one side only is an added (Target) or a removed
+//  (Source) page, drawn with the red "/" without anyone having to say so. The rule itself, and
+//  why there is no positional fall-back, is KCMPagePairRule.h. The flyout's "Pair Pages by UID"
+//  toggle (default ON) switches back to the rule that stood before, by position, for two
+//  documents that share no history.
 //
-//  What the registration is for: the pairing built here (KCMBuildPairing) leaves the registered
-//  pages out and pairs what is left in order, so everything downstream of it -- the comparison,
-//  peek's picture of the older version, a single spread's re-comparison, the CMYK sampler --
-//  lines up the right pages once the page counts differ. Nothing zips the raw page lists
-//  together any more; they all go through KCMBuildPairing / KCMMapTargetToSource /
-//  KCMMapSourceToTarget (background: memory kescm-page-offset-idea).
+//  The registration ("Register as Added/Removed Pages" on the Pages panel's context menu) stays
+//  as the user's override: a registered page is taken out before the pairing, whichever rule is
+//  in force, and so has no counterpart. It matters mostly under the positional rule now; under
+//  the identity rule it can still unpair a page whose namesake the user does not want compared.
+//  A registration lives for the session only and is never written to the document file.
+//
+//  Everything downstream -- the comparison, peek's picture of the older version, a single
+//  spread's re-comparison, the CMYK sampler, the view sync -- goes through KCMBuildPairing /
+//  KCMMapTargetToSource / KCMMapSourceToTarget; nothing zips the raw page lists together
+//  (background: memory kescm-page-offset-idea).
 //
 //========================================================================================
 #ifndef __KCMPageMap_h__
@@ -102,13 +108,22 @@ void KCMPageMapCollectRegistered(IDataBase* db, std::set<UID>& out);
 // document's registrations. The body is in KCMPageMap.cpp.
 void KCMPageMapReplaceRegistered(IDataBase* db, const std::vector<UID>& pages);
 
+// The pairing rule switch behind the flyout's "Pair Pages by UID" check toggle. kTrue (the
+// default) = by identity (KCMPagePairRule.h); kFalse = by position, the rule that stood until
+// 2026-09-13. The UI flips it and saves it with the panel settings; a running comparison is
+// re-run by the caller, as the folio toggle does. The body is in KCMPageMap.cpp.
+bool16 KCMGetPairPagesByUid();
+void KCMSetPairPagesByUid(bool16 on);
+
 // The exclusion pairing: take each document's flat page list (KCMCollectPageUIDs), drop the
-// registered ("no counterpart") pages, and pair what is left in order. outTargetPages[i] and
-// outSourcePages[i] are one pair; both arrays end up the same length, truncated to the shorter
-// side. A nil targetDB or sourceDB empties both and returns.
+// registered ("no counterpart") pages, and pair what is left - by identity (the default: a page
+// with the page of the same UID; a task-start copy's page counts under the origin UID its label
+// names), or in order when the toggle above is off. outTargetPages[i] and outSourcePages[i] are
+// one pair; both arrays end up the same length. A nil targetDB or sourceDB empties both and returns.
 // outOverflowTargetPages / outOverflowSourcePages (optional, nil allowed) collect the pages that
-// were NOT registered but still fell off the end because the documents hold different numbers of
-// pages. Only the longer document's set is filled; the shorter one's stays empty.
+// were NOT registered and still found no partner: by identity, the Target pages nobody answers to
+// (added) and the Source pages nobody names (removed), either side, anywhere in the document; by
+// position, the pages that fell off the longer document's end (the shorter side's stays empty).
 // The body is in KCMPageMap.cpp.
 void KCMBuildPairing(IDataBase* targetDB, IDataBase* sourceDB,
 	std::vector<UID>& outTargetPages, std::vector<UID>& outSourcePages,
@@ -118,9 +133,12 @@ void KCMBuildPairing(IDataBase* targetDB, IDataBase* sourceDB,
 // order. outTargetPages / outSourcePages come out the same length, the i-th of each being one
 // pair (both are cleared on entry).
 // **The rule itself differs from KCMBuildPairing above**, which is why this is a separate
-//   function: ordinary pages pair by position, masters by name ("A-Master" and so on). A master
-//   keeps its name through insertions and reordering, whereas pairing them by position means one
-//   extra master on one side makes every following pair compare two unrelated masters.
+//   function: ordinary pages pair by UID (or by position with the toggle off), masters by name
+//   ("A-Master" and so on). A master keeps its name through insertions and reordering, whereas
+//   pairing them by position means one extra master on one side makes every following pair
+//   compare two unrelated masters. (Master UIDs survive Save As too - measured 2026-09-10 - so
+//   pairing them by UID with the name as the fall-back would let a renamed master be followed;
+//   not done, the name rule having been measured to hold.)
 // A name that exists on one side only is not paired (no counterpart = not compared). A pair
 // whose spreads hold different numbers of pages is truncated to the shorter one.
 // The body is in KCMPageMap.cpp.

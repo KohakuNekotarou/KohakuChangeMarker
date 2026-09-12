@@ -242,9 +242,11 @@ public:
 	// Unlike sEntries it holds **every pair the last comparison looked at**, pages with no change
 	// included -- the presence of an entry alone cannot tell you a page's pair is unchanged.
 	static std::map<UID, UID> sPrevPairTargetToSource;
-	// The overflow sets: pages that are not registered but have no partner because the two
-	// documents hold different numbers of pages (drawn as "/"). Target side = sOverflowT, Source
-	// side = sOverflowS.
+	// The overflow sets: pages that are not registered but have no partner (drawn as "/") - under
+	// the UID rule the Target pages whose UID the Source does not hold (added) and the Source
+	// pages whose UID the Target does not hold (removed), anywhere in either document; under the
+	// positional rule (the toggle off) the longer document's tail. Target side = sOverflowT,
+	// Source side = sOverflowS.
 	// They are built once, when the comparison runs, rather than by walking both documents'
 	// pages (KCMBuildPairing) on every draw. Which (sDB, sSrcDB) they were built for is kept in
 	// sOverflowCacheDB / sOverflowCacheSrcDB, and EnsureOverflowCache rebuilds them when the

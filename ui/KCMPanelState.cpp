@@ -177,6 +177,7 @@ void KCMSavePanelState()
 	json += "  \"syncLayoutViews\": ";        json += KCMBoolLiteral(KCMGetLayoutSync());                       json += ",\n";
 	json += "  \"scrollbarMap\": ";           json += KCMBoolLiteral(KCMGetScrollMapEnabled());                 json += ",\n";
 	json += "  \"ignorePageNumberMarker\": "; json += KCMBoolLiteral(compare->GetIgnorePageNumberMarker());               json += ",\n";
+	json += "  \"pairPagesByUid\": ";         json += KCMBoolLiteral(compare->GetPairPagesByUid());                       json += ",\n";
 	json += "  \"translucentPanel\": ";       json += KCMBoolLiteral(KCMGetPanelTranslucent());                 json += ",\n";
 	json += "  \"translucentPagesPanel\": ";  json += KCMBoolLiteral(KCMGetPagesPanelTranslucent());            json += ",\n";
 	json += "  \"translucentBookDialog\": ";  json += KCMBoolLiteral(KCMGetBookDialogTranslucent());            json += ",\n";
@@ -299,6 +300,8 @@ void KCMLoadPanelStateIfPresent()
 	KCMSetScrollMapEnabled      (KCMJsonReadBool(text, "scrollbarMap",           KCMGetScrollMapEnabled()));
 	compare->SetIgnorePageNumberMarker(
 		KCMJsonReadBool(text, "ignorePageNumberMarker", compare->GetIgnorePageNumberMarker()));
+	compare->SetPairPagesByUid(
+		KCMJsonReadBool(text, "pairPagesByUid", compare->GetPairPagesByUid()));	// absent in a file saved before 2026-09-13 = the default stands
 
 	// ★No window is touched here, and none could be: this restore runs at startup
 	//   (KCMUIStartup::Startup), when the panel does not exist yet. What actually applies the

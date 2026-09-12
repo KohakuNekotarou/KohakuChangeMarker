@@ -1063,6 +1063,16 @@ resource MenuDef (kSDKDefMenuResourceID)
 
 		// ("Show HUD" was removed together with the on-press HUD itself on 2026-08-06.)
 
+		// "Pair Pages by UID" on the panel flyout (popup) menu. Check-mark toggle (default ON, see
+		// sPairPagesByUid in KCMPageMap.cpp): while ON, ordinary pages are compared with the page of
+		// the same UID in the other document - pages added, removed or moved since the older version
+		// was saved are found without registering anything; OFF brings the older rule back, by
+		// position, for two documents that share no history (made separately, or through IDML).
+		kKCMPopupPairByUidActionID,
+		kKCMPopupMenuPath,
+		kKCMPairByUidMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
 		// "Ignore Page Number Marker" on the panel flyout (popup) menu. Check-mark toggle (default OFF,
 		// see sIgnorePageNumberMarker in KCMPageNumberMarker.cpp): while ON, frames containing an
 		// automatic "Current Page Number" marker are excluded from the pixel comparison, so pages whose
@@ -1580,6 +1590,15 @@ resource ActionDef (kSDKDefActionResourceID)
 		kKCMActionComponentBoss,
 		kKCMPopupIgnorePageNumActionID,
 		kKCMIgnorePageNumMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates supplies the check mark (kSelectedAction)
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		kKCMActionComponentBoss,
+		kKCMPopupPairByUidActionID,
+		kKCMPairByUidMenuKey,
 		kOtherActionArea,
 		kNormalAction,
 		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates supplies the check mark (kSelectedAction)

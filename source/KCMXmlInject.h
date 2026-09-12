@@ -36,7 +36,13 @@
 //      stories by UID. <Story Self="ufe"> carries the old UID in its Self, so a script label
 //      KcmOriginUid=ufe is written into the COPY, right after the open tag. The rehydrated story
 //      then answers extractLabel("KcmOriginUid") with "ufe" while the user's document is untouched.
-//      Spreads get the same label (the peek needs to find one spread).
+//      Spreads get the same label (the peek needs to find one spread). PAGES are labelled here
+//      too (2026-09-13), but ⚠**the import drops every page label** (measured: all in the bytes,
+//      none in the copy), so the copy's pages are named AFTER the import from the spread -> pages
+//      table below (KCMCollectSpreadPages; the writer is KCMRehydrate.cpp, LabelCopyPages). That
+//      is what lets a task-start copy pair by identity (KCMPagePairRule.h) like any other Source.
+//      ⚠The element the new document was born with is reused by the import and loses its label
+//      (measured on the first spread, 2026-09-12); the write-back matches that spread by position.
 //
 //  PURE FUNCTIONS over bytes. No SDK type but bool16/int32/uint32, so work/kcm-origin-test builds
 //  them outside InDesign. Nothing here allocates: the caller supplies the sink (in the plug-in a
@@ -48,6 +54,7 @@
 
 #include "BaseType.h"
 #include <stddef.h>
+#include <vector>
 
 /** Where the injected copy is written. Write returns kFalse when it could not keep the bytes. */
 class KCMByteSink
@@ -76,10 +83,34 @@ extern const char* const kKCMOriginUidLabelKey;
                             specials - the caller makes it from kKCMSacrificialPrefix + hex).
     @param outStories  how many <Story> elements were labelled (and given a sacrificial range).
     @param outSpreads  how many <Spread> elements were labelled.
+    @param outPages    (optional) how many <Page> elements were labelled - the pages of the master
+                       spreads included, since a <Page is a <Page wherever it sits.
     @return kTrue when the whole copy was written. kFalse when the sink refused, when the token is
-            empty, or when a <Story or <Spread open tag has no closing '>' (malformed input). */
+            empty, or when a <Story, <Spread or <Page open tag has no closing '>' (malformed input). */
 bool16 KCMInjectForRehydration(const char* xml, size_t size, const char* sacrificialText,
-							   KCMByteSink& out, int32* outStories, int32* outSpreads);
+							   KCMByteSink& out, int32* outStories, int32* outSpreads,
+							   int32* outPages = nil);
+
+/** One <Spread> of the origin's XML and the Self uids of its <Page> children, in document order.
+    ⚠★★★WHY THIS EXISTS (measured 2026-09-13): ImportINX DROPS THE LABEL OF EVERY PAGE. The
+    injection above labels the <Page> elements (the offline probe on a real file shows every one
+    labelled), the copy comes back with its spreads and stories labelled - and not one page. So a
+    copy's pages cannot name the origin's pages through the XML; they are named AFTER the import
+    instead: this table, read off the very bytes that were imported, says which origin page stood
+    at which index of which spread, and KCMRehydrate.cpp (LabelCopyPages) writes that as the
+    page's KcmOriginUid label into the copy. The first spread, which the import reuses and leaves
+    unlabelled, is matched by its position (the first <Spread> in the file). */
+struct KCMXmlSpreadPages
+{
+	uint32				fSpread;	// the <Spread>'s Self uid
+	std::vector<uint32>	fPages;		// its <Page> children's Self uids, in order
+};
+
+/** Collect the <Spread> elements and their <Page> children from xml[0..size). Pages of a
+    <MasterSpread> are not collected (a <MasterSpread is not a <Spread, and its pages pair by
+    name). A <Spread or <Page without a parsable Self is skipped; a <Page outside any <Spread is
+    ignored. kFalse only for nil input. */
+bool16 KCMCollectSpreadPages(const char* xml, size_t size, std::vector<KCMXmlSpreadPages>& out);
 
 /** "ufe" -> 0xfe. The Self of a story, spread or page is "u" + the UID in lower-case hex.
     @return kFalse for anything else ("d", "", "ug", "u"). */

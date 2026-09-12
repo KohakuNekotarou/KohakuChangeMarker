@@ -103,8 +103,9 @@ PMReal KCMBaseScreenOpacity()
 
 // Every paired page of the two documents as target UID -> source UID, **masters included**.
 //
-// The two rules differ -- ordinary pages pair by position, master spreads by name -- so they come
-// from two separate functions, and both go into ONE map: page UIDs are unique within a document.
+// The two rules differ -- ordinary pages pair by UID (or by position, toggle off), master spreads
+// by name -- so they come from two separate functions, and both go into ONE map: page UIDs are
+// unique within a document.
 // (The view sync's KCMEnsureSyncPairing has the same shape.)
 //
 // @warning **leaving the masters out is a bug that hides.** Both callers below had it once, and
@@ -259,7 +260,7 @@ void KCMPeekShowAt(IDataBase* targetDB, IDataBase* sourceDB,
 		IDataBase::SaveRestoreModifiedState sourceDirtyGuard(sourceDB);
 
 		// New page -> old page comes from the exclusion pairing (registered pages, which have no
-		// counterpart, left out and the rest matched in order). It is only needed in this branch,
+		// counterpart, left out and the rest matched by UID - KCMPageMap.h). It is only needed in this branch,
 		// the one that actually rasterises: rebuilding the pairing on every cache hit would be
 		// wasted work, and cache hits are the common case.
 		KCMDrawEventHandler::DropAllOrig();		// only one spread is peeked at; the rest goes
@@ -299,8 +300,8 @@ void KCMPeekShowAt(IDataBase* targetDB, IDataBase* sourceDB,
 
 
 // The shared core of the partial re-comparison: re-compare targetPages (page UIDs in targetDB) and
-// update their rings. Each page's counterpart comes from the pairing -- ordinary pages by position
-// with the registered ones left out, masters by name.
+// update their rings. Each page's counterpart comes from the pairing -- ordinary pages by UID
+// (KCMPageMap.h) with the registered ones left out, masters by name.
 //   - every page is taken again with MakeEntry, so the difference reflects the current edit; a
 //     page that is no longer different has its old ring removed
 //   - the older-version image cache (sOrigImages) is stale and thrown away, to be rebuilt by the
@@ -894,6 +895,19 @@ void KCMDetachArmedSource()
 	KCMDrawEventHandler::sSrcDB = nil;
 	KCMDrawEventHandler::sSrcPageToTarget.clear();
 	KCMDrawEventHandler::DropAllOrig();		// the older-version images were of the copy
+
+	// The overflow ("/") cache stays. It was built by the comparison while the copy was the
+	// Source, and it holds the pages ADDED since the task start - the Target-side set. Left as
+	// it was, the cache read as built for (sDB, copy) while the current pair is (sDB, nil), so the
+	// next draw's EnsureOverflowCache rebuilt it against no Source at all and came back empty:
+	// measured 2026-09-13, "added=1" on the status line and no "/" on the page. The cache is
+	// re-stamped as built for (sDB, nil) instead; the Source-side set names pages of a document
+	// about to close and is dropped under the lock the drawing thread reads it with.
+	KCMDrawEventHandler::sOverflowCacheSrcDB = nil;
+	{
+		KCMMarkStateLock lock(KCMMarkStateMutex());
+		KCMDrawEventHandler::sOverflowS.clear();
+	}
 }
 
 // The state accessors the panel reads: an armed peek is what "a comparison is running" means.

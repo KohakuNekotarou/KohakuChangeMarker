@@ -303,6 +303,7 @@
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMFactoryList.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPageFlagState.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPageMap.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPagePairRule.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPageCheck.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPawStamp.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPageMarksDoc.h" />

@@ -652,6 +652,43 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 			break;
 		}
 
+		// The "Pair Pages by UID" toggle (2026-09-13): whether ordinary pages meet their namesake
+		// (ON, the default) or the page at the same position (OFF, the older rule). The same shape as
+		// "Ignore Page Number Marker" above: flip the flag and, if a comparison is already running,
+		// compare everything again so the new pairing shows at once. ⚠Not incremental: the toggle
+		// changes the partner of potentially every page, which is exactly what the incremental path
+		// cannot reuse anything across.
+		case kKCMPopupPairByUidActionID:
+		{
+			InterfacePtr<IKCMCompareFacade> pairing(Utils<IKCMCompareFacade>().QueryUtilInterface());
+			pairing->SetPairPagesByUid(!pairing->GetPairPagesByUid());
+			PMString msg(pairing->GetPairPagesByUid() ? "Pair pages by UID: on." : "Pair pages by UID: off (by position).");
+			msg.SetTranslatable(kFalse);
+			InterfacePtr<IKCMMarkData> marks(Utils<IKCMMarkData>().QueryUtilInterface());
+			IDataBase* const markedDB    = marks->GetMarkedTargetDB();
+			IDataBase* const markedSrcDB = marks->GetMarkedSourceDB();
+			if (pairing->IsOriginArmed())
+			{
+				pairing->RefreshComparison();
+				msg.Append(pairing->IsArmed() ? " (recompared)" : " (cancelled - stopped)");
+			}
+			else if (markedDB != nil && markedSrcDB != nil)
+			{
+				PMString report;
+				if (Utils<IKCMCompareFacade>()->MarkChanges(markedDB, markedSrcDB, report) == kSuccess)
+				{
+					msg.Append(" (recompared)");
+				}
+				else
+				{
+					Utils<IKCMCompareFacade>()->StopComparison();		// the marks are already discarded (the folio toggle's reasoning)
+					msg.Append(" (cancelled - stopped)");
+				}
+			}
+			KCMSetStatus(msg);
+			break;
+		}
+
 		// ★★Flyout "Compare mode > Pixel Changes / Story Changes": switch what is compared. The same
 		//   shape as "Ignore Page Number Marker" above ＝ change the setting and, if already Started,
 		//   compare everything again on the spot.
@@ -1229,6 +1266,10 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 		else if (action == kKCMPopupIgnorePageNumActionID)
 		{
 			KCMSetCheckState(listToUpdate, i, Utils<IKCMCompareFacade>()->GetIgnorePageNumberMarker());
+		}
+		else if (action == kKCMPopupPairByUidActionID)
+		{
+			KCMSetCheckState(listToUpdate, i, Utils<IKCMCompareFacade>()->GetPairPagesByUid());
 		}
 		else if (action == kKCMPageMapToggleActionID)
 		{
