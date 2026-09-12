@@ -70,6 +70,7 @@ resource StringTable (kSDKDefStringsResourceID + index_enUS)
                 kKCMTaskStartMenuKey,				"Task Start",
                 kKCMOpenOriginRawMenuKey,			"Open Task Start XML (raw)",
                 kKCMOpenOriginCopyMenuKey,		"Open Task Start Copy (as compared)",
+                kKCMSaveOriginRawMenuKey,			"Save Task Start XML to Desktop",
                 kKCMClearChosenMenuKey,			"Clear Target and Source",
                 kKCMBookDialogTitleKey,			"Kohaku Change Marker - Compare Books",
                 kKCMPawWordDialogTitleKey,		"Kohaku Change Marker - Cat Paw",

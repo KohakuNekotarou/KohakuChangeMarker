@@ -851,6 +851,28 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 			break;
 		}
 
+		// The third instrument, "Save Task Start XML to Desktop" (2026-09-12, the user's ask): the
+		// held origin's XML written to the Desktop exactly as Task Start took it. The model writes
+		// the file and names it; this half only says where it went (or why it did not).
+		case kKCMPopupSaveOriginRawActionID:
+		{
+			PMString path, whyNot;
+			PMString msg;
+			msg.SetTranslatable(kFalse);
+			if (Utils<IKCMCompareFacade>()->SaveOriginRawToDesktop(path, whyNot))
+			{
+				msg.Append("Task Start XML saved: ");
+				msg.Append(path);
+			}
+			else
+			{
+				msg.Append("Task Start XML not saved: ");
+				msg.Append(whyNot);
+			}
+			KCMSetStatus(msg);
+			break;
+		}
+
 		// Flyout "Clear Target and Source": put the panel's two lines back to bare labels, so the
 		// next Start falls back to the automatic rule (active document = Target, the earliest-opened
 		// other document = Source).
@@ -1046,9 +1068,10 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 			listToUpdate->SetNthActionState(i,
 				Utils<IKCMCompareFacade>()->CanTakeTaskStart() ? kEnabledAction : kDisabled_Unselected);
 		}
-		else if (action == kKCMPopupOpenOriginRawActionID || action == kKCMPopupOpenOriginCopyActionID)
+		else if (action == kKCMPopupOpenOriginRawActionID || action == kKCMPopupOpenOriginCopyActionID
+			|| action == kKCMPopupSaveOriginRawActionID)
 		{
-			// The two test instruments act on what Task Start took: live exactly while an origin is held.
+			// The three test instruments act on what Task Start took: live exactly while an origin is held.
 			listToUpdate->SetNthActionState(i,
 				Utils<IKCMCompareFacade>()->HasOrigin() ? kEnabledAction : kDisabled_Unselected);
 		}

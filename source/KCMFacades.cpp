@@ -223,6 +223,7 @@ public:
 	virtual bool16		IsOriginArmed()						{ return KCMOriginArmed(); }
 	virtual bool16		RehydrateOriginRaw(UIDRef& outDoc, PMString& outWhyNot)	{ return KCMOriginOpenRaw(outDoc, outWhyNot); }
 	virtual bool16		RehydrateOriginAsCompared(UIDRef& outDoc, PMString& outWhyNot)	{ return KCMOriginOpenCopy(outDoc, outWhyNot); }
+	virtual bool16		SaveOriginRawToDesktop(PMString& outPath, PMString& outWhyNot)	{ return KCMOriginSaveRaw(outPath, outWhyNot); }
 };
 
 CREATE_PMINTERFACE(KCMCompareFacade, kKCMCompareFacadeImpl)

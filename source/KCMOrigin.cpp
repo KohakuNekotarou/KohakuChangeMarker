@@ -11,6 +11,7 @@
 #include "IDocument.h"
 #include "IDocumentList.h"
 #include "IPageList.h"
+#include "IPMStream.h"			// the file the raw XML is saved to (KCMOriginSaveRaw)
 #include "ISession.h"
 #include "ISpreadList.h"
 #include "IStoryList.h"
@@ -19,10 +20,17 @@
 // General includes:
 #include "PersistUtils.h"
 #include "K2SmartPtr.h"
+#include "FileUtils.h"			// CoverSHGetFolderPath (the Desktop) / AppendPath / SysFileToPMString
+#include "IDFile.h"
+#include "StreamUtil.h"			// CreateFileStreamWrite
 
 #include <time.h>
 #include <stdio.h>
 #include <new>
+#include <string>
+#ifdef WINDOWS
+#include <shlobj.h>				// CSIDL_DESKTOPDIRECTORY - as the application's own WLinkUtilsHelper.cpp does
+#endif
 
 // Project includes:
 #include "KCMOrigin.h"
@@ -160,6 +168,73 @@ bool16 KCMOriginOpenCopy(UIDRef& outDoc, PMString& whyNot)
 		return kFalse;
 	}
 	return KCMRehydrate(*sBytes, sShape, outDoc, whyNot);
+}
+
+bool16 KCMOriginSaveRaw(PMString& outPath, PMString& whyNot)
+{
+	outPath.Clear();
+	outPath.SetTranslatable(kFalse);
+	whyNot.Clear();
+	whyNot.SetTranslatable(kFalse);
+	if (sBytes.get() == nil)
+	{
+		whyNot = "no Task Start origin is held";
+		return kFalse;
+	}
+
+	// The Desktop, asked of the shell through the SDK's cover (FileUtils.h:596; the application's
+	// own use is WLinkUtilsHelper.cpp:634). CSIDL_DESKTOPDIRECTORY is the folder on disk;
+	// CSIDL_DESKTOP is the virtual namespace root and would not take a file.
+	IDFile file;
+#ifdef WINDOWS
+	if (FileUtils::CoverSHGetFolderPath(CSIDL_DESKTOPDIRECTORY, &file) != kSuccess)
+	{
+		whyNot = "the Desktop folder could not be found";
+		return kFalse;
+	}
+#else
+	whyNot = "saving to the Desktop is Windows only";
+	return kFalse;
+#endif
+
+	// "<document name>.TaskStart-HHMMSS.xml": the time as the panel shows it, minus the colons a
+	// file name may not carry. The document name is the user's; a name with a '/' or a '\' in it
+	// cannot come from a saved document, and an untitled one is "Untitled-1".
+	PMString name(sDocName);
+	name.Append(".TaskStart-");
+	{
+		// sTakenAt is "%02d:%02d:%02d" (Now, above) - ASCII, so the UTF-8 walk is a byte walk.
+		const std::string taken = sTakenAt.GetUTF8String();
+		std::string compact;
+		for (std::string::const_iterator it = taken.begin(); it != taken.end(); ++it)
+			if (*it != ':')
+				compact += *it;
+		name.Append(compact.c_str());
+	}
+	name.Append(".xml");
+	name.SetTranslatable(kFalse);
+	FileUtils::AppendPath(&file, name);
+
+	// The same three steps as the TSV export (KCMChangedPagesTSV.cpp): write, Flush, THEN read
+	// the state - XferByte may only reach the buffer, so a failed write can surface at the Flush.
+	InterfacePtr<IPMStream> stream(StreamUtil::CreateFileStreamWrite(file, kOpenOut | kOpenTrunc, 'TEXT', 'CWIE'));
+	if (stream == nil)
+	{
+		whyNot = "the file could not be created on the Desktop";
+		return kFalse;
+	}
+	stream->XferByte(reinterpret_cast<uchar*>(const_cast<char*>(sBytes->Bytes())), static_cast<int32>(sBytes->Size()));
+	stream->Flush();
+	const bool16 failed = (stream->GetStreamState() == kStreamStateFailure) ? kTrue : kFalse;
+	stream->Close();
+	if (failed)
+	{
+		whyNot = "the file could not be written";
+		return kFalse;
+	}
+	outPath = FileUtils::SysFileToPMString(file);
+	outPath.SetTranslatable(kFalse);
+	return kTrue;
 }
 
 IDataBase* KCMOriginDocDB()

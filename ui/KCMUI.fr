@@ -831,6 +831,14 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKCMOpenOriginCopyMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
+		// "Save Task Start XML to Desktop" (2026-09-12): the third instrument - the held origin's
+		// XML written to the Desktop exactly as Task Start took it. Live while an origin is held
+		// (UpdateActionStates, kCustomEnabling).
+		kKCMPopupSaveOriginRawActionID,
+		kKCMPopupMenuPath,
+		kKCMSaveOriginRawMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
 		// "Clear Target and Source" on the panel flyout (popup) menu. Plain command: stops a running
 		// comparison and drops both chosen documents, so the next Start falls back to the automatic
 		// rule (active = Target, the earliest-opened other document = Source). Directly below the two
@@ -1355,6 +1363,16 @@ resource ActionDef (kSDKDefActionResourceID)
 		kKCMActionComponentBoss,
 		kKCMPopupOpenOriginCopyActionID,
 		kKCMOpenOriginCopyMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		// "Save Task Start XML to Desktop" (2026-09-12): the same enabling as the two above.
+		kKCMActionComponentBoss,
+		kKCMPopupSaveOriginRawActionID,
+		kKCMSaveOriginRawMenuKey,
 		kOtherActionArea,
 		kNormalAction,
 		kCustomEnabling|kDisableIfLowMem,

@@ -74,6 +74,14 @@ bool16 KCMOriginOpenRaw(UIDRef& outDoc, PMString& whyNot);
     kFalse, with a reason, when nothing is held or the rehydration failed. */
 bool16 KCMOriginOpenCopy(UIDRef& outDoc, PMString& whyNot);
 
+/** The third instrument (2026-09-12, the user's ask): the held origin's XML written to the
+    user's Desktop AS IT IS - the bytes Task Start took, before any injection - as
+    "<document name>.TaskStart-HHMMSS.xml". The same origin always gets the same name, so a
+    second press overwrites a file holding the same bytes. outPath is the file written, for the
+    status line. kFalse, with a reason, when nothing is held, the Desktop could not be found or
+    the write failed. Windows only (the Desktop is asked of the shell). */
+bool16 KCMOriginSaveRaw(PMString& outPath, PMString& whyNot);
+
 /** The origin's document, or nil when none is held or it has closed. Compared, never dereferenced
     by callers that did not get it from here a moment ago. */
 IDataBase* KCMOriginDocDB();

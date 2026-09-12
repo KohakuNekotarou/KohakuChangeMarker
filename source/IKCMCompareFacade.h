@@ -595,6 +595,11 @@ public:
 	    can look at the very copy the comparison reads (KCMOrigin.h, KCMOriginOpenCopy). The UI
 	    gives it a window. */
 	virtual bool16		RehydrateOriginAsCompared(UIDRef& outDoc, PMString& outWhyNot) = 0;
+
+	/** The third instrument (2026-09-12): the held origin's XML written to the user's Desktop
+	    exactly as Task Start took it (KCMOrigin.h, KCMOriginSaveRaw). outPath is the file written,
+	    for the status line. kFalse with a reason when nothing is held or the write failed. */
+	virtual bool16		SaveOriginRawToDesktop(PMString& outPath, PMString& outWhyNot) = 0;
 };
 
 #endif // __IKCMCompareFacade_h__
