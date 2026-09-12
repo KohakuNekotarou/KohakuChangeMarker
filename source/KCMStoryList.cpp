@@ -519,7 +519,16 @@ UID KCMStoryFrameAt(IDataBase* db, UID storyUID, TextIndex index)
 	if (pl == nil)
 		return kInvalidUID;
 
-	const ParcelKey key = tpl->GetParcelContaining(index);
+	// ★THE END OF THE STORY LEANS LEFT. A deletion at the very end is reported AT TotalLength -
+	//   the caret's place after the last character - which no parcel contains; the old route's `>`
+	//   test above admits it for exactly that row, and QueryFrameContaining used to answer for it.
+	//   GetParcelContainingLeanLeft is the parcel list's own word for "the parcel of the character
+	//   before this position" (ITextParcelList.h:92-94), so that row still lands in its frame
+	//   rather than falling back to the story's first (found in the recheck of 2026-09-12, after
+	//   the parcel route went in).
+	ParcelKey key = tpl->GetParcelContaining(index);
+	if (!key.IsValid() && index > 0)
+		key = tpl->GetParcelContainingLeanLeft(index);
 	if (!key.IsValid())
 		return kInvalidUID;		// overset, or placed nowhere - the caller keeps its own fallback
 
@@ -545,12 +554,6 @@ bool16 KCMStoryPointAt(IDataBase* db, UID storyUID, TextIndex index, PBPMPoint& 
 		return kFalse;		// see the @param note above: neither caller can clamp this for us.
 							// `>`, not `>=` -- the reason is written out in KCMStoryFrameAt.
 
-	// ★The same crossing KCMStoryFrameAt makes, for the same reason: the two readings must be of
-	//   the same place, and a cell's index is not a place the body's wax can answer for.
-	index = KCMPrimaryIndexOf(textModel, index);
-	if (index < 0)
-		return kFalse;
-
 	InterfacePtr<IWaxStrand> waxStrand((IWaxStrand*)textModel->QueryStrand(kFrameListBoss, IID_IWAXSTRAND));
 	if (waxStrand == nil)
 		return kFalse;
@@ -562,16 +565,38 @@ bool16 KCMStoryPointAt(IDataBase* db, UID storyUID, TextIndex index, PBPMPoint& 
 	if (waxIter == nil)
 		return kFalse;
 
-	int32 offsetInLine = 0;
-	IWaxLine* waxLine = waxIter->GetFirstWaxLine(index, &offsetInLine);
-	if (waxLine == nil)
-		return kFalse;			// overset, or not placed at all - there is no "where" to answer with
-
-	// Which run holds that character, and how far into the run it is. The escapement is measured
-	// up to the glyph BEFORE it, which is the start of the character rather than its far edge.
+	// ★TWO PLACES ARE TRIED, THE CHARACTER'S OWN FIRST (recheck of 2026-09-12). A cell's or a
+	//   footnote's characters are composed into wax of their own, and that wax answers where the
+	//   character really stands - inside the table, which is where the reader wants the window.
+	//   Only when the wax has no line for it is the index crossed to its ANCHOR in the body
+	//   (KCMPrimaryIndexOf - the frame KCMStoryFrameAt named holds that anchor, so the point still
+	//   lands in the same frame). ⚠Trying the anchor FIRST would be a quiet regression: the table
+	//   anchor character has no wax of its own (the composer stops at kTextChar_Table - memory
+	//   text-composition-damage-and-recompose), so GetFirstWaxLine could answer nil there and the
+	//   caller would fall back to the STORY'S START, far from the table.
+	// ⚠Neither reading COMPOSES anything beyond the RecomposeIfDamaged above: the wax iterator
+	//   reads what is there, which is the difference from the QueryFrameContaining that crashed.
+	TextIndex candidates[2] = { index, KCMPrimaryIndexOf(textModel, index) };
+	IWaxLine* waxLine = nil;
+	InterfacePtr<IWaxRun> waxRun;
 	int32 glyphOffset = -1;
-	InterfacePtr<IWaxRun> waxRun(waxLine->QueryRunByTextOffset(offsetInLine, &glyphOffset));
-	if (waxRun == nil)
+	for (int32 c = 0; c < 2 && waxRun == nil; ++c)
+	{
+		if (candidates[c] < 0 || (c == 1 && candidates[1] == candidates[0]))
+			continue;
+
+		int32 offsetInLine = 0;
+		waxLine = waxIter->GetFirstWaxLine(candidates[c], &offsetInLine);
+		if (waxLine == nil)
+			continue;			// overset, or not placed at all - there is no "where" to answer with
+
+		// Which run holds that character, and how far into the run it is. The escapement is
+		// measured up to the glyph BEFORE it, which is the start of the character rather than its
+		// far edge.
+		glyphOffset = -1;
+		waxRun = InterfacePtr<IWaxRun>(waxLine->QueryRunByTextOffset(offsetInLine, &glyphOffset));
+	}
+	if (waxLine == nil || waxRun == nil)
 		return kFalse;
 
 	PMReal x(0.0);
