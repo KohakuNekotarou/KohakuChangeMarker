@@ -7,23 +7,16 @@
 #include "VCPlugInHeaders.h"
 
 // Interface includes:
-#include "IBoolData.h"
-#include "ICommand.h"
 #include "IDataBase.h"
 #include "IDocumentList.h"
 #include "IHierarchy.h"				// GetSpreadUID - the spread a paired page sits on
 #include "ISession.h"
 #include "ISpread.h"
-#include "ISpreadList.h"
 
 #include <vector>
 
 // General includes:
-#include "CmdUtils.h"
-#include "ErrorUtils.h"
 #include "PersistUtils.h"
-#include "SpreadID.h"				// kDeleteSpreadCmdBoss
-#include "UIDList.h"
 
 // Project includes:
 #include "KCMOriginPeek.h"
@@ -49,35 +42,6 @@ bool16 CopyAlive()
 	ISession* const session = GetExecutionContextSession();
 	InterfacePtr<IDocumentList> docList(session != nil ? session->QueryDocumentList() : nil);
 	return (docList != nil && KCMIsDbAlive(docList, sCopy.GetDataBase())) ? kTrue : kFalse;
-}
-
-/** Delete every ordinary spread of copyDB except keepSpread. Masters stay (the pages draw them). */
-bool16 KeepOnlySpread(IDataBase* copyDB, UID keepSpread)
-{
-	InterfacePtr<ISpreadList> spreads(copyDB, copyDB->GetRootUID(), UseDefaultIID());
-	if (spreads == nil)
-		return kFalse;
-	UIDList doomed(copyDB);
-	const int32 n = spreads->GetSpreadCount();
-	for (int32 i = 0; i < n; ++i)
-	{
-		const UID uid = spreads->GetNthSpreadUID(i);
-		if (uid != keepSpread)
-			doomed.Append(uid);
-	}
-	if (doomed.Length() == 0)
-		return kTrue;
-	// The shape of SnpManipulateSpreadsAndPages::DeleteSpread (codesnippets, line 874): the
-	// command's IBoolData says whether pages may shuffle - not here, the copy's pages stay put.
-	InterfacePtr<ICommand> cmd(CmdUtils::CreateCommand(kDeleteSpreadCmdBoss));
-	InterfacePtr<IBoolData> allowShuffle(cmd, UseDefaultIID());
-	if (cmd == nil || allowShuffle == nil)
-		return kFalse;
-	allowShuffle->Set(kFalse);
-	cmd->SetItemList(doomed);
-	GlobalErrorStatePreserver errorState;
-	ErrorUtils::PMSetGlobalErrorCode(kSuccess);
-	return (CmdUtils::ProcessCommand(cmd) == kSuccess) ? kTrue : kFalse;
 }
 
 /** The copy's spread that holds the counterpart of targetSpreadUID's pages, through the same page
@@ -121,28 +85,40 @@ IDataBase* KCMOriginPeekDBFor(IDataBase* targetDB, UID targetSpreadUID, UID& out
 	outCopySpreadUID = kInvalidUID;
 	if (targetDB == nil || targetSpreadUID == kInvalidUID || targetDB != KCMOriginDocDB())
 		return nil;
-	if (CopyAlive() && sTargetDB == targetDB && sTargetSpreadUID == targetSpreadUID)
-	{
-		outCopySpreadUID = sCopySpreadUID;
-		return sCopy.GetDataBase();
-	}
-	KCMOriginPeekDrop();
 
-	const KCMResourceBytes* bytes = KCMOriginBytes();
-	const KCMOriginShape* shape = KCMOriginShapeOf();
-	if (bytes == nil || shape == nil)
-		return nil;
-	UIDRef copy;
-	PMString whyNot;
-	if (!KCMRehydrate(*bytes, *shape, copy, whyNot))
+	// The copy is WHOLE and is kept across spreads: a press on another spread of the same Target
+	// only looks its counterpart up again below. ⚠It used to be cut down to the one spread
+	// (kDeleteSpreadCmdBoss on every other), and that was a defect, measured 2026-09-12 evening:
+	// InDesign does not delete the text of a threaded story with the spreads its frames sit on -
+	// it REFLOWS it into the frames that remain, so the copy's page 2 showed the origin's page-1
+	// text ("L1..." where "L4..." had stood) and the peek laid the wrong words over the page. The
+	// pages the peek draws are the paired ones only (MakeOrigImage per page), so nothing needed the
+	// other spreads gone; the deletion bought speed and cost correctness.
+	if (!(CopyAlive() && sTargetDB == targetDB))
 	{
-		PMString msg("could not rebuild the task-start copy for the peek: ");
-		msg.SetTranslatable(kFalse);
-		msg.Append(whyNot);
-		KCMNotifyStatus(msg);
-		return nil;
+		KCMOriginPeekDrop();
+
+		const KCMResourceBytes* bytes = KCMOriginBytes();
+		const KCMOriginShape* shape = KCMOriginShapeOf();
+		if (bytes == nil || shape == nil)
+			return nil;
+		UIDRef copy;
+		PMString whyNot;
+		if (!KCMRehydrate(*bytes, *shape, copy, whyNot))
+		{
+			PMString msg("could not rebuild the task-start copy for the peek: ");
+			msg.SetTranslatable(kFalse);
+			msg.Append(whyNot);
+			KCMNotifyStatus(msg);
+			return nil;
+		}
+		sCopy = copy;
+		sTargetDB = targetDB;
+		sTargetSpreadUID = kInvalidUID;
+		sCopySpreadUID = kInvalidUID;
 	}
-	IDataBase* const copyDB = copy.GetDataBase();
+	IDataBase* const copyDB = sCopy.GetDataBase();
+
 	// ★THE SPREAD IS FOUND THROUGH THE PAGE PAIRING, NOT THROUGH ITS LABEL (2026-09-12, measured
 	//  on the first live peek): the copy's FIRST spread is the one the new document was born with,
 	//  reused by the import, and it does not receive the <Properties><Label> the injection put on
@@ -152,29 +128,24 @@ IDataBase* KCMOriginPeekDBFor(IDataBase* targetDB, UID targetSpreadUID, UID& out
 	//  lays over exactly the page the ring was computed against. The spread labels stay in the
 	//  XML - they cost nothing and the tables in KCMOriginCompare still read them where they
 	//  survive - but nothing rests on them any more.
-	const UID copySpread = PairedSpread(targetDB, targetSpreadUID, copyDB);
-	if (copySpread == kInvalidUID)
+	if (sTargetSpreadUID != targetSpreadUID || sCopySpreadUID == kInvalidUID)
 	{
-		PMString msg("could not find the spread in the task-start copy: no page of spread ");
-		msg.SetTranslatable(kFalse);
-		msg.AppendNumber(static_cast<int32>(targetSpreadUID.Get()));
-		msg.Append(" has a counterpart");
-		KCMCloseRehydrated(copy);
-		KCMNotifyStatus(msg);
-		return nil;
+		const UID copySpread = PairedSpread(targetDB, targetSpreadUID, copyDB);
+		if (copySpread == kInvalidUID)
+		{
+			// The copy stays (it is whole and good for the other spreads); only this press has no
+			// counterpart to show.
+			PMString msg("could not find the spread in the task-start copy: no page of spread ");
+			msg.SetTranslatable(kFalse);
+			msg.AppendNumber(static_cast<int32>(targetSpreadUID.Get()));
+			msg.Append(" has a counterpart");
+			KCMNotifyStatus(msg);
+			return nil;
+		}
+		sTargetSpreadUID = targetSpreadUID;
+		sCopySpreadUID = copySpread;
 	}
-	if (!KeepOnlySpread(copyDB, copySpread))
-	{
-		KCMCloseRehydrated(copy);
-		KCMSayStatus("could not delete the other spreads of the task-start copy");
-		return nil;
-	}
-	KCMMarkRehydratedClean(copyDB);		// the deletion dirtied it; ours, nothing to save (KCMRehydrate.h)
-	sCopy = copy;
-	sTargetDB = targetDB;
-	sTargetSpreadUID = targetSpreadUID;
-	sCopySpreadUID = copySpread;
-	outCopySpreadUID = copySpread;
+	outCopySpreadUID = sCopySpreadUID;
 	return copyDB;
 }
 
