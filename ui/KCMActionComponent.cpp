@@ -179,7 +179,18 @@ static void KCMApplyCompareMode(KCMCompareMode mode)
 	InterfacePtr<IKCMMarkData> marks(Utils<IKCMMarkData>().QueryUtilInterface());
 	IDataBase* const markedDB    = (marks != nil) ? marks->GetMarkedTargetDB() : nil;
 	IDataBase* const markedSrcDB = (marks != nil) ? marks->GetMarkedSourceDB() : nil;
-	if (markedDB != nil && markedSrcDB != nil)
+	if (compare->IsOriginArmed())
+	{
+		// ★Task Start: armed with NO Source database (the copy was closed after the comparison), so
+		//   the test below - "both marked documents are there" - read as "nothing is running" and
+		//   the mode changed without a comparison: Story's rows under a Pixel heading, and the other
+		//   way round (the user saw it: "モードをかえたとき、うまくいってないきがする", 2026-09-12).
+		//   The model's Refresh rehydrates a Source and runs the Start procedure in the new mode;
+		//   a cancel inside it stops the comparison itself, which IsArmed reports afterwards.
+		compare->RefreshComparison();
+		msg.Append(compare->IsArmed() ? " (recompared)" : " (cancelled - stopped)");
+	}
+	else if (markedDB != nil && markedSrcDB != nil)
 	{
 		PMString report;
 		// ★allowIncremental is not passed ＝ every page is compared again. An incremental comparison is
@@ -611,7 +622,14 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 			InterfacePtr<IKCMMarkData> marks(Utils<IKCMMarkData>().QueryUtilInterface());
 			IDataBase* const markedDB    = marks->GetMarkedTargetDB();
 			IDataBase* const markedSrcDB = marks->GetMarkedSourceDB();
-			if (markedDB != nil && markedSrcDB != nil)
+			if (folio->IsOriginArmed())
+			{
+				// Task Start: no Source database while armed - the same branch as KCMApplyCompareMode,
+				// for the same reason (the two-documents test below would read "not running").
+				folio->RefreshComparison();
+				msg.Append(folio->IsArmed() ? " (recompared)" : " (cancelled - stopped)");
+			}
+			else if (markedDB != nil && markedSrcDB != nil)
 			{
 				PMString report;
 				// ★allowIncremental is not passed here either ＝ every page is compared again, so with many
@@ -788,6 +806,48 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 				msg.Append(whyNot);
 				KCMSetStatus(msg);
 			}
+			break;
+		}
+
+		// Flyout "Open Task Start XML (raw)" (2026-09-12, the user's ask - a test instrument): the
+		// model imports the held origin's XML untouched into a new windowless document, and this
+		// half gives it a window (the split: a window is the UI's to open - KCMBringDocumentToFront
+		// is the route the book rows already use). The document is the reader's to close.
+		case kKCMPopupOpenOriginRawActionID:
+		{
+			PMString whyNot;
+			UIDRef doc = UIDRef::gNull;
+			if (!Utils<IKCMCompareFacade>()->RehydrateOriginRaw(doc, whyNot))
+			{
+				PMString msg("Task Start XML not opened: ");
+				msg.SetTranslatable(kFalse);
+				msg.Append(whyNot);
+				KCMSetStatus(msg);
+				break;
+			}
+			KCMSetStatus(KCMBringDocumentToFront(doc)
+				? "Task Start XML opened as a new document, untouched (the import's own doing)."
+				: "Task Start XML imported, but no window could be opened on it.");
+			break;
+		}
+
+		// Its twin: the copy exactly as a comparison rehydrates it, so the reader can look at what
+		// is compared (paragraph styles included) rather than at the import's raw doing.
+		case kKCMPopupOpenOriginCopyActionID:
+		{
+			PMString whyNot;
+			UIDRef doc = UIDRef::gNull;
+			if (!Utils<IKCMCompareFacade>()->RehydrateOriginAsCompared(doc, whyNot))
+			{
+				PMString msg("Task Start copy not opened: ");
+				msg.SetTranslatable(kFalse);
+				msg.Append(whyNot);
+				KCMSetStatus(msg);
+				break;
+			}
+			KCMSetStatus(KCMBringDocumentToFront(doc)
+				? "Task Start copy opened as a new document, exactly as the comparison reads it."
+				: "Task Start copy rehydrated, but no window could be opened on it.");
 			break;
 		}
 
@@ -986,14 +1046,23 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 			listToUpdate->SetNthActionState(i,
 				Utils<IKCMCompareFacade>()->CanTakeTaskStart() ? kEnabledAction : kDisabled_Unselected);
 		}
+		else if (action == kKCMPopupOpenOriginRawActionID || action == kKCMPopupOpenOriginCopyActionID)
+		{
+			// The two test instruments act on what Task Start took: live exactly while an origin is held.
+			listToUpdate->SetNthActionState(i,
+				Utils<IKCMCompareFacade>()->HasOrigin() ? kEnabledAction : kDisabled_Unselected);
+		}
 		else if (action == kKCMPopupSetTargetActionID || action == kKCMPopupSetSourceActionID)
 		{
 			InterfacePtr<IKCMCompareFacade> compare(Utils<IKCMCompareFacade>().QueryUtilInterface());
 			const bool16 armed = compare->IsArmed() && (compare->GetArmedTargetDB() != nil);
-			// Task Start: while an origin is held, "Set as Source" would replace it silently - greyed.
-			const bool16 sourceBlocked = (action == kKCMPopupSetSourceActionID && compare->HasOrigin()) ? kTrue : kFalse;
+			// Task Start: while an origin is held BOTH are greyed. "Set as Source" would replace the
+			// origin silently; "Set as Target" would name a document the resolver then ignores (the
+			// origin's pair wins while it is chosen), so the panel would say one Target and Start
+			// would compare another. The origin's pair is fixed at Task Start; Clear ends it.
+			const bool16 blocked = compare->HasOrigin();
 			listToUpdate->SetNthActionState(i,
-				(!armed && !sourceBlocked && compare->GetActiveDocDB() != nil) ? kEnabledAction : kDisabled_Unselected);
+				(!armed && !blocked && compare->GetActiveDocDB() != nil) ? kEnabledAction : kDisabled_Unselected);
 		}
 		else if (action == kKCMPopupPrintMarksActionID)
 		{

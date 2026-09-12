@@ -27,6 +27,8 @@
 
 #include "BaseType.h"
 #include "OMTypes.h"	// UID
+#include "PMString.h"
+#include "UIDRef.h"
 
 class IDataBase;
 
@@ -38,8 +40,36 @@ bool16	KCMOriginStart();
     as the ordinary Refresh does. */
 bool16	KCMOriginRefresh();
 
-/** kTrue while a comparison is armed whose Source was the origin. KCMArmedSourceDB is nil then. */
+/** kTrue while a comparison is armed whose Source was the origin. KCMArmedSourceDB is nil then.
+    ★ASKED OF THE STATE, NOT OF A FLAG ALONE: armed, a Target, NO armed Source, and an origin
+    still held. The flag by itself went stale when the origin's document closed - that path ends
+    the comparison through the close sweep, not through Stop, and the next ordinary Start would
+    have read as an origin pair (its Refresh going nowhere, its Sync Layout Views greyed). */
 bool16	KCMOriginArmed();
+
+/** A rehydrated copy for ONE call, held exactly as the comparison run holds its Source: while
+    this object stands, KCMOriginRunInProgress answers kTrue and the two uid translators know the
+    copy - so a story diff, a Story Edits rebuild or a page re-comparison run on it reads it as
+    the run does. Closed on the way out, whichever way.
+    ⚠One at a time: it is the run's own slot (a second one refuses to Open). */
+class KCMOriginScopedCopy
+{
+public:
+	KCMOriginScopedCopy();
+	~KCMOriginScopedCopy();
+
+	/** Rehydrate the held origin. kFalse with a reason when there is no origin, the slot is
+	    taken, or the rehydration failed. */
+	bool16		Open(PMString& whyNot);
+
+	/** The copy's database, or nil before Open / after a failed one. */
+	IDataBase*	DB() const;
+
+private:
+	UIDRef		fDoc;
+	KCMOriginScopedCopy(const KCMOriginScopedCopy&);
+	KCMOriginScopedCopy& operator=(const KCMOriginScopedCopy&);
+};
 
 /** Stop's hook: forget the armed-origin flag and drop the peek document. */
 void	KCMOriginOnStop();

@@ -7,6 +7,8 @@
 #include "VCPlugInHeaders.h"
 
 // Interface includes:
+#include "ICommand.h"
+#include "IComposeScanner.h"		// DeleteSurvivingDummies: the first paragraph of each story
 #include "IDataBase.h"
 #include "IDocFileHandler.h"
 #include "IDocument.h"
@@ -20,8 +22,12 @@
 #include "IScript.h"				// a story's scripting facet IS an IScriptLabel (KCMPageMarksDoc.cpp)
 #include "IScriptLabel.h"
 #include "ISession.h"
+#include "IStoryList.h"
+#include "ITextModel.h"
+#include "ITextModelCmds.h"		// DeleteCmd - the one edit ever made to a rehydrated copy
 
 // General includes:
+#include "CmdUtils.h"
 #include "ErrorUtils.h"				// GlobalErrorStatePreserver
 #include "PersistUtils.h"
 #include "StreamUtil.h"
@@ -30,6 +36,7 @@
 #include "SnippetID.h"				// kDocElementImportBoss
 
 #include <string>
+#include "WideString.h"
 
 // Project includes:
 #include "KCMRehydrate.h"
@@ -69,6 +76,146 @@ void AppendShape(PMString& out, const KCMOriginShape& s)
 	out.AppendNumber(s.fTextLen);
 }
 
+/** The sacrificial first range (KCMXmlInject.h) is put in for ImportINX to drop - and on a
+	one-story document it always was. WITH TWO STORIES ONE OF THEM KEPT IT (2026-09-12: the copy
+	came back 9 characters longer than the origin = "KCMDUMMY" + its return, and the shape check
+	refused it, which is what the check is for). So whatever survived is deleted here BY CONTENT:
+	a story whose first paragraph is exactly the sacrificial text loses that paragraph. Through a
+	command, because the text model takes no other route; the copy is ours and windowless, so the
+	undo step lands on nobody's stack (KCMOriginPeek deletes spreads of a copy the same way).
+	@return how many paragraphs were deleted (the caller only reports it). */
+int32 DeleteSurvivingDummies(IDataBase* db)
+{
+	int32 deleted = 0;
+	if (db == nil)
+		return 0;
+	const char* const dummy = kKCMSacrificialText;
+	const int32 dummyLen = static_cast<int32>(::strlen(dummy));
+	InterfacePtr<IStoryList> stories(db, db->GetRootUID(), UseDefaultIID());
+	if (stories == nil)
+		return 0;
+	const int32 n = stories->GetUserAccessibleStoryCount();
+	for (int32 i = 0; i < n; ++i)
+	{
+		InterfacePtr<ITextModel> model(stories->GetNthUserAccessibleStoryUID(i), UseDefaultIID());
+		if (model == nil)
+			continue;
+		InterfacePtr<IComposeScanner> scanner(model, UseDefaultIID());
+		if (scanner == nil)
+			continue;
+		int32 span = 0;
+		// excludeEOS = kFalse, as FirstReadableText reads (KCMStoryList.cpp): the whole paragraph,
+		// return included - so a surviving dummy spans exactly the text plus one.
+		const TextIndex start = scanner->FindSurroundingParagraph(0, &span, kFalse);
+		if (start != 0 || span != dummyLen + 1)
+			continue;
+		WideString para;
+		scanner->CopyText(0, dummyLen, &para);
+		bool16 same = (para.CharCount() == dummyLen) ? kTrue : kFalse;
+		for (int32 c = 0; same && c < dummyLen; ++c)
+			if (para.GetChar(c) != UTF32TextChar(dummy[c]))
+				same = kFalse;
+		if (!same)
+			continue;
+		InterfacePtr<ITextModelCmds> cmds(model, UseDefaultIID());
+		if (cmds == nil)
+			continue;
+		InterfacePtr<ICommand> cmd(cmds->DeleteCmd(0, span));
+		if (cmd != nil && CmdUtils::ProcessCommand(cmd) == kSuccess)
+			++deleted;
+	}
+	return deleted;
+}
+
+/** Steps 3 to 5 of a rehydration, on a document that already exists: import the injected XML,
+	compose, check the shape.
+
+	**EVERY INTERFACE THIS TAKES ON THE DOCUMENT IS RELEASED WHEN IT RETURNS, AND THAT IS THE
+	WHOLE REASON IT IS A SEPARATE FUNCTION.** The caller closes the document on kFalse - AFTER this
+	has returned, so nothing of ours is still standing on it. It used to be one function that
+	closed on each failure with `parent`, `importedHolder` and the policy still in scope, and
+	InDesign answers a close under outstanding references with a PROTECTIVE SHUTDOWN: the
+	process ends without an exception (measured 2026-09-12, twice: "CloseDocCmd - document is
+	still referenced ... Document has 3 extra references" in InDesign Recovery/
+	ProtectiveShutdownLog; nothing in any crash watch, because nothing was thrown). The morning's
+	"crash closing from inside a script property" was this same failure path, not the context.
+*/
+bool16 ImportOnly(const UIDRef& ref, KCMResourceBytes& xml, PMString& whyNot)
+{
+	IDocument* const doc = DocOf(ref.GetDataBase());
+	InterfacePtr<IDOMElement> parent(doc, UseDefaultIID());
+	ISession* const session = GetExecutionContextSession();
+	InterfacePtr<IINXManager> inxManager(session != nil ? session->QueryINXManager() : nil);
+	InterfacePtr<IPMUnknown> holder((IPMUnknown*)::CreateObject(kDocElementImportBoss, IID_IINXIMPORTPOLICY));
+	xml.Seek(0, kSeekFromStart);
+	InterfacePtr<IPMStream> stream(StreamUtil::CreateMemoryStreamRead(&xml));
+	if (doc == nil || parent == nil || inxManager == nil || holder == nil || stream == nil)
+	{
+		whyNot = "the import's parts could not be assembled";
+		return kFalse;
+	}
+
+	// 3. the import
+	IINXImportPolicy* const policy = (IINXImportPolicy*)holder.get();
+	IDOMElement* imported = nil;
+	ErrorCode err = kFailure;
+	{
+		GlobalErrorStatePreserver errorState;
+		ErrorUtils::PMSetGlobalErrorCode(kSuccess);
+		inxManager->BeginImportSession();
+		err = inxManager->ImportINX(parent, policy, stream, nil, kSuppressUI, &imported);
+		inxManager->EndImportSession();
+	}
+	InterfacePtr<IDOMElement> importedHolder(imported);	// takes the reference the call handed back
+	if (err != kSuccess)
+	{
+		whyNot = "ImportINX failed";
+		return kFalse;
+	}
+	return kTrue;
+}
+
+bool16 ImportAndCheck(const UIDRef& ref, KCMResourceBytes& copy, const KCMOriginShape& expect, PMString& whyNot)
+{
+	if (!ImportOnly(ref, copy, whyNot))
+		return kFalse;
+	IDocument* const doc = DocOf(ref.GetDataBase());
+
+	// 3b. the sacrificial ranges the import did NOT drop (DeleteSurvivingDummies says why there
+	//     can be any). Before the compose, so that what is composed is the text as it should be.
+	{
+		GlobalErrorStatePreserver errorState;
+		ErrorUtils::PMSetGlobalErrorCode(kSuccess);
+		DeleteSurvivingDummies(ref.GetDataBase());
+	}
+
+	// 4. compose BEFORE anything reads pixels or text positions. A document straight out of the
+	//    import has its stories uncomposed, and the Pixel comparison rasterises it at once: measured
+	//    2026-09-12 on the first live Start, every page of an unchanged document came back
+	//    "changed" (4 of 4) until this line. The book comparison does the same for the chapters it
+	//    opens (RecomposeChapter, KCMBookCompare.cpp), and for the same reason. A menu command is
+	//    a safe place to recompose; a draw event would not be.
+	{
+		InterfacePtr<IGlobalRecompose> recompose(doc, IID_IGLOBALRECOMPOSE);
+		if (recompose != nil)
+			recompose->ForceRecompositionToComplete();
+	}
+
+	// 5. the check: whole, or nothing
+	KCMOriginShape got;
+	KCMMeasureShape(ref.GetDataBase(), got);
+	if (!(got == expect))
+	{
+		whyNot = "the rehydrated document does not match the origin (spreads/pages/stories/text ";
+		AppendShape(whyNot, got);
+		whyNot.Append(" against ");
+		AppendShape(whyNot, expect);
+		whyNot.Append(")");
+		return kFalse;
+	}
+	return kTrue;
+}
+
 }	// namespace
 
 bool16 KCMRehydrate(const KCMResourceBytes& inx, const KCMOriginShape& expect, UIDRef& outDoc, PMString& whyNot)
@@ -103,69 +250,65 @@ bool16 KCMRehydrate(const KCMResourceBytes& inx, const KCMOriginShape& expect, U
 			return kFalse;
 		}
 	}
-	IDocument* const doc = DocOf(ref.GetDataBase());
-	InterfacePtr<IDOMElement> parent(doc, UseDefaultIID());
-	ISession* const session = GetExecutionContextSession();
-	InterfacePtr<IINXManager> inxManager(session != nil ? session->QueryINXManager() : nil);
-	InterfacePtr<IPMUnknown> holder((IPMUnknown*)::CreateObject(kDocElementImportBoss, IID_IINXIMPORTPOLICY));
-	copy.Seek(0, kSeekFromStart);
-	InterfacePtr<IPMStream> stream(StreamUtil::CreateMemoryStreamRead(&copy));
-	if (doc == nil || parent == nil || inxManager == nil || holder == nil || stream == nil)
+	// 3-5. import, compose, check - in a function of their own, so that every interface taken on
+	//      the document is gone before the close below (ImportAndCheck says why that is the rule).
+	if (!ImportAndCheck(ref, copy, expect, whyNot))
 	{
-		whyNot = "the import's parts could not be assembled";
-		KCMCloseRehydrated(ref);
+		KCMCloseRehydrated(ref);	// nothing of ours stands on it any more
 		return kFalse;
 	}
+	// 6. ours, and nothing in it to save (the header says why this matters at a Quit)
+	KCMMarkRehydratedClean(ref.GetDataBase());
+	outDoc = ref;
+	return kTrue;
+}
 
-	// 3. the import
-	IINXImportPolicy* const policy = (IINXImportPolicy*)holder.get();
-	IDOMElement* imported = nil;
-	ErrorCode err = kFailure;
+bool16 KCMRehydrateRaw(const KCMResourceBytes& inx, UIDRef& outDoc, PMString& whyNot)
+{
+	outDoc = UIDRef::gNull;
+	whyNot.Clear();
+	whyNot.SetTranslatable(kFalse);
+	if (inx.Size() == 0)
+	{
+		whyNot = "the origin holds no bytes";
+		return kFalse;
+	}
+	// The bytes AS THEY ARE: no injection, so the stream is a copy of the origin and nothing else.
+	KCMResourceBytes copy;
+	const uint32 size = static_cast<uint32>(inx.Size());
+	if (copy.Write(const_cast<char*>(inx.Bytes()), size) != size || !copy.IsWhole())
+	{
+		whyNot = "out of memory copying the origin";
+		return kFalse;
+	}
+	UIDRef ref = UIDRef::gNull;
 	{
 		GlobalErrorStatePreserver errorState;
 		ErrorUtils::PMSetGlobalErrorCode(kSuccess);
-		inxManager->BeginImportSession();
-		err = inxManager->ImportINX(parent, policy, stream, nil, kSuppressUI, &imported);
-		inxManager->EndImportSession();
+		if (Utils<IDocumentCommands>()->New(&ref, kSuppressUI) != kSuccess || ref == UIDRef::gNull)
+		{
+			whyNot = "could not create a document to rehydrate into";
+			return kFalse;
+		}
 	}
-	InterfacePtr<IDOMElement> importedHolder(imported);	// takes the reference the call handed back
-	if (err != kSuccess)
+	// The import and nothing after it - no sacrificial range deleted, no compose, no shape check,
+	// no clean mark: the reader asked to see what ImportINX makes of the XML untouched.
+	if (!ImportOnly(ref, copy, whyNot))
 	{
-		whyNot = "ImportINX failed";
-		KCMCloseRehydrated(ref);
-		return kFalse;
-	}
-
-	// 4. compose BEFORE anything reads pixels or text positions. A document straight out of the
-	//    import has its stories uncomposed, and the Pixel comparison rasterises it at once: measured
-	//    2026-09-12 on the first live Start, every page of an unchanged document came back
-	//    "changed" (4 of 4) until this line. The book comparison does the same for the chapters it
-	//    opens (RecomposeChapter, KCMBookCompare.cpp), and for the same reason. A menu command is
-	//    a safe place to recompose; a draw event would not be.
-	{
-		InterfacePtr<IGlobalRecompose> recompose(doc, IID_IGLOBALRECOMPOSE);
-		if (recompose != nil)
-			recompose->ForceRecompositionToComplete();
-	}
-
-	// 5. the check: whole, or nothing
-	KCMOriginShape got;
-	KCMMeasureShape(ref.GetDataBase(), got);
-	if (!(got == expect))
-	{
-		whyNot = "the rehydrated document does not match the origin (spreads/pages/stories/text ";
-		AppendShape(whyNot, got);
-		whyNot.Append(" against ");
-		AppendShape(whyNot, expect);
-		whyNot.Append(")");
-		KCMCloseRehydrated(ref);
+		KCMCloseRehydrated(ref);	// after ImportOnly returned: nothing of ours stands on it
 		return kFalse;
 	}
 	outDoc = ref;
 	return kTrue;
 }
 
-void KCMCloseRehydrated(const UIDRef& doc)
+void KCMMarkRehydratedClean(IDataBase* db)
+{
+	if (db != nil && db->IsModified())
+		db->SetModified(kFalse);
+}
+
+void KCMCloseRehydrated(const UIDRef& doc, bool16 deferred)
 {
 	if (doc == UIDRef::gNull || DocOf(doc.GetDataBase()) == nil)
 		return;						// already gone
@@ -174,9 +317,10 @@ void KCMCloseRehydrated(const UIDRef& doc)
 	InterfacePtr<IDocFileHandler> handler(Utils<IDocumentUtils>()->QueryDocFileHandler(doc));
 	if (handler == nil || !handler->CanClose(doc))
 		return;
-	// kProcess: closes now, legal because the document has no window (KCMBookCompare.cpp). See the
-	// header for what to do if this is ever seen to crash.
-	handler->Close(doc, kSuppressUI, kFalse /*allowCancel*/, IDocFileHandler::kProcess);
+	// kProcess: closes now, legal because the document has no window (KCMBookCompare.cpp).
+	// kSchedule: the handler's default, for the caller inside a close responder (the header).
+	handler->Close(doc, kSuppressUI, kFalse /*allowCancel*/,
+				   deferred ? IDocFileHandler::kSchedule : IDocFileHandler::kProcess);
 }
 
 bool16 KCMReadOriginUidLabel(IDataBase* db, UID uid, UID& outOriginal)

@@ -30,6 +30,7 @@
 #include "KCMComparisonRun.h"		// KCMChooseOriginPair
 #include "KCMExternalSource.h"		// KCMIsDbAlive
 #include "KCMOriginPeek.h"			// KCMOriginPeekDrop / KCMOriginPeekDescribe
+#include "KCMRehydrate.h"			// KCMRehydrateRaw - the test instrument's import
 #include "KCMResourceBytes.h"
 #include "KCMResourceSnapshot.h"	// KCMTakeResourceSnapshot - the export, as the Resources mode does it
 
@@ -135,6 +136,32 @@ bool16 KCMTakeTaskStart(PMString& whyNot)
 
 bool16 KCMHasOrigin()					{ return (sBytes.get() != nil) ? kTrue : kFalse; }
 
+bool16 KCMOriginOpenRaw(UIDRef& outDoc, PMString& whyNot)
+{
+	outDoc = UIDRef::gNull;
+	whyNot.Clear();
+	whyNot.SetTranslatable(kFalse);
+	if (sBytes.get() == nil)
+	{
+		whyNot = "no Task Start origin is held";
+		return kFalse;
+	}
+	return KCMRehydrateRaw(*sBytes, outDoc, whyNot);
+}
+
+bool16 KCMOriginOpenCopy(UIDRef& outDoc, PMString& whyNot)
+{
+	outDoc = UIDRef::gNull;
+	whyNot.Clear();
+	whyNot.SetTranslatable(kFalse);
+	if (sBytes.get() == nil)
+	{
+		whyNot = "no Task Start origin is held";
+		return kFalse;
+	}
+	return KCMRehydrate(*sBytes, sShape, outDoc, whyNot);
+}
+
 IDataBase* KCMOriginDocDB()
 {
 	if (sBytes.get() == nil || sDocDB == nil)
@@ -158,15 +185,17 @@ void KCMOriginLabel(PMString& out)
 	out.Append(sTakenAt);
 }
 
-void KCMReleaseOrigin()
+void KCMReleaseOrigin(bool16 deferPeekClose)
 {
-	KCMOriginPeekDrop();				// the peek document stood on these bytes
+	// The slot first, the peek document second: closing it raises kAfterCloseDoc, whose sweep
+	// comes back through KCMForgetOriginIfDocClosed - and finds the slot empty.
 	sBytes.reset();
 	sShape = KCMOriginShape();
 	sStamps.clear();
 	sDocDB = nil;
 	sDocName.Clear();
 	sTakenAt.Clear();
+	KCMOriginPeekDrop(deferPeekClose);	// the peek document stood on these bytes
 }
 
 void KCMForgetOriginIfDocClosed(IDocumentList* docList)
@@ -174,7 +203,7 @@ void KCMForgetOriginIfDocClosed(IDocumentList* docList)
 	if (docList == nil || sBytes.get() == nil || sDocDB == nil)
 		return;
 	if (!KCMIsDbAlive(docList, sDocDB))
-		KCMReleaseOrigin();
+		KCMReleaseOrigin(kTrue /*deferPeekClose: this is the close sweep*/);
 }
 
 void KCMOriginStatusLine(PMString& out)

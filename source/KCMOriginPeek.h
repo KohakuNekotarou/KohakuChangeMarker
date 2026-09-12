@@ -35,8 +35,11 @@ IDataBase*	KCMOriginPeekDBFor(IDataBase* targetDB, UID targetSpreadUID, UID& out
     copy is held, the page is not on that spread, or the copy is gone. */
 bool16		KCMOriginPeekMapPage(IDataBase* targetDB, UID targetPageUID, UID& outCopyPageUID);
 
-/** Close and forget the peek document, if any. Idempotent. */
-void		KCMOriginPeekDrop();
+/** Close and forget the peek document, if any. Idempotent, and re-entrant: the statics are
+    cleared BEFORE the close, so the kAfterCloseDoc sweep the close raises finds nothing held.
+    @param deferred kTrue schedules the close instead of running it now - for the close sweep,
+           which is itself inside a close responder (KCMRehydrate.h). */
+void		KCMOriginPeekDrop(bool16 deferred = kFalse);
 
 /** "-" when none is held, else the TARGET spread uid it was built for, as a number. */
 void		KCMOriginPeekDescribe(PMString& out);

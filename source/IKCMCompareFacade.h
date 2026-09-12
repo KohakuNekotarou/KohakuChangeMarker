@@ -38,6 +38,7 @@
 // General includes:
 #include "PMString.h"
 #include "PMReal.h"		// GetBaseScreenOpacity
+#include "UIDRef.h"		// RehydrateOriginRaw
 
 // Project includes:
 // The BOUNDARY header, not KCMID.h. All that is needed here is this interface's own IID
@@ -583,6 +584,17 @@ public:
 
 	/** kTrue while a comparison is armed whose Source is the origin (GetArmedSourceDB is nil then). */
 	virtual bool16		IsOriginArmed() = 0;
+
+	/** The test instrument (2026-09-12): the held origin's XML imported UNTOUCHED into a new
+	    windowless document. The UI gives it a window (KCMActionComponent.cpp); the document is the
+	    reader's to close and is neither the run's copy nor the peek document. kFalse with a reason
+	    when nothing is held or the import failed - nothing is left open then. */
+	virtual bool16		RehydrateOriginRaw(UIDRef& outDoc, PMString& outWhyNot) = 0;
+
+	/** Its twin: the held origin rehydrated exactly as a comparison rehydrates it, so the reader
+	    can look at the very copy the comparison reads (KCMOrigin.h, KCMOriginOpenCopy). The UI
+	    gives it a window. */
+	virtual bool16		RehydrateOriginAsCompared(UIDRef& outDoc, PMString& outWhyNot) = 0;
 };
 
 #endif // __IKCMCompareFacade_h__

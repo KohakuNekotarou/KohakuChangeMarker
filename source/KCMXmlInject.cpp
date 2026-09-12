@@ -17,6 +17,7 @@
 #include <string.h>
 
 const char* const kKCMOriginUidLabelKey = "KcmOriginUid";
+const char* const kKCMSacrificialText = kKCMSacrificialTextLiteral;
 
 namespace
 {
@@ -31,7 +32,7 @@ const char* const kSelfAttr    = "Self=\"";
 const char* const kDummyRange  =
 	"<ParagraphStyleRange AppliedParagraphStyle=\"ParagraphStyle/$ID/NormalParagraphStyle\">"
 	"<CharacterStyleRange AppliedCharacterStyle=\"CharacterStyle/$ID/[No character style]\">"
-	"<Content>KCMDUMMY</Content><Br /></CharacterStyleRange></ParagraphStyleRange>";
+	"<Content>" kKCMSacrificialTextLiteral "</Content><Br /></CharacterStyleRange></ParagraphStyleRange>";
 
 bool16 StartsWith(const char* xml, size_t size, size_t at, const char* literal)
 {

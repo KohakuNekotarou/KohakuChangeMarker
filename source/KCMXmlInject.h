@@ -7,10 +7,15 @@
 //  What is done to the XML of a task-start copy BEFORE it is handed to ImportINX. Two things,
 //  both measured on 2026-09-12 (docs/ai-notes/kcm-inx-rehydration-2026-09-12.md):
 //
-//   1. A SACRIFICIAL FIRST RANGE. ImportINX drops the first <ParagraphStyleRange> of every story
+//   1. A SACRIFICIAL FIRST RANGE. ImportINX drops the first <ParagraphStyleRange> of a story
 //      whole (13,106 characters came back as 6,298; a five-paragraph story lost exactly its first
-//      paragraph). The rule is mechanical, so a range that says KCMDUMMY is put first and is all
-//      that goes. Why it happens is not known; what is known is that this makes the text whole.
+//      paragraph), so a range that says KCMDUMMY is put first and is what goes. Why it happens is
+//      not known; what is known is that this makes the text whole.
+//      !NOT OF EVERY STORY. That was measured on one-story documents. With TWO stories one of
+//      them kept its sacrificial range (2026-09-12: the copy came back "KCMDUMMY" + a return =
+//      9 characters longer than the origin, and the shape check refused it). So the injection
+//      is only half of the rule: after the import, a story whose first paragraph is exactly
+//      kKCMSacrificialText loses that paragraph (KCMRehydrate.cpp, DeleteSurvivingDummies).
 //
 //   2. A LABEL NAMING THE ORIGINAL UID. The import renumbers everything, and the Story mode pairs
 //      stories by UID. <Story Self="ufe"> carries the old UID in its Self, so a script label
@@ -39,6 +44,12 @@ public:
 
 /** The label key the rehydrated copy carries. The value is the element's Self ("ufe"). */
 extern const char* const kKCMOriginUidLabelKey;
+
+/** The words of the sacrificial first range - ONE token, so that a paragraph made of exactly this
+    can be recognised after the import and deleted if the import left it standing (see 1. above).
+    The macro form is what the injected range is spelled with; the constant is the same bytes. */
+#define kKCMSacrificialTextLiteral "KCMDUMMY"
+extern const char* const kKCMSacrificialText;
 
 /** Copy xml[0..size) into out with the two injections above.
 

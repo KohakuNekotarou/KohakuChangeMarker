@@ -493,6 +493,15 @@ void KCMStartComparisonWithSourceDB(IDocument* target, IDataBase* sourceDB, cons
 	// "yes" about this database while its pages are being drawn.
 	KCMRegisterExternalSource(sourceDB, sourceLabel);
 
+	// The lent database replaces the origin as the Source, as a real document does in
+	// KCMSetChosenSourceToActive - and the origin is released with the choice. Left standing,
+	// the resolver would have gone on preferring it over the pair chosen two lines below.
+	if (sChosenSourceIsOrigin)
+	{
+		sChosenSourceIsOrigin = kFalse;
+		KCMReleaseOrigin();
+	}
+
 	// ★★CHOSEN AS WELL AS STARTED (the user's ask, 2026-09-02: "keep Target and Source after a
 	//  Stop, as a chosen pair is kept"). This is "Set as Target" + "Set as Source" + Start in one:
 	//  the panel keeps naming both after a Stop, and the flyout's own Start compares against the

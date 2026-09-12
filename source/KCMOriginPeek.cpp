@@ -169,6 +169,7 @@ IDataBase* KCMOriginPeekDBFor(IDataBase* targetDB, UID targetSpreadUID, UID& out
 		KCMSayStatus("could not delete the other spreads of the task-start copy");
 		return nil;
 	}
+	KCMMarkRehydratedClean(copyDB);		// the deletion dirtied it; ours, nothing to save (KCMRehydrate.h)
 	sCopy = copy;
 	sTargetDB = targetDB;
 	sTargetSpreadUID = targetSpreadUID;
@@ -200,14 +201,19 @@ bool16 KCMOriginPeekMapPage(IDataBase* targetDB, UID targetPageUID, UID& outCopy
 	return kFalse;
 }
 
-void KCMOriginPeekDrop()
+void KCMOriginPeekDrop(bool16 deferred)
 {
-	if (CopyAlive())
-		KCMCloseRehydrated(sCopy);
+	// Forgotten first, closed second. The close raises kAfterCloseDoc, whose sweep reaches
+	// KCMReleaseOrigin and this function again; with the statics already empty that second call
+	// finds nothing and returns, instead of closing the same document twice.
+	const UIDRef doomed = sCopy;
+	const bool16 alive = CopyAlive();
 	sCopy = UIDRef::gNull;
 	sTargetDB = nil;
 	sTargetSpreadUID = kInvalidUID;
 	sCopySpreadUID = kInvalidUID;
+	if (alive)
+		KCMCloseRehydrated(doomed, deferred);
 }
 
 void KCMOriginPeekDescribe(PMString& out)

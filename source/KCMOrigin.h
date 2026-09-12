@@ -61,6 +61,19 @@ bool16 KCMTakeTaskStart(PMString& whyNot);
 
 bool16 KCMHasOrigin();
 
+/** The test instrument (2026-09-12): the held origin's XML imported UNTOUCHED into a new
+    windowless document (KCMRehydrateRaw). The UI gives it a window; it is the reader's to close
+    and is not the run's copy nor the peek document. kFalse, with a reason, when nothing is held
+    or the import failed. */
+bool16 KCMOriginOpenRaw(UIDRef& outDoc, PMString& whyNot);
+
+/** Its twin: the held origin rehydrated EXACTLY as a comparison rehydrates it (KCMRehydrate -
+    the sacrificial range, the deletion of a surviving one, the compose, the shape check), so the
+    reader can look at the very copy the comparison reads - paragraph styles included. The UI
+    gives it a window; it is the reader's to close and is not the run's copy nor the peek document.
+    kFalse, with a reason, when nothing is held or the rehydration failed. */
+bool16 KCMOriginOpenCopy(UIDRef& outDoc, PMString& whyNot);
+
 /** The origin's document, or nil when none is held or it has closed. Compared, never dereferenced
     by callers that did not get it from here a moment ago. */
 IDataBase* KCMOriginDocDB();
@@ -77,10 +90,14 @@ const std::vector<KCMStoryStamp>* KCMOriginStoryStamps();
 void KCMOriginLabel(PMString& out);
 
 /** Drop the origin (bytes, shape, stamps, document) and the peek document that stood on it.
-    Idempotent; safe at any point of the shutdown sequence. */
-void KCMReleaseOrigin();
+    Idempotent; safe at any point of the shutdown sequence. The slot is emptied BEFORE the peek
+    document is closed, so the close sweep that close raises sees no origin and returns.
+    @param deferPeekClose kTrue schedules the peek document's close instead of running it now -
+           the close sweep's choice, being inside a close responder itself (KCMRehydrate.h). */
+void KCMReleaseOrigin(bool16 deferPeekClose = kFalse);
 
-/** The close sweep's half: forget the origin when its document is no longer in docList. */
+/** The close sweep's half: forget the origin when its document is no longer in docList (the peek
+    document's close is scheduled, not run, from here). */
 void KCMForgetOriginIfDocClosed(IDocumentList* docList);
 
 /** One line for app.kcmOriginStatus:

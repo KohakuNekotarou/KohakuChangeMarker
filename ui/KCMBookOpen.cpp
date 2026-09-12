@@ -362,6 +362,14 @@ void Say(const char* text, const PMString& name)
 
 }	// anonymous namespace
 
+/* KCMBringDocumentToFront (declared in KCMBookOpen.h) - the route above, for a caller outside
+   this file (the flyout's "Open Task Start XML (raw)", KCMActionComponent.cpp).
+*/
+bool16 KCMBringDocumentToFront(const UIDRef& docRef)
+{
+	return BringChapterToFront(docRef);
+}
+
 //----------------------------------------------------------------------------------------
 // Which row the menu belongs to
 //----------------------------------------------------------------------------------------

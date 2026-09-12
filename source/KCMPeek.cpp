@@ -53,10 +53,8 @@
 #include "KCMCore.h"               // the arm/disarm/state declarations
 #include "KCMComparisonRun.h"      // KCMForgetChosenDocsThatClosed -- the chosen Target/Source lose whichever document closed
 #include "KCMExternalSource.h"     // KCMIsDbAlive (the lent Source counts as alive)
-#include "KCMOriginCompare.h"      // KCMOriginArmed -- Task Start: armed with no Source database
-#include "KCMOrigin.h"             // KCMOriginBytes / KCMOriginShapeOf -- what a page refresh rehydrates from
+#include "KCMOriginCompare.h"      // KCMOriginArmed / KCMOriginScopedCopy -- Task Start: armed with no Source database; a page refresh's temporary Source
 #include "KCMOriginPeek.h"         // the one-spread peek document that stands in for the Source
-#include "KCMRehydrate.h"          // KCMRehydrate / KCMCloseRehydrated -- a page refresh's temporary Source
 #include "KCMResourceBytes.h"
 #include "KCMModelNotify.h"	// KCMNotifyStatus - the model tells the UI, it never calls it
 // The UI's KCMViewLookup.h is deliberately absent. Resolving which view the mouse is over belongs
@@ -546,13 +544,6 @@ static bool16 KCMQueryPixelComparePair(IDataBase*& outTarget, IDataBase*& outSou
 	return (outTarget != nil && (outSource != nil || KCMOriginArmed())) ? kTrue : kFalse;
 }
 
-/** Task Start: a rehydrated copy that lives for one call. Closed on the way out, whichever way. */
-struct KCMScopedRehydration
-{
-	UIDRef fDoc;
-	~KCMScopedRehydration() { KCMCloseRehydrated(fDoc); }	// UIDRef::gNull is ignored
-};
-
 
 // Re-detect and update the comparison of the pages selected in the Pages panel -- the body behind
 // the context-menu item "Refresh Page Comparison". It runs only while a comparison is armed and
@@ -577,13 +568,14 @@ bool16 KCMRefreshComparisonForSelectedPages(int32* outPages, int32* outChanged, 
 
 	// Task Start: rehydrate a Source for this call and close it afterwards (the ordinary route
 	// holds one). The whole document comes back, so the order pairing below holds as it stands.
-	KCMScopedRehydration originCopy;
+	// ★HELD AS THE RUN HOLDS ITS SOURCE (KCMOriginScopedCopy), and that is not a nicety: the
+	//   Story Edits rebuild at the end pairs stories by uid and reads the older side's change
+	//   counters, and a bare copy has new uids and blank counters - every story came back "Added".
+	KCMOriginScopedCopy originCopy;
 	if (sourceDB == nil)
 	{
-		const KCMResourceBytes* bytes = KCMOriginBytes();
-		const KCMOriginShape* shape = KCMOriginShapeOf();
 		PMString whyNot;
-		if (bytes == nil || shape == nil || !KCMRehydrate(*bytes, *shape, originCopy.fDoc, whyNot))
+		if (!originCopy.Open(whyNot))
 		{
 			PMString msg("could not rebuild the task-start copy: ");
 			msg.SetTranslatable(kFalse);
@@ -591,7 +583,7 @@ bool16 KCMRefreshComparisonForSelectedPages(int32* outPages, int32* outChanged, 
 			KCMNotifyStatus(msg);
 			return kFalse;
 		}
-		sourceDB = originCopy.fDoc.GetDataBase();
+		sourceDB = originCopy.DB();
 	}
 
 	// Read the Pages panel's selection through the reader Register and Check share

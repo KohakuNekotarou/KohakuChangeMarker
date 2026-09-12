@@ -436,7 +436,11 @@ bool16 KCMStoryJumpToRow(int32 rowIndex)
 							   : Utils<IKCMCompareFacade>()->GetArmedTargetDB();
 	if (db == nil || !Utils<IKCMCompareFacade>()->IsDocDBOpen(db))
 	{
-		KCMSetStatus("The comparison is no longer running.");
+		// Task Start: a Removed row's story exists only in the origin, which has no window - the
+		// comparison IS running, and saying otherwise would send the reader to press Start.
+		KCMSetStatus((removedRow && Utils<IKCMCompareFacade>()->IsOriginArmed())
+			? "That story is only in the Task Start version - there is no window to show it in."
+			: "The comparison is no longer running.");
 		return kFalse;
 	}
 

@@ -19,8 +19,9 @@
 
 // Project includes:
 #include "KCMOriginCompare.h"
+
 #include "KCMComparisonRun.h"		// KCMStartComparisonOn / KCMStopComparison / KCMChosenSourceIsOrigin
-#include "KCMCore.h"				// KCMIsArmed / KCMArmedTargetDB / KCMDetachArmedSource
+#include "KCMCore.h"				// KCMIsArmed / KCMArmedTargetDB / KCMArmedSourceDB / KCMDetachArmedSource
 #include "KCMID.h"				// kKCMMarksRebuiltMessage
 #include "KCMModelNotify.h"			// KCMSayStatus / KCMNotifyStatus / KCMNotify
 #include "KCMOrigin.h"
@@ -78,9 +79,7 @@ void BuildTables(IDataBase* copyDB)
 bool16 Run(bool16 isRefresh)
 {
 	IDataBase* const targetDB = KCMOriginDocDB();
-	const KCMResourceBytes* bytes = KCMOriginBytes();
-	const KCMOriginShape* shape = KCMOriginShapeOf();
-	if (targetDB == nil || bytes == nil || shape == nil)
+	if (targetDB == nil || KCMOriginBytes() == nil)
 	{
 		KCMReleaseOrigin();
 		KCMSayStatus("The Task Start origin's document has closed - origin released.");
@@ -88,28 +87,24 @@ bool16 Run(bool16 isRefresh)
 		return kFalse;
 	}
 
-	UIDRef copy;
-	PMString whyNot;
-	if (!KCMRehydrate(*bytes, *shape, copy, whyNot))
+	bool16 compared = kFalse;
 	{
-		PMString msg("could not rebuild the task-start copy: ");
-		msg.SetTranslatable(kFalse);
-		msg.Append(whyNot);
-		KCMNotifyStatus(msg);
-		KCMNotify(kKCMMarksRebuiltMessage);
-		return kFalse;
+		KCMOriginScopedCopy copy;
+		PMString whyNot;
+		if (!copy.Open(whyNot))
+		{
+			PMString msg("could not rebuild the task-start copy: ");
+			msg.SetTranslatable(kFalse);
+			msg.Append(whyNot);
+			KCMNotifyStatus(msg);
+			KCMNotify(kKCMMarksRebuiltMessage);
+			return kFalse;
+		}
+		compared = KCMStartComparisonOn(targetDB, copy.DB());
+		// The copy leaves the armed state BEFORE it is closed (the scope's end), so that the close
+		// sweep finds no pointer of ours at it (KCMHandleDocsClosed would otherwise clear everything).
+		KCMDetachArmedSource();
 	}
-
-	sRunSourceDB = copy.GetDataBase();
-	BuildTables(sRunSourceDB);
-	const bool16 compared = KCMStartComparisonOn(targetDB, sRunSourceDB);
-	// The copy leaves the armed state BEFORE it is closed, so that the close sweep finds no
-	// pointer of ours at it (KCMHandleDocsClosed would otherwise clear everything).
-	KCMDetachArmedSource();
-	sOriginToSource.clear();
-	sSourceToOrigin.clear();
-	sRunSourceDB = nil;
-	KCMCloseRehydrated(copy);
 
 	if (compared)
 	{
@@ -129,6 +124,55 @@ bool16 Run(bool16 isRefresh)
 
 }	// namespace
 
+//----------------------------------------------------------------------------------------
+// KCMOriginScopedCopy
+//----------------------------------------------------------------------------------------
+
+KCMOriginScopedCopy::KCMOriginScopedCopy() : fDoc(UIDRef::gNull) {}
+
+KCMOriginScopedCopy::~KCMOriginScopedCopy()
+{
+	if (fDoc == UIDRef::gNull)
+		return;
+	// Forgotten first, closed second: the close raises the sweep, and by then nothing of ours
+	// names the copy (the same order as KCMOriginPeekDrop).
+	sOriginToSource.clear();
+	sSourceToOrigin.clear();
+	sRunSourceDB = nil;
+	KCMCloseRehydrated(fDoc);
+}
+
+bool16 KCMOriginScopedCopy::Open(PMString& whyNot)
+{
+	whyNot.Clear();
+	whyNot.SetTranslatable(kFalse);
+	const KCMResourceBytes* bytes = KCMOriginBytes();
+	const KCMOriginShape* shape = KCMOriginShapeOf();
+	if (bytes == nil || shape == nil)
+	{
+		whyNot = "no origin is held";
+		return kFalse;
+	}
+	if (sRunSourceDB != nil || fDoc != UIDRef::gNull)
+	{
+		whyNot = "a task-start copy is already open";
+		return kFalse;
+	}
+	if (!KCMRehydrate(*bytes, *shape, fDoc, whyNot))
+	{
+		fDoc = UIDRef::gNull;
+		return kFalse;
+	}
+	sRunSourceDB = fDoc.GetDataBase();
+	BuildTables(sRunSourceDB);
+	return kTrue;
+}
+
+IDataBase* KCMOriginScopedCopy::DB() const
+{
+	return (fDoc == UIDRef::gNull) ? nil : fDoc.GetDataBase();
+}
+
 bool16 KCMOriginStart()
 {
 	if (!KCMChosenSourceIsOrigin())
@@ -145,7 +189,9 @@ bool16 KCMOriginRefresh()
 
 bool16 KCMOriginArmed()
 {
-	return (sArmedSourceIsOrigin && KCMIsArmed() && KCMArmedTargetDB() != nil) ? kTrue : kFalse;
+	// The flag AND the state it describes (the header says which stale reading this closes).
+	return (sArmedSourceIsOrigin && KCMHasOrigin() && KCMIsArmed()
+			&& KCMArmedTargetDB() != nil && KCMArmedSourceDB() == nil) ? kTrue : kFalse;
 }
 
 void KCMOriginOnStop()

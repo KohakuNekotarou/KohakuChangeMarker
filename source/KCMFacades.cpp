@@ -54,7 +54,7 @@
 #include "KCMChangedPagesTSV.h"	// the TSV export
 #include "KCMExternalSource.h"	// KCMExternalSourceLabel -- the lent Source's words for the panel
 #include "KCMOrigin.h"			// Task Start: the origin slot the five methods at the end forward to
-#include "KCMOriginCompare.h"	// KCMOriginArmed - armed with the origin as the Source
+#include "KCMOriginCompare.h"	// KCMOriginArmed / KCMOriginScopedCopy - armed with the origin as the Source; RefreshRow's temporary Source
 #include "KCMStoryMarkBuild.h"	// what the Story mode should be lighting up (Refresh / SetPress)
 #include "KCMStoryMarker.h"		// the adornment that draws it - the flash and the shutdown
 #include "IKCMResourcesFacade.h"	// the Resources mode's boundary
@@ -221,6 +221,8 @@ public:
 	virtual bool16		HasOrigin()							{ return KCMHasOrigin(); }
 	virtual void		GetOriginLabel(PMString& outLabel)	{ KCMOriginLabel(outLabel); }
 	virtual bool16		IsOriginArmed()						{ return KCMOriginArmed(); }
+	virtual bool16		RehydrateOriginRaw(UIDRef& outDoc, PMString& outWhyNot)	{ return KCMOriginOpenRaw(outDoc, outWhyNot); }
+	virtual bool16		RehydrateOriginAsCompared(UIDRef& outDoc, PMString& outWhyNot)	{ return KCMOriginOpenCopy(outDoc, outWhyNot); }
 };
 
 CREATE_PMINTERFACE(KCMCompareFacade, kKCMCompareFacadeImpl)
@@ -511,10 +513,21 @@ public:
 		// the panel can only reach this while a comparison is armed, but "armed" and "still open"
 		// are different questions and the second one is the one that matters here.
 		IDataBase* const targetDB = KCMArmedTargetDB();
-		IDataBase* const sourceDB = KCMArmedSourceDB();
-		if (targetDB == nil || sourceDB == nil)
+		IDataBase* sourceDB = KCMArmedSourceDB();
+		if (targetDB == nil || !KCMIsDocDBOpen(targetDB))
 			return -1;
-		if (!KCMIsDocDBOpen(targetDB) || !KCMIsDocDBOpen(sourceDB))
+		// Task Start: no Source database while armed - a copy is rehydrated for this one row and
+		// closed on the way out, held as the run holds its Source so that the row's story is found
+		// under its new uid (KCMOriginToSourceUID inside RunOne).
+		KCMOriginScopedCopy originCopy;
+		if (sourceDB == nil && KCMOriginArmed())
+		{
+			PMString whyNot;
+			if (!originCopy.Open(whyNot))
+				return -1;
+			sourceDB = originCopy.DB();
+		}
+		if (sourceDB == nil || !KCMIsDocDBOpen(sourceDB))
 			return -1;
 
 		const int32 count = KCMStoryDiffRun::RunOne(targetDB, sourceDB, nth);

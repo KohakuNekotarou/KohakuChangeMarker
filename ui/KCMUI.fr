@@ -816,6 +816,21 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKCMTaskStartMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
+		// "Open Task Start XML (raw)" (2026-09-12, a test instrument): the held origin's XML
+		// imported untouched into a new document with a window, so the import's own behaviour can
+		// be seen. Live while an origin is held (UpdateActionStates, kCustomEnabling).
+		kKCMPopupOpenOriginRawActionID,
+		kKCMPopupMenuPath,
+		kKCMOpenOriginRawMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
+		// "Open Task Start Copy (as compared)" (2026-09-12): its twin - the copy exactly as the
+		// comparison rehydrates it, with a window, so the reader can look at what is compared.
+		kKCMPopupOpenOriginCopyActionID,
+		kKCMPopupMenuPath,
+		kKCMOpenOriginCopyMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
 		// "Clear Target and Source" on the panel flyout (popup) menu. Plain command: stops a running
 		// comparison and drops both chosen documents, so the next Start falls back to the automatic
 		// rule (active = Target, the earliest-opened other document = Source). Directly below the two
@@ -1320,6 +1335,26 @@ resource ActionDef (kSDKDefActionResourceID)
 		kKCMActionComponentBoss,
 		kKCMPopupTaskStartActionID,
 		kKCMTaskStartMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		// "Open Task Start XML (raw)" (2026-09-12): greyed while no origin is held (UpdateActionStates).
+		kKCMActionComponentBoss,
+		kKCMPopupOpenOriginRawActionID,
+		kKCMOpenOriginRawMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		// "Open Task Start Copy (as compared)" (2026-09-12): the same enabling as its raw twin.
+		kKCMActionComponentBoss,
+		kKCMPopupOpenOriginCopyActionID,
+		kKCMOpenOriginCopyMenuKey,
 		kOtherActionArea,
 		kNormalAction,
 		kCustomEnabling|kDisableIfLowMem,
