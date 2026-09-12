@@ -231,6 +231,14 @@ public:
 
 CREATE_PMINTERFACE(KCMCompareFacade, kKCMCompareFacadeImpl)
 
+/** The facade's ABI stamp, exported from the .pln by name so that another plug-in can check it
+	WITHOUT going through the facade's vtable (IKCMCompareFacade.h, kKCMCompareFacadeAbi says why
+	and who reads it). extern "C": no decoration, so GetProcAddress finds it under this very name. */
+extern "C" __declspec(dllexport) int32 KCMCompareFacadeAbi()
+{
+	return kKCMCompareFacadeAbi;
+}
+
 
 //========================================================================================
 // KCMMarkData -- IKCMMarkData

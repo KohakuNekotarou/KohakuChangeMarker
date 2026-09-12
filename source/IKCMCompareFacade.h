@@ -608,7 +608,8 @@ public:
 	// two documents that share no history). A flyout check toggle flips it and the saved panel
 	// state reads and writes it, both UI-side; the rule is KCMPagePairRule.h.
 	//
-	// ⚠★★★**NEW VIRTUALS GO AT THE END OF THIS CLASS, NEVER IN THE MIDDLE.** This interface is
+	// ⚠★★★**NEW VIRTUALS GO AT THE END OF THIS CLASS, NEVER IN THE MIDDLE - AND BUMP
+	//   kKCMCompareFacadeAbi (below the class) WHENEVER THIS CLASS CHANGES.** This interface is
 	//   called by vtable slot from OUTSIDE this plug-in: Kohaku InDesign MCP's KIDMCPKcmBridge
 	//   (ReleaseExternalSourceDB / StartComparisonWithSourceDB) is built against a copy of this
 	//   header. Measured 2026-09-13: these two were first put after SetIgnorePageNumberMarker,
@@ -621,5 +622,13 @@ public:
 	virtual bool16		GetPairPagesByUid() = 0;
 	virtual void		SetPairPagesByUid(bool16 on) = 0;
 };
+
+/** THE ABI STAMP OF THE CLASS ABOVE. ★BUMP IT (the date, YYYYMMDD) EVERY TIME A VIRTUAL IS ADDED,
+	REMOVED, MOVED OR RE-TYPED. KohakuChangeMarker.pln exports it as a plain C function,
+	KCMCompareFacadeAbi() (KCMFacades.cpp), and Kohaku InDesign MCP reads that export by name and
+	compares it with the value ITS build saw in this header before it calls anything here
+	(KIDMCPKcmBridge::AbiState). Two binaries built from different versions of this class then
+	refuse each other instead of running the wrong method (2026-09-13: the header's warning). */
+const int32 kKCMCompareFacadeAbi = 20260913;
 
 #endif // __IKCMCompareFacade_h__
