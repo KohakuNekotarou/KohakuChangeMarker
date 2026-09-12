@@ -1289,6 +1289,23 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKCMStoryRowMenuName,
 		kKCMResourceRowXmlMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
+
+		// ----- The Story Edits CHANGE rows (child rows): right-click menu (2026-09-12) -----
+		// ★A SUBTREE OF ITS OWN, not the story row's. Until today a child row raised no menu at all
+		// (user's call, 2026-08-21) because the only menu there was acted on the whole STORY. This
+		// one carries a single item that acts on the CHANGE the cursor is over, and the story row's
+		// items are not on it - so neither row is ever offered the other's commands.
+		//
+		// "Copy Source Text as Plain Text": put the OLDER side's text of that change on the clipboard
+		// as plain text - what a replacement replaced, what a deletion removed, and for a ruby change or
+		// removal the older READING (user's ask: "the ruby itself, not its parent"). ★Enabled only
+		// in the Story mode on a change with something on the older side (kCustomEnabling ->
+		// KCMChangeRowCanCopySource): an insertion, a ruby added, kenten and footnote rows are
+		// greyed, and being the only item, greyed means the menu does not appear.
+		kKCMChangeRowCopySourceActionID,
+		kKCMChangeRowMenuName,
+		kKCMChangeRowCopySourceMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
 	}
 };
 
@@ -1667,6 +1684,19 @@ resource ActionDef (kSDKDefActionResourceID)
 		kOtherActionArea,
 		kNormalAction,
 		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates greys it outside the Resources mode (KCMResourceRowHasXml)
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		// "Copy Source Text as Plain Text" on a CHANGE row's context menu (2026-09-12).
+		// ⚠ Not on the flyout, for the same reason as the three items above: it acts on the CHANGE
+		// the menu was popped over, which a flyout has no way of naming (KCMStoryRowEH stashes it
+		// through KCMStorySetMenuChange).
+		kKCMActionComponentBoss,
+		kKCMChangeRowCopySourceActionID,
+		kKCMChangeRowCopySourceMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates greys it where the older side is empty (KCMChangeRowCanCopySource)
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 

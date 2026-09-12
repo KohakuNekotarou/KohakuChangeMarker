@@ -71,6 +71,7 @@
 #include "KCMUIID.h"
 #include "KCMStoryJump.h"
 #include "KCMStoryRefresh.h"		// where the right-click menu's row is stashed for the action to read
+#include "KCMStoryCopy.h"			// the same, for a CHANGE row's menu: row AND change (2026-09-12)
 
 namespace
 {
@@ -290,12 +291,15 @@ bool16 KCMStoryRowEH::LButtonUp(IEvent* e)
 // later, from the menu, knowing only its ActionID - so KCMStorySetMenuRow is how it learns which
 // story the menu was about. Both the action and its enabling test read it back.
 //
-// ***** STORY ROWS ONLY. ***** A right click on a CHANGE row raises nothing (user's call,
-// "do not bring the context menu up on a child row"). The first build did offer the menu there,
-// aimed at the change's parent story - which is a defensible answer to "what would it even mean"
-// and the wrong one to give: the reader is pointing at ONE difference and would be handed an action
-// over the whole story, so the menu would be doing something other than what it appears to. A row
-// that has nothing to offer should stay silent rather than offer something adjacent.
+// ***** TWO MENUS, ONE PER KIND OF ROW. ***** A STORY row pops kKCMStoryRowMenuName; a CHANGE row
+// pops kKCMChangeRowMenuName (2026-09-12, "Copy Source Text as Plain Text"). Neither row is
+// offered the other's.
+// ⚠This reverses a decision of 2026-08-21 ("do not bring the context menu up on a child row"),
+// and the reason that decision was right then is exactly why this is right now: the first build
+// offered the STORY row's menu on a child row, aimed at the change's parent story - so the reader,
+// pointing at ONE difference, was handed an action over the whole story. A menu doing something
+// other than what it appears to is worse than none. The child row's menu today carries only an
+// item about the CHANGE itself, and stashes the change (KCMStorySetMenuChange) rather than the row.
 //
 // Deliberately NOT calling the stock handler and NOT changing the selection: a right click that is
 // only asking for a menu should not move the user's place in the list - the same rule the chapter
@@ -312,10 +316,18 @@ bool16 KCMStoryRowEH::RButtonDn(IEvent* e)
 {
 	int32 changeIndex = -1;
 	const int32 rowIndex = this->RowFromNode(&changeIndex);
-	if (rowIndex < 0 || changeIndex >= 0 || e == nil)
+	if (rowIndex < 0 || e == nil)
 		return TreeNodeEventHandler::RButtonDn(e);
 
-	KCMStorySetMenuRow(rowIndex);
+	// Each kind of row stashes for its own menu, and only its own: the story row's actions read
+	// KCMStoryMenuRow, the change row's read the pair below, and neither stash is written by the
+	// other kind of click - so a stale value can never point a story action at a change or the
+	// reverse.
+	const bool16 isChangeRow = (changeIndex >= 0);
+	if (isChangeRow)
+		KCMStorySetMenuChange(rowIndex, changeIndex);
+	else
+		KCMStorySetMenuRow(rowIndex);
 
 	ISession* session = GetExecutionContextSession();
 	InterfacePtr<IApplication> app(session != nil ? session->QueryApplication() : nil);
@@ -328,7 +340,8 @@ bool16 KCMStoryRowEH::RButtonDn(IEvent* e)
 	if (menuMgr == nil)
 		return kTrue;
 
-	menuMgr->HandlePopupMenu(kKCMStoryRowMenuName, e->GlobalWhere(), e->GlobalWhere(), kTrue, this);
+	menuMgr->HandlePopupMenu(isChangeRow ? kKCMChangeRowMenuName : kKCMStoryRowMenuName,
+							 e->GlobalWhere(), e->GlobalWhere(), kTrue, this);
 	return kTrue;
 }
 

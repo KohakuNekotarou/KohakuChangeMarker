@@ -272,6 +272,7 @@
       <ClCompile Include="..\..\..\source\sdksamples\KCM\ui\KCMStoryJump.cpp"/>
       <ClCompile Include="..\..\..\source\sdksamples\KCM\ui\KCMStoryNav.cpp"/>
       <ClCompile Include="..\..\..\source\sdksamples\KCM\ui\KCMStoryRefresh.cpp"/>
+      <ClCompile Include="..\..\..\source\sdksamples\KCM\ui\KCMStoryCopy.cpp"/>
       <ClCompile Include="..\..\..\source\sdksamples\KCM\ui\KCMChangeNav.cpp"/>
       <ClCompile Include="..\..\..\source\sdksamples\KCM\ui\KCMViewSync.cpp"/>
       <ClCompile Include="..\..\..\source\sdksamples\KCM\ui\KCMViewLookup.cpp"/>
@@ -324,6 +325,7 @@
       <ClInclude Include="..\..\..\source\sdksamples\KCM\ui\KCMStoryJump.h"/>
       <ClInclude Include="..\..\..\source\sdksamples\KCM\ui\KCMStoryNav.h"/>
       <ClInclude Include="..\..\..\source\sdksamples\KCM\ui\KCMStoryRefresh.h"/>
+      <ClInclude Include="..\..\..\source\sdksamples\KCM\ui\KCMStoryCopy.h"/>
       <ClInclude Include="..\..\..\source\sdksamples\KCM\ui\KCMChangeNav.h"/>
       <ClInclude Include="..\..\..\source\sdksamples\KCM\ui\KCMViewSync.h"/>
       <ClInclude Include="..\..\..\source\sdksamples\KCM\ui\KCMViewLookup.h"/>

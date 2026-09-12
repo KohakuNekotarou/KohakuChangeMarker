@@ -54,6 +54,7 @@
 #include "KCMChangeNav.h"			// KCMRefreshNavPosition (the overset toggle changes what Prev/Next walks)
 #include "KCMStoryRefresh.h"		// KCMStoryRowCanRefresh / KCMStoryRefreshMenuRow (the "Refresh Story Comparison" row item)
 #include "KCMResourceXml.h"			// KCMResourceRowHasXml / KCMShowResourceXml (the "Show as XML" row item)
+#include "KCMStoryCopy.h"			// KCMChangeRowCanCopySource / KCMChangeRowCopySource (the "Copy Source Text as Plain Text" change-row item)
 #include "KCMPanelAlpha.h"		// KCMGetPanelTranslucent / Set / Apply (the "Translucent Panel" flyout item)
 #include "KCMStoryPressMarks.h"	// KCMStoryMarksRefresh (rebuild the always-on marks of Story mode)
 // (★`IActiveContext.h` / `IDocument.h` / `PersistUtils.h` were removed: **none of them was ever
@@ -962,6 +963,13 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 			KCMShowResourceXml();
 			break;
 
+		// "Copy Source Text as Plain Text" on a CHANGE row's context menu (2026-09-12): the older side's text of
+		// that one change - or its older ruby reading - on the clipboard as plain text. ★Which
+		// change it was is noted by KCMStorySetMenuChange at the right click, in a stash of its own.
+		case kKCMChangeRowCopySourceActionID:
+			KCMChangeRowCopySource();
+			break;
+
 		// (The panel tool button's flyout had two cases here for a few hours on 2026-09-04. They
 		//  are gone with their ActionDefs: the flyout is a Win32 popup raised by KCMToolButtonEH,
 		//  and it calls KCMToolButtonPressed itself. ⚠Do not add them back without a MenuDef --
@@ -1401,6 +1409,15 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 			//   comparing, on a definition the list still holds**.
 			listToUpdate->SetNthActionState(i, KCMResourceRowHasXml() ? kEnabledAction
 			                                                          : kDisabled_Unselected);
+		}
+		else if (action == kKCMChangeRowCopySourceActionID)
+		{
+			// ★The same test the action runs before it copies (KCMChangeRowCanCopySource), so the
+			//   menu and the result cannot part company. Live only **in the Story mode, on a change
+			//   with something on the older side** - an insertion, a ruby added, kenten and footnote
+			//   rows are greyed, and being the only item on its menu, greyed means no menu appears.
+			listToUpdate->SetNthActionState(i, KCMChangeRowCanCopySource() ? kEnabledAction
+			                                                               : kDisabled_Unselected);
 		}
 	}
 }

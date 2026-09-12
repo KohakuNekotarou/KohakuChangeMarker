@@ -83,6 +83,7 @@ resource StringTable (kSDKDefStringsResourceID + index_enUS)
                 kKCMBookRowStartMenuKey,			"Start Change Marker",
                 kKCMStoryRowRefreshMenuKey,		"Refresh Story Comparison",
                 kKCMResourceRowXmlMenuKey,		"Show as XML",
+                kKCMChangeRowCopySourceMenuKey,	"Copy Source Text as Plain Text",
                 kKCMIgnorePageNumMenuKey,			"Ignore Page Number Marker",
                 // ("Hold to Hide Marks" was retired on 2026-08-22 - see KCMUI.fr's MenuDef note.)
 

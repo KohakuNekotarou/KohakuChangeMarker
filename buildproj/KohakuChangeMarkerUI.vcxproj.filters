@@ -132,6 +132,9 @@
       <ClCompile Include="..\..\..\source\sdksamples\KCM\ui\KCMStoryRefresh.cpp">
          <Filter>Source Files</Filter>
       </ClCompile>
+      <ClCompile Include="..\..\..\source\sdksamples\KCM\ui\KCMStoryCopy.cpp">
+         <Filter>Source Files</Filter>
+      </ClCompile>
       <ClCompile Include="..\..\..\source\sdksamples\KCM\ui\KCMChangeNav.cpp">
          <Filter>Source Files</Filter>
       </ClCompile>
@@ -252,6 +255,9 @@
          <Filter>Header Files</Filter>
       </ClInclude>
       <ClInclude Include="..\..\..\source\sdksamples\KCM\ui\KCMStoryRefresh.h">
+         <Filter>Header Files</Filter>
+      </ClInclude>
+      <ClInclude Include="..\..\..\source\sdksamples\KCM\ui\KCMStoryCopy.h">
          <Filter>Header Files</Filter>
       </ClInclude>
       <ClInclude Include="..\..\..\source\sdksamples\KCM\ui\KCMChangeNav.h">

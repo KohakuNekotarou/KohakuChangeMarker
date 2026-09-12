@@ -34,8 +34,10 @@
 /** Remember which row of the list the right-click menu is about.
 
 	Called by KCMStoryRowEH::RButtonDn as the menu is popped, and read back by the actions on that
-	menu and by their enabling tests. ★TOP-LEVEL ROWS ONLY - a right click on a child row raises no
-	menu at all and never reaches here (user's call, 2026-08-21; the reasoning is at that function).
+	menu and by their enabling tests. ★TOP-LEVEL ROWS ONLY - a right click on a child row never
+	reaches here. ⚠Since 2026-09-12 a child row HAS a menu of its own ("Copy Source Text as Plain Text"), with a
+	stash of its own (KCMStorySetMenuChange in KCMStoryCopy.h); until then it raised none at all
+	(user's call, 2026-08-21; the reasoning is at that function).
 
 	⚠★★**WHICH LIST THE INDEX BELONGS TO DEPENDS ON THE MODE** (2026-09-09). The list is shared:
 	  in the Story mode this is a story of IKCMStoryEditsFacade, and in the Resources mode it is a
