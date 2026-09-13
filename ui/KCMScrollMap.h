@@ -46,28 +46,12 @@ void	KCMScrollMapInvalidateAll();
 // THE FINGERPRINT COVERS THREE DOCUMENTS, not two: the Target, the Source, and the document
 // scanned by Find Overset (a window with Find Overset alone gets a strip too). For the same
 // reason, an unarmed state does NOT return early -- it continues whenever Find Overset is on.
-// The two cases that do return at once are "Show Scrollbar Map is off" and "neither armed nor
-// scanning".
+// The one case that returns at once is "neither armed nor scanning". ⚠There was a second until
+// 2026-09-14: the map could be switched off from the flyout. It cannot any more - it is always on.
 //
 // The fingerprint also covers WHICH MASTER SPREAD IS ON SCREEN. What the map holds changes while
 // a master is shown (only that master's pages go on it), and switching spreads goes through none
 // of KCM's hooks either -- exactly the same reason as the hidden flags, so it rides along here.
 void	KCMScrollMapNoticeDrawEvent();
-
-// Whether the scrollbar map is on: the "Show Scrollbar Map" toggle in the flyout, on by default.
-// While it is off, KCMScrollMapAttach and KCMScrollMapNoticeDrawEvent return at once, so a Start
-// injects no strip. Strips that already exist are removed by whoever flips the toggle.
-//
-// THE SETTER ONLY WRITES THE FLAG. Attaching and detaching strips belongs to its callers, and
-// there are two of them:
-//   - KCMActionComponent (the flyout toggle) ... Attach + Invalidate when on, DetachAll when off
-//   - KCMPanelState (restoring the saved panel settings) ... the flag ALONE.
-// The second one doing nothing else is correct, not an oversight: KCMLoadPanelStateIfPresent runs
-// once per session (guarded by sLoaded) from the UI-side Startup, and at that point no comparison
-// has begun and there is not a single strip to attach or detach.
-// If that restore is ever made callable while a comparison is running, it will need the same
-// cleanup the flyout toggle does.
-bool16	KCMGetScrollMapEnabled();
-void	KCMSetScrollMapEnabled(bool16 on);
 
 #endif // __KCMScrollMap_h__

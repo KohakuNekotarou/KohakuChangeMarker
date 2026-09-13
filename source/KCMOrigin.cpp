@@ -144,32 +144,6 @@ bool16 KCMTakeTaskStart(PMString& whyNot)
 
 bool16 KCMHasOrigin()					{ return (sBytes.get() != nil) ? kTrue : kFalse; }
 
-bool16 KCMOriginOpenRaw(UIDRef& outDoc, PMString& whyNot)
-{
-	outDoc = UIDRef::gNull;
-	whyNot.Clear();
-	whyNot.SetTranslatable(kFalse);
-	if (sBytes.get() == nil)
-	{
-		whyNot = "no Task Start origin is held";
-		return kFalse;
-	}
-	return KCMRehydrateRaw(*sBytes, outDoc, whyNot);
-}
-
-bool16 KCMOriginOpenCopy(UIDRef& outDoc, PMString& whyNot)
-{
-	outDoc = UIDRef::gNull;
-	whyNot.Clear();
-	whyNot.SetTranslatable(kFalse);
-	if (sBytes.get() == nil)
-	{
-		whyNot = "no Task Start origin is held";
-		return kFalse;
-	}
-	return KCMRehydrate(*sBytes, sShape, outDoc, whyNot);
-}
-
 bool16 KCMOriginSaveRaw(PMString& outPath, PMString& whyNot)
 {
 	outPath.Clear();

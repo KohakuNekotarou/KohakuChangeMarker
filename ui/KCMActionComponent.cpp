@@ -518,28 +518,6 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 			break;
 		}
 
-		// The "Show Scrollbar Map" toggle: whether a strip mapping the changed positions is shown beside
-		// a document window’s vertical scrollbar (default ON). Switching ON attaches it at once to what
-		// is being compared; switching OFF detaches it from every window.
-		// Switching ON while nothing is armed makes the attach a no-op ＝ it appears naturally at the
-		// next Start (the flag stays ON).
-		case kKCMPopupScrollMapActionID:
-		{
-			const bool16 on = !KCMGetScrollMapEnabled();
-			KCMSetScrollMapEnabled(on);
-			if (on)
-			{
-				InterfacePtr<IKCMMarkData> marks(Utils<IKCMMarkData>().QueryUtilInterface());
-				if (marks->GetMarkedTargetDB() != nil) KCMScrollMapAttach(marks->GetMarkedTargetDB());
-				if (marks->GetMarkedSourceDB() != nil) KCMScrollMapAttach(marks->GetMarkedSourceDB());
-				KCMScrollMapInvalidateAll();
-			}
-			else
-				KCMScrollMapDetachAll();	// take any existing strip out of every window
-			KCMSayToggle("Scrollbar map", on);
-			break;
-		}
-
 		// (★The "Show HUD" toggle is gone: the on-press HUD **always shows**, so there is no menu item
 		//  for choosing whether it does. ⚠**The HUD itself is alive**: the sprite version was removed
 		//  and it was rebuilt on the Draw Event route the next day (KCMTrackerHud.cpp, which says in the
@@ -807,33 +785,6 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 		//  written into the document as they are made, so a private file beside it held a second
 		//  copy of the same thing.)
 
-		// "Clear Marks from Document" (2026-09-07): takes the ticks and paws out of the document,
-		//   where they live as script labels (KCMPageMarksDoc.h).
-		//   ★There is no "Save" case beside it any more. Writing stopped being a separate act on
-		//     2026-09-07: a tick or a paw goes into the document as it is made, undoably, so there
-		//     was nothing left for a save to do. Putting them back still happens on its own, in the
-		//     after-open responder.
-		//   ★The model counts and this side words it, the same division as everywhere here.
-		case kKCMClearMarksFromDocActionID:
-		{
-			IDataBase* const db = Utils<IKCMCompareFacade>()->GetActiveDocDB();
-			const int32 pages = Utils<IKCMPageFlagsFacade>()->ClearMarksFromDocument(db);
-			PMString msg;
-			msg.SetTranslatable(kFalse);
-			if (pages < 0)
-				msg.Append("No document.");
-			else if (pages == 0)
-				msg.Append("This document carries no marks of ours.");
-			else
-			{
-				msg.Append("Marks cleared from the document (");
-				msg.AppendNumber(pages);
-				msg.Append(pages == 1 ? " page)." : " pages).");
-			}
-			KCMSetStatus(msg);
-			break;
-		}
-
 		// Flyout "Clear Checks in This Document": drop the active document's ticks. The work, the
 		// status line and the notification that takes the ticks off the Pages panel's thumbnails
 		// are all on the model side (KCMPageCheck.cpp), which is why nothing is reported here.
@@ -870,70 +821,6 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 			break;
 		}
 
-		// Flyout "Open Task Start XML (raw)" (2026-09-12, the user's ask - a test instrument): the
-		// model imports the held origin's XML untouched into a new windowless document, and this
-		// half gives it a window (the split: a window is the UI's to open - KCMBringDocumentToFront
-		// is the route the book rows already use). The document is the reader's to close.
-		case kKCMPopupOpenOriginRawActionID:
-		{
-			PMString whyNot;
-			UIDRef doc = UIDRef::gNull;
-			if (!Utils<IKCMCompareFacade>()->RehydrateOriginRaw(doc, whyNot))
-			{
-				PMString msg("Task Start XML not opened: ");
-				msg.SetTranslatable(kFalse);
-				msg.Append(whyNot);
-				KCMSetStatus(msg);
-				break;
-			}
-			KCMSetStatus(KCMBringDocumentToFront(doc)
-				? "Task Start XML opened as a new document, untouched (the import's own doing)."
-				: "Task Start XML imported, but no window could be opened on it.");
-			break;
-		}
-
-		// Its twin: the copy exactly as a comparison rehydrates it, so the reader can look at what
-		// is compared (paragraph styles included) rather than at the import's raw doing.
-		case kKCMPopupOpenOriginCopyActionID:
-		{
-			PMString whyNot;
-			UIDRef doc = UIDRef::gNull;
-			if (!Utils<IKCMCompareFacade>()->RehydrateOriginAsCompared(doc, whyNot))
-			{
-				PMString msg("Task Start copy not opened: ");
-				msg.SetTranslatable(kFalse);
-				msg.Append(whyNot);
-				KCMSetStatus(msg);
-				break;
-			}
-			KCMSetStatus(KCMBringDocumentToFront(doc)
-				? "Task Start copy opened as a new document, exactly as the comparison reads it."
-				: "Task Start copy rehydrated, but no window could be opened on it.");
-			break;
-		}
-
-		// The third instrument, "Save Task Start XML to Desktop" (2026-09-12, the user's ask): the
-		// held origin's XML written to the Desktop exactly as Task Start took it. The model writes
-		// the file and names it; this half only says where it went (or why it did not).
-		case kKCMPopupSaveOriginRawActionID:
-		{
-			PMString path, whyNot;
-			PMString msg;
-			msg.SetTranslatable(kFalse);
-			if (Utils<IKCMCompareFacade>()->SaveOriginRawToDesktop(path, whyNot))
-			{
-				msg.Append("Task Start XML saved: ");
-				msg.Append(path);
-			}
-			else
-			{
-				msg.Append("Task Start XML not saved: ");
-				msg.Append(whyNot);
-			}
-			KCMSetStatus(msg);
-			break;
-		}
-
 		// Flyout "Clear Target and Source": put the panel's two lines back to bare labels, so the
 		// next Start falls back to the automatic rule (active document = Target, the earliest-opened
 		// other document = Source).
@@ -965,20 +852,6 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 			KCMSetStatus(wasArmed ? "Stopped, and Target and Source cleared." : "Target and Source cleared.");
 			break;
 		}
-
-		// Flyout "Export Changed Pages...": save the list of changed pages of the current comparison as
-		// TSV (new page / old page / kind = changed, inserted, deleted). The work is in
-		// KCMChangedPagesTSV.cpp. Enabled only while comparing; overset is not included.
-		case kKCMPopupExportChangedPagesActionID:
-			{
-			// ★The writing itself is on the model side and **the message comes back as a return value for
-			//   the UI to show**. Success is silent -- it returns empty -- and then nothing is shown.
-				PMString exportMsg;
-				Utils<IKCMCompareFacade>()->ExportChangedPagesTSV(exportMsg);
-				if (exportMsg.CharCount() > 0)
-					KCMSetStatus(exportMsg);
-			}
-			break;
 
 		// Flyout "Export Before/After PDF Report": the changed pages side by side, then the Story
 		// and the Resources tables, as one PDF written where the save dialog says and opened
@@ -1171,13 +1044,6 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 			listToUpdate->SetNthActionState(i,
 				Utils<IKCMCompareFacade>()->CanTakeTaskStart() ? kEnabledAction : kDisabled_Unselected);
 		}
-		else if (action == kKCMPopupOpenOriginRawActionID || action == kKCMPopupOpenOriginCopyActionID
-			|| action == kKCMPopupSaveOriginRawActionID)
-		{
-			// The three test instruments act on what Task Start took: live exactly while an origin is held.
-			listToUpdate->SetNthActionState(i,
-				Utils<IKCMCompareFacade>()->HasOrigin() ? kEnabledAction : kDisabled_Unselected);
-		}
 		else if (action == kKCMPopupSetTargetActionID || action == kKCMPopupSetSourceActionID)
 		{
 			InterfacePtr<IKCMCompareFacade> compare(Utils<IKCMCompareFacade>().QueryUtilInterface());
@@ -1288,10 +1154,6 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 				listToUpdate->SetNthActionState(i, kDisabled_Unselected);
 			else
 				KCMSetCheckState(listToUpdate, i, KCMGetLayoutSync());
-		}
-		else if (action == kKCMPopupScrollMapActionID)
-		{
-			KCMSetCheckState(listToUpdate, i, KCMGetScrollMapEnabled());	// a check while it is ON (the default)
 		}
 		else if (action == kKCMPopupTranslucentPanelActionID)
 		{
@@ -1405,10 +1267,10 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 				(Utils<IKCMCompareFacade>()->IsArmed() && Utils<IKCMCompareFacade>()->ArmedDocsAlive())
 					? kEnabledAction : kDisabled_Unselected);
 		}
-		else if (action == kKCMPopupExportChangedPagesActionID || action == kKCMPopupExportReportActionID)
+		else if (action == kKCMPopupExportReportActionID)
 		{
-			// Live only while comparing (a marked Target document exists) ＝ when there can be changes to
-			// write out. Greyed before a Start. The report shares the rule: it is made of the same marks.
+			// Live only while comparing (a marked Target document exists) ＝ when there is something to
+			// write out. Greyed before a Start. ⚠The TSV export shared this branch until 2026-09-14.
 			listToUpdate->SetNthActionState(i, (Utils<IKCMMarkData>()->GetMarkedTargetDB() != nil) ? kEnabledAction : kDisabled_Unselected);
 		}
 		else if (action == kKCMClearChecksActionID)
@@ -1447,14 +1309,6 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 			IDataBase* db = Utils<IKCMCompareFacade>()->GetActiveDocDB();
 			listToUpdate->SetNthActionState(i,
 				(Utils<IKCMPageFlagsFacade>()->PawStampCount(db) > 0) ? kEnabledAction : kDisabled_Unselected);
-		}
-		else if (action == kKCMClearMarksFromDocActionID)
-		{
-			// ⚠**A document is all this one asks for.** Whether it carries any of our labels can only be
-			//   answered by walking every page, and this runs every time the menu opens -- so the item
-			//   stays live and says "no marks of ours" when there were none.
-			listToUpdate->SetNthActionState(i,
-				(Utils<IKCMCompareFacade>()->GetActiveDocDB() != nil) ? kEnabledAction : kDisabled_Unselected);
 		}
 		else if (action == kKCMPopupCompareBooksActionID)
 		{

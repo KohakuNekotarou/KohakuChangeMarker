@@ -52,7 +52,6 @@
 #include "KCMBookPair.h"			// which two books, and their display paths
 #include "KCMBookCompare.h"		// the book comparison itself
 #include "KCMPageNumberMarker.h"	// the folio exclusion toggle
-#include "KCMChangedPagesTSV.h"	// the TSV export
 #include "KCMReport.h"			// the Before/After report
 #include "KCMRingAdornment.h"	// the story ID labels' toggle (Get/SetShowStoryIds)
 #include "KCMExternalSource.h"	// KCMExternalSourceLabel -- the lent Source's words for the panel
@@ -217,8 +216,6 @@ public:
 	virtual bool16		GetShowStoryIds()			{ return KCMGetShowStoryIds(); }
 	virtual void		SetShowStoryIds(bool16 on)	{ KCMSetShowStoryIds(on); }
 
-	virtual void		ExportChangedPagesTSV(PMString& outMessage)
-													{ KCMExportChangedPagesTSV(outMessage); }
 
 	// The lent Source (see the interface). Three one-line transfers; the rules are model-side.
 	virtual void		StartComparisonWithSourceDB(IDocument* target, IDataBase* sourceDB, const PMString& sourceLabel)
@@ -233,8 +230,6 @@ public:
 	virtual bool16		HasOrigin()							{ return KCMHasOrigin(); }
 	virtual void		GetOriginLabel(PMString& outLabel)	{ KCMOriginLabel(outLabel); }
 	virtual bool16		IsOriginArmed()						{ return KCMOriginArmed(); }
-	virtual bool16		RehydrateOriginRaw(UIDRef& outDoc, PMString& outWhyNot)	{ return KCMOriginOpenRaw(outDoc, outWhyNot); }
-	virtual bool16		RehydrateOriginAsCompared(UIDRef& outDoc, PMString& outWhyNot)	{ return KCMOriginOpenCopy(outDoc, outWhyNot); }
 	virtual bool16		SaveOriginRawToDesktop(PMString& outPath, PMString& outWhyNot)	{ return KCMOriginSaveRaw(outPath, outWhyNot); }
 };
 
@@ -388,7 +383,6 @@ public:
 	// ★SaveMarksToDocument was removed on 2026-09-07. Writing is no longer something the reader
 	//   asks for separately: a tick or a paw goes into the document the moment it is made, and
 	//   comes back out again with Ctrl+Z. There is nothing left for a "save" to do.
-	virtual int32	ClearMarksFromDocument(IDataBase* db)	{ return KCMMarksClearFromDocument(db); }
 
 	// The cat-paw stamps. The crossing exists because model and UI are two DLLs: the tool lives
 	// on the UI side and the store on this one.

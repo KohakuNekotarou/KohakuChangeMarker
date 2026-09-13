@@ -74,11 +74,6 @@ ErrorCode	KCMMarksWriteOnePage(IDataBase* db, UID page, bool16 check,
 	@return how many pages carried a label of ours, or -1 when the document could not be read. */
 int32	KCMMarksSyncFromDocument(IDataBase* db, int32* outChecks, int32* outPaws);
 
-/** Take every mark of ours off every page of this document, as one undoable step. Labels that are
-	not ours are left exactly as they were.
-	@return how many pages were changed, or -1 when the document could not be used. */
-int32	KCMMarksClearFromDocument(IDataBase* db);
-
 #endif // __KCMPageMarksDoc_h__
 
 // End, KCMPageMarksDoc.h.

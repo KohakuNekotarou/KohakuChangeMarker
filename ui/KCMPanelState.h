@@ -28,7 +28,6 @@
 //    - Sync Layout Views                 key "syncLayoutViews" (default ON. What actually fires
 //      a sync is Target<->Source while Started, or every document while stopped with the KCM
 //      tool active ＝ see the guard in KCMSyncOtherDocViewportsTo)
-//    - Show Scrollbar Map                key "scrollbarMap"
 //    - Ignore Page Number Marker         key "ignorePageNumberMarker"
 //    - Pair Pages by UID                 key "pairPagesByUid" (default ON; 2026-09-13)
 //    - Translucent Panel / Translucent Pages Panel / Translucent Book Dialog (★Windows only.

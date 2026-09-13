@@ -74,7 +74,6 @@
 #include "KCMResourceStore.h"      // the Resources list, emptied on the same routes
 #include "KCMStoryMarker.h"        // KCMStoryMarker::Shutdown (the Story mode's marks are never drawn again)
 #include "KCMBookCompare.h"        // KCMClearBookResultText (the book comparison's result text)
-#include "KCMChangedPagesTSV.h"    // KCMClearExportMessage (the TSV export's message)
 #include "KCMHideUnchanged.h"      // KCMResetHideUnchanged and the getters for the hidden documents
 #include "KCMPeek.h"
 
@@ -805,10 +804,8 @@ void KCMPeekStartup::Shutdown()
 	// Two more statics holding PMStrings, each keeping the text of the last run until unload:
 	//     - KCMClearBookResultText ... the book comparison's result (one line per chapter, which
 	//       app.kcmBookResult returns)
-	//     - KCMClearExportMessage  ... the TSV export's message, which contains a full path
 	//   Both only clear, dereference nothing, and are idempotent, so they are safe in any order.
 	KCMClearBookResultText();
-	KCMClearExportMessage();
 	// The panel's remembered status line (sSessionStatus) is the third of that shape.
 	//   @warning what used to empty it was the UI's KCMUIStartup, through the Facade and behind a
 	//     nil check, so **it did not happen once kUtilsBoss had gone**. Same conclusion as the CMYK

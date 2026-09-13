@@ -432,40 +432,6 @@ bool16 KCMRehydrate(const KCMResourceBytes& inx, const KCMOriginShape& expect, U
 	return kTrue;
 }
 
-bool16 KCMRehydrateRaw(const KCMResourceBytes& inx, UIDRef& outDoc, PMString& whyNot)
-{
-	outDoc = UIDRef::gNull;
-	whyNot.Clear();
-	whyNot.SetTranslatable(kFalse);
-	if (inx.Size() == 0)
-	{
-		whyNot = "the origin holds no bytes";
-		return kFalse;
-	}
-	// The bytes AS THEY ARE: no injection, so the stream is a copy of the origin and nothing else.
-	KCMResourceBytes copy;
-	const uint32 size = static_cast<uint32>(inx.Size());
-	if (copy.Write(const_cast<char*>(inx.Bytes()), size) != size || !copy.IsWhole())
-	{
-		whyNot = "out of memory copying the origin";
-		return kFalse;
-	}
-	// The document is made with the origin's page setup even here: that is the document, not the
-	// XML, and without it the raw copy's frames sit half a page off in a non-facing origin.
-	UIDRef ref = UIDRef::gNull;
-	if (!NewDocumentLike(inx, ref, whyNot))
-		return kFalse;
-	// The import and nothing after it - no sacrificial range deleted, no compose, no shape check,
-	// no clean mark: the reader asked to see what ImportINX makes of the XML untouched.
-	if (!ImportOnly(ref, copy, whyNot))
-	{
-		KCMCloseRehydrated(ref);	// after ImportOnly returned: nothing of ours stands on it
-		return kFalse;
-	}
-	outDoc = ref;
-	return kTrue;
-}
-
 void KCMMarkRehydratedClean(IDataBase* db)
 {
 	if (db != nil && db->IsModified())

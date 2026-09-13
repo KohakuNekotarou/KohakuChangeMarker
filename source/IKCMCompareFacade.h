@@ -480,14 +480,6 @@ public:
 	virtual bool16		GetIgnorePageNumberMarker() = 0;
 	virtual void		SetIgnorePageNumberMarker(bool16 on) = 0;
 
-	// ---- exporting -----------------------------------------------------------------------
-
-	/** Write the changed pages out as TSV, and describe what happened in outMessage -- the
-		path written, or why nothing was. The message comes back rather than being shown from
-		inside: the status line belongs to the UI, and the flyout item that asked is the one
-		that reports. */
-	virtual void		ExportChangedPagesTSV(PMString& outMessage) = 0;
-
 	// ---- a Source that is not an open document (2026-09-02) -------------------------------
 	//
 	// Kohaku InDesign MCP holds a task-start copy of a document (an IDataBase it made and owns),
@@ -585,20 +577,11 @@ public:
 	/** kTrue while a comparison is armed whose Source is the origin (GetArmedSourceDB is nil then). */
 	virtual bool16		IsOriginArmed() = 0;
 
-	/** The test instrument (2026-09-12): the held origin's XML imported UNTOUCHED into a new
-	    windowless document. The UI gives it a window (KCMActionComponent.cpp); the document is the
-	    reader's to close and is neither the run's copy nor the peek document. kFalse with a reason
-	    when nothing is held or the import failed - nothing is left open then. */
-	virtual bool16		RehydrateOriginRaw(UIDRef& outDoc, PMString& outWhyNot) = 0;
-
-	/** Its twin: the held origin rehydrated exactly as a comparison rehydrates it, so the reader
-	    can look at the very copy the comparison reads (KCMOrigin.h, KCMOriginOpenCopy). The UI
-	    gives it a window. */
-	virtual bool16		RehydrateOriginAsCompared(UIDRef& outDoc, PMString& outWhyNot) = 0;
-
-	/** The third instrument (2026-09-12): the held origin's XML written to the user's Desktop
-	    exactly as Task Start took it (KCMOrigin.h, KCMOriginSaveRaw). outPath is the file written,
-	    for the status line. kFalse with a reason when nothing is held or the write failed. */
+	/** THE DEBUGGING DOOR (2026-09-12, kept on 2026-09-14 when its two companions went): the held
+	    origin's XML written out exactly as Task Start took it. ⚠It is no longer on any menu - the
+	    flyout items that opened and saved the origin were removed - so the way in is the script
+	    method on app, which is why this survives while RehydrateOriginRaw and its twin did not.
+	    outPath is the file written. kFalse with a reason when nothing is held or the write failed. */
 	virtual bool16		SaveOriginRawToDesktop(PMString& outPath, PMString& outWhyNot) = 0;
 
 	// ---- the page pairing rule ------------------------------------------------------------
@@ -648,6 +631,6 @@ public:
 	compares it with the value ITS build saw in this header before it calls anything here
 	(KIDMCPKcmBridge::AbiState). Two binaries built from different versions of this class then
 	refuse each other instead of running the wrong method (2026-09-13: the header's warning). */
-const int32 kKCMCompareFacadeAbi = 2026091304;	// 04 = the fourth change of the day (Get/SetShowStoryIds, renamed from ...FrameUids the same afternoon)
+const int32 kKCMCompareFacadeAbi = 2026091401;	// 01 = the first change of 2026-09-14 (three virtuals removed with the menu items that called them: ExportChangedPagesTSV, RehydrateOriginRaw, RehydrateOriginAsCompared)
 
 #endif // __IKCMCompareFacade_h__

@@ -58,14 +58,6 @@ struct KCMOriginShape;
     @param whyNot  when kFalse, the step that failed. */
 bool16 KCMRehydrate(const KCMResourceBytes& inx, const KCMOriginShape& expect, UIDRef& outDoc, PMString& whyNot);
 
-/** THE TEST INSTRUMENT (2026-09-12, the user's ask: "materialise the XML as it is, touching
-    nothing"): a new windowless document with inx imported into it UNTOUCHED - no sacrificial
-    range, no deletion, no compose, no shape check, no clean mark. It is how the import's own
-    behaviour (the first range of a story going missing, KCMXmlInject.h) is looked at on the real
-    application. The caller gives it a window; the document is the reader's to close.
-    kFalse with a reason when the import failed; nothing is left open then. */
-bool16 KCMRehydrateRaw(const KCMResourceBytes& inx, UIDRef& outDoc, PMString& whyNot);
-
 /** Close a document this file made. Nothing else may be handed to it. A document that is already
     gone, or UIDRef::gNull, is ignored.
     @param deferred kTrue schedules the close (IDocFileHandler::kSchedule) instead of running it

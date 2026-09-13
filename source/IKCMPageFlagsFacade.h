@@ -143,10 +143,6 @@ public:
 	//   Putting the marks back when a document opens still happens on its own, in the after-open
 	//   responder. The reasoning is in KCMPageMarksDoc.h and KCMPageMarksCmd.h.
 
-	/** "Clear Marks from Document": take every mark of OURS off every page in one undoable step,
-		leaving all other labels exactly as they were.
-		@return how many pages were changed, or -1 when the document could not be used. */
-	virtual int32	ClearMarksFromDocument(IDataBase* db) = 0;
 };
 
 #endif // __IKCMPageFlagsFacade_h__

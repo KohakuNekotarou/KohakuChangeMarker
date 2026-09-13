@@ -23,7 +23,6 @@
 #include "IKCMCompareFacade.h"	// reading and writing the print-marks setting, across the boundary
 #include "KCMUIShared.h"	// panel / status line / nav readout / tool button (split from KCMCore.h on 2026-08-13)
 #include "KCMViewSync.h"			// KCMGetLayoutSync / KCMSetLayoutSync
-#include "KCMScrollMap.h"			// KCMGetScrollMapEnabled / KCMSetScrollMapEnabled
 #include "KCMPanelAlpha.h"		// KCMGetPanelTranslucent / KCMSetPanelTranslucent (Translucent Panel)
 #include "KCMPanelTitle.h"		// KCMPanelTitle::Update (put the restored compare mode on the tab)
 
@@ -176,7 +175,6 @@ void KCMSavePanelState()
 	json += "  \"showOldNumbers\": ";         json += KCMBoolLiteral(compare->GetShowOldPageNumbers());           json += ",\n";
 	json += "  \"showStoryIds\": ";           json += KCMBoolLiteral(compare->GetShowStoryIds());                 json += ",\n";
 	json += "  \"syncLayoutViews\": ";        json += KCMBoolLiteral(KCMGetLayoutSync());                       json += ",\n";
-	json += "  \"scrollbarMap\": ";           json += KCMBoolLiteral(KCMGetScrollMapEnabled());                 json += ",\n";
 	json += "  \"ignorePageNumberMarker\": "; json += KCMBoolLiteral(compare->GetIgnorePageNumberMarker());               json += ",\n";
 	json += "  \"pairPagesByUid\": ";         json += KCMBoolLiteral(compare->GetPairPagesByUid());                       json += ",\n";
 	json += "  \"translucentPanel\": ";       json += KCMBoolLiteral(KCMGetPanelTranslucent());                 json += ",\n";
@@ -298,7 +296,6 @@ void KCMLoadPanelStateIfPresent()
 	compare->SetMarkColor(KCMJsonReadBool(text, "markColorCyan", compare->GetMarkColorCyan()));
 
 	KCMSetLayoutSync            (KCMJsonReadBool(text, "syncLayoutViews",         KCMGetLayoutSync()));
-	KCMSetScrollMapEnabled      (KCMJsonReadBool(text, "scrollbarMap",           KCMGetScrollMapEnabled()));
 	compare->SetIgnorePageNumberMarker(
 		KCMJsonReadBool(text, "ignorePageNumberMarker", compare->GetIgnorePageNumberMarker()));
 	compare->SetPairPagesByUid(

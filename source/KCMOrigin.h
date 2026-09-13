@@ -61,20 +61,8 @@ bool16 KCMTakeTaskStart(PMString& whyNot);
 
 bool16 KCMHasOrigin();
 
-/** The test instrument (2026-09-12): the held origin's XML imported UNTOUCHED into a new
-    windowless document (KCMRehydrateRaw). The UI gives it a window; it is the reader's to close
-    and is not the run's copy nor the peek document. kFalse, with a reason, when nothing is held
-    or the import failed. */
-bool16 KCMOriginOpenRaw(UIDRef& outDoc, PMString& whyNot);
-
-/** Its twin: the held origin rehydrated EXACTLY as a comparison rehydrates it (KCMRehydrate -
-    the sacrificial range, the deletion of a surviving one, the compose, the shape check), so the
-    reader can look at the very copy the comparison reads - paragraph styles included. The UI
-    gives it a window; it is the reader's to close and is not the run's copy nor the peek document.
-    kFalse, with a reason, when nothing is held or the rehydration failed. */
-bool16 KCMOriginOpenCopy(UIDRef& outDoc, PMString& whyNot);
-
-/** The third instrument (2026-09-12, the user's ask): the held origin's XML written to the
+/** THE DEBUGGING DOOR (2026-09-12; the only one of the three left after 2026-09-14): the
+    held origin's XML written to the
     user's Desktop AS IT IS - the bytes Task Start took, before any injection - as
     "<document name>.TaskStart-HHMMSS.xml". The same origin always gets the same name, so a
     second press overwrites a file holding the same bytes. outPath is the file written, for the

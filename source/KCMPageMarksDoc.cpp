@@ -467,42 +467,4 @@ int32 KCMMarksSyncFromDocument(IDataBase* db, int32* outChecks, int32* outPaws)
 // Taking every mark off.
 //========================================================================================
 
-int32 KCMMarksClearFromDocument(IDataBase* db)
-{
-	if (db == nil)
-		return -1;
-
-	std::vector<UID> pages;
-	KCMCollectAllPages(db, pages);
-
-	// Only the pages that actually carry something of ours go into the step. Handing the command
-	// every page of the document would make an undo step out of a document that had no marks at
-	// all, and KCMMarksWriteOnePage would have to decide page by page not to write -- which is the
-	// same decision, made twice ([[one-question-one-place]]).
-	std::vector<KCMPageMarks> wanted;
-	for (size_t i = 0; i < pages.size(); ++i)
-	{
-		IScriptLabel::ScriptLabelKeyValueList had;
-		if (!KCMReadPageLabels(db, pages[i], had))
-			continue;
-
-		for (int32 k = 0; k < (int32)had.size(); ++k)
-		{
-			if (KCMIsOurKey(had[k].Key()))
-			{
-				wanted.push_back(KCMPageMarks(pages[i], kFalse));	// no tick, no paws
-				break;
-			}
-		}
-	}
-
-	if (wanted.empty())
-		return 0;
-
-	if (KCMMarksWrite(db, wanted, "Clear Marks") != kSuccess)
-		return -1;
-
-	return (int32)wanted.size();
-}
-
 // End, KCMPageMarksDoc.cpp.

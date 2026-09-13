@@ -124,7 +124,6 @@ static const PMReal kKCMScrollMapTrackInset = 8.0;
 // While it is off, Attach and NoticeDrawEvent return at once, so no strip is injected and no
 // fingerprint is computed on every draw. Removing the strips that already exist when the toggle
 // goes off is the caller's job (KCMActionComponent calls DetachAll).
-static bool16 sScrollMapOn = kTrue;
 
 //========================================================================================
 // KCMScrollMapView -- the strip draws itself (an IControlView implementation)
@@ -614,8 +613,6 @@ static void KCMCollectPresentationPanels(IDataBase* db, K2Vector<IPanelControlDa
 // document windows.
 void KCMScrollMapAttach(IDataBase* targetDB)
 {
-	if (!sScrollMapOn)
-		return;	// with "Show Scrollbar Map" off, no strip is injected (a Start shows no map)
 	if (targetDB == nil)
 		return;
 
@@ -835,8 +832,6 @@ static uint32 sHiddenFingerO = 0;			// the overset-scanned document (so a Find O
 // through another spread redraw into another detection.)
 void KCMScrollMapNoticeDrawEvent()
 {
-	if (!sScrollMapOn)
-		return;		// with the map off there is no strip either, so skip the per-draw fingerprint
 	// An unarmed state does not return: a Find Overset on its own can still have put a strip up.
 	// Both facades are asked more than once here, so each is queried into an InterfacePtr first
 	// (Utils.h says to do that rather than pay for a query per call) -- this path runs on EVERY
@@ -872,11 +867,5 @@ void KCMScrollMapNoticeDrawEvent()
 	}
 }
 
-// -- the on/off flag ("Show Scrollbar Map" in the flyout, on by default) --------------------
-// Attaching and detaching strips as the flag flips belongs to the callers; this only holds the
-// value. There are two callers and only one of them does that cleanup -- the reason, and why that
-// is not a defect, is on the declaration of KCMSetScrollMapEnabled in KCMScrollMap.h.
-bool16 KCMGetScrollMapEnabled()      { return sScrollMapOn; }
-void   KCMSetScrollMapEnabled(bool16 on) { sScrollMapOn = on; }
 
 // End of KCMScrollMap.cpp

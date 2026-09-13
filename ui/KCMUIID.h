@@ -335,7 +335,9 @@ DECLARE_PMID(kActionIDSpace, kKCMPopupSep2ActionID, kKCMUIPrefix + 18)	// flyout
 // kKCMPopupPanelShortcutActionID (kKCMUIPrefix + 20) went with the middle-button gestures. The
 // slot was reused:
 DECLARE_PMID(kActionIDSpace, kKCMPopupAlignViewsActionID, kKCMUIPrefix + 20)	// "Align Other Views to Active" on the panel flyout (a plain command). It sets the other documents' layout views to the active (frontmost) view's position and zoom, once. While Started, the page Add/Remove correction is applied. Shortcut-assignable (kKCMPanelMenuActionArea + VisibleInKBSC). The work is KCMAlignOtherViewsToActiveNow in ui/KCMViewSync.cpp
-DECLARE_PMID(kActionIDSpace, kKCMPopupScrollMapActionID, kKCMUIPrefix + 21)	// "Show Scrollbar Map" check toggle on the panel flyout (ON = a strip beside each document window's vertical scrollbar maps where the changes are. Default ON; the state is sScrollMapOn in KCMScrollMap.cpp)
+// (kKCMUIPrefix + 21 in the ACTION space is retired: it was the "Show Scrollbar Map" toggle,
+//  removed 2026-09-14 when the map became unconditional. Never reused - a reused ActionID
+//  inherits whatever shortcut a reader had bound to the old item.)
 DECLARE_PMID(kActionIDSpace, kKCMPopupSavePanelStateActionID, kKCMUIPrefix + 22)	// "Save Panel Settings" on the panel flyout (a plain command, not a check). It writes the current settings toggles to a private JSON file and shows the saved path. They are read back at startup (KCMUIStartup::Startup). KCMPanelState.cpp
 DECLARE_PMID(kActionIDSpace, kKCMPopupSep3ActionID, kKCMUIPrefix + 23)	// flyout: the separator below Refresh Overset (a MenuDef path ending in ":-"; no ActionDef needed). Its position is kKCMSep3MenuItemPosition below
 DECLARE_PMID(kActionIDSpace, kKCMPageCheckToggleActionID, kKCMUIPrefix + 24)	// "Check" toggle on the Pages panel page context menu (RtMenuPagesPanel): puts a check mark on the selected pages, or takes it off. The check mark and the enabling come from kCustomEnabling. ★★**No comparison is required, and Stop does not clear the ticks** (2026-09-04) -- the old "only while Started; cleared on Stop" is gone. ★**Which pages can be checked**: any page of a document nobody is comparing; of a document being compared, in Pixel only the pages that carry a mark and in Story any page. The answer lives in one place, the model's KCMCollectCheckablePageUIDs. KCMPageCheck.cpp, and the check itself is drawn by the isThumb branch of KCMDrawEventHandler
@@ -357,7 +359,8 @@ DECLARE_PMID(kActionIDSpace, kKCMPageRefreshCompareActionID, kKCMUIPrefix + 30)	
 //   JUMPS TO THE PLACE -- which this never did, stopping at "which page".
 //   ⚠**The three slots stay reserved and are never reused** (a shortcut a reader assigned is
 //   stored by number, so reusing one would fire something else).
-DECLARE_PMID(kActionIDSpace, kKCMPopupExportChangedPagesActionID, kKCMUIPrefix + 34)	// "Export Changed Pages..." on the panel flyout (a plain command). Enabled only during a comparison (sDB != nil) = write the list of changed pages as TSV (new / old / kind). KCMChangedPagesTSV.cpp
+// (kKCMUIPrefix + 34 in the ACTION space is retired: it was "Export Changed Pages..." (the TSV),
+//  removed 2026-09-14 because the Before/After PDF report carries the same list and more.)
 // (+35 = kKCMPopupHudActionID, "Show HUD", went out with the feature itself.
 //  ★**That number is not reused** ＝ a shortcut assignment is stored in .indk by the NUMERIC
 //  ActionID, so handing the number to another feature makes an existing assignment fire that
@@ -413,13 +416,16 @@ DECLARE_PMID(kActionIDSpace, kKCMClearChecksActionID, kKCMUIPrefix + 52)	// "Cle
 //   the one ID space where reuse is unsafe -- a .indk stores keyboard shortcuts as plain numbers,
 //   so a reader who had bound a key to +55 would find it working the new item. (+38 is retired for
 //   the same reason: it was the Translucent Toolbox toggle.)
-DECLARE_PMID(kActionIDSpace, kKCMClearMarksFromDocActionID, kKCMUIPrefix + 56)	// "Clear Marks from Document": takes OUR labels off every page and leaves every other label alone. Greyed with no active document
+// (kKCMUIPrefix + 56 in the ACTION space is retired: it was "Clear Marks from Document",
+//  removed 2026-09-14 - the two items above it, Clear Checks and Clear Cat Paws, are the whole
+//  of what it did.)
 DECLARE_PMID(kActionIDSpace, kKCMClearChosenActionID, kKCMUIPrefix + 54)	// "Clear Target and Source" on the panel flyout (a plain command; 2026-09-05, user's request). Drops both chosen documents, so the next Start falls back to the automatic rule and the panel's Target:/Source: lines go back to bare labels. A lent Source is forgotten with them. ★★It STOPS a running comparison first (2026-09-07, user's instruction -- it used to be greyed while armed and to leave the comparison running). Live through kCustomEnabling whenever a comparison is armed OR at least one of the two is chosen. ⚠The number is +54, not +50 or +51: those two are retired, see the note above
 // ★"Show as XML" on a DEFINITION row's context menu (2026-09-09, the user's request). Shows the element the row names, both documents' copies, in a modal alert the way How to Use is shown. ★It shares kKCMStoryRowMenuName with the Story refresh item and the two are enabled in OPPOSITE modes, so each mode's menu has exactly one live item and InDesign hides the greyed one. KCMResourceXml.cpp
 DECLARE_PMID(kActionIDSpace, kKCMResourceRowXmlActionID, kKCMUIPrefix + 58)
-DECLARE_PMID(kActionIDSpace, kKCMPopupOpenOriginRawActionID, kKCMUIPrefix + 60)	// "Open Task Start XML (raw)" on the panel flyout (a plain command, 2026-09-12, the user's ask: a test instrument). The held origin's XML is imported UNTOUCHED into a new document and given a window, so what ImportINX does to it (the first range of a story going missing) can be seen on the real application. Live while an origin is held (kCustomEnabling). Facade RehydrateOriginRaw + the window from here
-DECLARE_PMID(kActionIDSpace, kKCMPopupOpenOriginCopyActionID, kKCMUIPrefix + 61)	// "Open Task Start Copy (as compared)" on the panel flyout (2026-09-12, the user's ask): the held origin rehydrated exactly as a comparison rehydrates it, given a window - the way to look at the very copy the comparison reads (paragraph styles included). Live while an origin is held. Facade RehydrateOriginAsCompared
-DECLARE_PMID(kActionIDSpace, kKCMPopupSaveOriginRawActionID, kKCMUIPrefix + 62)	// "Save Task Start XML to Desktop" on the panel flyout (2026-09-12, the user's ask: the third instrument). The held origin's XML written to the Desktop exactly as Task Start took it, as "<document>.TaskStart-HHMMSS.xml". Live while an origin is held, with its two twins. Facade SaveOriginRawToDesktop; the status line names the file. ⚠+62 in the ACTION space only - the widget space's +62 is the book tree, and the two spaces are separate accounts
+// (kKCMUIPrefix + 60, 61 and 62 in the ACTION space are retired: they were Task Start's three
+//  XML instruments - Open raw / Open copy / Save to Desktop - removed from the menu 2026-09-14.
+//  ★The WRITER itself survives as a debugging door (KCMOriginSaveRaw, reached from a script
+//   method on app rather than from a menu); the other two were deleted outright.)
 // ★"Copy Source Text" on a CHANGE row's context menu (2026-09-12, the user's request: "the Source
 //   side's text only - what a replacement replaced, what a deletion removed, and for ruby the
 //   reading itself, not the characters under it"). A subtree of its own (kKCMChangeRowMenuName),
@@ -687,21 +693,15 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowChangeWidgetID, kKCMUIPrefix + 72)	// Ro
 #define kKCMExportReportMenuKey	kKCMStringPrefix "kKCMExportReportMenuKey"		// the menu name of "Export Before/After PDF Report" on the panel flyout
 #define kKCMShowStoryIdsMenuKey	kKCMStringPrefix "kKCMShowStoryIdsMenuKey"		// the menu name of the "Show Story IDs" toggle on the panel flyout
 // (kKCMHoldToHideMarksMenuKey went with that toggle - see the note at ActionID +19.)
-#define kKCMScrollMapMenuKey		kKCMStringPrefix "kKCMScrollMapMenuKey"	// the menu name of the "Show Scrollbar Map" toggle on the panel flyout
 #define kKCMSavePanelStateMenuKey	kKCMStringPrefix "kKCMSavePanelStateMenuKey"	// the menu name of "Save Panel Settings" on the panel flyout
 // (kKCMSaveMarksMenuKey stood here for one morning, 2026-09-07, and went with its menu item.)
-#define kKCMClearMarksMenuKey		kKCMStringPrefix "kKCMClearMarksMenuKey"	// the menu name of "Clear Marks from Document"
 #define kKCMClearChecksMenuKey		kKCMStringPrefix "kKCMClearChecksMenuKey"	// the menu name of "Clear Checks in This Document" on the panel flyout
 #define kKCMClearPawsMenuKey		kKCMStringPrefix "kKCMClearPawsMenuKey"	// the menu name of "Clear Cat Paws in This Document" on the panel flyout
 #define kKCMRefreshCompareMenuKey	kKCMStringPrefix "kKCMRefreshCompareMenuKey"	// the menu name of "Refresh Comparison" on the panel flyout (directly under Start). ⚠Not kKCMPageRefreshCompareMenuKey, which is the Pages panel's partial one
-#define kKCMExportChangedPagesMenuKey	kKCMStringPrefix "kKCMExportChangedPagesMenuKey"	// the menu name of "Export Changed Pages..." on the panel flyout
 #define kKCMCompareBooksMenuKey	kKCMStringPrefix "kKCMCompareBooksMenuKey"	// the menu name of "Compare Books" on the panel flyout (compare two books chapter by chapter)
 #define kKCMSetTargetMenuKey		kKCMStringPrefix "kKCMSetTargetMenuKey"	// ★the menu name of "Set as Target" on the panel flyout (the active document becomes the comparison's Target)
 #define kKCMSetSourceMenuKey		kKCMStringPrefix "kKCMSetSourceMenuKey"	// ★the menu name of "Set as Source" on the panel flyout (the active document becomes the older version)
 #define kKCMTaskStartMenuKey		kKCMStringPrefix "kKCMTaskStartMenuKey"	// ★the menu name of "Task Start" on the panel flyout (the active document's state now becomes the Source)
-#define kKCMOpenOriginRawMenuKey	kKCMStringPrefix "kKCMOpenOriginRawMenuKey"	// the menu name of "Open Task Start XML (raw)" on the panel flyout (the test instrument: the origin's XML materialised untouched)
-#define kKCMOpenOriginCopyMenuKey	kKCMStringPrefix "kKCMOpenOriginCopyMenuKey"	// the menu name of "Open Task Start Copy (as compared)" on the panel flyout (its twin: the copy the comparison reads)
-#define kKCMSaveOriginRawMenuKey	kKCMStringPrefix "kKCMSaveOriginRawMenuKey"	// the menu name of "Save Task Start XML to Desktop" on the panel flyout (the third instrument: the origin's XML written out as taken)
 #define kKCMClearChosenMenuKey	kKCMStringPrefix "kKCMClearChosenMenuKey"	// ★the menu name of "Clear Target and Source" on the panel flyout (drops both choices; the next Start falls back to the automatic rule)
 #define kKCMBookDialogTitleKey	kKCMStringPrefix "kKCMBookDialogTitleKey"	// the title of the book comparison dialog
 #define kKCMPawWordDialogTitleKey	kKCMStringPrefix "kKCMPawWordDialogTitleKey"	// the title of the paw word box
