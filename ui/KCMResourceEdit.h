@@ -45,8 +45,11 @@
 //       selection - but the styles panel stashes that row privately, so nothing outside it can say
 //       which row the action should be about.
 //
-//  ★ONLY CHARACTER STYLES SO FAR (the user's staging). Every other kind of row says so on the
-//  status line rather than doing nothing.
+//  ★ONLY CHARACTER STYLES SO FAR (the user's staging), AND ONLY ATTRIBUTES WHOSE PAGE IS KNOWN.
+//  Everything else is GREYED OUT on the menu rather than offered and then refused - the user's
+//  call, 2026-09-13: "when it is not handled, I would rather the Edit... item were greyed out, or
+//  not there". The refusals on the status line below are backstops for a caller that is not the
+//  menu; the menu itself never reaches them.
 //
 //========================================================================================
 
@@ -76,13 +79,20 @@
 	"after the panel opens, the place in the list on the left that holds that Kind should be
 	selected - AppliedFont first, second from the top, Basic Character Formats"). The dialog is the
 	same one either way; the child row only says which of its sixteen pages to show.
-	⚠**The page is chosen by POSITION**, from a table this file carries, because the pages come from
-	  twelve different plug-ins and their widget ids are not published. One line per attribute, and
-	  an attribute the table does not know simply opens the dialog at its own first page.
+	★**The page is named by the CLASS ID OF THE VIEW that supplies it**, from a table the .cpp
+	  carries, one line per attribute. ⚠**Not by position**, which is what it was for a day and why
+	  the page never switched: the set of pages differs by feature set, so a position means a
+	  different page in a Japanese InDesign and a Roman one. The reasoning, the seventeen pages as
+	  measured, and the hook-boss-is-not-the-page trap are all above the table itself.
+	⚠★★**An attribute the table does not know is REFUSED, not opened anyway** (2026-09-13, the
+	  user's call) - the "Edit..." item on such an attribute row is disabled, which in the Resources
+	  mode means **no menu appears at all** (measured, and the user's "that is fine"): the other
+	  items on that menu belong to the Story mode, so nothing on it is live. The DEFINITION row's
+	  own "Edit..." still opens the style, so nothing becomes unreachable; see CanEditResourceAttr.
 
 	@param row  0 .. IKCMResourcesFacade::GetChangeCount()-1, the DEFINITION row.
-	@param attrIndex  which of that definition's differing attributes was double-clicked, or -1 for
-	            the definition row itself. Only decides the page the dialog opens at.
+	@param attrIndex  which of that definition's differing attributes the menu was popped over, or
+	            -1 for the definition row itself. Only decides the page the dialog opens at.
 	@return kTrue when the action was fired. kFalse for every refusal, each of which has already
 	        been written to the status line - except the silent ones listed under 1.
 */

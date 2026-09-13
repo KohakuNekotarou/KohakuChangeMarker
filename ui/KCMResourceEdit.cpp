@@ -21,6 +21,7 @@
 #include "IPanelControlData.h"		// FindWidget - down to the tree inside it
 #include "IPanelMgr.h"				// ShowPanelByMenuID / IsPanelWithMenuIDShown
 #include "ISession.h"
+#include "ISubject.h"				// Change - telling the page that the proxy switched sides
 #include "ITextControlData.h"		// what the row the search found actually says
 #include "ITreeViewController.h"	// DeselectAll / Select - WITHOUT notifying
 #include "ITreeViewHierarchyAdapter.h"	// the tree's own rows, open or closed
@@ -35,6 +36,9 @@
 // KCMStoryRowEH.cpp's TreeNodeEventHandler.h: the build files that would carry such a directory
 // live outside this plug-in's repository, so a path added there would not survive a fresh checkout.
 #include "../../open/interfaces/text/CharPanelID.h"	// kCharDialogWidget - the Basic Character Formats page
+#include "IStrokeFillControlData.h"	// SetActive - which square of the fill/stroke proxy is in front
+#include "ToolboxProxyTypes.h"		// ToolboxProxy::kFillActive / kStrokeActive
+#include "widgetid.h"				// kStrokeFillWidgetBoss - the proxy's class, and this one IS public
 #include "StylePanelID.h"			// the Character Styles panel, its tree, and its action
 #include "TextStylePanelID.h"		// kStyleCharParentWidgetID - the panel that switches the pages
 #include "Utils.h"
@@ -188,7 +192,7 @@ NodeID FindNodeByPath(ITreeViewHierarchyAdapter* adapter, ITreeViewTypeAhead* ty
 }
 
 //========================================================================================
-// Opening the dialog AT THE PAGE that holds the attribute the reader double-clicked
+// Opening the dialog AT THE PAGE that holds the attribute the reader chose "Edit..." on
 //========================================================================================
 
 /** Which of the dialog's pages holds a given IDML attribute, BY THE BOSS THAT SUPPLIES THE PAGE.
@@ -256,6 +260,18 @@ struct KCMAttributePage
 	ClassID		fPageBoss;
 };
 
+/** The Character Colour page's view, AS A MEASURED NUMBER because the SDK declares no name for it.
+
+	⚠★★★`kTextColorDialogWidget` is what InDesign's own object model answers for 0x5c05 - it is a
+	real name, read off the running dialog - but **no public header declares it**, and neither does
+	any header declare the prefix of the 0x5c00 band it belongs to (TEXT COLOR PANEL). Grepping the
+	whole of `source/` for the spelling finds exactly one hit: the page table's own comment, above.
+	⇒ This is the case the table's header already set the rule for ("a page of theirs can only be
+	  written here as the measured number, with a comment saying where it came from"), met for the
+	  first time by a page that is NOT one of the Japanese-only eight.
+	★It is a ClassID, so it is the same number in every language and in every feature set. */
+const ClassID kKCMTextColourPageBoss(0x5c05);
+
 const KCMAttributePage kKCMAttributePages[] =
 {
 	// 一般 / General
@@ -272,6 +288,64 @@ const KCMAttributePage kKCMAttributePages[] =
 	{ "FontStyle",					kCharDialogWidget },
 	{ "PointSize",					kCharDialogWidget },
 	{ "Leading",					kCharDialogWidget },
+	// The rest of that page, 2026-09-13 (the user read them off it).
+	// ★SPELT AS THE EXPORT SPELLS THEM, and checked one by one against a real INX
+	//   (work/inx-probe/origin.xml) rather than against the panel's labels: `Underline` has a small
+	//   l, and `KerningMethod` is easy to mistype. A misspelt entry does not fail loudly - it simply
+	//   never matches, and the item it belongs to is then greyed out (CanEditResourceAttr below),
+	//   which reads exactly like "this one is not supported yet".
+	{ "KerningMethod",				kCharDialogWidget },
+	{ "Tracking",					kCharDialogWidget },
+	{ "Capitalization",				kCharDialogWidget },
+	{ "Position",					kCharDialogWidget },
+	{ "Underline",					kCharDialogWidget },
+	{ "StrikeThru",					kCharDialogWidget },
+	{ "Ligatures",					kCharDialogWidget },
+	{ "NoBreak",					kCharDialogWidget },
+	{ "CharacterAlignment",			kCharDialogWidget },
+	// 詳細文字形式 / Advanced Character Formats (2026-09-13, the user read them off that page)
+	// ⚠kCharDialog2Widget sits ONE LINE below kCharDialogWidget in CharPanelID.h (219 and 220) and
+	//   differs from it by one character here. The two pages are next to each other in the dialog
+	//   as well, so a swap would open a page that looks almost right - check against the page
+	//   TITLE when either of these is touched, never against its position.
+	// ★All three are shown as PERCENTAGES rather than as the export wrote them
+	//   (KCMResourceUnits.h); that is a display rule and has nothing to do with this table.
+	{ "HorizontalScale",			kCharDialog2Widget },
+	{ "VerticalScale",				kCharDialog2Widget },
+	{ "Tsume",						kCharDialog2Widget },
+	// ⚠`BaselineShift` has a SMALL l - the export's spelling, measured; the page reads it as
+	//   "BaseLineShift" and it is not that. ★Its unit moved to the text size (Q) in the same
+	//   change: KCMResourceUnits.h, where the wrong letter beside the right number is written up.
+	{ "BaselineShift",				kCharDialog2Widget },
+	{ "Skew",						kCharDialog2Widget },
+	{ "CharacterRotation",			kCharDialog2Widget },
+	{ "LeadingAki",					kCharDialog2Widget },
+	{ "TrailingAki",				kCharDialog2Widget },
+	{ "Jidori",						kCharDialog2Widget },
+	{ "GlyphForm",					kCharDialog2Widget },
+	{ "AppliedLanguage",			kCharDialog2Widget },
+	{ "ScaleAffectsLineHeight",		kCharDialog2Widget },
+	{ "CjkGridTracking",			kCharDialog2Widget },
+	// 文字カラー / Character Colour (2026-09-13)
+	// ★**AND THESE TWO ALSO PRESS A SQUARE.** The page shows ONE swatch list, and which of the
+	//   style's two colours it is about is decided by the fill/stroke proxy on it - so these two
+	//   rows would otherwise open the same page with the same square in front, and one of them
+	//   would be about the wrong colour. See KCMProxyForAttribute.
+	{ "FillColor",					kKCMTextColourPageBoss },
+	{ "StrokeColor",				kKCMTextColourPageBoss },
+	{ "FillTint",					kKCMTextColourPageBoss },
+	{ "StrokeTint",					kKCMTextColourPageBoss },
+	{ "OverprintFill",				kKCMTextColourPageBoss },
+	{ "OverprintStroke",			kKCMTextColourPageBoss },
+	{ "StrokeWeight",				kKCMTextColourPageBoss },
+	{ "MiterLimit",					kKCMTextColourPageBoss },
+	{ "EndJoin",					kKCMTextColourPageBoss },
+	{ "StrokeAlignment",			kKCMTextColourPageBoss },
+	// ⚠**KerningValue is absent on purpose, and NOT because its page is unknown**: it no longer
+	//   reaches this list at all. It rides along with KerningMethod and cannot be edited for a
+	//   definition, so the model leaves it out of the compared body (KCMResourceParse.cpp,
+	//   AppendOpenTag, where the reason is written down). ★Said here because this is where somebody
+	//   who misses it will come looking.
 };
 
 /** The page boss for `attributeName`, or kInvalidClass when the table does not know it. */
@@ -296,7 +370,19 @@ ClassID KCMPageBossForAttribute(const PMString& attributeName)
 //   ([[avoid-timers-and-idle-tasks]]). Idle tasks are serviced by the APPLICATION's event loop,
 //   and a modal dialog is not running it. ::SetTimer is not a preference here; it is the only
 //   thing that fires.
-ClassID		gWantedPageBoss	= kInvalidClass;
+/** Which square of the Character Colour page's fill/stroke proxy an attribute is about.
+	★Declared up here, beside the page the switch is aiming at, because the two are ONE gesture:
+	  armed together, cleared together, and meaningless apart. What they mean is under
+	  KCMProxyForAttribute, below. */
+enum KCMWantedProxy
+{
+	kKCMProxyLeaveAlone = 0,	// every other attribute: the proxy is left exactly as it was
+	kKCMProxyFill,
+	kKCMProxyStroke
+};
+
+ClassID			gWantedPageBoss	= kInvalidClass;
+KCMWantedProxy	gWantedProxy	= kKCMProxyLeaveAlone;
 UINT_PTR	gPageTimer		= 0;
 int			gPageTicks		= 0;
 const UINT	kPageTimerMs	= 100;
@@ -314,6 +400,7 @@ void StopPageTimer()
 		gPageTimer = 0;
 	}
 	gWantedPageBoss = kInvalidClass;
+	gWantedProxy = kKCMProxyLeaveAlone;
 }
 
 /** Which of the switcher's pages is supplied by `wanted`, or -1.
@@ -334,6 +421,122 @@ int32 PageIndexOfBoss(ISelectableDialogSwitcher* switcher, ClassID wanted)
 			return i;
 	}
 	return -1;
+}
+
+/** The page's own view, for the index PageIndexOfBoss just handed back. */
+IControlView* PageViewAt(ISelectableDialogSwitcher* switcher, int32 index)
+{
+	if (switcher == nil || index < 0 || index >= switcher->GetNumDialogPanels())
+		return nil;
+	return switcher->GetDialogPanel(switcher->GetPanelWidgetID(index));
+}
+
+//========================================================================================
+// The fill / stroke proxy on the Character Colour page
+//========================================================================================
+
+/** Whether opening the editor for `attributeName` should bring one square of the proxy to the front.
+
+	★★★WHY THE PAGE IS NOT ENOUGH (2026-09-13, the user pointing at the two squares: "for FillColor
+	and for StrokeColor, press this"). The Character Colour page shows ONE swatch list, one tint,
+	one overprint - and which of the style's two colours they are about is decided by the little
+	proxy at the top left. So a FillColor row and a StrokeColor row would open the same page with
+	the same square in front, and one of the two would quietly be about the wrong colour.
+
+	★★HOW IT WAS FOUND, because the shape of the search is the reusable part. The squares are NOT
+	Win32 controls - read from outside, that dialog's 173 child windows are edit boxes and their
+	containers and nothing else, because InDesign draws its own dialogs. So the page's widget tree
+	was dumped FROM INSIDE (KT's app.ktStyleDlgProbe, extended the same day the seventeen pages
+	were), every ClassID on it was turned back into a name with the debug build's object-model dump,
+	and one of them was `kStrokeFillWidgetBoss` - **declared in the public `widgetid.h:144`**, with
+	`IStrokeFillControlData` (public header) on it and `SetActive(kFillActive/kStrokeActive)` in it.
+	⇒ ★**The user's own observation is why it is public**: "the same fill and stroke colours are in
+	  lots of places - the toolbox has them, paragraph styles have them". A widget that appears in
+	  that many places lives in WIDGETS.RPLN and has a published name.
+	⚠★★But "the same square" is NOT "the same target": the toolbox's proxy is about the selection
+	  and the defaults, this one is about the style being edited. That is why the actions that drive
+	  the toolbox (kToggleFillAndStrokeActionID, the X key) were the wrong answer - and they are
+	  disabled during a modal dialog anyway, unless declared kEnableEvenDuringDialogs.
+
+	★EVERY ATTRIBUTE OF THAT PAGE IS HERE, and the last four were ASKED rather than assumed.
+	  OverprintStroke, MiterLimit, EndJoin and StrokeAlignment carry no "which square" in the list
+	  they arrived in - the other seven did - so they were left out of the first build and put to
+	  the user, who answered "those are the stroke" (2026-09-13). They are stroke because somebody
+	  said so, not because their names look like it.
+	⇒ ★**Anything else that lands on this page has no square and gets none**: the proxy is then left
+	  exactly where the reader put it, which is what an attribute missing from this table does too.
+	  The two cases are deliberately the same, so that forgetting a line here is harmless. */
+KCMWantedProxy KCMProxyForAttribute(const PMString& attributeName)
+{
+	const std::string name = attributeName.GetUTF8String();
+	if (name == "FillColor" || name == "FillTint" || name == "OverprintFill")
+		return kKCMProxyFill;
+	if (name == "StrokeColor" || name == "StrokeTint" || name == "StrokeWeight"
+		|| name == "OverprintStroke" || name == "MiterLimit" || name == "EndJoin"
+		|| name == "StrokeAlignment")
+		return kKCMProxyStroke;
+	return kKCMProxyLeaveAlone;
+}
+
+/** Bring `which` square of the proxy on `page` to the front. Does nothing, quietly, when the page
+	has no proxy - every page but Character Colour, and that is not an error.
+
+	★FOUND BY CLASS, NOT BY WidgetID, for the same reason the PAGE is: the proxy's WidgetID (0x5ccb,
+	measured) belongs to TEXT COLOR PANEL and has no published name, while its CLASS does. A walk
+	for the class also survives the widget being moved or renumbered in a later InDesign. */
+bool16 SetProxyOnPage(IControlView* view, KCMWantedProxy which, int& budget)
+{
+	if (view == nil || which == kKCMProxyLeaveAlone || budget <= 0)
+		return kFalse;
+	--budget;					// ★one shared count for the whole walk, so a deep tree cannot spin
+
+	if (::GetClass(view) == kStrokeFillWidgetBoss)
+	{
+		InterfacePtr<IStrokeFillControlData> proxy(view, UseDefaultIID());
+		if (proxy == nil)
+			return kFalse;
+		proxy->SetActive((which == kKCMProxyFill) ? ToolboxProxy::kFillActive
+												  : ToolboxProxy::kStrokeActive);
+
+		// ★★★THE SQUARE IS NOT THE PAGE (2026-09-13, the user: "it LOOKS pressed, but the contents
+		//   have not changed - does it need a refresh?"). SetActive writes the value the proxy DRAWS
+		//   ITSELF from and tells nobody: IStrokeFillControlData is "a widget data interface for the
+		//   stroke/fill proxy widget ... for rendering" (its own header). The swatch list, the tint
+		//   and the overprint are OTHER widgets, so until something tells them, they go on showing
+		//   the side that was in front before.
+		//   ⚠That is WORSE THAN NOT PRESSING IT: the square says fill while the fields below are
+		//     still about the stroke, so the reader trusts the square and reads the wrong colour.
+		//   ★The product's own click does both halves, and the SDK publishes the second one:
+		//     widgetid.h:464-466, "Messages sent by StrokeFillWidget" - kWidgetFillActiveMessage and
+		//     kWidgetStrokeActiveMessage. The page's observer is listening for those.
+		//   ⚠NO WORKED EXAMPLE EXISTS: those two DECLARE_PMID lines are the whole of it in the SDK
+		//     (measured across all of source/), so the protocol below is the one thing here that was
+		//     reasoned rather than read - a widget announcing that its data changed names that data
+		//     interface, which is why it is the proxy's own kDefaultIID.
+		//   ★A message nobody is attached to costs nothing and changes nothing, so this cannot make
+		//     the dialog worse than it was; what it can do is be ignored, and that is measurable.
+		InterfacePtr<ISubject> subject(view, UseDefaultIID());
+		if (subject != nil)
+			subject->Change((which == kKCMProxyFill) ? kWidgetFillActiveMessage
+													 : kWidgetStrokeActiveMessage,
+							IStrokeFillControlData::kDefaultIID);
+
+		// The widget draws itself from that value, and nothing has told it to redraw.
+		// ★KEPT even now that the message goes out: if no observer is listening, the square itself
+		//   must still tell the truth about which side SetActive put in front.
+		view->Invalidate();
+		return kTrue;
+	}
+
+	InterfacePtr<IPanelControlData> children(view, UseDefaultIID());
+	if (children == nil)
+		return kFalse;
+	for (int32 i = 0; i < children->Length(); ++i)
+	{
+		if (SetProxyOnPage(children->GetWidget(i), which, budget))
+			return kTrue;		// there is one on that page; nothing below wants the second
+	}
+	return kFalse;
 }
 
 void CALLBACK KCMSwitchPageProc(HWND, UINT, UINT_PTR, DWORD)
@@ -396,16 +599,28 @@ void CALLBACK KCMSwitchPageProc(HWND, UINT, UINT_PTR, DWORD)
 	//   has not touched it, so there is nothing to validate and nothing to refuse the move.
 	if (switcher->GetCurrentPanelIndex() != index)
 		switcher->SwitchDialogPanel(index, kFalse);
+
+	// ★AND THE SQUARE, AFTER THE PAGE IS IN FRONT. All seventeen views exist from the moment the
+	//   dialog opens (measured), so the widget could be reached either way round; doing it in this
+	//   order means the redraw it asks for is one that is on screen.
+	//   ⚠Does nothing on every page but Character Colour, and that is not an error - it is how an
+	//     attribute that has no square is told from one that has.
+	if (gWantedProxy != kKCMProxyLeaveAlone)
+	{
+		int budget = 200;
+		SetProxyOnPage(PageViewAt(switcher, index), gWantedProxy, budget);
+	}
 	StopPageTimer();
 }
 
 /** Arm the page switch, to happen once the dialog is up. Does nothing for kInvalidClass. */
-void ArmPageSwitch(ClassID pageBoss)
+void ArmPageSwitch(ClassID pageBoss, KCMWantedProxy proxy)
 {
 	StopPageTimer();
 	if (pageBoss == kInvalidClass)
-		return;
+		return;					// ★no page, no proxy either: the timer is what would set it
 	gWantedPageBoss = pageBoss;
+	gWantedProxy = proxy;
 	gPageTicks = 0;
 	gPageTimer = ::SetTimer(nullptr, 0, kPageTimerMs, KCMSwitchPageProc);
 	if (gPageTimer == 0)
@@ -452,12 +667,15 @@ bool16 KCMEditSelectedResource(int32 row, int32 attrIndex)
 	if (row < 0 || !resources->GetNthChange(row, kind, key, what))
 		return kFalse;	// rebuilt under the click, or the placeholder row: nothing to edit, silently
 
-	// ***** ONLY A CHARACTER STYLE, FOR NOW. ***** Said out loud rather than swallowed: a double
-	// click that does nothing looks broken, and the reader has no way to tell "not yet" from
-	// "not ever".
+	// ***** ONLY A CHARACTER STYLE, FOR NOW. ***** ⚠A BACKSTOP AND NOT THE ANSWER THE READER GETS:
+	// the menu item is already greyed out for every other kind (CanEditResourceRow), so the ordinary
+	// way in cannot reach this line. It is kept for the day the action is fired from somewhere else,
+	// and it says which it is rather than failing silently.
+	// ⚠It said "Double-click" until 2026-09-13, which stopped being true the evening the gesture
+	//   became a right-click menu item.
 	if (!kind.IsEqual(PMString(kKCMCharStyleKind)))
 	{
-		KCMSetStatus("Double-click opens the editor for character styles only, so far.");
+		KCMSetStatus("Edit... opens the editor for character styles only, so far.");
 		return kFalse;
 	}
 
@@ -598,7 +816,7 @@ bool16 KCMEditSelectedResource(int32 row, int32 attrIndex)
 	{
 		PMString attrName, attrSource, attrTarget;
 		if (resources->GetNthAttr(row, attrIndex, attrName, attrSource, attrTarget))
-			ArmPageSwitch(KCMPageBossForAttribute(attrName));
+			ArmPageSwitch(KCMPageBossForAttribute(attrName), KCMProxyForAttribute(attrName));
 	}
 
 	actionMgr->PerformAction(GetExecutionContextSession()->GetActiveContext(),
@@ -649,6 +867,42 @@ bool16 CanEditResourceRow(int32 row)
 	return (kind.IsEqual(PMString(kKCMCharStyleKind)) && what != kKCMResourceRemoved) ? kTrue : kFalse;
 }
 
+/** Whether attribute `attr` of row `row` is one this can open the editor AT ITS OWN PAGE.
+
+	★★★AN ATTRIBUTE WHOSE PAGE IS NOT KNOWN IS REFUSED, NOT OPENED ANYWAY (2026-09-13, the user's
+	call: "when it is not handled, I would rather the Edit... item were greyed out, or not there").
+	Opening the dialog at whatever page it opens itself at is not a smaller version of this item -
+	it is a different thing, and one the reader cannot tell apart from the item having worked. They
+	would be looking at the General page for a strikethrough, with nothing on screen saying that
+	this is not where it lives.
+	★NOTHING IS LOST BY REFUSING: the DEFINITION row above it still offers "Edit..." and still opens
+	  the same dialog, so the style is always reachable - what the greying withholds is only the
+	  promise to land on the right page.
+	★★WHAT THE READER ACTUALLY SEES IS NO MENU AT ALL (measured 2026-09-13, the user: "it is not
+	  greyed - the menu does not come up, and that is fine"). The other two items on this menu are
+	  the Story mode's, so in the Resources mode every item on it is disabled at once, and InDesign
+	  does not pop a menu with nothing live on it. ⇒ **"Greyed" below is what this code does; "no
+	  menu" is what it looks like.** The same is already true of Copy Source Text, which is the only
+	  item on its menu in the other direction (KCMActionComponent.cpp says so there).
+	⇒ **This is the one place that decides it, and the table is the one place that answers it.**
+	  An attribute added to kKCMAttributePages becomes live here on the same build.
+*/
+bool16 CanEditResourceAttr(int32 row, int32 attr)
+{
+	if (!CanEditResourceRow(row) || attr < 0)
+		return kFalse;
+
+	Utils<IKCMResourcesFacade> resources;
+	if (!resources)
+		return kFalse;
+
+	PMString name, source, target;
+	if (!resources->GetNthAttr(row, attr, name, source, target))
+		return kFalse;		// the list was rebuilt under the menu, or the attribute is gone
+
+	return (KCMPageBossForAttribute(name) != kInvalidClass) ? kTrue : kFalse;
+}
+
 }	// anonymous namespace
 
 bool16 KCMResourceRowCanEdit()
@@ -666,13 +920,18 @@ bool16 KCMResourceAttrCanEdit()
 	int32 row = -1, attr = -1;
 	if (!KCMStoryGetMenuChange(row, attr))
 		return kFalse;
-	return CanEditResourceRow(row);
+	return CanEditResourceAttr(row, attr);
 }
 
 void KCMEditMenuResourceAttr()
 {
 	int32 row = -1, attr = -1;
 	if (!KCMStoryGetMenuChange(row, attr))
+		return;
+	// ★The same test the menu asked, asked again here. It cannot normally be false - a greyed item
+	//   is not dispatched - but the pair is kept honest the way every other item on these menus is,
+	//   so that the day one of them is fired from somewhere else the answer is still the same one.
+	if (!CanEditResourceAttr(row, attr))
 		return;
 	KCMEditSelectedResource(row, attr);
 }

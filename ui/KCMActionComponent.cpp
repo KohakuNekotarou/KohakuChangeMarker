@@ -1523,6 +1523,12 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 		}
 		else if (action == kKCMResourceAttrEditActionID)
 		{
+			// ★The same test the action runs (KCMResourceAttrCanEdit), which asks ONE MORE THING
+			//   than its sibling above: the attribute has to be one whose page of the editor is
+			//   known. ⚠**An attribute this does not know is greyed rather than opened at whatever
+			//   page the dialog opens itself at** (2026-09-13, the user's call) - the reader would
+			//   have no way to tell that landing on General meant "not handled". The definition row
+			//   above it still offers Edit..., so the style itself is never out of reach.
 			listToUpdate->SetNthActionState(i, KCMResourceAttrCanEdit() ? kEnabledAction
 			                                                            : kDisabled_Unselected);
 		}

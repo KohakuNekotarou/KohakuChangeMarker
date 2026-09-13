@@ -353,6 +353,26 @@ void AppendOpenTag(PMString& body, const PMString& name, ISAXAttributes* attrs)
 			if (attrName == "StyleUniqueId")
 				continue;
 
+			// ★★★KerningValue RIDES ALONG WITH KerningMethod, added 2026-09-13 (the user's call, on
+			//   their own observation: "it is in the XML but it does not change - it comes out when
+			//   you touch kerning, and kerning itself is KerningMethod"). ONE EDIT, TWO ROWS, and
+			//   the second of them is the one the reader cannot act on: **the kerning VALUE is on
+			//   no page of the Character Style Options dialog.** Basic Character Formats carries the
+			//   METHOD, a drop-down; the numeric box belongs to the Character panel and to selected
+			//   text, which is a story and not a definition.
+			//   ★THE SAME SHAPE AS Font AND FontFamily, blacklisted earlier the same day because
+			//     changing AppliedFont brought those out too (KCMIsExcludedResource, above). Those
+			//     are elements and this is an attribute, which is the only reason it is written
+			//     here rather than there.
+			//   ⚠WHAT IT COSTS, PLAINLY: a difference carried ONLY by this attribute is from now on
+			//     never reported - not as a row, not as an attribute line, and not in "Show as XML",
+			//     because this is the one place the compared body is built. What was measured is
+			//     the user's observation above, on their documents. That it can never move on its
+			//     own was NOT measured, so if a kerning value ever has to be reported, this line is
+			//     the whole of the reason it is not.
+			if (attrName == "KerningValue")
+				continue;
+
 			body.Append(" ");
 			body.Append(attrName);
 			body.Append("=\"");

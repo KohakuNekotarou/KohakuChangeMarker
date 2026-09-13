@@ -1345,7 +1345,8 @@ resource MenuDef (kSDKDefMenuResourceID)
 		// "Edit..." (2026-09-13), at the TOP of this menu too. An ATTRIBUTE row's editor is the same
 		// dialog its definition row opens, shown AT THE PAGE THAT HOLDS THAT ATTRIBUTE. ★Live only
 		// in the Resources mode (kCustomEnabling -> KCMResourceAttrCanEdit), so a Story change row
-		// still sees only the two items below.
+		// still sees only the two items below - AND only on an attribute whose page is known, since
+		// landing on the General page is not a smaller version of this item but a different one.
 		kKCMResourceAttrEditActionID,
 		kKCMChangeRowMenuName,
 		kKCMResourceAttrEditMenuItemPosition,
