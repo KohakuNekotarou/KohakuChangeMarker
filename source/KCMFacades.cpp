@@ -48,6 +48,7 @@
 #include "KCMPawStamp.h"			// the cat-paw stamps (place / lift / count / the one size)
 #include "KCMStoryList.h"			// the Story Edits rows, and where a story begins in a document
 #include "KCMStoryDiffRun.h"		// RunOne - re-comparing one row's story ("Refresh Story Comparison")
+#include "KCMStoryRestore.h"		// KCMRestoreChange - "Restore Source Text" on a change row
 #include "KCMBookPair.h"			// which two books, and their display paths
 #include "KCMBookCompare.h"		// the book comparison itself
 #include "KCMPageNumberMarker.h"	// the folio exclusion toggle
@@ -557,6 +558,10 @@ public:
 		return count;
 	}
 
+	virtual bool16	RestoreChange(int32 nth, int32 which, PMString& outMessage)
+	{
+		return KCMRestoreChange(nth, which, outMessage);
+	}
 	virtual UID		GetFirstFrameUID(IDataBase* db, UID storyUID)
 					{ return KCMStoryFirstFrameUID(db, storyUID); }
 

@@ -1326,6 +1326,17 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKCMChangeRowMenuName,
 		kKCMChangeRowCopySourceMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
+
+		// "Restore Source Text" (2026-09-13): write the OLDER side's words over that one change in
+		// the newer document - one undo step - and diff the story again. Since the evening of
+		// 2026-09-13 the older RUBY (changed / added / removed, mono or group) and the older KENTEN
+		// kind go back the same way. Enabled in the Story mode on every change row
+		// (kCustomEnabling -> KCMChangeRowCanRestore); with this item present the menu appears on
+		// every change, the copy item alone deciding whether IT is greyed.
+		kKCMChangeRowRestoreActionID,
+		kKCMChangeRowMenuName,
+		kKCMChangeRowRestoreMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
 	}
 };
 
@@ -1735,6 +1746,15 @@ resource ActionDef (kSDKDefActionResourceID)
 		kOtherActionArea,
 		kNormalAction,
 		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates greys it where the older side is empty (KCMChangeRowCanCopySource)
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		kKCMActionComponentBoss,
+		kKCMChangeRowRestoreActionID,
+		kKCMChangeRowRestoreMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates greys it on a ruby/kenten change (KCMChangeRowCanRestore)
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 

@@ -80,6 +80,16 @@ bool16 KCMChangeRowCanCopySource();
 */
 bool16 KCMChangeRowCopySource();
 
+/** Whether "Restore Source Text" may be enabled for the stashed change: the Story mode, and any
+    change - words, ruby or kenten (since the evening of 2026-09-13). An insertion counts -
+    restoring it takes the inserted words out again. What cannot be written back is refused by
+    the model with a reason, not greyed here. */
+bool16 KCMChangeRowCanRestore();
+
+/** Runs "Restore Source Text" on the stashed change through the facade (KCMStoryRestore.h on
+    the model side) and puts its message on the status line. kTrue when something was written. */
+bool16 KCMChangeRowRestore();
+
 #endif // __KCMStoryCopy_h__
 
 // End, KCMStoryCopy.h.

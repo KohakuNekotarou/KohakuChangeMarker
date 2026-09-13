@@ -1223,6 +1223,7 @@ int32 KCMStoryDiffRun::Run(IDataBase* targetDB, IDataBase* sourceDB, bool16* out
 			//   fact that somebody looked. That fact is what lets the row say "None" instead of standing
 			//   there mute beside the rows that could not be compared at all.
 			KCMStoryList::SetRowChanges(i, changes, kTrue);
+			KCMStoryList::SetRowTargetTextCount(i, KCMStoryDiffRun::TextCountOf(UIDRef(targetDB, row->fStoryUID)));
 			total += static_cast<int32>(changes.size());
 		}
 		// (else: the row keeps its place and loses its detail)
@@ -1246,6 +1247,12 @@ int32 KCMStoryDiffRun::Run(IDataBase* targetDB, IDataBase* sourceDB, bool16* out
 //----------------------------------------------------------------------------------------
 // RunOne
 //----------------------------------------------------------------------------------------
+
+uint32 KCMStoryDiffRun::TextCountOf(const UIDRef& story)
+{
+	InterfacePtr<ITextModel> model(story, UseDefaultIID());
+	return (model != nil) ? model->GetTextChangeCount() : 0;
+}
 
 int32 KCMStoryDiffRun::RunOne(IDataBase* targetDB, IDataBase* sourceDB, int32 rowIndex)
 {
@@ -1293,6 +1300,7 @@ int32 KCMStoryDiffRun::RunOne(IDataBase* targetDB, IDataBase* sourceDB, int32 ro
 	if (!compared)
 		changes.clear();
 	KCMStoryList::SetRowChanges(rowIndex, changes, compared);
+	KCMStoryList::SetRowTargetTextCount(rowIndex, KCMStoryDiffRun::TextCountOf(UIDRef(targetDB, storyUID)));
 
 	return compared ? static_cast<int32>(changes.size()) : -1;
 }

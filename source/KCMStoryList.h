@@ -220,6 +220,12 @@ struct KCMStoryRow
 		never disappear because the detail could not be worked out. */
 	std::vector<KCMStoryChange> fChanges;
 
+	/** The Target story's text change counter (ITextModel::GetTextChangeCount) at the moment
+		fChanges were built. "Restore Source Text" (KCMStoryRestore.cpp) refuses to write into a
+		story whose counter has moved since: the change's positions name the text as it was then,
+		and an edit in between would put the older words somewhere else. 0 until the diff runs. */
+	uint32		fTargetTextCount;
+
 	/** Whether the two versions' TEXT was actually put side by side for this row.
 
 		**IT IS WHAT MAKES AN EMPTY fChanges READABLE**, and that is the whole reason it exists.
@@ -276,7 +282,7 @@ struct KCMStoryRow
 	KCMStoryRow()
 		: fStoryUID(kInvalidUID), fKinds(kKCMStoryKindNone), fFrameUID(kInvalidUID),
 		  fPageUID(kInvalidUID), fPageIndex(kMaxInt32), fTextCompared(kFalse),
-		  fAttrKind(kKCMStoryAttrNone), fAttrKindCount(0), fHasTextChange(kFalse) {}
+		  fAttrKind(kKCMStoryAttrNone), fAttrKindCount(0), fHasTextChange(kFalse), fTargetTextCount(0) {}
 };
 
 /** The first frame a story is placed in -- where a jump to that story should go.
@@ -442,6 +448,10 @@ namespace KCMStoryList
 			with kFalse it is "nobody could look".
 	*/
 	void SetRowChanges(int32 nth, const std::vector<KCMStoryChange>& changes, bool16 textCompared);
+
+	/** Record the Target story's text change counter for row nth (KCMStoryRow::fTargetTextCount),
+		read by the caller at the moment it attached the row's changes. Out-of-range nth is ignored. */
+	void SetRowTargetTextCount(int32 nth, uint32 count);
 
 	/** Drop the rows whose story differs only in HOW IT IS SET -- a font, a colour, a style, a
 		table stroke -- and keep the ones whose CONTENT differs: the words, or the ruby written over

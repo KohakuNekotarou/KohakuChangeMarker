@@ -235,6 +235,7 @@
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMDrawEventHandler.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMPageMap.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMReport.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMStoryRestore.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMPageCheck.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMPawStamp.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMPageMarksDoc.cpp" />
@@ -307,6 +308,7 @@
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPageMap.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPagePairRule.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMReport.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMStoryRestore.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPageCheck.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPawStamp.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPageMarksDoc.h" />

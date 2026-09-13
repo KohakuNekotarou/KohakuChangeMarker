@@ -1019,6 +1019,13 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 			KCMChangeRowCopySource();
 			break;
 
+		// Change-row context menu "Restore Source Text" (2026-09-13): the older words written over
+		// that one change, undoable. The model decides and reports (KCMStoryRestore.cpp); this side
+		// only names the stashed change.
+		case kKCMChangeRowRestoreActionID:
+			KCMChangeRowRestore();
+			break;
+
 		// (The panel tool button's flyout had two cases here for a few hours on 2026-09-04. They
 		//  are gone with their ActionDefs: the flyout is a Win32 popup raised by KCMToolButtonEH,
 		//  and it calls KCMToolButtonPressed itself. ⚠Do not add them back without a MenuDef --
@@ -1471,6 +1478,13 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 			//   rows are greyed, and being the only item on its menu, greyed means no menu appears.
 			listToUpdate->SetNthActionState(i, KCMChangeRowCanCopySource() ? kEnabledAction
 			                                                               : kDisabled_Unselected);
+		}
+		else if (action == kKCMChangeRowRestoreActionID)
+		{
+			// The same test the action runs (a text change, in the Story mode). Unlike the copy
+			// item, an insertion is live: restoring it takes the inserted words out again.
+			listToUpdate->SetNthActionState(i, KCMChangeRowCanRestore() ? kEnabledAction
+			                                                            : kDisabled_Unselected);
 		}
 	}
 }

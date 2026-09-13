@@ -389,6 +389,14 @@ public:
 		@return kInvalidUID when there is no such story or character, or it is overset or in no
 			frame - callers keep the fallback frame they already had. */
 	virtual UID		GetStoryFrameAt(IDataBase* db, UID storyUID, TextIndex index) = 0;
+
+	/** "Restore Source Text" (2026-09-13): write the older side's words of change `which` of
+		row `nth` over the newer side's range - one undoable command - then diff the row's story
+		again. kTrue when written; outMessage either way (how many characters, or why not:
+		a ruby/kenten change, a story edited since the comparison, a closed document). The words
+		are read raw from the Source, never from the row's display excerpt (KCMStoryRestore.h).
+		⚠Appended at the END of the class (new virtuals go nowhere else). */
+	virtual bool16	RestoreChange(int32 nth, int32 which, PMString& outMessage) = 0;
 };
 
 #endif // __IKCMStoryEditsFacade_h__

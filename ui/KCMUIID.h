@@ -427,6 +427,7 @@ DECLARE_PMID(kActionIDSpace, kKCMPopupSaveOriginRawActionID, kKCMUIPrefix + 62)	
 //   with something on the older side (kCustomEnabling -> KCMChangeRowCanCopySource); greyed on
 //   an insertion, a ruby added, kenten and footnote rows - and greyed means no menu. ui/KCMStoryCopy.cpp
 DECLARE_PMID(kActionIDSpace, kKCMChangeRowCopySourceActionID, kKCMUIPrefix + 63)
+DECLARE_PMID(kActionIDSpace, kKCMChangeRowRestoreActionID, kKCMUIPrefix + 66)	// ★"Restore Source Text" on a CHANGE row's context menu (2026-09-13, the user's pick: "put this part back the way it was at Task Start"): the older side's words are written over that one change's newer range, one undoable command, and the row's story is diffed again. Live in the Story mode on every change row: words (an insertion is restorable, its words come out), ruby (changed / added / removed, mono and group told apart) and kenten (its kind) - since the evening of 2026-09-13; the model refuses with a reason what it cannot write (a custom kenten, an attribute in a paragraph whose words changed too). Facade RestoreChange -> KCMStoryRestore.cpp
 DECLARE_PMID(kActionIDSpace, kKCMPopupExportReportActionID, kKCMUIPrefix + 65)	// ★"Export Before/After Report" on the panel flyout (a plain command, 2026-09-13, the user's pick): one PDF, a summary page then every changed page with the older version on the left and the newer (rings printed) on the right, written next to the Target. Live only while a comparison is running. Facade ExportBeforeAfterReport; the work is KCMReport.cpp
 DECLARE_PMID(kActionIDSpace, kKCMPopupPairByUidActionID, kKCMUIPrefix + 64)	// ★"Pair Pages by UID" check toggle on the panel flyout (2026-09-13, the user's ask: choose between UID and order). ON (the default) = ordinary pages pair with the page of the same UID on the other side, a UID found on one side only being an added / removed page (the red "/"); OFF = the rule that stood before, by position. The model holds it (KCMPageMap.cpp, sPairPagesByUid); flipping it re-compares like Ignore Page Number Marker. Saved with the panel settings ("pairPagesByUid")
 DECLARE_PMID(kActionIDSpace, kKCMPopupTaskStartActionID, kKCMUIPrefix + 59)	// ★"Task Start" on the panel flyout (a plain command, 2026-09-12): the ACTIVE document's INX is taken as the origin and the pair is chosen (Target = that document, Source = the origin). Live only while no origin is held, nothing is armed and a document is active (facade CanTakeTaskStart - the one place). Released by Clear Target and Source or the document closing.
@@ -729,6 +730,7 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowChangeWidgetID, kKCMUIPrefix + 72)	// Ro
 // HandlePopupMenu.
 // ★Its root name never reaches the screen either, so a plain literal will do.
 #define kKCMStoryRowMenuName		"KCMRtMenuStoryRow"
+#define kKCMChangeRowRestoreMenuKey	kKCMStringPrefix "kKCMChangeRowRestoreMenuKey"		// the "Restore Source Text" item on a CHANGE row's context menu (2026-09-13)
 #define kKCMChangeRowCopySourceMenuKey	kKCMStringPrefix "kKCMChangeRowCopySourceMenuKey"	// the "Copy Source Text" item on a CHANGE row's context menu (2026-09-12. ⚠The name carried "as Plain Text" for an hour on 2026-09-12 and the user took it out again the same night; what arrives is still words only - no formatting, no markers)
 // The CHANGE row (child row) context menu - a subtree of its own, so that the story row's items
 // (Refresh / Show as XML) are never offered on a child row. KCMStoryRowEH::RButtonDn puts it up
@@ -1118,6 +1120,7 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowChangeWidgetID, kKCMUIPrefix + 72)	// Ro
 #define kKCMStoryRowRefreshMenuItemPosition	1.0	// Story Edits row context menu: "Refresh Story Comparison" (a different subtree, so it may share 1.0 with the chapter row)
 #define kKCMResourceRowXmlMenuItemPosition	2.0	// ★the SAME subtree: "Show as XML" sits under the refresh item. The two are never live at once (opposite modes), so the order only decides what a future third item would sit between
 #define kKCMChangeRowCopySourceMenuItemPosition	1.0	// CHANGE row context menu (its own subtree, kKCMChangeRowMenuName): "Copy Source Text"
+#define kKCMChangeRowRestoreMenuItemPosition	2.0	// CHANGE row context menu: "Restore Source Text", under the copy item it supersedes for most uses
 // (The panel tool button's flyout had two positions here on 2026-09-04. Gone with its MenuDef --
 //  a Win32 popup orders its items by the order they are appended, in code.)
 // -- the informational items, at the end --

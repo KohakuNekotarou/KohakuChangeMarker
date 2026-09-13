@@ -233,4 +233,31 @@ bool16 KCMChangeRowCopySource()
 	return kTrue;
 }
 
+bool16 KCMChangeRowCanRestore()
+{
+	IKCMStoryEditsFacade::Change change;
+	if (!StashedChange(change))
+		return kFalse;
+	// Every kind: words, ruby and kenten (KCMStoryRestore.h). An insertion IS restorable - the
+	// words come out again - so, unlike the copy item, an empty older side does not grey this
+	// one. What cannot be written back (a custom kenten mark, an attribute whose paragraph's
+	// words also changed) is refused by the model with a reason on the status line.
+	return kTrue;
+}
+
+bool16 KCMChangeRowRestore()
+{
+	if (gMenuRow < 0 || gMenuChange < 0)
+	{
+		KCMSetStatus("restore: no change to restore.");
+		return kFalse;
+	}
+	// The model does the work and says what happened; the words go to the status line either way.
+	PMString msg;
+	const bool16 ok = Utils<IKCMStoryEditsFacade>()->RestoreChange(gMenuRow, gMenuChange, msg);
+	if (msg.CharCount() > 0)
+		KCMSetStatus(msg);
+	return ok;
+}
+
 // End, KCMStoryCopy.cpp.

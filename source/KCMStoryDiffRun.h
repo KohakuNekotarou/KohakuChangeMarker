@@ -112,6 +112,11 @@ namespace KCMStoryDiffRun
 			one of those cases; only its detail is cleared.
 	*/
 	int32 RunOne(IDataBase* targetDB, IDataBase* sourceDB, int32 rowIndex);
+
+	/** The story's text change counter (ITextModel::GetTextChangeCount), 0 when the story cannot
+		be opened. Run and RunOne record it on the row as they attach the changes; "Restore Source
+		Text" compares it before it writes (KCMStoryRow::fTargetTextCount). */
+	uint32 TextCountOf(const UIDRef& story);
 }
 
 #endif // __KCMStoryDiffRun_h__

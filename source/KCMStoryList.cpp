@@ -788,6 +788,13 @@ const KCMStoryRow* KCMStoryList::GetRow(int32 nth)
 
 /* SetRowChanges
 */
+void KCMStoryList::SetRowTargetTextCount(int32 nth, uint32 count)
+{
+	if (nth < 0 || nth >= static_cast<int32>(gRows.size()))
+		return;
+	gRows[nth].fTargetTextCount = count;
+}
+
 void KCMStoryList::SetRowChanges(int32 nth, const std::vector<KCMStoryChange>& changes,
 								   bool16 textCompared)
 {
